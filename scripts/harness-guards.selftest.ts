@@ -6,16 +6,14 @@
  * 去掉哈希段,本自测即红。
  *
  * 运行:`pnpm tsx scripts/harness-guards.selftest.ts`(exit 0 全过 / exit 1 有失败)。
- * 形态说明:jest unit 配置只覆盖 src/**;沿 goal 拍板不动 jest 配置,以可执行自测脚本承载。
+ * 形态说明:本脚本当前未接入 package.json 的 agent:check:* 自动链,必须显式运行;
+ * Jest worktree ignore guard 直接读取三份 config,不宣称 CI 已自动执行本 selftest。
  * preflight(R5-08)的参数 / bump 特征回归在 scripts/agent-preflight.selftest.sh。
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import {
-  checkFragment,
-  mergeIntoChangelog,
-} from './changelog-merge';
+import { checkFragment, mergeIntoChangelog } from './changelog-merge';
 import {
   countAuditLogEventMembers,
   countDecoratorUsage,
@@ -26,6 +24,9 @@ import {
   extractSeedPermissionCodesAst,
 } from './docs-counts';
 import { deriveTestDbNameFrom } from '../test/setup/worktree-db';
+import contractJestConfig from '../test/jest-contract.config';
+import e2eJestConfig from '../test/jest-e2e.config';
+import unitJestConfig from '../test/jest-unit.config';
 
 let passCount = 0;
 const failures: string[] = [];
@@ -300,14 +301,21 @@ checkThrows(
 // R5-04 — worktree 库名派生碰撞样例(报告 §5 R5-04 逐条)
 // ---------------------------------------------------------------------------
 
-checkEq('R5-04 db:主仓恒 app_test(行为零变化)', deriveTestDbNameFrom('/repo/main', false), 'app_test');
+checkEq(
+  'R5-04 db:主仓恒 app_test(行为零变化)',
+  deriveTestDbNameFrom('/repo/main', false),
+  'app_test',
+);
 
 // 样例:lane-a 与 lane_a 曾同为 app_test_lane_a
 {
   const a = deriveTestDbNameFrom('/w/lane-a', true);
   const b = deriveTestDbNameFrom('/w/lane_a', true);
   check('R5-04 db:lane-a 与 lane_a 不再共库', a !== b, `${a} == ${b}`);
-  check('R5-04 db:派生名保留 app_test_ 前缀(安全护栏不破)', a.startsWith('app_test_') && b.startsWith('app_test_'));
+  check(
+    'R5-04 db:派生名保留 app_test_ 前缀(安全护栏不破)',
+    a.startsWith('app_test_') && b.startsWith('app_test_'),
+  );
 }
 // 样例:两个共享前 40 字符的名称曾同 slug
 {
@@ -315,7 +323,11 @@ checkEq('R5-04 db:主仓恒 app_test(行为零变化)', deriveTestDbNameFrom('/r
   const p1 = deriveTestDbNameFrom(`/w/${prefix}-one`, true);
   const p2 = deriveTestDbNameFrom(`/w/${prefix}-two`, true);
   check('R5-04 db:40 字符共同前缀不再共库', p1 !== p2, `${p1} == ${p2}`);
-  check('R5-04 db:长名派生仍 ≤ PostgreSQL 63 字符上限', p1.length <= 63 && p2.length <= 63, `${p1.length}`);
+  check(
+    'R5-04 db:长名派生仍 ≤ PostgreSQL 63 字符上限',
+    p1.length <= 63 && p2.length <= 63,
+    `${p1.length}`,
+  );
 }
 // 样例:全中文目录名空 slug 曾回落主库 app_test
 {
@@ -328,6 +340,30 @@ checkEq('R5-04 db:主仓恒 app_test(行为零变化)', deriveTestDbNameFrom('/r
   const y = deriveTestDbNameFrom('/y/lane-a', true);
   check('R5-04 db:同名 worktree 挂不同路径不共库', x !== y);
   checkEq('R5-04 db:同路径重复派生稳定', deriveTestDbNameFrom('/x/lane-a', true), x);
+}
+
+// ---------------------------------------------------------------------------
+
+// R5-05 — Jest discovery/haste map 必须同时隔离两类仓内 worktree
+const JEST_CONFIGS = [
+  ['unit', unitJestConfig],
+  ['contract', contractJestConfig],
+  ['e2e', e2eJestConfig],
+] as const;
+const JEST_IGNORE_KEYS = ['testPathIgnorePatterns', 'modulePathIgnorePatterns'] as const;
+const JEST_WORKTREE_PATTERNS = ['<rootDir>/.claude/worktrees/', '<rootDir>/\\.worktrees/'] as const;
+
+for (const [configName, config] of JEST_CONFIGS) {
+  for (const ignoreKey of JEST_IGNORE_KEYS) {
+    const patterns = config[ignoreKey] ?? [];
+    for (const worktreePattern of JEST_WORKTREE_PATTERNS) {
+      check(
+        `R5-05 jest:${configName}.${ignoreKey} 覆盖 ${worktreePattern}`,
+        patterns.includes(worktreePattern),
+        `patterns=[${patterns.join(',')}]`,
+      );
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

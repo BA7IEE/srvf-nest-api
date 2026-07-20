@@ -8,10 +8,15 @@ import type { Config } from 'jest';
 const config: Config = {
   rootDir: '..',
   testRegex: '.*\\.e2e-spec\\.ts$',
-  testPathIgnorePatterns: ['/node_modules/', '/dist/', '<rootDir>/.claude/worktrees/'],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/dist/',
+    '<rootDir>/.claude/worktrees/',
+    '<rootDir>/\\.worktrees/',
+  ],
   // 把 worktree 子树排出 haste map,消除同名 package.json 副本的重名 warning;
   // testPathIgnorePatterns 只管 spec 选取,不影响 haste(详见 jest-unit.config.ts)。
-  modulePathIgnorePatterns: ['<rootDir>/.claude/worktrees/'],
+  modulePathIgnorePatterns: ['<rootDir>/.claude/worktrees/', '<rootDir>/\\.worktrees/'],
   moduleFileExtensions: ['ts', 'js', 'json'],
   transform: {
     '^.+\\.ts$': [
