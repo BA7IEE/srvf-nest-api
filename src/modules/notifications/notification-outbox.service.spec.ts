@@ -70,6 +70,7 @@ function row(overrides: Partial<NotificationOutboxIntent> = {}): NotificationOut
     lockedAt: null,
     leaseExpiresAt: null,
     preparedAt: null,
+    preparedTemplateId: null,
     sentAt: null,
     completedAt: null,
     lastErrorCode: null,

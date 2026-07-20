@@ -2573,6 +2573,7 @@ model NotificationOutboxIntent {
   leaseExpiresAt DateTime? @db.Timestamptz(3)
 
   preparedAt DateTime? @db.Timestamptz(3)
+  preparedTemplateId String?
   sentAt     DateTime? @db.Timestamptz(3)
   completedAt DateTime? @db.Timestamptz(3)
 

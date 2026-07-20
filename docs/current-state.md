@@ -17,7 +17,7 @@
 | 模块 | 36 |
 | Controller | 74 |
 | Endpoint | 365 |
-| Migration | 63 |
+| Migration | 64 |
 | BizCode | 258 |
 | 权限码 | 207 |
 | AuditLogEvent | 123 |
@@ -33,7 +33,7 @@
 - **会话注销终态**:`POST /api/auth/v1/logout` 由任一可识别且未过期 row(含 rotated ancestor)幂等撤销所属 refresh family 全部活跃未过期 token;其他 family 与 access 不动;详见 `security.md`
 - **限流多实例一致性**:10 个命名 throttler 共用 PostgreSQL `throttler_buckets`，保留 IP tracker / 包 hash key / limit+ttl+block / 42900 / 无 header 语义；DB/storage 异常严格 fail-closed 50000，零本地 Map fallback；过期桶手动 retention，Cron 仍恰好 2
 - **贡献规则 ACTIVE 槽位**:`ContributionRule` 以 `activityTypeCode × attendanceRoleCode` 为未软删 ACTIVE partial unique；`durationThreshold` 仅是单规则内部档位参数。create/激活在事务内预查，真实并发由 DB unique + 23002 收口；calculator 若读到漂移重复 pair 立即 fail-closed，不按创建顺序任取。
-- **通知 durable outbox**:eventKey 幂等，PG `SKIP LOCKED` + lease/fencing；marker/状态/audit 与 intent 同事务，provider 事务外 at-least-once，失败退避至 dead；cron 仅 enqueue。
+- **通知 durable outbox**:eventKey 幂等，PG `SKIP LOCKED` + lease/fencing；marker/状态/audit 与 intent 同事务，provider 事务外 at-least-once，失败退避至 dead；cron 仅 enqueue。Wave2 G1b 仅新增 nullable `preparedTemplateId` expand 骨架，runtime 尚未读写且 migration 未 deploy。
 - **Attachment storage Phase1**:Attachment key namespace 已接 durable ledger；locator 固定、凭证取当前 settings；旧 binary expand 未加 `Attachment.key` FK，repo-wide closure 未完成；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)。
 - **保险 v3 PR4 约束代码已交付(本 PR，未 deploy)**:migration 定义完整扫描、2+7 CHECK、2 owner partial unique、同 member/immutable trigger，任一脏数即失败且零修数/删数；生产尚未生效。PR3 gate 亦未部署，启用须 drain 旧 server 且禁混档。
 - **敏感读审计(C-2,2026-07-19)**:`AuditLogEvent` 123，placeholder 退役；管理端敏感读鉴权/查询后、CSV 交 generator 前、签名 URL 调 provider 前 fail-closed 落库。extra 仅 operation/字段名/maskLevel/计数，禁 PII/filter 值/key/URL。
