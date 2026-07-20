@@ -18,21 +18,25 @@ import {
   RealnameApiError,
   RealnameChannelUnavailableError,
   RealnameCredentialStatus,
+  type PreparedRealnameEffect,
   type RealnameOcrCardWarnings,
   type RealnameOcrExtendedFields,
   type RealnameOcrField,
   type RealnameOcrInput,
   type RealnameOcrResult,
   type RealnameProvider,
+  type RealnameSettingsResolved,
 } from '../realname.types';
 
 // 招新实名环节 OCR 改造(2026-06-22):真实腾讯云 OCR Provider(评审稿 E-RO-2;**休眠**待运维)
 //
 // 产品 = 腾讯云 OCR(ocr.tencentcloudapi.com,Version 2018-11-19,service ocr),按 documentTypeCode
 // 分流三 action(RecognizeValidIDCardOCR / MLIDPassportOCR / MainlandPermitOCR)。结构镜像原 provider:
-// - secretId / secretKey / region 从 RealnameSettingsService.getActiveSettings() 读(60s 缓存;不依赖 env)
-// - 每次调用 requireTencentContext() 做守护(settings null·未启用 / providerType ≠ TENCENT_CLOUD /
+// - 既有直接 recognize live-read 一次 settings；prepare(settings,input) 绑定 supplied snapshot
+// - prepare 时 requireTencentContext() 做守护(settings null·未启用 / providerType ≠ TENCENT_CLOUD /
 //   credentialStatus ≠ CONFIGURED;region 缺省兜底)
+// - credentials/region/payload 在 prepare 固定；TC3 timestamp/Authorization 在 invoke 紧邻 fetch 生成，
+//   避免排队后的 prepared Effect 使用陈旧签名时间
 // - 传输层 = **原生 fetch + TC3-HMAC-SHA256 签名**(node crypto;零新依赖,沿 #346 8s 上限);
 //   **真通道休眠**:DevStub 全验,本 Provider 仅由 .spec mock fetch 锁三 action 结构。
 //
@@ -118,6 +122,14 @@ export class TencentRealnameProvider implements RealnameProvider {
   constructor(private readonly settings: RealnameSettingsService) {}
 
   async recognize(input: RealnameOcrInput): Promise<RealnameOcrResult> {
+    const settings = await this.settings.getActiveSettings();
+    return this.prepare(settings, input).invoke();
+  }
+
+  prepare(
+    settings: RealnameSettingsResolved | null,
+    input: RealnameOcrInput,
+  ): PreparedRealnameEffect {
     const action = ocrActionFor(input.documentTypeCode);
     if (!action) {
       // 防御:调用方应只对 OCR 类型调本 provider(isOcrDocument 前置);非 OCR 类型不该到这
@@ -125,11 +137,24 @@ export class TencentRealnameProvider implements RealnameProvider {
         `documentTypeCode=${input.documentTypeCode} 非 OCR 证件类型`,
       );
     }
-    const ctx = await this.requireTencentContext();
+    const ctx = this.requireTencentContext(settings);
     const payload = JSON.stringify(buildRequestBody(action, input.image));
+    return {
+      providerType: 'TENCENT_CLOUD',
+      invoke: () => this.recognizeWithContext(ctx, action, input, payload),
+    };
+  }
+
+  private async recognizeWithContext(
+    ctx: { secretId: string; secretKey: string; region: string },
+    action: string,
+    input: RealnameOcrInput,
+    payload: string,
+  ): Promise<RealnameOcrResult> {
+    // Effect 边界：prepared snapshot 只固定配置与 payload；易过期的 TC3 时间/签名必须在
+    // invoke 内、最终 fetch 前即时生成，不能在可能排队的 prepare 阶段冻结。
     const timestamp = Math.floor(Date.now() / 1000);
     const headers = this.buildSignedHeaders(ctx, payload, timestamp, action);
-
     let res: Response;
     try {
       res = await fetch(REALNAME_TC_ENDPOINT, {
@@ -254,14 +279,12 @@ export class TencentRealnameProvider implements RealnameProvider {
     };
   }
 
-  // 解析 settings + 守护(镜像原 requireTencentContext;
-  // 第 1/2 档在 RealnameVerificationService.resolve 已挡,此处防御性重查)
-  private async requireTencentContext(): Promise<{
+  // 解析 supplied settings snapshot + 守护；不读取 RealnameSettingsService。
+  private requireTencentContext(settings: RealnameSettingsResolved | null): {
     secretId: string;
     secretKey: string;
     region: string;
-  }> {
-    const settings = await this.settings.getActiveSettings();
+  } {
     if (!settings || !settings.enabled) {
       throw new RealnameChannelUnavailableError('realname_verification_settings 未配置或未启用');
     }

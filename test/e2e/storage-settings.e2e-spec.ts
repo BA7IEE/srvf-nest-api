@@ -14,7 +14,7 @@ import { createTestApp } from '../setup/test-app';
 
 // V2.x C-7.5 实施 PR #11:Storage Settings admin e2e(沿评审 §6.5 / §6.6 + Q-11 拍板)
 // 30+ 用例;凭证不回显 / 加密落库 / credentialStatus 三态(missing / configured / invalid)/
-// upsert / TTL 边界 / forbidNonWhitelisted 拒凭证字段 / invalidate 生效 / IV 随机性
+// upsert / TTL 边界 / forbidNonWhitelisted 拒凭证字段 / live-read 生效 / IV 随机性
 //
 // P0-F PR-2B(2026-05-18):入口切到 service 层 rbac.can();失败统一 RBAC_FORBIDDEN(30100)。
 // D2=A 凭证收紧:`storage-setting.reset.credentials` 不绑 ops-admin;ADMIN+ops-admin 调
@@ -427,15 +427,10 @@ describe('storage-settings admin', () => {
         .post('/api/system/v1/storage-settings/reset-credentials')
         .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
-      // 手工写入无效 base64(无法解密)→ credentialStatus=invalid
-      // 同时 invalidate StorageSettingsService 的 60s 缓存(沿 PR #87)
+      // 手工写入无效 base64(无法解密)→ credentialStatus=invalid；下一读取直见 DB 当前值
       await prisma.storageSettings.updateMany({
         data: { secretIdEncrypted: 'INVALID_CIPHER_xxxx', secretKeyEncrypted: 'INVALID_xxxx' },
       });
-      const { StorageSettingsService } =
-        await import('../../src/modules/storage/storage-settings.service');
-      app.get(StorageSettingsService).invalidate();
-
       const res = await request(httpServer(app))
         .get('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth);
@@ -443,7 +438,7 @@ describe('storage-settings admin', () => {
       assertNoSecret(res.body);
     });
 
-    it('28. PATCH 后 invalidate 生效;下一次 GET 返回新值', async () => {
+    it('28. PATCH 提交后下一次 GET 直接返回新值', async () => {
       // 第一次 PATCH 设置 bucket=v1
       await request(httpServer(app))
         .patch('/api/system/v1/storage-settings')

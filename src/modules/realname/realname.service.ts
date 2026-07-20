@@ -11,10 +11,16 @@ import { RealnameSettingsService } from './realname-settings.service';
 import {
   RealnameApiError,
   RealnameChannelUnavailableError,
+  type PreparedRealnameEffect,
   type RealnameOcrInput,
   type RealnameOcrResult,
-  type RealnameProvider,
+  type RealnameSettingsResolved,
 } from './realname.types';
+
+interface RealnameProviderRoute {
+  readonly providerType: 'DEV_STUB' | 'TENCENT_CLOUD';
+  prepare(input: RealnameOcrInput): PreparedRealnameEffect;
+}
 
 // 招新实名环节 OCR 改造(2026-06-22):实名 OCR 识别编排(评审稿 §3.6/E-RO-1;
 // 镜像 WechatService 的 resolve + 域错误→BizCode 映射边界,不设独立 router 文件——
@@ -51,8 +57,8 @@ export class RealnameVerificationService {
   async recognize(input: RealnameOcrInput): Promise<RealnameOcrResult> {
     try {
       this.contentValidator.validateFromBuffer({ mime: input.mimeType, buffer: input.image });
-      const provider = await this.resolve();
-      return await provider.recognize(input);
+      const route = await this.resolveRoute();
+      return await route.prepare(input).invoke();
     } catch (err) {
       if (err instanceof RealnameChannelUnavailableError) {
         throw new BizException(BizCode.REALNAME_CHANNEL_NOT_CONFIGURED);
@@ -64,7 +70,8 @@ export class RealnameVerificationService {
     }
   }
 
-  private async resolve(): Promise<RealnameProvider> {
+  /** 每次只读取一次 PostgreSQL settings，并返回绑定该 snapshot 的短生命周期 route。 */
+  async resolveRoute(): Promise<RealnameProviderRoute> {
     const r = await this.settings.getActiveSettings();
     if (!r) {
       throw new RealnameChannelUnavailableError('realname_verification_settings 未配置');
@@ -76,12 +83,29 @@ export class RealnameVerificationService {
       if (isProductionLike(this.cfg.env)) {
         throw new RealnameChannelUnavailableError('production-like 环境禁用 DEV_STUB 通道');
       }
-      return this.devStub;
+      return this.createDevStubRoute();
     }
     if (r.providerType === 'TENCENT_CLOUD') {
-      return this.tencent;
+      return this.createTencentRoute(r);
     }
     // 防御:enum 未来扩展;与 wechat 同款不静默 fallback
     throw new RealnameChannelUnavailableError(`未知 providerType=${String(r.providerType)}`);
+  }
+
+  private createDevStubRoute(): RealnameProviderRoute {
+    return {
+      providerType: 'DEV_STUB',
+      prepare: (input) => ({
+        providerType: 'DEV_STUB',
+        invoke: () => this.devStub.recognize(input),
+      }),
+    };
+  }
+
+  private createTencentRoute(settings: RealnameSettingsResolved): RealnameProviderRoute {
+    return {
+      providerType: 'TENCENT_CLOUD',
+      prepare: (input) => this.tencent.prepare(settings, input),
+    };
   }
 }

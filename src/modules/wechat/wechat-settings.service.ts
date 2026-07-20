@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import { Prisma, type WechatSettings as WechatSettingsRow } from '@prisma/client';
+import { createHash } from 'node:crypto';
 
 import appConfig, { isProductionLike } from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
@@ -34,16 +35,9 @@ import { WechatCredentialStatus, type WechatSettingsResolved } from './wechat.ty
 // 凭证安全(L3 红线):response / 日志 / audit 永不含 appSecret 明文或密文;第六刀已补
 // update/reset in-tx audit(update 只记 changedFields;reset 不记任何凭证字段或值)。
 
-const CACHE_TTL_MS = 60_000;
-
 @Injectable()
 export class WechatSettingsService {
   private readonly logger = new Logger(WechatSettingsService.name);
-
-  private cache: {
-    resolved: WechatSettingsResolved | null;
-    expiresAt: number;
-  } | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -64,30 +58,13 @@ export class WechatSettingsService {
   }
 
   /**
-   * 读取当前生效配置(singleton row;60s 缓存,E-27 单实例部署前提)
+   * 读取 PostgreSQL 当前生效配置(singleton row;每次调用直读)
    * - DB 空 → null(调用路径由 WechatService 映射 25030)
    * - 第 49 migration 后 DB 层保证至多一条
    */
   async getActiveSettings(): Promise<WechatSettingsResolved | null> {
-    if (this.cache !== null && this.cache.expiresAt > Date.now()) {
-      return this.cache.resolved;
-    }
-
     const row = await this.prisma.wechatSettings.findFirst();
-
-    if (row === null) {
-      this.setCache(null);
-      return null;
-    }
-
-    const resolved = this.toResolved(row);
-    this.setCache(resolved);
-    return resolved;
-  }
-
-  /** 主动失效缓存(PATCH / reset-credentials 写后调用) */
-  invalidate(): void {
-    this.cache = null;
+    return row === null ? null : this.toResolved(row);
   }
 
   // ============ admin 三端点(评审稿 §3.2 ①-③) ============
@@ -153,7 +130,6 @@ export class WechatSettingsService {
       return updated;
     });
 
-    this.invalidate();
     return this.toResponseDto(row);
   }
 
@@ -211,7 +187,6 @@ export class WechatSettingsService {
     // 仅 pino 日志记动作 + actorUserId;不含 appSecret 明文 / 密文(L3 红线)
     this.logger.log(`wechat_settings credentials reset by user.id=${user.id}; row.id=${row.id}`);
 
-    this.invalidate();
     return this.toResponseDto(row);
   }
 
@@ -231,10 +206,6 @@ export class WechatSettingsService {
     }
   }
 
-  private setCache(resolved: WechatSettingsResolved | null): void {
-    this.cache = { resolved, expiresAt: Date.now() + CACHE_TTL_MS };
-  }
-
   private buildUpdateData(dto: UpdateWechatSettingsDto): Prisma.WechatSettingsUpdateInput {
     const data: Prisma.WechatSettingsUpdateInput = {};
     if (dto.providerType !== undefined) data.providerType = dto.providerType;
@@ -248,6 +219,7 @@ export class WechatSettingsService {
     const { credentials, credentialStatus } = this.resolveCredentials(row);
     return {
       id: row.id,
+      configurationGeneration: this.configurationGeneration(row),
       providerType: row.providerType,
       enabled: row.enabled,
       appId: row.appId,
@@ -258,6 +230,22 @@ export class WechatSettingsService {
       updatedAt: row.updatedAt,
       createdAt: row.createdAt,
     };
+  }
+
+  // opaque generation 只比较配置代次，不暴露明文 appSecret，也不受 remarks 等非 Effect 字段影响。
+  private configurationGeneration(row: WechatSettingsRow): string {
+    return createHash('sha256')
+      .update(
+        JSON.stringify([
+          row.id,
+          row.providerType,
+          row.enabled,
+          row.appId,
+          row.credentialConfigured,
+          row.appSecretEncrypted,
+        ]),
+      )
+      .digest('hex');
   }
 
   // 三档状态合成(镜像 sms resolveCredentials 语义;单段密文)

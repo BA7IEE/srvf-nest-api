@@ -59,17 +59,25 @@ function makeService(opts: {
     getActiveSettings: jest.fn().mockResolvedValue(opts.settings),
   } as unknown as RealnameSettingsService;
 
-  const make = (r?: RealnameOcrResult | Error): jest.Mock =>
+  const make = (
+    r?: RealnameOcrResult | Error,
+  ): jest.Mock<Promise<RealnameOcrResult>, [typeof INPUT]> =>
     jest
-      .fn()
-      .mockImplementation(() => (r instanceof Error ? Promise.reject(r) : Promise.resolve(r)));
+      .fn<Promise<RealnameOcrResult>, [typeof INPUT]>()
+      .mockImplementation(() =>
+        r instanceof Error ? Promise.reject(r) : Promise.resolve(r as RealnameOcrResult),
+      );
   const devStub = make(opts.devStubResult);
   const tencent = make(opts.tencentResult);
+  const prepare = jest.fn().mockImplementation(() => ({
+    providerType: 'TENCENT_CLOUD',
+    invoke: () => tencent(INPUT),
+  }));
 
   const service = new RealnameVerificationService(
     settings,
     { recognize: devStub } as unknown as DevStubRealnameProvider,
-    { recognize: tencent } as unknown as TencentRealnameProvider,
+    { prepare } as unknown as TencentRealnameProvider,
     { validateFromBuffer: jest.fn() } as never,
     { env: opts.env ?? 'test' } as unknown as ConfigType<typeof appConfig>,
   );
@@ -117,6 +125,39 @@ describe('RealnameVerificationService (OCR)', () => {
     expect(await service.recognize(INPUT)).toEqual(OK);
     expect(tencent).toHaveBeenCalledTimes(1);
     expect(devStub).not.toHaveBeenCalled();
+  });
+
+  it('TENCENT_CLOUD 一次 OCR 只读一次 settings，并把同一 snapshot 交给 prepare', async () => {
+    const oldSettings = resolved({
+      providerType: 'TENCENT_CLOUD',
+      region: 'ap-old',
+      credentialStatus: RealnameCredentialStatus.CONFIGURED,
+      credentials: { secretId: 'id-old', secretKey: 'key-old' },
+    });
+    const newSettings = resolved({
+      providerType: 'TENCENT_CLOUD',
+      region: 'ap-new',
+      credentialStatus: RealnameCredentialStatus.CONFIGURED,
+      credentials: { secretId: 'id-new', secretKey: 'key-new' },
+    });
+    const getActiveSettings = jest
+      .fn()
+      .mockResolvedValueOnce(oldSettings)
+      .mockResolvedValueOnce(newSettings);
+    const invoke = jest.fn().mockResolvedValue(OK);
+    const prepare = jest.fn().mockReturnValue({ providerType: 'TENCENT_CLOUD', invoke });
+    const service = new RealnameVerificationService(
+      { getActiveSettings } as unknown as RealnameSettingsService,
+      { recognize: jest.fn() } as unknown as DevStubRealnameProvider,
+      { prepare } as unknown as TencentRealnameProvider,
+      { validateFromBuffer: jest.fn() } as never,
+      { env: 'test' } as unknown as ConfigType<typeof appConfig>,
+    );
+
+    await expect(service.recognize(INPUT)).resolves.toBe(OK);
+    expect(getActiveSettings).toHaveBeenCalledTimes(1);
+    expect(prepare).toHaveBeenCalledWith(oldSettings, INPUT);
+    expect(invoke).toHaveBeenCalledTimes(1);
   });
 
   it('provider 抛 RealnameChannelUnavailableError → BizException 27030', async () => {

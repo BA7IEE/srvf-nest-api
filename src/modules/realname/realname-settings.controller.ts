@@ -54,7 +54,7 @@ export class RealnameSettingsController {
   @Patch()
   @ApiOperation({
     summary:
-      'upsert 更新实名核验设置(不存在则创建 default providerType=DEV_STUB;production-like 拒绝 DEV_STUB;**拒绝**任何凭证字段;成功后 invalidate cache) [rbac: realname-setting.update.singleton]',
+      'upsert 更新实名核验设置(不存在则创建 default providerType=DEV_STUB;production-like 拒绝 DEV_STUB;**拒绝**任何凭证字段;事务提交后任一实例下一次调用直读 PostgreSQL 新值,无需 invalidate/reload/restart) [rbac: realname-setting.update.singleton]',
   })
   @ApiWrappedOkResponse(RealnameSettingsResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -69,7 +69,7 @@ export class RealnameSettingsController {
   @Post('reset-credentials')
   @ApiOperation({
     summary:
-      '重置腾讯云实名核验 secretId/secretKey(**仅 SUPER_ADMIN 短路通过**,码不绑 ops-admin;两段 AES-256-GCM 加密落库;响应不回显;不存在则 upsert 创建 default providerType=TENCENT_CLOUD;成功后 invalidate cache) [rbac: realname-setting.reset.credentials]',
+      '重置腾讯云实名核验 secretId/secretKey(**仅 SUPER_ADMIN 短路通过**,码不绑 ops-admin;两段 AES-256-GCM 加密落库;响应不回显;不存在则 upsert 创建 default providerType=TENCENT_CLOUD;事务提交后任一实例下一次调用直读 PostgreSQL 新值,无需 invalidate/reload/restart) [rbac: realname-setting.reset.credentials]',
   })
   @ApiWrappedOkResponse(RealnameSettingsResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)

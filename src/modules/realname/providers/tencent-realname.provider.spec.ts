@@ -61,8 +61,100 @@ function input(documentTypeCode: string): RealnameOcrInput {
 describe('TencentRealnameProvider (OCR)', () => {
   const realFetch = global.fetch;
   afterEach(() => {
+    jest.useRealTimers();
     global.fetch = realFetch;
     jest.restoreAllMocks();
+  });
+
+  it('supplied snapshot prepare 不读 settings，invoke 返回前已同步用同一 credentials/region 启动 fetch', async () => {
+    const fn = mockFetchJson({
+      Response: {
+        IDCardInfo: {
+          Name: { Content: '张三' },
+          IdNum: { Content: '110101199003070038' },
+        },
+      },
+    });
+    const getActiveSettings = jest.fn();
+    const provider = new TencentRealnameProvider({
+      getActiveSettings,
+    } as unknown as RealnameSettingsService);
+    const snapshot = {
+      ...CONFIGURED,
+      region: 'ap-old',
+      credentials: { secretId: 'AKID-old', secretKey: 'secret-old' },
+    };
+
+    const prepared = provider.prepare(snapshot, input('mainland_id'));
+    const pending = prepared.invoke();
+    expect(fn).toHaveBeenCalledTimes(1);
+    const headers = ((fn.mock.calls[0] as unknown[])[1] as { headers: Record<string, string> })
+      .headers;
+    expect(headers['X-TC-Region']).toBe('ap-old');
+    expect(headers.Authorization).toContain('Credential=AKID-old/');
+    await expect(pending).resolves.toMatchObject({ recognized: true });
+    expect(getActiveSettings).not.toHaveBeenCalled();
+  });
+
+  it('prepare 后推进系统时间：invoke 才生成 TC3 timestamp/Authorization，仍绑定旧 credentials/region', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-07-20T23:59:00.000Z'));
+    const fn = mockFetchJson({
+      Response: {
+        IDCardInfo: {
+          Name: { Content: '张三' },
+          IdNum: { Content: '110101199003070038' },
+        },
+      },
+    });
+    const getActiveSettings = jest.fn().mockResolvedValue({
+      ...CONFIGURED,
+      region: 'ap-new',
+      credentials: { secretId: 'AKID-new', secretKey: 'secret-new' },
+    });
+    const provider = new TencentRealnameProvider({
+      getActiveSettings,
+    } as unknown as RealnameSettingsService);
+    const prepared = provider.prepare(
+      {
+        ...CONFIGURED,
+        region: 'ap-old',
+        credentials: { secretId: 'AKID-old', secretKey: 'secret-old' },
+      },
+      input('mainland_id'),
+    );
+    expect(fn).not.toHaveBeenCalled();
+
+    const invokeAt = new Date('2026-07-21T00:01:30.000Z');
+    jest.setSystemTime(invokeAt);
+    const pending = prepared.invoke();
+    expect(fn).toHaveBeenCalledTimes(1);
+    const headers = ((fn.mock.calls[0] as unknown[])[1] as { headers: Record<string, string> })
+      .headers;
+    expect(headers['X-TC-Timestamp']).toBe(String(Math.floor(invokeAt.getTime() / 1000)));
+    expect(headers['X-TC-Region']).toBe('ap-old');
+    expect(headers.Authorization).toContain('Credential=AKID-old/2026-07-21/ocr/tc3_request');
+    await expect(pending).resolves.toMatchObject({ recognized: true });
+    expect(getActiveSettings).not.toHaveBeenCalled();
+  });
+
+  it('supplied snapshot 缺凭证在 prepare 阶段失败，fetch=0', () => {
+    const fn = mockFetchJson({});
+    const provider = new TencentRealnameProvider({
+      getActiveSettings: jest.fn(),
+    } as unknown as RealnameSettingsService);
+
+    expect(() =>
+      provider.prepare(
+        {
+          ...CONFIGURED,
+          credentials: null,
+          credentialStatus: RealnameCredentialStatus.MISSING,
+        },
+        input('mainland_id'),
+      ),
+    ).toThrow(RealnameChannelUnavailableError);
+    expect(fn).not.toHaveBeenCalled();
   });
 
   // 鉴伪版 RecognizeValidIDCardOCR 真实响应:字段嵌在 Response.IDCardInfo,每项是 { Content } 对象;

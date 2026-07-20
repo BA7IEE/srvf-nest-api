@@ -21,29 +21,21 @@ import { CredentialStatus, type StorageSettingsResolved } from './storage-settin
 // V2.x C-7.5 Provider 选型实施 PR #6:storage_settings 读取层(沿 §6.5.5 + Q24 / Q25)
 //
 // 范围(PR #6):
-// - getActiveSettings():DB 读 + 60s 缓存 + 解密 + 合成 credentialStatus(沿 §6.5.5)
-// - invalidate():主动失效缓存(留 PR #11 后台 PATCH 调用)
+// - getActiveSettings():每次直读 DB + 解密 + 合成 credentialStatus(沿 §6.5.5)
 // - DB 空 → 返 null(沿 Q-87-3 拍板 B;bootstrap fallback 留 PR #11)
 //
 // 不在 PR #6 范围(沿 §16.1 PR #11):
 // - POST 首次创建 singleton row + count() 守护
-// - PATCH 改非凭证字段(invalidate 缓存)
+// - PATCH 改非凭证字段(提交后下一次调用直接读取新事实)
 // - POST /reset-credentials 接收明文 + 加密落库
 // - bootstrap fallback 从 env 兜底创建首条记录(沿 Q23 / Q-87-3)
 //
 // 第七刀 #13:singleton 由第 49 migration 的 unique index on constant((true)) 在 DB 层强制。
 // 并发首配由 P2002 后重跑同一事务映射到既有单行,不新增 BizCode。
 
-const CACHE_TTL_MS = 60_000;
-
 @Injectable()
 export class StorageSettingsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(StorageSettingsService.name);
-
-  private cache: {
-    resolved: StorageSettingsResolved | null;
-    expiresAt: number;
-  } | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -56,7 +48,7 @@ export class StorageSettingsService implements OnApplicationBootstrap {
 
   // P0-F PR-2B(2026-05-18):RBAC 判权(沿 PR-2A 范本)。
   // 失败统一抛 BizException(BizCode.RBAC_FORBIDDEN)(30100);RbacService.can 内部
-  // 已实现 SUPER_ADMIN 短路 + cache + ownership(.self);本模块无 .self 后缀。
+  // 已实现 SUPER_ADMIN 短路 + ownership(.self);本模块无 .self 后缀。
   // 注:`storage-setting.reset.credentials` 不绑 ops-admin(沿 D2=A),
   //     SUPER_ADMIN 经 RbacService.can 短路通过;ADMIN+ops-admin → RBAC_FORBIDDEN。
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
@@ -143,35 +135,11 @@ export class StorageSettingsService implements OnApplicationBootstrap {
    * - DB 空 → 返 null
    * - DB 有 1 条 → 解密 + 返 resolved
    * - 第 49 migration 后 DB 层保证至多一条,不再保留“取最早 + WARN”分支
-   * - 缓存 60s
+   * - 每次调用直读 PostgreSQL 当前已提交事实
    */
   async getActiveSettings(): Promise<StorageSettingsResolved | null> {
-    if (this.cache !== null && this.cache.expiresAt > Date.now()) {
-      return this.cache.resolved;
-    }
-
     const row = await this.prisma.storageSettings.findFirst();
-
-    if (row === null) {
-      this.setCache(null);
-      return null;
-    }
-
-    const resolved = this.toResolved(row);
-    this.setCache(resolved);
-    return resolved;
-  }
-
-  /**
-   * 主动失效缓存(沿 RbacCacheService.invalidate() 范式)。
-   * PR #11 后台 PATCH / reset-credentials 后调,保证下一次读到新值。
-   */
-  invalidate(): void {
-    this.cache = null;
-  }
-
-  private setCache(resolved: StorageSettingsResolved | null): void {
-    this.cache = { resolved, expiresAt: Date.now() + CACHE_TTL_MS };
+    return row === null ? null : this.toResolved(row);
   }
 
   // 把 Prisma row 解码为运行时 resolved 对象(沿 §6.6.3 三档状态)
@@ -252,7 +220,7 @@ export class StorageSettingsService implements OnApplicationBootstrap {
   // - resetCredentials(dto, user):AES-256-GCM 加密 SecretId/SecretKey 落库;不写日志凭证(沿 §6.6.2)
   // - 第六刀补齐 update/reset in-tx audit;update 只记 changedFields 字段名,reset 不记任何凭证字段或值
   // - 0 新 BizCode(沿 Q-11-4;复用 BAD_REQUEST / UNAUTHORIZED / FORBIDDEN / INTERNAL_ERROR)
-  // - PATCH / reset 末尾 invalidate() 清缓存(沿 Q-11-8 / Q-11-17)
+  // - PATCH / reset 提交后下一次 getActiveSettings() 直接读取新事实
 
   // GET /api/system/v1/storage-settings(admin 视图)
   // 单 singleton row 不存在 → 返 null(沿 Q-11-1);不抛 BizCode
@@ -265,7 +233,7 @@ export class StorageSettingsService implements OnApplicationBootstrap {
   // PATCH /api/system/v1/storage-settings(upsert;沿 Q-11-1 + Q-11-17)
   // 不存在 → create with default(providerType=LOCAL;沿 Q-11-2);
   // 存在 → update + updatedBy = user.id
-  // 末尾 invalidate() 清缓存(沿 Q-11-8 / Q-11-17)
+  // 提交后任一实例的下一次 getActiveSettings() 直接读取新事实
   async updateSettings(
     dto: UpdateStorageSettingsDto,
     user: CurrentUserPayload,
@@ -315,7 +283,6 @@ export class StorageSettingsService implements OnApplicationBootstrap {
       return updated;
     });
 
-    this.invalidate();
     return this.toResponseDto(row);
   }
 
@@ -381,7 +348,6 @@ export class StorageSettingsService implements OnApplicationBootstrap {
     // 仅 pino 日志记 reset 动作 + actorUserId;不含 secret 明文 / 密文
     this.logger.log(`storage_settings credentials reset by user.id=${user.id}; row.id=${row.id}`);
 
-    this.invalidate();
     return this.toResponseDto(row);
   }
 

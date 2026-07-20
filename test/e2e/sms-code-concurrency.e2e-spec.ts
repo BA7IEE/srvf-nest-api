@@ -10,7 +10,6 @@ import { acquireSmsIssueLocks } from '../../src/modules/sms/sms-issue-lock';
 import { SmsCodeService } from '../../src/modules/sms/sms-code.service';
 import { SMS_DEV_STUB_FIXED_CODE } from '../../src/modules/sms/sms.constants';
 import { SmsProviderRouter } from '../../src/modules/sms/sms-provider.router';
-import { SmsSettingsService } from '../../src/modules/sms/sms-settings.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
@@ -171,8 +170,6 @@ describe('SMS issue / consume PostgreSQL concurrency', () => {
   let smsCodeB: SmsCodeService;
   let routerA: SmsProviderRouter;
   let routerB: SmsProviderRouter;
-  let settingsA: SmsSettingsService;
-  let settingsB: SmsSettingsService;
   let devSendSpyA: jest.SpiedFunction<DevStubSmsProvider['sendVerifyCode']>;
   let devSendSpyB: jest.SpiedFunction<DevStubSmsProvider['sendVerifyCode']>;
 
@@ -187,8 +184,6 @@ describe('SMS issue / consume PostgreSQL concurrency', () => {
     smsCodeB = appB.get(SmsCodeService);
     routerA = appA.get(SmsProviderRouter);
     routerB = appB.get(SmsProviderRouter);
-    settingsA = appA.get(SmsSettingsService);
-    settingsB = appB.get(SmsSettingsService);
     devSendSpyA = jest.spyOn(appA.get(DevStubSmsProvider), 'sendVerifyCode');
     devSendSpyB = jest.spyOn(appB.get(DevStubSmsProvider), 'sendVerifyCode');
   });
@@ -196,8 +191,6 @@ describe('SMS issue / consume PostgreSQL concurrency', () => {
   beforeEach(async () => {
     await resetDb(appA);
     await prismaA.smsSettings.create({ data: { providerType: 'DEV_STUB', enabled: true } });
-    settingsA.invalidate();
-    settingsB.invalidate();
     devSendSpyA.mockClear();
     devSendSpyB.mockClear();
   });
@@ -448,9 +441,8 @@ describe('SMS issue / consume PostgreSQL concurrency', () => {
       expect(await routeResolved.promise).toBe('DEV_STUB');
       expect(await observeBlockedByBackend(prismaA, blockerPid, issueAttempt)).toBe('blocked');
 
-      // 真实 DB 配置改变并显式失效发起 app 的 60s cache；不触碰已取得的在途 route。
+      // 真实 DB 配置改变；不触碰已取得的在途 route。
       await prismaA.smsSettings.updateMany({ data: { enabled: false } });
-      settingsB.invalidate();
       releaseBlocker.resolve();
       await blocker;
 

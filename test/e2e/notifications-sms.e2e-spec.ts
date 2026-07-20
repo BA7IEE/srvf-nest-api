@@ -6,7 +6,6 @@ import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
 import { DevStubSmsProvider } from '../../src/modules/sms/providers/dev-stub.provider';
-import { SmsSettingsService } from '../../src/modules/sms/sms-settings.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -58,7 +57,6 @@ const NOTIFICATION_PERMISSION_CODES = [
 describe('统一通知模块 S5 短信兜底渠道 e2e', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let settings: SmsSettingsService;
   let worker: NotificationOutboxWorker;
   let devStub: DevStubSmsProvider;
   let adminAuth: string;
@@ -108,7 +106,6 @@ describe('统一通知模块 S5 短信兜底渠道 e2e', () => {
           over.templateIdNotification === undefined ? 'tpl-notif-1' : over.templateIdNotification,
       },
     });
-    settings.invalidate();
   }
 
   async function createOrg(): Promise<string> {
@@ -189,7 +186,6 @@ describe('统一通知模块 S5 短信兜底渠道 e2e', () => {
   beforeAll(async () => {
     app = await createTestApp();
     prisma = app.get(PrismaService);
-    settings = app.get(SmsSettingsService);
     worker = app.get(NotificationOutboxWorker);
     devStub = app.get(DevStubSmsProvider);
     await resetDb(app);

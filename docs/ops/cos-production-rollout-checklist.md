@@ -547,7 +547,7 @@ unset TMPBODY
 
 ### 8.5 重新录入(凭证轮换)
 
-同 §8.3 流程;再次 POST 即覆盖旧密文。**`StorageSettingsService.invalidate()` 自动主动失效缓存**;**下一次 Provider 调用 ≤ 60s 内自动用新凭证**(沿 [handoff §4.4 Router 动态路由](../archive/handoff/v0.11.0.md))。
+同 §8.3 流程;再次 POST 即覆盖旧密文。写事务提交后，**任一实例的下一次 Provider 调用直接从 PostgreSQL 读取并使用新凭证**，无需等待、重启、reload 或 invalidate；已开始的单次 Effect 继续使用其原快照。
 
 ---
 
@@ -704,8 +704,8 @@ unset UPLOAD_URL UPLOAD_TOKEN ATTACHMENT_ID ACCESS_URL
 
 | # | 场景 | 影响 | 处置 |
 |---|---|---|---|
-| 1 | **凭证误录**(SecretId / SecretKey 输错)| §9 闭环验收 PUT 403 / confirm-upload 50000 | 重做 §8 reset-credentials(覆盖密文);`StorageSettingsService.invalidate()` 自动主动失效缓存;≤ 60s 内自动用新凭证 |
-| 2 | **Provider 切换错位**(误选 COS 但凭证未录入)| 全部 attachments 5 端点 500 | `PATCH /storage-settings { providerType: "LOCAL" }` 临时降级到 LocalProvider(dev / test 用;**生产 LocalProvider 无意义,仅短暂兜底**);≤ 60s 自动切换;然后 §8 补凭证 |
+| 1 | **凭证误录**(SecretId / SecretKey 输错)| §9 闭环验收 PUT 403 / confirm-upload 50000 | 重做 §8 reset-credentials(覆盖密文);事务提交后任一实例的下一 Effect 直接使用新凭证，无需 invalidate/restart |
+| 2 | **Provider 切换错位**(误选 COS 但凭证未录入)| 全部 attachments 5 端点 500 | `PATCH /storage-settings { providerType: "LOCAL" }` 临时降级到 LocalProvider(dev / test 用;**生产 LocalProvider 无意义,仅短暂兜底**);事务提交后下一 Effect 即切换;然后 §8 补凭证 |
 | 3 | **bucket 误删**(运维误操作)| 全部历史附件不可读 + 新 upload 失败 | 启用 versioning 30 天兜底(沿 §5.1);腾讯云控制台恢复 bucket;或新建 bucket + `PATCH /storage-settings { bucket: <new-bucket> }`(历史附件 key 失效,**不可挽回**) |
 | 4 | **`STORAGE_ENCRYPTION_KEY` 丢失**(部署平台 env 误删 / 替换)| 应用启动 fail-fast / 现存凭证密文不可解(`credentialStatus: INVALID`)| **致命**;无法恢复旧凭证密文;必须 §6 重新生成 key + §8 重新录入凭证 |
 | 5 | **DB `storage_settings` row 误删** | 全部 attachments 5 端点 500(Service 找不到配置)| `PATCH /storage-settings { providerType: ..., bucket: ..., ... }` upsert 自动建新 row(沿 Q-11-1);然后 §8 补凭证 |

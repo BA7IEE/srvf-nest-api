@@ -3,7 +3,6 @@ import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
-import { RealnameSettingsService } from '../../src/modules/realname/realname-settings.service';
 import { hashPhoneVerificationToken } from '../../src/modules/recruitment/recruitment.constants';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { devStubOcrImage, VALID_PNG_IMAGE } from '../helpers/file-fixtures';
@@ -924,10 +923,9 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
   // 延迟分流不落报名记录、不消费 token(身份链保活可重试);连续达 2 次才升级落库。
 
   // 临时禁用/恢复 realname 通道(DevStub 不模拟上游错 → 用通道开关造 ocr_error;断言前即复原)。
-  // 直写 DB 绕过 service → 须显式 invalidate() 清 60s settings 缓存,否则旧值仍命中(非确定性)。
+  // 直写 DB 提交后下一次调用直接读取当前 settings。
   async function setRealnameEnabled(enabled: boolean): Promise<void> {
     await prisma.realnameVerificationSettings.updateMany({ data: { enabled } });
-    app.get(RealnameSettingsService).invalidate();
   }
 
   it('⑰ 模糊(clarity:false)→ retake,不落记录,会话行 count++/requiresRetake,token 不消费', async () => {

@@ -97,10 +97,6 @@ describe('control-plane audit characterization (finding 15)', () => {
     await prisma.realnameVerificationSettings.deleteMany({});
     await prisma.user.deleteMany({ where: { id: { not: actor.id } } });
     await prisma.member.deleteMany({});
-    storage.invalidate();
-    sms.invalidate();
-    wechat.invalidate();
-    realname.invalidate();
   });
 
   afterEach(() => {

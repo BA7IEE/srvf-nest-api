@@ -54,7 +54,7 @@ export class WechatSettingsController {
   @Patch()
   @ApiOperation({
     summary:
-      'upsert 更新 WeChat Settings(不存在则创建 default providerType=DEV_STUB;production-like 拒绝 DEV_STUB;**拒绝**任何凭证字段;成功后 invalidate cache) [rbac: wechat-setting.update.singleton]',
+      'upsert 更新 WeChat Settings(不存在则创建 default providerType=DEV_STUB;production-like 拒绝 DEV_STUB;**拒绝**任何凭证字段;事务提交后任一实例下一次调用直读 PostgreSQL 新值,无需 invalidate/reload/restart) [rbac: wechat-setting.update.singleton]',
   })
   @ApiWrappedOkResponse(WechatSettingsResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -69,7 +69,7 @@ export class WechatSettingsController {
   @Post('reset-credentials')
   @ApiOperation({
     summary:
-      '重置微信小程序 AppSecret(**仅 SUPER_ADMIN 短路通过**,码不绑 ops-admin;AES-256-GCM 加密落库;响应不回显;不存在则 upsert 创建 default providerType=WECHAT;成功后 invalidate cache) [rbac: wechat-setting.reset.credentials]',
+      '重置微信小程序 AppSecret(**仅 SUPER_ADMIN 短路通过**,码不绑 ops-admin;AES-256-GCM 加密落库;响应不回显;不存在则 upsert 创建 default providerType=WECHAT;事务提交后任一实例下一次调用直读 PostgreSQL 新值,无需 invalidate/reload/restart) [rbac: wechat-setting.reset.credentials]',
   })
   @ApiWrappedOkResponse(WechatSettingsResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)

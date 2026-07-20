@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import COS from 'cos-nodejs-sdk-v5';
 import { createHash } from 'node:crypto';
 import { Writable } from 'node:stream';
@@ -26,8 +26,8 @@ import type {
 // 范围(PR #8):
 // - 原始实现 StorageProvider 5 方法,通过 cos-nodejs-sdk-v5 调腾讯云 COS;
 //   v0.44.0 finding #23 追加 ranged getObject 固定前缀 readObjectPrefix
-// - 凭证 + bucket + region 从 StorageSettingsService.getActiveSettings() 读(沿 Q23 不依赖 env)
-// - 每次方法调用 requireCosContext():settings 60s 缓存削减 DB 压力(沿 PR #87)
+// - 既有直接方法各自 live-read 一次 settings；prepare(settings) 绑定 supplied snapshot，
+//   同一 Effect 的凭证 + bucket + region 不再重读
 // - 4 档守护:settings null / providerType ≠ COS / credentialStatus ≠ CONFIGURED / bucket+region 缺失
 //
 // **本 PR 不做**:
@@ -59,28 +59,37 @@ interface CosContext {
   cos: COS;
   bucket: string;
   region: string;
-  settings: StorageSettingsResolved;
 }
 
 @Injectable()
 export class CosStorageProvider implements StorageProvider {
-  private readonly logger = new Logger(CosStorageProvider.name);
-
   constructor(private readonly settings: StorageSettingsService) {}
 
-  putObject(input: PutObjectInput): Promise<StoredObject> {
-    return this.putObjectInternal(input);
+  /** supplied settings snapshot 的同步 prepare；返回适配器不会再次读取 settings。 */
+  prepare(settings: StorageSettingsResolved | null): StorageProvider {
+    const ctx = this.requireCosContext(settings);
+    return {
+      putObject: (input) => this.putObjectWithContext(ctx, input),
+      deleteObject: (key) => this.deleteObjectWithContext(ctx, key),
+      generateUploadUrl: (input) => this.generateUploadUrlWithContext(ctx, input),
+      generateDownloadUrl: (input) => this.generateDownloadUrlWithContext(ctx, input),
+      headObject: (key) => this.headObjectWithContext(ctx, key),
+      readObjectPrefix: (key, maxBytes) => this.readObjectPrefixWithContext(ctx, key, maxBytes),
+    };
   }
 
-  putObjectAt(locator: StorageObjectLocator, input: PutObjectInput): Promise<StoredObject> {
-    return this.putObjectInternal(input, locator);
+  async putObject(input: PutObjectInput): Promise<StoredObject> {
+    return (await this.resolvePrepared()).putObject(input);
   }
 
-  private async putObjectInternal(
+  async putObjectAt(locator: StorageObjectLocator, input: PutObjectInput): Promise<StoredObject> {
+    return this.putObjectWithContext(await this.resolveContext(locator), input);
+  }
+
+  private async putObjectWithContext(
+    ctx: CosContext,
     input: PutObjectInput,
-    locator?: StorageObjectLocator,
   ): Promise<StoredObject> {
-    const ctx = await this.requireCosContext(locator);
     const Body = await bufferize(input.body);
     const result = await ctx.cos.putObject({
       Bucket: ctx.bucket,
@@ -99,16 +108,15 @@ export class CosStorageProvider implements StorageProvider {
   }
 
   // COS / S3 协议对不存在 key 也返 204(沿 Q-89-6);不显式 catch 404
-  deleteObject(key: string): Promise<void> {
-    return this.deleteObjectInternal(key);
+  async deleteObject(key: string): Promise<void> {
+    return (await this.resolvePrepared()).deleteObject(key);
   }
 
-  deleteObjectAt(locator: StorageObjectLocator, key: string): Promise<void> {
-    return this.deleteObjectInternal(key, locator);
+  async deleteObjectAt(locator: StorageObjectLocator, key: string): Promise<void> {
+    return this.deleteObjectWithContext(await this.resolveContext(locator), key);
   }
 
-  private async deleteObjectInternal(key: string, locator?: StorageObjectLocator): Promise<void> {
-    const ctx = await this.requireCosContext(locator);
+  private async deleteObjectWithContext(ctx: CosContext, key: string): Promise<void> {
     await ctx.cos.deleteObject({
       Bucket: ctx.bucket,
       Region: ctx.region,
@@ -118,89 +126,81 @@ export class CosStorageProvider implements StorageProvider {
 
   // PUT signed URL(沿 F2 + Q5c v1.0 锁 method 'PUT')
   // getObjectUrl 同步路径:Sign=true + 不依赖 GetAuthorization 异步选项 → 直接返 URL
-  generateUploadUrl(input: GenerateUploadUrlInput): Promise<UploadUrlResult> {
-    return this.generateUploadUrlInternal(input);
+  async generateUploadUrl(input: GenerateUploadUrlInput): Promise<UploadUrlResult> {
+    return (await this.resolvePrepared()).generateUploadUrl(input);
   }
 
-  generateUploadUrlAt(
+  async generateUploadUrlAt(
     locator: StorageObjectLocator,
     input: GenerateUploadUrlInput,
   ): Promise<UploadUrlResult> {
-    return this.generateUploadUrlInternal(input, locator);
+    return this.generateUploadUrlWithContext(await this.resolveContext(locator), input);
   }
 
-  private generateUploadUrlInternal(
+  private generateUploadUrlWithContext(
+    ctx: CosContext,
     input: GenerateUploadUrlInput,
-    locator?: StorageObjectLocator,
   ): Promise<UploadUrlResult> {
-    return this.requireCosContext(locator).then((ctx) => {
-      const url = ctx.cos.getObjectUrl({
-        Bucket: ctx.bucket,
-        Region: ctx.region,
-        Key: input.key,
-        Method: 'PUT',
-        Sign: true,
-        Expires: input.expiresIn,
-      });
-      // Q5b:headers 必填可空;COS PUT 签名约定客户端必须带 Content-Type 与签名一致
-      return {
-        url,
-        method: 'PUT' as const,
-        headers: { 'Content-Type': input.contentType },
-        expiresAt: new Date(Date.now() + input.expiresIn * 1000),
-      };
+    const url = ctx.cos.getObjectUrl({
+      Bucket: ctx.bucket,
+      Region: ctx.region,
+      Key: input.key,
+      Method: 'PUT',
+      Sign: true,
+      Expires: input.expiresIn,
+    });
+    // Q5b:headers 必填可空;COS PUT 签名约定客户端必须带 Content-Type 与签名一致
+    return Promise.resolve({
+      url,
+      method: 'PUT' as const,
+      headers: { 'Content-Type': input.contentType },
+      expiresAt: new Date(Date.now() + input.expiresIn * 1000),
     });
   }
 
   // GET signed URL(沿 §6.4.1)
   // contentDisposition 通过 response-content-disposition query 参数附加(COS / S3 标准)
-  generateDownloadUrl(input: GenerateDownloadUrlInput): Promise<DownloadUrlResult> {
-    return this.generateDownloadUrlInternal(input);
+  async generateDownloadUrl(input: GenerateDownloadUrlInput): Promise<DownloadUrlResult> {
+    return (await this.resolvePrepared()).generateDownloadUrl(input);
   }
 
-  generateDownloadUrlAt(
+  async generateDownloadUrlAt(
     locator: StorageObjectLocator,
     input: GenerateDownloadUrlInput,
   ): Promise<DownloadUrlResult> {
-    return this.generateDownloadUrlInternal(input, locator);
+    return this.generateDownloadUrlWithContext(await this.resolveContext(locator), input);
   }
 
-  private generateDownloadUrlInternal(
+  private generateDownloadUrlWithContext(
+    ctx: CosContext,
     input: GenerateDownloadUrlInput,
-    locator?: StorageObjectLocator,
   ): Promise<DownloadUrlResult> {
-    return this.requireCosContext(locator).then((ctx) => {
-      const baseUrl = ctx.cos.getObjectUrl({
-        Bucket: ctx.bucket,
-        Region: ctx.region,
-        Key: input.key,
-        Method: 'GET',
-        Sign: true,
-        Expires: input.expiresIn,
-      });
-      const url = input.contentDisposition
-        ? appendQuery(baseUrl, 'response-content-disposition', input.contentDisposition)
-        : baseUrl;
-      return {
-        url,
-        expiresAt: new Date(Date.now() + input.expiresIn * 1000),
-      };
+    const baseUrl = ctx.cos.getObjectUrl({
+      Bucket: ctx.bucket,
+      Region: ctx.region,
+      Key: input.key,
+      Method: 'GET',
+      Sign: true,
+      Expires: input.expiresIn,
+    });
+    const url = input.contentDisposition
+      ? appendQuery(baseUrl, 'response-content-disposition', input.contentDisposition)
+      : baseUrl;
+    return Promise.resolve({
+      url,
+      expiresAt: new Date(Date.now() + input.expiresIn * 1000),
     });
   }
 
-  headObject(key: string): Promise<HeadObjectResult> {
-    return this.headObjectInternal(key);
+  async headObject(key: string): Promise<HeadObjectResult> {
+    return (await this.resolvePrepared()).headObject(key);
   }
 
-  headObjectAt(locator: StorageObjectLocator, key: string): Promise<HeadObjectResult> {
-    return this.headObjectInternal(key, locator);
+  async headObjectAt(locator: StorageObjectLocator, key: string): Promise<HeadObjectResult> {
+    return this.headObjectWithContext(await this.resolveContext(locator), key);
   }
 
-  private async headObjectInternal(
-    key: string,
-    locator?: StorageObjectLocator,
-  ): Promise<HeadObjectResult> {
-    const ctx = await this.requireCosContext(locator);
+  private async headObjectWithContext(ctx: CosContext, key: string): Promise<HeadObjectResult> {
     try {
       const result = await ctx.cos.headObject({
         Bucket: ctx.bucket,
@@ -225,24 +225,23 @@ export class CosStorageProvider implements StorageProvider {
     }
   }
 
-  readObjectPrefix(key: string, maxBytes: number): Promise<Buffer> {
-    return this.readObjectPrefixInternal(key, maxBytes);
+  async readObjectPrefix(key: string, maxBytes: number): Promise<Buffer> {
+    return (await this.resolvePrepared()).readObjectPrefix(key, maxBytes);
   }
 
-  readObjectPrefixAt(
+  async readObjectPrefixAt(
     locator: StorageObjectLocator,
     key: string,
     maxBytes: number,
   ): Promise<Buffer> {
-    return this.readObjectPrefixInternal(key, maxBytes, locator);
+    return this.readObjectPrefixWithContext(await this.resolveContext(locator), key, maxBytes);
   }
 
-  private async readObjectPrefixInternal(
+  private async readObjectPrefixWithContext(
+    ctx: CosContext,
     key: string,
     maxBytes: number,
-    locator?: StorageObjectLocator,
   ): Promise<Buffer> {
-    const ctx = await this.requireCosContext(locator);
     const result = await ctx.cos.getObject({
       Bucket: ctx.bucket,
       Region: ctx.region,
@@ -259,7 +258,7 @@ export class CosStorageProvider implements StorageProvider {
     key: string,
     onProgress?: StorageObjectReadProgress,
   ): Promise<StorageObjectSha256Result> {
-    const ctx = await this.requireCosContext(locator);
+    const ctx = await this.resolveContext(locator);
     const hash = createHash('sha256');
     let size = 0;
     const output = new Writable({
@@ -291,10 +290,19 @@ export class CosStorageProvider implements StorageProvider {
     return { size, checksum: hash.digest('hex'), etag: stripQuotes(result.ETag) };
   }
 
-  // 解析 settings + 构造 COS 实例 + 4 档守护
-  // 每次方法调用都查 settings;StorageSettingsService 内部 60s 缓存(沿 PR #87)
-  private async requireCosContext(expected?: StorageObjectLocator): Promise<CosContext> {
-    const settings = await this.settings.getActiveSettings();
+  private async resolvePrepared(): Promise<StorageProvider> {
+    return this.prepare(await this.settings.getActiveSettings());
+  }
+
+  private async resolveContext(expected: StorageObjectLocator): Promise<CosContext> {
+    return this.requireCosContext(await this.settings.getActiveSettings(), expected);
+  }
+
+  // 解析 supplied snapshot + 构造 COS 实例 + 4 档守护；不读取 StorageSettingsService。
+  private requireCosContext(
+    settings: StorageSettingsResolved | null,
+    expected?: StorageObjectLocator,
+  ): CosContext {
     if (!settings) {
       throw new CosProviderUnavailableError('storage_settings 未配置');
     }
@@ -324,7 +332,6 @@ export class CosStorageProvider implements StorageProvider {
       cos,
       bucket,
       region,
-      settings,
     };
   }
 }

@@ -165,7 +165,7 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     AttachmentsModule,
     // V2.x C-7.5 Provider:storage_settings 读取层 + 加密 helper + Provider 实装
     //   (沿 §6.5.5 + §6.6.1;Q5 / Q20-Q25)。
-    //   导出 StorageSettingsService(60s 缓存)+ StorageCryptoService(AES-256-GCM);
+    //   导出 StorageSettingsService(PostgreSQL live-read)+ StorageCryptoService(AES-256-GCM);
     //   LocalProvider / CosProvider 已实装;storage-settings 后台 CRUD 已落地。
     StorageModule,
     // SMS 基础设施 T2(2026-06-10):通道层(settings 三端点 + send-logs + 双 Provider + 动态路由)

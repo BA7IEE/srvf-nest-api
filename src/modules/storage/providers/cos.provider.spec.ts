@@ -78,6 +78,43 @@ describe('CosStorageProvider', () => {
     COSMock.__mockInstance.getObject.mockReset();
   });
 
+  describe('supplied snapshot prepare', () => {
+    it('不读 settings，SDK client/request 同步绑定同一 bucket/region/credentials', async () => {
+      const getActiveSettings = jest.fn();
+      const svc = new CosStorageProvider({
+        getActiveSettings,
+      } as unknown as StorageSettingsService);
+      COSMock.__mockInstance.getObjectUrl.mockReturnValue('https://old.example/k?sig=old');
+      const oldSettings = makeSettings({
+        bucket: 'bucket-old',
+        region: 'region-old',
+        credentials: { secretId: 'id-old', secretKey: 'key-old' },
+      });
+
+      const prepared = svc.prepare(oldSettings);
+      expect(COSMock).toHaveBeenCalledWith({
+        SecretId: 'id-old',
+        SecretKey: 'key-old',
+        Timeout: 8000,
+      });
+      const pending = prepared.generateUploadUrl({
+        key: 'k',
+        contentType: 'image/png',
+        expiresIn: 60,
+      });
+      expect(COSMock.__mockInstance.getObjectUrl).toHaveBeenCalledWith({
+        Bucket: 'bucket-old',
+        Region: 'region-old',
+        Key: 'k',
+        Method: 'PUT',
+        Sign: true,
+        Expires: 60,
+      });
+      await expect(pending).resolves.toMatchObject({ url: 'https://old.example/k?sig=old' });
+      expect(getActiveSettings).not.toHaveBeenCalled();
+    });
+  });
+
   describe('putObject', () => {
     it('Buffer 入参 → 调 SDK Bucket/Region/Key/Body/ContentType + 返 stripQuotes(ETag)', async () => {
       const { service } = makeSettingsServiceMock(makeSettings());
@@ -315,6 +352,11 @@ describe('CosStorageProvider', () => {
         etag: 'stream-etag',
       });
       expect(progress).toEqual([chunks[0].length, body.length]);
+      expect(COSMock).toHaveBeenCalledWith({
+        SecretId: 'AKID-test-id',
+        SecretKey: 'secret-test-key',
+        Timeout: 8000,
+      });
     });
   });
 
@@ -409,7 +451,7 @@ describe('CosStorageProvider', () => {
   });
 
   describe('每次方法调用都查 settings', () => {
-    it('两次 putObject 都调 getActiveSettings(确保 invalidate 后能拿到新 settings)', async () => {
+    it('两次 putObject 都调 getActiveSettings(下一 Effect 直接拿到新 settings)', async () => {
       const { service, getActiveSettings } = makeSettingsServiceMock(makeSettings());
       COSMock.__mockInstance.putObject.mockResolvedValue({ ETag: '"e"' });
       const svc = new CosStorageProvider(service);

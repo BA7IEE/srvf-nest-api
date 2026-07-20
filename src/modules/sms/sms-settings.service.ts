@@ -35,16 +35,9 @@ import { SmsCredentialStatus, type SmsSettingsResolved } from './sms.types';
 // 凭证安全(L3 红线):response / 日志 / audit 永不含明文或密文;第六刀已补 update/reset
 // in-tx audit(update 只记 changedFields;reset 不记任何凭证字段或值)。
 
-const CACHE_TTL_MS = 60_000;
-
 @Injectable()
 export class SmsSettingsService {
   private readonly logger = new Logger(SmsSettingsService.name);
-
-  private cache: {
-    resolved: SmsSettingsResolved | null;
-    expiresAt: number;
-  } | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -65,30 +58,13 @@ export class SmsSettingsService {
   }
 
   /**
-   * 读取当前生效配置(singleton row;60s 缓存)
+   * 读取 PostgreSQL 当前生效配置(singleton row;每次调用直读)
    * - DB 空 → null(发送路径由调用方映射 24030)
    * - 第 49 migration 后 DB 层保证至多一条
    */
   async getActiveSettings(): Promise<SmsSettingsResolved | null> {
-    if (this.cache !== null && this.cache.expiresAt > Date.now()) {
-      return this.cache.resolved;
-    }
-
     const row = await this.prisma.smsSettings.findFirst();
-
-    if (row === null) {
-      this.setCache(null);
-      return null;
-    }
-
-    const resolved = this.toResolved(row);
-    this.setCache(resolved);
-    return resolved;
-  }
-
-  /** 主动失效缓存(PATCH / reset-credentials 写后调用) */
-  invalidate(): void {
-    this.cache = null;
+    return row === null ? null : this.toResolved(row);
   }
 
   // ============ admin 三端点(评审稿 §3.2 ①-③) ============
@@ -154,7 +130,6 @@ export class SmsSettingsService {
       return updated;
     });
 
-    this.invalidate();
     return this.toResponseDto(row);
   }
 
@@ -215,7 +190,6 @@ export class SmsSettingsService {
     // 仅 pino 日志记动作 + actorUserId;不含 secret 明文 / 密文(L3 红线)
     this.logger.log(`sms_settings credentials reset by user.id=${user.id}; row.id=${row.id}`);
 
-    this.invalidate();
     return this.toResponseDto(row);
   }
 
@@ -233,10 +207,6 @@ export class SmsSettingsService {
       }
       return execute();
     }
-  }
-
-  private setCache(resolved: SmsSettingsResolved | null): void {
-    this.cache = { resolved, expiresAt: Date.now() + CACHE_TTL_MS };
   }
 
   private buildUpdateData(dto: UpdateSmsSettingsDto): Prisma.SmsSettingsUpdateInput {
