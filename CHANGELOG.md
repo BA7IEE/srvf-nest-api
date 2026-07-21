@@ -2,7 +2,9 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
-## Unreleased
+## v0.60.0 - 2026-07-22
+
+> 主题:**首发前 Storage production 闭环、Auth 契约与发布治理收口**(v0.59.0 后 #731–#737：招新字典跨域契约与 body-parser、Storage 空库 bootstrap/运行时不变量/COS SOP/四 key 冻结、logout OpenAPI 与 CI headroom、依赖审计治理)。Endpoint 365 / Migration 64 / BizCode 258 / Permission 207 / AuditLogEvent 123 / Controller 75 / Module 36 / Cron 2 均不变。release 不等于生产部署，真实 ingress/COS/worker/fleet 证据仍是 GO 硬门。
 
 - **fix(auth):校准 logout OpenAPI 与 family 撤销事实**——`POST /api/auth/v1/logout` 成功响应改为准确的 `data:null` schema，summary/DTO/交接说明明确传入 token 仅用于定位并撤销对应 refresh family；运行时、路由、DTO 字段、BizCode、schema 与 migration 均不变。
 - **ci:为当前全量门禁恢复足够的硬超时余量**——测试 Job 超时由 25 分钟提高到 35 分钟，避免约 21.5 分钟的 177-suite E2E 叠加安装、构建、单测和契约检查后被误取消；测试入口、顺序与断言均不变。
