@@ -108,13 +108,16 @@ export class AuthController {
   // P0-E PR-3:POST /api/auth/v1/logout(沿评审稿 §4.3)。
   // @Public()(refresh token 自身即凭证;允许 access token 过期后 logout)。
   // 幂等:不存在 / 已撤销 / 已过期 → 仍返 200 + data:null。
-  // 只撤销当前 refresh token,同 family 其他 rotation 链不动;不吊销 access token。
+  // 任一可识别且未过期 row 只用于定位 family；撤销该 family 全部 active 未过期 token。
+  // 其他 family 不动；不吊销 access token。
   // **不限流**(刻意;避免攻击者吃光合法用户 logout 配额;沿评审稿 §3.7 D-7)。
   @Public()
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '撤销当前 refresh token(幂等;不吊销 access) [public]' })
-  @ApiWrappedOkResponse(LogoutAllResponseDto)
+  @ApiOperation({
+    summary: '撤销该 refresh family 内全部未过期且未撤销 token(幂等;不吊销 access) [public]',
+  })
+  @ApiWrappedNullResponse()
   @ApiBizErrorResponse(BizCode.BAD_REQUEST)
   logout(@Body() dto: LogoutDto, @Req() req: Request): Promise<null> {
     return this.authService.logout(dto, this.buildAuditMeta(req));

@@ -20,10 +20,24 @@ import { createTestApp } from '../setup/test-app';
 //
 // 兼容已有 swagger.e2e-spec.ts:本 spec 关注 schema 内容,e2e 关注 HTTP 跳过包装,职责互补。
 
+interface OpenApiSchema {
+  $ref?: string;
+  type?: string;
+  nullable?: boolean;
+  example?: unknown;
+  properties?: Record<string, OpenApiSchema>;
+}
+
+interface OpenApiResponse {
+  content?: {
+    'application/json'?: { schema?: OpenApiSchema };
+  };
+}
+
 interface OpenApiOperation {
   operationId?: string;
   summary?: string;
-  responses?: Record<string, unknown>;
+  responses?: Record<string, OpenApiResponse>;
   deprecated?: boolean;
 }
 
@@ -1297,6 +1311,19 @@ describe('OpenAPI 契约快照', () => {
 
   it.each(EXPECTED_SCHEMAS)('Schema 仍存在: %s', (schemaName) => {
     expect(doc.components?.schemas?.[schemaName]).toBeDefined();
+  });
+
+  it('logout OpenAPI 明确 family 撤销且成功 data=null', () => {
+    const operation = doc.paths['/api/auth/v1/logout']?.post;
+    const dataSchema =
+      operation?.responses?.['200']?.content?.['application/json']?.schema?.properties?.data;
+
+    expect(operation?.summary).toBe(
+      '撤销该 refresh family 内全部未过期且未撤销 token(幂等;不吊销 access) [public]',
+    );
+    expect(dataSchema).toEqual({ type: 'object', nullable: true, example: null });
+    expect(dataSchema?.$ref).toBeUndefined();
+    expect(JSON.stringify(dataSchema)).not.toContain('LogoutAllResponseDto');
   });
 
   it('paths 段快照(锁定每个 operation 的响应结构)', () => {

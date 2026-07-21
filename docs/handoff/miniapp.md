@@ -17,7 +17,7 @@
 
 ### 1.1 登录与令牌(与 admin 全端一致,不在两处各维护)
 
-三种登录(`login` 密码 / `login-sms` 验证码 / `login-wechat` openid,未绑定时返 `bindingRequired` 见 §2)成功时返回同一 `LoginResponseDto`(P0-E 冻结 5 字段)。信封语义、业务失败 = HTTP 4xx、`expiresIn` 时长串 + `refreshExpiresAt` family 绝对死期的**双计时器**、rotation always、错误码(10004/40100/10007/42900)→ 行为映射,统一见 [`admin-web.md §3.1`](admin-web.md)(全端通用)。App 侧差异只有一条:登录后能力判定调 `GET app/v1/me/capabilities`(产品级),**不**消费 admin 的 raw 权限码出口(§1 铁律)。
+三种登录(`login` 密码 / `login-sms` 验证码 / `login-wechat` openid,未绑定时返 `bindingRequired` 见 §2)成功时返回同一 `LoginResponseDto`(P0-E 冻结 5 字段)。信封语义、业务失败 = HTTP 4xx、`expiresIn` 时长串 + `refreshExpiresAt` family 绝对死期的**双计时器**、rotation always、错误码(10004/40100/10007/42900)→ 行为映射,统一见 [`admin-web.md §3.1`](admin-web.md)(全端通用)。其中 `logout` 用传入 token 定位并撤销整个 refresh family，成功 `data=null`；只有 `logout-all` 返回 `revokedCount`。App 侧差异只有一条:登录后能力判定调 `GET app/v1/me/capabilities`(产品级),**不**消费 admin 的 raw 权限码出口(§1 铁律)。
 
 | 任务 | 端点 |
 |---|---|
