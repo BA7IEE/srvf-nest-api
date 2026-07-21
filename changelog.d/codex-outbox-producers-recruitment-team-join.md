@@ -1,1 +1,0 @@
-- 将招新批量/单人发号与入队成功通知接入 PostgreSQL durable outbox，业务写与 targeted intent 同事务提交并以稳定 event identity 去重。

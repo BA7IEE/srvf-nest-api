@@ -1,1 +1,0 @@
-- ⚠️ 收紧招新 batch/single 发号的主体裁剪图清理顺序：完成全部事务前校验后按 promotable 发号序逐条删除 `idCardCropImageKey`，任一 provider 异常以安全 500 且零业务写 fail-closed；删除成功后 DB 回滚保留 key 并依赖 absent-delete 幂等重试。skip 与头像对象不删，非大陆证件资料齐备可 batch 的既有资格语义不变。

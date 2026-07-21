@@ -1,1 +1,0 @@
-- D-Outbox Wave2 G1b 以 expand-only migration 为 `NotificationOutboxIntent` 增加 nullable `preparedTemplateId`，为后续 runtime 在已确认 provider 尚未启动的终态 skip 场景恢复已预占微信订阅消息配额保留稳定模板标识；provider 结果未知不退款。本切片零回填、零约束、零运行时读写，migration 未执行或部署，API 与 contract 行为不变。
