@@ -26,6 +26,7 @@ import {
   CONTENT_STATUS_PUBLISHED,
   CONTENT_TYPE_DICT_CODE,
   CONTENT_VISIBILITY_DEPARTMENT,
+  extractAttachmentPlaceholderIds,
   ownerTypeForKind,
   rewriteBody,
 } from './content.constants';
@@ -73,6 +74,27 @@ export class ContentService {
       throw new BizException(BizCode.CONTENT_NOT_FOUND);
     }
     return row;
+  }
+
+  /**
+   * Content is the aggregate root for publish/confirm storage coordination. Lock it before any
+   * Attachment/Object/Operation row, then reread through the normal soft-delete predicate so a
+   * waiter never acts on the state observed before `FOR UPDATE` returned.
+   */
+  private async lockContentRoot(id: string, tx: Prisma.TransactionClient): Promise<Content> {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id" FROM "contents" WHERE "id" = ${id} FOR UPDATE
+    `);
+    if (locked.length !== 1) {
+      throw new BizException(BizCode.CONTENT_NOT_FOUND);
+    }
+    return this.findOrThrow(id, tx);
+  }
+
+  private assertVirginContentForAttachmentConfirm(content: Content): void {
+    if (content.statusCode !== CONTENT_STATUS_DRAFT || content.publishedAt !== null) {
+      throw new BizException(BizCode.CONTENT_INVALID_STATUS_TRANSITION);
+    }
   }
 
   // ===== 校验:contentTypeCode 须为 content_type 字典 ACTIVE item(评审稿 §6) =====
@@ -330,7 +352,10 @@ export class ContentService {
     await this.assertCanOrThrow(user, 'content.publish.record');
 
     const row = await this.prisma.$transaction(async (tx) => {
-      const existing = await this.findOrThrow(id, tx);
+      const existing =
+        operation === 'publish'
+          ? await this.lockContentRoot(id, tx)
+          : await this.findOrThrow(id, tx);
       const data: Prisma.ContentUpdateInput = {};
 
       if (operation === 'publish') {
@@ -338,6 +363,12 @@ export class ContentService {
         if (existing.statusCode !== CONTENT_STATUS_DRAFT) {
           throw new BizException(BizCode.CONTENT_INVALID_STATUS_TRANSITION);
         }
+        await this.attachments.lockContentPublishStorageBoundaryTrusted(tx, {
+          contentId: existing.id,
+          referencedAttachmentIds: extractAttachmentPlaceholderIds(existing.body),
+          coverAttachmentId: existing.coverAttachmentId,
+          coverImageKey: existing.coverImageKey,
+        });
         data.statusCode = CONTENT_STATUS_PUBLISHED;
         data.publishedAt = new Date();
       } else if (operation === 'unpublish') {
@@ -400,13 +431,32 @@ export class ContentService {
     user: CurrentUserPayload,
     meta: AuditMeta,
   ) {
-    // content 先存在(token claims 内已绑 ownerId,但先给 29001 语义,避免对不存在 content 的端点透 13xxx)
-    await this.findOrThrow(contentId, this.prisma);
-    return this.attachments.confirmUpload(
+    // Route/token ownership, actor and coarse attachment RBAC are resolved before Content, ledger,
+    // Provider or audit work. Mismatches stay on the attachment anti-enumeration surface (13001).
+    const guarded = await this.attachments.guardContentUploadConfirm(
       { uploadToken: dto.uploadToken, checksum: dto.checksum },
       user,
-      meta,
+      {
+        ownerType: [CONTENT_OWNER_TYPE_IMAGE, CONTENT_OWNER_TYPE_FILE],
+        ownerId: contentId,
+      },
     );
+
+    // The two database phases both serialize on the Content root. Provider evidence is collected
+    // only between them, never while the aggregate transaction is open.
+    const prepared = await this.prisma.$transaction(async (tx) => {
+      const content = await this.lockContentRoot(contentId, tx);
+      this.assertVirginContentForAttachmentConfirm(content);
+      return this.attachments.prepareContentUploadConfirmInTransactionTrusted(tx, guarded);
+    });
+    const verified =
+      await this.attachments.verifyContentUploadConfirmEvidenceOutsideTransaction(prepared);
+    const finalized = await this.prisma.$transaction(async (tx) => {
+      const content = await this.lockContentRoot(contentId, tx);
+      this.assertVirginContentForAttachmentConfirm(content);
+      return this.attachments.finalizeContentUploadConfirmInTransactionTrusted(tx, verified, meta);
+    });
+    return this.attachments.resolveContentUploadConfirmResponseTrusted(finalized);
   }
 
   // ============ 端点 11:删附件(先校验归属本文章,再委托 AttachmentsService)============

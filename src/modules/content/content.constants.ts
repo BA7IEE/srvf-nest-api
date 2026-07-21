@@ -65,6 +65,15 @@ export const CONTENT_PAGE_SIZE_MAX = 50;
 const ATTACHMENT_PLACEHOLDER_RE = /attachment:([a-z0-9]+)/gi;
 
 /**
+ * Extract the exact Attachment ids whose placeholders participate in Content publication.
+ * Keep this on the same matcher as `rewriteBody`: a placeholder that the read side may resolve
+ * must first pass the publish-time storage boundary.
+ */
+export function extractAttachmentPlaceholderIds(body: string): string[] {
+  return [...new Set([...body.matchAll(ATTACHMENT_PLACEHOLDER_RE)].map((match) => match[1]))];
+}
+
+/**
  * 把 body 内 `attachment:<id>` 占位替换为签名 URL。
  * - idToUrlMap 仅含本文章 content-image 附件的 id→signedUrl(调用方从 listOwnerAttachmentsTrusted 构造);
  * - map 未命中的 id(外来 / 已删 / 非本文章)原样保留 → 零越权;
