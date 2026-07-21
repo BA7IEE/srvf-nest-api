@@ -310,3 +310,137 @@ describe('RecruitmentIdentityService.uploadCertificateImages · FOR UPDATE 后�
     expect(storage.deleteObject).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('RecruitmentIdentityService.withdraw · status claim 后权威重读', () => {
+  it('微信身份锁后仍一致 → audit 使用锁后行并写 withdrawn', async () => {
+    const base = {
+      id: 'app-withdraw-1',
+      cycleId: 'cycle-1',
+      statusCode: 'manual_review',
+      deletedAt: null,
+      openid: 'stale-openid-before-lock',
+      phone: '13900000001',
+      thresholdMarks: null,
+      tempNo: null,
+      promotedMemberId: null,
+      riskLevel: null,
+      certificateImages: null,
+      certificateReviewStatus: null,
+    };
+    const locked = { ...base };
+    const updated = { ...locked, statusCode: 'withdrawn' };
+    const auditLogs = { log: jest.fn().mockResolvedValue(undefined) };
+    const findFirst = jest.fn().mockResolvedValueOnce(base).mockResolvedValueOnce(locked);
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: base.id }]),
+      recruitmentApplication: {
+        findFirst,
+        update: jest.fn().mockResolvedValue(updated),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn((cb: (client: unknown) => unknown) => cb(tx)),
+      recruitmentCycle: {
+        findFirstOrThrow: jest
+          .fn()
+          .mockResolvedValue({ meetingInfo: null, qqGroup: null, notifyTemplate: null }),
+      },
+      dictItem: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new RecruitmentIdentityService(
+      prisma as never,
+      {} as never,
+      { code2session: jest.fn().mockResolvedValue({ openid: base.openid }) } as never,
+      auditLogs as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(service.withdraw({ wechatCode: 'wx-code' }, {} as never)).resolves.toMatchObject({
+      stage: 'withdrawn',
+    });
+
+    expect(findFirst).toHaveBeenCalledTimes(2);
+    expect(tx.recruitmentApplication.update).toHaveBeenCalledWith({
+      where: { id: locked.id },
+      data: { statusCode: 'withdrawn' },
+    });
+    expect(auditLogs.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        before: { statusCode: locked.statusCode },
+        extra: { channel: 'wechat', openid: 'stal****lock' },
+        tx,
+      }),
+    );
+  });
+
+  it('微信身份在 claim 等待期间漂移 → 泛化 NOT_FOUND 且零 update/audit', async () => {
+    const base = {
+      id: 'app-withdraw-wechat-drift',
+      statusCode: 'manual_review',
+      deletedAt: null,
+      openid: 'openid-before-lock',
+      phone: '13900000001',
+    };
+    const locked = { ...base, openid: 'openid-after-lock' };
+    const auditLogs = { log: jest.fn().mockResolvedValue(undefined) };
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: base.id }]),
+      recruitmentApplication: {
+        findFirst: jest.fn().mockResolvedValueOnce(base).mockResolvedValueOnce(locked),
+        update: jest.fn(),
+      },
+    };
+    const prisma = { $transaction: jest.fn((cb: (client: unknown) => unknown) => cb(tx)) };
+    const service = new RecruitmentIdentityService(
+      prisma as never,
+      {} as never,
+      { code2session: jest.fn().mockResolvedValue({ openid: base.openid }) } as never,
+      auditLogs as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(service.withdraw({ wechatCode: 'wx-code' }, {} as never)).rejects.toEqual(
+      new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND),
+    );
+    expect(tx.recruitmentApplication.update).not.toHaveBeenCalled();
+    expect(auditLogs.log).not.toHaveBeenCalled();
+  });
+
+  it('手机身份在 claim 等待期间漂移 → 泛化 NOT_FOUND 且零 update/audit', async () => {
+    const base = {
+      id: 'app-withdraw-phone-drift',
+      statusCode: 'manual_review',
+      deletedAt: null,
+      openid: null,
+      phone: '13900000001',
+    };
+    const locked = { ...base, phone: '13900000002' };
+    const auditLogs = { log: jest.fn().mockResolvedValue(undefined) };
+    const smsCode = { verifyAndConsume: jest.fn().mockResolvedValue(undefined) };
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: base.id }]),
+      recruitmentApplication: {
+        findFirst: jest.fn().mockResolvedValueOnce(base).mockResolvedValueOnce(locked),
+        update: jest.fn(),
+      },
+    };
+    const prisma = { $transaction: jest.fn((cb: (client: unknown) => unknown) => cb(tx)) };
+    const service = new RecruitmentIdentityService(
+      prisma as never,
+      smsCode as never,
+      {} as never,
+      auditLogs as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.withdraw({ phone: base.phone, code: '888888' }, {} as never),
+    ).rejects.toEqual(new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND));
+    expect(smsCode.verifyAndConsume).toHaveBeenCalledTimes(1);
+    expect(tx.recruitmentApplication.update).not.toHaveBeenCalled();
+    expect(auditLogs.log).not.toHaveBeenCalled();
+  });
+});

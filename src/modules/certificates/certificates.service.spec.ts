@@ -137,7 +137,8 @@ function makePrismaMock() {
   const dictItem = { findFirst: jest.fn<Promise<{ id: string } | null>, [unknown]>() };
   const user = { findFirst: jest.fn<Promise<{ memberId: string | null } | null>, [unknown]>() };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
-  const prisma = { member, certificate, dictItem, user, $transaction };
+  const $queryRaw = jest.fn().mockResolvedValue([{ id: 'cert-1' }]);
+  const prisma = { member, certificate, dictItem, user, $queryRaw, $transaction };
   // certificates 仅回调式:把 prisma mock 自身当 tx 传入(helper 内 `tx ?? this.prisma` 同源)。
   $transaction.mockImplementation((arg: unknown) =>
     (arg as (tx: typeof prisma) => Promise<unknown>)(prisma),
@@ -501,9 +502,17 @@ describe('CertificatesService (characterization, scoped)', () => {
       const prisma = makePrismaMock();
       const auditLogs = makeAuditLogsMock();
       prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
-      prisma.certificate.findFirst.mockResolvedValue(
-        makeCertRow({ id: 'cert-1', memberId: 'mem-1' }),
-      );
+      const observed = makeCertRow({
+        id: 'cert-1',
+        memberId: 'mem-1',
+        issuingOrg: 'stale-before-lock',
+      });
+      const locked = makeCertRow({
+        id: 'cert-1',
+        memberId: 'mem-1',
+        issuingOrg: 'locked-authoritative',
+      });
+      prisma.certificate.findFirst.mockResolvedValueOnce(observed).mockResolvedValueOnce(locked);
       prisma.certificate.update.mockResolvedValue(
         makeCertRow({ id: 'cert-1', memberId: 'mem-1', issuingOrg: 'New Org' }),
       );
@@ -529,6 +538,10 @@ describe('CertificatesService (characterization, scoped)', () => {
           tx: prisma,
         }),
       );
+      const auditArg = auditLogs.log.mock.calls[0][0] as {
+        before: { issuingOrg: string };
+      };
+      expect(auditArg.before.issuingOrg).toBe('locked-authoritative');
       expect(res.issuingOrg).toBe('New Org');
     });
   });
@@ -623,8 +636,13 @@ describe('CertificatesService (characterization, scoped)', () => {
       expect(updateArg.data.verifiedBy).toBe('verifier-mem');
       expect(updateArg.data.verifyNote).toBe('looks good');
       expect(auditLogs.log).toHaveBeenCalledWith(
-        expect.objectContaining({ event: 'certificate.verify', tx: prisma }),
+        expect.objectContaining({
+          event: 'certificate.verify',
+          before: { status: CERT_STATUS_PENDING },
+          tx: prisma,
+        }),
       );
+      expect(prisma.certificate.findFirst).toHaveBeenCalledTimes(1);
       expect(res.certStatusCode).toBe(CERT_STATUS_VERIFIED);
     });
 
@@ -693,8 +711,13 @@ describe('CertificatesService (characterization, scoped)', () => {
       expect(updateArg.data.verifiedBy).toBe('verifier-mem');
       expect(updateArg.data.verifyNote).toBe('insufficient evidence');
       expect(auditLogs.log).toHaveBeenCalledWith(
-        expect.objectContaining({ event: 'certificate.reject', tx: prisma }),
+        expect.objectContaining({
+          event: 'certificate.reject',
+          before: { status: CERT_STATUS_PENDING },
+          tx: prisma,
+        }),
       );
+      expect(prisma.certificate.findFirst).toHaveBeenCalledTimes(1);
       expect(res.certStatusCode).toBe(CERT_STATUS_REJECTED);
     });
   });

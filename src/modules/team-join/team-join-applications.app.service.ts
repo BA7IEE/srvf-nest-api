@@ -4,6 +4,7 @@ import { OrganizationStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
@@ -225,9 +226,25 @@ export class AppMeTeamJoinService {
       if (row.statusCode !== APP_STATUS_JOINING) {
         throw new BizException(BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
       }
+      await claimAtStatus(tx, {
+        target: 'teamJoinApplication',
+        id: row.id,
+        expectedStatus: APP_STATUS_JOINING,
+        invalidStatusBiz: BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE,
+      });
+      const lockedRow = await tx.teamJoinApplication.findFirst({
+        where: { id, memberId, deletedAt: null },
+        include: APP_APPLICATION_INCLUDE,
+      });
+      if (!lockedRow) {
+        throw new BizException(BizCode.TEAM_JOIN_APPLICATION_NOT_FOUND);
+      }
+      if (lockedRow.statusCode !== APP_STATUS_JOINING) {
+        throw new BizException(BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
+      }
       const targets = await this.validateTargetOrgsOrThrow(
         dto.targetOrganizationIds,
-        row.cycle,
+        lockedRow.cycle,
         tx,
       );
       const updated = await tx.teamJoinApplication.update({
@@ -242,7 +259,9 @@ export class AppMeTeamJoinService {
         resourceType: AUDIT_RESOURCE_TYPE,
         resourceId: id,
         meta,
-        before: { targetCount: (row.targetOrganizationIds as string[] | null)?.length ?? 0 },
+        before: {
+          targetCount: (lockedRow.targetOrganizationIds as string[] | null)?.length ?? 0,
+        },
         after: { targetCount: targets.length },
         tx,
       });

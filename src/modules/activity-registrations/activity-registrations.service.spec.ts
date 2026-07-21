@@ -472,9 +472,15 @@ describe('ActivityRegistrationsService (characterization)', () => {
       const recorder = makeAuditRecorderMock();
       const insuranceRequirement = makeInsuranceRequirementMock();
       const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'pass' });
-      prisma.activityRegistration.findFirst.mockResolvedValue(
-        makeRegRow({ statusCode: 'pending', activityId: 'act-1' }),
-      );
+      const observed = makeRegRow({ statusCode: 'pending', activityId: 'act-1' });
+      const locked = makeRegRow({
+        statusCode: 'pending',
+        activityId: 'act-1',
+        reviewNote: 'authoritative-before',
+      });
+      prisma.activityRegistration.findFirst
+        .mockResolvedValueOnce(observed)
+        .mockResolvedValueOnce(locked);
       prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ capacity: null }));
       prisma.activityRegistration.update.mockResolvedValue(
         makeRegRow({ statusCode: 'pass', reviewedBy: 'admin-1', reviewedAt: FIXED_DATE }),
@@ -515,9 +521,10 @@ describe('ActivityRegistrationsService (characterization)', () => {
       expect(
         insuranceRequirement.revalidateActivityRegistrationApproval.mock.invocationCallOrder[0],
       ).toBeGreaterThan(prisma.$queryRaw.mock.invocationCallOrder[0]);
-      expect(prisma.activityRegistration.updateMany.mock.invocationCallOrder[0]).toBeGreaterThan(
+      expect(prisma.$queryRaw.mock.invocationCallOrder[1]).toBeGreaterThan(
         insuranceRequirement.revalidateActivityRegistrationApproval.mock.invocationCallOrder[0],
       );
+      expect(recorder.logReview).toHaveBeenCalledWith(expect.objectContaining({ before: locked }));
       expect(result.statusCode).toBe('pass');
     });
 

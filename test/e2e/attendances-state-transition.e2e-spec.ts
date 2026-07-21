@@ -38,7 +38,9 @@ type SheetStatus = 'pending' | 'pending_final_review' | 'approved' | 'rejected' 
 
 interface SeedContext {
   prisma: PrismaService;
+  prismaB: PrismaService;
   service: AttendancesService;
+  serviceB: AttendancesService;
   reviewerUserId: string;
   reviewerPayload: CurrentUserPayload;
   // 摘码微刀(2026-07-03):biz-admin 不再持终审两码 → finalApprove/finalReject 一律用
@@ -51,6 +53,100 @@ interface SeedContext {
   activityId: string;
 }
 
+interface PgWaiter {
+  pid: number;
+  databaseName: string;
+  blockingPids: number[];
+}
+
+const LOCK_OBSERVE_TIMEOUT_MS = 4_000;
+const OPERATION_TIMEOUT_MS = 8_000;
+const CLEANUP_TIMEOUT_MS = 10_000;
+const BLOCKER_TIMEOUT_MS = 20_000;
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+async function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+async function settleAllWithTimeout(promises: Promise<unknown>[], label: string): Promise<void> {
+  const results = await withTimeout(Promise.allSettled(promises), label, CLEANUP_TIMEOUT_MS);
+  const rejected = results.find(
+    (result): result is PromiseRejectedResult => result.status === 'rejected',
+  );
+  if (rejected) throw rejected.reason;
+}
+
+function preservePrimaryFailure(primary: unknown, cleanup: unknown): void {
+  if (primary instanceof Error) {
+    Object.defineProperty(primary, 'cause', { value: cleanup, configurable: true });
+  }
+}
+
+function throwFailure(failure: unknown): never {
+  if (failure instanceof Error) throw failure;
+  throw new Error('non-Error test failure', { cause: failure });
+}
+
+async function waitForDirectPgWaiter(
+  observer: PrismaService,
+  directBlockerPid: number,
+  operation: Promise<unknown>,
+  queryPattern: string,
+  excludedPids: number[] = [],
+): Promise<PgWaiter> {
+  let settled = false;
+  void operation.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  const deadline = Date.now() + LOCK_OBSERVE_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (settled) throw new Error('attendance operation settled before expected lock wait');
+    const rows = await withTimeout(
+      observer.$queryRaw<PgWaiter[]>(Prisma.sql`
+        SELECT pid, datname AS "databaseName", pg_blocking_pids(pid) AS "blockingPids"
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND wait_event_type = 'Lock'
+          AND CAST(${directBlockerPid} AS integer) = ANY(pg_blocking_pids(pid))
+          AND query LIKE ${queryPattern}
+          AND NOT (pid = ANY(${excludedPids}::integer[]))
+        LIMIT 1
+      `),
+      'attendance lock observer query',
+      LOCK_OBSERVE_TIMEOUT_MS,
+    );
+    if (rows[0]) return rows[0];
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`attendance direct waiter missing blocker=${directBlockerPid}`);
+}
+
 const AUDIT_META: AuditMeta = {
   requestId: 'attstate-req-0000000000000001',
   ip: '127.0.0.1',
@@ -59,14 +155,18 @@ const AUDIT_META: AuditMeta = {
 
 describe('AttendancesService state transitions (characterization)', () => {
   let app: INestApplication;
+  let appB: INestApplication;
   let ctx: SeedContext;
 
   beforeAll(async () => {
     app = await createTestApp();
+    appB = await createTestApp();
     await resetDb(app);
 
     const prisma = app.get(PrismaService);
+    const prismaB = appB.get(PrismaService);
     const service = app.get(AttendancesService);
+    const serviceB = appB.get(AttendancesService);
 
     // 一次性 seed 全局公共数据(reviewer / member / org / activity)
     // 注意:由于 approve 等方法**仅校验** sheet.statusCode + records.contributionPoints,
@@ -143,7 +243,9 @@ describe('AttendancesService state transitions (characterization)', () => {
 
     ctx = {
       prisma,
+      prismaB,
       service,
+      serviceB,
       // PR9:submitter 真正接进 seedSheet(此前仅占位)—— 终审 authz 自审约束下
       // submitter 必须 ≠ 终审人(reviewerPayload),否则全 spec 吃 22074
       submitterUserId: submitter.id,
@@ -169,7 +271,7 @@ describe('AttendancesService state transitions (characterization)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    await settleAllWithTimeout([app.close(), appB.close()], 'attendance app shutdown');
   });
 
   // 测试前清空 sheets/records/audit_logs(保留 user/member/org/activity)
@@ -222,6 +324,161 @@ describe('AttendancesService state transitions (characterization)', () => {
     }
     return sheet.id;
   }
+
+  async function runPrimaryReviewLinearization(
+    firstAction: 'approve' | 'reject',
+    secondAction: 'approve' | 'reject',
+  ): Promise<void> {
+    const sheetId = await seedSheet({ statusCode: 'pending', recordsContributionPoints: [1] });
+    const identities = await Promise.all(
+      [ctx.prisma, ctx.prismaB].map(async (client) => {
+        const rows = await client.$queryRaw<
+          Array<{ pid: number; databaseName: string }>
+        >(Prisma.sql`
+          SELECT pg_backend_pid() AS pid, current_database() AS "databaseName"
+        `);
+        return rows[0];
+      }),
+    );
+    expect(identities[0].databaseName).toBe(identities[1].databaseName);
+    expect(identities[0].pid).not.toBe(identities[1].pid);
+    const notificationCountBefore = await ctx.prisma.notification.count();
+    const outboxCountBefore = await ctx.prisma.notificationOutboxIntent.count();
+
+    const rootReached = deferred();
+    const mutateRoot = deferred();
+    const rootMutated = deferred();
+    const releaseRoot = deferred();
+    let root!: { pid: number; databaseName: string };
+    const blocker = ctx.prisma.$transaction(
+      async (tx) => {
+        const rows = await tx.$queryRaw<Array<{ pid: number; databaseName: string }>>(Prisma.sql`
+          SELECT pg_backend_pid() AS pid, current_database() AS "databaseName"
+          FROM "AttendanceSheet"
+          WHERE "id" = ${sheetId}
+          FOR UPDATE
+        `);
+        root = rows[0];
+        rootReached.resolve();
+        await mutateRoot.promise;
+        await tx.attendanceSheet.update({ where: { id: sheetId }, data: { version: 7 } });
+        rootMutated.resolve();
+        await releaseRoot.promise;
+      },
+      { timeout: BLOCKER_TIMEOUT_MS },
+    );
+    const invoke = (service: AttendancesService, action: 'approve' | 'reject') =>
+      action === 'approve'
+        ? service.approve(
+            sheetId,
+            { reviewNote: 'linear approve' },
+            ctx.reviewerPayload,
+            AUDIT_META,
+          )
+        : service.reject(sheetId, { reviewNote: 'linear reject' }, ctx.reviewerPayload, AUDIT_META);
+    let first: Promise<unknown> | undefined;
+    let second: Promise<unknown> | undefined;
+    let primaryFailure: unknown;
+    let cleanupFailure: unknown;
+    try {
+      await withTimeout(rootReached.promise, 'attendance root blocker', BLOCKER_TIMEOUT_MS);
+      first = invoke(ctx.service, firstAction);
+      const firstWaiter = await waitForDirectPgWaiter(
+        ctx.prismaB,
+        root.pid,
+        first,
+        '%FROM "AttendanceSheet"%FOR NO KEY UPDATE%',
+      );
+      expect(firstWaiter.databaseName).toBe(root.databaseName);
+      expect(firstWaiter.blockingPids).toContain(root.pid);
+      mutateRoot.resolve();
+      await withTimeout(rootMutated.promise, 'attendance root mutation', OPERATION_TIMEOUT_MS);
+
+      second = invoke(ctx.serviceB, secondAction);
+      const secondWaiter = await waitForDirectPgWaiter(
+        ctx.prisma,
+        firstWaiter.pid,
+        second,
+        '%FROM "AttendanceSheet"%FOR NO KEY UPDATE%',
+        [root.pid, firstWaiter.pid],
+      );
+      expect(secondWaiter.databaseName).toBe(root.databaseName);
+      expect(secondWaiter.pid).not.toBe(firstWaiter.pid);
+      expect(secondWaiter.blockingPids).toContain(firstWaiter.pid);
+
+      releaseRoot.resolve();
+      const results = await withTimeout(
+        Promise.allSettled([first, second]),
+        'attendance competing reviews',
+        OPERATION_TIMEOUT_MS,
+      );
+      expect(results[0].status).toBe('fulfilled');
+      expect(results[1]).toMatchObject({
+        status: 'rejected',
+        reason: { biz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID },
+      });
+      expect(JSON.stringify(results[1])).not.toContain('40P01');
+      const expectedStatus = firstAction === 'approve' ? 'pending_final_review' : 'rejected';
+      expect(
+        await ctx.prisma.attendanceSheet.findUniqueOrThrow({
+          where: { id: sheetId },
+          select: { statusCode: true },
+        }),
+      ).toEqual({ statusCode: expectedStatus });
+      const record = await ctx.prisma.attendanceRecord.findFirstOrThrow({
+        where: { sheetId },
+        select: { deletedAt: true },
+      });
+      if (firstAction === 'approve') expect(record.deletedAt).toBeNull();
+      else expect(record.deletedAt).toEqual(expect.any(Date));
+      expect(
+        await ctx.prisma.auditLog.count({
+          where: { resourceId: sheetId, event: 'attendance-sheet.review' },
+        }),
+      ).toBe(1);
+      const reviewAudit = await ctx.prisma.auditLog.findFirstOrThrow({
+        where: { resourceId: sheetId, event: 'attendance-sheet.review' },
+        select: { context: true },
+      });
+      expect(reviewAudit.context).toMatchObject({ before: { sheet: { version: 7 } } });
+      expect(await ctx.prisma.notification.count()).toBe(notificationCountBefore);
+      expect(await ctx.prisma.notificationOutboxIntent.count()).toBe(outboxCountBefore);
+    } catch (error) {
+      primaryFailure = error;
+    } finally {
+      mutateRoot.resolve();
+      releaseRoot.resolve();
+      try {
+        await settleAllWithTimeout(
+          [
+            blocker,
+            ...(first ? [first.catch(() => undefined)] : []),
+            ...(second ? [second.catch(() => undefined)] : []),
+          ],
+          'attendance linearization cleanup',
+        );
+      } catch (cleanupError) {
+        cleanupFailure = cleanupError;
+      }
+    }
+    if (primaryFailure !== undefined) {
+      if (cleanupFailure !== undefined) preservePrimaryFailure(primaryFailure, cleanupFailure);
+      throwFailure(primaryFailure);
+    }
+    if (cleanupFailure !== undefined) throwFailure(cleanupFailure);
+  }
+
+  describe('PostgreSQL primary review direct/soft blocker chain', () => {
+    beforeEach(isolateFixtures);
+
+    it('approve-first:root → approve waiter → reject soft waiter', async () => {
+      await runPrimaryReviewLinearization('approve', 'reject');
+    });
+
+    it('reject-first:root → reject waiter → approve soft waiter', async () => {
+      await runPrimaryReviewLinearization('reject', 'approve');
+    });
+  });
 
   // ============ A. approve: pending → pending_final_review ============
   describe('A. approve(pending → pending_final_review)', () => {
@@ -343,10 +600,12 @@ describe('AttendancesService state transitions (characterization)', () => {
       findSpy.mockRestore();
 
       expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-      expect(results.find((result) => result.status === 'rejected')).toMatchObject({
+      const loser = results.find((result) => result.status === 'rejected');
+      expect(loser).toMatchObject({
         status: 'rejected',
         reason: { biz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID },
       });
+      expect(JSON.stringify(loser)).not.toContain('40P01');
       expect(
         await ctx.prisma.attendanceSheet.findUniqueOrThrow({
           where: { id: sheetId },
@@ -470,10 +729,12 @@ describe('AttendancesService state transitions (characterization)', () => {
       ]);
 
       expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-      expect(results.find((r) => r.status === 'rejected')).toMatchObject({
+      const loser = results.find((r) => r.status === 'rejected');
+      expect(loser).toMatchObject({
         status: 'rejected',
         reason: { biz: BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID },
       });
+      expect(JSON.stringify(loser)).not.toContain('40P01');
       const sheet = await ctx.prisma.attendanceSheet.findUniqueOrThrow({
         where: { id: sheetId },
         select: { statusCode: true },

@@ -1,12 +1,17 @@
 import type { INestApplication } from '@nestjs/common';
-import { Role, UserStatus } from '@prisma/client';
+import { Prisma, Role, UserStatus } from '@prisma/client';
+import request, { type Response } from 'supertest';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { ActivityRegistrationsService } from '../../src/modules/activity-registrations/activity-registrations.service';
 import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
+import { loginAs } from '../fixtures/auth.fixture';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
+import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
+import { expectBizError } from '../helpers/biz-code.assert';
+import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
@@ -51,8 +56,10 @@ const REGISTRATION_RESOURCE_TYPE = 'activity_registration';
 
 interface SeedContext {
   prisma: PrismaService;
+  prismaB: PrismaService;
   service: ActivityRegistrationsService;
   auditLogs: AuditLogsService;
+  adminAuth: string;
   adminUserId: string;
   adminPayload: CurrentUserPayload;
   selfAUserId: string;
@@ -66,15 +73,177 @@ interface SeedContext {
   publishedActivityId: string;
 }
 
+interface BackendIdentity {
+  pid: number;
+  databaseName: string;
+}
+
+interface BlockedBackend extends BackendIdentity {
+  blockingPids: number[];
+  waitEventType: string | null;
+}
+
+interface PgActivitySnapshot extends BackendIdentity {
+  state: string | null;
+  waitEventType: string | null;
+  waitEvent: string | null;
+  blockingPids: number[];
+  xactAgeMs: number | null;
+  queryAgeMs: number | null;
+  querySnippet: string;
+}
+
+const LOCK_OBSERVE_TIMEOUT_MS = 4_000;
+const HTTP_TIMEOUT_MS = 8_000;
+const CLEANUP_TIMEOUT_MS = 10_000;
+const BLOCKER_TIMEOUT_MS = 20_000;
+const CASE_TIMEOUT_MS = 30_000;
+
+function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+async function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+async function settleAllWithTimeout(promises: Promise<unknown>[], label: string): Promise<void> {
+  const results = await withTimeout(Promise.allSettled(promises), label, CLEANUP_TIMEOUT_MS);
+  const rejected = results.find(
+    (result): result is PromiseRejectedResult => result.status === 'rejected',
+  );
+  if (rejected) throw rejected.reason;
+}
+
+function preservePrimaryFailure(primary: unknown, cleanup: unknown): void {
+  if (primary instanceof Error) {
+    Object.defineProperty(primary, 'cause', { value: cleanup, configurable: true });
+  }
+}
+
+function throwFailure(failure: unknown): never {
+  if (failure instanceof Error) throw failure;
+  throw new Error('non-Error test failure', { cause: failure });
+}
+
+async function readBackendIdentity(
+  client: Pick<PrismaService, '$queryRaw'> | Prisma.TransactionClient,
+): Promise<BackendIdentity> {
+  const rows = await client.$queryRaw<BackendIdentity[]>(Prisma.sql`
+    SELECT pg_backend_pid() AS pid, current_database() AS "databaseName"
+  `);
+  const identity = rows[0];
+  if (!identity) throw new Error('PostgreSQL backend identity missing');
+  return identity;
+}
+
+async function waitForBlockedBackend(
+  observer: PrismaService,
+  blocker: BackendIdentity,
+  operation: Promise<unknown>,
+  queryPattern: string,
+  excludedPids: number[] = [],
+): Promise<BlockedBackend> {
+  let settled = false;
+  void operation.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  const deadline = Date.now() + LOCK_OBSERVE_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (settled) throw new Error('operation settled before the expected PostgreSQL lock wait');
+    const rows = await observer.$queryRaw<BlockedBackend[]>(Prisma.sql`
+      SELECT
+        pid,
+        datname AS "databaseName",
+        pg_blocking_pids(pid) AS "blockingPids",
+        wait_event_type AS "waitEventType"
+      FROM pg_stat_activity
+      WHERE datname = current_database()
+        AND pid <> CAST(${blocker.pid} AS integer)
+        AND wait_event_type = 'Lock'
+        AND CAST(${blocker.pid} AS integer) = ANY(pg_blocking_pids(pid))
+        AND query LIKE ${queryPattern}
+        AND NOT (pid = ANY(${excludedPids}::integer[]))
+      LIMIT 1
+    `);
+    const waiter = rows[0];
+    if (waiter) {
+      expect(waiter.databaseName).toBe(blocker.databaseName);
+      expect(waiter.blockingPids).toContain(blocker.pid);
+      expect(waiter.waitEventType).toBe('Lock');
+      return waiter;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  const snapshot = await observer.$queryRaw<PgActivitySnapshot[]>(Prisma.sql`
+    SELECT
+      pid,
+      datname AS "databaseName",
+      state,
+      wait_event_type AS "waitEventType",
+      wait_event AS "waitEvent",
+      pg_blocking_pids(pid) AS "blockingPids",
+      CASE
+        WHEN xact_start IS NULL THEN NULL
+        ELSE (EXTRACT(EPOCH FROM (clock_timestamp() - xact_start)) * 1000)::double precision
+      END AS "xactAgeMs",
+      CASE
+        WHEN query_start IS NULL THEN NULL
+        ELSE (EXTRACT(EPOCH FROM (clock_timestamp() - query_start)) * 1000)::double precision
+      END AS "queryAgeMs",
+      LEFT(REGEXP_REPLACE(query, '[[:space:]]+', ' ', 'g'), 240) AS "querySnippet"
+    FROM pg_stat_activity
+    WHERE datname = current_database()
+      AND (
+        pid = CAST(${blocker.pid} AS integer)
+        OR CAST(${blocker.pid} AS integer) = ANY(pg_blocking_pids(pid))
+        OR wait_event_type = 'Lock'
+      )
+    ORDER BY pid
+  `);
+  throw new Error(
+    `no PostgreSQL lock waiter observed blocker=${JSON.stringify(blocker)} ` +
+      `pattern=${JSON.stringify(queryPattern)} excludedPids=${JSON.stringify(excludedPids)} ` +
+      `snapshot=${JSON.stringify(snapshot)}`,
+  );
+}
+
 describe('ActivityRegistrationsService state transitions (characterization)', () => {
   let app: INestApplication;
+  let appB: INestApplication;
   let ctx: SeedContext;
 
   beforeAll(async () => {
     app = await createTestApp();
+    appB = await createTestApp();
     await resetDb(app);
 
     const prisma = app.get(PrismaService);
+    const prismaB = appB.get(PrismaService);
+    expect(appB).not.toBe(app);
+    expect(prismaB).not.toBe(prisma);
     const service = app.get(ActivityRegistrationsService);
     const auditLogs = app.get(AuditLogsService);
 
@@ -82,7 +251,7 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
     const admin = await prisma.user.create({
       data: {
         username: 'reg-state-admin',
-        passwordHash: '$2a$10$dummy-hash-not-used-since-no-login-needed',
+        passwordHash: TEST_PASSWORD_HASH,
         role: Role.ADMIN,
         status: UserStatus.ACTIVE,
       },
@@ -94,6 +263,7 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
     // @Roles(SUPER_ADMIN, ADMIN) 放行语义;断言零修改)。
     const bizSeed = await seedBizAdminPermissionsAndRole(app);
     await grantBizAdminToUser(app, admin.id, bizSeed.bizAdminRoleId);
+    const adminAuth = (await loginAs(app, 'reg-state-admin')).authHeader;
 
     const memberA = await prisma.member.create({
       data: { memberNo: 'reg-state-m-a', displayName: 'State Member A' },
@@ -160,8 +330,10 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
 
     ctx = {
       prisma,
+      prismaB,
       service,
       auditLogs,
+      adminAuth,
       adminUserId: admin.id,
       adminPayload: {
         id: admin.id,
@@ -195,7 +367,10 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
   });
 
   afterAll(async () => {
-    await app.close();
+    await settleAllWithTimeout(
+      [app.close(), appB.close()],
+      'activity state-transition app shutdown',
+    );
   });
 
   afterEach(() => {
@@ -204,6 +379,10 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
 
   // 每个 case 之间清:ActivityRegistration + AuditLog;保留 User / Member / Org / Activity。
   async function isolateFixtures(): Promise<void> {
+    await ctx.prisma.notificationDelivery.deleteMany({});
+    await ctx.prisma.notificationRead.deleteMany({});
+    await ctx.prisma.notificationOutboxIntent.deleteMany({});
+    await ctx.prisma.notification.deleteMany({});
     await ctx.prisma.activityRegistration.deleteMany({});
     await ctx.prisma.auditLog.deleteMany({});
   }
@@ -257,6 +436,191 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       select: { id: true },
     });
     return a.id;
+  }
+
+  function reviewRegistration(
+    targetApp: INestApplication,
+    registrationId: string,
+    action: 'approve' | 'reject',
+  ): Promise<Response> {
+    return Promise.resolve(
+      request(httpServer(targetApp))
+        .patch(
+          `/api/admin/v1/activities/${ctx.publishedActivityId}/registrations/${registrationId}/${action}`,
+        )
+        .set('Authorization', ctx.adminAuth)
+        .send(action === 'reject' ? { reviewNote: 'deterministic reject' } : {})
+        .timeout({ deadline: HTTP_TIMEOUT_MS }),
+    );
+  }
+
+  async function expectDeterministicReviewResult(
+    winner: Response,
+    loser: Response,
+    registrationId: string,
+    terminalStatus: 'pass' | 'reject',
+    winnerAction: 'approve' | 'reject',
+    expectedBeforeReviewNote: string,
+  ): Promise<void> {
+    expect(winner.status).toBe(200);
+    expect(winner.body.code).toBe(0);
+    expectBizError(loser, BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+    expect(JSON.stringify(loser.body)).not.toContain('40P01');
+    expect([winner, loser].filter(({ status }) => status === 200)).toHaveLength(1);
+    expect(
+      await ctx.prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: registrationId },
+        select: { statusCode: true },
+      }),
+    ).toEqual({ statusCode: terminalStatus });
+    const audits = await ctx.prisma.auditLog.findMany({
+      where: { resourceId: registrationId, event: 'registration.review' },
+      select: { context: true },
+    });
+    expect(audits).toHaveLength(1);
+    const auditContext = audits[0].context as {
+      before?: { reviewNote?: string | null };
+      extra?: { action?: string };
+    };
+    expect(auditContext.before?.reviewNote).toBe(expectedBeforeReviewNote);
+    expect(auditContext.extra?.action).toBe(winnerAction);
+    const notifications = await ctx.prisma.notification.findMany({
+      where: {
+        recipientMemberId: ctx.memberCId,
+        notificationTypeCode: 'registration-result',
+      },
+      select: { title: true, statusCode: true, channels: true },
+    });
+    expect(notifications).toEqual([
+      {
+        title: winnerAction === 'approve' ? '报名已通过' : '报名未通过',
+        statusCode: 'published',
+        channels: ['in-app'],
+      },
+    ]);
+    expect(await ctx.prisma.notificationDelivery.count()).toBe(0);
+    expect(await ctx.prisma.notificationOutboxIntent.count()).toBe(0);
+  }
+
+  async function runDeterministicReviewRace(
+    firstAction: 'approve' | 'reject',
+    secondAction: 'approve' | 'reject',
+    terminalStatus: 'pass' | 'reject',
+  ): Promise<void> {
+    const registrationId = await seedRegistration({
+      memberId: ctx.memberCId,
+      statusCode: 'pending',
+    });
+    const prismaA = app.get(PrismaService);
+    const prismaB = appB.get(PrismaService);
+    expect(prismaA).toBe(ctx.prisma);
+    expect(prismaB).toBe(ctx.prismaB);
+    expect(prismaB).not.toBe(prismaA);
+    const [poolA, poolB] = await Promise.all([
+      readBackendIdentity(prismaA),
+      readBackendIdentity(prismaB),
+    ]);
+    expect(poolA.databaseName).toBe(poolB.databaseName);
+    expect(poolA.pid).not.toBe(poolB.pid);
+
+    const blockerReached = deferred<BackendIdentity>();
+    const mutateBlocker = deferred();
+    const blockerMutated = deferred();
+    const releaseBlocker = deferred();
+    const rootReviewNote = `root committed ${firstAction}`;
+    const blocker = prismaA.$transaction(
+      async (tx) => {
+        const rows = await tx.$queryRaw<BackendIdentity[]>(Prisma.sql`
+          SELECT
+            pg_backend_pid() AS pid,
+            current_database() AS "databaseName"
+          FROM "ActivityRegistration"
+          WHERE "id" = ${registrationId}
+          FOR UPDATE
+        `);
+        const identity = rows[0];
+        if (!identity) throw new Error('registration blocker row missing');
+        blockerReached.resolve(identity);
+        await mutateBlocker.promise;
+        await tx.activityRegistration.update({
+          where: { id: registrationId },
+          data: { reviewNote: rootReviewNote },
+        });
+        blockerMutated.resolve(undefined);
+        await releaseBlocker.promise;
+      },
+      { timeout: BLOCKER_TIMEOUT_MS },
+    );
+    let first: Promise<Response> | undefined;
+    let second: Promise<Response> | undefined;
+    let primaryFailure: unknown;
+    let cleanupFailure: unknown;
+    try {
+      const rootBackend = await withTimeout(
+        blockerReached.promise,
+        `${firstAction}-first registration blocker`,
+        BLOCKER_TIMEOUT_MS,
+      );
+      expect(rootBackend.databaseName).toBe(poolA.databaseName);
+
+      first = reviewRegistration(app, registrationId, firstAction);
+      const firstWaiter = await waitForBlockedBackend(
+        prismaB,
+        rootBackend,
+        first,
+        '%FROM "ActivityRegistration"%FOR NO KEY UPDATE%',
+      );
+      expect(firstWaiter.pid).not.toBe(rootBackend.pid);
+      mutateBlocker.resolve(undefined);
+      await withTimeout(
+        blockerMutated.promise,
+        `${firstAction}-first registration root mutation`,
+        HTTP_TIMEOUT_MS,
+      );
+
+      second = reviewRegistration(appB, registrationId, secondAction);
+      const secondWaiter = await waitForBlockedBackend(
+        prismaA,
+        firstWaiter,
+        second,
+        '%FROM "ActivityRegistration"%FOR NO KEY UPDATE%',
+      );
+      expect(secondWaiter.pid).not.toBe(rootBackend.pid);
+      expect(secondWaiter.pid).not.toBe(firstWaiter.pid);
+      expect(secondWaiter.databaseName).toBe(rootBackend.databaseName);
+
+      releaseBlocker.resolve(undefined);
+      const [firstResponse, secondResponse] = await Promise.all([
+        withTimeout(first, `${firstAction}-first response`, HTTP_TIMEOUT_MS),
+        withTimeout(second, `${secondAction}-second response`, HTTP_TIMEOUT_MS),
+      ]);
+      await expectDeterministicReviewResult(
+        firstResponse,
+        secondResponse,
+        registrationId,
+        terminalStatus,
+        firstAction,
+        rootReviewNote,
+      );
+    } catch (error) {
+      primaryFailure = error;
+    } finally {
+      mutateBlocker.resolve(undefined);
+      releaseBlocker.resolve(undefined);
+      try {
+        await settleAllWithTimeout(
+          [blocker, ...(first ? [first] : []), ...(second ? [second] : [])],
+          `${firstAction}-first cleanup`,
+        );
+      } catch (cleanupError) {
+        cleanupFailure = cleanupError;
+      }
+    }
+    if (primaryFailure !== undefined) {
+      if (cleanupFailure !== undefined) preservePrimaryFailure(primaryFailure, cleanupFailure);
+      throwFailure(primaryFailure);
+    }
+    if (cleanupFailure !== undefined) throwFailure(cleanupFailure);
   }
 
   // ============ A. approve(pending → pass) ============
@@ -368,38 +732,21 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       },
     );
 
-    it('finding #3:同一 pending approve || reject 仅一方成功,败者 21030', async () => {
-      const regId = await seedRegistration({ memberId: ctx.memberCId, statusCode: 'pending' });
-      const results = await Promise.allSettled([
-        ctx.service.approve(
-          ctx.publishedActivityId,
-          regId,
-          { reviewNote: 'race approve' },
-          ctx.adminPayload,
-          AUDIT_META,
-        ),
-        ctx.service.reject(
-          ctx.publishedActivityId,
-          regId,
-          { reviewNote: 'race reject' },
-          ctx.adminPayload,
-          AUDIT_META,
-        ),
-      ]);
+    it(
+      'finding #3 approve-first:root registration lock 后 approve 先排队，reject 软阻塞其后',
+      async () => {
+        await runDeterministicReviewRace('approve', 'reject', 'pass');
+      },
+      CASE_TIMEOUT_MS,
+    );
 
-      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-      const loser = results.find((r) => r.status === 'rejected');
-      expect(loser).toMatchObject({
-        status: 'rejected',
-        reason: { biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID },
-      });
-      const row = await ctx.prisma.activityRegistration.findUniqueOrThrow({
-        where: { id: regId },
-        select: { statusCode: true },
-      });
-      expect(['pass', 'reject']).toContain(row.statusCode);
-      expect(await ctx.prisma.auditLog.count({ where: { resourceId: regId } })).toBe(1);
-    });
+    it(
+      'finding #3 reject-first:root registration lock 后 reject 先排队，approve 软阻塞其后',
+      async () => {
+        await runDeterministicReviewRace('reject', 'approve', 'reject');
+      },
+      CASE_TIMEOUT_MS,
+    );
   });
 
   // ============ B. reject(pending → reject) ============

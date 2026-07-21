@@ -6,39 +6,41 @@ import { claimAtStatus, type StatusClaimTarget } from './claim-at-status.util';
 describe('claimAtStatus', () => {
   const targets: Array<{
     target: StatusClaimTarget;
-    delegate: StatusClaimTarget;
-    statusField: 'statusCode' | 'certStatusCode';
+    table: string;
+    statusColumn: 'statusCode' | 'certStatusCode';
   }> = [
-    { target: 'activity', delegate: 'activity', statusField: 'statusCode' },
+    { target: 'activity', table: 'Activity', statusColumn: 'statusCode' },
     {
       target: 'activityRegistration',
-      delegate: 'activityRegistration',
-      statusField: 'statusCode',
+      table: 'ActivityRegistration',
+      statusColumn: 'statusCode',
     },
-    { target: 'attendanceSheet', delegate: 'attendanceSheet', statusField: 'statusCode' },
-    { target: 'certificate', delegate: 'certificate', statusField: 'certStatusCode' },
+    { target: 'attendanceSheet', table: 'AttendanceSheet', statusColumn: 'statusCode' },
+    { target: 'certificate', table: 'Certificate', statusColumn: 'certStatusCode' },
     {
       target: 'recruitmentApplication',
-      delegate: 'recruitmentApplication',
-      statusField: 'statusCode',
+      table: 'recruitment_applications',
+      statusColumn: 'statusCode',
     },
     {
       target: 'teamJoinApplication',
-      delegate: 'teamJoinApplication',
-      statusField: 'statusCode',
+      table: 'team_join_applications',
+      statusColumn: 'statusCode',
     },
   ];
 
-  function createTx(count: number) {
-    const updateMany = jest.fn().mockResolvedValue({ count });
-    const delegates = Object.fromEntries(
-      targets.map(({ delegate }) => [delegate, { updateMany }]),
-    ) as Record<StatusClaimTarget, { updateMany: typeof updateMany }>;
-    return { tx: delegates as unknown as Prisma.TransactionClient, updateMany };
+  function createTx(claimed: boolean) {
+    const queryRaw = jest
+      .fn<Promise<Array<{ id: string }>>, [Prisma.Sql]>()
+      .mockResolvedValue(claimed ? [{ id: 'row-1' }] : []);
+    return {
+      tx: { $queryRaw: queryRaw } as unknown as Prisma.TransactionClient,
+      queryRaw,
+    };
   }
 
-  it.each(targets)('$target uses one no-op CAS with the model status field', async (entry) => {
-    const { tx, updateMany } = createTx(1);
+  it.each(targets)('$target uses one conditional FOR NO KEY UPDATE', async (entry) => {
+    const { tx, queryRaw } = createTx(true);
 
     await claimAtStatus(tx, {
       target: entry.target,
@@ -47,15 +49,17 @@ describe('claimAtStatus', () => {
       invalidStatusBiz: BizCode.BAD_REQUEST,
     });
 
-    expect(updateMany).toHaveBeenCalledTimes(1);
-    expect(updateMany).toHaveBeenCalledWith({
-      where: { id: 'row-1', [entry.statusField]: 'pending', deletedAt: null },
-      data: { [entry.statusField]: 'pending' },
-    });
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    const statement = queryRaw.mock.calls[0][0];
+    expect(statement.sql).toContain(`FROM "${entry.table}"`);
+    expect(statement.sql).toContain(`"${entry.statusColumn}" = ?`);
+    expect(statement.sql).toContain('"deletedAt" IS NULL');
+    expect(statement.sql).toContain('FOR NO KEY UPDATE');
+    expect(statement.values).toEqual(['row-1', 'pending']);
   });
 
   it('rejects a lost claim with the caller-provided existing BizCode', async () => {
-    const { tx } = createTx(0);
+    const { tx } = createTx(false);
 
     await expect(
       claimAtStatus(tx, {

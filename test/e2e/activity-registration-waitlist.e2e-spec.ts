@@ -1,6 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
-import { Role, UserStatus } from '@prisma/client';
+import { Prisma, Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -22,6 +21,46 @@ const AUDIT_META: AuditMeta = {
   ip: '127.0.0.1',
   ua: 'jest/activity-registration-waitlist',
 };
+const LOCK_OBSERVE_TIMEOUT_MS = 4_000;
+const OPERATION_TIMEOUT_MS = 8_000;
+const CLEANUP_TIMEOUT_MS = 10_000;
+const BLOCKER_TIMEOUT_MS = 20_000;
+
+async function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+async function settleAllWithTimeout(promises: Promise<unknown>[], label: string): Promise<void> {
+  const results = await withTimeout(Promise.allSettled(promises), label, CLEANUP_TIMEOUT_MS);
+  const rejected = results.find(
+    (result): result is PromiseRejectedResult => result.status === 'rejected',
+  );
+  if (rejected) throw rejected.reason;
+}
+
+function preservePrimaryFailure(primary: unknown, cleanup: unknown): void {
+  if (primary instanceof Error) {
+    Object.defineProperty(primary, 'cause', { value: cleanup, configurable: true });
+  }
+}
+
+function throwFailure(failure: unknown): never {
+  if (failure instanceof Error) throw failure;
+  throw new Error('non-Error test failure', { cause: failure });
+}
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void;
@@ -44,22 +83,76 @@ async function observeActivityLockWait(
       settled = true;
     },
   );
-  const deadline = Date.now() + 5_000;
+  const deadline = Date.now() + LOCK_OBSERVE_TIMEOUT_MS;
   while (Date.now() < deadline) {
     if (settled) return 'settled';
-    const waiting = await prisma.$queryRaw<Array<{ pid: number }>>`
-      SELECT pid
-      FROM pg_stat_activity
-      WHERE datname = current_database()
-        AND pid <> pg_backend_pid()
-        AND wait_event_type = 'Lock'
-        AND query LIKE '%FROM "Activity"%FOR UPDATE%'
-      LIMIT 1
-    `;
+    const waiting = await withTimeout(
+      prisma.$queryRaw<Array<{ pid: number }>>`
+        SELECT pid
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND pid <> pg_backend_pid()
+          AND wait_event_type = 'Lock'
+          AND query LIKE '%FROM "Activity"%FOR UPDATE%'
+        LIMIT 1
+      `,
+      'activity lock observer query',
+      LOCK_OBSERVE_TIMEOUT_MS,
+    );
     if (waiting.length > 0) return 'blocked';
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error('timed out waiting for concurrent Activity mutation state');
+}
+
+async function waitForDirectWaiter(
+  observer: PrismaService,
+  directBlockerPid: number,
+  operation: Promise<unknown>,
+  queryPattern: string,
+  excludedPids: number[] = [],
+): Promise<{ pid: number; databaseName: string; blockingPids: number[] }> {
+  let settled = false;
+  void operation.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  const deadline = Date.now() + LOCK_OBSERVE_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (settled) throw new Error('waitlist operation settled before expected lock wait');
+    const rows = await withTimeout(
+      observer.$queryRaw<Array<{ pid: number; databaseName: string; blockingPids: number[] }>>(
+        Prisma.sql`
+          SELECT pid, datname AS "databaseName", pg_blocking_pids(pid) AS "blockingPids"
+          FROM pg_stat_activity
+          WHERE datname = current_database()
+            AND wait_event_type = 'Lock'
+            AND CAST(${directBlockerPid} AS integer) = ANY(pg_blocking_pids(pid))
+            AND query LIKE ${queryPattern}
+            AND NOT (pid = ANY(${excludedPids}::integer[]))
+          LIMIT 1
+        `,
+      ),
+      'waitlist direct-lock observer query',
+      LOCK_OBSERVE_TIMEOUT_MS,
+    );
+    if (rows[0]) return rows[0];
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`waitlist direct waiter missing blocker=${directBlockerPid}`);
+}
+
+async function backendIdentity(
+  client: PrismaService,
+): Promise<{ pid: number; databaseName: string }> {
+  const rows = await client.$queryRaw<Array<{ pid: number; databaseName: string }>>(Prisma.sql`
+    SELECT pg_backend_pid() AS pid, current_database() AS "databaseName"
+  `);
+  return rows[0];
 }
 
 interface RegistrationCreateTestHooks {
@@ -81,40 +174,39 @@ interface RegistrationCreateTestHooks {
   } | null>;
 }
 
-interface AttendanceSubmitTestHooks {
-  claimRegistrationsForSubmit: (
-    registrationIds: readonly string[],
-    tx: Prisma.TransactionClient,
-  ) => Promise<void>;
-}
-
 describe('activity registration waitlist', () => {
   let app: INestApplication;
+  let appB: INestApplication;
   let prisma: PrismaService;
+  let prismaB: PrismaService;
   let registrations: ActivityRegistrationsService;
+  let registrationsB: ActivityRegistrationsService;
   let appRegistrations: AppMyRegistrationsService;
   let activities: ActivitiesService;
   let activityPositions: ActivityPositionsService;
   let appActivities: AppActivitiesService;
   let dashboard: MetaService;
   let appCheckIns: AppActivityCheckInsService;
-  let attendances: AttendancesService;
+  let attendancesB: AttendancesService;
   let organizationId: string;
   let admin: CurrentUserPayload;
   let sequence = 0;
 
   beforeAll(async () => {
     app = await createTestApp();
+    appB = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
+    prismaB = appB.get(PrismaService);
     registrations = app.get(ActivityRegistrationsService);
+    registrationsB = appB.get(ActivityRegistrationsService);
     appRegistrations = app.get(AppMyRegistrationsService);
     activities = app.get(ActivitiesService);
     activityPositions = app.get(ActivityPositionsService);
     appActivities = app.get(AppActivitiesService);
     dashboard = app.get(MetaService);
     appCheckIns = app.get(AppActivityCheckInsService);
-    attendances = app.get(AttendancesService);
+    attendancesB = appB.get(AttendancesService);
 
     const adminUser = await createTestUser(app, {
       username: 'waitlist-super-admin',
@@ -156,7 +248,7 @@ describe('activity registration waitlist', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    await settleAllWithTimeout([app.close(), appB.close()], 'waitlist app shutdown');
   });
 
   async function createMember(label: string): Promise<string> {
@@ -835,6 +927,156 @@ describe('activity registration waitlist', () => {
     });
   });
 
+  it('promote×cancel:root候补锁 → pass cancel/promote direct waiter → 候补 cancel soft waiter', async () => {
+    const activityId = await createActivity(1, 'promote-cancel-linear');
+    const pass = await seedRegistration(activityId, await createMember('linear-pass'), 'pass');
+    const waitingMemberId = await createMember('linear-waiting');
+    const waiting = await seedRegistration(activityId, waitingMemberId, 'waitlisted');
+    const rootReviewNote = 'root committed waitlist note';
+    const [poolA, poolB] = await Promise.all([backendIdentity(prisma), backendIdentity(prismaB)]);
+    expect(poolA.databaseName).toBe(poolB.databaseName);
+    expect(poolA.pid).not.toBe(poolB.pid);
+
+    const rootReached = deferred();
+    const mutateRoot = deferred();
+    const rootMutated = deferred();
+    const releaseRoot = deferred();
+    let root!: { pid: number; databaseName: string };
+    const blocker = prisma.$transaction(
+      async (tx) => {
+        const rows = await tx.$queryRaw<Array<{ pid: number; databaseName: string }>>(Prisma.sql`
+          SELECT pg_backend_pid() AS pid, current_database() AS "databaseName"
+          FROM "ActivityRegistration"
+          WHERE "id" = ${waiting.id}
+          FOR UPDATE
+        `);
+        root = rows[0];
+        rootReached.resolve();
+        await mutateRoot.promise;
+        await tx.activityRegistration.update({
+          where: { id: waiting.id },
+          data: { reviewNote: rootReviewNote },
+        });
+        rootMutated.resolve();
+        await releaseRoot.promise;
+      },
+      { timeout: BLOCKER_TIMEOUT_MS },
+    );
+    let promotion: Promise<unknown> | undefined;
+    let candidateCancel: Promise<unknown> | undefined;
+    let primaryFailure: unknown;
+    let cleanupFailure: unknown;
+    try {
+      await withTimeout(rootReached.promise, 'promotion root blocker', BLOCKER_TIMEOUT_MS);
+      promotion = registrations.cancelAdmin(activityId, pass.id, {}, admin, AUDIT_META);
+      const firstWaiter = await waitForDirectWaiter(
+        prismaB,
+        root.pid,
+        promotion,
+        '%FROM "ActivityRegistration"%FOR NO KEY UPDATE%',
+      );
+      expect(firstWaiter.databaseName).toBe(root.databaseName);
+      expect(firstWaiter.blockingPids).toContain(root.pid);
+      mutateRoot.resolve();
+      await withTimeout(rootMutated.promise, 'promotion root mutation', OPERATION_TIMEOUT_MS);
+      candidateCancel = registrationsB.cancelAdmin(activityId, waiting.id, {}, admin, AUDIT_META);
+      const secondWaiter = await waitForDirectWaiter(
+        prisma,
+        firstWaiter.pid,
+        candidateCancel,
+        '%FROM "ActivityRegistration"%FOR NO KEY UPDATE%',
+        [root.pid],
+      );
+      expect(secondWaiter.pid).not.toBe(firstWaiter.pid);
+      expect(secondWaiter.databaseName).toBe(root.databaseName);
+      expect(secondWaiter.blockingPids).toContain(firstWaiter.pid);
+
+      releaseRoot.resolve();
+      const results = await withTimeout(
+        Promise.allSettled([promotion, candidateCancel]),
+        'promotion and candidate cancellation',
+        OPERATION_TIMEOUT_MS,
+      );
+      expect(results[0].status).toBe('fulfilled');
+      expect(results[1]).toMatchObject({
+        status: 'rejected',
+        reason: { biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID },
+      });
+      expect(JSON.stringify(results[1])).not.toContain('40P01');
+      expect(
+        await prisma.activityRegistration.findMany({
+          where: { id: { in: [pass.id, waiting.id] } },
+          select: { id: true, statusCode: true, reviewNote: true },
+          orderBy: { id: 'asc' },
+        }),
+      ).toEqual(
+        [
+          { id: pass.id, statusCode: 'cancelled', reviewNote: null },
+          { id: waiting.id, statusCode: 'pending', reviewNote: rootReviewNote },
+        ].sort((a, b) => a.id.localeCompare(b.id)),
+      );
+      const promotionAudit = await prisma.auditLog.findFirstOrThrow({
+        where: {
+          resourceId: waiting.id,
+          event: 'registration.review',
+          context: { path: ['extra', 'action'], equals: 'promote' },
+        },
+        select: { context: true },
+      });
+      expect(promotionAudit.context).toMatchObject({
+        before: { reviewNote: rootReviewNote },
+        after: { reviewNote: rootReviewNote },
+      });
+      expect(
+        await prisma.auditLog.count({
+          where: {
+            resourceId: waiting.id,
+            event: 'registration.review',
+            context: { path: ['extra', 'action'], equals: 'promote' },
+          },
+        }),
+      ).toBe(1);
+      expect(await prisma.auditLog.count({ where: { resourceId: waiting.id } })).toBe(1);
+      const notifications = await prisma.notification.findMany({
+        where: { recipientMemberId: waitingMemberId, title: '候补已递补' },
+        select: { id: true },
+      });
+      expect(notifications).toHaveLength(1);
+      expect(
+        await prisma.notificationDelivery.count({
+          where: { notificationId: notifications[0].id },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.notificationOutboxIntent.count({
+          where: { aggregateId: notifications[0].id },
+        }),
+      ).toBe(0);
+    } catch (error) {
+      primaryFailure = error;
+    } finally {
+      mutateRoot.resolve();
+      releaseRoot.resolve();
+      try {
+        await settleAllWithTimeout(
+          [
+            blocker,
+            ...(promotion ? [promotion.catch(() => undefined)] : []),
+            ...(candidateCancel ? [candidateCancel.catch(() => undefined)] : []),
+          ],
+          'promotion linearization cleanup',
+        );
+      } catch (cleanupError) {
+        cleanupFailure = cleanupError;
+      }
+    }
+    if (primaryFailure !== undefined) {
+      if (cleanupFailure !== undefined) preservePrimaryFailure(primaryFailure, cleanupFailure);
+      throwFailure(primaryFailure);
+    }
+    if (cleanupFailure !== undefined) throwFailure(cleanupFailure);
+  });
+
   it('取消 pending 或 waitlisted 不触发递补', async () => {
     const activityId = await createActivity(1, 'cancel-without-promotion');
     const pass = await seedRegistration(activityId, await createMember('no-promote-pass'), 'pass');
@@ -1110,7 +1352,7 @@ describe('activity registration waitlist', () => {
     }
   });
 
-  it('F2 真并发：考勤提交 claim pass registration 后，并发取消被已有考勤守卫拒绝', async () => {
+  it('F2 PG链：root Registration → submit direct waiter(持 Activity SHARE) → cancel direct waiter(submit Activity)', async () => {
     const activityId = await createActivity(5, 'attendance-cancel-race');
     const memberId = await createMember('attendance-cancel-member');
     const registration = await seedRegistration(activityId, memberId, 'pass');
@@ -1124,22 +1366,35 @@ describe('activity registration waitlist', () => {
         endAt: new Date(serverNow + 3_600_000),
       },
     });
-    const hooks = attendances as unknown as AttendanceSubmitTestHooks;
-    const originalClaim = hooks.claimRegistrationsForSubmit.bind(attendances);
-    const registrationClaimed = deferred();
-    const releaseSubmit = deferred();
-    const claimSpy = jest
-      .spyOn(hooks, 'claimRegistrationsForSubmit')
-      .mockImplementation(async (...args) => {
-        await originalClaim(...args);
-        registrationClaimed.resolve();
-        await releaseSubmit.promise;
-      });
+    const [poolA, poolB] = await Promise.all([backendIdentity(prisma), backendIdentity(prismaB)]);
+    expect(poolA.databaseName).toBe(poolB.databaseName);
+    expect(poolA.pid).not.toBe(poolB.pid);
+
+    const rootReached = deferred();
+    const releaseRoot = deferred();
+    let root!: { pid: number; databaseName: string };
+    const blocker = prisma.$transaction(
+      async (tx) => {
+        const rows = await tx.$queryRaw<Array<{ pid: number; databaseName: string }>>(Prisma.sql`
+          SELECT pg_backend_pid() AS pid, current_database() AS "databaseName"
+          FROM "ActivityRegistration"
+          WHERE "id" = ${registration.id}
+          FOR UPDATE
+        `);
+        root = rows[0];
+        rootReached.resolve();
+        await releaseRoot.promise;
+      },
+      { timeout: BLOCKER_TIMEOUT_MS },
+    );
 
     let submitPromise: ReturnType<AttendancesService['submit']> | undefined;
     let cancelPromise: ReturnType<ActivityRegistrationsService['cancelAdmin']> | undefined;
+    let primaryFailure: unknown;
+    let cleanupFailure: unknown;
     try {
-      submitPromise = attendances.submit(
+      await withTimeout(rootReached.promise, 'attendance root blocker', BLOCKER_TIMEOUT_MS);
+      submitPromise = attendancesB.submit(
         activityId,
         {
           records: [
@@ -1156,22 +1411,44 @@ describe('activity registration waitlist', () => {
         admin,
         AUDIT_META,
       );
-      await registrationClaimed.promise;
+      const submitWaiter = await waitForDirectWaiter(
+        prisma,
+        root.pid,
+        submitPromise,
+        '%FROM "ActivityRegistration"%FOR NO KEY UPDATE%',
+      );
+      expect(submitWaiter.databaseName).toBe(root.databaseName);
+      expect(submitWaiter.blockingPids).toContain(root.pid);
       cancelPromise = registrations.cancelAdmin(activityId, registration.id, {}, admin, AUDIT_META);
-      const observation = await observeActivityLockWait(prisma, cancelPromise);
-      releaseSubmit.resolve();
-      await submitPromise;
-      const cancellation = await Promise.allSettled([cancelPromise]);
+      const cancelWaiter = await waitForDirectWaiter(
+        prismaB,
+        submitWaiter.pid,
+        cancelPromise,
+        '%FROM "Activity"%FOR UPDATE%',
+        [root.pid],
+      );
+      expect(cancelWaiter.pid).not.toBe(submitWaiter.pid);
+      expect(cancelWaiter.databaseName).toBe(root.databaseName);
+      expect(cancelWaiter.blockingPids).toContain(submitWaiter.pid);
+      releaseRoot.resolve();
+      const results = await withTimeout(
+        Promise.allSettled([submitPromise, cancelPromise]),
+        'attendance submit and cancellation',
+        OPERATION_TIMEOUT_MS,
+      );
 
       // 本测试杀死「submit 普通读到 pass 后暂停，cancel 见 record=0 先提交，submit 再插 record」错误；
-      // 正确实现用 Activity→Registration + claimAtStatus 互斥，后到取消恒被 21033 拒绝。
-      expect(observation).toBe('blocked');
-      expect(cancellation[0]).toEqual(
+      // 实际 PG 链跨对象：submit 持 Activity SHARE 并等 Registration root，cancel 的 Activity
+      // FOR UPDATE 直接等 submit；释放后 submit 先提交 record，cancel 锁后由 21033 拒绝。
+      expect(results[0].status).toBe('fulfilled');
+      if (results[0].status !== 'fulfilled') throw results[0].reason;
+      expect(results[1]).toEqual(
         expect.objectContaining({
           status: 'rejected',
           reason: expect.objectContaining({ biz: BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE }),
         }),
       );
+      expect(JSON.stringify(results[1])).not.toContain('40P01');
       expect(
         await prisma.activityRegistration.findUniqueOrThrow({
           where: { id: registration.id },
@@ -1183,11 +1460,43 @@ describe('activity registration waitlist', () => {
           where: { registrationId: registration.id, deletedAt: null },
         }),
       ).toBe(1);
+      expect(
+        await prisma.auditLog.count({
+          where: { resourceId: registration.id, event: 'registration.cancel' },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.auditLog.count({
+          where: { resourceId: results[0].value.id, event: 'attendance-sheet.submit' },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.notification.count({
+          where: { recipientMemberId: memberId },
+        }),
+      ).toBe(0);
+    } catch (error) {
+      primaryFailure = error;
     } finally {
-      releaseSubmit.resolve();
-      await Promise.allSettled([submitPromise, cancelPromise].filter((item) => item !== undefined));
-      claimSpy.mockRestore();
+      releaseRoot.resolve();
+      try {
+        await settleAllWithTimeout(
+          [
+            blocker,
+            ...(submitPromise ? [submitPromise.catch(() => undefined)] : []),
+            ...(cancelPromise ? [cancelPromise.catch(() => undefined)] : []),
+          ],
+          'attendance cancellation cleanup',
+        );
+      } catch (cleanupError) {
+        cleanupFailure = cleanupError;
+      }
     }
+    if (primaryFailure !== undefined) {
+      if (cleanupFailure !== undefined) preservePrimaryFailure(primaryFailure, cleanupFailure);
+      throwFailure(primaryFailure);
+    }
+    if (cleanupFailure !== undefined) throwFailure(cleanupFailure);
   });
 
   it('活动取消联动 pending+waitlisted→cancelled；waitlisted 仍不能签到', async () => {

@@ -135,9 +135,16 @@ export async function promoteActivityWaitlist(args: {
       }
       throw err;
     }
+    const lockedCandidate = await args.tx.activityRegistration.findFirst({
+      where: notDeletedWhere({ id: candidate.id }),
+      select: waitlistAuditSelect,
+    });
+    if (!lockedCandidate) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+    }
 
     const updated = await args.tx.activityRegistration.update({
-      where: { id: candidate.id },
+      where: { id: lockedCandidate.id },
       data: { statusCode: transition.nextStatusCode },
       select: waitlistAuditSelect,
     });
@@ -147,22 +154,22 @@ export async function promoteActivityWaitlist(args: {
       actorUserId: args.actorUserId,
       actorRoleSnap: args.actorRoleSnap,
       resourceType: 'activity_registration',
-      resourceId: candidate.id,
+      resourceId: lockedCandidate.id,
       meta: args.auditMeta,
-      before: toAuditSnapshot(candidate),
+      before: toAuditSnapshot(lockedCandidate),
       after: toAuditSnapshot(updated),
       extra: {
         operation: 'review',
         action: 'promote',
-        priorStatusCode: candidate.statusCode,
+        priorStatusCode: lockedCandidate.statusCode,
         nextStatusCode: transition.nextStatusCode,
         activityId: args.activityId,
-        targetMemberId: candidate.memberId,
+        targetMemberId: lockedCandidate.memberId,
       },
       tx: args.tx,
     });
 
-    promoted.push({ registrationId: candidate.id, memberId: candidate.memberId });
+    promoted.push({ registrationId: lockedCandidate.id, memberId: lockedCandidate.memberId });
   }
 
   return { activityTitle: activity.title, promoted };
@@ -349,9 +356,16 @@ export async function promoteActivityWaitlistAcrossPositions(
       }
       throw err;
     }
+    const lockedCandidate = await args.tx.activityRegistration.findFirst({
+      where: notDeletedWhere({ id: candidate.id }),
+      select: waitlistAuditSelect,
+    });
+    if (!lockedCandidate) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+    }
 
     const updated = await args.tx.activityRegistration.update({
-      where: { id: candidate.id },
+      where: { id: lockedCandidate.id },
       data: { statusCode: transition.nextStatusCode },
       select: waitlistAuditSelect,
     });
@@ -360,22 +374,25 @@ export async function promoteActivityWaitlistAcrossPositions(
       actorUserId: args.actorUserId,
       actorRoleSnap: args.actorRoleSnap,
       resourceType: 'activity_registration',
-      resourceId: candidate.id,
+      resourceId: lockedCandidate.id,
       meta: args.auditMeta,
-      before: toAuditSnapshot(candidate),
+      before: toAuditSnapshot(lockedCandidate),
       after: toAuditSnapshot(updated),
       extra: {
         operation: 'review',
         action: 'promote',
-        priorStatusCode: candidate.statusCode,
+        priorStatusCode: lockedCandidate.statusCode,
         nextStatusCode: transition.nextStatusCode,
         activityId: args.activityId,
-        targetMemberId: candidate.memberId,
+        targetMemberId: lockedCandidate.memberId,
       },
       tx: args.tx,
     });
-    consumeRemaining(candidate.activityPositionId);
-    promoted.push({ registrationId: candidate.id, memberId: candidate.memberId });
+    consumeRemaining(lockedCandidate.activityPositionId);
+    promoted.push({
+      registrationId: lockedCandidate.id,
+      memberId: lockedCandidate.memberId,
+    });
   }
 
   return { activityTitle: activity.title, promoted };

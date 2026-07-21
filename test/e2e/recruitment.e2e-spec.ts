@@ -36,6 +36,46 @@ const OPEN_RECOGNIZE = '/api/open/v1/recruitment/applications/recognize';
 const OPEN_QUERY = '/api/open/v1/recruitment/applications/query';
 const ADMIN_CYCLES = '/api/admin/v1/recruitment/cycles';
 const ADMIN_APPS = '/api/admin/v1/recruitment/applications';
+const LOCK_OBSERVE_TIMEOUT_MS = 4_000;
+const HTTP_TIMEOUT_MS = 8_000;
+const CLEANUP_TIMEOUT_MS = 10_000;
+const BLOCKER_TIMEOUT_MS = 20_000;
+
+async function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+async function settleAllWithTimeout(promises: Promise<unknown>[], label: string): Promise<void> {
+  const results = await withTimeout(Promise.allSettled(promises), label, CLEANUP_TIMEOUT_MS);
+  const rejected = results.find(
+    (result): result is PromiseRejectedResult => result.status === 'rejected',
+  );
+  if (rejected) throw rejected.reason;
+}
+
+function preservePrimaryFailure(primary: unknown, cleanup: unknown): void {
+  if (primary instanceof Error) {
+    Object.defineProperty(primary, 'cause', { value: cleanup, configurable: true });
+  }
+}
+
+function throwFailure(failure: unknown): never {
+  if (failure instanceof Error) throw failure;
+  throw new Error('non-Error test failure', { cause: failure });
+}
 
 // 有效校验位大陆身份证(OCR 匹配/不匹配改由 submit() 信封驱动,与校验位无关)
 const ID_MATCH_A = '110101199003070038';
@@ -49,7 +89,9 @@ const ID_INVALID = '110101199003070010';
 
 describe('招新一期(招新前段)报名全链 e2e', () => {
   let app: INestApplication;
+  let appB: INestApplication;
   let prisma: PrismaService;
+  let prismaB: PrismaService;
   let storage: StorageProvider;
   let adminAuth: string; // SUPER_ADMIN(rbac.can 短路通过)
   let userAuth: string; // 普通 USER(RBAC 边界)
@@ -214,7 +256,9 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
   beforeAll(async () => {
     process.env.RECRUITMENT_THROTTLE_LIMIT = '100'; // 配额上限(评审稿 max 100);全链测试不触限流
     app = await createTestApp();
+    appB = await createTestApp();
     prisma = app.get(PrismaService);
+    prismaB = appB.get(PrismaService);
     storage = app.get<StorageProvider>(STORAGE_PROVIDER);
     await resetDb(app);
 
@@ -283,7 +327,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
 
   afterAll(async () => {
     delete process.env.RECRUITMENT_THROTTLE_LIMIT;
-    await app.close();
+    await settleAllWithTimeout([app.close(), appB.close()], 'recruitment app shutdown');
   });
 
   beforeEach(async () => {
@@ -620,6 +664,201 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       },
     });
   }
+
+  async function waitForRecruitmentWaiter(
+    directBlockerPid: number,
+    operation: Promise<request.Response>,
+    excludedPids: number[] = [],
+  ): Promise<{ pid: number; databaseName: string; blockingPids: number[] }> {
+    let settled = false;
+    void operation.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    const deadline = Date.now() + LOCK_OBSERVE_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (settled) throw new Error('recruitment operation settled before expected lock wait');
+      const rows = await withTimeout(
+        prismaB.$queryRaw<Array<{ pid: number; databaseName: string; blockingPids: number[] }>>(
+          Prisma.sql`
+            SELECT pid, datname AS "databaseName", pg_blocking_pids(pid) AS "blockingPids"
+            FROM pg_stat_activity
+            WHERE datname = current_database()
+              AND wait_event_type = 'Lock'
+              AND CAST(${directBlockerPid} AS integer) = ANY(pg_blocking_pids(pid))
+              AND query LIKE '%FROM "recruitment_applications"%FOR NO KEY UPDATE%'
+              AND NOT (pid = ANY(${excludedPids}::integer[]))
+            LIMIT 1
+          `,
+        ),
+        'recruitment lock observer query',
+        LOCK_OBSERVE_TIMEOUT_MS,
+      );
+      if (rows[0]) return rows[0];
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(`recruitment direct waiter missing blocker=${directBlockerPid}`);
+  }
+
+  async function runManualResolveLinearization(
+    firstApproved: boolean,
+    secondApproved: boolean,
+  ): Promise<void> {
+    const cycle = await openCycle();
+    const manual = await createAppRow(cycle.id, {
+      statusCode: 'manual_review',
+      openid: `linear-${firstApproved}-${Date.now()}`,
+      phone: `139${String(Date.now()).slice(-8)}`,
+      idCardNumber: `LINEAR-${Date.now()}`,
+    });
+    const rootCycle = await prisma.recruitmentCycle.create({
+      data: {
+        year: 2027,
+        name: `linear root cycle ${firstApproved}`,
+        statusCode: 'closed',
+      },
+    });
+    const poolIds = await Promise.all(
+      [prisma, prismaB].map(async (client) => {
+        const rows = await client.$queryRaw<
+          Array<{ pid: number; databaseName: string }>
+        >(Prisma.sql`
+          SELECT pg_backend_pid() AS pid, current_database() AS "databaseName"
+        `);
+        return rows[0];
+      }),
+    );
+    expect(poolIds[0].databaseName).toBe(poolIds[1].databaseName);
+    expect(poolIds[0].pid).not.toBe(poolIds[1].pid);
+
+    let release!: () => void;
+    const releasePromise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let root!: { pid: number; databaseName: string };
+    let reached!: () => void;
+    const reachedPromise = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    let mutate!: () => void;
+    const mutatePromise = new Promise<void>((resolve) => {
+      mutate = resolve;
+    });
+    let mutated!: () => void;
+    const mutatedPromise = new Promise<void>((resolve) => {
+      mutated = resolve;
+    });
+    const blocker = prisma.$transaction(
+      async (tx) => {
+        const rows = await tx.$queryRaw<Array<{ pid: number; databaseName: string }>>(Prisma.sql`
+          SELECT pg_backend_pid() AS pid, current_database() AS "databaseName"
+          FROM "recruitment_applications"
+          WHERE "id" = ${manual.id}
+          FOR UPDATE
+        `);
+        root = rows[0];
+        reached();
+        await mutatePromise;
+        await tx.recruitmentApplication.update({
+          where: { id: manual.id },
+          data: { cycleId: rootCycle.id },
+        });
+        mutated();
+        await releasePromise;
+      },
+      { timeout: BLOCKER_TIMEOUT_MS },
+    );
+    const invoke = (targetApp: INestApplication, approved: boolean) =>
+      Promise.resolve(
+        request(httpServer(targetApp))
+          .post(`${ADMIN_APPS}/${manual.id}/resolve`)
+          .set('Authorization', adminAuth)
+          .send({ approved, reviewNote: `linear ${approved ? 'approve' : 'reject'}` })
+          .timeout({ deadline: HTTP_TIMEOUT_MS }),
+      );
+    let first: Promise<request.Response> | undefined;
+    let second: Promise<request.Response> | undefined;
+    let primaryFailure: unknown;
+    let cleanupFailure: unknown;
+    try {
+      await withTimeout(reachedPromise, 'recruitment root blocker', BLOCKER_TIMEOUT_MS);
+      first = invoke(app, firstApproved);
+      const firstWaiter = await waitForRecruitmentWaiter(root.pid, first);
+      expect(firstWaiter.databaseName).toBe(root.databaseName);
+      expect(firstWaiter.blockingPids).toContain(root.pid);
+      mutate();
+      await withTimeout(mutatedPromise, 'recruitment root mutation', HTTP_TIMEOUT_MS);
+      second = invoke(appB, secondApproved);
+      const secondWaiter = await waitForRecruitmentWaiter(firstWaiter.pid, second, [root.pid]);
+      expect(secondWaiter.pid).not.toBe(firstWaiter.pid);
+      expect(secondWaiter.databaseName).toBe(root.databaseName);
+      expect(secondWaiter.blockingPids).toContain(firstWaiter.pid);
+
+      release();
+      const [winner, loser] = await withTimeout(
+        Promise.all([first, second]),
+        'recruitment competing resolutions',
+        HTTP_TIMEOUT_MS,
+      );
+      expect(winner.status).toBe(200);
+      expectBizError(loser, BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL);
+      expect(JSON.stringify(loser.body)).not.toContain('40P01');
+      const row = await prisma.recruitmentApplication.findUniqueOrThrow({
+        where: { id: manual.id },
+        select: { statusCode: true, tempNo: true, idCardNumber: true, cycleId: true },
+      });
+      expect(row.statusCode).toBe(firstApproved ? 'verified' : 'rejected');
+      expect(row.tempNo === null).toBe(!firstApproved);
+      expect(row.idCardNumber).toBe(manual.idCardNumber);
+      expect(row.cycleId).toBe(rootCycle.id);
+      expect(row.tempNo).toBe(firstApproved ? 'T20270001' : null);
+      expect(await prisma.auditLog.count({ where: { resourceId: manual.id } })).toBe(1);
+      expect(
+        await prisma.recruitmentCycle.findUniqueOrThrow({
+          where: { id: cycle.id },
+          select: { tempNoSeq: true },
+        }),
+      ).toEqual({ tempNoSeq: 0 });
+      expect(
+        await prisma.recruitmentCycle.findUniqueOrThrow({
+          where: { id: rootCycle.id },
+          select: { tempNoSeq: true },
+        }),
+      ).toEqual({ tempNoSeq: firstApproved ? 1 : 0 });
+    } catch (error) {
+      primaryFailure = error;
+    } finally {
+      mutate();
+      release();
+      try {
+        await settleAllWithTimeout(
+          [blocker, ...(first ? [first] : []), ...(second ? [second] : [])],
+          'recruitment linearization cleanup',
+        );
+      } catch (cleanupError) {
+        cleanupFailure = cleanupError;
+      }
+    }
+    if (primaryFailure !== undefined) {
+      if (cleanupFailure !== undefined) preservePrimaryFailure(primaryFailure, cleanupFailure);
+      throwFailure(primaryFailure);
+    }
+    if (cleanupFailure !== undefined) throwFailure(cleanupFailure);
+  }
+
+  describe('PostgreSQL manual resolve direct/soft blocker chain', () => {
+    it('approve-first:root → approve waiter → reject soft waiter', async () => {
+      await runManualResolveLinearization(true, false);
+    });
+
+    it('reject-first:root → reject waiter → approve soft waiter', async () => {
+      await runManualResolveLinearization(false, true);
+    });
+  });
 
   it('F2-① 权限边界:无码 USER → 30100;SA 短路可改', async () => {
     const cycle = await openCycle();
@@ -2145,6 +2384,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     const loser = results.find((result) => result.status !== 200);
     expect(loser).toBeDefined();
     expectBizError(loser!, BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL);
+    expect(JSON.stringify(loser!.body)).not.toContain('40P01');
     const row = await prisma.recruitmentApplication.findUniqueOrThrow({
       where: { id: manual.id },
       select: { statusCode: true },
@@ -4002,7 +4242,7 @@ describe('公开招新 recruitment throttler', () => {
   });
 
   afterAll(async () => {
-    await throttleApp.close();
+    await withTimeout(throttleApp.close(), 'recruitment throttle app shutdown', CLEANUP_TIMEOUT_MS);
     if (originalLimit === undefined) delete process.env.RECRUITMENT_THROTTLE_LIMIT;
     else process.env.RECRUITMENT_THROTTLE_LIMIT = originalLimit;
     if (originalTtl === undefined) delete process.env.RECRUITMENT_THROTTLE_TTL_SECONDS;

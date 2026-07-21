@@ -41,6 +41,10 @@ const GENERAL_GATES = [
   'entry-exam',
   'intermediate-outdoor',
 ];
+const LOCK_OBSERVE_TIMEOUT_MS = 4_000;
+const HTTP_TIMEOUT_MS = 8_000;
+const CLEANUP_TIMEOUT_MS = 10_000;
+const BLOCKER_TIMEOUT_MS = 20_000;
 
 describe('招新三期(入队)admin 面 e2e', () => {
   let app: INestApplication;
@@ -79,6 +83,18 @@ describe('招新三期(入队)admin 面 e2e', () => {
       .post(`${ADMIN_APPS}/${appId}/evaluate`)
       .set('Authorization', adminAuth)
       .send({ approved, ...over });
+  }
+
+  function evaluateVia(
+    targetApp: INestApplication,
+    appId: string,
+    approved: boolean,
+  ): request.Test {
+    return request(httpServer(targetApp))
+      .post(`${ADMIN_APPS}/${appId}/evaluate`)
+      .set('Authorization', adminAuth)
+      .send({ approved })
+      .timeout({ deadline: HTTP_TIMEOUT_MS });
   }
 
   async function createMember(): Promise<string> {
@@ -235,7 +251,7 @@ describe('招新三期(入队)admin 面 e2e', () => {
   }
 
   async function waitForBlockedQuery(blockerPid: number, queryPattern: string): Promise<void> {
-    const deadline = Date.now() + 5_000;
+    const deadline = Date.now() + LOCK_OBSERVE_TIMEOUT_MS;
     while (Date.now() < deadline) {
       const rows = await prisma.$queryRaw<Array<{ pid: number }>>(Prisma.sql`
         SELECT pid
@@ -247,6 +263,46 @@ describe('招新三期(入队)admin 面 e2e', () => {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
     throw new Error(`未观察到 PostgreSQL blocked query: ${queryPattern}`);
+  }
+
+  async function waitForDirectStatusWaiter(
+    directBlockerPid: number,
+    operation: Promise<request.Response>,
+    queryPattern: string,
+    excludedPids: number[] = [],
+  ): Promise<{ pid: number; databaseName: string; blockingPids: number[] }> {
+    let settled = false;
+    void operation.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      if (settled) throw new Error('team-join operation settled before expected lock wait');
+      const rows = await withTimeout(
+        prismaB.$queryRaw<Array<{ pid: number; databaseName: string; blockingPids: number[] }>>(
+          Prisma.sql`
+            SELECT pid, datname AS "databaseName", pg_blocking_pids(pid) AS "blockingPids"
+            FROM pg_stat_activity
+            WHERE datname = current_database()
+              AND wait_event_type = 'Lock'
+              AND CAST(${directBlockerPid} AS integer) = ANY(pg_blocking_pids(pid))
+              AND query LIKE ${queryPattern}
+              AND NOT (pid = ANY(${excludedPids}::integer[]))
+            LIMIT 1
+          `,
+        ),
+        'team-join lock observer query',
+        LOCK_OBSERVE_TIMEOUT_MS,
+      );
+      if (rows[0]) return rows[0];
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(`team-join direct waiter missing blocker=${directBlockerPid}`);
   }
 
   async function readBackendIdentity(client: PrismaService): Promise<{
@@ -280,18 +336,44 @@ describe('招新三期(入队)admin 面 e2e', () => {
     throw new Error(`未观察到 ${expectedCount} 条 PostgreSQL blocked query: ${queryPattern}`);
   }
 
-  async function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  async function withTimeout<T>(
+    promise: Promise<T>,
+    label: string,
+    timeoutMs = LOCK_OBSERVE_TIMEOUT_MS,
+  ): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
         promise,
         new Promise<never>((_resolve, reject) => {
-          timer = setTimeout(() => reject(new Error(`${label} timeout`)), 5_000);
+          timer = setTimeout(
+            () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+            timeoutMs,
+          );
         }),
       ]);
     } finally {
       if (timer) clearTimeout(timer);
     }
+  }
+
+  async function settleAllWithTimeout(promises: Promise<unknown>[], label: string): Promise<void> {
+    const results = await withTimeout(Promise.allSettled(promises), label, CLEANUP_TIMEOUT_MS);
+    const rejected = results.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    if (rejected) throw rejected.reason;
+  }
+
+  function preservePrimaryFailure(primary: unknown, cleanup: unknown): void {
+    if (primary instanceof Error) {
+      Object.defineProperty(primary, 'cause', { value: cleanup, configurable: true });
+    }
+  }
+
+  function throwFailure(failure: unknown): never {
+    if (failure instanceof Error) throw failure;
+    throw new Error('non-Error test failure', { cause: failure });
   }
 
   // 直建一条「approved」入队申请(8 通用 gate 全过 + 候选部门),用于 T4 一键入队测试。
@@ -406,7 +488,7 @@ describe('招新三期(入队)admin 面 e2e', () => {
   });
 
   afterAll(async () => {
-    await Promise.all([app.close(), appB.close()]);
+    await settleAllWithTimeout([app.close(), appB.close()], 'team-join app shutdown');
     if (previousGate === undefined) delete process.env.INSURANCE_ENFORCEMENT_ENABLED;
     else process.env.INSURANCE_ENFORCEMENT_ENABLED = previousGate;
   });
@@ -822,6 +904,272 @@ describe('招新三期(入队)admin 面 e2e', () => {
         where: { resourceType: 'team_join_application', resourceId: appId },
       }),
     ).toBe(9);
+  });
+
+  async function runEvaluateLinearization(
+    firstApproved: boolean,
+    secondApproved: boolean,
+    rootInvalidatesGates = false,
+  ): Promise<void> {
+    const cycleId = await openCycle();
+    const memberId = await createMember();
+    await addContribution(memberId, '5.00');
+    const appId = await createApplication(cycleId, memberId);
+    await markAllGeneralPassed(appId);
+    const [poolA, poolB] = await Promise.all([
+      readBackendIdentity(prisma),
+      readBackendIdentity(prismaB),
+    ]);
+    expect(poolA.databaseName).toBe(poolB.databaseName);
+    expect(poolA.pid).not.toBe(poolB.pid);
+
+    let release!: () => void;
+    const releasePromise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let root!: { pid: number; databaseName: string };
+    let reached!: () => void;
+    const reachedPromise = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    let mutate!: () => void;
+    const mutatePromise = new Promise<void>((resolve) => {
+      mutate = resolve;
+    });
+    let mutated!: () => void;
+    const mutatedPromise = new Promise<void>((resolve) => {
+      mutated = resolve;
+    });
+    const blocker = prisma.$transaction(
+      async (tx) => {
+        const rows = await tx.$queryRaw<Array<{ pid: number; databaseName: string }>>(Prisma.sql`
+          SELECT pg_backend_pid() AS pid, current_database() AS "databaseName"
+          FROM "team_join_applications"
+          WHERE "id" = ${appId}
+          FOR UPDATE
+        `);
+        root = rows[0];
+        reached();
+        if (rootInvalidatesGates) {
+          await mutatePromise;
+          await tx.teamJoinApplication.update({
+            where: { id: appId },
+            data: { gateMarks: {} },
+          });
+          mutated();
+        }
+        await releasePromise;
+      },
+      { timeout: BLOCKER_TIMEOUT_MS },
+    );
+    let first: Promise<request.Response> | undefined;
+    let second: Promise<request.Response> | undefined;
+    let primaryFailure: unknown;
+    let cleanupFailure: unknown;
+    try {
+      await withTimeout(reachedPromise, 'team-join evaluate root blocker', BLOCKER_TIMEOUT_MS);
+      first = Promise.resolve(evaluateVia(app, appId, firstApproved));
+      const firstWaiter = await waitForDirectStatusWaiter(
+        root.pid,
+        first,
+        '%FROM "team_join_applications"%FOR NO KEY UPDATE%',
+      );
+      expect(firstWaiter.databaseName).toBe(root.databaseName);
+      expect(firstWaiter.blockingPids).toContain(root.pid);
+      if (rootInvalidatesGates) {
+        mutate();
+        await withTimeout(mutatedPromise, 'team-join root gate mutation', HTTP_TIMEOUT_MS);
+      }
+      second = Promise.resolve(evaluateVia(appB, appId, secondApproved));
+      const secondWaiter = await waitForDirectStatusWaiter(
+        firstWaiter.pid,
+        second,
+        '%FROM "team_join_applications"%FOR NO KEY UPDATE%',
+        [root.pid],
+      );
+      expect(secondWaiter.pid).not.toBe(firstWaiter.pid);
+      expect(secondWaiter.databaseName).toBe(root.databaseName);
+      expect(secondWaiter.blockingPids).toContain(firstWaiter.pid);
+
+      release();
+      const [firstResponse, secondResponse] = await withTimeout(
+        Promise.all([first, second]),
+        'team-join competing evaluations',
+        HTTP_TIMEOUT_MS,
+      );
+      if (rootInvalidatesGates) {
+        expectBizError(firstResponse, BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
+        expect(secondResponse.status).toBe(200);
+      } else {
+        expect(firstResponse.status).toBe(200);
+        expectBizError(secondResponse, BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
+      }
+      expect(JSON.stringify([firstResponse.body, secondResponse.body])).not.toContain('40P01');
+      expect(
+        await prisma.teamJoinApplication.findUniqueOrThrow({
+          where: { id: appId },
+          select: { statusCode: true },
+        }),
+      ).toEqual({
+        statusCode: rootInvalidatesGates ? 'rejected' : firstApproved ? 'approved' : 'rejected',
+      });
+      expect(
+        await prisma.auditLog.count({
+          where: {
+            resourceType: 'team_join_application',
+            resourceId: appId,
+            event: 'team-join-application.evaluate',
+          },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.insuranceEligibilityEvidence.count({
+          where: { teamJoinApplicationId: appId },
+        }),
+      ).toBe(0);
+      expect(await prisma.notificationOutboxIntent.count({ where: { aggregateId: appId } })).toBe(
+        0,
+      );
+    } catch (error) {
+      primaryFailure = error;
+    } finally {
+      mutate();
+      release();
+      try {
+        await settleAllWithTimeout(
+          [blocker, ...(first ? [first] : []), ...(second ? [second] : [])],
+          'team-join evaluate cleanup',
+        );
+      } catch (cleanupError) {
+        cleanupFailure = cleanupError;
+      }
+    }
+    if (primaryFailure !== undefined) {
+      if (cleanupFailure !== undefined) preservePrimaryFailure(primaryFailure, cleanupFailure);
+      throwFailure(primaryFailure);
+    }
+    if (cleanupFailure !== undefined) throwFailure(cleanupFailure);
+  }
+
+  it('evaluate approve-first:root → approve direct waiter → reject soft waiter', async () => {
+    await runEvaluateLinearization(true, false);
+  });
+
+  it('evaluate reject-first:root → reject direct waiter → approve soft waiter', async () => {
+    await runEvaluateLinearization(false, true);
+  });
+
+  it('safe reread mutation-kill:approve 已读旧 gateMarks 并阻塞后 root 清空 gates，approve 拒绝且 queued reject 成功', async () => {
+    await runEvaluateLinearization(true, false, true);
+  });
+
+  it('root blocker: evaluate 获锁后时钟跨 military expiry → 拒绝 approve 且不写旧时刻', async () => {
+    const cycleId = await openCycle(new Date(Date.now() - 86_400_000));
+    const memberId = await createMember();
+    await addContribution(memberId, '5.00');
+    const expiresAt = new Date(Date.now() + 800);
+    const militaryCompletion = new Date(expiresAt);
+    militaryCompletion.setUTCFullYear(militaryCompletion.getUTCFullYear() - 2);
+    const currentCompletion = new Date().toISOString();
+    const gateMarks = Object.fromEntries(
+      GENERAL_GATES.map((gateCode) => [
+        gateCode,
+        {
+          at: currentCompletion,
+          by: adminUserId,
+          passed: true,
+          completionDate:
+            gateCode === 'military' ? militaryCompletion.toISOString() : currentCompletion,
+        },
+      ]),
+    );
+    const appId = await createApplication(cycleId, memberId, {
+      statusCode: 'pending_evaluation',
+      gateMarks,
+    });
+    const [poolA, poolB] = await Promise.all([
+      readBackendIdentity(prisma),
+      readBackendIdentity(prismaB),
+    ]);
+    expect(poolA.databaseName).toBe(poolB.databaseName);
+    expect(poolA.pid).not.toBe(poolB.pid);
+
+    let release!: () => void;
+    const releasePromise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let root!: { pid: number; databaseName: string };
+    let reached!: () => void;
+    const reachedPromise = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const blocker = prisma.$transaction(
+      async (tx) => {
+        const rows = await tx.$queryRaw<Array<{ pid: number; databaseName: string }>>(Prisma.sql`
+          SELECT pg_backend_pid() AS pid, current_database() AS "databaseName"
+          FROM "team_join_applications"
+          WHERE "id" = ${appId}
+          FOR UPDATE
+        `);
+        root = rows[0];
+        reached();
+        await releasePromise;
+      },
+      { timeout: BLOCKER_TIMEOUT_MS },
+    );
+    let evaluation: Promise<request.Response> | undefined;
+    let primaryFailure: unknown;
+    let cleanupFailure: unknown;
+    try {
+      await withTimeout(reachedPromise, 'team-join expiry root blocker', BLOCKER_TIMEOUT_MS);
+      evaluation = Promise.resolve(evaluateVia(appB, appId, true));
+      const waiter = await waitForDirectStatusWaiter(
+        root.pid,
+        evaluation,
+        '%FROM "team_join_applications"%FOR NO KEY UPDATE%',
+      );
+      expect(waiter.databaseName).toBe(root.databaseName);
+      expect(waiter.blockingPids).toContain(root.pid);
+      expect(waiter.pid).not.toBe(root.pid);
+      await withTimeout(
+        new Promise((resolve) =>
+          setTimeout(resolve, Math.max(0, expiresAt.getTime() - Date.now() + 50)),
+        ),
+        'team-join expiry wall-clock wait',
+        HTTP_TIMEOUT_MS,
+      );
+      release();
+      expectBizError(
+        await withTimeout(evaluation, 'post-lock-expiry evaluate', HTTP_TIMEOUT_MS),
+        BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE,
+      );
+      expect(
+        JSON.stringify(await withTimeout(evaluation, 'post-lock-expiry replay', HTTP_TIMEOUT_MS)),
+      ).not.toContain('40P01');
+      expect(
+        await prisma.teamJoinApplication.findUniqueOrThrow({
+          where: { id: appId },
+          select: { statusCode: true, evaluatedAt: true },
+        }),
+      ).toEqual({ statusCode: 'pending_evaluation', evaluatedAt: null });
+    } catch (error) {
+      primaryFailure = error;
+    } finally {
+      release();
+      try {
+        await settleAllWithTimeout(
+          [blocker, ...(evaluation ? [evaluation] : [])],
+          'team-join expiry cleanup',
+        );
+      } catch (cleanupError) {
+        cleanupFailure = cleanupError;
+      }
+    }
+    if (primaryFailure !== undefined) {
+      if (cleanupFailure !== undefined) preservePrimaryFailure(primaryFailure, cleanupFailure);
+      throwFailure(primaryFailure);
+    }
+    if (cleanupFailure !== undefined) throwFailure(cleanupFailure);
   });
 
   it('⑬ joining + approved → WRONG_STATE(门槛未齐);joining + !approved → rejected(gate-timeout)', async () => {

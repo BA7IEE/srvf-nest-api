@@ -1063,35 +1063,28 @@ export class ActivityRegistrationsService {
         act,
         tx,
       );
+      await claimAtStatus(tx, {
+        target: 'activityRegistration',
+        id: reg.id,
+        expectedStatus: reg.statusCode,
+        invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
+      });
+      const lockedReg = await this.findRegistrationOrThrow(activityId, reg.id, tx);
       const effectiveCapacity = await this.resolveApproveCapacity(
         activityId,
-        reg.activityPositionId,
+        lockedReg.activityPositionId,
         act.capacity,
         tx,
       );
-      // Finding #3:条件式 no-op UPDATE 先锁定期望状态；并发 approve/reject 只有一方 count=1。
-      // 锁持有到事务结束,后续实际 update 不再存在读写窗口；败者在 audit/通知前退出。
-      const claimed = await tx.activityRegistration.updateMany({
-        where: {
-          id: reg.id,
-          activityId,
-          statusCode: reg.statusCode,
-          deletedAt: null,
-        },
-        data: { statusCode: reg.statusCode },
-      });
-      if (claimed.count === 0) {
-        throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
-      }
       await this.assertCapacityNotExceeded(
         activityId,
-        reg.activityPositionId,
+        lockedReg.activityPositionId,
         act.capacity,
         effectiveCapacity,
         tx,
       );
       const updated = await tx.activityRegistration.update({
-        where: { id: reg.id },
+        where: { id: lockedReg.id },
         data: {
           statusCode: transition.nextStatusCode,
           reviewedBy: currentUser.id,
@@ -1102,16 +1095,16 @@ export class ActivityRegistrationsService {
       });
 
       await this.registrationAuditRecorder.logReview({
-        registrationId: reg.id,
-        before: reg,
+        registrationId: lockedReg.id,
+        before: lockedReg,
         after: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
         action: 'approve',
-        priorStatusCode: reg.statusCode,
+        priorStatusCode: lockedReg.statusCode,
         nextStatusCode: transition.nextStatusCode,
         activityId,
-        targetMemberId: reg.memberId,
+        targetMemberId: lockedReg.memberId,
         auditMeta,
         tx,
       });
@@ -1153,20 +1146,15 @@ export class ActivityRegistrationsService {
         throw new BizException(transition.biz);
       }
 
-      const claimed = await tx.activityRegistration.updateMany({
-        where: {
-          id: reg.id,
-          activityId,
-          statusCode: reg.statusCode,
-          deletedAt: null,
-        },
-        data: { statusCode: reg.statusCode },
+      await claimAtStatus(tx, {
+        target: 'activityRegistration',
+        id: reg.id,
+        expectedStatus: reg.statusCode,
+        invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
       });
-      if (claimed.count === 0) {
-        throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
-      }
+      const lockedReg = await this.findRegistrationOrThrow(activityId, reg.id, tx);
       const updated = await tx.activityRegistration.update({
-        where: { id: reg.id },
+        where: { id: lockedReg.id },
         data: {
           statusCode: transition.nextStatusCode,
           reviewedBy: currentUser.id,
@@ -1177,16 +1165,16 @@ export class ActivityRegistrationsService {
       });
 
       await this.registrationAuditRecorder.logReview({
-        registrationId: reg.id,
-        before: reg,
+        registrationId: lockedReg.id,
+        before: lockedReg,
         after: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
         action: 'reject',
-        priorStatusCode: reg.statusCode,
+        priorStatusCode: lockedReg.statusCode,
         nextStatusCode: transition.nextStatusCode,
         activityId,
-        targetMemberId: reg.memberId,
+        targetMemberId: lockedReg.memberId,
         auditMeta,
         tx,
       });
@@ -1267,11 +1255,12 @@ export class ActivityRegistrationsService {
         expectedStatus: reg.statusCode,
         invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
       });
+      const lockedReg = await this.findRegistrationOrThrow(activityId, reg.id, tx);
       // 参与域生命周期收口⑦:已有 live 考勤记录或签到证据的报名禁取消。
-      await this.assertNoParticipationEvidence(reg.id, tx);
+      await this.assertNoParticipationEvidence(lockedReg.id, tx);
 
       const updated = await tx.activityRegistration.update({
-        where: { id: reg.id },
+        where: { id: lockedReg.id },
         data: {
           statusCode: transition.nextStatusCode,
           cancelledByUserId: currentUser.id,
@@ -1282,26 +1271,26 @@ export class ActivityRegistrationsService {
       });
 
       await this.registrationAuditRecorder.logCancel({
-        registrationId: reg.id,
-        before: reg,
+        registrationId: lockedReg.id,
+        before: lockedReg,
         after: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        priorStatusCode: reg.statusCode,
+        priorStatusCode: lockedReg.statusCode,
         nextStatusCode: transition.nextStatusCode,
         cancelledByPath: 'admin',
         cancelReason: dto.cancelReason ?? null,
         activityId,
-        targetMemberId: reg.memberId,
+        targetMemberId: lockedReg.memberId,
         auditMeta,
         tx,
       });
 
       const promotion =
-        reg.statusCode === REGISTRATION_STATUS_PASS
+        lockedReg.statusCode === REGISTRATION_STATUS_PASS
           ? await promoteActivityWaitlistAcrossPositions({
               activityId,
-              preferredActivityPositionId: reg.activityPositionId,
+              preferredActivityPositionId: lockedReg.activityPositionId,
               maxPromotions: 1,
               actorUserId: currentUser.id,
               actorRoleSnap: currentUser.role,
@@ -1357,8 +1346,9 @@ export class ActivityRegistrationsService {
         expectedStatus: reg.statusCode,
         invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
       });
+      const lockedReg = await this.findRegistrationOrThrow(activityId, reg.id, tx);
       const updated = await tx.activityRegistration.update({
-        where: { id: reg.id },
+        where: { id: lockedReg.id },
         data: {
           statusCode: transition.nextStatusCode,
           reviewedBy: null,
@@ -1369,16 +1359,16 @@ export class ActivityRegistrationsService {
       });
 
       await this.registrationAuditRecorder.logReview({
-        registrationId: reg.id,
-        before: reg,
+        registrationId: lockedReg.id,
+        before: lockedReg,
         after: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
         action: 'reopen',
-        priorStatusCode: reg.statusCode,
+        priorStatusCode: lockedReg.statusCode,
         nextStatusCode: transition.nextStatusCode,
         activityId,
-        targetMemberId: reg.memberId,
+        targetMemberId: lockedReg.memberId,
         auditMeta,
         tx,
       });
@@ -1480,11 +1470,12 @@ export class ActivityRegistrationsService {
         expectedStatus: reg.statusCode,
         invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
       });
+      const lockedReg = await this.findRegistrationOrThrow(reg.activityId, reg.id, tx);
       // 参与域生命周期收口⑦:队员自助路径共用 live 考勤记录 / 签到证据守卫。
-      await this.assertNoParticipationEvidence(reg.id, tx);
+      await this.assertNoParticipationEvidence(lockedReg.id, tx);
 
       const updated = await tx.activityRegistration.update({
-        where: { id: reg.id },
+        where: { id: lockedReg.id },
         data: {
           statusCode: transition.nextStatusCode,
           cancelledByUserId: currentUser.id,
@@ -1495,26 +1486,26 @@ export class ActivityRegistrationsService {
       });
 
       await this.registrationAuditRecorder.logCancel({
-        registrationId: reg.id,
-        before: reg,
+        registrationId: lockedReg.id,
+        before: lockedReg,
         after: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        priorStatusCode: reg.statusCode,
+        priorStatusCode: lockedReg.statusCode,
         nextStatusCode: transition.nextStatusCode,
         cancelledByPath: 'self',
         cancelReason: dto.cancelReason ?? null,
-        activityId: reg.activityId,
-        targetMemberId: reg.memberId,
+        activityId: lockedReg.activityId,
+        targetMemberId: lockedReg.memberId,
         auditMeta,
         tx,
       });
 
       const promotion =
-        reg.statusCode === REGISTRATION_STATUS_PASS
+        lockedReg.statusCode === REGISTRATION_STATUS_PASS
           ? await promoteActivityWaitlistAcrossPositions({
-              activityId: reg.activityId,
-              preferredActivityPositionId: reg.activityPositionId,
+              activityId: lockedReg.activityId,
+              preferredActivityPositionId: lockedReg.activityPositionId,
               maxPromotions: 1,
               actorUserId: currentUser.id,
               actorRoleSnap: currentUser.role,
@@ -1526,10 +1517,10 @@ export class ActivityRegistrationsService {
 
       return {
         dto: this.toResponseDto(updated),
-        activityId: reg.activityId,
+        activityId: lockedReg.activityId,
         activityTitle: activity?.title ?? '活动',
         publisherMemberId: activity?.publisher?.memberId ?? null,
-        cancellingMemberId: reg.memberId,
+        cancellingMemberId: lockedReg.memberId,
         cancelReason: dto.cancelReason ?? null,
         promotedMemberIds: promotion.promoted.map((item) => item.memberId),
       };

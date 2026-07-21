@@ -1117,6 +1117,7 @@ export class AttendancesService {
         expectedStatus: sheet.statusCode,
         invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
       });
+      const lockedSheet = await this.findSheetOrThrow(id, tx);
       // 没有 records 字段 → 等同于 no-op(不动 records,仍生成 snapshot + version+1)
       if (dto.records === undefined) {
         // 仅 version+1 + snapshot 保存当前状态
@@ -1124,18 +1125,21 @@ export class AttendancesService {
           where: notDeletedWhere({ sheetId: id }),
           select: recordWithMemberSelect,
         });
-        const snapshot = this.attendanceAuditRecorder.buildPreviousSnapshot(sheet, currentRecords);
+        const snapshot = this.attendanceAuditRecorder.buildPreviousSnapshot(
+          lockedSheet,
+          currentRecords,
+        );
         const updated = await tx.attendanceSheet.update({
-          where: { id: sheet.id },
+          where: { id: lockedSheet.id },
           data: {
-            version: sheet.version + 1,
+            version: lockedSheet.version + 1,
             previousSnapshot: snapshot as Prisma.InputJsonValue,
           },
           select: sheetSafeSelect,
         });
         await this.attendanceAuditRecorder.logEditNoRecords({
           sheetId: id,
-          beforeSheet: sheet,
+          beforeSheet: lockedSheet,
           afterSheet: updated,
           records: currentRecords,
           actorUserId: currentUser.id,
@@ -1149,7 +1153,7 @@ export class AttendancesService {
       }
 
       // 1. 校验新 records；edit 同样按所属活动时间窗复核。
-      const activity = await this.findActivityWindowOrThrow(sheet.activityId, tx);
+      const activity = await this.findActivityWindowOrThrow(lockedSheet.activityId, tx);
       const now = new Date();
       const normalized = await this.validateAndNormalizeRecordsBatch(
         dto.records,
@@ -1178,7 +1182,10 @@ export class AttendancesService {
         where: notDeletedWhere({ sheetId: id }),
         select: recordWithMemberSelect,
       });
-      const snapshot = this.attendanceAuditRecorder.buildPreviousSnapshot(sheet, currentRecords);
+      const snapshot = this.attendanceAuditRecorder.buildPreviousSnapshot(
+        lockedSheet,
+        currentRecords,
+      );
 
       // 3. 软删旧 records + 创建新 records(D38)
       await tx.attendanceRecord.updateMany({
@@ -1202,9 +1209,9 @@ export class AttendancesService {
 
       // 4. 更新 Sheet:version+1 + previousSnapshot
       const updated = await tx.attendanceSheet.update({
-        where: { id: sheet.id },
+        where: { id: lockedSheet.id },
         data: {
-          version: sheet.version + 1,
+          version: lockedSheet.version + 1,
           previousSnapshot: snapshot as Prisma.InputJsonValue,
         },
         select: sheetSafeSelect,
@@ -1218,7 +1225,7 @@ export class AttendancesService {
       });
       await this.attendanceAuditRecorder.logEdit({
         sheetId: id,
-        beforeSheet: sheet,
+        beforeSheet: lockedSheet,
         beforeRecords: currentRecords,
         afterSheet: updated,
         afterRecords: newRecords,
@@ -1260,6 +1267,7 @@ export class AttendancesService {
         expectedStatus: sheet.statusCode,
         invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
       });
+      const lockedSheet = await this.findSheetOrThrow(id, tx);
       // PR #6 audit:before 需要 records 完整快照(软删之前抓取)
       const currentRecords = await tx.attendanceRecord.findMany({
         where: { sheetId: id, deletedAt: null },
@@ -1273,18 +1281,18 @@ export class AttendancesService {
         data: { deletedAt: now },
       });
       const removed = await tx.attendanceSheet.update({
-        where: { id: sheet.id },
+        where: { id: lockedSheet.id },
         data: { deletedAt: now },
         select: sheetSafeSelect,
       });
 
       await this.attendanceAuditRecorder.logDelete({
         sheetId: id,
-        beforeSheet: sheet,
+        beforeSheet: lockedSheet,
         beforeRecords: currentRecords,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        priorStatusCode: sheet.statusCode,
+        priorStatusCode: lockedSheet.statusCode,
         recordsCount: currentRecords.length,
         auditMeta,
         tx,
@@ -1320,6 +1328,14 @@ export class AttendancesService {
         throw new BizException(approveTransition.biz);
       }
 
+      await claimAtStatus(tx, {
+        target: 'attendanceSheet',
+        id: sheet.id,
+        expectedStatus: sheet.statusCode,
+        invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
+      });
+      const lockedSheet = await this.findSheetOrThrow(id, tx);
+
       // R31:所有 records contributionPoints 必填(沿 D-S8;APD 一级 approve 时校验)
       const recordsForCheck = await tx.attendanceRecord.findMany({
         where: notDeletedWhere({ sheetId: id }),
@@ -1328,17 +1344,9 @@ export class AttendancesService {
       if (recordsForCheck.some((r) => r.contributionPoints === null)) {
         throw new BizException(BizCode.ATTENDANCE_RECORD_CONTRIBUTION_POINTS_REQUIRED);
       }
-
       const reviewedAt = new Date();
-      const claimed = await tx.attendanceSheet.updateMany({
-        where: { id: sheet.id, statusCode: sheet.statusCode, deletedAt: null },
-        data: { statusCode: sheet.statusCode },
-      });
-      if (claimed.count === 0) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
-      }
       const updated = await tx.attendanceSheet.update({
-        where: { id: sheet.id },
+        where: { id: lockedSheet.id },
         data: {
           statusCode: approveTransition.nextStatusCode,
           reviewerUserId: currentUser.id,
@@ -1350,12 +1358,12 @@ export class AttendancesService {
 
       await this.attendanceAuditRecorder.logReview({
         sheetId: id,
-        beforeSheet: sheet,
+        beforeSheet: lockedSheet,
         afterSheet: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
         action: 'approve',
-        priorStatusCode: sheet.statusCode,
+        priorStatusCode: lockedSheet.statusCode,
         nextStatusCode: approveTransition.nextStatusCode,
         recordsCount: recordsForCheck.length,
         auditMeta,
@@ -1386,11 +1394,17 @@ export class AttendancesService {
         throw new BizException(rejectTransition.biz);
       }
 
-      const reviewedAt = new Date();
-
       // F4(#399):一级 reject 的 records **跟随软删**(对称 final_rejected;沿 softDelete / finalReject
       // 范式)。原先 rejected 的 records 仍 deletedAt IS NULL → 永久占用 time-overlap 窗口
       // (overlap 只过 deletedAt),致该队员同窗无法重交(死锁)。软删后窗口释放,可重新提交。
+      await claimAtStatus(tx, {
+        target: 'attendanceSheet',
+        id: sheet.id,
+        expectedStatus: sheet.statusCode,
+        invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
+      });
+      const lockedSheet = await this.findSheetOrThrow(id, tx);
+
       // 软删前抓 records 全字段快照入 audit(对称 finalReject;沿 §audit records 必含组)。
       const currentRecords = await tx.attendanceRecord.findMany({
         where: { sheetId: id, deletedAt: null },
@@ -1398,21 +1412,14 @@ export class AttendancesService {
         orderBy: { checkInAt: 'asc' },
       });
 
-      // Findings #4/#6:先用期望状态原子占有 Sheet；并发败者在任何明细软删前 abort。
-      const claimed = await tx.attendanceSheet.updateMany({
-        where: { id: sheet.id, statusCode: sheet.statusCode, deletedAt: null },
-        data: { statusCode: sheet.statusCode },
-      });
-      if (claimed.count === 0) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
-      }
+      const reviewedAt = new Date();
       await tx.attendanceRecord.updateMany({
         where: { sheetId: id, deletedAt: null },
         data: { deletedAt: reviewedAt },
       });
 
       const updated = await tx.attendanceSheet.update({
-        where: { id: sheet.id },
+        where: { id: lockedSheet.id },
         data: {
           statusCode: rejectTransition.nextStatusCode,
           reviewerUserId: currentUser.id,
@@ -1424,13 +1431,13 @@ export class AttendancesService {
 
       await this.attendanceAuditRecorder.logReview({
         sheetId: id,
-        beforeSheet: sheet,
+        beforeSheet: lockedSheet,
         beforeRecords: currentRecords,
         afterSheet: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
         action: 'reject',
-        priorStatusCode: sheet.statusCode,
+        priorStatusCode: lockedSheet.statusCode,
         nextStatusCode: rejectTransition.nextStatusCode,
         recordsCount: currentRecords.length,
         auditMeta,
@@ -1473,16 +1480,16 @@ export class AttendancesService {
         throw new BizException(finalApproveTransition.biz);
       }
 
-      const finalReviewedAt = new Date();
-      const claimed = await tx.attendanceSheet.updateMany({
-        where: { id: sheet.id, statusCode: sheet.statusCode, deletedAt: null },
-        data: { statusCode: sheet.statusCode },
+      await claimAtStatus(tx, {
+        target: 'attendanceSheet',
+        id: sheet.id,
+        expectedStatus: sheet.statusCode,
+        invalidStatusBiz: BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID,
       });
-      if (claimed.count === 0) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
-      }
+      const lockedSheet = await this.findSheetOrThrow(id, tx);
+      const finalReviewedAt = new Date();
       const updated = await tx.attendanceSheet.update({
-        where: { id: sheet.id },
+        where: { id: lockedSheet.id },
         data: {
           statusCode: finalApproveTransition.nextStatusCode,
           finalReviewerUserId: currentUser.id,
@@ -1521,12 +1528,12 @@ export class AttendancesService {
 
       await this.attendanceAuditRecorder.logFinalReview({
         sheetId: id,
-        beforeSheet: sheet,
+        beforeSheet: lockedSheet,
         afterSheet: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
         action: 'final-approve',
-        priorStatusCode: sheet.statusCode,
+        priorStatusCode: lockedSheet.statusCode,
         nextStatusCode: finalApproveTransition.nextStatusCode,
         recordsCount: recordsForEvent.length,
         eventTriggered: true,
@@ -1674,6 +1681,14 @@ export class AttendancesService {
         throw new BizException(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_NOTE_REQUIRED);
       }
 
+      await claimAtStatus(tx, {
+        target: 'attendanceSheet',
+        id: sheet.id,
+        expectedStatus: sheet.statusCode,
+        invalidStatusBiz: BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID,
+      });
+      const lockedSheet = await this.findSheetOrThrow(id, tx);
+
       // PR #6 audit:before 需要 records 完整快照(records 跟随软删之前抓取)
       const currentRecords = await tx.attendanceRecord.findMany({
         where: { sheetId: id, deletedAt: null },
@@ -1682,14 +1697,6 @@ export class AttendancesService {
       });
 
       const finalReviewedAt = new Date();
-      // Findings #5/#6:终审状态守卫先于明细软删；并发败者不再破坏 winner 的 records。
-      const claimed = await tx.attendanceSheet.updateMany({
-        where: { id: sheet.id, statusCode: sheet.statusCode, deletedAt: null },
-        data: { statusCode: sheet.statusCode },
-      });
-      if (claimed.count === 0) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
-      }
       // records 跟随软删(沿 D8 主路径)
       await tx.attendanceRecord.updateMany({
         where: { sheetId: id, deletedAt: null },
@@ -1697,7 +1704,7 @@ export class AttendancesService {
       });
 
       const updated = await tx.attendanceSheet.update({
-        where: { id: sheet.id },
+        where: { id: lockedSheet.id },
         data: {
           statusCode: finalRejectTransition.nextStatusCode,
           finalReviewerUserId: currentUser.id,
@@ -1709,13 +1716,13 @@ export class AttendancesService {
 
       await this.attendanceAuditRecorder.logFinalReview({
         sheetId: id,
-        beforeSheet: sheet,
+        beforeSheet: lockedSheet,
         beforeRecords: currentRecords,
         afterSheet: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
         action: 'final-reject',
-        priorStatusCode: sheet.statusCode,
+        priorStatusCode: lockedSheet.statusCode,
         nextStatusCode: finalRejectTransition.nextStatusCode,
         recordsCount: currentRecords.length,
         finalReviewNote: dto.finalReviewNote,
@@ -1750,13 +1757,13 @@ export class AttendancesService {
       const reopenTransition = this.sheetStateMachine.decide('reopen', sheet.statusCode);
       if (!reopenTransition.allowed) throw new BizException(reopenTransition.biz);
 
-      const claimed = await tx.attendanceSheet.updateMany({
-        where: { id: sheet.id, statusCode: sheet.statusCode, deletedAt: null },
-        data: { statusCode: sheet.statusCode },
+      await claimAtStatus(tx, {
+        target: 'attendanceSheet',
+        id: sheet.id,
+        expectedStatus: sheet.statusCode,
+        invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
       });
-      if (claimed.count === 0) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
-      }
+      const lockedSheet = await this.findSheetOrThrow(id, tx);
 
       const records = await tx.attendanceRecord.findMany({
         where: { sheetId: id, deletedAt: null },
@@ -1764,7 +1771,7 @@ export class AttendancesService {
         orderBy: { checkInAt: 'asc' },
       });
       const updated = await tx.attendanceSheet.update({
-        where: { id: sheet.id },
+        where: { id: lockedSheet.id },
         data: {
           statusCode: reopenTransition.nextStatusCode,
           reviewerUserId: null,
@@ -1779,13 +1786,13 @@ export class AttendancesService {
 
       await this.attendanceAuditRecorder.logReopen({
         sheetId: id,
-        beforeSheet: sheet,
+        beforeSheet: lockedSheet,
         afterSheet: updated,
         records,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
         reason,
-        priorStatusCode: sheet.statusCode,
+        priorStatusCode: lockedSheet.statusCode,
         nextStatusCode: reopenTransition.nextStatusCode,
         auditMeta,
         tx,

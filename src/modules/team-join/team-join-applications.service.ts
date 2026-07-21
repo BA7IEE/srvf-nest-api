@@ -196,17 +196,40 @@ export class TeamJoinApplicationsService {
     await this.assertCanOrThrow(user, 'team-join-application.evaluate.assessment');
     return this.prisma.$transaction(async (tx) => {
       const row = await this.findOrThrow(id, tx);
+      if (
+        row.statusCode !== APP_STATUS_PENDING_EVALUATION &&
+        row.statusCode !== APP_STATUS_JOINING
+      ) {
+        throw new BizException(BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
+      }
+
+      await claimAtStatus(tx, {
+        target: 'teamJoinApplication',
+        id: row.id,
+        expectedStatus: row.statusCode,
+        invalidStatusBiz: BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE,
+      });
+      const lockedRow = await this.findOrThrow(id, tx);
+      // Preserve the public injectable effective-time contract while refusing a pre-lock instant:
+      // production uses the time observed after lock acquisition, and a caller-supplied future
+      // effective time remains authoritative (also fail-safe across a backward wall-clock jump).
+      const evaluationNow = new Date(Math.max(now.getTime(), Date.now()));
       let nextStatus: string;
       let eliminationStage: string | null = null;
-      if (row.statusCode === APP_STATUS_PENDING_EVALUATION) {
+      if (lockedRow.statusCode === APP_STATUS_PENDING_EVALUATION) {
         if (dto.approved) {
-          // 重校验(bug MED 修复,2026-06-19 元核验;沿 phase-2 FM-A 精神):pending_evaluation
-          // 期间 years gate(军训 2年/初级救援 3年)或 dept-assessment 延长期可能过期,不可信旧
-          // statusCode 放过过期项 → 重跑 8 通用门槛 + 贡献值,不再满足则拒(28240),不写 approved;
-          // 旧 pending 态保留,admin 重标 gate 时 mark-gate 自动重算回退 joining(单一真相源自愈)。
-          const marks = (row.gateMarks as GateMarks | null) ?? null;
-          const generalSatisfied = allGeneralGatesSatisfied(marks, row.cycle.openedAt, now);
-          const contribution = await computeContribution(tx, row.memberId, row.cycle.year);
+          // 锁后 authoritative 重校验：等待期间 gate 延长期和贡献事实都可能变化。
+          const marks = (lockedRow.gateMarks as GateMarks | null) ?? null;
+          const generalSatisfied = allGeneralGatesSatisfied(
+            marks,
+            lockedRow.cycle.openedAt,
+            evaluationNow,
+          );
+          const contribution = await computeContribution(
+            tx,
+            lockedRow.memberId,
+            lockedRow.cycle.year,
+          );
           if (!generalSatisfied || !contribution.satisfied) {
             throw new BizException(BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
           }
@@ -215,9 +238,8 @@ export class TeamJoinApplicationsService {
           nextStatus = APP_STATUS_REJECTED;
           eliminationStage = ELIM_STAGE_EVALUATION;
         }
-      } else if (row.statusCode === APP_STATUS_JOINING) {
+      } else if (lockedRow.statusCode === APP_STATUS_JOINING) {
         if (dto.approved) {
-          // 门槛未齐不可直接过评估(必须先全完成 + 贡献值≥5 自动到 pending_evaluation)
           throw new BizException(BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
         }
         nextStatus = APP_STATUS_REJECTED;
@@ -229,21 +251,13 @@ export class TeamJoinApplicationsService {
       const data: Prisma.TeamJoinApplicationUpdateInput = {
         statusCode: nextStatus,
         evaluatedByUserId: user.id,
-        evaluatedAt: now,
+        evaluatedAt: evaluationNow,
       };
       if (dto.note !== undefined) data.evaluationNote = dto.note;
       if (eliminationStage) data.eliminationStage = eliminationStage;
-      // 综合评估延长期仅 approve 时记(自本版起仅存档;approved 不随轮关闭失效)
       if (nextStatus === APP_STATUS_APPROVED && dto.evaluationExtendedUntil !== undefined) {
         data.evaluationExtendedUntil = new Date(dto.evaluationExtendedUntil);
       }
-
-      await claimAtStatus(tx, {
-        target: 'teamJoinApplication',
-        id: row.id,
-        expectedStatus: row.statusCode,
-        invalidStatusBiz: BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE,
-      });
       const updated = await tx.teamJoinApplication.update({
         where: { id },
         data,
@@ -256,12 +270,12 @@ export class TeamJoinApplicationsService {
         resourceType: AUDIT_RESOURCE_TYPE,
         resourceId: id,
         meta,
-        before: { statusCode: row.statusCode },
+        before: { statusCode: lockedRow.statusCode },
         after: { statusCode: nextStatus },
         extra: { approved: dto.approved, eliminationStage },
         tx,
       });
-      return buildAdminDto(updated, null, now);
+      return buildAdminDto(updated, null, evaluationNow);
     });
   }
 }

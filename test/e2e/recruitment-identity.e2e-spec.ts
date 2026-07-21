@@ -1,4 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
@@ -29,10 +30,52 @@ const FIXED_CODE = '888888';
 const ID_A = '110101199003070038'; // 有效校验位大陆身份证
 const ID_B = '110101199003070046';
 const ID_C = '110101199003070054';
+const LOCK_OBSERVE_TIMEOUT_MS = 4_000;
+const HTTP_TIMEOUT_MS = 8_000;
+const CLEANUP_TIMEOUT_MS = 10_000;
+const BLOCKER_TIMEOUT_MS = 20_000;
+
+async function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+async function settleAllWithTimeout(promises: Promise<unknown>[], label: string): Promise<void> {
+  const results = await withTimeout(Promise.allSettled(promises), label, CLEANUP_TIMEOUT_MS);
+  const rejected = results.find(
+    (result): result is PromiseRejectedResult => result.status === 'rejected',
+  );
+  if (rejected) throw rejected.reason;
+}
+
+function preservePrimaryFailure(primary: unknown, cleanup: unknown): void {
+  if (primary instanceof Error) {
+    Object.defineProperty(primary, 'cause', { value: cleanup, configurable: true });
+  }
+}
+
+function throwFailure(failure: unknown): never {
+  if (failure instanceof Error) throw failure;
+  throw new Error('non-Error test failure', { cause: failure });
+}
 
 describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
   let app: INestApplication;
+  let appB: INestApplication;
   let prisma: PrismaService;
+  let prismaB: PrismaService;
 
   function basePayload(phone: string, over: Record<string, unknown> = {}): Record<string, unknown> {
     return {
@@ -128,7 +171,9 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
   beforeAll(async () => {
     process.env.RECRUITMENT_THROTTLE_LIMIT = '100'; // 配额上限(评审稿 max 100);全链测试不触 IP 限流
     app = await createTestApp();
+    appB = await createTestApp();
     prisma = app.get(PrismaService);
+    prismaB = appB.get(PrismaService);
     await resetDb(app);
 
     // 三 DevStub 通道
@@ -175,7 +220,7 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
 
   afterAll(async () => {
     delete process.env.RECRUITMENT_THROTTLE_LIMIT;
-    await app.close();
+    await settleAllWithTimeout([app.close(), appB.close()], 'recruitment identity app shutdown');
   });
 
   beforeEach(async () => {
@@ -561,6 +606,7 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
     const loser = results.find((result) => result.status !== 200);
     expect(loser).toBeDefined();
     expectBizError(loser!, BizCode.RECRUITMENT_APPLICATION_NOT_WITHDRAWABLE);
+    expect(JSON.stringify(loser!.body)).not.toContain('40P01');
     expect(
       await prisma.recruitmentApplication.findUniqueOrThrow({
         where: { id: target.id },
@@ -568,6 +614,231 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
       }),
     ).toEqual({ statusCode: 'withdrawn' });
     expect(await prisma.auditLog.count({ where: { resourceId: target.id } })).toBe(1);
+  });
+
+  async function waitForWithdrawWaiter(
+    directBlockerPid: number,
+    operation: Promise<request.Response>,
+    excludedPids: number[] = [],
+  ): Promise<{ pid: number; databaseName: string; blockingPids: number[] }> {
+    let settled = false;
+    void operation.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    const deadline = Date.now() + LOCK_OBSERVE_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (settled) throw new Error('withdraw operation settled before expected lock wait');
+      const rows = await withTimeout(
+        prismaB.$queryRaw<Array<{ pid: number; databaseName: string; blockingPids: number[] }>>(
+          Prisma.sql`
+            SELECT pid, datname AS "databaseName", pg_blocking_pids(pid) AS "blockingPids"
+            FROM pg_stat_activity
+            WHERE datname = current_database()
+              AND wait_event_type = 'Lock'
+              AND CAST(${directBlockerPid} AS integer) = ANY(pg_blocking_pids(pid))
+              AND query LIKE '%FROM "recruitment_applications"%FOR NO KEY UPDATE%'
+              AND NOT (pid = ANY(${excludedPids}::integer[]))
+            LIMIT 1
+          `,
+        ),
+        'withdraw lock observer query',
+        LOCK_OBSERVE_TIMEOUT_MS,
+      );
+      if (rows[0]) return rows[0];
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(`withdraw direct waiter missing blocker=${directBlockerPid}`);
+  }
+
+  async function runWithdrawLinearization(
+    firstTarget: 'appA' | 'appB',
+    identityDrift = false,
+  ): Promise<void> {
+    const cycle = await openCycle();
+    const suffix = `${firstTarget}-${Date.now()}`;
+    const requestOpenid = `dev-openid-wd-linear-${suffix}`;
+    const target = await seedApp(cycle.id, {
+      phone: `138${String(Date.now()).slice(-8)}`,
+      openid: requestOpenid,
+      statusCode: 'manual_review',
+      tempNo: null,
+      idCardNumber: `WD-LINEAR-${suffix}`,
+    });
+    const rootOpenid = `root-mutated-openid-${suffix}`;
+    const [poolA, poolB] = await Promise.all(
+      [prisma, prismaB].map(async (client) => {
+        const rows = await client.$queryRaw<
+          Array<{ pid: number; databaseName: string }>
+        >(Prisma.sql`
+          SELECT pg_backend_pid() AS pid, current_database() AS "databaseName"
+        `);
+        return rows[0];
+      }),
+    );
+    expect(poolA.databaseName).toBe(poolB.databaseName);
+    expect(poolA.pid).not.toBe(poolB.pid);
+    const notificationCountBefore = await prisma.notification.count();
+    const outboxCountBefore = await prisma.notificationOutboxIntent.count();
+    const evidenceCountBefore = await prisma.insuranceEligibilityEvidence.count();
+
+    let release!: () => void;
+    const releasePromise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let root!: { pid: number; databaseName: string };
+    let reached!: () => void;
+    const reachedPromise = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    let mutate!: () => void;
+    const mutatePromise = new Promise<void>((resolve) => {
+      mutate = resolve;
+    });
+    let mutated!: () => void;
+    const mutatedPromise = new Promise<void>((resolve) => {
+      mutated = resolve;
+    });
+    const blocker = prisma.$transaction(
+      async (tx) => {
+        const rows = await tx.$queryRaw<Array<{ pid: number; databaseName: string }>>(Prisma.sql`
+          SELECT pg_backend_pid() AS pid, current_database() AS "databaseName"
+          FROM "recruitment_applications"
+          WHERE "id" = ${target.id}
+          FOR UPDATE
+        `);
+        root = rows[0];
+        reached();
+        if (identityDrift) {
+          await mutatePromise;
+          await tx.recruitmentApplication.update({
+            where: { id: target.id },
+            data: { openid: rootOpenid },
+          });
+          mutated();
+        }
+        await releasePromise;
+      },
+      { timeout: BLOCKER_TIMEOUT_MS },
+    );
+    const requestWithdraw = (targetApp: INestApplication) =>
+      Promise.resolve(
+        request(httpServer(targetApp))
+          .post(WITHDRAW)
+          .send({ wechatCode: `wd-linear-${suffix}` })
+          .timeout({ deadline: HTTP_TIMEOUT_MS }),
+      );
+    let first: Promise<request.Response> | undefined;
+    let second: Promise<request.Response> | undefined;
+    let primaryFailure: unknown;
+    let cleanupFailure: unknown;
+    try {
+      await withTimeout(reachedPromise, 'withdraw root blocker', BLOCKER_TIMEOUT_MS);
+      first = requestWithdraw(firstTarget === 'appA' ? app : appB);
+      const firstWaiter = await waitForWithdrawWaiter(root.pid, first);
+      expect(firstWaiter.databaseName).toBe(root.databaseName);
+      expect(firstWaiter.blockingPids).toContain(root.pid);
+      if (identityDrift) {
+        mutate();
+        await withTimeout(mutatedPromise, 'withdraw root identity mutation', HTTP_TIMEOUT_MS);
+        release();
+        const drifted = await withTimeout(
+          first,
+          'identity-drift withdraw response',
+          HTTP_TIMEOUT_MS,
+        );
+        expectBizError(drifted, BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
+        expect(JSON.stringify(drifted.body)).not.toContain(requestOpenid);
+        expect(
+          await prisma.recruitmentApplication.findUniqueOrThrow({
+            where: { id: target.id },
+            select: { statusCode: true, openid: true },
+          }),
+        ).toEqual({ statusCode: 'manual_review', openid: rootOpenid });
+        expect(await prisma.auditLog.count({ where: { resourceId: target.id } })).toBe(0);
+        expect(await prisma.notification.count()).toBe(notificationCountBefore);
+        expect(await prisma.notificationOutboxIntent.count()).toBe(outboxCountBefore);
+        expect(await prisma.insuranceEligibilityEvidence.count()).toBe(evidenceCountBefore);
+      } else {
+        second = requestWithdraw(firstTarget === 'appA' ? appB : app);
+        const secondWaiter = await waitForWithdrawWaiter(firstWaiter.pid, second, [root.pid]);
+        expect(secondWaiter.pid).not.toBe(firstWaiter.pid);
+        expect(secondWaiter.databaseName).toBe(root.databaseName);
+        expect(secondWaiter.blockingPids).toContain(firstWaiter.pid);
+
+        release();
+        const [winner, loser] = await withTimeout(
+          Promise.all([first, second]),
+          'competing withdraw requests',
+          HTTP_TIMEOUT_MS,
+        );
+        expect(winner.status).toBe(200);
+        expectBizError(loser, BizCode.RECRUITMENT_APPLICATION_NOT_WITHDRAWABLE);
+        expect(JSON.stringify(loser.body)).not.toContain('40P01');
+        expect(
+          await prisma.recruitmentApplication.findUniqueOrThrow({
+            where: { id: target.id },
+            select: { statusCode: true, idCardNumber: true, phone: true, openid: true },
+          }),
+        ).toEqual({
+          statusCode: 'withdrawn',
+          idCardNumber: target.idCardNumber,
+          phone: target.phone,
+          openid: requestOpenid,
+        });
+        const audits = await prisma.auditLog.findMany({
+          where: { resourceId: target.id },
+          select: { context: true },
+        });
+        expect(audits).toEqual([
+          expect.objectContaining({
+            context: expect.objectContaining({
+              extra: expect.objectContaining({
+                openid: `${requestOpenid.slice(0, 4)}****${requestOpenid.slice(-4)}`,
+              }),
+            }),
+          }),
+        ]);
+        expect(JSON.stringify(audits)).not.toContain(requestOpenid);
+        expect(await prisma.notification.count()).toBe(notificationCountBefore);
+        expect(await prisma.notificationOutboxIntent.count()).toBe(outboxCountBefore);
+        expect(await prisma.insuranceEligibilityEvidence.count()).toBe(evidenceCountBefore);
+      }
+    } catch (error) {
+      primaryFailure = error;
+    } finally {
+      mutate();
+      release();
+      try {
+        await settleAllWithTimeout(
+          [blocker, ...(first ? [first] : []), ...(second ? [second] : [])],
+          'withdraw linearization cleanup',
+        );
+      } catch (cleanupError) {
+        cleanupFailure = cleanupError;
+      }
+    }
+    if (primaryFailure !== undefined) {
+      if (cleanupFailure !== undefined) preservePrimaryFailure(primaryFailure, cleanupFailure);
+      throwFailure(primaryFailure);
+    }
+    if (cleanupFailure !== undefined) throwFailure(cleanupFailure);
+  }
+
+  it('withdraw appA-first:root → appA direct waiter → appB soft waiter', async () => {
+    await runWithdrawLinearization('appA');
+  });
+
+  it('withdraw appB-first:root → appB direct waiter → appA soft waiter', async () => {
+    await runWithdrawLinearization('appB');
+  });
+
+  it('withdraw identity drift:旧 openid 已定位并阻塞后被换绑 → 泛化 NOT_FOUND 且零副作用', async () => {
+    await runWithdrawLinearization('appA', true);
   });
 
   it('F6-③ DoD:撤销后同轮同证件号重报成功(partial unique 排除集 + 三键去重排除集均含 withdrawn)', async () => {

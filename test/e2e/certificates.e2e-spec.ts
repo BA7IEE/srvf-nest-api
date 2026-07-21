@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { DictItemStatus, Role } from '@prisma/client';
+import { DictItemStatus, Prisma, Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -20,9 +20,52 @@ import { createTestApp } from '../setup/test-app';
 // 在 beforeAll 全局 grant biz-admin,业务断言零修改;
 // 细粒度判权矩阵另见 certificates-rbac-boundary.e2e-spec.ts。
 
+const LOCK_OBSERVE_TIMEOUT_MS = 4_000;
+const HTTP_TIMEOUT_MS = 8_000;
+const CLEANUP_TIMEOUT_MS = 10_000;
+const BLOCKER_TIMEOUT_MS = 20_000;
+
+async function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+async function settleAllWithTimeout(promises: Promise<unknown>[], label: string): Promise<void> {
+  const results = await withTimeout(Promise.allSettled(promises), label, CLEANUP_TIMEOUT_MS);
+  const rejected = results.find(
+    (result): result is PromiseRejectedResult => result.status === 'rejected',
+  );
+  if (rejected) throw rejected.reason;
+}
+
+function preservePrimaryFailure(primary: unknown, cleanup: unknown): void {
+  if (primary instanceof Error) {
+    Object.defineProperty(primary, 'cause', { value: cleanup, configurable: true });
+  }
+}
+
+function throwFailure(failure: unknown): never {
+  if (failure instanceof Error) throw failure;
+  throw new Error('non-Error test failure', { cause: failure });
+}
+
 describe('certificates 模块', () => {
   let app: INestApplication;
+  let appB: INestApplication;
   let prisma: PrismaService;
+  let prismaB: PrismaService;
   let superAdminAuth: string;
   let adminAuth: string;
   let userAuth: string;
@@ -38,8 +81,10 @@ describe('certificates 模块', () => {
 
   beforeAll(async () => {
     app = await createTestApp();
+    appB = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
+    prismaB = appB.get(PrismaService);
 
     // 4 用户:su / adm(无 memberId)/ user / adm-with-member(有 memberId)
     await createTestUser(app, { username: 'cert-su', role: Role.SUPER_ADMIN });
@@ -117,7 +162,7 @@ describe('certificates 模块', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    await settleAllWithTimeout([app.close(), appB.close()], 'certificate app shutdown');
   });
 
   const baseCreatePayload = (override: Record<string, unknown> = {}): Record<string, unknown> => ({
@@ -126,6 +171,157 @@ describe('certificates 模块', () => {
     issuedAt: '2024-01-01T00:00:00.000Z',
     ...override,
   });
+
+  async function waitForCertificateWaiter(
+    directBlockerPid: number,
+    operation: Promise<request.Response>,
+    excludedPids: number[] = [],
+  ): Promise<{ pid: number; databaseName: string; blockingPids: number[] }> {
+    let settled = false;
+    void operation.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    const deadline = Date.now() + LOCK_OBSERVE_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (settled) throw new Error('certificate operation settled before expected lock wait');
+      const rows = await withTimeout(
+        prismaB.$queryRaw<Array<{ pid: number; databaseName: string; blockingPids: number[] }>>(
+          Prisma.sql`
+            SELECT pid, datname AS "databaseName", pg_blocking_pids(pid) AS "blockingPids"
+            FROM pg_stat_activity
+            WHERE datname = current_database()
+              AND wait_event_type = 'Lock'
+              AND CAST(${directBlockerPid} AS integer) = ANY(pg_blocking_pids(pid))
+              AND query LIKE '%FROM "Certificate"%FOR NO KEY UPDATE%'
+              AND NOT (pid = ANY(${excludedPids}::integer[]))
+            LIMIT 1
+          `,
+        ),
+        'certificate lock observer query',
+        LOCK_OBSERVE_TIMEOUT_MS,
+      );
+      if (rows[0]) return rows[0];
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(`certificate direct waiter missing blocker=${directBlockerPid}`);
+  }
+
+  async function runCertificateLinearization(
+    firstAction: 'verify' | 'reject',
+    secondAction: 'verify' | 'reject',
+  ): Promise<void> {
+    const created = await request(httpServer(app))
+      .post(`/api/admin/v1/members/${memberA}/certificates`)
+      .set('Authorization', adminAuth)
+      .send(baseCreatePayload({ certNumber: `LINEAR-${firstAction}-${Date.now()}` }))
+      .expect(201);
+    const certificateId = created.body.data.id as string;
+    const poolIds = await Promise.all(
+      [prisma, prismaB].map(async (client) => {
+        const rows = await client.$queryRaw<
+          Array<{ pid: number; databaseName: string }>
+        >(Prisma.sql`
+          SELECT pg_backend_pid() AS pid, current_database() AS "databaseName"
+        `);
+        return rows[0];
+      }),
+    );
+    expect(poolIds[0].databaseName).toBe(poolIds[1].databaseName);
+    expect(poolIds[0].pid).not.toBe(poolIds[1].pid);
+
+    let release!: () => void;
+    const releasePromise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let root!: { pid: number; databaseName: string };
+    let reached!: () => void;
+    const reachedPromise = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const blocker = prisma.$transaction(
+      async (tx) => {
+        const rows = await tx.$queryRaw<Array<{ pid: number; databaseName: string }>>(Prisma.sql`
+          SELECT pg_backend_pid() AS pid, current_database() AS "databaseName"
+          FROM "Certificate"
+          WHERE "id" = ${certificateId}
+          FOR UPDATE
+        `);
+        root = rows[0];
+        reached();
+        await releasePromise;
+      },
+      { timeout: BLOCKER_TIMEOUT_MS },
+    );
+    const invoke = (targetApp: INestApplication, action: 'verify' | 'reject') =>
+      Promise.resolve(
+        request(httpServer(targetApp))
+          .patch(`/api/admin/v1/members/${memberA}/certificates/${certificateId}/${action}`)
+          .set('Authorization', adminWithMemberAuth)
+          .send({ verifyNote: `linear ${action}` })
+          .timeout({ deadline: HTTP_TIMEOUT_MS }),
+      );
+    let first: Promise<request.Response> | undefined;
+    let second: Promise<request.Response> | undefined;
+    let primaryFailure: unknown;
+    let cleanupFailure: unknown;
+    try {
+      await withTimeout(reachedPromise, 'certificate root blocker', BLOCKER_TIMEOUT_MS);
+      first = invoke(app, firstAction);
+      const firstWaiter = await waitForCertificateWaiter(root.pid, first);
+      expect(firstWaiter.databaseName).toBe(root.databaseName);
+      expect(firstWaiter.blockingPids).toContain(root.pid);
+      second = invoke(appB, secondAction);
+      const secondWaiter = await waitForCertificateWaiter(firstWaiter.pid, second, [root.pid]);
+      expect(secondWaiter.pid).not.toBe(firstWaiter.pid);
+      expect(secondWaiter.databaseName).toBe(root.databaseName);
+      expect(secondWaiter.blockingPids).toContain(firstWaiter.pid);
+
+      release();
+      const [winner, loser] = await withTimeout(
+        Promise.all([first, second]),
+        'certificate competing reviews',
+        HTTP_TIMEOUT_MS,
+      );
+      expect(winner.status).toBe(200);
+      expectBizError(loser, BizCode.CERTIFICATE_INVALID_STATE_TRANSITION);
+      expect(JSON.stringify(loser.body)).not.toContain('40P01');
+      expect(
+        await prisma.certificate.findUniqueOrThrow({
+          where: { id: certificateId },
+          select: { certStatusCode: true },
+        }),
+      ).toEqual({ certStatusCode: firstAction === 'verify' ? 'verified' : 'rejected' });
+      const audits = await prisma.auditLog.findMany({
+        where: { resourceId: certificateId },
+        select: { event: true },
+      });
+      expect(audits).toHaveLength(2);
+      expect(audits.filter(({ event }) => event === `certificate.${firstAction}`)).toHaveLength(1);
+      expect(audits.filter(({ event }) => event === `certificate.${secondAction}`)).toHaveLength(0);
+    } catch (error) {
+      primaryFailure = error;
+    } finally {
+      release();
+      try {
+        await settleAllWithTimeout(
+          [blocker, ...(first ? [first] : []), ...(second ? [second] : [])],
+          'certificate linearization cleanup',
+        );
+      } catch (cleanupError) {
+        cleanupFailure = cleanupError;
+      }
+    }
+    if (primaryFailure !== undefined) {
+      if (cleanupFailure !== undefined) preservePrimaryFailure(primaryFailure, cleanupFailure);
+      throwFailure(primaryFailure);
+    }
+    if (cleanupFailure !== undefined) throwFailure(cleanupFailure);
+  }
 
   // ============ 权限边界 ============
 
@@ -745,6 +941,7 @@ describe('certificates 模块', () => {
       const loser = results.find((result) => result.status !== 200);
       expect(loser).toBeDefined();
       expectBizError(loser!, BizCode.CERTIFICATE_INVALID_STATE_TRANSITION);
+      expect(JSON.stringify(loser!.body)).not.toContain('40P01');
       const row = await prisma.certificate.findUniqueOrThrow({
         where: { id: certificateId },
         select: { certStatusCode: true },
@@ -1092,6 +1289,16 @@ describe('certificates 模块', () => {
       expect(res.status).toBe(200);
       const dataKeys = Object.keys(res.body.data as Record<string, unknown>).sort();
       expect(dataKeys).toEqual(['certTypeCode', 'memberId', 'qualified']);
+    });
+  });
+
+  describe('PostgreSQL certificate direct/soft blocker chain', () => {
+    it('verify-first:root → verify waiter → reject soft waiter', async () => {
+      await runCertificateLinearization('verify', 'reject');
+    });
+
+    it('reject-first:root → reject waiter → verify soft waiter', async () => {
+      await runCertificateLinearization('reject', 'verify');
     });
   });
 });

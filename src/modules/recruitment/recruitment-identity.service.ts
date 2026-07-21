@@ -344,8 +344,23 @@ export class RecruitmentIdentityService {
         expectedStatus: app.statusCode,
         invalidStatusBiz: BizCode.RECRUITMENT_APPLICATION_NOT_WITHDRAWABLE,
       });
+      const lockedApp = await tx.recruitmentApplication.findFirst({
+        where: { id: app.id, deletedAt: null },
+      });
+      if (!lockedApp) {
+        throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_WITHDRAWABLE);
+      }
+      const identityStillMatches =
+        channel === 'wechat'
+          ? lockedApp.openid === openid
+          : (lockedApp.phone ?? '').trim() === (phone ?? '').trim();
+      if (!identityStillMatches) {
+        // 锁等待期间身份可能被换绑；沿首次定位失败的泛化 NOT_FOUND，既不撤销新身份
+        // 对应的报名，也不通过错误码泄露旧凭证曾命中过哪条记录。
+        throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
+      }
       const row = await tx.recruitmentApplication.update({
-        where: { id: app.id },
+        where: { id: lockedApp.id },
         data: { statusCode: APP_STATUS_WITHDRAWN },
       });
       await this.auditLogs.log({
@@ -353,14 +368,16 @@ export class RecruitmentIdentityService {
         actorUserId: null, // 无账号自助撤销
         actorRoleSnap: null,
         resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: app.id,
+        resourceId: lockedApp.id,
         meta,
-        before: { statusCode: app.statusCode },
+        before: { statusCode: lockedApp.statusCode },
         after: { statusCode: APP_STATUS_WITHDRAWN },
         extra: {
           channel,
           ...(channel === 'phone' ? { phone: maskPhone(phone as string) } : {}),
-          ...(channel === 'wechat' && app.openid ? { openid: this.maskOpenid(app.openid) } : {}),
+          ...(channel === 'wechat' && lockedApp.openid
+            ? { openid: this.maskOpenid(lockedApp.openid) }
+            : {}),
         },
         tx,
       });
