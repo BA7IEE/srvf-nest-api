@@ -260,6 +260,7 @@ export function beijingDateKey(now: Date): string {
 // OCR 改造(2026-06-22):身份证 / 护照 / 回乡证走 OCR(isOcrDocument,见 realname.constants);
 // **仅 mainland_id 可自动放行 verified**(OCR 匹配+防伪+清晰);护照/回乡证 OCR 后恒人工;其余不 OCR 人工。
 export const DOC_TYPE_MAINLAND_ID = 'mainland_id';
+export const MEMBER_PROFILE_DOC_TYPE_ID_CARD = 'id_card';
 
 /** 是否大陆身份证(唯一可 OCR 自动放行发号的类型;评审稿 §3.6/分叉②) */
 export function isMainlandId(documentTypeCode: string): boolean {
@@ -272,11 +273,20 @@ export function isForeignDocument(documentTypeCode: string): boolean {
   return documentTypeCode !== DOC_TYPE_MAINLAND_ID;
 }
 
+/**
+ * Recruitment owns OCR routing codes, while MemberProfile persists the canonical document_type
+ * dictionary code. Keep the public recruitment contract (`mainland_id`) stable and translate only
+ * at the promotion boundary so downstream profile CRUD can validate the persisted value.
+ */
+export function toMemberProfileDocumentTypeCode(documentTypeCode: string): string {
+  return isMainlandId(documentTypeCode) ? MEMBER_PROFILE_DOC_TYPE_ID_CARD : documentTypeCode;
+}
+
 // 十项收口刀A(2026-07-11;拍板六值):documentTypeCode 白名单(submit DTO @IsIn)。
 // 此前仅"非空字符串"校验,任意串(如 'abc')会被 isForeignDocument 判非大陆证件进普通人工队列,
 // 且可经 F2 补录 + promote-single 一路写进 member_profiles.documentTypeCode 污染档案。
-// ⚠️ 词表错位已知:权威值 mainland_id 不在 document_type 字典(字典是 id_card),统一挂账
-// NEXT_TASKS——本白名单落代码常量,不接字典校验。recognize 端点不挂白名单(未知类型已优雅
+// 本白名单仍属于 recruitment/OCR 契约；promote 建档时经 toMemberProfileDocumentTypeCode()
+// 映射到 member_profiles 的 document_type 字典真值。recognize 端点不挂白名单(未知类型已优雅
 // 返 ocrSupported:false 且不烧钱,收紧无收益)。
 export const RECRUITMENT_DOCUMENT_TYPE_CODES = [
   DOC_TYPE_MAINLAND_ID,

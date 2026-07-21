@@ -33,6 +33,7 @@ import {
   computeAge,
   decidePromotionIssuance,
   formatMemberNo,
+  toMemberProfileDocumentTypeCode,
 } from './recruitment.constants';
 import {
   certificateIssuanceForCategory,
@@ -542,7 +543,7 @@ export class RecruitmentPromotionService {
         realName: a.realName as string,
         genderCode: a.genderCode as string,
         birthDate: a.birthDate as Date, // 已在提交期归一 UTC 午夜
-        documentTypeCode: a.documentTypeCode,
+        documentTypeCode: toMemberProfileDocumentTypeCode(a.documentTypeCode),
         documentNumber: a.idCardNumber as string,
         mobile: a.phone as string,
         joinedDate: normalizeDateOnly(now.toISOString()),

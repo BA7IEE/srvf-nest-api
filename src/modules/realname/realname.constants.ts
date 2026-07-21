@@ -19,7 +19,8 @@ export const REALNAME_REQUEST_TIMEOUT_MS = 8000;
 
 // ===== 证件类型 → OCR action 映射(D-RO-3/6;评审稿 §3.6)=====
 // 仅这三类做 OCR;taiwan_permit / foreigner_permit / 其余本期不 OCR(沿现状人工 manual_review)。
-// action 字符串 = 腾讯云 OCR 接口名(documentTypeCode = 字典 document_type 码)。
+// action 字符串 = 腾讯云 OCR 接口名；documentTypeCode 是 recruitment/OCR 路由码。
+// 队员档案的 document_type 字典真值由 promote 建档边界负责映射。
 export const REALNAME_OCR_ACTION_MAINLAND_ID = 'RecognizeValidIDCardOCR'; // 身份证(自带图像防伪)
 export const REALNAME_OCR_ACTION_PASSPORT = 'MLIDPassportOCR'; // 护照(仅可机读)
 export const REALNAME_OCR_ACTION_HK_MACAU = 'MainlandPermitOCR'; // 港澳台来往内地/大陆通行证
