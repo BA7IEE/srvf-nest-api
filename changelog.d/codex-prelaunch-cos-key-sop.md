@@ -1,1 +1,0 @@
-- **docs(storage):重写空库 COS production SOP 并冻结 encryption key**——首启顺序改为 migration/seed → 离线 bootstrap → production boot，所有 settings 字段、状态、权限码和返回体以当前 DTO/OpenAPI 为准；新增真实 ValidationPipe + test-app fixture 护栏，并明确四把 `*_ENCRYPTION_KEY` 当前不支持直接/在线轮换。

@@ -1,1 +1,0 @@
-- **fix(recruitment,deps):上线前跨域契约与 body parser 依赖收口**——招新/OCR 保持 `mainland_id` 公开契约，promote 建立 `MemberProfile` 时转换为 `document_type` 字典真值 `id_card`，并以跨模块 E2E 锁定 promote 后档案可继续通过 CRUD 字典校验；同时将 Express 传递 `body-parser` 收口到已修复的 `^2.3.0`。零 endpoint/DTO/BizCode/schema/migration/permission/seed 变更，不回填既有档案数据，COS 传递链已登记的 3 条 moderate 风险未夹带处理。

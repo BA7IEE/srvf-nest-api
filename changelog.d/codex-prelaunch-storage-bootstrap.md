@@ -1,1 +1,0 @@
-- **feat(storage):新增全新生产库离线 StorageSettings 初始化命令**——要求显式私密 JSON 配置文件与 `--confirm-database` 双重确认，仅允许 production（测试库例外），锁定 COS + enabled，默认拒绝覆盖任何既有行；支持零写入 `--dry-run`，并以最终 `STORAGE_ENCRYPTION_KEY` 在同一事务内完成写后读取及凭证解密校验。零 schema/migration/seed/endpoint/DTO/BizCode/权限变更。

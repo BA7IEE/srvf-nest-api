@@ -2,6 +2,21 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+- **fix(auth):校准 logout OpenAPI 与 family 撤销事实**——`POST /api/auth/v1/logout` 成功响应改为准确的 `data:null` schema，summary/DTO/交接说明明确传入 token 仅用于定位并撤销对应 refresh family；运行时、路由、DTO 字段、BizCode、schema 与 migration 均不变。
+- **ci:为当前全量门禁恢复足够的硬超时余量**——测试 Job 超时由 25 分钟提高到 35 分钟，避免约 21.5 分钟的 177-suite E2E 叠加安装、构建、单测和契约检查后被误取消；测试入口、顺序与断言均不变。
+
+- **docs(storage):重写空库 COS production SOP 并冻结 encryption key**——首启顺序改为 migration/seed → 离线 bootstrap → production boot，所有 settings 字段、状态、权限码和返回体以当前 DTO/OpenAPI 为准；新增真实 ValidationPipe + test-app fixture 护栏，并明确四把 `*_ENCRYPTION_KEY` 当前不支持直接/在线轮换。
+
+- **fix(recruitment,deps):上线前跨域契约与 body parser 依赖收口**——招新/OCR 保持 `mainland_id` 公开契约，promote 建立 `MemberProfile` 时转换为 `document_type` 字典真值 `id_card`，并以跨模块 E2E 锁定 promote 后档案可继续通过 CRUD 字典校验；同时将 Express 传递 `body-parser` 收口到已修复的 `^2.3.0`。零 endpoint/DTO/BizCode/schema/migration/permission/seed 变更，不回填既有档案数据，COS 传递链已登记的 3 条 moderate 风险未夹带处理。
+
+- **chore(release):收口首发前治理漂移**——`.env.example` 对齐 canonical auth 路由与 PostgreSQL shared throttler，CODEMAP true-up AuditLogEvent/保险 PR1–PR4 状态，部署示例移除冻结 `v1.2` tag，并新增每个 release/tag 的 production dependency high/critical 审计门禁与 COS 传递链 moderate 风险分析。
+
+- **feat(storage):新增全新生产库离线 StorageSettings 初始化命令**——要求显式私密 JSON 配置文件与 `--confirm-database` 双重确认，仅允许 production（测试库例外），锁定 COS + enabled，默认拒绝覆盖任何既有行；支持零写入 `--dry-run`，并以最终 `STORAGE_ENCRYPTION_KEY` 在同一事务内完成写后读取及凭证解密校验。零 schema/migration/seed/endpoint/DTO/BizCode/权限变更。
+
+- **fix(storage):闭合 production Storage 运行时不变量与 enabled kill switch**——production PATCH 在事务内验证合并后的 COS、非空 bucket/region 与可解密凭证，允许 `enabled=false` 明确关闭下一次普通业务 pinned / non-pinned put/delete/sign/head/read（含自动 worker）；仅经过人工复核的 `manual_relocate` 证据采集显式绕过。零 endpoint/DTO/BizCode/schema/migration/permission 变更。
+
 ## v0.59.0 - 2026-07-21
 
 > 主题:**多实例一致性、持久化副作用与关键生命周期收口**(v0.58.0 后 #682–#727：身份 step-up / logout family、队员离队削权、SMS / 组织 / RBAC / PostgreSQL 限流、通知 outbox、Attachment ledger / Content live boundary、保险 v3 与可信代理)。Endpoint 360→365 / Migration 54→64 / BizCode 250→258 / Permission 206→207 / AuditLogEvent 113→123 / Controller 74→75；Module 36 / Cron 2 恒定。生产 migration / gate 未 deploy，release 不等于生产启用。
