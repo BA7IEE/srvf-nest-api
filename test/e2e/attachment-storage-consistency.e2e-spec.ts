@@ -13,6 +13,10 @@ import { AttachmentContentValidator } from '../../src/modules/attachments/attach
 import { AttachmentStorageOrchestrator } from '../../src/modules/attachments/attachment-storage-orchestrator';
 import type { AttachmentUploadStorageIdentity } from '../../src/modules/attachments/attachment-storage.types';
 import { AttachmentsService } from '../../src/modules/attachments/attachments.service';
+import {
+  type StorageConsistencyDrainResult,
+  StorageConsistencyWorker,
+} from '../../src/modules/attachments/storage-consistency.worker';
 import type { RbacService } from '../../src/modules/permissions/rbac.service';
 import type { PinnedStorageProvider } from '../../src/modules/storage/storage.interface';
 import { StorageObjectLedgerService } from '../../src/modules/storage/storage-object-ledger.service';
@@ -21,6 +25,7 @@ import {
   STORAGE_DELETE_REPLAY_TTL_MS,
   STORAGE_OPERATION_MAX_ATTEMPTS,
   STORAGE_OPERATION_PAYLOAD_VERSION,
+  type ClaimedStorageOperationWithObject,
   storageRequestHash,
 } from '../../src/modules/storage/storage-consistency.types';
 import type {
@@ -463,6 +468,25 @@ describe('Attachment durable storage consistency (real PostgreSQL barriers)', ()
     } finally {
       if (timer) clearTimeout(timer);
     }
+  }
+
+  async function settleAllWithTimeout(promises: Promise<unknown>[], label: string): Promise<void> {
+    const results = await withTimeout(Promise.allSettled(promises), label);
+    const rejected = results.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    if (rejected) throw rejected.reason;
+  }
+
+  function preservePrimaryFailure(primary: unknown, cleanup: unknown): void {
+    if (primary instanceof Error) {
+      Object.defineProperty(primary, 'cause', { value: cleanup, configurable: true });
+    }
+  }
+
+  function throwFailure(failure: unknown): never {
+    if (failure instanceof Error) throw failure;
+    throw new Error('non-Error test failure', { cause: failure });
   }
 
   it('STRICT gate rejects a key-only ledger join and an orphaned available object', async () => {
@@ -1695,6 +1719,196 @@ describe('Attachment durable storage consistency (real PostgreSQL barriers)', ()
       prisma.auditLog.count({ where: { resourceType: 'attachment', resourceId: attachment.id } }),
     ).resolves.toBe(0);
     expect(provider.heads.get(attachment.key)?.exists).toBe(true);
+  });
+
+  it('JIT claims leave the batch tail pending while a first Effect is blocked', async () => {
+    let appB: INestApplication | undefined;
+    const firstEntered = deferred<string>();
+    const firstRelease = deferred();
+    let firstDrain: Promise<StorageConsistencyDrainResult> | undefined;
+    let secondDrain: Promise<StorageConsistencyDrainResult> | undefined;
+    let primaryFailure: unknown;
+    let cleanupFailure: unknown;
+
+    try {
+      appB = await createTestApp();
+      const prismaB = appB.get(PrismaService);
+      const ledgerB = appB.get(StorageObjectLedgerService);
+      expect(prismaB).not.toBe(prisma);
+      expect(ledgerB).not.toBe(ledger);
+      const [[firstPid], [secondPid]] = await Promise.all([
+        prisma.$queryRaw<Array<{ pid: number }>>(Prisma.sql`
+          SELECT pg_backend_pid()::INT AS "pid"
+        `),
+        prismaB.$queryRaw<Array<{ pid: number }>>(Prisma.sql`
+          SELECT pg_backend_pid()::INT AS "pid"
+        `),
+      ]);
+      expect(firstPid?.pid).toEqual(expect.any(Number));
+      expect(secondPid?.pid).toEqual(expect.any(Number));
+      expect(firstPid?.pid).not.toBe(secondPid?.pid);
+
+      const probeEventKeys: string[] = [];
+      const probeOperationIds: string[] = [];
+      const probeAvailableAt = Date.now() - 120_000;
+      for (let index = 0; index < 21; index += 1) {
+        const eventKey = `storage.worker-jit:${++sequence}:${index}`;
+        probeEventKeys.push(eventKey);
+        const object = await prisma.storageObject.create({
+          data: {
+            key: `attachments/storage-worker-jit/${sequence}-${index}.txt`,
+            state: 'provider_unknown',
+            source: 'backfill',
+            providerType: LOCATOR.providerType,
+            bucket: LOCATOR.bucket,
+            region: LOCATOR.region,
+          },
+        });
+        const operation = await prisma.storageObjectOperation.create({
+          data: {
+            eventKey,
+            storageObjectId: object.id,
+            kind: 'backfill_verify',
+            status: 'pending',
+            effectState: 'not_started',
+            payloadVersion: STORAGE_OPERATION_PAYLOAD_VERSION,
+            payload: { source: 'worker-jit-e2e' },
+            requestHash: createHash('sha256').update(eventKey).digest('hex'),
+            availableAt: new Date(probeAvailableAt + index),
+          },
+        });
+        probeOperationIds.push(operation.id);
+      }
+      const firstEventKey = probeEventKeys[0];
+      const secondClaimedEventKeys: string[] = [];
+      const secondLeaseOwners = new Set<string>();
+      let firstLeaseOwner: string | undefined;
+
+      const firstOrchestrator = {
+        reconcileRolloutAttachments: jest.fn().mockResolvedValue(0),
+        executeClaimed: jest.fn(async (operation: ClaimedStorageOperationWithObject) => {
+          firstLeaseOwner = operation.leaseOwner;
+          firstEntered.resolve(operation.eventKey);
+          await withTimeout(firstRelease.promise, 'first worker Effect release barrier');
+          await ledger.ack(operation, 'effect_succeeded');
+        }),
+      } as unknown as AttachmentStorageOrchestrator;
+      const secondOrchestrator = {
+        reconcileRolloutAttachments: jest.fn().mockResolvedValue(0),
+        executeClaimed: jest.fn(async (operation: ClaimedStorageOperationWithObject) => {
+          if (
+            !probeEventKeys.includes(operation.eventKey) ||
+            operation.eventKey === firstEventKey
+          ) {
+            throw new Error(`second worker claimed outside probe tail: ${operation.eventKey}`);
+          }
+          secondClaimedEventKeys.push(operation.eventKey);
+          secondLeaseOwners.add(operation.leaseOwner);
+          await ledgerB.ack(operation, 'effect_succeeded');
+        }),
+      } as unknown as AttachmentStorageOrchestrator;
+      const firstWorker = new StorageConsistencyWorker(ledger, firstOrchestrator);
+      const secondWorker = new StorageConsistencyWorker(ledgerB, secondOrchestrator);
+
+      firstDrain = firstWorker.drainOnce({
+        limit: 21,
+        kind: 'backfill_verify',
+        runReconcile: false,
+      });
+      await expect(withTimeout(firstEntered.promise, 'first worker Effect barrier')).resolves.toBe(
+        firstEventKey,
+      );
+      expect(firstLeaseOwner).toEqual(expect.any(String));
+
+      await expect(
+        prisma.storageObjectOperation.findUnique({ where: { eventKey: firstEventKey } }),
+      ).resolves.toMatchObject({
+        status: 'processing',
+        attempts: 1,
+        leaseOwner: firstLeaseOwner,
+        leaseAcquiredAt: expect.any(Date),
+        leaseExpiresAt: expect.any(Date),
+      });
+      const untouchedTail = await prisma.storageObjectOperation.findMany({
+        where: { id: { in: probeOperationIds.slice(1) } },
+        select: {
+          status: true,
+          attempts: true,
+          leaseOwner: true,
+          leaseAcquiredAt: true,
+          leaseExpiresAt: true,
+        },
+      });
+      expect(untouchedTail).toHaveLength(20);
+      expect(untouchedTail).toEqual(
+        Array.from({ length: 20 }, () => ({
+          status: 'pending',
+          attempts: 0,
+          leaseOwner: null,
+          leaseAcquiredAt: null,
+          leaseExpiresAt: null,
+        })),
+      );
+
+      secondDrain = secondWorker.drainOnce({
+        limit: 20,
+        kind: 'backfill_verify',
+        runReconcile: false,
+      });
+      await expect(withTimeout(secondDrain, 'second worker drain')).resolves.toEqual({
+        backfilled: 0,
+        claimed: 20,
+        succeeded: 20,
+        pending: 0,
+        dead: 0,
+      });
+      expect([...secondClaimedEventKeys].sort()).toEqual([...probeEventKeys.slice(1)].sort());
+      expect(secondLeaseOwners.size).toBe(1);
+      expect([...secondLeaseOwners][0]).not.toBe(firstLeaseOwner);
+      await expect(
+        prismaB.storageObjectOperation.findUnique({ where: { eventKey: firstEventKey } }),
+      ).resolves.toMatchObject({ status: 'processing', attempts: 1, leaseGeneration: 1 });
+
+      firstRelease.resolve();
+      await expect(withTimeout(firstDrain, 'first worker drain')).resolves.toEqual({
+        backfilled: 0,
+        claimed: 1,
+        succeeded: 1,
+        pending: 0,
+        dead: 0,
+      });
+      await expect(
+        prisma.storageObjectOperation.count({
+          where: { id: { in: probeOperationIds }, status: 'succeeded' },
+        }),
+      ).resolves.toBe(21);
+    } catch (error) {
+      primaryFailure = error;
+    } finally {
+      firstRelease.resolve();
+      try {
+        await settleAllWithTimeout(
+          [
+            ...(firstDrain ? [withTimeout(firstDrain, 'first worker cleanup drain')] : []),
+            ...(secondDrain ? [withTimeout(secondDrain, 'second worker cleanup drain')] : []),
+          ],
+          'storage worker drain cleanup',
+        );
+      } catch (cleanupError) {
+        cleanupFailure = cleanupError;
+      }
+      try {
+        if (appB) await withTimeout(appB.close(), 'second app close');
+      } catch (closeError) {
+        if (cleanupFailure === undefined) cleanupFailure = closeError;
+        else preservePrimaryFailure(cleanupFailure, closeError);
+      }
+    }
+    if (primaryFailure !== undefined) {
+      if (cleanupFailure !== undefined) preservePrimaryFailure(primaryFailure, cleanupFailure);
+      throwFailure(primaryFailure);
+    }
+    if (cleanupFailure !== undefined) throwFailure(cleanupFailure);
   });
 
   it.each([
