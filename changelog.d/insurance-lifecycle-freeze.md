@@ -1,1 +1,0 @@
-- 在单一保险 enforcement gate 下冻结已有报名活动的保险标记/受保护时段，并在报名审批前按 immutable evidence 重验 live 队员与原始 exact 保险来源；失败保持 pending 且不写审核审计或通知，gate 关闭时保留旧行为与查询图。

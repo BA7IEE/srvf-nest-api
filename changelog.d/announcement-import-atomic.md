@@ -1,1 +1,0 @@
-- 公告导入 preview/execute 改为共用 request-wide PostgreSQL 事务与逐行 savepoint：同请求新建组织可被后续任命/分管真实引用，preview 完整演算后整批回滚，execute 未声明异常整批回滚，同时保留业务 blocked/already-exists 的逐行 best-effort 结果。

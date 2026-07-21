@@ -1,1 +1,0 @@
-- D-INSURANCE v3 PR4 以 fail-fast 完整性扫描收口数据库终态：`MemberInsurance` 新增版本/审核快照 CHECK，eligibility evidence 新增 7 个同行 CHECK、2 个 owner partial unique、四组合 source-owner 同 member trigger 与 immutable trigger；migration 零删数、零回填，且不新增 route、DTO、权限、AuditLogEvent、BizCode、配置或部署动作。

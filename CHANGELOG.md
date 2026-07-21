@@ -2,6 +2,135 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+- 收紧活动生命周期与容量父子不变量：活动只能在结束后手动完结；总名额始终作为全局硬上限，岗位名额仅作子上限，跨岗位并发审批、容量切换与岗位扩容均在 Activity 聚合锁后 fail-closed；父容量扩容或 pass 取消释放全局名额时，可按 child headroom 与稳定 FIFO 跨岗位递补历史候补。
+
+- 修复报名取消与 App 签到并发时的参与证据旁路：`cancelAdmin` / `cancelMy` 现在会在既有锁序内同时拒绝仍有 live 考勤记录或签到证据的报名，并继续复用错误码 21033。
+
+- 公告导入 preview/execute 改为共用 request-wide PostgreSQL 事务与逐行 savepoint：同请求新建组织可被后续任命/分管真实引用，preview 完整演算后整批回滚，execute 未声明异常整批回滚，同时保留业务 blocked/already-exists 的逐行 best-effort 结果。
+
+- Attachment 存储新增 PostgreSQL durable object/operation ledger、pinned non-secret locator、独立 worker 与 JIT→STRICT fail-closed 门；删除重放限 24h 并人工 purge；manual relocate 以 pinned locator 分块 SHA-256/ETag 证据恢复，size-only 继续 fail-closed；Phase 1 明确不宣称 PG/Provider 原子性，且 `Attachment.key` FK 留待旧 writer 全退场后的独立 contract migration。
+
+- 收口 Membership 任期状态机、并发槽位与当前有效组织来源；新 migration 对存量异常 fail-fast 且绝不自动修数。
+
+- 通知 outbox worker 改为每条 intent JIT claim，并以稳定 `lockedAt` fence、共享续租的最终 Effect guard、单路 heartbeat、异常退避续跑和 shutdown stop-and-drain 保护外发；WeChat 的 token fetch、订阅发送与 token-invalid 强刷/重发分别在真实 fetch 前重验 lease；admin SMS reservation 事务内仅落 `pending/attempts=0` command，提交后逐 eventKey 竞争首轮执行、重验父通知 current state，且不把 `not-claimed` 误算为 skipped。
+
+- 将招新批量/单人发号与入队成功通知接入 PostgreSQL durable outbox，业务写与 targeted intent 同事务提交并以稳定 event identity 去重。
+
+- 收口 PositionRule 任命执行：锁后严格合并人数/兼任/归属约束，停用配置禁止新任命，required/minCount 保持 advisory 且不阻断撤销或离队。
+
+- 收紧考勤到资格链:管理端 submit/edit 拒绝未来签退,最终贡献值改由 ContributionRule 权威计算(无规则落 0);当前保险活动只强制关联同活动/同成员/pass 报名,不证明报名创建时已开启保险门槛,也不代表保险独立核验。
+
+- 将管理端他人档案、紧急联系人、自购保险、证书、考勤与招新敏感读取从 pino 占位统一迁入 `audit_logs`；普通读取、CSV 流与签名 URL 均 fail-closed，审计 extra 仅保留资源锚点、字段名、掩码级与安全计数。
+
+### Fixed
+
+- SMS 单次操作现在以一次 settings snapshot 绑定 provider route、验证码内容、实际发送与 SENT/FAILED evidence；新增不暴露配置或 payload 的短生命周期 prepared Effect，并为生日祝福与通知模板提供后续 Outbox 可接线的 prepare API，现有 notifications runtime 行为保持不变。
+
+### Fixed
+
+- SMS 验证码 active 预检、错误尝试递增与最终消费统一改由数据库 UTC 时钟裁决；写路径使用参数化 PostgreSQL `UPDATE ... RETURNING` 并强制先取得目标行锁、再捕获实时时钟，避免热行等待期间自然过期后仍递增或消费。补充双 Nest app / 双 Prisma pool 的行锁屏障回归，覆盖签发与验证先后、错误尝试 4→5、快慢应用时钟、排队自然过期及双 consumer 竞态。
+
+### Fixed
+
+- Wire Content publication and upload confirmation to the durable Attachment storage boundary:
+  both flows serialize on the live Content root, publication validates current body/cover bindings,
+  Provider evidence remains outside database transactions, and publish-vs-confirm races converge
+  without binding an Attachment back into a Content item that won the publish transition. The same
+  final root reread also covers content tokens sent through the generic Attachment confirm route.
+
+### Not included
+
+- This feature slice did not itself add schema, migration, endpoint, DTO, BizCode, permission, provider, cron, release, version, tag,
+  deployment, repository-wide raw-key closure, or full published-Content immutability change.
+
+- 移除贡献规则新建/更新入参中已废弃的 `dailyCap`；旧客户端继续传入将返回 40000，历史列、读响应与审计快照保留兼容，实际贡献上限仍由全局固定规则决定。
+
+- 收紧贡献规则 ACTIVE 槽位：同一活动类型 × 考勤角色仅允许一条未软删 ACTIVE 规则，阈值不再扩展槽位；迁移遇存量冲突明确失败且不自动清理，HTTP 并发继续统一返回 23002，考勤预填遇数据库漂移重复 pair 时 fail-closed。
+
+- ⚠️ 收紧 App GPS 自助签到/签退：首次写只有活动与请求坐标合法且原始 Haversine 距离不超过配置半径才成功；活动定位异常或超范围返回 22080，请求 DTO 缺失/非法沿 40000，均零考勤/贡献/审计派生写；accuracy 仍仅作证据，既有合法 winner 幂等重试、Admin 手工考勤与历史异常证据读取保持不变。
+
+- D-INSURANCE v3 PR4 以 fail-fast 完整性扫描收口数据库终态：`MemberInsurance` 新增版本/审核快照 CHECK，eligibility evidence 新增 7 个同行 CHECK、2 个 owner partial unique、四组合 source-owner 同 member trigger 与 immutable trigger；migration 零删数、零回填，且不新增 route、DTO、权限、AuditLogEvent、BizCode、配置或部署动作。
+
+- ⚠️ D-INSURANCE v3 PR3 交付单一 `INSURANCE_ENFORCEMENT_ENABLED` cutover gate：启用时 App 自购保险 PATCH/DELETE 缺失/null/空白 `expectedVersion` 以 40000 且零写/审计拒绝，活动与 Team Join 仅认 verified self 或 live 团队保单覆盖并在根事务生成最小 eligibility evidence；`TeamJoinCycle.requiresInsurance` 可配置/返回，final join 无来源新增 26031。该切片不含 release/deploy/runtime enable，production 切换前仍须 drain 旧 server/旧事务并禁止混档运行；PR4 数据库约束/immutable trigger 已由同版后续切片交付，但仍未 deploy。
+
+- D-INSURANCE v3 PR1 以 expand-only migration 为 `MemberInsurance` 增加 pending/v0/nullable reviewer 骨架并将全部 legacy（含软删）统一回填 pending/v0/null reviewer，新增 nullable 双 source/双 owner `InsuranceEligibilityEvidence` RESTRICT FK 骨架与默认关闭的 Team Join 保险标志；本 PR 不启用审核、CAS、verified-only、evidence producer、入队保险闸或最终数据库约束。
+
+- 在单一保险 enforcement gate 下冻结已有报名活动的保险标记/受保护时段，并在报名审批前按 immutable evidence 重验 live 队员与原始 exact 保险来源；失败保持 pending 且不写审核审计或通知，gate 关闭时保留旧行为与查询图。
+
+- 增加队员自购保险的版本化审核与 PR2 客户端兼容窗口：Admin 以必填 expectedVersion 记录 verified/rejected，App 自助修改/删除支持可选 CAS、等值 no-op 与审核态复位；现有资格 consumer 继续保持旧语义，verified-only、evidence 与 Team Join gate 留待 PR3。
+
+### Fixed
+
+- 修复从主仓运行 Jest 时递归发现仓内 `.worktrees/**` 测试与模块副本的问题：unit、contract、E2E 配置同时从 spec discovery 与 haste map 排除 `.worktrees/**`，保留 `.claude/worktrees/**` 隔离，并新增须显式运行的 harness selftest 守卫。
+
+- 通知模块新增 PostgreSQL durable outbox 与独立多实例 worker：生日/到期 cron、admin publish 微信和显式短信改为事务内持久化 intent 后异步/首轮派发；支持 eventKey 幂等、generation 单 active、敏感文案 canonical 脱敏、SKIP LOCKED lease/fencing、指数重试与死信；SMS SENT log+delivery 同事务，外部 provider 明确为 at-least-once。
+
+- D-Outbox Wave2 G1b 以 expand-only migration 为 `NotificationOutboxIntent` 增加 nullable `preparedTemplateId`，为后续 runtime 在已确认 provider 尚未启动的终态 skip 场景恢复已预占微信订阅消息配额保留稳定模板标识；provider 结果未知不退款。本切片零回填、零约束、零运行时读写，migration 未执行或部署，API 与 contract 行为不变。
+
+- 通知 admin 发布链启用 `publishGeneration` 运行时 fence：draft→published 原子递增代次，WeChat root/child 与 admin SMS 使用 v2 payload；provider permission 以 Notification parent(`FOR SHARE`)→outbox intent(`FOR UPDATE`)→Member→shared organization topology→User/RBAC 固定锁序重验状态、渠道、代次、lease 与 recipient 活性/四档可见性，同代 child 可并发共享 parent、业务 writer 仍等待全部 permission 提交；destination 与 management GLOBAL 权限只取同事务 shared-row-lock 快照，provider 零回读；v2 pre-permission quota=0 固定记 `no-quota`，不伪造 destination evidence。
+- published 的真实 Effect 字段变化自动回 draft；system-directed 通知保持 admin 可读但禁止 mutation/send-sms。跨代 active WeChat child 令新 root 无损 defer，保留既有 lease heartbeat、shutdown drain 与 at-least-once/evidence 语义。
+- 微信 quota 首次 reservation 与 `preparedAt + preparedTemplateId` 原子提交，重领只用持久模板；半状态 fail-closed。仅同 attempt capability 可在 final permission 拒绝且 provider 未开始时精确退款，崩溃/旧 attempt/provider 结果未知绝不退款；provider 已返回但本地 evidence 未提交仍是 at-least-once 歧义，不宣称 exactly-once。
+- outbox envelope 与 payload 的通知/会员重复标识现强制一致；v1 WeChat child 仅兼容 published system-directed + directed audience + 同收件人 + wechat channel。部署必须先排空旧 API/worker、v1 admin intent 与 prepared-without-template 的 active v1 WeChat child，再以同一 G2 binary 启动 API+worker；禁止混合 producer/worker。未执行 release、tag、version bump 或生产部署。
+
+### Added
+
+- D-Outbox Wave 2 G1 为 `Notification` 增加 `publishGeneration` 非负整数骨架，旧行默认代次为 0。
+- 本条仅记录 expand schema；runtime enforcement 见同版后续条目，migration 仍未 deploy，API 与 contract 行为不变。
+
+- 串行化全部组织拓扑写入：五个写入口在事务首条拓扑 SQL 前获取同一 PostgreSQL transaction advisory lock，并新增真实并发与 closure 递归等价回归证据。
+
+- 10 个命名 throttler 改用 PostgreSQL shared storage，多实例共享同一 IP 配额并以 `(throttlerName,key)` 物理隔离；完整保留 6.5.0 rolling expiry/block、42900 与无 header 语义，数据库异常严格 fail-closed 50000，零本地 Map fallback、零新增 cron。
+
+- RBAC 权限解析退役进程内 Map/TTL 与提交后失效链，改为每次判权直接读取 PostgreSQL 当前 GLOBAL 绑定事实，确保多实例 grant/revoke 与角色权限变更在下一请求即时收敛；`rbac/reload` 契约保持兼容。
+
+- ⚠️ 收紧招新 batch/single 发号的主体裁剪图清理顺序：完成全部事务前校验后按 promotable 发号序逐条删除 `idCardCropImageKey`，任一 provider 异常以安全 500 且零业务写 fail-closed；删除成功后 DB 回滚保留 key 并依赖 absent-delete 幂等重试。skip 与头像对象不删，非大陆证件资料齐备可 batch 的既有资格语义不变。
+
+### Changed
+
+- SMS、WeChat、Storage、Realname 四类运行时设置改为每次直读 PostgreSQL 当前已提交 singleton，移除 60 秒进程缓存与 `invalidate()` 正确性链；写事务提交后任一实例的下一次 settings 读取直接获得新事实，provider Effect 使用其当前边界实际消费的一份配置快照。
+- WeChat、COS、实名 OCR 与既有 SMS route 均把单次 Effect 绑定到一份已解析配置快照；Storage pinned locator 继续固定 provider/bucket/region，仅凭证使用当前代。
+- WeChat access token 进程缓存按不透明配置 generation 隔离，配置切换后的下一 delivery 不复用旧 token，同一 delivery 的 token-invalid refresh/retry 不跨代混用。
+- Storage `enabled` 行为保持现状：pinned locator 与 production bootstrap 执行开关检查，legacy non-pinned 调用尚未统一执行；全局关闭语义留给后续 Storage 生命周期 D 切片。
+
+### Tests
+
+- 增加四类 settings live-read 单元测试、provider snapshot/token-generation mutation tests，以及双 Nest app/双 Prisma pool 的 committed cutover、事务可见性、最终 SDK/fetch facade 与在途 Effect barrier E2E 探针。
+
+- SMS 验证码签发改为 PostgreSQL phone → phone+purpose 双 transaction advisory lock 原子临界区，防止多实例并发穿透 60 秒/日限与产生多条 active code。
+
+### Fixed
+
+- 将六类状态写的 no-op `UPDATE` 认领统一替换为静态、参数化的 PostgreSQL 条件行锁；需要继续消费可变、非 predicate 字段的路径在锁后重读权威行，避免并发软阻塞者与随后真实更新形成死锁或使用陈旧快照。
+- 收紧 Team Join 管理评估和 App 候选部门更新：评估资格/时间以获锁后的权威时刻计算，候选部门只允许仍处 `joining` 的锁后当前行更新。
+- 招新自助撤销在获锁并重读后重新核对本次微信或手机身份；等待期间发生换绑时沿既有泛化未找到错误失败关闭，且不写撤销、审计或通知副作用。
+- 对抗性数据库探针为 ActivityRegistration review、Waitlist promotion、Attendance、Recruitment manual/withdraw、Team Join admin/App 七条锁后重读路径分别加入独立 mutation-kill，均复用既有业务或审计字段；Certificate verify/reject 仅消费 claim 已固定的 id/status，保留 root/direct/soft 锁线性化证明，不额外重读整行或宣称 safe-reread mutation-kill。
+
+### Fixed
+
+- Storage consistency worker 改为在每条 operation 即将执行前才领取单条 PostgreSQL lease，并继续保留生产 worker 默认每轮 20 条的 drain budget；显式 `limit` 仍保留既有 1..100 范围。慢首条 Effect 不再预占批尾 lease，其他实例可通过既有 `SKIP LOCKED` 安全消费未领取余量，Provider、ledger fence/backoff、schema 与 API 语义不变。
+
+### Fixed
+
+- 修复 PostgreSQL shared throttler 新建空桶的毫秒精度窗口漂移：仅当 raw hits 为空且不存在有效 block 时，使用锁后数据库时钟初始化完整 TTL；active block 与 expired block 的计数/解除语义不变，expired-block+raw-empty 的窗口按完整 TTL 初始化，rolling hits、retention 与多实例串行语义保持不变。
+
+### Changed
+
+- 新增单一 `APP_TRUSTED_PROXY_CIDRS` 配置边界：仅接受精确小写 `none` 或 canonical IPv4/IPv6 network CIDR 列表；拒绝非零 host bits、整个 RFC1918 聚合根及既有危险范围。production/smoke 缺失、空白或非法值在配置装配期 fail-fast，development/test 缺失默认 `none`。
+- `applyGlobalSetup` 先设置 Express 原生 `trust proxy` 并建立唯一 request ID，再在 Helmet 后、CORS preflight/pino/throttler/controller 前统一校验与固化 Express 选出的 `req.ip/req.ips`：IPv4-mapped 归 native IPv4，IPv6 归 lowercase 压缩形式；port/bracket/zone/空白/任意字符串、getter 异常，以及配置非 `none` 时最终 identity 仍属于 trusted proxy 的缺失客户端链，统一 fail-closed 为 `BAD_REQUEST=40000`。拒绝响应保留 request ID/Helmet/允许 Origin 的 CORS 头，并只写 event+reqId 的安全边界日志；仍不自行解析 XFF，也不新增 `Forwarded` / `X-Real-IP` 身份来源。
+- HTTP 日志 redact 增加三类代理头与 pino 标准 request remote peer 路径；招新 OCR 日封顶 warning 不再写原始 IP。
+- Docker Smoke 因测试容器真实直连而显式使用 `APP_TRUSTED_PROXY_CIDRS=none`；生产运维文档补齐反代下禁止 `none`、精确直连代理信任、edge 覆盖、backend ACL、同代切流/回退与旧限流/OCR 键自然过期口径。
+
+### Tests
+
+- 增加配置 parser、production/smoke fail-fast 与 bootstrap 首操作单元探针。
+- 增加 Node socket E2E harness：none/未信任伪造 XFF、trusted proxy 缺失/空/全 trusted XFF、单层、两个实际 Node HTTP proxy 的双层覆盖/追加、缺 edge trust 与 IPv4-mapped socket；锁定 native IPv4/mapped/IPv6 canonical identity，并以不同 Prisma pool/storage、同 database 与实际 SHA-256 key 证明等价文本跨实例共享同一 PostgreSQL bucket。port/bracket/zone/任意字符串及 malformed 中间 hop 在 CORS preflight/pino/throttler/controller 与 DB/audit/SMS/OCR 写前以 40000 拒绝；真实 LoggerModule 探针只锁 request ID/pino middleware 兼容，安全拒绝日志则由 Logger call-shape 断言锁定固定 event+reqId 且零 IP/header/path，不宣称观测最终 pino JSON。另验证两个 client 独立 PostgreSQL login bucket、同 client 跨两 Nest 实例共享额度，以及 refresh/audit、SMS code、OCR counter 的最终 IP 消费链。该 harness 不替代上线前真实 ingress/ACL 现场证据。
+
+### Not shipped
+
+- 该功能切片未自行包含生产 CIDR、release/tag/version bump 或部署；生产生效前仍须以真实 ingress 与 backend ACL 证据验证现场拓扑。
+
 ## v0.58.0 - 2026-07-17
 
 > 主题:**第五轮全仓 review 修复闭环**(report #674〔P2=7/P3=2 全 CONFIRMED〕→ 双 lane 并行修复 #675〔R5-01 取消通知锁内收件集 + R5-07 openapi 版本〕∥ #676〔Harness 机器层六连:counts 改 AST 真源计数、changelog-merge 拒收清单、e2e 库名加仓路径哈希、恒读协议对齐、四守护全挂 CI、lane 门禁加固〕→ 状态回填 #677)。0 schema / 0 migration(54 恒)/ 0 权限码 / 0 新依赖。

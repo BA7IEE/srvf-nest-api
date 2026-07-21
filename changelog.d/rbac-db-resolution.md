@@ -1,1 +1,0 @@
-- RBAC 权限解析退役进程内 Map/TTL 与提交后失效链，改为每次判权直接读取 PostgreSQL 当前 GLOBAL 绑定事实，确保多实例 grant/revoke 与角色权限变更在下一请求即时收敛；`rbac/reload` 契约保持兼容。

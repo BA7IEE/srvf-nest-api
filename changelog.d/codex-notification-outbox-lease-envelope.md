@@ -1,1 +1,0 @@
-- 通知 outbox worker 改为每条 intent JIT claim，并以稳定 `lockedAt` fence、共享续租的最终 Effect guard、单路 heartbeat、异常退避续跑和 shutdown stop-and-drain 保护外发；WeChat 的 token fetch、订阅发送与 token-invalid 强刷/重发分别在真实 fetch 前重验 lease；admin SMS reservation 事务内仅落 `pending/attempts=0` command，提交后逐 eventKey 竞争首轮执行、重验父通知 current state，且不把 `not-claimed` 误算为 skipped。
