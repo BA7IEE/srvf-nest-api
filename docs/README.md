@@ -26,6 +26,7 @@
 | [`docker-smoke-test.md`](./docker-smoke-test.md) | docker smoke CI 形态说明 |
 | [`ops/cos-production-rollout-checklist.md`](./ops/cos-production-rollout-checklist.md) | 运维侧真实 COS 上线 SOP |
 | [`ops/encryption-key-freeze.md`](./ops/encryption-key-freeze.md) | Storage/SMS/WeChat/Realname 四把 production encryption key 的首发冻结、禁止直接轮换与事故处置边界 |
+| [`ops/production-dependency-audit.md`](./ops/production-dependency-audit.md) | 每个 release candidate 的 production dependency high/critical 阻断与 moderate/low 逐条分析基线 |
 | [`ops/sms-production-rollout-checklist.md`](./ops/sms-production-rollout-checklist.md) | 运维侧腾讯云 SMS 真实通道上线 SOP(签名/模板审核 → 凭证录入 → 真实发送验收) |
 | [`ops/sms-data-retention-sop.md`](./ops/sms-data-retention-sop.md) | SMS 数据 retention 手动清理 SOP(验证码 90 天 / 发送流水 1 年,数值可改;维护者手动 psql,**不**引入 cron 清理;SQL 已 app_test 实测冻结) |
 | [`ops/wechat-mini-production-rollout-checklist.md`](./ops/wechat-mini-production-rollout-checklist.md) | 运维侧微信小程序登录真实通道上线 SOP(注册小程序 → AppID/AppSecret → admin 录凭证〔仅 SA〕→ DevStub 全链 → 真实验收;系统侧已"正确但休眠") |

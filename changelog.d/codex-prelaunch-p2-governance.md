@@ -1,0 +1,1 @@
+- **chore(release):收口首发前治理漂移**——`.env.example` 对齐 canonical auth 路由与 PostgreSQL shared throttler，CODEMAP true-up AuditLogEvent/保险 PR1–PR4 状态，部署示例移除冻结 `v1.2` tag，并新增每个 release/tag 的 production dependency high/critical 审计门禁与 COS 传递链 moderate 风险分析。
