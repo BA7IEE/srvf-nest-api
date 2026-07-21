@@ -7,8 +7,8 @@
 
 | 项 | 当前值 / 何处看 |
 |---|---|
-| 版本(六处一致) | **v0.58.0**(2026-07-17;tag/handoff #680=`30675e28`;`archive/handoff/v0.58.0.md`) |
-| main HEAD / open PR / Unreleased | 实时看 `gh pr list` · [`CHANGELOG.md`](../CHANGELOG.md) `## Unreleased` + `changelog.d/`;基线=v0.58.0 回填点(#674-#680)|
+| 版本(六处一致) | **v0.59.0**(2026-07-21;tag/handoff #729=`76837c84`;GitHub Release Latest;`archive/handoff/v0.59.0.md`) |
+| main HEAD / open PR / Unreleased | 实时看 `gh pr list`;发布锚点=`v0.59.0`/`76837c84`;release 时 Unreleased=0、fragment=0 |
 
 <!-- counts:begin -->
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
@@ -30,13 +30,14 @@
 - **接口与字段真相**:live `/api/docs-json` + contract snapshot + `EXPECTED_ROUTES`;**逐版本叙事**:[`CHANGELOG.md`](../CHANGELOG.md) + `archive/handoff/`
 - **模块地图** `CODEMAP.md` · **权限地图** `ai-harness/RBAC_MAP.md`(各有 check 脚本守护)· **数据模型** `prisma/schema.prisma`
 - **API surface 终态**:5 canonical `/v1` 前缀,contract 锁定;见 `api-surface-policy.md`;❌新增 Mixed Controller(存量 2)❌App 返回 L3(content-* 可见级后签名 URL 是唯一例外)
-- **会话注销终态**:`POST /api/auth/v1/logout` 由任一可识别且未过期 row(含 rotated ancestor)幂等撤销所属 refresh family 全部活跃未过期 token;其他 family 与 access 不动;详见 `security.md`
-- **限流多实例一致性**:10 个命名 throttler 共用 PostgreSQL `throttler_buckets`，保留 IP tracker / 包 hash key / limit+ttl+block / 42900 / 无 header 语义；DB/storage 异常严格 fail-closed 50000，零本地 Map fallback；过期桶手动 retention，Cron 仍恰好 2
-- **贡献规则 ACTIVE 槽位**:`ContributionRule` 以 `activityTypeCode × attendanceRoleCode` 为未软删 ACTIVE partial unique；`durationThreshold` 仅是单规则内部档位参数。create/激活在事务内预查，真实并发由 DB unique + 23002 收口；calculator 若读到漂移重复 pair 立即 fail-closed，不按创建顺序任取。
-- **通知 durable outbox**:PG lease/fence，provider 事务外 at-least-once。G2 含 generation、recipient 活性/可见性及同事务 destination+management RBAC shared-lock 快照；quota 双 marker，仅同-attempt 退款。生产 migration 未 deploy；切换 gates 待跑；本地 DB E2E/full 已绿。
+- **身份/会话终态**:手机/微信换绑消费 5 分钟 step-up proof 并锁后重验身份快照；logout 可由未过期 rotated ancestor 幂等撤销同 refresh family，其他 family/access 不动；详见 `security.md`
+- **多实例当前事实**:10 个 throttler 共用 PG bucket；RBAC 与 SMS/WeChat/Storage/Realname settings 每次直读已提交 PostgreSQL；Effect 绑定单份配置快照，DB 异常 fail-closed，零进程正确性缓存
+- **贡献规则 ACTIVE 槽位**:未软删 ACTIVE 按 `activityTypeCode × attendanceRoleCode` 唯一；迁移、并发与漂移重复 pair 均 fail-closed
+- **通知 durable outbox**:PG lease/fence、generation/recipient/同事务 RBAC 快照及 quota marker；provider 事务外 at-least-once。生产 migration/gate 未 deploy，切换须排空旧 API/worker/intents 且禁混档
 - **Attachment storage Phase1**:Attachment namespace 已接 durable ledger；locator 固定、凭证 live-read；Content publish/confirm 根锁接线、Provider 事务外；未加 key FK，repo-wide closure 未完成；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)。
-- **保险 v3 PR4 约束代码已交付(本 PR，未 deploy)**:migration 定义完整扫描、2+7 CHECK、2 owner partial unique、同 member/immutable trigger，任一脏数即失败且零修数/删数；生产尚未生效。PR3 gate 亦未部署，启用须 drain 旧 server 且禁混档。
-- **敏感读审计(C-2,2026-07-19)**:`AuditLogEvent` 123，placeholder 退役；管理端敏感读鉴权/查询后、CSV 交 generator 前、签名 URL 调 provider 前 fail-closed 落库。extra 仅 operation/字段名/maskLevel/计数，禁 PII/filter 值/key/URL。
+- **保险 v3(v0.59.0，未 deploy)**:PR1–PR4 的审核/CAS/evidence/gate 与 2+7 CHECK、owner unique、同 member/immutable trigger 已交付；脏数 fail-fast、零修删。启用须 drain 旧 server/事务且禁混档
+- **敏感读审计**:`AuditLogEvent` 123，管理端普通/CSV/签名 URL 敏感读均 fail-closed 落库，extra 禁 PII/filter/key/URL
+- **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)
 
@@ -55,7 +56,7 @@
 | 等级 | 债务 |
 |---|---|
 | P1 | 前端联调剩运维侧 P0-H 演练 + P0-I 排错 SOP(系统侧无动作) |
-| P1 | 保险 PR3 未启用；旧 server=0 未验证，须 drain/同档 |
+| P1 | 保险 gate 未启用、旧 server=0 未验证；可信代理真实 ingress/ACL 未验，均须部署前现场收口 |
 | P1 | P1-22 专业队 gate 配置化;P1-23 isForeigner 历史列改名(对外已用 isNonMainlandDocument) |
 | P2 | scoped 余面(§3);god-service 体量观察(codemap 实时口径);v0.44 接受项(#8 / #10 / #19 / #20#21 已收口 notifications-owned + 招新/入队，participation producer 待接);单测占比刻意低(e2e 为主);Mixed 存量 2;snapshot 用 diff 勿整读 |
 | P3 | SMS / 招新脱敏 retention 手动 SOP(刻意);28003 同轮枚举面(v1 接受);首轮 review 接受 / 延后残项(F7/F8/F13/F18 等)在 NEXT_TASKS |
