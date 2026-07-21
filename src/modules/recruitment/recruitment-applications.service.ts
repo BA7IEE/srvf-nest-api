@@ -806,9 +806,7 @@ export class RecruitmentApplicationsService {
       select: { count: true },
     });
     if (row.count > this.config.recruitmentOcr.dailyIpLimit) {
-      this.logger.warn(
-        `recruitment ocr daily limit hit ip=${ipKey} dateKey=${dateKey} count=${row.count}`,
-      );
+      this.logger.warn(`recruitment ocr daily limit hit dateKey=${dateKey} count=${row.count}`);
       throw new BizException(BizCode.RECRUITMENT_OCR_DAILY_LIMIT);
     }
   }

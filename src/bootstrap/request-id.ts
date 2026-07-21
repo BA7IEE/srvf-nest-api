@@ -18,12 +18,18 @@ function generateRequestId(): string {
   return `c${Date.now().toString(36)}${randomBytes(12).toString('hex')}`;
 }
 
-// pino-http 的 genReqId(req, res) 同时拿到 req 与 res,在中间件入口阶段调用,响应未发送,
-// 因此可以在此 setHeader 写回 x-request-id,无需额外中间件。
+// 全局 early middleware 在 pino-http 前调用并 own-set req.id；pino-http 直接复用该值。
+// 若其他边界显式重复调用，本函数也优先复用已建立的安全 ID 并回写同一响应头。
 export function genReqId(req: IncomingMessage, res: ServerResponse): string {
+  const establishedId = (req as IncomingMessage & { id?: unknown }).id;
   const headerValue = req.headers[REQUEST_ID_HEADER];
   const candidate = Array.isArray(headerValue) ? headerValue[0] : headerValue;
-  const id = candidate && REQUEST_ID_PATTERN.test(candidate) ? candidate : generateRequestId();
+  const id =
+    typeof establishedId === 'string' && REQUEST_ID_PATTERN.test(establishedId)
+      ? establishedId
+      : candidate && REQUEST_ID_PATTERN.test(candidate)
+        ? candidate
+        : generateRequestId();
   res.setHeader(REQUEST_ID_HEADER, id);
   return id;
 }

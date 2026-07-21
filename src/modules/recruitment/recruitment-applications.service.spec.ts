@@ -492,7 +492,10 @@ describe('RecruitmentApplicationsService.submit · F1 防重前移 + OCR 日封�
       storage,
       { recruitmentOcr: { dailyIpLimit: 30 } } as never,
     );
-    return { service, storage, prisma, realname };
+    const loggerWarn = jest
+      .spyOn((service as unknown as { logger: { warn(message: string): void } }).logger, 'warn')
+      .mockImplementation();
+    return { service, storage, prisma, realname, loggerWarn };
   }
 
   it('同轮活跃 openid 命中 → 28004;付费 OCR / 落图 / 事务零调用', async () => {
@@ -521,7 +524,7 @@ describe('RecruitmentApplicationsService.submit · F1 防重前移 + OCR 日封�
   });
 
   it('OCR 日封顶超限(upsert 返回 count > limit)→ 28060;recognize 零调用、计数键 = ip × 北京日', async () => {
-    const { service, prisma, realname } = buildService({ quotaCount: 31 });
+    const { service, prisma, realname, loggerWarn } = buildService({ quotaCount: 31 });
     await expect(service.submit(buildPayload(), image, image, meta, now)).rejects.toMatchObject({
       biz: { code: BizCode.RECRUITMENT_OCR_DAILY_LIMIT.code },
     });
@@ -531,6 +534,11 @@ describe('RecruitmentApplicationsService.submit · F1 防重前移 + OCR 日封�
         where: { ip_dateKey: { ip: '203.0.113.9', dateKey: '2026-07-11' } },
       }),
     );
+    expect(loggerWarn).toHaveBeenCalledWith(
+      'recruitment ocr daily limit hit dateKey=2026-07-11 count=31',
+    );
+    expect(loggerWarn).not.toHaveBeenCalledWith(expect.stringContaining('203.0.113.9'));
+    expect(loggerWarn).not.toHaveBeenCalledWith(expect.stringContaining('ip='));
   });
 
   it('恰达上限(count == limit)→ 放行继续 OCR(先加后判,拒者恒拒边界)', async () => {

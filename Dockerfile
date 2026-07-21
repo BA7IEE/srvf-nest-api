@@ -17,11 +17,13 @@
 #   docker build -t u-nest-api-starter:v1.1 .
 #
 # 运行(示例):
+# 下面的 `none` 仅适用于客户端直连 backend；反代部署必须改为已评审的实际直连代理 CIDR。
 #   docker run --rm -p 3000:3000 \
 #     -e DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:5432/app \
 #     -e APP_ENV=production \
 #     -e JWT_SECRET="$(openssl rand -base64 48)" \
 #     -e APP_CORS_ORIGIN=https://app.example.com \
+#     -e APP_TRUSTED_PROXY_CIDRS=none \
 #     u-nest-api-starter:v1.1
 
 ARG NODE_VERSION=22

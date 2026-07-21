@@ -1,4 +1,5 @@
 import type { AppConfig } from '../config/app.config';
+import pino, { type LoggerOptions } from 'pino';
 import { buildLoggerModuleParams } from './logger-options';
 
 // V2 A4-1:logger redact 清单单元测试。
@@ -11,6 +12,7 @@ const fakeAppCfg: AppConfig = {
   env: 'development',
   port: 3000,
   corsOrigin: ['http://localhost:3000'],
+  trustedProxyCidrs: [],
   swaggerEnabled: true,
   logLevel: 'info',
   loginThrottle: { limit: 5, ttlSeconds: 60 },
@@ -54,6 +56,27 @@ function getRedactPaths(): readonly string[] {
   return (redact as { paths: readonly string[] }).paths;
 }
 
+function serializeWithConfiguredRedaction(
+  value: Record<string, unknown>,
+  serializers?: LoggerOptions['serializers'],
+): Record<string, unknown> {
+  const params = buildLoggerModuleParams(fakeAppCfg);
+  const redact =
+    params.pinoHttp && 'redact' in params.pinoHttp ? params.pinoHttp.redact : undefined;
+  let output = '';
+  const logger = pino(
+    {
+      base: null,
+      timestamp: false,
+      redact,
+      serializers,
+    },
+    { write: (chunk: string) => (output += chunk) },
+  );
+  logger.info(value);
+  return JSON.parse(output) as Record<string, unknown>;
+}
+
 describe('LOG_REDACT_PATHS — v1 既有清单兜底', () => {
   const paths = getRedactPaths();
 
@@ -77,6 +100,81 @@ describe('LOG_REDACT_PATHS — v1 既有清单兜底', () => {
     '*.secret',
   ])('包含 v1 既有项 %s', (field) => {
     expect(paths).toContain(field);
+  });
+});
+
+describe('LOG_REDACT_PATHS — client IP identity', () => {
+  const paths = getRedactPaths();
+
+  it.each([
+    'req.headers["x-forwarded-for"]',
+    'req.headers.forwarded',
+    'req.headers["x-real-ip"]',
+    'req.ip',
+    'req.ips',
+    'req.remoteAddress',
+    'req.remotePort',
+    'req.socket.remoteAddress',
+    'req.socket.remotePort',
+    'req.connection.remoteAddress',
+    'req.connection.remotePort',
+  ])('包含精确 HTTP request 路径 %s', (field) => {
+    expect(paths).toContain(field);
+  });
+
+  it('redacts proxy headers and pino standard req serializer remote peer fields in actual output', () => {
+    const serialized = serializeWithConfiguredRedaction(
+      {
+        req: {
+          method: 'GET',
+          url: '/api/system/v1/health',
+          headers: {
+            host: 'localhost',
+            'x-forwarded-for': '203.0.113.10',
+            forwarded: 'for=203.0.113.11',
+            'x-real-ip': '203.0.113.12',
+          },
+          socket: { remoteAddress: '198.51.100.20', remotePort: 43123 },
+        },
+      },
+      { req: pino.stdSerializers.req },
+    );
+    const req = serialized.req as {
+      headers: Record<string, unknown>;
+      remoteAddress: unknown;
+      remotePort: unknown;
+    };
+
+    expect(req.headers['x-forwarded-for']).toBe('[REDACTED]');
+    expect(req.headers.forwarded).toBe('[REDACTED]');
+    expect(req.headers['x-real-ip']).toBe('[REDACTED]');
+    expect(req.remoteAddress).toBe('[REDACTED]');
+    expect(req.remotePort).toBe('[REDACTED]');
+    expect(JSON.stringify(serialized)).not.toContain('203.0.113.10');
+    expect(JSON.stringify(serialized)).not.toContain('198.51.100.20');
+    expect(JSON.stringify(serialized)).not.toContain('43123');
+  });
+
+  it('redacts explicitly logged Express identity getters and socket aliases', () => {
+    const serialized = serializeWithConfiguredRedaction({
+      req: {
+        ip: '203.0.113.20',
+        ips: ['203.0.113.20', '198.51.100.20'],
+        remoteAddress: '198.51.100.20',
+        remotePort: 43124,
+        socket: { remoteAddress: '198.51.100.21', remotePort: 43125 },
+        connection: { remoteAddress: '198.51.100.22', remotePort: 43126 },
+      },
+    });
+    const req = serialized.req as Record<string, unknown>;
+
+    expect(req.ip).toBe('[REDACTED]');
+    expect(req.ips).toBe('[REDACTED]');
+    expect(req.remoteAddress).toBe('[REDACTED]');
+    expect(req.remotePort).toBe('[REDACTED]');
+    expect(req.socket).toEqual({ remoteAddress: '[REDACTED]', remotePort: '[REDACTED]' });
+    expect(req.connection).toEqual({ remoteAddress: '[REDACTED]', remotePort: '[REDACTED]' });
+    expect(JSON.stringify(serialized)).not.toMatch(/203\.0\.113|198\.51\.100|4312[4-6]/);
   });
 });
 

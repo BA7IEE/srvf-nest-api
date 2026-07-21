@@ -28,7 +28,20 @@ const LOG_REDACT_PATHS: readonly string[] = [
   // HTTP 头
   'req.headers.authorization',
   'req.headers.cookie',
+  'req.headers["x-forwarded-for"]',
+  'req.headers.forwarded',
+  'req.headers["x-real-ip"]',
   'res.headers["set-cookie"]',
+  // pino-http 标准 req serializer 与显式 Request 日志中的来源地址。仅列 HTTP req
+  // 精确路径，避免 `*.ip` 一类过宽规则误伤业务字段；remotePort 与地址成对遮蔽。
+  'req.ip',
+  'req.ips',
+  'req.remoteAddress',
+  'req.remotePort',
+  'req.socket.remoteAddress',
+  'req.socket.remotePort',
+  'req.connection.remoteAddress',
+  'req.connection.remotePort',
   // 请求 body 中的敏感字段(若将来配置打 body,这里兜底屏蔽)
   'req.body.password',
   'req.body.oldPassword',
