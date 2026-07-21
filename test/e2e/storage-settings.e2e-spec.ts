@@ -1,5 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { Role } from '@prisma/client';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
@@ -28,6 +30,12 @@ const USER_USERNAME = 'st-user';
 
 const SECRET_ID_PLAIN = 'AKIDtestsecretid000000000000000000ABC';
 const SECRET_KEY_PLAIN = 'plain-secret-key-do-not-leak-1234567890ABC';
+const SOP_SETTINGS_FIXTURE = JSON.parse(
+  readFileSync(
+    join(process.cwd(), 'docs/ops/fixtures/cos-production-storage-settings.json'),
+    'utf8',
+  ),
+) as Record<string, unknown>;
 
 describe('storage-settings admin', () => {
   let app: INestApplication;
@@ -408,6 +416,41 @@ describe('storage-settings admin', () => {
 
   describe('集成 / credentialStatus 三态 / invalidate', () => {
     beforeEach(truncate);
+
+    it('COS production SOP fixture 经真实 test app 完成 reset → PATCH → GET', async () => {
+      const reset = await request(httpServer(app))
+        .post('/api/system/v1/storage-settings/reset-credentials')
+        .set('Authorization', superAuth)
+        .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
+      expect(reset.status).toBe(201);
+      expect(reset.body.data.credentialStatus).toBe('configured');
+      assertNoSecret(reset.body);
+
+      const update = await request(httpServer(app))
+        .patch('/api/system/v1/storage-settings')
+        .set('Authorization', adminAuth)
+        .send(SOP_SETTINGS_FIXTURE);
+      expect(update.status).toBe(200);
+      expect(update.body.data).toMatchObject({
+        providerType: 'COS',
+        enabled: true,
+        bucket: 'srvf-attachments-example',
+        region: 'ap-shanghai',
+        envPrefix: 'prod',
+        allowedMimePolicyMode: 'INHERIT',
+        credentialStatus: 'configured',
+        credentialConfigured: true,
+      });
+      assertNoSecret(update.body);
+
+      const get = await request(httpServer(app))
+        .get('/api/system/v1/storage-settings')
+        .set('Authorization', adminAuth);
+      expect(get.status).toBe(200);
+      expect(get.body.data.credentialStatus).toBe('configured');
+      expect(get.body.data.envPrefix).toBe('prod');
+      assertNoSecret(get.body);
+    });
 
     it('26. GET reset 后 credentialStatus=configured', async () => {
       await request(httpServer(app))

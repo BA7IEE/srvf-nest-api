@@ -20,7 +20,7 @@
 
 ### 1.1 系统侧已就位(必读,部署侧确认)
 
-- [ ] 部署环境 env 已注入 `SMS_ENCRYPTION_KEY`(≥32 字符;推荐 `openssl rand -base64 32`;**与 `STORAGE_ENCRYPTION_KEY` 不同值**;production / smoke 缺失会启动失败)
+- [ ] 部署环境 env 已注入并冻结 `SMS_ENCRYPTION_KEY`(≥32 字符;推荐 `openssl rand -base64 32`;**与其他三把 key 不同值**;production / smoke 缺失会启动失败;已有密文后禁止直接修改,见 [`encryption-key-freeze.md`](encryption-key-freeze.md))
 - [ ] 当前版本包含 SMS 基础设施 T1-T3(`sms_settings` 等三表 migration 已 deploy;`GET /api/system/v1/sms-settings` 可达)
 - [ ] 权限码已 seed(`sms-setting.*` 3 条 + `sms-send-log.read.list` + `user.phone.clear`;`pnpm prisma:seed` 幂等)
 
@@ -96,7 +96,7 @@
    ```
 
 **校验**:`GET /api/system/v1/sms-settings` 返回 `providerType=TENCENT_SMS` / `enabled=true` / **`credentialStatus=configured`** 且运行参数(sdkAppId / signName / region / 两模板 ID)均非 null。
-**⚠ `credentialStatus=invalid`** → `SMS_ENCRYPTION_KEY` 被轮换或密文损坏,重新执行第 2 步。
+**⚠ `credentialStatus=invalid`** → key 与密文不匹配或密文损坏。停止通道并恢复已冻结的原 key；不得把 reset-credentials 当作 key 轮换工具。
 **⚠ production 禁 `providerType=DEV_STUB`**:PATCH 传 DEV_STUB 会被 400 拒绝(评审稿 E-15);DevStub 仅限本地/测试联调。
 
 ## 6. 真实发送验收
@@ -142,6 +142,6 @@
 
 ## 8. 本清单不覆盖(系统侧已定/挂起事项)
 
-- 凭证轮换:重复 §4-§5 即可(再次 reset-credentials 覆盖)
+- 上游 SMS SecretId/SecretKey 替换：仅在 `SMS_ENCRYPTION_KEY` 不变时重复 §4-§5；encryption key 轮换当前不支持，见 [`encryption-key-freeze.md`](encryption-key-freeze.md)
 - `sms_verification_codes` / `sms_send_logs` retention 清理:**手动 SQL SOP 已收口**(2026-06-11 P2-6),见 [`sms-data-retention-sop.md`](sms-data-retention-sop.md)
 - 找回密码 / OTP 登录 / 生日祝福:**系统侧三项消费者已全部落地**(P1-7 闭环,2026-06-11);本清单完成后三者即随通道真实生效,**零额外运维作业**

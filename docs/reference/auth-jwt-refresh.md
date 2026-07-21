@@ -116,7 +116,7 @@
 - **reuse detection 触发 family revoke**:收到 `rotatedAt != null` 的 row(旧 raw 被重放)→ 同事务内 `updateMany({ where: { familyId, revokedAt: null }, data: { revokedAt: now(), revokedReason: 'family-revoked' } })`,然后抛 `REFRESH_TOKEN_INVALID`
 
 **logout 行为契约**:
-- `POST /api/auth/v1/logout` 走 `@Public()`(refresh token 自身即凭证),只撤销**当前** refresh token(`revokedReason='logout'`,其他 rotation 链 token 不动);**幂等**(不存在 / 已撤销 / 已过期 → 仍返 200,沿 RFC 7009 §2.2),**不**抛业务码;access token 若随头传入**不**校验、**不**消费、**不**吊销
+- `POST /api/auth/v1/logout` 走 `@Public()`(refresh token 自身即凭证);任一可识别且未过期 row(含 rotated ancestor)只用于定位 `familyId`,同事务撤销该 family 全部未过期且未撤销 token(`revokedReason='logout'`);其他 family 不动。未知 token / row 已过期 / family 已全撤均幂等 200 + `data:null` 且零 audit;只有实际撤销数 > 0 才写 `auth.logout`。access token 若随头传入**不**校验、**不**消费、**不**吊销
 - `POST /api/auth/v1/logout-all` 走 `JwtAuthGuard`,撤销当前 user 全部未过期且未撤销的 refresh token(`updateMany revokedReason='logout'`);返 `{ revokedCount }`
 
 **联动撤销五场景**(沿 §9 主条目;`updateMany` 必须**同事务**内与主写操作执行,沿 `prisma.$transaction` 范式):本人改密 → `'self-password-change'`(audit `password.change.self`,`extra.refreshTokensRevoked: count` 必写)/ 本人短信验证码重置(找回密码,pre-auth)→ `'self-password-reset'`(2026-06-11,冻结评审稿 [password-reset-by-sms-review](../archive/reviews/password-reset-by-sms-review.md);audit `password.reset.by-sms`,`extra.refreshTokensRevoked: count` 必写)/ 管理员重置 → `'admin-password-reset'`(audit `password.reset.by-admin`,`extra.refreshTokensRevoked: count` 必写)/ 用户禁用 → `'admin-disable'`(**2026-07-13 第六刀推翻 D-PR3-2**:`UsersService.updateStatus` 必须同事务写 `user.status.update` before/after audit;**2026-07-14 第七刀补齐第二条触发路径**:`PATCH admin/v1/members/:id/account/status` 必须在同事务写 `member.account.status-change` before/after audit,详见 `members.service.ts` `updateAccountStatus`)/ 用户软删 → `'admin-delete'`(**2026-07-13 第六刀推翻 D-PR3-2**:`UsersService.softDelete` 必须同事务写 `user.soft-delete` before/after audit)
@@ -137,9 +137,9 @@
 - 命中走 `BizException(BizCode.TOO_MANY_REQUESTS)` + HTTP 429;**不暴露** `Retry-After` / `X-RateLimit-*` 头(沿 [`src/bootstrap/throttle-options.ts`](../../src/bootstrap/throttle-options.ts) `setHeaders: false`)
 
 **audit 写入**(5 事件,kebab-case `<resource>.<action>` / `<resource>.<action>.<scope>`):
-- 事件:`auth.login`(`extra.familyId`)/ `auth.refresh`(`extra.familyId / replayDetected / familyRevoked?`)/ `auth.logout`(`extra.found: boolean`,含幂等命中均写)/ `auth.logout-all`(`extra.revokedCount: number`)/ `password.reset.by-admin`
+- 事件:`auth.login`(`extra.familyId`)/ `auth.refresh`(`extra.familyId / replayDetected / familyRevoked?`)/ `auth.logout`(`extra.familyId / revokedCount`,仅实际撤销数 > 0 时写)/ `auth.logout-all`(`extra.revokedCount: number`)/ `password.reset.by-admin`
 - `extra` **禁止**写:refresh token 明文 / `tokenHash` / `passwordHash` / IP 完整段(IP 已在 `AuditContext.ip`)
-- `extra` **允许**写:`familyId`(cuid) / `replayDetected: boolean` / `revokedCount: number` / `revokedReason` 字符串 / `found: boolean`
+- `extra` **允许**写:`familyId`(cuid) / `replayDetected: boolean` / `revokedCount: number` / `revokedReason` 字符串
 
 **BizCode 段位(锁死)**:
 - `REFRESH_TOKEN_INVALID = 10007`(HTTP 401);沿 100xx users 段,LOGIN_FAILED=10004 / OLD_PASSWORD_INVALID=10005 / NEW_PASSWORD_SAME_AS_OLD=10006 之后下一可用号位
