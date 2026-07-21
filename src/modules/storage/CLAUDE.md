@@ -8,6 +8,7 @@
 - **动态路由** `StorageProviderRouter`:每次方法调用 live-read 一次 `storage_settings`，并把同一 snapshot 绑定到本次 Effect;`STORAGE_PROVIDER` DI token = `useExisting StorageProviderRouter`(沿 [`storage.module.ts:37`](storage.module.ts:37))
 - **配置 singleton** `storage_settings` row(沿 §6.5.4)+ 第 49 migration constant unique DB 约束 + `StorageSettingsService` 每次直读 PostgreSQL 当前已提交事实
 - **凭证加密** `StorageCryptoService`(AES-256-GCM)+ **uploadToken HMAC-SHA256**(`upload-token.util.ts`,签名 key 由 `STORAGE_ENCRYPTION_KEY` scrypt 派生)
+- **空生产库离线初始化**:`node dist/storage-settings-bootstrap --config-file=<0600-json> --confirm-database=<db>`;仅创建 COS + enabled singleton,默认拒绝覆盖;`--dry-run` 零写入
 - **Storage Settings admin**:`GET / PATCH / POST reset-credentials` 三端点,经 `rbac.can()` 判权
 - **不负责**:附件业务流(在 [`/src/modules/attachments/`](../../modules/attachments/));附件配置三表(在 [`/src/modules/attachment-configs/`](../../modules/attachment-configs/))
 
@@ -18,6 +19,7 @@
 - **凭证加密 算法/key 派生**:AES-256-GCM + `scrypt(envKey, fixedSalt, 32)` 派生 32 字节 key;序列化 `base64(iv:12B || authTag:16B || ciphertext)`(沿 [`storage-crypto.service.ts:19`](storage-crypto.service.ts:19))
 - **`credentialStatus` 三档**:`MISSING`(无凭证字段)/ `CONFIGURED`(解密成功)/ `INVALID`(解密失败 / `STORAGE_ENCRYPTION_KEY` 被轮换)
 - **`StorageSettingsService` 是凭证读取唯一出口**:`getActiveSettings()` 每次直读 PostgreSQL,无跨请求 Map/TTL/invalidate 正确性链;第 49 migration 的 `storage_settings_singleton_key ON ((true))` 在 DB 层保证至多一行,首配并发 P2002 后重跑事务命中既有单行,不再有“取最早 + WARN”分支
+- **离线 bootstrap 安全边界**:配置文件必须无 group/other 权限,内含显式 `databaseUrl`(仅 `public` schema)且库名与 `--confirm-database` 逐字一致;仅 production 或 `test + app_test*` 可运行;空表才写,同事务读回并用当前 `STORAGE_ENCRYPTION_KEY` 解密校验;输出永不含 URL/凭证明文/密文
 - **`CosStorageProvider` 4 档守护**(每次方法调用):settings null / providerType ≠ COS / credentialStatus ≠ CONFIGURED / bucket+region 缺失 → 抛 `CosProviderUnavailableError`(沿 [`providers/cos.provider.ts:158`](providers/cos.provider.ts:158))
 - **`LocalStorageProvider.resolveKey`** 防 `../` 逃逸 root(沿 Q-88-6;[`providers/local.provider.ts:113`](providers/local.provider.ts:113));dev/test 默认 fallback,production 启动期被 fail-fast 拒绝
 - **signed URL**:COS PUT 上传约定客户端必须带 `Content-Type` 与签名一致;`response-content-disposition` 通过 query 参数附加(沿 §6.4.6 CORS);Local provider 返非路由 stub URL(`/internal/storage/local-stub-upload/...`;接口对称用,不会被实际命中)
