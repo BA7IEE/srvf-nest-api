@@ -11,6 +11,7 @@ import {
   isPinnedStorageProvider,
   StoragePinnedLocatorError,
   type PinnedStorageProvider,
+  type StoragePinnedOperationOptions,
   type StorageProvider,
 } from '../storage/storage.interface';
 import {
@@ -72,6 +73,10 @@ interface ManualRelocationEvidence {
   head: HeadObjectResult;
   hash: StorageObjectSha256Result | null;
 }
+
+const MANUAL_STORAGE_MAINTENANCE: StoragePinnedOperationOptions = {
+  maintenance: true,
+};
 
 /*
  * Storage-consistency lock-order ledger (rows are lock/write order, never call order):
@@ -2151,7 +2156,11 @@ export class AttachmentStorageOrchestrator {
     locator: StorageObjectLocator,
     onProgress: () => Promise<void>,
   ): Promise<ManualRelocationEvidence> {
-    const firstHead = await this.pinnedProvider().headObjectAt(locator, object.key);
+    const firstHead = await this.pinnedProvider().headObjectAt(
+      locator,
+      object.key,
+      MANUAL_STORAGE_MAINTENANCE,
+    );
     if (!firstHead.exists) throw new StorageCandidateNotFoundError();
     assertExpectedSizeMatchesHead(object, firstHead);
 
@@ -2161,8 +2170,17 @@ export class AttachmentStorageOrchestrator {
       return evidence;
     }
     requireSha256Hex(object.checksum, 'stored checksum');
-    const hash = await this.pinnedProvider().hashObjectSha256At(locator, object.key, onProgress);
-    const finalHead = await this.pinnedProvider().headObjectAt(locator, object.key);
+    const hash = await this.pinnedProvider().hashObjectSha256At(
+      locator,
+      object.key,
+      onProgress,
+      MANUAL_STORAGE_MAINTENANCE,
+    );
+    const finalHead = await this.pinnedProvider().headObjectAt(
+      locator,
+      object.key,
+      MANUAL_STORAGE_MAINTENANCE,
+    );
     if (!finalHead.exists) throw new StorageCandidateNotFoundError();
     const evidence = { key: object.key, head: finalHead, hash };
     this.assertManualRelocationEvidence(object, evidence);

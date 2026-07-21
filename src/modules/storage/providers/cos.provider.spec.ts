@@ -378,7 +378,7 @@ describe('CosStorageProvider', () => {
     });
   });
 
-  describe('4 档守护', () => {
+  describe('non-pinned 5 档守护 + pinned maintenance 例外', () => {
     it('settings null → CosProviderUnavailableError', async () => {
       const { service } = makeSettingsServiceMock(null);
       const svc = new CosStorageProvider(service);
@@ -391,6 +391,36 @@ describe('CosStorageProvider', () => {
       const { service } = makeSettingsServiceMock(makeSettings({ providerType: 'LOCAL' }));
       const svc = new CosStorageProvider(service);
       await expect(svc.deleteObject('k')).rejects.toThrow(/providerType=LOCAL/);
+    });
+
+    it('enabled=false 的 non-pinned 调用拒绝且不创建 COS client', async () => {
+      const { service } = makeSettingsServiceMock(makeSettings({ enabled: false }));
+      const svc = new CosStorageProvider(service);
+
+      await expect(svc.putObject({ key: 'k', body: Buffer.from('x') })).rejects.toThrow(
+        /enabled=false/,
+      );
+      expect(COSMock).not.toHaveBeenCalled();
+      expect(COSMock.__mockInstance.putObject).not.toHaveBeenCalled();
+    });
+
+    it('enabled=false 不误伤历史 pinned locator 的 maintenance 删除', async () => {
+      const { service } = makeSettingsServiceMock(makeSettings({ enabled: false }));
+      COSMock.__mockInstance.deleteObject.mockResolvedValue({ statusCode: 204 });
+      const svc = new CosStorageProvider(service);
+      const locator = {
+        providerType: 'COS' as const,
+        bucket: 'historical-bucket',
+        region: 'ap-old',
+        localNamespace: null,
+      };
+
+      await expect(svc.deleteObjectAt(locator, 'historical-key')).resolves.toBeUndefined();
+      expect(COSMock.__mockInstance.deleteObject).toHaveBeenCalledWith({
+        Bucket: 'historical-bucket',
+        Region: 'ap-old',
+        Key: 'historical-key',
+      });
     });
 
     it('credentialStatus=MISSING → CosProviderUnavailableError', async () => {

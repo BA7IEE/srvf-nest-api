@@ -9,6 +9,8 @@ import {
 import { NotificationOutboxService } from '../../src/modules/notifications/notification-outbox.service';
 import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
 import { PrismaService } from '../../src/database/prisma.service';
+import { CosStorageProvider } from '../../src/modules/storage/providers/cos.provider';
+import { LocalStorageProvider } from '../../src/modules/storage/providers/local.provider';
 import { STORAGE_PROVIDER } from '../../src/modules/storage/storage.constants';
 import type { StorageProvider } from '../../src/modules/storage/storage.interface';
 import { loginAs } from '../fixtures/auth.fixture';
@@ -369,6 +371,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     await prisma.member.deleteMany({});
     await prisma.recruitmentApplication.deleteMany({});
     await prisma.recruitmentCycle.deleteMany({});
+    await prisma.storageSettings.deleteMany({});
     // F1:OCR 日封顶按 IP 持久计数 —— 每测清零,防同文件多测累计打满 30 上限误伤无关用例。
     await prisma.recruitmentOcrDailyCounter.deleteMany({});
     await prisma.auditLog.deleteMany({
@@ -394,6 +397,29 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     const app1 = await prisma.recruitmentApplication.findFirst({ where: { tempNo: 'T20260001' } });
     expect(app1?.openid).toBe('dev-openid-code-a');
     expect(app1?.statusCode).toBe('verified');
+  });
+
+  it('P0-05 enabled=false → 招新主图/裁剪图/签名图零 Provider putObject、报名零落库', async () => {
+    await openCycle();
+    await prisma.storageSettings.create({
+      data: { providerType: 'LOCAL', enabled: false },
+    });
+    const localPut = jest.spyOn(app.get(LocalStorageProvider), 'putObject');
+    const cosPrepare = jest.spyOn(app.get(CosStorageProvider), 'prepare');
+
+    try {
+      const res = await submit(
+        validPayload({ wechatCode: 'storage-disabled', idCardNumber: ID_MATCH_A }),
+      );
+
+      expectBizError(res, BizCode.INTERNAL_ERROR, { strictMessage: false });
+      expect(localPut).not.toHaveBeenCalled();
+      expect(cosPrepare).not.toHaveBeenCalled();
+      expect(await prisma.recruitmentApplication.count()).toBe(0);
+    } finally {
+      localPut.mockRestore();
+      cosPrepare.mockRestore();
+    }
   });
 
   // ② 大陆 OCR 不匹配(小程序链/无会话)→ S4b 六分流:延迟 confirm 三选一,**不落记录**(替换原「直落 manual_review」)

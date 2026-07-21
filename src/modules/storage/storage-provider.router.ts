@@ -5,7 +5,9 @@ import { LocalStorageProvider } from './providers/local.provider';
 import { StorageSettingsService } from './storage-settings.service';
 import {
   StoragePinnedLocatorError,
+  StorageProviderUnavailableError,
   type PinnedStorageProvider,
+  type StoragePinnedOperationOptions,
   type StorageProvider,
 } from './storage.interface';
 import type {
@@ -52,6 +54,9 @@ export class StorageProviderRouter implements PinnedStorageProvider {
   private async resolve(): Promise<StorageProvider> {
     const r = await this.settings.getActiveSettings();
     if (!r) return this.local;
+    if (!r.enabled) {
+      throw new StorageProviderUnavailableError('storage_settings.enabled=false');
+    }
     if (r.providerType === 'COS') return this.cos.prepare(r);
     if (r.providerType === 'LOCAL') return this.local;
     // 防御:enum 未来扩展(如 'OSS' / 'R2');沿 v1.1+ 升级路径,fallback Local
@@ -82,13 +87,31 @@ export class StorageProviderRouter implements PinnedStorageProvider {
     throw new StoragePinnedLocatorError(`未知 providerType=${String(settings.providerType)}`);
   }
 
-  putObjectAt(locator: StorageObjectLocator, input: PutObjectInput): Promise<StoredObject> {
+  private async assertPinnedEffectEnabled(options?: StoragePinnedOperationOptions): Promise<void> {
+    if (options?.maintenance === true) return;
+    const settings = await this.settings.getActiveSettings();
+    if (settings && !settings.enabled) {
+      throw new StorageProviderUnavailableError('storage_settings.enabled=false');
+    }
+  }
+
+  async putObjectAt(
+    locator: StorageObjectLocator,
+    input: PutObjectInput,
+    options?: StoragePinnedOperationOptions,
+  ): Promise<StoredObject> {
+    await this.assertPinnedEffectEnabled(options);
     return locator.providerType === 'COS'
       ? this.cos.putObjectAt(locator, input)
       : this.local.putObjectAt(locator, input);
   }
 
-  deleteObjectAt(locator: StorageObjectLocator, key: string): Promise<void> {
+  async deleteObjectAt(
+    locator: StorageObjectLocator,
+    key: string,
+    options?: StoragePinnedOperationOptions,
+  ): Promise<void> {
+    await this.assertPinnedEffectEnabled(options);
     return locator.providerType === 'COS'
       ? this.cos.deleteObjectAt(locator, key)
       : this.local.deleteObjectAt(locator, key);
@@ -97,45 +120,63 @@ export class StorageProviderRouter implements PinnedStorageProvider {
   generateUploadUrlAt(
     locator: StorageObjectLocator,
     input: GenerateUploadUrlInput,
+    options?: StoragePinnedOperationOptions,
   ): Promise<UploadUrlResult> {
-    return locator.providerType === 'COS'
-      ? this.cos.generateUploadUrlAt(locator, input)
-      : this.local.generateUploadUrlAt(locator, input);
+    return this.assertPinnedEffectEnabled(options).then(() =>
+      locator.providerType === 'COS'
+        ? this.cos.generateUploadUrlAt(locator, input)
+        : this.local.generateUploadUrlAt(locator, input),
+    );
   }
 
   generateDownloadUrlAt(
     locator: StorageObjectLocator,
     input: GenerateDownloadUrlInput,
+    options?: StoragePinnedOperationOptions,
   ): Promise<DownloadUrlResult> {
-    return locator.providerType === 'COS'
-      ? this.cos.generateDownloadUrlAt(locator, input)
-      : this.local.generateDownloadUrlAt(locator, input);
+    return this.assertPinnedEffectEnabled(options).then(() =>
+      locator.providerType === 'COS'
+        ? this.cos.generateDownloadUrlAt(locator, input)
+        : this.local.generateDownloadUrlAt(locator, input),
+    );
   }
 
-  headObjectAt(locator: StorageObjectLocator, key: string): Promise<HeadObjectResult> {
-    return locator.providerType === 'COS'
-      ? this.cos.headObjectAt(locator, key)
-      : this.local.headObjectAt(locator, key);
+  headObjectAt(
+    locator: StorageObjectLocator,
+    key: string,
+    options?: StoragePinnedOperationOptions,
+  ): Promise<HeadObjectResult> {
+    return this.assertPinnedEffectEnabled(options).then(() =>
+      locator.providerType === 'COS'
+        ? this.cos.headObjectAt(locator, key)
+        : this.local.headObjectAt(locator, key),
+    );
   }
 
   readObjectPrefixAt(
     locator: StorageObjectLocator,
     key: string,
     maxBytes: number,
+    options?: StoragePinnedOperationOptions,
   ): Promise<Buffer> {
-    return locator.providerType === 'COS'
-      ? this.cos.readObjectPrefixAt(locator, key, maxBytes)
-      : this.local.readObjectPrefixAt(locator, key, maxBytes);
+    return this.assertPinnedEffectEnabled(options).then(() =>
+      locator.providerType === 'COS'
+        ? this.cos.readObjectPrefixAt(locator, key, maxBytes)
+        : this.local.readObjectPrefixAt(locator, key, maxBytes),
+    );
   }
 
   hashObjectSha256At(
     locator: StorageObjectLocator,
     key: string,
     onProgress?: StorageObjectReadProgress,
+    options?: StoragePinnedOperationOptions,
   ): Promise<StorageObjectSha256Result> {
-    return locator.providerType === 'COS'
-      ? this.cos.hashObjectSha256At(locator, key, onProgress)
-      : this.local.hashObjectSha256At(locator, key, onProgress);
+    return this.assertPinnedEffectEnabled(options).then(() =>
+      locator.providerType === 'COS'
+        ? this.cos.hashObjectSha256At(locator, key, onProgress)
+        : this.local.hashObjectSha256At(locator, key, onProgress),
+    );
   }
 
   async putObject(input: PutObjectInput): Promise<StoredObject> {

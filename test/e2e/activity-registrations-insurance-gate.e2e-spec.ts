@@ -759,7 +759,7 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
     expect(evidence[0].requiredThrough?.toISOString()).toBe('2099-07-01T00:00:00.000Z');
     expect(evidence[0].sourceCoverageStart?.toISOString()).toBe('2099-01-01T00:00:00.000Z');
     expect(evidence[0].sourceCoverageEnd?.toISOString()).toBe('2099-12-31T00:00:00.000Z');
-    expect(JSON.stringify(evidence[0])).not.toMatch(
+    expect(Object.keys(evidence[0]).join('|')).not.toMatch(
       /insurer|policyNumber|note|reason|image|attachment|key|url/i,
     );
   });

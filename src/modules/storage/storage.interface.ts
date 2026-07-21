@@ -55,27 +55,62 @@ export class StoragePinnedLocatorError extends Error {
   }
 }
 
+// 普通业务 Storage Effect 的运行时可用性错误。与 pinned locator 错误分离：
+// enabled=false 关闭普通 pinned / non-pinned Effect；仅显式人工维护证据链
+// 可凭历史 locator 绕过 kill switch。
+export class StorageProviderUnavailableError extends Error {
+  constructor(reason: string) {
+    super(`STORAGE_PROVIDER_UNAVAILABLE: ${reason}`);
+    this.name = 'StorageProviderUnavailableError';
+  }
+}
+
+export interface StoragePinnedOperationOptions {
+  // 仅允许显式人工维护证据链绕过 enabled kill switch；普通业务与自动 worker 不传。
+  maintenance?: boolean;
+}
+
 // Durable ledger 只能经 pinned locator 调 Provider；动态 settings 切换不得把旧 key
 // 静默路由到当前 bucket/root。STORAGE_PROVIDER 的 production 实例(StorageProviderRouter)
 // 实现本接口，测试 fake 可按需实现。
 export interface PinnedStorageProvider extends StorageProvider {
   getCurrentLocator(): Promise<StorageObjectLocator>;
-  putObjectAt(locator: StorageObjectLocator, input: PutObjectInput): Promise<StoredObject>;
-  deleteObjectAt(locator: StorageObjectLocator, key: string): Promise<void>;
+  putObjectAt(
+    locator: StorageObjectLocator,
+    input: PutObjectInput,
+    options?: StoragePinnedOperationOptions,
+  ): Promise<StoredObject>;
+  deleteObjectAt(
+    locator: StorageObjectLocator,
+    key: string,
+    options?: StoragePinnedOperationOptions,
+  ): Promise<void>;
   generateUploadUrlAt(
     locator: StorageObjectLocator,
     input: GenerateUploadUrlInput,
+    options?: StoragePinnedOperationOptions,
   ): Promise<UploadUrlResult>;
   generateDownloadUrlAt(
     locator: StorageObjectLocator,
     input: GenerateDownloadUrlInput,
+    options?: StoragePinnedOperationOptions,
   ): Promise<DownloadUrlResult>;
-  headObjectAt(locator: StorageObjectLocator, key: string): Promise<HeadObjectResult>;
-  readObjectPrefixAt(locator: StorageObjectLocator, key: string, maxBytes: number): Promise<Buffer>;
+  headObjectAt(
+    locator: StorageObjectLocator,
+    key: string,
+    options?: StoragePinnedOperationOptions,
+  ): Promise<HeadObjectResult>;
+  readObjectPrefixAt(
+    locator: StorageObjectLocator,
+    key: string,
+    maxBytes: number,
+    options?: StoragePinnedOperationOptions,
+  ): Promise<Buffer>;
   hashObjectSha256At(
     locator: StorageObjectLocator,
     key: string,
     onProgress?: StorageObjectReadProgress,
+    options?: StoragePinnedOperationOptions,
   ): Promise<StorageObjectSha256Result>;
 }
 
