@@ -15,7 +15,7 @@
 | 计数项 | 值 |
 |---|---|
 | 模块 | 36 |
-| Controller | 74 |
+| Controller | 75 |
 | Endpoint | 365 |
 | Migration | 64 |
 | BizCode | 258 |

@@ -18,8 +18,9 @@
 | 最后一个 SUPER_ADMIN 保护 | `users.service.ts` `assertNotLastSuperAdmin` | 在事务内 `count` 剩余活跃 super admin,< 1 抛 `LAST_SUPER_ADMIN_PROTECTED` |
 | helmet HTTP 安全头 | `bootstrap/apply-global-setup.ts` | 默认开启,Swagger UI 局部放开 CSP |
 | 登录限流 | `@nestjs/throttler` PostgreSQL shared storage | 10 个命名实例共用数据库并以 `(throttlerName,key)` 物理隔离；登录实例仅作用于 `POST /api/auth/v1/login`,IP 维度 5 次 / 60 秒(`LOGIN_THROTTLE_LIMIT` / `LOGIN_THROTTLE_TTL_SECONDS` 可配),不暴露阈值；DB/storage 异常 fail-closed 为 50000,零本地 Map fallback |
+| 可信代理身份边界 | `config/app.config.ts` + `bootstrap/apply-global-setup.ts` | 单一 `APP_TRUSTED_PROXY_CIDRS=none\|CIDR,...`；只收 canonical network CIDR，production/smoke 缺失或非法即启动失败。Express 原生 XFF 右向左首个不可信截断，`none` 映射 `trust proxy=false`且仅适用于真实直连；反代下 `none` 会把全部 client 汇入 proxy IP。全局边界先建立 request ID；紧随 Helmet 的 normalizer 在 CORS preflight/pino/throttler/controller 前把 mapped IPv4 归 native、IPv6 归 lowercase 压缩，并把非法 token/getter 异常或配置非 `none` 时仍为 trusted proxy 的最终 identity 统一拒绝为 40000。拒绝响应保留 request ID/Helmet/允许 Origin CORS，只写固定 event+reqId 的安全日志，不进入普通 request serializer。禁止 boolean/hop/wildcard/默认全信，不把 `Forwarded` / `X-Real-IP` 当身份来源。IP 仅用于限流、audit、SMS/OCR 防刷取证，不是鉴权身份，正常 HTTP 日志按下方路径 redact |
 | 日志敏感字段 redact | `bootstrap/logger-options.ts` | 命中字段日志显示为 `[REDACTED]`,**不仅仅是长度截断** |
-| 启动强校验 | `config/app.config.ts` + `prisma/seed.ts` | `APP_ENV=production` 下拒绝默认值的 `JWT_SECRET` / `APP_CORS_ORIGIN=*` / `SUPER_ADMIN_PASSWORD` / `SUPER_ADMIN_USERNAME=admin` |
+| 启动强校验 | `config/app.config.ts` + `prisma/seed.ts` | `APP_ENV=production` 下拒绝默认值的 `JWT_SECRET` / `APP_CORS_ORIGIN=*` / `SUPER_ADMIN_PASSWORD` / `SUPER_ADMIN_USERNAME=admin`；production/smoke 必须显式配置可信代理 CIDR或 `none` |
 | 本人自助改密 | `controllers/app-me.controller.ts` + `users.service.ts` + `audit-logs.service.ts` | `PUT /api/app/v1/me/password`(`ChangeMyPasswordDto { oldPassword, newPassword }`);严格事务内顺序:`bcrypt.compare(oldPassword)` → 严格 `===` 比较 oldPassword/newPassword → `bcrypt.hash(newPassword)` → 撤销该 user 全部活跃 refresh(`self-password-change`)→ 写 audit log `password.change.self`;响应 `userSafeSelect`(永不含 `passwordHash`);旧 access 不主动吊销、≤15m 自然过期 |
 | 改密接口防爆破 | `@PasswordChangeThrottle` + `throttler-biz.guard.ts` | 独立 throttler 实例 `password-change`,与登录限流物理隔离;IP 维度 5 次 / 60 秒(`PASSWORD_CHANGE_THROTTLE_LIMIT` / `PASSWORD_CHANGE_THROTTLE_TTL_SECONDS` 可配);共用 PostgreSQL storage(不引入 Redis);不暴露阈值 / `Retry-After` / `X-RateLimit-*` |
 | refresh token / logout / logout-all(P0-E PR-3 + identity session P0 PR2) | `auth.service.ts` + `refresh-token.util.ts` + `audit-logs.service.ts` | `POST /api/auth/v1/refresh`(rotation always + family revoke + absolute expiration)/ `POST /api/auth/v1/logout`(任一可识别且未过期 row〔含 rotated ancestor〕幂等撤销所属 family 全部活跃未过期 token)/ `POST /api/auth/v1/logout-all`(撤销该 user 全部 refresh);`refresh_tokens` 表只存 `sha256(raw).hex`,明文绝不入库;refresh 失败 4 子原因统一 `REFRESH_TOKEN_INVALID=10007`(不拆 EXPIRED/REVOKED/REPLAY);**其他 family 与 access token 不受 logout 影响**,access 仍不主动吊销;TTL `access 15m / refresh 90d` |
@@ -41,7 +42,18 @@
 ```
 req.headers.authorization
 req.headers.cookie
+req.headers["x-forwarded-for"]
+req.headers.forwarded
+req.headers["x-real-ip"]
 res.headers["set-cookie"]
+req.ip
+req.ips
+req.remoteAddress
+req.remotePort
+req.socket.remoteAddress
+req.socket.remotePort
+req.connection.remoteAddress
+req.connection.remotePort
 req.body.password
 req.body.oldPassword
 req.body.newPassword

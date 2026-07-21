@@ -128,6 +128,8 @@
 
 **限流契约**:
 - 全部 10 个命名 throttler 共用 PostgreSQL storage，并以 `(throttlerName,key)` 唯一行物理隔离；保留包默认 IP tracker / hash key，DB/storage 异常 fail-closed 为 50000，绝不回退进程内 Map
+- IP tracker 只读取全局固化后的 Express `req.ip`：`applyGlobalSetup` 先把 `app.trustedProxyCidrs` 设置为原生 `trust proxy`，按 X-Forwarded-For 从右向左在首个不可信 hop 截断；Helmet 后、CORS preflight/pino/throttler/controller 前的唯一 normalizer 再把 mapped IPv4 归 native、IPv6 归 lowercase 压缩，并将非法 token/getter 异常或配置非 `none` 时仍落在 trusted CIDR 的最终 identity 统一收口为 40000。只支持直接 socket + XFF；不把 `Forwarded` / `X-Real-IP` 当身份来源，也不自行拆解 XFF
+- IP 是限流、审计与成本防刷维度，不是鉴权身份。production/smoke 只能显式配置实际直连 backend socket 的精确代理 CIDR；`none` 仅适用于 backend 真实直连，反代承流时使用 `none` 会把全部 client 汇入 proxy IP，造成共享 429 与审计/成本证据污染。禁止 `true`、hop number、临时全信以及用整个 Pod/RFC1918 网段替代真实拓扑
 - `POST /api/auth/v1/refresh`:独立 throttler `'refresh'`,IP **30 次 / 60 秒**;装饰器 `@RefreshThrottle()`(纯 metadata,limit / ttl 在 `throttle-options.ts` 从 `app.config.ts` 注入)
 - `POST /api/auth/v1/logout`:**无限流**(刻意;避免攻击者吃光合法 logout 配额)
 - `POST /api/auth/v1/logout-all`:复用 `'password-change'` throttler(IP 5/60);沿"高危操作低频限流"语义

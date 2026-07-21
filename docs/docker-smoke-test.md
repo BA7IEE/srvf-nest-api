@@ -41,6 +41,7 @@
 | `APP_ENV` | `production` | 强校验:必须 ∈ `{development, test, production, smoke}` |
 | `APP_PORT` | `3000` | 容器内端口 |
 | `APP_CORS_ORIGIN` | `https://app.example.com` | production 下禁止为空 / 禁止 `*` |
+| `APP_TRUSTED_PROXY_CIDRS` | `none` | production / smoke 必须显式配置；此处仅因客户端直连 backend 才可使用 `none` |
 | `DATABASE_URL` | `postgresql://postgres:postgres@postgres:5432/app_smoke?schema=public` | 容器内通过 docker network 解析 `postgres` 服务名 |
 | `JWT_SECRET` | `openssl rand -base64 48`(64 字符) | 强校验:≥32 字符 + 不等于 `.env.example` 默认值 |
 | `JWT_EXPIRES_IN` | `15m` | 与 `.env.example` 一致 |
@@ -48,6 +49,8 @@
 | `LOG_LEVEL` | `info` | 留空亦可,production 默认 `info` |
 
 > `LOGIN_THROTTLE_LIMIT` / `LOGIN_THROTTLE_TTL_SECONDS` 留空,使用默认 5 / 60。
+
+> 这张表记录的是当时手动 smoke 的最小环境快照，不是当前生产配置的完整清单。当前部署必须以 `.env.example` 为字段权威源，使用经评审的完整 env file；自动化 smoke 使用 `APP_ENV=smoke`，同样必须显式设置 `APP_TRUSTED_PROXY_CIDRS`。
 
 ---
 
@@ -96,6 +99,7 @@ docker run -d --name u-nest-api-smoke \
   -e APP_ENV=production \
   -e APP_PORT=3000 \
   -e APP_CORS_ORIGIN=https://app.example.com \
+  -e APP_TRUSTED_PROXY_CIDRS=none \
   -e DATABASE_URL="postgresql://postgres:postgres@postgres:5432/app_smoke?schema=public" \
   -e JWT_SECRET="$(openssl rand -base64 48)" \
   -e JWT_EXPIRES_IN=15m \
@@ -103,6 +107,8 @@ docker run -d --name u-nest-api-smoke \
   -e LOG_LEVEL=info \
   u-nest-api-starter:smoke
 ```
+
+这里使用 `none` 的前提是请求经宿主机发布端口直接进入 backend、链路中没有反向代理。真实反代部署必须填写与 backend socket 直接相连、经过评审的代理 CIDR；误用 `none` 会让业务看到代理地址而非客户端地址，导致限流身份合并并污染审计证据。
 
 容器启动日志:
 
@@ -193,7 +199,7 @@ job 步骤:
 2. 起 service container `postgres:16-alpine`(GitHub Actions `services:` 字段,与 ci.yml 一致)
 3. `docker build -t u-nest-api-starter:ci .`(无 cache 时 ~3-4 分钟,可加 `actions/cache` 缓存 buildx layer)
 4. host 侧 `pnpm install --frozen-lockfile && pnpm exec prisma migrate deploy && pnpm exec prisma db seed`(注入 CI 专用 super admin 凭据)
-5. `docker run -d --name app ... u-nest-api-starter:ci`(production 模式,DATABASE_URL 走 service container hostname)
+5. `docker run -d --name app ... u-nest-api-starter:ci`(smoke 配置档,显式 `APP_TRUSTED_PROXY_CIDRS=none`,DATABASE_URL 走 service container hostname)
 6. `curl --retry 10 --retry-delay 2 --retry-connrefused` 探测 `/api/system/v1/health` → 200
 7. 断言:
    - `GET /api/system/v1/health/ready` → 200 + `db:"up"`

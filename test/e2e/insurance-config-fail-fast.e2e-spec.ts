@@ -6,12 +6,14 @@ import appConfig from '../../src/config/app.config';
 const BUSINESS_PROBE = Symbol('INSURANCE_BUSINESS_PROBE');
 interface BusinessProbe {
   readonly enforcementEnabled: boolean;
+  readonly trustedProxyCidrs: string[];
   onModuleInit(): void;
 }
 const ENV_KEYS = [
   'APP_ENV',
   'APP_PORT',
   'APP_CORS_ORIGIN',
+  'APP_TRUSTED_PROXY_CIDRS',
   'ENABLE_SWAGGER',
   'LOG_LEVEL',
   'STORAGE_CONSISTENCY_MODE',
@@ -35,6 +37,7 @@ describe('INSURANCE_ENFORCEMENT_ENABLED production config assembly', () => {
     process.env.APP_ENV = 'production';
     process.env.APP_PORT = '3000';
     process.env.APP_CORS_ORIGIN = 'https://insurance-config.example.test';
+    process.env.APP_TRUSTED_PROXY_CIDRS = 'none';
     process.env.ENABLE_SWAGGER = 'false';
     delete process.env.LOG_LEVEL;
     process.env.STORAGE_CONSISTENCY_MODE = 'STRICT';
@@ -68,6 +71,9 @@ describe('INSURANCE_ENFORCEMENT_ENABLED production config assembly', () => {
           useFactory: (config: ConfigType<typeof appConfig>): BusinessProbe => ({
             get enforcementEnabled() {
               return config.insurance.enforcementEnabled;
+            },
+            get trustedProxyCidrs() {
+              return config.trustedProxyCidrs;
             },
             onModuleInit() {
               businessServiceStarted = true;
@@ -104,4 +110,39 @@ describe('INSURANCE_ENFORCEMENT_ENABLED production config assembly', () => {
       await moduleRef.close();
     }
   });
+
+  it.each([
+    ['production', 'missing', undefined],
+    ['production', 'empty', ''],
+    ['production', 'blank', '   '],
+    ['smoke', 'missing', undefined],
+    ['smoke', 'empty', ''],
+    ['smoke', 'blank', '   '],
+  ] as const)(
+    '%s APP_TRUSTED_PROXY_CIDRS %s:config 装配在 listen/业务 service 前 fail-fast',
+    async (env, _label, value) => {
+      process.env.APP_ENV = env;
+      if (value === undefined) delete process.env.APP_TRUSTED_PROXY_CIDRS;
+      else process.env.APP_TRUSTED_PROXY_CIDRS = value;
+
+      await expect(assemble()).rejects.toThrow(/APP_TRUSTED_PROXY_CIDRS/);
+      expect(businessServiceStarted).toBe(false);
+    },
+  );
+
+  it.each(['production', 'smoke'] as const)(
+    '%s explicit none:config 与业务 provider 可装配，信任集合为空',
+    async (env) => {
+      process.env.APP_ENV = env;
+      process.env.APP_TRUSTED_PROXY_CIDRS = 'none';
+      const moduleRef = await assemble();
+      try {
+        await moduleRef.init();
+        expect(moduleRef.get<BusinessProbe>(BUSINESS_PROBE).trustedProxyCidrs).toEqual([]);
+        expect(businessServiceStarted).toBe(true);
+      } finally {
+        await moduleRef.close();
+      }
+    },
+  );
 });

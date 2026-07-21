@@ -1,4 +1,5 @@
 import { registerAs } from '@nestjs/config';
+import { BlockList, isIP } from 'node:net';
 
 // V2.x production storage_settings fail-fast(2026-05-16):
 // 'smoke' 是 CI Docker smoke job 专用 AppEnv;除 storage_settings fail-fast 外,
@@ -42,6 +43,186 @@ function parseCorsOrigin(raw: string | undefined): string[] {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+const FORBIDDEN_TRUSTED_PROXY_RANGES = [
+  { address: '127.0.0.0', prefix: 8, family: 'ipv4' },
+  { address: '169.254.0.0', prefix: 16, family: 'ipv4' },
+  { address: '::1', prefix: 128, family: 'ipv6' },
+  { address: 'fe80::', prefix: 10, family: 'ipv6' },
+  { address: 'fc00::', prefix: 7, family: 'ipv6' },
+] as const;
+
+const forbiddenTrustedProxyBlockList = new BlockList();
+for (const range of FORBIDDEN_TRUSTED_PROXY_RANGES) {
+  forbiddenTrustedProxyBlockList.addSubnet(range.address, range.prefix, range.family);
+}
+
+function trustedProxyCidrIntersectsForbiddenRange(
+  address: string,
+  prefix: number,
+  family: 'ipv4' | 'ipv6',
+): boolean {
+  if (forbiddenTrustedProxyBlockList.check(address, family)) return true;
+
+  const candidate = new BlockList();
+  candidate.addSubnet(address, prefix, family);
+  return FORBIDDEN_TRUSTED_PROXY_RANGES.some((range) =>
+    candidate.check(range.address, range.family),
+  );
+}
+
+function ipv4AddressBytes(address: string): number[] {
+  return address.split('.').map((octet) => Number.parseInt(octet, 10));
+}
+
+// isIP(address) 已先完成语法验证；这里只把合法 IPv6 转为 16 bytes，供 CIDR host-bit
+// 与 mapped RFC1918 root 判定。embedded IPv4 先转两个 hextet，再展开唯一的 `::`。
+function ipv6AddressBytes(address: string): number[] {
+  let normalized = address.toLowerCase();
+  const lastColon = normalized.lastIndexOf(':');
+  const possibleIpv4Tail = normalized.slice(lastColon + 1);
+  if (isIP(possibleIpv4Tail) === 4) {
+    const ipv4 = ipv4AddressBytes(possibleIpv4Tail);
+    const high = ((ipv4[0] << 8) | ipv4[1]).toString(16);
+    const low = ((ipv4[2] << 8) | ipv4[3]).toString(16);
+    normalized = `${normalized.slice(0, lastColon)}:${high}:${low}`;
+  }
+
+  const halves = normalized.split('::');
+  const left = halves[0] ? halves[0].split(':') : [];
+  const right = halves[1] ? halves[1].split(':') : [];
+  const groups =
+    halves.length === 2
+      ? [...left, ...Array<string>(8 - left.length - right.length).fill('0'), ...right]
+      : left;
+  if (groups.length !== 8) {
+    throw new Error(`APP_TRUSTED_PROXY_CIDRS 无效:"${address}" 的 IPv6 结构非法`);
+  }
+
+  return groups.flatMap((group) => {
+    const value = Number.parseInt(group, 16);
+    return [value >>> 8, value & 0xff];
+  });
+}
+
+function trustedProxyAddressBytes(address: string, ipVersion: 4 | 6): number[] {
+  return ipVersion === 4 ? ipv4AddressBytes(address) : ipv6AddressBytes(address);
+}
+
+function isCanonicalNetworkAddress(bytes: number[], prefix: number): boolean {
+  const completeBytes = Math.floor(prefix / 8);
+  const networkBitsInNextByte = prefix % 8;
+  if (networkBitsInNextByte > 0) {
+    const hostMask = (1 << (8 - networkBitsInNextByte)) - 1;
+    if ((bytes[completeBytes] & hostMask) !== 0) return false;
+  }
+  const firstHostByte = completeBytes + (networkBitsInNextByte > 0 ? 1 : 0);
+  return bytes.slice(firstHostByte).every((byte) => byte === 0);
+}
+
+const RFC1918_AGGREGATION_ROOTS = [
+  { bytes: [10, 0, 0, 0], prefix: 8 },
+  { bytes: [172, 16, 0, 0], prefix: 12 },
+  { bytes: [192, 168, 0, 0], prefix: 16 },
+] as const;
+
+function ipv4MappedTail(bytes: number[]): number[] | null {
+  if (
+    bytes.length !== 16 ||
+    !bytes.slice(0, 10).every((byte) => byte === 0) ||
+    bytes[10] !== 0xff ||
+    bytes[11] !== 0xff
+  ) {
+    return null;
+  }
+  return bytes.slice(12);
+}
+
+function isRfc1918AggregationRoot(bytes: number[], prefix: number, ipVersion: 4 | 6): boolean {
+  const candidateBytes = ipVersion === 4 ? bytes : ipv4MappedTail(bytes);
+  const candidatePrefix = ipVersion === 4 ? prefix : prefix - 96;
+  if (!candidateBytes || candidatePrefix < 0) return false;
+  return RFC1918_AGGREGATION_ROOTS.some(
+    (root) =>
+      root.prefix === candidatePrefix &&
+      root.bytes.every((byte, index) => candidateBytes[index] === byte),
+  );
+}
+
+// Trusted proxy identity boundary:只允许显式 CIDR 列表或精确小写 `none`。
+// 这里只验证配置并交给 Express 原生 proxy-addr 语义；不解析 X-Forwarded-For，
+// 不支持 hop 数、boolean、hostname、Forwarded 或 X-Real-IP。
+export function parseTrustedProxyCidrs(raw: string | undefined, env: AppEnv): string[] {
+  if (raw === undefined || raw.trim() === '') {
+    if (isProductionLike(env)) {
+      throw new Error(
+        'APP_TRUSTED_PROXY_CIDRS 不能为空(production / smoke 必须显式设置 none 或可信代理 CIDR)',
+      );
+    }
+    return [];
+  }
+  if (raw === 'none') return [];
+
+  const cidrs = raw.split(',');
+  for (const cidr of cidrs) {
+    if (cidr.length === 0 || cidr !== cidr.trim()) {
+      throw new Error('APP_TRUSTED_PROXY_CIDRS 无效:CIDR 项不能为空或包含首尾空白，none 必须独占');
+    }
+    if (cidr === 'none') {
+      throw new Error('APP_TRUSTED_PROXY_CIDRS 无效:none 必须独占');
+    }
+
+    const slash = cidr.indexOf('/');
+    if (slash <= 0 || slash !== cidr.lastIndexOf('/')) {
+      throw new Error(
+        `APP_TRUSTED_PROXY_CIDRS 无效:"${cidr}" 必须是显式 IPv4/IPv6 CIDR，裸 IP/hostname 不接受`,
+      );
+    }
+
+    const address = cidr.slice(0, slash);
+    const prefixRaw = cidr.slice(slash + 1);
+    const ipVersion = isIP(address);
+    if (ipVersion === 0 || address.includes('%')) {
+      throw new Error(`APP_TRUSTED_PROXY_CIDRS 无效:"${cidr}" 的 IP 地址非法`);
+    }
+    const validatedIpVersion: 4 | 6 = ipVersion === 4 ? 4 : 6;
+    if (!/^(0|[1-9]\d*)$/.test(prefixRaw)) {
+      throw new Error(`APP_TRUSTED_PROXY_CIDRS 无效:"${cidr}" 的前缀非法`);
+    }
+
+    const prefix = Number(prefixRaw);
+    const maxPrefix = ipVersion === 4 ? 32 : 128;
+    if (prefix === 0 || prefix > maxPrefix) {
+      throw new Error(
+        `APP_TRUSTED_PROXY_CIDRS 无效:"${cidr}" 的前缀必须在 1-${maxPrefix}，禁止任意 /0`,
+      );
+    }
+
+    const addressBytes = trustedProxyAddressBytes(address, validatedIpVersion);
+    const mappedIpv4Bytes = validatedIpVersion === 6 ? ipv4MappedTail(addressBytes) : null;
+    if (mappedIpv4Bytes && prefix - 96 <= 0) {
+      throw new Error(
+        `APP_TRUSTED_PROXY_CIDRS 无效:"${cidr}" 的 IPv4-mapped 前缀等价于 IPv4 /0，禁止任意 /0`,
+      );
+    }
+    if (!isCanonicalNetworkAddress(addressBytes, prefix)) {
+      throw new Error(
+        `APP_TRUSTED_PROXY_CIDRS 无效:"${cidr}" 含非零 host bits，必须填写 canonical network CIDR`,
+      );
+    }
+    if (isRfc1918AggregationRoot(addressBytes, prefix, validatedIpVersion)) {
+      throw new Error(`APP_TRUSTED_PROXY_CIDRS 无效:"${cidr}" 禁止信任整个 RFC1918 聚合根`);
+    }
+
+    const family = ipVersion === 4 ? 'ipv4' : 'ipv6';
+    if (trustedProxyCidrIntersectsForbiddenRange(address, prefix, family)) {
+      throw new Error(
+        `APP_TRUSTED_PROXY_CIDRS 无效:"${cidr}" 不得包含 loopback/link-local/unique-local 地址`,
+      );
+    }
+  }
+  return cidrs;
 }
 
 // V1.1 §11.5:LOG_LEVEL 留空时默认按 APP_ENV 推断;production-like(production / smoke)=info,其他=debug。
@@ -354,6 +535,7 @@ export interface AppConfig {
   env: AppEnv;
   port: number;
   corsOrigin: string[];
+  trustedProxyCidrs: string[];
   swaggerEnabled: boolean;
   logLevel: LogLevel;
   loginThrottle: LoginThrottleConfig;
@@ -383,6 +565,7 @@ export default registerAs('app', (): AppConfig => {
 
   const port = parsePort(process.env.APP_PORT);
   const corsOrigin = parseCorsOrigin(process.env.APP_CORS_ORIGIN);
+  const trustedProxyCidrs = parseTrustedProxyCidrs(process.env.APP_TRUSTED_PROXY_CIDRS, env);
 
   if (isProductionLike(env)) {
     if (corsOrigin.length === 0) {
@@ -621,6 +804,7 @@ export default registerAs('app', (): AppConfig => {
     env,
     port,
     corsOrigin,
+    trustedProxyCidrs,
     swaggerEnabled,
     logLevel,
     loginThrottle,

@@ -1,7 +1,7 @@
 name: Docker Smoke
 
 # 第二轮自动化(对应 docs/docker-smoke-test.md §7),非 required check。
-# 目标:容器层面回归保护——验证镜像不仅能 build,还能在 production 模式下真实启动、
+# 目标:容器层面回归保护——验证镜像不仅能 build,还能在 smoke 模式下真实启动、
 # 连库、跑 migration/seed、通过基础 API smoke check、graceful shutdown。
 # 与 ci.yml 的 docker-build job 互补:那个只验证 build 链路,本 workflow 验证运行时行为。
 
@@ -14,8 +14,8 @@ on:
       - 'pnpm-lock.yaml'
       - 'prisma/**'
       - '.github/workflows/docker-smoke.yml'
-      # Production boot 敏感路径:Docker Smoke 依赖容器在 production 模式下的真实启动行为。
-      # 仅列出会影响 production boot / config validation / global prefix / logger /
+      # Smoke boot 敏感路径:Docker Smoke 依赖容器在 smoke 模式下的真实启动行为。
+      # 仅列出会影响 smoke boot / config validation / global prefix / logger /
       # Prisma shutdown 的路径,**不**纳入整个 src/**(业务模块改动走 ci.yml 的 e2e)。
       - 'src/main.ts'
       - 'src/app.module.ts'
@@ -96,8 +96,8 @@ jobs:
       # WECHAT_ENCRYPTION_KEY 仅活在该 job 生命周期,
       # 不进 GitHub Secrets。写入 GITHUB_ENV 供后续 step 共享;不 echo 到日志(默认 mask 不覆盖
       # env 写入,因此这里手动 add-mask)。
-      # STORAGE_ENCRYPTION_KEY 沿 V2.x C-7.5 PR #6:production 启动校验要求 ≥ 32 字符;
-      # smoke 容器用 APP_ENV=production 启动,必须注入(SMS / WECHAT 两把 key 同款 fail-fast)。
+      # STORAGE_ENCRYPTION_KEY 沿 V2.x C-7.5 PR #6:smoke 启动校验要求 ≥ 32 字符;
+      # smoke 容器用 APP_ENV=smoke 启动,必须注入(SMS / WECHAT 两把 key 同款 fail-fast)。
       - name: Generate ephemeral secrets
         run: |
           JWT_SECRET="$(openssl rand -base64 48)"
@@ -162,6 +162,7 @@ jobs:
             -e APP_ENV=smoke \
             -e APP_PORT=3000 \
             -e APP_CORS_ORIGIN=https://app.example.com \
+            -e APP_TRUSTED_PROXY_CIDRS=none \
             -e ENABLE_SWAGGER=false \
             -e LOG_LEVEL=info \
             -e JWT_SECRET="$JWT_SECRET" \
