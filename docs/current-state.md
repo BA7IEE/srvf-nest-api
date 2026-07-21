@@ -7,8 +7,8 @@
 
 | 项 | 当前值 / 何处看 |
 |---|---|
-| 版本(六处一致) | **v0.59.0**(2026-07-21;tag/handoff #729=`76837c84`;GitHub Release Latest;`archive/handoff/v0.59.0.md`) |
-| main HEAD / open PR / Unreleased | 实时看 `gh pr list`;发布锚点=`v0.59.0`/`76837c84`;release 时 Unreleased=0、fragment=0 |
+| 版本(六处一致) | **v0.60.0**(2026-07-22;tag/handoff #739=`a64efe5c`;GitHub Release Latest;`archive/handoff/v0.60.0.md`) |
+| main HEAD / open PR / Unreleased | 实时看 `gh pr list`;发布锚点=`v0.60.0`/`a64efe5c`;release 时 Unreleased=0、fragment=0 |
 
 <!-- counts:begin -->
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
@@ -32,6 +32,7 @@
 - **API surface 终态**:5 canonical `/v1` 前缀,contract 锁定;见 `api-surface-policy.md`;❌新增 Mixed Controller(存量 2)❌App 返回 L3(content-* 可见级后签名 URL 是唯一例外)
 - **身份/会话终态**:手机/微信换绑消费 5 分钟 step-up proof 并锁后重验身份快照；logout 可由未过期 rotated ancestor 幂等撤销同 refresh family，其他 family/access 不动；详见 `security.md`
 - **多实例当前事实**:10 个 throttler 共用 PG bucket；RBAC 与 SMS/WeChat/Storage/Realname settings 每次直读已提交 PostgreSQL；Effect 绑定单份配置快照，DB 异常 fail-closed，零进程正确性缓存
+- **首发 Storage production**:空库须 migration/seed 后离线 bootstrap；production 强制 COS + enabled + 可解密凭证，四把 encryption key 冻结且当前不可直接轮换；真实 COS/fleet 仍须现场验收
 - **贡献规则 ACTIVE 槽位**:未软删 ACTIVE 按 `activityTypeCode × attendanceRoleCode` 唯一；迁移、并发与漂移重复 pair 均 fail-closed
 - **通知 durable outbox**:PG lease/fence、generation/recipient/同事务 RBAC 快照及 quota marker；provider 事务外 at-least-once。生产 migration/gate 未 deploy，切换须排空旧 API/worker/intents 且禁混档
 - **Attachment storage Phase1**:Attachment namespace 已接 durable ledger；locator 固定、凭证 live-read；Content publish/confirm 根锁接线、Provider 事务外；未加 key FK，repo-wide closure 未完成；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)。
@@ -46,7 +47,7 @@
 - scoped 可见性余面(users / content / notifications / audit-logs / attachment self-scope);Recruitment 与 team-join 维持中央流程 + 显式授权,不入职务派生
 - 招新后续(退队 / 晋升 / 多部门归属 / 级别版本化 / 证书自动核验 gate / 部门级细分);保险 PR3 enable/deploy(drain 旧 server、禁混档)及理赔/保单图/App 展示;CMS 后续(已读回执 / 评论点赞 / 定时发布 / UV / 部门级权限)
 - Slow-5(入队同意书 / 退队清理 N 值)与 Slow-7(uploadToken 黑名单等 storage 深化)— 等业务 / 真实反馈
-- 运维侧真实通道(COS / 微信小程序 / 腾讯云 OCR)— `docs/ops/` SOP 就绪,维护者执行
+- 运维侧真实通道(COS / 微信小程序 / 腾讯云 OCR / SMS)— `docs/ops/` SOP 就绪,维护者执行
 - god-service 重开拆分(P1-4 已收口,需 architecture-boundary §6 新触发 + 立项);repository 抽象层;未立项的 controller path / snapshot 变更
 - 数据清理自动化(SMS / 招新脱敏 = 手动 SOP,不上 cron);历史 handoff / 冻结评审稿不回改、不当当前事实
 - 招新身份证号 v1 明文入库(2026-06-18 拍板留审计痕迹;加密 / 哈希归 C-8 议题)
@@ -56,7 +57,7 @@
 | 等级 | 债务 |
 |---|---|
 | P1 | 前端联调剩运维侧 P0-H 演练 + P0-I 排错 SOP(系统侧无动作) |
-| P1 | 保险 gate 未启用、旧 server=0 未验证；可信代理真实 ingress/ACL 未验，均须部署前现场收口 |
+| P1 | 保险 gate 未启用、旧 server=0 未验证；真实 ingress/ACL、COS、worker/fleet、registry digest 未验，均为 production GO 硬门 |
 | P1 | P1-22 专业队 gate 配置化;P1-23 isForeigner 历史列改名(对外已用 isNonMainlandDocument) |
 | P2 | scoped 余面(§3);god-service 体量观察(codemap 实时口径);v0.44 接受项(#8 / #10 / #19 / #20#21 已收口 notifications-owned + 招新/入队，participation producer 待接);单测占比刻意低(e2e 为主);Mixed 存量 2;snapshot 用 diff 勿整读 |
 | P3 | SMS / 招新脱敏 retention 手动 SOP(刻意);28003 同轮枚举面(v1 接受);首轮 review 接受 / 延后残项(F7/F8/F13/F18 等)在 NEXT_TASKS |
