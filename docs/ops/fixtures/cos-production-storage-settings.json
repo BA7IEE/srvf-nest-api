@@ -1,0 +1,16 @@
+{
+  "providerType": "COS",
+  "enabled": true,
+  "bucket": "srvf-attachments-example",
+  "region": "ap-shanghai",
+  "envPrefix": "prod",
+  "uploadUrlTtlSeconds": 600,
+  "downloadUrlTtlSeconds": 300,
+  "lifecycleDays": 30,
+  "enableSignedUrl": true,
+  "enableVersioning": true,
+  "corsAllowedOrigins": ["https://app.example.com"],
+  "maxObjectSizeBytes": "104857600",
+  "allowedMimePolicyMode": "INHERIT",
+  "remarks": "production COS"
+}

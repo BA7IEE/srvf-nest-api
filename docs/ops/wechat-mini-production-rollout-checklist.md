@@ -29,7 +29,7 @@
 
 - [ ] 版本 ≥ 含微信 goal 的 release(migration `20260612091522_add_wechat_mini_login_infra` 已 deploy;`prisma migrate status` 无 pending)
 - [ ] seed 已跑(权限码 121,含 `wechat-setting.*` 3 条 + `user.wechat.clear`)
-- [ ] 生产 env 已注入 `WECHAT_ENCRYPTION_KEY`(≥32 字符,推荐 `openssl rand -base64 32`;**与 STORAGE/SMS 两把 key 不同值**;缺失时 production 启动 fail-fast,这是预期保护)
+- [ ] 生产 env 已注入并冻结 `WECHAT_ENCRYPTION_KEY`(≥32 字符,推荐 `openssl rand -base64 32`;**与其他三把 key 不同值**;缺失时 production 启动 fail-fast;已有密文后禁止直接修改,见 [`encryption-key-freeze.md`](encryption-key-freeze.md))
 - [ ] 可选 env:`LOGIN_WECHAT_THROTTLE_LIMIT` / `_TTL_SECONDS`(留空默认 IP 5 次/60 秒)
 
 ### 1.2 运维侧准备
@@ -82,7 +82,7 @@
 
    - 期待响应:`credentialStatus: "configured"`,且响应**不含** appSecret 任何形态(L3 红线;含明文即重大故障,立即上报)
 3. `GET /api/system/v1/wechat-settings` 复核:`providerType=WECHAT / enabled=true / appId 正确 / credentialStatus=configured`
-4. 录入后在小程序后台**不再**重置 AppSecret(重置会使已录密钥失效 → `credentialStatus` 仍 configured 但 code2session 返 40125 → 接口 25031;需重走本节)
+4. 录入后在小程序后台**不再**重置 AppSecret(重置会使已录凭证失效 → `credentialStatus` 仍 configured 但 code2session 返 40125 → 接口 25031;在 `WECHAT_ENCRYPTION_KEY` 不变时重走本节)。不得把 AppSecret replacement 与 encryption-key rotation 混为一谈。
 
 **✅ 完成判据**:GET 复核三字段正确;`credentialStatus=configured`。
 
