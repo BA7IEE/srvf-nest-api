@@ -34,6 +34,7 @@
     "agent:check:quick": "pnpm lint && pnpm typecheck && pnpm test",
     "agent:check:api": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:contract",
     "agent:check:full": "pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm test:contract && pnpm test:e2e",
+    "audit:production": "pnpm audit --prod --audit-level high",
     "docs:codemap:check": "tsx scripts/check-codemap.ts",
     "docs:rbacmap:check": "tsx scripts/check-rbac-map.ts",
     "docs:counts": "tsx scripts/docs-counts.ts --write",
