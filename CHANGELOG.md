@@ -2,7 +2,17 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
-## Unreleased
+## v0.59.0 - 2026-07-21
+
+> 主题:**多实例一致性、持久化副作用与关键生命周期收口**(v0.58.0 后 #682–#727：身份 step-up / logout family、队员离队削权、SMS / 组织 / RBAC / PostgreSQL 限流、通知 outbox、Attachment ledger / Content live boundary、保险 v3 与可信代理)。Endpoint 360→365 / Migration 54→64 / BizCode 250→258 / Permission 206→207 / AuditLogEvent 113→123 / Controller 74→75；Module 36 / Cron 2 恒定。生产 migration / gate 未 deploy，release 不等于生产启用。
+
+- 手机/微信换绑新增身份 step-up：密码、SMS、微信三种证明签发短时 proof，换绑在最终 User 行锁后重验身份快照；真实身份变化会在同事务撤销旧 refresh，直接同目标 no-op 保持零 OTP 消费、零撤销与零变更审计。
+
+- `POST /api/auth/v1/logout` 保持公开、幂等与 HTTP 200，但任一可识别且未过期的 refresh row（含 rotated ancestor）现在会撤销同 family 全部 active token；未知、过期或已全撤 family 仍零审计，其他 family 与已签 access token 不受影响。
+
+- 队员离队以 Member 行锁线性化并在同事务结束 membership、停用关联 USER、撤 refresh、撤销 active 任职/分管及 USER/MEMBER/POSITION_ASSIGNMENT RoleBinding；全部授权恢复写路径锁后拒绝 inactive member，重新激活不复活历史授权来源。
+
+- Attachment 上传确认新增 caller-owned transaction boundary：guard、ledger prepare、Provider evidence、finalize 分段执行，Provider 始终位于数据库事务外；后续 Content live publish/confirm 已接同一根锁边界，repo-wide raw-key closure 与 published Content 全面不可变仍未包含。
 
 - 收紧活动生命周期与容量父子不变量：活动只能在结束后手动完结；总名额始终作为全局硬上限，岗位名额仅作子上限，跨岗位并发审批、容量切换与岗位扩容均在 Activity 聚合锁后 fail-closed；父容量扩容或 pass 取消释放全局名额时，可按 child headroom 与稳定 FIFO 跨岗位递补历史候补。
 
