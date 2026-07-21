@@ -296,8 +296,9 @@
 2. **错误码 → 前端行为**:`10004`(401,登录失败;不存在/密码错/禁用/软删四场景防枚举同响应)→ 提示 message、**不**触发刷新;`40100`(401,未登录/access 失效)→ 触发 refresh → 重放,refresh 也失败才登出;`10007`(401,refresh 无效;4 子原因刻意不细分)→ 清 token 跳登录;`30100`(403,判权失败)→ 403 页;`42900`(429 限流,**无** `Retry-After` / `X-RateLimit-*` 头)→ 提示稍后再试。
 3. **令牌双计时器**:`expiresIn` 是 JWT 配置时长字符串(如 `"15m"`)**不是时间戳** → 前端自算 `expires = now + parse(expiresIn)`,建议提前 30–60s 主动刷;`refreshExpiresAt` 是 refresh **family 的 ISO 绝对死期**(rotation 不延期)→ 到点 refresh 必返 `10007`,强制重登(不是再刷)。rotation always:每次 refresh 返回全新 access+refresh 对,旧 refresh 立即失效,重放命中触发 family 整族撤销。
 4. **token 形态**:`accessToken` 是裸 JWT(响应不带前缀,前端自拼 `Bearer <token>`);`refreshToken` 是不透明随机串(**非 JWT,勿解析**);`LoginResponseDto` 恰 5 字段冻结(P0-E,禁再增)。
-5. **权限出口**:登录后 3-call(踩坑 #1);`permissions[]` 是真实点格式码,SUPER_ADMIN 返**实体化全集**(不是 `["*"]` 也不是空数组);前端 `hasPerms` 纯字符串 includes 直接喂真实码。
-6. **联调测试账号**:seed 建默认 SUPER_ADMIN(env `SUPER_ADMIN_USERNAME/PASSWORD`;非 production 缺省 `admin` / `ChangeMe123456`,production 禁用默认必须显式设 env;见 [`development.md`](../development.md))。
+5. **logout 两层语义**:`POST /api/auth/v1/logout` 的 refresh token **只用于定位 family**；后端撤销该 family 全部 active 未过期 token，其他登录 family 不动，成功恒 `{code:0,message:'ok',data:null}`，旧 access 仍自然过期。`logout-all` 才撤销当前用户全部 family，并返回 `{revokedCount}`；两者勿共用响应 DTO。
+6. **权限出口**:登录后 3-call(踩坑 #1);`permissions[]` 是真实点格式码,SUPER_ADMIN 返**实体化全集**(不是 `["*"]` 也不是空数组);前端 `hasPerms` 纯字符串 includes 直接喂真实码。
+7. **联调测试账号**:seed 建默认 SUPER_ADMIN(env `SUPER_ADMIN_USERNAME/PASSWORD`;非 production 缺省 `admin` / `ChangeMe123456`,production 禁用默认必须显式设 env;见 [`development.md`](../development.md))。
 
 ---
 

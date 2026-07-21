@@ -101,7 +101,9 @@ export class RefreshTokenDto {
 // 与 RefreshTokenDto 字段结构相同;独立类型用于 OpenAPI 区分 + 未来分化可能。
 export class LogoutDto {
   @ApiProperty({
-    description: '要撤销的 refresh token 明文;幂等(不存在 / 已撤销 / 已过期 → 仍返 200)',
+    description:
+      '用于定位 refresh family 的 token 明文;撤销该 family 全部未过期且未撤销 token;' +
+      '幂等(不存在 / 已撤销 / 已过期 → 仍返 200)',
   })
   @IsString()
   @IsNotEmpty()
