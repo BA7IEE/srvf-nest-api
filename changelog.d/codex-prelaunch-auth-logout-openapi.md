@@ -1,2 +1,0 @@
-- **fix(auth):校准 logout OpenAPI 与 family 撤销事实**——`POST /api/auth/v1/logout` 成功响应改为准确的 `data:null` schema，summary/DTO/交接说明明确传入 token 仅用于定位并撤销对应 refresh family；运行时、路由、DTO 字段、BizCode、schema 与 migration 均不变。
-- **ci:为当前全量门禁恢复足够的硬超时余量**——测试 Job 超时由 25 分钟提高到 35 分钟，避免约 21.5 分钟的 177-suite E2E 叠加安装、构建、单测和契约检查后被误取消；测试入口、顺序与断言均不变。

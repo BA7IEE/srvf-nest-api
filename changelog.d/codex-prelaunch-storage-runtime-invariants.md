@@ -1,1 +1,0 @@
-- **fix(storage):闭合 production Storage 运行时不变量与 enabled kill switch**——production PATCH 在事务内验证合并后的 COS、非空 bucket/region 与可解密凭证，允许 `enabled=false` 明确关闭下一次普通业务 pinned / non-pinned put/delete/sign/head/read（含自动 worker）；仅经过人工复核的 `manual_relocate` 证据采集显式绕过。零 endpoint/DTO/BizCode/schema/migration/permission 变更。
