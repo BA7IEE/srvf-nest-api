@@ -298,6 +298,16 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       ],
     });
 
+    // 招新用 mainland_id 路由 OCR，MemberProfile 必须持久化 document_type 字典真值 id_card。
+    // 只 seed id_card（不 seed mainland_id），让下方 promote→profile PATCH 真正杀掉跨域泄漏。
+    const documentType = await prisma.dictType.create({
+      data: { code: 'document_type', label: '证件类型' },
+      select: { id: true },
+    });
+    await prisma.dictItem.create({
+      data: { typeId: documentType.id, code: 'id_card', label: '居民身份证' },
+    });
+
     // 招新闭环优化 S1:recruitment_stage 业务态文案字典(镜像 prisma/seed.ts seedRecruitmentStageDict;
     // 公开查询进度模型的 stageText 来源;reference data,beforeEach 不清,跨测持久)。
     const stageType = await prisma.dictType.create({
@@ -2841,6 +2851,14 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     // MemberProfile 映射 + email null(M-1)+ 证件照搬入(wrinkle①)
     expect(li.memberProfile?.realName).toBe('李四');
     expect(li.memberProfile?.documentNumber).toBe(ID_MATCH_B);
+    expect(li.memberProfile?.documentTypeCode).toBe('id_card');
+    const profileLifecycle = await request(httpServer(app))
+      .patch(`/api/admin/v1/members/${li.id}/profile`)
+      .set('Authorization', adminAuth)
+      .send({ documentTypeCode: li.memberProfile?.documentTypeCode });
+    expect(profileLifecycle.status).toBe(200);
+    expect(profileLifecycle.body.code).toBe(0);
+    expect(profileLifecycle.body.data.documentTypeCode).toBe('id_card');
     // F1 fixture 手机唯一化后动态引用(语义不变:profile.mobile = 报名行 phone 原值搬运)
     expect(li.memberProfile?.mobile).toBe(phoneFor('p3-l'));
     expect(li.memberProfile?.email).toBeNull();
