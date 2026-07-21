@@ -28,7 +28,9 @@ import type {
 //   v0.44.0 finding #23 追加 ranged getObject 固定前缀 readObjectPrefix
 // - 既有直接方法各自 live-read 一次 settings；prepare(settings) 绑定 supplied snapshot，
 //   同一 Effect 的凭证 + bucket + region 不再重读
-// - 4 档守护:settings null / providerType ≠ COS / credentialStatus ≠ CONFIGURED / bucket+region 缺失
+// - 非 pinned 5 档守护:settings null / enabled=false / providerType ≠ COS /
+//   credentialStatus ≠ CONFIGURED / bucket+region 缺失
+// - pinned 方法按历史 locator 解析；Router 默认先检查 enabled，仅显式人工 maintenance 绕过
 //
 // **本 PR 不做**:
 // - 不接通 attachments.service(留 PR #9 wire `accessUrl` + delete)
@@ -305,6 +307,9 @@ export class CosStorageProvider implements StorageProvider {
   ): CosContext {
     if (!settings) {
       throw new CosProviderUnavailableError('storage_settings 未配置');
+    }
+    if (!expected && !settings.enabled) {
+      throw new CosProviderUnavailableError('storage_settings.enabled=false');
     }
     if (!expected && settings.providerType !== 'COS') {
       throw new CosProviderUnavailableError(`providerType=${settings.providerType} 不是 COS`);

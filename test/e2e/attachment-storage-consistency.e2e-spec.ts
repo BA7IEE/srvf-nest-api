@@ -18,7 +18,10 @@ import {
   StorageConsistencyWorker,
 } from '../../src/modules/attachments/storage-consistency.worker';
 import type { RbacService } from '../../src/modules/permissions/rbac.service';
-import type { PinnedStorageProvider } from '../../src/modules/storage/storage.interface';
+import type {
+  PinnedStorageProvider,
+  StoragePinnedOperationOptions,
+} from '../../src/modules/storage/storage.interface';
 import { StorageObjectLedgerService } from '../../src/modules/storage/storage-object-ledger.service';
 import type { StorageSettingsService } from '../../src/modules/storage/storage-settings.service';
 import {
@@ -81,6 +84,7 @@ class BarrierStorageProvider implements PinnedStorageProvider {
   readonly objectBodies = new Map<string, Buffer>();
   readonly headLocators: StorageObjectLocator[] = [];
   readonly hashLocators: StorageObjectLocator[] = [];
+  readonly maintenanceOptions: Array<StoragePinnedOperationOptions | undefined> = [];
   hashProgressCalls = 0;
   downloadCalls = 0;
   currentLocatorCalls = 0;
@@ -156,8 +160,13 @@ class BarrierStorageProvider implements PinnedStorageProvider {
     return this.headObjectAt(LOCATOR, key);
   }
 
-  headObjectAt(locator: StorageObjectLocator, key: string): Promise<HeadObjectResult> {
+  headObjectAt(
+    locator: StorageObjectLocator,
+    key: string,
+    options?: StoragePinnedOperationOptions,
+  ): Promise<HeadObjectResult> {
     this.headLocators.push(locator);
+    this.maintenanceOptions.push(options);
     const failure = this.headFailureOnce;
     this.headFailureOnce = undefined;
     if (failure) return Promise.reject(failure);
@@ -180,8 +189,10 @@ class BarrierStorageProvider implements PinnedStorageProvider {
     locator: StorageObjectLocator,
     key: string,
     onProgress?: StorageObjectReadProgress,
+    options?: StoragePinnedOperationOptions,
   ): Promise<StorageObjectSha256Result> {
     this.hashLocators.push(locator);
+    this.maintenanceOptions.push(options);
     const body = this.objectBodies.get(key);
     if (!body) throw new Error(`fake body missing for ${key}`);
     const hash = createHash('sha256');
@@ -1261,6 +1272,9 @@ describe('Attachment durable storage consistency (real PostgreSQL barriers)', ()
     ).resolves.toMatchObject({ status: 'succeeded', effectState: 'provider_present' });
     expect(provider.hashLocators).toEqual([NEW_LOCATOR]);
     expect(provider.hashProgressCalls).toBeGreaterThan(1);
+    expect(
+      provider.maintenanceOptions.filter((options) => options?.maintenance === true),
+    ).toHaveLength(3);
     await expect(ledger.assertStrictStartGate()).resolves.toBeUndefined();
   });
 

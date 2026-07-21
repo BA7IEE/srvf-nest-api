@@ -270,6 +270,11 @@ export class StorageSettingsService implements OnApplicationBootstrap {
         });
       }
 
+      // production 允许 enabled=false 作为“禁止新的普通业务 Storage Effect”的 kill switch，
+      // 但其余启动级不变量必须持续成立，确保重新启用不会切到 LOCAL、空 bucket/region
+      // 或不可解密凭证。校验在事务内、audit 前执行；失败会回滚上面的 create/update。
+      this.assertProductionRuntimeInvariant(updated);
+
       await this.auditLogs.log({
         event: 'storage-setting.update',
         actorUserId: user.id,
@@ -398,6 +403,19 @@ export class StorageSettingsService implements OnApplicationBootstrap {
       data.allowedMimePolicyMode = dto.allowedMimePolicyMode;
     if (dto.remarks !== undefined) data.remarks = dto.remarks;
     return data;
+  }
+
+  private assertProductionRuntimeInvariant(row: StorageSettingsRow): void {
+    if (this.cfg.env !== 'production') return;
+    const { credentialStatus } = this.resolveCredentials(row);
+    if (
+      row.providerType !== 'COS' ||
+      !row.bucket?.trim() ||
+      !row.region?.trim() ||
+      credentialStatus !== CredentialStatus.CONFIGURED
+    ) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
   }
 
   // Prisma row → ResponseDto(出参不含 secretIdEncrypted / secretKeyEncrypted / credentials;沿 §6.6.2)
