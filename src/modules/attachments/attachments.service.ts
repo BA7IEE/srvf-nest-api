@@ -1291,12 +1291,17 @@ export class AttachmentsService {
       user,
     );
 
-    const finalized = await this.prisma.$transaction((tx) =>
-      this.finalizeUploadConfirmInTransaction(tx, verified, auditMeta, {
+    const finalized = await this.prisma.$transaction(async (tx) => {
+      if (isContentAttachmentOwnerType(verifiedState.identity.ownerType)) {
+        // The generic Attachment endpoint accepts Content tokens too. It must participate in the
+        // same root-lock fence as the Content wrapper or it becomes a publish-vs-confirm bypass.
+        await this.lockVirginContentForUploadConfirm(tx, verifiedState.identity.ownerId);
+      }
+      return this.finalizeUploadConfirmInTransaction(tx, verified, auditMeta, {
         ownerTable,
         scope,
-      }),
-    );
+      });
+    });
     const finalizedState = this.requireUploadConfirmContext(finalized, 'finalized');
 
     // === Step 9-10:返完整 dto(toResponseDto 内已调 generateDownloadUrl 填 accessUrl;沿 PR #90) ===

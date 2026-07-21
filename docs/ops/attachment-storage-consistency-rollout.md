@@ -37,6 +37,26 @@ PostgreSQL and COS/LOCAL are not one atomic transaction. A committed intent, fen
 evidence, retry, and terminal reconciliation provide eventual consistency; this document does not
 claim cross-system atomicity or storage closure outside `Attachment`.
 
+## Content live boundary
+
+The Content admin wrapper participates in the Attachment ledger lifecycle without moving Provider
+Effects into a business transaction:
+
+- publish locks and rereads the `Content` root first, validates the current body/cover Attachment
+  bindings and their ledger state, cancels only safe unbound upload intents, then commits the
+  `draft -> published` transition and audit in the same transaction;
+- the Content confirm route validates route/token ownership before Content or ledger work; both it
+  and the generic Attachment confirm route prepare under one short root-locked transaction,
+  perform Provider HEAD/prefix evidence outside transactions, then lock and reread the root again
+  before binding a content-owned Attachment and audit in a second transaction;
+- publish winning between the two confirm transactions leaves the durable reclaim intent in place
+  and rejects final binding with the existing Content transition error. Confirm winning makes
+  publish wait and observe the committed available binding.
+
+This is an at-publication storage-consistency boundary, not full published-Content immutability.
+Post-publish editing, cover mutation, and Attachment deletion remain outside this slice and require
+their own reviewed lifecycle decision.
+
 ## Phase 1 expand limitation
 
 This migration intentionally does **not** add an `attachments.key -> storage_objects.key` foreign

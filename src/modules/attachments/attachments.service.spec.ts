@@ -1558,7 +1558,7 @@ describe('AttachmentsService (characterization)', () => {
       },
     );
 
-    it('content confirm locks virgin Content and prepares owner intent in that same transaction', async () => {
+    it('content confirm locks virgin Content in both prepare and finalization transactions', async () => {
       const prisma = makePrismaMock();
       const provider = makeProviderMock();
       const recorder = makeRecorderMock();
@@ -1606,6 +1606,52 @@ describe('AttachmentsService (characterization)', () => {
       expect(storageConsistency.verifyUploadEvidence).toHaveBeenCalledTimes(1);
       expect(storageConsistency.finalizeUpload).not.toHaveBeenCalled();
       expect(storageConsistency.finalizeUploadInTransaction).toHaveBeenCalledTimes(1);
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    });
+
+    it('generic content confirm rereads publish winner before finalization and stops with 29030', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      const recorder = makeRecorderMock();
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
+      prisma.$queryRaw
+        .mockResolvedValueOnce([
+          {
+            id: 'content-private-1',
+            deletedAt: null,
+            statusCode: 'draft',
+            publishedAt: null,
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'content-private-1',
+            deletedAt: null,
+            statusCode: 'published',
+            publishedAt: new Date('2026-07-21T08:00:00.000Z'),
+          },
+        ]);
+      prisma.attachmentTypeConfig.findFirst.mockResolvedValue(
+        makeTypeConfig({ ownerTable: 'contents' }),
+      );
+      const service = makeService(prisma, { provider, recorder, storageConsistency });
+
+      await expect(
+        service.confirmUpload(
+          makeConfirmDto(
+            makeUploadToken({ ownerType: 'content-file', ownerId: 'content-private-1' }),
+          ),
+          makeCurrentUser({ id: 'u1' }),
+          META,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.CONTENT_INVALID_STATUS_TRANSITION));
+
+      expect(storageConsistency.prepareUploadInTransaction).toHaveBeenCalledTimes(1);
+      expect(storageConsistency.verifyUploadEvidence).toHaveBeenCalledTimes(1);
+      expect(storageConsistency.finalizeUploadInTransaction).not.toHaveBeenCalled();
+      expect(storageConsistency.resolveDownloadUrl).not.toHaveBeenCalled();
+      expect(recorder.logUploadConfirmed).not.toHaveBeenCalled();
     });
 
     it('published Content wins before prepare → 29030 and zero storage/Provider/audit', async () => {

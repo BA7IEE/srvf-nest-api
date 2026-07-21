@@ -9,6 +9,7 @@ import { PrismaService } from '../../src/database/prisma.service';
 import { AttachmentStorageOrchestrator } from '../../src/modules/attachments/attachment-storage-orchestrator';
 import type { ContentUploadConfirmVerified } from '../../src/modules/attachments/attachment-storage.types';
 import { AttachmentsService } from '../../src/modules/attachments/attachments.service';
+import { ContentService } from '../../src/modules/content/content.service';
 import { STORAGE_PROVIDER } from '../../src/modules/storage/storage.constants';
 import {
   STORAGE_UNBOUND_GRACE_MS,
@@ -54,6 +55,8 @@ describe('Content attachment publish storage boundary (two real PostgreSQL pools
   let prismaB: PrismaService;
   let attachmentsA: AttachmentsService;
   let attachmentsB: AttachmentsService;
+  let contentA: ContentService;
+  let contentB: ContentService;
   let orchestratorB: AttachmentStorageOrchestrator;
   let ledgerB: StorageObjectLedgerService;
   let providerB: PinnedStorageProvider;
@@ -71,6 +74,8 @@ describe('Content attachment publish storage boundary (two real PostgreSQL pools
     prismaB = appB.get(PrismaService);
     attachmentsA = appA.get(AttachmentsService);
     attachmentsB = appB.get(AttachmentsService);
+    contentA = appA.get(ContentService);
+    contentB = appB.get(ContentService);
     orchestratorB = appB.get(AttachmentStorageOrchestrator);
     ledgerB = appB.get(StorageObjectLedgerService);
     providerB = appB.get<PinnedStorageProvider>(STORAGE_PROVIDER);
@@ -472,10 +477,11 @@ describe('Content attachment publish storage boundary (two real PostgreSQL pools
     try {
       await expect(
         withTimeout(
-          attachmentsB.guardContentUploadConfirm(
+          contentB.confirmAttachmentUpload(
+            contentId,
             { uploadToken: token(claims) },
             actor(uploaderId),
-            { ownerType: ['content-image', 'content-file'], ownerId: contentId },
+            { requestId: `content-route-mismatch-${++sequence}`, ip: null, ua: null },
           ),
           'route/token owner early guard',
         ),
@@ -803,6 +809,243 @@ describe('Content attachment publish storage boundary (two real PostgreSQL pools
       statusCode: 'published',
       publishedAt: expect.any(Date),
     });
+  });
+
+  it('live Content publish fails closed on an Attachment with no ledger and writes no state/audit', async () => {
+    const unsafe = await prismaA.attachment.create({
+      data: {
+        key: `attachments/storage-boundary/unsafe-${++sequence}.png`,
+        originalName: 'unsafe.png',
+        mime: 'image/png',
+        size: 8,
+        uploadedBy: uploaderId,
+        ownerType: 'content-image',
+        ownerId: contentId,
+        tags: [],
+      },
+    });
+    await prismaA.content.update({
+      where: { id: contentId },
+      data: { body: `![unsafe](attachment:${unsafe.id})` },
+    });
+
+    await expect(
+      contentA.publish(contentId, actor(uploaderId), {
+        requestId: `content-live-publish-unsafe-${++sequence}`,
+        ip: null,
+        ua: null,
+      }),
+    ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING));
+
+    await expect(prismaA.content.findUnique({ where: { id: contentId } })).resolves.toMatchObject({
+      statusCode: 'draft',
+      publishedAt: null,
+    });
+    await expect(prismaA.auditLog.count()).resolves.toBe(0);
+    await expect(
+      prismaA.attachment.findUnique({ where: { id: unsafe.id } }),
+    ).resolves.toMatchObject({
+      id: unsafe.id,
+      key: unsafe.key,
+    });
+  });
+
+  it('live publish wins while confirm is between txs: final reread returns 29030', async () => {
+    const intent = await createOwnerIntent('content-file');
+    const headStarted = deferred();
+    const headRelease = deferred();
+    const head = jest.spyOn(providerB, 'headObjectAt').mockImplementation(async () => {
+      headStarted.resolve();
+      await headRelease.promise;
+      return {
+        exists: true,
+        size: intent.identity.size,
+        contentType: intent.identity.mime,
+        etag: `etag-live-publish-wins-${sequence}`,
+      };
+    });
+    const prefix = jest
+      .spyOn(providerB, 'readObjectPrefixAt')
+      .mockResolvedValue(Buffer.from('89504e470d0a1a0a', 'hex'));
+    const confirming = contentB
+      .confirmAttachmentUpload(contentId, { uploadToken: intent.uploadToken }, actor(uploaderId), {
+        requestId: `content-live-confirm-${++sequence}`,
+        ip: null,
+        ua: null,
+      })
+      .catch((error: unknown) => error);
+
+    try {
+      await withTimeout(headStarted.promise, 'live confirm Provider evidence start');
+      await contentA.publish(contentId, actor(uploaderId), {
+        requestId: `content-live-publish-${++sequence}`,
+        ip: null,
+        ua: null,
+      });
+      headRelease.resolve();
+      await expect(
+        withTimeout(confirming, 'live publish-wins confirm finalization'),
+      ).resolves.toEqual(new BizException(BizCode.CONTENT_INVALID_STATUS_TRANSITION));
+      await expect(prismaA.content.findUnique({ where: { id: contentId } })).resolves.toMatchObject(
+        {
+          statusCode: 'published',
+          publishedAt: expect.any(Date),
+        },
+      );
+      await expect(
+        prismaA.attachment.findUnique({ where: { key: intent.identity.key } }),
+      ).resolves.toBeNull();
+      await expect(
+        prismaA.storageObject.findUnique({ where: { id: intent.object.id } }),
+      ).resolves.toMatchObject({ state: 'delete_pending', resourceId: null });
+      await expect(
+        prismaA.storageObjectOperation.findUnique({ where: { id: intent.operation.id } }),
+      ).resolves.toMatchObject({ status: 'dead' });
+      await expect(
+        prismaA.storageObjectOperation.count({
+          where: { storageObjectId: intent.object.id, kind: 'orphan_delete', status: 'pending' },
+        }),
+      ).resolves.toBe(1);
+      await expect(prismaA.auditLog.count()).resolves.toBe(1);
+    } finally {
+      headRelease.resolve();
+      await withTimeout(confirming, 'live publish-wins confirm cleanup').catch(() => undefined);
+      head.mockRestore();
+      prefix.mockRestore();
+    }
+  });
+
+  it('generic Attachment confirm cannot bypass the Content publish-wins final fence', async () => {
+    const intent = await createOwnerIntent('content-image');
+    const typeConfig = await prismaA.attachmentTypeConfig.create({
+      data: {
+        code: 'content-image',
+        displayName: 'Content image',
+        ownerTable: 'contents',
+        defaultMimeWhitelist: ['image/png'],
+        defaultMaxSizeBytes: null,
+      },
+    });
+    const headStarted = deferred();
+    const headRelease = deferred();
+    const head = jest.spyOn(providerB, 'headObjectAt').mockImplementation(async () => {
+      headStarted.resolve();
+      await headRelease.promise;
+      return {
+        exists: true,
+        size: intent.identity.size,
+        contentType: intent.identity.mime,
+        etag: `etag-generic-publish-wins-${sequence}`,
+      };
+    });
+    const prefix = jest
+      .spyOn(providerB, 'readObjectPrefixAt')
+      .mockResolvedValue(Buffer.from('89504e470d0a1a0a', 'hex'));
+    const confirming = attachmentsB
+      .confirmUpload({ uploadToken: intent.uploadToken }, actor(uploaderId), {
+        requestId: `generic-content-confirm-${++sequence}`,
+        ip: null,
+        ua: null,
+      })
+      .catch((error: unknown) => error);
+
+    try {
+      await withTimeout(headStarted.promise, 'generic content confirm Provider evidence start');
+      await contentA.publish(contentId, actor(uploaderId), {
+        requestId: `generic-content-publish-${++sequence}`,
+        ip: null,
+        ua: null,
+      });
+      headRelease.resolve();
+      await expect(
+        withTimeout(confirming, 'generic content confirm finalization'),
+      ).resolves.toEqual(new BizException(BizCode.CONTENT_INVALID_STATUS_TRANSITION));
+      await expect(
+        prismaA.attachment.findUnique({ where: { key: intent.identity.key } }),
+      ).resolves.toBeNull();
+      await expect(
+        prismaA.storageObject.findUnique({ where: { id: intent.object.id } }),
+      ).resolves.toMatchObject({ state: 'delete_pending', resourceId: null });
+      await expect(
+        prismaA.storageObjectOperation.findUnique({ where: { id: intent.operation.id } }),
+      ).resolves.toMatchObject({ status: 'dead' });
+      await expect(prismaA.auditLog.count()).resolves.toBe(1);
+    } finally {
+      headRelease.resolve();
+      await withTimeout(confirming, 'generic content confirm cleanup').catch(() => undefined);
+      head.mockRestore();
+      prefix.mockRestore();
+      await prismaA.attachmentTypeConfig.delete({ where: { id: typeConfig.id } });
+    }
+  });
+
+  it('live confirm wins: publish blocks on Content root and then accepts the available binding', async () => {
+    const intent = await createOwnerIntent('content-image');
+    const evidence = mockPresentUploadEvidence(intent.identity.size);
+    const finalizeReady = deferred();
+    const finalizeRelease = deferred();
+    const realFinalize =
+      attachmentsB.finalizeContentUploadConfirmInTransactionTrusted.bind(attachmentsB);
+    const finalize = jest
+      .spyOn(attachmentsB, 'finalizeContentUploadConfirmInTransactionTrusted')
+      .mockImplementation(async (tx, context, auditMeta) => {
+        const result = await realFinalize(tx, context, auditMeta);
+        finalizeReady.resolve();
+        await finalizeRelease.promise;
+        return result;
+      });
+    const confirming = contentB.confirmAttachmentUpload(
+      contentId,
+      { uploadToken: intent.uploadToken },
+      actor(uploaderId),
+      { requestId: `content-live-confirm-wins-${++sequence}`, ip: null, ua: null },
+    );
+    let publishing: Promise<unknown> | undefined;
+
+    try {
+      await withTimeout(finalizeReady.promise, 'live confirm final transaction ready');
+      publishing = contentA.publish(contentId, actor(uploaderId), {
+        requestId: `content-live-publish-waits-${++sequence}`,
+        ip: null,
+        ua: null,
+      });
+      try {
+        const waiter = await waitForRelationLockWait('contents');
+        expect(waiter.waitEventType).toBe('Lock');
+      } finally {
+        finalizeRelease.resolve();
+      }
+      await withTimeout(confirming, 'live confirm-wins response');
+      await withTimeout(publishing, 'live publish waiter');
+    } finally {
+      finalizeRelease.resolve();
+      await withTimeout(confirming, 'live confirm-wins cleanup').catch(() => undefined);
+      if (publishing) {
+        await withTimeout(publishing, 'live publish waiter cleanup').catch(() => undefined);
+      }
+      finalize.mockRestore();
+      evidence.restore();
+    }
+
+    const attachment = await prismaA.attachment.findUnique({ where: { key: intent.identity.key } });
+    if (!attachment) throw new Error('live confirm-wins Attachment missing');
+    await expect(
+      prismaA.storageObject.findUnique({ where: { id: intent.object.id } }),
+    ).resolves.toMatchObject({
+      state: 'available',
+      resourceType: 'attachment',
+      resourceId: attachment.id,
+    });
+    await expect(
+      prismaA.storageObjectOperation.count({
+        where: { storageObjectId: intent.object.id, kind: 'orphan_delete' },
+      }),
+    ).resolves.toBe(0);
+    await expect(prismaA.content.findUnique({ where: { id: contentId } })).resolves.toMatchObject({
+      statusCode: 'published',
+      publishedAt: expect.any(Date),
+    });
+    await expect(prismaA.auditLog.count()).resolves.toBe(2);
   });
 
   it('waits on a real Object lock and rejects the state committed while waiting', async () => {
