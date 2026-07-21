@@ -737,9 +737,15 @@ export class RecruitmentApplicationsService {
         expectedStatus: row.statusCode,
         invalidStatusBiz: BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL,
       });
+      const lockedRow = await tx.recruitmentApplication.findFirst({
+        where: { id: row.id, deletedAt: null },
+      });
+      if (!lockedRow) {
+        throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL);
+      }
       let updated: RecruitmentApplication;
       if (dto.approved) {
-        const tempNo = await this.issueTempNo(tx, row.cycleId);
+        const tempNo = await this.issueTempNo(tx, lockedRow.cycleId);
         updated = await tx.recruitmentApplication.update({
           where: { id },
           data: {
@@ -769,7 +775,7 @@ export class RecruitmentApplicationsService {
         resourceType: AUDIT_RESOURCE_TYPE,
         resourceId: id,
         meta: auditMeta,
-        before: { statusCode: row.statusCode },
+        before: { statusCode: lockedRow.statusCode },
         after: { statusCode: updated.statusCode },
         extra: { tempNo: updated.tempNo, eliminationStage: updated.eliminationStage },
         tx,

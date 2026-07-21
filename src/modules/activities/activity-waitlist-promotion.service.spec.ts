@@ -42,8 +42,12 @@ describe('promoteActivityWaitlist', () => {
           .mockResolvedValue({ title: '演练', statusCode: 'published', capacity: 2 }),
       },
       activityRegistration: {
-        findFirst: jest.fn().mockResolvedValueOnce(r1).mockResolvedValueOnce(r2),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findFirst: jest
+          .fn()
+          .mockResolvedValueOnce(r1)
+          .mockResolvedValueOnce(r1)
+          .mockResolvedValueOnce(r2)
+          .mockResolvedValueOnce(r2),
         update: jest.fn().mockImplementation(({ where }: { where: { id: string } }) => {
           const before = where.id === r1.id ? r1 : r2;
           return Promise.resolve({ ...before, statusCode: 'pending' });
@@ -64,11 +68,11 @@ describe('promoteActivityWaitlist', () => {
       auditLogs,
     });
 
-    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(3);
     expect(tx.activityRegistration.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ orderBy: [{ registeredAt: 'asc' }, { id: 'asc' }] }),
     );
-    expect(tx.activityRegistration.updateMany).toHaveBeenCalledTimes(2);
+    expect(tx.activityRegistration.findFirst).toHaveBeenCalledTimes(4);
     expect(result).toEqual({
       activityTitle: '演练',
       promoted: [
@@ -122,6 +126,7 @@ describe('promoteActivityWaitlist', () => {
     const findFirst = jest
       .fn<Promise<ReturnType<typeof row> | null>, [{ where: { OR?: unknown } }]>()
       .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(waitB)
       .mockResolvedValueOnce(waitB);
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([{ id: 'activity-1' }]),
@@ -143,7 +148,6 @@ describe('promoteActivityWaitlist', () => {
           .mockResolvedValue([{ activityPositionId: 'position-full', _count: { _all: 1 } }]),
         count: jest.fn().mockResolvedValue(0),
         findFirst,
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         update: jest.fn().mockResolvedValue({ ...waitB, statusCode: 'pending' }),
       },
     };
@@ -171,5 +175,6 @@ describe('promoteActivityWaitlist', () => {
       { activityPositionId: null },
       { activityPositionId: { in: ['position-a', 'position-b'] } },
     ]);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
   });
 });

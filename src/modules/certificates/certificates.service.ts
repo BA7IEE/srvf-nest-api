@@ -393,22 +393,22 @@ export class CertificatesService {
       if (dto.issuedAt !== undefined) data.issuedAt = normalizeDateOnly(dto.issuedAt);
       if (dto.expiredAt !== undefined) data.expiredAt = normalizeDateOnly(dto.expiredAt);
 
-      const coreFieldEdited = CERTIFICATE_CORE_FIELDS.some((field) => dto[field] !== undefined);
-      if (coreFieldEdited && before.certStatusCode !== CERT_STATUS_PENDING) {
-        data.certStatusCode = CERT_STATUS_PENDING;
-        data.verifiedBy = null;
-        data.verifiedAt = null;
-        data.verifyNote = null;
-      }
-
       await claimAtStatus(tx, {
         target: 'certificate',
         id: before.id,
         expectedStatus: before.certStatusCode,
         invalidStatusBiz: BizCode.CERTIFICATE_INVALID_STATE_TRANSITION,
       });
+      const lockedBefore = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
+      const coreFieldEdited = CERTIFICATE_CORE_FIELDS.some((field) => dto[field] !== undefined);
+      if (coreFieldEdited && lockedBefore.certStatusCode !== CERT_STATUS_PENDING) {
+        data.certStatusCode = CERT_STATUS_PENDING;
+        data.verifiedBy = null;
+        data.verifiedAt = null;
+        data.verifyNote = null;
+      }
       const updated = await tx.certificate.update({
-        where: { id: before.id },
+        where: { id: lockedBefore.id },
         data,
         select: certificateSafeSelect,
       });
@@ -418,9 +418,9 @@ export class CertificatesService {
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
         resourceType: 'certificate',
-        resourceId: before.id,
+        resourceId: lockedBefore.id,
         meta: auditMeta,
-        before: this.toCertSnapshot(before),
+        before: this.toCertSnapshot(lockedBefore),
         after: this.toCertSnapshot(updated),
         extra: { targetMemberId: memberId, operation: 'update' },
         tx,

@@ -754,6 +754,34 @@ describe('AttendancesService (characterization, scoped)', () => {
 
   // ============ 3. state-machine allow + audit wiring ============
   describe('state-machine allow + audit wiring', () => {
+    it('edit no-records → lock 后权威 version/snapshot/audit before，不复用锁前行', async () => {
+      const prisma = makePrismaMock();
+      const recorder = makeRecorderMock();
+      const stateMachine = makeStateMachineMock({
+        allowed: true,
+        nextStatusCode: ATTENDANCE_SHEET_STATUS.PENDING,
+      });
+      const observed = makeSheetRow({ version: 1, reviewNote: 'stale-before-lock' });
+      const locked = makeSheetRow({ version: 7, reviewNote: 'locked-authoritative' });
+      prisma.attendanceSheet.findFirst
+        .mockResolvedValueOnce(observed)
+        .mockResolvedValueOnce(locked);
+      prisma.attendanceRecord.findMany.mockResolvedValue([]);
+      prisma.attendanceSheet.update.mockResolvedValue(makeSheetRow({ version: 8 }));
+      const service = makeService(prisma, { recorder, stateMachine });
+
+      await service.edit('sheet-1', makeEditDto(), makeCurrentUser(), META);
+
+      expect(recorder.buildPreviousSnapshot).toHaveBeenCalledWith(locked, []);
+      const updateArg = prisma.attendanceSheet.update.mock.calls[0][0] as {
+        data: { version: number };
+      };
+      expect(updateArg.data.version).toBe(8);
+      expect(recorder.logEditNoRecords).toHaveBeenCalledWith(
+        expect.objectContaining({ beforeSheet: locked, newVersion: 8, tx: prisma }),
+      );
+    });
+
     it('approve allow → update nextStatus + reviewer;logReview(action=approve, tx)', async () => {
       const prisma = makePrismaMock();
       const recorder = makeRecorderMock();
@@ -972,9 +1000,17 @@ describe('AttendancesService (characterization, scoped)', () => {
         allowed: true,
         nextStatusCode: ATTENDANCE_SHEET_STATUS.FINAL_REJECTED,
       });
-      prisma.attendanceSheet.findFirst.mockResolvedValue(
-        makeSheetRow({ statusCode: ATTENDANCE_SHEET_STATUS.PENDING_FINAL_REVIEW }),
-      );
+      const observed = makeSheetRow({
+        statusCode: ATTENDANCE_SHEET_STATUS.PENDING_FINAL_REVIEW,
+        finalReviewNote: 'stale-before-lock',
+      });
+      const locked = makeSheetRow({
+        statusCode: ATTENDANCE_SHEET_STATUS.PENDING_FINAL_REVIEW,
+        finalReviewNote: 'locked-authoritative',
+      });
+      prisma.attendanceSheet.findFirst
+        .mockResolvedValueOnce(observed)
+        .mockResolvedValueOnce(locked);
       prisma.attendanceRecord.findMany.mockResolvedValue([makeRecordRow()]);
       prisma.attendanceSheet.update.mockResolvedValue(
         makeSheetRow({ statusCode: ATTENDANCE_SHEET_STATUS.FINAL_REJECTED }),
@@ -995,7 +1031,7 @@ describe('AttendancesService (characterization, scoped)', () => {
       expect(updateArg.data.statusCode).toBe(ATTENDANCE_SHEET_STATUS.FINAL_REJECTED);
       expect(updateArg.data.finalReviewNote).toBe('insufficient');
       expect(recorder.logFinalReview).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'final-reject', tx: prisma }),
+        expect.objectContaining({ action: 'final-reject', beforeSheet: locked, tx: prisma }),
       );
       expect(res.statusCode).toBe(ATTENDANCE_SHEET_STATUS.FINAL_REJECTED);
     });

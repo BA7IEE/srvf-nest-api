@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
@@ -19,6 +19,46 @@ const APPS = '/api/app/v1/me/team-join/applications';
 const CURRENT = '/api/app/v1/me/team-join/applications/current';
 const CYCLE_YEAR = 2026;
 const BEFORE_CUTOFF = new Date('2026-01-15T00:00:00Z');
+const LOCK_OBSERVE_TIMEOUT_MS = 4_000;
+const HTTP_TIMEOUT_MS = 8_000;
+const CLEANUP_TIMEOUT_MS = 10_000;
+const BLOCKER_TIMEOUT_MS = 20_000;
+
+async function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+async function settleAllWithTimeout(promises: Promise<unknown>[], label: string): Promise<void> {
+  const results = await withTimeout(Promise.allSettled(promises), label, CLEANUP_TIMEOUT_MS);
+  const rejected = results.find(
+    (result): result is PromiseRejectedResult => result.status === 'rejected',
+  );
+  if (rejected) throw rejected.reason;
+}
+
+function preservePrimaryFailure(primary: unknown, cleanup: unknown): void {
+  if (primary instanceof Error) {
+    Object.defineProperty(primary, 'cause', { value: cleanup, configurable: true });
+  }
+}
+
+function throwFailure(failure: unknown): never {
+  if (failure instanceof Error) throw failure;
+  throw new Error('non-Error test failure', { cause: failure });
+}
 
 interface LinkedUser {
   userId: string;
@@ -28,11 +68,14 @@ interface LinkedUser {
 
 describe('招新三期(入队)App 自助面 e2e', () => {
   let app: INestApplication;
+  let appB: INestApplication;
   let prisma: PrismaService;
+  let prismaB: PrismaService;
   let volA: LinkedUser;
   let volB: LinkedUser;
   let unlinkedAuth: string;
   let inactiveAuth: string;
+  let adminAuth: string;
   let orgSeq = 0;
 
   async function makeLinked(
@@ -124,17 +167,21 @@ describe('招新三期(入队)App 自助面 e2e', () => {
 
   beforeAll(async () => {
     app = await createTestApp();
+    appB = await createTestApp();
     prisma = app.get(PrismaService);
+    prismaB = appB.get(PrismaService);
     await resetDb(app);
     volA = await makeLinked('tja_vol_a', 'ACTIVE');
     volB = await makeLinked('tja_vol_b', 'ACTIVE');
     await createTestUser(app, { username: 'tja_unlinked', role: Role.USER });
     unlinkedAuth = (await loginAs(app, 'tja_unlinked')).authHeader;
     inactiveAuth = (await makeLinked('tja_inactive', 'INACTIVE')).authHeader;
+    await createTestUser(app, { username: 'tja_admin', role: Role.SUPER_ADMIN });
+    adminAuth = (await loginAs(app, 'tja_admin')).authHeader;
   });
 
   afterAll(async () => {
-    await app.close();
+    await settleAllWithTimeout([app.close(), appB.close()], 'team-join app surface shutdown');
   });
 
   beforeEach(async () => {
@@ -345,6 +392,227 @@ describe('招新三期(入队)App 自助面 e2e', () => {
       .set('Authorization', volA.authHeader)
       .send({ targetOrganizationIds: [orgA] });
     expectBizError(res, BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
+  });
+
+  async function waitForDirectTeamJoinWaiter(
+    directBlockerPid: number,
+    operation: Promise<request.Response>,
+    excludedPids: number[] = [],
+  ): Promise<{ pid: number; databaseName: string; blockingPids: number[] }> {
+    let settled = false;
+    void operation.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    const deadline = Date.now() + LOCK_OBSERVE_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (settled) throw new Error('team-join app operation settled before expected lock wait');
+      const rows = await withTimeout(
+        prismaB.$queryRaw<Array<{ pid: number; databaseName: string; blockingPids: number[] }>>(
+          Prisma.sql`
+            SELECT pid, datname AS "databaseName", pg_blocking_pids(pid) AS "blockingPids"
+            FROM pg_stat_activity
+            WHERE datname = current_database()
+              AND wait_event_type = 'Lock'
+              AND CAST(${directBlockerPid} AS integer) = ANY(pg_blocking_pids(pid))
+              AND query LIKE '%FROM "team_join_applications"%FOR NO KEY UPDATE%'
+              AND NOT (pid = ANY(${excludedPids}::integer[]))
+            LIMIT 1
+          `,
+        ),
+        'team-join app lock observer query',
+        LOCK_OBSERVE_TIMEOUT_MS,
+      );
+      if (rows[0]) return rows[0];
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(`team-join app direct waiter missing blocker=${directBlockerPid}`);
+  }
+
+  async function runUpdateTargetsRejectLinearization(
+    firstAction: 'reject' | 'update',
+  ): Promise<void> {
+    await openCycle();
+    const orgA = await makeOrg();
+    const orgB = await makeOrg();
+    const created = await submit(volA.authHeader, [orgA]).expect(201);
+    const appId = created.body.data.id as string;
+    const notificationCountBefore = await prisma.notification.count();
+    const outboxCountBefore = await prisma.notificationOutboxIntent.count();
+    const poolIds = await Promise.all(
+      [prisma, prismaB].map(async (client) => {
+        const rows = await client.$queryRaw<
+          Array<{ pid: number; databaseName: string }>
+        >(Prisma.sql`
+          SELECT pg_backend_pid() AS pid, current_database() AS "databaseName"
+        `);
+        return rows[0];
+      }),
+    );
+    expect(poolIds[0].databaseName).toBe(poolIds[1].databaseName);
+    expect(poolIds[0].pid).not.toBe(poolIds[1].pid);
+
+    let release!: () => void;
+    const releasePromise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let root!: { pid: number; databaseName: string };
+    let reached!: () => void;
+    const reachedPromise = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    let mutate!: () => void;
+    const mutatePromise = new Promise<void>((resolve) => {
+      mutate = resolve;
+    });
+    let mutated!: () => void;
+    const mutatedPromise = new Promise<void>((resolve) => {
+      mutated = resolve;
+    });
+    const blocker = prisma.$transaction(
+      async (tx) => {
+        const rows = await tx.$queryRaw<Array<{ pid: number; databaseName: string }>>(Prisma.sql`
+        SELECT pg_backend_pid() AS pid, current_database() AS "databaseName"
+        FROM "team_join_applications"
+        WHERE "id" = ${appId}
+        FOR UPDATE
+      `);
+        root = rows[0];
+        reached();
+        if (firstAction === 'update') {
+          await mutatePromise;
+          await tx.teamJoinApplication.update({
+            where: { id: appId },
+            data: { targetOrganizationIds: [orgA, orgB] },
+          });
+          mutated();
+        }
+        await releasePromise;
+      },
+      { timeout: BLOCKER_TIMEOUT_MS },
+    );
+
+    let rejectRequest: Promise<request.Response> | undefined;
+    let updateRequest: Promise<request.Response> | undefined;
+    let primaryFailure: unknown;
+    let cleanupFailure: unknown;
+    try {
+      await withTimeout(reachedPromise, 'team-join app root blocker', BLOCKER_TIMEOUT_MS);
+      const reject = () =>
+        Promise.resolve(
+          request(httpServer(firstAction === 'reject' ? app : appB))
+            .post(`/api/admin/v1/team-join/applications/${appId}/evaluate`)
+            .set('Authorization', adminAuth)
+            .send({ approved: false })
+            .timeout({ deadline: HTTP_TIMEOUT_MS }),
+        );
+      const update = () =>
+        Promise.resolve(
+          request(httpServer(firstAction === 'update' ? app : appB))
+            .patch(`${APPS}/${appId}/targets`)
+            .set('Authorization', volA.authHeader)
+            .send({ targetOrganizationIds: [orgB] })
+            .timeout({ deadline: HTTP_TIMEOUT_MS }),
+        );
+      const first =
+        firstAction === 'reject' ? (rejectRequest = reject()) : (updateRequest = update());
+      const firstWaiter = await waitForDirectTeamJoinWaiter(root.pid, first);
+      expect(firstWaiter.databaseName).toBe(root.databaseName);
+      expect(firstWaiter.blockingPids).toContain(root.pid);
+      if (firstAction === 'update') {
+        mutate();
+        await withTimeout(mutatedPromise, 'team-join app root mutation', HTTP_TIMEOUT_MS);
+      }
+      const second =
+        firstAction === 'reject' ? (updateRequest = update()) : (rejectRequest = reject());
+      const secondWaiter = await waitForDirectTeamJoinWaiter(firstWaiter.pid, second, [root.pid]);
+      expect(secondWaiter.pid).not.toBe(firstWaiter.pid);
+      expect(secondWaiter.databaseName).toBe(root.databaseName);
+      expect(secondWaiter.blockingPids).toContain(firstWaiter.pid);
+      release();
+      if (!rejectRequest || !updateRequest) {
+        throw new Error('both team-join operations must be started');
+      }
+      const [rejectResponse, updateResponse] = await withTimeout(
+        Promise.all([rejectRequest, updateRequest]),
+        'team-join app competing operations',
+        HTTP_TIMEOUT_MS,
+      );
+      expect(rejectResponse.status).toBe(200);
+      expect(JSON.stringify([rejectResponse.body, updateResponse.body])).not.toContain('40P01');
+      if (firstAction === 'reject') {
+        expectBizError(updateResponse, BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
+      } else {
+        expect(updateResponse.status).toBe(200);
+      }
+      expect(
+        await prisma.teamJoinApplication.findUniqueOrThrow({
+          where: { id: appId },
+          select: { statusCode: true, targetOrganizationIds: true },
+        }),
+      ).toEqual({
+        statusCode: 'rejected',
+        targetOrganizationIds: firstAction === 'reject' ? [orgA] : [orgB],
+      });
+      expect(
+        await prisma.auditLog.count({
+          where: { resourceId: appId, event: 'team-join-application.evaluate' },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.auditLog.count({
+          where: { resourceId: appId, event: 'team-join-application.update-targets' },
+        }),
+      ).toBe(firstAction === 'reject' ? 0 : 1);
+      if (firstAction === 'update') {
+        const updateAudit = await prisma.auditLog.findFirstOrThrow({
+          where: { resourceId: appId, event: 'team-join-application.update-targets' },
+          select: { context: true },
+        });
+        expect(updateAudit.context).toMatchObject({ before: { targetCount: 2 } });
+      }
+      expect(await prisma.notification.count()).toBe(notificationCountBefore);
+      expect(await prisma.notificationOutboxIntent.count()).toBe(outboxCountBefore);
+      expect(
+        await prisma.insuranceEligibilityEvidence.count({
+          where: { teamJoinApplicationId: appId },
+        }),
+      ).toBe(0);
+    } catch (error) {
+      primaryFailure = error;
+    } finally {
+      mutate();
+      release();
+      try {
+        await settleAllWithTimeout(
+          [
+            blocker,
+            ...(rejectRequest ? [rejectRequest] : []),
+            ...(updateRequest ? [updateRequest] : []),
+          ],
+          'team-join app linearization cleanup',
+        );
+      } catch (cleanupError) {
+        cleanupFailure = cleanupError;
+      }
+    }
+    if (primaryFailure !== undefined) {
+      if (cleanupFailure !== undefined) preservePrimaryFailure(primaryFailure, cleanupFailure);
+      throwFailure(primaryFailure);
+    }
+    if (cleanupFailure !== undefined) throwFailure(cleanupFailure);
+  }
+
+  it('reject-first:root → reject direct waiter → updateTargets soft waiter，后者零副作用', async () => {
+    await runUpdateTargetsRejectLinearization('reject');
+  });
+
+  it('updateTargets-first:root → update direct waiter → reject soft waiter；同态更新后 reject 合法', async () => {
+    await runUpdateTargetsRejectLinearization('update');
   });
 
   // ===== audit =====

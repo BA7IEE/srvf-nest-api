@@ -767,7 +767,7 @@ describe('ActivitiesService (characterization)', () => {
       expect(findArg.where.deletedAt).toBeNull();
 
       // 收件集必须在 Activity claim 之后读取，锁定 R5-01 的事务内时序。
-      const claimOrder = prisma.activity.updateMany.mock.invocationCallOrder[0];
+      const claimOrder = prisma.$queryRaw.mock.invocationCallOrder[0];
       const recipientReadOrder = prisma.activityRegistration.findMany.mock.invocationCallOrder[0];
       expect(recipientReadOrder).toBeGreaterThan(claimOrder);
 

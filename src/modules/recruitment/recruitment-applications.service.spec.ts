@@ -367,9 +367,9 @@ describe('RecruitmentApplicationsService.resolveManual · S3 敏感字段分级(
   // e2e ㉑-㉔ 覆盖发号路径,本组只锁「响应脱敏随 read.sensitive」这层,与业务态转移正交)。
   function buildService(canMap: Record<string, boolean>) {
     const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'app-1' }]),
       recruitmentApplication: {
         findFirst: jest.fn().mockResolvedValue({ id: 'app-1', statusCode: 'manual_review' }),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         update: jest.fn().mockResolvedValue(UPDATED_ROW),
       },
     };
@@ -391,12 +391,16 @@ describe('RecruitmentApplicationsService.resolveManual · S3 敏感字段分级(
       {} as never,
       { recruitmentOcr: { dailyIpLimit: 30 } } as never, // F1:OCR 日封顶 config(本组不触 submit)
     );
-    return { service };
+    return { service, tx };
   }
 
   it('仅持 resolve.manual(无 read.sensitive)→ 响应脱敏证件号/手机', async () => {
-    const { service } = buildService({ [RESOLVE]: true, [SENSITIVE]: false });
+    const { service, tx } = buildService({ [RESOLVE]: true, [SENSITIVE]: false });
     const dto = await service.resolveManual('app-1', { approved: false }, user, meta, now);
+    expect(tx.recruitmentApplication.findFirst).toHaveBeenCalledTimes(2);
+    expect(tx.recruitmentApplication.findFirst.mock.invocationCallOrder[1]).toBeGreaterThan(
+      tx.$queryRaw.mock.invocationCallOrder[0],
+    );
     expect(dto.idCardNumber).not.toBe(RAW_ID);
     expect(dto.idCardNumber).toContain('*');
     expect(dto.phone).not.toBe(RAW_PHONE);
