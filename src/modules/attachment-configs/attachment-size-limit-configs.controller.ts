@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
@@ -73,7 +74,7 @@ export class AttachmentSizeLimitConfigsController {
     summary:
       '创建附件尺寸限制配置(1:1 与 typeConfig;typeConfigId 不存在 → 13020;重复 → 13027;含软删历史) [rbac: attachment-config.create.size-limit]',
   })
-  @ApiWrappedOkResponse(AttachmentSizeLimitConfigResponseDto)
+  @ApiWrappedCreatedResponse(AttachmentSizeLimitConfigResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

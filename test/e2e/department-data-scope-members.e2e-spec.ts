@@ -555,7 +555,7 @@ describe('v0.49 department data scope — member axis', () => {
           { memberId: bulkCrossMemberId, phone: '13800000902' },
         ],
       });
-    expect(response.status).toBe(201);
+    expect(response.status).toBe(200);
     expect(response.body.data.summary).toEqual({ total: 2, ok: 1, blocked: 1 });
     expect(response.body.data.items).toEqual([
       expect.objectContaining({ memberId: bulkInScopeMemberId, status: 'ok' }),

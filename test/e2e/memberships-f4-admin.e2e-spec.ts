@@ -441,7 +441,7 @@ describe('F4/D 组 memberships 增强面(page / detail / conflicts / transfer / 
         membershipType: 'SUPPORT',
         reason: 'F4 迁移测试',
       });
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       expect(res.body.data).toMatchObject({
         memberId: mBobId,
         organizationId: groupId,
@@ -481,7 +481,7 @@ describe('F4/D 组 memberships 增强面(page / detail / conflicts / transfer / 
         toOrganizationId: groupId,
         membershipType: 'PRIMARY',
       });
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       const active = await prisma.memberOrganizationMembership.findMany({
         where: {
           memberId: mAliceId,
@@ -578,7 +578,7 @@ describe('F4/D 组 memberships 增强面(page / detail / conflicts / transfer / 
         toOrganizationId: groupId,
         membershipType: 'SECONDARY',
       });
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       const old = await prisma.memberOrganizationMembership.findUnique({
         where: { id: msDanglingOrgId },
         select: { status: true },
@@ -613,8 +613,8 @@ describe('F4/D 组 memberships 增强面(page / detail / conflicts / transfer / 
           membershipType: 'SECONDARY',
         }),
       ]);
-      expect(responses.filter((res) => res.status === 201)).toHaveLength(1);
-      const rejected = responses.find((res) => res.status !== 201);
+      expect(responses.filter((res) => res.status === 200)).toHaveLength(1);
+      const rejected = responses.find((res) => res.status !== 200);
       expect(rejected).toBeDefined();
       expectBizError(rejected!, BizCode.MEMBERSHIP_NOT_FOUND);
       const active = await prisma.memberOrganizationMembership.findMany({

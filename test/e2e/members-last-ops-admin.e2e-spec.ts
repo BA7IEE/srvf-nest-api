@@ -194,8 +194,8 @@ describe('队员轴最后 active ops-admin 保护', () => {
     await bindOpsAdmin(reopenTarget.user.id, role.id);
 
     expect((await updateAccountStatus(statusTarget.member.id)).status).toBe(200);
-    expect((await offboard(offboardTarget.member.id)).status).toBe(201);
-    expect((await reopenAccount(reopenTarget.member.id, '13800001002')).status).toBe(201);
+    expect((await offboard(offboardTarget.member.id)).status).toBe(200);
+    expect((await reopenAccount(reopenTarget.member.id, '13800001002')).status).toBe(200);
 
     expect(await countActiveOpsAdminHolders(role.id)).toBe(1);
     expect((await prisma.user.findUniqueOrThrow({ where: { id: backup.id } })).status).toBe(
@@ -209,8 +209,8 @@ describe('队员轴最后 active ops-admin 保护', () => {
     const reopenTarget = await createLinkedMemberAccount('reopen-plain');
 
     expect((await updateAccountStatus(statusTarget.member.id)).status).toBe(200);
-    expect((await offboard(offboardTarget.member.id)).status).toBe(201);
-    expect((await reopenAccount(reopenTarget.member.id, '13800001003')).status).toBe(201);
+    expect((await offboard(offboardTarget.member.id)).status).toBe(200);
+    expect((await reopenAccount(reopenTarget.member.id, '13800001003')).status).toBe(200);
   });
 
   it('跨轴并发：members.updateAccountStatus ∥ users.disable 同削最后两名 ops-admin → 恰一成功', async () => {

@@ -1,4 +1,6 @@
-import type { INestApplication } from '@nestjs/common';
+import { HttpStatus, RequestMethod, type INestApplication, type Type } from '@nestjs/common';
+import { HTTP_CODE_METADATA, METHOD_METADATA } from '@nestjs/common/constants';
+import { ModulesContainer } from '@nestjs/core';
 import request from 'supertest';
 import { httpServer } from '../helpers/http-server';
 import { createTestApp } from '../setup/test-app';
@@ -697,6 +699,17 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/meta/participation-overview'],
 ];
 
+const NULLABLE_SETTINGS_ROUTES = [
+  '/api/system/v1/storage-settings',
+  '/api/system/v1/sms-settings',
+  '/api/system/v1/wechat-settings',
+  '/api/system/v1/realname-settings',
+] as const;
+
+function schemaAllowsNull(schema: OpenApiSchema | undefined): boolean {
+  return schema?.nullable === true;
+}
+
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
 const EXPECTED_SCHEMAS: readonly string[] = [
   'LoginDto',
@@ -1308,6 +1321,78 @@ describe('OpenAPI 契约快照', () => {
     const extraInActual = [...actual].filter((r) => !expected.has(r)).sort();
     const missingInActual = [...expected].filter((r) => !actual.has(r)).sort();
     expect({ extraInActual, missingInActual }).toEqual({ extraInActual: [], missingInActual: [] });
+  });
+
+  it('全部 operation 的 OpenAPI success status 与 Nest handler 有效状态一致', () => {
+    const effectiveStatusByOperationId = new Map<string, number>();
+    const modules = app.get(ModulesContainer);
+    for (const moduleRef of modules.values()) {
+      for (const wrapper of moduleRef.controllers.values()) {
+        const controller = wrapper.metatype as Type<unknown> | undefined;
+        if (!controller) continue;
+        const prototype = controller.prototype as Record<string, unknown>;
+        for (const methodName of Object.getOwnPropertyNames(prototype)) {
+          const handler = prototype[methodName];
+          if (typeof handler !== 'function') continue;
+          const requestMethod = Reflect.getMetadata(METHOD_METADATA, handler) as
+            | RequestMethod
+            | undefined;
+          if (requestMethod === undefined) continue;
+          const explicitStatus = Reflect.getMetadata(HTTP_CODE_METADATA, handler) as
+            | number
+            | undefined;
+          effectiveStatusByOperationId.set(
+            `${controller.name}_${methodName}`,
+            explicitStatus ??
+              (requestMethod === RequestMethod.POST ? HttpStatus.CREATED : HttpStatus.OK),
+          );
+        }
+      }
+    }
+
+    const mismatches: string[] = [];
+    for (const [method, path] of EXPECTED_ROUTES) {
+      const operation = doc.paths[path]?.[method];
+      const operationId = operation?.operationId;
+      const effectiveStatus = operationId
+        ? effectiveStatusByOperationId.get(operationId)
+        : undefined;
+      const documentedSuccess = Object.keys(operation?.responses ?? {})
+        .filter((status) => /^2\d\d$/.test(status))
+        .sort();
+      if (
+        effectiveStatus === undefined ||
+        documentedSuccess.join(',') !== String(effectiveStatus)
+      ) {
+        mismatches.push(
+          `${method.toUpperCase()} ${path}: operationId=${operationId ?? '<missing>'}, ` +
+            `effective=${effectiveStatus ?? '<missing>'}, documented=${documentedSuccess.join(',')}`,
+        );
+      }
+    }
+
+    expect(mismatches).toEqual([]);
+    expect(effectiveStatusByOperationId.size).toBeGreaterThanOrEqual(EXPECTED_ROUTES.length);
+  });
+
+  it.each(NULLABLE_SETTINGS_ROUTES)('settings GET 明确声明 nullable data: %s', (path) => {
+    const dataSchema =
+      doc.paths[path]?.get?.responses?.['200']?.content?.['application/json']?.schema?.properties
+        ?.data;
+    expect(schemaAllowsNull(dataSchema)).toBe(true);
+  });
+
+  it('nullable settings route allowlist 精确，无漏项或额外 settings GET', () => {
+    const actual = Object.entries(doc.paths)
+      .filter(([path, item]) => {
+        if (!path.startsWith('/api/system/v1/') || !path.endsWith('-settings')) return false;
+        const dataSchema =
+          item.get?.responses?.['200']?.content?.['application/json']?.schema?.properties?.data;
+        return schemaAllowsNull(dataSchema);
+      })
+      .map(([path]) => path)
+      .sort();
+    expect(actual).toEqual([...NULLABLE_SETTINGS_ROUTES].sort());
   });
 
   it.each(EXPECTED_SCHEMAS)('Schema 仍存在: %s', (schemaName) => {

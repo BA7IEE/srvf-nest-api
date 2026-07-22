@@ -193,8 +193,8 @@ describe('SMS Settings + Send Logs(T3 e2e 组 1)', () => {
         .post(RESET_PATH)
         .set('Authorization', saHeader)
         .send({ secretId: 'AKID-e2e-secret-id', secretKey: 'e2e-secret-key-value' });
-      // 镜像 storage reset-credentials 现状:POST 无 @HttpCode → Nest 默认 201
-      expect(res.status).toBe(201);
+      // action command 契约:POST 显式 @HttpCode(200)
+      expect(res.status).toBe(200);
       const data = res.body.data as Record<string, unknown>;
       expect(data.credentialStatus).toBe('configured');
       expect(data.credentialConfigured).toBe(true);

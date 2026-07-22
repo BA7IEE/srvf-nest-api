@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from '@nestjs/
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedArrayResponse,
   ApiWrappedOkResponse,
@@ -64,7 +65,7 @@ export class EmergencyContactsController {
 
   @Post()
   @ApiOperation({ summary: '新增一条紧急联系人 [rbac: emergency-contact.create.record]' })
-  @ApiWrappedOkResponse(EmergencyContactResponseDto)
+  @ApiWrappedCreatedResponse(EmergencyContactResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

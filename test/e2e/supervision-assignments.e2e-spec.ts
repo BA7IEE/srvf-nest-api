@@ -410,7 +410,7 @@ describe('supervision-assignments 分管管理', () => {
       const rev = await request(httpServer(app))
         .post(`/api/admin/v1/supervision-assignments/${id}/revoke`)
         .set('Authorization', adminAuth);
-      expect(rev.status).toBe(201);
+      expect(rev.status).toBe(200);
       expect(rev.body.data.status).toBe('REVOKED');
       expect(rev.body.data.revokedByUserId).toBeTruthy();
       expect(rev.body.data.endedAt).toBeTruthy();

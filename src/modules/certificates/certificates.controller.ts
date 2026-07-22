@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedArrayResponse,
   ApiWrappedOkResponse,
@@ -83,7 +84,7 @@ export class CertificatesController {
     summary:
       '新增一条证书(默认 certStatusCode=pending / isInternal=false) [rbac: certificate.create.record]',
   })
-  @ApiWrappedOkResponse(CertificateResponseDto)
+  @ApiWrappedCreatedResponse(CertificateResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

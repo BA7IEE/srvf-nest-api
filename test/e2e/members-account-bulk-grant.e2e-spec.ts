@@ -160,7 +160,7 @@ describe('队员账号闭环 v2:POST /api/admin/v1/members/accounts/bulk-grant',
         opsAdminAuth,
       );
 
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       const items = res.body.data.items as Array<{
         memberId: string;
         status: string;
@@ -220,7 +220,7 @@ describe('队员账号闭环 v2:POST /api/admin/v1/members/accounts/bulk-grant',
         ],
         opsAdminAuth,
       );
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       expect(res.body.data.summary).toEqual({ total: 2, ok: 2, blocked: 0 });
     });
 
@@ -232,7 +232,7 @@ describe('队员账号闭环 v2:POST /api/admin/v1/members/accounts/bulk-grant',
         ],
         opsAdminAuth,
       );
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       expect(res.body.data.summary).toEqual({ total: 2, ok: 0, blocked: 2 });
     });
   });

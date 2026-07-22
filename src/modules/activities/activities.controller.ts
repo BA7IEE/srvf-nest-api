@@ -1,7 +1,20 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import {
+  HttpStatus,
+  HttpCode,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
@@ -89,7 +102,7 @@ export class ActivitiesController {
     summary:
       '创建活动(initial statusCode=draft;禁 statusCode / audit 字段) [rbac: activity.create.record]',
   })
-  @ApiWrappedOkResponse(ActivityResponseDto)
+  @ApiWrappedCreatedResponse(ActivityResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
@@ -219,6 +232,7 @@ export class ActivitiesController {
 
   // 参与域生命周期收口③(v0.40.0):管理端手动完结活动。POST(action 非幂等更新语义,沿 goal 指定动词)。
   @Post(':id/complete')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
       '手动完结活动(published → completed；唯一完结通路，非 published → 20030) [rbac: activity.complete.record]',

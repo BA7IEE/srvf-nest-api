@@ -12,6 +12,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedArrayResponse,
   ApiWrappedOkResponse,
@@ -77,7 +78,7 @@ export class PositionAssignmentsController {
     summary:
       '任命(校验 active 职务/规则、严格兼任交集、人数上限、归属要求、任期；锁后重算) [rbac: position-assignment.create.record]',
   })
-  @ApiWrappedOkResponse(PositionAssignmentResponseDto)
+  @ApiWrappedCreatedResponse(PositionAssignmentResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
@@ -174,6 +175,7 @@ export class PositionAssignmentsController {
   // ============ 扁平:撤销 + 历史 ============
 
   @Post('position-assignments/:id/revoke')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
       '撤销任职(status=REVOKED + 撤销人 + endedAt；required/minCount 不阻断) [rbac: position-assignment.revoke.record]',

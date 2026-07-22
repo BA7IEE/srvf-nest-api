@@ -1,7 +1,20 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import {
+  HttpStatus,
+  HttpCode,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
@@ -70,7 +83,7 @@ export class AttachmentsController {
     summary:
       '创建附件元数据(先落 durable storage intent,按 pinned locator 校验对象,再将 Attachment + audit + storage available 原子提交;存储状态不确定返 13034;其余校验:ownerType 13010 / ownerId 13011 / RBAC 30100 / MIME 13033或13012 / size 13013 / key 13014 / PII 13015) [rbac: attachment.upload.*]',
   })
-  @ApiWrappedOkResponse(AttachmentResponseDto)
+  @ApiWrappedCreatedResponse(AttachmentResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
@@ -109,6 +122,7 @@ export class AttachmentsController {
   // V2.x C-7.5 PR #10:upload-url + confirm-upload(沿评审 §8.1 / §8.2 / §8.3 / §8.4)
   // 路径顺序铁律:字面段优先,必须放在 `:id` 之前(沿 §8.2)
   @Post('upload-url')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
       '申请 signed upload URL(模式 B;先预写 durable storage intent,再按 pinned locator 签 URL;尚不创建 Attachment/不写业务 audit;存储状态不确定返 13034) [rbac: attachment.upload.*]',
@@ -134,6 +148,7 @@ export class AttachmentsController {
   }
 
   @Post('confirm-upload')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
       '确认上传完成(模式 B;验 uploadToken,按 intent 的 pinned locator 校验 HEAD/size/文件签名,再原子提交 Attachment + audit + available;同 token 幂等;不确定态返 13034) [rbac: attachment.upload.*]',

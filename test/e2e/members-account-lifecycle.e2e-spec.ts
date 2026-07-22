@@ -405,7 +405,7 @@ describe('队员账号闭环 v2:完整生命周期(bind/unbind/reopen/status)', 
       const oldUserId = granted.body.data.userId;
 
       const reopened = await reopen(member.id, '13900004008', opsAdminAuth);
-      expect(reopened.status).toBe(201);
+      expect(reopened.status).toBe(200);
       expect(reopened.body.data.username).toBe(`${member.memberNo}-2`);
       expect(reopened.body.data.memberId).toBe(member.id);
       expect(reopened.body.data.phone).toBe('13900004008');
@@ -444,10 +444,10 @@ describe('队员账号闭环 v2:完整生命周期(bind/unbind/reopen/status)', 
       const g = await grant(member.id, '13900004010', opsAdminAuth);
       expect(g.status).toBe(201);
       const r1 = await reopen(member.id, '13900004011', opsAdminAuth);
-      expect(r1.status).toBe(201);
+      expect(r1.status).toBe(200);
       expect(r1.body.data.username).toBe(`${member.memberNo}-2`);
       const r2 = await reopen(member.id, '13900004012', opsAdminAuth);
-      expect(r2.status).toBe(201);
+      expect(r2.status).toBe(200);
       expect(r2.body.data.username).toBe(`${member.memberNo}-3`);
 
       const liveCount = await prisma.user.count({
@@ -644,7 +644,7 @@ describe('队员账号闭环 v2:完整生命周期(bind/unbind/reopen/status)', 
 
       // 4. 退号重开
       const reopened = await reopen(member.id, '13900005002', opsAdminAuth);
-      expect(reopened.status).toBe(201);
+      expect(reopened.status).toBe(200);
       const secondUserId = reopened.body.data.userId;
       expect(secondUserId).not.toBe(firstUserId);
 

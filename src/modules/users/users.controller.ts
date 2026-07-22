@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req } fr
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
@@ -84,7 +85,7 @@ export class UsersController {
     summary:
       '创建用户;SUPER_ADMIN 可创建 ADMIN/USER,ADMIN 只能创建 USER [rbac: user.create.account]',
   })
-  @ApiWrappedOkResponse(UserResponseDto)
+  @ApiWrappedCreatedResponse(UserResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

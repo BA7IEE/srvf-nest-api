@@ -464,7 +464,7 @@ describe('activity-registrations 模块', () => {
       const completeRes = await request(httpServer(app))
         .post(`/api/admin/v1/activities/${id}/complete`)
         .set('Authorization', adminAuth);
-      expect(completeRes.status).toBe(201);
+      expect(completeRes.status).toBe(200);
       expect(completeRes.body.data.statusCode).toBe('completed');
 
       // 完结后 approve 该 pending 报名 → T1 活动状态闸拦(20124)。

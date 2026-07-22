@@ -1,7 +1,20 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import {
+  HttpStatus,
+  HttpCode,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedArrayResponse,
   ApiWrappedOkResponse,
@@ -125,7 +138,7 @@ export class OrganizationsController {
   @ApiOperation({
     summary: '创建组织节点(parentId 不传 = 根节点;V2 第一阶段单根上限 1) [rbac: org.create.node]',
   })
-  @ApiWrappedOkResponse(OrganizationResponseDto)
+  @ApiWrappedCreatedResponse(OrganizationResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
@@ -208,6 +221,7 @@ export class OrganizationsController {
   // 终态 scoped-authz PR1(2026-07-01 goal「组织基座」;冻结稿 §8.3/§11 PR1):reparent 重挂父级。
   // 命令式(沿 promote/join/send-sms 现役 POST 范式);判权 service 层 rbac.can('org.move.node'),0 @Roles。
   @Post(':id/move')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
       '重挂组织节点父级(reparent;禁改根节点父级 / 目标父=自身或后代成环 → 拒;事务内重算 closure) [rbac: org.move.node]',

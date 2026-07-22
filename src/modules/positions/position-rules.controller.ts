@@ -12,7 +12,9 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
+  ApiNoContentResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
 } from '../../common/decorators/api-response.decorator';
@@ -59,7 +61,7 @@ export class PositionRulesController {
     summary:
       '创建职务规则(校验字典/职务/唯一键 + required/min/max 一致性) [rbac: position-rule.create.record]',
   })
-  @ApiWrappedOkResponse(PositionRuleResponseDto)
+  @ApiWrappedCreatedResponse(PositionRuleResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
@@ -98,6 +100,7 @@ export class PositionRulesController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '软删职务规则 [rbac: position-rule.delete.record]' })
+  @ApiNoContentResponse()
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

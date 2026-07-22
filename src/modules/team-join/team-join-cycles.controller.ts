@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/sw
 import type { Request } from 'express';
 
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
@@ -45,7 +46,7 @@ export class TeamJoinCyclesController {
     summary:
       '创建入队轮(默认 closed;可配置开放候选部门清单与候选数上限,清单 org 须 ACTIVE) [rbac: team-join-cycle.create.record]',
   })
-  @ApiWrappedOkResponse(TeamJoinCycleResponseDto)
+  @ApiWrappedCreatedResponse(TeamJoinCycleResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Patch, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 
 import {
   ApiBizErrorResponse,
+  ApiWrappedNullableResponse,
   ApiWrappedOkResponse,
 } from '../../common/decorators/api-response.decorator';
 import {
@@ -45,7 +46,7 @@ export class WechatSettingsController {
     summary:
       '读 WeChat Settings singleton row(不存在返 data=null;不抛 BizCode;不回显凭证) [rbac: wechat-setting.read.singleton]',
   })
-  @ApiWrappedOkResponse(WechatSettingsResponseDto)
+  @ApiWrappedNullableResponse(WechatSettingsResponseDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
   get(@CurrentUser() user: CurrentUserPayload): Promise<WechatSettingsResponseDto | null> {
     return this.service.getForAdmin(user);
@@ -67,6 +68,7 @@ export class WechatSettingsController {
   }
 
   @Post('reset-credentials')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
       '重置微信小程序 AppSecret(**仅 SUPER_ADMIN 短路通过**,码不绑 ops-admin;AES-256-GCM 加密落库;响应不回显;不存在则 upsert 创建 default providerType=WECHAT;事务提交后任一实例下一次调用直读 PostgreSQL 新值,无需 invalidate/reload/restart) [rbac: wechat-setting.reset.credentials]',

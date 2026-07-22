@@ -2303,7 +2303,7 @@ describe('attendances 模块', () => {
         .post(`/api/admin/v1/attendance-sheets/${sheetId}/reopen`)
         .set('Authorization', finalAdminAuth)
         .send({ reason: '  记录时间需要修订  ' });
-      expect(reopen.status).toBe(201);
+      expect(reopen.status).toBe(200);
       expect(reopen.body.data).toMatchObject({
         statusCode: 'pending',
         reviewerUserId: null,

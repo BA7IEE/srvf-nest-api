@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from '@nestjs/
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedArrayResponse,
   ApiWrappedOkResponse,
@@ -31,7 +32,7 @@ export class AdminActivityPositionsController {
   @ApiOperation({
     summary: '创建活动岗位 [rbac: activity.update.record]',
   })
-  @ApiWrappedOkResponse(ActivityPositionResponseDto)
+  @ApiWrappedCreatedResponse(ActivityPositionResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

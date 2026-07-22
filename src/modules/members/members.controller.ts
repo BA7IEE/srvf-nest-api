@@ -14,6 +14,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
@@ -95,6 +96,7 @@ export class MembersController {
   // §1.2 E-12):批量开号,必须先于 /:id 定义(specific-before-dynamic,镜像 options 先例)。
   // 镜像 announcement-import 批模式:逐行 skip-on-error + 逐行结果回报,非全或无。
   @Post('accounts/bulk-grant')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
       '批量开号(逐行 skip-on-error,单行失败不影响其余行;≤200 条) [rbac: member.grant.account]',
@@ -114,7 +116,7 @@ export class MembersController {
     summary:
       '创建队员(memberNo 必填,全局唯一不复用;不接收任何敏感字段) [rbac: member.create.record]',
   })
-  @ApiWrappedOkResponse(MemberResponseDto)
+  @ApiWrappedCreatedResponse(MemberResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
@@ -214,7 +216,7 @@ export class MembersController {
     summary:
       '给已存在队员开通登录账号(手机验证码登录,不设密码;队员已有绑定账号则拒绝) [rbac: member.grant.account]',
   })
-  @ApiWrappedOkResponse(GrantMemberAccountResponseDto)
+  @ApiWrappedCreatedResponse(GrantMemberAccountResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
@@ -285,6 +287,7 @@ export class MembersController {
   }
 
   @Post(':id/account/reopen')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
       '退号重开:软删旧号 + 开新号(新手机号),单事务原子("账号打错了"一步修复) [rbac: member.grant.account]',
@@ -338,6 +341,7 @@ export class MembersController {
   // 单事务关闭 member、全部 active 归属、linked 账号/refresh、任职、分管与直接 RoleBinding，
   // 并写 1 条伞 audit；响应中的残留数是锁后不变式探针，正常终态恒为 0。
   @Post(':id/offboard')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
       '一键离队并结束全部当前授权来源(归属/账号/任职/分管/直接绑定) [rbac: member.offboard.record]',

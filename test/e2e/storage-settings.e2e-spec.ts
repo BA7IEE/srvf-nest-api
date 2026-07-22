@@ -336,7 +336,7 @@ describe('storage-settings admin', () => {
         .post('/api/system/v1/storage-settings/reset-credentials')
         .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       const d = res.body.data;
       expect(d.providerType).toBe('COS');
       expect(d.credentialStatus).toBe('configured');
@@ -422,7 +422,7 @@ describe('storage-settings admin', () => {
         .post('/api/system/v1/storage-settings/reset-credentials')
         .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
-      expect(reset.status).toBe(201);
+      expect(reset.status).toBe(200);
       expect(reset.body.data.credentialStatus).toBe('configured');
       assertNoSecret(reset.body);
 
@@ -533,7 +533,7 @@ describe('storage-settings admin', () => {
         .post('/api/system/v1/storage-settings/reset-credentials')
         .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
-      expect(r3.status).toBe(201);
+      expect(r3.status).toBe(200);
       assertNoSecret(r3.body);
     });
   });

@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
@@ -67,7 +68,7 @@ export class PermissionsController {
     summary:
       '创建权限点(code 格式 <module>.<action>.<resource_type>;失败抛 30008) [rbac: rbac.permission.create]',
   })
-  @ApiWrappedOkResponse(PermissionResponseDto)
+  @ApiWrappedCreatedResponse(PermissionResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

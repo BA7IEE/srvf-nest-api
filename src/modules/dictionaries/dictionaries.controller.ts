@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedArrayResponse,
   ApiWrappedOkResponse,
@@ -58,7 +59,7 @@ export class DictTypesController {
 
   @Post()
   @ApiOperation({ summary: '创建字典类型 [rbac: dict.create.type]' })
-  @ApiWrappedOkResponse(DictTypeResponseDto)
+  @ApiWrappedCreatedResponse(DictTypeResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
@@ -170,7 +171,7 @@ export class DictItemsController {
 
   @Post()
   @ApiOperation({ summary: '创建字典项 [rbac: dict.create.item]' })
-  @ApiWrappedOkResponse(DictItemResponseDto)
+  @ApiWrappedCreatedResponse(DictItemResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

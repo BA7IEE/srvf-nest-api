@@ -710,7 +710,7 @@ describe('position-assignments 任职双轴管理', () => {
         .post(`/api/admin/v1/position-assignments/${created.body.data.id}/revoke`)
         .set('Authorization', adminAuth);
 
-      expect(revoked.status).toBe(201);
+      expect(revoked.status).toBe(200);
       expect(revoked.body.data.status).toBe('REVOKED');
       const activeCount = await prisma.organizationPositionAssignment.count({
         where: {
@@ -723,7 +723,7 @@ describe('position-assignments 任职双轴管理', () => {
       expect(activeCount).toBe(0);
     });
 
-    it('撤销 active → 201 + REVOKED + revokedByUserId + endedAt;org 轴不再 active,队员轴仍可见', async () => {
+    it('撤销 active → 200 + REVOKED + revokedByUserId + endedAt;org 轴不再 active,队员轴仍可见', async () => {
       const memberId = await newMember('revoke');
       const created = await appoint(adminAuth, orgTeamId, {
         positionId: posViceId,
@@ -735,7 +735,7 @@ describe('position-assignments 任职双轴管理', () => {
       const rev = await request(httpServer(app))
         .post(`/api/admin/v1/position-assignments/${paId}/revoke`)
         .set('Authorization', adminAuth);
-      expect(rev.status).toBe(201);
+      expect(rev.status).toBe(200);
       expect(rev.body.data.status).toBe('REVOKED');
       expect(rev.body.data.revokedByUserId).toBeTruthy();
       expect(rev.body.data.endedAt).toBeTruthy();

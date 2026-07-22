@@ -12,7 +12,9 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
+  ApiNoContentResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
 } from '../../common/decorators/api-response.decorator';
@@ -73,7 +75,7 @@ export class PositionsController {
   @ApiOperation({
     summary: '创建职务定义(code kebab 唯一) [rbac: position.create.definition]',
   })
-  @ApiWrappedOkResponse(PositionResponseDto)
+  @ApiWrappedCreatedResponse(PositionResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
@@ -128,6 +130,7 @@ export class PositionsController {
   @ApiOperation({
     summary: '软删职务定义(被职务规则引用时禁删 → 32003) [rbac: position.delete.definition]',
   })
+  @ApiNoContentResponse()
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
