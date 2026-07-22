@@ -1,8 +1,8 @@
 name: Docker Smoke
 
 # 第二轮自动化(对应 docs/docker-smoke-test.md §7),非 required check。
-# 目标:容器层面回归保护——验证镜像不仅能 build,还能在 smoke 模式下真实启动、
-# 连库、跑 migration/seed、通过基础 API smoke check、graceful shutdown。
+# 目标:容器层面回归保护——验证镜像不仅能 build,还能按 production 真实启动、
+# 连库、跑 migration/seed/storage bootstrap、通过基础 API smoke check、graceful shutdown。
 # 与 ci.yml 的 docker-build job 互补:那个只验证 build 链路,本 workflow 验证运行时行为。
 
 on:
@@ -22,6 +22,10 @@ on:
       - 'src/bootstrap/**'
       - 'src/config/**'
       - 'src/database/**'
+      - 'src/storage-settings-bootstrap.ts'
+      - 'src/storage-consistency-worker.ts'
+      - 'src/modules/storage/**'
+      - 'src/modules/attachments/storage-consistency*'
 
 jobs:
   docker-smoke:
@@ -106,12 +110,16 @@ jobs:
           SMS_ENCRYPTION_KEY="$(openssl rand -base64 32)"
           WECHAT_ENCRYPTION_KEY="$(openssl rand -base64 32)"
           REALNAME_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+          STORAGE_SECRET_ID="$(openssl rand -base64 24)"
+          STORAGE_SECRET_KEY="$(openssl rand -base64 32)"
           echo "::add-mask::$JWT_SECRET"
           echo "::add-mask::$SUPER_ADMIN_PASSWORD"
           echo "::add-mask::$STORAGE_ENCRYPTION_KEY"
           echo "::add-mask::$SMS_ENCRYPTION_KEY"
           echo "::add-mask::$WECHAT_ENCRYPTION_KEY"
           echo "::add-mask::$REALNAME_ENCRYPTION_KEY"
+          echo "::add-mask::$STORAGE_SECRET_ID"
+          echo "::add-mask::$STORAGE_SECRET_KEY"
           {
             echo "JWT_SECRET=$JWT_SECRET"
             echo "SUPER_ADMIN_PASSWORD=$SUPER_ADMIN_PASSWORD"
@@ -119,6 +127,8 @@ jobs:
             echo "SMS_ENCRYPTION_KEY=$SMS_ENCRYPTION_KEY"
             echo "WECHAT_ENCRYPTION_KEY=$WECHAT_ENCRYPTION_KEY"
             echo "REALNAME_ENCRYPTION_KEY=$REALNAME_ENCRYPTION_KEY"
+            echo "STORAGE_SECRET_ID=$STORAGE_SECRET_ID"
+            echo "STORAGE_SECRET_KEY=$STORAGE_SECRET_KEY"
           } >> "$GITHUB_ENV"
 
       # Seed 用 APP_ENV=development 避开 production 下对默认值的额外校验;
@@ -142,24 +152,43 @@ jobs:
           SUPER_ADMIN_EMAIL: ''
         run: pnpm prisma:seed
 
+      - name: Build application for offline bootstrap
+        run: pnpm build
+
+      - name: Bootstrap production storage settings
+        run: |
+          set -euo pipefail
+          trap 'rm -f /tmp/storage-bootstrap.json' EXIT
+          jq -n \
+            --arg databaseUrl "$HOST_DATABASE_URL" \
+            --arg bucket "srvf-production-smoke" \
+            --arg region "ap-shanghai" \
+            --arg envPrefix "production-smoke" \
+            --arg secretId "$STORAGE_SECRET_ID" \
+            --arg secretKey "$STORAGE_SECRET_KEY" \
+            '{databaseUrl:$databaseUrl,bucket:$bucket,region:$region,envPrefix:$envPrefix,secretId:$secretId,secretKey:$secretKey}' \
+            > /tmp/storage-bootstrap.json
+          chmod 600 /tmp/storage-bootstrap.json
+          APP_ENV=production STORAGE_ENCRYPTION_KEY="$STORAGE_ENCRYPTION_KEY" \
+            node dist/storage-settings-bootstrap \
+              --config-file=/tmp/storage-bootstrap.json \
+              --confirm-database=app_smoke
+
       - name: Build production image
         run: docker build -t u-nest-api-starter:smoke .
 
-      # production 模式启动:APP_CORS_ORIGIN 给合法域名(禁空 / 禁 *),
+      # production 模式启动:bootstrap row 与同一 STORAGE_ENCRYPTION_KEY 已就位；
+      # APP_CORS_ORIGIN 给合法域名(禁空 / 禁 *),
       # ENABLE_SWAGGER=false 验证 /api/docs 应 404。
       - name: Start app container
-        # V2.x production storage_settings fail-fast(2026-05-16):
-        # APP_ENV=smoke 是 CI Docker smoke job 专用 AppEnv;除 storage_settings fail-fast 外,
-        # 行为尽量保持 production-like(JSON 日志 / 严格 CORS / 默认禁 Swagger /
-        # STORAGE_ENCRYPTION_KEY 必填 / 隐藏异常 message)。
-        # docker-smoke 不预接真实 COS,故跳过 storage_settings 5 项校验;
-        # **不得用于真实部署**,真实部署必须 APP_ENV=production。
+        # 使用假凭证但不触发任何 COS Effect；目标是验证 production 配置装配、
+        # storage singleton 解密、不变量与恢复控制面，而非替代真实 COS 现场验收。
         run: |
           docker run -d \
             --name "$APP_CONTAINER" \
             --network "$COMPOSE_NETWORK" \
             -p "$APP_HOST_PORT:3000" \
-            -e APP_ENV=smoke \
+            -e APP_ENV=production \
             -e APP_PORT=3000 \
             -e APP_CORS_ORIGIN=https://app.example.com \
             -e APP_TRUSTED_PROXY_CIDRS=none \
@@ -169,6 +198,8 @@ jobs:
             -e JWT_EXPIRES_IN=15m \
             -e JWT_REFRESH_EXPIRES_IN=90d \
             -e STORAGE_ENCRYPTION_KEY="$STORAGE_ENCRYPTION_KEY" \
+            -e STORAGE_CONSISTENCY_MODE=JIT \
+            -e INSURANCE_ENFORCEMENT_ENABLED=false \
             -e SMS_ENCRYPTION_KEY="$SMS_ENCRYPTION_KEY" \
             -e WECHAT_ENCRYPTION_KEY="$WECHAT_ENCRYPTION_KEY" \
             -e REALNAME_ENCRYPTION_KEY="$REALNAME_ENCRYPTION_KEY" \
@@ -244,6 +275,56 @@ jobs:
           test "$TOKEN" != "null"
           echo "::add-mask::$TOKEN"
           echo "ACCESS_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      - name: Smoke - storage disable, API/worker restart, and recovery
+        run: |
+          set -euo pipefail
+          BASE="http://localhost:${APP_HOST_PORT}"
+
+          STATUS=$(curl -sS -o /tmp/smoke-storage-disable.json -w '%{http_code}' \
+            -X PATCH \
+            -H "authorization: Bearer $ACCESS_TOKEN" \
+            -H 'content-type: application/json' \
+            -d '{"enabled":false}' \
+            "$BASE/api/system/v1/storage-settings")
+          test "$STATUS" = "200"
+          test "$(jq -r '.data.enabled' /tmp/smoke-storage-disable.json)" = "false"
+
+          docker restart "$APP_CONTAINER" >/dev/null
+          for i in $(seq 1 60); do
+            if curl -fsS "$BASE/api/system/v1/health/live" >/dev/null 2>&1; then
+              break
+            fi
+            test "$i" != "60"
+            sleep 1
+          done
+
+          docker run --rm \
+            --network "$COMPOSE_NETWORK" \
+            -e APP_ENV=production \
+            -e APP_PORT=3000 \
+            -e APP_CORS_ORIGIN=https://app.example.com \
+            -e APP_TRUSTED_PROXY_CIDRS=none \
+            -e ENABLE_SWAGGER=false \
+            -e LOG_LEVEL=info \
+            -e STORAGE_ENCRYPTION_KEY="$STORAGE_ENCRYPTION_KEY" \
+            -e STORAGE_CONSISTENCY_MODE=JIT \
+            -e INSURANCE_ENFORCEMENT_ENABLED=false \
+            -e SMS_ENCRYPTION_KEY="$SMS_ENCRYPTION_KEY" \
+            -e WECHAT_ENCRYPTION_KEY="$WECHAT_ENCRYPTION_KEY" \
+            -e REALNAME_ENCRYPTION_KEY="$REALNAME_ENCRYPTION_KEY" \
+            -e DATABASE_URL="$CONTAINER_DATABASE_URL" \
+            u-nest-api-starter:smoke \
+            node dist/storage-consistency-worker.js --strict-gate
+
+          STATUS=$(curl -sS -o /tmp/smoke-storage-enable.json -w '%{http_code}' \
+            -X PATCH \
+            -H "authorization: Bearer $ACCESS_TOKEN" \
+            -H 'content-type: application/json' \
+            -d '{"enabled":true}' \
+            "$BASE/api/system/v1/storage-settings")
+          test "$STATUS" = "200"
+          test "$(jq -r '.data.enabled' /tmp/smoke-storage-enable.json)" = "true"
 
       # 防账号枚举:用户不存在 与 错密码 必须返回完全相同的 body(code 10004)。
       - name: Smoke - login failure (unknown user vs wrong password)

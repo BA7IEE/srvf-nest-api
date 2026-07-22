@@ -50,7 +50,7 @@
 
 > `LOGIN_THROTTLE_LIMIT` / `LOGIN_THROTTLE_TTL_SECONDS` 留空,使用默认 5 / 60。
 
-> 这张表记录的是当时手动 smoke 的最小环境快照，不是当前生产配置的完整清单。当前部署必须以 `.env.example` 为字段权威源，使用经评审的完整 env file；自动化 smoke 使用 `APP_ENV=smoke`，同样必须显式设置 `APP_TRUSTED_PROXY_CIDRS`。
+> 这张表记录的是当时手动 smoke 的最小环境快照，不是当前生产配置的完整清单。当前部署必须以 `.env.example` 为字段权威源，使用经评审的完整 env file；当前自动化 smoke 使用 `APP_ENV=production`，先执行离线 Storage bootstrap，再验证容器启动、disabled 重启恢复、worker strict gate、readiness 与登录。其 COS 凭证为临时假值且不执行 Provider Effect，不能替代真实 COS 现场验收。
 
 ---
 
