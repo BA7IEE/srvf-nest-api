@@ -4,7 +4,7 @@
 
 ## Scope 与当前行为
 
-- App 自助 `app/v1/me/insurances`、Admin 队保单/覆盖名单与队员保险查询沿既有 surface；Admin 队员 360 另有 `GET admin/v1/members/:memberId/insurances/overview` 一次返回 `selfPurchased` / `teamProvided` / 北京当前日 `summary`。`MemberInsuranceOverviewService` 只是展示 Query Service，`InsuranceRequirementService` 仍是 Activity/Team Join 的唯一保险资格与 evidence 出口。
+- App 自助 `app/v1/me/insurances`、Admin 队保单/覆盖名单与队员保险查询沿既有 surface；Admin 队员 360 另有 `GET admin/v1/members/:memberId/insurances/overview` 一次返回 `selfPurchased` / `teamProvided` / 北京当前日 `summary`。`MemberInsuranceOverviewService` 是 Admin 队员轴的只读展示聚合应用服务，负责 scoped-authz 编排、保险读取、DTO 汇总与 fail-closed 读取审计；它不替代 `InsuranceRequirementService`，也不属于 D-7 的纯 QueryService 边界。`InsuranceRequirementService` 仍是 Activity/Team Join 的唯一保险资格与 evidence 出口。
 - overview 复用 `member-insurance.read.other` + member ref scoped-authz；一个事务内各查一次个人保险与团队 coverage/policy，禁止 N+1。团队投影不得返回 policyNumber/note/其他成员/reviewer；个人投影也不返回 reviewer。概览审计复用 `member-insurance.read.other`，extra 只允许 `operation=overview` 与两个计数。
 - overview 的 confirmed 口径为 active 团队保险，或 active + verified 且 reviewer/reviewedAt 完整的个人保险；该汇总不是具体 Activity/Team Join 资格结果，不读取 enforcement gate。旧 `GET .../insurances` 行为与排序保持不变。
 - D-INSURANCE v3 PR2 增加唯一审核动作 `POST admin/v1/members/:memberId/insurances/:insuranceId/review`：body 仅 `decision=verified|rejected` + 必填 `expectedVersion`；Service 只走 `rbac.can('member-insurance.review.record')`。
