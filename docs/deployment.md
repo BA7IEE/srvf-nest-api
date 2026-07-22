@@ -12,6 +12,8 @@
 > 6. **wechat-settings + access token(已支持多实例即时切换)**:[`wechat-settings.service.ts`](../src/modules/wechat/wechat-settings.service.ts) 每次调用直读 PostgreSQL；一次 delivery 固定同一配置快照。进程内 access token cache 按不透明 configuration generation 隔离，AppID/密文凭证代次变化后下一操作不会命中旧 token；同一 delivery 的 token-invalid refresh/retry 不跨代混用。
 > 7. **realname-settings(已支持多实例即时切换)**:[`realname-settings.service.ts`](../src/modules/realname/realname-settings.service.ts) 每次调用直读 PostgreSQL；单次 OCR 的 provider/credentials/region 绑定同一快照，配置提交只影响下一 Effect。
 
+> 8. **HTTP access log query 边界**:应用 pino 只记录 method + pathname；生产 ingress / gateway / CDN 必须使用不含 query 的 pathname 字段（Nginx 使用 `$uri`），禁止 `$request_uri`、`$request`、`$args`、`$query_string` 或 raw upstream URL。仓库不持有真实 ingress 配置，发布前须在部署侧验证手机号/邮箱/姓名搜索值不进入边缘 access log。
+
 ---
 
 ## V1.1 已落地的工程能力

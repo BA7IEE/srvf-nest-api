@@ -1,5 +1,7 @@
 import type { AppConfig } from '../config/app.config';
+import { createServer, type IncomingMessage } from 'node:http';
 import pino, { type LoggerOptions } from 'pino';
+import pinoHttp from 'pino-http';
 import { buildLoggerModuleParams } from './logger-options';
 
 // V2 A4-1:logger redact 清单单元测试。
@@ -329,5 +331,77 @@ describe('LOG_REDACT_PATHS — 整体属性', () => {
     const redact =
       params.pinoHttp && 'redact' in params.pinoHttp ? params.pinoHttp.redact : undefined;
     expect((redact as { censor: string }).censor).toBe('[REDACTED]');
+  });
+});
+
+describe('HTTP request serializer — query values never enter automatic logs', () => {
+  it('captures method/pathname/status/responseTime/reqId/userId without query or originalUrl', async () => {
+    const lines: string[] = [];
+    const params = buildLoggerModuleParams({
+      ...fakeAppCfg,
+      env: 'production',
+    });
+    if (
+      !params.pinoHttp ||
+      typeof params.pinoHttp !== 'object' ||
+      !('genReqId' in params.pinoHttp)
+    ) {
+      throw new Error('pinoHttp options not found');
+    }
+    const middleware = pinoHttp(params.pinoHttp, {
+      write: (line: string) => lines.push(line),
+    });
+    const server = createServer((req, res) => {
+      const requestWithIdentity = req as IncomingMessage & {
+        id: string;
+        user: { id: string };
+      };
+      requestWithIdentity.id = 'req-log-query-redaction';
+      requestWithIdentity.user = { id: 'user-log-query-redaction' };
+      middleware(req, res, () => {
+        res.statusCode = 204;
+        res.end();
+      });
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('HTTP test server has no port');
+    try {
+      const query = new URLSearchParams({
+        q: '13800138000',
+        email: 'person@example.com',
+        name: '敏感姓名',
+      });
+      const response = await fetch(
+        `http://127.0.0.1:${address.port}/api/admin/v1/users?${query.toString()}`,
+      );
+      expect(response.status).toBe(204);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+
+    const records = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    const completed = records.find((record) => record.msg === 'request completed');
+    expect(completed).toBeDefined();
+    expect(completed).toMatchObject({
+      req: { method: 'GET', url: '/api/admin/v1/users' },
+      res: { statusCode: 204 },
+      reqId: 'req-log-query-redaction',
+      userId: 'user-log-query-redaction',
+    });
+    expect(typeof completed?.responseTime).toBe('number');
+    const serialized = JSON.stringify(records);
+    expect(serialized).not.toContain('13800138000');
+    expect(serialized).not.toContain('person@example.com');
+    expect(serialized).not.toContain('敏感姓名');
+    expect(serialized).not.toContain('q=');
+    expect(serialized).not.toContain('originalUrl');
+    expect((completed?.req as Record<string, unknown>).query).toBeUndefined();
   });
 });
