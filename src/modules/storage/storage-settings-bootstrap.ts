@@ -1,8 +1,9 @@
 import { PrismaClient, StorageMimePolicyMode, StorageProviderType } from '@prisma/client';
+import type { ConfigType } from '@nestjs/config';
 import { readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import appConfig from '../../config/app.config';
+import appConfig, { parseAppEnv, parseStorageEncryptionKey } from '../../config/app.config';
 import { StorageCryptoService } from './storage-crypto.service';
 
 const MAX_CONFIG_FILE_BYTES = 64 * 1024;
@@ -106,14 +107,17 @@ export async function runStorageSettingsBootstrap(
     );
   }
 
-  const cfg = appConfig();
-  if (cfg.env !== 'production' && !(cfg.env === 'test' && target.database.startsWith('app_test'))) {
+  const env = parseAppEnv(process.env.APP_ENV);
+  if (env !== 'production' && !(env === 'test' && target.database.startsWith('app_test'))) {
     throw new StorageSettingsBootstrapError(
       '仅允许 APP_ENV=production；测试例外要求 APP_ENV=test 且目标库名以 app_test 开头',
     );
   }
 
-  const crypto = new StorageCryptoService(cfg);
+  const encryptionKey = parseStorageEncryptionKey(process.env.STORAGE_ENCRYPTION_KEY, env);
+  const crypto = new StorageCryptoService({
+    storage: { encryptionKey, localRoot: '', consistencyMode: 'JIT' },
+  } as ConfigType<typeof appConfig>);
   if (!crypto.isAvailable()) {
     throw new StorageSettingsBootstrapError('STORAGE_ENCRYPTION_KEY 未配置，拒绝初始化');
   }

@@ -22,7 +22,7 @@ migration
 → DELETE
 ```
 
-production 启动会强制要求 `COS + enabled=true + bucket/region + 可解密凭证`。因此空库不能先启动应用再靠 HTTP PATCH 初始化；必须先走离线 bootstrap。
+production 启动会强制要求 `COS + bucket/region + 可解密凭证`。因此空库不能先启动应用再靠 HTTP PATCH 初始化；必须先走离线 bootstrap。`enabled=false` 是允许启动的紧急恢复态，但普通 Storage Effect 仍全部拒绝。
 
 ---
 
@@ -223,7 +223,7 @@ FROM "storage_settings";
 验收锚点：
 
 - 进程启动成功并通过 `/api/system/v1/health/ready`。
-- 若 settings 缺失、disabled、非 COS、bucket/region 缺失或凭证无法解密，进程必须退出；不得临时放宽。
+- 若 settings 缺失、非 COS、bucket/region 缺失或凭证无法解密，进程必须退出；不得临时放宽。disabled 时进程应 WARN 后启动控制面，普通 Effect 继续 fail-closed。
 - 不依赖不存在的 crypto 初始化日志。
 
 ### 5.2 登录与 GET
@@ -273,7 +273,7 @@ curl -fsS -X PATCH '<api-base-url>/api/system/v1/storage-settings' \
   --data-binary @docs/ops/fixtures/cos-production-storage-settings.json
 ```
 
-生产 PATCH 合并后的配置仍强制 COS、非空 bucket/region 和可解密凭证；`enabled=false` 是显式 kill switch，关闭后普通 storage effect fail-closed。
+生产 PATCH 合并后的配置仍强制 COS、非空 bucket/region 和可解密凭证；既有 singleton 的 providerType/bucket/region 不允许普通 PATCH 改变。`enabled=false` 是显式 kill switch，关闭后普通 storage effect fail-closed，API/worker 可重启并通过管理面恢复。
 
 ---
 
@@ -408,7 +408,7 @@ curl -fsS -X DELETE '<api-base-url>/api/admin/v1/attachments/<attachment-id>' \
 | encryption key 丢失/疑似泄露         | 按安全事件处理；当前版本没有安全的直接轮换路径，见 key freeze SOP         |
 | Provider effect 不确定               | 保留 ledger/intent，按 storage consistency runbook 收敛；不得手工伪造成功 |
 
-生产回退不允许切到容器本地 `./tmp/storage`。紧急停用使用 `enabled=false`，恢复前确认新写入仍为 COS。
+生产回退不允许切到容器本地 `./tmp/storage`；settings 丢失、LOCAL 或未知 provider 均 fail-closed。紧急停用使用 `enabled=false`，API/worker 重启后通过同一管理面恢复；bucket/region relocation 必须另立评审，不能使用普通 PATCH。
 
 ---
 
