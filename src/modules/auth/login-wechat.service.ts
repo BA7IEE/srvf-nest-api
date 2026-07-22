@@ -11,6 +11,7 @@ import { maskPhone, SMS_CODE_TTL_SECONDS } from '../sms/sms.constants';
 import { maskOpenid } from '../wechat/wechat.constants';
 import { WechatService } from '../wechat/wechat.service';
 import { AuthService } from './auth.service';
+import { lockAuthSessionUser } from './auth-session-lock';
 import type {
   LoginResponseDto,
   LoginWechatDto,
@@ -79,7 +80,8 @@ export class LoginWechatService {
     }
 
     const session = await this.auth.createSession(
-      { id: user.id, username: user.username, role: user.role },
+      user.id,
+      { kind: 'openid', value: openid },
       meta,
       'auth.login.wechat',
       { openid: maskOpenid(openid) },
@@ -153,29 +155,58 @@ export class LoginWechatService {
 
     // ⑥ 绑定事务(已绑本人则幂等跳过,不重写不重计 audit)
     if (!alreadyBoundToSelf) {
-      const me = await this.prisma.user.findUniqueOrThrow({
-        where: { id: user.id },
-        select: { openid: true },
-      });
       try {
         await this.prisma.$transaction(async (tx) => {
+          if (!(await lockAuthSessionUser(tx, user.id))) {
+            throw new BizException(BizCode.SMS_CODE_INVALID);
+          }
+          const me = await tx.user.findUnique({
+            where: { id: user.id },
+            select: {
+              id: true,
+              username: true,
+              role: true,
+              status: true,
+              deletedAt: true,
+              phone: true,
+              openid: true,
+            },
+          });
+          if (
+            !me ||
+            me.deletedAt !== null ||
+            me.status !== UserStatus.ACTIVE ||
+            me.phone !== dto.phone
+          ) {
+            throw new BizException(BizCode.SMS_CODE_INVALID);
+          }
+          if (me.openid === openid) return;
+
+          const occupiedAfterLock = await tx.user.findUnique({
+            where: { openid },
+            select: { id: true },
+          });
+          if (occupiedAfterLock !== null && occupiedAfterLock.id !== me.id) {
+            throw new BizException(BizCode.WECHAT_ALREADY_BOUND);
+          }
+
           const now = new Date();
           await tx.user.update({
-            where: { id: user.id },
+            where: { id: me.id },
             data: { openid },
             select: { id: true },
           });
           await tx.refreshToken.updateMany({
-            where: { userId: user.id, revokedAt: null, expiresAt: { gt: now } },
+            where: { userId: me.id, revokedAt: null, expiresAt: { gt: now } },
             data: { revokedAt: now, revokedReason: 'self-wechat-identity-change' },
           });
           // audit detail openid 一律掩码(E-23);禁 wx code / 完整 openid / session_key
           await this.auditLogs.log({
             event: me.openid === null ? 'wechat.bind.self' : 'wechat.rebind.self',
-            actorUserId: user.id,
-            actorRoleSnap: user.role,
+            actorUserId: me.id,
+            actorRoleSnap: me.role,
             resourceType: 'user',
-            resourceId: user.id,
+            resourceId: me.id,
             meta,
             ...(me.openid === null ? {} : { before: { openid: maskOpenid(me.openid) } }),
             after: { openid: maskOpenid(openid) },
@@ -199,7 +230,8 @@ export class LoginWechatService {
 
     // ⑦ 同构签发(评审稿 E-15/E-24;audit auth.login.wechat 在 createSession 事务内)
     return this.auth.createSession(
-      { id: user.id, username: user.username, role: user.role },
+      user.id,
+      { kind: 'openid', value: openid },
       meta,
       'auth.login.wechat',
       { openid: maskOpenid(openid) },

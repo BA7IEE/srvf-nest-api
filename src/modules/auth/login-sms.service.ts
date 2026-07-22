@@ -91,7 +91,8 @@ export class LoginSmsService {
     });
 
     return this.auth.createSession(
-      { id: user.id, username: user.username, role: user.role },
+      user.id,
+      { kind: 'phone', value: dto.phone },
       meta,
       'auth.login.sms',
       { phone: maskPhone(dto.phone), codeId },

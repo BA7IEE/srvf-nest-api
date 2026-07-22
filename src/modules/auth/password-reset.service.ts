@@ -14,6 +14,7 @@ import type {
   SendPasswordResetCodeDto,
   SendPasswordResetCodeResponseDto,
 } from './auth.dto';
+import { lockAuthSessionUser } from './auth-session-lock';
 
 // 找回密码 T2(2026-06-11):pre-auth SMS 验证码重置密码
 // (冻结评审稿 docs/archive/reviews/password-reset-by-sms-review.md,下称"评审稿")。
@@ -108,8 +109,32 @@ export class PasswordResetService {
     const now = new Date();
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({
+      if (!(await lockAuthSessionUser(tx, user.id))) {
+        throw new BizException(BizCode.SMS_CODE_INVALID);
+      }
+      const current = await tx.user.findUnique({
         where: { id: user.id },
+        select: {
+          id: true,
+          role: true,
+          status: true,
+          deletedAt: true,
+          phone: true,
+          passwordHash: true,
+        },
+      });
+      if (
+        !current ||
+        current.deletedAt !== null ||
+        current.status !== UserStatus.ACTIVE ||
+        current.phone !== dto.phone ||
+        current.passwordHash !== user.passwordHash
+      ) {
+        throw new BizException(BizCode.SMS_CODE_INVALID);
+      }
+
+      await tx.user.update({
+        where: { id: current.id },
         data: { passwordHash },
         select: { id: true },
       });
@@ -117,7 +142,7 @@ export class PasswordResetService {
       // 联动撤销第 5 场景(评审稿 §5 / E-12;where 口径镜像 changeMyPassword):
       // 全部未撤销且未过期 refresh 即时失效(旧 refresh 统一 10007);已过期 token 本就不可用。
       const refreshRevoke = await tx.refreshToken.updateMany({
-        where: { userId: user.id, revokedAt: null, expiresAt: { gt: now } },
+        where: { userId: current.id, revokedAt: null, expiresAt: { gt: now } },
         data: { revokedAt: now, revokedReason: 'self-password-reset' },
       });
 
@@ -125,10 +150,10 @@ export class PasswordResetService {
       // extra 手机号一律掩码;禁明文码 / codeHash / 完整号码 / 密码任何形态
       await this.auditLogs.log({
         event: 'password.reset.by-sms',
-        actorUserId: user.id,
-        actorRoleSnap: user.role,
+        actorUserId: current.id,
+        actorRoleSnap: current.role,
         resourceType: 'user',
-        resourceId: user.id,
+        resourceId: current.id,
         meta: auditMeta,
         extra: {
           refreshTokensRevoked: refreshRevoke.count,
