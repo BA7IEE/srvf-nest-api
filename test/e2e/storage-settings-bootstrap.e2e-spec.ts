@@ -64,8 +64,9 @@ describe('storage-settings-bootstrap CLI', () => {
 
   function runCli(configFile: string, extraArgs: readonly string[] = []): CliRunResult {
     const result = spawnSync(
-      'pnpm',
+      process.execPath,
       [
+        '--import',
         'tsx',
         'src/storage-settings-bootstrap.ts',
         `--config-file=${configFile}`,
@@ -75,9 +76,36 @@ describe('storage-settings-bootstrap CLI', () => {
       {
         cwd: process.cwd(),
         env: {
-          ...process.env,
           APP_ENV: 'test',
           STORAGE_ENCRYPTION_KEY: encryptionKey,
+        },
+        encoding: 'utf8',
+      },
+    );
+    return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+  }
+
+  function runProductionCli(
+    configFile: string,
+    overrides: NodeJS.ProcessEnv = {},
+    extraArgs: readonly string[] = [],
+  ): CliRunResult {
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        'src/storage-settings-bootstrap.ts',
+        `--config-file=${configFile}`,
+        `--confirm-database=${databaseName}`,
+        ...extraArgs,
+      ],
+      {
+        cwd: process.cwd(),
+        env: {
+          APP_ENV: 'production',
+          STORAGE_ENCRYPTION_KEY: encryptionKey,
+          ...overrides,
         },
         encoding: 'utf8',
       },
@@ -111,6 +139,31 @@ describe('storage-settings-bootstrap CLI', () => {
     expect(await prisma.storageSettings.count()).toBe(0);
     expectNoCredentialLeak(result);
   });
+
+  it('production clean environment needs only APP_ENV and STORAGE_ENCRYPTION_KEY', async () => {
+    const result = runProductionCli(writeConfig(), {}, ['--dry-run']);
+
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ mode: 'dry-run', verified: true });
+    expect(await prisma.storageSettings.count()).toBe(0);
+    expectNoCredentialLeak(result);
+  });
+
+  it.each([
+    ['missing key', { STORAGE_ENCRYPTION_KEY: undefined }, /STORAGE_ENCRYPTION_KEY/],
+    ['short key', { STORAGE_ENCRYPTION_KEY: 'short' }, /太短/],
+    ['invalid APP_ENV', { APP_ENV: 'invalid' }, /APP_ENV 无效/],
+  ])(
+    'production clean environment rejects %s without writing',
+    async (_label, overrides, error) => {
+      const result = runProductionCli(writeConfig(), overrides, ['--dry-run']);
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toMatch(error);
+      expect(await prisma.storageSettings.count()).toBe(0);
+      expectNoCredentialLeak(result);
+    },
+  );
 
   it('creates one COS singleton, decrypts persisted credentials, and refuses overwrite', async () => {
     const configFile = writeConfig();

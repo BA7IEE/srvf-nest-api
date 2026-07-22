@@ -49,7 +49,10 @@ function makeSettingsServiceMock(settings: StorageSettingsResolved | null): {
   getActiveSettings: jest.Mock;
 } {
   const getActiveSettings = jest.fn().mockResolvedValue(settings);
-  const service = { getActiveSettings } as unknown as StorageSettingsService;
+  const service = {
+    getActiveSettings,
+    isProductionEnvironment: jest.fn().mockReturnValue(false),
+  } as unknown as StorageSettingsService;
   return { service, getActiveSettings };
 }
 
@@ -270,6 +273,25 @@ describe('StorageProviderRouter', () => {
       expect(cosMock.putObject).not.toHaveBeenCalled();
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Unknown providerType=UNKNOWN'));
     });
+
+    it.each([
+      ['missing settings', null],
+      ['LOCAL', makeSettings({ providerType: 'LOCAL' })],
+      ['unknown', makeSettings({ providerType: 'UNKNOWN' as unknown as 'COS' })],
+    ])('production %s → fail-closed 且零 Provider 调用', async (_label, settings) => {
+      const { service } = makeSettingsServiceMock(settings);
+      jest.spyOn(service, 'isProductionEnvironment').mockReturnValue(true);
+      const localMock = makeLocalMock();
+      const cosMock = makeCosMock();
+      const router = new StorageProviderRouter(service, localMock.instance, cosMock.instance);
+
+      await expect(router.putObject({ key: 'k', body: Buffer.from('x') })).rejects.toThrow(
+        StorageProviderUnavailableError,
+      );
+      expect(localMock.putObject).not.toHaveBeenCalled();
+      expect(cosMock.prepare).not.toHaveBeenCalled();
+      expect(cosMock.putObject).not.toHaveBeenCalled();
+    });
   });
 
   describe('6 方法路由', () => {
@@ -349,7 +371,10 @@ describe('StorageProviderRouter', () => {
         .fn()
         .mockResolvedValueOnce(oldSettings)
         .mockResolvedValueOnce(newSettings);
-      const service = { getActiveSettings } as unknown as StorageSettingsService;
+      const service = {
+        getActiveSettings,
+        isProductionEnvironment: jest.fn().mockReturnValue(false),
+      } as unknown as StorageSettingsService;
       const localMock = makeLocalMock();
       const cosMock = makeCosMock();
       const router = new StorageProviderRouter(service, localMock.instance, cosMock.instance);
@@ -429,6 +454,30 @@ describe('StorageProviderRouter', () => {
     expect(localMock.headObjectAt).not.toHaveBeenCalled();
     expect(localMock.readObjectPrefixAt).not.toHaveBeenCalled();
     expect(localMock.hashObjectSha256At).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['missing settings', null],
+    ['LOCAL', makeSettings({ providerType: 'LOCAL' })],
+    ['unknown', makeSettings({ providerType: 'UNKNOWN' as unknown as 'COS' })],
+  ])('production %s → 普通 pinned Effect fail-closed', async (_label, settings) => {
+    const { service } = makeSettingsServiceMock(settings);
+    jest.spyOn(service, 'isProductionEnvironment').mockReturnValue(true);
+    const localMock = makeLocalMock();
+    const cosMock = makeCosMock();
+    const router = new StorageProviderRouter(service, localMock.instance, cosMock.instance);
+    const locator = {
+      providerType: 'COS' as const,
+      bucket: 'old-pinned-bucket',
+      region: 'ap-old',
+      localNamespace: null,
+    };
+
+    await expect(router.deleteObjectAt(locator, 'k')).rejects.toThrow(
+      StorageProviderUnavailableError,
+    );
+    expect(cosMock.deleteObjectAt).not.toHaveBeenCalled();
+    expect(localMock.deleteObjectAt).not.toHaveBeenCalled();
   });
 
   it('显式 manual maintenance 可按 pinned locator 绕过 disabled settings', async () => {

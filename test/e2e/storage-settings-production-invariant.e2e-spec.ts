@@ -102,11 +102,11 @@ describe('production StorageSettings runtime invariant', () => {
     expect(auditLog).not.toHaveBeenCalled();
   });
 
-  it('allows a valid COS update and allows enabled=false as the business-effect kill switch', async () => {
+  it('allows enabled=false and same-location/non-location updates', async () => {
     await seedValidSettings();
 
     const result = await service.updateSettings(
-      { bucket: 'srvf-production-next', enabled: false },
+      { bucket: 'srvf-production', enabled: false, remarks: 'maintenance' },
       USER,
       AUDIT_META,
     );
@@ -114,17 +114,35 @@ describe('production StorageSettings runtime invariant', () => {
     expect(result).toMatchObject({
       providerType: 'COS',
       enabled: false,
-      bucket: 'srvf-production-next',
+      bucket: 'srvf-production',
       region: 'ap-shanghai',
       credentialStatus: 'configured',
     });
     expect(await prisma.storageSettings.findFirstOrThrow()).toMatchObject({
       providerType: 'COS',
       enabled: false,
-      bucket: 'srvf-production-next',
+      bucket: 'srvf-production',
       region: 'ap-shanghai',
     });
     expect(auditLog).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { field: 'providerType', dto: { providerType: 'LOCAL' as const } },
+    { field: 'bucket', dto: { bucket: 'srvf-production-next' } },
+    { field: 'region', dto: { region: 'ap-guangzhou' } },
+  ])('freezes production location field $field and rolls back audit', async ({ dto }) => {
+    await seedValidSettings();
+
+    await expect(service.updateSettings(dto, USER, AUDIT_META)).rejects.toEqual(
+      new BizException(BizCode.BAD_REQUEST),
+    );
+    expect(await prisma.storageSettings.findFirstOrThrow()).toMatchObject({
+      providerType: 'COS',
+      bucket: 'srvf-production',
+      region: 'ap-shanghai',
+    });
+    expect(auditLog).not.toHaveBeenCalled();
   });
 
   it('rejects production PATCH on an empty table instead of creating the legacy LOCAL default', async () => {
