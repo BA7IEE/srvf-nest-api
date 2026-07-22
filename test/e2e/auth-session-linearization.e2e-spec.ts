@@ -24,6 +24,11 @@ import { createTestApp } from '../setup/test-app';
 
 const META: AuditMeta = { requestId: 'auth-session-linearization', ip: '127.0.0.1', ua: 'jest' };
 const FIXED_SMS_CODE = '888888';
+// 独立 Jest 进程首次启动 Prisma transaction/pool 时，5s 观测窗在本地已建测试库上
+// 可稳定早于 waiter 入队而误报。这里仅扩大等待预算，不减少 waiter 数、direct blocker
+// 或 SQL 形状要求；holder timeout 留出两轮 waiter 观测与失败诊断的总预算。
+const LOCK_WAITER_DEADLINE_MS = 10_000;
+const BARRIER_TRANSACTION_TIMEOUT_MS = 25_000;
 
 function deferred<T>(): {
   promise: Promise<T>;
@@ -50,7 +55,7 @@ async function waitForUserLockWaiters(
   blockerPid: number,
   expected: number,
 ): Promise<UserLockWaiter[]> {
-  const deadline = performance.now() + 5_000;
+  const deadline = performance.now() + LOCK_WAITER_DEADLINE_MS;
   while (performance.now() < deadline) {
     const waiters = await prisma.$queryRaw<UserLockWaiter[]>`
       SELECT
@@ -76,7 +81,33 @@ async function waitForUserLockWaiters(
     }
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  throw new Error(`expected ${expected} User FOR UPDATE waiter(s) blocked by pid ${blockerPid}`);
+  const activity = await prisma.$queryRaw<
+    Array<{
+      pid: number;
+      state: string;
+      waitEventType: string | null;
+      waitEvent: string | null;
+      blockingPids: number[];
+      query: string;
+    }>
+  >`
+    SELECT
+      pid,
+      state,
+      wait_event_type AS "waitEventType",
+      wait_event AS "waitEvent",
+      pg_blocking_pids(pid) AS "blockingPids",
+      query
+    FROM pg_stat_activity
+    WHERE datname = current_database()
+      AND pid <> pg_backend_pid()
+      AND (wait_event_type = 'Lock' OR query LIKE '%"User"%')
+    ORDER BY query_start, pid
+  `;
+  throw new Error(
+    `expected ${expected} User FOR UPDATE waiter(s) blocked by pid ${blockerPid}; ` +
+      `activity=${JSON.stringify(activity)}`,
+  );
 }
 
 async function holdUserRow(
@@ -97,7 +128,7 @@ async function holdUserRow(
       ready.resolve(backend.pid);
       await release.promise;
     },
-    { maxWait: 5_000, timeout: 15_000 },
+    { maxWait: 5_000, timeout: BARRIER_TRANSACTION_TIMEOUT_MS },
   );
   void done.catch((error: unknown) => ready.reject(error));
   return {
