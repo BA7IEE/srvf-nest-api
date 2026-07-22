@@ -14,14 +14,15 @@
 
 ## Local facts
 
-- **production fail-fast 5 项严格校验**(`onApplicationBootstrap`,仅 `env === 'production'` 触发 — smoke / dev / test 全部跳过):settings 存在 / `enabled=true` / `providerType='COS'`(production 拒绝 LOCAL) / `bucket+region` 非空 / `credentialStatus=CONFIGURED`(沿 [`storage-settings.service.ts:84`](storage-settings.service.ts:84))
-- **`enabled` 生命周期**:`enabled=false` 会拒绝普通业务 pinned / non-pinned put/delete/sign/head/read Effect（含自动 worker）；仅经过人工复核的 `manual_relocate` 证据采集显式绕过。production PATCH 允许关闭，但合并后仍必须保持 COS + 非空 bucket/region + 可解密凭证
+- **production fail-fast 4 项严格校验 + 恢复态**(`onApplicationBootstrap`,仅 `env === 'production'` 触发):settings 存在 / `providerType='COS'` / `bucket+region` 非空 / `credentialStatus=CONFIGURED`；`enabled=false` 允许 API/worker 控制面启动并 WARN
+- **`enabled` 生命周期**:`enabled=false` 会拒绝普通业务 pinned / non-pinned put/delete/sign/head/read Effect（含自动 worker）；仅经过人工复核的 `manual_relocate` 证据采集显式绕过。production PATCH 允许关闭和恢复，但其余不变量必须持续成立
+- **production location 冻结**:singleton 建立后，普通 PATCH 不得改变 `providerType/bucket/region`；同值与 enabled/TTL/remarks/同 location credentials 可改，真实 relocation 只走独立评审的 inventory/copy/hash/cutover/rollback 流程
 - **凭证加密 算法/key 派生**:AES-256-GCM + `scrypt(envKey, fixedSalt, 32)` 派生 32 字节 key;序列化 `base64(iv:12B || authTag:16B || ciphertext)`(沿 [`storage-crypto.service.ts:19`](storage-crypto.service.ts:19))
 - **`credentialStatus` 三档**:`MISSING`(无凭证字段)/ `CONFIGURED`(解密成功)/ `INVALID`(解密失败 / `STORAGE_ENCRYPTION_KEY` 被轮换)
 - **`StorageSettingsService` 是凭证读取唯一出口**:`getActiveSettings()` 每次直读 PostgreSQL,无跨请求 Map/TTL/invalidate 正确性链;第 49 migration 的 `storage_settings_singleton_key ON ((true))` 在 DB 层保证至多一行,首配并发 P2002 后重跑事务命中既有单行,不再有“取最早 + WARN”分支
-- **离线 bootstrap 安全边界**:配置文件必须无 group/other 权限,内含显式 `databaseUrl`(仅 `public` schema)且库名与 `--confirm-database` 逐字一致;仅 production 或 `test + app_test*` 可运行;空表才写,同事务读回并用当前 `STORAGE_ENCRYPTION_KEY` 解密校验;输出永不含 URL/凭证明文/密文
+- **离线 bootstrap 安全边界**:进程 env 只解析 `APP_ENV + STORAGE_ENCRYPTION_KEY`，不装配完整 app config；配置文件必须无 group/other 权限,内含显式 `databaseUrl`(仅 `public` schema)且库名与 `--confirm-database` 逐字一致;仅 production 或 `test + app_test*` 可运行;空表才写,同事务读回并用当前 key 解密校验;输出永不含 URL/凭证明文/密文
 - **`CosStorageProvider` non-pinned 5 档守护**(每次方法调用):settings null / enabled=false / providerType ≠ COS / credentialStatus ≠ CONFIGURED / bucket+region 缺失 → 抛 `CosProviderUnavailableError`;pinned 方法在 Provider 层按历史 locator 解析，Router 默认先检查 enabled，仅显式人工 maintenance 绕过
-- **`LocalStorageProvider.resolveKey`** 防 `../` 逃逸 root(沿 Q-88-6;[`providers/local.provider.ts:113`](providers/local.provider.ts:113));dev/test 默认 fallback,production 启动期被 fail-fast 拒绝
+- **`LocalStorageProvider.resolveKey`** 防 `../` 逃逸 root(沿 Q-88-6;[`providers/local.provider.ts:113`](providers/local.provider.ts:113));dev/test/smoke settings null/LOCAL 可 fallback，production 运行期 null/LOCAL/unknown 均 fail-closed
 - **signed URL**:COS PUT 上传约定客户端必须带 `Content-Type` 与签名一致;`response-content-disposition` 通过 query 参数附加(沿 §6.4.6 CORS);Local provider 返非路由 stub URL(`/internal/storage/local-stub-upload/...`;接口对称用,不会被实际命中)
 - **uploadToken** 紧凑格式 `<base64url(claims)>.<base64url(hmac)>`,**不**引 jsonwebtoken;HMAC key 由 `STORAGE_ENCRYPTION_KEY` 经 scrypt 派生(单独 salt);验签 `timingSafeEqual`;失败统一映射 `13001`(信息泄漏防御)
 - **入口判权当前事实**:`StorageSettingsController` 三端点入口仅 `JwtAuthGuard`,**不**挂 `@Roles`,经 Service 内 `rbac.can()`;`storage-setting.reset.credentials` 当前**未**绑 `ops-admin`,仅 SUPER_ADMIN 经 `RbacService.can` 短路通过(沿 P0-F PR-2B D2=A);此处仅作为当前事实记录,**不得**在 docs-only PR 中改变权限策略
@@ -34,13 +35,13 @@
 - ❌ **不**把 `secretId` / `secretKey` / `credentials` / 完整 signed URL / `accessUrl` 写入日志 / audit / OpenAPI 示例 / e2e fixture / 文档示例 / pino logger fields
 - ❌ **不**把 `accessUrl` / signed URL 写入 audit `extra` / snapshot;`accessUrl` 解析失败必须**降级 null**,不向 client 抛凭证状态
 - ❌ **不**绕过 `StorageProviderRouter.resolve()` 直接注入 `CosStorageProvider` / `LocalStorageProvider` 到业务模块(动态路由是显式拍板,沿 Q-89-1 A);上游业务请走 `STORAGE_PROVIDER` token
-- ❌ **不**绕过 `onApplicationBootstrap` production fail-fast 5 项校验(允许 LOCAL 在 prod / 跳过 `credentialStatus=CONFIGURED` 校验等都不行)
+- ❌ **不**绕过 `onApplicationBootstrap` production 4 项不变量；`enabled=false` 仅放行控制面启动，不得放行普通 Storage Effect
 - ❌ **不**替换 AES-256-GCM 算法 / 改 scrypt 派生参数 / 改固定 salt — 改动会让既有 ciphertext 全部转 `INVALID`,需独立设计 PR + 凭证迁移 SOP
 - ❌ **不**自动引入 multipart upload(Q13)/ STS(Q19)/ 跨 provider migration / test-connection 端点 / queue/cron 清理任务 — 任一需独立设计决议
 - ❌ **不**对 COS / Local 行为差异做"对称化"假定:Local `generateUploadUrl` 返 stub URL 不会被实际命中;Local `headObject` 不返 etag / contentType(未持久化)
 - ❌ **不**给 `storage-settings` GET / PATCH response **回显**任何凭证字段(`secretIdEncrypted` / `secretKeyEncrypted` / `credentials` 均不出参,沿 §6.6.2 / §6.6.5)
 - ❌ **不**缓存 COS 客户端实例(沿 Q-89-2 A;每次 Effect 从单份 settings snapshot 新建 SDK 实例)
-- ❌ **不**新建非 `app.config.ts` 的 storage env 读取点 — 唯一入口是 `appConfig.storage.encryptionKey` / `appConfig.storage.localRoot`
+- ❌ **不**新建非 `app.config.ts` 的常驻业务 storage env 读取点；离线 bootstrap 是窄配置例外，仍复用 `app.config.ts` 导出的 APP_ENV/key parser
 - ❌ 改 storage 行为通常影响 attachments / attachment-configs / production safety,按 D 档降速;**任何凭证 / 加密 / fail-fast 改动都不是 docs-only**
 
 ## Validation

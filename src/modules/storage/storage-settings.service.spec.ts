@@ -353,7 +353,7 @@ describe('StorageSettingsService', () => {
       await expect(svc.onApplicationBootstrap()).rejects.toThrow(/未初始化/);
     });
 
-    it('用例 5: env=production + enabled=false → throw 含 enabled=false', async () => {
+    it('用例 5: env=production + enabled=false → 允许控制面启动并 WARN', async () => {
       const { prisma } = makePrismaMock([
         makeRow({
           enabled: false,
@@ -370,7 +370,10 @@ describe('StorageSettingsService', () => {
         makeAuditLogsMock(),
         makeCfg('production'),
       );
-      await expect(svc.onApplicationBootstrap()).rejects.toThrow(/enabled=false/);
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      await expect(svc.onApplicationBootstrap()).resolves.toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('enabled=false'));
+      warnSpy.mockRestore();
     });
 
     it('用例 6: env=production + providerType=LOCAL → throw 含 production 必须是 COS', async () => {

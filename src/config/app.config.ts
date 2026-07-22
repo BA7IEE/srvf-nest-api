@@ -25,6 +25,13 @@ function isAppEnv(value: string | undefined): value is AppEnv {
   return VALID_APP_ENVS.includes(value as AppEnv);
 }
 
+export function parseAppEnv(value: string | undefined): AppEnv {
+  if (!isAppEnv(value)) {
+    throw new Error(`APP_ENV 无效:"${value ?? ''}",必须是 development | test | production | smoke`);
+  }
+  return value;
+}
+
 function isLogLevel(value: string): value is LogLevel {
   return VALID_LOG_LEVELS.includes(value as LogLevel);
 }
@@ -453,7 +460,7 @@ function parseStorageConsistencyMode(raw: string | undefined, env: AppEnv): Stor
 // V2.x C-7.5 实施 PR #6:沿 Q-87-4(宽松校验)。
 // 启动校验只挡明显短(< 32 字符);具体派生留 StorageCryptoService;
 // 推荐 `openssl rand -base64 32`(44 字符 base64 = 32 字节)。
-function parseStorageEncryptionKey(raw: string | undefined, env: AppEnv): string {
+export function parseStorageEncryptionKey(raw: string | undefined, env: AppEnv): string {
   if (!raw || raw.trim() === '') {
     if (isProductionLike(env)) {
       throw new Error(
@@ -558,10 +565,7 @@ export interface AppConfig {
 }
 
 export default registerAs('app', (): AppConfig => {
-  const env = process.env.APP_ENV;
-  if (!isAppEnv(env)) {
-    throw new Error(`APP_ENV 无效:"${env ?? ''}",必须是 development | test | production | smoke`);
-  }
+  const env = parseAppEnv(process.env.APP_ENV);
 
   const port = parsePort(process.env.APP_PORT);
   const corsOrigin = parseCorsOrigin(process.env.APP_CORS_ORIGIN);
