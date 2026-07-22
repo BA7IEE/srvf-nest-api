@@ -150,7 +150,9 @@ describe('storage-settings-bootstrap CLI', () => {
   });
 
   it.each([
-    ['missing key', { STORAGE_ENCRYPTION_KEY: undefined }, /STORAGE_ENCRYPTION_KEY/],
+    // Prisma 的导入链会从仓库 `.env` 补载缺失变量；显式空值可阻止 dotenv 回填，
+    // 并精确验证 production 下“无可用 key”必须 fail-closed。
+    ['missing key', { STORAGE_ENCRYPTION_KEY: '' }, /STORAGE_ENCRYPTION_KEY/],
     ['short key', { STORAGE_ENCRYPTION_KEY: 'short' }, /太短/],
     ['invalid APP_ENV', { APP_ENV: 'invalid' }, /APP_ENV 无效/],
   ])(

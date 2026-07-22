@@ -50,6 +50,22 @@ interface UserLockWaiter {
   blockingPids: number[];
 }
 
+function isTransitivelyBlockedBy(
+  waiterPid: number,
+  blockerPid: number,
+  blockersByPid: ReadonlyMap<number, readonly number[]>,
+  visited: Set<number> = new Set(),
+): boolean {
+  if (visited.has(waiterPid)) return false;
+  visited.add(waiterPid);
+  const directBlockers = blockersByPid.get(waiterPid) ?? [];
+  return directBlockers.some(
+    (directBlockerPid) =>
+      directBlockerPid === blockerPid ||
+      isTransitivelyBlockedBy(directBlockerPid, blockerPid, blockersByPid, new Set(visited)),
+  );
+}
+
 async function waitForUserLockWaiters(
   prisma: PrismaService,
   blockerPid: number,
@@ -57,7 +73,7 @@ async function waitForUserLockWaiters(
 ): Promise<UserLockWaiter[]> {
   const deadline = performance.now() + LOCK_WAITER_DEADLINE_MS;
   while (performance.now() < deadline) {
-    const waiters = await prisma.$queryRaw<UserLockWaiter[]>`
+    const lockWaiters = await prisma.$queryRaw<UserLockWaiter[]>`
       SELECT
         pid,
         query,
@@ -67,17 +83,22 @@ async function waitForUserLockWaiters(
         AND pid <> pg_backend_pid()
         AND state = 'active'
         AND wait_event_type = 'Lock'
-        AND query LIKE '%FROM "User"%FOR UPDATE%'
       ORDER BY query_start, pid
     `;
-    // PostgreSQL 锁队列中的第二个 waiter 可能由第一个 waiter 直接阻塞，而不是把
-    // 最初 holder PID 暴露为 direct blocker；至少一条 direct edge 指回 holder，
-    // 其余 waiter 由同一 User FOR UPDATE 查询形状证明处在同一队列。
-    if (
-      waiters.length >= expected &&
-      waiters.some(({ blockingPids }) => blockingPids.includes(blockerPid))
-    ) {
-      return waiters;
+    const blockersByPid = new Map(
+      lockWaiters.map(({ pid, blockingPids }) => [pid, blockingPids] as const),
+    );
+    // PostgreSQL 可能把同一 User 的 UPDATE 排在 SELECT FOR UPDATE 前面；此时被测
+    // waiter 通过 UPDATE 间接指回 holder。必须证明每个返回 waiter 都沿真实
+    // pg_blocking_pids 链最终受原 holder 阻塞，不能只凭 SQL 形状或 waiter 数放行。
+    const blockedUserWaiters = lockWaiters.filter(
+      ({ pid, query }) =>
+        query.includes('FROM "User"') &&
+        query.includes('FOR UPDATE') &&
+        isTransitivelyBlockedBy(pid, blockerPid, blockersByPid),
+    );
+    if (blockedUserWaiters.length >= expected) {
+      return blockedUserWaiters;
     }
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
