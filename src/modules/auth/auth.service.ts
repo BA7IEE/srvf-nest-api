@@ -11,6 +11,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type { LoginDto, LoginResponseDto, LogoutDto, RefreshTokenDto } from './auth.dto';
+import { lockAuthSessionUser } from './auth-session-lock';
 import { generateFamilyId, generateRefreshTokenRaw, hashRefreshToken } from './refresh-token.util';
 import type { JwtPayload } from './strategies/jwt.strategy';
 
@@ -23,6 +24,22 @@ import type { JwtPayload } from './strategies/jwt.strategy';
 const TIMING_DUMMY_HASH = '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
 
 type PrismaTx = Prisma.TransactionClient;
+
+export type SessionIssuanceExpectation =
+  | { kind: 'password-hash'; value: string }
+  | { kind: 'phone'; value: string }
+  | { kind: 'openid'; value: string };
+
+type SessionUserSnapshot = {
+  id: string;
+  username: string;
+  role: Role;
+  status: UserStatus;
+  deletedAt: Date | null;
+  passwordHash: string;
+  phone: string | null;
+  openid: string | null;
+};
 
 @Injectable()
 export class AuthService {
@@ -88,19 +105,19 @@ export class AuthService {
       throw new BizException(BizCode.LOGIN_FAILED);
     }
 
-    // 5-8. 会话签发(B 队列 F4-T2 抽取为 createSession,逻辑零增删;
-    // 评审稿 queue-b-otp-birthday-infra-review.md E-O6——OTP 登录与密码登录
-    // 共用同一签发路径,"同构"由单一代码路径保证,行为锁 = auth 既有 e2e 断言零修改全绿)
+    // 5-8. 会话签发：三种登录继续共用 createSession；D-PR1 起额外传入锁外已验证
+    // factor snapshot，由唯一 User 行锁后的权威快照决定是否允许签发。
     return this.createSession(
-      { id: user.id, username: user.username, role: user.role },
+      user.id,
+      { kind: 'password-hash', value: user.passwordHash },
       meta,
       'auth.login',
     );
   }
 
-  // 会话签发(原 login() 第 5-8 步原样抽取,评审稿 E-O6):
-  //   5. 签 access token(JwtPayload zero drift:仅 { sub, username })
-  //   6. 计算 refresh family absolute expiration
+  // 会话签发(评审稿 E-O6 + D-PR1):
+  //   5. 锁 User，重读 ACTIVE/deletedAt/factor/username/role，拒绝 stale factor
+  //   6. 按锁后 username 签 access token(JwtPayload zero drift:仅 { sub, username })
   //   7. 事务内 create refresh_tokens 行 + 写 audit(event 由调用方传入)
   //   8. lastLoginAt fire-and-forget
   // 调用方:login()(event='auth.login',extra 仅 familyId)/
@@ -110,15 +127,12 @@ export class AuthService {
   // extraAudit 仅允许追加非敏感字段(掩码后手机号 / 掩码后 openid / codeId);
   // 禁明文码 / token / hash / session_key 任何形态。
   async createSession(
-    user: { id: string; username: string; role: Role },
+    userId: string,
+    expectation: SessionIssuanceExpectation,
     meta: AuditMeta,
     event: 'auth.login' | 'auth.login.sms' | 'auth.login.wechat',
     extraAudit?: Record<string, string | number | null>,
   ): Promise<LoginResponseDto> {
-    // 5. 签 access token(payload zero drift)
-    const payload: JwtPayload = { sub: user.id, username: user.username };
-    const accessToken = await this.jwtService.signAsync(payload);
-
     const jwtCfg = this.configService.get<JwtConfig>('jwt');
     if (!jwtCfg) {
       throw new Error('jwt.config 未加载');
@@ -131,13 +145,34 @@ export class AuthService {
     // 7. 生成 refresh token 明文 + sha256 哈希;事务内 create refresh_tokens 行 + 写 audit
     const rawRefreshToken = generateRefreshTokenRaw();
     const tokenHash = hashRefreshToken(rawRefreshToken);
-    const userIdForLog = user.id;
-    const userRoleForLog = user.role;
+    const result = await this.prisma.$transaction(async (tx) => {
+      const locked = await lockAuthSessionUser(tx, userId);
+      const current = locked
+        ? await tx.user.findUnique({
+            where: { id: userId },
+            select: {
+              id: true,
+              username: true,
+              role: true,
+              status: true,
+              deletedAt: true,
+              passwordHash: true,
+              phone: true,
+              openid: true,
+            },
+          })
+        : null;
+      if (!current || !this.matchesSessionExpectation(current, expectation)) {
+        throw new BizException(this.sessionIssuanceFailureCode(expectation));
+      }
 
-    await this.prisma.$transaction(async (tx) => {
+      // 签 access token(payload zero drift)；username / role 使用锁后权威快照。
+      const payload: JwtPayload = { sub: current.id, username: current.username };
+      const accessToken = await this.jwtService.signAsync(payload);
+
       await tx.refreshToken.create({
         data: {
-          userId: userIdForLog,
+          userId: current.id,
           tokenHash,
           familyId,
           expiresAt,
@@ -147,48 +182,73 @@ export class AuthService {
       });
       await this.auditLogs.log({
         event,
-        actorUserId: userIdForLog,
-        actorRoleSnap: userRoleForLog,
+        actorUserId: current.id,
+        actorRoleSnap: current.role,
         resourceType: 'user',
-        resourceId: userIdForLog,
+        resourceId: current.id,
         meta,
         extra: { familyId, ...extraAudit },
         tx,
       });
+
+      return {
+        accessToken,
+        tokenType: 'Bearer' as const,
+        expiresIn: jwtCfg.expiresIn,
+        refreshToken: rawRefreshToken,
+        refreshExpiresAt: expiresAt.toISOString(),
+      };
     });
 
     // 8. 顺手更新 lastLoginAt:fire-and-forget,失败只 logger.warn,不阻断响应
     void this.prisma.user
-      .update({ where: { id: userIdForLog }, data: { lastLoginAt: new Date() } })
+      .update({ where: { id: userId }, data: { lastLoginAt: new Date() } })
       .catch((err: unknown) => {
         this.logger.warn(
-          `Failed to update lastLoginAt for user ${userIdForLog}: ` +
+          `Failed to update lastLoginAt for user ${userId}: ` +
             (err instanceof Error ? err.message : String(err)),
         );
       });
 
-    return {
-      accessToken,
-      tokenType: 'Bearer',
-      expiresIn: jwtCfg.expiresIn,
-      refreshToken: rawRefreshToken,
-      refreshExpiresAt: expiresAt.toISOString(),
-    };
+    return result;
+  }
+
+  private matchesSessionExpectation(
+    user: SessionUserSnapshot,
+    expectation: SessionIssuanceExpectation,
+  ): boolean {
+    if (user.deletedAt !== null || user.status !== UserStatus.ACTIVE) return false;
+    switch (expectation.kind) {
+      case 'password-hash':
+        return user.passwordHash === expectation.value;
+      case 'phone':
+        return user.phone === expectation.value;
+      case 'openid':
+        return user.openid === expectation.value;
+    }
+  }
+
+  private sessionIssuanceFailureCode(expectation: SessionIssuanceExpectation) {
+    switch (expectation.kind) {
+      case 'password-hash':
+        return BizCode.LOGIN_FAILED;
+      case 'phone':
+        return BizCode.SMS_CODE_INVALID;
+      case 'openid':
+        return BizCode.WECHAT_CODE_INVALID;
+    }
   }
 
   // P0-E PR-3:POST /api/auth/v1/refresh(沿评审稿 §4.2 + §6 伪逻辑)。
   // rotation always + family revoke + absolute expiration;失败统一返 REFRESH_TOKEN_INVALID。
   //
   // 流程:
-  //   1. sha256(raw) → 查 refresh_tokens.findUnique({ tokenHash })
-  //   2. 不存在 / revokedAt != null / expiresAt <= now → REFRESH_TOKEN_INVALID
-  //      (不区分子原因;响应体 / HTTP status / message 完全一致;沿 v1 §8 防账号枚举)
-  //   3. row.rotatedAt != null(重放命中)→ family revoke + audit { replayDetected, familyRevoked }
-  //      → REFRESH_TOKEN_INVALID
-  //   4. user 不存在 / status !== ACTIVE / 已软删 → family revoke + REFRESH_TOKEN_INVALID
-  //   5. 生成 newRaw + newHash;事务内 create 新 refresh + 标旧 refresh(rotatedAt + revokedAt +
-  //      replacedById)+ 签新 access + 写 audit 'auth.refresh'
-  //   6. 返回 LoginResponseDto(refreshExpiresAt 继承原 family 首个 token 的 expiresAt;absolute)
+  //   1. sha256(raw) → 锁外查 refresh row，仅定位 userId 并记录请求到达时的 rotated 状态
+  //   2. 不存在 / 过期 / 非 rotation 撤销 → 统一 REFRESH_TOKEN_INVALID
+  //   3. 锁 User → 事务内重读 refresh row；锁外已观察 rotated 才按 replay revoke family
+  //   4. 锁等待期间被正常 rotation/revoke 改写的 fresh 请求仅作为竞争输家返 10007
+  //   5. 重读 User ACTIVE/未软删后 CAS rotate、insert sibling、签 access、写 audit
+  //   6. 返回 LoginResponseDto(refreshExpiresAt 继承原 family absolute expiresAt)
   async refresh(dto: RefreshTokenDto, meta: AuditMeta): Promise<LoginResponseDto> {
     const tokenHash = hashRefreshToken(dto.refreshToken);
 
@@ -197,8 +257,9 @@ export class AuthService {
       throw new Error('jwt.config 未加载');
     }
 
-    // 读 row(不需要事务;后续根据 row 状态分支处理)
-    const row = await this.prisma.refreshToken.findUnique({
+    // 锁外只做定位，并保存“请求到达时是否已经 rotated”的 observed state。
+    // 后者用于区分真实 replay 与两个 fresh refresh 请求在 User 锁上的正常竞争。
+    const observed = await this.prisma.refreshToken.findUnique({
       where: { tokenHash },
       select: {
         id: true,
@@ -214,16 +275,37 @@ export class AuthService {
     // 沿 v1 §8 防账号枚举;响应体 / HTTP status / message 完全一致)。
     // 本路径**不写 audit**(token 不存在时无 userId / 无攻击线索;沿 P0-D LOGIN_FAILED 范式)。
     const now = new Date();
-    if (!row || row.expiresAt <= now) {
+    if (!observed || observed.expiresAt <= now) {
+      throw new BizException(BizCode.REFRESH_TOKEN_INVALID);
+    }
+    const replayObserved = observed.rotatedAt !== null;
+    if (!replayObserved && observed.revokedAt !== null) {
       throw new BizException(BizCode.REFRESH_TOKEN_INVALID);
     }
 
-    // 失败 2:重放命中(row 已被 rotation 过,但攻击者拿旧 raw 来 refresh)。
-    // 注:rotation 路径同时设 `rotatedAt + revokedAt + revokedReason='rotated'`,
-    // 所以**必须先**判断 `rotatedAt !== null`(更具体的重放语义),才能与 logout / admin-* 撤销区分。
-    // 在**独立事务**内 family revoke + 写 audit;事务 commit 后再 throw,避免 throw 回滚 revoke。
-    if (row.rotatedAt !== null) {
-      await this.prisma.$transaction(async (tx) => {
+    const newRaw = generateRefreshTokenRaw();
+    const newHash = hashRefreshToken(newRaw);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      if (!(await lockAuthSessionUser(tx, observed.userId))) return null;
+
+      const row = await tx.refreshToken.findUnique({
+        where: { tokenHash },
+        select: {
+          id: true,
+          userId: true,
+          familyId: true,
+          expiresAt: true,
+          rotatedAt: true,
+          revokedAt: true,
+        },
+      });
+      const lockedNow = new Date();
+      if (!row || row.expiresAt <= lockedNow) return null;
+
+      // 请求在等待 User 锁之前就已经观察到 rotated ancestor，才属于 replay。
+      // revoke + audit 必须提交后再由事务外统一抛 10007。
+      if (replayObserved) {
         await this.revokeFamily(tx, row.familyId);
         await this.auditLogs.log({
           event: 'auth.refresh',
@@ -235,23 +317,17 @@ export class AuthService {
           extra: { familyId: row.familyId, replayDetected: true, familyRevoked: true },
           tx,
         });
+        return null;
+      }
+
+      // fresh 请求等待锁期间若已被另一 rotation 或 revoke 改写，只是正常竞争输家。
+      if (row.rotatedAt !== null || row.revokedAt !== null) return null;
+
+      const user = await tx.user.findUnique({
+        where: { id: row.userId },
+        select: { id: true, username: true, role: true, status: true, deletedAt: true },
       });
-      throw new BizException(BizCode.REFRESH_TOKEN_INVALID);
-    }
-
-    // 失败 3:row 被撤销但非 rotation(logout / admin-* 等;rotatedAt 仍 null)。
-    // 不触发 family revoke(撤销已经发生过,不视为攻击),直接 INVALID。**不写 audit**。
-    if (row.revokedAt !== null) {
-      throw new BizException(BizCode.REFRESH_TOKEN_INVALID);
-    }
-
-    // 失败 4:user 不存在 / 已禁用 / 已软删 → 独立事务 family revoke + 写 audit + throw。
-    const userCheck = await this.prisma.user.findFirst({
-      where: { id: row.userId, deletedAt: null },
-      select: { id: true, username: true, role: true, status: true },
-    });
-    if (!userCheck || userCheck.status !== UserStatus.ACTIVE) {
-      await this.prisma.$transaction(async (tx) => {
+      if (!user || user.deletedAt !== null || user.status !== UserStatus.ACTIVE) {
         await this.revokeFamily(tx, row.familyId);
         await this.auditLogs.log({
           event: 'auth.refresh',
@@ -263,25 +339,14 @@ export class AuthService {
           extra: { familyId: row.familyId, replayDetected: false, familyRevoked: true },
           tx,
         });
-      });
-      throw new BizException(BizCode.REFRESH_TOKEN_INVALID);
-    }
-    const user = userCheck; // alias for TS narrowing
+        return null;
+      }
 
-    // 成功路径:单一事务做 rotation + audit。
-    // 用 updateMany + check-and-set 防御 TOCTOU:仅当 row 仍 fresh 时才标 rotated
-    // (并发 race 时第二个请求 updateMany.count = 0;通过抛 REFRESH_TOKEN_INVALID 反向告知)。
-    const newRaw = generateRefreshTokenRaw();
-    const newHash = hashRefreshToken(newRaw);
-
-    // 在事务内执行;若并发命中失败,抛 REFRESH_TOKEN_INVALID(不触发 family revoke,
-    // 因为这是正常用户的并发 race,不是攻击)
-    const result = await this.prisma.$transaction(async (tx) => {
       const setResult = await tx.refreshToken.updateMany({
         where: { id: row.id, rotatedAt: null, revokedAt: null },
         data: {
-          rotatedAt: now,
-          revokedAt: now,
+          rotatedAt: lockedNow,
+          revokedAt: lockedNow,
           revokedReason: 'rotated',
           // replacedById 在创建 newRow 后单独 update
         },
@@ -331,6 +396,7 @@ export class AuthService {
       };
     });
 
+    if (!result) throw new BizException(BizCode.REFRESH_TOKEN_INVALID);
     return result;
   }
 
@@ -341,7 +407,14 @@ export class AuthService {
   async logout(dto: LogoutDto, meta: AuditMeta): Promise<null> {
     const tokenHash = hashRefreshToken(dto.refreshToken);
 
+    const observed = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
+      select: { userId: true, expiresAt: true },
+    });
+    if (!observed || observed.expiresAt <= new Date()) return null;
+
     await this.prisma.$transaction(async (tx) => {
+      if (!(await lockAuthSessionUser(tx, observed.userId))) return;
       const row = await tx.refreshToken.findUnique({
         where: { tokenHash },
         select: { id: true, userId: true, familyId: true, expiresAt: true },
@@ -380,6 +453,7 @@ export class AuthService {
   ): Promise<{ revokedCount: number }> {
     const now = new Date();
     const revokedCount = await this.prisma.$transaction(async (tx) => {
+      if (!(await lockAuthSessionUser(tx, currentUser.id))) return 0;
       const updateResult = await tx.refreshToken.updateMany({
         where: { userId: currentUser.id, revokedAt: null, expiresAt: { gt: now } },
         data: { revokedAt: now, revokedReason: 'logout' },

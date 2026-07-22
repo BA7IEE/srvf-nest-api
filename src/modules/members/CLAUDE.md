@@ -21,6 +21,7 @@
 - **offboard/reopen 已覆盖**:`offboard` 用伞事件 `member.offboard` 记录账号停用腿与撤销计数；`reopenAccount` 用 `member.account-reopened` 记录旧号软删/新号创建结果，两者原本即与业务写同事务，第七刀不新增重复事件。
 - **Member lifecycle 线性化**:offboard、linked 账号启用/绑定/重开、任职/分管创建、USER/MEMBER/POSITION_ASSIGNMENT direct binding 创建或恢复都先锁同一 Member 行；跨资源锁序固定 Member → User。offboard 在该事务内同时结束 active memberships、任职、分管与三类 direct binding，响应中的 residual 任职/分管字段只为兼容保留且终态为 0；INACTIVE Member 不得经任一入口恢复账号或授权来源。
 - **Membership offboard 收口**:Member 行锁下逐条调用 Membership 状态机做 ACTIVE→ENDED；ACTIVE 任期按不变式必已开始且 `endedAt=null`，因此 offboard 统一以当前时刻结束，不得恢复批量盲写时间。
+- **关联账号 session 锁(2026-07-22 D-PR1)**：`reopenAccount` / `updateAccountStatus` / `offboard` 在 Member 行锁后按 linked userId 调 `lockAuthSessionUser()`，锁后复读 memberId/role/status，再做软删或禁用、refresh 全撤销与 audit；禁止恢复旧的 `memberId` 裸 User 行锁作为 session 第二轨。
 
 ## Risk points
 
@@ -28,6 +29,7 @@
 - ❌ 不因本保护改 endpoint、DTO、OpenAPI、Permission、Role、BizCode、schema 或 migration。
 - ❌ 不改变 offboard 幂等 skip、refresh 撤销 reason、reopen username 探测与软删/建号先后序。
 - ❌ 不绕开 `member-lifecycle-lock.ts` 另造生命周期锁，也不采用 User → Member 的反向锁序。
+- ❌ 不在关联账号 session mutation 里先改 User/refresh 再补锁，也不基于锁前 linked role/status 快照提交。
 
 ## Validation
 
