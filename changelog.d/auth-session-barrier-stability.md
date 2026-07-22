@@ -1,0 +1,1 @@
+- Stabilized the PostgreSQL auth-session concurrency barrier for cold standalone E2E runs by preserving the exact waiter/blocker assertions while allowing enough time for Prisma pool startup and emitting lock diagnostics on timeout.
