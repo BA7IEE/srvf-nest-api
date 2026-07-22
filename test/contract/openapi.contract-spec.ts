@@ -374,6 +374,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/admin/v1/team-insurance-policies/{id}/members/add-all-active'],
   ['delete', '/api/admin/v1/team-insurance-policies/{id}/members/{memberId}'],
   ['get', '/api/admin/v1/members/{memberId}/insurances'],
+  ['get', '/api/admin/v1/members/{memberId}/insurances/overview'],
   ['post', '/api/admin/v1/members/{memberId}/insurances/{insuranceId}/review'],
   ['get', '/api/admin/v1/activities'],
   // F1/A6(admin-api-fe-integration-roadmap.md §4 A6)。
@@ -1292,8 +1293,8 @@ describe('OpenAPI 契约快照', () => {
     expect(Object.keys(item[method]?.responses ?? {}).length).toBeGreaterThan(0);
   });
 
-  it('D-INSURANCE v3 PR2 后路由足迹精确为 365', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(365);
+  it('队员统一保险概览后路由足迹精确为 366', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(366);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

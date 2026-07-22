@@ -18,7 +18,7 @@
 - **PR2 compatibility window(已交付)**:唯一 review route + optional App expectedVersion + telemetry；consumer 保持旧语义、0 evidence。
 - **PR3 enforcement cutover(本次代码交付，不含部署)**:`INSURANCE_ENFORCEMENT_ENABLED` 单 gate 同时切 App required CAS、verified-only、Activity/Team Join 最小 evidence 与 final join 保险闸；production missing/empty/invalid fail-fast，显式 false 可启动。维护者于 2026-07-19 逐字确认“旧客户端都没上线，放心操作执行”，仅解除客户端兼容等待，**不构成旧 server=0 运行证据**；真正 enable 前仍须 drain 旧 server 且禁止 true/false fleet 混跑。
 - **PR4 DB closeout(代码已交付，不含部署)**:migration 已实现完整性扫描、exactly-one/kind/interval/review snapshot、全局单 owner、同 member 与 immutable trigger；任一脏数即失败且零修数/删数。生产约束尚未生效，deploy 前仍须沿 PR3 SOP 确认旧 server=0、排空旧事务并禁止混合 gate。
-- 理赔、到期主动提醒(新增 cron 须 D 档)、保单图 attachments 接线与 App 展示仍不在 v3 PR1–4 自动范围，真实诉求触发后另立项。
+- Admin 队员 360 的团队保险覆盖安全投影已交付；小程序/App 端保险展示仍不在本任务范围。理赔、到期主动提醒(新增 cron 须 D 档)与保单图 attachments 接线也仍须真实诉求触发后另立项。
 
 ### P1-14 GAP-005 统一通知模块后续(S1–S5 已发,余项 ⏸ 诉求触发再立项)
 - **真·全员短信批处理异步**(S5 末位切片经 D-Outbox 收口):admin `confirmed=true` 现先持久化逐收件人 generation intent，再由 HTTP 做首轮、独立 worker 续跑失败项；跨进程 active-slot 防并发重复，真实 `NotificationDelivery SENT` 才是永久去重事实。实现未新增 cron/Redis/queue/事件总线；若未来受众规模需要分片、吞吐控制或专用队列，仍须另立 D 档，不在 durable outbox 基础能力中暗增。
