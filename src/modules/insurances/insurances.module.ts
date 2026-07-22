@@ -8,6 +8,7 @@ import { AdminMemberInsurancesController } from './admin-member-insurances.contr
 import { AppMeInsurancesService } from './app-me-insurances.service';
 import { AppMeInsurancesController } from './controllers/app-me-insurances.controller';
 import { InsuranceRequirementService } from './insurance-requirement.service';
+import { MemberInsuranceOverviewService } from './member-insurance-overview.service';
 import { MemberInsurancesService } from './member-insurances.service';
 import { TeamInsurancePoliciesController } from './team-insurance-policies.controller';
 import { TeamInsurancePoliciesService } from './team-insurance-policies.service';
@@ -36,6 +37,7 @@ import { TeamInsurancePoliciesService } from './team-insurance-policies.service'
   providers: [
     TeamInsurancePoliciesService,
     MemberInsurancesService,
+    MemberInsuranceOverviewService,
     AppMeInsurancesService,
     InsuranceRequirementService,
   ],

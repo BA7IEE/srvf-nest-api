@@ -4,7 +4,9 @@
 
 ## Scope 与当前行为
 
-- App 自助 `app/v1/me/insurances`、Admin 队保单/覆盖名单与队员保险查询沿既有 surface；`InsuranceRequirementService` 是 Activity/Team Join 的唯一保险资格与 evidence 出口。
+- App 自助 `app/v1/me/insurances`、Admin 队保单/覆盖名单与队员保险查询沿既有 surface；Admin 队员 360 另有 `GET admin/v1/members/:memberId/insurances/overview` 一次返回 `selfPurchased` / `teamProvided` / 北京当前日 `summary`。`MemberInsuranceOverviewService` 只是展示 Query Service，`InsuranceRequirementService` 仍是 Activity/Team Join 的唯一保险资格与 evidence 出口。
+- overview 复用 `member-insurance.read.other` + member ref scoped-authz；一个事务内各查一次个人保险与团队 coverage/policy，禁止 N+1。团队投影不得返回 policyNumber/note/其他成员/reviewer；个人投影也不返回 reviewer。概览审计复用 `member-insurance.read.other`，extra 只允许 `operation=overview` 与两个计数。
+- overview 的 confirmed 口径为 active 团队保险，或 active + verified 且 reviewer/reviewedAt 完整的个人保险；该汇总不是具体 Activity/Team Join 资格结果，不读取 enforcement gate。旧 `GET .../insurances` 行为与排序保持不变。
 - D-INSURANCE v3 PR2 增加唯一审核动作 `POST admin/v1/members/:memberId/insurances/:insuranceId/review`：body 仅 `decision=verified|rejected` + 必填 `expectedVersion`；Service 只走 `rbac.can('member-insurance.review.record')`。
 - 审核锁序固定 Authz → Member `FOR UPDATE` → live 且属于该 member 的 MemberInsurance `FOR UPDATE NOWAIT` → audit；版本冲突/NOWAIT 分别统一 `26011`，非 pending 为 `26012`。mutation 与 `member-insurance.review` audit 同事务；audit before/after 仅 status+version，extra 仅 memberId/insuranceId/decision。
 - PR3 客户端契约把 App PATCH body / DELETE query 的 `expectedVersion` 标为 required；single gate=true 时缺失/null/空白在事务前统一 40000 且零写/审计，显式 stale 仍 26011。gate=false 保留 PR2 optional runtime compatibility。实质 PATCH `version+1` 并回 pending/清 reviewer-time，DELETE `version+1` 但保留审核结论，等值 PATCH 是真 no-op。
@@ -24,7 +26,7 @@
 
 ## Validation
 
-- 先跑 insurances unit/characterization，再跑派生 PostgreSQL 的 App CAS、review、Activity 与 Team Join suites；竞态必须两 Nest/两 Prisma pool + `pg_stat_activity/pg_blocking_pids` barrier，contract snapshot diff 必须逐行解释。
+- 先跑 insurances unit/characterization，overview 必须用专属 E2E 锁定旧 GET 兼容、scoped-authz、日期/确认口径、安全投影、查询数与 audit fail-closed；再跑派生 PostgreSQL 的 App CAS、review、Activity 与 Team Join suites。竞态必须两 Nest/两 Prisma pool + `pg_stat_activity/pg_blocking_pids` barrier，contract snapshot diff 必须逐行解释。
 - 常规静态门禁：`pnpm lint`、`pnpm typecheck`、`pnpm build`、`pnpm test:contract`、`pnpm docs:rbacmap:check`。
 - 独立 review P0–P3 清零后才由总控安排独占 full。
 - 禁止自动运行 `prisma migrate dev|reset|db push`；默认/生产 DB 永不触碰。

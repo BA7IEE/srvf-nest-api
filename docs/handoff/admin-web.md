@@ -80,7 +80,7 @@
 | tab | 端点 | 状态 |
 |---|---|---|
 | 基本信息 | `GET /api/admin/v1/members/:id` | ✅ |
-| 证书 / 档案 / 紧急联系人 / 保险 | `GET /api/admin/v1/members/:id/{certificates,profile,emergency-contacts,insurances}`；保险审核与 PR3 gate 见下方 | ✅ |
+| 证书 / 档案 / 紧急联系人 / 保险 | `GET /api/admin/v1/members/:id/{certificates,profile,emergency-contacts}`；保险主数据源改用 `GET /api/admin/v1/members/:id/insurances/overview`，审核与 PR3 gate 见下方 | ✅ |
 | **组织归属(memberships)** — 主/兼/临时/支援多归属 + 任期 | `GET/POST .../members/:id/memberships` · `PATCH/DELETE .../members/:id/memberships/:id`(**终态 scoped-authz PR2**,已发 main)| ✅(旧 `/department` 单部门面 deprecated,见下备注)|
 | **任职(position-assignments)** — 该队员在组织体系内担任的职务,含撤销历史 | `GET .../members/:id/position-assignments`(**终态 scoped-authz PR4**,已发 main;含 ACTIVE/REVOKED 全量,任命/撤销动作在组织架构侧发起,见 §2.6)| ✅ |
 | 活动履历 / 考勤记录 / 参与汇总 / 贡献值 | `GET .../members/:id/registrations?statusCode=` · `GET .../members/:id/attendance-records` · `GET .../members/:id/participation-summary` · `GET .../members/:id/contribution-summary` | ✅ |
@@ -89,6 +89,10 @@
 
 > **新增 `participation-summary`** 把 approved-only 的 `totalServiceHours` / distinct `activityCount` / `recordCount` 与生涯 capped `contributionPoints` 合成一个卡片 DTO；贡献字段和旧 `contribution-summary` 都调用同一 `computeCappedContribution(memberId, null)`，可做等值迁移但旧端点保留。该个人端点刻意不返回 no-show。
 
+> **队员 360 统一保险概览**：保险 tab 的显示主数据源为 `GET /api/admin/v1/members/:memberId/insurances/overview`。`selfPurchased` 展示个人自购保险及审核动作；`teamProvided` 只读展示团队保险安全投影，不展示“核验通过 / 驳回”，也不返回保单号、备注、其他成员或 reviewer。UI 必须直接使用后端的 `dateStatus` 与 `summary.hasConfirmedCoverage`，不再仅以 `coverageEnd >= 当前时间` 自行推导日期状态。`summary` 只是按北京当前日的概览，不得替代某次活动审批或入队资格判定。旧 `GET /api/admin/v1/members/:memberId/insurances` 保留兼容，但队员 360 应迁移到 overview。
+>
+> 个人审核动作仍为 `POST /api/admin/v1/members/:memberId/insurances/:insuranceId/review`。
+>
 > **自购保险审核(D-INSURANCE v3 PR3 cutover)**：保险列表/审核成功响应包含 `reviewStatusCode`(`pending|verified|rejected`)、`version`、`reviewedAt`，不返回 reviewer 身份。仅对 `pending` 行展示“核验通过 / 驳回”动作；调用唯一 review 端点 `POST /api/admin/v1/members/:memberId/insurances/:insuranceId/review`，body **只能**是 `{decision:'verified'|'rejected',expectedVersion:number}`，`expectedVersion` 永远必填，不得设计 note/reason 输入。权限码仍为 `member-insurance.review.record`。`26011` 表示版本/并发冲突：刷新该行、重新展示当前状态并由用户确认后再提交；`26012` 表示已非 pending，刷新后关闭审核动作。审核响应的新 `version` 必须写回前端状态。
 >
 > **单 gate 与 Team Join final join**：`Create/UpdateTeamJoinCycleDto` 可配置 `requiresInsurance`（create 缺省 false），response 始终回显。只有 `INSURANCE_ENFORCEMENT_ENABLED=true && cycle.requiresInsurance=true` 时，admin final join 才按 verified self → live team policy coverage 固定优先级校验入队北京日，并在根事务生成绑定 application 的恰一条最小 evidence；无来源返 `26031`（“本轮入队要求保险,当前队员无覆盖入队日期的有效保险,无法入队”），不得复用活动的 `26030`。gate=false 时字段仍可配置/展示，但不查资格、不写 evidence；活动保险失败继续 `26030`。
