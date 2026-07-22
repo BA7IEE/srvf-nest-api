@@ -325,7 +325,7 @@ describe('Admin team-insurance-policies + member insurances(保险 T2)', () => {
     const first = await request(httpServer(app))
       .post(`/api/admin/v1/team-insurance-policies/${policyId}/members/add-all-active`)
       .set('Authorization', bizAdminAuth)
-      .expect(201);
+      .expect(200);
     const firstCount = ((first.body as ResBody).data as { addedCount: number }).addedCount;
     expect(firstCount).toBeGreaterThanOrEqual(2);
 
@@ -357,7 +357,7 @@ describe('Admin team-insurance-policies + member insurances(保险 T2)', () => {
     const second = await request(httpServer(app))
       .post(`/api/admin/v1/team-insurance-policies/${policyId}/members/add-all-active`)
       .set('Authorization', bizAdminAuth)
-      .expect(201);
+      .expect(200);
     expect(((second.body as ResBody).data as { addedCount: number }).addedCount).toBe(0);
   });
 

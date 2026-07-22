@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
 } from '../../common/decorators/api-response.decorator';
@@ -67,7 +68,7 @@ export class MemberProfilesController {
     summary:
       '创建队员扩展档案(1:1;重复创建 → MEMBER_PROFILE_ALREADY_EXISTS;回显 documentNumber / mobile 默认掩码,持 member-profile.read.sensitive 见明文) [rbac: member-profile.create.record]',
   })
-  @ApiWrappedOkResponse(MemberProfileResponseDto)
+  @ApiWrappedCreatedResponse(MemberProfileResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

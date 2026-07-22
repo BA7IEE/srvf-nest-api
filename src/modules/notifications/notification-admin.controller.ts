@@ -15,6 +15,7 @@ import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/sw
 import type { Request } from 'express';
 
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedNullResponse,
   ApiWrappedOkResponse,
@@ -62,7 +63,7 @@ export class NotificationAdminController {
 
   @Post()
   @ApiOperation({ summary: '新建通知草稿(create → draft) [rbac: notification.create.record]' })
-  @ApiWrappedOkResponse(NotificationAdminDetailDto)
+  @ApiWrappedCreatedResponse(NotificationAdminDetailDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

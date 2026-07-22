@@ -14,7 +14,9 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
+  ApiNoContentResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
 } from '../../common/decorators/api-response.decorator';
@@ -78,7 +80,7 @@ export class ContributionRulesController {
     summary:
       '创建贡献值规则(字典校验 + 字段语义 + ACTIVE 唯一性兜底含 NULL durationThreshold) [rbac: contribution.create.rule]',
   })
-  @ApiWrappedOkResponse(ContributionRuleResponseDto)
+  @ApiWrappedCreatedResponse(ContributionRuleResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
@@ -141,6 +143,7 @@ export class ContributionRulesController {
     summary:
       '软删贡献值规则(写 deletedAt + deletedByUserId;不强制改 status;删完该维度 attendance 预填走 22048 不抛错路径) [rbac: contribution.delete.rule]',
   })
+  @ApiNoContentResponse()
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

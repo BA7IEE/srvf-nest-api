@@ -14,6 +14,7 @@ import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/sw
 import type { Request } from 'express';
 
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
@@ -93,7 +94,7 @@ export class RecruitmentCyclesController {
   @ApiOperation({
     summary: '创建招新轮次(默认 closed,需显式开轮) [rbac: recruitment-cycle.create.record]',
   })
-  @ApiWrappedOkResponse(RecruitmentCycleResponseDto)
+  @ApiWrappedCreatedResponse(RecruitmentCycleResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
   create(
     @Body() dto: CreateRecruitmentCycleDto,

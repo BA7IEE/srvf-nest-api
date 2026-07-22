@@ -612,7 +612,7 @@ describe('organizations 模块', () => {
         .post(`/api/admin/v1/organizations/${leaf}/move`)
         .set('Authorization', superAdminAuth)
         .send({ parentId: deptB });
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       expect(res.body.data.parentId).toBe(deptB);
       // 移动后:leaf 祖先 = {leaf@0, deptB@1, root@2}(deptA 边已删)
       expect(await ancestorsOf(leaf)).toEqual(
@@ -634,7 +634,7 @@ describe('organizations 模块', () => {
         .post(`/api/admin/v1/organizations/${deptA}/move`)
         .set('Authorization', superAdminAuth)
         .send({ parentId: deptB });
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       // deptA 祖先 = {deptA@0, deptB@1, root@2}
       expect(await ancestorsOf(deptA)).toEqual(
         new Map([
@@ -701,7 +701,7 @@ describe('organizations 模块', () => {
         .post(`/api/admin/v1/organizations/${leaf}/move`)
         .set('Authorization', superAdminAuth)
         .send({ parentId: deptA });
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       expect(res.body.data.parentId).toBe(deptA);
       expect(await ancestorsOf(leaf)).toEqual(before);
     });

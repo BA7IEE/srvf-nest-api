@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Param, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
 } from '../../common/decorators/api-response.decorator';
@@ -55,7 +56,7 @@ export class RolePermissionsController {
     summary:
       '批量给角色加权限点(幂等:已存在的 (roleId, permissionId) 静默跳过;入参 permissionCodes[],非 ids;SA-only 保留码仅 SUPER_ADMIN 可分配,否则 30103) [rbac: rbac.role-permission.create]',
   })
-  @ApiWrappedOkResponse(RbacRoleDetailResponseDto)
+  @ApiWrappedCreatedResponse(RbacRoleDetailResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

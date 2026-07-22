@@ -1,5 +1,11 @@
 import { Type, applyDecorators } from '@nestjs/common';
-import { ApiExtraModels, ApiOkResponse, ApiResponse, getSchemaPath } from '@nestjs/swagger';
+import {
+  ApiCreatedResponse,
+  ApiExtraModels,
+  ApiOkResponse,
+  ApiResponse,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { PageResultDto } from '../dto/pagination.dto';
 import type { BizCodeEntry } from '../exceptions/biz-code.constant';
 
@@ -32,6 +38,27 @@ export const ApiWrappedOkResponse = <T extends Type<unknown>>(dto: T): MethodDec
     }),
   );
 
+export const ApiWrappedCreatedResponse = <T extends Type<unknown>>(dto: T): MethodDecorator =>
+  applyDecorators(
+    ApiExtraModels(dto),
+    ApiCreatedResponse({
+      schema: wrapEnvelope({ $ref: getSchemaPath(dto) }),
+    }),
+  );
+
+export const ApiWrappedNullableResponse = <T extends Type<unknown>>(dto: T): MethodDecorator =>
+  applyDecorators(
+    ApiExtraModels(dto),
+    ApiOkResponse({
+      schema: wrapEnvelope({
+        type: 'object',
+        allOf: [{ $ref: getSchemaPath(dto) }],
+        nullable: true,
+        example: null,
+      }),
+    }),
+  );
+
 export const ApiWrappedArrayResponse = <T extends Type<unknown>>(dto: T): MethodDecorator =>
   applyDecorators(
     ApiExtraModels(dto),
@@ -54,6 +81,20 @@ export const ApiWrappedNullResponse = (): MethodDecorator =>
   ApiOkResponse({
     schema: wrapEnvelope({ type: 'object', nullable: true, example: null }),
   });
+
+export const ApiCsvResponse = (): MethodDecorator =>
+  ApiResponse({
+    status: 200,
+    description: 'CSV file',
+    content: {
+      'text/csv': {
+        schema: { type: 'string', format: 'binary' },
+      },
+    },
+  });
+
+export const ApiNoContentResponse = (): MethodDecorator =>
+  ApiResponse({ status: 204, description: 'No content' });
 
 // V1.3-4 Contract Hardening:错误响应 schema 装饰器。
 //

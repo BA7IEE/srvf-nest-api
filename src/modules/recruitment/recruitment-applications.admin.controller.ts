@@ -18,6 +18,7 @@ import type { Request, Response } from 'express';
 
 import {
   ApiBizErrorResponse,
+  ApiCsvResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
 } from '../../common/decorators/api-response.decorator';
@@ -128,6 +129,7 @@ export class RecruitmentApplicationsAdminController {
       '批量导出 CSV(按筛选 全部/待人工/已初审/门槛未完成/待评定/公示/发号/淘汰;持 read.sensitive → 明文证件号/手机列 / 仅 read.record → 脱敏列〔S3 分级,脱敏复用 toAdminDto〕;读操作记审计) [rbac: recruitment-application.read.record]',
   })
   @ApiProduces('text/csv')
+  @ApiCsvResponse()
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
   async export(
     @Body() dto: ExportRecruitmentApplicationsDto,

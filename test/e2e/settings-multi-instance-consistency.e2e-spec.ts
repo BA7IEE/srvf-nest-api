@@ -160,7 +160,7 @@ describe('settings live-read / multi-instance cutover', () => {
       .set('x-request-id', requestId)
       .set('user-agent', HTTP_USER_AGENT)
       .send(body);
-    expect(response.status).toBe(201);
+    expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ code: 0, message: 'ok' });
   }
 

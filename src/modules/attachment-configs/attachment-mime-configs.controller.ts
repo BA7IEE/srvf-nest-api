@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
@@ -74,7 +75,7 @@ export class AttachmentMimeConfigsController {
     summary:
       '创建附件 MIME 配置(typeConfigId 不存在 → 13020;mime 格式不合法 → 13025;(typeConfigId, mime) 重复 → 13024;含软删历史) [rbac: attachment-config.create.mime]',
   })
-  @ApiWrappedOkResponse(AttachmentMimeConfigResponseDto)
+  @ApiWrappedCreatedResponse(AttachmentMimeConfigResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

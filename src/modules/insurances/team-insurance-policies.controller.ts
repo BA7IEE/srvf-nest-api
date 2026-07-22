@@ -1,7 +1,20 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import {
+  HttpStatus,
+  HttpCode,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
@@ -76,7 +89,7 @@ export class TeamInsurancePoliciesController {
     summary:
       '创建队保单(一张 = 一条;起保 ≤ 到期否则 26010) [rbac: team-insurance-policy.create.record]',
   })
-  @ApiWrappedOkResponse(TeamInsurancePolicyResponseDto)
+  @ApiWrappedCreatedResponse(TeamInsurancePolicyResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
@@ -176,7 +189,7 @@ export class TeamInsurancePoliciesController {
     summary:
       '覆盖名单单加队员(重复 → 26004;队员须存在未软删) [rbac: team-insurance-policy.add.member]',
   })
-  @ApiWrappedOkResponse(TeamInsuranceCoverageResponseDto)
+  @ApiWrappedCreatedResponse(TeamInsuranceCoverageResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
@@ -195,6 +208,7 @@ export class TeamInsurancePoliciesController {
   }
 
   @Post(':id/members/add-all-active')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
       '全体在册一键加入覆盖名单(仅 ACTIVE 未软删队员;幂等,已在名单跳过,二跑 addedCount=0) [rbac: team-insurance-policy.add.member]',

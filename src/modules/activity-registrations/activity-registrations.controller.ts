@@ -1,4 +1,6 @@
 import {
+  HttpStatus,
+  HttpCode,
   Body,
   Controller,
   Get,
@@ -14,7 +16,9 @@ import { Readable } from 'node:stream';
 import { ApiBearerAuth, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
+  ApiCsvResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
 } from '../../common/decorators/api-response.decorator';
@@ -115,7 +119,7 @@ export class ActivityRegistrationsAdminController {
     summary:
       'ADMIN 代报名(Q-A3 与 USER 自助拆开;必填 memberId;校验 capacity + 公开报名 + 未重复) [rbac: activity-registration.create.record]',
   })
-  @ApiWrappedOkResponse(ActivityRegistrationResponseDto)
+  @ApiWrappedCreatedResponse(ActivityRegistrationResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
@@ -147,6 +151,7 @@ export class ActivityRegistrationsAdminController {
       '名单导出 CSV(Q-A6:第一版仅 CSV;默认 scope=pass,可选 scope=all;XLSX 不支持 → 400) [rbac: activity-registration.read.record]',
   })
   @ApiProduces('text/csv')
+  @ApiCsvResponse()
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
@@ -293,6 +298,7 @@ export class ActivityRegistrationsAdminController {
   // 参与域生命周期收口②(v0.40.0):审批后悔药。撤销驳回、回待审(reject → pending)。
   // POST(action 非幂等创建/更新语义,沿 goal 指定动词);置 pending 同时清空审核三字段;不发通知。
   @Post(':id/reopen')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
       '撤销驳回、回待审(reject → pending;清空审核字段;不发通知) [rbac: activity-registration.reopen.record]',

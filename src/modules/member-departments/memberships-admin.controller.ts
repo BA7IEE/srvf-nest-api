@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
+import {
+  HttpStatus,
+  HttpCode,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
@@ -76,6 +86,7 @@ export class MembershipsAdminController {
 
   // F4 唯一写端点:单事务 end 旧 + create 新(受既有 partial unique 约束;audit `membership.transfer`)。
   @Post('memberships/transfer')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
       '归属迁移(单事务:结束源组织对应类型 ACTIVE 归属 + 在目标组织建同类型新归属;源=目标 → 400;目标撞唯一 → 17004) [rbac: membership.transfer.record]',

@@ -187,7 +187,7 @@ describe('参与域生命周期收口⑤:POST /api/admin/v1/members/:id/offboard
     it('biz-admin → 200', async () => {
       const m = await newMember();
       const res = await offboard(m.id, bizAdminAuth);
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       expect(res.body.data.member.status).toBe(MemberStatus.INACTIVE);
     });
   });
@@ -265,7 +265,7 @@ describe('参与域生命周期收口⑤:POST /api/admin/v1/members/:id/offboard
       expect(meBefore.status).toBe(200);
 
       const res = await offboard(m.id, bizAdminAuth);
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       const data = res.body.data;
       expect(data.member.status).toBe(MemberStatus.INACTIVE);
       expect(data.member.accountStatus).toBe(UserStatus.DISABLED);
@@ -353,13 +353,13 @@ describe('参与域生命周期收口⑤:POST /api/admin/v1/members/:id/offboard
       await seedPrimaryMembership(m.id);
 
       const first = await offboard(m.id, bizAdminAuth);
-      expect(first.status).toBe(201);
+      expect(first.status).toBe(200);
       expect(first.body.data.memberDeactivated).toBe(true);
       expect(first.body.data.membershipsEnded).toBe(1);
       expect(first.body.data.accountDisabled).toBe(true);
 
       const second = await offboard(m.id, bizAdminAuth);
-      expect(second.status).toBe(201);
+      expect(second.status).toBe(200);
       expect(second.body.data.memberDeactivated).toBe(false);
       expect(second.body.data.membershipsEnded).toBe(0);
       expect(second.body.data.accountDisabled).toBe(false);
@@ -373,7 +373,7 @@ describe('参与域生命周期收口⑤:POST /api/admin/v1/members/:id/offboard
       const m = await newMember();
       await seedPrimaryMembership(m.id);
       const res = await offboard(m.id, bizAdminAuth);
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       expect(res.body.data.member.status).toBe(MemberStatus.INACTIVE);
       expect(res.body.data.accountDisabled).toBe(false);
       expect(res.body.data.linkedUserId).toBeNull();
@@ -389,7 +389,7 @@ describe('参与域生命周期收口⑤:POST /api/admin/v1/members/:id/offboard
         data: { supervisorMemberId: m.id, organizationId: orgId, startedAt: new Date() },
       });
       const res = await offboard(m.id, bizAdminAuth);
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       expect(res.body.data.residualActiveSupervisions).toBe(0);
       const stillActive = await prisma.organizationSupervisionAssignment.count({
         where: { supervisorMemberId: m.id, status: 'ACTIVE', deletedAt: null },
@@ -414,7 +414,7 @@ describe('参与域生命周期收口⑤:POST /api/admin/v1/members/:id/offboard
           .send({ status: UserStatus.ACTIVE }),
       ]);
 
-      expect(offboardRes.status).toBe(201);
+      expect(offboardRes.status).toBe(200);
       expect([200, 409]).toContain(enableRes.status);
       const [member, user] = await Promise.all([
         prisma.member.findUniqueOrThrow({ where: { id: m.id } }),
@@ -440,7 +440,7 @@ describe('参与域生命周期收口⑤:POST /api/admin/v1/members/:id/offboard
           }),
       ]);
 
-      expect(offboardRes.status).toBe(201);
+      expect(offboardRes.status).toBe(200);
       expect([201, 409]).toContain(createRes.status);
       const member = await prisma.member.findUniqueOrThrow({ where: { id: m.id } });
       expect(member.status).toBe(MemberStatus.INACTIVE);

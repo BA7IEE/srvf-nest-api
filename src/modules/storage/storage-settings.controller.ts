@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Patch, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 
 import {
   ApiBizErrorResponse,
+  ApiWrappedNullableResponse,
   ApiWrappedOkResponse,
 } from '../../common/decorators/api-response.decorator';
 import {
@@ -49,7 +50,7 @@ export class StorageSettingsController {
     summary:
       '读 Storage Settings singleton row(沿 Q-11-1:不存在返 data=null;不抛 BizCode;不回显凭证) [rbac: storage-setting.read.singleton]',
   })
-  @ApiWrappedOkResponse(StorageSettingsResponseDto)
+  @ApiWrappedNullableResponse(StorageSettingsResponseDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
   get(@CurrentUser() user: CurrentUserPayload): Promise<StorageSettingsResponseDto | null> {
     return this.service.getForAdmin(user);
@@ -71,6 +72,7 @@ export class StorageSettingsController {
   }
 
   @Post('reset-credentials')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
       '重置 SecretId / SecretKey(沿 §6.6.2 / Q-11-1 / Q-11-5 + P0-F PR-2B D2=A:**仅 SUPER_ADMIN 短路通过**;ADMIN+ops-admin 调用 → 30100;AES-256-GCM 加密落库;响应不回显;不存在则 upsert 创建 default providerType=COS;事务提交后任一实例下一次调用直读 PostgreSQL 新值,无需 invalidate/reload/restart) [rbac: storage-setting.reset.credentials]',

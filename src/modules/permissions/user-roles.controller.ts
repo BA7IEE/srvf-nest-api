@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post, Req } from '@nestjs/common'
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedArrayResponse,
   ApiWrappedOkResponse,
@@ -73,7 +74,7 @@ export class UserRolesController {
     summary:
       '给用户分配角色(入参 roleCode;Q7 角色分级 C2 中庸:SUPER_ADMIN 通过任何 / 持 ops-admin 通过非 ops-admin / 其他 30102;重复分配 30006) [rbac: rbac.user-role.create]',
   })
-  @ApiWrappedOkResponse(UserRoleResponseDto)
+  @ApiWrappedCreatedResponse(UserRoleResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

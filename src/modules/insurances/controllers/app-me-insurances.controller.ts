@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
@@ -63,7 +64,7 @@ export class AppMeInsurancesController {
     summary:
       '新增自购保险(自报即可,无核验;保险公司/保单号/到期必填,起保可选;起保 ≤ 到期否则 26010) [auth]',
   })
-  @ApiWrappedOkResponse(AppMyInsuranceDto)
+  @ApiWrappedCreatedResponse(AppMyInsuranceDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

@@ -177,13 +177,13 @@ describe('WeChat Settings(T2 e2e)', () => {
       expect(await prisma.wechatSettings.count()).toBe(1);
     });
 
-    it('reset-credentials as SA → 201;credentialStatus=configured;密文落库且非明文', async () => {
+    it('reset-credentials as SA → 200;credentialStatus=configured;密文落库且非明文', async () => {
       const res = await request(httpServer(app))
         .post(RESET_PATH)
         .set('Authorization', saHeader)
         .send({ appSecret: 'e2e-app-secret-value' });
-      // 镜像 storage/sms reset-credentials 现状:POST 无 @HttpCode → Nest 默认 201
-      expect(res.status).toBe(201);
+      // action command 契约:POST 显式 @HttpCode(200)
+      expect(res.status).toBe(200);
       const data = res.body.data as Record<string, unknown>;
       expect(data.credentialStatus).toBe('configured');
       expect(data.credentialConfigured).toBe(true);

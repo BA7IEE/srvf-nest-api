@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post, Query, Req } from '@nestjs/c
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
@@ -113,7 +114,7 @@ export class AppMyRegistrationsController {
     summary:
       '本人报名活动(入参 activityId + 可选 activityPositionId/extras;非 published 统一 404) [auth]',
   })
-  @ApiWrappedOkResponse(AppMyRegistrationDto)
+  @ApiWrappedCreatedResponse(AppMyRegistrationDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

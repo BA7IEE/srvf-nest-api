@@ -731,7 +731,7 @@ describe('attachments 主模块', () => {
           mime: 'image/jpeg',
           sizeBytes: 1024,
         });
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       expect(isDerivedAttachmentKey(res.body.data.key as string, 'test')).toBe(true);
     });
   });

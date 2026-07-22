@@ -13,6 +13,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedArrayResponse,
   ApiWrappedOkResponse,
@@ -129,7 +130,7 @@ export class SupervisionAssignmentsController {
     summary:
       '建分管(supervisor × org × scopeMode + 任期;与职务正交,不要求 supervisor 持职务) [rbac: supervision-assignment.create.record]',
   })
-  @ApiWrappedOkResponse(SupervisionAssignmentResponseDto)
+  @ApiWrappedCreatedResponse(SupervisionAssignmentResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
@@ -215,6 +216,7 @@ export class SupervisionAssignmentsController {
   }
 
   @Post('supervision-assignments/:id/revoke')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
       '撤销分管(status=REVOKED + 撤销人 + endedAt) [rbac: supervision-assignment.revoke.record]',

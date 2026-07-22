@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
@@ -74,7 +75,7 @@ export class AttachmentTypeConfigsController {
     summary:
       '创建附件类型配置(code 全局唯一 / kebab-case 3-32;失败抛 13023 / 13021;status 默认 ACTIVE) [rbac: attachment-config.create.type]',
   })
-  @ApiWrappedOkResponse(AttachmentTypeConfigResponseDto)
+  @ApiWrappedCreatedResponse(AttachmentTypeConfigResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

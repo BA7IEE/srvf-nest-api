@@ -244,7 +244,7 @@ describe('attachments upload-url + confirm-upload', () => {
         .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', selfAuth)
         .send(buildUploadUrlBody());
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       const d = res.body.data;
       expect(typeof d.key).toBe('string');
       expect(d.key).toMatch(/^attachments\//);
@@ -268,7 +268,7 @@ describe('attachments upload-url + confirm-upload', () => {
             mime: 'application/pdf',
           }),
         );
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       expect(res.body.data.key).toMatch(/\.pdf$/);
     });
 
@@ -282,7 +282,7 @@ describe('attachments upload-url + confirm-upload', () => {
             ownerId: activity.id,
           }),
         );
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
     });
 
     it('6. ownerType 不在 enum → 13010', async () => {
@@ -359,7 +359,7 @@ describe('attachments upload-url + confirm-upload', () => {
         .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', selfAuth)
         .send(buildUploadUrlBody({ sizeBytes: 0 }));
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
     });
 
     it('14. originalName 极长(255 字符)→ 成功', async () => {
@@ -368,7 +368,7 @@ describe('attachments upload-url + confirm-upload', () => {
         .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', selfAuth)
         .send(buildUploadUrlBody({ originalName: longName }));
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
     });
 
     it('15. upload-url 不写 audit_logs(查 audit_logs 表空)', async () => {
@@ -378,7 +378,7 @@ describe('attachments upload-url + confirm-upload', () => {
         .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', selfAuth)
         .send(buildUploadUrlBody());
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       const afterCount = await prisma.auditLog.count();
       expect(afterCount).toBe(beforeCount);
     });
@@ -400,7 +400,7 @@ describe('attachments upload-url + confirm-upload', () => {
         .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', authHeader)
         .send(body);
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       return { token: res.body.data.uploadToken, key: res.body.data.key, bodyUsed: body };
     }
 
@@ -428,7 +428,7 @@ describe('attachments upload-url + confirm-upload', () => {
         .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: token });
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       expect(res.body.data.key).toBe(key);
       expect(res.body.data.uploadedBy).toBeTruthy();
       const count = await prisma.attachment.count({ where: { key } });
@@ -443,7 +443,7 @@ describe('attachments upload-url + confirm-upload', () => {
         .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: token })
-        .expect(201);
+        .expect(200);
 
       const auditRow = await prisma.auditLog.findFirst({
         where: { event: 'attachment.upload' },
@@ -565,13 +565,13 @@ describe('attachments upload-url + confirm-upload', () => {
         .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: token })
-        .expect(201);
+        .expect(200);
 
       const replay = await request(httpServer(app))
         .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: token })
-        .expect(201);
+        .expect(200);
       expect(replay.body.data).toMatchObject({ id: first.body.data.id, key });
 
       const object = await prisma.storageObject.findUniqueOrThrow({ where: { key } });
@@ -625,7 +625,7 @@ describe('attachments upload-url + confirm-upload', () => {
         .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: token, checksum })
-        .expect(201);
+        .expect(200);
 
       const row = await prisma.attachment.findFirstOrThrow({
         where: { key },
@@ -665,7 +665,7 @@ describe('attachments upload-url + confirm-upload', () => {
         .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: token })
-        .expect(201);
+        .expect(200);
       expect(typeof res.body.data.accessUrl).toBe('string');
       // etag/checksum 不在出参(沿 PR #76 Q6 v1.0);DB 内 LocalProvider headObject 不返 etag → null
       expect(res.body.data.etag).toBeUndefined();

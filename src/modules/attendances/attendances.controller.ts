@@ -1,7 +1,20 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import {
+  HttpStatus,
+  HttpCode,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
@@ -78,7 +91,7 @@ export class AttendanceSheetsCollectionController {
     summary:
       '提交考勤单据(事务内一次性 create Sheet + N records;初始 statusCode=pending,version=1;Activity cancelled 拒绝) [rbac: attendance.create.sheet]',
   })
-  @ApiWrappedOkResponse(AttendanceSheetResponseDto)
+  @ApiWrappedCreatedResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
@@ -347,6 +360,7 @@ export class AttendanceSheetsResourceController {
   }
 
   @Post(':id/reopen')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
       '撤回已终审通过的考勤单(approved → pending;保留 records,清空一审/终审责任字段;不发通知) [rbac: attendance.reopen.sheet]',

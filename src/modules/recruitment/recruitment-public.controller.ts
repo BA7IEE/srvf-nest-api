@@ -17,6 +17,7 @@ import { validate } from 'class-validator';
 import type { Request } from 'express';
 
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
 } from '../../common/decorators/api-response.decorator';
@@ -176,7 +177,7 @@ export class RecruitmentPublicController {
     summary:
       '公开报名提交(无账号;multipart:payload JSON 串 + idCardImage 文件 + 必填 signatureImage 签名图〔发号后随档案长期留存〕;⚠️ 契约收紧:signatureImage、payload.privacyConsentAccepted=true、已验手机 phoneVerificationToken 均必填,缺省/false → 40000;wechatCode 可选〔提供时另取 openid〕;免费校验通过后才调付费 OCR;大陆证件 OCR 匹配+防伪+清晰→发临时编号,否则/其余证件→人工待核;OCR 改造后提交端对 OCR 永不硬报错,通道未配/上游失败均转人工;throttler recruitment) [public]',
   })
-  @ApiWrappedOkResponse(RecruitmentSubmitResultDto)
+  @ApiWrappedCreatedResponse(RecruitmentSubmitResultDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.RECRUITMENT_CYCLE_NOT_OPEN,

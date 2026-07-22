@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from '@nestjs/
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedArrayResponse,
   ApiWrappedOkResponse,
@@ -57,7 +58,7 @@ export class MembershipsController {
   @ApiOperation({
     summary: '新增队员归属(指定 membershipType) [rbac: membership.set.record]',
   })
-  @ApiWrappedOkResponse(MembershipResponseDto)
+  @ApiWrappedCreatedResponse(MembershipResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

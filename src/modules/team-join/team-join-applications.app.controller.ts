@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/sw
 import type { Request } from 'express';
 
 import {
+  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
 } from '../../common/decorators/api-response.decorator';
@@ -44,7 +45,7 @@ export class TeamJoinApplicationsAppController {
     summary:
       '发起入队申请(候选须属于本轮开放清单且不超过轮上限;需有 open 入队轮 + 本人未入队;同轮防重) [auth]',
   })
-  @ApiWrappedOkResponse(AppTeamJoinApplicationDto)
+  @ApiWrappedCreatedResponse(AppTeamJoinApplicationDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

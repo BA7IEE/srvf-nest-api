@@ -366,7 +366,7 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
     expect(res.body.data.statusCode).toBe('approved');
     expect(res.body.data.finalReviewerUserId).toBe(saUserId);
     const reopened = await reopen(sheetId, saAuth);
-    expect(reopened.status).toBe(201);
+    expect(reopened.status).toBe(200);
     expect(reopened.body.data).toMatchObject({
       statusCode: 'pending',
       reviewerUserId: null,
@@ -433,7 +433,7 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
     expect(explainReopen.allow).toBe(true);
     expect(explainReopen.matchedGrant?.roleCode).toBe(FINAL_REVIEWER_ROLE_CODE);
     const reopened = await reopen(sheetA, deptHeadAuth);
-    expect(reopened.status).toBe(201);
+    expect(reopened.status).toBe(200);
     expect(reopened.body.data.statusCode).toBe('pending');
 
     // 换届:任职 ENDED → POSITION_ASSIGNMENT 主体绑定随之失效(不动绑定行)

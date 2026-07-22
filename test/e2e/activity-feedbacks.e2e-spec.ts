@@ -304,7 +304,7 @@ describe('activity feedbacks F2-F4', () => {
       .post(`/api/admin/v1/attendance-sheets/${mainApprovedSheetId}/reopen`)
       .set('Authorization', adminAuth)
       .send({ reason: '第四轮 review 评价率口径回归' });
-    expect(reopened.status).toBe(201);
+    expect(reopened.status).toBe(200);
     expect(reopened.body.data.statusCode).toBe('pending');
 
     const currentApprovedMembers = await prisma.attendanceRecord.findMany({
