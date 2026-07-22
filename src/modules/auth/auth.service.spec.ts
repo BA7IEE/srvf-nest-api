@@ -46,11 +46,12 @@ const bcryptMock = jest.mocked(bcrypt);
 
 const META: AuditMeta = { requestId: 'req-auth-1', ip: '10.0.0.1', ua: 'jest' };
 
-// service 只读 expiresIn / refreshExpiresIn;secret 由 JwtModule 消费,此处不参与。
+// service 只读 expiresIn / refreshExpiresInMs;secret / expiresInSeconds 由 JwtModule 消费。
 const JWT_CFG: JwtConfig = {
   secret: 'unit-test-jwt-secret-not-used-by-service',
   expiresIn: '15m',
-  refreshExpiresIn: '90d',
+  expiresInSeconds: 15 * 60,
+  refreshExpiresInMs: 90 * 24 * 60 * 60 * 1000,
 };
 const TTL_90D_MS = 90 * 24 * 60 * 60 * 1000;
 
@@ -531,6 +532,28 @@ describe('AuthService (characterization, scoped)', () => {
           'auth.login',
         ),
       ).rejects.toThrow('jwt.config 未加载');
+
+      expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+      expect(auditLogs.log).not.toHaveBeenCalled();
+    });
+
+    it('手工注入非法 refresh TTL 仍拒绝无效 Date，且不产生任何写', async () => {
+      const prisma = makePrismaMock();
+      const auditLogs = makeAuditLogsMock();
+      const config = {
+        get: jest
+          .fn<JwtConfig | undefined, [string]>()
+          .mockReturnValue({ ...JWT_CFG, refreshExpiresInMs: Number.POSITIVE_INFINITY }),
+      };
+      const service = makeService(prisma, { auditLogs, config });
+
+      await expect(
+        service.createSession(
+          { id: 'u-1', username: 'alice', role: Role.USER },
+          META,
+          'auth.login',
+        ),
+      ).rejects.toThrow('JWT_REFRESH_EXPIRES_IN 无效:无法计算有效过期时间');
 
       expect(prisma.refreshToken.create).not.toHaveBeenCalled();
       expect(auditLogs.log).not.toHaveBeenCalled();

@@ -51,7 +51,7 @@ docker run --rm -p 3000:3000 \
   u-nest-api-starter:<release-tag>
 ```
 
-启动强校验在 `APP_ENV=production` 下会拒绝:`JWT_SECRET` 等于 `.env.example` 默认值、`APP_CORS_ORIGIN` 为空或 `*`、`APP_TRUSTED_PROXY_CIDRS` 缺失/空白/非法、`SUPER_ADMIN_PASSWORD` 等于默认值(seed 时)、`SUPER_ADMIN_USERNAME=admin`(seed 时)。Docker Smoke 的 `APP_ENV=smoke` 同样要求显式 trusted proxy 配置，CI 固定 `none`。完整字段以 [`.env.example`](../.env.example) 为准。
+启动强校验会拒绝无单位、非正数或越界的 JWT TTL：access 只允许 1m–24h，refresh 只允许 1d–365d。`APP_ENV=production` 还会拒绝:`JWT_SECRET` 等于 `.env.example` 默认值、`APP_CORS_ORIGIN` 为空或 `*`、`APP_TRUSTED_PROXY_CIDRS` 缺失/空白/非法、`SUPER_ADMIN_PASSWORD` 等于默认值(seed 时)、`SUPER_ADMIN_USERNAME=admin`(seed 时)。Docker Smoke 的 `APP_ENV=smoke` 同样要求显式 trusted proxy 配置，CI 固定 `none`。完整字段以 [`.env.example`](../.env.example) 为准。
 
 四把 `*_ENCRYPTION_KEY` 必须在首发凭证落库前生成并冻结，所有 API/worker/蓝绿实例使用同一代值；当前版本不支持直接轮换，普通 reset API 只允许在 key 不变时替换 provider credential。完整边界见 [`ops/encryption-key-freeze.md`](ops/encryption-key-freeze.md)。
 

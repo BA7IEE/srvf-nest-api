@@ -157,7 +157,7 @@ req.body.stepUpToken
 | `LoginResponseDto` 扩展 | `refreshToken`(256bit base64url opaque random)+ `refreshExpiresAt`(ISO 8601 UTC family absolute expiration 时刻);字段集恰好 5 项 |
 | **refresh_tokens 表** | `tokenHash @unique`(sha256 hex)+ `familyId` + `expiresAt` + `rotatedAt` + `revokedAt` + `revokedReason` + `replacedById` + `ipFirstSeen` / `uaFirstSeen`(后两者仅供审计不出对外 API) |
 | **联动撤销 7 场景**(2026-07-17 identity session P0 PR1 由 5 扩 7) | 本人改密 `self-password-change` / 本人短信重置 `self-password-reset` / 管理员重置 `admin-password-reset` / 本人换手机号 `self-phone-identity-change` / 本人换微信 `self-wechat-identity-change` / 用户禁用 `admin-disable` / 用户软删 `admin-delete`(真实变更同事务原子；同目标 no-op 不撤销) |
-| TTL 锁定 | `JWT_EXPIRES_IN=15m`(由 7d 收敛)/ `JWT_REFRESH_EXPIRES_IN=90d` family **absolute expiration**;rotation 继承同一 `refreshExpiresAt` 不延长;**禁止** sliding expiration |
+| TTL 锁定 | `JWT_EXPIRES_IN=15m`(允许 1m–24h)/ `JWT_REFRESH_EXPIRES_IN=90d`(允许 1d–365d),两者启动期强制带单位并解析为 finite 正数;refresh family **absolute expiration**,rotation 继承同一 `refreshExpiresAt` 不延长;**禁止** sliding expiration |
 | 限流 | 独立 throttler `refresh` 30/60 IP(与 `default` / `password-change` 物理隔离);`logout` **无限流**;`logout-all` 复用 `password-change` 5/60 IP |
 | audit | 沿用 `auth.login` / `auth.refresh` / `auth.logout` / `auth.logout-all` / `password.reset.by-admin` 5 事件;`auth.logout` 仅真实状态变化写一次,extra 恰好 `familyId/revokedCount`,no-op 零 audit |
 

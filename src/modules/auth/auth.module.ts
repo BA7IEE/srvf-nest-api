@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { JwtModule, type JwtModuleOptions, type JwtSignOptions } from '@nestjs/jwt';
+import { JwtModule, type JwtModuleOptions } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import type { JwtConfig } from '../../config/jwt.config';
 import { DatabaseModule } from '../../database/database.module';
@@ -38,12 +38,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
         if (!jwtCfg) {
           throw new Error('jwt.config 未加载');
         }
-        // jsonwebtoken 运行时接受 '7d' 这类 ms 兼容字符串,但其 TS 类型从
-        // jsonwebtoken 9 起收紧到 ms.StringValue 字面量;这里 cast 让运行时
-        // 合法、来自 .env 的 string 通过编译。
-        const signOptions: JwtSignOptions = {
-          expiresIn: jwtCfg.expiresIn as JwtSignOptions['expiresIn'],
-        };
+        const signOptions = { expiresIn: jwtCfg.expiresInSeconds };
         return { secret: jwtCfg.secret, signOptions };
       },
     }),

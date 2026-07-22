@@ -11,12 +11,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type { LoginDto, LoginResponseDto, LogoutDto, RefreshTokenDto } from './auth.dto';
-import {
-  generateFamilyId,
-  generateRefreshTokenRaw,
-  hashRefreshToken,
-  parseMsString,
-} from './refresh-token.util';
+import { generateFamilyId, generateRefreshTokenRaw, hashRefreshToken } from './refresh-token.util';
 import type { JwtPayload } from './strategies/jwt.strategy';
 
 // 仅用于 timing 防御,不用于真实密码:
@@ -130,7 +125,7 @@ export class AuthService {
     }
 
     // 6. 计算 refresh family absolute expiration(沿评审稿 §3.1 D-1 + §3.5 D-5)
-    const expiresAt = this.computeRefreshExpiresAt(jwtCfg.refreshExpiresIn);
+    const expiresAt = this.computeRefreshExpiresAt(jwtCfg.refreshExpiresInMs);
     const familyId = generateFamilyId();
 
     // 7. 生成 refresh token 明文 + sha256 哈希;事务内 create refresh_tokens 行 + 写 audit
@@ -414,15 +409,13 @@ export class AuthService {
     });
   }
 
-  // 计算 family absolute expiration:JWT_REFRESH_EXPIRES_IN ms 字符串 → Date(now + ttlMs)。
-  // 启动时由 jwt.config 验证 refreshExpiresIn 已设置;此处不合法 ms 字符串再抛一次防御性错误。
-  private computeRefreshExpiresAt(refreshExpiresIn: string): Date {
-    const ttlMs = parseMsString(refreshExpiresIn);
-    if (ttlMs === null) {
-      throw new Error(
-        `JWT_REFRESH_EXPIRES_IN 无效:"${refreshExpiresIn}",必须是合法 ms 字符串(如 '90d' / '1h' / '30m' / '60s' / '500ms')`,
-      );
+  // 计算 family absolute expiration。TTL 已在 ConfigModule 启动期解析并校验范围；
+  // 此处仍防御性确认 Date 有效，避免任何手工构造 ConfigService 绕过启动门禁。
+  private computeRefreshExpiresAt(refreshExpiresInMs: number): Date {
+    const expiresAt = new Date(Date.now() + refreshExpiresInMs);
+    if (!Number.isFinite(expiresAt.getTime())) {
+      throw new Error('JWT_REFRESH_EXPIRES_IN 无效:无法计算有效过期时间');
     }
-    return new Date(Date.now() + ttlMs);
+    return expiresAt;
   }
 }
