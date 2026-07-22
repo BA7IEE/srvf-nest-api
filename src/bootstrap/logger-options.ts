@@ -1,5 +1,6 @@
 import { RequestMethod } from '@nestjs/common';
 import type { Params } from 'nestjs-pino';
+import type { SerializedRequest } from 'pino';
 import { isProductionLike, type AppConfig } from '../config/app.config';
 import { buildHttpLogProps, genReqId } from './request-id';
 
@@ -12,6 +13,12 @@ import { buildHttpLogProps, genReqId } from './request-id';
 const LOGGER_FOR_ROUTES: NonNullable<Params['forRoutes']> = [
   { path: '*path', method: RequestMethod.ALL },
 ];
+
+function requestPathname(url: string | undefined): string | undefined {
+  if (url === undefined) return undefined;
+  const queryStart = url.indexOf('?');
+  return queryStart < 0 ? url : url.slice(0, queryStart);
+}
 
 // V1.1 §11.2 / §11.4 / TASKS.md 15.2:
 // 敏感字段 redact 清单。命中字段日志输出 `[REDACTED]`,不能仅做长度截断。
@@ -160,6 +167,12 @@ export function buildLoggerModuleParams(appCfg: AppConfig): Params {
     pinoHttp: {
       level,
       genReqId,
+      serializers: {
+        req: (req: SerializedRequest) => ({
+          method: req.method,
+          url: requestPathname(req.url),
+        }),
+      },
       // 非 production 且非 test 才开 pino-pretty(开发时才需要美化输出)。
       transport:
         !isProd && !isTest
