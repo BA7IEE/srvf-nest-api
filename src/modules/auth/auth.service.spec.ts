@@ -73,6 +73,12 @@ interface LoginUserRow {
   status: UserStatus;
 }
 
+interface SessionUserRow extends LoginUserRow {
+  deletedAt: Date | null;
+  phone: string | null;
+  openid: string | null;
+}
+
 function makeLoginUser(overrides: Partial<LoginUserRow> = {}): LoginUserRow {
   return {
     id: 'u-1',
@@ -80,6 +86,16 @@ function makeLoginUser(overrides: Partial<LoginUserRow> = {}): LoginUserRow {
     passwordHash: 'stored-bcrypt-hash',
     role: Role.USER,
     status: UserStatus.ACTIVE,
+    ...overrides,
+  };
+}
+
+function makeSessionUser(overrides: Partial<SessionUserRow> = {}): SessionUserRow {
+  return {
+    ...makeLoginUser(),
+    deletedAt: null,
+    phone: '13800001234',
+    openid: 'openid-unit-fixture',
     ...overrides,
   };
 }
@@ -126,6 +142,9 @@ function makeLoginDto(overrides: Partial<LoginDto> = {}): LoginDto {
 function makePrismaMock() {
   const user = {
     findFirst: jest.fn<Promise<LoginUserRow | null>, [unknown]>(),
+    findUnique: jest
+      .fn<Promise<SessionUserRow | null>, [unknown]>()
+      .mockResolvedValue(makeSessionUser()),
     // lastLoginAt fire-and-forget 在返回值上挂 .catch;默认必须 resolve,避免假 TypeError。
     update: jest.fn<Promise<unknown>, [unknown]>().mockResolvedValue({}),
   };
@@ -141,7 +160,10 @@ function makePrismaMock() {
     updateMany: jest.fn<Promise<{ count: number }>, [unknown]>(),
   };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
-  const prisma = { user, member, refreshToken, $transaction };
+  const $queryRaw = jest
+    .fn<Promise<Array<{ id: string }>>, [unknown]>()
+    .mockResolvedValue([{ id: 'u-1' }]);
+  const prisma = { user, member, refreshToken, $transaction, $queryRaw };
   // auth 仅回调式:把 prisma mock 自身当 tx 传入;callback 抛错原样向外传播(与真 $transaction 同构)。
   $transaction.mockImplementation((arg: unknown) =>
     (arg as (tx: typeof prisma) => Promise<unknown>)(prisma),
@@ -338,6 +360,7 @@ describe('AuthService (characterization, scoped)', () => {
       prisma.user.findFirst
         .mockResolvedValueOnce(null) // 第 1 次:username 路径未命中
         .mockResolvedValueOnce(makeLoginUser({ id: 'u-2', username: 'bob' })); // 第 2 次:memberId 反查命中
+      prisma.user.findUnique.mockResolvedValue(makeSessionUser({ id: 'u-2', username: 'bob' }));
       prisma.member.findUnique.mockResolvedValue({ id: 'mem-1', deletedAt: null });
       bcryptMock.compare.mockResolvedValue(true as never);
       const service = makeService(prisma, { auditLogs });
@@ -385,11 +408,13 @@ describe('AuthService (characterization, scoped)', () => {
   describe('createSession — 会话签发契约', () => {
     it('JWT payload 严格 { sub, username } 恰 2 字段;role 不进 payload', async () => {
       const prisma = makePrismaMock();
+      prisma.user.findUnique.mockResolvedValue(makeSessionUser({ role: Role.ADMIN }));
       const jwt = makeJwtMock();
       const service = makeService(prisma, { jwt });
 
       await service.createSession(
-        { id: 'u-1', username: 'alice', role: Role.ADMIN },
+        'u-1',
+        { kind: 'password-hash', value: 'stored-bcrypt-hash' },
         META,
         'auth.login',
       );
@@ -407,7 +432,8 @@ describe('AuthService (characterization, scoped)', () => {
 
       const before = Date.now();
       const res = await service.createSession(
-        { id: 'u-1', username: 'alice', role: Role.USER },
+        'u-1',
+        { kind: 'password-hash', value: 'stored-bcrypt-hash' },
         META,
         'auth.login',
       );
@@ -448,7 +474,8 @@ describe('AuthService (characterization, scoped)', () => {
       const service = makeService(prisma, { auditLogs });
 
       const res = await service.createSession(
-        { id: 'u-1', username: 'alice', role: Role.USER },
+        'u-1',
+        { kind: 'phone', value: '13800001234' },
         META,
         'auth.login.sms',
         { phone: '138****1234', codeId: 'code-1' },
@@ -480,12 +507,53 @@ describe('AuthService (characterization, scoped)', () => {
       expect(JSON.stringify(logArg.extra)).not.toContain(createArg.data.tokenHash);
     });
 
+    it.each([
+      {
+        name: 'passwordHash',
+        expectation: { kind: 'password-hash' as const, value: 'observed-old-hash' },
+        current: makeSessionUser({ passwordHash: 'changed-hash' }),
+        event: 'auth.login' as const,
+        error: BizCode.LOGIN_FAILED,
+      },
+      {
+        name: 'phone',
+        expectation: { kind: 'phone' as const, value: '13800001234' },
+        current: makeSessionUser({ phone: '13900005678' }),
+        event: 'auth.login.sms' as const,
+        error: BizCode.SMS_CODE_INVALID,
+      },
+      {
+        name: 'openid',
+        expectation: { kind: 'openid' as const, value: 'observed-openid' },
+        current: makeSessionUser({ openid: 'changed-openid' }),
+        event: 'auth.login.wechat' as const,
+        error: BizCode.WECHAT_CODE_INVALID,
+      },
+    ])('User 锁后 $name snapshot 已变化 → 复用原失败码且零 token/audit', async (testCase) => {
+      const prisma = makePrismaMock();
+      const auditLogs = makeAuditLogsMock();
+      const jwt = makeJwtMock();
+      prisma.user.findUnique.mockResolvedValue(testCase.current);
+      const service = makeService(prisma, { auditLogs, jwt });
+
+      await expect(
+        service.createSession('u-1', testCase.expectation, META, testCase.event),
+      ).rejects.toEqual(new BizException(testCase.error));
+
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+      expect(auditLogs.log).not.toHaveBeenCalled();
+      expect(jwt.signAsync).not.toHaveBeenCalled();
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
     it('lastLoginAt fire-and-forget:成功路径事务外 update { lastLoginAt }', async () => {
       const prisma = makePrismaMock();
       const service = makeService(prisma);
 
       await service.createSession(
-        { id: 'u-1', username: 'alice', role: Role.USER },
+        'u-1',
+        { kind: 'password-hash', value: 'stored-bcrypt-hash' },
         META,
         'auth.login',
       );
@@ -505,7 +573,8 @@ describe('AuthService (characterization, scoped)', () => {
       const service = makeService(prisma);
 
       const res = await service.createSession(
-        { id: 'u-1', username: 'alice', role: Role.USER },
+        'u-1',
+        { kind: 'password-hash', value: 'stored-bcrypt-hash' },
         META,
         'auth.login',
       );
@@ -526,7 +595,8 @@ describe('AuthService (characterization, scoped)', () => {
 
       await expect(
         service.createSession(
-          { id: 'u-1', username: 'alice', role: Role.USER },
+          'u-1',
+          { kind: 'password-hash', value: 'stored-bcrypt-hash' },
           META,
           'auth.login',
         ),
@@ -545,7 +615,7 @@ describe('AuthService (characterization, scoped)', () => {
       const jwt = makeJwtMock();
       const row = makeRefreshRow();
       prisma.refreshToken.findUnique.mockResolvedValue(row);
-      prisma.user.findFirst.mockResolvedValue(makeLoginUser());
+      prisma.user.findUnique.mockResolvedValue(makeSessionUser());
       prisma.refreshToken.updateMany.mockResolvedValue({ count: 1 });
       prisma.refreshToken.create.mockResolvedValue({ id: 'rt-new' });
       const service = makeService(prisma, { auditLogs, jwt });
@@ -648,7 +718,7 @@ describe('AuthService (characterization, scoped)', () => {
       // 不发新 token / 不签 access / 不查 user(rotatedAt 检查先于 user 检查)
       expect(prisma.refreshToken.create).not.toHaveBeenCalled();
       expect(jwt.signAsync).not.toHaveBeenCalled();
-      expect(prisma.user.findFirst).not.toHaveBeenCalled();
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
     });
 
     it('check-and-set 输家分支:updateMany count=0(并发 race)→ REFRESH_TOKEN_INVALID;不 create / 不审计 / 不 family revoke', async () => {
@@ -656,7 +726,7 @@ describe('AuthService (characterization, scoped)', () => {
       const auditLogs = makeAuditLogsMock();
       const jwt = makeJwtMock();
       prisma.refreshToken.findUnique.mockResolvedValue(makeRefreshRow());
-      prisma.user.findFirst.mockResolvedValue(makeLoginUser());
+      prisma.user.findUnique.mockResolvedValue(makeSessionUser());
       // 读时 fresh,事务内 check-and-set 已被并发对手抢先 → count=0
       prisma.refreshToken.updateMany.mockResolvedValue({ count: 0 });
       const service = makeService(prisma, { auditLogs, jwt });
@@ -675,6 +745,28 @@ describe('AuthService (characterization, scoped)', () => {
       expect(prisma.refreshToken.update).not.toHaveBeenCalled();
       expect(jwt.signAsync).not.toHaveBeenCalled();
       expect(auditLogs.log).not.toHaveBeenCalled();
+    });
+
+    it('两个请求锁外都观察 fresh：锁等待输家复读到 rotated 只返 10007，不误撤 family', async () => {
+      const prisma = makePrismaMock();
+      const auditLogs = makeAuditLogsMock();
+      const fresh = makeRefreshRow();
+      prisma.refreshToken.findUnique
+        .mockResolvedValueOnce(fresh)
+        .mockResolvedValueOnce(
+          makeRefreshRow({ rotatedAt: minutesFromNow(-1), revokedAt: minutesFromNow(-1) }),
+        );
+      const service = makeService(prisma, { auditLogs });
+
+      await expect(service.refresh({ refreshToken: OLD_RAW }, META)).rejects.toEqual(
+        new BizException(BizCode.REFRESH_TOKEN_INVALID),
+      );
+
+      expect(prisma.refreshToken.findUnique).toHaveBeenCalledTimes(2);
+      expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+      expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+      expect(auditLogs.log).not.toHaveBeenCalled();
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
     });
 
     it('查不到(token 不存在 / hash 不符)→ REFRESH_TOKEN_INVALID;不写 audit、不开事务', async () => {
@@ -735,7 +827,7 @@ describe('AuthService (characterization, scoped)', () => {
       const auditLogs = makeAuditLogsMock();
       const jwt = makeJwtMock();
       prisma.refreshToken.findUnique.mockResolvedValue(makeRefreshRow());
-      prisma.user.findFirst.mockResolvedValue(makeLoginUser({ status: UserStatus.DISABLED }));
+      prisma.user.findUnique.mockResolvedValue(makeSessionUser({ status: UserStatus.DISABLED }));
       const service = makeService(prisma, { auditLogs, jwt });
 
       await expect(service.refresh({ refreshToken: OLD_RAW }, META)).rejects.toEqual(
@@ -763,17 +855,17 @@ describe('AuthService (characterization, scoped)', () => {
       const prisma = makePrismaMock();
       const auditLogs = makeAuditLogsMock();
       prisma.refreshToken.findUnique.mockResolvedValue(makeRefreshRow());
-      prisma.user.findFirst.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue(makeSessionUser({ deletedAt: new Date() }));
       const service = makeService(prisma, { auditLogs });
 
       await expect(service.refresh({ refreshToken: OLD_RAW }, META)).rejects.toEqual(
         new BizException(BizCode.REFRESH_TOKEN_INVALID),
       );
 
-      // user 有效性检查的查询条件锁形(软删在查询层过滤)
-      expect(prisma.user.findFirst).toHaveBeenCalledWith({
-        where: { id: 'u-1', deletedAt: null },
-        select: { id: true, username: true, role: true, status: true },
+      // User 锁后复读包含 deletedAt，软删与不存在统一失效。
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { id: 'u-1' },
+        select: { id: true, username: true, role: true, status: true, deletedAt: true },
       });
       const revokeArg = prisma.refreshToken.updateMany.mock.calls[0][0] as {
         where: { familyId: string; revokedAt: null };
@@ -803,7 +895,11 @@ describe('AuthService (characterization, scoped)', () => {
       const res = await service.logout({ refreshToken: OLD_RAW }, META);
 
       expect(res).toBeNull();
-      expect(prisma.refreshToken.findUnique).toHaveBeenCalledWith({
+      expect(prisma.refreshToken.findUnique).toHaveBeenNthCalledWith(1, {
+        where: { tokenHash: OLD_HASH },
+        select: { userId: true, expiresAt: true },
+      });
+      expect(prisma.refreshToken.findUnique).toHaveBeenNthCalledWith(2, {
         where: { tokenHash: OLD_HASH },
         select: { id: true, userId: true, familyId: true, expiresAt: true },
       });

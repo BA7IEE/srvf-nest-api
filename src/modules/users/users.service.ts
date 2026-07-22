@@ -9,8 +9,9 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { StepUpAction } from '../auth/auth.dto';
+import { lockAuthSessionUser } from '../auth/auth-session-lock';
 import { IdentityStepUpService } from '../auth/identity-step-up.service';
-import { lockMemberLifecycle, lockLiveUserLifecycle } from '../members/member-lifecycle-lock';
+import { lockMemberLifecycle } from '../members/member-lifecycle-lock';
 import { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
 import { RbacService } from '../permissions/rbac.service';
 import { SmsCodeService } from '../sms/sms-code.service';
@@ -293,8 +294,22 @@ export class UsersService {
     const passwordHash = await this.hashPassword(dto.newPassword);
 
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.user.update({
+      if (!(await lockAuthSessionUser(tx, currentUser.id))) {
+        throw new BizException(BizCode.USER_NOT_FOUND);
+      }
+      const current = await tx.user.findUnique({
         where: { id: currentUser.id },
+        select: { id: true, status: true, deletedAt: true, passwordHash: true },
+      });
+      if (!current || current.deletedAt !== null || current.status !== UserStatus.ACTIVE) {
+        throw new BizException(BizCode.USER_NOT_FOUND);
+      }
+      if (current.passwordHash !== user.passwordHash) {
+        throw new BizException(BizCode.OLD_PASSWORD_INVALID);
+      }
+
+      const updated = await tx.user.update({
+        where: { id: current.id },
         data: { passwordHash },
         select: userSafeSelect,
       });
@@ -305,7 +320,7 @@ export class UsersService {
       // e2e users-change-my-password.e2e-spec.ts §7.5 反向锁定断言(改密后旧 access 仍可调 /me)
       // 继续保留。
       const refreshRevoke = await tx.refreshToken.updateMany({
-        where: { userId: currentUser.id, revokedAt: null, expiresAt: { gt: new Date() } },
+        where: { userId: current.id, revokedAt: null, expiresAt: { gt: new Date() } },
         data: { revokedAt: new Date(), revokedReason: 'self-password-change' },
       });
 
@@ -513,14 +528,24 @@ export class UsersService {
     const passwordHash = await this.hashPassword(dto.newPassword);
 
     return this.prisma.$transaction(async (tx) => {
+      if (!(await lockAuthSessionUser(tx, id))) {
+        throw new BizException(BizCode.USER_NOT_FOUND);
+      }
+      const lockedTarget = await tx.user.findFirst({
+        where: this.notDeletedWhere({ id }),
+        select: { id: true, role: true, status: true, memberId: true },
+      });
+      if (!lockedTarget) throw new BizException(BizCode.USER_NOT_FOUND);
+      this.assertCanManageUser(currentUser, lockedTarget);
+
       const updated = await tx.user.update({
-        where: { id },
+        where: { id: lockedTarget.id },
         data: { passwordHash },
         select: userSafeSelect,
       });
 
       const refreshRevoke = await tx.refreshToken.updateMany({
-        where: { userId: id, revokedAt: null, expiresAt: { gt: new Date() } },
+        where: { userId: lockedTarget.id, revokedAt: null, expiresAt: { gt: new Date() } },
         data: { revokedAt: new Date(), revokedReason: 'admin-password-reset' },
       });
 
@@ -620,7 +645,7 @@ export class UsersService {
       if (target.memberId) {
         await lockMemberLifecycle(tx, target.memberId);
       }
-      await lockLiveUserLifecycle(tx, id);
+      await lockAuthSessionUser(tx, id);
       const lockedTarget = await tx.user.findFirst({
         where: this.notDeletedWhere({ id }),
         select: { id: true, role: true, status: true, memberId: true },
@@ -694,6 +719,22 @@ export class UsersService {
     // 删除走 update,而非 prisma.user.delete()(§7.8)
     return this.prisma.$transaction(async (tx) => {
       if (target.role === Role.SUPER_ADMIN) {
+        await this.lastAdminProtection.acquireSuperAdminInvariantLock(tx);
+      }
+      await this.lastAdminProtection.acquireOpsAdminInvariantLock(tx);
+      if (target.memberId) {
+        await lockMemberLifecycle(tx, target.memberId);
+      }
+      if (!(await lockAuthSessionUser(tx, id))) {
+        throw new BizException(BizCode.USER_NOT_FOUND);
+      }
+      const lockedTarget = await tx.user.findFirst({
+        where: this.notDeletedWhere({ id }),
+        select: { id: true, role: true, status: true, memberId: true },
+      });
+      if (!lockedTarget) throw new BizException(BizCode.USER_NOT_FOUND);
+      this.assertCanManageUser(currentUser, lockedTarget);
+      if (lockedTarget.role === Role.SUPER_ADMIN) {
         await this.lastAdminProtection.assertCanRemoveSuperAdmin(tx, id);
       }
       await this.lastAdminProtection.assertCanDeactivateOpsAdminUser(tx, id);
@@ -722,7 +763,7 @@ export class UsersService {
         resourceType: 'user',
         resourceId: id,
         meta: auditMeta,
-        before: { deleted: false, status: target.status },
+        before: { deleted: false, status: lockedTarget.status },
         after: { deleted: true, status: updated.status },
         tx,
       });
@@ -813,10 +854,7 @@ export class UsersService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const locked = await tx.$queryRaw<Array<{ id: string }>>(
-          Prisma.sql`SELECT "id" FROM "User" WHERE "id" = ${currentUser.id} FOR UPDATE`,
-        );
-        if (locked.length === 0) {
+        if (!(await lockAuthSessionUser(tx, currentUser.id))) {
           throw new BizException(BizCode.USER_NOT_FOUND);
         }
 
@@ -927,10 +965,7 @@ export class UsersService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const locked = await tx.$queryRaw<Array<{ id: string }>>(
-          Prisma.sql`SELECT "id" FROM "User" WHERE "id" = ${currentUser.id} FOR UPDATE`,
-        );
-        if (locked.length === 0) {
+        if (!(await lockAuthSessionUser(tx, currentUser.id))) {
           throw new BizException(BizCode.USER_NOT_FOUND);
         }
 
@@ -1021,15 +1056,30 @@ export class UsersService {
     if (!target) throw new BizException(BizCode.USER_NOT_FOUND);
     this.assertCanManageUser(currentUser, target);
 
-    if (target.openid === null) {
-      return this.findByIdOrThrow(id);
-    }
-
     return this.prisma.$transaction(async (tx) => {
+      if (!(await lockAuthSessionUser(tx, id))) {
+        throw new BizException(BizCode.USER_NOT_FOUND);
+      }
+      const lockedTarget = await tx.user.findFirst({
+        where: this.notDeletedWhere({ id }),
+        select: { id: true, role: true, status: true, openid: true },
+      });
+      if (!lockedTarget) throw new BizException(BizCode.USER_NOT_FOUND);
+      this.assertCanManageUser(currentUser, lockedTarget);
+      if (lockedTarget.openid === null) {
+        return tx.user.findUniqueOrThrow({ where: { id }, select: userSafeSelect });
+      }
+
+      const now = new Date();
       const updated = await tx.user.update({
         where: { id },
         data: { openid: null },
         select: userSafeSelect,
+      });
+
+      await tx.refreshToken.updateMany({
+        where: { userId: id, revokedAt: null, expiresAt: { gt: now } },
+        data: { revokedAt: now, revokedReason: 'admin-wechat-identity-change' },
       });
 
       await this.auditLogs.log({
@@ -1039,7 +1089,7 @@ export class UsersService {
         resourceType: 'user',
         resourceId: id,
         meta: auditMeta,
-        before: { openid: maskOpenid(target.openid as string) },
+        before: { openid: maskOpenid(lockedTarget.openid) },
         tx,
       });
 
@@ -1065,15 +1115,30 @@ export class UsersService {
     if (!target) throw new BizException(BizCode.USER_NOT_FOUND);
     this.assertCanManageUser(currentUser, target);
 
-    if (target.phone === null) {
-      return this.findByIdOrThrow(id);
-    }
-
     return this.prisma.$transaction(async (tx) => {
+      if (!(await lockAuthSessionUser(tx, id))) {
+        throw new BizException(BizCode.USER_NOT_FOUND);
+      }
+      const lockedTarget = await tx.user.findFirst({
+        where: this.notDeletedWhere({ id }),
+        select: { id: true, role: true, status: true, phone: true },
+      });
+      if (!lockedTarget) throw new BizException(BizCode.USER_NOT_FOUND);
+      this.assertCanManageUser(currentUser, lockedTarget);
+      if (lockedTarget.phone === null) {
+        return tx.user.findUniqueOrThrow({ where: { id }, select: userSafeSelect });
+      }
+
+      const now = new Date();
       const updated = await tx.user.update({
         where: { id },
         data: { phone: null, phoneVerifiedAt: null },
         select: userSafeSelect,
+      });
+
+      await tx.refreshToken.updateMany({
+        where: { userId: id, revokedAt: null, expiresAt: { gt: now } },
+        data: { revokedAt: now, revokedReason: 'admin-phone-identity-change' },
       });
 
       await this.auditLogs.log({
@@ -1083,7 +1148,7 @@ export class UsersService {
         resourceType: 'user',
         resourceId: id,
         meta: auditMeta,
-        before: { phone: maskPhone(target.phone as string) },
+        before: { phone: maskPhone(lockedTarget.phone) },
         tx,
       });
 
