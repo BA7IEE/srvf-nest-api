@@ -27,10 +27,10 @@ import type {
 //
 // 范围:
 // - 每次方法调用 live-read 一次 settings，并把同一 snapshot 绑定到本次 provider Effect
-// - settings null → fallback Local(dev/test 默认)
+// - settings null → fallback Local(dev/test 默认)，production fail-closed
 // - providerType=LOCAL → LocalStorageProvider
 // - providerType=COS → CosStorageProvider
-// - 未知 providerType → fallback Local + WARN(防御;沿 enum 未来扩展不破)
+// - 未知 providerType → dev/test fallback Local + WARN；production fail-closed
 //
 // 不同于启动时 useFactory 静态绑定的优势:
 // - 运维提交 storage_settings 后，任一实例的下一次 resolve 即时切换
@@ -53,13 +53,28 @@ export class StorageProviderRouter implements PinnedStorageProvider {
 
   private async resolve(): Promise<StorageProvider> {
     const r = await this.settings.getActiveSettings();
-    if (!r) return this.local;
+    if (!r) {
+      if (this.settings.isProductionEnvironment()) {
+        throw new StorageProviderUnavailableError('production storage_settings missing');
+      }
+      return this.local;
+    }
     if (!r.enabled) {
       throw new StorageProviderUnavailableError('storage_settings.enabled=false');
     }
     if (r.providerType === 'COS') return this.cos.prepare(r);
-    if (r.providerType === 'LOCAL') return this.local;
+    if (r.providerType === 'LOCAL') {
+      if (this.settings.isProductionEnvironment()) {
+        throw new StorageProviderUnavailableError('production providerType=LOCAL');
+      }
+      return this.local;
+    }
     // 防御:enum 未来扩展(如 'OSS' / 'R2');沿 v1.1+ 升级路径,fallback Local
+    if (this.settings.isProductionEnvironment()) {
+      throw new StorageProviderUnavailableError(
+        `production unknown providerType=${String(r.providerType)}`,
+      );
+    }
     this.logger.warn(
       `Unknown providerType=${String(r.providerType)};fallback to LocalStorageProvider`,
     );
@@ -68,11 +83,21 @@ export class StorageProviderRouter implements PinnedStorageProvider {
 
   async getCurrentLocator(): Promise<StorageObjectLocator> {
     const settings = await this.settings.getActiveSettings();
-    if (!settings) return this.local.getPinnedLocator();
+    if (!settings) {
+      if (this.settings.isProductionEnvironment()) {
+        throw new StoragePinnedLocatorError('production storage_settings missing');
+      }
+      return this.local.getPinnedLocator();
+    }
     if (!settings.enabled) {
       throw new StoragePinnedLocatorError('storage_settings.enabled=false');
     }
-    if (settings.providerType === 'LOCAL') return this.local.getPinnedLocator();
+    if (settings.providerType === 'LOCAL') {
+      if (this.settings.isProductionEnvironment()) {
+        throw new StoragePinnedLocatorError('production providerType=LOCAL');
+      }
+      return this.local.getPinnedLocator();
+    }
     if (settings.providerType === 'COS') {
       if (!settings.bucket || !settings.region) {
         throw new StoragePinnedLocatorError('COS bucket/region 未配置');
@@ -90,7 +115,18 @@ export class StorageProviderRouter implements PinnedStorageProvider {
   private async assertPinnedEffectEnabled(options?: StoragePinnedOperationOptions): Promise<void> {
     if (options?.maintenance === true) return;
     const settings = await this.settings.getActiveSettings();
-    if (settings && !settings.enabled) {
+    if (!settings) {
+      if (this.settings.isProductionEnvironment()) {
+        throw new StorageProviderUnavailableError('production storage_settings missing');
+      }
+      return;
+    }
+    if (this.settings.isProductionEnvironment() && settings.providerType !== 'COS') {
+      throw new StorageProviderUnavailableError(
+        `production invalid providerType=${String(settings.providerType)}`,
+      );
+    }
+    if (!settings.enabled) {
       throw new StorageProviderUnavailableError('storage_settings.enabled=false');
     }
   }

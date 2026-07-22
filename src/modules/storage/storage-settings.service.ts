@@ -62,15 +62,15 @@ export class StorageSettingsService implements OnApplicationBootstrap {
    * production 启动期严格校验 storage_settings 必须真实初始化为可用 COS。
    *
    * **仅 production 触发**(沿用户拍板修正版第 4 项 + Q-pff-2 / Q-pff-3 / Q-pff-4):
-   * - smoke / development / test 全部跳过(smoke 是 CI 专用,docker-smoke job 不预接真实 COS)
-   * - 此处直接判 `env === 'production'`,**不**用 isProductionLike(smoke 必须跳过)
+   * - smoke / development / test 全部跳过；当前 Docker smoke 已直接使用 production
+   * - 此处直接判 `env === 'production'`,**不**用 isProductionLike
    *
-   * **5 项严格校验**(缺一启动失败,沿评审 §6.5.4 + 修正版第 3 项):
+   * **4 项严格校验 + kill switch 恢复态**:
    * 1. settings 存在(运维真实 PATCH 创建过 row)
-   * 2. enabled === true
-   * 3. providerType === 'COS'(production 拒绝 LOCAL;沿 F2)
-   * 4. bucket / region 非空
-   * 5. credentialStatus === CONFIGURED(凭证已录入 + 解密成功)
+   * 2. providerType === 'COS'(production 拒绝 LOCAL;沿 F2)
+   * 3. bucket / region 非空
+   * 4. credentialStatus === CONFIGURED(凭证已录入 + 解密成功)
+   * - enabled=false 是允许启动的紧急恢复态；普通 Provider Effect 仍由 Router fail-closed。
    *
    * 错误消息含修复指引(指向 ops SOP §7 / §8);
    * **永不**包含凭证 secret 明文 / 密文(沿 §6.6 信息泄漏防御)。
@@ -89,15 +89,7 @@ export class StorageSettingsService implements OnApplicationBootstrap {
       );
     }
 
-    // 校验 2: enabled=true
-    if (!r.enabled) {
-      throw new Error(
-        'production fail-fast: storage_settings.enabled=false。' +
-          '请通过 PATCH /api/system/v1/storage-settings 设 enabled=true。',
-      );
-    }
-
-    // 校验 3: providerType=COS(production 拒绝 LOCAL;沿 F2)
+    // 校验 2: providerType=COS(production 拒绝 LOCAL;沿 F2)
     if (r.providerType !== 'COS') {
       throw new Error(
         `production fail-fast: providerType=${r.providerType},production 必须是 COS(沿 F2)。` +
@@ -105,7 +97,7 @@ export class StorageSettingsService implements OnApplicationBootstrap {
       );
     }
 
-    // 校验 4: bucket / region 非空
+    // 校验 3: bucket / region 非空
     if (!r.bucket || !r.region) {
       throw new Error(
         'production fail-fast: storage_settings.bucket / region 不能为空。' +
@@ -113,7 +105,7 @@ export class StorageSettingsService implements OnApplicationBootstrap {
       );
     }
 
-    // 校验 5: credentialStatus=CONFIGURED
+    // 校验 4: credentialStatus=CONFIGURED
     if (r.credentialStatus !== CredentialStatus.CONFIGURED) {
       throw new Error(
         `production fail-fast: credentialStatus=${r.credentialStatus},必须是 ${CredentialStatus.CONFIGURED}。` +
@@ -122,10 +114,17 @@ export class StorageSettingsService implements OnApplicationBootstrap {
       );
     }
 
+    if (!r.enabled) {
+      this.logger.warn(
+        'production recovery mode: storage_settings.enabled=false; ' +
+          'API/worker control plane started, ordinary Storage effects remain blocked',
+      );
+    }
+
     // 全部通过(成功日志不含凭证 secret 字段)
     this.logger.log(
       `production fail-fast: storage_settings OK ` +
-        `(providerType=${r.providerType}, bucket=${r.bucket}, region=${r.region}, ` +
+        `(enabled=${r.enabled}, providerType=${r.providerType}, bucket=${r.bucket}, region=${r.region}, ` +
         `credentialStatus=${r.credentialStatus})`,
     );
   }
@@ -140,6 +139,10 @@ export class StorageSettingsService implements OnApplicationBootstrap {
   async getActiveSettings(): Promise<StorageSettingsResolved | null> {
     const row = await this.prisma.storageSettings.findFirst();
     return row === null ? null : this.toResolved(row);
+  }
+
+  isProductionEnvironment(): boolean {
+    return this.cfg.env === 'production';
   }
 
   // 把 Prisma row 解码为运行时 resolved 对象(沿 §6.6.3 三档状态)
@@ -249,8 +252,10 @@ export class StorageSettingsService implements OnApplicationBootstrap {
 
     const row = await this.runSingletonWriteWithUniqueRetry(async (tx) => {
       const existing = await tx.storageSettings.findFirst({
-        select: { id: true },
+        select: { id: true, providerType: true, bucket: true, region: true },
       });
+
+      this.assertProductionLocationFrozen(existing, dto);
 
       let updated: StorageSettingsRow;
       if (existing) {
@@ -413,6 +418,24 @@ export class StorageSettingsService implements OnApplicationBootstrap {
       !row.bucket?.trim() ||
       !row.region?.trim() ||
       credentialStatus !== CredentialStatus.CONFIGURED
+    ) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+  }
+
+  private assertProductionLocationFrozen(
+    existing: {
+      providerType: StorageSettingsRow['providerType'];
+      bucket: string | null;
+      region: string | null;
+    } | null,
+    dto: UpdateStorageSettingsDto,
+  ): void {
+    if (this.cfg.env !== 'production' || existing === null) return;
+    if (
+      (dto.providerType !== undefined && dto.providerType !== existing.providerType) ||
+      (dto.bucket !== undefined && dto.bucket !== existing.bucket) ||
+      (dto.region !== undefined && dto.region !== existing.region)
     ) {
       throw new BizException(BizCode.BAD_REQUEST);
     }
