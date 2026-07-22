@@ -27,7 +27,8 @@
 - **password change**:本人改密在 [`users.service.ts:249`](../users/users.service.ts:249) 主动撤销该 user 全部未过期 refresh(`revokedReason='self-password-change'`);旧 access 仍可调直至自然过期(e2e 反向锁定)
 - **password reset by SMS(pre-auth,2026-06-11)**:校验顺序**冻结**(评审稿 E-5)= 解析用户 → 码预检不消费 → 10006 不烧码 → 原子消费 → 事务(改密 + 撤销全部未撤销未过期 refresh `'self-password-reset'`〔联动撤销第 5 场景,harness reference/auth-jwt-refresh.md〕+ audit);**防枚举** = 四种无效号码场景(不存在 / 未绑定 / 禁用 / 软删)send-code 返回与有效号完全相同泛化 200 且零留痕,reset 一切失败统一 `SMS_CODE_INVALID=24010`;成功 `data:null` 不自动登录;旧 access 沿 D-4 不吊销(e2e 正向断言)
 - **OTP 登录(pre-auth,2026-06-11)**:校验顺序**冻结**(评审稿 E-O5)= 解析用户(四无效场景 → 24010)→ `verifyAndConsume(LOGIN)` 原子消费 → `AuthService.createSession`(与密码登录**同一签发路径**,E-O6:同 `LoginResponseDto` / 同 refresh family / lastLoginAt 同步 / audit `auth.login.sms`);**防枚举** = send-code 四无效场景泛化 200 零留痕,登录一切失败统一 `SMS_CODE_INVALID=24010`(**不用 10004**,两套防枚举体系各自闭合);不更新 `phoneVerifiedAt`;号码无账号不自动注册
-- **`createSession` 是唯一会话签发点**(login / login-sms / login-wechat 三种登录方式共用;原 login 第 5-8 步原样抽取,行为锁 = auth 既有 e2e 断言零修改全绿):改签发逻辑 = 同时改三种登录方式,按 D 档降速
+- **`createSession` 是唯一会话签发点**(login / login-sms / login-wechat 三种登录方式共用；D-PR1 起调用方传锁外已验证 factor snapshot，锁后复验后才签发):改签发逻辑 = 同时改三种登录方式,按 D 档降速
+- **会话全链线性化(2026-07-22 D-PR1)**：唯一 primitive 为 `auth-session-lock.ts` 的 parameterized `User FOR UPDATE`；密码/SMS/微信签发在锁后重读 ACTIVE/未软删与 passwordHash/phone/openid snapshot，refresh/replay/logout/logout-all 同锁后再读 token。正常双 refresh 的锁等待输家仍只返 10007，不误判 replay；锁序固定上层 invariant/Member → User → refresh mutation → audit。
 - **微信登录(pre-auth,2026-06-12)**:login-wechat = code2session → 已绑 `createSession` / 未绑 `{bindingRequired:true, session:null}`(非枚举面);命中但账号 DISABLED/软删 → 统一 25010(防侧写);wechat-bind **七步校验顺序冻结**(评审稿 §4.3)= code2session 最前(失败不烧 SMS 码)→ 解析手机号(四无效 → 24010)→ 码预检不消费 → openid 占用(他人 → 25002,仅对已证手机控制权者可达)→ 原子消费 → 绑定事务 + audit → createSession;openid 占用**含软删**;wx code / session_key / 完整 openid 三不入日志响应 audit
 - **identity step-up proof**:action 恰好 `PHONE_BIND/WECHAT_BIND`、factor 恰好 `PASSWORD/SMS/WECHAT`；JWT secret 经 HKDF-SHA256 派生 `signing.v1` / `snapshot.v1` 两把 32-byte key，audience 固定 `srvf.identity-step-up`、TTL 固定 300s；snapshot HMAC 输入固定覆盖 `id/passwordHash/phone/phoneVerifiedAt/openid/status/deletedAt`。签名/过期/audience/sub/action/snapshot 失败统一 10008，不细分；无当前 phone/openid 返 10009；`JwtPayload` 仍严格 `{sub,username}`。
 - **pre-auth 微信真实 bind/rebind 的会话顺序**:`user.update` + 旧 refresh 全撤销(`self-wechat-identity-change`) + bind/rebind audit 同一 transaction；提交后才 `createSession` 新 family。already-bound-to-self 仍 no-op，不撤旧 family、不写变更 audit。
@@ -51,6 +52,7 @@
 - ❌ **不**破坏 password-reset 防枚举一致性:不为"号码不存在 / 禁用 / 软删"开任何可区分响应(字段 / message / 错误码细分);不在 send-code 写无效号侧痕;不把 10006 检查挪到码预检之前(密码 oracle);不让 reset 返回 token / 用户字段
 - ❌ **不**破坏 login-sms 防枚举一致性(同上范式):登录失败永远统一 24010,**不**细分、不混用 10004/10005;不在密码登录端点混入手机号/验证码入参(harness reference/auth-jwt-refresh.md 改写后契约);不给 OTP 登录加"自动注册"或"OTP+密码二要素"(goal 禁止域)
 - ❌ **不**破坏微信登录防侧写一致性:login-wechat 对"账号禁用/软删"不开可区分响应(统一 25010);wechat-bind 七步顺序不可调换(25002 必须在码预检后;code2session 必须最前);不给微信登录加"自动注册"/ unionid·session_key 存储 / 本人裸解绑(评审稿 §12 本期不做)
+- ❌ **不**在 session mutation 另造进程锁/advisory lock/Redis，也不先锁 refresh row 再锁 User；新增签发或 broad revoke 路径必须复用 `lockAuthSessionUser()` 并锁后重读。
 - ❌ 本目录任何"普通 docs-only"以外的改动都**非低风险**;改 token 链路 / payload / 错误码 / 限流均按 D 档降速,并跑安全相关 e2e
 
 ## Validation

@@ -23,6 +23,7 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { lockAuthSessionUser } from '../auth/auth-session-lock';
 import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
 import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
@@ -815,16 +816,22 @@ export class MembersService {
         throw new BizException(BizCode.MEMBER_INACTIVE);
       }
 
-      await lockLinkedUserLifecycle(tx, id);
       const oldLink = await tx.user.findFirst({
         where: { memberId: id, deletedAt: null },
         select: { id: true, role: true },
       });
       if (!oldLink) throw new BizException(BizCode.MEMBER_HAS_NO_LINKED_USER);
-      // 第三轮 review 护栏收口(§F&A-1):reopen 会软删旧号——若旧号经用户轴 updateRole 提权为
-      // 非 USER(如 ADMIN),软删它会绕过用户轴 last-SA / manage-user 护栏。非 USER 一律拒,
-      // 提示走用户管理端点。
-      if (oldLink.role !== Role.USER) {
+      if (!(await lockAuthSessionUser(tx, oldLink.id))) {
+        throw new BizException(BizCode.MEMBER_HAS_NO_LINKED_USER);
+      }
+      const lockedOldLink = await tx.user.findFirst({
+        where: { id: oldLink.id, memberId: id, deletedAt: null },
+        select: { id: true, role: true },
+      });
+      if (!lockedOldLink) throw new BizException(BizCode.MEMBER_HAS_NO_LINKED_USER);
+      // 第三轮 review 护栏收口(§F&A-1):必须基于 User 锁后快照判断角色，避免并发
+      // updateRole 后仍按旧 USER 快照软删特权账号。
+      if (lockedOldLink.role !== Role.USER) {
         throw new BizException(BizCode.MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE);
       }
 
@@ -848,10 +855,15 @@ export class MembersService {
 
       // 先软删旧行释放 partial unique 槽位,再建新行——顺序不可颠倒(先建会与仍
       // live 的旧行同时违反 partial unique)。
-      await this.lastAdminProtection.assertCanDeactivateOpsAdminUser(tx, oldLink.id);
+      await this.lastAdminProtection.assertCanDeactivateOpsAdminUser(tx, lockedOldLink.id);
+      const revokedAt = new Date();
       await tx.user.update({
-        where: { id: oldLink.id },
-        data: { deletedAt: new Date(), status: UserStatus.DISABLED },
+        where: { id: lockedOldLink.id },
+        data: { deletedAt: revokedAt, status: UserStatus.DISABLED },
+      });
+      await tx.refreshToken.updateMany({
+        where: { userId: lockedOldLink.id, revokedAt: null, expiresAt: { gt: revokedAt } },
+        data: { revokedAt, revokedReason: 'member-account-reopen' },
       });
 
       const passwordHash = await bcrypt.hash(
@@ -883,7 +895,7 @@ export class MembersService {
         meta: auditMeta,
         extra: {
           memberId: id,
-          oldUserId: oldLink.id,
+          oldUserId: lockedOldLink.id,
           newUserId: created.id,
           phone: maskPhone(dto.phone),
         },
@@ -932,18 +944,25 @@ export class MembersService {
       await lockMemberLifecycle(tx, id);
       const member = await this.findMemberOrThrow(id, tx);
 
-      await lockLinkedUserLifecycle(tx, id);
       const linked = await tx.user.findFirst({
         where: { memberId: id, deletedAt: null },
         select: { id: true, status: true, role: true },
       });
       if (!linked) throw new BizException(BizCode.MEMBER_HAS_NO_LINKED_USER);
+      if (!(await lockAuthSessionUser(tx, linked.id))) {
+        throw new BizException(BizCode.MEMBER_HAS_NO_LINKED_USER);
+      }
+      const lockedLinked = await tx.user.findFirst({
+        where: { id: linked.id, memberId: id, deletedAt: null },
+        select: { id: true, status: true, role: true },
+      });
+      if (!lockedLinked) throw new BizException(BizCode.MEMBER_HAS_NO_LINKED_USER);
 
       // 第三轮 review 护栏收口(§F&A-1):队员轴只启停 role=USER 的关联账号。若该账号经用户轴
       // updateRole 被提权(如提为 ADMIN),停用它会绕过用户轴 assertCanManageUser /
       // assertNotLastSuperAdmin——非 USER 一律拒,提示走用户管理端点。前置于自我保护检查:
       // "此账号不归本轴管理"是更根本的判定。
-      if (linked.role !== Role.USER) {
+      if (lockedLinked.role !== Role.USER) {
         throw new BizException(BizCode.MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE);
       }
 
@@ -952,14 +971,14 @@ export class MembersService {
       }
 
       if (dto.status === UserStatus.DISABLED) {
-        if (linked.id === currentUser.id) {
+        if (lockedLinked.id === currentUser.id) {
           throw new BizException(BizCode.CANNOT_OPERATE_SELF);
         }
-        await this.lastAdminProtection.assertCanDeactivateOpsAdminUser(tx, linked.id);
+        await this.lastAdminProtection.assertCanDeactivateOpsAdminUser(tx, lockedLinked.id);
       }
 
       const updated = await tx.user.update({
-        where: { id: linked.id },
+        where: { id: lockedLinked.id },
         data: { status: dto.status },
         select: { id: true, status: true },
       });
@@ -967,7 +986,7 @@ export class MembersService {
       let refreshTokensRevoked = 0;
       if (dto.status === UserStatus.DISABLED) {
         const revoked = await tx.refreshToken.updateMany({
-          where: { userId: linked.id, revokedAt: null, expiresAt: { gt: new Date() } },
+          where: { userId: lockedLinked.id, revokedAt: null, expiresAt: { gt: new Date() } },
           data: { revokedAt: new Date(), revokedReason: 'admin-disable' },
         });
         refreshTokensRevoked = revoked.count;
@@ -980,7 +999,7 @@ export class MembersService {
         resourceType: 'member',
         resourceId: id,
         meta: auditMeta,
-        before: { status: linked.status },
+        before: { status: lockedLinked.status },
         after: { status: updated.status },
         extra: { linkedUserId: updated.id, refreshTokensRevoked },
         tx,
@@ -1084,12 +1103,20 @@ export class MembersService {
       const member = await this.findMemberOrThrow(id, tx);
 
       // linked live 账号(含 role 用于护栏)。
-      await lockLinkedUserLifecycle(tx, id);
-      const linked = await tx.user.findFirst({
+      let linked = await tx.user.findFirst({
         where: { memberId: id, deletedAt: null },
         select: { id: true, status: true, role: true },
       });
       if (linked) {
+        if (!(await lockAuthSessionUser(tx, linked.id))) {
+          throw new BizException(BizCode.MEMBER_HAS_NO_LINKED_USER);
+        }
+        const lockedLinked = await tx.user.findFirst({
+          where: { id: linked.id, memberId: id, deletedAt: null },
+          select: { id: true, status: true, role: true },
+        });
+        if (!lockedLinked) throw new BizException(BizCode.MEMBER_HAS_NO_LINKED_USER);
+        linked = lockedLinked;
         // 护栏(§F&A-1):队员轴只停 role=USER 的关联账号;非 USER(含 ADMIN/SUPER_ADMIN)一律拒,
         // 提示走用户管理端点(否则经离队旁路可停用特权账号,绕过用户轴 last-SA / manage-user 护栏)。
         if (linked.role !== Role.USER) {

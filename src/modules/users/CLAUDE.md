@@ -17,6 +17,7 @@
 - **控制面审计(2026-07-13 第六刀)**:`updateRole` / `updateStatus` / `softDelete` 与用户行写入在同一事务记录 `user.role.update` / `user.status.update` / `user.soft-delete`；before/after 仅含 role/status/delete 动作，不得含 `passwordHash` 或任何 secret。该决定推翻 users D-PR3-2 的“不写 audit”挂起结论。
 - **linked Member 生命周期锁**:linked 账号状态更新固定按 advisory invariant（削权时）→ Member → User 取锁并锁后重读；启用前再次确认 Member=ACTIVE。`SUPER_ADMIN` 削权的 advisory 顺序固定 last-SA → last-ops；不得先锁 User 再等待 invariant lock，否则互禁事务会经 audit actor 外键形成死锁。该顺序与 members offboard 共用，禁止 INACTIVE Member 的账号被用户轴重新启用。
 - **角色边界不变**:`SUPER_ADMIN > ADMIN > USER`、自我保护、`assertCanManageUser`、最后一个 SUPER_ADMIN 保护均沿 harness reference/roles-admin-protection.md；不得把 RBAC 业务角色当作系统 `Role.SUPER_ADMIN`。
+- **User session 锁(2026-07-22 D-PR1)**：本人/管理员改密、status/soft-delete、phone/wechat 真实变更或清除都在原事务内复用 `auth-session-lock.ts` 的 User 行锁，锁后重读权威身份快照，再写 User、撤 refresh、写 audit；linked 账号继续先锁 Member，削权继续先取既有 invariant advisory lock。
 
 ## Risk points
 
@@ -24,6 +25,7 @@
 - ❌ 不因 ops-admin 守卫改 DTO、端点、OpenAPI、Role enum 或 token 行为。
 - ❌ 不把 GLOBAL RoleBinding 的任期判定复制进 users；判权任期真值在 `permissions/role-binding-validity.ts`，last-ops-admin 不变量沿 active binding + active user 的既有口径。
 - ❌ 不把 proof 校验移到 User 行锁外，不用 `$queryRawUnsafe` / 字符串拼接锁 SQL；不把 `stepUpToken`、snapshot、当前因子或完整 phone/openid 写入 audit / 日志 / App 响应。
+- ❌ 不在 User session 相关路径复制 `FOR UPDATE` SQL 或 broad revoke 后补锁；顺序必须是 invariant/Member → `lockAuthSessionUser()` → 锁后复读 → mutation/revoke → audit。
 
 ## Validation
 
