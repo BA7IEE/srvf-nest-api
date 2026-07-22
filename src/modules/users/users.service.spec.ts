@@ -379,6 +379,12 @@ describe('UsersService (characterization, scoped)', () => {
       const prisma = makePrismaMock();
       const auditLogs = makeAuditLogsMock();
       prisma.user.findFirst.mockResolvedValue({ id: 'me-1', passwordHash: 'stored-hash' });
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'me-1',
+        status: UserStatus.ACTIVE,
+        deletedAt: null,
+        passwordHash: 'stored-hash',
+      } as never);
       prisma.user.update.mockResolvedValue(makeSafeUser({ id: 'me-1' }));
       prisma.refreshToken.updateMany.mockResolvedValue({ count: 3 });
       const service = makeService(prisma, { auditLogs });

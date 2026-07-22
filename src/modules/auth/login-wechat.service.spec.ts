@@ -25,6 +25,8 @@ type ActiveRow = {
   deletedAt: Date | null;
 };
 
+type LockedBindRow = ActiveRow & { phone: string | null; openid: string | null };
+
 function makeP2002(target: string[]): Prisma.PrismaClientKnownRequestError {
   return new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
     code: 'P2002',
@@ -36,15 +38,17 @@ function makeP2002(target: string[]): Prisma.PrismaClientKnownRequestError {
 function makeMocks() {
   const user = {
     findFirst: jest.fn<Promise<ActiveRow | null>, [unknown]>(), // ② resolveActiveUserByPhone
-    findUnique: jest.fn<Promise<{ id: string } | null>, [unknown]>(), // ④ openid 占用
-    findUniqueOrThrow: jest.fn<Promise<{ openid: string | null }>, [unknown]>(), // ⑥ me.openid
+    findUnique: jest.fn<Promise<{ id: string } | LockedBindRow | null>, [unknown]>(),
     update: jest.fn<Promise<{ id: string }>, [unknown]>(), // ⑥ tx.user.update
   };
   const refreshToken = {
     updateMany: jest.fn<Promise<{ count: number }>, [unknown]>().mockResolvedValue({ count: 1 }),
   };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
-  const prisma = { user, refreshToken, $transaction };
+  const $queryRaw = jest
+    .fn<Promise<Array<{ id: string }>>, [unknown]>()
+    .mockResolvedValue([{ id: 'u-1' }]);
+  const prisma = { user, refreshToken, $transaction, $queryRaw };
   // 回调式把 prisma mock 自身当 tx 传入(沿 users.service.spec 双模范式)
   $transaction.mockImplementation((arg: unknown) =>
     typeof arg === 'function'
@@ -57,7 +61,9 @@ function makeMocks() {
     verifyAndConsume: jest.fn<Promise<{ codeId: string }>, [unknown]>(),
     issue: jest.fn<Promise<{ expiresInSeconds: number }>, [unknown]>(),
   };
-  const auth = { createSession: jest.fn<Promise<unknown>, [unknown, unknown, unknown, unknown]>() };
+  const auth = {
+    createSession: jest.fn<Promise<unknown>, [unknown, unknown, unknown, unknown, unknown?]>(),
+  };
   const auditLogs = { log: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined) };
   return { prisma, wechat, smsCode, auth, auditLogs };
 }
@@ -85,9 +91,19 @@ function primeHappyBindUntilTx(m: Mocks): void {
     deletedAt: null,
   });
   m.smsCode.assertValid.mockResolvedValue(undefined);
-  m.prisma.user.findUnique.mockResolvedValue(null); // ④ 占用预检未命中(竞态窗口)
+  m.prisma.user.findUnique
+    .mockResolvedValueOnce(null) // ④ 占用预检未命中(竞态窗口)
+    .mockResolvedValueOnce({
+      id: 'u-1',
+      username: 'alice',
+      role: Role.USER,
+      status: UserStatus.ACTIVE,
+      deletedAt: null,
+      phone: '13900000001',
+      openid: null,
+    })
+    .mockResolvedValueOnce(null); // ⑥ User 锁后再次确认 openid 未被占用
   m.smsCode.verifyAndConsume.mockResolvedValue({ codeId: 'code-1' });
-  m.prisma.user.findUniqueOrThrow.mockResolvedValue({ openid: null });
 }
 
 describe('LoginWechatService.bind — ⑥ P2002 兜底(增量审计⑬)', () => {
