@@ -49,20 +49,27 @@ model User {
 
   // V2 第一阶段批次 3 反向 relation(详见 docs:批次3_schema草案_*.md §12.1)
   // 沿批次 1 / 批次 2 R2 范式:Prisma 关系映射不算业务字段新增。
-  activitiesPublished           Activity[]             @relation("ActivityPublisher")
-  activitiesCancelled           Activity[]             @relation("ActivityCanceller")
-  registrationsReviewed         ActivityRegistration[] @relation("RegistrationReviewer")
-  registrationsCancelled        ActivityRegistration[] @relation("RegistrationCanceller")
-  attendanceSheetsSubmitted     AttendanceSheet[]      @relation("SheetSubmitter")
-  attendanceSheetsReviewed      AttendanceSheet[]      @relation("SheetReviewer")
+  activitiesPublished              Activity[]                         @relation("ActivityPublisher")
+  activitiesCancelled              Activity[]                         @relation("ActivityCanceller")
+  registrationsReviewed            ActivityRegistration[]             @relation("RegistrationReviewer")
+  registrationsCancelled           ActivityRegistration[]             @relation("RegistrationCanceller")
+  attendanceSheetsSubmitted        AttendanceSheet[]                  @relation("SheetSubmitter")
+  attendanceSheetsReviewed         AttendanceSheet[]                  @relation("SheetReviewer")
   // V2 第一阶段批次 4-A:终审反向 relation。详见 docs/批次4_贡献值业务规则_schema草案评审决议表 D-S5。
   // APD 部门部长 / 副部长终审通过 / 驳回时填入 AttendanceSheet.finalReviewerUserId。
-  attendanceSheetsFinalReviewed AttendanceSheet[]      @relation("SheetFinalReviewer")
+  attendanceSheetsFinalReviewed    AttendanceSheet[]                  @relation("SheetFinalReviewer")
+  attendanceSheetsLastSubmitted    AttendanceSheet[]                  @relation("AttendanceSheetLastSubmitter")
+  attendanceSheetsReturned         AttendanceSheet[]                  @relation("AttendanceSheetReturner")
+  activitiesAttendanceDeclared     Activity[]                         @relation("ActivityAttendanceDeclaration")
+  activityPublishReviewsSubmitted  ActivityPublishReview[]            @relation("ActivityPublishReviewSubmitter")
+  activityPublishReviewsReviewed   ActivityPublishReview[]            @relation("ActivityPublishReviewReviewer")
+  activityResponsibilitiesAssigned ActivityResponsibilityAssignment[] @relation("ActivityResponsibilityAssigner")
+  activityResponsibilitiesEnded    ActivityResponsibilityAssignment[] @relation("ActivityResponsibilityEnder")
   // V2 第一阶段批次 4-A:ContributionRule 审计字段反向 relation(沿 baseline §2.1 createdByUserId 等)。
   // 三条均为可空 + Restrict,运营后台审计责任字段。
-  contributionRulesCreated      ContributionRule[]     @relation("ContributionRuleCreator")
-  contributionRulesUpdated      ContributionRule[]     @relation("ContributionRuleUpdater")
-  contributionRulesDeleted      ContributionRule[]     @relation("ContributionRuleDeleter")
+  contributionRulesCreated         ContributionRule[]                 @relation("ContributionRuleCreator")
+  contributionRulesUpdated         ContributionRule[]                 @relation("ContributionRuleUpdater")
+  contributionRulesDeleted         ContributionRule[]                 @relation("ContributionRuleDeleter")
 
   // V2 第一阶段批次 6 audit_logs 反向 relation(D6 v1.1 §4.2)。
   // 仅 Prisma 关系映射,不算业务字段新增(沿批次 1 / 2 / 3 R2 范式)。
@@ -89,7 +96,7 @@ model User {
 
   // D-INSURANCE v3 PR1 expand:审核人与 eligibility evidence 快照审核人的反向关系。
   // 仅增加 schema/FK 骨架；审核与 evidence 生成行为在后续 PR 启用。
-  memberInsurancesReviewed          MemberInsurance[]             @relation("MemberInsuranceReviewer")
+  memberInsurancesReviewed         MemberInsurance[]              @relation("MemberInsuranceReviewer")
   insuranceEvidenceSourcesReviewed InsuranceEligibilityEvidence[] @relation("InsuranceEvidenceSourceReviewer")
 
   @@index([deletedAt])
@@ -437,7 +444,7 @@ model Member {
   // "至多 1 条 live")无法在 Prisma DSL 表达,故 Prisma 类型系统诚实反映"1 个 member
   // 可对应多条历史 User(软删)+ 至多 1 条 live"。消费方(resource-resolver.service.ts /
   // birthday-greeting.service.ts)已同步改为按 `where: { deletedAt: null }, take: 1` 取用。
-  users                          User[]
+  users                         User[]
   // 终态 scoped-authz PR2(2026-07-01;冻结稿 §3.1):组织归属反向 relation(仅关系映射,不算业务字段新增,沿 R2 范式)。
   memberOrganizationMemberships MemberOrganizationMembership[]
   // 终态 scoped-authz PR4(2026-07-01;冻结稿 §3.4):任职反向 relation(仅关系映射,不算业务字段新增,沿 R2 范式)。
@@ -455,10 +462,12 @@ model Member {
   certificatesVerified          Certificate[]                       @relation("CertificateVerifier")
 
   // V2 第一阶段批次 3 反向 relation(沿批次 1 / 批次 2 R2 范式)
-  activityRegistrations ActivityRegistration[]
-  activityCheckIns      ActivityCheckIn[]
-  activityFeedbacks     ActivityFeedback[]
-  attendanceRecords     AttendanceRecord[]
+  activityRegistrations    ActivityRegistration[]
+  activityCheckIns         ActivityCheckIn[]
+  activityFeedbacks        ActivityFeedback[]
+  attendanceRecords        AttendanceRecord[]
+  activitiesInitiated      Activity[]                         @relation("ActivityInitiator")
+  activityResponsibilities ActivityResponsibilityAssignment[]
 
   // 保险模块反向 relation(2026-06-13;沿 R2 范式,仅关系映射不算业务字段;
   // 冻结评审稿 docs/archive/reviews/insurance-module-review.md §3.1)
@@ -719,7 +728,7 @@ model Certificate {
   // 招新可用性收口 F7(2026-07-11;评审稿 §2.9 R6;第 44 migration,additive 可空):
   // 证书图 storage keys(promote 从 recruitment_applications.certificateImages 按类别搬入;
   // blob 单一属主=certificate;app 侧 my/certificates DTO v1 不暴露——另议,NEXT_TASKS 登记)。
-  imageKeys Json? // 证书图 storage keys(string[];招新自报材料,verify/reject 人工核验参考)
+  imageKeys          Json? // 证书图 storage keys(string[];招新自报材料,verify/reject 人工核验参考)
 
   member       Member        @relation("CertificateMember", fields: [memberId], references: [id], onDelete: Restrict)
   verifier     Member?       @relation("CertificateVerifier", fields: [verifiedBy], references: [id], onDelete: Restrict)
@@ -770,29 +779,33 @@ model Activity {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  title                 String
-  activityTypeCode      String
-  organizationId        String
-  startAt               DateTime
-  endAt                 DateTime
-  location              String
-  description           String? // v0.5 修订(Q-D14 v1.4):NOT NULL → String? 可空
-  capacity              Int?
-  genderRequirementCode String?
-  registrationDeadline  DateTime?
-  registrationNotes     String?
-  statusCode            String
-  publishedBy           String?
-  publishedAt           DateTime?
-  startReminderSentAt   DateTime?
-  cancelledBy           String?
-  cancelledAt           DateTime?
-  cancelReason          String?
-  isPublicRegistration  Boolean   @default(true)
+  title                              String
+  activityTypeCode                   String
+  organizationId                     String
+  startAt                            DateTime
+  endAt                              DateTime
+  location                           String
+  description                        String? // v0.5 修订(Q-D14 v1.4):NOT NULL → String? 可空
+  capacity                           Int?
+  genderRequirementCode              String?
+  registrationDeadline               DateTime?
+  registrationNotes                  String?
+  statusCode                         String
+  initiatorMemberId                  String?
+  workflowRevision                   Int       @default(0)
+  publishedBy                        String?
+  publishedAt                        DateTime?
+  startReminderSentAt                DateTime?
+  cancelledBy                        String?
+  cancelledAt                        DateTime?
+  cancelReason                       String?
+  isPublicRegistration               Boolean   @default(true)
   // 保险模块(2026-06-13):报名保险门槛开关;default false = 迁移安全,既有活动 /
   // 测试零影响,新活动发布时显式开(评审稿 insurance-module-review.md D-INS-1)。
-  requiresInsurance     Boolean   @default(false)
-  registrationSchema    Json? // v0.2 D12 报名表自定义字段 schema 字段位预留
+  requiresInsurance                  Boolean   @default(false)
+  registrationSchema                 Json? // v0.2 D12 报名表自定义字段 schema 字段位预留
+  attendanceDeclaredCompleteAt       DateTime?
+  attendanceDeclaredCompleteByUserId String?
 
   // v0.2 展示内容字段(Q-D11 / Q-D12 / Q-D13)
   coverImageUrl    String?
@@ -803,14 +816,18 @@ model Activity {
   locationLongitude Decimal? @db.Decimal(10, 7)
   locationLatitude  Decimal? @db.Decimal(10, 7)
 
-  organization      Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  publisher         User?                  @relation("ActivityPublisher", fields: [publishedBy], references: [id], onDelete: Restrict)
-  canceller         User?                  @relation("ActivityCanceller", fields: [cancelledBy], references: [id], onDelete: Restrict)
-  registrations     ActivityRegistration[]
-  activityPositions ActivityPosition[]
-  activityCheckIns  ActivityCheckIn[]
-  activityFeedbacks ActivityFeedback[]
-  attendanceSheets  AttendanceSheet[]
+  organization                 Organization                       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  initiator                    Member?                            @relation("ActivityInitiator", fields: [initiatorMemberId], references: [id], onDelete: Restrict)
+  publisher                    User?                              @relation("ActivityPublisher", fields: [publishedBy], references: [id], onDelete: Restrict)
+  canceller                    User?                              @relation("ActivityCanceller", fields: [cancelledBy], references: [id], onDelete: Restrict)
+  attendanceDeclaredCompleteBy User?                              @relation("ActivityAttendanceDeclaration", fields: [attendanceDeclaredCompleteByUserId], references: [id], onDelete: Restrict)
+  registrations                ActivityRegistration[]
+  activityPositions            ActivityPosition[]
+  activityCheckIns             ActivityCheckIn[]
+  activityFeedbacks            ActivityFeedback[]
+  attendanceSheets             AttendanceSheet[]
+  publishReviews               ActivityPublishReview[]
+  responsibilityAssignments    ActivityResponsibilityAssignment[]
 
   @@index([deletedAt])
   @@index([createdAt])
@@ -819,6 +836,79 @@ model Activity {
   @@index([activityTypeCode])
   @@index([startAt])
   @@index([isPublicRegistration])
+  @@index([initiatorMemberId])
+  @@index([attendanceDeclaredCompleteAt])
+}
+
+// ===== 活动责任闭环 PR1:发布审核请求 =====
+//
+// status / requestType 保持 String，沿活动域运营字典码与后续状态机校验；
+// 同一活动只允许一个 pending 请求的 partial unique 由 migration 手写。
+model ActivityPublishReview {
+  id             String  @id @default(cuid())
+  activityId     String
+  requestType    String
+  requestVersion Int
+  baseRevision   Int
+  status         String
+  snapshot       Json
+  directPublish  Boolean @default(false)
+
+  submittedByUserId String
+  submittedAt       DateTime  @default(now())
+  reviewedByUserId  String?
+  reviewedAt        DateTime?
+  reviewNote        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activity    Activity @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  submittedBy User     @relation("ActivityPublishReviewSubmitter", fields: [submittedByUserId], references: [id], onDelete: Restrict)
+  reviewedBy  User?    @relation("ActivityPublishReviewReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([activityId, requestVersion])
+  @@index([activityId, status])
+  @@index([status, submittedAt])
+  @@index([submittedByUserId])
+  @@index([reviewedByUserId])
+  @@map("activity_publish_reviews")
+}
+
+// ===== 活动责任闭环 PR1:负责人 / 协办历史 =====
+//
+// 活跃 owner / 活跃 member 唯一性及能力、终止时间不变量由 migration 约束；
+// 历史只结束或撤销，不提供物理删除入口。
+model ActivityResponsibilityAssignment {
+  id         String @id @default(cuid())
+  activityId String
+  memberId   String
+
+  responsibilityType     String
+  canManageRegistrations Boolean
+  canManageAttendance    Boolean
+  status                 String  @default("active")
+
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  assignedByUserId String
+  endedByUserId    String?
+  source           String
+  reason           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  member     Member   @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  assignedBy User     @relation("ActivityResponsibilityAssigner", fields: [assignedByUserId], references: [id], onDelete: Restrict)
+  endedBy    User?    @relation("ActivityResponsibilityEnder", fields: [endedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([activityId, status])
+  @@index([memberId, status])
+  @@index([assignedByUserId])
+  @@map("activity_responsibility_assignments")
 }
 
 // ===== 活动岗位与时段 F1:activity_positions =====
@@ -896,13 +986,13 @@ model ActivityRegistration {
   cancelledAt       DateTime?
   cancelReason      String?
 
-  activity          Activity           @relation(fields: [activityId], references: [id], onDelete: Restrict)
-  activityPosition  ActivityPosition?  @relation(fields: [activityPositionId], references: [id], onDelete: Restrict)
-  member            Member             @relation(fields: [memberId], references: [id], onDelete: Restrict)
-  reviewer          User?              @relation("RegistrationReviewer", fields: [reviewedBy], references: [id], onDelete: Restrict)
-  canceller         User?              @relation("RegistrationCanceller", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
-  attendanceRecords AttendanceRecord[]
-  activityCheckIns  ActivityCheckIn[]
+  activity                      Activity                       @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  activityPosition              ActivityPosition?              @relation(fields: [activityPositionId], references: [id], onDelete: Restrict)
+  member                        Member                         @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  reviewer                      User?                          @relation("RegistrationReviewer", fields: [reviewedBy], references: [id], onDelete: Restrict)
+  canceller                     User?                          @relation("RegistrationCanceller", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
+  attendanceRecords             AttendanceRecord[]
+  activityCheckIns              ActivityCheckIn[]
   insuranceEligibilityEvidences InsuranceEligibilityEvidence[]
 
   @@index([activityId])
@@ -1007,27 +1097,35 @@ model AttendanceSheet {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  activityId          String
-  submitterUserId     String
-  submittedAt         DateTime  @default(now())
-  statusCode          String
-  reviewerUserId      String?
-  reviewedAt          DateTime?
-  reviewNote          String?
+  activityId            String
+  submitterUserId       String
+  submittedAt           DateTime  @default(now())
+  statusCode            String
+  reviewerUserId        String?
+  reviewedAt            DateTime?
+  reviewNote            String?
   // V2 第一阶段批次 4-A 新增三字段(D-S5):APD 部门部长 / 副部长终审。
   // 与 reviewer* 系列对称(沿 baseline §2.1 命名);均可空,在 final-approve / final-reject
   // service 内事务填入。APD 一级 approve 时 statusCode 进入 pending_final_review;
   // 终审通过 → approved(贡献值正式生效,触发 attendance.recorded);终审驳回 → final_rejected。
-  finalReviewerUserId String?
-  finalReviewedAt     DateTime?
-  finalReviewNote     String?
-  previousSnapshot    Json? // D38 后端事务内自动生成
-  version             Int       @default(1) // Q-D8 不做乐观锁;服务端版本号
+  finalReviewerUserId   String?
+  finalReviewedAt       DateTime?
+  finalReviewNote       String?
+  lastSubmittedByUserId String?
+  lastSubmittedAt       DateTime?
+  returnedByUserId      String?
+  returnedAt            DateTime?
+  returnNote            String?
+  returnedFromStageCode String?
+  previousSnapshot      Json? // D38 后端事务内自动生成
+  version               Int       @default(1) // Q-D8 不做乐观锁;服务端版本号
 
   activity      Activity           @relation(fields: [activityId], references: [id], onDelete: Restrict)
   submitter     User               @relation("SheetSubmitter", fields: [submitterUserId], references: [id], onDelete: Restrict)
   reviewer      User?              @relation("SheetReviewer", fields: [reviewerUserId], references: [id], onDelete: Restrict)
   finalReviewer User?              @relation("SheetFinalReviewer", fields: [finalReviewerUserId], references: [id], onDelete: Restrict)
+  lastSubmitter User?              @relation("AttendanceSheetLastSubmitter", fields: [lastSubmittedByUserId], references: [id], onDelete: Restrict)
+  returnedBy    User?              @relation("AttendanceSheetReturner", fields: [returnedByUserId], references: [id], onDelete: Restrict)
   records       AttendanceRecord[]
 
   @@index([activityId])
@@ -1038,6 +1136,9 @@ model AttendanceSheet {
   @@index([deletedAt])
   @@index([createdAt])
   @@index([submittedAt])
+  @@index([lastSubmittedByUserId])
+  @@index([returnedByUserId])
+  @@index([returnedAt])
 }
 
 // ===== V2 第一阶段批次 3:attendance_records =====
@@ -1484,9 +1585,9 @@ model StorageObject {
   state  String @default("pending_upload")
   source String
 
-  providerType  StorageProviderType?
-  bucket        String?
-  region        String?
+  providerType   StorageProviderType?
+  bucket         String?
+  region         String?
   localNamespace String?
 
   // Provider/storage_settings 的对象上限是 BigInt；现有 Attachment.size 仍是 Int，写 ledger 时
@@ -1503,13 +1604,13 @@ model StorageObject {
   resourceId   String?
   version      Int     @default(0)
 
-  unboundExpiresAt    DateTime? @db.Timestamptz(3)
+  unboundExpiresAt      DateTime? @db.Timestamptz(3)
   lastProviderCheckedAt DateTime? @db.Timestamptz(3)
-  verifiedAt          DateTime? @db.Timestamptz(3)
-  presentAt           DateTime? @db.Timestamptz(3)
-  deleteRequestedAt   DateTime? @db.Timestamptz(3)
-  absentAt            DateTime? @db.Timestamptz(3)
-  missingAt           DateTime? @db.Timestamptz(3)
+  verifiedAt            DateTime? @db.Timestamptz(3)
+  presentAt             DateTime? @db.Timestamptz(3)
+  deleteRequestedAt     DateTime? @db.Timestamptz(3)
+  absentAt              DateTime? @db.Timestamptz(3)
+  missingAt             DateTime? @db.Timestamptz(3)
 
   lastErrorCode  String?
   lastErrorClass String?
@@ -1530,8 +1631,8 @@ model StorageObject {
 // Durable operation ledger。eventKey 幂等；leaseOwner + leaseGeneration 是 fencing token。
 // migration 的 partial unique 保证每个 object 同时至多一条 pending/processing operation。
 model StorageObjectOperation {
-  id              String @id @default(cuid())
-  eventKey        String @unique
+  id              String  @id @default(cuid())
+  eventKey        String  @unique
   storageObjectId String
   replayOfId      String?
 
@@ -1548,9 +1649,9 @@ model StorageObjectOperation {
 
   leaseOwner      String?
   leaseGeneration Int       @default(0)
-  leaseAcquiredAt DateTime?  @db.Timestamptz(3)
-  leaseRenewedAt  DateTime?  @db.Timestamptz(3)
-  leaseExpiresAt  DateTime?  @db.Timestamptz(3)
+  leaseAcquiredAt DateTime? @db.Timestamptz(3)
+  leaseRenewedAt  DateTime? @db.Timestamptz(3)
+  leaseExpiresAt  DateTime? @db.Timestamptz(3)
 
   effectStartedAt   DateTime? @db.Timestamptz(3)
   effectCompletedAt DateTime? @db.Timestamptz(3)
@@ -1566,7 +1667,7 @@ model StorageObjectOperation {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  storageObject StorageObject @relation(fields: [storageObjectId], references: [id], onDelete: Restrict)
+  storageObject StorageObject            @relation(fields: [storageObjectId], references: [id], onDelete: Restrict)
   replayOf      StorageObjectOperation?  @relation("StorageObjectOperationReplay", fields: [replayOfId], references: [id], onDelete: Restrict)
   replays       StorageObjectOperation[] @relation("StorageObjectOperationReplay")
 
@@ -1911,22 +2012,22 @@ model MemberInsurance {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  memberId      String
-  insurerName   String // 保险公司;长度 128 由 DTO 约束(沿 Certificate.issuingOrg 范式)
-  policyNumber  String // 保单号;长度 128 由 DTO 约束(沿 certNumber;无唯一约束,E-2)
-  coverageStart DateTime? // 起保日(可选;有值时门槛校验 coverageStart <= 活动 startAt,E-11)
-  coverageEnd   DateTime // 到期时间(必填;有效性唯一依据,D-INS-5)
+  memberId         String
+  insurerName      String // 保险公司;长度 128 由 DTO 约束(沿 Certificate.issuingOrg 范式)
+  policyNumber     String // 保单号;长度 128 由 DTO 约束(沿 certNumber;无唯一约束,E-2)
+  coverageStart    DateTime? // 起保日(可选;有值时门槛校验 coverageStart <= 活动 startAt,E-11)
+  coverageEnd      DateTime // 到期时间(必填;有效性唯一依据,D-INS-5)
   expireNotifiedAt DateTime? // v0.47.0 到期提醒幂等 marker;首次命中 30 天窗口后置 now,不因改期自动清空
 
   // D-INSURANCE v3 PR4 final。legacy(含软删)仍沿 PR1 统一 pending/v0，不推断 verified；
   // version 非负且 pending/reviewed snapshot 组合由 migration CHECK 兜底。
-  reviewStatusCode String @default("pending") // pending / verified / rejected
-  version          Int    @default(0)
+  reviewStatusCode String    @default("pending") // pending / verified / rejected
+  version          Int       @default(0)
   reviewedByUserId String?
   reviewedAt       DateTime?
 
-  member                       Member                         @relation(fields: [memberId], references: [id], onDelete: Restrict)
-  reviewer                     User?                          @relation("MemberInsuranceReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  member                        Member                         @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  reviewer                      User?                          @relation("MemberInsuranceReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
   insuranceEligibilityEvidences InsuranceEligibilityEvidence[]
 
   @@index([memberId])
@@ -1944,12 +2045,12 @@ model TeamInsurancePolicy {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  insurerName   String // 保险公司;长度 128 由 DTO 约束
-  policyNumber  String // 保单号;长度 128 由 DTO 约束
-  coverageStart DateTime // 起保(必填,goal ②)
-  coverageEnd   DateTime // 到期
+  insurerName      String // 保险公司;长度 128 由 DTO 约束
+  policyNumber     String // 保单号;长度 128 由 DTO 约束
+  coverageStart    DateTime // 起保(必填,goal ②)
+  coverageEnd      DateTime // 到期
   expireNotifiedAt DateTime? // v0.47.0 管理面到期提醒幂等 marker;首次命中 30 天窗口后置 now
-  note          String? // 备注;长度 500 由 DTO 约束
+  note             String? // 备注;长度 500 由 DTO 约束
 
   coverages TeamInsuranceCoverage[]
 
@@ -1968,8 +2069,8 @@ model TeamInsuranceCoverage {
   policyId String
   memberId String
 
-  policy TeamInsurancePolicy @relation(fields: [policyId], references: [id], onDelete: Restrict)
-  member Member              @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  policy                        TeamInsurancePolicy            @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  member                        Member                         @relation(fields: [memberId], references: [id], onDelete: Restrict)
   insuranceEligibilityEvidences InsuranceEligibilityEvidence[]
 
   // 业务唯一约束(partial unique;E-3):
@@ -2009,8 +2110,8 @@ model InsuranceEligibilityEvidence {
   memberInsurance       MemberInsurance?       @relation(fields: [memberInsuranceId], references: [id], onDelete: Restrict)
   teamInsuranceCoverage TeamInsuranceCoverage? @relation(fields: [teamInsuranceCoverageId], references: [id], onDelete: Restrict)
   activityRegistration  ActivityRegistration?  @relation(fields: [activityRegistrationId], references: [id], onDelete: Restrict)
-  teamJoinApplication   TeamJoinApplication?    @relation(fields: [teamJoinApplicationId], references: [id], onDelete: Restrict)
-  sourceReviewer        User?                   @relation("InsuranceEvidenceSourceReviewer", fields: [sourceReviewedByUserId], references: [id], onDelete: Restrict)
+  teamJoinApplication   TeamJoinApplication?   @relation(fields: [teamJoinApplicationId], references: [id], onDelete: Restrict)
+  sourceReviewer        User?                  @relation("InsuranceEvidenceSourceReviewer", fields: [sourceReviewedByUserId], references: [id], onDelete: Restrict)
 
   @@index([memberInsuranceId])
   @@index([teamInsuranceCoverageId])
@@ -2089,23 +2190,23 @@ model RecruitmentApplication {
   openid String? // 微信 openid(code2session;再查询 + 同轮去重次级键;掩码回显)
 
   // ===== 敏感资料(留存 SOP:rejected 或 本轮 closed 满 30 天后 NULL 化 + 按 idCardImageKey 删 blob)=====
-  realName          String?
-  idCardNumber      String? // 身份证号(高敏感;同轮去重键;留存清)
-  birthDate         DateTime? // 精确生日(从身份证号提取;留存清)
-  phone             String? // 手机(仅通知联系方式,非身份证据,配套③;留存清)
-  detailedAddress   String? // 详细住址(留存清)
-  idCardImageKey    String? // 证件照 storage key(分叉③A;留存按 key 删 storage blob)
-  emergencyContacts Json? // 紧急联系人 ≥2:[{name, relation, phone}](留存清)
-  profileExtra      Json? // 其余报名字段(Q7 精简后冻结,本期最小;留存清)
+  realName                String?
+  idCardNumber            String? // 身份证号(高敏感;同轮去重键;留存清)
+  birthDate               DateTime? // 精确生日(从身份证号提取;留存清)
+  phone                   String? // 手机(仅通知联系方式,非身份证据,配套③;留存清)
+  detailedAddress         String? // 详细住址(留存清)
+  idCardImageKey          String? // 证件照 storage key(分叉③A;留存按 key 删 storage blob)
+  emergencyContacts       Json? // 紧急联系人 ≥2:[{name, relation, phone}](留存清)
+  profileExtra            Json? // 其余报名字段(Q7 精简后冻结,本期最小;留存清)
   // 招新可用性收口 F5(2026-07-11;评审稿 §2.8 R5;第 42 migration,全 additive 可空):
   // 签名图 = 责任文件——promote 搬 member_profiles.signatureImageKey 长期留存 + 报名行清空
   // (镜像 idCardImageKey 搬运范式);未发号(rejected/withdrawn)行的 blob 随既有留存 SOP 按 key 删。
-  signatureImageKey String? // 申请人签名图 storage key(multipart 必填文件位 signatureImage;存量可为 null)
+  signatureImageKey       String? // 申请人签名图 storage key(multipart 必填文件位 signatureImage;存量可为 null)
   // 招新可用性收口 F7(2026-07-11;评审稿 §2.9 R6;第 44 migration,additive 可空):
   // 申请人证书图(公开上传,双通道凭证;category ∈ cert_type 既有码 first_aid/bsafe,每类 ≤3 张
   // 重传覆盖)。promote 时按类别自动建 pending Certificate 行 + 图 key 搬 Certificate.imageKeys,
   // 本列清空;未发号行的 blob 随既有留存 SOP 清理。形如 { [category]: string[] }。
-  certificateImages Json? // 证书图 storage keys(按类别分组;R6 长期档案的暂存位)
+  certificateImages       Json? // 证书图 storage keys(按类别分组;R6 长期档案的暂存位)
   // 招新证书审核闭环:按类别记录 approved/rejected + at/by/note(无 PII);promote 时与证书图一并清空。
   certificateReviewStatus Json?
   // 招新证书发证信息:按类别记录 { issuingOrg, issuedAt:'YYYY-MM-DD' }(无 PII)。
@@ -2302,16 +2403,16 @@ model TeamJoinCycle {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  year       Int // 入队年份(贡献值 cutoff = {year}-03-31 北京日界;级别/编号无关)
-  name       String // 轮次名(长度由 DTO 约束)
-  statusCode String // open / closed(后台开关;至多一个 open:service 预检 + partial unique DB 兜底)
-  openedAt   DateTime?
-  closedAt   DateTime?
-  requiresInsurance Boolean @default(false) // PR3 single gate=true 时参与 final join；默认 false
+  year              Int // 入队年份(贡献值 cutoff = {year}-03-31 北京日界;级别/编号无关)
+  name              String // 轮次名(长度由 DTO 约束)
+  statusCode        String // open / closed(后台开关;至多一个 open:service 预检 + partial unique DB 兜底)
+  openedAt          DateTime?
+  closedAt          DateTime?
+  requiresInsurance Boolean   @default(false) // PR3 single gate=true 时参与 final join；默认 false
 
   // 入队候选部门配置(PR-4 才接业务):null/空=全部 ACTIVE;max null=默认 8。
   openOrganizationIds Json?
-  maxTargetOrgs        Int?
+  maxTargetOrgs       Int?
 
   applications TeamJoinApplication[]
 
@@ -2348,9 +2449,9 @@ model TeamJoinApplication {
   eliminationStage String? // evaluation / gate-timeout(rejected 时记)
   joinedAt         DateTime? // 一键入队执行时刻
 
-  cycle        TeamJoinCycle @relation(fields: [cycleId], references: [id], onDelete: Restrict)
-  member       Member        @relation(fields: [memberId], references: [id], onDelete: Restrict)
-  organization Organization? @relation(fields: [selectedOrganizationId], references: [id], onDelete: Restrict)
+  cycle                         TeamJoinCycle                  @relation(fields: [cycleId], references: [id], onDelete: Restrict)
+  member                        Member                         @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  organization                  Organization?                  @relation(fields: [selectedOrganizationId], references: [id], onDelete: Restrict)
   insuranceEligibilityEvidences InsuranceEligibilityEvidence[]
 
   // 业务唯一约束(partial unique;migration.sql 末尾手写,E-J-2;Prisma DSL 不支持带 WHERE):
@@ -2553,14 +2654,14 @@ model WechatSubscribeTemplate {
 // aggregateId/destinationRef 同时至多一条 pending/processing；Prisma DSL 无法表达 partial
 // unique，勿用普通 @@unique 误伤 terminal generation history。
 model NotificationOutboxIntent {
-  id        String   @id @default(cuid())
-  eventKey  String   @unique
-  eventType String
+  id             String @id @default(cuid())
+  eventKey       String @unique
+  eventType      String
   payloadVersion Int
-  payload   Json
+  payload        Json
 
-  aggregateType String
-  aggregateId   String
+  aggregateType   String
+  aggregateId     String
   destinationType String
   destinationRef  String
 
@@ -2568,14 +2669,14 @@ model NotificationOutboxIntent {
   attempts    Int      @default(0)
   availableAt DateTime @default(now()) @db.Timestamptz(3)
 
-  leaseOwner    String?
-  lockedAt      DateTime? @db.Timestamptz(3)
+  leaseOwner     String?
+  lockedAt       DateTime? @db.Timestamptz(3)
   leaseExpiresAt DateTime? @db.Timestamptz(3)
 
-  preparedAt DateTime? @db.Timestamptz(3)
+  preparedAt         DateTime? @db.Timestamptz(3)
   preparedTemplateId String?
-  sentAt     DateTime? @db.Timestamptz(3)
-  completedAt DateTime? @db.Timestamptz(3)
+  sentAt             DateTime? @db.Timestamptz(3)
+  completedAt        DateTime? @db.Timestamptz(3)
 
   lastErrorCode  String?
   lastErrorClass String?
