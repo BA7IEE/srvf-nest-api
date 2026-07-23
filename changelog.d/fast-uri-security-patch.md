@@ -1,1 +1,0 @@
-- 将 production dependency graph 的 `fast-uri` override 提升到 3.1.4，修复 `GHSA-v2hh-gcrm-f6hx` host-confusion High 漏洞，不升级 COS SDK、conf 或 ajv。

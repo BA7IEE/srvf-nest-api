@@ -1,1 +1,0 @@
-- Fixed the production Storage bootstrap and recovery chain: the offline bootstrap now has a narrow configuration boundary, disabled settings survive API/worker restart while ordinary effects remain blocked, production routing no longer falls back to Local, and provider location is frozen outside the reviewed relocation flow.

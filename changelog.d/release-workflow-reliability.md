@@ -1,1 +1,0 @@
-- 移除生产依赖审计中未被使用的 pnpm cache，并为 production-mode Docker Smoke 增加手动触发入口，确保最终 main/tag 可获得完整绿色的发布门禁证据。
