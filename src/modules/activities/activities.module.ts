@@ -28,6 +28,11 @@ import { ActivityPublishReviewAuditRecorder } from './activity-publish-review-au
 import { ActivityPublishReviewService } from './activity-publish-review.service';
 import { ActivityPublishReviewQueryService } from './activity-publish-review-query.service';
 import { AdminActivityPublishReviewsController } from './controllers/admin-activity-publish-reviews.controller';
+import { ActivityResponsibilityPolicy } from './activity-responsibility-policy';
+import { ActivityResponsibilityGrantProjector } from './activity-responsibility-grant-projector';
+import { ActivityResponsibilityAuditRecorder } from './activity-responsibility-audit-recorder';
+import { ActivityResponsibilityService } from './activity-responsibility.service';
+import { AdminActivityResponsibilitiesController } from './controllers/admin-activity-responsibilities.controller';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activities 写操作(create / update / softDelete / publish / cancel 共 5 处共用 activity.publish)
@@ -70,6 +75,7 @@ import { AdminActivityPublishReviewsController } from './controllers/admin-activ
     AdminActivityParticipationController,
     AdminActivityPositionsController,
     AdminActivityPublishReviewsController,
+    AdminActivityResponsibilitiesController,
   ],
   providers: [
     ActivitiesService,
@@ -87,12 +93,18 @@ import { AdminActivityPublishReviewsController } from './controllers/admin-activ
     ActivityPublishReviewAuditRecorder,
     ActivityPublishReviewService,
     ActivityPublishReviewQueryService,
+    ActivityResponsibilityPolicy,
+    ActivityResponsibilityGrantProjector,
+    ActivityResponsibilityAuditRecorder,
+    ActivityResponsibilityService,
   ],
   exports: [
     ActivitiesService,
     AppMyActivitiesService,
     ActivityParticipationPolicy,
     ActivityPublishReviewService,
+    ActivityResponsibilityPolicy,
+    ActivityResponsibilityService,
   ],
 })
 export class ActivitiesModule {}

@@ -19,6 +19,7 @@ import {
   activityPublishReviewViewSelect,
 } from './activity-publish-review-presenter';
 import { ActivityPublishReviewStateMachine } from './activity-publish-review-state-machine';
+import { ActivityResponsibilityService } from './activity-responsibility.service';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -57,6 +58,7 @@ export class ActivityPublishReviewService {
     private readonly presenter: ActivityPublishReviewPresenter,
     private readonly audit: ActivityPublishReviewAuditRecorder,
     private readonly notifications: NotificationDispatcher,
+    private readonly responsibilities: ActivityResponsibilityService,
   ) {}
 
   private async lockActivity(activityId: string, tx: PrismaTx): Promise<void> {
@@ -353,6 +355,15 @@ export class ActivityPublishReviewService {
             reviewedAt: now,
           },
         });
+        await this.responsibilities.createOwnerForPublish(
+          tx,
+          activityId,
+          activity.initiatorMemberId,
+          user.id,
+          now,
+          user.role,
+          auditMeta,
+        );
         await tx.activity.update({
           where: { id: activityId },
           data: {
@@ -443,6 +454,19 @@ export class ActivityPublishReviewService {
         },
         select: activityPublishReviewViewSelect,
       });
+      const initiator = await tx.activity.findUniqueOrThrow({
+        where: { id: review.activityId },
+        select: { initiatorMemberId: true },
+      });
+      await this.responsibilities.createOwnerForPublish(
+        tx,
+        review.activityId,
+        initiator.initiatorMemberId,
+        user.id,
+        now,
+        user.role,
+        auditMeta,
+      );
       await tx.activity.update({
         where: { id: review.activityId },
         data: {

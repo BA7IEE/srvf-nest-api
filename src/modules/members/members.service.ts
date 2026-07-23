@@ -1205,6 +1205,14 @@ export class MembersService {
           endedAt: now,
         },
       });
+      const endedActivityResponsibilities = await tx.activityResponsibilityAssignment.updateMany({
+        where: { memberId: id, status: 'active' },
+        data: {
+          status: 'revoked',
+          endedAt: now,
+          endedByUserId: currentUser.id,
+        },
+      });
 
       const principalOr: Prisma.RoleBindingWhereInput[] = [
         { principalType: PrincipalType.MEMBER, principalId: id },
@@ -1253,6 +1261,7 @@ export class MembersService {
           linkedUserId: linked?.id ?? null,
           positionAssignmentsRevoked: revokedPositionAssignments.count,
           supervisionsRevoked: revokedSupervisions.count,
+          activityResponsibilitiesEnded: endedActivityResponsibilities.count,
           roleBindingsEnded: endedRoleBindings.count,
           residualActivePositionAssignments,
           residualActiveSupervisions,

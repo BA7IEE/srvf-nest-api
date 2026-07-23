@@ -216,6 +216,9 @@ describe('MembersService member lifecycle authorization closure', () => {
           .mockResolvedValue({ count: 1 }),
         count: jest.fn().mockResolvedValue(0),
       },
+      activityResponsibilityAssignment: {
+        updateMany: jest.fn().mockResolvedValue({ count: 3 }),
+      },
       roleBinding: {
         updateMany: jest
           .fn<Promise<{ count: number }>, [Prisma.RoleBindingUpdateManyArgs]>()
@@ -262,6 +265,7 @@ describe('MembersService member lifecycle authorization closure', () => {
       expect.objectContaining({
         positionAssignmentsRevoked: 2,
         supervisionsRevoked: 1,
+        activityResponsibilitiesEnded: 3,
         roleBindingsEnded: 4,
       }) as Record<string, unknown>,
     );
