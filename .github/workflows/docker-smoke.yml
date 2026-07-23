@@ -6,6 +6,7 @@ name: Docker Smoke
 # 与 ci.yml 的 docker-build job 互补:那个只验证 build 链路,本 workflow 验证运行时行为。
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - 'Dockerfile'
