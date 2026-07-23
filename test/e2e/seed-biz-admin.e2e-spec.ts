@@ -490,11 +490,11 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
     expect(codes).not.toContain('attendance.final-reject.sheet');
     expect(codes).not.toContain('attendance.reopen.sheet');
 
-    // 清理只咬合 biz-admin:attendance-final-reviewer 的 4 条绑定原样保留。
+    // 清理只咬合 biz-admin:attendance-final-reviewer 的 5 条绑定原样保留。
     const finalReviewer = await prisma.rbacRole.findUniqueOrThrow({
       where: { code: 'attendance-final-reviewer' },
       select: { id: true },
     });
-    expect(await prisma.rolePermission.count({ where: { roleId: finalReviewer.id } })).toBe(4);
+    expect(await prisma.rolePermission.count({ where: { roleId: finalReviewer.id } })).toBe(5);
   });
 });

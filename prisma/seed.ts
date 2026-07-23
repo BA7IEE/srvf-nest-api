@@ -2822,6 +2822,54 @@ const ATTENDANCE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
+// v0.61.0 活动责任闭环 expand：六个新权限只由下方显式 reviewer / 发起 /
+// 系统投影角色承载。本阶段不把它们并入 BIZ_PERMISSION_SEED，避免在 contract 摘权前
+// 意外给旧通用角色扩大权限面；SUPER_ADMIN 仍由 RbacService 固有短路。
+const ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'activity.create.cross-org',
+    module: 'activity',
+    action: 'create-cross-org',
+    resourceType: 'record',
+    description: '为本人非当前归属组织发起活动',
+  },
+  {
+    code: 'activity-review.read.request',
+    module: 'activity-review',
+    action: 'read',
+    resourceType: 'request',
+    description: '查看活动发布审核请求',
+  },
+  {
+    code: 'activity-review.return.request',
+    module: 'activity-review',
+    action: 'return',
+    resourceType: 'request',
+    description: '退回活动发布审核请求',
+  },
+  {
+    code: 'activity-responsibility.override.record',
+    module: 'activity-responsibility',
+    action: 'override',
+    resourceType: 'record',
+    description: '管理旧活动认领、管理员强制移交',
+  },
+  {
+    code: 'attendance.return.sheet',
+    module: 'attendance',
+    action: 'return',
+    resourceType: 'sheet',
+    description: '考勤一审退回修改',
+  },
+  {
+    code: 'attendance.final-return.sheet',
+    module: 'attendance',
+    action: 'final-return',
+    resourceType: 'sheet',
+    description: '考勤终审退回修改',
+  },
+];
+
 // 保险模块 T1(2026-06-13;冻结评审稿 docs/archive/reviews/insurance-module-review.md §3.4):
 // 队保单 6 码 + 队员自购保险 2 码(read.other + PR2 review.record),全部绑 biz-admin;
 // review.record 同步由动态映射下放 org-admin，不下放 group-manager / 两类 readonly / org-supervisor。
@@ -3790,13 +3838,225 @@ async function seedPositionRolePolicies(prisma: PrismaClient): Promise<void> {
   }
 }
 
+type ActivityResponsibilityWorkflowRoleSeed = {
+  code: string;
+  displayName: string;
+  description: string;
+  permissionCodes: ReadonlyArray<string>;
+};
+
+const ACTIVITY_RESPONSIBILITY_WORKFLOW_ROLE_SEED: ReadonlyArray<ActivityResponsibilityWorkflowRoleSeed> =
+  [
+    {
+      code: 'activity-publish-reviewer',
+      displayName: '活动发布审核员',
+      description:
+        '经显式 RoleBinding 配置的活动发布审核角色；零默认持有人、零 PositionRolePolicy。',
+      permissionCodes: [
+        'activity-review.read.request',
+        'activity.publish.record',
+        'activity-review.return.request',
+      ],
+    },
+    {
+      code: 'activity-cross-org-initiator',
+      displayName: '活动跨组织发起人',
+      description: '经显式 RoleBinding 配置的跨组织活动发起角色；零默认持有人。',
+      permissionCodes: ['activity.create.cross-org'],
+    },
+    {
+      code: 'attendance-first-reviewer',
+      displayName: '考勤一审员',
+      description: '经显式 RoleBinding 配置的考勤一审角色；零默认持有人、零 PositionRolePolicy。',
+      permissionCodes: [
+        'attendance.read.sheet',
+        'attendance.approve.sheet',
+        'attendance.reject.sheet',
+        'attendance.return.sheet',
+      ],
+    },
+    {
+      code: 'activity-owner',
+      displayName: '活动负责人',
+      description:
+        '由 ActivityResponsibilityGrantProjector 按活动责任自动投影；禁止通用角色接口人工维护。',
+      permissionCodes: [
+        'activity.update.record',
+        'activity.cancel.record',
+        'activity.complete.record',
+        'activity-registration.read.record',
+        'activity-registration.create.record',
+        'activity-registration.approve.record',
+        'activity-registration.reject.record',
+        'activity-registration.cancel.record',
+        'activity-registration.reopen.record',
+        'attendance.read.sheet',
+        'attendance.create.sheet',
+        'attendance.update.sheet',
+        'attendance.delete.sheet',
+      ],
+    },
+    {
+      code: 'activity-registration-collaborator',
+      displayName: '活动报名协办人',
+      description:
+        '由 ActivityResponsibilityGrantProjector 按活动责任自动投影；禁止通用角色接口人工维护。',
+      permissionCodes: [
+        'activity-registration.read.record',
+        'activity-registration.create.record',
+        'activity-registration.approve.record',
+        'activity-registration.reject.record',
+        'activity-registration.cancel.record',
+        'activity-registration.reopen.record',
+      ],
+    },
+    {
+      code: 'activity-attendance-collaborator',
+      displayName: '活动考勤协办人',
+      description:
+        '由 ActivityResponsibilityGrantProjector 按活动责任自动投影；禁止通用角色接口人工维护。',
+      permissionCodes: [
+        'attendance.read.sheet',
+        'attendance.create.sheet',
+        'attendance.update.sheet',
+        'attendance.delete.sheet',
+      ],
+    },
+  ];
+
+/**
+ * v0.61.0 PR-2 expand：只扩 Permission / Role / RolePermission，不创建任何持有人或
+ * PositionRolePolicy。旧通用角色码集保持不变，contract 摘权留 PR-11。
+ */
+async function seedActivityResponsibilityWorkflowRbac(prisma: PrismaClient): Promise<void> {
+  for (const permission of ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED) {
+    await prisma.permission.upsert({
+      where: { code: permission.code },
+      update: {},
+      create: permission,
+    });
+  }
+
+  const [
+    publishReviewerSeed,
+    crossOrgInitiatorSeed,
+    firstReviewerSeed,
+    ownerSeed,
+    registrationCollaboratorSeed,
+    attendanceCollaboratorSeed,
+  ] = ACTIVITY_RESPONSIBILITY_WORKFLOW_ROLE_SEED;
+  if (
+    publishReviewerSeed === undefined ||
+    crossOrgInitiatorSeed === undefined ||
+    firstReviewerSeed === undefined ||
+    ownerSeed === undefined ||
+    registrationCollaboratorSeed === undefined ||
+    attendanceCollaboratorSeed === undefined
+  ) {
+    throw new Error('[seed] activity responsibility workflow role seed 清单不完整');
+  }
+  const roles = [
+    await prisma.rbacRole.upsert({
+      where: { code: publishReviewerSeed.code },
+      update: {},
+      create: {
+        code: publishReviewerSeed.code,
+        displayName: publishReviewerSeed.displayName,
+        description: publishReviewerSeed.description,
+      },
+      select: { id: true, code: true },
+    }),
+    await prisma.rbacRole.upsert({
+      where: { code: crossOrgInitiatorSeed.code },
+      update: {},
+      create: {
+        code: crossOrgInitiatorSeed.code,
+        displayName: crossOrgInitiatorSeed.displayName,
+        description: crossOrgInitiatorSeed.description,
+      },
+      select: { id: true, code: true },
+    }),
+    await prisma.rbacRole.upsert({
+      where: { code: firstReviewerSeed.code },
+      update: {},
+      create: {
+        code: firstReviewerSeed.code,
+        displayName: firstReviewerSeed.displayName,
+        description: firstReviewerSeed.description,
+      },
+      select: { id: true, code: true },
+    }),
+    await prisma.rbacRole.upsert({
+      where: { code: ownerSeed.code },
+      update: {},
+      create: {
+        code: ownerSeed.code,
+        displayName: ownerSeed.displayName,
+        description: ownerSeed.description,
+      },
+      select: { id: true, code: true },
+    }),
+    await prisma.rbacRole.upsert({
+      where: { code: registrationCollaboratorSeed.code },
+      update: {},
+      create: {
+        code: registrationCollaboratorSeed.code,
+        displayName: registrationCollaboratorSeed.displayName,
+        description: registrationCollaboratorSeed.description,
+      },
+      select: { id: true, code: true },
+    }),
+    await prisma.rbacRole.upsert({
+      where: { code: attendanceCollaboratorSeed.code },
+      update: {},
+      create: {
+        code: attendanceCollaboratorSeed.code,
+        displayName: attendanceCollaboratorSeed.displayName,
+        description: attendanceCollaboratorSeed.description,
+      },
+      select: { id: true, code: true },
+    }),
+  ];
+
+  for (const [index, roleSeed] of ACTIVITY_RESPONSIBILITY_WORKFLOW_ROLE_SEED.entries()) {
+    const role = roles[index];
+    if (role === undefined) {
+      throw new Error(`[seed] activity responsibility workflow role '${roleSeed.code}' 未建立`);
+    }
+    const permissions = await prisma.permission.findMany({
+      where: { code: { in: [...roleSeed.permissionCodes] } },
+      select: { id: true, code: true },
+    });
+    if (permissions.length !== roleSeed.permissionCodes.length) {
+      const found = new Set(permissions.map((permission) => permission.code));
+      const missing = roleSeed.permissionCodes.filter((code) => !found.has(code));
+      throw new Error(
+        `[seed] activity responsibility workflow role '${role.code}' 缺少 Permission: ${missing.join(', ')}`,
+      );
+    }
+    for (const permission of permissions) {
+      await prisma.rolePermission.upsert({
+        where: { roleId_permissionId: { roleId: role.id, permissionId: permission.id } },
+        update: {},
+        create: { roleId: role.id, permissionId: permission.id },
+      });
+    }
+  }
+
+  console.log(
+    `[seed] activity responsibility workflow RBAC ensured (` +
+      `${ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED.length} permissions + ` +
+      `${ACTIVITY_RESPONSIBILITY_WORKFLOW_ROLE_SEED.length} roles;零持有、零 PositionRolePolicy)`,
+  );
+}
+
 // 终态 scoped-authz PR9「考勤终审员角色」(2026-07-02 goal;冻结稿场景 4 / §2.4 BD-2;序列 PR9/12)。
 //
 // 第 7 个内置角色:`attendance-final-reviewer` —— 终审中枢的**显式绑定**载体:业务上的终审部门
 // 部长/副部长经 RoleBinding(标准形态 principalType=POSITION_ASSIGNMENT + ORGANIZATION_TREE@root)
 // 持有本角色行使终审;换届 = 任职 ENDED 即失权,零代码改动(BD-2「只改绑定行不改代码」)。
-// 绑 4 条码:attendance.final-approve.sheet / attendance.final-reject.sheet /
-// attendance.reopen.sheet + attendance.read.sheet(读码让终审人可看单;一级
+// v0.61.0 expand 后绑 5 条码:attendance.final-approve.sheet / attendance.final-reject.sheet /
+// attendance.reopen.sheet / attendance.final-return.sheet + attendance.read.sheet(读码让终审人可看单;一级
 // approve/reject 不含 —— 同人约束语义下终审与一级分人)。
 //
 // **🔴 本 seed 零持有、零 policy 行**:不 seed 任何 RoleBinding(生产绑定 = PR11 公告导入建立真实
@@ -3808,13 +4068,14 @@ const ATTENDANCE_FINAL_REVIEWER_DISPLAY_NAME = '考勤终审员';
 const ATTENDANCE_FINAL_REVIEWER_DESCRIPTION =
   '考勤终审中枢角色(冻结稿场景 4 / BD-2):经显式 RoleBinding(标准形态 POSITION_ASSIGNMENT 主体 + ' +
   'ORGANIZATION_TREE@root)持有,行使 attendance.final-approve.sheet / final-reject.sheet / ' +
-  'reopen.sheet + read.sheet;' +
+  'reopen.sheet + final-return.sheet + read.sheet;' +
   '不随职务自动推导(零 PositionRolePolicy 行),换届撤任职即失权。自审禁止(SUPER_ADMIN 亦拒)与' +
   '一级同人默认禁止由 authz ActionConstraint 承载,不在角色码集内。seed 零持有;绑定经 ' +
   'role-bindings CRUD 显式建(PR11 公告导入后运营挂)。';
 const ATTENDANCE_FINAL_REVIEWER_PERMISSION_CODES: ReadonlyArray<string> = [
   'attendance.read.sheet',
   ...ATTENDANCE_REVIEWER_ONLY_CODES,
+  'attendance.final-return.sheet',
 ];
 
 // 幂等:RbacRole.upsert by code / RolePermission.upsert by (roleId,permissionId);
@@ -3969,6 +4230,10 @@ async function main(): Promise<void> {
     //   保持"先 RBAC meta 再业务权限点"语义顺序;依赖 SUPER_ADMIN/ADMIN 用户已就位。
     await seedBizAdminRbac(prisma);
 
+    // v0.61.0 活动责任闭环 PR-2 expand：6 Permission + 6 Role；三类责任角色仅由后续
+    // ActivityResponsibilityGrantProjector 自动维护。依赖 seedBizAdminRbac 已建立复用码。
+    await seedActivityResponsibilityWorkflowRbac(prisma);
+
     // 终态 scoped-authz PR7「职务→角色 policy」(2026-07-01;冻结稿 §3.7):3 管理/监督角色 +
     //   绑定 + 6 条默认职务→角色映射(3 正职管理 + 3 副职只读投影)。放在最后一步:依赖 seedPositions
     //   (职务 id)+ seedAttachmentPermissions(attachment.* 码)+ seedBizAdminRbac(biz-admin
@@ -3976,9 +4241,9 @@ async function main(): Promise<void> {
     await seedPositionRolePolicies(prisma);
 
     // 终态 scoped-authz PR9「考勤终审员」(2026-07-02;冻结稿场景 4 / BD-2):第 7 内置角色
-    //   attendance-final-reviewer,绑 4 条 attendance 码;零持有、零 policy(生产绑定 =
+    //   attendance-final-reviewer,绑 5 条 attendance 码;零持有、零 policy(生产绑定 =
     //   PR11 公告导入建立真实任职后,运营经 role-bindings CRUD 显式挂)。依赖 seedBizAdminRbac
-    //   已把 attendance.* 码 upsert 进 Permission 表。
+    //   与 seedActivityResponsibilityWorkflowRbac 已把所需 attendance.* 码 upsert 进 Permission 表。
     await seedAttendanceFinalReviewerRole(prisma);
   } finally {
     await prisma.$disconnect();

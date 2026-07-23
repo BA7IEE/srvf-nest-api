@@ -1,4 +1,11 @@
-import { isControlPlanePermissionCode, isPrivilegedRole } from './role-delegation.policy';
+import { Role, UserStatus } from '@prisma/client';
+import { BizCode } from '../../common/exceptions/biz-code.constant';
+import { BizException } from '../../common/exceptions/biz.exception';
+import {
+  isControlPlanePermissionCode,
+  isPrivilegedRole,
+  RoleDelegationPolicy,
+} from './role-delegation.policy';
 import { RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES } from './reserved-super-admin-permission-codes';
 
 describe('role delegation control-plane classification', () => {
@@ -37,5 +44,34 @@ describe('role delegation control-plane classification', () => {
         rolePermissions: [{ permission: { code: 'activity.read.record' } }],
       }),
     ).toBe(false);
+  });
+
+  it('系统托管角色对 SUPER_ADMIN 也在数据库查询前拒绝 34006', async () => {
+    const findFirst = jest.fn();
+    const policy = new RoleDelegationPolicy({
+      roleBinding: { findFirst },
+    } as never);
+
+    let thrown: unknown;
+    try {
+      await policy.assertActorMayConferRole(
+        {
+          id: 'su-id',
+          username: 'su',
+          role: Role.SUPER_ADMIN,
+          status: UserStatus.ACTIVE,
+          memberId: null,
+        },
+        { code: 'activity-owner', rolePermissions: [] },
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(BizException);
+    expect((thrown as BizException).biz.code).toBe(
+      BizCode.ROLE_BINDING_SYSTEM_MANAGED_ROLE_FORBIDDEN.code,
+    );
+    expect(findFirst).not.toHaveBeenCalled();
   });
 });

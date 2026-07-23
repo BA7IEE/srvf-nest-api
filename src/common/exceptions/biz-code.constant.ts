@@ -1477,7 +1477,8 @@ export const BizCode = {
   //   roleId 引用不存在/已软删复用 ROLE_NOT_FOUND(30003)/ ROLE_DELETED(30005);
   //   scopeOrgId 引用不存在复用 ORGANIZATION_NOT_FOUND(11001);scopeActivityId 引用不存在复用 ACTIVITY_NOT_FOUND(12001)。
   //   34001 NOT_FOUND / 34002 撞唯一 active(P2002 兜底,全 scope 维度)/ 34003 scope 字段与 scopeType 不匹配 /
-  //   34004 principalId 与 principalType 不匹配(非 SYSTEM 缺 principalId 等)/ 34005 任期非法(endedAt≤startedAt)。
+  //   34004 principalId 与 principalType 不匹配(非 SYSTEM 缺 principalId 等)/ 34005 任期非法(endedAt≤startedAt)/
+  //   34006 系统托管角色禁止通过通用入口人工维护。
   //   **🔴 scoped 绑定入库即止,RbacService 只读 scopeType=GLOBAL、绝不判 scoped**(判权是 PR8 AuthzService)。
   ROLE_BINDING_NOT_FOUND: {
     code: 34001,
@@ -1503,6 +1504,11 @@ export const BizCode = {
     code: 34005,
     message: '任期止必须晚于任期起',
     httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ROLE_BINDING_SYSTEM_MANAGED_ROLE_FORBIDDEN: {
+    code: 34006,
+    message: '该角色由业务流程自动维护，不能手工分配或撤销',
+    httpStatus: HttpStatus.FORBIDDEN,
   },
 
   // - 350xx:活动评价(activity-feedbacks)—— 审计刀 6 第三件 F2(2026-07-16;冻结稿 §4.2)。

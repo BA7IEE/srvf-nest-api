@@ -214,13 +214,14 @@ const NEW_ROLE_CODES = [
 ] as const;
 
 // 终态 scoped-authz PR9:第 7 内置角色(冻结稿场景 4 / BD-2);
-// v0.47.0 F2 后承载 read + 终审两码 + reopen 共 4 码。
+// v0.61.0 PR-2 后承载 read + 终审两码 + reopen + final-return 共 5 码。
 const FINAL_REVIEWER_ROLE_CODE = 'attendance-final-reviewer';
 const EXPECTED_FINAL_REVIEWER_CODES = [
   'attendance.read.sheet',
   'attendance.final-approve.sheet',
   'attendance.final-reject.sheet',
   'attendance.reopen.sheet',
+  'attendance.final-return.sheet',
 ] as const;
 
 // 既有 3 角色绑定数零漂移基线(seed-rbac 95 / seed-attachment 9 / seed-biz-admin 74〔§F&A-3 起〕同口径;
@@ -243,7 +244,7 @@ async function boundCodesOf(prisma: PrismaService, roleCode: string): Promise<st
   return rows.map((r) => r.permission.code).sort();
 }
 
-describe('prisma/seed.ts — position role policies + v0.49 vice readonly(内置角色 9)', () => {
+describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(内置角色 15)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
@@ -260,7 +261,7 @@ describe('prisma/seed.ts — position role policies + v0.49 vice readonly(内置
     await resetDb(app);
   });
 
-  it('1. 内置角色全集 = 9;org-admin 精确继承 insurance review,其余映射与只读投影不漂移', async () => {
+  it('1. 内置角色全集 = 15;org-admin 精确继承 insurance review,其余映射与只读投影不漂移', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-1' }).code).toBe(0);
 
     const roles = await prisma.rbacRole.findMany({
@@ -278,6 +279,12 @@ describe('prisma/seed.ts — position role policies + v0.49 vice readonly(内置
         'group-readonly',
         'org-supervisor',
         FINAL_REVIEWER_ROLE_CODE,
+        'activity-publish-reviewer',
+        'activity-cross-org-initiator',
+        'attendance-first-reviewer',
+        'activity-owner',
+        'activity-registration-collaborator',
+        'activity-attendance-collaborator',
       ]),
     );
 
@@ -501,10 +508,10 @@ describe('prisma/seed.ts — position role policies + v0.49 vice readonly(内置
     expect(policies.every((p) => p.updatedAt.getTime() === p.createdAt.getTime())).toBe(true);
   });
 
-  it('8. attendance-final-reviewer:绑且仅绑 4 码(含 reopen);零持有;零 policy 行', async () => {
+  it('8. attendance-final-reviewer:绑且仅绑 5 码(含 reopen/final-return);零持有;零 policy 行', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr9-seed-su-8' }).code).toBe(0);
 
-    // 码集逐码相等(read + 终审两码 + reopen)。
+    // 码集逐码相等(read + 终审两码 + reopen + final-return)。
     expect(await boundCodesOf(prisma, FINAL_REVIEWER_ROLE_CODE)).toEqual(
       [...EXPECTED_FINAL_REVIEWER_CODES].sort(),
     );
