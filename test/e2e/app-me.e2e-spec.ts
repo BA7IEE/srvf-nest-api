@@ -189,14 +189,19 @@ const ALL_CAPS_WHEN_USABLE = {
     canViewAvailableActivities: true,
     canRegisterActivity: true,
     canCancelOwnRegistration: true,
+    canInitiateActivity: false,
+    canDirectPublishOwnActivity: false,
   },
   attendance: { canViewOwnAttendance: true },
   certificates: { canViewOwnCertificates: true },
   tasks: { canViewTasks: false },
   managed: {
     canViewManagedActivities: false,
-    canReviewManagedRegistrations: false,
-    canReviewManagedAttendance: false,
+    canManageManagedRegistrations: false,
+    canSubmitManagedAttendance: false,
+    canReviewActivityPublication: false,
+    canFirstReviewAttendance: false,
+    canFinalReviewAttendance: false,
   },
 };
 
@@ -206,14 +211,19 @@ const ALL_CAPS_WHEN_BLOCKED = {
     canViewAvailableActivities: false,
     canRegisterActivity: false,
     canCancelOwnRegistration: false,
+    canInitiateActivity: false,
+    canDirectPublishOwnActivity: false,
   },
   attendance: { canViewOwnAttendance: false },
   certificates: { canViewOwnCertificates: false },
   tasks: { canViewTasks: false },
   managed: {
     canViewManagedActivities: false,
-    canReviewManagedRegistrations: false,
-    canReviewManagedAttendance: false,
+    canManageManagedRegistrations: false,
+    canSubmitManagedAttendance: false,
+    canReviewActivityPublication: false,
+    canFirstReviewAttendance: false,
+    canFinalReviewAttendance: false,
   },
 };
 

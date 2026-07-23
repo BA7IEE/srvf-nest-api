@@ -551,8 +551,13 @@ export class ActivitiesService {
     dto: CreateActivityDto,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    authorization: 'rbac' | 'managed' = 'rbac',
   ): Promise<ActivityResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'activity.create.record');
+    if (authorization === 'rbac') {
+      await this.assertCanOrThrow(currentUser, 'activity.create.record');
+    } else if (!this.config.activityResponsibilityWorkflow.enabled) {
+      throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+    }
     const initiatorMemberId = this.config.activityResponsibilityWorkflow.enabled
       ? await this.initiationPolicy.resolveInitiator(
           currentUser,
@@ -648,8 +653,13 @@ export class ActivitiesService {
     dto: UpdateActivityDto,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    authorization: 'rbac' | 'managed' = 'rbac',
   ): Promise<ActivityResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'activity.update.record', { type: 'activity', id });
+    if (authorization === 'rbac') {
+      await this.assertCanOrThrow(currentUser, 'activity.update.record', { type: 'activity', id });
+    } else if (!this.config.activityResponsibilityWorkflow.enabled) {
+      throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+    }
     const result = await this.prisma.$transaction(async (tx) => {
       // 所有活动写入口统一先锁 Activity，再重读状态、时间窗、岗位与 passCount 基线。
       const current = await this.lockAndFindActivityOrThrow(id, tx);
@@ -932,10 +942,22 @@ export class ActivitiesService {
     id: string,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    authorization: 'rbac' | 'managed' = 'rbac',
   ): Promise<ActivityResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'activity.delete.record', { type: 'activity', id });
+    if (authorization === 'rbac') {
+      await this.assertCanOrThrow(currentUser, 'activity.delete.record', { type: 'activity', id });
+    } else if (!this.config.activityResponsibilityWorkflow.enabled) {
+      throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+    }
     return this.prisma.$transaction(async (tx) => {
       const current = await this.lockAndFindActivityOrThrow(id, tx);
+      if (
+        authorization === 'managed' &&
+        (current.statusCode !== ACTIVITY_STATUS_DRAFT ||
+          current.initiatorMemberId !== currentUser.memberId)
+      ) {
+        throw new BizException(BizCode.RBAC_FORBIDDEN);
+      }
       if (
         this.config.activityResponsibilityWorkflow.enabled &&
         (await tx.activityPublishReview.count({

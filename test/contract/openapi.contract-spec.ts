@@ -161,6 +161,28 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/my/registrations/{id}'],
   ['get', '/api/app/v1/my/activities'],
 
+  // 活动责任闭环 PR-6:App 我发起或承担责任的活动；与既有 `/my/activities`
+  // “本人已建立报名关系”语义物理分离。核心、岗位、职责三组 controller 共 19 路由。
+  ['get', '/api/app/v1/my/managed-activities/organization-options'],
+  ['get', '/api/app/v1/my/managed-activities'],
+  ['post', '/api/app/v1/my/managed-activities'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}'],
+  ['patch', '/api/app/v1/my/managed-activities/{activityId}'],
+  ['delete', '/api/app/v1/my/managed-activities/{activityId}'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/submit-publish-review'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/direct-publish'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/submit-change-review'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/withdraw-publish-review'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/positions'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/positions'],
+  ['patch', '/api/app/v1/my/managed-activities/{activityId}/positions/{activityPositionId}'],
+  ['delete', '/api/app/v1/my/managed-activities/{activityId}/positions/{activityPositionId}'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/responsibilities'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/collaborator-options'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/collaborators'],
+  ['delete', '/api/app/v1/my/managed-activities/{activityId}/collaborators/{assignmentId}'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/transfer-owner'],
+
   // Phase 2 P2-5b(2026-05-20):App /api/app/v1/my/registrations 2 写 endpoint
   // 沿 docs/app-api-p2-5-registrations-review.md §13.7 + D-P2-5-5 / D-P2-5-8 / D-P2-5-9 /
   // D-P2-5-10;两 endpoint 挂在同一 AppMyRegistrationsController(P2-5a 已建)。
@@ -825,6 +847,29 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'TransferActivityOwnerDto',
   'ClaimLegacyActivityDto',
   'AssignLegacyActivityInitiatorDto',
+  // 活动责任闭环 PR-6:App managed activities 独立 DTO，禁止从 Admin DTO 派生。
+  'AppActivityInitiationOrganizationOptionDto',
+  'AppManagedActivityListItemDto',
+  'CreateAppManagedActivityDto',
+  'UpdateAppManagedActivityDto',
+  'AppManagedActivityDetailDto',
+  'AppManagedActivityProjectionDto',
+  'AppManagedMemberSummaryDto',
+  'AppManagedMyResponsibilityDto',
+  'AppManagedPublishReviewSummaryDto',
+  'AppManagedActivityCountsDto',
+  'AppManagedActivityClosureDto',
+  'AppSubmitActivityChangeReviewDto',
+  'AppActivityChangePositionDto',
+  'CreateAppManagedActivityPositionDto',
+  'UpdateAppManagedActivityPositionDto',
+  'AppManagedActivityPositionDto',
+  'AppCollaboratorOptionDto',
+  'AppCollaboratorOptionsResponseDto',
+  'CreateAppManagedCollaboratorDto',
+  'TransferAppManagedActivityOwnerDto',
+  'AppManagedResponsibilityAssignmentDto',
+  'AppManagedResponsibilitiesDto',
 
   // V2 第一阶段批次 3B attendances
   // 注:ListAttendanceSheetsQueryDto / MyAttendanceRecordsQueryDto / ActivityIdParamDto
@@ -1326,8 +1371,8 @@ describe('OpenAPI 契约快照', () => {
     expect(Object.keys(item[method]?.responses ?? {}).length).toBeGreaterThan(0);
   });
 
-  it('活动责任服务落地后路由足迹精确为 376', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(376);
+  it('App managed activities core 落地后路由足迹精确为 395', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(395);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {
