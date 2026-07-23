@@ -1,8 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { ConfigType } from '@nestjs/config';
+import { DictItemStatus, DictTypeStatus, Prisma, Role } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -53,6 +55,8 @@ interface ActivityWindow {
   startAt: Date;
   endAt: Date;
   capacity: number | null;
+  statusCode: string;
+  initiatorMemberId: string | null;
 }
 
 @Injectable()
@@ -66,6 +70,8 @@ export class ActivityPositionsService {
     private readonly rbac: RbacService,
     private readonly authz: AuthzService,
     private readonly notificationDispatcher: NotificationDispatcher,
+    @Inject(appConfig.KEY)
+    private readonly config: ConfigType<typeof appConfig>,
   ) {}
 
   async list(activityId: string): Promise<ActivityPositionResponseDto[]> {
@@ -105,6 +111,7 @@ export class ActivityPositionsService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const activity = await this.lockActivityOrThrow(tx, activityId);
+        await this.assertWorkflowMutationAllowed(tx, activity, currentUser);
         await this.assertNameAvailable(tx, activityId, dto.name);
         await this.assertDictionaryItemValid(
           tx,
@@ -177,6 +184,7 @@ export class ActivityPositionsService {
       const result = await this.prisma.$transaction(async (tx) => {
         // 岗位 capacity 的 read-modify-write 基线必须在 Activity 锁后读取；锁对象不扩到岗位行。
         const activity = await this.lockActivityOrThrow(tx, activityId);
+        await this.assertWorkflowMutationAllowed(tx, activity, currentUser);
         const current = await this.findActivityPositionOrThrow(tx, activityId, activityPositionId);
         let waitlistPromotionLimit: number | null | undefined;
 
@@ -317,7 +325,8 @@ export class ActivityPositionsService {
     });
 
     return this.prisma.$transaction(async (tx) => {
-      await this.lockActivityOrThrow(tx, activityId);
+      const activity = await this.lockActivityOrThrow(tx, activityId);
+      await this.assertWorkflowMutationAllowed(tx, activity, currentUser);
       const current = await this.findActivityPositionOrThrow(tx, activityId, activityPositionId);
       const activeRegistrationCount = await tx.activityRegistration.count({
         where: {
@@ -371,7 +380,14 @@ export class ActivityPositionsService {
   ): Promise<ActivityWindow> {
     const activity = await client.activity.findFirst({
       where: { id: activityId, deletedAt: null },
-      select: { id: true, startAt: true, endAt: true, capacity: true },
+      select: {
+        id: true,
+        startAt: true,
+        endAt: true,
+        capacity: true,
+        statusCode: true,
+        initiatorMemberId: true,
+      },
     });
     if (activity === null) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
     return activity;
@@ -386,10 +402,44 @@ export class ActivityPositionsService {
     if (locked.length === 0) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
     const activity = await tx.activity.findUnique({
       where: { id: activityId },
-      select: { id: true, startAt: true, endAt: true, capacity: true },
+      select: {
+        id: true,
+        startAt: true,
+        endAt: true,
+        capacity: true,
+        statusCode: true,
+        initiatorMemberId: true,
+      },
     });
     if (activity === null) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
     return activity;
+  }
+
+  private async assertWorkflowMutationAllowed(
+    tx: PrismaTx,
+    activity: ActivityWindow,
+    currentUser: CurrentUserPayload,
+  ): Promise<void> {
+    if (!this.config.activityResponsibilityWorkflow.enabled) return;
+    const pendingReview = await tx.activityPublishReview.count({
+      where: { activityId: activity.id, status: 'pending' },
+    });
+    if (pendingReview > 0) {
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
+    }
+    if (activity.statusCode === 'published') {
+      throw new BizException(BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED);
+    }
+    if (activity.statusCode !== 'draft') {
+      throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+    }
+    if (
+      activity.initiatorMemberId !== currentUser.memberId &&
+      currentUser.role !== Role.SUPER_ADMIN &&
+      !(await this.rbac.can(currentUser, 'activity-responsibility.override.record'))
+    ) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
   }
 
   private async assertPositionCapacityWithinActivity(

@@ -15,8 +15,8 @@
 | 计数项 | 值 |
 |---|---|
 | 模块 | 36 |
-| Controller | 75 |
-| Endpoint | 366 |
+| Controller | 76 |
+| Endpoint | 370 |
 | Migration | 65 |
 | BizCode | 275 |
 | 权限码 | 213 |
@@ -34,9 +34,10 @@
 - **多实例当前事实**:10 个 throttler 共用 PG bucket；RBAC 与 SMS/WeChat/Storage/Realname settings 每次直读已提交 PostgreSQL；Effect 绑定单份配置快照，DB 异常 fail-closed，零进程正确性缓存
 - **Storage production**:空库 migration/seed→窄配置 bootstrap；固定COS location+可解密凭证，disabled 重启不放行 Effect，null/LOCAL/unknown 禁回退；密钥不可轮换，真实 COS/fleet 待验
 - **贡献规则 ACTIVE 槽位**:未软删 ACTIVE 按 `activityTypeCode × attendanceRoleCode` 唯一；迁移、并发与漂移重复 pair 均 fail-closed
-- **通知 durable outbox**:PG lease/fence、generation/recipient/同事务 RBAC 快照及 quota marker；provider 事务外 at-least-once。生产 migration/gate 未 deploy，切换须排空旧 API/worker/intents 且禁混档
-- **Attachment storage Phase1**:Attachment namespace 已接 durable ledger；locator 固定、凭证 live-read；Content publish/confirm 根锁接线、Provider 事务外；未加 key FK，repo-wide closure 未完成；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)。
-- **保险 v3(v0.59.0，未 deploy)**:PR1–PR4 审核/CAS/evidence/gate及2+7 CHECK/owner unique/member-match/immutable 已交付，脏数 fail-fast 零修删；Admin队员360 overview（自购+团队安全投影+北京日汇总）已补，旧列表/审核/资格服务不变；启用须 drain 旧 server/事务且禁混档
+- **通知 durable outbox**:PG lease/fence + generation/recipient/RBAC 快照/quota marker；provider 事务外 at-least-once。生产未 deploy，切换须排空旧 API/worker/intents 且禁混档
+- **Attachment storage Phase1**:durable ledger 已接 Attachment；Content publish/confirm 根锁接线、Provider 事务外；未加 key FK，repo-wide closure 未完成；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)
+- **保险 v3(v0.59.0，未 deploy)**:PR1–PR4 gate/约束/evidence 已交付，脏数 fail-fast；Admin 360 overview 已补；切换须 drain 且禁混档
+- **活动责任闭环(Unreleased)**:PR0–PR4 已交付，gate=false 旧行为不变；PR5–PR11 未完成，production/smoke 须显式 false
 - **敏感读审计**:`AuditLogEvent` 123，管理端普通/CSV/签名 URL 敏感读均 fail-closed 落库，extra 禁 PII/filter/key/URL
 - **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 

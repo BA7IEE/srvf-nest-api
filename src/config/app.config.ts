@@ -433,6 +433,28 @@ export interface RealnameConfig {
   encryptionKey: string; // 空字符串 = 未配置(dev / test 允许;production / smoke 启动已 fail)
 }
 
+export interface ActivityResponsibilityWorkflowConfig {
+  enabled: boolean;
+}
+
+export function parseActivityResponsibilityWorkflowEnabled(
+  raw: string | undefined,
+  env: AppEnv,
+): boolean {
+  if (raw === undefined || raw.trim() === '') {
+    if (isProductionLike(env)) {
+      throw new Error(
+        'ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED 不能为空(production / smoke 必须显式设置 true 或 false)',
+      );
+    }
+    return false;
+  }
+  if (raw !== 'true' && raw !== 'false') {
+    throw new Error('ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED 必须严格为 true 或 false');
+  }
+  return raw === 'true';
+}
+
 // V2.x C-7.5 实施 PR #7:LocalStorageProvider 根目录(沿 Q-88-1 拍板 A)。
 // 留空默认 './tmp/storage'(相对仓库根目录;.gitignore 已排除 tmp/);
 // 显式可以是绝对路径或相对路径;由 LocalStorageProvider 调 path.resolve 归一化。
@@ -560,6 +582,7 @@ export interface AppConfig {
   recruitmentThrottle: RecruitmentThrottleConfig;
   recruitmentOcr: RecruitmentOcrConfig;
   contentPublicThrottle: ContentPublicThrottleConfig;
+  activityResponsibilityWorkflow: ActivityResponsibilityWorkflowConfig;
 }
 
 export default registerAs('app', (): AppConfig => {
@@ -802,6 +825,13 @@ export default registerAs('app', (): AppConfig => {
     ),
   };
 
+  const activityResponsibilityWorkflow: ActivityResponsibilityWorkflowConfig = {
+    enabled: parseActivityResponsibilityWorkflowEnabled(
+      process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED,
+      env,
+    ),
+  };
+
   return {
     env,
     port,
@@ -826,5 +856,6 @@ export default registerAs('app', (): AppConfig => {
     recruitmentThrottle,
     recruitmentOcr,
     contentPublicThrottle,
+    activityResponsibilityWorkflow,
   };
 });

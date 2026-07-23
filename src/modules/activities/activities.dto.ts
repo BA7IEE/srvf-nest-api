@@ -55,6 +55,12 @@ export class ActivityResponseDto {
   @ApiProperty({ description: '承办组织节点 Organization.id(NOT NULL;禁根节点)' })
   organizationId!: string;
 
+  @ApiProperty({ description: '业务发起人 Member.id', nullable: true, type: String })
+  initiatorMemberId!: string | null;
+
+  @ApiProperty({ description: '发布/变更审核通过后的工作流修订号' })
+  workflowRevision!: number;
+
   @ApiProperty({ description: '开始时间(ISO 8601)' })
   startAt!: Date;
 
@@ -293,6 +299,15 @@ export class CreateActivityDto {
   @MinLength(8)
   @MaxLength(64)
   organizationId!: string;
+
+  @ApiPropertyOptional({
+    description: '代建时指定业务发起人 Member.id(仅 SUPER_ADMIN 或 override 权限)',
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(64)
+  initiatorMemberId?: string;
 
   @ApiProperty({ description: '开始时间(ISO 8601;必填)' })
   @IsDateString()

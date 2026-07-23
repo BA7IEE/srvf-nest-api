@@ -40,6 +40,7 @@ function fakeConfig(trustedProxyCidrs: string[]): AppConfig {
       feedbackWindowDays: 30,
     },
     insurance: { enforcementEnabled: false },
+    activityResponsibilityWorkflow: { enabled: false },
     storage: { encryptionKey: '', localRoot: './tmp/storage', consistencyMode: 'JIT' },
     sms: { encryptionKey: '' },
     wechat: { encryptionKey: '' },

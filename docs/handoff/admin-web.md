@@ -51,6 +51,8 @@
 | 考勤审核详情 | `GET /api/admin/v1/attendance-sheets/:id/review-detail`(**活动摘要+单据+records含队员嵌套**,为审核页量身做的)· `PATCH .../:id/{approve,reject,final-approve,final-reject}` · `POST .../:id/reopen` · `DELETE` |
 | 参与核对 / 汇总 | `GET /api/admin/v1/activities/:id/reconciliation`(**仅 completed**) · `GET .../:id/participation-summary`；两者均需 `attendance.read.sheet` + `activity-registration.read.record` |
 
+> **Unreleased · 活动责任闭环 PR-4（尚未切生产 gate）**：活动出参 additive 增加 `initiatorMemberId` / `workflowRevision`，Admin create 可选 `initiatorMemberId`；不传时当前账号必须绑定正式队员，代建仅限 SUPER_ADMIN 或 `activity-responsibility.override.record`。新发布审核工作台为 `GET /api/admin/v1/activity-publish-reviews`、`GET /:id`、`POST /:id/approve`、`POST /:id/return`，列表按显式 `activity-publish-reviewer` RoleBinding 的组织范围过滤，普通管理角色不自动获得审核身份。gate=true 后，pending review 期间 Activity 与岗位均不可直改，published 直改返回 `20037`；旧 `PATCH activities/:id/publish` 只兼容“审批现有 pending initial”或“发起人本人且持发布权时直接发布”。当前 PR 尚未新增客户端提交/撤回审核入口（App managed 接口在 PR-6），前端不要自行拼写隐藏路由；生产在 PR-11 切换前继续显式 `ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED=false`。
+
 > 关键:报名/考勤接口**本来就按 activityId 嵌套**——作战室是它们的自然消费者。
 > `activityId` 从**路由参数**来,不要在页面顶部摆"选择活动"下拉。
 

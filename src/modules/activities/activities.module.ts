@@ -21,6 +21,13 @@ import { ActivityParticipationQueryService } from './activity-participation-quer
 import { AdminActivityPositionsController } from './controllers/admin-activity-positions.controller';
 import { ActivityPositionsService } from './activity-positions.service';
 import { ActivityPositionAuditRecorder } from './activity-position-audit-recorder';
+import { ActivityInitiationPolicy } from './activity-initiation-policy';
+import { ActivityPublishReviewStateMachine } from './activity-publish-review-state-machine';
+import { ActivityPublishReviewPresenter } from './activity-publish-review-presenter';
+import { ActivityPublishReviewAuditRecorder } from './activity-publish-review-audit-recorder';
+import { ActivityPublishReviewService } from './activity-publish-review.service';
+import { ActivityPublishReviewQueryService } from './activity-publish-review-query.service';
+import { AdminActivityPublishReviewsController } from './controllers/admin-activity-publish-reviews.controller';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activities 写操作(create / update / softDelete / publish / cancel 共 5 处共用 activity.publish)
@@ -62,6 +69,7 @@ import { ActivityPositionAuditRecorder } from './activity-position-audit-recorde
     AppActivitiesController,
     AdminActivityParticipationController,
     AdminActivityPositionsController,
+    AdminActivityPublishReviewsController,
   ],
   providers: [
     ActivitiesService,
@@ -73,7 +81,18 @@ import { ActivityPositionAuditRecorder } from './activity-position-audit-recorde
     AppMyActivitiesService,
     ActivityPositionsService,
     ActivityPositionAuditRecorder,
+    ActivityInitiationPolicy,
+    ActivityPublishReviewStateMachine,
+    ActivityPublishReviewPresenter,
+    ActivityPublishReviewAuditRecorder,
+    ActivityPublishReviewService,
+    ActivityPublishReviewQueryService,
   ],
-  exports: [ActivitiesService, AppMyActivitiesService, ActivityParticipationPolicy],
+  exports: [
+    ActivitiesService,
+    AppMyActivitiesService,
+    ActivityParticipationPolicy,
+    ActivityPublishReviewService,
+  ],
 })
 export class ActivitiesModule {}

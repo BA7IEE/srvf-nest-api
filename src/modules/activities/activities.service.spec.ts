@@ -20,6 +20,10 @@ import type { NotificationDispatcher } from '../notifications/notification-dispa
 import type { OrganizationsService } from '../organizations/organizations.service';
 import type { RbacService } from '../permissions/rbac.service';
 import type { AuthzService } from '../authz/authz.service';
+import type { ActivityInitiationPolicy } from './activity-initiation-policy';
+import type { ActivityPublishReviewService } from './activity-publish-review.service';
+import type { ConfigType } from '@nestjs/config';
+import appConfig from '../../config/app.config';
 
 jest.mock('./activity-waitlist-promotion', () => ({
   promoteActivityWaitlist: jest.fn().mockResolvedValue({ activityTitle: '测试活动', promoted: [] }),
@@ -60,6 +64,8 @@ interface ActivityRow {
   title: string;
   activityTypeCode: string;
   organizationId: string;
+  initiatorMemberId: string | null;
+  workflowRevision: number;
   startAt: Date;
   endAt: Date;
   location: string;
@@ -93,6 +99,8 @@ function makeActivityRow(overrides: Partial<ActivityRow> = {}): ActivityRow {
     title: 'Rescue Drill',
     activityTypeCode: 'rescue',
     organizationId: 'org-1',
+    initiatorMemberId: null,
+    workflowRevision: 0,
     startAt: FIXED_START,
     endAt: FIXED_END,
     location: 'HQ',
@@ -304,6 +312,15 @@ function makeService(
     dispatcher as unknown as NotificationDispatcher,
     organizations as unknown as OrganizationsService,
     insuranceRequirement as unknown as InsuranceRequirementService,
+    { resolveInitiator: jest.fn() } as unknown as ActivityInitiationPolicy,
+    {
+      compatibilityPublish: jest.fn(),
+      cancelPendingForActivity: jest.fn(),
+      assertNoPendingChangeReview: jest.fn(),
+    } as unknown as ActivityPublishReviewService,
+    {
+      activityResponsibilityWorkflow: { enabled: false },
+    } as ConfigType<typeof appConfig>,
   );
 }
 

@@ -92,6 +92,7 @@ function makeMocks() {
     rbac as unknown as RbacService,
     authz as unknown as AuthzService,
     notificationDispatcher as unknown as NotificationDispatcher,
+    { activityResponsibilityWorkflow: { enabled: false } } as never,
   );
   return { prisma, auditRecorder, auditLogs, rbac, authz, notificationDispatcher, service };
 }
@@ -106,7 +107,14 @@ describe('ActivityPositionsService', () => {
     expect(result).toHaveLength(1);
     expect(prisma.activity.findFirst).toHaveBeenCalledWith({
       where: { id: ACTIVITY_ID, deletedAt: null },
-      select: { id: true, startAt: true, endAt: true, capacity: true },
+      select: {
+        id: true,
+        startAt: true,
+        endAt: true,
+        capacity: true,
+        statusCode: true,
+        initiatorMemberId: true,
+      },
     });
     expect(prisma.activityPosition.findMany).toHaveBeenCalledWith(
       expect.objectContaining({

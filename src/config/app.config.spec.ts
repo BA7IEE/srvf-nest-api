@@ -1,4 +1,8 @@
-import { parseInsuranceEnforcementEnabled, parseTrustedProxyCidrs } from './app.config';
+import {
+  parseActivityResponsibilityWorkflowEnabled,
+  parseInsuranceEnforcementEnabled,
+  parseTrustedProxyCidrs,
+} from './app.config';
 
 describe('APP_TRUSTED_PROXY_CIDRS', () => {
   it.each(['development', 'test'] as const)('%s missing/empty/blank defaults to none', (env) => {
@@ -107,6 +111,32 @@ describe('APP_TRUSTED_PROXY_CIDRS', () => {
   ])('rejects CIDR that is inside or intersects a forbidden local range: %s', (raw) => {
     expect(() => parseTrustedProxyCidrs(raw, 'test')).toThrow(
       '不得包含 loopback/link-local/unique-local',
+    );
+  });
+});
+
+describe('ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED', () => {
+  it.each(['development', 'test'] as const)('%s missing defaults false', (env) => {
+    expect(parseActivityResponsibilityWorkflowEnabled(undefined, env)).toBe(false);
+    expect(parseActivityResponsibilityWorkflowEnabled('', env)).toBe(false);
+  });
+
+  it.each(['production', 'smoke'] as const)('%s requires an explicit value', (env) => {
+    expect(() => parseActivityResponsibilityWorkflowEnabled(undefined, env)).toThrow(
+      'ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED 不能为空',
+    );
+  });
+
+  it.each([
+    ['true', true],
+    ['false', false],
+  ] as const)('accepts strict literal %s', (raw, expected) => {
+    expect(parseActivityResponsibilityWorkflowEnabled(raw, 'production')).toBe(expected);
+  });
+
+  it.each(['TRUE', 'False', '1', 'yes', ' true '])('rejects invalid literal %j', (raw) => {
+    expect(() => parseActivityResponsibilityWorkflowEnabled(raw, 'test')).toThrow(
+      '必须严格为 true 或 false',
     );
   });
 });
