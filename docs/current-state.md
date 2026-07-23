@@ -7,8 +7,8 @@
 
 | 项 | 当前值 / 何处看 |
 |---|---|
-| 版本(六处一致) | **v0.60.0**(2026-07-22;tag/handoff #739=`a64efe5c`;GitHub Release Latest;`archive/handoff/v0.60.0.md`) |
-| main HEAD / open PR / Unreleased | 实时看 `gh pr list`;发布锚点=`v0.60.0`/`a64efe5c`;release 时 Unreleased=0、fragment=0 |
+| 版本(六处一致) | **v0.61.0**(2026-07-23;tag/handoff #754=`6adb0330`;GitHub Release Latest;`archive/handoff/v0.61.0.md`) |
+| main HEAD / open PR / Unreleased | 实时看 `gh pr list`;发布锚点=`v0.61.0`/`6adb0330`;release 时 Unreleased=0、fragment=0 |
 
 <!-- counts:begin -->
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
