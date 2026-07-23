@@ -30,6 +30,7 @@ const fakeAppCfg: AppConfig = {
     feedbackWindowDays: 30,
   },
   insurance: { enforcementEnabled: false },
+  activityResponsibilityWorkflow: { enabled: false },
   storage: { encryptionKey: '', localRoot: './tmp/storage', consistencyMode: 'JIT' },
   // SMS 基础设施 T2/T3:AppConfig 新增必填字段;本 unit test 不关心 SMS,仅满足接口
   sms: { encryptionKey: '' },

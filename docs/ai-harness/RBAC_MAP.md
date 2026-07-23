@@ -1,6 +1,6 @@
 # RBAC_MAP — 权限体系地图与对照表
 
-> 2026-07-24 v0.61.0 活动责任闭环 PR-2 expand:权限码 **207→213**,新增 `activity.create.cross-org`、`activity-review.{read,return}.request`、`activity-responsibility.override.record`、`attendance.{return,final-return}.sheet`;不向旧通用角色扩权。内置角色 **9→15**:新增 `activity-publish-reviewer` 3、`activity-cross-org-initiator` 1、`attendance-first-reviewer` 4、`activity-owner` 13、`activity-registration-collaborator` 6、`activity-attendance-collaborator` 4;现有 `attendance-final-reviewer` **4→5**(+`attendance.final-return.sheet`)。6 个新角色均零默认持有人;reviewer 零 PositionRolePolicy。三个责任角色由业务投影器托管,通用 role-bindings create/preview/batch/update/delete 与 legacy user-role assign/revoke 对任何身份(含 SUPER_ADMIN)统一拒绝 `34006`。受删除保护角色 **9→15**;ops-admin 96 / member 9 / biz-admin 82 / org-admin 61 / 两只读角色 / group-manager / org-supervisor 绑定不变。PR-11 contract 前不摘旧角色权限。
+> 2026-07-24 v0.61.0 活动责任闭环 PR-2 expand + PR-4 runtime:权限码 **207→213**,新增 `activity.create.cross-org`、`activity-review.{read,return}.request`、`activity-responsibility.override.record`、`attendance.{return,final-return}.sheet`;不向旧通用角色扩权。内置角色 **9→15**:新增 `activity-publish-reviewer` 3、`activity-cross-org-initiator` 1、`attendance-first-reviewer` 4、`activity-owner` 13、`activity-registration-collaborator` 6、`activity-attendance-collaborator` 4;现有 `attendance-final-reviewer` **4→5**(+`attendance.final-return.sheet`)。PR-4 起 Admin 发布审核 list/detail/approve/return 按 `activity-publish-reviewer` 显式 RoleBinding 的组织 scope 生效，普通管理角色不自动获得审核身份；workflow gate=false 仍保持旧发布行为。6 个新角色均零默认持有人;reviewer 零 PositionRolePolicy。三个责任角色由业务投影器托管,通用 role-bindings create/preview/batch/update/delete 与 legacy user-role assign/revoke 对任何身份(含 SUPER_ADMIN)统一拒绝 `34006`。受删除保护角色 **9→15**;ops-admin 96 / member 9 / biz-admin 82 / org-admin 61 / 两只读角色 / group-manager / org-supervisor 绑定不变。PR-11 contract 前不摘旧角色权限。
 
 > 2026-07-24 v0.61.0 活动责任闭环 PR-3 authz 基座:权限码 / 角色 / 默认绑定 **零变化**。ResourceResolver 11→13 类(+`organization` / `activity_publish_review`)；一级 `approve`/`reject`/未来 `return` 禁最初提交人或最近重提人自审，终审 `final-approve`/`final-reject`/未来 `final-return` 再禁一级审核人与终审人同人。约束对 SUPER_ADMIN 同样生效；`ATTENDANCE_ALLOW_SAME_REVIEWER` 仅保留解析兼容，true / false 均不放开。既有历史戳保留当时事实，以本行覆盖当前运行语义。
 
@@ -132,7 +132,7 @@
 - **App surface:不走 RBAC**——仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` self-scope + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`);capabilities 返回产品级能力而非 raw permission code(D-5.3)。
 - **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。`RbacService` 的 GLOBAL permission resolution 每请求从 PostgreSQL 解析当前在期 USER RoleBinding → RolePermission → Permission；`AuthzService` 同样不缓存判权/可见范围结果。
 
-## 2. controller × 鉴权模式对照(74 个 controller class)
+## 2. controller × 鉴权模式对照(75 个 controller class)
 
 ### 2.1 R 模式 — Service 层 `rbac.can()`(管理面,已收紧)
 
@@ -174,6 +174,7 @@
 | `admin/v1/members/:memberId/emergency-contacts`(Slow-4 T2;刀D 出口按 `emergency-contact.read.sensitive` 分级掩码) | `emergency-contact.*.record`(4) |
 | `admin/v1/members/:memberId/certificates`(Slow-4 T2) | `certificate.*.record`(6;list/detail/qualification-flag 共用 read) |
 | `admin/v1/activities`(Slow-4 T3;v0.40.0 +complete;审计刀 5 F1/F2;活动岗位 F2) | `activity.*.record`(6；活动主资源 6 个写端点含 `:id/complete`)；**活动列表/详情/options 与岗位 list/detail 均无码仅登录 `[auth]`**。岗位 create/update/delete 复用 `activity.update.record` + activity ref；审计刀 5 `AdminActivityParticipationController` 两读端点 `:activityId/{reconciliation,participation-summary}` 同时逐项判 `attendance.read.sheet` + `activity-registration.read.record`，均带 `{type:'activity',id}` ref；0 新码 |
+| `admin/v1/activity-publish-reviews`(活动责任闭环 PR-4) | list/detail 用 `activity-review.read.request`，return 用 `activity-review.return.request`，approve/legacy pending approve 用 `activity.publish.record`；均走 `AuthzService`，list 由 `getVisibleOrganizationScope` 下推并与显式 organization 过滤取交集，点动作带 `activity_publish_review` ref；专用 reviewer RoleBinding 可按 ORGANIZATION/TREE/GLOBAL 生效，普通管理角色不自动获得 |
 | `admin/v1/activities/:activityId/{check-ins,attendance-sheet-draft}`(活动自助 GPS 签到 F3；`AdminActivityCheckInsController`) | `attendance.read.sheet`(2 个只读端点；均由 Admin application service 调 `AuthzService.explain` 并带 `{type:'activity',id:activityId}` ref；`resource_not_found` 仅在全局 `rbac.can` 为真时回退后继续真实 Activity 存在性检查；0 新码) |
 | `admin/v1/activities/:activityId/registrations`(Slow-4 T3;v0.40.0 +reopen;审计刀 5 F6) | `activity-registration.*.record`(6;list/export 共用 read;`:id/reopen` = `reopen.record`;新增字面段 `bulk-approve`/`bulk-reject` 分别复用 approve/reject 码，逐 id 点判 + 独立事务，失败入结果不回滚成功项) |
 | `admin/v1/registrations`(跨轴只读 2026-06-23) | `activity-registration.read.record`(1;跨活动报名横扫,审批工作台,复用 read 零新码) |

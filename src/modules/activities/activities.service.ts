@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { ConfigType } from '@nestjs/config';
 import { DictItemStatus, DictTypeStatus, Prisma, Role } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
@@ -7,6 +8,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import appConfig from '../../config/app.config';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
@@ -41,6 +43,8 @@ import {
   promoteActivityWaitlist,
   promoteActivityWaitlistAcrossPositions,
 } from './activity-waitlist-promotion';
+import { ActivityInitiationPolicy } from './activity-initiation-policy';
+import { ActivityPublishReviewService } from './activity-publish-review.service';
 
 // V2 第一阶段批次 3A activities service。
 // 详见 docs:
@@ -92,6 +96,8 @@ const activitySafeSelect = {
   title: true,
   activityTypeCode: true,
   organizationId: true,
+  initiatorMemberId: true,
+  workflowRevision: true,
   startAt: true,
   endAt: true,
   location: true,
@@ -182,6 +188,10 @@ export class ActivitiesService {
     // Insurance lifecycle PR-A:Activity 仍持有根事务与聚合锁；保险策略只在 rollout gate
     // 开启且受保护字段真实变化时查询报名事实。
     private readonly insuranceRequirement: InsuranceRequirementService,
+    private readonly initiationPolicy: ActivityInitiationPolicy,
+    private readonly publishReviewService: ActivityPublishReviewService,
+    @Inject(appConfig.KEY)
+    private readonly config: ConfigType<typeof appConfig>,
   ) {}
 
   // ============ helpers ============
@@ -229,6 +239,8 @@ export class ActivitiesService {
       title: row.title,
       activityTypeCode: row.activityTypeCode,
       organizationId: row.organizationId,
+      initiatorMemberId: row.initiatorMemberId,
+      workflowRevision: row.workflowRevision,
       startAt: row.startAt,
       endAt: row.endAt,
       location: row.location,
@@ -541,6 +553,13 @@ export class ActivitiesService {
     auditMeta: AuditMeta,
   ): Promise<ActivityResponseDto> {
     await this.assertCanOrThrow(currentUser, 'activity.create.record');
+    const initiatorMemberId = this.config.activityResponsibilityWorkflow.enabled
+      ? await this.initiationPolicy.resolveInitiator(
+          currentUser,
+          dto.organizationId,
+          dto.initiatorMemberId,
+        )
+      : undefined;
     const startAt = new Date(dto.startAt);
     const endAt = new Date(dto.endAt);
     this.assertStartEndValid(startAt, endAt);
@@ -574,6 +593,7 @@ export class ActivitiesService {
         endAt,
         location: dto.location,
         statusCode: ACTIVITY_STATUS_DRAFT,
+        ...(initiatorMemberId ? { initiatorMemberId } : {}),
       };
       if (dto.description !== undefined) data.description = dto.description;
       if (dto.capacity !== undefined) data.capacity = dto.capacity;
@@ -633,6 +653,26 @@ export class ActivitiesService {
     const result = await this.prisma.$transaction(async (tx) => {
       // 所有活动写入口统一先锁 Activity，再重读状态、时间窗、岗位与 passCount 基线。
       const current = await this.lockAndFindActivityOrThrow(id, tx);
+
+      if (this.config.activityResponsibilityWorkflow.enabled) {
+        const pendingReview = await tx.activityPublishReview.count({
+          where: { activityId: id, status: 'pending' },
+        });
+        if (pendingReview > 0) {
+          throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
+        }
+        if (current.statusCode === ACTIVITY_STATUS_PUBLISHED) {
+          throw new BizException(BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED);
+        }
+        if (
+          current.statusCode === ACTIVITY_STATUS_DRAFT &&
+          current.initiatorMemberId !== currentUser.memberId &&
+          currentUser.role !== Role.SUPER_ADMIN &&
+          !(await this.rbac.can(currentUser, 'activity-responsibility.override.record'))
+        ) {
+          throw new BizException(BizCode.RBAC_FORBIDDEN);
+        }
+      }
 
       // Q-A12:cancelled 拒改(沿 ActivityStateMachine update decision)。
       const transition = this.activityStateMachine.decide('update', current.statusCode);
@@ -896,6 +936,14 @@ export class ActivitiesService {
     await this.assertCanOrThrow(currentUser, 'activity.delete.record', { type: 'activity', id });
     return this.prisma.$transaction(async (tx) => {
       const current = await this.lockAndFindActivityOrThrow(id, tx);
+      if (
+        this.config.activityResponsibilityWorkflow.enabled &&
+        (await tx.activityPublishReview.count({
+          where: { activityId: id, status: 'pending' },
+        })) > 0
+      ) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
+      }
 
       const [activeRegistrations, attendanceSheets] = await Promise.all([
         tx.activityRegistration.count({
@@ -947,6 +995,13 @@ export class ActivitiesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityResponseDto> {
+    if (this.config.activityResponsibilityWorkflow.enabled) {
+      if (dto.requiresInsuranceConfirmed !== true) {
+        throw new BizException(BizCode.BAD_REQUEST);
+      }
+      await this.publishReviewService.compatibilityPublish(id, dto, currentUser, auditMeta);
+      return this.findOne(id, currentUser);
+    }
     await this.assertCanOrThrow(currentUser, 'activity.publish.record', { type: 'activity', id });
     if (dto.requiresInsuranceConfirmed !== true) {
       throw new BizException(BizCode.BAD_REQUEST);
@@ -1036,6 +1091,10 @@ export class ActivitiesService {
       const { nextStatusCode } = transition;
 
       const cancelledAt = new Date();
+
+      if (this.config.activityResponsibilityWorkflow.enabled) {
+        await this.publishReviewService.cancelPendingForActivity(id, tx);
+      }
 
       await claimAtStatus(tx, {
         target: 'activity',
@@ -1129,6 +1188,9 @@ export class ActivitiesService {
     await this.assertCanOrThrow(currentUser, 'activity.complete.record', { type: 'activity', id });
     return this.prisma.$transaction(async (tx) => {
       const current = await this.lockAndFindActivityOrThrow(id, tx);
+      if (this.config.activityResponsibilityWorkflow.enabled) {
+        await this.publishReviewService.assertNoPendingChangeReview(id, tx);
+      }
 
       const transition = this.activityStateMachine.decide('complete', current.statusCode);
       if (!transition.allowed) {

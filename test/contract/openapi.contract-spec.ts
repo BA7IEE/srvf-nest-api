@@ -388,6 +388,11 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/admin/v1/activities/{id}/publish'],
   ['patch', '/api/admin/v1/activities/{id}/cancel'],
   ['post', '/api/admin/v1/activities/{id}/complete'],
+  // 活动责任闭环 PR-4:独立发布审核工作台 4 端点。
+  ['get', '/api/admin/v1/activity-publish-reviews'],
+  ['get', '/api/admin/v1/activity-publish-reviews/{id}'],
+  ['post', '/api/admin/v1/activity-publish-reviews/{id}/approve'],
+  ['post', '/api/admin/v1/activity-publish-reviews/{id}/return'],
   // 活动岗位与时段 F2:Admin 嵌套子资源 5 端点；两 GET login-only，三写复用 activity.update.record。
   ['post', '/api/admin/v1/activities/{activityId}/positions'],
   ['get', '/api/admin/v1/activities/{activityId}/positions'],
@@ -1306,8 +1311,8 @@ describe('OpenAPI 契约快照', () => {
     expect(Object.keys(item[method]?.responses ?? {}).length).toBeGreaterThan(0);
   });
 
-  it('队员统一保险概览后路由足迹精确为 366', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(366);
+  it('活动发布审核工作台后路由足迹精确为 370', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(370);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {
