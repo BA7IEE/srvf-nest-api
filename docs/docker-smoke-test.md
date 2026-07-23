@@ -4,7 +4,7 @@
 >
 > **v0.1.6 已修复**本文 §6.1 记录的启动期 WARN(`[LegacyRouteConverter] Unsupported route path: "/api/*"`),根因为 `nestjs-pino` 的 `LoggerModule` 默认 `forRoutes: [{ path: '*', ... }]` 与 `app.setGlobalPrefix('/api')` 拼接;详见 `CHANGELOG.md` v0.1.6 段。v0.1.6 之后再跑 smoke 应不再出现该 WARN。
 >
-> **当前自动化以 [`.github/workflows/docker-smoke.yml`](../.github/workflows/docker-smoke.yml) 为准**:本文已不再是回归基线,只承担"首轮手动报告"的归档职责。后续 PR 触发的容器级回归由该 workflow 提供,触发路径覆盖 `Dockerfile` / `docker-compose.yml` / `package.json` / `pnpm-lock.yaml` / `prisma/**` / production boot 敏感路径(`src/main.ts` / `src/app.module.ts` / `src/bootstrap/**` / `src/config/**` / `src/database/**`)/ workflow 自身。
+> **当前自动化以 [`.github/workflows/docker-smoke.yml`](../.github/workflows/docker-smoke.yml) 为准**:本文已不再是回归基线,只承担"首轮手动报告"的归档职责。容器级回归由该 workflow 提供：PR 触发路径覆盖 `Dockerfile` / `docker-compose.yml` / `package.json` / `pnpm-lock.yaml` / `prisma/**` / production boot 敏感路径(`src/main.ts` / `src/app.module.ts` / `src/bootstrap/**` / `src/config/**` / `src/database/**`)/ workflow 自身；`workflow_dispatch` 可在 release 收口时对最终 `main` 精确 SHA 手动执行，避免用本地 Docker 环境替代发布证据。v0.61.0 代码候选 `main@1bd0dc8f0cef7cd06456104bdbf3c2db49fb7243` 的完整 production-mode Smoke 已在 GitHub-hosted runner 全步骤绿色（[run 29999773325](https://github.com/BA7IEE/srvf-nest-api/actions/runs/29999773325)）。
 >
 > **范围承诺(原始)**:本次只做只读/可回滚验证,**不改** Dockerfile / docker-compose.yml / CI / Prisma schema / 运行时代码 / 依赖版本。
 
