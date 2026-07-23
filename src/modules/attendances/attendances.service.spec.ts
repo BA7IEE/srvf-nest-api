@@ -639,8 +639,8 @@ describe('AttendancesService (characterization, scoped)', () => {
   // 约束两 reason → 22074 / 22075;resource_not_found → rbac.can 回退保「先判码后查单」旧契约;
   // 其余一切 deny → 30100。终态 scoped-authz PR12(2026-07-02)起其余 6 管理端动作也切
   // authz.explain(ref 矩阵见 attendances.service.ts assertCanOrThrow 头注),
-  // 但**约束否决(self_approval_forbidden/same_reviewer_forbidden)仅注册于 final-approve**
-  // (§5.3 注册表冻结),故 approve 等动作即便走 authz 也不会命中这两个 reason。
+  // 活动责任闭环起 approve/reject/return 的 self_approval_forbidden 映射 22081；
+  // finalApprove/finalReject/finalReturn 的 self/same reason 继续映射 22074/22075。
   describe('PR9 终审 authz 判权(deny 映射)', () => {
     it('finalApprove:authz.explain 收 (user, final-approve 码, ref);approve 亦经 authz 但收各自 action+ref(PR12)', async () => {
       const prisma = makePrismaMock();
@@ -691,7 +691,27 @@ describe('AttendancesService (characterization, scoped)', () => {
       });
     });
 
-    it('self_approval_forbidden → 22074(域不变量,非权限不足);不进事务 / 不审计', async () => {
+    it('一审 self_approval_forbidden → 22081；不进事务 / 不审计', async () => {
+      for (const invoke of [
+        (service: AttendancesService) =>
+          service.approve('sheet-1', makeApproveDto(), makeCurrentUser(), META),
+        (service: AttendancesService) =>
+          service.reject('sheet-1', makeRejectDto(), makeCurrentUser(), META),
+      ]) {
+        const prisma = makePrismaMock();
+        const authz = makeAuthzMock({ allow: false, reason: 'self_approval_forbidden' });
+        const recorder = makeRecorderMock();
+        const service = makeService(prisma, { authz, recorder });
+
+        await expect(invoke(service)).rejects.toEqual(
+          new BizException(BizCode.ATTENDANCE_SELF_FIRST_REVIEW_FORBIDDEN),
+        );
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+        expect(recorder.logReview).not.toHaveBeenCalled();
+      }
+    });
+
+    it('终审 self_approval_forbidden → 22074(finalApprove / finalReject 同映射面)', async () => {
       const prisma = makePrismaMock();
       const authz = makeAuthzMock({ allow: false, reason: 'self_approval_forbidden' });
       const recorder = makeRecorderMock();
@@ -699,6 +719,9 @@ describe('AttendancesService (characterization, scoped)', () => {
 
       await expect(
         service.finalApprove('sheet-1', makeFinalApproveDto(), makeCurrentUser(), META),
+      ).rejects.toEqual(new BizException(BizCode.ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN));
+      await expect(
+        service.finalReject('sheet-1', makeFinalRejectDto('no'), makeCurrentUser(), META),
       ).rejects.toEqual(new BizException(BizCode.ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN));
       expect(prisma.$transaction).not.toHaveBeenCalled();
       expect(recorder.logFinalReview).not.toHaveBeenCalled();

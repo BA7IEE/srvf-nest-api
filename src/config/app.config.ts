@@ -298,10 +298,8 @@ export interface RefreshThrottleConfig {
   ttlSeconds: number;
 }
 
-// 终态 scoped-authz PR9(2026-07-02;冻结稿 §5.3 拍板「一级审核与终审同人默认禁止」):
-// 考勤终审 ActionConstraint 的同人开关。env `ATTENDANCE_ALLOW_SAME_REVIEWER`,严格 === 'true'
-// 才放开(沿 ENABLE_SWAGGER 布尔范式,默认 false=禁止);消费方 = authz 模块 same_reviewer 约束。
-// 只可放开「一级审核人 == 终审人」;自审禁止(submitter == 终审人)是域不变量,永不可配。
+// 终态 scoped-authz PR9(2026-07-02)遗留兼容字段：
+// @deprecated 仅保留环境变量解析兼容；活动责任闭环起运行时不再读取该值放开同人复核。
 export interface AttendanceConfig {
   allowSameReviewer: boolean;
   // 考勤记录允许落在活动起止两侧的容差小时数；默认 2，供 submit/edit 时间窗校验。

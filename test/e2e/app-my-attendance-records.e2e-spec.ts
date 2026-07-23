@@ -148,6 +148,7 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
 
     // ============ Users ============
     await createTestUser(app, { username: 'p26-su', role: Role.SUPER_ADMIN });
+    await createTestUser(app, { username: 'p26-su-submitter', role: Role.SUPER_ADMIN });
     // PR9:第二 SUPER_ADMIN 专职 final-approve(p26-su 是 submitter+一级审;自审 22074 对 SA
     // 亦拒、同人 22075 默认拒 —— 单人无法再走完 submit→approve→final 全程)
     await createTestUser(app, { username: 'p26-su-final', role: Role.SUPER_ADMIN });
@@ -219,6 +220,7 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
 
     // ============ Login ============
     const superAdminAuth = (await loginAs(app, 'p26-su')).authHeader;
+    const submitterAuth = (await loginAs(app, 'p26-su-submitter')).authHeader;
     const finalReviewerAuth = (await loginAs(app, 'p26-su-final')).authHeader;
     userAAuth = (await loginAs(app, 'p26-user-a')).authHeader;
     userBAuth = (await loginAs(app, 'p26-user-b')).authHeader;
@@ -333,7 +335,7 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
     // 1) activity1:approved sheet with 3 records (memberA × 2 + 一个之后软删)
     const approvedSheet1Res = await request(httpServer(app))
       .post(`/api/admin/v1/activities/${activity1Id}/attendance-sheets`)
-      .set('Authorization', superAdminAuth)
+      .set('Authorization', submitterAuth)
       .send({
         records: [
           {
@@ -366,7 +368,7 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
     // 2) activity2:memberA 1 record + memberB 1 record (验 scope-self + admin-as-member)
     const approvedSheet2Res = await request(httpServer(app))
       .post(`/api/admin/v1/activities/${activity2Id}/attendance-sheets`)
-      .set('Authorization', superAdminAuth)
+      .set('Authorization', submitterAuth)
       .send({
         records: [
           {
@@ -390,7 +392,7 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
     // 3) activity3:memberA 1 record(用于 filter)
     const approvedSheet3Res = await request(httpServer(app))
       .post(`/api/admin/v1/activities/${activity3Id}/attendance-sheets`)
-      .set('Authorization', superAdminAuth)
+      .set('Authorization', submitterAuth)
       .send({
         records: [
           {
@@ -447,7 +449,7 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
     // pending sheet(memberA)
     const pendingRes = await request(httpServer(app))
       .post(`/api/admin/v1/activities/${activity1Id}/attendance-sheets`)
-      .set('Authorization', superAdminAuth)
+      .set('Authorization', submitterAuth)
       .send({
         records: [
           {
@@ -464,7 +466,7 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
     // rejected(一级)sheet
     const rejRes = await request(httpServer(app))
       .post(`/api/admin/v1/activities/${activity1Id}/attendance-sheets`)
-      .set('Authorization', superAdminAuth)
+      .set('Authorization', submitterAuth)
       .send({
         records: [
           {
@@ -485,7 +487,7 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
     // pending_final_review sheet(只 approve 一级,不 final-approve)
     const pfRes = await request(httpServer(app))
       .post(`/api/admin/v1/activities/${activity1Id}/attendance-sheets`)
-      .set('Authorization', superAdminAuth)
+      .set('Authorization', submitterAuth)
       .send({
         records: [
           {
@@ -506,7 +508,7 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
     // final_rejected sheet(一级 approve,终审 reject)
     const frRes = await request(httpServer(app))
       .post(`/api/admin/v1/activities/${activity1Id}/attendance-sheets`)
-      .set('Authorization', superAdminAuth)
+      .set('Authorization', submitterAuth)
       .send({
         records: [
           {
@@ -525,14 +527,14 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
       .send({});
     await request(httpServer(app))
       .patch(`/api/admin/v1/attendance-sheets/${finalRejectedSheetId}/final-reject`)
-      .set('Authorization', superAdminAuth)
+      .set('Authorization', finalReviewerAuth)
       .send({ finalReviewNote: 'final rejected for test' });
 
     // ============ approved 后 sheet 软删(用 prisma 直写,模拟意外软删场景 — Sheet 模型 onDelete 不影响 records;
     // service 通过 sheet.deletedAt=null 过滤,本测验证此过滤生效)============
     const softRes = await request(httpServer(app))
       .post(`/api/admin/v1/activities/${activity1Id}/attendance-sheets`)
-      .set('Authorization', superAdminAuth)
+      .set('Authorization', submitterAuth)
       .send({
         records: [
           {
@@ -551,7 +553,7 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
       .send({});
     await request(httpServer(app))
       .patch(`/api/admin/v1/attendance-sheets/${softDeletedSheetId}/final-approve`)
-      .set('Authorization', superAdminAuth)
+      .set('Authorization', finalReviewerAuth)
       .send({});
     // 直接软删 sheet(模拟运维误操作 / 业务侧未提供 admin 接口)
     await prisma.attendanceSheet.update({

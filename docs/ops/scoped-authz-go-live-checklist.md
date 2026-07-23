@@ -151,7 +151,7 @@ curl -X POST https://<API_HOST>/api/admin/v1/authz/explain \
 
 ## 7. env 项确认
 
-- [ ] `ATTENDANCE_ALLOW_SAME_REVIEWER`:留空 / 非 `'true'`(默认,推荐)= 禁止"一级审核人 == 终审人";若运营规模小、终审人手不足,可显式设 `'true'` 放开同人限制——**但自审限制(提交人 == 终审人)不受此开关影响,永远禁止,`SUPER_ADMIN` 也不例外**
+- [ ] `ATTENDANCE_ALLOW_SAME_REVIEWER`:已废弃，仅保留启动解析兼容；无论留空、`false` 或 `true`，运行时都禁止“一级审核人 == 终审人”，不得再把该变量当作放开手段。提交/重提人自审同样永远禁止，`SUPER_ADMIN` 也不例外
 - [ ] **单一终审人风险**:若 §5 只建了一条绑定(如仅部长,无副部长备份),该人请假 / 离职 / 换届期间终审链会中断到只剩 `SUPER_ADMIN` 可用;建议至少两人(正副部长)同时持有 `attendance-final-reviewer` 绑定
 - [ ] `RBAC_CACHE_TTL_SECONDS` 已退役:`GLOBAL` 角色走的 `RbacService` 每请求读取当前 DB 权限事实,写后无需 invalidate / reload;§5 建的 `POSITION_ASSIGNMENT` scoped 绑定也由 `AuthzService` 实时查询
 
@@ -161,7 +161,7 @@ curl -X POST https://<API_HOST>/api/admin/v1/authz/explain \
 |---|---|---|
 | 终审端点返回 `30100` | `authz/explain` 查该终审人 | §5 绑定未建 / 建错(`principalId` 不是任职 id、`scopeOrgId` 不是祖先组织)、或对应任职已被撤销 |
 | 终审端点返回 `22074` | 单据的提交人 | 提交人与终审人是同一人,这是**正确行为**(不是 bug);换人提交或换人终审 |
-| 终审端点返回 `22075` | 单据一级审核人 | 一级审核人与终审人是同一人;确认是否要设 `ATTENDANCE_ALLOW_SAME_REVIEWER=true` |
+| 终审端点返回 `22075` | 单据一级审核人 | 一级审核人与终审人是同一人；必须改由其他终审人处理，兼容 env 不会放开 |
 | 公告导入 `execute` 大量 `blocked` | 响应 `reasons[]` | 多数是缺 `memberNo`,或组织 `code` 未先声明(父组织行必须先于引用它的子行出现) |
 | 公告导入 `needs-manual` 命中率低 | §3 是否已建全队员 | `displayName` 唯一命中的前提是该队员已存在于系统 |
 

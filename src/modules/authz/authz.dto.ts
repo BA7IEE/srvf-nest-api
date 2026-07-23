@@ -26,11 +26,13 @@ import type { ActionStateReason } from './action-state-checks';
 
 // ============ 运行时枚举数组(Swagger enum + 校验白名单)============
 
-// resourceRef.type 白名单 = ResourceResolverService.resolve() switch 的 11 类(冻结稿 §5.1),
+// resourceRef.type 白名单 = ResourceResolverService.resolve() switch 的 13 类,
 // 顺序与 resolver 分发一致。未来 resolver 扩类时须同步本表(漏加只会 400 拒收,fail-safe 收紧方向,
 // 不会误放行);消费面迁移(PR12)扩类时随刀更新。
 export const EXPLAINABLE_RESOURCE_TYPES = [
+  'organization',
   'activity',
+  'activity_publish_review',
   'attendance_sheet',
   'attendance_record',
   'activity_registration',
@@ -81,7 +83,7 @@ const ACTION_CODE_PATTERN = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2,3}$/;
 
 export class ExplainResourceRefDto {
   @ApiProperty({
-    description: '资源类型(ResourceResolver 支持的 11 类;冻结稿 §5.1)',
+    description: '资源类型(ResourceResolver 支持的 13 类)',
     enum: EXPLAINABLE_RESOURCE_TYPES,
     example: 'attendance_sheet',
   })
@@ -220,7 +222,8 @@ export class ResolvedResourceDto {
   sensitivityLevel!: ResourceSensitivityLevel | null;
 
   @ApiPropertyOptional({
-    description: '域特定附加(如 attendance_sheet 的 submitterUserId / reviewerUserId,自审约束事实)',
+    description:
+      '域特定附加(如 attendance_sheet 的 submitterUserId / lastSubmittedByUserId / reviewerUserId)',
     type: 'object',
     additionalProperties: true,
   })
@@ -365,7 +368,7 @@ export class ActionStateItemDto {
   action!: string;
 
   @ApiProperty({
-    description: '资源类型(ResourceResolver 支持的 11 类;同 explain 白名单)',
+    description: '资源类型(ResourceResolver 支持的 13 类;同 explain 白名单)',
     enum: EXPLAINABLE_RESOURCE_TYPES,
     example: 'attendance_sheet',
   })

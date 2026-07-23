@@ -519,6 +519,16 @@ export const BizCode = {
     message: '同一活动已存在同名岗位',
     httpStatus: HttpStatus.CONFLICT,
   },
+  ACTIVITY_PUBLISH_REVIEW_NOT_FOUND: {
+    code: 20004,
+    message: '活动发布审核记录不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_RESPONSIBILITY_NOT_FOUND: {
+    code: 20005,
+    message: '活动责任记录不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
   ACTIVITY_ORGANIZATION_ROOT_FORBIDDEN: {
     code: 20011,
     message: '活动不允许挂在组织根节点',
@@ -563,6 +573,26 @@ export const BizCode = {
     message: '活动岗位名额配置无效',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+  ACTIVITY_INITIATOR_NOT_FORMAL: {
+    code: 20019,
+    message: '只有正式队员可以发起活动',
+    httpStatus: HttpStatus.FORBIDDEN,
+  },
+  ACTIVITY_INITIATION_ORG_FORBIDDEN: {
+    code: 20020,
+    message: '无权为该组织发起活动',
+    httpStatus: HttpStatus.FORBIDDEN,
+  },
+  ACTIVITY_PUBLISH_REVIEW_NOTE_REQUIRED: {
+    code: 20021,
+    message: '退回发布审核必须填写原因',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID: {
+    code: 20022,
+    message: '活动审核快照无效或已过期',
+    httpStatus: HttpStatus.CONFLICT,
+  },
   ACTIVITY_STATUS_INVALID: {
     code: 20030,
     message: '活动当前状态不允许此操作',
@@ -571,6 +601,41 @@ export const BizCode = {
   ACTIVITY_POSITION_HAS_ACTIVE_REGISTRATIONS: {
     code: 20031,
     message: '活动岗位仍有活跃报名,不可删除',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_PUBLISH_REVIEW_PENDING: {
+    code: 20032,
+    message: '活动已有待处理的发布审核',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_PUBLISH_REVIEW_STATUS_INVALID: {
+    code: 20033,
+    message: '发布审核当前状态不允许此操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_RESPONSIBILITY_ALREADY_EXISTS: {
+    code: 20034,
+    message: '该人员已承担此活动责任',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_RESPONSIBILITY_TARGET_INVALID: {
+    code: 20035,
+    message: '责任人或协办人不符合条件',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_CHANGE_REVIEW_REQUIRED: {
+    code: 20037,
+    message: '已发布活动修改需先提交审核',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_LEGACY_OWNER_REQUIRED: {
+    code: 20038,
+    message: '历史活动尚未指定负责人',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_ATTENDANCE_DECLARATION_INVALID: {
+    code: 20039,
+    message: '当前活动不能声明考勤已全部提交',
     httpStatus: HttpStatus.CONFLICT,
   },
   ACTIVITY_NOT_PUBLIC_REGISTRATION: {
@@ -816,7 +881,7 @@ export const BizCode = {
   // RBAC_FORBIDDEN(22044 FINAL_REVIEW_FORBIDDEN 继续不开,沿 D-S2 决议)。
   // 段位:沿 22xxx attendances 顺延取 22074/22075(22050-22099 原规划 Record 实体级,
   // 22074 起两枚终审判权约束例外借用,就近登记于终审 2204x 块之后)。
-  // same_reviewer 可经 env ATTENDANCE_ALLOW_SAME_REVIEWER=true 放开;自审永不可放开。
+  // 活动责任闭环起 same_reviewer 与自审均为严格不变量；兼容 env 不再影响运行时。
   ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN: {
     code: 22074,
     message: '不能终审自己提交的考勤单据',
@@ -826,6 +891,21 @@ export const BizCode = {
     code: 22075,
     message: '一级审核人不得再终审同一张考勤单据',
     httpStatus: HttpStatus.FORBIDDEN,
+  },
+  ATTENDANCE_SELF_FIRST_REVIEW_FORBIDDEN: {
+    code: 22081,
+    message: '不能一审自己提交或重提的考勤单',
+    httpStatus: HttpStatus.FORBIDDEN,
+  },
+  ATTENDANCE_RETURN_NOTE_REQUIRED: {
+    code: 22082,
+    message: '退回修改必须填写原因',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ATTENDANCE_SHEET_RESUBMIT_STATUS_INVALID: {
+    code: 22083,
+    message: '只有退回修改的考勤单可以重新提交',
+    httpStatus: HttpStatus.CONFLICT,
   },
 
   // contribution_rules 模块业务级(230xx + 231xx)。批次 5-A 引入(2026-05-12)。

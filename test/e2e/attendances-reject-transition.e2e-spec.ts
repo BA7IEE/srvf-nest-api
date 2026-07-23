@@ -47,6 +47,7 @@ interface SeedContext {
   service: AttendancesService;
   reviewerUserId: string;
   reviewerPayload: CurrentUserPayload;
+  submitterUserId: string;
   memberId: string;
   activityId: string;
 }
@@ -76,6 +77,15 @@ describe('AttendancesService reject transition (characterization)', () => {
         username: 'att-rej-reviewer',
         passwordHash: '$2a$10$dummy-hash-not-used-since-no-login-needed',
         role: Role.ADMIN,
+        status: UserStatus.ACTIVE,
+      },
+      select: { id: true },
+    });
+    const submitter = await prisma.user.create({
+      data: {
+        username: 'att-rej-submitter',
+        passwordHash: '$2a$10$dummy-hash-not-used-since-no-login-needed',
+        role: Role.USER,
         status: UserStatus.ACTIVE,
       },
       select: { id: true },
@@ -132,6 +142,7 @@ describe('AttendancesService reject transition (characterization)', () => {
         status: UserStatus.ACTIVE,
         memberId: null,
       },
+      submitterUserId: submitter.id,
       memberId: member.id,
       activityId: activity.id,
     };
@@ -161,7 +172,7 @@ describe('AttendancesService reject transition (characterization)', () => {
     const sheet = await ctx.prisma.attendanceSheet.create({
       data: {
         activityId: ctx.activityId,
-        submitterUserId: ctx.reviewerUserId, // 简化:reviewer 兼作 submitter(FK 满足)
+        submitterUserId: ctx.submitterUserId,
         statusCode: opts.statusCode,
         version: 1,
       },

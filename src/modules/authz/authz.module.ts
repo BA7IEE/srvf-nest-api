@@ -14,7 +14,7 @@ import { ResourceResolverService } from './resource-resolver.service';
 
 // 终态 scoped-authz PR8「AuthzService / ResourceResolver」(2026-07-02;冻结稿 §5.1/§5.2/§5.3):
 // 统一判权模块(第 33 模块)。**0 schema** —— 判权大脑:
-// AuthzService(统一鉴权,三源推导 + covers + ActionConstraint)+ ResourceResolverService(11 类资源归属解析)。
+// AuthzService(统一鉴权,三源推导 + covers + ActionConstraint)+ ResourceResolverService(13 类资源归属解析)。
 //
 // PR10「authz/explain 端点」(2026-07-02;冻结稿 §7.6):挂本模块第一个 controller ——
 // POST admin/v1/authz/explain 权限解释(可解释性出口,1 端点 + 1 码 `authz.explain.decision`);
