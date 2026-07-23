@@ -2,7 +2,9 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
-## Unreleased
+## v0.61.0 - 2026-07-23
+
+> 主题:**会话线性化、生产启动恢复、契约一致性与发布门禁收口**(v0.60.0 后 #741–#752：队员 360 保险概览、Auth User 行锁与 JWT TTL、日志 query 脱敏、Storage production bootstrap/recovery、366 个 OpenAPI 成功状态对齐、fast-uri High 修复、最终 SHA audit/Docker Smoke 自动化)。Endpoint 365→366；Migration 64 / BizCode 258 / Permission 207 / AuditLogEvent 123 / Controller 75 / Module 36 / Cron 2 均不变。代码发布候选与 Release 自动化已 GO；真实 DB/COS/ingress/ACL/API/Worker fleet/外部通道验收前生产仍 NO-GO。
 
 - Stabilized the PostgreSQL auth-session concurrency barrier for cold standalone E2E runs by preserving the exact waiter/blocker assertions while allowing enough time for Prisma pool startup and emitting lock diagnostics on timeout.
 
