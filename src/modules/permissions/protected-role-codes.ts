@@ -13,6 +13,12 @@ export const PROTECTED_ROLE_CODES = [
   'group-readonly',
   'org-supervisor',
   'attendance-final-reviewer',
+  'activity-publish-reviewer',
+  'activity-cross-org-initiator',
+  'attendance-first-reviewer',
+  'activity-owner',
+  'activity-registration-collaborator',
+  'activity-attendance-collaborator',
 ] as const;
 
 export const PROTECTED_ROLE_CODE_SET: ReadonlySet<string> = new Set(PROTECTED_ROLE_CODES);

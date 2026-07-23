@@ -755,6 +755,7 @@ export class RoleBindingsService {
         },
       });
       if (!current) throw new BizException(BizCode.ROLE_BINDING_NOT_FOUND);
+      this.roleDelegation.assertRoleIsNotSystemManaged(current.role);
 
       const effectiveStartedAt =
         dto.startedAt !== undefined ? new Date(dto.startedAt) : current.startedAt;
@@ -862,6 +863,7 @@ export class RoleBindingsService {
         select: { ...roleBindingSafeSelect, role: { select: { code: true } } },
       });
       if (!current) throw new BizException(BizCode.ROLE_BINDING_NOT_FOUND);
+      this.roleDelegation.assertRoleIsNotSystemManaged(current.role);
 
       await this.lastAdminProtection.assertCanRemoveOpsAdminBinding(tx, current);
 

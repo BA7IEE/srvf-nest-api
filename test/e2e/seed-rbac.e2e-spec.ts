@@ -4,6 +4,7 @@ import { execSync } from 'child_process';
 import { PrismaService } from '../../src/database/prisma.service';
 import { PROTECTED_ROLE_CODES } from '../../src/modules/permissions/protected-role-codes';
 import { RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES } from '../../src/modules/permissions/reserved-super-admin-permission-codes';
+import { SYSTEM_MANAGED_ROLE_CODES } from '../../src/modules/permissions/system-managed-role-codes';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
@@ -221,6 +222,56 @@ const EXPECTED_OPS_ADMIN_BOUND_CODES = EXPECTED_RBAC_PERMISSION_CODES.filter(
     c !== REALNAME_RESET_CREDENTIALS_CODE,
 );
 const EXPECTED_RBAC_ONLY_COUNT = 14; // 仅 rbac.* 段位,供下面 module=rbac 断言用
+const EXPECTED_ACTIVITY_RESPONSIBILITY_ROLE_PERMISSIONS = {
+  'activity-publish-reviewer': [
+    'activity-review.read.request',
+    'activity.publish.record',
+    'activity-review.return.request',
+  ],
+  'activity-cross-org-initiator': ['activity.create.cross-org'],
+  'attendance-first-reviewer': [
+    'attendance.read.sheet',
+    'attendance.approve.sheet',
+    'attendance.reject.sheet',
+    'attendance.return.sheet',
+  ],
+  'activity-owner': [
+    'activity.update.record',
+    'activity.cancel.record',
+    'activity.complete.record',
+    'activity-registration.read.record',
+    'activity-registration.create.record',
+    'activity-registration.approve.record',
+    'activity-registration.reject.record',
+    'activity-registration.cancel.record',
+    'activity-registration.reopen.record',
+    'attendance.read.sheet',
+    'attendance.create.sheet',
+    'attendance.update.sheet',
+    'attendance.delete.sheet',
+  ],
+  'activity-registration-collaborator': [
+    'activity-registration.read.record',
+    'activity-registration.create.record',
+    'activity-registration.approve.record',
+    'activity-registration.reject.record',
+    'activity-registration.cancel.record',
+    'activity-registration.reopen.record',
+  ],
+  'activity-attendance-collaborator': [
+    'attendance.read.sheet',
+    'attendance.create.sheet',
+    'attendance.update.sheet',
+    'attendance.delete.sheet',
+  ],
+  'attendance-final-reviewer': [
+    'attendance.read.sheet',
+    'attendance.final-approve.sheet',
+    'attendance.final-reject.sheet',
+    'attendance.reopen.sheet',
+    'attendance.final-return.sheet',
+  ],
+} as const;
 
 describe('prisma/seed.ts — RBAC bootstrap', () => {
   let app: INestApplication;
@@ -368,7 +419,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     expect(bindings).toEqual([]);
   });
 
-  it('D3 漂移哨兵:PROTECTED_ROLE_CODES 的 9 个内置角色均由 seed 建立', async () => {
+  it('活动责任闭环漂移哨兵:15 个 protected 角色、7 组固定码集与 3 个 system-managed 角色均精确落地', async () => {
     const result = runSeed({
       APP_ENV: 'test',
       SUPER_ADMIN_USERNAME: 'rbac-seed-protected',
@@ -384,6 +435,56 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     });
     expect(new Set(roles.map((role) => role.code))).toEqual(new Set(PROTECTED_ROLE_CODES));
     expect(roles.every((role) => role.deletedAt === null)).toBe(true);
+
+    const workflowRoles = await prisma.rbacRole.findMany({
+      where: { code: { in: Object.keys(EXPECTED_ACTIVITY_RESPONSIBILITY_ROLE_PERMISSIONS) } },
+      select: {
+        id: true,
+        code: true,
+        rolePermissions: { select: { permission: { select: { code: true } } } },
+      },
+    });
+    expect(workflowRoles).toHaveLength(
+      Object.keys(EXPECTED_ACTIVITY_RESPONSIBILITY_ROLE_PERMISSIONS).length,
+    );
+    for (const role of workflowRoles) {
+      const expected =
+        EXPECTED_ACTIVITY_RESPONSIBILITY_ROLE_PERMISSIONS[
+          role.code as keyof typeof EXPECTED_ACTIVITY_RESPONSIBILITY_ROLE_PERMISSIONS
+        ];
+      expect(role.rolePermissions.map((item) => item.permission.code).sort()).toEqual(
+        [...expected].sort(),
+      );
+    }
+
+    expect(new Set(SYSTEM_MANAGED_ROLE_CODES)).toEqual(
+      new Set([
+        'activity-owner',
+        'activity-registration-collaborator',
+        'activity-attendance-collaborator',
+      ]),
+    );
+    expect(
+      await prisma.roleBinding.count({
+        where: { role: { code: { in: [...SYSTEM_MANAGED_ROLE_CODES] } } },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.organizationPositionRolePolicy.count({
+        where: {
+          role: {
+            code: {
+              in: [
+                'activity-publish-reviewer',
+                'attendance-first-reviewer',
+                'attendance-final-reviewer',
+                ...SYSTEM_MANAGED_ROLE_CODES,
+              ],
+            },
+          },
+        },
+      }),
+    ).toBe(0);
   });
 
   it('fallback 路径:RBAC_INITIAL_OPS_ADMIN_USER_ID 留空 → 绑到 SUPER_ADMIN(本 seed 刚创建的)', async () => {

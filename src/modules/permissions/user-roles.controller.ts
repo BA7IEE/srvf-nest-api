@@ -82,6 +82,7 @@ export class UserRolesController {
     BizCode.USER_NOT_FOUND,
     BizCode.ROLE_NOT_FOUND,
     BizCode.CANNOT_ASSIGN_HIGHER_ROLE,
+    BizCode.ROLE_BINDING_SYSTEM_MANAGED_ROLE_FORBIDDEN,
     BizCode.USER_ROLE_ALREADY_EXISTS,
   )
   assign(
@@ -107,6 +108,7 @@ export class UserRolesController {
     BizCode.ROLE_NOT_FOUND,
     BizCode.ROLE_DELETED,
     BizCode.CANNOT_ASSIGN_HIGHER_ROLE,
+    BizCode.ROLE_BINDING_SYSTEM_MANAGED_ROLE_FORBIDDEN,
     BizCode.USER_ROLE_NOT_FOUND,
     BizCode.LAST_OPS_ADMIN_PROTECTED,
   )

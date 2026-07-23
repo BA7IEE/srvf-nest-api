@@ -18,10 +18,10 @@
 | Controller | 75 |
 | Endpoint | 366 |
 | Migration | 65 |
-| BizCode | 258 |
-| 权限码 | 207 |
+| BizCode | 259 |
+| 权限码 | 213 |
 | AuditLogEvent | 123 |
-| 内建角色 | 9 |
+| 内建角色 | 15 |
 | Cron | 2 |
 <!-- counts:end -->
 
@@ -32,7 +32,7 @@
 - **API surface 终态**:5 canonical `/v1` 前缀,contract 锁定;见 `api-surface-policy.md`;❌新增 Mixed Controller(存量 2)❌App 返回 L3(content-* 可见级后签名 URL 是唯一例外)
 - **身份/会话终态**:手机/微信换绑消费 5 分钟 step-up proof 并锁后重验身份快照；logout 可由未过期 rotated ancestor 幂等撤销同 refresh family，其他 family/access 不动；详见 `security.md`
 - **多实例当前事实**:10 个 throttler 共用 PG bucket；RBAC 与 SMS/WeChat/Storage/Realname settings 每次直读已提交 PostgreSQL；Effect 绑定单份配置快照，DB 异常 fail-closed，零进程正确性缓存
-- **Storage production**:空库 migration/seed→窄配置 bootstrap；固定 COS location+可解密凭证，disabled 重启不放行 Effect，null/LOCAL/unknown 禁回退；密钥不可轮换，真实 COS/fleet 待验
+- **Storage production**:空库 migration/seed→窄配置 bootstrap；固定COS location+可解密凭证，disabled 重启不放行 Effect，null/LOCAL/unknown 禁回退；密钥不可轮换，真实 COS/fleet 待验
 - **贡献规则 ACTIVE 槽位**:未软删 ACTIVE 按 `activityTypeCode × attendanceRoleCode` 唯一；迁移、并发与漂移重复 pair 均 fail-closed
 - **通知 durable outbox**:PG lease/fence、generation/recipient/同事务 RBAC 快照及 quota marker；provider 事务外 at-least-once。生产 migration/gate 未 deploy，切换须排空旧 API/worker/intents 且禁混档
 - **Attachment storage Phase1**:Attachment namespace 已接 durable ledger；locator 固定、凭证 live-read；Content publish/confirm 根锁接线、Provider 事务外；未加 key FK，repo-wide closure 未完成；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)。
