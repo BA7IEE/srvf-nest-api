@@ -19,7 +19,8 @@
 - **role 护栏优先**:三条削权路径继续先拒 `role!==USER` 的关联账号；SUPER_ADMIN 不进入 last-ops-admin 检查，沿既有 `MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE` 行为。
 - **账号启停审计(2026-07-14 第七刀)**:`updateAccountStatus` 的 user status 写、禁用时 refresh token 撤销与 `member.account.status-change` 必须在同一事务；before/after 只含 status，extra 只含 linkedUserId/refreshTokensRevoked，禁止 phone/openid/secret。
 - **offboard/reopen 已覆盖**:`offboard` 用伞事件 `member.offboard` 记录账号停用腿与撤销计数；`reopenAccount` 用 `member.account-reopened` 记录旧号软删/新号创建结果，两者原本即与业务写同事务，第七刀不新增重复事件。
-- **Member lifecycle 线性化**:offboard、linked 账号启用/绑定/重开、任职/分管创建、USER/MEMBER/POSITION_ASSIGNMENT direct binding 创建或恢复都先锁同一 Member 行；跨资源锁序固定 Member → User。offboard 在该事务内同时结束 active memberships、任职、分管与三类 direct binding，响应中的 residual 任职/分管字段只为兼容保留且终态为 0；INACTIVE Member 不得经任一入口恢复账号或授权来源。
+- **Member lifecycle 线性化**:offboard、linked 账号启用/绑定/重开、任职/分管创建、活动责任移交、USER/MEMBER/POSITION_ASSIGNMENT direct binding 创建或恢复都先锁同一 Member 行；跨资源锁序固定 Member → User。offboard 在该事务内同时结束 active memberships、任职、分管、活动责任与三类 direct binding，响应中的 residual 任职/分管字段只为兼容保留且终态为 0；INACTIVE Member 不得经任一入口恢复账号或授权来源。
+- **活动责任摘权**:offboard 在 Member 锁事务内将该队员所有 active `ActivityResponsibilityAssignment` 置 revoked，并由既有 MEMBER RoleBinding 批量结束腿同步摘除 system-managed 活动角色；audit extra 记录 `activityResponsibilitiesEnded`，不得另开异步补偿。
 - **Membership offboard 收口**:Member 行锁下逐条调用 Membership 状态机做 ACTIVE→ENDED；ACTIVE 任期按不变式必已开始且 `endedAt=null`，因此 offboard 统一以当前时刻结束，不得恢复批量盲写时间。
 - **关联账号 session 锁(2026-07-22 D-PR1)**：`reopenAccount` / `updateAccountStatus` / `offboard` 在 Member 行锁后按 linked userId 调 `lockAuthSessionUser()`，锁后复读 memberId/role/status，再做软删或禁用、refresh 全撤销与 audit；禁止恢复旧的 `memberId` 裸 User 行锁作为 session 第二轨。
 

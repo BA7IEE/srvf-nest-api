@@ -6,6 +6,7 @@ import { BizException } from '../../src/common/exceptions/biz.exception';
 import { PrismaService } from '../../src/database/prisma.service';
 import { ActivityPublishReviewService } from '../../src/modules/activities/activity-publish-review.service';
 import { createTestUser } from '../fixtures/users.fixture';
+import { seedActivityResponsibilitySystemRoles } from '../fixtures/activity-responsibility.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
@@ -48,6 +49,7 @@ describe('activity publish review multi-instance concurrency', () => {
     prismaB = appB.get(PrismaService);
     reviewServiceA = appA.get(ActivityPublishReviewService);
     reviewServiceB = appB.get(ActivityPublishReviewService);
+    await seedActivityResponsibilitySystemRoles(appA);
 
     const reviewerUser = await createTestUser(appA, {
       username: 'activity-review-concurrency-reviewer',
@@ -215,5 +217,20 @@ describe('activity publish review multi-instance concurrency', () => {
         select: { status: true, reviewedByUserId: true },
       }),
     ).resolves.toEqual({ status: 'approved', reviewedByUserId: reviewer.id });
+    await expect(
+      prismaA.activityResponsibilityAssignment.count({
+        where: { activityId, responsibilityType: 'owner', status: 'active' },
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      prismaA.roleBinding.count({
+        where: {
+          principalId: creator.memberId,
+          scopeActivityId: activityId,
+          status: 'ACTIVE',
+          deletedAt: null,
+        },
+      }),
+    ).resolves.toBe(1);
   });
 });

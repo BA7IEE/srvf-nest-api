@@ -6,6 +6,7 @@
 
 - **活动主资源**:create / update / publish / cancel / complete 生命周期管理
 - **发布审核**:`ActivityPublishReview` 的 initial submit/direct publish/approve/return/withdraw/cancel；Admin 工作台由独立 controller/query/presenter 承载，审核事务固定锁序 Activity → review
+- **活动责任**:`ActivityResponsibilityAssignment` 是 owner/协办历史真源；发布事务同步创建唯一 owner 与 system-managed scoped RoleBinding，Admin 责任面由独立 controller/service/policy/projector/audit 承载
 - **活动岗位子资源**:`ActivityPosition` 归本模块；Admin CRUD 走 `AdminActivityPositionsController` + `ActivityPositionsService`，不新建 NestJS module
 - **状态机 4 态**:`draft → published → completed`，另有 `draft|published → cancelled`;`completed` 的**唯一推进通路**是管理端 `POST admin/v1/activities/:id/complete` 经本状态机执行。考勤提交只建 pending Sheet，禁止再直写 Activity 状态。
 - **App 视角**:`AppActivitiesService` 的可参加池仅含 published + 公开报名 + 未结束活动；detail 刻意仍以 published 可见；`GET :activityId/positions` 只认 published + 公开报名活动，返回 live 岗位余量 / `canRegister`。`AppMyActivitiesService` 暴露本人参与过的活动列表(按 `memberId` 锁定)
@@ -13,8 +14,9 @@
 
 ## Local facts
 
-- `activities.service.ts` **1351L**(偏厚,沿 CODEMAP 标 L 体量);活动岗位 CRUD/扩容递补已边界化为 `activity-positions.service.ts`(608L) + `activity-position-audit-recorder.ts`，发布审核边界化为 `activity-publish-review.service.ts`(681L)+query/presenter/audit/state-machine，不继续堆入主 service
-- **活动责任闭环 PR-4 gate**:`ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED` 在 dev/test 缺省 false，production/smoke 必须显式；false 保持旧 Admin 行为。true 时 create 解析正式 initiator，pending 冻结 Activity/岗位，published 写转 20037，旧 publish 仅审批 pending initial 或允许发起人直接发布；稳定切流与摘旧角色权限归 PR-11
+- `activities.service.ts` **1351L**(偏厚,沿 CODEMAP 标 L 体量);活动岗位 CRUD/扩容递补已边界化为 `activity-positions.service.ts`(608L) + `activity-position-audit-recorder.ts`，发布审核边界化为 `activity-publish-review.service.ts`(705L)+query/presenter/audit/state-machine；责任边界化为 `activity-responsibility.service.ts`(698L)+policy/projector/audit，不继续堆入主 service
+- **活动责任闭环 PR-5 gate**:`ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED` 在 dev/test 缺省 false，production/smoke 必须显式；false 保持旧 Admin 行为。true 时 create 解析正式 initiator，pending 冻结 Activity/岗位，published 写转 20037，旧 publish 仅审批 pending initial 或允许发起人直接发布；发布成功同步投影唯一 owner。稳定切流与摘旧角色权限归 PR-11
+- **责任锁序与投影不变式**:新增/移交固定 Activity → 目标 Member（移交时新旧 memberId 排序）→ current assignment → RoleBinding；assignment 与 `system:activity-responsibility:{assignmentId}` binding 必须同事务创建/结束。owner=`activity-owner`，协办按 registrations/attendance capability 投影对应角色；通用角色 API 永不代写这些 binding
 - **发布审核快照与并发**:snapshot 固定 schemaVersion=1，Activity 与岗位分离且岗位主键名为 `activityPositionId`；approve 在 Activity → review 锁后重建并比较服务端快照、复查 revision/时间窗，再单次递增 workflowRevision。并发 E2E 必须是两套 Nest/Prisma pool + PostgreSQL lock waiter barrier
 - **判权(终态 scoped-authz PR12,2026-07-02;v0.40.0 +complete)**:6 个写方法(create/update/delete/publish/cancel/**complete**)判权走 `assertCanOrThrow` → `authz.explain`;`create` 无 ref(GLOBAL-only,scoped 创建留后续批);`update`/`delete`/`publish`/`cancel`/`complete` 带 `{type:'activity', id}` ref(scoped 持有者〔如 team-leader 经 policy→org-admin@TREE〕在其组织树内可用);`resource_not_found` 回退 `rbac.can` 全局码判定,持码者 return 交回 `findActivityOrThrow` 抛既有 `ACTIVITY_NOT_FOUND`,无码者 30100;`list`/`findOne`/`options`(F1/A6 新增)仍无码仅登录(Slow-4 现状不变;RBAC_MAP §2.4 BD-3 已决 won't-do 新增 `activity.read.*` 码)。e2e 见 `test/e2e/participation-scoped-authz.e2e-spec.ts`。
 - **App 可报名池 endAt 过滤(v0.40.0 参与域生命周期收口③)**:`AppActivitiesService.listAvailableForMember` where 追加 `endAt >= now`——已结束(endAt < now)的 published 活动退出可报名列表;`findVisibleByIdForMember`(detail)口径**刻意不动**(published 即可见,已报名者回看已结束活动无碍)。报名 endAt 闸在 `activity-registrations` 侧 `assertActivityRegistrable`(20125),不在本模块。
@@ -34,13 +36,14 @@
 - **完结时间闸**:`complete` 在 Activity 聚合锁后重读状态与时间，只有 `published` 且读侧 phase 已为 `ended`（严格晚于 `endAt`）才允许写 `completed`；未来/进行中活动复用 `ACTIVITY_STATUS_INVALID` fail-closed。
 - 状态机错误码:wrong state 统一抛 `BizCode.ACTIVITY_STATUS_INVALID`
 - **受保护状态写(2026-07-21)**:`update`/`softDelete`/`publish`/`cancel`/`complete` 在持有 Activity 聚合锁并重读后，统一调用 [`/src/common/prisma/claim-at-status.util.ts`](../../common/prisma/claim-at-status.util.ts) 的条件 `SELECT ... FOR NO KEY UPDATE`；不产生 no-op tuple，调用方在 claim 后继续以既有锁后行完成真实写。并发败者复用 `ACTIVITY_STATUS_INVALID`；helper **只认领、不判断迁移合法性**，合法矩阵仍只在 `activity-state-machine.ts`。
-- E2E:`activities.e2e-spec.ts` / `activities-rbac-boundary.e2e-spec.ts` / `activities-state-transition.e2e-spec.ts` / `activities-audit-characterization.e2e-spec.ts` / `activity-publish-review.e2e-spec.ts` / `activity-publish-review-concurrency.e2e-spec.ts` / `app-activities-available.e2e-spec.ts` / `app-activities-detail.e2e-spec.ts`;scoped 判权矩阵在 `participation-scoped-authz.e2e-spec.ts`
+- E2E:`activities.e2e-spec.ts` / `activities-rbac-boundary.e2e-spec.ts` / `activities-state-transition.e2e-spec.ts` / `activities-audit-characterization.e2e-spec.ts` / `activity-publish-review.e2e-spec.ts` / `activity-publish-review-concurrency.e2e-spec.ts` / `activity-responsibilities.e2e-spec.ts` / `activity-responsibility-concurrency.e2e-spec.ts` / `app-activities-available.e2e-spec.ts` / `app-activities-detail.e2e-spec.ts`;scoped 判权矩阵在 `participation-scoped-authz.e2e-spec.ts`
 
 ## Risk points (不要做)
 
 - ❌ **不**绕过 `activity-state-machine.ts` 在 service 内裸写状态变更
 - ❌ **不**改 audit event 名 `'activity.publish'`(6 处共用〔v0.40.0 +complete〕,characterization 已锁)
 - ❌ **不**在发布审核事务中反转锁序或信任提交时快照；必须 Activity → review，approve 时服务端重建快照
+- ❌ **不**把责任 assignment 与 system-managed RoleBinding 分成两个事务，也不绕过 projector 直接写 responsibility binding
 - ❌ **不**把 `'activity.publish'` 拆成 `activity.create` / `activity.update` 等细分 event(沿现状)
 - ❌ 活动岗位链路不得用裸 `positionId` / `position` 命名；字段、参数、relation 一律 `activityPositionId` / `activityPosition`，仅 URL 子资源段保留 `/positions`
 - ❌ **不**从 attendances 或其它模块直写 `Activity.statusCode`;完结必须走本模块 `complete` action(`published → completed`)，取消仅允许 draft|published。

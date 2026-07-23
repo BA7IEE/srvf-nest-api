@@ -393,6 +393,13 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/activity-publish-reviews/{id}'],
   ['post', '/api/admin/v1/activity-publish-reviews/{id}/approve'],
   ['post', '/api/admin/v1/activity-publish-reviews/{id}/return'],
+  // 活动责任闭环 PR-5:负责人/协办人读取、增删、移交，以及 legacy 认领/补发起人 6 端点。
+  ['get', '/api/admin/v1/activities/{activityId}/responsibilities'],
+  ['post', '/api/admin/v1/activities/{activityId}/responsibilities/collaborators'],
+  ['delete', '/api/admin/v1/activities/{activityId}/responsibilities/collaborators/{assignmentId}'],
+  ['post', '/api/admin/v1/activities/{activityId}/responsibilities/transfer'],
+  ['post', '/api/admin/v1/activities/{activityId}/responsibilities/claim'],
+  ['post', '/api/admin/v1/activities/{activityId}/responsibilities/assign-initiator'],
   // 活动岗位与时段 F2:Admin 嵌套子资源 5 端点；两 GET login-only，三写复用 activity.update.record。
   ['post', '/api/admin/v1/activities/{activityId}/positions'],
   ['get', '/api/admin/v1/activities/{activityId}/positions'],
@@ -810,6 +817,14 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'ActivityRegistrationResponseDto',
   'ActivityRegistrationListItemDto',
   'ActivityRegistrationActivityPositionDto',
+  // 活动责任闭环 PR-5:责任人/协办人投影和三类写入请求。
+  'ActivityResponsibilitiesResponseDto',
+  'ActivityResponsibilityAssignmentDto',
+  'ActivityResponsibilityMemberDto',
+  'CreateActivityCollaboratorDto',
+  'TransferActivityOwnerDto',
+  'ClaimLegacyActivityDto',
+  'AssignLegacyActivityInitiatorDto',
 
   // V2 第一阶段批次 3B attendances
   // 注:ListAttendanceSheetsQueryDto / MyAttendanceRecordsQueryDto / ActivityIdParamDto
@@ -1311,8 +1326,8 @@ describe('OpenAPI 契约快照', () => {
     expect(Object.keys(item[method]?.responses ?? {}).length).toBeGreaterThan(0);
   });
 
-  it('活动发布审核工作台后路由足迹精确为 370', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(370);
+  it('活动责任服务落地后路由足迹精确为 376', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(376);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

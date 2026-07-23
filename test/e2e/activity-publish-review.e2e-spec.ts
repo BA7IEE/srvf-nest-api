@@ -8,6 +8,7 @@ import { ActivityPublishReviewService } from '../../src/modules/activities/activ
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
+import { seedActivityResponsibilitySystemRoles } from '../fixtures/activity-responsibility.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
@@ -58,6 +59,7 @@ describe('activity responsibility workflow gate=true publish review', () => {
     });
 
     const bizAdmin = await seedBizAdminPermissionsAndRole(app);
+    await seedActivityResponsibilitySystemRoles(app);
     await grantBizAdminToUser(app, creator.id, bizAdmin.bizAdminRoleId);
 
     const root = await prisma.organization.create({
@@ -346,6 +348,16 @@ describe('activity responsibility workflow gate=true publish review', () => {
       workflowRevision: 1,
       publishedBy: expect.any(String),
     });
+    await expect(
+      prisma.activityResponsibilityAssignment.findFirstOrThrow({
+        where: { activityId, responsibilityType: 'owner', status: 'active' },
+        select: { memberId: true, assignedByUserId: true, source: true },
+      }),
+    ).resolves.toEqual({
+      memberId: creatorPayload.memberId,
+      assignedByUserId: expect.any(String),
+      source: 'publish',
+    });
 
     const publishedEdit = await request(httpServer(app))
       .patch(`/api/admin/v1/activities/${activityId}`)
@@ -383,6 +395,15 @@ describe('activity responsibility workflow gate=true publish review', () => {
       directPublish: true,
       submittedByUserId: creatorPayload.id,
       reviewedByUserId: creatorPayload.id,
+    });
+    await expect(
+      prisma.activityResponsibilityAssignment.findFirstOrThrow({
+        where: { activityId, responsibilityType: 'owner', status: 'active' },
+        select: { memberId: true, assignedByUserId: true },
+      }),
+    ).resolves.toEqual({
+      memberId: creatorPayload.memberId,
+      assignedByUserId: creatorPayload.id,
     });
   });
 
