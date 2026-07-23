@@ -33,6 +33,12 @@ import { ActivityResponsibilityGrantProjector } from './activity-responsibility-
 import { ActivityResponsibilityAuditRecorder } from './activity-responsibility-audit-recorder';
 import { ActivityResponsibilityService } from './activity-responsibility.service';
 import { AdminActivityResponsibilitiesController } from './controllers/admin-activity-responsibilities.controller';
+import { AppManagedActivitiesService } from './app-managed-activities.service';
+import { AppManagedActivitiesController } from './controllers/app-managed-activities.controller';
+import { AppManagedActivityPositionsController } from './controllers/app-managed-activity-positions.controller';
+import { AppManagedActivityResponsibilitiesController } from './controllers/app-managed-activity-responsibilities.controller';
+import { ActivityProposalValidator } from './activity-proposal-validator';
+import { ActivityProposalApplier } from './activity-proposal-applier';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activities 写操作(create / update / softDelete / publish / cancel 共 5 处共用 activity.publish)
@@ -76,6 +82,9 @@ import { AdminActivityResponsibilitiesController } from './controllers/admin-act
     AdminActivityPositionsController,
     AdminActivityPublishReviewsController,
     AdminActivityResponsibilitiesController,
+    AppManagedActivitiesController,
+    AppManagedActivityPositionsController,
+    AppManagedActivityResponsibilitiesController,
   ],
   providers: [
     ActivitiesService,
@@ -91,12 +100,15 @@ import { AdminActivityResponsibilitiesController } from './controllers/admin-act
     ActivityPublishReviewStateMachine,
     ActivityPublishReviewPresenter,
     ActivityPublishReviewAuditRecorder,
+    ActivityProposalValidator,
+    ActivityProposalApplier,
     ActivityPublishReviewService,
     ActivityPublishReviewQueryService,
     ActivityResponsibilityPolicy,
     ActivityResponsibilityGrantProjector,
     ActivityResponsibilityAuditRecorder,
     ActivityResponsibilityService,
+    AppManagedActivitiesService,
   ],
   exports: [
     ActivitiesService,
@@ -105,6 +117,7 @@ import { AdminActivityResponsibilitiesController } from './controllers/admin-act
     ActivityPublishReviewService,
     ActivityResponsibilityPolicy,
     ActivityResponsibilityService,
+    AppManagedActivitiesService,
   ],
 })
 export class ActivitiesModule {}

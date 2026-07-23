@@ -106,6 +106,17 @@ describe('activity publish review multi-instance concurrency', () => {
         { ancestorId: organization.id, descendantId: organization.id, depth: 0 },
       ],
     });
+    const activityType = await prismaA.dictType.create({
+      data: { code: 'activity_type', label: '活动类型' },
+      select: { id: true },
+    });
+    await prismaA.dictItem.create({
+      data: {
+        typeId: activityType.id,
+        code: 'activity-review-concurrency',
+        label: '并发评审活动',
+      },
+    });
   });
 
   afterAll(async () => {
@@ -138,6 +149,29 @@ describe('activity publish review multi-instance concurrency', () => {
       ua: null,
     });
     return { activityId: activity.id, reviewId: review.id };
+  }
+
+  async function createPendingChangeReview(): Promise<{
+    activityId: string;
+    reviewId: string;
+    changedTitle: string;
+  }> {
+    const initial = await createPendingReview();
+    await reviewServiceA.approve(
+      initial.reviewId,
+      { requiresInsuranceConfirmed: true, reviewNote: '初始发布通过' },
+      reviewer,
+      { requestId: `activity-review-initial-${sequence}`, ip: null, ua: null },
+    );
+    const changedTitle = `并发变更活动 ${sequence}`;
+    const review = await reviewServiceA.submitChange(
+      initial.activityId,
+      { title: changedTitle },
+      undefined,
+      creator,
+      { requestId: `activity-change-submit-${sequence}`, ip: null, ua: null },
+    );
+    return { activityId: initial.activityId, reviewId: review.id, changedTitle };
   }
 
   it('two Nest apps forced behind one PostgreSQL Activity lock produce exactly one approval', async () => {
@@ -230,6 +264,90 @@ describe('activity publish review multi-instance concurrency', () => {
           status: 'ACTIVE',
           deletedAt: null,
         },
+      }),
+    ).resolves.toBe(1);
+  });
+
+  it('two Nest apps apply one pending change proposal exactly once under the Activity lock', async () => {
+    const { activityId, reviewId, changedTitle } = await createPendingChangeReview();
+    let signalBlockerReady!: () => void;
+    let releaseBlocker!: () => void;
+    const blockerReady = new Promise<void>((resolve) => {
+      signalBlockerReady = resolve;
+    });
+    const blockerRelease = new Promise<void>((resolve) => {
+      releaseBlocker = resolve;
+    });
+    const blocker = prismaA.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT id FROM "Activity" WHERE id = ${activityId} FOR UPDATE
+      `;
+      signalBlockerReady();
+      await blockerRelease;
+    });
+
+    await blockerReady;
+    const approveA = reviewServiceA.approve(
+      reviewId,
+      { requiresInsuranceConfirmed: true, reviewNote: '变更 A 通过' },
+      reviewer,
+      { requestId: 'activity-change-approve-a', ip: null, ua: null },
+    );
+    const approveB = reviewServiceB.approve(
+      reviewId,
+      { requiresInsuranceConfirmed: true, reviewNote: '变更 B 通过' },
+      reviewer,
+      { requestId: 'activity-change-approve-b', ip: null, ua: null },
+    );
+
+    let barrierError: unknown;
+    try {
+      await waitForActivityLockWaiters(prismaB, 2);
+    } catch (error) {
+      barrierError = error;
+    } finally {
+      releaseBlocker();
+      await blocker;
+    }
+    const results = await Promise.allSettled([approveA, approveB]);
+    if (barrierError instanceof Error) throw barrierError;
+    if (barrierError !== undefined) {
+      throw new Error('non-Error value thrown while forcing change-review interleaving');
+    }
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    expect(rejected).toBeDefined();
+    expect(rejected?.reason).toBeInstanceOf(BizException);
+    expect((rejected?.reason as BizException).biz).toBe(
+      BizCode.ACTIVITY_PUBLISH_REVIEW_STATUS_INVALID,
+    );
+
+    await expect(
+      prismaA.activity.findUniqueOrThrow({
+        where: { id: activityId },
+        select: { title: true, statusCode: true, workflowRevision: true },
+      }),
+    ).resolves.toEqual({
+      title: changedTitle,
+      statusCode: 'published',
+      workflowRevision: 2,
+    });
+    await expect(
+      prismaA.activityPublishReview.findUniqueOrThrow({
+        where: { id: reviewId },
+        select: { requestType: true, status: true, reviewedByUserId: true },
+      }),
+    ).resolves.toEqual({
+      requestType: 'change',
+      status: 'approved',
+      reviewedByUserId: reviewer.id,
+    });
+    await expect(
+      prismaA.activityResponsibilityAssignment.count({
+        where: { activityId, responsibilityType: 'owner', status: 'active' },
       }),
     ).resolves.toBe(1);
   });

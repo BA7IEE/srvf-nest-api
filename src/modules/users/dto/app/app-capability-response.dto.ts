@@ -8,7 +8,7 @@ import type { AppAccessReason } from './app-access-reason';
 // 3) ADMIN / SUPER_ADMIN **不扩大** AppSelf capability(沿 D-5.2)
 // 4) canUseApp=false → 所有业务 capability 强制 false
 // 5) reason 是展示字符串,**不**绑定 BizCode 段位
-// 6) tasks / managed 命名空间预留,P2-1 默认全 false
+// 6) tasks 命名空间仍预留；managed 已由活动责任闭环 PR-6 实装
 // **严禁**继承 / Pick / Omit Admin DTO。
 
 export class AppCapabilityAccountDto {
@@ -39,6 +39,15 @@ export class AppCapabilityActivitiesDto {
 
   @ApiProperty({ description: '是否可取消本人报名', example: true })
   canCancelOwnRegistration!: boolean;
+
+  @ApiProperty({ description: '当前正式队员是否可发起活动', example: true })
+  canInitiateActivity!: boolean;
+
+  @ApiProperty({
+    description: '是否持有至少一条有效发布审核 grant（仅入口提示）',
+    example: false,
+  })
+  canDirectPublishOwnActivity!: boolean;
 }
 
 export class AppCapabilityAttendanceDto {
@@ -57,14 +66,23 @@ export class AppCapabilityTasksDto {
 }
 
 export class AppCapabilityManagedDto {
-  @ApiProperty({ description: '是否可查看我管的活动(预留;当前恒 false)', example: false })
+  @ApiProperty({ description: '是否可查看我发起或承担责任的活动', example: true })
   canViewManagedActivities!: boolean;
 
-  @ApiProperty({ description: '是否可审核我管的报名(预留;当前恒 false)', example: false })
-  canReviewManagedRegistrations!: boolean;
+  @ApiProperty({ description: '是否存在可管理报名的 active 活动责任', example: false })
+  canManageManagedRegistrations!: boolean;
 
-  @ApiProperty({ description: '是否可审核我管的考勤(预留;当前恒 false)', example: false })
-  canReviewManagedAttendance!: boolean;
+  @ApiProperty({ description: '是否存在可提交考勤的 active 活动责任', example: false })
+  canSubmitManagedAttendance!: boolean;
+
+  @ApiProperty({ description: '是否持有有效活动发布审核角色', example: false })
+  canReviewActivityPublication!: boolean;
+
+  @ApiProperty({ description: '是否持有有效考勤一审角色', example: false })
+  canFirstReviewAttendance!: boolean;
+
+  @ApiProperty({ description: '是否持有有效考勤终审角色', example: false })
+  canFinalReviewAttendance!: boolean;
 }
 
 export class AppCapabilityResponseDto {
@@ -84,7 +102,7 @@ export class AppCapabilityResponseDto {
   tasks!: AppCapabilityTasksDto;
 
   @ApiProperty({
-    description: '管理范围 capability(预留;全 false)',
+    description: '管理范围 capability',
     type: AppCapabilityManagedDto,
   })
   managed!: AppCapabilityManagedDto;

@@ -5,6 +5,7 @@ import { AuthModule } from '../auth/auth.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { SmsModule } from '../sms/sms.module';
 import { WechatModule } from '../wechat/wechat.module';
+import { AuthzModule } from '../authz/authz.module';
 import { AppCapabilityService } from './app-capability.service';
 import { AppIdentityResolver } from './app-identity.resolver';
 import { AppProfileService } from './app-profile.service';
@@ -55,6 +56,7 @@ import { UsersService } from './users.service';
     PermissionsModule,
     SmsModule,
     WechatModule,
+    AuthzModule,
   ],
   // admin/v1/me 本人身份只读 bootstrap(2026-06-14):AdminMeController 物理隔离于 Admin surface
   // (单一 @ApiTags('Admin - Me'),非 Mixed),复用 UsersService.getMyAdminIdentity 薄读路径。

@@ -102,11 +102,16 @@ export class ActivityPositionsService {
     dto: CreateActivityPositionDto,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    authorization: 'rbac' | 'managed' = 'rbac',
   ): Promise<ActivityPositionResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'activity.update.record', {
-      type: 'activity',
-      id: activityId,
-    });
+    if (authorization === 'rbac') {
+      await this.assertCanOrThrow(currentUser, 'activity.update.record', {
+        type: 'activity',
+        id: activityId,
+      });
+    } else if (!this.config.activityResponsibilityWorkflow.enabled) {
+      throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+    }
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -174,11 +179,16 @@ export class ActivityPositionsService {
     dto: UpdateActivityPositionDto,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    authorization: 'rbac' | 'managed' = 'rbac',
   ): Promise<ActivityPositionResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'activity.update.record', {
-      type: 'activity',
-      id: activityId,
-    });
+    if (authorization === 'rbac') {
+      await this.assertCanOrThrow(currentUser, 'activity.update.record', {
+        type: 'activity',
+        id: activityId,
+      });
+    } else if (!this.config.activityResponsibilityWorkflow.enabled) {
+      throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+    }
 
     try {
       const result = await this.prisma.$transaction(async (tx) => {
@@ -318,11 +328,16 @@ export class ActivityPositionsService {
     activityPositionId: string,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    authorization: 'rbac' | 'managed' = 'rbac',
   ): Promise<ActivityPositionResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'activity.update.record', {
-      type: 'activity',
-      id: activityId,
-    });
+    if (authorization === 'rbac') {
+      await this.assertCanOrThrow(currentUser, 'activity.update.record', {
+        type: 'activity',
+        id: activityId,
+      });
+    } else if (!this.config.activityResponsibilityWorkflow.enabled) {
+      throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const activity = await this.lockActivityOrThrow(tx, activityId);

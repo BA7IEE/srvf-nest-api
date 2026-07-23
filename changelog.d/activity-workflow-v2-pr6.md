@@ -1,0 +1,1 @@
+- 活动责任闭环 PR-6：新增独立 App `/my/managed-activities` 核心、岗位和职责 19 路；正式队员可按当前组织范围发起活动、提交/撤回发布审核、管理协办与移交 owner，published 变更改为完整 proposal 审核后在同一事务应用 Activity + positions diff；`/my/activities` 报名历史语义保持不变。

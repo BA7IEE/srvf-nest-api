@@ -9,6 +9,28 @@ import { AuthzService } from '../authz/authz.service';
 export class ActivityResponsibilityPolicy {
   constructor(private readonly authz: AuthzService) {}
 
+  async assertOwner(
+    tx: Prisma.TransactionClient,
+    activityId: string,
+    user: CurrentUserPayload,
+  ): Promise<void> {
+    if (!user.memberId) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+    const owner = await tx.activityResponsibilityAssignment.findFirst({
+      where: {
+        activityId,
+        memberId: user.memberId,
+        responsibilityType: 'owner',
+        status: 'active',
+      },
+      select: { id: true },
+    });
+    if (!owner) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
+
   async assertOwnerOrOverride(
     tx: Prisma.TransactionClient,
     activityId: string,

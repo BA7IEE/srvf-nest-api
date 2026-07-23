@@ -366,11 +366,54 @@ export class ActivityResponsibilityService {
     };
   }
 
+  async listManaged(
+    activityId: string,
+    memberId: string,
+  ): Promise<ActivityResponsibilitiesResponseDto> {
+    this.assertWorkflowEnabled();
+    const activity = await this.prisma.activity.findFirst({
+      where: {
+        id: activityId,
+        deletedAt: null,
+        OR: [
+          { initiatorMemberId: memberId },
+          { responsibilityAssignments: { some: { memberId, status: 'active' } } },
+        ],
+      },
+      select: {
+        id: true,
+        statusCode: true,
+        initiator: {
+          select: { id: true, memberNo: true, displayName: true, gradeCode: true },
+        },
+      },
+    });
+    if (!activity) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+    const assignments = await this.prisma.activityResponsibilityAssignment.findMany({
+      where: { activityId, status: 'active' },
+      orderBy: [{ responsibilityType: 'asc' }, { startedAt: 'asc' }, { id: 'asc' }],
+      select: assignmentSelect,
+    });
+    const owner = assignments.find((item) => item.responsibilityType === 'owner') ?? null;
+    return {
+      activityId,
+      initiator: activity.initiator,
+      owner: owner ? this.toAssignmentDto(owner) : null,
+      collaborators: assignments
+        .filter((item) => item.responsibilityType === 'collaborator')
+        .map((item) => this.toAssignmentDto(item)),
+      legacyUnassigned:
+        (activity.statusCode === 'draft' && activity.initiator === null) ||
+        (activity.statusCode === 'published' && owner === null),
+    };
+  }
+
   async addCollaborator(
     activityId: string,
     dto: CreateActivityCollaboratorDto,
     user: CurrentUserPayload,
     auditMeta: AuditMeta,
+    authorization: 'owner-or-override' | 'owner' = 'owner-or-override',
   ): Promise<ActivityResponsibilityAssignmentDto> {
     this.assertWorkflowEnabled();
     if (!dto.canManageRegistrations && !dto.canManageAttendance) {
@@ -379,7 +422,11 @@ export class ActivityResponsibilityService {
     try {
       const result = await this.prisma.$transaction(async (tx) => {
         await this.lockActivity(activityId, tx);
-        await this.policy.assertOwnerOrOverride(tx, activityId, user);
+        if (authorization === 'owner') {
+          await this.policy.assertOwner(tx, activityId, user);
+        } else {
+          await this.policy.assertOwnerOrOverride(tx, activityId, user);
+        }
         await this.lockMembers([dto.memberId], tx);
         await this.assertActiveTarget(dto.memberId, tx);
         const activity = await tx.activity.findUniqueOrThrow({
@@ -440,6 +487,7 @@ export class ActivityResponsibilityService {
     assignmentId: string,
     user: CurrentUserPayload,
     auditMeta: AuditMeta,
+    authorization: 'owner-or-override' | 'owner' = 'owner-or-override',
   ): Promise<ActivityResponsibilityAssignmentDto> {
     this.assertWorkflowEnabled();
     const seed = await this.prisma.activityResponsibilityAssignment.findFirst({
@@ -449,7 +497,11 @@ export class ActivityResponsibilityService {
     if (!seed) throw new BizException(BizCode.ACTIVITY_RESPONSIBILITY_NOT_FOUND);
     const result = await this.prisma.$transaction(async (tx) => {
       await this.lockActivity(activityId, tx);
-      await this.policy.assertOwnerOrOverride(tx, activityId, user);
+      if (authorization === 'owner') {
+        await this.policy.assertOwner(tx, activityId, user);
+      } else {
+        await this.policy.assertOwnerOrOverride(tx, activityId, user);
+      }
       await this.lockMembers([seed.memberId], tx);
       await this.lockAssignment(assignmentId, tx);
       const assignment = await tx.activityResponsibilityAssignment.findFirst({
@@ -496,11 +548,16 @@ export class ActivityResponsibilityService {
     dto: TransferActivityOwnerDto,
     user: CurrentUserPayload,
     auditMeta: AuditMeta,
+    authorization: 'owner-or-override' | 'owner' = 'owner-or-override',
   ): Promise<ActivityResponsibilitiesResponseDto> {
     this.assertWorkflowEnabled();
     const effect = await this.prisma.$transaction(async (tx) => {
       await this.lockActivity(activityId, tx);
-      await this.policy.assertOwnerOrOverride(tx, activityId, user);
+      if (authorization === 'owner') {
+        await this.policy.assertOwner(tx, activityId, user);
+      } else {
+        await this.policy.assertOwnerOrOverride(tx, activityId, user);
+      }
       const currentOwnerSeed = await tx.activityResponsibilityAssignment.findFirst({
         where: { activityId, responsibilityType: 'owner', status: 'active' },
         select: { memberId: true },
