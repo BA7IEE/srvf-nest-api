@@ -2,6 +2,30 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+- Stabilized the PostgreSQL auth-session concurrency barrier for cold standalone E2E runs by preserving the exact waiter/blocker assertions while allowing enough time for Prisma pool startup and emitting lock diagnostics on timeout.
+
+### Fixed
+
+- **Auth 会话并发逃逸**：密码、短信、微信签发与 refresh rotation、replay、logout、改密/重置、身份变更、禁用/软删和队员离队统一通过 PostgreSQL User 行锁线性化；锁后复验身份快照，防止撤销成功后残留并发 refresh sibling 或旧 factor 签出新会话，既有 JWT payload、错误码、rotation 与 access-token 策略不变。
+
+- 将 production dependency graph 的 `fast-uri` override 提升到 3.1.4，修复 `GHSA-v2hh-gcrm-f6hx` host-confusion High 漏洞，不升级 COS SDK、conf 或 ajv。
+
+- 在启动期严格解析并限制 access/refresh JWT TTL，阻止无单位、非法或越界配置带病启动。
+
+- Prevented HTTP query strings and search values from entering automatic application logs while retaining method, pathname, status, response time, request ID, and authenticated user ID.
+
+### Added
+
+- **队员 360 统一保险概览**：新增 `GET /api/admin/v1/members/:memberId/insurances/overview`，一次返回个人自购保险、团队保险安全投影与按北京当前日派生的汇总；复用既有 scoped-authz 权限与审计事件，旧保险列表/审核、资格 gate 及 App 契约不变。
+
+- 对齐全部 366 个 OpenAPI operation 与 Nest 实际成功状态，并明确四个 settings GET 的 nullable data。
+
+- 移除生产依赖审计中未被使用的 pnpm cache，并为 production-mode Docker Smoke 增加手动触发入口，确保最终 main/tag 可获得完整绿色的发布门禁证据。
+
+- Fixed the production Storage bootstrap and recovery chain: the offline bootstrap now has a narrow configuration boundary, disabled settings survive API/worker restart while ordinary effects remain blocked, production routing no longer falls back to Local, and provider location is frozen outside the reviewed relocation flow.
+
 ## v0.60.0 - 2026-07-22
 
 > 主题:**首发前 Storage production 闭环、Auth 契约与发布治理收口**(v0.59.0 后 #731–#737：招新字典跨域契约与 body-parser、Storage 空库 bootstrap/运行时不变量/COS SOP/四 key 冻结、logout OpenAPI 与 CI headroom、依赖审计治理)。Endpoint 365 / Migration 64 / BizCode 258 / Permission 207 / AuditLogEvent 123 / Controller 75 / Module 36 / Cron 2 均不变。release 不等于生产部署，真实 ingress/COS/worker/fleet 证据仍是 GO 硬门。

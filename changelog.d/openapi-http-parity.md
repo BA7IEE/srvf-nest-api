@@ -1,1 +1,0 @@
-- 对齐全部 366 个 OpenAPI operation 与 Nest 实际成功状态，并明确四个 settings GET 的 nullable data。

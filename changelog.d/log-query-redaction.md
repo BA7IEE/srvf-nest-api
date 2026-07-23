@@ -1,1 +1,0 @@
-- Prevented HTTP query strings and search values from entering automatic application logs while retaining method, pathname, status, response time, request ID, and authenticated user ID.
