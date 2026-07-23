@@ -56,6 +56,7 @@ interface SeedContext {
   service: AttendancesService;
   submitterUserId: string;
   submitterPayload: CurrentUserPayload;
+  reviewerPayload: CurrentUserPayload;
   memberAId: string;
   memberBId: string;
   organizationId: string;
@@ -83,12 +84,22 @@ describe('AttendancesService time overlap (characterization)', () => {
       },
       select: { id: true },
     });
+    const reviewer = await prisma.user.create({
+      data: {
+        username: 'att-tovr-reviewer',
+        passwordHash: '$2a$10$dummy-hash-not-used-no-login',
+        role: Role.ADMIN,
+        status: UserStatus.ACTIVE,
+      },
+      select: { id: true },
+    });
 
     // Slow-4 T3(评审稿 §8 / D-S4-6):本 spec 直调 service(绕过 Guard),判权已下沉
     // service 层 rbac.can();给 ADMIN 测试用户 submitter 补挂 biz-admin(零漂移:对应迁移前
     // @Roles(SUPER_ADMIN, ADMIN) 放行语义;断言零修改)。
     const bizSeed = await seedBizAdminPermissionsAndRole(app);
     await grantBizAdminToUser(app, submitter.id, bizSeed.bizAdminRoleId);
+    await grantBizAdminToUser(app, reviewer.id, bizSeed.bizAdminRoleId);
 
     const memberA = await prisma.member.create({
       data: { memberNo: 'att-tovr-m-a', displayName: 'TOVR Member A' },
@@ -175,6 +186,13 @@ describe('AttendancesService time overlap (characterization)', () => {
       submitterPayload: {
         id: submitter.id,
         username: 'att-tovr-submitter',
+        role: Role.ADMIN,
+        status: UserStatus.ACTIVE,
+        memberId: null,
+      },
+      reviewerPayload: {
+        id: reviewer.id,
+        username: 'att-tovr-reviewer',
         role: Role.ADMIN,
         status: UserStatus.ACTIVE,
         memberId: null,
@@ -575,7 +593,7 @@ describe('AttendancesService time overlap (characterization)', () => {
       await ctx.service.reject(
         sheet1,
         { reviewNote: '数据有误,驳回' },
-        ctx.submitterPayload,
+        ctx.reviewerPayload,
         AUDIT_META,
       );
       expect(await countActiveRecordsForSheet(sheet1)).toBe(0);

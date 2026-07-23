@@ -13,8 +13,11 @@ import type { ResolvedResource, ResourceRef, ResourceSensitivityLevel } from './
 // → 返 null → 授权侧 deny(resource_not_found)。防枚举(他人资源统一 404)由业务消费者沿仓内惯例处理。
 //
 // 逐类口径(§5.1 逐资源解析表):
+// - organization:          org = 自身;status = organization.status
 // - activity:              org = activity.organizationId;activityId = 自身
-// - attendance_sheet:      org 经 activity;extra = { submitterUserId, reviewerUserId }(自审 / 同人终审约束用)
+// - activity_publish_review:org 经 activity;extra = {requestType,submittedByUserId,directPublish}
+// - attendance_sheet:      org 经 activity;extra = {submitterUserId,lastSubmittedByUserId,reviewerUserId}
+//                          (自审 / 同人复核约束用)
 // - attendance_record:     org 经 sheet→activity;owner = record.memberId
 // - activity_registration: org 经 activity;owner = reg.memberId
 // - member:                org = 该 member 的 active PRIMARY membership(可 null);ownerUserId = member.user?.id
@@ -46,8 +49,12 @@ export class ResourceResolverService {
   // 统一入口:未知类型 → null(fail-close)。
   async resolve(ref: ResourceRef): Promise<ResolvedResource | null> {
     switch (ref.type) {
+      case 'organization':
+        return this.resolveOrganization(ref.id);
       case 'activity':
         return this.resolveActivity(ref.id);
+      case 'activity_publish_review':
+        return this.resolveActivityPublishReview(ref.id);
       case 'attendance_sheet':
         return this.resolveAttendanceSheet(ref.id);
       case 'attendance_record':
@@ -75,6 +82,25 @@ export class ResourceResolverService {
 
   // ============ 逐类 resolver ============
 
+  private async resolveOrganization(id: string): Promise<ResolvedResource | null> {
+    const row = await this.prisma.organization.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true, status: true },
+    });
+    if (!row) return null;
+    return {
+      resourceType: 'organization',
+      resourceId: row.id,
+      organizationId: row.id,
+      organizationPath: await this.organizationPath(row.id),
+      ownerMemberId: null,
+      ownerUserId: null,
+      activityId: null,
+      statusCode: row.status,
+      sensitivityLevel: null,
+    };
+  }
+
   private async resolveActivity(id: string): Promise<ResolvedResource | null> {
     const row = await this.prisma.activity.findFirst({
       where: { id, deletedAt: null },
@@ -94,6 +120,38 @@ export class ResourceResolverService {
     };
   }
 
+  private async resolveActivityPublishReview(id: string): Promise<ResolvedResource | null> {
+    const row = await this.prisma.activityPublishReview.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        activityId: true,
+        requestType: true,
+        status: true,
+        submittedByUserId: true,
+        directPublish: true,
+        activity: { select: { organizationId: true } },
+      },
+    });
+    if (!row) return null;
+    return {
+      resourceType: 'activity_publish_review',
+      resourceId: row.id,
+      organizationId: row.activity.organizationId,
+      organizationPath: await this.organizationPath(row.activity.organizationId),
+      ownerMemberId: null,
+      ownerUserId: null,
+      activityId: row.activityId,
+      statusCode: row.status,
+      sensitivityLevel: null,
+      extra: {
+        requestType: row.requestType,
+        submittedByUserId: row.submittedByUserId,
+        directPublish: row.directPublish,
+      },
+    };
+  }
+
   private async resolveAttendanceSheet(id: string): Promise<ResolvedResource | null> {
     const row = await this.prisma.attendanceSheet.findFirst({
       where: { id, deletedAt: null },
@@ -102,6 +160,7 @@ export class ResourceResolverService {
         activityId: true,
         statusCode: true,
         submitterUserId: true,
+        lastSubmittedByUserId: true,
         reviewerUserId: true,
         activity: { select: { organizationId: true } },
       },
@@ -117,7 +176,11 @@ export class ResourceResolverService {
       activityId: row.activityId,
       statusCode: row.statusCode,
       sensitivityLevel: null,
-      extra: { submitterUserId: row.submitterUserId, reviewerUserId: row.reviewerUserId },
+      extra: {
+        submitterUserId: row.submitterUserId,
+        lastSubmittedByUserId: row.lastSubmittedByUserId,
+        reviewerUserId: row.reviewerUserId,
+      },
     };
   }
 

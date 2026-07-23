@@ -16,9 +16,8 @@ import type { ResolvedResource } from './authz.types';
 
 export type ConstraintVetoReason = 'self_approval_forbidden' | 'same_reviewer_forbidden';
 
-// 约束评估上下文(PR9,goal 决断②):运行时可配开关,由 AuthzService 从 app.config 注入
-// (env `ATTENDANCE_ALLOW_SAME_REVIEWER`,默认 false=禁止;取代 PR8 的代码常量
-// ATTENDANCE_FINAL_APPROVE_ALLOW_SAME_REVIEWER)。只影响 same_reviewer;自审约束永不读此开关。
+// 约束评估上下文保留 `attendanceAllowSameReviewer` 仅为配置兼容。活动责任闭环起运行时
+// 永不读取该值放开同人复核；true / false 均严格禁止。
 export interface ActionConstraintContext {
   attendanceAllowSameReviewer: boolean;
 }
@@ -33,21 +32,23 @@ export interface ActionConstraint {
   ): boolean;
 }
 
-// 自己不能终审自己提交的考勤单(§5.3 第 1 行;场景 4:SUPER_ADMIN 亦拒)。
-// 域不变量:不读 ctx,任何配置都不可放开(goal 决断②「自审永不可放开」)。
+// 自己不能审核自己最初提交或最近一次重提的考勤单；SUPER_ADMIN 亦拒。
 const selfApprovalForbidden: ActionConstraint = {
   reason: 'self_approval_forbidden',
   vetoes: (user, resource) => {
     const submitterUserId = resource?.extra?.['submitterUserId'];
-    return typeof submitterUserId === 'string' && submitterUserId === user.id;
+    const lastSubmittedByUserId = resource?.extra?.['lastSubmittedByUserId'];
+    return (
+      (typeof submitterUserId === 'string' && submitterUserId === user.id) ||
+      (typeof lastSubmittedByUserId === 'string' && lastSubmittedByUserId === user.id)
+    );
   },
 };
 
-// 一级审核人不得再终审同一张单(§5.3 第 2 行;默认禁止,env 可配 —— ctx 见上)。
+// 一级审核人不得再做终审；严格域不变量，不读兼容配置。
 const sameReviewerForbidden: ActionConstraint = {
   reason: 'same_reviewer_forbidden',
-  vetoes: (user, resource, ctx) => {
-    if (ctx.attendanceAllowSameReviewer) return false;
+  vetoes: (user, resource) => {
     const reviewerUserId = resource?.extra?.['reviewerUserId'];
     return typeof reviewerUserId === 'string' && reviewerUserId === user.id;
   },
@@ -55,7 +56,12 @@ const sameReviewerForbidden: ActionConstraint = {
 
 // 注册表:action → 约束列表(顺序即评估顺序,首个否决即返)。
 export const ACTION_CONSTRAINTS: ReadonlyMap<string, readonly ActionConstraint[]> = new Map([
+  ['attendance.approve.sheet', [selfApprovalForbidden]],
+  ['attendance.reject.sheet', [selfApprovalForbidden]],
+  ['attendance.return.sheet', [selfApprovalForbidden]],
   ['attendance.final-approve.sheet', [selfApprovalForbidden, sameReviewerForbidden]],
+  ['attendance.final-reject.sheet', [selfApprovalForbidden, sameReviewerForbidden]],
+  ['attendance.final-return.sheet', [selfApprovalForbidden, sameReviewerForbidden]],
 ]);
 
 export function getConstraintsForAction(action: string): readonly ActionConstraint[] {

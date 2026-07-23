@@ -15,7 +15,7 @@ import { createTestApp } from '../setup/test-app';
 // F3/C2「authz/explain-batch」e2e(2026-07-04;冻结路线图 admin-api-fe-integration-roadmap.md §4 C2 + D8)。
 // 覆盖:判权门(authz.explain-batch.decision;单条码不解锁批量)/ 批量矩阵(allow 各源 + deny 各归因
 // 逐条独立、顺序保持)/ 入参回显形状(resourceRef 未传则缺省)/ 输入错误(任一 userId 不存在 → 整请求
-// 10001;>200 → 400;action 非法 → 400;type ∉ 11 类 → 400)/ reason ⊆ 单条 explain 的 11 值枚举
+// 10001;>200 → 400;action 非法 → 400;type ∉ 13 类 → 400)/ reason ⊆ 单条 explain 的 11 值枚举
 // (「同一套枚举」= 契约锁,不因批量壳扩值)。
 // 判权语义零新增:decision 与单条 explain 同源(AuthzService.explain),此处只锁批量壳自身行为。
 
@@ -237,7 +237,7 @@ describe('F3/C2 authz/explain-batch(批量权限解释壳)', () => {
       expectBizError(res, BizCode.USER_NOT_FOUND);
     });
 
-    it('>200 条 / 空 items / action 非法 / type ∉ 11 类 / 未知字段 → 400', async () => {
+    it('>200 条 / 空 items / action 非法 / type ∉ 13 类 / 未知字段 → 400', async () => {
       const tooMany = Array.from({ length: 201 }, () => ({
         userId: tGrantedId,
         action: GRANTED_CODE,

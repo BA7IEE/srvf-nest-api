@@ -282,6 +282,14 @@ export class AttendancesService {
   ): Promise<void> {
     const decision = await this.authz.explain(user, action, ref);
     if (decision.allow) return;
+    if (
+      decision.reason === 'self_approval_forbidden' &&
+      (action === 'attendance.approve.sheet' ||
+        action === 'attendance.reject.sheet' ||
+        action === 'attendance.return.sheet')
+    ) {
+      throw new BizException(BizCode.ATTENDANCE_SELF_FIRST_REVIEW_FORBIDDEN);
+    }
     if (ref && decision.reason === 'resource_not_found' && (await this.rbac.can(user, action))) {
       return;
     }
@@ -321,7 +329,7 @@ export class AttendancesService {
   // 判权共用此 AuthzService 入口。带 ref 判权 = attendance-final-reviewer scoped 三源
   // (如 POSITION_ASSIGNMENT 主体 RoleBinding —— 终审中枢经 role-bindings 配置行决定,
   // 绝不 hardcode 部门)+ SUPER_ADMIN 兜底;biz-admin 不持终审/reopen 三码。
-  // ActionConstraint 仅 finalApprove 咬合自审/同人限制;finalReject/reopen 不受这两条限制。
+  // ActionConstraint 对 finalApprove / finalReject 咬合自审与同人限制；未来 finalReturn 同矩阵。
   //
   // deny 映射(goal 决断①):
   // - self_approval_forbidden → 22074 / same_reviewer_forbidden → 22075(域不变量否决,非权限不足)
@@ -1659,8 +1667,8 @@ export class AttendancesService {
   // - records **跟随软删**(沿 D8 主路径)
   // - **不触发** attendance.recorded(沿 D-S7;子项候选 C)
   // - audit:attendance-sheet.final-review(action='final-reject')
-  // - 权限同 finalApprove(PR9 起走 authz;B 方案 biz-admin 保留 + scoped 通路);注意
-  //   ActionConstraint 注册表(PR8 冻结)只咬合 final-approve —— final-reject 无自审/同人约束。
+  // - 权限同 finalApprove(PR9 起走 authz；scoped 通路 + SUPER_ADMIN 兜底)；
+  //   活动责任闭环起 final-reject 同样严格执行自审 / 同人约束。
   async finalReject(
     id: string,
     dto: FinalRejectAttendanceSheetDto,

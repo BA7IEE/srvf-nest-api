@@ -7,17 +7,25 @@ import {
 } from './action-constraints';
 import type { ResolvedResource } from './authz.types';
 
-// 终态 scoped-authz PR8:ActionConstraint 注册表单测(冻结稿 §5.3)。
-// 纯函数层:注册表内容 + 两条终审约束的否决/放行边界;与 DB 无关(服务级链路在
-// test/e2e/authz-three-source.e2e-spec.ts 场景 4 里连 AuthzService 一起锁)。
-// PR9(goal 决断②):同人开关从代码常量改为 ctx(env ATTENDANCE_ALLOW_SAME_REVIEWER 注入),
-// 默认禁止;ctx 放开只影响 same_reviewer,自审永不可放开。
+// 活动责任闭环 PR3:ActionConstraint 注册表单测。
+// 一审三动作均禁最初提交人 / 最近重提人自审；终审三动作在此基础上再禁一级审核人。
+// 兼容配置 true / false 均不得放开同人终审。
 
 const FINAL_APPROVE_ACTION = 'attendance.final-approve.sheet';
 
-// 默认 ctx = env 未设(同人禁止);RELAXED = env ATTENDANCE_ALLOW_SAME_REVIEWER=true
+const FIRST_REVIEW_ACTIONS = [
+  'attendance.approve.sheet',
+  'attendance.reject.sheet',
+  'attendance.return.sheet',
+] as const;
+const FINAL_REVIEW_ACTIONS = [
+  FINAL_APPROVE_ACTION,
+  'attendance.final-reject.sheet',
+  'attendance.final-return.sheet',
+] as const;
+
 const DEFAULT_CTX: ActionConstraintContext = { attendanceAllowSameReviewer: false };
-const RELAXED_CTX: ActionConstraintContext = { attendanceAllowSameReviewer: true };
+const COMPAT_TRUE_CTX: ActionConstraintContext = { attendanceAllowSameReviewer: true };
 
 function userPayload(id: string, role: Role = Role.ADMIN): CurrentUserPayload {
   return { id, username: `u-${id}`, role, status: UserStatus.ACTIVE, memberId: null };
@@ -39,14 +47,26 @@ function sheetResource(extra: Record<string, unknown>): ResolvedResource {
 }
 
 describe('action-constraints(§5.3 域不变量注册表)', () => {
-  it('注册表全集 = 仅 attendance.final-approve.sheet 两条(未注册 action 零约束)', () => {
-    expect([...ACTION_CONSTRAINTS.keys()]).toEqual([FINAL_APPROVE_ACTION]);
-    expect(ACTION_CONSTRAINTS.get(FINAL_APPROVE_ACTION)).toHaveLength(2);
+  it('注册表全集 = 一审三动作各一条 + 终审三动作各两条；未注册 action 零约束', () => {
+    expect([...ACTION_CONSTRAINTS.keys()]).toEqual([
+      ...FIRST_REVIEW_ACTIONS,
+      ...FINAL_REVIEW_ACTIONS,
+    ]);
+    for (const action of FIRST_REVIEW_ACTIONS) {
+      expect(ACTION_CONSTRAINTS.get(action)?.map((constraint) => constraint.reason)).toEqual([
+        'self_approval_forbidden',
+      ]);
+    }
+    for (const action of FINAL_REVIEW_ACTIONS) {
+      expect(ACTION_CONSTRAINTS.get(action)?.map((constraint) => constraint.reason)).toEqual([
+        'self_approval_forbidden',
+        'same_reviewer_forbidden',
+      ]);
+    }
     expect(getConstraintsForAction('member.read.record')).toHaveLength(0);
-    expect(getConstraintsForAction('attendance.approve.sheet')).toHaveLength(0);
   });
 
-  it('self_approval_forbidden:submitter==判权人 → 否决;他人 / 字段缺失 / resource=null → 放行', () => {
+  it('self_approval_forbidden:最初提交人或最近重提人==判权人 → 否决', () => {
     const [selfApproval] = getConstraintsForAction(FINAL_APPROVE_ACTION);
     expect(selfApproval.reason).toBe('self_approval_forbidden');
 
@@ -54,6 +74,16 @@ describe('action-constraints(§5.3 域不变量注册表)', () => {
     expect(selfApproval.vetoes(me, sheetResource({ submitterUserId: 'user-a' }), DEFAULT_CTX)).toBe(
       true,
     );
+    expect(
+      selfApproval.vetoes(
+        me,
+        sheetResource({
+          submitterUserId: 'user-b',
+          lastSubmittedByUserId: 'user-a',
+        }),
+        DEFAULT_CTX,
+      ),
+    ).toBe(true);
     expect(selfApproval.vetoes(me, sheetResource({ submitterUserId: 'user-b' }), DEFAULT_CTX)).toBe(
       false,
     );
@@ -68,10 +98,9 @@ describe('action-constraints(§5.3 域不变量注册表)', () => {
         DEFAULT_CTX,
       ),
     ).toBe(true);
-    // PR9:ctx 放开同人也**不**放开自审(域不变量永不可配;goal 决断②)
-    expect(selfApproval.vetoes(me, sheetResource({ submitterUserId: 'user-a' }), RELAXED_CTX)).toBe(
-      true,
-    );
+    expect(
+      selfApproval.vetoes(me, sheetResource({ submitterUserId: 'user-a' }), COMPAT_TRUE_CTX),
+    ).toBe(true);
   });
 
   it('same_reviewer_forbidden:一级 reviewer==判权人 → 默认否决;他人 / 未审 / resource=null → 放行', () => {
@@ -92,12 +121,12 @@ describe('action-constraints(§5.3 域不变量注册表)', () => {
     expect(sameReviewer.vetoes(me, null, DEFAULT_CTX)).toBe(false);
   });
 
-  it('same_reviewer_forbidden:ctx.attendanceAllowSameReviewer=true → 放行(env 开关生效)', () => {
+  it('same_reviewer_forbidden:兼容配置 true / false 均严格否决', () => {
     const sameReviewer = getConstraintsForAction(FINAL_APPROVE_ACTION)[1];
     const me = userPayload('user-a');
-    expect(sameReviewer.vetoes(me, sheetResource({ reviewerUserId: 'user-a' }), RELAXED_CTX)).toBe(
-      false,
-    );
+    const resource = sheetResource({ reviewerUserId: 'user-a' });
+    expect(sameReviewer.vetoes(me, resource, DEFAULT_CTX)).toBe(true);
+    expect(sameReviewer.vetoes(me, resource, COMPAT_TRUE_CTX)).toBe(true);
   });
 
   // review #484 G12:两约束同时命中(同一人身兼 submitter + 一级 reviewer,现试图终审)时的优先级

@@ -17,7 +17,7 @@ import { createTestApp } from '../setup/test-app';
 // §4 C3 + D8)。覆盖:判权门 / 判定对象=调用者本人 / allowed = authz ∧ 状态机只读
 // (state_forbidden 各资源型代表例:「考勤已终审→不可再终审」「活动已取消→不可再取消」「报名已过审→不可再批」)
 // / deny 原样归因(no_permission / resource_not_found)/ 未注册 action 走 authz-only /
-// 入参校验(>200 / type ∉ 11 类 / action 非法 → 400)/ reason 枚举完备双向锁
+// 入参校验(>200 / type ∉ 13 类 / action 非法 → 400)/ reason 枚举完备双向锁
 // (ACTION_STATE_REASON_VALUES = authz 11 值 ∪ state_forbidden 入 OpenAPI 契约)。
 // 判权语义零新增:authz 部分(含自审/同人约束)由 AuthzService.explain 原样承载,其矩阵锁在
 // authz-explain / authz-three-source e2e;此处只锁组合闸自身行为。
@@ -507,7 +507,7 @@ describe('F3/C3 authz/action-state/batch(批量业务态闸)', () => {
   // ============ 入参校验 + 枚举契约 ============
 
   describe('入参校验与 reason 枚举契约', () => {
-    it('>200 / 空 items / action 非法 / type ∉ 11 类 → 400', async () => {
+    it('>200 / 空 items / action 非法 / type ∉ 13 类 → 400', async () => {
       const tooMany = Array.from({ length: 201 }, () => ({
         action: 'attendance.read.sheet',
         resourceType: 'attendance_sheet',

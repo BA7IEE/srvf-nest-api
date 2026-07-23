@@ -5,7 +5,7 @@ import type { BindingScopeType } from '@prisma/client';
 
 // ============ ResourceRef(§5.2 入参)============
 
-// 业务侧引用一个资源的最小形状:type ∈ ResourceResolver 支持的 11 类(见 resource-resolver.service.ts),
+// 业务侧引用一个资源的最小形状:type ∈ ResourceResolver 支持的 13 类(见 resource-resolver.service.ts),
 // id = 该资源主键。消费者(PR9 起)在调用 authz.can/explain 时构造。
 export interface ResourceRef {
   type: string;
@@ -34,7 +34,8 @@ export interface ResolvedResource {
   statusCode: string | null;
   // 敏感分级 hint(权限码粒度仍是权威,§4.2;此处仅 hint)
   sensitivityLevel: ResourceSensitivityLevel | null;
-  // 域特定附加(自审等约束用,不污染主结构):如 attendance_sheet 的 { submitterUserId, reviewerUserId }
+  // 域特定附加(自审等约束用,不污染主结构):如 attendance_sheet 的
+  // { submitterUserId, lastSubmittedByUserId, reviewerUserId }
   extra?: Record<string, unknown>;
 }
 

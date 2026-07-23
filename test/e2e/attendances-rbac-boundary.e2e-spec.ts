@@ -377,7 +377,7 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
       ).toBe(200);
     });
     it('final-reject:②③④ 30100(② 摘码翻面)/ ① 200(SA;finalReviewNote 必填)', async () => {
-      const sheetId = await createSheetAt('pending_final_review');
+      const sheetId = await createSheetAt('pending_final_review', admBizUserId);
       expectBizError(
         await request(httpServer(app))
           .patch(`${resBase()}/${sheetId}/final-reject`)
@@ -400,7 +400,7 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
           .send({ finalReviewNote: 'X' }),
         BizCode.RBAC_FORBIDDEN,
       );
-      // ① SA 兜底 200(final-reject 无自审/同人约束 —— SA 终审自己提交的单亦可)
+      // ① SA 兜底 200（单据由他人提交；自审 / 同人约束仍对 SA 生效）
       expect(
         (
           await request(httpServer(app))

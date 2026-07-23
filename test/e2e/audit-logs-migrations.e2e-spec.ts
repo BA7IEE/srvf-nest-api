@@ -25,6 +25,8 @@ describe('audit-logs 写入迁移', () => {
   let prisma: PrismaService;
   let adminAuth: string;
   let adminId: string;
+  let attendanceSubmitterAuth: string;
+  let attendanceSubmitterId: string;
   // 终态 scoped-authz PR9:第二身份专职终审(submit/一级审是 adminAuth —— 自审 22074 /
   // 同人 22075 约束后同一人不能终审到底);摘码微刀(2026-07-03):biz-admin 不再持终审两码,
   // 终审身份换 SUPER_ADMIN(SA 兜底通路;audit 断言本身零修改)。
@@ -46,6 +48,12 @@ describe('audit-logs 写入迁移', () => {
     const admin = await createTestUser(app, { username: 'al-mig-adm', role: Role.ADMIN });
     adminId = admin.id;
     adminAuth = (await loginAs(app, 'al-mig-adm')).authHeader;
+    const attendanceSubmitter = await createTestUser(app, {
+      username: 'al-mig-att-submitter',
+      role: Role.ADMIN,
+    });
+    attendanceSubmitterId = attendanceSubmitter.id;
+    attendanceSubmitterAuth = (await loginAs(app, 'al-mig-att-submitter')).authHeader;
 
     // P0-F PR-2A:contribution-rules 写操作入口已切到 rbac.can();ADMIN 默认无 ops-admin
     // 会被 30100 拦下,导致 audit log 不会写;此处给 adminId grant ops-admin(模拟运维 SOP)。
@@ -56,6 +64,7 @@ describe('audit-logs 写入迁移', () => {
     // 也已切到 service 层 rbac.can(),ADMIN 测试用户统一补挂 biz-admin。
     const bizSeed = await seedBizAdminPermissionsAndRole(app);
     await grantBizAdminToUser(app, adminId, bizSeed.bizAdminRoleId);
+    await grantBizAdminToUser(app, attendanceSubmitterId, bizSeed.bizAdminRoleId);
 
     // PR9 第二终审身份;摘码微刀(2026-07-03)后为 SUPER_ADMIN(见上方 finalAdminAuth 注释)
     await createTestUser(app, {
@@ -1730,7 +1739,7 @@ describe('audit-logs 写入迁移', () => {
     ): Promise<string> => {
       const res = await request(httpServer(app))
         .post(`/api/admin/v1/activities/${actId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
+        .set('Authorization', attendanceSubmitterAuth)
         .send({ records });
       expect(res.status).toBe(201);
       return res.body.data.id;
@@ -1746,7 +1755,7 @@ describe('audit-logs 写入迁移', () => {
       expect(log.event).toBe('attendance-sheet.submit');
       expect(log.resourceType).toBe('attendance_sheet');
       expect(log.resourceId).toBe(sheetId);
-      expect(log.actorUserId).toBe(adminId);
+      expect(log.actorUserId).toBe(attendanceSubmitterId);
       expect(log.actorRoleSnap).toBe(Role.ADMIN);
       expect(log.success).toBe(true);
       const extra = (

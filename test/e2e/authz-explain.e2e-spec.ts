@@ -44,7 +44,7 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 //     ⑤ out_of_scope(scoped 绑定 + 树外 ref)⑥ self_approval_forbidden(final-approve + 提交人==目标;
 //     2026-07-03 摘码微刀后目标用 SA〔持权者才进约束评估〕,SA 亦拒的注册表语义在 three-source;
 //     此处锁 HTTP 面 200 形状)⑦ resource_not_found(200 decision,非 404)
-//   输入错误(异常):⑧ 目标用户不存在 / 已软删 → 10001;type ∉ 11 类 / action 非法格式 / 未知字段 → 400
+//   输入错误(异常):⑧ 目标用户不存在 / 已软删 → 10001;type ∉ 13 类 / action 非法格式 / 未知字段 → 400
 //   决断③:DISABLED 目标也可 explain,status 原样返
 //   §9 行 20:reason ∈ AuthzReason 稳定枚举(Record 完备性双向锁 + 实测响应 ⊆ 枚举)
 
@@ -475,7 +475,7 @@ describe('authz/explain 权限解释端点(PR10:可解释性出口)', () => {
     );
   });
 
-  it('入参白名单:type ∉ 11 类 / action 非法格式 / resourceRef 未知字段 → 400(不新增 BizCode)', async () => {
+  it('入参白名单:type ∉ 13 类 / action 非法格式 / resourceRef 未知字段 → 400(不新增 BizCode)', async () => {
     const badType = await explain(opsAuth, {
       userId: tBizId,
       action: 'member.read.record',
@@ -526,8 +526,10 @@ describe('authz/explain 权限解释端点(PR10:可解释性出口)', () => {
     };
     expect([...GRANT_SOURCE_VALUES].sort()).toEqual(Object.keys(sourceCover).sort());
 
-    // resourceRef.type 白名单 = resolver 11 类(冻结稿 §5.1)
-    expect(EXPLAINABLE_RESOURCE_TYPES).toHaveLength(11);
+    // resourceRef.type 白名单 = resolver 13 类
+    expect(EXPLAINABLE_RESOURCE_TYPES).toHaveLength(13);
+    expect(EXPLAINABLE_RESOURCE_TYPES).toContain('organization');
+    expect(EXPLAINABLE_RESOURCE_TYPES).toContain('activity_publish_review');
 
     // 本 spec 实测出现过的每个 reason 都必须落在稳定枚举内(响应契约,§9 行 20)
     expect(seenReasons.size).toBeGreaterThanOrEqual(6);

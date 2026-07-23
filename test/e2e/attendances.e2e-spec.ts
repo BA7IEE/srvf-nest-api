@@ -40,10 +40,12 @@ describe('attendances 模块', () => {
   let prisma: PrismaService;
   let superAdminAuth: string;
   let adminAuth: string;
+  let submitterAuth: string;
   // 终态 scoped-authz PR9:第二身份专职终审 —— 自审禁止(submitter==终审人 → 22074)+
   // 同人默认禁止(一级 reviewer==终审人 → 22075)后,单人无法再走完 submit→approve→final 全程;
   // 摘码微刀(2026-07-03):biz-admin 不再持终审两码 → 终审人从 ADMIN+biz-admin 换成
-  // SUPER_ADMIN(SA 兜底通路;仅换身份,业务断言零修改)。本 spec submit/一级审仍 adminAuth,
+  // SUPER_ADMIN(SA 兜底通路;仅换身份,业务断言零修改)。本 spec submit 用 submitterAuth、
+  // 一级审用 adminAuth,
   // final-approve / final-reject 一律 finalAdminAuth(权限/约束矩阵见
   // attendances-final-review-authz.e2e-spec.ts + attendances-rbac-boundary.e2e-spec.ts)。
   let finalAdminAuth: string;
@@ -69,11 +71,16 @@ describe('attendances 模块', () => {
     // 用户(权限边界只需 1 个已绑 member 的 USER)
     await createTestUser(app, { username: 'att-su', role: Role.SUPER_ADMIN });
     const admin = await createTestUser(app, { username: 'att-adm', role: Role.ADMIN });
+    const submitter = await createTestUser(app, {
+      username: 'att-submitter',
+      role: Role.ADMIN,
+    });
     // PR9 第二身份专职终审;摘码微刀(2026-07-03)后为 SUPER_ADMIN(SA 兜底通路,见上方注释)
     await createTestUser(app, { username: 'att-final-adm', role: Role.SUPER_ADMIN });
     await createTestUser(app, { username: 'att-user-with-mem', role: Role.USER });
     superAdminAuth = (await loginAs(app, 'att-su')).authHeader;
     adminAuth = (await loginAs(app, 'att-adm')).authHeader;
+    submitterAuth = (await loginAs(app, 'att-submitter')).authHeader;
     finalAdminAuth = (await loginAs(app, 'att-final-adm')).authHeader;
     userWithMemberAuth = (await loginAs(app, 'att-user-with-mem')).authHeader;
 
@@ -81,6 +88,7 @@ describe('attendances 模块', () => {
     // att-final-adm 是 SA 走短路,不 grant —— biz-admin 已无终审两码,grant 也无用)
     const bizSeed = await seedBizAdminPermissionsAndRole(app);
     await grantBizAdminToUser(app, admin.id, bizSeed.bizAdminRoleId);
+    await grantBizAdminToUser(app, submitter.id, bizSeed.bizAdminRoleId);
 
     const ma = await prisma.member.create({
       data: { memberNo: 'att-m-a', displayName: 'Member A' },
@@ -273,7 +281,7 @@ describe('attendances 模块', () => {
   ): Promise<string> {
     const res = await request(httpServer(app))
       .post(`/api/admin/v1/activities/${actId}/attendance-sheets`)
-      .set('Authorization', adminAuth)
+      .set('Authorization', submitterAuth)
       .send({ records });
     if (res.status !== 201) {
       throw new Error(`createPendingSheet failed: ${res.status} ${JSON.stringify(res.body)}`);
@@ -296,7 +304,8 @@ describe('attendances 模块', () => {
 
   // 批次 4-B helper:推到 approved 终态(APD 一级 approve + APD 部门部长 / 副部长 final-approve)。
   // 沿决议表 v1.0 D5 候选 B + D-S6:approved 语义升级为"终审通过"。
-  // PR9:终审换 finalAdminAuth(submit/一级审是 adminAuth —— 自审 22074 / 同人 22075 约束生效后
+  // PR9/PR3:终审换 finalAdminAuth(submit 是 submitterAuth、一级审是 adminAuth,
+  // 自审 22074/22081 与同人 22075 约束生效后
   // 同一人不能再终审)。
   async function approveToTerminalApproved(sheetId: string): Promise<void> {
     await approveToPendingFinalReview(sheetId);
