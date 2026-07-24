@@ -37,7 +37,7 @@
 - **通知 durable outbox**:PG lease/fence + generation/recipient/RBAC 快照/quota marker；provider 事务外 at-least-once。生产未 deploy，切换须排空旧 API/worker/intents 且禁混档
 - **Attachment storage Phase1**:durable ledger 已接 Attachment；Content publish/confirm 根锁接线、Provider 事务外；未加 key FK，repo-wide closure 未完成；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)
 - **保险 v3(v0.59.0，未 deploy)**:PR1–PR4 gate/约束/evidence 已交付，脏数 fail-fast；Admin 360 overview 已补；切换须 drain 且禁混档
-- **活动责任闭环(Unreleased 开发能力)**:代码、契约、全量测试、临时 Docker Smoke 已验证；仅供本地/前端联调，无正式环境，不执行生产 migration/seed、人员配置、历史认领、部署或切换。未来按批准的 release 构建物与不可变 image digest 复核 [`runbook`](ops/activity-responsibility-workflow-rollout.md)
+- **活动责任闭环(Unreleased，联调冻结)**:`app_local_frontend*` bootstrap 已交付；仅收可复现后端 Bug/契约缺口。无正式环境，生产 migration/seed、人员配置、历史认领、部署/切换未做；上线仍按批准 release + digest 复核 [`runbook`](ops/activity-responsibility-workflow-rollout.md)
 - **敏感读审计**:`AuditLogEvent` 123，管理端普通/CSV/签名 URL 敏感读均 fail-closed 落库，extra 禁 PII/filter/key/URL
 - **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 
@@ -57,7 +57,7 @@
 
 | 等级 | 债务 |
 |---|---|
-| P1 | 前端联调剩运维侧 P0-H 演练 + P0-I 排错 SOP(系统侧无动作) |
+| P1 | 前端联调包剩运维侧 P0-H 演练 + P0-I 排错 SOP(系统侧无动作) |
 | P1 | 保险 gate 未启用、旧 server=0 未验证；真实 ingress/ACL、COS、worker/fleet、registry digest 未验，均为 production GO 硬门 |
 | P1 | P1-22 专业队 gate 配置化;P1-23 isForeigner 历史列改名(对外已用 isNonMainlandDocument) |
 | P2 | scoped 余面(§3);god-service 体量观察(codemap 实时口径);v0.44 接受项(#8 / #10 / #19 / #20#21 已收口 notifications-owned + 招新/入队，participation producer 待接);单测占比刻意低(e2e 为主);Mixed 存量 2;snapshot 用 diff 勿整读 |
