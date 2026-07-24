@@ -2,7 +2,8 @@
 \pset tuples_only on
 \pset format unaligned
 
--- v0.61.0 activity responsibility workflow rollout preflight.
+-- Future activity responsibility workflow rollout read-only preflight.
+-- The current development stage has no production environment and does not execute this probe there.
 -- This file is deliberately read-only: PostgreSQL itself rejects any accidental write.
 BEGIN TRANSACTION READ ONLY;
 

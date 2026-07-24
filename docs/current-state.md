@@ -37,7 +37,7 @@
 - **通知 durable outbox**:PG lease/fence + generation/recipient/RBAC 快照/quota marker；provider 事务外 at-least-once。生产未 deploy，切换须排空旧 API/worker/intents 且禁混档
 - **Attachment storage Phase1**:durable ledger 已接 Attachment；Content publish/confirm 根锁接线、Provider 事务外；未加 key FK，repo-wide closure 未完成；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)
 - **保险 v3(v0.59.0，未 deploy)**:PR1–PR4 gate/约束/evidence 已交付，脏数 fail-fast；Admin 360 overview 已补；切换须 drain 且禁混档
-- **活动责任闭环(Unreleased)**:PR-13仅完成代码/契约收口。production migration/seed、历史认领、真实reviewer/owner配置、fleet drain/deploy/release/tag仍未执行；切换依PR-10 [`runbook`](ops/activity-responsibility-workflow-rollout.md)，禁true/false混跑
+- **活动责任闭环(Unreleased 开发能力)**:代码、契约、全量测试、临时 Docker Smoke 已验证；仅供本地/前端联调，无正式环境，不执行生产 migration/seed、人员配置、历史认领、部署或切换。未来按批准的 release 构建物与不可变 image digest 复核 [`runbook`](ops/activity-responsibility-workflow-rollout.md)
 - **敏感读审计**:`AuditLogEvent` 123，管理端普通/CSV/签名 URL 敏感读均 fail-closed 落库，extra 禁 PII/filter/key/URL
 - **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 

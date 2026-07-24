@@ -2,6 +2,7 @@
 
 > **本文件服务两类前端**:小程序(前端仓尚未建,能力图按占位骨架先就位,建仓直接填)与**招新 H5(已建仓 `srvf-h5`:报名 / 身份证上传 / OCR 确认 / 进度查询)**——H5 无账号,只消费 §2 中 `open/v1` 招新链各行。
 > canonical 在后端仓;字段真相 = live `/api/docs-json`;见 [`README.md`](README.md)。
+> 活动责任闭环当前是 Unreleased 开发能力，只用于本地前后端联调；没有正式生产环境，也不执行迁移、真实人员配置、部署或切换。
 
 ---
 
@@ -12,7 +13,7 @@
 - **准入**:App 要求 `User.memberId != null` + `User.status=ACTIVE` + 绑定 `Member.status=ACTIVE`;不满足 → `canUseApp=false`。候选人 / 临时号**进不来** App。
 - **scope=self**:App 端 where 永远用 `currentUser.memberId` 锁本人;后端不靠 role 放大数据范围(ADMIN 登 App 也只看本人)。
 - **`/me` vs `/my`**:`/me/*` = 身份/账号/资料/能力;`/my/*` = 本人持有的业务记录。别混。
-- **capability ≠ raw RBAC**:`GET /api/app/v1/me/capabilities` 返**产品级**能力(`canUseApp` / `canRegisterActivity`…),**不返** raw 权限码(raw 码是 admin 的 `system/v1/rbac/me/permissions`)。
+- **capability ≠ raw RBAC**:`GET /api/app/v1/me/capabilities` 返**产品级**能力，不返 raw 权限码。活动新增入口提示为 `activities.canInitiateActivity` / `canDirectPublishOwnActivity`，管理提示为 `managed.canViewManagedActivities` / `canManageManagedRegistrations` / `canSubmitManagedAttendance` / `canReviewActivityPublication` / `canFirstReviewAttendance` / `canFinalReviewAttendance`；它们都不能证明某一活动或组织最终可操作。
 - **L3 永不回**:App 永不返 `passwordHash` / `refreshToken` / `secretKey*` / 完整 signed URL。
 
 ### 1.1 登录与令牌(与 admin 全端一致,不在两处各维护)
@@ -25,13 +26,25 @@
 | 身份换绑 step-up | 换手机号/微信前先按当前可用因子调用 `POST /api/auth/v1/step-up/password`、`step-up/sms{,/send-code}` 或 `step-up/wechat`，body 的 `action` 固定为目标动作 `PHONE_BIND` / `WECHAT_BIND`；成功仅返 `{stepUpToken,expiresAt}`。随后分别把 proof 作为必填 `stepUpToken` 传给 `PUT /api/app/v1/me/phone` / `me/wechat` |
 | 我的身份/资料/能力 | `GET /api/app/v1/me` · `me/account` · `PATCH me/profile` · `PUT me/password` · `GET me/capabilities` |
 | 活动池 / 我的活动 | `GET /api/app/v1/activities/available`(**仅 `public` 且未结束活动;详情 `GET /api/app/v1/activities/:id` 含 `phase` / `genderRequirementCode` / `requiresInsurance` / `passCount`**) · `GET /api/app/v1/activities/:activityId/positions`（live 岗位，`remainingCapacity` / `canRegister`；余量 0 仍可进候补）· `GET /api/app/v1/my/activities`。活动 `capacity` 有岗位时为岗位总和，任一岗位不限则 null |
-| **我负责的活动（Unreleased PR-9/PR-11 contract）** | 新 base `GET/POST /api/app/v1/my/managed-activities`，**不得复用**上行 `/my/activities`（后者仍只表示本人报名历史）。`GET organization-options` 返回 active membership / cross-org grant 可发起组织及 `pathLabel`；detail 返回 activity、initiator/owner/myResponsibility、latest publishReview、counts、closure。draft 可 PATCH/DELETE，并在独立 `/positions` 子资源 CRUD；初发用 `submit-publish-review` 或持 grant 的 `direct-publish`，pending 可 `withdraw-publish-review`。published 直改仍返 `20037`，owner 改走 `submit-change-review`：body `{activity,positions?}`，positions 若传必须是完整 proposal（现有项带 `activityPositionId`，新增项带 `clientRef`，遗漏现有项表示软删），审核通过后才更新 live 数据。职责面为 `responsibilities`、`collaborator-options`、`collaborators` add/end、`transfer-owner`；App DTO 独立且不返回 L3 字段。报名管理位于 `/:activityId/registrations`；考勤管理位于 `/:activityId/check-ins`、`attendance-sheet-draft`、`attendance-sheets`（list/create/detail/edit/delete/resubmit）。owner 与 active 对应能力协办可用，无关用户即使持全局业务角色也统一 30100，协办结束后下一请求立即失权。PR-11 已从旧通用角色摘除这些动作权限，不改变 App route/DTO。考勤 GPS 视图不返回原始经纬度/精度；退回单允许先 PATCH 编辑，再 POST `:sheetId/resubmit`，重提后回 `pending` 并必须重新一审。活动结束后仅当前主负责人可 `POST /:activityId/declare-attendance-complete`（空 body）；重复声明或时机不合法返回 `20039`。`closure.status` 实时区分待声明/一审/退回整改/终审/closed；只有 Activity=`completed`、已声明且所有未作废有效 Sheet=`approved` 才 closed，`rejected`/`final_rejected`/软删除 Sheet 不阻挡。list 每行 `nextAction` 与 `unresolvedAttendanceSheets` 可直接驱动待办，不要在客户端自行推导。 |
+| **我发起或负责的活动（Unreleased 本地联调）** | 新 base `GET/POST /api/app/v1/my/managed-activities`，**不得复用**上行 `/my/activities`（后者仍只表示本人报名历史）。`GET organization-options` 返回 active membership / cross-org grant 可发起组织及 `pathLabel`；detail 返回 activity、initiator/owner/`myResponsibility`、publishReview、counts、closure。draft 可 PATCH/DELETE，并在独立 `/positions` 子资源 CRUD；初发用 `submit-publish-review` 或详情 `publishReview.canDirectPublish=true` 时的 `direct-publish`，pending 可 `withdraw-publish-review`。published 直改返 `20037`，owner 改走 `submit-change-review` 完整 proposal。职责面为 `responsibilities`、`collaborator-options`、`collaborators` add/end、`transfer-owner`；报名管理位于 `/:activityId/registrations`；考勤管理位于 `/:activityId/check-ins`、`attendance-sheet-draft`、`attendance-sheets`（list/create/detail/edit/delete/resubmit）。owner 与 active 对应能力协办可用，无关用户即使持全局业务角色也统一 30100，协办结束后下一请求立即失权。考勤 GPS 视图不返回原始经纬度/精度；退回单先 PATCH 编辑，再 POST `:sheetId/resubmit`，回 `pending` 后必须重新一审。活动结束后仅当前 owner 可 `POST /:activityId/declare-attendance-complete`；`closure.status` 实时区分待声明/一审/退回整改/终审/closed，只有 Activity=`completed`、已声明且无未解决有效 Sheet 时才 closed。list 的 `nextAction` 与 `unresolvedAttendanceSheets` 可直接驱动待办，不要在客户端自行推导。 |
 | 我的报名(报名/查/取消) | `GET /api/app/v1/my/registrations` · `POST` 报名 body additive 接受 `activityPositionId`（活动有岗位时必填，缺失 21035；不存在/跨活动/已删 20002；同人报第二岗仍 21002；满员成功创建 `waitlisted`，排位按岗位队列）· `PATCH` 取消(候补可随时退出)。活动已结束 `20125`、报名截止 `20123`、已有考勤不可取消 `21033` 等既有闸不变 |
 | 我的考勤 / 参与汇总 / 证书 | `GET /api/app/v1/my/attendance-records` · `GET /api/app/v1/my/participation-summary` · `GET /api/app/v1/my/certificates`。参与汇总严格锁当前 `AppIdentityResolver.memberId`，只统计 approved Sheet：`totalServiceHours` / distinct `activityCount` / `recordCount`；`contributionPoints` 复用生涯累计封顶核，与 Admin 旧 `contribution-summary` 同源。**不返回 memberId / no-show / 他人数据**，前端直接展示，勿自行 SUM |
 | **活动 GPS 自助签到 / 签退(F2)** | `POST /api/app/v1/my/activities/:activityId/check-in` · `POST .../check-out` · `GET .../check-in`。只认本人当前 `pass` 报名；⚠️ **首次写已收紧为 fail-closed**：活动/请求坐标完整合法且原始 Haversine 距离不超过配置半径才 200。已有合法 winner 的网络重试仍返回同一证据且不覆盖。App 仅收到时间、距离与历史兼容字段 `geoVerified/outOfRange`，**不返回原始经纬度、accuracy 或 memberId** |
 | **活动评价(F2–F4)** | `GET /api/app/v1/my/activities/:activityId/feedback` 初始化本人评价与 `canSubmit/windowClosesAt`；`PUT` 同路径提交 `{rating,comment?}`。只认 completed + 窗口内 + approved 到场，本人 scope；不返回他人评价/人数/均分 |
 | 公开(无账号) | `POST /api/open/v1/recruitment/applications/*`(招新报名) · `GET /api/open/v1/contents`(内容;`expireAt <= now` 的附件行不返回、过期封面 URL 为 null,未来时间/null 不变) |
 | 招新本人进度(无账号) | `POST /api/open/v1/recruitment/applications/query`(凭 wx.login code 换 openid;**返进度模型**:业务态 `stage` + 字典 `stageText` + `nextAction` + 门槛 `todoList` 真投影 + 临时编号;`memberNo` 恒 null——发号后经登录态 app 侧查,见 §3 GAP-006)。**F4(v0.41.0-pre)**:发号后(报名行 openid 已清)不再「查无 28002」——经账号 openid 锚 fall-through 返 **stage=volunteer 引导态**(「已转志愿者 / 待入队」+ `nextAction=apply-teamjoin`),前端见此态引导用户登录小程序/申请入队;已离队(INACTIVE)或非招新出身仍 28002 |
+
+### 活动责任闭环的五类视图与按钮
+
+1. **我参与的活动**：App `/api/app/v1/my/activities`，只表示本人报名/参与历史。
+2. **我发起或负责的活动**：App `/api/app/v1/my/managed-activities`，表示 initiator、owner 或 active collaborator 关系。
+3. **待发布审核**：Admin `/api/admin/v1/activity-publish-reviews?status=pending`。
+4. **待一审考勤**：Admin `/api/admin/v1/attendance-sheets?statusCode=pending`。
+5. **待终审考勤**：Admin `/api/admin/v1/attendance-sheets?statusCode=pending_final_review`。
+
+后三类是 Admin 审批面，不要混入 `/my/activities`。正式队员才显示“发起活动”，可选组织只读 `organization-options`；普通发起人显示“提交发布审核”，只有详情 `publishReview.canDirectPublish=true` 才显示“直接发布”。owner 与报名协办、考勤协办的按钮按 `myResponsibility` 分开；考勤提交与考勤审核按钮也必须分开。`returned` 时展示退回原因、修改和重新提交。最终闭环判断是 `closure.status === 'closed'`，不是 `closure.closed`。
+
+页面级 capability 只负责入口提示。每个按钮还要结合 `myResponsibility`、Activity/review/Sheet/closure 状态；服务端 resource + scope 判定才是最终结果。不得按 ADMIN、队长、`publishedBy` 或“能看到页面”猜权限。
 
 > **Unreleased · PR-12 边界收口**：draft 只有在目标组织 ACTIVE、未软删、非根，且持久化 initiator 仍为有 ACTIVE 账号的正式队员并具备目标组织 membership / scoped cross-org grant 时才可真实改组织；`initiatorMemberId=null` 不会回退为当前操作者。已发布活动的 `submit-change-review.activity.organizationId` 只能省略或等于当前组织，不同值统一返 `20022`，客户端不要提供普通 proposal 的“迁移组织”入口。
 | **H5 报名前手机身份链(无账号;S4a)** | `POST /api/open/v1/recruitment/identity/send-code`(`{phone}`→发验证码) → `POST .../identity/verify-code`(`{phone,code}`→返一次性 `phoneVerificationToken`〔30min,明文仅返一次〕) → 提交报名(见下行 H5 链)。**F4(v0.41.0-pre)**:闭轮期两端点对「手机命中未清除报名记录」者放行(自助查询/换绑链闭轮不再断);闭轮陌生手机 send-code 返防枚举泛化 200(不真发码),verify-code 统一 24010——前端不必对闭轮做特殊分支 |
