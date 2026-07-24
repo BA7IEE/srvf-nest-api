@@ -1,0 +1,1 @@
+- 活动责任闭环 PR-8：考勤单新增 `returned` 退回整改、独立一审/终审退回与重提；普通整改保留 records，重提清空审核责任并重新进入一审。新增 App `/my/managed-activities/:activityId` 考勤管理 8 路，仅 owner/考勤协办可用，责任撤销即时失权；Admin 新增 return/final-return/resubmit 3 路并锁定自审、同人和并发 winner。

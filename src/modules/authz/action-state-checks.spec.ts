@@ -14,8 +14,8 @@ describe('buildActionStateChecks(action→状态机只读注册表)', () => {
     activityRegistration: new ActivityRegistrationStateMachine(),
   });
 
-  it('注册面 = 13 项(attendance_sheet 7 + activity 3 + activity_registration 3),resourceType 对齐', () => {
-    expect(checks.size).toBe(13);
+  it('注册面 = 15 项(attendance_sheet 9 + activity 3 + activity_registration 3),resourceType 对齐', () => {
+    expect(checks.size).toBe(15);
     const byType = (t: string): string[] =>
       [...checks.entries()].filter(([, c]) => c.resourceType === t).map(([a]) => a);
     expect(byType('attendance_sheet').sort()).toEqual(
@@ -24,8 +24,10 @@ describe('buildActionStateChecks(action→状态机只读注册表)', () => {
         'attendance.delete.sheet',
         'attendance.final-approve.sheet',
         'attendance.final-reject.sheet',
+        'attendance.final-return.sheet',
         'attendance.reopen.sheet',
         'attendance.reject.sheet',
+        'attendance.return.sheet',
         'attendance.update.sheet',
       ].sort(),
     );
@@ -53,7 +55,12 @@ describe('buildActionStateChecks(action→状态机只读注册表)', () => {
 
     const edit = checks.get('attendance.update.sheet')!;
     expect(edit.decide('pending')).toBe(true);
+    expect(edit.decide('returned')).toBe(true);
     expect(edit.decide('approved')).toBe(false);
+
+    expect(checks.get('attendance.return.sheet')!.decide('pending')).toBe(true);
+    expect(checks.get('attendance.return.sheet')!.decide('returned')).toBe(false);
+    expect(checks.get('attendance.final-return.sheet')!.decide('pending_final_review')).toBe(true);
 
     const reopen = checks.get('attendance.reopen.sheet')!;
     expect(reopen.decide('approved')).toBe(true);

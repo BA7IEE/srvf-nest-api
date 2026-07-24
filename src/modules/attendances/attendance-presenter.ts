@@ -37,6 +37,12 @@ export type AttendanceSheetRowLike = {
   finalReviewerUserId: string | null;
   finalReviewedAt: Date | null;
   finalReviewNote: string | null;
+  lastSubmittedByUserId: string | null;
+  lastSubmittedAt: Date | null;
+  returnedByUserId: string | null;
+  returnedAt: Date | null;
+  returnNote: string | null;
+  returnedFromStageCode: string | null;
   version: number;
   createdAt: Date;
   updatedAt: Date;
@@ -91,6 +97,15 @@ export class AttendancePresenter {
       finalReviewerUserId: row.finalReviewerUserId,
       finalReviewedAt: row.finalReviewedAt,
       finalReviewNote: row.finalReviewNote,
+      lastSubmittedByUserId: row.lastSubmittedByUserId,
+      lastSubmittedAt: row.lastSubmittedAt,
+      returnedByUserId: row.returnedByUserId,
+      returnedAt: row.returnedAt,
+      returnNote: row.returnNote,
+      returnedFromStageCode:
+        row.returnedFromStageCode === 'first' || row.returnedFromStageCode === 'final'
+          ? row.returnedFromStageCode
+          : null,
       version: row.version,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

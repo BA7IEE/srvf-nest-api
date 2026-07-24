@@ -10,6 +10,7 @@ import { UsersModule } from '../users/users.module';
 import { AdminActivityCheckInsService } from './admin-activity-check-ins.service';
 import { ActivityCheckInQueryService } from './activity-check-in-query.service';
 import { AppMyAttendanceRecordsService } from './app-my-attendance-records.service';
+import { AppManagedActivityAttendancesService } from './app-managed-activity-attendances.service';
 import { ActivityCheckInFieldPolicy } from './activity-check-in-field-policy';
 import { ActivityCheckInLocationPolicy } from './activity-check-in-location-policy';
 import { ActivityCheckInPolicy } from './activity-check-in-policy';
@@ -30,10 +31,12 @@ import { AdminMemberAttendanceController } from './controllers/admin-member-atte
 import { AppActivityCheckInsController } from './controllers/app-activity-check-ins.controller';
 import { AppMyAttendanceRecordsController } from './controllers/app-my-attendance-records.controller';
 import { AppMyParticipationSummaryController } from './controllers/app-my-participation-summary.controller';
+import { AppManagedActivityAttendancesController } from './controllers/app-managed-activity-attendances.controller';
 import { ParticipationSummaryQueryService } from './participation-summary-query.service';
 
 // V2 批次 6 PR #6(D6 v1.1 §8 / 第二波最后一批):导入 AuditLogsModule 以注入 AuditLogsService,
-// attendances 9 处写操作(submit / edit × 2 / softDelete / approve / reject / finalApprove / finalReject / reopen)
+// attendances 12 处写操作(submit / edit × 2 / softDelete / approve / return / reject /
+// finalApprove / finalReturn / finalReject / resubmit / reopen)
 // 调 log() 落库;2026-07-19 C-2 起 3 处 read.other(list / findOne / reviewDetail)也经
 // AttendanceAuditRecorder 在查询完成后 fail-closed 落库,不再存在 pino-only placeholder。
 //
@@ -70,12 +73,14 @@ import { ParticipationSummaryQueryService } from './participation-summary-query.
     AppActivityCheckInsController,
     AppMyAttendanceRecordsController,
     AppMyParticipationSummaryController,
+    AppManagedActivityAttendancesController,
   ],
   providers: [
     AttendancesService,
     AdminActivityCheckInsService,
     ActivityCheckInQueryService,
     AppMyAttendanceRecordsService,
+    AppManagedActivityAttendancesService,
     AppActivityCheckInsService,
     ActivityCheckInPolicy,
     ActivityCheckInLocationPolicy,

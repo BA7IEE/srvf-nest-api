@@ -16,9 +16,12 @@ export const ATTENDANCE_SHEET_TRANSITION_ACTIONS = [
   'edit',
   'softDelete',
   'approve',
+  'firstReturn',
   'reject',
   'finalApprove',
+  'finalReturn',
   'finalReject',
+  'resubmit',
   'reopen',
 ] as const;
 
@@ -27,6 +30,7 @@ export type AttendanceSheetTransitionAction = (typeof ATTENDANCE_SHEET_TRANSITIO
 export type AttendanceSheetStatusCode =
   | typeof ATTENDANCE_SHEET_STATUS.PENDING
   | typeof ATTENDANCE_SHEET_STATUS.PENDING_FINAL_REVIEW
+  | typeof ATTENDANCE_SHEET_STATUS.RETURNED
   | typeof ATTENDANCE_SHEET_STATUS.APPROVED
   | typeof ATTENDANCE_SHEET_STATUS.REJECTED
   | typeof ATTENDANCE_SHEET_STATUS.FINAL_REJECTED;
@@ -43,11 +47,17 @@ export class AttendanceSheetStateMachine {
   ): AttendanceSheetTransitionDecision {
     switch (action) {
       case 'edit':
+        return this.decideEdit(currentStatusCode);
       case 'softDelete':
-        return this.rejectEditLike(currentStatusCode);
+        return this.decideSoftDelete(currentStatusCode);
       case 'approve':
         if (currentStatusCode === ATTENDANCE_SHEET_STATUS.PENDING) {
           return { allowed: true, nextStatusCode: ATTENDANCE_SHEET_STATUS.PENDING_FINAL_REVIEW };
+        }
+        return { allowed: false, biz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID };
+      case 'firstReturn':
+        if (currentStatusCode === ATTENDANCE_SHEET_STATUS.PENDING) {
+          return { allowed: true, nextStatusCode: ATTENDANCE_SHEET_STATUS.RETURNED };
         }
         return { allowed: false, biz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID };
       case 'reject':
@@ -60,11 +70,21 @@ export class AttendanceSheetStateMachine {
           return { allowed: true, nextStatusCode: ATTENDANCE_SHEET_STATUS.APPROVED };
         }
         return { allowed: false, biz: BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID };
+      case 'finalReturn':
+        if (currentStatusCode === ATTENDANCE_SHEET_STATUS.PENDING_FINAL_REVIEW) {
+          return { allowed: true, nextStatusCode: ATTENDANCE_SHEET_STATUS.RETURNED };
+        }
+        return { allowed: false, biz: BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID };
       case 'finalReject':
         if (currentStatusCode === ATTENDANCE_SHEET_STATUS.PENDING_FINAL_REVIEW) {
           return { allowed: true, nextStatusCode: ATTENDANCE_SHEET_STATUS.FINAL_REJECTED };
         }
         return { allowed: false, biz: BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID };
+      case 'resubmit':
+        if (currentStatusCode === ATTENDANCE_SHEET_STATUS.RETURNED) {
+          return { allowed: true, nextStatusCode: ATTENDANCE_SHEET_STATUS.PENDING };
+        }
+        return { allowed: false, biz: BizCode.ATTENDANCE_SHEET_RESUBMIT_STATUS_INVALID };
       case 'reopen':
         if (currentStatusCode === ATTENDANCE_SHEET_STATUS.APPROVED) {
           return { allowed: true, nextStatusCode: ATTENDANCE_SHEET_STATUS.PENDING };
@@ -73,7 +93,24 @@ export class AttendanceSheetStateMachine {
     }
   }
 
-  private rejectEditLike(currentStatusCode: string): AttendanceSheetTransitionDecision {
+  private decideEdit(currentStatusCode: string): AttendanceSheetTransitionDecision {
+    switch (currentStatusCode) {
+      case ATTENDANCE_SHEET_STATUS.PENDING:
+      case ATTENDANCE_SHEET_STATUS.RETURNED:
+        return { allowed: true, nextStatusCode: currentStatusCode };
+      default:
+        return this.rejectNonEditable(currentStatusCode);
+    }
+  }
+
+  private decideSoftDelete(currentStatusCode: string): AttendanceSheetTransitionDecision {
+    if (currentStatusCode === ATTENDANCE_SHEET_STATUS.PENDING) {
+      return { allowed: true, nextStatusCode: ATTENDANCE_SHEET_STATUS.PENDING };
+    }
+    return this.rejectNonEditable(currentStatusCode);
+  }
+
+  private rejectNonEditable(currentStatusCode: string): AttendanceSheetTransitionDecision {
     switch (currentStatusCode) {
       case ATTENDANCE_SHEET_STATUS.PENDING:
         return { allowed: true, nextStatusCode: ATTENDANCE_SHEET_STATUS.PENDING };

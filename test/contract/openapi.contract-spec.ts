@@ -193,6 +193,15 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/app/v1/my/managed-activities/{activityId}/registrations/{registrationId}/reopen'],
   ['patch', '/api/app/v1/my/managed-activities/{activityId}/registrations/bulk-approve'],
   ['patch', '/api/app/v1/my/managed-activities/{activityId}/registrations/bulk-reject'],
+  // 活动责任闭环 PR-8:负责人/考勤协办 App 考勤管理薄壳；App DTO 与 Admin 物理隔离。
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/check-ins'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/attendance-sheet-draft'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/attendance-sheets'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/attendance-sheets'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}'],
+  ['patch', '/api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}'],
+  ['delete', '/api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}/resubmit'],
 
   // Phase 2 P2-5b(2026-05-20):App /api/app/v1/my/registrations 2 写 endpoint
   // 沿 docs/app-api-p2-5-registrations-review.md §13.7 + D-P2-5-5 / D-P2-5-8 / D-P2-5-9 /
@@ -467,8 +476,11 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['delete', '/api/admin/v1/attendance-sheets/{id}'],
   ['patch', '/api/admin/v1/attendance-sheets/{id}/approve'],
   ['patch', '/api/admin/v1/attendance-sheets/{id}/reject'],
+  ['post', '/api/admin/v1/attendance-sheets/{id}/return'],
   ['patch', '/api/admin/v1/attendance-sheets/{id}/final-approve'],
   ['patch', '/api/admin/v1/attendance-sheets/{id}/final-reject'],
+  ['post', '/api/admin/v1/attendance-sheets/{id}/final-return'],
+  ['post', '/api/admin/v1/attendance-sheets/{id}/resubmit'],
   ['post', '/api/admin/v1/attendance-sheets/{id}/reopen'],
   // 队员/审批跨轴只读查询(2026-06-23;前端任务驱动后台 · GAP-001 Tier2 / GAP-002 Tier3):
   //   5 个 admin 只读端点,224→229(仅新增;复用 read 码零新码 / 零 schema 列 / 零 migration)。
@@ -1393,8 +1405,8 @@ describe('OpenAPI 契约快照', () => {
     expect(Object.keys(item[method]?.responses ?? {}).length).toBeGreaterThan(0);
   });
 
-  it('App managed registration 闭环落地后路由足迹精确为 402', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(402);
+  it('App managed attendance 闭环落地后路由足迹精确为 413', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(413);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

@@ -39,7 +39,9 @@ import {
   FinalRejectAttendanceSheetDto,
   ListAttendanceSheetsQueryDto,
   ReopenAttendanceSheetDto,
+  ResubmitAttendanceSheetDto,
   RejectAttendanceSheetDto,
+  ReturnAttendanceSheetDto,
   UpdateAttendanceSheetDto,
 } from './attendances.dto';
 import { AttendancesService } from './attendances.service';
@@ -209,7 +211,7 @@ export class AttendanceSheetsResourceController {
   @Patch(':id')
   @ApiOperation({
     summary:
-      '编辑 pending Sheet(D38:后端生成 previousSnapshot + version+1;旧 records 软删 + 新 records 创建;approved/rejected/pending_final_review/final_rejected 拒绝) [rbac: attendance.update.sheet]',
+      '编辑 pending/returned Sheet(D38:后端生成 previousSnapshot + version+1;旧 records 软删 + 新 records 创建;其余状态拒绝) [rbac: attendance.update.sheet]',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
@@ -277,6 +279,7 @@ export class AttendanceSheetsResourceController {
     BizCode.RBAC_FORBIDDEN,
     BizCode.ATTENDANCE_SHEET_NOT_FOUND,
     BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
+    BizCode.ATTENDANCE_SELF_FIRST_REVIEW_FORBIDDEN,
     BizCode.ATTENDANCE_RECORD_CONTRIBUTION_POINTS_REQUIRED,
   )
   approve(
@@ -299,6 +302,7 @@ export class AttendanceSheetsResourceController {
     BizCode.RBAC_FORBIDDEN,
     BizCode.ATTENDANCE_SHEET_NOT_FOUND,
     BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
+    BizCode.ATTENDANCE_SELF_FIRST_REVIEW_FORBIDDEN,
   )
   reject(
     @Param() params: IdParamDto,
@@ -307,6 +311,31 @@ export class AttendanceSheetsResourceController {
     @Req() req: Request,
   ): Promise<AttendanceSheetResponseDto> {
     return this.service.reject(params.id, dto, currentUser, buildAuditMeta(req));
+  }
+
+  @Post(':id/return')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '一级审核退回修改(pending → returned;保留 records;记录退回人、阶段与原因) [rbac: attendance.return.sheet]',
+  })
+  @ApiWrappedOkResponse(AttendanceSheetResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ATTENDANCE_SHEET_NOT_FOUND,
+    BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
+    BizCode.ATTENDANCE_SELF_FIRST_REVIEW_FORBIDDEN,
+    BizCode.ATTENDANCE_RETURN_NOTE_REQUIRED,
+  )
+  firstReturn(
+    @Param() params: IdParamDto,
+    @Body() dto: ReturnAttendanceSheetDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<AttendanceSheetResponseDto> {
+    return this.service.firstReturn(params.id, dto, currentUser, buildAuditMeta(req));
   }
 
   // ============ 批次 4-B 新增:终审 final-approve / final-reject ============
@@ -326,6 +355,8 @@ export class AttendanceSheetsResourceController {
     BizCode.RBAC_FORBIDDEN,
     BizCode.ATTENDANCE_SHEET_NOT_FOUND,
     BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID,
+    BizCode.ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN,
+    BizCode.ATTENDANCE_SAME_REVIEWER_FORBIDDEN,
   )
   finalApprove(
     @Param() params: IdParamDto,
@@ -349,6 +380,8 @@ export class AttendanceSheetsResourceController {
     BizCode.ATTENDANCE_SHEET_NOT_FOUND,
     BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID,
     BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_NOTE_REQUIRED,
+    BizCode.ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN,
+    BizCode.ATTENDANCE_SAME_REVIEWER_FORBIDDEN,
   )
   finalReject(
     @Param() params: IdParamDto,
@@ -357,6 +390,55 @@ export class AttendanceSheetsResourceController {
     @Req() req: Request,
   ): Promise<AttendanceSheetResponseDto> {
     return this.service.finalReject(params.id, dto, currentUser, buildAuditMeta(req));
+  }
+
+  @Post(':id/final-return')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '终审退回修改(pending_final_review → returned;保留 records;执行自审与同人约束) [rbac: attendance.final-return.sheet]',
+  })
+  @ApiWrappedOkResponse(AttendanceSheetResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ATTENDANCE_SHEET_NOT_FOUND,
+    BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID,
+    BizCode.ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN,
+    BizCode.ATTENDANCE_SAME_REVIEWER_FORBIDDEN,
+    BizCode.ATTENDANCE_RETURN_NOTE_REQUIRED,
+  )
+  finalReturn(
+    @Param() params: IdParamDto,
+    @Body() dto: ReturnAttendanceSheetDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<AttendanceSheetResponseDto> {
+    return this.service.finalReturn(params.id, dto, currentUser, buildAuditMeta(req));
+  }
+
+  @Post(':id/resubmit')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '退回考勤单重提(returned → pending;保留 records;清空审核/退回字段;version+1;限活动考勤责任人或 SUPER_ADMIN) [rbac: attendance.update.sheet]',
+  })
+  @ApiWrappedOkResponse(AttendanceSheetResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ATTENDANCE_SHEET_NOT_FOUND,
+    BizCode.ATTENDANCE_SHEET_RESUBMIT_STATUS_INVALID,
+  )
+  resubmit(
+    @Param() params: IdParamDto,
+    @Body() dto: ResubmitAttendanceSheetDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<AttendanceSheetResponseDto> {
+    return this.service.resubmit(params.id, dto, currentUser, buildAuditMeta(req));
   }
 
   @Post(':id/reopen')
