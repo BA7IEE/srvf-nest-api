@@ -235,6 +235,17 @@ describe('App managed activities core', () => {
     });
   }
 
+  async function workflowWriteCounts() {
+    const [activities, publishReviews, responsibilities, roleBindings, audits] = await Promise.all([
+      prisma.activity.count(),
+      prisma.activityPublishReview.count(),
+      prisma.activityResponsibilityAssignment.count(),
+      prisma.roleBinding.count(),
+      prisma.auditLog.count(),
+    ]);
+    return { activities, publishReviews, responsibilities, roleBindings, audits };
+  }
+
   it('keeps /my/activities separate and supports draft CRUD, positions and initial review withdrawal', async () => {
     const manager = await createMember('draft-manager');
     const options = await request(httpServer(app))
@@ -319,6 +330,30 @@ describe('App managed activities core', () => {
     ).resolves.toEqual({ organizationId });
   });
 
+  it.each([
+    ['a nonexistent organization', 'missing', BizCode.ORGANIZATION_NOT_FOUND],
+    ['the root organization', 'root', BizCode.ACTIVITY_ORGANIZATION_ROOT_FORBIDDEN],
+  ] as const)(
+    'rejects creating a draft for %s without workflow side effects',
+    async (_label, targetKind, expectedBizCode) => {
+      const owner = await createMember(`create-${targetKind}`);
+      const before = await workflowWriteCounts();
+      const targetOrganization =
+        targetKind === 'root' ? rootOrganizationId : 'managed-activities-missing-organization';
+
+      const response = await request(httpServer(app))
+        .post('/api/app/v1/my/managed-activities')
+        .set('Authorization', owner.auth)
+        .send({
+          ...createPayload(`Create ${targetKind} organization draft`),
+          organizationId: targetOrganization,
+        });
+
+      expectBizError(response, expectedBizCode);
+      await expect(workflowWriteCounts()).resolves.toEqual(before);
+    },
+  );
+
   it('allows a draft move with an EXACT organization cross-org grant', async () => {
     const owner = await createMember('cross-org-exact');
     await grantCrossOrgInitiation(
@@ -391,18 +426,34 @@ describe('App managed activities core', () => {
     expectBizError(response, BizCode.ORGANIZATION_INACTIVE);
   });
 
-  it('rejects the root organization as a draft target', async () => {
-    const owner = await createMember('cross-org-root');
-    await grantCrossOrgInitiation(owner.memberId, BindingScopeType.GLOBAL);
-    const activityId = await createManagedDraft(owner, 'Cross-org root draft');
+  it.each([
+    ['a nonexistent organization', 'missing', BizCode.ORGANIZATION_NOT_FOUND],
+    ['the root organization', 'root', BizCode.ACTIVITY_ORGANIZATION_ROOT_FORBIDDEN],
+  ] as const)(
+    'rejects %s as a draft update target without workflow side effects',
+    async (_label, targetKind, expectedBizCode) => {
+      const owner = await createMember(`cross-org-${targetKind}`);
+      await grantCrossOrgInitiation(owner.memberId, BindingScopeType.GLOBAL);
+      const activityId = await createManagedDraft(owner, `Cross-org ${targetKind} draft`);
+      const before = await workflowWriteCounts();
+      const targetOrganization =
+        targetKind === 'root' ? rootOrganizationId : 'managed-activities-missing-organization';
 
-    const response = await request(httpServer(app))
-      .patch(`/api/app/v1/my/managed-activities/${activityId}`)
-      .set('Authorization', owner.auth)
-      .send({ organizationId: rootOrganizationId });
+      const response = await request(httpServer(app))
+        .patch(`/api/app/v1/my/managed-activities/${activityId}`)
+        .set('Authorization', owner.auth)
+        .send({ organizationId: targetOrganization });
 
-    expectBizError(response, BizCode.ACTIVITY_ORGANIZATION_ROOT_FORBIDDEN);
-  });
+      expectBizError(response, expectedBizCode);
+      await expect(workflowWriteCounts()).resolves.toEqual(before);
+      await expect(
+        prisma.activity.findUniqueOrThrow({
+          where: { id: activityId },
+          select: { organizationId: true },
+        }),
+      ).resolves.toEqual({ organizationId });
+    },
+  );
 
   it('fails closed when a legacy draft has no persisted initiatorMemberId', async () => {
     const superAdmin = await createMember(

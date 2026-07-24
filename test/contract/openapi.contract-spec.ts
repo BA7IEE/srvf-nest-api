@@ -2,6 +2,7 @@ import { HttpStatus, RequestMethod, type INestApplication, type Type } from '@ne
 import { HTTP_CODE_METADATA, METHOD_METADATA } from '@nestjs/common/constants';
 import { ModulesContainer } from '@nestjs/core';
 import request from 'supertest';
+import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { httpServer } from '../helpers/http-server';
 import { createTestApp } from '../setup/test-app';
 
@@ -27,6 +28,7 @@ interface OpenApiSchema {
   type?: string;
   nullable?: boolean;
   example?: unknown;
+  enum?: unknown[];
   properties?: Record<string, OpenApiSchema>;
 }
 
@@ -55,6 +57,15 @@ interface OpenApiDoc {
     schemas?: Record<string, unknown>;
     securitySchemes?: Record<string, unknown>;
   };
+}
+
+function documented4xxCodes(operation: OpenApiOperation | undefined): number[] {
+  return Object.entries(operation?.responses ?? {})
+    .filter(([status]) => /^4\d\d$/.test(status))
+    .flatMap(([, response]) => {
+      const codeSchema = response.content?.['application/json']?.schema?.properties?.code;
+      return (codeSchema?.enum ?? []).filter((code): code is number => typeof code === 'number');
+    });
 }
 
 // v1 锁定路由清单 + V2 第一阶段(Step 3 起)dictionaries。
@@ -1511,6 +1522,41 @@ describe('OpenAPI 契约快照', () => {
     expect(dataSchema?.$ref).toBeUndefined();
     expect(JSON.stringify(dataSchema)).not.toContain('LogoutAllResponseDto');
   });
+
+  it.each([
+    [
+      'POST',
+      'post',
+      '/api/app/v1/my/managed-activities',
+      [
+        BizCode.ORGANIZATION_NOT_FOUND.code,
+        BizCode.ORGANIZATION_INACTIVE.code,
+        BizCode.ACTIVITY_ORGANIZATION_ROOT_FORBIDDEN.code,
+        BizCode.ACTIVITY_INITIATOR_NOT_FORMAL.code,
+        BizCode.ACTIVITY_INITIATION_ORG_FORBIDDEN.code,
+      ],
+    ],
+    [
+      'PATCH',
+      'patch',
+      '/api/app/v1/my/managed-activities/{activityId}',
+      [
+        BizCode.ORGANIZATION_NOT_FOUND.code,
+        BizCode.ORGANIZATION_INACTIVE.code,
+        BizCode.ACTIVITY_ORGANIZATION_ROOT_FORBIDDEN.code,
+        BizCode.ACTIVITY_INITIATOR_NOT_FORMAL.code,
+        BizCode.ACTIVITY_INITIATION_ORG_FORBIDDEN.code,
+        BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING.code,
+        BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED.code,
+      ],
+    ],
+  ] as const)(
+    '%s /app/v1/my/managed-activities 显式声明活动发起边界错误',
+    (_label, method, path, expectedCodes) => {
+      const operation = doc.paths[path]?.[method];
+      expect(documented4xxCodes(operation)).toEqual(expect.arrayContaining(expectedCodes));
+    },
+  );
 
   it('paths 段快照(锁定每个 operation 的响应结构)', () => {
     // 仅快照 paths,排除 info.version(随发布递增,不视作 schema 漂移)。
