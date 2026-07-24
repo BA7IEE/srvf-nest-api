@@ -20,11 +20,16 @@
 | 阶段 | gate | 通用角色旧活动动作 | 允许动作 | 通过条件 |
 |---|---|---|---|---|
 | expand / 配置 | `false` | 保留 | 部署 nullable schema、新角色；配置 reviewer；盘点 legacy | 不切生产入口 |
-| 认领演练 | `false` | 保留 | 逐条 `assign-initiator` / `claim`；反复跑只读探针 | `dataReadyForContract=true` |
-| contract 维护窗 | 全 fleet 停止 | PR-11 seed 摘除 | 最终只读探针、已审查 deploy/seed | 旧实例与旧事务均 drain |
+| 认领维护窗 | 旧 fleet 全停；唯一维护实例为 `true` | 保留 | 冻结外部流量后逐条 `assign-initiator` / `claim`；反复跑只读探针 | `dataReadyForContract=true`，随后停止维护实例 |
+| contract 维护窗 | 全部实例停止 | PR-11 seed 摘除 | 最终只读探针、已审查 deploy/seed | false fleet 与 true 维护实例均 drain |
 | cutover | 全 fleet `true` | 已摘除 | 启动新实例并验收 workflow | fleet 配置一致、验收全绿 |
 
 任何阶段的通过条件不满足，都停止在当前阶段，不进入下一阶段。
+
+`claim` / `assign-initiator` 本身受 workflow gate 保护，gate=false 会返回
+`ACTIVITY_STATUS_INVALID`。因此不能在仍提供流量的 false fleet 上完成认领。唯一允许的演练形态是：
+先冻结写流量并完整 drain false fleet，再启动一个不接外部流量的 true 维护实例；认领完成后先停止并
+drain 该实例，才执行 contract。全程不存在 true / false 实例混跑。
 
 ## 2. 执行只读预检
 
@@ -57,8 +62,16 @@ SQL 首行输出 `summary|{...}`，随后按需输出零到多行 `legacy-gap|{.
 
 - `draft` → `assign-initiator`
 - `published` → `claim`
+- `published` 且已有任意 active 协办、但没有 owner → `manual-review-active-responsibility`
+
+最后一种不能直接调用 `claim`：服务会因“已存在 active responsibility”拒绝。必须停下核对该异常
+责任历史并另立受审数据处置，禁止自动结束协办、补 owner 或改用裸 SQL。
 
 ## 3. 逐条完成 legacy 认领
+
+本节只在 §6 的受控维护窗执行：外部写流量已冻结、false fleet 和旧事务已 drain，并且唯一维护
+实例以 `ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED=true` 启动且不接业务流量。不要在日常
+gate=false 实例上尝试这些接口。
 
 ### 3.1 业务侧准备
 
@@ -166,7 +179,8 @@ curl -X POST "https://<API_HOST>/api/admin/v1/role-bindings" \
 
 - Role 与 RoleBinding 均未软删；
 - binding `status=ACTIVE` 且当前时间在任期内；
-- scope 为 GLOBAL / ORGANIZATION / ORGANIZATION_TREE 且形状合法；
+- scope 为 GLOBAL / ORGANIZATION / ORGANIZATION_TREE 且形状合法；组织 scope 必须指向 active、未软删组织；
+- reviewer 角色仍完整持有该阶段 seed 固定的全部 RolePermission；
 - USER 主体是 active User；
 - MEMBER 主体是 active Member 且有 active User；
 - POSITION_ASSIGNMENT 主体的任职、Member、User 均 active 且任期有效。
@@ -178,29 +192,39 @@ curl -X POST "https://<API_HOST>/api/admin/v1/role-bindings" \
 - [ ] 当前部署代码包含 PR-1 至 PR-10，required CI 全绿。
 - [ ] 已审查的 65 个 migration 均 deploy 完成，`prisma migrate status` 无 pending。
 - [ ] fleet 当前仍统一显式为 `ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED=false`。
-- [ ] §2 探针输出 `dataReadyForContract=true`。
-- [ ] 所有 `legacy-gap` 行已归零；completed / cancelled 未认领行已确认是允许项。
-- [ ] owner projection gap 为 0。
 - [ ] 发布审核、一审、终审均至少一条有效绑定；终审建议两人互备。
+- [ ] 三个 reviewer 角色的固定 RolePermission 码集已与 seed 逐码核对。
 - [ ] reviewer 账号能登录，scope 与业务组织树一致。
 - [ ] 已用测试单验证：提交人不能一审 / 终审，一审人不能终审，SUPER_ADMIN 同样受限。
 - [ ] 已冻结维护窗、回滚负责人和上一版本镜像 / 配置。
 - [ ] 已确认旧 fleet、worker 和长事务的 drain 方法。
 - [ ] 真实人员对照资料只存于受控工单，不进入仓库。
 
-任一项未勾选，禁止执行 PR-11 contract seed 或切 gate。
+以上是进入维护窗的前置项；此时只读探针可以仍有 legacy gap，不能伪填
+`dataReadyForContract=true`。维护窗内还必须依次确认：
+
+- [ ] 外部写流量已冻结，所有 false 实例、worker、连接和旧事务已 drain。
+- [ ] 只启动一个不接外部流量的 true 维护实例，且不存在任何 false 实例。
+- [ ] 逐条完成 `assign-initiator` / `claim`；`manual-review-active-responsibility` 已停下单独处置。
+- [ ] §2 探针输出 `dataReadyForContract=true`，所有 `legacy-gap` 行归零。
+- [ ] owner projection gap 为 0。
+- [ ] true 维护实例已停止并 drain，数据库上没有活动责任 workflow 写事务。
+
+任一前置项或维护窗项未勾选，禁止执行 PR-11 contract seed 或启动 cutover fleet。
 
 ## 6. 维护窗切换顺序
 
 本节描述顺序，不授权 AI 或 CI 对生产执行。
 
 1. 冻结活动 / 报名 / 考勤写流量。
-2. 停止并 drain 所有旧实例、worker 和旧事务，确认连接与写流量归零。
-3. 在同一数据库快照上重跑 §2，只接受 `dataReadyForContract=true`。
-4. 执行已审查的 PR-11 deploy / seed，使通用角色旧动作权限完成 targeted contract 摘除。
-5. 核对 `biz-admin` / `org-admin` / `group-manager` 精确码集与三个 reviewer / owner 角色码集。
-6. 为整个新 fleet 注入完全相同的 `ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED=true`，再启动实例。
-7. 先验 health / ready，再进行 §7 业务验收；通过后恢复流量。
+2. 停止并 drain 所有 false 实例、worker 和旧事务，确认连接与写流量归零。
+3. 启动一个不接外部流量的 PR-1–PR-10 维护实例，显式配置 gate=true；不得同时保留 false 实例。
+4. 通过 §3 API 逐条完成 legacy 认领，反复跑 §2；只接受 `dataReadyForContract=true`。
+5. 停止并 drain true 维护实例，再在同一数据库快照上重跑 §2。
+6. 执行已审查的 PR-11 deploy / seed，使通用角色旧动作权限完成 targeted contract 摘除。
+7. 核对 `biz-admin` / `org-admin` / `group-manager` 精确码集与三个 reviewer / owner 角色码集。
+8. 为整个新 fleet 注入完全相同的 `ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED=true`，再启动实例。
+9. 先验 health / ready，再进行 §7 业务验收；通过后恢复流量。
 
 禁止滚动地让 true / false 实例同时接流量。该切换应是 drain 后的整 fleet 替换。
 

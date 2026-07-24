@@ -23,6 +23,26 @@ import { deriveTestDbName } from '../setup/worktree-db';
 
 const PREFLIGHT_SQL_PATH = path.resolve('docs/ops/activity-responsibility-workflow-preflight.sql');
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
+const REVIEWER_PERMISSION_CODES = {
+  'activity-publish-reviewer': [
+    'activity-review.read.request',
+    'activity.publish.record',
+    'activity-review.return.request',
+  ],
+  'attendance-first-reviewer': [
+    'attendance.read.sheet',
+    'attendance.approve.sheet',
+    'attendance.reject.sheet',
+    'attendance.return.sheet',
+  ],
+  'attendance-final-reviewer': [
+    'attendance.read.sheet',
+    'attendance.final-approve.sheet',
+    'attendance.final-reject.sheet',
+    'attendance.reopen.sheet',
+    'attendance.final-return.sheet',
+  ],
+} as const;
 
 interface PreflightSummary {
   legacyDraftWithoutInitiator: number;
@@ -40,7 +60,7 @@ interface PreflightOutput {
     activityId: string;
     organizationId: string;
     statusCode: 'draft' | 'published';
-    requiredAction: 'assign-initiator' | 'claim';
+    requiredAction: 'assign-initiator' | 'claim' | 'manual-review-active-responsibility';
   }>;
 }
 
@@ -94,9 +114,12 @@ describe('activity responsibility workflow PR10 rollout drill', () => {
   let organizationId: string;
   let draftActivityId: string;
   let publishedActivityId: string;
+  let publishedWithCollaboratorId: string;
   let terminalActivityIds: string[];
+  let adminUserId: string;
   let ownerMemberId: string;
   let reviewerRoleIds: Record<string, string>;
+  let reviewerPrincipalIds: Record<string, string>;
   let sequence = 0;
   const previousGate = process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
 
@@ -111,6 +134,7 @@ describe('activity responsibility workflow PR10 rollout drill', () => {
       username: 'activity-rollout-super-admin',
       role: Role.SUPER_ADMIN,
     });
+    adminUserId = admin.id;
     adminAuth = (await loginAs(app, admin.username)).authHeader;
 
     const organization = await prisma.organization.create({
@@ -128,22 +152,31 @@ describe('activity responsibility workflow PR10 rollout drill', () => {
     const owner = await createFormalMember('owner');
     ownerMemberId = owner.memberId;
 
-    const [draft, published, completed, cancelled] = await Promise.all([
+    const [draft, published, publishedWithCollaborator, completed, cancelled] = await Promise.all([
       createLegacyActivity('draft'),
+      createLegacyActivity('published'),
       createLegacyActivity('published'),
       createLegacyActivity('completed'),
       createLegacyActivity('cancelled'),
     ]);
     draftActivityId = draft.id;
     publishedActivityId = published.id;
+    publishedWithCollaboratorId = publishedWithCollaborator.id;
     terminalActivityIds = [completed.id, cancelled.id];
+    await prisma.activityResponsibilityAssignment.create({
+      data: {
+        activityId: publishedWithCollaboratorId,
+        memberId: ownerMemberId,
+        responsibilityType: 'collaborator',
+        canManageRegistrations: true,
+        canManageAttendance: false,
+        assignedByUserId: adminUserId,
+        source: 'admin',
+      },
+    });
 
     reviewerRoleIds = {};
-    for (const code of [
-      'activity-publish-reviewer',
-      'attendance-first-reviewer',
-      'attendance-final-reviewer',
-    ]) {
+    for (const code of Object.keys(REVIEWER_PERMISSION_CODES)) {
       const role = await prisma.rbacRole.upsert({
         where: { code },
         create: { code, displayName: code },
@@ -152,6 +185,7 @@ describe('activity responsibility workflow PR10 rollout drill', () => {
       });
       reviewerRoleIds[code] = role.id;
     }
+    await configureDistinctReviewerBindings();
   });
 
   afterAll(async () => {
@@ -212,7 +246,7 @@ describe('activity responsibility workflow PR10 rollout drill', () => {
     });
   }
 
-  async function configureDistinctReviewers(): Promise<void> {
+  async function configureDistinctReviewerBindings(): Promise<void> {
     const position = await prisma.organizationPosition.create({
       data: {
         code: 'activity-rollout-reviewer',
@@ -222,12 +256,8 @@ describe('activity responsibility workflow PR10 rollout drill', () => {
       },
       select: { id: true },
     });
-    const roleCodes = [
-      'activity-publish-reviewer',
-      'attendance-first-reviewer',
-      'attendance-final-reviewer',
-    ] as const;
-    for (const roleCode of roleCodes) {
+    reviewerPrincipalIds = {};
+    for (const roleCode of Object.keys(REVIEWER_PERMISSION_CODES)) {
       const reviewer = await createFormalMember(roleCode);
       const assignment = await prisma.organizationPositionAssignment.create({
         data: {
@@ -239,6 +269,7 @@ describe('activity responsibility workflow PR10 rollout drill', () => {
         },
         select: { id: true },
       });
+      reviewerPrincipalIds[roleCode] = assignment.id;
       await prisma.roleBinding.create({
         data: {
           principalType: PrincipalType.POSITION_ASSIGNMENT,
@@ -253,7 +284,61 @@ describe('activity responsibility workflow PR10 rollout drill', () => {
     }
   }
 
-  it('read-only SQL reports only non-terminal legacy gaps and never mutates data', async () => {
+  async function configureReviewerPermissionsAndInactiveScopeControls(): Promise<void> {
+    const permissionCodes = [...new Set(Object.values(REVIEWER_PERMISSION_CODES).flat())];
+    await prisma.permission.createMany({
+      data: permissionCodes.map((code) => {
+        const parts = code.split('.');
+        return {
+          code,
+          module: parts[0],
+          action: parts[1],
+          resourceType: parts[2],
+        };
+      }),
+      skipDuplicates: true,
+    });
+    const permissions = await prisma.permission.findMany({
+      where: { code: { in: permissionCodes } },
+      select: { id: true, code: true },
+    });
+    const permissionIdByCode = new Map(
+      permissions.map((permission) => [permission.code, permission.id]),
+    );
+    for (const [roleCode, codes] of Object.entries(REVIEWER_PERMISSION_CODES)) {
+      await prisma.rolePermission.createMany({
+        data: codes.map((code) => ({
+          roleId: reviewerRoleIds[roleCode],
+          permissionId: permissionIdByCode.get(code)!,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    const inactiveOrganization = await prisma.organization.create({
+      data: {
+        name: '活动责任切换演练停用范围',
+        nodeTypeCode: 'activity-rollout-inactive',
+        status: 'INACTIVE',
+      },
+      select: { id: true },
+    });
+    for (const roleCode of Object.keys(REVIEWER_PERMISSION_CODES)) {
+      await prisma.roleBinding.create({
+        data: {
+          principalType: PrincipalType.POSITION_ASSIGNMENT,
+          principalId: reviewerPrincipalIds[roleCode],
+          roleId: reviewerRoleIds[roleCode],
+          scopeType: BindingScopeType.ORGANIZATION_TREE,
+          scopeOrgId: inactiveOrganization.id,
+          startedAt: new Date('2026-01-01T00:00:00.000Z'),
+          note: 'activity-responsibility-rollout-inactive-scope-control',
+        },
+      });
+    }
+  }
+
+  it('read-only SQL reports actionable non-terminal gaps and rejects incomplete reviewer roles', async () => {
     const before = {
       activities: await prisma.activity.count(),
       responsibilities: await prisma.activityResponsibilityAssignment.count(),
@@ -263,29 +348,43 @@ describe('activity responsibility workflow PR10 rollout drill', () => {
 
     const result = runPreflight();
 
+    await expect(
+      prisma.roleBinding.count({
+        where: { roleId: { in: Object.values(reviewerRoleIds) } },
+      }),
+    ).resolves.toBe(3);
     expect(result.summary).toEqual({
       legacyDraftWithoutInitiator: 1,
-      legacyPublishedWithoutOwner: 1,
+      legacyPublishedWithoutOwner: 2,
       activeOwnerProjectionGaps: 0,
       activityPublishReviewerBindings: 0,
       attendanceFirstReviewerBindings: 0,
       attendanceFinalReviewerBindings: 0,
       dataReadyForContract: false,
     });
-    expect(result.legacyGaps).toEqual([
-      {
-        activityId: draftActivityId,
-        organizationId,
-        statusCode: 'draft',
-        requiredAction: 'assign-initiator',
-      },
-      {
-        activityId: publishedActivityId,
-        organizationId,
-        statusCode: 'published',
-        requiredAction: 'claim',
-      },
-    ]);
+    expect(result.legacyGaps).toHaveLength(3);
+    expect(result.legacyGaps).toEqual(
+      expect.arrayContaining([
+        {
+          activityId: draftActivityId,
+          organizationId,
+          statusCode: 'draft',
+          requiredAction: 'assign-initiator',
+        },
+        {
+          activityId: publishedActivityId,
+          organizationId,
+          statusCode: 'published',
+          requiredAction: 'claim',
+        },
+        {
+          activityId: publishedWithCollaboratorId,
+          organizationId,
+          statusCode: 'published',
+          requiredAction: 'manual-review-active-responsibility',
+        },
+      ]),
+    );
     expect(result.legacyGaps.map((gap) => gap.activityId)).not.toEqual(
       expect.arrayContaining(terminalActivityIds),
     );
@@ -302,6 +401,12 @@ describe('activity responsibility workflow PR10 rollout drill', () => {
       before.roleBindings,
       before.audits,
     ]);
+
+    // 模拟人工核对后把该异常 legacy 样本退出 contract 阻断范围；探针本身没有执行此写入。
+    await prisma.activity.update({
+      where: { id: publishedWithCollaboratorId },
+      data: { statusCode: 'cancelled' },
+    });
   });
 
   it('drills explicit assign/claim and reaches dataReadyForContract with reviewer bindings', async () => {
@@ -319,9 +424,14 @@ describe('activity responsibility workflow PR10 rollout drill', () => {
     expect(claim.status).toBe(200);
     expect(claim.body.data.memberId).toBe(ownerMemberId);
 
-    await configureDistinctReviewers();
+    await configureReviewerPermissionsAndInactiveScopeControls();
     const result = runPreflight();
 
+    await expect(
+      prisma.roleBinding.count({
+        where: { roleId: { in: Object.values(reviewerRoleIds) } },
+      }),
+    ).resolves.toBe(6);
     expect(result.summary).toEqual({
       legacyDraftWithoutInitiator: 0,
       legacyPublishedWithoutOwner: 0,

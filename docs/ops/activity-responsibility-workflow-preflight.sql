@@ -45,16 +45,32 @@ owner_projection_gaps AS (
         AND rb.status = 'ACTIVE'
         AND rb."deletedAt" IS NULL
         AND rb."startedAt" <= clock_timestamp()
-        AND (rb."endedAt" IS NULL OR rb."endedAt" > clock_timestamp())
+        AND (rb."endedAt" IS NULL OR rb."endedAt" >= clock_timestamp())
         AND role.code = 'activity-owner'
         AND role."deletedAt" IS NULL
         AND rb.note = 'system:activity-responsibility:' || ara.id
     )
 ),
+required_reviewer_permissions(role_code, permission_code) AS (
+  VALUES
+    ('activity-publish-reviewer', 'activity-review.read.request'),
+    ('activity-publish-reviewer', 'activity.publish.record'),
+    ('activity-publish-reviewer', 'activity-review.return.request'),
+    ('attendance-first-reviewer', 'attendance.read.sheet'),
+    ('attendance-first-reviewer', 'attendance.approve.sheet'),
+    ('attendance-first-reviewer', 'attendance.reject.sheet'),
+    ('attendance-first-reviewer', 'attendance.return.sheet'),
+    ('attendance-final-reviewer', 'attendance.read.sheet'),
+    ('attendance-final-reviewer', 'attendance.final-approve.sheet'),
+    ('attendance-final-reviewer', 'attendance.final-reject.sheet'),
+    ('attendance-final-reviewer', 'attendance.reopen.sheet'),
+    ('attendance-final-reviewer', 'attendance.final-return.sheet')
+),
 effective_reviewer_bindings AS (
   SELECT role.code, rb.id
   FROM role_bindings AS rb
   JOIN roles AS role ON role.id = rb."roleId"
+  LEFT JOIN "Organization" AS scope_org ON scope_org.id = rb."scopeOrgId"
   WHERE role.code IN (
       'activity-publish-reviewer',
       'attendance-first-reviewer',
@@ -64,12 +80,31 @@ effective_reviewer_bindings AS (
     AND rb.status = 'ACTIVE'
     AND rb."deletedAt" IS NULL
     AND rb."startedAt" <= clock_timestamp()
-    AND (rb."endedAt" IS NULL OR rb."endedAt" > clock_timestamp())
+    AND (rb."endedAt" IS NULL OR rb."endedAt" >= clock_timestamp())
     AND rb."scopeType" IN ('GLOBAL', 'ORGANIZATION', 'ORGANIZATION_TREE')
     AND (
       (rb."scopeType" = 'GLOBAL' AND rb."scopeOrgId" IS NULL)
       OR
-      (rb."scopeType" IN ('ORGANIZATION', 'ORGANIZATION_TREE') AND rb."scopeOrgId" IS NOT NULL)
+      (
+        rb."scopeType" IN ('ORGANIZATION', 'ORGANIZATION_TREE')
+        AND rb."scopeOrgId" IS NOT NULL
+        AND scope_org.status = 'ACTIVE'
+        AND scope_org."deletedAt" IS NULL
+      )
+    )
+    -- A binding is not operational unless the seeded reviewer role still carries every
+    -- permission required by that workflow stage.
+    AND NOT EXISTS (
+      SELECT 1
+      FROM required_reviewer_permissions AS required
+      WHERE required.role_code = role.code
+        AND NOT EXISTS (
+          SELECT 1
+          FROM role_permissions AS rp
+          JOIN permissions AS permission ON permission.id = rp."permissionId"
+          WHERE rp."roleId" = role.id
+            AND permission.code = required.permission_code
+        )
     )
     AND (
       (
@@ -84,6 +119,8 @@ effective_reviewer_bindings AS (
       )
       OR
       (
+        -- Deliberately stricter than Authz's MEMBER lookup: requiring an active Member
+        -- can only create a safe false negative in this production-entry probe.
         rb."principalType" = 'MEMBER'
         AND EXISTS (
           SELECT 1
@@ -108,7 +145,7 @@ effective_reviewer_bindings AS (
             AND opa.status = 'ACTIVE'
             AND opa."deletedAt" IS NULL
             AND opa."startedAt" <= clock_timestamp()
-            AND (opa."endedAt" IS NULL OR opa."endedAt" > clock_timestamp())
+            AND (opa."endedAt" IS NULL OR opa."endedAt" >= clock_timestamp())
             AND m.status = 'ACTIVE'
             AND m."deletedAt" IS NULL
             AND u.status = 'ACTIVE'
@@ -160,9 +197,16 @@ SELECT 'legacy-gap|' || json_build_object(
   'organizationId', a."organizationId",
   'statusCode', a."statusCode",
   'requiredAction',
-    CASE a."statusCode"
-      WHEN 'draft' THEN 'assign-initiator'
-      WHEN 'published' THEN 'claim'
+    CASE
+      WHEN a."statusCode" = 'draft' THEN 'assign-initiator'
+      WHEN EXISTS (
+        SELECT 1
+        FROM activity_responsibility_assignments AS ara
+        WHERE ara."activityId" = a.id
+          AND ara.status = 'active'
+          AND ara."endedAt" IS NULL
+      ) THEN 'manual-review-active-responsibility'
+      ELSE 'claim'
     END
 )::text
 FROM "Activity" AS a
