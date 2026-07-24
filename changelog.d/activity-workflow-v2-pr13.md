@@ -1,0 +1,1 @@
+- 活动责任闭环 PR-13：为 App managed activity 创建与 draft 修改接口补声明组织不存在、根组织错误，并用显式 contract 锁定完整发起资格错误集、用零副作用 E2E 锁定运行时；同步上线 Runbook 的可选跨组织发起角色说明。

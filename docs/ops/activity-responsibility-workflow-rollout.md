@@ -142,7 +142,7 @@ curl -X POST \
 3. 不自动重建 binding，不按时间戳选赢家；
 4. 由维护者决定通过业务 API 重做还是另立数据修复审批。
 
-## 4. reviewer RoleBinding 配置样例
+## 4. reviewer 与跨组织发起 RoleBinding 配置样例
 
 三个 reviewer 角色均零默认持有人、零 PositionRolePolicy，必须显式配置。推荐主体是 active `POSITION_ASSIGNMENT`，scope 是业务组织的 `ORGANIZATION_TREE`。
 
@@ -173,9 +173,16 @@ curl -X POST "https://<API_HOST>/api/admin/v1/role-bindings" \
 
 生产建议三个阶段使用不同人员；即使配置重叠，服务端仍会对提交人、最近重提人、一审人执行人员隔离，SUPER_ADMIN 也不能绕过。
 
-### 4.2 有效性核对
+### 4.2 可选跨组织发起资格
 
-探针只计入以下绑定：
+跨组织发起使用独立角色 `activity-cross-org-initiator`，该角色零默认持有人，只授予
+`activity.create.cross-org`。推荐使用 `MEMBER` 主体并按实际业务范围配置
+`ORGANIZATION` 或 `ORGANIZATION_TREE` scope；它不是 reviewer 角色，也不是
+`dataReadyForContract` 的必选条件。是否配置以及具体范围必须来自受控业务审批，不能由系统推断。
+
+### 4.3 有效性核对
+
+reviewer 探针只计入以下绑定：
 
 - Role 与 RoleBinding 均未软删；
 - binding `status=ACTIVE` 且当前时间在任期内；
