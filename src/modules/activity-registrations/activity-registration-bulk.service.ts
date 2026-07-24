@@ -7,7 +7,10 @@ import {
   BulkReviewRegistrationsDto,
   BulkReviewRegistrationsResponseDto,
 } from './activity-registrations.dto';
-import { ActivityRegistrationsService } from './activity-registrations.service';
+import {
+  ActivityRegistrationsService,
+  type RegistrationAuthorization,
+} from './activity-registrations.service';
 
 // 审计刀 5 F6：薄批量编排层。每个 id 完整调用既有单条 approve/reject，因此每条各自拥有
 // authz ref 判权、事务、状态机、capacity FOR UPDATE、audit 与 commit 后通知；主 god-service 零增长。
@@ -20,6 +23,7 @@ export class ActivityRegistrationBulkService {
     dto: BulkReviewRegistrationsDto,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    authorization: RegistrationAuthorization = 'authz',
   ): Promise<BulkReviewRegistrationsResponseDto> {
     return this.execute(dto.ids, async (id) => {
       await this.registrations.approve(
@@ -28,6 +32,7 @@ export class ActivityRegistrationBulkService {
         { ...(dto.reviewNote !== undefined ? { reviewNote: dto.reviewNote } : {}) },
         currentUser,
         auditMeta,
+        authorization,
       );
     });
   }
@@ -37,10 +42,18 @@ export class ActivityRegistrationBulkService {
     dto: BulkReviewRegistrationsDto,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    authorization: RegistrationAuthorization = 'authz',
   ): Promise<BulkReviewRegistrationsResponseDto> {
     const reviewNote = dto.reviewNote?.trim() || '批量驳回';
     return this.execute(dto.ids, async (id) => {
-      await this.registrations.reject(activityId, id, { reviewNote }, currentUser, auditMeta);
+      await this.registrations.reject(
+        activityId,
+        id,
+        { reviewNote },
+        currentUser,
+        auditMeta,
+        authorization,
+      );
     });
   }
 

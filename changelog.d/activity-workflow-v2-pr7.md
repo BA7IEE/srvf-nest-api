@@ -1,0 +1,1 @@
+- 活动责任闭环 PR-7：新增 App `/my/managed-activities/:activityId/registrations` 报名管理 7 路，owner 与报名协办可查看、单条/批量审核、代取消和重开；复用既有报名状态机、容量、候补、审计与逐条批处理语义，责任结束后下一请求立即失权，独立 App DTO 不暴露 Admin 审核人字段。

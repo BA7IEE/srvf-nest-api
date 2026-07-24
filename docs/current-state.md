@@ -15,8 +15,8 @@
 | 计数项 | 值 |
 |---|---|
 | 模块 | 36 |
-| Controller | 80 |
-| Endpoint | 395 |
+| Controller | 81 |
+| Endpoint | 402 |
 | Migration | 65 |
 | BizCode | 275 |
 | 权限码 | 213 |
@@ -37,7 +37,7 @@
 - **通知 durable outbox**:PG lease/fence + generation/recipient/RBAC 快照/quota marker；provider 事务外 at-least-once。生产未 deploy，切换须排空旧 API/worker/intents 且禁混档
 - **Attachment storage Phase1**:durable ledger 已接 Attachment；Content publish/confirm 根锁接线、Provider 事务外；未加 key FK，repo-wide closure 未完成；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)
 - **保险 v3(v0.59.0，未 deploy)**:PR1–PR4 gate/约束/evidence 已交付，脏数 fail-fast；Admin 360 overview 已补；切换须 drain 且禁混档
-- **活动责任闭环(Unreleased)**:PR0–PR6 已交付；App 独立 `/my/managed-activities` 19 路，含发起/发布/岗位/职责及变更审核后原子应用；旧 `/my/activities` 为报名历史；PR7–PR11 待，production/smoke 须显式 false
+- **活动责任闭环(Unreleased)**:PR0–7交付；App `/my/managed-activities` 26 路含发起/发布/岗位/职责/报名；owner/报名协办生效、撤权实时；旧 `/my/activities` 为报名历史；PR8–11待，production/smoke 须显式 false
 - **敏感读审计**:`AuditLogEvent` 123，管理端普通/CSV/签名 URL 敏感读均 fail-closed 落库，extra 禁 PII/filter/key/URL
 - **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 
