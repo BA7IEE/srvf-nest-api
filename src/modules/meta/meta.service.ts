@@ -52,6 +52,7 @@ const DASHBOARD_REGISTRATION_STATUS_WAITLISTED = 'waitlisted';
 const DASHBOARD_ATTENDANCE_SHEET_STATUS_PENDING = 'pending';
 const DASHBOARD_ATTENDANCE_SHEET_STATUS_PENDING_FINAL_REVIEW = 'pending_final_review';
 const DASHBOARD_ACTIVITY_STATUS_PUBLISHED = 'published';
+const DASHBOARD_ACTIVITY_PUBLISH_REVIEW_STATUS_PENDING = 'pending';
 
 @Injectable()
 export class MetaService {
@@ -90,31 +91,44 @@ export class MetaService {
     return result;
   }
 
-  // GAP-003:三块可省略聚合,块级权限裁剪(registrations/attendanceSheets 各凭对应读码,
+  // GAP-003 + 活动责任闭环 PR-9:四块可省略聚合,块/字段权限裁剪(
+  // registrations/attendanceSheets 兼容字段凭对应读码,pendingFirstReview 与
+  // activityPublishReviews 分别凭一级审核/发布审核 action,
   // 并通过 getVisibleOrganizationScope 汇合 GLOBAL / 职务 / 分管三源,按 activity.organizationId
   // 下推与两个扁平跨轴列表完全相同的可见范围)。有码但无组织范围时保留块并返回零值；无码
   // 时整块省略、不报错。activities 无码(沿 activities list/detail/options 现状,任意已登录用户
   // 可见),响应恒 200(镜像 resolve-labels 静默省略哲学,唯一差异:本端点字段形状固定)。
   //
-  // 先并发解析两码的三源组织范围，再并发执行 6 个 count(结构性零 N+1,无缓存/无物化——
+  // 先并发解析四码的三源组织范围，再并发执行最多 8 个 count(结构性零 N+1,无缓存/无物化——
   // 当前规模即时算)。GLOBAL / SUPER_ADMIN 不下推 activity where,保持旧全量计数逐字一致。
   async dashboardSummary(user: CurrentUserPayload): Promise<DashboardSummaryResponseDto> {
-    const [registrationScope, attendanceScope] = await Promise.all([
-      this.authz.getVisibleOrganizationScope(user, 'activity-registration.read.record'),
-      this.authz.getVisibleOrganizationScope(user, 'attendance.read.sheet'),
-    ]);
+    const [registrationScope, attendanceScope, attendanceFirstReviewScope, publishReviewScope] =
+      await Promise.all([
+        this.authz.getVisibleOrganizationScope(user, 'activity-registration.read.record'),
+        this.authz.getVisibleOrganizationScope(user, 'attendance.read.sheet'),
+        this.authz.getVisibleOrganizationScope(user, 'attendance.approve.sheet'),
+        this.authz.getVisibleOrganizationScope(user, 'activity-review.read.request'),
+      ]);
     const registrationActivityScope = registrationScope.global
       ? {}
       : { activity: { organizationId: { in: registrationScope.organizationIds } } };
     const attendanceActivityScope = attendanceScope.global
       ? {}
       : { activity: { organizationId: { in: attendanceScope.organizationIds } } };
+    const attendanceFirstReviewActivityScope = attendanceFirstReviewScope.global
+      ? {}
+      : { activity: { organizationId: { in: attendanceFirstReviewScope.organizationIds } } };
+    const publishReviewActivityWhere = publishReviewScope.global
+      ? {}
+      : { organizationId: { in: publishReviewScope.organizationIds } };
 
     const [
       registrationsPending,
       registrationsWaitlisted,
       attendanceSheetsPending,
+      attendanceSheetsPendingFirstReview,
       attendanceSheetsPendingFinalReview,
+      activityPublishReviewsPending,
       activitiesPublished,
       activitiesPendingCompletion,
     ] = await Promise.all([
@@ -136,12 +150,31 @@ export class MetaService {
           ...attendanceActivityScope,
         }),
       }),
+      attendanceFirstReviewScope.hasPermission
+        ? this.prisma.attendanceSheet.count({
+            where: notDeletedWhere({
+              statusCode: DASHBOARD_ATTENDANCE_SHEET_STATUS_PENDING,
+              ...attendanceFirstReviewActivityScope,
+            }),
+          })
+        : Promise.resolve(0),
       this.prisma.attendanceSheet.count({
         where: notDeletedWhere({
           statusCode: DASHBOARD_ATTENDANCE_SHEET_STATUS_PENDING_FINAL_REVIEW,
           ...attendanceActivityScope,
         }),
       }),
+      publishReviewScope.hasPermission
+        ? this.prisma.activityPublishReview.count({
+            where: {
+              status: DASHBOARD_ACTIVITY_PUBLISH_REVIEW_STATUS_PENDING,
+              activity: {
+                deletedAt: null,
+                ...publishReviewActivityWhere,
+              },
+            },
+          })
+        : Promise.resolve(0),
       this.prisma.activity.count({
         where: notDeletedWhere({ statusCode: DASHBOARD_ACTIVITY_STATUS_PUBLISHED }),
       }),
@@ -166,7 +199,17 @@ export class MetaService {
         ? {
             attendanceSheets: {
               pending: attendanceSheetsPending,
+              ...(attendanceFirstReviewScope.hasPermission
+                ? { pendingFirstReview: attendanceSheetsPendingFirstReview }
+                : {}),
               pendingFinalReview: attendanceSheetsPendingFinalReview,
+            },
+          }
+        : {}),
+      ...(publishReviewScope.hasPermission
+        ? {
+            activityPublishReviews: {
+              pending: activityPublishReviewsPending,
             },
           }
         : {}),

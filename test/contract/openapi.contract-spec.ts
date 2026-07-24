@@ -173,6 +173,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/app/v1/my/managed-activities/{activityId}/direct-publish'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/submit-change-review'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/withdraw-publish-review'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/declare-attendance-complete'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/positions'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/positions'],
   ['patch', '/api/app/v1/my/managed-activities/{activityId}/positions/{activityPositionId}'],
@@ -1405,8 +1406,8 @@ describe('OpenAPI 契约快照', () => {
     expect(Object.keys(item[method]?.responses ?? {}).length).toBeGreaterThan(0);
   });
 
-  it('App managed attendance 闭环落地后路由足迹精确为 413', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(413);
+  it('活动闭环读模型落地后路由足迹精确为 414', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(414);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

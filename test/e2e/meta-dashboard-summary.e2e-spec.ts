@@ -74,6 +74,8 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
   let bizAdminAuth: string; // ADMIN + biz-admin(持 activity-registration.read.record + attendance.read.sheet)
   let opsAdminAuth: string; // ADMIN + ops-admin(运营面,不持业务面两码)
   let registrationOnlyAuth: string; // ADMIN + 自定义角色,仅 activity-registration.read.record
+  let publishReviewerAuth: string; // USER + activity-publish-reviewer@SMRT TREE
+  let firstReviewerAuth: string; // USER + attendance-first-reviewer@SMRT TREE
   let orgReadonlyAuth: string; // USER + vice-captain@SMRT → org-readonly@TREE
   let groupReadonlyAuth: string; // USER + deputy-group-leader@SMRT 子组 → group-readonly@TREE
   let emptyScopeAuth: string; // USER + biz-admin@SELF,有码但无组织范围
@@ -93,7 +95,11 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     auth: string,
     expected: {
       registrations: { pending: number; waitlisted: number };
-      attendanceSheets: { pending: number; pendingFinalReview: number };
+      attendanceSheets: {
+        pending: number;
+        pendingFirstReview?: number;
+        pendingFinalReview: number;
+      };
     },
   ): Promise<void> {
     const [summary, pendingRegistrations, waitlistedRegistrations, pendingSheets, finalSheets] =
@@ -176,6 +182,18 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     const opsAdminRoleId = (
       await prisma.rbacRole.findFirstOrThrow({ where: { code: 'ops-admin' }, select: { id: true } })
     ).id;
+    const publishReviewerRoleId = (
+      await prisma.rbacRole.findFirstOrThrow({
+        where: { code: 'activity-publish-reviewer' },
+        select: { id: true },
+      })
+    ).id;
+    const firstReviewerRoleId = (
+      await prisma.rbacRole.findFirstOrThrow({
+        where: { code: 'attendance-first-reviewer' },
+        select: { id: true },
+      })
+    ).id;
 
     const bizCaller = await createTestUser(app, { username: 'dashsum-biz', role: Role.ADMIN });
     await grantOpsAdminToUser(app, bizCaller.id, bizAdminRoleId); // helper 名沿旧,实为通用 grantRoleToUser
@@ -202,6 +220,25 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     });
     await grantOpsAdminToUser(app, regOnlyCaller.id, regOnlyRole.id);
     registrationOnlyAuth = (await loginAs(app, 'dashsum-regonly')).authHeader;
+
+    const createScopedReviewer = async (username: string, roleId: string): Promise<string> => {
+      const caller = await createTestUser(app, { username, role: Role.USER });
+      await prisma.roleBinding.create({
+        data: {
+          principalType: PrincipalType.USER,
+          principalId: caller.id,
+          roleId,
+          scopeType: BindingScopeType.ORGANIZATION_TREE,
+          scopeOrgId: organizationId,
+        },
+      });
+      return (await loginAs(app, username)).authHeader;
+    };
+    publishReviewerAuth = await createScopedReviewer(
+      'dashsum-publish-reviewer',
+      publishReviewerRoleId,
+    );
+    firstReviewerAuth = await createScopedReviewer('dashsum-first-reviewer', firstReviewerRoleId);
 
     const createPositionScopedUser = async (
       username: string,
@@ -340,6 +377,38 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     await mkSheet(actPublished2.id, 'rejected');
     await mkSheet(actOutside.id, 'pending');
     // GLOBAL pending=3/final=1；org-readonly pending=2/final=1；group-readonly 各 1。
+
+    await prisma.activityPublishReview.createMany({
+      data: [
+        {
+          activityId: actPublished1.id,
+          requestType: 'change',
+          requestVersion: 1,
+          baseRevision: 0,
+          status: 'pending',
+          snapshot: {},
+          submittedByUserId: submitterUserId,
+        },
+        {
+          activityId: actOutside.id,
+          requestType: 'change',
+          requestVersion: 1,
+          baseRevision: 0,
+          status: 'pending',
+          snapshot: {},
+          submittedByUserId: submitterUserId,
+        },
+        {
+          activityId: actPublished2.id,
+          requestType: 'change',
+          requestVersion: 1,
+          baseRevision: 0,
+          status: 'approved',
+          snapshot: {},
+          submittedByUserId: submitterUserId,
+        },
+      ],
+    });
   });
 
   afterAll(async () => {
@@ -357,7 +426,12 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     expect(res.body.code).toBe(0);
     const data = res.body.data;
     expect(data.registrations).toEqual({ pending: 4, waitlisted: 2 });
-    expect(data.attendanceSheets).toEqual({ pending: 3, pendingFinalReview: 1 });
+    expect(data.attendanceSheets).toEqual({
+      pending: 3,
+      pendingFirstReview: 3,
+      pendingFinalReview: 1,
+    });
+    expect(data.activityPublishReviews).toEqual({ pending: 2 });
     expect(data.activities).toEqual({ published: 3, pendingCompletion: 1 });
   });
 
@@ -366,7 +440,12 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     expect(res.status).toBe(200);
     const data = res.body.data;
     expect(data.registrations).toEqual({ pending: 4, waitlisted: 2 });
-    expect(data.attendanceSheets).toEqual({ pending: 3, pendingFinalReview: 1 });
+    expect(data.attendanceSheets).toEqual({
+      pending: 3,
+      pendingFirstReview: 3,
+      pendingFinalReview: 1,
+    });
+    expect(data).not.toHaveProperty('activityPublishReviews');
     expect(data.activities).toEqual({ published: 3, pendingCompletion: 1 });
   });
 
@@ -397,28 +476,50 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     expect(data.activities).toEqual({ published: 3, pendingCompletion: 1 });
   });
 
-  it('⑦ org-readonly(副队长@SMRT)的 summary 与其 scoped 报名/考勤列表一致', async () => {
+  it('⑦ scoped 发布审核员只见范围内发布待办，无码块静默省略', async () => {
+    const res = await getSummary(publishReviewerAuth);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({
+      activityPublishReviews: { pending: 1 },
+      activities: { published: 3, pendingCompletion: 1 },
+    });
+  });
+
+  it('⑧ scoped 一审员得到独立的一审待办数，且仍保留兼容读计数', async () => {
+    const res = await getSummary(firstReviewerAuth);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({
+      attendanceSheets: {
+        pending: 2,
+        pendingFirstReview: 2,
+        pendingFinalReview: 1,
+      },
+      activities: { published: 3, pendingCompletion: 1 },
+    });
+  });
+
+  it('⑨ org-readonly(副队长@SMRT)的 summary 与其 scoped 报名/考勤列表一致', async () => {
     await expectScopedSummaryMatchesLists(orgReadonlyAuth, {
       registrations: { pending: 3, waitlisted: 1 },
       attendanceSheets: { pending: 2, pendingFinalReview: 1 },
     });
   });
 
-  it('⑧ group-readonly(副组长@子组)的 summary 与其 scoped 报名/考勤列表一致', async () => {
+  it('⑩ group-readonly(副组长@子组)的 summary 与其 scoped 报名/考勤列表一致', async () => {
     await expectScopedSummaryMatchesLists(groupReadonlyAuth, {
       registrations: { pending: 1, waitlisted: 1 },
       attendanceSheets: { pending: 1, pendingFinalReview: 1 },
     });
   });
 
-  it('⑨ 有码但无组织范围时保留两个零值块，且与 scoped 空列表一致', async () => {
+  it('⑪ 有码但无组织范围时保留两个零值块，且与 scoped 空列表一致', async () => {
     await expectScopedSummaryMatchesLists(emptyScopeAuth, {
       registrations: { pending: 0, waitlisted: 0 },
-      attendanceSheets: { pending: 0, pendingFinalReview: 0 },
+      attendanceSheets: { pending: 0, pendingFirstReview: 0, pendingFinalReview: 0 },
     });
   });
 
-  it('⑩ GLOBAL 计数与对应列表端点同条件 total 严格相等', async () => {
+  it('⑫ GLOBAL 计数与对应列表端点同条件 total 严格相等', async () => {
     const summaryRes = await getSummary(superAdminAuth);
     expect(summaryRes.status).toBe(200);
     const data = summaryRes.body.data;

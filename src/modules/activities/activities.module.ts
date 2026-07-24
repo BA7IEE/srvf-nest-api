@@ -39,6 +39,8 @@ import { AppManagedActivityPositionsController } from './controllers/app-managed
 import { AppManagedActivityResponsibilitiesController } from './controllers/app-managed-activity-responsibilities.controller';
 import { ActivityProposalValidator } from './activity-proposal-validator';
 import { ActivityProposalApplier } from './activity-proposal-applier';
+import { ActivityClosurePolicy } from './activity-closure-policy';
+import { ActivityWorkflowQueryService } from './activity-workflow-query.service';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activities 写操作(create / update / softDelete / publish / cancel 共 5 处共用 activity.publish)
@@ -102,6 +104,8 @@ import { ActivityProposalApplier } from './activity-proposal-applier';
     ActivityPublishReviewAuditRecorder,
     ActivityProposalValidator,
     ActivityProposalApplier,
+    ActivityClosurePolicy,
+    ActivityWorkflowQueryService,
     ActivityPublishReviewService,
     ActivityPublishReviewQueryService,
     ActivityResponsibilityPolicy,
@@ -118,6 +122,7 @@ import { ActivityProposalApplier } from './activity-proposal-applier';
     ActivityResponsibilityPolicy,
     ActivityResponsibilityService,
     AppManagedActivitiesService,
+    ActivityWorkflowQueryService,
   ],
 })
 export class ActivitiesModule {}

@@ -3,6 +3,7 @@ import { MemberStatus, Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
 import { seedActivityResponsibilitySystemRoles } from '../fixtures/activity-responsibility.fixture';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { loginAs } from '../fixtures/auth.fixture';
@@ -15,6 +16,7 @@ import { createTestApp } from '../setup/test-app';
 describe('App managed activities core', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let auditLogs: AuditLogsService;
   let organizationId: string;
   let activityTypeCode: string;
   let attendanceRoleCode: string;
@@ -28,6 +30,7 @@ describe('App managed activities core', () => {
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
+    auditLogs = app.get(AuditLogsService);
     await seedActivityResponsibilitySystemRoles(app);
     bizAdminRoleId = (await seedBizAdminPermissionsAndRole(app)).bizAdminRoleId;
     const reviewer = await createTestUser(app, {
@@ -337,5 +340,216 @@ describe('App managed activities core', () => {
       .get('/api/app/v1/my/managed-activities/organization-options')
       .set('Authorization', nonFormal.auth);
     expectBizError(response, BizCode.ACTIVITY_INITIATOR_NOT_FORMAL);
+  });
+
+  it('lets only the current owner declare after end and derives the complete attendance closure chain', async () => {
+    const owner = await createMember('closure-owner');
+    const collaborator = await createMember('closure-collaborator');
+    const activity = await prisma.activity.create({
+      data: {
+        title: 'Managed closure activity',
+        activityTypeCode,
+        organizationId,
+        startAt: new Date('2020-07-23T01:00:00.000Z'),
+        endAt: new Date('2020-07-23T05:00:00.000Z'),
+        location: '深圳',
+        statusCode: 'published',
+        initiatorMemberId: owner.memberId,
+      },
+      select: { id: true },
+    });
+    await prisma.activityResponsibilityAssignment.createMany({
+      data: [
+        {
+          activityId: activity.id,
+          memberId: owner.memberId,
+          responsibilityType: 'owner',
+          canManageRegistrations: true,
+          canManageAttendance: true,
+          assignedByUserId: owner.userId,
+          source: 'publish',
+        },
+        {
+          activityId: activity.id,
+          memberId: collaborator.memberId,
+          responsibilityType: 'collaborator',
+          canManageRegistrations: false,
+          canManageAttendance: true,
+          assignedByUserId: owner.userId,
+          source: 'delegation',
+        },
+      ],
+    });
+    const sheetStatuses = [
+      'returned',
+      'pending',
+      'pending_final_review',
+      'approved',
+      'rejected',
+      'final_rejected',
+    ];
+    const sheets = await Promise.all(
+      sheetStatuses.map((statusCode) =>
+        prisma.attendanceSheet.create({
+          data: { activityId: activity.id, submitterUserId: owner.userId, statusCode },
+          select: { id: true, statusCode: true },
+        }),
+      ),
+    );
+
+    const beforeDeclaration = await request(httpServer(app))
+      .get(`/api/app/v1/my/managed-activities/${activity.id}`)
+      .set('Authorization', owner.auth);
+    expect(beforeDeclaration.status).toBe(200);
+    expect(beforeDeclaration.body.data.closure).toEqual({
+      attendanceDeclaredCompleteAt: null,
+      status: 'waiting-attendance-declaration',
+      nextAction: '声明考勤已全部提交',
+    });
+    expect(beforeDeclaration.body.data.counts).toEqual({
+      pendingRegistrations: 0,
+      waitlistedRegistrations: 0,
+      attendanceSheets: 6,
+      unresolvedAttendanceSheets: 3,
+    });
+
+    const collaboratorDeclaration = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${activity.id}/declare-attendance-complete`)
+      .set('Authorization', collaborator.auth);
+    expectBizError(collaboratorDeclaration, BizCode.ACTIVITY_NOT_FOUND);
+
+    const declared = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${activity.id}/declare-attendance-complete`)
+      .set('Authorization', owner.auth);
+    expect(declared.status).toBe(200);
+    expect(declared.body.data.closure.status).toBe('attendance-returned');
+    expect(declared.body.data.closure.nextAction).toBe('修改并重提退回考勤单');
+    expect(declared.body.data.closure.attendanceDeclaredCompleteAt).toEqual(expect.any(String));
+
+    const audit = await prisma.auditLog.findFirstOrThrow({
+      where: {
+        event: 'activity.publish',
+        resourceId: activity.id,
+        actorUserId: owner.userId,
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { context: true },
+    });
+    expect((audit.context as { extra: Record<string, unknown> }).extra).toEqual({
+      operation: 'attendance-declare-complete',
+    });
+
+    const duplicate = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${activity.id}/declare-attendance-complete`)
+      .set('Authorization', owner.auth);
+    expectBizError(duplicate, BizCode.ACTIVITY_ATTENDANCE_DECLARATION_INVALID);
+
+    const returnedSheet = sheets.find((sheet) => sheet.statusCode === 'returned')!;
+    await prisma.attendanceSheet.update({
+      where: { id: returnedSheet.id },
+      data: { statusCode: 'pending' },
+    });
+    const firstReview = await request(httpServer(app))
+      .get(`/api/app/v1/my/managed-activities/${activity.id}`)
+      .set('Authorization', owner.auth);
+    expect(firstReview.body.data.closure).toEqual(
+      expect.objectContaining({ status: 'attendance-first-review', nextAction: '等待考勤一审' }),
+    );
+
+    await prisma.attendanceSheet.updateMany({
+      where: { activityId: activity.id, statusCode: 'pending' },
+      data: { statusCode: 'pending_final_review' },
+    });
+    const finalReview = await request(httpServer(app))
+      .get(`/api/app/v1/my/managed-activities/${activity.id}`)
+      .set('Authorization', owner.auth);
+    expect(finalReview.body.data.closure).toEqual(
+      expect.objectContaining({ status: 'attendance-final-review', nextAction: '等待考勤终审' }),
+    );
+
+    await prisma.attendanceSheet.updateMany({
+      where: { activityId: activity.id, statusCode: 'pending_final_review' },
+      data: { statusCode: 'approved' },
+    });
+    const awaitingCompletion = await request(httpServer(app))
+      .get(`/api/app/v1/my/managed-activities/${activity.id}`)
+      .set('Authorization', owner.auth);
+    expect(awaitingCompletion.body.data.closure).toEqual(
+      expect.objectContaining({ status: 'published', nextAction: '等待活动完结' }),
+    );
+
+    await prisma.activity.update({
+      where: { id: activity.id },
+      data: { statusCode: 'completed' },
+    });
+    const closed = await request(httpServer(app))
+      .get(`/api/app/v1/my/managed-activities/${activity.id}`)
+      .set('Authorization', owner.auth);
+    expect(closed.body.data.closure).toEqual(
+      expect.objectContaining({ status: 'closed', nextAction: null }),
+    );
+    expect(closed.body.data.counts).toEqual(
+      expect.objectContaining({ attendanceSheets: 6, unresolvedAttendanceSheets: 0 }),
+    );
+
+    const list = await request(httpServer(app))
+      .get('/api/app/v1/my/managed-activities')
+      .set('Authorization', owner.auth);
+    expect(list.body.data.items).toContainEqual(
+      expect.objectContaining({
+        activityId: activity.id,
+        unresolvedAttendanceSheets: 0,
+        nextAction: null,
+      }),
+    );
+  });
+
+  it('rolls back the attendance declaration when its required audit write fails', async () => {
+    const owner = await createMember('audit-rollback');
+    const activity = await prisma.activity.create({
+      data: {
+        title: 'Managed declaration rollback',
+        activityTypeCode,
+        organizationId,
+        startAt: new Date('2020-07-23T01:00:00.000Z'),
+        endAt: new Date('2020-07-23T05:00:00.000Z'),
+        location: '深圳',
+        statusCode: 'published',
+        initiatorMemberId: owner.memberId,
+      },
+      select: { id: true },
+    });
+    await prisma.activityResponsibilityAssignment.create({
+      data: {
+        activityId: activity.id,
+        memberId: owner.memberId,
+        responsibilityType: 'owner',
+        canManageRegistrations: true,
+        canManageAttendance: true,
+        assignedByUserId: owner.userId,
+        source: 'publish',
+      },
+    });
+    const auditFailure = jest
+      .spyOn(auditLogs, 'log')
+      .mockRejectedValueOnce(new Error('simulated declaration audit failure'));
+
+    const response = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${activity.id}/declare-attendance-complete`)
+      .set('Authorization', owner.auth);
+    auditFailure.mockRestore();
+
+    expect(response.status).toBe(500);
+    const stored = await prisma.activity.findUniqueOrThrow({
+      where: { id: activity.id },
+      select: {
+        attendanceDeclaredCompleteAt: true,
+        attendanceDeclaredCompleteByUserId: true,
+      },
+    });
+    expect(stored).toEqual({
+      attendanceDeclaredCompleteAt: null,
+      attendanceDeclaredCompleteByUserId: null,
+    });
   });
 });

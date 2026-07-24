@@ -14,9 +14,9 @@
 
 ## Local facts
 
-- `activities.service.ts` **1351L**(偏厚,沿 CODEMAP 标 L 体量);活动岗位 CRUD/扩容递补已边界化为 `activity-positions.service.ts`(608L) + `activity-position-audit-recorder.ts`，发布审核边界化为 `activity-publish-review.service.ts`(705L)+query/presenter/audit/state-machine；责任边界化为 `activity-responsibility.service.ts`(698L)+policy/projector/audit，不继续堆入主 service
+- `activities.service.ts` **1373L**(偏厚,沿 CODEMAP 标 L 体量);活动岗位 CRUD/扩容递补已边界化为 `activity-positions.service.ts`(623L) + `activity-position-audit-recorder.ts`，发布审核边界化为 `activity-publish-review.service.ts`(868L)+query/presenter/audit/state-machine；责任边界化为 `activity-responsibility.service.ts`(755L)+policy/projector/audit，不继续堆入主 service
 - **活动责任闭环 PR-5 gate**:`ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED` 在 dev/test 缺省 false，production/smoke 必须显式；false 保持旧 Admin 行为。true 时 create 解析正式 initiator，pending 冻结 Activity/岗位，published 写转 20037，旧 publish 仅审批 pending initial 或允许发起人直接发布；发布成功同步投影唯一 owner。稳定切流与摘旧角色权限归 PR-11
-- **活动责任闭环 PR-6 App 面**:`/app/v1/my/managed-activities` 与既有报名历史 `/my/activities` 物理分离；3 个 controller 共 19 路，App DTO 独立。draft Activity/岗位只允许 initiator 直改；published 由 active owner 提交 schemaVersion=1 完整 proposal，approve 固定 Activity→review 锁序并在同事务复校、应用 Activity+positions diff、递增 revision、容量候补递补与 audit；禁止把 proposal 应用拆到事务外。
+- **活动责任闭环 PR-6/PR-9 App 面**:`/app/v1/my/managed-activities` 与既有报名历史 `/my/activities` 物理分离；activities 模块 3 个 managed controller 共 20 路，App DTO 独立。draft Activity/岗位只允许 initiator 直改；published 由 active owner 提交 schemaVersion=1 完整 proposal，approve 固定 Activity→review 锁序并在同事务复校、应用 Activity+positions diff、递增 revision、容量候补递补与 audit。PR-9 起 list/detail 读侧归 `activity-workflow-query.service.ts`，闭环纯判断归 `activity-closure-policy.ts`；主负责人活动结束后声明考勤完成时锁 Activity 根、同事务写声明 + audit，闭环只有 completed + 已声明 + 有效 Sheet 全 approved 才成立。
 - **责任锁序与投影不变式**:新增/移交固定 Activity → 目标 Member（移交时新旧 memberId 排序）→ current assignment → RoleBinding；assignment 与 `system:activity-responsibility:{assignmentId}` binding 必须同事务创建/结束。owner=`activity-owner`，协办按 registrations/attendance capability 投影对应角色；通用角色 API 永不代写这些 binding
 - **发布审核快照与并发**:snapshot 固定 schemaVersion=1，Activity 与岗位分离且岗位主键名为 `activityPositionId`；initial approve 在 Activity → review 锁后重建并比较服务端快照；change approve 在同一锁序下解析、二次验证完整 proposal，再由无自有事务的 applier 应用聚合 diff；两者均复查 revision 并只递增一次 workflowRevision。并发 E2E 必须是两套 Nest/Prisma pool + PostgreSQL lock waiter barrier
 - **判权(终态 scoped-authz PR12,2026-07-02;v0.40.0 +complete)**:6 个写方法(create/update/delete/publish/cancel/**complete**)判权走 `assertCanOrThrow` → `authz.explain`;`create` 无 ref(GLOBAL-only,scoped 创建留后续批);`update`/`delete`/`publish`/`cancel`/`complete` 带 `{type:'activity', id}` ref(scoped 持有者〔如 team-leader 经 policy→org-admin@TREE〕在其组织树内可用);`resource_not_found` 回退 `rbac.can` 全局码判定,持码者 return 交回 `findActivityOrThrow` 抛既有 `ACTIVITY_NOT_FOUND`,无码者 30100;`list`/`findOne`/`options`(F1/A6 新增)仍无码仅登录(Slow-4 现状不变;RBAC_MAP §2.4 BD-3 已决 won't-do 新增 `activity.read.*` 码)。e2e 见 `test/e2e/participation-scoped-authz.e2e-spec.ts`。
@@ -42,7 +42,7 @@
 ## Risk points (不要做)
 
 - ❌ **不**绕过 `activity-state-machine.ts` 在 service 内裸写状态变更
-- ❌ **不**改 audit event 名 `'activity.publish'`(6 处共用〔v0.40.0 +complete〕,characterization 已锁)
+- ❌ **不**改 audit event 名 `'activity.publish'`(7 类操作共用〔含 complete 与 attendance-declare-complete〕,characterization 已锁)
 - ❌ **不**在发布审核事务中反转锁序或信任提交时快照；必须 Activity → review，approve 时服务端重建快照
 - ❌ **不**把责任 assignment 与 system-managed RoleBinding 分成两个事务，也不绕过 projector 直接写 responsibility binding
 - ❌ **不**把 `'activity.publish'` 拆成 `activity.create` / `activity.update` 等细分 event(沿现状)

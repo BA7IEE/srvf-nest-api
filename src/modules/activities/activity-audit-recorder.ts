@@ -325,4 +325,34 @@ export class ActivityAuditRecorder {
       tx: args.tx,
     });
   }
+
+  async logAttendanceDeclaration(args: {
+    activityId: string;
+    actorUserId: string;
+    actorRoleSnap: Role;
+    declaredAt: Date;
+    auditMeta: AuditMeta;
+    tx: PrismaTx;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: ACTIVITY_AUDIT_EVENT,
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: args.activityId,
+      meta: args.auditMeta,
+      before: {
+        attendanceDeclaredCompleteAt: null,
+        attendanceDeclaredCompleteByUserId: null,
+      },
+      after: {
+        attendanceDeclaredCompleteAt: args.declaredAt,
+        attendanceDeclaredCompleteByUserId: args.actorUserId,
+      },
+      extra: {
+        operation: 'attendance-declare-complete',
+      },
+      tx: args.tx,
+    });
+  }
 }
