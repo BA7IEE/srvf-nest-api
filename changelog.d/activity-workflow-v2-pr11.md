@@ -1,0 +1,3 @@
+- 活动责任闭环 PR-9～PR-11：owner 可声明考勤完成并获得闭环状态/下一动作读模型，Dashboard 新增发布审核与考勤一审待办；提供只读上线预检 SQL、legacy 认领与 reviewer/owner 配置演练 runbook。
+- Contract 阶段从 `biz-admin`/`org-admin` 摘除活动发布修改、报名写入和考勤写入/一审权限，从 `group-manager` 摘除考勤一审；保留活动 create/delete 与报名/考勤只读。三类 reviewer 仍必须显式 RoleBinding，Docker smoke 的活动责任 gate 已切 true。
+- 本次只交付代码与 smoke 契约，未执行 production 预检、历史认领、真实 reviewer/owner 绑定、fleet drain、部署或发布；生产切换必须按 runbook 串行完成，禁止 true/false 混跑。

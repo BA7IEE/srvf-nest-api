@@ -13,7 +13,7 @@ import { createTestApp } from '../setup/test-app';
 
 // Slow-4 T3(2026-06-11):activity-registrations 模块 RBAC 权限边界 spec。
 // 沿冻结评审稿 slow4-rbac-business-face-review.md §7 零行为漂移验收
-// (① SA 短路 / ② ADMIN+biz-admin 照常 / ③ ADMIN 无 biz-admin 30100 / ④ USER 30100)。
+// v0.61.0 PR-11 contract:biz-admin 仅保留 read，create/approve/reject/cancel/reopen 翻 30100。
 // list / export 共用 activity-registration.read.record(D4=A 判例)。
 // 业务行为细节(状态机 / capacity / partial unique)由 activity-registrations.e2e-spec.ts 锁定。
 
@@ -57,7 +57,9 @@ describe('activity-registrations RBAC 权限边界(Slow-4 T3)', () => {
     userAuth = (await loginAs(app, 'rrb-user')).authHeader;
 
     const bizSeed = await seedBizAdminPermissionsAndRole(app);
-    await grantBizAdminToUser(app, admBiz.id, bizSeed.bizAdminRoleId);
+    await grantBizAdminToUser(app, admBiz.id, bizSeed.bizAdminRoleId, {
+      includeLegacyActivityActions: false,
+    });
 
     // org + 活动(published + 公开报名;FK 经 prisma 直造,绕开字典依赖)
     const nodeDict = await prisma.dictType.create({
@@ -128,7 +130,7 @@ describe('activity-registrations RBAC 权限边界(Slow-4 T3)', () => {
   });
 
   describe('POST 代报名(activity-registration.create.record)', () => {
-    it('③④ 30100(合法 body)/ ② 201 / ① 201', async () => {
+    it('②③④ 30100(合法 body)/ ① 201', async () => {
       const mDeny = await prisma.member.create({
         data: { memberNo: 'rrb-m-deny', displayName: 'Deny' },
         select: { id: true },
@@ -147,14 +149,13 @@ describe('activity-registrations RBAC 权限边界(Slow-4 T3)', () => {
           .send({ memberId: mDeny.id }),
         BizCode.RBAC_FORBIDDEN,
       );
-      expect(
-        (
-          await request(httpServer(app))
-            .post(base())
-            .set('Authorization', admBizAuth)
-            .send({ memberId: mDeny.id })
-        ).status,
-      ).toBe(201);
+      expectBizError(
+        await request(httpServer(app))
+          .post(base())
+          .set('Authorization', admBizAuth)
+          .send({ memberId: mDeny.id }),
+        BizCode.RBAC_FORBIDDEN,
+      );
       const mSa = await prisma.member.create({
         data: { memberNo: 'rrb-m-sa', displayName: 'SA' },
         select: { id: true },
@@ -171,7 +172,7 @@ describe('activity-registrations RBAC 权限边界(Slow-4 T3)', () => {
   });
 
   describe('approve / reject / cancel(独立码;每用例独立 pending 报名)', () => {
-    it('approve:③④ 30100 / ② 200 / ① 200', async () => {
+    it('approve:②③④ 30100 / ① 200', async () => {
       const target = await createPendingRegistration();
       expectBizError(
         await request(httpServer(app))
@@ -187,14 +188,13 @@ describe('activity-registrations RBAC 权限边界(Slow-4 T3)', () => {
           .send({}),
         BizCode.RBAC_FORBIDDEN,
       );
-      expect(
-        (
-          await request(httpServer(app))
-            .patch(`${base()}/${target}/approve`)
-            .set('Authorization', admBizAuth)
-            .send({})
-        ).status,
-      ).toBe(200);
+      expectBizError(
+        await request(httpServer(app))
+          .patch(`${base()}/${target}/approve`)
+          .set('Authorization', admBizAuth)
+          .send({}),
+        BizCode.RBAC_FORBIDDEN,
+      );
       const target2 = await createPendingRegistration();
       expect(
         (
@@ -205,7 +205,7 @@ describe('activity-registrations RBAC 权限边界(Slow-4 T3)', () => {
         ).status,
       ).toBe(200);
     });
-    it('reject:③④ 30100 / ② 200', async () => {
+    it('reject:②③④ 30100', async () => {
       const target = await createPendingRegistration();
       expectBizError(
         await request(httpServer(app))
@@ -221,16 +221,15 @@ describe('activity-registrations RBAC 权限边界(Slow-4 T3)', () => {
           .send({ reviewNote: 'X' }),
         BizCode.RBAC_FORBIDDEN,
       );
-      expect(
-        (
-          await request(httpServer(app))
-            .patch(`${base()}/${target}/reject`)
-            .set('Authorization', admBizAuth)
-            .send({ reviewNote: '边界驳回' })
-        ).status,
-      ).toBe(200);
+      expectBizError(
+        await request(httpServer(app))
+          .patch(`${base()}/${target}/reject`)
+          .set('Authorization', admBizAuth)
+          .send({ reviewNote: '边界驳回' }),
+        BizCode.RBAC_FORBIDDEN,
+      );
     });
-    it('cancel:③④ 30100 / ② 200', async () => {
+    it('cancel:②③④ 30100', async () => {
       const target = await createPendingRegistration();
       expectBizError(
         await request(httpServer(app))
@@ -246,14 +245,13 @@ describe('activity-registrations RBAC 权限边界(Slow-4 T3)', () => {
           .send({}),
         BizCode.RBAC_FORBIDDEN,
       );
-      expect(
-        (
-          await request(httpServer(app))
-            .patch(`${base()}/${target}/cancel`)
-            .set('Authorization', admBizAuth)
-            .send({})
-        ).status,
-      ).toBe(200);
+      expectBizError(
+        await request(httpServer(app))
+          .patch(`${base()}/${target}/cancel`)
+          .set('Authorization', admBizAuth)
+          .send({}),
+        BizCode.RBAC_FORBIDDEN,
+      );
     });
   });
 });

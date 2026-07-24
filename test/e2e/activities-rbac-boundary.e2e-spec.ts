@@ -15,7 +15,7 @@ import { createTestApp } from '../setup/test-app';
 // 沿冻结评审稿 slow4-rbac-business-face-review.md §7 零行为漂移验收:
 // - 列表 + 详情**无码化**(仅登录,[auth]):四种身份(SA / ADMIN±biz-admin / USER)全部可读
 //   (原 @Roles 含 USER = 全角色放行,等价仅登录;DoD-4 ④ "activities 2 端点仍可读");
-// - 5 个写端点:① SA 短路 / ② ADMIN+biz-admin 照常 / ③ ADMIN 无 biz-admin 30100 / ④ USER 30100。
+// - v0.61.0 PR-11 contract:biz-admin 仅保留 create/delete；update/publish/cancel 翻 30100。
 // 业务行为细节(状态机 / Q-A7 过滤)由 activities.e2e-spec.ts 锁定,本 spec 只锁判权矩阵。
 
 describe('activities RBAC 权限边界(Slow-4 T3)', () => {
@@ -60,7 +60,9 @@ describe('activities RBAC 权限边界(Slow-4 T3)', () => {
     userAuth = (await loginAs(app, 'arb-user')).authHeader;
 
     const bizSeed = await seedBizAdminPermissionsAndRole(app);
-    await grantBizAdminToUser(app, admBiz.id, bizSeed.bizAdminRoleId);
+    await grantBizAdminToUser(app, admBiz.id, bizSeed.bizAdminRoleId, {
+      includeLegacyActivityActions: false,
+    });
 
     // org + activity_type 字典(create 校验依赖)
     const nodeDict = await prisma.dictType.create({
@@ -163,7 +165,7 @@ describe('activities RBAC 权限边界(Slow-4 T3)', () => {
   });
 
   describe('PATCH / DELETE / publish / cancel(activity.{update,delete,publish,cancel}.record)', () => {
-    it('PATCH:①② 200 / ③④ 30100', async () => {
+    it('PATCH:②③④ 30100 / ① 200(PR-11 contract)', async () => {
       const id = await createDraft('ARB-PATCH');
       expectBizError(
         await request(httpServer(app))
@@ -179,14 +181,13 @@ describe('activities RBAC 权限边界(Slow-4 T3)', () => {
           .send({ title: 'X' }),
         BizCode.RBAC_FORBIDDEN,
       );
-      expect(
-        (
-          await request(httpServer(app))
-            .patch(`/api/admin/v1/activities/${id}`)
-            .set('Authorization', admBizAuth)
-            .send({ title: 'ARB-PATCH-BIZ' })
-        ).status,
-      ).toBe(200);
+      expectBizError(
+        await request(httpServer(app))
+          .patch(`/api/admin/v1/activities/${id}`)
+          .set('Authorization', admBizAuth)
+          .send({ title: 'ARB-PATCH-BIZ' }),
+        BizCode.RBAC_FORBIDDEN,
+      );
       expect(
         (
           await request(httpServer(app))
@@ -197,7 +198,7 @@ describe('activities RBAC 权限边界(Slow-4 T3)', () => {
       ).toBe(200);
     });
 
-    it('publish:③④ 30100 / ② 200;cancel:③④ 30100 / ② 200;DELETE:③④ 30100 / ①② 200', async () => {
+    it('publish/cancel:②③④ 30100;DELETE:③④ 30100 / ①② 200', async () => {
       const id = await createDraft('ARB-FLOW');
       // publish 判权
       expectBizError(
@@ -214,14 +215,13 @@ describe('activities RBAC 权限边界(Slow-4 T3)', () => {
           .send({ requiresInsuranceConfirmed: true }),
         BizCode.RBAC_FORBIDDEN,
       );
-      expect(
-        (
-          await request(httpServer(app))
-            .patch(`/api/admin/v1/activities/${id}/publish`)
-            .set('Authorization', admBizAuth)
-            .send({ requiresInsuranceConfirmed: true })
-        ).status,
-      ).toBe(200);
+      expectBizError(
+        await request(httpServer(app))
+          .patch(`/api/admin/v1/activities/${id}/publish`)
+          .set('Authorization', admBizAuth)
+          .send({ requiresInsuranceConfirmed: true }),
+        BizCode.RBAC_FORBIDDEN,
+      );
       // cancel 判权
       expectBizError(
         await request(httpServer(app))
@@ -237,15 +237,14 @@ describe('activities RBAC 权限边界(Slow-4 T3)', () => {
           .send({}),
         BizCode.RBAC_FORBIDDEN,
       );
-      expect(
-        (
-          await request(httpServer(app))
-            .patch(`/api/admin/v1/activities/${id}/cancel`)
-            .set('Authorization', admBizAuth)
-            .send({ cancelReason: '边界取消' })
-        ).status,
-      ).toBe(200);
-      // DELETE 判权(cancelled 仍允许软删,D3)
+      expectBizError(
+        await request(httpServer(app))
+          .patch(`/api/admin/v1/activities/${id}/cancel`)
+          .set('Authorization', admBizAuth)
+          .send({ cancelReason: '边界取消' }),
+        BizCode.RBAC_FORBIDDEN,
+      );
+      // DELETE 仍是后台清理保留能力
       expectBizError(
         await request(httpServer(app))
           .delete(`/api/admin/v1/activities/${id}`)

@@ -27,8 +27,9 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // scoped 通路用的是 seed 真第 7 角色 `attendance-final-reviewer`,与生产逐字一致;
 // sheet 直造(pending_final_review + 显式 submitter/reviewer)。
 //
-// ⚠️ 摘码微刀语义翻面:biz-admin 不再持终审两码(74→72)—— 终审权只归 scoped 绑定 +
-// SUPER_ADMIN 短路兜底。判定顺序(authz.service.ts):约束否决只发生在 grant 命中之后,
+// ⚠️ PR-11 contract 终态:biz-admin 不再持任何考勤责任动作，仅保留 attendance.read.sheet；
+// 一审/终审权只归独立 scoped 绑定 + SUPER_ADMIN 短路兜底。
+// 判定顺序(authz.service.ts):约束否决只发生在 grant 命中之后,
 // 故无码者(含持 biz-admin 的 ADMIN)一律 30100(no_permission),约束用例须由持权身份承载。
 //
 // 覆盖:
@@ -40,8 +41,9 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 //     final-approve/final-reject 双拒 + DB 显式断言终审两码不在 biz-admin 绑定)
 //     ④b SUPER_ADMIN 终审他人单 → 200(super_admin_pass 兜底恒在)
 //     ⑤裸 USER / 无 biz-admin 的 ADMIN → 30100(权限拒绝面零变)
-//     ⑤b 摘码边界:biz-admin 对其余 6 考勤动作(create/read/update/delete/approve/reject)
-//       authz.can 仍 ALLOW,仅终审两码 false(HTTP 面另见 attendances-rbac-boundary)
+//     ⑤b PR-11 摘码边界:biz-admin 仅 attendance.read.sheet ALLOW，create/update/delete/
+//       approve/reject/return/final-return 与既有终审三码全部 false
+//       (HTTP 面另见 attendances-rbac-boundary)
 //   scoped 通路(BD-2 全链,零变):⑥dept-leader 任职 + RoleBinding(POSITION_ASSIGNMENT,
 //     attendance-final-reviewer, TREE@root)且**无 biz-admin** → 终审他人单 200
 //     (service 级 explain 自证 matchedGrant.source=role_binding);撤任职(ENDED)→ 同请求
@@ -72,6 +74,7 @@ function runSeed(): void {
 }
 
 const PAST_START = new Date('2020-01-01T00:00:00.000Z');
+const FIRST_REVIEWER_ROLE_CODE = 'attendance-first-reviewer';
 const FINAL_REVIEWER_ROLE_CODE = 'attendance-final-reviewer';
 
 describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 scoped 通路)', () => {
@@ -87,7 +90,7 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
   let subAdminId: string; // ADMIN + biz-admin;固定当 submitter(摘码后不再作终审人)
   let subAdminAuth: string;
   let revAdminId: string; // ADMIN + biz-admin;固定当一级审核人(同上)
-  let finalAdminAuth: string; // ADMIN + biz-admin;摘码翻面主体(④ 终审 30100 / ⑤b 六动作边界)
+  let finalAdminAuth: string; // ADMIN + biz-admin;PR-11 摘码主体(④ 终审 30100 / ⑤b 责任动作边界)
   let finalAdminPayload: CurrentUserPayload;
   let saUserId: string;
   let saAuth: string;
@@ -176,16 +179,40 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
     revAdminId = revAdmin.id;
     saUserId = saUser.id;
 
-    // biz-admin 用真 seed 角色(2026-07-03 摘码微刀后 72 码,不含终审两码 —— ④/⑤b 翻面前提)
+    // biz-admin 用真 seed 角色(PR-11 后 68 码；不注入 test-only legacy 动作)。
     const bizAdminRoleId = (
       await prisma.rbacRole.findFirstOrThrow({
         where: { code: 'biz-admin', deletedAt: null },
         select: { id: true },
       })
     ).id;
-    await grantBizAdminToUser(app, subAdmin.id, bizAdminRoleId);
-    await grantBizAdminToUser(app, revAdmin.id, bizAdminRoleId);
-    await grantBizAdminToUser(app, finalAdmin.id, bizAdminRoleId);
+    await grantBizAdminToUser(app, subAdmin.id, bizAdminRoleId, {
+      includeLegacyActivityActions: false,
+    });
+    await grantBizAdminToUser(app, revAdmin.id, bizAdminRoleId, {
+      includeLegacyActivityActions: false,
+    });
+    await grantBizAdminToUser(app, finalAdmin.id, bizAdminRoleId, {
+      includeLegacyActivityActions: false,
+    });
+    // ②b 必须先命中真实一审 grant，才能验证“提交人/最近重提人不得一审”的域约束。
+    // 不再借 biz-admin 的旧动作权限承载该用例。
+    const firstReviewerRoleId = (
+      await prisma.rbacRole.findFirstOrThrow({
+        where: { code: FIRST_REVIEWER_ROLE_CODE, deletedAt: null },
+        select: { id: true },
+      })
+    ).id;
+    await prisma.roleBinding.create({
+      data: {
+        principalType: PrincipalType.USER,
+        principalId: subAdmin.id,
+        roleId: firstReviewerRoleId,
+        scopeType: BindingScopeType.GLOBAL,
+        status: BindingStatus.ACTIVE,
+        startedAt: PAST_START,
+      },
+    });
     finalAdminPayload = {
       id: finalAdmin.id,
       username: 'fra-final-adm',
@@ -370,7 +397,7 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
     });
     expect(db).toEqual({ statusCode: 'pending_final_review', finalReviewerUserId: null });
 
-    // DB 显式断言:终审两码不在 biz-admin 绑定(seed 对账另见 seed-biz-admin.e2e-spec 72)
+    // DB 显式断言:终审三码不在 biz-admin 绑定(seed 对账另见 seed-biz-admin.e2e-spec 68)
     const bizRole = await prisma.rbacRole.findFirstOrThrow({
       where: { code: 'biz-admin', deletedAt: null },
       select: { id: true },
@@ -422,19 +449,16 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
     );
   });
 
-  it('⑤b 摘码边界:biz-admin 对其余 6 考勤动作仍 ALLOW,仅终审两码 DENY(摘的只有终审两码)', async () => {
-    const stillAllowed = [
+  it('⑤b PR-11 摘码边界:biz-admin 仅保留考勤读取,全部责任动作 DENY', async () => {
+    expect(await authz.can(finalAdminPayload, 'attendance.read.sheet')).toBe(true);
+    for (const action of [
       'attendance.create.sheet',
-      'attendance.read.sheet',
       'attendance.update.sheet',
       'attendance.delete.sheet',
       'attendance.approve.sheet',
       'attendance.reject.sheet',
-    ];
-    for (const action of stillAllowed) {
-      expect(await authz.can(finalAdminPayload, action)).toBe(true);
-    }
-    for (const action of [
+      'attendance.return.sheet',
+      'attendance.final-return.sheet',
       'attendance.final-approve.sheet',
       'attendance.final-reject.sheet',
       'attendance.reopen.sheet',

@@ -17,9 +17,8 @@ const attendanceTestYear = new Date().getUTCFullYear() - 1;
 // 沿冻结评审稿 slow4-rbac-business-face-review.md §7 零行为漂移验收
 // (① SA 短路 / ② ADMIN+biz-admin 照常 / ③ ADMIN 无 biz-admin 30100 / ④ USER 30100)。
 // list / detail / review-detail 共用 attendance.read.sheet(D4=A 判例)。
-// ⚠️ 摘码微刀(2026-07-03):终审两码不再绑 biz-admin —— final-approve / final-reject 的
-// ② 从 200 翻 30100(其余 6 动作 ② 照常 200 = 摘码边界),终审 ALLOW 面由 ① SA 兜底承载;
-// scoped 通路见 attendances-final-review-authz.e2e-spec。
+// v0.61.0 PR-11 contract:biz-admin 仅保留 attendance.read.sheet；提交/编辑/删除/一审/终审
+// 全部翻 30100，动作能力由 owner/collaborator/显式 reviewer 承载。
 // 业务行为细节(状态机 / 时间重叠 / 贡献值)由 attendances*.e2e-spec.ts 系列锁定。
 
 describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
@@ -87,7 +86,9 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
     admBizUserId = admBiz.id;
 
     const bizSeed = await seedBizAdminPermissionsAndRole(app);
-    await grantBizAdminToUser(app, admBiz.id, bizSeed.bizAdminRoleId);
+    await grantBizAdminToUser(app, admBiz.id, bizSeed.bizAdminRoleId, {
+      includeLegacyActivityActions: false,
+    });
 
     // org / 活动 / member / 考勤字典(submit 路径的字典校验依赖)
     const nodeDict = await prisma.dictType.create({
@@ -164,7 +165,7 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
   };
 
   describe('Collection:POST submit / GET list', () => {
-    it('submit(attendance.create.sheet):③④ 30100(合法 body)/ ② 201 / ① 201', async () => {
+    it('submit(attendance.create.sheet):②③④ 30100(合法 body)/ ① 201', async () => {
       expectBizError(
         await request(httpServer(app))
           .post(sheetsBase())
@@ -179,14 +180,13 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
           .send(submitPayload()),
         BizCode.RBAC_FORBIDDEN,
       );
-      expect(
-        (
-          await request(httpServer(app))
-            .post(sheetsBase())
-            .set('Authorization', admBizAuth)
-            .send(submitPayload())
-        ).status,
-      ).toBe(201);
+      expectBizError(
+        await request(httpServer(app))
+          .post(sheetsBase())
+          .set('Authorization', admBizAuth)
+          .send(submitPayload()),
+        BizCode.RBAC_FORBIDDEN,
+      );
       expect(
         (
           await request(httpServer(app))
@@ -237,7 +237,7 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
   });
 
   describe('Resource:edit / delete(attendance.{update,delete}.sheet)', () => {
-    it('edit:③④ 30100 / ② 200(pending Sheet,{} 合法不替换 records)', async () => {
+    it('edit:②③④ 30100(pending Sheet,{} 合法不替换 records)', async () => {
       const sheetId = await createSheetAt('pending');
       expectBizError(
         await request(httpServer(app))
@@ -253,16 +253,15 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
           .send({}),
         BizCode.RBAC_FORBIDDEN,
       );
-      expect(
-        (
-          await request(httpServer(app))
-            .patch(`${resBase()}/${sheetId}`)
-            .set('Authorization', admBizAuth)
-            .send({})
-        ).status,
-      ).toBe(200);
+      expectBizError(
+        await request(httpServer(app))
+          .patch(`${resBase()}/${sheetId}`)
+          .set('Authorization', admBizAuth)
+          .send({}),
+        BizCode.RBAC_FORBIDDEN,
+      );
     });
-    it('delete:③④ 30100 / ②① 200(各独立 pending Sheet)', async () => {
+    it('delete:②③④ 30100 / ① 200(各独立 pending Sheet)', async () => {
       const s1 = await createSheetAt('pending');
       expectBizError(
         await request(httpServer(app))
@@ -274,13 +273,12 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
         await request(httpServer(app)).delete(`${resBase()}/${s1}`).set('Authorization', userAuth),
         BizCode.RBAC_FORBIDDEN,
       );
-      expect(
-        (
-          await request(httpServer(app))
-            .delete(`${resBase()}/${s1}`)
-            .set('Authorization', admBizAuth)
-        ).status,
-      ).toBe(200);
+      expectBizError(
+        await request(httpServer(app))
+          .delete(`${resBase()}/${s1}`)
+          .set('Authorization', admBizAuth),
+        BizCode.RBAC_FORBIDDEN,
+      );
       const s2 = await createSheetAt('pending');
       expect(
         (await request(httpServer(app)).delete(`${resBase()}/${s2}`).set('Authorization', saAuth))
@@ -290,7 +288,7 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
   });
 
   describe('Resource:approve / reject / final-approve / final-reject(独立码)', () => {
-    it('approve:③④ 30100 / ② 200(pending,records contributionPoints 已填)', async () => {
+    it('approve:②③④ 30100(pending,records contributionPoints 已填)', async () => {
       const sheetId = await createSheetAt('pending');
       expectBizError(
         await request(httpServer(app))
@@ -306,16 +304,15 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
           .send({}),
         BizCode.RBAC_FORBIDDEN,
       );
-      expect(
-        (
-          await request(httpServer(app))
-            .patch(`${resBase()}/${sheetId}/approve`)
-            .set('Authorization', admBizAuth)
-            .send({})
-        ).status,
-      ).toBe(200);
+      expectBizError(
+        await request(httpServer(app))
+          .patch(`${resBase()}/${sheetId}/approve`)
+          .set('Authorization', admBizAuth)
+          .send({}),
+        BizCode.RBAC_FORBIDDEN,
+      );
     });
-    it('reject:③④ 30100 / ② 200(pending)', async () => {
+    it('reject:②③④ 30100(pending)', async () => {
       const sheetId = await createSheetAt('pending');
       expectBizError(
         await request(httpServer(app))
@@ -331,14 +328,13 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
           .send({ reviewNote: 'X' }),
         BizCode.RBAC_FORBIDDEN,
       );
-      expect(
-        (
-          await request(httpServer(app))
-            .patch(`${resBase()}/${sheetId}/reject`)
-            .set('Authorization', admBizAuth)
-            .send({ reviewNote: '边界驳回' })
-        ).status,
-      ).toBe(200);
+      expectBizError(
+        await request(httpServer(app))
+          .patch(`${resBase()}/${sheetId}/reject`)
+          .set('Authorization', admBizAuth)
+          .send({ reviewNote: '边界驳回' }),
+        BizCode.RBAC_FORBIDDEN,
+      );
     });
     it('final-approve:②③④ 30100(② 摘码翻面)/ ① 200(SA 兜底;pending_final_review)', async () => {
       const sheetId = await createSheetAt('pending_final_review');

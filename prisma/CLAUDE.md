@@ -23,3 +23,4 @@
 ## seed.ts
 
 - 默认 super admin + bootstrap user_role;生产启动强校验 `SUPER_ADMIN_*` / `JWT_SECRET` / `APP_CORS_ORIGIN`,任一不满足直接抛错退出。
+- v0.61.0 PR-11 contract 只改 RolePermission 映射、不删 Permission：`biz-admin/org-admin/group-manager`=68/47/20；通用角色仅定点清理活动责任旧动作，保留无关自定义映射；三个 reviewer 角色零 PositionRolePolicy。
