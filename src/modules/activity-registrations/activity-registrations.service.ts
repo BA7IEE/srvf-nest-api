@@ -194,6 +194,7 @@ type RegistrationAdminListRow = Prisma.ActivityRegistrationGetPayload<{
   select: typeof registrationAdminListSelect;
 }>;
 type PrismaTx = Prisma.TransactionClient;
+export type RegistrationAuthorization = 'authz' | 'managed';
 
 @Injectable()
 export class ActivityRegistrationsService {
@@ -244,6 +245,33 @@ export class ActivityRegistrationsService {
       return;
     }
     throw new BizException(BizCode.RBAC_FORBIDDEN);
+  }
+
+  private async assertManagedRegistrationAccess(
+    activityId: string,
+    currentUser: CurrentUserPayload,
+    tx?: PrismaTx,
+  ): Promise<void> {
+    if (!currentUser.memberId) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+    const activity = await (tx ?? this.prisma).activity.findFirst({
+      where: {
+        id: activityId,
+        deletedAt: null,
+        responsibilityAssignments: {
+          some: {
+            memberId: currentUser.memberId,
+            status: 'active',
+            canManageRegistrations: true,
+          },
+        },
+      },
+      select: { id: true },
+    });
+    if (!activity) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
   }
 
   // v0.49:扁平报名工作台按 activity.organizationId 下推授权范围；用户显式组织筛选
@@ -696,11 +724,15 @@ export class ActivityRegistrationsService {
     activityId: string,
     query: ListRegistrationsQueryDto,
     currentUser: CurrentUserPayload,
+    authorization: RegistrationAuthorization = 'authz',
   ): Promise<PageResultDto<ActivityRegistrationListItemDto>> {
     await this.assertCanOrThrow(currentUser, 'activity-registration.read.record', {
       type: 'activity',
       id: activityId,
     });
+    if (authorization === 'managed') {
+      await this.assertManagedRegistrationAccess(activityId, currentUser);
+    }
     // activity 存在性校验(管理员看不存在的活动 → 404)。
     await this.findActivityOrThrow(activityId);
 
@@ -1035,12 +1067,17 @@ export class ActivityRegistrationsService {
     dto: ApproveRegistrationDto,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    authorization: RegistrationAuthorization = 'authz',
   ): Promise<ActivityRegistrationResponseDto> {
     await this.assertCanOrThrow(currentUser, 'activity-registration.approve.record', {
       type: 'activity_registration',
       id,
     });
     const result = await this.prisma.$transaction(async (tx) => {
+      if (authorization === 'managed') {
+        await this.lockActivityForRegistrationCreate(activityId, tx);
+        await this.assertManagedRegistrationAccess(activityId, currentUser, tx);
+      }
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
 
       const transition = this.registrationStateMachine.decide('approve', reg.statusCode);
@@ -1052,7 +1089,9 @@ export class ActivityRegistrationsService {
       // 两并发 approve 互不可见对方未提交写 → 双双过闸 → pass 超 capacity(原注释「事务内重新计数避免
       // race」不成立)。对 activity 行加 FOR UPDATE 排他锁,令同一 activity 的并发 approve 串行化:后到者
       // 阻塞至前者提交,再 COUNT 即见已提交 pass → 正确拒。仅限名额活动需锁(capacity=null 不限名额免锁)。
-      await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${activityId} FOR UPDATE`;
+      if (authorization === 'authz') {
+        await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${activityId} FOR UPDATE`;
+      }
       const act = await this.findActivityOrThrow(activityId, tx);
       const participationDecision = this.activityParticipationPolicy.canApprove(act);
       if (!participationDecision.allowed) {
@@ -1133,12 +1172,17 @@ export class ActivityRegistrationsService {
     dto: RejectRegistrationDto,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    authorization: RegistrationAuthorization = 'authz',
   ): Promise<ActivityRegistrationResponseDto> {
     await this.assertCanOrThrow(currentUser, 'activity-registration.reject.record', {
       type: 'activity_registration',
       id,
     });
     const result = await this.prisma.$transaction(async (tx) => {
+      if (authorization === 'managed') {
+        await this.lockActivityForRegistrationCreate(activityId, tx);
+        await this.assertManagedRegistrationAccess(activityId, currentUser, tx);
+      }
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
 
       const transition = this.registrationStateMachine.decide('reject', reg.statusCode);
@@ -1231,12 +1275,17 @@ export class ActivityRegistrationsService {
     dto: CancelRegistrationDto,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    authorization: RegistrationAuthorization = 'authz',
   ): Promise<ActivityRegistrationResponseDto> {
     await this.assertCanOrThrow(currentUser, 'activity-registration.cancel.record', {
       type: 'activity_registration',
       id,
     });
     const result = await this.prisma.$transaction(async (tx) => {
+      if (authorization === 'managed') {
+        await this.lockActivityForRegistrationCreate(activityId, tx);
+        await this.assertManagedRegistrationAccess(activityId, currentUser, tx);
+      }
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
 
       const transition = this.registrationStateMachine.decide('cancel', reg.statusCode);
@@ -1246,7 +1295,7 @@ export class ActivityRegistrationsService {
 
       // pass 取消会进入 Activity 候补队列，必须先按 Activity→Registration 固定锁序取聚合锁。
       // 否则并发取消会先各持一条 pass registration，再争 Activity 锁形成 40P01 死锁。
-      if (reg.statusCode === REGISTRATION_STATUS_PASS) {
+      if (authorization === 'authz' && reg.statusCode === REGISTRATION_STATUS_PASS) {
         await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${activityId} FOR UPDATE`;
       }
       await claimAtStatus(tx, {
@@ -1327,12 +1376,17 @@ export class ActivityRegistrationsService {
     id: string,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    authorization: RegistrationAuthorization = 'authz',
   ): Promise<ActivityRegistrationResponseDto> {
     await this.assertCanOrThrow(currentUser, 'activity-registration.reopen.record', {
       type: 'activity_registration',
       id,
     });
     return this.prisma.$transaction(async (tx) => {
+      if (authorization === 'managed') {
+        await this.lockActivityForRegistrationCreate(activityId, tx);
+        await this.assertManagedRegistrationAccess(activityId, currentUser, tx);
+      }
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
 
       const transition = this.registrationStateMachine.decide('reopen', reg.statusCode);

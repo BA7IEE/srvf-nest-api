@@ -182,6 +182,17 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/app/v1/my/managed-activities/{activityId}/collaborators'],
   ['delete', '/api/app/v1/my/managed-activities/{activityId}/collaborators/{assignmentId}'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/transfer-owner'],
+  // 活动责任闭环 PR-7:负责人/报名协办 App 报名管理薄壳，复用现有单条状态机与 bulk wrapper。
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/registrations'],
+  [
+    'patch',
+    '/api/app/v1/my/managed-activities/{activityId}/registrations/{registrationId}/approve',
+  ],
+  ['patch', '/api/app/v1/my/managed-activities/{activityId}/registrations/{registrationId}/reject'],
+  ['patch', '/api/app/v1/my/managed-activities/{activityId}/registrations/{registrationId}/cancel'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/registrations/{registrationId}/reopen'],
+  ['patch', '/api/app/v1/my/managed-activities/{activityId}/registrations/bulk-approve'],
+  ['patch', '/api/app/v1/my/managed-activities/{activityId}/registrations/bulk-reject'],
 
   // Phase 2 P2-5b(2026-05-20):App /api/app/v1/my/registrations 2 写 endpoint
   // 沿 docs/app-api-p2-5-registrations-review.md §13.7 + D-P2-5-5 / D-P2-5-8 / D-P2-5-9 /
@@ -870,6 +881,17 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'TransferAppManagedActivityOwnerDto',
   'AppManagedResponsibilityAssignmentDto',
   'AppManagedResponsibilitiesDto',
+  // 活动责任闭环 PR-7:App managed registration 独立 DTO。
+  'AppManagedRegistrationPositionDto',
+  'AppManagedRegistrationMemberDto',
+  'AppManagedRegistrationListItemDto',
+  'AppManagedRegistrationDto',
+  'ApproveAppManagedRegistrationDto',
+  'RejectAppManagedRegistrationDto',
+  'CancelAppManagedRegistrationDto',
+  'BulkReviewAppManagedRegistrationsDto',
+  'AppManagedRegistrationBulkFailureDto',
+  'AppManagedRegistrationBulkResponseDto',
 
   // V2 第一阶段批次 3B attendances
   // 注:ListAttendanceSheetsQueryDto / MyAttendanceRecordsQueryDto / ActivityIdParamDto
@@ -1371,8 +1393,8 @@ describe('OpenAPI 契约快照', () => {
     expect(Object.keys(item[method]?.responses ?? {}).length).toBeGreaterThan(0);
   });
 
-  it('App managed activities core 落地后路由足迹精确为 395', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(395);
+  it('App managed registration 闭环落地后路由足迹精确为 402', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(402);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

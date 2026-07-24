@@ -132,7 +132,7 @@
 - **App surface:不走 RBAC**——仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` self-scope + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`);capabilities 返回产品级能力而非 raw permission code(D-5.3)。
 - **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。`RbacService` 的 GLOBAL permission resolution 每请求从 PostgreSQL 解析当前在期 USER RoleBinding → RolePermission → Permission；`AuthzService` 同样不缓存判权/可见范围结果。
 
-## 2. controller × 鉴权模式对照(79 个 controller class)
+## 2. controller × 鉴权模式对照(80 个 controller class)
 
 ### 2.1 R 模式 — Service 层 `rbac.can()`(管理面,已收紧)
 
@@ -177,6 +177,7 @@
 | `admin/v1/activity-publish-reviews`(活动责任闭环 PR-4) | list/detail 用 `activity-review.read.request`，return 用 `activity-review.return.request`，approve/legacy pending approve 用 `activity.publish.record`；均走 `AuthzService`，list 由 `getVisibleOrganizationScope` 下推并与显式 organization 过滤取交集，点动作带 `activity_publish_review` ref；专用 reviewer RoleBinding 可按 ORGANIZATION/TREE/GLOBAL 生效，普通管理角色不自动获得 |
 | `admin/v1/activities/:activityId/responsibilities`(活动责任闭环 PR-5；`AdminActivityResponsibilitiesController`) | 6 路：GET current、协办 add/end、owner transfer、legacy claim/assign-initiator；owner 本人经 active responsibility 直通，管理员 override 走 `activity-responsibility.override.record` + activity ref；发布/协办/移交同事务由 projector 创建或结束 MEMBER/ACTIVITY scoped system-managed RoleBinding；0 新权限码 |
 | `app/v1/my/managed-activities`(活动责任闭环 PR-6；3 个 App controller) | 19 路：正式队员按 active membership 或 `activity.create.cross-org` scope 发起；draft 仅 initiator 可直改，published 变更只允许 active owner 提交完整 proposal；direct publish 仍要求 `activity.publish.record`；App 职责写只允许 active owner，协办只读按本人 active responsibility scope；0 新权限码、App DTO 与 Admin DTO 物理隔离 |
+| `app/v1/my/managed-activities/:activityId/registrations`(活动责任闭环 PR-7；`AppManagedActivityRegistrationsController`) | 7 路：list/approve/reject/cancel/reopen/bulk-approve/bulk-reject；先走既有 `activity-registration.*.record` scoped RoleBinding 判权，再要求当前活动 active responsibility `canManageRegistrations=true`；owner/报名协办可用，global 旧角色、考勤协办与无关用户不可旁路；责任结束后下一请求失权；写路径 Activity 根锁后重读 capability，再复用既有状态机/容量/候补/audit；0 新权限码 |
 | `admin/v1/activities/:activityId/{check-ins,attendance-sheet-draft}`(活动自助 GPS 签到 F3；`AdminActivityCheckInsController`) | `attendance.read.sheet`(2 个只读端点；均由 Admin application service 调 `AuthzService.explain` 并带 `{type:'activity',id:activityId}` ref；`resource_not_found` 仅在全局 `rbac.can` 为真时回退后继续真实 Activity 存在性检查；0 新码) |
 | `admin/v1/activities/:activityId/registrations`(Slow-4 T3;v0.40.0 +reopen;审计刀 5 F6) | `activity-registration.*.record`(6;list/export 共用 read;`:id/reopen` = `reopen.record`;新增字面段 `bulk-approve`/`bulk-reject` 分别复用 approve/reject 码，逐 id 点判 + 独立事务，失败入结果不回滚成功项) |
 | `admin/v1/registrations`(跨轴只读 2026-06-23) | `activity-registration.read.record`(1;跨活动报名横扫,审批工作台,复用 read 零新码) |

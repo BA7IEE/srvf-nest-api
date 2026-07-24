@@ -6,7 +6,7 @@
 
 - **活动报名记录**:create / approve / reject / cancel / reopen + 内部 promote，5 态闭集
 - **状态机 5 态**:`pending → pass|reject`;`waitlisted → pending`(仅自动递补，不开手动端点)；`pending|waitlisted → reject`；`pending|pass|waitlisted → cancelled`；`reject → pending`(reopen)。**不开 waitlisted → pass / reject → pass 直通**；只 pass 占 capacity
-- **两 surface**:Admin 代报名 + 审核 + CSV 导出(`admin/v1/activities/:activityId/registrations`);App 本人报名 / 查询 / 取消(`app/v1/my`)。历史 Legacy `/v2/users/me/*` 4 端点已于 Route B Phase 4d2 删除(队员流由 App surface 承载)
+- **三 surface**:Admin 代报名 + 审核 + CSV 导出(`admin/v1/activities/:activityId/registrations`);App 本人报名 / 查询 / 取消(`app/v1/my`);App 活动负责人/报名协办管理(`app/v1/my/managed-activities/:activityId/registrations`)。历史 Legacy `/v2/users/me/*` 4 端点已于 Route B Phase 4d2 删除(队员流由 App surface 承载)
 - **不负责**:活动主资源生命周期(`activities/`)、考勤(`attendances/`)、贡献值预填(`contribution-rules/` + `attendances/contribution-calculator.ts`);`AttendanceRecord.registrationId` 由 attendances 反向引用,本模块**不**主动维护
 
 ## Local facts
@@ -16,7 +16,8 @@
 - **CSV 导出(v0.44.0 finding #13)**:`exportCsv` 必须保持 500 行游标分页 async generator + BOM 首 chunk,controller 用 `Readable.from`;禁止恢复全量 `findMany` / `string[]` / 整串 Buffer。
 - Admin Controller:`activity-registrations.controller.ts` `@Controller('admin/v1/activities/:activityId/registrations')` `@ApiTags('Admin - Registrations')`
 - App Controller:`controllers/app-my-registrations.controller.ts` `@Controller('app/v1/my')` `@ApiTags('Mobile - My Registrations')`;**方法级**追加 `@ApiTags('Mobile - My Activities')` 于 `GET /my/activities`(刻意保留)
-- DTO 隔离:Admin DTO 在 `activity-registrations.dto.ts`;App DTO 在 `dto/app/`(5 文件)
+- Managed App Controller:`controllers/app-managed-activity-registrations.controller.ts`，7 路 list/approve/reject/cancel/reopen/bulk-approve/bulk-reject；薄 application service 只做 App safe projection，动作仍复用本模块单条 service 与 bulk wrapper，禁止复制第二套状态机/容量/候补/audit
+- DTO 隔离:Admin DTO 在 `activity-registrations.dto.ts`;App DTO 在 `dto/app/`(6 文件)，managed 出参刻意不含 `reviewedBy` / `cancelledByUserId`
 - **Partial unique** `activity_registrations_activity_member_active_unique` 由 migration 直写(Prisma schema 上**不可见**);service 用 `P2002` 兜底转 `BizCode.ACTIVITY_REGISTRATION_ALREADY_EXISTS = 21002`
 - **D-INSURANCE v3 PR3**:single gate=true 且 Activity.requiresInsurance=true 时，Admin/App create 共用 `Activity→source→Registration→Evidence→Audit` 根事务；source 只认覆盖活动北京日闭区间的 verified self，随后才尝试 live Team Policy+Coverage。成功恰一条最小 evidence，任一腿失败全回滚；pending/rejected/软删/不覆盖均 26030。gate=false 保留旧 consumer 且 0 evidence。
 - **保险生命周期 PR-A approve 重验**:single gate=true 且锁后 Activity.requiresInsurance=true 时，approve 在 Activity `FOR UPDATE` 后、registration claim/capacity write/audit 前调用 `InsuranceRequirementService`；必须恰有一条 owner/member/北京日区间均匹配的 immutable evidence，并只锁/重验 evidence 指向的 exact source（禁止重选另一份来源）与 live+ACTIVE Member。任一失配统一 `INSURANCE_REQUIRED`，事务内报名仍 pending、audit=0，commit 外通知也不启动。gate=false 或 Activity.requiresInsurance=false 增量资格查询为 0；bulk approve 继续逐条调用 single approve，部分成功语义不变。
@@ -25,6 +26,7 @@
 - 状态机错误码:wrong state 统一抛 `BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID`
 - **受保护状态写(2026-07-21)**:`approve`/`reject`/`cancelAdmin`/`reopen`/`cancelMy` 在真实写前统一调用 [`/src/common/prisma/claim-at-status.util.ts`](../../common/prisma/claim-at-status.util.ts)；helper 以静态物理表/列执行条件 `SELECT ... FOR NO KEY UPDATE`，不再写 no-op tuple。获锁后必须重读安全行，并让 current-row guard、子表写、真实更新与 audit before 只使用锁后行；并发败者复用 `ACTIVITY_REGISTRATION_STATUS_INVALID`，合法矩阵仍只在 `activity-registration-state-machine.ts`。
 - **候补并发锁序**:`promoteActivityWaitlist` 由调用方透传 tx，固定锁 Activity，按 `registeredAt ASC,id ASC` 逐行 claim CAS。Admin/self/App 三路 create 在读取 Activity/岗位/passCount 前先锁 Activity；pass 取消在 claim registration 前同样先锁 Activity，与 approve / check-in / attendance submit 统一 Activity → Registration 锁序，禁止恢复会触发 PostgreSQL 40P01 的反向锁序
+- **managed 报名判权与锁序(PR-7)**:单条写先走既有 `authz.explain`，再在同一事务的 Activity 根锁后重读 active responsibility 的 `canManageRegistrations=true`；因此 owner/报名协办可管理，global 旧角色、考勤协办不可旁路，协办 end/owner transfer 与在途写串行。默认 `authorization='authz'` 保持 Admin 调用逐字行为，managed 路径显式传 `'managed'`
 - **approve 保险锁序**:Activity 后按 evidence 类型分支：self=`Member→MemberInsurance→Registration`，team=`Policy→Coverage→Member→Registration`；与现有 self review、队保覆盖写同向。锁住来源后才 claim Registration，禁止先锁 Registration 再回头碰 Activity/source。
 - **候补排位**:`activity-registration-waitlist-query.service.ts` 批量按 `(activityId,activityPositionId)` 计算，`null` 是无岗位旧队列，列表禁止 N+1；非 waitlisted 返 null
 - **岗位报名**:Admin / self / App 三路 create DTO 均只接受可选 `activityPositionId`；有 live 岗位未传→21035，跨活动/已删/不存在→20002；活动 gender 后叠加岗位 gender；一人一活动 partial unique 仍不含岗位，报第二岗继续 21002。Admin 报名列表 additive 返回 `activityPosition{activityPositionId,name}`，App 报名读模型不扩岗位对象
@@ -43,7 +45,7 @@
 - ❌ **不**把 `cancelAdmin` / `cancelMy` 路径区分挪进 StateMachine(只通过 `extra.cancelledByPath` 在 audit 记录)
 - ❌ **不**改 Admin Controller path `admin/v1/activities/:activityId/registrations`(`export` 字面段必须**先**于 `:id/<action>` 路由声明,Q-A6 锁定;调换顺序会被 Nest 路由解析为 `:id=export`)
 - ❌ **不**把 Admin DTO 用 `extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 派生为 App DTO(沿 `harness reference/api-client-boundary.md` D-6`);App `dto/app/` 字段集**刻意删除** `memberId` / `memberNo` / `memberDisplayName`(沿 §16.B.2)
-- ❌ App 视角 where 子句**永远**用 `currentUser.memberId` 锁本人;**禁止** role 短路 / `scope=all`
+- ❌ App self 视角 where 子句**永远**用 `currentUser.memberId` 锁本人；managed 视角只认当前活动 active responsibility capability；两者都**禁止** role 短路 / `scope=all`
 - ❌ **不**主动拆 `activity-registrations.service.ts`(1587L,沿 [`/docs/current-state.md §4 P2`](../../../docs/current-state.md))
 - ❌ **不**在 CSV 导出路径引入 `csv-stringify` 等新依赖(沿 Q-A6 + [`/AGENTS.md §3`](../../../AGENTS.md))
 - ❌ **不**把递补改成 waitlisted → pass；腾出名额只自动进 pending，仍必须走 approve
