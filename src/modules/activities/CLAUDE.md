@@ -37,7 +37,7 @@
 - **完结时间闸**:`complete` 在 Activity 聚合锁后重读状态与时间，只有 `published` 且读侧 phase 已为 `ended`（严格晚于 `endAt`）才允许写 `completed`；未来/进行中活动复用 `ACTIVITY_STATUS_INVALID` fail-closed。
 - 状态机错误码:wrong state 统一抛 `BizCode.ACTIVITY_STATUS_INVALID`
 - **受保护状态写(2026-07-21)**:`update`/`softDelete`/`publish`/`cancel`/`complete` 在持有 Activity 聚合锁并重读后，统一调用 [`/src/common/prisma/claim-at-status.util.ts`](../../common/prisma/claim-at-status.util.ts) 的条件 `SELECT ... FOR NO KEY UPDATE`；不产生 no-op tuple，调用方在 claim 后继续以既有锁后行完成真实写。并发败者复用 `ACTIVITY_STATUS_INVALID`；helper **只认领、不判断迁移合法性**，合法矩阵仍只在 `activity-state-machine.ts`。
-- E2E:`activities.e2e-spec.ts` / `activities-rbac-boundary.e2e-spec.ts` / `activities-state-transition.e2e-spec.ts` / `activities-audit-characterization.e2e-spec.ts` / `activity-publish-review.e2e-spec.ts` / `activity-publish-review-concurrency.e2e-spec.ts` / `activity-responsibilities.e2e-spec.ts` / `activity-responsibility-concurrency.e2e-spec.ts` / `app-activities-available.e2e-spec.ts` / `app-activities-detail.e2e-spec.ts`;scoped 判权矩阵在 `participation-scoped-authz.e2e-spec.ts`
+- E2E:`activities.e2e-spec.ts` / `activities-rbac-boundary.e2e-spec.ts` / `activities-state-transition.e2e-spec.ts` / `activities-audit-characterization.e2e-spec.ts` / `activity-publish-review.e2e-spec.ts` / `activity-publish-review-concurrency.e2e-spec.ts` / `activity-responsibilities.e2e-spec.ts` / `activity-responsibility-concurrency.e2e-spec.ts` / `activity-responsibility-rollout.e2e-spec.ts` / `app-activities-available.e2e-spec.ts` / `app-activities-detail.e2e-spec.ts`;scoped 判权矩阵在 `participation-scoped-authz.e2e-spec.ts`
 
 ## Risk points (不要做)
 

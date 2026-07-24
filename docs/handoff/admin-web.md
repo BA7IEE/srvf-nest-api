@@ -53,6 +53,8 @@
 | 参与核对 / 汇总 | `GET /api/admin/v1/activities/:id/reconciliation`(**仅 completed**) · `GET .../:id/participation-summary`；两者均需 `attendance.read.sheet` + `activity-registration.read.record` |
 
 > **Unreleased · 活动责任闭环 PR-4–PR-6（尚未切生产 gate）**：活动出参 additive 增加 `initiatorMemberId` / `workflowRevision`，Admin create 可选 `initiatorMemberId`；不传时当前账号必须绑定正式队员，代建仅限 SUPER_ADMIN 或 `activity-responsibility.override.record`。发布审核工作台为 `GET /api/admin/v1/activity-publish-reviews`、`GET /:id`、`POST /:id/approve`、`POST /:id/return`，列表按显式 reviewer RoleBinding 组织范围过滤。发布成功会原子创建发起人为唯一 owner 并投影 `activity-owner` scoped binding；reviewer 永不因审批成为 owner。责任读模型返回 `{activityId,initiator,owner,collaborators,legacyUnassigned}`；协办 body 为 `{memberId,canManageRegistrations,canManageAttendance,reason?}`（至少一个 capability=true），移交 body 为 `{newOwnerMemberId,retainPreviousOwnerAsCollaborator,reason}`。legacy `claim` 只允许已发布且零 active responsibility，`assign-initiator` 只允许 draft 且 initiator 为空，两者 reason 必填。gate=true 后 pending review 期间 Activity 与岗位不可直改，published 直改返回 `20037`；PR-6 已提供 App submit/withdraw/change proposal，Admin approve change 时会在同一事务应用 Activity + positions diff 并递增 `workflowRevision`。生产在 PR-11 切换前继续显式 `ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED=false`。
+>
+> **PR-10 上线准备**：legacy gap、显式认领、三个 reviewer RoleBinding 与整 fleet 切换顺序见 [`activity-responsibility-workflow-rollout.md`](../ops/activity-responsibility-workflow-rollout.md)。只有只读探针 `dataReadyForContract=true` 且旧实例/旧事务已 drain，才可进入 PR-11；前端不得用 `publishedBy` 猜 owner。
 
 > 关键:报名/考勤接口**本来就按 activityId 嵌套**——作战室是它们的自然消费者。
 > `activityId` 从**路由参数**来,不要在页面顶部摆"选择活动"下拉。
