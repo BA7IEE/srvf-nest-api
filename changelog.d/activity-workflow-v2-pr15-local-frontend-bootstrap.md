@@ -1,0 +1,1 @@
+- 活动责任闭环 PR-15 新增仅限 `development/test` 与专用 `app_local_frontend*` 数据库的本地前端联调 bootstrap：稳定占位账号、幂等 setup/数据库只读与可选业务只读 HTTP verify、受保护的人工重建指令、启动与 A–I 手工联调说明就绪；后端进入前端联调功能冻结。本次不新增业务功能，不包含正式环境 migration/seed、人员配置、部署、release 或切换。

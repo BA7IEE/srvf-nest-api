@@ -46,6 +46,8 @@
 
 页面级 capability 只负责入口提示。每个按钮还要结合 `myResponsibility`、Activity/review/Sheet/closure 状态；服务端 resource + scope 判定才是最终结果。不得按 ADMIN、队长、`publishedBy` 或“能看到页面”猜权限。
 
+本地正常验收中的发布审核员、考勤一审员和终审员必须使用显式 scoped RoleBinding，不能使用 SUPER_ADMIN 掩盖角色配置问题。实际系统中 SUPER_ADMIN 保留紧急兜底权限，但仍受考勤提交人不能审核自己、最近重提人不能审核自己、一审人不能终审同一张单等人员隔离规则约束，不应作为日常审核人员配置使用。
+
 > **Unreleased · PR-12 边界收口**：draft 只有在目标组织 ACTIVE、未软删、非根，且持久化 initiator 仍为有 ACTIVE 账号的正式队员并具备目标组织 membership / scoped cross-org grant 时才可真实改组织；`initiatorMemberId=null` 不会回退为当前操作者。已发布活动的 `submit-change-review.activity.organizationId` 只能省略或等于当前组织，不同值统一返 `20022`，客户端不要提供普通 proposal 的“迁移组织”入口。
 | **H5 报名前手机身份链(无账号;S4a)** | `POST /api/open/v1/recruitment/identity/send-code`(`{phone}`→发验证码) → `POST .../identity/verify-code`(`{phone,code}`→返一次性 `phoneVerificationToken`〔30min,明文仅返一次〕) → 提交报名(见下行 H5 链)。**F4(v0.41.0-pre)**:闭轮期两端点对「手机命中未清除报名记录」者放行(自助查询/换绑链闭轮不再断);闭轮陌生手机 send-code 返防枚举泛化 200(不真发码),verify-code 统一 24010——前端不必对闭轮做特殊分支 |
 | **公开报名提交(无账号;H5 + 小程序)** | `POST /api/open/v1/recruitment/applications`(multipart)。**⚠️ 契约收紧(已发 v0.42.0;consent 必填自 v0.41.0)**:`payload.phoneVerificationToken` 对 H5/小程序现均为**必填**——两端都先调上一行 send-code/verify-code 完成短信验码,`payload.phone` 须与验证手机一致;小程序可另附 `wechatCode` 绑定 openid,但**仅 wechatCode、无 token 一律 40000**。`payload` 另须含 `privacyConsentAccepted: true`,multipart 须含 `signatureImage`(jpeg/png ≤5MB,申请人手写签名图;任一缺省/false → 40000,旧版本前端会全量 400——发版前必须同步升级);可选 `privacyConsentVersion`;签名图发号后随队员档案长期留存。**前端必须先完成短信验码 + 签名采集再允许提交**。证件照/签名图的实际字节必须匹配声明 MIME,仅改扩展名或伪装内容统一返 `13016`,且不会进入 OCR/落库 |
