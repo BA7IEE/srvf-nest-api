@@ -30,7 +30,7 @@ describe('AttendancePresenter', () => {
   });
 
   describe('toSheetResponseDto', () => {
-    it('14 字段严格透传(含 finalReviewer 三字段;不夹带 previousSnapshot 等多余字段)', () => {
+    it('20 字段严格透传(含重提/退回字段;不夹带 previousSnapshot 等多余字段)', () => {
       const row = {
         id: 'sheet-1',
         activityId: 'act-1',
@@ -43,6 +43,12 @@ describe('AttendancePresenter', () => {
         finalReviewerUserId: 'u3',
         finalReviewedAt: T2,
         finalReviewNote: 'final ok',
+        lastSubmittedByUserId: 'u1',
+        lastSubmittedAt: T0,
+        returnedByUserId: null,
+        returnedAt: null,
+        returnNote: null,
+        returnedFromStageCode: null,
         version: 2,
         createdAt: T0,
         updatedAt: T1,

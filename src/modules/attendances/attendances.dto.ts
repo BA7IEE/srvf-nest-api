@@ -40,14 +40,15 @@ const parseQueryBoolean = ({ value }: { value: unknown }): unknown =>
 // - previousSnapshot(R28 / R27:后端事务内自动生成;前端不上传)
 // - version(D41:服务端版本号;前端不上传)
 
-// ============ AttendanceSheet 状态机闭集(批次 4-B 升级为 5 态;沿 D-S6)============
+// ============ AttendanceSheet 状态机闭集(v0.61.0 升级为 6 态)============
 //
 // 单一来源:DTO 层 export,service.ts / e2e / 未来运营后台均 import,**禁止**手写字符串。
-// 与字典 `attendance_sheet_status` 5 项闭集保持一致;字典层 seed 由 batch 4-A migration 落地。
+// 与字典 `attendance_sheet_status` 6 项闭集保持一致。
 //
-// 5 态语义:
+// 6 态语义:
 //   pending              录入员提交 / APD 一级未审
 //   pending_final_review APD 一级已通过,等终审(批次 4-B 新增中间态)
+//   returned             一审或终审退回修改，records 保留，重提后重新进入一审
 //   approved             终审通过(批次 4-B 起语义升级为"贡献值正式生效";非"APD 一级已通过")
 //   rejected             APD 一级驳回
 //   final_rejected       终审驳回(批次 4-B 新增终态;records 跟随软删)
@@ -57,17 +58,19 @@ const parseQueryBoolean = ({ value }: { value: unknown }): unknown =>
 export const ATTENDANCE_SHEET_STATUS = {
   PENDING: 'pending',
   PENDING_FINAL_REVIEW: 'pending_final_review',
+  RETURNED: 'returned',
   APPROVED: 'approved',
   REJECTED: 'rejected',
   FINAL_REJECTED: 'final_rejected',
 } as const;
 
-// OpenAPI `enum` 元数据;与字典 `attendance_sheet_status` 5 项闭集 1:1 对应。
+// OpenAPI `enum` 元数据;与字典 `attendance_sheet_status` 6 项闭集 1:1 对应。
 // 注:DTO 字段层类型保留 `string`,与 Prisma `AttendanceSheet.statusCode: String` 对齐;
 // 收紧到 union 会导致 service / Prisma row → DTO 序列化处全是 type assertion 噪声。
 export const ATTENDANCE_SHEET_STATUS_VALUES: readonly string[] = [
   ATTENDANCE_SHEET_STATUS.PENDING,
   ATTENDANCE_SHEET_STATUS.PENDING_FINAL_REVIEW,
+  ATTENDANCE_SHEET_STATUS.RETURNED,
   ATTENDANCE_SHEET_STATUS.APPROVED,
   ATTENDANCE_SHEET_STATUS.REJECTED,
   ATTENDANCE_SHEET_STATUS.FINAL_REJECTED,
@@ -152,7 +155,7 @@ export class CreateAttendanceSheetDto {
   records!: AttendanceRecordInputDto[];
 }
 
-// 编辑 pending Sheet(D38:后端事务内生成 previousSnapshot + version+1;
+// 编辑 pending/returned Sheet(D38:后端事务内生成 previousSnapshot + version+1;
 // 旧 records 软删 + 新 records 创建);白名单严控。
 export class UpdateAttendanceSheetDto {
   @ApiPropertyOptional({
@@ -185,6 +188,17 @@ export class RejectAttendanceSheetDto {
   @MaxLength(500)
   reviewNote!: string;
 }
+
+export class ReturnAttendanceSheetDto {
+  @ApiProperty({ description: '退回修改原因', maxLength: 500 })
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MaxLength(500)
+  returnNote!: string;
+}
+
+// 无业务字段；独立 DTO 让全局 forbidNonWhitelisted 拒绝客户端夹带状态或审核责任字段。
+export class ResubmitAttendanceSheetDto {}
 
 export class ReopenAttendanceSheetDto {
   @ApiProperty({ description: '撤回终审原因(必填,去除首尾空白后 1-500 字符)', maxLength: 500 })
@@ -348,8 +362,7 @@ export class AttendanceSheetResponseDto {
   submittedAt!: Date;
 
   @ApiProperty({
-    description:
-      '审核状态字典 code(attendance_sheet_status,批次 4-B 升级为 5 态;**approved 语义为终审通过**)',
+    description: '审核状态字典 code(attendance_sheet_status,6 态;**approved 语义为终审通过**)',
     enum: ATTENDANCE_SHEET_STATUS_VALUES,
   })
   statusCode!: string;
@@ -382,6 +395,48 @@ export class AttendanceSheetResponseDto {
     nullable: true,
   })
   finalReviewNote!: string | null;
+
+  @ApiProperty({
+    description: '最近一次提交或重提人 User.id',
+    nullable: true,
+    type: String,
+  })
+  lastSubmittedByUserId!: string | null;
+
+  @ApiProperty({
+    description: '最近一次提交或重提时间',
+    nullable: true,
+    type: Date,
+  })
+  lastSubmittedAt!: Date | null;
+
+  @ApiProperty({
+    description: '最近退回操作人 User.id',
+    nullable: true,
+    type: String,
+  })
+  returnedByUserId!: string | null;
+
+  @ApiProperty({
+    description: '最近退回时间',
+    nullable: true,
+    type: Date,
+  })
+  returnedAt!: Date | null;
+
+  @ApiProperty({
+    description: '退回修改原因',
+    nullable: true,
+    type: String,
+  })
+  returnNote!: string | null;
+
+  @ApiProperty({
+    description: '退回阶段(first 或 final)',
+    nullable: true,
+    enum: ['first', 'final'],
+  })
+  returnedFromStageCode!: 'first' | 'final' | null;
 
   @ApiProperty({ description: '版本号(D41;pending 编辑时 +1)' })
   version!: number;

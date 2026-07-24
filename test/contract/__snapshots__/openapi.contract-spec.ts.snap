@@ -2697,6 +2697,68 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppManagedActivityCheckInDto": {
+    "properties": {
+      "activityId": {
+        "type": "string",
+      },
+      "checkInAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "checkInDistance": {
+        "nullable": true,
+        "type": "string",
+      },
+      "checkOutAt": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "checkOutDistance": {
+        "nullable": true,
+        "type": "string",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "geoVerified": {
+        "type": "boolean",
+      },
+      "id": {
+        "type": "string",
+      },
+      "member": {
+        "$ref": "#/components/schemas/AppManagedAttendanceMemberDto",
+      },
+      "outOfRange": {
+        "type": "boolean",
+      },
+      "registrationId": {
+        "type": "string",
+      },
+      "updatedAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "activityId",
+      "registrationId",
+      "member",
+      "checkInAt",
+      "checkOutAt",
+      "checkInDistance",
+      "checkOutDistance",
+      "geoVerified",
+      "outOfRange",
+      "createdAt",
+      "updatedAt",
+    ],
+    "type": "object",
+  },
   "AppManagedActivityClosureDto": {
     "properties": {
       "attendanceDeclaredCompleteAt": {
@@ -2977,6 +3039,450 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "isPublicRegistration",
       "createdAt",
       "updatedAt",
+    ],
+    "type": "object",
+  },
+  "AppManagedAttendanceDraftAbsentDto": {
+    "properties": {
+      "displayName": {
+        "type": "string",
+      },
+      "memberId": {
+        "type": "string",
+      },
+      "memberNo": {
+        "type": "string",
+      },
+      "registrationId": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "registrationId",
+      "memberId",
+      "memberNo",
+      "displayName",
+    ],
+    "type": "object",
+  },
+  "AppManagedAttendanceDraftFlagDto": {
+    "properties": {
+      "memberId": {
+        "type": "string",
+      },
+      "noCheckOut": {
+        "type": "boolean",
+      },
+      "outOfRange": {
+        "type": "boolean",
+      },
+      "registrationId": {
+        "type": "string",
+      },
+      "unverified": {
+        "type": "boolean",
+      },
+    },
+    "required": [
+      "registrationId",
+      "memberId",
+      "noCheckOut",
+      "outOfRange",
+      "unverified",
+    ],
+    "type": "object",
+  },
+  "AppManagedAttendanceDraftRecordDto": {
+    "properties": {
+      "attendanceStatusCode": {
+        "type": "string",
+      },
+      "checkInAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "checkOutAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "memberId": {
+        "type": "string",
+      },
+      "registrationId": {
+        "type": "string",
+      },
+      "roleCode": {
+        "type": "string",
+      },
+      "serviceHours": {
+        "type": "number",
+      },
+    },
+    "required": [
+      "memberId",
+      "roleCode",
+      "checkInAt",
+      "checkOutAt",
+      "serviceHours",
+      "attendanceStatusCode",
+      "registrationId",
+    ],
+    "type": "object",
+  },
+  "AppManagedAttendanceMemberDto": {
+    "properties": {
+      "displayName": {
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+      "memberNo": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "memberNo",
+      "displayName",
+    ],
+    "type": "object",
+  },
+  "AppManagedAttendanceRecordDto": {
+    "properties": {
+      "attendanceStatusCode": {
+        "type": "string",
+      },
+      "checkInAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "checkOutAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "contributionPoints": {
+        "nullable": true,
+        "type": "string",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+      "member": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppManagedAttendanceMemberDto",
+          },
+        ],
+        "nullable": true,
+        "type": "object",
+      },
+      "memberId": {
+        "type": "string",
+      },
+      "note": {
+        "nullable": true,
+        "type": "string",
+      },
+      "registrationId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "roleCode": {
+        "type": "string",
+      },
+      "serviceHours": {
+        "type": "string",
+      },
+      "sheetId": {
+        "type": "string",
+      },
+      "updatedAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "sheetId",
+      "memberId",
+      "member",
+      "roleCode",
+      "checkInAt",
+      "checkOutAt",
+      "serviceHours",
+      "attendanceStatusCode",
+      "note",
+      "registrationId",
+      "contributionPoints",
+      "createdAt",
+      "updatedAt",
+    ],
+    "type": "object",
+  },
+  "AppManagedAttendanceRecordInputDto": {
+    "properties": {
+      "attendanceStatusCode": {
+        "maxLength": 64,
+        "type": "string",
+      },
+      "checkInAt": {
+        "type": "string",
+      },
+      "checkOutAt": {
+        "type": "string",
+      },
+      "memberId": {
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "note": {
+        "maxLength": 500,
+        "type": "string",
+      },
+      "registrationId": {
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "roleCode": {
+        "maxLength": 64,
+        "type": "string",
+      },
+      "serviceHours": {
+        "type": "number",
+      },
+    },
+    "required": [
+      "memberId",
+      "roleCode",
+      "checkInAt",
+      "checkOutAt",
+      "attendanceStatusCode",
+    ],
+    "type": "object",
+  },
+  "AppManagedAttendanceSheetDetailDto": {
+    "properties": {
+      "records": {
+        "items": {
+          "$ref": "#/components/schemas/AppManagedAttendanceRecordDto",
+        },
+        "type": "array",
+      },
+      "sheet": {
+        "$ref": "#/components/schemas/AppManagedAttendanceSheetDto",
+      },
+    },
+    "required": [
+      "sheet",
+      "records",
+    ],
+    "type": "object",
+  },
+  "AppManagedAttendanceSheetDraftDto": {
+    "properties": {
+      "absentRegistrations": {
+        "items": {
+          "$ref": "#/components/schemas/AppManagedAttendanceDraftAbsentDto",
+        },
+        "type": "array",
+      },
+      "activityId": {
+        "type": "string",
+      },
+      "flags": {
+        "items": {
+          "$ref": "#/components/schemas/AppManagedAttendanceDraftFlagDto",
+        },
+        "type": "array",
+      },
+      "records": {
+        "items": {
+          "$ref": "#/components/schemas/AppManagedAttendanceDraftRecordDto",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "activityId",
+      "records",
+      "flags",
+      "absentRegistrations",
+    ],
+    "type": "object",
+  },
+  "AppManagedAttendanceSheetDto": {
+    "properties": {
+      "activityId": {
+        "type": "string",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "finalReviewNote": {
+        "nullable": true,
+        "type": "string",
+      },
+      "finalReviewedAt": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "finalReviewerUserId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+      "lastSubmittedAt": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "lastSubmittedByUserId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "returnNote": {
+        "nullable": true,
+        "type": "string",
+      },
+      "returnedAt": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "returnedByUserId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "returnedFromStageCode": {
+        "enum": [
+          "first",
+          "final",
+        ],
+        "nullable": true,
+        "type": "string",
+      },
+      "reviewNote": {
+        "nullable": true,
+        "type": "string",
+      },
+      "reviewedAt": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "reviewerUserId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "statusCode": {
+        "enum": [
+          "pending",
+          "pending_final_review",
+          "returned",
+          "approved",
+          "rejected",
+          "final_rejected",
+        ],
+        "type": "string",
+      },
+      "submittedAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "submitterUserId": {
+        "type": "string",
+      },
+      "updatedAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "version": {
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "activityId",
+      "submitterUserId",
+      "submittedAt",
+      "statusCode",
+      "reviewerUserId",
+      "reviewedAt",
+      "reviewNote",
+      "finalReviewerUserId",
+      "finalReviewedAt",
+      "finalReviewNote",
+      "lastSubmittedByUserId",
+      "lastSubmittedAt",
+      "returnedByUserId",
+      "returnedAt",
+      "returnNote",
+      "returnedFromStageCode",
+      "version",
+      "createdAt",
+      "updatedAt",
+    ],
+    "type": "object",
+  },
+  "AppManagedAttendanceSheetListItemDto": {
+    "properties": {
+      "activityId": {
+        "type": "string",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+      "reviewedAt": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "statusCode": {
+        "enum": [
+          "pending",
+          "pending_final_review",
+          "returned",
+          "approved",
+          "rejected",
+          "final_rejected",
+        ],
+        "type": "string",
+      },
+      "submittedAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "submitterUserId": {
+        "type": "string",
+      },
+      "version": {
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "activityId",
+      "submitterUserId",
+      "submittedAt",
+      "statusCode",
+      "reviewedAt",
+      "version",
+      "createdAt",
     ],
     "type": "object",
   },
@@ -5118,6 +5624,42 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "主键(cuid)",
         "type": "string",
       },
+      "lastSubmittedAt": {
+        "description": "最近一次提交或重提时间",
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "lastSubmittedByUserId": {
+        "description": "最近一次提交或重提人 User.id",
+        "nullable": true,
+        "type": "string",
+      },
+      "returnNote": {
+        "description": "退回修改原因",
+        "nullable": true,
+        "type": "string",
+      },
+      "returnedAt": {
+        "description": "最近退回时间",
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "returnedByUserId": {
+        "description": "最近退回操作人 User.id",
+        "nullable": true,
+        "type": "string",
+      },
+      "returnedFromStageCode": {
+        "description": "退回阶段(first 或 final)",
+        "enum": [
+          "first",
+          "final",
+        ],
+        "nullable": true,
+        "type": "string",
+      },
       "reviewNote": {
         "description": "APD 一级审核备注 / 驳回理由",
         "nullable": true,
@@ -5134,10 +5676,11 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "object",
       },
       "statusCode": {
-        "description": "审核状态字典 code(attendance_sheet_status,批次 4-B 升级为 5 态;**approved 语义为终审通过**)",
+        "description": "审核状态字典 code(attendance_sheet_status,6 态;**approved 语义为终审通过**)",
         "enum": [
           "pending",
           "pending_final_review",
+          "returned",
           "approved",
           "rejected",
           "final_rejected",
@@ -5169,6 +5712,12 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "submitterUserId",
       "submittedAt",
       "statusCode",
+      "lastSubmittedByUserId",
+      "lastSubmittedAt",
+      "returnedByUserId",
+      "returnedAt",
+      "returnNote",
+      "returnedFromStageCode",
       "version",
       "createdAt",
       "updatedAt",
@@ -6818,6 +7367,20 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "required": [
       "name",
       "attendanceRoleCode",
+    ],
+    "type": "object",
+  },
+  "CreateAppManagedAttendanceSheetDto": {
+    "properties": {
+      "records": {
+        "items": {
+          "$ref": "#/components/schemas/AppManagedAttendanceRecordInputDto",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "records",
     ],
     "type": "object",
   },
@@ -13899,6 +14462,14 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "ResubmitAppManagedAttendanceSheetDto": {
+    "properties": {},
+    "type": "object",
+  },
+  "ResubmitAttendanceSheetDto": {
+    "properties": {},
+    "type": "object",
+  },
   "ReturnActivityPublishReviewDto": {
     "properties": {
       "reviewNote": {
@@ -13909,6 +14480,19 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     },
     "required": [
       "reviewNote",
+    ],
+    "type": "object",
+  },
+  "ReturnAttendanceSheetDto": {
+    "properties": {
+      "returnNote": {
+        "description": "退回修改原因",
+        "maxLength": 500,
+        "type": "string",
+      },
+    },
+    "required": [
+      "returnNote",
     ],
     "type": "object",
   },
@@ -15662,6 +16246,17 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "format": "date-time",
         "nullable": true,
         "type": "string",
+      },
+    },
+    "type": "object",
+  },
+  "UpdateAppManagedAttendanceSheetDto": {
+    "properties": {
+      "records": {
+        "items": {
+          "$ref": "#/components/schemas/AppManagedAttendanceRecordInputDto",
+        },
+        "type": "array",
       },
     },
     "type": "object",
@@ -29584,7 +30179,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "编辑 pending Sheet(D38:后端生成 previousSnapshot + version+1;旧 records 软删 + 新 records 创建;approved/rejected/pending_final_review/final_rejected 拒绝) [rbac: attendance.update.sheet]",
+      "summary": "编辑 pending/returned Sheet(D38:后端生成 previousSnapshot + version+1;旧 records 软删 + 新 records 创建;其余状态拒绝) [rbac: attendance.update.sheet]",
       "tags": [
         "Admin - Attendances",
       ],
@@ -29721,9 +30316,10 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "30100: 无权执行此操作",
+                    "description": "30100: 无权执行此操作; 22081: 不能一审自己提交或重提的考勤单",
                     "enum": [
                       30100,
+                      22081,
                     ],
                     "example": 30100,
                     "type": "integer",
@@ -29747,7 +30343,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "无权执行此操作(code=30100)",
+          "description": "无权执行此操作(code=30100) / 不能一审自己提交或重提的考勤单(code=22081)",
         },
         "404": {
           "content": {
@@ -29961,9 +30557,11 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "30100: 无权执行此操作",
+                    "description": "30100: 无权执行此操作; 22074: 不能终审自己提交的考勤单据; 22075: 一级审核人不得再终审同一张考勤单据",
                     "enum": [
                       30100,
+                      22074,
+                      22075,
                     ],
                     "example": 30100,
                     "type": "integer",
@@ -29987,7 +30585,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "无权执行此操作(code=30100)",
+          "description": "无权执行此操作(code=30100) / 不能终审自己提交的考勤单据(code=22074) / 一级审核人不得再终审同一张考勤单据(code=22075)",
         },
         "404": {
           "content": {
@@ -30200,9 +30798,11 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "30100: 无权执行此操作",
+                    "description": "30100: 无权执行此操作; 22074: 不能终审自己提交的考勤单据; 22075: 一级审核人不得再终审同一张考勤单据",
                     "enum": [
                       30100,
+                      22074,
+                      22075,
                     ],
                     "example": 30100,
                     "type": "integer",
@@ -30226,7 +30826,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "无权执行此操作(code=30100)",
+          "description": "无权执行此操作(code=30100) / 不能终审自己提交的考勤单据(code=22074) / 一级审核人不得再终审同一张考勤单据(code=22075)",
         },
         "404": {
           "content": {
@@ -30304,6 +30904,248 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
         },
       ],
       "summary": "终审驳回(ADMIN 级终审沿 P1-5 方案 A,部门级细分挂 Slow-3;pending_final_review → final_rejected;finalReviewNote 必填;records 跟随软删;**不触发** attendance.recorded) [rbac: attendance.final-reject.sheet]",
+      "tags": [
+        "Admin - Attendances",
+      ],
+    },
+  },
+  "/api/admin/v1/attendance-sheets/{id}/final-return": {
+    "post": {
+      "operationId": "AttendanceSheetsResourceController_finalReturn",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ReturnAttendanceSheetDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AttendanceSheetResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 22082: 退回修改必须填写原因",
+                    "enum": [
+                      40000,
+                      22082,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 退回修改必须填写原因(code=22082)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作; 22074: 不能终审自己提交的考勤单据; 22075: 一级审核人不得再终审同一张考勤单据",
+                    "enum": [
+                      30100,
+                      22074,
+                      22075,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100) / 不能终审自己提交的考勤单据(code=22074) / 一级审核人不得再终审同一张考勤单据(code=22075)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "22001: 考勤单据不存在",
+                    "enum": [
+                      22001,
+                    ],
+                    "example": 22001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "考勤单据不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "考勤单据不存在(code=22001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "22045: 考勤单据当前状态不允许终审操作",
+                    "enum": [
+                      22045,
+                    ],
+                    "example": 22045,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "考勤单据当前状态不允许终审操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "考勤单据当前状态不允许终审操作(code=22045)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "终审退回修改(pending_final_review → returned;保留 records;执行自审与同人约束) [rbac: attendance.final-return.sheet]",
       "tags": [
         "Admin - Attendances",
       ],
@@ -30440,9 +31282,10 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "30100: 无权执行此操作",
+                    "description": "30100: 无权执行此操作; 22081: 不能一审自己提交或重提的考勤单",
                     "enum": [
                       30100,
+                      22081,
                     ],
                     "example": 30100,
                     "type": "integer",
@@ -30466,7 +31309,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "无权执行此操作(code=30100)",
+          "description": "无权执行此操作(code=30100) / 不能一审自己提交或重提的考勤单(code=22081)",
         },
         "404": {
           "content": {
@@ -30782,6 +31625,486 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
         },
       ],
       "summary": "撤回已终审通过的考勤单(approved → pending;保留 records,清空一审/终审责任字段;不发通知) [rbac: attendance.reopen.sheet]",
+      "tags": [
+        "Admin - Attendances",
+      ],
+    },
+  },
+  "/api/admin/v1/attendance-sheets/{id}/resubmit": {
+    "post": {
+      "operationId": "AttendanceSheetsResourceController_resubmit",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ResubmitAttendanceSheetDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AttendanceSheetResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "22001: 考勤单据不存在",
+                    "enum": [
+                      22001,
+                    ],
+                    "example": 22001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "考勤单据不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "考勤单据不存在(code=22001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "22083: 只有退回修改的考勤单可以重新提交",
+                    "enum": [
+                      22083,
+                    ],
+                    "example": 22083,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "只有退回修改的考勤单可以重新提交",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "只有退回修改的考勤单可以重新提交(code=22083)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "退回考勤单重提(returned → pending;保留 records;清空审核/退回字段;version+1;限活动考勤责任人或 SUPER_ADMIN) [rbac: attendance.update.sheet]",
+      "tags": [
+        "Admin - Attendances",
+      ],
+    },
+  },
+  "/api/admin/v1/attendance-sheets/{id}/return": {
+    "post": {
+      "operationId": "AttendanceSheetsResourceController_firstReturn",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ReturnAttendanceSheetDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AttendanceSheetResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 22082: 退回修改必须填写原因",
+                    "enum": [
+                      40000,
+                      22082,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 退回修改必须填写原因(code=22082)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作; 22081: 不能一审自己提交或重提的考勤单",
+                    "enum": [
+                      30100,
+                      22081,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100) / 不能一审自己提交或重提的考勤单(code=22081)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "22001: 考勤单据不存在",
+                    "enum": [
+                      22001,
+                    ],
+                    "example": 22001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "考勤单据不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "考勤单据不存在(code=22001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "22030: 考勤单据当前状态不允许此操作",
+                    "enum": [
+                      22030,
+                    ],
+                    "example": 22030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "考勤单据当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "考勤单据当前状态不允许此操作(code=22030)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "一级审核退回修改(pending → returned;保留 records;记录退回人、阶段与原因) [rbac: attendance.return.sheet]",
       "tags": [
         "Admin - Attendances",
       ],
@@ -73686,6 +75009,1833 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "App 发起人修改 draft 活动 [auth]",
       "tags": [
         "Mobile - Managed Activities",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/attendance-sheet-draft": {
+    "get": {
+      "operationId": "AppManagedActivityAttendancesController_draft",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppManagedAttendanceSheetDraftDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "App 活动考勤责任人生成考勤提交草稿（只读不落库） [auth]",
+      "tags": [
+        "Mobile - Managed Activity Attendances",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/attendance-sheets": {
+    "get": {
+      "operationId": "AppManagedActivityAttendancesController_listSheets",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "in": "query",
+          "name": "statusCode",
+          "required": false,
+          "schema": {
+            "enum": [
+              "pending",
+              "pending_final_review",
+              "returned",
+              "approved",
+              "rejected",
+              "final_rejected",
+            ],
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/AppManagedAttendanceSheetListItemDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "App 活动考勤责任人查看考勤单列表 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Attendances",
+      ],
+    },
+    "post": {
+      "operationId": "AppManagedActivityAttendancesController_submit",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CreateAppManagedAttendanceSheetDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppManagedAttendanceSheetDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "App 活动考勤责任人提交考勤单 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Attendances",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}": {
+    "delete": {
+      "operationId": "AppManagedActivityAttendancesController_softDelete",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "in": "path",
+          "name": "sheetId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppManagedAttendanceSheetDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "22001: 考勤单据不存在",
+                    "enum": [
+                      22001,
+                    ],
+                    "example": 22001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "考勤单据不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "考勤单据不存在(code=22001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "22030: 考勤单据当前状态不允许此操作",
+                    "enum": [
+                      22030,
+                    ],
+                    "example": 22030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "考勤单据当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "考勤单据当前状态不允许此操作(code=22030)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "App 活动考勤责任人软删 pending 考勤单 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Attendances",
+      ],
+    },
+    "get": {
+      "operationId": "AppManagedActivityAttendancesController_detail",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "in": "path",
+          "name": "sheetId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppManagedAttendanceSheetDetailDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "22001: 考勤单据不存在",
+                    "enum": [
+                      22001,
+                    ],
+                    "example": 22001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "考勤单据不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "考勤单据不存在(code=22001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "App 活动考勤责任人查看考勤单与 records 详情 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Attendances",
+      ],
+    },
+    "patch": {
+      "operationId": "AppManagedActivityAttendancesController_edit",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "in": "path",
+          "name": "sheetId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateAppManagedAttendanceSheetDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppManagedAttendanceSheetDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "22001: 考勤单据不存在",
+                    "enum": [
+                      22001,
+                    ],
+                    "example": 22001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "考勤单据不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "考勤单据不存在(code=22001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "22030: 考勤单据当前状态不允许此操作",
+                    "enum": [
+                      22030,
+                    ],
+                    "example": 22030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "考勤单据当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "考勤单据当前状态不允许此操作(code=22030)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "App 活动考勤责任人编辑 pending 或 returned 考勤单 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Attendances",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}/resubmit": {
+    "post": {
+      "operationId": "AppManagedActivityAttendancesController_resubmit",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "in": "path",
+          "name": "sheetId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ResubmitAppManagedAttendanceSheetDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppManagedAttendanceSheetDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "22001: 考勤单据不存在",
+                    "enum": [
+                      22001,
+                    ],
+                    "example": 22001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "考勤单据不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "考勤单据不存在(code=22001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "22083: 只有退回修改的考勤单可以重新提交",
+                    "enum": [
+                      22083,
+                    ],
+                    "example": 22083,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "只有退回修改的考勤单可以重新提交",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "只有退回修改的考勤单可以重新提交(code=22083)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "App 活动考勤责任人重提 returned 考勤单 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Attendances",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/check-ins": {
+    "get": {
+      "operationId": "AppManagedActivityAttendancesController_listCheckIns",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/AppManagedActivityCheckInDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "App 活动考勤责任人分页查看 GPS 打卡证据 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Attendances",
       ],
     },
   },

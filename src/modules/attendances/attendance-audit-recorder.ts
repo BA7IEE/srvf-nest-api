@@ -6,7 +6,8 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 
 // V2 第一阶段批次 6 attendance audit assembly 单一职责类(沿 PR #176 / #177 / #182 /
 // PR #184 characterization 锁定的 8 处 audit 行为 + audit failure rollback 零变化抽出;
-// v0.47.0 F2 additive 承接第 9 处 reopen audit;敏感读取统一批次再承接 3 处 read audit)。
+// v0.47.0 F2 additive 承接第 9 处 reopen audit；v0.61.0 PR-8 再承接 return /
+// final-return / resubmit，敏感读取统一批次另承接 3 处 read audit)。
 //
 // 三抽完成后(PR #178 ContributionCalculator / PR #180 TimeOverlapPolicy /
 // PR #183 AttendanceSheetStateMachine),`attendances.service.ts` 剩余最大单一职责是
@@ -20,7 +21,7 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 //   与 audit snapshot 同源,沿原 buildSnapshot)
 // - ❌ 不开事务 / 不持有 PrismaService / 不做 DB 查询 / 不写业务表
 // - ❌ 不改 audit event / resourceType / resourceId / actor / meta
-// - ❌ 不改 before / after / extra 字段语义;沿 8 路径现状逐字保留
+// - ❌ 不改既有 before / after / extra 字段语义；新增三路径只复用 umbrella event
 //
 // tx 由调用方($transaction 内)透传给 `auditLogs.log({ ..., tx })`;事务边界一致,
 // audit 写失败仍由 PrismaService.$transaction 隐式回滚(沿 D-S7 红线 / PR #184
@@ -47,6 +48,12 @@ type AuditSheetSnapshotInput = {
   finalReviewerUserId: string | null;
   finalReviewedAt: Date | null;
   finalReviewNote: string | null;
+  lastSubmittedByUserId: string | null;
+  lastSubmittedAt: Date | null;
+  returnedByUserId: string | null;
+  returnedAt: Date | null;
+  returnNote: string | null;
+  returnedFromStageCode: string | null;
   version: number;
 };
 
@@ -89,6 +96,12 @@ export class AttendanceAuditRecorder {
         finalReviewerUserId: sheet.finalReviewerUserId,
         finalReviewedAt: sheet.finalReviewedAt?.toISOString() ?? null,
         finalReviewNote: sheet.finalReviewNote,
+        lastSubmittedByUserId: sheet.lastSubmittedByUserId,
+        lastSubmittedAt: sheet.lastSubmittedAt?.toISOString() ?? null,
+        returnedByUserId: sheet.returnedByUserId,
+        returnedAt: sheet.returnedAt?.toISOString() ?? null,
+        returnNote: sheet.returnNote,
+        returnedFromStageCode: sheet.returnedFromStageCode,
         version: sheet.version,
       },
     };
@@ -296,7 +309,7 @@ export class AttendanceAuditRecorder {
     afterSheet: AuditSheetSnapshotInput;
     actorUserId: string;
     actorRoleSnap: Role;
-    action: 'approve' | 'reject';
+    action: 'approve' | 'reject' | 'return';
     priorStatusCode: string;
     nextStatusCode: string;
     recordsCount?: number;
@@ -341,7 +354,7 @@ export class AttendanceAuditRecorder {
     afterSheet: AuditSheetSnapshotInput;
     actorUserId: string;
     actorRoleSnap: Role;
-    action: 'final-approve' | 'final-reject';
+    action: 'final-approve' | 'final-reject' | 'final-return';
     priorStatusCode: string;
     nextStatusCode: string;
     recordsCount: number;
@@ -409,6 +422,38 @@ export class AttendanceAuditRecorder {
         priorStatusCode: args.priorStatusCode,
         nextStatusCode: args.nextStatusCode,
         recordsCount: args.records.length,
+      },
+      tx: args.tx,
+    });
+  }
+
+  // ============ returned → pending 重提 ============
+  // 复用 attendance-sheet.edit umbrella event；before/after 均保留 records，extra.operation=resubmit。
+  async logResubmit(args: {
+    sheetId: string;
+    beforeSheet: AuditSheetSnapshotInput;
+    afterSheet: AuditSheetSnapshotInput;
+    records: AuditRecordSnapshotInput[];
+    actorUserId: string;
+    actorRoleSnap: Role;
+    auditMeta: AuditMeta;
+    tx: PrismaTx;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: 'attendance-sheet.edit',
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: args.sheetId,
+      meta: args.auditMeta,
+      before: this.toSheetAuditSnapshot(args.beforeSheet, args.records),
+      after: this.toSheetAuditSnapshot(args.afterSheet, args.records),
+      extra: {
+        operation: 'resubmit',
+        priorStatusCode: args.beforeSheet.statusCode,
+        nextStatusCode: args.afterSheet.statusCode,
+        recordsCount: args.records.length,
+        newVersion: args.afterSheet.version,
       },
       tx: args.tx,
     });

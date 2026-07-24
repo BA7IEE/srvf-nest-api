@@ -1,108 +1,103 @@
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { ATTENDANCE_SHEET_STATUS } from './attendances.dto';
 import {
+  ATTENDANCE_SHEET_TRANSITION_ACTIONS,
   AttendanceSheetStateMachine,
   type AttendanceSheetTransitionAction,
 } from './attendance-sheet-state-machine';
 
-// AttendanceSheetStateMachine 组件级全矩阵 unit spec(B 档 test-only;沿 PR #176/#181/#182 characterization)。
-// 行为权威仍是 attendances-state-transition / attendances-reject-transition /
-// attendances-status-guards e2e(HTTP 层真实状态流转);本 spec 锁纯决策表本身:
-// 5 态 × 7 action = 35 判定点 + 未知态 × 7 = 42 全矩阵。
-// 本状态机最有价值的锁定点是 **wrong-state 错误码三分映射**:
-//   - edit/softDelete 按终态细分:approved → 22040 / rejected → 22041 / final_rejected → 22043,
-//     pending_final_review 与未知态 → 22030(STATUS_INVALID);
-//   - approve/reject(一审)wrong state → 22030;
-//   - finalApprove/finalReject(终审)wrong state → 22045(FINAL_REVIEW_STATUS_INVALID)。
-//   - reopen 仅 approved → pending;wrong state → 22030。
-// 终审授权语义(方案 A,2026-06-10 拍板)不在状态机内:finalReviewerUserId 仅审计记录。
-// 与 attendances.service.spec.ts 边界互补(该 spec mock 状态机返回值,不复刻内部矩阵)。
-
-const { PENDING, PENDING_FINAL_REVIEW, APPROVED, REJECTED, FINAL_REJECTED } =
+// PR-8 returned 闭环全矩阵：6 态 × 10 action + 未知态 × 10 = 70 判定点。
+const { PENDING, PENDING_FINAL_REVIEW, RETURNED, APPROVED, REJECTED, FINAL_REJECTED } =
   ATTENDANCE_SHEET_STATUS;
-const STATUSES = [PENDING, PENDING_FINAL_REVIEW, APPROVED, REJECTED, FINAL_REJECTED] as const;
+const STATUSES = [
+  PENDING,
+  PENDING_FINAL_REVIEW,
+  RETURNED,
+  APPROVED,
+  REJECTED,
+  FINAL_REJECTED,
+] as const;
 const UNKNOWN = 'garbage';
 
 const allow = (nextStatusCode: string) => ({ allowed: true, nextStatusCode });
 const deny = (biz: BizCodeEntry) => ({ allowed: false, biz });
 
+function nonEditableBiz(status: string): BizCodeEntry {
+  switch (status) {
+    case APPROVED:
+      return BizCode.ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE;
+    case REJECTED:
+      return BizCode.ATTENDANCE_SHEET_REJECTED_NOT_EDITABLE;
+    case FINAL_REJECTED:
+      return BizCode.ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE;
+    default:
+      return BizCode.ATTENDANCE_SHEET_STATUS_INVALID;
+  }
+}
+
+function expected(action: AttendanceSheetTransitionAction, status: string) {
+  switch (action) {
+    case 'edit':
+      return status === PENDING || status === RETURNED
+        ? allow(status)
+        : deny(nonEditableBiz(status));
+    case 'softDelete':
+      return status === PENDING ? allow(PENDING) : deny(nonEditableBiz(status));
+    case 'approve':
+      return status === PENDING
+        ? allow(PENDING_FINAL_REVIEW)
+        : deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
+    case 'firstReturn':
+      return status === PENDING ? allow(RETURNED) : deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
+    case 'reject':
+      return status === PENDING ? allow(REJECTED) : deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
+    case 'finalApprove':
+      return status === PENDING_FINAL_REVIEW
+        ? allow(APPROVED)
+        : deny(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
+    case 'finalReturn':
+      return status === PENDING_FINAL_REVIEW
+        ? allow(RETURNED)
+        : deny(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
+    case 'finalReject':
+      return status === PENDING_FINAL_REVIEW
+        ? allow(FINAL_REJECTED)
+        : deny(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
+    case 'resubmit':
+      return status === RETURNED
+        ? allow(PENDING)
+        : deny(BizCode.ATTENDANCE_SHEET_RESUBMIT_STATUS_INVALID);
+    case 'reopen':
+      return status === APPROVED ? allow(PENDING) : deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
+  }
+}
+
 describe('AttendanceSheetStateMachine', () => {
-  let machine: AttendanceSheetStateMachine;
+  const machine = new AttendanceSheetStateMachine();
+  const cases = ATTENDANCE_SHEET_TRANSITION_ACTIONS.flatMap((action) =>
+    [...STATUSES, UNKNOWN].map((status) => [action, status, expected(action, status)] as const),
+  );
 
-  beforeEach(() => {
-    machine = new AttendanceSheetStateMachine();
+  it.each(cases)('%s @ %s', (action, current, decision) => {
+    expect(machine.decide(action, current)).toEqual(decision);
   });
 
-  type Case = [
-    action: AttendanceSheetTransitionAction,
-    current: string,
-    expected: ReturnType<typeof allow> | ReturnType<typeof deny>,
-  ];
-
-  // edit 与 softDelete 共用 rejectEditLike 判定:仅 pending 可改(next echo pending),
-  // 已进入审阅链 / 终态后按状态细分错误码。
-  const editLikeExpected: Array<[current: string, expected: Case[2]]> = [
-    [PENDING, allow(PENDING)],
-    [PENDING_FINAL_REVIEW, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
-    [APPROVED, deny(BizCode.ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE)],
-    [REJECTED, deny(BizCode.ATTENDANCE_SHEET_REJECTED_NOT_EDITABLE)],
-    [FINAL_REJECTED, deny(BizCode.ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE)],
-    [UNKNOWN, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
-  ];
-
-  const cases: Case[] = [
-    ...editLikeExpected.map(([current, expected]): Case => ['edit', current, expected]),
-    ...editLikeExpected.map(([current, expected]): Case => ['softDelete', current, expected]),
-    // approve(一审):仅 pending → pending_final_review;wrong state 统一 22030
-    ['approve', PENDING, allow(PENDING_FINAL_REVIEW)],
-    ['approve', PENDING_FINAL_REVIEW, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
-    ['approve', APPROVED, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
-    ['approve', REJECTED, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
-    ['approve', FINAL_REJECTED, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
-    ['approve', UNKNOWN, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
-    // reject(一审):仅 pending → rejected;wrong state 统一 22030
-    ['reject', PENDING, allow(REJECTED)],
-    ['reject', PENDING_FINAL_REVIEW, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
-    ['reject', APPROVED, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
-    ['reject', REJECTED, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
-    ['reject', FINAL_REJECTED, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
-    ['reject', UNKNOWN, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
-    // finalApprove(终审):仅 pending_final_review → approved;wrong state 用 22045
-    ['finalApprove', PENDING_FINAL_REVIEW, allow(APPROVED)],
-    ['finalApprove', PENDING, deny(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID)],
-    ['finalApprove', APPROVED, deny(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID)],
-    ['finalApprove', REJECTED, deny(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID)],
-    ['finalApprove', FINAL_REJECTED, deny(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID)],
-    ['finalApprove', UNKNOWN, deny(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID)],
-    // finalReject(终审):仅 pending_final_review → final_rejected;wrong state 用 22045
-    ['finalReject', PENDING_FINAL_REVIEW, allow(FINAL_REJECTED)],
-    ['finalReject', PENDING, deny(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID)],
-    ['finalReject', APPROVED, deny(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID)],
-    ['finalReject', REJECTED, deny(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID)],
-    ['finalReject', FINAL_REJECTED, deny(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID)],
-    ['finalReject', UNKNOWN, deny(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID)],
-    // reopen(撤回终审):仅 approved → pending;wrong state 统一 22030
-    ['reopen', APPROVED, allow(PENDING)],
-    ['reopen', PENDING, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
-    ['reopen', PENDING_FINAL_REVIEW, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
-    ['reopen', REJECTED, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
-    ['reopen', FINAL_REJECTED, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
-    ['reopen', UNKNOWN, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
-  ];
-
-  it.each(cases)('%s @ %s', (action, current, expected) => {
-    expect(machine.decide(action, current)).toEqual(expected);
+  it('矩阵穷尽(10 action × (6 态 + 未知态) = 70)', () => {
+    expect(cases).toHaveLength(10 * (STATUSES.length + 1));
   });
 
-  it('矩阵穷尽(7 action × (5 态 + 未知态) = 42)', () => {
-    expect(cases).toHaveLength(7 * (STATUSES.length + 1));
+  it('returned 只可编辑或重提；记录不被删除的语义由 service/e2e 锁定', () => {
+    const allowed = ATTENDANCE_SHEET_TRANSITION_ACTIONS.filter(
+      (action) => machine.decide(action, RETURNED).allowed,
+    );
+    expect(allowed).toEqual(['edit', 'resubmit']);
   });
 
-  it('唯一可达 approved 的路径是 finalApprove @ pending_final_review(终审两段制)', () => {
+  it('唯一可达 approved 的路径是 finalApprove @ pending_final_review', () => {
     const reachApproved = cases
       .filter(([action, current]) => {
-        const d = machine.decide(action, current);
-        return d.allowed && d.nextStatusCode === APPROVED;
+        const decision = machine.decide(action, current);
+        return decision.allowed && decision.nextStatusCode === APPROVED;
       })
       .map(([action, current]) => `${action}@${current}`);
     expect(reachApproved).toEqual([`finalApprove@${PENDING_FINAL_REVIEW}`]);

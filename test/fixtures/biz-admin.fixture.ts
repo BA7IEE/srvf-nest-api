@@ -7,8 +7,8 @@ import { PrismaService } from '../../src/database/prisma.service';
 // 背景:test/setup/reset-db.ts 把 RBAC 4 表清空,prisma/seed.ts 的业务面码 + biz-admin
 // 角色不在 e2e 数据库里。本 fixture 在 spec 的 beforeAll 调用:
 // - seedBizAdminPermissionsAndRole:幂等 upsert 本 fixture 所需业务面码 + biz-admin 角色 + 对应绑定
-//   (`member.delete.record`〔D1=A 镜像,评审稿 §6〕+ 考勤终审/reopen 三码
-//   〔2026-07-03 摘码微刀:终审归 scoped 绑定 / SUPER_ADMIN 兜底〕进 Permission 表但**不**绑,
+//   (`member.delete.record`〔D1=A 镜像,评审稿 §6〕+ 新 return / 考勤终审 / reopen 五码
+//   〔一审/终审归 scoped 绑定或 SUPER_ADMIN 兜底〕进 Permission 表但**不**绑,
 //   与 prisma/seed.ts BIZ_ADMIN_EXCLUDED_CODES 同口径镜像)
 // - grantBizAdminToUser:给 user 绑 biz-admin
 // - revokeBizAdminFromUser:撤回 global 绑定
@@ -20,18 +20,21 @@ import { PrismaService } from '../../src/database/prisma.service';
 export interface BizAdminSeedResult {
   bizAdminRoleId: string;
   bizPermissionCount: number; // = seeded 业务面码数(动态 = 本 fixture 列表长度;勿硬编码,防漂移)
-  bizAdminRolePermissionCount: number; // = 绑定数(动态,过滤 member.delete.record + 终审/reopen 三码)
+  bizAdminRolePermissionCount: number; // = 绑定数(动态,过滤 member.delete.record + reviewer-only 五码)
 }
 
 // D1=A 镜像:members DELETE 仅 SUPER_ADMIN 短路;不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
 
-// 终审/reopen 三码不绑 biz-admin(终审面 = attendance-final-reviewer scoped 绑定
-// 或 SUPER_ADMIN 兜底);镜像 prisma/seed.ts BIZ_ADMIN_EXCLUDED_CODES 口径。
+// 新增 return 只归显式 attendance-first-reviewer；终审/reopen 四码只归
+// attendance-final-reviewer scoped 绑定或 SUPER_ADMIN 兜底。approve/reject 旧权限
+// 留到活动责任闭环 PR-11 contract 才摘，镜像当前 rollout 窗口。
 const BIZ_ADMIN_UNBOUND_CODES: ReadonlySet<string> = new Set([
   MEMBER_DELETE_RECORD_CODE,
+  'attendance.return.sheet',
   'attendance.final-approve.sheet',
   'attendance.final-reject.sheet',
+  'attendance.final-return.sheet',
   'attendance.reopen.sheet',
 ]);
 
@@ -192,7 +195,7 @@ const BIZ_PERMISSIONS = [
     action: 'reopen',
     resourceType: 'record',
   },
-  // ============ attendance 9 条(v0.47.0 +reopen)============
+  // ============ attendance 11 条(v0.61.0 +return/final-return)============
   {
     code: 'attendance.create.sheet',
     module: 'attendance',
@@ -225,6 +228,12 @@ const BIZ_PERMISSIONS = [
     resourceType: 'sheet',
   },
   {
+    code: 'attendance.return.sheet',
+    module: 'attendance',
+    action: 'return',
+    resourceType: 'sheet',
+  },
+  {
     code: 'attendance.final-approve.sheet',
     module: 'attendance',
     action: 'final-approve',
@@ -234,6 +243,12 @@ const BIZ_PERMISSIONS = [
     code: 'attendance.final-reject.sheet',
     module: 'attendance',
     action: 'final-reject',
+    resourceType: 'sheet',
+  },
+  {
+    code: 'attendance.final-return.sheet',
+    module: 'attendance',
+    action: 'final-return',
     resourceType: 'sheet',
   },
   {
@@ -369,7 +384,7 @@ export async function seedBizAdminPermissionsAndRole(
     select: { id: true, code: true },
   });
   // 绑给 biz-admin 时过滤 `member.delete.record`(仅 SUPER_ADMIN 短路;评审稿 §6)
-  // + 终审/reopen 三码(与 prisma/seed.ts 同口径)
+  // + 新 return / 终审 / reopen 码(与 prisma/seed.ts 当前 rollout 同口径)
   const bizAdminBindings = seeded.filter((p) => !BIZ_ADMIN_UNBOUND_CODES.has(p.code));
   await prisma.rolePermission.createMany({
     data: bizAdminBindings.map((p) => ({ roleId: bizAdmin.id, permissionId: p.id })),
