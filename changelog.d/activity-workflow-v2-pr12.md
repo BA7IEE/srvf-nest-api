@@ -1,0 +1,3 @@
+- 活动责任闭环 PR-12：draft 真实改组织在 Activity 行锁事务内复用统一发起资格策略，目标组织必须 ACTIVE、未软删、非根，持久化发起人必须是关联 ACTIVE 账号的正式队员；后台代建创建同步前置有效账号检查。
+- 已发布活动的普通 change proposal 禁止修改 `organizationId`，submit 与 approve（含旧或篡改 snapshot）双重复校并复用 `ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID`；同组织 proposal 保持兼容。
+- 本次仅完成代码侧上线阻断修复；未执行 production migration/seed、历史认领、真实 reviewer/owner 配置、fleet drain、deploy、release 或 tag。生产切换仍严格依赖 PR-10 runbook，禁止 true/false fleet 混跑。

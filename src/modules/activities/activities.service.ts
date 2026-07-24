@@ -558,13 +558,6 @@ export class ActivitiesService {
     } else if (!this.config.activityResponsibilityWorkflow.enabled) {
       throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
     }
-    const initiatorMemberId = this.config.activityResponsibilityWorkflow.enabled
-      ? await this.initiationPolicy.resolveInitiator(
-          currentUser,
-          dto.organizationId,
-          dto.initiatorMemberId,
-        )
-      : undefined;
     const startAt = new Date(dto.startAt);
     const endAt = new Date(dto.endAt);
     this.assertStartEndValid(startAt, endAt);
@@ -574,6 +567,14 @@ export class ActivitiesService {
     );
 
     return this.prisma.$transaction(async (tx) => {
+      const initiatorMemberId = this.config.activityResponsibilityWorkflow.enabled
+        ? await this.initiationPolicy.resolveInitiator(
+            currentUser,
+            dto.organizationId,
+            dto.initiatorMemberId,
+            tx,
+          )
+        : undefined;
       await this.assertDictItemValid(
         DICT_TYPE_ACTIVITY_TYPE,
         dto.activityTypeCode,
@@ -716,7 +717,19 @@ export class ActivitiesService {
         );
       }
       if (dto.organizationId !== undefined) {
-        await this.assertOrganizationValidAndNonRoot(dto.organizationId, tx);
+        if (
+          this.config.activityResponsibilityWorkflow.enabled &&
+          dto.organizationId !== current.organizationId
+        ) {
+          await this.initiationPolicy.assertInitiatorEligible(
+            currentUser,
+            dto.organizationId,
+            current.initiatorMemberId,
+            tx,
+          );
+        } else {
+          await this.assertOrganizationValidAndNonRoot(dto.organizationId, tx);
+        }
       }
 
       // 起止时间 + 报名截止复校(任一字段变化时,用合并后值)

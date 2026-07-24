@@ -1,5 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { MemberStatus, MembershipStatus, OrganizationStatus, Role } from '@prisma/client';
+import {
+  MemberStatus,
+  MembershipStatus,
+  OrganizationStatus,
+  Role,
+  UserStatus,
+  type PrismaClient,
+} from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -17,6 +24,8 @@ const FORMAL_GRADES = new Set([
   'level-7',
 ]);
 
+type InitiationClient = Pick<PrismaClient, 'member' | 'organization'>;
+
 @Injectable()
 export class ActivityInitiationPolicy {
   constructor(
@@ -29,6 +38,7 @@ export class ActivityInitiationPolicy {
     user: CurrentUserPayload,
     targetOrganizationId: string,
     requestedMemberId?: string,
+    client: InitiationClient = this.prisma,
   ): Promise<string> {
     const memberId = requestedMemberId ?? user.memberId;
     if (!memberId) throw new BizException(BizCode.ACTIVITY_INITIATOR_NOT_FORMAL);
@@ -41,15 +51,47 @@ export class ActivityInitiationPolicy {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
     }
 
+    await this.assertInitiatorEligible(user, targetOrganizationId, memberId, client);
+    return memberId;
+  }
+
+  async assertInitiatorEligible(
+    user: CurrentUserPayload,
+    targetOrganizationId: string,
+    initiatorMemberId: string | null,
+    client: InitiationClient = this.prisma,
+  ): Promise<void> {
+    if (!initiatorMemberId) {
+      throw new BizException(BizCode.ACTIVITY_INITIATOR_NOT_FORMAL);
+    }
+    const organization = await client.organization.findFirst({
+      where: { id: targetOrganizationId, deletedAt: null },
+      select: { status: true, parentId: true },
+    });
+    if (!organization) {
+      throw new BizException(BizCode.ORGANIZATION_NOT_FOUND);
+    }
+    if (organization.status !== OrganizationStatus.ACTIVE) {
+      throw new BizException(BizCode.ORGANIZATION_INACTIVE);
+    }
+    if (organization.parentId === null) {
+      throw new BizException(BizCode.ACTIVITY_ORGANIZATION_ROOT_FORBIDDEN);
+    }
+
     const now = new Date();
-    const member = await this.prisma.member.findFirst({
+    const member = await client.member.findFirst({
       where: {
-        id: memberId,
+        id: initiatorMemberId,
         status: MemberStatus.ACTIVE,
         deletedAt: null,
       },
       select: {
         gradeCode: true,
+        users: {
+          where: { status: UserStatus.ACTIVE, deletedAt: null },
+          select: { id: true },
+          take: 1,
+        },
         memberOrganizationMemberships: {
           where: {
             deletedAt: null,
@@ -66,7 +108,12 @@ export class ActivityInitiationPolicy {
         },
       },
     });
-    if (!member || !member.gradeCode || !FORMAL_GRADES.has(member.gradeCode)) {
+    if (
+      !member ||
+      !member.gradeCode ||
+      !FORMAL_GRADES.has(member.gradeCode) ||
+      member.users.length === 0
+    ) {
       throw new BizException(BizCode.ACTIVITY_INITIATOR_NOT_FORMAL);
     }
     if (
@@ -74,7 +121,7 @@ export class ActivityInitiationPolicy {
         (membership) => membership.organizationId === targetOrganizationId,
       )
     ) {
-      return memberId;
+      return;
     }
 
     const decision = await this.authz.explain(user, 'activity.create.cross-org', {
@@ -82,6 +129,5 @@ export class ActivityInitiationPolicy {
       id: targetOrganizationId,
     });
     if (!decision.allow) throw new BizException(BizCode.ACTIVITY_INITIATION_ORG_FORBIDDEN);
-    return memberId;
   }
 }

@@ -21,6 +21,7 @@ describe('activity responsibility workflow gate=true publish review', () => {
   let prisma: PrismaService;
   let reviewService: ActivityPublishReviewService;
   let creatorAuth: string;
+  let delegatedCreatorAuth: string;
   let reviewerAuth: string;
   let creatorPayload: CurrentUserPayload;
   let organizationId: string;
@@ -44,6 +45,10 @@ describe('activity responsibility workflow gate=true publish review', () => {
     const creator = await createTestUser(app, {
       username: 'activity-review-creator',
       role: Role.ADMIN,
+    });
+    const delegatedCreator = await createTestUser(app, {
+      username: 'activity-review-delegated-sa',
+      role: Role.SUPER_ADMIN,
     });
     const creatorMember = await prisma.member.create({
       data: {
@@ -179,6 +184,7 @@ describe('activity responsibility workflow gate=true publish review', () => {
     });
 
     creatorAuth = (await loginAs(app, creator.username)).authHeader;
+    delegatedCreatorAuth = (await loginAs(app, delegatedCreator.username)).authHeader;
     reviewerAuth = (await loginAs(app, reviewer.username)).authHeader;
     creatorPayload = {
       id: creator.id,
@@ -221,6 +227,17 @@ describe('activity responsibility workflow gate=true publish review', () => {
     expect(response.body.data.initiatorMemberId).toBe(creatorPayload.memberId);
     expect(response.body.data.workflowRevision).toBe(0);
     return response.body.data.id as string;
+  }
+
+  async function workflowWriteCounts() {
+    const [activities, publishReviews, responsibilities, roleBindings, audits] = await Promise.all([
+      prisma.activity.count(),
+      prisma.activityPublishReview.count(),
+      prisma.activityResponsibilityAssignment.count(),
+      prisma.roleBinding.count(),
+      prisma.auditLog.count(),
+    ]);
+    return { activities, publishReviews, responsibilities, roleBindings, audits };
   }
 
   it('formal member creates draft; pending review freezes activity/positions; reviewer returns then approves v2', async () => {
@@ -324,7 +341,7 @@ describe('activity responsibility workflow gate=true publish review', () => {
     const edit = await request(httpServer(app))
       .patch(`/api/admin/v1/activities/${activityId}`)
       .set('Authorization', creatorAuth)
-      .send({ title: '补充说明后的活动' });
+      .send({ title: '补充说明后的活动', organizationId });
     expect(edit.status).toBe(200);
     const second = await reviewService.submitInitial(activityId, creatorPayload, AUDIT_META);
     expect(second).toMatchObject({ requestVersion: 2, status: 'pending', baseRevision: 0 });
@@ -448,6 +465,57 @@ describe('activity responsibility workflow gate=true publish review', () => {
     ).resolves.toEqual({ statusCode: 'draft', workflowRevision: 0 });
   });
 
+  it('rejects approval when a pending change snapshot is tampered to another organization', async () => {
+    const activityId = await createActivity();
+    await request(httpServer(app))
+      .patch(`/api/admin/v1/activities/${activityId}/publish`)
+      .set('Authorization', creatorAuth)
+      .send({ requiresInsuranceConfirmed: true })
+      .expect(200);
+    const review = await reviewService.submitChange(
+      activityId,
+      { title: 'Legitimate same-organization proposal', organizationId },
+      undefined,
+      creatorPayload,
+      AUDIT_META,
+    );
+    const storedReview = await prisma.activityPublishReview.findUniqueOrThrow({
+      where: { id: review.id },
+      select: { snapshot: true },
+    });
+    const tamperedSnapshot = JSON.parse(JSON.stringify(storedReview.snapshot)) as {
+      activity: { organizationId: string };
+    };
+    tamperedSnapshot.activity.organizationId = outsideOrganizationId;
+    await prisma.activityPublishReview.update({
+      where: { id: review.id },
+      data: { snapshot: tamperedSnapshot },
+    });
+
+    const response = await request(httpServer(app))
+      .post(`/api/admin/v1/activity-publish-reviews/${review.id}/approve`)
+      .set('Authorization', reviewerAuth)
+      .send({ requiresInsuranceConfirmed: true });
+
+    expectBizError(response, BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    await expect(
+      prisma.activityPublishReview.findUniqueOrThrow({
+        where: { id: review.id },
+        select: { status: true },
+      }),
+    ).resolves.toEqual({ status: 'pending' });
+    await expect(
+      prisma.activity.findUniqueOrThrow({
+        where: { id: activityId },
+        select: { organizationId: true, workflowRevision: true, title: true },
+      }),
+    ).resolves.toEqual({
+      organizationId,
+      workflowRevision: 1,
+      title: expect.stringContaining('发布审核活动'),
+    });
+  });
+
   it('does not create an initial review for an already ended activity', async () => {
     const response = await request(httpServer(app))
       .post('/api/admin/v1/activities')
@@ -482,6 +550,48 @@ describe('activity responsibility workflow gate=true publish review', () => {
       }),
     ).resolves.toEqual({ status: 'cancelled' });
   });
+
+  it.each([
+    { label: 'missing', status: null, deletedAt: null },
+    { label: 'DISABLED', status: UserStatus.DISABLED, deletedAt: null },
+    { label: 'soft-deleted', status: UserStatus.ACTIVE, deletedAt: new Date() },
+  ])(
+    'rejects delegated creation when the formal initiator User is $label with zero workflow writes',
+    async ({ label, status, deletedAt }) => {
+      sequence += 1;
+      const member = await prisma.member.create({
+        data: {
+          memberNo: `delegated-${label}-${sequence}`,
+          displayName: `Delegated ${label} ${sequence}`,
+          gradeCode: 'level-3',
+        },
+        select: { id: true },
+      });
+      await prisma.memberOrganizationMembership.create({
+        data: { memberId: member.id, organizationId },
+      });
+      if (status !== null) {
+        const linkedUser = await createTestUser(app, {
+          username: `delegated-${label}-${sequence}`,
+          status,
+          deletedAt,
+        });
+        await prisma.user.update({
+          where: { id: linkedUser.id },
+          data: { memberId: member.id },
+        });
+      }
+      const before = await workflowWriteCounts();
+
+      const response = await request(httpServer(app))
+        .post('/api/admin/v1/activities')
+        .set('Authorization', delegatedCreatorAuth)
+        .send(createPayload({ initiatorMemberId: member.id }));
+
+      expectBizError(response, BizCode.ACTIVITY_INITIATOR_NOT_FORMAL);
+      await expect(workflowWriteCounts()).resolves.toEqual(before);
+    },
+  );
 
   it('rejects a non-formal initiator and a formal initiator outside own organizations', async () => {
     const nonFormal = await createTestUser(app, {

@@ -85,6 +85,7 @@ export class AppManagedActivitiesController {
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
     BizCode.FORBIDDEN,
+    BizCode.ORGANIZATION_INACTIVE,
     BizCode.ACTIVITY_INITIATOR_NOT_FORMAL,
     BizCode.ACTIVITY_INITIATION_ORG_FORBIDDEN,
   )
@@ -123,6 +124,9 @@ export class AppManagedActivitiesController {
     BizCode.ACTIVITY_NOT_FOUND,
     BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING,
     BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED,
+    BizCode.ORGANIZATION_INACTIVE,
+    BizCode.ACTIVITY_INITIATOR_NOT_FORMAL,
+    BizCode.ACTIVITY_INITIATION_ORG_FORBIDDEN,
   )
   async update(
     @CurrentUser() user: CurrentUserPayload,

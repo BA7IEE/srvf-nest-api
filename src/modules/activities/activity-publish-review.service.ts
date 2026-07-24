@@ -515,6 +515,7 @@ export class ActivityPublishReviewService {
         select: {
           statusCode: true,
           workflowRevision: true,
+          organizationId: true,
           startAt: true,
           endAt: true,
           registrationDeadline: true,
@@ -544,6 +545,10 @@ export class ActivityPublishReviewService {
         } catch {
           throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
         }
+        this.proposalValidator.assertOrganizationUnchanged(
+          activity.organizationId,
+          changeSnapshot.activity.organizationId,
+        );
         await this.proposalValidator.validate(tx, review.activityId, changeSnapshot);
       }
       const now = new Date();

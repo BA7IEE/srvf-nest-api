@@ -1,5 +1,11 @@
 import type { INestApplication } from '@nestjs/common';
-import { MemberStatus, Role } from '@prisma/client';
+import {
+  BindingScopeType,
+  MemberStatus,
+  OrganizationStatus,
+  PrincipalType,
+  Role,
+} from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -17,11 +23,16 @@ describe('App managed activities core', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let auditLogs: AuditLogsService;
+  let rootOrganizationId: string;
   let organizationId: string;
+  let targetBranchOrganizationId: string;
+  let targetOrganizationId: string;
+  let inactiveOrganizationId: string;
   let activityTypeCode: string;
   let attendanceRoleCode: string;
   let reviewerAuth: string;
   let bizAdminRoleId: string;
+  let crossOrgRoleId: string;
   let sequence = 0;
   const previousGate = process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
 
@@ -43,6 +54,7 @@ describe('App managed activities core', () => {
       data: { name: 'Managed Activities Root', nodeTypeCode: 'managed-activities-root' },
       select: { id: true },
     });
+    rootOrganizationId = root.id;
     const organization = await prisma.organization.create({
       data: {
         name: 'Managed Activities Team',
@@ -52,12 +64,77 @@ describe('App managed activities core', () => {
       select: { id: true },
     });
     organizationId = organization.id;
+    const targetBranch = await prisma.organization.create({
+      data: {
+        name: 'Managed Activities Target Branch',
+        nodeTypeCode: 'managed-activities-branch',
+        parentId: root.id,
+      },
+      select: { id: true },
+    });
+    targetBranchOrganizationId = targetBranch.id;
+    const targetOrganization = await prisma.organization.create({
+      data: {
+        name: 'Managed Activities Target Team',
+        nodeTypeCode: 'managed-activities-team',
+        parentId: targetBranch.id,
+      },
+      select: { id: true },
+    });
+    targetOrganizationId = targetOrganization.id;
+    const inactiveOrganization = await prisma.organization.create({
+      data: {
+        name: 'Managed Activities Inactive Team',
+        nodeTypeCode: 'managed-activities-team',
+        parentId: root.id,
+        status: OrganizationStatus.INACTIVE,
+      },
+      select: { id: true },
+    });
+    inactiveOrganizationId = inactiveOrganization.id;
     await prisma.organizationClosure.createMany({
       data: [
         { ancestorId: root.id, descendantId: root.id, depth: 0 },
         { ancestorId: root.id, descendantId: organization.id, depth: 1 },
+        { ancestorId: root.id, descendantId: targetBranch.id, depth: 1 },
+        { ancestorId: root.id, descendantId: targetOrganization.id, depth: 2 },
+        { ancestorId: root.id, descendantId: inactiveOrganization.id, depth: 1 },
         { ancestorId: organization.id, descendantId: organization.id, depth: 0 },
+        { ancestorId: targetBranch.id, descendantId: targetBranch.id, depth: 0 },
+        { ancestorId: targetBranch.id, descendantId: targetOrganization.id, depth: 1 },
+        {
+          ancestorId: targetOrganization.id,
+          descendantId: targetOrganization.id,
+          depth: 0,
+        },
+        {
+          ancestorId: inactiveOrganization.id,
+          descendantId: inactiveOrganization.id,
+          depth: 0,
+        },
       ],
+    });
+    const crossOrgPermission = await prisma.permission.upsert({
+      where: { code: 'activity.create.cross-org' },
+      update: {},
+      create: {
+        code: 'activity.create.cross-org',
+        module: 'activity',
+        action: 'create-cross-org',
+        resourceType: 'organization',
+      },
+      select: { id: true },
+    });
+    const crossOrgRole = await prisma.rbacRole.create({
+      data: {
+        code: 'managed-activities-cross-org-initiator',
+        displayName: 'Managed activities cross-org initiator',
+      },
+      select: { id: true },
+    });
+    crossOrgRoleId = crossOrgRole.id;
+    await prisma.rolePermission.create({
+      data: { roleId: crossOrgRole.id, permissionId: crossOrgPermission.id },
     });
     const activityType = await prisma.dictType.create({
       data: { code: 'activity_type', label: '活动类型' },
@@ -90,6 +167,7 @@ describe('App managed activities core', () => {
     label: string,
     gradeCode = 'level-3',
     grantPublish = false,
+    role: Role = Role.USER,
   ): Promise<{ memberId: string; userId: string; auth: string }> {
     sequence += 1;
     const member = await prisma.member.create({
@@ -102,8 +180,8 @@ describe('App managed activities core', () => {
       select: { id: true },
     });
     const user = await createTestUser(app, {
-      username: `managed-${label}-${sequence}`,
-      role: Role.USER,
+      username: `managed-${label.slice(0, 18)}-${sequence}`,
+      role,
     });
     await prisma.user.update({ where: { id: user.id }, data: { memberId: member.id } });
     await prisma.memberOrganizationMembership.create({
@@ -130,6 +208,31 @@ describe('App managed activities core', () => {
       location: '深圳',
       capacity: 20,
     };
+  }
+
+  async function createManagedDraft(actor: { auth: string }, title: string): Promise<string> {
+    const response = await request(httpServer(app))
+      .post('/api/app/v1/my/managed-activities')
+      .set('Authorization', actor.auth)
+      .send(createPayload(title));
+    expect(response.status).toBe(201);
+    return response.body.data.activity.id as string;
+  }
+
+  async function grantCrossOrgInitiation(
+    memberId: string,
+    scopeType: BindingScopeType,
+    scopeOrgId?: string,
+  ): Promise<void> {
+    await prisma.roleBinding.create({
+      data: {
+        principalType: PrincipalType.MEMBER,
+        principalId: memberId,
+        roleId: crossOrgRoleId,
+        scopeType,
+        scopeOrgId,
+      },
+    });
   }
 
   it('keeps /my/activities separate and supports draft CRUD, positions and initial review withdrawal', async () => {
@@ -162,7 +265,7 @@ describe('App managed activities core', () => {
     const updated = await request(httpServer(app))
       .patch(`/api/app/v1/my/managed-activities/${activityId}`)
       .set('Authorization', manager.auth)
-      .send({ title: 'Managed draft updated' });
+      .send({ title: 'Managed draft updated', organizationId });
     expect(updated.status).toBe(200);
     expect(updated.body.data.activity.title).toBe('Managed draft updated');
 
@@ -196,6 +299,144 @@ describe('App managed activities core', () => {
       .set('Authorization', manager.auth);
     expect(withdrawn.status).toBe(200);
     expect(withdrawn.body.data.status).toBe('withdrawn');
+  });
+
+  it('rejects an A-member moving a draft to B without cross-org grant', async () => {
+    const owner = await createMember('cross-org-denied');
+    const activityId = await createManagedDraft(owner, 'Cross-org denied draft');
+
+    const response = await request(httpServer(app))
+      .patch(`/api/app/v1/my/managed-activities/${activityId}`)
+      .set('Authorization', owner.auth)
+      .send({ organizationId: targetOrganizationId });
+
+    expectBizError(response, BizCode.ACTIVITY_INITIATION_ORG_FORBIDDEN);
+    await expect(
+      prisma.activity.findUniqueOrThrow({
+        where: { id: activityId },
+        select: { organizationId: true },
+      }),
+    ).resolves.toEqual({ organizationId });
+  });
+
+  it('allows a draft move with an EXACT organization cross-org grant', async () => {
+    const owner = await createMember('cross-org-exact');
+    await grantCrossOrgInitiation(
+      owner.memberId,
+      BindingScopeType.ORGANIZATION,
+      targetOrganizationId,
+    );
+    const activityId = await createManagedDraft(owner, 'Cross-org exact draft');
+
+    const response = await request(httpServer(app))
+      .patch(`/api/app/v1/my/managed-activities/${activityId}`)
+      .set('Authorization', owner.auth)
+      .send({ organizationId: targetOrganizationId });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.activity.organizationId).toBe(targetOrganizationId);
+  });
+
+  it('allows a draft move with an ORGANIZATION_TREE grant covering the target', async () => {
+    const owner = await createMember('cross-org-tree');
+    await grantCrossOrgInitiation(
+      owner.memberId,
+      BindingScopeType.ORGANIZATION_TREE,
+      targetBranchOrganizationId,
+    );
+    const activityId = await createManagedDraft(owner, 'Cross-org tree draft');
+
+    const response = await request(httpServer(app))
+      .patch(`/api/app/v1/my/managed-activities/${activityId}`)
+      .set('Authorization', owner.auth)
+      .send({ organizationId: targetOrganizationId });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.activity.organizationId).toBe(targetOrganizationId);
+  });
+
+  it('rejects an INACTIVE target even with a GLOBAL cross-org grant', async () => {
+    const owner = await createMember('cross-org-global-inactive');
+    await grantCrossOrgInitiation(owner.memberId, BindingScopeType.GLOBAL);
+    const activityId = await createManagedDraft(owner, 'Cross-org global inactive draft');
+
+    const response = await request(httpServer(app))
+      .patch(`/api/app/v1/my/managed-activities/${activityId}`)
+      .set('Authorization', owner.auth)
+      .send({ organizationId: inactiveOrganizationId });
+
+    expectBizError(response, BizCode.ORGANIZATION_INACTIVE);
+    await expect(
+      prisma.activity.findUniqueOrThrow({
+        where: { id: activityId },
+        select: { organizationId: true },
+      }),
+    ).resolves.toEqual({ organizationId });
+  });
+
+  it('rejects an INACTIVE target even for SUPER_ADMIN', async () => {
+    const superAdmin = await createMember(
+      'cross-org-super-admin',
+      'level-3',
+      false,
+      Role.SUPER_ADMIN,
+    );
+    const activityId = await createManagedDraft(superAdmin, 'Cross-org super-admin draft');
+
+    const response = await request(httpServer(app))
+      .patch(`/api/app/v1/my/managed-activities/${activityId}`)
+      .set('Authorization', superAdmin.auth)
+      .send({ organizationId: inactiveOrganizationId });
+
+    expectBizError(response, BizCode.ORGANIZATION_INACTIVE);
+  });
+
+  it('rejects the root organization as a draft target', async () => {
+    const owner = await createMember('cross-org-root');
+    await grantCrossOrgInitiation(owner.memberId, BindingScopeType.GLOBAL);
+    const activityId = await createManagedDraft(owner, 'Cross-org root draft');
+
+    const response = await request(httpServer(app))
+      .patch(`/api/app/v1/my/managed-activities/${activityId}`)
+      .set('Authorization', owner.auth)
+      .send({ organizationId: rootOrganizationId });
+
+    expectBizError(response, BizCode.ACTIVITY_ORGANIZATION_ROOT_FORBIDDEN);
+  });
+
+  it('fails closed when a legacy draft has no persisted initiatorMemberId', async () => {
+    const superAdmin = await createMember(
+      'cross-org-null-initiator',
+      'level-3',
+      false,
+      Role.SUPER_ADMIN,
+    );
+    const activity = await prisma.activity.create({
+      data: {
+        title: 'Legacy draft without initiator',
+        activityTypeCode,
+        organizationId,
+        initiatorMemberId: null,
+        startAt: new Date('2099-10-01T01:00:00.000Z'),
+        endAt: new Date('2099-10-01T05:00:00.000Z'),
+        location: '深圳',
+        statusCode: 'draft',
+      },
+      select: { id: true },
+    });
+
+    const response = await request(httpServer(app))
+      .patch(`/api/admin/v1/activities/${activity.id}`)
+      .set('Authorization', superAdmin.auth)
+      .send({ organizationId: targetOrganizationId });
+
+    expectBizError(response, BizCode.ACTIVITY_INITIATOR_NOT_FORMAL);
+    await expect(
+      prisma.activity.findUniqueOrThrow({
+        where: { id: activity.id },
+        select: { organizationId: true, initiatorMemberId: true },
+      }),
+    ).resolves.toEqual({ organizationId, initiatorMemberId: null });
   });
 
   it('direct publishes, projects owner, manages collaborators and transfers ownership', async () => {
@@ -282,7 +523,7 @@ describe('App managed activities core', () => {
       .post(`/api/app/v1/my/managed-activities/${activityId}/submit-change-review`)
       .set('Authorization', owner.auth)
       .send({
-        activity: { title: 'After approved change', location: '广州' },
+        activity: { title: 'After approved change', location: '广州', organizationId },
         positions: [
           {
             activityPositionId,
@@ -315,6 +556,7 @@ describe('App managed activities core', () => {
       select: {
         title: true,
         location: true,
+        organizationId: true,
         workflowRevision: true,
         activityPositions: {
           where: { deletedAt: null },
@@ -326,11 +568,49 @@ describe('App managed activities core', () => {
     expect(stored).toEqual({
       title: 'After approved change',
       location: '广州',
+      organizationId,
       workflowRevision: 2,
       activityPositions: [
         { name: '原岗位升级', capacity: 8 },
         { name: '新增岗位', capacity: 4 },
       ],
+    });
+  });
+
+  it('rejects a published change proposal that changes organizationId', async () => {
+    const owner = await createMember('change-org-rejected', 'level-5', true);
+    const activityId = await createManagedDraft(owner, 'Published organization change');
+    await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${activityId}/direct-publish`)
+      .set('Authorization', owner.auth)
+      .expect(200);
+
+    const beforeReviewCount = await prisma.activityPublishReview.count({
+      where: { activityId, status: 'pending' },
+    });
+    const submitted = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${activityId}/submit-change-review`)
+      .set('Authorization', owner.auth)
+      .send({
+        activity: {
+          title: 'Must remain in original organization',
+          organizationId: targetOrganizationId,
+        },
+      });
+
+    expectBizError(submitted, BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    await expect(
+      prisma.activityPublishReview.count({ where: { activityId, status: 'pending' } }),
+    ).resolves.toBe(beforeReviewCount);
+    await expect(
+      prisma.activity.findUniqueOrThrow({
+        where: { id: activityId },
+        select: { organizationId: true, workflowRevision: true, title: true },
+      }),
+    ).resolves.toEqual({
+      organizationId,
+      workflowRevision: 1,
+      title: 'Published organization change',
     });
   });
 

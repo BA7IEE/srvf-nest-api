@@ -192,6 +192,9 @@ function makePrismaMock() {
   const attendanceSheet = {
     count: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0),
   };
+  const activityPublishReview = {
+    count: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0),
+  };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
   const $queryRaw = jest.fn().mockResolvedValue([{ id: 'act-1' }]);
   const prisma = {
@@ -200,6 +203,7 @@ function makePrismaMock() {
     organization,
     activityRegistration,
     attendanceSheet,
+    activityPublishReview,
     $queryRaw,
     $transaction,
   };
@@ -285,6 +289,18 @@ function makeInsuranceRequirementMock() {
 }
 type InsuranceRequirementMock = ReturnType<typeof makeInsuranceRequirementMock>;
 
+function makeInitiationPolicyMock() {
+  return {
+    resolveInitiator: jest
+      .fn<Promise<string>, [unknown, string, string | undefined, unknown?]>()
+      .mockResolvedValue('member-initiator'),
+    assertInitiatorEligible: jest
+      .fn<Promise<void>, [unknown, string, string | null, unknown]>()
+      .mockResolvedValue(undefined),
+  };
+}
+type InitiationPolicyMock = ReturnType<typeof makeInitiationPolicyMock>;
+
 function makeService(
   prisma: PrismaMock,
   opts: {
@@ -294,6 +310,8 @@ function makeService(
     authz?: AuthzMock;
     organizations?: OrganizationsMock;
     insuranceRequirement?: InsuranceRequirementMock;
+    initiationPolicy?: InitiationPolicyMock;
+    workflowEnabled?: boolean;
   } = {},
 ): ActivitiesService {
   const stateMachine = opts.stateMachine ?? makeStateMachineMock(DENY_DECISION);
@@ -302,6 +320,7 @@ function makeService(
   const authz = opts.authz ?? makeAuthzMock();
   const organizations = opts.organizations ?? makeOrganizationsMock();
   const insuranceRequirement = opts.insuranceRequirement ?? makeInsuranceRequirementMock();
+  const initiationPolicy = opts.initiationPolicy ?? makeInitiationPolicyMock();
   return new ActivitiesService(
     prisma as unknown as PrismaService,
     stateMachine,
@@ -312,14 +331,14 @@ function makeService(
     dispatcher as unknown as NotificationDispatcher,
     organizations as unknown as OrganizationsService,
     insuranceRequirement as unknown as InsuranceRequirementService,
-    { resolveInitiator: jest.fn() } as unknown as ActivityInitiationPolicy,
+    initiationPolicy as unknown as ActivityInitiationPolicy,
     {
       compatibilityPublish: jest.fn(),
       cancelPendingForActivity: jest.fn(),
       assertNoPendingChangeReview: jest.fn(),
     } as unknown as ActivityPublishReviewService,
     {
-      activityResponsibilityWorkflow: { enabled: false },
+      activityResponsibilityWorkflow: { enabled: opts.workflowEnabled ?? false },
     } as ConfigType<typeof appConfig>,
   );
 }
@@ -483,6 +502,39 @@ describe('ActivitiesService (characterization)', () => {
 
   // ============ D. create:校验链 fail-fast ============
   describe('create — validation chain', () => {
+    it('workflow=true 在 create 事务内执行统一发起资格策略', async () => {
+      const prisma = makePrismaMock();
+      const initiationPolicy = makeInitiationPolicyMock();
+      prisma.dictItem.findFirst.mockResolvedValue({ id: 'di-type' });
+      prisma.organization.findFirst.mockResolvedValue({ id: 'org-1', parentId: 'root-1' });
+      prisma.activity.create.mockResolvedValue(
+        makeActivityRow({ statusCode: 'draft', initiatorMemberId: 'member-delegated' }),
+      );
+      initiationPolicy.resolveInitiator.mockResolvedValue('member-delegated');
+      const service = makeService(prisma, { initiationPolicy, workflowEnabled: true });
+      const user = makeCurrentUser({ memberId: 'member-operator' });
+
+      await service.create(
+        makeCreateDto({ initiatorMemberId: 'member-delegated' }),
+        user,
+        META,
+        'managed',
+      );
+
+      expect(initiationPolicy.resolveInitiator).toHaveBeenCalledWith(
+        user,
+        'org-1',
+        'member-delegated',
+        prisma,
+      );
+      expect(initiationPolicy.resolveInitiator.mock.invocationCallOrder[0]).toBeGreaterThan(
+        prisma.$transaction.mock.invocationCallOrder[0],
+      );
+      expect(initiationPolicy.resolveInitiator.mock.invocationCallOrder[0]).toBeLessThan(
+        prisma.activity.create.mock.invocationCallOrder[0],
+      );
+    });
+
     it('startAt >= endAt → ACTIVITY_START_END_INVALID;不开事务 / 不写库', async () => {
       const prisma = makePrismaMock();
       const recorder = makeRecorderMock();
@@ -571,6 +623,111 @@ describe('ActivitiesService (characterization)', () => {
 
   // ============ E. update:state-machine + audit 接线 ============
   describe('update — state-machine & audit wiring', () => {
+    it('workflow draft 真实改组织时在 Activity 锁后用持久化 initiator + tx 复核资格', async () => {
+      const prisma = makePrismaMock();
+      const initiationPolicy = makeInitiationPolicyMock();
+      const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'draft' });
+      const current = makeActivityRow({
+        statusCode: 'draft',
+        organizationId: 'org-1',
+        initiatorMemberId: 'member-persisted',
+      });
+      prisma.activity.findFirst.mockResolvedValue(current);
+      prisma.organization.findFirst.mockResolvedValue({ id: 'org-2', parentId: 'root-1' });
+      prisma.activity.update.mockResolvedValue({ ...current, organizationId: 'org-2' });
+      const user = makeCurrentUser({ memberId: 'member-persisted' });
+      const service = makeService(prisma, {
+        initiationPolicy,
+        stateMachine,
+        workflowEnabled: true,
+      });
+
+      await service.update(
+        'act-1',
+        makeUpdateDto({ organizationId: 'org-2' }),
+        user,
+        META,
+        'managed',
+      );
+
+      expect(initiationPolicy.assertInitiatorEligible).toHaveBeenCalledWith(
+        user,
+        'org-2',
+        'member-persisted',
+        prisma,
+      );
+      expect(initiationPolicy.assertInitiatorEligible.mock.invocationCallOrder[0]).toBeGreaterThan(
+        prisma.$queryRaw.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('workflow draft organizationId 同值不调用发起资格策略', async () => {
+      const prisma = makePrismaMock();
+      const initiationPolicy = makeInitiationPolicyMock();
+      const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'draft' });
+      const current = makeActivityRow({
+        statusCode: 'draft',
+        organizationId: 'org-1',
+        initiatorMemberId: 'member-persisted',
+      });
+      prisma.activity.findFirst.mockResolvedValue(current);
+      prisma.organization.findFirst.mockResolvedValue({ id: 'org-1', parentId: 'root-1' });
+      prisma.activity.update.mockResolvedValue(current);
+      const service = makeService(prisma, {
+        initiationPolicy,
+        stateMachine,
+        workflowEnabled: true,
+      });
+
+      await service.update(
+        'act-1',
+        makeUpdateDto({ organizationId: 'org-1' }),
+        makeCurrentUser({ memberId: 'member-persisted' }),
+        META,
+        'managed',
+      );
+
+      expect(initiationPolicy.assertInitiatorEligible).not.toHaveBeenCalled();
+    });
+
+    it('workflow draft initiatorMemberId=null 时改组织 fail-closed', async () => {
+      const prisma = makePrismaMock();
+      const initiationPolicy = makeInitiationPolicyMock();
+      initiationPolicy.assertInitiatorEligible.mockRejectedValue(
+        new BizException(BizCode.ACTIVITY_INITIATOR_NOT_FORMAL),
+      );
+      prisma.activity.findFirst.mockResolvedValue(
+        makeActivityRow({
+          statusCode: 'draft',
+          organizationId: 'org-1',
+          initiatorMemberId: null,
+        }),
+      );
+      prisma.organization.findFirst.mockResolvedValue({ id: 'org-2', parentId: 'root-1' });
+      const service = makeService(prisma, {
+        initiationPolicy,
+        stateMachine: makeStateMachineMock({ allowed: true, nextStatusCode: 'draft' }),
+        workflowEnabled: true,
+      });
+
+      await expect(
+        service.update(
+          'act-1',
+          makeUpdateDto({ organizationId: 'org-2' }),
+          makeCurrentUser({ role: Role.SUPER_ADMIN, memberId: 'member-operator' }),
+          META,
+          'managed',
+        ),
+      ).rejects.toEqual(new BizException(BizCode.ACTIVITY_INITIATOR_NOT_FORMAL));
+      expect(initiationPolicy.assertInitiatorEligible).toHaveBeenCalledWith(
+        expect.anything(),
+        'org-2',
+        null,
+        prisma,
+      );
+      expect(prisma.activity.update).not.toHaveBeenCalled();
+    });
+
     it('cancelled 拒改 → 抛 decision.biz;不 update / 不审计', async () => {
       const prisma = makePrismaMock();
       const recorder = makeRecorderMock();

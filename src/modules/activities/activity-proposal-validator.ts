@@ -91,6 +91,7 @@ export class ActivityProposalValidator {
       locationLatitude:
         activityPatch.locationLatitude ?? current.locationLatitude?.toString() ?? null,
     };
+    this.assertOrganizationUnchanged(current.organizationId, activity.organizationId);
     const positions =
       submittedPositions === undefined
         ? current.activityPositions.map(
@@ -128,6 +129,12 @@ export class ActivityProposalValidator {
     };
     await this.validate(tx, activityId, snapshot);
     return snapshot;
+  }
+
+  assertOrganizationUnchanged(currentOrganizationId: string, proposedOrganizationId: string): void {
+    if (proposedOrganizationId !== currentOrganizationId) {
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    }
   }
 
   async validate(

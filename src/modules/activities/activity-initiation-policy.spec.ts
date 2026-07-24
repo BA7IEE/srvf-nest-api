@@ -3,6 +3,7 @@ import {
   MemberStatus,
   MembershipStatus,
   MembershipType,
+  OrganizationStatus,
   Role,
   UserStatus,
 } from '@prisma/client';
@@ -25,6 +26,7 @@ const TARGET_ORG_ID = 'organization-activity-target';
 
 interface PolicyMemberRow {
   gradeCode: string | null;
+  users: Array<{ id: string }>;
   memberOrganizationMemberships: Array<{ organizationId: string }>;
 }
 
@@ -48,14 +50,27 @@ interface PolicyMemberQuery {
         };
       };
     };
+    users: {
+      where: {
+        status: UserStatus;
+        deletedAt: null;
+      };
+      take: number;
+    };
   };
 }
 
 function makePolicy() {
   const findFirst = jest.fn<Promise<PolicyMemberRow | null>, [unknown]>();
+  const findOrganization = jest
+    .fn<Promise<{ status: OrganizationStatus; parentId: string | null } | null>, [unknown]>()
+    .mockResolvedValue({ status: OrganizationStatus.ACTIVE, parentId: 'organization-root' });
   const prisma = {
     member: {
       findFirst,
+    },
+    organization: {
+      findFirst: findOrganization,
     },
   };
   const authz = {
@@ -79,6 +94,7 @@ describe('ActivityInitiationPolicy', () => {
       const { policy, prisma, authz } = makePolicy();
       prisma.member.findFirst.mockResolvedValue({
         gradeCode,
+        users: [{ id: USER.id }],
         memberOrganizationMemberships: [{ organizationId: TARGET_ORG_ID }],
       });
 
@@ -91,6 +107,7 @@ describe('ActivityInitiationPolicy', () => {
     const { policy, prisma } = makePolicy();
     prisma.member.findFirst.mockResolvedValue({
       gradeCode,
+      users: [{ id: USER.id }],
       memberOrganizationMemberships: [{ organizationId: TARGET_ORG_ID }],
     });
 
@@ -105,6 +122,7 @@ describe('ActivityInitiationPolicy', () => {
       const { policy, prisma } = makePolicy();
       prisma.member.findFirst.mockResolvedValue({
         gradeCode: 'level-1',
+        users: [{ id: USER.id }],
         memberOrganizationMemberships: [{ organizationId: TARGET_ORG_ID }],
       });
 
@@ -123,6 +141,7 @@ describe('ActivityInitiationPolicy', () => {
     const { policy, prisma } = makePolicy();
     prisma.member.findFirst.mockResolvedValue({
       gradeCode: 'level-4',
+      users: [{ id: USER.id }],
       memberOrganizationMemberships: [{ organizationId: TARGET_ORG_ID }],
     });
 
@@ -140,6 +159,11 @@ describe('ActivityInitiationPolicy', () => {
       parentId: { not: null },
     });
     expect(membershipWhere.startedAt.lte).toBe(membershipWhere.OR[1].endedAt.gt);
+    expect(query.select.users).toEqual({
+      where: { status: UserStatus.ACTIVE, deletedAt: null },
+      select: { id: true },
+      take: 1,
+    });
   });
 
   it.each([
@@ -150,6 +174,7 @@ describe('ActivityInitiationPolicy', () => {
     const { policy, prisma, authz } = makePolicy();
     prisma.member.findFirst.mockResolvedValue({
       gradeCode: 'level-5',
+      users: [{ id: USER.id }],
       memberOrganizationMemberships: [],
     });
     authz.explain.mockResolvedValue({
@@ -169,6 +194,7 @@ describe('ActivityInitiationPolicy', () => {
     const { policy, prisma } = makePolicy();
     prisma.member.findFirst.mockResolvedValue({
       gradeCode: 'level-6',
+      users: [{ id: USER.id }],
       memberOrganizationMemberships: [],
     });
 
@@ -187,10 +213,56 @@ describe('ActivityInitiationPolicy', () => {
     rbac.can.mockResolvedValue(true);
     prisma.member.findFirst.mockResolvedValue({
       gradeCode: 'level-7',
+      users: [{ id: 'user-other-formal' }],
       memberOrganizationMemberships: [{ organizationId: TARGET_ORG_ID }],
     });
     await expect(policy.resolveInitiator(USER, TARGET_ORG_ID, 'member-other-formal')).resolves.toBe(
       'member-other-formal',
     );
   });
+
+  it('rejects a formal member without an ACTIVE non-deleted User', async () => {
+    const { policy, prisma } = makePolicy();
+    prisma.member.findFirst.mockResolvedValue({
+      gradeCode: 'level-3',
+      users: [],
+      memberOrganizationMemberships: [{ organizationId: TARGET_ORG_ID }],
+    });
+
+    await expect(policy.resolveInitiator(USER, TARGET_ORG_ID)).rejects.toMatchObject({
+      biz: BizCode.ACTIVITY_INITIATOR_NOT_FORMAL,
+    });
+  });
+
+  it.each([
+    {
+      label: 'missing or deleted',
+      organization: null,
+      biz: BizCode.ORGANIZATION_NOT_FOUND,
+    },
+    {
+      label: 'inactive',
+      organization: { status: OrganizationStatus.INACTIVE, parentId: 'organization-root' },
+      biz: BizCode.ORGANIZATION_INACTIVE,
+    },
+    {
+      label: 'root',
+      organization: { status: OrganizationStatus.ACTIVE, parentId: null },
+      biz: BizCode.ACTIVITY_ORGANIZATION_ROOT_FORBIDDEN,
+    },
+  ])(
+    'rejects $label target organization before any grant shortcut',
+    async ({ organization, biz }) => {
+      const { policy, prisma, authz } = makePolicy();
+      prisma.organization.findFirst.mockResolvedValue(organization);
+      prisma.member.findFirst.mockResolvedValue({
+        gradeCode: 'level-3',
+        users: [{ id: USER.id }],
+        memberOrganizationMemberships: [],
+      });
+      authz.explain.mockResolvedValue({ allow: true, reason: 'matched' });
+
+      await expect(policy.resolveInitiator(USER, TARGET_ORG_ID)).rejects.toMatchObject({ biz });
+    },
+  );
 });
