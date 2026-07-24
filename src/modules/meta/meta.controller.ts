@@ -51,13 +51,13 @@ export class MetaController {
   }
 
   // GAP-003(handoff/admin-web.md §4;goal「GAP-003 收口」):工作台/首页待办汇总,零 query
-  // 参数。无入口 RBAC 码——三块各自块级裁剪(见 service),零权限时仍 200(只是块更少),
+  // 参数。无入口 RBAC 码——各块/字段按对应 action 裁剪(见 service),零权限时仍 200(只是块更少),
   // 故鉴权后缀为 [auth] 而非某个单一 [rbac: ...] 码(镜像 activities list 的 [auth] 用法,
   // 那也是"无单一码但内部另有过滤"的先例)。
   @Get('dashboard-summary')
   @ApiOperation({
     summary:
-      '工作台/首页待办汇总(registrations/attendanceSheets 按对应读码的三源授权组织范围统计;activities 块无码同 list 现状;缺码的块静默省略,响应恒 200) [auth]',
+      '工作台/首页待办汇总(报名/考勤/发布审核按对应 action 的授权组织范围统计;activities 无码;无权块或字段静默省略) [auth]',
   })
   @ApiWrappedOkResponse(DashboardSummaryResponseDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED)

@@ -85,10 +85,22 @@ export class DashboardAttendanceSheetsSummaryDto {
   @ApiProperty({ description: '待一级(APD)审核数(attendance_sheet_status=pending,未软删)' })
   pending!: number;
 
+  @ApiPropertyOptional({
+    description: '当前一级审核授权组织范围内待审数(attendance.approve.sheet;无该动作权限时省略)',
+  })
+  pendingFirstReview?: number;
+
   @ApiProperty({
     description: '待终审数(attendance_sheet_status=pending_final_review,未软删)',
   })
   pendingFinalReview!: number;
+}
+
+export class DashboardActivityPublishReviewsSummaryDto {
+  @ApiProperty({
+    description: '当前发布审核授权组织范围内待审请求数(activity-review.read.request,未软删活动)',
+  })
+  pending!: number;
 }
 
 export class DashboardActivitiesSummaryDto {
@@ -112,6 +124,13 @@ export class DashboardSummaryResponseDto {
     description: '考勤待办(需 attendance.read.sheet;按三源授权组织范围统计;无权省略本块,非报错)',
   })
   attendanceSheets?: DashboardAttendanceSheetsSummaryDto;
+
+  @ApiPropertyOptional({
+    type: DashboardActivityPublishReviewsSummaryDto,
+    description:
+      '活动发布审核待办(需 activity-review.read.request;按三源授权组织范围统计;无权省略本块)',
+  })
+  activityPublishReviews?: DashboardActivityPublishReviewsSummaryDto;
 
   @ApiPropertyOptional({
     type: DashboardActivitiesSummaryDto,

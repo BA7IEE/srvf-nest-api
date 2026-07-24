@@ -245,6 +245,26 @@ export class AppManagedActivitiesController {
     return this.service.withdraw(params.activityId, user, this.auditMeta(req));
   }
 
+  @Post(':activityId/declare-attendance-complete')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'App 主负责人声明活动考勤已全部提交 [auth]' })
+  @ApiWrappedOkResponse(AppManagedActivityDetailDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_ATTENDANCE_DECLARATION_INVALID,
+  )
+  async declareAttendanceComplete(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Req() req: Request,
+  ): Promise<AppManagedActivityDetailDto> {
+    await this.resolveMemberId(user);
+    return this.service.declareAttendanceComplete(params.activityId, user, this.auditMeta(req));
+  }
+
   private async resolveMemberId(user: CurrentUserPayload): Promise<string> {
     const access = await this.identity.resolve(user);
     if (!access.canUseApp || !access.member) throw new BizException(BizCode.FORBIDDEN);
