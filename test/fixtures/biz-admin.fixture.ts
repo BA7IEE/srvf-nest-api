@@ -7,10 +7,11 @@ import { PrismaService } from '../../src/database/prisma.service';
 // 背景:test/setup/reset-db.ts 把 RBAC 4 表清空,prisma/seed.ts 的业务面码 + biz-admin
 // 角色不在 e2e 数据库里。本 fixture 在 spec 的 beforeAll 调用:
 // - seedBizAdminPermissionsAndRole:幂等 upsert 本 fixture 所需业务面码 + biz-admin 角色 + 对应绑定
-//   (`member.delete.record`〔D1=A 镜像,评审稿 §6〕+ 新 return / 考勤终审 / reopen 五码
-//   〔一审/终审归 scoped 绑定或 SUPER_ADMIN 兜底〕进 Permission 表但**不**绑,
+//   (`member.delete.record`〔D1=A 镜像,评审稿 §6〕+ reviewer-only +
+//   v0.61.0 PR-11 contract 活动动作码进 Permission 表但**不**绑,
 //   与 prisma/seed.ts BIZ_ADMIN_EXCLUDED_CODES 同口径镜像)
-// - grantBizAdminToUser:给 user 绑 biz-admin
+// - grantBizAdminToUser:给 user 绑 biz-admin；既有 gate=false 功能回归默认额外挂明确标注的
+//   test-only legacy role，边界 spec 用 includeLegacyActivityActions=false 验证真实 contract
 // - revokeBizAdminFromUser:撤回 global 绑定
 //
 // **零漂移用法约定**(评审稿 §7/§8):既有业务 spec 的 ADMIN 测试用户在 beforeAll 统一
@@ -20,22 +21,129 @@ import { PrismaService } from '../../src/database/prisma.service';
 export interface BizAdminSeedResult {
   bizAdminRoleId: string;
   bizPermissionCount: number; // = seeded 业务面码数(动态 = 本 fixture 列表长度;勿硬编码,防漂移)
-  bizAdminRolePermissionCount: number; // = 绑定数(动态,过滤 member.delete.record + reviewer-only 五码)
+  bizAdminRolePermissionCount: number; // = 绑定数(动态,过滤 member.delete.record + reviewer/contract 动作码)
 }
 
 // D1=A 镜像:members DELETE 仅 SUPER_ADMIN 短路;不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
 
-// 新增 return 只归显式 attendance-first-reviewer；终审/reopen 四码只归
-// attendance-final-reviewer scoped 绑定或 SUPER_ADMIN 兜底。approve/reject 旧权限
-// 留到活动责任闭环 PR-11 contract 才摘，镜像当前 rollout 窗口。
+const ACTIVITY_RESPONSIBILITY_CONTRACT_ACTION_CODES = [
+  'activity.publish.record',
+  'activity.update.record',
+  'activity.cancel.record',
+  'activity.complete.record',
+  'activity-registration.create.record',
+  'activity-registration.approve.record',
+  'activity-registration.reject.record',
+  'activity-registration.cancel.record',
+  'activity-registration.reopen.record',
+  'attendance.create.sheet',
+  'attendance.update.sheet',
+  'attendance.delete.sheet',
+  'attendance.approve.sheet',
+  'attendance.reject.sheet',
+  'attendance.return.sheet',
+  'attendance.final-return.sheet',
+] as const;
+
+const TEST_LEGACY_ACTIVITY_ACTIONS_ROLE_CODE = 'test-legacy-activity-actions';
+
+async function ensureLegacyActivityActionsRole(prisma: PrismaService): Promise<string> {
+  const legacyActionPermissions = await prisma.permission.findMany({
+    where: {
+      code: { in: [...ACTIVITY_RESPONSIBILITY_CONTRACT_ACTION_CODES] },
+    },
+    select: { id: true, code: true },
+  });
+  if (legacyActionPermissions.length !== ACTIVITY_RESPONSIBILITY_CONTRACT_ACTION_CODES.length) {
+    throw new Error(
+      `test legacy activity role requires ${ACTIVITY_RESPONSIBILITY_CONTRACT_ACTION_CODES.length} permissions, found ${legacyActionPermissions.length}`,
+    );
+  }
+  const legacyActivityActionsRole = await prisma.rbacRole.upsert({
+    where: { code: TEST_LEGACY_ACTIVITY_ACTIONS_ROLE_CODE },
+    update: {},
+    create: {
+      code: TEST_LEGACY_ACTIVITY_ACTIONS_ROLE_CODE,
+      displayName: 'E2E legacy activity actions',
+      description: 'test-only compatibility role; never seeded by prisma/seed.ts',
+    },
+    select: { id: true },
+  });
+  await prisma.rolePermission.createMany({
+    data: legacyActionPermissions.map((permission) => ({
+      roleId: legacyActivityActionsRole.id,
+      permissionId: permission.id,
+    })),
+    skipDuplicates: true,
+  });
+  await prisma.rolePermission.deleteMany({
+    where: {
+      roleId: legacyActivityActionsRole.id,
+      permissionId: { notIn: legacyActionPermissions.map((permission) => permission.id) },
+    },
+  });
+  return legacyActivityActionsRole.id;
+}
+
+async function ensureUserRoleBinding(
+  prisma: PrismaService,
+  userId: string,
+  roleId: string,
+  options: {
+    scopeType: 'GLOBAL' | 'ORGANIZATION_TREE';
+    scopeOrgId?: string;
+  },
+): Promise<void> {
+  const existing = await prisma.roleBinding.findFirst({
+    where: {
+      principalType: 'USER',
+      principalId: userId,
+      roleId,
+      scopeType: options.scopeType,
+      scopeOrgId: options.scopeOrgId ?? null,
+      status: 'ACTIVE',
+      deletedAt: null,
+    },
+    select: { id: true },
+  });
+  if (!existing) {
+    await prisma.roleBinding.create({
+      data: {
+        principalType: 'USER',
+        principalId: userId,
+        roleId,
+        scopeType: options.scopeType,
+        scopeOrgId: options.scopeOrgId,
+        status: 'ACTIVE',
+      },
+    });
+  }
+}
+
+export async function grantLegacyActivityActionsToUser(
+  app: INestApplication,
+  userId: string,
+  options: {
+    scopeType?: 'GLOBAL' | 'ORGANIZATION_TREE';
+    scopeOrgId?: string;
+  } = {},
+): Promise<void> {
+  const prisma = app.get(PrismaService);
+  await ensureUserRoleBinding(prisma, userId, await ensureLegacyActivityActionsRole(prisma), {
+    scopeType: options.scopeType ?? 'GLOBAL',
+    scopeOrgId: options.scopeOrgId,
+  });
+}
+
+// 新增 return 只归显式 attendance-first-reviewer；终审/reopen 只归
+// attendance-final-reviewer；PR-11 contract 活动动作只归 owner/collaborator/reviewer。
 const BIZ_ADMIN_UNBOUND_CODES: ReadonlySet<string> = new Set([
   MEMBER_DELETE_RECORD_CODE,
-  'attendance.return.sheet',
   'attendance.final-approve.sheet',
   'attendance.final-reject.sheet',
-  'attendance.final-return.sheet',
   'attendance.reopen.sheet',
+  ...ACTIVITY_RESPONSIBILITY_CONTRACT_ACTION_CODES,
 ]);
 
 // 沿 prisma/seed.ts BIZ_PERMISSION_SEED 取 e2e 实际使用子集;
@@ -359,7 +467,7 @@ const BIZ_PERMISSIONS = [
 ] as const;
 
 // 在 e2e 的 beforeAll 调用一次,seed 本 fixture 所需业务面码 + biz-admin 角色 + 对应 RolePermission
-// 绑定(过滤 `member.delete.record` + 终审两码;沿 D1=A 镜像 + 摘码微刀)。
+// 绑定(过滤 `member.delete.record` + reviewer-only + v0.61.0 contract 动作码)。
 // 幂等:多次调用不出错(upsert + skipDuplicates)。
 export async function seedBizAdminPermissionsAndRole(
   app: INestApplication,
@@ -390,6 +498,10 @@ export async function seedBizAdminPermissionsAndRole(
     data: bizAdminBindings.map((p) => ({ roleId: bizAdmin.id, permissionId: p.id })),
     skipDuplicates: true,
   });
+
+  // gate=false 历史功能回归仍需一个能执行旧动作的主体。它必须与真实 biz-admin 分离，
+  // 才能让 contract 边界测试证明通用角色已摘权。
+  await ensureLegacyActivityActionsRole(prisma);
   return {
     bizAdminRoleId: bizAdmin.id,
     bizPermissionCount: seeded.length,
@@ -404,29 +516,12 @@ export async function grantBizAdminToUser(
   app: INestApplication,
   userId: string,
   bizAdminRoleId: string,
+  options: { includeLegacyActivityActions?: boolean } = {},
 ): Promise<void> {
   const prisma = app.get(PrismaService);
-  const existing = await prisma.roleBinding.findFirst({
-    where: {
-      principalType: 'USER',
-      principalId: userId,
-      roleId: bizAdminRoleId,
-      scopeType: 'GLOBAL',
-      status: 'ACTIVE',
-      deletedAt: null,
-    },
-    select: { id: true },
-  });
-  if (!existing) {
-    await prisma.roleBinding.create({
-      data: {
-        principalType: 'USER',
-        principalId: userId,
-        roleId: bizAdminRoleId,
-        scopeType: 'GLOBAL',
-        status: 'ACTIVE',
-      },
-    });
+  await ensureUserRoleBinding(prisma, userId, bizAdminRoleId, { scopeType: 'GLOBAL' });
+  if (options.includeLegacyActivityActions !== false) {
+    await grantLegacyActivityActionsToUser(app, userId);
   }
 }
 

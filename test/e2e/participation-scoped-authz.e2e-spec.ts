@@ -14,7 +14,10 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
-import { grantBizAdminToUser } from '../fixtures/biz-admin.fixture';
+import {
+  grantBizAdminToUser,
+  grantLegacyActivityActionsToUser,
+} from '../fixtures/biz-admin.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -235,6 +238,30 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
         organizationId: groupId,
         positionId: groupLeaderPositionId,
         status: AssignmentStatus.ACTIVE,
+        startedAt: PAST_START,
+      },
+    });
+    // gate=false 的旧 org-admin 行为仍由显式 test-only scoped grant 承载；
+    // 真实 seed 角色保持 PR-11 摘权后的终态。
+    await grantLegacyActivityActionsToUser(app, teamLeaderUser.id, {
+      scopeType: 'ORGANIZATION_TREE',
+      scopeOrgId: smrtId,
+    });
+    // group-manager 不再天然一审；本 scope 测试改由独立一审角色显式授权。
+    const firstReviewerRoleId = (
+      await prisma.rbacRole.findFirstOrThrow({
+        where: { code: 'attendance-first-reviewer', deletedAt: null },
+        select: { id: true },
+      })
+    ).id;
+    await prisma.roleBinding.create({
+      data: {
+        principalType: PrincipalType.USER,
+        principalId: groupLeaderUser.id,
+        roleId: firstReviewerRoleId,
+        scopeType: BindingScopeType.ORGANIZATION_TREE,
+        scopeOrgId: groupId,
+        status: 'ACTIVE',
         startedAt: PAST_START,
       },
     });
