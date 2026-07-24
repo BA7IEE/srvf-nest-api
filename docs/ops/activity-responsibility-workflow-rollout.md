@@ -1,7 +1,8 @@
-# 活动责任闭环上线认领与切换 Runbook
+# 活动责任闭环未来正式上线 SOP
 
-> 适用版本：v0.61.0 活动责任闭环 PR-10 / PR-11。  
-> 性质：维护者在受控维护窗执行的一次性上线 SOP，不是自动修数脚本。  
+> **当前尚无正式生产环境，本开发阶段不执行本文任何生产命令。**
+> 性质：未来具备正式环境和上线授权后，由维护者在受控维护窗执行的一次性 SOP，不是自动修数脚本。
+> 未来执行前必须用届时批准的正式 release tag、同一份 release 构建物和不可变 image digest 重新复核全文；当前 SHA、版本号和历史 PR 编号都不是永久发布锚点。维护实例与最终业务实例必须使用相同 image digest，该构建物必须包含活动责任闭环全部已合并修复，并重新通过届时的 CI、Docker Smoke 和人工评审。
 > 权威业务决议：[`activity-responsibility-workflow-v2-review.md`](../archive/reviews/activity-responsibility-workflow-v2-review.md)。  
 > 机器可执行只读探针：[`activity-responsibility-workflow-preflight.sql`](activity-responsibility-workflow-preflight.sql)。
 
@@ -13,7 +14,7 @@
 - 真实姓名、`memberNo`、账号、任职和活动对应关系不得进入仓库、PR、issue 或 AI 会话；本文件只使用占位符。
 - 禁止 `prisma migrate dev`、`prisma migrate reset`、`prisma db push`。生产仅执行已审查的 `pnpm prisma:deploy`。
 - 同一 fleet 禁止 `ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED=true/false` 混跑。切 true 前必须 drain 旧实例与旧事务。
-- PR-11 contract 后，单独把 gate 改回 false 不构成完整回滚：旧通用角色权限已经摘除，回滚必须同时恢复上一版本及经审核的旧 RolePermission 集。
+- contract 收口后，单独把 gate 改回 false 不构成完整回滚：旧通用角色权限已经摘除，回滚必须同时恢复上一版本及经审核的旧 RolePermission 集。
 
 ## 1. 阶段与通过条件
 
@@ -21,7 +22,7 @@
 |---|---|---|---|---|
 | expand / 配置 | `false` | 保留 | 部署 nullable schema、新角色；配置 reviewer；盘点 legacy | 不切生产入口 |
 | 认领维护窗 | 旧 fleet 全停；唯一维护实例为 `true` | 保留 | 冻结外部流量后逐条 `assign-initiator` / `claim`；反复跑只读探针 | `dataReadyForContract=true`，随后停止维护实例 |
-| contract 维护窗 | 全部实例停止 | PR-11 seed 摘除 | 最终只读探针、已审查 deploy/seed | false fleet 与 true 维护实例均 drain |
+| contract 维护窗 | 全部实例停止 | 经审核的 contract seed 摘除 | 最终只读探针、已审查 deploy/seed | false fleet 与 true 维护实例均 drain |
 | cutover | 全 fleet `true` | 已摘除 | 启动新实例并验收 workflow | fleet 配置一致、验收全绿 |
 
 任何阶段的通过条件不满足，都停止在当前阶段，不进入下一阶段。
@@ -54,7 +55,7 @@ SQL 首行输出 `summary|{...}`，随后按需输出零到多行 `legacy-gap|{.
 | `activityPublishReviewerBindings` | > 0 | 至少一条当前有效的发布审核绑定 |
 | `attendanceFirstReviewerBindings` | > 0 | 至少一条当前有效的考勤一审绑定 |
 | `attendanceFinalReviewerBindings` | > 0 | 至少一条当前有效的考勤终审绑定 |
-| `dataReadyForContract` | `true` | 上述条件的合取；只证明数据配置可进入 PR-11 contract，不代表 fleet 已 drain |
+| `dataReadyForContract` | `true` | 上述条件的合取；只证明数据配置可进入 contract，不代表 fleet 已 drain |
 
 探针只把 `draft` / `published` 作为 legacy 阻断项。`completed` / `cancelled` 允许 initiator / owner 为空，继续以 `legacyUnassigned=true` 只读展示。
 
@@ -194,10 +195,10 @@ reviewer 探针只计入以下绑定：
 
 任职撤销 / 到期后，POSITION_ASSIGNMENT binding 立即失效，不依赖缓存刷新。
 
-## 5. PR-11 contract 前 production checklist
+## 5. contract 前正式环境 checklist
 
-- [ ] 当前部署代码包含 PR-1 至 PR-10，required CI 全绿。
-- [ ] 已审查的 65 个 migration 均 deploy 完成，`prisma migrate status` 无 pending。
+- [ ] 维护实例与最终业务实例使用同一份已批准的正式 release 构建物和相同 image digest；该构建物包含活动责任闭环全部已合并修复，required CI、Docker Smoke 和人工评审全绿。
+- [ ] 该正式 release 包含的全部已审查 migration 均 deploy 完成，`prisma migrate status` 无 pending。
 - [ ] fleet 当前仍统一显式为 `ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED=false`。
 - [ ] 发布审核、一审、终审均至少一条有效绑定；终审建议两人互备。
 - [ ] 三个 reviewer 角色的固定 RolePermission 码集已与 seed 逐码核对。
@@ -217,7 +218,7 @@ reviewer 探针只计入以下绑定：
 - [ ] owner projection gap 为 0。
 - [ ] true 维护实例已停止并 drain，数据库上没有活动责任 workflow 写事务。
 
-任一前置项或维护窗项未勾选，禁止执行 PR-11 contract seed 或启动 cutover fleet。
+任一前置项或维护窗项未勾选，禁止执行 contract seed 或启动 cutover fleet。
 
 ## 6. 维护窗切换顺序
 
@@ -225,10 +226,10 @@ reviewer 探针只计入以下绑定：
 
 1. 冻结活动 / 报名 / 考勤写流量。
 2. 停止并 drain 所有 false 实例、worker 和旧事务，确认连接与写流量归零。
-3. 启动一个不接外部流量的 PR-1–PR-10 维护实例，显式配置 gate=true；不得同时保留 false 实例。
+3. 从已批准的正式 release 构建物启动一个不接外部流量的维护实例，核对其 image digest 与最终业务实例计划值完全相同，显式配置 gate=true；不得同时保留 false 实例。
 4. 通过 §3 API 逐条完成 legacy 认领，反复跑 §2；只接受 `dataReadyForContract=true`。
 5. 停止并 drain true 维护实例，再在同一数据库快照上重跑 §2。
-6. 执行已审查的 PR-11 deploy / seed，使通用角色旧动作权限完成 targeted contract 摘除。
+6. 执行该正式 release 中已审查的 deploy / seed，使通用角色旧动作权限完成 targeted contract 摘除。
 7. 核对 `biz-admin` / `org-admin` / `group-manager` 精确码集与三个 reviewer / owner 角色码集。
 8. 为整个新 fleet 注入完全相同的 `ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED=true`，再启动实例。
 9. 先验 health / ready，再进行 §7 业务验收；通过后恢复流量。

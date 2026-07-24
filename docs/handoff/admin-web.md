@@ -3,6 +3,7 @@
 > **canonical**(本文件在后端仓,改契约同 PR 改本文件;见 [`README.md`](README.md))。
 > 字段级真相 = live `/api/docs-json`;权限码 = [`RBAC_MAP.md`](../ai-harness/RBAC_MAP.md)(总数见 [`current-state.md §1`](../current-state.md),脚本守护,本文不抄数)。
 > 本文件只讲这两样讲不了的:**轴模型 + 任务→端点图 + 踩坑 + 缺口**。
+> 活动责任闭环当前是 Unreleased 开发能力，只用于本地前后端联调；没有正式生产环境，也不执行未来 Runbook 的迁移、认领、人员配置、部署或切换步骤。
 
 ---
 
@@ -43,7 +44,7 @@
 | 区块 | 端点 |
 |---|---|
 | 活动头部 + 发布/取消/完结 | `GET /api/admin/v1/activities/:id`(含派生 `phase`) · `PATCH .../:id/publish`(body 必填 `{requiresInsuranceConfirmed:true}`) · `PATCH .../:id/cancel`(仅 draft|published) · `POST .../:id/complete`(**唯一**完结通路 published→completed) |
-| 负责人 / 协办 tab（Unreleased PR-5） | `GET /api/admin/v1/activities/:activityId/responsibilities` · `POST/DELETE .../collaborators[/:assignmentId]` · `POST .../transfer`；legacy 仅管理员用 `POST .../claim` / `POST .../assign-initiator` |
+| 负责人 / 协办 tab（Unreleased） | `GET /api/admin/v1/activities/:activityId/responsibilities` · `POST/DELETE .../collaborators[/:assignmentId]` · `POST .../transfer`；legacy 仅管理员用 `POST .../claim` / `POST .../assign-initiator` |
 | 岗位 tab | `POST/GET /api/admin/v1/activities/:activityId/positions` · `GET/PATCH/DELETE .../positions/:activityPositionId`；读仅登录，写复用 `activity.update.record` + activity scope |
 | 报名 tab | `GET /api/admin/v1/activities/:id/registrations?statusCode=` · `POST` 代报名 · `PATCH .../:rid/{approve,reject,cancel}` · `POST .../:rid/reopen`(v0.40.0 审批后悔药 reject→pending)· `PATCH .../{bulk-approve,bulk-reject}`(1–100 条逐项结果) · `GET .../export`(CSV) |
 | 考勤 tab | `GET /api/admin/v1/activities/:id/attendance-sheets?statusCode=` · `POST` 提交单据 |
@@ -52,11 +53,11 @@
 | 考勤审核详情 | `GET /api/admin/v1/attendance-sheets/:id/review-detail`(**活动摘要+单据+records含队员嵌套**,为审核页量身做的)· `PATCH .../:id/{approve,reject,final-approve,final-reject}` · `POST .../:id/{return,final-return,resubmit,reopen}` · `DELETE` |
 | 参与核对 / 汇总 | `GET /api/admin/v1/activities/:id/reconciliation`(**仅 completed**) · `GET .../:id/participation-summary`；两者均需 `attendance.read.sheet` + `activity-registration.read.record` |
 
-> **Unreleased · 活动责任闭环 PR-4–PR-11**：活动出参 additive 增加 `initiatorMemberId` / `workflowRevision`，Admin create 可选 `initiatorMemberId`；不传时当前账号必须绑定正式队员，代建仅限 SUPER_ADMIN 或 `activity-responsibility.override.record`。发布审核工作台为 `GET /api/admin/v1/activity-publish-reviews`、`GET /:id`、`POST /:id/approve`、`POST /:id/return`，列表按显式 reviewer RoleBinding 组织范围过滤。发布成功会原子创建发起人为唯一 owner 并投影 `activity-owner` scoped binding；reviewer 永不因审批成为 owner。责任读模型返回 `{activityId,initiator,owner,collaborators,legacyUnassigned}`；协办 body 为 `{memberId,canManageRegistrations,canManageAttendance,reason?}`（至少一个 capability=true），移交 body 为 `{newOwnerMemberId,retainPreviousOwnerAsCollaborator,reason}`。legacy `claim` 只允许已发布且零 active responsibility，`assign-initiator` 只允许 draft 且 initiator 为空，两者 reason 必填。gate=true 后 pending review 期间 Activity 与岗位不可直改，published 直改返回 `20037`；App submit/withdraw/change proposal 与 Admin approve change 均已交付。PR-11 已把普通 `biz-admin`/`org-admin` 的活动写、报名写、考勤写/一审以及 `group-manager` 一审摘除，通用角色只保留规格中的 create/delete/read；Docker smoke 显式 gate=true。真实 production gate、认领与 reviewer/owner 配置仍必须按下方 runbook 现场执行。
+> **Unreleased · 活动责任闭环本地联调（历史来源 PR-4–PR-11）**：活动出参 additive 增加 `initiatorMemberId` / `workflowRevision`，Admin create 可选 `initiatorMemberId`；不传时当前账号必须绑定正式队员，代建仅限 SUPER_ADMIN 或 `activity-responsibility.override.record`。发布审核工作台为 `GET /api/admin/v1/activity-publish-reviews`、`GET /:id`、`POST /:id/approve`、`POST /:id/return`，列表按显式 reviewer RoleBinding 组织范围过滤。发布成功会原子创建发起人为唯一 owner 并投影 `activity-owner` scoped binding；reviewer 永不因审批成为 owner。责任读模型返回 `{activityId,initiator,owner,collaborators,legacyUnassigned}`；协办 body 为 `{memberId,canManageRegistrations,canManageAttendance,reason?}`（至少一个 capability=true），移交 body 为 `{newOwnerMemberId,retainPreviousOwnerAsCollaborator,reason}`。legacy `claim` 只允许已发布且零 active responsibility，`assign-initiator` 只允许 draft 且 initiator 为空，两者 reason 必填。gate=true 后 pending review 期间 Activity 与岗位不可直改，published 直改返回 `20037`；App submit/withdraw/change proposal 与 Admin approve change 均已交付。普通 `biz-admin`/`org-admin` 不再天然拥有活动写、报名写、考勤写/一审，`group-manager` 也不天然拥有一审；通用角色只保留规格中的 create/delete/read。代码、契约、全量测试和临时 Docker Smoke 已验证，但当前只供本地联调，不配置真实 reviewer/owner。
 >
 > **Unreleased · PR-12 发起权限边界**：create 与 draft 真实改 `organizationId` 共用同一发起资格策略；目标组织必须存在、ACTIVE、未软删且非根，持久化 initiator 必须是 ACTIVE 正式队员并关联至少一个 ACTIVE、未软删 User。后台代建沿既有 contract：membership 属于目标 initiator，`activity.create.cross-org` scoped grant 属于实际操作者；draft 改组织不得用操作者 memberId 回退。已发布活动的普通 change proposal 不允许改组织，submit 与 approve（含旧/篡改 snapshot）均以 `20022` 拒绝；显式传当前相同 `organizationId` 正常通过。
 >
-> **PR-10/PR-11 上线准备**：legacy gap、显式认领、三个 reviewer RoleBinding 与整 fleet 切换顺序见 [`activity-responsibility-workflow-rollout.md`](../ops/activity-responsibility-workflow-rollout.md)。代码 contract 已完成，但只有生产只读探针 `dataReadyForContract=true` 且旧实例/旧事务已 drain，才可实际切 true；前端不得用 `publishedBy` 猜 owner，也不得把 smoke=true 当作生产已切换。
+> **未来正式上线参考**：legacy gap、显式认领、三个 reviewer RoleBinding 与整 fleet 切换顺序保留在 [`activity-responsibility-workflow-rollout.md`](../ops/activity-responsibility-workflow-rollout.md)。当前不执行；真正上线时必须使用届时批准的正式 release tag 和不可变 image digest 重新复核。前端不得用 `publishedBy` 猜 owner，也不得把本地 smoke=true 当作环境状态。
 
 > 关键:报名/考勤接口**本来就按 activityId 嵌套**——作战室是它们的自然消费者。
 > `activityId` 从**路由参数**来,不要在页面顶部摆"选择活动"下拉。
@@ -120,6 +121,18 @@
 
 ### 2.3 审批工作台(跨活动横扫"待我处理")— ✅ 后端扁平查询就绪(跨轴只读 2026-06-23;F2「B 组」搜索/组织过滤/expand 已发 main)
 跨所有活动按 `statusCode` 横扫报名/考勤,**脱离 `:activityId` 路径段**:`GET /api/admin/v1/registrations?statusCode=` · `GET /api/admin/v1/attendance-sheets?statusCode=`(均分页 + item 自带 activity 上下文 `activityId`/`activityTitle`)。见 [GAP-001](#4-缺口台账-gap-ledger)。
+
+活动责任闭环联调必须把以下五种视图分开，不能因为用户“能看到某页”就把写按钮全部点亮：
+
+| 视图 | 数据源 | 操作判断 |
+|---|---|---|
+| 我参与的活动 | App `GET /api/app/v1/my/activities` | 本人报名/参与历史，不代表管理责任 |
+| 我发起或负责的活动 | App `GET /api/app/v1/my/managed-activities` | 详情的 `myResponsibility`、publish review 与 closure 状态 |
+| 待我审核发布 | Admin `GET /api/admin/v1/activity-publish-reviews?status=pending` | `activity.publish.record` 对该 review/activity 的 scoped 判定 |
+| 待我一审 | Admin `GET /api/admin/v1/attendance-sheets?statusCode=pending` | `attendance.approve.sheet` + resource 状态 + 人员隔离 |
+| 待我终审 | Admin `GET /api/admin/v1/attendance-sheets?statusCode=pending_final_review` | `attendance.final-approve.sheet` + resource 状态 + 人员隔离 |
+
+列表可见只说明有读取范围。按钮仍需按对应 action、resource-specific responsibility 和当前状态判断，服务端判定是最终结果；不要按管理员、队长、`publishedBy` 或页面可见性猜权限。
 
 > 报名批量动作仍落在具体活动轴：`PATCH admin/v1/activities/:activityId/registrations/bulk-approve` / `bulk-reject`。body `ids` 去重且 1–100；后端按输入顺序逐条复用单条 approve/reject 的事务、容量、状态、审计与通知语义，返回逐项 success/failed，一条失败不会回滚此前成功项。前端必须展示失败行及其 BizCode，不能把 HTTP 200 等价成“全批成功”；批量驳回未填备注时后端使用「批量驳回」。
 
@@ -388,14 +401,14 @@
 
 **故意不做的菜单**(它们是别人的 tab):报名管理、考勤管理、证书管理、保险管理、紧急联系人、部门管理、**任职管理**(任职是组织轴+队员轴双 tab,§2.6/§2.2,不设顶级"任职管理"+手选组织/队员)。看到要写"请先选择一个 X 才能看 Y"就回 §1 反模式。
 
-> **分组可演进**:① "系统管理" 一拥挤就拆「基础数据」(字典 / 组织 / 职务定义 / 职务规则 / 贡献值规则 / 附件配置)+「系统与权限」(用户 / 角色 / 审计 / 短信日志 / 各设置),按使用频率 + 权限层级分;② 审批工作台**只做日常高频**(报名 / 考勤);招新报名、入队申请的待处理队列是季节性的,**留在各自模块**别塞进工作台(要"全局待办数"等 [GAP-003](#4-缺口台账-gap-ledger) 的 stats 端点统一出)。
+> **分组可演进**:① "系统管理" 一拥挤就拆「基础数据」(字典 / 组织 / 职务定义 / 职务规则 / 贡献值规则 / 附件配置)+「系统与权限」(用户 / 角色 / 审计 / 短信日志 / 各设置),按使用频率 + 权限层级分;② 审批工作台**只做日常高频**(活动发布 / 报名 / 考勤);招新报名、入队申请的待处理队列是季节性的,**留在各自模块**别塞进工作台(要"全局待办数"等 [GAP-003](#4-缺口台账-gap-ledger) 的 stats 端点统一出)。
 
 ### 5.3 页面骨架 + 可见性码(组件按 Element Plus / pure-admin `PureTable`)
 
 | 页面 | 主端点(详见 §2) | 进入/列表可见性码 | 骨架要点 |
 |---|---|---|---|
 | 活动列表 → 作战室 | `activities` + `/:id/{registrations,attendance-sheets,reconciliation,participation-summary}` | 列表 `[auth]` 仅登录;写操作 `activity.*.record`;参与核对需两项读码 | `el-tabs` 增「参与核对」；`activityId` 取**路由参数**不放下拉；completed 才拉 reconciliation；考勤进 `review-detail` 审核页(初审/终审) |
-| 审批工作台 | `registrations?statusCode=` · `attendance-sheets?statusCode=` · 活动轴 `registrations/{bulk-approve,bulk-reject}` | `activity-registration.read.record` · `attendance.read.sheet` | 跨活动扁平列表 + `statusCode` 切；选中项按 activityId 分组后调用批量端点；展示逐项失败 BizCode；终审 22074/22075 仍单独处理 |
+| 审批工作台 | `activity-publish-reviews?status=pending` · `registrations?statusCode=` · `attendance-sheets?statusCode=` · 活动轴 `registrations/{bulk-approve,bulk-reject}` | `activity-review.read.request` · `activity-registration.read.record` · `attendance.read.sheet` | 发布审核、报名、考勤分栏；考勤再按 `pending`/`pending_final_review` 分一审和终审；选中报名按 activityId 分组后调用批量端点；展示逐项失败 BizCode；22081/22074/22075 单独处理 |
 | 队员列表 → 360 | `members` + 子资源(§2.2;含**组织归属 memberships** CRUD + **任职 position-assignments** 只读 + `participation-summary`)| `member.read.record`(各子 tab 另持各自 read 码;参与汇总另需 `attendance.read.sheet`)| `el-tabs` 十 tab；参与汇总卡展示 approved 时长/活动数/记录数 + capped 贡献值，**别裸 SUM**(§3 #4) |
 | 队保单 | `team-insurance-policies` | `team-insurance-policy.read.record` | 左保单表 + 右覆盖名单(`el-transfer` 或加/移弹窗) |
 | 招新轮次 / 报名审核 | `recruitment/{cycles,applications}`(列表 `?cycleId=&statusCode=&riskLevel=normal\|high\|system` 过滤〔三参均 query DTO 白名单、可选;早期 loose `@Query` 旁路曾被全局 `forbidNonWhitelisted` 误拒 400,已纳入 `RecruitmentApplicationListQueryDto` 修复〕,**S4b**) | `recruitment-cycle.read.record` · `recruitment-application.read.record`(列表/脱敏详情)· `recruitment-application.read.sensitive`(详情明文证件号·手机 + 证件照 signed-URL;**S3 敏感分级**) | `el-steps` 表流程;**详情默认脱敏,持 `read.sensitive` 才显明文证件号/手机 + 取证件照 signed-URL**(无该码 → signed-URL 30100;字段集不变只 masking 随码);**S4b 人工队列三栏**:列表按 `riskLevel`(普通/高风险/系统异常)切栏,DTO 含 `riskLevel`/`manualReviewReason`(`forgery_suspected`/`system_ocr_error`/`ocr_mismatch_confirmed`/`special_document`)分组筛;`el-drawer` 标门槛/综合评定/一键发号;**S6 批量操作**:`POST applications/batch-mark-threshold`(批量标门槛,匹配键 临时编号/手机/姓名+手机,`mark.threshold` 码,返 per-row + 批次汇总)· `POST applications/export`(导 CSV,`read.record` 脱敏列 / `read.sensitive` 明文列)· `GET cycles/:id/promote-precheck`(发号前预检,`promote.member` 码,预检=实发;**v0.40.0 H5 手机通道**:无微信 openid 但有已验证手机的申请人**现可一键发号**〔建 SMS 登录通道账号〕,`PromotePrecheckRowDto` additive +`phoneAlreadyBound`/`duplicatePhoneInBatch` 两 flag;⚠️ **skipReason 字符串变**:`missing-openid` 停用 → `missing-login-channel`〔openid+phone 皆无〕,另新增 `phone-already-bound`/`duplicate-phone-in-batch`——前端若硬编码 `missing-openid` 文案须改);**OCR 鉴伪版充分利用(已发 v0.33.0)**:`GET applications/{id}/id-card-image-url` 现返**三图 signed-URL**(`url` 原图 + `cropImageUrl` 主体框裁剪 + `portraitImageUrl` 头像裁剪;裁剪图仅大陆身份证鉴伪版且已入库才有、否则 null;**仍 `read.sensitive` 闸**),报名详情 DTO **+4 OCR 顾问式列** `ocrAddress`/`ocrNation`/`ocrAuthority`/`ocrValidDate`(**随 `read.sensitive` 分级:脱敏级 → null**,住址等同证件号敏感)+ `hasIdCardCropImage`/`hasIdCardPortraitImage` 布尔 flag;**OCR 仅顾问式存档,gender/birth 仍由证件号推导权威、不被 OCR 覆盖**;**F2 改资料(v0.41.0-pre)**:`PATCH applications/:id`(新码 `recruitment-application.update.record`)——非身份字段(地址/紧急联系人〔整组替换〕/profileExtra/来源渠道/城区)恒可改,身份字段(realName/idCardNumber/birthDate/genderCode)**仅 `manual_review` 或外籍记录**(verified 大陆 → `28045` 文案「已通过证件核验不可修改身份字段」);大陆记录 birthDate/genderCode 由证件号派生**不可直改**(表单该两项对大陆记录禁用),改证件号会自动重派生;promoted/已脱敏行 → `28041`;**phone/openid 改绑不在此端点**(引导申请人走自助换绑)——发号预检 skip 的 `missing-derived-field`/`incomplete-data` 行在此补录后即可走 F3 单人建档;**F3 单人手动建档(v0.41.0-pre)**:`POST applications/:id/promote-single`(新码 `recruitment-application.promote.single`)——批量发号 skip 项(锚点占用/缺派生)逐条收尾;非大陆证件资料与登录锚齐备时已直接进入 batch,不因证件类型单独 skip。单人通道与批量共用建档内核 + 原子号段(编号连续)+ 发号通知,且**同样放行非大陆证件**(缺姓名/生日/性别 → `28047`「先补录再建档」,前端直接跳 F2 编辑);锚点自动择优(openid 可用→微信登录,否则手机→SMS 登录,响应 `loginChannel` 回显;双缺/双占 → `28046`「引导申请人先自助换绑」);已发号重跑 → `28041`(幂等零重复)。公示页/预检页每个 skip 行的「手动建档」按钮即接此端点;**F7 证书图(v0.41.0-pre)**:`GET applications/:id/certificate-image-urls`(**复用 `read.sensitive`**,短 TTL signed-URL 按类别分组〔first_aid/bsafe〕,无图 → 空 items)——报名详情「证书材料」面板取图;标 redCross/bsafe 门槛前可先看申请人自报证书图;发号后图随档案进 certificates(pending 行,占位 issuingOrg/issuedAt 待核验人经证书面修正) |
