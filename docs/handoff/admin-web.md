@@ -58,6 +58,8 @@
 > **Unreleased · PR-12 发起权限边界**：create 与 draft 真实改 `organizationId` 共用同一发起资格策略；目标组织必须存在、ACTIVE、未软删且非根，持久化 initiator 必须是 ACTIVE 正式队员并关联至少一个 ACTIVE、未软删 User。后台代建沿既有 contract：membership 属于目标 initiator，`activity.create.cross-org` scoped grant 属于实际操作者；draft 改组织不得用操作者 memberId 回退。已发布活动的普通 change proposal 不允许改组织，submit 与 approve（含旧/篡改 snapshot）均以 `20022` 拒绝；显式传当前相同 `organizationId` 正常通过。
 >
 > **未来正式上线参考**：legacy gap、显式认领、三个 reviewer RoleBinding 与整 fleet 切换顺序保留在 [`activity-responsibility-workflow-rollout.md`](../ops/activity-responsibility-workflow-rollout.md)。当前不执行；真正上线时必须使用届时批准的正式 release tag 和不可变 image digest 重新复核。前端不得用 `publishedBy` 猜 owner，也不得把本地 smoke=true 当作环境状态。
+>
+> 本地正常验收中的发布审核员、考勤一审员和终审员必须使用显式 scoped RoleBinding，不能使用 SUPER_ADMIN 掩盖角色配置问题。实际系统中 SUPER_ADMIN 保留紧急兜底权限，但仍受考勤提交人不能审核自己、最近重提人不能审核自己、一审人不能终审同一张单等人员隔离规则约束，不应作为日常审核人员配置使用。
 
 > 关键:报名/考勤接口**本来就按 activityId 嵌套**——作战室是它们的自然消费者。
 > `activityId` 从**路由参数**来,不要在页面顶部摆"选择活动"下拉。

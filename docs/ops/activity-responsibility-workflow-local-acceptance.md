@@ -1,8 +1,11 @@
 # 活动责任闭环本地验收与前端联调说明
 
-> **本文件只用于本地开发和联调，不得直接照此操作生产环境。**
+> **本文件只用于专用本地联调数据库，不得复制命令操作正式环境。**
 >
-> 当前能力是 Unreleased 开发版，只允许在自动派生的 `app_test_*`、CI 临时测试库或可销毁的 Docker Smoke 临时库中验证。它不是正式上线、部署或切换指令。
+> 当前能力仍是 Unreleased 开发版。前端手工联调只使用按
+> [`activity-responsibility-workflow-local-bootstrap.md`](activity-responsibility-workflow-local-bootstrap.md)
+> 建立的 `app_local_frontend` / `app_local_frontend_<suffix>` 专用可销毁数据库；自动测试继续只用自动派生的
+> `app_test_*`、CI 临时测试库或 Docker Smoke 临时库。它不是正式上线、部署或切换指令。
 
 ## 1. 现在能做什么
 
@@ -18,22 +21,26 @@
 
 ## 2. 本地测试账号
 
-只创建明显的占位数据，不使用真实姓名、手机号、证件号、账号、`memberNo` 或组织关系。
+固定 17 个用户名、组织、等级、预置授权和可见性矩阵以
+[`activity-responsibility-workflow-local-bootstrap.md §6`](activity-responsibility-workflow-local-bootstrap.md#6-固定账号矩阵)
+为唯一准备清单。所有账号都只使用明显的 `local_fe_` / `LOCAL-FE-` 占位数据，不使用真实姓名、手机号、证件号、真实
+`memberNo` 或真实组织关系；密码只从调用者提供的 `LOCAL_FRONTEND_FIXTURE_PASSWORD` 读取，任何文档、清单和日志都不记录密码。
 
-| 占位账号 | 本地职责 | 主要动作 |
-|---|---|---|
-| Local Activity Owner | 正式队员、活动发起人和初始 owner | 建草稿、送审、报名审核、委托、移交 |
-| Local Publish Reviewer | 显式配置的发布审核员 | 审核发布申请，不因此成为 owner |
-| Local Registration Collaborator | 只管理报名的协办人 | 查看和审核本活动报名 |
-| Local Attendance Collaborator | 只管理考勤的协办人 | 整理、编辑、提交本活动考勤 |
-| Local First Reviewer A/B | 显式配置的考勤一审员 | 一审通过、拒绝或退回 |
-| Local Final Reviewer A/B | 显式配置的考勤终审员 | 终审通过、拒绝或退回 |
-| Local New Activity Owner | 移交后的新 owner | 完结活动、声明考勤提交完成 |
-| Local Participant | 普通参与队员 | 报名；终审通过后查看本人工时和贡献 |
-| Local Unrelated Administrator | 有通用管理角色但无本活动责任 | 用于验证报名、考勤写操作均被拒绝 |
-| Local Cross Organization Initiator | 只有跨组织发起资格 | 可在授权组织建草稿，但不能管理别人活动 |
+A–I 会使用以下职责账号：
 
-这些角色只在隔离测试库中用 fixture 建立。发布、一审、终审必须是显式 scoped RoleBinding；通用管理员身份、页面可见性或 `SUPER_ADMIN` 不能代替正常责任边界。
+- `local_fe_owner`：普通正式队员、主流程发起人和发布后的初始 owner；
+- `local_fe_publish_reviewer`：组织 A 的显式发布审核员，也单独验证本人活动直发；
+- `local_fe_registration_collab` / `local_fe_attendance_collab`：发布后由 owner 通过业务接口委托；
+- `local_fe_first_a` / `local_fe_first_b`：组织 A 的显式考勤一审员；
+- `local_fe_final_a` / `local_fe_final_b`：组织 A 的显式考勤终审员；
+- `local_fe_new_owner`：负责人移交目标；
+- `local_fe_participant_a` / `local_fe_participant_b`：报名、GPS 签到签退和 approved-only 对账；
+- `local_fe_unrelated_admin`：只有正常 `biz-admin`，没有 test-only legacy activity role；
+- `local_fe_cross_org`：本人属于组织 A，只对组织 B 持有精确跨组织发起授权；
+- `local_fe_org_b_owner`：组织 B 的正式队员和发布审核员，用于建立“组织 B 中别人负责”的活动；
+- `local_fe_volunteer` / `local_fe_reserve` / `local_fe_no_grade`：三个发起准入负例。
+
+本地正常验收中的发布审核员、考勤一审员和终审员必须使用显式 scoped RoleBinding，不能使用 SUPER_ADMIN 掩盖角色配置问题。实际系统中 SUPER_ADMIN 保留紧急兜底权限，但仍受考勤提交人不能审核自己、最近重提人不能审核自己、一审人不能终审同一张单等人员隔离规则约束，不应作为日常审核人员配置使用。
 
 ## 3. 前端的五个入口
 
@@ -49,20 +56,35 @@
 
 ## 4. 从创建到闭环怎么验
 
+### 开始前：为主流程安排真实短时间窗
+
+本流程不直接改数据库时间，也不通过 Prisma 伪造签到、owner、审核记录或业务状态。创建主流程活动时：
+
+1. `startAt` 预留足够时间完成发布和两名参与者报名，例如从当前时间起 20～30 分钟后开始；
+2. `endAt` 使用当天可实际等待结束的短时间窗；
+3. `registrationDeadline` 早于 `endAt`，但要给前端操作保留足够时间；
+4. `locationLongitude` / `locationLatitude` 填前端测试设备可实际到达的位置；
+5. 活动开始后，由两名参与者走真实 GPS 签到、签退；首次签退至少在签到 36 秒后；
+6. 活动自然到达 `endAt` 后再执行 I。若时间安排失误，重建一场本地活动，不得用 SQL、Prisma Studio 或手改系统时钟跳状态。
+
+建议分别建立三场本地活动：A + C–I 共用的“普通送审主流程”、B 的“审核员本人直发”、H 的“跨组织授权边界”。不要把三类互斥角色关系硬塞进同一场活动。
+
 ### A. 普通正式队员发起并送审
 
-1. Local Activity Owner 登录 App。只有 `gradeCode ∈ level-1..level-7`、ACTIVE 且有 ACTIVE User 的正式队员才显示“发起活动”。
+1. `local_fe_owner` 登录 App。只有 `gradeCode ∈ level-1..level-7`、ACTIVE 且有 ACTIVE User 的正式队员才显示“发起活动”。
 2. 先读 `GET /api/app/v1/my/managed-activities/organization-options`。组织选择器只使用返回项。
 3. `POST /api/app/v1/my/managed-activities` 建草稿，再用 `PATCH` 编辑活动，用 `/positions` 子资源新增和编辑岗位。
 4. 普通发起人显示“提交发布审核”，调用 `POST .../:activityId/submit-publish-review`。状态仍是 `draft`，公开活动详情不可见。
-5. Local Publish Reviewer 在待发布审核列表打开申请并调用 `POST /api/admin/v1/activity-publish-reviews/:id/approve`。
+5. `local_fe_publish_reviewer` 在待发布审核列表打开申请并调用 `POST /api/admin/v1/activity-publish-reviews/:id/approve`。
 6. 成功后活动为 `published`，发起人成为唯一 active owner，并生成 `activity-owner@ACTIVITY` RoleBinding；审核员不是 owner。
 
 不应出现：普通发起人的“直接发布”、审核员的 owner 管理按钮、待审活动的公开报名入口。
 
 ### B. 有审核资格的发起人直接发布
 
-当发起人对活动所属组织有有效 `activity-publish-reviewer` grant 时，详情的 `publishReview.canDirectPublish` 才能驱动“直接发布”。调用 `POST .../:activityId/direct-publish` 后仍会生成完整 `ActivityPublishReview`，其中：
+`local_fe_publish_reviewer` 另建一场组织 A 活动。当发起人对活动所属组织有有效
+`activity-publish-reviewer` grant 时，详情的 `publishReview.canDirectPublish` 才能驱动“直接发布”。调用
+`POST .../:activityId/direct-publish` 后仍会生成完整 `ActivityPublishReview`，其中：
 
 - `directPublish=true`；
 - `submittedByUserId === reviewedByUserId`；
@@ -73,25 +95,32 @@
 
 ### C. 报名审核责任
 
-1. Local Participant 调 `POST /api/app/v1/my/registrations`，状态进入 `pending`。
+1. `local_fe_participant_a` 和 `local_fe_participant_b` 分别调 `POST /api/app/v1/my/registrations`，状态进入 `pending`。
 2. owner 可在 `/:activityId/registrations` 审核通过。
-3. Local Unrelated Administrator 即使有通用管理角色也应收到 `30100`。
-4. owner 添加 `canManageRegistrations=true, canManageAttendance=false` 的协办人。
-5. 报名协办人可以管理报名，但访问考勤管理接口应收到 `30100`。
+3. `local_fe_unrelated_admin` 即使有通用管理角色也应收到 `30100`。
+4. owner 通过真实协办接口把 `local_fe_registration_collab` 添加为
+   `canManageRegistrations=true, canManageAttendance=false` 的协办人。
+5. `local_fe_registration_collab` 可以管理报名，但访问考勤管理接口应收到 `30100`。
 
 ### D. 临时委托考勤
 
-1. owner 添加 `canManageRegistrations=false, canManageAttendance=true` 的协办人。
-2. 考勤协办人从 `check-ins` 和 `attendance-sheet-draft` 整理草稿，再向 `attendance-sheets` 提交。
-3. 返回的 `submitterUserId`、`lastSubmittedByUserId` 应是真实协办用户；owner assignment 不变。
-4. 报名协办人和无活动责任的通用管理员不能提交考勤。
-5. 考勤提交按钮与审核按钮必须分开。拥有考勤协办责任不等于拥有一审或终审权限。
+1. owner 通过真实协办接口把 `local_fe_attendance_collab` 添加为
+   `canManageRegistrations=false, canManageAttendance=true` 的协办人。
+2. 到主流程活动时间窗后，`local_fe_participant_a` / `local_fe_participant_b` 分别通过
+   `POST /api/app/v1/my/activities/:activityId/check-in` 和 `check-out` 产生真实 GPS 证据；经纬度使用测试设备当前位置，
+   不从数据库伪造，签到后至少 36 秒再首次签退。
+3. `local_fe_attendance_collab` 从 `check-ins` 和 `attendance-sheet-draft` 整理草稿，再向
+   `attendance-sheets` 提交。
+4. 返回的 `submitterUserId`、`lastSubmittedByUserId` 应是真实协办用户；owner assignment 不变。
+5. 报名协办人和无活动责任的通用管理员不能提交考勤。
+6. 考勤提交按钮与审核按钮必须分开。拥有考勤协办责任不等于拥有一审或终审权限。
 
 ### E. 独立一审和终审
 
 1. 有效考勤单从 `pending` 开始。
-2. 独立一审员通过后进入 `pending_final_review`。
-3. 独立终审员通过后进入 `approved`。
+2. `local_fe_first_a` / `local_fe_first_b` 承担互相独立的一审轮次，通过后进入
+   `pending_final_review`。
+3. `local_fe_final_a` / `local_fe_final_b` 承担独立终审，通过后进入 `approved`。
 4. 原提交人或最近重提人不能一审、不能终审；一审人不能终审同一张单。
 5. 上述人员隔离对 `SUPER_ADMIN` 同样生效。
 6. 只有终审通过后，`/api/app/v1/my/attendance-records` 和 `/api/app/v1/my/participation-summary` 才计入工时、记录数和贡献值。
@@ -111,7 +140,7 @@
 
 ### G. 负责人移交
 
-owner 调 `POST .../:activityId/transfer-owner`：
+`local_fe_owner` 把负责人移交给 `local_fe_new_owner`，调用 `POST .../:activityId/transfer-owner`：
 
 - `initiatorMemberId` 永远保留原发起人；
 - 旧 owner assignment 和它的 `activity-owner` binding 结束；
@@ -123,7 +152,13 @@ owner 调 `POST .../:activityId/transfer-owner`：
 
 ### H. 跨组织发起
 
-- 无授权：不能选择其他组织；
+- `local_fe_owner` 的 organization-options 只能包含组织 A，不能包含组织 B；
+- `local_fe_cross_org` 属于组织 A，但 organization-options 还应包含组织 B，且该项
+  `source='cross-org-grant'`；
+- `local_fe_cross_org` 可在组织 B 建草稿；
+- `local_fe_org_b_owner` 在组织 B 建立并发布另一场属于自己的活动；
+- `local_fe_cross_org` 不能管理 `local_fe_org_b_owner` 的报名、考勤、移交或完结，越权动作返回
+  `30100`；
 - `ORGANIZATION` 精确授权：可在该组织发起；
 - `ORGANIZATION_TREE`：可覆盖授权树下级；
 - `GLOBAL` 也不能绕过停用组织或根组织禁令；
@@ -133,8 +168,9 @@ owner 调 `POST .../:activityId/transfer-owner`：
 
 本地验收使用真实状态接口，顺序如下：
 
-1. 通过测试 fixture 只推进活动时间到已结束；不直接修改业务状态。
-2. 当前 owner 调 `POST /api/admin/v1/activities/:id/complete`，活动从 `published` 进入 `completed`。
+1. 等待主流程活动自然到达 `endAt`；不得直接修改数据库时间、Activity 状态、审核状态或 closure 字段。
+2. 当前 owner `local_fe_new_owner` 调 `POST /api/admin/v1/activities/:id/complete`，活动从
+   `published` 进入 `completed`。
 3. 当前 owner 调 `POST /api/app/v1/my/managed-activities/:id/declare-attendance-complete`。
 4. 所有 `returned` 单修改重提，所有 `pending` 完成一审，所有 `pending_final_review` 完成终审。
 5. 重新读取 managed detail，确认 `closure.status='closed'`、`closure.nextAction=null`、`counts.unresolvedAttendanceSheets=0`。
@@ -157,24 +193,24 @@ owner 调 `POST .../:activityId/transfer-owner`：
 
 `GET /api/app/v1/me/capabilities` 是产品入口提示，不是某一活动的最终授权证明。按钮还必须结合 resource-specific responsibility 和状态；服务端每次请求的判定才是最终结果。
 
-## 6. 常见错误码
+## 6. 常见错误码与排查
 
-| BizCode | 大白话 |
-|---:|---|
-| `20019` | 当前队员不是可发起活动的正式级别 |
-| `20020` | 没有在目标组织发起活动的资格 |
-| `20021` | 发布审核退回时缺少原因 |
-| `20022` | 发布审核快照无效，或已发布普通变更试图迁移组织 |
-| `20030` | 活动当前状态不允许这个动作 |
-| `20032` | 已有待处理发布审核，不能重复提交或直接改 |
-| `20037` | 已发布活动不能直接改，要提交变更审核 |
-| `20039` | 当前还不能声明考勤全部提交，或已经声明过 |
-| `22074` | 考勤提交人不能终审自己的单 |
-| `22075` | 一审人不能终审同一张单 |
-| `22081` | 考勤提交人或最近重提人不能一审 |
-| `22082` | 退回原因不能为空 |
-| `22083` | 只有 `returned` 单据可以重提 |
-| `30100` | 对这条具体活动、报名或考勤没有操作权限 |
+| BizCode | HTTP | 大白话与本地排查 |
+|---:|---:|---|
+| `20019` | 403 | 当前队员不是可发起活动的正式级别。核对 `gradeCode`；`volunteer`、`reserve`、`null` 都是预期负例，不要给它们补权限绕过 |
+| `20020` | 403 | 没有在目标组织发起活动的资格。先刷新 `organization-options`；本组织项应来自 `membership`，跨组织项应来自精确 `cross-org-grant`，前端不得提交 options 之外的组织 |
+| `20021` | 400 | 发布审核退回时缺少原因 |
+| `20022` | 409 | 发布审核快照无效，或已发布普通变更试图迁移组织 |
+| `20030` | 409 | 活动当前状态不允许这个动作 |
+| `20032` | 409 | 已有待处理发布审核，不能重复提交或直接改 |
+| `20037` | 409 | 已发布活动不能直接改，要提交变更审核 |
+| `20039` | 409 | 当前还不能声明考勤全部提交，或已经声明过 |
+| `22074` | 403 | 考勤提交人或最近重提人不能终审自己的单。换用没有提交/重提过该单的显式终审员；SUPER_ADMIN 也不能绕过 |
+| `22075` | 403 | 一审人不能终审同一张单。换用另一名显式终审员；SUPER_ADMIN 也不能绕过 |
+| `22081` | 403 | 考勤提交人或最近重提人不能一审 |
+| `22082` | 400 | 退回原因不能为空 |
+| `22083` | 409 | 只有 `returned` 单据可以重提 |
+| `30100` | 403 | 对这条具体活动、报名或考勤没有操作权限。先区分“工作台可见”和“资源可操作”，再核对 scoped reviewer grant、`myResponsibility`、Activity/Sheet 状态；不要给 `biz-admin` 或 unrelated admin 补 legacy 活动角色 |
 
 前端按 `HTTP status + BizCode` 处理，不要只比对 message 文案。
 
@@ -238,19 +274,65 @@ owner 调 `POST .../:activityId/transfer-owner`：
 
 ## 9. 本地执行与清理
 
-在仓库派生 worktree 中先跑 preflight，再使用仓库 E2E 入口。测试框架会从 worktree 名自动派生 `app_test_*` 数据库：
+前端手工联调必须先完整执行
+[`activity-responsibility-workflow-local-bootstrap.md`](activity-responsibility-workflow-local-bootstrap.md)；
+其中的数据库名、显式确认值、setup、verify、print、启动与重建步骤是一条完整链，不能只复制中间一条命令。
+
+下面的命令仅供后端开发者回归自动聚合 E2E，不会创建可供前端长期登录的 17 个稳定账号，也不能替代 bootstrap：
 
 ```bash
-pnpm agent:preflight --lane activity-workflow-v2-pr14-local-acceptance
+pnpm agent:preflight --lane activity-workflow-v2-pr15-local-frontend-bootstrap
 pnpm test:e2e -- test/e2e/activity-workflow-local-acceptance.e2e-spec.ts --runInBand
 ```
 
-完整聚焦队列和最终验证结果记录在本 PR。测试数据由 `resetDb` 清空并重建；需要彻底清理时，只能处理明确识别为本 lane 自动派生、可销毁的 `app_test_*` 库或 Docker Smoke 临时库。不要清理日常开发库，不要把此处任何清理思路用于正式环境。
+自动测试框架会从 worktree 名派生 `app_test_*` 数据库并由 `resetDb` 清空重建；前端手工联调则只使用经硬校验的
+`app_local_frontend*`。两者不得互换，任何清理思路都不得用于日常开发库或正式环境。
 
-## 10. 当前没有做什么
+## 10. 前端问题反馈模板
+
+开始 A–I 前先跑 fixture verify。若问题发生在已经创建活动/责任/审核记录之后，保留现场，**不要**重跑只接受初始空业务态的
+verify，也不要先 cleanup；先按下列模板采集最小复现证据，完成取证后再重建并 verify。严禁把 access token、refresh
+token、密码、`DATABASE_URL`、数据库确认值或其他 secret 贴进 issue。
+
+```markdown
+### 活动责任闭环本地联调问题
+
+- 页面：
+- 当前账号职责（只写职责，不贴 token）：
+- 请求方法和路径：
+- 请求 body（已移除 secret）：
+- HTTP status：
+- BizCode：
+- 响应 data（已移除 secret / L3 字段）：
+- activity.statusCode：
+- publishReview.status：
+- myResponsibility：
+- attendanceSheet.statusCode：
+- closure.status：
+- 预期行为：
+- 实际行为：
+- 可重复步骤：
+- 是否每次必现：
+```
+
+## 11. 后端功能冻结
+
+本地 bootstrap 合并后，活动责任闭环后端进入前端联调冻结。联调反馈先分类：
+
+1. 后端已有，只是前端未使用；
+2. 契约漏写；
+3. 可重复复现的后端 Bug；
+4. 新业务需求。
+
+联调修复 PR 可以处理第 2、3 类，以及明确复现的权限、状态机、性能或安全问题。第 4 类必须回到产品确认，不能直接修改
+业务角色、审核层级、活动主状态、谁发起谁负责、临时委托、一审/终审隔离、跨组织授权、贡献值/工时制度或已发布活动组织迁移规则。
+
+## 12. 当前没有做什么
 
 - 没有正式环境、正式用户、真实业务数据或正式 fleet；
 - 没有执行正式环境 migration、seed、历史活动认领或真实 RoleBinding 配置；
 - 没有修改正式环境变量，没有 drain、部署、恢复流量、release、tag 或版本号变更；
+- 没有新增活动 endpoint、DTO 字段、BizCode、业务角色、Permission、schema、migration 或 cron；
+- 没有预制 draft/published 活动、owner/collaborator 投影、发布审核、报名、考勤或闭环状态；
 - 没有删除 gate=false 兼容分支；
 - 未来正式上线必须按届时批准的 release tag 和不可变 image digest 重新验证，不能把本次 SHA 当作永久发布锚点。
