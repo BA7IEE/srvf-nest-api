@@ -1,5 +1,6 @@
 import { PolicyScopeMode, PositionCategory, PrismaClient, Role, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { effectiveGlobalOpsAdminBindingWhere } from '../src/modules/permissions/role-binding-validity';
 
 // v1 唯一允许创建 SUPER_ADMIN 的入口(详见 ARCHITECTURE.md §7.11 + §8 + §13)。
 // seed 直接读 process.env(§14 显式例外):SUPER_ADMIN_* 不进 ConfigService,
@@ -68,10 +69,11 @@ import * as bcrypt from 'bcryptjs';
 // 2. 公开 seed 只创建 `ops-admin` RbacRole(用户拍板方案 A);**不**写真实部门名 / 真实职务名 /
 //    role-a..role-f placeholder;业务角色由后续运营通过 API 创建,或 .env.seed.local 私有 seed
 // 3. RolePermission 映射:ops-admin → 全部 14 条 rbac.*(D7 §10.3)
-// 4. bootstrap user_role(D7 §10.4):
+// 4. bootstrap global USER RoleBinding(D7 §10.4;旧 user_roles 已 DROP):
 //    - `RBAC_INITIAL_OPS_ADMIN_USER_ID` env 优先指定首个 ops-admin 持有者
 //    - 无 env 时 fallback 到现有 SUPER_ADMIN(seed 阶段刚创建的或已存在的)
-//    - 强校验:seed 完成后 **至少 1 个 user_role 持有 ops-admin**,否则 throw 退出
+//    - 强校验:seed 完成后必须同时有当前有效 holder 与 endedAt=null 常驻 holder；否则 throw
+//    - 已有 ACTIVE slot 的任期不自动改写；future / expired / 仅临时配置一律 fail-closed
 // 5. **不** 写 audit_logs(seed 是 bootstrap 离线工具;D7 §11 audit 是运行时 API 写操作审计)
 // 6. **不** 创建"ADMIN 内置角色"(用户拍板方案 A;留业务模块 RBAC 接入 PR 落地)
 // 7. 全部 upsert 幂等:重复跑不重复创建 / 不覆盖运营运行时调整
@@ -2242,27 +2244,39 @@ async function ensureGlobalUserRoleBinding(
   }
 }
 
-// 终态 scoped-authz PR6:某角色的活跃 GLOBAL 持有者中 active user 数(RoleBinding 无 user relation〔principalId 多态〕,
-//   故取 active global 绑定的 principalId 再 count active user =「至少 1 个活跃持有者」强校验的等价语义)。
-async function countActiveGlobalRoleHolders(
+// ops-admin bootstrap 强校验与运行时 holder 策略共用任期 where。RoleBinding 无 User relation，
+// 故先取当前有效 global ops-admin bindings，再以 ACTIVE/未删 User 过滤并派生常驻 endedAt=null 集。
+async function getCurrentOpsAdminHolderCounts(
   prisma: PrismaClient,
-  roleCode: string,
-): Promise<number> {
+  now: Date,
+): Promise<{ effective: number; permanent: number }> {
   const bindings = await prisma.roleBinding.findMany({
-    where: {
-      principalType: 'USER',
-      scopeType: 'GLOBAL',
-      status: 'ACTIVE',
-      deletedAt: null,
-      role: { code: roleCode, deletedAt: null },
-    },
-    select: { principalId: true },
+    where: effectiveGlobalOpsAdminBindingWhere(now),
+    select: { principalId: true, endedAt: true },
   });
-  const ids = bindings.map((b) => b.principalId).filter((id): id is string => id !== null);
-  if (ids.length === 0) return 0;
-  return prisma.user.count({
-    where: { id: { in: ids }, deletedAt: null, status: UserStatus.ACTIVE },
+  const candidateIds = [
+    ...new Set(
+      bindings.map(({ principalId }) => principalId).filter((id): id is string => id !== null),
+    ),
+  ];
+  if (candidateIds.length === 0) return { effective: 0, permanent: 0 };
+  const activeUsers = await prisma.user.findMany({
+    where: { id: { in: candidateIds }, deletedAt: null, status: UserStatus.ACTIVE },
+    select: { id: true },
   });
+  const activeUserIds = new Set(activeUsers.map(({ id }) => id));
+  return {
+    effective: candidateIds.filter((id) => activeUserIds.has(id)).length,
+    permanent: new Set(
+      bindings
+        .filter(({ endedAt }) => endedAt === null)
+        .map(({ principalId }) => principalId)
+        .filter(
+          (principalId): principalId is string =>
+            principalId !== null && activeUserIds.has(principalId),
+        ),
+    ).size,
+  };
 }
 
 // V2.x C-6 RBAC 实施 PR #8:RBAC seed/bootstrap 主函数。
@@ -2331,10 +2345,10 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
     `[seed] RBAC role-permissions ensured ('${opsAdminRole.code}' ↔ ${allPermissions.length} permissions: rbac.* + PR-2A + PR-2B + PR-3B + PR-4B; '${PR_2B_RESET_CREDENTIALS_CODE}' skipped per PR-2 D2=A; '${PR_3B_USER_UPDATE_ROLE_CODE}' skipped per PR-3 D1=A)`,
   );
 
-  // 4. bootstrap user_role(沿 D7 §10.4 + 用户拍板方案 A):
+  // 4. bootstrap global USER RoleBinding(沿 D7 §10.4 + 用户拍板方案 A):
   //    - RBAC_INITIAL_OPS_ADMIN_USER_ID env 优先
   //    - 无 env 时 fallback 到现有 SUPER_ADMIN(seed 阶段刚创建的或已存在的)
-  //    - upsert 复合唯一键 userId_roleId(schema @@unique([userId, roleId]))保证幂等
+  //    - ACTIVE slot 已存在即保留原任期；不存在才创建默认当前常驻 binding
   const envOpsAdminId = (process.env.RBAC_INITIAL_OPS_ADMIN_USER_ID ?? '').trim();
   let targetUserId: string | null = null;
   let bootstrapSource: 'env' | 'fallback' | 'skipped' = 'skipped';
@@ -2372,7 +2386,7 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
     } else {
       console.log(
         '[seed] RBAC bootstrap: 无 RBAC_INITIAL_OPS_ADMIN_USER_ID 且未找到活跃 SUPER_ADMIN;' +
-          '跳过 user_role 自动分配(强校验将检测最终状态)',
+          '跳过 RoleBinding 自动分配(强校验将检测最终状态)',
       );
     }
   }
@@ -2382,20 +2396,21 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
     await ensureGlobalUserRoleBinding(prisma, targetUserId, opsAdminRole.id);
   }
 
-  // 5. 强校验(沿 D7 §10.4 + §6.3 最后一个 ops-admin 保护范式):
-  //    seed 完成后 **至少 1 个活跃持有者(active user × active global ops-admin 绑定)**,否则 throw 退出。
-  //    检查范围:user 活跃 + ops-admin 角色未软删(理论本 seed 刚 ensure 应满足,
-  //    但若 fallback 路径没找到 SUPER_ADMIN 且无 env,此处会 throw — 这是设计预期)。
-  const activeOpsAdminCount = await countActiveGlobalRoleHolders(prisma, OPS_ADMIN_ROLE_CODE);
-  if (activeOpsAdminCount < 1) {
+  // 5. 强校验：同一时刻必须同时存在当前有效 holder 与 endedAt=null 常驻兜底。
+  //    future / expired / 仅临时 ACTIVE slot 均 fail-closed；seed 不静默篡改运营任期。
+  const holderCounts = await getCurrentOpsAdminHolderCounts(prisma, new Date());
+  if (holderCounts.effective < 1 || holderCounts.permanent < 1) {
     throw new Error(
-      `[seed] RBAC bootstrap 强校验失败:活跃 ops-admin 持有者数 = ${activeOpsAdminCount},` +
-        '系统必须至少保留 1 个活跃运营管理员(沿 D7 §10.4 + §6.3)。' +
+      `[seed] RBAC bootstrap 强校验失败:currentEffectiveOpsAdminCount=${holderCounts.effective},` +
+        `currentPermanentOpsAdminCount=${holderCounts.permanent};` +
+        '系统必须至少保留 1 个当前有效且 endedAt=null 的常驻运营管理员。' +
         '请通过 RBAC_INITIAL_OPS_ADMIN_USER_ID env 指定首个 ops-admin,或确保 seed 先创建 SUPER_ADMIN。',
     );
   }
   console.log(
-    `[seed] RBAC bootstrap done (source=${bootstrapSource}, active ops-admin holders=${activeOpsAdminCount})`,
+    `[seed] RBAC bootstrap done (source=${bootstrapSource}, ` +
+      `currentEffectiveOpsAdminCount=${holderCounts.effective}, ` +
+      `currentPermanentOpsAdminCount=${holderCounts.permanent})`,
   );
 }
 

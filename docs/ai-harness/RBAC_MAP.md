@@ -280,7 +280,7 @@
 |---|---|---|
 | 自我保护 | `users.service.ts` `assertCanManageUser`(删/禁/改角色拒绝 self) | [`roles-admin-protection`](../reference/roles-admin-protection.md) |
 | 最后一个活跃 SUPER_ADMIN ≥ 1 | 同上,**事务内计数 + 更新** | [`soft-delete-transactions`](../reference/soft-delete-transactions.md) / [`roles-admin-protection`](../reference/roles-admin-protection.md);**禁止** AI 增加"SA 互不可操作"校验 |
-| 最后一个 ops-admin 持有者 ≥ 1 | `user-roles.service.ts` revoke 路径 | seed bootstrap 强校验呼应 |
+| ops-admin 当前有效与常驻 holder 各 ≥ 1 | `LastAdminProtectionPolicy`（role-bindings / user-roles / users / members） | seed 与只读 preflight 同谓词；统一 advisory 后重读 |
 | ADMIN 只能管 USER | `assertCanManageUser` 统一入口;**禁止** service 内散落 `role ===` 比较(已核实 0 处) | [`roles-admin-protection`](../reference/roles-admin-protection.md) |
 | 身份有效性不缓存 | `JwtStrategy.validate` 每请求查库(`deletedAt + status`) | [`auth-jwt-refresh`](../reference/auth-jwt-refresh.md);GLOBAL 权限解析亦由 `RbacService` 每请求读 DB，无缓存例外 |
 | 防账号枚举 | 登录四场景统一 10004 + dummy bcrypt timing 防御 | [`auth-jwt-refresh`](../reference/auth-jwt-refresh.md) |
