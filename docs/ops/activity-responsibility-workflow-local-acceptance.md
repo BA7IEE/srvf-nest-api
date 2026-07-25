@@ -42,6 +42,9 @@ A–I 会使用以下职责账号：
 
 本地正常验收中的发布审核员、考勤一审员和终审员必须使用显式 scoped RoleBinding，不能使用 SUPER_ADMIN 掩盖角色配置问题。实际系统中 SUPER_ADMIN 保留紧急兜底权限，但仍受考勤提交人不能审核自己、最近重提人不能审核自己、一审人不能终审同一张单等人员隔离规则约束，不应作为日常审核人员配置使用。
 
+开始 A–I 前的 fixture verify 还会拒绝 fixture Member 的 active 职务、分管关系，以及关联职务的 active
+`POSITION_ASSIGNMENT` RoleBinding；这些来源为零，才能证明 reviewer、owner 和跨组织能力没有被动态授权掩盖。
+
 ## 3. 前端的五个入口
 
 | 用户要做的事 | 前端入口 | 后端数据源 |
@@ -153,6 +156,8 @@ A–I 会使用以下职责账号：
 ### H. 跨组织发起
 
 - `local_fe_owner` 的 organization-options 只能包含组织 A，不能包含组织 B；
+- `local_fe_unrelated_admin` 的 organization-options 同样只能包含组织 A、不能包含组织 B，且不得出现
+  `source='cross-org-grant'`；
 - `local_fe_cross_org` 属于组织 A，但 organization-options 还应包含组织 B，且该项
   `source='cross-org-grant'`；
 - `local_fe_cross_org` 可在组织 B 建草稿；
@@ -192,6 +197,10 @@ A–I 会使用以下职责账号：
 | 声明考勤完成 | 当前 `myResponsibility.responsibilityType='owner'` + `closure.nextAction` 对应 | initiator、旧 owner、`publishedBy` |
 
 `GET /api/app/v1/me/capabilities` 是产品入口提示，不是某一活动的最终授权证明。按钮还必须结合 resource-specific responsibility 和状态；服务端每次请求的判定才是最终结果。
+
+fixture HTTP verify 会按当前 OpenAPI 精确校验 `/me/capabilities` 和 `organization-options` 的固定字段，并继续扫描
+L3 黑名单。unknown 字段、unrelated admin 获得任何活动责任 capability、普通/负向等级账号获得审核 capability，或组织 B
+负责人同时获得考勤一审/终审能力，都会使 verify 失败。
 
 ## 6. 常见错误码与排查
 

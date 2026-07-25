@@ -1,4 +1,5 @@
 import {
+  AssignmentStatus,
   BindingScopeType,
   BindingStatus,
   DictItemStatus,
@@ -11,6 +12,7 @@ import {
   PrismaClient,
   PrincipalType,
   Role,
+  SupervisionStatus,
   UserStatus,
 } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -51,6 +53,8 @@ const ROLE_PERMISSION_CONTRACT = {
 } as const;
 
 const BIZ_ADMIN_FORBIDDEN_ACTIVITY_CODES = [
+  'activity.create.cross-org',
+  'activity-review.read.request',
   'activity-review.return.request',
   'activity-responsibility.override.record',
   'activity.publish.record',
@@ -289,6 +293,8 @@ type FixtureDatabaseClient = Pick<
   | 'user'
   | 'rbacRole'
   | 'roleBinding'
+  | 'organizationPositionAssignment'
+  | 'organizationSupervisionAssignment'
   | 'activityResponsibilityAssignment'
   | 'activity'
   | 'activityPublishReview'
@@ -1348,6 +1354,8 @@ async function verifyFixtureDatabaseState(db: FixtureDatabaseClient): Promise<{
     memberIdsByUsername.set(expected.username, member.id);
   }
 
+  await assertNoFixtureDerivedAuthorizationSources(db, [...memberIdsByUsername.values()]);
+
   const activeLinkedUsers = await db.user.count({
     where: {
       memberId: { in: [...memberIdsByUsername.values()] },
@@ -1535,6 +1543,78 @@ async function verifyFixtureDatabaseState(db: FixtureDatabaseClient): Promise<{
   };
 }
 
+async function assertNoFixtureDerivedAuthorizationSources(
+  db: FixtureDatabaseClient,
+  fixtureMemberIds: string[],
+): Promise<void> {
+  const now = new Date();
+  const [positionAssignments, supervisionAssignments] = await Promise.all([
+    db.organizationPositionAssignment.findMany({
+      where: {
+        memberId: { in: fixtureMemberIds },
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        status: true,
+        startedAt: true,
+        endedAt: true,
+      },
+    }),
+    db.organizationSupervisionAssignment.findMany({
+      where: {
+        supervisorMemberId: { in: fixtureMemberIds },
+        deletedAt: null,
+      },
+      select: {
+        status: true,
+        startedAt: true,
+        endedAt: true,
+      },
+    }),
+  ]);
+  const activePositionAssignments = positionAssignments.filter(
+    (assignment) =>
+      assignment.status === AssignmentStatus.ACTIVE &&
+      isWithinInclusiveTerm(assignment.startedAt, assignment.endedAt, now),
+  );
+  const activeSupervisionAssignments = supervisionAssignments.filter(
+    (assignment) =>
+      assignment.status === SupervisionStatus.ACTIVE &&
+      isWithinInclusiveTerm(assignment.startedAt, assignment.endedAt, now),
+  );
+  const positionAssignmentRoleBindings =
+    positionAssignments.length === 0
+      ? 0
+      : await db.roleBinding.count({
+          where: {
+            principalType: PrincipalType.POSITION_ASSIGNMENT,
+            principalId: { in: positionAssignments.map((assignment) => assignment.id) },
+            status: BindingStatus.ACTIVE,
+            deletedAt: null,
+            startedAt: { lte: now },
+            OR: [{ endedAt: null }, { endedAt: { gte: now } }],
+          },
+        });
+
+  if (
+    activePositionAssignments.length > 0 ||
+    activeSupervisionAssignments.length > 0 ||
+    positionAssignmentRoleBindings > 0
+  ) {
+    throw new LocalActivityFrontendFixtureError(
+      'fixture verify：fixture principal 存在未声明的 active Authz 来源：' +
+        `positionAssignments=${activePositionAssignments.length}, ` +
+        `supervisionAssignments=${activeSupervisionAssignments.length}, ` +
+        `positionAssignmentRoleBindings=${positionAssignmentRoleBindings}`,
+    );
+  }
+}
+
+function isWithinInclusiveTerm(startedAt: Date, endedAt: Date | null, now: Date): boolean {
+  return startedAt <= now && (endedAt === null || endedAt >= now);
+}
+
 function expectedBindingKey(
   expected: ExpectedBinding,
   userIdsByUsername: Map<string, string>,
@@ -1645,12 +1725,15 @@ async function verifyLocalActivityFrontendHttp(
       { headers: authorization },
     );
     assertNoL3Fields(capabilities.response);
-    if (!isRecord(capabilities.data)) {
-      throw new LocalActivityFrontendFixtureError(
-        `HTTP verify：账号 '${account.username}' capabilities 响应形状错误`,
-      );
-    }
-    capabilitiesByUsername.set(account.username, capabilities.data);
+    assertExactRecordKeys(
+      capabilities.response,
+      ['code', 'message', 'data'],
+      'capabilities 包装响应',
+    );
+    capabilitiesByUsername.set(
+      account.username,
+      assertAppCapabilityResponseData(capabilities.data, account.username),
+    );
 
     if (isFormalFixtureAccount(account)) {
       const organizationOptions = await requestWrappedData(
@@ -1660,21 +1743,32 @@ async function verifyLocalActivityFrontendHttp(
         { headers: authorization },
       );
       assertNoL3Fields(organizationOptions.response);
-      if (
-        !Array.isArray(organizationOptions.data) ||
-        organizationOptions.data.some((item) => !isRecord(item))
-      ) {
-        throw new LocalActivityFrontendFixtureError(
-          `HTTP verify：账号 '${account.username}' organization-options 响应形状错误`,
-        );
-      }
+      assertExactRecordKeys(
+        organizationOptions.response,
+        ['code', 'message', 'data'],
+        'organization-options 包装响应',
+      );
       organizationOptionsByUsername.set(
         account.username,
-        organizationOptions.data as Array<Record<string, unknown>>,
+        assertOrganizationOptionsResponseData(organizationOptions.data, account.username),
       );
     }
   }
 
+  assertLocalActivityFrontendHttpAuthorizationExpectations(
+    capabilitiesByUsername,
+    organizationOptionsByUsername,
+    organizationIds,
+  );
+
+  return 'passed';
+}
+
+export function assertLocalActivityFrontendHttpAuthorizationExpectations(
+  capabilitiesByUsername: Map<string, Record<string, unknown>>,
+  organizationOptionsByUsername: Map<string, Array<Record<string, unknown>>>,
+  organizationIds: Record<FixtureOrganizationKey, string>,
+): void {
   for (const account of LOCAL_ACTIVITY_FRONTEND_ACCOUNTS) {
     const capabilities = requiredRecordMapValue(
       capabilitiesByUsername,
@@ -1715,18 +1809,100 @@ async function verifyLocalActivityFrontendHttp(
     assertManagedCapability(capabilitiesByUsername, 'local_fe_unrelated_admin', key, false);
   }
 
+  for (const username of [
+    'local_fe_owner',
+    'local_fe_participant_a',
+    'local_fe_participant_b',
+    'local_fe_volunteer',
+    'local_fe_reserve',
+    'local_fe_no_grade',
+  ]) {
+    for (const key of [
+      'canReviewActivityPublication',
+      'canFirstReviewAttendance',
+      'canFinalReviewAttendance',
+    ]) {
+      assertManagedCapability(capabilitiesByUsername, username, key, false);
+    }
+  }
+
+  assertManagedCapability(
+    capabilitiesByUsername,
+    'local_fe_org_b_owner',
+    'canReviewActivityPublication',
+    true,
+  );
+  assertManagedCapability(
+    capabilitiesByUsername,
+    'local_fe_org_b_owner',
+    'canFirstReviewAttendance',
+    false,
+  );
+  assertManagedCapability(
+    capabilitiesByUsername,
+    'local_fe_org_b_owner',
+    'canFinalReviewAttendance',
+    false,
+  );
+
   const ownerOptions = requiredRecordArrayMapValue(organizationOptionsByUsername, 'local_fe_owner');
-  assertOrganizationOption(ownerOptions, organizationIds.A, 'membership', true);
-  assertOrganizationOption(ownerOptions, organizationIds.B, undefined, false);
+  assertOrganizationOption(ownerOptions, 'local_fe_owner', organizationIds.A, 'membership', true);
+  assertOrganizationOption(ownerOptions, 'local_fe_owner', organizationIds.B, undefined, false);
 
   const crossOrgOptions = requiredRecordArrayMapValue(
     organizationOptionsByUsername,
     'local_fe_cross_org',
   );
-  assertOrganizationOption(crossOrgOptions, organizationIds.A, 'membership', true);
-  assertOrganizationOption(crossOrgOptions, organizationIds.B, 'cross-org-grant', true);
+  assertOrganizationOption(
+    crossOrgOptions,
+    'local_fe_cross_org',
+    organizationIds.A,
+    'membership',
+    true,
+  );
+  assertOrganizationOption(
+    crossOrgOptions,
+    'local_fe_cross_org',
+    organizationIds.B,
+    'cross-org-grant',
+    true,
+  );
 
-  return 'passed';
+  const unrelatedAdminOptions = requiredRecordArrayMapValue(
+    organizationOptionsByUsername,
+    'local_fe_unrelated_admin',
+  );
+  assertOrganizationOption(
+    unrelatedAdminOptions,
+    'local_fe_unrelated_admin',
+    organizationIds.A,
+    'membership',
+    true,
+  );
+  assertOrganizationOption(
+    unrelatedAdminOptions,
+    'local_fe_unrelated_admin',
+    organizationIds.B,
+    undefined,
+    false,
+  );
+  assertNoOrganizationOptionSource(
+    unrelatedAdminOptions,
+    'local_fe_unrelated_admin',
+    'cross-org-grant',
+  );
+
+  const organizationBOwnerOptions = requiredRecordArrayMapValue(
+    organizationOptionsByUsername,
+    'local_fe_org_b_owner',
+  );
+  assertOrganizationOption(
+    organizationBOwnerOptions,
+    'local_fe_org_b_owner',
+    organizationIds.B,
+    'membership',
+    true,
+  );
 }
 
 function isFormalFixtureAccount(account: FixtureAccount): boolean {
@@ -1819,6 +1995,156 @@ export function assertNoL3Fields(value: unknown): void {
   visit(value, '$');
 }
 
+export function assertAppCapabilityResponseData(
+  value: unknown,
+  username: string,
+): Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new LocalActivityFrontendFixtureError(
+      `HTTP verify：账号 '${username}' capabilities 响应形状错误`,
+    );
+  }
+  assertExactRecordKeys(
+    value,
+    ['account', 'activities', 'attendance', 'certificates', 'tasks', 'managed'],
+    `账号 '${username}' capabilities`,
+  );
+  assertCapabilitySection(value, username, 'account', [
+    'canUseApp',
+    'reason',
+    'canEditProfile',
+    'canChangePassword',
+  ]);
+  assertCapabilitySection(value, username, 'activities', [
+    'canViewAvailableActivities',
+    'canRegisterActivity',
+    'canCancelOwnRegistration',
+    'canInitiateActivity',
+    'canDirectPublishOwnActivity',
+  ]);
+  assertCapabilitySection(value, username, 'attendance', ['canViewOwnAttendance']);
+  assertCapabilitySection(value, username, 'certificates', ['canViewOwnCertificates']);
+  assertCapabilitySection(value, username, 'tasks', ['canViewTasks']);
+  assertCapabilitySection(value, username, 'managed', [
+    'canViewManagedActivities',
+    'canManageManagedRegistrations',
+    'canSubmitManagedAttendance',
+    'canReviewActivityPublication',
+    'canFirstReviewAttendance',
+    'canFinalReviewAttendance',
+  ]);
+
+  const account = value.account as Record<string, unknown>;
+  if (account.reason !== null && typeof account.reason !== 'string') {
+    throw new LocalActivityFrontendFixtureError(
+      `HTTP verify：账号 '${username}' capabilities.account.reason 类型错误`,
+    );
+  }
+  return value;
+}
+
+export function assertOrganizationOptionsResponseData(
+  value: unknown,
+  username: string,
+): Array<Record<string, unknown>> {
+  if (!Array.isArray(value) || value.some((item) => !isRecord(item))) {
+    throw new LocalActivityFrontendFixtureError(
+      `HTTP verify：账号 '${username}' organization-options 响应形状错误`,
+    );
+  }
+  const options = value as Array<Record<string, unknown>>;
+  for (const option of options) {
+    assertAllowedRecordKeys(
+      option,
+      ['organizationId', 'name', 'pathLabel', 'source', 'membershipType'],
+      `账号 '${username}' organization-options 项`,
+    );
+    for (const key of ['organizationId', 'name', 'pathLabel'] as const) {
+      if (typeof option[key] !== 'string') {
+        throw new LocalActivityFrontendFixtureError(
+          `HTTP verify：账号 '${username}' organization-options.${key} 类型错误`,
+        );
+      }
+    }
+    if (option.source !== 'membership' && option.source !== 'cross-org-grant') {
+      throw new LocalActivityFrontendFixtureError(
+        `HTTP verify：账号 '${username}' organization-options.source 类型错误`,
+      );
+    }
+    if (
+      'membershipType' in option &&
+      option.membershipType !== null &&
+      !['PRIMARY', 'SECONDARY', 'TEMPORARY', 'SUPPORT'].includes(option.membershipType as string)
+    ) {
+      throw new LocalActivityFrontendFixtureError(
+        `HTTP verify：账号 '${username}' organization-options.membershipType 类型错误`,
+      );
+    }
+  }
+  return options;
+}
+
+function assertCapabilitySection(
+  response: Record<string, unknown>,
+  username: string,
+  sectionName: string,
+  fields: string[],
+): void {
+  const section = response[sectionName];
+  if (!isRecord(section)) {
+    throw new LocalActivityFrontendFixtureError(
+      `HTTP verify：账号 '${username}' capabilities.${sectionName} 响应形状错误`,
+    );
+  }
+  assertExactRecordKeys(section, fields, `账号 '${username}' capabilities.${sectionName}`);
+  for (const field of fields) {
+    if (sectionName === 'account' && field === 'reason') continue;
+    if (typeof section[field] !== 'boolean') {
+      throw new LocalActivityFrontendFixtureError(
+        `HTTP verify：账号 '${username}' capabilities.${sectionName}.${field} 类型错误`,
+      );
+    }
+  }
+}
+
+function assertExactRecordKeys(
+  value: Record<string, unknown>,
+  expectedKeys: string[],
+  context: string,
+): void {
+  const actualKeys = Object.keys(value).sort();
+  const sortedExpectedKeys = [...expectedKeys].sort();
+  if (
+    actualKeys.length !== sortedExpectedKeys.length ||
+    actualKeys.some((key, index) => key !== sortedExpectedKeys[index])
+  ) {
+    throw new LocalActivityFrontendFixtureError(
+      `HTTP verify：${context} 字段集偏离 OpenAPI allowlist；` +
+        `expected=[${sortedExpectedKeys.join(', ')}] actual=[${actualKeys.join(', ')}]`,
+    );
+  }
+}
+
+function assertAllowedRecordKeys(
+  value: Record<string, unknown>,
+  allowedKeys: string[],
+  context: string,
+): void {
+  const unexpectedKeys = Object.keys(value).filter((key) => !allowedKeys.includes(key));
+  if (unexpectedKeys.length > 0) {
+    throw new LocalActivityFrontendFixtureError(
+      `HTTP verify：${context} 出现 OpenAPI 未声明字段：${unexpectedKeys.join(', ')}`,
+    );
+  }
+  for (const requiredKey of ['organizationId', 'name', 'pathLabel', 'source']) {
+    if (!(requiredKey in value)) {
+      throw new LocalActivityFrontendFixtureError(
+        `HTTP verify：${context} 缺少 OpenAPI 必填字段 '${requiredKey}'`,
+      );
+    }
+  }
+}
+
 export function assertFrozenLoginResponseData(value: unknown, username: string): string {
   if (!isRecord(value)) {
     throw new LocalActivityFrontendFixtureError(`HTTP verify：账号 '${username}' 登录响应不是对象`);
@@ -1886,6 +2212,7 @@ function assertManagedCapability(
 
 function assertOrganizationOption(
   options: Array<Record<string, unknown>>,
+  username: string,
   organizationId: string,
   expectedSource: string | undefined,
   expectedPresent: boolean,
@@ -1893,7 +2220,7 @@ function assertOrganizationOption(
   const matching = options.filter((option) => option.organizationId === organizationId);
   if (!expectedPresent && matching.length !== 0) {
     throw new LocalActivityFrontendFixtureError(
-      'HTTP verify：organization-options 暴露了不应出现的组织',
+      `HTTP verify：账号 '${username}' organization-options 暴露了不应出现的组织`,
     );
   }
   if (
@@ -1901,7 +2228,19 @@ function assertOrganizationOption(
     (matching.length !== 1 || (expectedSource && matching[0]?.source !== expectedSource))
   ) {
     throw new LocalActivityFrontendFixtureError(
-      `HTTP verify：organization-options 缺少预期来源 '${expectedSource ?? 'any'}'`,
+      `HTTP verify：账号 '${username}' organization-options 缺少预期来源 '${expectedSource ?? 'any'}'`,
+    );
+  }
+}
+
+function assertNoOrganizationOptionSource(
+  options: Array<Record<string, unknown>>,
+  username: string,
+  forbiddenSource: string,
+): void {
+  if (options.some((option) => option.source === forbiddenSource)) {
+    throw new LocalActivityFrontendFixtureError(
+      `HTTP verify：账号 '${username}' organization-options 不应出现来源 '${forbiddenSource}'`,
     );
   }
 }
