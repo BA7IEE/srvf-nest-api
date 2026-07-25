@@ -1,10 +1,12 @@
 import {
   LOCAL_ACTIVITY_FRONTEND_ACCOUNTS,
   LocalActivityFrontendFixtureError,
+  assertAppCapabilityResponseData,
   assertFrozenLoginResponseData,
   assertLocalActivityFrontendPassword,
   assertLocalActivityFrontendTarget,
   assertNoL3Fields,
+  assertOrganizationOptionsResponseData,
   requestWrappedData,
   renderGuardedCleanupInstructions,
   runLocalActivityFrontendFixture,
@@ -225,6 +227,67 @@ describe('local activity frontend fixture safety guards', () => {
     });
   });
 
+  describe('fixed App response OpenAPI allowlists', () => {
+    it('accepts the current capabilities and organization-options shapes', () => {
+      expect(() =>
+        assertAppCapabilityResponseData(validCapabilitiesResponse(), 'local_fe_owner'),
+      ).not.toThrow();
+      expect(() =>
+        assertOrganizationOptionsResponseData(
+          [
+            {
+              organizationId: 'organization-a',
+              name: 'Organization A',
+              pathLabel: 'SRVF / Organization A',
+              source: 'membership',
+              membershipType: 'PRIMARY',
+            },
+            {
+              organizationId: 'organization-b',
+              name: 'Organization B',
+              pathLabel: 'SRVF / Organization B',
+              source: 'cross-org-grant',
+            },
+          ],
+          'local_fe_cross_org',
+        ),
+      ).not.toThrow();
+    });
+
+    it.each([
+      ['capabilities top level', (value: Record<string, unknown>) => (value.unexpected = true)],
+      [
+        'capabilities managed section',
+        (value: Record<string, unknown>) =>
+          ((value.managed as Record<string, unknown>).unexpected = true),
+      ],
+    ])('rejects an OpenAPI-unknown field at the %s', (_label, mutate) => {
+      const response = validCapabilitiesResponse();
+      mutate(response);
+      expect(() => assertAppCapabilityResponseData(response, 'local_fe_owner')).toThrow(
+        /OpenAPI allowlist/,
+      );
+    });
+
+    it('rejects an OpenAPI-unknown organization-options field', () => {
+      expect(() =>
+        assertOrganizationOptionsResponseData(
+          [
+            {
+              organizationId: 'organization-a',
+              name: 'Organization A',
+              pathLabel: 'SRVF / Organization A',
+              source: 'membership',
+              membershipType: 'PRIMARY',
+              unexpected: true,
+            },
+          ],
+          'local_fe_owner',
+        ),
+      ).toThrow(/OpenAPI 未声明字段/);
+    });
+  });
+
   describe('HTTP verification transport and frozen login contract', () => {
     it('forces redirect=error even when the caller asks fetch to follow redirects', async () => {
       const fetchMock = jest.fn().mockResolvedValue(
@@ -284,3 +347,32 @@ describe('local activity frontend fixture safety guards', () => {
     );
   });
 });
+
+function validCapabilitiesResponse(): Record<string, unknown> {
+  return {
+    account: {
+      canUseApp: true,
+      reason: null,
+      canEditProfile: true,
+      canChangePassword: true,
+    },
+    activities: {
+      canViewAvailableActivities: true,
+      canRegisterActivity: true,
+      canCancelOwnRegistration: true,
+      canInitiateActivity: true,
+      canDirectPublishOwnActivity: false,
+    },
+    attendance: { canViewOwnAttendance: true },
+    certificates: { canViewOwnCertificates: true },
+    tasks: { canViewTasks: false },
+    managed: {
+      canViewManagedActivities: true,
+      canManageManagedRegistrations: false,
+      canSubmitManagedAttendance: false,
+      canReviewActivityPublication: false,
+      canFirstReviewAttendance: false,
+      canFinalReviewAttendance: false,
+    },
+  };
+}

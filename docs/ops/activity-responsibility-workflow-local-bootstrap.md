@@ -101,8 +101,9 @@ fixture 只复用 seed 已存在的字典、Role 和 Permission。以下任一�
 同样会校验 `node_type.group` 与 `member_grade` 中的 `level-3`、`volunteer`、`reserve` 都是 active；缺失时停止，
 不在 fixture 中补造字典项。
 
-前四个专项角色的权限码集必须与冻结契约精确一致；`biz-admin` 必须继续不含活动责任写权限。任一检查失败都停止，不把
-`biz-admin` 的其他正常权限变化误判为漂移。
+前四个专项角色的权限码集必须与冻结契约精确一致；`biz-admin` 必须继续不含完整的 23 项活动责任专项权限，包括
+`activity.create.cross-org`、发布审核读/退回、活动责任 override、活动发布/修改/取消/完结、报名写入，以及考勤
+创建/修改/删除/一审/终审/退回/重开。任一检查失败都停止，不把 `biz-admin` 的其他正常权限变化误判为漂移。
 
 ## 5. 建立、检查和打印 fixture
 
@@ -116,7 +117,7 @@ pnpm local:activity-fixture:print
   RoleBinding；连续执行两次不得增加账号、Membership 或 RoleBinding；
 - 重跑 setup 必须使用首次建库时的同一密码；若密码不同，脚本拒绝直接覆盖 hash，以免绕过 refresh session 撤销与密码变更审计，
   需要按 guarded rebuild 重建专用库；
-- `verify` 只读检查数据库名、账号/队员状态、等级、组织、角色权限集、绑定唯一性和负向约束；
+- `verify` 只读检查数据库名、账号/队员状态、等级、组织、角色权限集、绑定唯一性，以及职务/分管等派生授权来源和负向约束；
 - `print` 只输出 username、职责、组织和页面提示，不输出密码、token、User id、Member id 或数据库信息。
 
 bootstrap 发生在后端监听启动之前，Admin API 尚不可用；现有 Service 入口还要求真实认证 actor，并把上述对象拆成多个独立事务，
@@ -128,11 +129,14 @@ setup 后初始数据库必须没有：
 
 - active `activity-owner` RoleBinding；
 - active `activity-registration-collaborator` / `activity-attendance-collaborator` RoleBinding；
+- fixture Member 的 active `OrganizationPositionAssignment` / `OrganizationSupervisionAssignment`；
+- 与 fixture Member 职务 assignment 关联的 active `POSITION_ASSIGNMENT` RoleBinding；
 - `ActivityResponsibilityAssignment`；
 - 活动、发布审核、报名、GPS 打卡、考勤单/记录或反馈；
 - `test-legacy-activity-actions` 对 `local_fe_unrelated_admin` 的绑定。
 
-owner 与 collaborator 投影只能在 A–I 过程中由真实业务接口产生。
+因此职务 policy、分管关系和职务 RoleBinding 都不能为 fixture 账号派生 reviewer、owner 或跨组织权限。owner 与
+collaborator 投影只能在 A–I 过程中由真实业务接口产生。
 
 ## 6. 固定账号矩阵
 
@@ -205,12 +209,17 @@ HTTP 部分应检查：
 
 - live / ready；
 - 17 个账号都能以 `LOCAL_FRONTEND_FIXTURE_PASSWORD` 登录；
+- `/me/capabilities` 与 `organization-options` 的包装和业务数据只含当前 OpenAPI 字段，未知字段立即失败；L3
+  blacklist 继续作为第二道防线；
 - 正式队员 `activities.canInitiateActivity=true`，三个负例为 false；
 - owner 的 organization-options 含 A 且不含 B；
 - cross-org 账号含 B，且 `source='cross-org-grant'`；
+- unrelated admin 的 organization-options 只含 A、不含 B，且没有 `source='cross-org-grant'`；
 - publish/first/final reviewer 对应 `managed.canReviewActivityPublication` /
   `canFirstReviewAttendance` / `canFinalReviewAttendance` 为 true；
-- unrelated admin 初始没有活动责任 capability；
+- unrelated admin 的发布审核、一审、终审、报名管理和考勤提交 capability 全为 false；
+- owner、participant、volunteer、reserve、no-grade 的发布审核、一审和终审 capability 全为 false；
+- org B owner 含 B、发布审核 capability 为 true，但一审和终审均为 false；
 - 业务 GET 响应不含 `passwordHash`、`secretKey*` 或其他 L3 字段。
 
 这里的“只读”指**不写活动业务域**。密码登录会按冻结认证契约建立 refresh session 和登录 audit；verify 必须只在内存中使用

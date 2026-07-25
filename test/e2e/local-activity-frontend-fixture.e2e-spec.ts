@@ -1,5 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import {
+  AssignmentStatus,
   BindingScopeType,
   BindingStatus,
   DictItemStatus,
@@ -8,8 +9,12 @@ import {
   MembershipStatus,
   MembershipType,
   OrganizationStatus,
+  PolicyStatus,
+  PositionCategory,
   PrincipalType,
   Role,
+  SupervisionScopeMode,
+  SupervisionStatus,
   UserStatus,
   type Prisma,
   type PrismaClient,
@@ -18,6 +23,7 @@ import { PrismaService } from '../../src/database/prisma.service';
 import {
   LOCAL_ACTIVITY_FRONTEND_ACCOUNTS,
   LOCAL_ACTIVITY_FRONTEND_ORGANIZATIONS,
+  runLocalActivityFrontendFixture,
   setupLocalActivityFrontendFixture,
   verifyLocalActivityFrontendFixture,
 } from '../../src/local-activity-frontend-fixture';
@@ -53,6 +59,32 @@ const BIZ_ADMIN_ACTIVITY_SLICE = [
   'activity.delete.record',
   'activity-registration.read.record',
   'attendance.read.sheet',
+] as const;
+
+const BIZ_ADMIN_FORBIDDEN_ACTIVITY_CODES = [
+  'activity.create.cross-org',
+  'activity-review.read.request',
+  'activity-review.return.request',
+  'activity-responsibility.override.record',
+  'activity.publish.record',
+  'activity.update.record',
+  'activity.cancel.record',
+  'activity.complete.record',
+  'activity-registration.create.record',
+  'activity-registration.approve.record',
+  'activity-registration.reject.record',
+  'activity-registration.cancel.record',
+  'activity-registration.reopen.record',
+  'attendance.create.sheet',
+  'attendance.update.sheet',
+  'attendance.delete.sheet',
+  'attendance.approve.sheet',
+  'attendance.reject.sheet',
+  'attendance.return.sheet',
+  'attendance.final-approve.sheet',
+  'attendance.final-reject.sheet',
+  'attendance.reopen.sheet',
+  'attendance.final-return.sheet',
 ] as const;
 
 const SYSTEM_MANAGED_ROLE_CASES = [
@@ -347,7 +379,7 @@ describe('local activity frontend fixture engine', () => {
     );
   });
 
-  it.each(['activity-review.return.request', 'activity-responsibility.override.record'])(
+  it.each(BIZ_ADMIN_FORBIDDEN_ACTIVITY_CODES)(
     "verify rejects biz-admin drift granting activity responsibility write permission '%s'",
     async (permissionCode) => {
       await expectRolledBackDrift(
@@ -382,6 +414,110 @@ describe('local activity frontend fixture engine', () => {
       );
     },
   );
+
+  it('verify rejects an active position assignment for a fixture member', async () => {
+    await expectRolledBackDrift(
+      prisma,
+      async (tx) => {
+        await createFixturePositionAssignment(tx, AssignmentStatus.ACTIVE);
+      },
+      /positionAssignments=1/,
+    );
+  });
+
+  it('verify rejects an active supervision assignment for a fixture member', async () => {
+    await expectRolledBackDrift(
+      prisma,
+      async (tx) => {
+        const [member, organization] = await Promise.all([
+          tx.member.findUniqueOrThrow({
+            where: { memberNo: 'LOCAL-FE-OWNER' },
+            select: { id: true },
+          }),
+          tx.organization.findUniqueOrThrow({
+            where: { code: 'LOCAL-FE-A' },
+            select: { id: true },
+          }),
+        ]);
+        await tx.organizationSupervisionAssignment.create({
+          data: {
+            supervisorMemberId: member.id,
+            organizationId: organization.id,
+            scopeMode: SupervisionScopeMode.TREE,
+            status: SupervisionStatus.ACTIVE,
+            startedAt: new Date(Date.now() - 60_000),
+            note: 'E2E fixture authz-source drift',
+          },
+        });
+      },
+      /supervisionAssignments=1/,
+    );
+  });
+
+  it('verify rejects an active POSITION_ASSIGNMENT RoleBinding linked to a fixture member assignment', async () => {
+    await expectRolledBackDrift(
+      prisma,
+      async (tx) => {
+        const [assignment, role, organization] = await Promise.all([
+          createFixturePositionAssignment(tx, AssignmentStatus.ENDED),
+          tx.rbacRole.findUniqueOrThrow({
+            where: { code: 'attendance-final-reviewer' },
+            select: { id: true },
+          }),
+          tx.organization.findUniqueOrThrow({
+            where: { code: 'LOCAL-FE-A' },
+            select: { id: true },
+          }),
+        ]);
+        await tx.roleBinding.create({
+          data: {
+            principalType: PrincipalType.POSITION_ASSIGNMENT,
+            principalId: assignment.id,
+            roleId: role.id,
+            scopeType: BindingScopeType.ORGANIZATION,
+            scopeOrgId: organization.id,
+            status: BindingStatus.ACTIVE,
+            note: 'E2E fixture authz-source drift',
+          },
+        });
+      },
+      /positionAssignmentRoleBindings=1/,
+    );
+  });
+
+  it('HTTP verify rejects organization B exposure for the unrelated admin', async () => {
+    const fixturePrisma = prismaWithoutLifecycleSideEffects(prisma);
+    const organizations = await prisma.organization.findMany({
+      where: { code: { in: ['LOCAL-FE-A', 'LOCAL-FE-B'] } },
+      select: { id: true, code: true },
+    });
+    const organizationIds = new Map(
+      organizations.map((organization) => [organization.code, organization.id]),
+    );
+    const fetch = createFixtureHttpFetch({
+      organizationAId: organizationIds.get('LOCAL-FE-A')!,
+      organizationBId: organizationIds.get('LOCAL-FE-B')!,
+      exposeOrganizationBToUnrelatedAdmin: true,
+    });
+
+    await expect(
+      runLocalActivityFrontendFixture(
+        'verify',
+        {
+          APP_ENV: 'test',
+          DATABASE_URL:
+            'postgresql://fixture_user:fixture_password@127.0.0.1:5432/app_local_frontend_e2e?schema=public',
+          LOCAL_FIXTURE_CONFIRM_DATABASE: 'app_local_frontend_e2e',
+          LOCAL_FRONTEND_FIXTURE_PASSWORD: TEST_PASSWORD,
+          LOCAL_API_BASE_URL: 'http://127.0.0.1:3000',
+        },
+        {
+          createPrisma: () => fixturePrisma,
+          fetch,
+        },
+      ),
+    ).rejects.toThrow(/local_fe_unrelated_admin.*organization-options/);
+  });
 
   it('verify rejects a test-only legacy activity binding on the unrelated admin', async () => {
     await expectRolledBackDrift(
@@ -509,6 +645,172 @@ async function seedRequiredLocalFixtureBaseline(
   await expect(
     prisma.rbacRole.findUnique({ where: { code: LEGACY_ACTIVITY_ROLE_CODE } }),
   ).resolves.toBeNull();
+}
+
+async function createFixturePositionAssignment(
+  tx: Prisma.TransactionClient,
+  status: AssignmentStatus,
+): Promise<{ id: string }> {
+  const [member, organization] = await Promise.all([
+    tx.member.findUniqueOrThrow({
+      where: { memberNo: 'LOCAL-FE-OWNER' },
+      select: { id: true },
+    }),
+    tx.organization.findUniqueOrThrow({
+      where: { code: 'LOCAL-FE-A' },
+      select: { id: true },
+    }),
+  ]);
+  const position = await tx.organizationPosition.create({
+    data: {
+      code: 'local-fixture-authz-source-drift',
+      name: 'Local fixture authz source drift',
+      categoryCode: PositionCategory.STAFF,
+      status: PolicyStatus.ACTIVE,
+    },
+    select: { id: true },
+  });
+  const startedAt = new Date(Date.now() - 120_000);
+  return tx.organizationPositionAssignment.create({
+    data: {
+      memberId: member.id,
+      organizationId: organization.id,
+      positionId: position.id,
+      status,
+      startedAt,
+      endedAt: status === AssignmentStatus.ACTIVE ? null : new Date(startedAt.getTime() + 60_000),
+      note: 'E2E fixture authz-source drift',
+    },
+    select: { id: true },
+  });
+}
+
+function prismaWithoutLifecycleSideEffects(prisma: PrismaService): PrismaClient {
+  return new Proxy(prisma, {
+    get(target, property) {
+      if (property === '$connect' || property === '$disconnect') return async () => undefined;
+      const value = Reflect.get(target, property, target) as unknown;
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
+function createFixtureHttpFetch(options: {
+  organizationAId: string;
+  organizationBId: string;
+  exposeOrganizationBToUnrelatedAdmin: boolean;
+}): typeof fetch {
+  const formalUsernames = new Set(
+    LOCAL_ACTIVITY_FRONTEND_ACCOUNTS.filter(
+      (account) => account.gradeCode !== null && /^level-[1-7]$/.test(account.gradeCode),
+    ).map((account) => account.username),
+  );
+  const wrapped = (data: unknown) =>
+    new Response(JSON.stringify({ code: 0, message: 'ok', data }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+
+  return jest.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+    const url =
+      input instanceof URL ? input : new URL(input instanceof Request ? input.url : input);
+    if (url.pathname === '/api/system/v1/health/live') return wrapped({ status: 'ok' });
+    if (url.pathname === '/api/system/v1/health/ready') {
+      return wrapped({ status: 'ok', db: 'up' });
+    }
+    if (url.pathname === '/api/auth/v1/login') {
+      if (typeof init?.body !== 'string') throw new Error('fixture login body must be JSON text');
+      const body = JSON.parse(init.body) as unknown;
+      if (
+        typeof body !== 'object' ||
+        body === null ||
+        !('username' in body) ||
+        typeof body.username !== 'string'
+      ) {
+        throw new Error('fixture login body must contain username');
+      }
+      return wrapped({
+        accessToken: `access-${body.username}`,
+        tokenType: 'Bearer',
+        expiresIn: '15m',
+        refreshToken: 'fixture-refresh-token',
+        refreshExpiresAt: '2026-10-01T00:00:00.000Z',
+      });
+    }
+
+    const authorization = new Headers(init?.headers).get('authorization');
+    const username = authorization?.replace(/^Bearer access-/, '');
+    if (!username) throw new Error(`missing fixture authorization for ${url.pathname}`);
+
+    if (url.pathname === '/api/app/v1/me/capabilities') {
+      const isFormal = formalUsernames.has(username);
+      return wrapped({
+        account: {
+          canUseApp: true,
+          reason: null,
+          canEditProfile: true,
+          canChangePassword: true,
+        },
+        activities: {
+          canViewAvailableActivities: true,
+          canRegisterActivity: true,
+          canCancelOwnRegistration: true,
+          canInitiateActivity: isFormal,
+          canDirectPublishOwnActivity:
+            username === 'local_fe_publish_reviewer' || username === 'local_fe_org_b_owner',
+        },
+        attendance: { canViewOwnAttendance: true },
+        certificates: { canViewOwnCertificates: true },
+        tasks: { canViewTasks: false },
+        managed: {
+          canViewManagedActivities: isFormal,
+          canManageManagedRegistrations: false,
+          canSubmitManagedAttendance: false,
+          canReviewActivityPublication:
+            username === 'local_fe_publish_reviewer' || username === 'local_fe_org_b_owner',
+          canFirstReviewAttendance:
+            username === 'local_fe_first_a' || username === 'local_fe_first_b',
+          canFinalReviewAttendance:
+            username === 'local_fe_final_a' || username === 'local_fe_final_b',
+        },
+      });
+    }
+    if (url.pathname === '/api/app/v1/my/managed-activities/organization-options') {
+      const account = LOCAL_ACTIVITY_FRONTEND_ACCOUNTS.find((item) => item.username === username);
+      if (!account) throw new Error(`unknown fixture account '${username}'`);
+      const membershipOrganization =
+        account.organization === 'A' ? options.organizationAId : options.organizationBId;
+      const result: Array<{
+        organizationId: string;
+        name: string;
+        pathLabel: string;
+        source: string;
+        membershipType: string | null;
+      }> = [
+        {
+          organizationId: membershipOrganization,
+          name: `Organization ${account.organization}`,
+          pathLabel: `SRVF / Organization ${account.organization}`,
+          source: 'membership',
+          membershipType: 'PRIMARY',
+        },
+      ];
+      if (
+        username === 'local_fe_cross_org' ||
+        (username === 'local_fe_unrelated_admin' && options.exposeOrganizationBToUnrelatedAdmin)
+      ) {
+        result.push({
+          organizationId: options.organizationBId,
+          name: 'Organization B',
+          pathLabel: 'SRVF / Organization B',
+          source: 'cross-org-grant',
+          membershipType: null,
+        });
+      }
+      return wrapped(result);
+    }
+    throw new Error(`unexpected fixture HTTP path '${url.pathname}'`);
+  });
 }
 
 async function seedExactRole(
