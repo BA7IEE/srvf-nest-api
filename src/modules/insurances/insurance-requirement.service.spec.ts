@@ -276,16 +276,18 @@ describe('InsuranceRequirementService approval evidence revalidation', () => {
 
   function makeHarness(enabled = true) {
     const findMany = jest.fn().mockResolvedValue([selfEvidence]);
-    const $queryRaw = jest.fn();
+    const $queryRaw = jest.fn().mockResolvedValue([{ id: 'member-1' }]);
+    const memberFindFirst = jest.fn().mockResolvedValue({ id: 'member-1', status: 'ACTIVE' });
     const tx = {
       insuranceEligibilityEvidence: { findMany },
       $queryRaw,
+      member: { findFirst: memberFindFirst },
     };
     const service = new InsuranceRequirementService(
       {} as PrismaService,
       { insurance: { enforcementEnabled: enabled } } as ConfigType<typeof appConfig>,
     );
-    return { service, tx, findMany, $queryRaw };
+    return { service, tx, findMany, $queryRaw, memberFindFirst };
   }
 
   function sqlText(call: unknown): string {
@@ -296,14 +298,24 @@ describe('InsuranceRequirementService approval evidence revalidation', () => {
   it.each([
     ['gate disabled', false, activity],
     ['activity does not require insurance', true, { ...activity, requiresInsurance: false }],
-  ] as const)('%s adds zero evidence/source queries', async (_name, enabled, testedActivity) => {
-    const { service, tx, findMany, $queryRaw } = makeHarness(enabled);
+  ] as const)(
+    '%s still locks and re-reads ACTIVE Member but adds zero evidence/source queries',
+    async (_name, enabled, testedActivity) => {
+      const { service, tx, findMany, $queryRaw, memberFindFirst } = makeHarness(enabled);
 
-    await service.revalidateActivityRegistrationApproval(registration, testedActivity, tx as never);
+      await service.revalidateActivityRegistrationApproval(
+        registration,
+        testedActivity,
+        tx as never,
+      );
 
-    expect(findMany).not.toHaveBeenCalled();
-    expect($queryRaw).not.toHaveBeenCalled();
-  });
+      expect(findMany).not.toHaveBeenCalled();
+      expect($queryRaw).toHaveBeenCalledTimes(1);
+      expect(sqlText($queryRaw.mock.calls[0])).toContain('FROM "Member"');
+      expect(sqlText($queryRaw.mock.calls[0])).toContain('FOR UPDATE');
+      expect(memberFindFirst).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it.each([
     ['missing evidence', []],
@@ -356,7 +368,7 @@ describe('InsuranceRequirementService approval evidence revalidation', () => {
     expect($queryRaw).toHaveBeenCalledTimes(2);
     const memberSql = sqlText($queryRaw.mock.calls[0]);
     expect(memberSql).toContain('FROM "Member"');
-    expect(memberSql).toContain('FOR SHARE');
+    expect(memberSql).toContain('FOR UPDATE');
     const sourceSql = sqlText($queryRaw.mock.calls[1]);
     expect(sourceSql).toContain('FROM "member_insurances"');
     expect(sourceSql).toContain('"version" =');
@@ -367,13 +379,23 @@ describe('InsuranceRequirementService approval evidence revalidation', () => {
     expect(sourceSql).toContain('FOR SHARE');
   });
 
-  it('inactive/deleted member rejects before the self source can be used', async () => {
-    const { service, tx, $queryRaw } = makeHarness();
-    $queryRaw.mockResolvedValueOnce([]);
+  it('deleted member rejects MEMBER_NOT_FOUND before the self source can be used', async () => {
+    const { service, tx, $queryRaw, memberFindFirst } = makeHarness();
+    memberFindFirst.mockResolvedValueOnce(null);
 
     await expect(
       service.revalidateActivityRegistrationApproval(registration, activity, tx as never),
-    ).rejects.toEqual(new BizException(BizCode.INSURANCE_REQUIRED));
+    ).rejects.toEqual(new BizException(BizCode.MEMBER_NOT_FOUND));
+    expect($queryRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('inactive member rejects MEMBER_INACTIVE before the self source can be used', async () => {
+    const { service, tx, $queryRaw, memberFindFirst } = makeHarness();
+    memberFindFirst.mockResolvedValueOnce({ id: 'member-1', status: 'INACTIVE' });
+
+    await expect(
+      service.revalidateActivityRegistrationApproval(registration, activity, tx as never),
+    ).rejects.toEqual(new BizException(BizCode.MEMBER_INACTIVE));
     expect($queryRaw).toHaveBeenCalledTimes(1);
   });
 
@@ -432,7 +454,7 @@ describe('InsuranceRequirementService approval evidence revalidation', () => {
     expect(coverageSql).toContain('FOR SHARE');
     const memberSql = sqlText($queryRaw.mock.calls[3]);
     expect(memberSql).toContain('FROM "Member"');
-    expect(memberSql).toContain('FOR SHARE');
+    expect(memberSql).toContain('FOR UPDATE');
     expect(alternativeSelection).not.toHaveBeenCalled();
   });
 

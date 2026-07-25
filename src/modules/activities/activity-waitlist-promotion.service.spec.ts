@@ -41,6 +41,12 @@ describe('promoteActivityWaitlist', () => {
           .fn()
           .mockResolvedValue({ title: '演练', statusCode: 'published', capacity: 2 }),
       },
+      member: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValueOnce({ id: 'm1', status: 'ACTIVE' })
+          .mockResolvedValueOnce({ id: 'm2', status: 'ACTIVE' }),
+      },
       activityRegistration: {
         findFirst: jest
           .fn()
@@ -68,7 +74,7 @@ describe('promoteActivityWaitlist', () => {
       auditLogs,
     });
 
-    expect(tx.$queryRaw).toHaveBeenCalledTimes(3);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(5);
     expect(tx.activityRegistration.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ orderBy: [{ registeredAt: 'asc' }, { id: 'asc' }] }),
     );
@@ -121,6 +127,62 @@ describe('promoteActivityWaitlist', () => {
     expect(auditLogs.log).not.toHaveBeenCalled();
   });
 
+  it('单队列跳过 inactive FIFO 队首，并递补下一名 ACTIVE Member', async () => {
+    const inactive = row('r-inactive', 'm-inactive');
+    const active = row('r-active', 'm-active');
+    const findFirst = jest
+      .fn<
+        Promise<ReturnType<typeof row> | null>,
+        [{ where: Record<string, unknown>; select?: unknown; orderBy?: unknown }]
+      >()
+      .mockResolvedValueOnce(inactive)
+      .mockResolvedValueOnce(active)
+      .mockResolvedValueOnce(active);
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'locked' }]),
+      activity: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ title: '演练', statusCode: 'published', capacity: 1 }),
+      },
+      member: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValueOnce({ id: inactive.memberId, status: 'INACTIVE' })
+          .mockResolvedValueOnce({ id: active.memberId, status: 'ACTIVE' }),
+      },
+      activityRegistration: {
+        findFirst,
+        update: jest.fn().mockResolvedValue({ ...active, statusCode: 'pending' }),
+      },
+    };
+    const auditLogs = {
+      log: jest.fn<Promise<void>, [AuditLogInput]>().mockResolvedValue(undefined),
+    };
+
+    await expect(
+      promoteActivityWaitlist({
+        activityId: 'activity-1',
+        maxPromotions: 1,
+        actorUserId: 'user-1',
+        actorRoleSnap: Role.ADMIN,
+        auditMeta: { requestId: 'req-1', ip: '127.0.0.1', ua: 'jest' },
+        tx: tx as never,
+        auditLogs,
+      }),
+    ).resolves.toEqual({
+      activityTitle: '演练',
+      promoted: [{ registrationId: active.id, memberId: active.memberId }],
+    });
+
+    expect(findFirst.mock.calls[1][0].where).toMatchObject({
+      id: { notIn: [inactive.id] },
+    });
+    expect(tx.activityRegistration.update).toHaveBeenCalledTimes(1);
+    expect(auditLogs.log).toHaveBeenCalledTimes(1);
+    expect(auditLogs.log.mock.calls[0][0].resourceId).toBe(active.id);
+  });
+
   it('同岗无候补时跨岗 fallback，并跳过 child 已满岗位', async () => {
     const waitB = row('r-b', 'm-b', 'waitlisted', 'position-b');
     const findFirst = jest
@@ -141,6 +203,9 @@ describe('promoteActivityWaitlist', () => {
           { id: 'position-b', capacity: 1 },
           { id: 'position-full', capacity: 1 },
         ]),
+      },
+      member: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'm-b', status: 'ACTIVE' }),
       },
       activityRegistration: {
         groupBy: jest
@@ -175,6 +240,64 @@ describe('promoteActivityWaitlist', () => {
       { activityPositionId: null },
       { activityPositionId: { in: ['position-a', 'position-b'] } },
     ]);
-    expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(3);
+  });
+
+  it('跨岗位引擎跳过 deleted FIFO 队首，并继续递补下一名 ACTIVE Member', async () => {
+    const deleted = row('r-deleted', 'm-deleted');
+    const active = row('r-active', 'm-active');
+    const findFirst = jest
+      .fn<
+        Promise<ReturnType<typeof row> | null>,
+        [{ where: Record<string, unknown>; select?: unknown; orderBy?: unknown }]
+      >()
+      .mockResolvedValueOnce(deleted)
+      .mockResolvedValueOnce(active)
+      .mockResolvedValueOnce(active);
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'locked' }]),
+      activity: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ title: '演练', statusCode: 'published', capacity: 1 }),
+      },
+      activityPosition: { findMany: jest.fn().mockResolvedValue([]) },
+      member: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({ id: active.memberId, status: 'ACTIVE' }),
+      },
+      activityRegistration: {
+        groupBy: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(2),
+        findFirst,
+        update: jest.fn().mockResolvedValue({ ...active, statusCode: 'pending' }),
+      },
+    };
+    const auditLogs = {
+      log: jest.fn<Promise<void>, [AuditLogInput]>().mockResolvedValue(undefined),
+    };
+
+    await expect(
+      promoteActivityWaitlistAcrossPositions({
+        activityId: 'activity-1',
+        maxPromotions: 1,
+        actorUserId: 'user-1',
+        actorRoleSnap: Role.ADMIN,
+        auditMeta: { requestId: 'req-1', ip: '127.0.0.1', ua: 'jest' },
+        tx: tx as never,
+        auditLogs,
+      }),
+    ).resolves.toEqual({
+      activityTitle: '演练',
+      promoted: [{ registrationId: active.id, memberId: active.memberId }],
+    });
+
+    expect(findFirst.mock.calls[1][0].where).toMatchObject({
+      id: { notIn: [deleted.id] },
+    });
+    expect(tx.activityRegistration.update).toHaveBeenCalledTimes(1);
+    expect(auditLogs.log).toHaveBeenCalledTimes(1);
   });
 });

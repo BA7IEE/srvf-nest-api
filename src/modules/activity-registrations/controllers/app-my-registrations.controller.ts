@@ -127,6 +127,9 @@ export class AppMyRegistrationsController {
     BizCode.ACTIVITY_POSITION_REQUIRED,
     BizCode.ACTIVITY_REGISTRATION_GENDER_MISMATCH,
     BizCode.ACTIVITY_CAPACITY_EXCEEDED,
+    BizCode.MEMBER_NOT_FOUND,
+    BizCode.MEMBER_INACTIVE,
+    BizCode.INSURANCE_REQUIRED,
   )
   createMy(
     @CurrentUser() currentUser: CurrentUserPayload,

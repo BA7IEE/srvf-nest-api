@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { MemberStatus, Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -81,8 +81,16 @@ describe('activity registration bulk approve/reject F6', () => {
   const bulkPath = (action: 'bulk-approve' | 'bulk-reject') =>
     `/api/admin/v1/activities/${activityId}/registrations/${action}`;
 
-  it('bulk-approve 字面路由逐条独立：首条成功，容量/不存在各自失败，audit 只落成功条', async () => {
+  it('bulk-approve 字面路由逐条独立：ACTIVE 成功，INACTIVE/不存在逐项失败，audit 只落成功条', async () => {
     const missingId = 'clmissingregistration000001';
+    const inactiveRegistration = await prisma.activityRegistration.findUniqueOrThrow({
+      where: { id: registration2Id },
+      select: { memberId: true },
+    });
+    await prisma.member.update({
+      where: { id: inactiveRegistration.memberId },
+      data: { status: MemberStatus.INACTIVE },
+    });
     const res = await request(httpServer(app))
       .patch(bulkPath('bulk-approve'))
       .set('Authorization', superAdminAuth)
@@ -94,8 +102,8 @@ describe('activity registration bulk approve/reject F6', () => {
       failed: [
         {
           id: registration2Id,
-          code: BizCode.ACTIVITY_CAPACITY_EXCEEDED.code,
-          message: BizCode.ACTIVITY_CAPACITY_EXCEEDED.message,
+          code: BizCode.MEMBER_INACTIVE.code,
+          message: BizCode.MEMBER_INACTIVE.message,
         },
         {
           id: missingId,

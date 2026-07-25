@@ -108,6 +108,8 @@ export class AppManagedActivityRegistrationsController {
     BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
     BizCode.ACTIVITY_ENDED_OR_CANCELLED_APPROVE_FORBIDDEN,
     BizCode.ACTIVITY_CAPACITY_EXCEEDED,
+    BizCode.MEMBER_NOT_FOUND,
+    BizCode.MEMBER_INACTIVE,
     BizCode.INSURANCE_REQUIRED,
   )
   async approve(

@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { Prisma, Role, UserStatus } from '@prisma/client';
+import { MemberStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import request, { type Response } from 'supertest';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
@@ -732,6 +732,121 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       },
     );
 
+    it('A3. Member INACTIVE → approve 拒 MEMBER_INACTIVE，状态/审核字段/容量/audit/通知均不变', async () => {
+      const activityId = await createActivity({ capacity: 1 });
+      const member = await ctx.prisma.member.create({
+        data: {
+          memberNo: `reg-state-inactive-${Date.now()}`,
+          displayName: 'Inactive Approve Target',
+          status: MemberStatus.INACTIVE,
+        },
+        select: { id: true },
+      });
+      const regId = await seedRegistration({
+        activityId,
+        memberId: member.id,
+        statusCode: 'pending',
+      });
+
+      await expect(
+        ctx.service.approve(
+          activityId,
+          regId,
+          { reviewNote: '不得落库' },
+          ctx.adminPayload,
+          AUDIT_META,
+        ),
+      ).rejects.toMatchObject({ biz: BizCode.MEMBER_INACTIVE });
+
+      expect(
+        await ctx.prisma.activityRegistration.findUniqueOrThrow({
+          where: { id: regId },
+          select: {
+            statusCode: true,
+            reviewedBy: true,
+            reviewedAt: true,
+            reviewNote: true,
+          },
+        }),
+      ).toEqual({
+        statusCode: 'pending',
+        reviewedBy: null,
+        reviewedAt: null,
+        reviewNote: null,
+      });
+      expect(
+        await ctx.prisma.activityRegistration.count({
+          where: { activityId, statusCode: 'pass', deletedAt: null },
+        }),
+      ).toBe(0);
+      expect(
+        await ctx.prisma.auditLog.count({
+          where: { resourceId: regId, event: 'registration.review' },
+        }),
+      ).toBe(0);
+      expect(
+        await ctx.prisma.notification.count({
+          where: { recipientMemberId: member.id, notificationTypeCode: 'registration-result' },
+        }),
+      ).toBe(0);
+      expect(await ctx.prisma.notificationDelivery.count()).toBe(0);
+      expect(await ctx.prisma.notificationOutboxIntent.count()).toBe(0);
+    });
+
+    it('A4. Member 已软删 → approve 拒 MEMBER_NOT_FOUND，报名保持 pending 且零副作用', async () => {
+      const member = await ctx.prisma.member.create({
+        data: {
+          memberNo: `reg-state-deleted-${Date.now()}`,
+          displayName: 'Deleted Approve Target',
+        },
+        select: { id: true },
+      });
+      const regId = await seedRegistration({
+        memberId: member.id,
+        statusCode: 'pending',
+      });
+      await ctx.prisma.member.update({
+        where: { id: member.id },
+        data: { deletedAt: new Date() },
+      });
+
+      await expect(
+        ctx.service.approve(
+          ctx.publishedActivityId,
+          regId,
+          { reviewNote: '不得落库' },
+          ctx.adminPayload,
+          AUDIT_META,
+        ),
+      ).rejects.toMatchObject({ biz: BizCode.MEMBER_NOT_FOUND });
+      expect(
+        await ctx.prisma.activityRegistration.findUniqueOrThrow({
+          where: { id: regId },
+          select: {
+            statusCode: true,
+            reviewedBy: true,
+            reviewedAt: true,
+            reviewNote: true,
+          },
+        }),
+      ).toEqual({
+        statusCode: 'pending',
+        reviewedBy: null,
+        reviewedAt: null,
+        reviewNote: null,
+      });
+      expect(
+        await ctx.prisma.auditLog.count({
+          where: { resourceId: regId, event: 'registration.review' },
+        }),
+      ).toBe(0);
+      expect(
+        await ctx.prisma.notification.count({
+          where: { recipientMemberId: member.id, notificationTypeCode: 'registration-result' },
+        }),
+      ).toBe(0);
+    });
+
     it(
       'finding #3 approve-first:root registration lock 后 approve 先排队，reject 软阻塞其后',
       async () => {
@@ -1432,6 +1547,67 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
         AUDIT_META,
       );
       expect(approved.statusCode).toBe('pass');
+    });
+
+    it('G4. inactive Member 允许 reject→pending reopen，但后续 approve 必须重验并拒 MEMBER_INACTIVE', async () => {
+      const member = await ctx.prisma.member.create({
+        data: {
+          memberNo: `reg-state-reopen-inactive-${Date.now()}`,
+          displayName: 'Inactive Reopen Target',
+          status: MemberStatus.INACTIVE,
+        },
+        select: { id: true },
+      });
+      const regId = await seedRegistration({
+        memberId: member.id,
+        statusCode: 'reject',
+        reviewerUserId: ctx.adminUserId,
+        reviewedAtIso: '2026-04-10T10:00:00.000Z',
+        reviewNote: '先拒',
+      });
+
+      const reopened = await ctx.service.reopen(
+        ctx.publishedActivityId,
+        regId,
+        ctx.adminPayload,
+        AUDIT_META,
+      );
+      expect(reopened).toMatchObject({
+        statusCode: 'pending',
+        reviewedBy: null,
+        reviewedAt: null,
+        reviewNote: null,
+      });
+
+      await expect(
+        ctx.service.approve(
+          ctx.publishedActivityId,
+          regId,
+          { reviewNote: '不得改判' },
+          ctx.adminPayload,
+          AUDIT_META,
+        ),
+      ).rejects.toMatchObject({ biz: BizCode.MEMBER_INACTIVE });
+      expect(
+        await ctx.prisma.activityRegistration.findUniqueOrThrow({
+          where: { id: regId },
+          select: { statusCode: true, reviewedBy: true, reviewedAt: true, reviewNote: true },
+        }),
+      ).toEqual({
+        statusCode: 'pending',
+        reviewedBy: null,
+        reviewedAt: null,
+        reviewNote: null,
+      });
+      expect(
+        await ctx.prisma.auditLog.count({
+          where: {
+            resourceId: regId,
+            event: 'registration.review',
+            context: { path: ['extra', 'action'], equals: 'approve' },
+          },
+        }),
+      ).toBe(0);
     });
   });
 

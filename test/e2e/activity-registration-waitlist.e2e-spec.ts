@@ -927,6 +927,102 @@ describe('activity registration waitlist', () => {
     });
   });
 
+  it('FIFO 队首 Member inactive/deleted 时均保持 waitlisted，跳过并递补下一名 ACTIVE Member', async () => {
+    const activityId = await createActivity(1, 'cancel-promote-skip-inactive');
+    const pass = await seedRegistration(
+      activityId,
+      await createMember('skip-inactive-pass'),
+      'pass',
+    );
+    const inactiveMemberId = await createMember('queue-inactive-head');
+    const deletedMemberId = await createMember('queue-deleted-second');
+    const activeMemberId = await createMember('queue-active-tail');
+    const inactiveHead = await seedRegistration(
+      activityId,
+      inactiveMemberId,
+      'waitlisted',
+      new Date('2026-07-15T01:00:00.000Z'),
+    );
+    const deletedSecond = await seedRegistration(
+      activityId,
+      deletedMemberId,
+      'waitlisted',
+      new Date('2026-07-15T01:01:00.000Z'),
+    );
+    const activeTail = await seedRegistration(
+      activityId,
+      activeMemberId,
+      'waitlisted',
+      new Date('2026-07-15T01:02:00.000Z'),
+    );
+    await prisma.member.update({
+      where: { id: inactiveMemberId },
+      data: { status: 'INACTIVE' },
+    });
+    await prisma.member.update({
+      where: { id: deletedMemberId },
+      data: { deletedAt: new Date() },
+    });
+
+    await registrations.cancelAdmin(activityId, pass.id, {}, admin, AUDIT_META);
+
+    expect(
+      await prisma.activityRegistration.findMany({
+        where: { id: { in: [inactiveHead.id, deletedSecond.id, activeTail.id] } },
+        select: { id: true, statusCode: true },
+        orderBy: { id: 'asc' },
+      }),
+    ).toEqual(
+      [
+        { id: inactiveHead.id, statusCode: 'waitlisted' },
+        { id: deletedSecond.id, statusCode: 'waitlisted' },
+        { id: activeTail.id, statusCode: 'pending' },
+      ].sort((a, b) => a.id.localeCompare(b.id)),
+    );
+    expect(
+      await prisma.auditLog.count({
+        where: {
+          resourceId: inactiveHead.id,
+          event: 'registration.review',
+          context: { path: ['extra', 'action'], equals: 'promote' },
+        },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.auditLog.count({
+        where: {
+          resourceId: deletedSecond.id,
+          event: 'registration.review',
+          context: { path: ['extra', 'action'], equals: 'promote' },
+        },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.auditLog.count({
+        where: {
+          resourceId: activeTail.id,
+          event: 'registration.review',
+          context: { path: ['extra', 'action'], equals: 'promote' },
+        },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.notification.count({
+        where: { recipientMemberId: inactiveMemberId, title: '候补已递补' },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.notification.count({
+        where: { recipientMemberId: deletedMemberId, title: '候补已递补' },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.notification.count({
+        where: { recipientMemberId: activeMemberId, title: '候补已递补' },
+      }),
+    ).toBe(1);
+  });
+
   it('promote×cancel:root候补锁 → pass cancel/promote direct waiter → 候补 cancel soft waiter', async () => {
     const activityId = await createActivity(1, 'promote-cancel-linear');
     const pass = await seedRegistration(activityId, await createMember('linear-pass'), 'pass');
