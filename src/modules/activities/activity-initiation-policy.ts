@@ -12,17 +12,8 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { AuthzService } from '../authz/authz.service';
+import { isFormalMemberGradeCode } from '../members/member-grade';
 import { RbacService } from '../permissions/rbac.service';
-
-const FORMAL_GRADES = new Set([
-  'level-1',
-  'level-2',
-  'level-3',
-  'level-4',
-  'level-5',
-  'level-6',
-  'level-7',
-]);
 
 type InitiationClient = Pick<PrismaClient, 'member' | 'organization'>;
 
@@ -108,12 +99,7 @@ export class ActivityInitiationPolicy {
         },
       },
     });
-    if (
-      !member ||
-      !member.gradeCode ||
-      !FORMAL_GRADES.has(member.gradeCode) ||
-      member.users.length === 0
-    ) {
+    if (!member || !isFormalMemberGradeCode(member.gradeCode) || member.users.length === 0) {
       throw new BizException(BizCode.ACTIVITY_INITIATOR_NOT_FORMAL);
     }
     if (

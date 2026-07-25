@@ -9,6 +9,8 @@
 
 ## Local facts
 
+- **正式等级唯一真值**:`isFormalMemberGradeCode()` 只对精确 `level-1`…`level-7` 返回 true；函数归本模块 `member-grade.ts`，其他模块不得复制正则/Set，也不得用组织归属推导正式等级。
+
 - **部门数据范围(v0.49)**:`list/options` 先取 `AuthzService.getVisibleOrganizationScope('member.read.record')`，再与用户 `organizationId/includeDescendants` 过滤取交集；成员归属只认 active PRIMARY，SECONDARY/TEMPORARY/SUPPORT 不扩大可见范围。有效持码但组织集合为空返回空列表，无码才返 30100。
 - **point auth**:除 `create` 保持 no-ref/GLOBAL-only 外，成员详情及全部单项写操作都用 `{type:'member', id}`；bulk grant 每项独立 point auth。证书点动作按 certificate ref，档案/联系人/保险按 member ref；`resource_not_found` 仅对旧 GLOBAL 持码者回退既有业务 NOT_FOUND，scoped 调用者统一 30100。
 - **敏感二次授权**:`member-profile.read.sensitive` 与 `emergency-contact.read.sensitive` 也必须带 member ref；基础 read 通过但 sensitive 未通过时继续掩码。副职只读投影明确不含任何 `*.read.sensitive`。

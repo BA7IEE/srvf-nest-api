@@ -13,8 +13,9 @@ import {
 //
 // 5 档可见(每篇选一):public / member / formal_member / department / management。
 // 设计:caller 上下文**一次性 async 解析**(在 content-read.service:isMember = canUseApp /
-// isFormalMember = 有活跃 member_department / activeOrgIds / isManagement = rbac.can('content.read.record')
-// 或 role ∈ {SUPER_ADMIN, ADMIN}),再喂入本文件**纯同步函数**(可单测,零 DB)。
+// isFormalMember = ACTIVE Member 的正式 gradeCode / activeOrgIds = 活跃 PRIMARY 组织归属 /
+// isManagement = rbac.can('content.read.record') 或 role ∈ {SUPER_ADMIN, ADMIN}),再喂入本文件
+// **纯同步函数**(可单测,零 DB)。formal 与 department 是彼此独立的可见轴。
 //
 // - canSeeContent:单条判定(app/v1 详情用;已含 published 前提)。
 // - buildVisibilityWhere:list where(published + 命中可见档 OR;分页正确性靠 DB 过滤,绝不读后内存过滤)。
@@ -24,9 +25,9 @@ import {
 export interface CallerVisibilityContext {
   // 任意活跃登录会员(志愿者 + 队员;= AppIdentityResolver.canUseApp)
   isMember: boolean;
-  // 有 ≥1 活跃 member_department(正式队员;org ACTIVE 且未软删)
+  // 正式队员布尔真值(读取层按 ACTIVE Member + gradeCode=level-1…level-7 解析)
   isFormalMember: boolean;
-  // 活跃 member_department.organizationId 数组(department 档命中判定用)
+  // 活跃 PRIMARY membership 的 organizationId 数组(仅 department 档命中判定用)
   activeOrgIds: string[];
   // 管理层 = rbac.can('content.read.record') 或 role ∈ {SUPER_ADMIN, ADMIN}
   isManagement: boolean;

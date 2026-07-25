@@ -17,12 +17,12 @@ import { createTestApp } from '../setup/test-app';
 //
 // 核心:**4 档可见性矩阵**(去 public;复用 content.visibility)+ 站内信增量(read 标志 / mark-read 幂等 /
 // unread-count / 防枚举 404)。caller:
-//   - volunteer(canUseApp,无 member_department)→ 见 member;不见 formal / department / management
-//   - formalA(活跃 orgA)→ 见 member + formal + department[orgA];不见 department[orgB] / management
-//   - formalB(活跃 orgB)→ 见 member + formal + department[orgB];不见 department[orgA]
+//   - volunteer / reserve / null-grade(均 ACTIVE PRIMARY)→ 见 member + 本部门;不见 formal
+//   - level-1(ACTIVE PRIMARY orgA)→ 见 member + formal + department[orgA]
+//   - level-3(无 current org)→ 见 member + formal;不见 department
 //   - mgmt(biz-admin 持 notification.read.record + ACTIVE member)→ 见 member + management;不见 formal / 两部门
-//   - canUseApp=false(unlinked / inactive)→ 403
-// reset-db 已清 notifications / member_department / org;本 spec 自造数据。
+//   - canUseApp=false(unlinked / inactive level-3)→ 403
+// reset-db 已清 notifications / member_organization_memberships / org;本 spec 自造数据。
 
 const APP_NOTIFICATIONS = '/api/app/v1/notifications';
 
@@ -36,12 +36,14 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
   let app: INestApplication;
   let prisma: PrismaService;
 
-  let volunteer: Caller;
-  let formalA: Caller;
-  let formalB: Caller;
+  let volunteerPrimary: Caller;
+  let reservePrimary: Caller;
+  let nullGradePrimary: Caller;
+  let level1Primary: Caller;
+  let level3NoOrg: Caller;
   let mgmtAuth: string;
   let unlinkedAuth: string;
-  let inactiveAuth: string;
+  let inactiveLevel3Auth: string;
 
   let orgA: string;
   let orgB: string;
@@ -57,10 +59,16 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
   async function makeMember(
     username: string,
     memberStatus: 'ACTIVE' | 'INACTIVE',
+    gradeCode: string | null,
   ): Promise<Caller> {
     const user = await createTestUser(app, { username, role: Role.USER });
     const member = await prisma.member.create({
-      data: { memberNo: `NTF-${username}`, displayName: username, status: memberStatus },
+      data: {
+        memberNo: `NTF-${username}`,
+        displayName: username,
+        status: memberStatus,
+        gradeCode,
+      },
     });
     await prisma.user.update({ where: { id: user.id }, data: { memberId: member.id } });
     const { authHeader } = await loginAs(app, username);
@@ -80,8 +88,11 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
     visibilityCode: string;
     visibleOrganizationIds?: string[];
     statusCode?: string;
+    audienceType?: 'broadcast' | 'directed';
+    recipientMemberId?: string;
   }): Promise<string> {
     const status = over.statusCode ?? 'published';
+    const audienceType = over.audienceType ?? 'broadcast';
     const row = await prisma.notification.create({
       data: {
         title: over.title,
@@ -90,6 +101,9 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
         statusCode: status,
         visibilityCode: over.visibilityCode,
         visibleOrganizationIds: over.visibleOrganizationIds ?? [],
+        audienceType,
+        sourceType: audienceType === 'directed' ? 'system' : 'admin',
+        recipientMemberId: over.recipientMemberId ?? null,
         publishedAt: status === 'published' ? new Date() : null,
       },
       select: { id: true },
@@ -118,6 +132,12 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
     const res = await listApp(auth, '?pageSize=50');
     expect(res.status).toBe(200);
     return (res.body.data.items as { id: string }[]).map((i) => i.id);
+  }
+
+  async function unreadCountOf(auth: string): Promise<number> {
+    const res = await unreadCountApp(auth);
+    expect(res.status).toBe(200);
+    return res.body.data.unreadCount as number;
   }
 
   beforeAll(async () => {
@@ -155,21 +175,26 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
     await grantBizAdminToUser(app, mgmtUser.id, bizAdminRoleId);
     mgmtAuth = (await loginAs(app, 'ntf_mgmt')).authHeader;
 
-    volunteer = await makeMember('ntf_vol', 'ACTIVE');
-    formalA = await makeMember('ntf_formal_a', 'ACTIVE');
-    formalB = await makeMember('ntf_formal_b', 'ACTIVE');
+    // PR-D 六账号矩阵:正式队员真值只由 ACTIVE member + gradeCode=level-1…level-7 决定。
+    volunteerPrimary = await makeMember('ntf_vol_primary', 'ACTIVE', 'volunteer');
+    reservePrimary = await makeMember('ntf_reserve_primary', 'ACTIVE', 'reserve');
+    nullGradePrimary = await makeMember('ntf_null_primary', 'ACTIVE', null);
+    level1Primary = await makeMember('ntf_level1_primary', 'ACTIVE', 'level-1');
+    level3NoOrg = await makeMember('ntf_level3_no_org', 'ACTIVE', 'level-3');
 
     await createTestUser(app, { username: 'ntf_unlinked', role: Role.USER });
     unlinkedAuth = (await loginAs(app, 'ntf_unlinked')).authHeader;
-    inactiveAuth = (await makeMember('ntf_inactive', 'INACTIVE')).auth;
+    inactiveLevel3Auth = (await makeMember('ntf_inactive_level3', 'INACTIVE', 'level-3')).auth;
 
     orgA = await makeOrg('部门A');
     orgB = await makeOrg('部门B');
-    await prisma.memberOrganizationMembership.create({
-      data: { memberId: formalA.memberId, organizationId: orgA },
-    });
-    await prisma.memberOrganizationMembership.create({
-      data: { memberId: formalB.memberId, organizationId: orgB },
+    await prisma.memberOrganizationMembership.createMany({
+      data: [
+        { memberId: volunteerPrimary.memberId, organizationId: orgA },
+        { memberId: reservePrimary.memberId, organizationId: orgB },
+        { memberId: nullGradePrimary.memberId, organizationId: orgA },
+        { memberId: level1Primary.memberId, organizationId: orgA },
+      ],
     });
 
     nMember = await makeNotif({ title: 'N-member', visibilityCode: 'member' });
@@ -200,8 +225,11 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
     it('unlinked 详情 → 403(准入先于可见性)', async () => {
       expectBizError(await detailApp(unlinkedAuth, nMember), BizCode.FORBIDDEN);
     });
-    it('inactive member 列表 → 403', async () => {
-      expectBizError(await listApp(inactiveAuth), BizCode.FORBIDDEN);
+    it('inactive level-3 的 feed / detail / mark-read / unread-count → 403', async () => {
+      expectBizError(await listApp(inactiveLevel3Auth), BizCode.FORBIDDEN);
+      expectBizError(await detailApp(inactiveLevel3Auth, nFormal), BizCode.FORBIDDEN);
+      expectBizError(await markReadApp(inactiveLevel3Auth, nFormal), BizCode.FORBIDDEN);
+      expectBizError(await unreadCountApp(inactiveLevel3Auth), BizCode.FORBIDDEN);
     });
     it('unlinked unread-count → 403', async () => {
       expectBizError(await unreadCountApp(unlinkedAuth), BizCode.FORBIDDEN);
@@ -213,28 +241,52 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
 
   // ============ 列表 4 档矩阵 ============
   describe('列表 4 档矩阵(看得到该看的 + 看不到不该看的;去 public)', () => {
-    it('volunteer:见 member;不见 formal / deptA / deptB / mgmt / draft', async () => {
-      const ids = await listedIds(volunteer.auth);
+    it('volunteer + ACTIVE PRIMARY(orgA):见 member + deptA;不见 formal / deptB / mgmt / draft', async () => {
+      const ids = await listedIds(volunteerPrimary.auth);
       expect(ids).toContain(nMember);
+      expect(ids).toContain(nDeptA);
       expect(ids).not.toContain(nFormal);
-      expect(ids).not.toContain(nDeptA);
       expect(ids).not.toContain(nDeptB);
       expect(ids).not.toContain(nMgmt);
       expect(ids).not.toContain(nDraft);
     });
-    it('formalA:见 member + formal + deptA;不见 deptB / mgmt', async () => {
-      const ids = await listedIds(formalA.auth);
+
+    it('reserve + ACTIVE PRIMARY(orgB):见 member + deptB;不见 formal / deptA / mgmt', async () => {
+      const ids = await listedIds(reservePrimary.auth);
+      expect(ids).toContain(nMember);
+      expect(ids).toContain(nDeptB);
+      expect(ids).not.toContain(nFormal);
+      expect(ids).not.toContain(nDeptA);
+      expect(ids).not.toContain(nMgmt);
+    });
+
+    it('null-grade + ACTIVE PRIMARY(orgA):见 member + deptA;不见 formal / deptB / mgmt', async () => {
+      const ids = await listedIds(nullGradePrimary.auth);
+      expect(ids).toContain(nMember);
+      expect(ids).toContain(nDeptA);
+      expect(ids).not.toContain(nFormal);
+      expect(ids).not.toContain(nDeptB);
+      expect(ids).not.toContain(nMgmt);
+    });
+
+    it('level-1 + ACTIVE PRIMARY(orgA):见 member + formal + deptA;不见 deptB / mgmt', async () => {
+      const ids = await listedIds(level1Primary.auth);
       expect(ids).toContain(nMember);
       expect(ids).toContain(nFormal);
       expect(ids).toContain(nDeptA);
       expect(ids).not.toContain(nDeptB);
       expect(ids).not.toContain(nMgmt);
     });
-    it('formalB:见 deptB;不见 deptA(部门隔离)', async () => {
-      const ids = await listedIds(formalB.auth);
-      expect(ids).toContain(nDeptB);
+
+    it('level-3 + 无 current org:见 member + formal;不见两部门 / mgmt', async () => {
+      const ids = await listedIds(level3NoOrg.auth);
+      expect(ids).toContain(nMember);
+      expect(ids).toContain(nFormal);
       expect(ids).not.toContain(nDeptA);
+      expect(ids).not.toContain(nDeptB);
+      expect(ids).not.toContain(nMgmt);
     });
+
     it('mgmt(持 notification.read.record,无部门):见 member + management;不见 formal / 两部门', async () => {
       const ids = await listedIds(mgmtAuth);
       expect(ids).toContain(nMember);
@@ -247,19 +299,59 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
 
   // ============ 详情 4 档矩阵:可见 200 / 不可见 404 防枚举 ============
   describe('详情 4 档矩阵(可见 200 / 不可见 + 未发布 404 防枚举)', () => {
-    it('volunteer:member → 200;formal / deptA / mgmt / draft → 404', async () => {
-      expect((await detailApp(volunteer.auth, nMember)).status).toBe(200);
-      expectBizError(await detailApp(volunteer.auth, nFormal), BizCode.NOTIFICATION_NOT_FOUND);
-      expectBizError(await detailApp(volunteer.auth, nDeptA), BizCode.NOTIFICATION_NOT_FOUND);
-      expectBizError(await detailApp(volunteer.auth, nMgmt), BizCode.NOTIFICATION_NOT_FOUND);
-      expectBizError(await detailApp(volunteer.auth, nDraft), BizCode.NOTIFICATION_NOT_FOUND);
+    it('volunteer + PRIMARY:member / deptA → 200;formal / deptB / mgmt / draft → 31001', async () => {
+      expect((await detailApp(volunteerPrimary.auth, nMember)).status).toBe(200);
+      expect((await detailApp(volunteerPrimary.auth, nDeptA)).status).toBe(200);
+      expectBizError(
+        await detailApp(volunteerPrimary.auth, nFormal),
+        BizCode.NOTIFICATION_NOT_FOUND,
+      );
+      expectBizError(
+        await detailApp(volunteerPrimary.auth, nDeptB),
+        BizCode.NOTIFICATION_NOT_FOUND,
+      );
+      expectBizError(await detailApp(volunteerPrimary.auth, nMgmt), BizCode.NOTIFICATION_NOT_FOUND);
+      expectBizError(
+        await detailApp(volunteerPrimary.auth, nDraft),
+        BizCode.NOTIFICATION_NOT_FOUND,
+      );
     });
-    it('formalB:deptB → 200;deptA → 404(部门隔离)', async () => {
-      expect((await detailApp(formalB.auth, nDeptB)).status).toBe(200);
-      expectBizError(await detailApp(formalB.auth, nDeptA), BizCode.NOTIFICATION_NOT_FOUND);
+
+    it('reserve + PRIMARY:deptB → 200;formal / deptA → 31001', async () => {
+      expect((await detailApp(reservePrimary.auth, nDeptB)).status).toBe(200);
+      expectBizError(await detailApp(reservePrimary.auth, nFormal), BizCode.NOTIFICATION_NOT_FOUND);
+      expectBizError(await detailApp(reservePrimary.auth, nDeptA), BizCode.NOTIFICATION_NOT_FOUND);
     });
+
+    it('null-grade + PRIMARY:deptA → 200;formal → 31001', async () => {
+      expect((await detailApp(nullGradePrimary.auth, nDeptA)).status).toBe(200);
+      expectBizError(
+        await detailApp(nullGradePrimary.auth, nFormal),
+        BizCode.NOTIFICATION_NOT_FOUND,
+      );
+    });
+
+    it('level-1 + PRIMARY:member / formal / deptA → 200;deptB / mgmt → 31001', async () => {
+      expect((await detailApp(level1Primary.auth, nMember)).status).toBe(200);
+      expect((await detailApp(level1Primary.auth, nFormal)).status).toBe(200);
+      expect((await detailApp(level1Primary.auth, nDeptA)).status).toBe(200);
+      expectBizError(await detailApp(level1Primary.auth, nDeptB), BizCode.NOTIFICATION_NOT_FOUND);
+      expectBizError(await detailApp(level1Primary.auth, nMgmt), BizCode.NOTIFICATION_NOT_FOUND);
+    });
+
+    it('level-3 + 无 current org:formal → 200;两部门 → 31001', async () => {
+      expect((await detailApp(level3NoOrg.auth, nFormal)).status).toBe(200);
+      expectBizError(await detailApp(level3NoOrg.auth, nDeptA), BizCode.NOTIFICATION_NOT_FOUND);
+      expectBizError(await detailApp(level3NoOrg.auth, nDeptB), BizCode.NOTIFICATION_NOT_FOUND);
+    });
+
+    it('mgmt:management → 200;formal → 31001', async () => {
+      expect((await detailApp(mgmtAuth, nMgmt)).status).toBe(200);
+      expectBizError(await detailApp(mgmtAuth, nFormal), BizCode.NOTIFICATION_NOT_FOUND);
+    });
+
     it('详情读者出参零敏感:无 authorUserId / visibleOrganizationIds / statusCode / readCount', async () => {
-      const res = await detailApp(formalA.auth, nDeptA);
+      const res = await detailApp(level1Primary.auth, nDeptA);
       expect(res.status).toBe(200);
       expect(res.body.data).not.toHaveProperty('authorUserId');
       expect(res.body.data).not.toHaveProperty('visibleOrganizationIds');
@@ -272,7 +364,7 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
   describe('站内信:read 标志 / mark-read 幂等 / readCount / unread-count', () => {
     it('mark-read 幂等:首读 readCount=1,二读 no-op 不重复增,已读行恰 1', async () => {
       const id = await makeNotif({ title: 'MR-idem', visibilityCode: 'member' });
-      const r1 = await markReadApp(volunteer.auth, id);
+      const r1 = await markReadApp(volunteerPrimary.auth, id);
       expect(r1.status).toBe(200);
       expect(r1.body.data.read).toBe(true);
       expect(
@@ -280,7 +372,7 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
           ?.readCount,
       ).toBe(1);
 
-      const r2 = await markReadApp(volunteer.auth, id); // 幂等二次
+      const r2 = await markReadApp(volunteerPrimary.auth, id); // 幂等二次
       expect(r2.status).toBe(200);
       expect(r2.body.data.read).toBe(true);
       expect(
@@ -292,7 +384,7 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
 
     it('read 标志:detail 不自动已读(readCount 不变);mark-read 后 list / detail read=true', async () => {
       const id = await makeNotif({ title: 'MR-flag', visibilityCode: 'member' });
-      const d1 = await detailApp(volunteer.auth, id);
+      const d1 = await detailApp(volunteerPrimary.auth, id);
       expect(d1.body.data.read).toBe(false);
       // detail **不**自动已读:readCount 仍 0,无 NotificationRead 行
       expect(
@@ -301,9 +393,9 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
       ).toBe(0);
       expect(await prisma.notificationRead.count({ where: { notificationId: id } })).toBe(0);
 
-      await markReadApp(volunteer.auth, id);
-      expect((await detailApp(volunteer.auth, id)).body.data.read).toBe(true);
-      const inList = (await listApp(volunteer.auth, '?pageSize=50')).body.data.items as {
+      await markReadApp(volunteerPrimary.auth, id);
+      expect((await detailApp(volunteerPrimary.auth, id)).body.data.read).toBe(true);
+      const inList = (await listApp(volunteerPrimary.auth, '?pageSize=50')).body.data.items as {
         id: string;
         read: boolean;
       }[];
@@ -312,20 +404,95 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
 
     it('unread-count 准确:mark-read 一条后 −1', async () => {
       const id = await makeNotif({ title: 'MR-unread', visibilityCode: 'member' });
-      const before = (await unreadCountApp(formalB.auth)).body.data.unreadCount as number;
+      const before = await unreadCountOf(reservePrimary.auth);
       expect(before).toBeGreaterThan(0);
-      await markReadApp(formalB.auth, id);
-      const after = (await unreadCountApp(formalB.auth)).body.data.unreadCount as number;
+      await markReadApp(reservePrimary.auth, id);
+      const after = await unreadCountOf(reservePrimary.auth);
       expect(after).toBe(before - 1);
     });
 
+    it('volunteer / reserve / null-grade + PRIMARY 均不可 mark-read formal,且零写入', async () => {
+      const id = await makeNotif({ title: 'MR-formal-denied', visibilityCode: 'formal_member' });
+
+      for (const caller of [volunteerPrimary, reservePrimary, nullGradePrimary]) {
+        expectBizError(await markReadApp(caller.auth, id), BizCode.NOTIFICATION_NOT_FOUND);
+      }
+
+      expect(await prisma.notificationRead.count({ where: { notificationId: id } })).toBe(0);
+      expect(
+        (await prisma.notification.findUnique({ where: { id }, select: { readCount: true } }))
+          ?.readCount,
+      ).toBe(0);
+    });
+
+    it('formal broadcast 只计入 level-1 / level-3 的 unread-count;level-3 无 org 仍可 mark-read', async () => {
+      const callers = [
+        volunteerPrimary,
+        reservePrimary,
+        nullGradePrimary,
+        level1Primary,
+        level3NoOrg,
+      ];
+      const before = await Promise.all(callers.map((caller) => unreadCountOf(caller.auth)));
+      const id = await makeNotif({ title: 'MR-formal-unread', visibilityCode: 'formal_member' });
+      const afterPublish = await Promise.all(callers.map((caller) => unreadCountOf(caller.auth)));
+
+      expect(afterPublish[0]).toBe(before[0]);
+      expect(afterPublish[1]).toBe(before[1]);
+      expect(afterPublish[2]).toBe(before[2]);
+      expect(afterPublish[3]).toBe(before[3] + 1);
+      expect(afterPublish[4]).toBe(before[4] + 1);
+
+      const marked = await markReadApp(level3NoOrg.auth, id);
+      expect(marked.status).toBe(200);
+      expect(marked.body.data.read).toBe(true);
+      expect(await unreadCountOf(level3NoOrg.auth)).toBe(before[4]);
+      expect(
+        await prisma.notificationRead.count({
+          where: { notificationId: id, memberId: level3NoOrg.memberId },
+        }),
+      ).toBe(1);
+    });
+
     it('mark-read 不可见 / 未发布 → 31001 防侧信道(不可标记看不到的)', async () => {
-      expectBizError(await markReadApp(volunteer.auth, nMgmt), BizCode.NOTIFICATION_NOT_FOUND);
-      expectBizError(await markReadApp(volunteer.auth, nDraft), BizCode.NOTIFICATION_NOT_FOUND);
+      expectBizError(
+        await markReadApp(volunteerPrimary.auth, nMgmt),
+        BizCode.NOTIFICATION_NOT_FOUND,
+      );
+      expectBizError(
+        await markReadApp(volunteerPrimary.auth, nDraft),
+        BizCode.NOTIFICATION_NOT_FOUND,
+      );
     });
 
     it('mark-read 不存在 id → 31001', async () => {
-      expectBizError(await markReadApp(volunteer.auth, 'nope-id'), BizCode.NOTIFICATION_NOT_FOUND);
+      expectBizError(
+        await markReadApp(volunteerPrimary.auth, 'nope-id'),
+        BizCode.NOTIFICATION_NOT_FOUND,
+      );
+    });
+
+    it('directed 仍仅收件人可见;他人 feed 缺席、detail / mark-read=31001、unread-count 不变', async () => {
+      const otherBefore = await unreadCountOf(level3NoOrg.auth);
+      const id = await makeNotif({
+        title: 'MR-directed-level1-only',
+        visibilityCode: 'member',
+        audienceType: 'directed',
+        recipientMemberId: level1Primary.memberId,
+      });
+
+      expect(await listedIds(level1Primary.auth)).toContain(id);
+      expect((await detailApp(level1Primary.auth, id)).status).toBe(200);
+
+      expect(await listedIds(level3NoOrg.auth)).not.toContain(id);
+      expectBizError(await detailApp(level3NoOrg.auth, id), BizCode.NOTIFICATION_NOT_FOUND);
+      expectBizError(await markReadApp(level3NoOrg.auth, id), BizCode.NOTIFICATION_NOT_FOUND);
+      expect(
+        await prisma.notificationRead.count({
+          where: { notificationId: id, memberId: level3NoOrg.memberId },
+        }),
+      ).toBe(0);
+      expect(await unreadCountOf(level3NoOrg.auth)).toBe(otherBefore);
     });
   });
 });

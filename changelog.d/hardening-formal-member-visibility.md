@@ -1,0 +1,1 @@
+- 正式队员读取与广播范围统一为 ACTIVE Member 且 `gradeCode` 精确属于 `level-1`～`level-7`：Content、站内通知、SMS/WeChat 广播、活动发起、App capability 与本地 fixture 共用唯一等级判断；部门归属仅决定 department 可见性，directed 防枚举与现有接口契约不变。

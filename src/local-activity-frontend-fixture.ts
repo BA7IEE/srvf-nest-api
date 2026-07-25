@@ -18,6 +18,7 @@ import {
 import * as bcrypt from 'bcryptjs';
 import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { isFormalMemberGradeCode } from './modules/members/member-grade';
 
 const LOCAL_DATABASE_PATTERN = /^app_local_frontend(?:_[a-z0-9][a-z0-9_]*)?$/;
 const FIXTURE_LOCK_KEY = 'srvf:local-activity-frontend-fixture:v1';
@@ -1906,7 +1907,7 @@ export function assertLocalActivityFrontendHttpAuthorizationExpectations(
 }
 
 function isFormalFixtureAccount(account: FixtureAccount): boolean {
-  return account.gradeCode !== null && /^level-[1-7]$/.test(account.gradeCode);
+  return isFormalMemberGradeCode(account.gradeCode);
 }
 
 function assertLoopbackApiBaseUrl(value: string): URL {

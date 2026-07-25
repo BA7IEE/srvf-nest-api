@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import type { Notification } from '@prisma/client';
 import { sms } from 'tencentcloud-sdk-nodejs-sms';
 
 import { DevStubSmsProvider } from '../sms/providers/dev-stub.provider';
@@ -34,6 +35,8 @@ const ALLOW_EFFECT = () => Promise.resolve();
 interface MemberSpec {
   memberId: string;
   phone: string | null; // null = 无绑定手机(可见但不计入可计费受众)
+  gradeCode?: string | null;
+  organizationIds?: readonly string[];
 }
 
 interface SmsLogState {
@@ -75,24 +78,58 @@ function build(opts: {
   const deliveries: Record<string, unknown>[] = [];
   const sendLogs: Record<string, unknown>[] = [];
 
-  const activeMemberIds = opts.members.map((m) => m.memberId);
+  const activeMemberRows = opts.members.map((m) => ({
+    id: m.memberId,
+    gradeCode: m.gradeCode ?? null,
+  }));
   const usersRows = opts.members
     .filter((m) => m.phone !== null)
     .map((m) => ({ id: `u-${m.memberId}`, memberId: m.memberId, role: 'USER', phone: m.phone }));
+  const membershipRows = opts.members.flatMap((m) =>
+    (m.organizationIds ?? []).map((organizationId) => ({
+      memberId: m.memberId,
+      organizationId,
+    })),
+  );
 
   const prisma = {
     member: {
-      findMany: jest.fn().mockResolvedValue(activeMemberIds.map((id) => ({ id }))),
+      findMany: jest.fn().mockImplementation(({ where }: { where: { id?: { in?: string[] } } }) => {
+        const requestedMemberIds = where.id?.in;
+        return Promise.resolve(
+          requestedMemberIds
+            ? activeMemberRows.filter(({ id }) => requestedMemberIds.includes(id))
+            : activeMemberRows,
+        );
+      }),
     },
     user: {
-      findMany: jest.fn().mockResolvedValue(usersRows),
+      findMany: jest
+        .fn()
+        .mockImplementation(({ where }: { where: { memberId?: { in?: string[] } } }) =>
+          Promise.resolve(
+            where.memberId?.in
+              ? usersRows.filter(({ memberId }) => where.memberId?.in?.includes(memberId))
+              : usersRows,
+          ),
+        ),
       findFirst: jest.fn().mockImplementation(({ where }: { where: { memberId?: string } }) => {
         const user = usersRows.find(({ memberId }) => memberId === where.memberId);
         return Promise.resolve(user ? { phone: user.phone } : null);
       }),
     },
     memberOrganizationMembership: {
-      findMany: jest.fn().mockResolvedValue([]),
+      findMany: jest
+        .fn()
+        .mockImplementation(({ where }: { where: { memberId?: string | { in?: string[] } } }) => {
+          const requestedMemberIds =
+            typeof where.memberId === 'string' ? [where.memberId] : where.memberId?.in;
+          return Promise.resolve(
+            requestedMemberIds
+              ? membershipRows.filter(({ memberId }) => requestedMemberIds.includes(memberId))
+              : membershipRows,
+          );
+        }),
     },
     notificationDelivery: {
       findFirst: jest
@@ -197,7 +234,7 @@ function build(opts: {
     visibleOrganizationIds: [],
     statusCode: 'published',
     recipientMemberId: null,
-  } as never;
+  } as unknown as Notification;
 
   return { service, notification, prisma, router, settings, transaction, deliveries, sendLogs };
 }
@@ -407,6 +444,175 @@ describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () =>
     expect(router.invoke).not.toHaveBeenCalled();
     expect(router.resolveProviderType).not.toHaveBeenCalled();
     expect(sendLogs).toHaveLength(0);
+  });
+
+  function formalVisibilityMembers(): MemberSpec[] {
+    return [
+      {
+        memberId: 'm-formal-no-org',
+        phone: '13900000011',
+        gradeCode: 'level-3',
+      },
+      {
+        memberId: 'm-formal-primary',
+        phone: '13900000012',
+        gradeCode: 'level-1',
+        organizationIds: ['org-a'],
+      },
+      {
+        memberId: 'm-volunteer-primary',
+        phone: '13900000013',
+        gradeCode: 'volunteer',
+        organizationIds: ['org-a'],
+      },
+      {
+        memberId: 'm-reserve-primary',
+        phone: '13900000014',
+        gradeCode: 'reserve',
+        organizationIds: ['org-a'],
+      },
+      {
+        memberId: 'm-null-primary',
+        phone: '13900000015',
+        gradeCode: null,
+        organizationIds: ['org-a'],
+      },
+    ];
+  }
+
+  it('formal_member preview 只按 gradeCode:level-3 无组织计入，三类非正式 PRIMARY 均排除', async () => {
+    const { service, notification, router } = build({ members: formalVisibilityMembers() });
+    const formalNotification = {
+      ...notification,
+      visibilityCode: 'formal_member',
+    };
+
+    await expect(service.countRecipients(formalNotification)).resolves.toBe(2);
+    expect(router.prepareNotification).not.toHaveBeenCalled();
+    expect(router.invoke).not.toHaveBeenCalled();
+  });
+
+  it('formal_member confirmed reservation 与 preview 复用同一 gradeCode 受众真值', async () => {
+    const { service, notification, prisma } = build({ members: formalVisibilityMembers() });
+    const formalNotification = {
+      ...notification,
+      visibilityCode: 'formal_member',
+    };
+
+    await expect(
+      service.resolveRecipientMemberIds(formalNotification, prisma as never),
+    ).resolves.toEqual(['m-formal-no-org', 'm-formal-primary']);
+  });
+
+  it.each([
+    [
+      'level-3/no-org',
+      {
+        memberId: 'm-formal-no-org',
+        phone: '13900000021',
+        gradeCode: 'level-3',
+      },
+      'sent',
+    ],
+    [
+      'volunteer+PRIMARY',
+      {
+        memberId: 'm-volunteer-primary',
+        phone: '13900000022',
+        gradeCode: 'volunteer',
+        organizationIds: ['org-a'],
+      },
+      'skipped',
+    ],
+    [
+      'reserve+PRIMARY',
+      {
+        memberId: 'm-reserve-primary',
+        phone: '13900000023',
+        gradeCode: 'reserve',
+        organizationIds: ['org-a'],
+      },
+      'skipped',
+    ],
+    [
+      'null+PRIMARY',
+      {
+        memberId: 'm-null-primary',
+        phone: '13900000024',
+        gradeCode: null,
+        organizationIds: ['org-a'],
+      },
+      'skipped',
+    ],
+  ] as const)(
+    'formal_member final dispatchRecipient 重验按 gradeCode：%s',
+    async (_name, member, outcome) => {
+      const { service, notification, router } = build({ members: [member] });
+      const formalNotification = {
+        ...notification,
+        visibilityCode: 'formal_member',
+      };
+
+      await expect(
+        service.dispatchRecipient(formalNotification, member.memberId, ALLOW_EFFECT),
+      ).resolves.toEqual({ outcome });
+      expect(router.prepareNotification).toHaveBeenCalledTimes(outcome === 'sent' ? 1 : 0);
+    },
+  );
+
+  it('department 仍只按 active PRIMARY org，与 gradeCode 无关', async () => {
+    const { service, notification, prisma } = build({
+      members: [
+        {
+          memberId: 'm-formal-no-org',
+          phone: '13900000031',
+          gradeCode: 'level-3',
+        },
+        {
+          memberId: 'm-volunteer-org-a',
+          phone: '13900000032',
+          gradeCode: 'volunteer',
+          organizationIds: ['org-a'],
+        },
+        {
+          memberId: 'm-formal-org-b',
+          phone: '13900000033',
+          gradeCode: 'level-1',
+          organizationIds: ['org-b'],
+        },
+      ],
+    });
+    const departmentNotification = {
+      ...notification,
+      visibilityCode: 'department',
+      visibleOrganizationIds: ['org-a'],
+    };
+
+    await expect(
+      service.resolveRecipientMemberIds(departmentNotification, prisma as never),
+    ).resolves.toEqual(['m-volunteer-org-a']);
+  });
+
+  it('directed 收件人不受 gradeCode 与 formal_member visibility 影响', async () => {
+    const member: MemberSpec = {
+      memberId: 'm-directed-null-grade',
+      phone: '13900000041',
+      gradeCode: null,
+    };
+    const { service, notification, prisma } = build({ members: [member] });
+    const directedNotification = {
+      ...notification,
+      audienceType: 'directed',
+      visibilityCode: 'formal_member',
+      recipientMemberId: member.memberId,
+    } as Notification;
+
+    await expect(
+      service.resolveRecipientMemberIds(directedNotification, prisma as never),
+    ).resolves.toEqual([member.memberId]);
+    await expect(
+      service.dispatchRecipient(directedNotification, member.memberId, ALLOW_EFFECT),
+    ).resolves.toEqual({ outcome: 'sent' });
   });
 
   it('outbox 单收件人 provider 失败必须外抛，FAILED 流水保留供该 child 重试', async () => {
