@@ -6,6 +6,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { RbacService } from '../permissions/rbac.service';
+import { auditLogReadScopePolicy } from './audit-log-read-scope.policy';
 import { AuditContextDto, AuditLogQueryDto, AuditLogResponseDto } from './audit-logs.dto';
 import { auditLogSafeSelect, type SafeAuditLog } from './audit-logs.select';
 import type { AuditContext, AuditLogEvent, AuditMeta } from './audit-logs.types';
@@ -15,8 +16,8 @@ import type { AuditContext, AuditLogEvent, AuditMeta } from './audit-logs.types'
 // 三个能力:
 // 1. log()                — 第一批落库入口,接受 tx 透传(D9);PR #2 起 emergency-contacts /
 //                            certificates 调用此方法替代 auditPlaceholder
-// 2. list()               — 分页查列表,ADMIN where 注入(§6.3);稳定排序 createdAt desc + id desc
-// 3. findOne()            — 单条详情,assertCanReadAuditLog 二次校验(§6.2 / §6.4)
+// 2. list()               — 分页查列表,统一 read scope 下推 where;稳定排序 createdAt desc + id desc
+// 3. findOne()            — 单条详情,复用同一 read scope 二次校验
 //
 // 红线:
 // - **不暴露** update / delete / softDelete 方法,审计写入后不可改不可删(R1)
@@ -86,36 +87,37 @@ export class AuditLogsService {
     });
   }
 
-  // ============ list(分页 + 过滤 + 权限 where 注入) ============
+  // ============ list(分页 + 过滤 + 强制读取范围下推) ============
 
   async list(
     query: AuditLogQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<AuditLogResponseDto>> {
     // P0-F PR-4B RBAC 入口判权(沿评审稿 §4.2 / §8.2;D1=A / D4=A list/findOne 共用 code)。
-    // 数据范围 ADMIN where 注入仍在下方(§2 步骤 2),业务护栏 service 层保留(沿评审稿 §8.3)。
+    // 数据范围仍在下方以 DB where 下推,业务护栏 service 层保留。
     await this.assertCanOrThrow(currentUser, 'audit-log.read.entry');
 
     const { page, pageSize, resourceType, resourceId, event, actorUserId, startDate, endDate } =
       query;
 
     // 1) 收集 QueryDto 过滤条件(各字段独立 AND)
-    const where: Prisma.AuditLogWhereInput = {};
-    if (resourceType !== undefined) where.resourceType = resourceType;
-    if (resourceId !== undefined) where.resourceId = resourceId;
-    if (event !== undefined) where.event = event;
-    if (actorUserId !== undefined) where.actorUserId = actorUserId;
+    const filters: Prisma.AuditLogWhereInput = {};
+    if (resourceType !== undefined) filters.resourceType = resourceType;
+    if (resourceId !== undefined) filters.resourceId = resourceId;
+    if (event !== undefined) filters.event = event;
+    if (actorUserId !== undefined) filters.actorUserId = actorUserId;
     if (startDate !== undefined || endDate !== undefined) {
-      where.createdAt = {};
-      if (startDate !== undefined) where.createdAt.gte = new Date(startDate);
-      if (endDate !== undefined) where.createdAt.lte = new Date(endDate);
+      filters.createdAt = {};
+      if (startDate !== undefined) filters.createdAt.gte = new Date(startDate);
+      if (endDate !== undefined) filters.createdAt.lte = new Date(endDate);
     }
 
-    // 2) ADMIN 权限 where 强制注入(§6.3):只能看自己 OR 操作对象是 USER 的记录
-    // SUPER_ADMIN 不注入,可看全部;USER 已被 Guard 挡,不会进来
-    if (currentUser.role === Role.ADMIN) {
-      where.OR = [{ actorUserId: currentUser.id }, { actorRoleSnap: Role.USER }];
-    }
+    // 2) 强制范围与显式过滤必须用 AND 求交，不能覆盖 actorUserId 等调用方过滤，
+    // 也不能先读全量再在内存裁剪（否则 total / page 会泄露或失真）。
+    const readScope = auditLogReadScopePolicy.resolve(currentUser);
+    const readScopeWhere = auditLogReadScopePolicy.toWhere(readScope);
+    const where: Prisma.AuditLogWhereInput =
+      readScopeWhere === null ? filters : { AND: [filters, readScopeWhere] };
 
     // 3) 稳定排序:createdAt desc tie-breaker id desc(R8)
     const orderBy: Prisma.AuditLogOrderByWithRelationInput[] = [
@@ -146,8 +148,9 @@ export class AuditLogsService {
 
   async findOne(id: string, currentUser: CurrentUserPayload): Promise<AuditLogResponseDto> {
     // P0-F PR-4B RBAC 入口判权(沿评审稿 §4.2 / §8.2;D1=A / D4=A list/findOne 共用 code)。
-    // detail 业务级越级码 14101 在 assertCanReadAuditLog 二次校验中保留(沿评审稿 §8.3)。
+    // detail 业务级越级码 14101 在共用 read scope 二次校验中保留。
     await this.assertCanOrThrow(currentUser, 'audit-log.read.entry');
+    const readScope = auditLogReadScopePolicy.resolve(currentUser);
 
     const row = await this.prisma.auditLog.findUnique({
       where: { id },
@@ -155,31 +158,11 @@ export class AuditLogsService {
     });
     if (!row) throw new BizException(BizCode.AUDIT_LOG_NOT_FOUND);
 
-    this.assertCanReadAuditLog(currentUser, row);
-
-    return this.toResponseDto(row);
-  }
-
-  // ============ 权限二次校验(§6.2 / §6.4 / D-D) ============
-
-  // SUPER_ADMIN     → 全部可看
-  // ADMIN           → 只能看 actorUserId === self OR actorRoleSnap === USER
-  //                   越级查 SUPER_ADMIN 的 detail → 14101 FORBIDDEN_AUDIT_LOG_READ
-  // USER            → Guard 已挡,此处不应到达;为防御性 fallback,落 14101
-  //
-  // 注意:list 路径通过 where 注入做"查不到",detail 路径明确返 14101,二者语义有别。
-  private assertCanReadAuditLog(
-    currentUser: CurrentUserPayload,
-    log: Pick<SafeAuditLog, 'actorUserId' | 'actorRoleSnap'>,
-  ): void {
-    if (currentUser.role === Role.SUPER_ADMIN) return;
-    if (currentUser.role === Role.ADMIN) {
-      if (log.actorUserId === currentUser.id) return;
-      if (log.actorRoleSnap === Role.USER) return;
+    if (!auditLogReadScopePolicy.includes(readScope, row)) {
       throw new BizException(BizCode.FORBIDDEN_AUDIT_LOG_READ);
     }
-    // USER 已被 Guard 挡;到这里说明 Guard 失效,防御性抛 14101
-    throw new BizException(BizCode.FORBIDDEN_AUDIT_LOG_READ);
+
+    return this.toResponseDto(row);
   }
 
   // ============ row → ResponseDto ============

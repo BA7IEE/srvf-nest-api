@@ -38,14 +38,14 @@
 - **Attachment storage Phase1**:durable ledger 已接 Attachment；Content publish/confirm 根锁接线、Provider 事务外；未加 key FK，repo-wide closure 未完成；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)
 - **保险 v3(v0.59.0，未 deploy)**:PR1–PR4 gate/约束/evidence 已交付，脏数 fail-fast；Admin 360 overview 已补；切换须 drain 且禁混档
 - **活动责任闭环(Unreleased，联调冻结)**:`app_local_frontend*` bootstrap 已交付；仅收可复现后端 Bug/契约缺口。无正式环境，生产 migration/seed、人员配置、历史认领、部署/切换未做；上线仍按批准 release + digest 复核 [`runbook`](ops/activity-responsibility-workflow-rollout.md)
-- **敏感读审计**:`AuditLogEvent` 123，管理端普通/CSV/签名 URL 敏感读均 fail-closed 落库，extra 禁 PII/filter/key/URL
+- **审计读**:SA全量；非SA持 `audit-log.read.entry` 仅本人/USER；敏感读fail-closed；extra 禁 PII/filter/key/URL
 - **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)
 
 - 新 schema / migration / Permission seed / Role 扩展;**第 3 个及以后 cron**(终态恰 2);LLM / vector / Redis / queue / 多租户
 - 延后模型:events / event_participants / member_profiles 扩展敏感字段(沿 V2 红线 §4.3)
-- scoped 可见性余面(users / content / notifications / audit-logs / attachment self-scope);Recruitment 与 team-join 维持中央流程 + 显式授权,不入职务派生
+- Authz scoped余面(users / content / notifications / audit-logs / attachment self-scope);Recruitment 与 team-join 维持中央流程 + 显式授权,不入职务派生
 - 招新后续(退队 / 晋升 / 多部门归属 / 级别版本化 / 证书自动核验 gate / 部门级细分);保险 PR3 enable/deploy(drain 旧 server、禁混档)及理赔/保单图/App 展示;CMS 后续(已读回执 / 评论点赞 / 定时发布 / UV / 部门级权限)
 - Slow-5(入队同意书 / 退队清理 N 值)与 Slow-7(uploadToken 黑名单等 storage 深化)— 等业务 / 真实反馈
 - 运维侧真实通道(COS / 微信小程序 / 腾讯云 OCR / SMS)— `docs/ops/` SOP 就绪,维护者执行

@@ -436,7 +436,7 @@
 | 数据字典 | `system/v1/dict-{types,items}` | `dict.read.type` / `dict.read.item` | 左类型右项联动;内置项有防误删守卫 |
 | 贡献值规则 | `system/v1/contribution-rules` | `contribution.read.rule` | 是**规则**不是队员的分,别和 360 贡献值混 |
 | 附件配置 | `system/v1/attachment-{type,mime,size-limit}-configs` | `attachment-config.read.*` | 三表 override-with-default,三 tab |
-| 审计日志 | `system/v1/audit-logs` | `audit-log.read.entry` | 只读 + 时间范围筛选;详情 `el-drawer` |
+| 审计日志 | `system/v1/audit-logs` | `audit-log.read.entry` | 只读 + 时间范围筛选；SUPER_ADMIN 可读取全部；其他持有该权限的账号仅能读取本人或 USER 操作的记录。list 隐藏超出范围的记录，detail 超出范围返 `14101`；详情用 `el-drawer` |
 | 短信日志 | `system/v1/sms-send-logs` | `sms-send-log.read.list` | 只读 `PureTable`(手机号**掩码**);独立页,别折进系统设置 |
 | 系统设置 | `{storage,sms,wechat,realname}-settings` | `*-setting.read.singleton` | 单例 `el-form`;密钥掩码回显;reset 凭证多为仅超管可见 |
 | 个人中心(头像下拉,非侧栏) | `admin/v1/me`(身份)· 改密走账号级 `app/v1/me/password`(admin 可用) | `[auth]` 仅登录 | `el-descriptions` 展示身份/角色;改密表单(旧→新)直接打账号级端点(踩坑 #6 例外,非缺口) |

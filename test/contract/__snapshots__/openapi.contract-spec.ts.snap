@@ -92270,7 +92270,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "列出审计记录(分页 + 过滤 resourceType / resourceId / event / actorUserId / startDate / endDate;ADMIN 仅看自己 OR USER 操作的记录;稳定排序 createdAt desc + id desc) [rbac: audit-log.read.entry]",
+      "summary": "列出审计记录(分页 + 过滤 resourceType / resourceId / event / actorUserId / startDate / endDate;SUPER_ADMIN 可读取全部;其他持有 audit-log.read.entry 的账号仅能读取本人或 USER 操作的记录;稳定排序 createdAt desc + id desc) [rbac: audit-log.read.entry]",
       "tags": [
         "Ops - Audit Logs",
       ],
@@ -92466,7 +92466,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "审计记录详情(ADMIN 越级查 SUPER_ADMIN 操作记录 → 14101;不存在 → 14001;无 update / delete 接口) [rbac: audit-log.read.entry]",
+      "summary": "审计记录详情(SUPER_ADMIN 可读取全部;其他持有 audit-log.read.entry 的账号仅能读取本人或 USER 操作的记录;超出范围 → 14101;不存在 → 14001;无 update / delete 接口) [rbac: audit-log.read.entry]",
       "tags": [
         "Ops - Audit Logs",
       ],
