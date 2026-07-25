@@ -9,11 +9,14 @@ import {
 } from '@prisma/client';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import {
+  effectiveGlobalOpsAdminBindingWhere,
+  isEffectiveRoleBinding,
+  OPS_ADMIN_ROLE_CODE,
+} from './role-binding-validity';
 
 export const LAST_SUPER_ADMIN_LOCK_KEY = 'users:last-super-admin';
 export const LAST_OPS_ADMIN_LOCK_KEY = 'role-bindings:last-ops-admin';
-
-const OPS_ADMIN_CODE = 'ops-admin';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -23,7 +26,17 @@ export interface RemovableRoleBinding {
   principalId: string | null;
   scopeType: BindingScopeType;
   status: BindingStatus;
-  role: { code: string };
+  startedAt: Date;
+  endedAt: Date | null;
+  deletedAt: Date | null;
+  role: { code: string; deletedAt: Date | null };
+}
+
+export interface OpsAdminBindingMutation {
+  status?: BindingStatus;
+  startedAt?: Date;
+  endedAt?: Date | null;
+  deletedAt?: Date | null;
 }
 
 // 两个「至少保留一名管理员」不变量的单一事务策略。
@@ -54,31 +67,32 @@ export class LastAdminProtectionPolicy {
   }
 
   async assertCanRemoveOpsAdminBinding(tx: PrismaTx, binding: RemovableRoleBinding): Promise<void> {
-    if (
-      binding.principalType !== PrincipalType.USER ||
-      binding.principalId === null ||
-      binding.scopeType !== BindingScopeType.GLOBAL ||
-      binding.status !== BindingStatus.ACTIVE ||
-      binding.role.code !== OPS_ADMIN_CODE
-    ) {
-      return;
-    }
+    const now = new Date();
+    await this.assertCanMutateOpsAdminBinding(tx, binding, {
+      status: BindingStatus.ENDED,
+      endedAt: now,
+      deletedAt: now,
+    });
+  }
 
-    await this.acquireOpsAdminInvariantLock(tx);
-    const activeHolderIds = await this.getActiveOpsAdminHolderIds(tx);
-    if (!activeHolderIds.some((id) => id !== binding.principalId)) {
-      throw new BizException(BizCode.LAST_OPS_ADMIN_PROTECTED);
-    }
+  async assertCanUpdateOpsAdminBinding(
+    tx: PrismaTx,
+    binding: RemovableRoleBinding,
+    mutation: OpsAdminBindingMutation,
+  ): Promise<void> {
+    await this.assertCanMutateOpsAdminBinding(tx, binding, mutation);
   }
 
   async assertCanDeactivateOpsAdminUser(tx: PrismaTx, affectedUserId: string): Promise<void> {
     // 必须先锁再判断 target 是否持有 ops-admin：禁用与并发授予/撤销交错时也不能留下零可用管理员。
     await this.acquireOpsAdminInvariantLock(tx);
-    const activeHolderIds = await this.getActiveOpsAdminHolderIds(tx);
-    if (
-      activeHolderIds.includes(affectedUserId) &&
-      !activeHolderIds.some((id) => id !== affectedUserId)
-    ) {
+    const now = new Date();
+    const holders = await this.getCurrentOpsAdminHolders(tx, now);
+    if (!holders.effectiveHolderIds.has(affectedUserId)) return;
+
+    const remainingEffective = this.without(holders.effectiveHolderIds, affectedUserId);
+    const remainingPermanent = this.without(holders.permanentHolderIds, affectedUserId);
+    if (remainingEffective.size === 0 || remainingPermanent.size === 0) {
       throw new BizException(BizCode.LAST_OPS_ADMIN_PROTECTED);
     }
   }
@@ -88,23 +102,96 @@ export class LastAdminProtectionPolicy {
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))::text AS locked`;
   }
 
-  private async getActiveOpsAdminHolderIds(tx: PrismaTx): Promise<string[]> {
-    const bindings = await tx.roleBinding.findMany({
-      where: {
-        principalType: PrincipalType.USER,
-        scopeType: BindingScopeType.GLOBAL,
-        status: BindingStatus.ACTIVE,
-        deletedAt: null,
-        role: { code: OPS_ADMIN_CODE, deletedAt: null },
+  private async assertCanMutateOpsAdminBinding(
+    tx: PrismaTx,
+    binding: RemovableRoleBinding,
+    mutation: OpsAdminBindingMutation,
+  ): Promise<void> {
+    // principal / role / scope 不可由 RoleBinding PATCH 改；先用它们避免普通绑定争抢 ops invariant。
+    // status / 任期必须锁后重读，绝不信调用方的旧快照。
+    if (!this.isGlobalUserOpsAdminBinding(binding)) return;
+
+    await this.acquireOpsAdminInvariantLock(tx);
+    const now = new Date();
+    const lockedBinding = await tx.roleBinding.findFirst({
+      where: { id: binding.id, deletedAt: null },
+      select: {
+        id: true,
+        principalType: true,
+        principalId: true,
+        scopeType: true,
+        status: true,
+        startedAt: true,
+        endedAt: true,
+        deletedAt: true,
+        role: { select: { code: true, deletedAt: true } },
       },
-      select: { principalId: true },
+    });
+    if (!lockedBinding || !this.isGlobalUserOpsAdminBinding(lockedBinding)) return;
+
+    const holders = await this.getCurrentOpsAdminHolders(tx, now);
+    const affectedUserId = lockedBinding.principalId;
+    if (
+      affectedUserId === null ||
+      !holders.effectiveHolderIds.has(affectedUserId) ||
+      !isEffectiveRoleBinding(lockedBinding, now)
+    ) {
+      // future / expired / 非 ACTIVE / 已软删 / linked User 不可用的绑定本来就不在 holder 集合，允许清理。
+      return;
+    }
+
+    const nextBinding: RemovableRoleBinding = {
+      ...lockedBinding,
+      ...mutation,
+    };
+    const remainsEffective =
+      nextBinding.role.deletedAt === null && isEffectiveRoleBinding(nextBinding, now);
+    const remainsPermanent = remainsEffective && nextBinding.endedAt === null;
+    const currentlyPermanent = holders.permanentHolderIds.has(affectedUserId);
+
+    const deprivesEffective = !remainsEffective;
+    const deprivesPermanent = currentlyPermanent && !remainsPermanent;
+    if (!deprivesEffective && !deprivesPermanent) return;
+
+    const remainingEffective = new Set(holders.effectiveHolderIds);
+    const remainingPermanent = new Set(holders.permanentHolderIds);
+    if (deprivesEffective) remainingEffective.delete(affectedUserId);
+    if (deprivesPermanent) remainingPermanent.delete(affectedUserId);
+    if (remainingEffective.size === 0 || remainingPermanent.size === 0) {
+      throw new BizException(BizCode.LAST_OPS_ADMIN_PROTECTED);
+    }
+  }
+
+  private isGlobalUserOpsAdminBinding(
+    binding: Pick<RemovableRoleBinding, 'principalType' | 'principalId' | 'scopeType' | 'role'>,
+  ): boolean {
+    return (
+      binding.principalType === PrincipalType.USER &&
+      binding.principalId !== null &&
+      binding.scopeType === BindingScopeType.GLOBAL &&
+      binding.role.code === OPS_ADMIN_ROLE_CODE
+    );
+  }
+
+  private async getCurrentOpsAdminHolders(
+    tx: PrismaTx,
+    now: Date,
+  ): Promise<{
+    effectiveHolderIds: Set<string>;
+    permanentHolderIds: Set<string>;
+  }> {
+    const bindings = await tx.roleBinding.findMany({
+      where: effectiveGlobalOpsAdminBindingWhere(now),
+      select: { principalId: true, endedAt: true },
     });
     const candidateIds = [
       ...new Set(
         bindings.map(({ principalId }) => principalId).filter((id): id is string => id !== null),
       ),
     ];
-    if (candidateIds.length === 0) return [];
+    if (candidateIds.length === 0) {
+      return { effectiveHolderIds: new Set(), permanentHolderIds: new Set() };
+    }
 
     const activeUsers = await tx.user.findMany({
       where: {
@@ -114,6 +201,23 @@ export class LastAdminProtectionPolicy {
       },
       select: { id: true },
     });
-    return activeUsers.map(({ id }) => id);
+    const activeUserIds = new Set(activeUsers.map(({ id }) => id));
+    const effectiveHolderIds = new Set(
+      candidateIds.filter((candidateId) => activeUserIds.has(candidateId)),
+    );
+    const permanentHolderIds = new Set(
+      bindings
+        .filter(({ principalId, endedAt }) => principalId !== null && endedAt === null)
+        .map(({ principalId }) => principalId)
+        .filter(
+          (principalId): principalId is string =>
+            principalId !== null && activeUserIds.has(principalId),
+        ),
+    );
+    return { effectiveHolderIds, permanentHolderIds };
+  }
+
+  private without(values: ReadonlySet<string>, excluded: string): Set<string> {
+    return new Set([...values].filter((value) => value !== excluded));
   }
 }

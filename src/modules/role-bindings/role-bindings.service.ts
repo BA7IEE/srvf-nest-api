@@ -21,6 +21,10 @@ import { lockMemberLifecycle, lockLiveUserLifecycle } from '../members/member-li
 import { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
 import { RbacService } from '../permissions/rbac.service';
 import {
+  effectiveRoleBindingWhere,
+  OPS_ADMIN_ROLE_CODE,
+} from '../permissions/role-binding-validity';
+import {
   isPrivilegedRole,
   RoleDelegationPolicy,
   type RoleDelegationTarget,
@@ -265,14 +269,12 @@ export class RoleBindingsService {
     if (query.scopeOrgId !== undefined) where.scopeOrgId = query.scopeOrgId;
     if (query.roleCode !== undefined) where.role = { code: query.roleCode };
 
-    // status 显式传参优先;否则 includeExpired=false(默认)收窄为「当前生效」
-    // (status=ACTIVE 且 endedAt 为空或未到 —— startedAt 未来的排期绑定仍展示,与判权侧 isWithinTerm 刻意不同:
-    //  列表是管理面,排期中的绑定也要能看见)。
+    // status 显式传参优先；否则 includeExpired=false(默认)严格复用当前有效任期真值。
+    // 排期/历史行仍可用 includeExpired=true 查看，默认“当前生效”不得自创第二套边界。
     if (query.status !== undefined) {
       where.status = query.status;
     } else if (query.includeExpired !== true) {
-      where.status = BindingStatus.ACTIVE;
-      and.push({ OR: [{ endedAt: null }, { endedAt: { gt: new Date() } }] });
+      Object.assign(where, effectiveRoleBindingWhere(new Date()));
     }
 
     if (query.principalQ !== undefined && query.principalQ !== '') {
@@ -505,6 +507,21 @@ export class RoleBindingsService {
         throw err;
       }
     };
+    const response = (): RoleBindingPreviewResponseDto => ({
+      valid: conflicts.length === 0,
+      conflicts,
+      resolvedScope: {
+        scopeType: query.scopeType,
+        scopeOrgId: query.scopeOrgId ?? null,
+        scopeActivityId: query.scopeActivityId ?? null,
+        scopeResourceType: query.scopeResourceType ?? null,
+        scopeResourceId: query.scopeResourceId ?? null,
+      },
+    });
+
+    // actor-first：无效 non-SA 只得到统一 30102 conflict，不继续探测 principal / role / duplicate。
+    await collect(() => this.roleDelegation.assertActorMayDelegate(user, this.prisma));
+    if (conflicts.length > 0) return response();
 
     await collect(() => this.validateScopeShapeOrThrow(query));
 
@@ -527,7 +544,7 @@ export class RoleBindingsService {
     const roleForDelegation = targetRole;
     if (roleForDelegation !== null) {
       await collect(() =>
-        this.roleDelegation.assertActorMayConferRole(user, roleForDelegation, this.prisma),
+        this.roleDelegation.assertTargetRoleMayBeConferred(user, roleForDelegation),
       );
     }
 
@@ -575,17 +592,7 @@ export class RoleBindingsService {
       if (dup) throw new BizException(BizCode.ROLE_BINDING_ALREADY_EXISTS);
     });
 
-    return {
-      valid: conflicts.length === 0,
-      conflicts,
-      resolvedScope: {
-        scopeType: query.scopeType,
-        scopeOrgId: query.scopeOrgId ?? null,
-        scopeActivityId: query.scopeActivityId ?? null,
-        scopeResourceType: query.scopeResourceType ?? null,
-        scopeResourceId: query.scopeResourceId ?? null,
-      },
-    };
+    return response();
   }
 
   // ============ F3/C1:POST /api/admin/v1/role-bindings/batch ============
@@ -657,11 +664,13 @@ export class RoleBindingsService {
     const rawPrincipalId = dto.principalId ?? null;
 
     const result = await this.prisma.$transaction(async (tx) => {
+      // actor-first：ops advisory → 锁内复核 actor，之后才允许读取/锁定任何 target。
+      await this.roleDelegation.assertActorMayDelegateForWrite(user, tx);
       await this.validatePrincipalOrThrow(tx, dto.principalType, rawPrincipalId, {
         lockLifecycle: true,
       });
       const role = await this.findRoleOrThrow(tx, dto.roleId);
-      await this.roleDelegation.assertActorMayConferRole(user, role, tx);
+      this.roleDelegation.assertTargetRoleMayBeConferred(user, role);
 
       if (
         dto.scopeType === BindingScopeType.ORGANIZATION ||
@@ -742,13 +751,15 @@ export class RoleBindingsService {
   async update(user: CurrentUserPayload, id: string, dto: UpdateRoleBindingDto, meta: AuditMeta) {
     await this.assertCanOrThrow(user, 'role-binding.update.record');
     const result = await this.prisma.$transaction(async (tx) => {
-      const current = await tx.roleBinding.findFirst({
+      let current = await tx.roleBinding.findFirst({
         where: notDeletedWhere({ id }),
         select: {
           ...roleBindingSafeSelect,
+          deletedAt: true,
           role: {
             select: {
               code: true,
+              deletedAt: true,
               rolePermissions: { select: { permission: { select: { code: true } } } },
             },
           },
@@ -757,6 +768,35 @@ export class RoleBindingsService {
       if (!current) throw new BizException(BizCode.ROLE_BINDING_NOT_FOUND);
       this.roleDelegation.assertRoleIsNotSystemManaged(current.role);
 
+      const touchesTenureOrStatus =
+        dto.status !== undefined || dto.startedAt !== undefined || dto.endedAt !== undefined;
+      const isGlobalUserOpsAdmin =
+        current.principalType === PrincipalType.USER &&
+        current.principalId !== null &&
+        current.scopeType === BindingScopeType.GLOBAL &&
+        current.role.code === OPS_ADMIN_ROLE_CODE;
+      if (touchesTenureOrStatus && isGlobalUserOpsAdmin) {
+        // 固定锁序：ops advisory 必须早于后续 Member → User lifecycle lock。
+        // 锁后重新读取 target，后续任期校验与 mutation 均不使用锁前快照。
+        await this.lastAdminProtection.acquireOpsAdminInvariantLock(tx);
+        const lockedCurrent = await tx.roleBinding.findFirst({
+          where: notDeletedWhere({ id }),
+          select: {
+            ...roleBindingSafeSelect,
+            deletedAt: true,
+            role: {
+              select: {
+                code: true,
+                deletedAt: true,
+                rolePermissions: { select: { permission: { select: { code: true } } } },
+              },
+            },
+          },
+        });
+        if (!lockedCurrent) throw new BizException(BizCode.ROLE_BINDING_NOT_FOUND);
+        current = lockedCurrent;
+      }
+
       const effectiveStartedAt =
         dto.startedAt !== undefined ? new Date(dto.startedAt) : current.startedAt;
       const effectiveEndedAt = dto.endedAt !== undefined ? new Date(dto.endedAt) : current.endedAt;
@@ -764,15 +804,13 @@ export class RoleBindingsService {
         throw new BizException(BizCode.ROLE_BINDING_TENURE_INVALID);
       }
 
-      const touchesTenureOrStatus =
-        dto.status !== undefined || dto.startedAt !== undefined || dto.endedAt !== undefined;
       if (touchesTenureOrStatus) {
         const effectiveStatus = dto.status ?? current.status;
         const now = new Date();
         if (
           effectiveStatus === BindingStatus.ACTIVE &&
           effectiveEndedAt !== null &&
-          effectiveEndedAt.getTime() <= now.getTime()
+          effectiveEndedAt.getTime() < now.getTime()
         ) {
           throw new BizException(BizCode.ROLE_BINDING_TENURE_INVALID);
         }
@@ -788,6 +826,13 @@ export class RoleBindingsService {
         current.endedAt !== null &&
         new Date(dto.endedAt).getTime() > current.endedAt.getTime();
       const effectiveStatus = dto.status ?? current.status;
+      if (touchesTenureOrStatus && isGlobalUserOpsAdmin) {
+        await this.lastAdminProtection.assertCanUpdateOpsAdminBinding(tx, current, {
+          ...(dto.status !== undefined ? { status: dto.status } : {}),
+          ...(dto.startedAt !== undefined ? { startedAt: new Date(dto.startedAt) } : {}),
+          ...(dto.endedAt !== undefined ? { endedAt: new Date(dto.endedAt) } : {}),
+        });
+      }
       if (
         effectiveStatus === BindingStatus.ACTIVE &&
         (dto.status !== undefined || dto.startedAt !== undefined || dto.endedAt !== undefined)
@@ -798,14 +843,6 @@ export class RoleBindingsService {
       }
       if ((reactivatesBinding || startsEarlier || endsLater) && isPrivilegedRole(current.role)) {
         await this.roleDelegation.assertActorMayConferRole(user, current.role, tx);
-      }
-
-      if (
-        current.status === BindingStatus.ACTIVE &&
-        dto.status !== undefined &&
-        dto.status !== BindingStatus.ACTIVE
-      ) {
-        await this.lastAdminProtection.assertCanRemoveOpsAdminBinding(tx, current);
       }
 
       const data: Prisma.RoleBindingUpdateInput = {};
@@ -860,7 +897,11 @@ export class RoleBindingsService {
     const result = await this.prisma.$transaction(async (tx) => {
       const current = await tx.roleBinding.findFirst({
         where: notDeletedWhere({ id }),
-        select: { ...roleBindingSafeSelect, role: { select: { code: true } } },
+        select: {
+          ...roleBindingSafeSelect,
+          deletedAt: true,
+          role: { select: { code: true, deletedAt: true } },
+        },
       });
       if (!current) throw new BizException(BizCode.ROLE_BINDING_NOT_FOUND);
       this.roleDelegation.assertRoleIsNotSystemManaged(current.role);

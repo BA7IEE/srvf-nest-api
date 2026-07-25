@@ -15,6 +15,7 @@ import type { AuditContext, AuditLogEvent, AuditMeta } from '../audit-logs/audit
 import { lockMemberLifecycle, lockLiveUserLifecycle } from '../members/member-lifecycle-lock';
 import { LastAdminProtectionPolicy } from './last-admin-protection.policy';
 import { RbacService } from './rbac.service';
+import { effectiveGlobalUserRoleBindingWhere } from './role-binding-validity';
 import { RoleDelegationPolicy, type RoleDelegationTarget } from './role-delegation.policy';
 import { AssignUserRoleDto, UserRoleResponseDto } from './user-roles.dto';
 
@@ -47,6 +48,7 @@ import { AssignUserRoleDto, UserRoleResponseDto } from './user-roles.dto';
 //    - 否则抛 30101(沿 v1 §13 最后一个 SUPER_ADMIN 保护范式)
 
 type PrismaTx = Prisma.TransactionClient;
+type UserRoleLookupClient = Pick<PrismaTx, 'rbacRole' | 'user'>;
 type UserRoleDelegationTarget = RoleDelegationTarget & {
   id: string;
   displayName: string;
@@ -63,9 +65,9 @@ export class UserRolesService {
 
   // ============ helpers ============
 
-  // 判权读源单一真相 = RoleBinding(principalType=USER, scopeType=GLOBAL, status=ACTIVE, 未软删)。
-  // 各查询点复用本 where 基座,避免遗漏 scope / status / 软删过滤(否则 scoped/失效绑定误入 user-role 面)。
-  private activeGlobalUserWhere(principalId?: string): Prisma.RoleBindingWhereInput {
+  // 数据库 active slot 与「当前有效角色」不是同一概念：partial unique 只看 ACTIVE + 未软删，
+  // duplicate/revoke 必须能定位 future/expired slot；legacy list 则复用 role-binding-validity 当前真值。
+  private activeGlobalUserSlotWhere(principalId?: string): Prisma.RoleBindingWhereInput {
     return {
       principalType: PrincipalType.USER,
       scopeType: BindingScopeType.GLOBAL,
@@ -87,8 +89,11 @@ export class UserRolesService {
 
   // 沿 v1 §10:user 不存在 / disabled / 已软删 统一抛 USER_NOT_FOUND(10001),
   // 信息泄漏防御(避免告知"该 user id 曾存在 / 已被禁用 / 已软删")。
-  private async assertUserAccessibleOrThrow(userId: string): Promise<void> {
-    const user = await this.prisma.user.findFirst({
+  private async assertUserAccessibleOrThrow(
+    userId: string,
+    client: UserRoleLookupClient = this.prisma,
+  ): Promise<void> {
+    const user = await client.user.findFirst({
       where: {
         id: userId,
         deletedAt: null,
@@ -100,8 +105,11 @@ export class UserRolesService {
   }
 
   // 沿 PR #3 RbacRole 范式:role 不存在 → 30003;role 已软删 → 30005(写操作披露)。
-  private async findRoleOrThrow(roleId: string): Promise<UserRoleDelegationTarget> {
-    const raw = await this.prisma.rbacRole.findUnique({
+  private async findRoleOrThrow(
+    roleId: string,
+    client: UserRoleLookupClient = this.prisma,
+  ): Promise<UserRoleDelegationTarget> {
+    const raw = await client.rbacRole.findUnique({
       where: { id: roleId },
       select: {
         id: true,
@@ -120,8 +128,11 @@ export class UserRolesService {
 
   // 沿 PR #3 范式:按 code 查 role(POST 入参 roleCode);软删的视为不存在(沿 v1 §10 信息泄漏防御
   // — POST 时用户传 code,如果该 code 是已软删角色,不应披露存在过)。
-  private async findActiveRoleByCodeOrThrow(code: string): Promise<UserRoleDelegationTarget> {
-    const role = await this.prisma.rbacRole.findFirst({
+  private async findActiveRoleByCodeOrThrow(
+    code: string,
+    client: UserRoleLookupClient = this.prisma,
+  ): Promise<UserRoleDelegationTarget> {
+    const role = await client.rbacRole.findFirst({
       where: { code, deletedAt: null },
       select: {
         id: true,
@@ -181,7 +192,7 @@ export class UserRolesService {
     // 2. 查 user 持有的活跃 RBAC 角色(global RoleBinding;排除已软删的 role;沿 §13 失效场景 join 过滤)。
     //    orderBy createdAt asc:回填保源 createdAt → 现有行排序逐字不变(行为锁)。
     const bindings = await this.prisma.roleBinding.findMany({
-      where: { ...this.activeGlobalUserWhere(userId), role: { deletedAt: null } },
+      where: effectiveGlobalUserRoleBindingWhere(userId, new Date()),
       select: {
         id: true,
         roleId: true,
@@ -211,29 +222,27 @@ export class UserRolesService {
     // 0. RBAC 入口判权(P0-F PR-1):actor 是否能进入 user-role 分配接口
     await this.assertCanOrThrow(actor, 'rbac.user-role.create');
 
-    // 1. target role 必须存在 + 未软删(按 code 查 — POST 入参是 roleCode)
-    const role = await this.findActiveRoleByCodeOrThrow(dto.roleCode);
+    // 1. 非 SA 委派先取 ops advisory 并锁内复核 actor；role/target/duplicate 探测必须在后，
+    //    防止无效 actor 用 10001/30006 枚举目标。随后按 Member → User 锁 target 并写 audit。
+    const { row: created, role } = await this.prisma.$transaction(async (tx) => {
+      await this.roleDelegation.assertActorMayDelegateForWrite(actor, tx);
+      const role = await this.findActiveRoleByCodeOrThrow(dto.roleCode, tx);
+      this.roleDelegation.assertTargetRoleMayBeConferred(actor, role);
 
-    // 2. 单一委派入口:SA 短路；ops-admin 仅能授予不含控制面权限的普通角色。
-    await this.roleDelegation.assertActorMayConferRole(actor, role);
-
-    // 3. target user 必须存在 + 未 disabled + 未软删
-    await this.assertUserAccessibleOrThrow(targetUserId);
-
-    // 4. 检查重复分配(沿 D7 §12 锁定:报错而非幂等)—— 读 active global 绑定(软删/失效行不算重复,可再分配)。
-    const existing = await this.prisma.roleBinding.findFirst({
-      where: { ...this.activeGlobalUserWhere(targetUserId), roleId: role.id },
-      select: { id: true },
-    });
-    if (existing) throw new BizException(BizCode.USER_ROLE_ALREADY_EXISTS);
-
-    // 5. 写入 global RoleBinding + audit(事务内原子;createdByUserId 记 actor;沿 D11 audit 字段)。
-    const created = await this.prisma.$transaction(async (tx) => {
       const initialUser = await tx.user.findFirst({
-        where: { id: targetUserId, deletedAt: null },
+        where: { id: targetUserId, deletedAt: null, status: UserStatus.ACTIVE },
         select: { memberId: true },
       });
       if (!initialUser) throw new BizException(BizCode.USER_NOT_FOUND);
+
+      // database ACTIVE slot（而非当前有效 helper）承载 partial unique；future/expired
+      // slot 仍须报重复，且 revoke 仍须可清理。
+      const existing = await tx.roleBinding.findFirst({
+        where: { ...this.activeGlobalUserSlotWhere(targetUserId), roleId: role.id },
+        select: { id: true },
+      });
+      if (existing) throw new BizException(BizCode.USER_ROLE_ALREADY_EXISTS);
+
       if (initialUser.memberId !== null) {
         await lockMemberLifecycle(tx, initialUser.memberId);
       }
@@ -278,7 +287,7 @@ export class UserRolesService {
         },
         extra: { viaPath: 'user-role', operation: 'create', targetUserId },
       });
-      return row;
+      return { row, role };
     });
 
     return {
@@ -300,35 +309,38 @@ export class UserRolesService {
     // 0. RBAC 入口判权(P0-F PR-1):actor 是否能进入 user-role 撤销接口
     await this.assertCanOrThrow(actor, 'rbac.user-role.delete');
 
-    // 1. target user 必须存在 + 未 disabled + 未软删
-    await this.assertUserAccessibleOrThrow(targetUserId);
-
-    // 2. target role 必须存在 + 未软删(按 id 查 — DELETE 路径是 roleId)
-    const role = await this.findRoleOrThrow(targetRoleId);
-
-    // 3. 赋予/撤销共用同一个委派入口。
-    await this.roleDelegation.assertActorMayConferRole(actor, role);
-
-    // 4. 关系存在性 + 最后一个 ops-admin 保护 + 软删必须原子(沿 v1 §13 范式)
+    // 1. actor-first 委派复核 + target/关系存在性 + 最后 ops-admin 保护 + 软删必须原子。
     return this.prisma.$transaction(async (tx) => {
-      // 4a. 关系必须存在(active global 绑定)
+      await this.roleDelegation.assertActorMayDelegateForWrite(actor, tx);
+      await this.assertUserAccessibleOrThrow(targetUserId, tx);
+      const role = await this.findRoleOrThrow(targetRoleId, tx);
+      this.roleDelegation.assertTargetRoleMayBeConferred(actor, role);
+
+      // 1a. 关系必须存在(database ACTIVE slot；future/expired 也必须可被 legacy 入口清理)
       const existing = await tx.roleBinding.findFirst({
-        where: { ...this.activeGlobalUserWhere(targetUserId), roleId: targetRoleId },
-        select: { id: true, createdAt: true, createdByUserId: true },
+        where: { ...this.activeGlobalUserSlotWhere(targetUserId), roleId: targetRoleId },
+        select: {
+          id: true,
+          principalType: true,
+          principalId: true,
+          scopeType: true,
+          status: true,
+          startedAt: true,
+          endedAt: true,
+          deletedAt: true,
+          createdAt: true,
+          createdByUserId: true,
+        },
       });
       if (!existing) throw new BizException(BizCode.USER_ROLE_NOT_FOUND);
 
-      // 4b. 与 role-bindings / users 削权路径共用同一 advisory lock + 锁后计数策略。
+      // 1b. 与 role-bindings / users 削权路径共用同一 advisory lock + 锁后重读/计数策略。
       await this.lastAdminProtection.assertCanRemoveOpsAdminBinding(tx, {
-        id: existing.id,
-        principalType: PrincipalType.USER,
-        principalId: targetUserId,
-        scopeType: BindingScopeType.GLOBAL,
-        status: BindingStatus.ACTIVE,
-        role: { code: role.code },
+        ...existing,
+        role: { code: role.code, deletedAt: null },
       });
 
-      // 4c. 软删(终态 scoped-authz PR6:status=ENDED + endedAt + deletedAt,保历史;
+      // 1c. 软删(终态 scoped-authz PR6:status=ENDED + endedAt + deletedAt,保历史;
       //     外部行为等同旧物理删 —— judgment/list 只读 active,软删行不再出现,partial unique 释放槽位可再分配)。
       const now = new Date();
       await tx.roleBinding.update({
@@ -336,7 +348,7 @@ export class UserRolesService {
         data: { status: BindingStatus.ENDED, endedAt: now, deletedAt: now },
       });
 
-      // 4d. audit(建 / 撤销写;沿冻结稿 §10.6 / DoD#7;resourceType='role_binding' + extra.viaPath='user-role')
+      // 1d. audit(建 / 撤销写;沿冻结稿 §10.6 / DoD#7;resourceType='role_binding' + extra.viaPath='user-role')
       await this.writeRoleBindingAudit(tx, {
         event: 'role-binding.revoke',
         actor,

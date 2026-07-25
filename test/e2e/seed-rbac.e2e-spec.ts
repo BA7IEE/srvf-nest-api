@@ -18,9 +18,10 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // 3. ops-admin 绑定 96 条(14 rbac.* + 44 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME + 3 AUTHZ + 2 ANNOUNCEMENT-IMPORT + 1 META + 2 MEMBER-ACCOUNT;**不含**
 //    storage-setting.reset.credentials(沿 PR-2 D2=A)+ user.update.role(沿 PR-3 D1=A);
 //    PR-4B D2=B audit-log.read.entry 整条加入;PR11 announcement-import 2 码整条加入;F1 meta.resolve.label / F3 authz 批量 2 码整条加入 / 队员账号闭环 v1 member.grant.account + v2 member.bind.account 整条加入)
-// 4. 至少 1 个 user_role 持有 ops-admin(强校验通过)
+// 4. 至少 1 个当前有效且 endedAt=null 的 global USER RoleBinding 持有 ops-admin(强校验通过)
 // 5. fallback 路径:无 RBAC_INITIAL_OPS_ADMIN_USER_ID 时绑到 SUPER_ADMIN
-// 6. 连续跑两次 seed 完全幂等:Permission / RbacRole / RolePermission / UserRole 数量不重复
+// 6. 连续跑两次 seed 完全幂等:Permission / RbacRole / RolePermission / RoleBinding
+//    数量与任期字段均不漂移
 // 7. RBAC_INITIAL_OPS_ADMIN_USER_ID env 指定路径:绑到指定 user 而非 SUPER_ADMIN
 // 8. RBAC_INITIAL_OPS_ADMIN_USER_ID 指定不存在的 userId → seed 失败(throw)
 //
@@ -373,17 +374,41 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     // PR-4 D2=B 正向断言:audit-log.read.entry **在** ops-admin RolePermission 中
     expect(boundCodes).toContain('audit-log.read.entry');
 
-    // 4. 至少 1 个 active global RoleBinding 持有 ops-admin(强校验;终态 scoped-authz PR6 判权唯一读源)
-    const opsAdminHolderCount = await prisma.roleBinding.count({
+    // 4. 至少 1 个当前有效且 endedAt=null 的 global USER RoleBinding 持有 ops-admin；
+    //    holder User 同时必须 ACTIVE + 未软删。
+    const holderNow = new Date();
+    const opsAdminBindings = await prisma.roleBinding.findMany({
       where: {
         role: { code: 'ops-admin', deletedAt: null },
         principalType: 'USER',
         scopeType: 'GLOBAL',
         status: 'ACTIVE',
         deletedAt: null,
+        startedAt: { lte: holderNow },
+        OR: [{ endedAt: null }, { endedAt: { gte: holderNow } }],
       },
+      select: { principalId: true, endedAt: true },
     });
-    expect(opsAdminHolderCount).toBeGreaterThanOrEqual(1);
+    const activeHolderIds = new Set(
+      (
+        await prisma.user.findMany({
+          where: {
+            id: { in: opsAdminBindings.flatMap((binding) => binding.principalId ?? []) },
+            status: UserStatus.ACTIVE,
+            deletedAt: null,
+          },
+          select: { id: true },
+        })
+      ).map((user) => user.id),
+    );
+    expect(
+      opsAdminBindings.filter(
+        (binding) =>
+          binding.principalId !== null &&
+          activeHolderIds.has(binding.principalId) &&
+          binding.endedAt === null,
+      ),
+    ).not.toHaveLength(0);
   });
 
   // F1(#399)漂移哨兵:RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES(role-permission.assign
@@ -588,7 +613,73 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     expect(result.stderr.toLowerCase()).toMatch(/rbac_initial_ops_admin_user_id|bootstrap/);
   });
 
-  it('幂等:连续跑两次 seed 数量不变(全表 permission / 1 ops-admin role / role-permission / 1 global role-binding;断言相对稳定)', async () => {
+  it.each([
+    {
+      label: 'future',
+      mutation: () => ({ startedAt: new Date(Date.now() + 60 * 60_000) }),
+      expectedCounts: 'currentEffectiveOpsAdminCount=0,currentPermanentOpsAdminCount=0',
+    },
+    {
+      label: 'expired',
+      mutation: () => ({
+        startedAt: new Date(Date.now() - 2 * 60 * 60_000),
+        endedAt: new Date(Date.now() - 60 * 60_000),
+      }),
+      expectedCounts: 'currentEffectiveOpsAdminCount=0,currentPermanentOpsAdminCount=0',
+    },
+    {
+      label: 'temporary-only',
+      mutation: () => ({ endedAt: new Date(Date.now() + 60 * 60_000) }),
+      expectedCounts: 'currentEffectiveOpsAdminCount=1,currentPermanentOpsAdminCount=0',
+    },
+  ])(
+    '已有唯一 bootstrap binding 变为 $label 时 seed fail-closed 且不改写任期',
+    async ({ mutation, expectedCounts }) => {
+      const env = {
+        APP_ENV: 'test',
+        SUPER_ADMIN_USERNAME: 'rbac-seed-invalid-term',
+        SUPER_ADMIN_PASSWORD: 'Passw0rd1!',
+        SUPER_ADMIN_EMAIL: '',
+        RBAC_INITIAL_OPS_ADMIN_USER_ID: '',
+      };
+      expect(runSeed(env).code).toBe(0);
+
+      const opsAdmin = await prisma.rbacRole.findUniqueOrThrow({
+        where: { code: 'ops-admin' },
+        select: { id: true },
+      });
+      const binding = await prisma.roleBinding.findFirstOrThrow({
+        where: {
+          roleId: opsAdmin.id,
+          principalType: 'USER',
+          scopeType: 'GLOBAL',
+          status: 'ACTIVE',
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      await prisma.roleBinding.update({
+        where: { id: binding.id },
+        data: mutation(),
+      });
+      const beforeRetry = await prisma.roleBinding.findUniqueOrThrow({
+        where: { id: binding.id },
+        select: { id: true, startedAt: true, endedAt: true, status: true, deletedAt: true },
+      });
+
+      const retry = runSeed(env);
+      expect(retry.code).not.toBe(0);
+      expect(retry.stderr).toContain(expectedCounts);
+      expect(
+        await prisma.roleBinding.findUniqueOrThrow({
+          where: { id: binding.id },
+          select: { id: true, startedAt: true, endedAt: true, status: true, deletedAt: true },
+        }),
+      ).toEqual(beforeRetry);
+    },
+  );
+
+  it('幂等:连续跑两次 seed 数量与 global RoleBinding 任期均不变', async () => {
     // 第一次
     const first = runSeed({
       APP_ENV: 'test',
@@ -609,6 +700,11 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     });
     const bindingCountAfter1 = await prisma.roleBinding.count({
       where: { roleId: opsAdminAfter1.id, principalType: 'USER', scopeType: 'GLOBAL' },
+    });
+    const bindingsAfter1 = await prisma.roleBinding.findMany({
+      where: { roleId: opsAdminAfter1.id, principalType: 'USER', scopeType: 'GLOBAL' },
+      orderBy: { id: 'asc' },
+      select: { id: true, startedAt: true, endedAt: true, status: true, deletedAt: true },
     });
 
     // 第二次:相同 env,seed 应全部 no-op
@@ -638,5 +734,12 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
         where: { roleId: opsAdminAfter1.id, principalType: 'USER', scopeType: 'GLOBAL' },
       }),
     ).toBe(bindingCountAfter1);
+    expect(
+      await prisma.roleBinding.findMany({
+        where: { roleId: opsAdminAfter1.id, principalType: 'USER', scopeType: 'GLOBAL' },
+        orderBy: { id: 'asc' },
+        select: { id: true, startedAt: true, endedAt: true, status: true, deletedAt: true },
+      }),
+    ).toEqual(bindingsAfter1);
   });
 });

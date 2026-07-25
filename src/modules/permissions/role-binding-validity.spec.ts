@@ -1,5 +1,13 @@
 import { BindingScopeType, BindingStatus, PrincipalType } from '@prisma/client';
-import { effectiveGlobalUserRoleBindingWhere, isWithinTerm } from './role-binding-validity';
+import {
+  currentPermanentGlobalOpsAdminBindingWhere,
+  effectiveGlobalOpsAdminBindingWhere,
+  effectiveGlobalUserRoleBindingWhere,
+  effectiveGlobalUserRoleBindingsWhere,
+  effectiveRoleBindingWhere,
+  isEffectiveRoleBinding,
+  isWithinTerm,
+} from './role-binding-validity';
 
 describe('role-binding-validity', () => {
   const now = new Date('2026-07-13T08:00:00.000Z');
@@ -23,6 +31,50 @@ describe('role-binding-validity', () => {
       OR: [{ endedAt: null }, { endedAt: { gte: now } }],
       deletedAt: null,
       role: { deletedAt: null },
+    });
+  });
+
+  it('isEffectiveRoleBinding 同时锁定 ACTIVE、未软删与双含等号任期边界', () => {
+    const base = {
+      status: BindingStatus.ACTIVE,
+      startedAt: now,
+      endedAt: now,
+      deletedAt: null,
+    };
+    expect(isEffectiveRoleBinding(base, now)).toBe(true);
+    expect(isEffectiveRoleBinding({ ...base, status: BindingStatus.ENDED }, now)).toBe(false);
+    expect(isEffectiveRoleBinding({ ...base, deletedAt: now }, now)).toBe(false);
+    expect(
+      isEffectiveRoleBinding(
+        { ...base, startedAt: new Date(now.getTime() + 1), endedAt: null },
+        now,
+      ),
+    ).toBe(false);
+    expect(isEffectiveRoleBinding({ ...base, endedAt: new Date(now.getTime() - 1) }, now)).toBe(
+      false,
+    );
+  });
+
+  it('可组合 where：generic、USER/GLOBAL、ops-admin 与 permanent 逐层只收窄同一真值', () => {
+    expect(effectiveRoleBindingWhere(now)).toEqual({
+      status: BindingStatus.ACTIVE,
+      startedAt: { lte: now },
+      OR: [{ endedAt: null }, { endedAt: { gte: now } }],
+      deletedAt: null,
+    });
+    expect(effectiveGlobalUserRoleBindingsWhere(now)).toMatchObject({
+      ...effectiveRoleBindingWhere(now),
+      principalType: PrincipalType.USER,
+      scopeType: BindingScopeType.GLOBAL,
+      role: { deletedAt: null },
+    });
+    expect(effectiveGlobalOpsAdminBindingWhere(now)).toMatchObject({
+      ...effectiveGlobalUserRoleBindingsWhere(now),
+      role: { code: 'ops-admin', deletedAt: null },
+    });
+    expect(currentPermanentGlobalOpsAdminBindingWhere(now)).toMatchObject({
+      ...effectiveGlobalOpsAdminBindingWhere(now),
+      endedAt: null,
     });
   });
 });
