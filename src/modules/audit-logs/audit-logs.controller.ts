@@ -24,8 +24,8 @@ import { AuditLogsService } from './audit-logs.service';
 // - controller 仅留 JwtAuthGuard;@Roles 装饰器已移除
 // - 入口判权迁移到 Service 层 rbac.can('audit-log.read.entry')(沿评审稿 §4.2 / §6.1 / §8.2)
 // - 入口拒返 RBAC_FORBIDDEN(30100)
-// - **数据范围 service 层全部保留**:list ADMIN where 注入(actorUserId=self OR actorRoleSnap=USER)
-// - detail 业务级越级码 FORBIDDEN_AUDIT_LOG_READ(14101)完全保留(ADMIN 越级查 SUPER_ADMIN;§6.4 / D-D)
+// - **数据范围 service 层统一**:SUPER_ADMIN 全量;其它持权限账号仅本人 OR USER 操作记录
+// - list 在数据库 where 下推范围;detail 超出同一范围返 FORBIDDEN_AUDIT_LOG_READ(14101)
 // - AUDIT_LOG_NOT_FOUND(14001)完全保留(findOne 命中但不存在)
 
 @ApiTags('Ops - Audit Logs')
@@ -37,7 +37,7 @@ export class AuditLogsController {
   @Get()
   @ApiOperation({
     summary:
-      '列出审计记录(分页 + 过滤 resourceType / resourceId / event / actorUserId / startDate / endDate;ADMIN 仅看自己 OR USER 操作的记录;稳定排序 createdAt desc + id desc) [rbac: audit-log.read.entry]',
+      '列出审计记录(分页 + 过滤 resourceType / resourceId / event / actorUserId / startDate / endDate;SUPER_ADMIN 可读取全部;其他持有 audit-log.read.entry 的账号仅能读取本人或 USER 操作的记录;稳定排序 createdAt desc + id desc) [rbac: audit-log.read.entry]',
   })
   @ApiWrappedPageResponse(AuditLogResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -51,7 +51,7 @@ export class AuditLogsController {
   @Get(':id')
   @ApiOperation({
     summary:
-      '审计记录详情(ADMIN 越级查 SUPER_ADMIN 操作记录 → 14101;不存在 → 14001;无 update / delete 接口) [rbac: audit-log.read.entry]',
+      '审计记录详情(SUPER_ADMIN 可读取全部;其他持有 audit-log.read.entry 的账号仅能读取本人或 USER 操作的记录;超出范围 → 14101;不存在 → 14001;无 update / delete 接口) [rbac: audit-log.read.entry]',
   })
   @ApiWrappedOkResponse(AuditLogResponseDto)
   @ApiBizErrorResponse(

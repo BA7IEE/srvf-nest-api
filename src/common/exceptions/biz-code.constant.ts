@@ -1622,13 +1622,13 @@ export const BizCode = {
   //
   // 子段(对齐 baseline §1.3 紧凑使用):
   // - 14001:NOT_FOUND(GET /:id 命中但不存在)
-  // - 14101:权限边界(ADMIN 越级查 SUPER_ADMIN 的 detail;D-D 拍板)
+  // - 14101:已通过 audit-log.read.entry 入口权限,但 detail 超出统一读取范围
   //
   // 不开的码(D6 v1.1 §9 明确):
   // - 14002+:无唯一约束(audit_logs 写入后不可改不可删,无 P2002 场景)
   // - 14010+:无入参业务级校验(QueryDto 由 ValidationPipe 兜底走 BAD_REQUEST / 40000)
-  // - 14102+:沿 baseline,USER 越权由 Guard 拒绝走通用 FORBIDDEN / 40300;
-  //          14101 仅用于 Service 层"已通过 Guard、但 detail 越级"场景
+  // - 14102+:沿 baseline 保留
+  //          14101 仅用于 Service 层"已通过 RBAC 入口、但 detail 超出范围"场景
   AUDIT_LOG_NOT_FOUND: {
     code: 14001,
     message: '审计记录不存在',

@@ -10,7 +10,7 @@ import type { AuditMeta } from './audit-logs.types';
 // V2 第一阶段批次 6 audit_logs service 单元测试。
 // 覆盖:
 // 1. log() 写入路径:context 锁形(3 必填 + 3 可选)/ tx 透传 / null 字段
-// 2. findOne() 权限路径:SUPER 全过 / ADMIN 看自己 / ADMIN 看 USER / ADMIN 越级查 SUPER →
+// 2. findOne() 权限路径:SUPER 全过 / 其它持权限账号统一看自己或 USER / 越界 →
 //    14101 / 不存在 → 14001
 // 3. P0-F PR-4B RBAC 入口判权:list / findOne 首句 rbac.can 返 false → 30100(沿评审稿 §8.2)
 //
@@ -364,9 +364,46 @@ describe('AuditLogsService', () => {
       );
     });
 
-    it('USER 防御性 fallback → 14101(实际 Guard 已挡,此用例覆盖 race 场景)', async () => {
+    it('USER+permission 查范围外 ADMIN 记录 → 14101', async () => {
       const prisma = makePrismaMock();
       prisma.auditLog.findUnique.mockResolvedValue(makeRow());
+      const service = makeService(prisma);
+
+      await expect(service.findOne('log-1', makeCurrentUser({ role: Role.USER }))).rejects.toEqual(
+        new BizException(BizCode.FORBIDDEN_AUDIT_LOG_READ),
+      );
+    });
+
+    it('USER+permission 查本人记录(历史角色快照为 ADMIN)→ 通过', async () => {
+      const prisma = makePrismaMock();
+      prisma.auditLog.findUnique.mockResolvedValue(
+        makeRow({ actorUserId: 'user-self-id', actorRoleSnap: Role.ADMIN }),
+      );
+      const service = makeService(prisma);
+
+      const res = await service.findOne(
+        'log-1',
+        makeCurrentUser({ id: 'user-self-id', role: Role.USER }),
+      );
+      expect(res.id).toBe('log-1');
+    });
+
+    it('USER+permission 查另一个 USER 操作的记录 → 通过', async () => {
+      const prisma = makePrismaMock();
+      prisma.auditLog.findUnique.mockResolvedValue(
+        makeRow({ actorUserId: 'other-user', actorRoleSnap: Role.USER }),
+      );
+      const service = makeService(prisma);
+
+      const res = await service.findOne('log-1', makeCurrentUser({ role: Role.USER }));
+      expect(res.id).toBe('log-1');
+    });
+
+    it('USER+permission 查 null/null system actor → 14101', async () => {
+      const prisma = makePrismaMock();
+      prisma.auditLog.findUnique.mockResolvedValue(
+        makeRow({ actorUserId: null, actorRoleSnap: null }),
+      );
       const service = makeService(prisma);
 
       await expect(service.findOne('log-1', makeCurrentUser({ role: Role.USER }))).rejects.toEqual(
@@ -412,7 +449,7 @@ describe('AuditLogsService', () => {
       expect(rbac.can).toHaveBeenCalledWith(expect.anything(), 'audit-log.read.entry');
     });
 
-    it('findOne / rbac.can 返 true + 资源存在 → 业务正常通过(回到 assertCanReadAuditLog 路径)', async () => {
+    it('findOne / rbac.can 返 true + 资源存在 → 业务正常进入共用 read scope 路径', async () => {
       const prisma = makePrismaMock();
       prisma.auditLog.findUnique.mockResolvedValue({
         id: 'log-1',
