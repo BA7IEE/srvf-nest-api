@@ -10638,6 +10638,150 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "MemberOffboardActivityClosureDto": {
+    "properties": {
+      "status": {
+        "description": "活动闭环状态；closed 表示历史责任已闭环",
+        "example": "published",
+        "type": "string",
+      },
+    },
+    "required": [
+      "status",
+    ],
+    "type": "object",
+  },
+  "MemberOffboardActivityImpactItemDto": {
+    "properties": {
+      "activityId": {
+        "type": "string",
+      },
+      "closure": {
+        "$ref": "#/components/schemas/MemberOffboardActivityClosureDto",
+      },
+      "responsibilityType": {
+        "enum": [
+          "initiator",
+          "owner",
+          "collaborator",
+        ],
+        "type": "string",
+      },
+      "statusCode": {
+        "type": "string",
+      },
+      "title": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "activityId",
+      "title",
+      "statusCode",
+      "closure",
+      "responsibilityType",
+    ],
+    "type": "object",
+  },
+  "MemberOffboardImpactResponseDto": {
+    "properties": {
+      "activeCollaboratorActivities": {
+        "items": {
+          "$ref": "#/components/schemas/MemberOffboardActivityImpactItemDto",
+        },
+        "type": "array",
+      },
+      "activeOwnerActivities": {
+        "items": {
+          "$ref": "#/components/schemas/MemberOffboardActivityImpactItemDto",
+        },
+        "type": "array",
+      },
+      "blockingReasons": {
+        "items": {
+          "enum": [
+            "draft-initiator-handoff-required",
+            "active-owner-handoff-required",
+            "registration-cleanup-required",
+          ],
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "canOffboard": {
+        "type": "boolean",
+      },
+      "draftInitiatedActivities": {
+        "items": {
+          "$ref": "#/components/schemas/MemberOffboardActivityImpactItemDto",
+        },
+        "type": "array",
+      },
+      "futureRegistrations": {
+        "items": {
+          "$ref": "#/components/schemas/MemberOffboardRegistrationImpactItemDto",
+        },
+        "type": "array",
+      },
+      "historicalRegistrationsWithEvidence": {
+        "items": {
+          "$ref": "#/components/schemas/MemberOffboardRegistrationImpactItemDto",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "draftInitiatedActivities",
+      "activeOwnerActivities",
+      "activeCollaboratorActivities",
+      "futureRegistrations",
+      "historicalRegistrationsWithEvidence",
+      "canOffboard",
+      "blockingReasons",
+    ],
+    "type": "object",
+  },
+  "MemberOffboardRegistrationImpactItemDto": {
+    "properties": {
+      "activityId": {
+        "type": "string",
+      },
+      "closure": {
+        "$ref": "#/components/schemas/MemberOffboardActivityClosureDto",
+      },
+      "hasParticipationEvidence": {
+        "description": "是否已有签到或考勤记录等真实参与证据",
+        "type": "boolean",
+      },
+      "registrationId": {
+        "type": "string",
+      },
+      "registrationStatus": {
+        "enum": [
+          "pending",
+          "waitlisted",
+          "pass",
+        ],
+        "type": "string",
+      },
+      "statusCode": {
+        "type": "string",
+      },
+      "title": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "activityId",
+      "title",
+      "statusCode",
+      "closure",
+      "registrationId",
+      "registrationStatus",
+      "hasParticipationEvidence",
+    ],
+    "type": "object",
+  },
   "MemberOffboardResponseDto": {
     "properties": {
       "accountDisabled": {
@@ -15943,6 +16087,23 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "newOwnerMemberId",
       "reason",
       "retainPreviousOwnerAsCollaborator",
+    ],
+    "type": "object",
+  },
+  "TransferAppManagedActivityInitiatorDto": {
+    "properties": {
+      "newInitiatorMemberId": {
+        "type": "string",
+      },
+      "reason": {
+        "maxLength": 500,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "newInitiatorMemberId",
+      "reason",
     ],
     "type": "object",
   },
@@ -38059,9 +38220,11 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "15036: 关联账号不是普通用户,请通过用户管理端点操作",
+                    "description": "15036: 关联账号不是普通用户,请通过用户管理端点操作; 15037: 队员仍有活动责任,请先完成移交; 15038: 队员仍有当前或未来活动报名,请先完成清理",
                     "enum": [
                       15036,
+                      15037,
+                      15038,
                     ],
                     "example": 15036,
                     "type": "integer",
@@ -38085,7 +38248,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "关联账号不是普通用户,请通过用户管理端点操作(code=15036)",
+          "description": "关联账号不是普通用户,请通过用户管理端点操作(code=15036) / 队员仍有活动责任,请先完成移交(code=15037) / 队员仍有当前或未来活动报名,请先完成清理(code=15038)",
         },
       },
       "security": [
@@ -38094,6 +38257,201 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
         },
       ],
       "summary": "一键离队并结束全部当前授权来源(归属/账号/任职/分管/直接绑定) [rbac: member.offboard.record]",
+      "tags": [
+        "Admin - Members",
+      ],
+    },
+  },
+  "/api/admin/v1/members/{id}/offboard-impact": {
+    "get": {
+      "operationId": "MembersController_offboardImpact",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/MemberOffboardImpactResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "15001: 队员不存在",
+                    "enum": [
+                      15001,
+                    ],
+                    "example": 15001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "队员不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "队员不存在(code=15001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "离队影响预检(活动发起/负责人/协办及当前未来报名安全摘要) [rbac: member.offboard.record]",
       "tags": [
         "Admin - Members",
       ],
@@ -38291,6 +38649,41 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
             },
           },
           "description": "队员不存在(code=15001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "15037: 队员仍有活动责任,请先完成移交; 15038: 队员仍有当前或未来活动报名,请先完成清理",
+                    "enum": [
+                      15037,
+                      15038,
+                    ],
+                    "example": 15037,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "队员仍有活动责任,请先完成移交",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "队员仍有活动责任,请先完成移交(code=15037) / 队员仍有当前或未来活动报名,请先完成清理(code=15038)",
         },
       },
       "security": [
@@ -81241,6 +81634,252 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "App 发起人提交初次发布审核 [auth]",
       "tags": [
         "Mobile - Managed Activities",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/transfer-initiator": {
+    "post": {
+      "operationId": "AppManagedActivityResponsibilitiesController_transferInitiator",
+      "parameters": [
+        {
+          "description": "Activity.id",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/TransferAppManagedActivityInitiatorDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppManagedResponsibilitiesDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20035: 责任人或协办人不符合条件; 20011: 活动不允许挂在组织根节点",
+                    "enum": [
+                      40000,
+                      20035,
+                      20011,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 责任人或协办人不符合条件(code=20035) / 活动不允许挂在组织根节点(code=20011)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作; 20019: 只有正式队员可以发起活动; 20020: 无权为该组织发起活动",
+                    "enum": [
+                      30100,
+                      20019,
+                      20020,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100) / 只有正式队员可以发起活动(code=20019) / 无权为该组织发起活动(code=20020)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在; 11001: 组织节点不存在",
+                    "enum": [
+                      20001,
+                      11001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001) / 组织节点不存在(code=11001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作; 20032: 活动已有待处理的发布审核; 20034: 该人员已承担此活动责任; 17031: 组织节点状态非活跃,不能挂队员",
+                    "enum": [
+                      20030,
+                      20032,
+                      20034,
+                      17031,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030) / 活动已有待处理的发布审核(code=20032) / 该人员已承担此活动责任(code=20034) / 组织节点状态非活跃,不能挂队员(code=17031)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "App 草稿活动移交发起人(当前发起人或 responsibility override) [auth]",
+      "tags": [
+        "Mobile - Managed Activity Responsibilities",
       ],
     },
   },

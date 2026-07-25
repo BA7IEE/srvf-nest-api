@@ -51,6 +51,21 @@ export class ActivityResponsibilityPolicy {
     await this.assertOverride(activityId, user);
   }
 
+  async assertInitiatorOrOverride(
+    tx: Prisma.TransactionClient,
+    activityId: string,
+    user: CurrentUserPayload,
+  ): Promise<void> {
+    if (user.memberId) {
+      const activity = await tx.activity.findFirst({
+        where: { id: activityId, initiatorMemberId: user.memberId, deletedAt: null },
+        select: { id: true },
+      });
+      if (activity) return;
+    }
+    await this.assertOverride(activityId, user);
+  }
+
   async assertOverride(activityId: string, user: CurrentUserPayload): Promise<void> {
     const decision = await this.authz.explain(user, 'activity-responsibility.override.record', {
       type: 'activity',

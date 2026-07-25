@@ -193,6 +193,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/my/managed-activities/{activityId}/collaborator-options'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/collaborators'],
   ['delete', '/api/app/v1/my/managed-activities/{activityId}/collaborators/{assignmentId}'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/transfer-initiator'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/transfer-owner'],
   // 活动责任闭环 PR-7:负责人/报名协办 App 报名管理薄壳，复用现有单条状态机与 bulk wrapper。
   ['get', '/api/app/v1/my/managed-activities/{activityId}/registrations'],
@@ -388,6 +389,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/admin/v1/members/{id}/account/reopen'],
   ['patch', '/api/admin/v1/members/{id}/account/status'],
   // 参与域生命周期收口⑤(v0.40.0):一键离队,+1 路由,328→329。
+  ['get', '/api/admin/v1/members/{id}/offboard-impact'],
   ['post', '/api/admin/v1/members/{id}/offboard'],
   // 队员账号闭环 v2 批量开号(2026-07-07):+1 路由,325→326。
   ['post', '/api/admin/v1/members/accounts/bulk-grant'],
@@ -1417,8 +1419,8 @@ describe('OpenAPI 契约快照', () => {
     expect(Object.keys(item[method]?.responses ?? {}).length).toBeGreaterThan(0);
   });
 
-  it('活动闭环读模型落地后路由足迹精确为 414', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(414);
+  it('PR-F 离队影响预检与发起人移交落地后路由足迹精确为 416', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(416);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

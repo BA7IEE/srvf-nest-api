@@ -114,6 +114,19 @@ export class TransferActivityOwnerDto {
   retainPreviousOwnerAsCollaborator!: boolean;
 }
 
+export class TransferActivityInitiatorDto {
+  @ApiProperty()
+  @IsString()
+  @Length(8, 64)
+  newInitiatorMemberId!: string;
+
+  @ApiProperty({ minLength: 1, maxLength: 500 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(500)
+  reason!: string;
+}
+
 export class ClaimLegacyActivityDto {
   @ApiProperty()
   @IsString()

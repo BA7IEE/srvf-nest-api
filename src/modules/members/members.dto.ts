@@ -122,6 +122,84 @@ export class MemberOffboardResponseDto {
   residualActiveSupervisions!: number;
 }
 
+export class MemberOffboardActivityClosureDto {
+  @ApiProperty({
+    description: '活动闭环状态；closed 表示历史责任已闭环',
+    example: 'published',
+  })
+  status!: string;
+}
+
+export class MemberOffboardActivityImpactItemDto {
+  @ApiProperty()
+  activityId!: string;
+
+  @ApiProperty()
+  title!: string;
+
+  @ApiProperty()
+  statusCode!: string;
+
+  @ApiProperty({ type: MemberOffboardActivityClosureDto })
+  closure!: MemberOffboardActivityClosureDto;
+
+  @ApiProperty({ enum: ['initiator', 'owner', 'collaborator'] })
+  responsibilityType!: 'initiator' | 'owner' | 'collaborator';
+}
+
+export class MemberOffboardRegistrationImpactItemDto {
+  @ApiProperty()
+  activityId!: string;
+
+  @ApiProperty()
+  title!: string;
+
+  @ApiProperty()
+  statusCode!: string;
+
+  @ApiProperty({ type: MemberOffboardActivityClosureDto })
+  closure!: MemberOffboardActivityClosureDto;
+
+  @ApiProperty()
+  registrationId!: string;
+
+  @ApiProperty({ enum: ['pending', 'waitlisted', 'pass'] })
+  registrationStatus!: string;
+
+  @ApiProperty({ description: '是否已有签到或考勤记录等真实参与证据' })
+  hasParticipationEvidence!: boolean;
+}
+
+export class MemberOffboardImpactResponseDto {
+  @ApiProperty({ type: [MemberOffboardActivityImpactItemDto] })
+  draftInitiatedActivities!: MemberOffboardActivityImpactItemDto[];
+
+  @ApiProperty({ type: [MemberOffboardActivityImpactItemDto] })
+  activeOwnerActivities!: MemberOffboardActivityImpactItemDto[];
+
+  @ApiProperty({ type: [MemberOffboardActivityImpactItemDto] })
+  activeCollaboratorActivities!: MemberOffboardActivityImpactItemDto[];
+
+  @ApiProperty({ type: [MemberOffboardRegistrationImpactItemDto] })
+  futureRegistrations!: MemberOffboardRegistrationImpactItemDto[];
+
+  @ApiProperty({ type: [MemberOffboardRegistrationImpactItemDto] })
+  historicalRegistrationsWithEvidence!: MemberOffboardRegistrationImpactItemDto[];
+
+  @ApiProperty()
+  canOffboard!: boolean;
+
+  @ApiProperty({
+    type: [String],
+    enum: [
+      'draft-initiator-handoff-required',
+      'active-owner-handoff-required',
+      'registration-cleanup-required',
+    ],
+  })
+  blockingReasons!: string[];
+}
+
 // ============ 入参 ============
 
 // memberNo 校验:DTO 层 @MinLength(1) + @MaxLength(32) + 字符集 [A-Za-z0-9-];

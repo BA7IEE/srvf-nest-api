@@ -364,6 +364,18 @@ export const BizCode = {
     message: '关联账号不是普通用户,请通过用户管理端点操作',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // PR-F 离队影响预检：责任移交与未来报名清理由 impact endpoint 给出完整安全摘要；
+  // offboard 只返回稳定冲突码，避免在异常体泄露活动明细。
+  MEMBER_OFFBOARD_ACTIVITY_HANDOFF_REQUIRED: {
+    code: 15037,
+    message: '队员仍有活动责任,请先完成移交',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  MEMBER_OFFBOARD_REGISTRATION_CLEANUP_REQUIRED: {
+    code: 15038,
+    message: '队员仍有当前或未来活动报名,请先完成清理',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // organizations 模块业务级(110xx + 111xx)。详见 docs/v2-api-contract.md §3.5。
   // 子段(对齐 baseline §1.3):

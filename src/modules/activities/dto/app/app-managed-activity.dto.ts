@@ -697,6 +697,21 @@ export class TransferAppManagedActivityOwnerDto {
   retainPreviousOwnerAsCollaborator!: boolean;
 }
 
+// App 入参独立定义，不从 Admin DTO 派生。
+export class TransferAppManagedActivityInitiatorDto {
+  @ApiProperty()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(64)
+  newInitiatorMemberId!: string;
+
+  @ApiProperty({ minLength: 1, maxLength: 500 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(500)
+  reason!: string;
+}
+
 export class AppManagedResponsibilityAssignmentDto {
   @ApiProperty()
   id!: string;

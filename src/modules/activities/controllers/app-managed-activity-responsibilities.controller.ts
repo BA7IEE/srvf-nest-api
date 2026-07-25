@@ -32,6 +32,7 @@ import {
   AppManagedResponsibilitiesDto,
   AppManagedResponsibilityAssignmentDto,
   CreateAppManagedCollaboratorDto,
+  TransferAppManagedActivityInitiatorDto,
   TransferAppManagedActivityOwnerDto,
 } from '../dto/app/app-managed-activity.dto';
 
@@ -126,6 +127,44 @@ export class AppManagedActivityResponsibilitiesController {
     return this.service.endCollaborator(
       params.activityId,
       params.assignmentId,
+      user,
+      this.auditMeta(req),
+    );
+  }
+
+  @Post('transfer-initiator')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'App 草稿活动移交发起人(当前发起人或 responsibility override) [auth]',
+  })
+  @ApiWrappedOkResponse(AppManagedResponsibilitiesDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING,
+    BizCode.ACTIVITY_RESPONSIBILITY_ALREADY_EXISTS,
+    BizCode.ACTIVITY_RESPONSIBILITY_TARGET_INVALID,
+    BizCode.ORGANIZATION_NOT_FOUND,
+    BizCode.ORGANIZATION_INACTIVE,
+    BizCode.ACTIVITY_ORGANIZATION_ROOT_FORBIDDEN,
+    BizCode.ACTIVITY_INITIATOR_NOT_FORMAL,
+    BizCode.ACTIVITY_INITIATION_ORG_FORBIDDEN,
+  )
+  async transferInitiator(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Body() dto: TransferAppManagedActivityInitiatorDto,
+    @Req() req: Request,
+  ): Promise<AppManagedResponsibilitiesDto> {
+    return this.service.transferInitiator(
+      params.activityId,
+      {
+        newInitiatorMemberId: dto.newInitiatorMemberId,
+        reason: dto.reason,
+      },
       user,
       this.auditMeta(req),
     );

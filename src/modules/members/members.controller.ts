@@ -35,6 +35,7 @@ import {
   GrantMemberAccountDto,
   GrantMemberAccountResponseDto,
   ListMembersQueryDto,
+  MemberOffboardImpactResponseDto,
   MemberOffboardResponseDto,
   MemberOptionsQueryDto,
   MemberOptionsResponseDto,
@@ -178,6 +179,8 @@ export class MembersController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
+    BizCode.MEMBER_OFFBOARD_ACTIVITY_HANDOFF_REQUIRED,
+    BizCode.MEMBER_OFFBOARD_REGISTRATION_CLEANUP_REQUIRED,
   )
   updateStatus(
     @Param() params: IdParamDto,
@@ -337,6 +340,25 @@ export class MembersController {
     return this.service.updateAccountStatus(params.id, dto, currentUser, this.buildAuditMeta(req));
   }
 
+  @Get(':id/offboard-impact')
+  @ApiOperation({
+    summary:
+      '离队影响预检(活动发起/负责人/协办及当前未来报名安全摘要) [rbac: member.offboard.record]',
+  })
+  @ApiWrappedOkResponse(MemberOffboardImpactResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.MEMBER_NOT_FOUND,
+  )
+  offboardImpact(
+    @Param() params: IdParamDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+  ): Promise<MemberOffboardImpactResponseDto> {
+    return this.service.getOffboardImpact(params.id, currentUser);
+  }
+
   // 参与域生命周期收口⑤(v0.40.0):一键离队编排。POST(action 非幂等更新语义);无 body;
   // 单事务关闭 member、全部 active 归属、linked 账号/refresh、任职、分管与直接 RoleBinding，
   // 并写 1 条伞 audit；响应中的残留数是锁后不变式探针，正常终态恒为 0。
@@ -354,6 +376,8 @@ export class MembersController {
     BizCode.MEMBER_NOT_FOUND,
     BizCode.MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE,
     BizCode.CANNOT_OPERATE_SELF,
+    BizCode.MEMBER_OFFBOARD_ACTIVITY_HANDOFF_REQUIRED,
+    BizCode.MEMBER_OFFBOARD_REGISTRATION_CLEANUP_REQUIRED,
   )
   offboard(
     @Param() params: IdParamDto,

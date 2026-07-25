@@ -23,6 +23,7 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { ActivityMemberOffboardImpactService } from '../activities/activity-member-offboard-impact.service';
 import { lockAuthSessionUser } from '../auth/auth-session-lock';
 import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
 import { AuthzService } from '../authz/authz.service';
@@ -42,6 +43,7 @@ import {
   GrantMemberAccountResponseDto,
   ListMembersQueryDto,
   MemberOffboardResponseDto,
+  MemberOffboardImpactResponseDto,
   MemberOptionItemDto,
   MemberOptionsQueryDto,
   MemberOptionsResponseDto,
@@ -87,6 +89,7 @@ export class MembersService {
     private readonly lastAdminProtection: LastAdminProtectionPolicy,
     private readonly organizations: OrganizationsService,
     private readonly auditLogs: AuditLogsService,
+    private readonly activityOffboardImpact: ActivityMemberOffboardImpactService,
   ) {}
 
   // ============ helpers ============
@@ -1091,6 +1094,15 @@ export class MembersService {
     return this.offboardCore(id, currentUser, auditMeta);
   }
 
+  async getOffboardImpact(
+    id: string,
+    currentUser: CurrentUserPayload,
+  ): Promise<MemberOffboardImpactResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'member.offboard.record', { type: 'member', id });
+    await this.findMemberOrThrow(id);
+    return this.activityOffboardImpact.getImpact(id);
+  }
+
   private async offboardCore(
     id: string,
     currentUser: CurrentUserPayload,
@@ -1101,6 +1113,18 @@ export class MembersService {
       await lockMemberLifecycle(tx, id);
       // 守卫:member 存在(不存在 / 软删 → 15001)。
       const member = await this.findMemberOrThrow(id, tx);
+      // PR-F:Member lifecycle lock 是离队与活动责任移交的共同线性化点。预检端点仅供展示；
+      // 真正的阻断必须在锁后、任何业务写与 audit 之前重新计算。
+      const impact = await this.activityOffboardImpact.getImpact(id, tx);
+      if (
+        impact.draftInitiatedActivities.length > 0 ||
+        impact.blockingReasons.includes('active-owner-handoff-required')
+      ) {
+        throw new BizException(BizCode.MEMBER_OFFBOARD_ACTIVITY_HANDOFF_REQUIRED);
+      }
+      if (impact.futureRegistrations.length > 0) {
+        throw new BizException(BizCode.MEMBER_OFFBOARD_REGISTRATION_CLEANUP_REQUIRED);
+      }
 
       // linked live 账号(含 role 用于护栏)。
       let linked = await tx.user.findFirst({

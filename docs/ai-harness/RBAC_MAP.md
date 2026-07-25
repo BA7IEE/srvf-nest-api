@@ -1,5 +1,7 @@
 # RBAC_MAP — 权限体系地图与对照表
 
+> 2026-07-26 v0.61.0 全仓修复 PR-F：权限码 / seed 绑定 / 内建角色 / controller **零变化**；endpoint **414→416**。新增 `GET admin/v1/members/:id/offboard-impact`，与 offboard 共用 `member.offboard.record`；新增 App 草稿发起人移交动作，当前 initiator 或 SUPER_ADMIN / `activity-responsibility.override.record` 可执行。offboard 在 Member lifecycle 锁后重算活动责任与报名 blocker；新增 2 个 150xx BizCode，不属权限表。
+
 > 2026-07-24 v0.61.0 活动责任闭环 PR-11 contract：权限码 **213 不变**，角色 **15 不变**；`biz-admin` **82→68**、`org-admin` **61→47**、`group-manager` **22→20**。biz/org 摘除活动 publish/update/cancel/complete、报名 5 写动作、考勤 create/update/delete/approve/reject，并对从未默认绑定的 return/final-return 同步做 targeted 残留清理；group 摘 approve/reject。继续保留 activity create/delete、registration read、attendance read；三个 reviewer 角色精确映射与零 PositionRolePolicy 不变。seed 不 exact-delete 通用角色，明确保留无关自定义映射。Docker smoke API/worker 显式 gate=true；production preflight/认领/绑定/drain 未执行。
 
 > 2026-07-24 v0.61.0 活动责任闭环 PR-9:权限码 / 角色 / 默认绑定 **零变化**；endpoint **413→414**（App owner 声明考勤完成，无 raw permission）。dashboard-summary additive 增 `activityPublishReviews.pending`（凭 `activity-review.read.request`）与 `attendanceSheets.pendingFirstReview`（凭 `attendance.approve.sheet`），均按各 action 的 Authz 可见组织范围统计；无权静默省略。既有 attendance 兼容计数字段继续凭 `attendance.read.sheet`。
