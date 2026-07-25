@@ -196,4 +196,87 @@ describe('activity responsibility transfer × member offboard concurrency', () =
       }),
     ).resolves.toBe(0);
   });
+
+  it('offboarding the current owner races safely with transfer and leaves exactly one owner', async () => {
+    const owner = await createFormalTarget('owner-handoff');
+    const target = await createFormalTarget('target-handoff');
+    const activity = await prismaA.activity.create({
+      data: {
+        title: '当前负责人离队与移交并发',
+        activityTypeCode: 'responsibility-race',
+        organizationId,
+        startAt: new Date('2099-12-02T01:00:00.000Z'),
+        endAt: new Date('2099-12-02T05:00:00.000Z'),
+        location: '深圳',
+        statusCode: 'published',
+      },
+      select: { id: true },
+    });
+    await responsibilities.claimLegacy(
+      activity.id,
+      { ownerMemberId: owner.memberId, reason: '建立负责人离队并发基线' },
+      actor,
+      META,
+    );
+
+    let signalReady!: () => void;
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      signalReady = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const blocker = prismaA.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT id FROM "Member" WHERE id = ${owner.memberId} FOR UPDATE
+      `;
+      signalReady();
+      await released;
+    });
+    await ready;
+    const offboard = members.offboard(owner.memberId, actor, META);
+    await waitForMemberLockWaiters(prismaA, 1);
+    const transfer = responsibilities.transferOwner(
+      activity.id,
+      {
+        newOwnerMemberId: target.memberId,
+        reason: '并发完成负责人移交',
+        retainPreviousOwnerAsCollaborator: false,
+      },
+      actor,
+      META,
+    );
+    let barrierError: unknown;
+    try {
+      await waitForMemberLockWaiters(prismaA, 2);
+    } catch (error) {
+      barrierError = error;
+    } finally {
+      release();
+      await blocker;
+    }
+    const [offboardResult, transferResult] = await Promise.allSettled([offboard, transfer]);
+    if (barrierError instanceof Error) throw barrierError;
+    if (barrierError !== undefined) {
+      throw new Error('non-Error value thrown while forcing owner handoff interleaving');
+    }
+    expect(offboardResult.status).toBe('rejected');
+    const reason = offboardResult.status === 'rejected' ? offboardResult.reason : undefined;
+    expect(reason).toBeInstanceOf(BizException);
+    expect((reason as BizException).biz).toBe(BizCode.MEMBER_OFFBOARD_ACTIVITY_HANDOFF_REQUIRED);
+    expect(transferResult.status).toBe('fulfilled');
+    await expect(
+      prismaA.activityResponsibilityAssignment.findMany({
+        where: { activityId: activity.id, status: 'active' },
+        select: { memberId: true, responsibilityType: true },
+      }),
+    ).resolves.toEqual([{ memberId: target.memberId, responsibilityType: 'owner' }]);
+    await expect(
+      prismaA.member.findUniqueOrThrow({
+        where: { id: owner.memberId },
+        select: { status: true },
+      }),
+    ).resolves.toEqual({ status: 'ACTIVE' });
+  });
 });

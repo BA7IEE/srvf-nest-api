@@ -2,9 +2,9 @@ import type { INestApplication } from '@nestjs/common';
 import { MemberStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import { BizException } from '../../src/common/exceptions/biz.exception';
 import { PrismaService } from '../../src/database/prisma.service';
 import { ActivityRegistrationsService } from '../../src/modules/activity-registrations/activity-registrations.service';
-import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { MembersService } from '../../src/modules/members/members.service';
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
@@ -19,46 +19,22 @@ const META: AuditMeta = {
 const WAIT_TIMEOUT_MS = 5_000;
 const CASE_TIMEOUT_MS = 30_000;
 
-function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => void } {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
-}
-
-async function waitForMemberLockWait(
-  observer: PrismaService,
-  blockerPid: number,
-  operation: Promise<unknown>,
-): Promise<void> {
-  let settled = false;
-  void operation.then(
-    () => {
-      settled = true;
-    },
-    () => {
-      settled = true;
-    },
-  );
+async function waitForMemberLockWaiters(observer: PrismaService, expected: number): Promise<void> {
   const deadline = Date.now() + WAIT_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    if (settled) throw new Error('approve settled before waiting on Member lifecycle lock');
-    const rows = await observer.$queryRaw<Array<{ pid: number; blockingPids: number[] }>>(
+    const [row] = await observer.$queryRaw<Array<{ waitingCount: number }>>(
       Prisma.sql`
-        SELECT pid, pg_blocking_pids(pid) AS "blockingPids"
+        SELECT count(*)::int AS "waitingCount"
         FROM pg_stat_activity
         WHERE datname = current_database()
           AND wait_event_type = 'Lock'
-          AND CAST(${blockerPid} AS integer) = ANY(pg_blocking_pids(pid))
           AND query LIKE '%FROM "Member"%FOR UPDATE%'
-        LIMIT 1
       `,
     );
-    if (rows[0]?.blockingPids.includes(blockerPid)) return;
+    if ((row?.waitingCount ?? 0) >= expected) return;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  throw new Error(`approve did not wait on Member lifecycle blocker pid=${blockerPid}`);
+  throw new Error(`expected at least ${expected} Member lifecycle lock waiter(s)`);
 }
 
 describe('activity registration Member lifecycle concurrency', () => {
@@ -120,7 +96,7 @@ describe('activity registration Member lifecycle concurrency', () => {
   });
 
   it(
-    'offboard 先持 Member lifecycle lock，approve 必须等待并最终拒 MEMBER_INACTIVE',
+    'approve 与 offboard 争用 Member lifecycle lock，审批先提交后退队必须以 15038 拒绝',
     async () => {
       const target = await prismaA.member.create({
         data: {
@@ -134,47 +110,54 @@ describe('activity registration Member lifecycle concurrency', () => {
         data: { activityId, memberId: target.id, statusCode: 'pending' },
         select: { id: true },
       });
-      const offboardAuditReached = deferred<number>();
-      const releaseOffboard = deferred();
-      const auditLogs = appA.get(AuditLogsService);
-      const originalLog = auditLogs.log.bind(auditLogs);
-      const barrier = jest.spyOn(auditLogs, 'log').mockImplementation(async (input) => {
-        if (input.event === 'member.offboard' && input.resourceId === target.id && input.tx) {
-          const rows = await input.tx.$queryRaw<Array<{ pid: number }>>(
-            Prisma.sql`SELECT pg_backend_pid() AS pid`,
-          );
-          offboardAuditReached.resolve(rows[0].pid);
-          await releaseOffboard.promise;
-        }
-        return originalLog(input);
+      let signalReady!: () => void;
+      let release!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        signalReady = resolve;
       });
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const blocker = prismaA.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "Member" WHERE id = ${target.id} FOR UPDATE`;
+        signalReady();
+        await released;
+      });
+      await ready;
+      const approve = appB
+        .get(ActivityRegistrationsService)
+        .approve(activityId, registration.id, { reviewNote: '先完成审批' }, actor, META);
+      await waitForMemberLockWaiters(prismaA, 1);
       const offboard = appA.get(MembersService).offboard(target.id, actor, META);
-      let approve: Promise<unknown> | undefined;
-
+      let barrierError: unknown;
       try {
-        const blockerPid = await offboardAuditReached.promise;
-        approve = appB
-          .get(ActivityRegistrationsService)
-          .approve(activityId, registration.id, { reviewNote: '不得落库' }, actor, META);
-        await waitForMemberLockWait(prismaA, blockerPid, approve);
-        releaseOffboard.resolve(undefined);
-
-        await expect(offboard).resolves.toMatchObject({
-          member: expect.objectContaining({ id: target.id, status: MemberStatus.INACTIVE }),
-        });
-        await expect(approve).rejects.toMatchObject({ biz: BizCode.MEMBER_INACTIVE });
+        await waitForMemberLockWaiters(prismaA, 2);
+      } catch (error) {
+        barrierError = error;
       } finally {
-        releaseOffboard.resolve(undefined);
-        await Promise.allSettled([offboard, ...(approve ? [approve] : [])]);
-        barrier.mockRestore();
+        release();
+        await blocker;
       }
+      const [approveResult, offboardResult] = await Promise.allSettled([approve, offboard]);
+      if (barrierError instanceof Error) throw barrierError;
+      if (barrierError !== undefined) {
+        throw new Error('non-Error value thrown while forcing registration/offboard interleaving');
+      }
+      expect(approveResult.status).toBe('fulfilled');
+      expect(offboardResult.status).toBe('rejected');
+      const offboardReason =
+        offboardResult.status === 'rejected' ? offboardResult.reason : undefined;
+      expect(offboardReason).toBeInstanceOf(BizException);
+      expect((offboardReason as BizException).biz).toBe(
+        BizCode.MEMBER_OFFBOARD_REGISTRATION_CLEANUP_REQUIRED,
+      );
 
       expect(
         await prismaA.member.findUniqueOrThrow({
           where: { id: target.id },
           select: { status: true },
         }),
-      ).toEqual({ status: MemberStatus.INACTIVE });
+      ).toEqual({ status: MemberStatus.ACTIVE });
       expect(
         await prismaA.activityRegistration.findUniqueOrThrow({
           where: { id: registration.id },
@@ -186,31 +169,31 @@ describe('activity registration Member lifecycle concurrency', () => {
           },
         }),
       ).toEqual({
-        statusCode: 'pending',
-        reviewedBy: null,
-        reviewedAt: null,
-        reviewNote: null,
+        statusCode: 'pass',
+        reviewedBy: actor.id,
+        reviewedAt: expect.any(Date),
+        reviewNote: '先完成审批',
       });
       expect(
         await prismaA.activityRegistration.count({
           where: { activityId, statusCode: 'pass', deletedAt: null },
         }),
-      ).toBe(0);
+      ).toBe(1);
       expect(
         await prismaA.auditLog.count({
           where: { resourceId: registration.id, event: 'registration.review' },
         }),
-      ).toBe(0);
+      ).toBe(1);
       expect(
         await prismaA.auditLog.count({
           where: { resourceId: target.id, event: 'member.offboard' },
         }),
-      ).toBe(1);
+      ).toBe(0);
       expect(
         await prismaA.notification.count({
           where: { recipientMemberId: target.id, notificationTypeCode: 'registration-result' },
         }),
-      ).toBe(0);
+      ).toBe(1);
       expect(
         await prismaA.insuranceEligibilityEvidence.count({
           where: { activityRegistrationId: registration.id },

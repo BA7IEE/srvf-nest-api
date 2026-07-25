@@ -19,6 +19,7 @@ import { ActivityPublishReviewService } from './activity-publish-review.service'
 import { ActivityWorkflowQueryService } from './activity-workflow-query.service';
 import type {
   CreateActivityCollaboratorDto,
+  TransferActivityInitiatorDto,
   TransferActivityOwnerDto,
 } from './activity-responsibility.dto';
 import { ActivityResponsibilityService } from './activity-responsibility.service';
@@ -418,6 +419,15 @@ export class AppManagedActivitiesService {
     auditMeta: AuditMeta,
   ) {
     return this.responsibilities.transferOwner(activityId, dto, user, auditMeta, 'owner');
+  }
+
+  async transferInitiator(
+    activityId: string,
+    dto: TransferActivityInitiatorDto,
+    user: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ) {
+    return this.responsibilities.transferInitiator(activityId, dto, user, auditMeta);
   }
 
   private async assertFormalMember(memberId: string): Promise<void> {

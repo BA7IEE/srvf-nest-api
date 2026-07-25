@@ -17,7 +17,9 @@ import {
   ClaimLegacyActivityDto,
   CreateActivityCollaboratorDto,
   TransferActivityOwnerDto,
+  TransferActivityInitiatorDto,
 } from './activity-responsibility.dto';
+import { ActivityInitiationPolicy } from './activity-initiation-policy';
 import { ActivityResponsibilityGrantProjector } from './activity-responsibility-grant-projector';
 import { ActivityResponsibilityPolicy } from './activity-responsibility-policy';
 
@@ -64,6 +66,7 @@ export class ActivityResponsibilityService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly policy: ActivityResponsibilityPolicy,
+    private readonly initiationPolicy: ActivityInitiationPolicy,
     private readonly projector: ActivityResponsibilityGrantProjector,
     private readonly audit: ActivityResponsibilityAuditRecorder,
     private readonly notifications: NotificationDispatcher,
@@ -657,6 +660,94 @@ export class ActivityResponsibilityService {
     });
     await Promise.all([this.dispatch(effect.oldOwner), this.dispatch(effect.newOwner)]);
     return effect.response;
+  }
+
+  async transferInitiator(
+    activityId: string,
+    dto: TransferActivityInitiatorDto,
+    user: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<ActivityResponsibilitiesResponseDto> {
+    this.assertWorkflowEnabled();
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockActivity(activityId, tx);
+      await this.policy.assertInitiatorOrOverride(tx, activityId, user);
+      const activity = await tx.activity.findUniqueOrThrow({
+        where: { id: activityId },
+        select: {
+          statusCode: true,
+          organizationId: true,
+          initiatorMemberId: true,
+          publishReviews: {
+            where: { status: 'pending' },
+            take: 1,
+            select: { id: true },
+          },
+        },
+      });
+      if (activity.statusCode !== 'draft') {
+        throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+      }
+      if (activity.publishReviews.length > 0) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
+      }
+      if (!activity.initiatorMemberId) {
+        throw new BizException(BizCode.ACTIVITY_RESPONSIBILITY_NOT_FOUND);
+      }
+      if (activity.initiatorMemberId === dto.newInitiatorMemberId) {
+        throw new BizException(BizCode.ACTIVITY_RESPONSIBILITY_ALREADY_EXISTS);
+      }
+
+      await this.lockMembers([activity.initiatorMemberId, dto.newInitiatorMemberId], tx);
+      await this.initiationPolicy.assertInitiatorEligible(
+        user,
+        activity.organizationId,
+        dto.newInitiatorMemberId,
+        tx,
+      );
+      await tx.activity.update({
+        where: { id: activityId },
+        data: { initiatorMemberId: dto.newInitiatorMemberId },
+      });
+      await this.audit.log({
+        activityId,
+        operation: 'responsibility-transfer-initiator',
+        targetMemberId: dto.newInitiatorMemberId,
+        source: 'transfer',
+        reason: dto.reason,
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        auditMeta,
+        tx,
+      });
+
+      const updated = await tx.activity.findUniqueOrThrow({
+        where: { id: activityId },
+        select: {
+          statusCode: true,
+          initiator: {
+            select: { id: true, memberNo: true, displayName: true, gradeCode: true },
+          },
+        },
+      });
+      const assignments = await tx.activityResponsibilityAssignment.findMany({
+        where: { activityId, status: 'active' },
+        orderBy: [{ responsibilityType: 'asc' }, { startedAt: 'asc' }, { id: 'asc' }],
+        select: assignmentSelect,
+      });
+      const owner = assignments.find((item) => item.responsibilityType === 'owner') ?? null;
+      return {
+        activityId,
+        initiator: updated.initiator,
+        owner: owner ? this.toAssignmentDto(owner) : null,
+        collaborators: assignments
+          .filter((item) => item.responsibilityType === 'collaborator')
+          .map((item) => this.toAssignmentDto(item)),
+        legacyUnassigned:
+          (updated.statusCode === 'draft' && updated.initiator === null) ||
+          (updated.statusCode === 'published' && owner === null),
+      };
+    });
   }
 
   async claimLegacy(

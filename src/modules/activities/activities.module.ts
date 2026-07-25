@@ -40,6 +40,7 @@ import { AppManagedActivityResponsibilitiesController } from './controllers/app-
 import { ActivityProposalValidator } from './activity-proposal-validator';
 import { ActivityProposalApplier } from './activity-proposal-applier';
 import { ActivityClosurePolicy } from './activity-closure-policy';
+import { ActivityMemberOffboardImpactService } from './activity-member-offboard-impact.service';
 import { ActivityWorkflowQueryService } from './activity-workflow-query.service';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
@@ -105,6 +106,7 @@ import { ActivityWorkflowQueryService } from './activity-workflow-query.service'
     ActivityProposalValidator,
     ActivityProposalApplier,
     ActivityClosurePolicy,
+    ActivityMemberOffboardImpactService,
     ActivityWorkflowQueryService,
     ActivityPublishReviewService,
     ActivityPublishReviewQueryService,
@@ -123,6 +125,7 @@ import { ActivityWorkflowQueryService } from './activity-workflow-query.service'
     ActivityResponsibilityService,
     AppManagedActivitiesService,
     ActivityWorkflowQueryService,
+    ActivityMemberOffboardImpactService,
   ],
 })
 export class ActivitiesModule {}

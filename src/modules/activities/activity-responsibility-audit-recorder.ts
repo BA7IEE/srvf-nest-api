@@ -14,6 +14,7 @@ export class ActivityResponsibilityAuditRecorder {
       | 'responsibility-collaborator-create'
       | 'responsibility-collaborator-end'
       | 'responsibility-transfer'
+      | 'responsibility-transfer-initiator'
       | 'responsibility-legacy-claim'
       | 'responsibility-assign-initiator';
     actorUserId: string;
@@ -25,6 +26,7 @@ export class ActivityResponsibilityAuditRecorder {
     canManageRegistrations?: boolean;
     canManageAttendance?: boolean;
     source?: string;
+    reason?: string;
   }): Promise<void> {
     await this.auditLogs.log({
       event: 'activity.publish',
@@ -44,6 +46,7 @@ export class ActivityResponsibilityAuditRecorder {
           ? { canManageAttendance: args.canManageAttendance }
           : {}),
         ...(args.source ? { source: args.source } : {}),
+        ...(args.reason ? { reason: args.reason } : {}),
       },
       tx: args.tx,
     });

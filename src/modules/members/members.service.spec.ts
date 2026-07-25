@@ -12,6 +12,7 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { ActivityMemberOffboardImpactService } from '../activities/activity-member-offboard-impact.service';
 import type { AuthzService } from '../authz/authz.service';
 import type { PrismaService } from '../../database/prisma.service';
 import type { OrganizationsService } from '../organizations/organizations.service';
@@ -70,6 +71,17 @@ const lastAdminProtectionNoop = {
   assertCanDeactivateOpsAdminUser: jest.fn().mockResolvedValue(undefined),
 } as unknown as LastAdminProtectionPolicy;
 const auditNoop = { log: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogsService;
+const activityOffboardImpactNoop = {
+  getImpact: jest.fn().mockResolvedValue({
+    draftInitiatedActivities: [],
+    activeOwnerActivities: [],
+    activeCollaboratorActivities: [],
+    futureRegistrations: [],
+    historicalRegistrationsWithEvidence: [],
+    canOffboard: true,
+    blockingReasons: [],
+  }),
+} as unknown as ActivityMemberOffboardImpactService;
 const organizationsStub = {} as unknown as OrganizationsService; // grantAccount 不触达
 
 function p2002(target: string[]): Prisma.PrismaClientKnownRequestError {
@@ -91,6 +103,7 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
       lastAdminProtectionNoop,
       organizationsStub,
       auditNoop,
+      activityOffboardImpactNoop,
     );
 
     await expect(service.grantAccount('m1', { phone: '13800000001' }, USER, META)).rejects.toEqual(
@@ -108,6 +121,7 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
       lastAdminProtectionNoop,
       organizationsStub,
       auditNoop,
+      activityOffboardImpactNoop,
     );
 
     await expect(service.grantAccount('m1', { phone: '13800000006' }, USER, META)).rejects.toEqual(
@@ -125,6 +139,7 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
       lastAdminProtectionNoop,
       organizationsStub,
       auditNoop,
+      activityOffboardImpactNoop,
     );
 
     await expect(service.grantAccount('m1', { phone: '13800000002' }, USER, META)).rejects.toEqual(
@@ -143,6 +158,7 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
       lastAdminProtectionNoop,
       organizationsStub,
       auditNoop,
+      activityOffboardImpactNoop,
     );
 
     await expect(service.grantAccount('m1', { phone: '13800000003' }, USER, META)).rejects.toBe(
@@ -161,6 +177,7 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
       lastAdminProtectionNoop,
       organizationsStub,
       auditNoop,
+      activityOffboardImpactNoop,
     );
 
     await expect(service.grantAccount('m1', { phone: '13800000004' }, USER, META)).rejects.toBe(
@@ -248,6 +265,7 @@ describe('MembersService member lifecycle authorization closure', () => {
       lastAdminProtection,
       organizationsStub,
       audit as unknown as AuditLogsService,
+      activityOffboardImpactNoop,
     );
 
     const result = await service.offboard('m1', USER, META);
@@ -291,6 +309,7 @@ describe('MembersService member lifecycle authorization closure', () => {
       lastAdminProtectionNoop,
       organizationsStub,
       auditNoop,
+      activityOffboardImpactNoop,
     );
 
     await expect(

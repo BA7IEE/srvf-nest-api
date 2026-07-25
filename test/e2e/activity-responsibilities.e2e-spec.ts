@@ -247,7 +247,7 @@ describe('activity responsibilities and system RoleBinding projection', () => {
     ).toBe(0);
   });
 
-  it('member offboard revokes active responsibility rows and their system bindings together', async () => {
+  it('member offboard blocks an active owner until responsibility is transferred', async () => {
     const owner = await createFormalMember('offboard-owner');
     const activity = await createLegacyActivity();
     const claim = await request(httpServer(app))
@@ -259,16 +259,16 @@ describe('activity responsibilities and system RoleBinding projection', () => {
     const offboard = await request(httpServer(app))
       .post(`/api/admin/v1/members/${owner.memberId}/offboard`)
       .set('Authorization', adminAuth);
-    expect(offboard.status).toBe(200);
+    expectBizError(offboard, BizCode.MEMBER_OFFBOARD_ACTIVITY_HANDOFF_REQUIRED);
     await expect(
       prisma.activityResponsibilityAssignment.findUniqueOrThrow({
         where: { id: claim.body.data.id as string },
         select: { status: true, endedAt: true, endedByUserId: true },
       }),
     ).resolves.toMatchObject({
-      status: 'revoked',
-      endedAt: expect.any(Date),
-      endedByUserId: expect.any(String),
+      status: 'active',
+      endedAt: null,
+      endedByUserId: null,
     });
     expect(
       await prisma.roleBinding.count({
@@ -279,6 +279,6 @@ describe('activity responsibilities and system RoleBinding projection', () => {
           deletedAt: null,
         },
       }),
-    ).toBe(0);
+    ).toBe(1);
   });
 });
