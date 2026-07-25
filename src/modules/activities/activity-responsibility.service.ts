@@ -7,6 +7,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import appConfig from '../../config/app.config';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { isFormalMemberGradeCode } from '../members/member-grade';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { ActivityResponsibilityAuditRecorder } from './activity-responsibility-audit-recorder';
 import {
@@ -133,7 +134,7 @@ export class ActivityResponsibilityService {
     if (
       !target ||
       target.users.length === 0 ||
-      (options?.formal && !/^level-[1-7]$/.test(target.gradeCode ?? ''))
+      (options?.formal && !isFormalMemberGradeCode(target.gradeCode))
     ) {
       throw new BizException(BizCode.ACTIVITY_RESPONSIBILITY_TARGET_INVALID);
     }

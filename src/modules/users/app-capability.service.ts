@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../database/prisma.service';
 import { AuthzService } from '../authz/authz.service';
+import { isFormalMemberGradeCode } from '../members/member-grade';
 import { AppIdentityResolver } from './app-identity.resolver';
 import { AppCapabilityResponseDto } from './dto/app/app-capability-response.dto';
 
@@ -24,20 +25,7 @@ export class AppCapabilityService {
   async resolve(currentUser: CurrentUserPayload): Promise<AppCapabilityResponseDto> {
     const access = await this.appIdentity.resolve(currentUser);
     const canUseApp = access.canUseApp;
-    const formalGrades = new Set([
-      'level-1',
-      'level-2',
-      'level-3',
-      'level-4',
-      'level-5',
-      'level-6',
-      'level-7',
-    ]);
-    const canInitiateActivity =
-      canUseApp &&
-      access.member?.gradeCode !== null &&
-      access.member?.gradeCode !== undefined &&
-      formalGrades.has(access.member.gradeCode);
+    const canInitiateActivity = canUseApp && isFormalMemberGradeCode(access.member?.gradeCode);
     const [
       publishScope,
       reviewScope,

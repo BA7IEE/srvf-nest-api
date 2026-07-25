@@ -22,7 +22,7 @@ import {
 //   2. canSeeContent 对通知行 4 档判定正确(member / formal_member / department / management);
 //   3. 通知永不写 public → 复用函数的 public 分支对通知恒不命中,效果即「去 public」;
 //   4. 非 published(draft / archived)通知一律不可见;
-//   5. buildVisibilityWhere 产出的 where 对通知列表过滤同样适用(published + 命中可见档 OR)。
+//   5. formal boolean 与 department activeOrgIds 正交,buildVisibilityWhere 不互相推导。
 
 const memberCtx: CallerVisibilityContext = {
   isMember: true,
@@ -30,16 +30,22 @@ const memberCtx: CallerVisibilityContext = {
   activeOrgIds: [],
   isManagement: false,
 };
-const formalCtx: CallerVisibilityContext = {
+const formalNoOrgCtx: CallerVisibilityContext = {
   isMember: true,
   isFormalMember: true,
+  activeOrgIds: [],
+  isManagement: false,
+};
+const departmentNonFormalCtx: CallerVisibilityContext = {
+  isMember: true,
+  isFormalMember: false,
   activeOrgIds: ['org-1'],
   isManagement: false,
 };
 const mgmtCtx: CallerVisibilityContext = {
   isMember: true,
-  isFormalMember: true,
-  activeOrgIds: ['org-1'],
+  isFormalMember: false,
+  activeOrgIds: [],
   isManagement: true,
 };
 
@@ -62,22 +68,22 @@ describe('统一通知模块 — 可见性复用 content.visibility(零第二套
     expect(canSeeContent(memberCtx, notif(NOTIFICATION_VISIBILITY_MEMBER))).toBe(true);
   });
 
-  it('formal_member 档:仅正式队员(有活跃部门)可见', () => {
+  it('formal_member 档:只消费 isFormalMember,无 activeOrgIds 的正式队员仍可见', () => {
     expect(canSeeContent(memberCtx, notif(NOTIFICATION_VISIBILITY_FORMAL_MEMBER))).toBe(false);
-    expect(canSeeContent(formalCtx, notif(NOTIFICATION_VISIBILITY_FORMAL_MEMBER))).toBe(true);
+    expect(canSeeContent(formalNoOrgCtx, notif(NOTIFICATION_VISIBILITY_FORMAL_MEMBER))).toBe(true);
   });
 
-  it('department 档:仅命中 visibleOrganizationIds 的会员可见', () => {
-    expect(canSeeContent(formalCtx, notif(NOTIFICATION_VISIBILITY_DEPARTMENT, ['org-1']))).toBe(
-      true,
-    );
-    expect(canSeeContent(formalCtx, notif(NOTIFICATION_VISIBILITY_DEPARTMENT, ['org-2']))).toBe(
-      false,
-    );
+  it('department 档:只消费 activeOrgIds,非正式队员也可按组织命中', () => {
+    expect(
+      canSeeContent(departmentNonFormalCtx, notif(NOTIFICATION_VISIBILITY_DEPARTMENT, ['org-1'])),
+    ).toBe(true);
+    expect(
+      canSeeContent(departmentNonFormalCtx, notif(NOTIFICATION_VISIBILITY_DEPARTMENT, ['org-2'])),
+    ).toBe(false);
   });
 
   it('management 档:仅管理层可见', () => {
-    expect(canSeeContent(formalCtx, notif(NOTIFICATION_VISIBILITY_MANAGEMENT))).toBe(false);
+    expect(canSeeContent(formalNoOrgCtx, notif(NOTIFICATION_VISIBILITY_MANAGEMENT))).toBe(false);
     expect(canSeeContent(mgmtCtx, notif(NOTIFICATION_VISIBILITY_MANAGEMENT))).toBe(true);
   });
 
@@ -108,5 +114,23 @@ describe('统一通知模块 — 可见性复用 content.visibility(零第二套
     // 含 member 档(isMember=true);public 分支虽在(复用函数)但通知无 public 行 → 恒不命中(去 public)。
     expect(orVisibilities).toContain('member');
     expect(orVisibilities).not.toContain('formal_member'); // memberCtx 非正式队员
+  });
+
+  it('buildVisibilityWhere:formal 无 org → 含 formal_member,不含 department', () => {
+    const where = buildVisibilityWhere(formalNoOrgCtx);
+    const orVisibilities = (where.OR ?? []).map(
+      (o) => (o as { visibilityCode?: string }).visibilityCode,
+    );
+    expect(orVisibilities).toContain('formal_member');
+    expect(orVisibilities).not.toContain('department');
+  });
+
+  it('buildVisibilityWhere:非正式但有 org → 含 department,不含 formal_member', () => {
+    const where = buildVisibilityWhere(departmentNonFormalCtx);
+    const orVisibilities = (where.OR ?? []).map(
+      (o) => (o as { visibilityCode?: string }).visibilityCode,
+    );
+    expect(orVisibilities).toContain('department');
+    expect(orVisibilities).not.toContain('formal_member');
   });
 });

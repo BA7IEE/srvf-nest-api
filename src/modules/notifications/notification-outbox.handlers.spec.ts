@@ -1407,9 +1407,186 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
     );
   });
 
+  interface WechatAudienceMemberSpec {
+    memberId: string;
+    gradeCode: string | null;
+    organizationIds?: string[];
+  }
+
+  function buildWechatRootAudience(members: WechatAudienceMemberSpec[]) {
+    const memberRows = members.map(({ memberId, gradeCode }) => ({
+      id: memberId,
+      gradeCode,
+    }));
+    const userRows = members.map(({ memberId }) => ({
+      id: `u-${memberId}`,
+      memberId,
+      role: Role.USER,
+      openid: `openid-${memberId}`,
+    }));
+    const membershipRows = members.flatMap(({ memberId, organizationIds = [] }) =>
+      organizationIds.map((organizationId) => ({ memberId, organizationId })),
+    );
+    const prisma = {
+      wechatSubscriptionQuota: {
+        findMany: jest.fn().mockResolvedValue(members.map(({ memberId }) => ({ memberId }))),
+      },
+      notificationDelivery: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      member: {
+        findMany: jest.fn().mockResolvedValue(memberRows),
+      },
+      user: {
+        findMany: jest.fn().mockResolvedValue(userRows),
+      },
+      memberOrganizationMembership: {
+        findMany: jest.fn().mockResolvedValue(membershipRows),
+      },
+    };
+    const templates = {
+      getEnabledTemplateId: jest.fn().mockResolvedValue('wechat-template-1'),
+    };
+    const rbac = { can: jest.fn().mockResolvedValue(false) };
+    return {
+      prisma,
+      rbac,
+      templates,
+      service: new NotificationWechatDispatchService(
+        prisma as never,
+        {} as never,
+        rbac as never,
+        templates as never,
+      ),
+    };
+  }
+
+  function formalWechatAudienceMembers(): WechatAudienceMemberSpec[] {
+    return [
+      {
+        memberId: 'm-formal-no-org',
+        gradeCode: 'level-3',
+      },
+      {
+        memberId: 'm-formal-primary',
+        gradeCode: 'level-1',
+        organizationIds: ['org-a'],
+      },
+      {
+        memberId: 'm-volunteer-primary',
+        gradeCode: 'volunteer',
+        organizationIds: ['org-a'],
+      },
+      {
+        memberId: 'm-reserve-primary',
+        gradeCode: 'reserve',
+        organizationIds: ['org-a'],
+      },
+      {
+        memberId: 'm-null-primary',
+        gradeCode: null,
+        organizationIds: ['org-a'],
+      },
+    ];
+  }
+
+  it('WeChat root fan-out 的 formal_member 只按 gradeCode，不把 PRIMARY 当正式队员', async () => {
+    const f = buildWechatRootAudience(formalWechatAudienceMembers());
+
+    await expect(
+      f.service.resolveDurableBroadcastMemberIds(visibilityNotification('formal_member')),
+    ).resolves.toEqual(['m-formal-no-org', 'm-formal-primary']);
+    expect(f.rbac.can).not.toHaveBeenCalled();
+  });
+
+  it('WeChat root fan-out 的 department 仍只按 active PRIMARY org', async () => {
+    const f = buildWechatRootAudience([
+      {
+        memberId: 'm-formal-no-org',
+        gradeCode: 'level-3',
+      },
+      {
+        memberId: 'm-volunteer-org-a',
+        gradeCode: 'volunteer',
+        organizationIds: ['org-a'],
+      },
+      {
+        memberId: 'm-formal-org-b',
+        gradeCode: 'level-1',
+        organizationIds: ['org-b'],
+      },
+    ]);
+
+    await expect(
+      f.service.resolveDurableBroadcastMemberIds(visibilityNotification('department', ['org-a'])),
+    ).resolves.toEqual(['m-volunteer-org-a']);
+  });
+
+  it('WeChat directed 显式收件人不受 gradeCode 影响', async () => {
+    const memberId = 'cm00000000000000000000012';
+    const notificationDelivery = {
+      create: jest
+        .fn<
+          Promise<{ id: string }>,
+          [{ data: { notificationId: string; memberId: string; status: string } }]
+        >()
+        .mockResolvedValue({ id: 'delivery-1' }),
+    };
+    const prisma = {
+      member: {
+        findFirst: jest.fn().mockResolvedValue({ id: memberId, gradeCode: 'volunteer' }),
+      },
+      user: {
+        findFirst: jest.fn().mockResolvedValue({ openid: 'directed-openid' }),
+      },
+      wechatSubscriptionQuota: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      notificationDelivery,
+    };
+    const wechat = {
+      sendSubscribeMessage: jest.fn().mockResolvedValue({ ok: true, msgId: 'wechat-msg-1' }),
+    };
+    const templates = {
+      getEnabledTemplateId: jest.fn().mockResolvedValue('wechat-template-1'),
+    };
+    const service = new NotificationWechatDispatchService(
+      prisma as never,
+      wechat as never,
+      { can: jest.fn() } as never,
+      templates as never,
+    );
+    const notification = {
+      id: 'cm00000000000000000000011',
+      audienceType: 'directed',
+      recipientMemberId: memberId,
+      notificationTypeCode: 'system',
+      visibilityCode: 'formal_member',
+      visibleOrganizationIds: [],
+      title: '定向通知',
+      body: '定向通知正文',
+      publishedAt: NOW,
+    } as unknown as Notification;
+
+    await expect(service.dispatchDirected(notification)).resolves.toBeUndefined();
+    expect(wechat.sendSubscribeMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openid: 'directed-openid',
+        templateId: 'wechat-template-1',
+      }),
+    );
+    expect(notificationDelivery.create).toHaveBeenCalledTimes(1);
+    expect(notificationDelivery.create.mock.calls[0]?.[0].data).toMatchObject({
+      notificationId: notification.id,
+      memberId,
+      status: 'sent',
+    });
+  });
+
   function buildRecipientEligibility(options?: {
     lockRows?: Array<{ id: string }>;
-    member?: { id: string } | null;
+    member?: { id: string; gradeCode?: string | null } | null;
+    gradeCode?: string | null;
     user?: {
       id: string;
       memberId: string;
@@ -1474,7 +1651,15 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
     const member = {
       findFirst: jest.fn(() => {
         events.push('member-read');
-        return Promise.resolve(options && 'member' in options ? options.member : { id: memberId });
+        return Promise.resolve(
+          options && 'member' in options
+            ? options.member
+            : {
+                id: memberId,
+                gradeCode:
+                  options && 'gradeCode' in options ? (options.gradeCode ?? null) : 'level-3',
+              },
+        );
       }),
     };
     const memberOrganizationMembership = {
@@ -1519,7 +1704,7 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
 
   it.each([
     ['member', [], false, [], true],
-    ['formal_member', ['org-a'], false, [], true],
+    ['formal_member', [], false, [], true],
     ['department', ['org-a'], false, ['org-a'], true],
     ['management', [], true, [], true],
   ] as const)(
@@ -1583,6 +1768,26 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
           expect(sql).not.toContain('FOR UPDATE');
         }
       }
+    },
+  );
+
+  it.each(['volunteer', 'reserve', null] as const)(
+    'final recipient eligibility:formal_member 对 gradeCode=%s + active PRIMARY fail-closed',
+    async (gradeCode) => {
+      const f = buildRecipientEligibility({
+        gradeCode,
+        organizationIds: ['org-a'],
+      });
+
+      await expect(
+        f.service.authorizeDurableBroadcastRecipient(
+          f.tx as never,
+          visibilityNotification('formal_member'),
+          f.memberId,
+          NOW,
+        ),
+      ).resolves.toBeNull();
+      expect(f.rbac.can).not.toHaveBeenCalled();
     },
   );
 

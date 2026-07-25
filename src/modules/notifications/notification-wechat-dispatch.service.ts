@@ -13,6 +13,7 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
 import { lockMemberLifecycle } from '../members/member-lifecycle-lock';
+import { isFormalMemberGradeCode } from '../members/member-grade';
 import { ORGANIZATION_TOPOLOGY_LOCK_KEY } from '../organizations/organization-topology-transaction';
 import {
   maskOpenid,
@@ -155,7 +156,7 @@ export class NotificationWechatDispatchService {
 
     const member = await tx.member.findFirst({
       where: notDeletedWhere({ id: memberId, status: MemberStatus.ACTIVE }),
-      select: { id: true },
+      select: { id: true, gradeCode: true },
     });
     if (!member) return null;
 
@@ -190,7 +191,7 @@ export class NotificationWechatDispatchService {
         : false;
     const ctx: CallerVisibilityContext = {
       isMember: true,
-      isFormalMember: activeOrgIds.length > 0,
+      isFormalMember: isFormalMemberGradeCode(member.gradeCode),
       activeOrgIds,
       isManagement,
     };
@@ -343,7 +344,8 @@ export class NotificationWechatDispatchService {
     }
   }
 
-  // 批量解析候选受众:active member + active user(openid)+ 活跃部门 → 构造 ctx,canSeeContent 过滤。
+  // 批量解析候选受众:active member(正式等级真值)+ active user(openid)+ 活跃部门
+  // → 构造 ctx,canSeeContent 过滤。
   // isManagement 仅在 visibilityCode=management 时按 user 逐个 rbac.can 解析(候选已被 quota 收窄,可接受)。
   private async resolveAudience(
     memberIds: string[],
@@ -351,9 +353,10 @@ export class NotificationWechatDispatchService {
   ): Promise<AudienceMember[]> {
     const members = await this.prisma.member.findMany({
       where: notDeletedWhere({ id: { in: memberIds }, status: MemberStatus.ACTIVE }),
-      select: { id: true },
+      select: { id: true, gradeCode: true },
     });
     const activeMemberIds = members.map((m) => m.id);
+    const gradeCodeByMember = new Map(members.map(({ id, gradeCode }) => [id, gradeCode] as const));
     if (activeMemberIds.length === 0) return [];
 
     const users = await this.prisma.user.findMany({
@@ -387,7 +390,7 @@ export class NotificationWechatDispatchService {
       const isManagement = needsManagement ? await this.resolveIsManagement(user) : false;
       const ctx: CallerVisibilityContext = {
         isMember: true, // active member 准入(canUseApp 等价)
-        isFormalMember: activeOrgIds.length > 0,
+        isFormalMember: isFormalMemberGradeCode(gradeCodeByMember.get(memberId)),
         activeOrgIds,
         isManagement,
       };

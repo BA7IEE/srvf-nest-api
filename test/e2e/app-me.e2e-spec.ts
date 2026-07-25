@@ -500,7 +500,7 @@ describe('App /api/app/v1/me 三 endpoint(Phase 2 P2-1)', () => {
       });
       await prisma.member.update({
         where: { id: memberId },
-        data: { status: MemberStatus.INACTIVE },
+        data: { gradeCode: 'level-3', status: MemberStatus.INACTIVE },
       });
 
       const res = await get('/api/app/v1/me/capabilities', authHeader);
@@ -510,6 +510,72 @@ describe('App /api/app/v1/me 三 endpoint(Phase 2 P2-1)', () => {
       expect(account.canUseApp).toBe(false);
       expect(account.reason).toBe('MEMBER_INACTIVE');
       expect(data.activities).toEqual(ALL_CAPS_WHEN_BLOCKED.activities);
+    });
+
+    it('formal level-3 无组织归属:canInitiateActivity=true', async () => {
+      const { memberId, authHeader } = await setupLinkedUser({
+        username: 'app_cap_formal_no_org',
+        memberNo: 'C-FORMAL-NO-ORG',
+      });
+      await prisma.member.update({
+        where: { id: memberId },
+        data: { gradeCode: 'level-3' },
+      });
+
+      const res = await get('/api/app/v1/me/capabilities', authHeader);
+      expect(res.status).toBe(200);
+      const { data } = res.body as ResBody;
+      expect(data.account).toEqual(
+        expect.objectContaining({
+          canUseApp: true,
+          reason: null,
+        }),
+      );
+      expect(data.activities).toEqual(
+        expect.objectContaining({
+          canInitiateActivity: true,
+        }),
+      );
+    });
+
+    it.each([
+      ['volunteer', 'volunteer'],
+      ['reserve', 'reserve'],
+      ['null-grade', null],
+    ] as const)('%s + ACTIVE PRIMARY:canInitiateActivity=false', async (suffix, gradeCode) => {
+      const { memberId, authHeader } = await setupLinkedUser({
+        username: `app_cap_${suffix.replace('-', '_')}_primary`,
+        memberNo: `C-${suffix.toUpperCase()}-PRIMARY`,
+      });
+      const organization = await prisma.organization.create({
+        data: {
+          name: `cap-${suffix}-primary`,
+          nodeTypeCode: 'demo-node',
+          status: 'ACTIVE',
+        },
+      });
+      await prisma.member.update({
+        where: { id: memberId },
+        data: { gradeCode },
+      });
+      await prisma.memberOrganizationMembership.create({
+        data: { memberId, organizationId: organization.id },
+      });
+
+      const res = await get('/api/app/v1/me/capabilities', authHeader);
+      expect(res.status).toBe(200);
+      const { data } = res.body as ResBody;
+      expect(data.account).toEqual(
+        expect.objectContaining({
+          canUseApp: true,
+          reason: null,
+        }),
+      );
+      expect(data.activities).toEqual(
+        expect.objectContaining({
+          canInitiateActivity: false,
+        }),
+      );
     });
 
     it('admin-as-member: ADMIN + linked active member → cap 字段集与 USER 完全一致(不扩大)', async () => {

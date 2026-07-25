@@ -18,6 +18,7 @@ import {
 // CMS 内容发布模块(第 28 模块)可见性纯函数单测(评审稿 §4)。
 // 零 DB / 零 NestJS:只验 canSeeContent(单条判定)+ buildVisibilityWhere(list where 片段)。
 // 覆盖 5 档 × 命中/不命中 + 非 published + 未知档 fail-close;以及匿名/会员/正式/部门/管理 where 形态。
+// 本纯策略只消费 isFormalMember boolean 与 activeOrgIds,并锁定两者互不推导。
 
 // caller 上下文工厂(只覆盖关心的字段,其余取 ANON 默认)。
 function ctx(over: Partial<CallerVisibilityContext> = {}): CallerVisibilityContext {
@@ -80,11 +81,13 @@ describe('content.visibility — canSeeContent', () => {
 
   describe('formal_member 档', () => {
     const c = content({ visibilityCode: CONTENT_VISIBILITY_FORMAL_MEMBER });
-    it('isFormalMember=true → 可见', () => {
+    it('isFormalMember=true 且 activeOrgIds=[] → 可见', () => {
       expect(canSeeContent(ctx({ isMember: true, isFormalMember: true }), c)).toBe(true);
     });
-    it('仅 isMember(非正式队员)→ 不可见', () => {
-      expect(canSeeContent(ctx({ isMember: true, isFormalMember: false }), c)).toBe(false);
+    it('isFormalMember=false 即使 activeOrgIds 非空 → 不可见', () => {
+      expect(
+        canSeeContent(ctx({ isMember: true, isFormalMember: false, activeOrgIds: ['orgA'] }), c),
+      ).toBe(false);
     });
   });
 
@@ -93,21 +96,21 @@ describe('content.visibility — canSeeContent', () => {
       visibilityCode: CONTENT_VISIBILITY_DEPARTMENT,
       visibleOrganizationIds: ['orgA', 'orgB'],
     });
-    it('activeOrgIds 与文章 visibleOrganizationIds 有交集 → 可见(命中)', () => {
+    it('activeOrgIds 有交集即使命中者非正式队员 → 可见', () => {
       expect(
         canSeeContent(
-          ctx({ isMember: true, isFormalMember: true, activeOrgIds: ['orgB', 'orgC'] }),
+          ctx({ isMember: true, isFormalMember: false, activeOrgIds: ['orgB', 'orgC'] }),
           c,
         ),
       ).toBe(true);
     });
     it('activeOrgIds 与文章无交集 → 不可见(不命中)', () => {
       expect(
-        canSeeContent(ctx({ isMember: true, isFormalMember: true, activeOrgIds: ['orgC'] }), c),
+        canSeeContent(ctx({ isMember: true, isFormalMember: false, activeOrgIds: ['orgC'] }), c),
       ).toBe(false);
     });
-    it('activeOrgIds 为空 → 不可见', () => {
-      expect(canSeeContent(ctx({ isMember: true }), c)).toBe(false);
+    it('activeOrgIds 为空即使是正式队员 → 不可见', () => {
+      expect(canSeeContent(ctx({ isMember: true, isFormalMember: true }), c)).toBe(false);
     });
   });
 
@@ -151,18 +154,24 @@ describe('content.visibility — buildVisibilityWhere', () => {
     ]);
   });
 
-  it('isFormalMember → OR 追加 formal_member 档', () => {
+  it('isFormalMember=true + 无 org → 仅追加 formal_member,不追加 department', () => {
     const where = buildVisibilityWhere(ctx({ isMember: true, isFormalMember: true }));
     expect(where.OR).toContainEqual({ visibilityCode: CONTENT_VISIBILITY_FORMAL_MEMBER });
+    expect(where.OR).not.toContainEqual(
+      expect.objectContaining({ visibilityCode: CONTENT_VISIBILITY_DEPARTMENT }),
+    );
   });
 
-  it('activeOrgIds 非空 → OR 追加 department 档含 hasSome', () => {
+  it('activeOrgIds 非空 + 非正式 → 仅追加 department,不追加 formal_member', () => {
     const where = buildVisibilityWhere(
-      ctx({ isMember: true, isFormalMember: true, activeOrgIds: ['orgA', 'orgB'] }),
+      ctx({ isMember: true, isFormalMember: false, activeOrgIds: ['orgA', 'orgB'] }),
     );
     expect(where.OR).toContainEqual({
       visibilityCode: CONTENT_VISIBILITY_DEPARTMENT,
       visibleOrganizationIds: { hasSome: ['orgA', 'orgB'] },
+    });
+    expect(where.OR).not.toContainEqual({
+      visibilityCode: CONTENT_VISIBILITY_FORMAL_MEMBER,
     });
   });
 

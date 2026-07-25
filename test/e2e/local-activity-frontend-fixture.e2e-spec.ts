@@ -27,6 +27,7 @@ import {
   setupLocalActivityFrontendFixture,
   verifyLocalActivityFrontendFixture,
 } from '../../src/local-activity-frontend-fixture';
+import { isFormalMemberGradeCode } from '../../src/modules/members/member-grade';
 import { seedActivityResponsibilitySystemRoles } from '../fixtures/activity-responsibility.fixture';
 import { TEST_PASSWORD } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
@@ -701,8 +702,8 @@ function createFixtureHttpFetch(options: {
   exposeOrganizationBToUnrelatedAdmin: boolean;
 }): typeof fetch {
   const formalUsernames = new Set(
-    LOCAL_ACTIVITY_FRONTEND_ACCOUNTS.filter(
-      (account) => account.gradeCode !== null && /^level-[1-7]$/.test(account.gradeCode),
+    LOCAL_ACTIVITY_FRONTEND_ACCOUNTS.filter((account) =>
+      isFormalMemberGradeCode(account.gradeCode),
     ).map((account) => account.username),
   );
   const wrapped = (data: unknown) =>

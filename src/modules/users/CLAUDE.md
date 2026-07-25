@@ -10,7 +10,7 @@
 ## Local facts
 
 - **身份有效性不缓存**:`JwtStrategy.validate()` 每请求查库；本模块禁用/软删下一请求即时失效。
-- **App 活动能力投影**:`/me/capabilities` 的 `activities.canInitiateActivity/canDirectPublishOwnActivity` 与 `managed.*` 只作产品入口提示；每次按正式等级、当前 authz scope、本人发起记录和 active responsibility 直读 PostgreSQL，零跨请求缓存，写端仍须重新判权。
+- **App 活动能力投影**:`/me/capabilities` 的 `activities.canInitiateActivity/canDirectPublishOwnActivity` 与 `managed.*` 只作产品入口提示；每次按共享 `isFormalMemberGradeCode()`（精确 `level-1`…`level-7`）、当前 authz scope、本人发起记录和 active responsibility 直读 PostgreSQL，零跨请求缓存，写端仍须重新判权。
 - **最后管理员保护(v0.61.0 PR-C)**:`UsersService.updateRole/updateStatus/softDelete` 不自建 count。三条 last-SUPER_ADMIN 削权路径统一委托 `LastAdminProtectionPolicy` 并取 `users:last-super-admin` advisory lock；禁用/软删用户还须取 `role-bindings:last-ops-admin` 锁，锁后按统一任期真值重算。若操作会让当前有效 ops-admin holder 或其中 `endedAt=null` 常驻 holder 任一归零，返既有 `LAST_OPS_ADMIN_PROTECTED=30101`。
 - **事务边界**:上述 guard 与实际角色/状态/软删写入必须在同一 `prisma.$transaction` 内；锁后重算、再写入，禁止把检查移到事务外。
 - **联动撤销不变**:禁用/软删成功仍在同事务撤销 refresh token，reason 分别为 `admin-disable` / `admin-delete`；保护守卫拒绝时用户与 refresh token 均不得变化。

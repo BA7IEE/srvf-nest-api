@@ -8,6 +8,7 @@ import { PrismaService } from '../../database/prisma.service';
 import appConfig from '../../config/app.config';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AuthzService } from '../authz/authz.service';
+import { isFormalMemberGradeCode } from '../members/member-grade';
 import { ActivityAuditRecorder } from './activity-audit-recorder';
 import type {
   CreateActivityPositionDto,
@@ -31,16 +32,6 @@ import type {
   AppManagedActivityDetailDto,
   AppManagedActivityProjectionDto,
 } from './dto/app/app-managed-activity.dto';
-
-const FORMAL_GRADES = new Set([
-  'level-1',
-  'level-2',
-  'level-3',
-  'level-4',
-  'level-5',
-  'level-6',
-  'level-7',
-]);
 
 @Injectable()
 export class AppManagedActivitiesService {
@@ -434,7 +425,7 @@ export class AppManagedActivitiesService {
       where: { id: memberId, status: MemberStatus.ACTIVE, deletedAt: null },
       select: { gradeCode: true },
     });
-    if (!member?.gradeCode || !FORMAL_GRADES.has(member.gradeCode)) {
+    if (!isFormalMemberGradeCode(member?.gradeCode)) {
       throw new BizException(BizCode.ACTIVITY_INITIATOR_NOT_FORMAL);
     }
   }

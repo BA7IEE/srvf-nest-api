@@ -13,6 +13,7 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
+import { isFormalMemberGradeCode } from '../members/member-grade';
 import { SmsProviderRouter } from '../sms/sms-provider.router';
 import { SmsSettingsService } from '../sms/sms-settings.service';
 import {
@@ -366,9 +367,12 @@ export class NotificationSmsDispatchService {
     // active member 再核(directed 候选可能已软删 / 非 ACTIVE)。
     const activeMembers = await client.member.findMany({
       where: notDeletedWhere({ id: { in: candidateMemberIds }, status: MemberStatus.ACTIVE }),
-      select: { id: true },
+      select: { id: true, gradeCode: true },
     });
     const activeMemberIds = activeMembers.map((m) => m.id);
+    const gradeCodeByMember = new Map(
+      activeMembers.map(({ id, gradeCode }) => [id, gradeCode] as const),
+    );
     if (activeMemberIds.length === 0) return [];
 
     // active user 的 phone(仅 User.phone;memberId 关联)。
@@ -411,7 +415,7 @@ export class NotificationSmsDispatchService {
       const isManagement = needsManagement ? await this.resolveIsManagement(user) : false;
       const ctx: CallerVisibilityContext = {
         isMember: true,
-        isFormalMember: activeOrgIds.length > 0,
+        isFormalMember: isFormalMemberGradeCode(gradeCodeByMember.get(memberId)),
         activeOrgIds,
         isManagement,
       };

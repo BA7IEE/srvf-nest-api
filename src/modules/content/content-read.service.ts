@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { OrganizationStatus, Prisma, Role, type Content } from '@prisma/client';
+import { OrganizationStatus, Prisma, Role, type Content, type Member } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
@@ -9,6 +9,7 @@ import { PrismaService } from '../../database/prisma.service';
 import type { AttachmentOwnerType } from '../attachments/attachment-validation';
 import { AttachmentsService } from '../attachments/attachments.service';
 import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
+import { isFormalMemberGradeCode } from '../members/member-grade';
 import { RbacService } from '../permissions/rbac.service';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
 import {
@@ -53,29 +54,26 @@ export class ContentReadService {
   ) {}
 
   // ===== caller 上下文一次性解析(评审稿 §4.1)=====
-  // isMember = canUseApp(member 绑定 + Member ACTIVE + 未软删);
-  // isFormalMember / activeOrgIds = 活跃 member_department(org ACTIVE 且未软删);
+  // 准入已确保 member ACTIVE 且未软删,故 isMember 恒 true;
+  // isFormalMember = gradeCode ∈ level-1…level-7;
+  // activeOrgIds = 活跃 PRIMARY membership 的组织(org ACTIVE 且未软删),仅供 department 档。
   // isManagement = rbac.can('content.read.record') ∨ role ∈ {SUPER_ADMIN, ADMIN}。
-  private async resolveCtx(currentUser: CurrentUserPayload): Promise<CallerVisibilityContext> {
-    const access = await this.appIdentity.resolve(currentUser);
-    const isMember = access.canUseApp;
-
-    // 活跃部门归属(department 档命中判定 + isFormalMember);仅当确为 member 时才查。
-    let activeOrgIds: string[] = [];
-    if (isMember && access.member !== null) {
-      // 终态 scoped-authz PR2:重指向 active PRIMARY membership(= 旧单部门)。
-      const depts = await this.prisma.memberOrganizationMembership.findMany({
-        where: {
-          ...MembershipTermStateMachine.effectiveWhere(new Date()),
-          memberId: access.member.id,
-          membershipType: 'PRIMARY',
-          organization: { status: OrganizationStatus.ACTIVE, deletedAt: null },
-        },
-        select: { organizationId: true },
-      });
-      activeOrgIds = depts.map((d) => d.organizationId);
-    }
-    const isFormalMember = activeOrgIds.length > 0;
+  private async resolveCtx(
+    currentUser: CurrentUserPayload,
+    member: Pick<Member, 'id' | 'gradeCode'>,
+  ): Promise<CallerVisibilityContext> {
+    // 终态 scoped-authz PR2:department 档只认 active PRIMARY membership(= 旧单部门)。
+    const depts = await this.prisma.memberOrganizationMembership.findMany({
+      where: {
+        ...MembershipTermStateMachine.effectiveWhere(new Date()),
+        memberId: member.id,
+        membershipType: 'PRIMARY',
+        organization: { status: OrganizationStatus.ACTIVE, deletedAt: null },
+      },
+      select: { organizationId: true },
+    });
+    const activeOrgIds = depts.map((d) => d.organizationId);
+    const isFormalMember = isFormalMemberGradeCode(member.gradeCode);
 
     // 管理层:rbac.can 命中 ∨ Role enum 在 {SUPER_ADMIN, ADMIN}(评审稿 §4.1)。
     const isManagement =
@@ -83,7 +81,7 @@ export class ContentReadService {
       currentUser.role === Role.ADMIN ||
       (await this.rbac.can(currentUser, 'content.read.record'));
 
-    return { isMember, isFormalMember, activeOrgIds, isManagement };
+    return { isMember: true, isFormalMember, activeOrgIds, isManagement };
   }
 
   // ===== where 组装:可见性 where 之上 AND keyword / tags / contentTypeCode(评审稿 §6)=====
@@ -168,24 +166,26 @@ export class ContentReadService {
     currentUser: CurrentUserPayload,
     query: ListContentReadQueryDto,
   ): Promise<PageResultDto<ContentReadListItemDto>> {
-    await this.assertCanUseAppOrThrow(currentUser);
-    const ctx = await this.resolveCtx(currentUser);
+    const member = await this.assertCanUseAppOrThrow(currentUser);
+    const ctx = await this.resolveCtx(currentUser, member);
     return this.listWith(ctx, query);
   }
 
   // ============ app/v1 详情(准入 canUseApp;按 5 档可见性判定;+viewCount)============
   async appDetail(currentUser: CurrentUserPayload, id: string): Promise<ContentReadDetailDto> {
-    await this.assertCanUseAppOrThrow(currentUser);
-    const ctx = await this.resolveCtx(currentUser);
+    const member = await this.assertCanUseAppOrThrow(currentUser);
+    const ctx = await this.resolveCtx(currentUser, member);
     return this.detailWith(ctx, id);
   }
 
   // 准入:canUseApp=false(memberId=null / member 软删 / member 非 ACTIVE)→ 403(镜像 team-join app)。
-  private async assertCanUseAppOrThrow(currentUser: CurrentUserPayload): Promise<void> {
+  // 返回非空 ACTIVE member,供同一次读取链解析正式等级与部门上下文。
+  private async assertCanUseAppOrThrow(currentUser: CurrentUserPayload): Promise<Member> {
     const access = await this.appIdentity.resolve(currentUser);
-    if (!access.canUseApp) {
+    if (!access.canUseApp || access.member === null) {
       throw new BizException(BizCode.FORBIDDEN);
     }
+    return access.member;
   }
 
   // ============ 读者出参构造(open + app 共用;零 authorUserId / 零 visibleOrganizationIds)============

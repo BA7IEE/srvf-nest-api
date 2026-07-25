@@ -7,6 +7,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
+import { isFormalMemberGradeCode } from '../members/member-grade';
 import { RbacService } from '../permissions/rbac.service';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
 // 可见性**复用** content.visibility 纯函数(canSeeContent / buildVisibilityWhere),零第二套(评审稿 §5)。
@@ -58,16 +59,17 @@ export class NotificationReadService {
   }
 
   // caller 上下文一次性解析(镜像 content-read.resolveCtx;isManagement 用 notification.read.record)。
-  // 准入已确保是 member(canUseApp),故 isMember 恒 true。
+  // 准入已确保是 ACTIVE member(canUseApp),故 isMember 恒 true;
+  // formal 只认 gradeCode,activeOrgIds 只供 department 档。
   private async resolveCtx(
     currentUser: CurrentUserPayload,
-    memberId: string,
+    member: Pick<Member, 'id' | 'gradeCode'>,
   ): Promise<CallerVisibilityContext> {
-    // 终态 scoped-authz PR2:重指向 active PRIMARY membership(= 旧单部门)。
+    // 终态 scoped-authz PR2:department 档只认 active PRIMARY membership(= 旧单部门)。
     const depts = await this.prisma.memberOrganizationMembership.findMany({
       where: {
         ...MembershipTermStateMachine.effectiveWhere(new Date()),
-        memberId,
+        memberId: member.id,
         membershipType: 'PRIMARY',
         organization: { status: OrganizationStatus.ACTIVE, deletedAt: null },
       },
@@ -78,7 +80,12 @@ export class NotificationReadService {
       currentUser.role === Role.SUPER_ADMIN ||
       currentUser.role === Role.ADMIN ||
       (await this.rbac.can(currentUser, 'notification.read.record'));
-    return { isMember: true, isFormalMember: activeOrgIds.length > 0, activeOrgIds, isManagement };
+    return {
+      isMember: true,
+      isFormalMember: isFormalMemberGradeCode(member.gradeCode),
+      activeOrgIds,
+      isManagement,
+    };
   }
 
   // 复用 content.visibility 的 list where(published + 命中可见档 OR);ContentWhereInput 与 NotificationWhereInput
@@ -120,7 +127,7 @@ export class NotificationReadService {
     query: ListNotificationReadQueryDto,
   ): Promise<PageResultDto<NotificationReadListItemDto>> {
     const member = await this.assertCanUseAppOrThrow(currentUser);
-    const ctx = await this.resolveCtx(currentUser, member.id);
+    const ctx = await this.resolveCtx(currentUser, member);
     const where = this.buildFeedWhere(ctx, member.id);
 
     const [rows, total] = await this.prisma.$transaction([
@@ -150,7 +157,7 @@ export class NotificationReadService {
   // ============ 端点 10:会员详情(可见级闸 + 防枚举 404;不自动已读)============
   async appDetail(currentUser: CurrentUserPayload, id: string): Promise<NotificationReadDetailDto> {
     const member = await this.assertCanUseAppOrThrow(currentUser);
-    const ctx = await this.resolveCtx(currentUser, member.id);
+    const ctx = await this.resolveCtx(currentUser, member);
     const row = await this.findVisibleOrThrow(ctx, member.id, id);
     const read = await this.hasRead(member.id, id);
     return this.toReadDetailDto(row, read);
@@ -162,7 +169,7 @@ export class NotificationReadService {
     id: string,
   ): Promise<MarkNotificationReadResponseDto> {
     const member = await this.assertCanUseAppOrThrow(currentUser);
-    const ctx = await this.resolveCtx(currentUser, member.id);
+    const ctx = await this.resolveCtx(currentUser, member);
     // 对不存在 / 不可见 / 未发布 / 他人定向通知 → 31001 防侧信道(不可 mark-read 看不到的)。
     await this.findVisibleOrThrow(ctx, member.id, id);
 
@@ -188,7 +195,7 @@ export class NotificationReadService {
   // ============ 端点 12:未读数(badge;NOT EXISTS 子查询 reads.none)============
   async unreadCount(currentUser: CurrentUserPayload): Promise<NotificationUnreadCountDto> {
     const member = await this.assertCanUseAppOrThrow(currentUser);
-    const ctx = await this.resolveCtx(currentUser, member.id);
+    const ctx = await this.resolveCtx(currentUser, member);
     const where: Prisma.NotificationWhereInput = {
       // 广播可见 ∪ 本人定向(S3),AND 本人未读 = 不存在该 member 的 NotificationRead 行(none → NOT EXISTS)。
       ...this.buildFeedWhere(ctx, member.id),
