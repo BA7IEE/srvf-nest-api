@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { MemberStatus, Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -269,6 +269,78 @@ describe('activity-registrations 模块', () => {
         .set('Authorization', adminAuth)
         .send({ memberId: 'cl0000000000000000000000' });
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
+    });
+
+    it('inactive Member 代报名 → MEMBER_INACTIVE，且 registration/evidence/audit 均不产生', async () => {
+      const member = await prisma.member.create({
+        data: {
+          memberNo: 'reg-inactive-create',
+          displayName: 'Inactive Registration Target',
+          status: MemberStatus.INACTIVE,
+        },
+        select: { id: true },
+      });
+      const activityId = await createActivityHelper({
+        title: 'INACTIVE-MEMBER-ADMIN-CREATE',
+        isPublicRegistration: true,
+        capacity: undefined,
+        publish: true,
+      });
+      const auditCountBefore = await prisma.auditLog.count();
+
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${activityId}/registrations`)
+        .set('Authorization', adminAuth)
+        .send({ memberId: member.id });
+
+      expectBizError(res, BizCode.MEMBER_INACTIVE);
+      expect(
+        await prisma.activityRegistration.count({
+          where: { activityId, memberId: member.id },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.insuranceEligibilityEvidence.count({
+          where: { activityRegistration: { activityId, memberId: member.id } },
+        }),
+      ).toBe(0);
+      expect(await prisma.auditLog.count()).toBe(auditCountBefore);
+    });
+
+    it('deleted Member 代报名 → MEMBER_NOT_FOUND，且 registration/evidence/audit 均不产生', async () => {
+      const member = await prisma.member.create({
+        data: {
+          memberNo: 'reg-deleted-create',
+          displayName: 'Deleted Registration Target',
+          deletedAt: new Date(),
+        },
+        select: { id: true },
+      });
+      const activityId = await createActivityHelper({
+        title: 'DELETED-MEMBER-ADMIN-CREATE',
+        isPublicRegistration: true,
+        capacity: undefined,
+        publish: true,
+      });
+      const auditCountBefore = await prisma.auditLog.count();
+
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${activityId}/registrations`)
+        .set('Authorization', adminAuth)
+        .send({ memberId: member.id });
+
+      expectBizError(res, BizCode.MEMBER_NOT_FOUND);
+      expect(
+        await prisma.activityRegistration.count({
+          where: { activityId, memberId: member.id },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.insuranceEligibilityEvidence.count({
+          where: { activityRegistration: { activityId, memberId: member.id } },
+        }),
+      ).toBe(0);
+      expect(await prisma.auditLog.count()).toBe(auditCountBefore);
     });
 
     it('activity 不存在 → ACTIVITY_NOT_FOUND', async () => {

@@ -68,6 +68,8 @@ interface ActivityRow {
 
 interface MemberRow {
   id: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  deletedAt: Date | null;
 }
 
 interface UserRow {
@@ -135,7 +137,7 @@ function makeActivityRow(overrides: Partial<ActivityRow> = {}): ActivityRow {
 }
 
 function makeMemberRow(overrides: Partial<MemberRow> = {}): MemberRow {
-  return { id: 'mem-1', ...overrides };
+  return { id: 'mem-1', status: 'ACTIVE', deletedAt: null, ...overrides };
 }
 
 // ============ mock 工厂 ============
@@ -161,7 +163,12 @@ function makePrismaMock() {
     findMany: jest.fn().mockResolvedValue([]),
     findFirst: jest.fn().mockResolvedValue(null),
   };
-  const member = { findFirst: jest.fn<Promise<MemberRow | null>, [unknown]>() };
+  const member = {
+    findFirst: jest.fn<Promise<MemberRow | null>, [unknown]>().mockResolvedValue(makeMemberRow()),
+    findUnique: jest
+      .fn<Promise<Pick<MemberRow, 'status' | 'deletedAt'> | null>, [unknown]>()
+      .mockResolvedValue({ status: 'ACTIVE', deletedAt: null }),
+  };
   const memberProfile = { findFirst: jest.fn().mockResolvedValue({ genderCode: 'male' }) };
   const user = { findFirst: jest.fn<Promise<UserRow | null>, [unknown]>() };
   // 参与域生命周期收口⑦:cancelAdmin / cancelMy 事务内查考勤记录与签到证据守卫。
@@ -446,6 +453,42 @@ describe('ActivityRegistrationsService (characterization)', () => {
       expect(createArg.data.statusCode).toBe('waitlisted');
       expect(auditArg.created.statusCode).toBe('waitlisted');
       expect(result.statusCode).toBe('waitlisted');
+    });
+
+    it('App 自助报名在保险校验后最终重读到 Member INACTIVE → 回滚且零 evidence/audit', async () => {
+      const prisma = makePrismaMock();
+      const recorder = makeAuditRecorderMock();
+      const insuranceRequirement = makeInsuranceRequirementMock();
+      prisma.user.findFirst.mockResolvedValue({ memberId: 'mem-1' });
+      prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ capacity: null }));
+      prisma.activityRegistration.findFirst.mockResolvedValue(null);
+      insuranceRequirement.requireForActivityRegistration.mockImplementation(() => {
+        // 模拟无锁 snapshot 通过后，offboard 在最终 lifecycle lock 前已提交。
+        prisma.member.findFirst.mockResolvedValueOnce(makeMemberRow({ status: 'INACTIVE' }));
+        return Promise.resolve(null);
+      });
+      const service = makeService(
+        prisma,
+        recorder,
+        makeStateMachineMock(DENY_DECISION),
+        makeNotificationDispatcherMock(),
+        makeAuthzMock(),
+        makeOrganizationsMock(),
+        insuranceRequirement,
+      );
+
+      await expect(
+        service.createMy(
+          'act-1',
+          {},
+          makeCurrentUser({ id: 'user-1', role: Role.USER, memberId: 'mem-1' }),
+          META,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.MEMBER_INACTIVE));
+
+      expect(prisma.activityRegistration.create).not.toHaveBeenCalled();
+      expect(insuranceRequirement.createActivityRegistrationEvidence).not.toHaveBeenCalled();
+      expect(recorder.logCreate).not.toHaveBeenCalled();
     });
   });
 

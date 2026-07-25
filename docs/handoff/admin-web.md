@@ -81,6 +81,7 @@
 > ④ **活动已结束/截止/公开性报名闸** —— admin 代报名与 App 自助都要求 published、未截止、未结束；admin 对 `isPublicRegistration=false` **允许定向邀请**，App 自助仍拒且 App 可参加池过滤非公开活动。活动 detail 口径刻意不动（published 即可见）。
 > ⑤ **手动完结唯一通路** —— `POST .../:id/complete`(无 body)把 published 推进 completed；考勤提交不再改变 Activity 状态。完结后仍可补录考勤，但不可新报名/审批通过。
 > ⑥ **发布/编辑前端适配** —— `PATCH .../:id/publish` 从本批起 body **必填** `{ "requiresInsuranceConfirmed": true }`，缺失/false → 400；发布弹窗必须让操作者显式核对 `requiresInsurance` 后再提交。发布会复检 `endAt > now` 与 deadline 未过；create/update 要求 deadline≤endAt，capacity 不得缩到当前 pass 数以下。completed/cancelled 仅开放 description/coverImageUrl/galleryImageUrls/content/registrationNotes 五个展示字段。
+> ⑦ **目标队员生命周期闸** —— Admin 代报名与 single/bulk approve 都要求目标 Member 存在、未软删且 `status=ACTIVE`；不存在/软删返 `15001`，inactive 返 `17030`。批量接口仍 HTTP 200，并把失效项逐条放进 `failed[]`，不影响其他合法项。`reopen` 对 inactive 队员仍允许 `reject→pending`，但后续 approve 会按 `17030` 拒绝；失败时状态、审核三字段、容量、audit 与通知都不变化。
 
 > ⚠️ **考勤终审判权与责任约束**：终审权只来自任职上的 scoped `attendance-final-reviewer` 绑定或 `SUPER_ADMIN`；`biz-admin` 不持终审码，无码者先返回 `30100`。持权者调用 `final-approve` / `final-reject` 时，提交人或最近重提人自审返回 `22074`，一级审核人与终审人同人返回 `22075`，`SUPER_ADMIN` 也不豁免。`ATTENDANCE_ALLOW_SAME_REVIEWER` 已废弃且不会放开。前端必须分别展示 30100/22074/22075，排查授权用 §2.6 `authz/explain`。
 

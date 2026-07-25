@@ -35,10 +35,10 @@
 - **Storage production**:空库 migration/seed→窄配置 bootstrap；固定COS location+可解密凭证，disabled 重启不放行 Effect，null/LOCAL/unknown 禁回退；密钥不可轮换，真实 COS/fleet 待验
 - **贡献规则 ACTIVE 槽位**:未软删 ACTIVE 按 `activityTypeCode × attendanceRoleCode` 唯一；迁移、并发与漂移重复 pair 均 fail-closed
 - **通知 durable outbox**:PG lease/fence + generation/recipient/RBAC 快照/quota marker；provider 事务外 at-least-once。生产未 deploy，切换须排空旧 API/worker/intents 且禁混档
-- **正式队员**:ACTIVE 且 gradeCode=level-1..7；共用 `isFormalMemberGradeCode()`。组织归属仅服务 department
+- **队员/报名真值**:正式=ACTIVE+grade level-1..7；报名 create/approve/递补锁后重验 live+ACTIVE，reopen 只回 pending
 - **Attachment storage Phase1**:ledger接 Attachment；Content根锁、provider外；无key FK/非 repo-wide closure；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)
 - **保险 v3(v0.59.0，未 deploy)**:PR1–PR4 gate/约束/evidence 已交付，脏数 fail-fast；Admin 360 overview 已补；切换须 drain 且禁混档
-- **活动责任(Unreleased，仅本地联调)**:bootstrap 已交付、冻结；仅收后端 Bug/契约缺口。正式环境 migration/seed/配置/认领/部署/切换均未做；上线须批准 release+digest 复核 [`runbook`](ops/activity-responsibility-workflow-rollout.md)
+- **活动责任(Unreleased，仅本地联调)**:代码冻结；生产迁移/配置/认领/部署未做，上线须按 [`runbook`](ops/activity-responsibility-workflow-rollout.md) 批准并验 digest
 - **安全**:审计SA全量/持码非SA仅本人或USER，敏感读fail-closed，extra禁PII/filter/key/URL；GLOBAL任期单轨；ops-admin当前+常驻双兜底/同锁重读
 - **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 

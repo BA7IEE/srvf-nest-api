@@ -288,4 +288,101 @@ describe('App managed activity registrations', () => {
       }),
     ).resolves.toBe(0);
   });
+
+  it('single/bulk approve 对目标 Member ACTIVE 同核校验，批量只阻断 inactive 项', async () => {
+    const owner = await createMember('lifecycle-owner', true);
+    const collaborator = await createMember('lifecycle-collaborator');
+    const { activityId } = await createPublishedManagedActivity(owner.auth);
+    await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${activityId}/collaborators`)
+      .set('Authorization', owner.auth)
+      .send({
+        memberId: collaborator.memberId,
+        canManageRegistrations: true,
+        canManageAttendance: false,
+        reason: '生命周期审批测试',
+      })
+      .expect(201);
+
+    const singleInactiveId = await createRegistration(activityId, 'single-inactive');
+    const bulkActiveId = await createRegistration(activityId, 'bulk-active');
+    const bulkInactiveId = await createRegistration(activityId, 'bulk-inactive');
+    const inactiveRegistrations = await prisma.activityRegistration.findMany({
+      where: { id: { in: [singleInactiveId, bulkInactiveId] } },
+      select: { id: true, memberId: true },
+    });
+    await prisma.member.updateMany({
+      where: { id: { in: inactiveRegistrations.map((row) => row.memberId) } },
+      data: { status: MemberStatus.INACTIVE },
+    });
+
+    expectBizError(
+      await request(httpServer(app))
+        .patch(
+          `/api/app/v1/my/managed-activities/${activityId}/registrations/${singleInactiveId}/approve`,
+        )
+        .set('Authorization', collaborator.auth)
+        .send({ reviewNote: '不得通过' }),
+      BizCode.MEMBER_INACTIVE,
+    );
+
+    const bulk = await request(httpServer(app))
+      .patch(`/api/app/v1/my/managed-activities/${activityId}/registrations/bulk-approve`)
+      .set('Authorization', collaborator.auth)
+      .send({ ids: [bulkActiveId, bulkInactiveId], reviewNote: '逐项审批' });
+    expect(bulk.status).toBe(200);
+    expect(bulk.body.data).toEqual({
+      succeeded: [bulkActiveId],
+      failed: [
+        {
+          id: bulkInactiveId,
+          code: BizCode.MEMBER_INACTIVE.code,
+          message: BizCode.MEMBER_INACTIVE.message,
+        },
+      ],
+    });
+
+    const states = await prisma.activityRegistration.findMany({
+      where: { id: { in: [singleInactiveId, bulkActiveId, bulkInactiveId] } },
+      select: { id: true, statusCode: true, reviewedBy: true, reviewedAt: true, reviewNote: true },
+    });
+    expect(new Map(states.map((row) => [row.id, row]))).toEqual(
+      new Map([
+        [
+          singleInactiveId,
+          expect.objectContaining({
+            id: singleInactiveId,
+            statusCode: 'pending',
+            reviewedBy: null,
+            reviewedAt: null,
+            reviewNote: null,
+          }),
+        ],
+        [bulkActiveId, expect.objectContaining({ id: bulkActiveId, statusCode: 'pass' })],
+        [
+          bulkInactiveId,
+          expect.objectContaining({
+            id: bulkInactiveId,
+            statusCode: 'pending',
+            reviewedBy: null,
+            reviewedAt: null,
+            reviewNote: null,
+          }),
+        ],
+      ]),
+    );
+    expect(
+      await prisma.auditLog.count({
+        where: {
+          resourceId: { in: [singleInactiveId, bulkInactiveId] },
+          event: 'registration.review',
+        },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.auditLog.count({
+        where: { resourceId: bulkActiveId, event: 'registration.review' },
+      }),
+    ).toBe(1);
+  });
 });

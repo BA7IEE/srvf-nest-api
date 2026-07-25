@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { MemberStatus, Prisma } from '@prisma/client';
 import { escapeCsvField } from '../../common/csv/csv.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
@@ -15,6 +15,7 @@ import { ActivityParticipationPolicy } from '../activities/activity-participatio
 import { hasActivityCapacity } from '../activities/activity-capacity';
 import { promoteActivityWaitlistAcrossPositions } from '../activities/activity-waitlist-promotion';
 import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
+import { assertActiveMemberLifecycle } from '../members/member-lifecycle-lock';
 import {
   NOTIFICATION_CHANNEL_IN_APP,
   NOTIFICATION_TYPE_ACTIVITY_CHANGED,
@@ -474,13 +475,20 @@ export class ActivityRegistrationsService {
     return u.memberId;
   }
 
-  // 校验 member 存在(ADMIN 代报名);USER 路径走 resolveUserMemberIdOrThrow。
-  private async assertMemberExists(memberId: string, tx: PrismaTx): Promise<void> {
-    const m = await tx.member.findFirst({
-      where: notDeletedWhere({ id: memberId }),
-      select: { id: true },
+  // 无锁预读只负责稳定错误优先级；真正防 offboard 竞态的排他锁必须在写入前再次取得。
+  // create 的最终锁刻意放在 insurance source 锁之后：team source 的全仓既有顺序是
+  // Policy → Coverage → Member，若这里先锁 Member 会与 team coverage writer 形成反向边。
+  private async assertMemberActiveSnapshot(memberId: string, tx: PrismaTx): Promise<void> {
+    const member = await tx.member.findUnique({
+      where: { id: memberId },
+      select: { status: true, deletedAt: true },
     });
-    if (!m) throw new BizException(BizCode.MEMBER_NOT_FOUND);
+    if (!member || member.deletedAt !== null) {
+      throw new BizException(BizCode.MEMBER_NOT_FOUND);
+    }
+    if (member.status !== MemberStatus.ACTIVE) {
+      throw new BizException(BizCode.MEMBER_INACTIVE);
+    }
   }
 
   // 报名前的 Activity 状态 / 公开性 / 名额校验。
@@ -923,7 +931,7 @@ export class ActivityRegistrationsService {
     return this.prisma.$transaction(async (tx) => {
       await this.lockActivityForRegistrationCreate(activityId, tx);
       const act = await this.assertActivityRegistrable(activityId, 'admin', tx);
-      await this.assertMemberExists(dto.memberId, tx);
+      await this.assertMemberActiveSnapshot(dto.memberId, tx);
       await this.assertGenderRequirement(dto.memberId, act.genderRequirementCode, tx);
       const activityPosition = await this.resolveActivityPositionForCreate(
         activityId,
@@ -943,6 +951,7 @@ export class ActivityRegistrationsService {
         act,
         tx,
       );
+      await assertActiveMemberLifecycle(tx, dto.memberId);
       const initialStatusCode = await this.resolveCreateStatusCode(
         activityId,
         activityPosition?.id ?? null,
@@ -998,6 +1007,7 @@ export class ActivityRegistrationsService {
       const memberId = await this.resolveUserMemberIdOrThrow(currentUser.id, tx);
       await this.lockActivityForRegistrationCreate(activityId, tx);
       const act = await this.assertActivityRegistrable(activityId, 'self', tx);
+      await this.assertMemberActiveSnapshot(memberId, tx);
       await this.assertGenderRequirement(memberId, act.genderRequirementCode, tx);
       const activityPosition = await this.resolveActivityPositionForCreate(
         activityId,
@@ -1016,6 +1026,7 @@ export class ActivityRegistrationsService {
         act,
         tx,
       );
+      await assertActiveMemberLifecycle(tx, memberId);
       const initialStatusCode = await this.resolveCreateStatusCode(
         activityId,
         activityPosition?.id ?? null,
@@ -1097,6 +1108,10 @@ export class ActivityRegistrationsService {
       if (!participationDecision.allowed) {
         throw new BizException(participationDecision.biz);
       }
+      // Pre-read gives MEMBER_NOT_FOUND / MEMBER_INACTIVE precedence over insurance evidence
+      // diagnostics. InsuranceRequirementService then takes the lifecycle lock at the existing
+      // self/team source position and re-reads ACTIVE before registration claim/write.
+      await this.assertMemberActiveSnapshot(reg.memberId, tx);
       await this.insuranceRequirement.revalidateActivityRegistrationApproval(
         { id: reg.id, memberId: reg.memberId },
         act,

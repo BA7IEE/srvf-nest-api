@@ -547,7 +547,7 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
       await expectApprovalFailureHasZeroEffects(registrationId, me.memberId);
     });
 
-    it('Member 不再 live+ACTIVE → exact source 仍在也拒 26030', async () => {
+    it('Member 不再 ACTIVE → exact source 仍在也拒 MEMBER_INACTIVE', async () => {
       const me = await setupLinkedUser('approve-inactive-member');
       await giveSelfInsurance(me.memberId, {
         coverageStart: '2099-01-01',
@@ -563,7 +563,7 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
 
       const res = await approveRegistration(act.id, registrationId);
 
-      expectBizError(res, BizCode.INSURANCE_REQUIRED);
+      expectBizError(res, BizCode.MEMBER_INACTIVE);
       await expectApprovalFailureHasZeroEffects(registrationId, me.memberId);
     });
 

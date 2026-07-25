@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { MemberStatus, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import { normalizeDateOnly } from '../../common/datetime/date-only.util';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -8,6 +8,7 @@ import type { BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
+import { assertActiveMemberLifecycle } from '../members/member-lifecycle-lock';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -68,10 +69,6 @@ interface LockedTeamCoverageRow {
 interface LockedOwnerRow {
   id: string;
   memberId: string;
-}
-
-interface LockedMemberRow {
-  id: string;
 }
 
 @Injectable()
@@ -285,26 +282,17 @@ export class InsuranceRequirementService {
     return this.isValidDate(left) && this.isValidDate(right) && left.getTime() === right.getTime();
   }
 
-  private async lockActiveMember(memberId: string, tx: PrismaTx): Promise<boolean> {
-    const rows = await tx.$queryRaw<LockedMemberRow[]>(Prisma.sql`
-      SELECT "id"
-      FROM "Member"
-      WHERE "id" = ${memberId}
-        AND "deletedAt" IS NULL
-        AND CAST("status" AS TEXT) = ${MemberStatus.ACTIVE}
-      FOR SHARE
-    `);
-    return rows.length === 1;
-  }
-
   async revalidateActivityRegistrationApproval(
     registration: { id: string; memberId: string },
     activity: { requiresInsurance: boolean; startAt: Date; endAt: Date },
     tx: PrismaTx,
   ): Promise<void> {
-    // Approval keeps its legacy query/eligibility behavior unless both rollout and activity
-    // requirement are active. Callers may invoke this unconditionally after locking Activity.
-    if (!this.isEnforcementEnabled() || !activity.requiresInsurance) return;
+    // Even when insurance is disabled/not required, approval upgrades current participation and
+    // therefore takes the shared Member lifecycle lock before registration claim/write.
+    if (!this.isEnforcementEnabled() || !activity.requiresInsurance) {
+      await assertActiveMemberLifecycle(tx, registration.memberId);
+      return;
+    }
 
     const fail = (): never => {
       throw new BizException(BizCode.INSURANCE_REQUIRED);
@@ -366,7 +354,7 @@ export class InsuranceRequirementService {
 
       // This Member -> MemberInsurance order matches admin review; app self writers lock only
       // MemberInsurance and never acquire Member afterwards, so they introduce no reverse edge.
-      if (!(await this.lockActiveMember(registration.memberId, tx))) fail();
+      await assertActiveMemberLifecycle(tx, registration.memberId);
       const sources = await tx.$queryRaw<LockedSelfInsuranceRow[]>(Prisma.sql`
         SELECT
           "id",
@@ -440,7 +428,7 @@ export class InsuranceRequirementService {
         FOR SHARE
       `);
       if (coverages.length !== 1) fail();
-      if (!(await this.lockActiveMember(registration.memberId, tx))) fail();
+      await assertActiveMemberLifecycle(tx, registration.memberId);
       return;
     }
 

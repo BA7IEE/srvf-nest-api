@@ -1,4 +1,4 @@
-import type { Prisma, Role } from '@prisma/client';
+import { MemberStatus, type Prisma, type Role } from '@prisma/client';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
@@ -9,6 +9,7 @@ import {
 } from '../activity-registrations/activity-registration-state-machine';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { lockAndReadLiveMemberLifecycle } from '../members/member-lifecycle-lock';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -99,6 +100,7 @@ export async function promoteActivityWaitlist(args: {
   }
 
   const promoted: ActivityWaitlistPromotionResult['promoted'] = [];
+  const skippedRegistrationIds = new Set<string>();
   if (activity.statusCode !== 'published' || args.maxPromotions === 0) {
     return { activityTitle: activity.title, promoted };
   }
@@ -109,6 +111,7 @@ export async function promoteActivityWaitlist(args: {
         activityId: args.activityId,
         activityPositionId: args.activityPositionId ?? null,
         statusCode: ACTIVITY_REGISTRATION_STATUS.WAITLISTED,
+        ...(skippedRegistrationIds.size > 0 ? { id: { notIn: [...skippedRegistrationIds] } } : {}),
       }),
       select: waitlistAuditSelect,
       orderBy: [{ registeredAt: 'asc' }, { id: 'asc' }],
@@ -118,6 +121,15 @@ export async function promoteActivityWaitlist(args: {
     const transition = decideActivityRegistrationTransition('promote', candidate.statusCode);
     if (!transition.allowed) {
       throw new BizException(transition.biz);
+    }
+
+    // Activity → Member → Registration. The lifecycle row stays locked until the caller's tx
+    // commits, so offboard cannot interleave after ACTIVE was re-read. Invalid heads remain
+    // waitlisted and are excluded only from this promotion pass, allowing the next FIFO member.
+    const member = await lockAndReadLiveMemberLifecycle(args.tx, candidate.memberId);
+    if (!member || member.status !== MemberStatus.ACTIVE) {
+      skippedRegistrationIds.add(candidate.id);
+      continue;
     }
 
     try {
@@ -202,6 +214,7 @@ export async function promoteActivityWaitlistAcrossPositions(
   }
 
   const promoted: ActivityWaitlistPromotionResult['promoted'] = [];
+  const skippedRegistrationIds = new Set<string>();
   if (activity.statusCode !== 'published' || args.maxPromotions === 0) {
     return { activityTitle: activity.title, promoted };
   }
@@ -306,6 +319,9 @@ export async function promoteActivityWaitlistAcrossPositions(
             activityId: args.activityId,
             activityPositionId: preferredActivityPositionId,
             statusCode: ACTIVITY_REGISTRATION_STATUS.WAITLISTED,
+            ...(skippedRegistrationIds.size > 0
+              ? { id: { notIn: [...skippedRegistrationIds] } }
+              : {}),
           }),
           select: waitlistAuditSelect,
           orderBy: [{ registeredAt: 'asc' }, { id: 'asc' }],
@@ -326,6 +342,9 @@ export async function promoteActivityWaitlistAcrossPositions(
           activityId: args.activityId,
           statusCode: ACTIVITY_REGISTRATION_STATUS.WAITLISTED,
           deletedAt: null,
+          ...(skippedRegistrationIds.size > 0
+            ? { id: { notIn: [...skippedRegistrationIds] } }
+            : {}),
           OR: [
             { activityPositionId: null },
             ...(eligibleActivityPositionIds.length === 0
@@ -342,6 +361,11 @@ export async function promoteActivityWaitlistAcrossPositions(
     const transition = decideActivityRegistrationTransition('promote', candidate.statusCode);
     if (!transition.allowed) {
       throw new BizException(transition.biz);
+    }
+    const member = await lockAndReadLiveMemberLifecycle(args.tx, candidate.memberId);
+    if (!member || member.status !== MemberStatus.ACTIVE) {
+      skippedRegistrationIds.add(candidate.id);
+      continue;
     }
     try {
       await claimAtStatus(args.tx, {
