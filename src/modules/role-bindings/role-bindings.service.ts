@@ -4,6 +4,7 @@ import {
   BindingScopeType,
   BindingStatus,
   MemberStatus,
+  OrganizationStatus,
   PrincipalType,
   Prisma,
   UserStatus,
@@ -95,6 +96,12 @@ export class RoleBindingsService {
       endedAt: row.endedAt,
       createdByUserId: row.createdByUserId,
       note: row.note,
+      scopeInactive:
+        (row.scopeType === BindingScopeType.ORGANIZATION ||
+          row.scopeType === BindingScopeType.ORGANIZATION_TREE) &&
+        (row.scopeOrganization === null ||
+          row.scopeOrganization.deletedAt !== null ||
+          row.scopeOrganization.status !== OrganizationStatus.ACTIVE),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
@@ -207,6 +214,41 @@ export class RoleBindingsService {
       case BindingScopeType.RESOURCE:
         if (!hasResType || !hasResId || hasOrg || hasActivity) invalid();
         break;
+    }
+  }
+
+  // create / preview / batch 与 PATCH 恢复生效共用同一 scope 实体真值:
+  // 组织 scope 必须存在、未软删且 ACTIVE；活动 scope 维持既有未软删存在性口径。
+  private async validateScopeEntityOrThrow(
+    tx: PrismaTx,
+    dto: {
+      scopeType: BindingScopeType;
+      scopeOrgId?: string | null;
+      scopeActivityId?: string | null;
+    },
+  ): Promise<void> {
+    if (
+      dto.scopeType === BindingScopeType.ORGANIZATION ||
+      dto.scopeType === BindingScopeType.ORGANIZATION_TREE
+    ) {
+      if (dto.scopeOrgId == null) return; // 形状校验负责报 SCOPE_INVALID
+      const org = await tx.organization.findFirst({
+        where: notDeletedWhere({ id: dto.scopeOrgId }),
+        select: { status: true },
+      });
+      if (!org) throw new BizException(BizCode.ORGANIZATION_NOT_FOUND);
+      if (org.status !== OrganizationStatus.ACTIVE) {
+        throw new BizException(BizCode.ORGANIZATION_INACTIVE);
+      }
+      return;
+    }
+    if (dto.scopeType === BindingScopeType.ACTIVITY) {
+      if (dto.scopeActivityId == null) return;
+      const activity = await tx.activity.findFirst({
+        where: notDeletedWhere({ id: dto.scopeActivityId }),
+        select: { id: true },
+      });
+      if (!activity) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
     }
   }
 
@@ -548,29 +590,7 @@ export class RoleBindingsService {
       );
     }
 
-    if (
-      query.scopeType === BindingScopeType.ORGANIZATION ||
-      query.scopeType === BindingScopeType.ORGANIZATION_TREE
-    ) {
-      await collect(async () => {
-        if (query.scopeOrgId === undefined) return; // 形状校验已报 SCOPE_INVALID,不重复报
-        const org = await this.prisma.organization.findFirst({
-          where: notDeletedWhere({ id: query.scopeOrgId }),
-          select: { id: true },
-        });
-        if (!org) throw new BizException(BizCode.ORGANIZATION_NOT_FOUND);
-      });
-    }
-    if (query.scopeType === BindingScopeType.ACTIVITY) {
-      await collect(async () => {
-        if (query.scopeActivityId === undefined) return;
-        const activity = await this.prisma.activity.findFirst({
-          where: notDeletedWhere({ id: query.scopeActivityId }),
-          select: { id: true },
-        });
-        if (!activity) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-      });
-    }
+    await collect(() => this.validateScopeEntityOrThrow(this.prisma, query));
 
     // 防重预检(镜像 role_bindings_active_unique 全 8 维度 NULLS NOT DISTINCT:相等含「均为 null」)
     await collect(async () => {
@@ -672,23 +692,7 @@ export class RoleBindingsService {
       const role = await this.findRoleOrThrow(tx, dto.roleId);
       this.roleDelegation.assertTargetRoleMayBeConferred(user, role);
 
-      if (
-        dto.scopeType === BindingScopeType.ORGANIZATION ||
-        dto.scopeType === BindingScopeType.ORGANIZATION_TREE
-      ) {
-        const org = await tx.organization.findFirst({
-          where: notDeletedWhere({ id: dto.scopeOrgId! }),
-          select: { id: true },
-        });
-        if (!org) throw new BizException(BizCode.ORGANIZATION_NOT_FOUND);
-      }
-      if (dto.scopeType === BindingScopeType.ACTIVITY) {
-        const activity = await tx.activity.findFirst({
-          where: notDeletedWhere({ id: dto.scopeActivityId! }),
-          select: { id: true },
-        });
-        if (!activity) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-      }
+      await this.validateScopeEntityOrThrow(tx, dto);
 
       const created = await this.runWithUniqueGuard(() =>
         tx.roleBinding.create({
@@ -826,6 +830,15 @@ export class RoleBindingsService {
         current.endedAt !== null &&
         new Date(dto.endedAt).getTime() > current.endedAt.getTime();
       const effectiveStatus = dto.status ?? current.status;
+      const now = new Date();
+      const wasEffective =
+        current.status === BindingStatus.ACTIVE &&
+        current.startedAt.getTime() <= now.getTime() &&
+        (current.endedAt === null || current.endedAt.getTime() >= now.getTime());
+      const willBeEffective =
+        effectiveStatus === BindingStatus.ACTIVE &&
+        effectiveStartedAt.getTime() <= now.getTime() &&
+        (effectiveEndedAt === null || effectiveEndedAt.getTime() >= now.getTime());
       if (touchesTenureOrStatus && isGlobalUserOpsAdmin) {
         await this.lastAdminProtection.assertCanUpdateOpsAdminBinding(tx, current, {
           ...(dto.status !== undefined ? { status: dto.status } : {}),
@@ -840,6 +853,14 @@ export class RoleBindingsService {
         await this.validatePrincipalOrThrow(tx, current.principalType, current.principalId, {
           lockLifecycle: true,
         });
+      }
+      if (
+        dto.status === BindingStatus.ACTIVE ||
+        ((dto.startedAt !== undefined || dto.endedAt !== undefined) &&
+          !wasEffective &&
+          willBeEffective)
+      ) {
+        await this.validateScopeEntityOrThrow(tx, current);
       }
       if ((reactivatesBinding || startsEarlier || endsLater) && isPrivilegedRole(current.role)) {
         await this.roleDelegation.assertActorMayConferRole(user, current.role, tx);
