@@ -227,8 +227,9 @@ Certificate (不在 participation 图内)
   复用单次 aggregate，总业务查询固定 4 次。全部只读、无 N+1、无 audit。
 - **候补递补**:取消 pass 或 capacity 调大/改 null 的主写、Activity `FOR UPDATE`、
   FIFO `registeredAt ASC,id ASC` 选队首、逐行 `claimAtStatus` CAS、waitlisted → pending
-  与 `registration.review(action=promote)` audit 全在同一事务；通知在 commit 后通过既有
-  `NotificationDispatcher` 派发。pass 取消与打卡写路径统一使用 Activity → Registration 锁序。
+  与 `registration.review(action=promote)` audit、`notification.targeted@1` outbox intent
+  全在同一事务；独立 worker 只在 commit 后执行通知 Effect。pass 取消与打卡写路径统一使用
+  Activity → Registration 锁序。
 - 跨 aggregate 写**只允许在同事务内发生**;**禁止**用"先 attendances 改完,再回调 activities"的两阶段方式;**禁止**用 `setTimeout` / `Promise.then` 把后续写挪出事务。
 
 ### 5.4 ContributionRule 是配置,不是流程

@@ -5,13 +5,13 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import type { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
-import type { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import type { OrganizationsService } from '../organizations/organizations.service';
 import type { RbacService } from '../permissions/rbac.service';
 import type { AuthzService } from '../authz/authz.service';
 import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
+import type { ActivityRegistrationNotificationProducer } from './activity-registration-notification-producer';
 import type { ActivityRegistrationTransitionDecision } from './activity-registration-state-machine';
 import type { ActivityRegistrationWaitlistQueryService } from './activity-registration-waitlist-query.service';
 import { ActivityRegistrationsService } from './activity-registrations.service';
@@ -264,16 +264,24 @@ function makeInsuranceRequirementMock() {
 }
 type InsuranceRequirementMock = ReturnType<typeof makeInsuranceRequirementMock>;
 
-// 统一通知 S4:派发器 mock —— dispatchTargeted 默认 resolve(派发成功);新 S4 用例可注入 reject
-// 验证「派发失败不破坏审批」,或断言入参(recipientMemberId / type / channels)。
-function makeNotificationDispatcherMock() {
+// PR-L1:业务事务内 durable notification producer；失败必须外抛给事务并整体回滚。
+function makeNotificationProducerMock() {
   return {
-    dispatchTargeted: jest
-      .fn<Promise<{ id: string }>, [Record<string, unknown>]>()
-      .mockResolvedValue({ id: 'notif-1' }),
+    enqueueReview: jest
+      .fn<
+        ReturnType<ActivityRegistrationNotificationProducer['enqueueReview']>,
+        Parameters<ActivityRegistrationNotificationProducer['enqueueReview']>
+      >()
+      .mockResolvedValue(),
+    enqueueWaitlistPromotions: jest
+      .fn<Promise<void>, [unknown, Record<string, unknown>]>()
+      .mockResolvedValue(),
+    enqueueSelfCancellation: jest
+      .fn<Promise<'legacy-publisher'>, [unknown, Record<string, unknown>]>()
+      .mockResolvedValue('legacy-publisher'),
   };
 }
-type NotificationDispatcherMock = ReturnType<typeof makeNotificationDispatcherMock>;
+type NotificationProducerMock = ReturnType<typeof makeNotificationProducerMock>;
 
 // F2/B1(2026-07-04):listAllForAdmin 新增 organizationId+includeDescendants 注入
 // OrganizationsService.queryDescendantOrgIds();本 spec 不覆盖该分支(归 e2e
@@ -298,7 +306,7 @@ function makeService(
   prisma: PrismaMock,
   recorder: AuditRecorderMock,
   stateMachine: StateMachineMock,
-  dispatcher: NotificationDispatcherMock = makeNotificationDispatcherMock(),
+  notificationProducer: NotificationProducerMock = makeNotificationProducerMock(),
   authz: AuthzMock = makeAuthzMock(),
   organizations: OrganizationsMock = makeOrganizationsMock(),
   insuranceRequirement: InsuranceRequirementMock = makeInsuranceRequirementMock(),
@@ -312,7 +320,7 @@ function makeService(
     makeRbacMock() as unknown as RbacService,
     authz as unknown as AuthzService,
     insuranceRequirement as unknown as InsuranceRequirementService,
-    dispatcher as unknown as NotificationDispatcher,
+    notificationProducer as unknown as ActivityRegistrationNotificationProducer,
     organizations as unknown as OrganizationsService,
     new ActivityParticipationPolicy(),
     makeWaitlistQueryMock() as unknown as ActivityRegistrationWaitlistQueryService,
@@ -471,7 +479,7 @@ describe('ActivityRegistrationsService (characterization)', () => {
         prisma,
         recorder,
         makeStateMachineMock(DENY_DECISION),
-        makeNotificationDispatcherMock(),
+        makeNotificationProducerMock(),
         makeAuthzMock(),
         makeOrganizationsMock(),
         insuranceRequirement,
@@ -574,7 +582,7 @@ describe('ActivityRegistrationsService (characterization)', () => {
     it('approve 保险重验失败 → registration 仍 pending，零 claim / update / audit / notification', async () => {
       const prisma = makePrismaMock();
       const recorder = makeAuditRecorderMock();
-      const dispatcher = makeNotificationDispatcherMock();
+      const notificationProducer = makeNotificationProducerMock();
       const insuranceRequirement = makeInsuranceRequirementMock();
       insuranceRequirement.revalidateActivityRegistrationApproval.mockRejectedValue(
         new BizException(BizCode.INSURANCE_REQUIRED),
@@ -589,7 +597,7 @@ describe('ActivityRegistrationsService (characterization)', () => {
         prisma,
         recorder,
         makeStateMachineMock({ allowed: true, nextStatusCode: 'pass' }),
-        dispatcher,
+        notificationProducer,
         undefined,
         undefined,
         insuranceRequirement,
@@ -602,14 +610,14 @@ describe('ActivityRegistrationsService (characterization)', () => {
       expect(prisma.activityRegistration.updateMany).not.toHaveBeenCalled();
       expect(prisma.activityRegistration.update).not.toHaveBeenCalled();
       expect(recorder.logReview).not.toHaveBeenCalled();
-      expect(dispatcher.dispatchTargeted).not.toHaveBeenCalled();
+      expect(notificationProducer.enqueueReview).not.toHaveBeenCalled();
     });
   });
 
-  // ===== 统一通知 S4(评审稿 §6.4 / §6.2):审批结果 → 报名本人定向通知(事务外 + 失败不破坏行为锁) =====
-  describe('S4 审批结果定向通知(approve/reject → 报名本人;commit 后事务外)', () => {
+  // ===== PR-L1:审批结果 intent 与 business/audit 同事务，Effect 由 worker 在 commit 后执行 =====
+  describe('PR-L1 审批结果 durable intent(approve/reject → 报名本人)', () => {
     function setupApprove(
-      dispatcher: NotificationDispatcherMock = makeNotificationDispatcherMock(),
+      notificationProducer: NotificationProducerMock = makeNotificationProducerMock(),
     ) {
       const prisma = makePrismaMock();
       const recorder = makeAuditRecorderMock();
@@ -621,13 +629,12 @@ describe('ActivityRegistrationsService (characterization)', () => {
       prisma.activityRegistration.update.mockResolvedValue(
         makeRegRow({ statusCode: 'pass', memberId: 'mem-42' }),
       );
-      prisma.activity.findUnique.mockResolvedValue({ title: '周末巡山' });
-      const service = makeService(prisma, recorder, stateMachine, dispatcher);
-      return { service, prisma, dispatcher };
+      const service = makeService(prisma, recorder, stateMachine, notificationProducer);
+      return { service, prisma, recorder, notificationProducer };
     }
 
-    it('approve 成功 → 派给报名本人(directed/in-app/registration-result),且在 update 之后(commit 外)', async () => {
-      const { service, prisma, dispatcher } = setupApprove();
+    it('approve 成功 → audit 后在同一 tx enqueue 审批 intent', async () => {
+      const { service, recorder, notificationProducer } = setupApprove();
       const result = await service.approve(
         'act-1',
         'reg-1',
@@ -636,23 +643,22 @@ describe('ActivityRegistrationsService (characterization)', () => {
         META,
       );
       expect(result.statusCode).toBe('pass');
-      expect(dispatcher.dispatchTargeted).toHaveBeenCalledTimes(1);
-      const arg = dispatcher.dispatchTargeted.mock.calls[0][0];
-      expect(arg).toMatchObject({
-        recipientMemberId: 'mem-42',
-        notificationTypeCode: 'registration-result',
-        channels: ['in-app'],
-        title: '报名已通过',
+      const [, reviewIntent] = notificationProducer.enqueueReview.mock.calls[0];
+      expect(reviewIntent).toMatchObject({
+        registrationId: 'reg-1',
+        activityId: 'act-1',
+        memberId: 'mem-42',
+        outcome: 'approved',
+        reviewNote: '材料齐全',
       });
-      expect(arg.body).toContain('周末巡山');
-      // 事务外硬证:派发严格在 registration.update(事务内)之后(commit 后才派发,绝不并入事务)
-      const updateOrder = prisma.activityRegistration.update.mock.invocationCallOrder[0];
-      const dispatchOrder = dispatcher.dispatchTargeted.mock.invocationCallOrder[0];
-      expect(dispatchOrder).toBeGreaterThan(updateOrder);
+      expect(reviewIntent.reviewedAt).toBeInstanceOf(Date);
+      expect(notificationProducer.enqueueReview.mock.invocationCallOrder[0]).toBeGreaterThan(
+        recorder.logReview.mock.invocationCallOrder[0],
+      );
     });
 
-    it('reject 成功 → title 未通过 + body 含活动名 + reviewNote 理由', async () => {
-      const dispatcher = makeNotificationDispatcherMock();
+    it('reject 成功 → 同 tx enqueue rejected intent + reviewNote', async () => {
+      const notificationProducer = makeNotificationProducerMock();
       const prisma = makePrismaMock();
       const recorder = makeAuditRecorderMock();
       const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'reject' });
@@ -662,8 +668,7 @@ describe('ActivityRegistrationsService (characterization)', () => {
       prisma.activityRegistration.update.mockResolvedValue(
         makeRegRow({ statusCode: 'reject', memberId: 'mem-7' }),
       );
-      prisma.activity.findUnique.mockResolvedValue({ title: '夜间值守' });
-      const service = makeService(prisma, recorder, stateMachine, dispatcher);
+      const service = makeService(prisma, recorder, stateMachine, notificationProducer);
 
       const result = await service.reject(
         'act-1',
@@ -673,26 +678,27 @@ describe('ActivityRegistrationsService (characterization)', () => {
         META,
       );
       expect(result.statusCode).toBe('reject');
-      const arg = dispatcher.dispatchTargeted.mock.calls[0][0];
-      expect(arg).toMatchObject({
-        recipientMemberId: 'mem-7',
-        notificationTypeCode: 'registration-result',
-        channels: ['in-app'],
-        title: '报名未通过',
+      const [, reviewIntent] = notificationProducer.enqueueReview.mock.calls[0];
+      expect(reviewIntent).toMatchObject({
+        registrationId: 'reg-1',
+        activityId: 'act-1',
+        memberId: 'mem-7',
+        outcome: 'rejected',
+        reviewNote: '名额已满',
       });
-      expect(arg.body).toContain('夜间值守');
-      expect(arg.body).toContain('名额已满');
+      expect(reviewIntent.reviewedAt).toBeInstanceOf(Date);
     });
 
-    it('派发失败(dispatcher 抛错)→ **审批仍成功**(update 已 commit;不外冒)', async () => {
-      const dispatcher = makeNotificationDispatcherMock();
-      dispatcher.dispatchTargeted.mockRejectedValue(new Error('dispatch boom'));
-      const { service, prisma } = setupApprove(dispatcher);
+    it('intent enqueue 失败 → 外抛给事务，禁止返回已提交审批', async () => {
+      const notificationProducer = makeNotificationProducerMock();
+      notificationProducer.enqueueReview.mockRejectedValue(new Error('intent insert failed'));
+      const { service, prisma } = setupApprove(notificationProducer);
 
-      const result = await service.approve('act-1', 'reg-1', {}, makeCurrentUser(), META);
-      expect(result.statusCode).toBe('pass'); // 业务成功,派发失败被 try-catch 吞
+      await expect(service.approve('act-1', 'reg-1', {}, makeCurrentUser(), META)).rejects.toThrow(
+        'intent insert failed',
+      );
       expect(prisma.activityRegistration.update).toHaveBeenCalledTimes(1);
-      expect(dispatcher.dispatchTargeted).toHaveBeenCalled();
+      expect(notificationProducer.enqueueReview).toHaveBeenCalledTimes(1);
     });
   });
 

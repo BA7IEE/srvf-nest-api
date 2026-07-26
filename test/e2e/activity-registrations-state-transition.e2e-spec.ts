@@ -525,7 +525,22 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       select: { title: true, statusCode: true, channels: true },
     });
     const deliveryCount = await ctx.prisma.notificationDelivery.count();
-    const outboxIntentCount = await ctx.prisma.notificationOutboxIntent.count();
+    const outboxIntents = await ctx.prisma.notificationOutboxIntent.findMany({
+      where: {
+        aggregateType: 'activity_registration',
+        aggregateId: registrationId,
+        eventType: 'notification.targeted',
+      },
+      select: { payload: true, status: true },
+    });
+    const outboxPayload =
+      outboxIntents.length === 1
+        ? (outboxIntents[0].payload as {
+            title?: string;
+            channels?: string[];
+            recipientMemberId?: string;
+          })
+        : null;
     const failures: string[] = [];
     if (winners.length !== 1) failures.push(`winner-count=${winners.length}`);
     if (losers.length !== 1) failures.push(`loser-count=${losers.length}`);
@@ -565,27 +580,25 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
     if (winnerAction !== null && auditAction !== winnerAction) {
       failures.push(`audit-action=${String(auditAction)}/winner=${winnerAction}`);
     }
-    if (notifications.length !== 1) failures.push(`notification-count=${notifications.length}`);
+    if (notifications.length !== 0) failures.push(`notification-count=${notifications.length}`);
     const expectedTitle =
       winnerAction === 'approve' ? '报名已通过' : winnerAction === 'reject' ? '报名未通过' : null;
-    if (notifications.length === 1 && notifications[0].title !== expectedTitle) {
-      failures.push(
-        `notification-title=${notifications[0].title}/expected=${String(expectedTitle)}`,
-      );
-    }
+    if (outboxIntents.length !== 1) failures.push(`outbox-intent-count=${outboxIntents.length}`);
     if (
-      notifications.length === 1 &&
-      (notifications[0].statusCode !== 'published' ||
-        JSON.stringify(notifications[0].channels) !== JSON.stringify(['in-app']))
+      outboxPayload?.title !== expectedTitle ||
+      outboxPayload.recipientMemberId !== ctx.memberCId ||
+      JSON.stringify(outboxPayload.channels) !== JSON.stringify(['in-app'])
     ) {
       failures.push(
-        `notification-shape=${notifications[0].statusCode}/${JSON.stringify(
-          notifications[0].channels,
-        )}`,
+        `outbox-payload=${String(outboxPayload?.title)}/${String(
+          outboxPayload?.recipientMemberId,
+        )}/${JSON.stringify(outboxPayload?.channels)}`,
       );
     }
+    if (outboxIntents.length === 1 && outboxIntents[0].status !== 'pending') {
+      failures.push(`outbox-status=${outboxIntents[0].status}`);
+    }
     if (deliveryCount !== 0) failures.push(`delivery-count=${deliveryCount}`);
-    if (outboxIntentCount !== 0) failures.push(`outbox-intent-count=${outboxIntentCount}`);
 
     return {
       iteration,
@@ -614,7 +627,7 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       notificationCount: notifications.length,
       notificationTitle: notifications.length === 1 ? notifications[0].title : null,
       deliveryCount,
-      outboxIntentCount,
+      outboxIntentCount: outboxIntents.length,
       failures,
     };
   }

@@ -16,17 +16,12 @@ import { hasActivityCapacity } from '../activities/activity-capacity';
 import { promoteActivityWaitlistAcrossPositions } from '../activities/activity-waitlist-promotion';
 import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import { assertActiveMemberLifecycle } from '../members/member-lifecycle-lock';
-import {
-  NOTIFICATION_CHANNEL_IN_APP,
-  NOTIFICATION_TYPE_ACTIVITY_CHANGED,
-  NOTIFICATION_TYPE_REGISTRATION_RESULT,
-} from '../notifications/notification.constants';
-import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { RbacService } from '../permissions/rbac.service';
 import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
+import { ActivityRegistrationNotificationProducer } from './activity-registration-notification-producer';
 import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
 import { ActivityRegistrationWaitlistQueryService } from './activity-registration-waitlist-query.service';
 import {
@@ -212,9 +207,9 @@ export class ActivityRegistrationsService {
     private readonly authz: AuthzService,
     // 保险 T3:报名门槛(跨模块单向依赖 activity-registration → insurances,评审稿 E-13)
     private readonly insuranceRequirement: InsuranceRequirementService,
-    // 统一通知 S4(评审稿 §6.4):审批结果定向通知派发器(producer → notifications 单向直调,
-    // commit 后事务外、try-catch 永不抛;防环:本服务绝不被通知模块回调)。
-    private readonly notificationDispatcher: NotificationDispatcher,
+    // PR-L1:业务写 + audit + durable intent 共用调用方事务；provider/Notification Effect
+    // 仅由独立 outbox worker 在 commit 后执行。
+    private readonly notificationProducer: ActivityRegistrationNotificationProducer,
     // F2/B1(路线图 §4;D7 拍板):供 queryDescendantOrgIds() 只读 helper 展开 includeDescendants
     // (closure 非判权,镜像 F1/A6 activities.service.ts 用法)。
     private readonly organizations: OrganizationsService,
@@ -1137,12 +1132,13 @@ export class ActivityRegistrationsService {
         effectiveCapacity,
         tx,
       );
+      const reviewedAt = new Date();
       const updated = await tx.activityRegistration.update({
         where: { id: lockedReg.id },
         data: {
           statusCode: transition.nextStatusCode,
           reviewedBy: currentUser.id,
-          reviewedAt: new Date(),
+          reviewedAt,
           reviewNote: dto.reviewNote ?? null,
         },
         select: registrationSafeSelect,
@@ -1163,20 +1159,18 @@ export class ActivityRegistrationsService {
         tx,
       });
 
-      // 携带通知收件人(报名本人 memberId)出事务;dto 仍为对外返回体。
-      return { dto: this.toResponseDto(updated), memberId: updated.memberId };
+      await this.notificationProducer.enqueueReview(tx, {
+        registrationId: updated.id,
+        activityId,
+        memberId: updated.memberId,
+        reviewedAt,
+        outcome: 'approved',
+        reviewNote: dto.reviewNote ?? null,
+      });
+      return this.toResponseDto(updated);
     });
 
-    // 报名审批结果定向通知(统一通知 S4;评审稿 §6.4 / §6.2):**事务 commit 之后、事务外**派给报名本人。
-    // **绝不破坏审批行为锁**(pending→pass 状态机 / capacity FOR UPDATE 串行化已在事务内 commit);派发失败只记日志。
-    await this.dispatchReviewNotification(
-      result.memberId,
-      activityId,
-      'approved',
-      dto.reviewNote ?? null,
-    );
-
-    return result.dto;
+    return result;
   }
 
   // ============ 管理端:reject ============
@@ -1212,12 +1206,13 @@ export class ActivityRegistrationsService {
         invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
       });
       const lockedReg = await this.findRegistrationOrThrow(activityId, reg.id, tx);
+      const reviewedAt = new Date();
       const updated = await tx.activityRegistration.update({
         where: { id: lockedReg.id },
         data: {
           statusCode: transition.nextStatusCode,
           reviewedBy: currentUser.id,
-          reviewedAt: new Date(),
+          reviewedAt,
           reviewNote: dto.reviewNote,
         },
         select: registrationSafeSelect,
@@ -1238,48 +1233,18 @@ export class ActivityRegistrationsService {
         tx,
       });
 
-      // 携带通知收件人(报名本人 memberId)出事务;dto 仍为对外返回体。
-      return { dto: this.toResponseDto(updated), memberId: updated.memberId };
+      await this.notificationProducer.enqueueReview(tx, {
+        registrationId: updated.id,
+        activityId,
+        memberId: updated.memberId,
+        reviewedAt,
+        outcome: 'rejected',
+        reviewNote: dto.reviewNote,
+      });
+      return this.toResponseDto(updated);
     });
 
-    // 报名审批结果定向通知(统一通知 S4;评审稿 §6.4 / §6.2):**事务 commit 之后、事务外**派给报名本人。
-    // **绝不破坏审批行为锁**(pending→reject 状态机已在事务内 commit);派发失败只记日志。
-    await this.dispatchReviewNotification(result.memberId, activityId, 'rejected', dto.reviewNote);
-
-    return result.dto;
-  }
-
-  // 派发「报名审批结果」定向通知(仅站内,§9.1 渠道倾向 + goal:S4 站内为主、微信 opt-in 延后)。
-  // **try-catch 永不抛**:派发失败(含 dispatcher 内部异常 / 活动查不到)只记日志,绝不回滚 / 阻断已 commit
-  // 的审批(行为锁)。收件人 = 报名本人 memberId(registration→member);payload:活动名 + 通过/驳回 + 理由(若有)。
-  private async dispatchReviewNotification(
-    memberId: string,
-    activityId: string,
-    outcome: 'approved' | 'rejected',
-    reviewNote: string | null,
-  ): Promise<void> {
-    try {
-      const activity = await this.prisma.activity.findUnique({
-        where: { id: activityId },
-        select: { title: true },
-      });
-      const activityTitle = activity?.title ?? '活动';
-      const passed = outcome === 'approved';
-      const reasonSuffix = reviewNote ? ` 理由:${reviewNote}` : '';
-      await this.notificationDispatcher.dispatchTargeted({
-        recipientMemberId: memberId,
-        notificationTypeCode: NOTIFICATION_TYPE_REGISTRATION_RESULT,
-        title: passed ? '报名已通过' : '报名未通过',
-        body: passed
-          ? `您报名的「${activityTitle}」已通过审核。${reasonSuffix}`
-          : `您报名的「${activityTitle}」未通过审核。${reasonSuffix}`,
-        channels: [NOTIFICATION_CHANNEL_IN_APP],
-      });
-    } catch (err) {
-      this.logger.error(
-        `registration review notification dispatch failed (member=${memberId}, activity=${activityId}): ${(err as Error).message}`,
-      );
-    }
+    return result;
   }
 
   // ============ 管理端:cancel(代取消)============
@@ -1323,12 +1288,13 @@ export class ActivityRegistrationsService {
       // 参与域生命周期收口⑦:已有 live 考勤记录或签到证据的报名禁取消。
       await this.assertNoParticipationEvidence(lockedReg.id, tx);
 
+      const cancelledAt = new Date();
       const updated = await tx.activityRegistration.update({
         where: { id: lockedReg.id },
         data: {
           statusCode: transition.nextStatusCode,
           cancelledByUserId: currentUser.id,
-          cancelledAt: new Date(),
+          cancelledAt,
           cancelReason: dto.cancelReason ?? null,
         },
         select: registrationSafeSelect,
@@ -1364,19 +1330,14 @@ export class ActivityRegistrationsService {
             })
           : { activityTitle: '活动', promoted: [] };
 
-      return {
-        dto: this.toResponseDto(updated),
+      await this.notificationProducer.enqueueWaitlistPromotions(tx, {
         activityTitle: promotion.activityTitle,
-        promotedMemberIds: promotion.promoted.map((item) => item.memberId),
-      };
+        promoted: promotion.promoted,
+      });
+      return this.toResponseDto(updated);
     });
 
-    await this.dispatchWaitlistPromotionNotifications(
-      activityId,
-      result.activityTitle,
-      result.promotedMemberIds,
-    );
-    return result.dto;
+    return result;
   }
 
   // ============ 管理端:reopen(审批后悔药:reject → pending)============
@@ -1543,12 +1504,13 @@ export class ActivityRegistrationsService {
       // 参与域生命周期收口⑦:队员自助路径共用 live 考勤记录 / 签到证据守卫。
       await this.assertNoParticipationEvidence(lockedReg.id, tx);
 
+      const cancelledAt = new Date();
       const updated = await tx.activityRegistration.update({
         where: { id: lockedReg.id },
         data: {
           statusCode: transition.nextStatusCode,
           cancelledByUserId: currentUser.id,
-          cancelledAt: new Date(),
+          cancelledAt,
           cancelReason: dto.cancelReason ?? null,
         },
         select: registrationSafeSelect,
@@ -1584,70 +1546,32 @@ export class ActivityRegistrationsService {
             })
           : { activityTitle: activity?.title ?? '活动', promoted: [] };
 
-      return {
-        dto: this.toResponseDto(updated),
+      const ownerRecipientResolution = await this.notificationProducer.enqueueSelfCancellation(tx, {
+        registrationId: updated.id,
         activityId: lockedReg.activityId,
         activityTitle: activity?.title ?? '活动',
         publisherMemberId: activity?.publisher?.memberId ?? null,
         cancellingMemberId: lockedReg.memberId,
+        cancelledAt,
         cancelReason: dto.cancelReason ?? null,
-        promotedMemberIds: promotion.promoted.map((item) => item.memberId),
+      });
+      await this.notificationProducer.enqueueWaitlistPromotions(tx, {
+        activityTitle: promotion.activityTitle,
+        promoted: promotion.promoted,
+      });
+      return {
+        dto: this.toResponseDto(updated),
+        activityId: lockedReg.activityId,
+        ownerRecipientResolution,
       };
     });
 
-    await this.dispatchSelfCancellationNotification(result);
-    await this.dispatchWaitlistPromotionNotifications(
-      result.activityId,
-      result.activityTitle,
-      result.promotedMemberIds,
-    );
-    return result.dto;
-  }
-
-  private async dispatchWaitlistPromotionNotifications(
-    activityId: string,
-    activityTitle: string,
-    memberIds: string[],
-  ): Promise<void> {
-    for (const memberId of memberIds) {
-      try {
-        await this.notificationDispatcher.dispatchTargeted({
-          recipientMemberId: memberId,
-          notificationTypeCode: NOTIFICATION_TYPE_REGISTRATION_RESULT,
-          title: '候补已递补',
-          body: `您报名的「${activityTitle}」已从候补递补，现已进入待审核。`,
-          channels: [NOTIFICATION_CHANNEL_IN_APP],
-        });
-      } catch (err) {
-        this.logger.error(
-          `waitlist promotion notification failed (activity=${activityId}, member=${memberId}): ${(err as Error).message}`,
-        );
-      }
-    }
-  }
-
-  private async dispatchSelfCancellationNotification(input: {
-    activityId: string;
-    activityTitle: string;
-    publisherMemberId: string | null;
-    cancellingMemberId: string;
-    cancelReason: string | null;
-  }): Promise<void> {
-    if (input.publisherMemberId === null) return;
-    try {
-      const reason = input.cancelReason ? `，原因：${input.cancelReason}` : '';
-      await this.notificationDispatcher.dispatchTargeted({
-        recipientMemberId: input.publisherMemberId,
-        notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_CHANGED,
-        title: '队员取消活动报名',
-        body: `队员 ${input.cancellingMemberId} 已取消「${input.activityTitle}」报名${reason}。`,
-        channels: [NOTIFICATION_CHANNEL_IN_APP],
-      });
-    } catch (err) {
-      this.logger.error(
-        `registration self-cancel notification failed (activity=${input.activityId}, member=${input.cancellingMemberId}): ${(err as Error).message}`,
+    if (result.ownerRecipientResolution.startsWith('missing-')) {
+      this.logger.warn(
+        `registration self-cancel owner notification skipped activity=${result.activityId} resolution=${result.ownerRecipientResolution}`,
       );
     }
+    return result.dto;
   }
 
   // ============ 管理端:CSV export(Q-A6)============
