@@ -19,10 +19,11 @@ import { NotificationWechatDispatchService } from './notification-wechat-dispatc
 //
 // **Effect 含**(§3.6 Should contain):通知派发 / 外部 API 调用(微信,委派 S2 渠道臂)/ 渠道 payload 组装 / 投递记录。
 // **Effect 不含**(§3.6 Should not contain):核心状态跃迁决策(留 producer service)/ 主 DB 事务所有权
-//   (producer 业务事务由 producer 持有;本 Effect 的定向行 create 是 commit 后**独立**小写,不并入 producer 事务)/
+//   (producer 业务事务由 producer 持有;本 Effect 的定向行 create 由 worker 在 commit 后独立写入)/
 //   DTO 呈现。**外部 HTTP 一律在 producer 业务事务之外**(§6.2:8s HTTP 绝不拖事务)。
 //
-// 形态:producer(招新发号 / 入队)在业务事务 **commit 之后**直调 dispatchTargeted(D-N5 同步直调,无事件总线);
+// 形态:durable producer 在业务事务内 enqueue，独立 worker commit 后调用 dispatchTargeted；
+// 尚未迁移的活动取消 / 考勤 producer 暂保持 commit 后同步直调，无事件总线。
 // **防环**:producer → notifications **单向**,本 Effect **绝不** import / 回调招新或 team-join。
 // **系统定向跳过 admin 状态机**:直接建 published 行(sourceType=system / authorUserId=null),不污染 admin CRUD 路径。
 export interface DispatchTargetedInput {

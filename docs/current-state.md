@@ -61,7 +61,7 @@
 | P1 | 前端联调包剩运维侧 P0-H 演练 + P0-I 排错 SOP(系统侧无动作) |
 | P1 | 保险 gate 未启用、旧 server=0 未验证；真实 ingress/ACL、COS、worker/fleet、registry digest 未验，均为 production GO 硬门 |
 | P1 | P1-22 专业队 gate 配置化;P1-23 isForeigner 历史列改名(对外已用 isNonMainlandDocument) |
-| P2 | scoped 余面(§3);god-service 体量观察;v0.44 接受项(#8/#10/#19/#20#21:notifications-owned+招新/入队已收口，participation producer 待接);单测刻意低(e2e 为主);Mixed 存量 2;snapshot 勿整读 |
+| P2 | scoped 余面(§3);god-service 体量观察;v0.44 接受项(#8/#10/#19/#20#21:通知自有+招新/入队+报名 L1 已收口，活动/责任/考勤待接);单测刻意低(e2e 为主);Mixed 存量 2;snapshot 勿整读 |
 | P3 | SMS / 招新脱敏 retention 手动 SOP(刻意);28003 同轮枚举面(v1 接受);首轮 review 接受 / 延后残项(F7/F8/F13/F18 等)在 NEXT_TASKS |
 
 ## 5. 开工门禁

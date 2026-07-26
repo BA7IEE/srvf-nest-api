@@ -26,6 +26,7 @@
 - 状态机错误码:wrong state 统一抛 `BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID`
 - **受保护状态写(2026-07-21)**:`approve`/`reject`/`cancelAdmin`/`reopen`/`cancelMy` 在真实写前统一调用 [`/src/common/prisma/claim-at-status.util.ts`](../../common/prisma/claim-at-status.util.ts)；helper 以静态物理表/列执行条件 `SELECT ... FOR NO KEY UPDATE`，不再写 no-op tuple。获锁后必须重读安全行，并让 current-row guard、子表写、真实更新与 audit before 只使用锁后行；并发败者复用 `ACTIVITY_REGISTRATION_STATUS_INVALID`，合法矩阵仍只在 `activity-registration-state-machine.ts`。
 - **候补并发锁序**:`promoteActivityWaitlist` 由调用方透传 tx，固定锁 Activity，按 `registeredAt ASC,id ASC` 扫描；每名候补先锁并重读 Member，inactive/软删留在 waitlisted 并仅从本轮排除，live+ACTIVE 才 claim Registration、写 pending/audit。递补固定 Activity→Member→Registration；Admin/self/App create 固定 Activity→保险 source→Member→Registration，避免反转 team 的 Policy→Coverage→Member 全仓锁序。
+- **报名通知 durable outbox**:approve/reject 审批结果、取消后的候补递补、自助取消告知均在业务 update + `registration.review` audit 的同一事务内 enqueue `notification.targeted@1`；enqueue 失败整体回滚，worker 仅在 commit 后执行 Effect。review eventKey 绑定 registration + reviewedAt + review audit 序号，递补/取消绑定对应状态写时间。责任制 gate=true 的自助取消只通知当前 ACTIVE owner，缺 owner fail-closed，绝不回退 `publishedBy`；gate=false 才显式沿用 publisher。
 - **managed 报名判权与锁序(PR-7)**:单条写先走既有 `authz.explain`，再在同一事务的 Activity 根锁后重读 active responsibility 的 `canManageRegistrations=true`；因此 owner/报名协办可管理，global 旧角色、考勤协办不可旁路，协办 end/owner transfer 与在途写串行。默认 `authorization='authz'` 保持 Admin 调用逐字行为，managed 路径显式传 `'managed'`
 - **approve 保险锁序**:Activity 后按 evidence 类型分支：self=`Member lifecycle FOR UPDATE→MemberInsurance→Registration`，team=`Policy→Coverage→Member lifecycle FOR UPDATE→Registration`；无保险分支=`Member→Registration`。与现有 self review、队保覆盖写同向；锁住生命周期/来源后才 claim Registration。
 - **create / approve Member ACTIVE**:Admin create 与 App core createMy 都先做无锁 live+ACTIVE snapshot 以稳定 15001/17030 优先级，保险 source 选择后再 `assertActiveMemberLifecycle()` 排他锁并重读；approve 同样先 snapshot，再由保险 service 在既有 source 锁位最终加锁。reopen 刻意不查 ACTIVE，只恢复 pending，后续 approve 必须重验。
@@ -45,11 +46,12 @@
 - ❌ 不拆 `INSURANCE_ENFORCEMENT_ENABLED` 单 gate，不在 Activity 锁前查/选 source，不把 evidence/audit 移出 create 根事务；approve 不得重新选择来源或把重验挪到 claim/audit 后；PR4 migration/约束代码已交付但尚未 deploy、生产未生效，禁止新增 Evidence 改删路径或绕过 `InsuranceRequirementService`
 - ❌ **不**把 `cancelAdmin` / `cancelMy` 路径区分挪进 StateMachine(只通过 `extra.cancelledByPath` 在 audit 记录)
 - ❌ **不**改 Admin Controller path `admin/v1/activities/:activityId/registrations`(`export` 字面段必须**先**于 `:id/<action>` 路由声明,Q-A6 锁定;调换顺序会被 Nest 路由解析为 `:id=export`)
-- ❌ **不**把 Admin DTO 用 `extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 派生为 App DTO(沿 `harness reference/api-client-boundary.md` D-6`);App `dto/app/` 字段集**刻意删除** `memberId` / `memberNo` / `memberDisplayName`(沿 §16.B.2)
+- ❌ **不**把 Admin DTO 用 `extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 派生为 App DTO(沿 `harness reference/api-client-boundary.md` D-6`);App `dto/app/`字段集**刻意删除**`memberId`/`memberNo`/`memberDisplayName`(沿 §16.B.2)
 - ❌ App self 视角 where 子句**永远**用 `currentUser.memberId` 锁本人；managed 视角只认当前活动 active responsibility capability；两者都**禁止** role 短路 / `scope=all`
 - ❌ **不**主动拆 `activity-registrations.service.ts`(1727L,沿 [`/docs/current-state.md §4 P2`](../../../docs/current-state.md))
 - ❌ **不**在 CSV 导出路径引入 `csv-stringify` 等新依赖(沿 Q-A6 + [`/AGENTS.md §3`](../../../AGENTS.md))
 - ❌ **不**把递补改成 waitlisted → pass；腾出名额只自动进 pending，仍必须走 approve
+- ❌ **不**把报名通知改回 commit 后 best-effort 直调 dispatcher；不得在业务事务内调用 provider，且 gate=true 不得用 `publishedBy` 冒充当前 owner
 
 ## Before editing
 

@@ -190,10 +190,20 @@ describe('activity registration Member lifecycle concurrency', () => {
         }),
       ).toBe(0);
       expect(
+        await prismaA.notificationOutboxIntent.count({
+          where: {
+            aggregateType: 'activity_registration',
+            aggregateId: registration.id,
+            destinationRef: target.id,
+            status: 'pending',
+          },
+        }),
+      ).toBe(1);
+      expect(
         await prismaA.notification.count({
           where: { recipientMemberId: target.id, notificationTypeCode: 'registration-result' },
         }),
-      ).toBe(1);
+      ).toBe(0);
       expect(
         await prismaA.insuranceEligibilityEvidence.count({
           where: { activityRegistrationId: registration.id },

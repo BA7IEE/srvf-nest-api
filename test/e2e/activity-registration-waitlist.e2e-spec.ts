@@ -915,16 +915,24 @@ describe('activity registration waitlist', () => {
       after: { statusCode: 'pending' },
       extra: { action: 'promote', priorStatusCode: 'waitlisted', nextStatusCode: 'pending' },
     });
-    expect(
-      await prisma.notification.findFirst({
-        where: { recipientMemberId: fifoHeadMemberId, title: '候补已递补' },
-        select: { body: true, notificationTypeCode: true, channels: true },
-      }),
-    ).toEqual({
+    const intent = await prisma.notificationOutboxIntent.findFirstOrThrow({
+      where: {
+        aggregateType: 'activity_registration',
+        aggregateId: fifoHead.id,
+        destinationRef: fifoHeadMemberId,
+      },
+      select: { payload: true, status: true },
+    });
+    expect(intent.status).toBe('pending');
+    expect(intent.payload).toMatchObject({
+      title: '候补已递补',
       body: expect.stringContaining('进入待审核'),
       notificationTypeCode: 'registration-result',
       channels: ['in-app'],
     });
+    expect(
+      await prisma.notification.count({ where: { recipientMemberId: fifoHeadMemberId } }),
+    ).toBe(0);
   });
 
   it('FIFO 队首 Member inactive/deleted 时均保持 waitlisted，跳过并递补下一名 ACTIVE Member', async () => {
@@ -1007,18 +1015,18 @@ describe('activity registration waitlist', () => {
       }),
     ).toBe(1);
     expect(
-      await prisma.notification.count({
-        where: { recipientMemberId: inactiveMemberId, title: '候补已递补' },
+      await prisma.notificationOutboxIntent.count({
+        where: { aggregateId: inactiveHead.id, destinationRef: inactiveMemberId },
       }),
     ).toBe(0);
     expect(
-      await prisma.notification.count({
-        where: { recipientMemberId: deletedMemberId, title: '候补已递补' },
+      await prisma.notificationOutboxIntent.count({
+        where: { aggregateId: deletedSecond.id, destinationRef: deletedMemberId },
       }),
     ).toBe(0);
     expect(
-      await prisma.notification.count({
-        where: { recipientMemberId: activeMemberId, title: '候补已递补' },
+      await prisma.notificationOutboxIntent.count({
+        where: { aggregateId: activeTail.id, destinationRef: activeMemberId },
       }),
     ).toBe(1);
   });
@@ -1133,21 +1141,24 @@ describe('activity registration waitlist', () => {
         }),
       ).toBe(1);
       expect(await prisma.auditLog.count({ where: { resourceId: waiting.id } })).toBe(1);
-      const notifications = await prisma.notification.findMany({
-        where: { recipientMemberId: waitingMemberId, title: '候补已递补' },
-        select: { id: true },
+      const intents = await prisma.notificationOutboxIntent.findMany({
+        where: {
+          aggregateType: 'activity_registration',
+          aggregateId: waiting.id,
+          destinationRef: waitingMemberId,
+        },
+        select: { status: true, payload: true },
       });
-      expect(notifications).toHaveLength(1);
+      expect(intents).toEqual([
+        {
+          status: 'pending',
+          payload: expect.objectContaining({ title: '候补已递补' }),
+        },
+      ]);
       expect(
-        await prisma.notificationDelivery.count({
-          where: { notificationId: notifications[0].id },
-        }),
+        await prisma.notification.count({ where: { recipientMemberId: waitingMemberId } }),
       ).toBe(0);
-      expect(
-        await prisma.notificationOutboxIntent.count({
-          where: { aggregateId: notifications[0].id },
-        }),
-      ).toBe(0);
+      expect(await prisma.notificationDelivery.count()).toBe(0);
     } catch (error) {
       primaryFailure = error;
     } finally {
