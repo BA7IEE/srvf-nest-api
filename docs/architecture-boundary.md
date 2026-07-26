@@ -159,8 +159,8 @@ Use an Effect when a business action triggers an **external or deferred side eff
 - DTO presentation
 
 **Current status**:
-- **First real Effect class is now active**: [`src/modules/notifications/notification-dispatcher.ts`](../src/modules/notifications/notification-dispatcher.ts)(`NotificationDispatcher`,统一通知 GAP-005 S3,2026-06-25)—— 真实副作用路径 = 微信订阅消息外部 API。招新发号/入队、报名 L1 与活动 L2 只在主业务 transaction 内写既有 outbox intent，独立 outbox worker 提交后调用 Effect；外部 HTTP 始终在主业务事务之外(§6.2)，Effect 不持有主事务、不做核心状态跃迁、不做 DTO 呈现。
-- `eventPlaceholder('attendance.recorded')` remains a domain marker inside the attendance flow；责任变更与考勤通知 producer 仍是下一批 L3/L4 outbox 接线范围。
+- **First real Effect class is now active**: [`src/modules/notifications/notification-dispatcher.ts`](../src/modules/notifications/notification-dispatcher.ts)(`NotificationDispatcher`,统一通知 GAP-005 S3,2026-06-25)—— 真实副作用路径 = 微信订阅消息外部 API。招新发号/入队、报名 L1、活动 L2 与责任 L3 只在主业务 transaction 内写既有 outbox intent，独立 outbox worker 提交后调用 Effect；外部 HTTP 始终在主业务事务之外(§6.2)，Effect 不持有主事务、不做核心状态跃迁、不做 DTO 呈现。
+- `eventPlaceholder('attendance.recorded')` remains a domain marker inside the attendance flow；考勤退回/终审通知 producer 仍是下一批 L4 outbox 接线范围。
 - **Do not** introduce *additional* Effect classes until a real side-effect path exists(短信 / 跨系统集成等);新通知类型先回评审,不在模块内自由生长。
 
 ---

@@ -22,8 +22,8 @@ import { NotificationWechatDispatchService } from './notification-wechat-dispatc
 //   (producer 业务事务由 producer 持有;本 Effect 的定向行 create 由 worker 在 commit 后独立写入)/
 //   DTO 呈现。**外部 HTTP 一律在 producer 业务事务之外**(§6.2:8s HTTP 绝不拖事务)。
 //
-// 形态:durable producer 在业务事务内 enqueue，独立 worker commit 后调用 dispatchTargeted；
-// 尚未迁移的活动取消 / 考勤 producer 暂保持 commit 后同步直调，无事件总线。
+// 形态:durable producer 在业务事务内 enqueue，独立 worker commit 后由 outbox handler 创建定向行；
+// 尚未迁移的考勤 producer 暂保持 commit 后同步直调本 Effect，无事件总线。
 // **防环**:producer → notifications **单向**,本 Effect **绝不** import / 回调招新或 team-join。
 // **系统定向跳过 admin 状态机**:直接建 published 行(sourceType=system / authorUserId=null),不污染 admin CRUD 路径。
 export interface DispatchTargetedInput {
@@ -103,7 +103,7 @@ export class NotificationDispatcher {
   }
 
   // 系统会员面广播：一个 broadcast 行供所有可使用 App 的未删除会员读取；不展开 N 条定向行。
-  // 当前由公开活动发布使用，仍是 commit 后独立 Effect，失败由 producer 吞并记录。
+  // L2 后公开活动发布已改走 system-broadcast outbox；本兼容入口当前无运行时调用。
   async dispatchSystemMemberBroadcast(input: DispatchSystemBroadcastInput): Promise<Notification> {
     return this.prisma.notification.create({
       data: {

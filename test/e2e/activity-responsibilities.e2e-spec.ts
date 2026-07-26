@@ -3,6 +3,11 @@ import { BindingScopeType, BindingStatus, MemberStatus, PrincipalType, Role } fr
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { ActivityResponsibilityAuditRecorder } from '../../src/modules/activities/activity-responsibility-audit-recorder';
+import { OUTBOX_EVENT_TARGETED_NOTIFICATION } from '../../src/modules/notifications/notification.constants';
+import { NotificationOutboxHandlers } from '../../src/modules/notifications/notification-outbox.handlers';
+import { NotificationOutboxService } from '../../src/modules/notifications/notification-outbox.service';
+import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
 import { seedActivityResponsibilitySystemRoles } from '../fixtures/activity-responsibility.fixture';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -14,6 +19,10 @@ import { createTestApp } from '../setup/test-app';
 describe('activity responsibilities and system RoleBinding projection', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let auditRecorder: ActivityResponsibilityAuditRecorder;
+  let outbox: NotificationOutboxService;
+  let outboxHandlers: NotificationOutboxHandlers;
+  let outboxWorker: NotificationOutboxWorker;
   let adminAuth: string;
   let organizationId: string;
   let roleIds: Record<string, string>;
@@ -25,6 +34,10 @@ describe('activity responsibilities and system RoleBinding projection', () => {
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
+    auditRecorder = app.get(ActivityResponsibilityAuditRecorder);
+    outbox = app.get(NotificationOutboxService);
+    outboxHandlers = app.get(NotificationOutboxHandlers);
+    outboxWorker = app.get(NotificationOutboxWorker);
     roleIds = await seedActivityResponsibilitySystemRoles(app);
     const admin = await createTestUser(app, {
       username: 'act-resp-super-admin',
@@ -108,11 +121,161 @@ describe('activity responsibilities and system RoleBinding projection', () => {
     });
   }
 
+  it('PR-L3 red: collaborator delegation persists a targeted intent before any Effect', async () => {
+    const owner = await createFormalMember('l3-do');
+    const collaborator = await createFormalMember('l3-dc');
+    const activity = await createLegacyActivity();
+    const claim = await request(httpServer(app))
+      .post(`/api/admin/v1/activities/${activity.id}/responsibilities/claim`)
+      .set('Authorization', adminAuth)
+      .send({ ownerMemberId: owner.memberId, reason: 'L3 红测 owner' });
+    expect(claim.status).toBe(200);
+
+    const ownerAuth = (await loginAs(app, owner.username)).authHeader;
+    const add = await request(httpServer(app))
+      .post(`/api/admin/v1/activities/${activity.id}/responsibilities/collaborators`)
+      .set('Authorization', ownerAuth)
+      .send({
+        memberId: collaborator.memberId,
+        canManageRegistrations: true,
+        canManageAttendance: true,
+        reason: 'L3 红测委托',
+      });
+    expect(add.status).toBe(201);
+
+    const assignmentId = add.body.data.id as string;
+    await expect(
+      prisma.notificationOutboxIntent.findMany({
+        where: {
+          eventKey: `responsibility-delegate:${assignmentId}`,
+          eventType: OUTBOX_EVENT_TARGETED_NOTIFICATION,
+          aggregateType: 'activity_responsibility_assignment',
+          aggregateId: assignmentId,
+          destinationType: 'member',
+          destinationRef: collaborator.memberId,
+          status: 'pending',
+        },
+      }),
+    ).resolves.toHaveLength(1);
+    await expect(
+      prisma.notification.count({ where: { recipientMemberId: collaborator.memberId } }),
+    ).resolves.toBe(0);
+  });
+
+  it('PR-L3 red: owner transfer rolls back assignments, grants and audit when intent enqueue fails', async () => {
+    const owner = await createFormalMember('l3-to');
+    const newOwner = await createFormalMember('l3-tn');
+    const activity = await createLegacyActivity();
+    const claim = await request(httpServer(app))
+      .post(`/api/admin/v1/activities/${activity.id}/responsibilities/claim`)
+      .set('Authorization', adminAuth)
+      .send({ ownerMemberId: owner.memberId, reason: 'L3 红测移交 owner' });
+    expect(claim.status).toBe(200);
+
+    const ownerAuth = (await loginAs(app, owner.username)).authHeader;
+    const auditCountBefore = await prisma.auditLog.count({
+      where: { event: 'activity.publish', resourceId: activity.id },
+    });
+    const enqueueSpy = jest.spyOn(outbox, 'enqueue').mockRejectedValue(new Error('intent failed'));
+    let transfer: request.Response;
+    try {
+      transfer = await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${activity.id}/responsibilities/transfer`)
+        .set('Authorization', ownerAuth)
+        .send({
+          newOwnerMemberId: newOwner.memberId,
+          reason: 'L3 红测强制 enqueue 失败',
+          retainPreviousOwnerAsCollaborator: false,
+        });
+    } finally {
+      enqueueSpy.mockRestore();
+    }
+    expect(transfer.status).toBe(500);
+    await expect(
+      prisma.activityResponsibilityAssignment.findMany({
+        where: { activityId: activity.id, status: 'active' },
+        select: { memberId: true, responsibilityType: true },
+      }),
+    ).resolves.toEqual([{ memberId: owner.memberId, responsibilityType: 'owner' }]);
+    await expect(
+      prisma.roleBinding.count({
+        where: {
+          principalId: newOwner.memberId,
+          scopeActivityId: activity.id,
+          status: BindingStatus.ACTIVE,
+          deletedAt: null,
+        },
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      prisma.auditLog.count({
+        where: { event: 'activity.publish', resourceId: activity.id },
+      }),
+    ).resolves.toBe(auditCountBefore);
+  });
+
+  it('rolls back collaborator assignment, grant and intent when audit persistence fails', async () => {
+    const owner = await createFormalMember('l3-ao');
+    const collaborator = await createFormalMember('l3-ac');
+    const activity = await createLegacyActivity();
+    const claim = await request(httpServer(app))
+      .post(`/api/admin/v1/activities/${activity.id}/responsibilities/claim`)
+      .set('Authorization', adminAuth)
+      .send({ ownerMemberId: owner.memberId, reason: 'L3 audit rollback owner' });
+    expect(claim.status).toBe(200);
+    const ownerAuth = (await loginAs(app, owner.username)).authHeader;
+
+    const auditSpy = jest
+      .spyOn(auditRecorder, 'log')
+      .mockRejectedValueOnce(new Error('audit failed'));
+    try {
+      await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${activity.id}/responsibilities/collaborators`)
+        .set('Authorization', ownerAuth)
+        .send({
+          memberId: collaborator.memberId,
+          canManageRegistrations: true,
+          canManageAttendance: false,
+          reason: 'L3 audit rollback',
+        })
+        .expect(500);
+    } finally {
+      auditSpy.mockRestore();
+    }
+    await expect(
+      prisma.activityResponsibilityAssignment.count({
+        where: { activityId: activity.id, memberId: collaborator.memberId },
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      prisma.roleBinding.count({
+        where: {
+          principalId: collaborator.memberId,
+          scopeActivityId: activity.id,
+          deletedAt: null,
+        },
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      prisma.notificationOutboxIntent.count({
+        where: { destinationRef: collaborator.memberId },
+      }),
+    ).resolves.toBe(0);
+  });
+
   it('claims legacy owner, projects collaborator capabilities, transfers and revokes immediately', async () => {
     const owner = await createFormalMember('owner');
     const collaborator = await createFormalMember('collaborator');
     const newOwner = await createFormalMember('new-owner');
+    const publishReviewer = await createFormalMember('pubrev');
     const activity = await createLegacyActivity();
+    await prisma.activity.update({
+      where: { id: activity.id },
+      data: {
+        publishedBy: publishReviewer.userId,
+        publishedAt: new Date('2026-07-27T00:00:00.000Z'),
+      },
+    });
 
     const claim = await request(httpServer(app))
       .post(`/api/admin/v1/activities/${activity.id}/responsibilities/claim`)
@@ -166,6 +329,22 @@ describe('activity responsibilities and system RoleBinding projection', () => {
         },
       }),
     ).toBe(2);
+    const addIntent = await prisma.notificationOutboxIntent.findUniqueOrThrow({
+      where: { eventKey: `responsibility-delegate:${add.body.data.id as string}` },
+    });
+    expect(addIntent).toMatchObject({
+      aggregateType: 'activity_responsibility_assignment',
+      aggregateId: add.body.data.id,
+      destinationRef: collaborator.memberId,
+      status: 'pending',
+    });
+    await expect(
+      prisma.notification.count({ where: { recipientMemberId: collaborator.memberId } }),
+    ).resolves.toBe(0);
+    await expect(outboxWorker.drainEventKey(addIntent.eventKey)).resolves.toMatchObject({
+      claimed: 1,
+      succeeded: 1,
+    });
 
     const end = await request(httpServer(app))
       .delete(
@@ -186,6 +365,23 @@ describe('activity responsibilities and system RoleBinding projection', () => {
         },
       }),
     ).toBe(0);
+    const endIntent = await prisma.notificationOutboxIntent.findFirstOrThrow({
+      where: {
+        aggregateId: add.body.data.id as string,
+        eventKey: { startsWith: `responsibility-delegate-end:${add.body.data.id as string}:` },
+      },
+    });
+    await expect(outboxWorker.drainEventKey(endIntent.eventKey)).resolves.toMatchObject({
+      claimed: 1,
+      succeeded: 1,
+    });
+    await expect(
+      prisma.notification.findMany({
+        where: { recipientMemberId: collaborator.memberId },
+        orderBy: { createdAt: 'asc' },
+        select: { title: true },
+      }),
+    ).resolves.toEqual([{ title: '你已被指定为活动协办人' }, { title: '活动协办职责已结束' }]);
 
     const transfer = await request(httpServer(app))
       .post(`/api/admin/v1/activities/${activity.id}/responsibilities/transfer`)
@@ -219,6 +415,88 @@ describe('activity responsibilities and system RoleBinding projection', () => {
         },
       }),
     ).toBe(1);
+    const newOwnerAssignmentId = transfer.body.data.owner.id as string;
+    const transferIntents = await prisma.notificationOutboxIntent.findMany({
+      where: {
+        aggregateType: 'activity_responsibility_assignment',
+        aggregateId: newOwnerAssignmentId,
+        eventKey: { startsWith: `responsibility-transfer:${newOwnerAssignmentId}:` },
+      },
+      orderBy: { eventKey: 'asc' },
+    });
+    expect(transferIntents).toHaveLength(2);
+    expect(transferIntents.map((intent) => intent.destinationRef).sort()).toEqual(
+      [owner.memberId, newOwner.memberId].sort(),
+    );
+    expect(
+      transferIntents.some((intent) => intent.destinationRef === publishReviewer.memberId),
+    ).toBe(false);
+    await expect(
+      prisma.notification.count({
+        where: { recipientMemberId: { in: [owner.memberId, newOwner.memberId] } },
+      }),
+    ).resolves.toBe(0);
+    const previousOwnerIntent = transferIntents.find((intent) =>
+      intent.eventKey.endsWith(':previous'),
+    );
+    const currentOwnerIntent = transferIntents.find((intent) =>
+      intent.eventKey.endsWith(':current'),
+    );
+    if (!previousOwnerIntent || !currentOwnerIntent) {
+      throw new Error('owner transfer intents are incomplete');
+    }
+    const dispatchSpy = jest
+      .spyOn(outboxHandlers, 'execute')
+      .mockRejectedValueOnce(new Error('provider unavailable'));
+    await expect(outboxWorker.drainEventKey(previousOwnerIntent.eventKey)).resolves.toMatchObject({
+      claimed: 1,
+      failed: 1,
+    });
+    await expect(
+      prisma.activityResponsibilityAssignment.findFirstOrThrow({
+        where: {
+          id: newOwnerAssignmentId,
+          status: 'active',
+          memberId: newOwner.memberId,
+        },
+        select: { id: true },
+      }),
+    ).resolves.toEqual({ id: newOwnerAssignmentId });
+    await expect(
+      prisma.notificationOutboxIntent.findUniqueOrThrow({
+        where: { eventKey: previousOwnerIntent.eventKey },
+        select: { status: true, attempts: true },
+      }),
+    ).resolves.toEqual({ status: 'pending', attempts: 1 });
+    await prisma.notificationOutboxIntent.update({
+      where: { eventKey: previousOwnerIntent.eventKey },
+      data: { availableAt: new Date(0) },
+    });
+    try {
+      await expect(outboxWorker.drainEventKey(previousOwnerIntent.eventKey)).resolves.toMatchObject(
+        {
+          claimed: 1,
+          succeeded: 1,
+        },
+      );
+      await expect(outboxWorker.drainEventKey(currentOwnerIntent.eventKey)).resolves.toMatchObject({
+        claimed: 1,
+        succeeded: 1,
+      });
+    } finally {
+      dispatchSpy.mockRestore();
+    }
+    await expect(
+      prisma.notification.findMany({
+        where: { recipientMemberId: { in: [owner.memberId, newOwner.memberId] } },
+        select: { recipientMemberId: true, title: true },
+      }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        { recipientMemberId: owner.memberId, title: '活动负责人已移交' },
+        { recipientMemberId: newOwner.memberId, title: '你已成为活动负责人' },
+      ]),
+    );
   });
 
   it('rolls back the assignment if its deterministic RoleBinding cannot be projected', async () => {
