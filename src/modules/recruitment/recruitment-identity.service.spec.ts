@@ -309,6 +309,35 @@ describe('RecruitmentIdentityService.uploadCertificateImages · FOR UPDATE 后�
     expect(update).not.toHaveBeenCalled();
     expect(storage.deleteObject).toHaveBeenCalledTimes(1);
   });
+
+  it('旧证书图清理失败只写固定安全分类,上传结果与补偿删除语义不变', async () => {
+    const { service, storage } = buildUploadService();
+    const rawProviderMessage =
+      'provider key=locked-old.png bucket=private-bucket secret=credential-value url=https://cos.example/locked-old.png';
+    storage.deleteObject.mockRejectedValueOnce(new Error(rawProviderMessage));
+    const warnSpy = jest
+      .spyOn((service as unknown as { logger: { warn(message: unknown): void } }).logger, 'warn')
+      .mockImplementation(() => undefined);
+
+    await expect(service.uploadCertificateImages(dto, [file], {} as never)).resolves.toMatchObject({
+      category: 'first_aid',
+      imageCount: 1,
+    });
+    expect(storage.deleteObject).toHaveBeenCalledWith('locked-old.png');
+    expect(warnSpy).toHaveBeenCalledWith({
+      event: 'recruitment.storage-cleanup.failed',
+      operation: 'delete-replaced-certificate-image',
+      safeErrorCategory: 'storage-delete-failed',
+      retryable: true,
+      manualCleanupRequired: true,
+    });
+    const serialized = JSON.stringify(warnSpy.mock.calls);
+    expect(serialized).not.toContain('locked-old.png');
+    expect(serialized).not.toContain('private-bucket');
+    expect(serialized).not.toContain('credential-value');
+    expect(serialized).not.toContain('https://cos.example');
+    expect(serialized).not.toContain(rawProviderMessage);
+  });
 });
 
 describe('RecruitmentIdentityService.withdraw · status claim 后权威重读', () => {

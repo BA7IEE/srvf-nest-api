@@ -220,9 +220,11 @@ export class RecruitmentPromotionService {
       { timeout: PROMOTE_TX_TIMEOUT_MS },
     );
 
-    this.logger.log(
-      `recruitment promote cycle=${cycleId} promoted=${promoted.length} skipped=${skipped.length}`,
-    );
+    this.logger.log({
+      event: 'recruitment.promotion.completed',
+      operation: 'promote',
+      requestId: meta.requestId,
+    });
 
     return {
       cycleId,
@@ -462,9 +464,11 @@ export class RecruitmentPromotionService {
       { timeout: PROMOTE_TX_TIMEOUT_MS },
     );
 
-    this.logger.log(
-      `recruitment promote-single app=${app.id} member=${promoted.memberId} channel=${channel}`,
-    );
+    this.logger.log({
+      event: 'recruitment.promotion.completed',
+      operation: 'promote-single',
+      requestId: meta.requestId,
+    });
 
     return { ...promoted, loginChannel: channel };
   }

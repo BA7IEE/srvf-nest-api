@@ -30,6 +30,7 @@ import {
   RECRUITMENT_IDENTITY_SESSION_TTL_SECONDS,
   generatePhoneVerificationToken,
   hashPhoneVerificationToken,
+  recruitmentStorageCleanupFailureLog,
 } from './recruitment.constants';
 import {
   certificateJsonOrDbNull,
@@ -551,10 +552,8 @@ export class RecruitmentIdentityService {
   private async safeDeleteBlob(key: string): Promise<void> {
     try {
       await this.storage.deleteObject(key);
-    } catch (e) {
-      this.logger.warn(
-        `recruitment certificate image cleanup failed key=${key}: ${e instanceof Error ? e.message : String(e)}`,
-      );
+    } catch {
+      this.logger.warn(recruitmentStorageCleanupFailureLog('delete-replaced-certificate-image'));
     }
   }
 
