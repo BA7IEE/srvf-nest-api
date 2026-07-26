@@ -62,7 +62,7 @@ export interface ActivityProposalApplyResult {
   activityTitle: string;
   initiatorMemberId: string | null;
   notificationMemberIds: string[];
-  promotedMemberIds: string[];
+  promoted: Array<{ registrationId: string; memberId: string }>;
 }
 
 @Injectable()
@@ -307,7 +307,7 @@ export class ActivityProposalApplier {
       activityTitle: updated.title,
       initiatorMemberId: identity.initiatorMemberId,
       notificationMemberIds,
-      promotedMemberIds: promotion.promoted.map((item) => item.memberId),
+      promoted: promotion.promoted,
     };
   }
 

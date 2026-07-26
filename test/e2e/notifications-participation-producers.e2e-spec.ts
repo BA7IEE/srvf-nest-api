@@ -234,6 +234,20 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
     return intent.id;
   }
 
+  async function drainActivityIntents(activityId: string): Promise<void> {
+    const intents = await prisma.notificationOutboxIntent.findMany({
+      where: { aggregateType: 'activity', aggregateId: activityId },
+      orderBy: { createdAt: 'asc' },
+    });
+    for (const intent of intents) {
+      expect(intent.status).toBe('pending');
+      await outboxWorker.drainEventKey(intent.eventKey);
+      expect(
+        await prisma.notificationOutboxIntent.findUniqueOrThrow({ where: { id: intent.id } }),
+      ).toMatchObject({ status: 'succeeded' });
+    }
+  }
+
   beforeAll(async () => {
     app = await createTestApp();
     prisma = app.get(PrismaService);
@@ -340,6 +354,42 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
   });
 
   describe('活动发布/改期/自助退出通知', () => {
+    it('PR-L2 red:公开活动 publish 与 audit 同事务写 broadcast intent，worker 前零 Notification', async () => {
+      const activity = await prisma.activity.create({
+        data: {
+          title: 'durable 公开活动',
+          activityTypeCode: 's4-type',
+          organizationId: orgId,
+          startAt: new Date('2099-08-01T08:00:00.000Z'),
+          endAt: new Date('2099-08-01T12:00:00.000Z'),
+          location: '梧桐山',
+          statusCode: 'draft',
+          isPublicRegistration: true,
+        },
+      });
+
+      await activities.publish(
+        activity.id,
+        { requiresInsuranceConfirmed: true },
+        adminPayload,
+        AUDIT_META,
+      );
+
+      expect(
+        await prisma.notificationOutboxIntent.findMany({
+          where: { aggregateType: 'activity', aggregateId: activity.id },
+          select: { eventType: true, status: true, destinationRef: true },
+        }),
+      ).toEqual([
+        {
+          eventType: 'notification.system-broadcast',
+          status: 'pending',
+          destinationRef: 'member',
+        },
+      ]);
+      expect(await prisma.notification.count({})).toBe(0);
+    });
+
     it('公开活动 publish → 一条 member broadcast/activity-published；非公开不广播', async () => {
       const makeDraft = (isPublicRegistration: boolean) =>
         prisma.activity.create({
@@ -370,6 +420,19 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
         AUDIT_META,
       );
 
+      expect(
+        await prisma.notificationOutboxIntent.findMany({
+          where: { aggregateType: 'activity', aggregateId: publicActivity.id },
+          select: { eventType: true, destinationRef: true },
+        }),
+      ).toEqual([{ eventType: 'notification.system-broadcast', destinationRef: 'member' }]);
+      expect(
+        await prisma.notificationOutboxIntent.count({
+          where: { aggregateType: 'activity', aggregateId: privateActivity.id },
+        }),
+      ).toBe(0);
+      expect(await prisma.notification.count({})).toBe(0);
+      await drainActivityIntents(publicActivity.id);
       const broadcasts = await prisma.notification.findMany({
         where: { audienceType: 'broadcast', sourceType: 'system' },
       });
@@ -403,6 +466,13 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
         AUDIT_META,
       );
 
+      expect(await prisma.notification.count({})).toBe(0);
+      expect(
+        await prisma.notificationOutboxIntent.count({
+          where: { aggregateType: 'activity', aggregateId: activityId },
+        }),
+      ).toBe(2);
+      await drainActivityIntents(activityId);
       const notifications = await prisma.notification.findMany({
         where: { notificationTypeCode: 'activity-changed' },
       });
@@ -658,6 +728,38 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
 
   // ============ ② 活动取消 → 遍历已报名者逐人(N 报名者各一条) ============
   describe('活动取消定向通知(cancel → 已报名者 fan-out;N 报名者各一条)', () => {
+    it('PR-L2 red:取消 intent 写失败使 activity + registration + audit 整体回滚', async () => {
+      const activityId = await seedActivity('取消 intent 回滚');
+      const registrationId = await seedRegistration(activityId, alice.memberId, 'pending');
+      const spy = jest
+        .spyOn(outbox, 'enqueue')
+        .mockRejectedValue(new Error('activity intent insert failed'));
+      try {
+        await expect(
+          activities.cancel(activityId, { cancelReason: '故障注入' }, adminPayload, AUDIT_META),
+        ).rejects.toThrow('activity intent insert failed');
+        expect(
+          await prisma.activity.findUniqueOrThrow({
+            where: { id: activityId },
+            select: { statusCode: true, cancelledAt: true },
+          }),
+        ).toEqual({ statusCode: 'published', cancelledAt: null });
+        expect(
+          await prisma.activityRegistration.findUniqueOrThrow({
+            where: { id: registrationId },
+            select: { statusCode: true, cancelledAt: true },
+          }),
+        ).toEqual({ statusCode: 'pending', cancelledAt: null });
+        expect(
+          await prisma.auditLog.count({
+            where: { resourceId: activityId, event: 'activity.publish' },
+          }),
+        ).toBe(0);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
     it('取消 → alice(pending)+ bob(pass)各收一条「活动已取消」(含活动名+原因);各自 feed 仅见本人', async () => {
       const activityId = await seedActivity('山地搜救演练');
       await seedRegistration(activityId, alice.memberId, 'pending');
@@ -665,6 +767,8 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
 
       await activities.cancel(activityId, { cancelReason: '暴雨预警' }, adminPayload, AUDIT_META);
 
+      expect(await prisma.notification.count({})).toBe(0);
+      await drainActivityIntents(activityId);
       const aliceNotifs = await directedOf(alice.memberId);
       const bobNotifs = await directedOf(bob.memberId);
       expect(aliceNotifs).toHaveLength(1);
@@ -734,6 +838,7 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
             select: { statusCode: true },
           }),
         ).toEqual({ statusCode: 'cancelled' });
+        await drainActivityIntents(activityId);
         expect(await directedOf(alice.memberId)).toEqual([
           expect.objectContaining({
             notificationTypeCode: 'activity-changed',
@@ -757,26 +862,46 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
 
       await activities.cancel(activityId, { cancelReason: '场地不可用' }, adminPayload, AUDIT_META);
 
+      await drainActivityIntents(activityId);
       expect(await directedOf(alice.memberId)).toHaveLength(1);
       expect(await directedOf(bob.memberId)).toHaveLength(0);
     });
 
-    it('注入 dispatcher 抛错 → **取消仍成功**(activity=cancelled 已 commit;行为锁未破)', async () => {
+    it('worker Effect 失败 → 取消保持已提交、intent 退避，重试后仅生成一条通知', async () => {
       const activityId = await seedActivity('夜训');
       await seedRegistration(activityId, alice.memberId, 'pass');
 
-      const spy = jest
-        .spyOn(dispatcher, 'dispatchTargeted')
-        .mockRejectedValue(new Error('dispatch boom'));
+      const res = await activities.cancel(activityId, {}, adminPayload, AUDIT_META);
+      expect(res.statusCode).toBe('cancelled');
+      const intent = await prisma.notificationOutboxIntent.findFirstOrThrow({
+        where: {
+          aggregateType: 'activity',
+          aggregateId: activityId,
+          destinationRef: alice.memberId,
+        },
+      });
+      const spy = jest.spyOn(outboxHandlers, 'execute').mockRejectedValueOnce(new Error('boom'));
       try {
-        const res = await activities.cancel(activityId, {}, adminPayload, AUDIT_META);
-        expect(res.statusCode).toBe('cancelled');
+        await outboxWorker.drainEventKey(intent.eventKey);
         const act = await prisma.activity.findUniqueOrThrow({ where: { id: activityId } });
-        expect(act.statusCode).toBe('cancelled'); // 取消产物已 commit
+        expect(act.statusCode).toBe('cancelled');
         expect(spy).toHaveBeenCalled();
+        expect(await directedOf(alice.memberId)).toHaveLength(0);
+        expect(
+          await prisma.notificationOutboxIntent.findUniqueOrThrow({ where: { id: intent.id } }),
+        ).toMatchObject({ status: 'pending', attempts: 1 });
       } finally {
         spy.mockRestore();
       }
+      await prisma.notificationOutboxIntent.update({
+        where: { id: intent.id },
+        data: { availableAt: new Date(0) },
+      });
+      await outboxWorker.drainEventKey(intent.eventKey);
+      expect(await directedOf(alice.memberId)).toHaveLength(1);
+      expect(
+        await prisma.notificationOutboxIntent.findUniqueOrThrow({ where: { id: intent.id } }),
+      ).toMatchObject({ status: 'succeeded', attempts: 2 });
     });
   });
 

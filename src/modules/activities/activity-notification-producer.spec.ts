@@ -1,0 +1,186 @@
+import type { Prisma } from '@prisma/client';
+
+import type { NotificationOutboxService } from '../notifications/notification-outbox.service';
+import { ActivityNotificationProducer } from './activity-notification-producer';
+
+function makeFixture() {
+  const tx = {
+    activityRegistration: {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          id: 'reg-1',
+          updatedAt: new Date('2026-07-27T00:00:04.000Z'),
+        },
+      ]),
+    },
+  };
+  const outbox = {
+    enqueue: jest
+      .fn<Promise<{ id: string }>, [Record<string, unknown>, unknown]>()
+      .mockResolvedValue({ id: 'intent-1' }),
+  };
+  const producer = new ActivityNotificationProducer(outbox as unknown as NotificationOutboxService);
+  return { tx, outbox, producer };
+}
+
+describe('ActivityNotificationProducer', () => {
+  it('公开发布:publishedAt 组成稳定 broadcast eventKey；非公开不入队', async () => {
+    const { tx, outbox, producer } = makeFixture();
+    const base = {
+      activityId: 'act-1',
+      activityTitle: '公开演练',
+      publishedAt: new Date('2026-07-27T00:00:01.000Z'),
+      startAt: new Date('2026-08-01T08:00:00.000Z'),
+      location: '梧桐山',
+      requiresInsurance: true,
+    };
+    await producer.enqueuePublished(tx as unknown as Prisma.TransactionClient, {
+      ...base,
+      isPublicRegistration: true,
+    });
+    await producer.enqueuePublished(tx as unknown as Prisma.TransactionClient, {
+      ...base,
+      activityId: 'act-private',
+      isPublicRegistration: false,
+    });
+
+    expect(outbox.enqueue).toHaveBeenCalledTimes(1);
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      {
+        eventKey: 'activity-publish:act-1:2026-07-27T00:00:01.000Z',
+        eventType: 'notification.system-broadcast',
+        payloadVersion: 1,
+        payload: {
+          notificationTypeCode: 'activity-published',
+          title: '新活动已发布',
+          body: '「公开演练」已发布，开始时间 2026-08-01T08:00:00.000Z，地点 梧桐山。 本活动要求有效保险，请在报名前确认覆盖期。',
+          visibilityCode: 'member',
+        },
+        aggregateType: 'activity',
+        aggregateId: 'act-1',
+        destinationType: 'visibility',
+        destinationRef: 'member',
+      },
+      tx,
+    );
+  });
+
+  it('取消:同一 cancelledAt 按 member 生成互异 intent', async () => {
+    const { tx, outbox, producer } = makeFixture();
+    await producer.enqueueCancellation(tx as unknown as Prisma.TransactionClient, {
+      activityId: 'act-1',
+      activityTitle: '夜训',
+      cancelledAt: new Date('2026-07-27T00:00:02.000Z'),
+      cancelReason: '暴雨',
+      memberIds: ['member-1', 'member-2'],
+    });
+
+    expect(outbox.enqueue).toHaveBeenCalledTimes(2);
+    expect(outbox.enqueue.mock.calls.map(([input]) => String(input.eventKey))).toEqual([
+      'activity-cancel:act-1:2026-07-27T00:00:02.000Z:member-1',
+      'activity-cancel:act-1:2026-07-27T00:00:02.000Z:member-2',
+    ]);
+  });
+
+  it('直接改期:payload 保留新旧安排与保险提示', async () => {
+    const { tx, outbox, producer } = makeFixture();
+    await producer.enqueueScheduleChange(tx as unknown as Prisma.TransactionClient, {
+      activityId: 'act-1',
+      activityTitle: '改期演练',
+      versionKey: '2026-07-27T00:00:03.000Z',
+      before: {
+        startAt: new Date('2026-08-01T08:00:00.000Z'),
+        endAt: new Date('2026-08-01T12:00:00.000Z'),
+        location: '梧桐山',
+      },
+      after: {
+        startAt: new Date('2026-08-02T08:00:00.000Z'),
+        endAt: new Date('2026-08-02T12:00:00.000Z'),
+        location: '莲花山',
+      },
+      requiresInsurance: true,
+      memberIds: ['member-1'],
+    });
+
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      {
+        eventKey: 'activity-change:act-1:2026-07-27T00:00:03.000Z:member-1',
+        eventType: 'notification.targeted',
+        payloadVersion: 1,
+        payload: {
+          recipientMemberId: 'member-1',
+          notificationTypeCode: 'activity-changed',
+          title: '活动安排已变更',
+          body: '您报名的「改期演练」安排有变更：开始时间：2026-08-01T08:00:00.000Z → 2026-08-02T08:00:00.000Z；结束时间：2026-08-01T12:00:00.000Z → 2026-08-02T12:00:00.000Z；地点：梧桐山 → 莲花山。 保险覆盖按原日期核验，请按调整后的活动时段重新确认。',
+          channels: ['in-app'],
+        },
+        aggregateType: 'activity',
+        aggregateId: 'act-1',
+        destinationType: 'member',
+        destinationRef: 'member-1',
+      },
+      tx,
+    );
+  });
+
+  it('候补递补:registration.updatedAt 组成与 L1 一致的 eventKey', async () => {
+    const { tx, outbox, producer } = makeFixture();
+    await producer.enqueueWaitlistPromotions(tx as unknown as Prisma.TransactionClient, {
+      activityTitle: '扩容活动',
+      promoted: [{ registrationId: 'reg-1', memberId: 'member-1' }],
+    });
+
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      {
+        eventKey: 'waitlist-promote:reg-1:2026-07-27T00:00:04.000Z',
+        eventType: 'notification.targeted',
+        payloadVersion: 1,
+        payload: {
+          recipientMemberId: 'member-1',
+          notificationTypeCode: 'registration-result',
+          title: '候补已递补',
+          body: '您报名的「扩容活动」已从候补递补，现已进入待审核。',
+          channels: ['in-app'],
+        },
+        aggregateType: 'activity_registration',
+        aggregateId: 'reg-1',
+        destinationType: 'member',
+        destinationRef: 'member-1',
+      },
+      tx,
+    );
+  });
+
+  it('审核结果:reviewId + reviewedAt 稳定指向事务内解析的收件人', async () => {
+    const { tx, outbox, producer } = makeFixture();
+    await producer.enqueueReviewOutcome(tx as unknown as Prisma.TransactionClient, {
+      reviewId: 'review-1',
+      activityId: 'act-1',
+      activityTitle: '审核活动',
+      reviewedAt: new Date('2026-07-27T00:00:05.000Z'),
+      recipientMemberId: 'member-owner',
+      approved: false,
+      reviewNote: '调整时间',
+    });
+
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      {
+        eventKey: 'activity-review-outcome:review-1:2026-07-27T00:00:05.000Z',
+        eventType: 'notification.targeted',
+        payloadVersion: 1,
+        payload: {
+          recipientMemberId: 'member-owner',
+          notificationTypeCode: 'general',
+          title: '活动发布审核已退回',
+          body: '「审核活动」发布审核已退回。原因：调整时间',
+          channels: ['in-app'],
+        },
+        aggregateType: 'activity_publish_review',
+        aggregateId: 'review-1',
+        destinationType: 'member',
+        destinationRef: 'member-owner',
+      },
+      tx,
+    );
+  });
+});

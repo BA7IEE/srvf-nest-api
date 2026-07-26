@@ -1,18 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { MemberStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { AuthzService } from '../authz/authz.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
-import {
-  NOTIFICATION_CHANNEL_IN_APP,
-  NOTIFICATION_TYPE_ACTIVITY_CHANGED,
-  NOTIFICATION_TYPE_ACTIVITY_PUBLISHED,
-  NOTIFICATION_TYPE_REGISTRATION_RESULT,
-} from '../notifications/notification.constants';
-import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import {
   ApproveActivityPublishReviewDto,
   ActivityPublishReviewResponseDto,
@@ -29,10 +22,8 @@ import { ActivityResponsibilityPolicy } from './activity-responsibility-policy';
 import type { UpdateActivityDto } from './activities.dto';
 import type { AppActivityChangePositionDto } from './dto/app/app-managed-activity.dto';
 import { ActivityProposalValidator } from './activity-proposal-validator';
-import {
-  ActivityProposalApplier,
-  type ActivityProposalApplyResult,
-} from './activity-proposal-applier';
+import { ActivityProposalApplier } from './activity-proposal-applier';
+import { ActivityNotificationProducer } from './activity-notification-producer';
 import {
   parseActivityProposalSnapshot,
   type ActivityProposalSnapshot,
@@ -45,6 +36,7 @@ interface PublishedActivityEffect {
   activityTitle: string;
   startAt: Date;
   location: string;
+  publishedAt: Date;
   requiresInsurance: boolean;
   isPublicRegistration: boolean;
   initiatorMemberId: string | null;
@@ -74,7 +66,7 @@ export class ActivityPublishReviewService {
     private readonly stateMachine: ActivityPublishReviewStateMachine,
     private readonly presenter: ActivityPublishReviewPresenter,
     private readonly audit: ActivityPublishReviewAuditRecorder,
-    private readonly notifications: NotificationDispatcher,
+    private readonly notificationProducer: ActivityNotificationProducer,
     private readonly responsibilities: ActivityResponsibilityService,
     private readonly responsibilityPolicy: ActivityResponsibilityPolicy,
     private readonly proposalValidator: ActivityProposalValidator,
@@ -391,9 +383,7 @@ export class ActivityPublishReviewService {
       id: activityId,
     });
     if (!decision.allow) throw new BizException(BizCode.RBAC_FORBIDDEN);
-    const effect = await this.directPublish(activityId, user, auditMeta);
-    await this.dispatchPublished(effect);
-    return effect;
+    return this.directPublish(activityId, user, auditMeta);
   }
 
   private async directPublish(
@@ -472,7 +462,17 @@ export class ActivityPublishReviewService {
           auditMeta,
           tx,
         });
-        return this.loadPublishedEffect(activityId, tx);
+        const effect = await this.loadPublishedEffect(activityId, tx);
+        await this.notificationProducer.enqueueReviewOutcome(tx, {
+          reviewId: review.id,
+          activityId,
+          activityTitle: effect.activityTitle,
+          reviewedAt: now,
+          recipientMemberId: activity.initiatorMemberId,
+          approved: true,
+        });
+        await this.notificationProducer.enqueuePublished(tx, effect);
+        return effect;
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -519,6 +519,7 @@ export class ActivityPublishReviewService {
           startAt: true,
           endAt: true,
           registrationDeadline: true,
+          initiatorMemberId: true,
         },
       });
       const decision = this.stateMachine.decide('approve', review.status);
@@ -608,20 +609,55 @@ export class ActivityPublishReviewService {
         auditMeta,
         tx,
       });
+      const publishedEffect =
+        review.requestType === 'initial'
+          ? await this.loadPublishedEffect(review.activityId, tx)
+          : null;
+      const recipientMemberId = await this.resolveReviewOutcomeRecipient(tx, {
+        activityId: review.activityId,
+        requestType: review.requestType,
+        initiatorMemberId: activity.initiatorMemberId,
+        at: now,
+      });
+      const activityTitle = publishedEffect?.activityTitle ?? changeEffect?.activityTitle;
+      if (!activityTitle) {
+        throw new Error(`activity review effect disappeared: ${review.id}`);
+      }
+      await this.notificationProducer.enqueueReviewOutcome(tx, {
+        reviewId: review.id,
+        activityId: review.activityId,
+        activityTitle,
+        reviewedAt: now,
+        recipientMemberId,
+        approved: true,
+      });
+      if (publishedEffect) {
+        await this.notificationProducer.enqueuePublished(tx, publishedEffect);
+      }
+      if (changeEffect) {
+        await this.notificationProducer.enqueueScheduleChange(tx, {
+          activityId: changeEffect.activityId,
+          activityTitle: changeEffect.activityTitle,
+          versionKey: `review:${review.id}`,
+          before: null,
+          after: null,
+          requiresInsurance: false,
+          memberIds: changeEffect.notificationMemberIds,
+        });
+        await this.notificationProducer.enqueueWaitlistPromotions(tx, {
+          activityTitle: changeEffect.activityTitle,
+          promoted: changeEffect.promoted,
+        });
+      }
       return {
         dto: this.presenter.toDto(updatedReview),
-        publishedEffect:
-          review.requestType === 'initial'
-            ? await this.loadPublishedEffect(review.activityId, tx)
-            : null,
-        changeEffect,
+        missingChangeOwner: review.requestType === 'change' && recipientMemberId === null,
       };
     });
-    if (result.publishedEffect) {
-      await this.dispatchPublished(result.publishedEffect);
-    }
-    if (result.changeEffect) {
-      await this.dispatchChangeApplied(result.changeEffect);
+    if (result.missingChangeOwner) {
+      this.logger.warn(
+        `activity review outcome recipient missing (activity=${seed.activityId}, review=${reviewId})`,
+      );
     }
     return result.dto;
   }
@@ -657,12 +693,13 @@ export class ActivityPublishReviewService {
       const review = await tx.activityPublishReview.findUniqueOrThrow({ where: { id: reviewId } });
       const decision = this.stateMachine.decide('return', review.status);
       if (!decision.allowed) throw new BizException(decision.biz);
+      const reviewedAt = new Date();
       const updated = await tx.activityPublishReview.update({
         where: { id: review.id },
         data: {
           status: decision.nextStatus,
           reviewedByUserId: user.id,
-          reviewedAt: new Date(),
+          reviewedAt,
           reviewNote: dto.reviewNote.trim(),
         },
         select: activityPublishReviewViewSelect,
@@ -683,16 +720,32 @@ export class ActivityPublishReviewService {
         where: { id: review.activityId },
         select: { title: true, initiatorMemberId: true },
       });
-      return { updated, activity };
+      const recipientMemberId = await this.resolveReviewOutcomeRecipient(tx, {
+        activityId: review.activityId,
+        requestType: review.requestType,
+        initiatorMemberId: activity.initiatorMemberId,
+        at: reviewedAt,
+      });
+      await this.notificationProducer.enqueueReviewOutcome(tx, {
+        reviewId: review.id,
+        activityId: review.activityId,
+        activityTitle: activity.title,
+        reviewedAt,
+        recipientMemberId,
+        approved: false,
+        reviewNote: dto.reviewNote.trim(),
+      });
+      return {
+        dto: this.presenter.toDto(updated),
+        missingChangeOwner: review.requestType === 'change' && recipientMemberId === null,
+      };
     });
-    await this.dispatchReviewOutcome({
-      activityId: seed.activityId,
-      activityTitle: result.activity.title,
-      initiatorMemberId: result.activity.initiatorMemberId,
-      approved: false,
-      reviewNote: dto.reviewNote.trim(),
-    });
-    return this.presenter.toDto(result.updated);
+    if (result.missingChangeOwner) {
+      this.logger.warn(
+        `activity review outcome recipient missing (activity=${seed.activityId}, review=${reviewId})`,
+      );
+    }
+    return result.dto;
   }
 
   async withdraw(
@@ -768,106 +821,48 @@ export class ActivityPublishReviewService {
         title: true,
         startAt: true,
         location: true,
+        publishedAt: true,
         requiresInsurance: true,
         isPublicRegistration: true,
         initiatorMemberId: true,
       },
     });
+    if (activity.publishedAt === null) {
+      throw new Error(`published activity has no publishedAt: ${activityId}`);
+    }
     return {
       activityId: activity.id,
       activityTitle: activity.title,
       startAt: activity.startAt,
       location: activity.location,
+      publishedAt: activity.publishedAt,
       requiresInsurance: activity.requiresInsurance,
       isPublicRegistration: activity.isPublicRegistration,
       initiatorMemberId: activity.initiatorMemberId,
     };
   }
 
-  private async dispatchPublished(effect: PublishedActivityEffect): Promise<void> {
-    await this.dispatchReviewOutcome({
-      activityId: effect.activityId,
-      activityTitle: effect.activityTitle,
-      initiatorMemberId: effect.initiatorMemberId,
-      approved: true,
+  private async resolveReviewOutcomeRecipient(
+    tx: PrismaTx,
+    input: {
+      activityId: string;
+      requestType: string;
+      initiatorMemberId: string | null;
+      at: Date;
+    },
+  ): Promise<string | null> {
+    if (input.requestType === 'initial') return input.initiatorMemberId;
+    const owner = await tx.activityResponsibilityAssignment.findFirst({
+      where: {
+        activityId: input.activityId,
+        responsibilityType: 'owner',
+        status: 'active',
+        startedAt: { lte: input.at },
+        endedAt: null,
+        member: { status: MemberStatus.ACTIVE, deletedAt: null },
+      },
+      select: { memberId: true },
     });
-    if (!effect.isPublicRegistration) return;
-    try {
-      const insurance = effect.requiresInsurance
-        ? ' 本活动要求有效保险，请在报名前确认覆盖期。'
-        : '';
-      await this.notifications.dispatchSystemMemberBroadcast({
-        notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_PUBLISHED,
-        title: '新活动已发布',
-        body: `「${effect.activityTitle}」已发布，开始时间 ${effect.startAt.toISOString()}，地点 ${effect.location}。${insurance}`,
-      });
-    } catch (error) {
-      this.logger.error(
-        `activity publish notification failed (activity=${effect.activityId}): ${(error as Error).message}`,
-      );
-    }
-  }
-
-  private async dispatchChangeApplied(effect: ActivityProposalApplyResult): Promise<void> {
-    await this.dispatchReviewOutcome({
-      activityId: effect.activityId,
-      activityTitle: effect.activityTitle,
-      initiatorMemberId: effect.initiatorMemberId,
-      approved: true,
-    });
-    for (const memberId of effect.notificationMemberIds) {
-      try {
-        await this.notifications.dispatchTargeted({
-          recipientMemberId: memberId,
-          notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_CHANGED,
-          title: '活动安排已变更',
-          body: `您报名的「${effect.activityTitle}」已通过变更审核，请查看最新安排。`,
-          channels: [NOTIFICATION_CHANNEL_IN_APP],
-        });
-      } catch (error) {
-        this.logger.error(
-          `activity change notification failed (activity=${effect.activityId}, member=${memberId}): ${(error as Error).message}`,
-        );
-      }
-    }
-    for (const memberId of effect.promotedMemberIds) {
-      try {
-        await this.notifications.dispatchTargeted({
-          recipientMemberId: memberId,
-          notificationTypeCode: NOTIFICATION_TYPE_REGISTRATION_RESULT,
-          title: '候补已递补',
-          body: `您报名的「${effect.activityTitle}」已从候补递补，现已进入待审核。`,
-          channels: [NOTIFICATION_CHANNEL_IN_APP],
-        });
-      } catch (error) {
-        this.logger.error(
-          `waitlist promotion notification failed (activity=${effect.activityId}, member=${memberId}): ${(error as Error).message}`,
-        );
-      }
-    }
-  }
-
-  private async dispatchReviewOutcome(input: {
-    activityId: string;
-    activityTitle: string;
-    initiatorMemberId: string | null;
-    approved: boolean;
-    reviewNote?: string;
-  }): Promise<void> {
-    if (!input.initiatorMemberId) return;
-    try {
-      await this.notifications.dispatchTargeted({
-        recipientMemberId: input.initiatorMemberId,
-        notificationTypeCode: 'general',
-        title: input.approved ? '活动发布审核已通过' : '活动发布审核已退回',
-        body: input.approved
-          ? `「${input.activityTitle}」已通过发布审核。`
-          : `「${input.activityTitle}」发布审核已退回。原因：${input.reviewNote ?? '未填写'}`,
-      });
-    } catch (error) {
-      this.logger.error(
-        `activity review outcome notification failed (activity=${input.activityId}, member=${input.initiatorMemberId}): ${(error as Error).message}`,
-      );
-    }
+    return owner?.memberId ?? null;
   }
 }

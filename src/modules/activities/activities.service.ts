@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { DictItemStatus, DictTypeStatus, Prisma, Role } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -12,13 +12,6 @@ import appConfig from '../../config/app.config';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
-import {
-  NOTIFICATION_CHANNEL_IN_APP,
-  NOTIFICATION_TYPE_ACTIVITY_CHANGED,
-  NOTIFICATION_TYPE_ACTIVITY_PUBLISHED,
-  NOTIFICATION_TYPE_REGISTRATION_RESULT,
-} from '../notifications/notification.constants';
-import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { RbacService } from '../permissions/rbac.service';
 import { AuthzService } from '../authz/authz.service';
@@ -44,6 +37,7 @@ import {
   promoteActivityWaitlistAcrossPositions,
 } from './activity-waitlist-promotion';
 import { ActivityInitiationPolicy } from './activity-initiation-policy';
+import { ActivityNotificationProducer } from './activity-notification-producer';
 import { ActivityPublishReviewService } from './activity-publish-review.service';
 
 // V2 第一阶段批次 3A activities service。
@@ -168,8 +162,6 @@ const ACTIVITY_CANCELLED_REGISTRATION_STATUS_CODES = ['pending', 'waitlisted'] a
 
 @Injectable()
 export class ActivitiesService {
-  private readonly logger = new Logger(ActivitiesService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly activityStateMachine: ActivityStateMachine,
@@ -179,9 +171,8 @@ export class ActivitiesService {
     // 终态 scoped-authz PR12(2026-07-02;冻结稿 §11 逐面迁移第一批):统一判权大脑,5 个写方法
     // 判权从 rbac.can 切 authz.explain(见 assertCanOrThrow);list / findOne 仍无码仅登录不变。
     private readonly authz: AuthzService,
-    // 统一通知 S4(评审稿 §6.4):活动取消 → 已报名者定向通知派发器(producer → notifications 单向直调,
-    // commit 后事务外、try-catch 永不抛;防环:本服务绝不被通知模块回调)。
-    private readonly notificationDispatcher: NotificationDispatcher,
+    // PR-L2:业务写 + audit + durable intent 同事务；独立 worker 仅在 commit 后执行通知 Effect。
+    private readonly notificationProducer: ActivityNotificationProducer,
     // F1/A6(路线图 §4;D7 拍板):供 queryDescendantOrgIds() 只读 helper 展开 includeDescendants
     // (closure 非判权)。
     private readonly organizations: OrganizationsService,
@@ -661,7 +652,7 @@ export class ActivitiesService {
     } else if (!this.config.activityResponsibilityWorkflow.enabled) {
       throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
     }
-    const result = await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       // 所有活动写入口统一先锁 Activity，再重读状态、时间窗、岗位与 passCount 基线。
       const current = await this.lockAndFindActivityOrThrow(id, tx);
 
@@ -918,10 +909,10 @@ export class ActivitiesService {
           ]
         : [];
 
-      return {
-        dto: this.toResponseDto(updated),
+      await this.notificationProducer.enqueueScheduleChange(tx, {
         activityId: current.id,
         activityTitle: updated.title,
+        versionKey: updated.updatedAt.toISOString(),
         before: {
           startAt: current.startAt,
           endAt: current.endAt,
@@ -933,20 +924,14 @@ export class ActivitiesService {
           location: updated.location,
         },
         requiresInsurance: updated.requiresInsurance,
-        notificationMemberIds,
-        promotedMemberIds: promotion.promoted.map((item) => item.memberId),
-      };
+        memberIds: notificationMemberIds,
+      });
+      await this.notificationProducer.enqueueWaitlistPromotions(tx, {
+        activityTitle: promotion.activityTitle,
+        promoted: promotion.promoted,
+      });
+      return this.toResponseDto(updated);
     });
-
-    if (result.notificationMemberIds.length > 0) {
-      await this.dispatchScheduleChangeNotifications(result);
-    }
-    await this.dispatchWaitlistPromotionNotifications(
-      result.activityId,
-      result.activityTitle,
-      result.promotedMemberIds,
-    );
-    return result.dto;
   }
 
   // ============ softDelete ============
@@ -1041,7 +1026,7 @@ export class ActivitiesService {
     if (dto.requiresInsuranceConfirmed !== true) {
       throw new BizException(BizCode.BAD_REQUEST);
     }
-    const result = await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       const current = await this.lockAndFindActivityOrThrow(id, tx);
 
       const transition = this.activityStateMachine.decide('publish', current.statusCode);
@@ -1089,21 +1074,17 @@ export class ActivitiesService {
         tx,
       });
 
-      return {
-        dto: this.toResponseDto(updated),
+      await this.notificationProducer.enqueuePublished(tx, {
         activityId: updated.id,
         activityTitle: updated.title,
+        publishedAt: now,
         startAt: updated.startAt,
         location: updated.location,
         requiresInsurance: updated.requiresInsurance,
         isPublicRegistration: updated.isPublicRegistration,
-      };
+      });
+      return this.toResponseDto(updated);
     });
-
-    if (result.isPublicRegistration) {
-      await this.dispatchPublishedNotification(result);
-    }
-    return result.dto;
   }
 
   // ============ cancel ============
@@ -1116,7 +1097,7 @@ export class ActivitiesService {
     auditMeta: AuditMeta,
   ): Promise<ActivityResponseDto> {
     await this.assertCanOrThrow(currentUser, 'activity.cancel.record', { type: 'activity', id });
-    const result = await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       const current = await this.lockAndFindActivityOrThrow(id, tx);
 
       const transition = this.activityStateMachine.decide('cancel', current.statusCode);
@@ -1187,26 +1168,15 @@ export class ActivitiesService {
         tx,
       });
 
-      // 携带锁后收件集与通知要素(活动名 + 取消原因)出事务;dto 仍为对外返回体。
-      return {
-        dto: this.toResponseDto(updated),
+      await this.notificationProducer.enqueueCancellation(tx, {
         activityId: current.id,
         activityTitle: updated.title,
+        cancelledAt,
         cancelReason: dto.cancelReason ?? null,
-        notificationMemberIds,
-      };
+        memberIds: notificationMemberIds,
+      });
+      return this.toResponseDto(updated);
     });
-
-    // 活动取消定向通知(统一通知 S4;评审稿 §6.4 / §6.2):**事务 commit 之后、事务外**遍历已报名者逐人派。
-    // **绝不破坏取消状态机行为锁**(* → cancelled 已在事务内 commit);派发失败只记日志,不阻断、不回滚。
-    await this.dispatchCancellationNotifications(
-      result.activityId,
-      result.activityTitle,
-      result.cancelReason,
-      result.notificationMemberIds,
-    );
-
-    return result.dto;
   }
 
   // ============ complete(v0.40.0 参与域生命周期收口③ 管理端手动完结)============
@@ -1262,125 +1232,5 @@ export class ActivitiesService {
 
       return this.toResponseDto(updated);
     });
-  }
-
-  // 派发「活动取消」定向通知(仅站内,goal:S4 站内为主、微信 opt-in 延后 —— 避免对 N 报名者微信 fan-out 延迟)。
-  // 收件人 = 该活动仍在册报名者(pending + pass + waitlisted;memberId 去重)。
-  // **整体 try-catch 永不抛 + 单人派发再各自吞**:任一人派发失败只记日志,不阻断其余、不破坏已 commit 的取消(行为锁)。
-  private async dispatchCancellationNotifications(
-    activityId: string,
-    activityTitle: string,
-    cancelReason: string | null,
-    memberIds: string[],
-  ): Promise<void> {
-    try {
-      const reasonSuffix = cancelReason ? ` 取消原因:${cancelReason}` : '';
-      for (const memberId of memberIds) {
-        try {
-          await this.notificationDispatcher.dispatchTargeted({
-            recipientMemberId: memberId,
-            notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_CHANGED,
-            title: '活动已取消',
-            body: `您报名的「${activityTitle}」已取消。${reasonSuffix}`,
-            channels: [NOTIFICATION_CHANNEL_IN_APP],
-          });
-        } catch (err) {
-          this.logger.error(
-            `activity cancel notification dispatch failed (activity=${activityId}, member=${memberId}): ${(err as Error).message}`,
-          );
-        }
-      }
-    } catch (err) {
-      this.logger.error(
-        `activity cancel notification fan-out failed (activity=${activityId}): ${(err as Error).message}`,
-      );
-    }
-  }
-
-  private async dispatchPublishedNotification(input: {
-    activityId: string;
-    activityTitle: string;
-    startAt: Date;
-    location: string;
-    requiresInsurance: boolean;
-  }): Promise<void> {
-    try {
-      const insurance = input.requiresInsurance
-        ? ' 本活动要求有效保险，请在报名前确认覆盖期。'
-        : '';
-      await this.notificationDispatcher.dispatchSystemMemberBroadcast({
-        notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_PUBLISHED,
-        title: '新活动已发布',
-        body: `「${input.activityTitle}」已发布，开始时间 ${input.startAt.toISOString()}，地点 ${input.location}。${insurance}`,
-      });
-    } catch (err) {
-      this.logger.error(
-        `activity publish notification failed (activity=${input.activityId}): ${(err as Error).message}`,
-      );
-    }
-  }
-
-  private async dispatchScheduleChangeNotifications(input: {
-    activityId: string;
-    activityTitle: string;
-    before: { startAt: Date; endAt: Date; location: string };
-    after: { startAt: Date; endAt: Date; location: string };
-    requiresInsurance: boolean;
-    notificationMemberIds: string[];
-  }): Promise<void> {
-    const changed: string[] = [];
-    if (input.before.startAt.getTime() !== input.after.startAt.getTime()) {
-      changed.push(
-        `开始时间：${input.before.startAt.toISOString()} → ${input.after.startAt.toISOString()}`,
-      );
-    }
-    if (input.before.endAt.getTime() !== input.after.endAt.getTime()) {
-      changed.push(
-        `结束时间：${input.before.endAt.toISOString()} → ${input.after.endAt.toISOString()}`,
-      );
-    }
-    if (input.before.location !== input.after.location) {
-      changed.push(`地点：${input.before.location} → ${input.after.location}`);
-    }
-    const insurance = input.requiresInsurance
-      ? ' 保险覆盖按原日期核验，请按调整后的活动时段重新确认。'
-      : '';
-    for (const memberId of input.notificationMemberIds) {
-      try {
-        await this.notificationDispatcher.dispatchTargeted({
-          recipientMemberId: memberId,
-          notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_CHANGED,
-          title: '活动安排已变更',
-          body: `您报名的「${input.activityTitle}」安排有变更：${changed.join('；')}。${insurance}`,
-          channels: [NOTIFICATION_CHANNEL_IN_APP],
-        });
-      } catch (err) {
-        this.logger.error(
-          `activity change notification failed (activity=${input.activityId}, member=${memberId}): ${(err as Error).message}`,
-        );
-      }
-    }
-  }
-
-  private async dispatchWaitlistPromotionNotifications(
-    activityId: string,
-    activityTitle: string,
-    memberIds: string[],
-  ): Promise<void> {
-    for (const memberId of memberIds) {
-      try {
-        await this.notificationDispatcher.dispatchTargeted({
-          recipientMemberId: memberId,
-          notificationTypeCode: NOTIFICATION_TYPE_REGISTRATION_RESULT,
-          title: '候补已递补',
-          body: `您报名的「${activityTitle}」已从候补递补，现已进入待审核。`,
-          channels: [NOTIFICATION_CHANNEL_IN_APP],
-        });
-      } catch (err) {
-        this.logger.error(
-          `waitlist promotion notification failed (activity=${activityId}, member=${memberId}): ${(err as Error).message}`,
-        );
-      }
-    }
   }
 }

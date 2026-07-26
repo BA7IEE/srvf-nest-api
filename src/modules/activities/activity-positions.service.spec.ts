@@ -6,10 +6,10 @@ import type { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthzService } from '../authz/authz.service';
-import type { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import type { RbacService } from '../permissions/rbac.service';
 import type { ActivityPositionAuditRecorder } from './activity-position-audit-recorder';
 import { ActivityPositionsService } from './activity-positions.service';
+import type { ActivityNotificationProducer } from './activity-notification-producer';
 
 const ACTIVITY_ID = 'activity-0001';
 const ACTIVITY_POSITION_ID = 'activity-position-0001';
@@ -84,17 +84,19 @@ function makeMocks() {
     explain: jest.fn().mockResolvedValue({ allow: true, reason: 'allowed' }),
   };
   const auditLogs = { log: jest.fn().mockResolvedValue(undefined) };
-  const notificationDispatcher = { dispatchTargeted: jest.fn().mockResolvedValue(undefined) };
+  const notificationProducer = {
+    enqueueWaitlistPromotions: jest.fn().mockResolvedValue(undefined),
+  };
   const service = new ActivityPositionsService(
     prisma as unknown as PrismaService,
     auditRecorder as unknown as ActivityPositionAuditRecorder,
     auditLogs as unknown as AuditLogsService,
     rbac as unknown as RbacService,
     authz as unknown as AuthzService,
-    notificationDispatcher as unknown as NotificationDispatcher,
+    notificationProducer as unknown as ActivityNotificationProducer,
     { activityResponsibilityWorkflow: { enabled: false } } as never,
   );
-  return { prisma, auditRecorder, auditLogs, rbac, authz, notificationDispatcher, service };
+  return { prisma, auditRecorder, auditLogs, rbac, authz, notificationProducer, service };
 }
 
 describe('ActivityPositionsService', () => {

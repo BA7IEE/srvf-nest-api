@@ -42,6 +42,7 @@ import { ActivityProposalApplier } from './activity-proposal-applier';
 import { ActivityClosurePolicy } from './activity-closure-policy';
 import { ActivityMemberOffboardImpactService } from './activity-member-offboard-impact.service';
 import { ActivityWorkflowQueryService } from './activity-workflow-query.service';
+import { ActivityNotificationProducer } from './activity-notification-producer';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activities 写操作(create / update / softDelete / publish / cancel 共 5 处共用 activity.publish)
@@ -65,8 +66,8 @@ import { ActivityWorkflowQueryService } from './activity-workflow-query.service'
 // 注入 AuthzService —— 5 个写方法判权从 rbac.can 切 authz.can/explain(update/delete/publish/cancel
 // 带 {type:'activity', id} ref;create 仍 no-ref)。authz 是叶子模块,不成环。
 @Module({
-  // 统一通知 S4(评审稿 §6.4 / §11):活动取消 → 已报名者定向通知(NotificationDispatcher;
-  // producer → notifications **单向**,cancel commit 后直调,防环:通知绝不回调活动)。
+  // 统一通知 S4/L2:活动发布、改期、取消与审核结果都在主业务 transaction 内
+  // enqueue durable intent；producer → notifications 单向，独立 worker 仅在 commit 后执行 Effect。
   imports: [
     DatabaseModule,
     AuditLogsModule,
@@ -92,6 +93,7 @@ import { ActivityWorkflowQueryService } from './activity-workflow-query.service'
   providers: [
     ActivitiesService,
     ActivityAuditRecorder,
+    ActivityNotificationProducer,
     ActivityStateMachine,
     ActivityParticipationPolicy,
     ActivityParticipationQueryService,
