@@ -71,7 +71,7 @@ function toAuditSnapshot(row: WaitlistAuditRow): Record<string, unknown> {
 
 // 活动聚合内的候补递补引擎：调用方持有事务，本函数只在同一事务内锁 Activity、按 FIFO
 // claim 候补行、写 waitlisted→pending 与 registration.review audit。保持纯函数入口，避免
-// participation 兄弟模块之间引入 Service-to-Service 依赖；通知仍由调用方在 commit 后派发。
+// participation 兄弟模块之间引入 Service-to-Service 依赖；通知由调用方在同一 transaction 内 enqueue。
 export async function promoteActivityWaitlist(args: {
   activityId: string;
   activityPositionId?: string | null;

@@ -233,6 +233,9 @@ Certificate (不在 participation 图内)
 - **活动 L2 通知**:发布/改期/取消/发布审核结果与 Activity/岗位扩容递补 intent
   和业务写、audit 同事务；审核 change 的收件人只认审核时当前 ACTIVE owner，
   禁止回退 `publishedBy`。独立 worker 仅在 commit 后执行通知 Effect。
+- **责任 L3 通知**:协办新增/结束与 owner 移交 intent 和 assignment、system-managed
+  RoleBinding、audit 同事务；移交分别快照旧/新 owner，禁止读取 `publishedBy`。
+  两条移交 intent 任一失败都回滚完整业务，worker 仅在 commit 后生成定向通知。
 - 跨 aggregate 写**只允许在同事务内发生**;**禁止**用"先 attendances 改完,再回调 activities"的两阶段方式;**禁止**用 `setTimeout` / `Promise.then` 把后续写挪出事务。
 
 ### 5.4 ContributionRule 是配置,不是流程

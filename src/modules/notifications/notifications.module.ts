@@ -43,8 +43,8 @@ import { WechatSubscribeTemplateService } from './wechat-subscribe-template.serv
 // **exports 出**供 producer(招新 recruitment / 入队 team-join)在业务事务 commit 后单向直调(D-N5;防环:本模块绝不回调 producer)。
 // feed 扩 buildFeedWhere(广播可见 ∪ 本人定向),recipientMemberId 定向收件人;S3 本身**不引 cron/queue/事件总线**。
 //
-// 统一通知 S4 活动·考勤 producer 定向触发(2026-06-25):报名审批 / 活动取消 / 考勤终审三处 producer commit 后
-// 事务外 try-catch 直调 S3 dispatchTargeted(仅站内;0 schema/0 端点/0 RBAC 码,纯 producer 接入)。
+// 统一通知 S4 活动·考勤 producer 定向触发(2026-06-25;L1-L3 durable):报名、活动与责任
+// producer 已在业务事务内 enqueue；仅考勤退回/终审仍待 L4 从 commit 后直调迁移。
 //
 // 统一通知 S5 短信兜底渠道(2026-06-27;评审稿 §4):NotificationSmsDispatchService —— admin 显式发起紧急召集短信
 // (NotificationAdminController +1 端点 send-sms,计费确认必需;新码 notification.send.sms)。复用 SmsModule
@@ -84,7 +84,7 @@ import { WechatSubscribeTemplateService } from './wechat-subscribe-template.serv
     NotificationOutboxWorker,
     WechatSubscribeTemplateService,
   ],
-  // 统一通知 S3:导出 NotificationDispatcher Effect 供 producer(招新发号 / 入队)commit 后直调(D-N5 单向直调)。
+  // 统一通知 S3:NotificationDispatcher 暂供尚未迁移的考勤 producer 单向直调；L4 后复核导出面。
   exports: [NotificationDispatcher, NotificationOutboxService],
 })
 export class NotificationsModule implements OnModuleInit {

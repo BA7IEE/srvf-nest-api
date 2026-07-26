@@ -182,8 +182,8 @@ function makePrismaMock() {
   const organization = {
     findFirst: jest.fn<Promise<{ id: string; parentId: string | null } | null>, [unknown]>(),
   };
-  // 统一通知 S4:cancel 后 commit 外的 fan-out helper 读已报名者(this.prisma.activityRegistration.findMany);
-  // 默认空(无报名者 → 零派发),旧 characterization 用例不关心(helper try-catch 永不抛,断言零影响)。
+  // 统一通知 L2:cancel 在同一事务内读取收件人并 enqueue durable intent；
+  // 默认空(无报名者 → 零 intent),旧 characterization 用例不关心通知内容。
   const activityRegistration = {
     findMany: jest.fn<Promise<Array<{ memberId: string }>>, [unknown]>().mockResolvedValue([]),
     updateMany: jest.fn<Promise<{ count: number }>, [unknown]>().mockResolvedValue({ count: 1 }),

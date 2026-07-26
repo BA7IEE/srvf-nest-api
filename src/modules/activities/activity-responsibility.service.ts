@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { MemberStatus, MembershipStatus, Prisma, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -8,7 +8,6 @@ import { PrismaService } from '../../database/prisma.service';
 import appConfig from '../../config/app.config';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { isFormalMemberGradeCode } from '../members/member-grade';
-import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { ActivityResponsibilityAuditRecorder } from './activity-responsibility-audit-recorder';
 import {
   ActivityResponsibilitiesResponseDto,
@@ -21,6 +20,7 @@ import {
 } from './activity-responsibility.dto';
 import { ActivityInitiationPolicy } from './activity-initiation-policy';
 import { ActivityResponsibilityGrantProjector } from './activity-responsibility-grant-projector';
+import { ActivityResponsibilityNotificationProducer } from './activity-responsibility-notification-producer';
 import { ActivityResponsibilityPolicy } from './activity-responsibility-policy';
 
 type PrismaTx = Prisma.TransactionClient;
@@ -53,23 +53,15 @@ type AssignmentView = Prisma.ActivityResponsibilityAssignmentGetPayload<{
   select: typeof assignmentSelect;
 }>;
 
-interface ResponsibilityEffect {
-  memberId: string;
-  title: string;
-  body: string;
-}
-
 @Injectable()
 export class ActivityResponsibilityService {
-  private readonly logger = new Logger(ActivityResponsibilityService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly policy: ActivityResponsibilityPolicy,
     private readonly initiationPolicy: ActivityInitiationPolicy,
     private readonly projector: ActivityResponsibilityGrantProjector,
     private readonly audit: ActivityResponsibilityAuditRecorder,
-    private readonly notifications: NotificationDispatcher,
+    private readonly notificationProducer: ActivityResponsibilityNotificationProducer,
     @Inject(appConfig.KEY)
     private readonly config: ConfigType<typeof appConfig>,
   ) {}
@@ -278,23 +270,6 @@ export class ActivityResponsibilityService {
     });
   }
 
-  private async dispatch(effect: ResponsibilityEffect): Promise<void> {
-    try {
-      await this.notifications.dispatchTargeted({
-        recipientMemberId: effect.memberId,
-        notificationTypeCode: 'general',
-        title: effect.title,
-        body: effect.body,
-      });
-    } catch (error) {
-      this.logger.error(
-        `activity responsibility notification failed (member=${effect.memberId}): ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }
-
   async createOwnerForPublish(
     tx: PrismaTx,
     activityId: string,
@@ -424,7 +399,7 @@ export class ActivityResponsibilityService {
       throw new BizException(BizCode.ACTIVITY_RESPONSIBILITY_TARGET_INVALID);
     }
     try {
-      const result = await this.prisma.$transaction(async (tx) => {
+      return await this.prisma.$transaction(async (tx) => {
         await this.lockActivity(activityId, tx);
         if (authorization === 'owner') {
           await this.policy.assertOwner(tx, activityId, user);
@@ -467,17 +442,13 @@ export class ActivityResponsibilityService {
           auditMeta,
           tx,
         });
-        return {
-          assignment,
-          effect: {
-            memberId: dto.memberId,
-            title: '你已被指定为活动协办人',
-            body: `你已成为「${activity.title}」的活动协办人。`,
-          },
-        };
+        await this.notificationProducer.enqueueCollaboratorAssigned(tx, {
+          assignmentId: assignment.id,
+          memberId: dto.memberId,
+          activityTitle: activity.title,
+        });
+        return this.toAssignmentDto(assignment);
       });
-      await this.dispatch(result.effect);
-      return this.toAssignmentDto(result.assignment);
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new BizException(BizCode.ACTIVITY_RESPONSIBILITY_ALREADY_EXISTS);
@@ -499,7 +470,7 @@ export class ActivityResponsibilityService {
       select: { memberId: true },
     });
     if (!seed) throw new BizException(BizCode.ACTIVITY_RESPONSIBILITY_NOT_FOUND);
-    const result = await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       await this.lockActivity(activityId, tx);
       if (authorization === 'owner') {
         await this.policy.assertOwner(tx, activityId, user);
@@ -534,17 +505,19 @@ export class ActivityResponsibilityService {
         auditMeta,
         tx,
       });
-      return {
-        assignment: { ...assignment, status: 'ended', endedAt: now, endedByUserId: user.id },
-        effect: {
-          memberId: assignment.memberId,
-          title: '活动协办职责已结束',
-          body: `你在「${activity.title}」中的活动协办职责已结束。`,
-        },
-      };
+      await this.notificationProducer.enqueueCollaboratorEnded(tx, {
+        assignmentId,
+        memberId: assignment.memberId,
+        activityTitle: activity.title,
+        endedAt: now,
+      });
+      return this.toAssignmentDto({
+        ...assignment,
+        status: 'ended',
+        endedAt: now,
+        endedByUserId: user.id,
+      });
     });
-    await this.dispatch(result.effect);
-    return this.toAssignmentDto(result.assignment);
   }
 
   async transferOwner(
@@ -555,7 +528,7 @@ export class ActivityResponsibilityService {
     authorization: 'owner-or-override' | 'owner' = 'owner-or-override',
   ): Promise<ActivityResponsibilitiesResponseDto> {
     this.assertWorkflowEnabled();
-    const effect = await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       await this.lockActivity(activityId, tx);
       if (authorization === 'owner') {
         await this.policy.assertOwner(tx, activityId, user);
@@ -634,32 +607,24 @@ export class ActivityResponsibilityService {
       });
       const responseOwner =
         activeAssignments.find((item) => item.responsibilityType === 'owner') ?? null;
+      await this.notificationProducer.enqueueOwnerTransferred(tx, {
+        assignmentId: newOwner.id,
+        oldOwnerMemberId: currentOwner.memberId,
+        newOwnerMemberId: dto.newOwnerMemberId,
+        activityTitle: activity.title,
+      });
       return {
-        oldOwner: {
-          memberId: currentOwner.memberId,
-          title: '活动负责人已移交',
-          body: `你已不再是「${activity.title}」的活动负责人。`,
-        },
-        newOwner: {
-          memberId: dto.newOwnerMemberId,
-          title: '你已成为活动负责人',
-          body: `你已成为「${activity.title}」的活动负责人。`,
-        },
-        response: {
-          activityId,
-          initiator: activity.initiator,
-          owner: responseOwner ? this.toAssignmentDto(responseOwner) : null,
-          collaborators: activeAssignments
-            .filter((item) => item.responsibilityType === 'collaborator')
-            .map((item) => this.toAssignmentDto(item)),
-          legacyUnassigned:
-            (activity.statusCode === 'draft' && activity.initiator === null) ||
-            (activity.statusCode === 'published' && responseOwner === null),
-        } satisfies ActivityResponsibilitiesResponseDto,
+        activityId,
+        initiator: activity.initiator,
+        owner: responseOwner ? this.toAssignmentDto(responseOwner) : null,
+        collaborators: activeAssignments
+          .filter((item) => item.responsibilityType === 'collaborator')
+          .map((item) => this.toAssignmentDto(item)),
+        legacyUnassigned:
+          (activity.statusCode === 'draft' && activity.initiator === null) ||
+          (activity.statusCode === 'published' && responseOwner === null),
       };
     });
-    await Promise.all([this.dispatch(effect.oldOwner), this.dispatch(effect.newOwner)]);
-    return effect.response;
   }
 
   async transferInitiator(
