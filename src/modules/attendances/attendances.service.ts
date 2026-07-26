@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { DictItemStatus, DictTypeStatus, Prisma, Role } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -13,27 +13,16 @@ import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
-import {
-  NOTIFICATION_CHANNEL_IN_APP,
-  NOTIFICATION_TYPE_ATTENDANCE_RESULT,
-  NOTIFICATION_TYPE_RECRUITMENT,
-} from '../notifications/notification.constants';
 import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
-import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { RbacService } from '../permissions/rbac.service';
 // 跨轴只读(2026-06-23):复用 team-join 贡献值封顶核(单一真相源;生涯累计 cutoff=null)。
 // 纯函数调用,非 DI provider → 无 AttendancesModule → TeamJoinModule 依赖;team-join 不反向
 // import attendances(team-join.constants 自洽),无循环。
-// 十项收口刀F(2026-07-11):终审 Effect 内再复用 computeContribution(入队年 cutoff 口径)判
-// 「贡献值达标」定向提醒——仍是纯函数 import,依赖形状不变。
-import { computeCappedContribution, computeContribution } from '../team-join/team-join-progress';
-import {
-  APP_STATUS_JOINING as TEAM_JOIN_APP_STATUS_JOINING,
-  CONTRIBUTION_THRESHOLD,
-} from '../team-join/team-join.constants';
+import { computeCappedContribution } from '../team-join/team-join-progress';
 import { AttendanceAuditRecorder } from './attendance-audit-recorder';
+import { AttendanceNotificationProducer } from './attendance-notification-producer';
 import { AttendancePresenter } from './attendance-presenter';
 import { AttendanceSheetStateMachine } from './attendance-sheet-state-machine';
 import { ContributionCalculator } from './contribution-calculator';
@@ -246,8 +235,6 @@ export type AttendanceAuthorization = 'authz' | 'managed';
 
 @Injectable()
 export class AttendancesService {
-  private readonly logger = new Logger(AttendancesService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly attendanceAuditRecorder: AttendanceAuditRecorder,
@@ -260,9 +247,9 @@ export class AttendancesService {
     // PR12(2026-07-02;冻结稿 §11 逐面迁移第一批)起其余 6 管理端动作(create/read×多/update/delete/
     // approve/reject)也切 authz.explain,见 assertCanOrThrow。
     private readonly authz: AuthzService,
-    // 统一通知 S4(评审稿 §6.4):考勤终审通过 → 本人考勤结果/贡献值定向通知派发器(producer → notifications
-    // 单向直调,commit 后事务外、try-catch 永不抛;防环:本服务绝不被通知模块回调)。
-    private readonly notificationDispatcher: NotificationDispatcher,
+    // PR-L4:考勤退回/终审通知 intent 与业务、audit 同事务落库；provider Effect 由既有
+    // NotificationOutboxWorker 在 commit 后执行并负责 lease/fence/retry。
+    private readonly attendanceNotificationProducer: AttendanceNotificationProducer,
     // F2/B2(路线图 §4;D7 拍板):供 queryDescendantOrgIds() 只读 helper 展开 includeDescendants
     // (closure 非判权,镜像 F1/A6 activities.service.ts 用法)。
     private readonly organizations: OrganizationsService,
@@ -1500,7 +1487,7 @@ export class AttendancesService {
       type: 'attendance_sheet',
       id,
     });
-    const result = await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
       const transition = this.sheetStateMachine.decide('firstReturn', sheet.statusCode);
       if (!transition.allowed) throw new BizException(transition.biz);
@@ -1545,21 +1532,19 @@ export class AttendancesService {
         tx,
       });
 
-      return {
-        dto: this.attendancePresenter.toSheetResponseDto(updated),
+      await this.attendanceNotificationProducer.enqueueReturned(tx, {
+        sheetId: id,
         activityId: updated.activityId,
+        returnedAt,
+        returnNote,
         submitterUserIds: [
           updated.submitterUserId,
           ...(updated.lastSubmittedByUserId ? [updated.lastSubmittedByUserId] : []),
         ],
-      };
+      });
+
+      return this.attendancePresenter.toSheetResponseDto(updated);
     });
-    await this.dispatchAttendanceCorrectionNotification(
-      result.activityId,
-      result.submitterUserIds,
-      returnNote,
-    );
-    return result.dto;
   }
 
   // ============ reject(PATCH;APD 一级)============
@@ -1658,7 +1643,7 @@ export class AttendancesService {
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
     await this.assertFinalReviewAuthzOrThrow(currentUser, 'attendance.final-approve.sheet', id);
-    const result = await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
       const finalApproveTransition = this.sheetStateMachine.decide(
@@ -1731,27 +1716,19 @@ export class AttendancesService {
         tx,
       });
 
-      // 携带通知收件人(逐 record 本人 memberId + 本次贡献值)出事务;dto 仍为对外返回体。
-      return {
-        dto: this.attendancePresenter.toSheetResponseDto(updated),
+      await this.attendanceNotificationProducer.enqueueFinalApproved(tx, {
+        sheetId: id,
         activityId: updated.activityId,
-        recipients: recordsForEvent.map((r) => ({
+        finalReviewedAt,
+        records: recordsForEvent.map((r) => ({
+          id: r.id,
           memberId: r.memberId,
           contributionPoints: this.attendancePresenter.decimalToString(r.contributionPoints),
         })),
-      };
+      });
+
+      return this.attendancePresenter.toSheetResponseDto(updated);
     });
-
-    // 考勤结果/贡献值定向通知(统一通知 S4;评审稿 §6.4 / §6.2):**事务 commit 之后、事务外**逐 record 派给本人。
-    // **绝不破坏 finalApprove + 贡献值生效行为锁**(pending_final_review → approved + attendance.recorded 已在事务内
-    // commit);派发失败只记日志,不阻断、不回滚。
-    await this.dispatchAttendanceNotifications(result.activityId, result.recipients);
-
-    // 十项收口刀F(#8 拍板「只发达标提醒,不动状态机」):本次终审使入队贡献值跨过阈值者,追发一条
-    // 「贡献值已达标」站内提醒(同为 commit 后事务外 additive Effect,失败只记日志)。
-    await this.dispatchTeamJoinContributionMetNotifications(result.recipients);
-
-    return result.dto;
   }
 
   // ============ final-return(POST;独立终审退回修改)============
@@ -1765,7 +1742,7 @@ export class AttendancesService {
     const returnNote = dto.returnNote.trim();
     if (!returnNote) throw new BizException(BizCode.ATTENDANCE_RETURN_NOTE_REQUIRED);
     await this.assertFinalReviewAuthzOrThrow(currentUser, 'attendance.final-return.sheet', id);
-    const result = await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
       const transition = this.sheetStateMachine.decide('finalReturn', sheet.statusCode);
       if (!transition.allowed) throw new BizException(transition.biz);
@@ -1810,157 +1787,19 @@ export class AttendancesService {
         tx,
       });
 
-      return {
-        dto: this.attendancePresenter.toSheetResponseDto(updated),
+      await this.attendanceNotificationProducer.enqueueReturned(tx, {
+        sheetId: id,
         activityId: updated.activityId,
+        returnedAt,
+        returnNote,
         submitterUserIds: [
           updated.submitterUserId,
           ...(updated.lastSubmittedByUserId ? [updated.lastSubmittedByUserId] : []),
         ],
-      };
-    });
-    await this.dispatchAttendanceCorrectionNotification(
-      result.activityId,
-      result.submitterUserIds,
-      returnNote,
-    );
-    return result.dto;
-  }
-
-  private async dispatchAttendanceCorrectionNotification(
-    activityId: string,
-    submitterUserIds: string[],
-    returnNote: string,
-  ): Promise<void> {
-    try {
-      const [activity, assignments, submitters] = await Promise.all([
-        this.prisma.activity.findUnique({
-          where: { id: activityId },
-          select: { title: true },
-        }),
-        this.prisma.activityResponsibilityAssignment.findMany({
-          where: {
-            activityId,
-            status: 'active',
-            canManageAttendance: true,
-          },
-          select: { memberId: true },
-        }),
-        this.prisma.user.findMany({
-          where: { id: { in: [...new Set(submitterUserIds)] }, deletedAt: null },
-          select: { memberId: true },
-        }),
-      ]);
-      const recipients = new Set<string>();
-      for (const assignment of assignments) recipients.add(assignment.memberId);
-      for (const submitter of submitters) {
-        if (submitter.memberId) recipients.add(submitter.memberId);
-      }
-      const activityTitle = activity?.title ?? '活动';
-      for (const recipientMemberId of recipients) {
-        try {
-          await this.notificationDispatcher.dispatchTargeted({
-            recipientMemberId,
-            notificationTypeCode: NOTIFICATION_TYPE_ATTENDANCE_RESULT,
-            title: '考勤单已退回修改',
-            body: `「${activityTitle}」考勤单已退回修改。原因：${returnNote}`,
-            channels: [NOTIFICATION_CHANNEL_IN_APP],
-          });
-        } catch (err) {
-          this.logger.error(
-            `attendance correction notification failed (activity=${activityId}, member=${recipientMemberId}): ${(err as Error).message}`,
-          );
-        }
-      }
-    } catch (err) {
-      this.logger.error(
-        `attendance correction notification fan-out failed (activity=${activityId}): ${(err as Error).message}`,
-      );
-    }
-  }
-
-  // 派发「考勤结果/贡献值」定向通知(仅站内,goal:S4 站内为主、微信 opt-in 延后)。收件人 = 该 sheet 终审通过的
-  // 逐条 record 本人(record→member;payload 含活动名 + 本次贡献值)。一人多 record(多时段)→ 多条,各自独立
-  // (每条 = 一次考勤结果)。**整体 try-catch + 单条各自吞**:任一失败只记日志,不阻断其余、不破坏已 commit 的终审。
-  private async dispatchAttendanceNotifications(
-    activityId: string,
-    recipients: Array<{ memberId: string; contributionPoints: string | null }>,
-  ): Promise<void> {
-    if (recipients.length === 0) return;
-    try {
-      const activity = await this.prisma.activity.findUnique({
-        where: { id: activityId },
-        select: { title: true },
       });
-      const activityTitle = activity?.title ?? '活动';
-      for (const r of recipients) {
-        try {
-          await this.notificationDispatcher.dispatchTargeted({
-            recipientMemberId: r.memberId,
-            notificationTypeCode: NOTIFICATION_TYPE_ATTENDANCE_RESULT,
-            title: '考勤结果已确认',
-            body: `您在「${activityTitle}」的考勤已终审通过,本次贡献值 ${r.contributionPoints ?? '0'}。`,
-            channels: [NOTIFICATION_CHANNEL_IN_APP],
-          });
-        } catch (err) {
-          this.logger.error(
-            `attendance result notification dispatch failed (activity=${activityId}, member=${r.memberId}): ${(err as Error).message}`,
-          );
-        }
-      }
-    } catch (err) {
-      this.logger.error(
-        `attendance result notification fan-out failed (activity=${activityId}): ${(err as Error).message}`,
-      );
-    }
-  }
 
-  // 十项收口刀F(#8;拍板「只发达标提醒,不动状态机」):考勤终审 commit 后,对持 joining 态入队
-  // 申请、且本次终审使贡献值跨过阈值(before<5≤after)的队员,发「入队贡献值已达标」站内定向通知。
-  // **纯 additive Effect**:整体+单条 try-catch 永不抛,不改任何状态(推进仍走 admin 重标 gate 的
-  // 既有自愈通道);复用 team-join 纯函数直连 prisma(本模块既有先例),不引 service 防环。
-  // 跨阈判定:before 下界 = after − 本 sheet 未封顶增量(封顶/超 cutoff 记录可致少数重复提醒,
-  // 可接受——已推进者不再命中 joining,天然收敛)。
-  private async dispatchTeamJoinContributionMetNotifications(
-    recipients: Array<{ memberId: string; contributionPoints: string | null }>,
-  ): Promise<void> {
-    if (recipients.length === 0) return;
-    try {
-      // 按 member 聚合本 sheet 增量(一人多时段多 record)
-      const deltas = new Map<string, Prisma.Decimal>();
-      for (const r of recipients) {
-        const prev = deltas.get(r.memberId) ?? new Prisma.Decimal(0);
-        deltas.set(r.memberId, prev.add(r.contributionPoints ?? 0));
-      }
-      for (const [memberId, delta] of deltas) {
-        try {
-          const app = await this.prisma.teamJoinApplication.findFirst({
-            where: { memberId, statusCode: TEAM_JOIN_APP_STATUS_JOINING, deletedAt: null },
-            orderBy: { createdAt: 'desc' },
-            select: { cycle: { select: { year: true } } },
-          });
-          if (!app) continue;
-          const after = await computeContribution(this.prisma, memberId, app.cycle.year);
-          // 未达标,或扣除本次增量后本就达标(存量已达标者)→ 不提醒
-          if (!after.satisfied || after.points.minus(delta).gte(CONTRIBUTION_THRESHOLD)) {
-            continue;
-          }
-          await this.notificationDispatcher.dispatchTargeted({
-            recipientMemberId: memberId,
-            notificationTypeCode: NOTIFICATION_TYPE_RECRUITMENT,
-            title: '入队贡献值已达标',
-            body: `您的贡献值已达到入队要求(当前 ${after.points.toString()} 分)。管理员核对门槛后将安排综合评估,请留意后续通知。`,
-            channels: [NOTIFICATION_CHANNEL_IN_APP],
-          });
-        } catch (err) {
-          this.logger.error(
-            `team-join contribution-met notification failed (member=${memberId}): ${(err as Error).message}`,
-          );
-        }
-      }
-    } catch (err) {
-      this.logger.error(`team-join contribution-met fan-out failed: ${(err as Error).message}`);
-    }
+      return this.attendancePresenter.toSheetResponseDto(updated);
+    });
   }
 
   // ============ final-reject(PATCH;批次 4-B 新增 — 终审驳回)============

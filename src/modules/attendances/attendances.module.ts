@@ -17,6 +17,7 @@ import { ActivityCheckInPolicy } from './activity-check-in-policy';
 import { ActivityCheckInPresenter } from './activity-check-in-presenter';
 import { AppActivityCheckInsService } from './app-activity-check-ins.service';
 import { AttendanceAuditRecorder } from './attendance-audit-recorder';
+import { AttendanceNotificationProducer } from './attendance-notification-producer';
 import { AttendancePresenter } from './attendance-presenter';
 import {
   AttendanceSheetsCollectionController,
@@ -49,8 +50,8 @@ import { ParticipationSummaryQueryService } from './participation-summary-query.
 // Route B Phase 4d2(2026-06-01):旧 AttendanceRecordsMeController(/v2/users/me/attendance-records)
 // 已删除(app/v1/my/attendance-records 对等存在;沿 docs/api-surface-migration-plan.md §6 Phase 4)。
 @Module({
-  // 统一通知 S4(评审稿 §6.4 / §11):考勤终审通过 → 本人考勤结果/贡献值定向通知(NotificationDispatcher;
-  // producer → notifications **单向**,finalApprove commit 后直调,防环:通知绝不回调考勤)。
+  // PR-L4:考勤退回/终审由 AttendanceNotificationProducer 在业务事务内写 durable intent；
+  // NotificationsModule 提供既有 outbox，worker 在 commit 后执行 Effect，依赖仍为单向。
   // 终态 scoped-authz PR9 + v0.47.0 F2:导入 AuthzModule 注入 AuthzService —— 终审与 reopen
   // 共用带 ref 的 authz.explain;authz 是叶子模块,无反向依赖,不成环。
   imports: [
@@ -90,6 +91,7 @@ import { ParticipationSummaryQueryService } from './participation-summary-query.
     TimeOverlapPolicy,
     AttendanceSheetStateMachine,
     AttendanceAuditRecorder,
+    AttendanceNotificationProducer,
     AttendancePresenter,
     ParticipationSummaryQueryService,
   ],

@@ -23,7 +23,7 @@ import { NotificationWechatDispatchService } from './notification-wechat-dispatc
 //   DTO 呈现。**外部 HTTP 一律在 producer 业务事务之外**(§6.2:8s HTTP 绝不拖事务)。
 //
 // 形态:durable producer 在业务事务内 enqueue，独立 worker commit 后由 outbox handler 创建定向行；
-// 尚未迁移的考勤 producer 暂保持 commit 后同步直调本 Effect，无事件总线。
+// L1-L4 后全仓业务 producer 均走该路径，本类保留模块内兼容实现，不再跨模块导出。
 // **防环**:producer → notifications **单向**,本 Effect **绝不** import / 回调招新或 team-join。
 // **系统定向跳过 admin 状态机**:直接建 published 行(sourceType=system / authorUserId=null),不污染 admin CRUD 路径。
 export interface DispatchTargetedInput {
@@ -51,8 +51,8 @@ export class NotificationDispatcher {
   ) {}
 
   // 定向派发:建已发布定向行(站内即达)+ 按声明派微信(机会式,有 quota 才推)。返建出的行(供测试 / 追溯)。
-  // **本方法可能抛**(如定向行 create 的 DB 异常);producer 侧以 try-catch 包裹保证「派发失败绝不破坏 promote/入队」
-  // (行为锁);微信分支本身永不抛(dispatchDirected 内 catch)。
+  // **本方法可能抛**(如定向行 create 的 DB 异常)；当前业务 producer 不直调本入口，
+  // durable retry/fencing 统一由 NotificationOutboxWorker 承担。
   async dispatchTargeted(input: DispatchTargetedInput): Promise<Notification> {
     const channels = this.normalizeChannels(input.channels);
 

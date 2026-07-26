@@ -65,7 +65,7 @@ interface LockedDurableBroadcastUser {
 
 // 统一通知 S2:微信渠道派发(广播勾微信 → 对可见且有 quota 的会员逐人下发)。
 //
-// **本服务不是 S3 的 NotificationDispatcher Effect**(派发器 Effect 正式化 = S3);S2 = 聚焦微信渠道分支,
+// **本服务不是 S3 的 outbox handler Effect owner**；S2 = 聚焦微信渠道分支,
 // 由 NotificationService.publish 在 **publish DB 事务之外** 同步调用(§6.2:8s HTTP 绝不拖事务)。
 //
 // fan-out 收窄(§2.1 / §8.1):候选 = 该类型微信模板下 **有 quota 的会员**(已 ack 订阅,远少于全员)∩ 可见,
@@ -99,7 +99,8 @@ export class NotificationWechatDispatchService {
   }
 
   // 统一通知 S3:定向通知微信渠道派发(单一收件人 = notification.recipientMemberId)。
-  // 由 NotificationDispatcher Effect 在 producer 事务 **commit 之后** 调用(§6.2:8s HTTP 绝不拖事务)。
+  // 由 outbox worker/handler 在 producer 事务 **commit 之后** 调用(§6.2:8s HTTP 绝不拖事务)；
+  // NotificationDispatcher 仅保留模块内兼容入口。
   // **永不抛**(镜像 dispatchBroadcast):微信失败仅 log + delivery,绝不回滚已建定向行 / 阻断 producer。
   // 复用 dispatchOne(§3.4 五步:openid → 原子扣 quota → send → delivery + 失败码语义)——与广播同一套渠道机制。
   // 与广播差异:无可见性 fan-out(收件人显式)、无 re-publish 去重(定向行每次新建唯一);新志愿者通常无 quota → skipped no-quota。

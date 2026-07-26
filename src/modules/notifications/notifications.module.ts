@@ -38,13 +38,13 @@ import { WechatSubscribeTemplateService } from './wechat-subscribe-template.serv
 // 微信派发分支(NotificationWechatDispatchService,由 publish 同事务 intent 驱动)+ quota ack/status(app)+
 // 模板配置(admin)。站内 S1 状态机 / 可见性 / 已读零改,微信为 additive 分支。
 //
-// 统一通知 S3 producer 接入 + 派发器 Effect 正式化(2026-06-25;评审稿 §2.2/§3.6/§6):NotificationDispatcher
-// (architecture-boundary §3.6 首个真实 Effect;dispatchTargeted 建已发布定向行 → 站内 + 微信〔复用 S2 dispatchDirected〕)
-// **exports 出**供 producer(招新 recruitment / 入队 team-join)在业务事务 commit 后单向直调(D-N5;防环:本模块绝不回调 producer)。
-// feed 扩 buildFeedWhere(广播可见 ∪ 本人定向),recipientMemberId 定向收件人;S3 本身**不引 cron/queue/事件总线**。
+// 统一通知 S3 producer 接入 + 派发器 Effect 正式化(2026-06-25;评审稿 §2.2/§3.6/§6):
+// NotificationOutboxHandlers 是当前 worker Effect owner；NotificationDispatcher 保留模块内兼容实现。
+// 定向 Effect 现统一由既有 outbox handler 驱动；producer 只依赖导出的 NotificationOutboxService。
+// feed 扩 buildFeedWhere(广播可见 ∪ 本人定向),recipientMemberId 定向收件人;S3 本身**不引第三个 cron/外部 queue/事件总线**。
 //
-// 统一通知 S4 活动·考勤 producer 定向触发(2026-06-25;L1-L3 durable):报名、活动与责任
-// producer 已在业务事务内 enqueue；仅考勤退回/终审仍待 L4 从 commit 后直调迁移。
+// 统一通知 S4 活动·考勤 producer 定向触发(2026-06-25;L1-L4 durable):报名、活动、责任与
+// 考勤退回/终审 producer 均在业务事务内 enqueue，worker commit 后执行 Effect。
 //
 // 统一通知 S5 短信兜底渠道(2026-06-27;评审稿 §4):NotificationSmsDispatchService —— admin 显式发起紧急召集短信
 // (NotificationAdminController +1 端点 send-sms,计费确认必需;新码 notification.send.sms)。复用 SmsModule
@@ -84,8 +84,8 @@ import { WechatSubscribeTemplateService } from './wechat-subscribe-template.serv
     NotificationOutboxWorker,
     WechatSubscribeTemplateService,
   ],
-  // 统一通知 S3:NotificationDispatcher 暂供尚未迁移的考勤 producer 单向直调；L4 后复核导出面。
-  exports: [NotificationDispatcher, NotificationOutboxService],
+  // L4 后业务 producer 只导入 outbox enqueue 面；Dispatcher 保持模块内兼容实现，不再跨模块导出。
+  exports: [NotificationOutboxService],
 })
 export class NotificationsModule implements OnModuleInit {
   private readonly logger = new Logger(NotificationsModule.name);
