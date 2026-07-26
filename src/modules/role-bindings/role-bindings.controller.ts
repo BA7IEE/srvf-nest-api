@@ -160,6 +160,7 @@ export class RoleBindingsController {
     BizCode.ROLE_DELETED,
     BizCode.CANNOT_ASSIGN_HIGHER_ROLE,
     BizCode.ORGANIZATION_NOT_FOUND,
+    BizCode.ORGANIZATION_INACTIVE,
     BizCode.ACTIVITY_NOT_FOUND,
   )
   create(
@@ -185,6 +186,8 @@ export class RoleBindingsController {
     BizCode.ROLE_BINDING_ALREADY_EXISTS,
     BizCode.ROLE_BINDING_SYSTEM_MANAGED_ROLE_FORBIDDEN,
     BizCode.LAST_OPS_ADMIN_PROTECTED,
+    BizCode.ORGANIZATION_NOT_FOUND,
+    BizCode.ORGANIZATION_INACTIVE,
   )
   update(
     @CurrentUser() user: CurrentUserPayload,

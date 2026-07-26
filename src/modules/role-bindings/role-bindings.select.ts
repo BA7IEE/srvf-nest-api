@@ -19,6 +19,12 @@ export const roleBindingSafeSelect = {
   note: true,
   createdAt: true,
   updatedAt: true,
+  scopeOrganization: {
+    select: {
+      status: true,
+      deletedAt: true,
+    },
+  },
 } as const satisfies Prisma.RoleBindingSelect;
 
 export type SafeRoleBinding = Prisma.RoleBindingGetPayload<{

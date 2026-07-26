@@ -14992,6 +14992,10 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "nullable": true,
         "type": "object",
       },
+      "scopeInactive": {
+        "description": "当前 scope 是否失效(仅 ORGANIZATION / ORGANIZATION_TREE 可能为 true；组织停用、软删或缺失时为 true)",
+        "type": "boolean",
+      },
       "scopeOrgId": {
         "description": "scope 组织 id(ORGANIZATION / ORGANIZATION_TREE 时有值)",
         "nullable": true,
@@ -15048,6 +15052,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "scopeType",
       "status",
       "startedAt",
+      "scopeInactive",
       "createdAt",
       "updatedAt",
     ],
@@ -59774,9 +59779,10 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "34002: 相同 principal × 角色 × scope 的在任绑定已存在",
+                    "description": "34002: 相同 principal × 角色 × scope 的在任绑定已存在; 17031: 组织节点状态非活跃,不能挂队员",
                     "enum": [
                       34002,
+                      17031,
                     ],
                     "example": 34002,
                     "type": "integer",
@@ -59800,7 +59806,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "相同 principal × 角色 × scope 的在任绑定已存在(code=34002)",
+          "description": "相同 principal × 角色 × scope 的在任绑定已存在(code=34002) / 组织节点状态非活跃,不能挂队员(code=17031)",
         },
         "410": {
           "content": {
@@ -61181,9 +61187,10 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "34001: 角色绑定不存在",
+                    "description": "34001: 角色绑定不存在; 11001: 组织节点不存在",
                     "enum": [
                       34001,
+                      11001,
                     ],
                     "example": 34001,
                     "type": "integer",
@@ -61207,7 +61214,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "角色绑定不存在(code=34001)",
+          "description": "角色绑定不存在(code=34001) / 组织节点不存在(code=11001)",
         },
         "409": {
           "content": {
@@ -61215,10 +61222,11 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "34002: 相同 principal × 角色 × scope 的在任绑定已存在; 30101: 系统必须保留至少一个活跃运营管理员",
+                    "description": "34002: 相同 principal × 角色 × scope 的在任绑定已存在; 30101: 系统必须保留至少一个活跃运营管理员; 17031: 组织节点状态非活跃,不能挂队员",
                     "enum": [
                       34002,
                       30101,
+                      17031,
                     ],
                     "example": 34002,
                     "type": "integer",
@@ -61242,7 +61250,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "相同 principal × 角色 × scope 的在任绑定已存在(code=34002) / 系统必须保留至少一个活跃运营管理员(code=30101)",
+          "description": "相同 principal × 角色 × scope 的在任绑定已存在(code=34002) / 系统必须保留至少一个活跃运营管理员(code=30101) / 组织节点状态非活跃,不能挂队员(code=17031)",
         },
       },
       "security": [

@@ -147,6 +147,12 @@ export class RoleBindingResponseDto {
   @ApiPropertyOptional({ description: '备注', nullable: true })
   note!: string | null;
 
+  @ApiProperty({
+    description:
+      '当前 scope 是否失效(仅 ORGANIZATION / ORGANIZATION_TREE 可能为 true；组织停用、软删或缺失时为 true)',
+  })
+  scopeInactive!: boolean;
+
   @ApiProperty({ description: '记录创建时间' })
   createdAt!: Date;
 

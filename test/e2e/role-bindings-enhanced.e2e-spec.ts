@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { BindingStatus, PrincipalType, Role } from '@prisma/client';
+import { BindingStatus, OrganizationStatus, PrincipalType, Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -68,6 +68,8 @@ describe('F3/C1 role-bindings 增强面(page / detail / preview / batch)', () =>
   let roleAId: string; // code rbe-role-a
   let roleBId: string; // code rbe-role-b
   let orgId: string;
+  let inactiveOrgId: string;
+  let deletedOrgId: string;
 
   let targetAliceId: string; // USER 主体(username 供 principalQ)
   let targetBobId: string;
@@ -115,6 +117,25 @@ describe('F3/C1 role-bindings 增强面(page / detail / preview / batch)', () =>
       select: { id: true },
     });
     orgId = org.id;
+    const inactiveOrg = await prisma.organization.create({
+      data: {
+        name: 'RBE Inactive Org',
+        nodeTypeCode: 'rescue-team',
+        status: OrganizationStatus.INACTIVE,
+      },
+      select: { id: true },
+    });
+    inactiveOrgId = inactiveOrg.id;
+    const deletedOrg = await prisma.organization.create({
+      data: {
+        name: 'RBE Deleted Org',
+        nodeTypeCode: 'rescue-team',
+        status: OrganizationStatus.INACTIVE,
+        deletedAt: new Date(),
+      },
+      select: { id: true },
+    });
+    deletedOrgId = deletedOrg.id;
     const member = await prisma.member.create({
       data: { memberNo: 'rbe-m1', displayName: 'RBE 队员甲' },
       select: { id: true },
@@ -185,6 +206,13 @@ describe('F3/C1 role-bindings 增强面(page / detail / preview / batch)', () =>
 
   function getPage(auth: string, query: Record<string, string> = {}) {
     return request(httpServer(app)).get(PAGE_PATH).query(query).set('Authorization', auth);
+  }
+
+  function postBinding(body: Record<string, unknown>) {
+    return request(httpServer(app))
+      .post('/api/admin/v1/role-bindings')
+      .set('Authorization', adminAuth)
+      .send(body);
   }
 
   // ============ RBAC 门 ============
@@ -478,6 +506,27 @@ describe('F3/C1 role-bindings 增强面(page / detail / preview / batch)', () =>
       );
       expect(await prisma.roleBinding.count()).toBe(before);
     });
+
+    it('ORGANIZATION scope + 停用组织 → preview/create 同为 ORGANIZATION_INACTIVE；软删组织仍 NOT_FOUND', async () => {
+      const query = {
+        principalType: 'USER',
+        principalId: targetBobId,
+        roleId: roleBId,
+        scopeType: 'ORGANIZATION',
+        scopeOrgId: inactiveOrgId,
+      };
+      const preview = await getPreview(query);
+      expect(preview.body.data.valid).toBe(false);
+      expect(preview.body.data.conflicts.map((c: { bizCode: number }) => c.bizCode)).toContain(
+        BizCode.ORGANIZATION_INACTIVE.code,
+      );
+      expectBizError(await postBinding(query), BizCode.ORGANIZATION_INACTIVE);
+
+      expectBizError(
+        await postBinding({ ...query, scopeOrgId: deletedOrgId }),
+        BizCode.ORGANIZATION_NOT_FOUND,
+      );
+    });
   });
 
   // ============ batch ============
@@ -544,6 +593,123 @@ describe('F3/C1 role-bindings 增强面(page / detail / preview / batch)', () =>
       }));
       expectBizError(await postBatch(tooMany), BizCode.BAD_REQUEST, { strictMessage: false });
       expectBizError(await postBatch([]), BizCode.BAD_REQUEST, { strictMessage: false });
+    });
+
+    it('停用组织项被 blocked 且不写绑定、不写成功审计', async () => {
+      const beforeBindings = await prisma.roleBinding.count();
+      const beforeAudits = await prisma.auditLog.count({ where: { event: 'role-binding.create' } });
+      const res = await postBatch([
+        {
+          principalType: 'USER',
+          principalId: targetBobId,
+          roleId: roleBId,
+          scopeType: 'ORGANIZATION_TREE',
+          scopeOrgId: inactiveOrgId,
+        },
+      ]);
+      expect(res.status).toBe(200);
+      expect(res.body.data.items).toEqual([
+        expect.objectContaining({
+          index: 0,
+          outcome: 'blocked',
+          bizCode: BizCode.ORGANIZATION_INACTIVE.code,
+          bindingId: null,
+        }),
+      ]);
+      expect(await prisma.roleBinding.count()).toBe(beforeBindings);
+      expect(await prisma.auditLog.count({ where: { event: 'role-binding.create' } })).toBe(
+        beforeAudits,
+      );
+    });
+  });
+
+  describe('停用组织 scope 的历史保留与恢复闸', () => {
+    it('active 组织可建；之后组织停用时读取显式 scopeInactive=true，纯 note 可改，恢复 ACTIVE 被拒且无失败审计', async () => {
+      const created = await postBinding({
+        principalType: 'USER',
+        principalId: targetBobId,
+        roleId: roleBId,
+        scopeType: 'ORGANIZATION_TREE',
+        scopeOrgId: orgId,
+      });
+      expect(created.status).toBe(201);
+      expect(created.body.data.scopeInactive).toBe(false);
+      const bindingId = created.body.data.id as string;
+
+      await prisma.roleBinding.update({
+        where: { id: bindingId },
+        data: { status: BindingStatus.SUSPENDED },
+      });
+      await prisma.organization.update({
+        where: { id: orgId },
+        data: { status: OrganizationStatus.INACTIVE },
+      });
+
+      const detail = await request(httpServer(app))
+        .get(`/api/admin/v1/role-bindings/${bindingId}`)
+        .set('Authorization', adminAuth);
+      expect(detail.status).toBe(200);
+      expect(detail.body.data).toMatchObject({ id: bindingId, scopeInactive: true });
+      const page = await getPage(adminAuth, {
+        scopeOrgId: orgId,
+        includeExpired: 'true',
+      });
+      expect(page.body.data.items).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: bindingId, scopeInactive: true })]),
+      );
+
+      const noteUpdate = await request(httpServer(app))
+        .patch(`/api/admin/v1/role-bindings/${bindingId}`)
+        .set('Authorization', adminAuth)
+        .send({ note: '停用 scope 的历史备注仍可维护' });
+      expect(noteUpdate.status).toBe(200);
+      expect(noteUpdate.body.data).toMatchObject({
+        note: '停用 scope 的历史备注仍可维护',
+        scopeInactive: true,
+      });
+
+      const beforeRejectedAudit = await prisma.auditLog.count({
+        where: { event: 'role-binding.update', resourceId: bindingId },
+      });
+      const reactivation = await request(httpServer(app))
+        .patch(`/api/admin/v1/role-bindings/${bindingId}`)
+        .set('Authorization', adminAuth)
+        .send({ status: BindingStatus.ACTIVE });
+      expectBizError(reactivation, BizCode.ORGANIZATION_INACTIVE);
+      expect(
+        await prisma.auditLog.count({
+          where: { event: 'role-binding.update', resourceId: bindingId },
+        }),
+      ).toBe(beforeRejectedAudit);
+    });
+
+    it('停用组织下，延长已到期 ACTIVE 绑定使其重新生效时被拒', async () => {
+      const stale = await prisma.roleBinding.create({
+        data: {
+          principalType: PrincipalType.USER,
+          principalId: targetAliceId,
+          roleId: roleBId,
+          scopeType: 'ORGANIZATION',
+          scopeOrgId: inactiveOrgId,
+          status: BindingStatus.ACTIVE,
+          startedAt: new Date('2020-01-01T00:00:00.000Z'),
+          endedAt: new Date('2020-02-01T00:00:00.000Z'),
+        },
+        select: { id: true },
+      });
+      const beforeAudit = await prisma.auditLog.count({
+        where: { event: 'role-binding.update', resourceId: stale.id },
+      });
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/role-bindings/${stale.id}`)
+        .set('Authorization', adminAuth)
+        .send({ endedAt: '2099-01-01T00:00:00.000Z' });
+      expectBizError(res, BizCode.ORGANIZATION_INACTIVE);
+      expect(
+        await prisma.auditLog.count({
+          where: { event: 'role-binding.update', resourceId: stale.id },
+        }),
+      ).toBe(beforeAudit);
     });
   });
 });
