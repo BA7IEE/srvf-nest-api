@@ -151,15 +151,55 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
     );
   });
 
-  it('补偿删失败仅吞掉告警,不掩盖原错(原错仍上抛)', async () => {
+  it('补偿删失败仅写固定安全分类且不掩盖原错', async () => {
     const { service, storage } = buildService(new Error('tx1 boom'));
-    storage.deleteObject.mockRejectedValueOnce(new Error('storage down'));
+    const rawProviderMessage =
+      'COS bucket=private-bucket secret=credential-value url=https://cos.example/raw-key';
+    storage.deleteObject.mockRejectedValueOnce(new Error(rawProviderMessage));
+    const warnSpy = jest
+      .spyOn((service as unknown as { logger: { warn(message: unknown): void } }).logger, 'warn')
+      .mockImplementation(() => undefined);
 
     // deleteObject 抛错被 safeDeleteOrphanImage 吞掉 → 仍以原 tx1 错误结束
     await expect(service.submit(buildPayload(), image, signatureImage, meta, now)).rejects.toThrow(
       'tx1 boom',
     );
     expect(storage.deleteObject).toHaveBeenCalledTimes(2);
+    expect(warnSpy).toHaveBeenCalledWith({
+      event: 'recruitment.storage-cleanup.failed',
+      operation: 'delete-orphan-id-card-image',
+      safeErrorCategory: 'storage-delete-failed',
+      retryable: true,
+      manualCleanupRequired: true,
+    });
+    const serialized = JSON.stringify(warnSpy.mock.calls);
+    expect(serialized).not.toContain('recruitment/id-card/');
+    expect(serialized).not.toContain('private-bucket');
+    expect(serialized).not.toContain('credential-value');
+    expect(serialized).not.toContain('https://cos.example');
+    expect(serialized).not.toContain(rawProviderMessage);
+  });
+
+  it('OCR defer 运维日志不写明文或掩码手机号', async () => {
+    const { service, realname, storage, prisma } = buildService(new Error('must not transact'));
+    realname.recognize.mockRejectedValueOnce(new BizException(BizCode.REALNAME_API_FAILED));
+    const logSpy = jest
+      .spyOn((service as unknown as { logger: { log(message: unknown): void } }).logger, 'log')
+      .mockImplementation(() => undefined);
+
+    await expect(
+      service.submit(buildPayload(), image, signatureImage, meta, now),
+    ).resolves.toBeDefined();
+    expect(storage.putObject).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(logSpy).toHaveBeenCalledWith({
+      event: 'recruitment.ocr-submit.deferred',
+      operation: 'submit',
+      requestId: 'r1',
+    });
+    const serialized = JSON.stringify(logSpy.mock.calls);
+    expect(serialized).not.toContain('13900000001');
+    expect(serialized).not.toContain('139****0001');
   });
 
   it('BizException 形态正确(P2002 → 28003 的 httpStatus 一致)', async () => {
@@ -493,7 +533,7 @@ describe('RecruitmentApplicationsService.submit · F1 防重前移 + OCR 日封�
       { recruitmentOcr: { dailyIpLimit: 30 } } as never,
     );
     const loggerWarn = jest
-      .spyOn((service as unknown as { logger: { warn(message: string): void } }).logger, 'warn')
+      .spyOn((service as unknown as { logger: { warn(message: unknown): void } }).logger, 'warn')
       .mockImplementation();
     return { service, storage, prisma, realname, loggerWarn };
   }
@@ -534,11 +574,17 @@ describe('RecruitmentApplicationsService.submit · F1 防重前移 + OCR 日封�
         where: { ip_dateKey: { ip: '203.0.113.9', dateKey: '2026-07-11' } },
       }),
     );
-    expect(loggerWarn).toHaveBeenCalledWith(
-      'recruitment ocr daily limit hit dateKey=2026-07-11 count=31',
-    );
-    expect(loggerWarn).not.toHaveBeenCalledWith(expect.stringContaining('203.0.113.9'));
-    expect(loggerWarn).not.toHaveBeenCalledWith(expect.stringContaining('ip='));
+    expect(loggerWarn).toHaveBeenCalledWith({
+      event: 'recruitment.ocr.daily-limit',
+      operation: 'recognize',
+      safeErrorCategory: 'rate-limit',
+      retryable: true,
+      manualCleanupRequired: false,
+    });
+    const serialized = JSON.stringify(loggerWarn.mock.calls);
+    expect(serialized).not.toContain('203.0.113.9');
+    expect(serialized).not.toContain('2026-07-11');
+    expect(serialized).not.toContain('count');
   });
 
   it('恰达上限(count == limit)→ 放行继续 OCR(先加后判,拒者恒拒边界)', async () => {

@@ -40,6 +40,7 @@ import {
   isMainlandId,
   isProfileExtraWithinLimit,
   isValidChineseId,
+  recruitmentStorageCleanupFailureLog,
 } from './recruitment.constants';
 import {
   certificateJsonOrDbNull,
@@ -315,11 +316,11 @@ export class RecruitmentApplicationReviewService {
     }
 
     // 批次汇总(操作性日志;per-row 审计已由单行 markThreshold 落库)。
-    this.logger.log(
-      `recruitment batch-mark-threshold code=${dto.thresholdCode} completed=${dto.completed} ` +
-        `total=${dto.matches.length} marked=${marked} unmatched=${unmatched} failed=${failed} ` +
-        `autoAdvanced=${autoAdvanced} by=${user.id}`,
-    );
+    this.logger.log({
+      event: 'recruitment.batch-mark-threshold.completed',
+      operation: 'batch-mark-threshold',
+      requestId: meta.requestId,
+    });
 
     return { results, total: dto.matches.length, marked, unmatched, failed, autoAdvanced };
   }
@@ -585,10 +586,8 @@ export class RecruitmentApplicationReviewService {
   private async safeDeleteBlob(key: string): Promise<void> {
     try {
       await this.storage.deleteObject(key);
-    } catch (err) {
-      this.logger.warn(
-        `recruitment certificate rejected image cleanup failed key=${key}: ${err instanceof Error ? err.message : String(err)}`,
-      );
+    } catch {
+      this.logger.warn(recruitmentStorageCleanupFailureLog('delete-rejected-certificate-image'));
     }
   }
 

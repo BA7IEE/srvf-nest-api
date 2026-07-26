@@ -46,7 +46,6 @@ import {
   SIGNATURE_IMAGE_KEY_PREFIX,
   RECRUITMENT_MAX_AGE,
   RECRUITMENT_MIN_AGE,
-  VERIFY_OUTCOME_CATEGORY_MISMATCH,
   ageGroupOf,
   beijingDateKey,
   computeAge,
@@ -57,6 +56,7 @@ import {
   isMainlandId,
   isProfileExtraWithinLimit,
   isValidChineseId,
+  recruitmentStorageCleanupFailureLog,
 } from './recruitment.constants';
 import {
   RecruitmentIdentityService,
@@ -154,11 +154,11 @@ export class RecruitmentApplicationsService {
     }
     // F1 成本线(评审稿 §2.5/E-U-1):付费 OCR 前按 IP 北京自然日封顶(免费分支不计;超限 28060)。
     await this.assertOcrDailyQuotaAndCount(meta.ip, new Date());
-    // dev 安全诊断(logger.debug:生产默认不输出;无 PII)——核对 multipart 文件是否正常读入
-    this.logger.debug(
-      `[recruitment ocr recognize] documentType=${documentTypeCode} mime=${image.mimetype} ` +
-        `size=${image.size} bufferLen=${image.buffer.length}`,
-    );
+    this.logger.debug({
+      event: 'recruitment.ocr-recognize.received',
+      operation: 'recognize',
+      requestId: meta.requestId,
+    });
     // 付费 OCR(27030/27031 在此抛出,供前端提示;不吞)。映射失败(IDCardInfo 缺)亦走 27031 不当不清晰。
     const ocr = await this.realname.recognize({
       documentTypeCode,
@@ -168,11 +168,11 @@ export class RecruitmentApplicationsService {
     // 回乡证类别(分叉②:识别端建议性校验 + 人工最终;不在提交端权威重判)
     const categoryOk =
       documentTypeCode !== 'hk_macau_permit' || isMainlandBoundPermitCategory(ocr.documentCategory);
-    // pino 运维 trace(不含姓名/证件号明文;记类型 + 清晰 + 告警数 + 类别结论)
-    this.logger.log(
-      `recruitment ocr recognize type=${documentTypeCode} recognized=${ocr.recognized} ` +
-        `warnings=${ocr.warnings.length} category=${categoryOk ? 'ok' : VERIFY_OUTCOME_CATEGORY_MISMATCH}`,
-    );
+    this.logger.log({
+      event: 'recruitment.ocr-recognize.completed',
+      operation: 'recognize',
+      requestId: meta.requestId,
+    });
     // 鉴伪版充分利用:顾问式扩展回显(字段级/卡片级告警 + 证件类型;不改判定)。不清晰时一并回显——
     // 此时字段级 reflect/incomplete 最能帮申请人定位「哪栏拍糊/反光」。**裁剪图 base64 绝不进响应**(纯函数不取)。
     const ocrDetail = buildOcrRecognizeDetail(ocr);
@@ -381,10 +381,11 @@ export class RecruitmentApplicationsService {
       if (decision.sessionBump && hasToken) {
         await this.identity.writeOcrAttempt(payload.phoneVerificationToken, decision.sessionBump);
       }
-      this.logger.log(
-        `recruitment ocr defer disposition=${decision.disposition} outcome=${outcome} ` +
-          `phone=${maskPhone(payload.phone)} hasSession=${hasToken}`,
-      );
+      this.logger.log({
+        event: 'recruitment.ocr-submit.deferred',
+        operation: 'submit',
+        requestId: meta.requestId,
+      });
       // 文案字典仅在有业务态(retake/confirm)时加载;retry 系统瞬态无 stage → 不查库(保留原行为)。
       const stageTextByCode =
         decision.disposition === 'retry'
@@ -564,9 +565,11 @@ export class RecruitmentApplicationsService {
     }
 
     // 12. 通知触发:小程序展示数据已落库(application 状态 + cycle 通知配置);可选 SMS 为休眠 hook
-    this.logger.log(
-      `recruitment notify ready app=${finalApp.id} status=${finalApp.statusCode} tempNo=${finalApp.tempNo ?? '-'}`,
-    );
+    this.logger.log({
+      event: 'recruitment.notification.ready',
+      operation: 'submit',
+      requestId: meta.requestId,
+    });
     return toRecruitmentSubmitResult(finalApp, cycle);
   }
 
@@ -596,9 +599,13 @@ export class RecruitmentApplicationsService {
         (err.biz === BizCode.REALNAME_CHANNEL_NOT_CONFIGURED ||
           err.biz === BizCode.REALNAME_API_FAILED)
       ) {
-        this.logger.warn(
-          'recruitment mainland OCR failed → ocr_error (六分流:首次重试/连续 2 次落系统异常)',
-        );
+        this.logger.warn({
+          event: 'recruitment.ocr.failed',
+          operation: 'recognize',
+          safeErrorCategory: 'ocr-provider-failed',
+          retryable: true,
+          manualCleanupRequired: false,
+        });
         return { outcome: 'ocr_error', recognized: null, ocr: null };
       }
       throw err;
@@ -806,7 +813,13 @@ export class RecruitmentApplicationsService {
       select: { count: true },
     });
     if (row.count > this.config.recruitmentOcr.dailyIpLimit) {
-      this.logger.warn(`recruitment ocr daily limit hit dateKey=${dateKey} count=${row.count}`);
+      this.logger.warn({
+        event: 'recruitment.ocr.daily-limit',
+        operation: 'recognize',
+        safeErrorCategory: 'rate-limit',
+        retryable: true,
+        manualCleanupRequired: false,
+      });
       throw new BizException(BizCode.RECRUITMENT_OCR_DAILY_LIMIT);
     }
   }
@@ -878,10 +891,8 @@ export class RecruitmentApplicationsService {
   private async safeDeleteOrphanImage(key: string): Promise<void> {
     try {
       await this.storage.deleteObject(key);
-    } catch (e) {
-      this.logger.warn(
-        `recruitment orphan id-card image cleanup failed key=${key}: ${e instanceof Error ? e.message : String(e)}`,
-      );
+    } catch {
+      this.logger.warn(recruitmentStorageCleanupFailureLog('delete-orphan-id-card-image'));
     }
   }
 }

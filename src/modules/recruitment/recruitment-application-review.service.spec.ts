@@ -77,6 +77,49 @@ describe('RecruitmentApplicationReviewService.reviewCertificate · 退役态防�
   });
 });
 
+describe('RecruitmentApplicationReviewService · 驳回证书图清理日志', () => {
+  it('provider 异常不泄漏 key/bucket/secret/URL 且 best-effort 删除仍吞错', async () => {
+    const rawKey = 'recruitment/certificate/private-app/raw-image.jpg';
+    const rawProviderMessage =
+      `provider key=${rawKey} bucket=private-bucket secret=credential-value ` +
+      'url=https://cos.example/raw-image.jpg';
+    const storage = {
+      deleteObject: jest.fn().mockRejectedValue(new Error(rawProviderMessage)),
+    };
+    const service = new RecruitmentApplicationReviewService(
+      {} as never,
+      {} as never,
+      {} as never,
+      storage as never,
+    );
+    const warnSpy = jest
+      .spyOn((service as unknown as { logger: { warn(message: unknown): void } }).logger, 'warn')
+      .mockImplementation(() => undefined);
+
+    await expect(
+      (
+        service as unknown as {
+          safeDeleteBlob(key: string): Promise<void>;
+        }
+      ).safeDeleteBlob(rawKey),
+    ).resolves.toBeUndefined();
+    expect(storage.deleteObject).toHaveBeenCalledWith(rawKey);
+    expect(warnSpy).toHaveBeenCalledWith({
+      event: 'recruitment.storage-cleanup.failed',
+      operation: 'delete-rejected-certificate-image',
+      safeErrorCategory: 'storage-delete-failed',
+      retryable: true,
+      manualCleanupRequired: true,
+    });
+    const serialized = JSON.stringify(warnSpy.mock.calls);
+    expect(serialized).not.toContain(rawKey);
+    expect(serialized).not.toContain('private-bucket');
+    expect(serialized).not.toContain('credential-value');
+    expect(serialized).not.toContain('https://cos.example');
+    expect(serialized).not.toContain(rawProviderMessage);
+  });
+});
+
 // god-service 拆分(2026-06-28):批量标门槛编排 characterization 随方法从
 // RecruitmentApplicationsService 迁来(断言不变,仅构造目标类改为 ReviewService;
 // markThreshold + batchMarkThreshold 同处一类 → spy 仍命中 this.markThreshold)。

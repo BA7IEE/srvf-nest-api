@@ -417,6 +417,34 @@ export function certificateCategoryForThreshold(
 }
 export const CERTIFICATE_IMAGES_MAX_PER_CATEGORY = 3;
 
+export type RecruitmentStorageCleanupOperation =
+  | 'delete-orphan-id-card-image'
+  | 'delete-replaced-certificate-image'
+  | 'delete-rejected-certificate-image';
+
+/**
+ * Recruitment cleanup failures are operationally actionable but their provider errors and object
+ * identities are L3-adjacent. Keep the warning schema closed so future callers cannot accidentally
+ * add a key, URL, credential state, or raw provider message.
+ */
+export function recruitmentStorageCleanupFailureLog(
+  operation: RecruitmentStorageCleanupOperation,
+): {
+  event: 'recruitment.storage-cleanup.failed';
+  operation: RecruitmentStorageCleanupOperation;
+  safeErrorCategory: 'storage-delete-failed';
+  retryable: true;
+  manualCleanupRequired: true;
+} {
+  return {
+    event: 'recruitment.storage-cleanup.failed',
+    operation,
+    safeErrorCategory: 'storage-delete-failed',
+    retryable: true,
+    manualCleanupRequired: true,
+  };
+}
+
 // ===== 紧急联系人(评审稿 D-R + E-R-13;JSON 数组,≥2)=====
 export const EMERGENCY_CONTACTS_MIN = 2;
 
