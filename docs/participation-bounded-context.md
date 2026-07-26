@@ -236,6 +236,10 @@ Certificate (不在 participation 图内)
 - **责任 L3 通知**:协办新增/结束与 owner 移交 intent 和 assignment、system-managed
   RoleBinding、audit 同事务；移交分别快照旧/新 owner，禁止读取 `publishedBy`。
   两条移交 intent 任一失败都回滚完整业务，worker 仅在 commit 后生成定向通知。
+- **考勤 L4 通知**:`firstReturn`/`finalReturn`/`finalApprove` 的 intent 和 Sheet 状态、
+  audit 同事务；退回收件人从 active `canManageAttendance` assignment 与提交人 member
+  快照解析并去重，终审结果按 record 快照。eventKey 含 `returnedAt`/`finalReviewedAt`
+  业务版本；enqueue 失败整体回滚，worker/provider 失败只重试 intent。
 - 跨 aggregate 写**只允许在同事务内发生**;**禁止**用"先 attendances 改完,再回调 activities"的两阶段方式;**禁止**用 `setTimeout` / `Promise.then` 把后续写挪出事务。
 
 ### 5.4 ContributionRule 是配置,不是流程

@@ -11,8 +11,8 @@ import { PrismaService } from '../../src/database/prisma.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { ActivitiesService } from '../../src/modules/activities/activities.service';
 import { ActivityRegistrationsService } from '../../src/modules/activity-registrations/activity-registrations.service';
+import { AttendanceAuditRecorder } from '../../src/modules/attendances/attendance-audit-recorder';
 import { AttendancesService } from '../../src/modules/attendances/attendances.service';
-import { NotificationDispatcher } from '../../src/modules/notifications/notification-dispatcher';
 import { NotificationOutboxHandlers } from '../../src/modules/notifications/notification-outbox.handlers';
 import { NotificationOutboxService } from '../../src/modules/notifications/notification-outbox.service';
 import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
@@ -29,8 +29,7 @@ import { createTestApp } from '../setup/test-app';
 //   ② 活动取消(cancel)→ 遍历已报名者(pending + pass)逐人;
 //   ③ 考勤终审通过(finalApprove)→ 逐 record 本人(含贡献值)。
 //
-// L1 断言业务 + audit + intent 原子性、worker retry/idempotency、gate owner 真值；L2/L4 尚未
-// 收口的活动取消与考勤路径继续锁定 commit 后 best-effort 行为。
+// L1-L4 断言业务 + audit + intent 原子性、worker retry/idempotency、gate owner 真值。
 //
 // schema / 端点 / RBAC / BizCode 零新增:复用 S3 dispatchTargeted + 既有 notification_type 字典 'activity-reminder'。
 
@@ -100,10 +99,10 @@ async function observeBlockedByBackend(
 describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let dispatcher: NotificationDispatcher;
   let outbox: NotificationOutboxService;
   let outboxHandlers: NotificationOutboxHandlers;
   let outboxWorker: NotificationOutboxWorker;
+  let attendanceAuditRecorder: AttendanceAuditRecorder;
   let config: ConfigType<typeof appConfig>;
   let activities: ActivitiesService;
   let registrations: ActivityRegistrationsService;
@@ -248,13 +247,27 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
     }
   }
 
+  async function drainAttendanceIntents(sheetId: string): Promise<void> {
+    const intents = await prisma.notificationOutboxIntent.findMany({
+      where: { aggregateType: 'attendance_sheet', aggregateId: sheetId },
+      orderBy: { createdAt: 'asc' },
+    });
+    for (const intent of intents) {
+      expect(intent.status).toBe('pending');
+      await outboxWorker.drainEventKey(intent.eventKey);
+      expect(
+        await prisma.notificationOutboxIntent.findUniqueOrThrow({ where: { id: intent.id } }),
+      ).toMatchObject({ status: 'succeeded' });
+    }
+  }
+
   beforeAll(async () => {
     app = await createTestApp();
     prisma = app.get(PrismaService);
-    dispatcher = app.get(NotificationDispatcher);
     outbox = app.get(NotificationOutboxService);
     outboxHandlers = app.get(NotificationOutboxHandlers);
     outboxWorker = app.get(NotificationOutboxWorker);
+    attendanceAuditRecorder = app.get(AttendanceAuditRecorder);
     config = app.get(appConfig.KEY);
     activities = app.get(ActivitiesService);
     registrations = app.get(ActivityRegistrationsService);
@@ -907,6 +920,33 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
 
   // ============ ③ 考勤终审通过 → 逐 record 本人(含贡献值) ============
   describe('考勤结果/贡献值定向通知(finalApprove → 逐 record 本人;仅站内)', () => {
+    it('PR-L4 red:finalApprove 与 audit 同事务写 targeted intents，worker 前零 Notification', async () => {
+      const activityId = await seedActivity('durable 考勤');
+      const sheetId = await seedSheetPendingFinal(activityId, [alice.memberId, bob.memberId]);
+
+      await attendances.finalApprove(
+        sheetId,
+        { finalReviewNote: 'ok' },
+        finalReviewerPayload,
+        AUDIT_META,
+      );
+
+      expect(
+        await prisma.notificationOutboxIntent.findMany({
+          where: { aggregateType: 'attendance_sheet', aggregateId: sheetId },
+          select: { eventType: true, status: true, destinationRef: true },
+          orderBy: { destinationRef: 'asc' },
+        }),
+      ).toEqual(
+        [alice.memberId, bob.memberId].sort().map((destinationRef) => ({
+          eventType: 'notification.targeted',
+          status: 'pending',
+          destinationRef,
+        })),
+      );
+      expect(await prisma.notification.count({})).toBe(0);
+    });
+
     it('finalApprove → alice + bob 各收一条「考勤结果已确认」(含活动名+贡献值);feed 仅见本人', async () => {
       const activityId = await seedActivity('汛期值守');
       const sheetId = await seedSheetPendingFinal(activityId, [alice.memberId, bob.memberId]);
@@ -918,6 +958,8 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
         AUDIT_META,
       );
 
+      expect(await prisma.notification.count({})).toBe(0);
+      await drainAttendanceIntents(sheetId);
       const aliceNotifs = await directedOf(alice.memberId);
       const bobNotifs = await directedOf(bob.memberId);
       expect(aliceNotifs).toHaveLength(1);
@@ -937,27 +979,217 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
       expect(await feedIds(bob.auth)).toEqual([bobNotifs[0].id]);
     });
 
-    it('注入 dispatcher 抛错 → **终审仍成功**(sheet=approved 已 commit;贡献值行为锁未破)', async () => {
-      const activityId = await seedActivity('防汛拉练');
+    it('intent enqueue 失败 → finalApprove + audit 整体回滚', async () => {
+      const activityId = await seedActivity('考勤 intent 回滚');
       const sheetId = await seedSheetPendingFinal(activityId, [alice.memberId]);
 
       const spy = jest
-        .spyOn(dispatcher, 'dispatchTargeted')
-        .mockRejectedValue(new Error('dispatch boom'));
+        .spyOn(outbox, 'enqueue')
+        .mockRejectedValue(new Error('attendance intent insert failed'));
       try {
-        const res = await attendances.finalApprove(
-          sheetId,
-          { finalReviewNote: 'ok' },
-          finalReviewerPayload,
-          AUDIT_META,
-        );
-        expect(res.statusCode).toBe('approved');
-        const sheet = await prisma.attendanceSheet.findUniqueOrThrow({ where: { id: sheetId } });
-        expect(sheet.statusCode).toBe('approved'); // 终审产物已 commit
-        expect(spy).toHaveBeenCalled();
+        await expect(
+          attendances.finalApprove(
+            sheetId,
+            { finalReviewNote: 'ok' },
+            finalReviewerPayload,
+            AUDIT_META,
+          ),
+        ).rejects.toThrow('attendance intent insert failed');
+        expect(
+          await prisma.attendanceSheet.findUniqueOrThrow({ where: { id: sheetId } }),
+        ).toMatchObject({
+          statusCode: 'pending_final_review',
+          finalReviewerUserId: null,
+          finalReviewedAt: null,
+        });
+        expect(
+          await prisma.auditLog.count({
+            where: { resourceId: sheetId, event: 'attendance-sheet.final-review' },
+          }),
+        ).toBe(0);
+        expect(
+          await prisma.notificationOutboxIntent.count({
+            where: { aggregateType: 'attendance_sheet', aggregateId: sheetId },
+          }),
+        ).toBe(0);
       } finally {
         spy.mockRestore();
       }
+    });
+
+    it('audit 失败 → finalApprove + intent 整体回滚', async () => {
+      const activityId = await seedActivity('考勤 audit 回滚');
+      const sheetId = await seedSheetPendingFinal(activityId, [alice.memberId]);
+      const spy = jest
+        .spyOn(attendanceAuditRecorder, 'logFinalReview')
+        .mockRejectedValue(new Error('attendance audit failed'));
+      try {
+        await expect(
+          attendances.finalApprove(
+            sheetId,
+            { finalReviewNote: 'ok' },
+            finalReviewerPayload,
+            AUDIT_META,
+          ),
+        ).rejects.toThrow('attendance audit failed');
+        expect(
+          await prisma.attendanceSheet.findUniqueOrThrow({ where: { id: sheetId } }),
+        ).toMatchObject({
+          statusCode: 'pending_final_review',
+          finalReviewerUserId: null,
+          finalReviewedAt: null,
+        });
+        expect(
+          await prisma.notificationOutboxIntent.count({
+            where: { aggregateType: 'attendance_sheet', aggregateId: sheetId },
+          }),
+        ).toBe(0);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('firstReturn / finalReturn → active attendance owner 收 durable correction intent', async () => {
+      const activityId = await seedActivity('退回修改活动');
+      await prisma.activityResponsibilityAssignment.create({
+        data: {
+          activityId,
+          memberId: alice.memberId,
+          responsibilityType: 'owner',
+          canManageRegistrations: true,
+          canManageAttendance: true,
+          status: 'active',
+          assignedByUserId: adminPayload.id,
+          source: 'admin',
+        },
+      });
+      const firstSheetId = await seedSheetPendingFinal(activityId, [bob.memberId]);
+      await prisma.attendanceSheet.update({
+        where: { id: firstSheetId },
+        data: { statusCode: 'pending' },
+      });
+      const finalSheetId = await seedSheetPendingFinal(activityId, [bob.memberId]);
+
+      await attendances.firstReturn(
+        firstSheetId,
+        { returnNote: '补录签退' },
+        finalReviewerPayload,
+        AUDIT_META,
+      );
+      await attendances.finalReturn(
+        finalSheetId,
+        { returnNote: '复核时长' },
+        finalReviewerPayload,
+        AUDIT_META,
+      );
+
+      const intents = await prisma.notificationOutboxIntent.findMany({
+        where: {
+          aggregateType: 'attendance_sheet',
+          aggregateId: { in: [firstSheetId, finalSheetId] },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(intents).toHaveLength(2);
+      expect(intents.map((intent) => intent.destinationRef)).toEqual([
+        alice.memberId,
+        alice.memberId,
+      ]);
+      expect(intents.map((intent) => intent.eventKey)).toEqual([
+        expect.stringMatching(new RegExp(`^attendance-return:${firstSheetId}:`)),
+        expect.stringMatching(new RegExp(`^attendance-return:${finalSheetId}:`)),
+      ]);
+      expect(await directedOf(alice.memberId)).toHaveLength(0);
+      await drainAttendanceIntents(firstSheetId);
+      await drainAttendanceIntents(finalSheetId);
+      const notifications = await directedOf(alice.memberId);
+      expect(notifications).toHaveLength(2);
+      expect(notifications.map((notification) => notification.title)).toEqual([
+        '考勤单已退回修改',
+        '考勤单已退回修改',
+      ]);
+      expect(notifications.map((notification) => notification.body).join(' ')).toContain(
+        '补录签退',
+      );
+      expect(notifications.map((notification) => notification.body).join(' ')).toContain(
+        '复核时长',
+      );
+    });
+
+    it('worker Effect 失败 → approved 保持提交、intent 退避，重试仅生成一条通知', async () => {
+      const activityId = await seedActivity('防汛拉练');
+      const sheetId = await seedSheetPendingFinal(activityId, [alice.memberId]);
+
+      const res = await attendances.finalApprove(
+        sheetId,
+        { finalReviewNote: 'ok' },
+        finalReviewerPayload,
+        AUDIT_META,
+      );
+      expect(res.statusCode).toBe('approved');
+      const intent = await prisma.notificationOutboxIntent.findFirstOrThrow({
+        where: { aggregateType: 'attendance_sheet', aggregateId: sheetId },
+      });
+      const spy = jest.spyOn(outboxHandlers, 'execute').mockRejectedValueOnce(new Error('boom'));
+      try {
+        await outboxWorker.drainEventKey(intent.eventKey);
+        expect(
+          await prisma.attendanceSheet.findUniqueOrThrow({ where: { id: sheetId } }),
+        ).toMatchObject({ statusCode: 'approved' });
+        expect(await directedOf(alice.memberId)).toHaveLength(0);
+        expect(
+          await prisma.notificationOutboxIntent.findUniqueOrThrow({ where: { id: intent.id } }),
+        ).toMatchObject({ status: 'pending', attempts: 1 });
+      } finally {
+        spy.mockRestore();
+      }
+      await prisma.notificationOutboxIntent.update({
+        where: { id: intent.id },
+        data: { availableAt: new Date(0) },
+      });
+      await outboxWorker.drainEventKey(intent.eventKey);
+      expect(await directedOf(alice.memberId)).toHaveLength(1);
+      expect(
+        await prisma.notificationOutboxIntent.findUniqueOrThrow({ where: { id: intent.id } }),
+      ).toMatchObject({ status: 'succeeded', attempts: 2 });
+    });
+
+    it('approved → reopen → 再次 finalApprove 生成新的 finalReviewedAt eventKey', async () => {
+      const activityId = await seedActivity('考勤重新终审');
+      const sheetId = await seedSheetPendingFinal(activityId, [alice.memberId]);
+
+      await attendances.finalApprove(
+        sheetId,
+        { finalReviewNote: '首次通过' },
+        finalReviewerPayload,
+        AUDIT_META,
+      );
+      await attendances.reopen(
+        sheetId,
+        { reason: '发现记录需复核' },
+        finalReviewerPayload,
+        AUDIT_META,
+      );
+      await attendances.approve(sheetId, { reviewNote: '一级复核通过' }, adminPayload, AUDIT_META);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      await attendances.finalApprove(
+        sheetId,
+        { finalReviewNote: '再次通过' },
+        finalReviewerPayload,
+        AUDIT_META,
+      );
+
+      const intents = await prisma.notificationOutboxIntent.findMany({
+        where: { aggregateType: 'attendance_sheet', aggregateId: sheetId },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(intents).toHaveLength(2);
+      expect(new Set(intents.map((intent) => intent.eventKey)).size).toBe(2);
+      for (const intent of intents) {
+        expect(intent.eventKey).toMatch(new RegExp(`^attendance-final:${sheetId}:`));
+        await outboxWorker.drainEventKey(intent.eventKey);
+      }
+      expect(await directedOf(alice.memberId)).toHaveLength(2);
     });
   });
 });

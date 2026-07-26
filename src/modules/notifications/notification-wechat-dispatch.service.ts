@@ -99,7 +99,8 @@ export class NotificationWechatDispatchService {
   }
 
   // 统一通知 S3:定向通知微信渠道派发(单一收件人 = notification.recipientMemberId)。
-  // 由 NotificationDispatcher Effect 在 producer 事务 **commit 之后** 调用(§6.2:8s HTTP 绝不拖事务)。
+  // 由 outbox worker/handler 在 producer 事务 **commit 之后** 调用(§6.2:8s HTTP 绝不拖事务)；
+  // NotificationDispatcher 仅保留模块内兼容入口。
   // **永不抛**(镜像 dispatchBroadcast):微信失败仅 log + delivery,绝不回滚已建定向行 / 阻断 producer。
   // 复用 dispatchOne(§3.4 五步:openid → 原子扣 quota → send → delivery + 失败码语义)——与广播同一套渠道机制。
   // 与广播差异:无可见性 fan-out(收件人显式)、无 re-publish 去重(定向行每次新建唯一);新志愿者通常无 quota → skipped no-quota。

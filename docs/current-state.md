@@ -34,7 +34,7 @@
 - **多实例当前事实**:10 个 throttler 共用 PG bucket；RBAC 与 SMS/WeChat/Storage/Realname settings 每次直读已提交 PostgreSQL；Effect 绑定单份配置快照，DB 异常 fail-closed，零进程正确性缓存
 - **Storage production**:空库 migration/seed→窄配置 bootstrap；固定COS location+可解密凭证，disabled 重启不放行 Effect，null/LOCAL/unknown 禁回退；密钥不可轮换，真实 COS/fleet 待验
 - **贡献规则 ACTIVE 槽位**:未软删 ACTIVE 按 `activityTypeCode × attendanceRoleCode` 唯一；迁移、并发与漂移重复 pair 均 fail-closed
-- **通知 durable outbox**:PG lease/fence + generation/recipient/RBAC 快照/quota marker；provider 事务外 at-least-once。生产未 deploy，切换须排空旧 API/worker/intents 且禁混档
+- **通知 durable outbox**:PG lease/fence + generation/recipient/RBAC 快照/quota marker；招新/入队与 participation 报名、活动、责任、考勤 producer 均同业务事务写 intent，provider 事务外 at-least-once。生产未 deploy，切换须排空旧 API/worker/intents 且禁混档
 - **队员/报名真值**:正式=ACTIVE+grade level-1..7；报名 create/approve/递补锁后重验 live+ACTIVE，reopen 只回 pending
 - **Attachment storage Phase1**:ledger接 Attachment；Content根锁、provider外；无key FK/非 repo-wide closure；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)
 - **保险 v3(v0.59.0，未 deploy)**:PR1–PR4 gate/约束/evidence 已交付，脏数 fail-fast；Admin 360 overview 已补；切换须 drain 且禁混档

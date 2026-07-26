@@ -3,6 +3,7 @@ import { Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -38,6 +39,7 @@ const earlierIso = (suffix: string): string => relativeIso(-2, suffix);
 describe('attendances 模块', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let outboxWorker: NotificationOutboxWorker;
   let superAdminAuth: string;
   let adminAuth: string;
   let submitterAuth: string;
@@ -67,6 +69,7 @@ describe('attendances 模块', () => {
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
+    outboxWorker = app.get(NotificationOutboxWorker);
 
     // 用户(权限边界只需 1 个已绑 member 的 USER)
     await createTestUser(app, { username: 'att-su', role: Role.SUPER_ADMIN });
@@ -2294,6 +2297,14 @@ describe('attendances 模块', () => {
       expect(firstFinal.status).toBe(200);
       expect(firstFinal.body.data.statusCode).toBe('approved');
       expect(await summary()).toBe('1');
+      const firstIntent = await prisma.notificationOutboxIntent.findFirstOrThrow({
+        where: {
+          aggregateType: 'attendance_sheet',
+          aggregateId: sheetId,
+          status: 'pending',
+        },
+      });
+      await outboxWorker.drainEventKey(firstIntent.eventKey);
 
       const notificationCountAfterFirstFinal = await prisma.notification.count({
         where: { recipientMemberId: member.id, deletedAt: null },
@@ -2380,6 +2391,14 @@ describe('attendances 模块', () => {
       expect(secondFinal.status).toBe(200);
       expect(secondFinal.body.data.statusCode).toBe('approved');
       expect(await summary()).toBe('1');
+      const secondIntent = await prisma.notificationOutboxIntent.findFirstOrThrow({
+        where: {
+          aggregateType: 'attendance_sheet',
+          aggregateId: sheetId,
+          status: 'pending',
+        },
+      });
+      await outboxWorker.drainEventKey(secondIntent.eventKey);
       expect(
         await prisma.notification.count({
           where: { recipientMemberId: member.id, deletedAt: null },

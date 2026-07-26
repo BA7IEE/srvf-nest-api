@@ -159,8 +159,8 @@ Use an Effect when a business action triggers an **external or deferred side eff
 - DTO presentation
 
 **Current status**:
-- **First real Effect class is now active**: [`src/modules/notifications/notification-dispatcher.ts`](../src/modules/notifications/notification-dispatcher.ts)(`NotificationDispatcher`,统一通知 GAP-005 S3,2026-06-25)—— 真实副作用路径 = 微信订阅消息外部 API。招新发号/入队、报名 L1、活动 L2 与责任 L3 只在主业务 transaction 内写既有 outbox intent，独立 outbox worker 提交后调用 Effect；外部 HTTP 始终在主业务事务之外(§6.2)，Effect 不持有主事务、不做核心状态跃迁、不做 DTO 呈现。
-- `eventPlaceholder('attendance.recorded')` remains a domain marker inside the attendance flow；考勤退回/终审通知 producer 仍是下一批 L4 outbox 接线范围。
+- **First real Effect path is now active**: [`src/modules/notifications/notification-outbox.handlers.ts`](../src/modules/notifications/notification-outbox.handlers.ts) + [`notification-dispatcher.ts`](../src/modules/notifications/notification-dispatcher.ts)(兼容实现)—— 真实副作用路径 = 微信订阅消息外部 API。招新发号/入队与 participation L1-L4 只在主业务 transaction 内写既有 outbox intent，独立 outbox worker 提交后执行 Effect；外部 HTTP 始终在主业务事务之外(§6.2)，Effect 不持有主事务、不做核心状态跃迁、不做 DTO 呈现。
+- `eventPlaceholder('attendance.recorded')` remains a domain marker inside the attendance flow；考勤退回/终审通知已由 `AttendanceNotificationProducer` 在同一业务事务内写 durable intent。
 - **Do not** introduce *additional* Effect classes until a real side-effect path exists(短信 / 跨系统集成等);新通知类型先回评审,不在模块内自由生长。
 
 ---
@@ -203,7 +203,7 @@ The service should **not** become a dumping ground for:
 | Calculator | [`src/modules/attendances/contribution-calculator.ts`](../src/modules/attendances/contribution-calculator.ts) | **active**:accepted adjacent pattern;not one of the six D-7 names but follows the same extraction discipline(纯计算、无 Prisma 写、无 audit) |
 | Presenter | [`src/modules/attendances/attendance-presenter.ts`](../src/modules/attendances/attendance-presenter.ts) | **active**(P1-4 第一刀,2026-06-10 方案 A 拍板抽出;select 查询策略不随迁,留 service) |
 | QueryService | none required yet | **deferred** |
-| Effect | [`src/modules/notifications/notification-dispatcher.ts`](../src/modules/notifications/notification-dispatcher.ts) | **active**(GAP-005 S3 抽出;首个真实 Effect = 微信外部 API;招新/入队 targeted intent 由 outbox worker 驱动) |
+| Effect | [`src/modules/notifications/notification-outbox.handlers.ts`](../src/modules/notifications/notification-outbox.handlers.ts) | **active**(GAP-005 S3/D-Outbox;首个真实 Effect = 微信外部 API;业务 targeted intent 由 outbox worker 驱动) |
 
 ---
 
