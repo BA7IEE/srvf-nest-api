@@ -65,7 +65,7 @@ interface LockedDurableBroadcastUser {
 
 // 统一通知 S2:微信渠道派发(广播勾微信 → 对可见且有 quota 的会员逐人下发)。
 //
-// **本服务不是 S3 的 NotificationDispatcher Effect**(派发器 Effect 正式化 = S3);S2 = 聚焦微信渠道分支,
+// **本服务不是 S3 的 outbox handler Effect owner**；S2 = 聚焦微信渠道分支,
 // 由 NotificationService.publish 在 **publish DB 事务之外** 同步调用(§6.2:8s HTTP 绝不拖事务)。
 //
 // fan-out 收窄(§2.1 / §8.1):候选 = 该类型微信模板下 **有 quota 的会员**(已 ack 订阅,远少于全员)∩ 可见,

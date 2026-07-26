@@ -38,8 +38,8 @@ import { WechatSubscribeTemplateService } from './wechat-subscribe-template.serv
 // 微信派发分支(NotificationWechatDispatchService,由 publish 同事务 intent 驱动)+ quota ack/status(app)+
 // 模板配置(admin)。站内 S1 状态机 / 可见性 / 已读零改,微信为 additive 分支。
 //
-// 统一通知 S3 producer 接入 + 派发器 Effect 正式化(2026-06-25;评审稿 §2.2/§3.6/§6):NotificationDispatcher
-// (architecture-boundary §3.6 首个真实 Effect;dispatchTargeted 建已发布定向行 → 站内 + 微信〔复用 S2 dispatchDirected〕)
+// 统一通知 S3 producer 接入 + 派发器 Effect 正式化(2026-06-25;评审稿 §2.2/§3.6/§6):
+// NotificationOutboxHandlers 是当前 worker Effect owner；NotificationDispatcher 保留模块内兼容实现。
 // 定向 Effect 现统一由既有 outbox handler 驱动；producer 只依赖导出的 NotificationOutboxService。
 // feed 扩 buildFeedWhere(广播可见 ∪ 本人定向),recipientMemberId 定向收件人;S3 本身**不引第三个 cron/外部 queue/事件总线**。
 //
