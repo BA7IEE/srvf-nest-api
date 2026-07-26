@@ -248,7 +248,7 @@ export class ContentService {
     await this.assertCanOrThrow(user, 'content.update.record');
 
     const row = await this.prisma.$transaction(async (tx) => {
-      const existing = await this.findOrThrow(id, tx);
+      const existing = await this.lockContentRoot(id, tx);
       // 更新仅 draft / published 可改;archived 冻结(评审稿 §3)
       if (existing.statusCode === CONTENT_STATUS_ARCHIVED) {
         throw new BizException(BizCode.CONTENT_INVALID_STATUS_TRANSITION);
@@ -281,6 +281,12 @@ export class ContentService {
         data.visibleOrganizationIds = nextOrgIds;
       }
 
+      if (dto.body !== undefined) {
+        await this.attachments.lockContentReferenceStorageBoundaryTrusted(tx, {
+          contentId: id,
+          referencedAttachmentIds: extractAttachmentPlaceholderIds(dto.body),
+        });
+      }
       const updated = await tx.content.update({ where: { id }, data });
       await this.auditLogs.log({
         event: 'content.update',
@@ -466,20 +472,9 @@ export class ContentService {
     user: CurrentUserPayload,
     meta: AuditMeta,
   ): Promise<void> {
+    await this.assertCanOrThrow(user, 'content.update.record');
     await this.findOrThrow(contentId, this.prisma);
-    // 校验该附件归属本文章(ownerId=contentId 且 ownerType ∈ content-*),否则 404(防越权删他文章附件)
-    const att = await this.prisma.attachment.findFirst({
-      where: {
-        id: attachmentId,
-        ownerId: contentId,
-        ownerType: { in: [CONTENT_OWNER_TYPE_IMAGE, CONTENT_OWNER_TYPE_FILE] },
-      },
-      select: { id: true },
-    });
-    if (!att) {
-      throw new BizException(BizCode.CONTENT_NOT_FOUND);
-    }
-    await this.attachments.delete(attachmentId, user, meta);
+    await this.attachments.deleteContentAttachmentTrusted(contentId, attachmentId, user, meta);
   }
 
   // ============ 端点 12:设 / 清封面 ============
@@ -492,7 +487,7 @@ export class ContentService {
     await this.assertCanOrThrow(user, 'content.update.record');
 
     const row = await this.prisma.$transaction(async (tx) => {
-      const existing = await this.findOrThrow(id, tx);
+      const existing = await this.lockContentRoot(id, tx);
       let coverImageKey: string | null = null;
       let coverAttachmentId: string | null = null;
 
@@ -510,6 +505,10 @@ export class ContentService {
           // 非本文章的 content-image 附件 → 404(沿 deleteAttachment 防越权语义)
           throw new BizException(BizCode.CONTENT_NOT_FOUND);
         }
+        await this.attachments.lockContentReferenceStorageBoundaryTrusted(tx, {
+          contentId: id,
+          referencedAttachmentIds: [att.id],
+        });
         coverImageKey = att.key;
         coverAttachmentId = att.id;
       }

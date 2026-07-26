@@ -157,7 +157,9 @@ describe('CMS 内容发布模块(第 28 模块)admin e2e', () => {
       where: { ownerType: { in: ['content-image', 'content-file'] } },
     });
     await prisma.content.deleteMany({});
-    await prisma.auditLog.deleteMany({ where: { resourceType: 'content' } });
+    await prisma.auditLog.deleteMany({
+      where: { resourceType: { in: ['content', 'attachment'] } },
+    });
   });
 
   // ===== helpers =====
@@ -495,6 +497,115 @@ describe('CMS 内容发布模块(第 28 模块)admin e2e', () => {
     expect(detail.body.data.attachments.length).toBe(0);
     const delAudit = await prisma.auditLog.count({ where: { event: 'attachment.delete' } });
     expect(delAudit).toBe(1);
+  });
+
+  it('⑮-A published / archived 内容附件不可从 Content 或通用 Attachment 路由删除', async () => {
+    const publishedId = await createDraft({ title: 'published attachment owner' });
+    const publishedAttachment = await uploadAttachment(publishedId, imageUpload());
+    await post(`${ADMIN_CONTENTS}/${publishedId}/publish`);
+
+    expectBizError(
+      await request(httpServer(app))
+        .delete(`${ADMIN_CONTENTS}/${publishedId}/attachments/${publishedAttachment.id}`)
+        .set('Authorization', adminAuth),
+      BizCode.CONTENT_INVALID_STATUS_TRANSITION,
+    );
+    expectBizError(
+      await request(httpServer(app))
+        .delete(`/api/admin/v1/attachments/${publishedAttachment.id}`)
+        .set('Authorization', adminAuth),
+      BizCode.CONTENT_INVALID_STATUS_TRANSITION,
+    );
+
+    const archivedId = await createDraft({ title: 'archived attachment owner' });
+    const archivedAttachment = await uploadAttachment(archivedId, fileUpload());
+    await post(`${ADMIN_CONTENTS}/${archivedId}/publish`);
+    await post(`${ADMIN_CONTENTS}/${archivedId}/archive`);
+    expectBizError(
+      await request(httpServer(app))
+        .delete(`${ADMIN_CONTENTS}/${archivedId}/attachments/${archivedAttachment.id}`)
+        .set('Authorization', adminAuth),
+      BizCode.CONTENT_INVALID_STATUS_TRANSITION,
+    );
+
+    await expect(
+      prisma.attachment.count({
+        where: { id: { in: [publishedAttachment.id, archivedAttachment.id] } },
+      }),
+    ).resolves.toBe(2);
+    await expect(prisma.auditLog.count({ where: { event: 'attachment.delete' } })).resolves.toBe(0);
+  });
+
+  it('⑮-B 当前封面 / 正文引用不可删；显式移除引用后才可删', async () => {
+    const coverContentId = await createDraft({ title: 'cover lifecycle' });
+    const coverAttachment = await uploadAttachment(coverContentId, imageUpload());
+    await request(httpServer(app))
+      .put(`${ADMIN_CONTENTS}/${coverContentId}/cover`)
+      .set('Authorization', adminAuth)
+      .send({ attachmentId: coverAttachment.id })
+      .expect(200);
+    expectBizError(
+      await request(httpServer(app))
+        .delete(`${ADMIN_CONTENTS}/${coverContentId}/attachments/${coverAttachment.id}`)
+        .set('Authorization', adminAuth),
+      BizCode.CONTENT_ATTACHMENT_IN_USE,
+    );
+    await request(httpServer(app))
+      .put(`${ADMIN_CONTENTS}/${coverContentId}/cover`)
+      .set('Authorization', adminAuth)
+      .send({ attachmentId: null })
+      .expect(200);
+    await request(httpServer(app))
+      .delete(`${ADMIN_CONTENTS}/${coverContentId}/attachments/${coverAttachment.id}`)
+      .set('Authorization', adminAuth)
+      .expect(200);
+
+    const bodyContentId = await createDraft({ title: 'body lifecycle' });
+    const bodyAttachment = await uploadAttachment(bodyContentId, imageUpload());
+    await request(httpServer(app))
+      .patch(`${ADMIN_CONTENTS}/${bodyContentId}`)
+      .set('Authorization', adminAuth)
+      .send({ body: `正文 ![asset](attachment:${bodyAttachment.id})` })
+      .expect(200);
+    expectBizError(
+      await request(httpServer(app))
+        .delete(`${ADMIN_CONTENTS}/${bodyContentId}/attachments/${bodyAttachment.id}`)
+        .set('Authorization', adminAuth),
+      BizCode.CONTENT_ATTACHMENT_IN_USE,
+    );
+    await request(httpServer(app))
+      .patch(`${ADMIN_CONTENTS}/${bodyContentId}`)
+      .set('Authorization', adminAuth)
+      .send({ body: '正文已移除附件引用' })
+      .expect(200);
+    await request(httpServer(app))
+      .delete(`${ADMIN_CONTENTS}/${bodyContentId}/attachments/${bodyAttachment.id}`)
+      .set('Authorization', adminAuth)
+      .expect(200);
+  });
+
+  it('⑮-C 内容附件删除 audit 不持久化 provider key 或 URL', async () => {
+    const id = await createDraft({ title: 'minimal attachment delete audit' });
+    const attachment = await uploadAttachment(id, fileUpload());
+    await request(httpServer(app))
+      .delete(`${ADMIN_CONTENTS}/${id}/attachments/${attachment.id}`)
+      .set('Authorization', adminAuth)
+      .expect(200);
+
+    const audit = await prisma.auditLog.findFirstOrThrow({
+      where: { event: 'attachment.delete', resourceId: attachment.id },
+      select: { context: true },
+    });
+    const context = audit.context as {
+      before?: Record<string, unknown>;
+      after?: Record<string, unknown> | null;
+      extra?: Record<string, unknown>;
+    };
+    expect(context.before).not.toHaveProperty('key');
+    expect(context.before).not.toHaveProperty('url');
+    expect(context.after ?? null).toBeNull();
+    expect(JSON.stringify(context)).not.toContain(attachment.key);
+    expect(JSON.stringify(context)).not.toMatch(/https?:\/\//);
   });
 
   it('⑯ upload-url 对不存在内容 → 29001(owner 先存在)', async () => {

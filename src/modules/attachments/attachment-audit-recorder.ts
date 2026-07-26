@@ -59,11 +59,14 @@ export class AttachmentAuditRecorder {
   // ============ snapshot helper(private;沿 service `toAttachmentAuditSnapshot` 字面值零变化) ============
 
   // D-STORAGE-CONSISTENCY 敏感最小化：未来 upload/delete audit snapshot 只保留
-  // provider/owner 恢复与追责所需 7 字段。originalName/description/tags/
+  // provider/owner 恢复与追责所需最小字段(Content delete 进一步省略 key)。originalName/description/tags/
   // originalUploaderName/accessLevel/expireAt 不再进入新 audit；历史行 append-only 不回改。
-  private toAttachmentAuditSnapshot(row: AuditAttachmentSnapshotInput): Record<string, unknown> {
+  private toAttachmentAuditSnapshot(
+    row: AuditAttachmentSnapshotInput,
+    options: { omitKey?: boolean } = {},
+  ): Record<string, unknown> {
     return {
-      key: row.key,
+      ...(options.omitKey ? {} : { key: row.key }),
       mime: row.mime,
       size: row.size,
       uploadedBy: row.uploadedBy,
@@ -173,7 +176,12 @@ export class AttachmentAuditRecorder {
       resourceType: ATTACHMENT_RESOURCE_TYPE,
       resourceId: args.attachmentId,
       meta: args.auditMeta,
-      before: this.toAttachmentAuditSnapshot(args.before),
+      // Content keys can encode provider namespace details and are not needed in immutable
+      // business audit. The durable storage ledger retains recovery identity separately.
+      before: this.toAttachmentAuditSnapshot(args.before, {
+        omitKey:
+          args.before.ownerType === 'content-image' || args.before.ownerType === 'content-file',
+      }),
       extra: {
         operation: 'delete',
         attachmentType: args.before.ownerType,

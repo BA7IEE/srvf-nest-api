@@ -124,6 +124,7 @@ export class ContentAdminController {
     BizCode.CONTENT_TYPE_INVALID,
     BizCode.CONTENT_VISIBLE_ORG_INVALID,
     BizCode.CONTENT_INVALID_STATUS_TRANSITION,
+    BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING,
   )
   update(
     @Param('id') id: string,
@@ -263,10 +264,17 @@ export class ContentAdminController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      '删内容附件(先验归属本文章,再物理删 + audit attachment.delete) [rbac: attachment.delete.*]',
+      '删草稿未引用附件(另需 content.update.record;Content 根锁 + durable storage delete) [rbac: attachment.delete.*]',
   })
   @ApiWrappedNullResponse()
-  @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN, BizCode.CONTENT_NOT_FOUND)
+  @ApiBizErrorResponse(
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.CONTENT_NOT_FOUND,
+    BizCode.CONTENT_INVALID_STATUS_TRANSITION,
+    BizCode.CONTENT_ATTACHMENT_IN_USE,
+    BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING,
+  )
   async removeAttachment(
     @Param('id') id: string,
     @Param('attachmentId') attachmentId: string,
@@ -288,6 +296,7 @@ export class ContentAdminController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.CONTENT_NOT_FOUND,
+    BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING,
   )
   setCover(
     @Param('id') id: string,

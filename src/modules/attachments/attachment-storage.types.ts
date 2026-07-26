@@ -49,6 +49,16 @@ export interface ContentPublishStorageBoundaryInput {
   coverImageKey: string | null;
 }
 
+/**
+ * A Content writer already holds the aggregate root and is about to persist new attachment
+ * references. Missing/foreign ids retain the Content module's existing placeholder semantics;
+ * matching owned attachments must not be in a delete lifecycle.
+ */
+export interface ContentAttachmentReferenceBoundaryInput {
+  contentId: string;
+  referencedAttachmentIds: readonly string[];
+}
+
 export type ContentAttachmentOwnerType = 'content-image' | 'content-file';
 
 /**

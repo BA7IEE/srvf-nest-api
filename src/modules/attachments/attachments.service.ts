@@ -9,6 +9,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { STORAGE_UNBOUND_GRACE_MS } from '../storage/storage-consistency.types';
+import { extractAttachmentPlaceholderIds } from '../content/content.constants';
 import type { AttachmentDeleteReplayResponse } from '../storage/storage-operation-payload';
 import { StorageSettingsService } from '../storage/storage-settings.service';
 import type { HeadObjectResult, StorageObjectLocator } from '../storage/storage.types';
@@ -26,6 +27,7 @@ import { RbacService } from '../permissions/rbac.service';
 import { AttachmentStorageOrchestrator } from './attachment-storage-orchestrator';
 import type {
   AttachmentUploadStorageIdentity,
+  ContentAttachmentReferenceBoundaryInput,
   ContentAttachmentOwnerType,
   ContentPublishStorageBoundaryInput,
   ContentUploadConfirmExpectedOwner,
@@ -229,6 +231,18 @@ export class AttachmentsService {
     input: ContentPublishStorageBoundaryInput,
   ): Promise<void> {
     return this.storageConsistency.lockContentPublishBoundary(tx, input);
+  }
+
+  /**
+   * Content writer fence. The caller holds the Content root; matching owned Attachment rows are
+   * share-locked so a concurrent delete either waits and sees the new reference or has already
+   * committed a tombstone that this method rejects.
+   */
+  async lockContentReferenceStorageBoundaryTrusted(
+    tx: Prisma.TransactionClient,
+    input: ContentAttachmentReferenceBoundaryInput,
+  ): Promise<void> {
+    return this.storageConsistency.lockContentReferenceBoundary(tx, input);
   }
 
   /**
@@ -1036,7 +1050,38 @@ export class AttachmentsService {
       throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
     }
 
-    // 2. 判 delete 权限(写路径;失败 → 30100)
+    return this.deleteResolvedAttachment(row, user, auditMeta, BizCode.ATTACHMENT_NOT_FOUND);
+  }
+
+  /**
+   * Content wrapper with route-owner anti-enumeration. Generic Attachment delete also enters the
+   * same content lifecycle path, so this facade cannot be bypassed through another controller.
+   */
+  async deleteContentAttachmentTrusted(
+    contentId: string,
+    attachmentId: string,
+    user: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<AttachmentResponseDto> {
+    const row = await this.prisma.attachment.findFirst({
+      where: {
+        id: attachmentId,
+        ownerId: contentId,
+        ownerType: { in: ['content-image', 'content-file'] },
+      },
+      select: attachmentSelect,
+    });
+    if (!row) throw new BizException(BizCode.CONTENT_NOT_FOUND);
+    return this.deleteResolvedAttachment(row, user, auditMeta, BizCode.CONTENT_NOT_FOUND);
+  }
+
+  private async deleteResolvedAttachment(
+    row: SafeAttachment,
+    user: CurrentUserPayload,
+    auditMeta: AuditMeta,
+    missingContentBiz: typeof BizCode.CONTENT_NOT_FOUND | typeof BizCode.ATTACHMENT_NOT_FOUND,
+  ): Promise<AttachmentResponseDto> {
+    // 判 delete 权限(写路径;失败 → 30100)
     const { resource, scope } = await this.buildRbacResourceAndScope(
       row.ownerType as AttachmentOwnerType,
       row.ownerId,
@@ -1045,9 +1090,7 @@ export class AttachmentsService {
     const action = `attachment.delete.${row.ownerType}${scope ? '.' + scope : ''}`;
     await this.assertRbacAllowed(user, action, resource);
 
-    // 3. DB intent 先提交；Provider effect 后以 HEAD absent 证明，再将 Attachment 硬删、audit、
-    //    object absent 与 operation succeeded 同事务提交。任何不确定态都返回 13034。
-    const eventKey = await this.storageConsistency.prepareDelete({
+    const deleteInput = {
       attachmentId: row.id,
       actorUserId: user.id,
       actorRoleSnap: user.role,
@@ -1055,7 +1098,49 @@ export class AttachmentsService {
       scope,
       deletedByPath: user.id === row.uploadedBy ? 'owner' : 'admin',
       auditMeta,
-    });
+    } as const;
+    let eventKey: string;
+    if (isContentAttachmentOwnerType(row.ownerType)) {
+      // Content-owned deletion is an aggregate mutation: require both coarse permissions before
+      // entering the root lock, then prepare the durable tombstone under the same transaction.
+      await this.assertRbacAllowed(user, 'content.update.record', undefined);
+      await this.storageConsistency.ensureAttachmentDeleteReady(row.id);
+      eventKey = await this.prisma.$transaction(async (tx) => {
+        const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+          SELECT "id" FROM "contents" WHERE "id" = ${row.ownerId} FOR UPDATE
+        `);
+        if (locked.length !== 1) throw new BizException(missingContentBiz);
+        const content = await tx.content.findUnique({
+          where: { id: row.ownerId },
+          select: {
+            statusCode: true,
+            body: true,
+            coverAttachmentId: true,
+            coverImageKey: true,
+            deletedAt: true,
+          },
+        });
+        if (!content || content.deletedAt !== null) {
+          throw new BizException(missingContentBiz);
+        }
+        if (content.statusCode !== 'draft') {
+          throw new BizException(BizCode.CONTENT_INVALID_STATUS_TRANSITION);
+        }
+        if (
+          content.coverAttachmentId === row.id ||
+          content.coverImageKey === row.key ||
+          extractAttachmentPlaceholderIds(content.body).includes(row.id)
+        ) {
+          throw new BizException(BizCode.CONTENT_ATTACHMENT_IN_USE);
+        }
+        return this.storageConsistency.prepareDeleteInTransaction(tx, deleteInput);
+      });
+    } else {
+      eventKey = await this.storageConsistency.prepareDelete(deleteInput);
+    }
+
+    // Provider effect runs after the root-locked intent commits. HEAD-absent finalization keeps
+    // Attachment deletion, audit, object state and operation terminal state atomic.
     await this.storageConsistency.executeEventKey(eventKey);
     const replay = await this.storageConsistency.getDeleteReplay(row.id, user.id, {
       allowAuthorizedJoin: true,

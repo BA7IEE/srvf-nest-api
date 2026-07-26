@@ -1409,6 +1409,11 @@ export const BizCode = {
     message: '内容状态流转不允许',
     httpStatus: HttpStatus.CONFLICT,
   },
+  CONTENT_ATTACHMENT_IN_USE: {
+    code: 29031,
+    message: '附件仍被内容封面或正文引用,请先移除引用',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // notification 模块业务级(310xx)。统一通知模块 S1 站内信渠道(第 28 模块 notifications 扩 controller)引入
   // (2026-06-25;冻结评审稿 unified-notification-dispatcher-review.md §9.3 + member-notification-review.md §5)。

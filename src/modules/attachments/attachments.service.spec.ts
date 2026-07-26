@@ -237,6 +237,10 @@ function makePrismaMock() {
     findMany: jest.fn<Promise<Array<{ id: string; memberId: string }>>, [unknown]>(),
   };
   const activity = { findFirst: jest.fn<Promise<{ id: string } | null>, [unknown]>() };
+  const content = {
+    findFirst: jest.fn<Promise<{ id: string } | null>, [unknown]>(),
+    findUnique: jest.fn<Promise<Record<string, unknown> | null>, [unknown]>(),
+  };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
   const $queryRaw = jest
     .fn<Promise<Array<Record<string, unknown>>>, [unknown]>()
@@ -250,6 +254,7 @@ function makePrismaMock() {
     member,
     certificate,
     activity,
+    content,
     $transaction,
     $queryRaw,
   };
@@ -394,8 +399,11 @@ function makeStorageConsistencyMock(provider: ProviderMock, recorder: RecorderMo
       >()
       .mockResolvedValue(makeAttachmentRow()),
     lockContentPublishBoundary: jest.fn().mockResolvedValue(undefined),
+    lockContentReferenceBoundary: jest.fn().mockResolvedValue(undefined),
     getDeleteReplay: jest.fn().mockResolvedValue(null),
+    ensureAttachmentDeleteReady: jest.fn().mockResolvedValue(undefined),
     prepareDelete: jest.fn().mockResolvedValue('storage.fixture:delete'),
+    prepareDeleteInTransaction: jest.fn().mockResolvedValue('storage.fixture:delete'),
     executeEventKey: jest.fn<Promise<void>, [string]>().mockResolvedValue(undefined),
   };
 }
@@ -933,6 +941,132 @@ describe('AttachmentsService (characterization)', () => {
       );
       expect(storageConsistency.getDeleteReplay).toHaveBeenCalledWith('missing', 'u1');
       expect(storageConsistency.prepareDelete).not.toHaveBeenCalled();
+    });
+
+    it('content-* 删除同时要求附件删除权与 Content 更新权，并在根锁内准备 intent', async () => {
+      const prisma = makePrismaMock();
+      const rbac = makeRbacMock(true);
+      const storageConsistency = makeStorageConsistencyMock(makeProviderMock(), makeRecorderMock());
+      const row = makeAttachmentRow({
+        ownerType: 'content-image',
+        ownerId: 'content-1',
+        uploadedBy: 'uploader-1',
+      });
+      prisma.attachment.findFirst.mockResolvedValue(row);
+      prisma.content.findUnique.mockResolvedValue({
+        statusCode: 'draft',
+        body: 'no attachment reference',
+        coverAttachmentId: null,
+        coverImageKey: null,
+        deletedAt: null,
+      });
+      storageConsistency.getDeleteReplay.mockResolvedValue({
+        state: 'succeeded',
+        eventKey: 'storage.fixture:delete',
+        response: makeDeleteReplayResponse(row),
+      });
+      const service = makeService(prisma, { rbac, storageConsistency });
+
+      await service.deleteContentAttachmentTrusted(
+        'content-1',
+        row.id,
+        makeCurrentUser({ id: 'admin-1' }),
+        META,
+      );
+
+      expect(rbac.can).toHaveBeenNthCalledWith(
+        1,
+        expect.anything(),
+        'attachment.delete.content-image',
+        undefined,
+      );
+      expect(rbac.can).toHaveBeenNthCalledWith(
+        2,
+        expect.anything(),
+        'content.update.record',
+        undefined,
+      );
+      expect(storageConsistency.ensureAttachmentDeleteReady).toHaveBeenCalledWith(row.id);
+      expect(storageConsistency.prepareDeleteInTransaction).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({ attachmentId: row.id, actorUserId: 'admin-1' }),
+      );
+      expect(storageConsistency.prepareDelete).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      {
+        name: 'published owner',
+        content: {
+          statusCode: 'published',
+          body: 'body',
+          coverAttachmentId: null,
+          coverImageKey: null,
+          deletedAt: null,
+        },
+        biz: BizCode.CONTENT_INVALID_STATUS_TRANSITION,
+      },
+      {
+        name: 'cover reference',
+        content: {
+          statusCode: 'draft',
+          body: 'body',
+          coverAttachmentId: 'att-1',
+          coverImageKey: makeAttachmentRow().key,
+          deletedAt: null,
+        },
+        biz: BizCode.CONTENT_ATTACHMENT_IN_USE,
+      },
+      {
+        name: 'body reference',
+        content: {
+          statusCode: 'draft',
+          body: '![asset](attachment:att-1)',
+          coverAttachmentId: null,
+          coverImageKey: null,
+          deletedAt: null,
+        },
+        biz: BizCode.CONTENT_ATTACHMENT_IN_USE,
+      },
+    ])('content-* 删除拒绝 $name，且不准备 intent', async ({ content, biz }) => {
+      const prisma = makePrismaMock();
+      const storageConsistency = makeStorageConsistencyMock(makeProviderMock(), makeRecorderMock());
+      const row = makeAttachmentRow({
+        id: 'attbody1',
+        ownerType: 'content-image',
+        ownerId: 'content-1',
+      });
+      prisma.attachment.findFirst.mockResolvedValue(row);
+      prisma.content.findUnique.mockResolvedValue({
+        ...content,
+        body: String(content.body).replace('att-1', row.id),
+        coverAttachmentId:
+          content.coverAttachmentId === 'att-1' ? row.id : content.coverAttachmentId,
+      });
+      const service = makeService(prisma, { storageConsistency });
+
+      await expect(
+        service.deleteContentAttachmentTrusted('content-1', row.id, makeCurrentUser(), META),
+      ).rejects.toEqual(new BizException(biz));
+      expect(storageConsistency.prepareDeleteInTransaction).not.toHaveBeenCalled();
+      expect(storageConsistency.executeEventKey).not.toHaveBeenCalled();
+    });
+
+    it('content-* 缺少 Content 更新权 → 30100，且不触碰 delete intent', async () => {
+      const prisma = makePrismaMock();
+      const rbac = makeRbacMock(true);
+      rbac.can.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+      const storageConsistency = makeStorageConsistencyMock(makeProviderMock(), makeRecorderMock());
+      prisma.attachment.findFirst.mockResolvedValue(
+        makeAttachmentRow({ ownerType: 'content-file', ownerId: 'content-1' }),
+      );
+      const service = makeService(prisma, { rbac, storageConsistency });
+
+      await expect(
+        service.deleteContentAttachmentTrusted('content-1', 'att-1', makeCurrentUser(), META),
+      ).rejects.toEqual(new BizException(BizCode.RBAC_FORBIDDEN));
+      expect(storageConsistency.ensureAttachmentDeleteReady).not.toHaveBeenCalled();
+      expect(storageConsistency.prepareDeleteInTransaction).not.toHaveBeenCalled();
     });
   });
 
