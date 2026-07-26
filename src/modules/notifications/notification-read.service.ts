@@ -38,8 +38,8 @@ import type {
 // (复用 content.visibility 纯函数,去 public)全前置在 service;读者出参零敏感(无 authorUserId / visibleOrganizationIds /
 // statusCode / readCount)。详情 / mark-read 命中不可见 / 不存在 → 31001 防枚举。
 //
-// 站内信增量(原 T0 ④):每项 read 已读标志 + mark-read 幂等(NotificationRead create + P2002 兜底,首插原子 +1
-// readCount,二次 no-op 不重复增)+ unread-count(NOT EXISTS 子查询 reads.none)。
+// 站内信增量(原 T0 ④):每项 read 已读标志 + mark-read 幂等(NotificationRead create + readCount 原子 +1
+// 同事务；仅该 read 唯一键 P2002 兜底，二次 no-op 不重复增)+ unread-count(NOT EXISTS 子查询 reads.none)。
 @Injectable()
 export class NotificationReadService {
   constructor(
@@ -174,17 +174,20 @@ export class NotificationReadService {
     await this.findVisibleOrThrow(ctx, member.id, id);
 
     try {
-      // 首插:create 成功 → 原子自增 readCount(非事务,镜像 content viewCount;失败不阻断已读语义)。
-      await this.prisma.notificationRead.create({
-        data: { notificationId: id, memberId: member.id },
-      });
-      await this.prisma.notification.update({
-        where: { id },
-        data: { readCount: { increment: 1 } },
+      // 首插与反范式计数同事务：任一步失败都整体回滚，重试不会留下「已读但少计数」。
+      await this.prisma.$transaction(async (tx) => {
+        await tx.notificationRead.create({
+          data: { notificationId: id, memberId: member.id },
+        });
+        await tx.notification.update({
+          where: { id },
+          data: { readCount: { increment: 1 } },
+        });
       });
     } catch (err) {
       // 已读过(plain unique [notificationId, memberId] 撞)→ 幂等 no-op,**不**重复 +1 readCount。
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      // target 必须同时且只含本幂等键两字段；其它 P2002 不得被误吞。
+      if (this.isNotificationReadDuplicate(err)) {
         return { read: true };
       }
       throw err;
@@ -206,6 +209,19 @@ export class NotificationReadService {
   }
 
   // ===== 私有 helper =====
+
+  private isNotificationReadDuplicate(err: unknown): boolean {
+    if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') {
+      return false;
+    }
+    const target = err.meta?.target;
+    return (
+      Array.isArray(target) &&
+      target.length === 2 &&
+      target.includes('notificationId') &&
+      target.includes('memberId')
+    );
+  }
 
   // 取行 → 可见性判定(不可见 / 不存在统一 31001 防枚举)。
   // 广播:复用 content.visibility 单条判定(canSeeContent;含 published 前提)。

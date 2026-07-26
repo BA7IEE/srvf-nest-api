@@ -382,6 +382,65 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
       expect(await prisma.notificationRead.count({ where: { notificationId: id } })).toBe(1);
     });
 
+    it('两请求并发 mark-read:两者都幂等成功，read 行与 readCount 恰各 1', async () => {
+      const id = await makeNotif({ title: 'MR-concurrent', visibilityCode: 'member' });
+      const beforeUnread = await unreadCountOf(volunteerPrimary.auth);
+
+      const [first, second] = await Promise.all([
+        markReadApp(volunteerPrimary.auth, id),
+        markReadApp(volunteerPrimary.auth, id),
+      ]);
+
+      expect([first.status, second.status]).toEqual([200, 200]);
+      expect(first.body.data).toEqual({ read: true });
+      expect(second.body.data).toEqual({ read: true });
+      expect(
+        await prisma.notificationRead.count({
+          where: { notificationId: id, memberId: volunteerPrimary.memberId },
+        }),
+      ).toBe(1);
+      expect(
+        (await prisma.notification.findUnique({ where: { id }, select: { readCount: true } }))
+          ?.readCount,
+      ).toBe(1);
+      expect(await unreadCountOf(volunteerPrimary.auth)).toBe(beforeUnread - 1);
+    });
+
+    it('readCount increment 失败时 read 行整体回滚，修复数据后重试可恢复正确计数', async () => {
+      const id = await makeNotif({ title: 'MR-rollback', visibilityCode: 'member' });
+      // PostgreSQL integer 上限用于无测试钩子的真实失败注入：increment 必然溢出。
+      await prisma.notification.update({
+        where: { id },
+        data: { readCount: 2_147_483_647 },
+      });
+
+      const failed = await markReadApp(volunteerPrimary.auth, id);
+      expect(failed.status).toBe(500);
+      expect(
+        await prisma.notificationRead.count({
+          where: { notificationId: id, memberId: volunteerPrimary.memberId },
+        }),
+      ).toBe(0);
+      expect(
+        (await prisma.notification.findUnique({ where: { id }, select: { readCount: true } }))
+          ?.readCount,
+      ).toBe(2_147_483_647);
+
+      await prisma.notification.update({ where: { id }, data: { readCount: 0 } });
+      const retried = await markReadApp(volunteerPrimary.auth, id);
+      expect(retried.status).toBe(200);
+      expect(retried.body.data).toEqual({ read: true });
+      expect(
+        await prisma.notificationRead.count({
+          where: { notificationId: id, memberId: volunteerPrimary.memberId },
+        }),
+      ).toBe(1);
+      expect(
+        (await prisma.notification.findUnique({ where: { id }, select: { readCount: true } }))
+          ?.readCount,
+      ).toBe(1);
+    });
+
     it('read 标志:detail 不自动已读(readCount 不变);mark-read 后 list / detail read=true', async () => {
       const id = await makeNotif({ title: 'MR-flag', visibilityCode: 'member' });
       const d1 = await detailApp(volunteerPrimary.auth, id);
