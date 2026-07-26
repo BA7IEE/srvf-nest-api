@@ -6,6 +6,7 @@ import { Prisma, type StorageObject, type StorageObjectOperation } from '@prisma
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
+import { extractAttachmentPlaceholderIds } from '../content/content.constants';
 import { STORAGE_PROVIDER } from '../storage/storage.constants';
 import {
   isPinnedStorageProvider,
@@ -57,6 +58,7 @@ import {
   deleteAuditEnvelope,
   type AttachmentDeleteReplay,
   type AttachmentUploadStorageIdentity,
+  type ContentAttachmentReferenceBoundaryInput,
   type ContentPublishStorageBoundaryInput,
   type FinalizeAttachmentStorageUploadInput,
   type PrepareManualStorageAttestAbsentInput,
@@ -86,11 +88,11 @@ const MANUAL_STORAGE_MAINTENANCE: StoragePinnedOperationOptions = {
  * | prepareUpload, ensureRuntimeBackfill | new StorageObject -> new Operation |
  * | verifyUpload/recordPresentUnbound, noteProviderUnknown | StorageObject -> Operation |
  * | finalizeUpload (legacy/confirm) | active Owner -> StorageObject -> upload Operation -> active orphan Operations -> new Attachment |
- * | prepareDelete | Attachment -> StorageObject -> active Operations |
+ * | prepareDelete | (Content root for content owners) -> Attachment -> StorageObject -> active Operations |
  * | AttachmentsService.update | Attachment -> StorageObject |
- * | finalizeAttachmentDelete | Attachment -> StorageObject -> claimed delete Operation |
+ * | finalizeAttachmentDelete | (Content root for content owners) -> Attachment -> StorageObject -> claimed delete Operation |
  * | prepareManualOperation | StorageObject -> original/event/active Operations (sorted id) |
- * | finalizeManualAttestedDelete | Attachment -> StorageObject -> original/manual Operations |
+ * | finalizeManualAttestedDelete | (Content root for content owners) -> Attachment -> StorageObject -> original/manual Operations |
  * | executeManualRelocate | StorageObject -> claimed manual Operation |
  * | transitionUploadVerifyToOrphan | StorageObject -> upload Operation -> new orphan Operation |
  * | finalizeUnboundAbsent/finalizeBackfillAvailable/finalizeOrphanAbsent | StorageObject -> Operation |
@@ -499,6 +501,61 @@ export class AttachmentStorageOrchestrator {
     }
   }
 
+  /**
+   * The caller holds the Content root. Lock only matching, currently owned Attachment rows and
+   * reject a reference to an object whose durable delete lifecycle has started. Missing/foreign
+   * placeholders remain ignored here so Content update keeps its historical draft semantics;
+   * publish performs the complete binding validation.
+   */
+  async lockContentReferenceBoundary(
+    tx: Prisma.TransactionClient,
+    input: ContentAttachmentReferenceBoundaryInput,
+  ): Promise<void> {
+    const ids = [...new Set(input.referencedAttachmentIds)].sort();
+    if (ids.length === 0) return;
+    await tx.$queryRaw(Prisma.sql`
+      SELECT "id" FROM "attachments"
+      WHERE "id" IN (${Prisma.join(ids)})
+        AND "ownerId" = ${input.contentId}
+        AND "ownerType" IN ('content-image', 'content-file')
+      ORDER BY "id"
+      FOR SHARE
+    `);
+    const attachments = await tx.attachment.findMany({
+      where: {
+        id: { in: ids },
+        ownerId: input.contentId,
+        ownerType: { in: ['content-image', 'content-file'] },
+      },
+      select: { id: true, key: true },
+      orderBy: { id: 'asc' },
+    });
+    if (attachments.length === 0) return;
+    const objects = await tx.storageObject.findMany({
+      where: { key: { in: attachments.map((attachment) => attachment.key) } },
+      select: {
+        key: true,
+        state: true,
+        resourceType: true,
+        resourceId: true,
+        deleteRequestedAt: true,
+      },
+    });
+    const objectByKey = new Map(objects.map((object) => [object.key, object]));
+    for (const attachment of attachments) {
+      const object = objectByKey.get(attachment.key);
+      if (
+        !object ||
+        object.state !== 'available' ||
+        object.resourceType !== 'attachment' ||
+        object.resourceId !== attachment.id ||
+        object.deleteRequestedAt !== null
+      ) {
+        throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
+      }
+    }
+  }
+
   private async lockContentPublishBoundaryUnsafe(
     tx: Prisma.TransactionClient,
     input: ContentPublishStorageBoundaryInput,
@@ -710,12 +767,26 @@ export class AttachmentStorageOrchestrator {
         continue;
       }
 
-      if (object.resourceType !== null || object.resourceId !== null) {
-        throwStorageBoundaryUnsafe();
-      }
       if (object.state === 'absent') {
         if (activeOperations(objectOperations).length !== 0) throwStorageBoundaryUnsafe();
+        const finalizedAttachmentDelete = objectOperations.some(
+          (operation) =>
+            operation.kind === 'attachment_delete' &&
+            operation.status === 'succeeded' &&
+            operation.effectState === 'effect_succeeded',
+        );
+        const isOwnerlessReclaim = object.resourceType === null && object.resourceId === null;
+        const isFinalizedAttachmentDelete =
+          object.resourceType === 'attachment' &&
+          object.resourceId !== null &&
+          finalizedAttachmentDelete;
+        if (!isOwnerlessReclaim && !isFinalizedAttachmentDelete) {
+          throwStorageBoundaryUnsafe();
+        }
         continue;
+      }
+      if (object.resourceType !== null || object.resourceId !== null) {
+        throwStorageBoundaryUnsafe();
       }
       if (object.state === 'delete_pending') {
         const active = activeOperations(objectOperations);
@@ -946,9 +1017,9 @@ export class AttachmentStorageOrchestrator {
     }
   }
 
-  async prepareDelete(input: PrepareAttachmentDeleteInput): Promise<string> {
+  async ensureAttachmentDeleteReady(attachmentId: string): Promise<void> {
     const attachment = await this.prisma.attachment.findUnique({
-      where: { id: input.attachmentId },
+      where: { id: attachmentId },
       select: attachmentSelect,
     });
     if (!attachment) throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
@@ -960,100 +1031,110 @@ export class AttachmentStorageOrchestrator {
     } catch {
       throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
     }
-    return this.prisma.$transaction(async (tx) => {
-      // Global delete lock order: Attachment -> StorageObject -> involved Operations.
-      await tx.$queryRaw(Prisma.sql`
-        SELECT "id" FROM "attachments" WHERE "id" = ${attachment.id} FOR UPDATE
-      `);
-      const current = await tx.attachment.findUnique({
-        where: { id: attachment.id },
-        select: attachmentSelect,
-      });
-      if (!current || current.key !== attachment.key) {
-        throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
-      }
-      await tx.$queryRaw(Prisma.sql`
-        SELECT "id" FROM "storage_objects" WHERE "key" = ${attachment.key} FOR UPDATE
-      `);
-      const object = await tx.storageObject.findUnique({ where: { key: attachment.key } });
-      if (!object || object.resourceType !== 'attachment' || object.resourceId !== current.id) {
-        throw new StorageConsistencyInvariantError('delete object ledger disappeared or drifted');
-      }
-      try {
-        storageLocatorFromObject(object);
-      } catch {
+  }
+
+  async prepareDelete(input: PrepareAttachmentDeleteInput): Promise<string> {
+    await this.ensureAttachmentDeleteReady(input.attachmentId);
+    return this.prisma.$transaction((tx) => this.prepareDeleteInTransaction(tx, input));
+  }
+
+  async prepareDeleteInTransaction(
+    tx: Prisma.TransactionClient,
+    input: PrepareAttachmentDeleteInput,
+  ): Promise<string> {
+    // Global delete lock order: optional Content root (held by caller) -> Attachment ->
+    // StorageObject -> involved Operations.
+    await tx.$queryRaw(Prisma.sql`
+      SELECT "id" FROM "attachments" WHERE "id" = ${input.attachmentId} FOR UPDATE
+    `);
+    const current = await tx.attachment.findUnique({
+      where: { id: input.attachmentId },
+      select: attachmentSelect,
+    });
+    if (!current) {
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
+    await tx.$queryRaw(Prisma.sql`
+      SELECT "id" FROM "storage_objects" WHERE "key" = ${current.key} FOR UPDATE
+    `);
+    const object = await tx.storageObject.findUnique({ where: { key: current.key } });
+    if (!object || object.resourceType !== 'attachment' || object.resourceId !== current.id) {
+      throw new StorageConsistencyInvariantError('delete object ledger disappeared or drifted');
+    }
+    try {
+      storageLocatorFromObject(object);
+    } catch {
+      throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
+    }
+    await tx.$queryRaw(Prisma.sql`
+      SELECT "id" FROM "storage_object_operations"
+      WHERE "storageObjectId" = ${object.id}
+        AND "status" IN ('pending', 'processing')
+      ORDER BY "id"
+      FOR UPDATE
+    `);
+    const activeOperations = await tx.storageObjectOperation.findMany({
+      where: { storageObjectId: object.id, status: { in: ['pending', 'processing'] } },
+      orderBy: { id: 'asc' },
+    });
+    if (activeOperations.length > 1) {
+      throw new StorageConsistencyInvariantError('multiple active delete operations');
+    }
+    const active = activeOperations[0];
+    if (active) {
+      if (active.kind !== 'attachment_delete') {
         throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
       }
-      await tx.$queryRaw(Prisma.sql`
-        SELECT "id" FROM "storage_object_operations"
-        WHERE "storageObjectId" = ${object.id}
-          AND "status" IN ('pending', 'processing')
-        ORDER BY "id"
-        FOR UPDATE
-      `);
-      const activeOperations = await tx.storageObjectOperation.findMany({
-        where: { storageObjectId: object.id, status: { in: ['pending', 'processing'] } },
-        orderBy: { id: 'asc' },
-      });
-      if (activeOperations.length > 1) {
-        throw new StorageConsistencyInvariantError('multiple active delete operations');
+      const activePayload = parseStorageOperationPayload(
+        'attachment_delete',
+        active.payloadVersion,
+        active.payload,
+      ) as AttachmentDeleteOperationPayload;
+      if (activePayload.audit.actorUserId !== input.actorUserId && !input.allowAuthorizedJoin) {
+        throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
       }
-      const active = activeOperations[0];
-      if (active) {
-        if (active.kind !== 'attachment_delete') {
-          throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
-        }
-        const activePayload = parseStorageOperationPayload(
-          'attachment_delete',
-          active.payloadVersion,
-          active.payload,
-        ) as AttachmentDeleteOperationPayload;
-        if (activePayload.audit.actorUserId !== input.actorUserId && !input.allowAuthorizedJoin) {
-          throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
-        }
-        return active.eventKey;
-      }
-      const now = new Date();
-      const payload: AttachmentDeleteOperationPayload = {
-        response: deleteReplayResponse(current),
-        audit: deleteAuditEnvelope(input),
-      };
-      parseStorageOperationPayload('attachment_delete', STORAGE_OPERATION_PAYLOAD_VERSION, payload);
-      const requestHash = storageRequestHash({
-        kind: 'attachment_delete',
-        payloadVersion: STORAGE_OPERATION_PAYLOAD_VERSION,
-        attachmentId: current.id,
-        storageObjectId: object.id,
-        actorUserId: input.actorUserId,
-      });
-      const eventKey = `storage.attachment-delete:${requestHash}`;
-      await tx.storageObject.update({
-        where: { id: object.id },
-        data: {
-          state: 'delete_pending',
-          deleteRequestedAt: now,
-          lastErrorCode: null,
-          lastErrorClass: null,
-          version: { increment: 1 },
-        },
-      });
-      await tx.storageObjectOperation.create({
-        data: {
-          eventKey,
-          storageObjectId: object.id,
-          kind: 'attachment_delete',
-          status: 'pending',
-          effectState: 'not_started',
-          payloadVersion: STORAGE_OPERATION_PAYLOAD_VERSION,
-          payload: toStorageJson(payload),
-          requestHash,
-          responseSnapshotExpiresAt: new Date(now.getTime() + STORAGE_DELETE_REPLAY_TTL_MS),
-          createdAt: now,
-          availableAt: now,
-        },
-      });
-      return eventKey;
+      return active.eventKey;
+    }
+    const now = new Date();
+    const payload: AttachmentDeleteOperationPayload = {
+      response: deleteReplayResponse(current),
+      audit: deleteAuditEnvelope(input),
+    };
+    parseStorageOperationPayload('attachment_delete', STORAGE_OPERATION_PAYLOAD_VERSION, payload);
+    const requestHash = storageRequestHash({
+      kind: 'attachment_delete',
+      payloadVersion: STORAGE_OPERATION_PAYLOAD_VERSION,
+      attachmentId: current.id,
+      storageObjectId: object.id,
+      actorUserId: input.actorUserId,
     });
+    const eventKey = `storage.attachment-delete:${requestHash}`;
+    await tx.storageObject.update({
+      where: { id: object.id },
+      data: {
+        state: 'delete_pending',
+        deleteRequestedAt: now,
+        lastErrorCode: null,
+        lastErrorClass: null,
+        version: { increment: 1 },
+      },
+    });
+    await tx.storageObjectOperation.create({
+      data: {
+        eventKey,
+        storageObjectId: object.id,
+        kind: 'attachment_delete',
+        status: 'pending',
+        effectState: 'not_started',
+        payloadVersion: STORAGE_OPERATION_PAYLOAD_VERSION,
+        payload: toStorageJson(payload),
+        requestHash,
+        responseSnapshotExpiresAt: new Date(now.getTime() + STORAGE_DELETE_REPLAY_TTL_MS),
+        createdAt: now,
+        availableAt: now,
+      },
+    });
+    return eventKey;
   }
 
   async getDeleteReplay(
@@ -1347,7 +1428,8 @@ export class AttachmentStorageOrchestrator {
     }
     const now = new Date();
     await this.prisma.$transaction(async (tx) => {
-      // 全局删除锁序：Attachment → StorageObject → involved Operations。
+      // 全局删除锁序：content owner 先 Content root，再 Attachment → StorageObject → Operations。
+      await this.lockContentDeleteFinalizationBoundary(tx, payload.response, candidateAttachmentId);
       await tx.$queryRaw(Prisma.sql`
         SELECT "id" FROM "attachments"
         WHERE "id" = ${candidateAttachmentId}
@@ -1657,6 +1739,7 @@ export class AttachmentStorageOrchestrator {
     }
     const now = new Date();
     await this.prisma.$transaction(async (tx) => {
+      await this.lockContentDeleteFinalizationBoundary(tx, payload.response, candidateAttachmentId);
       await tx.$queryRaw(Prisma.sql`
         SELECT "id" FROM "attachments"
         WHERE "id" = ${candidateAttachmentId}
@@ -1756,6 +1839,67 @@ export class AttachmentStorageOrchestrator {
         throw new StorageConsistencyLeaseLostError(currentManual.id, currentManual.leaseGeneration);
       }
     });
+  }
+
+  private async lockContentDeleteFinalizationBoundary(
+    tx: Prisma.TransactionClient,
+    response: AttachmentDeleteReplayResponse | null,
+    attachmentId: string,
+  ): Promise<void> {
+    let owner =
+      response && (response.ownerType === 'content-image' || response.ownerType === 'content-file')
+        ? { ownerId: response.ownerId, key: response.key }
+        : null;
+    if (!response) {
+      // The replay response is purged after its bounded retry window, while a dead delete may still
+      // require manual attestation later. Resolve the immutable owner link without taking an
+      // Attachment row lock, then preserve the global Content -> Attachment lock order below.
+      const attachment = await tx.attachment.findUnique({
+        where: { id: attachmentId },
+        select: { ownerType: true, ownerId: true, key: true },
+      });
+      if (
+        attachment &&
+        (attachment.ownerType === 'content-image' || attachment.ownerType === 'content-file')
+      ) {
+        owner = { ownerId: attachment.ownerId, key: attachment.key };
+      }
+    }
+    if (!owner) {
+      return;
+    }
+    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id" FROM "contents" WHERE "id" = ${owner.ownerId} FOR UPDATE
+    `);
+    if (locked.length !== 1) {
+      throw new StorageConsistencyInvariantError('content delete root disappeared');
+    }
+    const content = await tx.content.findUnique({
+      where: { id: owner.ownerId },
+      select: {
+        statusCode: true,
+        body: true,
+        coverAttachmentId: true,
+        coverImageKey: true,
+        deletedAt: true,
+      },
+    });
+    if (!content) {
+      throw new StorageConsistencyInvariantError('content delete root reread failed');
+    }
+    if (content.deletedAt !== null) return;
+    if (content.statusCode !== 'draft') {
+      throw new StorageConsistencyInvariantError('content changed state during attachment delete');
+    }
+    if (
+      content.coverAttachmentId === attachmentId ||
+      content.coverImageKey === owner.key ||
+      extractAttachmentPlaceholderIds(content.body).includes(attachmentId)
+    ) {
+      throw new StorageConsistencyInvariantError(
+        'content attachment became referenced during delete',
+      );
+    }
   }
 
   private async transitionUploadVerifyToOrphan(

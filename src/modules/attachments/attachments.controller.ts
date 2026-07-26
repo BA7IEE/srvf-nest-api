@@ -229,7 +229,7 @@ export class AttachmentsController {
   @Delete(':id')
   @ApiOperation({
     summary:
-      '删除附件(先提交 delete intent 并隐藏普通读取;Provider 删除后须 HEAD absent,再原子硬删 Attachment + 写 audit;未完成返 13034;原 actor 24h 内可幂等重放最小响应) [rbac: attachment.delete.*]',
+      '删除附件(content-* 另需 Content 更新权且仅草稿未引用;durable delete + HEAD absent 后原子 finalize;未完成返 13034) [rbac: attachment.delete.*]',
   })
   @ApiWrappedOkResponse(AttachmentResponseDto)
   @ApiBizErrorResponse(
@@ -238,6 +238,8 @@ export class AttachmentsController {
     BizCode.RBAC_FORBIDDEN,
     BizCode.ATTACHMENT_NOT_FOUND,
     BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING,
+    BizCode.CONTENT_INVALID_STATUS_TRANSITION,
+    BizCode.CONTENT_ATTACHMENT_IN_USE,
   )
   delete(
     @Param() params: IdParamDto,

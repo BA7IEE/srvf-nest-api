@@ -29056,6 +29056,41 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
           "description": "附件不存在(code=13001)",
         },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "29030: 内容状态流转不允许; 29031: 附件仍被内容封面或正文引用,请先移除引用",
+                    "enum": [
+                      29030,
+                      29031,
+                    ],
+                    "example": 29030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "内容状态流转不允许",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "内容状态流转不允许(code=29030) / 附件仍被内容封面或正文引用,请先移除引用(code=29031)",
+        },
         "503": {
           "content": {
             "application/json": {
@@ -29096,7 +29131,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "删除附件(先提交 delete intent 并隐藏普通读取;Provider 删除后须 HEAD absent,再原子硬删 Attachment + 写 audit;未完成返 13034;原 actor 24h 内可幂等重放最小响应) [rbac: attachment.delete.*]",
+      "summary": "删除附件(content-* 另需 Content 更新权且仅草稿未引用;durable delete + HEAD absent 后原子 finalize;未完成返 13034) [rbac: attachment.delete.*]",
       "tags": [
         "Admin - Attachments",
       ],
@@ -33989,6 +34024,40 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
           "description": "内容状态流转不允许(code=29030)",
         },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "13034: 附件存储操作处理中,请稍后重试",
+                    "enum": [
+                      13034,
+                    ],
+                    "example": 13034,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "附件存储操作处理中,请稍后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "附件存储操作处理中,请稍后重试(code=13034)",
+        },
       },
       "security": [
         {
@@ -34757,13 +34826,82 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
           "description": "内容不存在(code=29001)",
         },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "29030: 内容状态流转不允许; 29031: 附件仍被内容封面或正文引用,请先移除引用",
+                    "enum": [
+                      29030,
+                      29031,
+                    ],
+                    "example": 29030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "内容状态流转不允许",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "内容状态流转不允许(code=29030) / 附件仍被内容封面或正文引用,请先移除引用(code=29031)",
+        },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "13034: 附件存储操作处理中,请稍后重试",
+                    "enum": [
+                      13034,
+                    ],
+                    "example": 13034,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "附件存储操作处理中,请稍后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "附件存储操作处理中,请稍后重试(code=13034)",
+        },
       },
       "security": [
         {
           "bearer": [],
         },
       ],
-      "summary": "删内容附件(先验归属本文章,再物理删 + audit attachment.delete) [rbac: attachment.delete.*]",
+      "summary": "删草稿未引用附件(另需 content.update.record;Content 根锁 + durable storage delete) [rbac: attachment.delete.*]",
       "tags": [
         "Admin - Content",
       ],
@@ -34957,6 +35095,40 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
             },
           },
           "description": "内容不存在(code=29001)",
+        },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "13034: 附件存储操作处理中,请稍后重试",
+                    "enum": [
+                      13034,
+                    ],
+                    "example": 13034,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "附件存储操作处理中,请稍后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "附件存储操作处理中,请稍后重试(code=13034)",
         },
       },
       "security": [

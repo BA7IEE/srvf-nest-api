@@ -90,6 +90,10 @@ describe('Content attachment publish storage boundary (two real PostgreSQL pools
     await Promise.all([appA.close(), appB.close()]);
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   beforeEach(async () => {
     await prismaA.storageObjectOperation.deleteMany();
     await prismaA.storageObject.deleteMany();
@@ -298,6 +302,28 @@ describe('Content attachment publish storage boundary (two real PostgreSQL pools
     return { guarded, prepared };
   }
 
+  async function createAvailableContentAttachment(
+    ownerType: 'content-image' | 'content-file' = 'content-image',
+  ) {
+    const intent = await createOwnerIntent(ownerType);
+    const evidence = mockPresentUploadEvidence(intent.identity.size);
+    try {
+      const attachment = await contentB.confirmAttachmentUpload(
+        contentId,
+        { uploadToken: intent.uploadToken },
+        actor(uploaderId),
+        {
+          requestId: `content-storage-confirm-${++sequence}`,
+          ip: null,
+          ua: null,
+        },
+      );
+      return { attachment, intent };
+    } finally {
+      evidence.restore();
+    }
+  }
+
   async function captureConfirm(uploadToken: string, currentActorId: string): Promise<unknown> {
     try {
       return await attachmentsB.confirmUpload({ uploadToken }, actor(currentActorId), {
@@ -319,6 +345,183 @@ describe('Content attachment publish storage boundary (two real PostgreSQL pools
     expect(backendA[0]?.pid).toEqual(expect.any(Number));
     expect(backendB[0]?.pid).toEqual(expect.any(Number));
     expect(backendA[0]?.pid).not.toBe(backendB[0]?.pid);
+  });
+
+  it('publish wins attachment delete: delete waits on Content root then rejects 29030', async () => {
+    const { attachment } = await createAvailableContentAttachment();
+    const publishBoundaryEntered = deferred();
+    const publishBoundaryRelease = deferred();
+    const originalPublishBoundary =
+      attachmentsA.lockContentPublishStorageBoundaryTrusted.bind(attachmentsA);
+    const boundarySpy = jest
+      .spyOn(attachmentsA, 'lockContentPublishStorageBoundaryTrusted')
+      .mockImplementation(async (tx, input) => {
+        await originalPublishBoundary(tx, input);
+        publishBoundaryEntered.resolve();
+        await publishBoundaryRelease.promise;
+      });
+
+    const publishing = contentA.publish(contentId, actor(uploaderId), {
+      requestId: `attachment-delete-publish-wins-${++sequence}`,
+      ip: null,
+      ua: null,
+    });
+    await publishBoundaryEntered.promise;
+    const deleting = contentB.deleteAttachment(contentId, attachment.id, actor(uploaderId), {
+      requestId: `attachment-delete-publish-wins-delete-${++sequence}`,
+      ip: null,
+      ua: null,
+    });
+    try {
+      await waitForRelationLockWait('contents');
+    } finally {
+      publishBoundaryRelease.resolve();
+    }
+
+    await expect(
+      withTimeout(publishing, 'attachment publish-wins publisher'),
+    ).resolves.toMatchObject({ statusCode: 'published' });
+    await expect(withTimeout(deleting, 'attachment publish-wins delete waiter')).rejects.toEqual(
+      new BizException(BizCode.CONTENT_INVALID_STATUS_TRANSITION),
+    );
+    await expect(
+      prismaA.attachment.findUnique({ where: { id: attachment.id } }),
+    ).resolves.not.toBeNull();
+    await expect(
+      prismaA.storageObject.findUnique({ where: { key: attachment.key } }),
+    ).resolves.toMatchObject({ state: 'available', deleteRequestedAt: null });
+    await expect(
+      prismaA.storageObjectOperation.count({
+        where: { storageObject: { key: attachment.key }, kind: 'attachment_delete' },
+      }),
+    ).resolves.toBe(0);
+    boundarySpy.mockRestore();
+  });
+
+  it('delete wins attachment publish: publish observes durable tombstone, then retry is safe', async () => {
+    const { attachment } = await createAvailableContentAttachment('content-file');
+    const deletePrepared = deferred();
+    const prepareRelease = deferred();
+    const providerDeleteEntered = deferred();
+    const providerDeleteRelease = deferred();
+    const originalPrepareDelete = orchestratorB.prepareDeleteInTransaction.bind(orchestratorB);
+    const prepareSpy = jest
+      .spyOn(orchestratorB, 'prepareDeleteInTransaction')
+      .mockImplementation(async (tx, input) => {
+        const eventKey = await originalPrepareDelete(tx, input);
+        deletePrepared.resolve();
+        await prepareRelease.promise;
+        return eventKey;
+      });
+    const headSpy = jest
+      .spyOn(providerB, 'headObjectAt')
+      .mockResolvedValueOnce({ exists: true, size: attachment.size })
+      .mockResolvedValue({ exists: false });
+    const deleteSpy = jest.spyOn(providerB, 'deleteObjectAt').mockImplementation(async () => {
+      providerDeleteEntered.resolve();
+      await providerDeleteRelease.promise;
+    });
+
+    const deleting = contentB.deleteAttachment(contentId, attachment.id, actor(uploaderId), {
+      requestId: `attachment-delete-wins-${++sequence}`,
+      ip: null,
+      ua: null,
+    });
+    await deletePrepared.promise;
+    const publishing = contentA.publish(contentId, actor(uploaderId), {
+      requestId: `attachment-delete-wins-publish-${++sequence}`,
+      ip: null,
+      ua: null,
+    });
+    try {
+      await waitForRelationLockWait('contents');
+    } finally {
+      prepareRelease.resolve();
+    }
+    await providerDeleteEntered.promise;
+    await expect(withTimeout(publishing, 'attachment delete-wins publisher')).rejects.toEqual(
+      new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING),
+    );
+    providerDeleteRelease.resolve();
+    await expect(withTimeout(deleting, 'attachment delete-wins deletion')).resolves.toBeUndefined();
+
+    await expect(
+      prismaA.attachment.findUnique({ where: { id: attachment.id } }),
+    ).resolves.toBeNull();
+    await expect(
+      contentA.publish(contentId, actor(uploaderId), {
+        requestId: `attachment-delete-wins-publish-retry-${++sequence}`,
+        ip: null,
+        ua: null,
+      }),
+    ).resolves.toMatchObject({ statusCode: 'published' });
+    await expect(prismaA.content.findUnique({ where: { id: contentId } })).resolves.toMatchObject({
+      statusCode: 'published',
+      body: 'body',
+      coverAttachmentId: null,
+      coverImageKey: null,
+    });
+
+    prepareSpy.mockRestore();
+    headSpy.mockRestore();
+    deleteSpy.mockRestore();
+  });
+
+  it('provider failure leaves a retryable delete ledger and retry atomically finalizes DB + audit', async () => {
+    const { attachment } = await createAvailableContentAttachment();
+    const failedHead = jest
+      .spyOn(providerB, 'headObjectAt')
+      .mockResolvedValue({ exists: true, size: attachment.size });
+    const failedDelete = jest
+      .spyOn(providerB, 'deleteObjectAt')
+      .mockRejectedValue(new Error('simulated provider delete failure'));
+
+    await expect(
+      contentB.deleteAttachment(contentId, attachment.id, actor(uploaderId), {
+        requestId: `attachment-provider-failure-${++sequence}`,
+        ip: null,
+        ua: null,
+      }),
+    ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING));
+
+    const operation = await prismaA.storageObjectOperation.findFirstOrThrow({
+      where: { storageObject: { key: attachment.key }, kind: 'attachment_delete' },
+    });
+    await expect(
+      prismaA.storageObject.findUnique({ where: { key: attachment.key } }),
+    ).resolves.toMatchObject({ state: 'delete_pending', resourceId: attachment.id });
+    await expect(
+      prismaA.attachment.findUnique({ where: { id: attachment.id } }),
+    ).resolves.not.toBeNull();
+    await expect(
+      prismaA.auditLog.count({ where: { event: 'attachment.delete', resourceId: attachment.id } }),
+    ).resolves.toBe(0);
+
+    failedHead.mockReset();
+    failedHead
+      .mockResolvedValueOnce({ exists: true, size: attachment.size })
+      .mockResolvedValue({ exists: false });
+    failedDelete.mockReset();
+    failedDelete.mockResolvedValue();
+    await prismaA.storageObjectOperation.update({
+      where: { id: operation.id },
+      data: { availableAt: new Date(0) },
+    });
+    await orchestratorB.executeEventKey(operation.eventKey);
+
+    await expect(
+      prismaA.attachment.findUnique({ where: { id: attachment.id } }),
+    ).resolves.toBeNull();
+    await expect(
+      prismaA.storageObjectOperation.findUnique({ where: { id: operation.id } }),
+    ).resolves.toMatchObject({ status: 'succeeded', effectState: 'effect_succeeded' });
+    const audit = await prismaA.auditLog.findFirstOrThrow({
+      where: { event: 'attachment.delete', resourceId: attachment.id },
+    });
+    expect(JSON.stringify(audit.context)).not.toContain(attachment.key);
+
+    failedHead.mockRestore();
+    failedDelete.mockRestore();
   });
 
   it('same-service guarded replay is 13001 with zero extra ledger/Provider/audit mutation', async () => {
