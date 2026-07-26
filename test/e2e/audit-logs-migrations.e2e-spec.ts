@@ -262,6 +262,13 @@ describe('audit-logs 写入迁移', () => {
       expect(logs[0].event).toBe('certificate.create');
       expect(logs[0].resourceType).toBe('certificate');
       expect(logs[0].resourceId).toBe(c.id);
+      const context = logs[0].context as { after: Record<string, unknown> };
+      expect(context.after.certNumber).toBe('CN****01');
+      expect(context.after.verifyNoteProvided).toBe(false);
+      expect(context.after.verifyNoteChanged).toBe(false);
+      expect(context.after).not.toHaveProperty('verifyNote');
+      expect(JSON.stringify(context)).not.toContain('CN-2026-0001');
+      expect(c.certNumber).toBe('CN-2026-0001');
     });
 
     it('PATCH certificate 更新 → audit_logs +1 certificate.update', async () => {
@@ -278,6 +285,15 @@ describe('audit-logs 写入迁移', () => {
       expect(logs).toHaveLength(1);
       expect(logs[0].event).toBe('certificate.update');
       expect(logs[0].resourceId).toBe(c.id);
+      const context = logs[0].context as {
+        before: Record<string, unknown>;
+        after: Record<string, unknown>;
+      };
+      expect(context.before.certNumber).toBe('CN****01');
+      expect(context.after.certNumber).toBe('CN****01');
+      expect(context.before).not.toHaveProperty('verifyNote');
+      expect(context.after).not.toHaveProperty('verifyNote');
+      expect(JSON.stringify(context)).not.toContain('CN-2026-0001');
     });
 
     it('DELETE certificate 软删 → audit_logs +1 certificate.delete', async () => {
@@ -292,6 +308,10 @@ describe('audit-logs 写入迁移', () => {
       const logs = await prisma.auditLog.findMany();
       expect(logs).toHaveLength(1);
       expect(logs[0].event).toBe('certificate.delete');
+      const context = logs[0].context as { before: Record<string, unknown> };
+      expect(context.before.certNumber).toBe('CN****01');
+      expect(context.before).not.toHaveProperty('verifyNote');
+      expect(JSON.stringify(context)).not.toContain('CN-2026-0001');
     });
 
     it('PATCH certificate verify → audit_logs +1 certificate.verify', async () => {
@@ -307,6 +327,15 @@ describe('audit-logs 写入迁移', () => {
       const logs = await prisma.auditLog.findMany();
       expect(logs).toHaveLength(1);
       expect(logs[0].event).toBe('certificate.verify');
+      const context = logs[0].context as { after: Record<string, unknown> };
+      expect(context.after).toMatchObject({
+        status: 'verified',
+        verifyNoteProvided: true,
+        verifyNoteChanged: true,
+      });
+      expect(context.after).not.toHaveProperty('verifyNote');
+      expect(JSON.stringify(context)).not.toContain('OK');
+      expect(res.body.data.verifyNote).toBe('OK');
     });
 
     it('PATCH certificate reject → audit_logs +1 certificate.reject', async () => {
@@ -322,6 +351,15 @@ describe('audit-logs 写入迁移', () => {
       const logs = await prisma.auditLog.findMany();
       expect(logs).toHaveLength(1);
       expect(logs[0].event).toBe('certificate.reject');
+      const context = logs[0].context as { after: Record<string, unknown> };
+      expect(context.after).toMatchObject({
+        status: 'rejected',
+        verifyNoteProvided: true,
+        verifyNoteChanged: true,
+      });
+      expect(context.after).not.toHaveProperty('verifyNote');
+      expect(JSON.stringify(context)).not.toContain('材料不全');
+      expect(res.body.data.verifyNote).toBe('材料不全');
     });
   });
 
@@ -369,7 +407,7 @@ describe('audit-logs 写入迁移', () => {
       expect(ctx.after).toBeUndefined();
     });
 
-    it('certificate verify:before.status + after.status + verifyNote', async () => {
+    it('certificate verify:before/after 保留状态与备注布尔摘要,不写自由文本', async () => {
       const c = await createCert();
       await truncateAuditLogsTestOnly(app);
 
@@ -381,11 +419,16 @@ describe('audit-logs 写入迁移', () => {
 
       const log = (await prisma.auditLog.findFirst({ where: { resourceId: c.id } }))!;
       const ctx = log.context as Record<string, unknown>;
-      const before = ctx.before as { status: string };
-      const after = ctx.after as { status: string; verifyNote: string };
+      const before = ctx.before as Record<string, unknown>;
+      const after = ctx.after as Record<string, unknown>;
       expect(before.status).toBe('pending');
+      expect(before.verifyNoteProvided).toBe(false);
+      expect(before.verifyNoteChanged).toBe(false);
       expect(after.status).toBe('verified');
-      expect(after.verifyNote).toBe('已核验');
+      expect(after.verifyNoteProvided).toBe(true);
+      expect(after.verifyNoteChanged).toBe(true);
+      expect(after).not.toHaveProperty('verifyNote');
+      expect(JSON.stringify(ctx)).not.toContain('已核验');
     });
 
     it('certificate reject:before.status=pending + after.status=rejected', async () => {
@@ -400,11 +443,14 @@ describe('audit-logs 写入迁移', () => {
 
       const log = (await prisma.auditLog.findFirst({ where: { resourceId: c.id } }))!;
       const ctx = log.context as Record<string, unknown>;
-      const before = ctx.before as { status: string };
-      const after = ctx.after as { status: string; verifyNote: string };
+      const before = ctx.before as Record<string, unknown>;
+      const after = ctx.after as Record<string, unknown>;
       expect(before.status).toBe('pending');
       expect(after.status).toBe('rejected');
-      expect(after.verifyNote).toBe('材料不全');
+      expect(after.verifyNoteProvided).toBe(true);
+      expect(after.verifyNoteChanged).toBe(true);
+      expect(after).not.toHaveProperty('verifyNote');
+      expect(JSON.stringify(ctx)).not.toContain('材料不全');
     });
   });
 
@@ -470,11 +516,12 @@ describe('audit-logs 写入迁移', () => {
       expect(after.phoneBackup).toBeNull();
     });
 
-    it('certificate.certNumber:不在打码矩阵,原值入 audit', async () => {
+    it('certificate.certNumber:仅掩码值入 audit', async () => {
       const c = await createCert();
       const log = (await prisma.auditLog.findFirst({ where: { resourceId: c.id } }))!;
       const after = (log.context as { after: Record<string, unknown> }).after;
-      expect(after.certNumber).toBe('CN-2026-0001'); // 原值,无 mask
+      expect(after.certNumber).toBe('CN****01');
+      expect(JSON.stringify(log.context)).not.toContain('CN-2026-0001');
     });
 
     it('certificate.certTypeCode / issuingOrg:不在打码矩阵', async () => {

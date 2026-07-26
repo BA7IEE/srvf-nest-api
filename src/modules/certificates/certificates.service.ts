@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
+import { maskIdentifier } from '../../common/audit/mask-pii.util';
 import { normalizeDateOnly } from '../../common/datetime/date-only.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
@@ -182,24 +183,41 @@ export class CertificatesService {
   }
 
   // 把完整 Certificate 转成"JSON-safe 可入 audit context"的 snapshot(D6 v1.1 §8.2)。
-  // certificates 字段全部非敏感(Q4 矩阵未勾选),不打码;但 Date 字段必须 toISOString 避免
-  // Prisma InputJsonValue 拒绝 Date 对象(D6 v1.1 §R5)。
+  // certNumber 仅写通用标识符掩码；verifyNote 自由文本不入不可变审计，只留是否提供及
+  // 本次是否变化。Date 字段必须 toISOString，避免 Prisma InputJsonValue 拒绝 Date。
   // 不含 id / memberId / createdAt / updatedAt(audit_logs 自带 resourceId / createdAt / actorUser)。
-  private toCertSnapshot(c: SafeCertificate): Record<string, unknown> {
+  private toCertSnapshot(c: SafeCertificate, verifyNoteChanged = false): Record<string, unknown> {
     return {
       certTypeCode: c.certTypeCode,
       certSubTypeCode: c.certSubTypeCode,
       issuingOrg: c.issuingOrg,
-      certNumber: c.certNumber,
+      certNumber: maskIdentifier(c.certNumber),
       issuedAt: c.issuedAt.toISOString(),
       expiredAt: c.expiredAt ? c.expiredAt.toISOString() : null,
       certStatusCode: c.certStatusCode,
       verifiedBy: c.verifiedBy,
       verifiedAt: c.verifiedAt ? c.verifiedAt.toISOString() : null,
-      verifyNote: c.verifyNote,
+      verifyNoteProvided: this.isVerifyNoteProvided(c.verifyNote),
+      verifyNoteChanged,
       isInternal: c.isInternal,
       supersededByCertId: c.supersededByCertId,
     };
+  }
+
+  private toVerifyNoteAuditState(
+    status: string,
+    verifyNote: string | null,
+    verifyNoteChanged: boolean,
+  ): Record<string, unknown> {
+    return {
+      status,
+      verifyNoteProvided: this.isVerifyNoteProvided(verifyNote),
+      verifyNoteChanged,
+    };
+  }
+
+  private isVerifyNoteProvided(verifyNote: string | null): boolean {
+    return verifyNote !== null && verifyNote !== '';
   }
 
   // Q-I2 决议:取 currentUser 关联的 user.memberId 作为 verifiedBy;
@@ -421,7 +439,7 @@ export class CertificatesService {
         resourceId: lockedBefore.id,
         meta: auditMeta,
         before: this.toCertSnapshot(lockedBefore),
-        after: this.toCertSnapshot(updated),
+        after: this.toCertSnapshot(updated, lockedBefore.verifyNote !== updated.verifyNote),
         extra: { targetMemberId: memberId, operation: 'update' },
         tx,
       });
@@ -525,8 +543,12 @@ export class CertificatesService {
         resourceType: 'certificate',
         resourceId: before.id,
         meta: auditMeta,
-        before: { status: before.certStatusCode },
-        after: { status: updated.certStatusCode, verifyNote: updated.verifyNote },
+        before: this.toVerifyNoteAuditState(before.certStatusCode, before.verifyNote, false),
+        after: this.toVerifyNoteAuditState(
+          updated.certStatusCode,
+          updated.verifyNote,
+          before.verifyNote !== updated.verifyNote,
+        ),
         extra: { targetMemberId: memberId, verifierMemberId },
         tx,
       });
@@ -585,8 +607,12 @@ export class CertificatesService {
         resourceType: 'certificate',
         resourceId: before.id,
         meta: auditMeta,
-        before: { status: before.certStatusCode },
-        after: { status: updated.certStatusCode, verifyNote: updated.verifyNote },
+        before: this.toVerifyNoteAuditState(before.certStatusCode, before.verifyNote, false),
+        after: this.toVerifyNoteAuditState(
+          updated.certStatusCode,
+          updated.verifyNote,
+          before.verifyNote !== updated.verifyNote,
+        ),
         extra: { targetMemberId: memberId, verifierMemberId },
         tx,
       });
