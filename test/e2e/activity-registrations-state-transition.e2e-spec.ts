@@ -10,7 +10,6 @@ import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
-import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -81,6 +80,7 @@ interface BackendIdentity {
 interface BlockedBackend extends BackendIdentity {
   blockingPids: number[];
   waitEventType: string | null;
+  querySnippet: string;
 }
 
 interface PgActivitySnapshot extends BackendIdentity {
@@ -98,6 +98,33 @@ const HTTP_TIMEOUT_MS = 8_000;
 const CLEANUP_TIMEOUT_MS = 10_000;
 const BLOCKER_TIMEOUT_MS = 20_000;
 const CASE_TIMEOUT_MS = 30_000;
+const REVIEW_RACE_STRESS_ITERATIONS = Number.parseInt(
+  process.env.REGISTRATION_REVIEW_RACE_ITERATIONS ?? '0',
+  10,
+);
+
+interface ReviewRaceDiagnosticRecord {
+  iteration: number;
+  order: string;
+  rootPid: number;
+  firstWaiterPid: number;
+  secondWaiterPid: number;
+  firstBlockingPids: number[];
+  secondBlockingPids: number[];
+  firstQuerySnippet: string;
+  secondQuerySnippet: string;
+  firstResponse: { action: 'approve' | 'reject'; httpStatus: number; bizCode: number | null };
+  secondResponse: { action: 'approve' | 'reject'; httpStatus: number; bizCode: number | null };
+  winnerAction: 'approve' | 'reject' | null;
+  finalStatus: string;
+  auditCount: number;
+  auditAction: string | null;
+  notificationCount: number;
+  notificationTitle: string | null;
+  deliveryCount: number;
+  outboxIntentCount: number;
+  failures: string[];
+}
 
 function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void;
@@ -178,7 +205,8 @@ async function waitForBlockedBackend(
         pid,
         datname AS "databaseName",
         pg_blocking_pids(pid) AS "blockingPids",
-        wait_event_type AS "waitEventType"
+        wait_event_type AS "waitEventType",
+        LEFT(REGEXP_REPLACE(query, '[[:space:]]+', ' ', 'g'), 240) AS "querySnippet"
       FROM pg_stat_activity
       WHERE datname = current_database()
         AND pid <> CAST(${blocker.pid} AS integer)
@@ -454,36 +482,41 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
     );
   }
 
-  async function expectDeterministicReviewResult(
-    winner: Response,
-    loser: Response,
+  async function collectReviewRaceDiagnostic(
+    iteration: number,
+    firstAction: 'approve' | 'reject',
+    secondAction: 'approve' | 'reject',
+    rootBackend: BackendIdentity,
+    firstWaiter: BlockedBackend,
+    secondWaiter: BlockedBackend,
+    firstResponse: Response,
+    secondResponse: Response,
     registrationId: string,
-    terminalStatus: 'pass' | 'reject',
-    winnerAction: 'approve' | 'reject',
     expectedBeforeReviewNote: string,
-  ): Promise<void> {
-    expect(winner.status).toBe(200);
-    expect(winner.body.code).toBe(0);
-    expectBizError(loser, BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
-    expect(JSON.stringify(loser.body)).not.toContain('40P01');
-    expect([winner, loser].filter(({ status }) => status === 200)).toHaveLength(1);
-    expect(
-      await ctx.prisma.activityRegistration.findUniqueOrThrow({
-        where: { id: registrationId },
-        select: { statusCode: true },
-      }),
-    ).toEqual({ statusCode: terminalStatus });
+  ): Promise<ReviewRaceDiagnosticRecord> {
+    const responses = [
+      { action: firstAction, response: firstResponse },
+      { action: secondAction, response: secondResponse },
+    ];
+    const winners = responses.filter(({ response }) => response.status === 200);
+    const losers = responses.filter(({ response }) => response.status !== 200);
+    const winnerAction = winners.length === 1 ? winners[0].action : null;
+    const row = await ctx.prisma.activityRegistration.findUniqueOrThrow({
+      where: { id: registrationId },
+      select: { statusCode: true },
+    });
     const audits = await ctx.prisma.auditLog.findMany({
       where: { resourceId: registrationId, event: 'registration.review' },
       select: { context: true },
     });
-    expect(audits).toHaveLength(1);
-    const auditContext = audits[0].context as {
-      before?: { reviewNote?: string | null };
-      extra?: { action?: string };
-    };
-    expect(auditContext.before?.reviewNote).toBe(expectedBeforeReviewNote);
-    expect(auditContext.extra?.action).toBe(winnerAction);
+    const auditContext =
+      audits.length === 1
+        ? (audits[0].context as {
+            before?: { reviewNote?: string | null };
+            extra?: { action?: string };
+          })
+        : null;
+    const auditAction = auditContext === null ? null : (auditContext.extra?.action ?? null);
     const notifications = await ctx.prisma.notification.findMany({
       where: {
         recipientMemberId: ctx.memberCId,
@@ -491,21 +524,105 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       },
       select: { title: true, statusCode: true, channels: true },
     });
-    expect(notifications).toEqual([
-      {
-        title: winnerAction === 'approve' ? '报名已通过' : '报名未通过',
-        statusCode: 'published',
-        channels: ['in-app'],
+    const deliveryCount = await ctx.prisma.notificationDelivery.count();
+    const outboxIntentCount = await ctx.prisma.notificationOutboxIntent.count();
+    const failures: string[] = [];
+    if (winners.length !== 1) failures.push(`winner-count=${winners.length}`);
+    if (losers.length !== 1) failures.push(`loser-count=${losers.length}`);
+    if (winners.length === 1 && winners[0].response.body.code !== 0) {
+      failures.push(`winner-biz-code=${String(winners[0].response.body.code)}`);
+    }
+    if (
+      losers.length === 1 &&
+      (losers[0].response.status !==
+        Number(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID.httpStatus) ||
+        losers[0].response.body.code !== BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID.code)
+    ) {
+      failures.push(
+        `loser-response=${losers[0].response.status}/${String(losers[0].response.body.code)}`,
+      );
+    }
+    if (
+      responses.some(
+        ({ response }) => response.status >= 500 || JSON.stringify(response.body).includes('40P01'),
+      )
+    ) {
+      failures.push('server-error-or-deadlock');
+    }
+    const expectedFinalStatus =
+      winnerAction === 'approve' ? 'pass' : winnerAction === 'reject' ? 'reject' : null;
+    if (expectedFinalStatus === null || row.statusCode !== expectedFinalStatus) {
+      failures.push(`final-status=${row.statusCode}/expected=${String(expectedFinalStatus)}`);
+    }
+    if (audits.length !== 1) failures.push(`audit-count=${audits.length}`);
+    if (auditContext?.before?.reviewNote !== expectedBeforeReviewNote) {
+      failures.push(
+        `audit-before-review-note=${String(
+          auditContext?.before?.reviewNote,
+        )}/expected=${expectedBeforeReviewNote}`,
+      );
+    }
+    if (winnerAction !== null && auditAction !== winnerAction) {
+      failures.push(`audit-action=${String(auditAction)}/winner=${winnerAction}`);
+    }
+    if (notifications.length !== 1) failures.push(`notification-count=${notifications.length}`);
+    const expectedTitle =
+      winnerAction === 'approve' ? '报名已通过' : winnerAction === 'reject' ? '报名未通过' : null;
+    if (notifications.length === 1 && notifications[0].title !== expectedTitle) {
+      failures.push(
+        `notification-title=${notifications[0].title}/expected=${String(expectedTitle)}`,
+      );
+    }
+    if (
+      notifications.length === 1 &&
+      (notifications[0].statusCode !== 'published' ||
+        JSON.stringify(notifications[0].channels) !== JSON.stringify(['in-app']))
+    ) {
+      failures.push(
+        `notification-shape=${notifications[0].statusCode}/${JSON.stringify(
+          notifications[0].channels,
+        )}`,
+      );
+    }
+    if (deliveryCount !== 0) failures.push(`delivery-count=${deliveryCount}`);
+    if (outboxIntentCount !== 0) failures.push(`outbox-intent-count=${outboxIntentCount}`);
+
+    return {
+      iteration,
+      order: `${firstAction}-first`,
+      rootPid: rootBackend.pid,
+      firstWaiterPid: firstWaiter.pid,
+      secondWaiterPid: secondWaiter.pid,
+      firstBlockingPids: firstWaiter.blockingPids,
+      secondBlockingPids: secondWaiter.blockingPids,
+      firstQuerySnippet: firstWaiter.querySnippet,
+      secondQuerySnippet: secondWaiter.querySnippet,
+      firstResponse: {
+        action: firstAction,
+        httpStatus: firstResponse.status,
+        bizCode: typeof firstResponse.body.code === 'number' ? firstResponse.body.code : null,
       },
-    ]);
-    expect(await ctx.prisma.notificationDelivery.count()).toBe(0);
-    expect(await ctx.prisma.notificationOutboxIntent.count()).toBe(0);
+      secondResponse: {
+        action: secondAction,
+        httpStatus: secondResponse.status,
+        bizCode: typeof secondResponse.body.code === 'number' ? secondResponse.body.code : null,
+      },
+      winnerAction,
+      finalStatus: row.statusCode,
+      auditCount: audits.length,
+      auditAction,
+      notificationCount: notifications.length,
+      notificationTitle: notifications.length === 1 ? notifications[0].title : null,
+      deliveryCount,
+      outboxIntentCount,
+      failures,
+    };
   }
 
-  async function runDeterministicReviewRace(
+  async function runWinnerAgnosticReviewRace(
     firstAction: 'approve' | 'reject',
     secondAction: 'approve' | 'reject',
-    terminalStatus: 'pass' | 'reject',
+    diagnostic?: { iteration: number; records: ReviewRaceDiagnosticRecord[] },
   ): Promise<void> {
     const registrationId = await seedRegistration({
       memberId: ctx.memberCId,
@@ -594,14 +711,24 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
         withTimeout(first, `${firstAction}-first response`, HTTP_TIMEOUT_MS),
         withTimeout(second, `${secondAction}-second response`, HTTP_TIMEOUT_MS),
       ]);
-      await expectDeterministicReviewResult(
+      const record = await collectReviewRaceDiagnostic(
+        diagnostic?.iteration ?? 1,
+        firstAction,
+        secondAction,
+        rootBackend,
+        firstWaiter,
+        secondWaiter,
         firstResponse,
         secondResponse,
         registrationId,
-        terminalStatus,
-        firstAction,
         rootReviewNote,
       );
+      if (diagnostic) {
+        diagnostic.records.push(record);
+        console.info(JSON.stringify({ event: 'registration-review-race.iteration', ...record }));
+      } else {
+        expect(record.failures).toEqual([]);
+      }
     } catch (error) {
       primaryFailure = error;
     } finally {
@@ -621,6 +748,40 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       throwFailure(primaryFailure);
     }
     if (cleanupFailure !== undefined) throwFailure(cleanupFailure);
+  }
+
+  async function runReviewRaceStress(
+    firstAction: 'approve' | 'reject',
+    secondAction: 'approve' | 'reject',
+  ): Promise<void> {
+    const records: ReviewRaceDiagnosticRecord[] = [];
+    for (let iteration = 1; iteration <= REVIEW_RACE_STRESS_ITERATIONS; iteration += 1) {
+      if (iteration > 1) await isolateFixtures();
+      await runWinnerAgnosticReviewRace(firstAction, secondAction, {
+        iteration,
+        records,
+      });
+    }
+    const firstWinnerCount = records.filter((record) => record.winnerAction === firstAction).length;
+    const secondWinnerCount = records.filter(
+      (record) => record.winnerAction === secondAction,
+    ).length;
+    const failures = records.flatMap((record) =>
+      record.failures.map((failure) => ({ iteration: record.iteration, failure })),
+    );
+    console.info(
+      JSON.stringify({
+        event: 'registration-review-race.summary',
+        order: `${firstAction}-first`,
+        iterations: records.length,
+        firstWinnerCount,
+        secondWinnerCount,
+        invariantFailureCount: failures.length,
+        failures,
+      }),
+    );
+    expect(records).toHaveLength(REVIEW_RACE_STRESS_ITERATIONS);
+    expect(failures).toEqual([]);
   }
 
   // ============ A. approve(pending → pass) ============
@@ -847,20 +1008,40 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       ).toBe(0);
     });
 
+    /*
+     * PR-K report-only baseline (2026-07-26, 100 iterations per order):
+     * approve-first winners=92/100 (reject won 8); reject-first winners=96/100
+     * (approve won 4); invariant failures=0/200. The first observed inversion was
+     * approve-first iteration 6: root=24696, first=24694 blocked by root, second=24695
+     * blocked by first; reject nevertheless won with 200 while approve returned 409/21030.
+     * PostgreSQL waiter order is therefore diagnostic evidence, not the winner contract.
+     */
     it(
-      'finding #3 approve-first:root registration lock 后 approve 先排队，reject 软阻塞其后',
+      'finding #3 winner-agnostic approve/reject:保留 approve-first 锁等待链并冻结唯一成功',
       async () => {
-        await runDeterministicReviewRace('approve', 'reject', 'pass');
+        if (REVIEW_RACE_STRESS_ITERATIONS > 0) {
+          await runReviewRaceStress('approve', 'reject');
+        } else {
+          await runWinnerAgnosticReviewRace('approve', 'reject');
+        }
       },
-      CASE_TIMEOUT_MS,
+      REVIEW_RACE_STRESS_ITERATIONS > 0
+        ? CASE_TIMEOUT_MS * REVIEW_RACE_STRESS_ITERATIONS
+        : CASE_TIMEOUT_MS,
     );
 
     it(
-      'finding #3 reject-first:root registration lock 后 reject 先排队，approve 软阻塞其后',
+      'finding #3 winner-agnostic reject/approve:保留 reject-first 锁等待链并冻结唯一成功',
       async () => {
-        await runDeterministicReviewRace('reject', 'approve', 'reject');
+        if (REVIEW_RACE_STRESS_ITERATIONS > 0) {
+          await runReviewRaceStress('reject', 'approve');
+        } else {
+          await runWinnerAgnosticReviewRace('reject', 'approve');
+        }
       },
-      CASE_TIMEOUT_MS,
+      REVIEW_RACE_STRESS_ITERATIONS > 0
+        ? CASE_TIMEOUT_MS * REVIEW_RACE_STRESS_ITERATIONS
+        : CASE_TIMEOUT_MS,
     );
   });
 
