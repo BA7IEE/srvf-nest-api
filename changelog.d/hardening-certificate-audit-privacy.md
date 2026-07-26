@@ -1,0 +1,1 @@
+- 证书 create/update/delete/verify/reject 的不可变审计 context 不再保存完整证书编号或核验自由备注：编号改为通用标识符掩码，备注仅记录 `verifyNoteProvided` / `verifyNoteChanged` 布尔摘要；证书 API 响应、状态变化、审计事件与历史审计数据保持不变。

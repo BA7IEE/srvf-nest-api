@@ -59,3 +59,12 @@ export function maskIdCard(idCard: string | null | undefined): string | null {
   if (idCard.length === 15) return idCard.substring(0, 6) + '*****' + idCard.substring(11);
   return '****';
 }
+
+// 通用业务标识符（如证书编号）只保留首尾各 2 字符；短值全部掩去。
+// 使用固定 4 个 "*"，避免审计日志暴露标识符完整长度。
+// null / undefined / "" → null
+export function maskIdentifier(value: string | null | undefined): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (value.length <= 4) return '****';
+  return value.substring(0, 2) + '****' + value.substring(value.length - 2);
+}

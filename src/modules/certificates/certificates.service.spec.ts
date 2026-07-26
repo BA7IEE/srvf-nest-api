@@ -27,8 +27,8 @@ import { CertificatesService } from './certificates.service';
 //   mock 把 prisma 自身当 tx 传入(service 在 tx 与 this.prisma 上调同名方法)。
 //
 // 边界(本 spec 只到 service 编排层;不改任何业务代码 / BizCode / audit event 名):
-// - **不**断言 `toCertSnapshot` 内部 before/after 快照结构(Date→ISO 等细节);只断言
-//   `auditLogs.log` 被调用 + event 名 + tx 接线(snapshot 归 certificates-audit-characterization e2e)。
+// - 一般只锁 `auditLogs.log` 的 event 与 tx 接线；隐私边界额外锁定 certNumber 掩码、
+//   verifyNote 布尔摘要及 API 返回不变，完整真实库快照归 certificates audit e2e。
 // - 读审计只锁 event/resource/extra 与 fail-closed 编排,不复刻 AuditLogsService 内部写库。
 // - **不**复刻字典校验内部查询(mock `dictItem.findFirst` 返回值即可)。
 // - **不**测深事务 happy-path 全链(完整状态流 / 真实库写入归 certificates*.e2e)。
@@ -381,7 +381,11 @@ describe('CertificatesService (characterization, scoped)', () => {
       prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
       prisma.dictItem.findFirst.mockResolvedValue({ id: 'di-type' });
       prisma.certificate.create.mockResolvedValue(
-        makeCertRow({ id: 'cert-new', certStatusCode: CERT_STATUS_PENDING }),
+        makeCertRow({
+          id: 'cert-new',
+          certNumber: 'CN-2026-SECRET-0001',
+          certStatusCode: CERT_STATUS_PENDING,
+        }),
       );
       const service = makeService(prisma, { auditLogs });
 
@@ -409,7 +413,19 @@ describe('CertificatesService (characterization, scoped)', () => {
           tx: prisma,
         }),
       );
+      const auditArg = auditLogs.log.mock.calls[0][0] as {
+        after: Record<string, unknown>;
+      };
+      expect(auditArg.after).toEqual(
+        expect.objectContaining({
+          certNumber: 'CN****01',
+          verifyNoteProvided: false,
+          verifyNoteChanged: false,
+        }),
+      );
+      expect(auditArg.after).not.toHaveProperty('verifyNote');
       expect(res.id).toBe('cert-new');
+      expect(res.certNumber).toBe('CN-2026-SECRET-0001');
     });
 
     it('optional 字段(certSubTypeCode / certNumber / expiredAt)透传进 create data;expiredAt 抹平', async () => {
@@ -511,10 +527,20 @@ describe('CertificatesService (characterization, scoped)', () => {
         id: 'cert-1',
         memberId: 'mem-1',
         issuingOrg: 'locked-authoritative',
+        certNumber: 'CN-2026-SECRET-0001',
+        certStatusCode: CERT_STATUS_VERIFIED,
+        verifyNote: 'private old verification note',
       });
       prisma.certificate.findFirst.mockResolvedValueOnce(observed).mockResolvedValueOnce(locked);
       prisma.certificate.update.mockResolvedValue(
-        makeCertRow({ id: 'cert-1', memberId: 'mem-1', issuingOrg: 'New Org' }),
+        makeCertRow({
+          id: 'cert-1',
+          memberId: 'mem-1',
+          issuingOrg: 'New Org',
+          certNumber: 'NEW-CERT-SECRET-0002',
+          certStatusCode: CERT_STATUS_PENDING,
+          verifyNote: null,
+        }),
       );
       const service = makeService(prisma, { auditLogs });
 
@@ -539,10 +565,32 @@ describe('CertificatesService (characterization, scoped)', () => {
         }),
       );
       const auditArg = auditLogs.log.mock.calls[0][0] as {
-        before: { issuingOrg: string };
+        before: Record<string, unknown>;
+        after: Record<string, unknown>;
       };
       expect(auditArg.before.issuingOrg).toBe('locked-authoritative');
+      expect(auditArg.before).toEqual(
+        expect.objectContaining({
+          certNumber: 'CN****01',
+          verifyNoteProvided: true,
+          verifyNoteChanged: false,
+        }),
+      );
+      expect(auditArg.after).toEqual(
+        expect.objectContaining({
+          certNumber: 'NE****02',
+          verifyNoteProvided: false,
+          verifyNoteChanged: true,
+        }),
+      );
+      expect(auditArg.before).not.toHaveProperty('verifyNote');
+      expect(auditArg.after).not.toHaveProperty('verifyNote');
+      const serializedAudit = JSON.stringify(auditArg);
+      expect(serializedAudit).not.toContain('CN-2026-SECRET-0001');
+      expect(serializedAudit).not.toContain('NEW-CERT-SECRET-0002');
+      expect(serializedAudit).not.toContain('private old verification note');
       expect(res.issuingOrg).toBe('New Org');
+      expect(res.certNumber).toBe('NEW-CERT-SECRET-0002');
     });
   });
 
@@ -553,7 +601,13 @@ describe('CertificatesService (characterization, scoped)', () => {
       const auditLogs = makeAuditLogsMock();
       prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
       prisma.certificate.findFirst.mockResolvedValue(
-        makeCertRow({ id: 'cert-1', memberId: 'mem-1', certStatusCode: CERT_STATUS_VERIFIED }),
+        makeCertRow({
+          id: 'cert-1',
+          memberId: 'mem-1',
+          certNumber: 'DELETE-SECRET-0003',
+          certStatusCode: CERT_STATUS_VERIFIED,
+          verifyNote: 'private deletion note',
+        }),
       );
       prisma.certificate.update.mockResolvedValue(makeCertRow({ id: 'cert-1', memberId: 'mem-1' }));
       const service = makeService(prisma, { auditLogs });
@@ -571,8 +625,20 @@ describe('CertificatesService (characterization, scoped)', () => {
           tx: prisma,
         }),
       );
-      const logArg = auditLogs.log.mock.calls[0][0] as { extra: { priorStatusCode: string } };
+      const logArg = auditLogs.log.mock.calls[0][0] as {
+        before: Record<string, unknown>;
+        extra: { priorStatusCode: string };
+      };
       expect(logArg.extra.priorStatusCode).toBe(CERT_STATUS_VERIFIED);
+      expect(logArg.before).toEqual(
+        expect.objectContaining({
+          certNumber: 'DE****03',
+          verifyNoteProvided: true,
+          verifyNoteChanged: false,
+        }),
+      );
+      expect(logArg.before).not.toHaveProperty('verifyNote');
+      expect(JSON.stringify(logArg)).not.toContain('private deletion note');
     });
 
     it('不存在 → CERTIFICATE_NOT_FOUND;不 update / 不审计', async () => {
@@ -617,7 +683,12 @@ describe('CertificatesService (characterization, scoped)', () => {
       );
       prisma.user.findFirst.mockResolvedValue({ memberId: 'verifier-mem' });
       prisma.certificate.update.mockResolvedValue(
-        makeCertRow({ id: 'cert-1', memberId: 'mem-1', certStatusCode: CERT_STATUS_VERIFIED }),
+        makeCertRow({
+          id: 'cert-1',
+          memberId: 'mem-1',
+          certStatusCode: CERT_STATUS_VERIFIED,
+          verifyNote: 'looks good',
+        }),
       );
       const service = makeService(prisma, { auditLogs });
 
@@ -638,12 +709,23 @@ describe('CertificatesService (characterization, scoped)', () => {
       expect(auditLogs.log).toHaveBeenCalledWith(
         expect.objectContaining({
           event: 'certificate.verify',
-          before: { status: CERT_STATUS_PENDING },
+          before: {
+            status: CERT_STATUS_PENDING,
+            verifyNoteProvided: false,
+            verifyNoteChanged: false,
+          },
+          after: {
+            status: CERT_STATUS_VERIFIED,
+            verifyNoteProvided: true,
+            verifyNoteChanged: true,
+          },
           tx: prisma,
         }),
       );
+      expect(JSON.stringify(auditLogs.log.mock.calls)).not.toContain('looks good');
       expect(prisma.certificate.findFirst).toHaveBeenCalledTimes(1);
       expect(res.certStatusCode).toBe(CERT_STATUS_VERIFIED);
+      expect(res.verifyNote).toBe('looks good');
     });
 
     it('verify:user 无 memberId → verifiedBy=null;verifyNote 缺省 → null', async () => {
@@ -692,7 +774,12 @@ describe('CertificatesService (characterization, scoped)', () => {
       );
       prisma.user.findFirst.mockResolvedValue({ memberId: 'verifier-mem' });
       prisma.certificate.update.mockResolvedValue(
-        makeCertRow({ id: 'cert-1', memberId: 'mem-1', certStatusCode: CERT_STATUS_REJECTED }),
+        makeCertRow({
+          id: 'cert-1',
+          memberId: 'mem-1',
+          certStatusCode: CERT_STATUS_REJECTED,
+          verifyNote: 'insufficient evidence',
+        }),
       );
       const service = makeService(prisma, { auditLogs });
 
@@ -713,12 +800,23 @@ describe('CertificatesService (characterization, scoped)', () => {
       expect(auditLogs.log).toHaveBeenCalledWith(
         expect.objectContaining({
           event: 'certificate.reject',
-          before: { status: CERT_STATUS_PENDING },
+          before: {
+            status: CERT_STATUS_PENDING,
+            verifyNoteProvided: false,
+            verifyNoteChanged: false,
+          },
+          after: {
+            status: CERT_STATUS_REJECTED,
+            verifyNoteProvided: true,
+            verifyNoteChanged: true,
+          },
           tx: prisma,
         }),
       );
+      expect(JSON.stringify(auditLogs.log.mock.calls)).not.toContain('insufficient evidence');
       expect(prisma.certificate.findFirst).toHaveBeenCalledTimes(1);
       expect(res.certStatusCode).toBe(CERT_STATUS_REJECTED);
+      expect(res.verifyNote).toBe('insufficient evidence');
     });
   });
 

@@ -1,4 +1,4 @@
-import { maskAddress, maskIdCard, maskName, maskPhone } from './mask-pii.util';
+import { maskAddress, maskIdCard, maskIdentifier, maskName, maskPhone } from './mask-pii.util';
 
 // V2 第一阶段批次 6 audit_logs 打码工具单元测试。
 // 覆盖 4 函数 × (null / undefined / 空字符串 / 标准 / 边界长度)= ~20 用例。
@@ -133,6 +133,21 @@ describe('mask-pii.util', () => {
 
     it('字母乱码 "abcdef" → "****"', () => {
       expect(maskIdCard('abcdef')).toBe('****');
+    });
+  });
+
+  describe('maskIdentifier', () => {
+    it.each([null, undefined, ''] as const)('空值 %s → null', (value) => {
+      expect(maskIdentifier(value)).toBeNull();
+    });
+
+    it.each(['A', 'AB', 'ABC', 'ABCD'])('短标识符 %s → 全掩码', (value) => {
+      expect(maskIdentifier(value)).toBe('****');
+    });
+
+    it('长标识符只保留首尾各 2 字符且不暴露完整长度', () => {
+      expect(maskIdentifier('CN-2026-SECRET-0001')).toBe('CN****01');
+      expect(maskIdentifier('ABCDE')).toBe('AB****DE');
     });
   });
 });
