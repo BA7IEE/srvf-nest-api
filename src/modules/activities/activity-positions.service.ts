@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { DictItemStatus, DictTypeStatus, Prisma, Role } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -10,12 +10,8 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
-import {
-  NOTIFICATION_CHANNEL_IN_APP,
-  NOTIFICATION_TYPE_REGISTRATION_RESULT,
-} from '../notifications/notification.constants';
-import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { RbacService } from '../permissions/rbac.service';
+import { ActivityNotificationProducer } from './activity-notification-producer';
 import { ActivityPositionAuditRecorder } from './activity-position-audit-recorder';
 import { getActivityCapacityHeadroom } from './activity-capacity';
 import {
@@ -61,15 +57,13 @@ interface ActivityWindow {
 
 @Injectable()
 export class ActivityPositionsService {
-  private readonly logger = new Logger(ActivityPositionsService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditRecorder: ActivityPositionAuditRecorder,
     private readonly auditLogs: AuditLogsService,
     private readonly rbac: RbacService,
     private readonly authz: AuthzService,
-    private readonly notificationDispatcher: NotificationDispatcher,
+    private readonly notificationProducer: ActivityNotificationProducer,
     @Inject(appConfig.KEY)
     private readonly config: ConfigType<typeof appConfig>,
   ) {}
@@ -191,7 +185,7 @@ export class ActivityPositionsService {
     }
 
     try {
-      const result = await this.prisma.$transaction(async (tx) => {
+      return await this.prisma.$transaction(async (tx) => {
         // 岗位 capacity 的 read-modify-write 基线必须在 Activity 锁后读取；锁对象不扩到岗位行。
         const activity = await this.lockActivityOrThrow(tx, activityId);
         await this.assertWorkflowMutationAllowed(tx, activity, currentUser);
@@ -306,18 +300,12 @@ export class ActivityPositionsService {
                 auditLogs: this.auditLogs,
               })
             : { activityTitle: '活动', promoted: [] };
-        return {
-          dto: this.toResponseDto(updated),
+        await this.notificationProducer.enqueueWaitlistPromotions(tx, {
           activityTitle: promotion.activityTitle,
-          promotedMemberIds: promotion.promoted.map((item) => item.memberId),
-        };
+          promoted: promotion.promoted,
+        });
+        return this.toResponseDto(updated);
       });
-      await this.dispatchWaitlistPromotionNotifications(
-        activityId,
-        result.activityTitle,
-        result.promotedMemberIds,
-      );
-      return result.dto;
     } catch (error) {
       this.rethrowNameConflict(error);
     }
@@ -580,28 +568,6 @@ export class ActivityPositionsService {
       throw new BizException(BizCode.ACTIVITY_POSITION_NAME_ALREADY_EXISTS);
     }
     throw error;
-  }
-
-  private async dispatchWaitlistPromotionNotifications(
-    activityId: string,
-    activityTitle: string,
-    memberIds: string[],
-  ): Promise<void> {
-    for (const memberId of memberIds) {
-      try {
-        await this.notificationDispatcher.dispatchTargeted({
-          recipientMemberId: memberId,
-          notificationTypeCode: NOTIFICATION_TYPE_REGISTRATION_RESULT,
-          title: '候补已递补',
-          body: `您报名的「${activityTitle}」已从候补递补，现已进入待审核。`,
-          channels: [NOTIFICATION_CHANNEL_IN_APP],
-        });
-      } catch (error) {
-        this.logger.error(
-          `waitlist promotion notification failed (activity=${activityId}, member=${memberId}): ${(error as Error).message}`,
-        );
-      }
-    }
   }
 
   private toResponseDto(activityPosition: ActivityPositionRow): ActivityPositionResponseDto {

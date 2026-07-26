@@ -24,6 +24,8 @@ describe('activity responsibility workflow gate=true publish review', () => {
   let delegatedCreatorAuth: string;
   let reviewerAuth: string;
   let creatorPayload: CurrentUserPayload;
+  let reviewerUserId: string;
+  let reviewerMemberId: string;
   let organizationId: string;
   let outsideOrganizationId: string;
   let activityTypeCode: string;
@@ -42,6 +44,7 @@ describe('activity responsibility workflow gate=true publish review', () => {
       username: 'activity-review-super-admin',
       role: Role.USER,
     });
+    reviewerUserId = reviewer.id;
     const creator = await createTestUser(app, {
       username: 'activity-review-creator',
       role: Role.ADMIN,
@@ -57,6 +60,19 @@ describe('activity responsibility workflow gate=true publish review', () => {
         gradeCode: 'level-3',
       },
       select: { id: true },
+    });
+    const reviewerMember = await prisma.member.create({
+      data: {
+        memberNo: 'activity-review-reviewer-member',
+        displayName: '活动发布审核员',
+        gradeCode: 'level-3',
+      },
+      select: { id: true },
+    });
+    reviewerMemberId = reviewerMember.id;
+    await prisma.user.update({
+      where: { id: reviewer.id },
+      data: { memberId: reviewerMember.id },
     });
     await prisma.user.update({
       where: { id: creator.id },
@@ -337,6 +353,18 @@ describe('activity responsibility workflow gate=true publish review', () => {
       status: 'returned',
       reviewNote: '补充安全说明',
     });
+    await expect(
+      prisma.notificationOutboxIntent.findMany({
+        where: { aggregateType: 'activity_publish_review', aggregateId: first.id },
+        select: { eventType: true, status: true, destinationRef: true },
+      }),
+    ).resolves.toEqual([
+      {
+        eventType: 'notification.targeted',
+        status: 'pending',
+        destinationRef: creatorPayload.memberId,
+      },
+    ]);
 
     const edit = await request(httpServer(app))
       .patch(`/api/admin/v1/activities/${activityId}`)
@@ -356,6 +384,28 @@ describe('activity responsibility workflow gate=true publish review', () => {
       status: 'approved',
       reviewNote: '同意发布',
     });
+    await expect(
+      prisma.notificationOutboxIntent.findMany({
+        where: { aggregateType: 'activity_publish_review', aggregateId: second.id },
+        select: { eventType: true, status: true, destinationRef: true },
+      }),
+    ).resolves.toEqual([
+      {
+        eventType: 'notification.targeted',
+        status: 'pending',
+        destinationRef: creatorPayload.memberId,
+      },
+    ]);
+    await expect(
+      prisma.notificationOutboxIntent.findMany({
+        where: {
+          aggregateType: 'activity',
+          aggregateId: activityId,
+          eventType: 'notification.system-broadcast',
+        },
+        select: { status: true, destinationRef: true },
+      }),
+    ).resolves.toEqual([{ status: 'pending', destinationRef: 'member' }]);
     const activity = await prisma.activity.findUniqueOrThrow({
       where: { id: activityId },
       select: { statusCode: true, workflowRevision: true, publishedBy: true },
@@ -422,6 +472,81 @@ describe('activity responsibility workflow gate=true publish review', () => {
       memberId: creatorPayload.memberId,
       assignedByUserId: creatorPayload.id,
     });
+  });
+
+  it('change approve/return resolves current ACTIVE owner and never publishedBy reviewer', async () => {
+    const activityId = await createActivity();
+    await request(httpServer(app))
+      .patch(`/api/admin/v1/activities/${activityId}/publish`)
+      .set('Authorization', creatorAuth)
+      .send({ requiresInsuranceConfirmed: true })
+      .expect(200);
+    await prisma.activity.update({
+      where: { id: activityId },
+      data: { publishedBy: reviewerUserId },
+    });
+
+    const approvedReview = await reviewService.submitChange(
+      activityId,
+      { location: '莲花山' },
+      undefined,
+      creatorPayload,
+      AUDIT_META,
+    );
+    await request(httpServer(app))
+      .post(`/api/admin/v1/activity-publish-reviews/${approvedReview.id}/approve`)
+      .set('Authorization', reviewerAuth)
+      .send({ requiresInsuranceConfirmed: true })
+      .expect(200);
+    await expect(
+      prisma.notificationOutboxIntent.findMany({
+        where: {
+          aggregateType: 'activity_publish_review',
+          aggregateId: approvedReview.id,
+        },
+        select: { destinationRef: true },
+      }),
+    ).resolves.toEqual([{ destinationRef: creatorPayload.memberId }]);
+    await expect(
+      prisma.notificationOutboxIntent.count({
+        where: {
+          aggregateType: 'activity_publish_review',
+          aggregateId: approvedReview.id,
+          destinationRef: reviewerMemberId,
+        },
+      }),
+    ).resolves.toBe(0);
+
+    const returnedReview = await reviewService.submitChange(
+      activityId,
+      { location: '大鹏' },
+      undefined,
+      creatorPayload,
+      AUDIT_META,
+    );
+    await request(httpServer(app))
+      .post(`/api/admin/v1/activity-publish-reviews/${returnedReview.id}/return`)
+      .set('Authorization', reviewerAuth)
+      .send({ reviewNote: '调整集合点' })
+      .expect(200);
+    await expect(
+      prisma.notificationOutboxIntent.findMany({
+        where: {
+          aggregateType: 'activity_publish_review',
+          aggregateId: returnedReview.id,
+        },
+        select: { destinationRef: true },
+      }),
+    ).resolves.toEqual([{ destinationRef: creatorPayload.memberId }]);
+    await expect(
+      prisma.notificationOutboxIntent.count({
+        where: {
+          aggregateType: 'activity_publish_review',
+          aggregateId: returnedReview.id,
+          destinationRef: reviewerMemberId,
+        },
+      }),
+    ).resolves.toBe(0);
   });
 
   it('legacy publish approves the current pending initial review when actor has review scope', async () => {

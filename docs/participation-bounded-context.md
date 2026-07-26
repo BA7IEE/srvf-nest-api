@@ -134,8 +134,8 @@ Certificate (不在 participation 图内)
 | Stage | Module | State / action | Downstream effect |
 |---|---|---|---|
 | 1. 活动起草 | activities | `create` → `statusCode='draft'` | 仅创建,无下游 |
-| 2. 活动发布 | activities | `publish` → `draft → published` | 解锁 Registration 创建与 AttendanceSheet 提交 |
-| 3. 活动取消 | activities | `cancel` → `* → cancelled` | 同事务联动 live `pending + waitlisted → cancelled`(pass 保留历史审批结果);阻断所有下游写;attendances 在 `findActivityForSubmissionFull` 内会拒绝 `ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN` |
+| 2. 活动发布 | activities | `publish` → `draft → published` | 解锁 Registration 创建与 AttendanceSheet 提交；公开活动发布广播 intent 与业务/audit 同事务 |
+| 3. 活动取消 | activities | `cancel` → `* → cancelled` | 同事务联动 live `pending + waitlisted → cancelled`(pass 保留历史审批结果)，并为已报名成员写取消通知 intent；阻断所有下游写;attendances 在 `findActivityForSubmissionFull` 内会拒绝 `ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN` |
 | 4. 报名(admin / app) | activity-registrations | `create` / `createMy` → `pending \| waitlisted` | 全部前置闸通过后，`capacity=null` 或未满落 pending，已满落 waitlisted；partial unique 防重复;**报名截止生效**(`registrationDeadline` 非 null 且 `now > deadline` → `ACTIVITY_REGISTRATION_DEADLINE_PASSED=20123`;approve 不加此闸) |
 | 5. 报名审核 / 递补 | activity-registrations + activities | `approve: pending → pass`;`reject: pending\|waitlisted → reject`;`promote: waitlisted → pending` | promote 仅事务内 FIFO 引擎使用，不开手动端点，不开 waitlisted → pass 直通 |
 | 6. 报名取消 | activity-registrations | `cancelAdmin` / `cancelMy`: `pending\|pass\|waitlisted → cancelled` | live `AttendanceRecord` 或 `ActivityCheckIn` 已引用报名时复用 21033 拒绝取消；否则取消 pass 同事务 FIFO 递补队首一人至 pending；取消 pending/waitlisted 不递补；partial unique 允许同人再次报名 |
@@ -230,6 +230,9 @@ Certificate (不在 participation 图内)
   与 `registration.review(action=promote)` audit、`notification.targeted@1` outbox intent
   全在同一事务；独立 worker 只在 commit 后执行通知 Effect。pass 取消与打卡写路径统一使用
   Activity → Registration 锁序。
+- **活动 L2 通知**:发布/改期/取消/发布审核结果与 Activity/岗位扩容递补 intent
+  和业务写、audit 同事务；审核 change 的收件人只认审核时当前 ACTIVE owner，
+  禁止回退 `publishedBy`。独立 worker 仅在 commit 后执行通知 Effect。
 - 跨 aggregate 写**只允许在同事务内发生**;**禁止**用"先 attendances 改完,再回调 activities"的两阶段方式;**禁止**用 `setTimeout` / `Promise.then` 把后续写挪出事务。
 
 ### 5.4 ContributionRule 是配置,不是流程

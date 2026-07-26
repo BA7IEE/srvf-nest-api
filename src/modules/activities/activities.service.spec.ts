@@ -16,11 +16,11 @@ import type { ActivityAuditRecorder } from './activity-audit-recorder';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import type { ActivityStateDecision } from './activity-state-machine';
-import type { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import type { OrganizationsService } from '../organizations/organizations.service';
 import type { RbacService } from '../permissions/rbac.service';
 import type { AuthzService } from '../authz/authz.service';
 import type { ActivityInitiationPolicy } from './activity-initiation-policy';
+import type { ActivityNotificationProducer } from './activity-notification-producer';
 import type { ActivityPublishReviewService } from './activity-publish-review.service';
 import type { ConfigType } from '@nestjs/config';
 import appConfig from '../../config/app.config';
@@ -257,19 +257,24 @@ function makeAuthzMock(
 }
 type AuthzMock = ReturnType<typeof makeAuthzMock>;
 
-// 统一通知 S4:派发器 mock —— dispatchTargeted 默认 resolve;cancel fan-out 用例可注入 reject
-// 验证「派发失败不破坏取消」,或断言逐报名者入参(recipientMemberId / channels)。
-function makeNotificationDispatcherMock() {
+// PR-L2:durable producer mock；business + audit + intent 必须共用调用方 transaction。
+function makeNotificationProducerMock() {
   return {
-    dispatchTargeted: jest
-      .fn<Promise<{ id: string }>, [Record<string, unknown>]>()
-      .mockResolvedValue({ id: 'notif-1' }),
-    dispatchSystemMemberBroadcast: jest
-      .fn<Promise<{ id: string }>, [Record<string, unknown>]>()
-      .mockResolvedValue({ id: 'notif-broadcast-1' }),
+    enqueuePublished: jest
+      .fn<Promise<void>, [unknown, Record<string, unknown>]>()
+      .mockResolvedValue(),
+    enqueueCancellation: jest
+      .fn<Promise<void>, [unknown, Record<string, unknown>]>()
+      .mockResolvedValue(),
+    enqueueScheduleChange: jest
+      .fn<Promise<void>, [unknown, Record<string, unknown>]>()
+      .mockResolvedValue(),
+    enqueueWaitlistPromotions: jest
+      .fn<Promise<void>, [unknown, Record<string, unknown>]>()
+      .mockResolvedValue(),
   };
 }
-type NotificationDispatcherMock = ReturnType<typeof makeNotificationDispatcherMock>;
+type NotificationProducerMock = ReturnType<typeof makeNotificationProducerMock>;
 
 // F1/A6(路线图 §4;D7 拍板):organizations mock —— 仅 queryDescendantOrgIds 供
 // includeDescendants 展开,既有 characterization 断言零修改(未传 includeDescendants 时不调用)。
@@ -306,7 +311,7 @@ function makeService(
   opts: {
     stateMachine?: StateMachineMock;
     recorder?: RecorderMock;
-    dispatcher?: NotificationDispatcherMock;
+    notificationProducer?: NotificationProducerMock;
     authz?: AuthzMock;
     organizations?: OrganizationsMock;
     insuranceRequirement?: InsuranceRequirementMock;
@@ -316,7 +321,7 @@ function makeService(
 ): ActivitiesService {
   const stateMachine = opts.stateMachine ?? makeStateMachineMock(DENY_DECISION);
   const recorder = opts.recorder ?? makeRecorderMock();
-  const dispatcher = opts.dispatcher ?? makeNotificationDispatcherMock();
+  const notificationProducer = opts.notificationProducer ?? makeNotificationProducerMock();
   const authz = opts.authz ?? makeAuthzMock();
   const organizations = opts.organizations ?? makeOrganizationsMock();
   const insuranceRequirement = opts.insuranceRequirement ?? makeInsuranceRequirementMock();
@@ -328,7 +333,7 @@ function makeService(
     { log: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogsService,
     makeRbacMock() as unknown as RbacService,
     authz as unknown as AuthzService,
-    dispatcher as unknown as NotificationDispatcher,
+    notificationProducer as unknown as ActivityNotificationProducer,
     organizations as unknown as OrganizationsService,
     insuranceRequirement as unknown as InsuranceRequirementService,
     initiationPolicy as unknown as ActivityInitiationPolicy,
@@ -914,11 +919,11 @@ describe('ActivitiesService (characterization)', () => {
       );
     });
 
-    // ===== 统一通知 S4(评审稿 §6.4 / §6.2):取消 → 已报名者 fan-out 定向通知 =====
-    it('S4:取消 → fan-out 已报名者(pending+pass+waitlisted,去重)各一条 directed/in-app/activity-changed(含活动名+原因);事务外', async () => {
+    // ===== PR-L2:取消 → 同事务 durable intent fan-out =====
+    it('PR-L2:取消 → 锁后收件集去重并在 audit 后同 tx enqueue', async () => {
       const prisma = makePrismaMock();
       const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'cancelled' });
-      const dispatcher = makeNotificationDispatcherMock();
+      const notificationProducer = makeNotificationProducerMock();
       prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ statusCode: 'published' }));
       prisma.activity.update.mockResolvedValue(
         makeActivityRow({ statusCode: 'cancelled', title: '周末巡山' }),
@@ -929,7 +934,7 @@ describe('ActivitiesService (characterization)', () => {
         { memberId: 'm2' },
         { memberId: 'm1' },
       ]);
-      const service = makeService(prisma, { stateMachine, dispatcher });
+      const service = makeService(prisma, { stateMachine, notificationProducer });
 
       await service.cancel('act-1', makeCancelDto('暴雨'), makeCurrentUser(), META);
 
@@ -945,58 +950,55 @@ describe('ActivitiesService (characterization)', () => {
       const recipientReadOrder = prisma.activityRegistration.findMany.mock.invocationCallOrder[0];
       expect(recipientReadOrder).toBeGreaterThan(claimOrder);
 
-      // 去重后 2 派发,各 directed in-app activity-changed + 活动名 + 原因
-      expect(dispatcher.dispatchTargeted).toHaveBeenCalledTimes(2);
-      const recipients = dispatcher.dispatchTargeted.mock.calls.map((c) => c[0].recipientMemberId);
-      expect(new Set(recipients)).toEqual(new Set(['m1', 'm2']));
-      for (const [arg] of dispatcher.dispatchTargeted.mock.calls) {
-        expect(arg).toMatchObject({
-          notificationTypeCode: 'activity-changed',
-          channels: ['in-app'],
-          title: '活动已取消',
-        });
-        expect(arg.body).toContain('周末巡山');
-        expect(arg.body).toContain('暴雨');
-      }
-
-      // 事务外硬证:首个派发严格在 activity.update(事务内)之后(commit 后才 fan-out)
+      expect(notificationProducer.enqueueCancellation).toHaveBeenCalledTimes(1);
+      expect(notificationProducer.enqueueCancellation).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({
+          activityId: 'act-1',
+          activityTitle: '周末巡山',
+          cancelReason: '暴雨',
+          memberIds: ['m1', 'm2'],
+        }),
+      );
       const updateOrder = prisma.activity.update.mock.invocationCallOrder[0];
-      const dispatchOrder = dispatcher.dispatchTargeted.mock.invocationCallOrder[0];
-      expect(dispatchOrder).toBeGreaterThan(updateOrder);
+      const enqueueOrder = notificationProducer.enqueueCancellation.mock.invocationCallOrder[0];
+      expect(enqueueOrder).toBeGreaterThan(updateOrder);
     });
 
-    it('S4:无已报名者 → 零派发(取消仍成功)', async () => {
+    it('PR-L2:无已报名者 → producer 收空收件集，取消仍成功', async () => {
       const prisma = makePrismaMock();
       const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'cancelled' });
-      const dispatcher = makeNotificationDispatcherMock();
+      const notificationProducer = makeNotificationProducerMock();
       prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ statusCode: 'published' }));
       prisma.activity.update.mockResolvedValue(makeActivityRow({ statusCode: 'cancelled' }));
       prisma.activityRegistration.findMany.mockResolvedValue([]);
-      const service = makeService(prisma, { stateMachine, dispatcher });
+      const service = makeService(prisma, { stateMachine, notificationProducer });
 
       const res = await service.cancel('act-1', makeCancelDto(), makeCurrentUser(), META);
       expect(res.statusCode).toBe('cancelled');
-      expect(dispatcher.dispatchTargeted).not.toHaveBeenCalled();
+      expect(notificationProducer.enqueueCancellation).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({ memberIds: [] }),
+      );
     });
 
-    it('S4:某收件人派发失败 → 其余仍派发 + 取消仍成功(整体 try-catch 永不抛)', async () => {
+    it('PR-L2:intent enqueue 失败 → 外抛给事务，禁止返回已提交取消', async () => {
       const prisma = makePrismaMock();
       const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'cancelled' });
-      const dispatcher = makeNotificationDispatcherMock();
-      dispatcher.dispatchTargeted
-        .mockRejectedValueOnce(new Error('boom'))
-        .mockResolvedValueOnce({ id: 'notif-2' });
+      const notificationProducer = makeNotificationProducerMock();
+      notificationProducer.enqueueCancellation.mockRejectedValue(new Error('intent failed'));
       prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ statusCode: 'published' }));
       prisma.activity.update.mockResolvedValue(makeActivityRow({ statusCode: 'cancelled' }));
       prisma.activityRegistration.findMany.mockResolvedValue([
         { memberId: 'm1' },
         { memberId: 'm2' },
       ]);
-      const service = makeService(prisma, { stateMachine, dispatcher });
+      const service = makeService(prisma, { stateMachine, notificationProducer });
 
-      const res = await service.cancel('act-1', makeCancelDto('原因'), makeCurrentUser(), META);
-      expect(res.statusCode).toBe('cancelled'); // 业务成功(派发失败被吞)
-      expect(dispatcher.dispatchTargeted).toHaveBeenCalledTimes(2); // 单人失败不阻断其余
+      await expect(
+        service.cancel('act-1', makeCancelDto('原因'), makeCurrentUser(), META),
+      ).rejects.toThrow('intent failed');
+      expect(notificationProducer.enqueueCancellation).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -1018,7 +1020,7 @@ describe('ActivitiesService (characterization)', () => {
     it('published → update statusCode=completed;logComplete(prior/next);无通知派发', async () => {
       const prisma = makePrismaMock();
       const recorder = makeRecorderMock();
-      const dispatcher = makeNotificationDispatcherMock();
+      const notificationProducer = makeNotificationProducerMock();
       const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'completed' });
       prisma.activity.findFirst.mockResolvedValue(
         makeActivityRow({
@@ -1028,7 +1030,7 @@ describe('ActivitiesService (characterization)', () => {
         }),
       );
       prisma.activity.update.mockResolvedValue(makeActivityRow({ statusCode: 'completed' }));
-      const service = makeService(prisma, { stateMachine, recorder, dispatcher });
+      const service = makeService(prisma, { stateMachine, recorder, notificationProducer });
 
       const res = await service.complete('act-1', makeCurrentUser({ id: 'admin-1' }), META);
 
@@ -1044,7 +1046,7 @@ describe('ActivitiesService (characterization)', () => {
         }),
       );
       // complete 不发通知(区别于 cancel 的 fan-out)
-      expect(dispatcher.dispatchTargeted).not.toHaveBeenCalled();
+      expect(notificationProducer.enqueueCancellation).not.toHaveBeenCalled();
       expect(res.statusCode).toBe('completed');
     });
   });
