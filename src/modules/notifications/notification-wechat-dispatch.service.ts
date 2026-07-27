@@ -24,7 +24,11 @@ import {
 } from '../wechat/wechat.constants';
 import { WechatService } from '../wechat/wechat.service';
 // 可见性**复用** content.visibility 纯函数(canSeeContent);通知去 public,4 档天然适用(零第二套)。
-import { canSeeContent, type CallerVisibilityContext } from '../content/content.visibility';
+import {
+  canSeeContent,
+  type CallerVisibilityContext,
+  DEPARTMENT_VISIBILITY_MEMBERSHIP_TYPES,
+} from '../content/content.visibility';
 import { RbacService } from '../permissions/rbac.service';
 import {
   DELIVERY_REASON_API_FAILED,
@@ -180,7 +184,7 @@ export class NotificationWechatDispatchService {
       where: {
         ...MembershipTermStateMachine.effectiveWhere(now),
         memberId,
-        membershipType: 'PRIMARY',
+        membershipType: { in: [...DEPARTMENT_VISIBILITY_MEMBERSHIP_TYPES] },
         organization: { status: OrganizationStatus.ACTIVE, deletedAt: null },
       },
       select: { organizationId: true },
@@ -366,12 +370,11 @@ export class NotificationWechatDispatchService {
     });
     const userByMember = new Map(users.flatMap((u) => (u.memberId ? [[u.memberId, u]] : [])));
 
-    // 终态 scoped-authz PR2:重指向 active PRIMARY membership(= 旧单部门)。
     const depts = await this.prisma.memberOrganizationMembership.findMany({
       where: {
         ...MembershipTermStateMachine.effectiveWhere(new Date()),
         memberId: { in: activeMemberIds },
-        membershipType: 'PRIMARY',
+        membershipType: { in: [...DEPARTMENT_VISIBILITY_MEMBERSHIP_TYPES] },
         organization: { status: OrganizationStatus.ACTIVE, deletedAt: null },
       },
       select: { memberId: true, organizationId: true },

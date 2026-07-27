@@ -1,5 +1,7 @@
 # RBAC_MAP — 权限体系地图与对照表
 
+> 2026-07-27 v0.61.0 Decision 15.2=B：Content/Notification 的 department 可见档明确认当前有效 `PRIMARY` / `SECONDARY` / `TEMPORARY` / `SUPPORT` Membership；App pull、SMS/WeChat 根受众与 WeChat provider 前事务内最终复核同义。权限码、seed、角色绑定、controller、endpoint 均零变化。
+
 > 2026-07-27 v0.61.0 Decision 15.1=B：Content/Notification 的 management 可见档仅认 `SUPER_ADMIN` 或当前有效 GLOBAL `content.read.record` / `notification.read.record`；`Role.ADMIN` 不再天然命中。App pull、SMS/WeChat 根受众与 WeChat provider 前事务内最终闸同义；权限码、seed、角色绑定、controller、endpoint 均零变化。
 
 > 2026-07-26 v0.61.0 全仓修复 PR-G：权限码 / seed 绑定 / 内建角色 / controller / endpoint **零变化**。`content-image|content-file` 删除改为 `content.update.record` 与对应 `attachment.delete.content-*` **双权限合取**；Content 路由与通用 Attachment 路由共用同一 Content 根锁、草稿状态和封面/正文引用闸，不能旁路。新增 1 个 290xx BizCode，不属权限表。

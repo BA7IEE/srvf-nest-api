@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { MembershipType, Role } from '@prisma/client';
 import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
@@ -41,6 +41,7 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
   let nullGradePrimary: Caller;
   let level1Primary: Caller;
   let level3NoOrg: Caller;
+  let multiMembership: Caller;
   let mgmtAuth: string;
   let plainAdminAuth: string;
   let unlinkedAuth: string;
@@ -48,12 +49,16 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
 
   let orgA: string;
   let orgB: string;
+  let orgC: string;
+  let orgD: string;
 
   // 各档一条(全 published)+ 一条 draft(未发布)。
   let nMember: string;
   let nFormal: string;
   let nDeptA: string;
   let nDeptB: string;
+  let nDeptC: string;
+  let nDeptD: string;
   let nMgmt: string;
   let nDraft: string;
 
@@ -195,6 +200,7 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
     nullGradePrimary = await makeMember('ntf_null_primary', 'ACTIVE', null);
     level1Primary = await makeMember('ntf_level1_primary', 'ACTIVE', 'level-1');
     level3NoOrg = await makeMember('ntf_level3_no_org', 'ACTIVE', 'level-3');
+    multiMembership = await makeMember('ntf_multi_membership', 'ACTIVE', null);
 
     await createTestUser(app, { username: 'ntf_unlinked', role: Role.USER });
     unlinkedAuth = (await loginAs(app, 'ntf_unlinked')).authHeader;
@@ -202,12 +208,29 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
 
     orgA = await makeOrg('部门A');
     orgB = await makeOrg('部门B');
+    orgC = await makeOrg('部门C');
+    orgD = await makeOrg('部门D');
     await prisma.memberOrganizationMembership.createMany({
       data: [
         { memberId: volunteerPrimary.memberId, organizationId: orgA },
         { memberId: reservePrimary.memberId, organizationId: orgB },
         { memberId: nullGradePrimary.memberId, organizationId: orgA },
         { memberId: level1Primary.memberId, organizationId: orgA },
+        {
+          memberId: multiMembership.memberId,
+          organizationId: orgA,
+          membershipType: MembershipType.SECONDARY,
+        },
+        {
+          memberId: multiMembership.memberId,
+          organizationId: orgB,
+          membershipType: MembershipType.TEMPORARY,
+        },
+        {
+          memberId: multiMembership.memberId,
+          organizationId: orgC,
+          membershipType: MembershipType.SUPPORT,
+        },
       ],
     });
 
@@ -222,6 +245,16 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
       title: 'N-deptB',
       visibilityCode: 'department',
       visibleOrganizationIds: [orgB],
+    });
+    nDeptC = await makeNotif({
+      title: 'N-deptC',
+      visibilityCode: 'department',
+      visibleOrganizationIds: [orgC],
+    });
+    nDeptD = await makeNotif({
+      title: 'N-deptD',
+      visibilityCode: 'department',
+      visibleOrganizationIds: [orgD],
     });
     nMgmt = await makeNotif({ title: 'N-mgmt', visibilityCode: 'management' });
     nDraft = await makeNotif({ title: 'N-draft', visibilityCode: 'member', statusCode: 'draft' });
@@ -315,6 +348,12 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
       expect(ids).toContain(nMember);
       expect(ids).not.toContain(nMgmt);
     });
+
+    it('无 PRIMARY 但有 SECONDARY / TEMPORARY / SUPPORT:feed 见三个有效任职部门,不见无任职部门', async () => {
+      const ids = await listedIds(multiMembership.auth);
+      expect(ids).toEqual(expect.arrayContaining([nDeptA, nDeptB, nDeptC]));
+      expect(ids).not.toContain(nDeptD);
+    });
   });
 
   // ============ 详情 4 档矩阵:可见 200 / 不可见 404 防枚举 ============
@@ -373,6 +412,14 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
     it('裸 ADMIN:management → 31001 防枚举', async () => {
       expectBizError(await detailApp(plainAdminAuth, nMgmt), BizCode.NOTIFICATION_NOT_FOUND);
       expectBizError(await markReadApp(plainAdminAuth, nMgmt), BizCode.NOTIFICATION_NOT_FOUND);
+    });
+
+    it('SECONDARY / TEMPORARY / SUPPORT 的详情和 mark-read 可见,无任职部门仍 31001', async () => {
+      expect((await detailApp(multiMembership.auth, nDeptA)).status).toBe(200);
+      expect((await detailApp(multiMembership.auth, nDeptB)).status).toBe(200);
+      expect((await detailApp(multiMembership.auth, nDeptC)).status).toBe(200);
+      expect((await markReadApp(multiMembership.auth, nDeptC)).status).toBe(200);
+      expectBizError(await detailApp(multiMembership.auth, nDeptD), BizCode.NOTIFICATION_NOT_FOUND);
     });
 
     it('详情读者出参零敏感:无 authorUserId / visibleOrganizationIds / statusCode / readCount', async () => {

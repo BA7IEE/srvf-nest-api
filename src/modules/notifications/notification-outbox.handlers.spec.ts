@@ -1514,7 +1514,7 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
     expect(f.rbac.can).not.toHaveBeenCalled();
   });
 
-  it('WeChat root fan-out 的 department 仍只按 active PRIMARY org', async () => {
+  it('WeChat root fan-out 的 department 按四类有效 membership org', async () => {
     const f = buildWechatRootAudience([
       {
         memberId: 'm-formal-no-org',
@@ -1535,6 +1535,23 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
     await expect(
       f.service.resolveDurableBroadcastMemberIds(visibilityNotification('department', ['org-a'])),
     ).resolves.toEqual(['m-volunteer-org-a']);
+    const [membershipInput] = f.prisma.memberOrganizationMembership.findMany.mock
+      .calls[0] as unknown as [
+      {
+        where: {
+          membershipType: unknown;
+          organization: unknown;
+        };
+      },
+    ];
+    expect(membershipInput).toMatchObject({
+      where: {
+        membershipType: {
+          in: ['PRIMARY', 'SECONDARY', 'TEMPORARY', 'SUPPORT'],
+        },
+        organization: { status: 'ACTIVE', deletedAt: null },
+      },
+    });
   });
 
   it('WeChat management root 不把裸 ADMIN 当收件人', async () => {
@@ -1776,7 +1793,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       expect(membershipInput).toMatchObject({
         where: {
           memberId: f.memberId,
-          membershipType: 'PRIMARY',
+          membershipType: {
+            in: ['PRIMARY', 'SECONDARY', 'TEMPORARY', 'SUPPORT'],
+          },
           organization: { status: 'ACTIVE', deletedAt: null },
         },
         select: { organizationId: true },
