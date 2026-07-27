@@ -97,7 +97,7 @@ describe('ActivityRegistrationNotificationProducer', () => {
         activityId: 'act-1',
         activityTitle: '周末巡山',
         publisherMemberId: 'member-publisher',
-        cancellingMemberId: 'member-cancel',
+        cancellingMember: { memberNo: 'LOCAL-001', displayName: '本地队员甲' },
         cancelledAt: new Date('2026-07-26T00:00:03.000Z'),
         cancelReason: null,
       },
@@ -118,6 +118,18 @@ describe('ActivityRegistrationNotificationProducer', () => {
       expect.objectContaining({
         destinationRef: 'member-owner',
         eventKey: 'registration-cancel:reg-1:2026-07-26T00:00:03.000Z',
+        eventType: 'notification.targeted',
+        payloadVersion: 1,
+        aggregateType: 'activity_registration',
+        aggregateId: 'reg-1',
+        destinationType: 'member',
+        payload: {
+          recipientMemberId: 'member-owner',
+          notificationTypeCode: 'activity-changed',
+          title: '队员取消活动报名',
+          body: '队员本地队员甲（LOCAL-001）已取消「周末巡山」报名。',
+          channels: ['in-app'],
+        },
       }),
       tx,
     );
@@ -133,7 +145,7 @@ describe('ActivityRegistrationNotificationProducer', () => {
         activityId: 'act-1',
         activityTitle: '周末巡山',
         publisherMemberId: 'member-publisher',
-        cancellingMemberId: 'member-cancel',
+        cancellingMember: { memberNo: 'LOCAL-001', displayName: '本地队员甲' },
         cancelledAt: new Date('2026-07-26T00:00:03.000Z'),
         cancelReason: null,
       }),
@@ -150,15 +162,85 @@ describe('ActivityRegistrationNotificationProducer', () => {
         activityId: 'act-1',
         activityTitle: '周末巡山',
         publisherMemberId: 'member-publisher',
-        cancellingMemberId: 'member-cancel',
+        cancellingMember: { memberNo: 'LOCAL-001', displayName: '本地队员甲' },
         cancelledAt: new Date('2026-07-26T00:00:03.000Z'),
         cancelReason: '临时有事',
       }),
     ).resolves.toBe('legacy-publisher');
     expect(tx.activityResponsibilityAssignment.findFirst).not.toHaveBeenCalled();
     expect(outbox.enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({ destinationRef: 'member-publisher' }),
+      expect.objectContaining({
+        destinationRef: 'member-publisher',
+        eventKey: 'registration-cancel:reg-1:2026-07-26T00:00:03.000Z',
+        aggregateType: 'activity_registration',
+        aggregateId: 'reg-1',
+        payload: {
+          recipientMemberId: 'member-publisher',
+          notificationTypeCode: 'activity-changed',
+          title: '队员取消活动报名',
+          body: '队员本地队员甲（LOCAL-001）已取消「周末巡山」报名，原因：临时有事。',
+          channels: ['in-app'],
+        },
+      }),
       tx,
     );
+  });
+
+  it('gate=false 无 legacy publisher:零 intent，不查询 active owner', async () => {
+    const { producer, tx, outbox } = makeFixture(false);
+
+    await expect(
+      producer.enqueueSelfCancellation(tx as unknown as Prisma.TransactionClient, {
+        registrationId: 'reg-1',
+        activityId: 'act-1',
+        activityTitle: '周末巡山',
+        publisherMemberId: null,
+        cancellingMember: { memberNo: 'LOCAL-001', displayName: '本地队员甲' },
+        cancelledAt: new Date('2026-07-26T00:00:03.000Z'),
+        cancelReason: null,
+      }),
+    ).resolves.toBe('missing-legacy-publisher');
+    expect(tx.activityResponsibilityAssignment.findFirst).not.toHaveBeenCalled();
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      cancellingMember: null,
+      cancelReason: null,
+      body: '有队员已取消「周末巡山」报名，请查看活动报名列表。',
+    },
+    {
+      cancellingMember: { memberNo: 'LOCAL-001', displayName: null },
+      cancelReason: '临时有事',
+      body: '有队员已取消「周末巡山」报名，请查看活动报名列表。原因：临时有事。',
+    },
+    {
+      cancellingMember: { memberNo: '   ', displayName: '本地队员甲' },
+      cancelReason: null,
+      body: '有队员已取消「周末巡山」报名，请查看活动报名列表。',
+    },
+  ])('安全标签不可用时使用固定兜底，不生成内部 ID/undefined/null/空括号', async (testCase) => {
+    const { producer, tx, outbox } = makeFixture(false);
+    await producer.enqueueSelfCancellation(tx as unknown as Prisma.TransactionClient, {
+      registrationId: 'reg-1',
+      activityId: 'act-1',
+      activityTitle: '周末巡山',
+      publisherMemberId: 'member-publisher',
+      cancellingMember: testCase.cancellingMember,
+      cancelledAt: new Date('2026-07-26T00:00:03.000Z'),
+      cancelReason: testCase.cancelReason,
+    });
+
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({ body: testCase.body }) as Record<string, unknown>,
+      }),
+      tx,
+    );
+    expect(testCase.body).not.toContain('member-');
+    expect(testCase.body).not.toContain('undefined');
+    expect(testCase.body).not.toContain('null');
+    expect(testCase.body).not.toContain('（）');
   });
 });

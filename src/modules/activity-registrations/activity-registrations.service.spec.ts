@@ -56,6 +56,7 @@ interface RegRow {
 
 interface ActivityRow {
   id: string;
+  title: string;
   statusCode: string;
   isPublicRegistration: boolean;
   capacity: number | null;
@@ -64,10 +65,13 @@ interface ActivityRow {
   registrationDeadline: Date | null;
   endAt: Date;
   genderRequirementCode: string | null;
+  publisher: { memberId: string | null } | null;
 }
 
 interface MemberRow {
   id: string;
+  memberNo: string;
+  displayName: string;
   status: 'ACTIVE' | 'INACTIVE';
   deletedAt: Date | null;
 }
@@ -124,6 +128,7 @@ function makeRegRow(overrides: Partial<RegRow> = {}): RegRow {
 function makeActivityRow(overrides: Partial<ActivityRow> = {}): ActivityRow {
   return {
     id: 'act-1',
+    title: '测试活动',
     statusCode: 'published',
     isPublicRegistration: true,
     capacity: null,
@@ -132,12 +137,20 @@ function makeActivityRow(overrides: Partial<ActivityRow> = {}): ActivityRow {
     registrationDeadline: null,
     endAt: new Date('2099-01-01T00:00:00.000Z'),
     genderRequirementCode: null,
+    publisher: { memberId: 'member-publisher' },
     ...overrides,
   };
 }
 
 function makeMemberRow(overrides: Partial<MemberRow> = {}): MemberRow {
-  return { id: 'mem-1', status: 'ACTIVE', deletedAt: null, ...overrides };
+  return {
+    id: 'mem-1',
+    memberNo: 'LOCAL-001',
+    displayName: '本地队员甲',
+    status: 'ACTIVE',
+    deletedAt: null,
+    ...overrides,
+  };
 }
 
 // ============ mock 工厂 ============
@@ -165,9 +178,7 @@ function makePrismaMock() {
   };
   const member = {
     findFirst: jest.fn<Promise<MemberRow | null>, [unknown]>().mockResolvedValue(makeMemberRow()),
-    findUnique: jest
-      .fn<Promise<Pick<MemberRow, 'status' | 'deletedAt'> | null>, [unknown]>()
-      .mockResolvedValue({ status: 'ACTIVE', deletedAt: null }),
+    findUnique: jest.fn<Promise<MemberRow | null>, [unknown]>().mockResolvedValue(makeMemberRow()),
   };
   const memberProfile = { findFirst: jest.fn().mockResolvedValue({ genderCode: 'male' }) };
   const user = { findFirst: jest.fn<Promise<UserRow | null>, [unknown]>() };
@@ -767,6 +778,44 @@ describe('ActivityRegistrationsService (characterization)', () => {
       });
       expect(prisma.activityRegistration.update).not.toHaveBeenCalled();
       expect(recorder.logCancel).not.toHaveBeenCalled();
+    });
+
+    it('cancelMy:同事务只快照 memberNo/displayName 传给通知 producer', async () => {
+      const prisma = makePrismaMock();
+      const recorder = makeAuditRecorderMock();
+      const notificationProducer = makeNotificationProducerMock();
+      const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'cancelled' });
+      prisma.user.findFirst.mockResolvedValue({ memberId: 'mem-1' });
+      prisma.activityRegistration.findFirst.mockResolvedValue(
+        makeRegRow({ statusCode: 'pending', activityId: 'act-1', memberId: 'mem-1' }),
+      );
+      prisma.activityRegistration.update.mockResolvedValue(
+        makeRegRow({ statusCode: 'cancelled', activityId: 'act-1', memberId: 'mem-1' }),
+      );
+      prisma.activity.findFirst.mockResolvedValue(makeActivityRow());
+      prisma.member.findUnique.mockResolvedValue(
+        makeMemberRow({ memberNo: 'LOCAL-001', displayName: '本地队员甲' }),
+      );
+      const service = makeService(prisma, recorder, stateMachine, notificationProducer);
+
+      await service.cancelMy(
+        'reg-1',
+        { cancelReason: '临时有事' },
+        makeCurrentUser({ id: 'user-1', role: Role.USER }),
+        META,
+      );
+
+      expect(prisma.member.findUnique).toHaveBeenCalledWith({
+        where: { id: 'mem-1' },
+        select: { memberNo: true, displayName: true },
+      });
+      const [, input] = notificationProducer.enqueueSelfCancellation.mock.calls[0];
+      expect(input).toMatchObject({
+        registrationId: 'reg-1',
+        cancellingMember: { memberNo: 'LOCAL-001', displayName: '本地队员甲' },
+        cancelReason: '临时有事',
+      });
+      expect(input).not.toHaveProperty('cancellingMemberId');
     });
 
     it('cancelAdmin: cancelReason 缺省时传 null,cancelledByPath=admin', async () => {

@@ -138,7 +138,7 @@ Certificate (不在 participation 图内)
 | 3. 活动取消 | activities | `cancel` → `* → cancelled` | 同事务联动 live `pending + waitlisted → cancelled`(pass 保留历史审批结果)，并为已报名成员写取消通知 intent；阻断所有下游写;attendances 在 `findActivityForSubmissionFull` 内会拒绝 `ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN` |
 | 4. 报名(admin / app) | activity-registrations | `create` / `createMy` → `pending \| waitlisted` | 全部前置闸通过后，`capacity=null` 或未满落 pending，已满落 waitlisted；partial unique 防重复;**报名截止生效**(`registrationDeadline` 非 null 且 `now > deadline` → `ACTIVITY_REGISTRATION_DEADLINE_PASSED=20123`;approve 不加此闸) |
 | 5. 报名审核 / 递补 | activity-registrations + activities | `approve: pending → pass`;`reject: pending\|waitlisted → reject`;`promote: waitlisted → pending` | promote 仅事务内 FIFO 引擎使用，不开手动端点，不开 waitlisted → pass 直通 |
-| 6. 报名取消 | activity-registrations | `cancelAdmin` / `cancelMy`: `pending\|pass\|waitlisted → cancelled` | live `AttendanceRecord` 或 `ActivityCheckIn` 已引用报名时复用 21033 拒绝取消；否则取消 pass 同事务 FIFO 递补队首一人至 pending；取消 pending/waitlisted 不递补；partial unique 允许同人再次报名 |
+| 6. 报名取消 | activity-registrations | `cancelAdmin` / `cancelMy`: `pending\|pass\|waitlisted → cancelled` | live `AttendanceRecord` 或 `ActivityCheckIn` 已引用报名时复用 21033 拒绝取消；否则取消 pass 同事务 FIFO 递补队首一人至 pending；取消 pending/waitlisted 不递补；`cancelMy` 通知正文只展示 `displayName（memberNo）`，标签不可用匿名兜底且不暴露 `Member.id`；partial unique 允许同人再次报名 |
 | 7. 考勤表首次提交 | attendances | `submit` → `Sheet.statusCode='pending'` + 多条 `Record` 同事务建立 | **不再推动 Activity.completed**；用服务端 `now` 拒绝未来签退;`contributionPoints` 不接受输入,submit/edit 均读 `tx.contributionRule.findMany` 计算(无规则落 0,**不再 per-record dailyCap 钳制**);`requiresInsurance=true` 时每条 record 必须带同活动/同成员/pass 的 `registrationId`,但不证明报名创建时已开启该门槛 |
 | 8. APD 一级审核 | attendances | `approve` → `pending → pending_final_review`;`reject` → `pending → rejected` | **不**触发 `attendance.recorded`(沿 D-S7;触发点已移到 final-approve) |
 | 9. APD 终审通过 | attendances | `finalApprove` → `pending_final_review → approved` | **`contributionPoints` 在此刻语义上生效**;同事务内 `eventPlaceholder('attendance.recorded')` 发出；普通结果通知仍逐 Record。最新 joining application 的 5 分达标只在正式 capped before<5 且 approved 后 capped after≥5 时按 application+threshold 稳定 key 入队一次 |
@@ -230,6 +230,11 @@ Certificate (不在 participation 图内)
   与 `registration.review(action=promote)` audit、`notification.targeted@1` outbox intent
   全在同一事务；独立 worker 只在 commit 后执行通知 Effect。pass 取消与打卡写路径统一使用
   Activity → Registration 锁序。
+- **报名自助取消通知**:`cancelMy` 在既有事务内只读取取消队员的 `memberNo/displayName`
+  安全快照；正文使用 `displayName（memberNo）`，任一字段不可用即用固定匿名提示，禁止回退
+  Member/User 内部 ID。gate=true 收件人仍只认当前 ACTIVE owner，缺失时零 intent 且不回退
+  publisher；gate=false 仅保留 legacy `publisherMemberId`。`registration-cancel:{registrationId}:{cancelledAt}`
+  eventKey、`activity_registration` aggregate、member destination 与仅站内渠道均不变。
 - **活动 L2 通知**:发布/改期/取消/发布审核结果与 Activity/岗位扩容递补 intent
   和业务写、audit 同事务；审核 change 的收件人只认审核时当前 ACTIVE owner，
   禁止回退 `publishedBy`。独立 worker 仅在 commit 后执行通知 Effect。
