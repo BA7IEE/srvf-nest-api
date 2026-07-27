@@ -600,22 +600,51 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
         where: { id: activityId },
         data: { publishedBy: alice.userId },
       });
-      const registrationId = await seedRegistration(activityId, bob.memberId, 'pending');
-      const bobPayload = {
-        id: bob.userId,
-        username: 's4_bob',
+      const cancelling = await makeMember('s4_cancel_label_legacy');
+      await prisma.member.update({
+        where: { id: cancelling.memberId },
+        data: { memberNo: 'LOCAL-001', displayName: '本地队员甲' },
+      });
+      const registrationId = await seedRegistration(activityId, cancelling.memberId, 'pending');
+      const cancellingPayload = {
+        id: cancelling.userId,
+        username: 's4_cancel_label_legacy',
         role: Role.USER,
         status: UserStatus.ACTIVE,
-        memberId: bob.memberId,
+        memberId: cancelling.memberId,
       };
 
       await registrations.cancelMy(
         registrationId,
         { cancelReason: '临时有事' },
-        bobPayload,
+        cancellingPayload,
         AUDIT_META,
       );
 
+      const intent = await prisma.notificationOutboxIntent.findFirstOrThrow({
+        where: { aggregateId: registrationId, destinationRef: alice.memberId },
+      });
+      expect(intent).toMatchObject({
+        eventKey: expect.stringMatching(new RegExp(`^registration-cancel:${registrationId}:`)),
+        eventType: 'notification.targeted',
+        payloadVersion: 1,
+        aggregateType: 'activity_registration',
+        aggregateId: registrationId,
+        destinationType: 'member',
+        destinationRef: alice.memberId,
+        payload: {
+          recipientMemberId: alice.memberId,
+          notificationTypeCode: 'activity-changed',
+          title: '队员取消活动报名',
+          body: '队员本地队员甲（LOCAL-001）已取消「自助退出活动」报名，原因：临时有事。',
+          channels: ['in-app'],
+        },
+      });
+      const body = (intent.payload as { body: string }).body;
+      expect(body).not.toContain(cancelling.memberId);
+      expect(body).not.toContain(alice.memberId);
+      expect(body).not.toContain(cancelling.userId);
+      expect(body).not.toContain(alice.userId);
       await drainTargetedIntent(registrationId, alice.memberId);
       const notification = await prisma.notification.findFirstOrThrow({
         where: { recipientMemberId: alice.memberId },
@@ -649,6 +678,70 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
           source: 'admin',
         },
       });
+      const cancelling = await makeMember('s4_cancel_label_owner');
+      await prisma.member.update({
+        where: { id: cancelling.memberId },
+        data: { memberNo: 'LOCAL-002', displayName: '本地队员乙' },
+      });
+      const registrationId = await seedRegistration(activityId, cancelling.memberId, 'pending');
+
+      await registrations.cancelMy(
+        registrationId,
+        {},
+        {
+          id: cancelling.userId,
+          username: 's4_cancel_label_owner',
+          role: Role.USER,
+          status: UserStatus.ACTIVE,
+          memberId: cancelling.memberId,
+        },
+        AUDIT_META,
+      );
+
+      const intent = await prisma.notificationOutboxIntent.findFirstOrThrow({
+        where: { aggregateId: registrationId, destinationRef: alice.memberId },
+      });
+      expect(intent).toMatchObject({
+        eventType: 'notification.targeted',
+        payloadVersion: 1,
+        aggregateType: 'activity_registration',
+        aggregateId: registrationId,
+        destinationType: 'member',
+        destinationRef: alice.memberId,
+        payload: {
+          recipientMemberId: alice.memberId,
+          notificationTypeCode: 'activity-changed',
+          title: '队员取消活动报名',
+          body: '队员本地队员乙（LOCAL-002）已取消「责任模型自助退出」报名。',
+          channels: ['in-app'],
+        },
+      });
+      const body = (intent.payload as { body: string }).body;
+      expect(body).not.toContain(cancelling.memberId);
+      expect(body).not.toContain(alice.memberId);
+      expect(body).not.toContain(bob.memberId);
+      expect(body).not.toContain(cancelling.userId);
+      expect(body).not.toContain(alice.userId);
+      expect(body).not.toContain(bob.userId);
+      expect(body).not.toContain('原因：null');
+      expect(body).not.toContain('原因：undefined');
+      await drainTargetedIntent(registrationId, alice.memberId);
+      expect(await directedOf(alice.memberId)).toHaveLength(1);
+      expect(await directedOf(cancelling.memberId)).toHaveLength(0);
+      expect(
+        await prisma.notificationOutboxIntent.count({
+          where: { aggregateId: registrationId, destinationRef: bob.memberId },
+        }),
+      ).toBe(0);
+    });
+
+    it('gate=true 无 ACTIVE owner：取消照常提交，零 intent 且不回退 publishedBy', async () => {
+      config.activityResponsibilityWorkflow.enabled = true;
+      const activityId = await seedActivity('缺失 owner 的自助退出');
+      await prisma.activity.update({
+        where: { id: activityId },
+        data: { publishedBy: alice.userId },
+      });
       const registrationId = await seedRegistration(activityId, bob.memberId, 'pending');
 
       await registrations.cancelMy(
@@ -664,12 +757,105 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
         AUDIT_META,
       );
 
-      await drainTargetedIntent(registrationId, alice.memberId);
-      expect(await directedOf(alice.memberId)).toHaveLength(1);
-      expect(await directedOf(bob.memberId)).toHaveLength(0);
+      expect(
+        await prisma.activityRegistration.findUniqueOrThrow({ where: { id: registrationId } }),
+      ).toMatchObject({ statusCode: 'cancelled' });
+      expect(
+        await prisma.auditLog.count({
+          where: { resourceId: registrationId, event: 'registration.review' },
+        }),
+      ).toBe(1);
       expect(
         await prisma.notificationOutboxIntent.count({
-          where: { aggregateId: registrationId, destinationRef: bob.memberId },
+          where: { aggregateId: registrationId },
+        }),
+      ).toBe(0);
+    });
+
+    it('gate=false 无 legacy publisher：取消照常提交且零 intent', async () => {
+      const activityId = await seedActivity('缺失 publisher 的自助退出');
+      const registrationId = await seedRegistration(activityId, bob.memberId, 'pending');
+
+      await registrations.cancelMy(
+        registrationId,
+        {},
+        {
+          id: bob.userId,
+          username: 's4_bob',
+          role: Role.USER,
+          status: UserStatus.ACTIVE,
+          memberId: bob.memberId,
+        },
+        AUDIT_META,
+      );
+
+      expect(
+        await prisma.activityRegistration.findUniqueOrThrow({ where: { id: registrationId } }),
+      ).toMatchObject({ statusCode: 'cancelled' });
+      expect(
+        await prisma.notificationOutboxIntent.count({
+          where: { aggregateId: registrationId },
+        }),
+      ).toBe(0);
+    });
+
+    it('自助取消 intent enqueue 失败：取消、audit 与 pass 递补整体回滚', async () => {
+      const activityId = await seedActivity('取消 intent 原子回滚', 1);
+      await prisma.activity.update({
+        where: { id: activityId },
+        data: { publishedBy: alice.userId },
+      });
+      const cancelling = await makeMember('s4_cancel_rollback');
+      const registrationId = await seedRegistration(activityId, cancelling.memberId, 'pass');
+      const waitlistedId = await seedRegistration(activityId, charlie.memberId, 'waitlisted');
+      const enqueue = outbox.enqueue.bind(outbox);
+      const spy = jest.spyOn(outbox, 'enqueue').mockImplementation((input, client) => {
+        if (input.eventKey.startsWith(`registration-cancel:${registrationId}:`)) {
+          return Promise.reject(new Error('cancel intent insert failed'));
+        }
+        return enqueue(input, client);
+      });
+      try {
+        await expect(
+          registrations.cancelMy(
+            registrationId,
+            { cancelReason: '临时有事' },
+            {
+              id: cancelling.userId,
+              username: 's4_cancel_rollback',
+              role: Role.USER,
+              status: UserStatus.ACTIVE,
+              memberId: cancelling.memberId,
+            },
+            AUDIT_META,
+          ),
+        ).rejects.toThrow('cancel intent insert failed');
+      } finally {
+        spy.mockRestore();
+      }
+
+      expect(
+        await prisma.activityRegistration.findMany({
+          where: { id: { in: [registrationId, waitlistedId] } },
+          select: { id: true, statusCode: true },
+        }),
+      ).toEqual(
+        expect.arrayContaining([
+          { id: registrationId, statusCode: 'pass' },
+          { id: waitlistedId, statusCode: 'waitlisted' },
+        ]),
+      );
+      expect(
+        await prisma.auditLog.count({
+          where: {
+            resourceId: { in: [registrationId, waitlistedId] },
+            event: 'registration.review',
+          },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.notificationOutboxIntent.count({
+          where: { aggregateId: { in: [registrationId, waitlistedId] } },
         }),
       ).toBe(0);
     });

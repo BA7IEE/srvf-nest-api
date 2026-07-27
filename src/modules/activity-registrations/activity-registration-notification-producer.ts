@@ -30,6 +30,20 @@ interface TargetedNotificationInput {
   body: string;
 }
 
+interface CancellingMemberSnapshot {
+  memberNo: string | null;
+  displayName: string | null;
+}
+
+export function formatCancellingMemberLabel(
+  member: CancellingMemberSnapshot | null,
+): string | null {
+  const memberNo = member?.memberNo?.trim();
+  const displayName = member?.displayName?.trim();
+  if (!memberNo || !displayName) return null;
+  return `${displayName}（${memberNo}）`;
+}
+
 @Injectable()
 export class ActivityRegistrationNotificationProducer {
   constructor(
@@ -108,7 +122,7 @@ export class ActivityRegistrationNotificationProducer {
       activityId: string;
       activityTitle: string;
       publisherMemberId: string | null;
-      cancellingMemberId: string;
+      cancellingMember: CancellingMemberSnapshot | null;
       cancelledAt: Date;
       cancelReason: string | null;
     },
@@ -137,14 +151,21 @@ export class ActivityRegistrationNotificationProducer {
     }
     if (recipientMemberId === null) return resolution;
 
-    const reason = input.cancelReason ? `，原因：${input.cancelReason}` : '';
+    const memberLabel = formatCancellingMemberLabel(input.cancellingMember);
+    const body = memberLabel
+      ? `队员${memberLabel}已取消「${input.activityTitle}」报名${
+          input.cancelReason ? `，原因：${input.cancelReason}` : ''
+        }。`
+      : `有队员已取消「${input.activityTitle}」报名，请查看活动报名列表。${
+          input.cancelReason ? `原因：${input.cancelReason}。` : ''
+        }`;
     await this.enqueueTargeted(tx, {
       eventKey: `registration-cancel:${input.registrationId}:${input.cancelledAt.toISOString()}`,
       aggregateId: input.registrationId,
       memberId: recipientMemberId,
       notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_CHANGED,
       title: '队员取消活动报名',
-      body: `队员 ${input.cancellingMemberId} 已取消「${input.activityTitle}」报名${reason}。`,
+      body,
     });
     return resolution;
   }

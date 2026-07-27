@@ -1503,6 +1503,10 @@ export class ActivityRegistrationsService {
       const lockedReg = await this.findRegistrationOrThrow(reg.activityId, reg.id, tx);
       // 参与域生命周期收口⑦:队员自助路径共用 live 考勤记录 / 签到证据守卫。
       await this.assertNoParticipationEvidence(lockedReg.id, tx);
+      const cancellingMember = await tx.member.findUnique({
+        where: { id: lockedReg.memberId },
+        select: { memberNo: true, displayName: true },
+      });
 
       const cancelledAt = new Date();
       const updated = await tx.activityRegistration.update({
@@ -1551,7 +1555,7 @@ export class ActivityRegistrationsService {
         activityId: lockedReg.activityId,
         activityTitle: activity?.title ?? '活动',
         publisherMemberId: activity?.publisher?.memberId ?? null,
-        cancellingMemberId: lockedReg.memberId,
+        cancellingMember,
         cancelledAt,
         cancelReason: dto.cancelReason ?? null,
       });
