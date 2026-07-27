@@ -17,6 +17,7 @@ import {
   buildVisibilityWhere,
   canSeeContent,
   type CallerVisibilityContext,
+  DEPARTMENT_VISIBILITY_MEMBERSHIP_TYPES,
 } from '../content/content.visibility';
 import {
   NOTIFICATION_AUDIENCE_BROADCAST,
@@ -65,12 +66,11 @@ export class NotificationReadService {
     currentUser: CurrentUserPayload,
     member: Pick<Member, 'id' | 'gradeCode'>,
   ): Promise<CallerVisibilityContext> {
-    // 终态 scoped-authz PR2:department 档只认 active PRIMARY membership(= 旧单部门)。
     const depts = await this.prisma.memberOrganizationMembership.findMany({
       where: {
         ...MembershipTermStateMachine.effectiveWhere(new Date()),
         memberId: member.id,
-        membershipType: 'PRIMARY',
+        membershipType: { in: [...DEPARTMENT_VISIBILITY_MEMBERSHIP_TYPES] },
         organization: { status: OrganizationStatus.ACTIVE, deletedAt: null },
       },
       select: { organizationId: true },

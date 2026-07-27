@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { MembershipType, Role } from '@prisma/client';
 import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
@@ -436,6 +436,34 @@ describe('统一通知 S2 微信订阅 quota 渠道 e2e', () => {
       });
       expect(await deliveriesOf(id)).toHaveLength(0);
       expect(await getQuota(alice.memberId, TMPL_GENERAL)).toBe(3); // 不在受众不扣
+    });
+
+    it('仅有 SECONDARY 有效任职的会员 → department 微信受众命中且发送前复核通过', async () => {
+      const member = await makeMember('s2_secondary_visible', 'dev-openid-secondary-visible');
+      const org = await prisma.organization.create({
+        data: { name: 'S2部门SECONDARY', nodeTypeCode: 'demo-node', status: 'ACTIVE' },
+        select: { id: true },
+      });
+      await prisma.memberOrganizationMembership.create({
+        data: {
+          memberId: member.memberId,
+          organizationId: org.id,
+          membershipType: MembershipType.SECONDARY,
+        },
+      });
+      await setQuota(member.memberId, TMPL_GENERAL, 3);
+
+      const id = await createAndPublish({
+        visibilityCode: 'department',
+        visibleOrganizationIds: [org.id],
+      });
+
+      const deliveries = (await deliveriesOf(id)).filter(
+        (delivery) => delivery.memberId === member.memberId,
+      );
+      expect(deliveries).toHaveLength(1);
+      expect(deliveries[0]?.status).toBe('sent');
+      expect(await getQuota(member.memberId, TMPL_GENERAL)).toBe(2);
     });
 
     it('re-publish 去重:已 sent 不重复推(unpublish → 再 publish)', async () => {

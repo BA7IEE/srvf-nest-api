@@ -25,7 +25,11 @@ import {
 } from '../sms/sms.constants';
 import { SmsChannelUnavailableError, SmsProviderSendError } from '../sms/sms.types';
 // 可见性**复用** content.visibility 纯函数(canSeeContent),零第二套(评审稿 §5;镜像 S2 微信派发)。
-import { canSeeContent, type CallerVisibilityContext } from '../content/content.visibility';
+import {
+  canSeeContent,
+  type CallerVisibilityContext,
+  DEPARTMENT_VISIBILITY_MEMBERSHIP_TYPES,
+} from '../content/content.visibility';
 import { RbacService } from '../permissions/rbac.service';
 import {
   DELIVERY_REASON_ALREADY_SENT,
@@ -382,12 +386,12 @@ export class NotificationSmsDispatchService {
     });
     const userByMember = new Map(users.flatMap((u) => (u.memberId ? [[u.memberId, u]] : [])));
 
-    // 活跃部门(可见性 ctx;broadcast 用)。终态 scoped-authz PR2:重指向 active PRIMARY membership(= 旧单部门)。
+    // 四类有效任职部门(可见性 ctx;broadcast 用)。
     const depts = await client.memberOrganizationMembership.findMany({
       where: {
         ...MembershipTermStateMachine.effectiveWhere(new Date()),
         memberId: { in: activeMemberIds },
-        membershipType: 'PRIMARY',
+        membershipType: { in: [...DEPARTMENT_VISIBILITY_MEMBERSHIP_TYPES] },
         organization: { status: OrganizationStatus.ACTIVE, deletedAt: null },
       },
       select: { memberId: true, organizationId: true },

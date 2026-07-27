@@ -34,12 +34,12 @@
 - **多实例当前事实**:10 个 throttler 共用 PG bucket；RBAC 与 SMS/WeChat/Storage/Realname settings 每次直读已提交 PostgreSQL；Effect 绑定单份配置快照，DB 异常 fail-closed，零进程正确性缓存
 - **Storage production**:空库 migration/seed→窄配置 bootstrap；固定COS location+可解密凭证，disabled 重启不放行 Effect，null/LOCAL/unknown 禁回退；密钥不可轮换，真实 COS/fleet 待验
 - **贡献规则 ACTIVE 槽位**:未软删 ACTIVE 按 `activityTypeCode × attendanceRoleCode` 唯一；迁移、并发与漂移重复 pair 均 fail-closed
-- **通知 durable outbox**:PG lease/fence + generation/recipient/RBAC 快照/quota marker；招新/入队与 participation 报名、活动、责任、考勤 producer 均同业务事务写 intent，provider 事务外 at-least-once。生产未 deploy，切换须排空旧 API/worker/intents 且禁混档
+- **通知 durable outbox**:PG lease/fence + generation/recipient/RBAC 快照/quota marker；招新/入队与 participation 报名、活动、责任、考勤 producer 同业务事务写 intent，provider 事务外 at-least-once。生产未deploy，切换须排空旧API/worker/intents且禁混档
 - **队员/报名真值**:正式=ACTIVE+grade level-1..7；报名 create/approve/递补锁后重验 live+ACTIVE，reopen 只回 pending
 - **Attachment storage Phase1**:ledger接 Attachment；Content根锁、provider外；无key FK/非 repo-wide closure；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)
 - **保险 v3(v0.59.0，未 deploy)**:PR1–PR4 gate/约束/evidence 已交付，脏数 fail-fast；Admin 360 overview 已补；切换须 drain 且禁混档
 - **活动责任(Unreleased，仅本地联调)**:代码冻结；生产迁移/配置/认领/部署未做，上线须按 [`runbook`](ops/activity-responsibility-workflow-rollout.md) 批准并验 digest
-- **安全**:审计SA全量/持码非SA=self|USER；敏感读闭锁/extra禁PII等；C/N管理档=SA|GLOBAL读码(ADMIN不直通)；RBAC任期单轨；ops-admin现任+常驻双兜底/同锁重读
+- **安全**:审计SA全量/持码非SA=self|USER；敏感读闭锁/extra禁PII；C/N管理=SA|GLOBAL读码(ADMIN不直通)、部门=四类有效任职；RBAC任期单轨；ops-admin现任+常驻/同锁重读
 - **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)

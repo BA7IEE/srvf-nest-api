@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { MembershipType, Role } from '@prisma/client';
 import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
@@ -43,6 +43,7 @@ describe('CMS 内容发布模块(第 28 模块)app/v1 会员读取面 e2e(5 档�
   let nullGradePrimary: Caller; // grade=null,ACTIVE PRIMARY→orgA
   let level1Primary: Caller; // grade=level-1,ACTIVE PRIMARY→orgA
   let level3NoOrg: Caller; // grade=level-3,无 current org
+  let multiMembership: Caller; // SECONDARY→A,TEMPORARY→B,SUPPORT→C,无 PRIMARY
   let mgmtAuth: string; // biz-admin(持 content.read.record → isManagement)
   let plainAdminAuth: string; // 仅 Role.ADMIN,无 content.read.record
   let unlinkedAuth: string; // 无绑定 member → canUseApp=false
@@ -50,6 +51,8 @@ describe('CMS 内容发布模块(第 28 模块)app/v1 会员读取面 e2e(5 档�
 
   let orgA: string;
   let orgB: string;
+  let orgC: string;
+  let orgD: string;
 
   // 各档一篇(全 published)。
   let cPublic: string;
@@ -57,6 +60,8 @@ describe('CMS 内容发布模块(第 28 模块)app/v1 会员读取面 e2e(5 档�
   let cFormal: string;
   let cDeptA: string;
   let cDeptB: string;
+  let cDeptC: string;
+  let cDeptD: string;
   let cMgmt: string;
 
   async function makeMember(
@@ -182,6 +187,7 @@ describe('CMS 内容发布模块(第 28 模块)app/v1 会员读取面 e2e(5 档�
     nullGradePrimary = await makeMember('con_null_primary', 'ACTIVE', null);
     level1Primary = await makeMember('con_level1_primary', 'ACTIVE', 'level-1');
     level3NoOrg = await makeMember('con_level3_no_org', 'ACTIVE', 'level-3');
+    multiMembership = await makeMember('con_multi_membership', 'ACTIVE', null);
 
     // 两个非准入 caller
     await createTestUser(app, { username: 'con_unlinked', role: Role.USER });
@@ -191,10 +197,31 @@ describe('CMS 内容发布模块(第 28 模块)app/v1 会员读取面 e2e(5 档�
     // PRIMARY 归属只决定 department 可见性,不得把 volunteer / reserve / null-grade 抬成正式队员。
     orgA = await makeOrg('部门A');
     orgB = await makeOrg('部门B');
+    orgC = await makeOrg('部门C');
+    orgD = await makeOrg('部门D');
     await setDept(volunteerPrimary.memberId, orgA);
     await setDept(reservePrimary.memberId, orgB);
     await setDept(nullGradePrimary.memberId, orgA);
     await setDept(level1Primary.memberId, orgA);
+    await prisma.memberOrganizationMembership.createMany({
+      data: [
+        {
+          memberId: multiMembership.memberId,
+          organizationId: orgA,
+          membershipType: MembershipType.SECONDARY,
+        },
+        {
+          memberId: multiMembership.memberId,
+          organizationId: orgB,
+          membershipType: MembershipType.TEMPORARY,
+        },
+        {
+          memberId: multiMembership.memberId,
+          organizationId: orgC,
+          membershipType: MembershipType.SUPPORT,
+        },
+      ],
+    });
 
     // 各档一篇(全 published)
     cPublic = await makeContent({ title: 'C-public', visibilityCode: 'public' });
@@ -213,6 +240,16 @@ describe('CMS 内容发布模块(第 28 模块)app/v1 会员读取面 e2e(5 档�
       title: 'C-deptB',
       visibilityCode: 'department',
       visibleOrganizationIds: [orgB],
+    });
+    cDeptC = await makeContent({
+      title: 'C-deptC',
+      visibilityCode: 'department',
+      visibleOrganizationIds: [orgC],
+    });
+    cDeptD = await makeContent({
+      title: 'C-deptD',
+      visibilityCode: 'department',
+      visibleOrganizationIds: [orgD],
     });
     cMgmt = await makeContent({ title: 'C-mgmt', visibilityCode: 'management' });
   });
@@ -311,6 +348,12 @@ describe('CMS 内容发布模块(第 28 模块)app/v1 会员读取面 e2e(5 档�
       expect(ids).toContain(cMember);
       expect(ids).not.toContain(cMgmt);
     });
+
+    it('无 PRIMARY 但有 SECONDARY / TEMPORARY / SUPPORT:见三个有效任职部门,不见无任职部门', async () => {
+      const ids = await listedIds(multiMembership.auth);
+      expect(ids).toEqual(expect.arrayContaining([cDeptA, cDeptB, cDeptC]));
+      expect(ids).not.toContain(cDeptD);
+    });
   });
 
   // ============ 详情矩阵:正向 200 + 负向 404 防枚举 ============
@@ -359,6 +402,13 @@ describe('CMS 内容发布模块(第 28 模块)app/v1 会员读取面 e2e(5 档�
 
     it('裸 ADMIN:management 档 → 404 防枚举', async () => {
       expectBizError(await detailApp(plainAdminAuth, cMgmt), BizCode.CONTENT_NOT_FOUND);
+    });
+
+    it('SECONDARY / TEMPORARY / SUPPORT 的部门详情均可见,无任职部门仍 404', async () => {
+      expect((await detailApp(multiMembership.auth, cDeptA)).status).toBe(200);
+      expect((await detailApp(multiMembership.auth, cDeptB)).status).toBe(200);
+      expect((await detailApp(multiMembership.auth, cDeptC)).status).toBe(200);
+      expectBizError(await detailApp(multiMembership.auth, cDeptD), BizCode.CONTENT_NOT_FOUND);
     });
 
     it('详情读者出参零敏感:无 authorUserId / 无 visibleOrganizationIds(department 档亦不泄露 orgId 列表)', async () => {

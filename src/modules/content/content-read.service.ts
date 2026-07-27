@@ -28,6 +28,7 @@ import {
   buildVisibilityWhere,
   canSeeContent,
   type CallerVisibilityContext,
+  DEPARTMENT_VISIBILITY_MEMBERSHIP_TYPES,
 } from './content.visibility';
 
 // CMS 内容发布模块(第 28 模块)T3/T4(2026-06-21):open/v1(公开)+ app/v1(会员)读取面业务逻辑
@@ -56,18 +57,17 @@ export class ContentReadService {
   // ===== caller 上下文一次性解析(评审稿 §4.1)=====
   // 准入已确保 member ACTIVE 且未软删,故 isMember 恒 true;
   // isFormalMember = gradeCode ∈ level-1…level-7;
-  // activeOrgIds = 活跃 PRIMARY membership 的组织(org ACTIVE 且未软删),仅供 department 档。
+  // activeOrgIds = 四类有效 membership 的组织(org ACTIVE 且未软删),仅供 department 档。
   // isManagement = SUPER_ADMIN 或明确持有 content.read.record；统一由 rbac.can 判定。
   private async resolveCtx(
     currentUser: CurrentUserPayload,
     member: Pick<Member, 'id' | 'gradeCode'>,
   ): Promise<CallerVisibilityContext> {
-    // 终态 scoped-authz PR2:department 档只认 active PRIMARY membership(= 旧单部门)。
     const depts = await this.prisma.memberOrganizationMembership.findMany({
       where: {
         ...MembershipTermStateMachine.effectiveWhere(new Date()),
         memberId: member.id,
-        membershipType: 'PRIMARY',
+        membershipType: { in: [...DEPARTMENT_VISIBILITY_MEMBERSHIP_TYPES] },
         organization: { status: OrganizationStatus.ACTIVE, deletedAt: null },
       },
       select: { organizationId: true },

@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { MembershipType, Prisma } from '@prisma/client';
 
 import {
   CONTENT_STATUS_PUBLISHED,
@@ -13,7 +13,7 @@ import {
 //
 // 5 档可见(每篇选一):public / member / formal_member / department / management。
 // 设计:caller 上下文**一次性 async 解析**(在 content-read.service:isMember = canUseApp /
-// isFormalMember = ACTIVE Member 的正式 gradeCode / activeOrgIds = 活跃 PRIMARY 组织归属 /
+// isFormalMember = ACTIVE Member 的正式 gradeCode / activeOrgIds = 四类有效任职组织归属 /
 // isManagement = SUPER_ADMIN 或明确持有对应 management read 权限，由调用方通过 rbac.can 解析后
 // 再喂入本文件
 // **纯同步函数**(可单测,零 DB)。formal 与 department 是彼此独立的可见轴。
@@ -28,11 +28,20 @@ export interface CallerVisibilityContext {
   isMember: boolean;
   // 正式队员布尔真值(读取层按 ACTIVE Member + gradeCode=level-1…level-7 解析)
   isFormalMember: boolean;
-  // 活跃 PRIMARY membership 的 organizationId 数组(仅 department 档命中判定用)
+  // 四类有效 membership 的 organizationId 数组(仅 department 档命中判定用)
   activeOrgIds: string[];
-  // 管理层 = rbac.can('content.read.record') 或 role ∈ {SUPER_ADMIN, ADMIN}
+  // 管理层 = SUPER_ADMIN 或明确持有调用模块的 management read 权限
   isManagement: boolean;
 }
+
+// Decision 15.2=B:仅显式列出的四类有效任职参与 department 可见性。
+// 保留显式白名单，未来新增 MembershipType 时不得自动扩大读取范围。
+export const DEPARTMENT_VISIBILITY_MEMBERSHIP_TYPES = [
+  MembershipType.PRIMARY,
+  MembershipType.SECONDARY,
+  MembershipType.TEMPORARY,
+  MembershipType.SUPPORT,
+] as const;
 
 // 匿名上下文(open/v1 无登录):只命中 public 档。
 export const ANON_VISIBILITY_CONTEXT: CallerVisibilityContext = {

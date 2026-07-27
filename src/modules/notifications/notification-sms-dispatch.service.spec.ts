@@ -577,7 +577,7 @@ describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () =>
     },
   );
 
-  it('department 仍只按 active PRIMARY org，与 gradeCode 无关', async () => {
+  it('department 按四类有效 membership org，与 gradeCode 无关', async () => {
     const { service, notification, prisma } = build({
       members: [
         {
@@ -608,6 +608,23 @@ describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () =>
     await expect(
       service.resolveRecipientMemberIds(departmentNotification, prisma as never),
     ).resolves.toEqual(['m-volunteer-org-a']);
+    const [membershipInput] = prisma.memberOrganizationMembership.findMany.mock
+      .calls[0] as unknown as [
+      {
+        where: {
+          membershipType: unknown;
+          organization: unknown;
+        };
+      },
+    ];
+    expect(membershipInput).toMatchObject({
+      where: {
+        membershipType: {
+          in: ['PRIMARY', 'SECONDARY', 'TEMPORARY', 'SUPPORT'],
+        },
+        organization: { status: 'ACTIVE', deletedAt: null },
+      },
+    });
   });
 
   it('management 不把裸 ADMIN 当收件人，SUPER_ADMIN 与明确持码者仍命中', async () => {
