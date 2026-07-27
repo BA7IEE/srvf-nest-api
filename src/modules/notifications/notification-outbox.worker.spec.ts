@@ -1,3 +1,5 @@
+import { Logger } from '@nestjs/common';
+
 import {
   type ClaimedNotificationOutboxIntent,
   NotificationOutboxGenerationConflictError,
@@ -8,6 +10,17 @@ import {
   UnsupportedNotificationOutboxEventError,
 } from './notification-outbox.handlers';
 import { NotificationOutboxLeaseLostError } from './notification-outbox.types';
+
+const HIGH_RISK_ERROR_MESSAGE = [
+  'SecretId=TEST_SECRET',
+  'SecretKey=TEST_KEY',
+  'https://provider.example.com/private/path',
+  '13800138000',
+  'openid-sensitive-value',
+  'bucket/private/object-key',
+  'Authorization: Bearer test-token',
+  'postgresql://user:password@db.internal:5432/app',
+].join(' ');
 
 function claimed(): ClaimedNotificationOutboxIntent {
   const now = new Date('2026-07-18T00:00:00.000Z');
@@ -107,6 +120,47 @@ describe('NotificationOutboxWorker', () => {
     });
     expect(f.outbox.deadLetter).toHaveBeenCalledWith(f.intent, error);
     expect(f.outbox.nack).not.toHaveBeenCalled();
+  });
+
+  it('intent 失败日志不信任 error.name/message/stack/cause，retry/dead 语义不变', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const f = build();
+    const error = new Error(HIGH_RISK_ERROR_MESSAGE, {
+      cause: new Error(`cause ${HIGH_RISK_ERROR_MESSAGE}`),
+    });
+    error.name = HIGH_RISK_ERROR_MESSAGE;
+    error.stack = `stack ${HIGH_RISK_ERROR_MESSAGE}`;
+    f.handlers.execute.mockRejectedValue(error);
+
+    try {
+      await expect(f.worker.drainOnce()).resolves.toMatchObject({
+        claimed: 1,
+        succeeded: 0,
+        failed: 1,
+        dead: 0,
+      });
+      expect(f.outbox.nack).toHaveBeenCalledWith(f.intent, error);
+      expect(f.outbox.ack).not.toHaveBeenCalled();
+      const output = warnSpy.mock.calls
+        .flat()
+        .map((value) => (typeof value === 'string' ? value : JSON.stringify(value)))
+        .join('\n');
+      for (const forbidden of [
+        'TEST_SECRET',
+        'TEST_KEY',
+        'https://provider.example.com/private/path',
+        '13800138000',
+        'openid-sensitive-value',
+        'bucket/private/object-key',
+        'Authorization',
+        'test-token',
+        'postgresql://user:password@db.internal:5432/app',
+      ]) {
+        expect(output).not.toContain(forbidden);
+      }
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it('cross-generation root 停 heartbeat 后只 defer，不 ack/nack/dead', async () => {

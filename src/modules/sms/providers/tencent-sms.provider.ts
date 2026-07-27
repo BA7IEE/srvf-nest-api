@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { sms } from 'tencentcloud-sdk-nodejs-sms';
 
-import { maskPhone } from '../sms.constants';
 import { SmsSettingsService } from '../sms-settings.service';
 import {
   SmsChannelUnavailableError,
@@ -28,7 +27,7 @@ import {
 // - SDK 仅本文件 import(评审稿 R-4 供应链边界;锁精确版本)
 //
 // 安全性:
-// - 错误信息 / 日志永不含 SecretId / SecretKey 明文或密文;日志中手机号一律 maskPhone
+// - 错误信息 / 日志永不含 SecretId / SecretKey 明文或密文；普通日志不记录手机号
 // - 明文验证码仅作为 TemplateParamSet 传给 SDK,不写日志
 //
 // 模板参数约定(评审稿 E-22;运维侧 SOP 见 docs/ops/sms-production-rollout-checklist.md):
@@ -133,9 +132,7 @@ export class TencentSmsProvider implements SmsProvider {
       throw new SmsProviderSendError(status.Code ?? 'UNKNOWN', status.Message ?? 'unknown');
     }
 
-    this.logger.log(
-      `TencentSms sent ok phone=${maskPhone(ctx.phone)} serialNo=${status.SerialNo ?? ''}`,
-    );
+    this.logger.log({ event: 'sms_provider_send_succeeded' });
     return { providerMsgId: status.SerialNo ?? null };
   }
 

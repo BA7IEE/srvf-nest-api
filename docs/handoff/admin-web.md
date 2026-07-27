@@ -186,9 +186,9 @@
 
 ### 2.5 通知管理(站内信撰写 / 发布 + 微信订阅渠道 + 系统定向 + 短信兜底)— ✅ S1+S2+S3+S4+S5 后端就绪(v0.32.0 已发)
 
-统一通知模块 S1 站内信渠道 + S2 微信订阅 quota 渠道 + S3 producer 接入 + S4 活动·考勤 producer 定向触发 + S5 短信兜底渠道(GAP-005 S1–S5 全切片;冻结评审稿 [`unified-notification-dispatcher-review.md`](../archive/reviews/unified-notification-dispatcher-review.md))。admin 撰写/发布,会员 app 拉取站内信 feed(未读红点);S2 起 admin 可勾微信渠道,发布时向已订阅会员机会式推送。**S3 = 系统自动定向通知**:招新**发号 / 入队**完成后,后端自动向当事队员发一条**定向**站内信(发号另带微信),admin 面**无新操作**(业务 transaction 同写 durable intent、worker 后续执行,无新端点/无新 RBAC 码);会员侧 feed 见 [`miniapp.md`](miniapp.md)。**活动域现行通知口径(已发 v0.50.0)**:公开活动发布 → `activity-published` 会员广播;时间/地点变更、活动取消、队员取消已通过报名 → `activity-changed`;报名审批 → `registration-result`;考勤终审 → `attendance-result`;开场前 24 小时仅向仍为 `pass` 的报名者发一次 `activity-reminder`。全部复用站内信 feed、事务外 best-effort 派发,admin 面无新操作/新端点/RBAC 码。**S5 = 短信兜底(紧急召集;admin 显式发起 + 计费确认)**:管理端对**已发布且勾了"短信"渠道**的通知,点"发送短信" → **必须二次确认计费**:前端先以 `confirmed:false` 调 `POST admin/v1/notifications/{id}/send-sms` **预览** `recipientCount`(受众快照 / 预估,不保证最终计费),用户确认后再以 `confirmed:true` 确认并创建 / 尝试上述任务(向**可见且有手机**的队员逐人发"请打开 App 查看"短信,不代表全部最终完成;新 RBAC 码 `notification.send.sms` 162→163;见 §2.5)。**短信永不随发布自动发**(成本动作显式 gating);未声明短信渠道 / 未发布 → `31013`,短信通道未配置 → `24030`,缺 `confirmed` → 400;手机号一律掩码。**真·全员短信批处理异步未做**(若受众过大致延迟另立项)。
+统一通知模块 S1 站内信渠道 + S2 微信订阅 quota 渠道 + S3 producer 接入 + S4 活动·考勤 producer 定向触发 + S5 短信兜底渠道(GAP-005 S1–S5 全切片;冻结评审稿 [`unified-notification-dispatcher-review.md`](../archive/reviews/unified-notification-dispatcher-review.md))。admin 撰写/发布,会员 app 拉取站内信 feed(未读红点);S2 起 admin 可勾微信渠道。**S3 = 系统自动定向通知**:招新**发号 / 入队**完成后,后端自动向当事队员发一条**定向**站内信(发号另带微信),admin 面**无新操作**(业务 transaction 同写 durable intent、worker 后续执行,无新端点/无新 RBAC 码);会员侧 feed 见 [`miniapp.md`](miniapp.md)。**活动域现行通知口径(已发 v0.50.0)**:公开活动发布 → `activity-published` 会员广播;时间/地点变更、活动取消、队员取消已通过报名 → `activity-changed`;报名审批 → `registration-result`;考勤终审 → `attendance-result`;开场前 24 小时仅向仍为 `pass` 的报名者发一次 `activity-reminder`。招新/入队、报名 L1、活动 L2、责任 L3、考勤 L4 producer 均在业务事务内写 durable intent；worker 在 commit 后执行 Notification / 微信 / SMS Effect，provider 失败进入 retry/dead 且不回滚已提交业务，admin 面无新操作/新端点/RBAC 码。**S5 = 短信兜底(紧急召集;admin 显式发起 + 计费确认)**:管理端对**已发布且勾了"短信"渠道**的通知,点"发送短信" → **必须二次确认计费**:前端先以 `confirmed:false` 调 `POST admin/v1/notifications/{id}/send-sms` **预览** `recipientCount`(受众快照 / 预估,不保证最终计费),用户确认后再以 `confirmed:true` 确认并创建 / 尝试上述任务(向**可见且有手机**的队员逐人发"请打开 App 查看"短信,不代表全部最终完成;新 RBAC 码 `notification.send.sms` 162→163;见 §2.5)。**短信永不随发布自动发**(成本动作显式 gating);未声明短信渠道 / 未发布 → `31013`,短信通道未配置 → `24030`,缺 `confirmed` → 400;手机号一律掩码。**真·全员短信批处理异步未做**(若受众过大致延迟另立项)。
 
-> **D-Outbox 当前实现(2026-07-18)**:招新发号/入队由业务 transaction 同写 durable intent，独立 worker 后续执行定向 Effect。前端端点、响应和操作完全不变；活动/报名/考勤 producer 暂仍沿 commit 后 best-effort 口径。
+> **D-Outbox 当前实现(2026-07-27)**:招新/入队、报名 L1、活动 L2、责任 L3、考勤 L4 producer 均由业务 transaction 同写 durable intent；独立 worker 在 commit 后执行 Notification / 微信 / SMS Effect，provider 失败进入 retry/dead，不回滚已提交业务。前端端点、DTO、响应和操作入口完全不变，仍只消费既有 feed 与管理端点。
 
 | 任务 / 页面 | 端点 | 鉴权 |
 |---|---|---|
@@ -202,7 +202,7 @@
 
 **字段/可见性**:可见档 4 选 1 `member` / `formal_member` / `department` / `management`(**通知去 public**,会员面专属);`formal_member` 只面向 ACTIVE 且 `gradeCode∈level-1..level-7` 的正式队员，不由组织归属推导；`department` 档独立按当前 activeOrgIds，且须填活跃部门 orgId 数组(否则 31012);`notificationTypeCode` ∈ `notification_type` 字典(含 `activity-reminder` / `activity-published` / `activity-changed` / `registration-result` / `attendance-result` / `recruitment` / `emergency` / `general`)。统一形状列 `audienceType`/`sourceType`/`channels` 出参回显。**会员侧站内信 feed**(list/未读红点/标记已读)见 [`miniapp.md`](miniapp.md)。
 
-**S2 微信渠道勾选**:create/update 入参 `channels`(数组,值 ∈ `["in-app","wechat","sms"]`〔S5 放开 `sms`〕;**站内恒发**,后端强制含 `in-app`;不传 = 仅站内)。勾 `wechat` 后 **publish 时**后端在事务外向「该类型已配微信模板 + 可见 + 有订阅 quota」的会员逐人推送(非订阅者不打扰);投递成败落 `NotificationDelivery`(本期无 admin 查询端点,运维看库;`recipientRef` 为掩码 openid,非明文)。**前端只需在通知编辑页加渠道勾选**,微信推送由后端 publish 自动触发,无独立"发送"按钮。**`sms` 渠道例外**:勾 `sms` 仅"声明可短信兜底",**短信永不随 publish 自动发**;真发须 admin 在该通知详情页显式点"发送短信" → 走上表 S5 `send-sms` 端点(计费二次确认)。
+**S2 微信渠道勾选**:create/update 入参 `channels`(数组,值 ∈ `["in-app","wechat","sms"]`〔S5 放开 `sms`〕;**站内恒发**,后端强制含 `in-app`;不传 = 仅站内)。勾 `wechat` 后，publish 业务事务内写 durable root intent；worker 在事务提交后对「该类型已配微信模板 + 可见 + 有订阅 quota」的会员逐人执行 Effect(非订阅者不打扰)，provider 失败按 retry/dead 收口；投递成败落 `NotificationDelivery`(本期无 admin 查询端点,运维看库;`recipientRef` 为掩码 openid,非明文)。**前端只需在通知编辑页加渠道勾选**,微信推送由后端 publish 自动触发,无独立"发送"按钮。**`sms` 渠道例外**:勾 `sms` 仅"声明可短信兜底",**短信永不随 publish 自动发**;真发须 admin 在该通知详情页显式点"发送短信" → 走上表 S5 `send-sms` 端点(计费二次确认)。
 
 | S2 任务 / 页面 | 端点 | 鉴权 |
 |---|---|---|
@@ -336,6 +336,10 @@
 ## 4. 缺口台账(gap-ledger)
 
 > 前端→后端的需求簿。状态:`提出` → `已出 goal` → `已发`。
+
+> **当前运行时真值（2026-07-27）**：招新/入队、报名 L1、活动 L2、责任 L3、考勤 L4 producer 均在业务事务内写 durable intent；worker 在 commit 后执行 Notification / 微信 / SMS Effect，provider 失败进入 retry/dead 且不回滚已提交业务。admin API、DTO 与操作入口未变化，前端仍只消费既有 feed 和管理端点。
+>
+> **历史实现，已被 2026-07-26 L1–L4 durable outbox 收口取代。** 下方 GAP-005 S1–S5 长段保留发布时历史，涉及 publish 同步派发或 producer commit 后 best-effort 的描述不得再作为当前实现依据。
 
 | # | 诉求(前端想做的任务) | 期望端点 | 状态 |
 |---|---|---|---|

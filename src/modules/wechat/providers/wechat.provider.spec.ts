@@ -530,6 +530,45 @@ describe('WechatMiniRealProvider.sendSubscribeMessage (S2)', () => {
     expect(result).toEqual({ ok: false, errCode: 'FETCH_ERROR', errMsg: 'TimeoutError' });
   });
 
+  it('fetch 异常 name 保持既有诊断返回，但普通日志只写安全分类', async () => {
+    const highRisk =
+      'SecretId=TEST_SECRET SecretKey=TEST_KEY https://provider.example.com/private/path ' +
+      '13800138000 openid-sensitive-value bucket/private/object-key ' +
+      'Authorization: Bearer test-token postgresql://user:pass@db.internal/app';
+    const err = new Error('raw error message');
+    err.name = highRisk;
+    fetchSpy.mockRejectedValue(err);
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const provider = makeProvider(makeResolved());
+
+    const result = await provider.sendSubscribeMessage('test-token', INPUT);
+
+    expect(result).toEqual({ ok: false, errCode: 'FETCH_ERROR', errMsg: highRisk });
+    expect(warnSpy).toHaveBeenCalledWith({
+      event: 'wechat_subscribe_send_failed',
+      operation: 'subscribe-message',
+      safeErrorCategory: 'provider-timeout',
+      safeErrorCode: 'FETCH_ERROR',
+      retryable: true,
+    });
+    const logText = JSON.stringify(warnSpy.mock.calls);
+    for (const fragment of [
+      'TEST_SECRET',
+      'TEST_KEY',
+      'provider.example.com',
+      '13800138000',
+      'openid-sensitive-value',
+      'bucket/private/object-key',
+      'Authorization',
+      'test-token',
+      'postgresql://',
+      'raw error message',
+    ]) {
+      expect(logText).not.toContain(fragment);
+    }
+    warnSpy.mockRestore();
+  });
+
   it('非 JSON 体 → ok:false INVALID_RESPONSE', async () => {
     fetchSpy.mockResolvedValue(new Response('<html>', { status: 200 }));
     const provider = makeProvider(makeResolved());
@@ -537,15 +576,16 @@ describe('WechatMiniRealProvider.sendSubscribeMessage (S2)', () => {
     expect(result).toEqual({ ok: false, errCode: 'INVALID_RESPONSE', errMsg: 'non-JSON body' });
   });
 
-  it('失败日志不含 access_token,openid 掩码(E-12 / E-13)', async () => {
+  it('失败日志不含 access_token 或 openid(E-12 / E-13)', async () => {
     const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     fetchSpy.mockResolvedValue(jsonResponse({ errcode: 43101, errmsg: 'no auth' }));
     const provider = makeProvider(makeResolved());
     await provider.sendSubscribeMessage('access-token-secret', INPUT);
     const text = (warnSpy.mock.calls as unknown[][]).map((c) => String(c[0])).join('\n');
     expect(text).not.toContain('access-token-secret');
-    expect(text).not.toContain(INPUT.openid); // 明文 openid 不入,掩码形式
-    expect(text).toContain('oABC****7890');
+    expect(text).not.toContain(INPUT.openid);
+    expect(text).not.toContain('oABC****7890');
+    expect(text).not.toContain('openid');
     warnSpy.mockRestore();
   });
 });

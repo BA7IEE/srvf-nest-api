@@ -19,14 +19,14 @@ describe('DevStubSmsProvider', () => {
     expect(result).toEqual({ providerMsgId: null });
   });
 
-  it('sendNotification 恒成功且 providerMsgId=null(统一通知 S5;零变量,debug 日志可输出号码)', async () => {
+  it('sendNotification 恒成功且普通 debug 日志不输出手机号', async () => {
     const debugSpy = jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
     try {
       const provider = new DevStubSmsProvider();
       const result = await provider.sendNotification({ phone: '13800001234' });
       expect(result).toEqual({ providerMsgId: null });
       expect(debugSpy).toHaveBeenCalledTimes(1);
-      expect(String(debugSpy.mock.calls[0][0])).toContain('13800001234');
+      expect(JSON.stringify(debugSpy.mock.calls[0][0])).not.toContain('13800001234');
     } finally {
       debugSpy.mockRestore();
     }
