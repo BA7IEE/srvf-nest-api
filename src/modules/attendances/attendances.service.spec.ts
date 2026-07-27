@@ -302,6 +302,9 @@ function makeAttendanceNotificationProducerMock() {
     enqueueReturned: jest
       .fn<Promise<void>, [unknown, Record<string, unknown>]>()
       .mockResolvedValue(),
+    prepareContributionThresholdSnapshots: jest
+      .fn<Promise<unknown[]>, [unknown, unknown[]]>()
+      .mockResolvedValue([]),
     enqueueFinalApproved: jest
       .fn<Promise<void>, [unknown, Record<string, unknown>]>()
       .mockResolvedValue(),
@@ -966,6 +969,13 @@ describe('AttendancesService (characterization, scoped)', () => {
       );
       expect(res.statusCode).toBe(ATTENDANCE_SHEET_STATUS.APPROVED);
 
+      expect(notificationProducer.prepareContributionThresholdSnapshots).toHaveBeenCalledWith(
+        prisma,
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'rec-1', memberId: 'mem-1' }),
+          expect.objectContaining({ id: 'rec-2', memberId: 'mem-2' }),
+        ]),
+      );
       expect(notificationProducer.enqueueFinalApproved).toHaveBeenCalledWith(
         prisma,
         expect.objectContaining({
@@ -975,10 +985,14 @@ describe('AttendancesService (characterization, scoped)', () => {
             { id: 'rec-1', memberId: 'mem-1', contributionPoints: '1.5' },
             { id: 'rec-2', memberId: 'mem-2', contributionPoints: '2' },
           ],
+          contributionThresholdSnapshots: [],
         }),
       );
+      const prepareOrder =
+        notificationProducer.prepareContributionThresholdSnapshots.mock.invocationCallOrder[0];
       const updateOrder = prisma.attendanceSheet.update.mock.invocationCallOrder[0];
       const enqueueOrder = notificationProducer.enqueueFinalApproved.mock.invocationCallOrder[0];
+      expect(prepareOrder).toBeLessThan(updateOrder);
       expect(enqueueOrder).toBeGreaterThan(updateOrder);
     });
 

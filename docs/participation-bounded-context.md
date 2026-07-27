@@ -141,7 +141,7 @@ Certificate (不在 participation 图内)
 | 6. 报名取消 | activity-registrations | `cancelAdmin` / `cancelMy`: `pending\|pass\|waitlisted → cancelled` | live `AttendanceRecord` 或 `ActivityCheckIn` 已引用报名时复用 21033 拒绝取消；否则取消 pass 同事务 FIFO 递补队首一人至 pending；取消 pending/waitlisted 不递补；partial unique 允许同人再次报名 |
 | 7. 考勤表首次提交 | attendances | `submit` → `Sheet.statusCode='pending'` + 多条 `Record` 同事务建立 | **不再推动 Activity.completed**；用服务端 `now` 拒绝未来签退;`contributionPoints` 不接受输入,submit/edit 均读 `tx.contributionRule.findMany` 计算(无规则落 0,**不再 per-record dailyCap 钳制**);`requiresInsurance=true` 时每条 record 必须带同活动/同成员/pass 的 `registrationId`,但不证明报名创建时已开启该门槛 |
 | 8. APD 一级审核 | attendances | `approve` → `pending → pending_final_review`;`reject` → `pending → rejected` | **不**触发 `attendance.recorded`(沿 D-S7;触发点已移到 final-approve) |
-| 9. APD 终审通过 | attendances | `finalApprove` → `pending_final_review → approved` | **`contributionPoints` 在此刻语义上生效**;同事务内 `eventPlaceholder('attendance.recorded')` 发出([`attendances.service.ts:1003`](../src/modules/attendances/attendances.service.ts:1003));未来 contribution-points 聚合器从此事件消费 |
+| 9. APD 终审通过 | attendances | `finalApprove` → `pending_final_review → approved` | **`contributionPoints` 在此刻语义上生效**;同事务内 `eventPlaceholder('attendance.recorded')` 发出；普通结果通知仍逐 Record。最新 joining application 的 5 分达标只在正式 capped before<5 且 approved 后 capped after≥5 时按 application+threshold 稳定 key 入队一次 |
 | 10. APD 终审驳回 | attendances | `finalReject` → `pending_final_review → final_rejected` | 不触发 `attendance.recorded`;records 跟随软删 |
 | 11. 撤回终审通过 | attendances | `reopen` → `approved → pending` | 保留 records / previousSnapshot / version,清空一审与终审责任字段;所有 approved-only 贡献读模型立即不再计入,重新 edit → approve → finalApprove 后恢复。撤回本身不发通知、不回滚历史报名准入 / 招新入队晋级结果;再次 finalApprove 复用既有通知。 |
 | 12. 主负责人声明考勤提交完成 | activities | 活动结束后当前 owner 写 `attendanceDeclaredCompleteAt/ByUserId` | 仅声明“Sheet 已全部提交”，不替代审核、不推进 Activity 主状态；与实时 Sheet 状态共同驱动 managed closure 读模型 |
@@ -162,7 +162,7 @@ Certificate (不在 participation 图内)
 - `AttendanceRecord.contributionPoints` 字段层为历史兼容仍可空;业务写路不接受人工最终分,submit/edit 一律从 ContributionRule 计算,无规则落 0;仅 approved 时"语义生效"。
 - 当前 attendance 在 `requiresInsurance=true` 时只强制 `registrationId` 同活动/同成员且为 pass;它不能证明该报名创建时 `requiresInsurance=true`,不追溯旧报名,也不代表保险状态、有效期或活动时段经过独立核验。
 - `InsuranceEligibilityEvidence` 是 PR3 gate=true 根事务生成的最小资格事实；PR4 migration deploy 后再由 PostgreSQL 拒绝 source/owner mismatch、重复 owner 与事后改删。pending/rejected 不生成，gate=false 兼容档仍不生成 Evidence。
-- **全局每日封顶在本 context 之外**(活动闭环硬化 2026-06-21;v0.48.0 上限调整):队员单个北京日历日的贡献值总分封顶 3(`GLOBAL_DAILY_CONTRIBUTION_CAP`),封顶**只**发生在 recruitment 侧 team-join `computeContribution`(按 `checkInAt` 北京日分组 → 每日封顶 → 加总),**不**在 participation 侧落库——`AttendanceRecord.contributionPoints` 仍存原始规则分。历史记录同样按当前上限读时实时重算;`ContributionRule.dailyCap` 列保留但已 deprecated、calculator 不再读。
+- **全局每日封顶在本 context 之外**(活动闭环硬化 2026-06-21;v0.48.0 上限调整):队员单个北京日历日的贡献值总分封顶 3(`GLOBAL_DAILY_CONTRIBUTION_CAP`),封顶**只**发生在 recruitment 侧 team-join `computeContribution`(按 `checkInAt` 北京日分组 → 每日封顶 → 加总),**不**在 participation 侧落库——`AttendanceRecord.contributionPoints` 仍存原始规则分。历史记录同样按当前上限读时实时重算;`ContributionRule.dailyCap` 列保留但已 deprecated、calculator 不再读。终审贡献达标通知也必须在 approved 前后各调用该真值，禁止 `after-rawDelta` 或另造 cap。
 - `attendance.recorded` 事件是 participation context **向外的唯一已锁定出口语义**;其它消费方(未来 contribution 聚合 / 仪表盘 / 队员个人贡献值汇总)应当订阅它,**不应**直接读 `AttendanceSheet` / `AttendanceRecord` 表。
 - Activity → completed 的唯一通路是 activities 模块 `complete` action；attendances submit 不再执行该跨 aggregate 写。
 - **终审/撤回授权现状(2026-07-02 scoped-authz;v0.47.0 F2)**:Step 9/10/11 的 `finalApprove` / `finalReject` / `reopen` 均由 service 层 `authz.explain(...,{type:'attendance_sheet',id})` 判权;权限只来自显式 `attendance-final-reviewer` scoped RoleBinding(通常绑定有效任职并覆盖组织树)或 SUPER_ADMIN 兜底。`biz-admin` 不持这 3 个动作码;角色另含 `attendance.read.sheet`,合计 4 码。只有 finalApprove 受自审 22074 / 一级同人 22075 约束,reopen 不复用这两条终审完整性约束。
@@ -204,7 +204,7 @@ Certificate (不在 participation 图内)
 - **岗位 capacity 更新**:事务内固定先锁 `Activity`，再重读 `ActivityPosition.capacity` 与同岗位 passCount；扩容递补只消费同 `activityPositionId` 候补队列，不增加第二把聚合行锁。
 - **报名 approve / cancel / promote**:锁序固定 `Activity → ActivityRegistration`；pass cancel 在锁内检查同报名 live `AttendanceRecord` / `ActivityCheckIn`，与 App 打卡共享的 Activity → Registration 锁序串行收敛，任一证据存在复用 21033 且不取消、不审计、不递补；capacity 与 FIFO 域均显式包含 `activityPositionId`（无岗位为 null），跨岗位不借位、不递补。
 - **submit/edit 路径**:同一事务内固定一个服务端 `now`,校验活动/报名/时间窗与未来签退,再由 ContributionRule 计算并写入 records;submit 不写 Activity 状态。
-- **finalApprove 路径**:Sheet 状态翻转 + Record 复查 + `attendance.recorded` 事件 + audit 写入,**全部在一个 `prisma.$transaction(...)` 内**。
+- **finalApprove 路径**:claim 后先读 Record，并在 Sheet 仍为 `pending_final_review` 时为去重 Member 选最新 joining application、以其 cycle.year 调 `computeContribution` 快照 capped before；Sheet 翻为 approved 后，对同 application/cycle 再算 capped after。状态、`attendance.recorded`、audit、逐 Record 结果 intent 与满足 `before<5≤after` 的 application milestone intent **全部在一个 `prisma.$transaction(...)` 内**。
 - **ActivityCheckIn F2**:App 自助打卡写事务固定按 Activity → 当前 pass ActivityRegistration
   取共享锁并在锁后重跑状态/pass/时间闸；首次 create / checkout CAS 再统一调用
   `ActivityCheckInLocationPolicy`，只有合法活动坐标 + 通过 DTO 的合法请求坐标 + 原始距离 `<=` 半径才只写
@@ -238,8 +238,10 @@ Certificate (不在 participation 图内)
   两条移交 intent 任一失败都回滚完整业务，worker 仅在 commit 后生成定向通知。
 - **考勤 L4 通知**:`firstReturn`/`finalReturn`/`finalApprove` 的 intent 和 Sheet 状态、
   audit 同事务；退回收件人从 active `canManageAttendance` assignment 与提交人 member
-  快照解析并去重，终审结果按 record 快照。eventKey 含 `returnedAt`/`finalReviewedAt`
-  业务版本；enqueue 失败整体回滚，worker/provider 失败只重试 intent。
+  快照解析并去重，终审结果按 Record 快照且 key 保留 `finalReviewedAt` 版本；贡献达标
+  key=`team-join-contribution-met:{applicationId}:{threshold}`、aggregateType=`team_join_application`，
+  稳定正文不带 Sheet/Record/动态 after，同 application+门槛最多一次。enqueue 失败整体回滚，
+  worker/provider 失败只重试 intent。
 - 跨 aggregate 写**只允许在同事务内发生**;**禁止**用"先 attendances 改完,再回调 activities"的两阶段方式;**禁止**用 `setTimeout` / `Promise.then` 把后续写挪出事务。
 
 ### 5.4 ContributionRule 是配置,不是流程

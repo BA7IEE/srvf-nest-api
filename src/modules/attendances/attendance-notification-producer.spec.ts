@@ -1,11 +1,14 @@
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import type { NotificationOutboxService } from '../notifications/notification-outbox.service';
+import type { NotificationOutboxEnqueueInput } from '../notifications/notification-outbox.types';
 import { AttendanceNotificationProducer } from './attendance-notification-producer';
 
 function makeOutboxMock() {
   return {
-    enqueue: jest.fn().mockResolvedValue({ id: 'intent-1' }),
+    enqueue: jest
+      .fn<Promise<{ id: string }>, [NotificationOutboxEnqueueInput, Prisma.TransactionClient]>()
+      .mockResolvedValue({ id: 'intent-1' }),
   };
 }
 
@@ -23,6 +26,16 @@ function makeTxMock() {
     teamJoinApplication: {
       findFirst: jest.fn().mockResolvedValue(null),
     },
+    attendanceRecord: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+  };
+}
+
+function contributionRecord(day: string, points: string | number) {
+  return {
+    checkInAt: new Date(`${day}T01:00:00.000Z`),
+    contributionPoints: new Prisma.Decimal(points),
   };
 }
 
@@ -113,20 +126,193 @@ describe('AttendanceNotificationProducer', () => {
         { id: 'record-1', memberId: 'member-1', contributionPoints: '1.5' },
         { id: 'record-2', memberId: 'member-1', contributionPoints: '2' },
       ],
+      contributionThresholdSnapshots: [],
     });
 
     expect(outbox.enqueue).toHaveBeenCalledTimes(2);
-    expect(
-      outbox.enqueue.mock.calls.map(([input]) => (input as { eventKey: string }).eventKey),
-    ).toEqual([
+    expect(outbox.enqueue.mock.calls.map(([input]) => input.eventKey)).toEqual([
       `attendance-final:sheet-2:${finalReviewedAt.toISOString()}:record-1`,
       `attendance-final:sheet-2:${finalReviewedAt.toISOString()}:record-2`,
     ]);
     expect(
       outbox.enqueue.mock.calls.map(
-        ([input]) =>
-          (input as { payload: { recipientMemberId: string } }).payload.recipientMemberId,
+        ([input]) => (input.payload as unknown as { recipientMemberId: string }).recipientMemberId,
       ),
     ).toEqual(['member-1', 'member-1']);
+  });
+
+  it('终审前按 member 去重并快照最新 joining application 的真实 capped before', async () => {
+    const outbox = makeOutboxMock();
+    const tx = makeTxMock();
+    tx.teamJoinApplication.findFirst.mockResolvedValue({
+      id: 'application-1',
+      cycle: { year: 2027 },
+    });
+    tx.attendanceRecord.findMany.mockResolvedValue([
+      contributionRecord('2026-08-01', 3),
+      contributionRecord('2026-08-02', 1),
+    ]);
+    const producer = new AttendanceNotificationProducer(
+      outbox as unknown as NotificationOutboxService,
+    );
+
+    const snapshots = await producer.prepareContributionThresholdSnapshots(
+      tx as unknown as Prisma.TransactionClient,
+      [{ memberId: 'member-1' }, { memberId: 'member-1' }],
+    );
+
+    expect(tx.teamJoinApplication.findFirst).toHaveBeenCalledTimes(1);
+    expect(tx.teamJoinApplication.findFirst).toHaveBeenCalledWith({
+      where: { memberId: 'member-1', statusCode: 'joining', deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, cycle: { select: { year: true } } },
+    });
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]).toMatchObject({
+      applicationId: 'application-1',
+      memberId: 'member-1',
+      cycleYear: 2027,
+    });
+    expect(snapshots[0].beforePoints.toString()).toBe('4');
+  });
+
+  it('无 joining application 时不建立 milestone snapshot', async () => {
+    const outbox = makeOutboxMock();
+    const tx = makeTxMock();
+    const producer = new AttendanceNotificationProducer(
+      outbox as unknown as NotificationOutboxService,
+    );
+
+    await expect(
+      producer.prepareContributionThresholdSnapshots(tx as unknown as Prisma.TransactionClient, [
+        { memberId: 'member-1' },
+      ]),
+    ).resolves.toEqual([]);
+    expect(tx.attendanceRecord.findMany).not.toHaveBeenCalled();
+  });
+
+  it('真实 capped 4→5 时发送稳定 application+threshold milestone', async () => {
+    const outbox = makeOutboxMock();
+    const tx = makeTxMock();
+    tx.attendanceRecord.findMany.mockResolvedValue([
+      contributionRecord('2026-08-01', 3),
+      contributionRecord('2026-08-02', 2),
+    ]);
+    const producer = new AttendanceNotificationProducer(
+      outbox as unknown as NotificationOutboxService,
+    );
+
+    await producer.enqueueFinalApproved(tx as unknown as Prisma.TransactionClient, {
+      sheetId: 'sheet-2',
+      activityId: 'activity-2',
+      finalReviewedAt,
+      records: [{ id: 'record-1', memberId: 'member-1', contributionPoints: '1' }],
+      contributionThresholdSnapshots: [
+        {
+          applicationId: 'application-1',
+          memberId: 'member-1',
+          cycleYear: 2027,
+          beforePoints: new Prisma.Decimal(4),
+        },
+      ],
+    });
+
+    expect(outbox.enqueue).toHaveBeenCalledTimes(2);
+    expect(outbox.enqueue.mock.calls[1][0]).toEqual({
+      eventKey: 'team-join-contribution-met:application-1:5',
+      eventType: 'notification.targeted',
+      payloadVersion: 1,
+      payload: {
+        recipientMemberId: 'member-1',
+        notificationTypeCode: 'recruitment',
+        title: '入队贡献值已达标',
+        body: '您的贡献值已达到入队要求（5 分）。管理员核对其他门槛后将安排综合评估，请留意后续通知。',
+        channels: ['in-app'],
+      },
+      aggregateType: 'team_join_application',
+      aggregateId: 'application-1',
+      destinationType: 'member',
+      destinationRef: 'member-1',
+    });
+  });
+
+  it.each([
+    { before: 5, after: 5 },
+    { before: 6, after: 6 },
+  ])('真实 capped $before→$after 时不重复发送 milestone', async ({ before, after }) => {
+    const outbox = makeOutboxMock();
+    const tx = makeTxMock();
+    tx.attendanceRecord.findMany.mockResolvedValue([
+      contributionRecord('2026-08-01', 3),
+      contributionRecord('2026-08-02', after - 3),
+    ]);
+    const producer = new AttendanceNotificationProducer(
+      outbox as unknown as NotificationOutboxService,
+    );
+
+    await producer.enqueueFinalApproved(tx as unknown as Prisma.TransactionClient, {
+      sheetId: 'sheet-2',
+      activityId: 'activity-2',
+      finalReviewedAt,
+      records: [{ id: 'record-1', memberId: 'member-1', contributionPoints: '1' }],
+      contributionThresholdSnapshots: [
+        {
+          applicationId: 'application-1',
+          memberId: 'member-1',
+          cycleYear: 2027,
+          beforePoints: new Prisma.Decimal(before),
+        },
+      ],
+    });
+
+    expect(outbox.enqueue).toHaveBeenCalledTimes(1);
+    expect(outbox.enqueue.mock.calls[0][0]).toMatchObject({
+      eventKey: `attendance-final:sheet-2:${finalReviewedAt.toISOString()}:record-1`,
+    });
+  });
+
+  it('同一 member 多 records 原始 +3 但 capped 仅 +1 时保留两条结果并只发一次 milestone', async () => {
+    const outbox = makeOutboxMock();
+    const tx = makeTxMock();
+    tx.attendanceRecord.findMany.mockResolvedValue([
+      contributionRecord('2026-08-01', 2),
+      contributionRecord('2026-08-01', 1.5),
+      contributionRecord('2026-08-01', 1.5),
+      contributionRecord('2026-08-02', 2),
+    ]);
+    const producer = new AttendanceNotificationProducer(
+      outbox as unknown as NotificationOutboxService,
+    );
+    const input = {
+      sheetId: 'sheet-2',
+      activityId: 'activity-2',
+      finalReviewedAt,
+      records: [
+        { id: 'record-1', memberId: 'member-1', contributionPoints: '1.5' },
+        { id: 'record-2', memberId: 'member-1', contributionPoints: '1.5' },
+      ],
+      contributionThresholdSnapshots: [
+        {
+          applicationId: 'application-1',
+          memberId: 'member-1',
+          cycleYear: 2027,
+          beforePoints: new Prisma.Decimal(4),
+        },
+      ],
+    };
+
+    await producer.enqueueFinalApproved(tx as unknown as Prisma.TransactionClient, input);
+    await producer.enqueueFinalApproved(tx as unknown as Prisma.TransactionClient, input);
+
+    expect(outbox.enqueue).toHaveBeenCalledTimes(6);
+    const milestones = outbox.enqueue.mock.calls
+      .map(([candidate]) => candidate)
+      .filter(
+        (candidate) =>
+          (candidate as { eventKey: string }).eventKey ===
+          'team-join-contribution-met:application-1:5',
+      );
+    expect(milestones).toHaveLength(2);
+    expect(milestones[0]).toEqual(milestones[1]);
   });
 });

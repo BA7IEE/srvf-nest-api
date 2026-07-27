@@ -5,6 +5,7 @@
 ## Scope 与当前行为
 
 - 本模块负责入队轮、申请、gate/综合评估、贡献值进度与 final join；`requiresInsurance` 已进入 Cycle create/update/response，create 缺省 false。
+- `computeContribution`/`computeCappedContribution` 是 approved-only、北京时间自然日封顶 3、按 cycle.year cutoff 的唯一贡献值真值；考勤终审达标通知只允许在同一事务内分别于 approved 前后调用该真值，不得复制 cap 算法或用原始分反推。
 - single gate=false 时该 flag 仅配置/回显，不查询保险、不生成 evidence；gate=true 且 cycle=true 时只在 **final join** 捕获一次 now，以北京日 `requiredFrom=requiredThrough` 校验 verified self → live Team Policy+Coverage，无来源 26031。
 - final join 根锁序固定 Application→Cycle→source(self 或 Policy→Coverage)→Member→linked User→join writes→Evidence→Audit/outbox；evidence 绑定 TeamJoinApplication 且只含最小 snapshot，任一失败全回滚。申请创建/评估阶段绝不提前生成。
 - Cycle update 固定先按 `id ASC` 锁该 cycle 全部 live Application，再锁/重读 Cycle 后 update/audit，与 final join 同向；禁止退回无锁 `findFirst`。
