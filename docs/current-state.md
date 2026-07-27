@@ -1,7 +1,7 @@
 # SRVF API 当前状态入口
 
 > **当前事实唯一权威源**。冲突以本文件为准;先报告,不擅自调和。
-> Harness 2.0([T0](archive/reviews/harness-2.0-t0-review.md))；历史见 CHANGELOG/archive；§1守护；≤4,500字。
+> Harness 2.0 指针版；历史见 CHANGELOG/archive；§1守护；≤4,500字。
 
 ## 1. 当前版本状态
 
@@ -42,7 +42,7 @@
 - **Attachment storage Phase1**:ledger接 Attachment；Content根锁、provider外；无key FK/非 repo-wide closure；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)
 - **保险 v3(v0.59.0，未 deploy)**:PR1–PR4 gate/约束/evidence 已交付，脏数 fail-fast；Admin 360 overview 已补；切换须 drain 且禁混档
 - **活动责任(v0.62.0 已 release·未部署)**:取消闭环=cancelled/null;生产迁移/配置/认领/部署未做,按 [`runbook`](ops/activity-responsibility-workflow-rollout.md) 审批验 digest
-- **安全**:审计 SA 全量、持码非SA仅 self|USER；敏感读闭锁/extra禁PII；D15.1=B(C/N管理=SA|GLOBAL读码，ADMIN不直通)；D15.2=B(四类有效任职+组织 ACTIVE)；RBAC任期单轨，ops-admin现任常驻/同锁重读
+- **安全**:审计SA全量/持码非SA仅self|USER；敏感读闭锁/extra禁PII；Decision 15.1=B/15.2=B(业务负责人最终确认:2026-07-27):C/N管理=SA|GLOBAL读码(ADMIN不直通)，部门=PRIMARY/SECONDARY/TEMPORARY/SUPPORT有效任职+组织ACTIVE；RBAC任期单轨，ops-admin现任常驻/同锁重读
 - **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)
