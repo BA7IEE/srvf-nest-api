@@ -2,9 +2,9 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
-## Unreleased
+## v0.62.0 - 2026-07-27
 
-> 本期完成活动责任闭环、显式 scoped 审核与负责人机制，统一正式队员和组织可见性，收口账号离队、报名、内容附件和审计权限边界，并将报名、活动、责任和考勤通知全面迁移到 PostgreSQL durable outbox；同时提供可重复的本地前端联调环境。
+> 主题:**活动责任闭环、系统硬化与通知可靠性**(v0.61.0 后 #756–#793：活动责任工作流与本地前端联调基座、组织和正式队员可见性、安全边界、participation durable outbox 与通知隐私收口)。Endpoint 366→416；Migration 64→65；BizCode 258→278；Permission 207→213；Controller 75→82；AuditLogEvent 123 / Module 36 / 内建角色 15 / Cron 2。代码与契约里程碑 Release，不代表生产部署。
 
 ### Added
 
