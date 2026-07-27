@@ -2,6 +2,43 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+> 本期完成活动责任闭环、显式 scoped 审核与负责人机制，统一正式队员和组织可见性，收口账号离队、报名、内容附件和审计权限边界，并将报名、活动、责任和考勤通知全面迁移到 PostgreSQL durable outbox；同时提供可重复的本地前端联调环境。
+
+### Added
+
+- 完成活动责任闭环：正式队员可按当前组织范围发起活动；独立发布审核员负责审核，发起人具备审核资格时可直接发布；发起人、owner、报名协办和考勤协办各自承担明确职责，并支持 owner / initiator 移交与职责即时收回。
+- 新增独立 App managed activity 能力，覆盖活动核心、岗位与职责、报名审核和考勤管理；发布后的完整变更通过 proposal 审核后原子应用，既有 `/my/activities` 报名历史语义保持不变。
+- 考勤新增独立一审/终审、退回整改与重提，owner 可声明考勤完成并获得闭环状态和下一动作；Dashboard 增加发布审核与考勤一审待办，取消活动显式进入 `cancelled` 闭环。
+- 支持经过显式角色授权的跨组织发起，并对目标组织、发起人账号和正式队员资格做锁后校验；已发布活动的普通变更禁止跨组织迁移，submit / approve 均拒绝旧或篡改 snapshot。
+- 提供只读上线预检 SQL、legacy 认领与 reviewer / owner 配置演练 runbook、隔离本地聚合 E2E，以及仅限 `development/test` 和专用 `app_local_frontend*` 数据库的 17 账号幂等 bootstrap、验证与 A–I 手工联调说明。
+
+### Changed
+
+- 活动、报名、考勤和责任权限从旧通用角色收敛到显式 scoped RoleBinding；`biz-admin` / `org-admin` 不再拥有发布修改、报名写和考勤写/一审，`group-manager` 不再拥有考勤一审，三类 reviewer 均须显式绑定。
+- Content 与 Notification 的 management 可见性按 Decision 15.1=B 收敛到 SUPER_ADMIN 或显式 GLOBAL read permission；department 可见性按 Decision 15.2=B 统一读取当前有效 PRIMARY、SECONDARY、TEMPORARY、SUPPORT 任职。
+- 正式队员真值统一为 ACTIVE Member 且 `gradeCode` 属于 `level-1`～`level-7`，供 Content、通知广播、活动发起、App capability 与本地 fixture 共用；部门归属只决定 department 可见性。
+- GLOBAL RoleBinding 当前任期与 ops-admin 现任/常驻 holder 约束统一；非 SA 委派与削权在同一 advisory lock 下线性化，future / expired actor 不再可委派或枚举目标。
+- RoleBinding 新建、预检、批量建与恢复统一拒绝 inactive 组织；历史绑定保留并以 `scopeInactive` 标记失效范围。
+- 审计日志 list/detail 与 GLOBAL RBAC 对齐：SUPER_ADMIN 可读全部，其他持有读码的账号仅能读取本人或 USER 操作记录。
+- Content 附件生命周期收紧：仅草稿中的未引用附件可删，内容更新权与附件删除权缺一不可；Content 根锁串行化封面、正文、发布和删除，published/archived 禁删并通过 durable storage ledger 恢复 provider 失败。
+- 活动、报名、考勤和责任通知迁入 PostgreSQL durable outbox，业务状态、审计与 intent 同事务提交，provider 由 worker 在事务外执行并沿既有 retry/dead 语义收敛；责任制下变更审核只通知当前 ACTIVE owner。
+
+### Fixed
+
+- 报名 create、单条/批量 approve 与候补递补在锁后统一重验关联 Member 仍 ACTIVE；离队前新增活动影响预检，未解决的 draft initiator、active owner 或当前/未来报名义务必须显式处理。
+- 修正管理端审计日志 USER 越权、future/expired ops-admin 错误计数、volunteer 被误判为正式队员、inactive Member 报名和 offboard 后活动责任断裂。
+- 修正 App managed activity 的取消闭环：`closure.status=cancelled`、`nextAction=null`，优先于考勤声明、退回、一审、终审和 closed 派生。
+- 通知 readCount 与已读记录改为同事务原子更新，避免并发与重试造成计数漂移。
+- 考勤贡献达标通知改用正式 capped before/after，仅在真实 `before<5≤after` 时产生稳定、每 application+threshold 至多一次的 durable intent，避免日封顶导致重复或误报。
+- 取消报名通知改用 `displayName（memberNo）`，无可用身份时使用固定匿名标签，不再暴露内部 Member ID。
+- 通知、SMS、微信和招新补偿清理日志改为固定结构化安全分类，不再记录第三方 raw error、stack、cause、手机号、openid、URL、object key、secret、token、Authorization 或其他身份数据。
+- 证书 create/update/delete/verify/reject 的不可变审计不再保存完整证书编号或核验自由备注；编号使用通用掩码，备注只保留是否提供/变更的布尔摘要。
+- 报名审核并发测试改为锁定“恰好一个成功，最终状态、唯一审计与唯一通知匹配成功动作”，不再把 PostgreSQL 锁等待顺序误当成先到先得契约；本地 fixture 同时补齐 23 项活动责任禁止权限、授权来源负向矩阵及 OpenAPI/L3 字段守卫。
+
+本期未执行 production migration/seed、历史活动认领、真实 reviewer/owner/人员配置、fleet drain、部署、真实 COS/SMS/微信/OCR 验证或保险 gate 启用；生产切换仍须按 runbook 独立审批和验收，禁止新旧责任制实例混跑。
+
 ## v0.61.0 - 2026-07-23
 
 > 主题:**会话线性化、生产启动恢复、契约一致性与发布门禁收口**(v0.60.0 后 #741–#752：队员 360 保险概览、Auth User 行锁与 JWT TTL、日志 query 脱敏、Storage production bootstrap/recovery、366 个 OpenAPI 成功状态对齐、fast-uri High 修复、最终 SHA audit/Docker Smoke 自动化)。Endpoint 365→366；Migration 64 / BizCode 258 / Permission 207 / AuditLogEvent 123 / Controller 75 / Module 36 / Cron 2 均不变。代码发布候选与 Release 自动化已 GO；真实 DB/COS/ingress/ACL/API/Worker fleet/外部通道验收前生产仍 NO-GO。
