@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { type Member, OrganizationStatus, Prisma, Role, type Notification } from '@prisma/client';
+import { type Member, OrganizationStatus, Prisma, type Notification } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
@@ -76,10 +76,7 @@ export class NotificationReadService {
       select: { organizationId: true },
     });
     const activeOrgIds = depts.map((d) => d.organizationId);
-    const isManagement =
-      currentUser.role === Role.SUPER_ADMIN ||
-      currentUser.role === Role.ADMIN ||
-      (await this.rbac.can(currentUser, 'notification.read.record'));
+    const isManagement = await this.rbac.can(currentUser, 'notification.read.record');
     return {
       isMember: true,
       isFormalMember: isFormalMemberGradeCode(member.gradeCode),

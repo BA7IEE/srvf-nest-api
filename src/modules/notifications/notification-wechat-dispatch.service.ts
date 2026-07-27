@@ -207,7 +207,7 @@ export class NotificationWechatDispatchService {
     user: LockedDurableBroadcastUser,
     now: Date,
   ): Promise<boolean> {
-    if (user.role === Role.SUPER_ADMIN || user.role === Role.ADMIN) return true;
+    if (user.role === Role.SUPER_ADMIN) return true;
 
     const bindings = await tx.$queryRaw<Array<{ id: string; roleId: string }>>(Prisma.sql`
       SELECT "id", "roleId"
@@ -402,12 +402,11 @@ export class NotificationWechatDispatchService {
     return audience;
   }
 
-  // 管理层判定(仅 management 可见档用):SUPER_ADMIN / ADMIN 或持 notification.read.record。
+  // 管理层判定(仅 management 可见档用):SUPER_ADMIN 或持 notification.read.record。
   private async resolveIsManagement(
     user: { id: string; role: Role; memberId: string | null } | undefined,
   ): Promise<boolean> {
     if (!user) return false;
-    if (user.role === Role.SUPER_ADMIN || user.role === Role.ADMIN) return true;
     const payload: CurrentUserPayload = {
       id: user.id,
       username: '',

@@ -44,6 +44,7 @@ describe('CMS 内容发布模块(第 28 模块)app/v1 会员读取面 e2e(5 档�
   let level1Primary: Caller; // grade=level-1,ACTIVE PRIMARY→orgA
   let level3NoOrg: Caller; // grade=level-3,无 current org
   let mgmtAuth: string; // biz-admin(持 content.read.record → isManagement)
+  let plainAdminAuth: string; // 仅 Role.ADMIN,无 content.read.record
   let unlinkedAuth: string; // 无绑定 member → canUseApp=false
   let inactiveLevel3Auth: string; // grade=level-3 但 member INACTIVE → canUseApp=false
 
@@ -153,14 +154,27 @@ describe('CMS 内容发布模块(第 28 模块)app/v1 会员读取面 e2e(5 档�
       skipDuplicates: true,
     });
 
-    // mgmt caller:ADMIN 用户 + biz-admin 角色 + 绑定一个 ACTIVE member(canUseApp 需要 member)。
-    const mgmtUser = await createTestUser(app, { username: 'con_mgmt', role: Role.ADMIN });
+    // mgmt caller:普通 USER + 显式 biz-admin RoleBinding + ACTIVE member。
+    const mgmtUser = await createTestUser(app, { username: 'con_mgmt', role: Role.USER });
     const mgmtMember = await prisma.member.create({
       data: { memberNo: 'CON-mgmt', displayName: 'mgmt', status: 'ACTIVE' },
     });
     await prisma.user.update({ where: { id: mgmtUser.id }, data: { memberId: mgmtMember.id } });
     await grantBizAdminToUser(app, mgmtUser.id, bizAdminRoleId);
     mgmtAuth = (await loginAs(app, 'con_mgmt')).authHeader;
+
+    const plainAdmin = await createTestUser(app, {
+      username: 'con_plain_admin',
+      role: Role.ADMIN,
+    });
+    const plainAdminMember = await prisma.member.create({
+      data: { memberNo: 'CON-plain-admin', displayName: 'plain-admin', status: 'ACTIVE' },
+    });
+    await prisma.user.update({
+      where: { id: plainAdmin.id },
+      data: { memberId: plainAdminMember.id },
+    });
+    plainAdminAuth = (await loginAs(app, 'con_plain_admin')).authHeader;
 
     // PR-D 六账号矩阵:正式队员真值只由 ACTIVE member + gradeCode=level-1…level-7 决定。
     volunteerPrimary = await makeMember('con_vol_primary', 'ACTIVE', 'volunteer');
@@ -290,6 +304,13 @@ describe('CMS 内容发布模块(第 28 模块)app/v1 会员读取面 e2e(5 档�
       expect(ids).not.toContain(cDeptA);
       expect(ids).not.toContain(cDeptB);
     });
+
+    it('裸 ADMIN(无 content.read.record):不天然命中 management', async () => {
+      const ids = await listedIds(plainAdminAuth);
+      expect(ids).toContain(cPublic);
+      expect(ids).toContain(cMember);
+      expect(ids).not.toContain(cMgmt);
+    });
   });
 
   // ============ 详情矩阵:正向 200 + 负向 404 防枚举 ============
@@ -334,6 +355,10 @@ describe('CMS 内容发布模块(第 28 模块)app/v1 会员读取面 e2e(5 档�
       expect(res.status).toBe(200);
       expect(res.body.data.id).toBe(cMgmt);
       expect(res.body.data.visibilityCode).toBe('management');
+    });
+
+    it('裸 ADMIN:management 档 → 404 防枚举', async () => {
+      expectBizError(await detailApp(plainAdminAuth, cMgmt), BizCode.CONTENT_NOT_FOUND);
     });
 
     it('详情读者出参零敏感:无 authorUserId / 无 visibleOrganizationIds(department 档亦不泄露 orgId 列表)', async () => {

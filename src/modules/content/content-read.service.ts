@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { OrganizationStatus, Prisma, Role, type Content, type Member } from '@prisma/client';
+import { OrganizationStatus, Prisma, type Content, type Member } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
@@ -57,7 +57,7 @@ export class ContentReadService {
   // 准入已确保 member ACTIVE 且未软删,故 isMember 恒 true;
   // isFormalMember = gradeCode ∈ level-1…level-7;
   // activeOrgIds = 活跃 PRIMARY membership 的组织(org ACTIVE 且未软删),仅供 department 档。
-  // isManagement = rbac.can('content.read.record') ∨ role ∈ {SUPER_ADMIN, ADMIN}。
+  // isManagement = SUPER_ADMIN 或明确持有 content.read.record；统一由 rbac.can 判定。
   private async resolveCtx(
     currentUser: CurrentUserPayload,
     member: Pick<Member, 'id' | 'gradeCode'>,
@@ -75,11 +75,7 @@ export class ContentReadService {
     const activeOrgIds = depts.map((d) => d.organizationId);
     const isFormalMember = isFormalMemberGradeCode(member.gradeCode);
 
-    // 管理层:rbac.can 命中 ∨ Role enum 在 {SUPER_ADMIN, ADMIN}(评审稿 §4.1)。
-    const isManagement =
-      currentUser.role === Role.SUPER_ADMIN ||
-      currentUser.role === Role.ADMIN ||
-      (await this.rbac.can(currentUser, 'content.read.record'));
+    const isManagement = await this.rbac.can(currentUser, 'content.read.record');
 
     return { isMember: true, isFormalMember, activeOrgIds, isManagement };
   }

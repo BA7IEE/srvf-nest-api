@@ -837,13 +837,13 @@ describe('notification publishGeneration · two-app PostgreSQL fence', () => {
     }
   });
 
-  it('User role downgrade writer-first：management permission 等 User shared lock 后按 USER 拒绝', async () => {
+  it('User role downgrade writer-first：SUPER_ADMIN 降为裸 ADMIN 后按新 management 语义拒绝', async () => {
     const { intent, notificationId, memberId, templateId } = await createClaimedWechatChild();
     const user = await prisma.user.findFirstOrThrow({
       where: { memberId, deletedAt: null },
       select: { id: true },
     });
-    await prisma.user.update({ where: { id: user.id }, data: { role: Role.ADMIN } });
+    await prisma.user.update({ where: { id: user.id }, data: { role: Role.SUPER_ADMIN } });
     await prisma.notification.update({
       where: { id: notificationId },
       data: { visibilityCode: 'management' },
@@ -851,7 +851,7 @@ describe('notification publishGeneration · two-app PostgreSQL fence', () => {
     const reached = deferred<BackendIdentity>();
     const release = deferred();
     const mutation = prisma.$transaction(async (tx) => {
-      await tx.user.update({ where: { id: user.id }, data: { role: Role.USER } });
+      await tx.user.update({ where: { id: user.id }, data: { role: Role.ADMIN } });
       reached.resolve(await readBackendIdentity(tx));
       await release.promise;
     });

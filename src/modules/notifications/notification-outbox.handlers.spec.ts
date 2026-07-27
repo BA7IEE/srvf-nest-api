@@ -1411,6 +1411,8 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
     memberId: string;
     gradeCode: string | null;
     organizationIds?: string[];
+    role?: Role;
+    hasManagementPermission?: boolean;
   }
 
   function buildWechatRootAudience(members: WechatAudienceMemberSpec[]) {
@@ -1418,10 +1420,10 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       id: memberId,
       gradeCode,
     }));
-    const userRows = members.map(({ memberId }) => ({
+    const userRows = members.map(({ memberId, role }) => ({
       id: `u-${memberId}`,
       memberId,
-      role: Role.USER,
+      role: role ?? Role.USER,
       openid: `openid-${memberId}`,
     }));
     const membershipRows = members.flatMap(({ memberId, organizationIds = [] }) =>
@@ -1447,7 +1449,20 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
     const templates = {
       getEnabledTemplateId: jest.fn().mockResolvedValue('wechat-template-1'),
     };
-    const rbac = { can: jest.fn().mockResolvedValue(false) };
+    const managementPermissionUserIds = new Set(
+      members
+        .filter(({ hasManagementPermission }) => hasManagementPermission)
+        .map(({ memberId }) => `u-${memberId}`),
+    );
+    const rbac = {
+      can: jest
+        .fn()
+        .mockImplementation((user: { id: string; role: Role }) =>
+          Promise.resolve(
+            user.role === Role.SUPER_ADMIN || managementPermissionUserIds.has(user.id),
+          ),
+        ),
+    };
     return {
       prisma,
       rbac,
@@ -1520,6 +1535,22 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
     await expect(
       f.service.resolveDurableBroadcastMemberIds(visibilityNotification('department', ['org-a'])),
     ).resolves.toEqual(['m-volunteer-org-a']);
+  });
+
+  it('WeChat management root 不把裸 ADMIN 当收件人', async () => {
+    const f = buildWechatRootAudience([
+      { memberId: 'm-plain-admin', gradeCode: null, role: Role.ADMIN },
+      { memberId: 'm-super-admin', gradeCode: null, role: Role.SUPER_ADMIN },
+      {
+        memberId: 'm-explicit-reader',
+        gradeCode: null,
+        hasManagementPermission: true,
+      },
+    ]);
+
+    await expect(
+      f.service.resolveDurableBroadcastMemberIds(visibilityNotification('management')),
+    ).resolves.toEqual(['m-super-admin', 'm-explicit-reader']);
   });
 
   it('WeChat directed 显式收件人不受 gradeCode 影响', async () => {
@@ -1830,5 +1861,26 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       ),
     ).resolves.toBeNull();
     expect(management.rbac.can).not.toHaveBeenCalled();
+  });
+
+  it('final management recipient eligibility 不把裸 ADMIN 当管理层', async () => {
+    const plainAdmin = buildRecipientEligibility({
+      user: {
+        id: 'cm00000000000000000000003',
+        memberId: 'cm00000000000000000000002',
+        openid: 'locked-openid',
+        role: Role.ADMIN,
+        status: UserStatus.ACTIVE,
+      },
+    });
+
+    await expect(
+      plainAdmin.service.authorizeDurableBroadcastRecipient(
+        plainAdmin.tx as never,
+        visibilityNotification('management'),
+        plainAdmin.memberId,
+        NOW,
+      ),
+    ).resolves.toBeNull();
   });
 });
