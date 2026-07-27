@@ -38,7 +38,7 @@
 - **队员/报名真值**:正式=ACTIVE+grade level-1..7；报名 create/approve/递补锁后重验 live+ACTIVE，reopen 只回 pending
 - **Attachment storage Phase1**:ledger接 Attachment；Content根锁、provider外；无key FK/非 repo-wide closure；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)
 - **保险 v3(v0.59.0，未 deploy)**:PR1–PR4 gate/约束/evidence 已交付，脏数 fail-fast；Admin 360 overview 已补；切换须 drain 且禁混档
-- **活动责任(Unreleased，仅本地联调)**:代码冻结；生产迁移/配置/认领/部署未做，上线须按 [`runbook`](ops/activity-responsibility-workflow-rollout.md) 批准并验 digest
+- **活动责任(未发·本地)**:取消闭环=cancelled/null;生产迁移/配置/认领/部署未做,按 [`runbook`](ops/activity-responsibility-workflow-rollout.md) 审批验 digest
 - **安全**:审计SA全量/持码非SA=self|USER；敏感读闭锁/extra禁PII；C/N管理=SA|GLOBAL读码(ADMIN不直通)、部门=四类有效任职；RBAC任期单轨；ops-admin现任+常驻/同锁重读
 - **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 

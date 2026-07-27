@@ -2775,6 +2775,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
           "draft",
           "publish-review-pending",
           "published",
+          "cancelled",
           "waiting-attendance-declaration",
           "attendance-first-review",
           "attendance-returned",

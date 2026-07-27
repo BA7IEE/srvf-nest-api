@@ -1,0 +1,3 @@
+- 修正 App managed activity 责任闭环的取消语义：Activity 为 `cancelled` 时，详情 `closure.status` 固定为 `cancelled` 且 `nextAction=null`，优先于考勤声明、退回、一审、终审、未解决与 closed 派生；列表维持顶层 `statusCode + nextAction` 扁平契约。
+- OpenAPI 仅对 `AppManagedActivityClosureDto.status` additive 增加 `cancelled`，未新增 endpoint、BizCode、schema、migration、Permission 或 Role。
+- 本次未修改活动取消状态机、报名/考勤数据、通知、durable outbox、SMS/微信日志、audit、贡献值算法；未执行 production migration/seed、部署、release 或 tag。

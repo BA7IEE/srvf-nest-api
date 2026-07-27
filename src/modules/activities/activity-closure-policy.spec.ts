@@ -105,6 +105,92 @@ describe('ActivityClosurePolicy', () => {
     ).toEqual(expected);
   });
 
+  it.each([
+    ['without attendance history', {}],
+    [
+      'with a returned sheet',
+      {
+        attendance: {
+          total: 1,
+          pending: 0,
+          returned: 1,
+          pendingFinalReview: 0,
+          unresolved: 1,
+        },
+      },
+    ],
+    [
+      'with a pending sheet',
+      {
+        attendance: {
+          total: 1,
+          pending: 1,
+          returned: 0,
+          pendingFinalReview: 0,
+          unresolved: 1,
+        },
+      },
+    ],
+    [
+      'with a pending final review sheet',
+      {
+        attendance: {
+          total: 1,
+          pending: 0,
+          returned: 0,
+          pendingFinalReview: 1,
+          unresolved: 1,
+        },
+      },
+    ],
+    [
+      'with another unresolved sheet',
+      {
+        attendance: {
+          total: 1,
+          pending: 0,
+          returned: 0,
+          pendingFinalReview: 0,
+          unresolved: 1,
+        },
+      },
+    ],
+    [
+      'after attendance was declared complete',
+      {
+        attendanceDeclaredCompleteAt: new Date('2026-07-24T07:30:00.000Z'),
+      },
+    ],
+    [
+      'with completed-style resolved attendance data',
+      {
+        attendanceDeclaredCompleteAt: new Date('2026-07-24T07:30:00.000Z'),
+        attendance: {
+          total: 2,
+          pending: 0,
+          returned: 0,
+          pendingFinalReview: 0,
+          unresolved: 0,
+        },
+      },
+    ],
+  ] as const)('cancelled stays terminal %s', (_label, patch) => {
+    expect(
+      policy.decide(
+        {
+          ...base,
+          ...patch,
+          statusCode: 'cancelled',
+          attendance: {
+            ...base.attendance,
+            ...('attendance' in patch ? patch.attendance : {}),
+          },
+        },
+        now,
+      ),
+    ).toEqual({ status: 'cancelled', nextAction: null });
+  });
+
   it('does not let rejected or final-rejected sheets prevent closure when unresolved is zero', () => {
     expect(
       policy.decide(

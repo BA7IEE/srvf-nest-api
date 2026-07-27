@@ -835,6 +835,108 @@ describe('App managed activities core', () => {
     );
   });
 
+  it('keeps cancelled managed activity list and detail terminal without database writes', async () => {
+    const owner = await createMember('cancelled-closure-owner');
+    const declaredAt = new Date('2020-07-23T06:00:00.000Z');
+    const activity = await prisma.activity.create({
+      data: {
+        title: 'Managed cancelled closure activity',
+        activityTypeCode,
+        organizationId,
+        startAt: new Date('2020-07-23T01:00:00.000Z'),
+        endAt: new Date('2020-07-23T05:00:00.000Z'),
+        location: '深圳',
+        statusCode: 'cancelled',
+        initiatorMemberId: owner.memberId,
+        attendanceDeclaredCompleteAt: declaredAt,
+        attendanceDeclaredCompleteByUserId: owner.userId,
+      },
+      select: { id: true },
+    });
+    await prisma.activityResponsibilityAssignment.create({
+      data: {
+        activityId: activity.id,
+        memberId: owner.memberId,
+        responsibilityType: 'owner',
+        canManageRegistrations: true,
+        canManageAttendance: true,
+        assignedByUserId: owner.userId,
+        source: 'publish',
+      },
+    });
+    await prisma.attendanceSheet.createMany({
+      data: ['returned', 'pending', 'pending_final_review', 'approved'].map((statusCode) => ({
+        activityId: activity.id,
+        submitterUserId: owner.userId,
+        statusCode,
+      })),
+    });
+
+    const before = {
+      activity: await prisma.activity.findUniqueOrThrow({
+        where: { id: activity.id },
+        select: {
+          statusCode: true,
+          attendanceDeclaredCompleteAt: true,
+          updatedAt: true,
+        },
+      }),
+      sheets: await prisma.attendanceSheet.findMany({
+        where: { activityId: activity.id },
+        select: { id: true, statusCode: true, updatedAt: true },
+        orderBy: { id: 'asc' },
+      }),
+      auditCount: await prisma.auditLog.count({ where: { resourceId: activity.id } }),
+    };
+
+    const detail = await request(httpServer(app))
+      .get(`/api/app/v1/my/managed-activities/${activity.id}`)
+      .set('Authorization', owner.auth)
+      .expect(200);
+    expect(detail.body.data.activity.statusCode).toBe('cancelled');
+    expect(detail.body.data.closure).toEqual({
+      attendanceDeclaredCompleteAt: declaredAt.toISOString(),
+      status: 'cancelled',
+      nextAction: null,
+    });
+
+    const list = await request(httpServer(app))
+      .get('/api/app/v1/my/managed-activities')
+      .set('Authorization', owner.auth)
+      .expect(200);
+    const item = list.body.data.items.find(
+      (candidate: { activityId: string }) => candidate.activityId === activity.id,
+    );
+    expect(item).toEqual(
+      expect.objectContaining({
+        statusCode: 'cancelled',
+        nextAction: null,
+      }),
+    );
+    expect(item).not.toHaveProperty('closure');
+
+    await expect(
+      prisma.activity.findUniqueOrThrow({
+        where: { id: activity.id },
+        select: {
+          statusCode: true,
+          attendanceDeclaredCompleteAt: true,
+          updatedAt: true,
+        },
+      }),
+    ).resolves.toEqual(before.activity);
+    await expect(
+      prisma.attendanceSheet.findMany({
+        where: { activityId: activity.id },
+        select: { id: true, statusCode: true, updatedAt: true },
+        orderBy: { id: 'asc' },
+      }),
+    ).resolves.toEqual(before.sheets);
+    await expect(prisma.auditLog.count({ where: { resourceId: activity.id } })).resolves.toBe(
+      before.auditCount,
+    );
+  });
+
   it('rolls back the attendance declaration when its required audit write fails', async () => {
     const owner = await createMember('audit-rollback');
     const activity = await prisma.activity.create({
