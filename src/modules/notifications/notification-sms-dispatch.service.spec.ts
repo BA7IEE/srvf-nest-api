@@ -26,6 +26,39 @@ const TencentClientMock = sms.v20210111.Client as unknown as jest.Mock & {
 };
 
 const ALLOW_EFFECT = () => Promise.resolve();
+const HIGH_RISK_ERROR_MESSAGE = [
+  'SecretId=TEST_SECRET',
+  'SecretKey=TEST_KEY',
+  'https://provider.example.com/private/path',
+  '13800138000',
+  'openid-sensitive-value',
+  'bucket/private/object-key',
+  'Authorization: Bearer test-token',
+  'postgresql://user:password@db.internal:5432/app',
+].join(' ');
+
+function loggedText(spy: jest.SpyInstance): string {
+  return spy.mock.calls
+    .flat()
+    .map((value) => (typeof value === 'string' ? value : JSON.stringify(value)))
+    .join('\n');
+}
+
+function expectNoSensitiveLogContent(text: string): void {
+  for (const forbidden of [
+    'TEST_SECRET',
+    'TEST_KEY',
+    'https://provider.example.com/private/path',
+    '13800138000',
+    'openid-sensitive-value',
+    'bucket/private/object-key',
+    'Authorization',
+    'test-token',
+    'postgresql://user:password@db.internal:5432/app',
+  ]) {
+    expect(text).not.toContain(forbidden);
+  }
+}
 
 // 统一通知 S5:NotificationSmsDispatchService 单测(评审稿 §4 / §8.3;纯 unit,mock prisma + router + settings + rbac)。
 // 锁:① 通道未就绪 → 抛 SmsChannelUnavailableError(零计费);② 仅可见且有手机者计入受众;
@@ -431,6 +464,34 @@ describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () =>
       errCode: 'LimitExceeded',
     });
     expect(deliveries.find((d) => d.status === 'sent')).toBeDefined();
+  });
+
+  it('SMS 逐收件人失败不把 raw error.message 写入普通日志，且 delivery/provider 语义不变', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const providerError = new Error(HIGH_RISK_ERROR_MESSAGE, {
+      cause: new Error(`cause ${HIGH_RISK_ERROR_MESSAGE}`),
+    });
+    providerError.stack = `stack ${HIGH_RISK_ERROR_MESSAGE}`;
+    const { service, notification, router, deliveries } = build({
+      members: [{ memberId: 'm1', phone: '13800138000' }],
+      sendImpl: () => Promise.reject(providerError),
+    });
+
+    try {
+      await expect(service.dispatch(notification)).resolves.toEqual({
+        recipientCount: 1,
+        sent: 0,
+        failed: 1,
+        skipped: 0,
+      });
+      expect(router.invoke).toHaveBeenCalledTimes(1);
+      expect(deliveries).toContainEqual(
+        expect.objectContaining({ status: 'failed', reasonCode: 'send-failed' }),
+      );
+      expectNoSensitiveLogContent(loggedText(warnSpy));
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it('中途通道不可用(SmsChannelUnavailableError)→ 中止剩余,零成本不写 FAILED', async () => {

@@ -46,6 +46,7 @@ import {
   NOTIFICATION_VISIBILITY_MANAGEMENT,
   WECHAT_SUBSCRIPTION_QUOTA_CAP,
 } from './notification.constants';
+import { notificationDispatchFailureLog } from './notification-dispatch-error';
 import { buildWechatSubscribeData } from './notification.wechat-data';
 import { WechatSubscribeTemplateService } from './wechat-subscribe-template.service';
 
@@ -97,7 +98,9 @@ export class NotificationWechatDispatchService {
     } catch (err) {
       // 防御:派发整体异常不外冒(不影响 publish 响应);逐人异常已在 loop 内 catch。
       this.logger.error(
-        `wechat dispatch failed for notification=${notification.id}: ${(err as Error).message}`,
+        notificationDispatchFailureLog('wechat-broadcast', err, {
+          notificationId: notification.id,
+        }),
       );
     }
   }
@@ -135,7 +138,9 @@ export class NotificationWechatDispatchService {
       await this.dispatchOne(notification, templateId, { memberId: recipientMemberId, openid });
     } catch (err) {
       this.logger.error(
-        `wechat directed dispatch failed for notification=${notification.id}: ${(err as Error).message}`,
+        notificationDispatchFailureLog('wechat-directed', err, {
+          notificationId: notification.id,
+        }),
       );
     }
   }
@@ -343,7 +348,9 @@ export class NotificationWechatDispatchService {
         await this.dispatchOne(notification, templateId, member);
       } catch (err) {
         this.logger.warn(
-          `wechat dispatch one failed (notification=${notification.id} member=${member.memberId}): ${(err as Error).message}`,
+          notificationDispatchFailureLog('wechat-recipient', err, {
+            notificationId: notification.id,
+          }),
         );
       }
     }

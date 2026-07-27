@@ -37,9 +37,10 @@ export class DevStubSmsProvider implements SmsProvider {
     return Promise.resolve({ providerMsgId: null });
   }
 
-  // 通知兜底(统一通知 S5,评审稿 §4):零变量模板,无明文码,非生产通道,同 sendBirthdayGreeting 例外边界。
+  // 通知兜底(统一通知 S5,评审稿 §4):普通应用日志不记录 destination。
   sendNotification(input: SendNotificationInput): Promise<SendVerifyCodeResult> {
-    this.logger.debug(`[DEV_STUB] sendNotification phone=${input.phone}`);
+    void input;
+    this.logger.debug({ event: 'sms_provider_send_started', operation: 'notification' });
     return Promise.resolve({ providerMsgId: null });
   }
 }

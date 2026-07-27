@@ -6,6 +6,8 @@
 
 本模块自 2026-06-25 由「生日批单服务」扩为**统一通知中枢**(GAP-005;冻结评审稿 [`/docs/archive/reviews/unified-notification-dispatcher-review.md`](../../../docs/archive/reviews/unified-notification-dispatcher-review.md))。当前并存关注点:
 
+> 业务负责人于 2026-07-27 最终确认 **Decision 15.1=B / Decision 15.2=B**：management 仅认 SUPER_ADMIN 或明确 GLOBAL read grant，Role.ADMIN 不自动放行；department 认 PRIMARY/SECONDARY/TEMPORARY/SUPPORT 四类当前有效 Membership，且 Organization 必须 ACTIVE、未软删。App pull、SMS/WeChat 根受众与 WeChat Effect 前最终复核同义。
+
 - **生日祝福短信 job**(G-7 首个落地点;2026-06-11 B 队列 goal F5):每日 09:00(Asia/Shanghai)`@Cron` 只选取当日生日活跃队员并按「日期 + member」写 durable outbox intent;独立 worker 执行时才解析 `User.phone`、调用 [`/src/modules/sms/`](../sms/)`SmsProviderRouter.sendBirthdayGreeting` 并落 `sms_send_logs`;本仓两个 `@Cron` 之一。
 - **到期提醒 job**(v0.47.0):每日 09:00(Asia/Shanghai)第二个 `@Cron`;证书 60 天提醒 + 到期 `verified→expired`、个人保险 30 天、队保单 30 天的 marker / 状态 / audit 与 outbox intent 同事务落库;独立 worker 后续执行站内与微信 Effect,marker + 状态条件更新保证二跑幂等。
 - **统一通知 S1 站内信渠道**(2026-06-25):admin 撰写/发布面(`NotificationAdminController` 8 端点)+ 会员 app 拉取面(`NotificationAppController` 4 端点);`Notification` 广播 + `NotificationRead` 已读;**站内 = pull 零发送**;可见性**复用 `content.visibility`**(去 public = 4 档)。`formal_member` 由 ACTIVE Member + 共享 `isFormalMemberGradeCode()` 决定；department 明确认 PRIMARY/SECONDARY/TEMPORARY/SUPPORT 四类当前有效任职；management 仅认 SUPER_ADMIN 或当前有效 GLOBAL `notification.read.record`，Role.ADMIN 不天然放行；feed/detail/mark-read/unread 与 SMS/WeChat 广播共用该真值，directed 仍只认收件人本人。
@@ -25,6 +27,7 @@
 - 考勤 `firstReturn`/`finalReturn`/`finalApprove` 同样在 Sheet 状态、audit 的业务 transaction 内 enqueue；退回收件人从 active attendance assignment/提交人解析，终审逐 record snapshot；milestone payload 只含稳定 5 分门槛正文，aggregate=`team_join_application`，同 application+threshold 重放必须完整同内容。enqueue 失败整体回滚，worker/provider 失败不得重放业务写。
 - membership audience / 定向归属组织只接受当前有效 PRIMARY(`ACTIVE + startedAt<=now + endedAt=null + 未软删`)；本口径不改变 durable Outbox 的 enqueue 位置与事务顺序。
 - department 广播是独立读取可见档：App pull、SMS/WeChat 根受众与 WeChat 最终复核均接受当前有效 PRIMARY/SECONDARY/TEMPORARY/SUPPORT；不改变上一条 directed/membership audience 的 PRIMARY 语义。
+- 通知派发普通日志只记录固定 `event`、闭集 `operation`、后端映射的 `safeErrorCategory/safeErrorCode`、`retryable` 与必要稳定 ID；未知错误固定 `unexpected-error/code=null`。禁止 message/stack/cause、destinationRef、手机号、openid、object key、provider URL、secret/token/Authorization；持久化 delivery/outbox/sms_send_logs 诊断语义不因此改变。
 
 - **本仓恰好两个 `@Cron`**:生日批 + v0.47.0 到期提醒;`ScheduleModule.forRoot()` 在 `app.module.ts` 全局装配。第三个 cron / 独立业务调度 interval/timeout 仍须独立 D 档评审；随单 intent 启停并等待在途续租的 outbox lease heartbeat 是本 D 档已拍板的 worker 正确性循环，不是新调度器
 - **选取六条件**(评审稿 E-B5,全部同时满足):`MemberProfile.birthDate` 月日=今天(固定 UTC+8 日界)/ profile 未软删 / Member ACTIVE 未软删 / User 存在 / `User.phone` 非空 / User ACTIVE 未软删;**仅发 `User.phone`**(拍板⑤,`MemberProfile.mobile` 永不使用);2/29 仅闰年当天发(不顺延)

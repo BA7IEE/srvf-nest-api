@@ -44,6 +44,7 @@ import {
   NOTIFICATION_CHANNEL_SMS,
   NOTIFICATION_VISIBILITY_MANAGEMENT,
 } from './notification.constants';
+import { notificationDispatchFailureLog } from './notification-dispatch-error';
 
 // 短信兜底受众单元(已解析:可见 + 有手机的可计费收件人)。
 interface SmsRecipient {
@@ -197,18 +198,17 @@ export class NotificationSmsDispatchService {
       } catch (err) {
         if (err instanceof SmsChannelUnavailableError) {
           this.logger.warn(
-            `sms notification dispatch aborted: channel unavailable (${err.message}) notification=${notification.id}`,
+            notificationDispatchFailureLog('sms-broadcast', err, {
+              notificationId: notification.id,
+            }),
           );
           break;
         }
         summary.failed += 1;
-        if (err instanceof SmsProviderSendError) {
-          this.logger.warn(
-            `sms notification send failed phone=${maskPhone(recipient.phone)} errCode=${err.errCode}`,
-          );
-        }
         this.logger.warn(
-          `sms notification recipient failed (notification=${notification.id} member=${recipient.memberId}): ${(err as Error).message}`,
+          notificationDispatchFailureLog('sms-recipient', err, {
+            notificationId: notification.id,
+          }),
         );
       }
     }

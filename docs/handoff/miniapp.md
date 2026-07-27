@@ -118,6 +118,10 @@
 
 ## 3. 缺口台账(gap-ledger)
 
+> **当前运行时真值（2026-07-27）**：招新/入队、报名 L1、活动 L2、责任 L3、考勤 L4 producer 均在业务事务内写 durable intent；worker 在 commit 后执行 Notification / 微信 / SMS Effect，provider 失败进入 retry/dead 且不回滚已提交业务。App API/DTO 未变化，前端继续消费既有 feed。
+>
+> **历史实现，已被 2026-07-26 L1–L4 durable outbox 收口取代。** 下方 GAP-005 S1–S5 长段仅保留发布时历史，commit 后 best-effort 描述不是当前实现。
+
 | # | 诉求 | 期望端点 | 状态 |
 |---|---|---|---|
 | GAP-005 | 会员站内信(向队员推送通知/公告;站内 feed + 未读红点 + 标记已读)+ 微信订阅推送 | `app/v1/notifications`(list/unread-count/detail/mark-read + subscriptions/ack·status)| ✅ **已发 v0.32.0**(S1–S5;#449–#453 → bump #454 → tag `v0.32.0` / Release Latest;2026-06-27;以下逐切片 `本 PR` / Unreleased 为交付时态历史标注)。**S1 站内信 + S2 微信订阅 quota 渠道已交付**(本 PR,Unreleased;统一通知模块前两切片,冻结评审稿 `docs/archive/reviews/unified-notification-dispatcher-review.md`)。会员侧 = 站内信 feed(**4 档可见性复用 content.visibility 去 public**)+ 未读数 badge + mark-read 幂等(见 §2);**S2 微信订阅消息 quota** = `wx.requestSubscribeMessage` 接受后 **ack 上报 → 后端 quota +1 封顶 5**,后端 publish 勾微信时按配额扣减发送(只推已订阅会员),前端据 `status` 剩余配额判补授权(见 §2「微信订阅授权上报」行)。**S3 producer 接入已交付**(本 PR,Unreleased):招新**发号 / 入队**完成后,后端自动向当事队员发**定向**站内信(`recruitment` 类型;发号另带微信),复用 S1 feed 4 端点**无新端点**,定向通知**仅本人可见**(他人 404 防枚举);**报名前 5 触发不做**(申请人非队员,仍走 `query`/`query-by-phone` 查询进度),见 §2「系统定向通知」行。**S4 活动·考勤 producer 定向触发已交付**(本 PR,Unreleased):报名审批结果 / 活动取消(遍历已报名者)/ 考勤终审结果·贡献值三处队员事件后端自动发**定向**站内信(`activity-reminder` 类型,**仅站内**,微信 opt-in 延后),复用 S1 feed **无新端点 / 0 schema / 0 新 RBAC 码 / 0 BizCode**,仅本人可见(见 §2「系统定向通知(S4)」行)。**S5 短信兜底已交付**(本 PR,Unreleased;admin 显式发起紧急召集兜底,**无 miniapp 新面**——会员仅收到「请打开 App 查看」短信)。**报名前 openid 非会员推送路 / 真·全员短信批处理异步**待后续切片另出 goal |

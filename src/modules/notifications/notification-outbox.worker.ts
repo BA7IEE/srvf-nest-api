@@ -11,6 +11,7 @@ import {
   NotificationOutboxHandlers,
   UnsupportedNotificationOutboxEventError,
 } from './notification-outbox.handlers';
+import { notificationDispatchFailureLog } from './notification-dispatch-error';
 import {
   type ClaimedNotificationOutboxIntent,
   NotificationOutboxGenerationConflictError,
@@ -64,9 +65,7 @@ export class NotificationOutboxWorker implements OnApplicationShutdown, OnModule
         const result = await this.drainOnce();
         if (result.claimed === 0) await this.waitForNextPoll(500);
       } catch (error) {
-        this.logger.warn(
-          `notification outbox drain failed worker=${this.workerId} errorClass=${errorClass(error)}`,
-        );
+        this.logger.warn(notificationDispatchFailureLog('outbox-drain', error));
         await this.waitForNextPoll(500);
       }
     }
@@ -179,8 +178,12 @@ export class NotificationOutboxWorker implements OnApplicationShutdown, OnModule
       summary.failed += 1;
       if (result.dead) summary.dead += 1;
       this.logger.warn(
-        `notification outbox intent failed id=${intent.id} eventType=${intent.eventType} ` +
-          `attempt=${intent.attempts} errorClass=${errorClass(result.error)}`,
+        notificationDispatchFailureLog('outbox-intent', result.error, {
+          intentId: intent.id,
+          aggregateType: intent.aggregateType,
+          aggregateId: intent.aggregateId,
+          attempt: intent.attempts,
+        }),
       );
     }
     return summary;
@@ -302,8 +305,4 @@ function startLeaseHeartbeat(
     },
     failure: () => failed,
   };
-}
-
-function errorClass(error: unknown): string {
-  return error instanceof Error ? error.name : typeof error;
 }

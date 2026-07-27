@@ -34,12 +34,12 @@
 - **多实例当前事实**:10 个 throttler 共用 PG bucket；RBAC 与 SMS/WeChat/Storage/Realname settings 每次直读已提交 PostgreSQL；Effect 绑定单份配置快照，DB 异常 fail-closed，零进程正确性缓存
 - **Storage production**:空库 migration/seed→窄配置 bootstrap；固定COS location+可解密凭证，disabled 重启不放行 Effect，null/LOCAL/unknown 禁回退；密钥不可轮换，真实 COS/fleet 待验
 - **贡献规则 ACTIVE 槽位**:未软删 ACTIVE 按 `activityTypeCode × attendanceRoleCode` 唯一；迁移、并发与漂移重复 pair 均 fail-closed
-- **Outbox**:PG lease/fence/gen/recip/RBAC/quota；各域同事务，provider外至少一次；考勤capped前后/app门槛一次；生产未部署，切换排空API/worker/intents、禁混档。取消=displayName（memberNo）/匿名(禁Member.id)；T active owner/F legacy publisher；键/目标不变
+- **Outbox**:PG lease/fence/gen/recipient/RBAC/quota；全 producer 业务事务同写 intent，provider事务外至少一次；考勤 capped before/after、同 application+threshold 一次；生产未部署；切换排空 API/worker/intents、禁混跑。取消=displayName（memberNo）/匿名(禁 Member.id)；T active owner/F legacy publisher；键/目标不变
 - **队员/报名真值**:正式=ACTIVE+grade level-1..7；报名 create/approve/递补锁后重验 live+ACTIVE，reopen 只回 pending
 - **Attachment storage Phase1**:ledger接 Attachment；Content根锁、provider外；无key FK/非 repo-wide closure；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)
 - **保险 v3(v0.59.0，未 deploy)**:PR1–PR4 gate/约束/evidence 已交付，脏数 fail-fast；Admin 360 overview 已补；切换须 drain 且禁混档
 - **活动责任(未发·本地)**:取消闭环=cancelled/null;生产迁移/配置/认领/部署未做,按 [`runbook`](ops/activity-responsibility-workflow-rollout.md) 审批验 digest
-- **安全**:审计SA全量/持码非SA=self|USER；敏感读闭锁/extra禁PII；C/N管理=SA|GLOBAL读码(ADMIN不直通)、部门=四类有效任职；RBAC任期单轨；ops-admin现任+常驻/同锁重读
+- **安全**:审计SA全量/持码非SA=self|USER；敏感读闭锁/extra禁PII；Decision 15.1=B/15.2=B(业务负责人最终确认:2026-07-27):C/N管理=SA|GLOBAL读码(ADMIN不直通)，部门=PRIMARY/SECONDARY/TEMPORARY/SUPPORT 有效任职且组织 ACTIVE 未删；RBAC任期单轨；ops-admin现任+常驻/同锁重读
 - **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)
@@ -61,8 +61,8 @@
 | P1 | 前端联调包剩运维侧 P0-H 演练 + P0-I 排错 SOP(系统侧无动作) |
 | P1 | 保险 gate 未启用、旧 server=0 未验证；真实 ingress/ACL、COS、worker/fleet、registry digest 未验，均为 production GO 硬门 |
 | P1 | P1-22 专业队 gate 配置化;P1-23 isForeigner 历史列改名(对外已用 isNonMainlandDocument) |
-| P2 | scoped 余面(§3);god-service 体量观察;v0.44 接受项(#8/#10/#19/#20#21:通知自有+招新/入队+报名 L1+活动 L2+责任 L3 已收口，考勤待接);单测刻意低(e2e 为主);Mixed 存量 2;snapshot 勿整读 |
-| P3 | SMS / 招新脱敏 retention 手动 SOP(刻意);28003 同轮枚举面(v1 接受);首轮 review 接受 / 延后残项(F7/F8/F13/F18 等)在 NEXT_TASKS |
+| P2 | scoped余面(§3);god-service体量;单测低(e2e主);Mixed=2;snapshot勿整读 |
+| P3 | 考勤审核自由备注是否永久原文进入不可变审计，待独立隐私口径确认 |
 
 ## 5. 开工门禁
 

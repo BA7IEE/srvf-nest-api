@@ -8,7 +8,6 @@ import {
   WECHAT_REQUEST_TIMEOUT_MS,
   WECHAT_STABLE_TOKEN_URL,
   WECHAT_SUBSCRIBE_SEND_URL,
-  maskOpenid,
 } from '../wechat.constants';
 import {
   WechatApiError,
@@ -249,7 +248,7 @@ export class WechatMiniRealProvider implements WechatMiniProvider {
   /**
    * 下发订阅消息(单次 POST,不重试、不管理 token——access_token 由调用方 WechatService 传入并编排重试)。
    * 结果归一为 SendSubscribeMessageResult(**不抛业务异常**:网络/HTTP/超时/非 0 errcode 一律 ok:false)。
-   * E-12:URL query 含 access_token,**禁止整 URL 入日志**;失败仅记 errcode + maskOpenid。
+   * E-12:URL query 含 access_token,**禁止整 URL 入日志**;失败仅记受控 errcode。
    */
   async sendSubscribeMessage(
     accessToken: string,
@@ -276,12 +275,24 @@ export class WechatMiniRealProvider implements WechatMiniProvider {
       });
     } catch (err) {
       const name = err instanceof Error ? err.name : 'UnknownError';
-      this.logger.warn(`wechat subscribe send fetch failed name=${name}`);
+      this.logger.warn({
+        event: 'wechat_subscribe_send_failed',
+        operation: 'subscribe-message',
+        safeErrorCategory: 'provider-timeout',
+        safeErrorCode: 'FETCH_ERROR',
+        retryable: true,
+      });
       return { ok: false, errCode: 'FETCH_ERROR', errMsg: name };
     }
 
     if (!res.ok) {
-      this.logger.warn(`wechat subscribe send http error status=${res.status}`);
+      this.logger.warn({
+        event: 'wechat_subscribe_send_failed',
+        operation: 'subscribe-message',
+        safeErrorCategory: 'provider-timeout',
+        safeErrorCode: 'HTTP_ERROR',
+        retryable: true,
+      });
       return { ok: false, errCode: 'HTTP_ERROR', errMsg: `status=${res.status}` };
     }
 
@@ -289,15 +300,24 @@ export class WechatMiniRealProvider implements WechatMiniProvider {
     try {
       body = (await res.json()) as SubscribeSendWireResponse;
     } catch {
-      this.logger.warn('wechat subscribe send invalid response: non-JSON body');
+      this.logger.warn({
+        event: 'wechat_subscribe_send_failed',
+        operation: 'subscribe-message',
+        safeErrorCategory: 'provider-rejected',
+        safeErrorCode: 'INVALID_RESPONSE',
+        retryable: false,
+      });
       return { ok: false, errCode: 'INVALID_RESPONSE', errMsg: 'non-JSON body' };
     }
 
     if (typeof body.errcode === 'number' && body.errcode !== 0) {
-      // errmsg 来自微信回执不含 secret;openid 掩码后才可入日志(E-13)
-      this.logger.warn(
-        `wechat subscribe send errcode=${body.errcode} openid=${maskOpenid(input.openid)}`,
-      );
+      this.logger.warn({
+        event: 'wechat_subscribe_send_rejected',
+        operation: 'subscribe-message',
+        safeErrorCategory: 'provider-rejected',
+        safeErrorCode: String(body.errcode),
+        retryable: body.errcode === 40001,
+      });
       return {
         ok: false,
         errCode: String(body.errcode),
