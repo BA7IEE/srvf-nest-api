@@ -1,1 +1,0 @@
-- 审计日志读取范围与 GLOBAL RBAC 授权对齐：SUPER_ADMIN 可读取全部，其他持有 `audit-log.read.entry` 的账号仅能读取本人或 USER 操作的记录；list 与 detail 复用同一范围策略，显式过滤在数据库中与强制范围求交。

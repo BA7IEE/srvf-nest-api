@@ -1,1 +1,0 @@
-- 收紧内容附件生命周期：仅草稿中的未引用附件可删，内容附件删除同时要求内容更新权与附件删除权；Content 根锁串行化封面、正文、发布与删除，published/archived 禁删，通用附件路由不可旁路，并以 durable storage ledger 保证 provider 失败可重试恢复。

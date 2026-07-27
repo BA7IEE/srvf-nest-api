@@ -1,1 +1,0 @@
-- 本地活动前端 fixture verify 补齐 `biz-admin` 的 23 项活动责任禁止权限，拒绝 fixture Member 的 active 职务、分管关系及关联职务 RoleBinding 派生授权，并以 OpenAPI 字段 allowlist、L3 blacklist 和完整账号负向矩阵校验 capabilities / organization-options；本次不修改业务模块、endpoint、DTO、BizCode、Permission、Role、schema 或 migration。

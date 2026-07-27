@@ -1,1 +1,0 @@
-- 统一 GLOBAL RoleBinding 当前任期真值，并让 ops-admin 削权与非 SA 委派写在同一 advisory lock 下线性化，同时守住当前有效与 `endedAt=null` 常驻 holder；future/expired actor 不再可委派或枚举目标，seed 对无有效常驻配置 fail-closed 且不改写任期。
