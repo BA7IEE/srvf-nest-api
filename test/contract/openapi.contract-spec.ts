@@ -1525,6 +1525,37 @@ describe('OpenAPI 契约快照', () => {
     expect(JSON.stringify(dataSchema)).not.toContain('LogoutAllResponseDto');
   });
 
+  it('managed activity closure enum additive 支持 cancelled 且列表维持扁平契约', () => {
+    const closureSchema = doc.components?.schemas?.AppManagedActivityClosureDto as OpenApiSchema;
+    const listItemSchema = doc.components?.schemas?.AppManagedActivityListItemDto as OpenApiSchema;
+    const detailSchema = doc.components?.schemas?.AppManagedActivityDetailDto as OpenApiSchema;
+
+    expect(closureSchema?.properties?.status?.enum).toEqual([
+      'draft',
+      'publish-review-pending',
+      'published',
+      'cancelled',
+      'waiting-attendance-declaration',
+      'attendance-first-review',
+      'attendance-returned',
+      'attendance-final-review',
+      'closed',
+    ]);
+    expect(closureSchema?.properties?.nextAction).toEqual({
+      type: 'string',
+      nullable: true,
+    });
+    expect(listItemSchema?.properties?.closure).toBeUndefined();
+    expect(listItemSchema?.properties?.statusCode).toEqual({ type: 'string' });
+    expect(listItemSchema?.properties?.nextAction).toEqual({
+      type: 'string',
+      nullable: true,
+    });
+    expect(detailSchema?.properties?.closure).toEqual({
+      $ref: '#/components/schemas/AppManagedActivityClosureDto',
+    });
+  });
+
   it.each([
     [
       'POST',

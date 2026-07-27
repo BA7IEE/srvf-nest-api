@@ -394,6 +394,7 @@ export class AppManagedActivityClosureDto {
       'draft',
       'publish-review-pending',
       'published',
+      'cancelled',
       'waiting-attendance-declaration',
       'attendance-first-review',
       'attendance-returned',
@@ -405,6 +406,7 @@ export class AppManagedActivityClosureDto {
     | 'draft'
     | 'publish-review-pending'
     | 'published'
+    | 'cancelled'
     | 'waiting-attendance-declaration'
     | 'attendance-first-review'
     | 'attendance-returned'

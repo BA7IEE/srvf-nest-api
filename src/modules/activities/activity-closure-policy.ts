@@ -29,7 +29,7 @@ export class ActivityClosurePolicy {
     }
 
     if (input.statusCode === 'cancelled') {
-      return { status: 'published', nextAction: null };
+      return { status: 'cancelled', nextAction: null };
     }
 
     if (input.attendanceDeclaredCompleteAt === null) {
