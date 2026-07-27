@@ -1,0 +1,3 @@
+- 修正考勤终审入队贡献达标通知：在 Sheet 仍为 `pending_final_review` 时按最新 joining application 的 `cycle.year` 调正式 `computeContribution` 记录 capped before，更新 approved 后同事务再算 capped after；仅真实 `before<5≤after` 时提醒，不再使用 `after-rawDelta`。
+- contribution-met outbox eventKey 固定为 `team-join-contribution-met:{applicationId}:{threshold}`，aggregate 改为 `team_join_application`，稳定 5 分正文不含 Sheet、Record 或动态 after；同一 TeamJoinApplication + threshold 最多一次。普通 `attendance-final:{sheetId}:{finalReviewedAt}:{recordId}` 逐 Record 通知不变。
+- 零 endpoint、DTO、BizCode、schema、migration、Permission、Role、OpenAPI 变化；未修改正式贡献值门槛、每日封顶、cutoff、考勤状态机、SMS/微信、provider、审核备注审计；未执行 production migration/seed、部署、release 或 tag。

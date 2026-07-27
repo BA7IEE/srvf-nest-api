@@ -1662,6 +1662,18 @@ export class AttendancesService {
       });
       const lockedSheet = await this.findSheetOrThrow(id, tx);
       this.assertLockedReviewSeparation('final', lockedSheet, currentUser);
+
+      const recordsForEvent = await tx.attendanceRecord.findMany({
+        where: notDeletedWhere({ sheetId: id }),
+        select: recordWithMemberSelect,
+        orderBy: { checkInAt: 'asc' },
+      });
+      const contributionThresholdSnapshots =
+        await this.attendanceNotificationProducer.prepareContributionThresholdSnapshots(
+          tx,
+          recordsForEvent,
+        );
+
       const finalReviewedAt = new Date();
       const updated = await tx.attendanceSheet.update({
         where: { id: lockedSheet.id },
@@ -1675,11 +1687,6 @@ export class AttendancesService {
       });
 
       // 触发 attendance.recorded(批次 4-B 移到终审通过时;沿 D-S7;Q-S13 context schema 沿用)
-      const recordsForEvent = await tx.attendanceRecord.findMany({
-        where: notDeletedWhere({ sheetId: id }),
-        select: recordWithMemberSelect,
-        orderBy: { checkInAt: 'asc' },
-      });
       eventPlaceholder('attendance.recorded', {
         activityId: updated.activityId,
         sheetId: updated.id,
@@ -1725,6 +1732,7 @@ export class AttendancesService {
           memberId: r.memberId,
           contributionPoints: this.attendancePresenter.decimalToString(r.contributionPoints),
         })),
+        contributionThresholdSnapshots,
       });
 
       return this.attendancePresenter.toSheetResponseDto(updated);

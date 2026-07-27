@@ -16,6 +16,7 @@ import { AttendancesService } from '../../src/modules/attendances/attendances.se
 import { NotificationOutboxHandlers } from '../../src/modules/notifications/notification-outbox.handlers';
 import { NotificationOutboxService } from '../../src/modules/notifications/notification-outbox.service';
 import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
+import { computeContribution } from '../../src/modules/team-join/team-join-progress';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -116,6 +117,8 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
   let sheetSubmitterUserId: string;
   let alice: Member;
   let bob: Member;
+  let charlie: Member;
+  let diana: Member;
   let orgId: string;
 
   async function makeMember(username: string): Promise<Member> {
@@ -205,6 +208,92 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
         },
       });
     }
+    return sheet.id;
+  }
+
+  async function seedSheetPendingFinalWithRecords(
+    activityId: string,
+    records: Array<{
+      memberId: string;
+      checkInAt: Date;
+      checkOutAt: Date;
+      contributionPoints: number;
+    }>,
+  ): Promise<string> {
+    const sheet = await prisma.attendanceSheet.create({
+      data: {
+        activityId,
+        submitterUserId: sheetSubmitterUserId,
+        statusCode: 'pending_final_review',
+        version: 1,
+      },
+      select: { id: true },
+    });
+    await prisma.attendanceRecord.createMany({
+      data: records.map((record) => ({
+        sheetId: sheet.id,
+        memberId: record.memberId,
+        roleCode: 's4-role',
+        checkInAt: record.checkInAt,
+        checkOutAt: record.checkOutAt,
+        serviceHours: 1,
+        attendanceStatusCode: 'normal',
+        contributionPoints: record.contributionPoints,
+      })),
+    });
+    return sheet.id;
+  }
+
+  async function seedTeamJoinApplication(memberId: string, statusCode = 'joining', year = 2027) {
+    const cycle = await prisma.teamJoinCycle.create({
+      data: {
+        year,
+        name: `PR-M2a ${memberId} ${statusCode}`,
+        statusCode: 'closed',
+      },
+      select: { id: true },
+    });
+    return prisma.teamJoinApplication.create({
+      data: {
+        cycleId: cycle.id,
+        memberId,
+        statusCode,
+        targetOrganizationIds: [],
+      },
+      select: { id: true, cycle: { select: { year: true } } },
+    });
+  }
+
+  async function seedApprovedContribution(
+    activityId: string,
+    records: Array<{
+      memberId: string;
+      checkInAt: Date;
+      checkOutAt: Date;
+      contributionPoints: number;
+    }>,
+  ): Promise<string> {
+    const sheet = await prisma.attendanceSheet.create({
+      data: {
+        activityId,
+        submitterUserId: sheetSubmitterUserId,
+        statusCode: 'approved',
+        version: 1,
+      },
+      select: { id: true },
+    });
+    await prisma.attendanceRecord.createMany({
+      data: records.map((record) => ({
+        sheetId: sheet.id,
+        memberId: record.memberId,
+        roleCode: 's4-role',
+        checkInAt: record.checkInAt,
+        checkOutAt: record.checkOutAt,
+        serviceHours: 1,
+        attendanceStatusCode: 'normal',
+        contributionPoints: record.contributionPoints,
+      })),
+    });
     return sheet.id;
   }
 
@@ -347,6 +436,8 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
 
     alice = await makeMember('s4_alice');
     bob = await makeMember('s4_bob');
+    charlie = await makeMember('s4_charlie');
+    diana = await makeMember('s4_diana');
   });
 
   afterAll(async () => {
@@ -359,6 +450,8 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
     await prisma.notificationRead.deleteMany({});
     await prisma.notification.deleteMany({});
     await prisma.notificationOutboxIntent.deleteMany({});
+    await prisma.teamJoinApplication.deleteMany({});
+    await prisma.teamJoinCycle.deleteMany({});
     await prisma.activityResponsibilityAssignment.deleteMany({});
     await prisma.attendanceRecord.deleteMany({});
     await prisma.attendanceSheet.deleteMany({});
@@ -920,6 +1013,396 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
 
   // ============ ③ 考勤终审通过 → 逐 record 本人(含贡献值) ============
   describe('考勤结果/贡献值定向通知(finalApprove → 逐 record 本人;仅站内)', () => {
+    it('PR-M2a red:同日已封顶使正式贡献值 5→5 时不得重复发送达标通知', async () => {
+      const cycle = await prisma.teamJoinCycle.create({
+        data: {
+          year: 2027,
+          name: 'PR-M2a capped crossing',
+          statusCode: 'closed',
+        },
+        select: { id: true },
+      });
+      const application = await prisma.teamJoinApplication.create({
+        data: {
+          cycleId: cycle.id,
+          memberId: alice.memberId,
+          statusCode: 'joining',
+          targetOrganizationIds: [],
+        },
+        select: { id: true },
+      });
+      const activityId = await seedActivity('同日封顶不重复提醒');
+      const historicalSheets = await Promise.all(
+        [
+          {
+            checkInAt: new Date('2026-08-01T01:00:00.000Z'),
+            checkOutAt: new Date('2026-08-01T02:00:00.000Z'),
+            contributionPoints: 3,
+          },
+          {
+            checkInAt: new Date('2026-08-02T01:00:00.000Z'),
+            checkOutAt: new Date('2026-08-02T02:00:00.000Z'),
+            contributionPoints: 2,
+          },
+        ].map(async (record) => {
+          const sheet = await prisma.attendanceSheet.create({
+            data: {
+              activityId,
+              submitterUserId: sheetSubmitterUserId,
+              statusCode: 'approved',
+              version: 1,
+            },
+            select: { id: true },
+          });
+          await prisma.attendanceRecord.create({
+            data: {
+              sheetId: sheet.id,
+              memberId: alice.memberId,
+              roleCode: 's4-role',
+              checkInAt: record.checkInAt,
+              checkOutAt: record.checkOutAt,
+              serviceHours: 1,
+              attendanceStatusCode: 'normal',
+              contributionPoints: record.contributionPoints,
+            },
+          });
+          return sheet.id;
+        }),
+      );
+      expect(historicalSheets).toHaveLength(2);
+
+      const sheetId = await seedSheetPendingFinal(activityId, [alice.memberId]);
+      await prisma.attendanceRecord.updateMany({
+        where: { sheetId },
+        data: {
+          checkInAt: new Date('2026-08-01T03:00:00.000Z'),
+          checkOutAt: new Date('2026-08-01T04:00:00.000Z'),
+          serviceHours: 1,
+          contributionPoints: 1,
+        },
+      });
+
+      await attendances.finalApprove(
+        sheetId,
+        { finalReviewNote: '同日原始 +1，正式仍为 5' },
+        finalReviewerPayload,
+        AUDIT_META,
+      );
+
+      expect(
+        await prisma.notificationOutboxIntent.count({
+          where: { eventKey: { startsWith: `attendance-final:${sheetId}:` } },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.notificationOutboxIntent.count({
+          where: { eventType: 'notification.targeted', destinationRef: alice.memberId },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.notificationOutboxIntent.count({
+          where: {
+            aggregateType: 'team_join_application',
+            aggregateId: application.id,
+          },
+        }),
+      ).toBe(0);
+    });
+
+    it('真实 capped 4→5 且 raw +3/capped +1：逐 record 通知，application milestone 只一次', async () => {
+      const application = await seedTeamJoinApplication(alice.memberId);
+      const activityId = await seedActivity('真实 capped crossing');
+      await seedApprovedContribution(activityId, [
+        {
+          memberId: alice.memberId,
+          checkInAt: new Date('2026-08-01T01:00:00.000Z'),
+          checkOutAt: new Date('2026-08-01T02:00:00.000Z'),
+          contributionPoints: 2,
+        },
+        {
+          memberId: alice.memberId,
+          checkInAt: new Date('2026-08-02T01:00:00.000Z'),
+          checkOutAt: new Date('2026-08-02T02:00:00.000Z'),
+          contributionPoints: 2,
+        },
+        {
+          memberId: alice.memberId,
+          checkInAt: new Date('2027-04-01T01:00:00.000Z'),
+          checkOutAt: new Date('2027-04-01T02:00:00.000Z'),
+          contributionPoints: 99,
+        },
+      ]);
+      const sheetId = await seedSheetPendingFinalWithRecords(activityId, [
+        {
+          memberId: alice.memberId,
+          checkInAt: new Date('2026-08-01T03:00:00.000Z'),
+          checkOutAt: new Date('2026-08-01T04:00:00.000Z'),
+          contributionPoints: 1.5,
+        },
+        {
+          memberId: alice.memberId,
+          checkInAt: new Date('2026-08-01T05:00:00.000Z'),
+          checkOutAt: new Date('2026-08-01T06:00:00.000Z'),
+          contributionPoints: 1.5,
+        },
+      ]);
+
+      expect(
+        (
+          await computeContribution(prisma, alice.memberId, application.cycle.year)
+        ).points.toString(),
+      ).toBe('4');
+      await attendances.finalApprove(
+        sheetId,
+        { finalReviewNote: 'raw +3 but capped +1' },
+        finalReviewerPayload,
+        AUDIT_META,
+      );
+      expect(
+        (
+          await computeContribution(prisma, alice.memberId, application.cycle.year)
+        ).points.toString(),
+      ).toBe('5');
+
+      const firstMilestone = await prisma.notificationOutboxIntent.findFirstOrThrow({
+        where: {
+          aggregateType: 'team_join_application',
+          aggregateId: application.id,
+        },
+      });
+      expect(firstMilestone).toMatchObject({
+        eventKey: `team-join-contribution-met:${application.id}:5`,
+        eventType: 'notification.targeted',
+        destinationType: 'member',
+        destinationRef: alice.memberId,
+        payload: {
+          recipientMemberId: alice.memberId,
+          notificationTypeCode: 'recruitment',
+          title: '入队贡献值已达标',
+          body: '您的贡献值已达到入队要求（5 分）。管理员核对其他门槛后将安排综合评估，请留意后续通知。',
+          channels: ['in-app'],
+        },
+      });
+      expect(
+        await prisma.notificationOutboxIntent.count({
+          where: { aggregateType: 'attendance_sheet', aggregateId: sheetId },
+        }),
+      ).toBe(2);
+
+      await attendances.reopen(
+        sheetId,
+        { reason: '复核后重新终审' },
+        finalReviewerPayload,
+        AUDIT_META,
+      );
+      expect(
+        (
+          await computeContribution(prisma, alice.memberId, application.cycle.year)
+        ).points.toString(),
+      ).toBe('4');
+      await attendances.approve(sheetId, { reviewNote: '一级复核通过' }, adminPayload, AUDIT_META);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      await attendances.finalApprove(
+        sheetId,
+        { finalReviewNote: '再次通过' },
+        finalReviewerPayload,
+        AUDIT_META,
+      );
+
+      expect(
+        await prisma.notificationOutboxIntent.count({
+          where: {
+            aggregateType: 'team_join_application',
+            aggregateId: application.id,
+          },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.notificationOutboxIntent.count({
+          where: { aggregateType: 'attendance_sheet', aggregateId: sheetId },
+        }),
+      ).toBe(4);
+      const intents = await prisma.notificationOutboxIntent.findMany({
+        orderBy: { createdAt: 'asc' },
+      });
+      for (const intent of intents) await outboxWorker.drainEventKey(intent.eventKey);
+      const notifications = await directedOf(alice.memberId);
+      expect(notifications.filter((row) => row.title === '考勤结果已确认')).toHaveLength(4);
+      expect(notifications.filter((row) => row.title === '入队贡献值已达标')).toHaveLength(1);
+    });
+
+    it('同一 Sheet 多 Member：仅真实 4→5 的最新 joining application 收 milestone', async () => {
+      const aliceApplication = await seedTeamJoinApplication(alice.memberId);
+      const bobApplication = await seedTeamJoinApplication(bob.memberId);
+      const dianaApplication = await seedTeamJoinApplication(diana.memberId, 'approved');
+      const activityId = await seedActivity('多 Member capped crossing');
+      await seedApprovedContribution(activityId, [
+        {
+          memberId: alice.memberId,
+          checkInAt: new Date('2026-08-01T01:00:00.000Z'),
+          checkOutAt: new Date('2026-08-01T02:00:00.000Z'),
+          contributionPoints: 2,
+        },
+        {
+          memberId: alice.memberId,
+          checkInAt: new Date('2026-08-02T01:00:00.000Z'),
+          checkOutAt: new Date('2026-08-02T02:00:00.000Z'),
+          contributionPoints: 2,
+        },
+        {
+          memberId: bob.memberId,
+          checkInAt: new Date('2026-08-01T01:00:00.000Z'),
+          checkOutAt: new Date('2026-08-01T02:00:00.000Z'),
+          contributionPoints: 3,
+        },
+        {
+          memberId: bob.memberId,
+          checkInAt: new Date('2026-08-02T01:00:00.000Z'),
+          checkOutAt: new Date('2026-08-02T02:00:00.000Z'),
+          contributionPoints: 2,
+        },
+        {
+          memberId: diana.memberId,
+          checkInAt: new Date('2026-08-01T01:00:00.000Z'),
+          checkOutAt: new Date('2026-08-01T02:00:00.000Z'),
+          contributionPoints: 2,
+        },
+        {
+          memberId: diana.memberId,
+          checkInAt: new Date('2026-08-02T01:00:00.000Z'),
+          checkOutAt: new Date('2026-08-02T02:00:00.000Z'),
+          contributionPoints: 2,
+        },
+      ]);
+      const sheetId = await seedSheetPendingFinalWithRecords(activityId, [
+        {
+          memberId: alice.memberId,
+          checkInAt: new Date('2026-08-03T01:00:00.000Z'),
+          checkOutAt: new Date('2026-08-03T02:00:00.000Z'),
+          contributionPoints: 1,
+        },
+        {
+          memberId: bob.memberId,
+          checkInAt: new Date('2026-08-01T03:00:00.000Z'),
+          checkOutAt: new Date('2026-08-01T04:00:00.000Z'),
+          contributionPoints: 1,
+        },
+        {
+          memberId: charlie.memberId,
+          checkInAt: new Date('2026-08-04T01:00:00.000Z'),
+          checkOutAt: new Date('2026-08-04T02:00:00.000Z'),
+          contributionPoints: 1,
+        },
+        {
+          memberId: diana.memberId,
+          checkInAt: new Date('2026-08-03T01:00:00.000Z'),
+          checkOutAt: new Date('2026-08-03T02:00:00.000Z'),
+          contributionPoints: 1,
+        },
+      ]);
+
+      expect(
+        (
+          await computeContribution(prisma, alice.memberId, aliceApplication.cycle.year)
+        ).points.toString(),
+      ).toBe('4');
+      expect(
+        (
+          await computeContribution(prisma, bob.memberId, bobApplication.cycle.year)
+        ).points.toString(),
+      ).toBe('5');
+      await attendances.finalApprove(
+        sheetId,
+        { finalReviewNote: '多 Member 混合' },
+        finalReviewerPayload,
+        AUDIT_META,
+      );
+
+      expect(
+        await prisma.notificationOutboxIntent.findMany({
+          where: { aggregateType: 'team_join_application' },
+          select: { aggregateId: true, destinationRef: true, eventKey: true },
+        }),
+      ).toEqual([
+        {
+          aggregateId: aliceApplication.id,
+          destinationRef: alice.memberId,
+          eventKey: `team-join-contribution-met:${aliceApplication.id}:5`,
+        },
+      ]);
+      expect(
+        await prisma.notificationOutboxIntent.count({
+          where: { aggregateType: 'attendance_sheet', aggregateId: sheetId },
+        }),
+      ).toBe(4);
+      expect(dianaApplication.id).toBeTruthy();
+    });
+
+    it('milestone intent enqueue 失败使终审、audit 与已写普通 intent 整体回滚', async () => {
+      const application = await seedTeamJoinApplication(alice.memberId);
+      const activityId = await seedActivity('milestone intent 回滚');
+      await seedApprovedContribution(activityId, [
+        {
+          memberId: alice.memberId,
+          checkInAt: new Date('2026-08-01T01:00:00.000Z'),
+          checkOutAt: new Date('2026-08-01T02:00:00.000Z'),
+          contributionPoints: 2,
+        },
+        {
+          memberId: alice.memberId,
+          checkInAt: new Date('2026-08-02T01:00:00.000Z'),
+          checkOutAt: new Date('2026-08-02T02:00:00.000Z'),
+          contributionPoints: 2,
+        },
+      ]);
+      const sheetId = await seedSheetPendingFinalWithRecords(activityId, [
+        {
+          memberId: alice.memberId,
+          checkInAt: new Date('2026-08-03T01:00:00.000Z'),
+          checkOutAt: new Date('2026-08-03T02:00:00.000Z'),
+          contributionPoints: 1,
+        },
+      ]);
+      const enqueue = outbox.enqueue.bind(outbox);
+      const spy = jest.spyOn(outbox, 'enqueue').mockImplementation((input, client) => {
+        if (input.eventKey === `team-join-contribution-met:${application.id}:5`) {
+          return Promise.reject(new Error('milestone intent insert failed'));
+        }
+        return enqueue(input, client);
+      });
+      try {
+        await expect(
+          attendances.finalApprove(
+            sheetId,
+            { finalReviewNote: '应整体回滚' },
+            finalReviewerPayload,
+            AUDIT_META,
+          ),
+        ).rejects.toThrow('milestone intent insert failed');
+      } finally {
+        spy.mockRestore();
+      }
+
+      expect(
+        await prisma.attendanceSheet.findUniqueOrThrow({ where: { id: sheetId } }),
+      ).toMatchObject({
+        statusCode: 'pending_final_review',
+        finalReviewerUserId: null,
+        finalReviewedAt: null,
+      });
+      expect(
+        await prisma.auditLog.count({
+          where: { resourceId: sheetId, event: 'attendance-sheet.final-review' },
+        }),
+      ).toBe(0);
+      expect(await prisma.notificationOutboxIntent.count()).toBe(0);
+      expect(
+        (
+          await computeContribution(prisma, alice.memberId, application.cycle.year)
+        ).points.toString(),
+      ).toBe('4');
+    });
+
     it('PR-L4 red:finalApprove 与 audit 同事务写 targeted intents，worker 前零 Notification', async () => {
       const activityId = await seedActivity('durable 考勤');
       const sheetId = await seedSheetPendingFinal(activityId, [alice.memberId, bob.memberId]);

@@ -23,6 +23,13 @@ interface FinalApprovedRecord {
   contributionPoints: string | null;
 }
 
+export interface ContributionThresholdSnapshot {
+  applicationId: string;
+  memberId: string;
+  cycleYear: number;
+  beforePoints: Prisma.Decimal;
+}
+
 @Injectable()
 export class AttendanceNotificationProducer {
   constructor(private readonly outbox: NotificationOutboxService) {}
@@ -71,13 +78,41 @@ export class AttendanceNotificationProducer {
     for (const recipientMemberId of recipientMemberIds) {
       await this.enqueueTargeted(tx, {
         eventKey: `attendance-return:${input.sheetId}:${input.returnedAt.toISOString()}:${recipientMemberId}`,
-        sheetId: input.sheetId,
+        aggregateType: 'attendance_sheet',
+        aggregateId: input.sheetId,
         memberId: recipientMemberId,
         notificationTypeCode: NOTIFICATION_TYPE_ATTENDANCE_RESULT,
         title: '考勤单已退回修改',
         body: `「${activityTitle}」考勤单已退回修改。原因：${input.returnNote}`,
       });
     }
+  }
+
+  async prepareContributionThresholdSnapshots(
+    tx: PrismaTx,
+    records: ReadonlyArray<Pick<FinalApprovedRecord, 'memberId'>>,
+  ): Promise<ContributionThresholdSnapshot[]> {
+    const snapshots: ContributionThresholdSnapshot[] = [];
+    for (const memberId of new Set(records.map((record) => record.memberId))) {
+      const application = await tx.teamJoinApplication.findFirst({
+        where: {
+          memberId,
+          statusCode: TEAM_JOIN_APP_STATUS_JOINING,
+          deletedAt: null,
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, cycle: { select: { year: true } } },
+      });
+      if (!application) continue;
+      const before = await computeContribution(tx, memberId, application.cycle.year);
+      snapshots.push({
+        applicationId: application.id,
+        memberId,
+        cycleYear: application.cycle.year,
+        beforePoints: before.points,
+      });
+    }
+    return snapshots;
   }
 
   async enqueueFinalApproved(
@@ -87,6 +122,7 @@ export class AttendanceNotificationProducer {
       activityId: string;
       finalReviewedAt: Date;
       records: FinalApprovedRecord[];
+      contributionThresholdSnapshots: ContributionThresholdSnapshot[];
     },
   ): Promise<void> {
     if (input.records.length === 0) return;
@@ -98,7 +134,8 @@ export class AttendanceNotificationProducer {
     for (const record of input.records) {
       await this.enqueueTargeted(tx, {
         eventKey: `attendance-final:${input.sheetId}:${input.finalReviewedAt.toISOString()}:${record.id}`,
-        sheetId: input.sheetId,
+        aggregateType: 'attendance_sheet',
+        aggregateId: input.sheetId,
         memberId: record.memberId,
         notificationTypeCode: NOTIFICATION_TYPE_ATTENDANCE_RESULT,
         title: '考勤结果已确认',
@@ -106,31 +143,18 @@ export class AttendanceNotificationProducer {
       });
     }
 
-    const deltas = new Map<string, Prisma.Decimal>();
-    for (const record of input.records) {
-      const previous = deltas.get(record.memberId) ?? new Prisma.Decimal(0);
-      deltas.set(record.memberId, previous.add(record.contributionPoints ?? 0));
-    }
-    for (const [memberId, delta] of deltas) {
-      const application = await tx.teamJoinApplication.findFirst({
-        where: {
-          memberId,
-          statusCode: TEAM_JOIN_APP_STATUS_JOINING,
-          deletedAt: null,
-        },
-        orderBy: { createdAt: 'desc' },
-        select: { cycle: { select: { year: true } } },
-      });
-      if (!application) continue;
-      const after = await computeContribution(tx, memberId, application.cycle.year);
-      if (!after.satisfied || after.points.minus(delta).gte(CONTRIBUTION_THRESHOLD)) continue;
+    const threshold = CONTRIBUTION_THRESHOLD.toString();
+    for (const snapshot of input.contributionThresholdSnapshots) {
+      const after = await computeContribution(tx, snapshot.memberId, snapshot.cycleYear);
+      if (snapshot.beforePoints.gte(CONTRIBUTION_THRESHOLD) || !after.satisfied) continue;
       await this.enqueueTargeted(tx, {
-        eventKey: `attendance-contribution-met:${input.sheetId}:${input.finalReviewedAt.toISOString()}:${memberId}`,
-        sheetId: input.sheetId,
-        memberId,
+        eventKey: `team-join-contribution-met:${snapshot.applicationId}:${threshold}`,
+        aggregateType: 'team_join_application',
+        aggregateId: snapshot.applicationId,
+        memberId: snapshot.memberId,
         notificationTypeCode: NOTIFICATION_TYPE_RECRUITMENT,
         title: '入队贡献值已达标',
-        body: `您的贡献值已达到入队要求(当前 ${after.points.toString()} 分)。管理员核对门槛后将安排综合评估,请留意后续通知。`,
+        body: `您的贡献值已达到入队要求（${threshold} 分）。管理员核对其他门槛后将安排综合评估，请留意后续通知。`,
       });
     }
   }
@@ -139,7 +163,8 @@ export class AttendanceNotificationProducer {
     tx: PrismaTx,
     input: {
       eventKey: string;
-      sheetId: string;
+      aggregateType: string;
+      aggregateId: string;
       memberId: string;
       notificationTypeCode: string;
       title: string;
@@ -158,8 +183,8 @@ export class AttendanceNotificationProducer {
           body: input.body,
           channels: [NOTIFICATION_CHANNEL_IN_APP],
         },
-        aggregateType: 'attendance_sheet',
-        aggregateId: input.sheetId,
+        aggregateType: input.aggregateType,
+        aggregateId: input.aggregateId,
         destinationType: 'member',
         destinationRef: input.memberId,
       },
