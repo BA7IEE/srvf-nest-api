@@ -14,7 +14,8 @@ import {
 // 5 档可见(每篇选一):public / member / formal_member / department / management。
 // 设计:caller 上下文**一次性 async 解析**(在 content-read.service:isMember = canUseApp /
 // isFormalMember = ACTIVE Member 的正式 gradeCode / activeOrgIds = 活跃 PRIMARY 组织归属 /
-// isManagement = rbac.can('content.read.record') 或 role ∈ {SUPER_ADMIN, ADMIN}),再喂入本文件
+// isManagement = SUPER_ADMIN 或明确持有对应 management read 权限，由调用方通过 rbac.can 解析后
+// 再喂入本文件
 // **纯同步函数**(可单测,零 DB)。formal 与 department 是彼此独立的可见轴。
 //
 // - canSeeContent:单条判定(app/v1 详情用;已含 published 前提)。

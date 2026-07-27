@@ -429,7 +429,6 @@ export class NotificationSmsDispatchService {
     user: { id: string; role: Role; memberId: string | null } | undefined,
   ): Promise<boolean> {
     if (!user) return false;
-    if (user.role === Role.SUPER_ADMIN || user.role === Role.ADMIN) return true;
     const payload: CurrentUserPayload = {
       id: user.id,
       username: '',

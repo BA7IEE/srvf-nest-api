@@ -42,6 +42,7 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
   let level1Primary: Caller;
   let level3NoOrg: Caller;
   let mgmtAuth: string;
+  let plainAdminAuth: string;
   let unlinkedAuth: string;
   let inactiveLevel3Auth: string;
 
@@ -166,14 +167,27 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
       skipDuplicates: true,
     });
 
-    // mgmt caller:ADMIN + biz-admin + ACTIVE member(canUseApp 需要 member)。
-    const mgmtUser = await createTestUser(app, { username: 'ntf_mgmt', role: Role.ADMIN });
+    // mgmt caller:普通 USER + 显式 biz-admin RoleBinding + ACTIVE member。
+    const mgmtUser = await createTestUser(app, { username: 'ntf_mgmt', role: Role.USER });
     const mgmtMember = await prisma.member.create({
       data: { memberNo: 'NTF-mgmt', displayName: 'mgmt', status: 'ACTIVE' },
     });
     await prisma.user.update({ where: { id: mgmtUser.id }, data: { memberId: mgmtMember.id } });
     await grantBizAdminToUser(app, mgmtUser.id, bizAdminRoleId);
     mgmtAuth = (await loginAs(app, 'ntf_mgmt')).authHeader;
+
+    const plainAdmin = await createTestUser(app, {
+      username: 'ntf_plain_admin',
+      role: Role.ADMIN,
+    });
+    const plainAdminMember = await prisma.member.create({
+      data: { memberNo: 'NTF-plain-admin', displayName: 'plain-admin', status: 'ACTIVE' },
+    });
+    await prisma.user.update({
+      where: { id: plainAdmin.id },
+      data: { memberId: plainAdminMember.id },
+    });
+    plainAdminAuth = (await loginAs(app, 'ntf_plain_admin')).authHeader;
 
     // PR-D 六账号矩阵:正式队员真值只由 ACTIVE member + gradeCode=level-1…level-7 决定。
     volunteerPrimary = await makeMember('ntf_vol_primary', 'ACTIVE', 'volunteer');
@@ -295,6 +309,12 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
       expect(ids).not.toContain(nDeptA);
       expect(ids).not.toContain(nDeptB);
     });
+
+    it('裸 ADMIN(无 notification.read.record):不天然命中 management', async () => {
+      const ids = await listedIds(plainAdminAuth);
+      expect(ids).toContain(nMember);
+      expect(ids).not.toContain(nMgmt);
+    });
   });
 
   // ============ 详情 4 档矩阵:可见 200 / 不可见 404 防枚举 ============
@@ -348,6 +368,11 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
     it('mgmt:management → 200;formal → 31001', async () => {
       expect((await detailApp(mgmtAuth, nMgmt)).status).toBe(200);
       expectBizError(await detailApp(mgmtAuth, nFormal), BizCode.NOTIFICATION_NOT_FOUND);
+    });
+
+    it('裸 ADMIN:management → 31001 防枚举', async () => {
+      expectBizError(await detailApp(plainAdminAuth, nMgmt), BizCode.NOTIFICATION_NOT_FOUND);
+      expectBizError(await markReadApp(plainAdminAuth, nMgmt), BizCode.NOTIFICATION_NOT_FOUND);
     });
 
     it('详情读者出参零敏感:无 authorUserId / visibleOrganizationIds / statusCode / readCount', async () => {

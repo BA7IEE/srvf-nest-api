@@ -37,6 +37,7 @@ interface MemberSpec {
   phone: string | null; // null = 无绑定手机(可见但不计入可计费受众)
   gradeCode?: string | null;
   organizationIds?: readonly string[];
+  role?: 'USER' | 'ADMIN' | 'SUPER_ADMIN';
 }
 
 interface SmsLogState {
@@ -73,6 +74,7 @@ function build(opts: {
   smsLog?: SmsLogState;
   sendImpl?: (phone: string) => Promise<{ providerMsgId: string | null }>;
   prepareImpl?: (phone: string) => PreparedSmsEffect | Promise<PreparedSmsEffect>;
+  managementPermissionMemberIds?: string[];
 }) {
   const smsLog = opts.smsLog ?? {};
   const deliveries: Record<string, unknown>[] = [];
@@ -84,7 +86,12 @@ function build(opts: {
   }));
   const usersRows = opts.members
     .filter((m) => m.phone !== null)
-    .map((m) => ({ id: `u-${m.memberId}`, memberId: m.memberId, role: 'USER', phone: m.phone }));
+    .map((m) => ({
+      id: `u-${m.memberId}`,
+      memberId: m.memberId,
+      role: m.role ?? 'USER',
+      phone: m.phone,
+    }));
   const membershipRows = opts.members.flatMap((m) =>
     (m.organizationIds ?? []).map((organizationId) => ({
       memberId: m.memberId,
@@ -218,7 +225,17 @@ function build(opts: {
       ),
   };
 
-  const rbac = { can: jest.fn().mockResolvedValue(false) };
+  const rbac = {
+    can: jest
+      .fn()
+      .mockImplementation((user: { memberId: string | null; role: string }) =>
+        Promise.resolve(
+          user.role === 'SUPER_ADMIN' ||
+            (user.memberId !== null &&
+              (opts.managementPermissionMemberIds ?? []).includes(user.memberId)),
+        ),
+      ),
+  };
 
   const service = new NotificationSmsDispatchService(
     prisma as never,
@@ -591,6 +608,25 @@ describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () =>
     await expect(
       service.resolveRecipientMemberIds(departmentNotification, prisma as never),
     ).resolves.toEqual(['m-volunteer-org-a']);
+  });
+
+  it('management 不把裸 ADMIN 当收件人，SUPER_ADMIN 与明确持码者仍命中', async () => {
+    const { service, notification, prisma } = build({
+      members: [
+        { memberId: 'm-plain-admin', phone: '13900000034', role: 'ADMIN' },
+        { memberId: 'm-super-admin', phone: '13900000035', role: 'SUPER_ADMIN' },
+        { memberId: 'm-explicit-reader', phone: '13900000036', role: 'USER' },
+      ],
+      managementPermissionMemberIds: ['m-explicit-reader'],
+    });
+    const managementNotification = {
+      ...notification,
+      visibilityCode: 'management',
+    };
+
+    await expect(
+      service.resolveRecipientMemberIds(managementNotification, prisma as never),
+    ).resolves.toEqual(['m-super-admin', 'm-explicit-reader']);
   });
 
   it('directed 收件人不受 gradeCode 与 formal_member visibility 影响', async () => {
