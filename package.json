@@ -56,7 +56,8 @@
     "changelog:merge": "tsx scripts/changelog-merge.ts",
     "release:prepare": "tsx scripts/release-prepare.ts",
     "release:finish": "tsx scripts/release-finish.ts",
-    "docs:handoff:openapi": "curl -fsS http://localhost:3000/api/docs-json -o docs/handoff/openapi.json && echo 'openapi → docs/handoff/openapi.json'"
+    "docs:openapi": "ts-node --project tsconfig.json scripts/generate-openapi.ts",
+    "docs:openapi:check": "ts-node --project tsconfig.json scripts/generate-openapi.ts --check"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

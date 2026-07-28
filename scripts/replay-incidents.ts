@@ -101,6 +101,32 @@ const probes: Record<string, () => [boolean, string]> = {
       return [false, 'docs:counts:check 当前为红(计数已漂移)'];
     }
   },
+  'interpreter-bypass': () => {
+    // 真触发:把「用 python heredoc 写红区 workflow」原样喂给 bash-write-guard。
+    // 这条曾经返回 0(放行)—— 正文被剥离后命令位只剩 `python3 -`,不含写侧动词。
+    // 同时验反向:只碰非红区文件的 heredoc 必须放行,否则日常编辑全废、
+    // 人会去绕过守护(误伤到让人绕过的程度,防线同样失效)。
+    const grantFile = gitPath('srvf-redzone-grant.json');
+    const bak = `${grantFile}.replay-bak`;
+    const had = fs.existsSync(grantFile);
+    if (had) fs.renameSync(grantFile, bak);
+    try {
+      const attack = hookExit(
+        'bash-write-guard.sh',
+        bash("python3 - <<'PY'\nopen('.github/workflows/ci.yml','w').write('x')\nPY"),
+      );
+      if (attack !== 2) return [false, `解释器写红区返回 exit ${attack},期望 2(旁路仍在)`];
+      const benign = hookExit(
+        'bash-write-guard.sh',
+        bash("python3 - <<'PY'\nopen('CODEMAP.md').read()\nPY"),
+      );
+      if (benign !== 0)
+        return [false, `只碰非红区的 heredoc 返回 exit ${benign},期望 0(规则过宽会逼人绕过)`];
+      return [true, ''];
+    } finally {
+      if (had) fs.renameSync(bak, grantFile);
+    }
+  },
   'db-name-collision': () => {
     const src = fs.readFileSync(path.join(ROOT, 'test/setup/worktree-db.ts'), 'utf-8');
     const ok = src.includes('MAX_PG_IDENTIFIER') && src.includes('assertDerivedName');

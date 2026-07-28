@@ -26,6 +26,15 @@ GUARD="$REPO_ROOT/.claude/hooks/redzone-guard.sh"
 
 command -v jq >/dev/null 2>&1 || exit 0
 
+# 复用 redzone-guard 判定单个路径:命中则它 exit 2。
+# **不吞它的 stderr** —— 那正是「命中哪条规则 / 为什么受保护 / 如何获授权」的说明,
+# 吞掉的话模型只看到「被拒了」却不知道原因,无法自我纠正。
+check_path() {
+  printf '{"tool_name":"Bash","tool_input":{"file_path":%s}}' "$(printf '%s' "$1" | jq -Rs .)" \
+    | "$GUARD"
+  return $?
+}
+
 INPUT="$(cat)"
 CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""')"
 [ -n "$CMD" ] || exit 0
@@ -51,6 +60,49 @@ strip_noise() {
     }
   ' | sed "s/'[^']*'/QUOTED/g; s/\"[^\"]*\"/QUOTED/g"
 }
+# ── 漏放治理 ①:解释器旁路(2026-07-29 实测,作者自己走过去了)───────────────
+# 上面剥 heredoc 与引号是为了治误伤,但它同时开了一个洞:
+#   python3 - <<'PY'
+#   open('.github/workflows/ci.yml','w').write(...)
+#   PY
+# 正文被剥掉后,命令位只剩 `python3 -`,不含任何写侧动词 → 直接放行。
+# `node -e "fs.writeFileSync('AGENTS.md',...)"` 同理(引号内容被剥)。
+# 这不是理论风险:本守护落地当晚,作者就用 python heredoc 写进了未授权的红区文件,
+# 而 hook 全程沉默 —— `sed -i` 那条正门拦得好好的,后门却一直开着。
+#
+# 判定:命令**把代码喂给解释器**(heredoc 或 -e/-c/-p 内联)时,不看命令位,
+# 直接在**未剥离的原文**里找红区路径;命中即拒。
+# 这里刻意不做「读 vs 写」的区分 —— 解释器正文对 shell 是不透明的,任何试图从
+# 字符串里推断意图的做法都会漏。要读受保护文件请用 Read/Grep,要写请用 Write/Edit,
+# 两者都会被精确判定。代价是偶尔多拦一次只读脚本,收益是这条后门彻底关上。
+#
+# 边界:`npx tsx scripts/x.ts` / `node dist/main.js` 这类**跑磁盘上的文件**不触发 ——
+# 那些文件本身的改动早已被正门守住,再拦一次只会制造误伤。
+# 判定必须限定在**命令位**,且解释器与喂码方式(`<<` 或 -e/-c)出现在**同一行**。
+# 否则立刻反向误伤:一条 `git commit -F - <<MSG … MSG` 的正文里只要出现
+# "ts-node" / "node -e" 这类字样,就会被当成在跑解释器 —— 本次提交自己踩到了。
+# 「描述文本 ≠ 命令位」是本文件上方两条误伤治理的同一课,这里第三次学。
+RAW_CMD="$CMD"
+INTERP_RE='(python3?|node|ruby|perl|php|deno|osascript|tsx|ts-node)'
+# 分隔符集里**刻意不含反引号**:本仓提交信息与文档大量使用 markdown `code` 反引号,
+# 把它当命令位会让「正文里写了 `node -e`」的提交全被拦。反引号命令替换在本仓从未使用
+# (一律 $(...),而 `(` 在集内),这个取舍换来的是守护不会天天误伤。
+if printf '%s\n' "$RAW_CMD" \
+     | grep -qE "(^[[:space:]]*|[;&|(][[:space:]]*)([A-Za-z0-9_./-]*/)?${INTERP_RE}[[:space:]].*(<<|-[ecpEn]([[:space:]]|\$))"; then
+  for tok in $(printf '%s' "$RAW_CMD" \
+      | grep -oE '[A-Za-z0-9_.@/-]+\.(md|ts|tsx|json|jsonc|ya?ml|prisma|mjs|cjs|sh|env)' \
+      | sort -u); do
+    if ! check_path "$tok"; then
+      cat >&2 <<MSG
+   ↑ 触发者:解释器内联代码(heredoc 或 -e/-c)中出现了受保护路径。
+   shell 看不透解释器正文,无法区分这是读还是写,故一律拒绝(fail-closed)。
+   读受保护文件 → 用 Read / Grep;改受保护文件 → 用 Write / Edit(会被精确判定并给出授权指引)。
+MSG
+      exit 2
+    fi
+  done
+fi
+
 CMD="$(strip_noise "$CMD")"
 [ -n "$(printf '%s' "$CMD" | tr -d '[:space:]')" ] || exit 0
 

@@ -14,7 +14,7 @@ admin → `admin-web.md`,小程序 → `miniapp.md`,索引/原则 → `README.md
   字段真相对 live `/api/docs-json` 核,权限码对 `docs/ai-harness/RBAC_MAP.md` 核。别手抄契约。
 - **改了 API surface / 端点 / DTO / RBAC / 契约** → **同一个 PR 内**:
   1. 更新对应 `docs/handoff/*.md` 受影响的能力图 / 缺口台账行;
-  2. `pnpm docs:handoff:openapi` 刷新 `docs/handoff/openapi.json`(需 dev server）。
+  2. `pnpm docs:openapi` 刷新 `docs/handoff/openapi.json`(离线生成,不需要 dev server,也不占端口)。
   这是 [`AGENTS.md`](../../../AGENTS.md) 权威源表里的反漂铁律——交接更新焊在契约变更上。
 - **前端反馈"想做的任务后端没接口"** → 在对应文件的"缺口台账(gap-ledger)"登记一行
   (诉求 / 任务 / 期望端点 / 状态);维护者据此决定出不出 goal。goal 发了 → 回来标"已发"。
