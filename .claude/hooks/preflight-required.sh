@@ -18,6 +18,17 @@ set -u
 # fail-open:守护在最需要它的异常环境里悄悄消失。脚本位置是恒定事实,没有这个失效模式。
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HOOK_DIR/../.." && pwd)"
+
+# 仓库**外**的写入不受本仓门禁管(实测踩到:写 ~/.claude 下的 memory 文件被拦)。
+# 门禁语义是「本仓状态不干净时别改本仓代码」,与仓外文件无关;拦它们纯属误伤。
+if command -v jq >/dev/null 2>&1; then
+  TARGET="$(cat | jq -r '.tool_input.file_path // .tool_input.notebook_path // ""')"
+  case "$TARGET" in
+    "") ;;                                  # 拿不到路径:按仓内处理(保守)
+    /*) case "$TARGET" in "$REPO_ROOT"/*) ;; *) exit 0 ;; esac ;;  # 绝对路径且不在仓内 → 放行
+  esac
+fi
+
 MARKER_PATH="$(git -C "$REPO_ROOT" rev-parse --git-path srvf-preflight.json 2>/dev/null)"
 case "$MARKER_PATH" in
   /*) MARKER="$MARKER_PATH" ;;
@@ -41,13 +52,15 @@ MSG
 fi
 
 command -v jq >/dev/null 2>&1 || exit 0
-MARKED_HEAD="$(jq -r '.head // ""' "$MARKER" 2>/dev/null)"
-CUR_HEAD="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+# 按**分支名**判过期,不按 HEAD sha:会话内正常提交会改 HEAD,
+# 若按 sha 判,每 commit 一次就全线卡死(实测踩到)。要捕捉的是「中途换了分支」。
+MARKED_BRANCH="$(jq -r '.branch // ""' "$MARKER" 2>/dev/null)"
+CUR_BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 
-if [ -n "$MARKED_HEAD" ] && [ "$MARKED_HEAD" != "$CUR_HEAD" ]; then
+if [ -n "$MARKED_BRANCH" ] && [ "$MARKED_BRANCH" != "$CUR_BRANCH" ]; then
   cat >&2 <<MSG
 ⛔ 开工门禁标记已过期,拒绝写操作。
-   门禁判定时 HEAD=${MARKED_HEAD},当前 HEAD=${CUR_HEAD} —— 会话中途换过分支/拉过新提交,
+   门禁判定时在分支 ${MARKED_BRANCH},当前在 ${CUR_BRANCH} —— 会话中途换过分支,
    原先「工作树 clean · 无 open PR · 未落后 origin/main」的结论已不可信。
 
    修复:pnpm agent:preflight 重新确认后重开会话。

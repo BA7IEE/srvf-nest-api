@@ -59,17 +59,30 @@ elif [ prisma/schema.prisma -nt "$GENERATED_SCHEMA" ]; then
   ENV_NOTE="⚠️ schema.prisma 比生成物新 → 先跑:pnpm prisma:generate"
 fi
 
+# ⚠️ 用 -f 而非 -x:本脚本以 `bash <path>` 显式调用,执行位无关。
+# 原先写 -x 而该脚本恰为 644 → 条件恒假 → **整个检查被跳过而 RC 保持 0 → 假报通过**。
+# 这是最恶劣的一类失效:门禁在没真检查的情况下宣布「已检查、通过」。
+# 因此:脚本缺失 = 无法验证 = 按未通过处理(fail-closed),绝不静默当成通过。
 PREFLIGHT_OUT=""
 PREFLIGHT_RC=0
-if [ -x scripts/agent-preflight.sh ] && [ -z "$ENV_NOTE" ]; then
-  PREFLIGHT_OUT="$(bash scripts/agent-preflight.sh 2>&1)" || PREFLIGHT_RC=$?
+if [ -z "$ENV_NOTE" ]; then
+  if [ -f scripts/agent-preflight.sh ]; then
+    PREFLIGHT_OUT="$(bash scripts/agent-preflight.sh 2>&1)" || PREFLIGHT_RC=$?
+  else
+    PREFLIGHT_RC=127
+    PREFLIGHT_OUT="scripts/agent-preflight.sh 不存在 —— 无法验证开工条件(fail-closed)"
+  fi
 fi
 
 HEAD_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 if [ "$PREFLIGHT_RC" = "0" ] && [ -z "$ENV_NOTE" ]; then
-  printf '{"status":"pass","ts":"%s","head":"%s","source":"%s"}\n' "$NOW" "$HEAD_SHA" "$SOURCE" > "$MARKER"
+  # 记**分支名**而非 HEAD sha:会话内正常提交会改 HEAD,若按 sha 判过期,
+  # 每 commit 一次全线卡死(实测踩到)。要捕捉的是「中途换分支」,分支名才是对的信号。
+  printf '{"status":"pass","ts":"%s","branch":"%s","head":"%s","source":"%s"}\n' \
+    "$NOW" "$BRANCH" "$HEAD_SHA" "$SOURCE" > "$MARKER"
   emit "开工门禁:✅ 通过(工作树 clean · 无 open PR · 未落后 origin/main;HEAD=${HEAD_SHA})。红区写操作仍需 pnpm harness:grant 授权。"
 else
   rm -f "$MARKER"
