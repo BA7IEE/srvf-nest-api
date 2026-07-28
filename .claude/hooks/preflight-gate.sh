@@ -59,24 +59,67 @@ elif [ prisma/schema.prisma -nt "$GENERATED_SCHEMA" ]; then
   ENV_NOTE="⚠️ schema.prisma 比生成物新 → 先跑:pnpm prisma:generate"
 fi
 
+# ⚠️ 用 -f 而非 -x:本脚本以 `bash <path>` 显式调用,执行位无关。
+# 原先写 -x 而该脚本恰为 644 → 条件恒假 → **整个检查被跳过而 RC 保持 0 → 假报通过**。
+# 这是最恶劣的一类失效:门禁在没真检查的情况下宣布「已检查、通过」。
+# 因此:脚本缺失 = 无法验证 = 按未通过处理(fail-closed),绝不静默当成通过。
 PREFLIGHT_OUT=""
 PREFLIGHT_RC=0
-if [ -x scripts/agent-preflight.sh ] && [ -z "$ENV_NOTE" ]; then
-  PREFLIGHT_OUT="$(bash scripts/agent-preflight.sh 2>&1)" || PREFLIGHT_RC=$?
+if [ -z "$ENV_NOTE" ]; then
+  if [ -f scripts/agent-preflight.sh ]; then
+    PREFLIGHT_OUT="$(bash scripts/agent-preflight.sh 2>&1)" || PREFLIGHT_RC=$?
+  else
+    PREFLIGHT_RC=127
+    PREFLIGHT_OUT="scripts/agent-preflight.sh 不存在 —— 无法验证开工条件(fail-closed)"
+  fi
 fi
 
 HEAD_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-if [ "$PREFLIGHT_RC" = "0" ] && [ -z "$ENV_NOTE" ]; then
-  printf '{"status":"pass","ts":"%s","head":"%s","source":"%s"}\n' "$NOW" "$HEAD_SHA" "$SOURCE" > "$MARKER"
-  emit "开工门禁:✅ 通过(工作树 clean · 无 open PR · 未落后 origin/main;HEAD=${HEAD_SHA})。红区写操作仍需 pnpm harness:grant 授权。"
-else
-  rm -f "$MARKER"
-  REASON="${ENV_NOTE:-$(printf '%s' "$PREFLIGHT_OUT" | tail -3)}"
-  emit "开工门禁:❌ 未通过 —— 只读调研可继续,**写操作会被拦下**。
-${REASON}
-修复后重跑 pnpm agent:preflight(或重开会话)。若确需在未过门禁时写入,请先向维护者说明原因。"
+# ── 硬条件 vs 咨询条件(语义修正)──────────────────────────────────────────
+# process §2 的三硬判是「**开工前**别在这些状态下**开新功能**」,不是「每次写文件都查」。
+# 原实现把三条一律升为「拦写」,结果是:你正在做的任务本身会产生 open PR、
+# 开发中工作树当然是脏的 → 连续开发从第二次写入起全线卡死(实测踩到,作者被锁死)。
+# 一个让正常开发无法进行的门禁,只会被绕过 —— 误伤到那个程度,防线已经失效。
+#
+# 因此按「不修就会写出错误代码」来分:
+#   硬条件(拦写):依赖/生成物陈旧(会爆几百个假错)、落后 origin/main(在过时基础上改)
+#   咨询条件(只提示):工作树脏、有 open PR —— 都是连续推进的常态,由 §2 在开新任务时人判
+# 仓库既有的 lane 模式(--lane)本就把 open-PR 降为研判,这里与之语义对齐。
+BLOCKING_REASON=""
+ADVISORY=""
+if [ -n "$ENV_NOTE" ]; then
+  BLOCKING_REASON="$ENV_NOTE"
+elif [ "$PREFLIGHT_RC" != "0" ]; then
+  # 只认「✗ 开头的判定行」:脚本尾部的说明文字里含「未落后 origin/main」,
+  # 松匹配会把说明当成判定结果(实测踩到)。
+  BEHIND_LINE="$(printf '%s' "$PREFLIGHT_OUT" | grep '✗' | grep '落后 origin/main' | head -1)"
+  if [ -n "$BEHIND_LINE" ]; then
+    BLOCKING_REASON="$BEHIND_LINE"
+  elif [ "$PREFLIGHT_RC" = "127" ]; then
+    BLOCKING_REASON="$PREFLIGHT_OUT"
+  fi
+  ADVISORY="$(printf '%s' "$PREFLIGHT_OUT" | grep '✗' | grep -v '落后 origin/main' | head -3)"
 fi
 
-exit 0
+if [ -z "$BLOCKING_REASON" ]; then
+  # 记**分支名**而非 HEAD sha:会话内正常提交会改 HEAD,若按 sha 判过期,
+  # 每 commit 一次全线卡死(实测踩到)。要捕捉的是「中途换分支」,分支名才是对的信号。
+  printf '{"status":"pass","ts":"%s","branch":"%s","head":"%s","source":"%s"}\n' \
+    "$NOW" "$BRANCH" "$HEAD_SHA" "$SOURCE" > "$MARKER"
+  if [ -n "$ADVISORY" ]; then
+    emit "开工门禁:✅ 可写(环境就绪 · 未落后 origin/main;${BRANCH}@${HEAD_SHA})。
+⚠️ 但以下状态请自行研判 —— 按 process §2,处于这些状态时**不应开新功能**(继续当前任务可以):
+${ADVISORY}
+红区写操作仍需 pnpm harness:grant 授权。"
+  else
+    emit "开工门禁:✅ 全过(工作树 clean · 无 open PR · 未落后 origin/main;${BRANCH}@${HEAD_SHA})。红区写操作仍需 pnpm harness:grant 授权。"
+  fi
+else
+  rm -f "$MARKER"
+  emit "开工门禁:❌ 未通过 —— 只读调研可继续,**写操作会被拦下**。
+${BLOCKING_REASON}
+这是会让你写出错误代码的条件(不是流程提醒),必须先修。修完重跑 pnpm agent:preflight 或重开会话。"
+fi

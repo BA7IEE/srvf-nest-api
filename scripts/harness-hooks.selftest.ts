@@ -146,17 +146,125 @@ expectExit('bash:重定向 /dev/null 放行', 'bash-write-guard.sh', bash('pnpm 
   if (had) fs.renameSync(marker, backup);
   try {
     expectExit('preflight:无通行标记时拒绝写', 'preflight-required.sh', edit('src/x.ts'), 2);
-    const head = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+
+    // 过期判据是**分支名**而非 HEAD sha:会话内正常提交会改 HEAD,
+    // 按 sha 判会导致每 commit 一次全线卡死(实测踩到)。要捕捉的是「中途换了分支」。
+    const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
       encoding: 'utf-8',
       cwd: repoRoot,
     }).trim();
-    fs.writeFileSync(marker, JSON.stringify({ status: 'pass', head }));
-    expectExit('preflight:标记 HEAD 一致时放行', 'preflight-required.sh', edit('src/x.ts'), 0);
-    fs.writeFileSync(marker, JSON.stringify({ status: 'pass', head: 'deadbee' }));
-    expectExit('preflight:标记 HEAD 过期时拒绝', 'preflight-required.sh', edit('src/x.ts'), 2);
+    fs.writeFileSync(marker, JSON.stringify({ status: 'pass', branch }));
+    expectExit('preflight:同分支时放行', 'preflight-required.sh', edit('src/x.ts'), 0);
+
+    // 同分支但 HEAD 变了(= 会话内提交过)→ 必须仍放行,这是回归点
+    fs.writeFileSync(marker, JSON.stringify({ status: 'pass', branch, head: 'deadbee' }));
+    expectExit('preflight:同分支但 HEAD 已变(会话内提交)仍放行', 'preflight-required.sh', edit('src/x.ts'), 0);
+
+    fs.writeFileSync(marker, JSON.stringify({ status: 'pass', branch: 'some-other-branch' }));
+    expectExit('preflight:换分支后标记过期,拒绝', 'preflight-required.sh', edit('src/x.ts'), 2);
+
+    // 仓库外文件不受本仓门禁管(实测踩到:写 ~/.claude 下的 memory 被拦)
+    fs.rmSync(marker, { force: true });
+    expectExit(
+      'preflight:仓库外文件不受门禁管(即使无标记)',
+      'preflight-required.sh',
+      edit('/tmp/some-file-outside-repo.md'),
+      0,
+    );
   } finally {
     fs.rmSync(marker, { force: true });
     if (had) fs.renameSync(backup, marker);
+  }
+}
+
+// ---- preflight-gate:硬条件 vs 咨询条件(语义修正回归)----
+// 这四条锁死「哪些状态该拦写、哪些只该提示」,是三次实测事故的固化:
+//   ① gate 用 -x 判可执行性而脚本是 644 → 检查被整段跳过却报 PASS(fail-open)
+//   ② 树脏 / 有 open PR 被升为拦写 → 连续开发从第二次写入起全线卡死
+//   ③ 脚本缺失被静默当成通过
+{
+  const gate = path.join(hooksDir, 'preflight-gate.sh');
+  const realPreflight = path.join(repoRoot, 'scripts/agent-preflight.sh');
+  const backup = `${realPreflight}.selftest-bak`;
+  const marker = gitPath('srvf-preflight.json');
+  const markerBackup = `${marker}.gate-selftest-bak`;
+  const hadMarker = fs.existsSync(marker);
+  const hadReal = fs.existsSync(realPreflight);
+  if (hadMarker) fs.renameSync(marker, markerBackup);
+  if (hadReal) fs.copyFileSync(realPreflight, backup);
+
+  const runGate = (): { markerWritten: boolean; ctx: string } => {
+    fs.rmSync(marker, { force: true });
+    let out = '';
+    try {
+      out = execFileSync(gate, {
+        input: JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup' }),
+        encoding: 'utf-8',
+        cwd: repoRoot,
+      });
+    } catch {
+      out = '';
+    }
+    let ctx = out;
+    try {
+      ctx =
+        (JSON.parse(out) as { hookSpecificOutput?: { additionalContext?: string } })
+          .hookSpecificOutput?.additionalContext ?? out;
+    } catch {
+      /* 非 JSON:原样比对 */
+    }
+    return { markerWritten: fs.existsSync(marker), ctx };
+  };
+
+  const fakePreflight = (body: string): void =>
+    fs.writeFileSync(realPreflight, `#!/usr/bin/env bash\n${body}\n`, { mode: 0o644 });
+
+  const gateCase = (name: string, wantMarker: boolean, expectIn?: string): void => {
+    const { markerWritten, ctx } = runGate();
+    const ok = markerWritten === wantMarker && (!expectIn || ctx.includes(expectIn));
+    if (ok) {
+      passed++;
+      console.log(`✓ ${name}`);
+    } else {
+      failures.push(
+        `✗ ${name} — 期望发放标记=${String(wantMarker)},实际=${String(markerWritten)}` +
+          (expectIn && !ctx.includes(expectIn) ? `;文案缺「${expectIn}」` : ''),
+      );
+    }
+  };
+
+  try {
+    // 咨询条件:树脏 / 有 open PR → 放行写,但提示「不应开新功能」
+    fakePreflight(
+      'echo "preflight 门禁未过:"\n' +
+        'echo "  ✗ 工作树非 clean(git status --short 非空)→ 先 commit"\n' +
+        'echo "  ✗ 存在 open PR(gh pr list --state open 非空)→ 先合并"\n' +
+        'echo "(global 模式硬判 工作树 / open-PR / 未落后 origin/main 三条)"\nexit 1',
+    );
+    gateCase('gate:树脏+open PR 属咨询,仍放行写', true, '不应开新功能');
+
+    // 硬条件:落后 origin/main → 拦写(会在过时基础上改代码)
+    fakePreflight(
+      'echo "preflight 门禁未过:"\n' +
+        'echo "  ✗ 落后 origin/main 3 个 commit → 先 git pull --ff-only"\n' +
+        'echo "(global 模式硬判 工作树 / open-PR / 未落后 origin/main 三条)"\nexit 1',
+    );
+    gateCase('gate:落后 origin/main 属硬条件,拦写', false, '落后 origin/main');
+
+    // 脚本缺失 → fail-closed(无法验证 ≠ 通过)
+    fs.rmSync(realPreflight, { force: true });
+    gateCase('gate:preflight 脚本缺失时 fail-closed', false, 'fail-closed');
+
+    // 全过 → 发标记
+    fakePreflight('echo "✅ 硬门禁通过"\nexit 0');
+    gateCase('gate:全过时发放通行标记', true);
+  } finally {
+    if (hadReal) {
+      fs.copyFileSync(backup, realPreflight);
+      fs.rmSync(backup, { force: true });
+    }
+    fs.rmSync(marker, { force: true });
+    if (hadMarker) fs.renameSync(markerBackup, marker);
   }
 }
 
