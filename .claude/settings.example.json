@@ -39,7 +39,8 @@
       "Bash(git branch --delete --force*)",
       "Bash(git worktree remove --force*)",
       "Bash(git worktree remove * --force*)",
-      "Bash(gh release delete*)"
+      "Bash(gh release delete*)",
+      "Bash(pnpm db:test:prune --force*)"
     ],
     "allow": [
       "Bash(pnpm lint*)",
@@ -77,6 +78,7 @@
       "Bash(pnpm agent:preflight --lane)",
       "Bash(pnpm prisma:generate)",
       "Bash(pnpm db:test:init)",
+      "Bash(pnpm db:test:prune)",
       "Bash(pnpm install --frozen-lockfile)",
       "Bash(docker compose up -d postgres)"
     ]

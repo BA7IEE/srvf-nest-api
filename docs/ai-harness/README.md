@@ -7,7 +7,7 @@
 
 - **global**:`pnpm agent:preflight`(clean tree / 0 open PR / 未落后 origin/main 三硬判;**E 档收口必须用本形态**)
 - **lane**:`pnpm agent:preflight --lane <lane名>`(lane 名必填,无名 / 非法名 exit 1;open PR 降为清单研判,写集冲突由总控裁;检测到 bump 特征硬拒走 global;协议全文 [`process §8`](../process.md))
-- fresh worktree 先 `pnpm install --frozen-lockfile && pnpm prisma:generate`;e2e 测试库按 worktree 自动派生(`app_test_<slug>_<hash6>`,主仓恒 `app_test`)
+- fresh worktree 先 `pnpm install --frozen-lockfile && pnpm prisma:generate`;e2e 测试库两级派生:worktree 模板(`app_test_<slug>_<hash6>`,主仓恒 `app_test`)+ jest worker 克隆(`_w<N>`,并行隔离);孤儿库 `pnpm db:test:prune` 回收
 
 ## 2. 守护命令(全部挂 CI)
 

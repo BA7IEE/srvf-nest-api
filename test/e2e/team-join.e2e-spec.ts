@@ -257,6 +257,8 @@ describe('招新三期(入队)admin 面 e2e', () => {
         SELECT pid
         FROM pg_stat_activity
         WHERE CAST(${blockerPid} AS integer) = ANY(pg_blocking_pids(pid))
+          AND datname = current_database()
+          AND pid <> pg_backend_pid()
           AND query LIKE ${queryPattern}
       `);
       if (rows.length > 0) return;

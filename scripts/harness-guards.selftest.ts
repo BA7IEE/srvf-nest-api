@@ -23,7 +23,11 @@ import {
   diffSeedPermissionExtractions,
   extractSeedPermissionCodesAst,
 } from './docs-counts';
-import { deriveTestDbNameFrom } from '../test/setup/worktree-db';
+import {
+  deriveTestDbName,
+  deriveTestDbNameFrom,
+  deriveTemplateTestDbName,
+} from '../test/setup/worktree-db';
 import contractJestConfig from '../test/jest-contract.config';
 import e2eJestConfig from '../test/jest-e2e.config';
 import unitJestConfig from '../test/jest-unit.config';
@@ -340,6 +344,119 @@ checkEq(
   const y = deriveTestDbNameFrom('/y/lane-a', true);
   check('R5-04 db:同名 worktree 挂不同路径不共库', x !== y);
   checkEq('R5-04 db:同路径重复派生稳定', deriveTestDbNameFrom('/x/lane-a', true), x);
+}
+
+// ---------------------------------------------------------------------------
+// P1 — jest worker 级派生(Harness 3.0 并行化;worker 后缀并入唯一派生源)
+// ---------------------------------------------------------------------------
+
+{
+  const savedWorkerId = process.env.JEST_WORKER_ID;
+  const savedCwdNote = '本段只测纯函数与 env 分支,不触碰任何数据库';
+  void savedCwdNote;
+
+  // worker 后缀:合法 1-2 位数字
+  process.env.JEST_WORKER_ID = '3';
+  const w3 = deriveTestDbName();
+  check('P1 db:worker 内派生名以 _w<id> 结尾', w3.endsWith('_w3'), w3);
+  check('P1 db:worker 派生名仍含 app_test 子串(安全护栏不破)', w3.includes('app_test'), w3);
+  check('P1 db:worker 派生名 ≤ 63 字符', w3.length <= 63, `${w3.length}`);
+
+  // 两位 worker 号
+  process.env.JEST_WORKER_ID = '12';
+  check('P1 db:两位 worker 号可用', deriveTestDbName().endsWith('_w12'));
+
+  // 非法 worker 号必须抛错(拒绝任意字符串拼进库名)
+  process.env.JEST_WORKER_ID = 'evil;DROP';
+  checkThrows('P1 db:非法 JEST_WORKER_ID 拒绝派生', () => deriveTestDbName(), '非法 JEST_WORKER_ID');
+  process.env.JEST_WORKER_ID = '123';
+  checkThrows('P1 db:三位 worker 号拒绝(超出预期规模)', () => deriveTestDbName(), '非法 JEST_WORKER_ID');
+
+  // jest 之外(无 JEST_WORKER_ID)→ 模板库名,与 checkout 级派生一致
+  delete process.env.JEST_WORKER_ID;
+  checkEq('P1 db:无 worker 上下文时回到模板库名', deriveTestDbName(), deriveTemplateTestDbName());
+
+  // worker 展开:长 slug + 两位 worker 号仍 ≤63 且互不相同
+  {
+    const longBase = deriveTestDbNameFrom(`/w/${'y'.repeat(40)}-lane`, true);
+    check('P1 db:长 slug 模板 + _w 后缀总长安全余量', longBase.length + 4 <= 63, `${longBase.length}`);
+  }
+
+  if (savedWorkerId === undefined) delete process.env.JEST_WORKER_ID;
+  else process.env.JEST_WORKER_ID = savedWorkerId;
+}
+
+// ---------------------------------------------------------------------------
+// P1 — 并行 e2e 的三条承重不变式(Harness 3.0 P1;对抗性评审 blocker/major 固化)
+// ---------------------------------------------------------------------------
+
+{
+  const repoRoot = path.resolve(__dirname, '..');
+  const read = (rel: string): string => fs.readFileSync(path.join(repoRoot, rel), 'utf-8');
+
+  // ① 两条泄漏检测线的 grep 字符串**互不相同且各自正确**。
+  // 实测:并行 worker 模式打 'A worker process has failed to exit gracefully'(退出码 0);
+  // 串行 + detectOpenHandles 打 'Jest has detected the following N open handle' 并挂死。
+  // 曾经写反过(夜间线 grep 了并行才有的文案 = 死代码,泄漏检测净归零)。
+  const ci = read('.github/workflows/ci.yml');
+  const nightly = read('.github/workflows/nightly-e2e-leaks.yml');
+  check(
+    'P1 leak:ci.yml 并行 e2e 步骤 grep worker 强杀文案(告警级)',
+    ci.includes("grep -q 'failed to exit gracefully'") && ci.includes('::warning::'),
+    'ci.yml 缺并行泄漏 grep 或未按告警级投递',
+  );
+  // 该警告在本仓基线即非零(串行 detectOpenHandles 实测零句柄),
+  // 设成硬失败会让 CI 永久红且无鉴别力 —— 权威判据必须留在夜间线。
+  check(
+    'P1 leak:ci.yml 的 worker 强杀不得升为硬失败',
+    !/failed to exit gracefully'[\s\S]{0,200}::error::/.test(ci),
+    'ci.yml 把已知基线警告升成了硬失败',
+  );
+  check(
+    'P1 leak:nightly grep 串行 detectOpenHandles 文案(非 worker 文案)',
+    nightly.includes("grep -q 'Jest has detected the following'"),
+    'nightly grep 字符串错误(串行模式下不会出现 worker 文案)',
+  );
+  check(
+    'P1 leak:nightly 对挂死有 timeout 兜底(detectOpenHandles 泄漏时不退出)',
+    /timeout .*--kill-after/.test(nightly) && nightly.includes('124'),
+    'nightly 缺 timeout/超时判定',
+  );
+
+  // ② CI gate 必须正面证明 slow 的 skipped 合法(docs-only),不得从 skipped 反推。
+  // 曾经 fail-open:changeset 失败 → slow skipped → required check 变绿而 e2e 从未跑。
+  check(
+    'P1 gate:校验 changeset 结果',
+    ci.includes("needs.changeset.result }}\" != \"success\""),
+    'gate 未校验 changeset,存在 fail-open 假绿路径',
+  );
+  check(
+    'P1 gate:slow=skipped 需 docs_only 正面证明',
+    ci.includes("needs.changeset.outputs.docs_only }}\" != \"true\""),
+    'gate 未正面证明 docs-only',
+  );
+
+  // ③ 集群级目录视图(pg_locks / pg_stat_activity)必须按当前库收敛。
+  // TEMPLATE 克隆使各 worker 库的 pg_class.oid 完全相同(已实测),
+  // 不加库谓词的观测会计入别的 worker 的锁 → 并发屏障提前放行 → 测试假绿。
+  const DB_SCOPED = /datname\s*=\s*current_database\(\)|lock\.database\s*=|pid\s*=\s*pg_backend_pid\(\)|pid\s*=\s*CAST\(/;
+  const e2eDir = path.join(repoRoot, 'test/e2e');
+  const offenders: string[] = [];
+  for (const file of fs.readdirSync(e2eDir).filter((f) => f.endsWith('.e2e-spec.ts'))) {
+    const src = fs.readFileSync(path.join(e2eDir, file), 'utf-8');
+    // 逐个模板字面量/查询块检查:含 pg_locks|pg_stat_activity 的片段必须带库/进程谓词
+    for (const match of src.split(/\$queryRaw|Prisma\.sql/).slice(1)) {
+      const block = match.slice(0, 700);
+      if (/FROM\s+pg_(locks|stat_activity)/i.test(block) && !DB_SCOPED.test(block)) {
+        offenders.push(`${file}: ${block.replace(/\s+/g, ' ').slice(0, 90)}`);
+      }
+    }
+  }
+  check(
+    'P1 parallel:pg_locks / pg_stat_activity 观测均按当前库或 pid 收敛',
+    offenders.length === 0,
+    `未收敛的观测点:\n    ${offenders.join('\n    ')}`,
+  );
 }
 
 // ---------------------------------------------------------------------------

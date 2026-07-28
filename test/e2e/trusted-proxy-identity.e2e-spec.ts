@@ -68,7 +68,12 @@ function appConfigForProbe(trustedProxyCidrs: string[]): AppConfig {
     },
     insurance: { enforcementEnabled: false },
     activityResponsibilityWorkflow: { enabled: false },
-    storage: { encryptionKey: '', localRoot: './tmp/storage', consistencyMode: 'JIT' },
+    // localRoot 跟随 setup-files 的 per-worker 派生值(并行下不得硬编码共享目录)
+    storage: {
+      encryptionKey: '',
+      localRoot: process.env.STORAGE_LOCAL_ROOT ?? './tmp/storage',
+      consistencyMode: 'JIT',
+    },
     sms: { encryptionKey: '' },
     wechat: { encryptionKey: '' },
     realname: { encryptionKey: '' },

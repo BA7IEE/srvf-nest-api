@@ -2,6 +2,13 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+### Changed
+
+- **验证链重构(Harness 3.0 P1)**:e2e 从三重串行(runInBand + maxWorkers 1 + detectOpenHandles)改为 per-worker 派生库并行(模板库 migrate 一次 + `CREATE DATABASE ... TEMPLATE` 克隆 `_w<N>`,globalTeardown 回收;本地 5 worker 全量约 6 分钟);CI 拆 fast(lint/typecheck/docs guards/build/unit,无 Postgres)∥ slow(contract+e2e)双 job,由保名 gate job `Lint / Typecheck / E2E` 聚合上报(branch protection required checks 逐字不变);新增 `nightly-e2e-leaks.yml` 夜间串行 + detectOpenHandles 泄漏线(软警告升级硬失败,句柄纪律零放宽)。行为面:测试基建与 CI 编排变更,业务代码与接口契约零改动。
+- 新增脚本:`test:e2e:failed`(定点重跑上次失败 suite)、`test:e2e:leaks`、`lint:cached`、`db:test:prune`(按 git worktree 白名单差集回收孤儿测试库,默认 dry-run);`agent:check:quick` 改三步并行 + eslint 缓存(~85s → 热缓存 ~25s;CI 与 agent:check:full 恒冷跑为权威口径);`.env.test` 显式 `connection_limit=5&pool_timeout=20`,docker-compose 增 `max_connections=200`。
+
 ## v0.62.0 - 2026-07-28
 
 > 主题:**活动责任闭环、系统硬化与通知可靠性**(v0.61.0 后 #756–#793：活动责任工作流与本地前端联调基座、组织和正式队员可见性、安全边界、participation durable outbox 与通知隐私收口)。Endpoint 366→416；Migration 64→65；BizCode 258→278；Permission 207→213；Controller 75→82；AuditLogEvent 123 / Module 36 / 内建角色 15 / Cron 2。代码与契约里程碑 Release，不代表生产部署。
