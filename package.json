@@ -41,6 +41,7 @@
     "agent:preflight": "bash scripts/agent-preflight.sh",
     "agent:check:quick": "bash scripts/check-quick.sh",
     "harness:grant": "tsx scripts/harness-grant.ts",
+    "harness:replay": "tsx scripts/replay-incidents.ts",
     "harness:selftest": "tsx scripts/harness-guards.selftest.ts && tsx scripts/harness-eslint.selftest.ts && tsx scripts/harness-hooks.selftest.ts",
     "agent:check:api": "pnpm lint && pnpm typecheck && pnpm harness:selftest && pnpm test && pnpm test:contract",
     "agent:check:full": "pnpm lint && pnpm typecheck && pnpm harness:selftest && pnpm build && pnpm test && pnpm test:contract && pnpm test:e2e",

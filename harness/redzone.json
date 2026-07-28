@@ -25,12 +25,18 @@
     },
     {
       "id": "ci-workflows",
-      "globs": [".github/workflows/**"],
+      "globs": [
+        ".github/workflows/**"
+      ],
       "why": "CI / smoke 影响所有 PR;且 branch protection 的 required check 名逐字锁定在此(改名=全仓 PR 永久卡死)"
     },
     {
       "id": "prisma-schema",
-      "globs": ["prisma/schema.prisma", "prisma/migrations/**", "prisma/seed.ts"],
+      "globs": [
+        "prisma/schema.prisma",
+        "prisma/migrations/**",
+        "prisma/seed.ts"
+      ],
       "why": "schema / migration / seed 恒 D 档,不可逆"
     },
     {
@@ -45,23 +51,34 @@
     },
     {
       "id": "auth-frozen",
-      "globs": ["src/modules/auth/**", "src/**/*throttler*"],
+      "globs": [
+        "src/modules/auth/**",
+        "src/**/*throttler*"
+      ],
       "why": "P0-E refresh token 行为冻结 + 防枚举锁 + 限流语义"
     },
     {
       "id": "storage-crypto",
-      "globs": ["src/modules/storage/storage-crypto.service.ts"],
+      "globs": [
+        "src/modules/storage/storage-crypto.service.ts"
+      ],
       "why": "凭证加密;密钥不可轮换"
     },
     {
       "id": "archive-frozen",
-      "globs": ["docs/archive/**"],
+      "globs": [
+        "docs/archive/**"
+      ],
       "why": "归档冻结不回改(仅允许新增文件,Edit 既有文件需授权)",
       "allowCreate": true
     },
     {
       "id": "container-build",
-      "globs": ["Dockerfile", ".dockerignore", "docker-compose.yml"],
+      "globs": [
+        "Dockerfile",
+        ".dockerignore",
+        "docker-compose.yml"
+      ],
       "why": "交付物链路 + 测试库容量配置(AGENTS §3 触发即停 7 的『Dockerfile』半条,原清单无载体)"
     }
   ],
@@ -85,6 +102,7 @@
         "scripts/harness-grant.ts",
         "scripts/db-test-prune.ts",
         "scripts/generate-*.ts",
+        "scripts/replay-*.ts",
         "test/setup/**",
         "test/contract/**"
       ],

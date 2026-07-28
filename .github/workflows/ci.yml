@@ -127,6 +127,12 @@ jobs:
       - name: Harness selftests (guards + eslint positive controls)
         run: pnpm harness:selftest
 
+      # Harness 3.0 P2.5:历史事故回放 + 反向案例。
+      # 前者答「这些事故今天还会不会重演」,后者答「守护是不是开始误伤」——
+      # 两者都失效即防线不可信(前者让事故重演,后者让人绕过防线)。
+      - name: Replay historical incidents (+ inverse cases)
+        run: pnpm harness:replay
+
       # 显式跑 nest build,防止"typecheck 通过但 build 失败"的隐性回归。
       - name: Build
         run: pnpm build
