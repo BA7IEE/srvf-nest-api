@@ -133,6 +133,62 @@ expectExit(
   0,
 );
 
+// ---- 漏放回归:解释器旁路(2026-07-29,作者在 P4d 施工中自己走过去了)----
+// 剥 heredoc / 引号是为了治误伤,但它同时让「把代码喂给解释器」这条路完全不受检:
+// 正文被剥掉后命令位只剩 `python3 -`,不含任何写侧动词 → 放行。
+// 当晚作者就用 python heredoc 写进了未授权的红区 workflow,hook 全程沉默 ——
+// 正门(sed -i)拦得好好的,后门一直开着。这是**已发生**的绕过,不是假想。
+expectExit(
+  'bash:漏放回归 — python heredoc 写红区 workflow 拒绝',
+  'bash-write-guard.sh',
+  bash("python3 - <<'PY'\nopen('.github/workflows/ci.yml','w').write('x')\nPY"),
+  2,
+);
+expectExit(
+  'bash:漏放回归 — node -e 内联写红区文档 拒绝',
+  'bash-write-guard.sh',
+  bash('node -e "require(\'fs\').writeFileSync(\'AGENTS.md\',\'x\')"'),
+  2,
+);
+expectExit(
+  'bash:漏放回归 — python heredoc 触碰裁判脚本 拒绝',
+  'bash-write-guard.sh',
+  bash("python3 - <<'PY'\nopen('scripts/check-codemap.ts','w').write('exit(0)')\nPY"),
+  2,
+);
+// 反向:解释器规则必须只咬红区,否则日常 heredoc 编辑全废 —— 那种误伤会直接
+// 逼人绕过守护,后果比漏放更糟。
+expectExit(
+  'bash:反向 — heredoc 只碰非红区文件 放行',
+  'bash-write-guard.sh',
+  bash("python3 - <<'PY'\nopen('CODEMAP.md').read()\nPY"),
+  0,
+);
+expectExit(
+  'bash:反向 — 跑磁盘上的脚本(非内联代码)放行',
+  'bash-write-guard.sh',
+  bash('npx tsx scripts/generate-codemap.ts --check'),
+  0,
+);
+expectExit(
+  'bash:反向 — 内联代码不含任何路径 放行',
+  'bash-write-guard.sh',
+  bash('node -e "console.log(1+1)"'),
+  0,
+);
+// 修这条漏放时**当场又踩出一次误伤**:commit message 正文里提到 "ts-node" / "node -e"
+// 且用 heredoc 传入,整条命令被判成在跑解释器。判定必须限定在命令位且解释器与
+// `<<` 同行 —— 「描述文本 ≠ 命令位」这一课在本守护里已经学了三次,锁死。
+expectExit(
+  'bash:误伤回归 — commit heredoc 正文提到 node -e / ts-node 放行',
+  'bash-write-guard.sh',
+  bash(
+    'git commit -F - <<MSG\n用 ts-node 而非 tsx:esbuild 不支持 emitDecoratorMetadata\n' +
+      '`node -e` 内联写 AGENTS.md 已被拦下\nMSG',
+  ),
+  0,
+);
+
 expectExit('bash:git status 放行', 'bash-write-guard.sh', bash('git status --short'), 0);
 expectExit('bash:pnpm lint 放行', 'bash-write-guard.sh', bash('pnpm lint'), 0);
 expectExit('bash:写普通业务文件放行', 'bash-write-guard.sh', bash("sed -i '' 's/a/b/' src/modules/users/users.service.ts"), 0);
