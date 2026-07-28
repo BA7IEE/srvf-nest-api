@@ -1,0 +1,30 @@
+{
+  // scripts/ 的类型检查配置(Harness 3.0 P4b)。
+  //
+  // 立项理由:根 tsconfig 的 include 是 `src/**/*.ts`,eslint 的 glob 是
+  // `src|test|prisma` —— **执法层自己(scripts/)既没被类型检查也没被 lint**。
+  // 守卫脚本写错类型只会在 CI 跑到那一行时才炸,而 `--check` 类脚本一旦在
+  // 早期抛异常,外层 `&&` 链看到的只是非 0,很容易被读成「检查失败」而非
+  // 「检查本身坏了」。谁来检查检查者 —— 这里补上第一层。
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // eslint.harness.mjs 是 flat config 的真身,scripts 侧 import 它取选择器定义;
+    // allowJs 让这个 import 解析得开,但**不把 .mjs 本身纳入检查**(它跑在 eslint
+    // 自己的 runtime 里,由 `pnpm lint` 冷跑证明可用)
+    "allowJs": true,
+    "checkJs": false
+  },
+  "include": ["./**/*.ts"],
+  "exclude": [
+    // ⚠️ 暂时排除,**不是因为它不重要 —— 恰恰因为它最重要**。
+    // 它 import ../eslint.harness.mjs,那个文件顶部有 `// @ts-check`,一旦被拉进
+    // TS 程序就会暴露 2 处 implicit-any(第 111 行 `syntax` 的 rest 参数与索引)。
+    // 修法是给它加两行 JSDoc 类型注解,但 eslint.harness.mjs 在 harness/redzone.json
+    // 的 selfGuard 内,需要维护者跑 `pnpm harness:grant 'eslint.harness.mjs'` ——
+    // **AI 不自行发放授权**,所以这里如实留缺口,不用「造一份平行 .d.mts 绕开闸门」
+    // 这种为规避授权而变差的设计换取一个全绿的数字。
+    // 解除条件:拿到授权 → 注解那两行 → 从本 exclude 删掉这一条 → 15/15 覆盖。
+    "./harness-eslint.selftest.ts"
+  ]
+}
