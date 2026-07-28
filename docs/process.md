@@ -102,26 +102,40 @@ C / D 档确认、goal 模式中途新发现问题的上报,一律用本格式�
 
 > 默认节奏:**0.x 阶段一律 minor**(沿 v0.4.0 → ... 全部 minor)。真正的 breaking change 或 1.0 进入再考虑 major / patch。
 
-### 5.1 收口分阶段(逐步推进,**不混 PR**)
+### 5.1 收口两段式(Harness 3.0 P4c;原九阶段五 PR 已脚本化)
 
-| 阶段 | PR / 动作 | 谁来做 | 是否动代码 |
+```bash
+pnpm release:prepare 0.63.0 --dry-run   # 先看要做什么
+pnpm release:prepare 0.63.0             # 阶段 A:一次写完全部簿记
+# → 复核 diff → pnpm docs:counts && pnpm agent:check:full → 提交 + 开 PR(E 档)
+# → **维护者拍板合并**(自合门不变:AI 不自开自合)
+pnpm release:finish 0.63.0              # 阶段 B:tag + push + GitHub Release
+```
+
+| 段 | 内容 | 谁执行 | 幂等 |
 |---|---|---|---|
-| 1 | feature PR(本期所有业务变更) | AI + 维护者授权 | ✅ |
-| 2 | CHANGELOG Unreleased 增量登记 | 随 feature PR 或独立 docs PR | ❌ |
-| 3 | landing PR(本期跨文档事实同步) | AI | ❌ |
-| 4 | **bump PR**(仅 3 文件:`package.json` / `apply-swagger.ts` / `CHANGELOG.md` 折叠) | AI | ✅ |
-| 5 | **handoff PR**(新建 `docs/archive/handoff/v0.X.0.md`) | AI | ❌ |
-| 6 | **git tag**(`v0.X.0`,指向 handoff squash commit) | AI 执行,维护者亦可手动 | — |
-| 7 | **GitHub Release**(标 Latest;Notes 抽自 CHANGELOG 对应段;完成后输出 `gh release list` 证据) | AI 执行,维护者亦可手动 | — |
-| 8 | **current-state 回填** + README 入口对齐 | AI | ❌ |
-| 9 | open PR / 远端分支清理 | AI + 维护者 | — |
+| **A**(合并前,一个 PR) | changelog.d 归并 → `## Unreleased` 折叠为 `## vX.Y.Z - <今天>`(**日期自动**)→ package.json + apply-swagger 版本 → 生成 handoff 快照(数字取自守护计数、叙事取自 CHANGELOG)→ 回填 current-state §1 | AI 跑脚本 | ✅ 重跑自动跳过已完成步骤 |
+| **拍板** | 复核 diff + 全量检查 + **维护者合并** | 维护者 | — |
+| **B**(合并后) | 打 tag → push → 建 GitHub Release(Notes 抽自 CHANGELOG)→ 输出收尾证据 | AI 跑脚本 | ✅ 已存在则跳过并校验指向 |
+
+**为什么必须两段**:tag 与 Release 必须指向 release PR 的 **squash 合并提交**,而该提交在合并前不存在;塞进阶段 A 会指向一个将被 squash 丢弃的提交。
+
+**脚本的硬边界**(设计即约束,不靠自觉):
+- 阶段 A **不提交、不开 PR、不合并、不打 tag** —— 只写文件,其余全交人
+- 阶段 B **不改任何文件** —— 只与 git ref 和 GitHub 打交道
+- 两段均 **fail-closed**:任一步无法确定就停下并打印「已完成 / 未完成」清单,不猜
+- 阶段 B 会校验 `package.json#version` 与参数一致、本地 HEAD == origin/main、且 **HEAD 提交信息含本版号**(防 tag 指错提交);tag 已存在但指向不符 → 停下报告,**不自动移动 tag**
+
+**这样做的由来**:v0.62.0 收口用了 5 个纯簿记 PR(#794 归并 / #795 bump / **#796 修日期笔误** / #797 handoff / #798 current-state),每个都要维护者点一次、等一轮 CI。其中 #796 是手工必然会犯的那类错 —— 日期是可计算的,不该由人抄。
+
+> 旧的九阶段表(阶段 1–9)保留于 git 历史;单步手动路径不废除,脚本只是把 2–8 的机械部分合成两次执行。
 
 ### 5.2 关键约束
 
 - **tag 默认指向 handoff PR 的 squash merge commit**,除非用户另行拍板
 - **handoff 是历史快照,合入后不回改**;发现过时 → 更新 `current-state.md`,不回改 handoff
 - release 后必须回填 `current-state.md`(§1 / §2 / §4);README 启动入口保持指向 `current-state.md`
-- **bump PR 只允许动 3 文件**(`package.json#version` / `apply-swagger.ts` `setVersion` / CHANGELOG 折叠),**禁止**夹带其他改动
+- **release PR 只允许含阶段 A 的产物**(版本三处 / CHANGELOG 折叠 / handoff 快照 / current-state §1),**禁止**夹带其他改动;脚本本身不会写别的文件,人也别顺手加
 - **bump 前**:`changelog.d/` 有 fragment 时先 `pnpm changelog:merge` 归并进 `## Unreleased`(Harness 2.0;单 lane 直接编辑 Unreleased 的旧路径不废除)
 
 ### 5.3 release 后回填 checklist
