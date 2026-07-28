@@ -17,10 +17,14 @@ import * as path from 'path';
 
 const ROOT = path.resolve(__dirname, '..');
 
+// Harness 3.0 P3 起按重写后的实际形态重定预算(原值是 2.0 时代按当时体量定的魔法数)。
+// 预算保留而非废除:2.0 时代的实证是散文**必然再生**(权威顺序长出 4 份变体、
+// 「cron 恰 2 个」写了 4 处,全在有守护的条件下长出来的)。一行体积检查成本趋近于零。
+// 留 ~25% 余量:预算顶格会逼出「为省字符牺牲清晰度」的压缩(#792 曾因此删掉既有事实)。
 const BUDGETS: ReadonlyArray<{ file: string; maxChars: number; enforced: boolean }> = [
-  { file: 'AGENTS.md', maxChars: 18_000, enforced: true }, // PR4 已收口(2.0 重写)
-  { file: 'docs/current-state.md', maxChars: 4_500, enforced: true }, // PR3 已收口(全指针化)
-  { file: 'CLAUDE.md', maxChars: 2_500, enforced: true }, // PR4 已收口(2.0 重写)
+  { file: 'AGENTS.md', maxChars: 8_500, enforced: true }, // P3 重写后 ~6.8k
+  { file: 'docs/current-state.md', maxChars: 4_500, enforced: true }, // P3 删机器可查事实后 ~4.45k
+  { file: 'CLAUDE.md', maxChars: 2_000, enforced: true }, // P3 重写后 ~1.4k
 ];
 
 function main(): void {
