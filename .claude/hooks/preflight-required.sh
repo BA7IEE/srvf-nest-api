@@ -44,7 +44,7 @@ if [ ! -f "$MARKER" ]; then
    修复:
      pnpm agent:preflight          # 看是哪一项没过并按提示修
      # fresh worktree 还需:pnpm install --frozen-lockfile && pnpm prisma:generate
-   修完重开会话(门禁在会话开始时判定),或由维护者确认后放行。
+   修完跑 bash .claude/hooks/preflight-gate.sh 重新判定(不必重开会话),或由维护者确认后放行。
 
    注:只读调研不受影响,仅写操作被拦。
 MSG
@@ -63,7 +63,7 @@ if [ -n "$MARKED_BRANCH" ] && [ "$MARKED_BRANCH" != "$CUR_BRANCH" ]; then
    门禁判定时在分支 ${MARKED_BRANCH},当前在 ${CUR_BRANCH} —— 会话中途换过分支,
    原先「工作树 clean · 无 open PR · 未落后 origin/main」的结论已不可信。
 
-   修复:pnpm agent:preflight 重新确认后重开会话。
+   修复:bash .claude/hooks/preflight-gate.sh(就地重新判定并刷新标记,不必重开会话)。
 MSG
   exit 2
 fi

@@ -2,8 +2,16 @@
 /**
  * check-codemap.ts — CODEMAP 漂移检查
  *
- * 用途:扫描 CODEMAP.md 与当前源码结构的漂移,输出 PASS / WARN / FAIL / INFO。
- * 只读检查,不修改任何文件,不接入 CI。
+ * 用途:扫描 CODEMAP.md 与当前源码结构的**结构性**漂移,输出 PASS / WARN / FAIL / INFO。
+ * 只读检查,不修改任何文件。已接入 CI(`pnpm docs:codemap:check` 的第二段)。
+ *
+ * 与 generate-codemap.ts 的分工(Harness 3.0 P4b):
+ *   生成器负责「机器能算出来的数字」(体量列 / migration 计数 / e2e spec 数),
+ *   新鲜度由 `--check` 逐字 diff 保证;本脚本只查**生成器管不到的结构关系** ——
+ *   模块存在性双向、module-local CLAUDE.md 是否被引用、相对链接是否解析得开、
+ *   god-service 阈值、prisma/CLAUDE.md 这类仍靠人手写的数字。
+ *   **凡是「拿生成器输出跟生成器输入比」的检查一律删掉** —— 那种检查恒 PASS,
+ *   只会制造覆盖率的错觉。
  *
  * 运行:`pnpm docs:codemap:check`
  *
@@ -15,9 +23,10 @@
  *   A. modules-in-codemap         — src/modules/* 是否都在 CODEMAP 表格中 (FAIL on miss)
  *   B. codemap-modules-real       — CODEMAP 模块是否真实存在 (FAIL on stale)
  *   C. claude-md-referenced       — 已存在 module-local CLAUDE.md 是否在 CODEMAP 中被引用 (WARN)
- *   D. service-loc-*              — service LOC 阈值与声明漂移 (WARN / INFO)
+ *   D. service-loc-*              — service LOC 阈值:god-service >700 (WARN) / large >500 (INFO)
  *   E. referenced-paths-exist     — CODEMAP 中相对路径 markdown 链接是否存在 (WARN)
- *   F. migration-count-matches    — prisma/migrations/ 实际数 vs CODEMAP + prisma/CLAUDE.md 声明 (FAIL on drift)
+ *   F. migration-count-matches    — prisma/migrations/ 实际数 vs prisma/CLAUDE.md 声明 (FAIL on drift)
+ *                                   (CODEMAP 侧已是生成物,不在此列)
  */
 
 import * as fs from 'node:fs';
@@ -130,7 +139,6 @@ function readRepoFile(relPath: string): string {
 const MODULES_SECTION_RE = /^##\s+src\/modules\//;
 const ANY_SECTION_RE = /^##\s+/;
 const MODULE_ROW_RE = /^\|\s*`([a-z0-9-]+)\/`/;
-const SERVICE_LOC_RE = /service\s+(\d+)L/;
 const MD_LINK_RE = /\[[^\]]*\]\(([^)]+)\)/g;
 // 形如 "12 个 migration"(CODEMAP.md `migrations/` 行 + prisma/CLAUDE.md 累计行共用此措辞)。
 const MIGRATION_COUNT_RE = /(\d+)\s*个\s*migration/;
@@ -153,17 +161,6 @@ function parseCodemapModules(codemap: string): string[] {
   for (const line of iterModulesSection(codemap)) {
     const m = MODULE_ROW_RE.exec(line);
     if (m) out.push(m[1]);
-  }
-  return out;
-}
-
-function parseCodemapDeclaredServiceLoc(codemap: string): Map<string, number> {
-  const out = new Map<string, number>();
-  for (const line of iterModulesSection(codemap)) {
-    const modMatch = MODULE_ROW_RE.exec(line);
-    if (!modMatch) continue;
-    const locMatch = SERVICE_LOC_RE.exec(line);
-    if (locMatch) out.set(modMatch[1], parseInt(locMatch[1], 10));
   }
   return out;
 }
@@ -257,10 +254,7 @@ function checkClaudeMdReferenced(claudeMdPaths: string[], codemap: string): Chec
   };
 }
 
-function checkServiceLoc(
-  services: ServiceEntry[],
-  declared: Map<string, number>,
-): CheckResult[] {
+function checkServiceLoc(services: ServiceEntry[]): CheckResult[] {
   const results: CheckResult[] = [];
 
   const god = services.filter((s) => s.loc > 700);
@@ -290,28 +284,11 @@ function checkServiceLoc(
     });
   }
 
-  const drift: string[] = [];
-  for (const [moduleName, declaredLoc] of declared) {
-    const expectedRel = `src/modules/${moduleName}/${moduleName}.service.ts`;
-    const actual = services.find((s) => s.relPath === expectedRel);
-    if (!actual) continue;
-    const diff = actual.loc - declaredLoc;
-    if (Math.abs(diff) > 100) {
-      const sign = diff >= 0 ? '+' : '';
-      drift.push(
-        `${expectedRel}: CODEMAP declares ${declaredLoc}L, actual ${actual.loc}L (drift ${sign}${diff}L)`,
-      );
-    }
-  }
-  if (drift.length > 0) {
-    results.push({
-      id: 'service-loc-declared-drift',
-      severity: 'WARN',
-      summary: `${drift.length} declared service LOC drift > 100 lines`,
-      details: drift,
-    });
-  }
-
+  // 原 `service-loc-declared-drift`(比对 CODEMAP 声明 LOC 与磁盘实际)已于 Harness 3.0
+  // P4b 删除:体量列与模块行的 `service NNNNL` 现由 scripts/generate-codemap.ts 写入,
+  // 再拿它跟磁盘比对就是拿生成器的输出跟生成器的输入比 —— **恒 PASS 的自证**。
+  // 新鲜度改由 `pnpm docs:codemap:check`(重新生成并逐字 diff)承担。
+  // 保留在本函数里的两项(godservice / large)读的是磁盘真源、不读文档,不是自证。
   return results;
 }
 
@@ -344,6 +321,10 @@ interface MigrationDocDecl {
 
 // prisma/migrations/ 实际目录数为权威;校验各文档声明与之一致。承接 #249/#252 漂移教训:
 // CODEMAP.md 与 prisma/CLAUDE.md 的 migration 计数曾与实际不符,且此前无自动校验抓得到。
+//
+// Harness 3.0 P4b 起 **CODEMAP.md 从本检查移出** —— 那一行由 generate-codemap.ts 写入,
+// 再校一遍是拿生成器输出跟生成器输入比(恒 PASS 的自证);其新鲜度归 `docs:codemap:check`。
+// prisma/CLAUDE.md 仍是人手维护的数字,**必须留在这里**。
 function checkMigrationCount(actual: number, sources: MigrationDocDecl[]): CheckResult {
   const issues: string[] = [];
   for (const s of sources) {
@@ -357,7 +338,7 @@ function checkMigrationCount(actual: number, sources: MigrationDocDecl[]): Check
     return {
       id: 'migration-count-matches',
       severity: 'PASS',
-      summary: `${actual} migration(s);CODEMAP + prisma/CLAUDE.md 声明一致`,
+      summary: `${actual} migration(s);prisma/CLAUDE.md 声明一致`,
     };
   }
   return {
@@ -408,10 +389,9 @@ function main(): void {
   const declaredModules = parseCodemapModules(codemap);
   const claudeMdPaths = listClaudeMdUnderDirs(['src/modules', 'src/common']);
   const services = listServiceFiles();
-  const declaredServiceLoc = parseCodemapDeclaredServiceLoc(codemap);
   const actualMigrations = countMigrationDirs();
   const migrationSources: MigrationDocDecl[] = [
-    { label: 'CODEMAP.md', declared: parseDeclaredMigrationCount(codemap) },
+    // CODEMAP.md 不在此列:见 checkMigrationCount 上方注释(生成物,自证无意义)
     {
       label: 'prisma/CLAUDE.md',
       declared: parseDeclaredMigrationCount(readRepoFile('prisma/CLAUDE.md')),
@@ -422,7 +402,7 @@ function main(): void {
     checkModulesInCodemap(realModules, declaredModules),
     checkCodemapModulesReal(realModules, declaredModules),
     checkClaudeMdReferenced(claudeMdPaths, codemap),
-    ...checkServiceLoc(services, declaredServiceLoc),
+    ...checkServiceLoc(services),
     checkReferencedPathsExist(codemap),
     checkMigrationCount(actualMigrations, migrationSources),
   ];

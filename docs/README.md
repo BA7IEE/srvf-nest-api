@@ -60,6 +60,7 @@ V2 设计期产物(V2-D8 立项时刻 draft 历史快照,**非当前事实权威
 | [`archive/reviews/`](./archive/reviews/) | 历史评审稿:App API Phase 2(P2-2~P2-7)/ Phase 0.5/0.6/0.7 boundary review / Phase 1 client-boundary review / P0-D/P0-E/P0-F 评审稿 / 终态「组织职务 + 分管 + scoped RBAC + 统一鉴权」架构评审稿(`org-position-scoped-authz-terminal-design-review.md`,PR1–PR12 + 摘码微刀全序列实施完成,2026-07-03 归档)/ **第二轮全仓多维度系统性 review**(`full-repo-systematic-review-v0.34.0.md`,31 findings〔0 P0 / 1 P1 / 9 P2 / 19 P3 / 1 known-dup〕全处置完毕 #485–#490 + review #484 收口刀,2026-07-03 归档;沿 v0.26.0 报告归档先例) |
 | [`archive/batches/`](./archive/batches/) | 批次 5-A / 6 / 7 / 8 的 API 前评审、业务确认稿、业务访谈提纲、V2.x 立项记录(中文文件名) |
 | [`archive/plans/`](./archive/plans/) | 历史阶段计划:v1.3 / v1.4 / first-release readiness / bizcode mapping / bootstrap SOP / frontend scope / API client boundary migration plan / **Harness 3.0 重构蓝图 + 规则执法矩阵**(`harness-3.0-blueprint.md` + `harness-3.0-rule-enforcement-matrix.md`,2026-07-28 拍板冻结,P1–P7 施工依据) |
+| [`archive/prisma-migration-history.md`](./archive/prisma-migration-history.md) | prisma migration 历史链(2026-07-23 前),从 `CODEMAP.md` 单元格搬出并**冻结不再增长**(Harness 3.0 P4b:该链曾占 CODEMAP 27% 且无退场机制);之后的 migration 说明只写在 PR body 与 CHANGELOG |
 | [`archive/legacy/`](./archive/legacy/) | 自承"历史归档"的早期收尾报告(`FINAL_REPORT.md`) |
 | [`archive/ai-harness/`](./archive/ai-harness/) | 2026-06-10 全仓 Review 总报告与 AI Harness 底座设计(冻结快照;旧操作层 9 文档 + 3 模板已于同日瘦身收口为 `ai-harness/README.md` 单页,文内相对链接属预期死链) |
 

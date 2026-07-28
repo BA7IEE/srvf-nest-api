@@ -1,6 +1,9 @@
 import { ESLint } from 'eslint';
-import * as tsParser from '@typescript-eslint/parser';
-import tsPlugin from '@typescript-eslint/eslint-plugin';
+// 从**已声明的** typescript-eslint 元包取 parser / plugin。
+// 原先直接 import '@typescript-eslint/parser' 与 '@typescript-eslint/eslint-plugin' 是
+// 幻影依赖:两者都不在 package.json 里,只是被 pnpm 提升到 .pnpm 后偶然解析得到 ——
+// 提升策略一变本自测就整个失效(而失效的自测 = 静默失去阳性对照,最坏的失败模式)。
+import { parser as tsParser, plugin as tsPlugin } from 'typescript-eslint';
 
 // Harness 3.0 P2 — eslint 执法块的**阳性对照自测**。
 //
