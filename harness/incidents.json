@@ -134,6 +134,16 @@
       "note": "已在 process §5.4 条 6 写明改用 squash 提交为基准;脚本化归 P2c 的 squash-merge-guard,尚未落地。当前靠散文 + 本会话实践(tree hash 比对)。"
     },
     {
+      "id": "INC-16",
+      "title": "文档被单测钉成契约:搬动 NEXT_TASKS 里一条『已完成』条目,打挂了 notifications 的 canonical 文档断言",
+      "source": "2026-07-29 P7 熵清理现场(CI 抓到,本地未跑全量 unit)",
+      "cost": "一次 CI 红;若无该 spec,则是『业务决议的三处互证记录悄悄少一处』",
+      "status": "covered",
+      "guard": "src/modules/notifications/notification-canonical-docs.spec.ts —— 把 Decision 15.1/15.2 的关键串同时钉在 current-state / NEXT_TASKS / notifications CLAUDE.md 三处",
+      "lesson": "文档不总是『只是文档』:少数文档段落是代码级契约的一部分。**搬动/精简文档前先 grep 谁在 readFileSync 它** —— 本仓有 3 个这类 spec(notification-canonical-docs / bd2-department-literal-gate / cos-production-sop)。该条目虽标 ✅ 已收口,却是**当前生效的业务决议**而非完成的任务,故刻意留在活跃区并就地注明原因",
+      "probe": "doc-pinned-by-spec"
+    },
+    {
       "id": "INC-15",
       "title": "解释器旁路:python heredoc / node -e 内联代码可写进红区,bash-write-guard 全程沉默",
       "source": "2026-07-29 P4d 施工现场(作者本人走过去了,非事后推演)",

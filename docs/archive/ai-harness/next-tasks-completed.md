@@ -12,12 +12,6 @@
 
 ## 一、2026-07-29 从活跃区搬出的已收口条目
 
-### Content / Notification 可见性业务 Decision — **✅ 已最终拍板(2026-07-27)**
-- **业务负责人最终确认日期：2026-07-27**。
-- **Decision 15.1=B**：management 只认 SUPER_ADMIN 或明确持有对应 GLOBAL `content.read.record` / `notification.read.record` 的账号；Role.ADMIN 不自动放行。
-- **Decision 15.2=B**：department 认当前有效 PRIMARY / SECONDARY / TEMPORARY / SUPPORT Membership，且 Organization 必须 ACTIVE、未软删；适用于 App Content、App Notification、SMS/WeChat 根受众及微信实际 Effect 前最终收件人复核。
-- **非阻断待评审**：考勤审核自由备注是否永久原文进入不可变审计，待独立隐私口径确认；本项不是已确认漏洞，不在当前 hardening Goal 修改。
-
 ### P1-21 document_type 词表统一(`mainland_id` → `id_card`)— **✅ 建档边界已收口(2026-07-21)**
 - 招新/OCR 公开契约保持 `mainland_id` 不变；`RecruitmentPromotionService` 在创建 `MemberProfile` 的唯一边界将其映射为内置 `document_type` 字典真值 `id_card`，其余五个白名单码同值透传。不向字典再加同义的 `mainland_id`，避免运营选项双表示。
 - 单测锁定六码映射；跨模块 E2E 以字典仅含 `id_card` 证明 `recruitment promote → MemberProfile PATCH` 不再被自身字典校验拒绝。未改报名入参/OCR 路由/存量数据，未加 migration/seed 双码。

@@ -101,6 +101,26 @@ const probes: Record<string, () => [boolean, string]> = {
       return [false, 'docs:counts:check 当前为红(计数已漂移)'];
     }
   },
+  'doc-pinned-by-spec': () => {
+    // 真触发:按 spec 里的断言逐条核对被钉住的文档串还在不在。
+    // 不跑 jest —— 这里要的是「秒级回放」,而断言集本身就是那份 spec 的内容;
+    // spec 文件若被删,下面第一条就红(它也在 selfGuard 里,删不掉才是正常)。
+    const spec = 'src/modules/notifications/notification-canonical-docs.spec.ts';
+    if (!fs.existsSync(path.join(ROOT, spec))) return [false, `${spec} 不见了 —— 契约钉子被拔掉`];
+    const pinned: Array<[string, string[]]> = [
+      ['docs/current-state.md', ['Decision 15.1=B/15.2=B', '业务负责人最终确认:2026-07-27']],
+      ['docs/ai-harness/NEXT_TASKS.md', ['Decision 15.1=B', 'Decision 15.2=B', 'Role.ADMIN']],
+      ['src/modules/notifications/CLAUDE.md', ['Decision 15.1=B', 'Decision 15.2=B']],
+    ];
+    for (const [rel, needles] of pinned) {
+      const abs = path.join(ROOT, rel);
+      if (!fs.existsSync(abs)) return [false, `${rel} 不存在`];
+      const body = fs.readFileSync(abs, 'utf-8');
+      for (const n of needles)
+        if (!body.includes(n)) return [false, `${rel} 缺少被 spec 钉住的串:${n}`];
+    }
+    return [true, ''];
+  },
   'interpreter-bypass': () => {
     // 真触发:把「用 python heredoc 写红区 workflow」原样喂给 bash-write-guard。
     // 这条曾经返回 0(放行)—— 正文被剥离后命令位只剩 `python3 -`,不含写侧动词。
