@@ -436,7 +436,95 @@ checkEq(
     'gate 未正面证明 docs-only',
   );
 
-  // ③ 集群级目录视图(pg_locks / pg_stat_activity)必须按当前库收敛。
+  // ③ P2b 执法层接线:hooks 存在、可执行、且在 settings 里被正确挂载。
+  // 「装了 hook 但没接线」= 以为有防线其实没有,与 selector 写错同类的静默失效。
+  const settings = JSON.parse(read('.claude/settings.json')) as {
+    hooks?: Record<string, Array<{ matcher?: string; hooks?: Array<{ command?: string }> }>>;
+    permissions?: { deny?: string[]; ask?: string[]; allow?: string[] };
+  };
+  const hookCmds = Object.values(settings.hooks ?? {})
+    .flat()
+    .flatMap((m) => (m.hooks ?? []).map((h) => h.command ?? ''));
+  for (const script of [
+    'preflight-gate.sh',
+    'preflight-required.sh',
+    'redzone-guard.sh',
+    'bash-write-guard.sh',
+  ]) {
+    const p = path.join(repoRoot, '.claude/hooks', script);
+    check(`P2b hook:${script} 存在`, fs.existsSync(p), '文件缺失');
+    if (fs.existsSync(p)) {
+      check(`P2b hook:${script} 有执行位`, (fs.statSync(p).mode & 0o111) !== 0, 'chmod +x 缺失');
+    }
+    check(
+      `P2b hook:${script} 已在 settings 接线`,
+      hookCmds.some((c) => c.includes(script)),
+      '脚本存在但没挂进 settings —— 等于没装',
+    );
+  }
+  // Bash 旁路必须挂:只拦 Edit/Write 不拦 Bash,一条 sed -i 即可绕过全部红区保护
+  check(
+    'P2b hook:Bash 旁路已挂 PreToolUse',
+    (settings.hooks?.PreToolUse ?? []).some(
+      (m) =>
+        m.matcher === 'Bash' &&
+        (m.hooks ?? []).some((h) => h.command?.includes('bash-write-guard')),
+    ),
+    '未挂 Bash matcher —— sed -i / > 可绕过红区',
+  );
+
+  // ④ redzone.json 可解析,且裁判保护覆盖执法层自身
+  const redzone = JSON.parse(read('harness/redzone.json')) as {
+    redzone: Array<{ id: string; globs: string[] }>;
+    selfGuard: Array<{ id: string; globs: string[] }>;
+  };
+  const selfGlobs = redzone.selfGuard.flatMap((e) => e.globs);
+  for (const must of [
+    'scripts/**',
+    'test/setup/**',
+    'test/contract/**',
+    '.claude/hooks/**',
+    'harness/**',
+    'eslint.harness.mjs',
+  ]) {
+    check(`P2b redzone:裁判保护覆盖 ${must}`, selfGlobs.includes(must), '执法层可被 PR 内改松');
+  }
+  const redGlobs = redzone.redzone.flatMap((e) => e.globs);
+  for (const must of [
+    'AGENTS.md',
+    '.claude/CLAUDE.md',
+    '.github/workflows/**',
+    'prisma/schema.prisma',
+    'src/modules/auth/**',
+  ]) {
+    check(`P2b redzone:红区覆盖 ${must}`, redGlobs.includes(must), 'AGENTS §3 清单条目缺失');
+  }
+
+  // ⑤ 权限缺口(P1 对抗性评审实证):机器层不得比散文松
+  const deny = settings.permissions?.deny ?? [];
+  const ask = settings.permissions?.ask ?? [];
+  check(
+    'P2b perm:--force-with-lease 已 deny',
+    deny.some((r) => r.includes('force-with-lease')),
+    'deny 只有 --force,而 process §5.4 条 7 明禁 --force-with-lease',
+  );
+  check(
+    'P2b perm:pnpm prisma:migrate 别名已受管',
+    ask.some((r) => r.includes('prisma:migrate')),
+    '该别名 = prisma migrate dev,原先不命中任何规则',
+  );
+  check(
+    'P2b perm:盲更新快照已受管',
+    ask.some((r) => r.includes('updateSnapshot')),
+    'AGENTS §1 snapshot SOP 禁盲 -u,原先零机器载体',
+  );
+  check(
+    'P2b perm:settings 与 example 严格同步',
+    read('.claude/settings.json') === read('.claude/settings.example.json'),
+    '两文件必须逐字节一致(白名单改动须成对可见)',
+  );
+
+  // ⑥ 集群级目录视图(pg_locks / pg_stat_activity)必须按当前库收敛。
   // TEMPLATE 克隆使各 worker 库的 pg_class.oid 完全相同(已实测),
   // 不加库谓词的观测会计入别的 worker 的锁 → 并发屏障提前放行 → 测试假绿。
   const DB_SCOPED = /datname\s*=\s*current_database\(\)|lock\.database\s*=|pid\s*=\s*pg_backend_pid\(\)|pid\s*=\s*CAST\(/;

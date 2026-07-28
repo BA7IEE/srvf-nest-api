@@ -1,0 +1,87 @@
+{
+  "_comment": [
+    "红区路径的唯一机读源(Harness 3.0 P2b)。三处消费:",
+    "  1. .claude/hooks/redzone-guard.sh —— Claude 侧 PreToolUse 写前拦截",
+    "  2. .claude/hooks/bash-write-guard.sh —— 堵 sed -i / > / cp / git checkout -- 等 Bash 旁路",
+    "  3. (P2c)scripts/check-redzone.ts —— CI 侧 agent 无关兜底(Codex / 人手唯一受约束处)",
+    "单一机读源的意义:否则 hook 与 CI 的红区清单会各自演化,出现『一边拦一边放』。",
+    "本文件自身在 selfGuard 内 —— 模型改不了自己的约束边界。",
+    "语义与 AGENTS §3『红区精确清单』逐条对应;新增/删除条目 = 改规则语义,须用户拍板。"
+  ],
+  "version": 1,
+  "redzone": [
+    {
+      "id": "protected-docs",
+      "globs": [
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".claude/CLAUDE.md",
+        "ARCHITECTURE.md",
+        "docs/srvf-foundation-baseline.md",
+        "docs/V2红线与复活路径.md",
+        "docs/api-surface-policy.md"
+      ],
+      "why": "六大红区文档(AGENTS §0)。注意 CLAUDE.md 有两份,漏掉 .claude/CLAUDE.md 等于留后门"
+    },
+    {
+      "id": "ci-workflows",
+      "globs": [".github/workflows/**"],
+      "why": "CI / smoke 影响所有 PR;且 branch protection 的 required check 名逐字锁定在此(改名=全仓 PR 永久卡死)"
+    },
+    {
+      "id": "prisma-schema",
+      "globs": ["prisma/schema.prisma", "prisma/migrations/**", "prisma/seed.ts"],
+      "why": "schema / migration / seed 恒 D 档,不可逆"
+    },
+    {
+      "id": "global-pipeline",
+      "globs": [
+        "src/common/guards/**",
+        "src/common/filters/**",
+        "src/common/interceptors/**",
+        "src/bootstrap/**"
+      ],
+      "why": "全局 Guard / Filter / Interceptor / Pipe 影响每个请求。bootstrap 是全局 ValidationPipe 与 setVersion 的真身(AGENTS §3 触发即停 8 的落点,原清单遗漏)"
+    },
+    {
+      "id": "auth-frozen",
+      "globs": ["src/modules/auth/**", "src/**/*throttler*"],
+      "why": "P0-E refresh token 行为冻结 + 防枚举锁 + 限流语义"
+    },
+    {
+      "id": "storage-crypto",
+      "globs": ["src/modules/storage/storage-crypto.service.ts"],
+      "why": "凭证加密;密钥不可轮换"
+    },
+    {
+      "id": "archive-frozen",
+      "globs": ["docs/archive/**"],
+      "why": "归档冻结不回改(仅允许新增文件,Edit 既有文件需授权)",
+      "allowCreate": true
+    },
+    {
+      "id": "container-build",
+      "globs": ["Dockerfile", ".dockerignore", "docker-compose.yml"],
+      "why": "交付物链路 + 测试库容量配置(AGENTS §3 触发即停 7 的『Dockerfile』半条,原清单无载体)"
+    }
+  ],
+  "selfGuard": [
+    {
+      "id": "enforcement-layer",
+      "globs": [
+        "harness/**",
+        ".claude/hooks/**",
+        ".claude/settings.json",
+        ".claude/settings.example.json",
+        ".claude/rules/**",
+        "eslint.harness.mjs",
+        "scripts/**",
+        "test/setup/**",
+        "test/contract/**"
+      ],
+      "why": "裁判保护(对抗性评审 blocker):CI 跑的是 PR 分支上的守卫脚本 —— 不锁住裁判,任何违规 PR 都可以顺手把检查改成恒 PASS、检查名不变、CI 照绿。同理 test/setup(全量 e2e 的地基)与 test/contract(考卷本体)。⚠️ 与 AGENTS §3 现文『test/** 属 🟢 自由区』冲突,该口径需在 P3 同步收窄为『test/** 减去 setup 与 contract』"
+    }
+  ],
+  "grantFile": "srvf-redzone-grant.json",
+  "_grantNote": "授权令牌落在 $(git rev-parse --git-path srvf-redzone-grant.json):每个 worktree 独立、天然不入库、lane 间不串。该路径由 hook 硬编码识别,不接受来自 tool_input 的路径覆盖。"
+}

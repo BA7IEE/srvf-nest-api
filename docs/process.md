@@ -32,6 +32,8 @@ grep -A 3 "^## Unreleased" CHANGELOG.md    # Unreleased 段状态
 
 fresh worktree 先 `pnpm install --frozen-lockfile && pnpm prisma:generate`,否则 `typecheck` 报 Prisma 假错误。
 
+**Harness 3.0 P2b 起,Claude Code 会话内本条已机器化**:SessionStart 自动跑 preflight 并把结论注入上下文,同时写通行标记;**未过门禁时写操作被 hook 拒绝**(只读调研不受限)。环境卫生(依赖 / Prisma 生成物陈旧)一并检测并给出修复命令。其它执行体(Codex / 人手)仍按本节自觉执行,CI 侧兜底见 P2c。
+
 **lane 形态**(Harness 2.0):并行执行 lane 会话开工用 `pnpm agent:preflight --lane <lane名>`(clean tree 与未落后 origin/main 仍硬判;open PR 降为清单打印,写集冲突由总控研判);**E 档 release 收口必须用 global 模式**(全仓 0 open PR)。lane 协议全文见 §8。
 
 ---

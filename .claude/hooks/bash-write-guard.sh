@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# Harness 3.0 P2b — Bash 写侧旁路拦截(PreToolUse: Bash)。
+#
+# 为什么必须有:redzone-guard 只看 Edit/Write/MultiEdit 的 file_path。
+# 没有本脚本,一条 `sed -i '' 's/x/y/' AGENTS.md` 或 `echo x > AGENTS.md`
+# 就能绕过全部红区保护 —— 拦了正门没拦后门等于没拦。
+#
+# 语义(fail-closed):命令里出现写侧动词时,尽力解析目标路径;
+#   - 解析出的路径命中红区 → exit 2 拒绝
+#   - 含写侧动词但**解析不出确定路径**(变量展开 / $(...) / eval / 管道套娃)
+#     → 也拒绝,并要求改用 Edit/Write(它们会被 redzone-guard 精确判定)
+# 命令解析在 shell 里天然不完备,所以宁可误拒也不漏放;正常开发命令
+# (git/pnpm/docker/jq 读操作等)不含这些动词,不受影响。
+#
+# ⚠️ exit 1 是非阻断(会放行);阻断必须 exit 2,stderr 即回喂给模型的拒绝原因。
+set -u
+
+# 仓库根由**脚本自身位置**推导,不依赖 git ——
+# 本脚本恒在 <仓库根>/.claude/hooks/ 下。原先用 git rev-parse 时,git 一旦不可用
+# (容器内 worktree 的 .git 未挂载、PATH 异常等)就 `|| exit 0` **放行一切** =
+# fail-open:守护在最需要它的异常环境里悄悄消失。脚本位置是恒定事实,没有这个失效模式。
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$HOOK_DIR/../.." && pwd)"
+GUARD="$REPO_ROOT/.claude/hooks/redzone-guard.sh"
+[ -x "$GUARD" ] || exit 0
+
+command -v jq >/dev/null 2>&1 || exit 0
+
+INPUT="$(cat)"
+CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""')"
+[ -n "$CMD" ] || exit 0
+
+# ── 误伤治理 ①:只扫「命令位」,先剥掉 heredoc 正文与引号内容 ──────────────
+# 实测踩到:`git commit -m "$(cat <<EOF ... 禁止 sed -i ... EOF)"` 会被判成要执行 sed。
+# 那是**描述性文本**,不是命令。引号/heredoc 内的词本就不在命令位,剥掉在语义上正确。
+# 为什么值得专门治:误伤比漏放更能摧毁守护的可信度 —— 一旦人习惯了「守护老是瞎拦」,
+# 真拦住时也会被当噪音绕过去,防线就名存实亡。
+strip_noise() {
+  printf '%s\n' "$1" | awk '
+    BEGIN { in_h = 0 }
+    {
+      line = $0
+      if (in_h) { d2 = delim; sub(/^[[:space:]]*/, "", line); if (line == d2) in_h = 0; next }
+      if (match(line, /<<-?[[:space:]]*['"'"'"]?[A-Za-z_][A-Za-z0-9_]*['"'"'"]?/)) {
+        d = substr(line, RSTART, RLENGTH)
+        sub(/^<<-?[[:space:]]*/, "", d); gsub(/['"'"'"]/, "", d)
+        delim = d; in_h = 1
+        sub(/<<-?[[:space:]]*['"'"'"]?[A-Za-z_][A-Za-z0-9_]*['"'"'"]?.*$/, "", line)
+      }
+      print line
+    }
+  ' | sed "s/'[^']*'/QUOTED/g; s/\"[^\"]*\"/QUOTED/g"
+}
+CMD="$(strip_noise "$CMD")"
+[ -n "$(printf '%s' "$CMD" | tr -d '[:space:]')" ] || exit 0
+
+# 复用 redzone-guard 判定单个路径:命中则它 exit 2。
+# **不吞它的 stderr** —— 那正是「命中哪条规则 / 为什么受保护 / 如何获授权」的说明,
+# 吞掉的话模型只看到「被拒了」却不知道原因,无法自我纠正。
+check_path() {
+  printf '{"tool_name":"Bash","tool_input":{"file_path":%s}}' "$(printf '%s' "$1" | jq -Rs .)" \
+    | "$GUARD"
+  return $?
+}
+
+# 逐子命令处理(&& || ; | 分隔),避免复合命令里漏判后半段
+printf '%s\n' "$CMD" | tr ';&|' '\n' | while IFS= read -r part; do
+  [ -n "$part" ] || continue
+
+  # 1) 重定向写:> path / >> path(排除 >&2 / >/dev/null 等)
+  redirect_target="$(printf '%s' "$part" | sed -n 's/.*[^0-9>]>>\{0,1\}[[:space:]]*\([^[:space:]|&;]*\).*/\1/p')"
+  case "$redirect_target" in
+    ''|/dev/*|\&*) ;;
+    *)
+      if ! check_path "$redirect_target"; then
+        echo "   ↑ 触发者:shell 重定向写入(> / >>)。请改用 Write/Edit 工具,它们会给出精确的红区判定。" >&2
+        exit 2
+      fi
+      ;;
+  esac
+
+  # 2) 原地修改 / 复制 / 移动 / 打补丁 / 恢复类动词
+  case "$part" in
+    *"sed -i"*|*"perl -i"*|*" tee "*|*"cp "*|*"mv "*|*"patch "*|\
+    *"git checkout -- "*|*"git restore"*|*"git apply"*|*"install -m"*|*"truncate "*)
+      # ── 误伤治理 ②:cp / mv / install 只判**目标**(最后一个参数),不判来源 ─────
+      # 实测踩到:`cp .claude/hooks/x.sh tmp/backup.sh` 被拦 —— 但从受保护路径**读出**
+      # 是无害的(等价于 cat > 别处),真正要拦的是写入受保护路径。
+      # 其余动词(sed -i / tee / patch / git restore)的路径参数本身就是写入目标,全判。
+      verb_scans_target_only=0
+      case "$part" in
+        *"cp "*|*"mv "*|*"install -m"*) verb_scans_target_only=1 ;;
+      esac
+      if [ "$verb_scans_target_only" = "1" ]; then
+        last_tok=""
+        for tok in $part; do
+          case "$tok" in -*|'') continue ;; esac
+          last_tok="$tok"
+        done
+        if [ -n "$last_tok" ]; then
+          if ! check_path "$last_tok"; then
+            echo "   ↑ 触发者:Bash 写侧命令写入受保护路径。请改用 Write/Edit 工具。" >&2
+            exit 2
+          fi
+        fi
+        continue
+      fi
+
+      # 尽力取出看起来像仓内路径的参数
+      found_any=0
+      for tok in $part; do
+        case "$tok" in
+          -*|/dev/*|'') continue ;;
+        esac
+        # 仓内相对路径(含扩展名或已知目录前缀)才判
+        case "$tok" in
+          */*|*.md|*.ts|*.json|*.yml|*.yaml|*.prisma|*.mjs|*.sh)
+            found_any=1
+            if ! check_path "$tok"; then
+              echo "   ↑ 触发者:Bash 写侧命令(sed -i / tee / cp / mv / git restore / patch 等)。请改用 Write/Edit 工具。" >&2
+              exit 2
+            fi
+            ;;
+        esac
+      done
+      if [ "$found_any" = "0" ]; then
+        cat >&2 <<MSG
+⛔ 拒绝:命令含写侧动词但解析不出确定的目标路径,无法判断是否触碰红区(fail-closed)。
+   命令片段:${part}
+   请改用 Write / Edit / MultiEdit 工具执行文件修改 —— 它们会被精确判定;
+   若确属必要的批量操作,请出人话简报请维护者拍板。
+MSG
+        exit 2
+      fi
+      ;;
+  esac
+done
+
+# 上面 while 处于管道末段 = 子 shell:其中的 exit 2 结束的是子 shell,
+# 但子 shell 的退出码就是整条管道的退出码,故这里显式取回。
+# 只认 2(阻断);其余一律 0 —— 避免子 shell 里最后一条 case 未匹配之类的
+# 偶然非零状态被当成 hook 错误刷进 transcript。
+STATUS=$?
+[ "$STATUS" = "2" ] && exit 2
+exit 0
