@@ -201,6 +201,7 @@ export class PermissionsService {
     // 2. 物理删 + audit(单事务;D4 v1.0:Permission 物理删,无 deletedAt;
     //    RolePermission FK Cascade 自动联级清理 — 沿 schema 设计)
     return this.prisma.$transaction(async (tx) => {
+      // eslint-disable-next-line no-restricted-syntax -- 权限码是控制面配置而非业务数据,删码即撤销;软删码会被 rbac 误读
       await tx.permission.delete({ where: { id } });
       await writeConfigAudit(tx, {
         event: 'permission.delete',

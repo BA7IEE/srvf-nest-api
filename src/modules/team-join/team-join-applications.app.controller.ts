@@ -14,11 +14,11 @@ import {
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
+  AppGateStatusDto,
   CreateAppTeamJoinApplicationDto,
   AppTeamJoinApplicationDto,
   UpdateAppTeamJoinTargetsDto,
 } from './dto/app/app-team-join.dto';
-import { GateStatusDto } from './team-join.dto';
 import { AppMeTeamJoinService } from './team-join-applications.app.service';
 
 // 招新三期(入队)T3(2026-06-19):App 自助面 Mobile Controller(评审稿 §3.2 / E-J-5)。
@@ -35,7 +35,7 @@ function buildAuditMeta(req: Request): AuditMeta {
 
 @ApiTags('Mobile - My Team Join')
 @ApiBearerAuth()
-@ApiExtraModels(AppTeamJoinApplicationDto, GateStatusDto)
+@ApiExtraModels(AppTeamJoinApplicationDto, AppGateStatusDto)
 @Controller('app/v1/me/team-join')
 export class TeamJoinApplicationsAppController {
   constructor(private readonly service: AppMeTeamJoinService) {}

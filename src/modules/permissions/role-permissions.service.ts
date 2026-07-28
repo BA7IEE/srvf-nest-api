@@ -184,6 +184,7 @@ export class RolePermissionsService {
       throw new BizException(BizCode.ROLE_PERMISSION_NOT_FOUND);
     }
     await this.prisma.$transaction(async (tx) => {
+      // eslint-disable-next-line no-restricted-syntax -- 角色-权限关联表(纯连接表),解绑即物理删除
       await tx.rolePermission.delete({
         where: { roleId_permissionId: { roleId, permissionId } },
       });

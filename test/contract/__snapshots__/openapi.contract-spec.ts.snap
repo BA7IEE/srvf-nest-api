@@ -2697,6 +2697,44 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppGateStatusDto": {
+    "properties": {
+      "code": {
+        "type": "string",
+      },
+      "completionDate": {
+        "nullable": true,
+        "type": "object",
+      },
+      "extendedUntil": {
+        "nullable": true,
+        "type": "object",
+      },
+      "marked": {
+        "description": "是否已标记",
+        "type": "boolean",
+      },
+      "passed": {
+        "nullable": true,
+        "type": "object",
+      },
+      "professional": {
+        "description": "是否专业队 gate(条件性,不计入通用 8 自动推进)",
+        "type": "boolean",
+      },
+      "satisfied": {
+        "description": "是否满足(passed + 在有效期内)",
+        "type": "boolean",
+      },
+    },
+    "required": [
+      "code",
+      "professional",
+      "marked",
+      "satisfied",
+    ],
+    "type": "object",
+  },
   "AppManagedActivityCheckInDto": {
     "properties": {
       "activityId": {
@@ -4722,7 +4760,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "gates": {
         "description": "各 gate 实况(8 通用 + 4 专业队)",
         "items": {
-          "$ref": "#/components/schemas/GateStatusDto",
+          "$ref": "#/components/schemas/AppGateStatusDto",
         },
         "type": "array",
       },

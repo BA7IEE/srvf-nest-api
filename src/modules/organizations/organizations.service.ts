@@ -515,6 +515,7 @@ export class OrganizationsService {
         select: { ancestorId: true },
       });
       if (oldAncestors.length > 0) {
+        // eslint-disable-next-line no-restricted-syntax -- organizationClosure 是闭包表(纯派生索引,无业务语义),移动节点时必须整段重建
         await tx.organizationClosure.deleteMany({
           where: {
             ancestorId: { in: oldAncestors.map((a) => a.ancestorId) },

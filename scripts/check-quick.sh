@@ -26,6 +26,10 @@ mkdir -p "$LOG_DIR"
 
 pnpm lint:cached >"$LOG_DIR/lint.log" 2>&1 &
 PID_LINT=$!
+# harness 自测:守卫不变式 + eslint 执法块阳性对照(秒级,无 DB)。
+# 后者证明「lint 全绿」是因为代码合规,而不是选择器写错导致规则静默失效。
+{ pnpm exec tsx scripts/harness-guards.selftest.ts && pnpm exec tsx scripts/harness-eslint.selftest.ts; } >"$LOG_DIR/harness.log" 2>&1 &
+PID_HARNESS=$!
 pnpm typecheck >"$LOG_DIR/tsc.log" 2>&1 &
 PID_TSC=$!
 # 直调 jest(pnpm test -- 会把 '--' 后内容当测试路径 pattern,不是 flag)
@@ -35,17 +39,20 @@ PID_UNIT=$!
 wait "$PID_LINT"; RC_LINT=$?
 wait "$PID_TSC"; RC_TSC=$?
 wait "$PID_UNIT"; RC_UNIT=$?
+wait "$PID_HARNESS"; RC_HARNESS=$?
 
-echo "==================== [1/3] lint (cached; exit $RC_LINT) ===================="
+echo "==================== [1/4] lint (cached; exit $RC_LINT) ===================="
 cat "$LOG_DIR/lint.log"
-echo "==================== [2/3] typecheck (exit $RC_TSC) ===================="
+echo "==================== [2/4] typecheck (exit $RC_TSC) ===================="
 cat "$LOG_DIR/tsc.log"
-echo "==================== [3/3] unit tests (exit $RC_UNIT) ===================="
+echo "==================== [3/4] unit tests (exit $RC_UNIT) ===================="
 cat "$LOG_DIR/unit.log"
+echo "==================== [4/4] harness selftests (exit $RC_HARNESS) ===================="
+tail -20 "$LOG_DIR/harness.log"
 
 echo ""
-if [ "$RC_LINT" -ne 0 ] || [ "$RC_TSC" -ne 0 ] || [ "$RC_UNIT" -ne 0 ]; then
-  echo "✗ agent:check:quick FAILED (lint=$RC_LINT typecheck=$RC_TSC unit=$RC_UNIT)"
+if [ "$RC_LINT" -ne 0 ] || [ "$RC_TSC" -ne 0 ] || [ "$RC_UNIT" -ne 0 ] || [ "$RC_HARNESS" -ne 0 ]; then
+  echo "✗ agent:check:quick FAILED (lint=$RC_LINT typecheck=$RC_TSC unit=$RC_UNIT harness=$RC_HARNESS)"
   exit 1
 fi
-echo "✓ agent:check:quick 全绿 (lint / typecheck / unit;lint 为缓存口径,权威冷跑见 CI 与 agent:check:full)"
+echo "✓ agent:check:quick 全绿 (lint / typecheck / unit / harness 自测;lint 为缓存口径,权威冷跑见 CI 与 agent:check:full)"
