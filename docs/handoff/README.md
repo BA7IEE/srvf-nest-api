@@ -33,7 +33,14 @@
 | [`miniapp.md`](miniapp.md) | 小程序前端(仓未建,占位)+ **招新 H5(`srvf-h5`,消费其中 `open/v1` 招新链)** | App surface(`/api/app/v1/*`)模型 + 能力图 + H5 无账号链 + 缺口台账 |
 | `openapi.json` | 离线/版本审查用 | 从 live 导出的**便利快照**(非真相;真相是 live `/api/docs-json`) |
 
-刷新 openapi 快照:`pnpm docs:handoff:openapi`(需后端 dev server 在 `:3000`;本质 = `curl /api/docs-json`)。
+刷新 openapi 快照:**`pnpm docs:openapi`**(离线生成 —— 在进程内建 Nest 应用直接导出文档,
+**不监听端口、不连数据库**,约 8 秒)。新鲜度由 `pnpm docs:openapi:check` 在 CI 守护:
+契约改了而本快照没刷新 → CI 红,并打印新增/消失的路径。
+
+> 旧命令 `pnpm docs:handoff:openapi` 已删除。它是 `curl http://localhost:3000/api/docs-json`,
+> 要求先手动把 dev server 跑起来 —— 于是 :3000 被别的 worktree 的旧 server 占着时,
+> 会**悄无声息地导出另一个分支的契约**(HTTP 200、JSON 合法、文件看着正常)。
+> 错误结果长得像正确结果,是最难发现的一类。
 快照入 git 的好处:改契约的 PR 里 openapi.json 出 diff → reviewer 一眼看见契约变了。
 
 **前端仓地图(谁读哪篇)**:`srvf-admin-web` → admin-web.md;`srvf-h5`(招新 H5:报名/身份证 OCR/进度/撤销)→ miniapp.md 的 `open/v1` 各行;小程序(未建仓)→ miniapp.md;规划仓 `SRVF/05·06` 两文件夹是人看的协调空间(已是指针页,不承载事实)。各前端仓入口文件(CLAUDE.md 等)应带"对接前必读 → 本目录对应篇"指针,指针的增补/纠偏由维护者线下做(本仓 AI 不写姊妹仓)。
