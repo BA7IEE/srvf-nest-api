@@ -134,14 +134,18 @@ jobs:
     name: Contract + E2E
     runs-on: ubuntu-latest
     # 旧单 job 有两次超时误杀前科(147 suites/15m → 误杀;177 suites/25m → 再误杀 → 提到 35m)。
-    # 并行化后理应大幅下降,但 CI 侧(4 vCPU / 2 worker)尚未实测 —— 先保持 35m,
-    # 首跑拿到真实墙钟后再按实测收紧,并把数字写进本注释(沿旧注释的好习惯)。
-    timeout-minutes: 35
+    # 并行化实测(2026-07-28,PR #801 首跑,run 30361346317,195 suites / 4 vCPU / 2 worker):
+    #   本 job 12m17s,其中 e2e 步骤 11m23s(改前单 job 25m59s、e2e 步骤 22m14s)。
+    # 取 25m ≈ 实测 2 倍余量(旧两次误杀分别只有 1.03x / 1.16x 余量)。
+    timeout-minutes: 25
     needs: changeset
     if: needs.changeset.outputs.docs_only != 'true'
     env:
-      # ubuntu-latest 4 vCPU:先保守设 2 worker,拿到 CI 实测后再调。
-      # 本机实测(10 核 5 worker):串行 1350s → 并行 481-653s;CI 侧 4 vCPU 数据待本 PR 首跑填回。
+      # ubuntu-latest 4 vCPU(且 postgres 容器同机):保守 2 worker。
+      # 实测:e2e 步骤 22m14s(串行)→ 11m23s(2 worker),约 1.95x。
+      # **暂不上调到 3-4**:runner 只有 4 vCPU 且要与 postgres 分,本机曾在 CPU 争抢下
+      # 出现整批 beforeAll 撞 30s testTimeout(见 docs/testing.md 并行纪律段);
+      # 若要调,应单独一刀 + 观察多轮 CI,不与其他改动同 PR。
       JEST_MAX_WORKERS: '2'
     steps:
       - name: Checkout
