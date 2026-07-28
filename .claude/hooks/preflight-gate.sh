@@ -12,7 +12,9 @@
 # 真正的拦截发生在写操作那一刻。
 set -u
 
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+# 仓库根由脚本自身位置推导(同其余 hook,不依赖 git 可用性)
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$HOOK_DIR/../.." && pwd)"
 cd "$REPO_ROOT" || exit 0
 
 INPUT="$(cat 2>/dev/null || echo '{}')"

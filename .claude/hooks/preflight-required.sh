@@ -12,7 +12,12 @@
 # 这与 process §2「门禁不过不开新功能」的语义一致(调研不是开功能)。
 set -u
 
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+# 仓库根由**脚本自身位置**推导,不依赖 git ——
+# 本脚本恒在 <仓库根>/.claude/hooks/ 下。原先用 git rev-parse 时,git 一旦不可用
+# (容器内 worktree 的 .git 未挂载、PATH 异常等)就 `|| exit 0` **放行一切** =
+# fail-open:守护在最需要它的异常环境里悄悄消失。脚本位置是恒定事实,没有这个失效模式。
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$HOOK_DIR/../.." && pwd)"
 MARKER_PATH="$(git -C "$REPO_ROOT" rev-parse --git-path srvf-preflight.json 2>/dev/null)"
 case "$MARKER_PATH" in
   /*) MARKER="$MARKER_PATH" ;;
