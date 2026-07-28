@@ -1,17 +1,17 @@
 # SRVF API 当前状态入口
 
-> **当前事实唯一权威源**。冲突以本文件为准;先报告,不擅自调和。
-> Harness 2.0 指针版；历史见 CHANGELOG/archive；§1守护；≤4,500字。
+> **人类决策与现实世界状态的唯一权威源**。冲突以本文件为准;先报告,不擅自调和。
+> Harness 3.0 起本文件**只留不可从代码/GitHub 查到的东西**:现实运维态(§1)、能力指针(§2)、
+> 不做清单(§3)、债务(§4)。版本号 / main HEAD / open PR / tag run 等**机器可查事实已删** ——
+> 现场跑 `pnpm agent:preflight`(Claude 会话开工时自动执行并注入结论)。§1 计数块由 `pnpm docs:counts` 生成。
 
-## 1. 当前版本状态
+## 1. 现实世界状态(机器查不到,必须人维护)
 
-| 项 | 当前值 / 何处看 |
+| 项 | 当前值 |
 |---|---|
-| 版本 / Release | **v0.62.0**(2026-07-28;tag/handoff #797=`88e70f53`;GitHub Release=Latest;`archive/handoff/v0.62.0.md`) |
-| main / 卫生 | main=`5a33dab3`;release=`88e70f53`;PR=0;Unreleased/fragment=0 |
-| 本版 footprint | 即下方 9 项守护计数 |
-| Tag 门禁 | audit `30286755421`@`88e70f53`:success(0H/0C/3M，COS SDK 链);Smoke `30286855360`@`88e70f53`:success |
-| 发布边界 | **代码 Release GO;production 未部署**;活动责任、保险、Storage、外部通道、基础设施硬门仍开放(§4/runbook) |
+| **发布边界** | **代码 Release GO;production 未部署**;活动责任、保险、Storage、外部通道、基础设施硬门仍开放(§4 / runbook) |
+| 版本 / 卫生 | 现场查:`pnpm agent:preflight`(版本三方 / main HEAD / open PR / 落后与否一次打印) |
+| 本版 footprint | 即下方计数块(生成物) |
 
 <!-- counts:begin -->
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
