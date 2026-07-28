@@ -11,6 +11,7 @@
  * preflight(R5-08)的参数 / bump 特征回归在 scripts/agent-preflight.selftest.sh。
  */
 
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { checkFragment, mergeIntoChangelog } from './changelog-merge';
@@ -653,6 +654,88 @@ for (const [configName, config] of JEST_CONFIGS) {
         `patterns=[${patterns.join(',')}]`,
       );
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// P4b — generate-codemap.ts 正向对照
+//
+// 生成器的危险不在「算错数字」(那会被 --check 当场抓到),而在 **吃掉人工列** ——
+// CODEMAP 的价值 90% 在「主要风险 / 本地铁律」那几列散文里,一次贪心的正则就能
+// 把它们抹平,而且抹平后 --check 依然全绿(生成器跟自己比,永远一致)。
+// 所以这里断言的是「人工列逐字不变」与「篡改必被抓」两件事,不是数字对不对。
+// ---------------------------------------------------------------------------
+{
+  const REPO_ROOT = path.resolve(__dirname, '..');
+  const codemapPath = path.join(REPO_ROOT, 'CODEMAP.md');
+  const gen = path.join(REPO_ROOT, 'scripts', 'generate-codemap.ts');
+  const original = fs.readFileSync(codemapPath, 'utf8');
+
+  /** 抽出全部模块行的人工四列(职责 / 风险 / 本地约束),用于逐字比对。 */
+  const humanCells = (doc: string): string => {
+    const out: string[] = [];
+    let inSec = false;
+    for (const line of doc.split('\n')) {
+      if (line.startsWith('## src/modules/')) { inSec = true; continue; }
+      if (inSec && line.startsWith('## ')) break;
+      if (!inSec) continue;
+      const m = /^\|\s*`([a-z0-9-]+)\/`\s*\|/.exec(line);
+      if (!m) continue;
+      const cells = line.split('|');
+      if (cells.length !== 7) continue;
+      // cells[2] = 体量(生成物,跳过);cells[3..5] = 人工列
+      out.push(`${m[1]}::${cells.slice(3, 6).join('|')}`);
+    }
+    return out.join('\n');
+  };
+
+  const runGen = (args: string[]): { code: number; out: string } => {
+    const r = spawnSync('npx', ['tsx', gen, ...args], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+      env: { ...process.env, npm_config_yes: 'true' },
+    });
+    return { code: r.status ?? -1, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
+  };
+
+  try {
+    // 1) 反向案例:未改动时 --check 必须绿(误报会摧毁守护可信度)
+    checkEq('P4b codemap:--check 干净树为 0', runGen(['--check']).code, 0);
+
+    // 2) 幂等:再生成一次不应产生 diff
+    runGen([]);
+    checkEq(
+      'P4b codemap:生成幂等(第二次无改动)',
+      fs.readFileSync(codemapPath, 'utf8'),
+      original,
+    );
+
+    // 3) 正向对照:体量列被篡改 → --check 必须 exit 1
+    const tampered = original.replace(
+      /^(\|\s*`activities\/`\s*\|)[^|]*\|/m,
+      '$1 S 1L |',
+    );
+    check('P4b codemap:篡改样本确实改动了文本', tampered !== original);
+    fs.writeFileSync(codemapPath, tampered, 'utf8');
+    const bad = runGen(['--check']);
+    checkEq('P4b codemap:体量列被篡改 → --check exit 1', bad.code, 1);
+    check(
+      'P4b codemap:--check 打印出问题行',
+      bad.out.includes('activities/'),
+      bad.out.slice(0, 300),
+    );
+
+    // 4) 关键断言:重新生成后,人工四列必须逐字复原(生成器不吃散文)
+    fs.writeFileSync(codemapPath, tampered, 'utf8');
+    runGen([]);
+    checkEq(
+      'P4b codemap:重新生成后人工列逐字不变',
+      humanCells(fs.readFileSync(codemapPath, 'utf8')),
+      humanCells(original),
+    );
+  } finally {
+    // 自复原:selftest 绝不留下被篡改的仓库文件
+    fs.writeFileSync(codemapPath, original, 'utf8');
   }
 }
 
