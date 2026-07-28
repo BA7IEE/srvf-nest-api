@@ -44,9 +44,24 @@ pnpm harness:grant --clear                         # 用完撤销
 
 AI 不得自行发放授权 —— 自己给自己开通行证,这道闸就没有意义。**本地令牌只解开「能不能写」,不解开「能不能合」**:改动执法层的 PR 另需 GitHub `harness-review` 环境审批。
 
-**自测(证明防线真的存在)**:`pnpm harness:selftest` = 守护不变式 94 项 + lint 阳性对照 30 例 + hook 行为 31 例。
+**自测(证明防线真的存在)**:`pnpm harness:selftest` = 守护不变式 + lint 阳性对照 + hook 行为三份(条数以实际输出为准,不在此重复以免漂移)。
 中间那份专防「selector 写错导致规则永不触发」,最后那份专防「hook 用了 `exit 1`」——
 ⚠️ Claude Code 只把 **exit 2** 当阻断,`exit 1` 会被当成非阻断错误**直接放行**,那样拦截只存在于纸面。
+三份都遵循同一原则:**喂必定违规的样例断言真被拦 + 喂合法样例断言不误杀**。只测前者会漏掉误伤,而误伤到让人绕过的程度,防线同样失效。
+
+## 1.6 派生文档:生成而非手维(Harness 3.0 P4)
+
+> **镜像反转**:过去是「人写镜像给 AI 读 + 脚本检测漂移」;现在是「AI 从代码生成给人看 + CI 强制新鲜度」。
+> 「检测漂移」本身是在给一个不该存在的问题打补丁 —— 派生文档只是代码的视图,不该是独立事实源。
+
+| 文档 | 生成命令 | 新鲜度守护 | 人类保留部分 |
+|---|---|---|---|
+| [`RBAC_MAP.md`](RBAC_MAP.md) 派生段 | `pnpm docs:rbacmap` | `pnpm docs:rbacmap:check`(重新生成并比对) | 双轨架构叙事 / 保护不变式 / 缺口与冻结存量 / AI 硬规则 |
+
+生成段夹在 `<!-- rbac:begin -->` / `<!-- rbac:end -->` 之间,**禁手改**(改了新鲜度校验当场红,并提示跑生成命令)。
+权威源:权限码 → `prisma/seed.ts`;controller 前缀 → `@Controller` 装饰器。
+
+RBAC_MAP 的 75 行逐 PR 历史「戳」已归档至 [`archive/ai-harness/rbac-map-stamps.md`](../archive/ai-harness/rbac-map-stamps.md) —— 那是与 CHANGELOG 重复的历史叙事,读者要得出「现在权限长什么样」却必须在脑内折叠全部戳;现状已可直接生成,故戳不再占据理解路径。
 
 ## 2. 守护命令(全部挂 CI)
 
@@ -58,6 +73,6 @@ AI 不得自行发放授权 —— 自己给自己开通行证,这道闸就没�
 
 ## 4. 目录说明
 
-本目录恰 4 文件:**README.md**(本页)/ **codex-review-sop.md**(跨模型评审 SOP,沿 process §8.3)/ **RBAC_MAP.md**(权限地图,`docs:rbacmap:check` 守护)/ **NEXT_TASKS.md**(后续任务清单;逐项单独立项,AI 不自动启动)。
+本目录恰 4 文件:**README.md**(本页)/ **codex-review-sop.md**(跨模型评审 SOP,沿 process §8.3)/ **RBAC_MAP.md**(权限地图;派生段由 `pnpm docs:rbacmap` **生成**,新鲜度由 `docs:rbacmap:check` 守护)/ **NEXT_TASKS.md**(后续任务清单;逐项单独立项,AI 不自动启动)。
 
 本目录更新一律走 A 档 PR(权限**事实**变更本身是 D 档,本目录只能事后 true-up);沿 process §6"无守护不留",不再新增无守护的派生地图。2026-06-10 Review 冻结档在 [`../archive/ai-harness/`](../archive/ai-harness/)。
