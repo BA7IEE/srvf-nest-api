@@ -26,7 +26,8 @@ import { createTestApp } from '../setup/test-app';
 // - invalid MIME → 13025(Service 层显式 regex;Q1 v1.0)
 // - 同 type 下不同 mime / 不同 type 下同 mime 可共存
 // - List 分页 + typeConfigId / status / mime filter
-// - 资源不存在 / 已软删统一返 13022(沿 v1 §10 信息泄漏防御)
+// - 资源不存在 / 已软删统一返 13022
+//   (沿 docs/reference/soft-delete-transactions.md §10 信息泄漏防御)
 // - DTO 白名单(PATCH 拒绝 mime / typeConfigId / status / deletedAt / id;Q3 + Q4 + Q5 v1.0)
 // - 出参嵌套 typeConfig: { id, code, displayName }(Q2 v1.0)
 // - 软删后行为(不出现在 list)

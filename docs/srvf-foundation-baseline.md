@@ -79,7 +79,7 @@
 - **批次 3 已实装**(v0.4.0,2026-05-11):批次 3 schema 前评审收口时锁定 `activities` / `activity_registrations` / `attendances` 三段(评审稿 §7.2),v0.4.0 release 时全部 27 个 BizCode 实装落地(`200xx` 9 / `210xx` 4 / `220xx` 14;详见 `CHANGELOG.md` v0.4.0 段)
 - **批次 4-A 已实装**(v0.4.0 post-release,2026-05-11):批次 4-A schema PR(`2190803` PR #18)在 `220xx` attendances 段**补充** 3 个 BizCode(`22043` `ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE` / `22045` `ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID` / `22046` `ATTENDANCE_SHEET_FINAL_REVIEW_NOTE_REQUIRED`),配合 `AttendanceSheet` 5 态状态机扩展;**沿 batch 3B 段位**(`220xx`),**不新开模块码**;APD 部门部长 / 副部长专属权限沿 D-S2 **不开** `22044` `FORBIDDEN_*`,权限不足走通用 `40300`
 - **批次 5-A 已实装**(v0.5.0 post-release,2026-05-12):批次 5-A 实施 PR(`cfa396d` PR #24)新开 `230xx` `contribution_rules` 模块段位,5 个 BizCode 实装落地(`23001` `CONTRIBUTION_RULE_NOT_FOUND` / `23002` `CONTRIBUTION_RULE_ACTIVE_DUPLICATE` / `23010` `CONTRIBUTION_RULE_POINTS_INVALID` / `23011` `CONTRIBUTION_RULE_ACTIVITY_TYPE_INVALID` / `23012` `CONTRIBUTION_RULE_ROLE_CODE_INVALID`);**不开** `23030` `CONTRIBUTION_RULE_KEY_FIELDS_NOT_EDITABLE`(沿 D6 v1.1 E8,PATCH 维度禁改交给 `UpdateContributionRuleDto` 白名单 + ValidationPipe `forbidNonWhitelisted` 拦截 → 通用 `BAD_REQUEST` / 40000);**不开** `23101~23104` `FORBIDDEN_*`(沿 baseline,权限不足走通用 `FORBIDDEN` / 40300;APD 部门部长 / 副部长细分权限留 5-B);未规划模块从 `240xx` 起
-- **批次 6 已实装**(v0.6.x post-release,2026-05-12):批次 6 实施 PR #1(`9aac9d0` PR #29)+ PR #2(`aeb2ea8` PR #30)新开 `140xx + 141xx` `audit_logs` 模块段位,2 个 BizCode 实装落地(`14001` `AUDIT_LOG_NOT_FOUND` / `14101` `FORBIDDEN_AUDIT_LOG_READ`);**不开** `14002+`(`audit_logs` 写入后不可改不可删 / 无唯一约束 / 无 P2002 场景)/ `14010+`(`AuditLogQueryDto` 由 ValidationPipe 兜底走 `BAD_REQUEST` / 40000)/ `14102+`(沿 baseline,USER 越权由 Guard 拒绝走通用 `FORBIDDEN` / 40300;`14101` 仅用于 service 层"已通过 Guard、但 detail 越级"场景,详见 D6 v1.1 §6.4 / D-D 决议)。**历史起点**(D6 v1.1 Q1=A):第一波不记查看行为,不做失败操作审计,不审计 `audit_logs` 自身,`auditPlaceholder` 与 `AuditLogEvent` 两 union 物理隔离并渐进迁移。**当前约束**(2026-07-19 C-2,Q1=B 已拍板):管理端档案/联系人/保险/证书/考勤/招新等敏感读取 fail-closed 落 `audit_logs`;CSV 在返回 generator 前、签名 URL 在 provider 前落库;`auditPlaceholder` 文件与 union 已退役,事件类型唯一归 `AuditLogEvent`(122 项)。**仍保持**:失败操作不审计、`audit_logs` 自身读取不审计(A-17/A-18)。
+- **批次 6 已实装**(v0.6.x post-release,2026-05-12):批次 6 实施 PR #1(`9aac9d0` PR #29)+ PR #2(`aeb2ea8` PR #30)新开 `140xx + 141xx` `audit_logs` 模块段位,2 个 BizCode 实装落地(`14001` `AUDIT_LOG_NOT_FOUND` / `14101` `FORBIDDEN_AUDIT_LOG_READ`);**不开** `14002+`(`audit_logs` 写入后不可改不可删 / 无唯一约束 / 无 P2002 场景)/ `14010+`(`AuditLogQueryDto` 由 ValidationPipe 兜底走 `BAD_REQUEST` / 40000)/ `14102+`(沿 baseline,USER 越权由 Guard 拒绝走通用 `FORBIDDEN` / 40300;`14101` 仅用于 service 层"已通过 Guard、但 detail 越级"场景,详见 D6 v1.1 §6.4 / D-D 决议)。**历史起点**(D6 v1.1 Q1=A):第一波不记查看行为,不做失败操作审计,不审计 `audit_logs` 自身,`auditPlaceholder` 与 `AuditLogEvent` 两 union 物理隔离并渐进迁移。**当前约束**:2026-07-19 C-2(Q1=B)令敏感读取 fail-closed 落库并退役 placeholder union(当时 122 项);D-INSURANCE PR2 后事件类型唯一归 `AuditLogEvent`(当前 123 项)。CSV 在 generator 前、签名 URL 在 provider 前落库;失败操作不审计、`audit_logs` 自身读取不审计(A-17/A-18)仍保持。
 - **C-6 RBAC 已实装**(v0.9.0):`300xx + 301xx` `permissions` 模块全部落地(4 表 schema + 16 端点 + 14 BizCode;沿 D7-RBAC v1.1 冻结 / PR #51 + #53 + 实施 PR #54-#61);段位选择避开 `140xx + 141xx`(audit_logs)与 `240xx-290xx`(未规划业务);**v0.15.0 后管理面已收紧**(P0-F 4 PR:rbac / config / users / audit-logs 接入 `rbac.can()`);详见 [`docs/current-state.md §2`](current-state.md) 与历史评审稿 `docs/archive/batches/批次8_RBAC_API前评审.md`
 - **V2 候选预留**:研究文档 §2.6 / §4.6 显式给出"通用化失败回退三档"(最小骨架 / 延后参与表 / 整体砍掉),启用与否由 D5/D6 决议;若决议为"砍掉",对应段位释放给后续未规划模块
 - **历史命名废弃**:`events` / `event_participants` 不会以原模块名复活(批次 2 / 批次 3 已按业务语义拆分落地为 `certificates` / `activities` / `activity_registrations` / `attendances`);但 BizCode 段位维度**不存在废弃保留**——所有段位要么已实装,要么基线预留,要么 V2 候选预留,要么未规划预留
@@ -123,7 +123,7 @@ V2 模块**不得**为"token / 鉴权失败"自创业务码(沿用 v1 §5 纪律
 
 ### 1.4 新增 BizCode 必走流程
 
-继承 v1 §5 / `CLAUDE.md §5`:
+承接 [`reference/response-pagination-errors.md §5`](reference/response-pagination-errors.md):
 
 1. 先说明使用场景与前端提示价值
 2. 用户确认后加入对应模块 `XX0xx` / `XX1xx` 段
@@ -138,7 +138,7 @@ V2 模块**不得**为"token / 鉴权失败"自创业务码(沿用 v1 §5 纪律
 
 ### 2.1 完全继承 v1(不重述,只标沿用)
 
-以下沿用 `CLAUDE.md §3`,V2 模块**禁止**变更:
+以下沿用 [`reference/naming-dto-validation.md §3`](reference/naming-dto-validation.md),V2 模块**禁止**变更:
 
 - 时间字段:`createdAt` / `updatedAt` / `deletedAt`(类型 `Date | null`)
 - 主键:`cuid()` 字符串,字段名 `id`
@@ -355,7 +355,7 @@ V2 新模块:平铺加在 `src/modules/` 下,**禁止**嵌套 `system/` / `busin
 
 ## 7. V2 配置归属规则(沿用 v1 §14)
 
-### 7.1 既有归属表(不重述,见 `CLAUDE.md §14`)
+### 7.1 既有归属表(不重述,见 [`reference/config-env.md §14`](reference/config-env.md))
 
 `APP_*` / `DATABASE_URL` / `JWT_*` / `LOG_LEVEL` / `LOGIN_THROTTLE_*` / `SUPER_ADMIN_*` 已锁,V2 不动。
 
@@ -487,14 +487,14 @@ V2 模块即便对应字段尚未确定要不要落表,**屏蔽规则提前加�
 ```typescript
 providers: [
   { provide: APP_GUARD, useClass: JwtAuthGuard },   // 1. 验登录
-  { provide: APP_GUARD, useClass: RolesGuard },     // 2. 验角色
+  { provide: APP_GUARD, useClass: RolesGuard },     // 2. 防御性兜底(当前活跃 @Roles = 0)
 ]
 ```
 
 V2 **不引入**第三个 Guard。理由:
 
 - 部门级数据范围权限(如"部门负责人只能管本部门人")**显式**在 Service 内 `assertCanXxx` 实现,**不**通过 Guard 层
-- 这是 `research.md §3.11` / `CLAUDE.md §18.2` 锁定的红线
+- 这是根 [`AGENTS.md §2`](../AGENTS.md) 判权单轨 + [`reference/auth-jwt-refresh.md §8`](reference/auth-jwt-refresh.md) 锁定的红线
 
 ### 9.2 装饰器使用纪律
 
@@ -509,9 +509,9 @@ V2 **不引入**第三个 Guard。理由:
 
 | 接口语义 | 装饰器 | 备注 |
 |---|---|---|
-| 公开接口(无需登录) | `@Public()` | V2 仅 `/api/system/v1/health` 系列继续公开,V2 业务接口默认不公开 |
+| 公开接口(无需 access token) | `@Public()` | 当前分三类:`/api/auth/v1/*` 的登录 / refresh / logout / 找回等 pre-auth 或会话生命周期端点、`/api/system/v1/health*`、经立项的 `/api/open/v1/*`;精确清单以实际 `@Public()` + contract 为准,不得只从前缀或模块名推断 |
 | 需登录但任意角色可访问 | (默认,无需装饰) | |
-| 需特定角色 | `@Roles(Role.SUPER_ADMIN, Role.ADMIN)` | 角色枚举从 `@prisma/client` 导入 |
+| 需特定业务权限 | (Controller 默认仅登录) | Service 内 `rbac.can('<permission>')` + 必要业务 policy;不新增 `@Roles(...)` |
 | 本人专属接口 | (默认 + Service 内校验 `userId === currentUser.id`) | 不通过 Guard 层 |
 | 部门 / 资源数据范围 | (默认 + Service 内 `assertCanXxx`) | 不通过 Guard 层 |
 
@@ -588,42 +588,43 @@ V2 第一个使用软删的模块(预计 `organizations` 或 `dictionaries`)开�
 
 ---
 
-## 11. V2 不破坏 v1 14 接口的兼容性白名单
+## 11. v1 继承契约的 canonical 终态保护
 
 ### 11.1 兼容性铁律
 
-V2 **不修改** `docs/archive/legacy/architecture-v1-blueprint.md §6`(原 `ARCHITECTURE.md §6`,PR-6 已归档)已交付的 14 个 v1 接口的:
+`docs/archive/legacy/architecture-v1-blueprint.md §6` 记录最初 14 个 v1 接口。其旧 path 与 `@Roles` 标注已分别被 **D-9 Route B** 和**判权单轨**的已拍板终态取代,不得再把历史原值当当前 zero-drift 基线。
 
-- 路径(URL)
-- HTTP 方法
-- 入参 DTO 字段集(可新增可选字段,但**禁止**删除 / 重命名 / 改类型)
-- 出参 DTO 字段集(**禁止**删除 / 重命名 / 改类型)
-- 权限标注(`@Public` / `@Roles`)
-- 错误码语义
+当前保护对象是这些能力在 live canonical surface 下的:
 
-### 11.2 v1 14 接口清单(权威源 = `docs/archive/legacy/architecture-v1-blueprint.md §6`,原 `ARCHITECTURE.md §6`,PR-6 已归档)
+- 路径 / HTTP 方法(以 contract `EXPECTED_ROUTES` 为准)
+- 入参 / 出参 DTO 与错误码语义(以 live OpenAPI + 代码为准)
+- 当前鉴权语义(以实际 `@Public()` / JwtAuthGuard + Service 判权单轨为准)
 
-V2 文档不重复罗列字段集,以 `docs/archive/legacy/architecture-v1-blueprint.md §6`(原 `ARCHITECTURE.md §6`,PR-6 已归档)为单一权威源。V2 任何修改 `auth/` / `users/` / `health/` 模块的动作,必须先回到该归档 §6 比对兼容性。
+任何变化都必须按 [`process §3`](process.md) 分级、逐行解释 snapshot 并取得对应授权;禁止拿原 v1 path 恢复 legacy alias。
+
+### 11.2 原 v1 清单与当前权威源
+
+原始清单只用于追溯,见 `docs/archive/legacy/architecture-v1-blueprint.md §6`;当前路径、方法与 schema 的权威源是 live OpenAPI、`test/contract/openapi.contract-spec.ts` 及其 snapshot。修改 `auth/` / `users/` / `health/` 时同时核对原行为意图与当前 canonical 契约,高低冲突按根 `AGENTS.md §0` 处理。
 
 ### 11.3 V2 与 v1 集成的允许动作
 
-- ✅ 在 v1 接口出参 DTO 新增**可选**字段(标 `nullable`),不影响现有客户端
+- ✅ 经 C 档授权后在 canonical 接口出参 DTO 新增**可选**字段(标 `nullable`)
 - ✅ 在 v1 数据表新增**可空**外键(如 `users.memberId` 候选)
-- ✅ 新增 v1 模块的扩展接口(路径在 v1 接口之外)
+- ✅ 经 C 档授权后在五个 canonical surface 新增扩展接口
 
 ### 11.4 V2 与 v1 集成的禁止动作
 
-- ❌ 删除 / 重命名 / 改类型 v1 已交付字段
-- ❌ 修改 v1 接口的 HTTP 方法或路径
-- ❌ 在 v1 出参中新增**必返**字段(可能破坏旧客户端 schema 校验)
-- ❌ 把 V2 字段(如 `members.*`)倒灌进 v1 `UserResponseDto`
-- ❌ 修改 v1 的全局 ResponseInterceptor / AllExceptionsFilter / Guard 行为
+- ❌ 未授权删除 / 重命名 / 改类型当前 canonical 契约字段
+- ❌ 未授权修改当前 canonical endpoint 的 HTTP 方法或路径,或恢复已删除 legacy path
+- ❌ 未授权新增**必返**字段(可能破坏客户端 schema 校验)
+- ❌ 把 `members.*` 等业务字段倒灌进 `UserResponseDto`
+- ❌ 未经 D 档授权修改全局 ResponseInterceptor / AllExceptionsFilter / Guard 行为
 
 ### 11.5 OpenAPI 契约快照保护
 
-V1.3 已建立 `test/contract/openapi.contract-spec.ts` 快照测试。V2 任何修改可能影响 v1 14 接口的动作,必须:
+`test/contract/openapi.contract-spec.ts` 已锁定全量 live canonical 契约。任何可能影响继承自 v1 的能力或其它当前 endpoint 的动作,必须:
 
-1. 先确认是否真有必要修改 v1 接口(默认应当被否决,走 §11.4 红线)
+1. 先确认是否真有必要修改当前接口(默认保持 zero drift)
 2. 若必要,显式在 PR 中说明并更新快照
 3. 用户拍板后才能合并
 
@@ -684,7 +685,7 @@ V2 模块开发任务完成后,按以下两档逐项验证再报告完成:
 | 任务类型 | 档位 |
 |---|---|
 | 新增业务模块(controller / service / DTO) | A + B |
-| Schema 变更(新表 / 改表) | A + B(B 档需验 v1 接口未受影响) |
+| Schema 变更(新表 / 改表) | A + B(B 档需验 live canonical 契约未受影响) |
 | Seed 改动 | A + B(B 档需验 seed 幂等) |
 | **纯文档变更** | **见 §13.3 — 不强制跑 lint/typecheck/e2e/contract** |
 | 测试用例新增 / 修改 | A 档全跑 |
@@ -749,15 +750,7 @@ V2 模块开发任务完成后,按以下两档逐项验证再报告完成:
 
 ### 14.4 与 v1 / V1.1 铁律的优先级
 
-冲突时:
-
-1. v1 §1-§10 / `CLAUDE.md §1-§17` 最高优先级
-2. V1.1 §11 / `CLAUDE.md §17` 次之
-3. 本基线规范第三
-4. 草案文档第四
-5. 开发任务卡最低
-
-发现冲突且本规范在更高优先级范围内,**禁止** AI 自行调和,必须暂停说明。
+冲突顺序只认根 [`AGENTS.md §0`](../AGENTS.md) 的当前权威表;本文件位于 baseline 层,低于当前事实与根 AGENTS,高于 V2 红线 / API surface policy / process / archive 历史证据。发现冲突时**禁止** AI 自行调和,必须暂停说明。旧 v1 / V1.1 顺序仅保留在 [`archive/harness-v1/`](archive/harness-v1/) 供追溯,不再引用根 `CLAUDE.md` 的已删除章节号。
 
 ---
 
@@ -770,7 +763,7 @@ V2 模块开发任务完成后,按以下两档逐项验证再报告完成:
 | v0.3 | 2026-05-11 | §1.1 修正 `certificates` 段位归属:批次 2(v0.3.0,2026-05-10)已实装的 `certificates` 占用 `180xx + 181xx`(5 BizCode:`18001` / `18010` / `18011` / `18030` / `18101`,详见 `CHANGELOG.md` v0.3.0 段与 [src/common/exceptions/biz-code.constant.ts](../src/common/exceptions/biz-code.constant.ts) 模块内注释);v0.2 修订时**误将该槽位标记为 `events` 废弃保留**,本次更正为 `certificates` 已实装,并新增"批次 2 已实装"状态说明;`events` / `event_participants` 命名废弃语义保留为"历史命名废弃"状态条目,但 BizCode 段位维度**不存在废弃保留**——所有段位要么已实装,要么基线预留 / V2 候选预留 / 未规划预留 |
 | v0.4 | 2026-05-12 | §1.1 批次 4-A 段位补充(v0.4.0 post-release,**未 bump version**):`220xx` `attendances` 段位由批次 3B 14 BizCode 扩展为 17(沿段位补 `22043` / `22045` / `22046`,**不新开模块码**),配合 `AttendanceSheet` 5 态状态机(`pending` / `pending_final_review` / `approved` / `rejected` / `final_rejected`)+ APD 终审 + ContributionRule 系统预填;沿 D-S2 **不开** `22044` `FORBIDDEN_*`(APD 部门部长 / 副部长专属权限留后续 RBAC 批次);未规划模块仍从 `230xx` 起 |
 | v0.5 | 2026-05-12 | §1.1 批次 5-A 段位收口(v0.5.0 post-release,**未 bump version**):新开 `230xx` + `231xx` `contribution_rules` 模块段位,`230xx` 实装 5 BizCode(`23001` / `23002` / `23010` / `23011` / `23012`);**不开** `23030` `KEY_FIELDS_NOT_EDITABLE`(PATCH 维度禁改交给 DTO 白名单 + ValidationPipe `forbidNonWhitelisted` 拦截抛 40000;沿 D6 v1.1 §2.2 E8);**不开** `23101~23104` `FORBIDDEN_*`(沿 baseline 风格,Guard 拒绝走通用 40300);**不开** `23103` `LAST_RULE_PROTECTED`(无最后一条规则保护需求,沿 batch 4-B `22048` 不抛错路径);本批次 schema 影响 0(batch 4-A 已落地完整 model + partial unique + 审计字段);未规划模块从 `240xx` 起 |
-| v0.6 | 2026-05-14 | §1.1 C-6 D7 v0.2 局部收口段位预留(沿 [`docs/批次8_RBAC_API前评审.md`](批次8_RBAC_API前评审.md) v0.2 局部收口稿同步;v0.8.1 handoff §10 启动后 Fast-1 任务):新增 `300xx + 301xx` `permissions`(C-6 RBAC)模块段位预留,**避开 `140xx + 141xx`**(已被 audit_logs 批次 6 v0.7.0 占用,不可与 RBAC 共用);**中间留 `240xx-290xx`** 给未来未规划业务模块(训练 / 装备 / 财务 / 通知等);RBAC 是项目骨架级模块,值得占独立段位空间;原"`240xx` 起 未规划模块预留" 拆分为 "`240xx-290xx` 未规划" + "`300xx + 301xx` permissions" + "`310xx` 起 未规划";**段位预留 ≠ 段位实装**,本次仅 baseline 段位锁定,RBAC 4 model + ~14 个 BizCode 实装由 C-6 RBAC V2.x 立项后实施 PR 完成(预估 9 个 PR);本次纯文档变更,沿 baseline §13.3:**不改 schema / migration / 代码 / 测试 / version / tag / release** |
+| v0.6 | 2026-05-14 | §1.1 C-6 D7 v0.2 局部收口段位预留(沿 [`archive/batches/批次8_RBAC_API前评审.md`](archive/batches/批次8_RBAC_API前评审.md) v0.2 局部收口稿同步;v0.8.1 handoff §10 启动后 Fast-1 任务):新增 `300xx + 301xx` `permissions`(C-6 RBAC)模块段位预留,**避开 `140xx + 141xx`**(已被 audit_logs 批次 6 v0.7.0 占用,不可与 RBAC 共用);**中间留 `240xx-290xx`** 给未来未规划业务模块(训练 / 装备 / 财务 / 通知等);RBAC 是项目骨架级模块,值得占独立段位空间;原"`240xx` 起 未规划模块预留" 拆分为 "`240xx-290xx` 未规划" + "`300xx + 301xx` permissions" + "`310xx` 起 未规划";**段位预留 ≠ 段位实装**,本次仅 baseline 段位锁定,RBAC 4 model + ~14 个 BizCode 实装由 C-6 RBAC V2.x 立项后实施 PR 完成(预估 9 个 PR);本次纯文档变更,沿 baseline §13.3:**不改 schema / migration / 代码 / 测试 / version / tag / release** |
 | v0.7 | 2026-05-23 | **Phase G1 stale 状态校准**(治理期 G1-PR-A):头部加状态注释,明确"V2 设计阶段 / 不引入 schema / 不需要 D6/D7 gates"措辞仅作历史背景,当前实装状态以 §1.1 + [`docs/current-state.md §2`](current-state.md) + `prisma/schema.prisma` 为准。§1.1 段位表把 `organizations` / `dictionaries` / `attachments` / `members` / `member_profiles` / `member_departments` / `permissions` 7 条"V2 基线预留 / C-6 段位预留"刷新为对应批次或 V2.x **已实装**。状态说明段同步刷新"V2 基线预留"与"C-6"两条注释。不动 §2-§13 长期铁律;沿 §13.3 纯文档变更通道:**不改 schema / migration / 代码 / 测试 / version / tag / release** |
 | v0.8 | 2026-07-04 | **§8 日志屏蔽基线 true-up**(承接 pre-go-live readiness review v0.35.0 §4 F-1 越界遗留,维护者 2026-07-04 明确授权修改本节):§8.2 additive 补齐 4 类真实落表字段——`oldPassword`(新增"口令 / 改密类"子节,不塞入 §8.1 已锁清单)、`documentNumber` / `realName`(并入"个人身份证类")、OCR 识别中间字段 `sex` / `nation` / `birth` / `authority` / `validDate`(新增"OCR 识别中间字段"子节,`birth` 与既有"出生 / 身份信息类"`birthDate` 并列不混同)、`certNumber` / `policyNumber` 真实拼写(并入"第三方账号 / 凭证标识类",旧预留拼写 `certificateNo` / `policyNo` 按 §8.4 防御性留置不删);对齐 `src/bootstrap/logger-options.ts` + `docs/security.md`(#499)66 条 redact 路径,使"代码已覆盖真实字段 ⊆ §8 条目"不变量成立;仅动 §8,§1-§7 / §9-§14 长期铁律零改动;本次纯文档变更,沿 baseline §13.3:**不改 schema / migration / 代码 / 测试 / version / tag / release** |
 | v0.9 | 2026-07-15 | **§8 位置轨迹类 additive 扩展**(活动自助 GPS 签到 F1;维护者回复“按推荐”+“按补充推荐”授权):登记 App 位置上报 `longitude`/`latitude` 与 `ActivityCheckIn` 四个实际坐标字段，同批接入 pino `[REDACTED]`；明确公开活动场地坐标不等同成员轨迹。其余 §1-§7 / §9-§14 长期铁律零改动。 |
@@ -794,6 +787,6 @@ V2 模块开发任务完成后,按以下两档逐项验证再报告完成:
 | A8 日志屏蔽清单预扩展 | §8 |
 | A9 Guard 注册延续 | §9 |
 | A10 软删除显式封装 | §10 |
-| A11 不破坏 v1 14 接口的兼容性白名单 | §11 |
+| A11 原 v1 能力的 canonical 终态保护 | §11 |
 | A12 时区 / Date 处理 | §12 |
 | A13 任务验收门槛 | §13 |

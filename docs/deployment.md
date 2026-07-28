@@ -18,7 +18,7 @@
 
 ## V1.1 已落地的工程能力
 
-V1.1 在 v1 业务接口与数据模型不变的前提下补齐基础工程能力。规范定义见 [`ARCHITECTURE.md`](../ARCHITECTURE.md) §11、[`AGENTS.md`](../AGENTS.md) §17、[`CLAUDE.md`](../CLAUDE.md) §17;任务清单与验收标准见 [`TASKS.md`](../TASKS.md)。
+V1.1 在 v1 业务接口与数据模型不变的前提下补齐基础工程能力。历史摘要见 [`ARCHITECTURE.md`](../ARCHITECTURE.md) §11;当前执行铁律见 [`AGENTS.md §1/§3`](../AGENTS.md) + [`reference/config-env.md`](reference/config-env.md) + 本文件,任务清单与验收标准见 [`TASKS.md`](../TASKS.md)。
 
 | 能力 | 说明 |
 |---|---|
@@ -77,6 +77,7 @@ docker run --rm -p 3000:3000 \
 - migration 必须由部署流程**显式**触发(CI/CD pipeline 独立步骤、K8s `Job` / `initContainer` / Helm pre-upgrade hook、平台一次性 migration job 等),并在应用副本启动**之前**完成
 - 应用 runner 镜像不保证包含 Prisma CLI(runner 阶段已裁掉 devDependencies)。如需在容器环境执行迁移,应使用 CI/CD 的源码工作区(直接 `pnpm prisma:deploy`),或单独构建 migrator 镜像
 - 不在容器启动时自动 migrate 的原因:连库失败会触发反复重启(K8s rollback 行为不可控);多副本同时启动会让多个 `migrate deploy` 并发,Prisma migration_lock 不保证安全。详见 [`Dockerfile`](../Dockerfile) 文末注释
+- 所有分项上线 SOP 都必须先按 [`current-state.md §1`](current-state.md) 核对当前批准 release tag，再绑定不可变 SHA / image digest；migration 通过条件是该 tag 的已审查 migration 均已部署且 `pnpm prisma migrate status` 无 pending，禁止使用会随版本增长的累计数量作门槛
 
 ### D-INSURANCE v3 PR3 single gate 上线与回退 SOP（本次未部署）
 
@@ -90,7 +91,7 @@ docker run --rm -p 3000:3000 \
 
 ### D-Throttle 部署、观测与回退
 
-1. **先 migration，后应用副本**：先审查并执行 `20260718090000_postgresql_throttler_buckets`，确认 migration 总数 56、无 pending；再启动使用 PostgreSQL storage 的应用。表未就绪时启动新代码会按设计 fail-closed 为 50000。
+1. **先 migration，后应用副本**：先按当前批准 release tag / 不可变 SHA（或 image digest）锁定待部署制品，再审查并执行 `20260718090000_postgresql_throttler_buckets`；以 `pnpm prisma migrate status` 确认该 tag 无 pending 后，才启动使用 PostgreSQL storage 的应用。表未就绪时启动新代码会按设计 fail-closed 为 50000。
 2. **发布观察**：持续看 throttler increment latency p50/p95/p99、`throttler_buckets` row-lock wait、hot-key 等待、连接池占用/timeout、DB CPU、HTTP 429 与 500 比例、表行数/增长率。429 比例变化须与真实流量和阈值核对，不能用本地 fallback“止血”。
 3. **运行中故障语义**：PostgreSQL/storage 报错时业务 handler 不执行；所有副本继续 fail-closed。禁止动态切回每进程 Map，否则会静默恢复多实例额度穿透。
 4. **回退**：increment p99、锁等待、DB CPU/连接池或 429 比例异常时，先停止/替换新部署并缩到单实例，再显式恢复上一应用版本；回退完成前保持 fail-closed。additive `throttler_buckets` 表保留，不做 down migration、不立即 `DROP`。
@@ -98,7 +99,7 @@ docker run --rm -p 3000:3000 \
 
 ### D-Outbox 部署、观测与回退
 
-1. **先 migration，再应用与 worker**：先审查并执行 `20260718210000_notification_outbox_intents` 至 `20260720193621_notification_prepared_template` 的 additive migrations，确认 migration 总数 64、无 pending；再部署应用，最后至少启动一个独立 `pnpm start:notification-outbox-worker` 进程。worker 与 API 使用同一 `DATABASE_URL` 及既有 SMS/WeChat 配置，但不监听 HTTP、不 import `AppModule`/`ScheduleModule`。
+1. **先 migration，再应用与 worker**：先按当前批准 release tag / 不可变 SHA（或 image digest）锁定待部署制品，再审查并执行 `20260718210000_notification_outbox_intents` 至 `20260720193621_notification_prepared_template` 的 additive migrations；以 `pnpm prisma migrate status` 确认该 tag 无 pending 后，再部署应用，最后至少启动一个独立 `pnpm start:notification-outbox-worker` 进程。worker 与 API 使用同一 `DATABASE_URL` 及既有 SMS/WeChat 配置，但不监听 HTTP、不 import `AppModule`/`ScheduleModule`。
 2. **可用性底线**：API 已开始写 outbox 而 worker 未运行时不会丢 intent，但通知会积压。上线探针至少覆盖 pending oldest age、processing lease 超时、attempts 分布、dead 增长率、claim/ack/nack latency、provider 成功率和数据库连接池。
 3. **交付语义**：worker 在 provider 事务外发送；admin SMS 的 `sms_send_logs SENT` 与 `NotificationDelivery sent` 同一短事务提交后才 ack，微信成功证据同样先落库再 ack。provider accepted 到本地证据事务 commit 前、或证据已提交但 ack 前崩溃仍属于明确的 at-least-once 窗口，不宣称 exactly-once。微信 quota 的首次条件扣减与 `preparedAt + preparedTemplateId` 同短事务提交；重领只用持久模板。仅同进程同 attempt 正向扣减后拿到的临时 capability，可在 final permission 拒绝且 provider 尚未开始时原子精确退款并清双 marker；崩溃、重领或 provider 结果未知时绝不退款。
 4. **回退**：异常时先停止 worker，再回退 API；保留 outbox 表和 pending/dead 证据。不得把 intent 手工改成 succeeded、不得修改 `_prisma_migrations`、不得切进程内 fallback。

@@ -4,7 +4,7 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
-// V1.1 TASKS.md 15.5:GET /api/system/v1/health/live(K8s liveness probe)
+// ARCHITECTURE.md §11.1:GET /api/system/v1/health/live(K8s liveness probe)
 //
 // 与 v1 已有的 health.e2e-spec.ts 互不重叠:
 //   - health.e2e-spec.ts 守 v1 契约 GET /api/system/v1/health 不破坏(向后兼容)

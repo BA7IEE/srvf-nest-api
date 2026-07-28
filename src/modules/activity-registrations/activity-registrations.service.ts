@@ -57,7 +57,8 @@ type RegistrationExpandKey = (typeof REGISTRATION_EXPAND_WHITELIST)[number];
 // - 报名前校验:activity 存在 + 未取消 + 公开报名;满员时创建 waitlisted
 // - partial unique:同 activity 同 member active 报名唯一(deletedAt IS NULL AND statusCode != 'cancelled');
 //   P2002 兜底 → ACTIVITY_REGISTRATION_ALREADY_EXISTS(21002)
-// - USER 越权访问他人 registration → 404(沿 §1.7 风格,避免存在性泄漏)
+// - USER 越权访问他人 registration → 404
+//   (统一抛 BizCode.ACTIVITY_REGISTRATION_NOT_FOUND,避免存在性泄漏)
 // - audit:create / review(approve/reject/cancel)hook
 //
 // Q-A6 CSV export:
@@ -450,7 +451,8 @@ export class ActivityRegistrationsService {
       select: registrationSafeSelect,
     });
     if (!reg || reg.activityId !== activityId) {
-      // 沿 §1.7 风格:跨 activity 访问 → 404(避免存在性泄漏)
+      // 跨 activity 访问统一抛 ACTIVITY_REGISTRATION_NOT_FOUND → 404
+      // (避免存在性泄漏)
       throw new BizException(BizCode.ACTIVITY_REGISTRATION_NOT_FOUND);
     }
     return reg;
@@ -1453,7 +1455,7 @@ export class ActivityRegistrationsService {
       select: registrationSafeSelect,
     });
     if (!reg || reg.memberId !== memberId) {
-      // 沿 §1.7 风格:USER 越权 → 404
+      // USER 越权统一抛 ACTIVITY_REGISTRATION_NOT_FOUND → 404(避免存在性泄漏)
       throw new BizException(BizCode.ACTIVITY_REGISTRATION_NOT_FOUND);
     }
     return this.toResponseDto(reg);

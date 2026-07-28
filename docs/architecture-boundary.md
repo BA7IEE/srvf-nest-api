@@ -2,16 +2,16 @@
 
 > **Status**:active policy
 > **Scope**:SRVF V2 derived project (`srvf-nest-api`)
-> **Source decision**:[`AGENTS.md §19.7 D-7`](../AGENTS.md)(decision-lock record;不再重开讨论)
+> **Source decision**:[`AGENTS.md §2 D-7`](../AGENTS.md)(decision-lock entry;不再重开讨论)
 > **Purpose**:define when new logic should stay in an application service and when it should be extracted into a named boundary class.
 
 ---
 
 ## 1. Purpose
 
-本文档把 [`AGENTS.md §19.7 D-7`](../AGENTS.md) 的"架构边界 6 类"决策正式承接到 active execution policy。
+本文档把 [`AGENTS.md §2 D-7`](../AGENTS.md) 的"架构边界 6 类"决策正式承接到 active execution policy。
 
-- [`AGENTS.md §19.7 D-7`](../AGENTS.md) remains the **decision-lock record**(出处 / 拍板时间 / 不再重开讨论)。
+- [`AGENTS.md §2 D-7`](../AGENTS.md) remains the **decision-lock entry**(出处 / 不再重开讨论;全文在 reference)。
 - 本文档 is the **execution policy** for future code changes(常规 PR 直接引用)。
 
 The goal is **not** to force large rewrites. The goal is to prevent new service-level god objects by **naming the boundary before code grows**(沿 [`docs/current-state.md §4 P2`](current-state.md) god-service 债务条目)。
@@ -26,8 +26,8 @@ When new logic belongs to one of the boundary types in §3 below, prefer a **nam
 
 **Do not extract merely to reduce LOC.** Extract only when:
 
-- the boundary is **clear**(可命名为单一职责;沿 [`AGENTS.md` §6 同模块内职责类抽出](../AGENTS.md) 铁律), and
-- the behavior has **tests or characterization coverage**(沿 [`docs/api-surface-policy.md §7 P1-B`](api-surface-policy.md) characterization-tests-before-refactor 铁律)。
+- the boundary is **clear**(可命名为单一职责;沿 [`AGENTS.md §1`](../AGENTS.md) + [`reference/naming-dto-validation.md §2`](reference/naming-dto-validation.md) 同模块内职责类抽出铁律), and
+- the behavior has **tests or characterization coverage**(沿根 [`AGENTS.md §1`](../AGENTS.md) 测试纪律 + [`current-state.md §4 P2`](current-state.md))。
 
 ---
 
@@ -209,7 +209,7 @@ The service should **not** become a dumping ground for:
 
 ## 6. Trigger rules
 
-**Before** adding a new mobile endpoint, new export endpoint, new approval state, new data scope, or new notification side effect — check this document(沿 [`AGENTS.md §19.7 D-7`](../AGENTS.md) Refactor Triggers)。
+**Before** adding a new mobile endpoint, new export endpoint, new approval state, new data scope, or new notification side effect — check this document(沿 [`AGENTS.md §2 D-7`](../AGENTS.md) Refactor Triggers)。
 
 Prefer a named boundary class when **any** of the following is true:
 
@@ -225,7 +225,7 @@ Prefer a named boundary class when **any** of the following is true:
 - the logic is less than a few clear lines
 - the rule is not stable(仍在频繁改动)
 - the behavior is not tested or characterized(沿 §2 末尾 characterization-tests-before-refactor 铁律)
-- extraction would create a **generic grab-bag helper**(沿 [`AGENTS.md` §6 同模块内职责类抽出](../AGENTS.md) "禁止变成无边界的 common util grab-bag")
+- extraction would create a **generic grab-bag helper**(沿 [`AGENTS.md §1`](../AGENTS.md) "禁止变成无边界的 common util grab-bag")
 - the new class would **hide** rather than clarify the transaction boundary
 
 ---
@@ -235,26 +235,26 @@ Prefer a named boundary class when **any** of the following is true:
 - New boundary classes should stay **inside the owning module** unless a cross-module use case is proven。
 - **Do not** create shared generic helper bags(`common/utils/` / `shared-services/` 之类的目录扩张视作越权)。
 - **Do not** move Prisma write ownership out of the application service unless explicitly reviewed。
-- **Do not** introduce a `*.repository.ts` abstraction layer merely to wrap Prisma(沿 [`docs/api-surface-policy.md §8`](api-surface-policy.md) "不引入 repository 抽象层" 铁律)。
+- **Do not** introduce a `*.repository.ts` abstraction layer merely to wrap Prisma;本 active policy 只允许 §3 六类有边界职责,单纯包一层 Prisma 不构成抽离理由。
 - Prefer **characterization tests before** extracting behavior from a large service(沿 [`docs/current-state.md §4 P2`](current-state.md) god-service 拆分前置条件)。
-- For docs / code 冲突,[`AGENTS.md §19.7 D-7`](../AGENTS.md) is the decision-lock record;本文档 is the active execution policy。
+- For docs / code 冲突,[`AGENTS.md §2 D-7`](../AGENTS.md) is the decision-lock entry;本文档 is the active execution policy。
 
 ---
 
 ## 8. Deferred work(本期不做)
 
-- **Do not** retrofit every existing service into this pattern immediately(沿 [`AGENTS.md §19.7 D-7`](../AGENTS.md) "本规则不要求立即大规模重构" 段)。
+- **Do not** retrofit every existing service into this pattern immediately(沿 [`AGENTS.md §2 D-7`](../AGENTS.md) "本规则不要求立即大规模重构" 段)。
 - **Do not** extract QueryService / Effect until a concrete trigger appears(沿 §6 Trigger rules;Presenter 已于 2026-06-10 P1-4 第一刀按"逐个立项"路径抽出,见 §5)。
 - **Do not** rename existing extracted classes just to match this document(`contribution-calculator.ts` 保留现名,不强行改为 "Service" / "Policy" 等)。
 - **Do not** move participation / attachment / permissions module directories as part of this policy(沿 [`docs/participation-bounded-context.md §8`](participation-bounded-context.md) "禁止大搬目录" 铁律)。
-- **Do not** alter `attendances.service.ts`(1157 LOC)/ `attachments.service.ts`(826 LOC)/ `activity-registrations.service.ts`(750 LOC)/ `activities.service.ts`(607 LOC)行为 — 拆分需先补 characterization tests + 单独立项(沿 [`docs/current-state.md §3 / §4`](current-state.md));LOC 为 2026-05-23 实测,已计入 §5 state-machine + audit-recorder 抽离后的余量。
+- **Do not** alter the large attendances / attachments / activity-registrations / activities services as an incidental cleanup — 拆分需先补 characterization tests + 单独立项(沿 [`docs/current-state.md §3 / §4`](current-state.md));实时体量由 `docs:codemap:check` 报告,本 policy 不固化易漂 LOC。
 
 ---
 
 ## 9. Source references
 
-- [`AGENTS.md §19.7 D-7`](../AGENTS.md) — decision-lock record(2026-05-19 立项)
-- [`docs/archive/reviews/code-architecture-boundary-review.md`](archive/reviews/code-architecture-boundary-review.md) — Phase 0.7 评审稿(已归档;**仅作历史证据,不再作为当前执行约束**;沿 [`docs/README.md §2`](README.md) 归档铁律)
+- [`AGENTS.md §2 D-7`](../AGENTS.md) — decision-lock entry(2026-05-19 立项)
+- [`archive/reviews/code-architecture-boundary-review.md`](archive/reviews/code-architecture-boundary-review.md) — Phase 0.7 评审稿(已归档;**仅作历史证据,不再作为当前执行约束**;沿 [`docs/README.md §2`](README.md) 归档铁律)
 - [`docs/participation-bounded-context.md §7`](participation-bounded-context.md) — participation 上下文内的 `*-policy.ts` / `*-state-machine.ts` / `*-calculator.ts` / `*-audit-recorder.ts` 命名约定(本文档与之兼容,且把范围扩到全仓库 + 增加 Presenter / QueryService / Effect 3 类未来触发条件)
-- [`docs/api-surface-policy.md §7-§8`](api-surface-policy.md) — characterization-tests-before-refactor + 不引入 repository 抽象层
+- [`docs/api-surface-policy.md §7-§8`](api-surface-policy.md) — 2026-05 P1 执行期历史来源;当前规则由本文 §2 / §7 + 根 `AGENTS.md §1` 承接
 - [`docs/current-state.md §4`](current-state.md) — god-service 债务条目与拆分前置条件

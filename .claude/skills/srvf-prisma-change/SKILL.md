@@ -12,7 +12,7 @@ description: SRVF Nest API 项目内所有 Prisma / 数据模型 / migration / s
 本 skill **不复制**权威源原文,只编排"何时触发、如何降速、哪些动作禁止、如何验证、如何报告"。权威源:
 
 - [`prisma/CLAUDE.md`](../../../prisma/CLAUDE.md) — Prisma 模块铁律
-- [`AGENTS.md`](../../../AGENTS.md) §0 / §1 永久铁律 / §10 / §11 / §12 / §13 / §19
+- [`AGENTS.md`](../../../AGENTS.md) §0 / §1 / §2 / §3 + `docs/reference/{naming-dto-validation,soft-delete-transactions,roles-admin-protection,api-client-boundary}.md`
 - [`docs/process.md`](../../../docs/process.md) §3 PR 分级、§4 D 档降速规则
 - [`docs/current-state.md`](../../../docs/current-state.md) — 当前事实
 
@@ -37,11 +37,10 @@ description: SRVF Nest API 项目内所有 Prisma / 数据模型 / migration / s
 冲突时按以下优先级:
 
 1. 用户本轮明确指令
-2. `prisma/CLAUDE.md`
-3. `AGENTS.md`(尤其 §0 / §1 永久铁律 / §10 / §19)
-4. `docs/process.md`
-5. `docs/current-state.md`
-6. 实际代码 / migration / CI 结果
+2. `docs/current-state.md` + 实际 schema / migration / 代码 / 测试 / CI 结果
+3. `AGENTS.md`(尤其 §0 权威顺序 / §1 铁律速查 / §2 决策锁 / §3 红区)
+4. `prisma/CLAUDE.md` + 对应 `docs/reference/*`
+5. `docs/process.md`(过程细则)
 
 规则冲突时**停止并报告**,不自行调和。
 
@@ -79,7 +78,7 @@ description: SRVF Nest API 项目内所有 Prisma / 数据模型 / migration / s
 
 ### 3. 编辑红线
 
-仅在用户明确授权后才能修改相关文件。**永远禁止**自动执行(沿 `prisma/CLAUDE.md` + `AGENTS.md §0 / §1`):
+仅在用户明确授权后才能修改相关文件。**永远禁止**自动执行(沿 `prisma/CLAUDE.md` + `AGENTS.md §2 / §3`):
 
 - `prisma migrate dev`
 - `prisma db push`

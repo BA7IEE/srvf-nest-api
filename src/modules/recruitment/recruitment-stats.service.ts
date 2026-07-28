@@ -67,7 +67,7 @@ const STATS_SELECT = {
 } as const;
 
 // 固定 UTC+8 日界(与 birthday-greeting / sms-code 私有 startOfDayUtc8 同口径;各模块级实现、
-// 不抽共享 util —— AGENTS §2 grab-bag 禁令)。返回该北京自然日的 UTC 起点瞬间。
+// 不抽共享 util —— AGENTS §1 / docs/reference/naming-dto-validation.md §2 grab-bag 禁令)。返回该北京自然日的 UTC 起点瞬间。
 const UTC8_OFFSET_MS = 8 * 3600 * 1000;
 const DAY_MS = 86_400_000;
 function startOfBeijingDay(now: Date): Date {

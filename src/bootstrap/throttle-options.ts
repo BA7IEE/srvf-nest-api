@@ -10,7 +10,8 @@ import { SMS_SEND_THROTTLER_NAME } from '../common/decorators/sms-send-throttle.
 import { SMS_VERIFY_THROTTLER_NAME } from '../common/decorators/sms-verify-throttle.decorator';
 import type { AppConfig } from '../config/app.config';
 
-// V1.1 §11.4 / TASKS.md 15.7:登录接口限流(throttler `default` 实例)。
+// docs/reference/auth-jwt-refresh.md §9「限流契约」:
+// 登录接口限流(throttler `default` 实例)。
 // P0-D PR-3(2026-05-17):本人改密接口限流(独立 throttler `password-change` 实例;
 // 沿 docs/first-release-p0d-change-my-password-review.md §5.4 + §6 行 214)。
 // P0-E PR-3(2026-05-18):refresh 接口限流(独立 throttler `refresh` 实例;

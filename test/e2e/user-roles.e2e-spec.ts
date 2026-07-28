@@ -21,7 +21,8 @@ import { createTestApp } from '../setup/test-app';
 //
 // 覆盖(沿任务 #9):
 // - GET 查用户角色 / 分配角色 / 重复分配 30006 / 撤销角色 / 撤销不存在 30007
-// - user 不存在 / disabled / softdel 全 10001(沿 v1 §10 信息泄漏防御)
+// - user 不存在 / disabled / softdel 全 10001
+//   (沿 docs/reference/soft-delete-transactions.md §10 信息泄漏防御)
 // - role 不存在 / 已软删(POST 30003 / DELETE 30003 + 30005)
 // - Q7 C2 中庸:SUPER_ADMIN 通过 / ADMIN 单独 30102 / ADMIN+持 ops-admin 通过 /
 //   ops-admin 自己不能被 ops-admin 分配 / 业务角色互不分配

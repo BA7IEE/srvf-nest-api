@@ -8,7 +8,7 @@
 | 项 | 当前值 / 何处看 |
 |---|---|
 | 版本 / Release | **v0.62.0**(2026-07-28;tag/handoff #797=`88e70f53`;GitHub Release=Latest;`archive/handoff/v0.62.0.md`) |
-| main / 仓库卫生 | Release main=`88e70f53`;open PR=0;Unreleased=0;fragment=0 |
+| main / 卫生 | main=`5a33dab3`;release=`88e70f53`;PR=0;Unreleased/fragment=0 |
 | 本版 footprint | 即下方 9 项守护计数 |
 | Tag 门禁 | audit `30286755421`@`88e70f53`:success(0H/0C/3M，COS SDK 链);Smoke `30286855360`@`88e70f53`:success |
 | 发布边界 | **代码 Release GO;production 未部署**;活动责任、保险、Storage、外部通道、基础设施硬门仍开放(§4/runbook) |
@@ -18,7 +18,7 @@
 | 计数项 | 值 |
 |---|---|
 | 模块 | 36 |
-| Controller | 82 |
+| Controller | 81 |
 | Endpoint | 416 |
 | Migration | 65 |
 | BizCode | 278 |
@@ -32,7 +32,7 @@
 
 - **接口与字段真相**:live `/api/docs-json` + contract snapshot + `EXPECTED_ROUTES`;**逐版本叙事**:[`CHANGELOG.md`](../CHANGELOG.md) + `archive/handoff/`
 - **模块地图** `CODEMAP.md` · **权限地图** `ai-harness/RBAC_MAP.md`(各有 check 脚本守护)· **数据模型** `prisma/schema.prisma`
-- **API surface**:5 canonical `/v1` 前缀,contract 锁定;见 `api-surface-policy.md`;❌新增 Mixed Controller(存量 2)❌App 返回 L3(content-* 签名 URL 例外)
+- **API surface**:5前缀;跨 surface Mixed=1(禁增);同 surface 双 Controller文件=3(非 Mixed);App 禁返 L3(content-* signed URL 例外);见 `api-surface-policy.md`
 - **身份/会话终态**:手机/微信换绑消费 5 分钟 step-up proof 并锁后重验身份快照；logout 可由未过期 rotated ancestor 幂等撤销同 refresh family，其他 family/access 不动；详见 `security.md`
 - **多实例**:10 throttler 共用 PG bucket；RBAC/外部设置逐请求直读已提交 PG；Effect 单配置快照，DB 异常 fail-closed，零进程正确性缓存
 - **Storage production**:空库 migration/seed→窄 bootstrap；固定 COS location+可解密凭证；disabled 重启不放行 Effect，null/LOCAL/unknown 禁回退；密钥不可轮换，真实 COS/fleet 待验
@@ -61,10 +61,10 @@
 
 | 等级 | 债务 |
 |---|---|
-| P1 | 前端联调包剩运维侧 P0-H 演练 + P0-I 排错 SOP(系统侧无动作) |
+| P1 | 前端联调包剩运维演练 + 排错 SOP(系统侧无动作) |
 | P1 | 保险 gate 未启用、旧 server=0 未验证；真实 ingress/ACL、COS、worker/fleet、registry digest 未验，均为 production GO 硬门 |
 | P1 | P1-22 专业队 gate 配置化;P1-23 isForeigner 历史列改名(对外已用 isNonMainlandDocument) |
-| P2 | scoped余面(§3);god-service体量;单测低(e2e主);Mixed=2;snapshot勿整读 |
+| P2 | scoped余面;god-service;单测低;snapshot勿整读;nullable primitive→OpenAPI object(D档另立) |
 | P3 | 考勤审核自由备注是否永久原文进入不可变审计，待独立隐私口径确认 |
 
 ## 5. 开工门禁

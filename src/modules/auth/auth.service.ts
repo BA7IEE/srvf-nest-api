@@ -52,7 +52,8 @@ export class AuthService {
     private readonly auditLogs: AuditLogsService,
   ) {}
 
-  // 防账号枚举失败场景统一抛 LOGIN_FAILED(详见 CLAUDE.md §8 + V2-D8 §12.8.2.3 +
+  // 防账号枚举失败场景统一抛 LOGIN_FAILED
+  // (详见 docs/reference/auth-jwt-refresh.md §8 + V2-D8 §12.8.2.3 +
   // docs/v2-api-contract.md §6.6.3 失败场景表):
   //   1) 输入值在 username 与 memberNo 两条查找路径下均未命中
   //   2) memberNo 命中 member,但 member 未绑定 user(users.memberId 反查为 null)
@@ -272,7 +273,8 @@ export class AuthService {
     });
 
     // 失败 1:不存在 / 已过期 → 统一 REFRESH_TOKEN_INVALID(不区分子原因;
-    // 沿 v1 §8 防账号枚举;响应体 / HTTP status / message 完全一致)。
+    // 沿 docs/reference/auth-jwt-refresh.md §8 防账号枚举;
+    // 响应体 / HTTP status / message 完全一致)。
     // 本路径**不写 audit**(token 不存在时无 userId / 无攻击线索;沿 P0-D LOGIN_FAILED 范式)。
     const now = new Date();
     if (!observed || observed.expiresAt <= now) {

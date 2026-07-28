@@ -20,7 +20,7 @@
 
 > 2026-07-18 D-MEMBER-OFFBOARD-AUTHZ true-up:不改下方 T4 当时的历史戳与权限事实；现行离队事务在同一 Member lifecycle 锁下撤销 active 任职/分管，并结束 USER/MEMBER/POSITION_ASSIGNMENT 主体的 active RoleBinding。`PATCH .../members/:id/status` 置 `INACTIVE` 复用同一核心；两个 residual 字段仅保留为兼容不变式探针。0 新权限码 / endpoint / BizCode / AuditLogEvent / schema。
 
-> **性质**:derived 地图,非规则源。权限**事实**权威源:权限码与绑定 → [`prisma/seed.ts`](../../prisma/seed.ts);判权实现 → [`src/modules/permissions/rbac.service.ts`](../../src/modules/permissions/rbac.service.ts);铁律 → [`auth-jwt-refresh`](../reference/auth-jwt-refresh.md) / §13`。
+> **性质**:derived 地图,非规则源。权限**事实**权威源:权限码与绑定 → [`prisma/seed.ts`](../../prisma/seed.ts);判权实现 → [`src/modules/permissions/rbac.service.ts`](../../src/modules/permissions/rbac.service.ts);铁律 → [`auth-jwt-refresh`](../reference/auth-jwt-refresh.md) + [`roles-admin-protection §13`](../reference/roles-admin-protection.md)。
 > 数据快照:2026-06-11,**Slow-4 权限双轨收口完成**(goal #314-#317,冻结评审稿 [`slow4-rbac-business-face-review.md`](../archive/reviews/slow4-rbac-business-face-review.md)):117 码 / 内置角色 ×3 / **全仓活跃 `@Roles` = 0**(原 G 模式 44 处全摘;RolesGuard 机制保留 Guard 链);`docs:rbacmap:check` 0 FAIL / 0 WARN(seed↔代码双向对齐)。**任何权限事实的变更本身是 D 档**(评审稿 + 用户拍板),本文件只能事后 true-up。
 > 2026-06-11 B 队列收口戳(goal #322-#328):**权限事实零变化**(117 码 / 绑定 / 内置角色不动);endpoint 157→**159**(OTP 登录两公开端点 `[public]`,零新权限码;生日批零端点);`docs:rbacmap:check` 仍 0 FAIL / 0 WARN。
 > 2026-06-12 v0.22.0 收口戳(goal「会议延期窗口」G2/G3 #345/#346):**权限事实零变化**(117 码 / 绑定 / 内置角色不动);endpoint **159** 不变(进程崩溃兜底 + SDK 超时均零新端点);`docs:rbacmap:check` 仍 0 FAIL / 0 WARN。
@@ -320,7 +320,7 @@
 **首选自动检查**(NEXT_TASKS P1-1 已落地;0 FAIL 才算本表与事实一致):
 
 ```bash
-pnpm docs:rbacmap:check   # seed 码↔本表计数 / controller 数↔本表 / 4 canonical 前缀 / 直调码必在 seed / 孤码 WARN / summary 鉴权后缀一致(P2-2)
+pnpm docs:rbacmap:check   # seed 码↔本表计数 / controller 数↔本表 / 5 canonical 前缀 / 直调码必在 seed / 孤码 WARN / summary 鉴权后缀一致(P2-2)
 ```
 
 手工重新生成口径(true-up 改表时用):

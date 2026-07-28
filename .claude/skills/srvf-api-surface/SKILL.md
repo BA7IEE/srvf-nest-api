@@ -1,6 +1,6 @@
 ---
 name: srvf-api-surface
-description: Use when adding, splitting, moving, tagging, or changing HTTP API endpoints, controllers, DTOs, Swagger tags, OpenAPI contract output, or app/admin/public surface boundaries in srvf-nest-api.
+description: Use when adding, splitting, moving, tagging, or changing HTTP API endpoints, controllers, DTOs, Swagger tags, OpenAPI contract output, or App/Admin/Auth/System/Open surface boundaries in srvf-nest-api.
 ---
 
 # srvf-api-surface
@@ -15,7 +15,7 @@ SRVF Nest API 项目所有 API surface(controller / path / Swagger tag / DTO 边
 - [`docs/process.md §3`](../../../docs/process.md) — PR 分级
 - [`docs/current-state.md`](../../../docs/current-state.md) — 当前事实
 
-冲突时:用户本轮指令 → `api-surface-policy.md` → `AGENTS.md §2` 决策锁(全文 `docs/reference/api-client-boundary.md`)decision locks → `AGENTS.md` 其它 → `docs/process.md` → 实际代码 / `/api/docs` / contract snapshot。规则冲突**停止并报告**,不自行调和。
+冲突时按根 `AGENTS.md §0` 处理:用户本轮指令 → `docs/current-state.md` + 实际代码 / live OpenAPI / GitHub 当前状态 → 根 `AGENTS.md` → baseline / V2 红线 / `api-surface-policy.md` → `docs/process.md` → archive 历史证据。规则冲突**停止并报告**,不自行调和。
 
 ## When to use
 
@@ -24,8 +24,8 @@ SRVF Nest API 项目所有 API surface(controller / path / Swagger tag / DTO 边
 - 新增 / 删除 / 移动 / 拆分 controller(含同模块 `controllers/` 子目录文件拆分)
 - 修改 `@Controller(...)` path / 方法 path / HTTP method / 响应结构
 - 修改 `@ApiTags` / `@ApiOperation` summary / 任何 Swagger metadata
-- 新增 / 修改 DTO,尤其涉及 App / Admin / Public surface DTO 边界
-- 新增 endpoint 落 `admin/v1` / `app/v1` / `auth/v1` / `system/v1` 任一 canonical surface(Route B 终态;`open/v1` 预留禁占用)
+- 新增 / 修改 DTO,尤其涉及 App / Admin / Auth / System / Open surface DTO 边界
+- 新增 endpoint 只落 `admin/v1` / `app/v1` / `auth/v1` / `system/v1` / `open/v1` 五个 canonical surface 之一(Route B 终态)
 - 拆 Mixed Controller(class-level + 方法级双 `@ApiTags`)
 - 修改 OpenAPI snapshot 或 contract test
 - 修改方法上 `@Public()` / `@Roles(...)` / `JwtAuthGuard` 入口装饰器组合
@@ -35,7 +35,7 @@ SRVF Nest API 项目所有 API surface(controller / path / Swagger tag / DTO 边
 先**只读**调研,不动任何文件。必须确认并记录:
 
 - 目标 endpoint 当前 path / method / Swagger tag / Guard / `@Public()` / `@Roles(...)` / 限流装饰器
-- 该 endpoint 所属 surface(Admin / App / Auth / System 四 canonical 之一)
+- 该 endpoint 所属 surface(Admin / App / Auth / System / Open 五个 canonical 之一)
 - 是否影响 OpenAPI snapshot / contract test
 - 是否会形成 Mixed Controller(**不再新增**)
 - 是否触发已有 D-series decision lock(参 `AGENTS.md §2`,全文 `docs/reference/api-client-boundary.md`)
@@ -45,12 +45,12 @@ SRVF Nest API 项目所有 API surface(controller / path / Swagger tag / DTO 边
 以下不变式**严禁弱化**;具体清单 / 存量名单 / 历史例外查 `docs/api-surface-policy.md`:
 
 - **不再新增** Mixed Controller(class-level + 方法级双 `@ApiTags`);现存存量只兼容、不复制范式
-- **App / Admin / Public DTO 不得未经确认复用或派生**(`extends` / 任何映射类型工具均视作越权)
+- **App 顶层 DTO 不得从 Admin DTO 派生或夹带 Admin 专属字段**;跨 surface 复用只允许 policy 已登记的 surface-neutral 值对象 / 同语义读模型(content Open + App 读 DTO 与嵌套 `ContentAttachmentDto`),新增例外须先评审
 - 新移动端 endpoint **只能**落 `/api/app/v1/*`;Mobile / Admin 不混入彼此 surface
 - **不**随意改 existing path / method / response shape;改任一项即升档为 C/D
 - Controller 物理拆分必须 **endpoint zero drift**:path / method / tag / Guard / `@Roles` / DTO / service 调用全部不变
 - **raw permission code ≠ app capability**:RBAC 原始权限码端点与 App capability 端点语义不等价,不得 alias / 合并 / 互替
-- Route B 终态(全部路由仅落 4 canonical 前缀)由 contract 断言锁定;**不**顺手加 path alias / 改前缀,任何 surface / path 变更一律 D 档单独立项
+- Route B 终态(全部路由仅落 5 个 canonical 前缀,含 `open/v1`)由 contract 断言锁定;**不**顺手加 path alias / 改前缀;既有 endpoint 的 surface 重归类、path 迁移 / alias / deprecate / removal 一律 D 档单独立项,新增 endpoint 至少 C 档
 - 已有 D-series decision lock 冲突时**停止并报告**
 
 ## Risk grade
@@ -59,7 +59,7 @@ SRVF Nest API 项目所有 API surface(controller / path / Swagger tag / DTO 边
 |---|---|---|
 | **A** | docs-only / 注释 / 本 skill | ❌ |
 | **B** | tag-only drift / 物理拆 controller(endpoint zero drift) / DTO 内部重命名不触 contract | ❌(常规) |
-| **C** | OpenAPI schema / path / 响应字段语义变化 / 新 endpoint / 新 DTO 字段 | ✅ |
+| **C** | OpenAPI schema / 响应字段语义变化 / 新 endpoint(含其新 path)/ 新 DTO 字段 | ✅ |
 | **D** | breaking API change / surface 互转 / public-auth boundary / 删除或 deprecate legacy / path alias | ✅ + 评审稿 |
 
 Swagger tag / OpenAPI snapshot 出现 drift 时,**必须**在报告中显式说明"是否为 tag-only";tag-only 仍按 B 档,但 contract snapshot 需显式更新而非"漂着"。

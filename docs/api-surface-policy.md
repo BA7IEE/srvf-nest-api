@@ -2,27 +2,27 @@
 
 > **目的**:锁定 SRVF API 当前对外提供的 surface(客户端面)分类与新增规则。
 > **配套文档**:[`current-state.md`](./current-state.md)(当前事实)。设计期顶层规范 `api-client-boundary.md` 已归档至 [`docs/archive/plans/api-client-boundary-design-period.md`](./archive/plans/api-client-boundary-design-period.md);本文件已承接为 surface 边界的 active 单一权威源。
-> ⚠️ **2026-06-01 方向变更(Route B)**:用户拍板重开 [`AGENTS.md §19.7 D-2`](../AGENTS.md) 的"方案 C(`/api/v2/*` 长期保留)",改为**按客户端/场景四分的全量物理迁移**,并已于 **2026-06-01 全部完成**(见本文件 §0 + [`api-surface-migration-plan.md`](api-surface-migration-plan.md) + [`AGENTS.md §21 D-9`](../AGENTS.md))。**自该日起,本文件 §1 ~ §3 + §7 P1-D + §8 中一切关于"冻结 v2 / 不迁移 / Phase 1B 暂缓 / 不动 controller path / 新接口默认落 v2"的条款,均被本 §0 + Route B 取代,仅作迁移前历史口径保留**(其中 §1 表整体为迁移前现状快照)。§4 / §9(归档关系 / App·System semantic locks)继续有效;§5 / §6(Mixed Controller 存量 / mobile-like 处置矩阵)所列存量已被 **Route B Phase 4 全量删除**(见各节顶部终态注记),正文表格仅留作迁移前记录。
+> ⚠️ **2026-06-01 方向变更(Route B)**:用户拍板重开 [`api-client-boundary §19.7 D-2`](reference/api-client-boundary.md) 的"方案 C(`/api/v2/*` 长期保留)",改为**按客户端/场景四分的全量物理迁移**,并已于 **2026-06-01 全部完成**(见本文件 §0 + [`api-surface-migration-plan.md`](api-surface-migration-plan.md) + 根 [`AGENTS.md §2 D-9`](../AGENTS.md))。本文件 §1 与 §5 / §6 的旧路径表均仅保留迁移前历史快照;当前新增规则与禁止顺手改范围已在 §2 / §3 true-up。§7 P1-D / §8 中"冻结 v2 / Phase 1B 暂缓"等文字同样仅作历史记录;§4 / §9 继续有效。
 
 ---
 
 ## 0. API Surface 终态形态(Route B;2026-06-01 完成)
 
-> 本节是 surface 长期边界的 **canonical 权威源**,取代原"方案 C 冻结"口径。执行细节见 [`api-surface-migration-plan.md`](api-surface-migration-plan.md);决策锁见 [`AGENTS.md §21 D-9`](../AGENTS.md)(取代 §19.7 D-2)。
+> 本节是 surface 长期边界的 **canonical 权威源**,取代原"方案 C 冻结"口径。执行细节见 [`api-surface-migration-plan.md`](api-surface-migration-plan.md);决策入口见根 [`AGENTS.md §2 D-9`](../AGENTS.md)(取代设计期 D-2)。
 
 | Surface | 目标前缀 | 用途 |
 |---|---|---|
-| **Admin** | `/api/admin/v1/*` | 管理后台 / 运维后台业务(现 `/api/v2/*` 业务 CRUD + `/api/users/*`) |
-| **App** | `/api/app/v1/*` | App / 小程序 / 队员端(**已建成 15 endpoint,不迁移**) |
-| **Auth** | `/api/auth/v1/*` | 登录 / 刷新 / 登出 / 认证会话(现 `/api/auth/*`) |
-| **System** | `/api/system/v1/*` | 健康检查 / 运行状态 / 系统元信息 / ops 配置(现 `/api/health/*` + 现 `/api/v2/*` 中 ops/配置/可观测类;承接 D-1 `contribution-rules` → System) |
+| **Admin** | `/api/admin/v1/*` | 管理后台 / 运维后台业务(由原 `/api/v2/*` 业务 CRUD + `/api/users/*` 迁入) |
+| **App** | `/api/app/v1/*` | App / 小程序 / 队员端(现有数量以 contract snapshot / live OpenAPI 为准) |
+| **Auth** | `/api/auth/v1/*` | 登录 / 刷新 / 登出 / 认证会话(由原 `/api/auth/*` 迁入) |
+| **System** | `/api/system/v1/*` | 健康检查 / 运行状态 / 系统元信息 / ops 配置(由原 `/api/health/*` + `/api/v2/*` 中 ops/配置/可观测类迁入;承接 D-1 `contribution-rules` → System) |
 | **Open** | `/api/open/v1/*` | **首用(2026-06-18 招新一期 T3)**:无账号公开 surface(`@Public` 跳过 JwtAuthGuard;首落地 = 招新报名提交/查询,小程序自助直连);**2026-06-21 CMS 第二用** = 内容公开列表/详情(`open/v1/contents`,published+public,第 10 throttler `content-public`);未来开放平台扩展仍按需 D 档立项 |
 
 **新增规则(自 2026-06-01 生效,覆盖 §2.1 / §2.2 的"新接口落 v2"口径)**:
 
-- ✅ **新接口一律落新前缀**:新管理面 → `/api/admin/v1/*`;新 App → `/api/app/v1/*`;新认证 → `/api/auth/v1/*`;新 ops/系统 → `/api/system/v1/*`。**不再向 `/api/v2/*` 新增任何 endpoint**。
-- ✅ 存量 `/api/v2/*` / `/api/auth/*` / `/api/users/*` / `/api/health/*` 已按 [`api-surface-migration-plan.md §6`](api-surface-migration-plan.md) 全部迁移并删除(**2026-06-01 完成**,终态由 contract 前缀断言锁定:**2026-06-01 = 4 canonical 前缀**;**2026-06-18 招新一期 T3 首用 `open/v1` → 5 canonical 前缀**,见 [`test/contract/openapi.contract-spec.ts`](../test/contract/openapi.contract-spec.ts) + [`scripts/check-rbac-map.ts`](../scripts/check-rbac-map.ts) 的 `CANONICAL_PREFIXES`);此后任何 surface / path 变更仍需 **D 档、单独立项**。
-- ✅ App / Admin / System / Auth / Open surface 间 **DTO 不得复用或派生**(沿 §2.1 / D-6);五 surface 物理分离(`open/v1` 公开出参为独立 class,不派生自 admin/app DTO)。
+- ✅ **新接口一律落 canonical 前缀**:新管理面 → `/api/admin/v1/*`;新 App → `/api/app/v1/*`;新认证 → `/api/auth/v1/*`;新 ops/系统 → `/api/system/v1/*`;新公开面 → `/api/open/v1/*`。**不再向 `/api/v2/*` 新增任何 endpoint**。
+- ✅ 存量 `/api/v2/*` / `/api/auth/*` / `/api/users/*` / `/api/health/*` 已按 [`api-surface-migration-plan.md §6`](api-surface-migration-plan.md) 全部迁移并删除(**2026-06-01 完成**,终态由 contract 前缀断言锁定:**2026-06-01 = 4 canonical 前缀**;**2026-06-18 招新一期 T3 首用 `open/v1` → 5 canonical 前缀**,见 [`test/contract/openapi.contract-spec.ts`](../test/contract/openapi.contract-spec.ts) + [`scripts/check-rbac-map.ts`](../scripts/check-rbac-map.ts) 的 `CANONICAL_PREFIXES`);此后既有 endpoint 的 surface 重归类、path 迁移 / alias / deprecate / removal 仍需 **D 档、单独立项**;新增 endpoint 按 §2.4 至少 C 档。
+- ✅ App 顶层入参 / 出参 DTO **不得从 Admin DTO 派生**,也不得把 Admin 专属字段带入 App(沿 §2.1 / D-6);跨 surface 复用须是经评审登记的 surface-neutral 值对象或完全同语义读模型。当前唯一登记项:content 的 Open + App 共用 `ListContentReadQueryDto` / `ContentRead*Dto`,`ContentAttachmentDto` 作为嵌套附件值对象由 Admin / Open / App 共用;这些类型不含 Admin 专属字段。
 - ✅ audit-logs / storage / RBAC 系 / dictionaries / attachment-configs 的 admin↔system 灰区归属**已由迁移计划 Phase 0 映射表(经用户签字)冻结**(见 [`api-surface-migration-plan.md §3`](api-surface-migration-plan.md);均落 System surface `/api/system/v1/*`);**不**在常规 PR 内擅自重归类。
 
 ---
@@ -44,44 +44,40 @@
 
 ### 2.1 移动端
 
-- ✅ 新移动端接口**只能**落在 `/api/app/v1/*`,且必须新建独立的 Mobile Controller(允许文件位于 `src/modules/<module>/controllers/app-*.controller.ts`)
-- ✅ 新移动端 DTO **必须**独立定义在 `src/modules/<module>/dto/app/` 子目录,**禁止** `extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 一个 Admin DTO 构造 App DTO
+- ✅ 新移动端接口**只能**落在 `/api/app/v1/*`,且必须使用独立的 Mobile Controller;文件布局沿模块既有形态,允许已解锁的 `controllers/app-*.controller.ts` 例外,也允许既有平铺 controller,禁止仅为机械一致性迁移存量
+- ✅ 新移动端顶层 DTO 必须独立定义,**禁止** `extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 一个 Admin DTO 构造 App DTO;文件布局沿模块既有形态,允许已解锁的 `dto/app/` 或既有平铺 DTO,禁止仅为机械一致性迁移存量。content 已登记的 Open + App 同语义读模型及 surface-neutral `ContentAttachmentDto` 例外见 §0
 - ✅ App API where 子句永远使用 `currentUser.memberId` 锁定本人(`scope = self`);**禁止**用 `role` 短路决定数据范围
-- ❌ App API **永远不返回** L3 凭证字段:`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*` / 完整 signed URL
-- ❌ 不在 Admin / System / Public controller 内新增 Mobile-only 方法
-- ❌ **不再新增 "Mixed Controller"**(class-level `@ApiTags('Admin - X')` 同时在方法级追加 `@ApiTags('Mobile - X')`);已存在的(如 `users.controller.ts` 中 `/me` 三端点)作为**历史存量**保留,不再扩展
+- ❌ App API 默认不返回 L3 凭证字段:`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*` / 完整 signed URL;唯一 content-* 读面例外见 §9.6
+- ❌ 不在 Admin / System / Open controller 内新增 Mobile-only 方法
+- ❌ **不再新增 "Mixed Controller"**(class-level surface tag 与方法级另一 surface tag 混用);当前跨 surface Mixed 存量为 1(`permissions/rbac.controller.ts`);同文件同 surface 多 Controller 为 3(不计 Mixed),见 §5 终态注记
 
 ### 2.2 管理面
 
-- ✅ 新 PC 管理后台接口默认落在 `/api/v2/*`(沿现状;短期内不再新建别的管理前缀)
-- ✅ 管理面 DTO 与移动端 DTO **物理分离**,即使字段集相同,也不共用 class
+- ✅ 新 PC 管理后台接口只能落在 `/api/admin/v1/*`
+- ✅ 管理面与移动端的顶层入参 / 出参 DTO **物理分离**,即使字段集相同也不共用 class;经评审登记的 surface-neutral 嵌套值对象不在此限
 - ❌ 不在管理面接口中夹带"顺手满足 Mobile"的字段语义
 
-### 2.3 兼容入口
+### 2.3 Auth / System / Open
 
-- ✅ `/api/auth/*` / `/api/users/*` / `/api/health/*` 保留作为 Root Legacy,**不强制迁移**到任何带版本号的前缀
-- ✅ 已存在的"双端点"模式(如 `PUT /api/users/me/password` 与 `PUT /api/app/v1/me/password` 共存)**只维护兼容、不扩展新字段**;两端点共享同一 service 与同一 DTO 的现状沿用,未来如要拆分,**必须单独立项**
+- ✅ 登录 / 会话端点只落 `/api/auth/v1/*`;系统、运维、健康检查只落 `/api/system/v1/*`;认证域之外、面向匿名用户的公开业务端点只落 `/api/open/v1/*`
+- ❌ 不恢复已删除的裸 `/api/auth/*` / `/api/users/*` / `/api/health/*` 或 `/api/v2/*`,也不新增 legacy alias
+- ✅ Open surface 必须显式 `@Public()` 并按业务风险配置限流;`@Public` 不等于可以绕过业务身份、可见级或防枚举校验
 
-### 2.4 迁移与别名
+### 2.4 Surface / path 变更
 
-- ✅ 若需迁移旧 endpoint(例如 `/api/auth/login` → `/api/auth/v1/login`),**必须单独立项**(C/D 档评审稿 + 双写 alias + 灰度切流 + 旧 endpoint deprecated 公告)
-- ❌ **不**在常规 PR 中"顺手"添加路径别名
-- ❌ **不**在常规 PR 中"顺手" deprecate 现有 endpoint
+- ✅ 新 endpoint / DTO 契约至少按 C 档立项;surface 重归类、path 迁移 / alias / deprecate / removal 按 D 档单独立项;两者都须逐行复核 snapshot
+- ❌ 不在普通功能、重构或 docs-only PR 中顺手改 controller path、Swagger tag、DTO 归属或客户端联调口径
 
 ---
 
 ## 3. 本 policy 不主动改的范围(长期生效)
 
-> 本节适用于**任何引用本 policy 的常规 PR**(包括 docs-only / 代码 PR);若需突破任一项,**必须单独立项**。
+> 本节适用于**未明确授权 API contract 变更的常规 PR**;若需突破任一项,必须按 §2.4 单独立项。
 
-- ❌ **不改** controller path(任何 `@Controller(...)` 字符串)
-- ❌ **不删** `/api/v2/*` 任何 endpoint
-- ❌ **不改** `/api/auth/*` / `/api/users/*` / `/api/health/*` 根路径
-- ❌ **不改** OpenAPI snapshot 或任何 contract 测试
-- ❌ **不改**前端联调口径
-- ❌ **不改** E2E / unit 测试
-- ❌ **不启动** Phase 1B path alias(`/api/auth/v1/*` + `/api/public/v1/*`;沿 §7 P1-D)
-- ❌ **不**物理拆分已存在的 Mixed Controller(沿 §7 P1-C 顺序)
+- ❌ 不改 `@Controller(...)` / 方法 path / HTTP method / Swagger tag / DTO 字段
+- ❌ 不增删 alias、endpoint、OpenAPI snapshot 或 contract route 断言
+- ❌ 不借重构改变现有客户端面、权限、响应字段或前端联调口径
+- ❌ 不顺手拆唯一 surface Mixed `permissions/rbac.controller.ts`;若真要拆,先锁定 raw permission 与 App capability 语义不等价
 
 ---
 
@@ -102,6 +98,8 @@
 > 实际盘点共 6 处(2026-05-21 P1 只读评审落地;前 3 处在 PR #165 时已登记,后 3 处由 P1-A 决策锁补登)。"surface Mixed"指单文件同时承载多个 surface;"same-file multi-controller, same surface"仅是文件结构问题、不构成 surface 混合。
 
 > ✅ **Route B 终态注记(2026-06-01)**:下表 6 项中,P1-C 拆出的 4 个 `controllers/*-legacy.controller.ts`(users / attachments / activity-registrations / attendances)已于 **Phase 4 删除**,队员自助流统一在 App surface(`controllers/app-me.controller.ts` / `controllers/app-my-*.controller.ts`);仅 `permissions/rbac.controller.ts` `me/permissions`(现 `@Controller('system/v1/rbac')`)仍 method-level Mixed,**按 §9.4 / D-5.3 保留**;`dictionaries.controller.ts`(现 `system/v1/dict-*`)为非 surface Mixed。下表为**迁移前 P1-A 存量快照**,路径前缀与"未来 deprecate 候选 / 本阶段不删"等处置均为当时口径,仅留作历史。
+>
+> **2026-07-28 当前拓扑复核**:跨 surface Mixed=1(`permissions/rbac.controller.ts`);同文件同 surface 多 Controller=3(`activity-registrations/controllers/admin-registrations.controller.ts` / `attendances/attendances.controller.ts` / `dictionaries/dictionaries.controller.ts`),后者不计 Mixed。
 
 ### 5.1 Mixed Controller 存量(6 项;迁移前 P1-A 快照)
 
@@ -217,18 +215,18 @@
 
 ## 9. App / System surface semantic locks
 
-> 本节把 `AGENTS.md §19.7` 中与 API surface 相关的 D-series 决策正式承接到本 active policy。
-> `AGENTS.md §19.7` 仍是 decision-lock record(出处 / 拍板时间 / 不再重开讨论);本节是 execution policy(常规 PR 直接引用)。
-> 冲突时:沿 §4 现有规则,`AGENTS.md §19.7` > 本节;本节 > 归档评审稿。
+> 本节把 [`api-client-boundary §19.7`](reference/api-client-boundary.md) 中与 API surface 相关的 D-series 决策承接到 active policy;根 [`AGENTS.md §2`](../AGENTS.md) 是恒读入口。
+> `api-client-boundary §19.7` 保留 decision-lock 全文;本节是 execution policy(常规 PR 直接引用)。
+> 冲突时:沿根 AGENTS §0 权威顺序处理;本节 > 归档评审稿。
 
 ### 9.1 contribution-rules belongs to the System / Ops surface
 
 - `contribution-rules` is a participation-context configuration / rule resource, not a normal Admin business CRUD resource.
 - Current implementation is under `/api/system/v1/contribution-rules` with an Ops-oriented Swagger tag (`Ops - Contribution Rules`)(Route B 已落 System surface).
-- The surface stays System / Ops (`/api/system/v1/contribution-rules/*`,承接 D-1);**不得**改归 Admin / App / Public。
+- The surface stays System / Ops (`/api/system/v1/contribution-rules/*`,承接 D-1);**不得**改归 Admin / App / Open。
 - Normal ADMIN users may be authorized through `contribution-rule.*` permission codes, but that does not change the surface classification.
-- 常规 PR **不得**把 `contribution-rules` 重新归 Admin / App / Public 任一其他 surface;若需重开,必须单独立项并先回到 `AGENTS.md §19.7 D-1`。
-- This section executes `AGENTS.md §19.7 D-1`.
+- 常规 PR **不得**把 `contribution-rules` 重新归 Admin / App / Open 任一其他 surface;若需重开,必须单独立项并先回到根 `AGENTS.md §2 D-1`。
+- This section executes root `AGENTS.md §2 D-1`.
 
 ### 9.2 App access requires a linked active member
 
@@ -240,16 +238,16 @@
   - linked `Member.status = ACTIVE`
 - ADMIN / SUPER_ADMIN accounts without a linked member remain backend accounts only; they do not automatically get an App self perspective.
 - `canUseApp = false` means the identity / member binding does not satisfy App access requirements; it is **not** a substitute for endpoint authorization — backend write endpoints must still re-check RBAC / service-level guards regardless of `canUseApp` value.
-- 新增任何接受 candidate / temporary-number 进入 App 的能力,**必须**单独立项并先回到 `AGENTS.md §19.7 D-5.1 / D-5.2`。
-- This section executes `AGENTS.md §19.7 D-5.1 / D-5.2`.
+- 新增任何接受 candidate / temporary-number 进入 App 的能力,**必须**单独立项并先回到 [`api-client-boundary §19.7 D-5.1 / D-5.2`](reference/api-client-boundary.md)。
+- This section executes `api-client-boundary §19.7 D-5.1 / D-5.2`.
 
 ### 9.3 Admin-as-member uses linked-member self perspective
 
 - When an ADMIN / SUPER_ADMIN account has a linked member (`User.memberId != null`), the App surface only exposes the linked member's self perspective.
 - Backend role (ADMIN / SUPER_ADMIN) **does not** expand AppSelf field visibility — App responses are field-identical to a regular USER linked-member would see.
 - App endpoints must still apply `scope = self` semantics (沿 §2.1 `currentUser.memberId` 锁定本人) and must not infer broader data access from backend role.
-- 任何 App endpoint 出现 `if (role === ADMIN) { 返回扩展字段 / 扩展数据范围 }` 之类的分支视作越权,**必须**回退并回到 `AGENTS.md §19.7 D-5.2`。
-- This section executes `AGENTS.md §19.7 D-5.2`.
+- 任何 App endpoint 出现 `if (role === ADMIN) { 返回扩展字段 / 扩展数据范围 }` 之类的分支视作越权,**必须**回退并回到 [`api-client-boundary §19.7 D-5.2`](reference/api-client-boundary.md)。
+- This section executes `api-client-boundary §19.7 D-5.2`.
 
 ### 9.4 capability is not raw RBAC permission
 
@@ -257,8 +255,8 @@
 - It must **not** expose raw RBAC permission codes.
 - `/api/system/v1/rbac/me/permissions` remains the backend / PC / raw permission-code view; the two endpoints are **semantically not equivalent** and must not be merged or deprecated against each other (沿 §5.1 项 5 与 §6 项 7)。
 - Capabilities are **not** authorization proof — every write endpoint must still perform backend authorization through RBAC and / or service-level checks.
-- **禁止**把 `/api/app/v1/me/capabilities` 改回返回 raw RBAC permission code,或在 App surface 新增任何返回 raw permission code 的端点;若需重开,必须单独立项并先回到 `AGENTS.md §19.7 D-5.3`。
-- This section executes `AGENTS.md §19.7 D-5.3`.
+- **禁止**把 `/api/app/v1/me/capabilities` 改回返回 raw RBAC permission code,或在 App surface 新增任何返回 raw permission code 的端点;若需重开,必须单独立项并先回到 [`api-client-boundary §19.7 D-5.3`](reference/api-client-boundary.md)。
+- This section executes `api-client-boundary §19.7 D-5.3`.
 
 ### 9.5 `/me/*` and `/my/*` are physically separated
 
@@ -276,5 +274,12 @@
   - `/api/app/v1/my/registrations`
   - `/api/app/v1/my/attendance-records`
   - `/api/app/v1/my/certificates`
-- 新增 `/api/app/v1/me/<owned-business-record>` 或 `/api/app/v1/my/<identity-or-capability>` 这种语义错配的路径视作越权,**必须**回退并回到 `AGENTS.md §19.7 D-5.4`。
-- This section executes `AGENTS.md §19.7 D-5.4`.
+- 新增 `/api/app/v1/me/<owned-business-record>` 或 `/api/app/v1/my/<identity-or-capability>` 这种语义错配的路径视作越权,**必须**回退并回到 [`api-client-boundary §19.7 D-5.4`](reference/api-client-boundary.md)。
+- This section executes `api-client-boundary §19.7 D-5.4`.
+
+### 9.6 Content 读取面 signed URL 范围例外(a)
+
+- App 默认不返回完整 signed URL;**唯一例外**是 owner 为 `content-image` / `content-file` 的短 TTL URL,可在 `/api/open/v1/contents/*` 与 `/api/app/v1/contents/*` 读取面返回。
+- 返回前必须先通过对应文章可见级(public / member / formal_member / department / management);不可见详情仍 404,不得先签 URL 再判可见性。
+- 例外仅覆盖 content 读面。member / certificate / activity 等其余 owner、content 写路径、日志、audit 与 snapshot 仍不得暴露完整 URL 或凭证。
+- 实现锚点:`content-read.service.ts` + `attachments/CLAUDE.md`;扩大 owner、surface 或生命周期必须单独立项。

@@ -11,10 +11,10 @@
 |---|---|
 | [`current-state.md`](./current-state.md) | **当前事实唯一入口**:版本、open PR、最新 release、surface 状态、当前债务、不做清单 |
 | [`process.md`](./process.md) | 开发流程与协作制度:开工 checklist、PR 五档分级、release 收口、AI 协作纪律 |
-| [`api-surface-policy.md`](./api-surface-policy.md) | API surface 长期边界(active 单一权威源):Mobile App / Admin Legacy / Root Legacy 三层 + 新增/迁移规则;原设计期顶层规范 `api-client-boundary.md` 已归档至 `archive/plans/api-client-boundary-design-period.md` |
+| [`api-surface-policy.md`](./api-surface-policy.md) | API surface 长期边界(active 单一权威源):Admin / App / Auth / System / Open 五个 canonical 前缀 + 新增/迁移规则;原设计期顶层规范 `api-client-boundary.md` 已归档至 `archive/plans/api-client-boundary-design-period.md` |
 | [`participation-bounded-context.md`](./participation-bounded-context.md) | Participation 业务上下文边界图:`activities` / `activity-registrations` / `attendances` / `contribution-rules` 4 模块的状态链条、跨模块耦合、API surface 与 governance;**不**含 `certificates`(独立 member-qualifications 上下文) |
 | [`attachment-config-boundary.md`](./attachment-config-boundary.md) | 附件配置三表(`AttachmentTypeConfig` / `AttachmentMimeConfig` / `AttachmentSizeLimitConfig`)的 override-with-default 边界说明:为什么不合表、为什么不抽 facade、新增规则落点 |
-| [`architecture-boundary.md`](./architecture-boundary.md) | 架构边界铁律 / active architecture boundary policy for Presenter / QueryService / PolicyService / StateMachine / AuditRecorder / Effect extraction decisions;承接 `AGENTS.md §19.7 D-7` |
+| [`architecture-boundary.md`](./architecture-boundary.md) | 架构边界铁律 / active architecture boundary policy for Presenter / QueryService / PolicyService / StateMachine / AuditRecorder / Effect extraction decisions;承接 `AGENTS.md §2 D-7` |
 | [`reference/`](./reference/) | **Harness 2.0 细则层(触碰才读)**:承接 harness v1 AGENTS 教学细则的九篇(命名与 DTO / 返回与错误码 / Swagger / auth-token / 软删与事务 / 角色保护 / 配置 / 测试纪律 / API 边界与决策锁全文);恒读入口与索引在根 `AGENTS.md` §6 |
 | [`handoff/`](./handoff/) | **前后端交接层(canonical,两端对接文档唯一家)**:README(索引 + 维护协议 + **变更触发对照表**)+ `admin-web.md`(PC 后台)/ `miniapp.md`(小程序 + 招新 H5)+ `openapi.json` 便利快照;改契约同 PR 更新(AGENTS §0 反漂铁律) |
 | [`srvf-foundation-baseline.md`](./srvf-foundation-baseline.md) | V2 派生项目基线规范(BizCode 段位 / 命名 / DTO / 软删除 / 验收门槛 13 项) |
@@ -56,7 +56,7 @@ V2 设计期产物(V2-D8 立项时刻 draft 历史快照,**非当前事实权威
 
 | 目录 | 内容 |
 |---|---|
-| [`archive/handoff/`](./archive/handoff/) | 历史 release handoff(v0.4.0 ~ v0.15.0),release 时刻快照,**合入后不回改** |
+| [`archive/handoff/`](./archive/handoff/) | 历史 release handoff(v0.4.0 ~ v0.62.0),release 时刻快照,**合入后不回改** |
 | [`archive/reviews/`](./archive/reviews/) | 历史评审稿:App API Phase 2(P2-2~P2-7)/ Phase 0.5/0.6/0.7 boundary review / Phase 1 client-boundary review / P0-D/P0-E/P0-F 评审稿 / 终态「组织职务 + 分管 + scoped RBAC + 统一鉴权」架构评审稿(`org-position-scoped-authz-terminal-design-review.md`,PR1–PR12 + 摘码微刀全序列实施完成,2026-07-03 归档)/ **第二轮全仓多维度系统性 review**(`full-repo-systematic-review-v0.34.0.md`,31 findings〔0 P0 / 1 P1 / 9 P2 / 19 P3 / 1 known-dup〕全处置完毕 #485–#490 + review #484 收口刀,2026-07-03 归档;沿 v0.26.0 报告归档先例) |
 | [`archive/batches/`](./archive/batches/) | 批次 5-A / 6 / 7 / 8 的 API 前评审、业务确认稿、业务访谈提纲、V2.x 立项记录(中文文件名) |
 | [`archive/plans/`](./archive/plans/) | 历史阶段计划:v1.3 / v1.4 / first-release readiness / bizcode mapping / bootstrap SOP / frontend scope / API client boundary migration plan |
@@ -85,7 +85,7 @@ V2 设计期产物(V2-D8 立项时刻 draft 历史快照,**非当前事实权威
 - ❌ `archive/reviews/**`:评审稿在被实施落地后,**实施细节会演进**(BizCode 段位补全、字段命名调整、限流参数调整);**实际代码以 `src/**` 为准**
 - ❌ `archive/batches/**`:各批次冻结时刻的业务决议;**业务诉求若发生变化,需通过新的评审稿覆盖**
 - ❌ `archive/plans/**`:阶段开始前的执行计划;**实际执行可能偏离计划**
-- ❌ `archive/legacy/FINAL_REPORT.md`:v0.1.3 时代的收尾报告;**与当前 v0.15.0 状态无关**
+- ❌ `archive/legacy/FINAL_REPORT.md`:v0.1.3 时代的收尾报告;**与当前状态无关,当前版本以 [`current-state.md`](./current-state.md) §1 为准**
 
 ---
 

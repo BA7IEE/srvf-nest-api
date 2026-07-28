@@ -52,7 +52,7 @@
 | `src/database/` | `PrismaService` + `DatabaseModule` |
 | `src/modules/` | **业务模块权威位置**(平铺,**禁止**嵌套 `system/` / `business/` / `core/` 子目录) |
 
-**业务模块以 `src/modules/` 实际目录为准**(以 `ls -d src/modules/*/` 当下结果为权威清单);本文不再 inline 维护模块树。模块结构基线与已解锁例外(surface-specific Controller / DTO 子目录 / 6 类职责类抽离)沿 [`naming-dto-validation`](reference/naming-dto-validation.md)` + [`api-surface-policy.md`](api-surface-policy.md) + [`architecture-boundary.md`](architecture-boundary.md)。
+**业务模块以 `src/modules/` 实际目录为准**(以 `ls -d src/modules/*/` 当下结果为权威清单);本文不再 inline 维护模块树。模块结构基线与已解锁例外(surface-specific Controller / DTO 子目录 / 6 类职责类抽离)沿 [`naming-dto-validation`](reference/naming-dto-validation.md) + [`api-surface-policy.md`](api-surface-policy.md) + [`architecture-boundary.md`](architecture-boundary.md)。
 
 ---
 
@@ -61,7 +61,7 @@
 **完整路由 / endpoint 清单的权威源**:
 
 - 在线浏览:Swagger UI `/api/docs`(开发环境默认开;生产需 `ENABLE_SWAGGER=true`)
-- 在仓代码:[`test/contract/openapi.contract-spec.ts`](../test/contract/openapi.contract-spec.ts) 中的 `EXPECTED_ROUTES` 常量(当前覆盖 78+ endpoint)
+- 在仓代码:[`test/contract/openapi.contract-spec.ts`](../test/contract/openapi.contract-spec.ts) 中的 `EXPECTED_ROUTES` 常量(当前 416 endpoint;计数由 [`current-state.md`](current-state.md) §1 守护)
 - OpenAPI snapshot 走 `pnpm test:contract` 回归
 
 本文只保留**典型调用示例**,不再 inline 维护完整表:
@@ -72,16 +72,16 @@
 | `POST` | `/api/auth/v1/login` | `username + password` 登录,返回 `accessToken` + `refreshToken` + `refreshExpiresAt`;**默认 IP 5 次 / 60 秒** |
 | `POST` | `/api/auth/v1/login-sms` / `/api/auth/v1/login-sms/send-code` | OTP(验证码)登录——密码登录的并行方式(2026-06-11):发码 + 登录,防枚举统一 24010,会话签发与密码登录同构;独立 throttler `login-sms` 5 / 60 |
 | `POST` | `/api/auth/v1/refresh` | rotation always + family revoke + absolute expiration;失败统一 `REFRESH_TOKEN_INVALID=10007`;独立 throttler `refresh` 30 / 60 |
-| `POST` | `/api/auth/v1/logout` | 幂等;只撤销当前 refresh token;**不限流**;**不**吊销 access |
+| `POST` | `/api/auth/v1/logout` | 幂等;任一可识别且未过期 row(含 rotated ancestor)定位并撤销所属 refresh family 的全部活跃未过期 token;其他 family 不动;**不限流**;**不**吊销 access |
 | `POST` | `/api/auth/v1/logout-all` | 撤销该用户全部未过期 refresh;返 `{ revokedCount }`;复用 `password-change` throttler 5 / 60 |
 | `GET`/`PATCH`/`PUT` | `/api/app/v1/me` · `/api/app/v1/me/profile` · `/api/app/v1/me/password` | 队员本人身份 / 资料 / 改密(`PATCH` 白名单 `nickname` / `avatarKey`;改密独立 throttler `password-change` 5 / 60,`OLD_PASSWORD_INVALID=10005` / `NEW_PASSWORD_SAME_AS_OLD=10006`)|
-| `GET` | `/api/app/v1/me/capabilities` / `/api/app/v1/my/registrations` 等 | App API surface 完整 15 endpoint;清单见 `EXPECTED_ROUTES` |
+| `GET` | `/api/app/v1/me/capabilities` / `/api/app/v1/my/registrations` 等 | App API surface 示例;完整清单见 `EXPECTED_ROUTES` |
 | `GET` | `/api/docs` | Swagger UI |
 
 > **铁律**:
 > - 新移动端能力**只能**落 `/api/app/v1/*` surface(沿 [`api-surface-policy.md §0`](api-surface-policy.md));Route B 终态后已无 `/api/users/me/*` legacy 入口
 > - 新 PC 管理后台 endpoint 落 `/api/admin/v1/*`(Route B 终态;原 `/api/v2/*` 已迁移并删除)
-> - 鉴权细则(JWT payload zero drift / refresh token 安全策略 / 联动撤销 4 场景)详 [`auth-jwt-refresh`](reference/auth-jwt-refresh.md) / §9` + [`security.md`](security.md)
+> - 鉴权细则(JWT payload zero drift / refresh token 安全策略 / 联动撤销 9 场景)详 [`auth-jwt-refresh`](reference/auth-jwt-refresh.md) §9 + [`security.md`](security.md)
 
 ---
 
@@ -98,9 +98,9 @@ TOKEN=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['
 curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/app/v1/me
 ```
 
-成功响应统一 `{ "code": 0, "message": "ok", "data": ... }`,错误响应 `{ "code": <BizCode>, "message": <提示>, "data": null }`(沿 [`response-pagination-errors`](reference/response-pagination-errors.md) / §5`)。
+成功响应统一 `{ "code": 0, "message": "ok", "data": ... }`,错误响应 `{ "code": <BizCode>, "message": <提示>, "data": null }`(沿 [`response-pagination-errors`](reference/response-pagination-errors.md) §5)。
 
-`refresh` / `logout` / `logout-all` 语义(rotation always / family revoke / absolute expiration / 联动撤销 4 场景 / `JwtStrategy.validate` 每请求查库)详 [`auth-jwt-refresh`](reference/auth-jwt-refresh.md) P0-E 子节` + [`security.md`](security.md) `Token 吊销升级路径`。
+`refresh` / `logout` / `logout-all` 语义(rotation always / family revoke / absolute expiration / 联动撤销 9 场景 / `JwtStrategy.validate` 每请求查库)详 [`auth-jwt-refresh`](reference/auth-jwt-refresh.md) P0-E 子节 + [`security.md`](security.md)“Token 吊销升级路径”。
 
 ---
 
@@ -119,7 +119,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/app/v1/me
 | Database | `DATABASE_URL` |
 | Application | `APP_PORT` / `APP_ENV` / `APP_CORS_ORIGIN` / `ENABLE_SWAGGER` |
 | JWT(access + refresh) | `JWT_SECRET` / `JWT_EXPIRES_IN`(15m) / `JWT_REFRESH_EXPIRES_IN`(90d) |
-| Throttler 三实例(物理隔离) | `LOGIN_THROTTLE_*` / `PASSWORD_CHANGE_THROTTLE_*` / `REFRESH_THROTTLE_*` |
+| Throttler 十实例(物理隔离) | `LOGIN_THROTTLE_*` / `PASSWORD_CHANGE_THROTTLE_*` / `REFRESH_THROTTLE_*` / `SMS_SEND_THROTTLE_*` / `SMS_VERIFY_THROTTLE_*` / `PASSWORD_RESET_THROTTLE_*` / `LOGIN_SMS_THROTTLE_*` / `LOGIN_WECHAT_THROTTLE_*` / `RECRUITMENT_THROTTLE_*` / `CONTENT_PUBLIC_THROTTLE_*` |
 | RBAC | `RBAC_INITIAL_OPS_ADMIN_USER_ID`（GLOBAL permission resolution 每请求读 DB；`RBAC_CACHE_TTL_SECONDS` 已退役） |
 | Storage / COS | `STORAGE_ENCRYPTION_KEY` / `STORAGE_LOCAL_ROOT` 等(详 [`ops/cos-production-rollout-checklist.md`](ops/cos-production-rollout-checklist.md)) |
 | Seed / 日志 | `SUPER_ADMIN_*` / `LOG_LEVEL` |

@@ -17,7 +17,8 @@ export function isProductionLike(env: AppEnv): boolean {
   return env === 'production' || env === 'smoke';
 }
 
-// V1.1 §11.5:LOG_LEVEL 允许值固定六个,silent 不在此清单(运行时为 test 环境兜底用)。
+// ARCHITECTURE.md §11.3:LOG_LEVEL 允许值固定六个,silent 不在此清单
+// (运行时为 test 环境兜底用)。
 const VALID_LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace'] as const;
 export type LogLevel = (typeof VALID_LOG_LEVELS)[number];
 
@@ -232,7 +233,8 @@ export function parseTrustedProxyCidrs(raw: string | undefined, env: AppEnv): st
   return cidrs;
 }
 
-// V1.1 §11.5:LOG_LEVEL 留空时默认按 APP_ENV 推断;production-like(production / smoke)=info,其他=debug。
+// ARCHITECTURE.md §11.3:LOG_LEVEL 留空时默认按 APP_ENV 推断;
+// production-like(production / smoke)=info,其他=debug。
 // 显式赋值时必须 ∈ VALID_LOG_LEVELS,否则启动 fail-fast(.env.example 应留空,不写默认值)。
 function parseLogLevel(raw: string | undefined, env: AppEnv): LogLevel {
   if (!raw || raw.trim() === '') {
@@ -247,7 +249,7 @@ function parseLogLevel(raw: string | undefined, env: AppEnv): LogLevel {
   return value;
 }
 
-// V1.1 §11.5 / TASKS.md 15.7:登录限流参数解析。
+// docs/reference/auth-jwt-refresh.md §9「限流契约」:登录限流参数解析。
 // 留空 → 用 ARCHITECTURE.md §11.5 表里给出的默认值(limit=5,ttl=60 秒)。
 // 显式赋值必须为正整数且落在推荐区间;越界直接 fail-fast,禁止 fallback。
 // 推荐区间来自 §11.5:LIMIT [1, 100],TTL [1, 3600]。
@@ -333,7 +335,7 @@ export function parseInsuranceEnforcementEnabled(raw: string | undefined, env: A
 
 // V2.x C-7.5 Provider 选型实施 PR #6:storage 凭证加密 key(沿 §6.6.1 + Q23 例外)。
 // AES-256-GCM 需 32 字节 key;运行时由 StorageCryptoService 派生(scrypt)。
-// production 严禁默认值 / 严禁留空(沿 v1 §14 JWT_SECRET 范式)。
+// production 严禁默认值 / 严禁留空(沿 docs/reference/config-env.md §14 JWT_SECRET 范式)。
 // dev / test 允许留空 → StorageCryptoService.isAvailable() === false,凭证字段读写均抛。
 //
 // V2.x C-7.5 实施 PR #7:LocalStorageProvider 根目录(沿 Q-88-1 拍板 A)。

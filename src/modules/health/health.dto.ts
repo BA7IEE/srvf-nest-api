@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-// V1.1 §11.2 / TASKS.md 15.5:健康检查响应载荷。
+// 健康检查响应载荷(ARCHITECTURE.md §11.1)。
 //
 // 三端点共用此 DTO,经 ResponseInterceptor 包装后响应外层始终是
 // `{ code: 0, message: 'ok', data: HealthResponseDto }`:

@@ -17,11 +17,11 @@
 - **R13 红线贯穿全篇**:真实姓名 / 身份证号 / 手机号 / `memberNo` 的对照关系绝不写入本仓库任何文件(含 issue、PR 描述、commit message、AI 协作会话记录);本清单所有示例一律用假数据(`T0001`/`张三` 类占位)。
 - 占位符:`<API_HOST>` / `<ACCESS_TOKEN>`(SUPER_ADMIN 或持权账号的登录 token)。
 
-## 1. 部署 ≥ v0.49.0
+## 1. 部署当前批准的 release
 
-- [ ] 部署版本 ≥ `v0.49.0`；该版本包含摘码微刀([#482](https://github.com/BA7IEE/srvf-nest-api/pull/482))及部门数据范围全面接线 #604–#608
-- [ ] `prisma migrate deploy` 执行完毕、`prisma migrate status` 无 pending:v0.49.0 共 **50** 个 migration（本版 0 migration）；终态 scoped-authz 8 张表在第 38 个 migration 建齐,第 39 个 migration 清理冻结旧表。若部署旧 tag,以该 tag 的 `migrate status` 为准
-- [ ] `pnpm prisma:seed` 幂等执行:权限码 **206** 条 / 9 个内置角色(`biz-admin` **81** / `ops-admin` **96** / `member` 9 / `org-admin` 60 / `org-readonly` 10 / `group-manager` 22 / `group-readonly` 11 / `org-supervisor` 4 / `attendance-final-reviewer` 4)/ 6 个内置职务(队长 / 副队长 / 部长 / 副部长 / 组长 / 副组长)/ 30 条默认职务规则全部到位
+- [ ] 以 [`current-state.md §1`](../current-state.md) 指定的当前批准 release tag 为准，核对部署的不可变 SHA / image digest 与该 tag 一致；不得再用“版本 ≥ 某个历史下限”单独作为通过条件。该 release 必须包含摘码微刀([#482](https://github.com/BA7IEE/srvf-nest-api/pull/482))及部门数据范围全面接线 #604–#608
+- [ ] 对同一 release 的已审查 migration 执行 `pnpm prisma:deploy`，随后以 `pnpm prisma migrate status` 确认无 pending；不得用会随版本增长的累计 migration 数替代状态检查
+- [ ] `pnpm prisma:seed` 幂等执行；权限码、内置角色及绑定以同一 tag 的 [`RBAC_MAP.md`](../ai-harness/RBAC_MAP.md) 和 seed 为准，并运行 `pnpm docs:rbacmap:check` 对账。确认 `biz-admin` / `ops-admin` / `member` / `org-admin` / `org-readonly` / `group-manager` / `group-readonly` / `org-supervisor` / `attendance-final-reviewer`、六个内置职务（队长 / 副队长 / 部长 / 副部长 / 组长 / 副组长）及默认职务规则均已就位，不抄累计数量作门槛
 
 **校验**:
 
@@ -30,7 +30,7 @@ curl -s https://<API_HOST>/api/system/v1/health/ready
 # 期望:{"code":0,...,"data":{"status":"ok"}}
 ```
 
-`GET /api/system/v1/roles`(需 SUPER_ADMIN token)应看到 9 条内置角色；`org-readonly` 绑 10 个只读码、`group-readonly` 绑 11 个只读码，均零 `*.read.sensitive`/零写码；`attendance-final-reviewer` 绑 4 码(`attendance.{read,final-approve,final-reject,reopen}.sheet`)。
+`GET /api/system/v1/roles`（需 SUPER_ADMIN token）应与当前 [`RBAC_MAP.md`](../ai-harness/RBAC_MAP.md) 的内置角色和绑定一致；`org-readonly` / `group-readonly` 均须零 `*.read.sensitive`、零写码，`attendance-final-reviewer` 的权限集合也以该 tag 的 RBAC_MAP 为准。
 
 ## 2. 建 SUPER_ADMIN 与管理账号
 
@@ -130,7 +130,7 @@ curl -X POST https://<API_HOST>/api/admin/v1/authz/explain \
 
 全部通过 = 判权链路验收完成。
 
-### 6.1 v0.49.0 部门数据范围抽查
+### 6.1 部门数据范围抽查
 
 - [ ] **正职范围**:仅有 `dept-leader` active 任职、零 GLOBAL 绑定的账号，`members` 列表/options 只含本部门树 active PRIMARY 队员；本部门队员详情/更新可用，跨部门详情/更新/证书/档案均 `30100`
 - [ ] **副职只读**:`vice-captain` / `dept-deputy` / `deputy-group-leader` 的有效权限出口分别含 `org-readonly` / `group-readonly` 投影读码；范围内列表/详情可读，任一 create/update/delete/approve 写动作 `30100`
@@ -138,7 +138,7 @@ curl -X POST https://<API_HOST>/api/admin/v1/authz/explain \
 - [ ] **扁平列表求交**:`registrations` / `attendance-sheets` 显式传 `organizationId` + `includeDescendants=true` 时，结果必须同时落在用户筛选树和 Authz 可见组织集内；有效范围为空返 200 空列表
 - [ ] **换届失权**:撤销或结束一条副职/正职任职后，重调 effective-permissions 与上述列表，派生码/范围立即消失（Authz 不缓存）
 
-### 6.2 v0.49.0 上线后运维重配 runbook
+### 6.2 上线后运维重配 runbook
 
 > 目标是把此前为“能看到菜单”临时授予部长/队长/副职的 `biz-admin` GLOBAL 绑定收回，恢复职务派生的最小权限。按人串行执行，任一步抽查失败就先回滚该人，不批量裸删。
 
@@ -168,6 +168,6 @@ curl -X POST https://<API_HOST>/api/admin/v1/authz/explain \
 ## 9. 本清单不覆盖(已知事项 / 后续)
 
 - **存量队员批量导入工具**:preview/execute 两段式镜像 announcement-import 尚未建,已登记 [`NEXT_TASKS.md`](../ai-harness/NEXT_TASKS.md) 候选项,诉求触发再立项
-- **仍未接线的业务面**:users / content / notifications / audit-logs 与 attachment self-scope 等，见 [`admin-web.md` GAP-007 v0.49.0 扩展关账](../handoff/admin-web.md#4-缺口台账-gap-ledger)。members / certificates / profile / contacts / insurance 与 participation 五个扁平/member-axis 入口已在 v0.49.0 划账完成
+- **仍未接线的业务面**:users / content / notifications / audit-logs 与 attachment self-scope 等，见 [`admin-web.md` GAP-007 v0.49.0 扩展关账](../handoff/admin-web.md#4-缺口台账gap-ledger)。members / certificates / profile / contacts / insurance 与 participation 五个扁平/member-axis 入口已在 v0.49.0 划账完成
 - **Recruitment / team-join**:明确维持中央流程，不随职务/分管自动派生；审核人按 §6.2 保留显式授权，这不是 scoped 迁移 TODO
 - **换届 SOP**:本清单只覆盖首次上线初始化;后续常态化换届(撤销旧任职/绑定 + 建新任职/绑定)沿 §5 末尾的"撤销 + 重建"操作即可,暂不需要独立 SOP,诉求增长后可另立

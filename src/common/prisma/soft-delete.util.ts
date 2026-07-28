@@ -1,6 +1,6 @@
 // V2 基线规范 §10 软删除显式封装。
 //
-// 沿用 v1 §10 / CLAUDE.md §10:仅显式调用,不引入 Prisma middleware /
+// 沿用 docs/reference/soft-delete-transactions.md §10:仅显式调用,不引入 Prisma middleware /
 // client extension / BaseRepository / 装饰器 / 拦截器 / Pipe 等隐式自动过滤。
 // 形态铁律详见 docs/srvf-foundation-baseline.md §10.2.2。
 //

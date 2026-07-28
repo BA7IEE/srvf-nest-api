@@ -30,7 +30,8 @@ export class UserLinkedMemberDto {
 }
 
 // ============ 出参 DTO ============
-// UserResponseDto 字段必须与 userSafeSelect 严格同步(详见 §7.9 + users.select.ts)。
+// UserResponseDto 字段必须与 userSafeSelect 严格同步
+// (详见 docs/reference/naming-dto-validation.md §11 + users.select.ts)。
 // 永不包含 passwordHash / deletedAt。
 export class UserResponseDto {
   @ApiProperty({ description: '用户主键(cuid)', example: 'cl9z3a8b00000abcd1234efgh' })

@@ -22,7 +22,8 @@ import { createTestApp } from '../setup/test-app';
 // - status 默认 ACTIVE(沿 Prisma schema default)
 // - duplicate code 拦截(13021 ATTACHMENT_TYPE_CONFIG_CODE_ALREADY_EXISTS)
 // - invalid code format 拦截(13023 INVALID_ATTACHMENT_TYPE_CONFIG_CODE_FORMAT;Service 层显式 regex)
-// - 资源不存在 / 已软删统一返(13020 ATTACHMENT_TYPE_CONFIG_NOT_FOUND;沿 v1 §10 信息泄漏防御)
+// - 资源不存在 / 已软删统一返(13020 ATTACHMENT_TYPE_CONFIG_NOT_FOUND;
+//   沿 docs/reference/soft-delete-transactions.md §10 信息泄漏防御)
 // - List 分页 + status filter + ownerTable filter
 // - DTO 白名单(PATCH 拒绝 code / status / deletedAt / id)
 // - 软删后行为(不出现在 list / code 不可复用 → 13021)

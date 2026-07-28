@@ -128,7 +128,7 @@ export function applyGlobalSetup(app: INestApplication, appCfg: AppConfig): void
     next();
   });
 
-  // V1.1 §11.2 / TASKS.md 15.6:HTTP 基线安全头(X-Content-Type-Options / X-Frame-Options /
+  // ARCHITECTURE.md §11.1:HTTP 基线安全头(X-Content-Type-Options / X-Frame-Options /
   // Strict-Transport-Security / Referrer-Policy / X-DNS-Prefetch-Control 等),用 helmet 默认配置。
   //
   // /api/docs 路径局部禁 CSP:Swagger UI HTML 内含 inline `<script>`,helmet 默认 CSP

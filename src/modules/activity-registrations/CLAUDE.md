@@ -46,7 +46,7 @@
 - ❌ 不拆 `INSURANCE_ENFORCEMENT_ENABLED` 单 gate，不在 Activity 锁前查/选 source，不把 evidence/audit 移出 create 根事务；approve 不得重新选择来源或把重验挪到 claim/audit 后；PR4 migration/约束代码已交付但尚未 deploy、生产未生效，禁止新增 Evidence 改删路径或绕过 `InsuranceRequirementService`
 - ❌ **不**把 `cancelAdmin` / `cancelMy` 路径区分挪进 StateMachine(只通过 `extra.cancelledByPath` 在 audit 记录)
 - ❌ **不**改 Admin Controller path `admin/v1/activities/:activityId/registrations`(`export` 字面段必须**先**于 `:id/<action>` 路由声明,Q-A6 锁定;调换顺序会被 Nest 路由解析为 `:id=export`)
-- ❌ **不**把 Admin DTO 用 `extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 派生为 App DTO(沿 `harness reference/api-client-boundary.md` D-6`);App `dto/app/`字段集**刻意删除**`memberId`/`memberNo`/`memberDisplayName`(沿 §16.B.2)
+- ❌ **不**把 Admin DTO 用 `extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 派生为 App DTO(沿 [`api-client-boundary` D-6](../../../docs/reference/api-client-boundary.md));App `dto/app/`字段集**刻意删除**`memberId`/`memberNo`/`memberDisplayName`(沿 §16.B.2)
 - ❌ App self 视角 where 子句**永远**用 `currentUser.memberId` 锁本人；managed 视角只认当前活动 active responsibility capability；两者都**禁止** role 短路 / `scope=all`
 - ❌ **不**主动拆 `activity-registrations.service.ts`(1727L,沿 [`/docs/current-state.md §4 P2`](../../../docs/current-state.md))
 - ❌ **不**在 CSV 导出路径引入 `csv-stringify` 等新依赖(沿 Q-A6 + [`/AGENTS.md §3`](../../../AGENTS.md))

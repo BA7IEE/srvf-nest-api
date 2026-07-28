@@ -26,7 +26,7 @@
 
 ## 落地时同步检查
 
-第一个 AI 产品启动时,按 NestJS 业务模块铁律(CLAUDE.md §2)创建 4 文件:
+第一个 AI 产品启动时,按 NestJS 业务模块铁律(`AGENTS.md §1` + `docs/reference/naming-dto-validation.md §2`)创建 4 文件:
 
 ```
 modules/ai/

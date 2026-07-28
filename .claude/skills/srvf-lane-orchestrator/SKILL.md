@@ -5,7 +5,7 @@ description: 当本会话要充当 SRVF 并行开发「总控」时使用:为执
 
 # srvf-lane-orchestrator — 总控行为清单(Harness 2.0)
 
-> 协议权威源 [`docs/process.md §8`](../../../docs/process.md);公理与设计 [`harness-2.0-t0-review.md`](../../../docs/archive/reviews/harness-2.0-t0-review.md)。本 skill 是操作 checklist,**非规则源**,冲突时让步 process。
+> lane 过程细则见 [`docs/process.md §8`](../../../docs/process.md);公理与历史设计证据见 [`harness-2.0-t0-review.md`](../../../docs/archive/reviews/harness-2.0-t0-review.md)。本 skill 是操作 checklist,**非规则源**；冲突时沿根 `AGENTS.md §0`:用户本轮指令 → `docs/current-state.md` + live Git / 代码 / GitHub → 根 `AGENTS.md` → `docs/process.md` → archive 历史证据。发现冲突即停止报告。
 
 ## 0. 角色边界
 

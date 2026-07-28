@@ -2,7 +2,7 @@ import { ExecutionContext, createParamDecorator } from '@nestjs/common';
 import { Role, UserStatus } from '@prisma/client';
 import type { Request } from 'express';
 
-// 当前登录用户的形状(详见 ARCHITECTURE.md §7.6)。
+// 当前登录用户的形状(详见 docs/reference/auth-jwt-refresh.md §8)。
 // JwtStrategy.validate() 返回的对象由 passport 自动挂到 request.user 上,
 // 字段必须与本接口一致。第 7 阶段接入 auth 时落地具体填充逻辑。
 //

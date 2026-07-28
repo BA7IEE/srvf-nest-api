@@ -4,7 +4,7 @@ import { HttpStatus } from '@nestjs/common';
 //
 // 当前状态(随实施滚动维护;每次新增模块码后校对):
 // - 招新证书闭环刀A(2026-07-13):28xxx +2(28054 已审核通过禁止重传 / 28055 未审核通过禁止标门槛)
-// - 250 个 BizCode(2026-07-16 亲核:Object.keys(BizCode).length;活动岗位 F2/F3 新增 6 码)
+// - 278 个 BizCode(2026-07-28;当前总数以 docs/current-state.md §1 + `pnpm docs:counts:check` 真源为准)
 // - 历史 2026-06-25 快照为 175 个 BizCode(彼时含 CMS content 290xx +5
 //   + 活动闭环硬化 20123 报名截止 +1 + 统一通知 310xx +5;2026-06-13 的「141」系彼时快照,此后 realname 27xxx
 //   + 招新·入队 28xxx(280xx/281xx/282xx)+ #399 review 错误码增量(13014 / 19010 / 30103)+ CMS content 290xx 5 码
@@ -15,15 +15,17 @@ import { HttpStatus } from '@nestjs/common';
 // - 统一通知模块 S1 站内信渠道(第 28 模块 notifications 扩 controller,2026-06-25,评审稿 §9.3):310xx 段 5 码
 //   (31001 NOT_FOUND / 31010 type / 31011 visibility / 31012 visible-org / 31030 status-transition,镜像 content 290xx);
 //   311xx 权限边界预留(暂不用,RBAC 统一 30100);可见性复用 content.visibility,无第二套
-// - 编号段权威说明以 `docs/srvf-foundation-baseline.md §1.1` 为准;
-//   ARCHITECTURE.md §7.3 是早期蓝图,模块命名已演进(missions→dictionaries、
+// - 编号段权威说明以 `docs/srvf-foundation-baseline.md §1.1`
+//   + `docs/reference/response-pagination-errors.md §5` 为准;
+//   ARCHITECTURE 历史 v1 蓝图中的段位示例已随模块命名演进(missions→dictionaries、
 //   files→attachments、devices→audit_logs 等),遇分歧以 baseline §1.1 + 本文件实际常量为准
 // - 本文件是运行时代码唯一导出源(全仓 BizException throw 与 test 引用共 ~1700 处),
 //   无明确迁移计划前不得拆分
 //
 // 治理约束:
 // - 禁止复用已存在 code(新增前先 grep 数字是否撞段)
-// - 禁止为同一语义新开重复码(优先复用既有码;沿 v1 §10 信息泄漏防御)
+// - 禁止为同一语义新开重复码
+//   (优先复用既有码;沿 docs/reference/soft-delete-transactions.md §10 信息泄漏防御)
 // - 新增模块码必须先确认编号段归属(baseline §1.1 表)
 // - 不在本文件记录接口路径(`GET /api/...` 之类语义留在 controller / docs / OpenAPI contract)
 //
@@ -61,7 +63,8 @@ export const BizCode = {
   UNAUTHORIZED: { code: 40100, message: '未登录或登录已失效', httpStatus: HttpStatus.UNAUTHORIZED },
   FORBIDDEN: { code: 40300, message: '无权限访问', httpStatus: HttpStatus.FORBIDDEN },
   NOT_FOUND: { code: 40400, message: '资源不存在', httpStatus: HttpStatus.NOT_FOUND },
-  // V1.1 §11.4 / TASKS.md 15.7:登录接口限流命中。落 4xxxx 通用 HTTP 段(429),
+  // docs/reference/response-pagination-errors.md §5:登录接口限流命中。
+  // 落 4xxxx 通用 HTTP 段(429),
   // 不占用业务模块 100xx / 110xx 段。message 故意不暴露阈值数字、剩余配额、
   // 重置时间(防止攻击者反推限流参数)。
   TOO_MANY_REQUESTS: {
@@ -111,11 +114,13 @@ export const BizCode = {
 
   // P0-E PR-3(2026-05-18):refresh token 接口失败统一码(沿
   // docs/first-release-p0e-refresh-token-review.md §5.7 + §6.5)。
-  // 段位归属:沿 v1 §5 BizCode 编码段:100xx 为 users 模块业务级(含 auth);
+  // 段位归属:沿 docs/reference/response-pagination-errors.md §5 BizCode 编码段:
+  // 100xx 为 users 模块业务级(含 auth);
   // 已用 10001-10006(LOGIN_FAILED=10004 / OLD_PASSWORD_INVALID=10005 /
   // NEW_PASSWORD_SAME_AS_OLD=10006),10007 为下一可用号位。
   //
-  // **不**拆 REFRESH_TOKEN_EXPIRED / REVOKED / REPLAY(沿评审稿 D-6 + v1 §8 防账号枚举):
+  // **不**拆 REFRESH_TOKEN_EXPIRED / REVOKED / REPLAY
+  // (沿评审稿 D-6 + docs/reference/auth-jwt-refresh.md §8 防账号枚举):
   // refresh 失败的 4 种子原因(不存在 / 已撤销 / 已过期 / 重放命中)统一返 10007,
   // 响应体 / HTTP status / message 完全一致(防止攻击者据错误码反推 token 状态)。
   REFRESH_TOKEN_INVALID: {
@@ -706,7 +711,8 @@ export const BizCode = {
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。
   // 子段(对齐 baseline §1.3):
-  // - 21001:NOT_FOUND(含 USER 越权访问他人 → 404,沿 §1.7 风格避免存在性泄漏)
+  // - 21001:NOT_FOUND(含 USER 越权访问他人 → 404;
+  //   以 ACTIVITY_REGISTRATION_NOT_FOUND 隐藏资源存在性)
   // - 21002-21009:唯一约束冲突(partial unique:同活动同 member active 报名唯一)
   // - 21030-21099:状态机转移非法
   // - 211xx:暂留(USER NOT_OWNED / FORBIDDEN_REGISTRATION_REVIEW 不开,沿 baseline)
@@ -755,7 +761,8 @@ export const BizCode = {
   // - 22001-22009:Sheet / ActivityCheckIn NOT_FOUND
   // - 22030-22049:Sheet 状态机 / 资源状态(STATUS_INVALID / APPROVED_NOT_EDITABLE / REJECTED_NOT_EDITABLE)
   // - 22050-22099:Record / ActivityCheckIn 实体级(字典 / 时间 / contribution / registration / GPS)
-  // - 221xx:暂留(FORBIDDEN_ATTENDANCE_* 不开,沿 baseline;USER 越权 → 404 沿 §1.7)
+  // - 221xx:暂留(FORBIDDEN_ATTENDANCE_* 不开,沿 baseline;
+  //   USER 越权 → 404 隐藏资源存在性)
   //
   // 不开的码:
   // - 22042 ATTENDANCE_SHEET_VERSION_CONFLICT(D37 暂不启用乐观锁)
@@ -1697,7 +1704,8 @@ export const BizCode = {
   //   - 完全不存在 id → 30003 ROLE_NOT_FOUND
   //   - 存在但 deletedAt != null → 30005 ROLE_DELETED(410 Gone;detail 精确告知"曾在已删")
   // - PATCH / DELETE /api/system/v1/roles/:id:
-  //   - 不存在 + 已软删统一返 30003(沿 v1 §10 信息泄漏防御,不告知曾在过)
+  //   - 不存在 + 已软删统一返 30003
+  //     (沿 docs/reference/soft-delete-transactions.md §10 信息泄漏防御,不告知曾在过)
   // - POST /api/system/v1/roles:code 撞唯一约束(含软删历史)→ 30004(P2002 兜底 + 预检查)
   //
   // 已在 RBAC 后续 PR 实装的相关码:
@@ -1755,7 +1763,8 @@ export const BizCode = {
   //
   // 30101 / 30102 实装规则(沿 D7 v1.1 §12.2 + §6.2 + §6.3):
   // - 30101 LAST_OPS_ADMIN_PROTECTED:DELETE 撤销 ops-admin 角色时,事务内 count 剩余活跃
-  //   ops-admin 持有者数 ≥ 1,否则抛 30101(沿 v1 §13 最后一个 SUPER_ADMIN 保护范式)
+  //   ops-admin 持有者数 ≥ 1,否则抛 30101
+  //   (沿 docs/reference/roles-admin-protection.md §13 最后一个 SUPER_ADMIN 保护范式)
   // - 30102 CANNOT_ASSIGN_HIGHER_ROLE:沿 §6.2 Q7 角色分级 C2 中庸方案:
   //   - SUPER_ADMIN(系统级)→ 通过任何
   //   - actor 持有 ops-admin(RBAC 角色)→ 可分配/撤销非 ops-admin 目标
@@ -1845,7 +1854,8 @@ export const BizCode = {
   //
   // 沿 D7 v1.0 §8.1 子段位 13020-13029 配置三表通用段;PR #3 已实装 13020 / 13021 / 13023(type config),
   // 本 PR 继续 13022 / 13024 / 13025(mime config)。typeConfigId 不存在场景**复用 13020**(Q5 v1.0 拍板:
-  // 沿信息泄漏防御 + 不开多余 _TYPE_NOT_FOUND 镜像码;沿 v1 §10)。
+  // 沿信息泄漏防御 + 不开多余 _TYPE_NOT_FOUND 镜像码;
+  // 沿 docs/reference/soft-delete-transactions.md §10)。
   // size config 段位号 13026 / 13027 已实装(详见下方对应段)。
   ATTACHMENT_MIME_CONFIG_NOT_FOUND: {
     code: 13022,
@@ -1867,7 +1877,8 @@ export const BizCode = {
   //
   // 沿 D7 v1.0 §8.1 子段位 13020-13029 配置三表通用段;PR #3 已实装 13020 / 13021 / 13023(type config),
   // PR #4 已实装 13022 / 13024 / 13025(mime config),本 PR 继续 13026 / 13027(size limit config)。
-  // typeConfigId 不存在场景**复用 13020**(沿 Q5 PR #4 + v1 §10 信息泄漏防御)。
+  // typeConfigId 不存在场景**复用 13020**
+  // (沿 Q5 PR #4 + docs/reference/soft-delete-transactions.md §10 信息泄漏防御)。
   // 跨表 IN_USE 引用约束(13030-13032)已由 V2.x Slow-6 PR 实装(详见下方 13030-13032 段)。
   // 13028 / 13029 段位预留给本表未来扩展。
   ATTACHMENT_SIZE_LIMIT_CONFIG_NOT_FOUND: {
@@ -1888,7 +1899,8 @@ export const BizCode = {
   // - 13032: size limit config IN_USE(通过 typeConfigId → typeConfig.code 由 attachment.ownerType 引用)
   // 检查范围:softDelete + updateStatus → INACTIVE 双路径对称(沿 Q-cross-3 A);
   // 普通 update(改文案 / 数值)不检查(沿 Q-cross-6 A)。
-  // refCount > 0 时统一抛对应 BizCode;不在 message / extra 暴露引用数(沿 Q-cross-impl-4 A;v1 §10 信息泄漏防御)。
+  // refCount > 0 时统一抛对应 BizCode;不在 message / extra 暴露引用数
+  // (沿 Q-cross-impl-4 A;docs/reference/soft-delete-transactions.md §10 信息泄漏防御)。
   ATTACHMENT_TYPE_IN_USE: {
     code: 13030,
     message: '附件类型仍被附件引用,无法删除或停用',
@@ -1927,7 +1939,9 @@ export const BizCode = {
   // V2.x C-7 attachments 实施 PR #6b(2026-05-15):attachments 主模块业务级错误段位。
   //
   // 沿 D7-attachments v1.0 §8.1 子段位规划 + 用户 PR #6b 拍板 Q1-Q14:
-  // - 13001 主表实体不存在(沿 v1 §10 信息泄漏防御:detail / update / delete 不存在或无权统一返此码)
+  // - 13001 主表实体不存在
+  //   (沿 docs/reference/soft-delete-transactions.md §10 信息泄漏防御:
+  //    detail / update / delete 不存在或无权统一返此码)
   // - 13010-13013 业务级输入校验(ownerType / ownerId / mime / size)
   // - 13015 PII 检测拒绝(身份证号);13014 跳过(沿 v0.2 决议 DTO @MaxLength 走 40000)
   // - 13101 不实装(Q13 拍板:写路径 RBAC 失败复用 30100,读路径用 13001 信息泄漏防御)

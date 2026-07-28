@@ -12,7 +12,7 @@ import {
 
 // 保险模块 T2 App 入参 DTO(PATCH /api/app/v1/me/insurances/:id)。
 // 全字段可选,白名单同 Create 4 字段;**不**从 CreateAppMeInsuranceDto 派生
-// (PartialType 等映射工具越权,沿 AGENTS §2 / §19.7 D-6,显式平铺)。
+// (PartialType 等映射工具越权,沿 AGENTS §2 D-6 + docs/reference/api-client-boundary.md,显式平铺)。
 export class UpdateAppMeInsuranceDto {
   @ApiProperty({
     description:

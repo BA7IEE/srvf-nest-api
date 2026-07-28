@@ -223,8 +223,9 @@ export class UpdateContributionRuleDto {
 
 // ============ 列表 query ============
 
-// 分页 + 多字段过滤;沿 v1 §4 PaginationQueryDto。
-// 不暴露 includeDeleted / deletedAt 过滤(沿 v1 §10)。
+// 分页 + 多字段过滤;沿 docs/reference/response-pagination-errors.md §4 PaginationQueryDto。
+// 不暴露 includeDeleted / deletedAt 过滤
+// (沿 docs/reference/soft-delete-transactions.md §10)。
 export class ContributionRuleQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({
     description: '按活动类型字典 code 过滤',

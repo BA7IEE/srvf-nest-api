@@ -21,7 +21,8 @@ import {
   UpdateDictTypeStatusDto,
 } from './dictionaries.dto';
 
-// 集中定义对外 select。详见 ARCHITECTURE.md §7.9 / docs/v2-data-model.md §2-§3。
+// 集中定义对外 select。
+// 详见 docs/reference/naming-dto-validation.md §11 / docs/v2-data-model.md §2-§3。
 // 任何对外返回必须使用以下两个常量,禁止散写不同 select。
 // 永不包含 deletedAt(软删除内部状态;查询接口已通过 notDeletedWhere 过滤)。
 const dictTypeSelect = {
@@ -147,7 +148,7 @@ export class DictionariesService {
 
   // P0-F PR-2A(2026-05-18):RBAC 判权(沿 PR-1 attachments F5 v1.0 范本)。
   // 失败统一抛 BizException(BizCode.RBAC_FORBIDDEN)(30100);RbacService.can 内部
-  // 已实现 SUPER_ADMIN 短路 + cache + ownership(.self);本模块无 .self 后缀。
+  // 已实现 SUPER_ADMIN 短路 + 每次直读当前 GLOBAL 权限;本模块无 .self 后缀。
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
     if (!(await this.rbac.can(user, action))) {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
@@ -237,7 +238,8 @@ export class DictionariesService {
     dto: CreateDictTypeDto,
   ): Promise<DictTypeResponseDto> {
     await this.assertCanOrThrow(user, 'dict.create.type');
-    // 唯一性预检查(包含软删):findUnique;沿用 v1 §10 / baseline §10。
+    // 唯一性预检查(包含软删):findUnique;
+    // 沿用 docs/reference/soft-delete-transactions.md §10 / baseline §10。
     // dict_type.code 是普通 @unique(全表唯一不复用,与 memberNo 同语义),
     // 软删后 code 仍占位,新建撞 code 直接拒绝。
     const existing = await this.prisma.dictType.findUnique({
@@ -379,7 +381,8 @@ export class DictionariesService {
         }
       }
 
-      // 3. (typeId, code) 唯一性预检查(包含软删,沿用 v1 §10 + memberNo 决议同语义)
+      // 3. (typeId, code) 唯一性预检查
+      //    (包含软删,沿用 docs/reference/soft-delete-transactions.md §10 + memberNo 决议同语义)
       const existing = await tx.dictItem.findUnique({
         where: { typeId_code: { typeId: dto.typeId, code: dto.code } },
         select: { id: true },

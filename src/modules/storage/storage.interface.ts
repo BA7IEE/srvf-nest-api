@@ -12,7 +12,7 @@ import type {
 } from './storage.types';
 
 // StorageProvider 接口(C-7.5 v1.0 锁;沿 F5 / Q5 + §7.4)
-// 详见 ARCHITECTURE.md §3 + §4 + 附录第 10 步 + CLAUDE.md §1
+// 详见 ARCHITECTURE.md §3 / §4 / §9
 //      + docs/批次7_provider选型_API前评审.md §7.4
 //      + docs/批次7_provider选型_V2x立项记录.md §二.2
 //

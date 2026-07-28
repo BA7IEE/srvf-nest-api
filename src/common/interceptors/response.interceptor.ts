@@ -8,7 +8,7 @@ import {
 import type { Request } from 'express';
 import { Observable, map } from 'rxjs';
 
-// 跳过路径(详见 ARCHITECTURE.md §7.3 表):
+// 跳过路径(详见 docs/reference/response-pagination-errors.md §4):
 // - /api/docs:Swagger UI(HTML)+ /api/docs-json / /api/docs-yaml(OpenAPI spec)
 // - /favicon.ico:浏览器自动请求,非业务响应
 // - /metrics:Prometheus 文本格式

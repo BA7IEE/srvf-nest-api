@@ -20,7 +20,7 @@ import { RbacService } from './rbac.service';
 //
 // 2 个端点(累计):
 //   GET  /api/system/v1/rbac/me/permissions    当前用户的有效权限点集 + 业务角色摘要 (PR #6)
-//   POST /api/system/v1/rbac/reload            触发 RBAC 缓存失效 (PR #7;沿 D7 §5.4)
+//   POST /api/system/v1/rbac/reload            兼容保留三档请求校验(当前无跨请求缓存)
 //
 // **权限标注**(P0-F PR-1,2026-05-18):入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`。
 // - GET /me/permissions:任何登录用户(沿 D7 §5.3;RBAC 元接口里**唯一**无 RBAC permission 要求的)
@@ -53,12 +53,12 @@ export class RbacController {
   }
 
   @Post('reload')
-  // POST 默认 201,这里 reload 是"清缓存动作"(无资源创建),沿 v1 / V2 同类动作端点
+  // POST 默认 201,这里是无资源创建的兼容动作端点,沿 v1 / V2 同类动作端点
   // (verify / approve / publish / cancel 等)统一用 HTTP 200
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      '触发 RBAC 缓存失效(沿 D7 v1.1 §5.4 + F4 v1.0 三档 scope:all / user(+userId) / role(+roleId)) [rbac: rbac.config.reload]',
+      '兼容校验 RBAC reload 三档请求(当前无跨请求缓存,无内部状态变更) [rbac: rbac.config.reload]',
   })
   @ApiWrappedOkResponse(ReloadRbacResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)

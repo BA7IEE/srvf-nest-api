@@ -9,7 +9,7 @@ import { BizException } from '../../../common/exceptions/biz.exception';
 import type { JwtConfig } from '../../../config/jwt.config';
 import { PrismaService } from '../../../database/prisma.service';
 
-// JwtPayload 固定为最小结构(详见 ARCHITECTURE.md §7.6):
+// JwtPayload 固定为最小结构(详见 docs/reference/auth-jwt-refresh.md §8):
 // 不塞 role,不塞完整用户对象。每请求查库取最新 role / status。
 export interface JwtPayload {
   sub: string;

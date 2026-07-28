@@ -1,6 +1,6 @@
 # 模块结构 · 命名 · 校验 · DTO 边界(reference · 触碰才读)
 
-> Harness 2.0 细则层:承接 harness v1 `AGENTS.md` §2 / §3 / §7 / §11 **原文逐字搬家(零放宽;唯一机械改写=相对链接前缀)**;恒读入口与速查见根 [`AGENTS.md`](../../AGENTS.md),原文快照 [`archive/harness-v1/AGENTS.md`](../archive/harness-v1/AGENTS.md)。
+> Harness 2.0 细则层:承接 harness v1 `AGENTS.md` §2 / §3 / §7 / §11,并按已拍板的 surface 布局、判权单轨与当前 Mixed Controller 终态 true-up;恒读入口与速查见根 [`AGENTS.md`](../../AGENTS.md),原文快照 [`archive/harness-v1/AGENTS.md`](../archive/harness-v1/AGENTS.md)。
 > 机器锁定:全局 ValidationPipe + contract snapshot + lint/typecheck。
 
 ## 2. 模块结构:默认 4 文件基线 + 已解锁例外
@@ -28,9 +28,9 @@ SRVF 派生项目已解锁以下例外。**执行细节以 [`docs/api-surface-po
 
 - ❌ **禁止** `*.entity.ts`(本项目不是 TypeORM 项目)
 - ❌ **禁止**跨模块公共目录(`common/utils/` / `shared-services/` / 任何 "common util grab-bag")
-- ❌ **禁止**用 `extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 从 Admin DTO 派生 App DTO(沿 §19.7 D-6)
-- ❌ **禁止**在未补 characterization tests 前拆 god-service(沿 [`api-surface-policy.md §7 P1-B`](../api-surface-policy.md) + [`current-state.md §4 P2`](../current-state.md))
-- ❌ **不再新增 Mixed Controller**(class-level + 方法级双 `@ApiTags`);现存 6 处存量保留不扩展,详 [`api-surface-policy.md §5.1`](../api-surface-policy.md)
+- ❌ **禁止**用 `extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 从 Admin DTO 派生 App DTO(沿根 [`AGENTS.md §2 D-6`](../../AGENTS.md))
+- ❌ **禁止**在未补 characterization tests 前拆 god-service(沿根 [`AGENTS.md §1`](../../AGENTS.md) 测试纪律 + [`current-state.md §4 P2`](../current-state.md))
+- ❌ **不再新增 Mixed Controller**(class-level + 方法级跨 surface 双 `@ApiTags`);当前仅 `permissions/rbac.controller.ts` 1 个 surface Mixed 存量,详 [`api-surface-policy.md §5`](../api-surface-policy.md)
 - ✅ 新业务模块**平铺**加在 `src/modules/` 下,**禁止**嵌套 `system/` / `business/` / `core/` 子目录
 
 > **冲突顺序**:本节与 [`api-surface-policy.md`](../api-surface-policy.md) / [`architecture-boundary.md`](../architecture-boundary.md) 冲突时,以后者为准并回头同步本节;**不**允许"按 4 文件基线读"否决 surface 拆分既成事实。
@@ -43,7 +43,7 @@ SRVF 派生项目已解锁以下例外。**执行细节以 [`docs/api-surface-po
 | 密码字段 | `password`(model / response DTO) | `passwordHash`(仅 Prisma model 与 service 内部) |
 | 文件标识 | `path` / `filename` / `url` | `key` |
 | 角色判断 | `if (user.role === 'admin')` | `if (user.role === Role.ADMIN)` |
-| 角色装饰器 | `@Roles('admin')` | `@Roles(Role.SUPER_ADMIN, Role.ADMIN)` |
+| 业务判权 | 新增 `@Roles(...)` / 手写角色短路 | Controller 仅登录;Service `rbac.can('<permission>')` + 必要业务 policy |
 | 错误抛出 | `throw new Error('用户不存在')` | `throw new BizException(BizCode.USER_NOT_FOUND)` |
 | 时间字段 | `create_time` / `createTime` | `createdAt` |
 | 主键 | 自增 int | `cuid()` 字符串 |
@@ -86,11 +86,10 @@ import { Role, UserStatus } from '@prisma/client';
 
 `forbidNonWhitelisted: true` 是兜底,DTO 自身白名单是第一道防线;一旦 DTO 多声明一个字段,纵深防御直接破口。
 
-- **`UpdateMyProfileDto`**(`PATCH /api/app/v1/me/profile`):仅允许 `nickname` / `avatarKey`。**禁止**包含 `username` / `email` / `password` / `newPassword` / `oldPassword` / `passwordHash` / `role` / `status` / `deletedAt` / `id` / `lastLoginAt` 等任何字段;本人自助改密必须走独立接口 `PUT /api/app/v1/me/password`(铁律见 §9)
+- **`UpdateMyProfileDto`**(`PATCH /api/app/v1/me/profile`):仅允许 `nickname` / `avatarKey`。**禁止**包含 `username` / `email` / `password` / `newPassword` / `oldPassword` / `passwordHash` / `role` / `status` / `deletedAt` / `id` / `lastLoginAt` 等任何字段;本人自助改密必须走独立接口 `PUT /api/app/v1/me/password`(铁律见 [`auth-jwt-refresh §9`](auth-jwt-refresh.md))
 - **`UpdateUserDto`**(`PATCH /api/admin/v1/users/:id`,管理员改用户资料):**禁止**包含 `role` / `password` / `passwordHash` / `status` / `deletedAt` / `id`。角色修改走 `PATCH /api/admin/v1/users/:id/role`,密码重置走 `PUT /api/admin/v1/users/:id/password`,启用 / 禁用走 `PATCH /api/admin/v1/users/:id/status`,软删除走 `DELETE /api/admin/v1/users/:id`,**绝不在更新资料接口里夹带**
-- **`CreateUserDto.role`** 可选,**禁止**直接透传给 Prisma;必须经业务层根据当前用户角色校验后再决定写入值(见 §13)
+- **`CreateUserDto.role`** 可选,**禁止**直接透传给 Prisma;必须经业务层根据当前用户角色校验后再决定写入值(见 [`roles-admin-protection §13`](roles-admin-protection.md))
 
 ### `IdParamDto` 字符串校验
 
 所有 `:id` 路径参数都通过 `IdParamDto` 校验:`@IsString()` + `@Length(8, 64)`(长度校验,不写死 cuid 正则)+ `@ApiProperty({ example: 'cl9z3a8b00000abcd1234efgh' })`。**禁止** `@Param('id', ParseIntPipe)` / `id: number` / `@IsInt()`。
-

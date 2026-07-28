@@ -77,7 +77,7 @@ pnpm start:dev
 
 ## API 总览
 
-> 全仓 API 落在 **5 个 canonical surface 前缀**(Route B 终态):`/api/admin/v1`(管理面)· `/api/app/v1`(移动端队员自助)· `/api/auth/v1`(认证)· `/api/system/v1`(系统 / ops)· `/api/open/v1`(预留)。长期边界见 [`docs/api-surface-policy.md`](./docs/api-surface-policy.md);**完整端点、字段、错误码、权限矩阵一律以 `/api/docs` 与 [`docs/current-state.md`](./docs/current-state.md) 为准,README 不维护路由表**。
+> 全仓 API 落在 **5 个 canonical surface 前缀**(Route B 终态):`/api/admin/v1`(管理面)· `/api/app/v1`(移动端队员自助)· `/api/auth/v1`(认证)· `/api/system/v1`(系统 / ops)· `/api/open/v1`(已启用的公开面:招新报名与公开内容读取)。长期边界见 [`docs/api-surface-policy.md`](./docs/api-surface-policy.md);**完整端点、字段、错误码、权限矩阵一律以 `/api/docs` 与 [`docs/current-state.md`](./docs/current-state.md) 为准,README 不维护路由表**。
 
 装好后可用这几个稳定入口做冒烟自检:
 

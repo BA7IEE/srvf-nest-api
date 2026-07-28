@@ -25,9 +25,11 @@ import { AppMyRegistrationDto } from '../dto/app/app-my-registration.dto';
 import { ListAppMyRegistrationsQueryDto } from '../dto/app/list-app-my-registrations-query.dto';
 
 // Phase 2 P2-5a/P2-5b App /api/app/v1/my/* registrations Mobile Controller(5 endpoint)。
-// 沿 docs/app-api-p2-5-registrations-review.md §6.1 + §6.4 + D-P2-5-5:
+// 沿历史评审稿 docs/archive/reviews/app-api-p2-5-registrations-review.md
+// §6.1 + §6.4 + D-P2-5-5:
 //   - **新建** @Controller('app/v1/my');物理路径 src/modules/activity-registrations/controllers/
-//   - 5 endpoint 都挂此 controller(P2-5a 3 个只读;P2-5b 2 个写,沿 §17.1 PR 串)
+//   - 5 endpoint 都挂此 controller(P2-5a 3 个只读;P2-5b 2 个写;
+//     当时按两条独立 PR 串行落地)
 //   - **不**挂 @Roles(沿 P2-2 / P2-3 / P2-4 范式;App 不用 Role 短路);ADMIN 兼队员
 //     可用走 AppIdentityResolver(§7.5 + D-5.2 self perspective)
 //   - **不**挂 @Public(全部要登录);依赖全局 JwtAuthGuard
@@ -43,7 +45,7 @@ import { ListAppMyRegistrationsQueryDto } from '../dto/app/list-app-my-registrat
 // ActivityRegistrationsService.listMy / findMy / createMy / cancelMy 现状保证;
 // **禁止** role 短路 / 接收 body memberId)。
 //
-// Phase 2 P2-5b(2026-05-20)追加 2 写 endpoint(沿 §17.1 + §13.5):
+// Phase 2 P2-5b(2026-05-20)按既定 PR 串追加 2 写 endpoint:
 //   - POST   /registrations             报名(薄壳 inline `assertActivityPublishedOrThrow` 前置)
 //   - PATCH  /registrations/:id/cancel  取消本人报名(状态机 pending|pass → cancelled)
 // 复用既有 audit event(registration.create + viaPath='self' / registration.review +

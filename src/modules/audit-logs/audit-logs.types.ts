@@ -239,7 +239,8 @@ export type AuditLogEvent =
 // 必含 `requestId` / `ip` / `ua` 三字段(ip / ua 可为 null,但字段必须存在;requestId 必为非空字符串)。
 //
 // 字段语义(D6 v1.1 §10.3):
-// - requestId:nestjs-pino `req.id`(V1.1 §17.4 已接),用于跨日志关联。必为非空字符串
+// - requestId:nestjs-pino `req.id`(ARCHITECTURE.md §11.1),用于跨日志关联。
+//   必为非空字符串
 // - ip:request.ip,可为 null(测试环境无来源 IP)
 // - ua:request.headers['user-agent'],可为 null(curl / 内部调用可能缺)
 // - before:service 调用方构造,敏感字段已打码;create 场景无

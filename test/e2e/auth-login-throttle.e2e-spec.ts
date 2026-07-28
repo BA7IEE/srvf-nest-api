@@ -7,7 +7,8 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
-// V1.1 TASKS.md 15.7:登录接口限流(@nestjs/throttler + PostgreSQL shared storage)。
+// docs/reference/auth-jwt-refresh.md §9「限流契约」:
+// 登录接口限流(@nestjs/throttler + PostgreSQL shared storage)。
 //
 // 关键约束验证:
 //   1. POST /api/auth/v1/login 触发限流后返回 BizCode.TOO_MANY_REQUESTS(HTTP 429)

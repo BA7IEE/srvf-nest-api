@@ -4,7 +4,8 @@ import type { StorageProviderType } from '@prisma/client';
 // C-7.5 实施 PR #5 沿 F5 + Q5 新增"upload / download signed URL + head"类型
 // (详见 docs/批次7_provider选型_API前评审.md §7.4)。
 //
-// 命名铁律:文件标识必须叫 `key`,不叫 path / filename / url(详见 §7.2 + CLAUDE.md §3)。
+// 命名铁律:文件标识必须叫 `key`,不叫 path / filename / url
+// (详见 docs/reference/naming-dto-validation.md §3)。
 
 export type StorageBody = Buffer | NodeJS.ReadableStream;
 

@@ -7,8 +7,8 @@ import { ROLES_KEY } from '../decorators/roles.decorator';
 import { BizCode } from '../exceptions/biz-code.constant';
 import { BizException } from '../exceptions/biz.exception';
 
-// RolesGuard:全局注册(顺序在 JwtAuthGuard 之后)。详见 ARCHITECTURE.md §7.6 +
-// CLAUDE.md §8。
+// RolesGuard:全局注册(顺序在 JwtAuthGuard 之后)。
+// 详见 docs/reference/auth-jwt-refresh.md §8。
 //
 // 规则:
 // - 接口未标 @Roles(...) → 直接放行(只要 JwtAuthGuard 已通过)

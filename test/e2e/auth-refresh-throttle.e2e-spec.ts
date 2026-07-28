@@ -11,7 +11,8 @@ import { createTestApp } from '../setup/test-app';
 // 关键验证:
 //   1. 30/60 IP 命中后第 31 次 → 42900
 //   2. 与 default(login)/ password-change(改密)throttler 物理隔离
-//   3. 不暴露 Retry-After / X-RateLimit-* 头(沿 V1.1 §17.7 / setHeaders: false)
+//   3. 不暴露 Retry-After / X-RateLimit-* 头
+//      (沿 docs/reference/auth-jwt-refresh.md §9「限流契约」/ setHeaders: false)
 //
 // .env.test REFRESH_THROTTLE_LIMIT=100;本 spec beforeAll **临时覆盖** process.env 把 LIMIT 调到 5
 // 触发限流;afterAll 还原(参考 auth-login-throttle.e2e-spec.ts 范式)。

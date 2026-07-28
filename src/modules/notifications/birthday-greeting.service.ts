@@ -133,7 +133,7 @@ export class BirthdayGreetingService {
 }
 
 // 固定 UTC+8 日界与月日(评审稿 E-B5;与 sms-code.service 私有 startOfDayUtc8 同口径,
-// 该函数未导出且语义独立,这里模块级实现,不抽共享 util——AGENTS §2 grab-bag 禁令)
+// 该函数未导出且语义独立,这里模块级实现,不抽共享 util——AGENTS §1 / docs/reference/naming-dto-validation.md §2 grab-bag 禁令)
 const UTC8_OFFSET_MS = 8 * 3600 * 1000;
 
 function utc8MonthDay(d: Date): { month: number; day: number } {

@@ -77,7 +77,7 @@ export class UsersService {
 
   // P0-F PR-3B(2026-05-18):RBAC 业务模块判权(沿 PR-1 permissions.service.ts:41-45 字面范式)。
   // 失败统一抛 BizException(BizCode.RBAC_FORBIDDEN)(30100);RbacService.can 内部已实现
-  // SUPER_ADMIN 短路 + cache + ownership(.self),users 8 端点粗粒度无 resource。
+  // SUPER_ADMIN 短路 + 每次直读当前 GLOBAL 权限;users 管理端点为粗粒度 action,无 resource。
   // service 内业务护栏(canViewUser / canManageUser / canCreateRole / canChangeRole / assertNotSelf /
   // LastAdminProtectionPolicy)在 assertCanOrThrow 之后保留并执行,**不挪动**。
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
@@ -86,7 +86,8 @@ export class UsersService {
     }
   }
 
-  // 软删除显式过滤(详见 §7.8):所有非"管理员看回收站"查询经此过滤
+  // 软删除显式过滤(详见 docs/reference/soft-delete-transactions.md §10):
+  // 所有非"管理员看回收站"查询经此过滤
   private notDeletedWhere<T extends Prisma.UserWhereInput>(
     where: T = {} as T,
   ): T & { deletedAt: null } {
@@ -108,7 +109,7 @@ export class UsersService {
     return raw.trim().toLowerCase();
   }
 
-  // 双层校验(§7.11):Guard 已通过 + Service 再按当前/目标角色校验。
+  // 两层校验:Service 的 rbac.can() 已通过 + 本 policy 再按当前/目标角色校验。
   // 策略判定集中在 users.policy.ts;此处仅负责把布尔结果转成统一 BizException。
   private assertCanManageUser(
     currentUser: CurrentUserPayload,
@@ -149,7 +150,7 @@ export class UsersService {
   }
 
   // 唯一性预检查:**必须用 findUnique**(包含软删记录),禁止 findFirst+notDeletedWhere
-  // (§7.8 — 软删后 username/email 不复用)。
+  // (docs/reference/soft-delete-transactions.md §10 — 软删后 username/email 不复用)。
   private async checkUniqueOrThrow(
     username: string | undefined,
     email: string | null | undefined,
@@ -315,7 +316,8 @@ export class UsersService {
       });
 
       // P0-E PR-3(2026-05-18):本人改密后**主动撤销**该 user 全部未过期且未撤销的 refresh token
-      // (沿评审稿 §7.1 + CLAUDE.md §9 P0-E 子节)。access token 仍不主动吊销(沿 D-4),
+      // (沿评审稿 §7.1 + docs/reference/auth-jwt-refresh.md §9 P0-E 子节)。
+      // access token 仍不主动吊销(沿 D-4),
       // 由 JWT_EXPIRES_IN=15m 自然过期 + JwtStrategy 每请求查库阻断 DISABLED / 软删用户。
       // e2e users-change-my-password.e2e-spec.ts §7.5 反向锁定断言(改密后旧 access 仍可调 /me)
       // 继续保留。
@@ -434,7 +436,8 @@ export class UsersService {
 
   async create(currentUser: CurrentUserPayload, dto: CreateUserDto): Promise<UserResponseDto> {
     await this.assertCanOrThrow(currentUser, 'user.create.account');
-    // role 透传安全(§7.11):策略集中在 users.policy.canCreateRole。
+    // role 透传安全(docs/reference/roles-admin-protection.md §13):
+    // 策略集中在 users.policy.canCreateRole。
     const targetRole = dto.role ?? Role.USER;
     if (!canCreateRole(currentUser.role, targetRole)) {
       throw new BizException(BizCode.FORBIDDEN_ROLE_OPERATION);
@@ -519,10 +522,12 @@ export class UsersService {
     this.assertCanManageUser(currentUser, target);
 
     // 管理员重置密码后:
-    //   - access token v1 仍不主动吊销(沿 §7.7 + D-4;access ≤ 15m 自然过期);
+    //   - access token v1 仍不主动吊销
+    //     (沿 docs/reference/auth-jwt-refresh.md §9「access token 行为锁定」+ D-4;
+    //      access ≤ 15m 自然过期);
     //     如需立即阻断,管理员同步把目标 status 改 DISABLED。
     //   - P0-E PR-3(2026-05-18):**主动撤销**目标 user 全部 refresh token
-    //     (revokedReason='admin-password-reset';沿评审稿 §7.2 + §9 联动撤销 4 场景)。
+    //     (revokedReason='admin-password-reset';沿 auth-jwt-refresh 联动撤销九场景)。
     //   - P0-E PR-3 同步补 audit 'password.reset.by-admin'(隐含范围扩展;沿评审稿 §3.8
     //     D-8 + §5.9;管理员重置之前从未写 audit,本 PR 顺手补对称)。
     const passwordHash = await this.hashPassword(dto.newPassword);
@@ -576,7 +581,7 @@ export class UsersService {
     // RBAC 通过后仍走 service 内 4 项业务护栏(assertNotSelf + assertCanManageUser +
     // canChangeRole 永禁升 SA + LastAdminProtectionPolicy 降级时);全部保留不动。
     await this.assertCanOrThrow(currentUser, 'user.update.role');
-    // 自我保护(§7.11):自改 role 永远拦
+    // 自我保护(docs/reference/roles-admin-protection.md §13):自改 role 永远拦
     this.assertNotSelf(currentUser, id);
 
     const target = await this.findRawByIdOrThrow(id);
@@ -676,7 +681,7 @@ export class UsersService {
       });
 
       // P0-E PR-3(2026-05-18):用户被 DISABLED 时**主动撤销**目标 user 全部 refresh token
-      // (revokedReason='admin-disable';沿评审稿 §7.3 + §9 联动撤销 4 场景之一)。
+      // (revokedReason='admin-disable';沿 auth-jwt-refresh 联动撤销九场景之一)。
       // 仅当 dto.status === DISABLED 时撤销;ACTIVE → ACTIVE 不动 refresh(沿评审稿 §7.5);
       // access token 由 JwtStrategy 每请求查库即时阻断(沿现状)。
       // 第六刀已补 in-tx audit(2026-07-13;推翻 D-PR3-2 的“不写 audit”挂起决定)。
@@ -716,7 +721,8 @@ export class UsersService {
     const target = await this.findRawByIdOrThrow(id);
     this.assertCanManageUser(currentUser, target);
 
-    // 删除走 update,而非 prisma.user.delete()(§7.8)
+    // 删除走 update,而非 prisma.user.delete()
+    // (docs/reference/soft-delete-transactions.md §10)
     return this.prisma.$transaction(async (tx) => {
       if (target.role === Role.SUPER_ADMIN) {
         await this.lastAdminProtection.acquireSuperAdminInvariantLock(tx);
@@ -748,7 +754,7 @@ export class UsersService {
       });
 
       // P0-E PR-3(2026-05-18):用户被软删时**主动撤销**目标 user 全部 refresh token
-      // (revokedReason='admin-delete';沿评审稿 §7.4 + §9 联动撤销 4 场景之一)。
+      // (revokedReason='admin-delete';沿 auth-jwt-refresh 联动撤销九场景之一)。
       // access token 由 JwtStrategy 每请求查库即时阻断(deletedAt != null;沿现状)。
       // 第六刀已补 in-tx audit(2026-07-13;推翻 D-PR3-2 的“不写 audit”挂起决定)。
       await tx.refreshToken.updateMany({
@@ -779,7 +785,8 @@ export class UsersService {
   // 豁免仅限这两个端点,禁止外溢。
 
   // POST /api/app/v1/me/phone/send-code(⑤)。
-  // 占用预检必须 findUnique(**含软删占用**,E-7,沿 §7.8 username/email 不复用范式);
+  // 占用预检必须 findUnique(**含软删占用**,E-7,
+  // 沿 docs/reference/soft-delete-transactions.md §10 username/email 不复用范式);
   // 含本人已绑同号(不提供"重新验证当前号"语义,省一次短信资费)。
   // 间隔 / 日限 / 通道 / 发送 / 落日志在 SmsCodeService.issue(E-30 边界)。
   async sendMyPhoneBindCode(
@@ -808,7 +815,8 @@ export class UsersService {
   // (SmsCodeService 明确使用根 Prisma client,不得在持 User 行锁时调用)→ binding transaction
   // 内 User FOR UPDATE + snapshot/proof 二次权威校验 + final no-op/占用复查 →
   // update + refresh revoke + audit。验码消费后遇并发 stale/占用是既有可接受窄窗口。
-  // P2002 兜底竞态:落库撞 User_phone_key → PHONE_ALREADY_BOUND(沿 §5 数组判断铁律)。
+  // P2002 兜底竞态:落库撞 User_phone_key → PHONE_ALREADY_BOUND
+  // (沿 docs/reference/response-pagination-errors.md §5 Prisma 错误转换)。
   async bindMyPhone(
     currentUser: CurrentUserPayload,
     dto: BindMyPhoneDto,
@@ -955,7 +963,8 @@ export class UsersService {
   // PUT /api/app/v1/me/wechat(⑧):已登录绑定 / 换绑一体(评审稿 §4.4;JWT 已证身份,
   // 无需再验手机,D-W3)。流程:code2session → 占用检查(=本人幂等返当前状态不写 audit;
   // 他人 → 25002)→ 事务 update + audit wechat.{bind,rebind}.self(viaPath='me')。
-  // P2002 兜底竞态:落库撞 User_openid_key → WECHAT_ALREADY_BOUND(沿 §5 数组判断铁律)。
+  // P2002 兜底竞态:落库撞 User_openid_key → WECHAT_ALREADY_BOUND
+  // (沿 docs/reference/response-pagination-errors.md §5 Prisma 错误转换)。
   async bindMyWechat(
     currentUser: CurrentUserPayload,
     dto: BindMyWechatDto,
@@ -1040,7 +1049,8 @@ export class UsersService {
 
   // DELETE /api/admin/v1/users/:id/wechat(⑨):管理员清除绑定(解除绑定唯一路径,D-W3;
   // 逐行镜像 clearUserPhone E-20)。rbac.can('user.wechat.clear')(绑 ops-admin)+
-  // assertCanManageUser 既有护栏;软删用户统一 USER_NOT_FOUND(沿 §7.8);
+  // assertCanManageUser 既有护栏;软删用户统一 USER_NOT_FOUND
+  // (沿 docs/reference/soft-delete-transactions.md §10);
   // **幂等**:目标无 openid → 200 不报错,且仅实际清除时写 audit。
   async clearUserWechat(
     currentUser: CurrentUserPayload,
@@ -1099,7 +1109,8 @@ export class UsersService {
 
   // DELETE /api/admin/v1/users/:id/phone(⑦):管理员清除绑定(解除绑定唯一路径,§7)。
   // rbac.can('user.phone.clear')(绑 ops-admin,评审稿 E-3)+ assertCanManageUser 既有护栏;
-  // 软删用户统一 USER_NOT_FOUND(沿 §7.8);**幂等**(E-19):目标无 phone → 200 不报错,
+  // 软删用户统一 USER_NOT_FOUND(沿 docs/reference/soft-delete-transactions.md §10);
+  // **幂等**(E-19):目标无 phone → 200 不报错,
   // 且仅实际清除时写 audit。
   async clearUserPhone(
     currentUser: CurrentUserPayload,

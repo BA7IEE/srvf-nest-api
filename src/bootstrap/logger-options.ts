@@ -20,7 +20,7 @@ function requestPathname(url: string | undefined): string | undefined {
   return queryStart < 0 ? url : url.slice(0, queryStart);
 }
 
-// V1.1 §11.2 / §11.4 / TASKS.md 15.2:
+// ARCHITECTURE.md §11.1:
 // 敏感字段 redact 清单。命中字段日志输出 `[REDACTED]`,不能仅做长度截断。
 // `*.<name>` 通配匹配任意嵌套对象的同名字段(纵深防御:即使将来日志格式变了也兜底)。
 //
@@ -153,7 +153,7 @@ const LOG_REDACT_PATHS: readonly string[] = [
   '*.policyNumber',
 ];
 
-// V1.1 §17.5 / TASKS.md 15.2:HTTP 自动日志只打 method / url / status / responseTime
+// ARCHITECTURE.md §11.1:HTTP 自动日志只打 method / url / status / responseTime
 // + reqId(pino 内置)+ userId(若已登录)。禁止默认打印请求体。
 export function buildLoggerModuleParams(appCfg: AppConfig): Params {
   // test 环境强制 silent:e2e 跑 162 用例,任何日志都会污染 jest 输出。

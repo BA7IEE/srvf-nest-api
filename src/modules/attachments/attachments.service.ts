@@ -65,7 +65,8 @@ import { mimeToExt } from './mime-to-ext';
 // - F5 v1.0:RBAC 失败统一抛 BizException(BizCode.RBAC_FORBIDDEN)(30100)
 // - Q1 v1.0:ownerType 双层校验 — 先查 attachment_type_configs(权威);enum 兜底
 // - Q5 v1.0:Update 仅 description / accessLevel / tags / expireAt 四字段
-// - Q8 v1.0:detail / update / delete 软删 / 不存在 / 无权统一返 13001(沿 v1 §10 信息泄漏防御)
+// - Q8 v1.0:detail / update / delete 软删 / 不存在 / 无权统一返 13001
+//   (沿 docs/reference/soft-delete-transactions.md §10 信息泄漏防御)
 // - Q11 v1.0:DELETE 物理删,不查跨表引用(不抛 IN_USE 13030)
 // - Q13 v1.0:RBAC 写失败复用 30100;读路径用 13001 信息泄漏防御
 // - Q14 v1.0:accessUrl 占位恒返 null(Provider 接通前;沿 D7 §5.5 / §5.6)
@@ -79,7 +80,8 @@ import { mimeToExt } from './mime-to-ext';
 // - 配置三表 'attachment.config.change' **不在本 PR**(留 PR #6d)
 
 // 全局兜底:无 mime 配置 + type 无 defaultMimeWhitelist 时,**不允许**任何 mime
-// (fail-close;沿 v1 §10 / baseline 安全默认拒绝;由 13012 命中)
+// (fail-close;沿 docs/reference/soft-delete-transactions.md §10 / baseline 安全默认拒绝;
+// 由 13012 命中)
 
 type SafeAttachment = Prisma.AttachmentGetPayload<{ select: typeof attachmentSelect }>;
 
@@ -521,7 +523,8 @@ export class AttachmentsService {
     }
   }
 
-  // 7. 详情活跃记录查询:不存在统一返 13001(沿 v1 §10 信息泄漏防御;Q8 v1.0)。
+  // 7. 详情活跃记录查询:不存在统一返 13001
+  // (沿 docs/reference/soft-delete-transactions.md §10 信息泄漏防御;Q8 v1.0)。
   private async findByIdOrThrow(id: string): Promise<SafeAttachment> {
     const found = await this.prisma.attachment.findFirst({
       where: { id },

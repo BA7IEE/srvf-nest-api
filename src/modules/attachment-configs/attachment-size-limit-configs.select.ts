@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 //
 // 沿 D7 v1.0 §4.4 + PR #3 / PR #4 select 范式:
 // - 永不选 deletedAt(Q2 PR #3/#4 v1.0:外部不感知软删字段;查询通过 notDeletedWhere 过滤,
-//   findById 软删后统一返 13026,沿 v1 §10 信息泄漏防御)
+//   findById 软删后统一返 13026,沿 docs/reference/soft-delete-transactions.md §10 信息泄漏防御)
 // - 嵌套 typeConfig 摘要(Q4 v1.0 拍板:新建独立 AttachmentSizeLimitConfigTypeConfigSummaryDto,
 //   不复用 mime 的 summary DTO;避免跨表 DTO 耦合)
 // - **本表无 status 字段**(沿 D7 v1.0 §4.4 schema 现状;Q1 v1.0:不加 status)

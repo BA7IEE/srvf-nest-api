@@ -25,7 +25,7 @@
   - `GET /api/system/v1/rbac/me/permissions`(本模块,raw `Permission.code` 集合 + 业务角色摘要;SUPER_ADMIN 返 Permission.code 全集而**非** `["*"]`)
   - `GET /api/app/v1/me/capabilities`(在 `users/` 模块,product-level capability map,经四维降权;**不是**授权证明,后端写端点必须重新做四维校验)
 - **`/reload` 三档 scope**:`all` / `user(+userId)` / `role(+roleId)`;缺字段抛 `BAD_REQUEST`;userId / roleId 不存在静默成功;出参恒为 `{ reloaded: true }`
-- **`.self` ownership**:`ownerType='user'` → `ownerId === user.id`;`ownerType='member'` → `ownerId === user.memberId`(未绑定 memberId 时 fail-close);未知 ownerType / 缺 resource → fail-close(沿 [`rbac.service.ts:203`](rbac.service.ts:203))
+- **`.self` ownership**:`ownerType='user'` → `ownerId === user.id`;`ownerType='member'` → `ownerId === user.memberId`(未绑定 memberId 时 fail-close);未知 ownerType / 缺 resource → fail-close(沿 [`rbac.service.ts`](rbac.service.ts) 第 216–228 行)
 - **错误码段位**:`PERMISSION_NOT_FOUND/30001` / `RBAC_ROLE_NOT_FOUND/30003` / `INVALID_PERMISSION_CODE_FORMAT/30008` / `PERMISSION_CODE_ALREADY_EXISTS/30009` / `LAST_OPS_ADMIN_PROTECTED/30101`(含 role-binding/user-role 撤权及禁用/软删最后 ops-admin 持有人) / `CANNOT_ASSIGN_HIGHER_ROLE/30102` / `PERMISSION_RESERVED_SUPER_ADMIN_ONLY/30103` / `PROTECTED_ROLE_DELETE_FORBIDDEN/30104`;`RBAC_FORBIDDEN=30100` 是判权失败统一码
 - **Permission 物理删**(D4 v1.0);`RolePermission` FK Cascade 自动联级清理
 - **seed 文件** [`/prisma/seed.ts`](../../../prisma/seed.ts) 内 `RBAC_PERMISSION_SEED` / `DICT_PERMISSION_SEED` / `ORG_PERMISSION_SEED` 等;**RolePermission 映射 + Permission code 集合属于高风险变更**
@@ -35,7 +35,7 @@
 - ❌ **不**给任何端点重新挂 `@Roles(...)` 入口判权(Slow-4 已收口单轨;新管理面 endpoint 默认 R 模式,权限事实变更一律 D 档)
 - ❌ **不**把 `/api/system/v1/rbac/me/permissions` 与 `/api/app/v1/me/capabilities` 混为一谈;raw code 不出 App;capability 不替代后端判权
 - ❌ **不**在本"docs-only / 局部 PR"中改 seed `Permission.code` 集合 / `RolePermission` 映射 / `RbacRole` 内置角色 — 任何 Permission code 改名 / 增删 / 角色权限重映射都按 D 档降速,先与维护者对齐
-- ❌ **不**给 `RbacService.can()` 加 `ADMIN` 内置短路(`ADMIN` 继承 USER 由 seed 实现;Service 不特判,沿 [`rbac.service.ts:124`](rbac.service.ts:124))
+- ❌ **不**给 `RbacService.can()` 加 `ADMIN` 内置短路(`ADMIN` 继承 USER 由 seed 实现;Service 不特判,沿 [`rbac.service.ts`](rbac.service.ts) 第 116–124 行)
 - ❌ **不**给 `SUPER_ADMIN` 的 `me/permissions` 返 `["*"]` 或空数组(返 `Permission.code` 全集是显式拍板)
 - ❌ **不**新增 `GET /api/system/v1/users/:userId/permissions`(管理员查他人;非 D7 §5.1 端点;沿用户拍板留 PR 边界)
 - ❌ **不**批量给所有业务 controller 接 `rbac.can()`;新增 / 改判权要说明三层关系:controller 入口 Guard、Service 内 `rbac.can()`、数据范围(where 子句 / `.self`)

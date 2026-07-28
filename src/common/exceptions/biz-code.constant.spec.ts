@@ -5,7 +5,7 @@ import { BizCode } from './biz-code.constant';
 // Object.values(BizCode) 遍历断言每个条目结构合法,避免新增 BizCode 漏掉
 // `code` 唯一性、`httpStatus` 合法性、`message` 非空等基本约束。
 //
-// 段位规则(对齐 CLAUDE.md §5 / ARCHITECTURE.md §7.3):
+// 段位规则(对齐 docs/reference/response-pagination-errors.md §5):
 //   - 4xxxx / 5xxxx:通用 HTTP 级
 //   - 100xx:users 业务级
 //   - 101xx:users 权限 / 操作边界

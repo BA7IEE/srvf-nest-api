@@ -473,7 +473,7 @@ export class NotificationSmsDispatchService {
 }
 
 // 固定 UTC+8 日界(评审稿 E-10;与 birthday-greeting / sms-code 私有 startOfDayUtc8 同口径,
-// 各模块本地实现,不抽共享 util——AGENTS §2 grab-bag 禁令 + notifications/CLAUDE.md)。
+// 各模块本地实现,不抽共享 util——AGENTS §1 / docs/reference/naming-dto-validation.md §2 grab-bag 禁令 + notifications/CLAUDE.md)。
 function startOfDayUtc8(now: Date): Date {
   const offsetMs = SMS_DAILY_WINDOW_UTC_OFFSET_HOURS * 3600 * 1000;
   const shifted = now.getTime() + offsetMs;

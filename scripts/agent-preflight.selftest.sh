@@ -4,7 +4,10 @@
 # 固化冻结报告 full-repo-fifth-review-v0.57.0.md §2.2/§5 R5-08 的绕过样例:
 #   - `SRVF_LANE=0 pnpm agent:preflight` 曾进入 lane 模式(任意非空值降级 open-PR 硬判)
 #   - 裸 `--lane` 曾无名即进入 lane 模式
-# 以及新增的 bump 特征硬拒(package.json + apply-swagger.ts 同时脏 → lane 模式拒)。
+# 以及:
+#   - bump 特征硬拒(package.json + apply-swagger.ts 同时脏 → lane 模式拒)
+#   - global gh 不可用 fail closed,lane gh 不可用只告警
+#   - global / lane 都必须能解析 origin/main 并可靠计算 behind
 #
 # 运行:`bash scripts/agent-preflight.selftest.sh`(exit 0 全过 / exit 1 有失败)。
 # 参数/环境校验用例直接跑真仓(校验先于任何 git 检查,确定性早退);
@@ -50,7 +53,19 @@ expect "R5-08 --lane=空值 exit 1" 1 "显式 lane 名" \
 expect "R5-08 未知参数 exit 1" 1 "未知参数" \
   env -u SRVF_LANE bash "$SCRIPT" --lan
 
-# --- 门禁行为(临时 git 仓;无 origin/main、gh 不可用 → 两判跳过,验证 clean/lane/bump 判) ---
+# --- 门禁行为(临时 git 仓 + 确定性 gh stub,验证 clean/open-PR/origin/main/lane/bump 判) ---
+MOCK_BIN="$TMP/bin"
+mkdir -p "$MOCK_BIN"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'case "${GH_MOCK_MODE:-ok}" in' \
+  '  ok) exit 0 ;;' \
+  '  open) printf "%s\n" "123 selftest-open-pr"; exit 0 ;;' \
+  '  fail) exit 1 ;;' \
+  '  *) exit 2 ;;' \
+  'esac' > "$MOCK_BIN/gh"
+chmod +x "$MOCK_BIN/gh"
+
 REPO="$TMP/repo"
 mkdir -p "$REPO/src/bootstrap"
 (
@@ -62,10 +77,11 @@ mkdir -p "$REPO/src/bootstrap"
   printf "setVersion('0.0.1')\n" > src/bootstrap/apply-swagger.ts
   git add -A
   git commit -qm init
+  git update-ref refs/remotes/origin/main HEAD
 )
 
 in_repo() { # CMD... 在临时仓 cwd 下执行
-  (cd "$REPO" && "$@")
+  (cd "$REPO" && PATH="$MOCK_BIN:$PATH" GH_MOCK_MODE="${GH_MOCK_MODE:-ok}" "$@")
 }
 
 expect "global 模式 clean 仓通过(行为回归)" 0 "硬门禁通过" \
@@ -78,6 +94,26 @@ expect "SRVF_LANE=<合法名> 通过" 0 "lane=review-x" \
   in_repo env SRVF_LANE=review-x bash "$SCRIPT"
 expect "裸 --lane + SRVF_LANE=<合法名> 从环境取名" 0 "lane=env-lane" \
   in_repo env SRVF_LANE=env-lane bash "$SCRIPT" --lane
+
+# open PR:global 硬拒,lane 只打印交总控研判
+expect "global 模式存在 open PR fail closed" 1 "存在 open PR" \
+  in_repo env -u SRVF_LANE GH_MOCK_MODE=open bash "$SCRIPT"
+expect "lane 模式存在 open PR 不硬判" 0 "open-PR lane 豁免" \
+  in_repo env -u SRVF_LANE GH_MOCK_MODE=open bash "$SCRIPT" --lane test-lane
+
+# gh 不可用/未登录:global 无法证明 open PR=0 → 硬拒;lane 保留总控研判语义但必须如实告警
+expect "global 模式 gh 不可用 fail closed" 1 "global 模式无法核对 open PR" \
+  in_repo env -u SRVF_LANE GH_MOCK_MODE=fail bash "$SCRIPT"
+expect "lane 模式 gh 不可用告警后通过" 0 "open-PR 未校验(lane 告警,总控研判)" \
+  in_repo env -u SRVF_LANE GH_MOCK_MODE=fail bash "$SCRIPT" --lane test-lane
+
+# origin/main 不可解析:未落后无法证明,global / lane 都硬拒
+(cd "$REPO" && git update-ref -d refs/remotes/origin/main)
+expect "global 模式 origin/main 缺失 fail closed" 1 "无法确认未落后 origin/main" \
+  in_repo env -u SRVF_LANE GH_MOCK_MODE=ok bash "$SCRIPT"
+expect "lane 模式 origin/main 缺失 fail closed" 1 "无法确认未落后 origin/main" \
+  in_repo env -u SRVF_LANE GH_MOCK_MODE=ok bash "$SCRIPT" --lane test-lane
+(cd "$REPO" && git update-ref refs/remotes/origin/main HEAD)
 
 # global 模式不得出现 lane banner
 set +e

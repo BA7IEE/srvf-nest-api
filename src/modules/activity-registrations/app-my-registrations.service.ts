@@ -21,27 +21,28 @@ import { CreateAppMyRegistrationDto } from './dto/app/create-app-my-registration
 import { ListAppMyRegistrationsQueryDto } from './dto/app/list-app-my-registrations-query.dto';
 
 // Phase 2 P2-5a App /api/app/v1/my/* registrations 薄壳 service。
-// 沿 docs/app-api-p2-5-registrations-review.md §6.4 + §16.A.7 默认锁定:
+// 沿历史评审稿 docs/archive/reviews/app-api-p2-5-registrations-review.md
+// §6.4 + §16.A.7 默认锁定:
 //   controller → 薄壳 service → 既有 ActivityRegistrationsService(thin-wrap)
 //
-// 职责(沿 §6.1 + §6.4):
+// 职责(沿同评审稿 §6.1 + §6.4):
 //   1. 所有 endpoint 前置 AppIdentityResolver.resolve + assertCanUseApp(canUseApp=false
-//      统一 FORBIDDEN=40300;沿 §7.1 + §7.3)
+//      统一 FORBIDDEN=40300;沿同评审稿 §7.1 + §7.3)
 //   2. thin-wrap 既有 ActivityRegistrationsService.listMy / findMy(读 2 endpoint)
 //   3. 委派 AppMyActivitiesService.listForMember(/my/activities)
 //   4. 私有 App mapper:
-//        - Admin DTO 字段集 → App DTO 字段集(沿 §8.2.1 / §8.2.2 严格白名单)
+//        - Admin DTO 字段集 → App DTO 字段集(沿同评审稿 §8.2.1 / §8.2.2 严格白名单)
 //        - 列表项二次 join Activity 拿派生字段(activityTitle / activityStartAt /
-//          activityEndAt / activityCoverImageUrl;沿 §8.2.1)
+//          activityEndAt / activityCoverImageUrl;沿同评审稿 §8.2.1)
 //
 // 铁律:
 //   - **不**改 ActivityRegistrationsService 签名(沿评审稿 §6.2)
 //   - **不**新增 BizCode(D-P2-5-10)
-//   - admin-as-member 走 linked-member self perspective(沿 D-5.2 + §7.5);
+//   - admin-as-member 走 linked-member self perspective(沿 D-5.2 + 同评审稿 §7.5);
 //     **禁止** role 短路 / scope=all
 //   - MEMBER_NOT_FOUND=15001 由 controller 层 AppIdentityResolver 拦截,不可触达 App
 //     path(沿评审稿 §14.2 风险 + §9.1 BizCode 矩阵)
-//   - 列表项**不返** memberId(§16.B.2 默认锁定)
+//   - 列表项**不返** memberId(同评审稿 §16.B.2 默认锁定)
 @Injectable()
 export class AppMyRegistrationsService {
   constructor(
@@ -72,7 +73,8 @@ export class AppMyRegistrationsService {
       return { items: [], total: result.total, page: result.page, pageSize: result.pageSize };
     }
 
-    // 二次 join Activity 拿派生字段(沿 §8.2.1 activityTitle / activityStartAt / ...);
+    // 二次 join Activity 拿派生字段
+    // (沿同评审稿 §8.2.1 activityTitle / activityStartAt / ...);
     // 单次 IN 查询,**不** N+1。Activity.deletedAt 不过滤:onDelete=Restrict FK 保证
     // activity row 存在;soft-delete 状态下字段仍可读,**不**暴露 deletedAt。
     const activityIds = [...new Set(result.items.map((r) => r.activityId))];
@@ -114,21 +116,24 @@ export class AppMyRegistrationsService {
 
   // ============ POST /api/app/v1/my/registrations(P2-5b)============
   //
-  // 沿 docs/app-api-p2-5-registrations-review.md §6.4 + §9.3 + §16.B.6 默认锁定方案 B:
-  //   1. 准入:`assertCanUseAppOrThrow`(沿 §7.1 + §7.3;canUseApp=false → 403)
-  //   2. **薄壳内 inline** `assertActivityPublishedOrThrow`(沿 D-P2-5-8 + §9.3):
+  // 沿同一历史评审稿 §6.4 + §9.3 + §16.B.6 默认锁定方案 B:
+  //   1. 准入:`assertCanUseAppOrThrow`(沿同评审稿 §7.1 + §7.3;canUseApp=false → 403)
+  //   2. **薄壳内 inline** `assertActivityPublishedOrThrow`
+  //      (沿 D-P2-5-8 + 同评审稿 §9.3):
   //      只有 published 活动可报名,其它(draft / cancelled / completed / 软删 / 不存在)
   //      **统一抛** ACTIVITY_NOT_FOUND=20001 / 404 防侧信道(沿 P2-4 D-P2-4-3 范式)
-  //   3. thin-wrap 既有 `ActivityRegistrationsService.createMy`(沿 §6.2 不改签名):
+  //   3. thin-wrap 既有 `ActivityRegistrationsService.createMy`(沿同评审稿 §6.2 不改签名):
   //      事务内 resolveUserMemberIdOrThrow + assertActivityRegistrable(剩余只触发 20120)
   //      + assertCapacityNotExceeded + assertNoActiveRegistration + create + audit
-  //   4. 出参经私有 mapper 转 AppMyRegistrationDto(沿 §8.2.2 字段集 11 项不返 memberId)
+  //   4. 出参经私有 mapper 转 AppMyRegistrationDto
+  //      (沿同评审稿 §8.2.2 字段集 11 项不返 memberId)
   //
   // 铁律:
-  //   - **不**改 ActivityRegistrationsService 公共 API(沿 §6.2 + §16.B.6 方案 B)
+  //   - **不**改 ActivityRegistrationsService 公共 API
+  //     (沿同评审稿 §6.2 + §16.B.6 方案 B)
   //   - **不**新增 BizCode(沿 D-P2-5-10)
-  //   - **不**新增 audit event(沿 §12.1 复用 registration.create + viaPath='self')
-  //   - admin-as-member 走 linked-member self perspective(沿 D-5.2 + §7.5);
+  //   - **不**新增 audit event(沿同评审稿 §12.1 复用 registration.create + viaPath='self')
+  //   - admin-as-member 走 linked-member self perspective(沿 D-5.2 + 同评审稿 §7.5);
   //     既有 createMy 内 resolveUserMemberIdOrThrow 用 currentUser.id 锁本人,
   //     **禁止** role 短路 / 接收 body memberId(DTO 严格白名单已挡)
   async createMyForApp(
@@ -139,7 +144,7 @@ export class AppMyRegistrationsService {
     await this.assertCanUseAppOrThrow(currentUser);
     await this.assertActivityPublishedOrThrow(dto.activityId);
 
-    // thin-wrap 既有 createMy(沿 §6.2 不改签名);extras 可选透传
+    // thin-wrap 既有 createMy(沿同评审稿 §6.2 不改签名);extras 可选透传
     const reg = await this.registrationsService.createMy(
       dto.activityId,
       {
@@ -158,8 +163,8 @@ export class AppMyRegistrationsService {
   // ============ PATCH /api/app/v1/my/registrations/:id/cancel(P2-5b)============
   //
   // 沿评审稿 §10.2 状态机 + §7.7 owner 校验 + §12.1 audit:
-  //   1. 准入:`assertCanUseAppOrThrow`(沿 §7.1)
-  //   2. thin-wrap 既有 `ActivityRegistrationsService.cancelMy`(沿 §6.2):
+  //   1. 准入:`assertCanUseAppOrThrow`(沿同评审稿 §7.1)
+  //   2. thin-wrap 既有 `ActivityRegistrationsService.cancelMy`(沿同评审稿 §6.2):
   //      事务内:resolveUserMemberIdOrThrow + 反查 registration(本人 + 未软删) →
   //      404 防侧信道(他人 / 不存在 / 软删统一 ACTIVITY_REGISTRATION_NOT_FOUND=21001)→
   //      状态机校验 pending|pass → cancelled,其它态 → ACTIVITY_REGISTRATION_STATUS_INVALID=21030
@@ -167,7 +172,7 @@ export class AppMyRegistrationsService {
   //   3. 出参经私有 mapper 转 AppMyRegistrationDto
   //
   // 取消他人 / 不存在 / 软删 statusCode==reject / cancelled 全部由既有 cancelMy 兜底,
-  // 与 P2-5a `findMy` 防侧信道范式对齐(沿 §7.7)。
+  // 与 P2-5a `findMy` 防侧信道范式对齐(沿同评审稿 §7.7)。
   async cancelMyForApp(
     currentUser: CurrentUserPayload,
     id: string,
@@ -187,9 +192,10 @@ export class AppMyRegistrationsService {
 
   // ============ 内部 helpers ============
 
-  // 沿 §7.1 / §7.3 准入硬约束:canUseApp=false → FORBIDDEN(member 未关联 / INACTIVE /
+  // 沿同评审稿 §7.1 / §7.3 准入硬约束:
+  // canUseApp=false → FORBIDDEN(member 未关联 / INACTIVE /
   // 软删 / Admin 无 member 全部统一 403);**不**沿 P2-3 admin-without-member 例外
-  // (沿 §7.4 / D-P2-3-1 严格仅限 /me/password)。
+  // (沿同评审稿 §7.4 / D-P2-3-1 严格仅限 /me/password)。
   private async assertCanUseAppOrThrow(currentUser: CurrentUserPayload): Promise<void> {
     const access = await this.appIdentity.resolve(currentUser);
     if (!access.canUseApp || access.member === null) {
@@ -197,7 +203,8 @@ export class AppMyRegistrationsService {
     }
   }
 
-  // 沿 D-P2-5-8 + §9.3 + §16.B.6 默认方案 B:报名前置 published 校验薄壳内 inline。
+  // 沿 D-P2-5-8 + 同评审稿 §9.3 + §16.B.6 默认方案 B:
+  // 报名前置 published 校验薄壳内 inline。
   // 非 published(draft / cancelled / completed / 软删 / 不存在)统一抛 ACTIVITY_NOT_FOUND=20001
   // 防侧信道(沿 P2-4 D-P2-4-3 范式);**不**改 ActivityRegistrationsService 公共 API。
   // 与 admin path 行为故意不同:admin POST cancelled 活动仍抛 ACTIVITY_CANCELLED_REGISTRATION_FORBIDDEN=20121,
@@ -212,7 +219,7 @@ export class AppMyRegistrationsService {
     }
   }
 
-  // 列表项二次 join 用的 Activity 精简 select(沿 §8.2.1 派生字段集)。
+  // 列表项二次 join 用的 Activity 精简 select(沿同评审稿 §8.2.1 派生字段集)。
   // **不** select:description / capacity / registrationDeadline / registrationNotes /
   // organizationId / 任何 audit / publishedBy* / cancelledBy* / deletedAt。
   private static readonly listActivitySelect = {
@@ -223,8 +230,10 @@ export class AppMyRegistrationsService {
     coverImageUrl: true,
   } as const satisfies Prisma.ActivitySelect;
 
-  // 私有 mapper(沿 §6.4 + P2-4 §8.3.3 P0/P1 过渡;不抽独立 Presenter class)。
-  // **删除** admin DTO 字段:memberId / memberNo / memberDisplayName(沿 §8.2.1 / §16.B.2)。
+  // 私有 mapper(沿同评审稿 §6.4 + P2-4 §8.3.3 P0/P1 过渡;
+  // 不抽独立 Presenter class)。
+  // **删除** admin DTO 字段:memberId / memberNo / memberDisplayName
+  // (沿同评审稿 §8.2.1 / §16.B.2)。
   // **追加** 派生字段:activityTitle / activityStartAt / activityEndAt / activityCoverImageUrl。
   private static toAppListItemDto(
     reg: {
@@ -259,8 +268,9 @@ export class AppMyRegistrationsService {
     };
   }
 
-  // 详情 mapper(沿 §8.2.2 基线字段集 additive 增加 waitlistPosition；仍**删除** memberId /
-  // reviewedBy / cancelledByUserId，沿 §16.B.2 + §8.2.2 字段表)。
+  // 详情 mapper(沿同评审稿 §8.2.2 基线字段集 additive 增加 waitlistPosition；
+  // 仍**删除** memberId / reviewedBy / cancelledByUserId，
+  // 沿同评审稿 §16.B.2 + §8.2.2 字段表)。
   private static toAppDetailDto(
     reg: {
       id: string;

@@ -63,7 +63,7 @@ import { RecruitmentIdentityService } from './recruitment-identity.service';
 // 招新一期 T3(2026-06-18):公开报名 surface(评审稿 §3.2 端点 4-5)。
 //
 // **surface 首用**:`open/v1/*` = 无账号公开前缀(api-surface-policy §0「预留→首用」;
-// AGENTS §9/§21)。@Public 跳过 JwtAuthGuard;@RecruitmentThrottle 第 9 throttler 'recruitment'
+// reference/auth-jwt-refresh + api-client-boundary)。@Public 跳过 JwtAuthGuard;@RecruitmentThrottle 第 9 throttler 'recruitment'
 // 按 IP 限流(默认 10/3600)。报名 = multipart/form-data(分叉③:证件照走文件,payload 走 JSON 串)。
 //
 // **校验顺序冻结见 service §4**:免费校验(校验位/年龄/code2session/去重)→ 最后才调付费实名核验。

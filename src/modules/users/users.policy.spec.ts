@@ -4,7 +4,7 @@ import { canChangeRole, canCreateRole, canManageUser, canViewUser } from './user
 // V1.3-1:users.policy 4 个纯函数完整角色矩阵单测。
 // 3 actor × 3 target = 9 组合 × 4 函数 = 36 个判定点;表格化避免重复代码。
 //
-// 设计要点(对齐 CLAUDE.md §13 / ARCHITECTURE.md §7.11):
+// 设计要点(对齐 docs/reference/roles-admin-protection.md §13):
 //   - SUPER_ADMIN 业务 API 不可被创建 / 提升,只有 prisma/seed.ts 能产生
 //   - ADMIN 仅能看到 / 管理 / 创建 USER
 //   - USER 不能进入管理可见 / 管理 / 创建范围

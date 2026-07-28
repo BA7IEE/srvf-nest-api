@@ -21,7 +21,8 @@ import { createTestApp } from '../setup/test-app';
 // - 状态机 4 态(pending → pass/reject/cancelled;pass → cancelled)
 // - capacity 校验(仅 pass 占名额,Q-D17;cancelled 释放)
 // - partial unique(同 activity 同 member;取消后允许重报)
-// - USER 越权访问他人 → 404(沿 §1.7 风格)
+// - USER 越权访问他人 → 404
+//   (统一断言 BizCode.ACTIVITY_REGISTRATION_NOT_FOUND,避免存在性泄漏)
 // - CSV export(Q-A6:format=csv 默认;scope=pass 默认 / scope=all 可选;XLSX → 400;
 //   副作用 0:不写库 / 不落 export_logs / 不生成 AttendanceRecord)
 

@@ -33,7 +33,7 @@ import { lockAuthSessionUser } from './auth-session-lock';
 //
 // 明文纪律:newPassword / passwordHash / 验证码明文不入日志、不入 audit、不入响应。
 
-const BCRYPT_SALT_ROUNDS = 10; // 沿 AGENTS §9(与 users.service 同值;该常量未导出,各自模块级声明)
+const BCRYPT_SALT_ROUNDS = 10; // 沿 reference/auth-jwt-refresh(与 users.service 同值;该常量未导出,各自模块级声明)
 
 @Injectable()
 export class PasswordResetService {
@@ -76,7 +76,7 @@ export class PasswordResetService {
    *         只允许对已证明持有有效验证码(即手机号控制权)者可达
    *   ④ verifyAndConsume 原子消费(并发重放单赢家)
    *   ⑤ 事务:改密 + 撤销全部未撤销未过期 refresh('self-password-reset',
-   *      联动撤销第 5 场景,AGENTS §9)+ audit password.reset.by-sms
+   *      P0-E 基础联动撤销第 5 场景,reference/auth-jwt-refresh)+ audit password.reset.by-sms
    * 成功返 null(data:null;不返 token、不自动登录,D-PR-1);
    * access token 沿 D-4 不吊销(≤15m 自然过期)。
    */

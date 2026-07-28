@@ -85,7 +85,7 @@ export class CreateRbacRoleDto {
 }
 
 // PATCH 仅允许 displayName / description;严禁 code / id / createdAt / updatedAt / deletedAt
-// (沿 baseline §4.2 + CLAUDE.md §11 纵深防御)。
+// (沿 baseline §4.2 + docs/reference/naming-dto-validation.md §11 纵深防御)。
 export class UpdateRbacRoleDto {
   @ApiPropertyOptional({ description: '显示名', maxLength: 50 })
   @IsOptional()

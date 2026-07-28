@@ -215,7 +215,8 @@ export class UpdatePositionDto {
 
 // ============ 列表 query ============
 
-// 分页 + 过滤;沿 v1 §4 PaginationQueryDto。不暴露 includeDeleted / deletedAt 过滤。
+// 分页 + 过滤;沿 docs/reference/response-pagination-errors.md §4 PaginationQueryDto。
+// 不暴露 includeDeleted / deletedAt 过滤。
 export class PositionQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({ description: '按职务类别过滤', enum: PositionCategory })
   @IsOptional()

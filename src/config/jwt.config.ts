@@ -47,7 +47,7 @@ function parseDurationMs(name: string, value: string, minMs: number, maxMs: numb
   return durationMs;
 }
 
-// 启动强校验(详见 ARCHITECTURE.md §8 + CLAUDE.md §14):
+// 启动强校验(详见 docs/reference/config-env.md §14):
 // - JWT_SECRET 必须存在且 ≥ 32 字符
 // - APP_ENV=production 时 JWT_SECRET 不能等于 .env.example 默认值
 // - JWT_EXPIRES_IN 必须带单位且在 1m-24h

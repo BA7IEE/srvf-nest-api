@@ -1,6 +1,6 @@
 # recruitment — 本地铁律
 
-> 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);敏感字段三问、App/Open surface 与职责边界分别沿其 §18.4、§19.7/§21 及 [`/docs/architecture-boundary.md`](../../../docs/architecture-boundary.md)。本文件只记录招新模块内的高风险本地约束。
+> 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);敏感字段三问与 App/Open 边界沿其 §2 + [`api-client-boundary`](../../../docs/reference/api-client-boundary.md) / [`api-surface-policy`](../../../docs/api-surface-policy.md),职责边界沿 [`architecture-boundary`](../../../docs/architecture-boundary.md)。本文件只记录招新模块内的高风险本地约束。
 
 ## 文件入口
 

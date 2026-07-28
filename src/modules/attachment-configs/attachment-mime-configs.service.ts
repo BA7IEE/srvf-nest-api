@@ -46,7 +46,7 @@ export class AttachmentMimeConfigsService {
 
   // P0-F PR-2B(2026-05-18):RBAC 判权(沿 PR-2A dict / org / contrib-rule 范本)。
   // 失败统一抛 BizException(BizCode.RBAC_FORBIDDEN)(30100);RbacService.can 内部
-  // 已实现 SUPER_ADMIN 短路 + cache + ownership(.self);本模块无 .self 后缀。
+  // 已实现 SUPER_ADMIN 短路 + 每次直读当前 GLOBAL 权限;本模块无 .self 后缀。
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
     if (!(await this.rbac.can(user, action))) {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
@@ -69,7 +69,8 @@ export class AttachmentMimeConfigsService {
   // ============ helpers ============
 
   // 业务详情查询:findFirst + notDeletedWhere(沿 PR #3 type config 范式)。
-  // 不存在或已软删统一抛 13022(沿 v1 §10 信息泄漏防御;Q2 v1.0 锁)。
+  // 不存在或已软删统一抛 13022
+  // (沿 docs/reference/soft-delete-transactions.md §10 信息泄漏防御;Q2 v1.0 锁)。
   private async findActiveByIdOrThrow(id: string): Promise<SafeMimeConfig> {
     const found = await this.prisma.attachmentMimeConfig.findFirst({
       where: notDeletedWhere({ id }),
@@ -159,7 +160,8 @@ export class AttachmentMimeConfigsService {
     // 2. MIME 格式校验(Q1 v1.0;失败抛 13025)
     this.assertMimeFormatValid(dto.mime);
 
-    // 3. (typeConfigId, mime) UNIQUE 预检查(含软删历史;Q8 v1.0:软删后不可复用;沿 CLAUDE.md §10)
+    // 3. (typeConfigId, mime) UNIQUE 预检查(含软删历史;Q8 v1.0:软删后不可复用;
+    //    沿 docs/reference/soft-delete-transactions.md §10)
     const existing = await this.prisma.attachmentMimeConfig.findUnique({
       where: {
         typeConfigId_mime: {
@@ -305,7 +307,8 @@ export class AttachmentMimeConfigsService {
     auditMeta: AuditMeta,
   ): Promise<AttachmentMimeConfigResponseDto> {
     await this.assertCanOrThrow(currentUser, 'attachment-config.delete.mime');
-    // 1. 先确认活跃(沿 PR #3 type config softDelete 范式;沿 v1 §10 信息泄漏防御)
+    // 1. 先确认活跃(沿 PR #3 type config softDelete 范式;
+    //    沿 docs/reference/soft-delete-transactions.md §10 信息泄漏防御)
     const existing = await this.findActiveByIdOrThrow(id);
 
     // 2. V2.x Slow-6:跨表引用检查(对称在 updateStatus 也加;沿 Q-cross-3 A)
@@ -349,7 +352,8 @@ export class AttachmentMimeConfigsService {
    *
    * 检查路径:typeConfigId → typeConfig.code → count attachments where ownerType+mime。
    * 注意 mime 字段比较精确到字符串级别,同 type 不同 mime 不视为引用。
-   * 信息泄漏防御:不在异常 message / extra 暴露引用数(沿 Q-cross-impl-4 A + v1 §10)。
+   * 信息泄漏防御:不在异常 message / extra 暴露引用数
+   * (沿 Q-cross-impl-4 A + docs/reference/soft-delete-transactions.md §10)。
    */
   private async assertMimeNotInUse(typeConfigId: string, mime: string): Promise<void> {
     const typeConfig = await this.prisma.attachmentTypeConfig.findUnique({

@@ -10,12 +10,12 @@
 
 | 能力 | 实现位置 | 说明 |
 |---|---|---|
-| 防账号枚举 | `auth.service.ts` | 四场景(`username` 不存在 / `password` 错 / 已禁用 / 已软删除)统一 `LOGIN_FAILED` + HTTP 401,`username` 不存在路径仍跑 `bcrypt.compare(dummyHash)` 抹平 timing |
+| 防账号枚举 | `auth.service.ts` | username 主链四场景(`username` 不存在 / `password` 错 / 已禁用 / 已软删除)及 memberNo 回退失败均统一 `LOGIN_FAILED` + HTTP 401,身份不存在路径仍跑 `bcrypt.compare(dummyHash)` 抹平 timing |
 | 密码哈希 | `auth.service.ts` / `users.service.ts` | `bcryptjs`,salt rounds=10;响应 DTO 永不含 `passwordHash`(`userSafeSelect` 排除) |
 | 字段白名单 | `*.dto.ts` + 全局 `forbidNonWhitelisted: true` | 入参 DTO 不声明的字段直接 422;`UpdateMyProfileDto` 仅 `nickname/avatarKey`,`UpdateUserDto` 不接受 `role/password/status` |
-| 角色策略集中 | `src/modules/users/users.policy.ts` | 4 个纯函数(`canViewUser` / `canManageUser` / `canCreateRole` / `canChangeRole`),双层校验:Guard 管入口、policy 管业务 |
+| 角色策略集中 | `src/modules/users/users.policy.ts` | Service 先走 `rbac.can()` 权限单轨,再由 4 个纯函数(`canViewUser` / `canManageUser` / `canCreateRole` / `canChangeRole`)约束目标角色;Controller 不新增 `@Roles` |
 | 自我保护 | `users.service.ts` | 自删 / 自禁 / 自改角色一律 `CANNOT_OPERATE_SELF` |
-| 最后一个 SUPER_ADMIN 保护 | `users.service.ts` `assertNotLastSuperAdmin` | 在事务内 `count` 剩余活跃 super admin,< 1 抛 `LAST_SUPER_ADMIN_PROTECTED` |
+| 最后一个 SUPER_ADMIN 保护 | `permissions/last-admin-protection.policy.ts` | 在同一事务/锁内核验剩余活跃 super admin,< 1 抛 `LAST_SUPER_ADMIN_PROTECTED` |
 | helmet HTTP 安全头 | `bootstrap/apply-global-setup.ts` | 默认开启,Swagger UI 局部放开 CSP |
 | 登录限流 | `@nestjs/throttler` PostgreSQL shared storage | 10 个命名实例共用数据库并以 `(throttlerName,key)` 物理隔离；登录实例仅作用于 `POST /api/auth/v1/login`,IP 维度 5 次 / 60 秒(`LOGIN_THROTTLE_LIMIT` / `LOGIN_THROTTLE_TTL_SECONDS` 可配),不暴露阈值；DB/storage 异常 fail-closed 为 50000,零本地 Map fallback |
 | 可信代理身份边界 | `config/app.config.ts` + `bootstrap/apply-global-setup.ts` | 单一 `APP_TRUSTED_PROXY_CIDRS=none\|CIDR,...`；只收 canonical network CIDR，production/smoke 缺失或非法即启动失败。Express 原生 XFF 右向左首个不可信截断，`none` 映射 `trust proxy=false`且仅适用于真实直连；反代下 `none` 会把全部 client 汇入 proxy IP。全局边界先建立 request ID；紧随 Helmet 的 normalizer 在 CORS preflight/pino/throttler/controller 前把 mapped IPv4 归 native、IPv6 归 lowercase 压缩，并把非法 token/getter 异常或配置非 `none` 时仍为 trusted proxy 的最终 identity 统一拒绝为 40000。拒绝响应保留 request ID/Helmet/允许 Origin CORS，只写固定 event+reqId 的安全日志，不进入普通 request serializer。禁止 boolean/hop/wildcard/默认全信，不把 `Forwarded` / `X-Real-IP` 当身份来源。IP 仅用于限流、audit、SMS/OCR 防刷取证，不是鉴权身份，正常 HTTP 日志按下方路径 redact |
@@ -140,7 +140,7 @@ req.body.stepUpToken
   ```
 - 后续若实现 restore,接口契约预定义为:
   - `PATCH /api/admin/v1/users/:id/restore`
-  - **仅 `SUPER_ADMIN` 可用**(`@Roles(Role.SUPER_ADMIN)`)
+  - **仅 `SUPER_ADMIN` 可用**;实施时沿判权单轨在 Service 使用经评审的新权限码,不新增 `@Roles(...)`,且该码不绑定任何非 SA 角色
   - 入参为空,出参与其他用户接口一致(`UserResponseDto`)
   - 同样要在事务里检查 `username` / `email` 是否被新用户占用,若占用则要求先重命名旧记录或拒绝恢复
   - **本节属于升级路径,AI 不得在 V1.2 范围内实现**
@@ -206,7 +206,7 @@ req.body.stepUpToken
 
 ## RBAC / scoped-authz 交叉引用
 
-本文件不是 RBAC / scoped-authz(组织职务 + 分管 + 统一鉴权)的权威源,只覆盖认证(登录 / 密码 / token)相关安全策略,不重复判权设计。权威源:[`AGENTS.md`](../AGENTS.md) §8 / §13(RBAC / 判权铁律)、[`src/modules/authz/CLAUDE.md`](../src/modules/authz/CLAUDE.md)(判权大脑本地事实)、[`docs/ops/scoped-authz-go-live-checklist.md`](ops/scoped-authz-go-live-checklist.md)(上线初始化 SOP,含考勤终审绑定 / `22074`-`22075` 行为)。
+本文件不是 RBAC / scoped-authz(组织职务 + 分管 + 统一鉴权)的权威源,只覆盖认证(登录 / 密码 / token)相关安全策略,不重复判权设计。权威入口:[`AGENTS.md §2`](../AGENTS.md)(判权单轨)、[`reference/auth-jwt-refresh.md`](reference/auth-jwt-refresh.md) / [`reference/roles-admin-protection.md`](reference/roles-admin-protection.md)、[`src/modules/authz/CLAUDE.md`](../src/modules/authz/CLAUDE.md)(判权大脑本地事实)、[`ops/scoped-authz-go-live-checklist.md`](ops/scoped-authz-go-live-checklist.md)(上线初始化 SOP)。
 
 ## 控制面审计(control-plane audit)权威规则
 
