@@ -69,7 +69,8 @@ export class RbacRolesService {
   }
 
   // PATCH / DELETE 路径:活跃(未软删)的查询;不存在或已软删统一抛 30003。
-  // 沿 v1 §10 / CLAUDE.md §10:访问已软删资源统一表现为不存在,防止信息泄漏。
+  // 沿 docs/reference/soft-delete-transactions.md §10:
+  // 访问已软删资源统一表现为不存在,防止信息泄漏。
   private async findActiveByIdOrThrow(id: string): Promise<SafeRbacRole> {
     const found = await this.prisma.rbacRole.findFirst({
       where: notDeletedWhere({ id }),
@@ -112,7 +113,8 @@ export class RbacRolesService {
   ): Promise<PageResultDto<RbacRoleResponseDto>> {
     await this.assertCanOrThrow(user, 'rbac.role.read');
     const { page, pageSize, code } = query;
-    // 列表默认排除软删(沿 v1 §10 / baseline §10);code 过滤走 contains(模糊匹配)
+    // 列表默认排除软删(沿 docs/reference/soft-delete-transactions.md §10 / baseline §10);
+    // code 过滤走 contains(模糊匹配)
     const where: Prisma.RbacRoleWhereInput = notDeletedWhere(
       code !== undefined ? { code: { contains: code } } : {},
     );
@@ -121,7 +123,8 @@ export class RbacRolesService {
       this.prisma.rbacRole.findMany({
         where,
         select: rbacRoleSelect,
-        // 默认排序:createdAt DESC(沿 baseline §3.2 + CLAUDE.md §4)
+        // 默认排序:createdAt DESC
+        // (沿 baseline §3.2 + docs/reference/response-pagination-errors.md §4)
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -193,7 +196,8 @@ export class RbacRolesService {
     // 1. 显式格式校验(30009)
     this.assertCodeFormatValid(dto.code);
 
-    // 2. 预检查 code 唯一性(**含软删历史** — sched unique 不区分 deletedAt,沿 v1 §10
+    // 2. 预检查 code 唯一性(**含软删历史** — sched unique 不区分 deletedAt,
+    //    沿 docs/reference/soft-delete-transactions.md §10
     //    "软删后 username / email 不复用"范式),提供 user-friendly 30004。
     //    用 findUnique(不带 notDeletedWhere)确保撞软删历史也能精准报错。
     const existing = await this.prisma.rbacRole.findUnique({
@@ -239,7 +243,8 @@ export class RbacRolesService {
     meta: AuditMeta,
   ): Promise<RbacRoleResponseDto> {
     await this.assertCanOrThrow(user, 'rbac.role.update');
-    // 1. 先确认活跃(不存在 + 已软删都返 30003,沿 v1 §10 信息泄漏防御);顺带取 before 快照。
+    // 1. 先确认活跃(不存在 + 已软删都返 30003,
+    //    沿 docs/reference/soft-delete-transactions.md §10 信息泄漏防御);顺带取 before 快照。
     const before = await this.findActiveByIdOrThrow(id);
 
     // 2. 更新 + audit(单事务;仅允许 displayName / description;DTO 层已白名单 +
@@ -278,7 +283,8 @@ export class RbacRolesService {
       throw new BizException(BizCode.PROTECTED_ROLE_DELETE_FORBIDDEN);
     }
 
-    // 2. 软删 + audit(单事务;D4 v1.0;沿 v1 §10:update deletedAt = new Date();
+    // 2. 软删 + audit(单事务;D4 v1.0;
+    //    沿 docs/reference/soft-delete-transactions.md §10:update deletedAt = new Date();
     //    user_roles / role_permissions 不联动,沿 D7 §6.3 "最后一个运营管理员保护" 决策)。
     //    **不实装 deletedByUserId**(沿用户拍板方案 A;schema + D7 v1.1 均无此字段);删除责任由
     //    audit_logs 的 rbac-role.delete 事件 + actorUserId 记录(第三轮 review §F&A-2 补齐;

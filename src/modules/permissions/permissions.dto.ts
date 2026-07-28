@@ -13,7 +13,8 @@ import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 // - 若放在 DTO @Matches,失败时 ValidationPipe 走通用 BAD_REQUEST(40000),
 //   30008 永远不会被触发,违背"实装"语义
 //
-// **PATCH 字段白名单(纵深防御铁律,沿 baseline §4.2 + CLAUDE.md §11)**:
+// **PATCH 字段白名单**
+// (纵深防御铁律,沿 baseline §4.2 + docs/reference/naming-dto-validation.md §11):
 // - UpdatePermissionDto 仅允许 description(且可空)
 // - 严禁 code / module / action / resourceType / id / createdAt / updatedAt;
 //   code 是业务标识不可改;module/action/resourceType 改了等于改语义,需走 DELETE+POST
@@ -91,7 +92,7 @@ export class CreatePermissionDto {
 }
 
 // PATCH 仅允许 description;严禁 code / module / action / resourceType / id 等敏感字段
-// (沿 baseline §4.2 / CLAUDE.md §11 纵深防御)。
+// (沿 baseline §4.2 / docs/reference/naming-dto-validation.md §11 纵深防御)。
 export class UpdatePermissionDto {
   @ApiPropertyOptional({ description: '描述(可空)', maxLength: 500 })
   @IsOptional()

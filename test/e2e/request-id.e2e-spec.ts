@@ -6,7 +6,7 @@ import { buildHttpLogProps } from '../../src/app.module';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
-// V1.1 TASKS.md 15.3 验收:请求 ID 贯通(x-request-id)
+// ARCHITECTURE.md §11.1 验收:请求 ID 贯通(x-request-id)
 //
 // 黑盒(经 supertest 打真实 HTTP 接口):
 //   1. 客户端不传 x-request-id → 响应头有合法生成值(cuid-like:^c[0-9a-z]{32,}$)

@@ -45,7 +45,7 @@ export class AttachmentSizeLimitConfigsService {
 
   // P0-F PR-2B(2026-05-18):RBAC 判权(沿 PR-2A dict / org / contrib-rule 范本)。
   // 失败统一抛 BizException(BizCode.RBAC_FORBIDDEN)(30100);RbacService.can 内部
-  // 已实现 SUPER_ADMIN 短路 + cache + ownership(.self);本模块无 .self 后缀。
+  // 已实现 SUPER_ADMIN 短路 + 每次直读当前 GLOBAL 权限;本模块无 .self 后缀。
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
     if (!(await this.rbac.can(user, action))) {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
@@ -67,7 +67,8 @@ export class AttachmentSizeLimitConfigsService {
   // ============ helpers ============
 
   // 业务详情查询:findFirst + notDeletedWhere(沿 PR #3 / PR #4 范式)。
-  // 不存在或已软删统一抛 13026(沿 v1 §10 信息泄漏防御;Q2 PR #3/#4 沿用)。
+  // 不存在或已软删统一抛 13026
+  // (沿 docs/reference/soft-delete-transactions.md §10 信息泄漏防御;Q2 PR #3/#4 沿用)。
   private async findActiveByIdOrThrow(id: string): Promise<SafeSizeLimitConfig> {
     const found = await this.prisma.attachmentSizeLimitConfig.findFirst({
       where: notDeletedWhere({ id }),
@@ -146,7 +147,8 @@ export class AttachmentSizeLimitConfigsService {
     // 1. typeConfigId FK 真实性校验(Q5 PR #4 复用:不存在或软删 → 13020;校验链留事务外)
     await this.assertTypeConfigActive(dto.typeConfigId);
 
-    // 2. typeConfigId 1:1 UNIQUE 预检查(含软删历史;Q3 v1.0:软删后不可复用;沿 CLAUDE.md §10)
+    // 2. typeConfigId 1:1 UNIQUE 预检查(含软删历史;Q3 v1.0:软删后不可复用;
+    //    沿 docs/reference/soft-delete-transactions.md §10)
     const existing = await this.prisma.attachmentSizeLimitConfig.findUnique({
       where: { typeConfigId: dto.typeConfigId },
       select: { id: true },
@@ -247,7 +249,8 @@ export class AttachmentSizeLimitConfigsService {
     auditMeta: AuditMeta,
   ): Promise<AttachmentSizeLimitConfigResponseDto> {
     await this.assertCanOrThrow(currentUser, 'attachment-config.delete.size-limit');
-    // 1. 先确认活跃(沿 PR #4 mime softDelete 范式;沿 v1 §10 信息泄漏防御)
+    // 1. 先确认活跃(沿 PR #4 mime softDelete 范式;
+    //    沿 docs/reference/soft-delete-transactions.md §10 信息泄漏防御)
     const existing = await this.findActiveByIdOrThrow(id);
 
     // 2. V2.x Slow-6:跨表引用检查(沿 Q-cross-4 A:size 1:1 with type;
@@ -291,7 +294,8 @@ export class AttachmentSizeLimitConfigsService {
    * 检查路径:typeConfigId → typeConfig.code → count attachments where ownerType。
    * 沿 Q-cross-4 A:size 是 type 的 1:1 覆盖;删除 size 会让既有 type 的 attachment 走兜底,
    * 视作"语义破坏",故同 type 任意 attachment 即视为 size config IN_USE。
-   * 信息泄漏防御:不在异常 message / extra 暴露引用数(沿 Q-cross-impl-4 A + v1 §10)。
+   * 信息泄漏防御:不在异常 message / extra 暴露引用数
+   * (沿 Q-cross-impl-4 A + docs/reference/soft-delete-transactions.md §10)。
    */
   private async assertSizeNotInUse(typeConfigId: string): Promise<void> {
     const typeConfig = await this.prisma.attachmentTypeConfig.findUnique({

@@ -23,7 +23,7 @@ import type {
 
 // 微信小程序登录 T3(2026-06-12):第三个独立认证端点 + 手机短信锚点绑定
 // (冻结评审稿 docs/archive/reviews/wechat-mini-login-review.md §4,下称"评审稿";
-// AGENTS §8 登录契约已随本 PR 加微信端点行,密码登录契约零变化)。
+// docs/reference/auth-jwt-refresh.md §8 登录契约已随本 PR 加微信端点行,密码登录契约零变化)。
 //
 // 文件归属(评审稿 E-14):auth 模块平铺新文件(沿 login-sms.service.ts / password-reset.service.ts
 // 先例);**不**进 auth.service.ts(P0-E 冻结;其 diff 仅 createSession event union 类型行)。

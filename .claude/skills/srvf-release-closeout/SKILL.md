@@ -24,15 +24,14 @@ SRVF Nest API 项目的 **release 收口 + PR squash merge + main 同步 + branc
 冲突时按此优先级,**不自行调和,停止并报告**:
 
 1. 用户本轮明确指令
-2. [`docs/process.md §5`](../../../docs/process.md) — release 收口分阶段(feature → CHANGELOG → landing → bump → handoff → tag → Release → current-state 回填 → 清理)
-3. [`docs/process.md §5.4`](../../../docs/process.md) — squash merge + main 同步 + 远端/worktree/本地分支清理 + patch-equivalence + 禁止动作 + 报告格式(§5.4.1–§5.4.8)
-4. [`AGENTS.md §1` git 安全行](../../../AGENTS.md) + `docs/process.md §5.4` — worktree / 并行协作硬约束(§5.4 是其展开版)
-5. [`docs/current-state.md §1`](../../../docs/current-state.md) — 版本 / tag / HEAD / open PR 当前事实
-6. [`CHANGELOG.md`](../../../CHANGELOG.md) — release notes 唯一来源(`## vX.Y.Z` 对应段)
+2. [`docs/current-state.md §1`](../../../docs/current-state.md) + live Git / GitHub / 代码版本证据 — 版本 / tag / HEAD / open PR 当前事实
+3. [`AGENTS.md`](../../../AGENTS.md) — 长期铁律、git 安全与 E 档串行边界
+4. [`docs/process.md §5 / §5.4`](../../../docs/process.md) — release 九阶段、squash merge、清理与 patch-equivalence 过程细则
+5. [`CHANGELOG.md`](../../../CHANGELOG.md) — release notes 唯一来源(`## vX.Y.Z` 对应段)
 
 ## Required first checks
 
-先**只读**调研,不动文件、不合并(沿 [`process.md §5.4.1`](../../../docs/process.md)),必须确认:
+先**只读**调研,不动文件、不合并(沿 [`process.md §5.4 条 1`](../../../docs/process.md)),必须确认:
 
 - 主仓在 `main` 且 `git status --short` 为空
 - `gh pr list --state open` 只剩目标 PR(或为空)
@@ -51,7 +50,7 @@ SRVF Nest API 项目的 **release 收口 + PR squash merge + main 同步 + branc
 
 ## Squash merge + cleanup workflow
 
-沿 [`process.md §5.4.2–§5.4.5`](../../../docs/process.md),顺序严格:
+沿 [`process.md §5.4 条 2–5`](../../../docs/process.md),顺序严格:
 
 1. `gh pr merge <PR> --squash --delete-branch`
 2. **判定成败看 PR state,不只看 exit code**:exit≠0 时先 `gh pr view <PR> --json state,mergedAt,mergeCommit`。`state=MERGED` → squash 已成,**不重跑 merge**,进清理;`state=OPEN` → 排查 CI/冲突后重试,不强合。
@@ -61,7 +60,7 @@ SRVF Nest API 项目的 **release 收口 + PR squash merge + main 同步 + branc
 
 ## Patch-equivalence rules
 
-squash merge 后 `git branch -d <head>` 报 `not fully merged` 属正常(squash 产生新 commit,原 tip 不在 main 祖先链)。**禁止直接 `-D`**;先全过 [`process.md §5.4.6`](../../../docs/process.md) 5 项(缺一不可):
+squash merge 后 `git branch -d <head>` 报 `not fully merged` 属正常(squash 产生新 commit,原 tip 不在 main 祖先链)。**禁止直接 `-D`**;先全过 [`process.md §5.4 条 6`](../../../docs/process.md) 5 项(缺一不可):
 
 1. PR `state=MERGED`
 2. `git diff --stat main..<head>` 为空 / 仅 main 多 commit(本分支 0 新增)
@@ -82,18 +81,18 @@ merge / 清理动作本身不改代码,但**整体档位随目标 PR 升档**;�
 
 ## Validation
 
-- merge 前:`gh pr view` + `gh pr checks`(§5.4.1 全过)
+- merge 前:`gh pr view` + `gh pr checks`(§5.4 条 1 全过)
 - merge 后:`git -C <main> log -1 --oneline`(应为新 squash commit)+ `git status --short`(clean)+ 残留核验四连(`worktree list` / 本地 `claude/*` / 远端 `claude/*` / open PR)
 - release 收口:版本三方一致 + `gh release list --limit 1`
 - 缺 `node_modules`:**不** `pnpm install` / 改 lockfile;如实报告环境阻塞
 
 ## Output report
 
-沿 [`process.md §5.4.8`](../../../docs/process.md) 合并/清理专项段,必须含:合并前确认 / 合并结果(exit + PR state + mergeCommit)/ main 同步 / 远端分支 / 本地 worktree+branch / patch-equivalence 核验 / 后置状态 / 未触碰项 / 是否触发任何禁止动作授权。
+沿 [`process.md §5.4 条 8`](../../../docs/process.md) 合并/清理专项段,必须含:合并前确认 / 合并结果(exit + PR state + mergeCommit)/ main 同步 / 远端分支 / 本地 worktree+branch / patch-equivalence 核验 / 后置状态 / 未触碰项 / 是否触发任何禁止动作授权。
 
 ## Hard stops
 
-下列**立即停止并报告**(沿 [`process.md §5.4.7`](../../../docs/process.md)):
+下列**立即停止并报告**(沿 [`process.md §5.4 条 7`](../../../docs/process.md)):
 
 - 跳过 CI / `mergeStateStatus` 检查直接合
 - 对已 `MERGED` 的 PR 重跑 `gh pr merge`
@@ -107,4 +106,4 @@ merge / 清理动作本身不改代码,但**整体档位随目标 PR 升档**;�
 - tag 未指向正确的 release / handoff squash commit
 - GitHub Release notes 临场编造,而非抽自 CHANGELOG 对应段
 
-未授权例外 → 回对话等用户看到具体风险后**再次**明确授权(沿 [`process.md §5.4.7`](../../../docs/process.md)),并在报告中记录授权证据。
+未授权例外 → 回对话等用户看到具体风险后**再次**明确授权(沿 [`process.md §5.4 条 7`](../../../docs/process.md)),并在报告中记录授权证据。

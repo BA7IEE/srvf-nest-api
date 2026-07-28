@@ -17,7 +17,7 @@ import type {
 
 // B 队列 F4-T2(2026-06-11):OTP(验证码)登录——密码登录的**并行方式**,独立端点
 // (冻结评审稿 docs/archive/reviews/queue-b-otp-birthday-infra-review.md §5,下称"评审稿";
-// AGENTS §8 登录契约行已随本 PR 解锁改写,密码登录契约零变化)。
+// docs/reference/auth-jwt-refresh.md §8 登录契约已随本 PR 解锁改写,密码登录契约零变化)。
 //
 // 文件归属(评审稿 E-O1):auth 模块平铺新文件(沿 password-reset.service.ts 先例);
 // **不**进 users.service.ts;auth.service.ts 仅做 createSession 抽取式重排(E-O6)。

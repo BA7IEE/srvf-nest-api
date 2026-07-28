@@ -323,7 +323,11 @@ export class ContentAttachmentDto {
   @ApiProperty({ description: 'MIME 类型' }) mime!: string;
   @ApiProperty({ description: '原始文件名' }) originalName!: string;
   @ApiProperty({ description: '文件大小(字节)' }) size!: number;
-  @ApiPropertyOptional({ description: '签名访问短链(Provider 不可用时降级 null)', nullable: true })
+  @ApiPropertyOptional({
+    description: '签名访问短链(Provider 不可用时降级 null)',
+    nullable: true,
+    type: String,
+  })
   url!: string | null;
 }
 
@@ -336,7 +340,11 @@ export class ContentAdminListItemDto {
   @ApiProperty() statusCode!: string;
   @ApiProperty() visibilityCode!: string;
   @ApiProperty({ type: [String] }) tags!: string[];
-  @ApiPropertyOptional({ description: '封面缩略图签名 URL(coverImageKey 直签)', nullable: true })
+  @ApiPropertyOptional({
+    description: '封面缩略图签名 URL(coverImageKey 直签)',
+    nullable: true,
+    type: String,
+  })
   coverImageUrl!: string | null;
   @ApiProperty() pinned!: boolean;
   @ApiProperty({ description: '累计 PV' }) viewCount!: number;
@@ -358,7 +366,11 @@ export class ContentAdminDetailDto {
   @ApiProperty() visibilityCode!: string;
   @ApiProperty({ type: [String] }) visibleOrganizationIds!: string[];
   @ApiProperty({ type: [String] }) tags!: string[];
-  @ApiPropertyOptional({ description: '封面缩略图签名 URL', nullable: true })
+  @ApiPropertyOptional({
+    description: '封面缩略图签名 URL',
+    nullable: true,
+    type: String,
+  })
   coverImageUrl!: string | null;
   @ApiPropertyOptional({ nullable: true }) coverAttachmentId!: string | null;
   @ApiProperty({
@@ -438,7 +450,11 @@ export class ContentReadListItemDto {
   @ApiPropertyOptional({ nullable: true }) summary!: string | null;
   @ApiProperty() contentTypeCode!: string;
   @ApiProperty({ type: [String] }) tags!: string[];
-  @ApiPropertyOptional({ description: '封面缩略图签名 URL(coverImageKey 直签)', nullable: true })
+  @ApiPropertyOptional({
+    description: '封面缩略图签名 URL(coverImageKey 直签)',
+    nullable: true,
+    type: String,
+  })
   coverImageUrl!: string | null;
   @ApiProperty() pinned!: boolean;
   @ApiProperty({ description: '累计 PV' }) viewCount!: number;
@@ -456,7 +472,11 @@ export class ContentReadDetailDto {
   @ApiProperty() contentTypeCode!: string;
   @ApiProperty({ description: '可见档(展示用;不回显可见部门 orgId 列表)' }) visibilityCode!: string;
   @ApiProperty({ type: [String] }) tags!: string[];
-  @ApiPropertyOptional({ description: '封面缩略图签名 URL', nullable: true })
+  @ApiPropertyOptional({
+    description: '封面缩略图签名 URL',
+    nullable: true,
+    type: String,
+  })
   coverImageUrl!: string | null;
   @ApiProperty({
     type: [ContentAttachmentDto],

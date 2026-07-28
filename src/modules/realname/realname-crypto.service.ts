@@ -11,7 +11,7 @@ import appConfig from '../../config/app.config';
 // 序列化:base64(iv:12B || authTag:16B || ciphertext) -> base64 单字符串。
 //
 // 与 Wechat / Sms / StorageCryptoService 的关系:**独立 env key + 独立 salt,密文互不可解**;
-// 刻意不抽公共基类(各模块各自演进,沿 AGENTS §2 禁 grab-bag 精神)。
+// 刻意不抽公共基类(各模块各自演进,沿 AGENTS §1 / docs/reference/naming-dto-validation.md §2 禁 grab-bag 精神)。
 //
 // 失败模式:
 // - encryptionKey 为空(dev / test) -> encrypt / decrypt 抛 RealnameCryptoUnavailableError

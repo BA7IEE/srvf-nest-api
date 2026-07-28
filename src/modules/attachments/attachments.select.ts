@@ -8,7 +8,8 @@ import { Prisma } from '@prisma/client';
 //   后续 admin / debug 专属接口若需可见,另起 select)
 // - accessUrl 是 Service 层 toResponseDto 时附加的占位字段(Provider 接通前恒返 null;
 //   沿 D7 v1.0 §5.5),**不是** DB 字段,因此本 select 不包含
-// - **必须与 AttachmentResponseDto 同步维护**(沿 v1 §11)
+// - **必须与 AttachmentResponseDto 同步维护**
+//   (沿 docs/reference/naming-dto-validation.md §11)
 export const attachmentSelect = {
   id: true,
   createdAt: true,

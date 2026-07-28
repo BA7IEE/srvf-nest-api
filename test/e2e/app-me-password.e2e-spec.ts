@@ -17,7 +17,7 @@ import { createTestApp } from '../setup/test-app';
 // 验收基准:docs/app-api-p2-3-password-review.md §10 + Phase 2 review §9.3 #14。
 // 沿 P0-D users-change-my-password.e2e-spec.ts 范式逐项移植 + 新增 App 特定用例:
 //   - 10.2.1 ~ 10.2.8 沿 P0-D 范式(成功 / 错误码 / DTO 校验 / 鉴权 / refresh 撤销 / audit / 限流)
-//   - 10.2.9 path stability(新 App path 与旧 /api/users/me/password 共存,行为不互相干扰)
+//   - 10.2.9 path stability(Route B 完成后旧 /api/users/me/password 已删除,只锁定 App path)
 //   - 10.2.10 admin without member 行为锁定(D-P2-3-1 = X:允许使用)
 //
 // 关键反向断言:
@@ -523,8 +523,8 @@ describe('App 视角本人自助改密 PUT /api/app/v1/me/password (P2-3)', () =
 });
 
 // ============ 10.2.8 限流(独立 describe + 独立 createTestApp) ============
-// 沿 P0-D users-change-my-password.e2e-spec.ts §7.4 范式;throttler 实例 'password-change'
-// 与旧 /api/users/me/password 共享同一计数器(沿评审稿 §8.2 + §8.3 A 档锁定)。
+// 沿 P0-D users-change-my-password.e2e-spec.ts §7.4 范式;throttler 实例 'password-change'。
+// Route B 已删除旧 /api/users/me/password;当前仅锁定 App path 的独立限流行为。
 describe('App 视角本人自助改密限流 PUT /api/app/v1/me/password throttling', () => {
   let app: INestApplication;
 

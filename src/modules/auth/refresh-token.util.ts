@@ -11,7 +11,7 @@ import { createHash, randomBytes } from 'node:crypto';
 //   - **明文绝不入库**:DB 字段 `refresh_tokens.tokenHash @unique` 只存 hash;
 //     login / refresh 接口响应里 `data.refreshToken` 是明文(也只在该响应里出现一次)。
 //   - **明文绝不入日志 / audit / OpenAPI 示例 / 测试 fixture / 测试快照 / 文档示例**
-//     (沿评审稿 §5.1 + CLAUDE.md §9 P0-E 子节)。
+//     (沿评审稿 §5.1 + docs/reference/auth-jwt-refresh.md §9 P0-E 子节)。
 //
 // 不引入第三方依赖(`crypto` 是 Node 内置;沿评审稿"0 新依赖")。
 

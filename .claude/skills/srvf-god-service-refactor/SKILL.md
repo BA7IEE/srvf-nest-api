@@ -25,13 +25,12 @@ SRVF Nest API 项目内所有 god-service / large-service **内部边界抽离**
 冲突时按以下优先级:
 
 1. 用户本轮明确指令
-2. module-local `CLAUDE.md`(目标模块,例如 [`src/modules/attendances/CLAUDE.md`](../../../src/modules/attendances/CLAUDE.md))
-3. [`docs/architecture-boundary.md`](../../../docs/architecture-boundary.md) — Presenter / QueryService / Policy / StateMachine / AuditRecorder / Effect 6 类边界
-4. [`docs/api-surface-policy.md §7-§8`](../../../docs/api-surface-policy.md) — characterization-tests-before-refactor + 不引入 repository 抽象层
-5. [`docs/current-state.md §3-§4`](../../../docs/current-state.md) — god-service 债务条目与"不主动拆"条款
-6. [`docs/process.md`](../../../docs/process.md) — PR 分级 / D 档降速
-7. [`docs/architecture-boundary.md`](../../../docs/architecture-boundary.md) + `AGENTS.md §2` D-7 — 同模块内职责类抽出 + decision-lock
-8. [`CODEMAP.md`](../../../CODEMAP.md) — 模块体量级与 god-service 标记
+2. [`docs/current-state.md §3-§4`](../../../docs/current-state.md) + 实际代码 / characterization 测试结果 — 当前债务与行为事实
+3. [`AGENTS.md §2`](../../../AGENTS.md) — D-7 与长期铁律
+4. module-local `CLAUDE.md`(目标模块,例如 [`src/modules/attendances/CLAUDE.md`](../../../src/modules/attendances/CLAUDE.md))
+5. [`docs/architecture-boundary.md §2 / §3 / §7 / §8`](../../../docs/architecture-boundary.md) + [`docs/reference/testing-discipline.md`](../../../docs/reference/testing-discipline.md) — 六类边界、characterization-first 与 repository 禁区
+6. [`docs/process.md`](../../../docs/process.md) — PR 分级 / D 档降速过程细则
+7. [`CODEMAP.md`](../../../CODEMAP.md) — 由代码派生的模块体量级与 god-service 标记
 
 规则冲突时**停止并报告**,不自行调和。
 
@@ -52,10 +51,10 @@ SRVF Nest API 项目内所有 god-service / large-service **内部边界抽离**
 以下不变式**严禁弱化**;具体业务事件名 / BizCode / 状态矩阵 / 字段集查 module-local CLAUDE.md 或代码:
 
 - **不为 LOC 而抽**;边界必须可命名为单一职责(沿 [`architecture-boundary.md §2`](../../../docs/architecture-boundary.md))
-- **characterization tests 先于抽离**;无 spec 不动行为(沿 [`api-surface-policy.md §7 P1-B`](../../../docs/api-surface-policy.md))
+- **characterization tests 先于抽离**;无 spec 不动行为(沿 [`architecture-boundary.md §2 / §7`](../../../docs/architecture-boundary.md) + [`testing-discipline`](../../../docs/reference/testing-discipline.md))
 - **每个 PR 只抽一个边界**;一次只搬一类职责
 - **application service 保持 transaction owner**;`prisma.$transaction(...)` 持有权不下放,除非已有设计决议(沿 [`architecture-boundary.md §4`](../../../docs/architecture-boundary.md))
-- **不引入 `*.repository.ts` 抽象层**(沿 [`api-surface-policy.md §8`](../../../docs/api-surface-policy.md))
+- **不引入 `*.repository.ts` 抽象层**(沿 [`architecture-boundary.md §7`](../../../docs/architecture-boundary.md))
 - **不把业务逻辑塞 `common/utils/`** / `shared-services/` / 任何跨模块 grab-bag(沿 [`AGENTS.md §1` 模块结构行](../../../AGENTS.md))
 - **抽离类留在 owning module**;未证明跨模块用例不外移(沿 [`architecture-boundary.md §7`](../../../docs/architecture-boundary.md))
 - **不顺手改** DTO / controller / OpenAPI snapshot / BizCode / audit event 名 / state-machine 错误码

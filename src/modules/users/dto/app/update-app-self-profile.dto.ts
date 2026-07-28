@@ -6,7 +6,8 @@ import { IsOptional, IsString, MaxLength } from 'class-validator';
 // **严禁**继承 / Pick / Omit / Mapped Types Admin DTO;
 // **严禁**夹带 Member 业务 / Emergency contacts / Organization / Department / Role /
 // Permission / Account / 审批字段(沿 §3.3);全局 ValidationPipe `forbidNonWhitelisted: true`
-// 兜底,DTO 自身白名单是第一道防线(沿 CLAUDE.md §11)。
+// 兜底,DTO 自身白名单是第一道防线
+// (沿 docs/reference/naming-dto-validation.md §11)。
 export class UpdateAppSelfProfileDto {
   @ApiPropertyOptional({ description: '昵称', maxLength: 50 })
   @IsOptional()

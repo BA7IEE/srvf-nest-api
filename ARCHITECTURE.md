@@ -5,7 +5,7 @@
 > 本文是 SRVF API 的**顶层架构入口与升级路径权威源**。
 >
 > - **当前事实**(版本 / open PR / 已发能力 / surface 状态)见 [`docs/current-state.md`](./docs/current-state.md)
-> - **长期 AI 协作铁律**(命名 / 错误码 / Guard / 软删 / App API 边界 / §19.7 D-series 决策锁)见 [`AGENTS.md`](./AGENTS.md)
+> - **长期 AI 协作铁律**(命名 / 错误码 / Guard / 软删 / App API 边界 / D-series 决策锁)见 [`AGENTS.md §1/§2`](./AGENTS.md) + [`docs/reference/`](./docs/reference/)
 > - **流程与 PR 分级**见 [`docs/process.md`](./docs/process.md)
 > - **本文** 聚焦长期生效的设计哲学、升级路径(§9)、V1.1 工程加固摘要(§11)、文档权威源地图,以及历史架构归档索引
 >
@@ -22,7 +22,7 @@
 | 维度 | 权威源 |
 |---|---|
 | **当前事实**(版本 / open PR / 已发能力 / surface 状态 / 当前债务) | [`docs/current-state.md`](./docs/current-state.md) |
-| **长期 AI 协作铁律**(命名 / 错误码 / Guard / 软删 / 密码 / DTO 分离 / 角色层级 / refresh token / §19.7 D-series 决策锁) | [`AGENTS.md`](./AGENTS.md) §1-§19 |
+| **长期 AI 协作铁律**(命名 / 错误码 / Guard / 软删 / 密码 / DTO 分离 / 角色层级 / refresh token / D-series 决策锁) | [`AGENTS.md`](./AGENTS.md) §0-§6 + [`docs/reference/`](./docs/reference/) |
 | **流程制度**(开工 checklist / PR 五档 / D 档降速 / release 收口 / AI 协作纪律) | [`docs/process.md`](./docs/process.md) |
 | **本文(顶层架构入口)** | 设计哲学(§1)+ 技术栈快照(§2)+ 升级路径(§9 active)+ V1.1 摘要(§11 active)+ 权威源地图(§13)+ 归档索引(§14) |
 | **V2 基线 / 红线** | [`docs/srvf-foundation-baseline.md`](./docs/srvf-foundation-baseline.md) / [`docs/V2红线与复活路径.md`](./docs/V2红线与复活路径.md) |
@@ -46,7 +46,7 @@
 - **命名即文档**:`passwordHash` 不叫 `password`,`key` 不叫 `path`,`@Roles(Role.SUPER_ADMIN)` 不写 `'admin'` 字符串。读代码不用猜语义。
 - **极简主义优先**:任何"未来可能用到"的功能先砍掉,需要时再加。复杂度上去,AI 改起来就慢、错、乱。真有诉求按 §9 升级路径走,**禁止**"以为以后会用得到"提前实装。
 
-历史 v1 设计原则原文(`Interface stability > implementation completeness` / `不预先做 RBAC / 多租户 / 刷新 token` 等)见归档 [`architecture-v1-blueprint.md §1`](./docs/archive/legacy/architecture-v1-blueprint.md)。注意:原文中"v1 不预先做 RBAC / refresh token / 附件 Provider / App API / audit_logs"等条目**已被 SRVF 业务驱动解锁**,当前 A/B/C 三档读取规则以 [`AGENTS.md §1`](./AGENTS.md) 为准。
+历史 v1 设计原则原文(`Interface stability > implementation completeness` / `不预先做 RBAC / 多租户 / 刷新 token` 等)见归档 [`architecture-v1-blueprint.md §1`](./docs/archive/legacy/architecture-v1-blueprint.md)。注意:原文中"v1 不预先做 RBAC / refresh token / 附件 Provider / App API / audit_logs"等条目**已被 SRVF 业务驱动解锁**,当前已落地能力 / 暂不启动边界以 [`current-state.md §2/§3`](./docs/current-state.md) + [`AGENTS.md §2/§3`](./AGENTS.md) 为准。
 
 ---
 
@@ -58,7 +58,7 @@
 | 运行时 | **Node.js** | 22 LTS | 稳,生态全 |
 | 数据库 | **PostgreSQL** | 16 | 关系数据 + JSON + 向量(pgvector 触发后)一把梭 |
 | ORM | **Prisma** | ^6 | schema-first,类型安全,AI 训练语料最多 |
-| 鉴权 | **@nestjs/jwt** + **passport-jwt** | — | JWT 登录与请求鉴权;refresh token(P0-E)见 [`AGENTS.md §9`](./AGENTS.md) |
+| 鉴权 | **@nestjs/jwt** + **passport-jwt** | — | JWT 登录与请求鉴权;refresh token(P0-E)见 [`docs/reference/auth-jwt-refresh.md`](./docs/reference/auth-jwt-refresh.md) |
 | 密码哈希 | **bcryptjs** | salt rounds 10 | 跨平台部署稳定 |
 | API 文档 | **@nestjs/swagger** | 按 `peerDependencies` 选 | **禁止**手动钉死主版本号 |
 | 校验 | **class-validator** + **class-transformer** | — | NestJS 标配 |
@@ -77,9 +77,9 @@
 当前 `src/modules/` 已远超 v1 蓝图阶段的 4 模块,实际目录与历史 v1 蓝图原文(归档于 [`architecture-v1-blueprint.md §3`](./docs/archive/legacy/architecture-v1-blueprint.md))已显著漂移。本文**不再**维护具体目录树,改由以下 active 文档承接:
 
 - **当前 active 项目结构** / 路由总览 / 环境变量索引:[`docs/development.md`](./docs/development.md)
-- **模块结构铁律**(4 文件默认基线 + 已解锁例外:Surface-specific Controller / `dto/app/` 子目录 / 同模块内职责类抽出):[`AGENTS.md §2`](./AGENTS.md)
-- **API surface 四前缀边界**(`/api/admin/v1/*` / `/api/app/v1/*` / `/api/auth/v1/*` / `/api/system/v1/*`;Route B 终态):[`docs/api-surface-policy.md`](./docs/api-surface-policy.md)
-- **架构边界铁律**(Presenter / QueryService / PolicyService / StateMachine / AuditRecorder / Effect 6 类抽离决策;承接 [`AGENTS.md §19.7 D-7`](./AGENTS.md)):[`docs/architecture-boundary.md`](./docs/architecture-boundary.md)
+- **模块结构铁律**(4 文件默认基线 + 已解锁例外:Surface-specific Controller / `dto/app/` 子目录 / 同模块内职责类抽出):[`AGENTS.md §1`](./AGENTS.md) + [`reference/naming-dto-validation.md §2`](./docs/reference/naming-dto-validation.md)
+- **API surface 五个 canonical 前缀边界**(`/api/admin/v1/*` / `/api/app/v1/*` / `/api/auth/v1/*` / `/api/system/v1/*` / `/api/open/v1/*`;Route B 终态):[`docs/api-surface-policy.md §0`](./docs/api-surface-policy.md)
+- **架构边界铁律**(Presenter / QueryService / PolicyService / StateMachine / AuditRecorder / Effect 6 类抽离决策;承接 [`AGENTS.md §2 D-7`](./AGENTS.md)):[`docs/architecture-boundary.md`](./docs/architecture-boundary.md)
 
 **模块扩展铁律**:新业务模块**平铺**加在 `src/modules/` 下,**禁止**嵌套 `system/` / `business/` / `core/` 等子目录;**禁止** `*.entity.ts`(本项目不是 TypeORM)。
 
@@ -91,7 +91,7 @@
 
 **当前** 解锁 / 未解锁的清单以以下 active 文档为准:
 
-- **A/B/C 三档读取**(已解锁 / 评审解锁 / 仍不做):[`AGENTS.md §1`](./AGENTS.md)
+- **当前已落地能力 / 暂不启动边界**:[`docs/current-state.md §2/§3`](./docs/current-state.md) + [`AGENTS.md §2/§3`](./AGENTS.md)
 - **V2 五档红线 / V2.x 复活路径**(A 不可破 / B 当前批次禁止 / C 可复活 / D 历史过期 / E 待业务确认):[`docs/V2红线与复活路径.md`](./docs/V2红线与复活路径.md)
 - **当前已落地能力清单**:[`docs/current-state.md §2`](./docs/current-state.md)
 
@@ -102,24 +102,24 @@
 历史 v1 单 `User` 表模型 + 字段约定原文见归档 [`architecture-v1-blueprint.md §5`](./docs/archive/legacy/architecture-v1-blueprint.md)。当前 schema 已远超 v1 单表,以以下 active 权威源为准:
 
 - **当前 Prisma schema**:[`prisma/schema.prisma`](./prisma/schema.prisma)(单一权威源)
-- **字段命名 / 时间戳 / 主键 / 软删除 / 密码 / 角色枚举铁律**:[`AGENTS.md §3 / §9 / §10`](./AGENTS.md)
+- **字段命名 / 时间戳 / 主键 / 软删除 / 密码 / 角色枚举铁律**:[`AGENTS.md §1`](./AGENTS.md) + [`naming-dto-validation`](./docs/reference/naming-dto-validation.md) + [`auth-jwt-refresh`](./docs/reference/auth-jwt-refresh.md) + [`soft-delete-transactions`](./docs/reference/soft-delete-transactions.md) + [`roles-admin-protection`](./docs/reference/roles-admin-protection.md)
 - **V2 命名约定**(外键 / 中间表 / 启停字段 / 字典关联):[`docs/srvf-foundation-baseline.md §2`](./docs/srvf-foundation-baseline.md)
 - **V2 第一阶段数据模型说明**(4 模型 + `users.memberId`):[`docs/v2-data-model.md`](./docs/v2-data-model.md)
-- **敏感字段三问**(身份证 / 紧急联系人 / 医疗等纳入 schema 的前置条件):[`AGENTS.md §18.4`](./AGENTS.md) + [`docs/srvf-foundation-baseline.md §8`](./docs/srvf-foundation-baseline.md)(屏蔽清单)
+- **敏感字段三问**(身份证 / 紧急联系人 / 医疗等纳入 schema 的前置条件):[`AGENTS.md §2`](./AGENTS.md) + [`reference/api-client-boundary.md §18.4`](./docs/reference/api-client-boundary.md) + [`docs/srvf-foundation-baseline.md §8`](./docs/srvf-foundation-baseline.md)(屏蔽清单)
 
 ---
 
 ## 6. API 接口清单
 
-历史 v1 14 接口清单 + HTTP 方法规则原文见归档 [`architecture-v1-blueprint.md §6`](./docs/archive/legacy/architecture-v1-blueprint.md)。当前接口数已远超 v1 14 个;v1 14 接口 schema **严格 zero drift** 是 V2 红线 A-2(见 [`docs/V2红线与复活路径.md §A-2`](./docs/V2红线与复活路径.md))。
+历史 v1 14 接口清单 + HTTP 方法规则原文见归档 [`architecture-v1-blueprint.md §6`](./docs/archive/legacy/architecture-v1-blueprint.md)。当前接口数已远超 v1 14 个；受保护的是代码与 OpenAPI snapshot 已锁定的 **live canonical contract**，旧 v1 path 与旧 `@Roles` 原值不再是现行基准(见 [`docs/V2红线与复活路径.md` A-2](./docs/V2红线与复活路径.md))。
 
 当前 API 接口以以下 active 权威源为准:
 
 - **OpenAPI / Swagger 实时文档**:`/api/docs`(运行时);`test/contract/__snapshots__/openapi.contract-spec.ts.snap`(契约快照)
-- **API surface 三前缀策略 + Mixed Controller 存量 + mobile-like endpoint 处置矩阵**:[`docs/api-surface-policy.md`](./docs/api-surface-policy.md)
+- **API surface 五个 canonical 前缀 + Mixed Controller 存量 + mobile-like endpoint 处置矩阵**:[`docs/api-surface-policy.md`](./docs/api-surface-policy.md)
 - **V2 第一阶段接口契约**(含 §6.6 memberNo 登录回退):[`docs/v2-api-contract.md`](./docs/v2-api-contract.md)
 - **Participation 业务上下文边界图**(activities / activity-registrations / attendances / contribution-rules):[`docs/participation-bounded-context.md`](./docs/participation-bounded-context.md)
-- **HTTP 方法选择 / 统一返回格式 / 错误处理**:[`AGENTS.md §4 / §5 / §8`](./AGENTS.md)
+- **HTTP 方法选择 / 统一返回格式 / 错误处理**:[`reference/response-pagination-errors.md`](./docs/reference/response-pagination-errors.md)
 
 ---
 
@@ -129,17 +129,17 @@
 
 | 历史 §7.X 子节 | 当前 active 权威源 |
 |---|---|
-| §7.1 模块结构(4 文件) | [`AGENTS.md §2`](./AGENTS.md) |
-| §7.2 命名铁律 | [`AGENTS.md §3`](./AGENTS.md) |
-| §7.3 统一返回格式 + BizCode + BizException + ResponseInterceptor 跳过路径 | [`AGENTS.md §4 / §5`](./AGENTS.md) |
-| §7.4 Swagger 100% 覆盖 | [`AGENTS.md §6`](./AGENTS.md) |
-| §7.5 全局 ValidationPipe | [`AGENTS.md §7`](./AGENTS.md) |
-| §7.6 权限标注 + JWT + 登录防账号枚举 + Timing 防御 | [`AGENTS.md §8`](./AGENTS.md) |
-| §7.7 密码处理 | [`AGENTS.md §9`](./AGENTS.md) |
-| §7.8 软删除 | [`AGENTS.md §10`](./AGENTS.md) |
-| §7.9 DTO 与 Prisma 分离 + IdParamDto | [`AGENTS.md §11`](./AGENTS.md) |
-| §7.10 事务使用规则 | [`AGENTS.md §12`](./AGENTS.md) |
-| §7.11 角色层级与管理员保护 | [`AGENTS.md §13`](./AGENTS.md) |
+| §7.1 模块结构(4 文件) | [`reference/naming-dto-validation.md §2`](./docs/reference/naming-dto-validation.md) |
+| §7.2 命名铁律 | [`reference/naming-dto-validation.md §3`](./docs/reference/naming-dto-validation.md) |
+| §7.3 统一返回格式 + BizCode + BizException + ResponseInterceptor 跳过路径 | [`reference/response-pagination-errors.md §4/§5`](./docs/reference/response-pagination-errors.md) |
+| §7.4 Swagger 100% 覆盖 | [`reference/swagger.md §6`](./docs/reference/swagger.md) |
+| §7.5 全局 ValidationPipe | [`reference/naming-dto-validation.md §7`](./docs/reference/naming-dto-validation.md) |
+| §7.6 权限标注 + JWT + 登录防账号枚举 + Timing 防御 | [`reference/auth-jwt-refresh.md §8`](./docs/reference/auth-jwt-refresh.md) |
+| §7.7 密码处理 | [`reference/auth-jwt-refresh.md §9`](./docs/reference/auth-jwt-refresh.md) |
+| §7.8 软删除 | [`reference/soft-delete-transactions.md §10`](./docs/reference/soft-delete-transactions.md) |
+| §7.9 DTO 与 Prisma 分离 + IdParamDto | [`reference/naming-dto-validation.md §11`](./docs/reference/naming-dto-validation.md) |
+| §7.10 事务使用规则 | [`reference/soft-delete-transactions.md §12`](./docs/reference/soft-delete-transactions.md) |
+| §7.11 角色层级与管理员保护 | [`reference/roles-admin-protection.md §13`](./docs/reference/roles-admin-protection.md) |
 
 ---
 
@@ -150,9 +150,9 @@
 当前 env 与配置归属以以下 active 权威源为准:
 
 - **`.env.example`** 实时模板:[`.env.example`](./.env.example)(运行时)
-- **配置归属规则 + 启动强校验铁律**:[`AGENTS.md §14`](./AGENTS.md)
+- **配置归属规则 + 启动强校验铁律**:[`reference/config-env.md`](./docs/reference/config-env.md)
 - **V2 配置归属决策模板**(应用级 / 数据库 / JWT / 模块特有 / seed 一次性):[`docs/srvf-foundation-baseline.md §7`](./docs/srvf-foundation-baseline.md)
-- **运行环境变量索引**:[`docs/development.md §6`](./docs/development.md)
+- **运行环境变量索引**:[`docs/development.md §4`](./docs/development.md)
 
 ---
 
@@ -170,9 +170,9 @@
 | 救援队系统启动 | `modules/orgs/`(组织/部门),`User` 加 `orgId` 字段 | `src/modules/orgs/` |
 | 出现"A 队不能看 B 队数据" | 引入 `tenantId`,所有 service 显式按租户过滤 | 各业务 `src/modules/<name>/<name>.service.ts` |
 | 真要做"按钮级 / resource type 级 RBAC"(C-6 D7 v0.2 局部收口) | 加 `Role` / `Permission` / `RolePermission` / `UserRole` 4 表 + 自实现 `RbacService`(沿 [`docs/archive/batches/批次8_RBAC_API前评审.md`](./docs/archive/batches/批次8_RBAC_API前评审.md) D7 v0.2 决议;**不**用 `casl` 库;Service 层显式 `rbac.can()` 调用,不做 Guard 装饰器;BizCode 段位 `300xx + 301xx`)| `src/modules/permissions/` |
-| 第一个小程序产品要接 | 加微信登录策略 — **✅ 已解锁并落地(2026-06-12;触发条件满足「队员近期要用微信小程序」,冻结评审稿 [`wechat-mini-login-review.md`](./docs/archive/reviews/wechat-mini-login-review.md))**;实际落地形态与本行早期建议路径不同:**不引入 passport strategy**(沿 AGENTS §8 不引入 LocalStrategy 同源纪律),通道层落 `src/modules/wechat/`、认证端点沿 login-sms 范式平铺 `src/modules/auth/login-wechat.service.ts` | `src/modules/wechat/` + `src/modules/auth/login-wechat.service.ts` |
+| 第一个小程序产品要接 | 加微信登录策略 — **✅ 已解锁并落地(2026-06-12;触发条件满足「队员近期要用微信小程序」,冻结评审稿 [`wechat-mini-login-review.md`](./docs/archive/reviews/wechat-mini-login-review.md))**;实际落地形态与本行早期建议路径不同:**不引入 passport strategy**(沿 [`reference/auth-jwt-refresh.md §8`](./docs/reference/auth-jwt-refresh.md) 不引入 LocalStrategy 同源纪律),通道层落 `src/modules/wechat/`、认证端点沿 login-sms 范式平铺 `src/modules/auth/login-wechat.service.ts` | `src/modules/wechat/` + `src/modules/auth/login-wechat.service.ts` |
 | 真有"无感续期"诉求 | 加 refresh token 表 + 接口 | `src/modules/auth/` |
-| 出现"普通用户自助改密码"产品 | 加 `PUT /api/users/me/password` + `ChangeMyPasswordDto` + 防爆破;是否吊销其他设备 token 由该产品安全策略决定 | `src/modules/auth/` + `src/modules/users/` |
+| 出现"普通用户自助改密码"产品 | **✅ 已落地**:`PUT /api/app/v1/me/password` + `ChangeMyPasswordDto` + 防爆破;旧 `/api/users/me/password` 已随 Route B 删除,当前 token 撤销行为按 P0-E 冻结 | `src/modules/auth/` + `src/modules/users/` |
 | 真有异步任务 / 限流 | 加 Redis + BullMQ | 新增 `src/modules/queue/` 模块 |
 | 第一个 AI 产品启动 | 再注册 `AiModule`,填充 `modules/ai/`,接 Vercel AI SDK,加 pgvector | `src/modules/ai/` |
 | 真有审计需求 | 加 `operation_logs` 表 + 全局拦截器 | `src/common/interceptors/audit.interceptor.ts` |
@@ -191,13 +191,13 @@
 - **运行时部署 SOP** / Docker 镜像 / 生产部署 / 迁移流程:[`docs/deployment.md`](./docs/deployment.md)
 - **docker smoke CI 形态**:[`docs/docker-smoke-test.md`](./docs/docker-smoke-test.md)
 - **运维侧真实 COS 上线 SOP**:[`docs/ops/cos-production-rollout-checklist.md`](./docs/ops/cos-production-rollout-checklist.md)
-- **生产 `prisma migrate deploy` 铁律 / 禁止 `prisma migrate dev` 直连生产**:[`AGENTS.md §0`](./AGENTS.md) + V2 红线 A-12
+- **生产 `prisma migrate deploy` 铁律 / 禁止 `prisma migrate dev` 直连生产**:[`AGENTS.md §3`](./AGENTS.md) + V2 红线 A-12
 
 ---
 
 ## 11. V1.1 工程加固摘要(active 锚点)
 
-> V1.1 工程加固("能上生产"的最小工程基线)已于 v0.1.5 / v0.1.6 收口。本节是 active 摘要锚点,保证 [`AGENTS.md §17`](./AGENTS.md) / [`docs/current-state.md`](./docs/current-state.md) / [`docs/deployment.md`](./docs/deployment.md) 对 "ARCHITECTURE.md §11" 的现有引用持续可达。原 §11.1-§11.7 详细约束见归档 [`architecture-v1-1-hardening.md`](./docs/archive/legacy/architecture-v1-1-hardening.md)。
+> V1.1 工程加固("能上生产"的最小工程基线)已于 v0.1.5 / v0.1.6 收口。本节是 active 摘要锚点,保证 [`docs/current-state.md`](./docs/current-state.md) / [`docs/deployment.md`](./docs/deployment.md) 对 "ARCHITECTURE.md §11" 的现有引用持续可达。原 §11.1-§11.7 详细约束见归档 [`architecture-v1-1-hardening.md`](./docs/archive/legacy/architecture-v1-1-hardening.md)。
 
 ### 11.1 V1.1 覆盖能力
 
@@ -252,7 +252,7 @@ V1.1 完成后,多实例配额共享 / 用户禁用即时失效 / Sentry 上报 
 | 你想知道的事 | active 权威源 |
 |---|---|
 | **当前事实**(版本 / open PR / 已发能力 / surface 状态 / 当前债务 / 不做清单) | [`docs/current-state.md`](./docs/current-state.md) |
-| **长期 AI 协作铁律**(命名 / Guard / 软删 / 错误码 / 密码 / DTO 分离 / 角色层级 / refresh token / §19.7 D-series 决策锁) | [`AGENTS.md`](./AGENTS.md) §1-§19 |
+| **长期 AI 协作铁律**(命名 / Guard / 软删 / 错误码 / 密码 / DTO 分离 / 角色层级 / refresh token / D-series 决策锁) | [`AGENTS.md`](./AGENTS.md) §0-§6 + [`docs/reference/`](./docs/reference/) |
 | **流程制度**(开工 checklist / PR 五档 / D 档降速 / release 收口 / AI 协作纪律 / 收尾报告) | [`docs/process.md`](./docs/process.md) |
 | **V2 基线规范**(13 项 A 档) | [`docs/srvf-foundation-baseline.md`](./docs/srvf-foundation-baseline.md) |
 | **V2 五档红线 / V2.x 复活路径** | [`docs/V2红线与复活路径.md`](./docs/V2红线与复活路径.md) |
@@ -283,7 +283,7 @@ PR-6(2026-05-22)将原 ARCHITECTURE.md 1547 行设计期蓝图拆解归档,统�
 ## 15. 本文不维护的事
 
 - ❌ **不维护**当前版本号 / open PR / release 状态 / 已发能力清单(那是 [`docs/current-state.md`](./docs/current-state.md) 的职能)
-- ❌ **不复制** [`AGENTS.md`](./AGENTS.md) 全文铁律(命名 / Guard / 软删 / 密码 / DTO / 角色层级 / refresh token / §19.7 决策锁全部在 AGENTS.md)
+- ❌ **不复制** [`AGENTS.md`](./AGENTS.md) + [`docs/reference/`](./docs/reference/) 全文铁律(命名 / Guard / 软删 / 密码 / DTO / 角色层级 / refresh token / D-series 决策锁均由两层权威承接)
 - ❌ **不维护**单批次评审稿 / 历史 handoff / PR 编号(那是 [`docs/archive/`](./docs/archive/) 的职能)
 - ❌ **不维护**当前项目目录结构 / 模块清单(那是 [`docs/development.md`](./docs/development.md) + `src/modules/` 实际状态)
 - ❌ **不维护**当前 API surface endpoint 清单(那是 [`docs/api-surface-policy.md`](./docs/api-surface-policy.md) + Swagger `/api/docs`)

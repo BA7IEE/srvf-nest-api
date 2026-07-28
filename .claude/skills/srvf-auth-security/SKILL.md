@@ -16,7 +16,7 @@ SRVF Nest API 项目所有 auth / token / 密码 / 限流 / Guard / 审计跨模
 - [`docs/process.md §3 / §4`](../../../docs/process.md) — PR 分级 / D 档降速
 - [`docs/current-state.md`](../../../docs/current-state.md)
 
-冲突时:用户本轮指令 → 模块本地 CLAUDE → `docs/reference/auth-jwt-refresh.md` + `AGENTS.md §2` → `docs/security.md` → 其它。规则冲突**停止并报告**,不自行调和。
+冲突时按根 `AGENTS.md §0` 处理:用户本轮指令 → `docs/current-state.md` + 实际代码 / schema / 测试结果 → 根 `AGENTS.md` → 模块本地 `CLAUDE.md` + `docs/reference/auth-jwt-refresh.md` → `docs/security.md` → `docs/process.md`。规则冲突**停止并报告**,不自行调和。
 
 ## When to use
 

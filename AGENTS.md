@@ -13,7 +13,7 @@
 - **恒读层**(每会话开工必读):本文件 → [`docs/current-state.md`](docs/current-state.md)(当前事实唯一权威源)→ [`docs/process.md §2/§3`](docs/process.md)(门禁 + 五档)。Claude Code 另读 `CLAUDE.md`。
 - **触碰才读**(改到哪个主题读哪篇):
   - [`docs/reference/`](docs/reference/) 细则九篇(§6 索引)
-  - 模块级 `CLAUDE.md`(12 个,动模块时顺手校准)/ [`CODEMAP.md`](CODEMAP.md)
+  - 模块级 `CLAUDE.md`(`src/modules` 20 个 + `prisma` 1 个;动模块时顺手校准)/ [`CODEMAP.md`](CODEMAP.md)
   - [`docs/ai-harness/RBAC_MAP.md`](docs/ai-harness/RBAC_MAP.md)(改权限**必读**)
   - 边界四篇:[`api-surface-policy`](docs/api-surface-policy.md) / [`architecture-boundary`](docs/architecture-boundary.md) / [`participation-bounded-context`](docs/participation-bounded-context.md) / [`attachment-config-boundary`](docs/attachment-config-boundary.md)
   - [`docs/handoff/`](docs/handoff/)(改契约必同 PR 更新)/ process 其余节
@@ -52,7 +52,7 @@
 | 角色保护 | 三层 Role 不是 RBAC;`assertCanManageUser` 统一入口;自我保护 + 最后 SUPER_ADMIN 事务内计数;禁加 SA 互斥 | [roles-admin-protection](docs/reference/roles-admin-protection.md) |
 | 配置归属 | env 归 `*.config.ts` 注入,禁散落 `process.env`(seed `SUPER_ADMIN_*` 唯一例外);业务判断只用 `APP_ENV`;production fail-fast 禁默认值兜底 | [config-env](docs/reference/config-env.md) |
 | DTO 边界 | App DTO 禁从 Admin DTO 派生(extends / Pick / Omit / …Type);出参 DTO 与 safeSelect 同步维护;Prisma 类型不出 service | [naming-dto-validation](docs/reference/naming-dto-validation.md) + §2 D-6 |
-| API surface | 新 endpoint 只落 `admin/v1` · `app/v1` · `auth/v1` · `system/v1` · `open/v1`;禁新增 Mixed Controller;App 永不返回 L3 字段 | [api-surface-policy](docs/api-surface-policy.md) |
+| API surface | 新 endpoint 只落 `admin/v1` · `app/v1` · `auth/v1` · `system/v1` · `open/v1`;禁新增 Mixed Controller;App 默认不返 L3,仅 content-* 读面签名 URL 按已锁例外 | [api-surface-policy](docs/api-surface-policy.md) |
 | 测试纪律 | 新 e2e 复用 `test/{setup,fixtures,helpers}`;错误断言同核 HTTP status 与 BizCode;改 service 编排先跑 characterization,行为差异 = 停下报告;禁删测试 / 放宽断言 | [testing-discipline](docs/reference/testing-discipline.md) |
 | snapshot SOP | contract snapshot 仅随拍板范围内接口 PR 更新,diff 逐行可解释;EXPECTED_ROUTES 增删显式登记;禁盲 `-u`;L3 字段出现 = 拒 | [testing-discipline](docs/reference/testing-discipline.md) |
 | 受影响范围 | 改哪个模块跑哪组 e2e + 横切组;动依赖枢纽(permissions / audit-logs / `common/*`)或全局横切 → 先列引用链、直接 `agent:check:full` | [process §3/§4](docs/process.md) |
@@ -68,10 +68,10 @@
 |---|---|---|
 | D-1 | `contribution-rules` 归 System surface | [api-client-boundary](docs/reference/api-client-boundary.md) |
 | D-5 | App 准入 = `memberId != null ∧ User.ACTIVE ∧ Member.ACTIVE`;capabilities ≠ raw permission code;`/me/*` 与 `/my/*` 物理分离 | 同上 |
-| D-6 | App DTO 禁派生自 Admin DTO;Mobile 默认 `scope = self`;L3 字段(passwordHash / \*token\* / secret\* / 完整 signed URL)永不返回 | 同上 |
+| D-6 | App DTO 禁派生自 Admin DTO;Mobile 默认 `scope = self`;L3 字段(passwordHash / \*token\* / secret\* / 完整 signed URL)默认不返;唯一 content-* 读面例外见 api-surface-policy §9.6 | 同上 |
 | D-7 | 六类职责边界(Presenter / QueryService / PolicyService / StateMachine / AuditRecorder / Effect)boundary-aware | [architecture-boundary](docs/architecture-boundary.md) |
 | D-9 | Route B 终态 = 5 canonical 前缀,老前缀已物理删除,contract 断言锁定(取代 D-2;D-3 / D-4 / D-8 为已履行的设计期流程锁) | [api-client-boundary](docs/reference/api-client-boundary.md) |
-| P0-E | refresh token 冻结:opaque random + sha256 入库;rotation always / family revoke / 90d absolute 不延期;失败统一 10007 不细分;logout 幂等无限流;access 15m 自然过期不主动吊销;联动撤销五场景同事务;`LoginDto` / `LoginResponseDto` / `JwtPayload` zero drift | [auth-jwt-refresh](docs/reference/auth-jwt-refresh.md) |
+| P0-E | refresh token 冻结:opaque random + sha256 入库;rotation always / family revoke / 90d absolute 不延期;失败统一 10007 不细分;logout 幂等无限流;access 15m 自然过期不主动吊销;联动撤销基础五场景 + 身份变更四场景 = 共九场景同事务;`LoginDto` / `LoginResponseDto` / `JwtPayload` zero drift | [auth-jwt-refresh](docs/reference/auth-jwt-refresh.md) |
 | 判权单轨 | 全仓活跃 `@Roles` = 0;业务判权 Service 层 `rbac.can()`(SA 短路,拒权 30100);participation 三模块已切 authz(GLOBAL 语义逐字等价);`RolesGuard` 保留兜底不删;scope 不进权限码;`RbacService` 只读 GLOBAL | [auth-jwt-refresh](docs/reference/auth-jwt-refresh.md) |
 | 防枚举 | 登录失败四场景统一 10004 + dummy bcrypt 抗 timing;SMS / 微信绑定沿 24010 泛化 200;refresh 失败不细分;任何 message / 错误码 / 耗时差异都算枚举漏洞 | 同上 |
 | 身份 / 权限不缓存 | `JwtStrategy.validate` 每请求查身份;`RbacService` 每次判权直读 PostgreSQL 当前 GLOBAL 权限,零跨请求 Map / TTL / invalidate 正确性链 | 同上 |
@@ -116,7 +116,7 @@
 ## 4. lane 并行协议(摘要;全文 [process §8](docs/process.md))
 
 - **总控**(与维护者对话的会话):出 goal;按**写集声明**排班(写集相交或同 bounded context → 不并行);持 migration token(schema lane ≤1);串行集成(rebase → snapshot 复核 → `agent:check:full` → diff 白名单核对 → squash 合并 → 通知其余 lane rebase);独占 E 档与 CHANGELOG 归并;**唯一简报流**;不写业务代码。
-- **执行 lane**(≤3 条):一 lane = 一可见会话窗口 + 一 worktree + 一 PR,**写者唯一**;B/C 档 goal 内自治,D 档新发现上报总控不顺手修;CHANGELOG 走 `changelog.d/` fragment;开工 `pnpm agent:preflight --lane`;e2e 库自动派生 `app_test_<worktree>`。
+- **执行 lane**(≤3 条):一 lane = 一可见会话窗口 + 一 worktree + 一 PR,**写者唯一**;B/C 档 goal 内自治,D 档新发现上报总控不顺手修;CHANGELOG 走 `changelog.d/` fragment;开工 `pnpm agent:preflight --lane <lane名>`;e2e 库自动派生 `app_test_<worktree>`。
 - **跨模型互查**:写与查跨模型(Claude 写 → Codex 查,反之亦然;SOP 见 [`codex-review-sop`](docs/ai-harness/codex-review-sop.md));分歧不内部调和,升级进简报。
 - **goal = 立项 + 授权**,五要素:DoD / 探针队列 / 授权清单 / 禁止域 / 写集声明。**E 档收口必须 global preflight**(全仓 0 open PR)。
 

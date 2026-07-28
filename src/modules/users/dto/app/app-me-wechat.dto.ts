@@ -4,7 +4,7 @@ import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 // 微信小程序登录 T3(2026-06-12):App 微信绑定 DTO 集合(冻结评审稿
 // wechat-mini-login-review.md §3.2 ⑦⑧ / E-13 / E-25;镜像 app-me-phone.dto 范式)。
 //
-// App DTO 隔离铁律(AGENTS §11 / D-6):独立定义,**禁止**从 Admin DTO
+// App DTO 隔离铁律(AGENTS §2 D-6):独立定义,**禁止**从 Admin DTO
 // extends / Pick / Omit / IntersectionType 派生;严格字段白名单
 // (forbidNonWhitelisted 兜底)。
 //

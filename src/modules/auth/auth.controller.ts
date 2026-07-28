@@ -63,7 +63,8 @@ export class AuthController {
 
   // POST /api/auth/v1/login(@Public 跳过 JwtAuthGuard)。
   // 默认 POST 返回 201,登录场景没有创建资源,显式 200。
-  // V1.1 §11.4 / TASKS.md 15.7:加 @LoginThrottle() 启用 IP 维度限流(参数走 app.config),
+  // docs/reference/auth-jwt-refresh.md §9「限流契约」:
+  // 加 @LoginThrottle() 启用 IP 维度限流(参数走 app.config),
   // 命中后 ThrottlerBizGuard 抛 BizException(BizCode.TOO_MANY_REQUESTS) → HTTP 429 +
   // 统一错误体,不暴露阈值/剩余配额/重置时间(无 X-RateLimit-* / Retry-After 头)。
   //
@@ -266,7 +267,7 @@ export class AuthController {
   // 找回密码 T2(评审稿 §3.2 ② / E-5 校验顺序冻结):
   // 解析用户 → 码预检(不消费)→ 10006(不烧码,可换密码同码重试)→ 原子消费 →
   // 事务(改密 + 撤销全部未撤销未过期 refresh 'self-password-reset'〔联动撤销第 5 场景,
-  // AGENTS §9〕+ audit password.reset.by-sms)。一切失败统一 24010(10006 仅对已验码者可达);
+  // reference/auth-jwt-refresh〕+ audit password.reset.by-sms)。一切失败统一 24010(10006 仅对已验码者可达);
   // 成功 data:null——不返 token、不自动登录(D-PR-1);access 沿 D-4 不吊销。
   @Public()
   @PasswordResetThrottle()
@@ -320,7 +321,7 @@ export class AuthController {
   // createSession(与密码登录同构签发,E-O6;audit 'auth.login.sms')。
   // 一切失败统一 24010(不用 10004——两套防枚举体系各自闭合,零新增 BizCode);
   // 成功响应 = LoginResponseDto(与密码登录**同 DTO**;同 refresh family 机制 /
-  // lastLoginAt 同步)。AGENTS §8 登录契约行已随本 PR 解锁改写,密码登录契约零变化。
+  // lastLoginAt 同步)。docs/reference/auth-jwt-refresh.md §8 登录契约已随本 PR 解锁改写,密码登录契约零变化。
   @Public()
   @LoginSmsThrottle()
   @Post('login-sms')

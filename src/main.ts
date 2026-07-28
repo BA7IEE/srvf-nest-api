@@ -12,7 +12,7 @@ async function bootstrap(): Promise<void> {
   // 否则 NestFactory.create 期间的 "Starting Nest application..." 等会走默认 console。
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
 
-  // V1.1 §11.2 / §17.4:接管 NestJS 内置 Logger,所有 framework 日志(模块加载 / 路由
+  // ARCHITECTURE.md §11.1:接管 NestJS 内置 Logger,所有 framework 日志(模块加载 / 路由
   // 映射 / 全局过滤器注册等)走 pino。HTTP 请求日志由 LoggerModule 注册的 middleware 处理。
   // test/setup/test-app.ts 走 app.useLogger(false),不会受这里影响——main.ts 是生产入口,
   // test 入口独立。
@@ -24,7 +24,7 @@ async function bootstrap(): Promise<void> {
   // 与下方优雅关闭职责互不重叠,边界详见 apply-crash-handlers.ts 头注释。
   applyCrashHandlers(logger);
 
-  // V1.1 §11.2 / §15.4:启用 NestJS 关闭钩子,SIGTERM / SIGINT 时触发模块生命周期。
+  // ARCHITECTURE.md §11.1:启用 NestJS 关闭钩子,SIGTERM / SIGINT 时触发模块生命周期。
   // 关闭顺序:HTTP server 停接 → 等待 in-flight 请求 → 各模块 OnModuleDestroy
   // (PrismaService.$disconnect) → OnApplicationShutdown。
   // 禁止自写 process.on('SIGTERM') / process.exit() 参与**关闭流程**,优雅关闭由

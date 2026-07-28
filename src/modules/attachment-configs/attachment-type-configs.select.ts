@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 //
 // 沿 D7 v1.0 §4.2 + dictionaries / RbacRole 范式:
 // - 永不选 deletedAt(Q2 v1.0 拍板:外部不感知软删字段;查询通过 notDeletedWhere 过滤,
-//   findById 软删后统一返 13020,沿 v1 §10 信息泄漏防御)
+//   findById 软删后统一返 13020,沿 docs/reference/soft-delete-transactions.md §10 信息泄漏防御)
 // - 必须与 AttachmentTypeConfigResponseDto 同步维护(新增 / 删除字段时同步两边)
 export const attachmentTypeConfigSelect = {
   id: true,

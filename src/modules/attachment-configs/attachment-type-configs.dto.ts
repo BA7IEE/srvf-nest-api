@@ -23,7 +23,8 @@ import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 //   BizException(BizCode.INVALID_ATTACHMENT_TYPE_CONFIG_CODE_FORMAT)(13023),
 //   让本 BizCode 真正可触发并被 e2e 覆盖
 //
-// **PATCH 字段白名单铁律**(纵深防御;沿 baseline §4.2 / CLAUDE.md §11):
+// **PATCH 字段白名单铁律**
+// (纵深防御;沿 baseline §4.2 / docs/reference/naming-dto-validation.md §11):
 // - UpdateAttachmentTypeConfigDto 仅允许资料字段(displayName / description / ownerTable /
 //   defaultMaxSizeBytes / defaultMimeWhitelist)
 // - **严禁** code(Q1 拍板:不可改)/ status(Q5 拍板:走独立 PATCH /:id/status 端点)/
@@ -155,7 +156,8 @@ export class CreateAttachmentTypeConfigDto {
 }
 
 // PATCH 仅允许资料字段;严禁 code(Q1 v1.0:不可改)/ status(Q5 v1.0:走专属端点)/
-// deletedAt / id / createdAt / updatedAt(沿 baseline §4.2 + CLAUDE.md §11 纵深防御)。
+// deletedAt / id / createdAt / updatedAt
+// (沿 baseline §4.2 + docs/reference/naming-dto-validation.md §11 纵深防御)。
 export class UpdateAttachmentTypeConfigDto {
   @ApiPropertyOptional({ description: '显示名', maxLength: 255 })
   @IsOptional()
@@ -226,4 +228,5 @@ export class ListAttachmentTypeConfigsQueryDto extends PaginationQueryDto {
   ownerTable?: string;
 }
 
-// 沿 v1 §11 IdParamDto 等价(controller 复用全局 IdParamDto;本文件不重复定义)。
+// 沿 docs/reference/naming-dto-validation.md §11 IdParamDto 等价
+// (controller 复用全局 IdParamDto;本文件不重复定义)。

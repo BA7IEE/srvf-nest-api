@@ -155,7 +155,8 @@ describe('管理员重置密码 PUT /api/admin/v1/users/:id/password', () => {
     );
   });
 
-  // 反向断言:CLAUDE.md §9 明确"管理员重置密码后不主动吊销旧 token;
+  // 反向断言:docs/reference/auth-jwt-refresh.md §9「access token 行为锁定」明确
+  // "管理员重置密码后不主动吊销旧 access token;
   // 如需立即阻断,管理员同步把目标 status 改 DISABLED"。
   // 这条用例确认 v1 故意保留此行为——未来若有人"顺手加吊销 token 逻辑",
   // 此用例会立刻挂,逼回头先改文档 §9。

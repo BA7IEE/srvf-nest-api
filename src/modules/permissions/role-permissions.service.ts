@@ -28,7 +28,8 @@ import { isControlPlanePermissionCode } from './role-delegation.policy';
 // **30003 vs 30005**(沿 PR #3 RbacRole 范式):
 // - role 不存在 → 30003
 // - role 已软删 → 30005(GET-like 操作披露)
-//   注:授权 / 撤权属于写操作,严格按 v1 §10 信息泄漏防御应统一 30003;
+//   注:授权 / 撤权属于写操作,
+//      严格按 docs/reference/soft-delete-transactions.md §10 信息泄漏防御应统一 30003;
 //        但 D7 §6.1 决议"运营管理员管 role_permissions",意味着调用者本来就掌握角色明细;
 //        披露"角色已软删"无信息泄漏风险(管理者已知角色 id 存在),沿 detail 接口语义返 30005,
 //        让前端能精确提示"该角色已删除,请先恢复或重建"。

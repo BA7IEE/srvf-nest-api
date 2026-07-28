@@ -20,7 +20,7 @@ import { SmsSettingsService } from './sms-settings.service';
 // T3 已追加:SmsCodeService(签发/校验/防刷)export 供 users 模块消费(评审稿 E-30 边界:
 // 本模块对 User 无感知;phone 占用 / 绑定落库 / audit 归 users 模块)。
 //
-// AGENTS §2 例外:providers/ 子目录经 2026-06-10 goal 拍板解锁(评审稿 §5,
+// AGENTS §1 / docs/reference/naming-dto-validation.md §2 例外:providers/ 子目录经 2026-06-10 goal 拍板解锁(评审稿 §5,
 // 仅限本模块本子目录;镜像 modules/storage/providers/ 形态)。
 @Module({
   imports: [DatabaseModule, AuditLogsModule, PermissionsModule],

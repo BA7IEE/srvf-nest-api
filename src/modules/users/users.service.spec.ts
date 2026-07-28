@@ -1103,7 +1103,8 @@ describe('UsersService (characterization, scoped)', () => {
   });
 
   // 微信 T3 review 收口(2026-06-12 增量审计⑬):bindMyWechat P2002 兜底触达。
-  // 上方既有用例不触达 wechat 方法;本组只锁兜底 catch(含 §5 数组判断铁律),
+  // 上方既有用例不触达 wechat 方法;本组只锁兜底 catch
+  // (含 docs/reference/response-pagination-errors.md §5 Prisma 错误转换),
   // 主流程 / 掩码 / 幂等由 app-me-wechat e2e 锁定。
   describe('bindMyWechat — P2002 兜底', () => {
     function primeBindUntilTx(prisma: PrismaMock, wechat: WechatMock): void {

@@ -193,7 +193,7 @@ describe('队员账号闭环 v1:POST /api/admin/v1/members/:id/account', () => {
       );
     });
 
-    it('phone 被已软删账号占用 → 仍 PHONE_ALREADY_BOUND(含软删占用范式,沿 AGENTS §10)', async () => {
+    it('phone 被已软删账号占用 → 仍 PHONE_ALREADY_BOUND(含软删占用范式,沿 reference/soft-delete-transactions §10)', async () => {
       const occupied = await createTestUser(app, {
         username: 'mag-phone-softdel',
         deletedAt: new Date(),

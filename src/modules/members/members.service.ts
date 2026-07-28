@@ -197,7 +197,7 @@ export class MembersService {
   }
 
   // 队员账号闭环 v2(评审稿 §1.2 E-7):username 结构性冲突。User.username 仍是全量
-  // @unique(不在本次改造范围,AGENTS §10"不复用"永久铁律),故一旦某 memberNo 曾经
+  // @unique(不在本次改造范围,reference/soft-delete-transactions"不复用"铁律),故一旦某 memberNo 曾经
   // 创建过账号(即使已软删,或曾 unbind 成悬空 memberId=null),那条历史/悬空行永久
   // 占用其 username——早期按 count(memberId) 推算"代际"曾在"grant → unbind → 再
   // grant"路径下失灵:unbind 只断链不软删,断链后 count(memberId) 归零而误判"从未
@@ -556,7 +556,7 @@ export class MembersService {
   //   3. 该 memberId 槽位无 live 关联(队员账号闭环 v2:User.memberId 已改 partial unique
   //      WHERE deletedAt IS NULL,槽位仅在 live 时占用;历史软删行不再阻塞——这是对 v1
   //      唯一有意的行为变更,评审稿 D-2)→ 否则 MEMBER_HAS_LINKED_USER
-  //   4. username(=memberNo)唯一性预检查含软删占用(沿 AGENTS §10 不复用范式)→ 否则 USERNAME_ALREADY_EXISTS
+  //   4. username(=memberNo)唯一性预检查含软删占用(沿 reference/soft-delete-transactions 不复用范式)→ 否则 USERNAME_ALREADY_EXISTS
   //   5. phone 唯一性预检查含软删占用 → 否则 PHONE_ALREADY_BOUND
   async grantAccount(
     id: string,
@@ -787,7 +787,7 @@ export class MembersService {
   // 根改造让新号取到released 槽位。
   //
   // username 结构性冲突(评审稿 §1.2 E-7):User.username 仍是全量 @unique(不在本次
-  // 改造范围,AGENTS §10"不复用"永久铁律),旧行软删后仍永久占用其 username——若新行
+  // 改造范围,reference/soft-delete-transactions"不复用"铁律),旧行软删后仍永久占用其 username——若新行
   // 沿用同一 memberNo 会 100% 撞车。已用代码验证 login-sms 完全按 phone 解析账号、
   // 从不读 username,故重开时安全地用 `${memberNo}-{generation}` 后缀化(第 1 次
   // grant 仍是裸 memberNo,v1 行为逐字不变;仅第 2 次起 reopen 才出现后缀)。
@@ -923,7 +923,7 @@ export class MembersService {
   // UsersService,沿既有模块边界;本模块对 User 表写入的既定范式就是直连 prisma,
   // 不经 UsersService,镜像 grantAccount"不复用 UsersService,防环 + 零漂移"先例),
   // 改为直连 prisma 显式复刻其唯一必要副作用:禁用时撤销该 user 全部未撤销未过期
-  // refresh token(revokedReason='admin-disable',AGENTS §9 联动撤销场景 4 的第二条
+  // refresh token(revokedReason='admin-disable',auth-jwt-refresh 联动撤销场景的第二条
   // 触发路径);不做"最后一个 SUPER_ADMIN 保护":队员轴只管理 role=USER 的关联账号——下方
   // 前置校验 linked.role===USER 拒非 USER(bind 亦只认领 role=USER+ACTIVE 悬空账号,
   // grant/reopen 恒建 role=USER),故非 USER(含唯一能触发 last-SA 保护的 SUPER_ADMIN)在

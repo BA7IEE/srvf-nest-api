@@ -1,6 +1,6 @@
 # 鉴权 · 密码 · refresh token(P0-E 行为冻结)(reference · 触碰才读)
 
-> Harness 2.0 细则层:承接 harness v1 `AGENTS.md` §8 / §9 **原文逐字搬家(零放宽;唯一机械改写=相对链接前缀)**;恒读入口与速查见根 [`AGENTS.md`](../../AGENTS.md),原文快照 [`archive/harness-v1/AGENTS.md`](../archive/harness-v1/AGENTS.md)。
+> Harness 2.0 细则层:承接 harness v1 `AGENTS.md` §8 / §9,并按后续已拍板的 P0-E、identity session 与判权单轨终态 true-up;恒读入口与速查见根 [`AGENTS.md`](../../AGENTS.md),原文快照 [`archive/harness-v1/AGENTS.md`](../archive/harness-v1/AGENTS.md)。
 > 机器锁定:auth e2e(JwtPayload 字段集硬断言 / 防枚举四场景 / §7.5 反向锁)+ throttler e2e + P0-E 冻结评审稿。
 
 ## 8. 权限与鉴权
@@ -9,7 +9,7 @@
 
 - `JwtAuthGuard` + `RolesGuard` 通过 `AppModule.providers` 中 `APP_GUARD` 全局注册,顺序固定 `JwtAuthGuard` → `RolesGuard`(先验登录,再验角色);**禁止在 controller 上 `@UseGuards(...)`**
 - 未标 `@Public()` 默认要登录;`@Public()` 与 `@Roles(...)` 互斥
-- **判权单轨现状(2026-06-11 Slow-4 收口,冻结评审稿 [`docs/archive/reviews/slow4-rbac-business-face-review.md`](../archive/reviews/slow4-rbac-business-face-review.md))**:全仓活跃 `@Roles(...)` 使用点 = 0——管理面 / 配置面 / 业务面判权一律下沉 Service 层 `rbac.can('<code>')`(SUPER_ADMIN 短路;拒权统一 `RBAC_FORBIDDEN` 30100),controller 入口仅 JwtAuthGuard;`RolesGuard` 机制与 `@Roles` 装饰器**保留在 Guard 链**(防御性兜底,不删);新 endpoint **不**再标 `@Roles`(管理面默认 R 模式,沿 [`docs/ai-harness/RBAC_MAP.md §6`](../ai-harness/RBAC_MAP.md));三层 `Role` enum 仍是身份层事实(SA 短路 / §13 用户管理边界 / App 准入),**不**因此废除
+- **判权单轨现状(2026-06-11 Slow-4 收口,冻结评审稿 [`docs/archive/reviews/slow4-rbac-business-face-review.md`](../archive/reviews/slow4-rbac-business-face-review.md))**:全仓活跃 `@Roles(...)` 使用点 = 0——管理面 / 配置面 / 业务面判权一律下沉 Service 层 `rbac.can('<code>')`(SUPER_ADMIN 短路;拒权统一 `RBAC_FORBIDDEN` 30100),controller 入口仅 JwtAuthGuard;`RolesGuard` 机制与 `@Roles` 装饰器**保留在 Guard 链**(防御性兜底,不删);新 endpoint **不**再标 `@Roles`(管理面默认 R 模式,沿 [`docs/ai-harness/RBAC_MAP.md §6`](../ai-harness/RBAC_MAP.md));三层 `Role` enum 仍是身份层事实(SA 短路 / [`roles-admin-protection §13`](roles-admin-protection.md) 用户管理边界 / App 准入),**不**因此废除
 - `RolesGuard` 看到 `@Roles(...)` 但 `request.user` 为空 → **拒绝访问**(抛 `BizException(BizCode.UNAUTHORIZED)`),不要因没拿到 user 就放行
 - `JwtAuthGuard.canActivate` 用 `reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [handler, class])`,命中 `@Public()` 直接返 true,否则走 `super.canActivate`;`@Public()` 装饰器 `SetMetadata(IS_PUBLIC_KEY, true)`,常量与装饰器同文件导出
 
@@ -80,14 +80,14 @@
 - 响应 DTO 通过 `userSafeSelect` 排除 `passwordHash`,任何接口响应里都不应出现该字段
 - `POST /api/admin/v1/users` **必须由调用方传 `password`**,禁止后端生成默认密码或留空
 - `PUT /api/admin/v1/users/:id/password` 接收 `ResetUserPasswordDto { newPassword }`,**不需要 `oldPassword`**,但必须走 `assertCanManageUser`
-- 管理员重置密码后**不主动吊销 access token**(access ≤ 15m 自然过期);**必须主动撤销目标用户全部 refresh token**(详 §9 P0-E 联动撤销五场景);如需立即阻断 access token,由管理员把目标用户 `status` 改 `DISABLED`(经每请求查库即时生效)
+- 管理员重置密码后**不主动吊销 access token**(access ≤ 15m 自然过期);**必须主动撤销目标用户全部 refresh token**(详下方 P0-E / identity session 联动撤销九场景);如需立即阻断 access token,由管理员把目标用户 `status` 改 `DISABLED`(经每请求查库即时生效)
 - **本人自助改密只能通过独立接口** `PUT /api/app/v1/me/password`(原 `/api/users/me/password` 于 v0.13.0 落地、Route B 终态迁至 App surface;行为冻结于 [P0-D 评审稿](../archive/reviews/first-release-p0d-change-my-password-review.md));**不得**在 `PATCH /api/app/v1/me/profile` 或其他资料更新接口里夹带"顺手改密码"逻辑;管理员重置他人密码接口 `PUT /api/admin/v1/users/:id/password` 契约保持不变
 - 本人改密接口入参固定 `ChangeMyPasswordDto { oldPassword, newPassword }`(`oldPassword` 必填,与管理员重置无 `oldPassword` 的语义对称区分);`newPassword` 沿 `ResetUserPasswordDto.newPassword` 范式(至少 8 位 + 数字 + 字母);严格白名单,**禁止**夹带 `username` / `email` / `role` / `status` / `passwordHash` / `id` 任何其他字段
 - 本人改密新增 BizCode:`OLD_PASSWORD_INVALID = 10005`(HTTP 401)、`NEW_PASSWORD_SAME_AS_OLD = 10006`(HTTP 400);**禁止**复用 `LOGIN_FAILED` 或 `BAD_REQUEST` 兜底语义
-- 本人改密接口必须挂 `@PasswordChangeThrottle()`(IP 5/60 秒;沿 §17 `@nestjs/throttler` PostgreSQL shared storage,**禁止** Redis / 本地 Map fallback;limit / ttl 从 `src/config/app.config.ts` 注入,**禁止**硬编码在装饰器)
+- 本人改密接口必须挂 `@PasswordChangeThrottle()`(IP 5/60 秒;沿本文下方“限流契约”的 `@nestjs/throttler` PostgreSQL shared storage,**禁止** Redis / 本地 Map fallback;limit / ttl 从 `src/config/app.config.ts` 注入,**禁止**硬编码在装饰器)
 - 本人改密成功必须写 audit `AuditLogEvent.UserPasswordChangedSelf`;**禁止**把 `oldPassword` / `newPassword` / `passwordHash` 任何明文或 hash 写入 audit
-- 本人改密成功后**不主动吊销 access token**;**必须主动撤销该用户全部 refresh token**(详 §9 P0-E 联动撤销五场景);`tokenVersion` **不做**,沿 §1 B 档
-- 用户被 `DISABLED`(`PATCH /api/admin/v1/users/:id/status` → `DISABLED`)或被软删(`DELETE /api/admin/v1/users/:id`)时,**必须**主动撤销目标用户全部 refresh token(详 §9 P0-E 联动撤销五场景);access token 由 `JwtStrategy.validate` 每请求查库即时失效
+- 本人改密成功后**不主动吊销 access token**;**必须主动撤销该用户全部 refresh token**(详下方 P0-E / identity session 联动撤销九场景);`tokenVersion` **不做**,沿本文 P0-E “access token 行为锁定 / 不做清单”
+- 用户被 `DISABLED`(`PATCH /api/admin/v1/users/:id/status` → `DISABLED`)或被软删(`DELETE /api/admin/v1/users/:id`)时,**必须**主动撤销目标用户全部 refresh token(详下方 P0-E / identity session 联动撤销九场景);access token 由 `JwtStrategy.validate` 每请求查库即时失效
 - 本人改密接口**不做**首次登录强制改密、忘记密码 / 邮箱找回、user-member 绑定能力;这些越界诉求出现时必须暂停说明
 
 ### P0-E refresh token 鉴权铁律(v0.14.0 落地,行为冻结)
@@ -119,11 +119,11 @@
 - `POST /api/auth/v1/logout` 走 `@Public()`(refresh token 自身即凭证);任一可识别且未过期 row(含 rotated ancestor)只用于定位 `familyId`,同事务撤销该 family 全部未过期且未撤销 token(`revokedReason='logout'`);其他 family 不动。未知 token / row 已过期 / family 已全撤均幂等 200 + `data:null` 且零 audit;只有实际撤销数 > 0 才写 `auth.logout`。access token 若随头传入**不**校验、**不**消费、**不**吊销
 - `POST /api/auth/v1/logout-all` 走 `JwtAuthGuard`,撤销当前 user 全部未过期且未撤销的 refresh token(`updateMany revokedReason='logout'`);返 `{ revokedCount }`
 
-**联动撤销五场景**(沿 §9 主条目;`updateMany` 必须**同事务**内与主写操作执行,沿 `prisma.$transaction` 范式):本人改密 → `'self-password-change'`(audit `password.change.self`,`extra.refreshTokensRevoked: count` 必写)/ 本人短信验证码重置(找回密码,pre-auth)→ `'self-password-reset'`(2026-06-11,冻结评审稿 [password-reset-by-sms-review](../archive/reviews/password-reset-by-sms-review.md);audit `password.reset.by-sms`,`extra.refreshTokensRevoked: count` 必写)/ 管理员重置 → `'admin-password-reset'`(audit `password.reset.by-admin`,`extra.refreshTokensRevoked: count` 必写)/ 用户禁用 → `'admin-disable'`(**2026-07-13 第六刀推翻 D-PR3-2**:`UsersService.updateStatus` 必须同事务写 `user.status.update` before/after audit;**2026-07-14 第七刀补齐第二条触发路径**:`PATCH admin/v1/members/:id/account/status` 必须在同事务写 `member.account.status-change` before/after audit,详见 `members.service.ts` `updateAccountStatus`)/ 用户软删 → `'admin-delete'`(**2026-07-13 第六刀推翻 D-PR3-2**:`UsersService.softDelete` 必须同事务写 `user.soft-delete` before/after audit)
+**联动撤销九场景**(P0-E 基础五场景 + identity session 四场景;`updateMany` 必须**同事务**内与主写操作执行,沿 `prisma.$transaction` 范式):本人改密 → `'self-password-change'`(audit `password.change.self`,`extra.refreshTokensRevoked: count` 必写)/ 本人短信验证码重置(找回密码,pre-auth)→ `'self-password-reset'`(2026-06-11,冻结评审稿 [password-reset-by-sms-review](../archive/reviews/password-reset-by-sms-review.md);audit `password.reset.by-sms`,`extra.refreshTokensRevoked: count` 必写)/ 管理员重置 → `'admin-password-reset'`(audit `password.reset.by-admin`,`extra.refreshTokensRevoked: count` 必写)/ 本人换手机号 → `'self-phone-identity-change'`/ 本人换微信(含 pre-auth bind/rebind)→ `'self-wechat-identity-change'`/ 管理员清手机号 → `'admin-phone-identity-change'`/ 管理员清微信 → `'admin-wechat-identity-change'`/ 用户禁用 → `'admin-disable'`(**2026-07-13 第六刀推翻 D-PR3-2**:`UsersService.updateStatus` 必须同事务写 `user.status.update` before/after audit;**2026-07-14 第七刀补齐第二条触发路径**:`PATCH admin/v1/members/:id/account/status` 必须在同事务写 `member.account.status-change` before/after audit,详见 `members.service.ts` `updateAccountStatus`)/ 用户软删 → `'admin-delete'`(**2026-07-13 第六刀推翻 D-PR3-2**:`UsersService.softDelete` 必须同事务写 `user.soft-delete` before/after audit)。身份字段真实变更才撤销;同目标 no-op 不撤销、不写变更 audit
 
 **access token 行为锁定**:
 - **不主动吊销**;依赖 `JWT_EXPIRES_IN=15m` 自然过期 + `JwtStrategy.validate` 每请求查库阻断 `DISABLED` / 软删用户
-- access token blacklist / JWT revoke list **不做**(沿 §1 C 档);未来"改密后所有 access 立即失效"诉求出现时沿 §1 B 档 `tokenVersion` 路径单独评审
+- access token blacklist / JWT revoke list **不做**(沿本文 P0-E 不做清单);未来“改密后所有 access 立即失效”诉求出现时按 [`ARCHITECTURE.md §9`](../../ARCHITECTURE.md) 升级路径对 `tokenVersion` 单独评审
 - e2e `users-change-my-password.e2e-spec.ts §7.5` "改密后旧 access token 仍可调 `/me`" 反向锁定断言**保留不破**
 
 **限流契约**:
@@ -143,7 +143,7 @@
 
 **BizCode 段位(锁死)**:
 - `REFRESH_TOKEN_INVALID = 10007`(HTTP 401);沿 100xx users 段,LOGIN_FAILED=10004 / OLD_PASSWORD_INVALID=10005 / NEW_PASSWORD_SAME_AS_OLD=10006 之后下一可用号位
-- refresh 失败 4 种子原因(不存在 / 已撤销 / 已过期 / 重放命中)统一返 10007;**禁止**拆 `REFRESH_TOKEN_EXPIRED` / `REFRESH_TOKEN_REVOKED` / `REFRESH_TOKEN_REPLAY`(沿 §5 + 评审稿 v1 D-6;细分让攻击者据错误码反推 token 状态,违 §8 防账号枚举铁律精神)
+- refresh 失败 4 种子原因(不存在 / 已撤销 / 已过期 / 重放命中)统一返 10007;**禁止**拆 `REFRESH_TOKEN_EXPIRED` / `REFRESH_TOKEN_REVOKED` / `REFRESH_TOKEN_REPLAY`(沿 [`response-pagination-errors §5`](response-pagination-errors.md) + 评审稿 v1 D-6;细分让攻击者据错误码反推 token 状态,违本文 §8 防账号枚举铁律精神)
 - logout / logout-all **不**抛业务码(logout 幂等;logout-all 走通用 40100 / 42900)
 
 **不做清单**(沿评审稿 v1 D-9):

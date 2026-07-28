@@ -40,7 +40,8 @@ import {
 import { BizCode } from '../exceptions/biz-code.constant';
 import { BizException } from '../exceptions/biz.exception';
 
-// V1.1 §11.4 / TASKS.md 15.7:登录限流入口(metadata = LOGIN_THROTTLE_KEY,走 throttler `default`)。
+// docs/reference/auth-jwt-refresh.md §9「限流契约」:
+// 登录限流入口(metadata = LOGIN_THROTTLE_KEY,走 throttler `default`)。
 // P0-D PR-3(2026-05-17):本人改密限流入口(metadata = PASSWORD_CHANGE_THROTTLE_KEY,走 throttler `password-change`)。
 // P0-E PR-3(2026-05-18):refresh 限流入口(metadata = REFRESH_THROTTLE_KEY,走 throttler `refresh`)。
 // SMS T3(2026-06-10):发码 / 验码限流入口(metadata = SMS_SEND/VERIFY_THROTTLE_KEY,
@@ -52,7 +53,7 @@ import { BizException } from '../exceptions/biz.exception';
 // 微信小程序登录 T3(2026-06-12):微信 pre-auth 三端点限流入口(metadata =
 // LOGIN_WECHAT_THROTTLE_KEY,走 throttler `login-wechat`;wechat-mini-login-review.md E-17,同型扩展)。
 //
-// 八个 throttler 实例在 ThrottlerModule.forRootAsync 中注册(详见 bootstrap/throttle-options.ts),
+// 十个 throttler 实例在 ThrottlerModule.forRootAsync 中注册(详见 bootstrap/throttle-options.ts),
 // 物理隔离:登录失败爆破不消耗改密 / refresh / 发码配额,反之亦然。
 //
 // 与 ThrottlerGuard 的三点定制:
@@ -68,7 +69,8 @@ import { BizException } from '../exceptions/biz.exception';
 //      不抛 throttler 默认的 ThrottlerException(后者会绕过统一错误码体系)。
 //
 // 不暴露阈值/剩余配额/重置时间:通过 ThrottlerModule.forRootAsync 顶层 setHeaders: false 关闭
-// X-RateLimit-* / Retry-After 头(沿 V1.1 §17.7 / 评审稿 §5.4 / §5.8)。
+// X-RateLimit-* / Retry-After 头
+// (沿 docs/reference/auth-jwt-refresh.md §9「限流契约」/ 评审稿 §5.4 / §5.8)。
 //
 // 全局 APP_GUARD 顺序:ThrottlerBizGuard → JwtAuthGuard → RolesGuard。
 @Injectable()

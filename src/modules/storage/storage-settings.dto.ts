@@ -19,7 +19,8 @@ import { CredentialStatus } from './storage-settings.types';
 
 // V2.x C-7.5 Provider 选型实施 PR #11:Storage Settings DTO 集合(沿评审 §6.5 / §6.6 + Q-11 拍板)
 //
-// **入参 DTO 字段白名单铁律**(纵深防御;沿 baseline §4.2 / v1 §11):
+// **入参 DTO 字段白名单铁律**
+// (纵深防御;沿 baseline §4.2 / docs/reference/naming-dto-validation.md §11):
 // - UpdateStorageSettingsDto:**禁止** secretId / secretKey / secretIdEncrypted / secretKeyEncrypted /
 //   credentialConfigured / id / createdAt / updatedAt / updatedBy(forbidNonWhitelisted 兜底拦截)
 // - ResetStorageCredentialsDto:仅 secretId + secretKey;**禁止**任何其他字段

@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 
-// V1.1 §11.2 / TASKS.md 15.3:请求 ID 贯通(x-request-id)
+// ARCHITECTURE.md §11.1:请求 ID 贯通(x-request-id)
 // 客户端可在请求头传 `x-request-id` 透传调用链 ID;缺失或非法时由后端生成。
 // 生成结果同时写回响应头与 pino 日志的 reqId 字段,前端报错时凭此对齐后端日志。
 export const REQUEST_ID_HEADER = 'x-request-id';
@@ -34,7 +34,7 @@ export function genReqId(req: IncomingMessage, res: ServerResponse): string {
   return id;
 }
 
-// V1.1 TASKS.md 15.3:HTTP 请求日志 customProps 工厂。
+// ARCHITECTURE.md §11.1:HTTP 请求日志 customProps 工厂。
 // pino-http 在响应阶段调用此函数,把返回字段合并到当前请求日志条目顶层。
 //   - reqId:与响应头 x-request-id 完全一致(同一字符串引用,均来自 genReqId → req.id)。
 //   - userId:已登录请求由 JwtStrategy.validate() 后 passport 挂在 Express Request 上;

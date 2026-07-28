@@ -1,8 +1,9 @@
 # API Surface 全量迁移计划(Route B)
 
-> **状态**:立项冻结(2026-06-01 用户拍板)+ 滚动执行追踪。
+> **状态**:Route B 已完成；本文保留 2026-06-01 的冻结方案与执行追踪，属于迁移过程记录，不再承担当前 surface 事实。
+> **当前覆盖注记(2026-06-18 起)**:文中“终态四前缀 / `open/v1` 仅预留”均是 Route B 当日快照；招新随后首用 `open/v1`，现行代码与 contract 已锁定 **5 个 canonical 前缀**。当前权威源为 [`current-state.md`](current-state.md) + [`api-surface-policy.md §0`](api-surface-policy.md)。
 > **档位**:**D 档**(surface 互转 / 删除 legacy / path alias / 前端联调口径变化);严格**分阶段、分 PR、串行**;每阶段先评审稿冻结再动代码。
-> **承接**:[`api-client-boundary`](reference/api-client-boundary.md) D-9`(2026-06-01 重开并取代 §19.7 D-2)、[`api-surface-policy.md §0`](api-surface-policy.md)。
+> **承接**:[`api-client-boundary`](reference/api-client-boundary.md) D-9(2026-06-01 重开并取代 §19.7 D-2)、[`api-surface-policy.md §0`](api-surface-policy.md)。
 > **配套**:当前事实见 [`current-state.md`](current-state.md);PR 分级 / D 档降速见 [`process.md §3 / §4`](process.md)。
 > **本立项稿不改任何代码、不改 OpenAPI snapshot;仅冻结目标形态、原则、阶段顺序与禁止事项**。
 
@@ -22,8 +23,8 @@
 
 ## 2. 决策冻结(2026-06-01;不回改)
 
-- **放弃** [`api-client-boundary`](reference/api-client-boundary.md) D-2` 的"方案 C(`/api/v2/*` 长期保留、不强制迁移)";**改为 Route B 全量物理迁移**。
-- **重开依据**:用户 2026-06-01 主动要求重开 D-2,已按 [`api-client-boundary`](reference/api-client-boundary.md)` preamble "暂停说明本节存在后再讨论" 履行,拍板 Route B。
+- **放弃** [`api-client-boundary`](reference/api-client-boundary.md) D-2 的"方案 C(`/api/v2/*` 长期保留、不强制迁移)";**改为 Route B 全量物理迁移**。
+- **重开依据**:用户 2026-06-01 主动要求重开 D-2,已按 [`api-client-boundary`](reference/api-client-boundary.md) preamble "暂停说明本节存在后再讨论" 履行,拍板 Route B。
 - **冻结的不变式**(贯穿全部阶段):
   1. **alias 阶段只加不删**:新路径与老路径并存,保证零破坏;
   2. **删除老路径**只能在满足"deprecation 窗口 ≥ 2 release + 前端/移动端切流确认 + 单独 deprecated 公告"后执行(沿 [`api-surface-policy.md §6`](api-surface-policy.md) 既有铁律);
@@ -145,4 +146,4 @@
 | Phase 3 deprecation | ⏭️ **豁免** | — | **无生产消费者**(用户 2026-06-01 确认),deprecation 窗口 / 前端切流 / 流量观测 gate 均不适用,直接进 Phase 4 |
 | Phase 4 removal | ✅ **完成** | 4a #263 / 4b #264 / 4c #265 / 4d #266 / 4e #267 / 4d2 PR | **全部老路径已删**:4a auth+health / 4b system / 4c admin / 4d `/api/users/me*` / 4e attachments(flip + 删 orphan)/ 4d2 registrations-me + attendances-me-records legacy + 主 spec 队员流迁 `app/v1/my`。**移除 apply-swagger deprecation 后处理 + 加终态 contract 断言(仅 4 前缀)**;contract 280 + full e2e 72 suites/1664 绿。余 A 档收尾(非阻塞):EXPECTED_ROUTES 注释 header + 模块 CLAUDE.md path true-up |
 
-> **🎉 Route B 终态达成(2026-06-01)**:全仓 API 只剩 `/api/admin/v1/*` + `/api/app/v1/*` + `/api/auth/v1/*` + `/api/system/v1/*`,零 `v2` / 零裸 `auth`·`health`·`users` / 零 legacy mobile-like。§3.4 终态验收基线已由 contract 断言"全部路由仅落 4 canonical 前缀"锁定。`/api/open/v1/*` 仍仅预留。
+> **🎉 Route B 当日终态(2026-06-01)**:全仓 API 当时只剩 `/api/admin/v1/*` + `/api/app/v1/*` + `/api/auth/v1/*` + `/api/system/v1/*`,零 `v2` / 零裸 `auth`·`health`·`users` / 零 legacy mobile-like。§3.4 的四前缀断言是当日收口证据；2026-06-18 招新首用 `/api/open/v1/*` 后，当前终态为 5 canonical 前缀，以顶部覆盖注记所列权威源为准。

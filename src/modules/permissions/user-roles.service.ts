@@ -37,7 +37,8 @@ import { AssignUserRoleDto, UserRoleResponseDto } from './user-roles.dto';
 //   DELETE /api/system/v1/users/:userId/roles/:roleId          撤销角色
 //
 // **关键设计**(沿用户拍板):
-// 1. **user 失效场景**(沿 v1 §10):user 不存在 / disabled / 已软删 统一返 USER_NOT_FOUND = 10001
+// 1. **user 失效场景**(沿 docs/reference/soft-delete-transactions.md §10):
+//    user 不存在 / disabled / 已软删 统一返 USER_NOT_FOUND = 10001
 // 2. **Q7 角色分级 C2 中庸**(inline canAssignRole 私有 helper):
 //    - SUPER_ADMIN(系统级)→ 通过任何
 //    - actor 持有 ops-admin(RBAC 角色)→ 可分配/撤销非 ops-admin 目标
@@ -45,7 +46,8 @@ import { AssignUserRoleDto, UserRoleResponseDto } from './user-roles.dto';
 // 3. **重复分配 → 30006**(D7 §12 锁定,**报错**而非幂等;与 RolePermission 批量幂等不同)
 // 4. **最后一个 ops-admin 保护**(沿 D7 §6.3 触发场景 1):
 //    - DELETE 撤销 ops-admin 角色时,与 role-bindings/users 共用 advisory lock 后重算,剩余活跃持有者数 ≥ 1
-//    - 否则抛 30101(沿 v1 §13 最后一个 SUPER_ADMIN 保护范式)
+//    - 否则抛 30101
+//      (沿 docs/reference/roles-admin-protection.md §13 最后一个 SUPER_ADMIN 保护范式)
 
 type PrismaTx = Prisma.TransactionClient;
 type UserRoleLookupClient = Pick<PrismaTx, 'rbacRole' | 'user'>;
@@ -87,7 +89,8 @@ export class UserRolesService {
     }
   }
 
-  // 沿 v1 §10:user 不存在 / disabled / 已软删 统一抛 USER_NOT_FOUND(10001),
+  // 沿 docs/reference/soft-delete-transactions.md §10:
+  // user 不存在 / disabled / 已软删 统一抛 USER_NOT_FOUND(10001),
   // 信息泄漏防御(避免告知"该 user id 曾存在 / 已被禁用 / 已软删")。
   private async assertUserAccessibleOrThrow(
     userId: string,
@@ -126,7 +129,8 @@ export class UserRolesService {
     return role;
   }
 
-  // 沿 PR #3 范式:按 code 查 role(POST 入参 roleCode);软删的视为不存在(沿 v1 §10 信息泄漏防御
+  // 沿 PR #3 范式:按 code 查 role(POST 入参 roleCode);软删的视为不存在
+  // (沿 docs/reference/soft-delete-transactions.md §10 信息泄漏防御
   // — POST 时用户传 code,如果该 code 是已软删角色,不应披露存在过)。
   private async findActiveRoleByCodeOrThrow(
     code: string,

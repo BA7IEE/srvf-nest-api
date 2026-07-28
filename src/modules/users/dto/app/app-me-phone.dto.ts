@@ -5,7 +5,7 @@ import { MAINLAND_PHONE_PATTERN, SMS_CODE_LENGTH } from '../../../sms/sms.consta
 
 // SMS 基础设施 T3(2026-06-10):App 手机号绑定 DTO 集合(评审稿 §3.2 ⑤⑥ / E-17 / E-18)。
 //
-// App DTO 隔离铁律(AGENTS §11 / D-6):独立定义,**禁止**从 Admin DTO
+// App DTO 隔离铁律(AGENTS §2 D-6):独立定义,**禁止**从 Admin DTO
 // extends / Pick / Omit / IntersectionType 派生;严格字段白名单
 // (forbidNonWhitelisted 兜底)。
 //

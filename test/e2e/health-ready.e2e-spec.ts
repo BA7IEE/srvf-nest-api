@@ -7,14 +7,14 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
-// V1.1 TASKS.md 15.5:GET /api/system/v1/health/ready(K8s readiness probe)
+// ARCHITECTURE.md §11.1:GET /api/system/v1/health/ready(K8s readiness probe)
 //
 // 覆盖三条核心路径:
 //   1. 成功路径:DB 连通 → 200 + { status: 'ok', db: 'up' }
 //   2. 失败路径:DB 不可用 → HTTP 500 + code 50000 + data null
-//      (用户决策方案 A:ARCHITECTURE.md §11.4 规定 HTTP status 由 BizCode 决定,
-//       BizCode.INTERNAL_ERROR.httpStatus = 500,以最高优先级的 ARCHITECTURE.md 为准。
-//       CLAUDE.md/AGENTS.md/TASKS.md §17.5/15.5 描述的 "503" 是文档矛盾,本期不修正。
+//      (当前行为由 BizCode.INTERNAL_ERROR.httpStatus = 500 + 全局异常过滤器锁定,
+//       HTTP status 语义沿 docs/reference/response-pagination-errors.md §5。
+//       历史 V1.1 文档的 "503" 仅为历史口径,不作当前权威。
 //       后续若需标准 503,应单独新增 BizCode.SERVICE_UNAVAILABLE,不在 15.5 内处理。)
 //   3. 包装语义:不暴露 terminus 原生 { info, error, details } 输出
 //

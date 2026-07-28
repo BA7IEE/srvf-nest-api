@@ -11,7 +11,7 @@ import type {
 // 沿 PR #247 service characterization + 8 组 attendances e2e 锁定的现状行为,从
 // `AttendancesService` 中极小抽出(仅"搬家",不动任何字段映射 / Decimal 序列化语义);
 // P1-4 第一刀(2026-06-10 方案 A 拍板),沿 architecture-boundary.md §3.1 Presenter 边界
-// + AGENTS §19.7 D-7 决策锁。
+// + AGENTS §2 D-7 决策锁。
 //
 // **职责边界(严守"搬家不优化")**:
 // - ✅ Prisma 行 → 响应 DTO 的纯字段映射(Sheet 详情 / Sheet 列表项 / Record 含 member 摘要)

@@ -15,7 +15,7 @@ import { createTestApp } from '../setup/test-app';
 // 14.4 jwt-guard spec(7 用例)。
 // 验证 JwtAuthGuard + JwtStrategy.validate 在所有 token 失效路径都返回 UNAUTHORIZED (40100)。
 //
-// 关键不变式(对应 ARCHITECTURE.md §7.6):JwtStrategy 每请求查库,旧 token 在
+// 关键不变式(对应 docs/reference/auth-jwt-refresh.md §8):JwtStrategy 每请求查库,旧 token 在
 // 用户被禁用 / 软删后立即失效——这是 v1 不引入 Redis 缓存的有意设计。
 describe('JwtAuthGuard / JwtStrategy.validate 失效路径', () => {
   let app: INestApplication;

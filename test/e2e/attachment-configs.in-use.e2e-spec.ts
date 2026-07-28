@@ -19,7 +19,8 @@ import { createTestApp } from '../setup/test-app';
 // - size limit config IN_USE → 13032(通过 typeConfigId → typeConfig.code → attachment.ownerType)
 // - softDelete + updateStatus → INACTIVE 双路径对称(防绕过;Q-cross-3 A)
 // - INACTIVE → ACTIVE / 同状态等不触发检查(只挡破坏性变更)
-// - refCount > 0 即拒绝;不在 message / extra 暴露引用数(Q-cross-impl-4 A;v1 §10 信息泄漏防御)
+// - refCount > 0 即拒绝;不在 message / extra 暴露引用数
+//   (Q-cross-impl-4 A;docs/reference/soft-delete-transactions.md §10 信息泄漏防御)
 // - 普通 update(改文案 / 数值)不检查(Q-cross-6 A);本 spec 不覆盖
 // - RBAC 入口已在 PR #74-#75 验证,本 spec 全部用 SUPER_ADMIN(沿 Q-cross-impl-2 A 范式)
 

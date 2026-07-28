@@ -32,7 +32,7 @@ grep -A 3 "^## Unreleased" CHANGELOG.md    # Unreleased 段状态
 
 fresh worktree 先 `pnpm install --frozen-lockfile && pnpm prisma:generate`,否则 `typecheck` 报 Prisma 假错误。
 
-**lane 形态**(Harness 2.0):并行执行 lane 会话开工用 `pnpm agent:preflight --lane`(clean tree 与未落后 origin/main 仍硬判;open PR 降为清单打印,写集冲突由总控研判);**E 档 release 收口必须用 global 模式**(全仓 0 open PR)。lane 协议全文见 §8。
+**lane 形态**(Harness 2.0):并行执行 lane 会话开工用 `pnpm agent:preflight --lane <lane名>`(clean tree 与未落后 origin/main 仍硬判;open PR 降为清单打印,写集冲突由总控研判);**E 档 release 收口必须用 global 模式**(全仓 0 open PR)。lane 协议全文见 §8。
 
 ---
 
@@ -166,7 +166,7 @@ C / D 档确认、goal 模式中途新发现问题的上报,一律用本格式�
 
 - **无守护不留**:长期派生文档(地图 / 对照表 / 矩阵)必须有自动守护(`docs:codemap:check` / `docs:rbacmap:check` / contract 断言等);无守护、靠人肉对账的派生文档**不再新增**,存量裁撤或并入权威源。
 - **守护溯及恒读层自身**(Harness 2.0):`docs:readtax:check`(体积预算)与 `docs:counts:check`(事实计数)把"无守护不留"应用到 AGENTS / current-state / CLAUDE 三件恒读文件。
-- **模块级 CLAUDE.md 唯一例外**:8 个模块级 `CLAUDE.md`(7 个 src 模块 + `prisma/`)无自动守护但保留;**动到对应模块时顺手校准**,不单独立项。
+- **模块级 CLAUDE.md 唯一例外**:`src/modules` 20 个 + `prisma/` 1 个 `CLAUDE.md` 无独立内容守护但保留(`docs:codemap:check` 守护 20 个 src 指针);**动到对应模块时顺手校准**,不单独立项。
 
 ---
 
@@ -212,7 +212,7 @@ C / D 档确认、goal 模式中途新发现问题的上报,一律用本格式�
 
 ### 8.2 执行 lane 职责
 
-- 开工 `pnpm agent:preflight --lane`;fresh worktree 先 install + `prisma:generate`;e2e 测试库自动派生 `app_test_<worktree slug>`(主仓恒 `app_test`)
+- 开工 `pnpm agent:preflight --lane <lane名>`;fresh worktree 先 install + `prisma:generate`;e2e 测试库自动派生 `app_test_<worktree slug>`(主仓恒 `app_test`)
 - goal 授权内自治推进 B/C 档;D 档新发现按 §4.1 上报总控,**不顺手修**
 - CHANGELOG 登记走 `changelog.d/<branch>.md` fragment(单 lane 场景直接编辑 Unreleased 的旧路径不废除)
 - 交付 = 分支 + PR(body 按 `.github/pull_request_template.md`:档位 / 写集声明 / 本次未做 / 验证);沙箱无 `gh` 时交分支与 PR 文案,由总控代开

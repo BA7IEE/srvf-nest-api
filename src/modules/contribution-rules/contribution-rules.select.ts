@@ -4,7 +4,8 @@ import { Prisma } from '@prisma/client';
 // 沿 v1 users.select.ts 范式;模块主体 4 文件 + 本辅助文件 = 5 个文件(D6 v1.1 §0 元信息)。
 //
 // 对外字段必须与 ContributionRuleResponseDto 严格同步:增删字段两边同时改。
-// 永不包含 deletedAt / deletedByUserId(沿 v1 §11 严格类型分离)。
+// 永不包含 deletedAt / deletedByUserId
+// (沿 docs/reference/naming-dto-validation.md §11 严格类型分离)。
 // 不暴露用户摘要(nickname / role / username,D6 v1.1 §2.2 E7)。
 export const contributionRuleSafeSelect = {
   id: true,

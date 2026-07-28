@@ -2,7 +2,7 @@
 
 > **本文件只用于专用本地联调数据库，不得复制命令操作正式环境。**
 >
-> 当前能力仍是 Unreleased 开发版。前端手工联调只使用按
+> 当前能力已随 **v0.62.0 release**，但 production 尚未部署；本文件仍只用于本地验收。前端手工联调只使用按
 > [`activity-responsibility-workflow-local-bootstrap.md`](activity-responsibility-workflow-local-bootstrap.md)
 > 建立的 `app_local_frontend` / `app_local_frontend_<suffix>` 专用可销毁数据库；自动测试继续只用自动派生的
 > `app_test_*`、CI 临时测试库或 Docker Smoke 临时库。它不是正式上线、部署或切换指令。

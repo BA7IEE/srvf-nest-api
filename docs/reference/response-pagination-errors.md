@@ -47,11 +47,10 @@
 
 **通用 token / 鉴权失败统一复用 `UNAUTHORIZED=40100`,不另起编号**:`JwtStrategy.validate()` 中 token 无效 / 已过期 / 用户被禁 / 用户被软删全部抛 `UNAUTHORIZED`。这类是 HTTP 401 通用语义,不是业务级错误;AI **禁止**为 `TOKEN_INVALID` / `TOKEN_EXPIRED` 之类自创 `100xx` 业务码。
 
-**`100xx` 段位实数(锁死)**:10001 USER_NOT_FOUND / 10002 USERNAME_ALREADY_EXISTS / 10003 EMAIL_ALREADY_EXISTS / 10004 LOGIN_FAILED / 10005 OLD_PASSWORD_INVALID(P0-D) / 10006 NEW_PASSWORD_SAME_AS_OLD(P0-D) / **10007 REFRESH_TOKEN_INVALID**(P0-E,HTTP 401,详 §9 P0-E 子节 + [评审稿 §5.7](../archive/reviews/first-release-p0e-refresh-token-review.md))。10007 **仅占 1 个号位**:refresh 失败 4 种子原因统一返;**禁止**拆 `REFRESH_TOKEN_EXPIRED` / `REFRESH_TOKEN_REVOKED` / `REFRESH_TOKEN_REPLAY`(沿 §8 防账号枚举铁律精神)。
+**`100xx` 段位实数(锁死)**:10001 USER_NOT_FOUND / 10002 USERNAME_ALREADY_EXISTS / 10003 EMAIL_ALREADY_EXISTS / 10004 LOGIN_FAILED / 10005 OLD_PASSWORD_INVALID(P0-D) / 10006 NEW_PASSWORD_SAME_AS_OLD(P0-D) / **10007 REFRESH_TOKEN_INVALID**(P0-E,HTTP 401,详 [`auth-jwt-refresh §9`](auth-jwt-refresh.md) P0-E 子节 + [评审稿 §5.7](../archive/reviews/first-release-p0e-refresh-token-review.md))。10007 **仅占 1 个号位**:refresh 失败 4 种子原因统一返;**禁止**拆 `REFRESH_TOKEN_EXPIRED` / `REFRESH_TOKEN_REVOKED` / `REFRESH_TOKEN_REPLAY`(沿 [`auth-jwt-refresh §8`](auth-jwt-refresh.md) 防账号枚举铁律精神)。
 
 新增 BizCode 必须先说明使用场景与前端提示价值,确认后加入,显式声明 `httpStatus`。
 
 ### Prisma 错误转换
 
 `P2002` 唯一约束错误必须显式捕获 `Prisma.PrismaClientKnownRequestError`(`err.code === 'P2002'`),根据 `err.meta?.target` 转为对应 `BizException`(`USERNAME_ALREADY_EXISTS` / `EMAIL_ALREADY_EXISTS`),不丢给全局过滤器兜底。**`err.meta?.target` 是 `string[]` 而非 `string`**,必须用 `target.includes('username')` 数组方法判断;**禁止** `target === 'username'`(多列复合唯一约束场景会漏判)。
-

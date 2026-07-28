@@ -271,7 +271,7 @@ V2 第一阶段**最小骨架**:身份基础 + 启停 + 时间戳 + 字典关联
 - **唯一约束**:`memberNo` **全局唯一**(不在 `deletedAt = null` 范围内,而是包含软删记录的全表唯一)— 确保历史 memberNo 永久绑定历史身份,不复用导致档案歧义
 - **业务校验(service 层)**:
   - `memberNo` 创建时必填(DTO 层 `@MinLength(1)`);`trim()` 后保存;长度 1-32(DTO 层 `@MaxLength(32)`);允许字母 / 数字 / 连字符(DTO 层 `@Matches(/^[A-Za-z0-9-]+$/)`);**不**写死真实编号规则,**不**把真实编号样例写进代码
-  - `memberNo` 唯一性预检查必须用 `findUnique`(包含软删记录;沿用 `docs/srvf-foundation-baseline.md §10` / `CLAUDE.md §10` 唯一性预检查纪律)— 防止"软删后旧 memberNo 复活创建" 撞约束
+  - `memberNo` 唯一性预检查必须用 `findUnique`(包含软删记录;沿用 `docs/srvf-foundation-baseline.md §10` / `docs/reference/soft-delete-transactions.md §10` 唯一性预检查纪律)— 防止"软删后旧 memberNo 复活创建" 撞约束
   - `gradeCode` 若提供,必须存在于 `dict_items` 中且 type code = '队员等级' 且 `status = ACTIVE`
   - `displayName` 不允许空字符串(DTO 层 `@MinLength(1)`)
 - **索引**:`memberNo`(精确查找 + 登录回退查找路径热点)/ `gradeCode`(按等级筛选)/ `status`(按在队 / 离队筛选)/ `createdAt`

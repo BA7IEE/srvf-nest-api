@@ -15,7 +15,7 @@ import { SetMetadata } from '@nestjs/common';
 //   ...
 //
 // 仅打算用于 App 改密端点 PUT /api/app/v1/me/password。其他接口若未来要限流,应单独评估业务需求
-// (CLAUDE.md §17.9 禁止"接了 throttler 就顺手对所有接口加限流"),不要复用本装饰器。
+// (docs/reference/auth-jwt-refresh.md §9「限流契约」只锁定已评审端点),不要复用本装饰器。
 export const PASSWORD_CHANGE_THROTTLE_KEY = 'password-change-throttle:enabled';
 
 // throttler.module 中独立 throttler 实例名;与 default(LoginThrottle 用)区分。

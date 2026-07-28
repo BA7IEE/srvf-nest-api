@@ -3,7 +3,7 @@ import { Role } from '@prisma/client';
 // V1.2:用户管理权限策略集中文件。
 // UsersService 内不得再散落角色判断,所有"谁能操作谁"的决策都走本文件的纯函数。
 //
-// 设计要点(对齐 ARCHITECTURE.md §7.11 / CLAUDE.md §13):
+// 设计要点(对齐 docs/reference/roles-admin-protection.md §13):
 //   - 三层 Role:SUPER_ADMIN > ADMIN > USER,不是 RBAC,不扩展 permission 表
 //   - 业务 API 永远不能创建 / 提升至 SUPER_ADMIN(只有 prisma/seed.ts 能)
 //   - SUPER_ADMIN 可管理任何角色(含其他 SUPER_ADMIN);自我保护与最后一个保护

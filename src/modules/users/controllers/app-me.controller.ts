@@ -154,7 +154,8 @@ export class AppMeController {
 
   // Phase 2 P2-2:PATCH /me/profile(沿评审稿 §3 严格 2 字段白名单)。
   // 空 body → BAD_REQUEST(沿 §3.4 A 档);forbidden field → 全局 ValidationPipe
-  // forbidNonWhitelisted: true 自动返 BAD_REQUEST(沿 CLAUDE.md §7);
+  // forbidNonWhitelisted: true 自动返 BAD_REQUEST
+  // (沿 docs/reference/naming-dto-validation.md §7);
   // canUseApp=false → FORBIDDEN。沿 §6.1 不新增 BizCode。
   @Patch('profile')
   @ApiOperation({ summary: 'App 视角本人改 profile(严格白名单 nickname / avatarKey) [auth]' })

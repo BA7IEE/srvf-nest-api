@@ -8,7 +8,7 @@ import type { AppConfig } from '../config/app.config';
 //
 // 内部判断 appCfg.swaggerEnabled,关闭则 no-op。
 //
-// 路径锚定:文档(ARCHITECTURE.md §6 / CLAUDE.md §4)固定 /api/docs。
+// 路径锚定:docs/reference/swagger.md §6 固定 /api/docs。
 // SwaggerModule 11 默认 setup() 不跟全局前缀,必须显式 useGlobalPrefix: true,
 // 让其在 setGlobalPrefix('/api') 下注册到 /api/docs(及 /api/docs-json、/api/docs-yaml)。
 export function applySwagger(app: INestApplication, appCfg: AppConfig): void {

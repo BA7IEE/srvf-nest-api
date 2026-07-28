@@ -17,7 +17,7 @@ import { createTestApp } from '../setup/test-app';
 //   3. /api/docs-json 能成功生成 — Swagger 装配链路完整(applySwagger + ResponseInterceptor 跳过 + setGlobalPrefix)。
 //
 // 不做的事:
-//   - 不引入 dredd / prism / 其他外部 schema 工具(CLAUDE.md §17 / v1.3-plan §1)
+//   - 本 contract 测试采用 Jest snapshot,不引入 dredd / prism / 其他外部 schema 工具
 //   - 不做语义版本号绑定(snapshot 自身就是 truth)
 //   - 不断言完整 OpenAPI 文档逐字节相等(交给 toMatchSnapshot 自动维护)
 //

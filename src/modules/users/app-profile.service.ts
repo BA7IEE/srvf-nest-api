@@ -83,7 +83,7 @@ export class AppProfileService {
   }
 
   // 派生 hasMemberProfile:**单字段** select { id: true } 白名单;不读任何业务字段。
-  // 沿 §8.2 + CLAUDE.md §10 软删除显式封装。
+  // 沿评审稿 §8.2 + docs/reference/soft-delete-transactions.md §10 软删除显式封装。
   private async deriveHasMemberProfile(memberId: string): Promise<boolean> {
     const probe = await this.prisma.memberProfile.findFirst({
       where: notDeletedWhere({ memberId }),

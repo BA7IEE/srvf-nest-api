@@ -11,7 +11,8 @@
  *
  * 真源(与既有守卫同口径,不另造第二套):
  *   模块          = src/modules 一级目录数
- *   Controller    = src/**\/*.ts 中带 @Controller(...) 装饰器的 class 声明数
+ *   Controller    = src/**\/*.ts(排除 *.spec.ts)中带 @Controller(...) 装饰器的
+ *                   class 声明数(生产 Controller 口径,测试专用 probe 不计)
  *   Endpoint      = test/contract/openapi.contract-spec.ts 的 EXPECTED_ROUTES 数组元素数
  *                   (spread 元素无法静态计数 → 拒绝并要求同步;并与该 spec 自身
  *                   toHaveLength(N) 断言交叉核对,不一致 → exit 2)
@@ -82,7 +83,8 @@ function decoratorName(dec: ts.Decorator): string | null {
   return null;
 }
 
-// 一次解析同时数 @Controller class 与 @Cron 装饰器(两者共扫 src/**/*.ts)
+// 一次解析同时数 @Controller class 与 @Cron 装饰器;生产 Controller 是否纳入由
+// gather 的文件口径决定，提取器本身继续按 class 声明计数，供合成样例回归。
 export function countDecoratorUsage(source: string): { controllers: number; cron: number } {
   const sf = parseSource(source);
   let controllers = 0;
@@ -305,7 +307,9 @@ function gather(): ReadonlyArray<readonly [string, number]> {
     // 子串预筛只为省去无关文件的 AST 解析;真假由 AST 判定
     if (!content.includes('@Controller') && !content.includes('@Cron')) continue;
     const usage = countDecoratorUsage(content);
-    controllers += usage.controllers;
+    // current-state 的 Controller 是生产 HTTP surface footprint；src 内 spec 可声明
+    // Nest 测试 probe，但不属于生产 module/controller 集。Cron 口径保持原样。
+    if (!f.endsWith('.spec.ts')) controllers += usage.controllers;
     cron += usage.cron;
   }
   // 标签刻意精简:current-state 恒读预算紧张;各项真源与口径见本文件头注

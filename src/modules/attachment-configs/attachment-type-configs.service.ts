@@ -43,7 +43,7 @@ export class AttachmentTypeConfigsService {
 
   // P0-F PR-2B(2026-05-18):RBAC 判权(沿 PR-2A dict / org / contrib-rule 范本)。
   // 失败统一抛 BizException(BizCode.RBAC_FORBIDDEN)(30100);RbacService.can 内部
-  // 已实现 SUPER_ADMIN 短路 + cache + ownership(.self);本模块无 .self 后缀。
+  // 已实现 SUPER_ADMIN 短路 + 每次直读当前 GLOBAL 权限;本模块无 .self 后缀。
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
     if (!(await this.rbac.can(user, action))) {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
@@ -66,8 +66,10 @@ export class AttachmentTypeConfigsService {
 
   // ============ helpers ============
 
-  // 业务详情查询:findFirst + notDeletedWhere(沿 v1 §10 / batch6 / RBAC roles 范式)。
-  // 不存在或已软删统一抛 13020(沿 v1 §10 信息泄漏防御:不区分 NOT_FOUND vs DELETED;Q2 v1.0 锁)。
+  // 业务详情查询:findFirst + notDeletedWhere
+  // (沿 docs/reference/soft-delete-transactions.md §10 / batch6 / RBAC roles 范式)。
+  // 不存在或已软删统一抛 13020
+  // (沿同节信息泄漏防御:不区分 NOT_FOUND vs DELETED;Q2 v1.0 锁)。
   private async findActiveByIdOrThrow(id: string): Promise<SafeTypeConfig> {
     const found = await this.prisma.attachmentTypeConfig.findFirst({
       where: notDeletedWhere({ id }),
@@ -118,7 +120,8 @@ export class AttachmentTypeConfigsService {
       this.prisma.attachmentTypeConfig.findMany({
         where,
         select: attachmentTypeConfigSelect,
-        // 默认排序:createdAt DESC(沿 baseline §3.2 + CLAUDE.md §4 分页默认)
+        // 默认排序:createdAt DESC
+        // (沿 baseline §3.2 + docs/reference/response-pagination-errors.md §4)
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -142,7 +145,8 @@ export class AttachmentTypeConfigsService {
     // 1. 显式格式校验(13023;校验链留事务外)
     this.assertCodeFormatValid(dto.code);
 
-    // 2. 预检查 code 唯一性(含软删历史;沿 CLAUDE.md §10 软删 unique 预检查铁律:
+    // 2. 预检查 code 唯一性
+    //    (含软删历史;沿 docs/reference/soft-delete-transactions.md §10 软删 unique 预检查铁律:
     //    软删后 code 不可复用;预检查必须用 findUnique 含全部记录,否则软删占用会通过预检查后撞 P2002)
     const existing = await this.prisma.attachmentTypeConfig.findUnique({
       where: { code: dto.code },
@@ -295,7 +299,8 @@ export class AttachmentTypeConfigsService {
     auditMeta: AuditMeta,
   ): Promise<AttachmentTypeConfigResponseDto> {
     await this.assertCanOrThrow(currentUser, 'attachment-config.delete.type');
-    // 1. 先确认活跃(沿 RbacRole.softDelete 范式;沿 v1 §10 信息泄漏防御:
+    // 1. 先确认活跃(沿 RbacRole.softDelete 范式;
+    //    沿 docs/reference/soft-delete-transactions.md §10 信息泄漏防御:
     //    第二次软删撞 findActiveByIdOrThrow,统一返 13020,不开 13024)
     const existing = await this.findActiveByIdOrThrow(id);
 
@@ -342,7 +347,8 @@ export class AttachmentTypeConfigsService {
    *
    * 触发点:softDelete + updateStatus(仅 ACTIVE → INACTIVE)双路径对称(沿 Q-cross-3 A)。
    * 计数语义:Attachment 是硬删(无 deletedAt),count 即活跃数。
-   * 信息泄漏防御:不在异常 message / extra 暴露引用数(沿 Q-cross-impl-4 A + v1 §10)。
+   * 信息泄漏防御:不在异常 message / extra 暴露引用数
+   * (沿 Q-cross-impl-4 A + docs/reference/soft-delete-transactions.md §10)。
    */
   private async assertTypeNotInUse(code: string): Promise<void> {
     const refCount = await this.prisma.attachment.count({

@@ -5,7 +5,8 @@
 // - 由 service 调用方在构造 before / after JSON 前调用
 // - AuditLogsService.log() 不二次打码
 // - 边界 null / undefined / 空字符串统一短路返回 null
-//   (与 V2 baseline §2.3 / v1 §11 "空字符串按未填写处理"一致)
+//   (与 V2 baseline §2.3 / docs/reference/naming-dto-validation.md §3
+//    "空字符串按未填写处理"一致)
 //
 // 打码矩阵(D6 v1.1 §7.3 第一批):
 // - emergency_contact.contactName  → maskName

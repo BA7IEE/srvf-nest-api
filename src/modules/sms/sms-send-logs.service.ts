@@ -15,7 +15,7 @@ import type { SmsSendLogQueryDto, SmsSendLogResponseDto } from './sms.dto';
 // - 分页只读;无 detail / 无更新删除路径(append-only 留痕,写入方为 SmsCodeService,T3)
 // - **响应 phone 一律掩码** 138****1234(E-21);入参 phone 过滤为精确匹配明文
 // - R 模式判权:rbac.can('sms-send-log.read.list'),失败 30100(镜像 audit-log.read.entry 范式)
-// - 默认排序 createdAt desc(沿 AGENTS §4)
+// - 默认排序 createdAt desc(沿 docs/reference/response-pagination-errors.md §4)
 
 @Injectable()
 export class SmsSendLogsService {

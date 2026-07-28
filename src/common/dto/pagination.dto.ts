@@ -2,7 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
 
-// 分页入参铁律(ARCHITECTURE.md §7.3):
+// 分页入参铁律(docs/reference/response-pagination-errors.md §4):
 // - 字段固定 page / pageSize,默认 page=1 / pageSize=20,pageSize 上限 100
 // - 禁止 limit/offset / skip/take / cursor 等变体
 // - Prisma 查询时换算 skip = (page - 1) * pageSize,take = pageSize

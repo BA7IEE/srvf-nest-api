@@ -10,7 +10,7 @@ import { PageResultDto } from '../dto/pagination.dto';
 import type { BizCodeEntry } from '../exceptions/biz-code.constant';
 
 // 三个包装装饰器统一描述业务响应外层 { code, message, data } 结构,
-// 详见 ARCHITECTURE.md §7.4 + CLAUDE.md §6。
+// 详见 docs/reference/swagger.md §6 + docs/reference/response-pagination-errors.md §4。
 //
 // 用法:
 //   @ApiWrappedOkResponse(UserResponseDto)
@@ -99,7 +99,8 @@ export const ApiNoContentResponse = (): MethodDecorator =>
 // V1.3-4 Contract Hardening:错误响应 schema 装饰器。
 //
 // 错误响应外层结构由 AllExceptionsFilter 保证为 { code, message, data: null },
-// HTTP status 由 BizCode.httpStatus 决定(详见 ARCHITECTURE.md §7.4 / CLAUDE.md §5)。
+// HTTP status 由 BizCode.httpStatus 决定
+// (详见 docs/reference/response-pagination-errors.md §5)。
 //
 // 用法:
 //   @ApiBizErrorResponse(BizCode.UNAUTHORIZED)

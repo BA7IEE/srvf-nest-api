@@ -238,7 +238,8 @@ describe('rbac me/permissions', () => {
   });
 
   // ============ P1-B 第三单(2026-05-21):L3 凭证字段反向断言 ============
-  // 沿 docs/api-surface-policy.md §2.1 ❌ "App API 永远不返回 L3 凭证字段"。
+  // 沿 docs/api-surface-policy.md §2.1:App API 默认不返回 L3 凭证字段;唯一例外是 §9.6
+  // content-* 读面在文章可见级通过后返回短 TTL signed URL。
   // /api/system/v1/rbac/me/permissions 虽属 Ops surface,亦应满足同等约束(沿 §6 项 7 处置铁律)。
   describe('P1-B characterization:L3 凭证字段不得泄漏', () => {
     const L3_FORBIDDEN_FIELDS = [

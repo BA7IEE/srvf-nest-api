@@ -6619,7 +6619,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "coverImageUrl": {
         "description": "封面缩略图签名 URL",
         "nullable": true,
-        "type": "object",
+        "type": "string",
       },
       "createdAt": {
         "format": "date-time",
@@ -6698,7 +6698,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "coverImageUrl": {
         "description": "封面缩略图签名 URL(coverImageKey 直签)",
         "nullable": true,
-        "type": "object",
+        "type": "string",
       },
       "createdAt": {
         "format": "date-time",
@@ -6801,7 +6801,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "url": {
         "description": "签名访问短链(Provider 不可用时降级 null)",
         "nullable": true,
-        "type": "object",
+        "type": "string",
       },
     },
     "required": [
@@ -6866,7 +6866,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "coverImageUrl": {
         "description": "封面缩略图签名 URL",
         "nullable": true,
-        "type": "object",
+        "type": "string",
       },
       "createdAt": {
         "format": "date-time",
@@ -6926,7 +6926,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "coverImageUrl": {
         "description": "封面缩略图签名 URL(coverImageKey 直签)",
         "nullable": true,
-        "type": "object",
+        "type": "string",
       },
       "createdAt": {
         "format": "date-time",
@@ -14340,7 +14340,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "scope": {
-        "description": "reload 范围;默认 all",
+        "description": "兼容保留的 reload 范围;默认 all",
         "enum": [
           "all",
           "user",
@@ -14362,7 +14362,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   "ReloadRbacResponseDto": {
     "properties": {
       "reloaded": {
-        "description": "reload 是否成功;reload 是"尽力清缓存"语义,DB 故障由后端 logger 暴露给运维,本字段对外恒为 true",
+        "description": "兼容请求已通过判权与组合校验;当前无跨请求缓存或内部状态变更,本字段恒为 true",
         "example": true,
         "type": "boolean",
       },
@@ -98357,7 +98357,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "触发 RBAC 缓存失效(沿 D7 v1.1 §5.4 + F4 v1.0 三档 scope:all / user(+userId) / role(+roleId)) [rbac: rbac.config.reload]",
+      "summary": "兼容校验 RBAC reload 三档请求(当前无跨请求缓存,无内部状态变更) [rbac: rbac.config.reload]",
       "tags": [
         "Ops - RBAC",
       ],

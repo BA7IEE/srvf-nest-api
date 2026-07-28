@@ -49,8 +49,7 @@ export class MyPermissionsResponseDto {
 // - scope 三档:'all'(默认)/ 'user'(配 userId)/ 'role'(配 roleId)
 // - userId / roleId 在 DTO 层标 @IsOptional;**Service 层做组合校验**:
 //     scope='user' 必须有 userId、scope='role' 必须有 roleId,否则 BAD_REQUEST(40000)
-// - userId / roleId 不存在 → Service 静默成功(reload 是"清缓存"语义,与 v1 §10
-//     信息泄漏防御一致)
+// - userId / roleId 不存在 → Service 静默成功;当前无跨请求缓存,端点仅保留输入 / 响应兼容
 // - reload 入口判权已于 P0-F PR-1(2026-05-18)迁移到 Service 层 `rbac.can('rbac.config.reload')`;
 //   早期为 `@Roles(SUPER_ADMIN, ADMIN)` 入口 Guard;当前以 docs/current-state.md 为准。
 
@@ -59,7 +58,7 @@ export type ReloadRbacScope = (typeof RELOAD_RBAC_SCOPES)[number];
 
 export class ReloadRbacDto {
   @ApiPropertyOptional({
-    description: 'reload 范围;默认 all',
+    description: '兼容保留的 reload 范围;默认 all',
     enum: RELOAD_RBAC_SCOPES,
     example: 'all',
   })
@@ -93,8 +92,7 @@ export class ReloadRbacDto {
 // 出参(沿用户拍板方案 A):固定 `{ reloaded: true }`;为未来扩展字段预留单对象包装。
 export class ReloadRbacResponseDto {
   @ApiProperty({
-    description:
-      'reload 是否成功;reload 是"尽力清缓存"语义,DB 故障由后端 logger 暴露给运维,本字段对外恒为 true',
+    description: '兼容请求已通过判权与组合校验;当前无跨请求缓存或内部状态变更,本字段恒为 true',
     example: true,
   })
   reloaded!: true;

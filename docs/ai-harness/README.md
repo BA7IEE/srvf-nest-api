@@ -15,7 +15,7 @@
 
 ## 3. 定位路径
 
-[`current-state.md`](../current-state.md) →(领任务)→ 根 [`CODEMAP.md`](../../CODEMAP.md)(src 模块地图)→ 模块级 `CLAUDE.md`(12 个,动模块时顺手校准)→ 改权限再读 [`RBAC_MAP.md`](./RBAC_MAP.md)。读写分区 / 红区清单 / 触发即停见 `AGENTS.md §3`;细则按 `AGENTS.md §6` 索引触碰才读。**勿整读**:`docs/archive/**` 正文、contract snapshot(~3.6 万行,用 diff)、`pnpm-lock.yaml`。
+[`current-state.md`](../current-state.md) →(领任务)→ 根 [`CODEMAP.md`](../../CODEMAP.md)(src 模块地图)→ 模块级 `CLAUDE.md`(`src/modules` 20 个 + `prisma` 1 个,动模块时顺手校准)→ 改权限再读 [`RBAC_MAP.md`](./RBAC_MAP.md)。读写分区 / 红区清单 / 触发即停见 `AGENTS.md §3`;细则按 `AGENTS.md §6` 索引触碰才读。**勿整读**:`docs/archive/**` 正文、contract snapshot(~3.6 万行,用 diff)、`pnpm-lock.yaml`。
 
 ## 4. 目录说明
 

@@ -71,14 +71,15 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
       isGlobal: true,
       load: [appConfig, databaseConfig, jwtConfig],
     }),
-    // V1.1 §11.4:LoggerModule 全局注册,所有 HTTP 请求自动打日志。
+    // ARCHITECTURE.md §11.1:LoggerModule 全局注册,所有 HTTP 请求自动打日志。
     LoggerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService): Params =>
         buildLoggerModuleParams(getAppConfigOrThrow(configService, 'LoggerModule')),
     }),
-    // V1.1 §11.4 / TASKS.md 15.7:登录接口限流。详见 bootstrap/throttle-options.ts。
+    // docs/reference/auth-jwt-refresh.md §9「限流契约」:
+    // 登录接口限流。详见 bootstrap/throttle-options.ts。
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule, DatabaseModule],
       inject: [ConfigService, PrismaService],
@@ -205,7 +206,7 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     // 全局 Guard 顺序(NestJS 按 providers 数组顺序执行):
     //   ThrottlerBizGuard 先挡爆破(IP 维度,粗粒度),避免攻击流量打到 JWT 解析。
     //   JwtAuthGuard 验登录(@Public 跳过)。
-    //   RolesGuard 验角色(详见 ARCHITECTURE.md §7.6)。
+    //   RolesGuard 验角色(详见 docs/reference/auth-jwt-refresh.md §8)。
     { provide: APP_GUARD, useClass: ThrottlerBizGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },

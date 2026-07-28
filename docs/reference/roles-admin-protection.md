@@ -1,6 +1,6 @@
 # 角色层级与管理员保护(reference · 触碰才读)
 
-> Harness 2.0 细则层:承接 harness v1 `AGENTS.md` §13 **原文逐字搬家(零放宽;唯一机械改写=相对链接前缀)**;恒读入口与速查见根 [`AGENTS.md`](../../AGENTS.md),原文快照 [`archive/harness-v1/AGENTS.md`](../archive/harness-v1/AGENTS.md)。
+> Harness 2.0 细则层:承接 harness v1 `AGENTS.md` §13,并按当前判权单轨 true-up;恒读入口与速查见根 [`AGENTS.md`](../../AGENTS.md),原文快照 [`archive/harness-v1/AGENTS.md`](../archive/harness-v1/AGENTS.md)。
 > 机器锁定:users.policy.spec 3×3 矩阵 + 角色边界 e2e。
 
 ## 13. 角色层级与管理员保护
@@ -15,9 +15,9 @@
 - `ADMIN` 只能管理 `USER`,不能查看 / 修改 / 禁用 / 删除 / 降级 / 创建 `ADMIN` / `SUPER_ADMIN`
 - `USER` 只能访问本人接口
 
-### 双层校验
+### RBAC 入口 + 业务角色保护
 
-**Guard 管入口,Service 管业务**:Guard 层 `@Roles(Role.SUPER_ADMIN, Role.ADMIN)` 只决定谁能进管理接口;Service 层必须经统一 `assertCanManageUser(currentUser, targetUser)` 二次校验"能操作谁"——SUPER_ADMIN 总通过,ADMIN 只能管理 USER,其余抛 `BizException(BizCode.FORBIDDEN_ROLE_OPERATION)`。**禁止**在 service 散落手写 `currentUser.role === ...` 角色比较绕过此函数。
+Controller 入口仅由全局 `JwtAuthGuard` 确认登录,**不新增 `@Roles(...)`**;Service 先以 `rbac.can('<permission>')` 做业务权限判定(SUPER_ADMIN 短路,拒绝统一 30100),再经统一 `assertCanManageUser(currentUser, targetUser)` 校验"能操作谁"——SUPER_ADMIN 总通过,ADMIN 只能管理 USER,其余抛 `BizException(BizCode.FORBIDDEN_ROLE_OPERATION)`。**禁止**手写角色短路绕过 RBAC 或该业务 policy。
 
 以下接口必须先 `findFirst` 查出目标用户,再 `assertCanManageUser`:`GET /api/admin/v1/users/:id` / `PATCH /api/admin/v1/users/:id` / `PUT /api/admin/v1/users/:id/password` / `PATCH /api/admin/v1/users/:id/role` / `PATCH /api/admin/v1/users/:id/status` / `DELETE /api/admin/v1/users/:id`。
 
@@ -46,4 +46,3 @@ v1 允许 `SUPER_ADMIN` **互相管理**(重置密码 / 禁用 / 改角色 / 软
 这是**明确选择,不是疏漏**:v1 默认只有一个 SUPER_ADMIN(`prisma/seed.ts` 创建),互操作是低频运维场景;禁止互操作会导致"前任 SUPER_ADMIN 离职后无法被接任者接管"的死锁。真出现"SUPER_ADMIN 互不可操作"诉求按 `ARCHITECTURE.md §9` 升级路径处理(**作为权限模型升级**,不是渐进改造)。
 
 AI **禁止**凭直觉额外加"SUPER_ADMIN 互不可操作"校验,**禁止**在 `assertCanManageUser` 里把 `targetUser.role === Role.SUPER_ADMIN` 列为禁止条件。
-

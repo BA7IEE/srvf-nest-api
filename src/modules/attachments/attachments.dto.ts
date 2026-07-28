@@ -20,7 +20,8 @@ import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 // V2.x C-7 attachments 实施 PR #6b(2026-05-15):attachments 主模块 DTO 集合。
 // 沿 D7-attachments v1.0 §5.4 + 用户 PR #6b 14 项 Q 拍板。
 //
-// **入参 DTO 字段白名单铁律**(纵深防御;沿 baseline §4.2 / v1 §11):
+// **入参 DTO 字段白名单铁律**
+// (纵深防御;沿 baseline §4.2 / docs/reference/naming-dto-validation.md §11):
 // - CreateAttachmentDto:严禁 id / uploadedBy / uploadedAt / originalUploaderName /
 //   createdAt / updatedAt(forbidNonWhitelisted 兜底拦截)
 // - UpdateAttachmentDto:仅允许 description / accessLevel / tags / expireAt 四字段;
@@ -201,7 +202,8 @@ export class CreateAttachmentDto {
   @IsISO8601()
   expireAt?: string;
 
-  // **不接受**(沿 D7 §5.4.1 + v1 §11):id / uploadedBy / uploadedAt / originalUploaderName /
+  // **不接受**(沿 D7 §5.4.1 + docs/reference/naming-dto-validation.md §11):
+  // id / uploadedBy / uploadedAt / originalUploaderName /
   //   createdAt / updatedAt / checksum / etag(checksum / etag Q6 v1.0 暂不接受入参;
   //   Provider 接通后由独立 PR 决议)— forbidNonWhitelisted 兜底拦截
 }

@@ -99,7 +99,8 @@ export class PermissionsService {
       this.prisma.permission.findMany({
         where,
         select: permissionSelect,
-        // 默认排序:createdAt DESC(沿 baseline §3.2 + CLAUDE.md §4 分页默认)
+        // 默认排序:createdAt DESC
+        // (沿 baseline §3.2 + docs/reference/response-pagination-errors.md §4)
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,

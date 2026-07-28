@@ -13,7 +13,8 @@ import { PaginationQueryDto } from '../../../../common/dto/pagination.dto';
 // `dateFrom` / `dateTo` / `issuedAt[gte]` / `expiredAt[lte]`(P2.x 单独立项);
 // `sortBy` / `sortOrder`(默认 createdAt desc;沿 D-P2-7-8);
 // `isInternal` filter(若需要 P2.x 立项)。
-// `forbidNonWhitelisted: true` 兜底任何越界字段(沿 ARCHITECTURE.md §7.2)。
+// `forbidNonWhitelisted: true` 兜底任何越界字段
+// (沿 docs/reference/naming-dto-validation.md §7)。
 //
 // `extends PaginationQueryDto` 是唯一允许例外(沿 §6.3 + P2-5a / P2-6 范式):
 // `PaginationQueryDto` 来自 `common/dto/pagination.dto.ts` 跨模块公共 DTO,**非** admin
