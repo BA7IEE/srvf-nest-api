@@ -1459,6 +1459,7 @@ export class AttachmentStorageOrchestrator {
       if (!attachment || attachment.key !== current.storageObject.key) {
         throw new StorageConsistencyInvariantError('attachment disappeared before atomic finalize');
       }
+      // eslint-disable-next-line no-restricted-syntax -- 上传失败回滚:附件记录尚未对外可见,物理删除是补偿事务的一部分,不留软删墓碑
       await tx.attachment.delete({ where: { id: attachment.id } });
       await this.auditRecorder.logDelete({
         attachmentId: attachment.id,
@@ -1784,6 +1785,7 @@ export class AttachmentStorageOrchestrator {
       if (!attachment || attachment.key !== currentManual.storageObject.key) {
         throw new StorageConsistencyInvariantError('manual attest Attachment link rejected');
       }
+      // eslint-disable-next-line no-restricted-syntax -- 上传失败回滚:附件记录尚未对外可见,物理删除是补偿事务的一部分,不留软删墓碑
       await tx.attachment.delete({ where: { id: attachment.id } });
       await this.auditRecorder.logDelete({
         attachmentId: attachment.id,

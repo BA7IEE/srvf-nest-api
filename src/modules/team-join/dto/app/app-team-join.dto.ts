@@ -5,12 +5,27 @@ import {
   TEAM_JOIN_DEFAULT_MAX_TARGET_ORGS,
   TEAM_JOIN_MAX_TARGET_ORGS,
 } from '../../team-join.constants';
-import { GateStatusDto } from '../../team-join.dto';
 
 // 招新三期(入队)T3(2026-06-19):App 自助面 DTO(评审稿 §3.2)。
 // dto/app/ 隔离(沿 insurances 范式);self-scope,**永不返回 L3**;候选部门数组 ≥1。
 
 const ORG_ID_MAX = 64;
+
+// App 侧 gate 实况(Harness 3.0 P2:与管理面 GateStatusDto 物理解耦)。
+// 字段与当前管理面形状**逐字段一致**(零行为变更),但今后各自演进:
+// 管理面新增字段不会自动漏进 App 出参 —— 这正是 §2 D-6「App DTO 禁派生自 Admin DTO」
+// 要防的隐式契约联动,现由 eslint(@typescript-eslint/no-restricted-imports)机器强制。
+export class AppGateStatusDto {
+  @ApiProperty() code!: string;
+  @ApiProperty({ description: '是否专业队 gate(条件性,不计入通用 8 自动推进)' })
+  professional!: boolean;
+  @ApiProperty({ description: '是否已标记' }) marked!: boolean;
+  @ApiPropertyOptional({ nullable: true }) passed!: boolean | null;
+  @ApiProperty({ description: '是否满足(passed + 在有效期内)' }) satisfied!: boolean;
+  @ApiPropertyOptional({ nullable: true }) completionDate!: string | null;
+  @ApiPropertyOptional({ nullable: true }) extendedUntil!: string | null;
+}
+
 // 候选目标部门入参(发起 / 改候选共用校验:≥1 且每个 orgId 字符串;存在+ACTIVE 由 service 校验)
 class TargetOrganizationsInput {
   @ApiProperty({
@@ -51,8 +66,8 @@ export class AppTeamJoinApplicationDto {
   maxTargetOrgs!: number;
   @ApiPropertyOptional({ description: '最终选定部门(一键入队后)', nullable: true })
   selectedOrganizationId!: string | null;
-  @ApiProperty({ type: [GateStatusDto], description: '各 gate 实况(8 通用 + 4 专业队)' })
-  gates!: GateStatusDto[];
+  @ApiProperty({ type: [AppGateStatusDto], description: '各 gate 实况(8 通用 + 4 专业队)' })
+  gates!: AppGateStatusDto[];
   @ApiProperty({ description: '8 通用门槛是否全满足(contribution 另算)' })
   generalGatesSatisfied!: boolean;
   @ApiProperty({ description: '贡献值汇总(approved sheet,截至入队年 3-31)' })

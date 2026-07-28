@@ -4,9 +4,12 @@ import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended'
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
+import { harnessConfigBlocks } from './eslint.harness.mjs';
+
+
 export default tseslint.config(
   {
-    ignores: ['eslint.config.mjs', 'dist', 'node_modules'],
+    ignores: ['eslint.config.mjs', 'eslint.harness.mjs', 'dist', 'node_modules'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -47,4 +50,7 @@ export default tseslint.config(
       '@typescript-eslint/require-await': 'off',
     },
   },
+  // Harness 3.0 P2:执法块必须放在最后 —— flat config 对同一 ruleId 是「后块整体覆盖前块」,
+  // 放前面会被后续块静默清空(见块内注释与 docs/reference/testing-discipline.md 同源教训)。
+  ...harnessConfigBlocks,
 );

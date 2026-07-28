@@ -121,6 +121,12 @@ jobs:
       - name: Docs guards (readtax + counts + codemap + rbacmap)
         run: pnpm docs:readtax:check && pnpm docs:counts:check && pnpm docs:codemap:check && pnpm docs:rbacmap:check
 
+      # Harness 3.0 P2:守卫自测 + eslint 执法块阳性对照。
+      # 后者对每条执法规则喂必定违规的合成片段,断言确实被抓到 ——
+      # 防「lint 全绿是因为 selector 写错/被 flat config 后块静默覆盖」这一最坏失败模式。
+      - name: Harness selftests (guards + eslint positive controls)
+        run: pnpm harness:selftest
+
       # 显式跑 nest build,防止"typecheck 通过但 build 失败"的隐性回归。
       - name: Build
         run: pnpm build
