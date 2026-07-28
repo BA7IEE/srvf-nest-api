@@ -9,6 +9,33 @@
 - **lane**:`pnpm agent:preflight --lane <lane名>`(lane 名必填,无名 / 非法名 exit 1;open PR 降为清单研判,写集冲突由总控裁;检测到 bump 特征硬拒走 global;协议全文 [`process §8`](../process.md))
 - fresh worktree 先 `pnpm install --frozen-lockfile && pnpm prisma:generate`;e2e 测试库两级派生:worktree 模板(`app_test_<slug>_<hash6>`,主仓恒 `app_test`)+ jest worker 克隆(`_w<N>`,并行隔离);孤儿库 `pnpm db:test:prune` 回收
 
+## 1.5 机器执法层(Harness 3.0 P2;Claude 侧 hooks + 全执行体 lint)
+
+> **规则语义零放宽,只换执法方式**。以下都是「物理上做不出来」,不是「文字上不许做」。
+
+| 层 | 载体 | 覆盖执行体 | 违反时 |
+|---|---|---|---|
+| 语法级铁律(17 条 + 2 组禁引) | `eslint.harness.mjs` | **双模型**(任何人跑 `pnpm lint` / CI 都判) | lint error,文案含正确做法 |
+| 红区路径写前拦截 | `.claude/hooks/redzone-guard.sh` | 仅 Claude(Codex 侧由 P2c 的 CI 守护兜底) | 拒绝写入 + 说明命中哪条 |
+| Bash 写侧旁路 | `.claude/hooks/bash-write-guard.sh` | 仅 Claude | 拒绝 `sed -i` / `>` / `cp` 等绕道 |
+| 开工门禁 | `preflight-gate.sh`(SessionStart 写通行标记)+ `preflight-required.sh`(PreToolUse 校验) | 仅 Claude | 门禁未过则**写操作**被拒(只读不受限) |
+
+**红区清单唯一机读源**:[`harness/redzone.json`](../../harness/redzone.json)(hook / 未来 CI 守护 / CODEOWNERS 三处共享;自身在裁判保护内)。
+
+**触碰红区时的正确流程**:出人话简报 → 维护者拍板 → **由维护者**执行
+
+```bash
+pnpm harness:grant '<glob>' --reason "<拍板出处>"   # 授权(令牌在 .git/ 内,本 worktree 私有、不入库)
+pnpm harness:grant --list                          # 查看当前授权
+pnpm harness:grant --clear                         # 用完撤销
+```
+
+AI 不得自行发放授权 —— 自己给自己开通行证,这道闸就没有意义。**本地令牌只解开「能不能写」,不解开「能不能合」**:改动执法层的 PR 另需 GitHub `harness-review` 环境审批。
+
+**自测(证明防线真的存在)**:`pnpm harness:selftest` = 守护不变式 94 项 + lint 阳性对照 30 例 + hook 行为 31 例。
+中间那份专防「selector 写错导致规则永不触发」,最后那份专防「hook 用了 `exit 1`」——
+⚠️ Claude Code 只把 **exit 2** 当阻断,`exit 1` 会被当成非阻断错误**直接放行**,那样拦截只存在于纸面。
+
 ## 2. 守护命令(全部挂 CI)
 
 `pnpm docs:readtax:check`(恒读层体积预算)· `pnpm docs:counts:check`(current-state §1 事实计数)· `pnpm docs:codemap:check` · `pnpm docs:rbacmap:check`;CHANGELOG fragment 归并:`pnpm changelog:merge`(bump 前,总控执行)。
