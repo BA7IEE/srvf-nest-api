@@ -1,47 +1,56 @@
 name: CI
 
+# Harness 3.0 P1:单一 test job 拆为 fast ∥ slow 双队列 + 保名 gate 聚合。
+#
+# ⚠️ 分支保护红线(动本文件前必读):main 的 required_status_checks.contexts 逐字为
+#   ["Lint / Typecheck / E2E", "Docker image build"] 且 enforce_admins=true。
+# 这两个 check 名一旦不再上报,所有 PR 永久卡死且 owner 也无法合并。
+# 因此:`gate` job 的 name 与 `docker-build` job 的 name **逐字不得改**;
+# 拆分/改名必须先在 main 上让新名跑过、再改保护规则,且不得在同一个 PR 内做。
+#
+# 结构:
+#   changeset(docs-only 判定)──┐
+#   fast(lint/typecheck/docs guards/build/unit;无 Postgres,~3m)──┤
+#   slow(contract + e2e 并行;docs-only 跳过,~8-12m)◄─ changeset ──┤
+#   gate(name 恒为 'Lint / Typecheck / E2E';needs: [fast, slow])◄──┘
+#
+# e2e 并行化(per-worker 派生库)见 test/setup/;句柄泄漏检测由
+# nightly-e2e-leaks.yml 串行线承接(detectOpenHandles 与并行互斥)。
+
 on:
   push:
     branches: [main, dev]
   pull_request:
 
+# 与 .env.test 对齐(测试环境配置在仓库公开,值均为非敏感)。
+# 见 .env.test。SUPER_ADMIN_EMAIL 故意留空,seed 校验在 APP_ENV=test 下放行默认值。
+# DATABASE_URL 的 connection_limit/pool_timeout 与 .env.test 同步(并行 e2e 连接预算)。
+env:
+  APP_ENV: test
+  APP_PORT: '3001'
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/app_test?schema=public&connection_limit=5&pool_timeout=20
+  APP_CORS_ORIGIN: http://localhost:5173
+  ENABLE_SWAGGER: 'true'
+  JWT_SECRET: test-secret-please-keep-this-string-long-enough-32-chars
+  JWT_EXPIRES_IN: 1h
+  SUPER_ADMIN_USERNAME: admin
+  SUPER_ADMIN_PASSWORD: ChangeMe123456
+  SUPER_ADMIN_EMAIL: ''
+
 jobs:
-  test:
-    name: Lint / Typecheck / E2E
+  # docs-only 快速路径(2026-06-11 拍板;效率排查 goal 简报方案 A):
+  # 变更文件「全部 *.md」才算 docs-only(白名单取反:任一非 .md → 全量);
+  # 判定仅在 pull_request 事件进行,push / API 失败 / 文件列表为空或被截断
+  # (changedFiles > 已列出数,>100 文件场景)→ 一律回退全量,只会多跑不会少跑。
+  # 取文件列表用 `gh pr view --json files` 的原始路径,不用 `gh pr diff --name-only`
+  # (后者对非 ASCII 路径做 C 转义加引号,行尾不再是 .md,会误判;JSON 无此问题)。
+  changeset:
+    name: Change set
     runs-on: ubuntu-latest
-    # v0.51.0 起全量 e2e(147 suites)稳定在 ~14.5m,15m 硬超时开始误杀(#618 首跑被 cancel);
-    # prelaunch 全量 e2e 已增长到 177 suites、约 21.5m,叠加安装/构建/单测后 25m 再次误杀;
-    # 提到 35m 留余量。docker-build/docker-smoke 各自仍 15m 不动。
-    timeout-minutes: 35
-
-    # 与 .env.test 对齐(测试环境配置在仓库公开,值均为非敏感)。
-    # 见 .env.test:1-19。SUPER_ADMIN_EMAIL 故意留空,seed 校验在 APP_ENV=test 下放行默认值。
-    env:
-      APP_ENV: test
-      APP_PORT: '3001'
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/app_test?schema=public
-      APP_CORS_ORIGIN: http://localhost:5173
-      ENABLE_SWAGGER: 'true'
-      JWT_SECRET: test-secret-please-keep-this-string-long-enough-32-chars
-      JWT_EXPIRES_IN: 1h
-      SUPER_ADMIN_USERNAME: admin
-      SUPER_ADMIN_PASSWORD: ChangeMe123456
-      SUPER_ADMIN_EMAIL: ''
-
+    timeout-minutes: 5
+    outputs:
+      docs_only: ${{ steps.changeset.outputs.docs_only }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # docs-only 快速路径(2026-06-11 拍板;效率排查 goal 简报方案 A):
-      # 变更文件「全部 *.md」才算 docs-only(白名单取反:任一非 .md → 全量);
-      # 判定仅在 pull_request 事件进行,push / API 失败 / 文件列表为空或被截断
-      # (changedFiles > 已列出数,>100 文件场景)→ 一律回退全量,只会多跑不会少跑。
-      # 采用 job 内步骤级条件而非 workflow 级 paths 过滤:本 job 在 docs-only PR 上
-      # 仍以同一 check 名上报 success(为未来 required checks 兼容;被跳过的步骤在
-      # run 页面可见可审计)。docs-only 时仍跑 lint / typecheck / unit(秒级轻检),
-      # 跳过 Postgres 启动、Build、db init、prisma:deploy 验证、contract、e2e。
-      # 取文件列表用 `gh pr view --json files` 的原始路径,不用 `gh pr diff --name-only`
-      # (后者对非 ASCII 路径做 C 转义加引号,行尾不再是 .md,会误判;JSON 无此问题)。
       - name: Detect docs-only change set
         id: changeset
         if: github.event_name == 'pull_request'
@@ -64,29 +73,17 @@ jobs:
           fi
           echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
           echo "docs_only=$docs_only"
+      # push 事件:上一步被 skip,outputs.docs_only 为空 → 下游 != 'true' → 走全量。
 
-      # 通过项目自带的 docker-compose.yml 启动 postgres:16-alpine。
-      # 容器名固定为 'u-nest-api-postgres'(见 docker-compose.yml#container_name),与
-      # package.json#db:test:init 与 test/setup/test-db.ts 硬编码的 docker exec 目标一致。
-      # 不使用 GitHub Actions 的 services: 字段:services 容器名由 runner 自动生成,
-      # 无法对齐既有 db:test:init 脚本,会导致 'docker exec u-nest-api-postgres' 失败。
-      - name: Start PostgreSQL 16 service container
-        if: steps.changeset.outputs.docs_only != 'true'
-        run: docker compose up -d postgres
-
-      - name: Wait for PostgreSQL ready
-        if: steps.changeset.outputs.docs_only != 'true'
-        run: |
-          for i in $(seq 1 60); do
-            if docker exec u-nest-api-postgres pg_isready -U postgres -d app >/dev/null 2>&1; then
-              echo "PostgreSQL is ready after ${i}s"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "PostgreSQL not ready after 60s; dumping logs:"
-          docker compose logs postgres
-          exit 1
+  # 快信号线:无 Postgres 依赖的全部检查,~3 分钟内给出结果。
+  # docs-only PR 也全跑(lint/typecheck/unit 秒级轻检;docs guards 正是 md 变更的守护对象)。
+  fast:
+    name: Fast checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
       # pnpm/action-setup 必须在 actions/setup-node 之前,
       # setup-node 的 'cache: pnpm' 需要 pnpm 已可用才能定位 store。
@@ -107,69 +104,165 @@ jobs:
 
       # Prisma client 不会随 pnpm install 自动生成(项目无 .npmrc / postinstall 钩子,
       # @prisma/client 的 build script 被 pnpm 默认忽略)。
-      # lint / typecheck / E2E 都依赖 generate 后的类型(如 Role / UserStatus enum),
-      # 因此必须在 lint 前显式生成。
+      # lint / typecheck 都依赖 generate 后的类型(如 Role / UserStatus enum)。
       - name: Generate Prisma client
         run: pnpm prisma:generate
 
       # V1.4-1:严格模式(`--max-warnings 0`)写在 package.json#scripts.lint 里,
-      # 本地 / CI 共用同一入口;这里保留 `pnpm lint` 直调,删 flag 时要改 npm script
-      # 而不是改 ci.yml,避免本地放行 / CI 严格的二义状态。
+      # 本地 / CI 共用同一入口。CI 恒冷跑(无 --cache):缓存不追踪跨文件类型依赖,
+      # 冷跑是 lint 的权威口径(本地 agent:check:quick 用缓存换速度)。
       - name: Lint
         run: pnpm lint
 
       - name: Typecheck
         run: pnpm typecheck
 
-      # Harness 2.0(T0 §1.4):恒读层预算 + 事实计数守护;第五轮 review R5-06 起
-      # codemap / rbacmap 两 checker 同挂(四守护全上 CI,与 docs/ai-harness/README §2
-      # 声明对齐)。四项均纯文件解析、无 DB 依赖,秒级;
-      # 不挂 docs-only 条件 —— md 变更正是这些守护的对象。
+      # Harness 2.0(T0 §1.4):恒读层预算 + 事实计数守护;四项均纯文件解析、秒级。
       - name: Docs guards (readtax + counts + codemap + rbacmap)
         run: pnpm docs:readtax:check && pnpm docs:counts:check && pnpm docs:codemap:check && pnpm docs:rbacmap:check
 
-      # 显式跑 nest build,验证 tsconfig.build.json 与构建产物链路;
-      # 防止"typecheck 通过但 build 失败"的隐性回归(例如 nest-cli 配置漂移、
-      # 构建期 import 路径解析与开发期不一致)。
+      # 显式跑 nest build,防止"typecheck 通过但 build 失败"的隐性回归。
       - name: Build
-        if: steps.changeset.outputs.docs_only != 'true'
         run: pnpm build
 
-      - name: Initialize test database
-        if: steps.changeset.outputs.docs_only != 'true'
-        run: pnpm db:test:init
-
-      # 显式跑一次生产迁移命令,验证 `pnpm prisma:deploy` 脚本存在且可执行。
-      # 复用同一份测试库 DATABASE_URL,不引入新的数据库服务;E2E 的 globalSetup
-      # 之后还会再跑一次 `prisma migrate deploy`,Prisma 对已应用的 migration
-      # 是 no-op,不会重复执行或失败。
-      - name: Verify production migration command
-        if: steps.changeset.outputs.docs_only != 'true'
-        run: pnpm prisma:deploy
-
-      # V1.3-5:把 V1.3-1/-2 新增的纯单元测试纳入 CI。
-      # 不依赖数据库,但放在 db setup 之后保持脚本顺序与 docs/v1.3-plan.md 一致;
-      # Jest 启动开销 < 2s,顺序代价可忽略。覆盖:
-      #   - users.policy.spec.ts(canViewUser/canManageUser/canCreateRole/canChangeRole 的 3×3 矩阵)
-      #   - biz-code.constant.spec.ts(BizCode 元属性:key/code 段位/message/httpStatus)
       - name: Run unit tests
         run: pnpm test
 
-      # V1.3-5:把 V1.3-3 的 OpenAPI 契约快照纳入 CI。
-      # 复用 e2e 的 globalSetup(已在上一步初始化 / migrate 完成),串行跑 jest-contract.config.ts;
-      # 任何 OpenAPI schema 漂移(路由白名单 / DTO 字段 / 错误响应 schema)都会被快照拦截。
+  # 慢验证线:contract + 全量 e2e(并行,JEST_MAX_WORKERS 显式给定)。
+  # docs-only PR 跳过(gate 对 skipped 视为通过,与旧版步骤级跳过语义一致)。
+  slow:
+    name: Contract + E2E
+    runs-on: ubuntu-latest
+    # 旧单 job 有两次超时误杀前科(147 suites/15m → 误杀;177 suites/25m → 再误杀 → 提到 35m)。
+    # 并行化实测(2026-07-28,PR #801 首跑,run 30361346317,195 suites / 4 vCPU / 2 worker):
+    #   本 job 12m17s,其中 e2e 步骤 11m23s(改前单 job 25m59s、e2e 步骤 22m14s)。
+    # 取 25m ≈ 实测 2 倍余量(旧两次误杀分别只有 1.03x / 1.16x 余量)。
+    timeout-minutes: 25
+    needs: changeset
+    if: needs.changeset.outputs.docs_only != 'true'
+    env:
+      # ubuntu-latest 4 vCPU(且 postgres 容器同机):保守 2 worker。
+      # 实测:e2e 步骤 22m14s(串行)→ 11m23s(2 worker),约 1.95x。
+      # **暂不上调到 3-4**:runner 只有 4 vCPU 且要与 postgres 分,本机曾在 CPU 争抢下
+      # 出现整批 beforeAll 撞 30s testTimeout(见 docs/testing.md 并行纪律段);
+      # 若要调,应单独一刀 + 观察多轮 CI,不与其他改动同 PR。
+      JEST_MAX_WORKERS: '2'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 通过项目自带的 docker-compose.yml 启动 postgres:16-alpine。
+      # 容器名固定为 'u-nest-api-postgres',与 package.json#db:test:init 与
+      # test/setup/test-db.ts 硬编码的 docker exec 目标一致。
+      # 不使用 GitHub Actions 的 services: 字段:services 容器名由 runner 自动生成,
+      # 无法对齐既有 db:test:init 脚本,会导致 'docker exec u-nest-api-postgres' 失败。
+      - name: Start PostgreSQL 16 service container
+        run: docker compose up -d postgres
+
+      - name: Wait for PostgreSQL ready
+        run: |
+          for i in $(seq 1 60); do
+            if docker exec u-nest-api-postgres pg_isready -U postgres -d app >/dev/null 2>&1; then
+              echo "PostgreSQL is ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "PostgreSQL not ready after 60s; dumping logs:"
+          docker compose logs postgres
+          exit 1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      - name: Initialize test database
+        run: pnpm db:test:init
+
+      # 显式跑一次生产迁移命令,验证 `pnpm prisma:deploy` 脚本存在且可执行。
+      # 复用同一份测试库(模板库);E2E 的 globalSetup 之后还会再跑一次
+      # `prisma migrate deploy`,Prisma 对已应用的 migration 是 no-op。
+      - name: Verify production migration command
+        run: pnpm prisma:deploy
+
+      # OpenAPI 契约快照:任何 schema 漂移(路由白名单 / DTO 字段 / 错误响应)都会被拦截。
       - name: Run contract tests
-        if: steps.changeset.outputs.docs_only != 'true'
         run: pnpm test:contract
 
-      - name: Run E2E tests
-        if: steps.changeset.outputs.docs_only != 'true'
-        run: pnpm test:e2e
+      # 句柄泄漏信号(每 PR,**告警级**;权威检测在 nightly-e2e-leaks.yml)。
+      #
+      # 实测事实(2026-07-28,本仓 195 suites):
+      #   - 并行模式恒打 'A worker process has failed to exit gracefully'(退出码仍为 0);
+      #   - 同一套件串行 + detectOpenHandles 跑完 **零个开放句柄报告**(1641s,195/195 绿)。
+      # 即该警告在本仓的基线就非零,来源是 jest worker 关闭时序(Prisma 引擎子进程等),
+      # 而非测试代码 teardown 缺失 —— 设成硬失败会让 CI 永久红且毫无鉴别力。
+      # 因此这里只升告警注解(PR 上可见),真正的泄漏判据是夜间线的 detectOpenHandles 报告。
+      - name: Run E2E tests (parallel; worker force-exit = warning)
+        run: |
+          set -o pipefail
+          mkdir -p tmp
+          pnpm test:e2e 2>&1 | tee tmp/e2e.log
+          if grep -q 'failed to exit gracefully' tmp/e2e.log; then
+            echo "::warning::并行 e2e 出现 worker 强制退出(本仓已知基线,非硬失败)。若近期新增/改动了 spec,请核对 afterAll 是否 app.close();权威检测见 nightly-e2e-leaks.yml,本地复现:pnpm test:e2e:leaks"
+          fi
+
+  # 保名 gate:branch protection 的 required context 逐字指向本 job 的 name。
+  # fast 必须 success;slow 允许 success(全量)或 skipped(docs-only)。
+  # 其余一切结果(failure / cancelled)→ gate 红。
+  gate:
+    name: Lint / Typecheck / E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [changeset, fast, slow]
+    if: always()
+    steps:
+      - name: Aggregate results
+        run: |
+          echo "changeset=${{ needs.changeset.result }} fast=${{ needs.fast.result }} slow=${{ needs.slow.result }} docs_only=${{ needs.changeset.outputs.docs_only }}"
+          # ① changeset 必须成功:它失败 → slow 被 GitHub 标 skipped(不是 failure),
+          #    若不判这一条,gate 会在 contract+e2e 一次都没跑的情况下放行(fail-open 假绿)。
+          if [ "${{ needs.changeset.result }}" != "success" ]; then
+            echo "::error::changeset 判定未成功,无法确认是否 docs-only —— 拒绝放行"
+            exit 1
+          fi
+          if [ "${{ needs.fast.result }}" != "success" ]; then
+            echo "::error::fast checks 未通过"
+            exit 1
+          fi
+          # ② slow 允许 skipped 的**唯一**合法理由必须被正面证明(docs_only == 'true'),
+          #    不从 skipped 反推。
+          if [ "${{ needs.slow.result }}" = "skipped" ]; then
+            if [ "${{ needs.changeset.outputs.docs_only }}" != "true" ]; then
+              echo "::error::slow 被跳过但变更集并非 docs-only —— 拒绝放行"
+              exit 1
+            fi
+            echo "✓ gate passed (docs-only:slow 合法跳过)"
+            exit 0
+          fi
+          if [ "${{ needs.slow.result }}" != "success" ]; then
+            echo "::error::contract/e2e 未通过"
+            exit 1
+          fi
+          echo "✓ gate passed (fast + slow 均通过)"
 
   # 验证 Dockerfile 多阶段构建可成功产出生产镜像。
-  # 与上面的 test job 解耦:test 关注源码质量与运行时行为;docker-build 关注交付物链路。
+  # 与上面的测试链解耦:测试链关注源码质量与运行时行为;docker-build 关注交付物链路。
   # 不做容器启动 / smoke test:容器启动需要外部 PostgreSQL,与 V1.1.1 收口范围(只验证
-  # build 链路)一致;真正的运行时验证仍由 test job 在 Node 进程内的 E2E 完成。
+  # build 链路)一致;真正的运行时验证仍由 E2E 在 Node 进程内完成。
+  # ⚠️ name 'Docker image build' 是 branch protection required check,逐字不得改。
   docker-build:
     name: Docker image build
     runs-on: ubuntu-latest

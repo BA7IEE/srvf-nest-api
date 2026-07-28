@@ -212,7 +212,7 @@ C / D 档确认、goal 模式中途新发现问题的上报,一律用本格式�
 
 ### 8.2 执行 lane 职责
 
-- 开工 `pnpm agent:preflight --lane <lane名>`;fresh worktree 先 install + `prisma:generate`;e2e 测试库自动派生 `app_test_<worktree slug>`(主仓恒 `app_test`)
+- 开工 `pnpm agent:preflight --lane <lane名>`;fresh worktree 先 install + `prisma:generate`;e2e 测试库两级自动派生:worktree 模板 `app_test_<slug>_<hash6>`(主仓恒 `app_test`)+ jest worker 克隆 `_w<N>`(并行隔离,详见 [`testing.md`](testing.md))
 - goal 授权内自治推进 B/C 档;D 档新发现按 §4.1 上报总控,**不顺手修**
 - CHANGELOG 登记走 `changelog.d/<branch>.md` fragment(单 lane 场景直接编辑 Unreleased 的旧路径不废除)
 - 交付 = 分支 + PR(body 按 `.github/pull_request_template.md`:档位 / 写集声明 / 本次未做 / 验证);沙箱无 `gh` 时交分支与 PR 文案,由总控代开

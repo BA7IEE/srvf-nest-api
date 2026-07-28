@@ -5,7 +5,24 @@ E2E 跑在独立的 `app_test` 物理库,与开发库 `app` 完全隔离,**不�
 > 测试数量属于高频变化信息。本文不维护固定 spec / case 总数;
 > 当前数量以 `find test/e2e -name '*.ts'`、`pnpm test:e2e` 输出末尾汇总、CI 结果,以及 [`docs/current-state.md`](current-state.md) §2 "测试与契约" 段为准。
 
-E2E 串行执行(`--runInBand`),`detectOpenHandles: true` 启用,无连接泄漏。
+E2E **并行执行**(Harness 3.0 P1;默认 `maxWorkers: 50%`,CI 由 `JEST_MAX_WORKERS` 显式指定),并行安全由三层隔离保证:
+
+1. **per-worker 派生测试库**:globalSetup 对模板库(主仓 `app_test`;linked worktree `app_test_<slug>_<hash6>`)migrate deploy 一次,再按 `CREATE DATABASE ... TEMPLATE` 克隆出 `<模板名>_w<N>`,每个 jest worker 连自己的克隆库;globalTeardown 回收克隆库、保留模板。孤儿库用 `pnpm db:test:prune` 按 git worktree 白名单差集回收(默认 dry-run,`--force` 才删)。
+2. **per-worker 本地存储目录**:`tmp/storage-w<N>`(setup-files 派生),attachment/content 类 spec 的文件断言互不干扰。
+3. **显式连接预算**:`.env.test` 的 `connection_limit=5&pool_timeout=20` + Postgres `max_connections=200`。
+
+**句柄泄漏检测**(原 `detectOpenHandles` 与并行互斥,已分两条线;**禁 `forceExit`、afterAll 必须 `app.close()` 的纪律不变**):
+
+| 线 | 何时跑 | 判据 | 性质 |
+|---|---|---|---|
+| 并行主线(`ci.yml` slow job) | 每个 PR | grep `A worker process has failed to exit gracefully` | **告警注解**,不阻塞 |
+| 串行线(`nightly-e2e-leaks.yml` / 本地 `pnpm test:e2e:leaks`) | 每日 02:00 + 手动 | grep `Jest has detected the following ... open handle` + 超时兜底 | **硬失败**(权威判据) |
+
+为什么主线只给告警:2026-07-28 实测,本仓并行跑**恒**打出 worker 强杀警告,而同一套件串行 + `detectOpenHandles` 跑完(1641s,195/195 绿)**零个开放句柄报告** —— 该警告的来源是 jest worker 关闭时序(Prisma 引擎子进程等),基线即非零,设成硬失败会让 CI 永久红且毫无鉴别力。真正的泄漏判据因此放在夜间串行线(当前基线干净,任何新增句柄都会让它变红)。
+
+**新 e2e 并行纪律**(约束收紧,非放宽):不得依赖跨 spec 残留状态;不得写入固定共享路径(用 config 的 `localRoot` 或 `mkdtemp`);查 `pg_locks` / `pg_stat_activity` 必须按当前库或自身 pid 收敛(见 [`testing-discipline §16.1`](reference/testing-discipline.md));不得在 spec 内 inline 破坏性 SQL 打非当前库;不要同时跑两条 jest 命令(`test:e2e` 与 `test:contract` 争抢 `_w1` 克隆库 —— 现在会**明确报错**而非静默互擦)。
+
+**跑 e2e 时不要并发跑其他重负载**(另一个 jest、`agent:check:quick`、大型构建):每个 worker 都要启动完整 Nest app,CPU 争抢会把 `beforeAll` 顶到 30s `testTimeout` 之上,表现为一批 suite 集体超时(**不是** flaky 断言,也**不应**靠抬 testTimeout 掩盖 —— 那会同时掩盖真实性能回归)。若确实需要在低配机器上跑,降并发:`JEST_MAX_WORKERS=2 pnpm test:e2e`。排查失败时用 `SRVF_KEEP_TEST_DBS=1` 保留 worker 库验尸。
 
 ---
 
@@ -18,14 +35,23 @@ docker compose up -d
 # 2. 首次跑测试前,创建 app_test 库(幂等,已存在则跳过)
 pnpm db:test:init
 
-# 3. 跑 E2E
+# 3. 跑 E2E(并行;单 spec:pnpm test:e2e -- <spec名>,位置参数是路径 pattern)
 pnpm test:e2e
+
+# 只重跑上次失败的 suite(串行,消除并行噪声;依赖 jest cache)
+pnpm test:e2e:failed
+
+# 串行 + 句柄泄漏检测(夜间 CI 同款;发版前可手动跑)
+pnpm test:e2e:leaks
 
 # watch 模式
 pnpm test:e2e:watch
 
-# 出现脏数据时重置 app_test(护栏:DATABASE_URL 不含 'app_test' 拒绝执行)
+# 出现脏数据时重置模板库(护栏:DATABASE_URL 不含 'app_test' 拒绝执行)
 pnpm db:test:reset
+
+# 回收孤儿派生库(默认 dry-run;--force 执行删除)
+pnpm db:test:prune
 ```
 
 任何破坏性操作(`TRUNCATE`、`prisma migrate deploy`、`prisma migrate reset`)在执行前都会断言 `DATABASE_URL` 包含 `app_test` 子串,不通过立即抛错。详见 [`test/setup/test-db.ts`](../test/setup/test-db.ts)。

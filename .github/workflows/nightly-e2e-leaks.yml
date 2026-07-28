@@ -1,0 +1,106 @@
+name: Nightly E2E leaks
+
+# Harness 3.0 P1:句柄泄漏检测串行线。
+#
+# 背景:jest 30 的 detectOpenHandles 强制 runInBand,与 e2e 并行化互斥,已从
+# jest-e2e.config.ts 移除。它承担的「倒逼 afterAll app.close()」纪律由**两条线**承接:
+#   ① 每 PR:ci.yml 的并行 e2e 步骤 grep 'failed to exit gracefully'
+#      (并行模式泄漏时 jest 强杀 worker 并打这条,**退出码仍为 0**)
+#   ② 每夜:本 workflow 串行 + detectOpenHandles,拿到**逐句柄的堆栈定位**
+#
+# ⚠️ 两种模式的文案完全不同(已实测确认,勿混用):
+#   - 串行 + detectOpenHandles → 'Jest has detected the following N open handle...' + 堆栈,
+#     且进程**挂住不退出**(没有 worker 可强杀)→ 必须用 timeout 兜底,否则只会以
+#     job 超时的形式变红,看不出是泄漏。
+#   - 并行 worker 模式     → 'A worker process has failed to exit gracefully...',退出码 0。
+# 两条 grep 字符串由 scripts/harness-guards.selftest.ts 断言守护,防止再次写成对方的文案。
+#
+# 不加入 branch protection required checks:夜间跑,不阻塞 PR;失败通过 workflow
+# 失败通知维护者,修复走常规 B/C 档 PR。
+
+on:
+  schedule:
+    - cron: '0 18 * * *' # 18:00 UTC = 北京 02:00
+  workflow_dispatch: {}
+
+env:
+  APP_ENV: test
+  APP_PORT: '3001'
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/app_test?schema=public&connection_limit=5&pool_timeout=20
+  APP_CORS_ORIGIN: http://localhost:5173
+  ENABLE_SWAGGER: 'true'
+  JWT_SECRET: test-secret-please-keep-this-string-long-enough-32-chars
+  JWT_EXPIRES_IN: 1h
+  SUPER_ADMIN_USERNAME: admin
+  SUPER_ADMIN_PASSWORD: ChangeMe123456
+  SUPER_ADMIN_EMAIL: ''
+
+jobs:
+  e2e-leaks:
+    name: E2E serial + detectOpenHandles
+    runs-on: ubuntu-latest
+    # 本机串行基线 27.4 分钟;CI 更慢 + 前置安装/迁移,给 60 分钟(内层 timeout 45m 先兜底)。
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start PostgreSQL 16 service container
+        run: docker compose up -d postgres
+
+      - name: Wait for PostgreSQL ready
+        run: |
+          for i in $(seq 1 60); do
+            if docker exec u-nest-api-postgres pg_isready -U postgres -d app >/dev/null 2>&1; then
+              echo "PostgreSQL is ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "PostgreSQL not ready after 60s"; docker compose logs postgres; exit 1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      - name: Initialize test database
+        run: pnpm db:test:init
+
+      # 串行全量 e2e + 句柄泄漏检测(**权威泄漏判据**)。
+      # 本机实测基线(2026-07-28):1641s ≈ 27.4 分钟,195/195 绿、零句柄报告。
+      # detectOpenHandles 在有泄漏时**挂住不退出**,因此必须 timeout 兜底:
+      # 取 45m(本机 27.4m + CI 更慢 + 余量),超时按「疑似泄漏」处理。
+      - name: Run E2E (serial + detectOpenHandles; open handle = failure)
+        run: |
+          set +e
+          mkdir -p tmp
+          timeout --signal=TERM --kill-after=60s 45m pnpm test:e2e:leaks > tmp/leaks.log 2>&1
+          rc=$?
+          set -e
+          tail -200 tmp/leaks.log
+          if grep -q 'Jest has detected the following' tmp/leaks.log; then
+            echo "::error::检测到未关闭句柄(某 spec 的 afterAll 缺 app.close()?句柄堆栈见上方 jest 输出)"
+            exit 1
+          fi
+          if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+            echo "::error::串行 e2e 在 30 分钟内未退出 —— detectOpenHandles 下挂死通常意味着句柄泄漏"
+            exit 1
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::串行 e2e 失败(exit $rc),详见上方输出"
+            exit "$rc"
+          fi
+          echo "✓ 无句柄泄漏"

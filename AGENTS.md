@@ -116,7 +116,7 @@
 ## 4. lane 并行协议(摘要;全文 [process §8](docs/process.md))
 
 - **总控**(与维护者对话的会话):出 goal;按**写集声明**排班(写集相交或同 bounded context → 不并行);持 migration token(schema lane ≤1);串行集成(rebase → snapshot 复核 → `agent:check:full` → diff 白名单核对 → squash 合并 → 通知其余 lane rebase);独占 E 档与 CHANGELOG 归并;**唯一简报流**;不写业务代码。
-- **执行 lane**(≤3 条):一 lane = 一可见会话窗口 + 一 worktree + 一 PR,**写者唯一**;B/C 档 goal 内自治,D 档新发现上报总控不顺手修;CHANGELOG 走 `changelog.d/` fragment;开工 `pnpm agent:preflight --lane <lane名>`;e2e 库自动派生 `app_test_<worktree>`。
+- **执行 lane**(≤3 条):一 lane = 一可见会话窗口 + 一 worktree + 一 PR,**写者唯一**;B/C 档 goal 内自治,D 档新发现上报总控不顺手修;CHANGELOG 走 `changelog.d/` fragment;开工 `pnpm agent:preflight --lane <lane名>`;e2e 库两级派生 `app_test_<worktree>` + worker 克隆 `_w<N>`(并行,详见 testing.md)。
 - **跨模型互查**:写与查跨模型(Claude 写 → Codex 查,反之亦然;SOP 见 [`codex-review-sop`](docs/ai-harness/codex-review-sop.md));分歧不内部调和,升级进简报。
 - **goal = 立项 + 授权**,五要素:DoD / 探针队列 / 授权清单 / 禁止域 / 写集声明。**E 档收口必须 global preflight**(全仓 0 open PR)。
 

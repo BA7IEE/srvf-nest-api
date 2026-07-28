@@ -32,10 +32,16 @@ const config: Config = {
     ],
   },
   testEnvironment: 'node',
+  // contract 仅 1 个 suite(CI 实测 ~31s):保持串行 + detectOpenHandles,
+  // 零成本保留一份常跑的句柄泄漏检测(e2e 侧的检测迁去了 test:e2e:leaks 夜间线)。
+  // globalSetup 会按 maxWorkers=1 克隆 app_test*_w1;globalTeardown 回收。
+  // 注意:不要与 pnpm test:e2e 同时跑 —— 两者会争抢同一个 _w1 克隆库
+  // (Harness 2.0 共享单库时代同样不允许并行跑两条 jest 命令,非新增约束)。
   maxWorkers: 1,
   testTimeout: 30000,
   detectOpenHandles: true,
   globalSetup: '<rootDir>/test/setup/global-setup.ts',
+  globalTeardown: '<rootDir>/test/setup/global-teardown.ts',
   setupFiles: ['<rootDir>/test/setup/setup-files.ts'],
 };
 

@@ -18,11 +18,17 @@ const ATTENDANCE_ROLE_CODE = 'cr-concurrency-role';
 async function waitForTwoBlockedInsertLocks(prisma: PrismaService): Promise<void> {
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
+    // ⚠️ lock.database 过滤不可省(Harness 3.0 P1 并行化后的硬前提):
+    // pg_locks 是**实例级**视图,而 per-worker 测试库由 CREATE DATABASE ... TEMPLATE 克隆,
+    // 各 worker 库里 ContributionRule 的 pg_class.oid **完全相同**(已实测)。
+    // 不按当前库过滤 → 别的 worker 库的锁会被计入 waitingCount → 屏障提前放行 →
+    // 两个 INSERT 退化为串行、只走事务内预检查路径,而断言照样通过(假绿)。
     const [row] = await prisma.$queryRaw<Array<{ waitingCount: number }>>`
       SELECT count(*)::int AS "waitingCount"
       FROM pg_locks AS lock
       JOIN pg_class AS relation ON relation.oid = lock.relation
       WHERE relation.relname = 'ContributionRule'
+        AND lock.database = (SELECT oid FROM pg_database WHERE datname = current_database())
         AND lock.mode = 'RowExclusiveLock'
         AND lock.granted = false
     `;

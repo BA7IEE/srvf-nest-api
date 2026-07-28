@@ -163,13 +163,16 @@ docker run --rm -p 3000:3000 \
 
 ## Branch protection / required checks
 
-仓库内 `.github/workflows/` 目前提供两条 CI 流水线:[`ci.yml`](../.github/workflows/ci.yml) 与 [`docker-smoke.yml`](../.github/workflows/docker-smoke.yml)。建议在 GitHub branch protection 中按下表配置 required checks(具体勾选在仓库 Settings → Branches 中操作,代码仓库本身不持有该配置):
+仓库内 `.github/workflows/` 目前提供三条 CI 流水线:[`ci.yml`](../.github/workflows/ci.yml)、[`docker-smoke.yml`](../.github/workflows/docker-smoke.yml) 与 [`nightly-e2e-leaks.yml`](../.github/workflows/nightly-e2e-leaks.yml)。建议在 GitHub branch protection 中按下表配置 required checks(具体勾选在仓库 Settings → Branches 中操作,代码仓库本身不持有该配置):
+
+> ⚠️ **红线**:main 的 required contexts 逐字为 `Lint / Typecheck / E2E` 与 `Docker image build`,且 `enforce_admins=true`。这两个 job name 一旦不再上报,所有 PR 永久卡死且 owner 也无法合并。`ci.yml` 已按此约束设计:内部拆成 `changeset` / `fast` / `slow` 三个 job,由 **`gate` job 用锁死的 name 聚合上报**(见 ci.yml 头部注释)。改名或删除必须先在 main 上让新 name 跑过一次、再改保护规则,且不得与其他改动同 PR。
 
 | Check | 来源 workflow / job | 建议状态 | 理由 |
 |---|---|---|---|
-| `Lint / Typecheck / E2E` | `ci.yml` 的 `test` job | **required** | 覆盖 lint / typecheck / build / `prisma:deploy` / unit / contract / e2e,是模板核心契约护栏 |
+| `Lint / Typecheck / E2E` | `ci.yml` 的 `gate` job(聚合 `fast` + `slow`;name 逐字锁定,勿改) | **required** | 覆盖 lint / typecheck / docs guards / build / unit(fast)+ `prisma:deploy` / contract / 并行 e2e(slow),是模板核心契约护栏 |
 | `Docker image build` | `ci.yml` 的 `docker-build` job | **required** | 验证多阶段 Dockerfile 在 CI 环境可成功构建出生产镜像 |
 | `Container boot + API smoke + graceful shutdown` | `docker-smoke.yml` 的 `docker-smoke` job | **non-required**(当前阶段建议) | 容器启动级 smoke,受 runner / docker / network 时序影响更高,失败更可能是基础设施抖动而非代码缺陷 |
+| `E2E serial + detectOpenHandles` | `nightly-e2e-leaks.yml`(每日 02:00 北京时间 / 可手动触发) | **non-required**(定时) | 串行全量 e2e + 句柄泄漏堆栈定位。每 PR 的泄漏检测已由 `ci.yml` 的 slow job grep worker 强杀文案承担;本线提供逐句柄堆栈,跑 30 分钟不适合阻塞 PR |
 
 ### 为什么 Docker Smoke 当前建议 non-required
 

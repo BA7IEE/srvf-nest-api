@@ -16,6 +16,9 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: app
+    # 并行 e2e 容量(Harness 3.0 P1):最坏 8 worker × 3 app/spec × connection_limit 5 = 120,
+    # 加 seed 子进程/裸 PrismaClient 各 ≤5,峰值 <200;容器默认 100 会被击穿。
+    command: ['postgres', '-c', 'max_connections=200']
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

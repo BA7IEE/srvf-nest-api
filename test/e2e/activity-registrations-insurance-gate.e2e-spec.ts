@@ -245,6 +245,8 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
         SELECT pid
         FROM pg_stat_activity
         WHERE CAST(${blockerPid} AS integer) = ANY(pg_blocking_pids(pid))
+          AND datname = current_database()
+          AND pid <> pg_backend_pid()
           AND query LIKE ${queryPattern}
       `);
       if (rows.length > 0) return;
