@@ -96,12 +96,22 @@ elif [ "$PREFLIGHT_RC" != "0" ]; then
   # 只认「✗ 开头的判定行」:脚本尾部的说明文字里含「未落后 origin/main」,
   # 松匹配会把说明当成判定结果(实测踩到)。
   BEHIND_LINE="$(printf '%s' "$PREFLIGHT_OUT" | grep '✗' | grep '落后 origin/main' | head -1)"
+  # 合并进行中(MERGE_HEAD 存在)时,HEAD 仍指向合并前的提交,**按定义必然显示落后**。
+  # 此时拦写会把人锁在解冲突这一步之外 —— 而解冲突正是门禁要求的那个补救动作本身。
+  # 实测踩到:替 P3 分支对齐 main 时冲突未提交,门禁报「落后 1 个提交」并拒绝一切写,
+  # 连修门禁自己都做不到(与 P2b「开工前检查误用成每次写检查」同一类死锁)。
+  if [ -n "$BEHIND_LINE" ] && [ -f "$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)" ]; then
+    ADVISORY_MERGE="⚠️ 合并进行中(有未解决的冲突或未提交的合并)—— 「落后 origin/main」是该状态的必然表象,已不拦写;请先完成这次合并"
+    BEHIND_LINE=""
+  fi
   if [ -n "$BEHIND_LINE" ]; then
     BLOCKING_REASON="$BEHIND_LINE"
   elif [ "$PREFLIGHT_RC" = "127" ]; then
     BLOCKING_REASON="$PREFLIGHT_OUT"
   fi
   ADVISORY="$(printf '%s' "$PREFLIGHT_OUT" | grep '✗' | grep -v '落后 origin/main' | head -3)"
+  # 合并进行中的提示不能丢:降级不等于沉默,否则「为什么不拦了」无迹可循。
+  [ -n "${ADVISORY_MERGE:-}" ] && ADVISORY="$(printf '%s\n%s' "$ADVISORY_MERGE" "$ADVISORY")"
 fi
 
 if [ -z "$BLOCKING_REASON" ]; then

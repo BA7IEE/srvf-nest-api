@@ -194,6 +194,29 @@ expectExit('bash:pnpm lint 放行', 'bash-write-guard.sh', bash('pnpm lint'), 0)
 expectExit('bash:写普通业务文件放行', 'bash-write-guard.sh', bash("sed -i '' 's/a/b/' src/modules/users/users.service.ts"), 0);
 expectExit('bash:重定向 /dev/null 放行', 'bash-write-guard.sh', bash('pnpm test > /dev/null 2>&1'), 0);
 
+// ---- preflight-gate:合并进行中不得拦写(2026-07-29 实测死锁)----
+// 合并未提交时 HEAD 仍指向合并前的提交,**按定义必然显示落后 origin/main**。
+// 若此时拦写,人就被锁在解冲突这一步之外 —— 而解冲突正是门禁要求的补救动作本身。
+// (与 P2b「把开工前检查误用成每次写检查」同一类死锁,第二次学。)
+{
+  const gate = path.join(hooksDir, 'preflight-gate.sh');
+  const src = fs.readFileSync(gate, 'utf-8');
+  const has = src.includes('MERGE_HEAD');
+  if (has) {
+    passed++;
+    console.log('✓ preflight-gate:合并进行中豁免「落后 origin/main」硬判');
+  } else {
+    failures.push('✗ preflight-gate 未豁免 MERGE_HEAD —— 解冲突期间会被自己的门禁锁死');
+  }
+  const degradesNotSilently = src.includes('ADVISORY_MERGE');
+  if (degradesNotSilently) {
+    passed++;
+    console.log('✓ preflight-gate:该豁免降级为提示而非静默');
+  } else {
+    failures.push('✗ preflight-gate 的 MERGE_HEAD 豁免没有留下提示 —— 降级不等于沉默');
+  }
+}
+
 // ---- preflight-required:开工门禁执法半边 ----
 {
   const marker = gitPath('srvf-preflight.json');
