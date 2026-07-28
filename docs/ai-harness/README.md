@@ -18,7 +18,19 @@
 | 语法级铁律(17 条 + 2 组禁引) | `eslint.harness.mjs` | **双模型**(任何人跑 `pnpm lint` / CI 都判) | lint error,文案含正确做法 |
 | 红区路径写前拦截 | `.claude/hooks/redzone-guard.sh` | 仅 Claude(Codex 侧由 P2c 的 CI 守护兜底) | 拒绝写入 + 说明命中哪条 |
 | Bash 写侧旁路 | `.claude/hooks/bash-write-guard.sh` | 仅 Claude | 拒绝 `sed -i` / `>` / `cp` 等绕道 |
-| 开工门禁 | `preflight-gate.sh`(SessionStart 写通行标记)+ `preflight-required.sh`(PreToolUse 校验) | 仅 Claude | 门禁未过则**写操作**被拒(只读不受限) |
+| 开工门禁 | `preflight-gate.sh`(SessionStart 写通行标记)+ `preflight-required.sh`(PreToolUse 校验) | 仅 Claude | **硬条件**未过则写操作被拒(只读不受限);咨询条件只提示 |
+
+**门禁的两类条件**(process §2 的三硬判是「开工前别在这些状态下**开新功能**」,不是「每次写文件都查」——把它们一律升为拦写会让连续开发从第二次写入起卡死):
+
+| 条件 | 判定 | 理由 |
+|---|---|---|
+| 依赖 / Prisma 生成物陈旧 | **拦写** | 会爆几百个 unsafe-* 假错,此时写代码必然踩坑 |
+| 落后 origin/main | **拦写** | 在过时的基础上改代码 |
+| preflight 脚本不可用 | **拦写**(fail-closed) | 无法验证 ≠ 通过 |
+| 工作树非 clean | 提示 | 开发中本来就脏 |
+| 存在 open PR | 提示 | 连续推进的常态(与 lane 模式语义一致) |
+
+标记过期按**分支名**判(会话内提交会改 HEAD,按 sha 判则每 commit 一次全线卡死);仓库外文件不受本仓门禁管。
 
 **红区清单唯一机读源**:[`harness/redzone.json`](../../harness/redzone.json)(hook / 未来 CI 守护 / CODEOWNERS 三处共享;自身在裁判保护内)。
 
