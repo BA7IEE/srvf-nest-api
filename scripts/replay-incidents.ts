@@ -1,0 +1,279 @@
+import { execFileSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+
+// Harness 3.0 P2.5 — 事故回放(把「教训」变成「可重跑的证明」)。
+//
+// 仓库的教训一直只存在于 memory 与 PR 叙事里 —— 它们无法回答
+// **「今天这个事故还会不会重演」**。本脚本对 harness/incidents.json 里
+// 每条标 covered 的事故实际触发一次场景,断言守护确实拦下;
+// 对每条反向案例(inverse)断言守护确实**不**拦。
+//
+// 为什么反向案例同等重要:P2b 实测三次误伤 —— 误伤到让人不得不绕过的程度,
+// 防线就已经失效。只测「该拦时拦」会把守护越修越严,直到没人愿意用。
+//
+// 用途:
+//   pnpm harness:replay            改 harness / 换模型 / 大重构前后各跑一次
+//   pnpm harness:replay --coverage 只看覆盖率与缺口(不跑探针)
+//
+// 设计:探针只做**只读或自还原**的操作;任何会污染仓库的探针一律不写。
+
+const ROOT = path.resolve(__dirname, '..');
+
+interface Incident {
+  readonly id: string;
+  readonly title: string;
+  readonly status: 'covered' | 'uncovered' | 'accepted';
+  readonly guard: string | null;
+  readonly probe?: string;
+  readonly note?: string;
+}
+interface Inverse {
+  readonly id: string;
+  readonly title: string;
+  readonly why: string;
+  readonly probe: string;
+}
+
+const registry = JSON.parse(
+  fs.readFileSync(path.join(ROOT, 'harness/incidents.json'), 'utf-8'),
+) as { incidents: Incident[]; inverse: Inverse[] };
+
+let passed = 0;
+const failures: string[] = [];
+const skipped: string[] = [];
+
+function record(ok: boolean, label: string, detail: string): void {
+  if (ok) {
+    passed++;
+    console.log(`✓ ${label}`);
+  } else {
+    failures.push(`✗ ${label} — ${detail}`);
+  }
+}
+
+function hookExit(script: string, input: unknown): number {
+  try {
+    execFileSync(path.join(ROOT, '.claude/hooks', script), {
+      input: JSON.stringify(input),
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: ROOT,
+    });
+    return 0;
+  } catch (err) {
+    return (err as { status?: number }).status ?? -1;
+  }
+}
+
+function fileHas(rel: string, needle: string): boolean {
+  try {
+    return fs.readFileSync(path.join(ROOT, rel), 'utf-8').includes(needle);
+  } catch {
+    return false;
+  }
+}
+
+function gitPath(name: string): string {
+  const p = execFileSync('git', ['rev-parse', '--git-path', name], {
+    encoding: 'utf-8',
+    cwd: ROOT,
+  }).trim();
+  return path.isAbsolute(p) ? p : path.join(ROOT, p);
+}
+
+const edit = (f: string) => ({ tool_name: 'Edit', tool_input: { file_path: f } });
+const bash = (c: string) => ({ tool_name: 'Bash', tool_input: { command: c } });
+
+// 探针注册表:每个返回 [是否通过, 说明]
+// 全部只读或自还原 —— 回放不得污染仓库(否则没人敢在开发中途跑)。
+const probes: Record<string, () => [boolean, string]> = {
+  'prisma-stale': () => {
+    const src = fs.readFileSync(path.join(ROOT, '.claude/hooks/preflight-gate.sh'), 'utf-8');
+    const ok = src.includes('GENERATED_SCHEMA') && src.includes('prisma:generate');
+    return [ok, '门禁未检测 Prisma 生成物陈旧'];
+  },
+  'counts-drift': () => {
+    try {
+      execFileSync('pnpm', ['docs:counts:check'], { cwd: ROOT, stdio: 'pipe' });
+      return [true, ''];
+    } catch {
+      return [false, 'docs:counts:check 当前为红(计数已漂移)'];
+    }
+  },
+  'db-name-collision': () => {
+    const src = fs.readFileSync(path.join(ROOT, 'test/setup/worktree-db.ts'), 'utf-8');
+    const ok = src.includes('MAX_PG_IDENTIFIER') && src.includes('assertDerivedName');
+    return [ok, '派生库名缺 63 字符硬断言(超长会被静默截断 → 跨 worker 撞库)'];
+  },
+  'hook-exit-code': () => {
+    // 真触发:红区写入必须 exit 2(exit 1 会被 Claude Code 当非阻断直接放行)
+    const grantFile = gitPath('srvf-redzone-grant.json');
+    const bak = `${grantFile}.replay-bak`;
+    const had = fs.existsSync(grantFile);
+    if (had) fs.renameSync(grantFile, bak);
+    try {
+      const code = hookExit('redzone-guard.sh', edit('AGENTS.md'));
+      return [code === 2, `红区写入返回 exit ${code},期望 2`];
+    } finally {
+      if (had) fs.renameSync(bak, grantFile);
+    }
+  },
+  'eslint-rules-live': () => {
+    try {
+      execFileSync('pnpm', ['exec', 'tsx', 'scripts/harness-eslint.selftest.ts'], {
+        cwd: ROOT,
+        stdio: 'pipe',
+      });
+      return [true, ''];
+    } catch {
+      return [false, 'eslint 阳性对照失败 —— 规则可能已静默失效'];
+    }
+  },
+  'gate-fail-open': () => {
+    const src = fs.readFileSync(path.join(ROOT, '.claude/hooks/preflight-gate.sh'), 'utf-8');
+    const ok = src.includes('-f scripts/agent-preflight.sh') && src.includes('fail-closed');
+    return [ok, '门禁未对「脚本不可用」做 fail-closed(会宣布未检查的通过)'];
+  },
+  'pglocks-db-scoped': () => {
+    const dir = path.join(ROOT, 'test/e2e');
+    const offenders: string[] = [];
+    const scoped = /datname\s*=\s*current_database\(\)|lock\.database\s*=|pid\s*=\s*pg_backend_pid\(\)|pid\s*=\s*CAST\(/;
+    for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.e2e-spec.ts'))) {
+      const src = fs.readFileSync(path.join(dir, f), 'utf-8');
+      for (const seg of src.split(/\$queryRaw|Prisma\.sql/).slice(1)) {
+        const block = seg.slice(0, 700);
+        if (/FROM\s+pg_(locks|stat_activity)/i.test(block) && !scoped.test(block)) offenders.push(f);
+      }
+    }
+    return [offenders.length === 0, `未按库收敛的观测点:${[...new Set(offenders)].join(', ')}`];
+  },
+  'ci-gate-fail-open': () => {
+    const ci = fs.readFileSync(path.join(ROOT, '.github/workflows/ci.yml'), 'utf-8');
+    const ok = ci.includes('needs.changeset.result') && ci.includes('docs_only }}" != "true"');
+    return [ok, 'CI gate 未正面证明 docs_only(skipped 会被当通过)'];
+  },
+  'semver-sort': () => [fileHas('scripts/release-prepare.ts', 'semverKey'), 'handoff 上一版仍按字符串排序'],
+  'judge-protected': () => {
+    const rz = JSON.parse(fs.readFileSync(path.join(ROOT, 'harness/redzone.json'), 'utf-8')) as {
+      selfGuard: Array<{ globs: string[] }>;
+    };
+    const globs = rz.selfGuard.flatMap((e) => e.globs);
+    const ok = globs.includes('scripts/harness-grant.ts') && globs.includes('.claude/hooks/**');
+    return [ok, '授权工具或 hook 自身不在裁判保护内'];
+  },
+  'behind-main-blocks': () => {
+    const src = fs.readFileSync(path.join(ROOT, '.claude/hooks/preflight-gate.sh'), 'utf-8');
+    const ok = src.includes('BEHIND_LINE') && src.includes('BLOCKING_REASON');
+    return [ok, '「落后 origin/main」未被列为拦写的硬条件'];
+  },
+
+  // ── 反向案例:守护必须**不**拦 ──────────────────────────────────────────
+  'dirty-tree-allows-write': () => {
+    const src = fs.readFileSync(path.join(ROOT, '.claude/hooks/preflight-gate.sh'), 'utf-8');
+    const ok = src.includes('ADVISORY') && src.includes('不应开新功能');
+    return [ok, '工作树脏 / open PR 未降级为咨询 → 连续开发会卡死'];
+  },
+  'descriptive-text-allowed': () => {
+    const code = hookExit('bash-write-guard.sh', bash('git commit -m "docs: 禁止 sed -i 绕过红区"'));
+    return [code === 0, `提交信息里描述写侧命令被误拦(exit ${code})`];
+  },
+  'read-from-protected-allowed': () => {
+    const code = hookExit('bash-write-guard.sh', bash('cp .claude/hooks/redzone-guard.sh tmp/x.sh'));
+    return [code === 0, `从受保护路径读出被误拦(exit ${code})`];
+  },
+  'outside-repo-allowed': () => {
+    const marker = gitPath('srvf-preflight.json');
+    const bak = `${marker}.replay-bak`;
+    const had = fs.existsSync(marker);
+    if (had) fs.renameSync(marker, bak);
+    try {
+      const code = hookExit('preflight-required.sh', edit('/tmp/outside-repo-file.md'));
+      return [code === 0, `仓库外文件被本仓门禁误拦(exit ${code})`];
+    } finally {
+      if (had) fs.renameSync(bak, marker);
+    }
+  },
+  'normal-paths-allowed': () => {
+    const codes = [
+      hookExit('redzone-guard.sh', edit('src/modules/users/users.service.ts')),
+      hookExit('redzone-guard.sh', edit('test/e2e/users.e2e-spec.ts')),
+      hookExit('redzone-guard.sh', edit('docs/testing.md')),
+    ];
+    return [codes.every((c) => c === 0), `日常路径被红区误拦:exit ${codes.join(',')}`];
+  },
+  'justified-exemption-allowed': () => {
+    const n = execFileSync('bash', ['-c', "grep -rc 'eslint-disable-next-line no-restricted-syntax' src | grep -v ':0' | wc -l"], {
+      cwd: ROOT,
+      encoding: 'utf-8',
+    }).trim();
+    return [Number(n) > 0, '无任何带原因的豁免样例 —— 若规则不给豁免通道,人会整体关掉它'];
+  },
+};
+
+function main(): void {
+  const coverageOnly = process.argv.includes('--coverage');
+
+  const covered = registry.incidents.filter((i) => i.status === 'covered');
+  const uncovered = registry.incidents.filter((i) => i.status === 'uncovered');
+  const accepted = registry.incidents.filter((i) => i.status === 'accepted');
+
+  console.log(
+    `事故登记簿:${registry.incidents.length} 条 ` +
+      `(covered ${covered.length} / uncovered ${uncovered.length} / accepted ${accepted.length})` +
+      ` + 反向案例 ${registry.inverse.length} 条\n`,
+  );
+
+  if (coverageOnly) {
+    for (const i of [...uncovered, ...accepted]) {
+      console.log(`[${i.status.toUpperCase()}] ${i.id} ${i.title}`);
+      if (i.note) console.log(`         ${i.note}`);
+    }
+    console.log('\n(--coverage 只列缺口,不跑探针)');
+    return;
+  }
+
+  console.log('── 回放:事故是否仍会被拦下 ──');
+  for (const inc of covered) {
+    if (!inc.probe) {
+      skipped.push(`${inc.id} 标 covered 但无 probe`);
+      continue;
+    }
+    const probe = probes[inc.probe];
+    if (!probe) {
+      failures.push(`✗ ${inc.id} — 探针 '${inc.probe}' 未实现(登记簿与脚本脱节)`);
+      continue;
+    }
+    const [ok, detail] = probe();
+    record(ok, `${inc.id} ${inc.title.slice(0, 46)}`, detail);
+  }
+
+  console.log('\n── 反向:不该拦时必须不拦 ──');
+  for (const inv of registry.inverse) {
+    const probe = probes[inv.probe];
+    if (!probe) {
+      failures.push(`✗ ${inv.id} — 探针 '${inv.probe}' 未实现`);
+      continue;
+    }
+    const [ok, detail] = probe();
+    record(ok, `${inv.id} ${inv.title.slice(0, 46)}`, detail);
+  }
+
+  if (uncovered.length > 0 || accepted.length > 0) {
+    console.log('\n── 已知缺口(不假装安全)──');
+    for (const i of [...uncovered, ...accepted]) console.log(`  [${i.status}] ${i.id} ${i.title}`);
+  }
+
+  for (const s of skipped) console.log(`\n⚠️  ${s}`);
+  for (const f of failures) console.error(f);
+  console.log(`\n${passed} passed, ${failures.length} failed`);
+  if (failures.length > 0) {
+    console.error(
+      '\n⚠️ 历史事故的守护已失效,或守护开始误伤。两者都意味着防线不可信 ——' +
+        '\n   前者会让事故重演,后者会让人绕过防线。改 harness 后请对比本命令的前后输出。',
+    );
+    process.exit(1);
+  }
+}
+
+main();

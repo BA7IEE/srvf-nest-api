@@ -41,6 +41,7 @@
     "agent:preflight": "bash scripts/agent-preflight.sh",
     "agent:check:quick": "bash scripts/check-quick.sh",
     "harness:grant": "tsx scripts/harness-grant.ts",
+    "harness:replay": "tsx scripts/replay-incidents.ts",
     "harness:selftest": "tsx scripts/harness-guards.selftest.ts && tsx scripts/harness-eslint.selftest.ts && tsx scripts/harness-hooks.selftest.ts",
     "agent:check:api": "pnpm lint && pnpm typecheck && pnpm harness:selftest && pnpm test && pnpm test:contract",
     "agent:check:full": "pnpm lint && pnpm typecheck && pnpm harness:selftest && pnpm build && pnpm test && pnpm test:contract && pnpm test:e2e",
@@ -52,6 +53,8 @@
     "docs:counts:check": "tsx scripts/docs-counts.ts --check",
     "docs:readtax:check": "tsx scripts/docs-readtax.ts",
     "changelog:merge": "tsx scripts/changelog-merge.ts",
+    "release:prepare": "tsx scripts/release-prepare.ts",
+    "release:finish": "tsx scripts/release-finish.ts",
     "docs:handoff:openapi": "curl -fsS http://localhost:3000/api/docs-json -o docs/handoff/openapi.json && echo 'openapi → docs/handoff/openapi.json'"
   },
   "dependencies": {

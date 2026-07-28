@@ -1,0 +1,184 @@
+{
+  "_comment": [
+    "事故 → 守护 覆盖登记簿(Harness 3.0 P2.5)。",
+    "",
+    "为什么要这个:仓库的教训一直只存在于 memory 与 PR 叙事里 —— 它们无法回答",
+    "『今天这个事故还会不会重演』。本登记簿把每条真实事故绑到一个**可回放的探针**上:",
+    "  covered   → scripts/replay-incidents.ts 会实际触发该场景并断言守护确实拦下",
+    "  uncovered → 明确承认无机器守护(靠散文/人),不假装安全",
+    "  accepted  → 该风险已被评估并接受(附理由)",
+    "",
+    "另含**反向案例**(inverse):不该拦时必须不拦。只测『该拦时拦』会漏掉误伤,",
+    "而误伤到让人绕过的程度,防线同样失效(P2b 实测过三次误伤)。",
+    "",
+    "用途:改 harness / 换模型 / 大重构前后各跑一次 `pnpm harness:replay`,",
+    "对比结果即可回答『规则还管不管用』——这正是 P3 恒读层重写敢动手的前提。"
+  ],
+  "version": 1,
+  "incidents": [
+    {
+      "id": "INC-01",
+      "title": "复用 worktree 的陈旧 Prisma 生成物,让未触碰的 src 文件爆数百个 unsafe-* 假错",
+      "source": "memory/reused-worktree-stale-prisma-client.md",
+      "cost": "单次事故浪费 5-15 轮排查(且会让人先怀疑自己的 diff)",
+      "status": "covered",
+      "guard": "preflight-gate.sh 检测生成物缺失/陈旧 → 不发通行标记 → 写操作被拒",
+      "probe": "prisma-stale"
+    },
+    {
+      "id": "INC-02",
+      "title": "e2e fixture 硬编码历史日期,耦合墙钟的报名/App 池闸随时间引爆",
+      "source": "memory/e2e-activity-fixture-time-bomb.md",
+      "cost": "定向 sweep 漏测 → 全量 e2e 才暴露",
+      "status": "uncovered",
+      "guard": null,
+      "note": "静态检测『日期是否会过期』需要业务语义(哪些字段耦合墙钟),误杀率高。当前靠 CI 恒跑全量 e2e 兜底(P1 并行化后成本已大幅下降)。"
+    },
+    {
+      "id": "INC-03",
+      "title": "docs 计数漂移(migration 恒 49 实为 50;RBAC_MAP 76→191)",
+      "source": "memory/srvf-local-env-and-conventions.md",
+      "cost": "简报数字错误,基于错数字的判断连带错",
+      "status": "covered",
+      "guard": "docs:counts:check(AST 提取)+ P4a 起 RBAC_MAP 派生段改生成 + 新鲜度校验",
+      "probe": "counts-drift"
+    },
+    {
+      "id": "INC-04",
+      "title": "worktree 派生测试库撞名 → 两条 lane 共库互相 TRUNCATE",
+      "source": "第五轮 review R5-04",
+      "cost": "随机、极难归因的跨 lane 测试失败",
+      "status": "covered",
+      "guard": "harness-guards.selftest 的 R5-04 派生样例 + P1 的 63 字符硬断言",
+      "probe": "db-name-collision"
+    },
+    {
+      "id": "INC-05",
+      "title": "jest hook 用 exit 1 拦截 → Claude Code 视为非阻断,直接放行",
+      "source": "P2b 施工实测(官方文档确认)",
+      "cost": "『拦截』只存在于纸面,无人察觉",
+      "status": "covered",
+      "guard": "harness-hooks.selftest 全部用例断言 exit 2",
+      "probe": "hook-exit-code"
+    },
+    {
+      "id": "INC-06",
+      "title": "flat config 同 ruleId 后块整体覆盖前块 → 窄域豁免静默关掉整组规则",
+      "source": "P2a 预研实测(矩阵未记载)",
+      "cost": "lint 全绿但 12 条铁律失效,完全静默",
+      "status": "covered",
+      "guard": "harness-eslint.selftest 30 例阳性对照(每条规则喂必定违规片段)",
+      "probe": "eslint-rules-live"
+    },
+    {
+      "id": "INC-07",
+      "title": "开工门禁用 [ -x ] 判可执行性,而脚本是 644 → 检查整段跳过却报 PASS",
+      "source": "P2b-fix 实测(#804)",
+      "cost": "门禁宣布『已检查、通过』而实际未检查 —— 最恶劣的 fail-open",
+      "status": "covered",
+      "guard": "harness-hooks.selftest 的 gate:preflight 脚本缺失时 fail-closed",
+      "probe": "gate-fail-open"
+    },
+    {
+      "id": "INC-08",
+      "title": "pg_locks 是实例级视图 + TEMPLATE 克隆保留 OID → 并发屏障被别 worker 的锁提前放行",
+      "source": "P1 对抗性评审实测(模板与 _w1/_w2 的 OID 均为 40368849)",
+      "cost": "真并发测试静默降级为『只测预检查路径』,断言照样通过",
+      "status": "covered",
+      "guard": "harness-guards.selftest 的静态检查:pg_locks/pg_stat_activity 必须按当前库或自身 pid 收敛",
+      "probe": "pglocks-db-scoped"
+    },
+    {
+      "id": "INC-09",
+      "title": "CI gate 把 needs 依赖失败导致的 skipped 当成通过 → e2e 从未运行而必需检查报绿",
+      "source": "P1 对抗性评审",
+      "cost": "改了 src 的 PR 在零测试的情况下满足 required check",
+      "status": "covered",
+      "guard": "harness-guards.selftest 的 P1 gate 断言(必须正面证明 docs_only)",
+      "probe": "ci-gate-fail-open"
+    },
+    {
+      "id": "INC-10",
+      "title": "handoff『接续上一版』用字符串排序 → v0.9.0 > v0.62.0 指错上一版",
+      "source": "P4c 试跑实测",
+      "cost": "发版文档指向错误的前序版本",
+      "status": "covered",
+      "guard": "harness-guards.selftest 的 P4c semverKey 断言",
+      "probe": "semver-sort"
+    },
+    {
+      "id": "INC-11",
+      "title": "守卫脚本自身不在保护内 → 违规 PR 可在同一分支把检查改成恒 PASS,检查名不变、CI 照绿",
+      "source": "P2b 对抗性评审 blocker",
+      "cost": "唯一权威(CI 绿)被自考自评",
+      "status": "covered",
+      "guard": "redzone.json selfGuard + ci-guard-coverage 断言(CI 引用的守卫必须在保护内)",
+      "probe": "judge-protected"
+    },
+    {
+      "id": "INC-12",
+      "title": "掩码 PII 字段在管理端编辑表单 round-trip → 保存时用掩码覆盖真值",
+      "source": "memory/masked-field-write-back-gotcha.md",
+      "cost": "真实数据被 `***` 覆盖(不可逆)",
+      "status": "uncovered",
+      "guard": null,
+      "note": "需要跨端语义(后端掩码 × 前端表单回写),静态检测不可行。当前靠 DTO 层『不发即保留』范式 + e2e 行为锁,并在 handoff 标注 FE 适配点。"
+    },
+    {
+      "id": "INC-13",
+      "title": "squash 清理时 `git diff main..branch` 非空被误读为『分支有未合内容』(main 已前进的假阳性)",
+      "source": "memory/patch-equiv-false-positive-advanced-main.md",
+      "cost": "越过 stop-gate 或误删分支",
+      "status": "accepted",
+      "guard": null,
+      "note": "已在 process §5.4 条 6 写明改用 squash 提交为基准;脚本化归 P2c 的 squash-merge-guard,尚未落地。当前靠散文 + 本会话实践(tree hash 比对)。"
+    },
+    {
+      "id": "INC-14",
+      "title": "worktree 静默落后 origin/main,基于陈旧代码得出的『正确』结论其实是错的",
+      "source": "memory/stale-worktree-before-verify.md",
+      "cost": "元核验/数字研究结论错误",
+      "status": "covered",
+      "guard": "preflight-gate 把『落后 origin/main』列为硬条件(拦写)",
+      "probe": "behind-main-blocks"
+    }
+  ],
+  "inverse": [
+    {
+      "id": "INV-01",
+      "title": "工作树脏 / 有 open PR 时,继续当前任务的写操作必须放行",
+      "why": "P2b 曾把它们升为拦写,导致连续开发从第二次写入起全线卡死(作者被自己锁死)",
+      "probe": "dirty-tree-allows-write"
+    },
+    {
+      "id": "INV-02",
+      "title": "提交信息里**描述**写侧命令(如『禁止 sed -i』)不得被判为要执行它",
+      "why": "P2b 实测误伤:commit message 里提到命令 → 被当成要执行 → 拒绝提交",
+      "probe": "descriptive-text-allowed"
+    },
+    {
+      "id": "INV-03",
+      "title": "从受保护路径**读出**(cp 到临时目录)必须放行",
+      "why": "P2b 实测误伤:红区只该拦『写入』,不该拦『读出』",
+      "probe": "read-from-protected-allowed"
+    },
+    {
+      "id": "INV-04",
+      "title": "仓库外文件(如 ~/.claude 下的 memory)不受本仓门禁管",
+      "why": "P2b 实测误伤:门禁语义是『本仓状态不干净时别改本仓代码』,与仓外无关",
+      "probe": "outside-repo-allowed"
+    },
+    {
+      "id": "INV-05",
+      "title": "普通业务代码 / 普通 e2e / 普通文档的写入必须放行",
+      "why": "红区若误伤日常路径,会训练出『无视门禁』的习惯 —— 比没有门禁更糟",
+      "probe": "normal-paths-allowed"
+    },
+    {
+      "id": "INV-06",
+      "title": "合法的硬删(连接表/闭包表/含 PII 的短时凭据)带原因豁免后必须放行",
+      "why": "lint 若不给豁免通道,开发者会整体关掉规则",
+      "probe": "justified-exemption-allowed"
+    }
+  ]
+}

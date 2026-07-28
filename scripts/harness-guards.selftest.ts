@@ -566,7 +566,50 @@ checkEq(
     '两文件必须逐字节一致(白名单改动须成对可见)',
   );
 
-  // ⑥ 集群级目录视图(pg_locks / pg_stat_activity)必须按当前库收敛。
+  // ⑥ P4c 发版脚本的硬边界(设计即约束,不靠自觉)
+  {
+    const prep = read('scripts/release-prepare.ts');
+    const finish = read('scripts/release-finish.ts');
+    // 阶段 A 只写文件:不提交、不开 PR、不合并、不打 tag —— 自合门必须留在人手里
+    for (const forbidden of ['git commit', 'gh pr create', 'gh pr merge', "'tag'", 'git push']) {
+      check(
+        `P4c release:阶段 A 不含「${forbidden}」`,
+        !prep.includes(forbidden),
+        '阶段 A 越界:它只应写文件,提交/开 PR/合并/打 tag 全部交人(自合门)',
+      );
+    }
+    // 阶段 B 不改任何仓库文件(只与 git ref / GitHub 打交道;临时 notes 文件在 tmp/ 内)
+    check(
+      'P4c release:阶段 B 不写仓库文档',
+      !/writeFileSync\([^)]*(CHANGELOG|current-state|package\.json|apply-swagger)/.test(finish),
+      '阶段 B 越界:tag/Release 阶段不该再改文件,否则 release PR 的 diff 不可信',
+    );
+    // 两段都必须 fail-closed
+    for (const [name, src] of [
+      ['prepare', prep],
+      ['finish', finish],
+    ] as const) {
+      check(
+        `P4c release:${name} 具备 fail-closed 退出`,
+        src.includes('process.exit(1)'),
+        '无法确定时必须停下,不猜',
+      );
+    }
+    // handoff「接续上一版」必须按 semver 数值排序 —— 字符串排序下 v0.9.0 > v0.62.0(实测踩到)
+    check(
+      'P4c release:handoff 上一版按 semver 数值排序',
+      prep.includes('semverKey'),
+      '字符串排序会把「接续上一版」指错(v0.9.0 > v0.62.0)',
+    );
+    // tag 不得被自动移动:已存在但指向不符 → 停下报告
+    check(
+      'P4c release:已存在的 tag 指向不符时不自动移动',
+      finish.includes('不自动移动 tag'),
+      'tag 指错是重大异常,必须人工确认',
+    );
+  }
+
+  // ⑦ 集群级目录视图(pg_locks / pg_stat_activity)必须按当前库收敛。
   // TEMPLATE 克隆使各 worker 库的 pg_class.oid 完全相同(已实测),
   // 不加库谓词的观测会计入别的 worker 的锁 → 并发屏障提前放行 → 测试假绿。
   const DB_SCOPED = /datname\s*=\s*current_database\(\)|lock\.database\s*=|pid\s*=\s*pg_backend_pid\(\)|pid\s*=\s*CAST\(/;
