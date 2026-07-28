@@ -2,7 +2,8 @@
 /**
  * check-rbac-map.ts — RBAC_MAP 漂移检查
  *
- * 用途:校验 docs/ai-harness/RBAC_MAP.md 声明、prisma/seed.ts 权限码、src/ 实际使用三方一致,
+ * 用途:校验 prisma/seed.ts 权限码与 src/ 实际使用的**代码对代码**不变量。
+ * (P4a 起 RBAC_MAP.md 的派生段由 generate-rbac-map.ts 生成,文档计数类检查已移除。)
  * 输出 PASS / WARN / FAIL / INFO。只读检查,不修改任何文件,不接入 CI。
  * 沿 scripts/check-codemap.ts 范式(零依赖;承接 docs/ai-harness/NEXT_TASKS.md P1-1 立项)。
  *
@@ -14,8 +15,6 @@
  *
  * 检查项:
  *   A. seed-codes-extract        — seed 权限码可提取且非空(FAIL on empty)
- *   B. rbacmap-code-count        — RBAC_MAP.md 声明的权限码总数 vs seed 实际 (FAIL on drift)
- *   C. rbacmap-controller-count  — RBAC_MAP.md 声明的 controller 数 vs src 实际 (FAIL on drift)
  *   D. controller-prefix-canonical — 全部 @Controller 前缀落在 CANONICAL_PREFIXES 内 (FAIL on violation)
  *   E. direct-call-codes-seeded  — rbac.can()/judge() 同行字面量码必须在 seed 中 (FAIL on miss)
  *   F. seed-codes-referenced     — seed 码在 src 中有字面量引用或被动态模板前缀覆盖 (WARN on orphan)
@@ -50,7 +49,6 @@ interface CheckResult {
 
 const repoRoot = process.cwd();
 const seedRelPath = 'prisma/seed.ts';
-const rbacMapRelPath = 'docs/ai-harness/RBAC_MAP.md';
 // 招新一期(招新前段)T3(2026-06-18):open/v1 首用——无账号公开报名 surface(api-surface-policy §0
 // 「预留→首用」解锁;第 5 canonical 前缀,与 test/contract/openapi.contract-spec.ts CANONICAL_PREFIXES 同步)。
 const CANONICAL_PREFIXES = ['admin/v1', 'app/v1', 'auth/v1', 'system/v1', 'open/v1'] as const;
@@ -122,12 +120,6 @@ function extractControllers(files: string[]): ControllerDecl[] {
     }
   }
   return out;
-}
-
-// RBAC_MAP.md 声明计数:沿文档固定措辞("权限码全集(N 条" / "(N 个 controller")。
-function parseDeclaredCount(doc: string, re: RegExp): number | null {
-  const m = re.exec(doc);
-  return m ? parseInt(m[1], 10) : null;
 }
 
 interface SrcScan {
@@ -262,29 +254,6 @@ function checkSeedCodesExtract(codes: Set<string>): CheckResult {
     severity: 'PASS',
     summary: `${codes.size} permission code(s) extracted from ${seedRelPath}`,
   };
-}
-
-function checkDeclaredCount(
-  id: string,
-  label: string,
-  declared: number | null,
-  actual: number,
-): CheckResult {
-  if (declared === null) {
-    return {
-      id,
-      severity: 'FAIL',
-      summary: `${rbacMapRelPath} 未找到${label}声明(实际 ${actual});请同步该文档`,
-    };
-  }
-  if (declared !== actual) {
-    return {
-      id,
-      severity: 'FAIL',
-      summary: `${label}漂移:${rbacMapRelPath} 声明 ${declared},实际 ${actual}`,
-    };
-  }
-  return { id, severity: 'PASS', summary: `${label} ${actual},与 ${rbacMapRelPath} 声明一致` };
 }
 
 function checkCanonicalPrefixes(controllers: ControllerDecl[]): CheckResult {
@@ -451,10 +420,11 @@ function printSummary(results: CheckResult[]): void {
 // ---------------------------------------------------------------------------
 
 function main(): void {
+  // P4a 起本检查只做「代码对代码」不变量,不再读 RBAC_MAP.md
+  // (该文档的派生段由 generate-rbac-map.ts 生成并自带新鲜度校验)。
   const seedSource = readRepoFile(seedRelPath);
-  const rbacMapDoc = readRepoFile(rbacMapRelPath);
-  if (seedSource === '' || rbacMapDoc === '') {
-    console.log(`[FAIL] inputs-exist (${seedRelPath} 或 ${rbacMapRelPath} 不存在/为空)`);
+  if (seedSource === '') {
+    console.log(`[FAIL] inputs-exist (${seedRelPath} 不存在/为空)`);
     console.log('');
     console.log('Summary: 1 FAIL, 0 WARN, 0 INFO, 0 PASS');
     process.exitCode = 1;
@@ -468,18 +438,12 @@ function main(): void {
 
   const results: CheckResult[] = [
     checkSeedCodesExtract(seedCodes),
-    checkDeclaredCount(
-      'rbacmap-code-count',
-      '权限码总数',
-      parseDeclaredCount(rbacMapDoc, /权限码全集\((\d+)\s*条/),
-      seedCodes.size,
-    ),
-    checkDeclaredCount(
-      'rbacmap-controller-count',
-      'controller 数',
-      parseDeclaredCount(rbacMapDoc, /\((\d+)\s*个 controller class/),
-      controllers.length,
-    ),
+    // rbacmap-code-count / rbacmap-controller-count 已于 Harness 3.0 P4a 删除:
+    // 那两条检查的存在前提是「RBAC_MAP 由人手维护、可能与代码漂移」。该文档的派生段
+    // 现由 `pnpm docs:rbacmap` 从 seed 与 @Controller 生成,新鲜度由
+    // `generate-rbac-map.ts --check`(重新生成并比对)守护 —— 计数不一致必然表现为
+    // 生成段差异,再单独数一遍是给「不该存在的问题」打补丁。
+    // 保留下方四条**代码对代码**的不变量:它们与文档无关,是真安全网。
     checkCanonicalPrefixes(controllers),
     checkDirectCallCodesSeeded(scan, seedCodes),
     ...checkSeedCodesReferenced(scan, seedCodes),

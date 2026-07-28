@@ -75,11 +75,21 @@
         ".claude/settings.example.json",
         ".claude/rules/**",
         "eslint.harness.mjs",
-        "scripts/**",
+        "scripts/check-*.ts",
+        "scripts/check-*.sh",
+        "scripts/*.selftest.ts",
+        "scripts/*.selftest.sh",
+        "scripts/agent-preflight.sh",
+        "scripts/docs-counts.ts",
+        "scripts/docs-readtax.ts",
+        "scripts/harness-grant.ts",
+        "scripts/db-test-prune.ts",
+        "scripts/generate-*.ts",
         "test/setup/**",
         "test/contract/**"
       ],
-      "why": "裁判保护(对抗性评审 blocker):CI 跑的是 PR 分支上的守卫脚本 —— 不锁住裁判,任何违规 PR 都可以顺手把检查改成恒 PASS、检查名不变、CI 照绿。同理 test/setup(全量 e2e 的地基)与 test/contract(考卷本体)。⚠️ 与 AGENTS §3 现文『test/** 属 🟢 自由区』冲突,该口径需在 P3 同步收窄为『test/** 减去 setup 与 contract』"
+      "why": "裁判保护(对抗性评审 blocker):CI 跑的是 PR 分支上的守卫脚本 —— 不锁住裁判,任何违规 PR 都可以顺手把检查改成恒 PASS、检查名不变、CI 照绿。同理 test/setup(全量 e2e 的地基)与 test/contract(考卷本体)。⚠️ 与 AGENTS §3 现文『test/** 属 🟢 自由区』冲突,该口径需在 P3 同步收窄为『test/** 减去 setup 与 contract』",
+      "scopeNote": "2026-07-28 拍板收窄:原为整个 scripts/**,导致每新增一个普通脚本(生成器等)都要授权一次 —— 授权一旦沦为例行公事就不再是拍板,与『误伤摧毁守护可信度』同源。现按「是不是裁判」列具名清单:CI 门禁(check-* / docs-counts / docs-readtax)、守卫的守卫(*.selftest)、开工门禁(agent-preflight)、**授权工具本身(harness-grant —— 能改它就能自授权,最关键的一条)**、破坏性操作(db-test-prune)。非裁判脚本(如 changelog-merge)放开。⚠️ 收窄当天由 ci-guard-coverage 断言当场纠正了一处判断错误:**生成器也是裁判** —— `generate-*.ts --check`(新鲜度校验)是 CI 的一道门,把它改成恒返回通过,校验就静默失效;故 `scripts/generate-*.ts` 一并纳入。防「改名绕过」由该断言持续兜底:凡被 CI 检查链引用的 scripts/ 文件必须落在本清单内,新增守卫却未纳入保护 → 当场红。"
     }
   ],
   "grantFile": "srvf-redzone-grant.json",

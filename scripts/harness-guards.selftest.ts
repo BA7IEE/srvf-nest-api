@@ -480,14 +480,56 @@ checkEq(
   };
   const selfGlobs = redzone.selfGuard.flatMap((e) => e.globs);
   for (const must of [
-    'scripts/**',
     'test/setup/**',
     'test/contract/**',
     '.claude/hooks/**',
     'harness/**',
     'eslint.harness.mjs',
+    'scripts/harness-grant.ts', // 授权工具:能改它就能自授权,最关键的一条
   ]) {
     check(`P2b redzone:裁判保护覆盖 ${must}`, selfGlobs.includes(must), '执法层可被 PR 内改松');
+  }
+
+  // ── ci-guard-coverage:凡被检查链引用的 scripts/ 文件,必须落在裁判保护内 ──────
+  // 2026-07-28 把 selfGuard 从整个 scripts/** 收窄为具名清单后,新增的漏洞是
+  // 「把守卫命名成清单外的名字再挂进 CI」。本断言把这个洞堵死:从 package.json 的
+  // 检查链(agent:check:* / harness:selftest / docs:*:check)与 ci.yml 里解析出所有
+  // 被引用的 scripts/ 文件,逐一要求命中 selfGuard —— 加了新守卫却没纳入保护,当场红。
+  {
+    const pkg = JSON.parse(read('package.json')) as { scripts: Record<string, string> };
+    const ciYml = read('.github/workflows/ci.yml');
+    const guardEntries = Object.entries(pkg.scripts).filter(([name]) =>
+      /^(agent:check|harness:selftest|docs:.*:check)/.test(name),
+    );
+    // 展开一层 pnpm <script> 引用,拿到最终的 scripts/ 路径
+    const referenced = new Set<string>();
+    const collect = (cmd: string): void => {
+      for (const m of cmd.matchAll(/scripts\/[A-Za-z0-9._-]+\.(ts|sh)/g)) referenced.add(m[0]);
+      for (const m of cmd.matchAll(/pnpm ([a-z][a-z0-9:-]*)/g)) {
+        const sub = pkg.scripts[m[1]];
+        if (sub && !sub.includes(m[1])) collect(sub);
+      }
+    };
+    for (const [, cmd] of guardEntries) collect(cmd);
+    for (const m of ciYml.matchAll(/pnpm ([a-z][a-z0-9:-]*)/g)) {
+      const sub = pkg.scripts[m[1]];
+      if (sub) collect(sub);
+    }
+
+    const matchesAnyGlob = (p: string): boolean =>
+      selfGlobs.some((g) => {
+        if (g.includes('**')) return p.startsWith(g.slice(0, g.indexOf('**')));
+        // scripts/check-*.ts 形态:转成正则
+        const re = new RegExp(`^${g.replace(/[.]/g, '\\.').replace(/\*/g, '[^/]*')}$`);
+        return re.test(p);
+      });
+
+    const unprotected = [...referenced].filter((p) => !matchesAnyGlob(p)).sort();
+    check(
+      'P4a ci-guard-coverage:检查链引用的守卫脚本均在裁判保护内',
+      unprotected.length === 0,
+      `以下脚本被 CI/检查链引用却不在 selfGuard,可在同一 PR 内被改松而不被察觉:\n    ${unprotected.join('\n    ')}`,
+    );
   }
   const redGlobs = redzone.redzone.flatMap((e) => e.globs);
   for (const must of [
