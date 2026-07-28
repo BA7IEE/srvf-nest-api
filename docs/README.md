@@ -20,6 +20,7 @@
 | [`srvf-foundation-baseline.md`](./srvf-foundation-baseline.md) | V2 派生项目基线规范(BizCode 段位 / 命名 / DTO / 软删除 / 验收门槛 13 项) |
 | [`V2红线与复活路径.md`](./V2红线与复活路径.md) | V2 五档红线 A/B/C/D/E 与解锁触发条件 |
 | [`security.md`](./security.md) | 已落地安全策略、软删除策略、token 吊销升级路径 |
+| [`maintainer-guide.md`](./maintainer-guide.md) | **维护者手册(唯一一篇写给人不写给 AI 的)**:只有你能做的四件事(红区授权 / 不可逆 DB 命令 / 合红区 PR / 发版)、出事怎么办、命令速查、以及「哪些文档你不必读」 |
 | [`deployment.md`](./deployment.md) | Docker 镜像、生产部署、迁移流程 |
 | [`development.md`](./development.md) | 项目结构 / 路由总览 / 环境变量 / 排错 |
 | [`testing.md`](./testing.md) | E2E 测试运行与覆盖范围 |
@@ -62,7 +63,7 @@ V2 设计期产物(V2-D8 立项时刻 draft 历史快照,**非当前事实权威
 | [`archive/plans/`](./archive/plans/) | 历史阶段计划:v1.3 / v1.4 / first-release readiness / bizcode mapping / bootstrap SOP / frontend scope / API client boundary migration plan / **Harness 3.0 重构蓝图 + 规则执法矩阵**(`harness-3.0-blueprint.md` + `harness-3.0-rule-enforcement-matrix.md`,2026-07-28 拍板冻结,P1–P7 施工依据) |
 | [`archive/prisma-migration-history.md`](./archive/prisma-migration-history.md) | prisma migration 历史链(2026-07-23 前),从 `CODEMAP.md` 单元格搬出并**冻结不再增长**(Harness 3.0 P4b:该链曾占 CODEMAP 27% 且无退场机制);之后的 migration 说明只写在 PR body 与 CHANGELOG |
 | [`archive/legacy/`](./archive/legacy/) | 自承"历史归档"的早期收尾报告(`FINAL_REPORT.md`) |
-| [`archive/ai-harness/`](./archive/ai-harness/) | 2026-06-10 全仓 Review 总报告与 AI Harness 底座设计(冻结快照;旧操作层 9 文档 + 3 模板已于同日瘦身收口为 `ai-harness/README.md` 单页,文内相对链接属预期死链) |
+| [`archive/ai-harness/`](./archive/ai-harness/) | 2026-06-10 全仓 Review 总报告与 AI Harness 底座设计(冻结快照;旧操作层 9 文档 + 3 模板已于同日瘦身收口为 `ai-harness/README.md` 单页,文内相对链接属预期死链);同目录 `rbac-map-stamps.md`(逐 PR 权限地图戳)与 **`next-tasks-completed.md`**(NEXT_TASKS 已收口项,2026-07-29 P7 熵清理搬出,冻结不再增长) |
 
 ---
 

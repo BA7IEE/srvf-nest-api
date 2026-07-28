@@ -131,4 +131,4 @@
 
 ## 4. 不馊
 
-改 App surface / 契约 → 同 PR 改本文件 + `pnpm docs:handoff:openapi`(沿 [`AGENTS.md`](../../AGENTS.md) 反漂铁律);"改什么必须动哪篇哪节"的逐行对照见 [`README.md §2`](README.md)。
+改 App surface / 契约 → 同 PR 改本文件 + `pnpm docs:openapi`(沿 [`AGENTS.md`](../../AGENTS.md) 反漂铁律);"改什么必须动哪篇哪节"的逐行对照见 [`README.md §2`](README.md)。

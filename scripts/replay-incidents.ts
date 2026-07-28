@@ -101,6 +101,52 @@ const probes: Record<string, () => [boolean, string]> = {
       return [false, 'docs:counts:check 当前为红(计数已漂移)'];
     }
   },
+  'doc-pinned-by-spec': () => {
+    // 真触发:按 spec 里的断言逐条核对被钉住的文档串还在不在。
+    // 不跑 jest —— 这里要的是「秒级回放」,而断言集本身就是那份 spec 的内容;
+    // spec 文件若被删,下面第一条就红(它也在 selfGuard 里,删不掉才是正常)。
+    const spec = 'src/modules/notifications/notification-canonical-docs.spec.ts';
+    if (!fs.existsSync(path.join(ROOT, spec))) return [false, `${spec} 不见了 —— 契约钉子被拔掉`];
+    const pinned: Array<[string, string[]]> = [
+      ['docs/current-state.md', ['Decision 15.1=B/15.2=B', '业务负责人最终确认:2026-07-27']],
+      ['docs/ai-harness/NEXT_TASKS.md', ['Decision 15.1=B', 'Decision 15.2=B', 'Role.ADMIN']],
+      ['src/modules/notifications/CLAUDE.md', ['Decision 15.1=B', 'Decision 15.2=B']],
+    ];
+    for (const [rel, needles] of pinned) {
+      const abs = path.join(ROOT, rel);
+      if (!fs.existsSync(abs)) return [false, `${rel} 不存在`];
+      const body = fs.readFileSync(abs, 'utf-8');
+      for (const n of needles)
+        if (!body.includes(n)) return [false, `${rel} 缺少被 spec 钉住的串:${n}`];
+    }
+    return [true, ''];
+  },
+  'interpreter-bypass': () => {
+    // 真触发:把「用 python heredoc 写红区 workflow」原样喂给 bash-write-guard。
+    // 这条曾经返回 0(放行)—— 正文被剥离后命令位只剩 `python3 -`,不含写侧动词。
+    // 同时验反向:只碰非红区文件的 heredoc 必须放行,否则日常编辑全废、
+    // 人会去绕过守护(误伤到让人绕过的程度,防线同样失效)。
+    const grantFile = gitPath('srvf-redzone-grant.json');
+    const bak = `${grantFile}.replay-bak`;
+    const had = fs.existsSync(grantFile);
+    if (had) fs.renameSync(grantFile, bak);
+    try {
+      const attack = hookExit(
+        'bash-write-guard.sh',
+        bash("python3 - <<'PY'\nopen('.github/workflows/ci.yml','w').write('x')\nPY"),
+      );
+      if (attack !== 2) return [false, `解释器写红区返回 exit ${attack},期望 2(旁路仍在)`];
+      const benign = hookExit(
+        'bash-write-guard.sh',
+        bash("python3 - <<'PY'\nopen('CODEMAP.md').read()\nPY"),
+      );
+      if (benign !== 0)
+        return [false, `只碰非红区的 heredoc 返回 exit ${benign},期望 0(规则过宽会逼人绕过)`];
+      return [true, ''];
+    } finally {
+      if (had) fs.renameSync(bak, grantFile);
+    }
+  },
   'db-name-collision': () => {
     const src = fs.readFileSync(path.join(ROOT, 'test/setup/worktree-db.ts'), 'utf-8');
     const ok = src.includes('MAX_PG_IDENTIFIER') && src.includes('assertDerivedName');

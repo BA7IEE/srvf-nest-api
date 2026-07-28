@@ -133,10 +133,89 @@ expectExit(
   0,
 );
 
+// ---- 漏放回归:解释器旁路(2026-07-29,作者在 P4d 施工中自己走过去了)----
+// 剥 heredoc / 引号是为了治误伤,但它同时让「把代码喂给解释器」这条路完全不受检:
+// 正文被剥掉后命令位只剩 `python3 -`,不含任何写侧动词 → 放行。
+// 当晚作者就用 python heredoc 写进了未授权的红区 workflow,hook 全程沉默 ——
+// 正门(sed -i)拦得好好的,后门一直开着。这是**已发生**的绕过,不是假想。
+expectExit(
+  'bash:漏放回归 — python heredoc 写红区 workflow 拒绝',
+  'bash-write-guard.sh',
+  bash("python3 - <<'PY'\nopen('.github/workflows/ci.yml','w').write('x')\nPY"),
+  2,
+);
+expectExit(
+  'bash:漏放回归 — node -e 内联写红区文档 拒绝',
+  'bash-write-guard.sh',
+  bash('node -e "require(\'fs\').writeFileSync(\'AGENTS.md\',\'x\')"'),
+  2,
+);
+expectExit(
+  'bash:漏放回归 — python heredoc 触碰裁判脚本 拒绝',
+  'bash-write-guard.sh',
+  bash("python3 - <<'PY'\nopen('scripts/check-codemap.ts','w').write('exit(0)')\nPY"),
+  2,
+);
+// 反向:解释器规则必须只咬红区,否则日常 heredoc 编辑全废 —— 那种误伤会直接
+// 逼人绕过守护,后果比漏放更糟。
+expectExit(
+  'bash:反向 — heredoc 只碰非红区文件 放行',
+  'bash-write-guard.sh',
+  bash("python3 - <<'PY'\nopen('CODEMAP.md').read()\nPY"),
+  0,
+);
+expectExit(
+  'bash:反向 — 跑磁盘上的脚本(非内联代码)放行',
+  'bash-write-guard.sh',
+  bash('npx tsx scripts/generate-codemap.ts --check'),
+  0,
+);
+expectExit(
+  'bash:反向 — 内联代码不含任何路径 放行',
+  'bash-write-guard.sh',
+  bash('node -e "console.log(1+1)"'),
+  0,
+);
+// 修这条漏放时**当场又踩出一次误伤**:commit message 正文里提到 "ts-node" / "node -e"
+// 且用 heredoc 传入,整条命令被判成在跑解释器。判定必须限定在命令位且解释器与
+// `<<` 同行 —— 「描述文本 ≠ 命令位」这一课在本守护里已经学了三次,锁死。
+expectExit(
+  'bash:误伤回归 — commit heredoc 正文提到 node -e / ts-node 放行',
+  'bash-write-guard.sh',
+  bash(
+    'git commit -F - <<MSG\n用 ts-node 而非 tsx:esbuild 不支持 emitDecoratorMetadata\n' +
+      '`node -e` 内联写 AGENTS.md 已被拦下\nMSG',
+  ),
+  0,
+);
+
 expectExit('bash:git status 放行', 'bash-write-guard.sh', bash('git status --short'), 0);
 expectExit('bash:pnpm lint 放行', 'bash-write-guard.sh', bash('pnpm lint'), 0);
 expectExit('bash:写普通业务文件放行', 'bash-write-guard.sh', bash("sed -i '' 's/a/b/' src/modules/users/users.service.ts"), 0);
 expectExit('bash:重定向 /dev/null 放行', 'bash-write-guard.sh', bash('pnpm test > /dev/null 2>&1'), 0);
+
+// ---- preflight-gate:合并进行中不得拦写(2026-07-29 实测死锁)----
+// 合并未提交时 HEAD 仍指向合并前的提交,**按定义必然显示落后 origin/main**。
+// 若此时拦写,人就被锁在解冲突这一步之外 —— 而解冲突正是门禁要求的补救动作本身。
+// (与 P2b「把开工前检查误用成每次写检查」同一类死锁,第二次学。)
+{
+  const gate = path.join(hooksDir, 'preflight-gate.sh');
+  const src = fs.readFileSync(gate, 'utf-8');
+  const has = src.includes('MERGE_HEAD');
+  if (has) {
+    passed++;
+    console.log('✓ preflight-gate:合并进行中豁免「落后 origin/main」硬判');
+  } else {
+    failures.push('✗ preflight-gate 未豁免 MERGE_HEAD —— 解冲突期间会被自己的门禁锁死');
+  }
+  const degradesNotSilently = src.includes('ADVISORY_MERGE');
+  if (degradesNotSilently) {
+    passed++;
+    console.log('✓ preflight-gate:该豁免降级为提示而非静默');
+  } else {
+    failures.push('✗ preflight-gate 的 MERGE_HEAD 豁免没有留下提示 —— 降级不等于沉默');
+  }
+}
 
 // ---- preflight-required:开工门禁执法半边 ----
 {

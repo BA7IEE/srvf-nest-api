@@ -466,4 +466,4 @@
 
 ## 6. 这份文件怎么不馊
 
-改后端 API surface / RBAC / 契约 → **同 PR** 改本文件受影响行 + `pnpm docs:handoff:openapi`(沿 [`AGENTS.md`](../../AGENTS.md) 反漂铁律);"改什么必须动哪篇哪节"的逐行对照见 [`README.md §2`](README.md)。前端对接前先读本文件 + 对 live `/api/docs-json` 核字段。
+改后端 API surface / RBAC / 契约 → **同 PR** 改本文件受影响行 + `pnpm docs:openapi`(沿 [`AGENTS.md`](../../AGENTS.md) 反漂铁律);"改什么必须动哪篇哪节"的逐行对照见 [`README.md §2`](README.md)。前端对接前先读本文件 + 对 live `/api/docs-json` 核字段。
