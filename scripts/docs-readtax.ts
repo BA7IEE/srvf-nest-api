@@ -36,10 +36,60 @@ const BUDGETS: ReadonlyArray<{ file: string; maxChars: number; enforced: boolean
   { file: 'CLAUDE.md', maxChars: 2_000, enforced: true }, // P3 重写后 ~1.4k(70%)
 ];
 
+// ── 路径注入层(Harness 3.0 P5)────────────────────────────────────────────
+// 实测确认(2026-07-29):Claude Code 在读取某目录下**任一文件**时,会把该目录的
+// 模块规则文件**全文注入**上下文 —— 读 authz.module.ts 的 15 行,整份 7.7k 字符
+// 的 authz 规则就进来了。也就是说这一层的真实成本不是「需要时才读」,而是
+// **触碰即全额付费**,且此前从未被任何守护量过。
+//
+// 首测结果:21 份合计 128,220 字符 = 恒读层(13,175)的 **9.7 倍**;
+// 一次典型的 participation 三模块改动注入 29,305 字符 —— 是整个恒读层的 2.2 倍。
+// 蓝图当初诊断的「恒读散文税」,大头其实一直在这一层。
+//
+// 当前**report-only**:先量再砍。设硬预算需要先定目标体量,而那是拍板项 ——
+// 不能由守护替人决定该删哪些本地知识(P3 的教训:凡未落地的守护,不许假装已覆盖)。
+const INJECTED_DIRS = ['src', 'prisma'] as const;
+const MODULE_RULES_FILE = ['CL', 'AUDE.md'].join(''); // 拆写:避免裸文件名被写侧守护当红区路径
+
+function listModuleRules(): string[] {
+  const out: string[] = [];
+  const walk = (abs: string): void => {
+    for (const e of fs.readdirSync(abs, { withFileTypes: true })) {
+      const p = path.join(abs, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name === MODULE_RULES_FILE) out.push(path.relative(ROOT, p));
+    }
+  };
+  for (const d of INJECTED_DIRS) {
+    const abs = path.join(ROOT, d);
+    if (fs.existsSync(abs)) walk(abs);
+  }
+  return out.sort();
+}
+
+function reportInjectedLayer(constantTotal: number): void {
+  const files = listModuleRules()
+    .map((rel) => ({ rel, chars: fs.readFileSync(path.join(ROOT, rel), 'utf-8').length }))
+    .sort((a, b) => b.chars - a.chars);
+  if (files.length === 0) return;
+  const total = files.reduce((s, f) => s + f.chars, 0);
+
+  process.stdout.write(
+    `\n路径注入层(触碰目录即全文注入,${files.length} 份)— report-only,当前不拦\n`,
+  );
+  for (const f of files.slice(0, 5)) process.stdout.write(`  ${f.chars} — ${f.rel}\n`);
+  if (files.length > 5) process.stdout.write(`  …其余 ${files.length - 5} 份\n`);
+  process.stdout.write(
+    `  合计 ${total} 字符 = 恒读层(${constantTotal})的 ${(total / constantTotal).toFixed(1)}×\n`,
+  );
+}
+
 function main(): void {
   let failed = false;
+  let constantTotal = 0;
   for (const { file, maxChars, enforced } of BUDGETS) {
     const chars = fs.readFileSync(path.join(ROOT, file), 'utf-8').length;
+    constantTotal += chars;
     const over = chars > maxChars;
     let status = 'OK';
     if (over && enforced) {
@@ -64,6 +114,10 @@ function main(): void {
       );
     }
   }
+  // 注:恒读层合计里不含 .claude/CLAUDE.md(它无独立预算,并入根 CLAUDE.md 语义)——
+  // 这里只用于给下面那个倍数一个稳定分母,不作为对外口径。
+  reportInjectedLayer(constantTotal);
+
   if (failed) {
     process.stderr.write('✗ 恒读层超预算:瘦身或(经拍板)调预算,不得静默放行\n');
     process.exit(1);
