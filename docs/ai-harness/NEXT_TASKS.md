@@ -47,6 +47,22 @@
 - **触发条件**:出现批量导入存量队员(> 逐个可接受量级)的真实诉求时单独立项评审(D 档,涉及 schema 是否需要新增批量端点、字段集范围、与 `POST admin/v1/members` 单条端点的关系)。
 - **与 P1-18(队员账号闭环,✅ 已完成)关系**:P1-15 解决"批量把队员**档案**（`Member`)灌进来";P1-18 解决"给**已存在**队员开**登录账号**(`User`)"。两者正交——P1-15 若落地,批量导入出的 `Member` 仍可用 P1-18 已交付的 `POST admin/v1/members/accounts/bulk-grant` 批量开号能力。
 
+### P1-24 通用证书标准库 + 队内认定规则 + 招新证书闭环 — **🟢 已冻结,下一个开工的 Goal**
+- **冻结评审稿**:[`archive/reviews/certificate-standard-library-t0-review.md`](../archive/reviews/certificate-standard-library-t0-review.md)(2026-07-29 拍板;v1.0 / v1.1 **废止**)。
+- **要解决什么**:当前系统能录/审/拒/提醒证书,但答不出四个问题 —— 这是什么证 / 本队按什么规则认可 / 申请人交了什么原件 / 审核后确认了什么。四类事实拆为 `CertificateStandard`(证书身份,稳定 code)+ `CertificateRecognitionPolicy`(队内认定规则,可多版本)+ `RecruitmentCertificateClaim`(一证一行的原始申报,可暂不分类)+ `Certificate`(正式档案)。
+- **拆分**:PR-0(冻结,本 PR 完成)→ PR-1(日期语义 + `certificate.read.sensitive`)→ PR-2(schema/权限/审计骨架)→ PR-3(Standard/Policy 管理 API)→ **PR-4a(写路径切换)+ PR-4b(删旧事实,同 release)**→ PR-5(证据读取 + 工作台)→ PR-6(前端联调)→ PR-7(release 收口)。
+- **⚠️ 单向门**:整套方案「直接删列、不做兼容、不双写」的可行性,建立在 `Certificate = 0 行` 且 `招新证书 JSON = 0 行` 之上,**只在 production 未部署期间成立**。一旦上线跑完一轮招新,PR-4 就退化成 migration + 回填 + 双写兼容期。**这是本任务排在企业微信之前的唯一理由。**
+- **⚠️ 跨仓破坏性变更**:门槛 `redCross` / `bsafe` 从「可人工标记」变为 **Claim 的只读派生投影**,`markThreshold` 传这两个 code 将返回业务错误(当前二者在 [`recruitment.constants.ts`](../../src/modules/recruitment/recruitment.constants.ts) `THRESHOLD_CODES` 中与 `patrol1/patrol2/training` 平级)。**`srvf-admin-web` 若已有该按钮,须同批适配**,不得等上线才发现。
+- **档位**:C/D 混合;schema / migration / Permission seed / AuditLogEvent / 敏感读语义均须维护者红区授权。**每个 PR 开工前先跑 `pnpm harness:needs <写集>`**,把授权凑成一次请求。
+
+### P1-25 企业微信接入(身份入口 + 工作台入口 + 通知通道) — **🟡 已冻结,排在 P1-24 之后**
+- **冻结评审稿**:[`archive/reviews/wecom-integration-t0-terminal-review.md`](../archive/reviews/wecom-integration-t0-terminal-review.md)(2026-07-29 维护者「按推荐」整体冻结 `D-WC-1..31`)。
+- **终态**:单企业、单自建应用 Agent;`WecomIdentity → User → Member → SRVF Authz`;消息只走既有 Notification Outbox。**企业微信只回答「你是谁」,SRVF 继续回答「你能做什么」**。
+- **拆分**:T0(冻结,本 PR 完成)→ T1(schema expand-only)→ T2(通道层 + 设置 + 连接诊断)→ T3(OAuth 登录/绑定/换绑/管理员清除)→ T4(User 生命周期闭环)→ T5A(受众判定重构,行为保持)→ T5B(WeCom 消息通道)→ T6(runbook + 10–30 人分层试点)。
+- **⏸ 为什么排在后面**(2026-07-29 拍板):① 与 P1-24 同为 schema-touching,受 [`process.md §8`](../process.md) 「同一时刻至多一条 schema-touching lane」约束,不并行;② 写集在 Permission seed / AuditLogEvent / openapi / CODEMAP / RBAC_MAP / counts 上重叠;③ 本任务 expand-only、开关默认全 false,**何时做成本相同**,而 P1-24 有会关闭的单向门。
+- **额外硬门**:身份链(T1–T4)可先落地;**消息链(T5B)的启用**必须等现有 Notification Outbox 在生产完成部署、Worker 同版本切换并通过硬门(见 [`current-state.md §2`](../current-state.md) Outbox 行)。代码可以先写,`messageEnabled` 默认 false。
+- **不做清单(节选)**:不写 `User.openid`、不接通讯录同步、不加第 3 个 cron、不引入 Redis/queue、不做 PC 浏览器扫码登录、不承诺 exactly-once。全文见评审稿 §0.3 与 §17。
+
 ### P1-22 入队专业队类型 / gate 定义配置化 — **⏸ 诉求触发再立项**
 - **背景**(招新/入队十三项收口问题⑨):`PROFESSIONAL_GATE_CODES` / `GATE_VALIDITY` / `PROFESSIONAL_TEAM_GATE_BY_NODE_TYPE` 当前在 `team-join.constants.ts` 硬编码 4 种专业队及全部 gate 有效期;新增专业队、改 gate 或调整有效期都必须发后端版本。P⑦ 已拍板本 goal 只挂账,不顺手扩动态配置面。
 - **候选方案**:D 档新增 gate 定义表(建议字段:`code`/`professional`/`validityType`/`validityYears`/`extendable`/`status`) + 专业队 nodeType→gate 映射表(建议字段:`nodeTypeCode`/`gateCode`/`status`),由 Query/Policy 层一次加载后供标 gate、进度派生与一键入队重校验共用;须同步设计 admin 配置端点、RBAC、audit、缓存失效与存量常量迁移/回滚方案,禁止只把其中一个消费者改成读表造成双轨。
