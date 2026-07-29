@@ -47,21 +47,29 @@ export function planGrants(hits: readonly Hit[]): Array<{ glob: string; files: s
   const out: Array<{ glob: string; files: string[]; why: string }> = [];
   for (const [id, list] of byRule) {
     const files = list.map((h) => h.file).sort();
-    // 单文件 → 就授权那一个;多文件 → 用它们的公共目录前缀 + /**
-    let glob: string;
+    const why = `${id} — ${list[0].why}`;
     if (files.length === 1) {
-      glob = files[0];
-    } else {
-      const segs = files.map((f) => f.split('/'));
-      const common: string[] = [];
-      for (let i = 0; i < segs[0].length - 1; i++) {
-        const s = segs[0][i];
-        if (segs.every((x) => x[i] === s)) common.push(s);
-        else break;
-      }
-      glob = common.length > 0 ? `${common.join('/')}/**` : files.join(' ');
+      out.push({ glob: files[0], files, why });
+      continue;
     }
-    out.push({ glob, files, why: `${id} — ${list[0].why}` });
+    const segs = files.map((f) => f.split('/'));
+    const common: string[] = [];
+    for (let i = 0; i < segs[0].length - 1; i++) {
+      const s = segs[0][i];
+      if (segs.every((x) => x[i] === s)) common.push(s);
+      else break;
+    }
+    if (common.length > 0) {
+      out.push({ glob: `${common.join('/')}/**`, files, why });
+    } else {
+      // 无公共目录前缀(常见:同属「执法层」但散在 .claude/ scripts/ harness/)。
+      // 首版在这里把多个路径**空格拼成一个字符串**当 glob 输出 ——
+      // 生成的命令 `harness:grant 'a b c'` 是错的:grant 会把整串当成一个 glob,
+      // 谁也匹配不上,而维护者照抄后只会得到「授权了但还是被拦」。
+      // 实测于本工具落地当天(#814 合并后第一次真实使用)。
+      // 正确做法:逐个出命令。宁可多打几行,也不能给一条跑了没用的命令。
+      for (const f of files) out.push({ glob: f, files: [f], why });
+    }
   }
   return out;
 }

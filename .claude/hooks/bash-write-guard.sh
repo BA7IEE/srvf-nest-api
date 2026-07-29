@@ -87,9 +87,37 @@ INTERP_RE='(python3?|node|ruby|perl|php|deno|osascript|tsx|ts-node)'
 # 分隔符集里**刻意不含反引号**:本仓提交信息与文档大量使用 markdown `code` 反引号,
 # 把它当命令位会让「正文里写了 `node -e`」的提交全被拦。反引号命令替换在本仓从未使用
 # (一律 $(...),而 `(` 在集内),这个取舍换来的是守护不会天天误伤。
-if printf '%s\n' "$RAW_CMD" \
-     | grep -qE "(^[[:space:]]*|[;&|(][[:space:]]*)([A-Za-z0-9_./-]*/)?${INTERP_RE}[[:space:]].*(<<|-[ecpEn]([[:space:]]|\$))"; then
-  for tok in $(printf '%s' "$RAW_CMD" \
+# ── 误伤治理 ③:只扫「解释器的代码区」,不扫整条命令 ────────────────────────
+# 首版在检测到解释器后扫**整条命令原文**找红区路径。实测 5 次误伤,全是同一形态:
+#   · `git commit -F - <<MSG` 的提交信息里**描述**了红区路径,同命令内另有 python heredoc
+#   · 只读的 `find … -name <裸文件名>` 分析命令
+#   · 想跑一下 `pnpm harness:replay`(命令里出现脚本路径)
+# 真正要拦的从来只是**喂给解释器的那段正文**;命令里别处出现的路径是描述,不是执行。
+# 「描述文本 ≠ 执行位」在本文件已经是第四次学 —— 这次把范围收到位:
+#   heredoc → 从解释器行到它的终止符;-e/-c → 仅该行本身(内联代码就在行内)。
+# 收窄不得开出漏放:阳性用例(heredoc 正文写红区 / -e 内联写红区)必须仍被拦,
+# 由 harness-hooks.selftest 的正反两组用例同时锁死。
+INTERP_CODE="$(printf '%s\n' "$RAW_CMD" | awk -v re="(^[[:space:]]*|[;&|(][[:space:]]*)([A-Za-z0-9_./-]*/)?${INTERP_RE}[[:space:]].*(<<|-[ecpEn]([[:space:]]|\$))" '
+  BEGIN { inh = 0 }
+  {
+    line = $0
+    if (inh) {
+      t = line; sub(/^[[:space:]]*/, "", t)
+      if (t == delim) { inh = 0 } else { print line }
+      next
+    }
+    if (match(line, re)) {
+      print line                      # 解释器行本身也可能含内联代码(node -e "…")
+      if (match(line, /<<-?[[:space:]]*['"'"'"]?[A-Za-z_][A-Za-z0-9_]*['"'"'"]?/)) {
+        d = substr(line, RSTART, RLENGTH)
+        sub(/^<<-?[[:space:]]*/, "", d); gsub(/['"'"'"]/, "", d)
+        delim = d; inh = 1
+      }
+    }
+  }')"
+
+if [ -n "$INTERP_CODE" ]; then
+  for tok in $(printf '%s' "$INTERP_CODE" \
       | grep -oE '[A-Za-z0-9_.@/-]+\.(md|ts|tsx|json|jsonc|ya?ml|prisma|mjs|cjs|sh|env)' \
       | sort -u); do
     if ! check_path "$tok"; then
