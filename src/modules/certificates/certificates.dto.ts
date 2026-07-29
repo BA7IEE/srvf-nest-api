@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsDateString, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 // V2 第一阶段批次 2 certificates 模块 DTO 集合。
 // 详见 docs:批次2_API前评审_certificates.md §3 + 草案 v1.0 §4 / §5.1 / §13。
@@ -136,6 +136,31 @@ export class QualificationFlagResponseDto {
   qualified!: boolean;
 }
 
+// ============ 日期入参口径(证书标准库 PR-1 · 冻结稿 §10.2)============
+
+// 「所有证书日期只接受 YYYY-MM-DD,不再接受带时区和时分秒的任意 ISO datetime。」
+//
+// 为什么收紧:`expiredAt` 是**最后有效日**(§10.1),是一个日历日而不是瞬间。
+// 放开 datetime 会让 `2026-08-01T00:00:00+08:00` 与 `2026-08-01T00:00:00Z` 这类
+// 输入落到不同的北京日(前者 08-01、后者 07-31),同一个"意图日期"产生两种入库结果。
+// 收成纯日期后,归一只有一条路径,客户端也无法用时区偷偷改天。
+//
+// 两个装饰器各管一件事,缺一不可:
+// - `@Matches` 管**形状**(必须恰好 10 位纯日期,拒绝任何时分秒/时区后缀);
+// - `@IsDateString({ strict: true })` 管**日历真实性**(拒绝 2026-02-30 / 2027-02-29
+//   这类形状合法但不存在的日期 —— 光靠正则拦不住)。
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_ONLY_DESC = '纯日期 YYYY-MM-DD(不接受时分秒与时区;按北京日历日入库)';
+
+// 同时把口径写进 OpenAPI schema,而不是只写在 description 里 ——
+// `@Matches` 不会被 Swagger 插件推导成 `pattern`,契约里就只剩一句人类可读的说明,
+// 前端 codegen 拿不到可执行约束。PR-6 要求前端适配日期格式收紧,这里必须是机器可读的。
+const DATE_ONLY_SCHEMA = {
+  type: 'string',
+  format: 'date',
+  pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+} as const;
+
 // ============ 入参:Create ============
 
 // 必填:certTypeCode / issuingOrg / issuedAt;其余可选(schema 可空,Q-D4 / Q-D5)。
@@ -166,13 +191,23 @@ export class CreateCertificateDto {
   @MaxLength(128)
   certNumber?: string;
 
-  @ApiProperty({ description: '颁发日期(ISO 8601;业务层规范化为 00:00:00.000Z;必填)' })
-  @IsDateString()
+  @ApiProperty({
+    description: `颁发日期(${DATE_ONLY_DESC};不得晚于今天;必填)`,
+    ...DATE_ONLY_SCHEMA,
+    example: '2026-07-01',
+  })
+  @Matches(DATE_ONLY_PATTERN, { message: 'issuedAt 必须是 YYYY-MM-DD 纯日期' })
+  @IsDateString({ strict: true })
   issuedAt!: string;
 
-  @ApiPropertyOptional({ description: '到期日(ISO 8601;NULL = 终身有效)' })
+  @ApiPropertyOptional({
+    description: `最后有效日(${DATE_ONLY_DESC};不填 = 终身有效)`,
+    ...DATE_ONLY_SCHEMA,
+    example: '2028-06-30',
+  })
   @IsOptional()
-  @IsDateString()
+  @Matches(DATE_ONLY_PATTERN, { message: 'expiredAt 必须是 YYYY-MM-DD 纯日期' })
+  @IsDateString({ strict: true })
   expiredAt?: string;
 }
 
@@ -210,14 +245,24 @@ export class UpdateCertificateDto {
   @MaxLength(128)
   certNumber?: string;
 
-  @ApiPropertyOptional({ description: '颁发日期(ISO 8601;Q-A4 决议:允许资料修正)' })
+  @ApiPropertyOptional({
+    description: `颁发日期(${DATE_ONLY_DESC};不得晚于今天;Q-A4 决议:允许资料修正)`,
+    ...DATE_ONLY_SCHEMA,
+    example: '2026-07-01',
+  })
   @IsOptional()
-  @IsDateString()
+  @Matches(DATE_ONLY_PATTERN, { message: 'issuedAt 必须是 YYYY-MM-DD 纯日期' })
+  @IsDateString({ strict: true })
   issuedAt?: string;
 
-  @ApiPropertyOptional({ description: '到期日(ISO 8601;Q-A4 决议:允许资料修正;NULL = 终身有效)' })
+  @ApiPropertyOptional({
+    description: `最后有效日(${DATE_ONLY_DESC};Q-A4 决议:允许资料修正;不填 = 保持原值)`,
+    ...DATE_ONLY_SCHEMA,
+    example: '2028-06-30',
+  })
   @IsOptional()
-  @IsDateString()
+  @Matches(DATE_ONLY_PATTERN, { message: 'expiredAt 必须是 YYYY-MM-DD 纯日期' })
+  @IsDateString({ strict: true })
   expiredAt?: string;
 }
 

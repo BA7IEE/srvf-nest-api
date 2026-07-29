@@ -87,7 +87,7 @@ describe('certificates RBAC 权限边界(Slow-4 T2)', () => {
   const createPayload = (): Record<string, unknown> => ({
     certTypeCode,
     issuingOrg: '边界机构',
-    issuedAt: '2024-01-01T00:00:00.000Z',
+    issuedAt: '2024-01-01', // 冻结稿 §10.2:纯 YYYY-MM-DD
   });
 
   describe('read 族:list / detail / qualification-flag(certificate.read.record 共用)', () => {

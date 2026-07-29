@@ -184,7 +184,7 @@ describe('audit-logs 写入迁移', () => {
         certTypeCode,
         issuingOrg: 'Demo Issuing Org',
         certNumber: 'CN-2026-0001',
-        issuedAt: '2026-01-01T00:00:00.000Z',
+        issuedAt: '2026-01-01', // 冻结稿 §10.2:纯 YYYY-MM-DD
       });
     expect(res.status).toBe(201);
     return res.body.data;

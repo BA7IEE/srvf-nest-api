@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
 import { maskIdentifier } from '../../common/audit/mask-pii.util';
-import { normalizeDateOnly } from '../../common/datetime/date-only.util';
+import { beijingDateOnly, normalizeDateOnly } from '../../common/datetime/date-only.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -134,6 +134,25 @@ export class CertificatesService {
     });
     if (!m) throw new BizException(BizCode.MEMBER_NOT_FOUND);
     return m;
+  }
+
+  // 冻结稿 §10.3 基础校验(证书标准库 PR-1)。
+  //
+  //   issuedAt  <= today
+  //   expiredAt IS NULL OR expiredAt >= issuedAt
+  //
+  // 两侧都按北京日历日比较:入参已经过 normalizeDateOnly,是「北京日的 UTC 零点」,
+  // 所以基准也必须是 date-only 的 today,不能拿当下瞬间去比(§10.1 expiredAt =
+  // 最后有效日;用时间戳比会让最后有效日当天在北京 08:00 后被算成过期)。
+  // `expiredAt === issuedAt` 合法:当天发证当天到期,仍是有效一天。
+  private assertDateSemantics(issuedAt: Date, expiredAt: Date | null): void {
+    const today = beijingDateOnly(new Date());
+    if (issuedAt.getTime() > today.getTime()) {
+      throw new BizException(BizCode.CERTIFICATE_ISSUED_AT_IN_FUTURE);
+    }
+    if (expiredAt !== null && expiredAt.getTime() < issuedAt.getTime()) {
+      throw new BizException(BizCode.CERTIFICATE_DATE_RANGE_INVALID);
+    }
   }
 
   // 通用字典 code 校验(对齐 member-profiles.assertDictItemValid 模式)。
@@ -332,17 +351,21 @@ export class CertificatesService {
         );
       }
 
+      const issuedAt = normalizeDateOnly(dto.issuedAt);
+      const expiredAt = dto.expiredAt !== undefined ? normalizeDateOnly(dto.expiredAt) : null;
+      this.assertDateSemantics(issuedAt, expiredAt);
+
       const data: Prisma.CertificateUncheckedCreateInput = {
         memberId,
         certTypeCode: dto.certTypeCode,
         issuingOrg: dto.issuingOrg,
-        issuedAt: normalizeDateOnly(dto.issuedAt),
+        issuedAt,
         certStatusCode: CERT_STATUS_PENDING,
         isInternal: false, // Q-A3:本批次 API 永远 false
       };
       if (dto.certSubTypeCode !== undefined) data.certSubTypeCode = dto.certSubTypeCode;
       if (dto.certNumber !== undefined) data.certNumber = dto.certNumber;
-      if (dto.expiredAt !== undefined) data.expiredAt = normalizeDateOnly(dto.expiredAt);
+      if (expiredAt !== null) data.expiredAt = expiredAt;
 
       const created = await tx.certificate.create({
         data,
@@ -418,6 +441,23 @@ export class CertificatesService {
         invalidStatusBiz: BizCode.CERTIFICATE_INVALID_STATE_TRANSITION,
       });
       const lockedBefore = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
+
+      // §10.3 校验用「本次写入后的最终值」,而不是只看本次传了什么:
+      // 只改 expiredAt 时也必须和库内 issuedAt 比,否则能写出 expiredAt < issuedAt。
+      // 取 lockedBefore(行锁之后)而非 before,避免并发改动下用过期基准放行。
+      const effectiveIssuedAt =
+        dto.issuedAt !== undefined ? normalizeDateOnly(dto.issuedAt) : lockedBefore.issuedAt;
+      const effectiveExpiredAt =
+        dto.expiredAt !== undefined ? normalizeDateOnly(dto.expiredAt) : lockedBefore.expiredAt;
+      this.assertDateSemantics(effectiveIssuedAt, effectiveExpiredAt);
+
+      // §9.2:`expiredAt` 最终值变化时清空 `expireNotifyDueAt`,让到期提醒按新日期
+      // 重新计算(该标记是 at-most-once 的已提醒水印,不清会永久错过新窗口)。
+      // 只在真的变化时清 —— 传了同值不算变化,不无谓抹掉已发提醒的事实。
+      if ((effectiveExpiredAt?.getTime() ?? null) !== (lockedBefore.expiredAt?.getTime() ?? null)) {
+        data.expireNotifyDueAt = null;
+      }
+
       const coreFieldEdited = CERTIFICATE_CORE_FIELDS.some((field) => dto[field] !== undefined);
       if (coreFieldEdited && lockedBefore.certStatusCode !== CERT_STATUS_PENDING) {
         data.certStatusCode = CERT_STATUS_PENDING;
@@ -643,13 +683,19 @@ export class CertificatesService {
       BizCode.CERTIFICATE_TYPE_CODE_INVALID,
     );
 
-    const now = new Date();
+    // 冻结稿 §10.5 有效资质 = status=verified AND 未软删 AND
+    //   (expiredAt IS NULL OR expiredAt >= today),today = 北京日历日。
+    //
+    // 必须同时查状态与日期(D-CERT-020):不能只信持久状态 —— cron 每天 09:00 才翻态,
+    // 在它跑之前已过期的证书状态仍是 verified。反过来也不能拿时间戳比 `expiredAt`:
+    // 它存的是北京日的 UTC 零点,与 now 比会在最后有效日的北京 08:00 后误判为过期。
+    const today = beijingDateOnly(new Date());
     const found = await this.prisma.certificate.findFirst({
       where: notDeletedWhere({
         memberId,
         certTypeCode,
         certStatusCode: CERT_STATUS_VERIFIED,
-        OR: [{ expiredAt: null }, { expiredAt: { gt: now } }],
+        OR: [{ expiredAt: null }, { expiredAt: { gte: today } }],
       }),
       select: { id: true },
     });

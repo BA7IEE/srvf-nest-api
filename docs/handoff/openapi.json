@@ -95375,11 +95375,17 @@
           },
           "issuedAt": {
             "type": "string",
-            "description": "颁发日期(ISO 8601;业务层规范化为 00:00:00.000Z;必填)"
+            "description": "颁发日期(纯日期 YYYY-MM-DD(不接受时分秒与时区;按北京日历日入库);不得晚于今天;必填)",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2026-07-01"
           },
           "expiredAt": {
             "type": "string",
-            "description": "到期日(ISO 8601;NULL = 终身有效)"
+            "description": "最后有效日(纯日期 YYYY-MM-DD(不接受时分秒与时区;按北京日历日入库);不填 = 终身有效)",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2028-06-30"
           }
         },
         "required": [
@@ -95435,11 +95441,17 @@
           },
           "issuedAt": {
             "type": "string",
-            "description": "颁发日期(ISO 8601;Q-A4 决议:允许资料修正)"
+            "description": "颁发日期(纯日期 YYYY-MM-DD(不接受时分秒与时区;按北京日历日入库);不得晚于今天;Q-A4 决议:允许资料修正)",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2026-07-01"
           },
           "expiredAt": {
             "type": "string",
-            "description": "到期日(ISO 8601;Q-A4 决议:允许资料修正;NULL = 终身有效)"
+            "description": "最后有效日(纯日期 YYYY-MM-DD(不接受时分秒与时区;按北京日历日入库);Q-A4 决议:允许资料修正;不填 = 保持原值)",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2028-06-30"
           }
         }
       },

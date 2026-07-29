@@ -890,4 +890,242 @@ describe('CertificatesService (characterization, scoped)', () => {
       expect(prisma.certificate.findFirst).not.toHaveBeenCalled();
     });
   });
+
+  // ============ 7. 证书标准库 PR-1 · 冻结稿 §10 日期语义 ============
+  //
+  // §10.1 定死 `expiredAt` = **最后有效日**;§10.5 由此要求有效资质判定为
+  //   status=verified AND deletedAt IS NULL AND (expiredAt IS NULL OR expiredAt >= today)
+  // 其中 today = 北京日历日。
+  //
+  // 修正前本 service 用 `expiredAt > now`(**时间戳**)。因为 date-only 归一后
+  // `expiredAt` 存的是「北京日历日的 UTC 零点」,拿它和当下瞬间比,会在最后有效日的
+  // 北京 08:00 之后误判为无资质 —— 该日 UTC 零点已经先于 now。窗口是每天 16/24 小时。
+  describe('isQualified — §10.5 expiredAt 是最后有效日(date-only 比较)', () => {
+    const REAL_NOW = Date.now;
+
+    afterEach(() => {
+      Date.now = REAL_NOW;
+      jest.useRealTimers();
+    });
+
+    // 冻结北京 2026-08-01 10:00 = UTC 2026-08-01T02:00Z。
+    // 该瞬间已越过 2026-08-01T00:00Z,旧 `gt: now` 会把「最后有效日=今天」判为过期。
+    function freezeBeijing0801At10(): void {
+      jest.useFakeTimers().setSystemTime(new Date('2026-08-01T02:00:00.000Z'));
+    }
+
+    it('where 用 date-only 的 expiredAt >= today,不用时间戳 gt now', async () => {
+      freezeBeijing0801At10();
+      const prisma = makePrismaMock();
+      prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
+      prisma.dictItem.findFirst.mockResolvedValue({ id: 'di-type' });
+      prisma.certificate.findFirst.mockResolvedValue(makeCertRow({ id: 'cert-1' }));
+      const service = makeService(prisma);
+
+      await service.isQualified('mem-1', 'cert_first_aid', makeCurrentUser(), META);
+
+      const where = (
+        prisma.certificate.findFirst.mock.calls[0][0] as {
+          where: { OR: Array<Record<string, unknown>> };
+        }
+      ).where;
+      // 北京 08-01 的 date-only 基准 = 2026-08-01T00:00:00.000Z(不是 02:00 的 now)。
+      expect(where.OR).toEqual([
+        { expiredAt: null },
+        { expiredAt: { gte: new Date('2026-08-01T00:00:00.000Z') } },
+      ]);
+    });
+
+    it('北京 08:00 之后仍在最后有效日 → 基准是当天零点,不随 now 前移(旧实现在此误判)', async () => {
+      freezeBeijing0801At10();
+      const prisma = makePrismaMock();
+      prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
+      prisma.dictItem.findFirst.mockResolvedValue({ id: 'di-type' });
+      prisma.certificate.findFirst.mockResolvedValue(makeCertRow({ id: 'cert-1' }));
+      const service = makeService(prisma);
+
+      await service.isQualified('mem-1', 'cert_first_aid', makeCurrentUser(), META);
+
+      const where = (
+        prisma.certificate.findFirst.mock.calls[0][0] as {
+          where: { OR: Array<{ expiredAt?: { gte?: Date } }> };
+        }
+      ).where;
+      const gte = where.OR[1].expiredAt?.gte as Date;
+      // 一张最后有效日 = 今天(08-01)的证书必须落在 gte 边界之内。
+      expect(new Date('2026-08-01T00:00:00.000Z').getTime()).toBeGreaterThanOrEqual(gte.getTime());
+      // 而最后有效日 = 昨天(07-31)的证书必须落在边界之外。
+      expect(new Date('2026-07-31T00:00:00.000Z').getTime()).toBeLessThan(gte.getTime());
+    });
+
+    it('北京日界前(UTC 15:59)基准仍是当日,不提前翻到次日', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-07-31T15:59:59.999Z')); // 北京 07-31 23:59
+      const prisma = makePrismaMock();
+      prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
+      prisma.dictItem.findFirst.mockResolvedValue({ id: 'di-type' });
+      prisma.certificate.findFirst.mockResolvedValue(null);
+      const service = makeService(prisma);
+
+      await service.isQualified('mem-1', 'cert_first_aid', makeCurrentUser(), META);
+
+      const where = (
+        prisma.certificate.findFirst.mock.calls[0][0] as {
+          where: { OR: Array<{ expiredAt?: { gte?: Date } }> };
+        }
+      ).where;
+      expect(where.OR[1].expiredAt?.gte).toEqual(new Date('2026-07-31T00:00:00.000Z'));
+    });
+  });
+
+  // §10.3 基础校验:issuedAt <= today;expiredAt IS NULL OR expiredAt >= issuedAt。
+  describe('create / update — §10.3 日期基础校验', () => {
+    const REAL_NOW = Date.now;
+
+    afterEach(() => {
+      Date.now = REAL_NOW;
+      jest.useRealTimers();
+    });
+
+    function freezeToday(): void {
+      jest.useFakeTimers().setSystemTime(new Date('2026-08-01T02:00:00.000Z')); // 北京 08-01
+    }
+
+    function primeCreate(prisma: PrismaMock): void {
+      prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
+      prisma.dictItem.findFirst.mockResolvedValue({ id: 'di-type' });
+      prisma.certificate.create.mockResolvedValue(makeCertRow());
+    }
+
+    it('create:issuedAt 晚于今天 → CERTIFICATE_ISSUED_AT_IN_FUTURE;零写入', async () => {
+      freezeToday();
+      const prisma = makePrismaMock();
+      primeCreate(prisma);
+      const service = makeService(prisma);
+
+      await expect(
+        service.create('mem-1', makeCreateDto({ issuedAt: '2026-08-02' }), makeCurrentUser(), META),
+      ).rejects.toEqual(new BizException(BizCode.CERTIFICATE_ISSUED_AT_IN_FUTURE));
+      expect(prisma.certificate.create).not.toHaveBeenCalled();
+    });
+
+    it('create:issuedAt = 今天 → 放行(边界含当天)', async () => {
+      freezeToday();
+      const prisma = makePrismaMock();
+      primeCreate(prisma);
+      const service = makeService(prisma);
+
+      await service.create(
+        'mem-1',
+        makeCreateDto({ issuedAt: '2026-08-01' }),
+        makeCurrentUser(),
+        META,
+      );
+      expect(prisma.certificate.create).toHaveBeenCalled();
+    });
+
+    it('create:expiredAt 早于 issuedAt → CERTIFICATE_DATE_RANGE_INVALID;零写入', async () => {
+      freezeToday();
+      const prisma = makePrismaMock();
+      primeCreate(prisma);
+      const service = makeService(prisma);
+
+      await expect(
+        service.create(
+          'mem-1',
+          makeCreateDto({ issuedAt: '2026-07-01', expiredAt: '2026-06-30' }),
+          makeCurrentUser(),
+          META,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.CERTIFICATE_DATE_RANGE_INVALID));
+      expect(prisma.certificate.create).not.toHaveBeenCalled();
+    });
+
+    it('create:expiredAt = issuedAt → 放行(同日发证当日到期,最后有效日语义合法)', async () => {
+      freezeToday();
+      const prisma = makePrismaMock();
+      primeCreate(prisma);
+      const service = makeService(prisma);
+
+      await service.create(
+        'mem-1',
+        makeCreateDto({ issuedAt: '2026-07-01', expiredAt: '2026-07-01' }),
+        makeCurrentUser(),
+        META,
+      );
+      expect(prisma.certificate.create).toHaveBeenCalled();
+    });
+
+    it('update:只改 expiredAt 也要与库内 issuedAt 比较(不是只在同时传两个时才校验)', async () => {
+      freezeToday();
+      const prisma = makePrismaMock();
+      prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
+      prisma.certificate.findFirst.mockResolvedValue(
+        makeCertRow({ issuedAt: new Date('2026-07-01T00:00:00.000Z') }),
+      );
+      const service = makeService(prisma);
+
+      await expect(
+        service.update(
+          'mem-1',
+          'cert-1',
+          makeUpdateDto({ expiredAt: '2026-06-30' }),
+          makeCurrentUser(),
+          META,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.CERTIFICATE_DATE_RANGE_INVALID));
+      expect(prisma.certificate.update).not.toHaveBeenCalled();
+    });
+
+    it('update:expiredAt 最终值变化 → 清空 expireNotifyDueAt(§9.2 重置提醒标记)', async () => {
+      freezeToday();
+      const prisma = makePrismaMock();
+      prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
+      prisma.certificate.findFirst.mockResolvedValue(
+        makeCertRow({
+          issuedAt: new Date('2026-07-01T00:00:00.000Z'),
+          expiredAt: new Date('2026-09-01T00:00:00.000Z'),
+        }),
+      );
+      prisma.certificate.update.mockResolvedValue(makeCertRow());
+      const service = makeService(prisma);
+
+      await service.update(
+        'mem-1',
+        'cert-1',
+        makeUpdateDto({ expiredAt: '2026-10-01' }),
+        makeCurrentUser(),
+        META,
+      );
+
+      const data = (prisma.certificate.update.mock.calls[0][0] as { data: Record<string, unknown> })
+        .data;
+      expect(data.expireNotifyDueAt).toBeNull();
+    });
+
+    it('update:expiredAt 传入但与库内相同 → 不清空 expireNotifyDueAt(未变化不重置)', async () => {
+      freezeToday();
+      const prisma = makePrismaMock();
+      prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
+      prisma.certificate.findFirst.mockResolvedValue(
+        makeCertRow({
+          issuedAt: new Date('2026-07-01T00:00:00.000Z'),
+          expiredAt: new Date('2026-09-01T00:00:00.000Z'),
+        }),
+      );
+      prisma.certificate.update.mockResolvedValue(makeCertRow());
+      const service = makeService(prisma);
+
+      await service.update(
+        'mem-1',
+        'cert-1',
+        makeUpdateDto({ expiredAt: '2026-09-01' }),
+        makeCurrentUser(),
+        META,
+      );
+
+      const data = (prisma.certificate.update.mock.calls[0][0] as { data: Record<string, unknown> })
+        .data;
+      expect(data).not.toHaveProperty('expireNotifyDueAt');
+    });
+  });
 });

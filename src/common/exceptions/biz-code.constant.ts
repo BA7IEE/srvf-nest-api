@@ -293,6 +293,19 @@ export const BizCode = {
     message: '证书子类型字典 code 不存在或已停用',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+  // 证书标准库 PR-1(冻结稿 §10.3 基础校验 + §18 号位建议)。
+  // 落在既有 18010-18029「业务级输入校验」子段;号位已 grep 真源确认无碰撞
+  // (180xx 现用 18001/18010/18011/18030/18101)。
+  CERTIFICATE_DATE_RANGE_INVALID: {
+    code: 18017,
+    message: '到期日期不能早于发证日期',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  CERTIFICATE_ISSUED_AT_IN_FUTURE: {
+    code: 18018,
+    message: '发证日期不能晚于今天',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
   CERTIFICATE_INVALID_STATE_TRANSITION: {
     code: 18030,
     message: '证书状态不允许此操作',
