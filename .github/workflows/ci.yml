@@ -237,11 +237,58 @@ jobs:
   # 保名 gate:branch protection 的 required context 逐字指向本 job 的 name。
   # fast 必须 success;slow 允许 success(全量)或 skipped(docs-only)。
   # 其余一切结果(failure / cancelled)→ gate 红。
+  # ── Harness 3.0 P2c:红区触碰的 agent 无关守护 ────────────────────────────
+  # 为什么在 CI 而不只在 hook:`.claude/hooks/redzone-guard.sh` 只对 Claude Code
+  # 会话生效。Codex / Cursor / 人手 vim / GitHub 网页编辑全都绕过它 ——
+  # 也就是说 P2b 建起来的红区执法,此前覆盖的只是「其中一个执行体」。
+  # 判定复用同一份 harness/redzone.json;两侧裁决一致性由 harness-guards.selftest
+  # 的 parity 用例逐条锁死(37 条路径),避免「一边拦一边放」。
+  redzone-scan:
+    name: Red-zone scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      touched: ${{ steps.scan.outputs.touched }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 要算 base...HEAD,浅克隆不够
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Scan changed files against red-zone registry
+        id: scan
+        run: |
+          BASE="origin/${{ github.base_ref || github.event.repository.default_branch }}"
+          git fetch --no-tags origin "${{ github.base_ref || github.event.repository.default_branch }}"
+          pnpm exec tsx scripts/check-redzone.ts --base "$BASE"
+
+  # 触碰红区/执法层时才跑:environment 上挂了 required reviewer,
+  # 这个 job 会一直 pending 直到维护者在 PR 页面点批准。
+  #
+  # ⚠️ 它是**摩擦与留痕**,不是不可伪造的授权 —— 本仓 AI 用的就是维护者本人的
+  #    token,GitHub 侧任何门在协议上都分不清「人点的」和「AI 拿人的 token 点的」。
+  #    真正不可绕过的一步,只能是维护者合并前亲自看一眼被标红的 PR。
+  redzone-approval:
+    name: Red-zone approval
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: redzone-scan
+    if: needs.redzone-scan.outputs.touched == 'true'
+    environment: harness-review
+    steps:
+      - name: Record approval
+        run: echo "✓ 维护者已在 harness-review 环境批准本次红区/执法层改动"
+
   gate:
     name: Lint / Typecheck / E2E
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [changeset, fast, slow]
+    needs: [changeset, fast, slow, redzone-scan, redzone-approval]
     if: always()
     steps:
       - name: Aggregate results
@@ -272,6 +319,42 @@ jobs:
             exit 1
           fi
           echo "✓ gate passed (fast + slow 均通过)"
+
+      # ③ 红区审批(P2c)。与 slow 同一套「不从 skipped 反推」的判法:
+      #    redzone-approval 被跳过的**唯一**合法理由是 scan 明确报告 touched=false。
+      #    若 scan 本身失败,touched 会是空字符串或 'error' —— 那不是「没触碰」,
+      #    是「没查出来」,必须拒绝放行(INC-07:无法验证 ≠ 通过)。
+      - name: Red-zone approval gate
+        run: |
+          scan='${{ needs.redzone-scan.result }}'
+          touched='${{ needs.redzone-scan.outputs.touched }}'
+          approval='${{ needs.redzone-approval.result }}'
+          echo "redzone-scan=$scan touched=$touched approval=$approval"
+          if [ "$scan" != "success" ]; then
+            echo "::error::红区扫描未成功($scan)—— 无法确认本次是否触碰红区,拒绝放行"
+            exit 1
+          fi
+          case "$touched" in
+            false)
+              if [ "$approval" != "skipped" ]; then
+                echo "::error::未触碰红区却跑了审批 job($approval)—— 条件表达式与扫描结论不一致,拒绝放行"
+                exit 1
+              fi
+              echo "✓ 未触碰红区/执法层,无需审批"
+              ;;
+            true)
+              if [ "$approval" != "success" ]; then
+                echo "::error::本次触碰红区/执法层,但 harness-review 审批未通过($approval)—— 拒绝放行"
+                echo "::error::维护者需在本 PR 的 Red-zone approval job 上点 Review deployments → Approve"
+                exit 1
+              fi
+              echo "✓ 红区改动已由维护者在 harness-review 环境批准"
+              ;;
+            *)
+              echo "::error::红区扫描未给出明确结论(touched='$touched')—— 无法验证 ≠ 通过,拒绝放行"
+              exit 1
+              ;;
+          esac
 
   # 验证 Dockerfile 多阶段构建可成功产出生产镜像。
   # 与上面的测试链解耦:测试链关注源码质量与运行时行为;docker-build 关注交付物链路。
