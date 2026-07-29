@@ -50,6 +50,29 @@ function checkEq(name: string, actual: unknown, expected: unknown): void {
   check(name, actual === expected, `actual=${String(actual)} expected=${String(expected)}`);
 }
 
+/**
+ * 剥掉注释行,再对源码文本做断言。
+ *
+ * 为什么必须有(2026-07-29 review findings P2-1):本文件有 7 处「读文件内容 +
+ * `.includes(某字符串)`」的静态断言,**没有一处剥注释**。于是只要注释里写了同样的话,
+ * 断言就变绿 —— 真实逻辑删没删都一样。
+ *
+ * 这不是理论风险,同一天已经真实发生两次:
+ *   · workflow 文件引用断言,命中了注释里**描述**那个错误的句子
+ *   · INC-17 探针,命中了 release-prepare 里**解释这次删除**的注释
+ * 两次都是「写断言的人」和「写注释的人」是同一个,当场自摆乌龙。
+ *
+ * 危险方向是**注释让断言通过**(假绿);反过来「注释让断言误报」只是噪音,
+ * 所以只在前一种场景使用本函数。
+ */
+function codeOnly(text: string, style: 'hash' | 'slash' = 'hash'): string {
+  const re = style === 'hash' ? /(^|\s)#.*$/ : /(^|\s)\/\/.*$/;
+  return text
+    .split('\n')
+    .map((l) => l.replace(re, ''))
+    .join('\n');
+}
+
 function checkThrows(name: string, fn: () => unknown, msgPart: string): void {
   try {
     fn();
@@ -399,8 +422,9 @@ checkEq(
   // 实测:并行 worker 模式打 'A worker process has failed to exit gracefully'(退出码 0);
   // 串行 + detectOpenHandles 打 'Jest has detected the following N open handle' 并挂死。
   // 曾经写反过(夜间线 grep 了并行才有的文案 = 死代码,泄漏检测净归零)。
-  const ci = read('.github/workflows/ci.yml');
-  const nightly = read('.github/workflows/nightly-e2e-leaks.yml');
+  // 剥注释后再判 —— 否则注释里写一句同样的话,断言就绿了(见 codeOnly 的说明)
+  const ci = codeOnly(read('.github/workflows/ci.yml'));
+  const nightly = codeOnly(read('.github/workflows/nightly-e2e-leaks.yml'));
   check(
     'P1 leak:ci.yml 并行 e2e 步骤 grep worker 强杀文案(告警级)',
     ci.includes("grep -q 'failed to exit gracefully'") && ci.includes('::warning::'),
@@ -740,6 +764,32 @@ for (const [configName, config] of JEST_CONFIGS) {
 }
 
 // ---------------------------------------------------------------------------
+// review P2-1 — codeOnly 自身的阳性对照(守护的守护)
+//
+// 剥注释这件事本身也可能写错。用合成样例直接验:注释里的句子必须消失,
+// 代码里的同一句必须留下 —— 否则「剥注释」会从治假绿变成造假红。
+// ---------------------------------------------------------------------------
+{
+  const yaml = ['run: echo "红区扫描未成功"', '# 注释里也提到 红区扫描未成功', 'x: 1'].join('\n');
+  const stripped = codeOnly(yaml);
+  check(
+    'P2-1 codeOnly:注释里的句子被剥掉',
+    stripped.split('\n')[1].trim() === '',
+    stripped.split('\n')[1],
+  );
+  check(
+    'P2-1 codeOnly:代码里的同一句必须保留(不能剥过头)',
+    stripped.includes('run: echo "红区扫描未成功"'),
+  );
+  const ts = ['const a = 1;', '// 注释 no-use-guards', 'const b = "no-use-guards";'].join('\n');
+  const strippedTs = codeOnly(ts, 'slash');
+  check(
+    'P2-1 codeOnly:slash 风格同样生效且不误伤字符串',
+    strippedTs.split('\n')[1].trim() === '' && strippedTs.includes('const b = "no-use-guards";'),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // P6 — changelog fragment 形态判定
 //
 // 立项证据:2026-07-28/29 通宵 8 个 PR,**每一个都在 CHANGELOG 上撞冲突**。
@@ -805,7 +855,11 @@ for (const [configName, config] of JEST_CONFIGS) {
 // P2c — CI 接线的 fail-open 面(与 INC-09 同一类:skipped ≠ 通过)
 // ---------------------------------------------------------------------------
 {
-  const ci = fs.readFileSync(path.resolve(__dirname, '..', '.github/workflows/ci.yml'), 'utf-8');
+  // 同样剥注释:本块下面每一条都是 `ci.includes(某句错误文案)`,
+  // 而那些文案在注释里也出现过 —— 不剥的话,删掉真实逻辑只留注释,断言照样绿。
+  const ci = codeOnly(
+    fs.readFileSync(path.resolve(__dirname, '..', '.github/workflows/ci.yml'), 'utf-8'),
+  );
   const cases: Array<[string, boolean, string]> = [
     [
       'P2c ci:gate 依赖 redzone-scan 与 redzone-approval',
@@ -843,14 +897,10 @@ for (const [configName, config] of JEST_CONFIGS) {
       // 凡 CI 引用仓内文件,该文件必须真的存在 —— 这条能静态判,就别留给 CI 去发现。
       'P2c ci:workflow 引用的仓内文件必须存在',
       (() => {
-        // 先剥注释再扫 —— 否则「注释里**描述**这个错误」的那句话自己会被判成配置。
-        // 本仓今晚第三次踩同一类:描述文本 ≠ 命令位 / 配置位。
-        const code = ci
-          .split('\n')
-          .map((l) => l.replace(/(^|\s)#.*$/, ''))
-          .join('\n');
+        // `ci` 在本块开头已经过 codeOnly 剥注释 —— 否则「注释里**描述**这个错误」
+        // 的那句话自己会被判成配置(实测踩到过)。
         const refs = [
-          ...code.matchAll(/(?:node-version-file|env-file|args-file):\s*([^\s#]+)/g),
+          ...ci.matchAll(/(?:node-version-file|env-file|args-file):\s*([^\s#]+)/g),
         ].map((m) => m[1]);
         return refs.every((r) => fs.existsSync(path.resolve(__dirname, '..', r)));
       })(),
