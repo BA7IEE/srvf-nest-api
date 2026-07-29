@@ -242,7 +242,17 @@ jobs:
   # 会话生效。Codex / Cursor / 人手 vim / GitHub 网页编辑全都绕过它 ——
   # 也就是说 P2b 建起来的红区执法,此前覆盖的只是「其中一个执行体」。
   # 判定复用同一份 harness/redzone.json;两侧裁决一致性由 harness-guards.selftest
-  # 的 parity 用例逐条锁死(37 条路径),避免「一边拦一边放」。
+  # 的 parity 用例逐条锁死,避免「一边拦一边放」。
+  #
+  # ⚠️⚠️ 本 job **不是权威判定**,只是快速反馈。(2026-07-29 跨模型评审 finding 2)
+  #      它 checkout PR 的合并引用 → `pnpm install`(PR 的锁文件)→ 跑
+  #      `scripts/check-redzone.ts`(**PR 自己提供的裁判**)。PR 只要让 main()
+  #      输出 touched=false,红区审批就被跳过;而 judge() 不动,parity 自测照样
+  #      全绿 —— 自考自评的门不是门。
+  #      **权威判定在 `.github/workflows/redzone-trusted.yml`**:它用
+  #      pull_request_target 只跑 base 分支上的裁判,不 checkout PR、不装 PR
+  #      依赖、不执行 PR 内任何脚本。本 job 保留是因为它快、能在同一次 run 里
+  #      给出注解;真正卡合并的是那一个。
   redzone-scan:
     name: Diff guards
     runs-on: ubuntu-latest

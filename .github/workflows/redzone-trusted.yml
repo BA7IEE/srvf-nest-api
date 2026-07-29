@@ -1,0 +1,132 @@
+# =============================================================================
+# ⚠️⚠️⚠️  本文件用 `pull_request_target` 触发 —— 这是 GitHub Actions 里最危险的
+#         触发器。它以 **base 分支的 workflow 定义**运行,并且**能拿到仓库
+#         secrets 与写权限的 token**,而 PR 可能来自任何人。
+#
+#         历史上绝大多数 pull_request_target 事故都是同一个形态:
+#         「先 checkout 了 PR 的代码,然后在有 secrets 的上下文里跑了它」——
+#         装依赖会执行 PR 的 lifecycle script,跑构建会执行 PR 的配置文件,
+#         两者都等于把仓库交给提 PR 的人。
+#
+#         本文件因此有三条**不可删除**的禁令:
+#           ① 绝不 checkout PR 代码(只 checkout base ref)
+#           ② 绝不安装 PR 依赖(不跑 pnpm/npm/yarn install)
+#           ③ 绝不执行 PR 内任何脚本(裁判脚本取自 base)
+#         这三条由 scripts/harness-guards.selftest.ts 的 F3 断言逐条锁死
+#         (剥注释后判,所以「注释里写了」不算数)。改这里之前先看那组断言。
+#
+# 它为什么必须存在(2026-07-29 跨模型评审 finding 2):
+#   ci.yml 的 `Diff guards` 走 actions/checkout(PR 合并引用)→ pnpm install
+#   (PR 的锁文件)→ tsx scripts/check-redzone.ts(**PR 自己提供的裁判**)。
+#   PR 只要让 main() 输出 touched=false,红区审批就被跳过 —— 而 judge() 不动,
+#   parity 自测照样全绿。自考自评的门不是门。`Diff guards` 保留作快速反馈,
+#   **权威判定在本文件**。
+# =============================================================================
+name: Red-zone (trusted)
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# 最小权限:只读。本 workflow 不写任何东西,只输出一个裁决。
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: redzone-trusted-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: Red-zone trusted scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      required: ${{ steps.judge.outputs.required }}
+    steps:
+      # 禁令①:ref 写死 base_ref。**绝不**用 github.event.pull_request.head.*,
+      # 也不用默认的 merge ref —— 那两者都会把 PR 的代码放进这个有 secrets 的进程。
+      # persist-credentials: false —— 不给后续步骤留下可用的 git 凭据。
+      - name: Checkout BASE branch only (never the PR)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref }}
+          persist-credentials: false
+
+      # 只装 Node 运行时,不碰仓库依赖(禁令②)。
+      # 需要 ≥22.5:裁判用 path.matchesGlob(内置 glob,免依赖)。
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 禁令③:跑的是 base checkout 里的裁判脚本,不是 PR 里的。
+      # 变更清单走 GitHub API(gh 是 runner 自带的),不信任 PR 的 git 历史。
+      - name: Judge changed files against BASE red-zone registry
+        id: judge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node .github/workflows/redzone-trusted-judge.mjs
+
+  # 触碰受保护路径时才跑:harness-review 环境上挂了 required reviewer,
+  # 本 job 会一直 pending 直到维护者在 PR 页面点批准。
+  #
+  # ⚠️ 与 ci.yml 里那个同名机制一样,它是**摩擦与留痕**,不是不可伪造的授权:
+  #    本仓 AI 用的就是维护者本人的 token,GitHub 侧任何门在协议上都分不清
+  #    「人点的」和「AI 拿人的 token 点的」。真正不可绕过的一步,只能是维护者
+  #    合并前亲自看一眼被标红的 PR。
+  approval:
+    name: Red-zone trusted approval
+    needs: scan
+    if: needs.scan.outputs.required == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: harness-review
+    steps:
+      - name: Record approval
+        run: echo "✓ 维护者已在 harness-review 环境批准本次红区/执法层改动(trusted 裁判)"
+
+  # 保名 gate:branch protection 的 required context 逐字指向本 job 的 name。
+  # 判法与 ci.yml 的 gate 同源 —— **不从 skipped 反推**:approval 被跳过的唯一
+  # 合法理由必须是 scan 明确报告 required=false。scan 自己失败时 required 会是
+  # 空串或 'true'(fail-closed),那不是「没触碰」,是「没查出来」。
+  verdict:
+    name: Red-zone (trusted)
+    needs: [scan, approval]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Aggregate (fail-closed)
+        run: |
+          scan='${{ needs.scan.result }}'
+          required='${{ needs.scan.outputs.required }}'
+          approval='${{ needs.approval.result }}'
+          echo "scan=$scan required=$required approval=$approval"
+          if [ "$scan" != "success" ]; then
+            echo "::error::trusted 裁判未成功($scan)—— 无法确认是否触碰红区,拒绝放行"
+            exit 1
+          fi
+          case "$required" in
+            false)
+              if [ "$approval" != "skipped" ]; then
+                echo "::error::未触碰红区却跑了审批 job($approval)—— 与裁决不一致,拒绝放行"
+                exit 1
+              fi
+              echo "✓ 未触碰红区/执法层,无需审批"
+              ;;
+            true)
+              if [ "$approval" != "success" ]; then
+                echo "::error::本次触碰红区/执法层,但 harness-review 审批未通过($approval)—— 拒绝放行"
+                echo "::error::维护者需在本 PR 的 Red-zone trusted approval job 上点 Review deployments → Approve"
+                exit 1
+              fi
+              echo "✓ 红区改动已由维护者批准(trusted 裁判)"
+              ;;
+            *)
+              echo "::error::裁判未给出明确结论(required='$required')—— 无法验证 ≠ 通过,拒绝放行"
+              exit 1
+              ;;
+          esac

@@ -1,0 +1,10 @@
+- **红区裁判改为 base-trusted,不再自考自评(跨模型评审 F2:唯一权威被 PR 自己提供)**。原 `Diff guards` 的链路是:`actions/checkout`(PR 合并引用)→ `pnpm install`(**PR 的锁文件**)→ `tsx scripts/check-redzone.ts`(**PR 自己提供的裁判**)。PR 只要让 `main()` 输出 `touched=false`,红区审批就被整段跳过 —— 而 `judge()` 一字不动,parity 自测照样全绿。自考自评的门不是门。
+  - 新增 `.github/workflows/redzone-trusted.yml`(`pull_request_target`)+ `redzone-trusted-judge.mjs`。**三条禁令**写在文件顶部并由自测逐条锁死:① 绝不 checkout PR 代码(`ref` 写死 `github.base_ref`)② 绝不安装 PR 依赖 ③ 绝不执行 PR 内任何脚本。判据(`harness/redzone.json`)与裁判脚本**都取自 base**,PR 改不动本次裁决。
+  - 裁判**零依赖**:只用 Node 内置 `path.matchesGlob`(22.5+)与 runner 自带的 `gh`。选它而不是 minimatch,正是因为「装依赖」本身就是执行 PR 提供的 lifecycle script —— 禁令②不允许。
+  - 变更清单走 GitHub API 且**必须翻页**;拿 PR 元数据的 `changed_files` 对账,数目对不上一律 fail-closed(`pulls/files` 端点上限 3000 且**静默**截断)。
+  - **rename 判新旧两条路径**(finding 4):只判新路径的话,`git mv 受保护文件 非保护路径` 就能把文件挪出保护区而不触发审批。
+  - 裁判自身 / `redzone.json` / CI 配置**无条件要求审批**,该清单**硬编码在裁判里、不从 registry 读** —— registry 被读坏或条目被挪走时仍守得住。
+  - 权限收到只读(`pull_request_target` 默认给写权限,不收紧等于把写权限暴露在最危险的触发器上)。
+- **旧 `Diff guards` 保留为快速反馈,并在 `ci.yml` 注释与 `AGENTS.md` 里明确降级表述**:它不是权威判定,真正卡合并的是 trusted 那一个。
+- 自测 149 → 170,新增 21 条,其中 6 条是**行为断言**(直接 import 裁判的纯函数喂合成变更清单),不是 grep 源码字符串。三处变异实测均被抓到:删掉 rename 旧路径判定 → 2 条红;把 `ref` 改成 `pull_request.head.sha` 并加一条 `pnpm install` → 3 条红。所有 workflow 断言都在**剥注释之后**判 —— 顶部禁令注释里逐字写着「不跑 pnpm install」,不剥的话断言会被那句注释自己满足(#817 的 comment-satisfiable 教训)。
+- 裁判已对真实 PR 干跑验证:#819(5 个文件 → 4 处命中,`changelog.d` fragment 正确不命中)、#817(4 个文件 → 2 处命中)。
