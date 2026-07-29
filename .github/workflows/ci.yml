@@ -117,9 +117,12 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      # Harness 2.0(T0 §1.4):恒读层预算 + 事实计数守护;四项均纯文件解析、秒级。
-      - name: Docs guards (readtax + counts + codemap + rbacmap)
-        run: pnpm docs:readtax:check && pnpm docs:counts:check && pnpm docs:codemap:check && pnpm docs:rbacmap:check
+      # Harness 2.0(T0 §1.4):恒读层预算 + 事实计数守护;前四项均纯文件解析、秒级。
+      # openapi 一项(Harness 3.0 P4d)在进程内建 Nest 应用导出契约再逐字比对,
+      # **不监听端口、不连数据库**,故可留在这个无 Postgres 的 fast job 里(~10s)。
+      # 它把「改契约必须同 PR 刷新交接文档」从散文铁律变成机器判据。
+      - name: Docs guards (readtax + counts + codemap + rbacmap + openapi)
+        run: pnpm docs:readtax:check && pnpm docs:counts:check && pnpm docs:codemap:check && pnpm docs:rbacmap:check && pnpm docs:openapi:check
 
       # Harness 3.0 P2:守卫自测 + eslint 执法块阳性对照。
       # 后者对每条执法规则喂必定违规的合成片段,断言确实被抓到 ——
