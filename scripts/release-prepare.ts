@@ -140,6 +140,27 @@ function buildSteps(version: string, tag: string, date: string, handoffRel: stri
       },
     },
     {
+      // ⚠️ 必须紧跟在 apply-swagger 版本改动之后:openapi 快照的 `info.version`
+      // 取自 setVersion,版本一改快照立即过期,而 P4d 把「契约快照新鲜度」接进了 CI。
+      // 不做这一步,**每一次发版都会被自己的守护卡住** —— v0.63.0 发版 PR 的
+      // Fast checks 就是这么红的(2026-07-29 实测,发版链第一次真实使用即暴露)。
+      // 教训:加一道门时,必须同时问「哪些既有流程会撞上它」。
+      name: 'openapi 快照随版本刷新',
+      done: () => {
+        try {
+          execFileSync('pnpm', ['exec', 'ts-node', '--project', 'tsconfig.json',
+            'scripts/generate-openapi.ts', '--check'], { cwd: ROOT, stdio: 'pipe' });
+          return '快照已与当前代码一致';
+        } catch {
+          return null;
+        }
+      },
+      run: () => {
+        execFileSync('pnpm', ['exec', 'ts-node', '--project', 'tsconfig.json',
+          'scripts/generate-openapi.ts'], { cwd: ROOT, stdio: 'inherit' });
+      },
+    },
+    {
       name: `生成 ${handoffRel}`,
       done: () => (fs.existsSync(path.join(ROOT, handoffRel)) ? '快照已存在(不回改)' : null),
       run: () => {
@@ -194,21 +215,18 @@ function buildSteps(version: string, tag: string, date: string, handoffRel: stri
         write(handoffRel, lines.join('\n'));
       },
     },
-    {
-      name: 'current-state §1 回填',
-      done: () => (read(CURRENT_STATE).includes(`**${tag}**(${date}`) ? `已回填 ${tag}` : null),
-      run: () => {
-        const doc = read(CURRENT_STATE);
-        const next = doc.replace(
-          /\| 版本 \/ Release \| .*? \|\n/,
-          `| 版本 / Release | **${tag}**(${date};handoff \`archive/handoff/${tag}.md\`;tag 与 GitHub Release 由 \`pnpm release:finish\` 收口) |\n`,
-        );
-        if (next === doc) {
-          throw new Error('current-state §1 未找到「版本 / Release」行 —— 结构变了,拒绝盲改');
-        }
-        write(CURRENT_STATE, next);
-      },
-    },
+    // 原「current-state §1 回填」步骤已于 2026-07-29 删除。
+    //
+    // 它往 current-state §1 写 `| 版本 / Release | **vX.Y.Z**(日期…) |` 这一行,
+    // 而 **P3 恒读层重写把那一行删了** —— 版本号 / main HEAD / open PR 属机器可查事实,
+    // 现场跑 `pnpm agent:preflight` 即得,留在恒读层只会周期性过期。
+    // 于是这一步永久失败(它 fail-closed 拒绝盲改,这点是对的),
+    // 而**直到本次真实发版才暴露** —— release:prepare 此前只在自测里跑过。
+    //
+    // 教训(已登记):**文档瘦身会砍掉脚本依赖的锚点,而没有守护看得见这种依赖**。
+    // 恒读层守护只管体积,docs-counts 只管计数块,谁都不知道有个脚本在找那一行。
+    // 现在版本真相的载体是:package.json + git tag + handoff 快照 —— 三者都不在恒读层,
+    // 不需要回填。
   ];
 }
 

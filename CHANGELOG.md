@@ -2,7 +2,7 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
-## Unreleased
+## v0.63.0 - 2026-07-29
 
 ### Changed
 
@@ -30,6 +30,9 @@
 - ⚠️ **契约(App surface,非破坏)**:`GET /api/app/v1/me/team-join/applications/current` 响应中 `gates[]` 的 OpenAPI schema 名由 `GateStatusDto` 改为 `AppGateStatusDto`(App 与管理面 DTO 物理解耦,由上述 lint 规则机器强制)。**字段、可空性、required 集合逐字段不变,无运行时行为变化**;仅按 OpenAPI 生成客户端类型的项目需重新 codegen 并改引用名(见 `docs/handoff/miniapp.md`)。
 - **验证链重构(Harness 3.0 P1)**:e2e 从三重串行(runInBand + maxWorkers 1 + detectOpenHandles)改为 per-worker 派生库并行(模板库 migrate 一次 + `CREATE DATABASE ... TEMPLATE` 克隆 `_w<N>`,globalTeardown 回收;本地 5 worker 全量约 6 分钟);CI 拆 fast(lint/typecheck/docs guards/build/unit,无 Postgres)∥ slow(contract+e2e)双 job,由保名 gate job `Lint / Typecheck / E2E` 聚合上报(branch protection required checks 逐字不变);新增 `nightly-e2e-leaks.yml` 夜间串行 + detectOpenHandles 泄漏线(软警告升级硬失败,句柄纪律零放宽)。行为面:测试基建与 CI 编排变更,业务代码与接口契约零改动。
 - 新增脚本:`test:e2e:failed`(定点重跑上次失败 suite)、`test:e2e:leaks`、`lint:cached`、`db:test:prune`(按 git worktree 白名单差集回收孤儿测试库,默认 dry-run);`agent:check:quick` 改三步并行 + eslint 缓存(~85s → 热缓存 ~25s;CI 与 agent:check:full 恒冷跑为权威口径);`.env.test` 显式 `connection_limit=5&pool_timeout=20`,docker-compose 增 `max_connections=200`。
+
+- **并行 PR 不再撞 CHANGELOG(Harness 3.0 P6)**:新增 `pnpm exec tsx scripts/check-changelog-fragment.ts` 并接入 CI —— 功能 PR 若直接改 `## Unreleased` 段而不提供 `changelog.d/` fragment,当场红并打印可照抄的修复命令。**立项证据是实测不是推演**:2026-07-28/29 通宵推进 Harness 3.0 期间开了 8 个 PR,**每一个都在 CHANGELOG 上撞了合并冲突**(单一追加点),为对齐 main 产生的合并提交与解冲突来回全是纯损耗;而 fragment 机制 **Harness 2.0 就建好了**(README 写着、`changelog:merge` 能跑、`release:prepare` 会归并),当晚**一个都没人用,包括 AI 自己**。规则写了、工具有了、没人用 —— 于是不再写第二遍「请用 fragment」,直接做成判据。豁免三类真实合法形态:发版收口(归并 fragment + bump 版本)、只改历史版本段、完全不碰 CHANGELOG;**发版豁免尤其关键** —— 不豁免的话发版会永远过不了自己这道门,而那种门迟早被整个关掉。8 条自测(3 正向 + 5 反向)。**本条目自己就是用 fragment 写的。**
+- **授权往返从 N 次压成 1 次(Harness 3.0 P6)**:新增 `pnpm harness:needs <路径…>` —— 开工前把计划写集喂进去,一次性算清哪些受保护、命中哪条规则、以及**可直接照抄的 grant 命令**(按最小必要合并 glob:单文件就授权该文件,多文件才收敛到公共目录),同时列出**无需授权**的路径免得维护者以为整批都要批。立项证据:同一通宵 AI **停下来问授权 6 次**,每次都是「写到某个文件才发现是红区」→ 停 → 出简报 → 等维护者 → 继续;维护者是这条链上唯一的人类,每次往返都要他放下手头的事。根因不是闸门太严,是**发现得太晚** —— goal 五要素里本来就有「写集声明」,只是没有工具把写集翻译成 grant 命令,实际做法便退化成边写边撞。⚠️ 它**只做预算,不发放授权**:发放仍然只能由维护者本人执行,「AI 不得自行发放授权」是这套设计的地基,不因为便利而松动。
 
 ## v0.62.0 - 2026-07-28
 

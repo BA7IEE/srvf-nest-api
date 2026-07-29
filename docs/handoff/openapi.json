@@ -84442,7 +84442,7 @@
   "info": {
     "title": "U Nest API Starter",
     "description": "AI-friendly TypeScript API base — NestJS + Prisma + PostgreSQL",
-    "version": "0.62.0",
+    "version": "0.63.0",
     "contact": {}
   },
   "tags": [
