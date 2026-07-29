@@ -107,7 +107,14 @@ INTERP_CODE="$(printf '%s\n' "$RAW_CMD" | awk -v re="(^[[:space:]]*|[;&|(][[:spa
       next
     }
     if (match(line, re)) {
-      print line                      # 解释器行本身也可能含内联代码(node -e "…")
+      # 只取**从解释器起**到行尾,不要整行 —— 否则同一行里排在解释器**前面**的
+      # 无关命令(如 `cat <受保护路径> | head; node -e "…"`)也会被圈进代码区,
+      # 又变回误伤。实测第 6 条误伤回归用例就是这个形态。
+      #
+      # 已知残留(如实写明,不假装精确):排在解释器**后面**的子命令仍会被圈进来 ——
+      # shell 的引号与分隔符在 awk 里无法可靠切分。这一侧刻意留保守:
+      # **它只会多拦,不会漏放**,而漏放才是致命的那一种(INC-15 的代价)。
+      print substr(line, RSTART)
       if (match(line, /<<-?[[:space:]]*['"'"'"]?[A-Za-z_][A-Za-z0-9_]*['"'"'"]?/)) {
         d = substr(line, RSTART, RLENGTH)
         sub(/^<<-?[[:space:]]*/, "", d); gsub(/['"'"'"]/, "", d)
