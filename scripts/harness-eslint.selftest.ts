@@ -239,7 +239,8 @@ async function main(): Promise<void> {
   // 合成片段是虚拟路径,不在任何 tsconfig 项目里,类型感知解析会直接 parsing error
   // 而让规则根本跑不到(那样「全绿」毫无意义)。harness 规则全是语法级的,不需要类型信息。
   // overrideConfigFile: true = 完全不加载项目配置文件,只用下面这份。
-  const { harnessConfigBlocks } = (await import('../eslint.harness.mjs')) as {
+  const { harnessConfigBlocks, HARNESS_SYNTAX } = (await import('../eslint.harness.mjs')) as {
+    HARNESS_SYNTAX: Record<string, { message: string }>;
     harnessConfigBlocks: unknown[];
   };
   const eslint = new ESLint({
@@ -259,6 +260,23 @@ async function main(): Promise<void> {
   });
   let passed = 0;
   const failures: string[] = [];
+
+  // ── review P2-2:把「17 条选择器」和「用例」绑死 ─────────────────────────────
+  // 原先断言的是 eslint 的 **ruleId**(`no-restricted-syntax`),不是**哪一条选择器**
+  // 命中。当时 17 条选择器恰好各有一例,但那是**巧合,没有任何机制保证** ——
+  // 加第 18 条规则却不加正向用例,它从此没有阳性对照,而阳性对照正是防
+  // 「选择器写错了永远匹配不到」的唯一手段(INC-06 就是这么静默失效的)。
+  //
+  // 做法:每条选择器的 message 是唯一的,拿命中消息反查是哪条选择器 ——
+  // 顺带把断言从「有 harness 规则响了」升级成「**是这一条**响了」,
+  // misattribution(A 的用例被 B 抓到)也一并堵上。
+  const messageToId = new Map<string, string>(
+    Object.entries(HARNESS_SYNTAX).map(([id, def]) => [
+      def.message,
+      id,
+    ]),
+  );
+  const coveredSelectors = new Set<string>();
 
   for (const c of CASES) {
     const results = await eslint.lintText(c.code, { filePath: c.filename });
@@ -280,6 +298,10 @@ async function main(): Promise<void> {
     }
 
     const wanted = harnessHits.filter((m) => m.ruleId === c.expect);
+    for (const m of wanted) {
+      const id = messageToId.get(m.message);
+      if (id) coveredSelectors.add(id);
+    }
     if (wanted.length >= (c.minCount ?? 1)) {
       passed++;
       console.log(`✓ ${c.name}`);
@@ -290,6 +312,20 @@ async function main(): Promise<void> {
         }`,
       );
     }
+  }
+
+  // 覆盖率闭环:每条选择器都必须至少被一个正向用例真实触发过
+  const allIds = Object.keys(HARNESS_SYNTAX);
+  const uncovered = allIds.filter((id) => !coveredSelectors.has(id));
+  if (uncovered.length === 0) {
+    passed++;
+    console.log(`✓ 选择器覆盖闭环:${allIds.length}/${allIds.length} 条均有正向用例真实触发`);
+  } else {
+    failures.push(
+      `✗ 选择器覆盖闭环 — ${uncovered.length} 条选择器没有任何正向用例:${uncovered.join(', ')}\n` +
+        '  没有阳性对照的规则 = 写错了也永远不会有人知道(INC-06 就是这么静默失效的)。' +
+        '请为每条新增选择器补一个「必定违规」的用例。',
+    );
   }
 
   for (const f of failures) console.error(f);
