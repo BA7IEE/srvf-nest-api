@@ -2,6 +2,61 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## v0.64.0 - 2026-07-29
+
+- **登记簿的「covered」不再是一句空话**:新增断言 —— `harness/incidents.json` 里标 `covered`(事故)或 `probeKind: live`(反向案例)的条目,其探针函数体**必须真的执行守护**(出现 `hookExit(` / `execFileSync(` / `spawnSync(`),只读源码字符串的一律判为名不副实。**这是同一个病的第三次复发**:①「17 条 lint 选择器都有阳性对照」实为巧合对齐 ②「37 条 parity 证明判定正确」只证明两把刻错的尺子读数相同 ③「4 条事故 covered = 会被真实回放」只是登记簿里手写的一个词。三次都是**元数据描述实现,却没有任何东西检查这个描述是真的** —— 而基于谎话做的判断(「回放 20/20,守护可信」)比没有数字更危险。判定抽成纯函数并用**合成登记簿**做阳性对照(标错必抓 / 标对不误报),因此无需为跑一次测试去申请受保护路径的授权。另加「探针体切分有效」反向断言,防止切分正则失配后「零违规」的假绿。
+
+- **测试库安全闸从「子串判定」改为「主机允许清单 + 库名逐字相等 + 连接后求证」(跨模型评审 F1,真实数据破坏风险)**。旧实现是 `url.includes('app_test')` 一行:任何**远程** `DATABASE_URL` 只要路径含该子串就通过闸门,随后 `reset-db.ts` 对它执行 55 张业务表的 `TRUNCATE`。`postgresql://user:pw@prod.example.com:5432/app_test_prod` 是原样放行的,而 `.env.test`(这条 URL 的真源)当时**不在任何红区**,一条 PR 就能改。三层收紧:
+  - **URL 层**:解析 URL → 协议必须是 `postgresql:`/`postgres:` → host 必须**逐字命中**写死在代码里的允许清单(`localhost` / `127.0.0.1` / `::1` / `postgres` / `db` / `u-nest-api-postgres` / `host.docker.internal`,每条都注了理由)→ 库名必须**严格等于** `deriveTestDbName()` 的结果。清单写死而不读配置,是因为配置可被 PR 改、本文件在 `redzone.json` 保护内 —— **判据要放在受保护的那一侧**。库名与 `load-env` 的 `applyTestDbDerivation()` 共用同一个派生函数,两侧不可能各自漂移。
+  - **连接层**:`resetDb()` 在 `TRUNCATE` 之前先向服务器求证 `current_database()`(逐字比对)与 `inet_server_addr()`。URL 只是**意图** —— DNS 劫持、SSH 端口转发都能让一条完全合规的 URL 落到另一台机器上,唯一可信的答案来自连接的另一端。建/删库那条 `docker exec` 链路同样求证(先拒非本机 `DOCKER_HOST`,再问容器内 psql 连的是不是维护库 `postgres`)。
+  - **生命周期层**:`assertDroppableTestDbName` 由 `startsWith('app_test')` 收紧为「本 checkout 派生的那一族」(模板库或它的 `_w<N>` 克隆)。旧口径会放行**别的 worktree/lane 的派生库**,而 `DROP ... WITH (FORCE)` 会连人家正在跑的 e2e 一起踩死。
+  - **`.env.test` 纳入红区**(新条目 `test-env`)。
+  - 如实写明未做到逐字比对的一处:`inet_server_addr()` 判的是**地址段**(环回 / RFC1918 / 链路本地)而非字面量 —— 宿主机经 docker 端口映射连过去时它是容器在网桥上的地址(本机实测 `192.168.97.2`),随 docker 网络配置而变,写死字面量会在别人机器上误伤。它拦不住「同一台机器上的另一个库」(那由 `current_database()` 的逐字比对负责),拦得住「连到了一台公网数据库」。
+  - 自测 137 → 149:含评审给出的那条远程 URL 必须被拒、当前真实派生库名必须通过、口令在拒绝信息里已掩码、跨 lane 库名拒绝 `DROP`,以及用假客户端喂各种服务器回答验证连接后求证的六条裁决(不需要真数据库,可进 CI fast job)。
+
+- **锁住 CI 控制面与生产入口(跨模型评审 F2:实测 12/12 全部不在保护内)**。此前红区清单管住了「代码里的语义」,却漏掉了「决定检查本身还成不成立」的那一层 —— 把 `package.json` 里 `lint` / `typecheck` / `test` 的脚本体改成恒成功,fast 与 slow 两个 job 就全绿,**检查名一字未动,CI 一片绿,而什么都没跑**。新增四组保护:
+  - **`ci-control-plane`(裁判保护)**:`package.json`(所有检查命令的真身)、`pnpm-lock.yaml`(依赖真身 —— 换掉 eslint / tsc 即换掉裁判)、`eslint.config.mjs`(**执法块的接线**)、`tsconfig.json` / `test/tsconfig.test.json` / `scripts/tsconfig.json` / `prisma/tsconfig.eslint.json`(类型检查与 lint 的覆盖范围 —— 缩 `include` 即缩掉被检查的代码)、`test/jest-*.config.ts`(跑哪些 spec —— `testRegex` 一改,e2e 可以一个用例都不跑却报绿)、`nest-cli.json`、`scripts/harness-needs.ts`(授权预算工具 —— 改它可以让它少报需要授权的路径,把维护者骗成「这次不用授权」)。
+  - **`authz-core`(红区)**:`src/modules/authz/**` 与 `src/common/decorators/*-throttle.decorator.ts`。原 `auth-frozen` 那条 `src/**/*throttler*` **既拼错了名**(仓内真实文件是 `*-throttle.decorator.ts`,少个 r)**又匹配不到任何文件**,11 个限流装饰器与整个判权模块一直裸奔。
+  - **`production-entrypoint`(红区)**:`src/main.ts`、`src/app.module.ts` —— `APP_GUARD` / `APP_FILTER` / `APP_INTERCEPTOR` 的注册处,改它等于改每个请求的鉴权与响应链路。
+  - **`release-tooling`(红区)**:`scripts/release-prepare.ts`、`scripts/release-finish.ts`。INC-17 已证明它坏了要到真发版才显形。
+- **新增「接线自测」:走 `pnpm lint` 的正式入口,不再只 import `eslint.harness.mjs`**。此前 31 条 eslint 用例全部跑在自测**自己 new 出来的** ESLint 实例上,配置直接来自 import 进来的 `harnessConfigBlocks` —— 它证明的是「规则本身写对了」,**不是「规则真的接在 `pnpm lint` 上」**,而这两件事可以分开坏。实测:把 `eslint.config.mjs` 里那行 `...harnessConfigBlocks` 删掉,同一个违规文件从 exit 1 变成 **exit 0、零违规**,17 条铁律对真实 lint 全部静默失效,而 31 条用例**一条都不会红** —— 正是 INC-06 的形态。新用例往 `src/` 写一个必定违规的临时文件(必须落在 `src/` 内,否则 `parserOptions.project` 不含它、eslint 直接报错,断言就变成在测另一件事),用仓库自己的 eslint 二进制 + 默认配置解析去 lint,断言非零退出且命中的正是 harness 那条 message;`finally` 清理探针(留在 `src/` 会让 lint 永远红 —— 响亮地坏好过静默地坏)。eslint 自测 31 → 32。
+- 顺带订正 `test/setup/worktree-db.ts` 一句已被 F1 作废的注释(原文称「派生名仍含 `app_test` 子串所以既有安全断言原样生效」;F1 起子串不再是判据,两侧共用 `deriveTestDbName()` 逐字比对)。
+- redzone parity 用例 38 → 53(新增 15 条覆盖本次每条新 glob,hook 与 CI 两侧裁决逐条一致)。
+
+- **红区裁判改为 base-trusted,不再自考自评(跨模型评审 F2:唯一权威被 PR 自己提供)**。原 `Diff guards` 的链路是:`actions/checkout`(PR 合并引用)→ `pnpm install`(**PR 的锁文件**)→ `tsx scripts/check-redzone.ts`(**PR 自己提供的裁判**)。PR 只要让 `main()` 输出 `touched=false`,红区审批就被整段跳过 —— 而 `judge()` 一字不动,parity 自测照样全绿。自考自评的门不是门。
+  - 新增 `.github/workflows/redzone-trusted.yml`(`pull_request_target`)+ `redzone-trusted-judge.mjs`。**三条禁令**写在文件顶部并由自测逐条锁死:① 绝不 checkout PR 代码(`ref` 写死 `github.base_ref`)② 绝不安装 PR 依赖 ③ 绝不执行 PR 内任何脚本。判据(`harness/redzone.json`)与裁判脚本**都取自 base**,PR 改不动本次裁决。
+  - 裁判**零依赖**:只用 Node 内置 `path.matchesGlob`(22.5+)与 runner 自带的 `gh`。选它而不是 minimatch,正是因为「装依赖」本身就是执行 PR 提供的 lifecycle script —— 禁令②不允许。
+  - 变更清单走 GitHub API 且**必须翻页**;拿 PR 元数据的 `changed_files` 对账,数目对不上一律 fail-closed(`pulls/files` 端点上限 3000 且**静默**截断)。
+  - **rename 判新旧两条路径**(finding 4):只判新路径的话,`git mv 受保护文件 非保护路径` 就能把文件挪出保护区而不触发审批。
+  - 裁判自身 / `redzone.json` / CI 配置**无条件要求审批**,该清单**硬编码在裁判里、不从 registry 读** —— registry 被读坏或条目被挪走时仍守得住。
+  - 权限收到只读(`pull_request_target` 默认给写权限,不收紧等于把写权限暴露在最危险的触发器上)。
+- **旧 `Diff guards` 保留为快速反馈,并在 `ci.yml` 注释与 `AGENTS.md` 里明确降级表述**:它不是权威判定,真正卡合并的是 trusted 那一个。
+- 自测 149 → 170,新增 21 条,其中 6 条是**行为断言**(直接 import 裁判的纯函数喂合成变更清单),不是 grep 源码字符串。三处变异实测均被抓到:删掉 rename 旧路径判定 → 2 条红;把 `ref` 改成 `pull_request.head.sha` 并加一条 `pnpm install` → 3 条红。所有 workflow 断言都在**剥注释之后**判 —— 顶部禁令注释里逐字写着「不跑 pnpm install」,不剥的话断言会被那句注释自己满足(#817 的 comment-satisfiable 教训)。
+- 裁判已对真实 PR 干跑验证:#819(5 个文件 → 4 处命中,`changelog.d` fragment 正确不命中)、#817(4 个文件 → 2 处命中)。
+
+- **删掉两个自制 glob 引擎,换成 Node 内置 `path.matchesGlob`(跨模型评审 F5:两把刻错的尺子读数相同)**。原实现对含 `**` 的 glob 只做「前缀 + 后缀」两头匹配,于是 `redzone.json` 里那条 src 下的 throttler glob **实测匹配不到任何文件**;而 `redzone-guard.sh` 的 bash 版**一致地错**,所以 37 条 parity 用例全绿 —— 它们证明的只是「两把刻错的尺子读数相同」。**parity(一致)≠ correctness(正确)。**
+  - `check-redzone.ts` 的 `matchesGlob` 改为 `path.matchesGlob`;`redzone-guard.sh` 删掉整个 bash `matches_glob`,退化成纯 I/O —— 取路径 → 调 `check-redzone.ts --hook` → 按结果拼人话消息。授权令牌的匹配也一并搬进去(它同样要 glob,留在 shell 就等于留半套语义)。判定不可用时 fail-closed。
+  - 选 Node 内置而不是 minimatch:F3 的 trusted 裁判在 `pull_request_target` 下**禁止装依赖**(装依赖 = 执行 PR 提供的 lifecycle script),要让三处消费者共用同一套语义,唯一选择就是免依赖的内置实现。它目前标 experimental —— 缓解办法是下面那张期望值表把每条 glob 的裁决逐条钉死,语义一旦漂移 CI 当场红。**因此本批未新增任何依赖,`package.json` / `pnpm-lock.yaml` 未动。**
+- **限流 glob 修正**:`src/**/*throttler*`(零命中)→ `src/**/*throttle*`,实测覆盖 13/13 个 throttle 与 throttler 文件(后者含前者)。同时把限流从 `auth-frozen` 挪到 `authz-core`,让「refresh token 冻结」与「判权 + 限流」各自成条。
+- **parity 自测改三方结构**:`fixture` + **期望值** + TS 结果 + Hook 结果,**57/57 条 glob 各有正反样例,共 118 条**。新增两条覆盖闭环断言:registry 里加了 glob 却不加样例 → 红;表里留着 registry 已删的 glob → 也红(与 eslint 侧「选择器覆盖闭环」同源)。负样例的语义是**全局不受保护**,所以都挑成不会被别的 glob 顺手捞走的近似路径。
+- **rename 双路径**:`check-redzone.ts` 改用 `git diff --no-renames`,让 rename 变成 `D 旧路径` + `A 新路径`。实测对照 —— 默认 `R100 scripts/harness-grant.ts → scripts/moved-grant.ts`(只判新路径 = 不命中);加 `--no-renames` 后两条都进变更集,裁决为「触碰受保护路径 1 处」。
+- **三处诚实订正**:
+  - `AGENTS.md` §1「语法级铁律(17 条)」→「**字面语法拦截**(17 条,非语义分析)」,并就地写明 `import 别名` / `变量中转` / `computed property` **已知可绕过**。
+  - `AGENTS.md` 红区一行 → 权威判定 = F3 的 base-trusted 裁判,本地 hook 是**提前反馈,不是最终边界**。
+  - `pnpm harness:replay` 不再统称「20/20」,拆成**真触发 8 条**(实跑守护并断言裁决)与**结构断言 12 条**(只查源码字符串)分别计数,并在输出末尾写明「结构断言发现不了『代码还在但不起作用』,别把两组加起来当同一种保证」。`incidents.json` 的 `covered` 收窄为只授予真触发那组,其余改标 `structural`,每条附 `probeNote` 说明弱在哪。
+    > 与评审报告的 9/10 略有出入:按「探针是否执行守护本体」这条写进登记簿的判据逐条核下来是 **8/12**(评审记的是 9/10)。差异在 `INV-06` —— 它确实 spawn 了一条命令,但那条命令是 grep 源码统计豁免注释数量,不是守护本体,故归结构断言。
+- **eslint 补 5 条对抗用例,断言为「当前放行」**:`UseGuards as UG` / `const db = this.prisma; db.user.delete()` / `const p = process; p.env.X` / `const C = Map; new C()` / `PickType as PT` —— 实测 5/5 全部绕过。它们标 `knownGap`,在输出里**单独成段计数**(`32 passed, 0 failed, 5 known gaps`),不混进「通过」的叙事。若哪天缺口被补上,该用例会红并提示来摘掉标记 —— 缺口关闭这件事因此不会被忘记。自定义 ESLint 规则(import binding resolution)已拍板另立 goal,本批不做。
+- ⚠️ **成本如实记录**:parity 由 37 条增至 118 条且每条都真跑一次 hook(hook 内是 tsx 冷启动 ≈ 175 ms),`harness-guards.selftest` 从约 4 s 增至约 28 s。换来的是「每条 glob 都有期望值、正反样例齐全」——若这个代价在日常 `agent:check:quick` 里太重,可把 hook 那一列收窄成按条目抽样(TS 列仍跑满 118 条),但那会削弱 hook 侧的阳性对照,故未擅自这么做。
+
+- **写侧守护的解释器规则收窄(实测 5 次误伤)**:INC-15 的修复在检测到解释器后扫**整条命令原文**找红区路径,一天内误伤 5 次,全是「命令里**提到**路径而非要写它」——commit 信息描述红区改动、`find -name <裸文件名>` 只读分析、想跑一下 `harness:replay`、CHANGELOG 正文提到 hook 路径、`cat <受保护路径> | head; node -e "…"`。每次都逼人换写法绕开,而**那正是守护失效的前兆**:人一旦养成绕路习惯,真该拦的那次也会被绕过去(P2b 已学过一次:误伤比漏放更能摧毁可信度)。现收窄为只扫**解释器的代码区**——heredoc 取到终止符、`-e/-c` 从解释器位置取到行尾(不取整行,否则行首无关命令会被圈进)。已知残留如实写进注释:解释器**之后**的子命令仍会被圈进来(shell 引号与分隔符在 awk 里无法可靠切分),这一侧刻意保守 —— **只会多拦不会漏放**。hook 自测 50 → 56(4 条误伤回归逐条对应实际踩点 + 2 条边界),INC-15 的三条阳性场景全部仍被拦。
+- **登记 INC-17:发版链两处缺陷 + 回放探针**:v0.63.0 是 `release:prepare` 的第一次真实使用,当场炸出两个 ——(a)openapi 快照不随版本刷新 → 撞上刚接进 CI 的契约新鲜度门,**每次发版都会被自己的守护卡住**;(b)`current-state` 回填步骤找的那一行 P3 已删除 → 该步骤自 P3 合并起永久失败(它 fail-closed 拒绝盲改是对的,但直到真发版才暴露)。两者已在发版 PR 修掉,此处补静态回放探针守住。**教训**:①加一道门时必须同时问「哪些既有流程会撞上它」;②**没有任何守护看得见「脚本依赖某行文档」这种关系** —— 恒读层守护只管体积、`docs-counts` 只管计数块,谁都不知道有个脚本在找那一行。事故登记簿 16 → 17 条(covered 14),回放 19 → 20。
+
+- **自查一轮 + 三处修正(review findings)**。方法论上先说明局限:**这一轮是 AI 查自己刚写的代码,查不出它本来就没看见的东西**,只覆盖「能拿证据」的部分(数字对不对、断言能否被绕过、文件里有没有那行);设计层面的盲区仍需跨模型互查。三处已修:
+  - **P1-1 头号数字错了一倍,已随 v0.63.0 发布**:「恒读层 24,000 → 13,175 字符(−46%)」中 **24,000 是字节、13,175 是字符**,混用两种口径得出 −46%。实测同口径:字符 **16,902 → 13,175(−22%)**,字节 24,000 → 20,313(−15%)。中文一字三字节,`wc -m` 在非 UTF-8 locale 下又退化成数字节,是直接诱因。CHANGELOG 已就地订正并留勘误;`archive/handoff/v0.63.0.md` 与 commit 标题按「快照不回改」保留原文。**其余数字逐个复核,口径均自洽**(CODEMAP / NEXT_TASKS / RBAC_MAP 全程字节,路径注入层全程字符)。
+  - **P1-2 一个 PR 曾能删掉整套红区守护而 CI 全绿**:`Diff guards` / `Red-zone approval` 都不是 required check,唯一会察觉接线被删的断言又住在同一个 PR 改得动的自测里,且无 CODEOWNERS —— 三者叠加即可无声绕过。**已由维护者把 `Diff guards` 加入 branch protection required contexts**(增量 POST,`enforce_admins` 等其余字段未受影响,已核验);删掉该 job 后 required check 永远报不出来,PR 合不了。
+  - **P2-1 七处静态断言不剥注释**:`harness-guards.selftest` 有 7 处「读文件 + `includes(某句)`」的断言,注释里写同样的话即可让断言变绿 —— 该失败模式**同日已真实发生两次**(workflow 引用断言、INC-17 探针,均是作者的断言命中作者的注释)。新增共用 `codeOnly()` 并在「注释可致假绿」的方向全部启用,附 3 条阳性对照(剥得掉注释、剥不过头、不误伤字符串)。
+  - **P2-2 17 条 lint 选择器与用例是巧合对齐**:此前断言的是 eslint 的 `ruleId`,不是**哪条选择器**命中;17↔17 满覆盖没有任何机制保证,加第 18 条规则却不加用例将静默失去阳性对照(INC-06 正是这么失效的)。现按各选择器唯一的 message 反查命中来源,输出 `选择器覆盖闭环 17/17`,任一条无正向用例即红;顺带把断言从「有 harness 规则响了」升级为「**是这一条**响了」,misattribution 一并堵上。
+
 ## v0.63.0 - 2026-07-29
 
 ### Changed
