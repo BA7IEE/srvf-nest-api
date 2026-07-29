@@ -189,6 +189,55 @@ expectExit(
   0,
 );
 
+// ---- 误伤回归:解释器规则的扫描范围(2026-07-29 实测 5 次,逐条固化)----
+// 首版在检测到解释器后扫**整条命令原文**找红区路径,于是「命令里提到路径」= 被拦。
+// 5 次全发生在真实工作里,每次都逼人换个写法绕开 —— **那正是守护失效的前兆**:
+// 人一旦养成绕路的习惯,真该拦的那次也会被绕过去。
+// 收窄为「只扫解释器的代码区」(heredoc 正文 + 解释器行本身)后,下面这些必须放行。
+expectExit(
+  'bash:误伤回归 — 同命令内 python heredoc + commit 信息提到红区路径 放行',
+  'bash-write-guard.sh',
+  bash(
+    "python3 - <<'PY'\nopen('CHANGELOG.md','a').write('x')\nPY\n" +
+      'git commit -F - <<MSG\n改了 .github/workflows/ci.yml 的 docs 守护行\nMSG',
+  ),
+  0,
+);
+expectExit(
+  'bash:误伤回归 — 只读 find 命令里出现裸受保护文件名 放行',
+  'bash-write-guard.sh',
+  bash('find src prisma -name CLAUDE.md -exec wc -c {} +'),
+  0,
+);
+expectExit(
+  'bash:误伤回归 — 跑守卫脚本(命令里含其路径)+ 无关内联代码 放行',
+  'bash-write-guard.sh',
+  bash('pnpm harness:replay && node -e "console.log(1)"'),
+  0,
+);
+expectExit(
+  'bash:误伤回归 — 读受保护文件与内联代码分处不同子命令 放行',
+  'bash-write-guard.sh',
+  bash('cat .claude/hooks/redzone-guard.sh | head -5; node -e "console.log(2)"'),
+  0,
+);
+// 边界:收窄**不得**让「解释器行本身含内联代码」漏掉 —— 那一行就是代码区
+expectExit(
+  'bash:边界 — 解释器行内联代码含红区路径 仍拦',
+  'bash-write-guard.sh',
+  bash('ls -la; node -e "require(\'fs\').writeFileSync(\'AGENTS.md\',\'x\')"; echo done'),
+  2,
+);
+// 边界:heredoc 正文里的写入必须仍被拦,即使同命令另有大量无关文本
+expectExit(
+  'bash:边界 — heredoc 正文写红区,前后有无关命令 仍拦',
+  'bash-write-guard.sh',
+  bash(
+    'echo start\npython3 - <<PY\nopen("prisma/schema.prisma","w").write("x")\nPY\necho end',
+  ),
+  2,
+);
+
 expectExit('bash:git status 放行', 'bash-write-guard.sh', bash('git status --short'), 0);
 expectExit('bash:pnpm lint 放行', 'bash-write-guard.sh', bash('pnpm lint'), 0);
 expectExit('bash:写普通业务文件放行', 'bash-write-guard.sh', bash("sed -i '' 's/a/b/' src/modules/users/users.service.ts"), 0);

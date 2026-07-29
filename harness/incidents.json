@@ -134,6 +134,16 @@
       "note": "已在 process §5.4 条 6 写明改用 squash 提交为基准;脚本化归 P2c 的 squash-merge-guard,尚未落地。当前靠散文 + 本会话实践(tree hash 比对)。"
     },
     {
+      "id": "INC-17",
+      "title": "文档瘦身砍掉了脚本依赖的锚点行,而该脚本从未真跑过 —— 缺陷潜伏到第一次发版才炸",
+      "source": "2026-07-29 v0.63.0 发版现场(release:prepare 首次真实使用)",
+      "cost": "发版链两处同时坏:openapi 快照不随版本刷新(撞自家 CI 门)+ current-state 回填步骤永久失败",
+      "status": "covered",
+      "guard": "release-prepare 增加「openapi 快照随版本刷新」步骤;删除依赖已被 P3 删除之锚点行的回填步骤;两者由 release-prepare-anchors 探针静态守住",
+      "lesson": "两条共同点是**只在第一次真实端到端跑时显形**。自测覆盖了每个步骤的逻辑,却没有一次真的从 Unreleased 走到 tag。推论有二:①**加一道门时必须同时问「哪些既有流程会撞上它」**(openapi 门把发版卡死);②**没有任何守护看得见「脚本依赖某行文档」这种关系** —— 恒读层守护只管体积,docs-counts 只管计数块,谁都不知道有个脚本在找那一行",
+      "probe": "release-prepare-anchors"
+    },
+    {
       "id": "INC-16",
       "title": "文档被单测钉成契约:搬动 NEXT_TASKS 里一条『已完成』条目,打挂了 notifications 的 canonical 文档断言",
       "source": "2026-07-29 P7 熵清理现场(CI 抓到,本地未跑全量 unit)",

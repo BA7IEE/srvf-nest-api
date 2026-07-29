@@ -101,6 +101,27 @@ const probes: Record<string, () => [boolean, string]> = {
       return [false, 'docs:counts:check 当前为红(计数已漂移)'];
     }
   },
+  'release-prepare-anchors': () => {
+    // 发版链的两条不变量,都用静态判(回放要秒级,不能真跑一次发版):
+    //   ① openapi 快照必须随版本刷新 —— 否则每次发版都撞自家 CI 的契约新鲜度门
+    //   ② release-prepare 不得再依赖 current-state 里那行「版本 / Release」——
+    //      P3 已把它删了(版本号属机器可查事实),依赖它的步骤会永久失败
+    const raw = fs.readFileSync(path.join(ROOT, 'scripts/release-prepare.ts'), 'utf-8');
+    // 先剥行注释再判 —— 否则「注释里解释这次删除」的那句话自己会被判成代码。
+    // 今天第四次栽在同一处:描述文本 ≠ 代码位 / 命令位 / 配置位。
+    const src = raw
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('//'))
+      .join('\n');
+    if (!src.includes('generate-openapi.ts'))
+      return [false, 'release-prepare 未刷新 openapi 快照 —— 每次发版都会被契约新鲜度门卡住'];
+    if (src.includes('版本 \\/ Release') || src.includes('| 版本 / Release |'))
+      return [false, 'release-prepare 仍在找 current-state 的「版本 / Release」行,而 P3 已删除该行'];
+    // 反向:该脚本仍须读 current-state 取 counts footprint(删过头也是错)
+    if (!src.includes('CURRENT_STATE'))
+      return [false, 'release-prepare 不再读 current-state —— handoff 的 footprint 会失去真源'];
+    return [true, ''];
+  },
   'doc-pinned-by-spec': () => {
     // 真触发:按 spec 里的断言逐条核对被钉住的文档串还在不在。
     // 不跑 jest —— 这里要的是「秒级回放」,而断言集本身就是那份 spec 的内容;
