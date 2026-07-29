@@ -776,6 +776,25 @@ for (const [configName, config] of JEST_CONFIGS) {
       '浅克隆下 diff 会算错或报错,进而 fail-closed 卡住所有 PR',
     ],
     [
+      // 实测踩到:新 job 里写了 `node-version-file: .nvmrc`,而本仓没有 .nvmrc,
+      // scan job 当场失败(且因为 fail-closed,连带整个 gate 拒绝放行)。
+      // 凡 CI 引用仓内文件,该文件必须真的存在 —— 这条能静态判,就别留给 CI 去发现。
+      'P2c ci:workflow 引用的仓内文件必须存在',
+      (() => {
+        // 先剥注释再扫 —— 否则「注释里**描述**这个错误」的那句话自己会被判成配置。
+        // 本仓今晚第三次踩同一类:描述文本 ≠ 命令位 / 配置位。
+        const code = ci
+          .split('\n')
+          .map((l) => l.replace(/(^|\s)#.*$/, ''))
+          .join('\n');
+        const refs = [
+          ...code.matchAll(/(?:node-version-file|env-file|args-file):\s*([^\s#]+)/g),
+        ].map((m) => m[1]);
+        return refs.every((r) => fs.existsSync(path.resolve(__dirname, '..', r)));
+      })(),
+      'workflow 指向不存在的文件 → 该 job 直接失败',
+    ],
+    [
       'P2c ci:两个 required check 名逐字未动',
       ci.includes('name: Lint / Typecheck / E2E') && ci.includes('name: Docker image build'),
       'branch protection 逐字锁这两个名字,改名 = 全仓 PR 永久卡死(含维护者本人)',

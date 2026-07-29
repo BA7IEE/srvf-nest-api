@@ -250,16 +250,28 @@ jobs:
     outputs:
       touched: ${{ steps.scan.outputs.touched }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           # 要算 base...HEAD,浅克隆不够
           fetch-depth: 0
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+
+      # 与 fast job 同型:pnpm 必须先于 setup-node(后者的 cache: pnpm 要 pnpm 已可用)。
+      # ⚠️ 别自创配置 —— 首版这里写了 `node-version-file: .nvmrc`,而本仓根本没有
+      # .nvmrc,scan job 直接失败。照抄同文件里已在跑的 job,不凭印象写。
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          node-version-file: .nvmrc
+          run_install: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
       - name: Scan changed files against red-zone registry
         id: scan
         run: |
