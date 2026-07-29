@@ -58,6 +58,30 @@
       "why": "P0-E refresh token 行为冻结 + 防枚举锁 + 限流语义"
     },
     {
+      "id": "authz-core",
+      "globs": [
+        "src/modules/authz/**",
+        "src/common/decorators/*-throttle.decorator.ts"
+      ],
+      "why": "判权核心与限流语义。2026-07-29 跨模型评审 F2 实测:authz 整个模块与 11 个限流装饰器全部不在保护内 —— auth-frozen 那条 `src/**/*throttler*` 既拼错了名(仓内真实文件是 *-throttle.decorator.ts,少个 r)又匹配不到任何文件"
+    },
+    {
+      "id": "production-entrypoint",
+      "globs": [
+        "src/main.ts",
+        "src/app.module.ts"
+      ],
+      "why": "生产进程入口与全局 provider 装配(APP_GUARD / APP_FILTER / APP_INTERCEPTOR 的注册处)。改它等于改每个请求的鉴权与响应链路,而它此前不在任何红区"
+    },
+    {
+      "id": "release-tooling",
+      "globs": [
+        "scripts/release-prepare.ts",
+        "scripts/release-finish.ts"
+      ],
+      "why": "两段式发版的执行体(打 tag / 归并 fragment / 刷 openapi 快照)。INC-17 已证明它坏了要到真发版才显形,不该允许顺手改"
+    },
+    {
       "id": "storage-crypto",
       "globs": [
         "src/modules/storage/storage-crypto.service.ts"
@@ -115,6 +139,23 @@
       ],
       "why": "裁判保护(对抗性评审 blocker):CI 跑的是 PR 分支上的守卫脚本 —— 不锁住裁判,任何违规 PR 都可以顺手把检查改成恒 PASS、检查名不变、CI 照绿。同理 test/setup(全量 e2e 的地基)与 test/contract(考卷本体)。⚠️ 与 AGENTS §3 现文『test/** 属 🟢 自由区』冲突,该口径需在 P3 同步收窄为『test/** 减去 setup 与 contract』",
       "scopeNote": "2026-07-28 拍板收窄:原为整个 scripts/**,导致每新增一个普通脚本(生成器等)都要授权一次 —— 授权一旦沦为例行公事就不再是拍板,与『误伤摧毁守护可信度』同源。现按「是不是裁判」列具名清单:CI 门禁(check-* / docs-counts / docs-readtax)、守卫的守卫(*.selftest)、开工门禁(agent-preflight)、**授权工具本身(harness-grant —— 能改它就能自授权,最关键的一条)**、破坏性操作(db-test-prune)。非裁判脚本(如 changelog-merge)放开。⚠️ 收窄当天由 ci-guard-coverage 断言当场纠正了一处判断错误:**生成器也是裁判** —— `generate-*.ts --check`(新鲜度校验)是 CI 的一道门,把它改成恒返回通过,校验就静默失效;故 `scripts/generate-*.ts` 一并纳入。防「改名绕过」由该断言持续兜底:凡被 CI 检查链引用的 scripts/ 文件必须落在本清单内,新增守卫却未纳入保护 → 当场红。"
+    },
+    {
+      "id": "ci-control-plane",
+      "globs": [
+        "package.json",
+        "pnpm-lock.yaml",
+        "eslint.config.mjs",
+        "tsconfig.json",
+        "test/tsconfig.test.json",
+        "scripts/tsconfig.json",
+        "prisma/tsconfig.eslint.json",
+        "test/jest-*.config.ts",
+        "nest-cli.json",
+        "scripts/harness-needs.ts"
+      ],
+      "why": "决定「检查本身还成不成立」的那一层。2026-07-29 跨模型评审 F2 实测 12/12 全部不在保护内:把 package.json 里 lint / typecheck / test 的脚本体改成恒成功,fast 与 slow 两个 job 就全绿 —— 检查名一字未动,CI 一片绿,而什么都没跑。",
+      "scopeNote": "逐条理由:package.json = 所有检查命令的真身;pnpm-lock.yaml = 依赖真身(换掉 eslint / tsc 即换掉裁判);eslint.config.mjs = **执法块的接线**(eslint.harness.mjs 早在保护内,但把 `...harnessConfigBlocks` 从接线里删掉,17 条规则静默全失效、lint 照绿 —— 已实测:同一违规文件 exit 1 → exit 0);三份 tsconfig + prisma/tsconfig.eslint.json = 类型检查与 lint 的覆盖范围(缩 include 即缩掉被检查的代码);三份 jest config = 跑哪些 spec(testRegex 一改,e2e 可以一个用例都不跑却报绿);nest-cli.json = 构建入口;scripts/harness-needs.ts = 授权预算工具,改它可以让它少报需要授权的路径,把维护者骗成「这次不用授权」。prisma/tsconfig.eslint.json 是 DoD 清单外的一条,因为锁了 eslint.config.mjs 却不锁它指向的 project 等于留门 —— 在 PR 里已具名说明,不是顺手扩集。"
     }
   ],
   "grantFile": "srvf-redzone-grant.json",

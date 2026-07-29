@@ -23,7 +23,8 @@ import * as path from 'path';
 // slug 为空,曾回落主仓 app_test。追加"仓绝对路径 sha256 前 6 位"后不同 checkout 恒不同库;
 // 空 slug 也带哈希 —— **linked worktree 永不回落 'app_test'**。
 //
-// 派生名仍含 'app_test' 子串,test-db.ts 的 assertTestDatabaseUrl 安全护栏原样生效;
+// 安全护栏与本文件共用同一个真源:test-db.ts 的 assertTestDatabaseUrl 拿 deriveTestDbName()
+// 算预期库名并**逐字比对**(F1 起子串不再是判据 —— app_test_prod / 别的 lane 的库都含它);
 // 总长 ≤ 9+40+7+4=60 ≤ PostgreSQL 标识符 63 上限(超 63 会被静默截断导致跨 worker
 // 撞库 —— R5-04 同类 bug 的加强版,因此下方对最终名做硬断言而不只靠算术推导)。
 // CI 在仓库根 checkout(.git 为目录)→ 模板恒为 'app_test',与 ci.yml env 一致。
