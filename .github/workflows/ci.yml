@@ -305,16 +305,29 @@ jobs:
   # ⚠️ 它是**摩擦与留痕**,不是不可伪造的授权 —— 本仓 AI 用的就是维护者本人的
   #    token,GitHub 侧任何门在协议上都分不清「人点的」和「AI 拿人的 token 点的」。
   #    真正不可绕过的一步,只能是维护者合并前亲自看一眼被标红的 PR。
+  # ⚠️ 本 job 已于 2026-07-29 **降级为纯报告**,不再要求维护者审批。
+  #
+  # 为什么降级(不是嫌麻烦,是它作为「门」本来就不成立):
+  #   本 job 依赖的 redzone-scan 跑的是 **PR 自己提供的** check-redzone.ts ——
+  #   那正是跨模型评审 BLOCKER-1 指出的问题,也正是我们为此新建 `Red-zone (trusted)`
+  #   (pull_request_target,只跑 base 分支裁判)的原因。
+  #   既然它的输入不可信,再对着它的结论要一次人类审批,就是**仪式而非保障**:
+  #   摩擦是真的(每个执法层 PR 要在两个不同 workflow 页面各批一次),
+  #   安全增量是零(一个能改 scan 的 PR,同样能让它报 touched=false)。
+  #
+  # 权威判定在 `.github/workflows/redzone-trusted.yml`,那条才是 required context。
+  # 本 job 保留的价值:PR 内快速反馈 + 把命中路径以注解形式标在 Files changed 上。
   redzone-approval:
-    name: Red-zone approval
+    name: Red-zone approval (report-only)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 5
     needs: redzone-scan
     if: needs.redzone-scan.outputs.touched == 'true'
-    environment: harness-review
     steps:
-      - name: Record approval
-        run: echo "✓ 维护者已在 harness-review 环境批准本次红区/执法层改动"
+      - name: Report (authoritative gate is the trusted judge)
+        run: |
+          echo "本次触碰红区/执法层。"
+          echo "::notice::红区触碰已记录。**权威判定与审批在 'Red-zone (trusted)'**(base-trusted 裁判);本 job 仅快速反馈,不构成审批。"
 
   gate:
     name: Lint / Typecheck / E2E
@@ -375,12 +388,17 @@ jobs:
               echo "✓ 未触碰红区/执法层,无需审批"
               ;;
             true)
+              # 2026-07-29 起 redzone-approval 是**纯报告**,不再是审批门(见其定义处的降级说明)。
+              # 这里仍要求它 success,判的是**接线一致性**而不是授权:
+              # scan 既然说 touched=true,那份报告就必须真的跑出来;若失败或被跳过,
+              # 说明 if 条件与 scan 结论已经对不上 —— 那是配置漂移,该拦。
+              # **真正的授权在 `Red-zone (trusted)`**(base-trusted 裁判 + 环境审批),
+              # 它是独立 workflow 上的 required context,与本 gate 互不依赖。
               if [ "$approval" != "success" ]; then
-                echo "::error::本次触碰红区/执法层,但 harness-review 审批未通过($approval)—— 拒绝放行"
-                echo "::error::维护者需在本 PR 的 Red-zone approval job 上点 Review deployments → Approve"
+                echo "::error::scan 报告触碰红区,但报告 job 未成功($approval)—— 接线不一致,拒绝放行"
                 exit 1
               fi
-              echo "✓ 红区改动已由维护者在 harness-review 环境批准"
+              echo "✓ 红区触碰已记录(授权由 'Red-zone (trusted)' 承担,不在本 gate)"
               ;;
             *)
               echo "::error::红区扫描未给出明确结论(touched='$touched')—— 无法验证 ≠ 通过,拒绝放行"

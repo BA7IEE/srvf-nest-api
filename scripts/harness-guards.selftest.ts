@@ -993,9 +993,20 @@ for (const [configName, config] of JEST_CONFIGS) {
       'touched 为空/error 时若放行,scan 崩溃就等于绕过整层',
     ],
     [
-      'P2c ci:approval job 挂 harness-review 环境',
-      /redzone-approval:[\s\S]*?environment:\s*harness-review/.test(ci),
-      '不挂环境 = 无人审批,job 直接绿',
+      // 2026-07-29 清账:环境审批从 ci.yml 的 redzone-approval **搬到**了独立的
+      // trusted workflow(前者跑 PR 自己的 scan,对着不可信结论要审批是仪式不是保障)。
+      // 原断言查的是 ci.yml 里那处环境 —— 若只是删掉,「审批环境必须存在」这条守护
+      // 就随搬家一起消失了。**搬家时最容易丢的正是守护本身**,所以本条不删,改为
+      // 指向保护真正所在的地方,并额外钉住「ci.yml 侧不得再挂」——
+      // 防止将来有人加回去,又变成同一件事批两次的摩擦。
+      'F3 trusted:环境审批挂在 base-trusted 裁判上(且 ci.yml 侧不重复)',
+      /approval:[\s\S]*?environment:\s*harness-review/.test(
+        fs.readFileSync(
+          path.resolve(__dirname, '..', '.github/workflows/redzone-trusted.yml'),
+          'utf-8',
+        ),
+      ) && !/redzone-approval:[\s\S]*?environment:\s*harness-review/.test(ci),
+      '不挂环境 = 无人审批 job 直接绿;两处都挂 = 每个执法层 PR 要批两次',
     ],
     [
       'P2c ci:scan 用全深度 checkout(浅克隆算不出 base...HEAD)',
