@@ -65,6 +65,10 @@ const CERTIFICATE_CORE_FIELDS = [
 
 // 详情 / 写操作返回的完整 select(永不含 deletedAt 软删内部状态、永不含 expireNotifyDueAt
 // hook 字段);必须与 CertificateResponseDto 同步维护。
+//
+// 证书标准库 PR-1:含 `imageKeys` 是为了算 §15.3 的 `evidenceAvailable` 布尔。
+// 它**只在 service 内部存活** —— `presentCertificate` 会把它连同 `certNumber` 一起
+// 从出参里剥掉,任何响应/日志/审计都拿不到 key(D-CERT-024)。
 const certificateSafeSelect = {
   id: true,
   memberId: true,
@@ -80,6 +84,7 @@ const certificateSafeSelect = {
   verifyNote: true,
   isInternal: true,
   supersededByCertId: true,
+  imageKeys: true,
   createdAt: true,
   updatedAt: true,
 } as const satisfies Prisma.CertificateSelect;
@@ -104,6 +109,33 @@ type SafeCertificate = Prisma.CertificateGetPayload<{ select: typeof certificate
 
 type PrismaTx = Prisma.TransactionClient;
 
+// `imageKeys` 是 `Json?`,业务上是 string[]。只判「有没有」,不解析内容也不外传。
+function hasEvidence(imageKeys: Prisma.JsonValue | null): boolean {
+  return Array.isArray(imageKeys) && imageKeys.length > 0;
+}
+
+// 证书标准库 PR-1 · 冻结稿 §15.3 敏感分级的**唯一出口**。
+//
+// 6 个返 `CertificateResponseDto` 的方法(findOne / create / update / softDelete /
+// verify / reject)必须全部经过它 —— 少接一条路径,那条路径就会把 L2 明文漏出去。
+// 出参形状由 TypeScript 兜底:`CertificateResponseDto` 不再有 `certNumber`,
+// 直接 `return cert` 会编译失败,漏接不可能静默通过。
+//
+// 普通 `certificate.read.record`:编号只给掩码、审核备注与审核人 id 恒 null。
+// 另持 scoped `certificate.read.sensitive`:明文编号 + 备注 + 审核人 id。
+// `imageKeys` / `certNumber` 原值一律不进出参。
+function presentCertificate(cert: SafeCertificate, sensitive: boolean): CertificateResponseDto {
+  const { certNumber, imageKeys, ...rest } = cert;
+  return {
+    ...rest,
+    certNumberMasked: maskIdentifier(certNumber),
+    certNumberFull: sensitive ? certNumber : null,
+    verifyNote: sensitive ? cert.verifyNote : null,
+    verifiedBy: sensitive ? cert.verifiedBy : null,
+    evidenceAvailable: hasEvidence(imageKeys),
+  };
+}
+
 @Injectable()
 export class CertificatesService {
   constructor(
@@ -124,6 +156,16 @@ export class CertificatesService {
     if (decision.allow) return;
     if (decision.reason === 'resource_not_found' && (await this.rbac.can(user, action))) return;
     throw new BizException(BizCode.RBAC_FORBIDDEN);
+  }
+
+  // §15.3:明文闸。入口码仍是 `certificate.read.record`(由各方法的写/读 gate 把守),
+  // 本闸只决定「同一次响应里给不给明文」,无权时降级为掩码而不是 403。
+  //
+  // ref 与该方法自己的 gate 用同一个 —— create 用 member ref(证书此刻在事务内尚未
+  // 对其他连接可见,拿 certificate ref 会解析不到而误判无权),其余用 certificate ref。
+  // 一律在事务外先算,避免在事务中间引入跨连接可见性问题。
+  private async canReadSensitive(user: CurrentUserPayload, ref: ResourceRef): Promise<boolean> {
+    return this.authz.can(user, 'certificate.read.sensitive', ref);
   }
 
   private async findMemberOrThrow(memberId: string, tx?: PrismaTx): Promise<{ id: string }> {
@@ -290,10 +332,8 @@ export class CertificatesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'certificate.read.record', {
-      type: 'certificate',
-      id: certificateId,
-    });
+    const ref: ResourceRef = { type: 'certificate', id: certificateId };
+    await this.assertCanOrThrow(currentUser, 'certificate.read.record', ref);
     await this.findMemberOrThrow(memberId);
 
     const cert = await this.prisma.certificate.findFirst({
@@ -305,6 +345,8 @@ export class CertificatesService {
       throw new BizException(BizCode.CERTIFICATE_NOT_BELONGS_TO_MEMBER);
     }
 
+    const sensitive = await this.canReadSensitive(currentUser, ref);
+
     await this.auditLogs.log({
       event: 'certificate.read.other',
       actorUserId: currentUser.id,
@@ -312,10 +354,12 @@ export class CertificatesService {
       resourceType: 'certificate',
       resourceId: cert.id,
       meta: auditMeta,
-      extra: { operation: 'detail' },
+      // maskLevel 沿 member-profiles §F&A-3 惯例:记「这次给了明文还是掩码」,
+      // 便于事后追「谁看过完整编号」;不记编号本身(§15.6)。
+      extra: { operation: 'detail', maskLevel: sensitive ? 'plain' : 'masked' },
     });
 
-    return cert;
+    return presentCertificate(cert, sensitive);
   }
 
   // ============ create ============
@@ -329,10 +373,9 @@ export class CertificatesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'certificate.create.record', {
-      type: 'member',
-      id: memberId,
-    });
+    const ref: ResourceRef = { type: 'member', id: memberId };
+    await this.assertCanOrThrow(currentUser, 'certificate.create.record', ref);
+    const sensitive = await this.canReadSensitive(currentUser, ref);
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
 
@@ -384,7 +427,7 @@ export class CertificatesService {
         tx,
       });
 
-      return created;
+      return presentCertificate(created, sensitive);
     });
   }
 
@@ -401,10 +444,9 @@ export class CertificatesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'certificate.update.record', {
-      type: 'certificate',
-      id: certificateId,
-    });
+    const ref: ResourceRef = { type: 'certificate', id: certificateId };
+    await this.assertCanOrThrow(currentUser, 'certificate.update.record', ref);
+    const sensitive = await this.canReadSensitive(currentUser, ref);
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
       const before = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
@@ -484,7 +526,7 @@ export class CertificatesService {
         tx,
       });
 
-      return updated;
+      return presentCertificate(updated, sensitive);
     });
   }
 
@@ -498,10 +540,9 @@ export class CertificatesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'certificate.delete.record', {
-      type: 'certificate',
-      id: certificateId,
-    });
+    const ref: ResourceRef = { type: 'certificate', id: certificateId };
+    await this.assertCanOrThrow(currentUser, 'certificate.delete.record', ref);
+    const sensitive = await this.canReadSensitive(currentUser, ref);
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
       const before = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
@@ -528,7 +569,7 @@ export class CertificatesService {
         tx,
       });
 
-      return removed;
+      return presentCertificate(removed, sensitive);
     });
   }
 
@@ -544,10 +585,9 @@ export class CertificatesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'certificate.verify.record', {
-      type: 'certificate',
-      id: certificateId,
-    });
+    const ref: ResourceRef = { type: 'certificate', id: certificateId };
+    await this.assertCanOrThrow(currentUser, 'certificate.verify.record', ref);
+    const sensitive = await this.canReadSensitive(currentUser, ref);
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
       const before = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
@@ -593,7 +633,7 @@ export class CertificatesService {
         tx,
       });
 
-      return updated;
+      return presentCertificate(updated, sensitive);
     });
   }
 
@@ -608,10 +648,9 @@ export class CertificatesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'certificate.reject.record', {
-      type: 'certificate',
-      id: certificateId,
-    });
+    const ref: ResourceRef = { type: 'certificate', id: certificateId };
+    await this.assertCanOrThrow(currentUser, 'certificate.reject.record', ref);
+    const sensitive = await this.canReadSensitive(currentUser, ref);
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
       const before = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
@@ -657,7 +696,7 @@ export class CertificatesService {
         tx,
       });
 
-      return updated;
+      return presentCertificate(updated, sensitive);
     });
   }
 

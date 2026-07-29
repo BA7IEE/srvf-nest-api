@@ -22,7 +22,7 @@
 | Endpoint | 416 |
 | Migration | 65 |
 | BizCode | 280 |
-| 权限码 | 213 |
+| 权限码 | 214 |
 | AuditLogEvent | 123 |
 | 内建角色 | 15 |
 | Cron | 2 |

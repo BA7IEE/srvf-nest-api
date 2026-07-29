@@ -2640,7 +2640,22 @@ const CERTIFICATE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
     module: 'certificate',
     action: 'read',
     resourceType: 'record',
-    description: '查看队员证书(列表 + 详情 + qualification-flag 共用 read)',
+    description:
+      '查看队员证书(列表 + 详情 + qualification-flag 共用 read;证书编号默认掩码、' +
+      '审核备注与审核人不返,明文走 read.sensitive)',
+  },
+  // 证书标准库 PR-1(冻结稿 §15.3):证书编号(L2,可用于外部查询或冒用)、自由审核备注与
+  // 审核人身份(L2,跨成员信息)从 read.record 切出,收进独立更严的 read.sensitive ——
+  // 镜像 member-profile.read.sensitive / emergency-contact.read.sensitive 先例。
+  // 默认绑 biz-admin(不入 BIZ_ADMIN_EXCLUDED_CODES);**必须**入 ORG_ADMIN_EXCLUDED_CODES,
+  // 否则 org-admin 会随 biz-admin 码集自动继承(敏感明文码不随「本组织业务管理」下放)。
+  {
+    code: 'certificate.read.sensitive',
+    module: 'certificate',
+    action: 'read',
+    resourceType: 'sensitive',
+    description:
+      '查看证书敏感明文(完整证书编号 + 审核备注 + 审核人 id;仍按 Certificate 资源走 scoped Authz,非全局裸开)',
   },
   {
     code: 'certificate.create.record',
@@ -3352,11 +3367,12 @@ const BIZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...MEMBERSHIP_TRANSFER_PERMISSION_SEED,
 ];
 
-// biz-admin 绑定集合(68 条 = 86 中实际过滤 18 码；两条 return 不在该 86 条集合中；
+// biz-admin 绑定集合(69 条 = 87 中实际过滤 18 码；两条 return 不在该 87 条集合中；
 // Slow-4 §5/§6 + 保险 E-6
 // + 招新 E-R-19/E-R2-11 + 摘码微刀 2026-07-03 + F4「D 组」membership.transfer.record 2026-07-04
 // + 招新可用性收口 F2/F3、十项收口刀D 与十三项收口刀G 2026-07-11/12
-// + v0.61.0 PR-11 活动责任闭环 contract)
+// + v0.61.0 PR-11 活动责任闭环 contract
+// + 证书标准库 PR-1 certificate.read.sensitive 2026-07-30)
 const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISSION_SEED.filter(
   (p) => !BIZ_ADMIN_EXCLUDED_CODES.has(p.code),
 );
@@ -3364,7 +3380,7 @@ const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISS
 const BIZ_ADMIN_ROLE_CODE = 'biz-admin';
 const BIZ_ADMIN_DISPLAY_NAME = '业务管理员';
 const BIZ_ADMIN_DESCRIPTION =
-  '业务面通用管理角色(Slow-3 决议 2026-06-11;v0.61.0 PR-11 contract 后活动发布/更新/取消/完成、报名写动作、考勤提交/编辑/删除/一审动作改由 owner/collaborator/reviewer 显式责任角色承载):86 条业务码中绑 68；继续保留 activity.create/delete.record、activity-registration.read.record、attendance.read.sheet。member.delete.record 仅 SUPER_ADMIN；考勤终审/撤回与活动责任 contract 动作均不绑。attachment 存量 20 码(member/certificate/activity)不在本角色，CMS content 附件写 4 码保留；notification 7 码与 membership.transfer.record 保留；每个 ADMIN 用户由 seed 自动补挂本角色。';
+  '业务面通用管理角色(Slow-3 决议 2026-06-11;v0.61.0 PR-11 contract 后活动发布/更新/取消/完成、报名写动作、考勤提交/编辑/删除/一审动作改由 owner/collaborator/reviewer 显式责任角色承载):87 条业务码中绑 69；继续保留 activity.create/delete.record、activity-registration.read.record、attendance.read.sheet。member.delete.record 仅 SUPER_ADMIN；考勤终审/撤回与活动责任 contract 动作均不绑。attachment 存量 20 码(member/certificate/activity)不在本角色，CMS content 附件写 4 码保留；notification 7 码与 membership.transfer.record 保留；证书标准库 PR-1 起含 certificate.read.sensitive(证书编号/审核备注明文，org-admin 不继承)；每个 ADMIN 用户由 seed 自动补挂本角色。';
 
 // Slow-4 T1(36/35)+ 保险模块含 PR2 增量(+8 全绑 → 44/43)+ 招新一期 T1 增量(+5 → 49/48):
 // 业务面权限点 + biz-admin 角色 + 绑定 + ADMIN 全员补挂 + 强校验。
@@ -3417,7 +3433,7 @@ async function seedBizAdminRbac(prisma: PrismaClient): Promise<void> {
   console.log(`[seed] RBAC role '${bizAdminRole.code}' ensured`);
 
   // 3. upsert RolePermission 映射:数量由 BIZ_ADMIN_PERMISSION_SEED.length 单一推导
-  //    (当前 68 = 86 - 18；两条 return 只在 workflow 权限集合中)。
+  //    (当前 69 = 87 - 18；两条 return 只在 workflow 权限集合中)。
   const bizPermissions = await prisma.permission.findMany({
     where: { code: { in: BIZ_ADMIN_PERMISSION_SEED.map((p) => p.code) } },
     select: { id: true, code: true },
@@ -3563,7 +3579,8 @@ const ORG_SUPERVISOR_DESCRIPTION =
 // org-admin 排除项(冻结稿 §2.4 BD-1 + BD-2 + §4.2;+ 第三轮 review §F&A-3 + 十项收口刀D
 // + v0.61.0 PR-11 contract):reviewer-only / contract 动作 + 敏感 3 码精确排除。
 // 前两组已不在 BIZ_ADMIN_PERMISSION_SEED，仍作为防御性 no-op 与 targeted cleanup 来源。
-// member-profile.read.sensitive(§F&A-3)/ emergency-contact.read.sensitive(十项收口刀D 2026-07-11):
+// member-profile.read.sensitive(§F&A-3)/ emergency-contact.read.sensitive(十项收口刀D 2026-07-11)
+// / certificate.read.sensitive(证书标准库 PR-1,冻结稿 §15.3):
 // 敏感明文码不随「本组织业务管理」下放,与 recruitment sensitive 同款排除
 // D-INSURANCE PR2 的 member-insurance.review.record 不在排除集合，按「组织业务管理」冻结映射继承。
 const ORG_ADMIN_EXCLUDED_CODES: ReadonlySet<string> = new Set([
@@ -3571,6 +3588,7 @@ const ORG_ADMIN_EXCLUDED_CODES: ReadonlySet<string> = new Set([
   'recruitment-application.read.sensitive',
   'member-profile.read.sensitive',
   'emergency-contact.read.sensitive',
+  'certificate.read.sensitive',
 ]);
 // org-admin 排除项(runner 判断,goal 原文标注倾向排除):招新/入队中央功能码整前缀族。
 const ORG_ADMIN_EXCLUDED_PREFIXES: ReadonlyArray<string> = ['recruitment-', 'team-join-'];

@@ -324,4 +324,113 @@ describe('certificates RBAC 权限边界(Slow-4 T2)', () => {
       ).toBe(200);
     });
   });
+
+  // ============ 证书标准库 PR-1 · 冻结稿 §15.3 敏感分级(真实判权链) ============
+  //
+  // 关键区分:`certificate.read.sensitive` **不是**入口码 —— 缺它不是 403,而是
+  // 同一次 200 响应里编号降级为掩码、审核备注与审核人 id 变 null。
+  //
+  // 这里必须用一个**只持 read.record、不持 sensitive** 的真实角色来证,不能靠 mock:
+  // biz-admin 与 SUPER_ADMIN 都能看明文,只用它们测就永远测不到掩码那一侧。
+  describe('§15.3 敏感分级:read.record 能读,明文另需 read.sensitive', () => {
+    let narrowAuth: string;
+    let sensitiveCertId: string;
+
+    beforeAll(async () => {
+      // 窄角色:全局只绑 certificate.read.record 一条码。
+      const readOnlyPerm = await prisma.permission.findFirstOrThrow({
+        where: { code: 'certificate.read.record' },
+        select: { id: true },
+      });
+      const narrowRole = await prisma.rbacRole.create({
+        data: { code: 'crtb-cert-read-only', displayName: '仅证书只读(无敏感)' },
+        select: { id: true },
+      });
+      await prisma.rolePermission.create({
+        data: { roleId: narrowRole.id, permissionId: readOnlyPerm.id },
+      });
+      const narrowUser = await createTestUser(app, {
+        username: 'crtb-narrow',
+        role: Role.USER,
+      });
+      await prisma.roleBinding.create({
+        data: {
+          principalType: 'USER',
+          principalId: narrowUser.id,
+          roleId: narrowRole.id,
+          scopeType: 'GLOBAL',
+          status: 'ACTIVE',
+          startedAt: new Date('2024-01-01T00:00:00.000Z'),
+        },
+      });
+      narrowAuth = (await loginAs(app, 'crtb-narrow')).authHeader;
+
+      // 一张带完整敏感事实的证书:长编号(掩码后仍可辨形)+ 审核备注 + 审核人。
+      const c = await prisma.certificate.create({
+        data: {
+          memberId: memberA,
+          certTypeCode,
+          issuingOrg: '边界机构',
+          certNumber: 'SZ-2026-SENSITIVE-0001',
+          issuedAt: new Date('2024-01-01T00:00:00.000Z'),
+          certStatusCode: 'verified',
+          verifiedBy: null,
+          verifyNote: '原件已核,备注仅敏感可见',
+          isInternal: false,
+        },
+        select: { id: true },
+      });
+      sensitiveCertId = c.id;
+    });
+
+    it('只持 read.record:200 但编号只给掩码,备注/审核人恒 null', async () => {
+      const res = await request(httpServer(app))
+        .get(`${base()}/${sensitiveCertId}`)
+        .set('Authorization', narrowAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.certNumberMasked).toBe('SZ****01');
+      expect(res.body.data.certNumberFull).toBeNull();
+      expect(res.body.data.verifyNote).toBeNull();
+      expect(res.body.data.verifiedBy).toBeNull();
+      // 明文与 storage key 都不得出现在整个响应体的任何角落。
+      expect(JSON.stringify(res.body)).not.toContain('SZ-2026-SENSITIVE-0001');
+      expect(JSON.stringify(res.body)).not.toContain('原件已核');
+      expect(res.body.data).not.toHaveProperty('imageKeys');
+      expect(res.body.data).not.toHaveProperty('certNumber');
+    });
+
+    it('biz-admin(含 read.sensitive):同一张证书给明文编号与备注', async () => {
+      const res = await request(httpServer(app))
+        .get(`${base()}/${sensitiveCertId}`)
+        .set('Authorization', admBizAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.certNumberFull).toBe('SZ-2026-SENSITIVE-0001');
+      expect(res.body.data.certNumberMasked).toBe('SZ****01');
+      expect(res.body.data.verifyNote).toBe('原件已核,备注仅敏感可见');
+    });
+
+    it('SUPER_ADMIN 短路:同样给明文', async () => {
+      const res = await request(httpServer(app))
+        .get(`${base()}/${sensitiveCertId}`)
+        .set('Authorization', saAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.certNumberFull).toBe('SZ-2026-SENSITIVE-0001');
+    });
+
+    it('列表恒不返编号任何形态(§15.2:连掩码字段也不在列表 select 里)', async () => {
+      const res = await request(httpServer(app)).get(base()).set('Authorization', admBizAuth);
+
+      expect(res.status).toBe(200);
+      for (const item of res.body.data as Array<Record<string, unknown>>) {
+        expect(item).not.toHaveProperty('certNumber');
+        expect(item).not.toHaveProperty('certNumberFull');
+        expect(item).not.toHaveProperty('verifyNote');
+        expect(item).not.toHaveProperty('verifiedBy');
+        expect(item).not.toHaveProperty('imageKeys');
+      }
+    });
+  });
 });

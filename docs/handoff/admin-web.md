@@ -98,6 +98,15 @@
 | **任职(position-assignments)** — 该队员在组织体系内担任的职务,含撤销历史 | `GET .../members/:id/position-assignments`(**终态 scoped-authz PR4**,已发 main;含 ACTIVE/REVOKED 全量,任命/撤销动作在组织架构侧发起,见 §2.6)| ✅ |
 | 活动履历 / 考勤记录 / 参与汇总 / 贡献值 | `GET .../members/:id/registrations?statusCode=` · `GET .../members/:id/attendance-records` · `GET .../members/:id/participation-summary` · `GET .../members/:id/contribution-summary` | ✅ |
 
+> 🔴 **证书面待适配(证书标准库 PR-1,2026-07-30;契约破坏 + 行为变更)**。字段真相仍以 live `/api/docs-json` 为准,以下是本刀必须改的四处:
+>
+> 1. **`certNumber` 出参已删**,拆成 `certNumberMasked`(恒返,形如 `SZ****01`;≤4 字符整体掩为 `****`)+ `certNumberFull`(仅持 `certificate.read.sensitive` 时有值,否则 `null`)。**写侧入参仍是 `certNumber`,未变** —— 编辑表单要用 `certNumberFull` 回填、提交时写回 `certNumber`;**不要把 `certNumberMasked` 当值提交**(那会把掩码写成真编号)。
+> 2. **`verifyNote` / `verifiedBy` 在无 `certificate.read.sensitive` 时恒 `null`**(不是"没填",是"没权限看")。缺该码**不是 403**,详情仍 200,只是这几个字段降级 —— UI 不要据此判定"无备注",应按权限显示"需敏感权限查看"。
+> 3. **新增 `evidenceAvailable`** 布尔:表示这张证书有没有证据图。**不返 key 也不返 URL**;真正取图要等 §13.5 的 `evidence-urls` 端点(后续刀交付),按需申请、不预加载、不入 localStorage。
+> 4. **日期入参收紧为纯 `YYYY-MM-DD`**:`issuedAt` / `expiredAt` 不再接受带时分秒或时区的 ISO datetime(契约已声明 `format: date` + `pattern`,可直接 codegen)。`expiredAt` 语义 = **最后有效日**(当天仍有效)。另有两条业务校验:`issuedAt` 晚于今天 → `18018`;`expiredAt` 早于 `issuedAt` → `18017`。
+>
+> 权限侧:`certificate.read.sensitive` 默认**只绑 biz-admin**;org-admin / 只读投影角色 / group-manager 均**不**继承(敏感明文不随组织业务下放)。SUPER_ADMIN 短路照常可见。**列表接口恒不返编号的任何形态**(连掩码字段都不在 list select 里),编号只在详情出现。
+
 > 队员 360 跨轴查询备注:`registrations`/`attendance-records` 分页(`page`/`pageSize`)+ item 自带 activity 上下文(`activityId`/`activityTitle`);`attendance-records` **仅返 approved sheet 内 records**(已生效记录,镜像 app `/me` 口径);`contribution-summary` 返**生涯累计 capped 总分**(`{ memberId, contributionPoints }`,后端已按北京日封顶 3,**前端直接展示别再加**)。v0.48.0 起历史记录也按新上限读时实时重算,生涯累计数字可能变大;不存在/软删队员 → `MEMBER_NOT_FOUND`(15001)。
 
 > **新增 `participation-summary`** 把 approved-only 的 `totalServiceHours` / distinct `activityCount` / `recordCount` 与生涯 capped `contributionPoints` 合成一个卡片 DTO；贡献字段和旧 `contribution-summary` 都调用同一 `computeCappedContribution(memberId, null)`，可做等值迁移但旧端点保留。该个人端点刻意不返回 no-show。

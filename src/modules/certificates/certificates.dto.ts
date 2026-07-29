@@ -35,11 +35,29 @@ export class CertificateResponseDto {
   @ApiProperty({ description: '颁发机构(CT-4;自由文本)' })
   issuingOrg!: string;
 
+  // 证书标准库 PR-1(冻结稿 §15.3):完整证书编号是 L2(可用于外部查询或冒用),
+  // 拆成「恒返掩码 + 明文按权限」两个字段,而不是沿 member-profiles 的「同名字段原地打码」。
+  //
+  // 为何拆名:同名打码有已知的 FE 回写陷阱 —— 管理端编辑表单 round-trip 会把掩码值
+  // 当真值写回,覆盖真实编号(member-profiles 只能靠 admin-web 侧「值含 * 则 delete」
+  // 的约定缓解)。`certNumber` 是 PATCH 可写字段,踩中概率高;读出参改名后,
+  // 表单拿不到可直接回写的 `certNumber`,陷阱在结构上不成立。
+  // 显式 `type: String`:Swagger 插件对 `string | null` 的推导不稳(实测把 Full 推成
+  // `type: object`、Masked 干脆无 type),契约里的类型必须是确定的,前端才能 codegen。
   @ApiPropertyOptional({
-    description: '证书编号(CT-5;中敏感;详情接口才返回)',
+    description: '证书编号掩码(CT-5;恒返;形如 SZ****01;无编号为 null)',
+    type: String,
     nullable: true,
   })
-  certNumber!: string | null;
+  certNumberMasked!: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      '证书编号明文(CT-5;L2;仅持 certificate.read.sensitive 且通过该证书 scoped 判权时返回,否则恒 null)',
+    type: String,
+    nullable: true,
+  })
+  certNumberFull!: string | null;
 
   @ApiProperty({ description: '颁发日期(CT-6;ISO 8601)' })
   issuedAt!: Date;
@@ -56,7 +74,8 @@ export class CertificateResponseDto {
   certStatusCode!: string;
 
   @ApiPropertyOptional({
-    description: '核验人 Member.id(CT-9a;待核验态空;Q-I2:user 无 memberId 时为 null)',
+    description:
+      '核验人 Member.id(CT-9a;L2 跨成员身份;仅持 certificate.read.sensitive 时返回,否则恒 null;§15.3)',
     nullable: true,
   })
   verifiedBy!: string | null;
@@ -65,10 +84,18 @@ export class CertificateResponseDto {
   verifiedAt!: Date | null;
 
   @ApiPropertyOptional({
-    description: '核验备注(CT-9c;中敏感;长度 ≤ 500)',
+    description:
+      '核验备注(CT-9c;L2 自由文本;仅持 certificate.read.sensitive 时返回,否则恒 null;§15.3)',
     nullable: true,
   })
   verifyNote!: string | null;
+
+  // §15.3 普通读返 evidenceAvailable 布尔,让前端知道「有没有证据可看」而不泄露任何
+  // key / URL;真正取证据走 §13.5 的 evidence-urls 端点(PR-5)。
+  // 当前证据事实源是 `Certificate.imageKeys`;PR-4a 起改读 sourceClaim.imageKeys,
+  // PR-4b 删该列 —— 届时本字段只换取值来源,对外契约不变。
+  @ApiProperty({ description: '是否存在证据图(布尔;不返 key / URL;取证据走 evidence-urls 端点)' })
+  evidenceAvailable!: boolean;
 
   @ApiProperty({ description: '是否本会颁发(CT-11;本批次 service 始终写 false)' })
   isInternal!: boolean;

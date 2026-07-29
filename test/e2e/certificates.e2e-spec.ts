@@ -464,7 +464,7 @@ describe('certificates 模块', () => {
         });
       expect(res.status).toBe(201);
       expect(res.body.data.certSubTypeCode).toBe(activeCertSubTypeCode);
-      expect(res.body.data.certNumber).toBe('DEMO-CERT-002');
+      expect(res.body.data.certNumberFull).toBe('DEMO-CERT-002');
       expect(res.body.data.expiredAt).toBe('2030-06-01T00:00:00.000Z');
     });
 
@@ -751,7 +751,7 @@ describe('certificates 模块', () => {
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.id).toBe(certIdA);
-      expect(res.body.data.certNumber).toBe('DETAIL-CERT-001');
+      expect(res.body.data.certNumberFull).toBe('DETAIL-CERT-001');
       expect(res.body.data).not.toHaveProperty('deletedAt');
       expect(res.body.data).not.toHaveProperty('expireNotifyDueAt');
       // V2.x C-7 attachments PR #2:attachmentKey 字段已删除
@@ -779,7 +779,7 @@ describe('certificates 模块', () => {
         .send({ issuingOrg: '新机构', certNumber: 'PATCH-001-UPDATED' });
       expect(res.status).toBe(200);
       expect(res.body.data.issuingOrg).toBe('新机构');
-      expect(res.body.data.certNumber).toBe('PATCH-001-UPDATED');
+      expect(res.body.data.certNumberFull).toBe('PATCH-001-UPDATED');
     });
 
     it('finding #7:verified 核心字段编辑 → pending + 核验三字段清空,随后可重新 verify', async () => {

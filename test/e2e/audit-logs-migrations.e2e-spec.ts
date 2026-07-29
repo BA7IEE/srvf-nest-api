@@ -176,7 +176,12 @@ describe('audit-logs 写入迁移', () => {
   };
 
   // 创建一条 pending 状态 certificate,返回 id;用于 update / softDelete / verify / reject 前置
-  const createCert = async (): Promise<{ id: string; certNumber: string | null }> => {
+  // PR-1 §15.3:出参 certNumber 已拆为 certNumberMasked + certNumberFull(明文需 read.sensitive)。
+  const createCert = async (): Promise<{
+    id: string;
+    certNumberMasked: string | null;
+    certNumberFull: string | null;
+  }> => {
     const res = await request(httpServer(app))
       .post(`/api/admin/v1/members/${memberId}/certificates`)
       .set('Authorization', adminAuth)
@@ -268,7 +273,9 @@ describe('audit-logs 写入迁移', () => {
       expect(context.after.verifyNoteChanged).toBe(false);
       expect(context.after).not.toHaveProperty('verifyNote');
       expect(JSON.stringify(context)).not.toContain('CN-2026-0001');
-      expect(c.certNumber).toBe('CN-2026-0001');
+      // PR-1 §15.3:API 出参改名 certNumberFull(明文,需 read.sensitive);
+      // audit snapshot 内仍是掩码后的 `certNumber` 键(上面那条断言),两者互不影响。
+      expect(c.certNumberFull).toBe('CN-2026-0001');
     });
 
     it('PATCH certificate 更新 → audit_logs +1 certificate.update', async () => {
@@ -718,13 +725,15 @@ describe('audit-logs 写入迁移', () => {
         requestId: string;
         ip: string | null;
         ua: string | null;
-        extra: { operation: string };
+        extra: { operation: string; maskLevel: string };
       };
       expect(context).toEqual({
         requestId: expect.any(String),
         ip: expect.any(String),
         ua: 'audit-migrations-sensitive-read',
-        extra: { operation: 'detail' },
+        // PR-1 §15.3:读审计增记本次给的是明文还是掩码(此处 adminAuth 持
+        // certificate.read.sensitive 故为 plain);编号本身仍不入审计。
+        extra: { operation: 'detail', maskLevel: 'plain' },
       });
       expect(context.requestId.length).toBeGreaterThan(0);
       expect(JSON.stringify(context)).not.toMatch(

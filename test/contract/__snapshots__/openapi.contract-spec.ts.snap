@@ -6484,10 +6484,15 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "CertificateResponseDto": {
     "properties": {
-      "certNumber": {
-        "description": "证书编号(CT-5;中敏感;详情接口才返回)",
+      "certNumberFull": {
+        "description": "证书编号明文(CT-5;L2;仅持 certificate.read.sensitive 且通过该证书 scoped 判权时返回,否则恒 null)",
         "nullable": true,
-        "type": "object",
+        "type": "string",
+      },
+      "certNumberMasked": {
+        "description": "证书编号掩码(CT-5;恒返;形如 SZ****01;无编号为 null)",
+        "nullable": true,
+        "type": "string",
       },
       "certStatusCode": {
         "description": "核验状态字典 code(CT-8;4 态闭集 pending / verified / expired / rejected)",
@@ -6506,6 +6511,10 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "创建时间",
         "format": "date-time",
         "type": "string",
+      },
+      "evidenceAvailable": {
+        "description": "是否存在证据图(布尔;不返 key / URL;取证据走 evidence-urls 端点)",
+        "type": "boolean",
       },
       "expiredAt": {
         "description": "到期日(CT-7;NULL = 终身有效;Q-S4)",
@@ -6550,12 +6559,12 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "object",
       },
       "verifiedBy": {
-        "description": "核验人 Member.id(CT-9a;待核验态空;Q-I2:user 无 memberId 时为 null)",
+        "description": "核验人 Member.id(CT-9a;L2 跨成员身份;仅持 certificate.read.sensitive 时返回,否则恒 null;§15.3)",
         "nullable": true,
         "type": "object",
       },
       "verifyNote": {
-        "description": "核验备注(CT-9c;中敏感;长度 ≤ 500)",
+        "description": "核验备注(CT-9c;L2 自由文本;仅持 certificate.read.sensitive 时返回,否则恒 null;§15.3)",
         "nullable": true,
         "type": "object",
       },
@@ -6567,6 +6576,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "issuingOrg",
       "issuedAt",
       "certStatusCode",
+      "evidenceAvailable",
       "isInternal",
       "createdAt",
       "updatedAt",

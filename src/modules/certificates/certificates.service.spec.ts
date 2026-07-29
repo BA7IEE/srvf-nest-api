@@ -63,6 +63,9 @@ interface CertRow {
   verifyNote: string | null;
   isInternal: boolean;
   supersededByCertId: string | null;
+  // 证书标准库 PR-1:进 select 只为算 §15.3 的 evidenceAvailable 布尔,
+  // presenter 会把它从出参剥掉(断言见「§15.3 敏感分级」组)。
+  imageKeys: string[] | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -83,6 +86,7 @@ function makeCertRow(overrides: Partial<CertRow> = {}): CertRow {
     verifyNote: null,
     isInternal: false,
     supersededByCertId: null,
+    imageKeys: null,
     createdAt: FIXED_DATE,
     updatedAt: FIXED_DATE,
     ...overrides,
@@ -159,19 +163,23 @@ function makeRbacMock() {
 }
 
 function makeAuthzMock() {
-  return { explain: jest.fn().mockResolvedValue({ allow: true, reason: 'matched' }) };
+  return {
+    explain: jest.fn().mockResolvedValue({ allow: true, reason: 'matched' }),
+    can: jest.fn<Promise<boolean>, [unknown, string, unknown]>().mockResolvedValue(true),
+  };
 }
+type AuthzMock = ReturnType<typeof makeAuthzMock>;
 
 function makeService(
   prisma: PrismaMock,
-  opts: { auditLogs?: AuditLogsMock } = {},
+  opts: { auditLogs?: AuditLogsMock; authz?: AuthzMock } = {},
 ): CertificatesService {
   const auditLogs = opts.auditLogs ?? makeAuditLogsMock();
   return new CertificatesService(
     prisma as unknown as PrismaService,
     auditLogs as unknown as AuditLogsService,
     makeRbacMock() as unknown as RbacService,
-    makeAuthzMock() as unknown as AuthzService,
+    (opts.authz ?? makeAuthzMock()) as unknown as AuthzService,
   );
 }
 
@@ -198,7 +206,10 @@ describe('CertificatesService (characterization, scoped)', () => {
 
       expect(res.id).toBe('cert-1');
       expect(res.certStatusCode).toBe(CERT_STATUS_VERIFIED);
-      expect(res.certNumber).toBe('CN-1');
+      // authz mock 恒 allow → 视为持有 certificate.read.sensitive,明文出参(§15.3)。
+      expect(res.certNumberFull).toBe('CN-1');
+      // maskIdentifier 对 ≤4 字符整体掩去(不暴露任何原字符),故 'CN-1' → '****'。
+      expect(res.certNumberMasked).toBe('****');
       expect(res.verifiedBy).toBe('mem-9');
       expect(res.verifyNote).toBe('ok');
       expect(auditLogs.log).toHaveBeenCalledWith({
@@ -208,7 +219,9 @@ describe('CertificatesService (characterization, scoped)', () => {
         resourceType: 'certificate',
         resourceId: 'cert-1',
         meta: META,
-        extra: { operation: 'detail' },
+        // PR-1 §15.3:读审计增记 maskLevel(本次给了明文还是掩码),便于事后追
+        // 「谁看过完整编号」;编号本身仍不入审计(§15.6)。
+        extra: { operation: 'detail', maskLevel: 'plain' },
       });
     });
 
@@ -425,7 +438,7 @@ describe('CertificatesService (characterization, scoped)', () => {
       );
       expect(auditArg.after).not.toHaveProperty('verifyNote');
       expect(res.id).toBe('cert-new');
-      expect(res.certNumber).toBe('CN-2026-SECRET-0001');
+      expect(res.certNumberFull).toBe('CN-2026-SECRET-0001');
     });
 
     it('optional 字段(certSubTypeCode / certNumber / expiredAt)透传进 create data;expiredAt 抹平', async () => {
@@ -590,7 +603,7 @@ describe('CertificatesService (characterization, scoped)', () => {
       expect(serializedAudit).not.toContain('NEW-CERT-SECRET-0002');
       expect(serializedAudit).not.toContain('private old verification note');
       expect(res.issuingOrg).toBe('New Org');
-      expect(res.certNumber).toBe('NEW-CERT-SECRET-0002');
+      expect(res.certNumberFull).toBe('NEW-CERT-SECRET-0002');
     });
   });
 
@@ -891,7 +904,154 @@ describe('CertificatesService (characterization, scoped)', () => {
     });
   });
 
-  // ============ 7. 证书标准库 PR-1 · 冻结稿 §10 日期语义 ============
+  // ============ 7. 证书标准库 PR-1 · 冻结稿 §15.3 敏感分级 ============
+  //
+  // 入口码仍是 `certificate.read.record`;`certificate.read.sensitive` 只决定
+  // 同一次响应给明文还是掩码(无权是降级,不是 403)。
+  //
+  // 必须逐条钉住**泄露方向**:无权时 certNumberFull / verifyNote / verifiedBy 恒 null,
+  // 且 imageKeys 原值绝不出现在出参任何角落(D-CERT-024)。
+  describe('§15.3 敏感分级 — certificate.read.sensitive', () => {
+    // 无敏感权限的 authz:explain 恒 allow(入口码过),can 恒 false(明文闸关)。
+    function makeNonSensitiveAuthz(): AuthzMock {
+      return {
+        explain: jest.fn().mockResolvedValue({ allow: true, reason: 'matched' }),
+        can: jest.fn<Promise<boolean>, [unknown, string, unknown]>().mockResolvedValue(false),
+      };
+    }
+
+    function primeFindOne(prisma: PrismaMock): void {
+      prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
+      prisma.certificate.findFirst.mockResolvedValue(
+        makeCertRow({
+          certNumber: 'SZ-2026-SECRET-0001',
+          verifyNote: 'private reviewer note',
+          verifiedBy: 'mem-reviewer-9',
+          imageKeys: ['certificates/abc.jpg', 'certificates/def.jpg'],
+          certStatusCode: CERT_STATUS_VERIFIED,
+        }),
+      );
+    }
+
+    it('无 read.sensitive:编号只给掩码,明文/备注/审核人恒 null', async () => {
+      const prisma = makePrismaMock();
+      primeFindOne(prisma);
+      const service = makeService(prisma, { authz: makeNonSensitiveAuthz() });
+
+      const res = await service.findOne('mem-1', 'cert-1', makeCurrentUser(), META);
+
+      expect(res.certNumberMasked).toBe('SZ****01');
+      expect(res.certNumberFull).toBeNull();
+      expect(res.verifyNote).toBeNull();
+      expect(res.verifiedBy).toBeNull();
+    });
+
+    it('持 read.sensitive:明文编号 + 备注 + 审核人 id 都给', async () => {
+      const prisma = makePrismaMock();
+      primeFindOne(prisma);
+      const service = makeService(prisma);
+
+      const res = await service.findOne('mem-1', 'cert-1', makeCurrentUser(), META);
+
+      expect(res.certNumberFull).toBe('SZ-2026-SECRET-0001');
+      expect(res.certNumberMasked).toBe('SZ****01');
+      expect(res.verifyNote).toBe('private reviewer note');
+      expect(res.verifiedBy).toBe('mem-reviewer-9');
+    });
+
+    it('明文闸按 certificate ref 判权(不是全局裸开)', async () => {
+      const prisma = makePrismaMock();
+      primeFindOne(prisma);
+      const authz = makeNonSensitiveAuthz();
+      const service = makeService(prisma, { authz });
+
+      await service.findOne('mem-1', 'cert-1', makeCurrentUser(), META);
+
+      expect(authz.can).toHaveBeenCalledWith(expect.anything(), 'certificate.read.sensitive', {
+        type: 'certificate',
+        id: 'cert-1',
+      });
+    });
+
+    it('imageKeys 原值绝不进出参;只暴露 evidenceAvailable 布尔', async () => {
+      const prisma = makePrismaMock();
+      primeFindOne(prisma);
+      const service = makeService(prisma);
+
+      const res = await service.findOne('mem-1', 'cert-1', makeCurrentUser(), META);
+
+      expect(res).not.toHaveProperty('imageKeys');
+      expect(res.evidenceAvailable).toBe(true);
+      // 整体序列化兜底:任何 key 片段都不得出现(哪怕将来新增字段无意带出)。
+      expect(JSON.stringify(res)).not.toContain('certificates/abc.jpg');
+    });
+
+    it('无证据图 → evidenceAvailable=false(空数组与 null 同解)', async () => {
+      const prisma = makePrismaMock();
+      prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
+      prisma.certificate.findFirst.mockResolvedValue(makeCertRow({ imageKeys: [] }));
+      const service = makeService(prisma);
+
+      const res = await service.findOne('mem-1', 'cert-1', makeCurrentUser(), META);
+      expect(res.evidenceAvailable).toBe(false);
+    });
+
+    it('出参永不含 certNumber 原字段名(防前端回写陷阱的结构保证)', async () => {
+      const prisma = makePrismaMock();
+      primeFindOne(prisma);
+      const service = makeService(prisma);
+
+      const res = await service.findOne('mem-1', 'cert-1', makeCurrentUser(), META);
+      expect(res).not.toHaveProperty('certNumber');
+    });
+
+    it('读审计记 maskLevel 分级但不记编号本身(§15.6)', async () => {
+      const prisma = makePrismaMock();
+      const auditLogs = makeAuditLogsMock();
+      primeFindOne(prisma);
+      const service = makeService(prisma, { auditLogs, authz: makeNonSensitiveAuthz() });
+
+      await service.findOne('mem-1', 'cert-1', makeCurrentUser(), META);
+
+      const auditArg = auditLogs.log.mock.calls[0][0] as { extra: Record<string, unknown> };
+      expect(auditArg.extra.maskLevel).toBe('masked');
+      expect(JSON.stringify(auditArg)).not.toContain('SZ-2026-SECRET-0001');
+      expect(JSON.stringify(auditArg)).not.toContain('certificates/abc.jpg');
+    });
+
+    it('写回显同样分级:verify 回显在无权时不漏明文', async () => {
+      const prisma = makePrismaMock();
+      prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
+      prisma.certificate.findFirst.mockResolvedValue(
+        makeCertRow({ certStatusCode: CERT_STATUS_PENDING }),
+      );
+      prisma.user.findFirst.mockResolvedValue({ memberId: 'mem-admin' });
+      prisma.certificate.update.mockResolvedValue(
+        makeCertRow({
+          certStatusCode: CERT_STATUS_VERIFIED,
+          certNumber: 'SZ-2026-SECRET-0001',
+          verifyNote: 'ok',
+          verifiedBy: 'mem-admin',
+        }),
+      );
+      const service = makeService(prisma, { authz: makeNonSensitiveAuthz() });
+
+      const res = await service.verify(
+        'mem-1',
+        'cert-1',
+        makeVerifyDto('ok'),
+        makeCurrentUser(),
+        META,
+      );
+
+      expect(res.certNumberFull).toBeNull();
+      expect(res.certNumberMasked).toBe('SZ****01');
+      expect(res.verifyNote).toBeNull();
+      expect(res.verifiedBy).toBeNull();
+    });
+  });
+
+  // ============ 8. 证书标准库 PR-1 · 冻结稿 §10 日期语义 ============
   //
   // §10.1 定死 `expiredAt` = **最后有效日**;§10.5 由此要求有效资质判定为
   //   status=verified AND deletedAt IS NULL AND (expiredAt IS NULL OR expiredAt >= today)
