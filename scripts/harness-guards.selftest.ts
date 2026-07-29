@@ -25,6 +25,12 @@ import {
   extractSeedPermissionCodesAst,
 } from './docs-counts';
 import {
+  assertConnectedTestDatabase,
+  assertDroppableTestDbName,
+  assertTestDatabaseUrl,
+  type RawQueryClient,
+} from '../test/setup/test-db';
+import {
   deriveTestDbName,
   deriveTestDbNameFrom,
   deriveTemplateTestDbName,
@@ -76,6 +82,16 @@ function codeOnly(text: string, style: 'hash' | 'slash' = 'hash'): string {
 function checkThrows(name: string, fn: () => unknown, msgPart: string): void {
   try {
     fn();
+    failures.push(name);
+    process.stderr.write(`✗ ${name} — 期望抛错但未抛\n`);
+  } catch (e) {
+    check(name, String((e as Error).message).includes(msgPart), (e as Error).message);
+  }
+}
+
+async function checkRejects(name: string, fn: () => Promise<unknown>, msgPart: string): Promise<void> {
+  try {
+    await fn();
     failures.push(name);
     process.stderr.write(`✗ ${name} — 期望抛错但未抛\n`);
   } catch (e) {
@@ -408,6 +424,101 @@ checkEq(
 
   if (savedWorkerId === undefined) delete process.env.JEST_WORKER_ID;
   else process.env.JEST_WORKER_ID = savedWorkerId;
+}
+
+// ---------------------------------------------------------------------------
+// F1 — 测试库安全闸(2026-07-29 跨模型评审 finding 1:真实数据破坏风险)
+//
+// 旧实现是 `url.includes('app_test')`。任何**远程** DATABASE_URL 只要路径含
+// 'app_test' 就通过闸门,随后 reset-db.ts 对它 TRUNCATE 55 张业务表。
+// 下面第一条用例就是评审给出的那条 URL —— 它必须抛错。
+// ---------------------------------------------------------------------------
+
+{
+  const expectedDb = deriveTestDbName();
+  process.stdout.write(`  · 本 checkout 的派生测试库名:${expectedDb}\n`);
+
+  // ① 评审给出的攻击样例:远程主机 + 含 'app_test' 子串的库名
+  const REMOTE_URL = 'postgresql://user:pw@prod.example.com:5432/app_test_prod';
+  checkThrows(
+    'F1 dburl:远程主机 + app_test 子串库名被拒(旧实现原样放行)',
+    () => assertTestDatabaseUrl(REMOTE_URL),
+    '不在允许清单内',
+  );
+  // 报错信息会被贴进 PR / issue,不得把口令一起带出去
+  try {
+    assertTestDatabaseUrl(REMOTE_URL);
+  } catch (e) {
+    check(
+      'F1 dburl:拒绝信息里的口令已掩码',
+      !String((e as Error).message).includes(':pw@'),
+      String((e as Error).message),
+    );
+  }
+
+  // ② host 合法但库名只是「含子串」——旧实现的第二个洞
+  checkThrows(
+    'F1 dburl:本机主机 + app_test_prod 库名仍被拒(子串 ≠ 相等)',
+    () => assertTestDatabaseUrl('postgresql://postgres:postgres@localhost:5432/app_test_prod'),
+    '库名必须严格等于',
+  );
+  checkThrows(
+    'F1 dburl:开发库 app 被拒',
+    () => assertTestDatabaseUrl('postgresql://postgres:postgres@localhost:5432/app'),
+    '库名必须严格等于',
+  );
+  checkThrows('F1 dburl:未设置被拒', () => assertTestDatabaseUrl(undefined), '未设置');
+  checkThrows(
+    'F1 dburl:非法 URL 被拒(无法判定目标 ≠ 放行)',
+    () => assertTestDatabaseUrl('not-a-url'),
+    '不是合法 URL',
+  );
+  checkThrows(
+    'F1 dburl:非 postgres 协议被拒',
+    () => assertTestDatabaseUrl('mysql://localhost:3306/app_test'),
+    '协议必须是',
+  );
+
+  // ③ 反向:当前真实派生库名必须原样通过(闸门不能把正常路径判死)
+  {
+    let threw = '';
+    try {
+      assertTestDatabaseUrl(
+        `postgresql://postgres:postgres@localhost:5432/${expectedDb}?schema=public&connection_limit=5`,
+      );
+    } catch (e) {
+      threw = (e as Error).message;
+    }
+    check(`F1 dburl:当前真实派生库名 '${expectedDb}' 通过`, threw === '', threw);
+  }
+
+  // ④ 建/删库的名字闸:只允许本 checkout 派生的那一族
+  const template = deriveTemplateTestDbName();
+  {
+    let threw = '';
+    try {
+      assertDroppableTestDbName(template);
+      assertDroppableTestDbName(`${template}_w7`);
+    } catch (e) {
+      threw = (e as Error).message;
+    }
+    check('F1 dbname:模板库与 _w<N> 克隆库允许 CREATE/DROP', threw === '', threw);
+  }
+  checkThrows(
+    'F1 dbname:开发库 app 拒绝 CREATE/DROP',
+    () => assertDroppableTestDbName('app'),
+    '只允许本 checkout 派生的库',
+  );
+  checkThrows(
+    'F1 dbname:别的 lane 的派生库拒绝 CREATE/DROP(旧 startsWith 会放行)',
+    () => assertDroppableTestDbName('app_test_some_other_lane_abc123'),
+    '只允许本 checkout 派生的库',
+  );
+  checkThrows(
+    'F1 dbname:三位 worker 号不在派生族内',
+    () => assertDroppableTestDbName(`${template}_w123`),
+    '只允许本 checkout 派生的库',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -950,6 +1061,7 @@ for (const [configName, config] of JEST_CONFIGS) {
       'src/modules/storage/storage-crypto.service.ts',
       'Dockerfile',
       'docker-compose.yml',
+      '.env.test',
       'harness/redzone.json',
       'harness/incidents.json',
       '.claude/hooks/redzone-guard.sh',
@@ -1015,6 +1127,59 @@ for (const [configName, config] of JEST_CONFIGS) {
 }
 
 // ---------------------------------------------------------------------------
+// F1 — 「连接建立之后」的求证(assertConnectedTestDatabase)
+//
+// 这一层是给 URL 判定兜底的:URL 只表达**意图**,DNS 劫持 / 端口转发能让一条
+// 完全合规的 URL 落到别的机器上。用假客户端喂各种服务器回答,断言裁决 ——
+// 不需要真数据库,所以能进 CI 的 fast job(harness:selftest)。
+// ---------------------------------------------------------------------------
 
-process.stdout.write(`\n${passCount} passed, ${failures.length} failed\n`);
-if (failures.length > 0) process.exit(1);
+async function runConnectedDbAssertions(): Promise<void> {
+  const expectedDb = deriveTestDbName();
+  const fakeClient = (rows: unknown): RawQueryClient => ({
+    $queryRawUnsafe: <T = unknown,>(): Promise<T> => Promise.resolve(rows as T),
+  });
+
+  // 正常路径:库名对上 + 服务端地址在 docker 网桥段 / unix socket
+  for (const [label, srv] of [
+    ['docker 网桥地址', '192.168.97.2'],
+    ['环回地址', '127.0.0.1'],
+    ['unix socket(inet_server_addr 为 NULL)', null],
+  ] as const) {
+    let threw = '';
+    try {
+      await assertConnectedTestDatabase(fakeClient([{ db: expectedDb, srv }]), expectedDb);
+    } catch (e) {
+      threw = (e as Error).message;
+    }
+    check(`F1 connected:${label} + 库名一致 → 放行`, threw === '', threw);
+  }
+
+  // 连到了同一台机器上的别的库(URL 判定看不见这种情况)
+  await checkRejects(
+    'F1 connected:current_database() 与预期不符 → 拒',
+    () => assertConnectedTestDatabase(fakeClient([{ db: 'app', srv: '127.0.0.1' }]), expectedDb),
+    '已连接的库与预期不符',
+  );
+  // 库名恰好对上,但服务器在公网 —— 正是「URL 合规却落到别处」的形态
+  await checkRejects(
+    'F1 connected:服务端为公网地址 → 拒(即使库名对上)',
+    () =>
+      assertConnectedTestDatabase(fakeClient([{ db: expectedDb, srv: '13.250.1.1' }]), expectedDb),
+    '公网可路由地址',
+  );
+  // 问不出答案 ≠ 通过(INC-07 的同一课)
+  await checkRejects(
+    'F1 connected:查不到 current_database() → 拒(无法验证 ≠ 通过)',
+    () => assertConnectedTestDatabase(fakeClient([]), expectedDb),
+    '无法向 Postgres 求证',
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+void (async (): Promise<void> => {
+  await runConnectedDbAssertions();
+  process.stdout.write(`\n${passCount} passed, ${failures.length} failed\n`);
+  if (failures.length > 0) process.exit(1);
+})();
