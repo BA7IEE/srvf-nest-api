@@ -1165,63 +1165,243 @@ for (const [configName, config] of JEST_CONFIGS) {
   if (hadGrant) fs.renameSync(grantAbs, bak);
 
   try {
-    // 覆盖:每个 redzone 组各一 + selfGuard 各类 + archive 新建/改既有 + 日常放行路径
-    const FIXTURES = [
-      'AGENTS.md',
-      'CLAUDE.md',
-      '.claude/CLAUDE.md',
-      'docs/api-surface-policy.md',
-      '.github/workflows/ci.yml',
-      'prisma/schema.prisma',
-      'prisma/migrations/20260101_x/migration.sql',
-      'prisma/seed.ts',
-      'src/common/guards/jwt-auth.guard.ts',
-      'src/bootstrap/apply-global-setup.ts',
-      'src/modules/auth/auth.service.ts',
-      'src/modules/storage/storage-crypto.service.ts',
-      'Dockerfile',
-      'docker-compose.yml',
-      '.env.test',
-      // F2 — CI 控制面与生产入口(2026-07-29 跨模型评审:此前 12/12 全不在保护内)
-      'pnpm-lock.yaml',
-      'eslint.config.mjs',
-      'tsconfig.json',
-      'test/tsconfig.test.json',
-      'scripts/tsconfig.json',
-      'prisma/tsconfig.eslint.json',
-      'test/jest-e2e.config.ts',
-      'nest-cli.json',
-      'scripts/harness-needs.ts',
-      'src/main.ts',
-      'src/app.module.ts',
-      'src/modules/authz/authz.service.ts',
-      'src/common/decorators/login-throttle.decorator.ts',
-      'scripts/release-prepare.ts',
-      'scripts/release-finish.ts',
-      'harness/redzone.json',
-      'harness/incidents.json',
-      '.claude/hooks/redzone-guard.sh',
-      '.claude/settings.json',
-      'eslint.harness.mjs',
-      'scripts/check-codemap.ts',
-      'scripts/check-redzone.ts',
-      'scripts/harness-eslint.selftest.ts',
-      'scripts/agent-preflight.sh',
-      'scripts/docs-counts.ts',
-      'scripts/harness-grant.ts',
-      'scripts/generate-codemap.ts',
-      'scripts/replay-incidents.ts',
-      'scripts/changelog-merge.ts',
-      'test/setup/test-app.ts',
-      'test/contract/openapi.contract-spec.ts',
-      'docs/archive/plans/harness-3.0-blueprint.md',
-      'docs/archive/plans/definitely-brand-new-file.md',
-      'src/modules/users/users.service.ts',
-      'test/e2e/users.e2e-spec.ts',
-      'docs/testing.md',
-      'CHANGELOG.md',
-      'package.json',
+    // 每条 glob 至少 1 正 1 反。`no` 的语义是**全局不受保护**(不是「只不被这条命中」),
+    // 所以负样例都挑成不会被别的 glob 顺手捞走的近似路径。
+    const GLOB_EXPECTATIONS: ReadonlyArray<{
+      glob: string;
+      yes: readonly string[];
+      no: readonly string[];
+    }> = [
+      // ── redzone ──
+      { glob: 'AGENTS.md', yes: ['AGENTS.md'], no: ['docs/AGENTS.md'] },
+      { glob: 'CLAUDE.md', yes: ['CLAUDE.md'], no: ['src/modules/users/CLAUDE.md'] },
+      { glob: '.claude/CLAUDE.md', yes: ['.claude/CLAUDE.md'], no: ['.claude/NOTES.md'] },
+      { glob: 'ARCHITECTURE.md', yes: ['ARCHITECTURE.md'], no: ['docs/ARCHITECTURE.md'] },
+      {
+        glob: 'docs/srvf-foundation-baseline.md',
+        yes: ['docs/srvf-foundation-baseline.md'],
+        no: ['docs/srvf-foundation-baseline-v2.md'],
+      },
+      {
+        glob: 'docs/V2红线与复活路径.md',
+        yes: ['docs/V2红线与复活路径.md'],
+        no: ['docs/V2红线与复活路径.bak.md'],
+      },
+      {
+        glob: 'docs/api-surface-policy.md',
+        yes: ['docs/api-surface-policy.md'],
+        no: ['docs/api-surface-policy-draft.md'],
+      },
+      {
+        glob: '.github/workflows/**',
+        yes: ['.github/workflows/ci.yml', '.github/workflows/redzone-trusted-judge.mjs'],
+        no: ['.github/ISSUE_TEMPLATE.md'],
+      },
+      { glob: 'prisma/schema.prisma', yes: ['prisma/schema.prisma'], no: ['prisma/schema.prisma.bak'] },
+      {
+        glob: 'prisma/migrations/**',
+        yes: ['prisma/migrations/20260101_x/migration.sql'],
+        no: ['prisma/migrations-archive/old.sql'],
+      },
+      { glob: 'prisma/seed.ts', yes: ['prisma/seed.ts'], no: ['prisma/seed-helpers.ts'] },
+      {
+        glob: 'src/common/guards/**',
+        yes: ['src/common/guards/jwt-auth.guard.ts'],
+        no: ['src/common/guards.ts'],
+      },
+      {
+        glob: 'src/common/filters/**',
+        yes: ['src/common/filters/http-exception.filter.ts'],
+        no: ['src/common/filters.ts'],
+      },
+      {
+        glob: 'src/common/interceptors/**',
+        yes: ['src/common/interceptors/response.interceptor.ts'],
+        no: ['src/common/interceptors.ts'],
+      },
+      {
+        glob: 'src/bootstrap/**',
+        yes: ['src/bootstrap/apply-global-setup.ts'],
+        no: ['src/bootstrapper.ts'],
+      },
+      {
+        glob: 'src/modules/auth/**',
+        yes: ['src/modules/auth/auth.service.ts'],
+        no: ['src/modules/authors/authors.service.ts'],
+      },
+      {
+        glob: 'src/modules/authz/**',
+        yes: ['src/modules/authz/authz.service.ts'],
+        no: ['src/modules/authzx/x.service.ts'],
+      },
+      {
+        // finding 5 的落点:原 `src/**/*throttler*` 实测零命中,且仓内真名少个 r。
+        // 两种拼法各来一条,其中 rate-throttler 刻意放在**不被别的 glob 覆盖**的目录下,
+        // 这样它证明的确实是本条 glob(否则会被 src/bootstrap/** 之类顺手捞走)。
+        glob: 'src/**/*throttle*',
+        yes: [
+          'src/common/decorators/login-throttle.decorator.ts',
+          'src/modules/ratelimit/rate-throttler.service.ts',
+        ],
+        no: ['src/modules/ratelimit/rate-limit.service.ts'],
+      },
+      { glob: 'src/main.ts', yes: ['src/main.ts'], no: ['src/main.spec.ts'] },
+      { glob: 'src/app.module.ts', yes: ['src/app.module.ts'], no: ['src/app.controller.ts'] },
+      {
+        glob: 'scripts/release-prepare.ts',
+        yes: ['scripts/release-prepare.ts'],
+        no: ['scripts/release-notes.ts'],
+      },
+      {
+        glob: 'scripts/release-finish.ts',
+        yes: ['scripts/release-finish.ts'],
+        no: ['scripts/release-finish.md'],
+      },
+      {
+        glob: 'src/modules/storage/storage-crypto.service.ts',
+        yes: ['src/modules/storage/storage-crypto.service.ts'],
+        no: ['src/modules/storage/storage.service.ts'],
+      },
+      {
+        // allowCreate:**改既有**拦、**新建**放行。判据是磁盘上文件在不在,
+        // 所以 yes 必须挑一个真实存在的归档文件。
+        glob: 'docs/archive/**',
+        yes: ['docs/archive/plans/harness-3.0-blueprint.md'],
+        no: ['docs/archived/not-the-archive.md'],
+      },
+      { glob: '.env.test', yes: ['.env.test'], no: ['.env.testing'] },
+      { glob: 'Dockerfile', yes: ['Dockerfile'], no: ['Dockerfile.dev'] },
+      { glob: '.dockerignore', yes: ['.dockerignore'], no: ['.dockerignore.bak'] },
+      {
+        glob: 'docker-compose.yml',
+        yes: ['docker-compose.yml'],
+        no: ['docker-compose.override.yml'],
+      },
+      // ── selfGuard ──
+      { glob: 'harness/**', yes: ['harness/redzone.json', 'harness/incidents.json'], no: ['harness.md'] },
+      {
+        glob: '.claude/hooks/**',
+        yes: ['.claude/hooks/redzone-guard.sh'],
+        no: ['.claude/hooks.md'],
+      },
+      {
+        glob: '.claude/settings.json',
+        yes: ['.claude/settings.json'],
+        no: ['.claude/settings.local.json'],
+      },
+      {
+        glob: '.claude/settings.example.json',
+        yes: ['.claude/settings.example.json'],
+        no: ['.claude/settings.example.md'],
+      },
+      { glob: '.claude/rules/**', yes: ['.claude/rules/anything.md'], no: ['.claude/rules.md'] },
+      { glob: 'eslint.harness.mjs', yes: ['eslint.harness.mjs'], no: ['eslint.harness.test.mjs'] },
+      { glob: 'scripts/check-*.ts', yes: ['scripts/check-redzone.ts'], no: ['scripts/checker.ts'] },
+      { glob: 'scripts/check-*.sh', yes: ['scripts/check-quick.sh'], no: ['scripts/checkup.sh'] },
+      {
+        glob: 'scripts/*.selftest.ts',
+        yes: ['scripts/harness-guards.selftest.ts'],
+        no: ['scripts/harness-guards.selftest.js'],
+      },
+      {
+        glob: 'scripts/*.selftest.sh',
+        yes: ['scripts/agent-preflight.selftest.sh'],
+        no: ['scripts/agent-preflight.selftest.bash'],
+      },
+      {
+        glob: 'scripts/agent-preflight.sh',
+        yes: ['scripts/agent-preflight.sh'],
+        no: ['scripts/agent-preflight.ts'],
+      },
+      { glob: 'scripts/docs-counts.ts', yes: ['scripts/docs-counts.ts'], no: ['scripts/docs-count.ts'] },
+      {
+        glob: 'scripts/docs-readtax.ts',
+        yes: ['scripts/docs-readtax.ts'],
+        no: ['scripts/docs-readtax.md'],
+      },
+      {
+        glob: 'scripts/harness-grant.ts',
+        yes: ['scripts/harness-grant.ts'],
+        no: ['scripts/harness-grants.ts'],
+      },
+      {
+        glob: 'scripts/db-test-prune.ts',
+        yes: ['scripts/db-test-prune.ts'],
+        no: ['scripts/db-test-prune.sh'],
+      },
+      {
+        glob: 'scripts/generate-*.ts',
+        yes: ['scripts/generate-codemap.ts'],
+        no: ['scripts/generator.ts'],
+      },
+      {
+        glob: 'scripts/replay-*.ts',
+        yes: ['scripts/replay-incidents.ts'],
+        no: ['scripts/replayer.ts'],
+      },
+      { glob: 'test/setup/**', yes: ['test/setup/test-db.ts'], no: ['test/setup.ts'] },
+      {
+        glob: 'test/contract/**',
+        yes: ['test/contract/openapi.contract-spec.ts'],
+        no: ['test/contracts.ts'],
+      },
+      { glob: 'package.json', yes: ['package.json'], no: ['src/vendor/package.json'] },
+      { glob: 'pnpm-lock.yaml', yes: ['pnpm-lock.yaml'], no: ['pnpm-workspace.yaml'] },
+      { glob: 'eslint.config.mjs', yes: ['eslint.config.mjs'], no: ['eslint.config.js'] },
+      { glob: 'tsconfig.json', yes: ['tsconfig.json'], no: ['tsconfig.build.json'] },
+      {
+        glob: 'test/tsconfig.test.json',
+        yes: ['test/tsconfig.test.json'],
+        no: ['test/tsconfig.json'],
+      },
+      {
+        glob: 'scripts/tsconfig.json',
+        yes: ['scripts/tsconfig.json'],
+        no: ['scripts/tsconfig.build.json'],
+      },
+      {
+        glob: 'prisma/tsconfig.eslint.json',
+        yes: ['prisma/tsconfig.eslint.json'],
+        no: ['prisma/tsconfig.json'],
+      },
+      {
+        glob: 'test/jest-*.config.ts',
+        yes: ['test/jest-e2e.config.ts', 'test/jest-unit.config.ts'],
+        no: ['test/jest.config.ts'],
+      },
+      { glob: 'nest-cli.json', yes: ['nest-cli.json'], no: ['nest-cli.dev.json'] },
+      {
+        glob: 'scripts/harness-needs.ts',
+        yes: ['scripts/harness-needs.ts'],
+        no: ['scripts/harness-need.ts'],
+      },
     ];
+
+    // ① 覆盖闭环:registry 里每条 glob 都必须在期望值表里有正反样例。
+    // 加了新 glob 却不加样例 = 那条 glob 从此没有阳性对照,写错了也没人知道
+    // (与 eslint 侧「选择器覆盖闭环」同源;INC-06 就是这么静默失效的)。
+    const registry = (
+      require('./check-redzone') as {
+        loadRegistry: () => {
+          redzone: Array<{ globs: string[] }>;
+          selfGuard: Array<{ globs: string[] }>;
+        };
+      }
+    ).loadRegistry();
+    const registryGlobs = [...registry.redzone, ...registry.selfGuard].flatMap((e) => e.globs);
+    const tabled = new Set(GLOB_EXPECTATIONS.map((g) => g.glob));
+    const uncovered = registryGlobs.filter((g) => !tabled.has(g));
+    check(
+      `F4 glob 覆盖闭环:${registryGlobs.length}/${registryGlobs.length} 条 glob 均有正反样例`,
+      uncovered.length === 0,
+      `缺样例的 glob:${uncovered.join(', ')}`,
+    );
+    const stale = [...tabled].filter((g) => !registryGlobs.includes(g));
+    check(
+      'F4 glob 覆盖闭环:期望值表里没有 registry 已删除的陈旧 glob',
+      stale.length === 0,
+      `registry 已无此 glob:${stale.join(', ')}`,
+    );
 
     const hookBlocks = (rel: string): boolean => {
       const r = spawnSync(path.join(REPO, '.claude/hooks/redzone-guard.sh'), {
@@ -1239,24 +1419,51 @@ for (const [configName, config] of JEST_CONFIGS) {
       }
     ).judge;
 
-    let mismatches = 0;
-    for (const rel of FIXTURES) {
-      const added = !fs.existsSync(path.join(REPO, rel));
-      const ci = judge(rel, added) !== null;
-      const hook = hookBlocks(rel);
-      if (ci !== hook) {
-        mismatches++;
-        failures.push(
-          `✗ P2c parity 分歧:${rel} — hook ${hook ? '拦' : '放'} / CI ${ci ? '拦' : '放'}` +
-            '(两侧裁决必须逐条一致,否则会出现「一边拦一边放」)',
-        );
+    // ② 三方比对:fixture + **期望值** + TS 结果 + Hook 结果。
+    //
+    // 为什么必须有「期望值」这一列(2026-07-29 跨模型评审 finding 5):
+    // 旧版只断言「两边相等」。而 hook 与 TS 的 glob 引擎是**一致地错**的 ——
+    // 37 条用例全绿,证明的只是「两把刻错的尺子读数相同」,
+    // `src/**/*throttler*` 零命中这件事一条用例都没抓到。
+    // parity(一致)≠ correctness(正确),期望值那一列才是后者。
+    let tsWrong = 0;
+    let hookWrong = 0;
+    let disagree = 0;
+    let total = 0;
+    for (const { glob, yes, no } of GLOB_EXPECTATIONS) {
+      for (const [paths, expected] of [
+        [yes, true],
+        [no, false],
+      ] as const) {
+        for (const rel of paths) {
+          total++;
+          const added = !fs.existsSync(path.join(REPO, rel));
+          const ts = judge(rel, added) !== null;
+          const hook = hookBlocks(rel);
+          if (ts !== expected) {
+            tsWrong++;
+            failures.push(
+              `✗ F4 期望值(TS):${rel} — 期望${expected ? '拦' : '放'},TS 实际${ts ? '拦' : '放'}(glob ${glob})`,
+            );
+          }
+          if (hook !== expected) {
+            hookWrong++;
+            failures.push(
+              `✗ F4 期望值(Hook):${rel} — 期望${expected ? '拦' : '放'},Hook 实际${hook ? '拦' : '放'}(glob ${glob})`,
+            );
+          }
+          if (ts !== hook) {
+            disagree++;
+            failures.push(
+              `✗ F4 parity 分歧:${rel} — hook ${hook ? '拦' : '放'} / TS ${ts ? '拦' : '放'}`,
+            );
+          }
+        }
       }
     }
-    check(
-      `P2c redzone parity:${FIXTURES.length} 条路径 hook 与 CI 裁决一致`,
-      mismatches === 0,
-      `${mismatches} 条分歧`,
-    );
+    check(`F4 三方比对:${total} 条样例 TS 裁决 == 期望值`, tsWrong === 0, `${tsWrong} 条不符`);
+    check(`F4 三方比对:${total} 条样例 Hook 裁决 == 期望值`, hookWrong === 0, `${hookWrong} 条不符`);
+    check(`F4 三方比对:${total} 条样例 TS 与 Hook 一致`, disagree === 0, `${disagree} 条分歧`);
   } finally {
     if (hadGrant && fs.existsSync(bak)) fs.renameSync(bak, grantAbs);
   }

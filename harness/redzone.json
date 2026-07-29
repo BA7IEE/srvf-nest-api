@@ -52,18 +52,17 @@
     {
       "id": "auth-frozen",
       "globs": [
-        "src/modules/auth/**",
-        "src/**/*throttler*"
+        "src/modules/auth/**"
       ],
-      "why": "P0-E refresh token 行为冻结 + 防枚举锁 + 限流语义"
+      "why": "P0-E refresh token 行为冻结 + 防枚举锁。限流语义已挪到 authz-core:原先挂在这里的 `src/**/*throttler*` 实测匹配不到任何文件(自制 glob 引擎把 ** 之后的部分当字面后缀),且仓内真实文件名是 *-throttle*(少个 r)"
     },
     {
       "id": "authz-core",
       "globs": [
         "src/modules/authz/**",
-        "src/common/decorators/*-throttle.decorator.ts"
+        "src/**/*throttle*"
       ],
-      "why": "判权核心与限流语义。2026-07-29 跨模型评审 F2 实测:authz 整个模块与 11 个限流装饰器全部不在保护内 —— auth-frozen 那条 `src/**/*throttler*` 既拼错了名(仓内真实文件是 *-throttle.decorator.ts,少个 r)又匹配不到任何文件"
+      "why": "判权核心与限流语义。2026-07-29 跨模型评审 F2/F5 实测:authz 整个模块与 13 个限流文件全部不在保护内 —— 原挂在 auth-frozen 的 `src/**/*throttler*` 既拼错了名(仓内真实文件是 *-throttle*,少个 r)又因自制 glob 引擎的缺陷匹配不到任何文件。`*throttle*` 同时覆盖 throttle 与 throttler(后者含前者),实测 13/13"
     },
     {
       "id": "production-entrypoint",

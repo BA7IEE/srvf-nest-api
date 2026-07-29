@@ -26,9 +26,25 @@ REDZONE_JSON="$REPO_ROOT/harness/redzone.json"
 [ -f "$REDZONE_JSON" ] || exit 0   # 清单不存在 = 本仓未启用红区执法,静默放行
 
 command -v jq >/dev/null 2>&1 || {
-  echo "redzone-guard: 缺少 jq,无法解析红区清单 —— 拒绝写操作(fail-closed)。请先安装 jq。" >&2
+  echo "redzone-guard: 缺少 jq,无法解析 hook 输入 —— 拒绝写操作(fail-closed)。请先安装 jq。" >&2
   exit 2
 }
+
+# 判定一律交给 scripts/check-redzone.ts --hook(2026-07-29 跨模型评审 finding 5)。
+# 本脚本原先用 bash `case` 自己实现了一套 glob 语义,与 TS 侧**一致地错**:
+# `src/` + `**` + `*throttler*` 被当成字面后缀比较,实测匹配不到任何文件 ——
+# 而 37 条 parity 用例只证明了「两把刻错的尺子读数相同」。
+# 现在 shell 侧退化成纯 I/O:取路径 → 调那一个判定 → 按结果拼人话消息。
+JUDGE="$REPO_ROOT/scripts/check-redzone.ts"
+TSX="$REPO_ROOT/node_modules/.bin/tsx"
+if [ ! -f "$JUDGE" ] || [ ! -x "$TSX" ]; then
+  cat >&2 <<'MSG'
+⛔ 红区判定不可用(缺 scripts/check-redzone.ts 或 node_modules/.bin/tsx)——
+   拒绝写操作(fail-closed)。「判不了」不等于「没触碰」。
+   fresh worktree 请先跑:pnpm install --frozen-lockfile && pnpm prisma:generate
+MSG
+  exit 2
+fi
 
 INPUT="$(cat)"
 TOOL="$(printf '%s' "$INPUT" | jq -r '.tool_name // ""')"
@@ -43,67 +59,30 @@ esac
 # 仍是绝对路径 = 仓库外文件,不归红区管
 case "$REL" in /*) exit 0 ;; esac
 
-# glob 匹配:** 跨目录,* 单层。用 bash case 的模式匹配(3.2 可用)
-matches_glob() {
-  # $1 = 路径, $2 = glob
-  local path="$1" glob="$2"
-  case "$glob" in
-    *'**'*)
-      # a/** → 前缀匹配;a/**/b.ts → 前缀 + 后缀
-      local prefix="${glob%%\*\**}"
-      local suffix="${glob##*\*\*}"
-      suffix="${suffix#/}"
-      case "$path" in
-        "$prefix"*)
-          [ -z "$suffix" ] && return 0
-          case "$path" in *"$suffix") return 0 ;; esac
-          ;;
-      esac
-      return 1
-      ;;
-    *)
-      case "$path" in $glob) return 0 ;; esac
-      return 1
-      ;;
-  esac
-}
-
-# 找出命中的条目(红区 + 裁判保护),返回 "id|why|allowCreate"
-HIT_ID=""; HIT_WHY=""; HIT_ALLOW_CREATE=""; HIT_KIND=""
-while IFS='	' read -r kind id glob why allow_create; do
-  [ -n "$glob" ] || continue
-  if matches_glob "$REL" "$glob"; then
-    HIT_KIND="$kind"; HIT_ID="$id"; HIT_WHY="$why"; HIT_ALLOW_CREATE="$allow_create"
-    break
-  fi
-done <<EOF
-$(jq -r '
-  (.redzone[]   | . as $e | $e.globs[] | ["redzone",  $e.id, ., $e.why, ($e.allowCreate // false | tostring)] | @tsv),
-  (.selfGuard[] | . as $e | $e.globs[] | ["selfGuard", $e.id, ., $e.why, "false"] | @tsv)
-' "$REDZONE_JSON")
-EOF
-
-[ -n "$HIT_ID" ] || exit 0   # 未命中红区 → 放行
-
-# archive:允许新建文件,禁改既有文件
-if [ "$HIT_ALLOW_CREATE" = "true" ] && [ ! -e "$REPO_ROOT/$REL" ]; then
-  exit 0
-fi
-
-# 授权令牌:{"grants":[{"glob":"...","reason":"...","ts":"..."}]}
+# 授权令牌路径:{"grants":[{"glob":"...","reason":"...","ts":"..."}]}
+# 由本脚本硬编码识别,不接受任何来自 tool_input 的覆盖;内容由判定侧解析。
 GRANT_PATH="$(git -C "$REPO_ROOT" rev-parse --git-path srvf-redzone-grant.json 2>/dev/null)"
 case "$GRANT_PATH" in
   /*) GRANT_FILE="$GRANT_PATH" ;;          # worktree:绝对路径
   *)  GRANT_FILE="$REPO_ROOT/$GRANT_PATH" ;; # 主仓:相对仓库根
 esac
-if [ -f "$GRANT_FILE" ]; then
-  while IFS= read -r g; do
-    [ -n "$g" ] || continue
-    if matches_glob "$REL" "$g"; then exit 0; fi
-  done <<EOF
-$(jq -r '.grants[]?.glob // empty' "$GRANT_FILE" 2>/dev/null)
-EOF
+
+# 唯一判定入口。红区/执法层分类、archive 的 allowCreate、授权令牌匹配 —— 全在里面。
+VERDICT="$("$TSX" "$JUDGE" --hook "$REL" --grant-file "$GRANT_FILE" 2>/dev/null)"
+JUDGE_STATUS=$?
+if [ "$JUDGE_STATUS" != "0" ]; then
+  echo "⛔ 红区判定异常(exit $JUDGE_STATUS)—— 拒绝写操作(fail-closed)。「判不了」不等于「没触碰」。" >&2
+  exit 2
 fi
+
+case "$VERDICT" in
+  '')       exit 0 ;;   # 未命中 → 放行
+  GRANTED*) exit 0 ;;   # 命中但本 worktree 已获授权 → 放行
+esac
+
+HIT_KIND="$(printf '%s' "$VERDICT" | cut -f2)"
+HIT_ID="$(printf '%s' "$VERDICT" | cut -f3)"
+HIT_WHY="$(printf '%s' "$VERDICT" | cut -f4)"
 
 if [ "$HIT_KIND" = "selfGuard" ]; then
   LABEL="执法层(裁判保护)"

@@ -56,24 +56,26 @@ export interface Hit {
 }
 
 /**
- * glob 匹配 —— 逐条对齐 redzone-guard.sh 的 `matches_glob`:
- *   含 `**`:按「`**` 前的前缀」+「`**` 后的后缀(去掉前导 /)」两头匹配
- *   不含 `**`:等价于 bash `case` 的模式匹配(`*` 不跨目录、`?` 单字符、`[...]` 字符类)
- * 任何一处偏离都会造成两侧裁决分歧,parity 自测会当场红。
+ * glob 匹配 —— **Node 内置** `path.matchesGlob`(22.5+),全仓唯一实现。
+ *
+ * 为什么删掉原来那个手写引擎(2026-07-29 跨模型评审 finding 5):
+ * 原实现对含 `**` 的 glob 只做「前缀 + 后缀」两头匹配,于是
+ * 前缀 `src/` 加通配后缀 `*throttler*` 变成了**字面**后缀比较 ——
+ * `harness/redzone.json` 里那条 src 下的 throttler glob 实测匹配不到任何文件
+ * (glob 原文不写在这里:它含有会提前结束块注释的字符序列)。
+ * 而 `.claude/hooks/redzone-guard.sh` 的 bash 版**一致地错**,
+ * 于是 37 条 parity 用例只证明了「两把刻错的尺子读数相同」。
+ * 教训:parity(两侧一致)不能替代 correctness(裁决正确)——
+ * 自那以后 parity 用例一律带**期望值**,见 harness-guards.selftest 的 GLOB_EXPECTATIONS。
+ *
+ * 为什么是 Node 内置而不是 minimatch:F3 的 trusted 裁判在
+ * `pull_request_target` 下运行,**禁止安装依赖**(装依赖 = 执行 PR 提供的
+ * lifecycle script)。要让三处消费者共用同一套语义,唯一选择就是免依赖的内置实现。
+ * 它目前标记为 experimental —— 缓解办法是 GLOB_EXPECTATIONS 把每条 glob 的
+ * 期望裁决逐条钉死,语义一旦漂移,CI 当场红而不是静默改判。
  */
 export function matchesGlob(p: string, glob: string): boolean {
-  if (glob.includes('**')) {
-    const prefix = glob.slice(0, glob.indexOf('**'));
-    let suffix = glob.slice(glob.lastIndexOf('**') + 2);
-    if (suffix.startsWith('/')) suffix = suffix.slice(1);
-    if (!p.startsWith(prefix)) return false;
-    return suffix === '' || p.endsWith(suffix);
-  }
-  // bash case:* 不跨 /? 实际上 bash 的 case 里 * **会**跨 /。逐字对齐它。
-  const rx = new RegExp(
-    `^${glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`,
-  );
-  return rx.test(p);
+  return path.matchesGlob(p, glob);
 }
 
 export function loadRegistry(): Registry {
@@ -104,17 +106,26 @@ export function judge(rel: string, added: boolean, reg = loadRegistry()): Hit | 
 function changedFiles(base: string): Array<{ file: string; added: boolean }> {
   // --name-status + -z:文件名含空格/中文/引号都不会被 shell 或 quotepath 破坏。
   // 本仓有中文文件名(docs/V2红线与复活路径.md),`core.quotepath=false` 不可省。
+  //
+  // --no-renames(2026-07-29 跨模型评审 finding 4):让 git 把重命名拆成
+  // `D 旧路径` + `A 新路径`,**新旧两条路径都进变更集**。
+  // 原实现对 R/C 只 push 新路径,于是 `git mv 受保护文件 非保护路径`
+  // 不触发审批 —— 把文件挪出保护区这件事本身就该惊动维护者。
+  // 用 --no-renames 而不是手写 R/C 分支,是因为「让 git 别做这个推断」
+  // 比「事后把它的推断拆回去」少一处会写错的地方。
   const out = execFileSync(
     'git',
-    ['-c', 'core.quotepath=false', 'diff', '--name-status', '-z', `${base}...HEAD`],
+    ['-c', 'core.quotepath=false', 'diff', '--name-status', '-z', '--no-renames', `${base}...HEAD`],
     { cwd: ROOT, encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 },
   );
   const parts = out.split('\0').filter((s) => s !== '');
   const res: Array<{ file: string; added: boolean }> = [];
   for (let i = 0; i < parts.length; ) {
     const status = parts[i];
-    // R(重命名)/C(复制)后面跟两个路径:旧、新。判新路径。
+    // --no-renames 之后 git 不再产出 R/C;仍保留这一支做防御 ——
+    // 万一将来有人拿掉该参数,这里判**新旧两条**而不是只判新的。
     if (status.startsWith('R') || status.startsWith('C')) {
+      res.push({ file: parts[i + 1], added: false });
       res.push({ file: parts[i + 2], added: false });
       i += 3;
     } else {
@@ -130,8 +141,64 @@ function ghOutput(key: string, value: string): void {
   if (f) fs.appendFileSync(f, `${key}=${value}\n`);
 }
 
+/**
+ * `--hook <rel> [--grant-file <abs>]` —— 给 `.claude/hooks/redzone-guard.sh` 用的单路径裁决。
+ *
+ * 为什么把它放进本文件(2026-07-29 跨模型评审 finding 5):
+ * hook 原来自己用 bash `case` 复制了一套 glob 语义,与这里的 TS 版**一致地错**
+ * —— 两把刻错的尺子读数相同,parity 自测于是全绿。与其维护两把尺子,不如让
+ * shell 侧退化成纯 I/O:取路径 → 调本判定 → 按结果拼人话消息。
+ * 授权令牌的匹配也一并搬过来(它同样要 glob),否则 shell 侧又会留半套语义。
+ *
+ * 输出协议(stdout,恒 exit 0;内部错误才非 0,hook 据此 fail-closed):
+ *   (空)                     → 未命中,放行
+ *   GRANTED                   → 命中但本 worktree 已获授权,放行
+ *   HIT\t<kind>\t<id>\t<why>  → 命中且无授权,hook 负责 exit 2 并给出指引
+ *
+ * `added` 与 hook 旧语义一致:按**磁盘上文件是否存在**判(不存在 = 新建),
+ * 这决定 archive 类 allowCreate 条目放不放行。
+ */
+function hookMode(argv: string[]): void {
+  const rel = argv[argv.indexOf('--hook') + 1];
+  if (!rel || rel.startsWith('--')) {
+    console.error('--hook 需要一个仓内相对路径');
+    process.exit(1);
+  }
+
+  const added = !fs.existsSync(path.join(ROOT, rel));
+  const hit = judge(rel, added);
+  if (!hit) return;
+
+  const gi = argv.indexOf('--grant-file');
+  const grantFile = gi >= 0 ? argv[gi + 1] : undefined;
+  if (grantFile && fs.existsSync(grantFile)) {
+    let grants: string[] = [];
+    try {
+      const parsed = JSON.parse(fs.readFileSync(grantFile, 'utf-8')) as {
+        grants?: Array<{ glob?: string }>;
+      };
+      grants = (parsed.grants ?? []).map((g) => g.glob).filter((g): g is string => Boolean(g));
+    } catch {
+      // 令牌文件坏了 = 拿不到授权,按未授权处理(fail-closed:坏文件不能变成通行证)
+      grants = [];
+    }
+    for (const g of grants) {
+      if (matchesGlob(rel, g)) {
+        process.stdout.write('GRANTED\n');
+        return;
+      }
+    }
+  }
+  // why 里有换行会破坏逐行协议 —— 压成单行
+  process.stdout.write(`HIT\t${hit.kind}\t${hit.id}\t${hit.why.replace(/\s*\n\s*/g, ' ')}\n`);
+}
+
 function main(): void {
   const argv = process.argv.slice(2);
+  if (argv.includes('--hook')) {
+    hookMode(argv);
+    return;
+  }
   let files: Array<{ file: string; added: boolean }>;
 
   const filesIdx = argv.indexOf('--files');
