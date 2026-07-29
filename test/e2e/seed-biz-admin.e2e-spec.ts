@@ -32,7 +32,7 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // 3. biz-admin 绑定 69 条 RolePermission;member.delete/reviewer-only/contract 动作 **不**在绑定中
 // 4. 幂等补挂:seed 前已存在的 ADMIN 用户(含 DISABLED)跑 seed 后持有 biz-admin;
 //    SUPER_ADMIN / USER 不被挂;软删 ADMIN 不补挂(D-S4-7)
-// 5. 零变化项:ops-admin 绑定数(96;WECHAT T2 58→61 + 招新 T1 REALNAME settings 61→63 授权 true-up
+// 5. 零变化项:ops-admin 绑定数(104;证书标准库 PR-2 +8 配置面码 96→104,业务面本文件不绑之不变量仍成立;WECHAT T2 58→61 + 招新 T1 REALNAME settings 61→63 授权 true-up
 //    + 终态 scoped-authz PR1 org.move.node 63→64 + PR2 membership 4 码 64→68 + PR3 position/rule 8 码 68→76
 //    + PR4 position-assignment 4 码 76→80 + PR5 supervision-assignment 4 码 80→84 + PR6 role-binding 4 码 84→88
 //    + PR10 authz.explain.decision 88→89 + PR11 announcement-import 2 码 89→91 + F1「A 组」meta.resolve.label 91→92
@@ -191,7 +191,7 @@ const EXPECTED_BIZ_PERMISSION_CODES = [
   // membership.{list,read,set,end} 4 条 ops-admin 管理面码,module 同为 'membership' 但归业务面 seed)
   'membership.transfer.record',
 ] as const;
-const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 87(D-INSURANCE PR2 +review.record;PR-1 +certificate.read.sensitive)
+const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 87(PR-1 +certificate.read.sensitive;PR-2 的 8 条配置面码只绑 ops-admin,不进业务面)
 
 // D1=A 镜像:不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
@@ -243,7 +243,7 @@ const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_CODES.filter(
 // 2026-07-04 F3「C 组」authz.{explain-batch,action-state}.decision +2 → 92→94;与 seed-rbac 的 99-5=94 推导一致;
 // 2026-07-07 队员账号闭环 v1 member.grant.account +1 → 94→95;与 seed-rbac 的 100-5=95 推导一致;
 // 2026-07-07 队员账号闭环 v2 member.bind.account +1 → 95→96;与 seed-rbac 的 101-5=96 推导一致)
-const EXPECTED_OPS_ADMIN_BINDING_COUNT = 96;
+const EXPECTED_OPS_ADMIN_BINDING_COUNT = 104; // 证书标准库 PR-2:+8 配置面码(certificate-standard 4 + certificate-recognition-policy 4)
 const EXPECTED_MEMBER_ROLE_BINDING_COUNT = 9;
 
 const SEED_ENV = {

@@ -151,6 +151,19 @@ const EXPECTED_RBAC_PERMISSION_CODES = [
   'role-binding.create.record',
   'role-binding.update.record',
   'role-binding.delete.record',
+  // 8 条 certificate-standard.* / certificate-recognition-policy.*(PR-2A;
+  // 证书标准库 PR-2 2026-07-30)。Standard / Policy 是全局主数据配置面(冻结稿 §16.4:
+  // 走 RbacService.can(),不是 Certificate 实例的 scoped Authz),故与 dict / position /
+  // role-binding 同列 PR-2A、全绑 ops-admin。两条 read 码另进业务面给 biz-admin,
+  // 但那不影响本表(本表 = ALL_PERMISSION_SEED 侧)。
+  'certificate-standard.read.record',
+  'certificate-standard.create.record',
+  'certificate-standard.update.record',
+  'certificate-standard.delete.record',
+  'certificate-recognition-policy.read.record',
+  'certificate-recognition-policy.create.record',
+  'certificate-recognition-policy.update.record',
+  'certificate-recognition-policy.delete.record',
   // 12 条 attachment-config.*(PR-2B)
   'attachment-config.read.type',
   'attachment-config.create.type',

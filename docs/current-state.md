@@ -20,10 +20,10 @@
 | 模块 | 36 |
 | Controller | 81 |
 | Endpoint | 416 |
-| Migration | 65 |
+| Migration | 66 |
 | BizCode | 280 |
-| 权限码 | 214 |
-| AuditLogEvent | 123 |
+| 权限码 | 222 |
+| AuditLogEvent | 127 |
 | 内建角色 | 15 |
 | Cron | 2 |
 <!-- counts:end -->

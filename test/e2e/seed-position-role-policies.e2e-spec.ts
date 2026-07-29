@@ -22,7 +22,7 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 //   4. R5 运行时护栏生效:人为给副职塞管理 policy 后重跑 seed → 非 0 退出
 //   5. 只读角色 RolePermission 精确同步:补缺失、删脏写码
 //   6. 零指派 + 零漂移:5 个职务/分管角色无任何 RoleBinding 持有者(判权零影响);
-//      ops-admin 96 / member 9 不变；biz-admin 69(PR-1 +certificate.read.sensitive);
+//      ops-admin 104(PR-2 +8 配置面码)/ member 9 不变；biz-admin 69(PR-1 +read.sensitive;PR-2 配置面码只绑 ops-admin);
 //      6 保留码不绑 3 新角色(F1 哨兵延伸)
 //   7. 幂等:连续两次 seed counts / role id 稳定 + policy updatedAt 不 bump
 //
@@ -217,12 +217,12 @@ const EXPECTED_FINAL_REVIEWER_CODES = [
 // 2026-07-04 F3「C 组」authz.{explain-batch,action-state}.decision 绑 ops-admin 92→94;
 // 2026-07-07 队员账号闭环 v1 member.grant.account 绑 ops-admin 94→95;
 // 2026-07-07 队员账号闭环 v2 member.bind.account 绑 ops-admin 95→96)。
-const EXPECTED_OPS_ADMIN_BINDING_COUNT = 96;
+const EXPECTED_OPS_ADMIN_BINDING_COUNT = 104; // 证书标准库 PR-2:+8 配置面码(certificate-standard 4 + certificate-recognition-policy 4)
 const EXPECTED_MEMBER_ROLE_BINDING_COUNT = 9;
 // 证书标准库 PR-1(2026-07-30):+1 = certificate.read.sensitive(§15.3)。
 // 同刀已把该码加入 ORG_ADMIN_EXCLUDED_CODES,故 EXPECTED_ORG_ADMIN_CODES 逐字不变 ——
 // 上面那份精确码表就是「敏感明文不随组织业务下放」的阳性对照:漏加排除即红。
-const EXPECTED_BIZ_ADMIN_BINDING_COUNT = 69;
+const EXPECTED_BIZ_ADMIN_BINDING_COUNT = 69; // PR-2 的 8 条配置面码只绑 ops-admin,biz-admin 不变
 
 const CONTRACT_REMOVED_FROM_BIZ_AND_ORG_CODES = [
   'activity.publish.record',
@@ -551,7 +551,7 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
     );
   });
 
-  it('7. 零指派 + 精确增量:5 个职务/分管角色无持有者;ops 96 / member 9 / biz 69', async () => {
+  it('7. 零指派 + 精确增量:5 个职务/分管角色无持有者;ops 104 / member 9 / biz 69', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-6' }).code).toBe(0);
 
     // 5 个职务/分管角色零直接持有(判权唯一读源 RoleBinding 全类型;

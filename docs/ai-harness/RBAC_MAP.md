@@ -19,7 +19,7 @@
 
 ## 派生对照表(生成物)
 
-### 权限码全集(214 条,按一级域分组)
+### 权限码全集(222 条,按一级域分组)
 
 > 权威源 `prisma/seed.ts`(幂等 upsert)。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 
@@ -42,6 +42,8 @@
 | `emergency-contact` | 5 | `emergency-contact.create.record` · `emergency-contact.delete.record` · `emergency-contact.read.record` · `emergency-contact.read.sensitive` · `emergency-contact.update.record` |
 | `membership` | 5 | `membership.end.record` · `membership.list.record` · `membership.read.record` · `membership.set.record` · `membership.transfer.record` |
 | `org` | 5 | `org.create.node` · `org.delete.node` · `org.move.node` · `org.read.node` · `org.update.node` |
+| `certificate-recognition-policy` | 4 | `certificate-recognition-policy.create.record` · `certificate-recognition-policy.delete.record` · `certificate-recognition-policy.read.record` · `certificate-recognition-policy.update.record` |
+| `certificate-standard` | 4 | `certificate-standard.create.record` · `certificate-standard.delete.record` · `certificate-standard.read.record` · `certificate-standard.update.record` |
 | `contribution` | 4 | `contribution.create.rule` · `contribution.delete.rule` · `contribution.read.rule` · `contribution.update.rule` |
 | `member-profile` | 4 | `member-profile.create.record` · `member-profile.read.record` · `member-profile.read.sensitive` · `member-profile.update.record` |
 | `position` | 4 | `position.create.definition` · `position.delete.definition` · `position.read.definition` · `position.update.definition` |
