@@ -27,7 +27,7 @@
 | 域 | 载体 | 管什么 |
 |---|---|---|
 | 语法级铁律(17 条) | `eslint.harness.mjs` | 禁 `@UseGuards`/`@Roles`/裸 `@ApiOkResponse`/局部 `ValidationPipe`/Prisma `$use`·`$extends`/硬删/重定义 Prisma enum/手工包响应/Mapped Types 派生 DTO/`LocalStrategy`/分页别名/散落 `process.env`/判权路径缓存与定时器/裸 `@Param('id')`;禁引 Redis·queue·cache;App DTO 禁引 Admin;Presenter·Policy 禁碰 DB;禁跨模块深引私有子目录 |
-| 红区路径 | `harness/redzone.json`(唯一机读源)+ `.claude/hooks/redzone-guard.sh` + `bash-write-guard.sh` | 六大红区文档 · workflows · prisma schema/migrations/seed · 全局 Guard/Filter/Interceptor/bootstrap · auth · storage-crypto · archive · 容器构建;**执法层自身**(scripts 裁判 / hooks / harness / test setup 与 contract) |
+| 红区路径 | `harness/redzone.json`(唯一机读源);**权威判定** = `.github/workflows/redzone-trusted.yml`(base-trusted);本地 `redzone-guard.sh` / `bash-write-guard.sh` = **提前反馈,不是最终边界** | 六大红区文档 · workflows · prisma schema/migrations/seed · 全局 Guard/Filter/Interceptor/bootstrap · auth · storage-crypto · archive · 容器构建 · **CI 控制面**(package.json / lock / eslint 与 tsconfig / jest config)· **生产入口**(main.ts / app.module.ts)· authz 与限流装饰器 · 发版脚本;**执法层自身**(scripts 裁判 / hooks / harness / test setup 与 contract) |
 | 开工门禁 | `preflight-gate.sh` + `preflight-required.sh` | 依赖或 Prisma 生成物陈旧、落后 origin/main、门禁不可验证 → **拦写**;工作树脏 / open PR → 只提示 |
 | 危险命令 | `.claude/settings.json` deny/ask | `migrate reset`/`db push`(**deny 而非 ask** = 任何预授权都不算,必须人当场执行)· `push --force[-with-lease]` · `reset --hard` · 批量 `-D` · 盲 `-u` 更新快照 · 包管理器 |
 | 派生文档 | `docs:{readtax,counts,codemap,rbacmap}:check` + `pnpm docs:rbacmap` 生成 | 恒读层体积 · 事实计数 · 模块地图 · **权限地图(生成物,禁手改)** |

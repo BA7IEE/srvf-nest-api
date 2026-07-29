@@ -1027,6 +1027,126 @@ for (const [configName, config] of JEST_CONFIGS) {
 }
 
 // ---------------------------------------------------------------------------
+// F3 — 独立裁判(pull_request_target,base-trusted)的三条禁令
+//
+// pull_request_target 能拿到 secrets,而 PR 可以来自任何人。历史上几乎所有该
+// 触发器的事故都是同一形态:**先 checkout 了 PR 代码,再在有 secrets 的上下文
+// 里跑它**(装依赖 = 执行 PR 的 lifecycle script;跑构建 = 执行 PR 的配置)。
+//
+// 下面每条都在**剥掉注释之后**判 —— workflow 顶部的禁令注释里逐字写着
+// 「不跑 pnpm install」,不剥注释的话,这条断言会被那句注释自己满足/推翻
+// (#817 的 comment-satisfiable 教训,本仓一天内栽过四次)。
+// ---------------------------------------------------------------------------
+
+{
+  const repoRoot = path.resolve(__dirname, '..');
+  const ymlRaw = fs.readFileSync(
+    path.join(repoRoot, '.github/workflows/redzone-trusted.yml'),
+    'utf-8',
+  );
+  const judgeRaw = fs.readFileSync(
+    path.join(repoRoot, '.github/workflows/redzone-trusted-judge.mjs'),
+    'utf-8',
+  );
+  const yml = codeOnly(ymlRaw, 'hash');
+  const judge = codeOnly(judgeRaw, 'slash');
+
+  const cases: Array<[string, boolean, string]> = [
+    [
+      'F3 trusted:用 pull_request_target 触发(裁判必须跑 base 的定义)',
+      yml.includes('pull_request_target:'),
+      '普通 pull_request 触发时 workflow 也来自 PR —— 又变成自考自评',
+    ],
+    // ── 禁令①:绝不 checkout PR 代码 ──
+    [
+      'F3 禁令①:不出现 github.event.pull_request.head(绝不 checkout PR 代码)',
+      !yml.includes('pull_request.head'),
+      'checkout PR head/merge ref = 把 PR 的代码放进有 secrets 的进程,这是该触发器的头号事故形态',
+    ],
+    [
+      'F3 禁令①:checkout 显式钉在 base_ref 上',
+      yml.includes('ref: ${{ github.base_ref }}'),
+      '不写 ref 会用默认引用;显式写死 base_ref 才能让「没 checkout PR」看得见、可断言',
+    ],
+    [
+      'F3 禁令①:checkout 只有一处(不留第二个 checkout 偷偷拉 PR)',
+      (yml.match(/uses:\s*actions\/checkout/g) ?? []).length === 1,
+      '多一个 checkout 就多一次把 PR 代码拉进来的机会',
+    ],
+    // ── 禁令②:绝不安装 PR 依赖 ──
+    [
+      'F3 禁令②:不装任何依赖(pnpm/npm/yarn install 均不得出现)',
+      !/\b(pnpm|npm|yarn)\s+(install|ci)\b/.test(yml) && !yml.includes('pnpm/action-setup'),
+      '装依赖会执行 PR 锁文件里的 lifecycle script —— 等于在有 secrets 的上下文里跑 PR 的代码',
+    ],
+    // ── 禁令③:绝不执行 PR 内任何脚本 ──
+    [
+      'F3 禁令③:裁判脚本取自 base checkout 的固定路径',
+      yml.includes('node .github/workflows/redzone-trusted-judge.mjs'),
+      '裁判必须是 base 上的那一份;跑 PR 提供的脚本就是 finding 2 本身',
+    ],
+    [
+      'F3 禁令③:裁判只 import node: 内置模块(不碰 node_modules)',
+      (judgeRaw.match(/^import .* from '([^']+)'/gm) ?? []).every((l) => l.includes("from 'node:")),
+      '一旦 import 第三方包就必须装依赖,禁令②随之破功',
+    ],
+    // ── 权限与判法 ──
+    [
+      'F3 trusted:权限只读',
+      /permissions:\s*\n\s*contents:\s*read\s*\n\s*pull-requests:\s*read/.test(yml) &&
+        !/permissions:[\s\S]{0,120}write/.test(yml),
+      'pull_request_target 默认给写权限;不收紧就等于把写权限暴露在最危险的触发器上',
+    ],
+    [
+      'F3 trusted:required context 名逐字为 Red-zone (trusted)',
+      yml.includes('name: Red-zone (trusted)'),
+      '维护者会把这个名字增量 POST 进 branch protection;改名 = 该门永久报不出来',
+    ],
+    [
+      'F3 trusted:approval 跳过必须由 required=false 正面证明(不从 skipped 反推)',
+      yml.includes("required='${{ needs.scan.outputs.required }}'") &&
+        yml.includes('无法验证 ≠ 通过'),
+      'scan 失败时 required 是空串,若从 skipped 反推就会在「没查出来」时放行(INC-07)',
+    ],
+    // ── 裁判本体的三条不变式 ──
+    [
+      'F3 judge:rename 判新旧两条路径',
+      judge.includes('previous_filename'),
+      '只判新路径的话,`git mv 受保护文件 非保护路径` 就能把文件挪出保护区而不触发审批',
+    ],
+    [
+      'F3 judge:变更清单翻页且与 changed_files 对账(禁静默截断)',
+      judge.includes('--paginate') && judge.includes('expectedCount'),
+      'pulls/files 端点上限 3000 且**静默**截断;不对账就会在超大 PR 上漏判',
+    ],
+    [
+      'F3 judge:裁判自身/判据/CI 配置无条件要求审批(硬编码,不从 registry 读)',
+      judge.includes('ALWAYS_REQUIRE_APPROVAL') &&
+        judge.includes("'.github/workflows/**'") &&
+        judge.includes("'harness/redzone.json'"),
+      'registry 若被读坏或条目被挪走,碰裁判自身仍必须惊动维护者',
+    ],
+    [
+      'F3 judge:异常一律 fail-closed(要求审批)',
+      judge.includes('failClosed') && judge.includes("emit('required', 'true')"),
+      '「查不出来」永远不等于「没触碰」',
+    ],
+  ];
+  for (const [name, ok, why] of cases) check(name, ok, why);
+
+  // 顶部禁令注释本身也必须在(这条刻意判**原文**:它要的就是那段给人读的说明)。
+  // 它与上面每条行为断言是两回事 —— 上面判「事实如此」,这条判「说明还在」。
+  check(
+    'F3 trusted:顶部三条禁令的醒目注释未被删除',
+    ymlRaw.includes('pull_request_target') &&
+      ymlRaw.includes('绝不 checkout PR 代码') &&
+      ymlRaw.includes('绝不安装 PR 依赖') &&
+      ymlRaw.includes('绝不执行 PR 内任何脚本'),
+    '下一个改这个文件的人必须先读到危险性说明;注释没了,禁令就只剩断言在守',
+  );
+}
+
+// ---------------------------------------------------------------------------
 // P2c — CI 侧红区检测 与 hook 的**裁决一致性**(parity)
 //
 // 两套实现判同一份 harness/redzone.json:hook 用 bash case,CI 用 TS 正则。
@@ -1194,8 +1314,94 @@ async function runConnectedDbAssertions(): Promise<void> {
 
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// F3 — trusted 裁判的**行为**断言(不是 grep 源码字符串)
+//
+// 上面那组 F3 断言判的是「文件里有没有那行」。这一组直接 import 裁判的纯函数,
+// 喂合成的变更清单,断言它的**裁决**。区别在 finding 4 这种场景上尤其要紧:
+// `judge.includes('previous_filename')` 只能证明那个词出现过,证明不了
+// 「rename 出保护区确实会被拦」。
+// ---------------------------------------------------------------------------
+
+async function runTrustedJudgeAssertions(): Promise<void> {
+  const judge = (await import('../.github/workflows/redzone-trusted-judge.mjs')) as {
+    collectHits: (
+      files: Array<{ filename: string; status: string; previous_filename?: string }>,
+      entries: unknown[],
+    ) => Array<{ file: string; id: string }>;
+    flattenRegistry: (reg: unknown) => unknown[];
+    ALWAYS_REQUIRE_APPROVAL: string[];
+  };
+  const reg = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '../harness/redzone.json'), 'utf-8'),
+  ) as unknown;
+  const entries = judge.flattenRegistry(reg);
+  const hitsOf = (
+    files: Array<{ filename: string; status: string; previous_filename?: string }>,
+    ent: unknown[] = entries,
+  ): string[] => judge.collectHits(files, ent).map((h) => h.file);
+
+  // finding 4:把受保护文件 rename 到非保护路径 —— 只判新路径就会漏
+  check(
+    'F3 行为:rename「受保护 → 非保护」被拦(判旧路径)',
+    hitsOf([
+      { filename: 'docs/moved-out.md', status: 'renamed', previous_filename: 'AGENTS.md' },
+    ]).includes('AGENTS.md'),
+    'git mv 受保护文件 非保护路径 必须仍然触发审批',
+  );
+  check(
+    'F3 行为:rename「非保护 → 受保护」被拦(判新路径)',
+    hitsOf([
+      { filename: 'AGENTS.md', status: 'renamed', previous_filename: 'docs/whatever.md' },
+    ]).includes('AGENTS.md'),
+    '反方向同样要拦 —— 否则可以把任意内容改名成受保护文件',
+  );
+  // 反向:日常路径不得误伤(误伤到让人绕过的程度,防线同样失效)
+  check(
+    'F3 行为:普通业务文件不被拦',
+    hitsOf([
+      { filename: 'src/modules/users/users.service.ts', status: 'modified' },
+      { filename: 'test/e2e/users.e2e-spec.ts', status: 'modified' },
+      { filename: 'docs/testing.md', status: 'modified' },
+      { filename: 'changelog.d/whatever.md', status: 'added' },
+    ]).length === 0,
+    '日常路径被误拦会训练出「无视门禁」的习惯',
+  );
+  // allowCreate:archive 新建放行、改既有拦下
+  check(
+    'F3 行为:archive 新建放行 / 改既有拦下',
+    hitsOf([{ filename: 'docs/archive/plans/brand-new.md', status: 'added' }]).length === 0 &&
+      hitsOf([{ filename: 'docs/archive/plans/existing.md', status: 'modified' }]).length === 1,
+    'allowCreate 语义必须与 hook / CI 侧一致',
+  );
+  // 硬编码兜底:即使 registry 被读成空,碰裁判自身仍要审批
+  check(
+    'F3 行为:registry 为空时,碰裁判自身/判据仍无条件要求审批',
+    hitsOf(
+      [
+        { filename: '.github/workflows/redzone-trusted.yml', status: 'modified' },
+        { filename: '.github/workflows/redzone-trusted-judge.mjs', status: 'modified' },
+        { filename: 'harness/redzone.json', status: 'modified' },
+      ],
+      [],
+    ).length === 3,
+    'ALWAYS_REQUIRE_APPROVAL 必须独立于 registry —— 条目被挪走也不能让裁判自身失守',
+  );
+  // F2 新加的 glob 在 trusted 侧同样生效(证明 matchesGlob 认得 *-throttle.decorator.ts)
+  check(
+    'F3 行为:F2 新增的限流装饰器 / authz glob 在 trusted 裁判侧同样命中',
+    hitsOf([
+      { filename: 'src/common/decorators/login-throttle.decorator.ts', status: 'modified' },
+      { filename: 'src/modules/authz/authz.service.ts', status: 'modified' },
+      { filename: 'package.json', status: 'modified' },
+    ]).length === 3,
+    '三处消费者若对同一条 glob 判得不一样,就又回到「一边拦一边放」',
+  );
+}
+
 void (async (): Promise<void> => {
   await runConnectedDbAssertions();
+  await runTrustedJudgeAssertions();
   process.stdout.write(`\n${passCount} passed, ${failures.length} failed\n`);
   if (failures.length > 0) process.exit(1);
 })();
