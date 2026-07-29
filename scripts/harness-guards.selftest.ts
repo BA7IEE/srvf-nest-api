@@ -740,6 +740,68 @@ for (const [configName, config] of JEST_CONFIGS) {
 }
 
 // ---------------------------------------------------------------------------
+// P6 — changelog fragment 形态判定
+//
+// 立项证据:2026-07-28/29 通宵 8 个 PR,**每一个都在 CHANGELOG 上撞冲突**。
+// fragment 机制 Harness 2.0 就建好了,当晚一个都没人用(包括我)。
+// 反向用例在这里尤其重要:**发版收口本身要改 CHANGELOG** ——
+// 若不豁免,发版会永远过不了自己这道门(而那种门迟早被整个关掉)。
+// ---------------------------------------------------------------------------
+{
+  const { judgeChangelog } = require('./check-changelog-fragment') as {
+    judgeChangelog: (
+      changed: readonly string[],
+      unreleasedTouched: boolean,
+      versionBumped: boolean,
+      fragmentsDeleted: boolean,
+    ) => { ok: boolean; reason: string };
+  };
+  const cases: Array<[string, boolean, { ok: boolean; reason: string }]> = [
+    [
+      'P6 changelog:直接改 Unreleased 且无 fragment → 拦',
+      false,
+      judgeChangelog(['CHANGELOG.md', 'src/x.ts'], true, false, false),
+    ],
+    [
+      'P6 changelog:提供了 fragment → 放行',
+      true,
+      judgeChangelog(['CHANGELOG.md', 'changelog.d/my-lane.md'], true, false, false),
+    ],
+    [
+      'P6 changelog:只给 fragment 不碰 CHANGELOG → 放行',
+      true,
+      judgeChangelog(['changelog.d/my-lane.md', 'src/x.ts'], false, false, false),
+    ],
+    [
+      'P6 changelog:反向 — 发版收口(归并 fragment + bump 版本)必须放行',
+      true,
+      judgeChangelog(['CHANGELOG.md', 'package.json', 'changelog.d/a.md'], true, true, true),
+    ],
+    [
+      'P6 changelog:反向 — 只改历史版本段(不碰 Unreleased)放行',
+      true,
+      judgeChangelog(['CHANGELOG.md'], false, false, false),
+    ],
+    [
+      'P6 changelog:反向 — 完全不碰 CHANGELOG 放行',
+      true,
+      judgeChangelog(['src/x.ts', 'docs/testing.md'], false, false, false),
+    ],
+    [
+      'P6 changelog:fragment 目录的 README 不算 fragment',
+      false,
+      judgeChangelog(['CHANGELOG.md', 'changelog.d/README.md'], true, false, false),
+    ],
+    [
+      'P6 changelog:只 bump 版本但没归并 fragment → 仍拦(不是发版形态)',
+      false,
+      judgeChangelog(['CHANGELOG.md', 'package.json'], true, true, false),
+    ],
+  ];
+  for (const [name, wantOk, got] of cases) check(name, got.ok === wantOk, `reason=${got.reason}`);
+}
+
+// ---------------------------------------------------------------------------
 // P2c — CI 接线的 fail-open 面(与 INC-09 同一类:skipped ≠ 通过)
 // ---------------------------------------------------------------------------
 {
