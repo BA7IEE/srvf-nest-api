@@ -6482,6 +6482,160 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "CertificateRecognitionIssuerInputDto": {
+    "properties": {
+      "name": {
+        "description": "机构名称",
+        "example": "深圳市急救中心",
+        "maxLength": 128,
+        "type": "string",
+      },
+      "sortOrder": {
+        "description": "排序权重(默认按数组顺序)",
+        "type": "number",
+      },
+    },
+    "required": [
+      "name",
+    ],
+    "type": "object",
+  },
+  "CertificateRecognitionIssuerResponseDto": {
+    "properties": {
+      "id": {
+        "description": "认可机构 id(实例提交用它,不用机构文字)",
+        "type": "string",
+      },
+      "name": {
+        "description": "机构名称(canonical)",
+        "type": "string",
+      },
+      "sortOrder": {
+        "description": "排序权重",
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "name",
+      "sortOrder",
+    ],
+    "type": "object",
+  },
+  "CertificateRecognitionPolicyListResponseDto": {
+    "properties": {
+      "items": {
+        "description": "该 Standard 的全部认定规则版本(version DESC;含 DRAFT / ACTIVE / RETIRED)",
+        "items": {
+          "$ref": "#/components/schemas/CertificateRecognitionPolicyResponseDto",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "items",
+    ],
+    "type": "object",
+  },
+  "CertificateRecognitionPolicyResponseDto": {
+    "properties": {
+      "activatedAt": {
+        "description": "激活时刻",
+        "nullable": true,
+        "type": "object",
+      },
+      "certNumberMode": {
+        "description": "编号规则",
+        "enum": [
+          "REQUIRED",
+          "OPTIONAL",
+          "NONE",
+        ],
+        "type": "string",
+      },
+      "createdAt": {
+        "description": "创建时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "id": {
+        "description": "主键(cuid)",
+        "type": "string",
+      },
+      "issuerPolicy": {
+        "description": "FIXED 恰好 1 个机构(实例可不传)/ ALLOWLIST ≥1 个(实例必须传 id)/ FREE_TEXT 0 个(实例填自由文本)",
+        "enum": [
+          "FIXED",
+          "ALLOWLIST",
+          "FREE_TEXT",
+        ],
+        "type": "string",
+      },
+      "issuers": {
+        "description": "认可机构集合(随 DRAFT 整体替换;FREE_TEXT 时为空数组)",
+        "items": {
+          "$ref": "#/components/schemas/CertificateRecognitionIssuerResponseDto",
+        },
+        "type": "array",
+      },
+      "retiredAt": {
+        "description": "退役时刻",
+        "nullable": true,
+        "type": "object",
+      },
+      "standardId": {
+        "description": "所属证书标准 id",
+        "type": "string",
+      },
+      "status": {
+        "description": "DRAFT 可编辑 / ACTIVE 生效且只读 / RETIRED 已退役且只读",
+        "enum": [
+          "DRAFT",
+          "ACTIVE",
+          "RETIRED",
+        ],
+        "type": "string",
+      },
+      "updatedAt": {
+        "description": "更新时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "validityMode": {
+        "description": "PERMANENT 到期日必须空 / FIXED_MONTHS 后端按自然月算 / EXPLICIT_REQUIRED 必填 / EXPLICIT_OPTIONAL 可空即终身",
+        "enum": [
+          "PERMANENT",
+          "FIXED_MONTHS",
+          "EXPLICIT_REQUIRED",
+          "EXPLICIT_OPTIONAL",
+        ],
+        "type": "string",
+      },
+      "validityMonths": {
+        "description": "仅 FIXED_MONTHS 有值(1-600);其余模式恒 null",
+        "nullable": true,
+        "type": "number",
+      },
+      "version": {
+        "description": "版本号(同 Standard 内递增;服务端分配)",
+        "example": 2,
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "standardId",
+      "version",
+      "status",
+      "issuerPolicy",
+      "validityMode",
+      "certNumberMode",
+      "issuers",
+      "createdAt",
+      "updatedAt",
+    ],
+    "type": "object",
+  },
   "CertificateResponseDto": {
     "properties": {
       "certNumberFull": {
@@ -6578,6 +6732,249 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "certStatusCode",
       "evidenceAvailable",
       "isInternal",
+      "createdAt",
+      "updatedAt",
+    ],
+    "type": "object",
+  },
+  "CertificateStandardOptionIssuerDto": {
+    "properties": {
+      "id": {
+        "description": "认可机构 id(实例提交用它,不用机构文字)",
+        "type": "string",
+      },
+      "name": {
+        "description": "机构名称",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "name",
+    ],
+    "type": "object",
+  },
+  "CertificateStandardOptionItemDto": {
+    "properties": {
+      "categoryCode": {
+        "description": "类别字典 code",
+        "type": "string",
+      },
+      "code": {
+        "description": "Standard code",
+        "example": "bsafe_l2",
+        "type": "string",
+      },
+      "currentPolicy": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CertificateStandardOptionPolicyDto",
+          },
+        ],
+        "description": "当前 ACTIVE 认定规则摘要;currentlyRecognized=false 时为 null",
+        "nullable": true,
+        "type": "object",
+      },
+      "currentlyRecognized": {
+        "description": "当前是否可用于认定 = 存在 ACTIVE Policy。false 代表「已收录、待认定」——可作为申请人建议,后台**不得**据此直接通过(§11.2 / §13.3)",
+        "example": true,
+        "type": "boolean",
+      },
+      "id": {
+        "description": "Standard id",
+        "type": "string",
+      },
+      "isInternal": {
+        "description": "是否本会颁发",
+        "type": "boolean",
+      },
+      "levelCode": {
+        "description": "等级字典 code",
+        "nullable": true,
+        "type": "string",
+      },
+      "name": {
+        "description": "Standard 名称",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "code",
+      "name",
+      "categoryCode",
+      "isInternal",
+      "currentlyRecognized",
+    ],
+    "type": "object",
+  },
+  "CertificateStandardOptionPolicyDto": {
+    "properties": {
+      "certNumberMode": {
+        "description": "编号规则",
+        "enum": [
+          "REQUIRED",
+          "OPTIONAL",
+          "NONE",
+        ],
+        "type": "string",
+      },
+      "id": {
+        "description": "当前 ACTIVE 认定规则 id",
+        "type": "string",
+      },
+      "issuerPolicy": {
+        "description": "FIXED = 后端自动选唯一机构 / ALLOWLIST = 必须从 issuers 选 / FREE_TEXT = 自由填写",
+        "enum": [
+          "FIXED",
+          "ALLOWLIST",
+          "FREE_TEXT",
+        ],
+        "type": "string",
+      },
+      "issuers": {
+        "description": "认可机构选项(FREE_TEXT 时为空数组)",
+        "items": {
+          "$ref": "#/components/schemas/CertificateStandardOptionIssuerDto",
+        },
+        "type": "array",
+      },
+      "validityMode": {
+        "description": "PERMANENT 到期日必须空 / FIXED_MONTHS 后端算(客户端不得传)/ EXPLICIT_REQUIRED 必填 / EXPLICIT_OPTIONAL 可空即终身",
+        "enum": [
+          "PERMANENT",
+          "FIXED_MONTHS",
+          "EXPLICIT_REQUIRED",
+          "EXPLICIT_OPTIONAL",
+        ],
+        "type": "string",
+      },
+      "validityMonths": {
+        "description": "仅 FIXED_MONTHS 有值(1-600)",
+        "nullable": true,
+        "type": "number",
+      },
+      "version": {
+        "description": "版本号",
+        "example": 2,
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "version",
+      "issuerPolicy",
+      "validityMode",
+      "certNumberMode",
+      "issuers",
+    ],
+    "type": "object",
+  },
+  "CertificateStandardOptionsResponseDto": {
+    "properties": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/CertificateStandardOptionItemDto",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "items",
+    ],
+    "type": "object",
+  },
+  "CertificateStandardResponseDto": {
+    "properties": {
+      "activatedAt": {
+        "description": "首次启用时刻",
+        "nullable": true,
+        "type": "object",
+      },
+      "categoryCode": {
+        "description": "类别字典 code(cert_type)",
+        "example": "bsafe",
+        "type": "string",
+      },
+      "code": {
+        "description": "标准 code(长期稳定标识,创建后不可改不可复用)",
+        "example": "bsafe_l2",
+        "type": "string",
+      },
+      "createdAt": {
+        "description": "创建时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "description": {
+        "description": "说明(≤500)",
+        "nullable": true,
+        "type": "string",
+      },
+      "id": {
+        "description": "主键(cuid)",
+        "example": "cl9z3a8b00000abcd1234efgh",
+        "type": "string",
+      },
+      "isInternal": {
+        "description": "是否本会颁发",
+        "example": false,
+        "type": "boolean",
+      },
+      "kind": {
+        "description": "FAMILY = 仅目录分组(不可被认定 / 不可持有);CREDENTIAL = 可持有证书标准",
+        "enum": [
+          "FAMILY",
+          "CREDENTIAL",
+        ],
+        "example": "CREDENTIAL",
+        "type": "string",
+      },
+      "levelCode": {
+        "description": "等级 / 子类型字典 code(cert_sub_type)",
+        "nullable": true,
+        "type": "string",
+      },
+      "name": {
+        "description": "标准名称",
+        "example": "BSAFE 二级",
+        "type": "string",
+      },
+      "parentId": {
+        "description": "父级 Standard id(必为 FAMILY;与父级 categoryCode 一致)",
+        "nullable": true,
+        "type": "string",
+      },
+      "sortOrder": {
+        "description": "排序权重(越小越前)",
+        "example": 0,
+        "type": "number",
+      },
+      "status": {
+        "description": "DRAFT 可编辑身份字段 / ACTIVE 可用于认定与建证 / INACTIVE 不出现在新建选项",
+        "enum": [
+          "DRAFT",
+          "ACTIVE",
+          "INACTIVE",
+        ],
+        "example": "ACTIVE",
+        "type": "string",
+      },
+      "updatedAt": {
+        "description": "更新时间",
+        "format": "date-time",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "code",
+      "name",
+      "kind",
+      "categoryCode",
+      "isInternal",
+      "status",
+      "sortOrder",
       "createdAt",
       "updatedAt",
     ],
@@ -7766,6 +8163,116 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "certTypeCode",
       "issuingOrg",
       "issuedAt",
+    ],
+    "type": "object",
+  },
+  "CreateCertificateRecognitionPolicyDto": {
+    "properties": {
+      "certNumberMode": {
+        "description": "编号规则",
+        "enum": [
+          "REQUIRED",
+          "OPTIONAL",
+          "NONE",
+        ],
+        "type": "string",
+      },
+      "issuerPolicy": {
+        "description": "机构策略",
+        "enum": [
+          "FIXED",
+          "ALLOWLIST",
+          "FREE_TEXT",
+        ],
+        "type": "string",
+      },
+      "issuers": {
+        "description": "认可机构集合(FIXED 恰好 1 / ALLOWLIST ≥1 / FREE_TEXT 必须空;同名去重后仍重复即 18013)",
+        "items": {
+          "$ref": "#/components/schemas/CertificateRecognitionIssuerInputDto",
+        },
+        "type": "array",
+      },
+      "validityMode": {
+        "description": "有效期模式",
+        "enum": [
+          "PERMANENT",
+          "FIXED_MONTHS",
+          "EXPLICIT_REQUIRED",
+          "EXPLICIT_OPTIONAL",
+        ],
+        "type": "string",
+      },
+      "validityMonths": {
+        "description": "有效月数(**仅** FIXED_MONTHS 允许且必填,1-600;其余模式传值即 18015)",
+        "maximum": 600,
+        "minimum": 1,
+        "type": "number",
+      },
+    },
+    "required": [
+      "issuerPolicy",
+      "validityMode",
+      "certNumberMode",
+      "issuers",
+    ],
+    "type": "object",
+  },
+  "CreateCertificateStandardDto": {
+    "properties": {
+      "categoryCode": {
+        "description": "类别字典 code(必须是 ACTIVE cert_type)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "code": {
+        "description": "标准 code(小写字母/数字/下划线/中横线;创建后不可改不可复用)",
+        "example": "bsafe_l2",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "description": {
+        "description": "说明",
+        "maxLength": 500,
+        "type": "string",
+      },
+      "isInternal": {
+        "description": "是否本会颁发(默认 false)",
+        "type": "boolean",
+      },
+      "kind": {
+        "description": "FAMILY 仅分组 / CREDENTIAL 可持有",
+        "enum": [
+          "FAMILY",
+          "CREDENTIAL",
+        ],
+        "type": "string",
+      },
+      "levelCode": {
+        "description": "等级字典 code(非空时必须是 ACTIVE cert_sub_type)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "name": {
+        "description": "标准名称",
+        "example": "BSAFE 二级",
+        "maxLength": 128,
+        "type": "string",
+      },
+      "parentId": {
+        "description": "父级 Standard id(必为 FAMILY 且同 categoryCode)",
+        "type": "string",
+      },
+      "sortOrder": {
+        "description": "排序权重(默认 0)",
+        "type": "number",
+      },
+    },
+    "required": [
+      "code",
+      "name",
+      "kind",
+      "categoryCode",
     ],
     "type": "object",
   },
@@ -16743,6 +17250,105 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
     },
+    "type": "object",
+  },
+  "UpdateCertificateRecognitionPolicyDto": {
+    "properties": {
+      "certNumberMode": {
+        "description": "编号规则",
+        "enum": [
+          "REQUIRED",
+          "OPTIONAL",
+          "NONE",
+        ],
+        "type": "string",
+      },
+      "issuerPolicy": {
+        "description": "机构策略",
+        "enum": [
+          "FIXED",
+          "ALLOWLIST",
+          "FREE_TEXT",
+        ],
+        "type": "string",
+      },
+      "issuers": {
+        "description": "认可机构集合(传即整体替换,不做增量 merge;不传则保持不动)",
+        "items": {
+          "$ref": "#/components/schemas/CertificateRecognitionIssuerInputDto",
+        },
+        "type": "array",
+      },
+      "validityMode": {
+        "description": "有效期模式",
+        "enum": [
+          "PERMANENT",
+          "FIXED_MONTHS",
+          "EXPLICIT_REQUIRED",
+          "EXPLICIT_OPTIONAL",
+        ],
+        "type": "string",
+      },
+      "validityMonths": {
+        "description": "有效月数(仅 FIXED_MONTHS;显式传 null 语义由「不传」表达,本 DTO 不接受 null)",
+        "maximum": 600,
+        "minimum": 1,
+        "type": "number",
+      },
+    },
+    "type": "object",
+  },
+  "UpdateCertificateRecognitionPolicyStatusDto": {
+    "properties": {
+      "status": {
+        "description": "目标状态。ACTIVE = 激活本版并**原子退役**该 Standard 当前 ACTIVE 版;RETIRED = 直接退役当前 ACTIVE 版。不接受 DRAFT",
+        "enum": [
+          "ACTIVE",
+          "RETIRED",
+        ],
+        "example": "ACTIVE",
+        "type": "string",
+      },
+    },
+    "required": [
+      "status",
+    ],
+    "type": "object",
+  },
+  "UpdateCertificateStandardDto": {
+    "properties": {
+      "description": {
+        "description": "说明",
+        "maxLength": 500,
+        "type": "string",
+      },
+      "name": {
+        "description": "标准名称",
+        "maxLength": 128,
+        "type": "string",
+      },
+      "sortOrder": {
+        "description": "排序权重",
+        "type": "number",
+      },
+    },
+    "type": "object",
+  },
+  "UpdateCertificateStandardStatusDto": {
+    "properties": {
+      "status": {
+        "description": "目标状态(不接受 DRAFT:启用过的标准不可回退)",
+        "enum": [
+          "ACTIVE",
+          "INACTIVE",
+        ],
+        "example": "ACTIVE",
+        "type": "string",
+      },
+    },
+    "required": [
+      "status",
+    ],
     "type": "object",
   },
   "UpdateContentDto": {
@@ -33174,6 +33780,2838 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "批量权限解释(诊断读):逐条返 allow/deny + reason(同单条 11 值枚举)+ matchedGrant;deny 是 200 数据非错误 [rbac: authz.explain-batch.decision]",
       "tags": [
         "Admin - Authz",
+      ],
+    },
+  },
+  "/api/admin/v1/certificate-recognition-policies/{id}": {
+    "delete": {
+      "operationId": "CertificateRecognitionPoliciesController_softDelete",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "204": {
+          "description": "No content",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "18004: 证书认定规则不存在",
+                    "enum": [
+                      18004,
+                    ],
+                    "example": 18004,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "证书认定规则不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "证书认定规则不存在(code=18004)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "18036: 生效或退役认定规则不可修改",
+                    "enum": [
+                      18036,
+                    ],
+                    "example": 18036,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "生效或退役认定规则不可修改",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "生效或退役认定规则不可修改(code=18036)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "软删 DRAFT 认定规则(ACTIVE / RETIRED 恒 18036) [rbac: certificate-recognition-policy.delete.record]",
+      "tags": [
+        "Admin - Certificate Recognition Policies",
+      ],
+    },
+    "get": {
+      "operationId": "CertificateRecognitionPoliciesController_findOne",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/CertificateRecognitionPolicyResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "18004: 证书认定规则不存在",
+                    "enum": [
+                      18004,
+                    ],
+                    "example": 18004,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "证书认定规则不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "证书认定规则不存在(code=18004)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "认定规则详情(含认可机构集合) [rbac: certificate-recognition-policy.read.record]",
+      "tags": [
+        "Admin - Certificate Recognition Policies",
+      ],
+    },
+    "patch": {
+      "operationId": "CertificateRecognitionPoliciesController_update",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateCertificateRecognitionPolicyDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/CertificateRecognitionPolicyResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 18013: 发证机构配置不符合认定规则; 18015: 证书有效期不符合认定规则",
+                    "enum": [
+                      40000,
+                      18013,
+                      18015,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 发证机构配置不符合认定规则(code=18013) / 证书有效期不符合认定规则(code=18015)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "18004: 证书认定规则不存在",
+                    "enum": [
+                      18004,
+                    ],
+                    "example": 18004,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "证书认定规则不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "证书认定规则不存在(code=18004)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "18036: 生效或退役认定规则不可修改",
+                    "enum": [
+                      18036,
+                    ],
+                    "example": 18036,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "生效或退役认定规则不可修改",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "生效或退役认定规则不可修改(code=18036)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "修改 DRAFT 认定规则(传 issuers 即整体替换;ACTIVE / RETIRED 恒 18036) [rbac: certificate-recognition-policy.update.record]",
+      "tags": [
+        "Admin - Certificate Recognition Policies",
+      ],
+    },
+  },
+  "/api/admin/v1/certificate-recognition-policies/{id}/status": {
+    "patch": {
+      "operationId": "CertificateRecognitionPoliciesController_updateStatus",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateCertificateRecognitionPolicyStatusDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/CertificateRecognitionPolicyResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 18012: 该目录节点不是可持有证书标准; 18013: 发证机构配置不符合认定规则; 18015: 证书有效期不符合认定规则",
+                    "enum": [
+                      40000,
+                      18012,
+                      18013,
+                      18015,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 该目录节点不是可持有证书标准(code=18012) / 发证机构配置不符合认定规则(code=18013) / 证书有效期不符合认定规则(code=18015)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "18004: 证书认定规则不存在; 18002: 证书标准不存在",
+                    "enum": [
+                      18004,
+                      18002,
+                    ],
+                    "example": 18004,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "证书认定规则不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "证书认定规则不存在(code=18004) / 证书标准不存在(code=18002)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "18037: 认定规则状态不允许此操作; 18031: 证书标准未启用; 18040: 该证书标准已有生效认定规则,请刷新后重试",
+                    "enum": [
+                      18037,
+                      18031,
+                      18040,
+                    ],
+                    "example": 18037,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "认定规则状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "认定规则状态不允许此操作(code=18037) / 证书标准未启用(code=18031) / 该证书标准已有生效认定规则,请刷新后重试(code=18040)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "激活 / 退役认定规则(ACTIVE 会原子退役该标准当前生效版;不接受 DRAFT) [rbac: certificate-recognition-policy.update.record]",
+      "tags": [
+        "Admin - Certificate Recognition Policies",
+      ],
+    },
+  },
+  "/api/admin/v1/certificate-standards": {
+    "get": {
+      "operationId": "CertificateStandardsController_list",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "按 kind 过滤",
+          "in": "query",
+          "name": "kind",
+          "required": false,
+          "schema": {
+            "enum": [
+              "FAMILY",
+              "CREDENTIAL",
+            ],
+            "type": "string",
+          },
+        },
+        {
+          "description": "按类别字典 code 过滤",
+          "in": "query",
+          "name": "categoryCode",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按等级字典 code 过滤",
+          "in": "query",
+          "name": "levelCode",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按状态过滤",
+          "in": "query",
+          "name": "status",
+          "required": false,
+          "schema": {
+            "enum": [
+              "DRAFT",
+              "ACTIVE",
+              "INACTIVE",
+            ],
+            "type": "string",
+          },
+        },
+        {
+          "description": "按父级过滤(取某 FAMILY 的直接子节点)",
+          "in": "query",
+          "name": "parentId",
+          "required": false,
+          "schema": {
+            "maxLength": 32,
+            "type": "string",
+          },
+        },
+        {
+          "description": "模糊搜 name / code",
+          "in": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/CertificateStandardResponseDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "列出证书标准(分页 + kind / category / level / status / parentId / q) [rbac: certificate-standard.read.record]",
+      "tags": [
+        "Admin - Certificate Standards",
+      ],
+    },
+    "post": {
+      "operationId": "CertificateStandardsController_create",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CreateCertificateStandardDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/CertificateStandardResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 18012: 该目录节点不是可持有证书标准; 18019: 父级证书标准不合法(类别不一致或形成循环); 18010: 证书大类字典 code 不存在或已停用; 18011: 证书子类型字典 code 不存在或已停用",
+                    "enum": [
+                      40000,
+                      18012,
+                      18019,
+                      18010,
+                      18011,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 该目录节点不是可持有证书标准(code=18012) / 父级证书标准不合法(类别不一致或形成循环)(code=18019) / 证书大类字典 code 不存在或已停用(code=18010) / 证书子类型字典 code 不存在或已停用(code=18011)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "18002: 证书标准不存在",
+                    "enum": [
+                      18002,
+                    ],
+                    "example": 18002,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "证书标准不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "证书标准不存在(code=18002)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "18003: 证书标准编码已存在; 18034: 证书标准状态不允许此操作",
+                    "enum": [
+                      18003,
+                      18034,
+                    ],
+                    "example": 18003,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "证书标准编码已存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "证书标准编码已存在(code=18003) / 证书标准状态不允许此操作(code=18034)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "创建证书标准(初始恒 DRAFT;code 唯一且不可复用) [rbac: certificate-standard.create.record]",
+      "tags": [
+        "Admin - Certificate Standards",
+      ],
+    },
+  },
+  "/api/admin/v1/certificate-standards/options": {
+    "get": {
+      "operationId": "CertificateStandardsController_options",
+      "parameters": [
+        {
+          "description": "true = 只返「ACTIVE 且有 ACTIVE Policy」的标准(建证 / 审核下拉用);不传或 false = 也返「已收录待认定」的标准",
+          "in": "query",
+          "name": "recognizedOnly",
+          "required": false,
+          "schema": {
+            "example": true,
+            "type": "boolean",
+          },
+        },
+        {
+          "description": "按类别字典 code 过滤",
+          "in": "query",
+          "name": "categoryCode",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "模糊搜 name / code",
+          "in": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "条数上限(≤200,默认 50)",
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "maximum": 200,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/CertificateStandardOptionsResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "证书标准选择器(只返 CREDENTIAL;带当前 ACTIVE 认定规则摘要与机构选项;recognizedOnly=true 只返可认定的;§16.4 替代入口码:certificate.create.record / certificate.verify.record / recruitment-application.review.certificate 任一即可) [rbac: certificate-standard.read.record]",
+      "tags": [
+        "Admin - Certificate Standards",
+      ],
+    },
+  },
+  "/api/admin/v1/certificate-standards/{id}": {
+    "delete": {
+      "operationId": "CertificateStandardsController_softDelete",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "204": {
+          "description": "No content",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "18002: 证书标准不存在",
+                    "enum": [
+                      18002,
+                    ],
+                    "example": 18002,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "证书标准不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "证书标准不存在(code=18002)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "18032: 证书标准已被引用,不能删除",
+                    "enum": [
+                      18032,
+                    ],
+                    "example": 18032,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "证书标准已被引用,不能删除",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "证书标准已被引用,不能删除(code=18032)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "软删证书标准(被子节点 / 认定规则 / 申报 / 证书引用时禁删 → 18032) [rbac: certificate-standard.delete.record]",
+      "tags": [
+        "Admin - Certificate Standards",
+      ],
+    },
+    "get": {
+      "operationId": "CertificateStandardsController_findOne",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/CertificateStandardResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "18002: 证书标准不存在",
+                    "enum": [
+                      18002,
+                    ],
+                    "example": 18002,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "证书标准不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "证书标准不存在(code=18002)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "证书标准详情(软删返 404) [rbac: certificate-standard.read.record]",
+      "tags": [
+        "Admin - Certificate Standards",
+      ],
+    },
+    "patch": {
+      "operationId": "CertificateStandardsController_update",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateCertificateStandardDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/CertificateStandardResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "18002: 证书标准不存在",
+                    "enum": [
+                      18002,
+                    ],
+                    "example": 18002,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "证书标准不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "证书标准不存在(code=18002)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "修正证书标准文案与排序(只接受 name / description / sortOrder;身份字段永不可改) [rbac: certificate-standard.update.record]",
+      "tags": [
+        "Admin - Certificate Standards",
+      ],
+    },
+  },
+  "/api/admin/v1/certificate-standards/{id}/status": {
+    "patch": {
+      "operationId": "CertificateStandardsController_updateStatus",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateCertificateStandardStatusDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/CertificateStandardResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 18012: 该目录节点不是可持有证书标准; 18019: 父级证书标准不合法(类别不一致或形成循环); 18010: 证书大类字典 code 不存在或已停用; 18011: 证书子类型字典 code 不存在或已停用",
+                    "enum": [
+                      40000,
+                      18012,
+                      18019,
+                      18010,
+                      18011,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 该目录节点不是可持有证书标准(code=18012) / 父级证书标准不合法(类别不一致或形成循环)(code=18019) / 证书大类字典 code 不存在或已停用(code=18010) / 证书子类型字典 code 不存在或已停用(code=18011)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "18002: 证书标准不存在",
+                    "enum": [
+                      18002,
+                    ],
+                    "example": 18002,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "证书标准不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "证书标准不存在(code=18002)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "18034: 证书标准状态不允许此操作",
+                    "enum": [
+                      18034,
+                    ],
+                    "example": 18034,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "证书标准状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "证书标准状态不允许此操作(code=18034)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "证书标准状态迁移(DRAFT→ACTIVE / ACTIVE→INACTIVE / INACTIVE→ACTIVE;恢复 ACTIVE 前重校验字典与父级) [rbac: certificate-standard.update.record]",
+      "tags": [
+        "Admin - Certificate Standards",
+      ],
+    },
+  },
+  "/api/admin/v1/certificate-standards/{standardId}/recognition-policies": {
+    "get": {
+      "operationId": "CertificateRecognitionPoliciesController_list",
+      "parameters": [
+        {
+          "description": "证书标准 id(cuid)",
+          "in": "path",
+          "name": "standardId",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/CertificateRecognitionPolicyListResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "18002: 证书标准不存在",
+                    "enum": [
+                      18002,
+                    ],
+                    "example": 18002,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "证书标准不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "证书标准不存在(code=18002)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "列出某证书标准的全部认定规则版本(version DESC;含 DRAFT / ACTIVE / RETIRED) [rbac: certificate-recognition-policy.read.record]",
+      "tags": [
+        "Admin - Certificate Recognition Policies",
+      ],
+    },
+    "post": {
+      "operationId": "CertificateRecognitionPoliciesController_create",
+      "parameters": [
+        {
+          "description": "证书标准 id(cuid)",
+          "in": "path",
+          "name": "standardId",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CreateCertificateRecognitionPolicyDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/CertificateRecognitionPolicyResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 18012: 该目录节点不是可持有证书标准; 18013: 发证机构配置不符合认定规则; 18015: 证书有效期不符合认定规则",
+                    "enum": [
+                      40000,
+                      18012,
+                      18013,
+                      18015,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 该目录节点不是可持有证书标准(code=18012) / 发证机构配置不符合认定规则(code=18013) / 证书有效期不符合认定规则(code=18015)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "18002: 证书标准不存在",
+                    "enum": [
+                      18002,
+                    ],
+                    "example": 18002,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "证书标准不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "证书标准不存在(code=18002)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "18039: 认定规则版本号已被占用,请刷新后重试",
+                    "enum": [
+                      18039,
+                    ],
+                    "example": 18039,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "认定规则版本号已被占用,请刷新后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "认定规则版本号已被占用,请刷新后重试(code=18039)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "为某证书标准新建认定规则版本(恒 DRAFT;version 服务端在 Standard 行锁内分配) [rbac: certificate-recognition-policy.create.record]",
+      "tags": [
+        "Admin - Certificate Recognition Policies",
       ],
     },
   },

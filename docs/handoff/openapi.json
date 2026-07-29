@@ -53137,7 +53137,7 @@
             "bearer": []
           }
         ],
-        "summary": "证书标准选择器(只返 CREDENTIAL;带当前 ACTIVE 认定规则摘要与机构选项;recognizedOnly=true 只返可认定的) [rbac: certificate-standard.read.record 或 certificate.create/verify.record 或 recruitment-application.review.certificate]",
+        "summary": "证书标准选择器(只返 CREDENTIAL;带当前 ACTIVE 认定规则摘要与机构选项;recognizedOnly=true 只返可认定的;§16.4 替代入口码:certificate.create.record / certificate.verify.record / recruitment-application.review.certificate 任一即可) [rbac: certificate-standard.read.record]",
         "tags": [
           "Admin - Certificate Standards"
         ]

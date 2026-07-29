@@ -416,6 +416,24 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['delete', '/api/admin/v1/members/{memberId}/certificates/{id}'],
   ['patch', '/api/admin/v1/members/{memberId}/certificates/{id}/verify'],
   ['patch', '/api/admin/v1/members/{memberId}/certificates/{id}/reject'],
+  // 证书标准库 PR-3(2026-07-30;冻结稿 §13.1 / §13.2):通用证书标准 7 + 队内认定规则 6 = 13。
+  //
+  // `/options` 必须在 `/{id}` **之前**被 Nest 声明,否则会被动态段吞掉(恒 404)。
+  // 本表不体现声明顺序 —— 顺序由 controller 内方法次序保证,
+  // 且 e2e「§16.4 options 替代入口码」用真请求证明它没被吞。
+  ['get', '/api/admin/v1/certificate-standards'],
+  ['post', '/api/admin/v1/certificate-standards'],
+  ['get', '/api/admin/v1/certificate-standards/options'],
+  ['get', '/api/admin/v1/certificate-standards/{id}'],
+  ['patch', '/api/admin/v1/certificate-standards/{id}'],
+  ['delete', '/api/admin/v1/certificate-standards/{id}'],
+  ['patch', '/api/admin/v1/certificate-standards/{id}/status'],
+  ['get', '/api/admin/v1/certificate-standards/{standardId}/recognition-policies'],
+  ['post', '/api/admin/v1/certificate-standards/{standardId}/recognition-policies'],
+  ['get', '/api/admin/v1/certificate-recognition-policies/{id}'],
+  ['patch', '/api/admin/v1/certificate-recognition-policies/{id}'],
+  ['delete', '/api/admin/v1/certificate-recognition-policies/{id}'],
+  ['patch', '/api/admin/v1/certificate-recognition-policies/{id}/status'],
 
   // 保险模块 T2 + D-INSURANCE v3 PR2:队统一保单 CRUD +
   // 覆盖名单管理(单加/一键加幂等/移除)+ admin 查队员自购保险(read.other,镜像 certificates
@@ -1419,8 +1437,11 @@ describe('OpenAPI 契约快照', () => {
     expect(Object.keys(item[method]?.responses ?? {}).length).toBeGreaterThan(0);
   });
 
-  it('PR-F 离队影响预检与发起人移交落地后路由足迹精确为 416', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(416);
+  // 证书标准库 PR-3(2026-07-30):+13(证书标准 7 + 队内认定规则 6)→ 429。
+  // 这个数字被 scripts/docs-counts.ts 反向交叉校验(条目数 ≠ 本断言即 exit 2),
+  // 所以它不会和上面的表悄悄脱钩。
+  it('证书标准库 PR-3 落地后路由足迹精确为 429', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(429);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {
