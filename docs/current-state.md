@@ -18,10 +18,10 @@
 | 计数项 | 值 |
 |---|---|
 | 模块 | 36 |
-| Controller | 81 |
+| Controller | 83 |
 | Endpoint | 416 |
 | Migration | 66 |
-| BizCode | 280 |
+| BizCode | 295 |
 | 权限码 | 222 |
 | AuditLogEvent | 127 |
 | 内建角色 | 15 |
