@@ -1609,6 +1609,117 @@ async function runTrustedJudgeAssertions(): Promise<void> {
 void (async (): Promise<void> => {
   await runConnectedDbAssertions();
   await runTrustedJudgeAssertions();
+  // ---------------------------------------------------------------------------
+  // 元数据 ↔ 实现 绑定:标 covered / live 的探针必须真的执行守护
+  //
+  // 立项理由(2026-07-29 元核验发现,同一个病的**第三次复发**):
+  //   ① 17 条 lint 选择器「都有阳性对照」—— 实为巧合对齐,无机制保证
+  //   ② 37 条 parity「证明判定正确」—— 只证明两把刻错的尺子读数相同
+  //   ③ 4 条事故「covered = 会被真实回放」—— 只是登记簿里手写的一个词
+  //
+  // 三次都是**元数据描述实现,而没有任何东西检查这个描述是真的**。
+  // 前两次已各自补了断言;这条把第三处也钉上,并把模式本身写进注释:
+  // 凡「元数据声称实现具备某性质」,必须有断言把两者绑死,否则元数据迟早变成谎话 ——
+  // 而基于谎话做的判断(「回放 20/20,守护可信」)比没有数字更危险。
+  //
+  // 判据:探针函数体必须出现 hookExit( / execFileSync( / spawnSync( 之一,
+  // 即「真的把输入喂给守护并读它的裁决」。只读源码字符串的一律不算。
+  // ---------------------------------------------------------------------------
+  {
+    const REPO = path.resolve(__dirname, '..');
+    const reg = JSON.parse(
+      fs.readFileSync(path.join(REPO, 'harness/incidents.json'), 'utf-8'),
+    ) as {
+      incidents: Array<{ id: string; status: string; probe?: string }>;
+      inverse: Array<{ id: string; probeKind?: string; probe: string }>;
+    };
+    const src = fs.readFileSync(path.join(REPO, 'scripts/replay-incidents.ts'), 'utf-8');
+
+    // 按顶层探针键切分函数体:从本键起到下一个键为止
+    const marks: Array<[string, number]> = [];
+    const keyRe = /^ {2}'([a-z0-9-]+)':\s*(?:\(\)\s*=>\s*)?/gm;
+    let mm: RegExpExecArray | null;
+    while ((mm = keyRe.exec(src)) !== null) marks.push([mm[1], mm.index]);
+    const bodyOf = (name: string): string | null => {
+      const i = marks.findIndex(([n]) => n === name);
+      if (i < 0) return null;
+      return src.slice(marks[i][1], i + 1 < marks.length ? marks[i + 1][1] : src.length);
+    };
+    const EXECUTES = /hookExit\(|execFileSync\(|spawnSync\(/;
+
+    /**
+     * 判定抽成纯函数,好处有二:
+     *   ① **阳性对照可以喂合成登记簿**验证「标错必红」—— 不必去改真的
+     *      `harness/incidents.json`(受保护路径;为跑一次测试而申请授权是本末倒置)
+     *   ② 判定本身可被读懂与复查,不埋在一段 for 循环里
+     */
+    const findLiars = (
+      registry: typeof reg,
+      resolve: (probe: string) => string | null,
+    ): string[] => {
+      const out: string[] = [];
+      for (const inc of registry.incidents) {
+        if (inc.status !== 'covered') continue;
+        if (!inc.probe) {
+          out.push(`${inc.id}:标 covered 却没有 probe`);
+          continue;
+        }
+        const body = resolve(inc.probe);
+        if (body === null) out.push(`${inc.id}:probe '${inc.probe}' 在 replay 里不存在`);
+        else if (!EXECUTES.test(body)) out.push(`${inc.id}(${inc.probe}):标 covered 但只做静态检查`);
+      }
+      for (const inv of registry.inverse ?? []) {
+        if (inv.probeKind !== 'live') continue;
+        const body = resolve(inv.probe);
+        if (body === null) out.push(`${inv.id}:probe '${inv.probe}' 在 replay 里不存在`);
+        else if (!EXECUTES.test(body)) out.push(`${inv.id}(${inv.probe}):标 live 但只做静态检查`);
+      }
+      return out;
+    };
+
+    // 阳性对照:合成一份「把静态探针标成 covered / live」的登记簿,必须被抓出来。
+    // 不做这一步,上面那条断言就只是又一个「看着绿」的东西 —— 而那正是本条要治的病。
+    const fakeReg = {
+      incidents: [
+        { id: 'FAKE-01', status: 'covered', probe: 'only-reads-source' },
+        { id: 'FAKE-02', status: 'covered', probe: 'really-runs-guard' },
+        { id: 'FAKE-03', status: 'structural', probe: 'only-reads-source' },
+      ],
+      inverse: [{ id: 'FAKE-INV', probeKind: 'live', probe: 'only-reads-source' }],
+    } as unknown as typeof reg;
+    const fakeBodies: Record<string, string> = {
+      'only-reads-source': "const s = readFile(p); return [s.includes('x'), ''];",
+      'really-runs-guard': "const code = hookExit('redzone-guard.sh', edit('AGENTS.md'));",
+    };
+    const fakeLiars = findLiars(fakeReg, (p) => fakeBodies[p] ?? null);
+    check(
+      '登记簿:阳性对照 — 把静态探针标成 covered / live 必被抓出',
+      fakeLiars.length === 2 &&
+        fakeLiars.some((l) => l.startsWith('FAKE-01')) &&
+        fakeLiars.some((l) => l.startsWith('FAKE-INV')),
+      `实际抓出 ${fakeLiars.length} 条:${fakeLiars.join(' · ')}`,
+    );
+    check(
+      '登记簿:阳性对照 — 真执行守护的 / 标 structural 的 均不误报',
+      !fakeLiars.some((l) => l.startsWith('FAKE-02') || l.startsWith('FAKE-03')),
+      fakeLiars.join(' · '),
+    );
+
+    const liars = findLiars(reg, bodyOf);
+
+    check(
+      '登记簿:标 covered / live 的探针确实执行守护(元数据不得说谎)',
+      liars.length === 0,
+      liars.join(' · '),
+    );
+    // 反向:切分逻辑本身要有效 —— 一个都抽不出来时上面会「零违规」假绿
+    check(
+      '登记簿:探针体切分有效(防「一个都没抽到」的假绿)',
+      marks.length >= 15,
+      `只抽到 ${marks.length} 个探针体,切分正则可能已失配`,
+    );
+  }
+
   process.stdout.write(`\n${passCount} passed, ${failures.length} failed\n`);
   if (failures.length > 0) process.exit(1);
 })();
