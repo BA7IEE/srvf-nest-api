@@ -23,16 +23,24 @@ const ROOT = path.resolve(__dirname, '..');
 interface Incident {
   readonly id: string;
   readonly title: string;
-  readonly status: 'covered' | 'uncovered' | 'accepted';
+  /**
+   * covered    = **真触发**:探针实际执行守护本体(跑 hook / 门禁命令 / lint)并断言其裁决
+   * structural = **结构断言**:探针只查源码或配置里的字符串/结构,不执行守护
+   * 两者强度差一个量级,所以分开计数(2026-07-29 跨模型评审 finding 7)。
+   */
+  readonly status: 'covered' | 'structural' | 'uncovered' | 'accepted';
   readonly guard: string | null;
   readonly probe?: string;
   readonly note?: string;
+  readonly probeNote?: string;
 }
 interface Inverse {
   readonly id: string;
   readonly title: string;
   readonly why: string;
   readonly probe: string;
+  readonly probeKind: 'live' | 'structural';
+  readonly probeNote?: string;
 }
 
 const registry = JSON.parse(
@@ -278,17 +286,47 @@ const probes: Record<string, () => [boolean, string]> = {
   },
 };
 
+/** 跑一组探针,返回该组的 (通过数, 总数)。 */
+function runGroup(
+  label: string,
+  items: ReadonlyArray<{ id: string; title: string; probe?: string }>,
+): [number, number] {
+  console.log(label);
+  const before = passed;
+  let total = 0;
+  for (const it of items) {
+    if (!it.probe) {
+      skipped.push(`${it.id} 已登记但无 probe`);
+      continue;
+    }
+    const probe = probes[it.probe];
+    if (!probe) {
+      failures.push(`✗ ${it.id} — 探针 '${it.probe}' 未实现(登记簿与脚本脱节)`);
+      total++;
+      continue;
+    }
+    total++;
+    const [ok, detail] = probe();
+    record(ok, `${it.id} ${it.title.slice(0, 46)}`, detail);
+  }
+  return [passed - before, total];
+}
+
 function main(): void {
   const coverageOnly = process.argv.includes('--coverage');
 
-  const covered = registry.incidents.filter((i) => i.status === 'covered');
+  const live = registry.incidents.filter((i) => i.status === 'covered');
+  const structural = registry.incidents.filter((i) => i.status === 'structural');
   const uncovered = registry.incidents.filter((i) => i.status === 'uncovered');
   const accepted = registry.incidents.filter((i) => i.status === 'accepted');
+  const invLive = registry.inverse.filter((i) => i.probeKind === 'live');
+  const invStructural = registry.inverse.filter((i) => i.probeKind === 'structural');
 
   console.log(
     `事故登记簿:${registry.incidents.length} 条 ` +
-      `(covered ${covered.length} / uncovered ${uncovered.length} / accepted ${accepted.length})` +
-      ` + 反向案例 ${registry.inverse.length} 条\n`,
+      `(真触发 ${live.length} / 结构断言 ${structural.length} / ` +
+      `uncovered ${uncovered.length} / accepted ${accepted.length})\n` +
+      `反向案例:${registry.inverse.length} 条(真触发 ${invLive.length} / 结构断言 ${invStructural.length})\n`,
   );
 
   if (coverageOnly) {
@@ -296,35 +334,24 @@ function main(): void {
       console.log(`[${i.status.toUpperCase()}] ${i.id} ${i.title}`);
       if (i.note) console.log(`         ${i.note}`);
     }
-    console.log('\n(--coverage 只列缺口,不跑探针)');
+    console.log('\n── 结构断言(只查源码字符串,不执行守护)──');
+    for (const i of [...structural, ...invStructural])
+      console.log(`[STRUCTURAL] ${i.id} ${i.title}`);
+    console.log('\n(--coverage 只列缺口与弱探针,不跑探针)');
     return;
   }
 
-  console.log('── 回放:事故是否仍会被拦下 ──');
-  for (const inc of covered) {
-    if (!inc.probe) {
-      skipped.push(`${inc.id} 标 covered 但无 probe`);
-      continue;
-    }
-    const probe = probes[inc.probe];
-    if (!probe) {
-      failures.push(`✗ ${inc.id} — 探针 '${inc.probe}' 未实现(登记簿与脚本脱节)`);
-      continue;
-    }
-    const [ok, detail] = probe();
-    record(ok, `${inc.id} ${inc.title.slice(0, 46)}`, detail);
-  }
+  // ── 第一组:真触发。探针实际跑守护本体并断言裁决 ──
+  const [liveOk, liveTotal] = runGroup(
+    '── ① 真触发:实际执行守护并断言其裁决 ──',
+    [...live, ...invLive],
+  );
 
-  console.log('\n── 反向:不该拦时必须不拦 ──');
-  for (const inv of registry.inverse) {
-    const probe = probes[inv.probe];
-    if (!probe) {
-      failures.push(`✗ ${inv.id} — 探针 '${inv.probe}' 未实现`);
-      continue;
-    }
-    const [ok, detail] = probe();
-    record(ok, `${inv.id} ${inv.title.slice(0, 46)}`, detail);
-  }
+  // ── 第二组:结构断言。只查源码/配置,发现不了「代码还在但不起作用」──
+  const [structOk, structTotal] = runGroup(
+    '\n── ② 结构断言:只查源码/配置字符串,**不执行守护** ──',
+    [...structural, ...invStructural],
+  );
 
   if (uncovered.length > 0 || accepted.length > 0) {
     console.log('\n── 已知缺口(不假装安全)──');
@@ -333,7 +360,18 @@ function main(): void {
 
   for (const s of skipped) console.log(`\n⚠️  ${s}`);
   for (const f of failures) console.error(f);
-  console.log(`\n${passed} passed, ${failures.length} failed`);
+
+  // 分组计数,**不再给一个统称的总数**(2026-07-29 跨模型评审 finding 7):
+  // 此前统称「事故回放 20/20」,而其中只有 8 条真的触发了守护 ——
+  // 一个漂亮的总数把强度差异抹平了,而强度差异恰恰是读者最需要知道的事。
+  console.log(
+    `\n真触发 ${liveOk}/${liveTotal} 通过 · 结构断言 ${structOk}/${structTotal} 通过 · ` +
+      `失败 ${failures.length}`,
+  );
+  console.log(
+    '注:结构断言只能发现「那行代码被删了」,发现不了「那行代码不再起作用」——' +
+      '\n    别把两组加起来当成同一种保证。',
+  );
   if (failures.length > 0) {
     console.error(
       '\n⚠️ 历史事故的守护已失效,或守护开始误伤。两者都意味着防线不可信 ——' +

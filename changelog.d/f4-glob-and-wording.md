@@ -1,0 +1,13 @@
+- **删掉两个自制 glob 引擎,换成 Node 内置 `path.matchesGlob`(跨模型评审 F5:两把刻错的尺子读数相同)**。原实现对含 `**` 的 glob 只做「前缀 + 后缀」两头匹配,于是 `redzone.json` 里那条 src 下的 throttler glob **实测匹配不到任何文件**;而 `redzone-guard.sh` 的 bash 版**一致地错**,所以 37 条 parity 用例全绿 —— 它们证明的只是「两把刻错的尺子读数相同」。**parity(一致)≠ correctness(正确)。**
+  - `check-redzone.ts` 的 `matchesGlob` 改为 `path.matchesGlob`;`redzone-guard.sh` 删掉整个 bash `matches_glob`,退化成纯 I/O —— 取路径 → 调 `check-redzone.ts --hook` → 按结果拼人话消息。授权令牌的匹配也一并搬进去(它同样要 glob,留在 shell 就等于留半套语义)。判定不可用时 fail-closed。
+  - 选 Node 内置而不是 minimatch:F3 的 trusted 裁判在 `pull_request_target` 下**禁止装依赖**(装依赖 = 执行 PR 提供的 lifecycle script),要让三处消费者共用同一套语义,唯一选择就是免依赖的内置实现。它目前标 experimental —— 缓解办法是下面那张期望值表把每条 glob 的裁决逐条钉死,语义一旦漂移 CI 当场红。**因此本批未新增任何依赖,`package.json` / `pnpm-lock.yaml` 未动。**
+- **限流 glob 修正**:`src/**/*throttler*`(零命中)→ `src/**/*throttle*`,实测覆盖 13/13 个 throttle 与 throttler 文件(后者含前者)。同时把限流从 `auth-frozen` 挪到 `authz-core`,让「refresh token 冻结」与「判权 + 限流」各自成条。
+- **parity 自测改三方结构**:`fixture` + **期望值** + TS 结果 + Hook 结果,**57/57 条 glob 各有正反样例,共 118 条**。新增两条覆盖闭环断言:registry 里加了 glob 却不加样例 → 红;表里留着 registry 已删的 glob → 也红(与 eslint 侧「选择器覆盖闭环」同源)。负样例的语义是**全局不受保护**,所以都挑成不会被别的 glob 顺手捞走的近似路径。
+- **rename 双路径**:`check-redzone.ts` 改用 `git diff --no-renames`,让 rename 变成 `D 旧路径` + `A 新路径`。实测对照 —— 默认 `R100 scripts/harness-grant.ts → scripts/moved-grant.ts`(只判新路径 = 不命中);加 `--no-renames` 后两条都进变更集,裁决为「触碰受保护路径 1 处」。
+- **三处诚实订正**:
+  - `AGENTS.md` §1「语法级铁律(17 条)」→「**字面语法拦截**(17 条,非语义分析)」,并就地写明 `import 别名` / `变量中转` / `computed property` **已知可绕过**。
+  - `AGENTS.md` 红区一行 → 权威判定 = F3 的 base-trusted 裁判,本地 hook 是**提前反馈,不是最终边界**。
+  - `pnpm harness:replay` 不再统称「20/20」,拆成**真触发 8 条**(实跑守护并断言裁决)与**结构断言 12 条**(只查源码字符串)分别计数,并在输出末尾写明「结构断言发现不了『代码还在但不起作用』,别把两组加起来当同一种保证」。`incidents.json` 的 `covered` 收窄为只授予真触发那组,其余改标 `structural`,每条附 `probeNote` 说明弱在哪。
+    > 与评审报告的 9/10 略有出入:按「探针是否执行守护本体」这条写进登记簿的判据逐条核下来是 **8/12**(评审记的是 9/10)。差异在 `INV-06` —— 它确实 spawn 了一条命令,但那条命令是 grep 源码统计豁免注释数量,不是守护本体,故归结构断言。
+- **eslint 补 5 条对抗用例,断言为「当前放行」**:`UseGuards as UG` / `const db = this.prisma; db.user.delete()` / `const p = process; p.env.X` / `const C = Map; new C()` / `PickType as PT` —— 实测 5/5 全部绕过。它们标 `knownGap`,在输出里**单独成段计数**(`32 passed, 0 failed, 5 known gaps`),不混进「通过」的叙事。若哪天缺口被补上,该用例会红并提示来摘掉标记 —— 缺口关闭这件事因此不会被忘记。自定义 ESLint 规则(import binding resolution)已拍板另立 goal,本批不做。
+- ⚠️ **成本如实记录**:parity 由 37 条增至 118 条且每条都真跑一次 hook(hook 内是 tsx 冷启动 ≈ 175 ms),`harness-guards.selftest` 从约 4 s 增至约 28 s。换来的是「每条 glob 都有期望值、正反样例齐全」——若这个代价在日常 `agent:check:quick` 里太重,可把 hook 那一列收窄成按条目抽样(TS 列仍跑满 118 条),但那会削弱 hook 侧的阳性对照,故未擅自这么做。

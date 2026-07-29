@@ -1,29 +1,40 @@
 {
   "_comment": [
-    "事故 → 守护 覆盖登记簿(Harness 3.0 P2.5)。",
+    "事故 → 守护 覆盖登记簿(Harness 3.0 P2.5;F4 起区分两种探针强度)。",
     "",
     "为什么要这个:仓库的教训一直只存在于 memory 与 PR 叙事里 —— 它们无法回答",
-    "『今天这个事故还会不会重演』。本登记簿把每条真实事故绑到一个**可回放的探针**上:",
-    "  covered   → scripts/replay-incidents.ts 会实际触发该场景并断言守护确实拦下",
-    "  uncovered → 明确承认无机器守护(靠散文/人),不假装安全",
-    "  accepted  → 该风险已被评估并接受(附理由)",
+    "『今天这个事故还会不会重演』。本登记簿把每条真实事故绑到一个可回放的探针上。",
+    "",
+    "探针分两档,**强度差一个量级,所以分开计数**(2026-07-29 跨模型评审 finding 7):",
+    "  covered(真触发)  → 探针**实际执行守护本体**(跑 hook / 跑门禁命令 / 跑 lint)",
+    "                       并断言它的裁决。守护若失效,探针当场红。",
+    "  structural(结构断言)→ 探针只检查源码或配置里的字符串/结构,**不执行守护**。",
+    "                       它能发现『那行代码被删了』,发现不了『那行代码不再起作用』。",
+    "  uncovered           → 明确承认无机器守护(靠散文/人),不假装安全",
+    "  accepted            → 该风险已被评估并接受(附理由)",
+    "",
+    "为什么要分:此前 20 条探针被统称『事故回放 20/20』,而其中只有 8 条真的触发了守护,",
+    "另外 12 条是 grep 源码字符串 —— 上面这段说明自己写着 covered = 『实际触发该场景并",
+    "断言守护确实拦下』,与实现不符。把两档分开计数,是为了让『我们到底验证了什么』",
+    "一眼可见,而不是靠一个漂亮的总数掩盖强度差异。",
     "",
     "另含**反向案例**(inverse):不该拦时必须不拦。只测『该拦时拦』会漏掉误伤,",
-    "而误伤到让人绕过的程度,防线同样失效(P2b 实测过三次误伤)。",
+    "而误伤到让人绕过的程度,防线同样失效(P2b 实测过三次误伤)。反向案例同样分两档。",
     "",
     "用途:改 harness / 换模型 / 大重构前后各跑一次 `pnpm harness:replay`,",
     "对比结果即可回答『规则还管不管用』——这正是 P3 恒读层重写敢动手的前提。"
   ],
-  "version": 1,
+  "version": 2,
   "incidents": [
     {
       "id": "INC-01",
       "title": "复用 worktree 的陈旧 Prisma 生成物,让未触碰的 src 文件爆数百个 unsafe-* 假错",
       "source": "memory/reused-worktree-stale-prisma-client.md",
       "cost": "单次事故浪费 5-15 轮排查(且会让人先怀疑自己的 diff)",
-      "status": "covered",
+      "status": "structural",
       "guard": "preflight-gate.sh 检测生成物缺失/陈旧 → 不发通行标记 → 写操作被拒",
-      "probe": "prisma-stale"
+      "probe": "prisma-stale",
+      "probeNote": "只 grep preflight-gate.sh 里的两个串,不实际制造陈旧生成物再验证门禁真的拦"
     },
     {
       "id": "INC-02",
@@ -41,16 +52,18 @@
       "cost": "简报数字错误,基于错数字的判断连带错",
       "status": "covered",
       "guard": "docs:counts:check(AST 提取)+ P4a 起 RBAC_MAP 派生段改生成 + 新鲜度校验",
-      "probe": "counts-drift"
+      "probe": "counts-drift",
+      "probeNote": "真跑 docs:counts:check 这道门本身;但不主动制造漂移,验的是『门当前是绿的』而非『门能抓到漂移』"
     },
     {
       "id": "INC-04",
       "title": "worktree 派生测试库撞名 → 两条 lane 共库互相 TRUNCATE",
       "source": "第五轮 review R5-04",
       "cost": "随机、极难归因的跨 lane 测试失败",
-      "status": "covered",
+      "status": "structural",
       "guard": "harness-guards.selftest 的 R5-04 派生样例 + P1 的 63 字符硬断言",
-      "probe": "db-name-collision"
+      "probe": "db-name-collision",
+      "probeNote": "只 grep worktree-db.ts 里的两个标识符;真正的碰撞样例断言在 harness-guards.selftest 内(那边是真跑纯函数)"
     },
     {
       "id": "INC-05",
@@ -67,7 +80,7 @@
       "source": "P2a 预研实测(矩阵未记载)",
       "cost": "lint 全绿但 12 条铁律失效,完全静默",
       "status": "covered",
-      "guard": "harness-eslint.selftest 30 例阳性对照(每条规则喂必定违规片段)",
+      "guard": "harness-eslint.selftest 阳性对照(每条规则喂必定违规片段)+ F2 起增加走 pnpm lint 正式入口的接线自测",
       "probe": "eslint-rules-live"
     },
     {
@@ -75,45 +88,50 @@
       "title": "开工门禁用 [ -x ] 判可执行性,而脚本是 644 → 检查整段跳过却报 PASS",
       "source": "P2b-fix 实测(#804)",
       "cost": "门禁宣布『已检查、通过』而实际未检查 —— 最恶劣的 fail-open",
-      "status": "covered",
+      "status": "structural",
       "guard": "harness-hooks.selftest 的 gate:preflight 脚本缺失时 fail-closed",
-      "probe": "gate-fail-open"
+      "probe": "gate-fail-open",
+      "probeNote": "只 grep preflight-gate.sh;真触发版本(把脚本改成不可读再跑门禁)在 harness-hooks.selftest 内"
     },
     {
       "id": "INC-08",
       "title": "pg_locks 是实例级视图 + TEMPLATE 克隆保留 OID → 并发屏障被别 worker 的锁提前放行",
       "source": "P1 对抗性评审实测(模板与 _w1/_w2 的 OID 均为 40368849)",
       "cost": "真并发测试静默降级为『只测预检查路径』,断言照样通过",
-      "status": "covered",
+      "status": "structural",
       "guard": "harness-guards.selftest 的静态检查:pg_locks/pg_stat_activity 必须按当前库或自身 pid 收敛",
-      "probe": "pglocks-db-scoped"
+      "probe": "pglocks-db-scoped",
+      "probeNote": "对 e2e 源码做正则扫描;要真触发得起两个 worker 造锁竞争,成本远超回放应有的秒级"
     },
     {
       "id": "INC-09",
       "title": "CI gate 把 needs 依赖失败导致的 skipped 当成通过 → e2e 从未运行而必需检查报绿",
       "source": "P1 对抗性评审",
       "cost": "改了 src 的 PR 在零测试的情况下满足 required check",
-      "status": "covered",
+      "status": "structural",
       "guard": "harness-guards.selftest 的 P1 gate 断言(必须正面证明 docs_only)",
-      "probe": "ci-gate-fail-open"
+      "probe": "ci-gate-fail-open",
+      "probeNote": "grep ci.yml;真触发需要在 GitHub 上跑一次故意失败的 changeset job,回放做不到"
     },
     {
       "id": "INC-10",
       "title": "handoff『接续上一版』用字符串排序 → v0.9.0 > v0.62.0 指错上一版",
       "source": "P4c 试跑实测",
       "cost": "发版文档指向错误的前序版本",
-      "status": "covered",
+      "status": "structural",
       "guard": "harness-guards.selftest 的 P4c semverKey 断言",
-      "probe": "semver-sort"
+      "probe": "semver-sort",
+      "probeNote": "只 grep release-prepare.ts 里有没有 semverKey;真正的排序断言在 harness-guards.selftest 内"
     },
     {
       "id": "INC-11",
       "title": "守卫脚本自身不在保护内 → 违规 PR 可在同一分支把检查改成恒 PASS,检查名不变、CI 照绿",
       "source": "P2b 对抗性评审 blocker",
       "cost": "唯一权威(CI 绿)被自考自评",
-      "status": "covered",
-      "guard": "redzone.json selfGuard + ci-guard-coverage 断言(CI 引用的守卫必须在保护内)",
-      "probe": "judge-protected"
+      "status": "structural",
+      "guard": "redzone.json selfGuard + ci-guard-coverage 断言(CI 引用的守卫必须在保护内)+ F3 起 base-trusted 裁判",
+      "probe": "judge-protected",
+      "probeNote": "只检查 redzone.json 的 globs 数组含不含两条关键项;真触发在 harness-guards.selftest 的三方比对与 F3 行为断言内"
     },
     {
       "id": "INC-12",
@@ -138,20 +156,22 @@
       "title": "文档瘦身砍掉了脚本依赖的锚点行,而该脚本从未真跑过 —— 缺陷潜伏到第一次发版才炸",
       "source": "2026-07-29 v0.63.0 发版现场(release:prepare 首次真实使用)",
       "cost": "发版链两处同时坏:openapi 快照不随版本刷新(撞自家 CI 门)+ current-state 回填步骤永久失败",
-      "status": "covered",
+      "status": "structural",
       "guard": "release-prepare 增加「openapi 快照随版本刷新」步骤;删除依赖已被 P3 删除之锚点行的回填步骤;两者由 release-prepare-anchors 探针静态守住",
       "lesson": "两条共同点是**只在第一次真实端到端跑时显形**。自测覆盖了每个步骤的逻辑,却没有一次真的从 Unreleased 走到 tag。推论有二:①**加一道门时必须同时问「哪些既有流程会撞上它」**(openapi 门把发版卡死);②**没有任何守护看得见「脚本依赖某行文档」这种关系** —— 恒读层守护只管体积,docs-counts 只管计数块,谁都不知道有个脚本在找那一行",
-      "probe": "release-prepare-anchors"
+      "probe": "release-prepare-anchors",
+      "probeNote": "静态判 release-prepare.ts 的三条不变式。真触发要跑一次完整发版,与『回放必须秒级且不污染仓库』直接冲突 —— 这条缺口如实留着"
     },
     {
       "id": "INC-16",
       "title": "文档被单测钉成契约:搬动 NEXT_TASKS 里一条『已完成』条目,打挂了 notifications 的 canonical 文档断言",
       "source": "2026-07-29 P7 熵清理现场(CI 抓到,本地未跑全量 unit)",
       "cost": "一次 CI 红;若无该 spec,则是『业务决议的三处互证记录悄悄少一处』",
-      "status": "covered",
+      "status": "structural",
       "guard": "src/modules/notifications/notification-canonical-docs.spec.ts —— 把 Decision 15.1/15.2 的关键串同时钉在 current-state / NEXT_TASKS / notifications CLAUDE.md 三处",
       "lesson": "文档不总是『只是文档』:少数文档段落是代码级契约的一部分。**搬动/精简文档前先 grep 谁在 readFileSync 它** —— 本仓有 3 个这类 spec(notification-canonical-docs / bd2-department-literal-gate / cos-production-sop)。该条目虽标 ✅ 已收口,却是**当前生效的业务决议**而非完成的任务,故刻意留在活跃区并就地注明原因",
-      "probe": "doc-pinned-by-spec"
+      "probe": "doc-pinned-by-spec",
+      "probeNote": "按 spec 的断言逐条核对被钉住的串还在不在,但不跑那个 spec;真触发 = pnpm test 里的那条 unit"
     },
     {
       "id": "INC-15",
@@ -168,9 +188,10 @@
       "title": "worktree 静默落后 origin/main,基于陈旧代码得出的『正确』结论其实是错的",
       "source": "memory/stale-worktree-before-verify.md",
       "cost": "元核验/数字研究结论错误",
-      "status": "covered",
+      "status": "structural",
       "guard": "preflight-gate 把『落后 origin/main』列为硬条件(拦写)",
-      "probe": "behind-main-blocks"
+      "probe": "behind-main-blocks",
+      "probeNote": "只 grep preflight-gate.sh 的两个变量名;真触发要造一个落后的 worktree 再跑门禁"
     }
   ],
   "inverse": [
@@ -178,37 +199,45 @@
       "id": "INV-01",
       "title": "工作树脏 / 有 open PR 时,继续当前任务的写操作必须放行",
       "why": "P2b 曾把它们升为拦写,导致连续开发从第二次写入起全线卡死(作者被自己锁死)",
-      "probe": "dirty-tree-allows-write"
+      "probe": "dirty-tree-allows-write",
+      "probeKind": "structural",
+      "probeNote": "grep preflight-gate.sh 里的 ADVISORY 分支;真触发要把工作树弄脏再跑门禁"
     },
     {
       "id": "INV-02",
       "title": "提交信息里**描述**写侧命令(如『禁止 sed -i』)不得被判为要执行它",
       "why": "P2b 实测误伤:commit message 里提到命令 → 被当成要执行 → 拒绝提交",
-      "probe": "descriptive-text-allowed"
+      "probe": "descriptive-text-allowed",
+      "probeKind": "live"
     },
     {
       "id": "INV-03",
       "title": "从受保护路径**读出**(cp 到临时目录)必须放行",
       "why": "P2b 实测误伤:红区只该拦『写入』,不该拦『读出』",
-      "probe": "read-from-protected-allowed"
+      "probe": "read-from-protected-allowed",
+      "probeKind": "live"
     },
     {
       "id": "INV-04",
       "title": "仓库外文件(如 ~/.claude 下的 memory)不受本仓门禁管",
       "why": "P2b 实测误伤:门禁语义是『本仓状态不干净时别改本仓代码』,与仓外无关",
-      "probe": "outside-repo-allowed"
+      "probe": "outside-repo-allowed",
+      "probeKind": "live"
     },
     {
       "id": "INV-05",
       "title": "普通业务代码 / 普通 e2e / 普通文档的写入必须放行",
       "why": "红区若误伤日常路径,会训练出『无视门禁』的习惯 —— 比没有门禁更糟",
-      "probe": "normal-paths-allowed"
+      "probe": "normal-paths-allowed",
+      "probeKind": "live"
     },
     {
       "id": "INV-06",
       "title": "合法的硬删(连接表/闭包表/含 PII 的短时凭据)带原因豁免后必须放行",
       "why": "lint 若不给豁免通道,开发者会整体关掉规则",
-      "probe": "justified-exemption-allowed"
+      "probe": "justified-exemption-allowed",
+      "probeKind": "structural",
+      "probeNote": "跑的是 grep 源码统计豁免注释数量 —— 执行了命令,但那条命令不是守护本体"
     }
   ]
 }

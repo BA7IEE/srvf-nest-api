@@ -25,10 +25,16 @@ type Case = {
   readonly name: string;
   readonly filename: string;
   readonly code: string;
-  /** 期望命中的 ruleId;null = 期望零违规(合法样例 / baseline 豁免) */
+  /** 期望命中的 ruleId;null = 期望零违规(合法样例 / baseline 豁免 / 已知缺口) */
   readonly expect: string | null;
   /** 期望命中次数(默认 ≥1) */
   readonly minCount?: number;
+  /**
+   * **已知缺口**:这条对抗样例当前**能绕过**规则,断言的是「现状如此」而不是「这样对」。
+   * 存在的意义是把缺口钉成可见事实 —— 哪天补上自定义规则,这里会红,提醒来更新。
+   * 输出里单独成段计数,不混进「通过」的叙事(见 AGENTS §1「字面语法拦截」)。
+   */
+  readonly knownGap?: true;
 };
 
 const SYNTAX = 'no-restricted-syntax';
@@ -235,6 +241,57 @@ const CASES: readonly Case[] = [
     code: "import { PrismaService } from '../../database/prisma.service';\nexport const a = PrismaService;",
     expect: TS_IMPORTS,
   },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 已知缺口:对抗样例(2026-07-29 跨模型评审 finding 6,实测 5/5 全部绕过)
+  //
+  // `no-restricted-syntax` 匹配的是**语法树的字面形状**,不做 import binding
+  // 解析,也不做变量指向分析。所以下面每一条都能原样通过 lint —— 原写法拦得住,
+  // 换个名字就拦不住。
+  //
+  // 这些用例断言的是**现状**(当前放行),不是「这样是对的」。把缺口钉成
+  // 可见事实的价值有二:
+  //   ① 谁都能在自测输出里看到防线的边界在哪,不会误以为它是语义级的
+  //   ② 将来落地自定义规则(import binding resolution)时,这里会变红,
+  //      提醒来把 knownGap 摘掉 —— 缺口关闭这件事因此不会被忘记
+  // 对应 AGENTS §1 的表述:**字面语法拦截**,不是语义分析。
+  // 自定义 ESLint 规则已拍板另立 goal,本批不做。
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    name: '缺口:import 别名 `UseGuards as UG` 绕过',
+    filename: 'src/modules/x/x.controller.ts',
+    code: "import { UseGuards as UG } from '@nestjs/common';\n@UG(JwtAuthGuard) export class C {}",
+    expect: null,
+    knownGap: true,
+  },
+  {
+    name: '缺口:变量中转 `const db = this.prisma; db.user.delete()` 绕过硬删',
+    filename: 'src/modules/x/x.service.ts',
+    code: 'export class S { prisma: any; async f(id: string) { const db = this.prisma; await db.user.delete({ where: { id } }); } }',
+    expect: null,
+    knownGap: true,
+  },
+  {
+    name: '缺口:变量中转 `const p = process; p.env.X` 绕过散落 process.env',
+    filename: 'src/modules/x/x.service.ts',
+    code: 'const p = process;\nexport const a = p.env.SOME_KEY;',
+    expect: null,
+    knownGap: true,
+  },
+  {
+    name: '缺口:间接构造 `const C = Map; new C()` 绕过判权路径缓存',
+    filename: 'src/modules/authz/authz.service.ts',
+    code: 'const C = Map;\nexport class S { cache = new C(); }',
+    expect: null,
+    knownGap: true,
+  },
+  {
+    name: '缺口:import 别名 `PickType as PT` 绕过 Mapped Types 派生 DTO',
+    filename: 'src/modules/x/dto/x.dto.ts',
+    code: "import { PickType as PT } from '@nestjs/swagger';\nexport class D extends PT(Base, ['a']) {}",
+    expect: null,
+    knownGap: true,
+  },
 ];
 
 async function main(): Promise<void> {
@@ -263,6 +320,7 @@ async function main(): Promise<void> {
   });
   let passed = 0;
   const failures: string[] = [];
+  const knownGaps: string[] = [];
 
   // ── review P2-2:把「17 条选择器」和「用例」绑死 ─────────────────────────────
   // 原先断言的是 eslint 的 **ruleId**(`no-restricted-syntax`),不是**哪一条选择器**
@@ -289,6 +347,23 @@ async function main(): Promise<void> {
     );
 
     if (c.expect === null) {
+      if (c.knownGap) {
+        // 断言的是「现状:能绕过」。若哪天它**被拦住了**,说明缺口已关闭 ——
+        // 那是好消息,但必须来把 knownGap 摘掉,否则这段文字就开始说谎。
+        if (harnessHits.length === 0) {
+          knownGaps.push(c.name);
+          console.log(`⚠ ${c.name}`);
+        } else {
+          failures.push(
+            `✗ ${c.name} — 该缺口似乎已被拦住(命中 ${harnessHits
+              .map((m) => m.ruleId ?? '?')
+              .join(',')})。\n` +
+              '  这是好事,但请把该用例的 knownGap 摘掉并改成正向断言 —— ' +
+              '否则自测输出会继续把已关闭的缺口报成「已知缺口」。',
+          );
+        }
+        continue;
+      }
       if (harnessHits.length === 0) {
         passed++;
         console.log(`✓ ${c.name}`);
@@ -385,8 +460,21 @@ async function main(): Promise<void> {
     }
   }
 
+  // 已知缺口单独成段:不混进「通过」的叙事。
+  // 防线的边界必须和防线本身一样显眼 —— 否则「31 passed」会被读成「全都管住了」。
+  if (knownGaps.length > 0) {
+    console.log(`\n── 已知缺口:${knownGaps.length} 条对抗样例当前**可绕过**(不假装安全)──`);
+    for (const g of knownGaps) console.log(`  ⚠ ${g}`);
+    console.log(
+      '  成因:no-restricted-syntax 匹配的是语法树的**字面形状**,不解析 import binding、\n' +
+        '        不做变量指向分析。原写法拦得住,换个名字就拦不住。\n' +
+        '  定性:AGENTS §1 已把该层表述为「**字面语法拦截**」而非「机器执法」。\n' +
+        '  处置:自定义 ESLint 规则(import binding resolution)已拍板另立 goal,本批不做。',
+    );
+  }
+
   for (const f of failures) console.error(f);
-  console.log(`\n${passed} passed, ${failures.length} failed`);
+  console.log(`\n${passed} passed, ${failures.length} failed, ${knownGaps.length} known gaps`);
   if (failures.length > 0) {
     console.error(
       '\n⚠️ eslint 执法规则失效或误杀。常见原因:flat config 同 ruleId 后块整体覆盖前块' +
