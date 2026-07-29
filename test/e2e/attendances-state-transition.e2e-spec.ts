@@ -412,6 +412,26 @@ describe('AttendancesService state transitions (characterization)', () => {
         'attendance competing reviews',
         OPERATION_TIMEOUT_MS,
       );
+      // 失败时把**为什么**一并打出来。
+      //
+      // 2026-07-29 排查手记:本用例约 1/10 概率红在下面这一行,而 Jest 对
+      // `expect(results[0].status).toBe('fulfilled')` 只会打印 "Expected: fulfilled /
+      // Received: rejected" —— 拿不到 reason,于是「赢家为什么没赢」始终定不了性。
+      // 曾被记成「Prisma 默认 5s 事务预算」,但那是推断:blocker 事务明确给了 20s,
+      // 而服务侧那条确实吃默认预算 —— 到底是它超时、还是死锁回滚、还是状态机先变,
+      // **没有证据**。断言本身一字不动(仍要求 fulfilled),这里只补失败时的可诊断性;
+      // 下一次再红即可一次定性,不必再靠猜。
+      if (results[0].status === 'rejected') {
+        const reason = results[0].reason as
+          | { biz?: unknown; code?: unknown; message?: unknown }
+          | undefined;
+        throw new Error(
+          `首个审核(应当胜出)被拒 —— biz=${String(reason?.biz)} code=${String(reason?.code)} ` +
+            `message=${String(reason?.message)}\n` +
+            `完整 reason: ${JSON.stringify(reason, Object.getOwnPropertyNames(reason ?? {}))}\n` +
+            `(P2028 = 事务预算耗尽 / 40P01 = 死锁 / ATTENDANCE_SHEET_STATUS_INVALID = 状态已被改)`,
+        );
+      }
       expect(results[0].status).toBe('fulfilled');
       expect(results[1]).toMatchObject({
         status: 'rejected',
