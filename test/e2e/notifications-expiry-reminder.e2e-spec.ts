@@ -65,13 +65,15 @@ describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
         certStatusCode: 'verified',
       },
     });
+    // 冻结稿 §10.5:过期条件是 `expiredAt < today`。原 fixture 用 today(07-14)本身,
+    // 那是**最后有效日**、当天仍有效;下移到 07-13 才是真正已过期的那一天。
     const certificateExpired = await prisma.certificate.create({
       data: {
         memberId: members[1].id,
         certTypeCode: 'first-aid',
         issuingOrg: '测试机构',
         issuedAt: new Date('2025-01-01T00:00:00.000Z'),
-        expiredAt: new Date('2026-07-14T00:00:00.000Z'),
+        expiredAt: new Date('2026-07-13T00:00:00.000Z'),
         certStatusCode: 'verified',
         verifiedAt: new Date('2025-01-02T00:00:00.000Z'),
       },
@@ -307,5 +309,56 @@ describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
         where: { notificationTypeCode: 'activity-reminder', recipientMemberId: member.id },
       }),
     ).toBe(1);
+  });
+
+  // 证书标准库 PR-1 · 冻结稿 §10.5 边界实证(真实 DB)。
+  //
+  // `expiredAt` 是**最后有效日**,所以最后有效日 = today 的证书:
+  //   - **不得**被过期扫描翻成 expired(`expiredAt < today` 严格小于);
+  //   - **必须**进提醒窗(`expiredAt BETWEEN today AND today+60`,含 today)。
+  // 修正前两条同时错:当天 09:00 就被翻 expired,且从没进过提醒窗。
+  //
+  // 本用例只断言自己创建的两行,不碰全局 intent/notification 计数 ——
+  // 本 spec 只在 beforeAll 做一次 resetDb,同文件用例共享库状态,
+  // 全局计数会被前面用例的残留干扰(那是脆弱断言,不是本用例要证的事)。
+  it('§10.5:最后有效日 = today 仍 verified 且进提醒窗;前一天才过期', async () => {
+    const member = await prisma.member.create({
+      data: { memberNo: 'ER9001', displayName: '边界证书', status: 'ACTIVE' },
+    });
+    const lastValidDayIsToday = await prisma.certificate.create({
+      data: {
+        memberId: member.id,
+        certTypeCode: 'boundary-today',
+        issuingOrg: '测试机构',
+        issuedAt: new Date('2025-01-01T00:00:00.000Z'),
+        expiredAt: new Date('2026-07-14T00:00:00.000Z'), // = today
+        certStatusCode: 'verified',
+      },
+    });
+    const lastValidDayWasYesterday = await prisma.certificate.create({
+      data: {
+        memberId: member.id,
+        certTypeCode: 'boundary-yesterday',
+        issuingOrg: '测试机构',
+        issuedAt: new Date('2025-01-01T00:00:00.000Z'),
+        expiredAt: new Date('2026-07-13T00:00:00.000Z'), // = today - 1
+        certStatusCode: 'verified',
+      },
+    });
+
+    await job.runOnce(NOW);
+
+    const [todayRow, yesterdayRow] = await Promise.all([
+      prisma.certificate.findUniqueOrThrow({ where: { id: lastValidDayIsToday.id } }),
+      prisma.certificate.findUniqueOrThrow({ where: { id: lastValidDayWasYesterday.id } }),
+    ]);
+
+    // today = 最后有效日 → 仍有效,且已被提醒(水印落在本次 run 的 claimedAt)。
+    expect(todayRow.certStatusCode).toBe('verified');
+    expect(todayRow.expireNotifyDueAt?.toISOString()).toBe(NOW.toISOString());
+
+    // today-1 → 已过最后有效日,翻 expired;过期路径不写提醒水印。
+    expect(yesterdayRow.certStatusCode).toBe('expired');
+    expect(yesterdayRow.expireNotifyDueAt).toBeNull();
   });
 });

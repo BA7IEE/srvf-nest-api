@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import type { Prisma } from '@prisma/client';
 
+import { beijingDateOnly } from '../../common/datetime/date-only.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import {
@@ -19,7 +20,6 @@ import { NotificationOutboxService } from './notification-outbox.service';
 const CERT_STATUS_VERIFIED = 'verified';
 const CERT_STATUS_EXPIRED = 'expired';
 const DAY_MS = 86_400_000;
-const UTC8_OFFSET_MS = 8 * 3_600_000;
 
 export interface ExpiryReminderRunSummary {
   activityReminderCandidates: number;
@@ -139,6 +139,9 @@ export class ExpiryReminderService {
     }
   }
 
+  // 冻结稿 §10.5 提前 60 天:`expiredAt BETWEEN today AND today+60`。
+  // 边界含 today —— `expiredAt` 是最后有效日,到期日=今天的证书当天仍有效,
+  // 正是最该提醒的一批(修正前用 `gt today` 把它整批漏掉)。
   private async remindCertificates(
     today: Date,
     reminderEnd: Date,
@@ -149,7 +152,7 @@ export class ExpiryReminderService {
       where: {
         deletedAt: null,
         certStatusCode: CERT_STATUS_VERIFIED,
-        expiredAt: { gt: today, lte: reminderEnd },
+        expiredAt: { gte: today, lte: reminderEnd },
         expireNotifyDueAt: null,
       },
       select: { id: true, memberId: true, expiredAt: true },
@@ -166,7 +169,7 @@ export class ExpiryReminderService {
               id: row.id,
               deletedAt: null,
               certStatusCode: CERT_STATUS_VERIFIED,
-              expiredAt: { gt: today, lte: reminderEnd },
+              expiredAt: { gte: today, lte: reminderEnd },
               expireNotifyDueAt: null,
             },
             data: { expireNotifyDueAt: claimedAt },
@@ -192,6 +195,11 @@ export class ExpiryReminderService {
     }
   }
 
+  // 冻结稿 §10.5 自动过期:`expiredAt < today`(**严格小于**)。
+  // `expiredAt` 是最后有效日,当天仍有效,次日才失效;修正前用 `lte today`
+  // 会在最后有效日 09:00 就把证书翻成 expired,整整早一天。
+  // 外层扫描、事务内 findFirst 复核、原子 updateMany claim 三处谓词必须同口径,
+  // 否则会出现「扫到了但 claim 不到」的静默空转。
   private async expireCertificates(
     today: Date,
     requestId: string,
@@ -201,7 +209,7 @@ export class ExpiryReminderService {
       where: {
         deletedAt: null,
         certStatusCode: CERT_STATUS_VERIFIED,
-        expiredAt: { lte: today },
+        expiredAt: { lt: today },
       },
       select: { id: true },
     });
@@ -215,7 +223,7 @@ export class ExpiryReminderService {
               id: row.id,
               deletedAt: null,
               certStatusCode: CERT_STATUS_VERIFIED,
-              expiredAt: { lte: today },
+              expiredAt: { lt: today },
             },
             select: {
               id: true,
@@ -234,7 +242,7 @@ export class ExpiryReminderService {
               id: before.id,
               deletedAt: null,
               certStatusCode: CERT_STATUS_VERIFIED,
-              expiredAt: { lte: today },
+              expiredAt: { lt: today },
             },
             data: { certStatusCode: CERT_STATUS_EXPIRED },
           });
@@ -458,9 +466,12 @@ function certificateAuditSnapshot(row: {
 }
 
 // 北京自然日映射为同 Y/M/D 的 UTC 午夜，和仓库 date-only 持久化口径一致。
+//
+// 证书标准库 PR-1:实现搬到 `common/datetime/date-only.util` 的 `beijingDateOnly`
+// (与 `normalizeDateOnly` 同一日界),本处只留薄壳保持既有导出面不变 ——
+// 冻结稿 §19「不复制第二套日期算法」。行为逐位不变,已有日界用例继续覆盖。
 export function toBeijingDateOnly(now: Date): Date {
-  const shifted = new Date(now.getTime() + UTC8_OFFSET_MS);
-  return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()));
+  return beijingDateOnly(now);
 }
 
 export function addDateOnlyDays(date: Date, days: number): Date {

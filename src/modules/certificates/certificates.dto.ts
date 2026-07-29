@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsDateString, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 // V2 第一阶段批次 2 certificates 模块 DTO 集合。
 // 详见 docs:批次2_API前评审_certificates.md §3 + 草案 v1.0 §4 / §5.1 / §13。
@@ -35,11 +35,29 @@ export class CertificateResponseDto {
   @ApiProperty({ description: '颁发机构(CT-4;自由文本)' })
   issuingOrg!: string;
 
+  // 证书标准库 PR-1(冻结稿 §15.3):完整证书编号是 L2(可用于外部查询或冒用),
+  // 拆成「恒返掩码 + 明文按权限」两个字段,而不是沿 member-profiles 的「同名字段原地打码」。
+  //
+  // 为何拆名:同名打码有已知的 FE 回写陷阱 —— 管理端编辑表单 round-trip 会把掩码值
+  // 当真值写回,覆盖真实编号(member-profiles 只能靠 admin-web 侧「值含 * 则 delete」
+  // 的约定缓解)。`certNumber` 是 PATCH 可写字段,踩中概率高;读出参改名后,
+  // 表单拿不到可直接回写的 `certNumber`,陷阱在结构上不成立。
+  // 显式 `type: String`:Swagger 插件对 `string | null` 的推导不稳(实测把 Full 推成
+  // `type: object`、Masked 干脆无 type),契约里的类型必须是确定的,前端才能 codegen。
   @ApiPropertyOptional({
-    description: '证书编号(CT-5;中敏感;详情接口才返回)',
+    description: '证书编号掩码(CT-5;恒返;形如 SZ****01;无编号为 null)',
+    type: String,
     nullable: true,
   })
-  certNumber!: string | null;
+  certNumberMasked!: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      '证书编号明文(CT-5;L2;仅持 certificate.read.sensitive 且通过该证书 scoped 判权时返回,否则恒 null)',
+    type: String,
+    nullable: true,
+  })
+  certNumberFull!: string | null;
 
   @ApiProperty({ description: '颁发日期(CT-6;ISO 8601)' })
   issuedAt!: Date;
@@ -56,7 +74,8 @@ export class CertificateResponseDto {
   certStatusCode!: string;
 
   @ApiPropertyOptional({
-    description: '核验人 Member.id(CT-9a;待核验态空;Q-I2:user 无 memberId 时为 null)',
+    description:
+      '核验人 Member.id(CT-9a;L2 跨成员身份;仅持 certificate.read.sensitive 时返回,否则恒 null;§15.3)',
     nullable: true,
   })
   verifiedBy!: string | null;
@@ -65,10 +84,18 @@ export class CertificateResponseDto {
   verifiedAt!: Date | null;
 
   @ApiPropertyOptional({
-    description: '核验备注(CT-9c;中敏感;长度 ≤ 500)',
+    description:
+      '核验备注(CT-9c;L2 自由文本;仅持 certificate.read.sensitive 时返回,否则恒 null;§15.3)',
     nullable: true,
   })
   verifyNote!: string | null;
+
+  // §15.3 普通读返 evidenceAvailable 布尔,让前端知道「有没有证据可看」而不泄露任何
+  // key / URL;真正取证据走 §13.5 的 evidence-urls 端点(PR-5)。
+  // 当前证据事实源是 `Certificate.imageKeys`;PR-4a 起改读 sourceClaim.imageKeys,
+  // PR-4b 删该列 —— 届时本字段只换取值来源,对外契约不变。
+  @ApiProperty({ description: '是否存在证据图(布尔;不返 key / URL;取证据走 evidence-urls 端点)' })
+  evidenceAvailable!: boolean;
 
   @ApiProperty({ description: '是否本会颁发(CT-11;本批次 service 始终写 false)' })
   isInternal!: boolean;
@@ -136,6 +163,31 @@ export class QualificationFlagResponseDto {
   qualified!: boolean;
 }
 
+// ============ 日期入参口径(证书标准库 PR-1 · 冻结稿 §10.2)============
+
+// 「所有证书日期只接受 YYYY-MM-DD,不再接受带时区和时分秒的任意 ISO datetime。」
+//
+// 为什么收紧:`expiredAt` 是**最后有效日**(§10.1),是一个日历日而不是瞬间。
+// 放开 datetime 会让 `2026-08-01T00:00:00+08:00` 与 `2026-08-01T00:00:00Z` 这类
+// 输入落到不同的北京日(前者 08-01、后者 07-31),同一个"意图日期"产生两种入库结果。
+// 收成纯日期后,归一只有一条路径,客户端也无法用时区偷偷改天。
+//
+// 两个装饰器各管一件事,缺一不可:
+// - `@Matches` 管**形状**(必须恰好 10 位纯日期,拒绝任何时分秒/时区后缀);
+// - `@IsDateString({ strict: true })` 管**日历真实性**(拒绝 2026-02-30 / 2027-02-29
+//   这类形状合法但不存在的日期 —— 光靠正则拦不住)。
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_ONLY_DESC = '纯日期 YYYY-MM-DD(不接受时分秒与时区;按北京日历日入库)';
+
+// 同时把口径写进 OpenAPI schema,而不是只写在 description 里 ——
+// `@Matches` 不会被 Swagger 插件推导成 `pattern`,契约里就只剩一句人类可读的说明,
+// 前端 codegen 拿不到可执行约束。PR-6 要求前端适配日期格式收紧,这里必须是机器可读的。
+const DATE_ONLY_SCHEMA = {
+  type: 'string',
+  format: 'date',
+  pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+} as const;
+
 // ============ 入参:Create ============
 
 // 必填:certTypeCode / issuingOrg / issuedAt;其余可选(schema 可空,Q-D4 / Q-D5)。
@@ -166,13 +218,23 @@ export class CreateCertificateDto {
   @MaxLength(128)
   certNumber?: string;
 
-  @ApiProperty({ description: '颁发日期(ISO 8601;业务层规范化为 00:00:00.000Z;必填)' })
-  @IsDateString()
+  @ApiProperty({
+    description: `颁发日期(${DATE_ONLY_DESC};不得晚于今天;必填)`,
+    ...DATE_ONLY_SCHEMA,
+    example: '2026-07-01',
+  })
+  @Matches(DATE_ONLY_PATTERN, { message: 'issuedAt 必须是 YYYY-MM-DD 纯日期' })
+  @IsDateString({ strict: true })
   issuedAt!: string;
 
-  @ApiPropertyOptional({ description: '到期日(ISO 8601;NULL = 终身有效)' })
+  @ApiPropertyOptional({
+    description: `最后有效日(${DATE_ONLY_DESC};不填 = 终身有效)`,
+    ...DATE_ONLY_SCHEMA,
+    example: '2028-06-30',
+  })
   @IsOptional()
-  @IsDateString()
+  @Matches(DATE_ONLY_PATTERN, { message: 'expiredAt 必须是 YYYY-MM-DD 纯日期' })
+  @IsDateString({ strict: true })
   expiredAt?: string;
 }
 
@@ -210,14 +272,24 @@ export class UpdateCertificateDto {
   @MaxLength(128)
   certNumber?: string;
 
-  @ApiPropertyOptional({ description: '颁发日期(ISO 8601;Q-A4 决议:允许资料修正)' })
+  @ApiPropertyOptional({
+    description: `颁发日期(${DATE_ONLY_DESC};不得晚于今天;Q-A4 决议:允许资料修正)`,
+    ...DATE_ONLY_SCHEMA,
+    example: '2026-07-01',
+  })
   @IsOptional()
-  @IsDateString()
+  @Matches(DATE_ONLY_PATTERN, { message: 'issuedAt 必须是 YYYY-MM-DD 纯日期' })
+  @IsDateString({ strict: true })
   issuedAt?: string;
 
-  @ApiPropertyOptional({ description: '到期日(ISO 8601;Q-A4 决议:允许资料修正;NULL = 终身有效)' })
+  @ApiPropertyOptional({
+    description: `最后有效日(${DATE_ONLY_DESC};Q-A4 决议:允许资料修正;不填 = 保持原值)`,
+    ...DATE_ONLY_SCHEMA,
+    example: '2028-06-30',
+  })
   @IsOptional()
-  @IsDateString()
+  @Matches(DATE_ONLY_PATTERN, { message: 'expiredAt 必须是 YYYY-MM-DD 纯日期' })
+  @IsDateString({ strict: true })
   expiredAt?: string;
 }
 

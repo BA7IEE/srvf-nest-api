@@ -168,7 +168,8 @@ describe('certificates 模块', () => {
   const baseCreatePayload = (override: Record<string, unknown> = {}): Record<string, unknown> => ({
     certTypeCode: activeCertTypeCode,
     issuingOrg: '演示颁发机构 A',
-    issuedAt: '2024-01-01T00:00:00.000Z',
+    // 冻结稿 §10.2:证书日期入参收紧为纯 YYYY-MM-DD(不再接受 ISO datetime)。
+    issuedAt: '2024-01-01',
     ...override,
   });
 
@@ -458,12 +459,12 @@ describe('certificates 模块', () => {
           certSubTypeCode: activeCertSubTypeCode,
           issuingOrg: '演示颁发机构 B',
           certNumber: 'DEMO-CERT-002',
-          issuedAt: '2023-06-01T00:00:00.000Z',
-          expiredAt: '2030-06-01T00:00:00.000Z',
+          issuedAt: '2023-06-01',
+          expiredAt: '2030-06-01',
         });
       expect(res.status).toBe(201);
       expect(res.body.data.certSubTypeCode).toBe(activeCertSubTypeCode);
-      expect(res.body.data.certNumber).toBe('DEMO-CERT-002');
+      expect(res.body.data.certNumberFull).toBe('DEMO-CERT-002');
       expect(res.body.data.expiredAt).toBe('2030-06-01T00:00:00.000Z');
     });
 
@@ -573,6 +574,125 @@ describe('certificates 模块', () => {
     });
   });
 
+  // ============ 证书标准库 PR-1 · 冻结稿 §10.2 / §10.3 日期契约 ============
+  //
+  // §10.2 日期只收纯 `YYYY-MM-DD`;§10.3 issuedAt <= today 且
+  // (expiredAt IS NULL OR expiredAt >= issuedAt)。前者是 DTO 形状(400 通用校验),
+  // 后者是业务语义(18018 / 18017)。
+  describe('日期语义契约(§10.2 形状 + §10.3 业务)', () => {
+    const dayOffsetFromToday = (days: number): string => {
+      // 按北京日历日偏移,与后端 date-only 口径同源(避免用机器本地时区推日期)。
+      const beijingNow = new Date(Date.now() + 8 * 3_600_000);
+      beijingNow.setUTCDate(beijingNow.getUTCDate() + days);
+      return beijingNow.toISOString().slice(0, 10);
+    };
+
+    it('§10.2 issuedAt 带时分秒 ISO datetime → 400(不再接受)', async () => {
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
+        .set('Authorization', adminAuth)
+        .send(baseCreatePayload({ issuedAt: '2024-01-01T00:00:00.000Z' }));
+      expect(res.status).toBe(400);
+    });
+
+    it('§10.2 issuedAt 带时区偏移 → 400(时区曾能悄悄改天)', async () => {
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
+        .set('Authorization', adminAuth)
+        .send(baseCreatePayload({ issuedAt: '2024-01-01T00:00:00+08:00' }));
+      expect(res.status).toBe(400);
+    });
+
+    it('§10.2 expiredAt 带时分秒 → 400', async () => {
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
+        .set('Authorization', adminAuth)
+        .send(baseCreatePayload({ expiredAt: '2030-06-01T00:00:00.000Z' }));
+      expect(res.status).toBe(400);
+    });
+
+    it('§10.2 形状合法但日历不存在(2026-02-30)→ 400', async () => {
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
+        .set('Authorization', adminAuth)
+        .send(baseCreatePayload({ issuedAt: '2026-02-30' }));
+      expect(res.status).toBe(400);
+    });
+
+    it('§10.3 issuedAt = 明天 → 18018 CERTIFICATE_ISSUED_AT_IN_FUTURE', async () => {
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
+        .set('Authorization', adminAuth)
+        .send(baseCreatePayload({ issuedAt: dayOffsetFromToday(1) }));
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe(18018);
+    });
+
+    it('§10.3 issuedAt = 今天 → 201(边界含当天)', async () => {
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
+        .set('Authorization', adminAuth)
+        .send(baseCreatePayload({ issuedAt: dayOffsetFromToday(0) }));
+      expect(res.status).toBe(201);
+    });
+
+    it('§10.3 expiredAt 早于 issuedAt → 18017 CERTIFICATE_DATE_RANGE_INVALID', async () => {
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
+        .set('Authorization', adminAuth)
+        .send(baseCreatePayload({ issuedAt: '2024-01-01', expiredAt: '2023-12-31' }));
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe(18017);
+    });
+
+    it('§10.3 expiredAt = issuedAt → 201(当天发证当天到期仍有效一天)', async () => {
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
+        .set('Authorization', adminAuth)
+        .send(baseCreatePayload({ issuedAt: '2024-01-01', expiredAt: '2024-01-01' }));
+      expect(res.status).toBe(201);
+    });
+
+    it('§10.3 PATCH 只改 expiredAt 也与库内 issuedAt 比较 → 18017', async () => {
+      const created = await request(httpServer(app))
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
+        .set('Authorization', adminAuth)
+        .send(baseCreatePayload({ issuedAt: '2024-06-01' }));
+      expect(created.status).toBe(201);
+
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${created.body.data.id}`)
+        .set('Authorization', adminAuth)
+        .send({ expiredAt: '2024-05-31' });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe(18017);
+    });
+
+    it('§9.2 PATCH 改 expiredAt → 清空 expireNotifyDueAt(重置到期提醒水印)', async () => {
+      const created = await request(httpServer(app))
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
+        .set('Authorization', adminAuth)
+        .send(baseCreatePayload({ issuedAt: '2024-06-01', expiredAt: '2030-06-01' }));
+      expect(created.status).toBe(201);
+      const certId = created.body.data.id as string;
+
+      // 直接置一个已提醒水印,模拟 cron 已发过提醒。
+      await prisma.certificate.update({
+        where: { id: certId },
+        data: { expireNotifyDueAt: new Date('2026-01-01T00:00:00.000Z') },
+      });
+
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${certId}`)
+        .set('Authorization', adminAuth)
+        .send({ expiredAt: '2031-06-01' });
+      expect(res.status).toBe(200);
+
+      const row = await prisma.certificate.findUniqueOrThrow({ where: { id: certId } });
+      expect(row.expireNotifyDueAt).toBeNull();
+    });
+  });
+
   // ============ GET list 排序 + 列表精简 ============
 
   describe('GET list 排序 + 精简字段', () => {
@@ -631,7 +751,7 @@ describe('certificates 模块', () => {
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.id).toBe(certIdA);
-      expect(res.body.data.certNumber).toBe('DETAIL-CERT-001');
+      expect(res.body.data.certNumberFull).toBe('DETAIL-CERT-001');
       expect(res.body.data).not.toHaveProperty('deletedAt');
       expect(res.body.data).not.toHaveProperty('expireNotifyDueAt');
       // V2.x C-7 attachments PR #2:attachmentKey 字段已删除
@@ -659,7 +779,7 @@ describe('certificates 模块', () => {
         .send({ issuingOrg: '新机构', certNumber: 'PATCH-001-UPDATED' });
       expect(res.status).toBe(200);
       expect(res.body.data.issuingOrg).toBe('新机构');
-      expect(res.body.data.certNumber).toBe('PATCH-001-UPDATED');
+      expect(res.body.data.certNumberFull).toBe('PATCH-001-UPDATED');
     });
 
     it('finding #7:verified 核心字段编辑 → pending + 核验三字段清空,随后可重新 verify', async () => {
@@ -739,8 +859,8 @@ describe('certificates 模块', () => {
         .patch(`/api/admin/v1/members/${memberA}/certificates/${certIdA}`)
         .set('Authorization', superAdminAuth)
         .send({
-          issuedAt: '2024-03-01T00:00:00.000Z',
-          expiredAt: '2029-03-01T00:00:00.000Z',
+          issuedAt: '2024-03-01',
+          expiredAt: '2029-03-01',
         });
       expect(res.status).toBe(200);
       expect(res.body.data.issuedAt).toBe('2024-03-01T00:00:00.000Z');
@@ -974,7 +1094,7 @@ describe('certificates 模块', () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberA}/certificates/${r.body.data.id}/verify`)
         .set('Authorization', adminAuth)
-        .send({ issuedAt: '2025-01-01T00:00:00.000Z' });
+        .send({ issuedAt: '2025-01-01' });
       expect(res.status).toBe(400);
     });
 
@@ -1181,7 +1301,7 @@ describe('certificates 模块', () => {
       const r = await request(httpServer(app))
         .post(`/api/admin/v1/members/${m.id}/certificates`)
         .set('Authorization', adminAuth)
-        .send(baseCreatePayload({ expiredAt: '2099-01-01T00:00:00.000Z' }));
+        .send(baseCreatePayload({ expiredAt: '2099-01-01' }));
       await request(httpServer(app))
         .patch(`/api/admin/v1/members/${m.id}/certificates/${r.body.data.id}/verify`)
         .set('Authorization', adminAuth)

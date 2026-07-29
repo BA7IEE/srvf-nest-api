@@ -21,8 +21,8 @@
 | Controller | 81 |
 | Endpoint | 416 |
 | Migration | 65 |
-| BizCode | 278 |
-| 权限码 | 213 |
+| BizCode | 280 |
+| 权限码 | 214 |
 | AuditLogEvent | 123 |
 | 内建角色 | 15 |
 | Cron | 2 |

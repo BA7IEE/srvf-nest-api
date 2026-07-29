@@ -19,7 +19,7 @@
 
 ## 派生对照表(生成物)
 
-### 权限码全集(213 条,按一级域分组)
+### 权限码全集(214 条,按一级域分组)
 
 > 权威源 `prisma/seed.ts`(幂等 upsert)。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 
@@ -34,9 +34,9 @@
 | `dict` | 8 | `dict.create.item` · `dict.create.type` · `dict.delete.item` · `dict.delete.type` · `dict.read.item` · `dict.read.type` · `dict.update.item` · `dict.update.type` |
 | `member` | 8 | `member.bind.account` · `member.create.record` · `member.delete.record` · `member.grant.account` · `member.offboard.record` · `member.read.record` · `member.update.record` · `member.update.status` |
 | `activity` | 7 | `activity.cancel.record` · `activity.complete.record` · `activity.create.cross-org` · `activity.create.record` · `activity.delete.record` · `activity.publish.record` · `activity.update.record` |
+| `certificate` | 7 | `certificate.create.record` · `certificate.delete.record` · `certificate.read.record` · `certificate.read.sensitive` · `certificate.reject.record` · `certificate.update.record` · `certificate.verify.record` |
 | `notification` | 7 | `notification.create.record` · `notification.delete.record` · `notification.publish.record` · `notification.read.record` · `notification.send.sms` · `notification.update.record` · `notification.update.template` |
 | `activity-registration` | 6 | `activity-registration.approve.record` · `activity-registration.cancel.record` · `activity-registration.create.record` · `activity-registration.read.record` · `activity-registration.reject.record` · `activity-registration.reopen.record` |
-| `certificate` | 6 | `certificate.create.record` · `certificate.delete.record` · `certificate.read.record` · `certificate.reject.record` · `certificate.update.record` · `certificate.verify.record` |
 | `team-insurance-policy` | 6 | `team-insurance-policy.add.member` · `team-insurance-policy.create.record` · `team-insurance-policy.delete.record` · `team-insurance-policy.read.record` · `team-insurance-policy.remove.member` · `team-insurance-policy.update.record` |
 | `content` | 5 | `content.create.record` · `content.delete.record` · `content.publish.record` · `content.read.record` · `content.update.record` |
 | `emergency-contact` | 5 | `emergency-contact.create.record` · `emergency-contact.delete.record` · `emergency-contact.read.record` · `emergency-contact.read.sensitive` · `emergency-contact.update.record` |

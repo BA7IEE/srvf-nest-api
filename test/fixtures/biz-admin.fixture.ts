@@ -212,12 +212,22 @@ const BIZ_PERMISSIONS = [
     action: 'read',
     resourceType: 'sensitive',
   },
-  // ============ certificate 6 条 ============
+  // ============ certificate 7 条 ============
   {
     code: 'certificate.read.record',
     module: 'certificate',
     action: 'read',
     resourceType: 'record',
+  },
+  // 证书标准库 PR-1(冻结稿 §15.3):prisma/seed.ts 把本码绑给 biz-admin,
+  // 本 fixture 必须同步 —— 否则 e2e 里的 "biz-admin" 与生产的 biz-admin 不是同一个角色,
+  // 「明文可见」这类断言就测不到真实口径(掩码路径另由 certificates-rbac-boundary 的
+  // 窄角色用例覆盖)。
+  {
+    code: 'certificate.read.sensitive',
+    module: 'certificate',
+    action: 'read',
+    resourceType: 'sensitive',
   },
   {
     code: 'certificate.create.record',

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
 import { maskIdentifier } from '../../common/audit/mask-pii.util';
-import { normalizeDateOnly } from '../../common/datetime/date-only.util';
+import { beijingDateOnly, normalizeDateOnly } from '../../common/datetime/date-only.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -65,6 +65,10 @@ const CERTIFICATE_CORE_FIELDS = [
 
 // 详情 / 写操作返回的完整 select(永不含 deletedAt 软删内部状态、永不含 expireNotifyDueAt
 // hook 字段);必须与 CertificateResponseDto 同步维护。
+//
+// 证书标准库 PR-1:含 `imageKeys` 是为了算 §15.3 的 `evidenceAvailable` 布尔。
+// 它**只在 service 内部存活** —— `presentCertificate` 会把它连同 `certNumber` 一起
+// 从出参里剥掉,任何响应/日志/审计都拿不到 key(D-CERT-024)。
 const certificateSafeSelect = {
   id: true,
   memberId: true,
@@ -80,6 +84,7 @@ const certificateSafeSelect = {
   verifyNote: true,
   isInternal: true,
   supersededByCertId: true,
+  imageKeys: true,
   createdAt: true,
   updatedAt: true,
 } as const satisfies Prisma.CertificateSelect;
@@ -104,6 +109,33 @@ type SafeCertificate = Prisma.CertificateGetPayload<{ select: typeof certificate
 
 type PrismaTx = Prisma.TransactionClient;
 
+// `imageKeys` 是 `Json?`,业务上是 string[]。只判「有没有」,不解析内容也不外传。
+function hasEvidence(imageKeys: Prisma.JsonValue | null): boolean {
+  return Array.isArray(imageKeys) && imageKeys.length > 0;
+}
+
+// 证书标准库 PR-1 · 冻结稿 §15.3 敏感分级的**唯一出口**。
+//
+// 6 个返 `CertificateResponseDto` 的方法(findOne / create / update / softDelete /
+// verify / reject)必须全部经过它 —— 少接一条路径,那条路径就会把 L2 明文漏出去。
+// 出参形状由 TypeScript 兜底:`CertificateResponseDto` 不再有 `certNumber`,
+// 直接 `return cert` 会编译失败,漏接不可能静默通过。
+//
+// 普通 `certificate.read.record`:编号只给掩码、审核备注与审核人 id 恒 null。
+// 另持 scoped `certificate.read.sensitive`:明文编号 + 备注 + 审核人 id。
+// `imageKeys` / `certNumber` 原值一律不进出参。
+function presentCertificate(cert: SafeCertificate, sensitive: boolean): CertificateResponseDto {
+  const { certNumber, imageKeys, ...rest } = cert;
+  return {
+    ...rest,
+    certNumberMasked: maskIdentifier(certNumber),
+    certNumberFull: sensitive ? certNumber : null,
+    verifyNote: sensitive ? cert.verifyNote : null,
+    verifiedBy: sensitive ? cert.verifiedBy : null,
+    evidenceAvailable: hasEvidence(imageKeys),
+  };
+}
+
 @Injectable()
 export class CertificatesService {
   constructor(
@@ -126,6 +158,16 @@ export class CertificatesService {
     throw new BizException(BizCode.RBAC_FORBIDDEN);
   }
 
+  // §15.3:明文闸。入口码仍是 `certificate.read.record`(由各方法的写/读 gate 把守),
+  // 本闸只决定「同一次响应里给不给明文」,无权时降级为掩码而不是 403。
+  //
+  // ref 与该方法自己的 gate 用同一个 —— create 用 member ref(证书此刻在事务内尚未
+  // 对其他连接可见,拿 certificate ref 会解析不到而误判无权),其余用 certificate ref。
+  // 一律在事务外先算,避免在事务中间引入跨连接可见性问题。
+  private async canReadSensitive(user: CurrentUserPayload, ref: ResourceRef): Promise<boolean> {
+    return this.authz.can(user, 'certificate.read.sensitive', ref);
+  }
+
   private async findMemberOrThrow(memberId: string, tx?: PrismaTx): Promise<{ id: string }> {
     const client = tx ?? this.prisma;
     const m = await client.member.findFirst({
@@ -134,6 +176,25 @@ export class CertificatesService {
     });
     if (!m) throw new BizException(BizCode.MEMBER_NOT_FOUND);
     return m;
+  }
+
+  // 冻结稿 §10.3 基础校验(证书标准库 PR-1)。
+  //
+  //   issuedAt  <= today
+  //   expiredAt IS NULL OR expiredAt >= issuedAt
+  //
+  // 两侧都按北京日历日比较:入参已经过 normalizeDateOnly,是「北京日的 UTC 零点」,
+  // 所以基准也必须是 date-only 的 today,不能拿当下瞬间去比(§10.1 expiredAt =
+  // 最后有效日;用时间戳比会让最后有效日当天在北京 08:00 后被算成过期)。
+  // `expiredAt === issuedAt` 合法:当天发证当天到期,仍是有效一天。
+  private assertDateSemantics(issuedAt: Date, expiredAt: Date | null): void {
+    const today = beijingDateOnly(new Date());
+    if (issuedAt.getTime() > today.getTime()) {
+      throw new BizException(BizCode.CERTIFICATE_ISSUED_AT_IN_FUTURE);
+    }
+    if (expiredAt !== null && expiredAt.getTime() < issuedAt.getTime()) {
+      throw new BizException(BizCode.CERTIFICATE_DATE_RANGE_INVALID);
+    }
   }
 
   // 通用字典 code 校验(对齐 member-profiles.assertDictItemValid 模式)。
@@ -271,10 +332,8 @@ export class CertificatesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'certificate.read.record', {
-      type: 'certificate',
-      id: certificateId,
-    });
+    const ref: ResourceRef = { type: 'certificate', id: certificateId };
+    await this.assertCanOrThrow(currentUser, 'certificate.read.record', ref);
     await this.findMemberOrThrow(memberId);
 
     const cert = await this.prisma.certificate.findFirst({
@@ -286,6 +345,8 @@ export class CertificatesService {
       throw new BizException(BizCode.CERTIFICATE_NOT_BELONGS_TO_MEMBER);
     }
 
+    const sensitive = await this.canReadSensitive(currentUser, ref);
+
     await this.auditLogs.log({
       event: 'certificate.read.other',
       actorUserId: currentUser.id,
@@ -293,10 +354,12 @@ export class CertificatesService {
       resourceType: 'certificate',
       resourceId: cert.id,
       meta: auditMeta,
-      extra: { operation: 'detail' },
+      // maskLevel 沿 member-profiles §F&A-3 惯例:记「这次给了明文还是掩码」,
+      // 便于事后追「谁看过完整编号」;不记编号本身(§15.6)。
+      extra: { operation: 'detail', maskLevel: sensitive ? 'plain' : 'masked' },
     });
 
-    return cert;
+    return presentCertificate(cert, sensitive);
   }
 
   // ============ create ============
@@ -310,10 +373,9 @@ export class CertificatesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'certificate.create.record', {
-      type: 'member',
-      id: memberId,
-    });
+    const ref: ResourceRef = { type: 'member', id: memberId };
+    await this.assertCanOrThrow(currentUser, 'certificate.create.record', ref);
+    const sensitive = await this.canReadSensitive(currentUser, ref);
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
 
@@ -332,17 +394,21 @@ export class CertificatesService {
         );
       }
 
+      const issuedAt = normalizeDateOnly(dto.issuedAt);
+      const expiredAt = dto.expiredAt !== undefined ? normalizeDateOnly(dto.expiredAt) : null;
+      this.assertDateSemantics(issuedAt, expiredAt);
+
       const data: Prisma.CertificateUncheckedCreateInput = {
         memberId,
         certTypeCode: dto.certTypeCode,
         issuingOrg: dto.issuingOrg,
-        issuedAt: normalizeDateOnly(dto.issuedAt),
+        issuedAt,
         certStatusCode: CERT_STATUS_PENDING,
         isInternal: false, // Q-A3:本批次 API 永远 false
       };
       if (dto.certSubTypeCode !== undefined) data.certSubTypeCode = dto.certSubTypeCode;
       if (dto.certNumber !== undefined) data.certNumber = dto.certNumber;
-      if (dto.expiredAt !== undefined) data.expiredAt = normalizeDateOnly(dto.expiredAt);
+      if (expiredAt !== null) data.expiredAt = expiredAt;
 
       const created = await tx.certificate.create({
         data,
@@ -361,7 +427,7 @@ export class CertificatesService {
         tx,
       });
 
-      return created;
+      return presentCertificate(created, sensitive);
     });
   }
 
@@ -378,10 +444,9 @@ export class CertificatesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'certificate.update.record', {
-      type: 'certificate',
-      id: certificateId,
-    });
+    const ref: ResourceRef = { type: 'certificate', id: certificateId };
+    await this.assertCanOrThrow(currentUser, 'certificate.update.record', ref);
+    const sensitive = await this.canReadSensitive(currentUser, ref);
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
       const before = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
@@ -418,6 +483,23 @@ export class CertificatesService {
         invalidStatusBiz: BizCode.CERTIFICATE_INVALID_STATE_TRANSITION,
       });
       const lockedBefore = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
+
+      // §10.3 校验用「本次写入后的最终值」,而不是只看本次传了什么:
+      // 只改 expiredAt 时也必须和库内 issuedAt 比,否则能写出 expiredAt < issuedAt。
+      // 取 lockedBefore(行锁之后)而非 before,避免并发改动下用过期基准放行。
+      const effectiveIssuedAt =
+        dto.issuedAt !== undefined ? normalizeDateOnly(dto.issuedAt) : lockedBefore.issuedAt;
+      const effectiveExpiredAt =
+        dto.expiredAt !== undefined ? normalizeDateOnly(dto.expiredAt) : lockedBefore.expiredAt;
+      this.assertDateSemantics(effectiveIssuedAt, effectiveExpiredAt);
+
+      // §9.2:`expiredAt` 最终值变化时清空 `expireNotifyDueAt`,让到期提醒按新日期
+      // 重新计算(该标记是 at-most-once 的已提醒水印,不清会永久错过新窗口)。
+      // 只在真的变化时清 —— 传了同值不算变化,不无谓抹掉已发提醒的事实。
+      if ((effectiveExpiredAt?.getTime() ?? null) !== (lockedBefore.expiredAt?.getTime() ?? null)) {
+        data.expireNotifyDueAt = null;
+      }
+
       const coreFieldEdited = CERTIFICATE_CORE_FIELDS.some((field) => dto[field] !== undefined);
       if (coreFieldEdited && lockedBefore.certStatusCode !== CERT_STATUS_PENDING) {
         data.certStatusCode = CERT_STATUS_PENDING;
@@ -444,7 +526,7 @@ export class CertificatesService {
         tx,
       });
 
-      return updated;
+      return presentCertificate(updated, sensitive);
     });
   }
 
@@ -458,10 +540,9 @@ export class CertificatesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'certificate.delete.record', {
-      type: 'certificate',
-      id: certificateId,
-    });
+    const ref: ResourceRef = { type: 'certificate', id: certificateId };
+    await this.assertCanOrThrow(currentUser, 'certificate.delete.record', ref);
+    const sensitive = await this.canReadSensitive(currentUser, ref);
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
       const before = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
@@ -488,7 +569,7 @@ export class CertificatesService {
         tx,
       });
 
-      return removed;
+      return presentCertificate(removed, sensitive);
     });
   }
 
@@ -504,10 +585,9 @@ export class CertificatesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'certificate.verify.record', {
-      type: 'certificate',
-      id: certificateId,
-    });
+    const ref: ResourceRef = { type: 'certificate', id: certificateId };
+    await this.assertCanOrThrow(currentUser, 'certificate.verify.record', ref);
+    const sensitive = await this.canReadSensitive(currentUser, ref);
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
       const before = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
@@ -553,7 +633,7 @@ export class CertificatesService {
         tx,
       });
 
-      return updated;
+      return presentCertificate(updated, sensitive);
     });
   }
 
@@ -568,10 +648,9 @@ export class CertificatesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'certificate.reject.record', {
-      type: 'certificate',
-      id: certificateId,
-    });
+    const ref: ResourceRef = { type: 'certificate', id: certificateId };
+    await this.assertCanOrThrow(currentUser, 'certificate.reject.record', ref);
+    const sensitive = await this.canReadSensitive(currentUser, ref);
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
       const before = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
@@ -617,7 +696,7 @@ export class CertificatesService {
         tx,
       });
 
-      return updated;
+      return presentCertificate(updated, sensitive);
     });
   }
 
@@ -643,13 +722,19 @@ export class CertificatesService {
       BizCode.CERTIFICATE_TYPE_CODE_INVALID,
     );
 
-    const now = new Date();
+    // 冻结稿 §10.5 有效资质 = status=verified AND 未软删 AND
+    //   (expiredAt IS NULL OR expiredAt >= today),today = 北京日历日。
+    //
+    // 必须同时查状态与日期(D-CERT-020):不能只信持久状态 —— cron 每天 09:00 才翻态,
+    // 在它跑之前已过期的证书状态仍是 verified。反过来也不能拿时间戳比 `expiredAt`:
+    // 它存的是北京日的 UTC 零点,与 now 比会在最后有效日的北京 08:00 后误判为过期。
+    const today = beijingDateOnly(new Date());
     const found = await this.prisma.certificate.findFirst({
       where: notDeletedWhere({
         memberId,
         certTypeCode,
         certStatusCode: CERT_STATUS_VERIFIED,
-        OR: [{ expiredAt: null }, { expiredAt: { gt: now } }],
+        OR: [{ expiredAt: null }, { expiredAt: { gte: today } }],
       }),
       select: { id: true },
     });
