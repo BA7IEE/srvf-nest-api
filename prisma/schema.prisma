@@ -730,10 +730,38 @@ model Certificate {
   // blob 单一属主=certificate;app 侧 my/certificates DTO v1 不暴露——另议,NEXT_TASKS 登记)。
   imageKeys          Json? // 证书图 storage keys(string[];招新自报材料,verify/reject 人工核验参考)
 
+  // ===== 证书标准库 PR-2(冻结稿 §5.6;expand-only,全部 nullable)=====
+  //
+  // 本刀只建列与约束,**零写入路径**:PR-4a 才开始写 standardId / recognitionPolicyId /
+  // sourceCode,PR-4b 收紧为 NOT NULL 并 DROP 上面 4 个重复事实列
+  // (certTypeCode / certSubTypeCode / isInternal / imageKeys)。
+  //
+  // 为什么本刀就必须加 `sourceClaimId`:§5.5 的 Claim 有 `certificate Certificate?`
+  // 反向关系,缺这一侧 `prisma generate` 直接失败,而冻结稿 §26 铁律 11 要求
+  // **每个 PR 都必须可 generate**,不许只写单边 relation。
+  //
+  // 复合 FK 本刀就落(维护者 2026-07-30 拍板,把 goal 原定 PR-4b 的这一项提前):
+  // 列此刻全为 NULL,PostgreSQL 复合 FK 走 MATCH SIMPLE —— 任一列为 NULL 即放行,
+  // 所以提前落不会挡住空表期;而 PR-4a 一开始写入就有 DB 兜底,不会出现
+  // 「写了一轮不合法的 policy/standard 组合、等 PR-4b 才发现」。这是收紧,不是放松。
+  standardId          String?
+  recognitionPolicyId String?
+  recognitionIssuerId String?
+  sourceClaimId       String?            @unique // 一条 Claim 最多生成一张证书(§8.5 防重跑)
+  sourceCode          CertificateSource?
+
   member       Member        @relation("CertificateMember", fields: [memberId], references: [id], onDelete: Restrict)
   verifier     Member?       @relation("CertificateVerifier", fields: [verifiedBy], references: [id], onDelete: Restrict)
   supersededBy Certificate?  @relation("CertificateSupersession", fields: [supersededByCertId], references: [id], onDelete: Restrict)
   supersedes   Certificate[] @relation("CertificateSupersession")
+
+  standard CertificateStandard? @relation(fields: [standardId], references: [id], onDelete: Restrict)
+  // 复合 FK:锁死「这张证的 Policy 必须属于这张证的 Standard」(§5.6),
+  // 不能只按 policyId 单列引用 —— 否则能写出 policy 指向另一个 standard 的错行。
+  policy CertificateRecognitionPolicy? @relation(fields: [recognitionPolicyId, standardId], references: [id, standardId], onDelete: Restrict)
+  // 同理:issuer 必须属于该证锁定的 Policy。
+  issuer      CertificateRecognitionIssuer? @relation(fields: [recognitionIssuerId, recognitionPolicyId], references: [id, policyId], onDelete: Restrict)
+  sourceClaim RecruitmentCertificateClaim?  @relation(fields: [sourceClaimId], references: [id], onDelete: Restrict)
 
   @@index([memberId])
   @@index([certTypeCode])
@@ -742,6 +770,234 @@ model Certificate {
   @@index([deletedAt])
   @@index([createdAt])
   @@index([supersededByCertId])
+  @@index([standardId])
+  @@index([recognitionPolicyId])
+  @@index([sourceCode])
+}
+
+// ===== 证书标准库 / 队内认定规则 / 招新证书申报(PR-2 骨架)=====
+//
+// 冻结稿 [`docs/archive/reviews/certificate-standard-library-t0-review.md`](../docs/archive/reviews/certificate-standard-library-t0-review.md) v1.2 §5。
+// 本刀 **expand-only**:4 张净新空表 + 8 枚举 + Certificate 5 个 nullable 列;
+// 零 controller / 零 service / 零 DTO / 零业务写入口(PR-3 起才有 API)。
+//
+// 第一性拆分(§2,D-CERT-001):四类事实必须分表,不能由一张模板表同时承担 ——
+//   CertificateStandard          「这是什么证」= 证书身份,稳定不变
+//   CertificateRecognitionPolicy 「本队某时期怎么认可它」= 规则版本,可迭代
+//   RecruitmentCertificateClaim  「申请人拿来了什么」= 一张原始申报,可暂未分类
+//   Certificate                  「审核后确认了什么」= 正式档案
+// 合表的代价见 §0:认可机构或有效期一变,同一种证就被迫复制出 v2/v3,
+// 最后变成 bsafe_l2_final_final —— 那不是版本管理,是证书身份被炸碎。
+//
+// 命名:全部走 Prisma 默认表名(PascalCase),**不加 `@@map`**(prisma/CLAUDE.md 铁律);
+// 冻结稿 §5.3/§5.4 的手写 partial unique SQL 也正是按 `"CertificateRecognitionPolicy"`
+// 这种带引号的 PascalCase 写的,两边一致。
+// FK 全 `onDelete: Restrict`(沿全仓约定,证书是长期档案,不做级联删)。
+
+enum CertificateStandardKind {
+  FAMILY // 目录分组用,不可被认定 / 不可持有(D-CERT-003)
+  CREDENTIAL // 真实可持有的证书标准
+}
+
+enum CertificateStandardStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+}
+
+enum CertificateRecognitionPolicyStatus {
+  DRAFT
+  ACTIVE
+  RETIRED
+}
+
+enum CertificateIssuerPolicy {
+  FIXED // 恰好 1 个 issuer,实例可不传
+  ALLOWLIST // ≥1 个 issuer,实例必须传 recognitionIssuerId
+  FREE_TEXT // 0 个 issuer,实例必须传 issuingOrg 自由文本
+}
+
+// §5.3:EXPLICIT_REQUIRED / EXPLICIT_OPTIONAL 是刻意拆开的两态 ——
+// 旧设计用一个模糊的 MANUAL 同时表达「必须手填到期日」和「可不填即终身」,
+// 两种语义混在一个值里,校验写不出来。
+enum CertificateValidityMode {
+  PERMANENT // 到期日必须 NULL
+  FIXED_MONTHS // 后端按自然月算(addMonthsClamped),客户端不得传
+  EXPLICIT_REQUIRED // 证书上有具体到期日,必填
+  EXPLICIT_OPTIONAL // 到期日可空,空值明确代表终身有效
+}
+
+enum CertificateNumberMode {
+  REQUIRED // trim 后必须非空
+  OPTIONAL // 空字符串归一为 NULL
+  NONE // 必须为 NULL;客户端传值直接拒绝
+}
+
+// §5.1:第一版只有真实存在的两种来源。**不预埋** APP_SELF / IMPORT
+// (冻结稿 §1.1 第 7 条:不预埋尚未实施的来源)。
+enum CertificateSource {
+  ADMIN
+  RECRUITMENT
+}
+
+enum RecruitmentCertificateClaimStatus {
+  SUBMITTED
+  NEEDS_INFO
+  APPROVED
+  REJECTED
+  PROMOTED
+  WITHDRAWN
+}
+
+// §5.2 证书身份。code 创建后不可改、不可复用(D-CERT-004);
+// 类别/等级/父级/内部属性首次启用后冻结,只留名称/说明/排序可在审计下修文案(D-CERT-005)。
+model CertificateStandard {
+  id           String                    @id @default(cuid())
+  code         String                    @unique
+  name         String
+  description  String?
+  kind         CertificateStandardKind
+  categoryCode String // 字典 cert_type;沿全仓约定不做 FK,业务层校验
+  levelCode    String? // 字典 cert_sub_type;可空
+  parentId     String? // 必须指向 FAMILY;子父 categoryCode 必须一致;禁环
+  isInternal   Boolean                   @default(false)
+  status       CertificateStandardStatus @default(DRAFT)
+  sortOrder    Int                       @default(0)
+  activatedAt  DateTime?
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+  deletedAt    DateTime?
+
+  parent   CertificateStandard?  @relation("CertificateStandardTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children CertificateStandard[] @relation("CertificateStandardTree")
+
+  policies        CertificateRecognitionPolicy[]
+  certificates    Certificate[]
+  suggestedClaims RecruitmentCertificateClaim[] @relation("ClaimSuggestedStandard")
+  resolvedClaims  RecruitmentCertificateClaim[] @relation("ClaimResolvedStandard")
+
+  @@index([kind])
+  @@index([categoryCode])
+  @@index([levelCode])
+  @@index([parentId])
+  @@index([status])
+  @@index([sortOrder])
+  @@index([deletedAt])
+  @@index([createdAt])
+}
+
+// §5.3 队内认定规则版本。同一 Standard 至多一个 ACTIVE(D-CERT-006,
+// 由 migration 末尾手写 partial unique 兜底);已激活/已退役的规则永久不可改(D-CERT-007)。
+model CertificateRecognitionPolicy {
+  id             String                             @id @default(cuid())
+  standardId     String
+  version        Int
+  status         CertificateRecognitionPolicyStatus @default(DRAFT)
+  issuerPolicy   CertificateIssuerPolicy
+  validityMode   CertificateValidityMode
+  validityMonths Int? // 仅 FIXED_MONTHS 有值,1..600
+  certNumberMode CertificateNumberMode
+  activatedAt    DateTime?
+  retiredAt      DateTime?
+  createdAt      DateTime                           @default(now())
+  updatedAt      DateTime                           @updatedAt
+  deletedAt      DateTime?
+
+  standard     CertificateStandard            @relation(fields: [standardId], references: [id], onDelete: Restrict)
+  issuers      CertificateRecognitionIssuer[]
+  certificates Certificate[]
+  claims       RecruitmentCertificateClaim[]
+
+  @@unique([standardId, version])
+  // 复合 FK 的引用目标:让 Certificate / Claim 能按 (policyId, standardId) 整体引用,
+  // 从而在 DB 层锁死「policy 属于该 standard」。单看是冗余,是复合 FK 的必要前置。
+  @@unique([id, standardId])
+  @@index([standardId])
+  @@index([status])
+  @@index([deletedAt])
+  @@index([createdAt])
+}
+
+// §5.4 认可机构。实例认可靠 issuer id,**不靠机构文字匹配**(D-CERT-021;
+// 中文机构名匹配不可靠)。normalizedName 只用于 DRAFT 内去重,不做模糊匹配。
+model CertificateRecognitionIssuer {
+  id             String    @id @default(cuid())
+  policyId       String
+  name           String
+  normalizedName String // trim + 连续空白折叠 + ASCII 大小写归一;不删中文法律名称
+  sortOrder      Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  policy       CertificateRecognitionPolicy @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  claims       RecruitmentCertificateClaim[]
+  certificates Certificate[]
+
+  // 同上:复合 FK 的引用目标,锁死「issuer 属于该 policy」。
+  @@unique([id, policyId])
+  @@index([policyId])
+  @@index([sortOrder])
+  @@index([deletedAt])
+}
+
+// §5.5 招新证书申报。**一张真实证书一条 Claim**(D-CERT-012),不再按 category
+// 聚合成 JSON —— 旧 JSON 结构无法表达「同一类别多张不同证书」,也做不到单证重传/单证审核。
+// 允许审核前没有 Standard(D-CERT-014「不知道」是工作流状态,不是一种正式证书);
+// APPROVED 时必须解析为具体 CREDENTIAL Standard + Policy。
+model RecruitmentCertificateClaim {
+  id            String                            @id @default(cuid())
+  applicationId String
+  version       Int                               @default(0) // 申请人重传 vs 管理员审核的 CAS,避免双方互相覆盖
+  status        RecruitmentCertificateClaimStatus @default(SUBMITTED)
+
+  // 申请人侧原始申报(suggestedStandardId 只是建议,不是审核结论,D-CERT-016)
+  categoryHintCode    String
+  rawCertificateName  String?
+  suggestedStandardId String?
+
+  // 审核锁定的标准化结论(APPROVED 时非空,由 migration CHECK 兜底)
+  standardId          String?
+  recognitionPolicyId String?
+  recognitionIssuerId String?
+
+  issuingOrg String?
+  certNumber String?
+  issuedAt   DateTime?
+  expiredAt  DateTime?
+  // 只在数据库内部使用:永不进普通响应、日志、审计或 OpenAPI 示例(§5.5 / D-CERT-024)。
+  imageKeys  Json?
+
+  reviewedByUserId  String?
+  reviewedAt        DateTime?
+  reviewNote        String?
+  promotedAt        DateTime?
+  sensitivePurgedAt DateTime? // 发号后清空重复标量的时刻(§8.5 第 11 步)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  application       RecruitmentApplication @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  suggestedStandard CertificateStandard?   @relation("ClaimSuggestedStandard", fields: [suggestedStandardId], references: [id], onDelete: Restrict)
+  standard          CertificateStandard?   @relation("ClaimResolvedStandard", fields: [standardId], references: [id], onDelete: Restrict)
+
+  // 复合 FK,与 Certificate 同款(§5.6 明确「Claim 使用同样约束」)。
+  // 冻结稿 §5.5 的示意片段写的是单列关系,但 §5.6 要求的是复合约束;这里按后者落,
+  // 并且**用 Prisma 声明而不是在 SQL 里手加** —— 手加的 FK 不在 schema 里,
+  // 下一次 `prisma migrate diff` 会认为它是多余约束并生成 DROP,制造长期漂移。
+  // 跨表一致性(Policy.standardId = Claim.standardId、Issuer.policyId =
+  // Claim.recognitionPolicyId)由 Resolver 在事务内校验,这两条 FK 是 DB 兜底。
+  policy      CertificateRecognitionPolicy? @relation(fields: [recognitionPolicyId, standardId], references: [id, standardId], onDelete: Restrict)
+  issuer      CertificateRecognitionIssuer? @relation(fields: [recognitionIssuerId, recognitionPolicyId], references: [id, policyId], onDelete: Restrict)
+  certificate Certificate?
+
+  @@index([applicationId])
+  @@index([status])
+  @@index([standardId])
+  @@index([recognitionPolicyId])
+  @@index([deletedAt])
+  @@index([createdAt])
 }
 
 // ===== V2 第一阶段批次 3:activities =====
@@ -2285,6 +2541,12 @@ model RecruitmentApplication {
   idCardPortraitImageKey String? // 头像裁剪图 storage key(PortraitImage;十项收口刀E:promote 搬 User.avatarKey 设为队员头像,同一 blob 属主转 user、本列清空;未发号行留存按 key 删 blob)
 
   cycle RecruitmentCycle @relation(fields: [cycleId], references: [id], onDelete: Restrict)
+
+  // 证书标准库 PR-2(§5.5 结尾):一张真实证书一条 Claim 的反向数组。
+  // 冻结稿 §26 铁律 11 要求关系双向完整、每个 PR 都能 prisma generate,不许只写单边。
+  // 上面三个证书 JSON 列(certificateImages / certificateReviewStatus /
+  // certificateIssuanceInfo)在 PR-4a 停写、PR-4b DROP,由本关系取代。
+  certificateClaims RecruitmentCertificateClaim[]
 
   // 业务唯一约束(partial unique;migration.sql 末尾手写,E-R-9/10;Prisma DSL 不支持带 WHERE):
   // - recruitment_applications_cycle_idcard_active_unique ON (cycleId, idCardNumber)

@@ -28,6 +28,19 @@ export type AuditLogEvent =
   | 'certificate.verify' // PR #2 接入(certificates.service: verify)
   | 'certificate.reject' // PR #2 接入(certificates.service: reject)
   | 'certificate.expire' // v0.47.0 到期扫描:verified → expired,同事务落 before/after;系统 actor 为空
+  // 证书标准库 PR-2(冻结稿 §17):4 个高价值事件。本刀只登记常量,消费方在 PR-3(Standard/
+  // Policy 管理)与 PR-4a(Claim 审核)接入 —— 事件名先落是为了让 counts/契约一次到位,
+  // 不必在后续刀里再动 AuditLogEvent 这类跨模块枚举。
+  // 具体动作由 `extra.operation` 区分(create / update / activate / deactivate / delete /
+  // create-policy / activate-policy / retire-policy / replace-draft-issuers /
+  // approve / reject / needs-info / revoke-approval)。
+  // snapshot 允许含 code/name/kind/category/level/status/policyVersion/issuerPolicy/
+  // issuerNames/validityMode/validityMonths/certNumberMode;**禁**完整证书编号、图片 key、
+  // signed URL、审核备注全文、申请人姓名手机证件号(§17 / D-CERT-024)。
+  | 'certificate-standard.change' // Standard 身份与状态变更
+  | 'certificate-recognition-policy.change' // 认定规则版本创建 / 激活 / 退役 / issuer 整体替换
+  | 'recruitment-certificate-claim.review' // 招新证书申报审核(approve / reject / needs-info)
+  | 'recruitment-certificate-claim.review-revoke' // 发号前撤回 APPROVED 结论,重算门槛
   | 'contribution-rule.create' // PR #3 接入(contribution-rules.service: create)
   | 'contribution-rule.update' // PR #3 接入(contribution-rules.service: update)
   | 'contribution-rule.delete' // PR #3 接入(contribution-rules.service: softDelete)

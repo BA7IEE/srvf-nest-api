@@ -1542,6 +1542,81 @@ const META_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
 ];
 
 // PR-2A 聚合(44 条:dict 8 + org 5〔终态 scoped-authz PR1 +org.move.node〕+ member-department 3 +
+// ===== 证书标准库 PR-2(冻结稿 §16.1 / §16.2)=====
+//
+// Standard / Policy 是**全局主数据配置面**(§16.4:走 `RbacService.can()`,不是
+// Certificate 实例的 scoped Authz),所以两族码跟 `dict.*` / `position.*` /
+// `role-binding.*` 一样进 `PR_2A_PERMISSION_SEED` → 全绑 ops-admin。
+//
+// 另外把两条 **read** 码也列进 `BIZ_PERMISSION_SEED`(§16.4 表格:biz-admin
+// Standard read = 是 / Policy read = 是;写码一律不给)。同一码出现在两张 seed 列表里
+// 是**结构性必需**而非笔误:ops-admin 只从 `OPS_ADMIN_PERMISSION_SEED` 取绑定、
+// biz-admin 只从 `BIZ_ADMIN_PERMISSION_SEED` 取,两边都要的码就必须两边都在
+// (Permission 行本身是 upsert,重复列出不会建两行)。
+// biz-admin 拿到读码后 org-admin 按既有派生规则自动继承 —— 这是需要的:
+// org-admin 持 certificate.create/verify,建证时要靠 Standard options 下拉。
+const CERTIFICATE_STANDARD_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'certificate-standard.read.record',
+    module: 'certificate-standard',
+    action: 'read',
+    resourceType: 'record',
+    description: '查看通用证书标准(列表 / 详情 / options 建证与审核下拉)',
+  },
+  {
+    code: 'certificate-standard.create.record',
+    module: 'certificate-standard',
+    action: 'create',
+    resourceType: 'record',
+    description: '新建通用证书标准(初始 DRAFT;code 创建后不可改不可复用)',
+  },
+  {
+    code: 'certificate-standard.update.record',
+    module: 'certificate-standard',
+    action: 'update',
+    resourceType: 'record',
+    description: '修改通用证书标准(ACTIVE 后仅名称 / 说明 / 排序 / 状态可改)',
+  },
+  {
+    code: 'certificate-standard.delete.record',
+    module: 'certificate-standard',
+    action: 'delete',
+    resourceType: 'record',
+    description: '软删通用证书标准(被 Policy / Claim / Certificate 引用时拒绝)',
+  },
+];
+
+const CERTIFICATE_RECOGNITION_POLICY_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'certificate-recognition-policy.read.record',
+    module: 'certificate-recognition-policy',
+    action: 'read',
+    resourceType: 'record',
+    description: '查看队内证书认定规则(版本历史 + 当前生效摘要 + 认可机构)',
+  },
+  {
+    code: 'certificate-recognition-policy.create.record',
+    module: 'certificate-recognition-policy',
+    action: 'create',
+    resourceType: 'record',
+    description: '新建认定规则版本(DRAFT;issuer 集合随 DRAFT 整体提交)',
+  },
+  {
+    code: 'certificate-recognition-policy.update.record',
+    module: 'certificate-recognition-policy',
+    action: 'update',
+    resourceType: 'record',
+    description: '修改 DRAFT 认定规则 / 激活或退役(生效与退役后规则永久只读)',
+  },
+  {
+    code: 'certificate-recognition-policy.delete.record',
+    module: 'certificate-recognition-policy',
+    action: 'delete',
+    resourceType: 'record',
+    description: '软删 DRAFT 认定规则(ACTIVE / RETIRED 不可删)',
+  },
+];
+
 // membership 4〔终态 scoped-authz PR2〕+ contribution 4 + position 4 + position-rule 4〔终态 scoped-authz PR3〕
 // + position-assignment 4〔终态 scoped-authz PR4〕+ supervision-assignment 4〔终态 scoped-authz PR5〕
 // + role-binding 4〔终态 scoped-authz PR6〕)。
@@ -1559,6 +1634,9 @@ const PR_2A_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...POSITION_ASSIGNMENT_PERMISSION_SEED,
   ...SUPERVISION_ASSIGNMENT_PERMISSION_SEED,
   ...ROLE_BINDING_PERMISSION_SEED,
+  // 证书标准库 PR-2:证书标准 4 + 认定规则 4 = 8,配置面全绑 ops-admin(同 dict / position)。
+  ...CERTIFICATE_STANDARD_PERMISSION_SEED,
+  ...CERTIFICATE_RECOGNITION_POLICY_PERMISSION_SEED,
 ];
 
 // P0-F PR-2B(2026-05-18):配置类接口 RBAC 接入第二批(15 条)。
@@ -3366,6 +3444,23 @@ const BIZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...NOTIFICATION_PERMISSION_SEED,
   ...MEMBERSHIP_TRANSFER_PERMISSION_SEED,
 ];
+
+// 证书标准库 PR-2 的一处设计订正(2026-07-30):
+//
+// 起初把 Standard / Policy 的两条 read 码同时列进本表(业务面)与 PR_2A(配置面),
+// 想让 biz-admin 也直接持有 —— 依据是冻结稿 §16.4 表格「biz-admin Standard read = 是」。
+// 但 `seed-biz-admin.e2e-spec.ts` 用例 5 钉着一条本仓**架构不变量**:
+// **业务面码集与 ops-admin 码集互不相交**(`opsBound ∩ EXPECTED_BIZ_PERMISSION_CODES = ∅`)。
+// 同码两列直接违反它,而放宽这条断言是被 goal 明令禁止的。
+//
+// 因此 8 条码**只**进 PR_2A(ops-admin 配置面,与 dict / position / role-binding 同族),
+// biz-admin / org-admin 不持有。§16.4 自己给了这条路:
+// 「options endpoint 可以接受 Standard read,**或由持 certificate create/verify、
+//   recruitment certificate review 的角色获得专门只读绑定**」。
+// ⇒ PR-3 落 `/certificate-standards/options` 时,判权必须接受
+//   `certificate.create.record` / `certificate.verify.record` /
+//   `recruitment-application.review.certificate` 作为替代入口码,
+//   否则 biz-admin / org-admin 建证时下拉是空的。这一条已写进 PR-2 的「本次未做」。
 
 // biz-admin 绑定集合(69 条 = 87 中实际过滤 18 码；两条 return 不在该 87 条集合中；
 // Slow-4 §5/§6 + 保险 E-6
