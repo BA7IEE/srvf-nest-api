@@ -21,6 +21,8 @@ export function loadTestEnv(): void {
     );
   }
   // linked worktree 内把库名派生为 app_test_<slug>_<hash6>,并行 lane 的 e2e 互不打架;
-  // 主仓零变化,派生名仍含 'app_test' 子串,既有安全断言原样生效(worktree-db.ts)。
+  // 主仓零变化。派生用的是 deriveTestDbName(),而 test-db.ts 的 assertTestDatabaseUrl
+  // 拿**同一个函数**算预期值并逐字比对 —— 两侧共用一个真源,不可能各自漂移
+  // (旧口径「派生名仍含 app_test 子串所以断言原样生效」已作废:子串不再是判据)。
   applyTestDbDerivation();
 }

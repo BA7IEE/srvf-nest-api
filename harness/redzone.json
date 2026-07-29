@@ -73,6 +73,13 @@
       "allowCreate": true
     },
     {
+      "id": "test-env",
+      "globs": [
+        ".env.test"
+      ],
+      "why": "e2e 的 DATABASE_URL 真源 —— 它决定 reset-db.ts 那条 55 表 TRUNCATE 打到哪个库。2026-07-29 跨模型评审 F1:此前它不在任何红区,一条 PR 就能把它改到别处,而当时的安全闸只查 'app_test' 子串"
+    },
+    {
       "id": "container-build",
       "globs": [
         "Dockerfile",

@@ -1,0 +1,7 @@
+- **测试库安全闸从「子串判定」改为「主机允许清单 + 库名逐字相等 + 连接后求证」(跨模型评审 F1,真实数据破坏风险)**。旧实现是 `url.includes('app_test')` 一行:任何**远程** `DATABASE_URL` 只要路径含该子串就通过闸门,随后 `reset-db.ts` 对它执行 55 张业务表的 `TRUNCATE`。`postgresql://user:pw@prod.example.com:5432/app_test_prod` 是原样放行的,而 `.env.test`(这条 URL 的真源)当时**不在任何红区**,一条 PR 就能改。三层收紧:
+  - **URL 层**:解析 URL → 协议必须是 `postgresql:`/`postgres:` → host 必须**逐字命中**写死在代码里的允许清单(`localhost` / `127.0.0.1` / `::1` / `postgres` / `db` / `u-nest-api-postgres` / `host.docker.internal`,每条都注了理由)→ 库名必须**严格等于** `deriveTestDbName()` 的结果。清单写死而不读配置,是因为配置可被 PR 改、本文件在 `redzone.json` 保护内 —— **判据要放在受保护的那一侧**。库名与 `load-env` 的 `applyTestDbDerivation()` 共用同一个派生函数,两侧不可能各自漂移。
+  - **连接层**:`resetDb()` 在 `TRUNCATE` 之前先向服务器求证 `current_database()`(逐字比对)与 `inet_server_addr()`。URL 只是**意图** —— DNS 劫持、SSH 端口转发都能让一条完全合规的 URL 落到另一台机器上,唯一可信的答案来自连接的另一端。建/删库那条 `docker exec` 链路同样求证(先拒非本机 `DOCKER_HOST`,再问容器内 psql 连的是不是维护库 `postgres`)。
+  - **生命周期层**:`assertDroppableTestDbName` 由 `startsWith('app_test')` 收紧为「本 checkout 派生的那一族」(模板库或它的 `_w<N>` 克隆)。旧口径会放行**别的 worktree/lane 的派生库**,而 `DROP ... WITH (FORCE)` 会连人家正在跑的 e2e 一起踩死。
+  - **`.env.test` 纳入红区**(新条目 `test-env`)。
+  - 如实写明未做到逐字比对的一处:`inet_server_addr()` 判的是**地址段**(环回 / RFC1918 / 链路本地)而非字面量 —— 宿主机经 docker 端口映射连过去时它是容器在网桥上的地址(本机实测 `192.168.97.2`),随 docker 网络配置而变,写死字面量会在别人机器上误伤。它拦不住「同一台机器上的另一个库」(那由 `current_database()` 的逐字比对负责),拦得住「连到了一台公网数据库」。
+  - 自测 137 → 149:含评审给出的那条远程 URL 必须被拒、当前真实派生库名必须通过、口令在拒绝信息里已掩码、跨 lane 库名拒绝 `DROP`,以及用假客户端喂各种服务器回答验证连接后求证的六条裁决(不需要真数据库,可进 CI fast job)。

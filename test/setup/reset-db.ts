@@ -1,13 +1,14 @@
 import type { INestApplication } from '@nestjs/common';
 import { PrismaService } from '../../src/database/prisma.service';
-import { assertTestDatabaseUrl } from './test-db';
+import { assertConnectedTestDatabase, assertTestDatabaseUrl } from './test-db';
 
 // 每个 spec 文件 beforeAll 调用一次,在 createTestApp() 之后,
 // 把 User 表清空,保证文件间互不干扰(隔离粒度到 spec 文件级,
 // 不下沉到 it 级,避免 fixtures 反复重建拖慢套件)。
 //
-// 双保险:即使 setupFiles 没把 .env.test 加载好,这里再断言一次 DATABASE_URL 含 'app_test',
-// 任何路径上 truncate 误打到开发库 app 都会被这条护栏拒绝。
+// 双保险:即使 setupFiles 没把 .env.test 加载好,这里再判一次 DATABASE_URL
+// (host 允许清单 + 库名严格等于本 worker 的派生名),并在连接建立后向服务器
+// 求证 current_database() —— 任何路径上 truncate 误打到别的库都会被拒。
 //
 // 设计选择:
 // - 复用 app.get(PrismaService),不新开 PrismaClient,避免连接池泄漏
@@ -163,9 +164,14 @@ import { assertTestDatabaseUrl } from './test-db';
 // Activity 与 User，责任表还引用 Member；必须在 AttendanceSheet / Activity / User / Member
 // 之前显式清理，避免发布待审与活跃负责人 partial unique 跨 spec 污染。
 export async function resetDb(app: INestApplication): Promise<void> {
+  // 第一道:DATABASE_URL 的**意图**(host 允许清单 + 库名严格等于本 worker 的派生名)
   assertTestDatabaseUrl(process.env.DATABASE_URL);
 
   const prisma = app.get(PrismaService);
+  // 第二道:连接建立之后向服务器求证它**事实上**是谁。URL 合规不等于连对了地方
+  // (DNS 劫持 / 端口转发都能让一条合规 URL 落到别的机器上),而下面这条是
+  // 55 张业务表的 TRUNCATE —— 判错一次就是不可逆的数据破坏。
+  await assertConnectedTestDatabase(prisma);
   await prisma.$executeRawUnsafe(
     'TRUNCATE TABLE "activity_publish_reviews", "activity_responsibility_assignments", "insurance_eligibility_evidences", "notification_outbox_intents", "throttler_buckets", "organization_position_role_policies", "role_bindings", "role_permissions", "roles", "permissions", "audit_logs", "storage_settings", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "realname_verification_settings", "recruitment_applications", "recruitment_cycles", "recruitment_ocr_daily_counters", "team_join_applications", "team_join_cycles", "notification_reads", "notifications", "contents", "attachment_mime_configs", "attachment_size_limit_configs", "storage_object_operations", "storage_objects", "attachments", "attachment_type_configs", "team_insurance_coverages", "member_insurances", "team_insurance_policies", "ContributionRule", "activity_check_ins", "activity_feedbacks", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "activity_positions", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "member_organization_memberships", "organization_supervision_assignments", "organization_position_assignments", "organization_position_rules", "organization_positions", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
   );
