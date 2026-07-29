@@ -1,3 +1,6 @@
+import { spawnSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 import { ESLint } from 'eslint';
 // 从**已声明的** typescript-eslint 元包取 parser / plugin。
 // 原先直接 import '@typescript-eslint/parser' 与 '@typescript-eslint/eslint-plugin' 是
@@ -326,6 +329,60 @@ async function main(): Promise<void> {
         '  没有阳性对照的规则 = 写错了也永远不会有人知道(INC-06 就是这么静默失效的)。' +
         '请为每条新增选择器补一个「必定违规」的用例。',
     );
+  }
+
+  // ── F2:接线自测(走 `pnpm lint` 的正式入口,不 import eslint.harness.mjs)──────
+  //
+  // 为什么必须另起一条:上面每一条用例用的都是**本文件自己 new 出来的** ESLint
+  // 实例,配置直接来自 import 进来的 harnessConfigBlocks。它证明的是「规则本身
+  // 写对了」,**不是「规则真的接在 pnpm lint 上」** —— 这两件事可以分开坏。
+  //
+  // 实测(2026-07-29):把 eslint.config.mjs 里那一行 `...harnessConfigBlocks`
+  // 删掉,同一个违规文件从 exit 1 变成 exit 0、零违规,17 条铁律对真实 lint
+  // 全部静默失效 —— 而上面 31 条用例**一条都不会红**。这正是 INC-06 的形态:
+  // 以为有防线,其实没有,且完全静默。
+  //
+  // 做法:往 src/ 写一个必定违规的临时文件,用**仓库自己的 eslint 二进制 +
+  // 默认配置解析**(即 `pnpm lint` 走的那条路)去 lint 它,断言非零退出且
+  // 命中的正是 harness 的那条 message。
+  // 临时文件必须落在 src/ 内:eslint.config.mjs 的 parserOptions.project 只含
+  // src / test / prisma,放到别处 eslint 会因「文件不在任何 TS project 内」直接
+  // 报错 —— 那样断言测的就是另一件事了。
+  {
+    const repoRoot = path.resolve(__dirname, '..');
+    const probeRel = 'src/__harness-lint-wiring-probe.ts';
+    const probeAbs = path.join(repoRoot, probeRel);
+    // 违反 no-manual-response-wrap:ReturnStatement > ObjectExpression 同时含 code 与 message
+    const probeCode =
+      'export class HarnessLintWiringProbe {\n' +
+      '  m() {\n' +
+      "    return { code: 0, message: 'ok', data: 1 };\n" +
+      '  }\n' +
+      '}\n';
+    const expectedMessage = HARNESS_SYNTAX['no-manual-response-wrap'].message;
+    try {
+      fs.writeFileSync(probeAbs, probeCode);
+      const r = spawnSync(
+        path.join(repoRoot, 'node_modules/.bin/eslint'),
+        ['--max-warnings', '0', '--format', 'json', probeRel],
+        { cwd: repoRoot, encoding: 'utf-8' },
+      );
+      const hit =
+        r.status !== 0 && typeof r.stdout === 'string' && r.stdout.includes(expectedMessage);
+      if (hit) {
+        passed++;
+        console.log('✓ 接线自测:正式 lint 入口确实在执行 harness 执法块(删接线即红)');
+      } else {
+        failures.push(
+          `✗ 接线自测 — 正式 lint 入口没抓到必定违规的探针文件(exit=${String(r.status)})。\n` +
+            '  含义:eslint.harness.mjs 里的规则也许还在,但它没有接到 eslint.config.mjs 上,\n' +
+            '  `pnpm lint` 因此对 17 条铁律全部放行。检查 eslint.config.mjs 末尾的 `...harnessConfigBlocks`。',
+        );
+      }
+    } finally {
+      // 必须清掉:留在 src/ 会让 pnpm lint 永远红(响亮地坏,好过静默地坏)
+      fs.rmSync(probeAbs, { force: true });
+    }
   }
 
   for (const f of failures) console.error(f);
