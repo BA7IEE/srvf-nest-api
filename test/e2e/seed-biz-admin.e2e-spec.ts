@@ -22,14 +22,14 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // 2026-07-11 十项收口刀D:emergency-contact.read.sensitive +1(全绑 biz-admin)→ **83 码绑 80**。
 // 2026-07-19 D-INSURANCE v3 PR2:member-insurance.review.record +1(全绑)→ 86 码绑 82。
 // 2026-07-24 v0.61.0 PR-11 contract:活动/报名/考勤旧动作 14 条从该 86 条解绑，
-// 两条 return 码本就不在业务集合但一并 targeted 对账，终态 **86 码绑 68**。
+// 两条 return 码本就不在业务集合但一并 targeted 对账，终态 **86 码绑 68**;2026-07-30 证书标准库 PR-1:certificate.read.sensitive +1(全绑)→ **87 码绑 69**。
 // 沿冻结评审稿 docs/archive/reviews/slow4-rbac-business-face-review.md §5 + D-S4-7
 // + seed-attachment-permissions.e2e-spec.ts 子进程范式。
 //
 // 覆盖(评审稿 §5 验收项):
-// 1. 跑 seed 后存在 86 条业务面 permission(17 域,byModule 逐码一致)
+// 1. 跑 seed 后存在 87 条业务面 permission(17 域,byModule 逐码一致)
 // 2. 存在 biz-admin RbacRole(displayName / description 正确)
-// 3. biz-admin 绑定 68 条 RolePermission;member.delete/reviewer-only/contract 动作 **不**在绑定中
+// 3. biz-admin 绑定 69 条 RolePermission;member.delete/reviewer-only/contract 动作 **不**在绑定中
 // 4. 幂等补挂:seed 前已存在的 ADMIN 用户(含 DISABLED)跑 seed 后持有 biz-admin;
 //    SUPER_ADMIN / USER 不被挂;软删 ADMIN 不补挂(D-S4-7)
 // 5. 零变化项:ops-admin 绑定数(96;WECHAT T2 58→61 + 招新 T1 REALNAME settings 61→63 授权 true-up
@@ -98,8 +98,11 @@ const EXPECTED_BIZ_PERMISSION_CODES = [
   'emergency-contact.update.record',
   'emergency-contact.delete.record',
   'emergency-contact.read.sensitive',
-  // certificate 6
+  // certificate 7(证书标准库 PR-1:+read.sensitive)
   'certificate.read.record',
+  // 证书标准库 PR-1(2026-07-30,冻结稿 §15.3):+1 全绑 biz-admin。
+  // 本 spec 的两个计数均由本码表 derive(87 码绑 69),不需另改数字常量。
+  'certificate.read.sensitive',
   'certificate.create.record',
   'certificate.update.record',
   'certificate.delete.record',
@@ -188,7 +191,7 @@ const EXPECTED_BIZ_PERMISSION_CODES = [
   // membership.{list,read,set,end} 4 条 ops-admin 管理面码,module 同为 'membership' 但归业务面 seed)
   'membership.transfer.record',
 ] as const;
-const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 86(D-INSURANCE PR2 +review.record)
+const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 87(D-INSURANCE PR2 +review.record;PR-1 +certificate.read.sensitive)
 
 // D1=A 镜像:不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
@@ -221,7 +224,7 @@ const BIZ_ADMIN_UNBOUND_CODES: ReadonlyArray<string> = [
 ];
 const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_CODES.filter(
   (code) => !BIZ_ADMIN_UNBOUND_CODES.includes(code),
-).length; // 68(两条 return 不在 86 条业务集合)
+).length; // 69(两条 return 不在 87 条业务集合;PR-1 +certificate.read.sensitive)
 
 // 零变化基线(评审稿 §6):本断言意图 = 业务面 seed 不改 ops-admin / member 绑定;
 // 基线数跟随 ops-admin 当前合法总数(2026-06-12 WECHAT T2 +3 → 58→61;
@@ -267,7 +270,7 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
     await resetDb(app);
   });
 
-  it('1. 空 db → seed 跑完后 86 条业务面 permission 全部存在(17 域分布一致)', async () => {
+  it('1. 空 db → seed 跑完后 87 条业务面 permission 全部存在(17 域分布一致)', async () => {
     const result = runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'biz-seed-su-1' });
     expect(result.code).toBe(0);
 
@@ -286,7 +289,7 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
       member: 6,
       'member-profile': 4,
       'emergency-contact': 5,
-      certificate: 6,
+      certificate: 7, // 证书标准库 PR-1:+read.sensitive(§15.3)
       activity: 6,
       'activity-registration': 6,
       attendance: 9,
@@ -303,7 +306,7 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
     });
   });
 
-  it('2 + 3. biz-admin 绑定恰 68 条;保留 create/delete/read 并摘除 contract 动作', async () => {
+  it('2 + 3. biz-admin 绑定恰 69 条;保留 create/delete/read 并摘除 contract 动作', async () => {
     const result = runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'biz-seed-su-2' });
     expect(result.code).toBe(0);
 
