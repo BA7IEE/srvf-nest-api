@@ -11,7 +11,7 @@
  * preflight(R5-08)的参数 / bump 特征回归在 scripts/agent-preflight.selftest.sh。
  */
 
-import { spawnSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { checkFragment, mergeIntoChangelog } from './changelog-merge';
@@ -736,6 +736,169 @@ for (const [configName, config] of JEST_CONFIGS) {
   } finally {
     // 自复原:selftest 绝不留下被篡改的仓库文件
     fs.writeFileSync(codemapPath, original, 'utf8');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// P2c — CI 接线的 fail-open 面(与 INC-09 同一类:skipped ≠ 通过)
+// ---------------------------------------------------------------------------
+{
+  const ci = fs.readFileSync(path.resolve(__dirname, '..', '.github/workflows/ci.yml'), 'utf-8');
+  const cases: Array<[string, boolean, string]> = [
+    [
+      'P2c ci:gate 依赖 redzone-scan 与 redzone-approval',
+      /needs:\s*\[changeset, fast, slow, redzone-scan, redzone-approval\]/.test(ci),
+      'gate 不依赖这两个 job = 审批不影响放行,门形同虚设',
+    ],
+    [
+      'P2c ci:scan 未成功即拒绝放行(无法验证 ≠ 通过)',
+      ci.includes('红区扫描未成功'),
+      'scan 失败时若不拦,等于在没查的情况下宣布没触碰(INC-07 同型)',
+    ],
+    [
+      'P2c ci:approval 跳过必须由 touched=false 正面证明',
+      ci.includes("case \"$touched\" in") && ci.includes('未触碰红区却跑了审批'),
+      '从 skipped 反推「没触碰」= INC-09 原样复发',
+    ],
+    [
+      'P2c ci:touched 无明确结论时 fail-closed',
+      ci.includes('未给出明确结论'),
+      'touched 为空/error 时若放行,scan 崩溃就等于绕过整层',
+    ],
+    [
+      'P2c ci:approval job 挂 harness-review 环境',
+      /redzone-approval:[\s\S]*?environment:\s*harness-review/.test(ci),
+      '不挂环境 = 无人审批,job 直接绿',
+    ],
+    [
+      'P2c ci:scan 用全深度 checkout(浅克隆算不出 base...HEAD)',
+      /redzone-scan:[\s\S]*?fetch-depth:\s*0/.test(ci),
+      '浅克隆下 diff 会算错或报错,进而 fail-closed 卡住所有 PR',
+    ],
+    [
+      // 实测踩到:新 job 里写了 `node-version-file: .nvmrc`,而本仓没有 .nvmrc,
+      // scan job 当场失败(且因为 fail-closed,连带整个 gate 拒绝放行)。
+      // 凡 CI 引用仓内文件,该文件必须真的存在 —— 这条能静态判,就别留给 CI 去发现。
+      'P2c ci:workflow 引用的仓内文件必须存在',
+      (() => {
+        // 先剥注释再扫 —— 否则「注释里**描述**这个错误」的那句话自己会被判成配置。
+        // 本仓今晚第三次踩同一类:描述文本 ≠ 命令位 / 配置位。
+        const code = ci
+          .split('\n')
+          .map((l) => l.replace(/(^|\s)#.*$/, ''))
+          .join('\n');
+        const refs = [
+          ...code.matchAll(/(?:node-version-file|env-file|args-file):\s*([^\s#]+)/g),
+        ].map((m) => m[1]);
+        return refs.every((r) => fs.existsSync(path.resolve(__dirname, '..', r)));
+      })(),
+      'workflow 指向不存在的文件 → 该 job 直接失败',
+    ],
+    [
+      'P2c ci:两个 required check 名逐字未动',
+      ci.includes('name: Lint / Typecheck / E2E') && ci.includes('name: Docker image build'),
+      'branch protection 逐字锁这两个名字,改名 = 全仓 PR 永久卡死(含维护者本人)',
+    ],
+  ];
+  for (const [name, ok, why] of cases) check(name, ok, why);
+}
+
+// ---------------------------------------------------------------------------
+// P2c — CI 侧红区检测 与 hook 的**裁决一致性**(parity)
+//
+// 两套实现判同一份 harness/redzone.json:hook 用 bash case,CI 用 TS 正则。
+// 各自演化就会出现「一边拦一边放」—— 那比没有守护更糟,因为人会以为已经管住了。
+// 这里对一组覆盖每类条目的路径逐条比对两边裁决,任何分歧当场红。
+// ---------------------------------------------------------------------------
+{
+  const REPO = path.resolve(__dirname, '..');
+  const grantFile = execFileSync('git', ['rev-parse', '--git-path', 'srvf-redzone-grant.json'], {
+    encoding: 'utf-8',
+    cwd: REPO,
+  }).trim();
+  const grantAbs = path.isAbsolute(grantFile) ? grantFile : path.join(REPO, grantFile);
+  const bak = `${grantAbs}.parity-bak`;
+  const hadGrant = fs.existsSync(grantAbs);
+  if (hadGrant) fs.renameSync(grantAbs, bak);
+
+  try {
+    // 覆盖:每个 redzone 组各一 + selfGuard 各类 + archive 新建/改既有 + 日常放行路径
+    const FIXTURES = [
+      'AGENTS.md',
+      'CLAUDE.md',
+      '.claude/CLAUDE.md',
+      'docs/api-surface-policy.md',
+      '.github/workflows/ci.yml',
+      'prisma/schema.prisma',
+      'prisma/migrations/20260101_x/migration.sql',
+      'prisma/seed.ts',
+      'src/common/guards/jwt-auth.guard.ts',
+      'src/bootstrap/apply-global-setup.ts',
+      'src/modules/auth/auth.service.ts',
+      'src/modules/storage/storage-crypto.service.ts',
+      'Dockerfile',
+      'docker-compose.yml',
+      'harness/redzone.json',
+      'harness/incidents.json',
+      '.claude/hooks/redzone-guard.sh',
+      '.claude/settings.json',
+      'eslint.harness.mjs',
+      'scripts/check-codemap.ts',
+      'scripts/check-redzone.ts',
+      'scripts/harness-eslint.selftest.ts',
+      'scripts/agent-preflight.sh',
+      'scripts/docs-counts.ts',
+      'scripts/harness-grant.ts',
+      'scripts/generate-codemap.ts',
+      'scripts/replay-incidents.ts',
+      'scripts/changelog-merge.ts',
+      'test/setup/test-app.ts',
+      'test/contract/openapi.contract-spec.ts',
+      'docs/archive/plans/harness-3.0-blueprint.md',
+      'docs/archive/plans/definitely-brand-new-file.md',
+      'src/modules/users/users.service.ts',
+      'test/e2e/users.e2e-spec.ts',
+      'docs/testing.md',
+      'CHANGELOG.md',
+      'package.json',
+    ];
+
+    const hookBlocks = (rel: string): boolean => {
+      const r = spawnSync(path.join(REPO, '.claude/hooks/redzone-guard.sh'), {
+        input: JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: rel } }),
+        encoding: 'utf-8',
+        cwd: REPO,
+      });
+      return r.status === 2;
+    };
+
+    // 与 hook 同口径:它按「磁盘上文件是否存在」决定 archive 的新建豁免
+    const judge = (
+      require('./check-redzone') as {
+        judge: (rel: string, added: boolean) => unknown;
+      }
+    ).judge;
+
+    let mismatches = 0;
+    for (const rel of FIXTURES) {
+      const added = !fs.existsSync(path.join(REPO, rel));
+      const ci = judge(rel, added) !== null;
+      const hook = hookBlocks(rel);
+      if (ci !== hook) {
+        mismatches++;
+        failures.push(
+          `✗ P2c parity 分歧:${rel} — hook ${hook ? '拦' : '放'} / CI ${ci ? '拦' : '放'}` +
+            '(两侧裁决必须逐条一致,否则会出现「一边拦一边放」)',
+        );
+      }
+    }
+    check(
+      `P2c redzone parity:${FIXTURES.length} 条路径 hook 与 CI 裁决一致`,
+      mismatches === 0,
+      `${mismatches} 条分歧`,
+    );
+  } finally {
+    if (hadGrant && fs.existsSync(bak)) fs.renameSync(bak, grantAbs);
   }
 }
 
