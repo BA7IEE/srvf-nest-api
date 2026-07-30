@@ -695,7 +695,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
       await request(httpServer(app))
         .get(`/api/admin/v1/members/${memberId}/certificates/qualification-flag`)
-        .query({ certTypeCode })
+        .query({ criterionType: 'category', criterionCode: certTypeCode })
         .set('Authorization', adminAuth)
         .set('User-Agent', 'audit-migrations-sensitive-read')
         .expect(200);
@@ -720,7 +720,10 @@ describe('audit-logs 写入迁移', () => {
         requestId: expect.any(String),
         ip: expect.any(String),
         ua: 'audit-migrations-sensitive-read',
-        extra: { operation: 'qualification-flag', filterFields: ['certTypeCode'] },
+        extra: {
+          operation: 'qualification-flag',
+          filterFields: ['criterionType', 'criterionCode'],
+        },
       });
       expect(context.requestId.length).toBeGreaterThan(0);
       const serializedContext = JSON.stringify(context);

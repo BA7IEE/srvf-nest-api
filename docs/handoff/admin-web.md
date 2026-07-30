@@ -375,6 +375,55 @@
 5. **证据 URL 按需申请**:TTL 300s + `Cache-Control: no-store`。**不预加载、页面关闭即丢弃、不写 localStorage/sessionStorage、埋点禁止采集 URL 与表单值**(§23 / §15.5,后端无法强制,是交接约定)。⚠️ `sourceCode=ADMIN` 的证据读者需**同时**持 `certificate.read.sensitive` 与 `attachment.view`(方案 A 的已知代价);另外该分支依赖 `attachment_type_configs` 里 `certificate` 那条为 ACTIVE,运维停用它会返 400 而不是空数组。
 6. **一证一行**:同类别可以有多张证书/多条申报,互不覆盖;重传只换那一条。旧的「按类别一格」端点已全部删除,没有兼容窗口 —— 调它们返 404。
 
+#### 3.2.1 跨模型评审 findings 修复批次(2026-07-30;⚠️ 再三处契约变化)
+
+> 2026-07-30 批次级跨模型独立评审对 PR-1→PR-6 判 NO-GO,修复批次 F1→F6。
+> 下面只列**前端能感知**的部分;并发、审计、SOP 那几刀对前端透明。
+> 逐条修正记录见 [`certificate-standard-library-t0-amendments.md`](../archive/reviews/certificate-standard-library-t0-amendments.md)。
+
+**① 资质判定端点换了查询契约(F4;⚠️ 破坏,无兼容窗口)**
+
+`GET /admin/v1/members/:memberId/certificates/qualification-flag`
+
+| | 旧 | 新 |
+|---|---|---|
+| query | `certTypeCode=first_aid` | `criterionType=category&criterionCode=first_aid`<br>或 `criterionType=standard&criterionCode=bsafe_l2` |
+| 出参 | `{memberId, certTypeCode, qualified}` | `{memberId, criterionType, criterionCode, qualified, matchedCertificateId, expiredAt}` |
+
+`certTypeCode` **已删且不做兼容** —— 继续发它会被 `forbidNonWhitelisted` 拒成 `40000`,而不是静默当成「没传判据」返回一个错误答案。判据一律用**稳定 code**(cert_type 字典 code 或 `CertificateStandard.code`),不收 cuid。
+
+`criterionCode` 拼错 / 不存在 → `18010`(category,证书大类字典 code 不存在)或 `18002`(standard,证书标准不存在),**不是** `qualified: false` —— 拼错的 code 和「确实没有这张证」是两件事,后者会被调用方当成「这个人不合格」写进业务结论。
+
+新出参的用途:`matchedCertificateId` 让前端能直接跳到那张证书;`expiredAt` 让「还有多久到期 / 该不该提醒续期」不用再查一次列表。多张证书命中时选哪一张是**确定**的(永久有效 > 到期日较晚 > 发证日较晚 > id 字典序),同一次查询不会返回不同结果。
+
+**② PATCH 证书的三态语义(F3;⚠️ 破坏)**
+
+```
+字段不出现        → 保持库内现值
+字段出现且为 null → 清空
+字段出现且有值    → 用新值
+```
+
+对前端的三点实际影响:
+
+- **`expiredAt: null` / `certNumber: null` 现在会真的清空**(此前发 null 无效果)。如果表单是「未填 = 发 null」,请改成「未填 = 不发这个 key」,否则会误清。
+- **`issuedAt: null` 现在返 400**(此前静默忽略)。
+- **带上原样 `standardId` 的整表单提交不再清空到期日了** —— 此前那是一次静默的数据丢失。
+- 顺带:**零变更的整表单提交不再把已核验证书打回 pending**;真改了值仍然打回。
+
+**③ 招新申报证据图按状态分流(F2)**
+
+`GET /admin/v1/recruitment/certificate-claims/:id/image-urls` 现在对两个终态返 `28057`:
+
+- `WITHDRAWN`(申请人已撤回)—— 撤回的语义就是「别再看了」;
+- `PROMOTED`(已发号)—— 改走 `GET /admin/v1/members/:memberId/certificates/:id/evidence-urls`。
+
+前端做法:申报卡片按 `status` 决定证据按钮是「查看证据」「已撤回」还是「去证书档案查看」,不要无脑请求再吞错。`REJECTED` 仍可看(申请人能从它重投,审核员要能回看)。
+
+**④ 工作台分页越界现在会 400**(F3):`page ≥ 1`、`1 ≤ pageSize ≤ 100`。此前只写在 Swagger 注解里、没有实际校验。
+
+**⑤ 核验一张已过期的证书,落点是 `expired` 而不是 `verified`**(F3)。核验成功的响应里 `certStatusCode` 可能直接是 `expired` —— 前端不要假设「verify 成功 = verified」。
+
 ### 3.3 招新公开面(小程序/H5)的连带变化
 
 见 [`miniapp.md`](miniapp.md) 的证书段:公开上传换端点、进度模型 `certificates` 变形、`my/certificates` 出参与过滤参数都改了。

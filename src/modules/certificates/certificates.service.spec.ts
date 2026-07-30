@@ -1000,7 +1000,7 @@ describe('CertificatesService (characterization, scoped)', () => {
       const service = makeService(prisma);
 
       await expect(
-        service.isQualified('mem-1', 'cert_unknown', makeCurrentUser(), META),
+        service.isQualified('mem-1', 'category', 'cert_unknown', makeCurrentUser(), META),
       ).rejects.toEqual(new BizException(BizCode.CERTIFICATE_TYPE_CODE_INVALID));
     });
 
@@ -1012,11 +1012,20 @@ describe('CertificatesService (characterization, scoped)', () => {
       prisma.certificate.findFirst.mockResolvedValue(makeCertRow({ id: 'cert-1' }));
       const service = makeService(prisma, { auditLogs });
 
-      const res = await service.isQualified('mem-1', 'cert_first_aid', makeCurrentUser(), META);
+      const res = await service.isQualified(
+        'mem-1',
+        'category',
+        'cert_first_aid',
+        makeCurrentUser(),
+        META,
+      );
 
       expect(res.qualified).toBe(true);
       expect(res.memberId).toBe('mem-1');
-      expect(res.certTypeCode).toBe('cert_first_aid');
+      // 评审 findings F4(§12):出参回显两级判据,并给出命中的那张证书。
+      expect(res.criterionType).toBe('category');
+      expect(res.criterionCode).toBe('cert_first_aid');
+      expect(res.matchedCertificateId).toBe('cert-1');
       const findFirstArg = prisma.certificate.findFirst.mock.calls[0][0] as {
         where: {
           memberId: string;
@@ -1040,10 +1049,14 @@ describe('CertificatesService (characterization, scoped)', () => {
         resourceType: 'member',
         resourceId: 'mem-1',
         meta: META,
-        extra: { operation: 'qualification-flag', filterFields: ['certTypeCode'] },
+        extra: {
+          operation: 'qualification-flag',
+          filterFields: ['criterionType', 'criterionCode'],
+        },
       });
       const auditInput = auditLogs.log.mock.calls[0][0] as { extra: Record<string, unknown> };
-      expect(auditInput.extra).not.toHaveProperty('certTypeCode');
+      // 审计只记「按哪些字段筛的」,不记筛选值本身,也不记判定结果。
+      expect(auditInput.extra).not.toHaveProperty('criterionCode');
       expect(auditInput.extra).not.toHaveProperty('qualified');
     });
 
@@ -1054,7 +1067,13 @@ describe('CertificatesService (characterization, scoped)', () => {
       prisma.certificate.findFirst.mockResolvedValue(null);
       const service = makeService(prisma);
 
-      const res = await service.isQualified('mem-1', 'cert_first_aid', makeCurrentUser(), META);
+      const res = await service.isQualified(
+        'mem-1',
+        'category',
+        'cert_first_aid',
+        makeCurrentUser(),
+        META,
+      );
 
       expect(res.qualified).toBe(false);
     });
@@ -1065,7 +1084,7 @@ describe('CertificatesService (characterization, scoped)', () => {
       const service = makeService(prisma);
 
       await expect(
-        service.isQualified('missing', 'cert_first_aid', makeCurrentUser(), META),
+        service.isQualified('missing', 'category', 'cert_first_aid', makeCurrentUser(), META),
       ).rejects.toEqual(new BizException(BizCode.MEMBER_NOT_FOUND));
       expect(prisma.dictItem.findFirst).not.toHaveBeenCalled();
       expect(prisma.certificate.findFirst).not.toHaveBeenCalled();
@@ -1252,7 +1271,7 @@ describe('CertificatesService (characterization, scoped)', () => {
       prisma.certificate.findFirst.mockResolvedValue(makeCertRow({ id: 'cert-1' }));
       const service = makeService(prisma);
 
-      await service.isQualified('mem-1', 'cert_first_aid', makeCurrentUser(), META);
+      await service.isQualified('mem-1', 'category', 'cert_first_aid', makeCurrentUser(), META);
 
       const where = (
         prisma.certificate.findFirst.mock.calls[0][0] as {
@@ -1274,7 +1293,7 @@ describe('CertificatesService (characterization, scoped)', () => {
       prisma.certificate.findFirst.mockResolvedValue(makeCertRow({ id: 'cert-1' }));
       const service = makeService(prisma);
 
-      await service.isQualified('mem-1', 'cert_first_aid', makeCurrentUser(), META);
+      await service.isQualified('mem-1', 'category', 'cert_first_aid', makeCurrentUser(), META);
 
       const where = (
         prisma.certificate.findFirst.mock.calls[0][0] as {
@@ -1296,7 +1315,7 @@ describe('CertificatesService (characterization, scoped)', () => {
       prisma.certificate.findFirst.mockResolvedValue(null);
       const service = makeService(prisma);
 
-      await service.isQualified('mem-1', 'cert_first_aid', makeCurrentUser(), META);
+      await service.isQualified('mem-1', 'category', 'cert_first_aid', makeCurrentUser(), META);
 
       const where = (
         prisma.certificate.findFirst.mock.calls[0][0] as {

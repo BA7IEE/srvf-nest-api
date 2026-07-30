@@ -26,6 +26,7 @@ import {
   CreateCertificateDto,
   QualificationFlagResponseDto,
   RejectCertificateDto,
+  type QualificationCriterionType,
   UpdateCertificateDto,
   VerifyCertificateDto,
 } from './certificates.dto';
@@ -845,7 +846,8 @@ export class CertificatesService {
   // 只返布尔 + 摘要(草案 §13.2 强约束)。
   async isQualified(
     memberId: string,
-    certTypeCode: string,
+    criterionType: QualificationCriterionType,
+    criterionCode: string,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<QualificationFlagResponseDto> {
@@ -854,11 +856,27 @@ export class CertificatesService {
       id: memberId,
     });
     await this.findMemberOrThrow(memberId);
-    await this.assertDictItemValid(
-      DICT_TYPE_CERT_TYPE,
-      certTypeCode,
-      BizCode.CERTIFICATE_TYPE_CODE_INVALID,
-    );
+
+    // §12 两级判据各自校验 code 存在,不存在直接 400 —— 不静默返 `qualified: false`。
+    // 拼错的 code 和「确实没有这张证」是两件完全不同的事,而后者会被调用方
+    // (岗位资格、活动门槛)当成「这个人不合格」写进业务结论。
+    if (criterionType === 'category') {
+      await this.assertDictItemValid(
+        DICT_TYPE_CERT_TYPE,
+        criterionCode,
+        BizCode.CERTIFICATE_TYPE_CODE_INVALID,
+      );
+    } else {
+      // §12:「历史 Certificate 不要求 Standard 当前 ACTIVE」——
+      // 所以这里只校验**存在且未软删**,不校验 status。
+      // 校验 ACTIVE 会让「标准停用后,存量持证人一夜之间全部不合格」,
+      // 而停用标准的本意是「不再新发」,不是「追溯作废」。
+      const std = await this.prisma.certificateStandard.findFirst({
+        where: notDeletedWhere({ code: criterionCode }),
+        select: { id: true },
+      });
+      if (!std) throw new BizException(BizCode.CERTIFICATE_STANDARD_NOT_FOUND);
+    }
 
     // 冻结稿 §10.5 有效资质 = status=verified AND 未软删 AND
     //   (expiredAt IS NULL OR expiredAt >= today),today = 北京日历日。
@@ -877,14 +895,29 @@ export class CertificatesService {
     const found = await this.prisma.certificate.findFirst({
       where: notDeletedWhere({
         memberId,
-        standard: { categoryCode: certTypeCode },
+        // §12:分类级按 `Standard.categoryCode`,标准级按 `Standard.code`。
+        // 两级都经关联走 Standard —— 实例侧没有任何类别副本(PR-4b 已 DROP)。
+        standard:
+          criterionType === 'category' ? { categoryCode: criterionCode } : { code: criterionCode },
         certStatusCode: CERT_STATUS_VERIFIED,
         OR: [{ expiredAt: null }, { expiredAt: { gte: today } }],
       }),
-      select: { id: true },
+      // §12 四级稳定排序:
+      //   ① 永久有效优先   → `expiredAt` NULLS FIRST
+      //   ② expiredAt 较晚 → 同一 clause 的 DESC
+      //   ③ issuedAt 较晚
+      //   ④ id 字典序      → 兜底,保证**完全**确定(前三级可能全部并列)
+      //
+      // 第 ④ 级不是凑数:少了它,两张同日发放、同日到期的证书谁被选中取决于
+      // PostgreSQL 的物理行序,同一次查询在 VACUUM 前后可能返回不同的
+      // `matchedCertificateId` —— 那正是「稳定顺序」这四个字要排除的东西。
+      orderBy: [
+        { expiredAt: { sort: 'desc', nulls: 'first' } },
+        { issuedAt: 'desc' },
+        { id: 'asc' },
+      ],
+      select: { id: true, expiredAt: true },
     });
-
-    const qualified = found !== null;
 
     await this.auditLogs.log({
       event: 'certificate.read.qualification-flag',
@@ -893,13 +926,19 @@ export class CertificatesService {
       resourceType: 'member',
       resourceId: memberId,
       meta: auditMeta,
-      extra: { operation: 'qualification-flag', filterFields: ['certTypeCode'] },
+      extra: {
+        operation: 'qualification-flag',
+        filterFields: ['criterionType', 'criterionCode'],
+      },
     });
 
     return {
       memberId,
-      certTypeCode,
-      qualified,
+      criterionType,
+      criterionCode,
+      qualified: found !== null,
+      matchedCertificateId: found?.id ?? null,
+      expiredAt: found?.expiredAt ?? null,
     };
   }
   // ============ 证据读取(§13.5)============

@@ -13959,8 +13959,27 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "QualificationFlagResponseDto": {
     "properties": {
-      "certTypeCode": {
-        "description": "查询的证书大类 code",
+      "criterionCode": {
+        "description": "判据 code(回显入参)",
+        "type": "string",
+      },
+      "criterionType": {
+        "description": "判据级别(回显入参)",
+        "enum": [
+          "category",
+          "standard",
+        ],
+        "type": "string",
+      },
+      "expiredAt": {
+        "description": "命中证书的最后有效日(null = 终身有效,或不具备资质)",
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "matchedCertificateId": {
+        "description": "命中的证书 id(四级稳定排序选出的那一张;不具备资质时为 null)",
+        "nullable": true,
         "type": "string",
       },
       "memberId": {
@@ -13968,13 +13987,14 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "qualified": {
-        "description": "是否具备资质(已核验 + 未过期 + 未软删;草案 §9.3 / Q-S9)",
+        "description": "是否具备资质(已核验 + 未过期 + 未软删;§10.5 / §12)",
         "type": "boolean",
       },
     },
     "required": [
       "memberId",
-      "certTypeCode",
+      "criterionType",
+      "criterionCode",
       "qualified",
     ],
     "type": "object",
@@ -44250,11 +44270,26 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
         },
         {
-          "description": "证书大类 code(必填)",
+          "description": "判据级别:category = 按证书大类;standard = 按具体证书标准",
           "in": "query",
-          "name": "certTypeCode",
+          "name": "criterionType",
           "required": true,
           "schema": {
+            "enum": [
+              "category",
+              "standard",
+            ],
+            "example": "category",
+            "type": "string",
+          },
+        },
+        {
+          "description": "判据 code(稳定 code,非 cuid)。criterionType=category 时为 cert_type 字典 code;criterionType=standard 时为 CertificateStandard.code",
+          "in": "query",
+          "name": "criterionCode",
+          "required": true,
+          "schema": {
+            "example": "first_aid",
             "maxLength": 64,
             "type": "string",
           },
@@ -44399,9 +44434,10 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "15001: 队员不存在",
+                    "description": "15001: 队员不存在; 18002: 证书标准不存在",
                     "enum": [
                       15001,
+                      18002,
                     ],
                     "example": 15001,
                     "type": "integer",
@@ -44425,7 +44461,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "队员不存在(code=15001)",
+          "description": "队员不存在(code=15001) / 证书标准不存在(code=18002)",
         },
       },
       "security": [
