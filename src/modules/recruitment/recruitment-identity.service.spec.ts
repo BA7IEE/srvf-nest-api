@@ -252,10 +252,21 @@ describe('RecruitmentIdentityService.withdraw · status claim 后权威重读', 
         update: jest.fn().mockResolvedValue(updated),
       },
       // PR-4a-2(§8.4 末段):整份撤销级联未 PROMOTED 的 Claim → WITHDRAWN,
-      // 随后重算派生门槛。本组无 Claim → updateMany 0 条、重算无改动。
+      // 随后重算派生门槛。
+      //
+      // 评审 findings H1:级联收编进 `withdrawClaimsOnApplicationTerminal` 后,
+      // **零 Claim 时它提前返回、不再空跑 updateMany** —— 所以这里必须真的摆一条
+      // Claim,否则下面「级联真的发生了」那句断言会退化成永真。
+      // 这一行同时喂给门槛重算:SUBMITTED 不贡献门槛 ⇒ 重算无改动(本组守的是撤销,不是门槛)。
       recruitmentCertificateClaim: {
-        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
-        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'claim-withdraw-1',
+            status: 'SUBMITTED',
+            standard: { categoryCode: 'first_aid' },
+          },
+        ]),
       },
     };
     const prisma = {
@@ -296,7 +307,7 @@ describe('RecruitmentIdentityService.withdraw · status claim 后权威重读', 
         // PR-4a-2:extra 多一个 withdrawnClaimCount(级联撤了几条证书申报)。
         // 断言写全集而不是放宽成 objectContaining —— 这一格的意义正是「只记条数,
         // 不记 claim id / 编号 / key」,放宽就测不到「没多记别的」。
-        extra: { channel: 'wechat', openid: 'stal****lock', withdrawnClaimCount: 0 },
+        extra: { channel: 'wechat', openid: 'stal****lock', withdrawnClaimCount: 1 },
         tx,
       }),
     );

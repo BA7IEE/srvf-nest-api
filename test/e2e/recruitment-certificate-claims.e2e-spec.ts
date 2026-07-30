@@ -54,6 +54,7 @@ describe('recruitment certificate claims + public standard options(PR-4a-1)', ()
   let sensitiveAuth: string; // read.record + read.sensitive
   let reviewerAuth: string; // 三码全持
   let plainAuth: string; // 无任何招新码
+  let resolverAuth: string; // read.record + resolve.manual(人工核验)
 
   let cycleId: string;
   let firstAidStandardId: string; // ACTIVE CREDENTIAL + ACTIVE Policy(FIXED_MONTHS/ALLOWLIST/REQUIRED)
@@ -156,6 +157,10 @@ describe('recruitment certificate claims + public standard options(PR-4a-1)', ()
       'recruitment-application.review.certificate',
     ]);
     plainAuth = await createUserWithCodes('rcc-plain', []);
+    resolverAuth = await createUserWithCodes('rcc-resolver', [
+      'recruitment-application.read.record',
+      'recruitment-application.resolve.manual',
+    ]);
 
     cycleId = (
       await prisma.recruitmentCycle.create({
@@ -925,5 +930,63 @@ describe('recruitment certificate claims + public standard options(PR-4a-1)', ()
       ['operation', 'satisfiedCategories', 'evaluationCleared'].sort(),
     );
     expect(extra.satisfiedCategories).toEqual(['first_aid']);
+  });
+
+  // ===== 评审 findings H1:人工核验不通过 = 报名进终态 ⇒ 级联收尾 =====
+
+  it('H1 人工核验不通过 → 该报名的非终态 Claim 全部级联 WITHDRAWN(真 HTTP)', async () => {
+    // manual_review 期就能提交证书申报,所以这条路径下真的会有存量 Claim。
+    const applicationId = await createAppRow({ statusCode: 'manual_review' });
+    const submitted = await createClaim(applicationId);
+    // 第二条取 NEEDS_INFO:两个不同的非终态都要被级联到,而不是只有 SUBMITTED。
+    // (APPROVED 那一档由 `recruitment-application-write-concurrency` 的评定组覆盖 ——
+    //  APPROVED 行有 DB check 约束要求认定事实齐备,直插的成本不该压在这条用例上。)
+    const needsInfo = await createClaim(applicationId, {
+      status: CLAIM_STATUS.NEEDS_INFO,
+      categoryHintCode: 'bsafe',
+      rawCertificateName: 'BSAFE 证',
+    });
+
+    const res = await request(httpServer(app))
+      .post(`/api/admin/v1/recruitment/applications/${applicationId}/resolve`)
+      .set('Authorization', resolverAuth)
+      .send({ approved: false, reviewNote: '证件不清晰' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.statusCode).toBe('rejected');
+
+    // **修复前这段必红**:两条 Claim 原样留在 SUBMITTED / APPROVED,
+    // 而 rejected 之后一切 Claim 写路径都被终态闸拒 —— 永久卡死。
+    const after = await prisma.recruitmentCertificateClaim.findMany({
+      where: { applicationId },
+      select: { id: true, status: true },
+    });
+    expect(after).toHaveLength(2);
+    expect(after.every((c) => c.status === CLAIM_STATUS.WITHDRAWN)).toBe(true);
+    expect(after.map((c) => c.id).sort()).toEqual([submitted.id, needsInfo.id].sort());
+
+    // 审计只记条数。
+    const log = await prisma.auditLog.findFirstOrThrow({
+      where: { event: 'recruitment-application.resolve-manual', resourceId: applicationId },
+      select: { context: true },
+    });
+    const extra = (log.context as { extra: Record<string, unknown> }).extra;
+    expect(extra.cascadedWithdrawnClaimCount).toBe(2);
+    expect(JSON.stringify(extra)).not.toContain('SZ-2026-000001');
+  });
+
+  it('H1 人工核验通过(未进终态)不级联 —— 收尾函数只绑终态', async () => {
+    const applicationId = await createAppRow({ statusCode: 'manual_review' });
+    const claim = await createClaim(applicationId);
+    const res = await request(httpServer(app))
+      .post(`/api/admin/v1/recruitment/applications/${applicationId}/resolve`)
+      .set('Authorization', resolverAuth)
+      .send({ approved: true });
+    expect(res.status).toBe(200);
+    expect(res.body.data.statusCode).toBe('verified');
+    const after = await prisma.recruitmentCertificateClaim.findUniqueOrThrow({
+      where: { id: claim.id },
+      select: { status: true },
+    });
+    expect(after.status).toBe(CLAIM_STATUS.SUBMITTED);
   });
 });

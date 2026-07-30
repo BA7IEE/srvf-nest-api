@@ -44,6 +44,7 @@ import {
   formatMemberNo,
   toMemberProfileDocumentTypeCode,
 } from './recruitment.constants';
+import { withdrawClaimsOnApplicationTerminal } from './recruitment-application-terminal';
 import type {
   PromoteResultDto,
   PromoteSkippedItemDto,
@@ -771,16 +772,11 @@ export class RecruitmentPromotionService {
     // 可被审核、可签发证据 URL。这正好破坏「终态报名下不存在非终态 Claim」这条不变量,
     // 而且它不需要并发就能复现,是一条独立于竞态的缺陷。
     //
-    // 语义与整份撤销那条路径逐字一致(`notIn [PROMOTED]` + 目标 WITHDRAWN),
-    // 两处必须同口径:否则「报名到终态后 Claim 该是什么」会有两个答案。
-    const cascaded = await tx.recruitmentCertificateClaim.updateMany({
-      where: {
-        applicationId: a.id,
-        deletedAt: null,
-        status: { notIn: [RecruitmentCertificateClaimStatus.PROMOTED] },
-      },
-      data: { status: RecruitmentCertificateClaimStatus.WITHDRAWN },
-    });
+    // 评审 findings H1:这段与整份撤销那份「逐字一致」的要求,现在由**共用同一个函数**
+    // 兑现而不是靠两处各自抄一遍 —— 抄写版已经证明过会漏(综合评定与人工核验两条
+    // 写终态的路径当时一条都没抄到)。本行上方的 id ASC 锁此刻已持有,
+    // 函数内重取同序锁是幂等的。
+    const cascadedCount = await withdrawClaimsOnApplicationTerminal(tx, a.id);
     // 标 promoted + 链 + 即时清敏感(PII 已搬 member/user;blob 归 member/user,留存 SOP 不再触 promoted 行)。
     // F12(#399):openid + reviewNote 亦属留存 SOP §1 须置 NULL 的敏感字段;promote 即时清后
     // SOP「WHERE sensitivePurgedAt IS NULL」永久跳过本行 —— 漏清则再识别字段在「已脱敏」行永久残留。
@@ -848,7 +844,7 @@ export class RecruitmentPromotionService {
         ...(viaPath ? { viaPath, channel } : {}),
         // 发号顺手终结掉的非 APPROVED 申报条数(只记条数,不记 id / 编号 / key)。
         // 恒为 0 时说明该报名的申报要么全过审、要么本来就没有。
-        cascadedWithdrawnClaimCount: cascaded.count,
+        cascadedWithdrawnClaimCount: cascadedCount,
       },
       tx,
     });
