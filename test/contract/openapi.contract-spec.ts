@@ -423,6 +423,14 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 且 e2e「§16.4 options 替代入口码」用真请求证明它没被吞。
   ['get', '/api/admin/v1/certificate-standards'],
   ['post', '/api/admin/v1/certificate-standards'],
+  // 证书标准库 PR-5(2026-07-30;冻结评审稿 v1.2 §13.5 / §13.6 / §14):
+  //   证据读取 1(RECRUITMENT 读 sourceClaim.imageKeys;ADMIN 经 AttachmentsService 的
+  //   可读性 + pinned ledger,另需 attachment.view —— 维护者拍板走方案 A,
+  //   不在 attachments 的「仅限 content-* owner」护栏上开口)
+  //   + 全局工作台 2(跨队员;scope 先下推再分页与计数,§15.7)。零新增权限码。
+  ['get', '/api/admin/v1/members/{memberId}/certificates/{id}/evidence-urls'],
+  ['get', '/api/admin/v1/certificates'],
+  ['get', '/api/admin/v1/certificates/stats'],
   ['get', '/api/admin/v1/certificate-standards/options'],
   ['get', '/api/admin/v1/certificate-standards/{id}'],
   ['patch', '/api/admin/v1/certificate-standards/{id}'],
@@ -1459,8 +1467,10 @@ describe('OpenAPI 契约快照', () => {
   //   会抓住任何一侧漏改。
   // 这个数字被 scripts/docs-counts.ts 反向交叉校验(条目数 ≠ 本断言即 exit 2),
   // 所以它不会和上面的表悄悄脱钩。
-  it('证书标准库 PR-4a-1 落地后路由足迹精确为 435', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(435);
+  // 证书标准库 PR-4a-3 / PR-4b(2026-07-30):零新增端点(只换入参 / 删列)。
+  // 证书标准库 PR-5(2026-07-30):+3(证据读取 1 + 全局工作台 2)→ 438。
+  it('证书标准库 PR-5 落地后路由足迹精确为 438', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(438);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

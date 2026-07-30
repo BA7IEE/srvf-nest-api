@@ -377,3 +377,32 @@ export class QualificationFlagQueryDto {
   @MaxLength(64)
   certTypeCode!: string;
 }
+
+// ============ 证书标准库 PR-5(冻结稿 §13.5):证据读取 ============
+
+export class CertificateEvidenceUrlsResponseDto {
+  @ApiProperty({ description: '证书 id' })
+  certificateId!: string;
+
+  @ApiProperty({
+    description:
+      '证据来源:RECRUITMENT 读 sourceClaim.imageKeys;ADMIN 读 ownerType=certificate 的标准 Attachment',
+    enum: ['ADMIN', 'RECRUITMENT'],
+  })
+  sourceCode!: string;
+
+  @ApiProperty({
+    description:
+      '证据短 TTL signed-URL(**只返 URL 不返 key**;响应带 Cache-Control: no-store)。' +
+      'ADMIN 来源经 AttachmentsService 的可读性 + pinned ledger 解析,' +
+      'provider/ledger 状态不确定的项**不出现在数组里**(fail-closed,不回退裸 key)',
+    type: [String],
+  })
+  urls!: string[];
+
+  @ApiPropertyOptional({
+    description: 'URL 过期时刻(RECRUITMENT 来源 TTL ≤300s;ADMIN 来源由 attachments 侧决定)',
+    nullable: true,
+  })
+  expiresAt!: Date | null;
+}
