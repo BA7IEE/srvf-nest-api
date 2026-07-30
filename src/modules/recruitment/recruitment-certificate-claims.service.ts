@@ -23,6 +23,10 @@ import { RbacService } from '../permissions/rbac.service';
 import { STORAGE_PROVIDER } from '../storage/storage.constants';
 import type { StorageProvider } from '../storage/storage.interface';
 import {
+  lockActiveApplicationOrThrow,
+  lockOwnActiveApplicationOrThrow,
+} from './recruitment-application-lock';
+import {
   assertApplicantMayMutate,
   assertClaimTransitionAllowed,
   assertClaimVersionMatches,
@@ -206,14 +210,11 @@ export class RecruitmentCertificateClaimsService {
   // §8.3 固定锁序第 1 步:RecruitmentApplication。
   // 所有 Claim review / revoke / 整份撤销都必须沿同一前缀锁序,
   // 避免与发号和 Policy 切换形成死锁(§8.3 明列)。
-  private async lockApplication(
-    tx: Prisma.TransactionClient,
-    applicationId: string,
-  ): Promise<void> {
-    await tx.$queryRaw(
-      Prisma.sql`SELECT "id" FROM "recruitment_applications" WHERE "id" = ${applicationId} FOR UPDATE`,
-    );
-  }
+  //
+  // 实现搬到 `recruitment-application-lock.ts` —— 原来这里的版本只 `SELECT id FOR UPDATE`
+  // 且返回 void,调用方拿不到锁后的行,于是继续用锁**之前**的快照判定。
+  // 跨模型评审把这一条同时打在四条写路径上,所以修法是把「锁 + 复读 + 判定」
+  // 做成一个只能整体调用的函数,而不是在四处各补一次复读。
 
   // ============ §8.4 门槛派生:唯一重算入口(实现在 recruitment-certificate-threshold-derive.ts)============
   //
@@ -409,7 +410,10 @@ export class RecruitmentCertificateClaimsService {
 
     return this.prisma.$transaction(async (tx) => {
       const pre = await this.findClaimOrThrow(tx, claimId);
-      await this.lockApplication(tx, pre.applicationId);
+      // 锁 + 复读报名:等锁期间它可能已被整份撤销(级联把本 Claim 打成 WITHDRAWN)
+      // 或已发号。终态报名下不接受任何审核动作 —— 状态机随后还会再拦一次本 Claim,
+      // 两道闸都在,因为它们锁的不是同一件事(一个是报名生命周期,一个是 Claim 状态机)。
+      await lockActiveApplicationOrThrow(tx, pre.applicationId);
       // 锁后复读:等锁期间申请人可能重传过(version 变),或别人已审过。
       const claim = await this.findClaimOrThrow(tx, claimId);
       assertClaimVersionMatches(dto.version, claim.version);
@@ -538,7 +542,7 @@ export class RecruitmentCertificateClaimsService {
 
     return this.prisma.$transaction(async (tx) => {
       const pre = await this.findClaimOrThrow(tx, claimId);
-      await this.lockApplication(tx, pre.applicationId);
+      await lockActiveApplicationOrThrow(tx, pre.applicationId);
       const claim = await this.findClaimOrThrow(tx, claimId);
       assertClaimVersionMatches(dto.version, claim.version);
       assertClaimTransitionAllowed(claim.status, RecruitmentCertificateClaimStatus.SUBMITTED);
@@ -761,12 +765,15 @@ export class RecruitmentCertificateClaimsService {
     const imageKeys = await this.putClaimImages(files);
     try {
       return await this.prisma.$transaction(async (tx) => {
-        await this.lockApplication(tx, app.id);
+        // 凭证在事务外解析(要调微信 / 消费短信码),所以 `app` 是**锁前**快照。
+        // 锁后必须复读状态与归属:等锁期间报名可能已被整份撤销 / 换绑 / 发号,
+        // 而旧实现只锁不复读,于是能往一份已撤销的报名里插一条 SUBMITTED 申报。
+        const locked = await lockOwnActiveApplicationOrThrow(tx, app, channel);
         await this.assertSuggestedStandardSelectable(tx, facts.suggestedStandardId);
 
         // 上限在**锁内**复查:两个并发提交都在锁外看到 9 条时,只有一个能过。
         const count = await tx.recruitmentCertificateClaim.count({
-          where: notDeletedWhere({ applicationId: app.id }),
+          where: notDeletedWhere({ applicationId: locked.id }),
         });
         if (count >= CERTIFICATE_CLAIM_MAX_PER_APPLICATION) {
           throw new BizException(BizCode.RECRUITMENT_CERTIFICATE_CLAIM_LIMIT);
@@ -774,7 +781,7 @@ export class RecruitmentCertificateClaimsService {
 
         const created = await tx.recruitmentCertificateClaim.create({
           data: {
-            applicationId: app.id,
+            applicationId: locked.id,
             status: RecruitmentCertificateClaimStatus.SUBMITTED,
             ...facts,
             imageKeys,
@@ -791,7 +798,7 @@ export class RecruitmentCertificateClaimsService {
           meta,
           extra: {
             operation: 'submit',
-            applicationId: app.id,
+            applicationId: locked.id,
             channel,
             categoryHintCode: facts.categoryHintCode,
             suggestedStandardProvided: facts.suggestedStandardId !== null,
@@ -803,7 +810,7 @@ export class RecruitmentCertificateClaimsService {
 
         // 新提交的 Claim 是 SUBMITTED,本身不贡献门槛;但重算是**幂等聚合**,
         // 调它可以让「唯一写者」这条规则没有例外 —— 例外就是漂移的入口。
-        await this.recomputeCertificateThresholds(tx, app.id, null, null, meta, new Date());
+        await this.recomputeCertificateThresholds(tx, locked.id, null, null, meta, new Date());
 
         return { claim: this.presentPublic(created), claimCount: count + 1 };
       });
@@ -827,8 +834,8 @@ export class RecruitmentCertificateClaimsService {
     let replacedKeys: string[] = [];
     try {
       const result = await this.prisma.$transaction(async (tx) => {
-        await this.lockApplication(tx, app.id);
-        const claim = await this.resolveOwnClaim(tx, app.id, claimId);
+        const locked = await lockOwnActiveApplicationOrThrow(tx, app, channel);
+        const claim = await this.resolveOwnClaim(tx, locked.id, claimId);
         assertClaimVersionMatches(dto.version, claim.version);
         // 申请人只能改 SUBMITTED / NEEDS_INFO / REJECTED 的行 —— APPROVED 不可由申请人
         // 直接改(§8.2);要改就得管理员先撤回审核。
@@ -860,7 +867,7 @@ export class RecruitmentCertificateClaimsService {
           meta,
           extra: {
             operation: 'resubmit',
-            applicationId: app.id,
+            applicationId: locked.id,
             channel,
             categoryHintCode: facts.categoryHintCode,
             suggestedStandardProvided: facts.suggestedStandardId !== null,
@@ -872,10 +879,10 @@ export class RecruitmentCertificateClaimsService {
         });
 
         // 重传会让一条曾经 APPROVED→(管理员撤回)→SUBMITTED 的行退出贡献,必须重算。
-        await this.recomputeCertificateThresholds(tx, app.id, null, null, meta, new Date());
+        await this.recomputeCertificateThresholds(tx, locked.id, null, null, meta, new Date());
 
         const count = await tx.recruitmentCertificateClaim.count({
-          where: notDeletedWhere({ applicationId: app.id }),
+          where: notDeletedWhere({ applicationId: locked.id }),
         });
         return {
           payload: { claim: this.presentPublic(updated), claimCount: count },
@@ -902,8 +909,8 @@ export class RecruitmentCertificateClaimsService {
     const { app, channel } = await this.identity.resolveActiveApplicationByCredential(dto);
 
     const result = await this.prisma.$transaction(async (tx) => {
-      await this.lockApplication(tx, app.id);
-      const claim = await this.resolveOwnClaim(tx, app.id, claimId);
+      const locked = await lockOwnActiveApplicationOrThrow(tx, app, channel);
+      const claim = await this.resolveOwnClaim(tx, locked.id, claimId);
       assertClaimVersionMatches(dto.version, claim.version);
       // 状态机负责拦 PROMOTED / 已 WITHDRAWN(两个空集终态)。
       assertClaimTransitionAllowed(claim.status, RecruitmentCertificateClaimStatus.WITHDRAWN);
@@ -926,7 +933,7 @@ export class RecruitmentCertificateClaimsService {
         meta,
         extra: {
           operation: 'withdraw',
-          applicationId: app.id,
+          applicationId: locked.id,
           channel,
           previousStatus: claim.status,
           imageCount: this.imageCountOf(claim.imageKeys),
@@ -935,10 +942,10 @@ export class RecruitmentCertificateClaimsService {
       });
 
       // 撤回一条已通过的证书会让门槛回落 —— 若同类别还有另一张 APPROVED,聚合仍成立。
-      await this.recomputeCertificateThresholds(tx, app.id, null, null, meta, new Date());
+      await this.recomputeCertificateThresholds(tx, locked.id, null, null, meta, new Date());
 
       const count = await tx.recruitmentCertificateClaim.count({
-        where: notDeletedWhere({ applicationId: app.id }),
+        where: notDeletedWhere({ applicationId: locked.id }),
       });
       return { claim: this.presentPublic(updated), claimCount: count };
     });

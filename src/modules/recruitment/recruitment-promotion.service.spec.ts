@@ -87,14 +87,29 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
       emergencyContact: { create: jest.fn().mockResolvedValue({ id: 'ec' }) },
       // S5:promote 同事务建 VOL 归口部门(每个 member 一条)
       memberOrganizationMembership: { create: jest.fn().mockResolvedValue({ id: 'md' }) },
-      recruitmentApplication: { update: jest.fn().mockResolvedValue({}) },
+      // 评审 findings 修复 F1:发号内核改为「锁 + CAS + 锁后复读」。
+      // `findFirst` 必须按 id 回原行 —— 建档字段自此全部取锁后复读的结果,
+      // 桩若统一回 apps[0],5 个人会被建成同一个人,这组用例就再也测不到发号序。
+      recruitmentApplication: {
+        findFirst: jest
+          .fn()
+          .mockImplementation(({ where }: { where: { id: string } }) =>
+            Promise.resolve(apps.find((a) => a.id === where.id) ?? null),
+          ),
+        // CAS 收尾:命中 1 行 = 该报名写入时仍在 publicity。
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       // 证书标准库 PR-4a-2(§8.5):发号改读 APPROVED Claim。本组不造 Claim
       // (默认返 []),所以建证块整体跳过 —— 本组守的是 bcrypt/锁序/intent/清敏,
       // 不是建证。「只搬不重判」的行为锁在 e2e(需要真 Standard/Policy 关系)。
       recruitmentCertificateClaim: {
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockResolvedValue({}),
+        // 发号收尾把剩余非终态 Claim 级联成 WITHDRAWN(本组无 Claim → 0 行)。
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
+      // claimAtStatus 的条件行锁:非空数组 = 锁到且状态仍是 publicity。
+      $queryRaw: jest.fn().mockImplementation(() => Promise.resolve([{ id: 'locked' }])),
       certificateStandard: {
         findFirst: jest.fn().mockResolvedValue({ categoryCode: 'first_aid' }),
       },
@@ -232,8 +247,8 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
   it('F12(#399):promote 即时清的 update 同时置 openid=null + reviewNote=null', async () => {
     const { service, txMock } = buildService(2);
     await service.promote('cyc1', user, meta, now);
-    expect(txMock.recruitmentApplication.update).toHaveBeenCalledTimes(2);
-    const updateCalls = txMock.recruitmentApplication.update.mock.calls as Array<
+    expect(txMock.recruitmentApplication.updateMany).toHaveBeenCalledTimes(2);
+    const updateCalls = txMock.recruitmentApplication.updateMany.mock.calls as Array<
       [{ data: Record<string, unknown> }]
     >;
     for (const [{ data }] of updateCalls) {
@@ -431,7 +446,7 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
     expect(txMock.memberProfile.create).not.toHaveBeenCalled();
     expect(txMock.emergencyContact.create).not.toHaveBeenCalled();
     expect(txMock.memberOrganizationMembership.create).not.toHaveBeenCalled();
-    expect(txMock.recruitmentApplication.update).not.toHaveBeenCalled();
+    expect(txMock.recruitmentApplication.updateMany).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
     expect(auditLog).not.toHaveBeenCalled();
   });
@@ -467,7 +482,7 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
     expect(txMock.user.create).not.toHaveBeenCalled();
     expect(txMock.memberProfile.create).not.toHaveBeenCalled();
     expect(txMock.emergencyContact.create).not.toHaveBeenCalled();
-    expect(txMock.recruitmentApplication.update).not.toHaveBeenCalled();
+    expect(txMock.recruitmentApplication.updateMany).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
     expect(auditLog).not.toHaveBeenCalled();
   });
