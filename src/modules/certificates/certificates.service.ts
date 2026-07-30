@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
+import { CertificateSource, DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
 import { maskIdentifier } from '../../common/audit/mask-pii.util';
-import { beijingDateOnly, normalizeDateOnly } from '../../common/datetime/date-only.util';
+import { beijingDateOnly } from '../../common/datetime/date-only.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -13,6 +13,7 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
 import { RbacService } from '../permissions/rbac.service';
+import { CertificateRecognitionResolver } from './certificate-recognition-resolver';
 import {
   CertificateListItemDto,
   CertificateResponseDto,
@@ -47,21 +48,15 @@ import {
 // - supersededByCertId / expireNotifyDueAt:本批次 zero API 写入
 
 const DICT_TYPE_CERT_TYPE = 'cert_type';
-const DICT_TYPE_CERT_SUB_TYPE = 'cert_sub_type';
 
 const CERT_STATUS_PENDING = 'pending';
 const CERT_STATUS_VERIFIED = 'verified';
 const CERT_STATUS_REJECTED = 'rejected';
 // CERT_STATUS_EXPIRED 由 v0.47.0 ExpiryReminderService 到期扫描推动,本 service 不主动写入
 
-const CERTIFICATE_CORE_FIELDS = [
-  'certTypeCode',
-  'certSubTypeCode',
-  'issuingOrg',
-  'certNumber',
-  'issuedAt',
-  'expiredAt',
-] as const satisfies readonly (keyof UpdateCertificateDto)[];
+// 证书标准库 PR-4a-3:「改了核心事实就回 pending」的判定改用 update 内的
+// `factsTouched`(它同时决定要不要重跑认定规则解析)。拆成两处会让「什么算核心事实」
+// 有两个定义,而这两处必须永远一致 —— 少了任一边都会写出「改了事实却没重新复核」。
 
 // 详情 / 写操作返回的完整 select(永不含 deletedAt 软删内部状态、永不含 expireNotifyDueAt
 // hook 字段);必须与 CertificateResponseDto 同步维护。
@@ -85,6 +80,13 @@ const certificateSafeSelect = {
   isInternal: true,
   supersededByCertId: true,
   imageKeys: true,
+  // 证书标准库 PR-4a-3:update 的「沿已锁定 policyId 校验」需要这三列作基准。
+  // 它们不进出参 —— presenter 只用 standardId 之外的字段组装,新增列由
+  // presentCertificate 的显式白名单挡住(加列不会被动外泄)。
+  standardId: true,
+  recognitionPolicyId: true,
+  recognitionIssuerId: true,
+  sourceCode: true,
   createdAt: true,
   updatedAt: true,
 } as const satisfies Prisma.CertificateSelect;
@@ -136,6 +138,13 @@ function presentCertificate(cert: SafeCertificate, sensitive: boolean): Certific
   };
 }
 
+// Date(北京日历日 UTC 零点)→ 纯 YYYY-MM-DD。Resolver 的入参契约是纯日期字符串,
+// 而 update 的基准值来自库内 Date —— 少了这层就会把 ISO datetime 塞进去,
+// 而那正是 PR-1 收紧掉的东西(时区能偷偷改天)。
+function toDateOnlyString(d: Date | null): string | null {
+  return d === null ? null : d.toISOString().slice(0, 10);
+}
+
 @Injectable()
 export class CertificatesService {
   constructor(
@@ -143,7 +152,26 @@ export class CertificatesService {
     private readonly auditLogs: AuditLogsService,
     private readonly rbac: RbacService,
     private readonly authz: AuthzService,
+    // 证书标准库 PR-4a-3(§19):与招新 Claim 审核共用同一套认定规则解析,
+    // 不在建证侧复制第二套机构 / 编号 / 日期算法。
+    private readonly recognitionResolver: CertificateRecognitionResolver,
   ) {}
+
+  /**
+   * 旧 `certTypeCode` 仍是 NOT NULL(4b 才 DROP),按已解析 Standard 的类别回填一次。
+   * **不是双写** —— 值派生自 Standard,不是第二个事实源。
+   */
+  private async categoryCodeOfStandard(
+    tx: Prisma.TransactionClient,
+    standardId: string,
+  ): Promise<string> {
+    const std = await tx.certificateStandard.findFirst({
+      where: notDeletedWhere({ id: standardId }),
+      select: { categoryCode: true },
+    });
+    if (!std) throw new BizException(BizCode.CERTIFICATE_STANDARD_NOT_FOUND);
+    return std.categoryCode;
+  }
 
   // ============ helpers ============
 
@@ -183,19 +211,13 @@ export class CertificatesService {
   //   issuedAt  <= today
   //   expiredAt IS NULL OR expiredAt >= issuedAt
   //
-  // 两侧都按北京日历日比较:入参已经过 normalizeDateOnly,是「北京日的 UTC 零点」,
-  // 所以基准也必须是 date-only 的 today,不能拿当下瞬间去比(§10.1 expiredAt =
-  // 最后有效日;用时间戳比会让最后有效日当天在北京 08:00 后被算成过期)。
-  // `expiredAt === issuedAt` 合法:当天发证当天到期,仍是有效一天。
-  private assertDateSemantics(issuedAt: Date, expiredAt: Date | null): void {
-    const today = beijingDateOnly(new Date());
-    if (issuedAt.getTime() > today.getTime()) {
-      throw new BizException(BizCode.CERTIFICATE_ISSUED_AT_IN_FUTURE);
-    }
-    if (expiredAt !== null && expiredAt.getTime() < issuedAt.getTime()) {
-      throw new BizException(BizCode.CERTIFICATE_DATE_RANGE_INVALID);
-    }
-  }
+  // 证书标准库 PR-4a-3:PR-1 的 `assertDateSemantics` 退役 —— 它的两条判断
+  // (issuedAt 不晚于今天 18018 / expiredAt 不早于 issuedAt 18017)已经在
+  // `CertificateRecognitionResolver.resolveDates` + `assertRange` 里,
+  // 而且那里还多了按 validityMode 的规则校验。留两份日期算法就是 §19 明令要避免的
+  // 「第二套日期算法」—— 两份迟早会在某一次改动里分叉。
+  //
+  // 行为等价性由既有 e2e 保证:那几条用例逐字未改,只是现在打在 Resolver 上。
 
   // 通用字典 code 校验(对齐 member-profiles.assertDictItemValid 模式)。
   private async assertDictItemValid(
@@ -379,36 +401,40 @@ export class CertificatesService {
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
 
-      await this.assertDictItemValid(
-        DICT_TYPE_CERT_TYPE,
-        dto.certTypeCode,
-        BizCode.CERTIFICATE_TYPE_CODE_INVALID,
+      // 证书标准库 PR-4a-3(§9.1 步骤 2-7):按 Standard 当前 ACTIVE Policy 解析机构 /
+      // 编号 / 日期。**不再校验两个字典 code** —— 类别与等级现在是 Standard 的属性,
+      // 由 PR-3 的 Standard 管理面在建标准时校验过一次,建证时不必也不该再猜。
+      //
+      // 日期语义(不晚于今天 / 区间不倒挂 / 按 validityMode)全在 Resolver 内,
+      // 与招新审核共用同一实现(§19)—— 所以这里不再单独调 assertDateSemantics。
+      const resolved = await this.recognitionResolver.resolveActivePolicyForNewCertificate(
         tx,
+        dto.standardId,
+        {
+          recognitionIssuerId: dto.recognitionIssuerId ?? null,
+          issuingOrg: dto.issuingOrg ?? null,
+          certNumber: dto.certNumber ?? null,
+          issuedAt: dto.issuedAt,
+          expiredAt: dto.expiredAt ?? null,
+        },
       );
-      if (dto.certSubTypeCode !== undefined) {
-        await this.assertDictItemValid(
-          DICT_TYPE_CERT_SUB_TYPE,
-          dto.certSubTypeCode,
-          BizCode.CERTIFICATE_SUB_TYPE_CODE_INVALID,
-          tx,
-        );
-      }
-
-      const issuedAt = normalizeDateOnly(dto.issuedAt);
-      const expiredAt = dto.expiredAt !== undefined ? normalizeDateOnly(dto.expiredAt) : null;
-      this.assertDateSemantics(issuedAt, expiredAt);
 
       const data: Prisma.CertificateUncheckedCreateInput = {
         memberId,
-        certTypeCode: dto.certTypeCode,
-        issuingOrg: dto.issuingOrg,
-        issuedAt,
+        // 旧列停写(§21):certSubTypeCode / isInternal / imageKeys 本刀起一律不写。
+        // certTypeCode 仍 NOT NULL(4b 才 DROP),按 Standard 的类别回填一次 ——
+        // 值派生自 Standard,不是第二个事实源。
+        certTypeCode: await this.categoryCodeOfStandard(tx, resolved.standardId),
+        standardId: resolved.standardId,
+        recognitionPolicyId: resolved.recognitionPolicyId,
+        recognitionIssuerId: resolved.recognitionIssuerId,
+        sourceCode: CertificateSource.ADMIN,
+        issuingOrg: resolved.issuingOrg,
+        certNumber: resolved.certNumber,
+        issuedAt: resolved.issuedAt,
+        expiredAt: resolved.expiredAt,
         certStatusCode: CERT_STATUS_PENDING,
-        isInternal: false, // Q-A3:本批次 API 永远 false
       };
-      if (dto.certSubTypeCode !== undefined) data.certSubTypeCode = dto.certSubTypeCode;
-      if (dto.certNumber !== undefined) data.certNumber = dto.certNumber;
-      if (expiredAt !== null) data.expiredAt = expiredAt;
 
       const created = await tx.certificate.create({
         data,
@@ -451,30 +477,7 @@ export class CertificatesService {
       await this.findMemberOrThrow(memberId, tx);
       const before = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
 
-      if (dto.certTypeCode !== undefined) {
-        await this.assertDictItemValid(
-          DICT_TYPE_CERT_TYPE,
-          dto.certTypeCode,
-          BizCode.CERTIFICATE_TYPE_CODE_INVALID,
-          tx,
-        );
-      }
-      if (dto.certSubTypeCode !== undefined) {
-        await this.assertDictItemValid(
-          DICT_TYPE_CERT_SUB_TYPE,
-          dto.certSubTypeCode,
-          BizCode.CERTIFICATE_SUB_TYPE_CODE_INVALID,
-          tx,
-        );
-      }
-
       const data: Prisma.CertificateUncheckedUpdateInput = {};
-      if (dto.certTypeCode !== undefined) data.certTypeCode = dto.certTypeCode;
-      if (dto.certSubTypeCode !== undefined) data.certSubTypeCode = dto.certSubTypeCode;
-      if (dto.issuingOrg !== undefined) data.issuingOrg = dto.issuingOrg;
-      if (dto.certNumber !== undefined) data.certNumber = dto.certNumber;
-      if (dto.issuedAt !== undefined) data.issuedAt = normalizeDateOnly(dto.issuedAt);
-      if (dto.expiredAt !== undefined) data.expiredAt = normalizeDateOnly(dto.expiredAt);
 
       await claimAtStatus(tx, {
         target: 'certificate',
@@ -484,14 +487,85 @@ export class CertificatesService {
       });
       const lockedBefore = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
 
-      // §10.3 校验用「本次写入后的最终值」,而不是只看本次传了什么:
-      // 只改 expiredAt 时也必须和库内 issuedAt 比,否则能写出 expiredAt < issuedAt。
-      // 取 lockedBefore(行锁之后)而非 before,避免并发改动下用过期基准放行。
-      const effectiveIssuedAt =
-        dto.issuedAt !== undefined ? normalizeDateOnly(dto.issuedAt) : lockedBefore.issuedAt;
-      const effectiveExpiredAt =
-        dto.expiredAt !== undefined ? normalizeDateOnly(dto.expiredAt) : lockedBefore.expiredAt;
-      this.assertDateSemantics(effectiveIssuedAt, effectiveExpiredAt);
+      // 证书标准库 PR-4a-3(§9.2):Standard 只在 pending 态可改(纠正选错的标准)。
+      // 非 pending 传它 → 18033(身份字段不可改)。这条依赖行状态,DTO 表达不了,
+      // 所以必须在**行锁之后**判 —— 锁前判会被并发的 verify 抢在中间。
+      const changingStandard =
+        dto.standardId !== undefined && dto.standardId !== lockedBefore.standardId;
+      if (changingStandard && lockedBefore.certStatusCode !== CERT_STATUS_PENDING) {
+        throw new BizException(BizCode.CERTIFICATE_STANDARD_IMMUTABLE);
+      }
+
+      // §9.2 两条规则的分岔点:
+      //   改 Standard  → 重选**当前 ACTIVE** Policy 并完整重校验(换标准就是换规则);
+      //   只改事实      → 继续沿该证**已锁定**的 policyId 校验,避免规则在录入后移动
+      //                  (原 Policy 已 RETIRED 仍允许按该版本修正与复核)。
+      // 校验用「本次写入后的最终值」而不是只看本次传了什么:只改 expiredAt 时
+      // 也必须和库内 issuedAt 比,否则能写出 expiredAt < issuedAt。
+      // 基准取 lockedBefore(行锁之后),避免并发改动下用过期基准放行。
+      const factsTouched =
+        dto.standardId !== undefined ||
+        dto.recognitionIssuerId !== undefined ||
+        dto.issuingOrg !== undefined ||
+        dto.certNumber !== undefined ||
+        dto.issuedAt !== undefined ||
+        dto.expiredAt !== undefined;
+
+      let effectiveExpiredAt = lockedBefore.expiredAt;
+      if (factsTouched) {
+        // PATCH 语义:没传的字段**保持库内现值**。机构这一对尤其要小心 ——
+        // 只改 expiredAt 时若把 issuingOrg 当 null 传给 Resolver,FREE_TEXT 规则会
+        // 立刻以 18013 拒掉一次本来合法的日期修正。所以两个机构入参各自回落到库内值,
+        // 显式传了哪一个就清掉另一个(它们互斥,由 issuerPolicy 决定用哪个)。
+        const issuerExplicit =
+          dto.recognitionIssuerId !== undefined || dto.issuingOrg !== undefined;
+        const facts = {
+          recognitionIssuerId: issuerExplicit
+            ? (dto.recognitionIssuerId ?? null)
+            : lockedBefore.recognitionIssuerId,
+          issuingOrg: issuerExplicit
+            ? (dto.issuingOrg ?? null)
+            : // 库内 issuerId 为空 = FREE_TEXT 谱系,机构名就是那一列;
+              // 有 issuerId 时机构名由 issuer 决定,不能再当自由文本回传(否则 18013)。
+              lockedBefore.recognitionIssuerId === null
+              ? lockedBefore.issuingOrg
+              : null,
+          certNumber: dto.certNumber ?? lockedBefore.certNumber,
+          // issuedAt 在库内 NOT NULL,所以这里必有值;`??` 只是给类型收窄用。
+          issuedAt: dto.issuedAt ?? (toDateOnlyString(lockedBefore.issuedAt) as string),
+          expiredAt:
+            dto.expiredAt ??
+            (dto.standardId !== undefined ? null : toDateOnlyString(lockedBefore.expiredAt)),
+        };
+        const resolved = changingStandard
+          ? await this.recognitionResolver.resolveActivePolicyForNewCertificate(
+              tx,
+              dto.standardId as string,
+              facts,
+            )
+          : await this.recognitionResolver.validateLockedPolicyForCertificateUpdate(
+              tx,
+              // 已锁定 policyId 必存在:PR-4b 会把它收紧为 NOT NULL,在此之前
+              // 存量行理论上可能为空 —— 那种行按「无生效认定规则」拒改,不猜。
+              lockedBefore.recognitionPolicyId ??
+                (() => {
+                  throw new BizException(BizCode.CERTIFICATE_ACTIVE_POLICY_MISSING);
+                })(),
+              facts,
+            );
+        data.standardId = resolved.standardId;
+        data.recognitionPolicyId = resolved.recognitionPolicyId;
+        data.recognitionIssuerId = resolved.recognitionIssuerId;
+        data.issuingOrg = resolved.issuingOrg;
+        data.certNumber = resolved.certNumber;
+        data.issuedAt = resolved.issuedAt;
+        data.expiredAt = resolved.expiredAt;
+        // 改了 Standard 就同步回填派生的 certTypeCode(4b DROP 前的过渡)。
+        if (changingStandard) {
+          data.certTypeCode = await this.categoryCodeOfStandard(tx, resolved.standardId);
+        }
+        effectiveExpiredAt = resolved.expiredAt;
+      }
 
       // §9.2:`expiredAt` 最终值变化时清空 `expireNotifyDueAt`,让到期提醒按新日期
       // 重新计算(该标记是 at-most-once 的已提醒水印,不清会永久错过新窗口)。
@@ -500,8 +574,8 @@ export class CertificatesService {
         data.expireNotifyDueAt = null;
       }
 
-      const coreFieldEdited = CERTIFICATE_CORE_FIELDS.some((field) => dto[field] !== undefined);
-      if (coreFieldEdited && lockedBefore.certStatusCode !== CERT_STATUS_PENDING) {
+      // §9.2:verified / expired / rejected 改核心事实后重回 pending(要重新复核)。
+      if (factsTouched && lockedBefore.certStatusCode !== CERT_STATUS_PENDING) {
         data.certStatusCode = CERT_STATUS_PENDING;
         data.verifiedBy = null;
         data.verifiedAt = null;

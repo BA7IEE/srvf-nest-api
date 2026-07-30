@@ -99379,6 +99379,30 @@
             "type": "boolean",
             "description": "是否本会颁发(CT-11;本批次 service 始终写 false)"
           },
+          "standardId": {
+            "type": "string",
+            "description": "证书标准 id(PR-4b 收紧为恒非空)",
+            "nullable": true
+          },
+          "recognitionPolicyId": {
+            "type": "string",
+            "description": "录入 / 审核时锁定的认定规则 id(PR-4b 收紧为恒非空)",
+            "nullable": true
+          },
+          "recognitionIssuerId": {
+            "type": "string",
+            "description": "认可机构 id(FREE_TEXT 规则下为 null,机构名见 issuingOrg)",
+            "nullable": true
+          },
+          "sourceCode": {
+            "type": "string",
+            "description": "来源:ADMIN = 管理端录入 / RECRUITMENT = 招新发号搬运(PR-4b 收紧为恒非空)",
+            "enum": [
+              "ADMIN",
+              "RECRUITMENT"
+            ],
+            "nullable": true
+          },
           "supersededByCertId": {
             "type": "object",
             "description": "替代关系:被替代的旧证书 id(CT-12;不做反向冗余,Q-S6 / Q-D2)",
@@ -99411,19 +99435,19 @@
       "CreateCertificateDto": {
         "type": "object",
         "properties": {
-          "certTypeCode": {
+          "standardId": {
             "type": "string",
-            "description": "证书大类字典 code(必填)",
-            "maxLength": 64
+            "description": "证书标准 id(必填;须为 ACTIVE 且 CREDENTIAL —— 证书族 FAMILY 不可持有)。来源:GET /admin/v1/certificate-standards/options",
+            "maxLength": 32
           },
-          "certSubTypeCode": {
+          "recognitionIssuerId": {
             "type": "string",
-            "description": "证书子类型 / 等级字典 code",
-            "maxLength": 64
+            "description": "认可机构 id。ALLOWLIST 规则**必填**;FIXED 可不传(后端选唯一);FREE_TEXT 不得传",
+            "maxLength": 32
           },
           "issuingOrg": {
             "type": "string",
-            "description": "颁发机构(自由文本;必填)",
+            "description": "FREE_TEXT 规则**必填**的自由机构名;FIXED / ALLOWLIST 不得传",
             "maxLength": 128
           },
           "certNumber": {
@@ -99447,8 +99471,7 @@
           }
         },
         "required": [
-          "certTypeCode",
-          "issuingOrg",
+          "standardId",
           "issuedAt"
         ]
       },
@@ -99477,19 +99500,19 @@
       "UpdateCertificateDto": {
         "type": "object",
         "properties": {
-          "certTypeCode": {
+          "standardId": {
             "type": "string",
-            "description": "证书大类字典 code",
-            "maxLength": 64
+            "description": "证书标准 id(**仅 pending 态可改** —— 纠正选错的标准;非 pending → 18033)",
+            "maxLength": 32
           },
-          "certSubTypeCode": {
+          "recognitionIssuerId": {
             "type": "string",
-            "description": "证书子类型 / 等级字典 code",
-            "maxLength": 64
+            "description": "认可机构 id(按认定规则的 issuerPolicy)",
+            "maxLength": 32
           },
           "issuingOrg": {
             "type": "string",
-            "description": "颁发机构",
+            "description": "FREE_TEXT 规则的自由机构名",
             "maxLength": 128
           },
           "certNumber": {

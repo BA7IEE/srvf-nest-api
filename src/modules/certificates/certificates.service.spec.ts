@@ -14,6 +14,7 @@ import type {
   UpdateCertificateDto,
   VerifyCertificateDto,
 } from './certificates.dto';
+import { CertificateRecognitionResolver } from './certificate-recognition-resolver';
 import { CertificatesService } from './certificates.service';
 
 // certificates service-level characterization spec(B 档 test-only,scoped;沿 srvf-god-service-refactor）。
@@ -66,6 +67,11 @@ interface CertRow {
   // 证书标准库 PR-1:进 select 只为算 §15.3 的 evidenceAvailable 布尔,
   // presenter 会把它从出参剥掉(断言见「§15.3 敏感分级」组)。
   imageKeys: string[] | null;
+  // 证书标准库 PR-4a-3:标准化事实四列(与 certificateSafeSelect 同步)。
+  standardId: string | null;
+  recognitionPolicyId: string | null;
+  recognitionIssuerId: string | null;
+  sourceCode: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -87,6 +93,12 @@ function makeCertRow(overrides: Partial<CertRow> = {}): CertRow {
     isInternal: false,
     supersededByCertId: null,
     imageKeys: null,
+    // 证书标准库 PR-4a-3:标准化事实四列。夹具默认给全 —— update 的
+    // 「沿已锁定 policyId 校验」需要 recognitionPolicyId 作基准,缺它会拒改(18035)。
+    standardId: 'std-1',
+    recognitionPolicyId: 'pol-1',
+    recognitionIssuerId: null,
+    sourceCode: 'ADMIN',
     createdAt: FIXED_DATE,
     updatedAt: FIXED_DATE,
     ...overrides,
@@ -106,11 +118,14 @@ function makeCurrentUser(overrides: Partial<CurrentUserPayload> = {}): CurrentUs
 
 // ============ DTO 工厂(只填 service 实际读取的字段;结构性 cast) ============
 
+// 证书标准库 PR-4a-3:入参从「字典 code + 自由文本机构」改为「Standard id + 按规则的机构」。
+// `issuedAt` 也从「带时间分量、由 normalizeDateOnly 抹平」改为**纯日期**
+// (PR-1 已在契约层收紧到 10 位;Resolver 的入参契约同样是纯日期)。
 function makeCreateDto(overrides: Partial<Record<string, unknown>> = {}): CreateCertificateDto {
   return {
-    certTypeCode: 'cert_first_aid',
-    issuingOrg: 'Red Cross',
-    issuedAt: '2026-03-15T10:30:00.000Z', // 带时间分量;normalizeDateOnly 应抹平到 00:00:00
+    standardId: 'std-1',
+    issuingOrg: 'Red Cross', // 默认夹具用 FREE_TEXT 规则
+    issuedAt: '2026-03-15',
     ...overrides,
   };
 }
@@ -139,10 +154,49 @@ function makePrismaMock() {
     update: jest.fn<Promise<CertRow>, [unknown]>(),
   };
   const dictItem = { findFirst: jest.fn<Promise<{ id: string } | null>, [unknown]>() };
+  // 证书标准库 PR-4a-3:建证 / 改证经 CertificateRecognitionResolver 解析认定规则。
+  // 这里注入**真实 Resolver**(它是零依赖纯类)+ 三张表的 mock,而不是打桩 Resolver ——
+  // 打桩会让「机构 / 编号 / 日期按规则校验」这条在本 spec 里彻底测不到。
+  // 默认夹具:ACTIVE CREDENTIAL Standard + FREE_TEXT / EXPLICIT_OPTIONAL / OPTIONAL 规则
+  // (最宽松,让既有用例的断言逐字不变)。
+  const certificateStandard = {
+    findFirst: jest.fn<Promise<Record<string, unknown> | null>, [unknown]>().mockResolvedValue({
+      id: 'std-1',
+      kind: 'CREDENTIAL',
+      status: 'ACTIVE',
+      categoryCode: 'cert_first_aid',
+    }),
+  };
+  const certificateRecognitionPolicy = {
+    findFirst: jest.fn<Promise<Record<string, unknown> | null>, [unknown]>().mockResolvedValue({
+      id: 'pol-1',
+      standardId: 'std-1',
+      issuerPolicy: 'FREE_TEXT',
+      validityMode: 'EXPLICIT_OPTIONAL',
+      validityMonths: null,
+      certNumberMode: 'OPTIONAL',
+    }),
+  };
+  const certificateRecognitionIssuer = {
+    findFirst: jest
+      .fn<Promise<Record<string, unknown> | null>, [unknown]>()
+      .mockResolvedValue(null),
+    findMany: jest.fn<Promise<Record<string, unknown>[]>, [unknown]>().mockResolvedValue([]),
+  };
   const user = { findFirst: jest.fn<Promise<{ memberId: string | null } | null>, [unknown]>() };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
   const $queryRaw = jest.fn().mockResolvedValue([{ id: 'cert-1' }]);
-  const prisma = { member, certificate, dictItem, user, $queryRaw, $transaction };
+  const prisma = {
+    member,
+    certificate,
+    dictItem,
+    user,
+    certificateStandard,
+    certificateRecognitionPolicy,
+    certificateRecognitionIssuer,
+    $queryRaw,
+    $transaction,
+  };
   // certificates 仅回调式:把 prisma mock 自身当 tx 传入(helper 内 `tx ?? this.prisma` 同源)。
   $transaction.mockImplementation((arg: unknown) =>
     (arg as (tx: typeof prisma) => Promise<unknown>)(prisma),
@@ -180,6 +234,7 @@ function makeService(
     auditLogs as unknown as AuditLogsService,
     makeRbacMock() as unknown as RbacService,
     (opts.authz ?? makeAuthzMock()) as unknown as AuthzService,
+    new CertificateRecognitionResolver(),
   );
 }
 
@@ -356,43 +411,58 @@ describe('CertificatesService (characterization, scoped)', () => {
       expect(auditLogs.log).not.toHaveBeenCalled();
     });
 
-    it('certTypeCode 无效 → CERTIFICATE_TYPE_CODE_INVALID;不 create', async () => {
+    it('standardId 指向证书族(FAMILY)→ 18012;不 create', async () => {
+      // PR-4a-3:入参不再有字典 code,所以「字典 code 无效」这一格换成
+      // 「Standard 本身不可持有」——D-CERT-003:FAMILY 是目录节点,不是可持有证书。
       const prisma = makePrismaMock();
       prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
-      prisma.dictItem.findFirst.mockResolvedValue(null);
+      prisma.certificateStandard.findFirst.mockResolvedValue({
+        id: 'std-1',
+        kind: 'FAMILY',
+        status: 'ACTIVE',
+        categoryCode: 'cert_first_aid',
+      });
       const service = makeService(prisma);
 
       await expect(
         service.create('mem-1', makeCreateDto(), makeCurrentUser(), META),
-      ).rejects.toEqual(new BizException(BizCode.CERTIFICATE_TYPE_CODE_INVALID));
+      ).rejects.toEqual(new BizException(BizCode.CERTIFICATE_STANDARD_KIND_INVALID));
       expect(prisma.certificate.create).not.toHaveBeenCalled();
     });
 
-    it('certSubTypeCode 提供且无效 → CERTIFICATE_SUB_TYPE_CODE_INVALID;不 create', async () => {
+    it('standardId 未启用(DRAFT)→ 18031;不 create', async () => {
       const prisma = makePrismaMock();
       prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
-      // 第 1 次 dictItem.findFirst(cert_type)通过;第 2 次(cert_sub_type)null。
-      prisma.dictItem.findFirst
-        .mockResolvedValueOnce({ id: 'di-type' })
-        .mockResolvedValueOnce(null);
+      prisma.certificateStandard.findFirst.mockResolvedValue({
+        id: 'std-1',
+        kind: 'CREDENTIAL',
+        status: 'DRAFT',
+        categoryCode: 'cert_first_aid',
+      });
       const service = makeService(prisma);
 
       await expect(
-        service.create(
-          'mem-1',
-          makeCreateDto({ certSubTypeCode: 'sub-x' }),
-          makeCurrentUser(),
-          META,
-        ),
-      ).rejects.toEqual(new BizException(BizCode.CERTIFICATE_SUB_TYPE_CODE_INVALID));
+        service.create('mem-1', makeCreateDto(), makeCurrentUser(), META),
+      ).rejects.toEqual(new BizException(BizCode.CERTIFICATE_STANDARD_INACTIVE));
       expect(prisma.certificate.create).not.toHaveBeenCalled();
     });
 
-    it('happy → create(certStatusCode=pending, isInternal=false);issuedAt 抹平到 00:00:00;audit 接线', async () => {
+    it('§11.2 已收录但无生效认定规则 → 18035;不 create(「待认定」≠「已认可」)', async () => {
+      const prisma = makePrismaMock();
+      prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
+      prisma.certificateRecognitionPolicy.findFirst.mockResolvedValue(null);
+      const service = makeService(prisma);
+
+      await expect(
+        service.create('mem-1', makeCreateDto(), makeCurrentUser(), META),
+      ).rejects.toEqual(new BizException(BizCode.CERTIFICATE_ACTIVE_POLICY_MISSING));
+      expect(prisma.certificate.create).not.toHaveBeenCalled();
+    });
+
+    it('happy → 写 standardId/policyId/sourceCode=ADMIN + pending;**旧四列停写**;audit 接线', async () => {
       const prisma = makePrismaMock();
       const auditLogs = makeAuditLogsMock();
       prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
-      prisma.dictItem.findFirst.mockResolvedValue({ id: 'di-type' });
       prisma.certificate.create.mockResolvedValue(
         makeCertRow({
           id: 'cert-new',
@@ -404,18 +474,30 @@ describe('CertificatesService (characterization, scoped)', () => {
 
       const res = await service.create(
         'mem-1',
-        makeCreateDto({ issuedAt: '2026-03-15T10:30:00.000Z' }),
+        makeCreateDto({ issuedAt: '2026-03-15' }),
         makeCurrentUser({ id: 'admin-1' }),
         META,
       );
 
       expect(prisma.certificate.create).toHaveBeenCalledTimes(1);
       const createArg = prisma.certificate.create.mock.calls[0][0] as {
-        data: { memberId: string; certStatusCode: string; isInternal: boolean; issuedAt: Date };
+        data: Record<string, unknown>;
       };
       expect(createArg.data.memberId).toBe('mem-1');
       expect(createArg.data.certStatusCode).toBe(CERT_STATUS_PENDING);
-      expect(createArg.data.isInternal).toBe(false);
+      // §9.1 步骤 7:标准化四列落库。
+      expect(createArg.data.standardId).toBe('std-1');
+      expect(createArg.data.recognitionPolicyId).toBe('pol-1');
+      expect(createArg.data.sourceCode).toBe('ADMIN');
+      // FREE_TEXT 规则 → issuerId 为 null,机构名取自由文本。
+      expect(createArg.data.recognitionIssuerId).toBeNull();
+      expect(createArg.data.issuingOrg).toBe('Red Cross');
+      // certTypeCode 派生自 Standard 的类别(4b DROP 前的过渡回填)。
+      expect(createArg.data.certTypeCode).toBe('cert_first_aid');
+      // **旧三列彻底停写**(§21):不是写 null,而是根本不出现在 data 里。
+      expect(createArg.data).not.toHaveProperty('certSubTypeCode');
+      expect(createArg.data).not.toHaveProperty('isInternal');
+      expect(createArg.data).not.toHaveProperty('imageKeys');
       expect(createArg.data.issuedAt).toEqual(new Date('2026-03-15T00:00:00.000Z'));
       expect(auditLogs.log).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -426,9 +508,7 @@ describe('CertificatesService (characterization, scoped)', () => {
           tx: prisma,
         }),
       );
-      const auditArg = auditLogs.log.mock.calls[0][0] as {
-        after: Record<string, unknown>;
-      };
+      const auditArg = auditLogs.log.mock.calls[0][0] as { after: Record<string, unknown> };
       expect(auditArg.after).toEqual(
         expect.objectContaining({
           certNumber: 'CN****01',
@@ -441,30 +521,69 @@ describe('CertificatesService (characterization, scoped)', () => {
       expect(res.certNumberFull).toBe('CN-2026-SECRET-0001');
     });
 
-    it('optional 字段(certSubTypeCode / certNumber / expiredAt)透传进 create data;expiredAt 抹平', async () => {
+    it('ALLOWLIST 规则:issuerId 必须属于本规则,机构名取 issuer 快照;编号与到期日按规则落库', async () => {
       const prisma = makePrismaMock();
       prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
-      prisma.dictItem.findFirst.mockResolvedValue({ id: 'di-type' });
+      prisma.certificateRecognitionPolicy.findFirst.mockResolvedValue({
+        id: 'pol-1',
+        standardId: 'std-1',
+        issuerPolicy: 'ALLOWLIST',
+        validityMode: 'EXPLICIT_OPTIONAL',
+        validityMonths: null,
+        certNumberMode: 'OPTIONAL',
+      });
+      prisma.certificateRecognitionIssuer.findFirst.mockResolvedValue({
+        id: 'iss-1',
+        name: '深圳市红十字会',
+      });
       prisma.certificate.create.mockResolvedValue(makeCertRow({ id: 'cert-new' }));
       const service = makeService(prisma);
 
       await service.create(
         'mem-1',
         makeCreateDto({
-          certSubTypeCode: 'sub-1',
+          issuingOrg: undefined, // ALLOWLIST 不得传自由文本
+          recognitionIssuerId: 'iss-1',
           certNumber: 'CN-9',
-          expiredAt: '2027-01-01T08:00:00.000Z',
+          expiredAt: '2027-01-01',
         }),
         makeCurrentUser(),
         META,
       );
 
       const createArg = prisma.certificate.create.mock.calls[0][0] as {
-        data: { certSubTypeCode?: string; certNumber?: string; expiredAt?: Date };
+        data: Record<string, unknown>;
       };
-      expect(createArg.data.certSubTypeCode).toBe('sub-1');
+      expect(createArg.data.recognitionIssuerId).toBe('iss-1');
+      // §5.6:实例存机构**名称快照**,而不是只存 issuer 引用。
+      expect(createArg.data.issuingOrg).toBe('深圳市红十字会');
       expect(createArg.data.certNumber).toBe('CN-9');
       expect(createArg.data.expiredAt).toEqual(new Date('2027-01-01T00:00:00.000Z'));
+    });
+
+    it('ALLOWLIST 规则下 issuerId 不属于本规则 → 18014;不 create', async () => {
+      const prisma = makePrismaMock();
+      prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
+      prisma.certificateRecognitionPolicy.findFirst.mockResolvedValue({
+        id: 'pol-1',
+        standardId: 'std-1',
+        issuerPolicy: 'ALLOWLIST',
+        validityMode: 'EXPLICIT_OPTIONAL',
+        validityMonths: null,
+        certNumberMode: 'OPTIONAL',
+      });
+      prisma.certificateRecognitionIssuer.findFirst.mockResolvedValue(null); // 查不到 = 不属于本规则
+      const service = makeService(prisma);
+
+      await expect(
+        service.create(
+          'mem-1',
+          makeCreateDto({ issuingOrg: undefined, recognitionIssuerId: 'iss-foreign' }),
+          makeCurrentUser(),
+          META,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.CERTIFICATE_ISSUER_NOT_ALLOWED));
+      expect(prisma.certificate.create).not.toHaveBeenCalled();
     });
   });
 
@@ -508,23 +627,62 @@ describe('CertificatesService (characterization, scoped)', () => {
       expect(prisma.certificate.update).not.toHaveBeenCalled();
     });
 
-    it('certTypeCode 提供且无效 → CERTIFICATE_TYPE_CODE_INVALID;不 update', async () => {
+    it('§9.2 非 pending 改 standardId → 18033;pending 可改(纠正选错的标准)', async () => {
       const prisma = makePrismaMock();
       prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
-      prisma.certificate.findFirst.mockResolvedValue(makeCertRow({ memberId: 'mem-1' }));
-      prisma.dictItem.findFirst.mockResolvedValue(null);
+      prisma.certificate.findFirst.mockResolvedValue(
+        makeCertRow({ memberId: 'mem-1', certStatusCode: 'verified' }),
+      );
       const service = makeService(prisma);
 
       await expect(
         service.update(
           'mem-1',
           'cert-1',
-          makeUpdateDto({ certTypeCode: 'bad' }),
+          makeUpdateDto({ standardId: 'std-2' }),
           makeCurrentUser(),
           META,
         ),
-      ).rejects.toEqual(new BizException(BizCode.CERTIFICATE_TYPE_CODE_INVALID));
+      ).rejects.toEqual(new BizException(BizCode.CERTIFICATE_STANDARD_IMMUTABLE));
       expect(prisma.certificate.update).not.toHaveBeenCalled();
+
+      // pending 态可改:重选当前 ACTIVE Policy 并完整重校验。
+      const pendingPrisma = makePrismaMock();
+      pendingPrisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
+      pendingPrisma.certificate.findFirst.mockResolvedValue(
+        makeCertRow({ memberId: 'mem-1', certStatusCode: CERT_STATUS_PENDING }),
+      );
+      pendingPrisma.certificateStandard.findFirst.mockResolvedValue({
+        id: 'std-2',
+        kind: 'CREDENTIAL',
+        status: 'ACTIVE',
+        categoryCode: 'cert_bsafe',
+      });
+      pendingPrisma.certificateRecognitionPolicy.findFirst.mockResolvedValue({
+        id: 'pol-2',
+        standardId: 'std-2',
+        issuerPolicy: 'FREE_TEXT',
+        validityMode: 'EXPLICIT_OPTIONAL',
+        validityMonths: null,
+        certNumberMode: 'OPTIONAL',
+      });
+      pendingPrisma.certificate.update.mockResolvedValue(makeCertRow({ standardId: 'std-2' }));
+      const pendingService = makeService(pendingPrisma);
+
+      await pendingService.update(
+        'mem-1',
+        'cert-1',
+        makeUpdateDto({ standardId: 'std-2', issuingOrg: 'Red Cross' }),
+        makeCurrentUser(),
+        META,
+      );
+      const arg = pendingPrisma.certificate.update.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(arg.data.standardId).toBe('std-2');
+      // 换标准就换规则:policyId 跟着重选,certTypeCode 也按新标准的类别回填。
+      expect(arg.data.recognitionPolicyId).toBe('pol-2');
+      expect(arg.data.certTypeCode).toBe('cert_bsafe');
     });
 
     it('happy → update 透传字段;audit event=certificate.update + tx', async () => {

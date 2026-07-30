@@ -6695,6 +6695,30 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "关联队员外键(指向 members.id;N:1)",
         "type": "string",
       },
+      "recognitionIssuerId": {
+        "description": "认可机构 id(FREE_TEXT 规则下为 null,机构名见 issuingOrg)",
+        "nullable": true,
+        "type": "string",
+      },
+      "recognitionPolicyId": {
+        "description": "录入 / 审核时锁定的认定规则 id(PR-4b 收紧为恒非空)",
+        "nullable": true,
+        "type": "string",
+      },
+      "sourceCode": {
+        "description": "来源:ADMIN = 管理端录入 / RECRUITMENT = 招新发号搬运(PR-4b 收紧为恒非空)",
+        "enum": [
+          "ADMIN",
+          "RECRUITMENT",
+        ],
+        "nullable": true,
+        "type": "string",
+      },
+      "standardId": {
+        "description": "证书标准 id(PR-4b 收紧为恒非空)",
+        "nullable": true,
+        "type": "string",
+      },
       "supersededByCertId": {
         "description": "替代关系:被替代的旧证书 id(CT-12;不做反向冗余,Q-S6 / Q-D2)",
         "nullable": true,
@@ -8160,16 +8184,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "maxLength": 128,
         "type": "string",
       },
-      "certSubTypeCode": {
-        "description": "证书子类型 / 等级字典 code",
-        "maxLength": 64,
-        "type": "string",
-      },
-      "certTypeCode": {
-        "description": "证书大类字典 code(必填)",
-        "maxLength": 64,
-        "type": "string",
-      },
       "expiredAt": {
         "description": "最后有效日(纯日期 YYYY-MM-DD(不接受时分秒与时区;按北京日历日入库);不填 = 终身有效)",
         "example": "2028-06-30",
@@ -8185,14 +8199,23 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "issuingOrg": {
-        "description": "颁发机构(自由文本;必填)",
+        "description": "FREE_TEXT 规则**必填**的自由机构名;FIXED / ALLOWLIST 不得传",
         "maxLength": 128,
+        "type": "string",
+      },
+      "recognitionIssuerId": {
+        "description": "认可机构 id。ALLOWLIST 规则**必填**;FIXED 可不传(后端选唯一);FREE_TEXT 不得传",
+        "maxLength": 32,
+        "type": "string",
+      },
+      "standardId": {
+        "description": "证书标准 id(必填;须为 ACTIVE 且 CREDENTIAL —— 证书族 FAMILY 不可持有)。来源:GET /admin/v1/certificate-standards/options",
+        "maxLength": 32,
         "type": "string",
       },
     },
     "required": [
-      "certTypeCode",
-      "issuingOrg",
+      "standardId",
       "issuedAt",
     ],
     "type": "object",
@@ -17617,16 +17640,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "maxLength": 128,
         "type": "string",
       },
-      "certSubTypeCode": {
-        "description": "证书子类型 / 等级字典 code",
-        "maxLength": 64,
-        "type": "string",
-      },
-      "certTypeCode": {
-        "description": "证书大类字典 code",
-        "maxLength": 64,
-        "type": "string",
-      },
       "expiredAt": {
         "description": "最后有效日(纯日期 YYYY-MM-DD(不接受时分秒与时区;按北京日历日入库);Q-A4 决议:允许资料修正;不填 = 保持原值)",
         "example": "2028-06-30",
@@ -17642,8 +17655,18 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "issuingOrg": {
-        "description": "颁发机构",
+        "description": "FREE_TEXT 规则的自由机构名",
         "maxLength": 128,
+        "type": "string",
+      },
+      "recognitionIssuerId": {
+        "description": "认可机构 id(按认定规则的 issuerPolicy)",
+        "maxLength": 32,
+        "type": "string",
+      },
+      "standardId": {
+        "description": "证书标准 id(**仅 pending 态可改** —— 纠正选错的标准;非 pending → 18033)",
+        "maxLength": 32,
         "type": "string",
       },
     },

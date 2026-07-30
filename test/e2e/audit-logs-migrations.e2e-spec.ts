@@ -35,6 +35,7 @@ describe('audit-logs 写入迁移', () => {
   let memberId: string;
   let relationCode: string;
   let certTypeCode: string;
+  let certStandardId: string;
 
   // PR #3 fixtures
   let activityTypeCode: string;
@@ -104,6 +105,30 @@ describe('audit-logs 写入迁移', () => {
       select: { code: true },
     });
     certTypeCode = certItem.code;
+
+    // 证书标准库 PR-4a-3:建证入参改为 standardId(+ 按认定规则的机构入参)。
+    // 最宽松的一条 ACTIVE Policy 即可 —— 本 spec 锁的是审计接线,不是认定规则。
+    const certStandard = await prisma.certificateStandard.create({
+      data: {
+        code: 'audit-mig-std',
+        name: '审计迁移用标准',
+        kind: 'CREDENTIAL',
+        status: 'ACTIVE',
+        categoryCode: certTypeCode,
+      },
+      select: { id: true },
+    });
+    await prisma.certificateRecognitionPolicy.create({
+      data: {
+        standardId: certStandard.id,
+        version: 1,
+        status: 'ACTIVE',
+        issuerPolicy: 'FREE_TEXT',
+        validityMode: 'EXPLICIT_OPTIONAL',
+        certNumberMode: 'OPTIONAL',
+      },
+    });
+    certStandardId = certStandard.id;
 
     // member
     const m = await prisma.member.create({
@@ -186,7 +211,7 @@ describe('audit-logs 写入迁移', () => {
       .post(`/api/admin/v1/members/${memberId}/certificates`)
       .set('Authorization', adminAuth)
       .send({
-        certTypeCode,
+        standardId: certStandardId,
         issuingOrg: 'Demo Issuing Org',
         certNumber: 'CN-2026-0001',
         issuedAt: '2026-01-01', // 冻结稿 §10.2:纯 YYYY-MM-DD
@@ -535,6 +560,7 @@ describe('audit-logs 写入迁移', () => {
       const c = await createCert();
       const log = (await prisma.auditLog.findFirst({ where: { resourceId: c.id } }))!;
       const after = (log.context as { after: Record<string, unknown> }).after;
+      // PR-4a-3:certTypeCode 现在派生自 Standard 的类别(值不变,来源变了)。
       expect(after.certTypeCode).toBe(certTypeCode);
       expect(after.issuingOrg).toBe('Demo Issuing Org');
     });
