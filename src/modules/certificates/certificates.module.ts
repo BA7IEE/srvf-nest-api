@@ -10,6 +10,7 @@ import { UsersModule } from '../users/users.module';
 import { AppMyCertificatesService } from './app-my-certificates.service';
 import { CertificateRecognitionPoliciesController } from './certificate-recognition-policies.controller';
 import { CertificateRecognitionPoliciesService } from './certificate-recognition-policies.service';
+import { CertificateEvidenceSigner } from './certificate-evidence-signer';
 import { CertificateRecognitionResolver } from './certificate-recognition-resolver';
 import { CertificateStandardAuditRecorder } from './certificate-standard-audit-recorder';
 import { CertificateStandardsController } from './certificate-standards.controller';
@@ -71,11 +72,15 @@ import { AppMyCertificatesController } from './controllers/app-my-certificates.c
     CertificateRecognitionPoliciesService,
     CertificateStandardAuditRecorder,
     CertificateRecognitionResolver,
+    CertificateEvidenceSigner,
     CertificatesWorkbenchService,
   ],
   // 证书标准库 PR-4a-1(§19):**只导出窄 Resolver**,供 Recruitment 的 Claim 审核复用
   // 同一套认定规则解析(机构 / 编号 / 日期),避免招新侧复制第二套 Policy 算法。
   // 依赖方向单向:CertificatesModule **绝不**反向 import Recruitment(防环)。
-  exports: [CertificateRecognitionResolver],
+  //
+  // 评审 findings F2(§13.5):再导出证据签发器 —— 招新 Claim 取图与证书证据读取
+  // 必须共用同一套签名逻辑,而不是各写一份各带一个 TTL 常量。
+  exports: [CertificateRecognitionResolver, CertificateEvidenceSigner],
 })
 export class CertificatesModule {}

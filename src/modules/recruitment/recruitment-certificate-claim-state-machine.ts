@@ -84,6 +84,32 @@ export function assertApplicantMayMutate(status: RecruitmentCertificateClaimStat
   }
 }
 
+// ============ §15.5 / §15.9 证据可读状态闸 ============
+//
+// 「谁能看这条申报的证据图」不是只看权限码,还要看**这条申报此刻处于什么状态**。
+// 两个终态各有各的理由被拒:
+//
+//   WITHDRAWN  申请人已经把材料撤回了。撤回的语义就是「别再看了」——
+//              继续按 read.sensitive 放行,等于撤回只撤了个列表可见性(§15.5)。
+//   PROMOTED   证据已经成为一张正式证书的认定依据。此后它只能经
+//              `GET /admin/v1/members/:memberId/certificates/:id/evidence-urls` 读 ——
+//              那条路走的是 Certificate 的 **scoped** authz(能看这个队员才能看),
+//              而招新审核码是 GLOBAL 的。留着 Claim 端点等于给 promoted 队员的
+//              档案开了一条绕过 scope 的旁路(§15.9)。
+//
+// 非终态(SUBMITTED / NEEDS_INFO / APPROVED / REJECTED)一律放行:它们都还在审核流里,
+// REJECTED 尤其不能拒 —— 申请人可以从 REJECTED 重投,审核员必须能回看「当初拒的是什么」。
+const CLAIM_EVIDENCE_DENIED: ReadonlySet<RecruitmentCertificateClaimStatus> = new Set([
+  RecruitmentCertificateClaimStatus.WITHDRAWN,
+  RecruitmentCertificateClaimStatus.PROMOTED,
+]);
+
+export function assertClaimEvidenceReadable(status: RecruitmentCertificateClaimStatus): void {
+  if (CLAIM_EVIDENCE_DENIED.has(status)) {
+    throw new BizException(BizCode.RECRUITMENT_CERTIFICATE_CLAIM_STATE_INVALID);
+  }
+}
+
 // CAS:申请人重传与管理员审核可能同时进行,靠 version 防互相覆盖(§5.5)。
 export function assertClaimVersionMatches(expected: number, actual: number): void {
   if (expected !== actual) {
