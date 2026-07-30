@@ -14406,31 +14406,51 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   "RecruitmentCertificateProgressItemDto": {
     "properties": {
       "category": {
+        "description": "本人选的类别提示",
         "enum": [
           "first_aid",
           "bsafe",
         ],
         "type": "string",
       },
+      "claimId": {
+        "description": "申报 id(重传 / 撤回时回传)",
+        "type": "string",
+      },
       "imageCount": {
+        "description": "该申报的证据图数量",
         "type": "number",
       },
       "note": {
-        "description": "驳回说明(申请人可见)",
+        "description": "审核说明(驳回 / 要求补材料时对本人可见)",
+        "nullable": true,
+        "type": "string",
+      },
+      "rawCertificateName": {
+        "description": "本人填的证书名称",
         "nullable": true,
         "type": "string",
       },
       "status": {
+        "description": "申报状态(直接透传 Claim 状态机,不再折叠成 none/uploaded)",
         "enum": [
-          "none",
-          "uploaded",
-          "approved",
-          "rejected",
+          "SUBMITTED",
+          "NEEDS_INFO",
+          "APPROVED",
+          "REJECTED",
+          "PROMOTED",
+          "WITHDRAWN",
         ],
         "type": "string",
       },
+      "version": {
+        "description": "CAS 版本号(重传 / 撤回必须回传)",
+        "type": "number",
+      },
     },
     "required": [
+      "claimId",
+      "version",
       "category",
       "status",
       "imageCount",
@@ -59551,6 +59571,40 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
           "description": "无权执行此操作(code=30100)",
         },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "28063: 该门槛由证书申报审核结论自动派生,不可人工标记",
+                    "enum": [
+                      28063,
+                    ],
+                    "example": 28063,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "该门槛由证书申报审核结论自动派生,不可人工标记",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "该门槛由证书申报审核结论自动派生,不可人工标记(code=28063)",
+        },
       },
       "security": [
         {
@@ -61206,10 +61260,9 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "40000: 请求参数错误; 28053: 请先上传对应证书图片后再标记门槛完成",
+                    "description": "40000: 请求参数错误",
                     "enum": [
                       40000,
-                      28053,
                     ],
                     "example": 40000,
                     "type": "integer",
@@ -61233,7 +61286,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "请求参数错误(code=40000) / 请先上传对应证书图片后再标记门槛完成(code=28053)",
+          "description": "请求参数错误(code=40000)",
         },
         "401": {
           "content": {
@@ -61343,10 +61396,10 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "28041: 该报名当前状态不允许此操作; 28055: 该类证书尚未审核通过,无法标记门槛完成",
+                    "description": "28041: 该报名当前状态不允许此操作; 28063: 该门槛由证书申报审核结论自动派生,不可人工标记",
                     "enum": [
                       28041,
-                      28055,
+                      28063,
                     ],
                     "example": 28041,
                     "type": "integer",
@@ -61370,7 +61423,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "该报名当前状态不允许此操作(code=28041) / 该类证书尚未审核通过,无法标记门槛完成(code=28055)",
+          "description": "该报名当前状态不允许此操作(code=28041) / 该门槛由证书申报审核结论自动派生,不可人工标记(code=28063)",
         },
       },
       "security": [
@@ -61378,7 +61431,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "标/清门槛(巡山×2/培训/急救资质/BSAFE;证书类标完成须对应图片审核 approved;清标不受闸;幂等;仅 verified/pending_evaluation 态;末次完成自动→待综合评定) [rbac: recruitment-application.mark.threshold]",
+      "summary": "标/清门槛(仅巡山×2/培训三项人工门槛;⚠️ 契约收紧:急救资质 redCross 与 BSAFE 已改为证书申报审核结论的派生投影,传这两个 code 无论 completed 真假一律 28063;清标不受闸;幂等;仅 verified/pending_evaluation 态;末次完成自动→待综合评定) [rbac: recruitment-application.mark.threshold]",
       "tags": [
         "Admin - Recruitment Applications",
       ],

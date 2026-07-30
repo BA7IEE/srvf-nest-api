@@ -12,6 +12,7 @@ import { EmergencyContactsService } from '../../src/modules/emergency-contacts/e
 import { MemberInsurancesService } from '../../src/modules/insurances/member-insurances.service';
 import { MemberProfilesService } from '../../src/modules/member-profiles/member-profiles.service';
 import { RecruitmentApplicationsQueryService } from '../../src/modules/recruitment/recruitment-applications-query.service';
+import { RecruitmentCertificateClaimsService } from '../../src/modules/recruitment/recruitment-certificate-claims.service';
 import { STORAGE_PROVIDER } from '../../src/modules/storage/storage.constants';
 import type { StorageProvider } from '../../src/modules/storage/storage.interface';
 import { resetDb } from '../setup/reset-db';
@@ -75,6 +76,7 @@ interface SeededFixtures {
   activityId: string;
   recruitmentCycleId: string;
   recruitmentApplicationId: string;
+  recruitmentCertificateClaimId: string;
 }
 
 type OrdinaryReadCase =
@@ -97,6 +99,7 @@ describe('sensitive-read audit unification (C-2)', () => {
   let attendances: AttendancesService;
   let registrations: ActivityRegistrationsService;
   let recruitmentQueries: RecruitmentApplicationsQueryService;
+  let recruitmentClaims: RecruitmentCertificateClaimsService;
   let storage: StorageProvider;
   let actor: CurrentUserPayload;
   let fixtures: SeededFixtures;
@@ -114,6 +117,7 @@ describe('sensitive-read audit unification (C-2)', () => {
     attendances = app.get(AttendancesService);
     registrations = app.get(ActivityRegistrationsService);
     recruitmentQueries = app.get(RecruitmentApplicationsQueryService);
+    recruitmentClaims = app.get(RecruitmentCertificateClaimsService);
     storage = app.get<StorageProvider>(STORAGE_PROVIDER);
 
     const actorRow = await prisma.user.create({
@@ -242,7 +246,18 @@ describe('sensitive-read audit unification (C-2)', () => {
         idCardNumber: APPLICATION_ID_CARD,
         phone: APPLICATION_PHONE,
         idCardImageKey: ID_CARD_IMAGE_KEY,
-        certificateImages: { first_aid: [CERTIFICATE_IMAGE_KEY] },
+      },
+      select: { id: true },
+    });
+    // 证书标准库 PR-4a-2:证书图的敏感读入口从「报名行 JSON 按类别」迁到
+    // 「Claim 行」。同一条不变量(先按安全计数审计、再调 provider;审计失败零 provider)
+    // 必须跟着入口走 —— 本文件是「每个敏感读入口都被覆盖」的总账,漏改就等于漏防。
+    const certificateClaim = await prisma.recruitmentCertificateClaim.create({
+      data: {
+        applicationId: application.id,
+        status: 'SUBMITTED',
+        categoryHintCode: 'first_aid',
+        imageKeys: [CERTIFICATE_IMAGE_KEY],
       },
       select: { id: true },
     });
@@ -253,6 +268,7 @@ describe('sensitive-read audit unification (C-2)', () => {
       activityId: activity.id,
       recruitmentCycleId: cycle.id,
       recruitmentApplicationId: application.id,
+      recruitmentCertificateClaimId: certificateClaim.id,
     };
   });
 
@@ -350,11 +366,7 @@ describe('sensitive-read audit unification (C-2)', () => {
       actor,
       AUDIT_META,
     );
-    await recruitmentQueries.getCertificateImageUrls(
-      fixtures.recruitmentApplicationId,
-      actor,
-      AUDIT_META,
-    );
+    await recruitmentClaims.getImageUrls(actor, fixtures.recruitmentCertificateClaimId, AUDIT_META);
     await recruitmentQueries.getIdCardImageUrl(
       fixtures.recruitmentApplicationId,
       actor,
@@ -443,8 +455,13 @@ describe('sensitive-read audit unification (C-2)', () => {
       filterFields: ['cycleId', 'filter'],
       maskLevel: 'plain',
     });
-    expect(contextFor('recruitment-application.read.other', 'certificate-images').extra).toEqual({
-      operation: 'certificate-images',
+    // PR-4a-2:operation 从 `certificate-images`(报名行按类别)改为
+    // `certificate-claim-images`(单条申报)。事件名与 extra 白名单不变 ——
+    // 换的是入口,不是审计口径。
+    expect(
+      contextFor('recruitment-application.read.other', 'certificate-claim-images').extra,
+    ).toEqual({
+      operation: 'certificate-claim-images',
       count: 1,
     });
     expect(contextFor('recruitment-application.id-card-image.read', 'id-card-image').extra).toEqual(
@@ -562,11 +579,7 @@ describe('sensitive-read audit unification (C-2)', () => {
     const certificateAuditError = new Error('certificate image audit unavailable');
     auditSpy.mockRejectedValueOnce(certificateAuditError);
     await expect(
-      recruitmentQueries.getCertificateImageUrls(
-        fixtures.recruitmentApplicationId,
-        actor,
-        AUDIT_META,
-      ),
+      recruitmentClaims.getImageUrls(actor, fixtures.recruitmentCertificateClaimId, AUDIT_META),
     ).rejects.toBe(certificateAuditError);
     expect(providerSpy).not.toHaveBeenCalled();
   });

@@ -14,9 +14,9 @@ import { createTestApp } from '../setup/test-app';
 //
 // 覆盖 6 个新端点:招新证书申报管理端 5 + 公开证书标准选项 1。
 //
-// 本刀是**纯新增**:不动旧 `certificates/:category/review` 路径、不派生门槛、不停写旧 JSON
-// (那三件必须在 4a-2 一次原子切换,见 service 头注)。所以这里**不断言**门槛变化 ——
-// 断言一个本刀刻意没做的事只会写出假绿。
+// PR-4a-1 落地时本刀是纯新增(不派生门槛、不停写旧 JSON),文件末尾那条曾是**反向**断言。
+// PR-4a-2 接线后它已翻面:审核通过 → 派生门槛写入,撤回 → 聚合后清除。
+// 反向断言的寿命只到它锁住的事实还成立那一刻,过期不翻面就是假绿。
 //
 // 判权用码全部复用既有 3 码,零新增:
 //   recruitment-application.read.record     读列表 / 详情
@@ -804,21 +804,15 @@ describe('recruitment certificate claims + public standard options(PR-4a-1)', ()
     expect(JSON.stringify(extra)).not.toContain('SZ-REV-2');
   });
 
-  // ===== §21 约束 2:本刀不派生门槛 =====
+  // ===== §8.4 门槛派生(PR-4a-2 接线后)=====
 
-  it('§21 约束 2:本刀审核**不**动旧门槛标记与旧证书 JSON(门槛派生随 4a-2 原子切换)', async () => {
+  it('§8.4 审核通过 → 派生门槛写入 thresholdMarks;撤回审核 → 聚合后清除', async () => {
     const applicationId = await createAppRow();
-    const before = await prisma.recruitmentApplication.findUniqueOrThrow({
-      where: { id: applicationId },
-      select: {
-        statusCode: true,
-        thresholdMarks: true,
-        certificateImages: true,
-        certificateReviewStatus: true,
-      },
-    });
     const claim = await createClaim(applicationId);
-    await request(httpServer(app))
+
+    // PR-4a-1 时这里断言的是**反向**的「审核不动门槛」——那是因为派生刻意还没接线。
+    // 4a-2 接线后反向断言必须翻面,否则它就成了「锁住一个已经不成立的事实」的假绿。
+    const approved = await request(httpServer(app))
       .post(`${ADMIN}/certificate-claims/${claim.id}/review`)
       .set('Authorization', reviewerAuth)
       .send({
@@ -826,20 +820,49 @@ describe('recruitment certificate claims + public standard options(PR-4a-1)', ()
         version: claim.version,
         standardId: firstAidStandardId,
         recognitionIssuerId: firstAidIssuerId,
-        certNumber: 'SZ-NOTHRESH',
+        certNumber: 'SZ-THRESH-1',
         issuedAt: '2026-01-31',
-      })
-      .expect(200);
+      });
+    expect(approved.status).toBe(200);
 
-    const after = await prisma.recruitmentApplication.findUniqueOrThrow({
+    const afterApprove = await prisma.recruitmentApplication.findUniqueOrThrow({
       where: { id: applicationId },
-      select: {
-        statusCode: true,
-        thresholdMarks: true,
-        certificateImages: true,
-        certificateReviewStatus: true,
-      },
+      select: { thresholdMarks: true, certificateImages: true, certificateReviewStatus: true },
     });
-    expect(after).toEqual(before);
+    const marks = (afterApprove.thresholdMarks ?? {}) as Record<
+      string,
+      { at: string; by: string } | undefined
+    >;
+    // 急救类 Standard → redCross 门槛成立;bsafe 未过审 → 不成立。
+    expect(marks.redCross?.by).toBe('system:certificate-claim-derived');
+    expect(marks.bsafe).toBeUndefined();
+    // 旧两个 JSON 列**仍然只读不写**(4a 起停写,4b 才 DROP)。
+    expect(afterApprove.certificateImages).toBeNull();
+    expect(afterApprove.certificateReviewStatus).toBeNull();
+
+    // 撤回审核 → 该类别再无 APPROVED/PROMOTED Claim → 聚合清除该门槛。
+    await request(httpServer(app))
+      .post(`${ADMIN}/certificate-claims/${claim.id}/revoke-review`)
+      .set('Authorization', reviewerAuth)
+      .send({ version: approved.body.data.version, note: '结论有误' })
+      .expect(200);
+    const afterRevoke = await prisma.recruitmentApplication.findUniqueOrThrow({
+      where: { id: applicationId },
+      select: { thresholdMarks: true },
+    });
+    expect(
+      ((afterRevoke.thresholdMarks ?? {}) as Record<string, unknown>).redCross,
+    ).toBeUndefined();
+
+    // 重算落审计(它是「为什么这份报名状态自己动了」的唯一线索)。
+    const log = await prisma.auditLog.findFirstOrThrow({
+      where: { event: 'recruitment-application.threshold-recompute' },
+      select: { context: true, actorUserId: true },
+    });
+    const extra = (log.context as { extra: Record<string, unknown> }).extra;
+    expect(Object.keys(extra).sort()).toEqual(
+      ['operation', 'satisfiedCategories', 'evaluationCleared'].sort(),
+    );
+    expect(extra.satisfiedCategories).toEqual(['first_aid']);
   });
 });

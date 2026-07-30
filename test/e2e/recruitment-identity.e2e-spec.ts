@@ -227,6 +227,9 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
     await prisma.recruitmentIdentitySession.deleteMany({});
     await prisma.smsVerificationCode.deleteMany({});
     await prisma.smsSendLog.deleteMany({});
+    // 证书标准库 PR-4a-2:Claim 的 applicationId FK 是 **Restrict**(不是 Cascade)——
+    // 先清 Claim,否则本文件里任何创建过申报的用例都会让下一个用例的清理撞 FK。
+    await prisma.recruitmentCertificateClaim.deleteMany({});
     await prisma.recruitmentApplication.deleteMany({});
     await prisma.recruitmentCycle.deleteMany({});
     // F1:OCR 日封顶按 IP 持久计数 —— 每测清零,防同文件多测累计打满 30 上限误伤无关用例。
@@ -871,13 +874,13 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
 
   // ============ 招新可用性收口 F7:证书图上传(手机通道)============
 
-  it('F7-④ 手机通道上传证书图 → 消费一码 + 落 keys + audit(actor 置空)', async () => {
+  it('F7-④ → PR-4a-2:手机通道提交证书申报 → 消费一码 + 落 Claim + audit(actor 置空)', async () => {
     const cycle = await openCycle();
     await seedApp(cycle.id, { phone: '13900000001', statusCode: 'verified' });
     await sendCode('13900000001');
     const res = await request(httpServer(app))
-      .post('/api/open/v1/recruitment/applications/certificates')
-      .field('category', 'first_aid')
+      .post('/api/open/v1/recruitment/certificate-claims')
+      .field('categoryHintCode', 'first_aid')
       .field('issuingOrg', '深圳市红十字会')
       .field('issuedAt', '2026-07-01')
       .field('phone', '13900000001')
@@ -886,20 +889,44 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
         filename: 'c.png',
         contentType: 'image/png',
       });
-    expect(res.status).toBe(200);
-    expect(res.body.data).toEqual({ category: 'first_aid', imageCount: 1 });
+    expect(res.status).toBe(201);
+    expect(res.body.data.claim.imageCount).toBe(1);
+    expect(res.body.data.claimCount).toBe(1);
     const row = await prisma.recruitmentApplication.findFirstOrThrow({
       where: { phone: '13900000001' },
     });
-    expect((row.certificateImages as Record<string, string[]>).first_aid).toHaveLength(1);
+    // 落的是 Claim 行,不再是报名行上的 JSON 列(4a 起那三列只读不写)。
+    const claims = await prisma.recruitmentCertificateClaim.findMany({
+      where: { applicationId: row.id },
+      select: { imageKeys: true, status: true },
+    });
+    expect(claims).toHaveLength(1);
+    expect(claims[0].status).toBe('SUBMITTED');
+    expect(claims[0].imageKeys as string[]).toHaveLength(1);
+    expect(row.certificateImages).toBeNull();
+
     const audit = await prisma.auditLog.findFirst({
-      where: { event: 'recruitment-application.certificate-upload', resourceId: row.id },
+      where: { event: 'recruitment-certificate-claim.submit' },
     });
     expect(audit).not.toBeNull();
-    expect(audit?.actorUserId).toBeNull();
-    const ctx = audit?.context as { extra?: { channel?: string; category?: string } } | null;
+    expect(audit?.actorUserId).toBeNull(); // 公开自助无账号
+    const ctx = audit?.context as {
+      extra?: { channel?: string; categoryHintCode?: string; operation?: string };
+    } | null;
     expect(ctx?.extra?.channel).toBe('phone');
-    expect(ctx?.extra?.category).toBe('first_aid');
+    expect(ctx?.extra?.categoryHintCode).toBe('first_aid');
+    expect(ctx?.extra?.operation).toBe('submit');
+    // 手机通道消费一码:同码再用即失效。
+    expect(
+      (
+        await request(httpServer(app))
+          .post('/api/open/v1/recruitment/certificate-claims')
+          .field('categoryHintCode', 'first_aid')
+          .field('phone', '13900000001')
+          .field('code', FIXED_CODE)
+          .attach('images', VALID_PNG_IMAGE, { filename: 'c2.png', contentType: 'image/png' })
+      ).body.code,
+    ).toBe(BizCode.SMS_CODE_INVALID.code);
   });
 
   // ============ 小程序提交同样须验手机 ============
