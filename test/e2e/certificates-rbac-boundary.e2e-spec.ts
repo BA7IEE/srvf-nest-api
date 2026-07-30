@@ -27,6 +27,8 @@ describe('certificates RBAC 权限边界(Slow-4 T2)', () => {
 
   let memberA: string;
   let certTypeCode: string;
+  let standardId: string;
+  let policyId: string;
   let certId: string; // 预创建 pending 证书(read/update 用)
 
   const createPendingCert = async (): Promise<string> => {
@@ -34,10 +36,16 @@ describe('certificates RBAC 权限边界(Slow-4 T2)', () => {
       data: {
         memberId: memberA,
         certTypeCode,
+        // 证书标准库 PR-4a-3:直插夹具也必须带上 standardId + recognitionPolicyId ——
+        // PATCH 的「沿已锁定 policyId 校验」拿不到 policyId 会以 18035 拒改。
+        // 这不是夹具将就实现:§20.1 探针已证实库内零存量证书,所以「没有 policyId 的行」
+        // 在真实部署里不存在,4b 会把该列收紧为 NOT NULL。
+        standardId,
+        recognitionPolicyId: policyId,
+        sourceCode: 'ADMIN',
         issuingOrg: '边界机构',
         issuedAt: new Date('2024-01-01T00:00:00.000Z'),
         certStatusCode: 'pending',
-        isInternal: false,
       },
       select: { id: true },
     });
@@ -71,6 +79,32 @@ describe('certificates RBAC 权限边界(Slow-4 T2)', () => {
     });
     certTypeCode = ct.code;
 
+    // 证书标准库 PR-4a-3:建证入参改为 standardId。本 spec 锁判权边界,
+    // 用最宽松的一条 ACTIVE Policy(FREE_TEXT / EXPLICIT_OPTIONAL / OPTIONAL)即可。
+    const std = await prisma.certificateStandard.create({
+      data: {
+        code: 'crtb-std',
+        name: '判权边界用标准',
+        kind: 'CREDENTIAL',
+        status: 'ACTIVE',
+        categoryCode: certTypeCode,
+      },
+      select: { id: true },
+    });
+    const pol = await prisma.certificateRecognitionPolicy.create({
+      data: {
+        standardId: std.id,
+        version: 1,
+        status: 'ACTIVE',
+        issuerPolicy: 'FREE_TEXT',
+        validityMode: 'EXPLICIT_OPTIONAL',
+        certNumberMode: 'OPTIONAL',
+      },
+      select: { id: true },
+    });
+    standardId = std.id;
+    policyId = pol.id;
+
     const a = await prisma.member.create({
       data: { memberNo: 'crtb-m-a', displayName: 'A' },
       select: { id: true },
@@ -85,7 +119,7 @@ describe('certificates RBAC 权限边界(Slow-4 T2)', () => {
 
   const base = (): string => `/api/admin/v1/members/${memberA}/certificates`;
   const createPayload = (): Record<string, unknown> => ({
-    certTypeCode,
+    standardId,
     issuingOrg: '边界机构',
     issuedAt: '2024-01-01', // 冻结稿 §10.2:纯 YYYY-MM-DD
   });

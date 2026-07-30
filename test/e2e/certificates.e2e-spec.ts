@@ -75,8 +75,9 @@ describe('certificates 模块', () => {
   let memberB: string; // 跨 member 测试
   let adminMemberId: string; // ADMIN 绑定的 member,用于测 verifiedBy=memberId 路径
   let activeCertTypeCode: string;
-  let inactiveCertTypeCode: string;
-  let activeCertSubTypeCode: string;
+  let primaryStandardId: string;
+  let secondStandardId: string;
+  let draftStandardId: string;
   let secondActiveCertTypeCode: string; // 用于 supersededBy / 多类型测试
 
   beforeAll(async () => {
@@ -147,7 +148,10 @@ describe('certificates 模块', () => {
       },
       select: { code: true },
     });
-    inactiveCertTypeCode = certTypeInactive.code;
+    // PR-4a-3:INACTIVE cert_type 不再参与建证入参校验(字典校验移到建 Standard 时),
+    // 但 qualification-flag 的 query 仍收 certTypeCode,该 fixture 行仍需存在 ——
+    // 只是不再需要把 code 存进变量。
+    void certTypeInactive;
 
     // cert_sub_type 字典
     const certSubTypeDict = await prisma.dictType.create({
@@ -158,7 +162,55 @@ describe('certificates 模块', () => {
       data: { typeId: certSubTypeDict.id, code: 'first_aid_basic', label: '救护员基础' },
       select: { code: true },
     });
-    activeCertSubTypeCode = subTypeActive.code;
+    // PR-4a-3:certSubTypeCode 已从建证入参移除(等级是 Standard 的属性),
+    // 该字典项 fixture 仍建 —— 它是 cert_sub_type 字典存在性的前置,但不再需要变量。
+    void subTypeActive;
+
+    // 证书标准库 PR-4a-3:建证入参从「字典 code」改为「Standard id」。
+    // 两个 ACTIVE CREDENTIAL Standard(对应两个 ACTIVE cert_type),各带一条
+    // 最宽松的 ACTIVE Policy(FREE_TEXT / EXPLICIT_OPTIONAL / OPTIONAL)——
+    // 本 spec 锁的是 Certificate 实例的生命周期与判权,认定规则的各种组合
+    // 由 certificate-standards.e2e-spec 覆盖,这里不重复。
+    for (const [key, categoryCode] of [
+      ['primary', activeCertTypeCode],
+      ['second', secondActiveCertTypeCode],
+    ] as const) {
+      const std = await prisma.certificateStandard.create({
+        data: {
+          code: `cert-e2e-std-${key}`,
+          name: `${categoryCode} 标准`,
+          kind: 'CREDENTIAL',
+          status: 'ACTIVE',
+          categoryCode,
+        },
+        select: { id: true },
+      });
+      await prisma.certificateRecognitionPolicy.create({
+        data: {
+          standardId: std.id,
+          version: 1,
+          status: 'ACTIVE',
+          issuerPolicy: 'FREE_TEXT',
+          validityMode: 'EXPLICIT_OPTIONAL',
+          certNumberMode: 'OPTIONAL',
+        },
+      });
+      if (key === 'primary') primaryStandardId = std.id;
+      else secondStandardId = std.id;
+    }
+    // 一个 DRAFT Standard:用于「未启用标准不可建证」这一格。
+    draftStandardId = (
+      await prisma.certificateStandard.create({
+        data: {
+          code: 'cert-e2e-std-draft',
+          name: '草稿标准',
+          kind: 'CREDENTIAL',
+          status: 'DRAFT',
+          categoryCode: activeCertTypeCode,
+        },
+        select: { id: true },
+      })
+    ).id;
   });
 
   afterAll(async () => {
@@ -166,7 +218,8 @@ describe('certificates 模块', () => {
   });
 
   const baseCreatePayload = (override: Record<string, unknown> = {}): Record<string, unknown> => ({
-    certTypeCode: activeCertTypeCode,
+    // PR-4a-3:standardId 取代 certTypeCode;issuingOrg 仍传(默认规则是 FREE_TEXT)。
+    standardId: primaryStandardId,
     issuingOrg: '演示颁发机构 A',
     // 冻结稿 §10.2:证书日期入参收紧为纯 YYYY-MM-DD(不再接受 ISO datetime)。
     issuedAt: '2024-01-01',
@@ -450,51 +503,65 @@ describe('certificates 模块', () => {
       expect(res.body.data).not.toHaveProperty('attachmentKey');
     });
 
-    it('SUPER_ADMIN 创建完整字段 → 201', async () => {
+    it('SUPER_ADMIN 创建完整字段 → 201;standardId/policyId/sourceCode 落库', async () => {
       const res = await request(httpServer(app))
         .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', superAdminAuth)
         .send({
-          certTypeCode: activeCertTypeCode,
-          certSubTypeCode: activeCertSubTypeCode,
+          standardId: primaryStandardId,
           issuingOrg: '演示颁发机构 B',
           certNumber: 'DEMO-CERT-002',
           issuedAt: '2023-06-01',
           expiredAt: '2030-06-01',
         });
       expect(res.status).toBe(201);
-      expect(res.body.data.certSubTypeCode).toBe(activeCertSubTypeCode);
       expect(res.body.data.certNumberFull).toBe('DEMO-CERT-002');
       expect(res.body.data.expiredAt).toBe('2030-06-01T00:00:00.000Z');
+      // §9.1 步骤 7:标准化四列进出参。
+      expect(res.body.data.standardId).toBe(primaryStandardId);
+      expect(res.body.data.recognitionPolicyId).toEqual(expect.any(String));
+      expect(res.body.data.sourceCode).toBe('ADMIN');
+      // FREE_TEXT 规则 → issuerId 为 null,机构名是自由文本。
+      expect(res.body.data.recognitionIssuerId).toBeNull();
+      // PR-4a-3:certSubTypeCode 已从入参移除(等级现在是 Standard 的属性),
+      // 出参该列仍在但恒 null —— 停写不等于停读,列在 4b 才 DROP。
+      expect(res.body.data.certSubTypeCode).toBeNull();
+      // 旧 isInternal 同理:停写后由 DB default(false)兜住。
+      expect(res.body.data.isInternal).toBe(false);
     });
 
-    it('cert_type 不存在 → CERTIFICATE_TYPE_CODE_INVALID', async () => {
+    // PR-4a-3:入参不再有两个字典 code,原三格「字典 code 不存在 / INACTIVE /
+    // 子类型不存在」换成 Standard 维度的等价三格。字典校验本身没有消失 ——
+    // 它移到了 Standard 建标准时(PR-3 的管理面),建证时不再重复猜。
+    it('standardId 不存在 → CERTIFICATE_STANDARD_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
         .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
-        .send(baseCreatePayload({ certTypeCode: 'no-such-type' }));
-      expectBizError(res, BizCode.CERTIFICATE_TYPE_CODE_INVALID);
+        .send(baseCreatePayload({ standardId: 'no-such-standard' }));
+      expectBizError(res, BizCode.CERTIFICATE_STANDARD_NOT_FOUND);
     });
 
-    it('cert_type INACTIVE → CERTIFICATE_TYPE_CODE_INVALID', async () => {
+    it('standardId 未启用(DRAFT)→ CERTIFICATE_STANDARD_INACTIVE', async () => {
       const res = await request(httpServer(app))
         .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
-        .send(baseCreatePayload({ certTypeCode: inactiveCertTypeCode }));
-      expectBizError(res, BizCode.CERTIFICATE_TYPE_CODE_INVALID);
+        .send(baseCreatePayload({ standardId: draftStandardId }));
+      expectBizError(res, BizCode.CERTIFICATE_STANDARD_INACTIVE);
     });
 
-    it('cert_sub_type 不存在 → CERTIFICATE_SUB_TYPE_CODE_INVALID', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/members/${memberA}/certificates`)
-        .set('Authorization', adminAuth)
-        .send(baseCreatePayload({ certSubTypeCode: 'no-such-sub' }));
-      expectBizError(res, BizCode.CERTIFICATE_SUB_TYPE_CODE_INVALID);
-    });
-
-    it('缺 certTypeCode → 400', async () => {
+    it('FREE_TEXT 规则下不传 issuingOrg → CERTIFICATE_ISSUER_CONFIG_INVALID', async () => {
       const payload = baseCreatePayload();
-      delete payload.certTypeCode;
+      delete payload.issuingOrg;
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
+        .set('Authorization', adminAuth)
+        .send(payload);
+      expectBizError(res, BizCode.CERTIFICATE_ISSUER_CONFIG_INVALID);
+    });
+
+    it('缺 standardId → 400', async () => {
+      const payload = baseCreatePayload();
+      delete payload.standardId;
       const res = await request(httpServer(app))
         .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
@@ -867,12 +934,12 @@ describe('certificates 模块', () => {
       expect(res.body.data.expiredAt).toBe('2029-03-01T00:00:00.000Z');
     });
 
-    it('PATCH cert_type 字典 invalid → CERTIFICATE_TYPE_CODE_INVALID', async () => {
+    it('PATCH standardId 指向不存在的标准 → CERTIFICATE_STANDARD_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberA}/certificates/${certIdA}`)
         .set('Authorization', adminAuth)
-        .send({ certTypeCode: 'no-such-type' });
-      expectBizError(res, BizCode.CERTIFICATE_TYPE_CODE_INVALID);
+        .send({ standardId: 'no-such-standard' });
+      expectBizError(res, BizCode.CERTIFICATE_STANDARD_NOT_FOUND);
     });
 
     it('non-whitelisted certStatusCode → 400', async () => {
@@ -1200,9 +1267,7 @@ describe('certificates 模块', () => {
       const r1 = await request(httpServer(app))
         .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
-        .send(
-          baseCreatePayload({ certNumber: 'RESUB-C1', certTypeCode: secondActiveCertTypeCode }),
-        );
+        .send(baseCreatePayload({ certNumber: 'RESUB-C1', standardId: secondStandardId }));
       const c1Id = r1.body.data.id;
       await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberA}/certificates/${c1Id}/reject`)
@@ -1216,9 +1281,7 @@ describe('certificates 模块', () => {
       const r2 = await request(httpServer(app))
         .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
-        .send(
-          baseCreatePayload({ certNumber: 'RESUB-C2', certTypeCode: secondActiveCertTypeCode }),
-        );
+        .send(baseCreatePayload({ certNumber: 'RESUB-C2', standardId: secondStandardId }));
       expect(r2.status).toBe(201);
       expect(r2.body.data.id).not.toBe(c1Id);
       expect(r2.body.data.certStatusCode).toBe('pending');

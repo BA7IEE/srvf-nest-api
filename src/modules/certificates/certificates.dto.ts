@@ -100,6 +100,38 @@ export class CertificateResponseDto {
   @ApiProperty({ description: '是否本会颁发(CT-11;本批次 service 始终写 false)' })
   isInternal!: boolean;
 
+  // 证书标准库 PR-4a-3(§9.1 步骤 7):标准化事实四列进出参。
+  // 它们是队内主数据的**引用**(L1 配置面),不是敏感字段 —— 前端靠 standardId
+  // 显示「这是哪个标准」,靠 sourceCode 决定 evidence 从哪读(§13.5)。
+  // 与 certificateSafeSelect 同步维护(该 select 注释里写明了这条约束)。
+  @ApiPropertyOptional({
+    description: '证书标准 id(PR-4b 收紧为恒非空)',
+    nullable: true,
+    type: String,
+  })
+  standardId!: string | null;
+
+  @ApiPropertyOptional({
+    description: '录入 / 审核时锁定的认定规则 id(PR-4b 收紧为恒非空)',
+    nullable: true,
+    type: String,
+  })
+  recognitionPolicyId!: string | null;
+
+  @ApiPropertyOptional({
+    description: '认可机构 id(FREE_TEXT 规则下为 null,机构名见 issuingOrg)',
+    nullable: true,
+    type: String,
+  })
+  recognitionIssuerId!: string | null;
+
+  @ApiPropertyOptional({
+    description: '来源:ADMIN = 管理端录入 / RECRUITMENT = 招新发号搬运(PR-4b 收紧为恒非空)',
+    enum: ['ADMIN', 'RECRUITMENT'],
+    nullable: true,
+  })
+  sourceCode!: string | null;
+
   @ApiPropertyOptional({
     description: '替代关系:被替代的旧证书 id(CT-12;不做反向冗余,Q-S6 / Q-D2)',
     nullable: true,
@@ -191,25 +223,45 @@ const DATE_ONLY_SCHEMA = {
 // ============ 入参:Create ============
 
 // 必填:certTypeCode / issuingOrg / issuedAt;其余可选(schema 可空,Q-D4 / Q-D5)。
+// 证书标准库 PR-4a-3(冻结稿 §9.1):**契约破坏性变化**。
+// 入参从「两个字典 code + 自由文本机构」改为「一个 Standard id + 按认定规则的机构入参」:
+//   certTypeCode / certSubTypeCode  →  standardId
+//   issuingOrg(恒必填自由文本)      →  recognitionIssuerId 或 issuingOrg,由该 Standard
+//                                       当前生效认定规则的 issuerPolicy 决定该传哪个
+//
+// 为什么不保留旧字段做兼容:两套入参就是两个事实源,而 category 猜 Standard 是
+// 冻结稿明令禁止的(§21 硬禁区)。旧字段留着,下一个人就会用它。
 export class CreateCertificateDto {
-  @ApiProperty({ description: '证书大类字典 code(必填)', maxLength: 64 })
+  @ApiProperty({
+    description:
+      '证书标准 id(必填;须为 ACTIVE 且 CREDENTIAL —— 证书族 FAMILY 不可持有)。' +
+      '来源:GET /admin/v1/certificate-standards/options',
+    maxLength: 32,
+  })
   @IsString()
   @MinLength(1)
-  @MaxLength(64)
-  certTypeCode!: string;
+  @MaxLength(32)
+  standardId!: string;
 
-  @ApiPropertyOptional({ description: '证书子类型 / 等级字典 code', maxLength: 64 })
+  @ApiPropertyOptional({
+    description: '认可机构 id。ALLOWLIST 规则**必填**;FIXED 可不传(后端选唯一);FREE_TEXT 不得传',
+    maxLength: 32,
+  })
   @IsOptional()
   @IsString()
   @MinLength(1)
-  @MaxLength(64)
-  certSubTypeCode?: string;
+  @MaxLength(32)
+  recognitionIssuerId?: string;
 
-  @ApiProperty({ description: '颁发机构(自由文本;必填)', maxLength: 128 })
+  @ApiPropertyOptional({
+    description: 'FREE_TEXT 规则**必填**的自由机构名;FIXED / ALLOWLIST 不得传',
+    maxLength: 128,
+  })
+  @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(128)
-  issuingOrg!: string;
+  issuingOrg?: string;
 
   @ApiPropertyOptional({ description: '证书编号(中敏感)', maxLength: 128 })
   @IsOptional()
@@ -243,22 +295,28 @@ export class CreateCertificateDto {
 // PATCH 语义:全字段 optional;**绝对禁止** certStatusCode / verifiedBy / verifiedAt / verifyNote /
 //   isInternal / supersededByCertId / expireNotifyDueAt(forbidNonWhitelisted 兜底)。
 // Q-A4 决议:接受 issuedAt / expiredAt 资料修正。
+// 证书标准库 PR-4a-3(§9.2):`standardId` **只在 pending 态可改**(纠正选错的标准),
+// 非 pending 传它 → 18033。这条不做进 DTO 是因为它依赖行状态,DTO 看不到 ——
+// 但「改了 Standard 就重选当前 ACTIVE Policy 并完整重校验」这条由 service 保证。
 export class UpdateCertificateDto {
-  @ApiPropertyOptional({ description: '证书大类字典 code', maxLength: 64 })
+  @ApiPropertyOptional({
+    description: '证书标准 id(**仅 pending 态可改** —— 纠正选错的标准;非 pending → 18033)',
+    maxLength: 32,
+  })
   @IsOptional()
   @IsString()
   @MinLength(1)
-  @MaxLength(64)
-  certTypeCode?: string;
+  @MaxLength(32)
+  standardId?: string;
 
-  @ApiPropertyOptional({ description: '证书子类型 / 等级字典 code', maxLength: 64 })
+  @ApiPropertyOptional({ description: '认可机构 id(按认定规则的 issuerPolicy)', maxLength: 32 })
   @IsOptional()
   @IsString()
   @MinLength(1)
-  @MaxLength(64)
-  certSubTypeCode?: string;
+  @MaxLength(32)
+  recognitionIssuerId?: string;
 
-  @ApiPropertyOptional({ description: '颁发机构', maxLength: 128 })
+  @ApiPropertyOptional({ description: 'FREE_TEXT 规则的自由机构名', maxLength: 128 })
   @IsOptional()
   @IsString()
   @MinLength(1)
