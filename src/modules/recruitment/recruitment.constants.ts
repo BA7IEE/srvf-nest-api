@@ -76,6 +76,31 @@ export function isThresholdCode(code: string): code is ThresholdCode {
   return (THRESHOLD_CODES as ReadonlyArray<string>).includes(code);
 }
 
+// 证书标准库 PR-4a-2(冻结稿 §8.4):5 项门槛自本刀起**分成两族**。
+//
+//   人工标记族 patrol1 / patrol2 / training —— 沿既有 markThreshold 语义不变。
+//   派生族     redCross / bsafe            —— Claim 审核结论的投影,**不可人工标记**。
+//
+// 派生族仍然物化在同一个 `thresholdMarks` JSON 里(所以所有既有读侧逐字不变),
+// 但**唯一写者**是 Claim 事务里的重算函数:每次重算都对该报名**全部未软删 Claim**
+// 做聚合,而不是「这次审核的结论直接写 true/false」。
+// 这个区别是 §8.4 第一条推论的全部内容 —— 两张急救证里拒掉一张,聚合仍然看得见
+// 另一张已通过的证书,而一个被逐次覆写的标记记不住这件事。
+export const MANUAL_THRESHOLD_CODES = ['patrol1', 'patrol2', 'training'] as const;
+export type ManualThresholdCode = (typeof MANUAL_THRESHOLD_CODES)[number];
+
+/** 由证书申报审核结论派生的门槛 code(= `CERTIFICATE_THRESHOLD_BY_CATEGORY` 的值域)。 */
+export const DERIVED_CERTIFICATE_THRESHOLD_CODES = ['redCross', 'bsafe'] as const;
+
+export function isManualThresholdCode(code: string): code is ManualThresholdCode {
+  return (MANUAL_THRESHOLD_CODES as ReadonlyArray<string>).includes(code);
+}
+
+/** 该门槛是否属于「由证书申报派生、不可人工标记」的一族。 */
+export function isDerivedCertificateThresholdCode(code: string): boolean {
+  return (DERIVED_CERTIFICATE_THRESHOLD_CODES as ReadonlyArray<string>).includes(code);
+}
+
 /** 5 项门槛是否全部完成(标记存在即完成) */
 export function allThresholdsComplete(marks: ThresholdMarks | null | undefined): boolean {
   if (!marks) return false;
@@ -416,6 +441,17 @@ export function certificateCategoryForThreshold(
   );
 }
 export const CERTIFICATE_IMAGES_MAX_PER_CATEGORY = 3;
+
+// ===== 证书标准库 PR-4a-2(冻结稿 §8.1):一证一行的申报 =====
+// key 只由固定 namespace + 随机 id 组成 —— **不含**类别、姓名、手机、证件号或原文件名
+// (§8.1:「storage key 只能使用随机 id 和固定 namespace」)。旧 key 里带 category 与
+// cycleId,那是按类别覆盖时代的产物;一证一行后 key 不需要承载任何业务语义。
+export const CERTIFICATE_CLAIM_IMAGE_KEY_PREFIX = 'recruitment/certificate-claim';
+export const CERTIFICATE_CLAIM_IMAGES_MAX = 3;
+export const CERTIFICATE_CLAIM_IMAGES_MIN = 1;
+// 每个报名最多保留的未软删申报数。上限的作用不是业务规则而是**防滥用**:
+// 公开端点无账号,不设上限就是一个匿名可写的无限存储入口(§8.1)。
+export const CERTIFICATE_CLAIM_MAX_PER_APPLICATION = 10;
 
 export type RecruitmentStorageCleanupOperation =
   | 'delete-orphan-id-card-image'

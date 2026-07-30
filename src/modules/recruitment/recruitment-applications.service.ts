@@ -63,6 +63,7 @@ import {
   type ConsumedPhoneIdentity,
 } from './recruitment-identity.service';
 import { type OcrOutcome, classifyOcrResult, routeOcrOutcome } from './recruitment-ocr-routing';
+import { loadProgressClaims } from './recruitment-certificate-claim-progress';
 import {
   RECRUITMENT_STAGE_DICT_TYPE,
   assembleRecruitmentProgress,
@@ -650,7 +651,9 @@ export class RecruitmentApplicationsService {
       where: { id: app.cycleId },
     });
     const stageTextByCode = await this.loadStageTextMap();
-    return assembleRecruitmentProgress(app, cycle, stageTextByCode);
+    // PR-4a-2:证书段改由 Claim 行组装(一证一行);presenter 仍零 Prisma。
+    const certificateClaims = await loadProgressClaims(this.prisma, app.id);
+    return assembleRecruitmentProgress({ ...app, certificateClaims }, cycle, stageTextByCode);
   }
 
   private async findLatestActiveAppByOpenidForProgress(

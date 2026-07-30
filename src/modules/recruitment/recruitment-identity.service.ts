@@ -1,8 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
-import { DictItemStatus, Prisma, SmsPurpose, type RecruitmentApplication } from '@prisma/client';
+import {
+  DictItemStatus,
+  Prisma,
+  RecruitmentCertificateClaimStatus,
+  SmsPurpose,
+  type RecruitmentApplication,
+} from '@prisma/client';
 
-import { normalizeDateOnly } from '../../common/datetime/date-only.util';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
@@ -20,32 +24,22 @@ import {
   APP_STATUS_PROMOTED,
   APP_STATUS_REJECTED,
   APP_STATUS_WITHDRAWN,
-  CERTIFICATE_IMAGES_MAX_PER_CATEGORY,
-  CERTIFICATE_IMAGE_KEY_PREFIX,
   CYCLE_STATUS_OPEN,
-  ID_CARD_IMAGE_ALLOWED_MIME,
-  ID_CARD_IMAGE_MAX_BYTES,
   PHONE_CHANGE_REASON_SELF_REBIND,
   PHONE_VERIFICATION_METHOD_SMS,
   RECRUITMENT_IDENTITY_SESSION_TTL_SECONDS,
   generatePhoneVerificationToken,
   hashPhoneVerificationToken,
-  recruitmentStorageCleanupFailureLog,
 } from './recruitment.constants';
-import {
-  certificateJsonOrDbNull,
-  certificateJsonRecord,
-  certificateReviewForCategory,
-} from './recruitment-certificate-json';
 import { recruitmentDuplicateExceptionForP2002 } from './recruitment-prisma-errors';
+import { loadProgressClaims } from './recruitment-certificate-claim-progress';
+import { recomputeCertificateThresholds } from './recruitment-certificate-threshold-derive';
 import {
   RECRUITMENT_STAGE_DICT_TYPE,
   assembleRecruitmentProgress,
 } from './recruitment-progress-presenter';
 import type {
   RecruitmentApplicationProgressDto,
-  RecruitmentCertificateUploadDto,
-  RecruitmentCertificateUploadResultDto,
   RecruitmentRebindPhoneDto,
   RecruitmentRebindWechatDto,
   RecruitmentSendCodeResponseDto,
@@ -53,7 +47,6 @@ import type {
   RecruitmentVerifyCodeResponseDto,
   RecruitmentWithdrawDto,
 } from './recruitment.dto';
-import type { UploadedImageFile } from './recruitment-applications.service';
 
 // 招新四期 S4a(H5 + 手机身份链;2026-06-24;评审稿 recruitment-phase4-loop-optimization-review.md §3)。
 //
@@ -365,6 +358,28 @@ export class RecruitmentIdentityService {
         where: { id: lockedApp.id },
         data: { statusCode: APP_STATUS_WITHDRAWN },
       });
+      // 证书标准库 PR-4a-2(冻结稿 §8.4 末段):整份报名撤销时,所有**未 PROMOTED**
+      // 的 Claim 在**同一事务**转 WITHDRAWN,并清除它们对门槛的贡献。
+      // PROMOTED 的 Claim 不动 —— 已发号的报名本就撤不掉(上面状态闸已拦),
+      // 这里的 notIn 是纵深防御:万一将来放开了某条撤销路径,也绝不把已生成正式
+      // 证书的申报改成 WITHDRAWN(那会让档案与申报事实脱钩)。
+      const cascaded = await tx.recruitmentCertificateClaim.updateMany({
+        where: {
+          applicationId: lockedApp.id,
+          deletedAt: null,
+          status: { notIn: [RecruitmentCertificateClaimStatus.PROMOTED] },
+        },
+        data: { status: RecruitmentCertificateClaimStatus.WITHDRAWN },
+      });
+      // 重算在级联之后:此刻所有贡献者都已 WITHDRAWN,聚合自然清空两个派生门槛。
+      // 报名已是终态 withdrawn,`recalcApplicationStatusForThresholds` 会原样返回它 ——
+      // 不会把一份已撤销的报名拉回流程。
+      await recomputeCertificateThresholds(this.auditLogs, tx, lockedApp.id, {
+        actorUserId: null,
+        actorRoleSnap: null,
+        meta,
+        now: new Date(),
+      });
       await this.auditLogs.log({
         event: 'recruitment-application.withdraw',
         actorUserId: null, // 无账号自助撤销
@@ -380,6 +395,8 @@ export class RecruitmentIdentityService {
           ...(channel === 'wechat' && lockedApp.openid
             ? { openid: this.maskOpenid(lockedApp.openid) }
             : {}),
+          // 级联撤了几条证书申报 —— 只记条数,不记 id / 编号 / key。
+          withdrawnClaimCount: cascaded.count,
         },
         tx,
       });
@@ -394,172 +411,16 @@ export class RecruitmentIdentityService {
   // idCardImage(jpeg/png ≤5MB)。存 recruitment_applications.certificateImages Json
   // ({ [category]: string[] } 暂存位);promote 建 pending Certificate 搬 imageKeys(R6)。
   // 终态行(promoted/rejected/withdrawn)不可传 → 28041。审核动作仍 = 既有标门槛,不新建审核流。
-  async uploadCertificateImages(
-    dto: RecruitmentCertificateUploadDto,
-    files: UploadedImageFile[],
-    meta: AuditMeta,
-  ): Promise<RecruitmentCertificateUploadResultDto> {
-    const issuingOrg = dto.issuingOrg.trim();
-    if (issuingOrg.length === 0) {
-      throw new BizException(BizCode.BAD_REQUEST);
-    }
-    const issuedAt = normalizeDateOnly(dto.issuedAt);
-    const today = normalizeDateOnly(new Date().toISOString());
-    if (issuedAt.getTime() > today.getTime()) {
-      throw new BizException(BizCode.BAD_REQUEST);
-    }
-    const issuedAtDateOnly = issuedAt.toISOString().slice(0, 10);
-    const viaWechat = typeof dto.wechatCode === 'string' && dto.wechatCode.length > 0;
-    const viaPhone = typeof dto.phone === 'string' && dto.phone.length > 0;
-    if (viaWechat === viaPhone) {
-      throw new BizException(BizCode.BAD_REQUEST);
-    }
-    if (files.length === 0 || files.length > CERTIFICATE_IMAGES_MAX_PER_CATEGORY) {
-      throw new BizException(BizCode.BAD_REQUEST);
-    }
-    for (const f of files) {
-      if (f.size > ID_CARD_IMAGE_MAX_BYTES || !ID_CARD_IMAGE_ALLOWED_MIME.includes(f.mimetype)) {
-        throw new BizException(BizCode.BAD_REQUEST);
-      }
-      this.contentValidator.validateFromBuffer({ mime: f.mimetype, buffer: f.buffer });
-    }
-    let app: RecruitmentApplication | null;
-    let channel: 'wechat' | 'phone';
-    if (viaWechat) {
-      channel = 'wechat';
-      const { openid } = await this.wechat.code2session(dto.wechatCode as string);
-      app = await this.findLatestActiveAppByOpenid(openid);
-    } else {
-      channel = 'phone';
-      if (typeof dto.code !== 'string' || dto.code.length === 0) {
-        throw new BizException(BizCode.BAD_REQUEST);
-      }
-      await this.smsCode.verifyAndConsume({
-        phone: dto.phone as string,
-        purpose: SmsPurpose.RECRUITMENT_BIND,
-        code: dto.code,
-        userId: null,
-      });
-      app = await this.findLatestActiveAppByPhone(dto.phone as string);
-    }
-    if (!app) {
-      throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
-    }
-    this.assertCertificateUploadAllowed(app, dto.category);
-    const targetApp = app;
+  // 证书标准库 PR-4a-2(冻结稿 §13.3 / §21 约束 2、3):旧「按类别整组覆盖上传」
+  // `uploadCertificateImages` 与其状态守卫 `assertCertificateUploadAllowed` **本刀删除**。
+  // 它是三个证书 JSON 列(certificateImages / certificateReviewStatus /
+  // certificateIssuanceInfo)在申请人侧的唯一写者 —— 删掉它,那三列就只剩读,
+  // 满足「4a 起旧字段只读不写」。替代品是一证一行的
+  // `POST /open/v1/recruitment/certificate-claims`(+ resubmit / withdraw)。
+  //
+  // 双通道凭证那一段没有丢:抽成了下面的 `resolveActiveApplicationByCredential`,
+  // 三个新公开端点共用,身份链因此仍然只有一处实现。
 
-    // 落图(失败域:任一 putObject 失败 → best-effort 删本批已落新 key,不动旧图;镜像 FM-B)
-    const newKeys: string[] = [];
-    try {
-      for (const f of files) {
-        const ext = f.mimetype === 'image/png' ? 'png' : 'jpg';
-        const key = `${CERTIFICATE_IMAGE_KEY_PREFIX}/${dto.category}/${targetApp.cycleId}/${randomUUID()}.${ext}`;
-        await this.storage.putObject({ key, body: f.buffer, contentType: f.mimetype });
-        newKeys.push(key);
-      }
-    } catch (err) {
-      for (const k of newKeys) {
-        await this.safeDeleteBlob(k);
-      }
-      throw err;
-    }
-
-    let oldKeys: string[];
-    try {
-      oldKeys = await this.prisma.$transaction(async (tx) => {
-        await tx.$queryRaw(
-          Prisma.sql`SELECT "id" FROM "recruitment_applications" WHERE "id" = ${targetApp.id} FOR UPDATE`,
-        );
-        const locked = await tx.recruitmentApplication.findFirst({
-          where: { id: targetApp.id, deletedAt: null },
-        });
-        if (!locked) {
-          throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
-        }
-        // 落图窗口内状态/审核结论可能变化；合并写只认 FOR UPDATE 后的最新行。
-        this.assertCertificateUploadAllowed(locked, dto.category);
-
-        const existing = certificateJsonRecord(locked.certificateImages);
-        const existingReviews = certificateJsonRecord(locked.certificateReviewStatus);
-        const existingIssuance = certificateJsonRecord(locked.certificateIssuanceInfo);
-        const nextReviews = { ...existingReviews };
-        delete nextReviews[dto.category];
-        const replacedKeys = Array.isArray(existing[dto.category])
-          ? (existing[dto.category] as string[])
-          : [];
-        const nextImages = { ...existing, [dto.category]: newKeys };
-        const nextIssuance = {
-          ...existingIssuance,
-          [dto.category]: { issuingOrg, issuedAt: issuedAtDateOnly },
-        };
-
-        await tx.recruitmentApplication.update({
-          where: { id: targetApp.id },
-          data: {
-            certificateImages: nextImages as Prisma.InputJsonValue,
-            certificateReviewStatus: certificateJsonOrDbNull(nextReviews),
-            certificateIssuanceInfo: nextIssuance as Prisma.InputJsonValue,
-          },
-        });
-        await this.auditLogs.log({
-          event: 'recruitment-application.certificate-upload',
-          actorUserId: null, // 无账号自助上传
-          actorRoleSnap: null,
-          resourceType: AUDIT_RESOURCE_TYPE,
-          resourceId: targetApp.id,
-          meta,
-          extra: {
-            channel,
-            category: dto.category,
-            imageCount: newKeys.length,
-            replacedCount: replacedKeys.length,
-            issuingOrg,
-            ...(channel === 'phone' ? { phone: maskPhone(dto.phone as string) } : {}),
-          },
-          tx,
-        });
-        return replacedKeys;
-      });
-    } catch (err) {
-      for (const k of newKeys) {
-        await this.safeDeleteBlob(k);
-      }
-      throw err;
-    }
-
-    // 重传覆盖:旧 blob best-effort 删(库行已指向新 key;删失败仅告警,不影响本次结果)
-    for (const k of oldKeys) {
-      await this.safeDeleteBlob(k);
-    }
-    return { category: dto.category, imageCount: newKeys.length };
-  }
-
-  private assertCertificateUploadAllowed(app: RecruitmentApplication, category: string): void {
-    if (
-      app.statusCode === APP_STATUS_PROMOTED ||
-      app.statusCode === APP_STATUS_REJECTED ||
-      app.statusCode === APP_STATUS_WITHDRAWN
-    ) {
-      throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
-    }
-    if (
-      certificateReviewForCategory(app.certificateReviewStatus, category)?.status === 'approved'
-    ) {
-      throw new BizException(BizCode.RECRUITMENT_CERTIFICATE_ALREADY_APPROVED);
-    }
-  }
-
-  // 证书图 blob best-effort 删(重传覆盖旧图 / 落图失败补偿;失败仅告警不外抛,镜像 safeDeleteOrphanImage)
-  private async safeDeleteBlob(key: string): Promise<void> {
-    try {
-      await this.storage.deleteObject(key);
-    } catch {
-      this.logger.warn(recruitmentStorageCleanupFailureLog('delete-replaced-certificate-image'));
-    }
-  }
-
-  // ============ 自助换微信换绑(锚当前手机;§3.4)============
-  // 校验本人 = 当前手机验码;定位最近活跃报名 → code2session 新微信 → 防绑他人报名 → 更 openid + 审计。
   async rebindWechat(
     dto: RecruitmentRebindWechatDto,
     meta: AuditMeta,
@@ -715,6 +576,52 @@ export class RecruitmentIdentityService {
   }
 
   // 写动作口径:手机只锚最近活跃报名(rejected/withdrawn 终态永不被更新)。
+  /**
+   * 证书标准库 PR-4a-2(冻结稿 §8.1 / §13.3):公开面双通道凭证 → 定位本人最近活跃报名。
+   *
+   * 从 `uploadCertificateImages` 里原样抽出的那一段,**不是第二套实现** ——
+   * 申报的提交 / 重传 / 撤回三个新公开端点都走它,身份链因此只有一处。
+   * §13.3 的硬要求是「身份凭证必须解析到同一 RecruitmentApplication」且
+   * 「claimId 不能单独构成授权」:调用方拿到 app 后必须再校验 claim.applicationId === app.id。
+   *
+   * 通道二选一(异或):wechatCode 走 code2session;phone + code 走验码并**消费一码**。
+   * 两个都给或都不给 → 40000(不猜意图:猜错会让一次操作消费掉不该消费的验证码)。
+   */
+  async resolveActiveApplicationByCredential(cred: {
+    wechatCode?: string;
+    phone?: string;
+    code?: string;
+  }): Promise<{ app: RecruitmentApplication; channel: 'wechat' | 'phone' }> {
+    const viaWechat = typeof cred.wechatCode === 'string' && cred.wechatCode.length > 0;
+    const viaPhone = typeof cred.phone === 'string' && cred.phone.length > 0;
+    if (viaWechat === viaPhone) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    let app: RecruitmentApplication | null;
+    let channel: 'wechat' | 'phone';
+    if (viaWechat) {
+      channel = 'wechat';
+      const { openid } = await this.wechat.code2session(cred.wechatCode as string);
+      app = await this.findLatestActiveAppByOpenid(openid);
+    } else {
+      channel = 'phone';
+      if (typeof cred.code !== 'string' || cred.code.length === 0) {
+        throw new BizException(BizCode.BAD_REQUEST);
+      }
+      await this.smsCode.verifyAndConsume({
+        phone: cred.phone as string,
+        purpose: SmsPurpose.RECRUITMENT_BIND,
+        code: cred.code,
+        userId: null,
+      });
+      app = await this.findLatestActiveAppByPhone(cred.phone as string);
+    }
+    if (!app) {
+      throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
+    }
+    return { app, channel };
+  }
+
   private async findLatestActiveAppByPhone(
     phone: string,
     client: PrismaService | Prisma.TransactionClient = this.prisma,
@@ -827,7 +734,9 @@ export class RecruitmentIdentityService {
       where: { id: app.cycleId },
     });
     const stageTextByCode = await this.loadStageTextMap();
-    return assembleRecruitmentProgress(app, cycle, stageTextByCode);
+    // PR-4a-2:证书段改由 Claim 行组装(一证一行);presenter 仍零 Prisma。
+    const certificateClaims = await loadProgressClaims(this.prisma, app.id);
+    return assembleRecruitmentProgress({ ...app, certificateClaims }, cycle, stageTextByCode);
   }
 
   // recruitment_stage 字典 → { stage → stageText } map(§4.1;仅 ACTIVE;缺项 presenter 回退机器码)

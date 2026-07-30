@@ -366,9 +366,19 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     await prisma.notificationRead.deleteMany({});
     await prisma.notification.deleteMany({});
     await prisma.notificationOutboxIntent.deleteMany({});
-    // F7:promote 现为证书图类别建 pending Certificate(FK→Member Restrict,须先于 member 清)
+    // F7 → PR-4a-2:promote 现为每条 APPROVED Claim 建 Certificate
+    // (FK→Member Restrict,须先于 member 清;Certificate.sourceClaimId FK→Claim Restrict,
+    //  所以 Certificate 也必须先于 Claim 清)。
     await prisma.certificate.deleteMany({});
     await prisma.member.deleteMany({});
+    // PR-4a-2:Claim 挂 application(FK Cascade),但显式先清更可读、也不依赖级联口径。
+    await prisma.recruitmentCertificateClaim.deleteMany({});
+    // 每测重建 Standard/Policy 夹具(上一测的 Certificate 已清 → 无引用,可安全清)。
+    await prisma.certificateRecognitionIssuer.deleteMany({});
+    await prisma.certificateRecognitionPolicy.deleteMany({});
+    await prisma.certificateStandard.deleteMany({});
+    CLAIM_STANDARD_BY_CATEGORY.clear();
+    await seedCertificateStandards();
     await prisma.recruitmentApplication.deleteMany({});
     await prisma.recruitmentCycle.deleteMany({});
     await prisma.storageSettings.deleteMany({});
@@ -1433,15 +1443,22 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
 
   // ===== 招新可用性收口 F7(评审稿 §2.9 R6):证书图上传与长期档案 =====
 
-  const OPEN_CERTS = '/api/open/v1/recruitment/applications/certificates';
+  // ============ 证书标准库 PR-4a-2:一证一行的公开申报(取代旧按类别整组覆盖)============
+  //
+  // 旧块的 6 个用例连同它们测的 3 个端点一起退役(§13.4 / §13.3)。逐条交代去向:
+  //   A1「重传整类覆盖」        → 语义反转:同类别多张互不覆盖,重传只换**这一条**;
+  //   F7-②「按类别取图 URL」    → 换成 claim 维度的 image-urls(行为锁在
+  //                              recruitment-certificate-claims.e2e-spec,含 no-store 与审计闭集);
+  //   A5「promote 搬发证真值」  → 换成「只搬 APPROVED Claim」,并新增证据不复制的断言;
+  //   A5「存量缺发证信息回退占位」→ 语义消失:机构与日期在审核时按认定规则锁定,不存在占位一档;
+  //   A2/A3/G「未审不可标 / approved 禁重传」→ 前半由派生门槛替代(见 ㉑),
+  //                              后半由 Claim 状态机替代(APPROVED 不可由申请人改 → 28057);
+  //   finding #10「伪装 PNG → 13016」→ 逐字保留在下方,只换端点。
+  const OPEN_CLAIMS = '/api/open/v1/recruitment/certificate-claims';
 
-  function uploadCerts(fields: Record<string, string>, fileCount: number) {
-    let req = request(httpServer(app)).post(OPEN_CERTS);
-    for (const [k, v] of Object.entries({
-      issuingOrg: '深圳市红十字会',
-      issuedAt: '2026-07-01',
-      ...fields,
-    }))
+  function submitClaim(fields: Record<string, string>, fileCount: number) {
+    let req = request(httpServer(app)).post(OPEN_CLAIMS);
+    for (const [k, v] of Object.entries({ categoryHintCode: 'first_aid', ...fields }))
       req = req.field(k, v);
     for (let i = 0; i < fileCount; i++) {
       req = req.attach('images', VALID_PNG_IMAGE, {
@@ -1452,362 +1469,401 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     return req;
   }
 
-  it('finding #10:证书图声明 image/png 但字节为文本 → 13016,不落 key', async () => {
+  it('finding #10:证据图声明 image/png 但字节为文本 → 13016,不落 key', async () => {
     const cycle = await openCycle();
     await createAppRow(cycle.id, {
       openid: 'dev-openid-fake-cert',
       phone: '13900009109',
     });
-
     const res = await request(httpServer(app))
-      .post(OPEN_CERTS)
-      .field('category', 'first_aid')
-      .field('issuingOrg', '深圳市红十字会')
-      .field('issuedAt', '2026-07-01')
+      .post(OPEN_CLAIMS)
+      .field('categoryHintCode', 'first_aid')
       .field('wechatCode', 'fake-cert')
-      .attach('images', Buffer.from('plain text pretending to be png'), {
-        filename: 'fake.png',
+      .attach('images', Buffer.from('not really a png'), {
+        filename: 'cert.png',
         contentType: 'image/png',
       });
-
     expectBizError(res, BizCode.ATTACHMENT_CONTENT_TYPE_MISMATCH);
-    const row = await prisma.recruitmentApplication.findFirstOrThrow({
-      where: { openid: 'dev-openid-fake-cert' },
-    });
-    expect(row.certificateImages).toBeNull();
+    // 内容闸在**落对象之前**跑完 → 零 Claim、零 key。
+    expect(await prisma.recruitmentCertificateClaim.count()).toBe(0);
   });
 
-  it('A1/F7-① 上传必填发证信息并落库;重传整类覆盖;非法/缺字段/未来日期 → 400', async () => {
-    const cycle = await openCycle();
-    await createAppRow(cycle.id, { openid: 'dev-openid-f7-a', phone: '13900009101' });
-
-    const r1 = await uploadCerts({ category: 'first_aid', wechatCode: 'f7-a' }, 2);
-    expect(r1.status).toBe(200);
-    expect(r1.body.data).toEqual({ category: 'first_aid', imageCount: 2 });
-    const row1 = await prisma.recruitmentApplication.findFirstOrThrow({
-      where: { openid: 'dev-openid-f7-a' },
-    });
-    const imgs1 = row1.certificateImages as Record<string, string[]>;
-    expect(imgs1.first_aid).toHaveLength(2);
-    expect(imgs1.first_aid[0]).toMatch(/^recruitment\/certificate\/first_aid\//);
-    expect(row1.certificateIssuanceInfo).toEqual({
-      first_aid: { issuingOrg: '深圳市红十字会', issuedAt: '2026-07-01' },
-    });
-
-    const missingIssuingOrg = request(httpServer(app))
-      .post(OPEN_CERTS)
-      .field('category', 'bsafe')
-      .field('issuedAt', '2026-07-01')
-      .field('wechatCode', 'f7-a')
-      .attach('images', Buffer.from('cert'), { filename: 'cert.png', contentType: 'image/png' });
-    expectBizError(await missingIssuingOrg, BizCode.BAD_REQUEST, { strictMessage: false });
-    const missingIssuedAt = request(httpServer(app))
-      .post(OPEN_CERTS)
-      .field('category', 'bsafe')
-      .field('issuingOrg', '深圳市红十字会')
-      .field('wechatCode', 'f7-a')
-      .attach('images', Buffer.from('cert'), { filename: 'cert.png', contentType: 'image/png' });
-    expectBizError(await missingIssuedAt, BizCode.BAD_REQUEST, { strictMessage: false });
-    expectBizError(
-      await uploadCerts({ category: 'bsafe', wechatCode: 'f7-a', issuedAt: '2099-01-01' }, 1),
-      BizCode.BAD_REQUEST,
-      { strictMessage: false },
-    );
-
-    // 重传覆盖(2 → 1;key 全换)
-    const r2 = await uploadCerts({ category: 'first_aid', wechatCode: 'f7-a' }, 1);
-    expect(r2.body.data.imageCount).toBe(1);
-    const row2 = await prisma.recruitmentApplication.findFirstOrThrow({
-      where: { openid: 'dev-openid-f7-a' },
-    });
-    const imgs2 = row2.certificateImages as Record<string, string[]>;
-    expect(imgs2.first_aid).toHaveLength(1);
-    expect(imgs1.first_aid).not.toContain(imgs2.first_aid[0]);
-
-    // 第二类并存(bsafe 不覆盖 first_aid)
-    const r3 = await uploadCerts({ category: 'bsafe', wechatCode: 'f7-a' }, 1);
-    expect(r3.body.data.imageCount).toBe(1);
-    const row3 = await prisma.recruitmentApplication.findFirstOrThrow({
-      where: { openid: 'dev-openid-f7-a' },
-    });
-    const imgs3 = row3.certificateImages as Record<string, string[]>;
-    expect(Object.keys(imgs3).sort()).toEqual(['bsafe', 'first_aid']);
-
-    // 非法 category → 400(DTO @IsIn)
-    expectBizError(
-      await uploadCerts({ category: 'not-a-cert', wechatCode: 'f7-a' }, 1),
-      BizCode.BAD_REQUEST,
-      { strictMessage: false },
-    );
-    // 双通道 both → 400
-    expectBizError(
-      await uploadCerts(
-        { category: 'bsafe', wechatCode: 'f7-a', phone: '13900009101', code: '888888' },
-        1,
-      ),
-      BizCode.BAD_REQUEST,
-      { strictMessage: false },
-    );
-    // 零文件 → 400
-    expectBizError(
-      await uploadCerts({ category: 'bsafe', wechatCode: 'f7-a' }, 0),
-      BizCode.BAD_REQUEST,
-      {
-        strictMessage: false,
-      },
-    );
-
-    // 刀A2:终态行(rejected)不再作为写动作锚点 → 28002
-    await createAppRow(cycle.id, {
-      statusCode: 'rejected',
-      idCardNumber: 'F7ID0002',
-      phone: '13900009102',
-      openid: 'dev-openid-f7-b',
-    });
-    expectBizError(
-      await uploadCerts({ category: 'first_aid', wechatCode: 'f7-b' }, 1),
-      BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
-    );
-  });
-
-  it('F7-② admin 取证书图 signed-URL:仅 read.record → 30100;read.sensitive → 按类别 urls;无图 → 空 items', async () => {
-    const cycle = await openCycle();
-    const row = await createAppRow(cycle.id, { openid: 'dev-openid-f7-c', phone: '13900009103' });
-    await uploadCerts({ category: 'bsafe', wechatCode: 'f7-c' }, 2).expect(200);
-
-    const urlPath = `${ADMIN_APPS}/${row.id}/certificate-image-urls`;
-    expectBizError(
-      await request(httpServer(app)).get(urlPath).set('Authorization', recordOnlyAuth),
-      BizCode.RBAC_FORBIDDEN,
-    );
-    const ok = await request(httpServer(app)).get(urlPath).set('Authorization', sensitiveAuth);
-    expect(ok.status).toBe(200);
-    expect(ok.body.data.items).toHaveLength(1);
-    expect(ok.body.data.items[0].category).toBe('bsafe');
-    expect(ok.body.data.items[0].urls).toHaveLength(2);
-    expect(ok.body.data.expiresAt).toEqual(expect.any(String));
-
-    // 无图行 → 空 items(200,非 404:「有没有传」是合法业务信息)
-    const bare = await createAppRow(cycle.id, {
-      idCardNumber: 'F7ID0003',
-      phone: '13900009104',
-      openid: 'dev-openid-f7-d',
-    });
-    const empty = await request(httpServer(app))
-      .get(`${ADMIN_APPS}/${bare.id}/certificate-image-urls`)
-      .set('Authorization', sensitiveAuth);
-    expect(empty.status).toBe(200);
-    expect(empty.body.data.items).toEqual([]);
-  });
-
-  it('A5/F7-③ promote 搬发证真值,approved 继承 verified(审核人/时间/备注),未审仍 pending,并清三列', async () => {
-    const cycle = await openCycle();
-    await createAppRow(cycle.id, {
-      statusCode: 'publicity',
-      realName: '寅丙',
-      idCardNumber: 'F7ID0005',
-      phone: '13900009105',
-      openid: 'dev-openid-f7-e',
-      birthDate: new Date('1995-03-07T00:00:00.000Z'),
-      genderCode: 'male',
-    });
-    await uploadCerts({ category: 'first_aid', wechatCode: 'f7-e' }, 2).expect(200);
-    await uploadCerts(
-      {
-        category: 'bsafe',
-        wechatCode: 'f7-e',
-        issuingOrg: '深圳市急救中心',
-        issuedAt: '2026-06-15',
-      },
-      1,
-    ).expect(200);
-    const before = await prisma.recruitmentApplication.findFirstOrThrow({
-      where: { openid: 'dev-openid-f7-e' },
-    });
-    const uploaded = before.certificateImages as Record<string, string[]>;
-    const reviewer = await prisma.user.findUniqueOrThrow({
-      where: { username: 'recruit_admin' },
-      select: { id: true, memberId: true },
-    });
-    await prisma.recruitmentApplication.update({
-      where: { id: before.id },
-      data: {
-        certificateReviewStatus: {
-          first_aid: {
-            status: 'approved',
-            at: '2026-07-12T08:00:00.000Z',
-            by: reviewer.id,
-            note: '招新期审核已通过,证件与本人一致',
-          },
-        },
-      },
-    });
-
-    const pr = await promote(cycle.id);
-    expect(pr.body.data.promotedCount).toBe(1);
-    const memberId = pr.body.data.promoted[0].memberId as string;
-
-    const certs = await prisma.certificate.findMany({
-      where: { memberId },
-      orderBy: { certTypeCode: 'asc' },
-    });
-    expect(certs).toHaveLength(2);
-    expect(certs.map((c) => c.certTypeCode)).toEqual(['bsafe', 'first_aid']);
-    for (const c of certs) {
-      expect(c.isInternal).toBe(false);
-    }
-    // 招新期 approved → 继承为 verified(审核人=reviewer.memberId〔SUPER_ADMIN 无 member → null〕/
-    // 审核时间=review.at / 审核备注原样继承),不再重建成 pending。
-    const firstAid = certs.find((c) => c.certTypeCode === 'first_aid');
-    expect(firstAid?.certStatusCode).toBe('verified');
-    expect(firstAid?.verifiedBy).toBe(reviewer.memberId);
-    expect(firstAid?.verifiedAt?.toISOString()).toBe('2026-07-12T08:00:00.000Z');
-    expect(firstAid?.verifyNote).toBe('招新期审核已通过,证件与本人一致');
-    expect(firstAid?.issuingOrg).toBe('深圳市红十字会');
-    expect(firstAid?.issuedAt.toISOString()).toBe('2026-07-01T00:00:00.000Z');
-    // 未审类别仍建 pending,verify 三字段留空,走既有 certificates verify/reject 核验流。
-    const bsafe = certs.find((c) => c.certTypeCode === 'bsafe');
-    expect(bsafe?.certStatusCode).toBe('pending');
-    expect(bsafe?.verifiedBy).toBeNull();
-    expect(bsafe?.verifiedAt).toBeNull();
-    expect(bsafe?.issuingOrg).toBe('深圳市急救中心');
-    expect(bsafe?.issuedAt.toISOString()).toBe('2026-06-15T00:00:00.000Z');
-    expect(bsafe?.verifyNote).toBeNull();
-    expect(certs.find((c) => c.certTypeCode === 'first_aid')?.imageKeys).toEqual(
-      uploaded.first_aid,
-    );
-    expect(certs.find((c) => c.certTypeCode === 'bsafe')?.imageKeys).toEqual(uploaded.bsafe);
-
-    // 报名行清空(blob 单一属主 = certificate)
-    const after = await prisma.recruitmentApplication.findUniqueOrThrow({
-      where: { id: before.id },
-    });
-    expect(after.certificateImages).toBeNull();
-    expect(after.certificateReviewStatus).toBeNull();
-    expect(after.certificateIssuanceInfo).toBeNull();
-    expect(after.statusCode).toBe('promoted');
-  });
-
-  it('A5:存量证书图缺发证信息 → promote 回退占位机构与当天日期', async () => {
-    const cycle = await openCycle();
-    const legacy = await createAppRow(cycle.id, {
-      statusCode: 'publicity',
-      realName: '存量申请人',
-      idCardNumber: 'F7LEGACY01',
-      phone: '13900009115',
-      openid: 'dev-openid-f7-legacy',
-      certificateImages: { first_aid: ['recruitment/certificate/first_aid/legacy.png'] },
-      certificateReviewStatus: {
-        first_aid: {
-          status: 'approved',
-          at: '2026-07-10T08:00:00.000Z',
-          by: 'missing-reviewer-id',
-        },
-      },
-      certificateIssuanceInfo: undefined,
-    });
-    await promote(cycle.id).expect(200);
-    const cert = await prisma.certificate.findFirstOrThrow({
-      where: { member: { memberNo: { not: '' } }, certTypeCode: 'first_aid' },
-      orderBy: { createdAt: 'desc' },
-    });
-    expect(cert.memberId).toBe(
-      (await prisma.recruitmentApplication.findUniqueOrThrow({ where: { id: legacy.id } }))
-        .promotedMemberId,
-    );
-    expect(cert.issuingOrg).toBe('申请人自报(招新上传,待核验)');
-    const beijingToday = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    expect(cert.issuedAt.toISOString().slice(0, 10)).toBe(beijingToday);
-    // 招新期 approved 继承 verified:审核人 review.by 查无对应 User → verifiedBy 合法为 null(沿 Q-I2);
-    // 审核时间继承 review.at;该存量夹具无 note → verifyNote 为空。
-    expect(cert.certStatusCode).toBe('verified');
-    expect(cert.verifiedBy).toBeNull();
-    expect(cert.verifiedAt?.toISOString()).toBe('2026-07-10T08:00:00.000Z');
-    expect(cert.verifyNote).toBeNull();
-  });
-
-  it('A2/A3/G:未审不可标、approved 禁重传、清标后可再标、驳回后复通上传', async () => {
+  it('§8.1 公开提交:1~3 张;key 只含固定 namespace + 随机 id;同类别多张互不覆盖', async () => {
     const cycle = await openCycle();
     const row = await createAppRow(cycle.id, {
-      statusCode: 'verified',
-      tempNo: 'T20269991',
-      openid: 'dev-openid-g-cert',
-      phone: '13900009991',
-      idCardNumber: 'GCERT001',
+      openid: 'dev-openid-c1',
+      phone: '13900009101',
     });
+
+    const r1 = await submitClaim({ wechatCode: 'c1', issuingOrg: '深圳市红十字会' }, 2);
+    expect(r1.status).toBe(201);
+    expect(r1.body.data.claim.imageCount).toBe(2);
+    expect(r1.body.data.claim.status).toBe('SUBMITTED');
+    expect(r1.body.data.claimCount).toBe(1);
+    // 公开出参不返 key,也不返 URL。
+    expect(JSON.stringify(r1.body.data)).not.toContain('recruitment/certificate-claim');
+
+    const first = await prisma.recruitmentCertificateClaim.findFirstOrThrow({
+      where: { applicationId: row.id },
+    });
+    const keys = first.imageKeys as string[];
+    expect(keys).toHaveLength(2);
+    for (const k of keys) {
+      // §8.1:key 只能是固定 namespace + 随机 id + 扩展名。
+      expect(k).toMatch(/^recruitment\/certificate-claim\/[0-9a-f-]{36}\.png$/);
+      // 不含类别 / cycleId / 姓名 / 手机 / 原文件名。
+      expect(k).not.toContain('first_aid');
+      expect(k).not.toContain(cycle.id);
+      expect(k).not.toContain('cert-0');
+    }
+
+    // 同类别再传一条 —— **不覆盖**第一条(这正是一证一行取代按类别覆盖的理由)。
+    const r2 = await submitClaim({ wechatCode: 'c1', issuingOrg: '深圳市急救中心' }, 1);
+    expect(r2.status).toBe(201);
+    expect(r2.body.data.claimCount).toBe(2);
+    expect(r2.body.data.claim.id).not.toBe(r1.body.data.claim.id);
+    const stillTwo = await prisma.recruitmentCertificateClaim.findUniqueOrThrow({
+      where: { id: first.id },
+      select: { imageKeys: true },
+    });
+    expect(stillTwo.imageKeys as string[]).toHaveLength(2);
+
+    // 0 张 / 4 张都拒(DTO 之外的数量闸)。
+    expectBizError(await submitClaim({ wechatCode: 'c1' }, 0), BizCode.BAD_REQUEST, {
+      strictMessage: false,
+    });
+    expectBizError(await submitClaim({ wechatCode: 'c1' }, 4), BizCode.BAD_REQUEST, {
+      strictMessage: false,
+    });
+    // 类别非法 → 契约层 400。
     expectBizError(
-      await markThreshold(row.id, 'redCross', true),
-      BizCode.RECRUITMENT_CERTIFICATE_IMAGE_REQUIRED,
+      await submitClaim({ wechatCode: 'c1', categoryHintCode: 'rope' }, 1),
+      BizCode.BAD_REQUEST,
+      { strictMessage: false },
     );
-    await uploadCerts({ category: 'first_aid', wechatCode: 'g-cert' }, 1).expect(200);
+  });
+
+  it('§8.1 自报日期基础健全性:未来发证日 → 18018;到期早于发证 → 18017', async () => {
+    const cycle = await openCycle();
+    await createAppRow(cycle.id, { openid: 'dev-openid-c2', phone: '13900009102' });
     expectBizError(
-      await markThreshold(row.id, 'redCross', true),
-      BizCode.RECRUITMENT_CERTIFICATE_NOT_APPROVED,
+      await submitClaim({ wechatCode: 'c2', issuedAt: '2099-01-01' }, 1),
+      BizCode.CERTIFICATE_ISSUED_AT_IN_FUTURE,
     );
-    const reviewPath = `${ADMIN_APPS}/${row.id}/certificates/first_aid/review`;
+    expectBizError(
+      await submitClaim({ wechatCode: 'c2', issuedAt: '2026-05-01', expiredAt: '2026-04-01' }, 1),
+      BizCode.CERTIFICATE_DATE_RANGE_INVALID,
+    );
+  });
+
+  it('§8.1 每份报名最多 10 条未撤回申报 → 第 11 条 28059', async () => {
+    const cycle = await openCycle();
+    const row = await createAppRow(cycle.id, { openid: 'dev-openid-c3', phone: '13900009103' });
+    for (let i = 0; i < 10; i++) {
+      await prisma.recruitmentCertificateClaim.create({
+        data: {
+          applicationId: row.id,
+          status: 'SUBMITTED',
+          categoryHintCode: 'first_aid',
+          imageKeys: [`recruitment/certificate-claim/seed-${i}.png`],
+        },
+      });
+    }
+    expectBizError(
+      await submitClaim({ wechatCode: 'c3' }, 1),
+      BizCode.RECRUITMENT_CERTIFICATE_CLAIM_LIMIT,
+    );
+  });
+
+  it('§8.1 单证重传:只换这一条的图、回 SUBMITTED 并清上一轮审核痕迹;version 为 CAS', async () => {
+    const cycle = await openCycle();
+    await createAppRow(cycle.id, { openid: 'dev-openid-c4', phone: '13900009104' });
+    const created = await submitClaim({ wechatCode: 'c4' }, 2);
+    const claimId = created.body.data.claim.id as string;
+    const other = await submitClaim({ wechatCode: 'c4', categoryHintCode: 'bsafe' }, 1);
+    const otherId = other.body.data.claim.id as string;
+
+    // 先让管理员要求补材料(带 note),重传后 note 必须被清掉 ——
+    // 留着会让申请人以为驳回说明还适用于这一版新材料。
+    const needsInfo = await request(httpServer(app))
+      .post(`/api/admin/v1/recruitment/certificate-claims/${claimId}/review`)
+      .set('Authorization', adminAuth)
+      .send({ decision: 'NEEDS_INFO', version: 0, note: '请补正面照' });
+    expect(needsInfo.status).toBe(200);
+
+    // CAS:审核已把 version 推到 1,拿旧的 0 去重传 → 28058
+    expectBizError(
+      await request(httpServer(app))
+        .post(`${OPEN_CLAIMS}/${claimId}/resubmit`)
+        .field('categoryHintCode', 'first_aid')
+        .field('version', '0')
+        .field('wechatCode', 'c4')
+        .attach('images', VALID_PNG_IMAGE, { filename: 'stale.png', contentType: 'image/png' }),
+      BizCode.RECRUITMENT_CERTIFICATE_CLAIM_VERSION_CONFLICT,
+    );
+
+    const before = await prisma.recruitmentCertificateClaim.findUniqueOrThrow({
+      where: { id: claimId },
+      select: { version: true, imageKeys: true },
+    });
+    const resubmit = await request(httpServer(app))
+      .post(`${OPEN_CLAIMS}/${claimId}/resubmit`)
+      .field('categoryHintCode', 'first_aid')
+      .field('version', String(before.version))
+      .field('wechatCode', 'c4')
+      .attach('images', VALID_PNG_IMAGE, { filename: 'new.png', contentType: 'image/png' });
+    expect(resubmit.status).toBe(200);
+    expect(resubmit.body.data.claim.status).toBe('SUBMITTED');
+    expect(resubmit.body.data.claim.imageCount).toBe(1);
+    expect(resubmit.body.data.claim.reviewNote).toBeNull();
+
+    const after = await prisma.recruitmentCertificateClaim.findUniqueOrThrow({
+      where: { id: claimId },
+      select: { imageKeys: true, reviewNote: true, reviewedAt: true, reviewedByUserId: true },
+    });
+    expect(after.reviewNote).toBeNull();
+    expect(after.reviewedAt).toBeNull();
+    expect(after.reviewedByUserId).toBeNull();
+    // key 全换(旧 key 一个不留)。
+    const oldKeys = before.imageKeys as string[];
+    for (const k of after.imageKeys as string[]) expect(oldKeys).not.toContain(k);
+    // **另一条 Claim 一格没动** —— 重传是单证语义。
+    const untouched = await prisma.recruitmentCertificateClaim.findUniqueOrThrow({
+      where: { id: otherId },
+      select: { imageKeys: true, status: true },
+    });
+    expect(untouched.status).toBe('SUBMITTED');
+    expect(untouched.imageKeys as string[]).toHaveLength(1);
+  });
+
+  it('§8.2 已通过的申报不可由申请人直接改;撤回后是终态', async () => {
+    const cycle = await openCycle();
+    await createAppRow(cycle.id, { openid: 'dev-openid-c5', phone: '13900009105' });
+    const created = await submitClaim({ wechatCode: 'c5' }, 1);
+    const claimId = created.body.data.claim.id as string;
     const approved = await request(httpServer(app))
-      .post(reviewPath)
+      .post(`/api/admin/v1/recruitment/certificate-claims/${claimId}/review`)
       .set('Authorization', adminAuth)
-      .send({ approved: true });
-    expect(approved.status).toBe(200);
-    expect(approved.body.data.certificates).toContainEqual(
-      expect.objectContaining({
-        category: 'first_aid',
-        imageCount: 1,
+      .send({
+        decision: 'APPROVE',
+        version: 0,
+        standardId: CLAIM_STANDARD_BY_CATEGORY.get('first_aid'),
         issuingOrg: '深圳市红十字会',
-        issuedAt: '2026-07-01',
-        reviewStatus: 'approved',
-        reviewedBy: expect.any(String),
-      }),
-    );
-    const detail = await request(httpServer(app))
-      .get(`${ADMIN_APPS}/${row.id}`)
-      .set('Authorization', adminAuth);
-    expect(detail.body.data.certificates).toEqual(approved.body.data.certificates);
-    const list = await request(httpServer(app))
-      .get(`${ADMIN_APPS}?cycleId=${cycle.id}`)
-      .set('Authorization', adminAuth);
-    expect(list.body.data.items[0].certificates).toEqual(approved.body.data.certificates);
-    let db = await prisma.recruitmentApplication.findUniqueOrThrow({ where: { id: row.id } });
-    expect((db.thresholdMarks as Record<string, unknown>).redCross).toBeTruthy();
+        issuedAt: '2026-01-01',
+      });
+    expect(approved.status).toBe(200);
+
+    // APPROVED 不可由申请人重传(要改就得管理员先撤回审核)。
     expectBizError(
-      await uploadCerts({ category: 'first_aid', wechatCode: 'g-cert' }, 1),
-      BizCode.RECRUITMENT_CERTIFICATE_ALREADY_APPROVED,
+      await request(httpServer(app))
+        .post(`${OPEN_CLAIMS}/${claimId}/resubmit`)
+        .field('categoryHintCode', 'first_aid')
+        .field('version', String(approved.body.data.version))
+        .field('wechatCode', 'c5')
+        .attach('images', VALID_PNG_IMAGE, { filename: 'x.png', contentType: 'image/png' }),
+      BizCode.RECRUITMENT_CERTIFICATE_CLAIM_STATE_INVALID,
     );
-    await markThreshold(row.id, 'redCross', false).expect(200);
-    await markThreshold(row.id, 'redCross', true).expect(200);
 
-    const rejected = await request(httpServer(app))
-      .post(reviewPath)
-      .set('Authorization', adminAuth)
-      .send({ approved: false, note: '照片模糊,请重传' });
-    expect(rejected.status).toBe(200);
-    db = await prisma.recruitmentApplication.findUniqueOrThrow({ where: { id: row.id } });
-    expect((db.thresholdMarks as Record<string, unknown>).redCross).toBeUndefined();
-    expect(db.certificateImages).toBeNull();
-    const progress = await request(httpServer(app)).post(OPEN_QUERY).send({ wechatCode: 'g-cert' });
-    expect(progress.body.data.certificates).toContainEqual({
-      category: 'first_aid',
-      status: 'rejected',
-      imageCount: 0,
-      note: '照片模糊,请重传',
+    // 撤回 → WITHDRAWN;再撤一次拒(空集终态)。
+    const withdrawn = await request(httpServer(app))
+      .post(`${OPEN_CLAIMS}/${claimId}/withdraw`)
+      .send({ version: approved.body.data.version, wechatCode: 'c5' });
+    expect(withdrawn.status).toBe(200);
+    expect(withdrawn.body.data.claim.status).toBe('WITHDRAWN');
+    expectBizError(
+      await request(httpServer(app))
+        .post(`${OPEN_CLAIMS}/${claimId}/withdraw`)
+        .send({ version: withdrawn.body.data.claim.version, wechatCode: 'c5' }),
+      BizCode.RECRUITMENT_CERTIFICATE_CLAIM_STATE_INVALID,
+    );
+  });
+
+  it('§13.3 claimId 不单独构成授权:换一个人的凭证撤别人的申报 → 28056', async () => {
+    const cycle = await openCycle();
+    await createAppRow(cycle.id, { openid: 'dev-openid-c6a', phone: '13900009106' });
+    await createAppRow(cycle.id, {
+      openid: 'dev-openid-c6b',
+      phone: '13900009107',
+      idCardNumber: 'RCCOTHER01',
     });
+    const mine = await submitClaim({ wechatCode: 'c6a' }, 1);
+    const claimId = mine.body.data.claim.id as string;
 
-    await uploadCerts({ category: 'first_aid', wechatCode: 'g-cert' }, 1).expect(200);
-    const afterRetransmit = await request(httpServer(app))
-      .post(OPEN_QUERY)
-      .send({ wechatCode: 'g-cert' });
-    expect(afterRetransmit.body.data.certificates).toContainEqual({
+    // 用 b 的凭证撤 a 的 claim:按「不存在」回,不区分「不是你的」(后者是枚举信号)。
+    expectBizError(
+      await request(httpServer(app))
+        .post(`${OPEN_CLAIMS}/${claimId}/withdraw`)
+        .send({ version: 0, wechatCode: 'c6b' }),
+      BizCode.RECRUITMENT_CERTIFICATE_CLAIM_NOT_FOUND,
+    );
+  });
+
+  it('§13.4 两个旧 category 端点已删除(无兼容窗口)', async () => {
+    const cycle = await openCycle();
+    const row = await createAppRow(cycle.id, { openid: 'dev-openid-c7', phone: '13900009108' });
+    // 旧公开上传
+    expect(
+      (
+        await request(httpServer(app))
+          .post('/api/open/v1/recruitment/applications/certificates')
+          .field('category', 'first_aid')
+          .field('wechatCode', 'c7')
+      ).status,
+    ).toBe(404);
+    // 旧 admin 按类别审核
+    expect(
+      (
+        await request(httpServer(app))
+          .post(`${ADMIN_APPS}/${row.id}/certificates/first_aid/review`)
+          .set('Authorization', adminAuth)
+          .send({ approved: true })
+      ).status,
+    ).toBe(404);
+    // 旧 admin 按类别取图
+    expect(
+      (
+        await request(httpServer(app))
+          .get(`${ADMIN_APPS}/${row.id}/certificate-image-urls`)
+          .set('Authorization', adminAuth)
+      ).status,
+    ).toBe(404);
+  });
+
+  it('§8.1 进度模型一证一行:同类别两条各自显示状态', async () => {
+    const cycle = await openCycle();
+    await createAppRow(cycle.id, { openid: 'dev-openid-c8', phone: '13900009110' });
+    const a = await submitClaim({ wechatCode: 'c8', rawCertificateName: '红十字急救员' }, 1);
+    const b = await submitClaim({ wechatCode: 'c8', rawCertificateName: 'AHA BLS' }, 1);
+    await request(httpServer(app))
+      .post(`/api/admin/v1/recruitment/certificate-claims/${b.body.data.claim.id}/review`)
+      .set('Authorization', adminAuth)
+      .send({ decision: 'REJECT', version: 0, note: '照片模糊,请重传' })
+      .expect(200);
+
+    const progress = await request(httpServer(app)).post(OPEN_QUERY).send({ wechatCode: 'c8' });
+    expect(progress.status).toBe(200);
+    const items = progress.body.data.certificates as Array<Record<string, unknown>>;
+    // 同一类别两行 —— 旧形状(每类别恰一条)表达不了这个。
+    expect(items).toHaveLength(2);
+    expect(items).toContainEqual({
+      claimId: a.body.data.claim.id,
+      version: 0,
       category: 'first_aid',
-      status: 'uploaded',
+      rawCertificateName: '红十字急救员',
+      status: 'SUBMITTED',
       imageCount: 1,
       note: null,
     });
-    expect(
-      await prisma.auditLog.count({
-        where: { event: 'recruitment-application.certificate-review', resourceId: row.id },
-      }),
-    ).toBe(2);
+    expect(items).toContainEqual({
+      claimId: b.body.data.claim.id,
+      version: 1,
+      category: 'first_aid',
+      rawCertificateName: 'AHA BLS',
+      status: 'REJECTED',
+      imageCount: 1,
+      // 驳回说明对本人可见。
+      note: '照片模糊,请重传',
+    });
+    // 公开进度里不出现 key / 审核人。
+    expect(JSON.stringify(items)).not.toContain('recruitment/certificate-claim');
+  });
+
+  it('§8.5 发号只搬 APPROVED Claim:落 standardId/policy/source,证据不复制,Claim 转 PROMOTED 并清重复标量', async () => {
+    const cycle = await openCycle();
+    const row = await createAppRow(cycle.id, {
+      openid: 'dev-openid-c9',
+      phone: '13900009111',
+      statusCode: 'verified',
+      realName: '发号一',
+      birthDate: new Date('1995-03-07T00:00:00.000Z'),
+      genderCode: 'male',
+    });
+    // 一条过审 + 一条未审。未审的那条**不该**产生证书(§8.5 不建 pending)。
+    const approvedClaim = await submitClaim({ wechatCode: 'c9', certNumber: 'SZ-PROMO-1' }, 2);
+    const approvedId = approvedClaim.body.data.claim.id as string;
+    await request(httpServer(app))
+      .post(`/api/admin/v1/recruitment/certificate-claims/${approvedId}/review`)
+      .set('Authorization', adminAuth)
+      .send({
+        decision: 'APPROVE',
+        version: 0,
+        standardId: CLAIM_STANDARD_BY_CATEGORY.get('first_aid'),
+        issuingOrg: '深圳市红十字会',
+        certNumber: 'SZ-PROMO-1',
+        issuedAt: '2026-01-01',
+        note: '与名单一致',
+      })
+      .expect(200);
+    const pendingClaim = await submitClaim({ wechatCode: 'c9', categoryHintCode: 'bsafe' }, 1);
+
+    // 走到公示再发号(门槛由派生 + 人工共同满足)。
+    for (const c of MANUAL_THRESHOLDS) await markThreshold(row.id, c, true);
+    await approveCertificateClaims(row.id);
+    await evaluate(row.id, true);
+    const promoted = await request(httpServer(app))
+      .post(`${ADMIN_CYCLES}/${cycle.id}/promote`)
+      .set('Authorization', adminAuth)
+      .send({});
+    expect(promoted.status).toBe(200);
+
+    const certs = await prisma.certificate.findMany({
+      where: { sourceClaimId: { not: null } },
+      select: {
+        sourceClaimId: true,
+        sourceCode: true,
+        standardId: true,
+        recognitionPolicyId: true,
+        certStatusCode: true,
+        certNumber: true,
+        issuingOrg: true,
+        imageKeys: true,
+        verifyNote: true,
+      },
+    });
+    // 3 条 APPROVED(本条 + approveCertificateClaims 的两条),未审的那条不建证。
+    expect(certs).toHaveLength(3);
+    expect(certs.map((c) => c.sourceClaimId)).not.toContain(pendingClaim.body.data.claim.id);
+    const mine = certs.find((c) => c.sourceClaimId === approvedId);
+    expect(mine).toBeDefined();
+    expect(mine?.sourceCode).toBe('RECRUITMENT');
+    expect(mine?.standardId).toBe(CLAIM_STANDARD_BY_CATEGORY.get('first_aid'));
+    expect(mine?.recognitionPolicyId).toBeTruthy();
+    expect(mine?.certStatusCode).toBe('verified');
+    expect(mine?.certNumber).toBe('SZ-PROMO-1');
+    expect(mine?.issuingOrg).toBe('深圳市红十字会');
+    expect(mine?.verifyNote).toBe('与名单一致');
+    // §13.5:证据留在 Claim,**不复制**到 Certificate。
+    expect(mine?.imageKeys).toBeNull();
+
+    const claimAfter = await prisma.recruitmentCertificateClaim.findUniqueOrThrow({
+      where: { id: approvedId },
+      select: {
+        status: true,
+        promotedAt: true,
+        sensitivePurgedAt: true,
+        certNumber: true,
+        issuingOrg: true,
+        issuedAt: true,
+        expiredAt: true,
+        rawCertificateName: true,
+        standardId: true,
+        imageKeys: true,
+        reviewedByUserId: true,
+      },
+    });
+    expect(claimAfter.status).toBe('PROMOTED');
+    expect(claimAfter.promotedAt).toBeTruthy();
+    expect(claimAfter.sensitivePurgedAt).toBeTruthy();
+    // §8.5 第 11 步:与证书重复的标量清空……
+    expect(claimAfter.certNumber).toBeNull();
+    expect(claimAfter.issuingOrg).toBeNull();
+    expect(claimAfter.issuedAt).toBeNull();
+    expect(claimAfter.expiredAt).toBeNull();
+    expect(claimAfter.rawCertificateName).toBeNull();
+    // ……但 Standard / 审核链 / 图片证据保留(那是「当时凭什么认定」的档案)。
+    expect(claimAfter.standardId).toBeTruthy();
+    expect(claimAfter.reviewedByUserId).toBeTruthy();
+    expect(claimAfter.imageKeys as string[]).toHaveLength(2);
   });
 
   // ⑥ 轮次开关:无 open 轮 → 28030
@@ -2489,7 +2545,9 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
   // =====================================================================
 
   const ADMIN_APPS2 = ADMIN_APPS;
-  const THRESHOLDS = ['patrol1', 'patrol2', 'training', 'redCross', 'bsafe'] as const;
+  // PR-4a-2:五项门槛分成人工族与派生族。人工族仍走 markThreshold;
+  // 派生族(redCross / bsafe)由 approveCertificateClaims 经真实审核路径产生。
+  const MANUAL_THRESHOLDS = ['patrol1', 'patrol2', 'training'] as const;
 
   async function submitVerified(code: string, idCard: string, name = '张三') {
     const res = await submit(
@@ -2506,25 +2564,75 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       .set('Authorization', auth)
       .send({ thresholdCode, completed });
   }
-  async function seedThresholdCertificateImages(id: string) {
-    await prisma.recruitmentApplication.update({
-      where: { id },
-      data: {
-        certificateImages: {
-          first_aid: [`recruitment/certificate/first_aid/test/${id}.png`],
-          bsafe: [`recruitment/certificate/bsafe/test/${id}.png`],
+  // 证书标准库 PR-4a-2(§8.4):redCross / bsafe 不再可人工标记,改由证书申报审核结论派生。
+  // 所以门槛夹具从「直插 certificateImages + certificateReviewStatus 两个 JSON」
+  // 改成**走真实路径**:直插一条 SUBMITTED Claim,再调管理端 review APPROVE ——
+  // 只有 review 事务里的重算才会把派生门槛写进 thresholdMarks。
+  //
+  // 刻意不直接改 thresholdMarks:那样等于夹具自己伪造派生结果,
+  // 就测不到「重算真的把门槛算出来了」这件事(本刀最容易静默失效的一环)。
+  const CLAIM_STANDARD_BY_CATEGORY = new Map<string, string>();
+
+  // 每个招新类别一个 ACTIVE CREDENTIAL Standard + 最宽松的 ACTIVE Policy
+  // (FREE_TEXT 机构 / EXPLICIT_OPTIONAL 有效期 / OPTIONAL 编号)——
+  // 夹具要的是「能过审」,不是覆盖认定规则的各种组合(那在 certificate-standards.e2e)。
+  async function seedCertificateStandards() {
+    for (const category of ['first_aid', 'bsafe']) {
+      const std = await prisma.certificateStandard.create({
+        data: {
+          code: `p2-std-${category}`,
+          name: `${category} 标准(招新 e2e 夹具)`,
+          kind: 'CREDENTIAL',
+          status: 'ACTIVE',
+          categoryCode: category,
         },
-        certificateReviewStatus: {
-          first_aid: { status: 'approved', at: new Date().toISOString(), by: 'fixture-admin' },
-          bsafe: { status: 'approved', at: new Date().toISOString(), by: 'fixture-admin' },
+        select: { id: true },
+      });
+      await prisma.certificateRecognitionPolicy.create({
+        data: {
+          standardId: std.id,
+          version: 1,
+          status: 'ACTIVE',
+          issuerPolicy: 'FREE_TEXT',
+          validityMode: 'EXPLICIT_OPTIONAL',
+          certNumberMode: 'OPTIONAL',
         },
-      },
-    });
+      });
+      CLAIM_STANDARD_BY_CATEGORY.set(category, std.id);
+    }
   }
+
+  // 两类各一条 APPROVED Claim → 两个派生门槛成立。
+  async function approveCertificateClaims(applicationId: string) {
+    for (const category of ['first_aid', 'bsafe']) {
+      const claim = await prisma.recruitmentCertificateClaim.create({
+        data: {
+          applicationId,
+          status: 'SUBMITTED',
+          categoryHintCode: category,
+          imageKeys: [`recruitment/certificate-claim/${applicationId}-${category}.png`],
+        },
+        select: { id: true, version: true },
+      });
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/recruitment/certificate-claims/${claim.id}/review`)
+        .set('Authorization', adminAuth)
+        .send({
+          decision: 'APPROVE',
+          version: claim.version,
+          standardId: CLAIM_STANDARD_BY_CATEGORY.get(category),
+          issuingOrg: '深圳市红十字会',
+          issuedAt: '2026-01-01',
+        });
+      expect(res.status).toBe(200);
+    }
+  }
+
   async function markAll(id: string) {
-    await seedThresholdCertificateImages(id);
-    for (const c of THRESHOLDS) await markThreshold(id, c, true);
+    for (const c of MANUAL_THRESHOLDS) await markThreshold(id, c, true);
+    await approveCertificateClaims(id);
   }
+
   function evaluate(id: string, approved: boolean, note?: string, auth = adminAuth) {
     return request(httpServer(app))
       .post(`${ADMIN_APPS2}/${id}/evaluate`)
@@ -2532,23 +2640,35 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       .send({ approved, ...(note !== undefined ? { note } : {}) });
   }
 
-  it('㉑(二期) 门槛标记:逐项标 → 末次自动 pending_evaluation;清一项回退 verified;谁标/何时落库', async () => {
+  it('㉑(二期) 门槛:三项人工标 + 两类证书审核通过 → 自动 pending_evaluation;清一项回退 verified', async () => {
     await openCycle();
     const appRow = await submitVerified('p2-1', ID_MATCH_A);
-    await seedThresholdCertificateImages(appRow.id);
-    for (const c of ['patrol1', 'patrol2', 'training', 'redCross']) {
+    // 人工族三项标满仍不够 —— 五项门槛里还差两个派生的。
+    for (const c of MANUAL_THRESHOLDS) {
       const r = await markThreshold(appRow.id, c, true);
       expect(r.status).toBe(200);
       expect(r.body.data.statusCode).toBe('verified');
       expect(r.body.data.thresholdsComplete).toBe(false);
     }
-    const r5 = await markThreshold(appRow.id, 'bsafe', true);
-    expect(r5.body.data.statusCode).toBe('pending_evaluation');
-    expect(r5.body.data.thresholdsComplete).toBe(true);
+    // PR-4a-2:派生族只能由证书申报审核结论产生,人工标一律拒 —— **无论 completed 真假**。
+    // 这里期望的是 40000 而不是 28063:DTO 的 @IsIn 已把枚举收窄到 3 项,
+    // 请求在 ValidationPipe 就被拦下,根本到不了 service 那道 28063。
+    // 28063 是纵深防御(挡未来任何内部直调 markThreshold 的新路径),
+    // 它的行为锁在单测里(recruitment-application-review.service.spec 直调 service)。
+    for (const code of ['redCross', 'bsafe']) {
+      for (const completed of [true, false]) {
+        expectBizError(await markThreshold(appRow.id, code, completed), BizCode.BAD_REQUEST, {
+          strictMessage: false,
+        });
+      }
+    }
+    // 两类各审通过一条 Claim → 重算把两个派生门槛写进 thresholdMarks 并推进状态。
+    await approveCertificateClaims(appRow.id);
 
     const after = await prisma.recruitmentApplication.findFirstOrThrow({
       where: { id: appRow.id },
     });
+    expect(after.statusCode).toBe('pending_evaluation');
     const marks = after.thresholdMarks as Record<string, { at: string; by: string }>;
     expect(Object.keys(marks).sort()).toEqual([
       'bsafe',
@@ -2557,12 +2677,57 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       'redCross',
       'training',
     ]);
-    expect(marks.bsafe.by).toBeTruthy(); // 谁标
-    expect(marks.bsafe.at).toBeTruthy(); // 何时
+    // 派生族的 by 是显式系统常量,不是审核员 id —— 塞审核员会让人误以为可以人工撤销。
+    expect(marks.bsafe.by).toBe('system:certificate-claim-derived');
+    expect(marks.bsafe.at).toBeTruthy();
+    // 人工族的 by 仍是操作人。
+    expect(marks.patrol1.by).not.toBe('system:certificate-claim-derived');
 
     const rc = await markThreshold(appRow.id, 'patrol1', false);
-    expect(rc.body.data.statusCode).toBe('verified'); // 清一项 → 回退
+    expect(rc.body.data.statusCode).toBe('verified'); // 清一项人工门槛 → 回退
     expect(rc.body.data.thresholdsComplete).toBe(false);
+  });
+
+  it('§8.4 聚合语义:同类别两张证书,撤回其中一张的审核,门槛仍成立', async () => {
+    await openCycle();
+    const appRow = await submitVerified('p2-agg', ID_MATCH_B);
+    for (const c of MANUAL_THRESHOLDS) await markThreshold(appRow.id, c, true);
+    // 急救类两张都过审(bsafe 一张),此刻五项齐 → pending_evaluation
+    await approveCertificateClaims(appRow.id);
+    const second = await prisma.recruitmentCertificateClaim.create({
+      data: {
+        applicationId: appRow.id,
+        status: 'SUBMITTED',
+        categoryHintCode: 'first_aid',
+        imageKeys: ['recruitment/certificate-claim/agg-2.png'],
+      },
+      select: { id: true, version: true },
+    });
+    const approved2 = await request(httpServer(app))
+      .post(`/api/admin/v1/recruitment/certificate-claims/${second.id}/review`)
+      .set('Authorization', adminAuth)
+      .send({
+        decision: 'APPROVE',
+        version: second.version,
+        standardId: CLAIM_STANDARD_BY_CATEGORY.get('first_aid'),
+        issuingOrg: '深圳市急救中心',
+        issuedAt: '2026-02-01',
+      });
+    expect(approved2.status).toBe(200);
+
+    // 撤回第二张的审核 —— 第一张仍是 APPROVED,聚合看得见它,redCross 门槛不该掉。
+    const revoked = await request(httpServer(app))
+      .post(`/api/admin/v1/recruitment/certificate-claims/${second.id}/revoke-review`)
+      .set('Authorization', adminAuth)
+      .send({ version: approved2.body.data.version, note: '认错了机构' });
+    expect(revoked.status).toBe(200);
+
+    const after = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { id: appRow.id },
+    });
+    const marks = after.thresholdMarks as Record<string, unknown>;
+    expect(marks.redCross).toBeTruthy(); // ← 这一格就是 §8.4 第一条推论
+    expect(after.statusCode).toBe('pending_evaluation');
   });
 
   it('㉒(二期) 门槛标记幂等 + 非法态 28041 + RBAC 边界 + 非法 code 422', async () => {
@@ -3858,13 +4023,13 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
   it('㉚(S6) 批量标门槛:批量标末次门槛触发自动推进 pending_evaluation(autoAdvanced 计数;保留单行自动推进语义)', async () => {
     const cycle = await openCycle();
     const a = await submitVerifiedPhone('s6-aa', ID_MATCH_A, '郑一', '13900003000');
-    await seedThresholdCertificateImages(a.id);
-    for (const c of ['patrol1', 'patrol2', 'training', 'redCross'])
-      await markThreshold(a.id, c, true);
+    // PR-4a-2:末项改用人工族的 training —— 派生族已不可批量标(下一条用例正向验)。
+    await approveCertificateClaims(a.id);
+    for (const c of ['patrol1', 'patrol2']) await markThreshold(a.id, c, true);
 
     const res = await batchMarkThreshold({
       cycleId: cycle.id,
-      thresholdCode: 'bsafe',
+      thresholdCode: 'training',
       completed: true,
       matches: [{ tempNo: a.tempNo }],
     });
@@ -3879,37 +4044,27 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(db.statusCode).toBe('pending_evaluation');
   });
 
-  it('A3:批量端点逐行复用单行证书 approved 硬闸', async () => {
+  it('A3 → PR-4a-2:批量端点也不接受派生门槛(契约层 400,不是逐行 failed)', async () => {
     const cycle = await openCycle();
     const row = await submitVerifiedPhone('a3-batch', ID_MATCH_A, '批量证书', '13900003010');
-    await prisma.recruitmentApplication.update({
-      where: { id: row.id },
-      data: {
-        certificateImages: { first_aid: ['recruitment/certificate/first_aid/batch.png'] },
-      },
-    });
+    // 旧行为:批量传 redCross 会逐行跑「该类别是否 approved」硬闸,未审的行记 failed。
+    // 新行为:redCross 已不在批量 DTO 的枚举里 → 整个请求 400,一行都不处理。
+    // 这比逐行 failed 更严:批量入口不再是「绕过审核结论标证书门槛」的可能路径。
     const blocked = await batchMarkThreshold({
       cycleId: cycle.id,
       thresholdCode: 'redCross',
       completed: true,
       matches: [{ tempNo: row.tempNo }],
     });
-    expect(blocked.body.data.results[0]).toMatchObject({
-      status: 'failed',
-      errorCode: BizCode.RECRUITMENT_CERTIFICATE_NOT_APPROVED.code,
-    });
+    expect(blocked.status).toBe(400);
+    // 整批未处理:该报名的 thresholdMarks 一格没动。
+    const db = await prisma.recruitmentApplication.findFirstOrThrow({ where: { id: row.id } });
+    expect(db.thresholdMarks ?? {}).toEqual({});
 
-    await prisma.recruitmentApplication.update({
-      where: { id: row.id },
-      data: {
-        certificateReviewStatus: {
-          first_aid: { status: 'approved', at: new Date().toISOString(), by: 'admin-fixture' },
-        },
-      },
-    });
+    // 人工族仍可批量标(不误伤)。
     const allowed = await batchMarkThreshold({
       cycleId: cycle.id,
-      thresholdCode: 'redCross',
+      thresholdCode: 'patrol1',
       completed: true,
       matches: [{ tempNo: row.tempNo }],
     });

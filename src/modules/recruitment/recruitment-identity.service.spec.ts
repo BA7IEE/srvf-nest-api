@@ -208,137 +208,16 @@ describe('RecruitmentIdentityService.consumePhoneSession', () => {
   });
 });
 
-describe('RecruitmentIdentityService.uploadCertificateImages · FOR UPDATE 后合并写', () => {
-  const dto = {
-    category: 'first_aid',
-    issuingOrg: '深圳市红十字会',
-    issuedAt: '2026-07-01',
-    wechatCode: 'wx-code',
-  };
-  const file = {
-    buffer: Buffer.from('new-image'),
-    mimetype: 'image/png',
-    size: 9,
-  } as never;
-
-  function buildUploadService(lockedOverrides: Record<string, unknown> = {}) {
-    const initial = {
-      id: 'app-1',
-      cycleId: 'cycle-1',
-      statusCode: 'verified',
-      deletedAt: null,
-      certificateImages: { first_aid: ['stale-old.png'] },
-      certificateReviewStatus: null,
-      certificateIssuanceInfo: null,
-    };
-    const locked = {
-      ...initial,
-      certificateImages: {
-        first_aid: ['locked-old.png'],
-        bsafe: ['concurrent-bsafe.png'],
-      },
-      certificateIssuanceInfo: {
-        bsafe: { issuingOrg: '并发写入机构', issuedAt: '2026-06-01' },
-      },
-      ...lockedOverrides,
-    };
-    let updatedData: Record<string, Record<string, unknown>> | null = null;
-    const update = jest
-      .fn()
-      .mockImplementation(({ data }: { data: Record<string, Record<string, unknown>> }) => {
-        updatedData = data;
-        return Promise.resolve({});
-      });
-    const tx = {
-      $queryRaw: jest.fn().mockResolvedValue([{ id: initial.id }]),
-      recruitmentApplication: {
-        findFirst: jest.fn().mockResolvedValue(locked),
-        update,
-      },
-    };
-    const prisma = {
-      recruitmentApplication: { findFirst: jest.fn().mockResolvedValue(initial) },
-      $transaction: jest.fn((cb: (arg: unknown) => unknown) => cb(tx)),
-    };
-    const storage = {
-      putObject: jest.fn().mockResolvedValue(undefined),
-      deleteObject: jest.fn().mockResolvedValue(undefined),
-    };
-    const service = new RecruitmentIdentityService(
-      prisma as never,
-      {} as never,
-      { code2session: jest.fn().mockResolvedValue({ openid: 'openid-1' }) } as never,
-      { log: jest.fn().mockResolvedValue(undefined) } as never,
-      { validateFromBuffer: jest.fn() } as never,
-      storage as never,
-    );
-    return { service, update, storage, getUpdatedData: () => updatedData };
-  }
-
-  it('A4:合并写以锁后最新行值为基,保留并发新增类别并删除锁后旧图', async () => {
-    const { service, storage, getUpdatedData } = buildUploadService();
-    await expect(service.uploadCertificateImages(dto, [file], {} as never)).resolves.toMatchObject({
-      category: 'first_aid',
-      imageCount: 1,
-    });
-    const data = getUpdatedData();
-    expect(data).not.toBeNull();
-    if (data === null) throw new Error('expected update data');
-    expect(data.certificateImages.bsafe).toEqual(['concurrent-bsafe.png']);
-    expect(data.certificateIssuanceInfo.bsafe).toEqual({
-      issuingOrg: '并发写入机构',
-      issuedAt: '2026-06-01',
-    });
-    expect(data.certificateIssuanceInfo.first_aid).toEqual({
-      issuingOrg: '深圳市红十字会',
-      issuedAt: '2026-07-01',
-    });
-    expect(storage.deleteObject).toHaveBeenCalledWith('locked-old.png');
-    expect(storage.deleteObject).not.toHaveBeenCalledWith('stale-old.png');
-  });
-
-  it('A2/A4:落图窗口内变为 approved → 28054 且补偿删除本批新 blob', async () => {
-    const { service, update, storage } = buildUploadService({
-      certificateReviewStatus: {
-        first_aid: { status: 'approved', at: '2026-07-13T00:00:00.000Z', by: 'admin-1' },
-      },
-    });
-    await expect(service.uploadCertificateImages(dto, [file], {} as never)).rejects.toMatchObject({
-      biz: BizCode.RECRUITMENT_CERTIFICATE_ALREADY_APPROVED,
-    });
-    expect(update).not.toHaveBeenCalled();
-    expect(storage.deleteObject).toHaveBeenCalledTimes(1);
-  });
-
-  it('旧证书图清理失败只写固定安全分类,上传结果与补偿删除语义不变', async () => {
-    const { service, storage } = buildUploadService();
-    const rawProviderMessage =
-      'provider key=locked-old.png bucket=private-bucket secret=credential-value url=https://cos.example/locked-old.png';
-    storage.deleteObject.mockRejectedValueOnce(new Error(rawProviderMessage));
-    const warnSpy = jest
-      .spyOn((service as unknown as { logger: { warn(message: unknown): void } }).logger, 'warn')
-      .mockImplementation(() => undefined);
-
-    await expect(service.uploadCertificateImages(dto, [file], {} as never)).resolves.toMatchObject({
-      category: 'first_aid',
-      imageCount: 1,
-    });
-    expect(storage.deleteObject).toHaveBeenCalledWith('locked-old.png');
-    expect(warnSpy).toHaveBeenCalledWith({
-      event: 'recruitment.storage-cleanup.failed',
-      operation: 'delete-replaced-certificate-image',
-      safeErrorCategory: 'storage-delete-failed',
-      retryable: true,
-      manualCleanupRequired: true,
-    });
-    const serialized = JSON.stringify(warnSpy.mock.calls);
-    expect(serialized).not.toContain('locked-old.png');
-    expect(serialized).not.toContain('private-bucket');
-    expect(serialized).not.toContain('credential-value');
-    expect(serialized).not.toContain('https://cos.example');
-    expect(serialized).not.toContain(rawProviderMessage);
-  });
-});
+// 证书标准库 PR-4a-2:`uploadCertificateImages · FOR UPDATE 后合并写` 整组随该方法退役
+// (§13.3 一证一行取代按类别整组覆盖 —— 没有「合并写」这回事了:每条 Claim 独立一行,
+//  重传只换自己那一行的图,不需要把别的类别读出来再合并回去)。
+//
+// 它守的三条不变量各自的新归属:
+//   ① 「锁后复读最新行再判」→ 新公开三端点都在 lockApplication 之后才 resolveOwnClaim;
+//   ② 「28054 已通过类别不可覆盖」→ 语义消失(APPROVED 的 Claim 由 assertApplicantMayMutate
+//      拒改,回 28057;不再有「类别」这一层可被整组覆盖);
+//   ③ 「落图失败删本批新 key、不动旧图」→ putClaimImages 的 catch 分支,
+//      e2e 覆盖(见 test/e2e/recruitment-certificate-claims.e2e-spec.ts)。
 
 describe('RecruitmentIdentityService.withdraw · status claim 后权威重读', () => {
   it('微信身份锁后仍一致 → audit 使用锁后行并写 withdrawn', async () => {
@@ -359,12 +238,24 @@ describe('RecruitmentIdentityService.withdraw · status claim 后权威重读', 
     const locked = { ...base };
     const updated = { ...locked, statusCode: 'withdrawn' };
     const auditLogs = { log: jest.fn().mockResolvedValue(undefined) };
-    const findFirst = jest.fn().mockResolvedValueOnce(base).mockResolvedValueOnce(locked);
+    // 第 3 次读来自 PR-4a-2 的门槛重算(同事务、锁内);回落到 locked 而不是 undefined,
+    // 否则重算会走 `if (!app) return` 静默空转,这条用例就测不到它真的跑了。
+    const findFirst = jest
+      .fn()
+      .mockResolvedValueOnce(base)
+      .mockResolvedValueOnce(locked)
+      .mockResolvedValue(locked);
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([{ id: base.id }]),
       recruitmentApplication: {
         findFirst,
         update: jest.fn().mockResolvedValue(updated),
+      },
+      // PR-4a-2(§8.4 末段):整份撤销级联未 PROMOTED 的 Claim → WITHDRAWN,
+      // 随后重算派生门槛。本组无 Claim → updateMany 0 条、重算无改动。
+      recruitmentCertificateClaim: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        findMany: jest.fn().mockResolvedValue([]),
       },
     };
     const prisma = {
@@ -375,6 +266,9 @@ describe('RecruitmentIdentityService.withdraw · status claim 后权威重读', 
           .mockResolvedValue({ meetingInfo: null, qqGroup: null, notifyTemplate: null }),
       },
       dictItem: { findMany: jest.fn().mockResolvedValue([]) },
+      // 证书标准库 PR-4a-2:进度模型的证书段改由 Claim 行组装(loadProgressClaims)。
+      // 本组守的是「锁后权威重读」,与证书无关 → 空数组。
+      recruitmentCertificateClaim: { findMany: jest.fn().mockResolvedValue([]) },
     };
     const service = new RecruitmentIdentityService(
       prisma as never,
@@ -389,7 +283,9 @@ describe('RecruitmentIdentityService.withdraw · status claim 后权威重读', 
       stage: 'withdrawn',
     });
 
-    expect(findFirst).toHaveBeenCalledTimes(2);
+    // 2 次是「锁前定位 + 锁后权威重读」(本用例的原意);
+    // 第 3 次是 PR-4a-2 新增的门槛重算在同一事务、同一锁内的读 —— 刻意加的,不是回归。
+    expect(findFirst).toHaveBeenCalledTimes(3);
     expect(tx.recruitmentApplication.update).toHaveBeenCalledWith({
       where: { id: locked.id },
       data: { statusCode: 'withdrawn' },
@@ -397,10 +293,15 @@ describe('RecruitmentIdentityService.withdraw · status claim 后权威重读', 
     expect(auditLogs.log).toHaveBeenCalledWith(
       expect.objectContaining({
         before: { statusCode: locked.statusCode },
-        extra: { channel: 'wechat', openid: 'stal****lock' },
+        // PR-4a-2:extra 多一个 withdrawnClaimCount(级联撤了几条证书申报)。
+        // 断言写全集而不是放宽成 objectContaining —— 这一格的意义正是「只记条数,
+        // 不记 claim id / 编号 / key」,放宽就测不到「没多记别的」。
+        extra: { channel: 'wechat', openid: 'stal****lock', withdrawnClaimCount: 0 },
         tx,
       }),
     );
+    // 级联真的发生了(哪怕本组 0 条):少了这一句,把 updateMany 整段删掉也不会红。
+    expect(tx.recruitmentCertificateClaim.updateMany).toHaveBeenCalledTimes(1);
   });
 
   it('微信身份在 claim 等待期间漂移 → 泛化 NOT_FOUND 且零 update/audit', async () => {

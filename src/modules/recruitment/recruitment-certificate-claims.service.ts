@@ -1,17 +1,21 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   CertificateRecognitionPolicyStatus,
   CertificateStandardKind,
   CertificateStandardStatus,
   Prisma,
   RecruitmentCertificateClaimStatus,
+  type Role,
 } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { maskIdentifier } from '../../common/audit/mask-pii.util';
+import { beijingDateOnly } from '../../common/datetime/date-only.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AttachmentContentValidator } from '../attachments/attachment-content-validator';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { CertificateRecognitionResolver } from '../certificates/certificate-recognition-resolver';
@@ -19,18 +23,37 @@ import { RbacService } from '../permissions/rbac.service';
 import { STORAGE_PROVIDER } from '../storage/storage.constants';
 import type { StorageProvider } from '../storage/storage.interface';
 import {
+  assertApplicantMayMutate,
   assertClaimTransitionAllowed,
   assertClaimVersionMatches,
 } from './recruitment-certificate-claim-state-machine';
-import { RECRUITMENT_CERT_CATEGORIES } from './recruitment.constants';
+import {
+  CERTIFICATE_CLAIM_IMAGES_MAX,
+  CERTIFICATE_CLAIM_IMAGES_MIN,
+  CERTIFICATE_CLAIM_IMAGE_KEY_PREFIX,
+  CERTIFICATE_CLAIM_MAX_PER_APPLICATION,
+  ID_CARD_IMAGE_ALLOWED_MIME,
+  ID_CARD_IMAGE_MAX_BYTES,
+  RECRUITMENT_CERT_CATEGORIES,
+  recruitmentStorageCleanupFailureLog,
+  type RecruitmentStorageCleanupOperation,
+} from './recruitment.constants';
+import type { UploadedImageFile } from './recruitment-applications.service';
+import { recomputeCertificateThresholds } from './recruitment-certificate-threshold-derive';
+import { RecruitmentIdentityService } from './recruitment-identity.service';
 import {
   ClaimStandardSummaryDto,
   RecruitmentCertificateClaimAdminDto,
   RecruitmentCertificateClaimImageUrlsResponseDto,
   RecruitmentCertificateClaimListResponseDto,
+  PublicCertificateClaimDto,
+  PublicCertificateClaimResultDto,
   PublicCertificateStandardOptionsResponseDto,
+  ResubmitCertificateClaimDto,
   ReviewCertificateClaimDto,
   RevokeCertificateClaimReviewDto,
+  SubmitCertificateClaimDto,
+  WithdrawCertificateClaimDto,
 } from './recruitment-certificate-claims.dto';
 
 // 证书标准库 PR-4a-1(冻结稿 §8.2 / §8.3 / §13.4 / §15.4):招新证书申报**管理端** service。
@@ -86,8 +109,12 @@ export class RecruitmentCertificateClaimsService {
     private readonly rbac: RbacService,
     private readonly auditLogs: AuditLogsService,
     private readonly resolver: CertificateRecognitionResolver,
+    private readonly identity: RecruitmentIdentityService,
+    private readonly contentValidator: AttachmentContentValidator,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
+
+  private readonly logger = new Logger(RecruitmentCertificateClaimsService.name);
 
   // ============ helpers ============
 
@@ -186,6 +213,28 @@ export class RecruitmentCertificateClaimsService {
     await tx.$queryRaw(
       Prisma.sql`SELECT "id" FROM "recruitment_applications" WHERE "id" = ${applicationId} FOR UPDATE`,
     );
+  }
+
+  // ============ §8.4 门槛派生:唯一重算入口(实现在 recruitment-certificate-threshold-derive.ts)============
+  //
+  // 实现搬到普通导出函数,原因与 loadProgressClaims 相同:整份报名撤销走的是
+  // `RecruitmentIdentityService`,而本 service 已经注入了它 ——
+  // 让 identity 反向注入本 service 会立刻成环。抽成纯函数后两边共用同一实现,
+  // 「唯一写者」这条规则才真的只有一处代码。
+  private recomputeCertificateThresholds(
+    tx: Prisma.TransactionClient,
+    applicationId: string,
+    actorUserId: string | null,
+    actorRoleSnap: Role | null,
+    meta: AuditMeta,
+    now: Date,
+  ): Promise<void> {
+    return recomputeCertificateThresholds(this.auditLogs, tx, applicationId, {
+      actorUserId,
+      actorRoleSnap,
+      meta,
+      now,
+    });
   }
 
   // ============ 读 ============
@@ -455,6 +504,18 @@ export class RecruitmentCertificateClaimsService {
         tx,
       });
 
+      // §8.4:Claim 状态一变,证书门槛与报名状态必须在**同一事务**重算。
+      // 放在审计之后:审计记的是「这次审核做了什么」,重算记的是「门槛因此变成什么」,
+      // 两条各自独立可读,不合并成一条。
+      await this.recomputeCertificateThresholds(
+        tx,
+        claim.applicationId,
+        user.id,
+        user.role,
+        meta,
+        new Date(),
+      );
+
       return this.present(updated, sensitive);
     });
   }
@@ -515,7 +576,374 @@ export class RecruitmentCertificateClaimsService {
         tx,
       });
 
+      // 撤回审核会让该 Claim 不再贡献门槛 —— 重算是**聚合**,所以同类别若还有
+      // 另一张 APPROVED 的证书,门槛依然成立(§8.4 第一条推论)。
+      await this.recomputeCertificateThresholds(
+        tx,
+        claim.applicationId,
+        user.id,
+        user.role,
+        meta,
+        new Date(),
+      );
+
       return this.present(updated, sensitive);
     });
+  }
+
+  // ============ §8.1 公开面:申请人提交 / 重传 / 撤回 ============
+
+  // 申请人视角出参。**与 admin 的 present() 分开两条** —— 不是重复:
+  // 公开面字段集必须能独立收紧,共用一个出口迟早会让某次 admin 加字段顺手泄到公开面。
+  private presentPublic(row: ClaimRow): PublicCertificateClaimDto {
+    return {
+      id: row.id,
+      version: row.version,
+      status: row.status,
+      categoryHintCode: row.categoryHintCode,
+      rawCertificateName: row.rawCertificateName,
+      suggestedStandardId: row.suggestedStandardId,
+      issuingOrg: row.issuingOrg,
+      certNumberMasked: maskIdentifier(row.certNumber),
+      issuedAt: row.issuedAt,
+      expiredAt: row.expiredAt,
+      imageCount: this.imageCountOf(row.imageKeys),
+      reviewNote: row.reviewNote,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  // best-effort 删对象。日志 schema 闭集(不含 key / bucket / provider 原文)——
+  // 这条不变量随 safeDeleteBlob 从 review service 迁来,断言逐字保留在本 service 的单测里。
+  private async safeDeleteBlob(
+    key: string,
+    operation: RecruitmentStorageCleanupOperation,
+  ): Promise<void> {
+    try {
+      await this.storage.deleteObject(key);
+    } catch {
+      this.logger.warn(recruitmentStorageCleanupFailureLog(operation));
+    }
+  }
+
+  /**
+   * 文件闸(§8.1):数量 1~3 · 单文件 ≤5MB · MIME 白名单 · 魔数与内容一致。
+   * 内容校验**必须**复用 attachments 的 `AttachmentContentValidator`
+   * (recruitment/CLAUDE.md 铁律:模块内不得复制 MIME 黑名单 / 签名表)。
+   * 校验在**落对象之前**全部跑完 —— 任何一张不合格就一张都不落。
+   */
+  private assertClaimImages(files: UploadedImageFile[]): void {
+    if (
+      files.length < CERTIFICATE_CLAIM_IMAGES_MIN ||
+      files.length > CERTIFICATE_CLAIM_IMAGES_MAX
+    ) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    for (const f of files) {
+      if (f.size > ID_CARD_IMAGE_MAX_BYTES || !ID_CARD_IMAGE_ALLOWED_MIME.includes(f.mimetype)) {
+        throw new BizException(BizCode.BAD_REQUEST);
+      }
+      this.contentValidator.validateFromBuffer({ mime: f.mimetype, buffer: f.buffer });
+    }
+  }
+
+  // key = 固定 namespace + 随机 id + 扩展名。**不含**类别 / cycleId / 姓名 / 原文件名(§8.1)。
+  private async putClaimImages(files: UploadedImageFile[]): Promise<string[]> {
+    const keys: string[] = [];
+    try {
+      for (const f of files) {
+        const ext = f.mimetype === 'image/png' ? 'png' : 'jpg';
+        const key = `${CERTIFICATE_CLAIM_IMAGE_KEY_PREFIX}/${randomUUID()}.${ext}`;
+        await this.storage.putObject({ key, body: f.buffer, contentType: f.mimetype });
+        keys.push(key);
+      }
+    } catch (err) {
+      // 落一半失败 → 删本批已落的,不留孤儿对象(镜像既有 FM-B)。
+      for (const k of keys) await this.safeDeleteBlob(k, 'delete-orphan-id-card-image');
+      throw err;
+    }
+    return keys;
+  }
+
+  // 申请人可自报的事实(不含 standardId / policyId / issuerId / 审核字段)。
+  // §8.1:「申请人不能提交 Policy、审核状态或标准化 issuer id」——
+  // 做法是这个白名单函数,而不是在写入前逐个 delete 不该有的键。
+  private applicantFacts(dto: SubmitCertificateClaimDto): {
+    categoryHintCode: string;
+    rawCertificateName: string | null;
+    suggestedStandardId: string | null;
+    issuingOrg: string | null;
+    certNumber: string | null;
+    issuedAt: Date | null;
+    expiredAt: Date | null;
+  } {
+    const trimOrNull = (v: string | undefined): string | null => {
+      const t = v?.trim() ?? '';
+      return t === '' ? null : t;
+    };
+    const issuedAt = dto.issuedAt ? beijingDateOnly(new Date(dto.issuedAt)) : null;
+    const expiredAt = dto.expiredAt ? beijingDateOnly(new Date(dto.expiredAt)) : null;
+    // 自报阶段只做**基础**日期健全性(不晚于今天 / 区间不倒挂)。
+    // 按认定规则的完整校验留到审核 —— 此刻还没有 Standard,谈不上规则。
+    if (issuedAt !== null && issuedAt.getTime() > beijingDateOnly(new Date()).getTime()) {
+      throw new BizException(BizCode.CERTIFICATE_ISSUED_AT_IN_FUTURE);
+    }
+    if (issuedAt !== null && expiredAt !== null && expiredAt.getTime() < issuedAt.getTime()) {
+      throw new BizException(BizCode.CERTIFICATE_DATE_RANGE_INVALID);
+    }
+    return {
+      categoryHintCode: dto.categoryHintCode,
+      rawCertificateName: trimOrNull(dto.rawCertificateName),
+      suggestedStandardId: trimOrNull(dto.suggestedStandardId),
+      issuingOrg: trimOrNull(dto.issuingOrg),
+      certNumber: trimOrNull(dto.certNumber),
+      issuedAt,
+      expiredAt,
+    };
+  }
+
+  /**
+   * 建议的 Standard 必须是**申请人本来就能看到的那一批**(公开选项同一过滤):
+   * ACTIVE + CREDENTIAL + 招新类别。否则拒 40000。
+   *
+   * 为什么要校验:`suggestedStandardId` 是客户端传来的 id。不校验就等于让公开端点
+   * 变成一个「猜 id 探测队内主数据是否存在」的接口,还能把 FAMILY / DRAFT 节点塞进来
+   * 让审核界面出现本不该出现的选项。**注意它只是建议** —— 校验通过也不代表能过审。
+   */
+  private async assertSuggestedStandardSelectable(
+    tx: Prisma.TransactionClient,
+    standardId: string | null,
+  ): Promise<void> {
+    if (standardId === null) return;
+    const found = await tx.certificateStandard.findFirst({
+      where: notDeletedWhere({
+        id: standardId,
+        kind: CertificateStandardKind.CREDENTIAL,
+        status: CertificateStandardStatus.ACTIVE,
+        categoryCode: { in: [...RECRUITMENT_CERT_CATEGORIES] },
+      }),
+      select: { id: true },
+    });
+    if (!found) throw new BizException(BizCode.BAD_REQUEST);
+  }
+
+  /** 公开面统一的「凭证 → 报名 → 且这条 claim 属于该报名」三步(§13.3)。 */
+  private async resolveOwnClaim(
+    tx: Prisma.TransactionClient,
+    applicationId: string,
+    claimId: string,
+  ): Promise<ClaimRow> {
+    const claim = await tx.recruitmentCertificateClaim.findFirst({
+      where: notDeletedWhere({ id: claimId }),
+      select: claimSelect,
+    });
+    // §13.3「claimId 不能单独构成授权」:凭证解析出的报名必须与 claim 归属一致。
+    // 不一致按「不存在」回,不区分「不存在」与「不是你的」—— 后者是枚举 id 的信号。
+    if (!claim || claim.applicationId !== applicationId) {
+      throw new BizException(BizCode.RECRUITMENT_CERTIFICATE_CLAIM_NOT_FOUND);
+    }
+    return claim;
+  }
+
+  async submitPublic(
+    dto: SubmitCertificateClaimDto,
+    files: UploadedImageFile[],
+    meta: AuditMeta,
+  ): Promise<PublicCertificateClaimResultDto> {
+    // 顺序要紧:先跑**免费**的文件闸,再走可能消费短信码 / 调微信的凭证链
+    // (沿 recruitment §4 冻结的校验顺序:免费校验先行)。
+    this.assertClaimImages(files);
+    const facts = this.applicantFacts(dto);
+    const { app, channel } = await this.identity.resolveActiveApplicationByCredential(dto);
+
+    // 落对象在事务外(putObject 不可回滚);失败域由 catch 兜底删本批。
+    const imageKeys = await this.putClaimImages(files);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await this.lockApplication(tx, app.id);
+        await this.assertSuggestedStandardSelectable(tx, facts.suggestedStandardId);
+
+        // 上限在**锁内**复查:两个并发提交都在锁外看到 9 条时,只有一个能过。
+        const count = await tx.recruitmentCertificateClaim.count({
+          where: notDeletedWhere({ applicationId: app.id }),
+        });
+        if (count >= CERTIFICATE_CLAIM_MAX_PER_APPLICATION) {
+          throw new BizException(BizCode.RECRUITMENT_CERTIFICATE_CLAIM_LIMIT);
+        }
+
+        const created = await tx.recruitmentCertificateClaim.create({
+          data: {
+            applicationId: app.id,
+            status: RecruitmentCertificateClaimStatus.SUBMITTED,
+            ...facts,
+            imageKeys,
+          },
+          select: claimSelect,
+        });
+
+        await this.auditLogs.log({
+          event: 'recruitment-certificate-claim.submit',
+          actorUserId: null, // 公开自助,无账号
+          actorRoleSnap: null,
+          resourceType: 'recruitment_certificate_claim',
+          resourceId: created.id,
+          meta,
+          extra: {
+            operation: 'submit',
+            applicationId: app.id,
+            channel,
+            categoryHintCode: facts.categoryHintCode,
+            suggestedStandardProvided: facts.suggestedStandardId !== null,
+            imageCount: imageKeys.length,
+            certNumberProvided: facts.certNumber !== null,
+          },
+          tx,
+        });
+
+        // 新提交的 Claim 是 SUBMITTED,本身不贡献门槛;但重算是**幂等聚合**,
+        // 调它可以让「唯一写者」这条规则没有例外 —— 例外就是漂移的入口。
+        await this.recomputeCertificateThresholds(tx, app.id, null, null, meta, new Date());
+
+        return { claim: this.presentPublic(created), claimCount: count + 1 };
+      });
+    } catch (err) {
+      for (const k of imageKeys) await this.safeDeleteBlob(k, 'delete-orphan-id-card-image');
+      throw err;
+    }
+  }
+
+  async resubmitPublic(
+    claimId: string,
+    dto: ResubmitCertificateClaimDto,
+    files: UploadedImageFile[],
+    meta: AuditMeta,
+  ): Promise<PublicCertificateClaimResultDto> {
+    this.assertClaimImages(files);
+    const facts = this.applicantFacts(dto);
+    const { app, channel } = await this.identity.resolveActiveApplicationByCredential(dto);
+
+    const imageKeys = await this.putClaimImages(files);
+    let replacedKeys: string[] = [];
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        await this.lockApplication(tx, app.id);
+        const claim = await this.resolveOwnClaim(tx, app.id, claimId);
+        assertClaimVersionMatches(dto.version, claim.version);
+        // 申请人只能改 SUBMITTED / NEEDS_INFO / REJECTED 的行 —— APPROVED 不可由申请人
+        // 直接改(§8.2);要改就得管理员先撤回审核。
+        assertApplicantMayMutate(claim.status);
+        await this.assertSuggestedStandardSelectable(tx, facts.suggestedStandardId);
+
+        const updated = await tx.recruitmentCertificateClaim.update({
+          where: { id: claimId },
+          data: {
+            status: RecruitmentCertificateClaimStatus.SUBMITTED,
+            ...facts,
+            imageKeys,
+            // 重传把上一轮的审核痕迹清掉:留着 reviewNote 会让申请人以为驳回说明
+            // 还适用于这一版新材料。
+            reviewedByUserId: null,
+            reviewedAt: null,
+            reviewNote: null,
+            version: { increment: 1 },
+          },
+          select: claimSelect,
+        });
+
+        await this.auditLogs.log({
+          event: 'recruitment-certificate-claim.submit',
+          actorUserId: null,
+          actorRoleSnap: null,
+          resourceType: 'recruitment_certificate_claim',
+          resourceId: claimId,
+          meta,
+          extra: {
+            operation: 'resubmit',
+            applicationId: app.id,
+            channel,
+            categoryHintCode: facts.categoryHintCode,
+            suggestedStandardProvided: facts.suggestedStandardId !== null,
+            imageCount: imageKeys.length,
+            replacedCount: this.imageCountOf(claim.imageKeys),
+            certNumberProvided: facts.certNumber !== null,
+          },
+          tx,
+        });
+
+        // 重传会让一条曾经 APPROVED→(管理员撤回)→SUBMITTED 的行退出贡献,必须重算。
+        await this.recomputeCertificateThresholds(tx, app.id, null, null, meta, new Date());
+
+        const count = await tx.recruitmentCertificateClaim.count({
+          where: notDeletedWhere({ applicationId: app.id }),
+        });
+        return {
+          payload: { claim: this.presentPublic(updated), claimCount: count },
+          replaced: this.imageKeysOf(claim.imageKeys),
+        };
+      });
+      replacedKeys = result.replaced;
+      // 事务提交后才删旧图 —— 提交前删,回滚就会让一条仍在库里的 Claim 指向已删对象。
+      for (const k of replacedKeys) {
+        await this.safeDeleteBlob(k, 'delete-replaced-certificate-image');
+      }
+      return result.payload;
+    } catch (err) {
+      for (const k of imageKeys) await this.safeDeleteBlob(k, 'delete-orphan-id-card-image');
+      throw err;
+    }
+  }
+
+  async withdrawPublic(
+    claimId: string,
+    dto: WithdrawCertificateClaimDto,
+    meta: AuditMeta,
+  ): Promise<PublicCertificateClaimResultDto> {
+    const { app, channel } = await this.identity.resolveActiveApplicationByCredential(dto);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      await this.lockApplication(tx, app.id);
+      const claim = await this.resolveOwnClaim(tx, app.id, claimId);
+      assertClaimVersionMatches(dto.version, claim.version);
+      // 状态机负责拦 PROMOTED / 已 WITHDRAWN(两个空集终态)。
+      assertClaimTransitionAllowed(claim.status, RecruitmentCertificateClaimStatus.WITHDRAWN);
+
+      const updated = await tx.recruitmentCertificateClaim.update({
+        where: { id: claimId },
+        data: {
+          status: RecruitmentCertificateClaimStatus.WITHDRAWN,
+          version: { increment: 1 },
+        },
+        select: claimSelect,
+      });
+
+      await this.auditLogs.log({
+        event: 'recruitment-certificate-claim.submit',
+        actorUserId: null,
+        actorRoleSnap: null,
+        resourceType: 'recruitment_certificate_claim',
+        resourceId: claimId,
+        meta,
+        extra: {
+          operation: 'withdraw',
+          applicationId: app.id,
+          channel,
+          previousStatus: claim.status,
+          imageCount: this.imageCountOf(claim.imageKeys),
+        },
+        tx,
+      });
+
+      // 撤回一条已通过的证书会让门槛回落 —— 若同类别还有另一张 APPROVED,聚合仍成立。
+      await this.recomputeCertificateThresholds(tx, app.id, null, null, meta, new Date());
+
+      const count = await tx.recruitmentCertificateClaim.count({
+        where: notDeletedWhere({ applicationId: app.id }),
+      });
+      return { claim: this.presentPublic(updated), claimCount: count };
+    });
+    // 证据清理按 §8.4「进入证据清理流程」——留存 SOP 在 PR-6,此刻不删对象:
+    // 撤回后短期内仍可能需要复核「他撤的是什么」,过早删掉就再也查不回来。
+    return result;
   }
 }

@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RecruitmentCertificateClaimStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
+import { RECRUITMENT_CERT_CATEGORIES } from './recruitment.constants';
 import {
   IsIn,
   IsInt,
@@ -205,6 +206,79 @@ export class PublicCertificateStandardOptionsResponseDto {
   items!: PublicCertificateStandardOptionDto[];
 }
 
+// ============ 公开面:申请人视角的申报(§8.1)============
+
+// 申请人只看得到自己填的事实 + 状态 + 驳回说明。
+// **刻意不含** standardId / recognitionPolicyId / recognitionIssuerId / reviewedByUserId ——
+// 那是审核结论与队内主数据,申请人无需也不该看到(§15.1)。
+// 编号回显掩码而不是明文:哪怕是他自己填的,也没有理由让一次公开 GET 把它再吐一遍。
+export class PublicCertificateClaimDto {
+  @ApiProperty({ description: '申报 id(重传 / 撤回时回传)' })
+  id!: string;
+
+  @ApiProperty({ description: 'CAS 版本号(重传 / 撤回必须回传当前值)' })
+  version!: number;
+
+  @ApiProperty({ description: '申报状态', enum: RecruitmentCertificateClaimStatus })
+  status!: RecruitmentCertificateClaimStatus;
+
+  @ApiProperty({ description: '本人选的类别提示' })
+  categoryHintCode!: string;
+
+  @ApiPropertyOptional({ description: '本人填的证书名称', nullable: true, type: String })
+  rawCertificateName!: string | null;
+
+  @ApiPropertyOptional({
+    description: '本人建议的证书标准 id(仅建议,最终分类由审核决定)',
+    nullable: true,
+    type: String,
+  })
+  suggestedStandardId!: string | null;
+
+  @ApiPropertyOptional({ description: '本人填的发证机构', nullable: true, type: String })
+  issuingOrg!: string | null;
+
+  @ApiPropertyOptional({
+    description: '证书编号掩码(形如 SZ****01;无编号为 null)',
+    nullable: true,
+    type: String,
+  })
+  certNumberMasked!: string | null;
+
+  @ApiPropertyOptional({ description: '发证日期', nullable: true })
+  issuedAt!: Date | null;
+
+  @ApiPropertyOptional({ description: '最后有效日', nullable: true })
+  expiredAt!: Date | null;
+
+  @ApiProperty({ description: '已上传证据图数量(**不返 key、不返 URL**)', example: 2 })
+  imageCount!: number;
+
+  @ApiPropertyOptional({
+    description: '审核说明(驳回 / 要求补材料时对本人可见)',
+    nullable: true,
+    type: String,
+  })
+  reviewNote!: string | null;
+
+  @ApiProperty({ description: '提交时间' })
+  createdAt!: Date;
+
+  @ApiProperty({ description: '最后更新时间' })
+  updatedAt!: Date;
+}
+
+export class PublicCertificateClaimResultDto {
+  @ApiProperty({ description: '本次操作后的申报', type: PublicCertificateClaimDto })
+  claim!: PublicCertificateClaimDto;
+
+  @ApiProperty({
+    description: '本次报名当前的全部未软删申报数量(上限 10;达上限后新提交返 28059)',
+    example: 2,
+  })
+  claimCount!: number;
+}
+
 // ============ 入参 ============
 
 export class ClaimIdParamDto {
@@ -316,4 +390,97 @@ export class RevokeCertificateClaimReviewDto {
   @MinLength(1)
   @MaxLength(500)
   note!: string;
+}
+
+// ============ 公开面入参(§8.1;multipart 文件位 images)============
+
+// 双通道凭证。三个公开端点共用 —— 抽成基类而不是各写一遍,
+// 是为了让「通道二选一」这条规则只有一处定义(§13.3)。
+class PublicClaimCredentialDto {
+  @ApiPropertyOptional({
+    description: '通道①:微信 wx.login code(与 phone+code 二选一)',
+    maxLength: 128,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  wechatCode?: string;
+
+  @ApiPropertyOptional({ description: '通道②:手机号(配合 code)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  phone?: string;
+
+  @ApiPropertyOptional({ description: '通道②:短信验证码(消费一码)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  code?: string;
+}
+
+export class SubmitCertificateClaimDto extends PublicClaimCredentialDto {
+  @ApiProperty({
+    description: '证书类别提示(仅提示;最终分类由审核决定)',
+    enum: RECRUITMENT_CERT_CATEGORIES as unknown as string[],
+  })
+  @IsIn(RECRUITMENT_CERT_CATEGORIES, { message: '证书类别非法' })
+  categoryHintCode!: string;
+
+  @ApiPropertyOptional({ description: '证书名称(自由文本)', maxLength: 128 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  rawCertificateName?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '建议的证书标准 id(来自公开标准选项端点;「不确定」时不传 —— 不确定是合法选项,§8.1)',
+    maxLength: 32,
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(32)
+  suggestedStandardId?: string;
+
+  @ApiPropertyOptional({ description: '发证机构(自由文本)', maxLength: 128 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  issuingOrg?: string;
+
+  @ApiPropertyOptional({ description: '证书编号', maxLength: 128 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  certNumber?: string;
+
+  @ApiPropertyOptional({ ...DATE_ONLY_SCHEMA, description: '发证日期', example: '2026-07-01' })
+  @IsOptional()
+  @Matches(DATE_ONLY_PATTERN, { message: 'issuedAt 必须是 YYYY-MM-DD 纯日期' })
+  issuedAt?: string;
+
+  @ApiPropertyOptional({ ...DATE_ONLY_SCHEMA, description: '最后有效日', example: '2028-06-30' })
+  @IsOptional()
+  @Matches(DATE_ONLY_PATTERN, { message: 'expiredAt 必须是 YYYY-MM-DD 纯日期' })
+  expiredAt?: string;
+}
+
+// 重传 = 换图 + 可选改自报事实。CAS `version` 必填:审核员可能正在看这条,
+// 不带版本号的重传会静默盖掉刚落的审核结论(§5.5)。
+export class ResubmitCertificateClaimDto extends SubmitCertificateClaimDto {
+  @ApiProperty({ description: 'CAS 版本号:必须等于当前 claim.version,否则 28058', example: 0 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  version!: number;
+}
+
+export class WithdrawCertificateClaimDto extends PublicClaimCredentialDto {
+  @ApiProperty({ description: 'CAS 版本号', example: 0 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  version!: number;
 }

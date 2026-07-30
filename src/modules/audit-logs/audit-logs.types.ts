@@ -39,6 +39,10 @@ export type AuditLogEvent =
   // signed URL、审核备注全文、申请人姓名手机证件号(§17 / D-CERT-024)。
   | 'certificate-standard.change' // Standard 身份与状态变更
   | 'certificate-recognition-policy.change' // 认定规则版本创建 / 激活 / 退役 / issuer 整体替换
+  // 证书标准库 PR-4a-2(§8.1):申请人自助提交 / 重传 / 撤回单条申报。
+  // actor 恒 null(公开端点无账号),通道与操作由 extra.channel / extra.operation 区分。
+  // extra 闭集,**禁**完整编号 / 图片 key / 申请人 PII;编号只留 certNumberProvided 布尔。
+  | 'recruitment-certificate-claim.submit'
   | 'recruitment-certificate-claim.review' // 招新证书申报审核(approve / reject / needs-info)
   | 'recruitment-certificate-claim.review-revoke' // 发号前撤回 APPROVED 结论,重算门槛
   | 'contribution-rule.create' // PR #3 接入(contribution-rules.service: create)
@@ -121,6 +125,11 @@ export type AuditLogEvent =
   | 'recruitment-application.update' // admin 改报名资料(R1 白名单);before/after 仅身份字段掩码值;extra {changedFields, identityChanged}
   // 招新二期(后段)T2/T3(2026-06-19;评审稿 recruitment-phase2-review.md §3.5 / E-R2-12):
   | 'recruitment-application.mark-threshold' // admin 标/清门槛;before/after status;extra {thresholdCode, completed, allComplete}
+  // 证书标准库 PR-4a-2(§8.4):证书门槛派生重算。**不是**人工动作 ——
+  // 由 Claim 状态变化在同一事务内触发,actor 可能为 null(申请人侧自助路径无账号)。
+  // 它是「为什么这份报名的状态自己动了」的唯一线索,所以必须落审计。
+  // extra 闭集 {operation, satisfiedCategories, evaluationCleared};不记 Claim 明细、编号、key。
+  | 'recruitment-application.threshold-recompute'
   | 'recruitment-application.evaluate' // admin 综合评定/淘汰;before/after status;extra {approved, eliminationStage?}
   | 'recruitment-application.promote' // admin 一键发号(逐报名一条);before/after status;extra {memberNo, memberId, tempNo, openid:掩码}
   // 招新四期 S4a(H5 + 手机身份链)T1(2026-06-24;评审稿 recruitment-phase4-loop-optimization-review.md §3.4):

@@ -21,12 +21,12 @@ import {
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import {
   EMERGENCY_CONTACTS_MIN,
+  MANUAL_THRESHOLD_CODES,
   RECRUITMENT_CERT_CATEGORIES,
   RECRUITMENT_DOCUMENT_TYPE_CODES,
   RISK_LEVEL_HIGH,
   RISK_LEVEL_NORMAL,
   RISK_LEVEL_SYSTEM,
-  THRESHOLD_CODES,
 } from './recruitment.constants';
 
 // 招新一期(招新前段)T3(2026-06-18):recruitment DTO 集合(评审稿 §3.2)。
@@ -319,79 +319,6 @@ export class RecruitmentQueryByPhoneDto {
 
 // ============ 招新可用性收口 F7:证书图上传(评审稿 §2.9 R6;凭证双通道镜像 F6 withdraw)============
 // multipart:本 DTO 承载文本字段(category + 双通道凭证),文件位 images(≤3;校验镜像 idCardImage)。
-export class RecruitmentCertificateUploadDto {
-  @ApiProperty({
-    description: '证书类别(cert_type 既有码;每类 ≤3 张,重传整类覆盖)',
-    enum: RECRUITMENT_CERT_CATEGORIES as unknown as string[],
-  })
-  @IsString()
-  @IsIn(RECRUITMENT_CERT_CATEGORIES, { message: '证书类别非法' })
-  category!: string;
-
-  @ApiProperty({
-    description:
-      '发证机构(自由文本;任一被认可的急救资质发证机构均可,前端可提供红十字会/深圳市急救中心等快捷项)',
-    maxLength: 128,
-  })
-  @IsString()
-  @MinLength(1)
-  @MaxLength(128)
-  issuingOrg!: string;
-
-  @ApiProperty({ description: '发证日期(YYYY-MM-DD;不得晚于今天)', example: '2026-07-13' })
-  @IsString()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: '发证日期须为 YYYY-MM-DD' })
-  @IsDateString({ strict: true })
-  issuedAt!: string;
-
-  @ApiPropertyOptional({
-    description: '微信 wx.login code(通道①:换 openid 定位本人最近活跃报名;与 phone+code 二选一)',
-    maxLength: 128,
-  })
-  @IsOptional()
-  @IsString()
-  @MinLength(1)
-  @MaxLength(128)
-  wechatCode?: string;
-
-  @ApiPropertyOptional({ description: '手机号(通道②:配合验证码;与 wechatCode 二选一)' })
-  @IsOptional()
-  @IsString()
-  @Matches(MAINLAND_PHONE, { message: '手机号格式不正确' })
-  phone?: string;
-
-  @ApiPropertyOptional({ description: '短信验证码(6 位数字;通道② 必带,消费一码)' })
-  @IsOptional()
-  @IsString()
-  @Matches(SMS_CODE_6, { message: '验证码格式不正确' })
-  code?: string;
-}
-
-export class RecruitmentCertificateUploadResultDto {
-  @ApiProperty({ description: '证书类别' })
-  category!: string;
-  @ApiProperty({ description: '该类别当前图片数(重传覆盖后)' })
-  imageCount!: number;
-}
-
-// admin 取证书图 signed-URL(镜像 IdCardImageUrlResponseDto;复用 read.sensitive,0 新码)
-export class RecruitmentCertificateImagesItemDto {
-  @ApiProperty({ description: '证书类别(first_aid/bsafe)' })
-  category!: string;
-  @ApiProperty({ description: '该类别各图短 TTL signed-URL(L3;不入日志/snapshot)', type: [String] })
-  urls!: string[];
-}
-
-export class RecruitmentCertificateImageUrlsResponseDto {
-  @ApiProperty({
-    type: [RecruitmentCertificateImagesItemDto],
-    description: '按类别分组(无图类别不出现;全无 → 空数组)',
-  })
-  items!: RecruitmentCertificateImagesItemDto[];
-  @ApiProperty({ description: 'URL 过期时刻(各图同 TTL)' })
-  expiresAt!: Date;
-}
-
 // ============ 招新可用性收口 F6:自助撤销(评审稿 §3 R4;凭证双通道镜像 query / query-by-phone)============
 export class RecruitmentWithdrawDto {
   @ApiPropertyOptional({
@@ -541,13 +468,41 @@ export class RecruitmentTodoItemDto {
   done!: boolean;
 }
 
+// 证书标准库 PR-4a-2(冻结稿 §8.1):**一证一行**。
+// ⚠️ 公开契约变化:本项从「每个类别恰一条(none/uploaded/approved/rejected)」
+// 改为「每条申报一行」—— 同类别可以有多行,数组也可能为空。
+// 理由是旧形状在结构上表达不了「两张急救证,一张过了一张被驳回」,
+// 而那正是一证一行要解决的问题。
 export class RecruitmentCertificateProgressItemDto {
-  @ApiProperty({ enum: RECRUITMENT_CERT_CATEGORIES as unknown as string[] })
+  @ApiProperty({ description: '申报 id(重传 / 撤回时回传)' })
+  claimId!: string;
+
+  @ApiProperty({ description: 'CAS 版本号(重传 / 撤回必须回传)' })
+  version!: number;
+
+  @ApiProperty({
+    description: '本人选的类别提示',
+    enum: RECRUITMENT_CERT_CATEGORIES as unknown as string[],
+  })
   category!: string;
-  @ApiProperty({ enum: ['none', 'uploaded', 'approved', 'rejected'] })
+
+  @ApiPropertyOptional({ description: '本人填的证书名称', type: String, nullable: true })
+  rawCertificateName!: string | null;
+
+  @ApiProperty({
+    description: '申报状态(直接透传 Claim 状态机,不再折叠成 none/uploaded)',
+    enum: ['SUBMITTED', 'NEEDS_INFO', 'APPROVED', 'REJECTED', 'PROMOTED', 'WITHDRAWN'],
+  })
   status!: string;
-  @ApiProperty() imageCount!: number;
-  @ApiPropertyOptional({ description: '驳回说明(申请人可见)', type: String, nullable: true })
+
+  @ApiProperty({ description: '该申报的证据图数量' })
+  imageCount!: number;
+
+  @ApiPropertyOptional({
+    description: '审核说明(驳回 / 要求补材料时对本人可见)',
+    type: String,
+    nullable: true,
+  })
   note!: string | null;
 }
 
@@ -791,30 +746,21 @@ export class RecruitmentApplicationAdminDto {
 // ============ 招新二期:门槛标记 / 综合评定(admin)============
 
 // 标/清单个门槛(幂等;仅 verified/pending_evaluation 态可标,评审稿 E-R2-2)
+// 证书标准库 PR-4a-2(§8.4):枚举从 5 收窄到 3。`redCross` / `bsafe` 改由 Claim
+// 审核结论派生,人工标记入口在**契约层**就不再接受它们(codegen 拿到的就是 3 项);
+// service 层另有 28063 兜底 —— batchMarkThreshold 是内部直调,不过 ValidationPipe。
 export class MarkThresholdDto {
   @ApiProperty({
-    description: '门槛 code',
-    enum: THRESHOLD_CODES as unknown as string[],
+    description: '门槛 code(证书型门槛 redCross / bsafe 已改为派生,不在此列)',
+    enum: MANUAL_THRESHOLD_CODES as unknown as string[],
   })
   @IsString()
-  @IsIn(THRESHOLD_CODES, { message: '门槛 code 非法' })
+  @IsIn(MANUAL_THRESHOLD_CODES, { message: '门槛 code 非法' })
   thresholdCode!: string;
 
   @ApiProperty({ description: 'true=标记完成;false=清除标记(补课纠错)' })
   @IsBoolean()
   completed!: boolean;
-}
-
-export class ReviewRecruitmentCertificateDto {
-  @ApiProperty({ description: 'true=通过并自动标对应门槛;false=驳回、清图并取消对应门槛' })
-  @IsBoolean()
-  approved!: boolean;
-
-  @ApiPropertyOptional({ description: '审核备注(驳回说明会对申请人可见)' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  note?: string;
 }
 
 // ============ 招新可用性收口 F2:admin 改资料(评审稿 recruitment-usability-closeout-review.md §3 R1)============
@@ -1171,9 +1117,12 @@ export class BatchMarkThresholdDto {
   @MaxLength(64)
   cycleId?: string;
 
-  @ApiProperty({ description: '门槛 code', enum: THRESHOLD_CODES as unknown as string[] })
+  @ApiProperty({
+    description: '门槛 code(证书型门槛 redCross / bsafe 已改为派生,不在此列)',
+    enum: MANUAL_THRESHOLD_CODES as unknown as string[],
+  })
   @IsString()
-  @IsIn(THRESHOLD_CODES, { message: '门槛 code 非法' })
+  @IsIn(MANUAL_THRESHOLD_CODES, { message: '门槛 code 非法' })
   thresholdCode!: string;
 
   @ApiProperty({ description: 'true=标记完成;false=清除标记(逐行幂等,复用单行 markThreshold)' })

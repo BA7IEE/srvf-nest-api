@@ -37,10 +37,8 @@ import {
   IdCardImageUrlResponseDto,
   MarkThresholdDto,
   PromoteSingleResultDto,
-  RecruitmentCertificateImageUrlsResponseDto,
   RecruitmentApplicationAdminDto,
   RecruitmentApplicationListQueryDto,
-  ReviewRecruitmentCertificateDto,
   ResolveRecruitmentApplicationDto,
   UpdateRecruitmentApplicationDto,
 } from './recruitment.dto';
@@ -113,7 +111,14 @@ export class RecruitmentApplicationsAdminController {
       '批量标门槛(匹配键 临时编号/手机/姓名+手机,签到记录导入由前端解析为数组;逐行复用单行 markThreshold = 逐行幂等 + 逐行容错〔某行匹配不上/状态非法不整批回滚〕+ 自动推进;返回 per-row 结果 + 批次汇总) [rbac: recruitment-application.mark.threshold]',
   })
   @ApiWrappedOkResponse(BatchMarkThresholdResultDto)
-  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    // PR-4a-2:批量入口同样拒派生门槛 —— 它逐行内部直调 markThreshold,
+    // 不过 ValidationPipe,靠 service 层那道 28063 兜住。
+    BizCode.RECRUITMENT_THRESHOLD_DERIVED_READONLY,
+  )
   batchMarkThreshold(
     @Body() dto: BatchMarkThresholdDto,
     @CurrentUser() user: CurrentUserPayload,
@@ -210,57 +215,11 @@ export class RecruitmentApplicationsAdminController {
     return this.queryService.getIdCardImageUrl(id, user, buildAuditMeta(req));
   }
 
-  // 招新可用性收口 F7(评审稿 §2.9):admin 取证书图 signed-URL(镜像 id-card-image-url;0 新码)。
-  @Get(':id/certificate-image-urls')
-  @ApiOperation({
-    summary:
-      '取申请人证书图短 TTL signed-URL(按类别分组;无图类别不出现,全无 → 空数组;L3 不入日志/snapshot;读图记审计;复用敏感读码) [rbac: recruitment-application.read.sensitive]',
-  })
-  @ApiWrappedOkResponse(RecruitmentCertificateImageUrlsResponseDto)
-  @ApiBizErrorResponse(
-    BizCode.UNAUTHORIZED,
-    BizCode.RBAC_FORBIDDEN,
-    BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
-  )
-  certificateImageUrls(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload,
-    @Req() req: Request,
-  ): Promise<RecruitmentCertificateImageUrlsResponseDto> {
-    return this.queryService.getCertificateImageUrls(id, user, buildAuditMeta(req));
-  }
-
-  @Post(':id/certificates/:category/review')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary:
-      '审核申请人证书(通过→自动标对应急救资质/BSAFE 门槛;驳回→清该类图并取消门槛;驳回说明申请人进度可见) [rbac: recruitment-application.review.certificate]',
-  })
-  @ApiWrappedOkResponse(RecruitmentApplicationAdminDto)
-  @ApiBizErrorResponse(
-    BizCode.BAD_REQUEST,
-    BizCode.UNAUTHORIZED,
-    BizCode.RBAC_FORBIDDEN,
-    BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
-    BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
-    BizCode.RECRUITMENT_CERTIFICATE_IMAGE_REQUIRED,
-  )
-  reviewCertificate(
-    @Param('id') id: string,
-    @Param('category') category: string,
-    @Body() dto: ReviewRecruitmentCertificateDto,
-    @CurrentUser() user: CurrentUserPayload,
-    @Req() req: Request,
-  ): Promise<RecruitmentApplicationAdminDto> {
-    return this.reviewService.reviewCertificate(
-      id,
-      category,
-      dto,
-      user,
-      buildAuditMeta(req),
-      new Date(),
-    );
-  }
+  // 证书标准库 PR-4a-2(冻结稿 §13.4):`GET :id/certificate-image-urls` 与
+  // `POST :id/certificates/:category/review` 两个旧端点**本刀删除**,不留兼容窗口
+  // (§21 约束 3)。替代品是一证一行的
+  // `GET /admin/v1/recruitment/certificate-claims/:id/image-urls` 与 `.../review` ——
+  // 旧端点把 category 当资源 id,做不到同类别多张证书、单证重传与单证审核。
 
   @Post(':id/resolve')
   @HttpCode(HttpStatus.OK)
@@ -285,10 +244,15 @@ export class RecruitmentApplicationsAdminController {
     return this.service.resolveManual(id, dto, user, buildAuditMeta(req), new Date());
   }
 
+  // 证书标准库 PR-4a-2(§8.4):枚举从 5 项收窄到 3 项人工门槛。
+  // redCross / bsafe 已改为证书申报审核结论的派生投影 —— 传它们返 28063,
+  // 且**无论 completed 真假**都拒(允许人工清除就等于允许绕过审核结论)。
+  // 原先的两条前置条件(该类别有图 + 已 approved)随之退役:它们现在由
+  // Claim 状态机本身保证,不再是本端点的入参校验。
   @Patch(':id/thresholds')
   @ApiOperation({
     summary:
-      '标/清门槛(巡山×2/培训/急救资质/BSAFE;证书类标完成须对应图片审核 approved;清标不受闸;幂等;仅 verified/pending_evaluation 态;末次完成自动→待综合评定) [rbac: recruitment-application.mark.threshold]',
+      '标/清门槛(仅巡山×2/培训三项人工门槛;⚠️ 契约收紧:急救资质 redCross 与 BSAFE 已改为证书申报审核结论的派生投影,传这两个 code 无论 completed 真假一律 28063;清标不受闸;幂等;仅 verified/pending_evaluation 态;末次完成自动→待综合评定) [rbac: recruitment-application.mark.threshold]',
   })
   @ApiWrappedOkResponse(RecruitmentApplicationAdminDto)
   @ApiBizErrorResponse(
@@ -297,8 +261,7 @@ export class RecruitmentApplicationsAdminController {
     BizCode.RBAC_FORBIDDEN,
     BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
     BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
-    BizCode.RECRUITMENT_CERTIFICATE_IMAGE_REQUIRED,
-    BizCode.RECRUITMENT_CERTIFICATE_NOT_APPROVED,
+    BizCode.RECRUITMENT_THRESHOLD_DERIVED_READONLY,
   )
   markThreshold(
     @Param('id') id: string,

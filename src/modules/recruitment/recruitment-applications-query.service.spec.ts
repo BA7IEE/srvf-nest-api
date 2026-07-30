@@ -186,40 +186,10 @@ describe('RecruitmentApplicationsQueryService · S3 敏感字段分级判权', (
     expect(storage.generateDownloadUrl).not.toHaveBeenCalled();
   });
 
-  it('证书图先按安全计数审计,再调用 provider', async () => {
-    const { service, auditLogs, storage } = buildReadService(
-      { [SENSITIVE]: true },
-      { ...ROW, certificateImages: { firstAid: ['secret-object-key'] } },
-    );
-
-    const result = await service.getCertificateImageUrls('app-1', ADMIN_USER, META);
-
-    expect(result.items).toHaveLength(1);
-    expect(auditLogs.log).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event: 'recruitment-application.read.other',
-        resourceId: 'app-1',
-        extra: { operation: 'certificate-images', count: 1 },
-      }),
-    );
-    expect(JSON.stringify(auditLogs.log.mock.calls[0][0])).not.toContain('secret-object-key');
-    expect(auditLogs.log.mock.invocationCallOrder[0]).toBeLessThan(
-      storage.generateDownloadUrl.mock.invocationCallOrder[0],
-    );
-  });
-
-  it('证书图审计失败 → provider 调用次数为 0', async () => {
-    const { service, auditLogs, storage } = buildReadService(
-      { [SENSITIVE]: true },
-      { ...ROW, certificateImages: { firstAid: ['secret-object-key'] } },
-    );
-    auditLogs.log.mockRejectedValue(new Error('audit unavailable'));
-
-    await expect(service.getCertificateImageUrls('app-1', ADMIN_USER, META)).rejects.toThrow(
-      'audit unavailable',
-    );
-    expect(storage.generateDownloadUrl).not.toHaveBeenCalled();
-  });
+  // 证书标准库 PR-4a-2:原「证书图先审计再调 provider」与「审计失败 → provider 0 次」
+  // 两条随 `getCertificateImageUrls` 端点一起退役(§13.4 删旧 category 端点)。
+  // **同一条 fail-closed 不变量已迁到新端点**,见
+  // recruitment-certificate-claims.service.spec.ts —— 不变量没有被删掉,只是换了守卫位置。
 });
 
 describe('RecruitmentApplicationsQueryService.listForAdmin read audit', () => {

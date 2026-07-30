@@ -2,123 +2,77 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RecruitmentApplicationReviewService } from './recruitment-application-review.service';
-import { APP_STATUS_PENDING } from './recruitment.constants';
 
-describe('RecruitmentApplicationReviewService.reviewCertificate · 退役态防御', () => {
-  it('pending_verification 历史行证书通过后保持原状态,不自动翻为 pending_evaluation', async () => {
-    const now = new Date('2026-07-12T00:00:00.000Z');
-    const row = {
-      id: 'app-legacy-pending',
-      cycleId: 'cycle-1',
-      statusCode: APP_STATUS_PENDING,
-      tempNo: null,
-      realName: '历史申请人',
-      idCardNumber: null,
-      phone: null,
-      documentTypeCode: 'mainland_id',
-      isForeigner: false,
-      birthDate: new Date('1990-01-01T00:00:00.000Z'),
-      genderCode: 'female',
-      ageGroup: null,
-      cityDistrict: null,
-      verifyOutcome: null,
-      riskLevel: null,
-      manualReviewReason: null,
-      eliminationStage: null,
-      idCardImageKey: null,
-      ocrAddress: null,
-      ocrNation: null,
-      ocrAuthority: null,
-      ocrValidDate: null,
-      idCardCropImageKey: null,
-      idCardPortraitImageKey: null,
-      certificateImages: { first_aid: ['recruitment/certificate/legacy.jpg'] },
-      certificateReviewStatus: null,
-      thresholdMarks: {
-        patrol1: { at: now.toISOString(), by: 'admin1' },
-        patrol2: { at: now.toISOString(), by: 'admin1' },
-        training: { at: now.toISOString(), by: 'admin1' },
-        bsafe: { at: now.toISOString(), by: 'admin1' },
-      },
-      evaluationNote: null,
-      promotedMemberId: null,
-      openid: null,
-      createdAt: new Date('2026-06-18T00:00:00.000Z'),
-    };
-    const update = jest.fn().mockImplementation(({ data }: { data: Record<string, unknown> }) => {
-      expect(data.statusCode).toBe(APP_STATUS_PENDING);
-      return Promise.resolve({ ...row, ...data });
-    });
-    const tx = {
-      $queryRaw: jest.fn().mockResolvedValue([{ id: row.id }]),
-      recruitmentApplication: {
-        findFirst: jest.fn().mockResolvedValue(row),
-        update,
-      },
-    };
+// 证书标准库 PR-4a-2(§8.4):`reviewCertificate` 随旧 category 端点退役,
+// 其「pending_verification 历史行不被自动翻状态」的断言由 buildThresholdMutation
+// 本身承担(该分支未改动,markThreshold 路径仍覆盖)。
+//
+// 换上来的是本刀真正需要钉住的那条:**证书型门槛不可人工标记**。
+// 这条最容易被后续刀「顺手放开一格」——放开就等于把派生投影退回可写标记,
+// 而可写标记记不住「同类别还有另一张已通过的证书」。
+describe('RecruitmentApplicationReviewService.markThreshold · 证书门槛派生只读(§8.4)', () => {
+  const meta: AuditMeta = { requestId: 'r1', ip: null, ua: null };
+  const now = new Date('2026-07-30T00:00:00.000Z');
+  const user = { id: 'admin1', role: 'SUPER_ADMIN' } as never;
+
+  function buildService(): {
+    service: RecruitmentApplicationReviewService;
+    $transaction: jest.Mock;
+  } {
+    const $transaction = jest.fn();
     const service = new RecruitmentApplicationReviewService(
-      { $transaction: jest.fn((cb: (arg: unknown) => unknown) => cb(tx)) } as never,
+      { $transaction } as never,
       { can: jest.fn().mockResolvedValue(true) } as never,
       { log: jest.fn() } as never,
-      { deleteObject: jest.fn() } as never,
     );
+    return { service, $transaction };
+  }
 
-    const result = await service.reviewCertificate(
-      row.id,
-      'first_aid',
-      { approved: true },
-      { id: 'admin1', role: 'SUPER_ADMIN' } as never,
-      { requestId: 'r1', ip: null, ua: null },
-      now,
+  // completed 真假都拒。拒 false 与拒 true 同等重要:允许人工清除,
+  // 就等于允许绕过审核结论把一张已通过证书带来的门槛抹掉。
+  const derivedCases: Array<[string, boolean]> = [
+    ['redCross', true],
+    ['redCross', false],
+    ['bsafe', true],
+    ['bsafe', false],
+  ];
+  it.each(derivedCases)('%s + completed=%s → 28063,且不进事务', async (code, completed) => {
+    const { service, $transaction } = buildService();
+
+    const err = await service
+      .markThreshold('app-1', { thresholdCode: code, completed }, user, meta, now)
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(err).toBeInstanceOf(BizException);
+    expect((err as BizException).biz.code).toBe(
+      BizCode.RECRUITMENT_THRESHOLD_DERIVED_READONLY.code,
     );
-
-    expect(update).toHaveBeenCalledTimes(1);
-    expect(result.statusCode).toBe(APP_STATUS_PENDING);
+    // 守卫必须在开事务**之前** —— 进了事务再拒会白拿一次行锁。
+    expect($transaction).not.toHaveBeenCalled();
   });
-});
 
-describe('RecruitmentApplicationReviewService · 驳回证书图清理日志', () => {
-  it('provider 异常不泄漏 key/bucket/secret/URL 且 best-effort 删除仍吞错', async () => {
-    const rawKey = 'recruitment/certificate/private-app/raw-image.jpg';
-    const rawProviderMessage =
-      `provider key=${rawKey} bucket=private-bucket secret=credential-value ` +
-      'url=https://cos.example/raw-image.jpg';
-    const storage = {
-      deleteObject: jest.fn().mockRejectedValue(new Error(rawProviderMessage)),
-    };
-    const service = new RecruitmentApplicationReviewService(
-      {} as never,
-      {} as never,
-      {} as never,
-      storage as never,
-    );
-    const warnSpy = jest
-      .spyOn((service as unknown as { logger: { warn(message: unknown): void } }).logger, 'warn')
-      .mockImplementation(() => undefined);
+  it('人工族 patrol1 不被这道守卫拦住(不误伤)', async () => {
+    const { service, $transaction } = buildService();
+    $transaction.mockRejectedValue(new Error('reached transaction'));
 
     await expect(
-      (
-        service as unknown as {
-          safeDeleteBlob(key: string): Promise<void>;
-        }
-      ).safeDeleteBlob(rawKey),
-    ).resolves.toBeUndefined();
-    expect(storage.deleteObject).toHaveBeenCalledWith(rawKey);
-    expect(warnSpy).toHaveBeenCalledWith({
-      event: 'recruitment.storage-cleanup.failed',
-      operation: 'delete-rejected-certificate-image',
-      safeErrorCategory: 'storage-delete-failed',
-      retryable: true,
-      manualCleanupRequired: true,
-    });
-    const serialized = JSON.stringify(warnSpy.mock.calls);
-    expect(serialized).not.toContain(rawKey);
-    expect(serialized).not.toContain('private-bucket');
-    expect(serialized).not.toContain('credential-value');
-    expect(serialized).not.toContain('https://cos.example');
-    expect(serialized).not.toContain(rawProviderMessage);
+      service.markThreshold(
+        'app-1',
+        { thresholdCode: 'patrol1', completed: true },
+        user,
+        meta,
+        now,
+      ),
+    ).rejects.toThrow('reached transaction');
+    expect($transaction).toHaveBeenCalledTimes(1);
   });
 });
+
+// 证书标准库 PR-4a-2:「驳回证书图清理日志不泄漏 key/bucket/secret/URL」随
+// safeDeleteBlob 一起迁到 recruitment-certificate-claims.service(证据清理的新归属)。
+// 不变量与断言逐字保留,只是守卫位置跟着代码走。
 
 // god-service 拆分(2026-06-28):批量标门槛编排 characterization 随方法从
 // RecruitmentApplicationsService 迁来(断言不变,仅构造目标类改为 ReviewService;
@@ -141,7 +95,6 @@ describe('RecruitmentApplicationReviewService.batchMarkThreshold · 编排(复�
       prisma as never,
       rbac as never,
       { log: jest.fn() } as never,
-      { deleteObject: jest.fn() } as never,
     );
     return { service };
   }
@@ -213,7 +166,6 @@ describe('RecruitmentApplicationReviewService.batchMarkThreshold · 编排(复�
       prisma as never,
       rbac as never,
       { log: jest.fn() } as never,
-      { deleteObject: jest.fn() } as never,
     );
     await expect(service.batchMarkThreshold(dto() as never, user, meta, now)).rejects.toMatchObject(
       {
@@ -283,7 +235,6 @@ describe('RecruitmentApplicationReviewService · S3 敏感字段分级(响应脱
       prisma as never,
       rbac as never,
       auditLogs as never,
-      { deleteObject: jest.fn() } as never,
     );
     return { service };
   }
