@@ -76,6 +76,7 @@ describe('certificates 模块', () => {
   let adminMemberId: string; // ADMIN 绑定的 member,用于测 verifiedBy=memberId 路径
   let activeCertTypeCode: string;
   let primaryStandardId: string;
+  let primaryPolicyId: string;
   let secondStandardId: string;
   let draftStandardId: string;
   let secondActiveCertTypeCode: string; // 用于 supersededBy / 多类型测试
@@ -185,7 +186,7 @@ describe('certificates 模块', () => {
         },
         select: { id: true },
       });
-      await prisma.certificateRecognitionPolicy.create({
+      const pol = await prisma.certificateRecognitionPolicy.create({
         data: {
           standardId: std.id,
           version: 1,
@@ -194,9 +195,12 @@ describe('certificates 模块', () => {
           validityMode: 'EXPLICIT_OPTIONAL',
           certNumberMode: 'OPTIONAL',
         },
+        select: { id: true },
       });
-      if (key === 'primary') primaryStandardId = std.id;
-      else secondStandardId = std.id;
+      if (key === 'primary') {
+        primaryStandardId = std.id;
+        primaryPolicyId = pol.id;
+      } else secondStandardId = std.id;
     }
     // 一个 DRAFT Standard:用于「未启用标准不可建证」这一格。
     draftStandardId = (
@@ -481,7 +485,7 @@ describe('certificates 模块', () => {
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
     });
 
-    it('ADMIN 创建仅必填 → 201,status=pending,isInternal=false,不返 deletedAt / attachmentKey', async () => {
+    it('ADMIN 创建仅必填 → 201,status=pending,不返 deletedAt / attachmentKey', async () => {
       const res = await request(httpServer(app))
         .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
@@ -489,9 +493,13 @@ describe('certificates 模块', () => {
       expect(res.status).toBe(201);
       expect(res.body.code).toBe(0);
       expect(res.body.data.memberId).toBe(memberA);
-      expect(res.body.data.certTypeCode).toBe(activeCertTypeCode);
       expect(res.body.data.certStatusCode).toBe('pending');
-      expect(res.body.data.isInternal).toBe(false);
+      // PR-4b:certTypeCode / certSubTypeCode / isInternal 已从出参移除(列已 DROP)。
+      // 反向断言 —— 它们一旦重现就说明有人又在实例侧复制了 Standard 的属性。
+      expect(res.body.data).not.toHaveProperty('certTypeCode');
+      expect(res.body.data).not.toHaveProperty('certSubTypeCode');
+      expect(res.body.data).not.toHaveProperty('isInternal');
+      expect(res.body.data.standardId).toBe(primaryStandardId);
       expect(res.body.data.verifiedBy).toBeNull();
       expect(res.body.data.verifiedAt).toBeNull();
       expect(res.body.data.verifyNote).toBeNull();
@@ -523,11 +531,11 @@ describe('certificates 模块', () => {
       expect(res.body.data.sourceCode).toBe('ADMIN');
       // FREE_TEXT 规则 → issuerId 为 null,机构名是自由文本。
       expect(res.body.data.recognitionIssuerId).toBeNull();
-      // PR-4a-3:certSubTypeCode 已从入参移除(等级现在是 Standard 的属性),
-      // 出参该列仍在但恒 null —— 停写不等于停读,列在 4b 才 DROP。
-      expect(res.body.data.certSubTypeCode).toBeNull();
-      // 旧 isInternal 同理:停写后由 DB default(false)兜住。
-      expect(res.body.data.isInternal).toBe(false);
+      // PR-4b:三个实例侧副本已 DROP 且从出参移除。反向断言它们不再出现 ——
+      // 4a-3 时这里断言的是「仍在但恒 null」,4b 后必须翻成「彻底不在」。
+      expect(res.body.data).not.toHaveProperty('certTypeCode');
+      expect(res.body.data).not.toHaveProperty('certSubTypeCode');
+      expect(res.body.data).not.toHaveProperty('isInternal');
     });
 
     // PR-4a-3:入参不再有两个字典 code,原三格「字典 code 不存在 / INACTIVE /
@@ -1386,12 +1394,14 @@ describe('certificates 模块', () => {
       await prisma.certificate.create({
         data: {
           memberId: m.id,
-          certTypeCode: activeCertTypeCode,
+          // PR-4b:类别经 Standard;三列 NOT NULL 由主标准夹具给齐。
+          standardId: primaryStandardId,
+          recognitionPolicyId: primaryPolicyId,
+          sourceCode: 'ADMIN',
           issuingOrg: 'Demo Past',
           issuedAt: new Date('2010-01-01T00:00:00.000Z'),
           expiredAt: new Date('2015-01-01T00:00:00.000Z'),
           certStatusCode: 'verified',
-          isInternal: false,
         },
       });
 

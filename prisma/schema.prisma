@@ -711,10 +711,16 @@ model Certificate {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  // ===== 业务字段(CT-2 ~ CT-12 + HK-1) =====
-  certTypeCode       String // CT-2 字典 cert_type
-  certSubTypeCode    String? // CT-3 字典 cert_sub_type;Q-D4 schema 可空
-  issuingOrg         String // CT-4 自由文本;长度 128 由 DTO 约束
+  // ===== 业务字段(CT-4 ~ CT-12 + HK-1) =====
+  //
+  // 证书标准库 PR-4b(第 67 migration,contract):**已 DROP 四列** ——
+  //   certTypeCode / certSubTypeCode  类别与等级现在是 Standard 的属性,由 standardId 唯一决定;
+  //                                   留着就是「按 category 猜 Standard」的现成入口(§21 硬禁区)。
+  //   isInternal                      本会颁发与否属标准的性质,已在 CertificateStandard.isInternal;
+  //                                   实例侧那一列自建库起恒 false,是纯冗余。
+  //   imageKeys                       证据现在读 sourceClaim.imageKeys(§13.5),
+  //                                   blob 单一属主是 Claim;实例侧再存一份 key 就是第二个属主。
+  issuingOrg         String // CT-4 机构名称**快照**(§5.6;由认定规则解析后写入,不是客户端自由文本)
   certNumber         String? // CT-5 Q-D5 schema 可空;长度 128(Q-D3)由 DTO 约束
   issuedAt           DateTime // CT-6 业务层日期规范化
   expiredAt          DateTime? // CT-7 NULL = 终身有效(Q-S4)
@@ -722,13 +728,8 @@ model Certificate {
   verifiedBy         String? // CT-9a FK→Member.id 可空(Q-D1)
   verifiedAt         DateTime? // CT-9b
   verifyNote         String? // CT-9c 长度 500(Q-S5)由 DTO 约束
-  isInternal         Boolean   @default(false) // CT-11 是否本会颁发
   supersededByCertId String? // CT-12 自引用 FK 可空(Q-D2)
   expireNotifyDueAt  DateTime? // HK-1 60 天提醒 hook;Q-D6 不加索引
-  // 招新可用性收口 F7(2026-07-11;评审稿 §2.9 R6;第 44 migration,additive 可空):
-  // 证书图 storage keys(promote 从 recruitment_applications.certificateImages 按类别搬入;
-  // blob 单一属主=certificate;app 侧 my/certificates DTO v1 不暴露——另议,NEXT_TASKS 登记)。
-  imageKeys          Json? // 证书图 storage keys(string[];招新自报材料,verify/reject 人工核验参考)
 
   // ===== 证书标准库 PR-2(冻结稿 §5.6;expand-only,全部 nullable)=====
   //
@@ -744,27 +745,29 @@ model Certificate {
   // 列此刻全为 NULL,PostgreSQL 复合 FK 走 MATCH SIMPLE —— 任一列为 NULL 即放行,
   // 所以提前落不会挡住空表期;而 PR-4a 一开始写入就有 DB 兜底,不会出现
   // 「写了一轮不合法的 policy/standard 组合、等 PR-4b 才发现」。这是收紧,不是放松。
-  standardId          String?
-  recognitionPolicyId String?
+  // PR-4b 收紧:三列转 NOT NULL(§20.2「nullable 过渡字段不得进入 release」)。
+  // recognitionIssuerId 仍可空 —— FREE_TEXT 认定规则下本就没有 issuer 实体,
+  // 机构名在 issuingOrg 快照里;把它一起收紧会逼出一个假的「自由文本 issuer 行」。
+  standardId          String
+  recognitionPolicyId String
   recognitionIssuerId String?
-  sourceClaimId       String?            @unique // 一条 Claim 最多生成一张证书(§8.5 防重跑)
-  sourceCode          CertificateSource?
+  sourceClaimId       String?           @unique // 一条 Claim 最多生成一张证书(§8.5 防重跑)
+  sourceCode          CertificateSource
 
   member       Member        @relation("CertificateMember", fields: [memberId], references: [id], onDelete: Restrict)
   verifier     Member?       @relation("CertificateVerifier", fields: [verifiedBy], references: [id], onDelete: Restrict)
   supersededBy Certificate?  @relation("CertificateSupersession", fields: [supersededByCertId], references: [id], onDelete: Restrict)
   supersedes   Certificate[] @relation("CertificateSupersession")
 
-  standard CertificateStandard? @relation(fields: [standardId], references: [id], onDelete: Restrict)
+  standard CertificateStandard @relation(fields: [standardId], references: [id], onDelete: Restrict)
   // 复合 FK:锁死「这张证的 Policy 必须属于这张证的 Standard」(§5.6),
   // 不能只按 policyId 单列引用 —— 否则能写出 policy 指向另一个 standard 的错行。
-  policy CertificateRecognitionPolicy? @relation(fields: [recognitionPolicyId, standardId], references: [id, standardId], onDelete: Restrict)
+  policy CertificateRecognitionPolicy @relation(fields: [recognitionPolicyId, standardId], references: [id, standardId], onDelete: Restrict)
   // 同理:issuer 必须属于该证锁定的 Policy。
   issuer      CertificateRecognitionIssuer? @relation(fields: [recognitionIssuerId, recognitionPolicyId], references: [id, policyId], onDelete: Restrict)
   sourceClaim RecruitmentCertificateClaim?  @relation(fields: [sourceClaimId], references: [id], onDelete: Restrict)
 
   @@index([memberId])
-  @@index([certTypeCode])
   @@index([certStatusCode])
   @@index([expiredAt])
   @@index([deletedAt])
@@ -2458,16 +2461,11 @@ model RecruitmentApplication {
   // 签名图 = 责任文件——promote 搬 member_profiles.signatureImageKey 长期留存 + 报名行清空
   // (镜像 idCardImageKey 搬运范式);未发号(rejected/withdrawn)行的 blob 随既有留存 SOP 按 key 删。
   signatureImageKey       String? // 申请人签名图 storage key(multipart 必填文件位 signatureImage;存量可为 null)
-  // 招新可用性收口 F7(2026-07-11;评审稿 §2.9 R6;第 44 migration,additive 可空):
-  // 申请人证书图(公开上传,双通道凭证;category ∈ cert_type 既有码 first_aid/bsafe,每类 ≤3 张
-  // 重传覆盖)。promote 时按类别自动建 pending Certificate 行 + 图 key 搬 Certificate.imageKeys,
-  // 本列清空;未发号行的 blob 随既有留存 SOP 清理。形如 { [category]: string[] }。
-  certificateImages       Json? // 证书图 storage keys(按类别分组;R6 长期档案的暂存位)
-  // 招新证书审核闭环:按类别记录 approved/rejected + at/by/note(无 PII);promote 时与证书图一并清空。
-  certificateReviewStatus Json?
-  // 招新证书发证信息:按类别记录 { issuingOrg, issuedAt:'YYYY-MM-DD' }(无 PII)。
-  // promote 时搬入 Certificate 真值并清空;存量 null 由 promote 沿既有占位机构/当天日期回退。
-  certificateIssuanceInfo Json?
+  // 证书标准库 PR-4b(第 67 migration,contract):三个证书 JSON 列**已 DROP**
+  // (certificateImages / certificateReviewStatus / certificateIssuanceInfo)。
+  // 它们是「按类别一格」时代的产物 —— 结构上表达不了同类别多张证书,
+  // 也做不到单证重传与单证审核。取代者是下面的 `certificateClaims` 关系(一证一行)。
+  // PR-4a-2 已停写(申请人侧唯一写者 uploadCertificateImages 随旧端点删除)。
 
   // ===== 脱敏留存字段(永久行级保留)=====
   documentTypeCode String // 证件类型(判非大陆证件/人工核验;非高敏)

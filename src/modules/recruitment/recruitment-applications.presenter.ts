@@ -15,15 +15,9 @@ import {
   allThresholdsComplete,
   isPromotable,
 } from './recruitment.constants';
-import {
-  certificateIssuanceForCategory,
-  certificateJsonRecord,
-  certificateReviewForCategory,
-} from './recruitment-certificate-json';
 import { deriveRecruitmentStage } from './recruitment-progress-presenter';
 import type {
   RecruitmentApplicationAdminDto,
-  RecruitmentCertificateAdminSummaryDto,
   RecruitmentOcrDetailDto,
   RecruitmentSubmitResultDto,
 } from './recruitment.dto';
@@ -52,32 +46,9 @@ function presentPhone(value: string | null, masked: boolean): string | null {
   return value ? (masked ? maskPhone(value) : value) : null;
 }
 
-export function buildAdminCertificateSummaries(
-  certificateImages: unknown,
-  certificateReviewStatus: unknown,
-  certificateIssuanceInfo: unknown,
-): RecruitmentCertificateAdminSummaryDto[] {
-  const images = certificateJsonRecord(certificateImages);
-  const reviews = certificateJsonRecord(certificateReviewStatus);
-  const issuanceInfo = certificateJsonRecord(certificateIssuanceInfo);
-  const categories = [
-    ...new Set([...Object.keys(images), ...Object.keys(reviews), ...Object.keys(issuanceInfo)]),
-  ].sort();
-  return categories.map((category) => {
-    const review = certificateReviewForCategory(reviews, category);
-    const issuance = certificateIssuanceForCategory(issuanceInfo, category);
-    return {
-      category,
-      imageCount: Array.isArray(images[category]) ? images[category].length : 0,
-      issuingOrg: issuance?.issuingOrg ?? null,
-      issuedAt: issuance?.issuedAt ?? null,
-      reviewStatus: review?.status ?? null,
-      reviewedAt: review?.at ?? null,
-      reviewedBy: review?.by ?? null,
-      reviewNote: review?.note ?? null,
-    };
-  });
-}
+// 证书标准库 PR-4b:`buildAdminCertificateSummaries` 随三个证书 JSON 列一起退役。
+// 管理端读证书申报改走专用端点(PR-4a-1 的 certificate-claims list),
+// 那里有正确的敏感分级;报名 DTO 不再内嵌第二份摘要。
 
 /**
  * OCR 鉴伪版充分利用(2026-06-29):RealnameOcrResult → recognize 端顾问式 ocrDetail(纯映射)。
@@ -135,11 +106,6 @@ export function toAdminApplicationDto(
     ocrValidDate: masked ? null : app.ocrValidDate,
     hasIdCardCropImage: app.idCardCropImageKey !== null,
     hasIdCardPortraitImage: app.idCardPortraitImageKey !== null,
-    certificates: buildAdminCertificateSummaries(
-      app.certificateImages,
-      app.certificateReviewStatus,
-      app.certificateIssuanceInfo,
-    ),
     thresholdMarks:
       (app.thresholdMarks as Record<string, { at: string; by: string }> | null) ?? null,
     thresholdsComplete: allThresholdsComplete(app.thresholdMarks as ThresholdMarks | null),

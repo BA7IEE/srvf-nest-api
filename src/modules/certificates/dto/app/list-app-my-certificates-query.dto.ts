@@ -28,13 +28,16 @@ export class ListAppMyCertificatesQueryDto extends PaginationQueryDto {
   @IsIn(['pending', 'verified', 'expired', 'rejected'])
   certStatusCode?: string;
 
+  // 证书标准库 PR-4b(⚠️ 小程序契约破坏):`certTypeCode` → `certCategoryCode`。
+  // 值域与语义不变(仍是 cert_type 字典 code),但过滤落点从实例列换成
+  // `standard.categoryCode` —— 实例侧那一列已 DROP。
   @ApiPropertyOptional({
-    description: '按证书大类 code 过滤(可选;cert_type 字典 code);默认全集',
+    description: '按证书类别 code 过滤(可选;cert_type 字典 code;经 Standard 过滤);默认全集',
     maxLength: 64,
   })
   @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(64)
-  certTypeCode?: string;
+  certCategoryCode?: string;
 }

@@ -35,8 +35,8 @@ describe('certificates RBAC 权限边界(Slow-4 T2)', () => {
     const c = await prisma.certificate.create({
       data: {
         memberId: memberA,
-        certTypeCode,
-        // 证书标准库 PR-4a-3:直插夹具也必须带上 standardId + recognitionPolicyId ——
+        // 证书标准库 PR-4a-3 / PR-4b:直插夹具必须带上 standardId + recognitionPolicyId
+        // + sourceCode(4b 起三列 NOT NULL);certTypeCode 已 DROP ——
         // PATCH 的「沿已锁定 policyId 校验」拿不到 policyId 会以 18035 拒改。
         // 这不是夹具将就实现:§20.1 探针已证实库内零存量证书,所以「没有 policyId 的行」
         // 在真实部署里不存在,4b 会把该列收紧为 NOT NULL。
@@ -403,14 +403,16 @@ describe('certificates RBAC 权限边界(Slow-4 T2)', () => {
       const c = await prisma.certificate.create({
         data: {
           memberId: memberA,
-          certTypeCode,
+          // PR-4b:certTypeCode 已 DROP;三列 NOT NULL 由夹具给齐。
+          standardId,
+          recognitionPolicyId: policyId,
+          sourceCode: 'ADMIN',
           issuingOrg: '边界机构',
           certNumber: 'SZ-2026-SENSITIVE-0001',
           issuedAt: new Date('2024-01-01T00:00:00.000Z'),
           certStatusCode: 'verified',
           verifiedBy: null,
           verifyNote: '原件已核,备注仅敏感可见',
-          isInternal: false,
         },
         select: { id: true },
       });

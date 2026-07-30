@@ -52,8 +52,6 @@ const CERT_STATUS_REJECTED = 'rejected';
 interface CertRow {
   id: string;
   memberId: string;
-  certTypeCode: string;
-  certSubTypeCode: string | null;
   issuingOrg: string;
   certNumber: string | null;
   issuedAt: Date;
@@ -62,11 +60,10 @@ interface CertRow {
   verifiedBy: string | null;
   verifiedAt: Date | null;
   verifyNote: string | null;
-  isInternal: boolean;
   supersededByCertId: string | null;
-  // 证书标准库 PR-1:进 select 只为算 §15.3 的 evidenceAvailable 布尔,
-  // presenter 会把它从出参剥掉(断言见「§15.3 敏感分级」组)。
-  imageKeys: string[] | null;
+  // 证书标准库 PR-4b:证据判定改看 sourceClaim.imageKeys(§13.5),
+  // 实例侧 imageKeys 已 DROP;presenter 仍把整个 sourceClaim 从出参剥掉。
+  sourceClaim: { imageKeys: string[] | null } | null;
   // 证书标准库 PR-4a-3:标准化事实四列(与 certificateSafeSelect 同步)。
   standardId: string | null;
   recognitionPolicyId: string | null;
@@ -80,8 +77,6 @@ function makeCertRow(overrides: Partial<CertRow> = {}): CertRow {
   return {
     id: 'cert-1',
     memberId: 'mem-1',
-    certTypeCode: 'cert_first_aid',
-    certSubTypeCode: null,
     issuingOrg: 'Red Cross',
     certNumber: null,
     issuedAt: FIXED_ISSUED,
@@ -90,9 +85,8 @@ function makeCertRow(overrides: Partial<CertRow> = {}): CertRow {
     verifiedBy: null,
     verifiedAt: null,
     verifyNote: null,
-    isInternal: false,
     supersededByCertId: null,
-    imageKeys: null,
+    sourceClaim: null,
     // 证书标准库 PR-4a-3:标准化事实四列。夹具默认给全 —— update 的
     // 「沿已锁定 policyId 校验」需要 recognitionPolicyId 作基准,缺它会拒改(18035)。
     standardId: 'std-1',
@@ -492,9 +486,10 @@ describe('CertificatesService (characterization, scoped)', () => {
       // FREE_TEXT 规则 → issuerId 为 null,机构名取自由文本。
       expect(createArg.data.recognitionIssuerId).toBeNull();
       expect(createArg.data.issuingOrg).toBe('Red Cross');
-      // certTypeCode 派生自 Standard 的类别(4b DROP 前的过渡回填)。
-      expect(createArg.data.certTypeCode).toBe('cert_first_aid');
-      // **旧三列彻底停写**(§21):不是写 null,而是根本不出现在 data 里。
+      // PR-4b:四个重复事实列已 DROP —— 连过渡期的 certTypeCode 回填也没了。
+      // 断言它们**根本不出现在 data 里**(不是写 null):这四个 key 一旦重现,
+      // 就说明有人又在实例侧复制了 Standard 的属性(§6 数据权威表明令禁止)。
+      expect(createArg.data).not.toHaveProperty('certTypeCode');
       expect(createArg.data).not.toHaveProperty('certSubTypeCode');
       expect(createArg.data).not.toHaveProperty('isInternal');
       expect(createArg.data).not.toHaveProperty('imageKeys');
@@ -680,9 +675,9 @@ describe('CertificatesService (characterization, scoped)', () => {
         data: Record<string, unknown>;
       };
       expect(arg.data.standardId).toBe('std-2');
-      // 换标准就换规则:policyId 跟着重选,certTypeCode 也按新标准的类别回填。
+      // 换标准就换规则:policyId 跟着重选。PR-4b 起不再有 certTypeCode 回填。
       expect(arg.data.recognitionPolicyId).toBe('pol-2');
-      expect(arg.data.certTypeCode).toBe('cert_bsafe');
+      expect(arg.data).not.toHaveProperty('certTypeCode');
     });
 
     it('happy → update 透传字段;audit event=certificate.update + tx', async () => {
@@ -1018,11 +1013,21 @@ describe('CertificatesService (characterization, scoped)', () => {
       expect(res.memberId).toBe('mem-1');
       expect(res.certTypeCode).toBe('cert_first_aid');
       const findFirstArg = prisma.certificate.findFirst.mock.calls[0][0] as {
-        where: { memberId: string; certTypeCode: string; certStatusCode: string };
+        where: {
+          memberId: string;
+          certTypeCode?: string;
+          standard?: { categoryCode: string };
+          certStatusCode: string;
+        };
       };
       expect(findFirstArg.where.certStatusCode).toBe(CERT_STATUS_VERIFIED);
       expect(findFirstArg.where.memberId).toBe('mem-1');
-      expect(findFirstArg.where.certTypeCode).toBe('cert_first_aid');
+      // PR-4b:类别过滤经关联走 standard.categoryCode(实例侧 certTypeCode 已 DROP)。
+      // 正向断言新落点 + 反向断言旧 key 不再出现 —— 后者是本刀最险的一格:
+      // `notDeletedWhere(...)` 入参是宽类型,旧写法删列后**仍能编译**,
+      // 只会在真实查询时炸。少了这条反向断言,回退到旧写法不会红。
+      expect(findFirstArg.where.standard).toEqual({ categoryCode: 'cert_first_aid' });
+      expect(findFirstArg.where).not.toHaveProperty('certTypeCode');
       expect(auditLogs.log).toHaveBeenCalledWith({
         event: 'certificate.read.qualification-flag',
         actorUserId: 'admin-1',
@@ -1085,7 +1090,7 @@ describe('CertificatesService (characterization, scoped)', () => {
           certNumber: 'SZ-2026-SECRET-0001',
           verifyNote: 'private reviewer note',
           verifiedBy: 'mem-reviewer-9',
-          imageKeys: ['certificates/abc.jpg', 'certificates/def.jpg'],
+          sourceClaim: { imageKeys: ['certificates/abc.jpg', 'certificates/def.jpg'] },
           certStatusCode: CERT_STATUS_VERIFIED,
         }),
       );
@@ -1147,7 +1152,9 @@ describe('CertificatesService (characterization, scoped)', () => {
     it('无证据图 → evidenceAvailable=false(空数组与 null 同解)', async () => {
       const prisma = makePrismaMock();
       prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
-      prisma.certificate.findFirst.mockResolvedValue(makeCertRow({ imageKeys: [] }));
+      prisma.certificate.findFirst.mockResolvedValue(
+        makeCertRow({ sourceClaim: { imageKeys: [] } }),
+      );
       const service = makeService(prisma);
 
       const res = await service.findOne('mem-1', 'cert-1', makeCurrentUser(), META);

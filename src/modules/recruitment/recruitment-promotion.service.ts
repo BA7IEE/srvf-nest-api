@@ -43,7 +43,6 @@ import {
   formatMemberNo,
   toMemberProfileDocumentTypeCode,
 } from './recruitment.constants';
-import {} from './recruitment-certificate-json';
 import type {
   PromoteResultDto,
   PromoteSkippedItemDto,
@@ -112,23 +111,6 @@ export class RecruitmentPromotionService {
     // 主体裁剪图 blob 无档案落点；发号前经当前 provider fail-closed 删除。
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
-
-  /**
-   * 旧 `Certificate.certTypeCode` 仍是 NOT NULL(4b 才 DROP),这里按已锁定 Standard
-   * 的类别回填一次以满足约束。**不是双写** —— 值派生自 Standard,不是第二个事实源;
-   * Standard 不存在是关系不完整,按 §8.5「不悄悄跳过坏 Claim」整批 fail-closed。
-   */
-  private async categoryCodeOfStandard(
-    tx: Prisma.TransactionClient,
-    standardId: string,
-  ): Promise<string> {
-    const std = await tx.certificateStandard.findFirst({
-      where: notDeletedWhere({ id: standardId }),
-      select: { categoryCode: true },
-    });
-    if (!std) throw new BizException(BizCode.CERTIFICATE_STANDARD_NOT_FOUND);
-    return std.categoryCode;
-  }
 
   async promote(
     cycleId: string,
@@ -681,10 +663,8 @@ export class RecruitmentPromotionService {
       await tx.certificate.create({
         data: {
           memberId: member.id,
-          // 旧四列(certTypeCode / certSubTypeCode / isInternal / imageKeys)**本刀停写**;
-          // certTypeCode 仍 NOT NULL,故按 Standard 的类别回填一次以满足约束 ——
-          // 它在 4b 被 DROP。这不是「双写」:值来自 Standard,不是第二个事实源。
-          certTypeCode: await this.categoryCodeOfStandard(tx, facts.standardId),
+          // PR-4b:旧四列已 DROP,连过渡期的 certTypeCode 回填也随之删除 ——
+          // 类别现在只有一个权威(Standard),join 即可,不再有实例侧副本。
           standardId: facts.standardId,
           recognitionPolicyId: facts.recognitionPolicyId,
           recognitionIssuerId: facts.recognitionIssuerId,
@@ -744,10 +724,8 @@ export class RecruitmentPromotionService {
         // F5(R5):签名图已搬 member_profiles 长期留存 → 报名行 key 清空(blob 单一属主=member);
         // privacyConsentAcceptedAt/Version 为脱敏留存字段,不清。
         signatureImageKey: null,
-        // F7(R6):证书图已按类别搬 Certificate.imageKeys → 报名行清空(blob 单一属主=certificate)。
-        certificateImages: Prisma.DbNull,
-        certificateReviewStatus: Prisma.DbNull,
-        certificateIssuanceInfo: Prisma.DbNull,
+        // PR-4b:三个证书 JSON 列已 DROP —— 4a 起就停写,这里连「清成 DbNull」也不需要了。
+        // 证据与审核链现在留在 RecruitmentCertificateClaim 行上(blob 单一属主=Claim)。
         // transaction 成功后两列一并清空；若 transaction 失败，key 暂留供 absent-delete 幂等重试。
         ocrAddress: null,
         ocrNation: null,

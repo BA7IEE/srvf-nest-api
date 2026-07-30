@@ -4338,6 +4338,16 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "AppMyCertificateDto": {
     "properties": {
+      "certCategoryCode": {
+        "description": "证书类别字典 code(取自 Standard)",
+        "example": "first_aid",
+        "type": "string",
+      },
+      "certLevelCode": {
+        "description": "证书等级字典 code(取自 Standard;NULL 表示无等级)",
+        "nullable": true,
+        "type": "string",
+      },
       "certNumber": {
         "description": "证书编号(中敏感;本人完整可见)",
         "nullable": true,
@@ -4346,16 +4356,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "certStatusCode": {
         "description": "核验状态字典 code(cert_status;4 态闭集 pending / verified / expired / rejected;只返持久态,不做 expiredAt<now() 实时映射)",
         "example": "verified",
-        "type": "string",
-      },
-      "certSubTypeCode": {
-        "description": "证书子类型 / 等级字典 code(cert_sub_type;NULL 表示无子类型)",
-        "nullable": true,
-        "type": "object",
-      },
-      "certTypeCode": {
-        "description": "证书大类字典 code(cert_type)",
-        "example": "first_aid",
         "type": "string",
       },
       "createdAt": {
@@ -4374,7 +4374,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "isInternal": {
-        "description": "是否本会颁发",
+        "description": "是否本会颁发(取自 Standard)",
         "type": "boolean",
       },
       "issuedAt": {
@@ -4385,6 +4385,15 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "issuingOrg": {
         "description": "颁发机构(自由文本)",
         "example": "深圳市红十字会",
+        "type": "string",
+      },
+      "standardId": {
+        "description": "证书标准 id",
+        "type": "string",
+      },
+      "standardName": {
+        "description": "证书标准名称(展示用;取自 Standard)",
+        "example": "红十字急救员证",
         "type": "string",
       },
       "verifiedAt": {
@@ -4400,7 +4409,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     },
     "required": [
       "id",
-      "certTypeCode",
+      "standardId",
+      "standardName",
+      "certCategoryCode",
       "issuingOrg",
       "issuedAt",
       "certStatusCode",
@@ -6421,15 +6432,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "核验状态字典 code(4 态闭集)",
         "type": "string",
       },
-      "certSubTypeCode": {
-        "description": "证书子类型 / 等级字典 code",
-        "nullable": true,
-        "type": "object",
-      },
-      "certTypeCode": {
-        "description": "证书大类字典 code",
-        "type": "string",
-      },
       "createdAt": {
         "description": "创建时间",
         "format": "date-time",
@@ -6444,10 +6446,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "主键(cuid)",
         "type": "string",
       },
-      "isInternal": {
-        "description": "是否本会颁发",
-        "type": "boolean",
-      },
       "issuedAt": {
         "description": "颁发日期",
         "format": "date-time",
@@ -6461,6 +6459,18 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "关联队员外键",
         "type": "string",
       },
+      "sourceCode": {
+        "description": "来源:ADMIN 或 RECRUITMENT",
+        "enum": [
+          "ADMIN",
+          "RECRUITMENT",
+        ],
+        "type": "string",
+      },
+      "standardId": {
+        "description": "证书标准 id(类别 / 等级 / 内部属性都 join Standard 取)",
+        "type": "string",
+      },
       "updatedAt": {
         "description": "更新时间",
         "format": "date-time",
@@ -6470,11 +6480,11 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "required": [
       "id",
       "memberId",
-      "certTypeCode",
+      "standardId",
+      "sourceCode",
       "issuingOrg",
       "issuedAt",
       "certStatusCode",
-      "isInternal",
       "createdAt",
       "updatedAt",
     ],
@@ -6650,15 +6660,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "核验状态字典 code(CT-8;4 态闭集 pending / verified / expired / rejected)",
         "type": "string",
       },
-      "certSubTypeCode": {
-        "description": "证书子类型 / 等级字典 code(CT-3;字典 cert_sub_type;Q-D4 schema 可空)",
-        "nullable": true,
-        "type": "object",
-      },
-      "certTypeCode": {
-        "description": "证书大类字典 code(CT-2;字典 cert_type)",
-        "type": "string",
-      },
       "createdAt": {
         "description": "创建时间",
         "format": "date-time",
@@ -6678,17 +6679,13 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "example": "cl9z3a8b00000abcd1234efgh",
         "type": "string",
       },
-      "isInternal": {
-        "description": "是否本会颁发(CT-11;本批次 service 始终写 false)",
-        "type": "boolean",
-      },
       "issuedAt": {
         "description": "颁发日期(CT-6;ISO 8601)",
         "format": "date-time",
         "type": "string",
       },
       "issuingOrg": {
-        "description": "颁发机构(CT-4;自由文本)",
+        "description": "颁发机构(CT-4;认定规则解析后的名称快照)",
         "type": "string",
       },
       "memberId": {
@@ -6748,12 +6745,10 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "required": [
       "id",
       "memberId",
-      "certTypeCode",
       "issuingOrg",
       "issuedAt",
       "certStatusCode",
       "evidenceAvailable",
-      "isInternal",
       "createdAt",
       "updatedAt",
     ],
@@ -13984,13 +13979,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "nullable": true,
         "type": "object",
       },
-      "certificates": {
-        "description": "证书摘要(images/reviewStatus/issuanceInfo 类别并集;无材料时空数组)",
-        "items": {
-          "$ref": "#/components/schemas/RecruitmentCertificateAdminSummaryDto",
-        },
-        "type": "array",
-      },
       "cityDistrict": {
         "nullable": true,
         "type": "object",
@@ -14119,7 +14107,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "hasIdCardImage",
       "hasIdCardCropImage",
       "hasIdCardPortraitImage",
-      "certificates",
       "thresholdsComplete",
       "needsManualBuild",
       "createdAt",
@@ -14195,55 +14182,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "identityText",
       "todoList",
       "certificates",
-    ],
-    "type": "object",
-  },
-  "RecruitmentCertificateAdminSummaryDto": {
-    "properties": {
-      "category": {
-        "enum": [
-          "first_aid",
-          "bsafe",
-        ],
-        "type": "string",
-      },
-      "imageCount": {
-        "type": "number",
-      },
-      "issuedAt": {
-        "description": "发证日期(YYYY-MM-DD)",
-        "nullable": true,
-        "type": "string",
-      },
-      "issuingOrg": {
-        "nullable": true,
-        "type": "string",
-      },
-      "reviewNote": {
-        "nullable": true,
-        "type": "string",
-      },
-      "reviewStatus": {
-        "enum": [
-          "approved",
-          "rejected",
-        ],
-        "nullable": true,
-        "type": "string",
-      },
-      "reviewedAt": {
-        "nullable": true,
-        "type": "string",
-      },
-      "reviewedBy": {
-        "description": "审核人 User.id",
-        "nullable": true,
-        "type": "string",
-      },
-    },
-    "required": [
-      "category",
-      "imageCount",
     ],
     "type": "object",
   },
@@ -78939,9 +78877,9 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
         },
         {
-          "description": "按证书大类 code 过滤(可选;cert_type 字典 code);默认全集",
+          "description": "按证书类别 code 过滤(可选;cert_type 字典 code;经 Standard 过滤);默认全集",
           "in": "query",
-          "name": "certTypeCode",
+          "name": "certCategoryCode",
           "required": false,
           "schema": {
             "maxLength": 64,

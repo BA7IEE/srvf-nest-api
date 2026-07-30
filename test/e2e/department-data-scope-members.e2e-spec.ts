@@ -14,6 +14,10 @@ import { loginAs } from '../fixtures/auth.fixture';
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
+import {
+  seedCertificateStandard,
+  type SeededCertificateStandard,
+} from '../fixtures/certificate-standard.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
@@ -48,6 +52,7 @@ interface Person {
 describe('v0.49 department data scope — member axis', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let certStd: SeededCertificateStandard;
   let rootId: string;
   let sectId: string;
   let childId: string;
@@ -111,6 +116,8 @@ describe('v0.49 department data scope — member axis', () => {
     await resetDb(app);
     runSeed();
     prisma = app.get(PrismaService);
+    // PR-4b:直插证书须给齐三列(NOT NULL)。
+    certStd = await seedCertificateStandard(prisma, { categoryCode: 'first-aid' });
 
     rootId = (
       await prisma.organization.findFirstOrThrow({ where: { code: 'SRVF' }, select: { id: true } })
@@ -305,7 +312,7 @@ describe('v0.49 department data scope — member axis', () => {
       await prisma.certificate.create({
         data: {
           memberId: sectMemberId,
-          certTypeCode: 'first-aid',
+          ...certStd.certificateColumns,
           issuingOrg: 'v0.49 发证机构',
           issuedAt: new Date('2025-01-01T00:00:00.000Z'),
           certStatusCode: 'pending',
@@ -316,7 +323,7 @@ describe('v0.49 department data scope — member axis', () => {
     await prisma.certificate.create({
       data: {
         memberId: childMemberId,
-        certTypeCode: 'first-aid',
+        ...certStd.certificateColumns,
         issuingOrg: 'v0.49 子组发证机构',
         issuedAt: new Date('2025-01-01T00:00:00.000Z'),
         certStatusCode: 'pending',

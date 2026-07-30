@@ -21,7 +21,7 @@ import { ListAppMyCertificatesQueryDto } from './dto/app/list-app-my-certificate
 //   2. 直查 prisma.certificate.findMany / count(**不**调 admin CertificatesService;
 //      admin list 写 `certificate.read.other` 审计 + admin scope,语义不匹配)
 //   3. where 锁:memberId = access.member.id(本人) + deletedAt: null(软删过滤) +
-//      可选 certStatusCode filter + 可选 certTypeCode filter
+//      可选 certStatusCode filter + 可选 certCategoryCode filter(经 Standard)
 //   4. orderBy createdAt desc(沿 D-P2-7-8;App 视角按时间线最直观)
 //   5. 私有静态 mapper:Prisma row → AppMyCertificateDto(沿 §5.1 严格白名单 12 项)
 //
@@ -56,7 +56,15 @@ export class AppMyCertificatesService {
       memberId,
       deletedAt: null,
       ...(query.certStatusCode !== undefined ? { certStatusCode: query.certStatusCode } : {}),
-      ...(query.certTypeCode !== undefined ? { certTypeCode: query.certTypeCode } : {}),
+      // PR-4b:类别过滤经关联走 `standard.categoryCode`(实例侧 certTypeCode 已 DROP)。
+      //
+      // ⚠️ 这一处是本刀最险的一格:`where` 用的是**展开**语法,而 TypeScript 的
+      // 多余属性检查不穿透 spread —— 旧写法 `{ certTypeCode: ... }` 在列删掉之后
+      // **依然编译通过**,只会在真实请求打到 Prisma 时才炸。
+      // 所以它的行为锁必须在 e2e(真 HTTP + 真 DB),不能只指望 typecheck。
+      ...(query.certCategoryCode !== undefined
+        ? { standard: { categoryCode: query.certCategoryCode } }
+        : {}),
     };
 
     const [rows, total] = await this.prisma.$transaction([
@@ -92,40 +100,48 @@ export class AppMyCertificatesService {
     return access.member.id;
   }
 
-  // findMany select 严格 12 字段白名单(沿 §5.1 + D-P2-7-4);**不** include verifier /
+  // findMany select 严格白名单(沿 §5.1 + D-P2-7-4);**不** include verifier /
   // member / supersededBy / supersedes(沿 §5.3 不暴露审核人 / 替代链路 / Member 嵌套)。
-  // 字段顺序刻意与 §5.1 表格 #1-#12 对齐,便于代码 review 比对。
+  //
+  // 证书标准库 PR-4b(⚠️ 小程序契约破坏):certTypeCode / certSubTypeCode / isInternal
+  // 三列已 DROP。App 面改带 `standardId` + 从 Standard join 出来的类别 / 等级 / 内部属性 ——
+  // 队员看到的仍是「这是什么证书」,只是值的权威从实例侧副本换成了标准本身。
+  // 只 join 三个展示字段,不把整个 Standard 摊进 App 出参(那会把 code / status /
+  // sortOrder 这类队内配置面字段泄给队员)。
   private static readonly appSelect = {
     id: true,
-    certTypeCode: true,
-    certSubTypeCode: true,
+    standardId: true,
+    standard: { select: { categoryCode: true, levelCode: true, isInternal: true, name: true } },
     issuingOrg: true,
     certNumber: true,
     issuedAt: true,
     expiredAt: true,
     certStatusCode: true,
-    isInternal: true,
     verifyNote: true,
     verifiedAt: true,
     createdAt: true,
   } as const satisfies Prisma.CertificateSelect;
 
-  // 私有 mapper(沿 §7.1 + D-P2-7-14 + P2-5 / P2-6 P0/P1 过渡;不抽独立 Presenter class)。
-  // 直 spread:appSelect 已锁定 12 字段集 = AppMyCertificateDto 字段集,无字段名转换。
+  // 私有 mapper(沿 §7.1 + D-P2-7-14;不抽独立 Presenter class)。
+  // PR-4b 起有一层字段名映射(standard.categoryCode → certCategoryCode 等)——
+  // 逐字段显式列出而不是 spread,正是为了让「join 进来的 Standard 有哪些字段外泄」
+  // 变成一份必须显式维护的清单。
   // **绝不** include 关联 row(verifier / member / supersededBy),appSelect 已确保。
   private static toAppDto(
     row: Prisma.CertificateGetPayload<{ select: typeof AppMyCertificatesService.appSelect }>,
   ): AppMyCertificateDto {
     return {
       id: row.id,
-      certTypeCode: row.certTypeCode,
-      certSubTypeCode: row.certSubTypeCode,
+      standardId: row.standardId,
+      standardName: row.standard.name,
+      certCategoryCode: row.standard.categoryCode,
+      certLevelCode: row.standard.levelCode,
+      isInternal: row.standard.isInternal,
       issuingOrg: row.issuingOrg,
       certNumber: row.certNumber,
       issuedAt: row.issuedAt,
       expiredAt: row.expiredAt,
       certStatusCode: row.certStatusCode,
-      isInternal: row.isInternal,
       verifyNote: row.verifyNote,
       verifiedAt: row.verifiedAt,
       createdAt: row.createdAt,

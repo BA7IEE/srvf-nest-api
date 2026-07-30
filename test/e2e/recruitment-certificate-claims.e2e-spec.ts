@@ -827,7 +827,7 @@ describe('recruitment certificate claims + public standard options(PR-4a-1)', ()
 
     const afterApprove = await prisma.recruitmentApplication.findUniqueOrThrow({
       where: { id: applicationId },
-      select: { thresholdMarks: true, certificateImages: true, certificateReviewStatus: true },
+      select: { thresholdMarks: true },
     });
     const marks = (afterApprove.thresholdMarks ?? {}) as Record<
       string,
@@ -836,9 +836,11 @@ describe('recruitment certificate claims + public standard options(PR-4a-1)', ()
     // 急救类 Standard → redCross 门槛成立;bsafe 未过审 → 不成立。
     expect(marks.redCross?.by).toBe('system:certificate-claim-derived');
     expect(marks.bsafe).toBeUndefined();
-    // 旧两个 JSON 列**仍然只读不写**(4a 起停写,4b 才 DROP)。
-    expect(afterApprove.certificateImages).toBeNull();
-    expect(afterApprove.certificateReviewStatus).toBeNull();
+    // 4a 时这里断言旧两个 JSON 列「仍在但恒 null」;PR-4b 已把它们整列 DROP,
+    // 断言随之升级为「列不存在」—— 停写的终点是列没了,而不是永远写 null。
+    await expect(
+      prisma.$queryRaw`SELECT "certificateImages" FROM "recruitment_applications" LIMIT 1`,
+    ).rejects.toThrow();
 
     // 撤回审核 → 该类别再无 APPROVED/PROMOTED Claim → 聚合清除该门槛。
     await request(httpServer(app))

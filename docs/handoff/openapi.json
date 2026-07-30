@@ -52253,10 +52253,10 @@
             }
           },
           {
-            "name": "certTypeCode",
+            "name": "certCategoryCode",
             "required": false,
             "in": "query",
-            "description": "按证书大类 code 过滤(可选;cert_type 字典 code);默认全集",
+            "description": "按证书类别 code 过滤(可选;cert_type 字典 code;经 Standard 过滤);默认全集",
             "schema": {
               "maxLength": 64,
               "type": "string"
@@ -99253,14 +99253,17 @@
             "type": "string",
             "description": "关联队员外键"
           },
-          "certTypeCode": {
+          "standardId": {
             "type": "string",
-            "description": "证书大类字典 code"
+            "description": "证书标准 id(类别 / 等级 / 内部属性都 join Standard 取)"
           },
-          "certSubTypeCode": {
-            "type": "object",
-            "description": "证书子类型 / 等级字典 code",
-            "nullable": true
+          "sourceCode": {
+            "type": "string",
+            "description": "来源:ADMIN 或 RECRUITMENT",
+            "enum": [
+              "ADMIN",
+              "RECRUITMENT"
+            ]
           },
           "issuingOrg": {
             "type": "string",
@@ -99280,10 +99283,6 @@
             "type": "string",
             "description": "核验状态字典 code(4 态闭集)"
           },
-          "isInternal": {
-            "type": "boolean",
-            "description": "是否本会颁发"
-          },
           "createdAt": {
             "format": "date-time",
             "type": "string",
@@ -99298,11 +99297,11 @@
         "required": [
           "id",
           "memberId",
-          "certTypeCode",
+          "standardId",
+          "sourceCode",
           "issuingOrg",
           "issuedAt",
           "certStatusCode",
-          "isInternal",
           "createdAt",
           "updatedAt"
         ]
@@ -99319,18 +99318,9 @@
             "type": "string",
             "description": "关联队员外键(指向 members.id;N:1)"
           },
-          "certTypeCode": {
-            "type": "string",
-            "description": "证书大类字典 code(CT-2;字典 cert_type)"
-          },
-          "certSubTypeCode": {
-            "type": "object",
-            "description": "证书子类型 / 等级字典 code(CT-3;字典 cert_sub_type;Q-D4 schema 可空)",
-            "nullable": true
-          },
           "issuingOrg": {
             "type": "string",
-            "description": "颁发机构(CT-4;自由文本)"
+            "description": "颁发机构(CT-4;认定规则解析后的名称快照)"
           },
           "certNumberMasked": {
             "type": "string",
@@ -99375,10 +99365,6 @@
             "type": "boolean",
             "description": "是否存在证据图(布尔;不返 key / URL;取证据走 evidence-urls 端点)"
           },
-          "isInternal": {
-            "type": "boolean",
-            "description": "是否本会颁发(CT-11;本批次 service 始终写 false)"
-          },
           "standardId": {
             "type": "string",
             "description": "证书标准 id(PR-4b 收紧为恒非空)",
@@ -99422,12 +99408,10 @@
         "required": [
           "id",
           "memberId",
-          "certTypeCode",
           "issuingOrg",
           "issuedAt",
           "certStatusCode",
           "evidenceAvailable",
-          "isInternal",
           "createdAt",
           "updatedAt"
         ]
@@ -99567,14 +99551,23 @@
             "description": "证书主键(cuid)",
             "example": "cl9z3a8b00000abcd1234efgh"
           },
-          "certTypeCode": {
+          "standardId": {
             "type": "string",
-            "description": "证书大类字典 code(cert_type)",
+            "description": "证书标准 id"
+          },
+          "standardName": {
+            "type": "string",
+            "description": "证书标准名称(展示用;取自 Standard)",
+            "example": "红十字急救员证"
+          },
+          "certCategoryCode": {
+            "type": "string",
+            "description": "证书类别字典 code(取自 Standard)",
             "example": "first_aid"
           },
-          "certSubTypeCode": {
-            "type": "object",
-            "description": "证书子类型 / 等级字典 code(cert_sub_type;NULL 表示无子类型)",
+          "certLevelCode": {
+            "type": "string",
+            "description": "证书等级字典 code(取自 Standard;NULL 表示无等级)",
             "nullable": true
           },
           "issuingOrg": {
@@ -99604,7 +99597,7 @@
           },
           "isInternal": {
             "type": "boolean",
-            "description": "是否本会颁发"
+            "description": "是否本会颁发(取自 Standard)"
           },
           "verifyNote": {
             "type": "object",
@@ -99624,7 +99617,9 @@
         },
         "required": [
           "id",
-          "certTypeCode",
+          "standardId",
+          "standardName",
+          "certCategoryCode",
           "issuingOrg",
           "issuedAt",
           "certStatusCode",
@@ -106160,55 +106155,6 @@
           }
         }
       },
-      "RecruitmentCertificateAdminSummaryDto": {
-        "type": "object",
-        "properties": {
-          "category": {
-            "type": "string",
-            "enum": [
-              "first_aid",
-              "bsafe"
-            ]
-          },
-          "imageCount": {
-            "type": "number"
-          },
-          "issuingOrg": {
-            "type": "string",
-            "nullable": true
-          },
-          "issuedAt": {
-            "type": "string",
-            "description": "发证日期(YYYY-MM-DD)",
-            "nullable": true
-          },
-          "reviewStatus": {
-            "type": "string",
-            "enum": [
-              "approved",
-              "rejected"
-            ],
-            "nullable": true
-          },
-          "reviewedAt": {
-            "type": "string",
-            "nullable": true
-          },
-          "reviewedBy": {
-            "type": "string",
-            "description": "审核人 User.id",
-            "nullable": true
-          },
-          "reviewNote": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "required": [
-          "category",
-          "imageCount"
-        ]
-      },
       "RecruitmentApplicationAdminDto": {
         "type": "object",
         "properties": {
@@ -106307,13 +106253,6 @@
             "type": "boolean",
             "description": "是否有头像裁剪图(身份证鉴伪版;取图走 portraitImageUrl)"
           },
-          "certificates": {
-            "description": "证书摘要(images/reviewStatus/issuanceInfo 类别并集;无材料时空数组)",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RecruitmentCertificateAdminSummaryDto"
-            }
-          },
           "thresholdMarks": {
             "type": "object",
             "description": "门槛标记 { patrol1:{at,by}, ... }(M-3;5 项 patrol1/patrol2/training/redCross/bsafe)",
@@ -106351,7 +106290,6 @@
           "hasIdCardImage",
           "hasIdCardCropImage",
           "hasIdCardPortraitImage",
-          "certificates",
           "thresholdsComplete",
           "needsManualBuild",
           "createdAt"

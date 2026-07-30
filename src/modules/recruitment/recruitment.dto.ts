@@ -506,21 +506,6 @@ export class RecruitmentCertificateProgressItemDto {
   note!: string | null;
 }
 
-export class RecruitmentCertificateAdminSummaryDto {
-  @ApiProperty({ enum: RECRUITMENT_CERT_CATEGORIES as unknown as string[] })
-  category!: string;
-  @ApiProperty() imageCount!: number;
-  @ApiPropertyOptional({ type: String, nullable: true }) issuingOrg!: string | null;
-  @ApiPropertyOptional({ type: String, description: '发证日期(YYYY-MM-DD)', nullable: true })
-  issuedAt!: string | null;
-  @ApiPropertyOptional({ enum: ['approved', 'rejected'], nullable: true })
-  reviewStatus!: string | null;
-  @ApiPropertyOptional({ type: String, nullable: true }) reviewedAt!: string | null;
-  @ApiPropertyOptional({ type: String, description: '审核人 User.id', nullable: true })
-  reviewedBy!: string | null;
-  @ApiPropertyOptional({ type: String, nullable: true }) reviewNote!: string | null;
-}
-
 export class RecruitmentApplicationProgressDto {
   @ApiProperty({ description: '业务态枚举(评审稿 §4.2;statusCode 派生,机器态不外露)' })
   stage!: string;
@@ -717,11 +702,11 @@ export class RecruitmentApplicationAdminDto {
   hasIdCardCropImage!: boolean;
   @ApiProperty({ description: '是否有头像裁剪图(身份证鉴伪版;取图走 portraitImageUrl)' })
   hasIdCardPortraitImage!: boolean;
-  @ApiProperty({
-    type: [RecruitmentCertificateAdminSummaryDto],
-    description: '证书摘要(images/reviewStatus/issuanceInfo 类别并集;无材料时空数组)',
-  })
-  certificates!: RecruitmentCertificateAdminSummaryDto[];
+  // 证书标准库 PR-4b(⚠️ 契约变化):`certificates` 证书摘要**已从报名 DTO 移除**。
+  // 它原本由三个 JSON 列的类别并集拼出来,而那三列本刀已 DROP。
+  // 替代者是专用端点 `GET /admin/v1/recruitment/applications/:applicationId/certificate-claims`
+  // (PR-4a-1 上线)—— 那里有正确的敏感分级(编号掩码 / imageCount / 明文需敏感码)。
+  // 不在报名 DTO 里再拼一份:两个读路径必然出现两套掩码规则,而其中一套迟早松。
   // ===== 招新二期(后段)字段 =====
   @ApiPropertyOptional({
     description:
