@@ -1063,9 +1063,58 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
     );
 
+    // 评审 findings H2(方案 A):**已脱敏但未 promoted** 的行同样一律拒 ——
+    // `sensitivePurgedAt` 是独立于状态的那根轴,留存清理跑过就不能再回写 PII
+    // (回写后 `WHERE sensitivePurgedAt IS NULL` 会永久跳过这一行)。
+    const purged = await createAppRow(cycle.id, {
+      statusCode: 'verified',
+      sensitivePurgedAt: new Date(),
+      realName: null,
+      idCardNumber: null,
+      phone: null,
+      openid: null,
+    });
+    expectBizError(
+      await updateApp(purged.id, { detailedAddress: '不该写入' }),
+      BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
+    );
+
     expectBizError(await updateApp(verified.id, {}), BizCode.BAD_REQUEST, {
       strictMessage: false,
     });
+  });
+
+  // 评审 findings H2(维护者拍板方案 A):`rejected` / `withdrawn` 的**非身份字段可改**。
+  // 「给一份已淘汰的报名补个备注 / 订正住址」是合理运营需求,canonical handoff
+  // 契约一直写着它可以 —— 运行时回到那份契约,净契约变化为零。
+  it('H2 终态(rejected / withdrawn)报名仍可改非身份字段;身份字段照旧锁死', async () => {
+    const cycle = await openCycle();
+    for (const terminal of ['rejected', 'withdrawn'] as const) {
+      const row = await createAppRow(cycle.id, {
+        statusCode: terminal,
+        idCardNumber: `H2${terminal.slice(0, 4)}${Date.now() % 100000}`,
+        openid: `dev-openid-h2-${terminal}`,
+        phone: `139${String(Date.now() % 100000000).padStart(8, '0')}`,
+      });
+      const ok = await updateApp(row.id, { detailedAddress: `淘汰后补录 ${terminal}` });
+      expect(ok.status).toBe(200);
+      // 改资料不得顺手改状态。
+      expect(ok.body.data.statusCode).toBe(terminal);
+      // 住址按敏感字段处理,不一定出现在本 auth 的响应里 —— 落库为准。
+      expect(
+        (
+          await prisma.recruitmentApplication.findUniqueOrThrow({
+            where: { id: row.id },
+            select: { detailedAddress: true, statusCode: true },
+          })
+        ).detailedAddress,
+      ).toBe(`淘汰后补录 ${terminal}`);
+      // 身份字段仍归 R1 条件闸管:非 manual_review 的大陆件恒拒。
+      expectBizError(
+        await updateApp(row.id, { realName: '张改名' }),
+        BizCode.RECRUITMENT_IDENTITY_FIELDS_LOCKED,
+      );
+    }
   });
 
   // ===== 招新可用性收口 F3(评审稿 §3 R3 / §6.1 E-U-3/E-U-4):单人手动建档 promote-single =====

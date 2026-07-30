@@ -36,7 +36,7 @@ import {
   isValidChineseId,
 } from './recruitment.constants';
 import { resolveBatchMatches } from './recruitment-batch-matching';
-import { lockActiveApplicationOrThrow } from './recruitment-application-lock';
+import { lockActiveApplicationOrThrow, lockApplicationRow } from './recruitment-application-lock';
 import { withdrawClaimsOnApplicationTerminal } from './recruitment-application-terminal';
 import { recomputeCertificateThresholds } from './recruitment-certificate-threshold-derive';
 import { toAdminApplicationDto } from './recruitment-applications.presenter';
@@ -375,6 +375,7 @@ export class RecruitmentApplicationReviewService {
   // - 大陆记录 birthDate/genderCode 恒由证件号派生(直接传 → 40000);大陆改 idCardNumber → 校验位 +
   //   年龄复检(28010)+ birthDate/genderCode 重派生 + 同轮活跃去重(28003;镜像 submit 语义);
   // - promoted / 已脱敏(sensitivePurgedAt 置)行不可改(28041)——回写 PII 会与留存 SOP「已清不再触」冲突;
+  //   rejected / withdrawn **可改非身份字段**(H2 方案 A:淘汰后补个备注是合理运营动作);
   // - phone/openid 不在白名单(自助换绑通道已存在,admin 直改会绕过双验破坏身份锚;R3 取舍)。
   // 必落 audit('recruitment-application.update'):before/after 仅身份字段掩码值,非身份字段只记字段名。
   async updateApplication(
@@ -415,12 +416,25 @@ export class RecruitmentApplicationReviewService {
       // 住址 / 紧急联系人照写回去。`sensitivePurgedAt` 非空又会让留存清理
       // (`WHERE sensitivePurgedAt IS NULL`)**永远跳过该行**:这一行会永久带着本该删的 PII。
       //
-      // 锁 + 复读 + 拒终态,然后把两道守卫**在锁后重新执行一遍**。
-      const row = await lockActiveApplicationOrThrow(tx, id);
-      // promoted / 已脱敏行:PII 已清并搬 member,回写与留存 SOP 冲突 → 一律不可改。
-      // promoted 已由上面的终态闸拦下(rejected / withdrawn 一并),
-      // `sensitivePurgedAt` 是**独立的一根轴** —— 留存清理跑过但状态还没到终态的行
-      // 只有这一条能拦,所以它必须单独保留、且同样在锁后判。
+      // 锁 + 复读,然后把两道守卫**在锁后重新执行一遍**。
+      //
+      // 评审 findings H2:这里**不用** `lockActiveApplicationOrThrow` ——
+      // 它连 rejected / withdrawn 一起拒,而「给一份已淘汰的报名补个住址 / 改个来源渠道」
+      // 是合理的运营动作,canonical handoff 契约里也一直是这么写的。
+      //
+      // G2 那一刀要封的是 **PII 并发写回**,而那件事由下面两道守卫 + CAS 承担,
+      // 不需要连整个终态一起禁掉(禁掉是当时顺手取的一个更强条件,代价是砍掉了真实需求):
+      //   - `promoted`:PII 已清并搬 member,回写与留存 SOP「已清不再触」冲突;
+      //   - `sensitivePurgedAt != null`:**独立的一根轴** —— 留存清理跑过但状态还没到
+      //     终态的行只有这一条拦得住;写回会让该行永久带着本该删的 PII
+      //     (清理的 `WHERE sensitivePurgedAt IS NULL` 从此永远跳过它)。
+      //
+      // 两道都在**锁后**判,再由 CAS 把这两根轴一起写进 where ——
+      // 等锁期间发号提交的那一路因此仍然一个字段都写不回去(G2 的并发用例守着这条)。
+      const row = await lockApplicationRow(tx, id);
+      if (!row) {
+        throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
+      }
       if (row.statusCode === APP_STATUS_PROMOTED || row.sensitivePurgedAt !== null) {
         throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
       }
