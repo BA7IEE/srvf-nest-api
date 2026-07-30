@@ -51,6 +51,26 @@
 - **交付**:PR-0(冻结)→ PR-1 → PR-2 → PR-3 → PR-4a(拆三刀)+ PR-4b → PR-5 → PR-6 全部合入 main([#826–#834](https://github.com/BA7IEE/srvf-nest-api/pull/834));**Endpoint 435→438 · Migration 66→67 · 权限码 214→222**。
 - **⚠️ 交付后跨模型评审判 NO-GO → findings 修复批次 F1–F6**(2026-07-30):两个外部模型对 `main@bc300a66` 独立评审,21 条 findings 主会话逐条复现。修复见 [#835](https://github.com/BA7IEE/srvf-nest-api/pull/835)(并发四处统一收口)· [#836](https://github.com/BA7IEE/srvf-nest-api/pull/836)(证据授权按状态分流)· [#837](https://github.com/BA7IEE/srvf-nest-api/pull/837)(PATCH 三态 + 日期真实性 + 核验落点)· [#838](https://github.com/BA7IEE/srvf-nest-api/pull/838)(§12 资质判断)· [#839](https://github.com/BA7IEE/srvf-nest-api/pull/839)(主数据契约与审计)· F6(SOP / 初始化 / 台账)。
 - **post-freeze 修正记录**:[`archive/reviews/certificate-standard-library-t0-amendments.md`](../archive/reviews/certificate-standard-library-t0-amendments.md) —— 冻结稿正文不回改,修正逐条记在这里。**冻结稿 + amendments 两份合起来才是当前需求。**
+
+#### 🔴 第二轮独立评审未通过(2026-07-30,`main@2998a708`)—— 发版门禁已关闭
+
+四条 findings 主会话**已逐条复现机制,全部属实**。**根因一句话**:证书相关的新写路径已经统一使用报名锁
+(`lockApplicationRow` / `lockOwnActiveApplicationOrThrow`),但**评定、换绑、后台改资料这些旧入口还没接入同一串行点**。
+发号内核本身在 F1 已修好(`claimAtStatus` + `WHERE statusCode='publicity'` 条件行锁 + 锁后复读 + CAS),
+**这轮不是上轮问题反复**。
+
+| # | 落点 | 机制(已复现) | 后果 |
+|---|---|---|---|
+| **P0** | `recruitment-application-review.service.ts` `evaluate()` | `findFirst`(无 `FOR UPDATE`)读 `statusCode` → 算 `nextStatus` → `update({ where: { id } })` 无条件写。无锁、无锁后复读、无 CAS | 可把并发提交的 `withdrawn`、或证书门槛回退后的 `verified`,**覆盖回 `publicity`**。发号内核只复核「当前是不是 publicity」,且**不要求存在 APPROVED Claim** ⇒ **已撤销的报名仍可能被建 Member/User 并发出永久编号** |
+| **P1** | 同文件 `updateApplication()`;`recruitment-identity.service.ts` `rebindWechat()` / `rebindPhone()` | 三处都未接入 `lockApplicationRow`。`updateApplication` 的 `promoted` / `sensitivePurgedAt` 守卫建立在**锁前**的 `findFirst` 上;换绑事务内只做冲突查询后按 `id` 无条件 `update` | 发号已脱敏(`sensitivePurgedAt` 非空、PII 已清)之后,等锁的旧请求仍可**把手机 / openid / 地址 / 换绑历史写回**;而 `sensitivePurgedAt` 非空会让留存清理**永远跳过该行** |
+| **P1** | `certificates.service.ts` `verify()` | `before` 读于 `claimAtStatus()` **之前**,`alreadyExpired` 用的就是这份锁前快照,锁后未复读 | 并发 PATCH 改到期日 → 核验写错终态(两个方向都会错)。与 F1 修掉的「发号用锁前快照」是同一个病,只是没修到这儿 |
+| **P2** | `ops/certificate-standard-library-initialization.md` | 示例传 `"levelCode": null` / `"parentId": null`,而 `certificate-standards.service.ts` 分支判据是 `!== undefined` —— 显式 `null` 会进字典 / 父节点查询分支 | 示例**不能按原样执行**。同文档「先建 FAMILY 还是先建 CREDENTIAL」一段仍写「`parentId` 只能创建时设、事后只能删掉重建」,与 [`amendments A-3`](../archive/reviews/certificate-standard-library-t0-amendments.md) 直接冲突 |
+
+**修复范围**(零 schema,Migration 应恒 67):上表四个落点 + 三组真 PostgreSQL 并发 e2e ——
+① 评定 vs 报名撤销 / Claim 撤回审核;② 换绑与后台改资料 vs 发号;③ PATCH 到期日 vs 核验(两个方向)。
+外加全库巡检断言:`publicity` 报名不得存在证书门槛不完整的状态;`sensitivePurgedAt` 非空的报名不得被写回任何应清 PII。
+
+**修复批次自己也要再过一轮跨模型评审**才允许发版(SOP [§1.6](codex-review-sop.md))。
 - **⏸ 剩余挂账**(不属于本任务的代码范围,但没做完就不能算上线):
   - **发版**:#826–#834 与 F1–F6 全部未随版本发布(tag 仍是 v0.64.0)。
   - **PR-4b 的第 67 个 migration 未部署** —— 不可逆 contract,按 [`go-live runbook`](../ops/certificate-standard-library-go-live.md) 执行(停写 → 备份验证 → 探针 → migrate)。
