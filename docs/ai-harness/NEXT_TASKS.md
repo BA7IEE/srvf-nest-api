@@ -47,8 +47,17 @@
 - **触发条件**:出现批量导入存量队员(> 逐个可接受量级)的真实诉求时单独立项评审(D 档,涉及 schema 是否需要新增批量端点、字段集范围、与 `POST admin/v1/members` 单条端点的关系)。
 - **与 P1-18(队员账号闭环,✅ 已完成)关系**:P1-15 解决"批量把队员**档案**（`Member`)灌进来";P1-18 解决"给**已存在**队员开**登录账号**(`User`)"。两者正交——P1-15 若落地,批量导入出的 `Member` 仍可用 P1-18 已交付的 `POST admin/v1/members/accounts/bulk-grant` 批量开号能力。
 
-### P1-24 通用证书标准库 + 队内认定规则 + 招新证书闭环 — **🟢 已冻结,下一个开工的 Goal**
-- **冻结评审稿**:[`archive/reviews/certificate-standard-library-t0-review.md`](../archive/reviews/certificate-standard-library-t0-review.md)(2026-07-29 拍板;v1.0 / v1.1 **废止**)。
+### P1-24 通用证书标准库 + 队内认定规则 + 招新证书闭环 — **✅ 已交付(2026-07-30);剩发版与首批初始化**
+- **交付**:PR-0(冻结)→ PR-1 → PR-2 → PR-3 → PR-4a(拆三刀)+ PR-4b → PR-5 → PR-6 全部合入 main([#826–#834](https://github.com/BA7IEE/srvf-nest-api/pull/834));**Endpoint 435→438 · Migration 66→67 · 权限码 214→222**。
+- **⚠️ 交付后跨模型评审判 NO-GO → findings 修复批次 F1–F6**(2026-07-30):两个外部模型对 `main@bc300a66` 独立评审,21 条 findings 主会话逐条复现。修复见 [#835](https://github.com/BA7IEE/srvf-nest-api/pull/835)(并发四处统一收口)· [#836](https://github.com/BA7IEE/srvf-nest-api/pull/836)(证据授权按状态分流)· [#837](https://github.com/BA7IEE/srvf-nest-api/pull/837)(PATCH 三态 + 日期真实性 + 核验落点)· [#838](https://github.com/BA7IEE/srvf-nest-api/pull/838)(§12 资质判断)· [#839](https://github.com/BA7IEE/srvf-nest-api/pull/839)(主数据契约与审计)· F6(SOP / 初始化 / 台账)。
+- **post-freeze 修正记录**:[`archive/reviews/certificate-standard-library-t0-amendments.md`](../archive/reviews/certificate-standard-library-t0-amendments.md) —— 冻结稿正文不回改,修正逐条记在这里。**冻结稿 + amendments 两份合起来才是当前需求。**
+- **⏸ 剩余挂账**(不属于本任务的代码范围,但没做完就不能算上线):
+  - **发版**:#826–#834 与 F1–F6 全部未随版本发布(tag 仍是 v0.64.0)。
+  - **PR-4b 的第 67 个 migration 未部署** —— 不可逆 contract,按 [`go-live runbook`](../ops/certificate-standard-library-go-live.md) 执行(停写 → 备份验证 → 探针 → migrate)。
+  - **首批标准与认定规则未建**(刻意不 seed:认定口径是维护者拍板,不由 AI 内置)。按 [`初始化 runbook`](../ops/certificate-standard-library-initialization.md);⚠️ `code` 打错不可挽回。
+  - **前端适配**:对外契约破坏清单见 [`handoff/admin-web.md`](../handoff/admin-web.md) §3.2 / §3.2.1。
+- **原立项背景(保留)**:
+  [`certificate-standard-library-t0-review.md`](../archive/reviews/certificate-standard-library-t0-review.md)(2026-07-29 拍板;v1.0 / v1.1 **废止**)。
 - **要解决什么**:当前系统能录/审/拒/提醒证书,但答不出四个问题 —— 这是什么证 / 本队按什么规则认可 / 申请人交了什么原件 / 审核后确认了什么。四类事实拆为 `CertificateStandard`(证书身份,稳定 code)+ `CertificateRecognitionPolicy`(队内认定规则,可多版本)+ `RecruitmentCertificateClaim`(一证一行的原始申报,可暂不分类)+ `Certificate`(正式档案)。
 - **拆分**:PR-0(冻结,本 PR 完成)→ PR-1(日期语义 + `certificate.read.sensitive`)→ PR-2(schema/权限/审计骨架)→ PR-3(Standard/Policy 管理 API)→ **PR-4a(写路径切换)+ PR-4b(删旧事实,同 release)**→ PR-5(证据读取 + 工作台)→ PR-6(前端联调)→ PR-7(release 收口)。
 - **⚠️ 单向门**:整套方案「直接删列、不做兼容、不双写」的可行性,建立在 `Certificate = 0 行` 且 `招新证书 JSON = 0 行` 之上,**只在 production 未部署期间成立**。一旦上线跑完一轮招新,PR-4 就退化成 migration + 回填 + 双写兼容期。**这是本任务排在企业微信之前的唯一理由。**
