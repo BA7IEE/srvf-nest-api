@@ -903,7 +903,10 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
     expect(claims).toHaveLength(1);
     expect(claims[0].status).toBe('SUBMITTED');
     expect(claims[0].imageKeys as string[]).toHaveLength(1);
-    expect(row.certificateImages).toBeNull();
+    // PR-4b:旧 certificateImages 列已 DROP(4a 停写 → 4b 删列)。
+    await expect(
+      prisma.$queryRaw`SELECT "certificateImages" FROM "recruitment_applications" LIMIT 1`,
+    ).rejects.toThrow();
 
     const audit = await prisma.auditLog.findFirst({
       where: { event: 'recruitment-certificate-claim.submit' },

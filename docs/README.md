@@ -25,6 +25,7 @@
 | [`development.md`](./development.md) | 项目结构 / 路由总览 / 环境变量 / 排错 |
 | [`testing.md`](./testing.md) | E2E 测试运行与覆盖范围 |
 | [`docker-smoke-test.md`](./docker-smoke-test.md) | docker smoke CI 形态说明 |
+| [`ops/certificate-standard-library-go-live.md`](./ops/certificate-standard-library-go-live.md) | 证书标准库 PR-4b **不可逆** contract migration 上线 SOP(执行前必跑的七条只读探针 + 迁移后三条结构复核 + 无列级回滚的处置边界 + 两处对外契约破坏清单) |
 | [`ops/cos-production-rollout-checklist.md`](./ops/cos-production-rollout-checklist.md) | 运维侧真实 COS 上线 SOP |
 | [`ops/encryption-key-freeze.md`](./ops/encryption-key-freeze.md) | Storage/SMS/WeChat/Realname 四把 production encryption key 的首发冻结、禁止直接轮换与事故处置边界 |
 | [`ops/production-dependency-audit.md`](./ops/production-dependency-audit.md) | 每个 release candidate 的 production dependency high/critical 阻断与 moderate/low 逐条分析基线 |

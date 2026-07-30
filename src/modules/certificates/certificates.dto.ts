@@ -23,16 +23,10 @@ export class CertificateResponseDto {
   @ApiProperty({ description: '关联队员外键(指向 members.id;N:1)' })
   memberId!: string;
 
-  @ApiProperty({ description: '证书大类字典 code(CT-2;字典 cert_type)' })
-  certTypeCode!: string;
-
-  @ApiPropertyOptional({
-    description: '证书子类型 / 等级字典 code(CT-3;字典 cert_sub_type;Q-D4 schema 可空)',
-    nullable: true,
-  })
-  certSubTypeCode!: string | null;
-
-  @ApiProperty({ description: '颁发机构(CT-4;自由文本)' })
+  // 证书标准库 PR-4b(⚠️ 契约破坏):`certTypeCode` / `certSubTypeCode` / `isInternal`
+  // **已从出参移除**,列也已 DROP。类别、等级、内部属性的唯一权威是 CertificateStandard,
+  // 用 `standardId` 去取(§6 数据权威表明令禁止实例侧副本)。
+  @ApiProperty({ description: '颁发机构(CT-4;认定规则解析后的名称快照)' })
   issuingOrg!: string;
 
   // 证书标准库 PR-1(冻结稿 §15.3):完整证书编号是 L2(可用于外部查询或冒用),
@@ -97,9 +91,6 @@ export class CertificateResponseDto {
   @ApiProperty({ description: '是否存在证据图(布尔;不返 key / URL;取证据走 evidence-urls 端点)' })
   evidenceAvailable!: boolean;
 
-  @ApiProperty({ description: '是否本会颁发(CT-11;本批次 service 始终写 false)' })
-  isInternal!: boolean;
-
   // 证书标准库 PR-4a-3(§9.1 步骤 7):标准化事实四列进出参。
   // 它们是队内主数据的**引用**(L1 配置面),不是敏感字段 —— 前端靠 standardId
   // 显示「这是哪个标准」,靠 sourceCode 决定 evidence 从哪读(§13.5)。
@@ -154,11 +145,12 @@ export class CertificateListItemDto {
   @ApiProperty({ description: '关联队员外键' })
   memberId!: string;
 
-  @ApiProperty({ description: '证书大类字典 code' })
-  certTypeCode!: string;
+  // PR-4b:列表同样移除三个实例侧副本,改带 standardId / sourceCode。
+  @ApiProperty({ description: '证书标准 id(类别 / 等级 / 内部属性都 join Standard 取)' })
+  standardId!: string;
 
-  @ApiPropertyOptional({ description: '证书子类型 / 等级字典 code', nullable: true })
-  certSubTypeCode!: string | null;
+  @ApiProperty({ description: '来源:ADMIN 或 RECRUITMENT', enum: ['ADMIN', 'RECRUITMENT'] })
+  sourceCode!: string;
 
   @ApiProperty({ description: '颁发机构' })
   issuingOrg!: string;
@@ -171,9 +163,6 @@ export class CertificateListItemDto {
 
   @ApiProperty({ description: '核验状态字典 code(4 态闭集)' })
   certStatusCode!: string;
-
-  @ApiProperty({ description: '是否本会颁发' })
-  isInternal!: boolean;
 
   @ApiProperty({ description: '创建时间' })
   createdAt!: Date;

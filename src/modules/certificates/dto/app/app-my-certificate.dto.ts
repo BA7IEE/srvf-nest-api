@@ -36,14 +36,24 @@ export class AppMyCertificateDto {
   @ApiProperty({ description: '证书主键(cuid)', example: 'cl9z3a8b00000abcd1234efgh' })
   id!: string;
 
-  @ApiProperty({ description: '证书大类字典 code(cert_type)', example: 'first_aid' })
-  certTypeCode!: string;
+  // 证书标准库 PR-4b(⚠️ 小程序契约破坏):`certTypeCode` / `certSubTypeCode` 改为
+  // `standardId` + 从 Standard join 出来的展示字段。队员看到的仍是「这是什么证书」,
+  // 只是值的权威从实例侧副本换成了标准本身(§6 数据权威表)。
+  @ApiProperty({ description: '证书标准 id' })
+  standardId!: string;
+
+  @ApiProperty({ description: '证书标准名称(展示用;取自 Standard)', example: '红十字急救员证' })
+  standardName!: string;
+
+  @ApiProperty({ description: '证书类别字典 code(取自 Standard)', example: 'first_aid' })
+  certCategoryCode!: string;
 
   @ApiPropertyOptional({
-    description: '证书子类型 / 等级字典 code(cert_sub_type;NULL 表示无子类型)',
+    description: '证书等级字典 code(取自 Standard;NULL 表示无等级)',
     nullable: true,
+    type: String,
   })
-  certSubTypeCode!: string | null;
+  certLevelCode!: string | null;
 
   @ApiProperty({ description: '颁发机构(自由文本)', example: '深圳市红十字会' })
   issuingOrg!: string;
@@ -70,7 +80,7 @@ export class AppMyCertificateDto {
   })
   certStatusCode!: string;
 
-  @ApiProperty({ description: '是否本会颁发' })
+  @ApiProperty({ description: '是否本会颁发(取自 Standard)' })
   isInternal!: boolean;
 
   @ApiPropertyOptional({

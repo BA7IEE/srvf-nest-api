@@ -10,6 +10,10 @@ import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
+import {
+  seedCertificateStandard,
+  type SeededCertificateStandard,
+} from '../fixtures/certificate-standard.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
@@ -39,6 +43,7 @@ const ATTACHMENT_PERMISSION_CODES = [
 describe('attachments upload-url + confirm-upload', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let certStd: SeededCertificateStandard;
 
   let superAuth: string;
   let selfAuth: string;
@@ -57,6 +62,7 @@ describe('attachments upload-url + confirm-upload', () => {
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
+    certStd = await seedCertificateStandard(prisma);
 
     // 1. 用户
     await createTestUser(app, { username: SUPER_USERNAME, role: Role.SUPER_ADMIN });
@@ -95,7 +101,8 @@ describe('attachments upload-url + confirm-upload', () => {
     certificateA = await prisma.certificate.create({
       data: {
         memberId: memberA.id,
-        certTypeCode: 'cpr',
+        // PR-4b:直插证书须给齐 standardId / recognitionPolicyId / sourceCode(NOT NULL)。
+        ...certStd.certificateColumns,
         issuingOrg: 'TestOrg',
         issuedAt: new Date('2026-01-01'),
         certStatusCode: 'pending',

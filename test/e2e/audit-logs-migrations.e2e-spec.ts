@@ -556,12 +556,14 @@ describe('audit-logs 写入迁移', () => {
       expect(JSON.stringify(log.context)).not.toContain('CN-2026-0001');
     });
 
-    it('certificate.certTypeCode / issuingOrg:不在打码矩阵', async () => {
+    it('certificate.standardId / issuingOrg:不在打码矩阵', async () => {
       const c = await createCert();
       const log = (await prisma.auditLog.findFirst({ where: { resourceId: c.id } }))!;
       const after = (log.context as { after: Record<string, unknown> }).after;
-      // PR-4a-3:certTypeCode 现在派生自 Standard 的类别(值不变,来源变了)。
-      expect(after.certTypeCode).toBe(certTypeCode);
+      // PR-4b:审计快照的类别副本 certTypeCode 已随列 DROP,改记 standardId 引用。
+      // 正向断言新字段 + 反向断言旧字段不再出现(否则回退到记副本不会红)。
+      expect(after.standardId).toBe(certStandardId);
+      expect(after).not.toHaveProperty('certTypeCode');
       expect(after.issuingOrg).toBe('Demo Issuing Org');
     });
   });

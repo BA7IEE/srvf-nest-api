@@ -15,6 +15,10 @@ import { RecruitmentApplicationsQueryService } from '../../src/modules/recruitme
 import { RecruitmentCertificateClaimsService } from '../../src/modules/recruitment/recruitment-certificate-claims.service';
 import { STORAGE_PROVIDER } from '../../src/modules/storage/storage.constants';
 import type { StorageProvider } from '../../src/modules/storage/storage.interface';
+import {
+  seedCertificateStandard,
+  type SeededCertificateStandard,
+} from '../fixtures/certificate-standard.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
@@ -91,6 +95,7 @@ type OrdinaryReadCase =
 describe('sensitive-read audit unification (C-2)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let certStd: SeededCertificateStandard;
   let auditLogs: AuditLogsService;
   let memberProfiles: MemberProfilesService;
   let emergencyContacts: EmergencyContactsService;
@@ -109,6 +114,9 @@ describe('sensitive-read audit unification (C-2)', () => {
     await resetDb(app);
 
     prisma = app.get(PrismaService);
+    certStd = await seedCertificateStandard(prisma, {
+      categoryCode: QUALIFICATION_FILTER_VALUE,
+    });
     auditLogs = app.get(AuditLogsService);
     memberProfiles = app.get(MemberProfilesService);
     emergencyContacts = app.get(EmergencyContactsService);
@@ -192,7 +200,7 @@ describe('sensitive-read audit unification (C-2)', () => {
     await prisma.certificate.create({
       data: {
         memberId: member.id,
-        certTypeCode: QUALIFICATION_FILTER_VALUE,
+        ...certStd.certificateColumns,
         issuingOrg: 'Audit PII Issuer 9f1',
         certNumber: 'CERT-RAW-9F1-SECRET',
         issuedAt: new Date('2026-01-01T00:00:00.000Z'),

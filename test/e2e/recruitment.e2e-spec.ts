@@ -1816,7 +1816,6 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
         certStatusCode: true,
         certNumber: true,
         issuingOrg: true,
-        imageKeys: true,
         verifyNote: true,
       },
     });
@@ -1833,7 +1832,9 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(mine?.issuingOrg).toBe('深圳市红十字会');
     expect(mine?.verifyNote).toBe('与名单一致');
     // §13.5:证据留在 Claim,**不复制**到 Certificate。
-    expect(mine?.imageKeys).toBeNull();
+    // PR-4b 把 Certificate.imageKeys 整列 DROP —— 「不复制」从「值为 null」
+    // 升级成「结构上无处可放」。这里断言列真的不在了(select 它会直接抛)。
+    await expect(prisma.$queryRaw`SELECT "imageKeys" FROM "Certificate" LIMIT 1`).rejects.toThrow();
 
     const claimAfter = await prisma.recruitmentCertificateClaim.findUniqueOrThrow({
       where: { id: approvedId },

@@ -2,6 +2,10 @@ import type { INestApplication } from '@nestjs/common';
 import { AttachmentAccessLevel, MembershipStatus, MembershipType, Role } from '@prisma/client';
 import { PrismaService } from '../../src/database/prisma.service';
 import { ResourceResolverService } from '../../src/modules/authz/resource-resolver.service';
+import {
+  seedCertificateStandard,
+  type SeededCertificateStandard,
+} from '../fixtures/certificate-standard.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
@@ -24,6 +28,7 @@ import { createTestApp } from '../setup/test-app';
 describe('authz ResourceResolver(13 类资源归属解析)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let certStd: SeededCertificateStandard;
   let resolver: ResourceResolverService;
 
   // 组织
@@ -60,6 +65,7 @@ describe('authz ResourceResolver(13 类资源归属解析)', () => {
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
+    certStd = await seedCertificateStandard(prisma);
     resolver = app.get(ResourceResolverService);
 
     // ===== 组织树 + closure(自环 depth 0;链 root→dept→grp)=====
@@ -212,7 +218,8 @@ describe('authz ResourceResolver(13 类资源归属解析)', () => {
     const certificate = await prisma.certificate.create({
       data: {
         memberId: ownerMemberId,
-        certTypeCode: 'rr-cert',
+        // PR-4b:直插证书须给齐 standardId / recognitionPolicyId / sourceCode(NOT NULL)。
+        ...certStd.certificateColumns,
         issuingOrg: 'RR 发证机构',
         issuedAt: new Date('2024-01-01T00:00:00.000Z'),
         certStatusCode: 'valid',

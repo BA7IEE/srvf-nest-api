@@ -228,7 +228,10 @@ export class ExpiryReminderService {
             select: {
               id: true,
               memberId: true,
-              certTypeCode: true,
+              // 证书标准库 PR-4b:certTypeCode 已 DROP —— 审计快照改记 standardId。
+              // 类别只有一个权威(CertificateStandard),记它的引用而不是记一份副本;
+              // 事后要看类别就 join,不必让审计自带一个会漂移的字符串。
+              standardId: true,
               certStatusCode: true,
               expiredAt: true,
               verifiedBy: true,
@@ -450,14 +453,15 @@ function emptySummary(): ExpiryReminderRunSummary {
 }
 
 function certificateAuditSnapshot(row: {
-  certTypeCode: string;
+  standardId: string;
   certStatusCode: string;
   expiredAt: Date | null;
   verifiedBy: string | null;
   verifiedAt: Date | null;
 }): Record<string, unknown> {
   return {
-    certTypeCode: row.certTypeCode,
+    // PR-4b:字段名从 certTypeCode 改为 standardId(⚠️ 审计快照形状变化)。
+    standardId: row.standardId,
     certStatusCode: row.certStatusCode,
     expiredAt: row.expiredAt?.toISOString() ?? null,
     verifiedBy: row.verifiedBy,

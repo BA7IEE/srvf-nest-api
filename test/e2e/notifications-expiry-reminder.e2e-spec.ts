@@ -3,6 +3,10 @@ import type { INestApplication } from '@nestjs/common';
 import { PrismaService } from '../../src/database/prisma.service';
 import { ExpiryReminderService } from '../../src/modules/notifications/expiry-reminder.service';
 import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
+import {
+  seedCertificateStandard,
+  type SeededCertificateStandard,
+} from '../fixtures/certificate-standard.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
@@ -11,6 +15,7 @@ const NOW = new Date('2026-07-14T09:00:00+08:00');
 describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let certStd: SeededCertificateStandard;
   let job: ExpiryReminderService;
   let worker: NotificationOutboxWorker;
 
@@ -29,6 +34,9 @@ describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
     job = app.get(ExpiryReminderService);
     worker = app.get(NotificationOutboxWorker);
     await resetDb(app);
+    // PR-4b:必须在 resetDb **之后** seed —— 之前 seed 会被 TRUNCATE 掉,
+    // 后续直插证书就会撞 Certificate_standardId_fkey。
+    certStd = await seedCertificateStandard(prisma);
 
     // templateId 保持 null：个人提醒站内成功，微信 best-effort 记 no-template，不阻断主链。
     await prisma.wechatSubscribeTemplate.upsert({
@@ -58,7 +66,7 @@ describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
     const certificateReminder = await prisma.certificate.create({
       data: {
         memberId: members[0].id,
-        certTypeCode: 'first-aid',
+        ...certStd.certificateColumns,
         issuingOrg: '测试机构',
         issuedAt: new Date('2025-08-01T00:00:00.000Z'),
         expiredAt: new Date('2026-08-01T00:00:00.000Z'),
@@ -70,7 +78,7 @@ describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
     const certificateExpired = await prisma.certificate.create({
       data: {
         memberId: members[1].id,
-        certTypeCode: 'first-aid',
+        ...certStd.certificateColumns,
         issuingOrg: '测试机构',
         issuedAt: new Date('2025-01-01T00:00:00.000Z'),
         expiredAt: new Date('2026-07-13T00:00:00.000Z'),
@@ -81,7 +89,7 @@ describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
     const perpetualCertificate = await prisma.certificate.create({
       data: {
         memberId: members[0].id,
-        certTypeCode: 'perpetual',
+        ...certStd.certificateColumns,
         issuingOrg: '测试机构',
         issuedAt: new Date('2025-01-01T00:00:00.000Z'),
         expiredAt: null,
@@ -91,7 +99,7 @@ describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
     const outsideWindowCertificate = await prisma.certificate.create({
       data: {
         memberId: members[0].id,
-        certTypeCode: 'long-term',
+        ...certStd.certificateColumns,
         issuingOrg: '测试机构',
         issuedAt: new Date('2025-01-01T00:00:00.000Z'),
         expiredAt: new Date('2027-01-01T00:00:00.000Z'),
@@ -328,7 +336,7 @@ describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
     const lastValidDayIsToday = await prisma.certificate.create({
       data: {
         memberId: member.id,
-        certTypeCode: 'boundary-today',
+        ...certStd.certificateColumns,
         issuingOrg: '测试机构',
         issuedAt: new Date('2025-01-01T00:00:00.000Z'),
         expiredAt: new Date('2026-07-14T00:00:00.000Z'), // = today
@@ -338,7 +346,7 @@ describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
     const lastValidDayWasYesterday = await prisma.certificate.create({
       data: {
         memberId: member.id,
-        certTypeCode: 'boundary-yesterday',
+        ...certStd.certificateColumns,
         issuingOrg: '测试机构',
         issuedAt: new Date('2025-01-01T00:00:00.000Z'),
         expiredAt: new Date('2026-07-13T00:00:00.000Z'), // = today - 1

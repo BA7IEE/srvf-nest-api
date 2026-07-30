@@ -8,6 +8,10 @@ import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
+import {
+  seedCertificateStandard,
+  type SeededCertificateStandard,
+} from '../fixtures/certificate-standard.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
@@ -22,7 +26,7 @@ import { createTestApp } from '../setup/test-app';
 //   7. 本人 pending / verified / expired / rejected 4 态全部可见(沿 顶层 §12.2.8)
 //   8. 软删 cert(deletedAt != null)不可见(notDeletedWhere 等价)
 //   9. ?certStatusCode=verified 仅返 verified;?certStatusCode=invalid → 400
-//   10. ?certTypeCode 过滤 + 不存在 type → items=[] / total=0
+//   10. ?certCategoryCode 过滤 + 不存在 category → items=[] / total=0
 //   11. ?memberId / ?verifiedBy / ?includeDeleted → 400 BAD_REQUEST(forbidNonWhitelisted)
 //   12. 字段集白名单恰好 12;反向断言不含 memberId / verifiedBy / verifier /
 //       supersededByCertId / updatedAt / deletedAt / passwordHash 等
@@ -41,11 +45,16 @@ interface ResBody {
   data: Record<string, unknown>;
 }
 
-// AppMyCertificateDto 字段集恰好 12 项(沿评审稿 §5.1)
+// AppMyCertificateDto 字段集(沿评审稿 §5.1)。
+// 证书标准库 PR-4b(⚠️ 小程序契约破坏):certTypeCode / certSubTypeCode 换成
+// standardId + 从 Standard join 出来的 standardName / certCategoryCode / certLevelCode。
+// isInternal 保留字段名,但值改取自 Standard(实例侧那一列已 DROP)。
 const APP_MY_CERT_KEYS = [
   'id',
-  'certTypeCode',
-  'certSubTypeCode',
+  'standardId',
+  'standardName',
+  'certCategoryCode',
+  'certLevelCode',
   'issuingOrg',
   'certNumber',
   'issuedAt',
@@ -114,7 +123,10 @@ describe('App /api/app/v1/my/certificates (P2-7)', () => {
   let certExpiredId: string;
   let certRejectedId: string;
   let certSoftDeletedId: string;
-  let certVerifiedSecondTypeId: string; // 用于 certTypeCode filter
+  let certVerifiedSecondTypeId: string; // 用于 certCategoryCode filter
+  let firstAidStd: SeededCertificateStandard;
+  let bsafeStd: SeededCertificateStandard;
+  let internalStd: SeededCertificateStandard;
 
   // memberB 名下证书(scope-self 反向断言)
   let memberBCertId: string;
@@ -126,6 +138,21 @@ describe('App /api/app/v1/my/certificates (P2-7)', () => {
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
+
+    // PR-4b:三个标准夹具 —— 急救 / BSAFE(测类别过滤)/ 内部(测 isInternal 取自 Standard)。
+    firstAidStd = await seedCertificateStandard(prisma, {
+      code: 'p27-first-aid',
+      categoryCode: 'first_aid',
+    });
+    bsafeStd = await seedCertificateStandard(prisma, {
+      code: 'p27-bsafe',
+      categoryCode: 'bsafe',
+    });
+    internalStd = await seedCertificateStandard(prisma, {
+      code: 'p27-internal',
+      categoryCode: 'first_aid',
+      isInternal: true,
+    });
 
     // ============ Users ============
     await createTestUser(app, { username: 'p27-user-a', role: Role.USER });
@@ -221,19 +248,19 @@ describe('App /api/app/v1/my/certificates (P2-7)', () => {
     //   - certExpired  (expired)
     //   - certRejected (rejected)
     //   - certSoftDeleted(verified + deletedAt;不应可见)
-    //   - certVerifiedSecondType (verified + 第二大类 bsafe;用于 certTypeCode filter)
+    //   - certVerifiedSecondType (verified + 第二类别 bsafe;用于 certCategoryCode filter)
     // memberB 名下 1 张(scope-self 反向断言)
     // memberAdmin 名下 1 张(admin-as-member self perspective 验证)
 
+    // PR-4b:直插证书必须给齐 standardId / recognitionPolicyId / sourceCode(NOT NULL)。
     const baseCert = (
       override: Partial<Prisma.CertificateUncheckedCreateInput>,
     ): Prisma.CertificateUncheckedCreateInput => ({
       memberId: memberAId,
-      certTypeCode: 'first_aid',
+      ...firstAidStd.certificateColumns,
       issuingOrg: '深圳市红十字会',
       issuedAt: new Date('2024-01-01T00:00:00.000Z'),
       certStatusCode: 'pending',
-      isInternal: false,
       ...override,
     });
 
@@ -255,7 +282,7 @@ describe('App /api/app/v1/my/certificates (P2-7)', () => {
 
     const cvSecond = await prisma.certificate.create({
       data: baseCert({
-        certTypeCode: 'bsafe',
+        ...bsafeStd.certificateColumns,
         certStatusCode: 'verified',
         certNumber: 'A-BSAFE-001',
         issuedAt: new Date('2024-04-01T00:00:00.000Z'),
@@ -316,11 +343,10 @@ describe('App /api/app/v1/my/certificates (P2-7)', () => {
     const cb = await prisma.certificate.create({
       data: {
         memberId: memberBId,
-        certTypeCode: 'first_aid',
+        ...firstAidStd.certificateColumns,
         issuingOrg: '深圳市红十字会',
         issuedAt: new Date('2024-01-01T00:00:00.000Z'),
         certStatusCode: 'verified',
-        isInternal: false,
         certNumber: 'B-VERIFIED-001',
         verifiedAt: new Date('2024-03-01T00:00:00.000Z'),
         verifyNote: 'memberB 证书',
@@ -332,11 +358,11 @@ describe('App /api/app/v1/my/certificates (P2-7)', () => {
     const cAdminMember = await prisma.certificate.create({
       data: {
         memberId: memberAdminId,
-        certTypeCode: 'first_aid',
+        // isInternal 现在是 Standard 的属性 → 用内部标准建这一张。
+        ...internalStd.certificateColumns,
         issuingOrg: '深圳市红十字会',
         issuedAt: new Date('2024-01-01T00:00:00.000Z'),
         certStatusCode: 'verified',
-        isInternal: true,
         certNumber: 'ADMIN-VERIFIED-001',
         verifiedAt: new Date('2024-03-01T00:00:00.000Z'),
         verifyNote: 'admin 自己的证书',
@@ -501,27 +527,27 @@ describe('App /api/app/v1/my/certificates (P2-7)', () => {
     expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
   });
 
-  // ============ 10. certTypeCode filter ============
+  // ============ 10. certCategoryCode filter(PR-4b:经 Standard 过滤)============
 
-  it('10a. ?certTypeCode=first_aid 仅返该 type', async () => {
+  it('10a. ?certCategoryCode=first_aid 仅返该类别(经 standard.categoryCode 过滤)', async () => {
     const res = await request(httpServer(app))
       .get('/api/app/v1/my/certificates')
-      .query({ certTypeCode: 'first_aid' })
+      .query({ certCategoryCode: 'first_aid' })
       .set('Authorization', userAAuth);
     expect(res.status).toBe(200);
     const body = res.body as ResBody;
-    const items = body.data.items as Array<{ id: string; certTypeCode: string }>;
+    const items = body.data.items as Array<{ id: string; certCategoryCode: string }>;
     for (const it of items) {
-      expect(it.certTypeCode).toBe('first_aid');
+      expect(it.certCategoryCode).toBe('first_aid');
     }
     // memberA 5 张 active 中 4 张 first_aid + 1 张 bsafe → first_aid 应返 4
     expect(items.length).toBe(4);
   });
 
-  it('10b. ?certTypeCode=nonexistent → items=[] / total=0', async () => {
+  it('10b. ?certCategoryCode=nonexistent → items=[] / total=0', async () => {
     const res = await request(httpServer(app))
       .get('/api/app/v1/my/certificates')
-      .query({ certTypeCode: 'nonexistent-type' })
+      .query({ certCategoryCode: 'nonexistent-type' })
       .set('Authorization', userAAuth);
     expect(res.status).toBe(200);
     const body = res.body as ResBody;
@@ -549,7 +575,7 @@ describe('App /api/app/v1/my/certificates (P2-7)', () => {
 
   // ============ 12. 字段集白名单恰好 12 + 反向断言 ============
 
-  it('12a. 字段集恰好 12 + 字段名集合等于 APP_MY_CERT_KEYS', async () => {
+  it('12a. 字段集恰好 14 + 字段名集合等于 APP_MY_CERT_KEYS(PR-4b:12 → 14)', async () => {
     const res = await request(httpServer(app))
       .get('/api/app/v1/my/certificates')
       .set('Authorization', userAAuth);
@@ -560,7 +586,10 @@ describe('App /api/app/v1/my/certificates (P2-7)', () => {
     for (const it of items) {
       const keys = Object.keys(it).sort();
       expect(keys).toEqual(APP_MY_CERT_KEYS);
-      expect(keys.length).toBe(12);
+      // PR-4b:12 → 14。certTypeCode / certSubTypeCode(2 项)换成
+      // standardId / standardName / certCategoryCode / certLevelCode(4 项)。
+      // 这个数字是 App 出参扩面的硬闸 —— 加字段必须来改它,不能悄悄多返。
+      expect(keys.length).toBe(14);
     }
   });
 

@@ -61,14 +61,12 @@ const CERT_STATUS_REJECTED = 'rejected';
 // 详情 / 写操作返回的完整 select(永不含 deletedAt 软删内部状态、永不含 expireNotifyDueAt
 // hook 字段);必须与 CertificateResponseDto 同步维护。
 //
-// 证书标准库 PR-1:含 `imageKeys` 是为了算 §15.3 的 `evidenceAvailable` 布尔。
-// 它**只在 service 内部存活** —— `presentCertificate` 会把它连同 `certNumber` 一起
-// 从出参里剥掉,任何响应/日志/审计都拿不到 key(D-CERT-024)。
+// 证书标准库 PR-4b:四个重复事实列已 DROP(certTypeCode / certSubTypeCode /
+// isInternal / imageKeys)。类别、等级、内部属性只有一个权威 —— CertificateStandard,
+// 读侧要用就 join;`evidenceAvailable` 改判 sourceClaim 的证据(§13.5)。
 const certificateSafeSelect = {
   id: true,
   memberId: true,
-  certTypeCode: true,
-  certSubTypeCode: true,
   issuingOrg: true,
   certNumber: true,
   issuedAt: true,
@@ -77,16 +75,16 @@ const certificateSafeSelect = {
   verifiedBy: true,
   verifiedAt: true,
   verifyNote: true,
-  isInternal: true,
   supersededByCertId: true,
-  imageKeys: true,
   // 证书标准库 PR-4a-3:update 的「沿已锁定 policyId 校验」需要这三列作基准。
-  // 它们不进出参 —— presenter 只用 standardId 之外的字段组装,新增列由
-  // presentCertificate 的显式白名单挡住(加列不会被动外泄)。
   standardId: true,
   recognitionPolicyId: true,
   recognitionIssuerId: true,
   sourceCode: true,
+  // PR-4b:证据判定改看 sourceClaim —— RECRUITMENT 来源的 evidence 在 Claim 上,
+  // ADMIN 来源在 ownerType=certificate 的 Attachment 上(§13.5 的 evidence-urls 走 PR-5)。
+  // 这里只取「有没有」,不取 key。
+  sourceClaim: { select: { imageKeys: true } },
   createdAt: true,
   updatedAt: true,
 } as const satisfies Prisma.CertificateSelect;
@@ -96,13 +94,13 @@ const certificateSafeSelect = {
 const certificateListItemSelect = {
   id: true,
   memberId: true,
-  certTypeCode: true,
-  certSubTypeCode: true,
   issuingOrg: true,
   issuedAt: true,
   expiredAt: true,
   certStatusCode: true,
-  isInternal: true,
+  // PR-4b:列表也改带 standardId(前端靠它显示「哪个标准」),旧三列已 DROP。
+  standardId: true,
+  sourceCode: true,
   createdAt: true,
   updatedAt: true,
 } as const satisfies Prisma.CertificateSelect;
@@ -111,9 +109,13 @@ type SafeCertificate = Prisma.CertificateGetPayload<{ select: typeof certificate
 
 type PrismaTx = Prisma.TransactionClient;
 
-// `imageKeys` 是 `Json?`,业务上是 string[]。只判「有没有」,不解析内容也不外传。
-function hasEvidence(imageKeys: Prisma.JsonValue | null): boolean {
-  return Array.isArray(imageKeys) && imageKeys.length > 0;
+// PR-4b:证据来源从实例侧 `Certificate.imageKeys` 改为 `sourceClaim.imageKeys`(§13.5)。
+// 只判「有没有」,不解析内容也不外传 key。
+// ADMIN 来源的证据是 ownerType=certificate 的 Attachment,判定与取图都归 PR-5 的
+// evidence-urls 端点 —— 本布尔此刻只覆盖 RECRUITMENT 来源,不假装覆盖两种。
+function hasEvidence(sourceClaim: { imageKeys: Prisma.JsonValue } | null): boolean {
+  const keys = sourceClaim?.imageKeys ?? null;
+  return Array.isArray(keys) && keys.length > 0;
 }
 
 // 证书标准库 PR-1 · 冻结稿 §15.3 敏感分级的**唯一出口**。
@@ -125,16 +127,16 @@ function hasEvidence(imageKeys: Prisma.JsonValue | null): boolean {
 //
 // 普通 `certificate.read.record`:编号只给掩码、审核备注与审核人 id 恒 null。
 // 另持 scoped `certificate.read.sensitive`:明文编号 + 备注 + 审核人 id。
-// `imageKeys` / `certNumber` 原值一律不进出参。
+// `sourceClaim` / `certNumber` 原值一律不进出参(前者含 object key)。
 function presentCertificate(cert: SafeCertificate, sensitive: boolean): CertificateResponseDto {
-  const { certNumber, imageKeys, ...rest } = cert;
+  const { certNumber, sourceClaim, ...rest } = cert;
   return {
     ...rest,
     certNumberMasked: maskIdentifier(certNumber),
     certNumberFull: sensitive ? certNumber : null,
     verifyNote: sensitive ? cert.verifyNote : null,
     verifiedBy: sensitive ? cert.verifiedBy : null,
-    evidenceAvailable: hasEvidence(imageKeys),
+    evidenceAvailable: hasEvidence(sourceClaim),
   };
 }
 
@@ -156,22 +158,6 @@ export class CertificatesService {
     // 不在建证侧复制第二套机构 / 编号 / 日期算法。
     private readonly recognitionResolver: CertificateRecognitionResolver,
   ) {}
-
-  /**
-   * 旧 `certTypeCode` 仍是 NOT NULL(4b 才 DROP),按已解析 Standard 的类别回填一次。
-   * **不是双写** —— 值派生自 Standard,不是第二个事实源。
-   */
-  private async categoryCodeOfStandard(
-    tx: Prisma.TransactionClient,
-    standardId: string,
-  ): Promise<string> {
-    const std = await tx.certificateStandard.findFirst({
-      where: notDeletedWhere({ id: standardId }),
-      select: { categoryCode: true },
-    });
-    if (!std) throw new BizException(BizCode.CERTIFICATE_STANDARD_NOT_FOUND);
-    return std.categoryCode;
-  }
 
   // ============ helpers ============
 
@@ -271,8 +257,10 @@ export class CertificatesService {
   // 不含 id / memberId / createdAt / updatedAt(audit_logs 自带 resourceId / createdAt / actorUser)。
   private toCertSnapshot(c: SafeCertificate, verifyNoteChanged = false): Record<string, unknown> {
     return {
-      certTypeCode: c.certTypeCode,
-      certSubTypeCode: c.certSubTypeCode,
+      // PR-4b:类别 / 等级 / 内部属性的实例侧副本已 DROP —— 审计改记 standardId 引用。
+      standardId: c.standardId,
+      recognitionPolicyId: c.recognitionPolicyId,
+      sourceCode: c.sourceCode,
       issuingOrg: c.issuingOrg,
       certNumber: maskIdentifier(c.certNumber),
       issuedAt: c.issuedAt.toISOString(),
@@ -282,7 +270,6 @@ export class CertificatesService {
       verifiedAt: c.verifiedAt ? c.verifiedAt.toISOString() : null,
       verifyNoteProvided: this.isVerifyNoteProvided(c.verifyNote),
       verifyNoteChanged,
-      isInternal: c.isInternal,
       supersededByCertId: c.supersededByCertId,
     };
   }
@@ -421,10 +408,8 @@ export class CertificatesService {
 
       const data: Prisma.CertificateUncheckedCreateInput = {
         memberId,
-        // 旧列停写(§21):certSubTypeCode / isInternal / imageKeys 本刀起一律不写。
-        // certTypeCode 仍 NOT NULL(4b 才 DROP),按 Standard 的类别回填一次 ——
-        // 值派生自 Standard,不是第二个事实源。
-        certTypeCode: await this.categoryCodeOfStandard(tx, resolved.standardId),
+        // PR-4b:四个重复事实列已 DROP —— 类别 / 等级 / 内部属性只有一个权威
+        // (CertificateStandard),读侧 join 即得;实例侧不再有任何副本。
         standardId: resolved.standardId,
         recognitionPolicyId: resolved.recognitionPolicyId,
         recognitionIssuerId: resolved.recognitionIssuerId,
@@ -560,10 +545,8 @@ export class CertificatesService {
         data.certNumber = resolved.certNumber;
         data.issuedAt = resolved.issuedAt;
         data.expiredAt = resolved.expiredAt;
-        // 改了 Standard 就同步回填派生的 certTypeCode(4b DROP 前的过渡)。
-        if (changingStandard) {
-          data.certTypeCode = await this.categoryCodeOfStandard(tx, resolved.standardId);
-        }
+        // PR-4b:certTypeCode 已 DROP,过渡期的回填随之删除 ——
+        // 类别只有一个权威(Standard),读侧 join 即得。
         effectiveExpiredAt = resolved.expiredAt;
       }
 
@@ -802,11 +785,18 @@ export class CertificatesService {
     // 必须同时查状态与日期(D-CERT-020):不能只信持久状态 —— cron 每天 09:00 才翻态,
     // 在它跑之前已过期的证书状态仍是 verified。反过来也不能拿时间戳比 `expiredAt`:
     // 它存的是北京日的 UTC 零点,与 now 比会在最后有效日的北京 08:00 后误判为过期。
+    // 证书标准库 PR-4b:类别过滤从实例列改为经关联走 `standard.categoryCode`
+    // (实例侧 certTypeCode 已 DROP)。**端点契约不变** —— query 参数仍叫 certTypeCode,
+    // 值域仍是 cert_type 字典 code;换的只是它落到哪一列上。
+    //
+    // ⚠️ 这一格与 App 列表过滤同属本刀最险的一类:`notDeletedWhere(...)` 的入参是
+    // 宽类型,旧写法 `certTypeCode` 在列删掉之后**依然编译通过**,只会在真实查询时炸。
+    // 而这是 §10.5 的资质判定 —— 全系统最关键的一次读。行为锁必须在 e2e。
     const today = beijingDateOnly(new Date());
     const found = await this.prisma.certificate.findFirst({
       where: notDeletedWhere({
         memberId,
-        certTypeCode,
+        standard: { categoryCode: certTypeCode },
         certStatusCode: CERT_STATUS_VERIFIED,
         OR: [{ expiredAt: null }, { expiredAt: { gte: today } }],
       }),
