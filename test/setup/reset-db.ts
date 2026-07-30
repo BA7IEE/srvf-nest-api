@@ -30,6 +30,20 @@ import { assertConnectedTestDatabase, assertTestDatabaseUrl } from './test-db';
 // 之后的扩展子表段;Certificate.memberId / verifiedBy 引用 Member.id,supersededByCertId
 // 自引用 Certificate.id,全部 ON DELETE Restrict;CASCADE 兜底自引用与跨表依赖。
 //
+// 证书标准库 PR-3 追加(2026-07-30;修 PR-2 的遗漏):4 张新表进列表。
+// PR-2 建表时只有 `RecruitmentCertificateClaim` 会被 `recruitment_applications` 的
+// CASCADE 隐式带走,另外三张**从未被清** —— 实测逐字跑当时那条 TRUNCATE:
+//   插入 Standard/Policy/Issuer 各 1 行 → TRUNCATE(含 Certificate 与全部父表)
+//   → 三张表仍各剩 1 行。
+// 机理:`TRUNCATE ... CASCADE` 只连带清「**引用**被清表」的表;
+// `Certificate.standardId → CertificateStandard` 是 Certificate 引用 Standard,
+// 所以清 Certificate 清不到 Standard,而 Standard 自己不在列表里。
+// 后果是同一 worker DB 内跨 spec 累积 Standard 行,`options` 这类全量取回断言
+// 会随执行顺序时红时绿 —— 典型的「只在特定 spec 组合下复现」的 flake 源。
+// 顺序:Issuer → Policy → Standard(先子后父,与本文件既有惯例一致;CASCADE 亦可兜)。
+// `RecruitmentCertificateClaim` 也显式列出:不再依赖 recruitment_applications 的
+// 隐式 CASCADE —— 那条依赖一旦被挪走就会静默失效。
+//
 // V2 第一阶段批次 3 追加(2026-05-11):4 张新表(Activity / ActivityRegistration /
 // AttendanceSheet / AttendanceRecord);全部 FK ON DELETE Restrict(沿 R20 / Q-S21);
 // 顺序:孙表(AttendanceRecord)→ 子表(AttendanceSheet / ActivityRegistration)→ 父表(Activity)
@@ -170,9 +184,9 @@ export async function resetDb(app: INestApplication): Promise<void> {
   const prisma = app.get(PrismaService);
   // 第二道:连接建立之后向服务器求证它**事实上**是谁。URL 合规不等于连对了地方
   // (DNS 劫持 / 端口转发都能让一条合规 URL 落到别的机器上),而下面这条是
-  // 55 张业务表的 TRUNCATE —— 判错一次就是不可逆的数据破坏。
+  // 59 张业务表的 TRUNCATE —— 判错一次就是不可逆的数据破坏。
   await assertConnectedTestDatabase(prisma);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "activity_publish_reviews", "activity_responsibility_assignments", "insurance_eligibility_evidences", "notification_outbox_intents", "throttler_buckets", "organization_position_role_policies", "role_bindings", "role_permissions", "roles", "permissions", "audit_logs", "storage_settings", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "realname_verification_settings", "recruitment_applications", "recruitment_cycles", "recruitment_ocr_daily_counters", "team_join_applications", "team_join_cycles", "notification_reads", "notifications", "contents", "attachment_mime_configs", "attachment_size_limit_configs", "storage_object_operations", "storage_objects", "attachments", "attachment_type_configs", "team_insurance_coverages", "member_insurances", "team_insurance_policies", "ContributionRule", "activity_check_ins", "activity_feedbacks", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "activity_positions", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "member_organization_memberships", "organization_supervision_assignments", "organization_position_assignments", "organization_position_rules", "organization_positions", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "activity_publish_reviews", "activity_responsibility_assignments", "insurance_eligibility_evidences", "notification_outbox_intents", "throttler_buckets", "organization_position_role_policies", "role_bindings", "role_permissions", "roles", "permissions", "audit_logs", "storage_settings", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "realname_verification_settings", "RecruitmentCertificateClaim", "recruitment_applications", "recruitment_cycles", "recruitment_ocr_daily_counters", "team_join_applications", "team_join_cycles", "notification_reads", "notifications", "contents", "attachment_mime_configs", "attachment_size_limit_configs", "storage_object_operations", "storage_objects", "attachments", "attachment_type_configs", "team_insurance_coverages", "member_insurances", "team_insurance_policies", "ContributionRule", "activity_check_ins", "activity_feedbacks", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "activity_positions", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "CertificateRecognitionIssuer", "CertificateRecognitionPolicy", "CertificateStandard", "User", "member_organization_memberships", "organization_supervision_assignments", "organization_position_assignments", "organization_position_rules", "organization_positions", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
   );
 }

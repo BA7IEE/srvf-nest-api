@@ -269,10 +269,11 @@ export const BizCode = {
   // certificates 模块业务级(180xx + 181xx)。批次 2 引入(2026-05-10)。
   // 段位选择:baseline §1.1 中 180xx 是 batch 1 评审时为 member_profiles 预留但实际让位
   // 160xx 后空出的段位;批次 2 接管。详见 docs:批次2_API前评审_certificates.md §9。
-  // 子段(对齐 baseline §1.3):
-  // - 18001:NOT_FOUND
-  // - 18010-18029:业务级输入校验(cert_type / cert_sub_type 字典 invalid)
-  // - 18030-18099:资源状态非法 / 状态机转移非法
+  // 子段(对齐 baseline §1.3;证书标准库 PR-3 起 NOT_FOUND 扩到三条):
+  // - 18001 / 18002 / 18004:NOT_FOUND(证书实例 / 证书标准 / 认定规则)
+  // - 18003:唯一约束冲突(Standard code)
+  // - 18010-18029:业务级输入校验(字典 invalid、日期语义、Standard kind / 父级 / 机构 / 有效期配置)
+  // - 18030-18099:资源状态非法 / 状态机转移非法 / 并发冲突兜底
   // - 18101:权限边界(NOT_BELONGS_TO_MEMBER)
   //
   // 复用现有错误码:MEMBER_NOT_FOUND(15001);
@@ -315,6 +316,95 @@ export const BizCode = {
     code: 18101,
     message: '证书不属于该队员',
     httpStatus: HttpStatus.FORBIDDEN,
+  },
+
+  // ===== 证书标准库 PR-3(冻结稿 §18)=====
+  //
+  // 号位落在既有子段:18002/18004 = NOT_FOUND;18012-18019 = 业务级输入校验;
+  // 18031-18040 = 资源状态非法 / 状态机转移非法。
+  // 已 grep 真源确认无碰撞(180xx 此前占用 18001/18010/18011/18017/18018/18030/18101)。
+  // §18 的号码是「建议」,本刀按真源逐条复核后落定;18014/18016/18035/18038
+  // 属实例写路径(建证与审核),留给 PR-4a,此刻加就是孤码。
+  CERTIFICATE_STANDARD_NOT_FOUND: {
+    code: 18002,
+    message: '证书标准不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  CERTIFICATE_STANDARD_CODE_EXISTS: {
+    code: 18003,
+    message: '证书标准编码已存在',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  CERTIFICATE_POLICY_NOT_FOUND: {
+    code: 18004,
+    message: '证书认定规则不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  CERTIFICATE_STANDARD_KIND_INVALID: {
+    code: 18012,
+    message: '该目录节点不是可持有证书标准',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  CERTIFICATE_ISSUER_CONFIG_INVALID: {
+    code: 18013,
+    message: '发证机构配置不符合认定规则',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  CERTIFICATE_VALIDITY_INVALID: {
+    code: 18015,
+    message: '证书有效期不符合认定规则',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  // §5.2 的父级约束三合一:父节点必须是 FAMILY 由 18012 表达;
+  // 「父子 categoryCode 不一致」与「形成父子循环」用本码(§18 建议表未列,按真源补)。
+  CERTIFICATE_STANDARD_PARENT_INVALID: {
+    code: 18019,
+    message: '父级证书标准不合法(类别不一致或形成循环)',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  CERTIFICATE_STANDARD_INACTIVE: {
+    code: 18031,
+    message: '证书标准未启用',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  CERTIFICATE_STANDARD_IN_USE: {
+    code: 18032,
+    message: '证书标准已被引用,不能删除',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  CERTIFICATE_STANDARD_IMMUTABLE: {
+    code: 18033,
+    message: '证书标准启用后身份字段不可修改',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  CERTIFICATE_STANDARD_STATE_INVALID: {
+    code: 18034,
+    message: '证书标准状态不允许此操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  CERTIFICATE_POLICY_IMMUTABLE: {
+    code: 18036,
+    message: '生效或退役认定规则不可修改',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  CERTIFICATE_POLICY_STATE_INVALID: {
+    code: 18037,
+    message: '认定规则状态不允许此操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // 两条并发兜底码。都由 P2002 转来,但撞的是**不同索引**,语义与前端提示不同,
+  // 故分开(§5.3 要求「显式转换 P2002」,按 meta.target 里的索引名区分):
+  // - (standardId, version) 普通唯一 → 版本号被别人抢先占用,重取 MAX(version) 再来
+  // - one_active_per_standard partial unique → 已有别的版本刚被激活,刷新后再决定
+  CERTIFICATE_POLICY_VERSION_CONFLICT: {
+    code: 18039,
+    message: '认定规则版本号已被占用,请刷新后重试',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  CERTIFICATE_POLICY_ACTIVE_CONFLICT: {
+    code: 18040,
+    message: '该证书标准已有生效认定规则,请刷新后重试',
+    httpStatus: HttpStatus.CONFLICT,
   },
 
   // members 模块业务级(150xx + 151xx)。详见 docs/v2-api-contract.md §4.7。

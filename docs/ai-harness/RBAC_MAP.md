@@ -68,18 +68,19 @@
 | `meta` | 1 | `meta.resolve.label` |
 | `sms-send-log` | 1 | `sms-send-log.read.list` |
 
-### controller × surface 对照(81 个 @Controller)
+### controller × surface 对照(83 个 @Controller)
 
 > 权威源:`src/**/*.controller.ts` 的 `@Controller(...)` 装饰器。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 鉴权模式(R / A / P)与业务语义属人类知识,见本文件标记之外的章节。
 
-#### admin/v1(42 个 controller)
+#### admin/v1(44 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
 | `admin/v1` | `src/modules/announcement-import/announcement-import.controller.ts` |
 | `admin/v1` | `src/modules/authz/action-state.controller.ts` |
 | `admin/v1` | `src/modules/authz/authz.controller.ts` |
+| `admin/v1` | `src/modules/certificates/certificate-recognition-policies.controller.ts` |
 | `admin/v1` | `src/modules/member-departments/memberships-admin.controller.ts` |
 | `admin/v1` | `src/modules/position-assignments/position-assignments.controller.ts` |
 | `admin/v1` | `src/modules/role-bindings/role-bindings.controller.ts` |
@@ -95,6 +96,7 @@
 | `admin/v1/activity-publish-reviews` | `src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts` |
 | `admin/v1/attachments` | `src/modules/attachments/attachments.controller.ts` |
 | `admin/v1/attendance-sheets` | `src/modules/attendances/attendances.controller.ts` |
+| `admin/v1/certificate-standards` | `src/modules/certificates/certificate-standards.controller.ts` |
 | `admin/v1/contents` | `src/modules/content/content-admin.controller.ts` |
 | `admin/v1/me` | `src/modules/users/controllers/admin-me.controller.ts` |
 | `admin/v1/members` | `src/modules/members/members.controller.ts` |
