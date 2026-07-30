@@ -8,7 +8,6 @@ import {
   APP_STATUS_VERIFIED,
   APP_STATUS_WITHDRAWN,
   RISK_LEVEL_HIGH,
-  RECRUITMENT_CERT_CATEGORIES,
   THRESHOLD_CODES,
   type ThresholdCode,
   type ThresholdMarks,
@@ -195,8 +194,20 @@ export type RecruitmentProgressSource = {
   thresholdMarks: unknown; // Prisma Json
   promotedMemberId: string | null;
   riskLevel: string | null; // S4b:manual_review + high → manual_high(申请人侧文案中性)
-  certificateImages?: unknown;
-  certificateReviewStatus?: unknown;
+  // 证书标准库 PR-4a-2(§8.1):证书进度改由 Claim 行组装,不再读旧两个 JSON 列。
+  // 本模块仍然零 Prisma —— 调用方把已查好的 Claim 行按结构子类型传进来。
+  certificateClaims?: ReadonlyArray<ProgressClaimLike>;
+};
+
+/** 组装证书进度所需的最小 Claim 结构。刻意不含 imageKeys / certNumber —— 传不进来就泄不出去。 */
+export type ProgressClaimLike = {
+  id: string;
+  version: number;
+  status: string;
+  categoryHintCode: string;
+  rawCertificateName: string | null;
+  reviewNote: string | null;
+  imageCount: number;
 };
 
 export type RecruitmentProgressCycle = {
@@ -244,7 +255,7 @@ export function assembleRecruitmentProgress(
     memberNo: null,
     identityText,
     todoList: buildRecruitmentTodoList(marks),
-    certificates: buildCertificateProgress(app.certificateImages, app.certificateReviewStatus),
+    certificates: buildCertificateProgress(app.certificateClaims),
     meetingInfo: canViewMeetingInfo ? cycle.meetingInfo : null,
     qqGroup: canViewMeetingInfo ? cycle.qqGroup : null,
     notice: canViewMeetingInfo ? (cycle.notifyTemplate as Record<string, unknown> | null) : null,
@@ -252,25 +263,20 @@ export function assembleRecruitmentProgress(
 }
 
 function buildCertificateProgress(
-  imagesRaw: unknown,
-  reviewsRaw: unknown,
+  claims: ReadonlyArray<ProgressClaimLike> | undefined,
 ): RecruitmentCertificateProgressItemDto[] {
-  const images = (imagesRaw as Record<string, string[]> | null) ?? {};
-  const reviews = (reviewsRaw as Record<string, { status?: string; note?: string }> | null) ?? {};
-  return RECRUITMENT_CERT_CATEGORIES.map((category) => {
-    const imageCount = Array.isArray(images[category]) ? images[category].length : 0;
-    const review = reviews[category];
-    const status =
-      review?.status === 'approved' || review?.status === 'rejected'
-        ? review.status
-        : imageCount > 0
-          ? 'uploaded'
-          : 'none';
-    return {
-      category,
-      status,
-      imageCount,
-      note: status === 'rejected' ? (review?.note ?? null) : null,
-    };
-  });
+  // 一证一行:直接一一映射,不做按类别的折叠。
+  // 状态直接透传 Claim 状态机 —— 旧的 none/uploaded 两档是「按类别一格」时代的产物
+  // (「这个类别还没传图」),一证一行下不存在「没有申报的申报」。
+  // `note` 只在需要申请人动作的两态给:REJECTED 与 NEEDS_INFO。
+  // 通过态把审核备注回显给申请人没有意义,还可能带出内部口径。
+  return (claims ?? []).map((c) => ({
+    claimId: c.id,
+    version: c.version,
+    category: c.categoryHintCode,
+    rawCertificateName: c.rawCertificateName,
+    status: c.status,
+    imageCount: c.imageCount,
+    note: c.status === 'REJECTED' || c.status === 'NEEDS_INFO' ? c.reviewNote : null,
+  }));
 }

@@ -104862,32 +104862,52 @@
       "RecruitmentCertificateProgressItemDto": {
         "type": "object",
         "properties": {
+          "claimId": {
+            "type": "string",
+            "description": "申报 id(重传 / 撤回时回传)"
+          },
+          "version": {
+            "type": "number",
+            "description": "CAS 版本号(重传 / 撤回必须回传)"
+          },
           "category": {
             "type": "string",
+            "description": "本人选的类别提示",
             "enum": [
               "first_aid",
               "bsafe"
             ]
           },
+          "rawCertificateName": {
+            "type": "string",
+            "description": "本人填的证书名称",
+            "nullable": true
+          },
           "status": {
             "type": "string",
+            "description": "申报状态(直接透传 Claim 状态机,不再折叠成 none/uploaded)",
             "enum": [
-              "none",
-              "uploaded",
-              "approved",
-              "rejected"
+              "SUBMITTED",
+              "NEEDS_INFO",
+              "APPROVED",
+              "REJECTED",
+              "PROMOTED",
+              "WITHDRAWN"
             ]
           },
           "imageCount": {
-            "type": "number"
+            "type": "number",
+            "description": "该申报的证据图数量"
           },
           "note": {
             "type": "string",
-            "description": "驳回说明(申请人可见)",
+            "description": "审核说明(驳回 / 要求补材料时对本人可见)",
             "nullable": true
           }
         },
         "required": [
+          "claimId",
+          "version",
           "category",
           "status",
           "imageCount"

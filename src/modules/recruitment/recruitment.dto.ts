@@ -468,13 +468,41 @@ export class RecruitmentTodoItemDto {
   done!: boolean;
 }
 
+// 证书标准库 PR-4a-2(冻结稿 §8.1):**一证一行**。
+// ⚠️ 公开契约变化:本项从「每个类别恰一条(none/uploaded/approved/rejected)」
+// 改为「每条申报一行」—— 同类别可以有多行,数组也可能为空。
+// 理由是旧形状在结构上表达不了「两张急救证,一张过了一张被驳回」,
+// 而那正是一证一行要解决的问题。
 export class RecruitmentCertificateProgressItemDto {
-  @ApiProperty({ enum: RECRUITMENT_CERT_CATEGORIES as unknown as string[] })
+  @ApiProperty({ description: '申报 id(重传 / 撤回时回传)' })
+  claimId!: string;
+
+  @ApiProperty({ description: 'CAS 版本号(重传 / 撤回必须回传)' })
+  version!: number;
+
+  @ApiProperty({
+    description: '本人选的类别提示',
+    enum: RECRUITMENT_CERT_CATEGORIES as unknown as string[],
+  })
   category!: string;
-  @ApiProperty({ enum: ['none', 'uploaded', 'approved', 'rejected'] })
+
+  @ApiPropertyOptional({ description: '本人填的证书名称', type: String, nullable: true })
+  rawCertificateName!: string | null;
+
+  @ApiProperty({
+    description: '申报状态(直接透传 Claim 状态机,不再折叠成 none/uploaded)',
+    enum: ['SUBMITTED', 'NEEDS_INFO', 'APPROVED', 'REJECTED', 'PROMOTED', 'WITHDRAWN'],
+  })
   status!: string;
-  @ApiProperty() imageCount!: number;
-  @ApiPropertyOptional({ description: '驳回说明(申请人可见)', type: String, nullable: true })
+
+  @ApiProperty({ description: '该申报的证据图数量' })
+  imageCount!: number;
+
+  @ApiPropertyOptional({
+    description: '审核说明(驳回 / 要求补材料时对本人可见)',
+    type: String,
+    nullable: true,
+  })
   note!: string | null;
 }
 

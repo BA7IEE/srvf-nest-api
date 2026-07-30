@@ -238,12 +238,24 @@ describe('RecruitmentIdentityService.withdraw · status claim 后权威重读', 
     const locked = { ...base };
     const updated = { ...locked, statusCode: 'withdrawn' };
     const auditLogs = { log: jest.fn().mockResolvedValue(undefined) };
-    const findFirst = jest.fn().mockResolvedValueOnce(base).mockResolvedValueOnce(locked);
+    // 第 3 次读来自 PR-4a-2 的门槛重算(同事务、锁内);回落到 locked 而不是 undefined,
+    // 否则重算会走 `if (!app) return` 静默空转,这条用例就测不到它真的跑了。
+    const findFirst = jest
+      .fn()
+      .mockResolvedValueOnce(base)
+      .mockResolvedValueOnce(locked)
+      .mockResolvedValue(locked);
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([{ id: base.id }]),
       recruitmentApplication: {
         findFirst,
         update: jest.fn().mockResolvedValue(updated),
+      },
+      // PR-4a-2(§8.4 末段):整份撤销级联未 PROMOTED 的 Claim → WITHDRAWN,
+      // 随后重算派生门槛。本组无 Claim → updateMany 0 条、重算无改动。
+      recruitmentCertificateClaim: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        findMany: jest.fn().mockResolvedValue([]),
       },
     };
     const prisma = {
@@ -254,6 +266,9 @@ describe('RecruitmentIdentityService.withdraw · status claim 后权威重读', 
           .mockResolvedValue({ meetingInfo: null, qqGroup: null, notifyTemplate: null }),
       },
       dictItem: { findMany: jest.fn().mockResolvedValue([]) },
+      // 证书标准库 PR-4a-2:进度模型的证书段改由 Claim 行组装(loadProgressClaims)。
+      // 本组守的是「锁后权威重读」,与证书无关 → 空数组。
+      recruitmentCertificateClaim: { findMany: jest.fn().mockResolvedValue([]) },
     };
     const service = new RecruitmentIdentityService(
       prisma as never,
@@ -268,7 +283,9 @@ describe('RecruitmentIdentityService.withdraw · status claim 后权威重读', 
       stage: 'withdrawn',
     });
 
-    expect(findFirst).toHaveBeenCalledTimes(2);
+    // 2 次是「锁前定位 + 锁后权威重读」(本用例的原意);
+    // 第 3 次是 PR-4a-2 新增的门槛重算在同一事务、同一锁内的读 —— 刻意加的,不是回归。
+    expect(findFirst).toHaveBeenCalledTimes(3);
     expect(tx.recruitmentApplication.update).toHaveBeenCalledWith({
       where: { id: locked.id },
       data: { statusCode: 'withdrawn' },
@@ -276,10 +293,15 @@ describe('RecruitmentIdentityService.withdraw · status claim 后权威重读', 
     expect(auditLogs.log).toHaveBeenCalledWith(
       expect.objectContaining({
         before: { statusCode: locked.statusCode },
-        extra: { channel: 'wechat', openid: 'stal****lock' },
+        // PR-4a-2:extra 多一个 withdrawnClaimCount(级联撤了几条证书申报)。
+        // 断言写全集而不是放宽成 objectContaining —— 这一格的意义正是「只记条数,
+        // 不记 claim id / 编号 / key」,放宽就测不到「没多记别的」。
+        extra: { channel: 'wechat', openid: 'stal****lock', withdrawnClaimCount: 0 },
         tx,
       }),
     );
+    // 级联真的发生了(哪怕本组 0 条):少了这一句,把 updateMany 整段删掉也不会红。
+    expect(tx.recruitmentCertificateClaim.updateMany).toHaveBeenCalledTimes(1);
   });
 
   it('微信身份在 claim 等待期间漂移 → 泛化 NOT_FOUND 且零 update/audit', async () => {
