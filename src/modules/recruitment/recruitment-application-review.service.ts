@@ -36,6 +36,8 @@ import {
   isValidChineseId,
 } from './recruitment.constants';
 import { resolveBatchMatches } from './recruitment-batch-matching';
+import { lockActiveApplicationOrThrow } from './recruitment-application-lock';
+import { recomputeCertificateThresholds } from './recruitment-certificate-threshold-derive';
 import { toAdminApplicationDto } from './recruitment-applications.presenter';
 import type {
   BatchMarkThresholdDto,
@@ -230,6 +232,20 @@ export class RecruitmentApplicationReviewService {
   // pending_evaluation:通过→公示 / 不通过→未通过(evaluation);
   // verified:仅 approved=false 淘汰(门槛超期/退出,threshold-timeout);approved=true→28041(门槛未齐);
   // 其余态→28041。
+  //
+  // 第二轮跨模型评审 findings G1:本方法此前**无锁、无锁后复读、无 CAS** ——
+  // 事务外读到 pending_evaluation 就无条件 `update({ where: { id } })`。
+  // 后果是等锁期间提交的整份撤销(withdrawn)或门槛回退(verified)会被覆写回 publicity,
+  // 而发号内核只复核「当前是不是 publicity」、**不要求存在 APPROVED Claim** ——
+  // 于是一份已撤销 / 门槛已失效的报名照样能被建 Member/User 并发出永久编号。
+  //
+  // 修法沿 `recruitment-application-lock.ts` 的固定范式:
+  //   锁(FOR NO KEY UPDATE) → 锁后复读 → **重新聚合门槛** → 判定 → 带 expectedStatus 的 CAS。
+  //
+  // 门槛复算这一步不可省。锁保证的是「没人同时改」,不是「我的判断依据还成立」:
+  // `thresholdMarks` 对 redCross / bsafe 只是 Claim 审核结论的**投影**,
+  // 任何漏调重算的 Claim 写路径都会让投影静默落后于事实。只信投影 =
+  // 把「这个人到底有没有证」交给另一处代码有没有记得同步。
   async evaluate(
     id: string,
     dto: EvaluateRecruitmentApplicationDto,
@@ -240,10 +256,32 @@ export class RecruitmentApplicationReviewService {
     await this.assertCanOrThrow(user, 'recruitment-application.evaluate.assessment');
     const canSensitive = await this.rbac.can(user, 'recruitment-application.read.sensitive');
     return this.prisma.$transaction(async (tx) => {
-      const row = await tx.recruitmentApplication.findFirst({ where: { id, deletedAt: null } });
-      if (!row) {
-        throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
+      // 锁 + 复读 + 拒终态(promoted / rejected / withdrawn 一律 28041,与旧 else 分支同码)。
+      let row = await lockActiveApplicationOrThrow(tx, id);
+
+      // 通过评定是唯一会写出 publicity 的动作,也是唯一需要门槛成立的动作 ——
+      // 所以只在这一支重算。`recomputeCertificateThresholds` 是这两个门槛的唯一写者:
+      // 它按当前全部未软删 Claim 重新聚合,并在门槛不再完整时把报名从
+      // pending_evaluation 退回 verified。不另写一套判定 —— 第二套聚合就是第二个可漂移的真相。
+      //
+      // 它与评定同事务:门槛不成立 → 下面抛 28041 → **重算刚写的修正一起回滚**。
+      // 这是刻意的:本方法的职责是「不要基于失效依据放行」,不是「顺手修数据」。
+      // 修正只在评定本身提交的那条路径上落库(例如投影漏标但 Claim 齐全时补上标记)。
+      if (dto.approved && row.statusCode === APP_STATUS_PENDING_EVALUATION) {
+        await recomputeCertificateThresholds(this.auditLogs, tx, id, {
+          actorUserId: user.id,
+          actorRoleSnap: user.role,
+          meta,
+          now,
+        });
+        // 重算可能刚刚改过这一行 —— 判定依据必须取重算**之后**的事实。
+        const recomputed = await tx.recruitmentApplication.findFirst({
+          where: { id, deletedAt: null },
+        });
+        if (!recomputed) throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
+        row = recomputed;
       }
+
       let nextStatus: string;
       let eliminationStage: string | null = null;
       if (row.statusCode === APP_STATUS_PENDING_EVALUATION) {
@@ -255,7 +293,8 @@ export class RecruitmentApplicationReviewService {
         }
       } else if (row.statusCode === APP_STATUS_VERIFIED) {
         if (dto.approved) {
-          // 门槛未齐不可直接过评定(必须先全完成自动到 pending_evaluation)
+          // 门槛未齐不可直接过评定(必须先全完成自动到 pending_evaluation)。
+          // 门槛回退导致的 pending_evaluation → verified 也落在这里,同码 28041。
           throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
         }
         nextStatus = APP_STATUS_REJECTED;
@@ -263,8 +302,13 @@ export class RecruitmentApplicationReviewService {
       } else {
         throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
       }
-      const updated = await tx.recruitmentApplication.update({
-        where: { id },
+
+      // CAS 收尾:`updateMany` + `statusCode = <锁后判定的那个状态>`,而不是按 id 无条件写。
+      // 上面的行锁理论上已经保证这里必然命中 1 行;保留显式条件是因为
+      // 「无条件按 id 写状态」正是这批缺陷的共同形状 —— 将来谁挪走了锁,
+      // 这一行会立刻变红,而不是安静地退化回旧行为。
+      const written = await tx.recruitmentApplication.updateMany({
+        where: { id, statusCode: row.statusCode, deletedAt: null },
         data: {
           statusCode: nextStatus,
           evaluatedByUserId: user.id,
@@ -273,6 +317,14 @@ export class RecruitmentApplicationReviewService {
           ...(eliminationStage ? { eliminationStage } : {}),
         },
       });
+      if (written.count !== 1) {
+        throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
+      }
+      const updated = await tx.recruitmentApplication.findFirst({
+        where: { id, deletedAt: null },
+      });
+      if (!updated) throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
+
       await this.auditLogs.log({
         event: 'recruitment-application.evaluate',
         actorUserId: user.id,

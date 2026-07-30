@@ -190,6 +190,17 @@ describe('RecruitmentApplicationReviewService · S3 敏感字段分级(响应脱
   const meta: AuditMeta = { requestId: 'r1', ip: null, ua: null };
   const now = new Date('2026-06-24T00:00:00.000Z');
 
+  // 5 项门槛齐备的投影 —— evaluate 的门槛重算(findings G1)读它,
+  // 与桩里那两条 APPROVED Claim 对上后判定「仍完整」,重算因此不改任何字段。
+  const MARK_AT = { at: '2026-06-24T00:00:00.000Z', by: 'admin1' };
+  const COMPLETE_MARKS = {
+    patrol1: MARK_AT,
+    patrol2: MARK_AT,
+    training: MARK_AT,
+    redCross: MARK_AT,
+    bsafe: MARK_AT,
+  };
+
   // toAdminApplicationDto / isPromotable 读到的字段全集(镜像 query.service.spec.ts 的 ROW)
   const UPDATED_ROW = {
     id: 'app-1',
@@ -216,12 +227,29 @@ describe('RecruitmentApplicationReviewService · S3 敏感字段分级(响应脱
   };
 
   // $transaction 回调式 mock:把 tx 桩传入 service 内部的 tx.recruitmentApplication.* 调用。
+  //
+  // findings G1 之后 evaluate 的调用序变成「锁 → 复读 → 门槛重算 → CAS updateMany → 再复读」,
+  // 所以桩要能区分「写入前的复读」与「写入后的复读」—— 本组断言(脱敏 / 明文)一字未改,
+  // 变的只是桩要跟上真实调用序。`recruitmentCertificateClaim.findMany` 返两条 APPROVED
+  // 是让重算得出「门槛仍完整」,否则重算会把 pending_evaluation 退回 verified,
+  // 这组用例就测不到本该测的响应脱敏了。
   function buildReviewService(canMap: Record<string, boolean>, entryRow: Record<string, unknown>) {
+    let written = false;
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([{ id: 'app-1' }]),
       recruitmentApplication: {
-        findFirst: jest.fn().mockResolvedValue(entryRow),
+        findFirst: jest.fn(() => Promise.resolve(written ? UPDATED_ROW : entryRow)),
         update: jest.fn().mockResolvedValue(UPDATED_ROW),
+        updateMany: jest.fn(() => {
+          written = true;
+          return Promise.resolve({ count: 1 });
+        }),
+      },
+      recruitmentCertificateClaim: {
+        findMany: jest.fn().mockResolvedValue([
+          { status: 'APPROVED', standard: { categoryCode: 'first_aid' } },
+          { status: 'APPROVED', standard: { categoryCode: 'bsafe' } },
+        ]),
       },
     };
     const prisma = {
@@ -276,7 +304,7 @@ describe('RecruitmentApplicationReviewService · S3 敏感字段分级(响应脱
   it('evaluate · 仅持 evaluate.assessment(无 read.sensitive)→ 响应脱敏证件号/手机', async () => {
     const { service } = buildReviewService(
       { [EVALUATE]: true, [SENSITIVE]: false },
-      { id: 'app-1', statusCode: 'pending_evaluation' },
+      { id: 'app-1', statusCode: 'pending_evaluation', thresholdMarks: COMPLETE_MARKS },
     );
     const dto = await service.evaluate('app-1', { approved: true }, user, meta, now);
     expect(dto.idCardNumber).not.toBe(RAW_ID);
@@ -288,7 +316,7 @@ describe('RecruitmentApplicationReviewService · S3 敏感字段分级(响应脱
   it('evaluate · 持 evaluate.assessment + read.sensitive → 响应明文证件号/手机', async () => {
     const { service } = buildReviewService(
       { [EVALUATE]: true, [SENSITIVE]: true },
-      { id: 'app-1', statusCode: 'pending_evaluation' },
+      { id: 'app-1', statusCode: 'pending_evaluation', thresholdMarks: COMPLETE_MARKS },
     );
     const dto = await service.evaluate('app-1', { approved: true }, user, meta, now);
     expect(dto.idCardNumber).toBe(RAW_ID);
