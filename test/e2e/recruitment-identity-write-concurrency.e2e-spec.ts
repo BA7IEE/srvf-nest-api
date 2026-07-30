@@ -507,11 +507,58 @@ describe('recruitment identity/update write concurrency(评审 findings G2:换�
     ).toBe('深圳市福田区某路 8 号');
   });
 
-  it('终态报名(withdrawn)不可再被后台改资料 —— 锁内终态闸', async () => {
+  // 评审 findings H2(维护者拍板方案 A):`rejected` / `withdrawn` 的**非身份字段可改**。
+  //
+  // 这条用例是**翻面**的:G2 那一刀顺手把 `updateApplication` 挂上了
+  // `lockActiveApplicationOrThrow`,连终态一起拒 —— 那是一个比需要的更强的条件,
+  // 代价是砍掉了「给一份已淘汰的报名补个备注 / 订正住址」这个真实运营需求,
+  // 而 canonical handoff 契约一直写着它可以。反向断言过期就必须翻面,不能留着当假绿。
+  //
+  // PII 并发写回**没有**因此放回来:封它的是 `promoted` 与 `sensitivePurgedAt`
+  // 两道锁后守卫 + CAS(见下面两条,以及「后台改资料 vs 发号」那条并发用例)。
+  for (const terminal of ['rejected', 'withdrawn'] as const) {
+    it(`终态报名(${terminal})仍可改非身份字段 —— 方案 A 的正向证据`, async () => {
+      const target = await createPublicityApp();
+      await prismaA.recruitmentApplication.update({
+        where: { id: target.id },
+        data: { statusCode: terminal },
+      });
+      const dto = await reviewA.updateApplication(
+        target.id,
+        { detailedAddress: `淘汰后补录地址 ${terminal}` },
+        admin,
+        meta,
+        new Date(),
+      );
+      expect(dto.id).toBe(target.id);
+      const row = await prismaA.recruitmentApplication.findUniqueOrThrow({
+        where: { id: target.id },
+        select: { detailedAddress: true, statusCode: true },
+      });
+      // 改资料**不得**顺手改状态:终态还是终态。
+      expect(row).toMatchObject({
+        detailedAddress: `淘汰后补录地址 ${terminal}`,
+        statusCode: terminal,
+      });
+    });
+  }
+
+  it('终态报名的**身份字段**仍然锁死 —— 放宽的只有非身份字段', async () => {
     const target = await createPublicityApp();
     await prismaA.recruitmentApplication.update({
       where: { id: target.id },
-      data: { statusCode: 'withdrawn' },
+      data: { statusCode: 'rejected' },
+    });
+    await expect(
+      reviewA.updateApplication(target.id, { realName: '张改名' }, admin, meta, new Date()),
+    ).rejects.toMatchObject({ biz: BizCode.RECRUITMENT_IDENTITY_FIELDS_LOCKED });
+  });
+
+  it('已发号(promoted)行仍然一个字段都不可改 —— PII 回写与留存 SOP 冲突', async () => {
+    const target = await createPublicityApp();
+    await prismaA.recruitmentApplication.update({
+      where: { id: target.id },
+      data: { statusCode: 'promoted' },
     });
     await expect(
       reviewA.updateApplication(
