@@ -82,8 +82,9 @@ export async function lockOwnActiveApplicationOrThrow(
   }
 
   // 终态报名不得再产生 / 变更证书申报 —— 这是「终态报名下不存在非终态 Claim」
-  // 这条数据库级不变量在**写入侧**的守门人。整份撤销那条路径负责把存量 Claim 级联成
-  // WITHDRAWN;没有这道闸,级联之后仍能插进一条新的 SUBMITTED,不变量当场破。
+  // 这条数据库级不变量在**写入侧**的守门人。存量 Claim 由
+  // `withdrawClaimsOnApplicationTerminal` 级联成 WITHDRAWN(四条写终态的路径共用);
+  // 没有这道闸,级联之后仍能插进一条新的 SUBMITTED,不变量当场破。
   if (isApplicationTerminal(row.statusCode)) {
     throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
   }

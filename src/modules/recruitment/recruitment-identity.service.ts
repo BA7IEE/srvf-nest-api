@@ -1,11 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import {
-  DictItemStatus,
-  Prisma,
-  RecruitmentCertificateClaimStatus,
-  SmsPurpose,
-  type RecruitmentApplication,
-} from '@prisma/client';
+import { DictItemStatus, Prisma, SmsPurpose, type RecruitmentApplication } from '@prisma/client';
 
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -32,6 +26,7 @@ import {
   hashPhoneVerificationToken,
 } from './recruitment.constants';
 import { lockOwnActiveApplicationOrThrow } from './recruitment-application-lock';
+import { withdrawClaimsOnApplicationTerminal } from './recruitment-application-terminal';
 import { recruitmentDuplicateExceptionForP2002 } from './recruitment-prisma-errors';
 import { loadProgressClaims } from './recruitment-certificate-claim-progress';
 import { recomputeCertificateThresholds } from './recruitment-certificate-threshold-derive';
@@ -361,17 +356,12 @@ export class RecruitmentIdentityService {
       });
       // 证书标准库 PR-4a-2(冻结稿 §8.4 末段):整份报名撤销时,所有**未 PROMOTED**
       // 的 Claim 在**同一事务**转 WITHDRAWN,并清除它们对门槛的贡献。
-      // PROMOTED 的 Claim 不动 —— 已发号的报名本就撤不掉(上面状态闸已拦),
-      // 这里的 notIn 是纵深防御:万一将来放开了某条撤销路径,也绝不把已生成正式
-      // 证书的申报改成 WITHDRAWN(那会让档案与申报事实脱钩)。
-      const cascaded = await tx.recruitmentCertificateClaim.updateMany({
-        where: {
-          applicationId: lockedApp.id,
-          deletedAt: null,
-          status: { notIn: [RecruitmentCertificateClaimStatus.PROMOTED] },
-        },
-        data: { status: RecruitmentCertificateClaimStatus.WITHDRAWN },
-      });
+      //
+      // 评审 findings H1:这段曾是本文件内联的第二份实现,现已收编进
+      // `withdrawClaimsOnApplicationTerminal` —— 四条写终态的路径共用同一个函数,
+      // 「报名到终态后 Claim 该是什么」只有一个答案。收编顺带补了 id ASC 行锁:
+      // 此前这里只 updateMany 不锁,与并发的申请人重传互相覆盖。
+      const cascadedCount = await withdrawClaimsOnApplicationTerminal(tx, lockedApp.id);
       // 重算在级联之后:此刻所有贡献者都已 WITHDRAWN,聚合自然清空两个派生门槛。
       // 报名已是终态 withdrawn,`recalcApplicationStatusForThresholds` 会原样返回它 ——
       // 不会把一份已撤销的报名拉回流程。
@@ -397,7 +387,7 @@ export class RecruitmentIdentityService {
             ? { openid: this.maskOpenid(lockedApp.openid) }
             : {}),
           // 级联撤了几条证书申报 —— 只记条数,不记 id / 编号 / key。
-          withdrawnClaimCount: cascaded.count,
+          withdrawnClaimCount: cascadedCount,
         },
         tx,
       });

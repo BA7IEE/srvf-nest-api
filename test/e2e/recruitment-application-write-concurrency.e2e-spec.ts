@@ -200,6 +200,32 @@ describe('recruitment application write concurrency(评审 findings G1:评定锁
     expect(rows).toEqual([]);
   }
 
+  /**
+   * 评审 findings H1:终态报名下不得存在非终态 Claim —— 数据库级全表巡检。
+   *
+   * 与 `recruitment-certificate-concurrency.e2e-spec.ts` 里那条逐字同款,**刻意重复**:
+   * 那份守的是发号与撤销,这份守的是评定;缺陷正是「范式抽出来了但没铺到每条路径」,
+   * 所以每条写终态的路径都必须在**自己那组用例里**被这条巡检扫一遍。
+   *
+   * 这条与本文件那条「正常淘汰照旧可用」曾经是互相矛盾的:修复前淘汰一定留下
+   * APPROVED Claim,两条不可能同时绿。现在必须同时绿。
+   */
+  async function assertNoNonTerminalClaimUnderTerminalApplication(): Promise<void> {
+    const rows = await prismaA.$queryRaw<Array<{ claimId: string; appStatus: string; s: string }>>`
+      SELECT c."id" AS "claimId", a."statusCode" AS "appStatus", c."status"::text AS s
+      FROM "RecruitmentCertificateClaim" c
+      JOIN "recruitment_applications" a ON a."id" = c."applicationId"
+      WHERE c."deletedAt" IS NULL
+        AND a."deletedAt" IS NULL
+        AND a."statusCode" IN ('promoted', 'withdrawn', 'rejected')
+        AND c."status" NOT IN (
+          'PROMOTED'::"RecruitmentCertificateClaimStatus",
+          'WITHDRAWN'::"RecruitmentCertificateClaimStatus"
+        )
+    `;
+    expect(rows).toEqual([]);
+  }
+
   beforeAll(async () => {
     appA = await createTestApp();
     appB = await createTestApp();
@@ -453,6 +479,16 @@ describe('recruitment application write concurrency(评审 findings G1:评定锁
       await tx.$executeRaw`
         UPDATE "recruitment_applications" SET "statusCode" = 'withdrawn' WHERE "id" = ${withdrawn.id}
       `;
+      // 与用例 ① 的 blocker 同款:撤销服务是**连 Claim 一起**级联的,裸 SQL 少写这一半
+      // 就等于给库里留一份真实撤销永远不会产生的残局,H1 那条全表巡检会照直报出来。
+      // 「语义与对应 service 逐字对齐」是本文件 blocker 的既定纪律,这里补齐。
+      await tx.$executeRaw`
+        UPDATE "RecruitmentCertificateClaim"
+        SET "status" = 'WITHDRAWN'::"RecruitmentCertificateClaimStatus"
+        WHERE "applicationId" = ${withdrawn.id}
+          AND "status" <> 'PROMOTED'::"RecruitmentCertificateClaimStatus"
+          AND "deletedAt" IS NULL
+      `;
     });
     await b1.ready;
     const e1 = reviewB.evaluate(withdrawn.id, { approved: true }, admin, meta, new Date());
@@ -575,6 +611,66 @@ describe('recruitment application write concurrency(评审 findings G1:评定锁
       eliminationStage: 'evaluation',
       evaluatedByUserId: admin.id,
     });
+    // 评审 findings H1:淘汰必须同事务把该报名的非 PROMOTED Claim 级联成 WITHDRAWN。
+    // **修复前这一段必红** —— 那两条 APPROVED Claim 会原样留下,而 rejected 之后
+    // 一切 Claim 写路径都被终态闸拒掉:它们永久卡住,留存 SOP(只扫 REJECTED/WITHDRAWN)
+    // 扫不到,证据闸(只含 WITHDRAWN/PROMOTED)也不拦 —— 证件照无限期留存且仍可签 URL。
+    const claims = await prismaA.recruitmentCertificateClaim.findMany({
+      where: { applicationId: target.id },
+      select: { status: true },
+      orderBy: { id: 'asc' },
+    });
+    expect(claims).toHaveLength(2);
+    expect(claims.every((c) => c.status === 'WITHDRAWN')).toBe(true);
+    // 派生门槛随之失去依据 → 重算清空(Claim 状态一变就必须重算,§8.4 唯一写者)。
+    const marks = (
+      await prismaA.recruitmentApplication.findUniqueOrThrow({
+        where: { id: target.id },
+        select: { thresholdMarks: true },
+      })
+    ).thresholdMarks as Record<string, unknown> | null;
+    expect(marks?.redCross).toBeUndefined();
+    expect(marks?.bsafe).toBeUndefined();
+    // 审计只记条数,不记 claimId / 编号 / 图片 key。
+    const log = await prismaA.auditLog.findFirstOrThrow({
+      where: { event: 'recruitment-application.evaluate', resourceId: target.id },
+      select: { context: true },
+    });
+    const extra = (log.context as { extra: Record<string, unknown> }).extra;
+    expect(extra.cascadedWithdrawnClaimCount).toBe(2);
+    expect(JSON.stringify(extra)).not.toContain('AWC-first_aid');
+    // 这条与上面的「淘汰照旧可用」修复前不可能同时绿。
+    await assertNoNonTerminalClaimUnderTerminalApplication();
+  });
+
+  it('评定通过(未进终态)不级联 Claim —— 收尾函数只绑终态,不得误伤正常放行', async () => {
+    const target = await createPendingEvaluationApp();
+    await createApprovedClaims(target.id);
+    await reviewB.evaluate(target.id, { approved: true }, admin, meta, new Date());
+    const claims = await prismaA.recruitmentCertificateClaim.findMany({
+      where: { applicationId: target.id },
+      select: { status: true },
+    });
+    expect(claims.map((c) => c.status)).toEqual([CLAIM_APPROVED, CLAIM_APPROVED]);
+  });
+
+  it('PROMOTED Claim 在淘汰级联中必须保留 —— 否则正式证书与来源申报脱钩', async () => {
+    const target = await createPendingEvaluationApp();
+    const { firstAidClaimId } = await createApprovedClaims(target.id);
+    // PROMOTED 行有 DB check(standardId + policyId + promotedAt 必须齐),
+    // 直插要按发号那条路径的落库形态写全,不能只改 status。
+    await prismaA.recruitmentCertificateClaim.update({
+      where: { id: firstAidClaimId },
+      data: { status: 'PROMOTED', promotedAt: new Date(), sensitivePurgedAt: new Date() },
+    });
+    await reviewB.evaluate(target.id, { approved: false }, admin, meta, new Date());
+    const claims = await prismaA.recruitmentCertificateClaim.findMany({
+      where: { applicationId: target.id },
+      select: { id: true, status: true },
+    });
+    expect(claims.find((c) => c.id === firstAidClaimId)?.status).toBe('PROMOTED');
+    expect(claims.filter((c) => c.status === 'WITHDRAWN')).toHaveLength(1);
+    await assertNoNonTerminalClaimUnderTerminalApplication();
   });
 
   it('verified 态 + approved=true 仍恒拒(门槛未齐不可直接过评定;复算不得把它变成可通过)', async () => {

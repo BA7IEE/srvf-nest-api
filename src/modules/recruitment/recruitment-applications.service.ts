@@ -58,6 +58,8 @@ import {
   isValidChineseId,
   recruitmentStorageCleanupFailureLog,
 } from './recruitment.constants';
+import { withdrawClaimsOnApplicationTerminal } from './recruitment-application-terminal';
+import { recomputeCertificateThresholds } from './recruitment-certificate-threshold-derive';
 import {
   RecruitmentIdentityService,
   type ConsumedPhoneIdentity,
@@ -754,6 +756,7 @@ export class RecruitmentApplicationsService {
         throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL);
       }
       let updated: RecruitmentApplication;
+      let cascadedWithdrawnClaimCount = 0;
       if (dto.approved) {
         const tempNo = await this.issueTempNo(tx, lockedRow.cycleId);
         updated = await tx.recruitmentApplication.update({
@@ -777,6 +780,22 @@ export class RecruitmentApplicationsService {
             ...(dto.reviewNote !== undefined ? { reviewNote: dto.reviewNote } : {}),
           },
         });
+        // 评审 findings H1:核验不通过同样是「报名进终态」,与综合评定淘汰、整份撤销、
+        // 发号共用同一个收尾函数。修复前这条路径零级联 —— manual_review 期已经可以
+        // 提交证书申报,它们会永久卡在非终态(rejected 之后一切 Claim 写路径皆拒),
+        // 留存 SOP 扫不到、证据闸不拦。
+        cascadedWithdrawnClaimCount = await withdrawClaimsOnApplicationTerminal(tx, id);
+        // Claim 状态变了就必须重算派生门槛(唯一写者)。报名已是 rejected,
+        // `recalcApplicationStatusForThresholds` 对终态原样返回,只清掉失去依据的标记。
+        await recomputeCertificateThresholds(this.auditLogs, tx, id, {
+          actorUserId: user.id,
+          actorRoleSnap: user.role,
+          meta: auditMeta,
+          now,
+        });
+        updated =
+          (await tx.recruitmentApplication.findFirst({ where: { id, deletedAt: null } })) ??
+          updated;
       }
       await this.auditLogs.log({
         event: 'recruitment-application.resolve-manual',
@@ -787,7 +806,12 @@ export class RecruitmentApplicationsService {
         meta: auditMeta,
         before: { statusCode: lockedRow.statusCode },
         after: { statusCode: updated.statusCode },
-        extra: { tempNo: updated.tempNo, eliminationStage: updated.eliminationStage },
+        // 级联撤了几条证书申报 —— 只记条数,不记 claimId / 编号 / 图片 key。
+        extra: {
+          tempNo: updated.tempNo,
+          eliminationStage: updated.eliminationStage,
+          cascadedWithdrawnClaimCount,
+        },
         tx,
       });
       return toAdminApplicationDto(updated, !canSensitive);

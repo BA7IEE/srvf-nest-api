@@ -409,8 +409,26 @@ describe('RecruitmentApplicationsService.resolveManual · S3 敏感字段分级(
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([{ id: 'app-1' }]),
       recruitmentApplication: {
-        findFirst: jest.fn().mockResolvedValue({ id: 'app-1', statusCode: 'manual_review' }),
+        // 第 1/2 次是「锁前定位 + 锁后权威重读」;第 4 次是 H1 新增的
+        // 「级联 + 门槛重算之后再读一遍」—— 重算可能刚清掉 thresholdMarks,
+        // 响应必须是那之后的事实。返回 UPDATED_ROW 让脱敏断言仍拿到证件号/手机。
+        findFirst: jest
+          .fn()
+          .mockResolvedValueOnce({ id: 'app-1', statusCode: 'manual_review' })
+          .mockResolvedValueOnce({ id: 'app-1', statusCode: 'manual_review' })
+          .mockResolvedValue(UPDATED_ROW),
         update: jest.fn().mockResolvedValue(UPDATED_ROW),
+      },
+      // 评审 findings H1:核验不通过 = 报名进终态 ⇒ 级联该报名的非 PROMOTED Claim。
+      // 摆一条真 Claim 而不是空数组:空数组会让收尾函数提前返回,
+      // 「级联真的发生了」就测不到。SUBMITTED 不贡献门槛 ⇒ 重算无改动。
+      recruitmentCertificateClaim: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { id: 'claim-manual-1', status: 'SUBMITTED', standard: { categoryCode: 'first_aid' } },
+          ]),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
     const prisma = {
@@ -437,10 +455,14 @@ describe('RecruitmentApplicationsService.resolveManual · S3 敏感字段分级(
   it('仅持 resolve.manual(无 read.sensitive)→ 响应脱敏证件号/手机', async () => {
     const { service, tx } = buildService({ [RESOLVE]: true, [SENSITIVE]: false });
     const dto = await service.resolveManual('app-1', { approved: false }, user, meta, now);
-    expect(tx.recruitmentApplication.findFirst).toHaveBeenCalledTimes(2);
+    // 4 次 =「锁前定位 + 锁后权威重读」(本用例原意)+ 门槛重算内的一次读 +
+    // 级联/重算之后的收尾重读(H1 新增,刻意的,不是回归)。
+    expect(tx.recruitmentApplication.findFirst).toHaveBeenCalledTimes(4);
     expect(tx.recruitmentApplication.findFirst.mock.invocationCallOrder[1]).toBeGreaterThan(
       tx.$queryRaw.mock.invocationCallOrder[0],
     );
+    // 级联真的发生了:少了这一句,把收尾函数整段删掉也不会红。
+    expect(tx.recruitmentCertificateClaim.updateMany).toHaveBeenCalledTimes(1);
     expect(dto.idCardNumber).not.toBe(RAW_ID);
     expect(dto.idCardNumber).toContain('*');
     expect(dto.phone).not.toBe(RAW_PHONE);

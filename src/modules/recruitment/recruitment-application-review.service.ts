@@ -37,6 +37,7 @@ import {
 } from './recruitment.constants';
 import { resolveBatchMatches } from './recruitment-batch-matching';
 import { lockActiveApplicationOrThrow } from './recruitment-application-lock';
+import { withdrawClaimsOnApplicationTerminal } from './recruitment-application-terminal';
 import { recomputeCertificateThresholds } from './recruitment-certificate-threshold-derive';
 import { toAdminApplicationDto } from './recruitment-applications.presenter';
 import type {
@@ -302,6 +303,7 @@ export class RecruitmentApplicationReviewService {
       } else {
         throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
       }
+      const dropsOutOfProcess = nextStatus === APP_STATUS_REJECTED;
 
       // CAS 收尾:`updateMany` + `statusCode = <锁后判定的那个状态>`,而不是按 id 无条件写。
       // 上面的行锁理论上已经保证这里必然命中 1 行;保留显式条件是因为
@@ -320,6 +322,29 @@ export class RecruitmentApplicationReviewService {
       if (written.count !== 1) {
         throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
       }
+      // 评审 findings H1:淘汰 = 报名进终态,它下面的证书申报必须同事务收尾。
+      // 修复前这条路径零级联 —— 而 rejected 在 `APP_INACTIVE_STATUS_CODES` 里,
+      // 之后一切 Claim 写路径都被 `lockActiveApplicationOrThrow` 拒掉:
+      // 那些 APPROVED / SUBMITTED 申报永久卡在非终态,留存 SOP 扫不到、证据闸不拦,
+      // 一个没进队的人的证件照就此无限期留存且仍可签出下载 URL。
+      //
+      // 位置在 CAS **之后**:级联只动 Claim 表,但 `recomputeCertificateThresholds`
+      // 会写报名行 —— 放在 CAS 之前会让它把 statusCode 改掉,CAS 当场落空。
+      const cascadedWithdrawnClaimCount = dropsOutOfProcess
+        ? await withdrawClaimsOnApplicationTerminal(tx, id)
+        : 0;
+      if (dropsOutOfProcess) {
+        // Claim 状态变了就必须重算派生门槛(该函数是这两个门槛的唯一写者)。
+        // 报名此刻已是 rejected,`recalcApplicationStatusForThresholds` 对终态原样返回,
+        // 不会把一份已淘汰的报名拉回流程 —— 它在这里只负责清掉失去依据的门槛标记。
+        await recomputeCertificateThresholds(this.auditLogs, tx, id, {
+          actorUserId: user.id,
+          actorRoleSnap: user.role,
+          meta,
+          now,
+        });
+      }
+
       const updated = await tx.recruitmentApplication.findFirst({
         where: { id, deletedAt: null },
       });
@@ -334,7 +359,8 @@ export class RecruitmentApplicationReviewService {
         meta,
         before: { statusCode: row.statusCode },
         after: { statusCode: nextStatus },
-        extra: { approved: dto.approved, eliminationStage },
+        // 级联撤了几条证书申报 —— 只记条数,不记 claimId / 编号 / 图片 key。
+        extra: { approved: dto.approved, eliminationStage, cascadedWithdrawnClaimCount },
         tx,
       });
       return toAdminApplicationDto(updated, !canSensitive);
