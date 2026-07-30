@@ -116,6 +116,49 @@
 - **⚠️ submit `documentTypeCode` 白名单**:仅 `mainland_id / passport / hk_macau_permit / taiwan_permit / foreigner_permit / other` 六值,名单外 400——证件类型用选择器,别放自由输入。
 - **新站内通知(additive)**:入队贡献值达标提醒(type=`recruitment`,title「入队贡献值已达标」)随考勤终审自动触达本人,复用既有 notifications 拉取端点,无新契约。
 
+## 2.9 证书标准库(2026-07-30;PR-1 → PR-5,⚠️ 三处契约破坏)
+
+> 冻结稿 = [`certificate-standard-library-t0-review.md`](../archive/reviews/certificate-standard-library-t0-review.md) v1.2;后台侧见 [`admin-web.md §3.2`](admin-web.md)。
+
+小程序面被动到三处,都是**破坏性**的,不改就报错或显示错:
+
+### ① 招新证书上传:换端点,且语义从「按类别覆盖」变成「一证一行」
+
+| 旧 | 新 |
+|---|---|
+| `POST /api/open/v1/recruitment/applications/certificates`(已删,调它 404) | `POST /api/open/v1/recruitment/certificate-claims` |
+| — | `POST /api/open/v1/recruitment/certificate-claims/:id/resubmit` |
+| — | `POST /api/open/v1/recruitment/certificate-claims/:id/withdraw` |
+
+- multipart 文件位仍是 `images`,**1~3 张**;凭证仍是双通道二选一(`wechatCode` 或 `phone`+`code`)。
+- 入参从 `category` 改为 `categoryHintCode`(只是提示,最终分类由审核定),并可带 `rawCertificateName` / `suggestedStandardId` / `issuingOrg` / `certNumber` / `issuedAt` / `expiredAt`。
+- **同类别可以交多张,互不覆盖**。重传只换那一条(要带 `version` 做 CAS,不符返 `28058`)。
+- 每份报名最多 **10 条**未撤回申报,超了返 `28059`。
+- 已通过的申报**本人不能改**(`28057`)—— 要改得让管理员先撤回审核。撤回后是终态,要重来就新交一条。
+- 标准选择器:`GET /api/open/v1/recruitment/certificate-standards`(无需登录)。`currentlyRecognized: false` = **已收录、待认定** —— 可以选它作建议,别当成不可选。**不要自动选第一项**,要有「不确定/没找到」(§23)。
+
+### ② 进度模型 `certificates` 变形
+
+从「每个类别恰一条,`status ∈ none/uploaded/approved/rejected`」改为**每条申报一行**:
+
+```text
+{ claimId, version, category, rawCertificateName, status, imageCount, note }
+```
+
+`status` 直接是 Claim 六态(`SUBMITTED/NEEDS_INFO/APPROVED/REJECTED/PROMOTED/WITHDRAWN`)。数组**可能为空**,也**可能同类别多行** —— 旧形状表达不了「两张急救证一张过了一张被驳回」,这正是改它的原因。`note` 只在 `REJECTED` / `NEEDS_INFO` 有值。
+
+### ③ `GET /api/app/v1/my/certificates` 出参与过滤都改了
+
+| 旧 | 新 |
+|---|---|
+| `certTypeCode` / `certSubTypeCode` | `standardId` + `standardName` + `certCategoryCode` + `certLevelCode` |
+| `isInternal`(取自证书行) | `isInternal`(字段名不变,值取自 Standard) |
+| 查询参数 `?certTypeCode=` | 查询参数 **`?certCategoryCode=`**(值域不变,仍是 cert_type 字典 code) |
+
+出参字段数 **12 → 14**。其余字段(`certNumber` 本人可见明文、`verifyNote` 本人可见、`certStatusCode`、`verifiedAt`)语义不变;仍**不**暴露审核人身份。
+
+---
+
 ## 3. 缺口台账(gap-ledger)
 
 > **当前运行时真值（2026-07-27）**：招新/入队、报名 L1、活动 L2、责任 L3、考勤 L4 producer 均在业务事务内写 durable intent；worker 在 commit 后执行 Notification / 微信 / SMS Effect，provider 失败进入 retry/dead 且不回滚已提交业务。App API/DTO 未变化，前端继续消费既有 feed。

@@ -25,6 +25,8 @@
 | [`development.md`](./development.md) | 项目结构 / 路由总览 / 环境变量 / 排错 |
 | [`testing.md`](./testing.md) | E2E 测试运行与覆盖范围 |
 | [`docker-smoke-test.md`](./docker-smoke-test.md) | docker smoke CI 形态说明 |
+| [`ops/certificate-standard-library-initialization.md`](./ops/certificate-standard-library-initialization.md) | 证书标准库首批 Standard/Policy 初始化指引(§20.3 步骤 6;**本仓刻意不内置任何证书标准** —— 认哪些证书/机构/有效期是业务拍板;含三组规则对照表 + 8 步最小 smoke + 两个顺序坑) |
+| [`ops/certificate-evidence-retention-sop.md`](./ops/certificate-evidence-retention-sop.md) | 证书证据(L3)留存与手动清理 SOP(证据两个属主 / PROMOTED Claim 图**绝不可删** / 三类可清理 + 只读核对 SQL / 先删对象后清列 / 不引入 cron) |
 | [`ops/certificate-standard-library-go-live.md`](./ops/certificate-standard-library-go-live.md) | 证书标准库 PR-4b **不可逆** contract migration 上线 SOP(执行前必跑的七条只读探针 + 迁移后三条结构复核 + 无列级回滚的处置边界 + 两处对外契约破坏清单) |
 | [`ops/cos-production-rollout-checklist.md`](./ops/cos-production-rollout-checklist.md) | 运维侧真实 COS 上线 SOP |
 | [`ops/encryption-key-freeze.md`](./ops/encryption-key-freeze.md) | Storage/SMS/WeChat/Realname 四把 production encryption key 的首发冻结、禁止直接轮换与事故处置边界 |

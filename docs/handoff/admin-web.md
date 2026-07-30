@@ -342,6 +342,45 @@
 
 ---
 
+### 3.2 证书标准库(2026-07-30;PR-1 → PR-5 全落地,⚠️ 四处契约破坏)
+
+> 冻结稿 = [`certificate-standard-library-t0-review.md`](../archive/reviews/certificate-standard-library-t0-review.md) v1.2。
+> 初始化与上线两份 SOP:[`initialization`](../ops/certificate-standard-library-initialization.md) · [`go-live`](../ops/certificate-standard-library-go-live.md)。
+
+**核心模型换了一次**:证书的类别 / 等级 / 内部属性不再存在证书行上,而是由 `standardId` 指向的 `CertificateStandard` 唯一决定;「这张证按什么规则认定」由审核/录入时锁定的 `recognitionPolicyId` 记住。所以前端凡是要显示分类,一律从标准取,不要再找 `certTypeCode`。
+
+**四处必须改的地方:**
+
+1. **建证 / 改证入参**(`POST`/`PATCH /admin/v1/members/:memberId/certificates`):`certTypeCode` + `certSubTypeCode` → **`standardId`**;`issuingOrg` 从「恒必填自由文本」变成**按规则二选一** —— 该标准生效规则的 `issuerPolicy` 是 `ALLOWLIST` 就传 `recognitionIssuerId`、`FREE_TEXT` 就传 `issuingOrg`、`FIXED` 可都不传。标准下拉来源 `GET /admin/v1/certificate-standards/options`(接受四条入口码任一,建证的人不必持标准管理码)。
+2. **出参少了三个字段**:`certTypeCode` / `certSubTypeCode` / `isInternal` 从证书 DTO 移除(列已 DROP)。新增 `standardId` / `recognitionPolicyId` / `recognitionIssuerId` / `sourceCode`。
+3. **报名 DTO 的 `certificates` 摘要字段没了**。改调专用端点 `GET /admin/v1/recruitment/applications/:applicationId/certificate-claims` —— 那里才有正确的敏感分级。
+4. **标门槛枚举 5 → 3**:`PATCH .../thresholds` 与 `POST .../batch-mark-threshold` 的 `thresholdCode` 只剩 `patrol1` / `patrol2` / `training`。传 `redCross` / `bsafe` → **`40000`**,无论 `completed` 真假。这两项现在是**证书申报审核结论的派生投影**,只能通过审核 Claim 来改。
+
+**新增端点速查:**
+
+| 任务 | 端点 |
+|---|---|
+| 标准库 CRUD + 启停 | `admin/v1/certificate-standards*`(7) |
+| 认定规则版本 CRUD + 激活/退役 | `admin/v1/certificate-standards/:id/recognition-policies` · `admin/v1/certificate-recognition-policies/:id*`(6) |
+| 招新证书申报(一证一行) | `admin/v1/recruitment/applications/:applicationId/certificate-claims` · `admin/v1/recruitment/certificate-claims/:id{,/image-urls,/review,/revoke-review}`(5) |
+| 全局证书工作台 | `GET admin/v1/certificates` · `GET admin/v1/certificates/stats`(2) |
+| 证书证据 | `GET admin/v1/members/:memberId/certificates/:id/evidence-urls`(1) |
+
+**六条前端必须知道的行为:**
+
+1. **「已收录、待认定」是一个正常状态**,不是坏数据。标准 `ACTIVE` 但没有 ACTIVE Policy 时,标准页显示「已收录,待认定」;招新公开选择器返 `currentlyRecognized: false`,申请人**可以选它作建议**,但后台审核通过会被拒(`28062`)—— 这时要引导标准管理员先建规则,不要提示申请人重传。
+2. **审核不能自动选第一个标准**。§23 明列:申报卡片要有「不确定/没找到」,`suggestedStandardId` 可为空;审核员必须显式选具体 CREDENTIAL 标准,`APPROVE` 前展示后端最终规范化结果(机构快照 / 编号 / 算出来的到期日)。
+3. **`effectiveStatusCode` 是展示状态,`certStatusCode` 是持久状态**。前者在「`verified` 但已过期」时为 `expired`,每次读按北京当天算 —— 别把它当第五个持久状态存下来,也别拿 `certStatusCode` 直接判有效性(到期 cron 每天 09:00 才翻态)。
+4. **编号只显示掩码**。工作台永不返完整编号;详情页要明文得持 `certificate.read.sensitive`,取 `certNumberFull`(无权时恒 `null`,`certNumberMasked` 始终有值)。
+5. **证据 URL 按需申请**:TTL 300s + `Cache-Control: no-store`。**不预加载、页面关闭即丢弃、不写 localStorage/sessionStorage、埋点禁止采集 URL 与表单值**(§23 / §15.5,后端无法强制,是交接约定)。⚠️ `sourceCode=ADMIN` 的证据读者需**同时**持 `certificate.read.sensitive` 与 `attachment.view`(方案 A 的已知代价);另外该分支依赖 `attachment_type_configs` 里 `certificate` 那条为 ACTIVE,运维停用它会返 400 而不是空数组。
+6. **一证一行**:同类别可以有多张证书/多条申报,互不覆盖;重传只换那一条。旧的「按类别一格」端点已全部删除,没有兼容窗口 —— 调它们返 404。
+
+### 3.3 招新公开面(小程序/H5)的连带变化
+
+见 [`miniapp.md`](miniapp.md) 的证书段:公开上传换端点、进度模型 `certificates` 变形、`my/certificates` 出参与过滤参数都改了。
+
+---
+
 ## 4. 缺口台账(gap-ledger)
 
 > 前端→后端的需求簿。状态:`提出` → `已出 goal` → `已发`。
