@@ -555,6 +555,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/open/v1/recruitment/applications/rebind-phone'],
   // 十项收口刀F(2026-07-11):公开公示名单(view-publicity 悬空动作收口;姓名+拟发号,公示=实发同源)。
   ['get', '/api/open/v1/recruitment/publicity'],
+  // 证书标准库 PR-4a-1(2026-07-30;冻结评审稿 certificate-standard-library-t0-review.md v1.2 §13.3):
+  //   公开证书标准选项(申请人侧选择器;只返 ACTIVE CREDENTIAL 且按招新证书类别过滤;
+  //   不含认定规则细节;零新 RBAC 码 —— 公开面无判权,沿 recruitment throttler 限流)。
+  ['get', '/api/open/v1/recruitment/certificate-standards'],
   ['post', '/api/admin/v1/recruitment/cycles'],
   ['get', '/api/admin/v1/recruitment/cycles'],
   ['get', '/api/admin/v1/recruitment/cycles/{id}'],
@@ -588,6 +592,14 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/admin/v1/recruitment/applications/batch-mark-threshold'],
   ['post', '/api/admin/v1/recruitment/applications/export'],
   ['get', '/api/admin/v1/recruitment/cycles/{id}/promote-precheck'],
+  // 证书标准库 PR-4a-1(2026-07-30;冻结评审稿 v1.2 §13.4):招新证书申报管理端 5 路由。
+  //   集合挂报名下、单体挂扁平前缀(claimId 足够定位;旧 `:category` 路径在 PR-4a-2 删)。
+  //   review 锁定 Standard/Policy/机构/编号/日期;revoke-review 是发号前纠错的独立动作。
+  ['get', '/api/admin/v1/recruitment/applications/{applicationId}/certificate-claims'],
+  ['get', '/api/admin/v1/recruitment/certificate-claims/{id}'],
+  ['get', '/api/admin/v1/recruitment/certificate-claims/{id}/image-urls'],
+  ['post', '/api/admin/v1/recruitment/certificate-claims/{id}/review'],
+  ['post', '/api/admin/v1/recruitment/certificate-claims/{id}/revoke-review'],
   // 招新三期(入队:志愿者→队员)T2(2026-06-19;冻结评审稿 recruitment-phase3-review.md §3.2):
   //   team-join admin 面 8 端点(入队轮 CRUD 4 + 报名 list/detail/标 gate/综合评估 4),200→208(均 admin/v1,仅新增)。
   //   app 自助面(T3)/ 一键入队(T4)后续追加。
@@ -1438,10 +1450,11 @@ describe('OpenAPI 契约快照', () => {
   });
 
   // 证书标准库 PR-3(2026-07-30):+13(证书标准 7 + 队内认定规则 6)→ 429。
+  // 证书标准库 PR-4a-1(2026-07-30):+6(招新证书申报管理端 5 + 公开标准选项 1)→ 435。
   // 这个数字被 scripts/docs-counts.ts 反向交叉校验(条目数 ≠ 本断言即 exit 2),
   // 所以它不会和上面的表悄悄脱钩。
-  it('证书标准库 PR-3 落地后路由足迹精确为 429', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(429);
+  it('证书标准库 PR-4a-1 落地后路由足迹精确为 435', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(435);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

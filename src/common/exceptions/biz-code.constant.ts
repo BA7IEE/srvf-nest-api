@@ -362,6 +362,32 @@ export const BizCode = {
     message: '父级证书标准不合法(类别不一致或形成循环)',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+  // ===== 证书标准库 PR-4a-1:实例写路径码(PR-3 刻意延后的那批)=====
+  // PR-3 不加这几条是因为当时没有消费者 —— 建证与审核路径在本刀才切到
+  // Standard/Policy,此刻它们才有真实触发点(§18 号位 18014/18016/18035)。
+  CERTIFICATE_ISSUER_NOT_ALLOWED: {
+    code: 18014,
+    message: '发证机构不在认可范围内',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  CERTIFICATE_NUMBER_REQUIRED: {
+    code: 18016,
+    message: '该证书必须填写证书编号',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  // §5.3 certNumberMode=NONE:「必须为 NULL;客户端传值直接拒绝」。
+  // 刻意不静默丢弃 —— 静默丢弃会让运营以为编号已存下来。
+  // §18 建议表未列本码,按真源补(18020,18010-18029 校验子段内空闲)。
+  CERTIFICATE_NUMBER_NOT_ALLOWED: {
+    code: 18020,
+    message: '该证书的认定规则不接受证书编号',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  CERTIFICATE_ACTIVE_POLICY_MISSING: {
+    code: 18035,
+    message: '该证书标准尚无生效认定规则',
+    httpStatus: HttpStatus.CONFLICT,
+  },
   CERTIFICATE_STANDARD_INACTIVE: {
     code: 18031,
     message: '证书标准未启用',
@@ -1418,6 +1444,55 @@ export const BizCode = {
     code: 28060,
     message: '今日证件识别次数已达上限,请明日再试;如有疑问请联系管理员',
     httpStatus: HttpStatus.TOO_MANY_REQUESTS,
+  },
+
+  // ===== 招新证书申报(Claim)业务级 —— 证书标准库 PR-4a(冻结稿 §18)=====
+  //
+  // §18 指定用「空闲 28056+ 号位」。已 grep 真源确认 28056-28059 与 28061+ 均空闲
+  // (280xx 现用至 28055,再往上是 28060 OCR 日限)。
+  RECRUITMENT_CERTIFICATE_CLAIM_NOT_FOUND: {
+    code: 28056,
+    message: '证书申报不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  RECRUITMENT_CERTIFICATE_CLAIM_STATE_INVALID: {
+    code: 28057,
+    message: '证书申报状态不允许此操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  RECRUITMENT_CERTIFICATE_CLAIM_VERSION_CONFLICT: {
+    code: 28058,
+    message: '证书申报已更新,请刷新后重试',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // §8.1:每个报名最多保留 10 条未软删 Claim ——
+  // 防公开上传端点被当成无限存储入口。
+  RECRUITMENT_CERTIFICATE_CLAIM_LIMIT: {
+    code: 28059,
+    message: '本次报名的证书申报数量已达上限',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // §8.3 APPROVE 第 3 步:审核通过必须解析到具体 CREDENTIAL Standard,
+  // 不允许「不确定」状态直接过审(D-CERT-014 / D-CERT-015)。
+  RECRUITMENT_CERTIFICATE_STANDARD_REQUIRED: {
+    code: 28061,
+    message: '审核通过前必须选定具体证书标准',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  // §11.2:Standard 可以「已收录、暂无 ACTIVE Policy」——
+  // 那种标准可被建议、可进待认定队列,但**不能**据此过审。
+  RECRUITMENT_CERTIFICATE_POLICY_UNAVAILABLE: {
+    code: 28062,
+    message: '该证书标准尚无生效认定规则,无法通过审核',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // §8.4:redCross / bsafe 自本刀起是 Claim 的**只读派生投影**,
+  // 单条与批量 markThreshold 传这两个 code(无论 completed 真假)一律拒。
+  // 这是行为变更:此前它们是可人工标记的门槛。
+  RECRUITMENT_THRESHOLD_DERIVED_READONLY: {
+    code: 28063,
+    message: '该门槛由证书申报审核结论自动派生,不可人工标记',
+    httpStatus: HttpStatus.CONFLICT,
   },
 
   // team-join 招新三期(入队:志愿者→队员)业务级(282xx)。T2 引入(2026-06-19)。
