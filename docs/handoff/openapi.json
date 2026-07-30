@@ -100282,19 +100282,19 @@
             "maxLength": 32
           },
           "recognitionIssuerId": {
-            "type": "object",
+            "type": "string",
             "description": "认可机构 id(按认定规则的 issuerPolicy;传 null = 清空)",
             "maxLength": 32,
             "nullable": true
           },
           "issuingOrg": {
-            "type": "object",
+            "type": "string",
             "description": "FREE_TEXT 规则的自由机构名(传 null = 清空)",
             "maxLength": 128,
             "nullable": true
           },
           "certNumber": {
-            "type": "object",
+            "type": "string",
             "description": "证书编号(传 null = 清空;OPTIONAL 编号规则下可改回无编号)",
             "maxLength": 128,
             "nullable": true

@@ -320,6 +320,10 @@ export class UpdateCertificateDto {
   @ApiPropertyOptional({
     description: '认可机构 id(按认定规则的 issuerPolicy;传 null = 清空)',
     maxLength: 32,
+    // 显式 `type: String` 不能省:Swagger 插件对 `string | null` 的推导不稳,
+    // 实测会推成 `type: object` —— 前端 codegen 拿到的就不是字符串了。
+    // 出参侧(CertificateResponseDto)早有同款注释,入参侧这次由 contract 快照抓出来。
+    type: String,
     nullable: true,
   })
   @IsOptional()
@@ -331,6 +335,7 @@ export class UpdateCertificateDto {
   @ApiPropertyOptional({
     description: 'FREE_TEXT 规则的自由机构名(传 null = 清空)',
     maxLength: 128,
+    type: String,
     nullable: true,
   })
   @IsOptional()
@@ -342,6 +347,7 @@ export class UpdateCertificateDto {
   @ApiPropertyOptional({
     description: '证书编号(传 null = 清空;OPTIONAL 编号规则下可改回无编号)',
     maxLength: 128,
+    type: String,
     nullable: true,
   })
   @IsOptional()
