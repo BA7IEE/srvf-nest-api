@@ -383,11 +383,18 @@ export class RecruitmentApplicationReviewService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const row = await tx.recruitmentApplication.findFirst({ where: { id, deletedAt: null } });
-      if (!row) {
-        throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
-      }
-      // promoted / 已脱敏行:PII 已清并搬 member,回写与留存 SOP 冲突 → 一律不可改
+      // 评审 findings G2:两道守卫此前建立在**锁前**的 findFirst 上。
+      // 等锁期间发号可以提交(标 promoted + sensitivePurgedAt + 清空全部 PII),
+      // 而旧请求醒来时守卫看的还是那份「仍然活跃、仍未脱敏」的快照 —— 守卫全过,
+      // 住址 / 紧急联系人照写回去。`sensitivePurgedAt` 非空又会让留存清理
+      // (`WHERE sensitivePurgedAt IS NULL`)**永远跳过该行**:这一行会永久带着本该删的 PII。
+      //
+      // 锁 + 复读 + 拒终态,然后把两道守卫**在锁后重新执行一遍**。
+      const row = await lockActiveApplicationOrThrow(tx, id);
+      // promoted / 已脱敏行:PII 已清并搬 member,回写与留存 SOP 冲突 → 一律不可改。
+      // promoted 已由上面的终态闸拦下(rejected / withdrawn 一并),
+      // `sensitivePurgedAt` 是**独立的一根轴** —— 留存清理跑过但状态还没到终态的行
+      // 只有这一条能拦,所以它必须单独保留、且同样在锁后判。
       if (row.statusCode === APP_STATUS_PROMOTED || row.sensitivePurgedAt !== null) {
         throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
       }
@@ -465,15 +472,25 @@ export class RecruitmentApplicationReviewService {
         data.genderCode = dto.genderCode;
       }
 
+      // CAS 收尾:条件带上锁后判定所依据的**那两根轴**(状态 + 未脱敏),而不是按 id 无条件写。
+      // 行锁理论上已保证这里必然命中 1 行;显式条件是为了让「谁哪天挪走了锁」当场变红。
       let updated;
       try {
-        updated = await tx.recruitmentApplication.update({ where: { id }, data });
+        const written = await tx.recruitmentApplication.updateMany({
+          where: { id, statusCode: row.statusCode, sensitivePurgedAt: null, deletedAt: null },
+          data,
+        });
+        if (written.count !== 1) {
+          throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
+        }
+        updated = await tx.recruitmentApplication.findFirst({ where: { id, deletedAt: null } });
       } catch (err) {
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
           throw new BizException(BizCode.RECRUITMENT_DUPLICATE_APPLICATION);
         }
         throw err;
       }
+      if (!updated) throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
 
       // audit:身份字段记掩码前后值;非身份字段只记字段名(PII 不进 audit 明文,沿 D6 掩码三不)
       const maskedIdentity = (r: {

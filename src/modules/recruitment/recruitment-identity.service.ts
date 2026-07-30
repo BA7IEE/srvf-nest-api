@@ -31,6 +31,7 @@ import {
   generatePhoneVerificationToken,
   hashPhoneVerificationToken,
 } from './recruitment.constants';
+import { lockOwnActiveApplicationOrThrow } from './recruitment-application-lock';
 import { recruitmentDuplicateExceptionForP2002 } from './recruitment-prisma-errors';
 import { loadProgressClaims } from './recruitment-certificate-claim-progress';
 import { recomputeCertificateThresholds } from './recruitment-certificate-threshold-derive';
@@ -433,16 +434,27 @@ export class RecruitmentIdentityService {
     });
     const app = await this.findLatestActiveAppByPhoneOrThrow(dto.phone);
     const { openid: newOpenid } = await this.wechat.code2session(dto.newWechatCode);
-    const oldOpenid = app.openid;
     const updated = await this.prisma.$transaction(async (tx) => {
-      // 防换绑到他人:新 openid 已被本轮另一活跃报名占用 → 28051(否则查询串号)
+      // 评审 findings G2:此前事务内只做冲突查询,然后按 id **无条件** update。
+      // 授权本次换绑的凭证是 `dto.phone`(上面验的码),而报名的 phone 在等锁期间
+      // 可能被自助换手机改掉、也可能被发号清空 —— 旧凭证不该再写这份报名。
+      //
+      // 所以 channel 传 'phone':复核的必须是**授权用的那条凭证**,不是被改的那个字段。
+      // 顺带覆盖首次绑定(报名此前无 openid)—— 按 openid 复核会把这条合法路径误杀。
+      const locked = await lockOwnActiveApplicationOrThrow(
+        tx,
+        { id: app.id, openid: app.openid, phone: dto.phone },
+        'phone',
+      );
+      // 防换绑到他人:新 openid 已被本轮另一活跃报名占用 → 28051(否则查询串号)。
+      // 用锁后的 cycleId,不用事务外快照。
       const conflict = await tx.recruitmentApplication.findFirst({
         where: {
-          cycleId: app.cycleId,
+          cycleId: locked.cycleId,
           openid: newOpenid,
           deletedAt: null,
           statusCode: { notIn: [...APP_INACTIVE_STATUS_CODES] },
-          id: { not: app.id },
+          id: { not: locked.id },
         },
         select: { id: true },
       });
@@ -452,7 +464,7 @@ export class RecruitmentIdentityService {
       let row: RecruitmentApplication;
       try {
         row = await tx.recruitmentApplication.update({
-          where: { id: app.id },
+          where: { id: locked.id },
           data: { openid: newOpenid },
         });
       } catch (err) {
@@ -465,9 +477,10 @@ export class RecruitmentIdentityService {
         actorUserId: null, // 无账号自助换绑
         actorRoleSnap: null,
         resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: app.id,
+        resourceId: locked.id,
         meta,
-        before: { openid: this.maskOpenid(oldOpenid) },
+        // before 取**锁后**的 openid:事务外那份可能已经不是被替换掉的那个值。
+        before: { openid: this.maskOpenid(locked.openid) },
         after: { openid: this.maskOpenid(newOpenid) },
         extra: { phone: maskPhone(dto.phone) },
         tx,
@@ -503,35 +516,46 @@ export class RecruitmentIdentityService {
       userId: null,
     });
     const reason = dto.reason ?? PHONE_CHANGE_REASON_SELF_REBIND;
-    const priorHistory = Array.isArray(app.phoneBindingHistory) ? app.phoneBindingHistory : [];
-    const history = [
-      ...priorHistory,
-      {
-        from: app.phone,
-        to: dto.newPhone,
-        at: now.toISOString(),
-        reason,
-        method: PHONE_VERIFICATION_METHOD_SMS,
-      },
-    ];
     const updated = await this.prisma.$transaction(async (tx) => {
+      // 评审 findings G2:锁 + 复读 + 复核旧凭证仍匹配。`pre.phone` 传的是**旧**手机
+      // (= 上面验过码的那个),等锁期间它若被换走或被发号清空,这次写入必须落空。
+      const locked = await lockOwnActiveApplicationOrThrow(
+        tx,
+        { id: app.id, openid: app.openid, phone: dto.phone },
+        'phone',
+      );
       const conflict = await tx.recruitmentApplication.findFirst({
         where: {
-          cycleId: app.cycleId,
+          cycleId: locked.cycleId,
           phone: dto.newPhone,
           deletedAt: null,
           statusCode: { notIn: [...APP_INACTIVE_STATUS_CODES] },
-          id: { not: app.id },
+          id: { not: locked.id },
         },
         select: { id: true },
       });
       if (conflict) {
         throw new BizException(BizCode.RECRUITMENT_DUPLICATE_PHONE_ACTIVE);
       }
+      // 换绑历史必须从**锁后**的行重新生成。沿用事务外那份快照,会把等锁期间
+      // 别人刚追加的一条整条抹掉 —— 历史是追加型事实,覆盖写就是丢事实。
+      const priorHistory = Array.isArray(locked.phoneBindingHistory)
+        ? locked.phoneBindingHistory
+        : [];
+      const history = [
+        ...priorHistory,
+        {
+          from: locked.phone,
+          to: dto.newPhone,
+          at: now.toISOString(),
+          reason,
+          method: PHONE_VERIFICATION_METHOD_SMS,
+        },
+      ];
       let row: RecruitmentApplication;
       try {
         row = await tx.recruitmentApplication.update({
-          where: { id: app.id },
+          where: { id: locked.id },
           data: {
             phone: dto.newPhone,
             phoneChangedAt: now,
@@ -551,9 +575,9 @@ export class RecruitmentIdentityService {
         actorUserId: null,
         actorRoleSnap: null,
         resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: app.id,
+        resourceId: locked.id,
         meta,
-        before: { phone: maskPhone(app.phone ?? '') },
+        before: { phone: maskPhone(locked.phone ?? '') },
         after: { phone: maskPhone(dto.newPhone) },
         extra: { method: PHONE_VERIFICATION_METHOD_SMS, reason },
         tx,
