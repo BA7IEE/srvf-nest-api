@@ -25,7 +25,7 @@
 
   **门槛派生刻意还没接线**(§21 约束 2):门槛是**聚合投影**而不是可写标记(两张急救证拒掉一张,不该清掉另一张已通过证书带来的门槛),纯函数已就位并有单测,但接线必须与「`markThreshold` 拒写证书两类」「旧 `certificateImages` JSON 停写」在 4a-2 一次原子切换 —— 提前接线会与仍在线的人工标记形成两个真相源。e2e 有一条**反向断言**锁住这件事:审核前后报名的 `statusCode` / `thresholdMarks` / `certificateImages` / `certificateReviewStatus` 逐字不变。
 
-  **BizCode +11(295 → 306)**:招新域 7 条(`28056` 申报不存在 / `28057` 状态非法 / `28058` 版本冲突 / `28059` 数量超限 / `28061` 必须指定标准 / `28062` 无生效认定规则 / `28063` 类别与标准不符),证书域 4 条(`18014` 机构不在名单 / `18016` 编号规则不允许 / `18020` 编号必填 / `18035` 无生效认定规则)—— 后 4 条是 PR-3 明确留给实例写路径的号位,此刻才不是孤码。
+  **BizCode +11(295 → 306)**:招新域 7 条(`28056` 申报不存在 / `28057` 状态非法 / `28058` 版本冲突 / `28059` 数量超限 / `28061` 必须指定标准 / `28062` 无生效认定规则 / `28063` 证书门槛派生只读〔消费方在 4a-2〕),证书域 4 条(`18014` 机构不在认可范围 / `18016` 编号必填 / `18020` 编号不允许填写 / `18035` 尚无生效认定规则)—— 后 4 条是 PR-3 明确留给实例写路径的号位,此刻才不是孤码。
 
   **首次消费 PR-2 已登记的两个审计事件**(AuditLogEvent 恒 **127**,不新增):`recruitment-certificate-claim.review` / `.review-revoke`。extra 是**闭集**,e2e 逐 key 精确比对:只有 operation / applicationId / decision / standardId / policyId / issuerProvided / imageCount / certNumberProvided / expiredAtProvided。完整编号、图片 key、备注全文、申请人 PII 全部不入;同时**正向**断言 `certNumberProvided` 与 `imageCount` 在 —— 否则「不写明文」可以靠什么都不写来假装满足。撤回事件另记 `revokedStandardId` / `revokedPolicyId`,那是事后复原判断依据的唯一线索。
 
