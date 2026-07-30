@@ -59,6 +59,11 @@ import {
 } from './recruitment-applications.service';
 import { RecruitmentApplicationsQueryService } from './recruitment-applications-query.service';
 import { RecruitmentIdentityService } from './recruitment-identity.service';
+import {
+  PublicCertificateStandardOptionDto,
+  PublicCertificateStandardOptionsResponseDto,
+} from './recruitment-certificate-claims.dto';
+import { RecruitmentCertificateClaimsService } from './recruitment-certificate-claims.service';
 
 // 招新一期 T3(2026-06-18):公开报名 surface(评审稿 §3.2 端点 4-5)。
 //
@@ -115,6 +120,9 @@ async function parseSubmitPayload(
   // 十项收口刀F:公开公示名单 DTO
   PublicRecruitmentPublicityItemDto,
   PublicRecruitmentPublicityResponseDto,
+  // 证书标准库 PR-4a-1:公开证书标准选项 DTO(嵌套项须显式注册进 components.schemas)
+  PublicCertificateStandardOptionDto,
+  PublicCertificateStandardOptionsResponseDto,
 )
 @Controller('open/v1/recruitment')
 export class RecruitmentPublicController {
@@ -123,6 +131,9 @@ export class RecruitmentPublicController {
     private readonly identity: RecruitmentIdentityService,
     // 十项收口刀F:公开公示名单复用 admin 预览同一取数内核(公示=实发)
     private readonly queryService: RecruitmentApplicationsQueryService,
+    // 证书标准库 PR-4a-1(§13.3):公开证书标准选项与管理端 Claim 共用同一取数
+    // (同一 ACTIVE/CREDENTIAL 过滤只写一处),避免公开面与后台看到两套「可选标准」。
+    private readonly claimsService: RecruitmentCertificateClaimsService,
   ) {}
 
   // ============ 十项收口刀F:公开公示名单(view-publicity 悬空动作收口)============
@@ -136,6 +147,24 @@ export class RecruitmentPublicController {
   @ApiWrappedOkResponse(PublicRecruitmentPublicityResponseDto)
   publicity(): Promise<PublicRecruitmentPublicityResponseDto> {
     return this.queryService.publicPublicityList();
+  }
+
+  // ============ 证书标准库 PR-4a-1(冻结稿 §13.3):公开证书标准选项 ============
+  //
+  // 申请人填证书时的选择器。**只读、只给六个字段**:
+  // 认定规则内容(机构名单 / 有效期 / 编号规则)属队内主数据,不上公开面(§15.1)。
+  // `currentlyRecognized=false` = 已收录但暂无生效认定规则 —— 申请人仍可选它作建议,
+  // 但后台**不得**据此自动通过(§11.2:待认定 ≠ 已认可)。
+  @Public()
+  @RecruitmentThrottle()
+  @Get('certificate-standards')
+  @ApiOperation({
+    summary:
+      '公开证书标准选项(无账号;仅生效的正式证书标准,按招新证书类别过滤;currentlyRecognized=false 表示已收录待认定,后台不据此自动通过;不含认定规则细节;throttler recruitment) [public]',
+  })
+  @ApiWrappedOkResponse(PublicCertificateStandardOptionsResponseDto)
+  certificateStandards(): Promise<PublicCertificateStandardOptionsResponseDto> {
+    return this.claimsService.listPublicStandardOptions();
   }
 
   @Public()

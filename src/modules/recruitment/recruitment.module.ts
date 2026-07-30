@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { AttachmentsModule } from '../attachments/attachments.module';
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { CertificatesModule } from '../certificates/certificates.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { RealnameModule } from '../realname/realname.module';
@@ -13,6 +14,8 @@ import { RecruitmentApplicationReviewService } from './recruitment-application-r
 import { RecruitmentApplicationsAdminController } from './recruitment-applications.admin.controller';
 import { RecruitmentApplicationsQueryService } from './recruitment-applications-query.service';
 import { RecruitmentApplicationsService } from './recruitment-applications.service';
+import { RecruitmentCertificateClaimsAdminController } from './recruitment-certificate-claims.admin.controller';
+import { RecruitmentCertificateClaimsService } from './recruitment-certificate-claims.service';
 import { RecruitmentCyclesController } from './recruitment-cycles.controller';
 import { RecruitmentCyclesService } from './recruitment-cycles.service';
 import { RecruitmentIdentityService } from './recruitment-identity.service';
@@ -36,11 +39,15 @@ import { RecruitmentStatsService } from './recruitment-stats.service';
     StorageModule,
     SmsModule, // 招新四期 S4a:复用 SmsCodeService(RECRUITMENT_BIND 发码/验码)
     NotificationsModule, // durable outbox producer: 发号事务与 targeted intent 同事务
+    // 证书标准库 PR-4a-1(§19):只为拿 CertificatesModule 导出的窄 Resolver,
+    // 让 Claim 审核复用同一套认定规则解析,不在招新侧复制第二套 Policy 算法。
+    CertificatesModule,
   ],
   controllers: [
     RecruitmentPublicController,
     RecruitmentCyclesController,
     RecruitmentApplicationsAdminController,
+    RecruitmentCertificateClaimsAdminController,
   ],
   providers: [
     RecruitmentCyclesService,
@@ -50,6 +57,7 @@ import { RecruitmentStatsService } from './recruitment-stats.service';
     RecruitmentIdentityService,
     RecruitmentPromotionService,
     RecruitmentStatsService,
+    RecruitmentCertificateClaimsService,
   ],
 })
 export class RecruitmentModule {}

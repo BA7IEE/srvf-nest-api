@@ -7,6 +7,7 @@ import { UsersModule } from '../users/users.module';
 import { AppMyCertificatesService } from './app-my-certificates.service';
 import { CertificateRecognitionPoliciesController } from './certificate-recognition-policies.controller';
 import { CertificateRecognitionPoliciesService } from './certificate-recognition-policies.service';
+import { CertificateRecognitionResolver } from './certificate-recognition-resolver';
 import { CertificateStandardAuditRecorder } from './certificate-standard-audit-recorder';
 import { CertificateStandardsController } from './certificate-standards.controller';
 import { CertificateStandardsService } from './certificate-standards.service';
@@ -48,6 +49,11 @@ import { AppMyCertificatesController } from './controllers/app-my-certificates.c
     CertificateStandardsService,
     CertificateRecognitionPoliciesService,
     CertificateStandardAuditRecorder,
+    CertificateRecognitionResolver,
   ],
+  // 证书标准库 PR-4a-1(§19):**只导出窄 Resolver**,供 Recruitment 的 Claim 审核复用
+  // 同一套认定规则解析(机构 / 编号 / 日期),避免招新侧复制第二套 Policy 算法。
+  // 依赖方向单向:CertificatesModule **绝不**反向 import Recruitment(防环)。
+  exports: [CertificateRecognitionResolver],
 })
 export class CertificatesModule {}
