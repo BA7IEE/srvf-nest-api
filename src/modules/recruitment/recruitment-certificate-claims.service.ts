@@ -18,6 +18,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { AttachmentContentValidator } from '../attachments/attachment-content-validator';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { CertificateEvidenceSigner } from '../certificates/certificate-evidence-signer';
 import { CertificateRecognitionResolver } from '../certificates/certificate-recognition-resolver';
 import { RbacService } from '../permissions/rbac.service';
 import { STORAGE_PROVIDER } from '../storage/storage.constants';
@@ -28,6 +29,7 @@ import {
 } from './recruitment-application-lock';
 import {
   assertApplicantMayMutate,
+  assertClaimEvidenceReadable,
   assertClaimTransitionAllowed,
   assertClaimVersionMatches,
 } from './recruitment-certificate-claim-state-machine';
@@ -70,9 +72,8 @@ import {
 // 判权沿招新域既有 GLOBAL 语义(`rbac.can`),不是 Certificate 实例的 scoped Authz
 // (Recruitment 尚未接入 AuthzService)。
 //
-// §15.5:证据 URL TTL ≤ 300s;`Cache-Control: no-store` 由 controller 设置;
-// URL 不写 audit、不写 log、不进 contract snapshot 示例。
-const CLAIM_IMAGE_SIGNED_URL_TTL_SECONDS = 300;
+// §15.5 的 TTL 常量已搬进 `CertificateEvidenceSigner`(证据签发唯一封装)——
+// 本模块曾经有一份自己的 300,与 certificates 那份互相不知道对方存在。
 
 const claimSelect = {
   id: true,
@@ -116,6 +117,8 @@ export class RecruitmentCertificateClaimsService {
     private readonly identity: RecruitmentIdentityService,
     private readonly contentValidator: AttachmentContentValidator,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    // §13.5:证据签发的唯一封装,与 CertificatesService 共用同一份 —— 不写第二套。
+    private readonly evidenceSigner: CertificateEvidenceSigner,
   ) {}
 
   private readonly logger = new Logger(RecruitmentCertificateClaimsService.name);
@@ -313,7 +316,9 @@ export class RecruitmentCertificateClaimsService {
   ): Promise<RecruitmentCertificateClaimImageUrlsResponseDto> {
     await this.assertCanOrThrow(user, 'recruitment-application.read.sensitive');
     const claim = await this.findClaimOrThrow(this.prisma, claimId);
-    const keys = this.imageKeysOf(claim.imageKeys);
+    // §15.5 / §15.9:光有 read.sensitive 不够,还要看这条申报此刻的状态。
+    // 修复前这里只做「查权限 → 签全部 key」,于是已撤回和已发号的申报照样出图。
+    assertClaimEvidenceReadable(claim.status);
 
     await this.auditLogs.log({
       event: 'recruitment-application.read.other',
@@ -323,23 +328,25 @@ export class RecruitmentCertificateClaimsService {
       resourceId: claim.applicationId,
       meta,
       // 只记条数 —— key 与 URL 一律不入审计(§15.6)。
-      extra: { operation: 'certificate-claim-images', count: keys.length },
+      extra: {
+        operation: 'certificate-claim-images',
+        count: this.imageCountOf(claim.imageKeys),
+      },
     });
 
-    const urls: string[] = [];
-    for (const key of keys) {
-      const r = await this.storage.generateDownloadUrl({
-        key,
-        expiresIn: CLAIM_IMAGE_SIGNED_URL_TTL_SECONDS,
-      });
-      urls.push(r.url);
-    }
+    // §15.5「URL 生成前重新检查」:上面到这里之间有一次审计写的 IO 往返,
+    // 申请人完全可能在这个窗口里撤回、或管理员发号把它转成 PROMOTED。
+    // 所以状态、归属与权限在**签发前**再验一次 —— 审计已经落账了,
+    // 这次拒签只是不发 URL,不影响「谁在什么时候试图读过」这条记录的完整性。
+    await this.assertCanOrThrow(user, 'recruitment-application.read.sensitive');
+    const fresh = await this.findClaimOrThrow(this.prisma, claimId);
+    assertClaimEvidenceReadable(fresh.status);
 
-    return {
-      claimId: claim.id,
-      urls,
-      expiresAt: new Date(Date.now() + CLAIM_IMAGE_SIGNED_URL_TTL_SECONDS * 1000),
-    };
+    // 签发走 certificates 模块导出的**唯一**封装(§13.5:不写第二套签名逻辑)。
+    const signed = await this.evidenceSigner.sign(
+      CertificateEvidenceSigner.keysOf(fresh.imageKeys),
+    );
+    return { claimId: fresh.id, urls: signed.urls, expiresAt: signed.expiresAt };
   }
 
   // ============ 公开面:证书标准选项(§13.3)============

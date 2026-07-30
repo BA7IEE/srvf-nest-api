@@ -16,6 +16,7 @@ import { RbacService } from '../permissions/rbac.service';
 import { AttachmentsService } from '../attachments/attachments.service';
 import { STORAGE_PROVIDER } from '../storage/storage.constants';
 import type { StorageProvider } from '../storage/storage.interface';
+import { CertificateEvidenceSigner } from './certificate-evidence-signer';
 import { CertificateRecognitionResolver } from './certificate-recognition-resolver';
 import {
   CertificateEvidenceUrlsResponseDto,
@@ -55,8 +56,8 @@ const DICT_TYPE_CERT_TYPE = 'cert_type';
 
 const CERT_STATUS_PENDING = 'pending';
 const CERT_STATUS_VERIFIED = 'verified';
-// §13.5:证据 URL TTL 默认不超过 300 秒。
-const CERTIFICATE_EVIDENCE_URL_TTL_SECONDS = 300;
+// §13.5 的 TTL 与签发循环已搬进 `CertificateEvidenceSigner` —— 本文件与
+// recruitment 的 Claim 取图曾各写一份,连常量都各声明了一个。
 const CERT_STATUS_REJECTED = 'rejected';
 // CERT_STATUS_EXPIRED 由 v0.47.0 ExpiryReminderService 到期扫描推动,本 service 不主动写入
 
@@ -168,6 +169,8 @@ export class CertificatesService {
     // 不允许业务模块自己拼 URL(§13.5 实现约束)。
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     private readonly attachments: AttachmentsService,
+    // §13.5:证据签发的唯一封装,与招新 Claim 取图共用同一份。
+    private readonly evidenceSigner: CertificateEvidenceSigner,
   ) {}
 
   // ============ helpers ============
@@ -866,9 +869,7 @@ export class CertificatesService {
 
     // 审计先落账再签 URL(fail-closed;与既有敏感读同款)。
     // extra 只记来源与条数 —— key 与 URL 一律不入(§15.6)。
-    const claimKeys = Array.isArray(cert.sourceClaim?.imageKeys)
-      ? cert.sourceClaim.imageKeys.filter((k): k is string => typeof k === 'string')
-      : [];
+    const claimKeys = CertificateEvidenceSigner.keysOf(cert.sourceClaim?.imageKeys);
     await this.auditLogs.log({
       event: 'certificate.read.other',
       actorUserId: currentUser.id,
@@ -884,19 +885,12 @@ export class CertificatesService {
     });
 
     if (cert.sourceCode === CertificateSource.RECRUITMENT) {
-      const urls: string[] = [];
-      for (const key of claimKeys) {
-        const r = await this.storage.generateDownloadUrl({
-          key,
-          expiresIn: CERTIFICATE_EVIDENCE_URL_TTL_SECONDS,
-        });
-        urls.push(r.url);
-      }
+      const signed = await this.evidenceSigner.sign(claimKeys);
       return {
         certificateId,
         sourceCode: cert.sourceCode,
-        urls,
-        expiresAt: new Date(Date.now() + CERTIFICATE_EVIDENCE_URL_TTL_SECONDS * 1000),
+        urls: signed.urls,
+        expiresAt: signed.expiresAt,
       };
     }
 

@@ -421,6 +421,59 @@ describe('recruitment certificate claims + public standard options(PR-4a-1)', ()
     expect(JSON.stringify(extra)).not.toContain('http');
   });
 
+  // ===== 评审 findings F2(§15.5 / §15.9):证据授权按 status 分流 =====
+  //
+  // 上面那条只证明了「正常 Claim 能返两个 URL」。它对**不该出图的状态**一个字都没说,
+  // 而修复前的实现恰恰是「查权限 → 签全部 key」,状态完全不参与判定。
+  // 下面三条是反向断言,少了它们这条分流规则随时可以被删掉而全绿。
+
+  it('§15.5 WITHDRAWN 申报不得签证据 URL —— 撤回不能只撤掉列表可见性', async () => {
+    const applicationId = await createAppRow();
+    const claim = await createClaim(applicationId, { status: CLAIM_STATUS.WITHDRAWN });
+    expectBizError(
+      await request(httpServer(app))
+        .get(`${ADMIN}/certificate-claims/${claim.id}/image-urls`)
+        .set('Authorization', sensitiveAuth),
+      BizCode.RECRUITMENT_CERTIFICATE_CLAIM_STATE_INVALID,
+    );
+  });
+
+  it('§15.9 PROMOTED 申报的证据只能经 Certificate scoped 端点读 —— Claim 端点拒签', async () => {
+    const applicationId = await createAppRow();
+    const policyId = (
+      await prisma.certificateRecognitionPolicy.findFirstOrThrow({
+        where: { standardId: firstAidStandardId, status: 'ACTIVE' },
+        select: { id: true },
+      })
+    ).id;
+    // PROMOTED 行须带齐标准化事实(DB 的 promoted 完整性 CHECK 拦着)。
+    const claim = await createClaim(applicationId, {
+      status: CLAIM_STATUS.PROMOTED,
+      standardId: firstAidStandardId,
+      recognitionPolicyId: policyId,
+      recognitionIssuerId: firstAidIssuerId,
+      issuingOrg: '深圳市红十字会',
+      issuedAt: new Date('2026-01-31T00:00:00.000Z'),
+      promotedAt: new Date('2026-02-01T00:00:00.000Z'),
+    });
+    expectBizError(
+      await request(httpServer(app))
+        .get(`${ADMIN}/certificate-claims/${claim.id}/image-urls`)
+        .set('Authorization', sensitiveAuth),
+      BizCode.RECRUITMENT_CERTIFICATE_CLAIM_STATE_INVALID,
+    );
+  });
+
+  it('REJECTED 仍在审核流内 → 必须能出图(申请人可从 REJECTED 重投,审核员要能回看)', async () => {
+    const applicationId = await createAppRow();
+    const claim = await createClaim(applicationId, { status: CLAIM_STATUS.REJECTED });
+    const res = await request(httpServer(app))
+      .get(`${ADMIN}/certificate-claims/${claim.id}/image-urls`)
+      .set('Authorization', sensitiveAuth);
+    expect(res.status).toBe(200);
+    expect(res.body.data.urls).toHaveLength(2);
+  });
+
   // ===== §8.3 审核 =====
 
   it('§8.3 APPROVE:锁定 Standard/Policy/机构/编号,FIXED_MONTHS 由后端算到期日', async () => {

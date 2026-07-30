@@ -1,4 +1,6 @@
+import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { CertificateEvidenceSigner } from '../certificates/certificate-evidence-signer';
 import { RecruitmentCertificateClaimsService } from './recruitment-certificate-claims.service';
 
 const META: AuditMeta = { requestId: 'req-claim-1', ip: '127.0.0.1', ua: 'jest' };
@@ -38,9 +40,11 @@ describe('RecruitmentCertificateClaimsService.getImageUrls · 证据图 fail-clo
     standard: null,
   };
 
-  function buildService() {
+  function buildService(status: string = 'SUBMITTED') {
     const prisma = {
-      recruitmentCertificateClaim: { findFirst: jest.fn().mockResolvedValue(CLAIM) },
+      recruitmentCertificateClaim: {
+        findFirst: jest.fn().mockResolvedValue({ ...CLAIM, status }),
+      },
       recruitmentApplication: { findFirst: jest.fn().mockResolvedValue({ id: 'app-1' }) },
     };
     const rbac = { can: jest.fn().mockResolvedValue(true) };
@@ -50,6 +54,9 @@ describe('RecruitmentCertificateClaimsService.getImageUrls · 证据图 fail-clo
         .fn()
         .mockResolvedValue({ url: 'https://storage.example/signed', expiresAt: new Date() }),
     };
+    // 用**真的**签发器包住 storage 桩:本组的顺序断言打在 provider 调用上,
+    // 换成签发器桩就等于把「审计先于 provider」这条不变量测没了。
+    const evidenceSigner = new CertificateEvidenceSigner(storage as never);
     const service = new RecruitmentCertificateClaimsService(
       prisma as never,
       rbac as never,
@@ -58,6 +65,7 @@ describe('RecruitmentCertificateClaimsService.getImageUrls · 证据图 fail-clo
       {} as never, // identity:同上,公开面凭证链不参与 admin 取图
       {} as never, // contentValidator
       storage as never,
+      evidenceSigner,
     );
     return { service, auditLogs, storage };
   }
@@ -109,5 +117,49 @@ describe('RecruitmentCertificateClaimsService.getImageUrls · 证据图 fail-clo
     expect(result).not.toHaveProperty('imageKeys');
     expect(result).not.toHaveProperty('keys');
     expect(Object.keys(result).sort()).toEqual(['claimId', 'expiresAt', 'urls']);
+  });
+
+  // ===== 评审 findings F2(§15.5 / §15.9):状态分流 =====
+  //
+  // 修复前本方法只做「查权限 → 签全部 key」,状态完全不参与判定。
+  // 下面四条正反成对:三个非终态必须能出图(否则审核流断),两个终态必须拒
+  // (否则撤回只撤了列表可见性、发号后的证据绕开 Certificate 的 scoped authz)。
+
+  it.each(['SUBMITTED', 'NEEDS_INFO', 'APPROVED', 'REJECTED'])(
+    '%s:仍在审核流内 → 正常出图(REJECTED 尤其不能拒,申请人可从它重投)',
+    async (status) => {
+      const { service, storage } = buildService(status);
+      const result = await service.getImageUrls(ADMIN_USER, 'claim-1', META);
+      expect(result.urls).toHaveLength(1);
+      expect(storage.generateDownloadUrl).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(['WITHDRAWN', 'PROMOTED'])(
+    '%s:终态 → 28057 拒签,且 provider 一次都不调',
+    async (status) => {
+      const { service, storage } = buildService(status);
+      await expect(service.getImageUrls(ADMIN_USER, 'claim-1', META)).rejects.toMatchObject({
+        biz: BizCode.RECRUITMENT_CERTIFICATE_CLAIM_STATE_INVALID,
+      });
+      expect(storage.generateDownloadUrl).not.toHaveBeenCalled();
+    },
+  );
+
+  it('签发前重新读取状态(§15.5「URL 生成前重新检查」):审计后被撤回 → 仍拒签', async () => {
+    const { service, storage } = buildService();
+    const prismaFindFirst = (
+      service as unknown as { prisma: { recruitmentCertificateClaim: { findFirst: jest.Mock } } }
+    ).prisma.recruitmentCertificateClaim.findFirst;
+    // 第一次读到 SUBMITTED(通过状态闸、落审计),第二次(签发前复读)已是 WITHDRAWN。
+    prismaFindFirst
+      .mockResolvedValueOnce({ ...CLAIM, status: 'SUBMITTED' })
+      .mockResolvedValueOnce({ ...CLAIM, status: 'WITHDRAWN' });
+
+    await expect(service.getImageUrls(ADMIN_USER, 'claim-1', META)).rejects.toMatchObject({
+      biz: BizCode.RECRUITMENT_CERTIFICATE_CLAIM_STATE_INVALID,
+    });
+    // 只有复读那一道拦住了 —— 少了它,这一格会照常签出 URL。
+    expect(storage.generateDownloadUrl).not.toHaveBeenCalled();
   });
 });
