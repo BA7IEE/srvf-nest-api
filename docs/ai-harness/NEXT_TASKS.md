@@ -52,7 +52,25 @@
 - **⚠️ 交付后跨模型评审判 NO-GO → findings 修复批次 F1–F6**(2026-07-30):两个外部模型对 `main@bc300a66` 独立评审,21 条 findings 主会话逐条复现。修复见 [#835](https://github.com/BA7IEE/srvf-nest-api/pull/835)(并发四处统一收口)· [#836](https://github.com/BA7IEE/srvf-nest-api/pull/836)(证据授权按状态分流)· [#837](https://github.com/BA7IEE/srvf-nest-api/pull/837)(PATCH 三态 + 日期真实性 + 核验落点)· [#838](https://github.com/BA7IEE/srvf-nest-api/pull/838)(§12 资质判断)· [#839](https://github.com/BA7IEE/srvf-nest-api/pull/839)(主数据契约与审计)· F6(SOP / 初始化 / 台账)。
 - **post-freeze 修正记录**:[`archive/reviews/certificate-standard-library-t0-amendments.md`](../archive/reviews/certificate-standard-library-t0-amendments.md) —— 冻结稿正文不回改,修正逐条记在这里。**冻结稿 + amendments 两份合起来才是当前需求。**
 
-#### 🔴 第二轮独立评审未通过(2026-07-30,`main@2998a708`)—— 发版门禁已关闭
+#### 🔴 第三轮独立评审未通过(`main@1560c761`)—— 发版门禁仍关闭
+
+**第二轮 4 条已全部修复并经第三轮复核关闭**(G1–G4 = [#843](https://github.com/BA7IEE/srvf-nest-api/pull/843)–[#846](https://github.com/BA7IEE/srvf-nest-api/pull/846),零 schema,Migration 恒 67)。
+本轮 5 条**无 P0**,主会话逐条复现,**全部属实**;其中第 ④ 条主会话判定比外部报告**更严重**(P2 → P1)。
+
+| # | 落点 | 机制(已复现) | 后果 |
+|---|---|---|---|
+| **P1** | `evaluate(false)` / `resolveManual(false)` | 只写 `recruitment_applications.statusCode = rejected`,**零 Claim 级联**。而 `APP_INACTIVE_STATUS_CODES` 含 `REJECTED` ⇒ `lockActiveApplicationOrThrow` 之后拒绝一切 Claim 写路径 | 该报名下的 `APPROVED` Claim **永久卡在非终态**:不能撤回审核 / 拒绝 / 重传 / 撤回 / 转 PROMOTED。留存 SOP 只扫 `status IN ('REJECTED','WITHDRAWN')` ⇒ **永远清理不到**;证据闸 `CLAIM_EVIDENCE_DENIED` 只含 `{WITHDRAWN, PROMOTED}` ⇒ **图片仍可签 URL**。⚠️ 与既有全库不变量**直接矛盾** —— `recruitment-certificate-concurrency` 断言「`a.statusCode IN ('promoted','withdrawn','rejected')` 下不得有非终态 Claim」,而 G1 新增的正常淘汰用例正好造出 `rejected + APPROVED`。两份 spec 在各自派生库里都绿,**合起来系统规则不能同时成立** |
+| **P1** | `updateApplication()` | G2 改用 `lockActiveApplicationOrThrow`,该函数把 `rejected / withdrawn / promoted` 一律视为终态返 28041 | canonical [`handoff/admin-web.md`](../handoff/admin-web.md) 仍写「非身份字段**恒可改**…promoted/已脱敏行 → 28041」,**没说 rejected/withdrawn**。运行时与 canonical 契约分叉。**需要维护者在 A(恢复可改,仅按 promoted + sensitivePurgedAt 拒)/ B(终态一律不可改,同步改 handoff+DTO+前端+CHANGELOG breaking)之间拍板** —— 「实现变了」不自动等于「契约变了」 |
+| **P1** | `POST /certificate-standards` | `CreateCertificateStandardDto` 的 `levelCode`/`parentId`(以及 `isInternal`/`sortOrder`)仍是 `@IsOptional() @IsString()`;`@IsOptional()` 对 `null` 与 `undefined` 都跳过校验,而 service 判据是 `!== undefined` ⇒ 显式 `null` 穿过 DTO 后进入字典 / 父节点查询 | **500 而非 400**。G4 只改了文档示例不再发 `null`,没修接口本身。修法:`@ValidateIf((_o, v) => v !== undefined)` 让 `null` 落进 `@IsString()` |
+| **P1**(外部报告列 P2,主会话上调) | `certificate-standards.service.ts:297` | 注释写「`parentId` 只在 create 期可设、Update DTO 不含它 —— 因此循环在结构上不可能形成」。**这是一条安全论证**,而 [`amendments A-3`](../archive/reviews/certificate-standard-library-t0-amendments.md) 已放开 DRAFT 改 `parentId`,论证失效。全文件**零环检查** | 冻结稿 §5.2「禁止形成父子循环」**零执法**且可达(建 FAMILY A → 建 FAMILY B 挂 A → DRAFT 期改 A 挂 B;父必为 FAMILY ✓、同 categoryCode ✓ 两条约束都过)。成环后两节点互为子节点 ⇒ 删除守卫恒非零 ⇒ **谁都删不掉**(与第 ① 条同一「冻死」形状);admin-web 要渲染树,递归渲染会挂。**后端本身是扁平一层、不递归,所以不会挂服务** —— 但注释会阻止下一个人补上这道校验 |
+| **P2** | 同文件 `:30` / `:373-376` | 「Update DTO 刻意不含 kind/categoryCode/levelCode/parentId/isInternal」「update(仅文案与排序)」「身份字段不在白名单」—— 而紧接着的执行代码正在完整处理这五个字段 | 本仓维护者看不懂代码、长期由 AI 维护,**错误注释会指挥下一个模型删掉正确实现**。这是本项目第四次抓到「注释≠执行位」 |
+
+**修复范围**(零 schema):① 抽报名终态 Claim 收尾函数,`evaluate(false)` 与 `resolveManual(false)` 共用,同事务锁 Claim 按 id ASC 转 `WITHDRAWN`(保留 `PROMOTED`),审计只记条数;② 按拍板结果收口 `updateApplication` **并同步 canonical handoff**;③ DTO 三态化 + 四个字段各一条 `null → 400` 真 HTTP e2e;④ 补环检查(祖先链遍历)+ 删掉失效论证 + 一条成环必拒的 e2e;⑤ 清理失真注释。
+**修完仍须第四轮跨模型评审**(SOP [§1.6](codex-review-sop.md)),门禁由维护者解除。
+
+<details><summary>第二轮 findings(已全部关闭,保留作历史)</summary>
+
+#### 第二轮独立评审(2026-07-30,`main@2998a708`)
 
 四条 findings 主会话**已逐条复现机制,全部属实**。**根因一句话**:证书相关的新写路径已经统一使用报名锁
 (`lockApplicationRow` / `lockOwnActiveApplicationOrThrow`),但**评定、换绑、后台改资料这些旧入口还没接入同一串行点**。
@@ -71,6 +89,8 @@
 外加全库巡检断言:`publicity` 报名不得存在证书门槛不完整的状态;`sensitivePurgedAt` 非空的报名不得被写回任何应清 PII。
 
 **修复批次自己也要再过一轮跨模型评审**才允许发版(SOP [§1.6](codex-review-sop.md))。
+
+</details>
 - **⏸ 剩余挂账**(不属于本任务的代码范围,但没做完就不能算上线):
   - **发版**:#826–#834 与 F1–F6 全部未随版本发布(tag 仍是 v0.64.0)。
   - **PR-4b 的第 67 个 migration 未部署** —— 不可逆 contract,按 [`go-live runbook`](../ops/certificate-standard-library-go-live.md) 执行(停写 → 备份验证 → 探针 → migrate)。
