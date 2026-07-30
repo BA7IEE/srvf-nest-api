@@ -351,9 +351,18 @@ export class CreateCertificateStandardDto {
 
 // ============ 入参:Update ============
 
-// **只允许文案与排序**(§7.1 ACTIVE/INACTIVE 段:「只允许修正名称、说明、排序」)。
-// DRAFT 期同样只开这三项 —— 身份字段要改就删掉重建(DRAFT 可软删且必然零引用),
-// 这样「身份字段可变期」在代码里根本不存在,不必靠运行时判状态防漏。
+// 文案与排序**恒可改**(§7.1 ACTIVE/INACTIVE 段:「只允许修正名称、说明、排序」);
+// 身份字段**只在 DRAFT 且从未启用过时可改**,首次 ACTIVE 之后永久拒绝(18033)。
+//
+// 评审 findings F5(R2):此前的设计是「身份字段一律不可改,DRAFT 期要改就删掉重建」。
+// 那条路在这个模型里**走不通** —— `code` 是全量 @unique 且**含软删行**
+// (D-CERT-004「不可复用」正是靠这一点)。所以软删一个填错的 DRAFT 标准之后,
+// 它的 code 被永久占用,「重建」只能换一个 code。首批初始化时打错一个字,
+// 结果就是这个 code 永远用不了了 —— 死胡同。
+//
+// 现在开的是**除 `code` 以外**的身份字段。`code` 仍然一个字都不能改:
+// 它是长期稳定标识,岗位要求、活动门槛、外部系统都可能引用它,改 code 等于改身份。
+// 填错 code 只能新建 —— 这一条是刻意保留的代价,不是遗漏。
 export class UpdateCertificateStandardDto {
   @ApiPropertyOptional({ description: '标准名称', maxLength: 128 })
   @IsOptional()
@@ -375,6 +384,56 @@ export class UpdateCertificateStandardDto {
   @Min(0)
   @Max(100000)
   sortOrder?: number;
+
+  // ===== 以下五个是身份字段:仅 DRAFT 且从未启用过时可改,否则 18033 =====
+
+  @ApiPropertyOptional({
+    description: '类型(FAMILY 目录节点 / CREDENTIAL 可持有证书)。**仅 DRAFT 期可改**',
+    enum: CertificateStandardKind,
+  })
+  @IsOptional()
+  @IsEnum(CertificateStandardKind)
+  kind?: CertificateStandardKind;
+
+  @ApiPropertyOptional({
+    description: '证书大类字典 code(cert_type)。**仅 DRAFT 期可改**',
+    maxLength: 64,
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  categoryCode?: string;
+
+  @ApiPropertyOptional({
+    description: '等级字典 code(cert_sub_type;传 null = 清空)。**仅 DRAFT 期可改**',
+    maxLength: 64,
+    type: String,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  levelCode?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      '父级 Standard id(必为 FAMILY 且同 categoryCode;传 null = 摘到根)。**仅 DRAFT 期可改**',
+    maxLength: 32,
+    type: String,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(32)
+  parentId?: string | null;
+
+  @ApiPropertyOptional({ description: '是否队内自建标准。**仅 DRAFT 期可改**' })
+  @IsOptional()
+  @IsBoolean()
+  isInternal?: boolean;
 }
 
 // ============ 入参:状态迁移 ============

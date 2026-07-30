@@ -383,7 +383,7 @@ export class CertificateRecognitionPoliciesService {
         currentUser: user,
         meta,
         policyId: id,
-        operation: replacing ? 'replace-draft-issuers' : 'create-policy',
+        operation: replacing ? 'replace-draft-issuers' : 'update-draft-policy',
         before: this.audit.toPolicySnapshot(
           locked,
           beforeIssuers.map((i) => i.name),
@@ -428,6 +428,8 @@ export class CertificateRecognitionPoliciesService {
 
       const issuers = await this.loadIssuers(tx, id);
       const now = new Date();
+      // 激活时被自动退役的那一版(R8);非激活路径恒 null。
+      let supersededPolicy: { id: string; version: number } | null = null;
 
       if (dto.status === CertificateRecognitionPolicyStatus.ACTIVE) {
         assertStandardIsCredential(standard.kind);
@@ -438,6 +440,19 @@ export class CertificateRecognitionPoliciesService {
 
         // 原子退役当前 ACTIVE(§13.2:不让客户端分两步操作)。
         // 只会命中 0 或 1 行 —— partial unique 保证了至多一个 ACTIVE。
+        //
+        // 评审 findings F5(R8):退役前先把「被顶掉的是哪一版」读出来。
+        // 修复前这一步只有一条 `updateMany`,审计里完全看不出激活 v3 的同时
+        // 退役了 v2 —— 而「上一版是什么时候、被哪次激活顶掉的」正是事后复原
+        // 「这张证书当时按哪版规则认定」的关键线索。
+        const superseded = await tx.certificateRecognitionPolicy.findFirst({
+          where: notDeletedWhere({
+            standardId: locked.standardId,
+            status: CertificateRecognitionPolicyStatus.ACTIVE,
+          }),
+          select: { id: true, version: true },
+        });
+        supersededPolicy = superseded;
         await tx.certificateRecognitionPolicy.updateMany({
           where: { standardId: locked.standardId, status: 'ACTIVE', deletedAt: null },
           data: { status: CertificateRecognitionPolicyStatus.RETIRED, retiredAt: now },
@@ -476,6 +491,7 @@ export class CertificateRecognitionPoliciesService {
           updated,
           issuers.map((i) => i.name),
         ),
+        supersededPolicy,
         tx,
       });
 

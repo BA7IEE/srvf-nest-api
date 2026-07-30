@@ -100810,6 +100810,35 @@
           "sortOrder": {
             "type": "number",
             "description": "排序权重"
+          },
+          "kind": {
+            "type": "string",
+            "description": "类型(FAMILY 目录节点 / CREDENTIAL 可持有证书)。**仅 DRAFT 期可改**",
+            "enum": [
+              "FAMILY",
+              "CREDENTIAL"
+            ]
+          },
+          "categoryCode": {
+            "type": "string",
+            "description": "证书大类字典 code(cert_type)。**仅 DRAFT 期可改**",
+            "maxLength": 64
+          },
+          "levelCode": {
+            "type": "string",
+            "description": "等级字典 code(cert_sub_type;传 null = 清空)。**仅 DRAFT 期可改**",
+            "maxLength": 64,
+            "nullable": true
+          },
+          "parentId": {
+            "type": "string",
+            "description": "父级 Standard id(必为 FAMILY 且同 categoryCode;传 null = 摘到根)。**仅 DRAFT 期可改**",
+            "maxLength": 32,
+            "nullable": true
+          },
+          "isInternal": {
+            "type": "boolean",
+            "description": "是否队内自建标准。**仅 DRAFT 期可改**"
           }
         }
       },
@@ -101087,10 +101116,9 @@
         "properties": {
           "status": {
             "type": "string",
-            "description": "目标状态。ACTIVE = 激活本版并**原子退役**该 Standard 当前 ACTIVE 版;RETIRED = 直接退役当前 ACTIVE 版。不接受 DRAFT",
+            "description": "目标状态。**只接受 ACTIVE** = 激活本版并**原子退役**该 Standard 当前 ACTIVE 版。不接受 DRAFT(已激活/退役的规则永不可回,§7.2 / D-CERT-007);也不接受 RETIRED(「暂停认定」是独立业务动作,不在本接口)",
             "enum": [
-              "ACTIVE",
-              "RETIRED"
+              "ACTIVE"
             ],
             "example": "ACTIVE"
           }

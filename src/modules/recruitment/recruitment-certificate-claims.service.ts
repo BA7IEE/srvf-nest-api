@@ -554,6 +554,16 @@ export class RecruitmentCertificateClaimsService {
       assertClaimVersionMatches(dto.version, claim.version);
       assertClaimTransitionAllowed(claim.status, RecruitmentCertificateClaimStatus.SUBMITTED);
 
+      // 评审 findings F5(R9):撤回**只清不写**。
+      //
+      // 修复前这里把撤回人写进 `reviewedByUserId` / `reviewedAt`、把撤回理由写进
+      // `reviewNote` —— 而这三列的语义是「谁、什么时候、以什么理由**通过**了这条申报」。
+      // 于是一条 SUBMITTED 的申报上挂着「审核人:张三」,任何读者(包括申请人侧的
+      // `reviewNote`)都会把撤回人误读成审核人,把撤回理由误读成驳回说明。
+      // 方法的 JSDoc 本来就写着「必须清空……审核字段」—— 执行位没跟上。
+      //
+      // 撤回人不会因此丢失:审计的 `actorUserId` 就是他,时间是审计行的 `createdAt`。
+      // 撤回理由按 §17 不入审计全文(Claim 审计禁备注全文),只记「填没填」。
       const updated = await tx.recruitmentCertificateClaim.update({
         where: { id: claimId },
         data: {
@@ -561,9 +571,9 @@ export class RecruitmentCertificateClaimsService {
           standardId: null,
           recognitionPolicyId: null,
           recognitionIssuerId: null,
-          reviewedByUserId: user.id,
-          reviewedAt: new Date(),
-          reviewNote: dto.note,
+          reviewedByUserId: null,
+          reviewedAt: null,
+          reviewNote: null,
           version: { increment: 1 },
         },
         select: claimSelect,
@@ -582,6 +592,10 @@ export class RecruitmentCertificateClaimsService {
           // 撤回前锁定的是哪一版规则 —— 事后复原判断依据要靠它。
           revokedStandardId: claim.standardId,
           revokedPolicyId: claim.recognitionPolicyId,
+          // 被撤销的那次审核是谁做的(R9:它从 Claim 行上清掉了,只能记在这里)。
+          revokedReviewerUserId: claim.reviewedByUserId,
+          // 撤回理由**只记填没填**:§17 明令 Claim 审计不含备注全文。
+          noteProvided: dto.note.trim() !== '',
           imageCount: this.imageCountOf(updated.imageKeys),
         },
         tx,
