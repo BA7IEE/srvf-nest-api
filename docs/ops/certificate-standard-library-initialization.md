@@ -42,11 +42,15 @@ POST /api/admin/v1/certificate-standards
   "name": "红十字急救员证",
   "kind": "CREDENTIAL",
   "categoryCode": "first_aid",     // cert_type 字典 code
-  "levelCode": null,               // cert_sub_type 字典 code,可空
-  "parentId": null,                // 可挂在 FAMILY 下
   "isInternal": false              // 是否本会颁发
 }
 ```
+
+> ⚠️ **可选字段要么带一个真值,要么整条省掉 —— 不要传显式 `null`。**
+> `levelCode`(cert_sub_type 字典 code)与 `parentId`(挂到某个 FAMILY 下)都是可选的,
+> 但后端判的是「这个键在不在」而不是「值是不是空」:传 `"levelCode": null` 会去字典里查一个叫 `null` 的
+> 等级码,传 `"parentId": null` 会去查一个 id 为 `null` 的父节点 —— 两者都直接失败。
+> 要用就给真值(`"levelCode": "level_2"` / `"parentId": "<FAMILY 的 id>"`),不用就别写这一行。
 
 新建为 `DRAFT`,**不能用于建证**。
 
@@ -136,7 +140,7 @@ POST /api/admin/v1/certificate-standards/:standardId/recognition-policies
 
 ## 五、两个容易踩的顺序问题
 
-**先建 FAMILY 还是先建 CREDENTIAL**:`parentId` 只能在 create 时设,所以要挂树就得先建 FAMILY。事后想挂只能删掉重建(DRAFT 期可软删且必然零引用)。
+**先建 FAMILY 还是先建 CREDENTIAL**:两个顺序都行。先建 FAMILY 可以在建 CREDENTIAL 时直接传 `parentId`;先建 CREDENTIAL 也不要紧 —— 它仍是 `DRAFT` 且**从未启用过**时,`PATCH /:id` 可以补设 `parentId`(见上文 [amendments A-3](../archive/reviews/certificate-standard-library-t0-amendments.md#a-3-draft-标准可改身份字段code-除外))。父节点必须是 `FAMILY` 且 `categoryCode` 与子节点一致。
 
 **ALLOWLIST 的 issuer 名单只能在 DRAFT 期整体替换**。Policy 一旦 ACTIVE,加机构要新建版本 —— 这是刻意的:改认可范围是规则变更,应该有版本痕迹,而不是悄悄往名单里塞一行。
 
