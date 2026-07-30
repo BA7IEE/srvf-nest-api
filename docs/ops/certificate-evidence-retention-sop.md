@@ -50,10 +50,34 @@ WHERE "deletedAt" IS NULL
   AND "updatedAt" < now() - INTERVAL '90 days';
 
 -- 对象删完之后:
+-- ⚠️ 2026-07-30 跨模型评审 R11 订正:此前这条只清 imageKeys + 打 sensitivePurgedAt,
+--    **把申报里的其余再识别字段全留下了**。冻结稿 §15.9 要求的是「清除敏感信息」,
+--    而证书编号(L2,可用于外部查询或冒用)、发证机构、发证日 / 到期日
+--    三者合起来足以定位到一个具体的人 —— 只删图片等于只清了最显眼的那一项,
+--    然后在 `sensitivePurgedAt` 上打了一个「已脱敏」的标记。
+--    而 SOP 的筛选条件是 `sensitivePurgedAt IS NULL` —— 打上标记之后这一行**永不再被扫到**,
+--    漏清的字段会永久残留。这正是 promote 路径 F12 踩过的同一个坑。
 UPDATE "RecruitmentCertificateClaim"
-SET "imageKeys" = NULL, "sensitivePurgedAt" = now()
+SET "imageKeys"      = NULL,
+    "certNumber"     = NULL,
+    "issuingOrg"     = NULL,
+    "issuedAt"       = NULL,
+    "expiredAt"      = NULL,
+    "rawCertificateName" = NULL,
+    "reviewNote"     = NULL,
+    "sensitivePurgedAt" = now()
 WHERE id = ANY($1::text[]);
 ```
+
+> **不清 `standardId` / `recognitionPolicyId` / `status` / 时间戳**:它们是「这条申报当时被判成什么」的档案,不含再识别信息,清掉会让门槛派生与历史统计失去依据。
+>
+> **`PROMOTED` 行不在本口子内**:发号时已即时清敏(§8.5 第 11 步),且它的标量事实已搬进正式证书。本 SQL 的 `status IN ('REJECTED','WITHDRAWN')` 天然排除。
+
+**删除失败要留可重试标记 —— 别打 `sensitivePurgedAt`。**
+
+存储侧删对象是 best-effort:一批里可能只成功了一部分。**只对确认删成功的那些 id 执行上面的 UPDATE**。删失败的行**保持 `sensitivePurgedAt IS NULL`**,下一轮 SOP 会重新扫到它 —— 这就是重试机制,不需要额外的账本。
+
+反过来做(先整批打标记再删对象)会让删失败的行永久跳出筛选条件,对象和字段都留着,而库里显示「已脱敏」。判断依据只有一条:**`sensitivePurgedAt` 非空 = 这一行的敏感字段确实已经清干净了**。任何让这句话不成立的写法都是错的。
 
 **90 天是建议值,不是铁律** —— 留这么久的理由是申请人可能申诉「我传的明明是对的」,而复核需要原图。缩短前先确认没有在办申诉。
 

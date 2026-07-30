@@ -48,7 +48,13 @@ POST /api/admin/v1/certificate-standards
 }
 ```
 
-新建为 `DRAFT`,**不能用于建证**。改身份字段(code / kind / category / level / parent / isInternal)只能在 DRAFT 期,而且是删掉重建 —— `PATCH` 契约层就不接收这些字段(`forbidNonWhitelisted` 直接 400)。
+新建为 `DRAFT`,**不能用于建证**。
+
+**身份字段在 DRAFT 期可以直接改**(2026-07-30 修正,见 [amendments A-3](../archive/reviews/certificate-standard-library-t0-amendments.md#a-3-draft-标准可改身份字段code-除外)):`PATCH /:id` 接受 `kind` / `categoryCode` / `levelCode` / `parentId` / `isInternal`,条件是该标准仍是 `DRAFT` **且从未启用过**;首次切 `ACTIVE` 之后永久拒绝(`18033`),哪怕后来又切回 `INACTIVE`。
+
+**`code` 是唯一改不了的那个。** 它是长期稳定标识(岗位要求、活动门槛、外部系统都可能引用),而且它的 unique **含软删行** —— 软删一个标准**不会**释放它的 code。所以:
+
+> ⚠️ **初始化时 `code` 打错一个字,那个 code 就永远用不了了。** 建标准前把 code 逐个念一遍再提交,这是本文档里最不可逆的一步。
 
 `PATCH /:id/status` 切 `ACTIVE` 后才可用。
 
@@ -73,9 +79,26 @@ POST /api/admin/v1/certificate-standards/:standardId/recognition-policies
   "validityMode": "FIXED_MONTHS",     // PERMANENT | FIXED_MONTHS | EXPLICIT_REQUIRED | EXPLICIT_OPTIONAL
   "validityMonths": 24,               // FIXED_MONTHS 必填
   "certNumberMode": "REQUIRED",       // REQUIRED | OPTIONAL | NONE
-  "issuers": [{ "name": "深圳市红十字会" }, { "name": "深圳市急救中心" }]
+  "issuers": [{ "name": "深圳市红十字会" }]
 }
 ```
+
+> ⚠️ **issuer 名单不是「这个类别下所有可能的发证机构」,而是「**这一个标准**认可哪些机构签发」。**
+>
+> 本示例此前把「深圳市红十字会」与「深圳市急救中心」放进同一个 `red_cross_first_aid` 的 issuer 名单(2026-07-30 跨模型评审 R12 订正)。那是错的:它们是**两种不同的证书**,只是同属 `first_aid` 大类。
+>
+> 维护者口径逐字:**「急救资质是大类,不等于红十字证书。」** 把两家揉进一个标准,后果是资质判定分不出「这个人有红十字救护员证」和「这个人有急救中心的急救员证」—— 而它们的培训内容、有效期、复训要求都不一样。
+>
+> 正确做法是**两个 Standard、同一个 `categoryCode`**:
+>
+> | code | name | categoryCode | issuers |
+> |---|---|---|---|
+> | `red_cross_first_aid` | 红十字救护员证 | `first_aid` | 深圳市红十字会 |
+> | `emergency_center_first_aid` | 深圳市急救中心急救员证 | `first_aid` | 深圳市急救中心 |
+>
+> 两者都属 `first_aid`,所以 `criterionType=category&criterionCode=first_aid` 的资质判定**两张证都算数**(§12);要精确到某一种就用 `criterionType=standard`。这正是两级判据存在的理由。
+>
+> **什么时候才该把多个机构放进同一个名单**:同一张证书由多家机构联合签发或分区签发(例如同一个 BSAFE 等级在不同城市由不同分会发证),它们发的是**同一种**证书。判据是「持证人拿到的是不是同一张证」,不是「都属于同一个大类」。
 
 三组规则各自决定录入/审核时要传什么:
 
