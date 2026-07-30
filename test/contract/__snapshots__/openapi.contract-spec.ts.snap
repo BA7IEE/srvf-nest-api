@@ -17738,32 +17738,36 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   "UpdateCertificateDto": {
     "properties": {
       "certNumber": {
-        "description": "证书编号",
+        "description": "证书编号(传 null = 清空;OPTIONAL 编号规则下可改回无编号)",
         "maxLength": 128,
+        "nullable": true,
         "type": "string",
       },
       "expiredAt": {
-        "description": "最后有效日(纯日期 YYYY-MM-DD(不接受时分秒与时区;按北京日历日入库);Q-A4 决议:允许资料修正;不填 = 保持原值)",
+        "description": "最后有效日(纯日期 YYYY-MM-DD(不接受时分秒与时区;按北京日历日入库);Q-A4 决议:允许资料修正)。**不传 = 保持原值,传 null = 清成终身有效**",
         "example": "2028-06-30",
         "format": "date",
+        "nullable": true,
         "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
         "type": "string",
       },
       "issuedAt": {
-        "description": "颁发日期(纯日期 YYYY-MM-DD(不接受时分秒与时区;按北京日历日入库);不得晚于今天;Q-A4 决议:允许资料修正)",
+        "description": "颁发日期(纯日期 YYYY-MM-DD(不接受时分秒与时区;按北京日历日入库);不得晚于今天;Q-A4 决议:允许资料修正)。库内 NOT NULL,**不接受 null**",
         "example": "2026-07-01",
         "format": "date",
         "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
         "type": "string",
       },
       "issuingOrg": {
-        "description": "FREE_TEXT 规则的自由机构名",
+        "description": "FREE_TEXT 规则的自由机构名(传 null = 清空)",
         "maxLength": 128,
+        "nullable": true,
         "type": "string",
       },
       "recognitionIssuerId": {
-        "description": "认可机构 id(按认定规则的 issuerPolicy)",
+        "description": "认可机构 id(按认定规则的 issuerPolicy;传 null = 清空)",
         "maxLength": 32,
+        "nullable": true,
         "type": "string",
       },
       "standardId": {

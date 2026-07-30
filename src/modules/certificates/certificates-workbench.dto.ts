@@ -1,7 +1,18 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CertificateSource } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsDateString,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 
 // 证书标准库 PR-5(冻结稿 §13.6 / §14 / §15.2):全局证书工作台。
@@ -91,44 +102,69 @@ export class CertificateWorkbenchFilterDto {
   @ApiPropertyOptional({ ...DATE_ONLY_SCHEMA, description: '发证日 ≥(含)' })
   @IsOptional()
   @Matches(DATE_ONLY_PATTERN, { message: 'issuedFrom 必须是 YYYY-MM-DD 纯日期' })
+  @IsDateString({ strict: true })
   issuedFrom?: string;
 
   @ApiPropertyOptional({ ...DATE_ONLY_SCHEMA, description: '发证日 ≤(含)' })
   @IsOptional()
   @Matches(DATE_ONLY_PATTERN, { message: 'issuedTo 必须是 YYYY-MM-DD 纯日期' })
+  @IsDateString({ strict: true })
   issuedTo?: string;
 
   @ApiPropertyOptional({ ...DATE_ONLY_SCHEMA, description: '到期日 ≥(含);终身有效不匹配' })
   @IsOptional()
   @Matches(DATE_ONLY_PATTERN, { message: 'expiresFrom 必须是 YYYY-MM-DD 纯日期' })
+  @IsDateString({ strict: true })
   expiresFrom?: string;
 
   @ApiPropertyOptional({ ...DATE_ONLY_SCHEMA, description: '到期日 ≤(含);终身有效不匹配' })
   @IsOptional()
   @Matches(DATE_ONLY_PATTERN, { message: 'expiresTo 必须是 YYYY-MM-DD 纯日期' })
+  @IsDateString({ strict: true })
   expiresTo?: string;
 }
 
-export class ListCertificateWorkbenchQueryDto extends CertificateWorkbenchFilterDto {
-  @ApiPropertyOptional({ description: '页码', default: 1, minimum: 1 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  page: number = 1;
-
-  @ApiPropertyOptional({ description: '每页数量', default: 20, minimum: 1, maximum: 100 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  pageSize: number = 20;
-}
-
-// PaginationQueryDto 的字段范围校验(@Min/@Max)在此复用其常量,不重复魔数。
+// 分页边界常量。声明在 DTO **之前** —— 下面的 `@Min` / `@Max` 要用它,
+// 装饰器在类定义时求值,写在后面会撞 TDZ。
 export const WORKBENCH_PAGE_DEFAULTS = {
   page: 1,
   pageSize: 20,
   maxPageSize: 100,
 } as const satisfies Record<string, number>;
+
+// 评审 findings F3(V8):这里原本只有 `@IsInt()`,`minimum` / `maximum` 只写在
+// Swagger 注解里 —— 那是**文档**不是校验。而原先那行注释写的是
+// 「@Min/@Max 在此复用其常量」,描述的规则根本不存在:
+// `pageSize=100000` 或 `page=-5` 会原样进 `skip` / `take`。
+//
+// 这是本批第三处「注释写对、执行位没跟上」。修法是补上真装饰器,
+// 并让常量成为**两边共同的**来源:Swagger 注解与 `@Min/@Max` 引用同一个值,
+// 于是文档与执行位不可能再分叉。
+export class ListCertificateWorkbenchQueryDto extends CertificateWorkbenchFilterDto {
+  @ApiPropertyOptional({
+    description: '页码',
+    default: WORKBENCH_PAGE_DEFAULTS.page,
+    minimum: 1,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page: number = WORKBENCH_PAGE_DEFAULTS.page;
+
+  @ApiPropertyOptional({
+    description: '每页数量',
+    default: WORKBENCH_PAGE_DEFAULTS.pageSize,
+    minimum: 1,
+    maximum: WORKBENCH_PAGE_DEFAULTS.maxPageSize,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(WORKBENCH_PAGE_DEFAULTS.maxPageSize)
+  pageSize: number = WORKBENCH_PAGE_DEFAULTS.pageSize;
+}
 
 // ============ 出参 ============
 

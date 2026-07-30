@@ -163,6 +163,24 @@ export function assertIssuerCountMatchesPolicy(
   if (!ok) throw new BizException(BizCode.CERTIFICATE_ISSUER_CONFIG_INVALID);
 }
 
+/**
+ * 到期日是否由**客户端**提供。
+ *
+ * `PERMANENT`(恒空)与 `FIXED_MONTHS`(后端按 issuedAt 算)属于**派生型**:
+ * 客户端传了直接拒(§10.4「不静默忽略」)。两种 EXPLICIT 才是客户端提供的。
+ *
+ * 为什么 PATCH 需要这个判断:「不传 expiredAt = 保持库内现值」这句话对派生型规则
+ * 不能照字面执行 —— 把库内那个**后端自己算出来的**值回传给 Resolver,会被
+ * 「客户端不得传」那条规则拒成 18016。派生型的「保持现值」正确做法是**不传**,
+ * 让规则按同一个 issuedAt 重新派生出同一个值。
+ */
+export function expiryIsClientSupplied(mode: CertificateValidityMode): boolean {
+  return (
+    mode === CertificateValidityMode.EXPLICIT_REQUIRED ||
+    mode === CertificateValidityMode.EXPLICIT_OPTIONAL
+  );
+}
+
 // certNumberMode 无跨字段组合约束(三种取值都自洽),此处仅做闭集兜底,
 // 供将来新增取值时有一处集中的地方。
 export function isKnownNumberMode(mode: CertificateNumberMode): boolean {
