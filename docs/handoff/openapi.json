@@ -77258,9 +77258,9 @@
         ]
       }
     },
-    "/api/open/v1/recruitment/applications/certificates": {
+    "/api/open/v1/recruitment/certificate-claims": {
       "post": {
-        "operationId": "RecruitmentPublicController_uploadCertificates",
+        "operationId": "RecruitmentPublicController_submitCertificateClaim",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -77269,33 +77269,50 @@
               "schema": {
                 "type": "object",
                 "required": [
-                  "category",
-                  "issuingOrg",
-                  "issuedAt",
+                  "categoryHintCode",
                   "images"
                 ],
                 "properties": {
-                  "category": {
+                  "categoryHintCode": {
                     "type": "string",
                     "enum": [
                       "first_aid",
                       "bsafe"
                     ],
-                    "description": "证书类别(cert_type 既有码;每类 ≤3 张,重传整类覆盖)"
+                    "description": "证书类别提示(仅提示,最终分类由审核决定)"
+                  },
+                  "rawCertificateName": {
+                    "type": "string",
+                    "maxLength": 128,
+                    "description": "证书名称(自由文本)"
+                  },
+                  "suggestedStandardId": {
+                    "type": "string",
+                    "description": "建议的证书标准 id(来自 GET certificate-standards;「不确定」时不传)"
                   },
                   "issuingOrg": {
                     "type": "string",
                     "maxLength": 128,
-                    "description": "发证机构(自由文本;任一被认可的急救资质发证机构均可,前端可提供红十字会/深圳市急救中心等快捷项)"
+                    "description": "发证机构(自由文本)"
+                  },
+                  "certNumber": {
+                    "type": "string",
+                    "maxLength": 128,
+                    "description": "证书编号"
                   },
                   "issuedAt": {
                     "type": "string",
                     "format": "date",
-                    "description": "发证日期(YYYY-MM-DD;不得晚于今天)"
+                    "description": "发证日期(不得晚于今天)"
+                  },
+                  "expiredAt": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "最后有效日"
                   },
                   "wechatCode": {
                     "type": "string",
-                    "description": "通道①:微信 wx.login code(与 phone+code 二选一)"
+                    "description": "通道①:微信 wx.login code"
                   },
                   "phone": {
                     "type": "string",
@@ -77311,7 +77328,7 @@
                       "type": "string",
                       "format": "binary"
                     },
-                    "description": "证书图(1~3 张;jpeg/png 每张 ≤5MB)"
+                    "description": "证据图(1~3 张;jpeg/png 每张 ≤5MB)"
                   }
                 }
               }
@@ -77319,7 +77336,7 @@
           }
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
@@ -77341,7 +77358,7 @@
                       "example": "ok"
                     },
                     "data": {
-                      "$ref": "#/components/schemas/RecruitmentCertificateUploadResultDto"
+                      "$ref": "#/components/schemas/PublicCertificateClaimResultDto"
                     }
                   }
                 }
@@ -77349,7 +77366,7 @@
             }
           },
           "400": {
-            "description": "请求参数错误(code=40000) / 验证码错误或已失效(code=24010)",
+            "description": "请求参数错误(code=40000) / 验证码错误或已失效(code=24010) / 发证日期不能晚于今天(code=18018) / 到期日期不能早于发证日期(code=18017) / 附件内容与声明的 MIME 类型不符(code=13016) / 附件 MIME 类型在系统级黑名单中,不允许上传(code=13033)",
             "content": {
               "application/json": {
                 "schema": {
@@ -77364,9 +77381,13 @@
                       "type": "integer",
                       "enum": [
                         40000,
-                        24010
+                        24010,
+                        18018,
+                        18017,
+                        13016,
+                        13033
                       ],
-                      "description": "40000: 请求参数错误; 24010: 验证码错误或已失效",
+                      "description": "40000: 请求参数错误; 24010: 验证码错误或已失效; 18018: 发证日期不能晚于今天; 18017: 到期日期不能早于发证日期; 13016: 附件内容与声明的 MIME 类型不符; 13033: 附件 MIME 类型在系统级黑名单中,不允许上传",
                       "example": 40000
                     },
                     "message": {
@@ -77418,7 +77439,7 @@
             }
           },
           "409": {
-            "description": "该报名当前状态不允许此操作(code=28041) / 该类证书已审核通过,如需更换请联系管理员(code=28054)",
+            "description": "本次报名的证书申报数量已达上限(code=28059)",
             "content": {
               "application/json": {
                 "schema": {
@@ -77432,15 +77453,14 @@
                     "code": {
                       "type": "integer",
                       "enum": [
-                        28041,
-                        28054
+                        28059
                       ],
-                      "description": "28041: 该报名当前状态不允许此操作; 28054: 该类证书已审核通过,如需更换请联系管理员",
-                      "example": 28041
+                      "description": "28059: 本次报名的证书申报数量已达上限",
+                      "example": 28059
                     },
                     "message": {
                       "type": "string",
-                      "example": "该报名当前状态不允许此操作"
+                      "example": "本次报名的证书申报数量已达上限"
                     },
                     "data": {
                       "type": "object",
@@ -77487,7 +77507,468 @@
             }
           }
         },
-        "summary": "公开上传证书图(无账号;multipart 必填 category+issuingOrg+issuedAt+images;凭证双通道二选一:wechatCode 或 phone+code;每类 ≤3 张整类覆盖;已审核通过类别 → 28054;发号时按类别建 pending Certificate 并搬发证真值;审计 certificate-upload;throttler recruitment) [public]",
+        "summary": "公开提交一条证书申报(无账号;一证一行 —— 同类别可提交多张,互不覆盖;multipart 文件位 images 1~3 张;凭证双通道二选一:wechatCode 或 phone+code;suggestedStandardId 可不传〔「不确定」是合法选项〕且只是建议,后台不据此自动通过;每份报名最多 10 条未撤回申报,超限 28059;throttler recruitment) [public]",
+        "tags": [
+          "Public - Recruitment"
+        ]
+      }
+    },
+    "/api/open/v1/recruitment/certificate-claims/{id}/resubmit": {
+      "post": {
+        "operationId": "RecruitmentPublicController_resubmitCertificateClaim",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "证书申报 id(cuid)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "categoryHintCode",
+                  "version",
+                  "images"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "integer",
+                    "description": "CAS 版本号:必须等于当前值,否则 28058"
+                  },
+                  "categoryHintCode": {
+                    "type": "string",
+                    "enum": [
+                      "first_aid",
+                      "bsafe"
+                    ]
+                  },
+                  "rawCertificateName": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "suggestedStandardId": {
+                    "type": "string"
+                  },
+                  "issuingOrg": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "certNumber": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "issuedAt": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "expiredAt": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "wechatCode": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "images": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/PublicCertificateClaimResultDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 验证码错误或已失效(code=24010) / 发证日期不能晚于今天(code=18018) / 到期日期不能早于发证日期(code=18017) / 附件内容与声明的 MIME 类型不符(code=13016) / 附件 MIME 类型在系统级黑名单中,不允许上传(code=13033)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        24010,
+                        18018,
+                        18017,
+                        13016,
+                        13033
+                      ],
+                      "description": "40000: 请求参数错误; 24010: 验证码错误或已失效; 18018: 发证日期不能晚于今天; 18017: 到期日期不能早于发证日期; 13016: 附件内容与声明的 MIME 类型不符; 13033: 附件 MIME 类型在系统级黑名单中,不允许上传",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "招新报名记录不存在(code=28002) / 证书申报不存在(code=28056)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        28002,
+                        28056
+                      ],
+                      "description": "28002: 招新报名记录不存在; 28056: 证书申报不存在",
+                      "example": 28002
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "招新报名记录不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "证书申报状态不允许此操作(code=28057) / 证书申报已更新,请刷新后重试(code=28058)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        28057,
+                        28058
+                      ],
+                      "description": "28057: 证书申报状态不允许此操作; 28058: 证书申报已更新,请刷新后重试",
+                      "example": 28057
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "证书申报状态不允许此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "请求过于频繁，请稍后再试(code=42900)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        42900
+                      ],
+                      "description": "42900: 请求过于频繁，请稍后再试",
+                      "example": 42900
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求过于频繁，请稍后再试"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "重传单条证书申报(无账号;只换这一条的图与自报事实,**不影响同类别其他申报**;回 SUBMITTED 并清上一轮审核痕迹;version 为 CAS,不符 28058;已通过的申报不可由本人直接改〔需管理员先撤回审核〕→ 28057;throttler recruitment) [public]",
+        "tags": [
+          "Public - Recruitment"
+        ]
+      }
+    },
+    "/api/open/v1/recruitment/certificate-claims/{id}/withdraw": {
+      "post": {
+        "operationId": "RecruitmentPublicController_withdrawCertificateClaim",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "证书申报 id(cuid)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WithdrawCertificateClaimDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/PublicCertificateClaimResultDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 验证码错误或已失效(code=24010)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        24010
+                      ],
+                      "description": "40000: 请求参数错误; 24010: 验证码错误或已失效",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "招新报名记录不存在(code=28002) / 证书申报不存在(code=28056)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        28002,
+                        28056
+                      ],
+                      "description": "28002: 招新报名记录不存在; 28056: 证书申报不存在",
+                      "example": 28002
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "招新报名记录不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "证书申报状态不允许此操作(code=28057) / 证书申报已更新,请刷新后重试(code=28058)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        28057,
+                        28058
+                      ],
+                      "description": "28057: 证书申报状态不允许此操作; 28058: 证书申报已更新,请刷新后重试",
+                      "example": 28057
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "证书申报状态不允许此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "请求过于频繁，请稍后再试(code=42900)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        42900
+                      ],
+                      "description": "42900: 请求过于频繁，请稍后再试",
+                      "example": 42900
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求过于频繁，请稍后再试"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "撤回单条证书申报(无账号;WITHDRAWN 是终态,要重来请新提交一条 —— 不复用行;已发号的申报不可撤 → 28057;version 为 CAS;撤回会在同一事务重算证书门槛〔同类别若还有另一张已通过证书,门槛仍成立〕;throttler recruitment) [public]",
         "tags": [
           "Public - Recruitment"
         ]
@@ -79732,6 +80213,40 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "该门槛由证书申报审核结论自动派生,不可人工标记(code=28063)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        28063
+                      ],
+                      "description": "28063: 该门槛由证书申报审核结论自动派生,不可人工标记",
+                      "example": 28063
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "该门槛由证书申报审核结论自动派生,不可人工标记"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -80436,407 +80951,6 @@
         ]
       }
     },
-    "/api/admin/v1/recruitment/applications/{id}/certificate-image-urls": {
-      "get": {
-        "operationId": "RecruitmentApplicationsAdminController_certificateImageUrls",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "example": 0,
-                      "description": "业务码,0 表示成功"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "ok"
-                    },
-                    "data": {
-                      "$ref": "#/components/schemas/RecruitmentCertificateImageUrlsResponseDto"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未登录或登录已失效(code=40100)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        40100
-                      ],
-                      "description": "40100: 未登录或登录已失效",
-                      "example": 40100
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "未登录或登录已失效"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "无权执行此操作(code=30100)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        30100
-                      ],
-                      "description": "30100: 无权执行此操作",
-                      "example": 30100
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "无权执行此操作"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "招新报名记录不存在(code=28002)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        28002
-                      ],
-                      "description": "28002: 招新报名记录不存在",
-                      "example": 28002
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "招新报名记录不存在"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "取申请人证书图短 TTL signed-URL(按类别分组;无图类别不出现,全无 → 空数组;L3 不入日志/snapshot;读图记审计;复用敏感读码) [rbac: recruitment-application.read.sensitive]",
-        "tags": [
-          "Admin - Recruitment Applications"
-        ]
-      }
-    },
-    "/api/admin/v1/recruitment/applications/{id}/certificates/{category}/review": {
-      "post": {
-        "operationId": "RecruitmentApplicationsAdminController_reviewCertificate",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "category",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ReviewRecruitmentCertificateDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "example": 0,
-                      "description": "业务码,0 表示成功"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "ok"
-                    },
-                    "data": {
-                      "$ref": "#/components/schemas/RecruitmentApplicationAdminDto"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "请求参数错误(code=40000) / 请先上传对应证书图片后再标记门槛完成(code=28053)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        40000,
-                        28053
-                      ],
-                      "description": "40000: 请求参数错误; 28053: 请先上传对应证书图片后再标记门槛完成",
-                      "example": 40000
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "请求参数错误"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未登录或登录已失效(code=40100)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        40100
-                      ],
-                      "description": "40100: 未登录或登录已失效",
-                      "example": 40100
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "未登录或登录已失效"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "无权执行此操作(code=30100)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        30100
-                      ],
-                      "description": "30100: 无权执行此操作",
-                      "example": 30100
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "无权执行此操作"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "招新报名记录不存在(code=28002)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        28002
-                      ],
-                      "description": "28002: 招新报名记录不存在",
-                      "example": 28002
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "招新报名记录不存在"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "该报名当前状态不允许此操作(code=28041)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        28041
-                      ],
-                      "description": "28041: 该报名当前状态不允许此操作",
-                      "example": 28041
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "该报名当前状态不允许此操作"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "审核申请人证书(通过→自动标对应急救资质/BSAFE 门槛;驳回→清该类图并取消门槛;驳回说明申请人进度可见) [rbac: recruitment-application.review.certificate]",
-        "tags": [
-          "Admin - Recruitment Applications"
-        ]
-      }
-    },
     "/api/admin/v1/recruitment/applications/{id}/resolve": {
       "post": {
         "operationId": "RecruitmentApplicationsAdminController_resolve",
@@ -81126,7 +81240,7 @@
             }
           },
           "400": {
-            "description": "请求参数错误(code=40000) / 请先上传对应证书图片后再标记门槛完成(code=28053)",
+            "description": "请求参数错误(code=40000)",
             "content": {
               "application/json": {
                 "schema": {
@@ -81140,10 +81254,9 @@
                     "code": {
                       "type": "integer",
                       "enum": [
-                        40000,
-                        28053
+                        40000
                       ],
-                      "description": "40000: 请求参数错误; 28053: 请先上传对应证书图片后再标记门槛完成",
+                      "description": "40000: 请求参数错误",
                       "example": 40000
                     },
                     "message": {
@@ -81263,7 +81376,7 @@
             }
           },
           "409": {
-            "description": "该报名当前状态不允许此操作(code=28041) / 该类证书尚未审核通过,无法标记门槛完成(code=28055)",
+            "description": "该报名当前状态不允许此操作(code=28041) / 该门槛由证书申报审核结论自动派生,不可人工标记(code=28063)",
             "content": {
               "application/json": {
                 "schema": {
@@ -81278,9 +81391,9 @@
                       "type": "integer",
                       "enum": [
                         28041,
-                        28055
+                        28063
                       ],
-                      "description": "28041: 该报名当前状态不允许此操作; 28055: 该类证书尚未审核通过,无法标记门槛完成",
+                      "description": "28041: 该报名当前状态不允许此操作; 28063: 该门槛由证书申报审核结论自动派生,不可人工标记",
                       "example": 28041
                     },
                     "message": {
@@ -81303,7 +81416,7 @@
             "bearer": []
           }
         ],
-        "summary": "标/清门槛(巡山×2/培训/急救资质/BSAFE;证书类标完成须对应图片审核 approved;清标不受闸;幂等;仅 verified/pending_evaluation 态;末次完成自动→待综合评定) [rbac: recruitment-application.mark.threshold]",
+        "summary": "标/清门槛(仅巡山×2/培训三项人工门槛;⚠️ 契约收紧:急救资质 redCross 与 BSAFE 已改为证书申报审核结论的派生投影,传这两个 code 无论 completed 真假一律 28063;清标不受闸;幂等;仅 verified/pending_evaluation 态;末次完成自动→待综合评定) [rbac: recruitment-application.mark.threshold]",
         "tags": [
           "Admin - Recruitment Applications"
         ]
@@ -105153,6 +105266,116 @@
           "items"
         ]
       },
+      "PublicCertificateClaimDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "申报 id(重传 / 撤回时回传)"
+          },
+          "version": {
+            "type": "number",
+            "description": "CAS 版本号(重传 / 撤回必须回传当前值)"
+          },
+          "status": {
+            "type": "string",
+            "description": "申报状态",
+            "enum": [
+              "SUBMITTED",
+              "NEEDS_INFO",
+              "APPROVED",
+              "REJECTED",
+              "PROMOTED",
+              "WITHDRAWN"
+            ]
+          },
+          "categoryHintCode": {
+            "type": "string",
+            "description": "本人选的类别提示"
+          },
+          "rawCertificateName": {
+            "type": "string",
+            "description": "本人填的证书名称",
+            "nullable": true
+          },
+          "suggestedStandardId": {
+            "type": "string",
+            "description": "本人建议的证书标准 id(仅建议,最终分类由审核决定)",
+            "nullable": true
+          },
+          "issuingOrg": {
+            "type": "string",
+            "description": "本人填的发证机构",
+            "nullable": true
+          },
+          "certNumberMasked": {
+            "type": "string",
+            "description": "证书编号掩码(形如 SZ****01;无编号为 null)",
+            "nullable": true
+          },
+          "issuedAt": {
+            "type": "object",
+            "description": "发证日期",
+            "nullable": true
+          },
+          "expiredAt": {
+            "type": "object",
+            "description": "最后有效日",
+            "nullable": true
+          },
+          "imageCount": {
+            "type": "number",
+            "description": "已上传证据图数量(**不返 key、不返 URL**)",
+            "example": 2
+          },
+          "reviewNote": {
+            "type": "string",
+            "description": "审核说明(驳回 / 要求补材料时对本人可见)",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "提交时间"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "最后更新时间"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "status",
+          "categoryHintCode",
+          "imageCount",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "PublicCertificateClaimResultDto": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "description": "本次操作后的申报",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PublicCertificateClaimDto"
+              }
+            ]
+          },
+          "claimCount": {
+            "type": "number",
+            "description": "本次报名当前的全部未软删申报数量(上限 10;达上限后新提交返 28059)",
+            "example": 2
+          }
+        },
+        "required": [
+          "claim",
+          "claimCount"
+        ]
+      },
       "RecruitmentQueryDto": {
         "type": "object",
         "properties": {
@@ -105212,21 +105435,30 @@
           "code"
         ]
       },
-      "RecruitmentCertificateUploadResultDto": {
+      "WithdrawCertificateClaimDto": {
         "type": "object",
         "properties": {
-          "category": {
+          "wechatCode": {
             "type": "string",
-            "description": "证书类别"
+            "description": "通道①:微信 wx.login code(与 phone+code 二选一)",
+            "maxLength": 128
           },
-          "imageCount": {
+          "phone": {
+            "type": "string",
+            "description": "通道②:手机号(配合 code)"
+          },
+          "code": {
+            "type": "string",
+            "description": "通道②:短信验证码(消费一码)"
+          },
+          "version": {
             "type": "number",
-            "description": "该类别当前图片数(重传覆盖后)"
+            "description": "CAS 版本号",
+            "example": 0
           }
         },
         "required": [
-          "category",
-          "imageCount"
+          "version"
         ]
       },
       "RecruitmentWithdrawDto": {
@@ -106223,13 +106455,11 @@
           },
           "thresholdCode": {
             "type": "string",
-            "description": "门槛 code",
+            "description": "门槛 code(证书型门槛 redCross / bsafe 已改为派生,不在此列)",
             "enum": [
               "patrol1",
               "patrol2",
-              "training",
-              "redCross",
-              "bsafe"
+              "training"
             ]
           },
           "completed": {
@@ -106344,63 +106574,6 @@
           }
         }
       },
-      "RecruitmentCertificateImagesItemDto": {
-        "type": "object",
-        "properties": {
-          "category": {
-            "type": "string",
-            "description": "证书类别(first_aid/bsafe)"
-          },
-          "urls": {
-            "description": "该类别各图短 TTL signed-URL(L3;不入日志/snapshot)",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "category",
-          "urls"
-        ]
-      },
-      "RecruitmentCertificateImageUrlsResponseDto": {
-        "type": "object",
-        "properties": {
-          "items": {
-            "description": "按类别分组(无图类别不出现;全无 → 空数组)",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RecruitmentCertificateImagesItemDto"
-            }
-          },
-          "expiresAt": {
-            "format": "date-time",
-            "type": "string",
-            "description": "URL 过期时刻(各图同 TTL)"
-          }
-        },
-        "required": [
-          "items",
-          "expiresAt"
-        ]
-      },
-      "ReviewRecruitmentCertificateDto": {
-        "type": "object",
-        "properties": {
-          "approved": {
-            "type": "boolean",
-            "description": "true=通过并自动标对应门槛;false=驳回、清图并取消对应门槛"
-          },
-          "note": {
-            "type": "string",
-            "description": "审核备注(驳回说明会对申请人可见)"
-          }
-        },
-        "required": [
-          "approved"
-        ]
-      },
       "ResolveRecruitmentApplicationDto": {
         "type": "object",
         "properties": {
@@ -106422,13 +106595,11 @@
         "properties": {
           "thresholdCode": {
             "type": "string",
-            "description": "门槛 code",
+            "description": "门槛 code(证书型门槛 redCross / bsafe 已改为派生,不在此列)",
             "enum": [
               "patrol1",
               "patrol2",
-              "training",
-              "redCross",
-              "bsafe"
+              "training"
             ]
           },
           "completed": {

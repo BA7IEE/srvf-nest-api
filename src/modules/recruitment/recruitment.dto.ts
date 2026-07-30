@@ -319,61 +319,6 @@ export class RecruitmentQueryByPhoneDto {
 
 // ============ 招新可用性收口 F7:证书图上传(评审稿 §2.9 R6;凭证双通道镜像 F6 withdraw)============
 // multipart:本 DTO 承载文本字段(category + 双通道凭证),文件位 images(≤3;校验镜像 idCardImage)。
-export class RecruitmentCertificateUploadDto {
-  @ApiProperty({
-    description: '证书类别(cert_type 既有码;每类 ≤3 张,重传整类覆盖)',
-    enum: RECRUITMENT_CERT_CATEGORIES as unknown as string[],
-  })
-  @IsString()
-  @IsIn(RECRUITMENT_CERT_CATEGORIES, { message: '证书类别非法' })
-  category!: string;
-
-  @ApiProperty({
-    description:
-      '发证机构(自由文本;任一被认可的急救资质发证机构均可,前端可提供红十字会/深圳市急救中心等快捷项)',
-    maxLength: 128,
-  })
-  @IsString()
-  @MinLength(1)
-  @MaxLength(128)
-  issuingOrg!: string;
-
-  @ApiProperty({ description: '发证日期(YYYY-MM-DD;不得晚于今天)', example: '2026-07-13' })
-  @IsString()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: '发证日期须为 YYYY-MM-DD' })
-  @IsDateString({ strict: true })
-  issuedAt!: string;
-
-  @ApiPropertyOptional({
-    description: '微信 wx.login code(通道①:换 openid 定位本人最近活跃报名;与 phone+code 二选一)',
-    maxLength: 128,
-  })
-  @IsOptional()
-  @IsString()
-  @MinLength(1)
-  @MaxLength(128)
-  wechatCode?: string;
-
-  @ApiPropertyOptional({ description: '手机号(通道②:配合验证码;与 wechatCode 二选一)' })
-  @IsOptional()
-  @IsString()
-  @Matches(MAINLAND_PHONE, { message: '手机号格式不正确' })
-  phone?: string;
-
-  @ApiPropertyOptional({ description: '短信验证码(6 位数字;通道② 必带,消费一码)' })
-  @IsOptional()
-  @IsString()
-  @Matches(SMS_CODE_6, { message: '验证码格式不正确' })
-  code?: string;
-}
-
-export class RecruitmentCertificateUploadResultDto {
-  @ApiProperty({ description: '证书类别' })
-  category!: string;
-  @ApiProperty({ description: '该类别当前图片数(重传覆盖后)' })
-  imageCount!: number;
-}
-
 // ============ 招新可用性收口 F6:自助撤销(评审稿 §3 R4;凭证双通道镜像 query / query-by-phone)============
 export class RecruitmentWithdrawDto {
   @ApiPropertyOptional({

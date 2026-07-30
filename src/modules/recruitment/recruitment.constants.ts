@@ -442,6 +442,17 @@ export function certificateCategoryForThreshold(
 }
 export const CERTIFICATE_IMAGES_MAX_PER_CATEGORY = 3;
 
+// ===== 证书标准库 PR-4a-2(冻结稿 §8.1):一证一行的申报 =====
+// key 只由固定 namespace + 随机 id 组成 —— **不含**类别、姓名、手机、证件号或原文件名
+// (§8.1:「storage key 只能使用随机 id 和固定 namespace」)。旧 key 里带 category 与
+// cycleId,那是按类别覆盖时代的产物;一证一行后 key 不需要承载任何业务语义。
+export const CERTIFICATE_CLAIM_IMAGE_KEY_PREFIX = 'recruitment/certificate-claim';
+export const CERTIFICATE_CLAIM_IMAGES_MAX = 3;
+export const CERTIFICATE_CLAIM_IMAGES_MIN = 1;
+// 每个报名最多保留的未软删申报数。上限的作用不是业务规则而是**防滥用**:
+// 公开端点无账号,不设上限就是一个匿名可写的无限存储入口(§8.1)。
+export const CERTIFICATE_CLAIM_MAX_PER_APPLICATION = 10;
+
 export type RecruitmentStorageCleanupOperation =
   | 'delete-orphan-id-card-image'
   | 'delete-replaced-certificate-image'

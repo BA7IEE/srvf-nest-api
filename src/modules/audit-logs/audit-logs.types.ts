@@ -39,6 +39,10 @@ export type AuditLogEvent =
   // signed URL、审核备注全文、申请人姓名手机证件号(§17 / D-CERT-024)。
   | 'certificate-standard.change' // Standard 身份与状态变更
   | 'certificate-recognition-policy.change' // 认定规则版本创建 / 激活 / 退役 / issuer 整体替换
+  // 证书标准库 PR-4a-2(§8.1):申请人自助提交 / 重传 / 撤回单条申报。
+  // actor 恒 null(公开端点无账号),通道与操作由 extra.channel / extra.operation 区分。
+  // extra 闭集,**禁**完整编号 / 图片 key / 申请人 PII;编号只留 certNumberProvided 布尔。
+  | 'recruitment-certificate-claim.submit'
   | 'recruitment-certificate-claim.review' // 招新证书申报审核(approve / reject / needs-info)
   | 'recruitment-certificate-claim.review-revoke' // 发号前撤回 APPROVED 结论,重算门槛
   | 'contribution-rule.create' // PR #3 接入(contribution-rules.service: create)

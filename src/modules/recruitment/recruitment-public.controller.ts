@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Param,
   Post,
   Req,
   UploadedFile,
@@ -27,15 +28,14 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
-  CERTIFICATE_IMAGES_MAX_PER_CATEGORY,
+  CERTIFICATE_CLAIM_IMAGES_MAX,
   ID_CARD_IMAGE_MAX_BYTES,
+  RECRUITMENT_CERT_CATEGORIES,
 } from './recruitment.constants';
 import {
   PublicRecruitmentPublicityItemDto,
   PublicRecruitmentPublicityResponseDto,
   RecruitmentApplicationProgressDto,
-  RecruitmentCertificateUploadDto,
-  RecruitmentCertificateUploadResultDto,
   RecruitmentOcrCardWarningsDto,
   RecruitmentOcrDetailDto,
   RecruitmentOcrFieldDto,
@@ -60,8 +60,14 @@ import {
 import { RecruitmentApplicationsQueryService } from './recruitment-applications-query.service';
 import { RecruitmentIdentityService } from './recruitment-identity.service';
 import {
+  ClaimIdParamDto,
+  PublicCertificateClaimDto,
+  PublicCertificateClaimResultDto,
   PublicCertificateStandardOptionDto,
   PublicCertificateStandardOptionsResponseDto,
+  ResubmitCertificateClaimDto,
+  SubmitCertificateClaimDto,
+  WithdrawCertificateClaimDto,
 } from './recruitment-certificate-claims.dto';
 import { RecruitmentCertificateClaimsService } from './recruitment-certificate-claims.service';
 
@@ -123,6 +129,9 @@ async function parseSubmitPayload(
   // 证书标准库 PR-4a-1:公开证书标准选项 DTO(嵌套项须显式注册进 components.schemas)
   PublicCertificateStandardOptionDto,
   PublicCertificateStandardOptionsResponseDto,
+  // 证书标准库 PR-4a-2:申请人视角的申报 DTO
+  PublicCertificateClaimDto,
+  PublicCertificateClaimResultDto,
 )
 @Controller('open/v1/recruitment')
 export class RecruitmentPublicController {
@@ -377,70 +386,157 @@ export class RecruitmentPublicController {
   }
 
   // 招新可用性收口 F7(评审稿 §2.9 R6):证书图上传(双通道凭证;每类 ≤3 张重传覆盖)。
+  // ============ 证书标准库 PR-4a-2(冻结稿 §8.1 / §13.3):一证一行的公开申报 ============
+  //
+  // 取代旧 `POST applications/certificates`(按类别整组覆盖)。旧端点**本刀删除**,
+  // 不留兼容窗口(§21 约束 3)—— 留着就是两条写路径,而两条写路径必然漂移。
+  //
+  // 三个端点共用一套规则:multipart 文件位 `images`(1~3 张)· 双通道凭证二选一 ·
+  // 凭证解析出的报名必须与 claim 归属一致(claimId 不单独构成授权)。
   @Public()
   @RecruitmentThrottle()
-  @Post('applications/certificates')
-  @HttpCode(HttpStatus.OK)
+  @Post('certificate-claims')
   @UseInterceptors(
-    FilesInterceptor('images', CERTIFICATE_IMAGES_MAX_PER_CATEGORY, {
-      limits: { fileSize: ID_CARD_IMAGE_MAX_BYTES, files: CERTIFICATE_IMAGES_MAX_PER_CATEGORY },
+    FilesInterceptor('images', CERTIFICATE_CLAIM_IMAGES_MAX, {
+      limits: { fileSize: ID_CARD_IMAGE_MAX_BYTES, files: CERTIFICATE_CLAIM_IMAGES_MAX },
     }),
   )
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
-      required: ['category', 'issuingOrg', 'issuedAt', 'images'],
+      required: ['categoryHintCode', 'images'],
       properties: {
-        category: {
+        categoryHintCode: {
           type: 'string',
-          enum: ['first_aid', 'bsafe'],
-          description: '证书类别(cert_type 既有码;每类 ≤3 张,重传整类覆盖)',
+          enum: [...RECRUITMENT_CERT_CATEGORIES],
+          description: '证书类别提示(仅提示,最终分类由审核决定)',
         },
-        issuingOrg: {
+        rawCertificateName: { type: 'string', maxLength: 128, description: '证书名称(自由文本)' },
+        suggestedStandardId: {
           type: 'string',
-          maxLength: 128,
-          description:
-            '发证机构(自由文本;任一被认可的急救资质发证机构均可,前端可提供红十字会/深圳市急救中心等快捷项)',
+          description: '建议的证书标准 id(来自 GET certificate-standards;「不确定」时不传)',
         },
-        issuedAt: {
-          type: 'string',
-          format: 'date',
-          description: '发证日期(YYYY-MM-DD;不得晚于今天)',
-        },
-        wechatCode: {
-          type: 'string',
-          description: '通道①:微信 wx.login code(与 phone+code 二选一)',
-        },
+        issuingOrg: { type: 'string', maxLength: 128, description: '发证机构(自由文本)' },
+        certNumber: { type: 'string', maxLength: 128, description: '证书编号' },
+        issuedAt: { type: 'string', format: 'date', description: '发证日期(不得晚于今天)' },
+        expiredAt: { type: 'string', format: 'date', description: '最后有效日' },
+        wechatCode: { type: 'string', description: '通道①:微信 wx.login code' },
         phone: { type: 'string', description: '通道②:手机号(配合 code)' },
         code: { type: 'string', description: '通道②:短信验证码(消费一码)' },
         images: {
           type: 'array',
           items: { type: 'string', format: 'binary' },
-          description: '证书图(1~3 张;jpeg/png 每张 ≤5MB)',
+          description: '证据图(1~3 张;jpeg/png 每张 ≤5MB)',
         },
       },
     },
   })
   @ApiOperation({
     summary:
-      '公开上传证书图(无账号;multipart 必填 category+issuingOrg+issuedAt+images;凭证双通道二选一:wechatCode 或 phone+code;每类 ≤3 张整类覆盖;已审核通过类别 → 28054;发号时按类别建 pending Certificate 并搬发证真值;审计 certificate-upload;throttler recruitment) [public]',
+      '公开提交一条证书申报(无账号;一证一行 —— 同类别可提交多张,互不覆盖;multipart 文件位 images 1~3 张;凭证双通道二选一:wechatCode 或 phone+code;suggestedStandardId 可不传〔「不确定」是合法选项〕且只是建议,后台不据此自动通过;每份报名最多 10 条未撤回申报,超限 28059;throttler recruitment) [public]',
   })
-  @ApiWrappedOkResponse(RecruitmentCertificateUploadResultDto)
+  @ApiWrappedCreatedResponse(PublicCertificateClaimResultDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.SMS_CODE_INVALID,
     BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
-    BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
-    BizCode.RECRUITMENT_CERTIFICATE_ALREADY_APPROVED,
+    BizCode.RECRUITMENT_CERTIFICATE_CLAIM_LIMIT,
+    BizCode.CERTIFICATE_ISSUED_AT_IN_FUTURE,
+    BizCode.CERTIFICATE_DATE_RANGE_INVALID,
+    BizCode.ATTACHMENT_CONTENT_TYPE_MISMATCH,
+    BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED,
     BizCode.TOO_MANY_REQUESTS,
   )
-  uploadCertificates(
-    @Body() dto: RecruitmentCertificateUploadDto,
+  submitCertificateClaim(
+    @Body() dto: SubmitCertificateClaimDto,
     @UploadedFiles() images: UploadedImageFile[] | undefined,
     @Req() req: Request,
-  ): Promise<RecruitmentCertificateUploadResultDto> {
-    return this.identity.uploadCertificateImages(dto, images ?? [], buildAuditMeta(req));
+  ): Promise<PublicCertificateClaimResultDto> {
+    return this.claimsService.submitPublic(dto, images ?? [], buildAuditMeta(req));
+  }
+
+  @Public()
+  @RecruitmentThrottle()
+  @Post('certificate-claims/:id/resubmit')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FilesInterceptor('images', CERTIFICATE_CLAIM_IMAGES_MAX, {
+      limits: { fileSize: ID_CARD_IMAGE_MAX_BYTES, files: CERTIFICATE_CLAIM_IMAGES_MAX },
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['categoryHintCode', 'version', 'images'],
+      properties: {
+        version: { type: 'integer', description: 'CAS 版本号:必须等于当前值,否则 28058' },
+        categoryHintCode: { type: 'string', enum: [...RECRUITMENT_CERT_CATEGORIES] },
+        rawCertificateName: { type: 'string', maxLength: 128 },
+        suggestedStandardId: { type: 'string' },
+        issuingOrg: { type: 'string', maxLength: 128 },
+        certNumber: { type: 'string', maxLength: 128 },
+        issuedAt: { type: 'string', format: 'date' },
+        expiredAt: { type: 'string', format: 'date' },
+        wechatCode: { type: 'string' },
+        phone: { type: 'string' },
+        code: { type: 'string' },
+        images: { type: 'array', items: { type: 'string', format: 'binary' } },
+      },
+    },
+  })
+  @ApiOperation({
+    summary:
+      '重传单条证书申报(无账号;只换这一条的图与自报事实,**不影响同类别其他申报**;回 SUBMITTED 并清上一轮审核痕迹;version 为 CAS,不符 28058;已通过的申报不可由本人直接改〔需管理员先撤回审核〕→ 28057;throttler recruitment) [public]',
+  })
+  @ApiWrappedOkResponse(PublicCertificateClaimResultDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.SMS_CODE_INVALID,
+    BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
+    BizCode.RECRUITMENT_CERTIFICATE_CLAIM_NOT_FOUND,
+    BizCode.RECRUITMENT_CERTIFICATE_CLAIM_STATE_INVALID,
+    BizCode.RECRUITMENT_CERTIFICATE_CLAIM_VERSION_CONFLICT,
+    BizCode.CERTIFICATE_ISSUED_AT_IN_FUTURE,
+    BizCode.CERTIFICATE_DATE_RANGE_INVALID,
+    BizCode.ATTACHMENT_CONTENT_TYPE_MISMATCH,
+    BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  resubmitCertificateClaim(
+    @Param() params: ClaimIdParamDto,
+    @Body() dto: ResubmitCertificateClaimDto,
+    @UploadedFiles() images: UploadedImageFile[] | undefined,
+    @Req() req: Request,
+  ): Promise<PublicCertificateClaimResultDto> {
+    return this.claimsService.resubmitPublic(params.id, dto, images ?? [], buildAuditMeta(req));
+  }
+
+  @Public()
+  @RecruitmentThrottle()
+  @Post('certificate-claims/:id/withdraw')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '撤回单条证书申报(无账号;WITHDRAWN 是终态,要重来请新提交一条 —— 不复用行;已发号的申报不可撤 → 28057;version 为 CAS;撤回会在同一事务重算证书门槛〔同类别若还有另一张已通过证书,门槛仍成立〕;throttler recruitment) [public]',
+  })
+  @ApiWrappedOkResponse(PublicCertificateClaimResultDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.SMS_CODE_INVALID,
+    BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
+    BizCode.RECRUITMENT_CERTIFICATE_CLAIM_NOT_FOUND,
+    BizCode.RECRUITMENT_CERTIFICATE_CLAIM_STATE_INVALID,
+    BizCode.RECRUITMENT_CERTIFICATE_CLAIM_VERSION_CONFLICT,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  withdrawCertificateClaim(
+    @Param() params: ClaimIdParamDto,
+    @Body() dto: WithdrawCertificateClaimDto,
+    @Req() req: Request,
+  ): Promise<PublicCertificateClaimResultDto> {
+    return this.claimsService.withdrawPublic(params.id, dto, buildAuditMeta(req));
   }
 
   // 招新可用性收口 F6(评审稿 §3 R4):自助撤销(凭证双通道镜像 query / query-by-phone)。

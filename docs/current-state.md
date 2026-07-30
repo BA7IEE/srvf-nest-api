@@ -23,7 +23,7 @@
 | Migration | 66 |
 | BizCode | 306 |
 | 权限码 | 222 |
-| AuditLogEvent | 127 |
+| AuditLogEvent | 129 |
 | 内建角色 | 15 |
 | Cron | 2 |
 <!-- counts:end -->

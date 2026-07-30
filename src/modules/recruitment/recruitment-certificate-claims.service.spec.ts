@@ -54,7 +54,9 @@ describe('RecruitmentCertificateClaimsService.getImageUrls · 证据图 fail-clo
       prisma as never,
       rbac as never,
       auditLogs as never,
-      {} as never,
+      {} as never, // resolver:本组只测读图,不触发认定规则解析
+      {} as never, // identity:同上,公开面凭证链不参与 admin 取图
+      {} as never, // contentValidator
       storage as never,
     );
     return { service, auditLogs, storage };

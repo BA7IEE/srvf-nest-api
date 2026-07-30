@@ -549,8 +549,12 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/open/v1/recruitment/applications/query-by-phone'],
   // 招新可用性收口 F6(2026-07-11;评审稿 §3 R4):自助撤销(公开双通道;0 新码)。
   ['post', '/api/open/v1/recruitment/applications/withdraw'],
-  // 招新可用性收口 F7(2026-07-11;评审稿 §2.9 R6):证书图上传(公开双通道;0 新码)。
-  ['post', '/api/open/v1/recruitment/applications/certificates'],
+  // 证书标准库 PR-4a-2(2026-07-30;冻结评审稿 v1.2 §8.1 / §13.3):一证一行的公开申报
+  //   3 端点,取代旧「按类别整组覆盖上传」`POST applications/certificates`(本刀删除,
+  //   不留兼容窗口 —— §21 约束 3)。同类别可提交多张、单证重传与撤回互不影响。
+  ['post', '/api/open/v1/recruitment/certificate-claims'],
+  ['post', '/api/open/v1/recruitment/certificate-claims/{id}/resubmit'],
+  ['post', '/api/open/v1/recruitment/certificate-claims/{id}/withdraw'],
   ['post', '/api/open/v1/recruitment/applications/rebind-wechat'],
   ['post', '/api/open/v1/recruitment/applications/rebind-phone'],
   // 十项收口刀F(2026-07-11):公开公示名单(view-publicity 悬空动作收口;姓名+拟发号,公示=实发同源)。
@@ -568,11 +572,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 招新可用性收口 F2(2026-07-11;评审稿 recruitment-usability-closeout-review.md §3 R1):admin 改报名资料。
   ['patch', '/api/admin/v1/recruitment/applications/{id}'],
   ['get', '/api/admin/v1/recruitment/applications/{id}/id-card-image-url'],
-  // 招新可用性收口 F7:admin 取证书图 signed-URL(复用 read.sensitive,0 新码)。
-  ['get', '/api/admin/v1/recruitment/applications/{id}/certificate-image-urls'],
   ['post', '/api/admin/v1/recruitment/applications/{id}/resolve'],
-  // 十三项收口刀G(2026-07-12):证书审核闭环(通过自动标门槛;驳回清图并退标记)。
-  ['post', '/api/admin/v1/recruitment/applications/{id}/certificates/{category}/review'],
+  // 证书标准库 PR-4a-2:旧 `applications/{id}/certificates/{category}/review` 与
+  //   `applications/{id}/certificate-image-urls` **本刀删除**(§13.4)——
+  //   category 不是证书实例 id,做不到同类别多张、单证重传与单证审核。
   // 招新可用性收口 F3(2026-07-11;评审稿 §3 R3):单人手动建档(批量 skip 项收尾通道)。
   ['post', '/api/admin/v1/recruitment/applications/{id}/promote-single'],
   // 招新二期(招新后段)T2(2026-06-19;冻结评审稿 recruitment-phase2-review.md §3.2):
@@ -1451,6 +1454,9 @@ describe('OpenAPI 契约快照', () => {
 
   // 证书标准库 PR-3(2026-07-30):+13(证书标准 7 + 队内认定规则 6)→ 429。
   // 证书标准库 PR-4a-1(2026-07-30):+6(招新证书申报管理端 5 + 公开标准选项 1)→ 435。
+  // 证书标准库 PR-4a-2(2026-07-30):+3 公开申报 −1 旧公开上传 −2 旧 admin category 端点
+  //   = **净 0**,足迹仍 435。数字不变但集合变了 —— 下面「未出现意料之外的路由」那条
+  //   会抓住任何一侧漏改。
   // 这个数字被 scripts/docs-counts.ts 反向交叉校验(条目数 ≠ 本断言即 exit 2),
   // 所以它不会和上面的表悄悄脱钩。
   it('证书标准库 PR-4a-1 落地后路由足迹精确为 435', () => {
