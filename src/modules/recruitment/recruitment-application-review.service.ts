@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { normalizeDateOnly } from '../../common/datetime/date-only.util';
@@ -10,8 +10,6 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { assertEmergencyRelationCodeValid } from '../emergency-contacts/emergency-relation.validation';
 import { RbacService } from '../permissions/rbac.service';
-import { STORAGE_PROVIDER } from '../storage/storage.constants';
-import type { StorageProvider } from '../storage/storage.interface';
 import { maskIdCard, maskName } from '../realname/realname.constants';
 import {
   APP_INACTIVE_STATUS_CODES,
@@ -22,30 +20,21 @@ import {
   APP_STATUS_PUBLICITY,
   APP_STATUS_REJECTED,
   APP_STATUS_VERIFIED,
-  APP_STATUS_WITHDRAWN,
-  CERTIFICATE_THRESHOLD_BY_CATEGORY,
   ELIM_STAGE_EVALUATION,
   ELIM_STAGE_THRESHOLD_TIMEOUT,
   RECRUITMENT_MAX_AGE,
   RECRUITMENT_MIN_AGE,
-  RECRUITMENT_CERT_CATEGORIES,
-  type RecruitmentCertificateCategory,
-  type ThresholdCode,
+  type ManualThresholdCode,
   type ThresholdMarks,
   allThresholdsComplete,
-  certificateCategoryForThreshold,
   computeAge,
   extractBirthDate,
   extractGenderCode,
   isMainlandId,
   isProfileExtraWithinLimit,
+  isDerivedCertificateThresholdCode,
   isValidChineseId,
-  recruitmentStorageCleanupFailureLog,
 } from './recruitment.constants';
-import {
-  certificateJsonOrDbNull,
-  certificateReviewForCategory,
-} from './recruitment-certificate-json';
 import { resolveBatchMatches } from './recruitment-batch-matching';
 import { toAdminApplicationDto } from './recruitment-applications.presenter';
 import type {
@@ -54,7 +43,6 @@ import type {
   BatchMarkThresholdRowResultDto,
   EvaluateRecruitmentApplicationDto,
   MarkThresholdDto,
-  ReviewRecruitmentCertificateDto,
   RecruitmentApplicationAdminDto,
   UpdateRecruitmentApplicationDto,
 } from './recruitment.dto';
@@ -76,7 +64,6 @@ export class RecruitmentApplicationReviewService {
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
     private readonly auditLogs: AuditLogsService,
-    @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
   // ============ 招新二期:标/清门槛(M-3 / E-R2-2;幂等;末次完成自动推进 pending_evaluation)============
@@ -88,6 +75,16 @@ export class RecruitmentApplicationReviewService {
     now: Date,
   ): Promise<RecruitmentApplicationAdminDto> {
     await this.assertCanOrThrow(user, 'recruitment-application.mark.threshold');
+    // 证书标准库 PR-4a-2(§8.4):redCross / bsafe 已改为 Claim 审核结论的派生投影,
+    // 人工标记一律拒 —— **无论 completed 真假**。拒 false 同样要紧:允许人工清除,
+    // 就等于允许绕过审核结论把一张已通过证书带来的门槛抹掉。
+    //
+    // DTO 的 @IsIn 已在契约层收窄到 3 项,这里不是重复:`batchMarkThreshold` 逐行
+    // **内部直调**本方法并自造对象字面量,那条路径根本不过 ValidationPipe。
+    // 少了这道 service 门,批量入口就是绕过派生的现成缺口。
+    if (isDerivedCertificateThresholdCode(dto.thresholdCode)) {
+      throw new BizException(BizCode.RECRUITMENT_THRESHOLD_DERIVED_READONLY);
+    }
     const canSensitive = await this.rbac.can(user, 'recruitment-application.read.sensitive');
     return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw(
@@ -104,23 +101,11 @@ export class RecruitmentApplicationReviewService {
       ) {
         throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
       }
-      const code = dto.thresholdCode as ThresholdCode; // DTO @IsIn 已校验 ∈ THRESHOLD_CODES
-      const certificateCategory = certificateCategoryForThreshold(code);
-      if (dto.completed && certificateCategory) {
-        const images = (row.certificateImages as Record<string, string[]> | null) ?? {};
-        if (
-          !Array.isArray(images[certificateCategory]) ||
-          images[certificateCategory].length === 0
-        ) {
-          throw new BizException(BizCode.RECRUITMENT_CERTIFICATE_IMAGE_REQUIRED);
-        }
-        if (
-          certificateReviewForCategory(row.certificateReviewStatus, certificateCategory)?.status !==
-          'approved'
-        ) {
-          throw new BizException(BizCode.RECRUITMENT_CERTIFICATE_NOT_APPROVED);
-        }
-      }
+      // 本方法自 PR-4a-2 起只处理人工族(派生族在入口已拒),所以原先那段
+      // 「标证书门槛前先查该类别有图且已 approved」整段删除 —— 那两条前置条件
+      // 现在由 Claim 状态机本身承担:只有 APPROVED / PROMOTED 的 Claim 才贡献门槛,
+      // 而门槛值不再经由这条路径写入。
+      const code = dto.thresholdCode as ManualThresholdCode; // 入口 @IsIn + 派生族守卫双保
       const { marks, allComplete, nextStatus } = this.buildThresholdMutation(
         row.statusCode,
         row.thresholdMarks,
@@ -147,90 +132,6 @@ export class RecruitmentApplicationReviewService {
       });
       return toAdminApplicationDto(updated, !canSensitive);
     });
-  }
-
-  async reviewCertificate(
-    id: string,
-    category: string,
-    dto: ReviewRecruitmentCertificateDto,
-    user: CurrentUserPayload,
-    meta: AuditMeta,
-    now: Date,
-  ): Promise<RecruitmentApplicationAdminDto> {
-    await this.assertCanOrThrow(user, 'recruitment-application.review.certificate');
-    if (!RECRUITMENT_CERT_CATEGORIES.includes(category as RecruitmentCertificateCategory)) {
-      throw new BizException(BizCode.BAD_REQUEST);
-    }
-    const canSensitive = await this.rbac.can(user, 'recruitment-application.read.sensitive');
-    const result = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw(
-        Prisma.sql`SELECT "id" FROM "recruitment_applications" WHERE "id" = ${id} FOR UPDATE`,
-      );
-      const row = await tx.recruitmentApplication.findFirst({ where: { id, deletedAt: null } });
-      if (!row) throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
-      if (
-        row.statusCode === APP_STATUS_PROMOTED ||
-        row.statusCode === APP_STATUS_REJECTED ||
-        row.statusCode === APP_STATUS_WITHDRAWN
-      ) {
-        throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
-      }
-      const typedCategory = category as RecruitmentCertificateCategory;
-      const images = (row.certificateImages as Record<string, string[]> | null) ?? {};
-      const categoryImages = Array.isArray(images[typedCategory]) ? images[typedCategory] : [];
-      if (categoryImages.length === 0) {
-        throw new BizException(BizCode.RECRUITMENT_CERTIFICATE_IMAGE_REQUIRED);
-      }
-      const reviews = (row.certificateReviewStatus as Record<string, unknown> | null) ?? {};
-      const nextReviews = {
-        ...reviews,
-        [typedCategory]: {
-          status: dto.approved ? 'approved' : 'rejected',
-          at: now.toISOString(),
-          by: user.id,
-          ...(dto.note ? { note: dto.note } : {}),
-        },
-      };
-      const thresholdCode = CERTIFICATE_THRESHOLD_BY_CATEGORY[typedCategory];
-      const threshold = this.buildThresholdMutation(
-        row.statusCode,
-        row.thresholdMarks,
-        thresholdCode,
-        dto.approved,
-        user.id,
-        now,
-      );
-      const nextImages = { ...images };
-      if (!dto.approved) delete nextImages[typedCategory];
-      const updated = await tx.recruitmentApplication.update({
-        where: { id },
-        data: {
-          certificateReviewStatus: certificateJsonOrDbNull(nextReviews),
-          certificateImages: certificateJsonOrDbNull(nextImages),
-          thresholdMarks: threshold.marks as Prisma.InputJsonValue,
-          statusCode: threshold.nextStatus,
-        },
-      });
-      await this.auditLogs.log({
-        event: 'recruitment-application.certificate-review',
-        actorUserId: user.id,
-        actorRoleSnap: user.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: id,
-        meta,
-        before: { statusCode: row.statusCode },
-        after: { statusCode: threshold.nextStatus },
-        extra: {
-          category: typedCategory,
-          approved: dto.approved,
-          imageCount: categoryImages.length,
-        },
-        tx,
-      });
-      return { updated, deleteKeys: dto.approved ? [] : categoryImages };
-    });
-    for (const key of result.deleteKeys) await this.safeDeleteBlob(key);
-    return toAdminApplicationDto(result.updated, !canSensitive);
   }
 
   // ============ 招新闭环优化 S6:批量标门槛(评审稿 §8.1;复用单行 markThreshold,零第二套)============
@@ -563,7 +464,7 @@ export class RecruitmentApplicationReviewService {
   private buildThresholdMutation(
     currentStatus: string,
     rawMarks: unknown,
-    code: ThresholdCode,
+    code: ManualThresholdCode,
     completed: boolean,
     by: string,
     now: Date,
@@ -581,14 +482,6 @@ export class RecruitmentApplicationReviewService {
             ? APP_STATUS_PENDING_EVALUATION
             : APP_STATUS_VERIFIED;
     return { marks, allComplete, nextStatus };
-  }
-
-  private async safeDeleteBlob(key: string): Promise<void> {
-    try {
-      await this.storage.deleteObject(key);
-    } catch {
-      this.logger.warn(recruitmentStorageCleanupFailureLog('delete-rejected-certificate-image'));
-    }
   }
 
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {

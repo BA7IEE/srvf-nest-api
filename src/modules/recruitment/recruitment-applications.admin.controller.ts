@@ -37,10 +37,8 @@ import {
   IdCardImageUrlResponseDto,
   MarkThresholdDto,
   PromoteSingleResultDto,
-  RecruitmentCertificateImageUrlsResponseDto,
   RecruitmentApplicationAdminDto,
   RecruitmentApplicationListQueryDto,
-  ReviewRecruitmentCertificateDto,
   ResolveRecruitmentApplicationDto,
   UpdateRecruitmentApplicationDto,
 } from './recruitment.dto';
@@ -210,57 +208,11 @@ export class RecruitmentApplicationsAdminController {
     return this.queryService.getIdCardImageUrl(id, user, buildAuditMeta(req));
   }
 
-  // 招新可用性收口 F7(评审稿 §2.9):admin 取证书图 signed-URL(镜像 id-card-image-url;0 新码)。
-  @Get(':id/certificate-image-urls')
-  @ApiOperation({
-    summary:
-      '取申请人证书图短 TTL signed-URL(按类别分组;无图类别不出现,全无 → 空数组;L3 不入日志/snapshot;读图记审计;复用敏感读码) [rbac: recruitment-application.read.sensitive]',
-  })
-  @ApiWrappedOkResponse(RecruitmentCertificateImageUrlsResponseDto)
-  @ApiBizErrorResponse(
-    BizCode.UNAUTHORIZED,
-    BizCode.RBAC_FORBIDDEN,
-    BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
-  )
-  certificateImageUrls(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload,
-    @Req() req: Request,
-  ): Promise<RecruitmentCertificateImageUrlsResponseDto> {
-    return this.queryService.getCertificateImageUrls(id, user, buildAuditMeta(req));
-  }
-
-  @Post(':id/certificates/:category/review')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary:
-      '审核申请人证书(通过→自动标对应急救资质/BSAFE 门槛;驳回→清该类图并取消门槛;驳回说明申请人进度可见) [rbac: recruitment-application.review.certificate]',
-  })
-  @ApiWrappedOkResponse(RecruitmentApplicationAdminDto)
-  @ApiBizErrorResponse(
-    BizCode.BAD_REQUEST,
-    BizCode.UNAUTHORIZED,
-    BizCode.RBAC_FORBIDDEN,
-    BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
-    BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
-    BizCode.RECRUITMENT_CERTIFICATE_IMAGE_REQUIRED,
-  )
-  reviewCertificate(
-    @Param('id') id: string,
-    @Param('category') category: string,
-    @Body() dto: ReviewRecruitmentCertificateDto,
-    @CurrentUser() user: CurrentUserPayload,
-    @Req() req: Request,
-  ): Promise<RecruitmentApplicationAdminDto> {
-    return this.reviewService.reviewCertificate(
-      id,
-      category,
-      dto,
-      user,
-      buildAuditMeta(req),
-      new Date(),
-    );
-  }
+  // 证书标准库 PR-4a-2(冻结稿 §13.4):`GET :id/certificate-image-urls` 与
+  // `POST :id/certificates/:category/review` 两个旧端点**本刀删除**,不留兼容窗口
+  // (§21 约束 3)。替代品是一证一行的
+  // `GET /admin/v1/recruitment/certificate-claims/:id/image-urls` 与 `.../review` ——
+  // 旧端点把 category 当资源 id,做不到同类别多张证书、单证重传与单证审核。
 
   @Post(':id/resolve')
   @HttpCode(HttpStatus.OK)

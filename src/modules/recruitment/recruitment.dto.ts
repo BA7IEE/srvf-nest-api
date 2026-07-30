@@ -21,12 +21,12 @@ import {
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import {
   EMERGENCY_CONTACTS_MIN,
+  MANUAL_THRESHOLD_CODES,
   RECRUITMENT_CERT_CATEGORIES,
   RECRUITMENT_DOCUMENT_TYPE_CODES,
   RISK_LEVEL_HIGH,
   RISK_LEVEL_NORMAL,
   RISK_LEVEL_SYSTEM,
-  THRESHOLD_CODES,
 } from './recruitment.constants';
 
 // 招新一期(招新前段)T3(2026-06-18):recruitment DTO 集合(评审稿 §3.2)。
@@ -372,24 +372,6 @@ export class RecruitmentCertificateUploadResultDto {
   category!: string;
   @ApiProperty({ description: '该类别当前图片数(重传覆盖后)' })
   imageCount!: number;
-}
-
-// admin 取证书图 signed-URL(镜像 IdCardImageUrlResponseDto;复用 read.sensitive,0 新码)
-export class RecruitmentCertificateImagesItemDto {
-  @ApiProperty({ description: '证书类别(first_aid/bsafe)' })
-  category!: string;
-  @ApiProperty({ description: '该类别各图短 TTL signed-URL(L3;不入日志/snapshot)', type: [String] })
-  urls!: string[];
-}
-
-export class RecruitmentCertificateImageUrlsResponseDto {
-  @ApiProperty({
-    type: [RecruitmentCertificateImagesItemDto],
-    description: '按类别分组(无图类别不出现;全无 → 空数组)',
-  })
-  items!: RecruitmentCertificateImagesItemDto[];
-  @ApiProperty({ description: 'URL 过期时刻(各图同 TTL)' })
-  expiresAt!: Date;
 }
 
 // ============ 招新可用性收口 F6:自助撤销(评审稿 §3 R4;凭证双通道镜像 query / query-by-phone)============
@@ -791,30 +773,21 @@ export class RecruitmentApplicationAdminDto {
 // ============ 招新二期:门槛标记 / 综合评定(admin)============
 
 // 标/清单个门槛(幂等;仅 verified/pending_evaluation 态可标,评审稿 E-R2-2)
+// 证书标准库 PR-4a-2(§8.4):枚举从 5 收窄到 3。`redCross` / `bsafe` 改由 Claim
+// 审核结论派生,人工标记入口在**契约层**就不再接受它们(codegen 拿到的就是 3 项);
+// service 层另有 28063 兜底 —— batchMarkThreshold 是内部直调,不过 ValidationPipe。
 export class MarkThresholdDto {
   @ApiProperty({
-    description: '门槛 code',
-    enum: THRESHOLD_CODES as unknown as string[],
+    description: '门槛 code(证书型门槛 redCross / bsafe 已改为派生,不在此列)',
+    enum: MANUAL_THRESHOLD_CODES as unknown as string[],
   })
   @IsString()
-  @IsIn(THRESHOLD_CODES, { message: '门槛 code 非法' })
+  @IsIn(MANUAL_THRESHOLD_CODES, { message: '门槛 code 非法' })
   thresholdCode!: string;
 
   @ApiProperty({ description: 'true=标记完成;false=清除标记(补课纠错)' })
   @IsBoolean()
   completed!: boolean;
-}
-
-export class ReviewRecruitmentCertificateDto {
-  @ApiProperty({ description: 'true=通过并自动标对应门槛;false=驳回、清图并取消对应门槛' })
-  @IsBoolean()
-  approved!: boolean;
-
-  @ApiPropertyOptional({ description: '审核备注(驳回说明会对申请人可见)' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  note?: string;
 }
 
 // ============ 招新可用性收口 F2:admin 改资料(评审稿 recruitment-usability-closeout-review.md §3 R1)============
@@ -1171,9 +1144,12 @@ export class BatchMarkThresholdDto {
   @MaxLength(64)
   cycleId?: string;
 
-  @ApiProperty({ description: '门槛 code', enum: THRESHOLD_CODES as unknown as string[] })
+  @ApiProperty({
+    description: '门槛 code(证书型门槛 redCross / bsafe 已改为派生,不在此列)',
+    enum: MANUAL_THRESHOLD_CODES as unknown as string[],
+  })
   @IsString()
-  @IsIn(THRESHOLD_CODES, { message: '门槛 code 非法' })
+  @IsIn(MANUAL_THRESHOLD_CODES, { message: '门槛 code 非法' })
   thresholdCode!: string;
 
   @ApiProperty({ description: 'true=标记完成;false=清除标记(逐行幂等,复用单行 markThreshold)' })

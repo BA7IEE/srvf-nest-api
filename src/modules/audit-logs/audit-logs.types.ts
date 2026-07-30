@@ -121,6 +121,11 @@ export type AuditLogEvent =
   | 'recruitment-application.update' // admin 改报名资料(R1 白名单);before/after 仅身份字段掩码值;extra {changedFields, identityChanged}
   // 招新二期(后段)T2/T3(2026-06-19;评审稿 recruitment-phase2-review.md §3.5 / E-R2-12):
   | 'recruitment-application.mark-threshold' // admin 标/清门槛;before/after status;extra {thresholdCode, completed, allComplete}
+  // 证书标准库 PR-4a-2(§8.4):证书门槛派生重算。**不是**人工动作 ——
+  // 由 Claim 状态变化在同一事务内触发,actor 可能为 null(申请人侧自助路径无账号)。
+  // 它是「为什么这份报名的状态自己动了」的唯一线索,所以必须落审计。
+  // extra 闭集 {operation, satisfiedCategories, evaluationCleared};不记 Claim 明细、编号、key。
+  | 'recruitment-application.threshold-recompute'
   | 'recruitment-application.evaluate' // admin 综合评定/淘汰;before/after status;extra {approved, eliminationStage?}
   | 'recruitment-application.promote' // admin 一键发号(逐报名一条);before/after status;extra {memberNo, memberId, tempNo, openid:掩码}
   // 招新四期 S4a(H5 + 手机身份链)T1(2026-06-24;评审稿 recruitment-phase4-loop-optimization-review.md §3.4):

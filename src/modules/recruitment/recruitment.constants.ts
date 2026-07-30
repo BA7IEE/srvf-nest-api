@@ -76,6 +76,31 @@ export function isThresholdCode(code: string): code is ThresholdCode {
   return (THRESHOLD_CODES as ReadonlyArray<string>).includes(code);
 }
 
+// 证书标准库 PR-4a-2(冻结稿 §8.4):5 项门槛自本刀起**分成两族**。
+//
+//   人工标记族 patrol1 / patrol2 / training —— 沿既有 markThreshold 语义不变。
+//   派生族     redCross / bsafe            —— Claim 审核结论的投影,**不可人工标记**。
+//
+// 派生族仍然物化在同一个 `thresholdMarks` JSON 里(所以所有既有读侧逐字不变),
+// 但**唯一写者**是 Claim 事务里的重算函数:每次重算都对该报名**全部未软删 Claim**
+// 做聚合,而不是「这次审核的结论直接写 true/false」。
+// 这个区别是 §8.4 第一条推论的全部内容 —— 两张急救证里拒掉一张,聚合仍然看得见
+// 另一张已通过的证书,而一个被逐次覆写的标记记不住这件事。
+export const MANUAL_THRESHOLD_CODES = ['patrol1', 'patrol2', 'training'] as const;
+export type ManualThresholdCode = (typeof MANUAL_THRESHOLD_CODES)[number];
+
+/** 由证书申报审核结论派生的门槛 code(= `CERTIFICATE_THRESHOLD_BY_CATEGORY` 的值域)。 */
+export const DERIVED_CERTIFICATE_THRESHOLD_CODES = ['redCross', 'bsafe'] as const;
+
+export function isManualThresholdCode(code: string): code is ManualThresholdCode {
+  return (MANUAL_THRESHOLD_CODES as ReadonlyArray<string>).includes(code);
+}
+
+/** 该门槛是否属于「由证书申报派生、不可人工标记」的一族。 */
+export function isDerivedCertificateThresholdCode(code: string): boolean {
+  return (DERIVED_CERTIFICATE_THRESHOLD_CODES as ReadonlyArray<string>).includes(code);
+}
+
 /** 5 项门槛是否全部完成(标记存在即完成) */
 export function allThresholdsComplete(marks: ThresholdMarks | null | undefined): boolean {
   if (!marks) return false;
