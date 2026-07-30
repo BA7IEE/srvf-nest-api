@@ -88,6 +88,17 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
       // S5:promote 同事务建 VOL 归口部门(每个 member 一条)
       memberOrganizationMembership: { create: jest.fn().mockResolvedValue({ id: 'md' }) },
       recruitmentApplication: { update: jest.fn().mockResolvedValue({}) },
+      // 证书标准库 PR-4a-2(§8.5):发号改读 APPROVED Claim。本组不造 Claim
+      // (默认返 []),所以建证块整体跳过 —— 本组守的是 bcrypt/锁序/intent/清敏,
+      // 不是建证。「只搬不重判」的行为锁在 e2e(需要真 Standard/Policy 关系)。
+      recruitmentCertificateClaim: {
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      certificateStandard: {
+        findFirst: jest.fn().mockResolvedValue({ categoryCode: 'first_aid' }),
+      },
+      certificate: { create: jest.fn().mockResolvedValue({ id: 'cert-1' }) },
     };
 
     // S5:VOL 归口部门事务前解析(Organization.code='VOL' + ACTIVE);默认 ACTIVE,可注入缺失/inactive
@@ -141,6 +152,9 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
       rbac as never,
       auditLogs as never,
       notificationOutbox as never,
+      // PR-4a-2:窄 Resolver。本组不造 APPROVED Claim,故发号路径不会调它;
+      // 真正的「只搬不重判」行为锁在 e2e(需要真 Standard/Policy 关系)。
+      {} as never,
       storage as never,
     );
 
@@ -594,6 +608,9 @@ describe('RecruitmentPromotionService.promotePrecheck · 预检(同源 decidePro
       rbac as never,
       auditLogs as never,
       notificationOutbox as never,
+      // PR-4a-2:窄 Resolver。本组不造 APPROVED Claim,故发号路径不会调它;
+      // 真正的「只搬不重判」行为锁在 e2e(需要真 Standard/Policy 关系)。
+      {} as never,
       storage as never,
     );
     return { service, prisma, rbac, auditLogs, enqueue: notificationOutbox.enqueue };

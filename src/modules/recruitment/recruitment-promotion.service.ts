@@ -1,15 +1,23 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
-import { OrganizationStatus, Prisma, type RecruitmentApplication } from '@prisma/client';
+import {
+  CertificateSource,
+  OrganizationStatus,
+  Prisma,
+  RecruitmentCertificateClaimStatus,
+  type RecruitmentApplication,
+} from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
-import { normalizeDateOnly } from '../../common/datetime/date-only.util';
+import { beijingDateOnly, normalizeDateOnly } from '../../common/datetime/date-only.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { CertificateRecognitionResolver } from '../certificates/certificate-recognition-resolver';
 import { assertEmergencyRelationCodeValid } from '../emergency-contacts/emergency-relation.validation';
 import {
   NOTIFICATION_CHANNEL_IN_APP,
@@ -35,10 +43,7 @@ import {
   formatMemberNo,
   toMemberProfileDocumentTypeCode,
 } from './recruitment.constants';
-import {
-  certificateIssuanceForCategory,
-  certificateReviewForCategory,
-} from './recruitment-certificate-json';
+import {} from './recruitment-certificate-json';
 import type {
   PromoteResultDto,
   PromoteSkippedItemDto,
@@ -73,12 +78,17 @@ const JOIN_SOURCE_RECRUITMENT = 'recruitment'; // member_profiles.joinSourceCode
 const VOLUNTEER_GRADE_CODE = 'volunteer';
 const VOL_ORG_CODE = 'VOL';
 // 招新可用性收口 F7(评审稿 §2.9 R6):promote 为已上传证书图的类别自动建 Certificate。
-// 字面镜像 certificates.service 的建行契约;仅上传未审的类别建 pending 走既有 verify/reject 核验;
-// 存量报名没有 certificateIssuanceInfo 时才回退以下占位；新上传按申请人填写真值搬运。
-// 证书审核只审一次(2026-07-14):招新阶段已 approved 的类别在此继承审核结论建为 verified(见建行块)。
-const CERT_STATUS_PENDING = 'pending';
+// 证书标准库 PR-4a-2(§8.5):发号只搬 APPROVED Claim,**不再建 pending 证书**。
+// 随之退役的两个常量:
+//   CERT_STATUS_PENDING          —— 旧路径给「上传未审类别」建 pending 走 verify/reject;
+//                                   现在未过审的 Claim 根本不进发号(§8.5「不为缺失
+//                                   Standard/Policy 的 Claim 创建 pending Certificate」)。
+//   RECRUITMENT_CERT_ISSUING_ORG —— 旧占位机构名「申请人自报(待核验)」。现在机构是
+//                                   审核时按认定规则锁定的**名称快照**,不存在占位一档。
 const CERT_STATUS_VERIFIED = 'verified';
-const RECRUITMENT_CERT_ISSUING_ORG = '申请人自报(招新上传,待核验)';
+// 发号时若 Claim 的最后有效日已早于今天,证书直接建成 expired ——
+// 建成 verified 会让资质查询把过期证书当有效,那正是 PR-1 收口的那类边界错误。
+const CERT_STATUS_EXPIRED = 'expired';
 
 interface EmergencyContactJson {
   name: string;
@@ -96,9 +106,29 @@ export class RecruitmentPromotionService {
     private readonly auditLogs: AuditLogsService,
     // Durable outbox producer: intent 与发号业务写共用同一 PostgreSQL transaction。
     private readonly notificationOutbox: NotificationOutboxService,
+    // 证书标准库 PR-4a-2(§8.5 / §19):发号只用 Resolver 的「只搬不重判」入口。
+    // 注入窄 Resolver 而不是整个 CertificatesService —— 发号不需要建证以外的任何能力。
+    private readonly recognitionResolver: CertificateRecognitionResolver,
     // 主体裁剪图 blob 无档案落点；发号前经当前 provider fail-closed 删除。
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
+
+  /**
+   * 旧 `Certificate.certTypeCode` 仍是 NOT NULL(4b 才 DROP),这里按已锁定 Standard
+   * 的类别回填一次以满足约束。**不是双写** —— 值派生自 Standard,不是第二个事实源;
+   * Standard 不存在是关系不完整,按 §8.5「不悄悄跳过坏 Claim」整批 fail-closed。
+   */
+  private async categoryCodeOfStandard(
+    tx: Prisma.TransactionClient,
+    standardId: string,
+  ): Promise<string> {
+    const std = await tx.certificateStandard.findFirst({
+      where: notDeletedWhere({ id: standardId }),
+      select: { categoryCode: true },
+    });
+    if (!std) throw new BizException(BizCode.CERTIFICATE_STANDARD_NOT_FOUND);
+    return std.categoryCode;
+  }
 
   async promote(
     cycleId: string,
@@ -587,39 +617,107 @@ export class RecruitmentPromotionService {
         select: { id: true },
       });
     }
-    // F7(R6)+ 证书审核只审一次(2026-07-14):为已上传证书图的类别自动建 Certificate(图 key 搬入,
-    // blob 单一属主=certificate)。招新阶段已 approved 的类别**继承**审核结论建为 verified(审核人/时间/
-    // 备注一并搬入),不再重建成 pending 让核验人二次审核;仅上传未审的类别仍建 pending 走既有
-    // certificates verify/reject 核验流。legacy 行无 certificateImages → 零建行(批量 promote 行为锁)。
-    const certImages = a.certificateImages as Record<string, string[]> | null;
-    if (certImages) {
-      for (const [category, keys] of Object.entries(certImages)) {
-        if (!Array.isArray(keys) || keys.length === 0) continue;
-        const issuance = certificateIssuanceForCategory(a.certificateIssuanceInfo, category);
-        const review = certificateReviewForCategory(a.certificateReviewStatus, category);
-        const data: Prisma.CertificateUncheckedCreateInput = {
+    // 证书标准库 PR-4a-2(冻结稿 §8.5):发号只搬 **APPROVED Claim**,不再读旧
+    // `certificateImages` JSON,也不再按 category 猜 Standard。
+    //
+    // 「只搬不重判」是 D-CERT-008 的落点:审核当时锁定的 Policy 就是最终依据 ——
+    // 哪怕此刻该 Standard 已换了新 ACTIVE Policy,也绝不按新规则重算。
+    // 所以这里不锁 Standard/Policy,只校验 Claim 关系完整
+    // (`materializeApprovedClaimForPromotion` 缺任何标准化字段即整批 fail-closed)。
+    //
+    // §8.5 第 2 步:按稳定 id ASC 锁全部 APPROVED Claim。稳定顺序是为了让并发的
+    // 两次发号 / 审核撞同一前缀锁序,而不是交叉持锁死锁。
+    const approvedClaims = await tx.recruitmentCertificateClaim.findMany({
+      where: notDeletedWhere({
+        applicationId: a.id,
+        status: RecruitmentCertificateClaimStatus.APPROVED,
+      }),
+      orderBy: { id: 'asc' },
+      select: {
+        id: true,
+        standardId: true,
+        recognitionPolicyId: true,
+        recognitionIssuerId: true,
+        issuingOrg: true,
+        certNumber: true,
+        issuedAt: true,
+        expiredAt: true,
+        imageKeys: true,
+        reviewedByUserId: true,
+        reviewedAt: true,
+        reviewNote: true,
+      },
+    });
+    if (approvedClaims.length > 0) {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "RecruitmentCertificateClaim" WHERE "id" IN (${Prisma.join(
+          approvedClaims.map((c) => c.id),
+        )}) ORDER BY "id" ASC FOR UPDATE`,
+      );
+    }
+    const today = beijingDateOnly(now);
+    for (const claim of approvedClaims) {
+      // 只校验完整性,一律不重新判断规则(§8.5 第 3 步)。
+      const facts = this.recognitionResolver.materializeApprovedClaimForPromotion(claim);
+
+      // §8.5 第 8 步:按到期日决定初始状态。已过期的证书建成 verified 会让资质查询
+      // 把它当有效的 —— 那正是 PR-1 收口的那类边界错误,不能在发号处重新引入。
+      const expired = facts.expiredAt !== null && facts.expiredAt.getTime() < today.getTime();
+      // 证据图**不搬到 Certificate**:§13.5 明确 `source=RECRUITMENT` 的 evidence
+      // 读的是 `sourceClaim.imageKeys` —— blob 单一属主自本刀起是 Claim 而不是 Certificate。
+      // 这与旧模型相反(旧 promote 把 key 搬进 Certificate.imageKeys 再清报名行)。
+      // 好处是审核链与证据留在同一行,发号不产生第二份 key 副本。
+      //
+      // 审核人是 User.id,Certificate.verifiedBy 是 Member.id;无 memberId(如 SUPER_ADMIN)
+      // 合法为 null,沿 certificates.service Q-I2,不卡核验流。
+      const reviewer =
+        claim.reviewedByUserId === null
+          ? null
+          : await tx.user.findUnique({
+              where: { id: claim.reviewedByUserId },
+              select: { memberId: true },
+            });
+
+      await tx.certificate.create({
+        data: {
           memberId: member.id,
-          certTypeCode: category,
-          issuingOrg: issuance?.issuingOrg ?? RECRUITMENT_CERT_ISSUING_ORG,
-          issuedAt: normalizeDateOnly(issuance?.issuedAt ?? now.toISOString()),
-          certStatusCode: CERT_STATUS_PENDING,
-          isInternal: false,
-          imageKeys: keys,
-        };
-        if (review?.status === 'approved') {
-          // 继承审核状态/人/时间/备注:审核人 review.by 为 User.id,映射其 Member.id 作 verifiedBy;
-          // 无 memberId(如 SUPER_ADMIN)合法为 null,沿 certificates.service Q-I2,不卡核验流。
-          const reviewer = await tx.user.findUnique({
-            where: { id: review.by },
-            select: { memberId: true },
-          });
-          data.certStatusCode = CERT_STATUS_VERIFIED;
-          data.verifiedBy = reviewer?.memberId ?? null;
-          data.verifiedAt = new Date(review.at);
-          if (review.note) data.verifyNote = review.note;
-        }
-        await tx.certificate.create({ data, select: { id: true } });
-      }
+          // 旧四列(certTypeCode / certSubTypeCode / isInternal / imageKeys)**本刀停写**;
+          // certTypeCode 仍 NOT NULL,故按 Standard 的类别回填一次以满足约束 ——
+          // 它在 4b 被 DROP。这不是「双写」:值来自 Standard,不是第二个事实源。
+          certTypeCode: await this.categoryCodeOfStandard(tx, facts.standardId),
+          standardId: facts.standardId,
+          recognitionPolicyId: facts.recognitionPolicyId,
+          recognitionIssuerId: facts.recognitionIssuerId,
+          sourceCode: CertificateSource.RECRUITMENT,
+          sourceClaimId: claim.id, // @unique:重跑不会重复建证(§8.5 第 10 步)
+          issuingOrg: facts.issuingOrg,
+          certNumber: facts.certNumber,
+          issuedAt: facts.issuedAt,
+          expiredAt: facts.expiredAt,
+          certStatusCode: expired ? CERT_STATUS_EXPIRED : CERT_STATUS_VERIFIED,
+          verifiedBy: reviewer?.memberId ?? null,
+          verifiedAt: claim.reviewedAt,
+          ...(claim.reviewNote !== null ? { verifyNote: claim.reviewNote } : {}),
+        },
+        select: { id: true },
+      });
+
+      // §8.5 第 9 + 11 步:Claim 转 PROMOTED,并清掉与 Certificate 重复的标量事实。
+      // Standard / Policy / 审核链 / 图片证据继续保留 —— 那是「当时凭什么认定」的档案,
+      // 而重复的编号与机构名留着就是第二份可漂移的真相。
+      await tx.recruitmentCertificateClaim.update({
+        where: { id: claim.id },
+        data: {
+          status: RecruitmentCertificateClaimStatus.PROMOTED,
+          promotedAt: now,
+          sensitivePurgedAt: now,
+          rawCertificateName: null,
+          certNumber: null,
+          issuingOrg: null,
+          issuedAt: null,
+          expiredAt: null,
+        },
+      });
     }
     // 标 promoted + 链 + 即时清敏感(PII 已搬 member/user;blob 归 member/user,留存 SOP 不再触 promoted 行)。
     // F12(#399):openid + reviewNote 亦属留存 SOP §1 须置 NULL 的敏感字段;promote 即时清后
