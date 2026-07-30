@@ -1,5 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import {
+  IsDateString,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+  ValidateIf,
+} from 'class-validator';
 
 // V2 第一阶段批次 2 certificates 模块 DTO 集合。
 // 详见 docs:批次2_API前评审_certificates.md §3 + 草案 v1.0 §4 / §5.1 / §13。
@@ -287,6 +295,17 @@ export class CreateCertificateDto {
 // 证书标准库 PR-4a-3(§9.2):`standardId` **只在 pending 态可改**(纠正选错的标准),
 // 非 pending 传它 → 18033。这条不做进 DTO 是因为它依赖行状态,DTO 看不到 ——
 // 但「改了 Standard 就重选当前 ACTIVE Policy 并完整重校验」这条由 service 保证。
+// 评审 findings F3:**三态语义**在契约层就要能表达,否则 service 无论怎么写都猜不出来。
+//
+//   字段不出现        → 保持库内现值
+//   字段出现且为 null → 清空
+//   字段出现且有值    → 用新值
+//
+// 可空字段用 `string | null` + `@IsOptional()`(class-validator 对 null 与 undefined
+// 都跳过校验,所以显式 null 能穿过校验层抵达 service,由 service 区分二者)。
+// **不可空**的 `issuedAt` 不能用 `@IsOptional()` —— 那会让 `issuedAt: null` 静默通过再被
+// service 的 `??` 悄悄换成库内值,客户端以为自己清空了。改用 `@ValidateIf`:
+// 只要 key 出现就必须过 `@Matches`,null 因此稳定 400。
 export class UpdateCertificateDto {
   @ApiPropertyOptional({
     description: '证书标准 id(**仅 pending 态可改** —— 纠正选错的标准;非 pending → 18033)',
@@ -298,46 +317,59 @@ export class UpdateCertificateDto {
   @MaxLength(32)
   standardId?: string;
 
-  @ApiPropertyOptional({ description: '认可机构 id(按认定规则的 issuerPolicy)', maxLength: 32 })
+  @ApiPropertyOptional({
+    description: '认可机构 id(按认定规则的 issuerPolicy;传 null = 清空)',
+    maxLength: 32,
+    nullable: true,
+  })
   @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(32)
-  recognitionIssuerId?: string;
-
-  @ApiPropertyOptional({ description: 'FREE_TEXT 规则的自由机构名', maxLength: 128 })
-  @IsOptional()
-  @IsString()
-  @MinLength(1)
-  @MaxLength(128)
-  issuingOrg?: string;
-
-  @ApiPropertyOptional({ description: '证书编号', maxLength: 128 })
-  @IsOptional()
-  @IsString()
-  @MinLength(1)
-  @MaxLength(128)
-  certNumber?: string;
+  recognitionIssuerId?: string | null;
 
   @ApiPropertyOptional({
-    description: `颁发日期(${DATE_ONLY_DESC};不得晚于今天;Q-A4 决议:允许资料修正)`,
+    description: 'FREE_TEXT 规则的自由机构名(传 null = 清空)',
+    maxLength: 128,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(128)
+  issuingOrg?: string | null;
+
+  @ApiPropertyOptional({
+    description: '证书编号(传 null = 清空;OPTIONAL 编号规则下可改回无编号)',
+    maxLength: 128,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(128)
+  certNumber?: string | null;
+
+  @ApiPropertyOptional({
+    description: `颁发日期(${DATE_ONLY_DESC};不得晚于今天;Q-A4 决议:允许资料修正)。库内 NOT NULL,**不接受 null**`,
     ...DATE_ONLY_SCHEMA,
     example: '2026-07-01',
   })
-  @IsOptional()
+  @ValidateIf((o: UpdateCertificateDto) => o.issuedAt !== undefined)
   @Matches(DATE_ONLY_PATTERN, { message: 'issuedAt 必须是 YYYY-MM-DD 纯日期' })
   @IsDateString({ strict: true })
   issuedAt?: string;
 
   @ApiPropertyOptional({
-    description: `最后有效日(${DATE_ONLY_DESC};Q-A4 决议:允许资料修正;不填 = 保持原值)`,
+    description: `最后有效日(${DATE_ONLY_DESC};Q-A4 决议:允许资料修正)。**不传 = 保持原值,传 null = 清成终身有效**`,
     ...DATE_ONLY_SCHEMA,
     example: '2028-06-30',
+    nullable: true,
   })
   @IsOptional()
   @Matches(DATE_ONLY_PATTERN, { message: 'expiredAt 必须是 YYYY-MM-DD 纯日期' })
   @IsDateString({ strict: true })
-  expiredAt?: string;
+  expiredAt?: string | null;
 }
 
 // ============ 入参:Verify ============

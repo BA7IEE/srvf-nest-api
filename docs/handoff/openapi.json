@@ -100282,33 +100282,37 @@
             "maxLength": 32
           },
           "recognitionIssuerId": {
-            "type": "string",
-            "description": "认可机构 id(按认定规则的 issuerPolicy)",
-            "maxLength": 32
+            "type": "object",
+            "description": "认可机构 id(按认定规则的 issuerPolicy;传 null = 清空)",
+            "maxLength": 32,
+            "nullable": true
           },
           "issuingOrg": {
-            "type": "string",
-            "description": "FREE_TEXT 规则的自由机构名",
-            "maxLength": 128
+            "type": "object",
+            "description": "FREE_TEXT 规则的自由机构名(传 null = 清空)",
+            "maxLength": 128,
+            "nullable": true
           },
           "certNumber": {
-            "type": "string",
-            "description": "证书编号",
-            "maxLength": 128
+            "type": "object",
+            "description": "证书编号(传 null = 清空;OPTIONAL 编号规则下可改回无编号)",
+            "maxLength": 128,
+            "nullable": true
           },
           "issuedAt": {
             "type": "string",
-            "description": "颁发日期(纯日期 YYYY-MM-DD(不接受时分秒与时区;按北京日历日入库);不得晚于今天;Q-A4 决议:允许资料修正)",
+            "description": "颁发日期(纯日期 YYYY-MM-DD(不接受时分秒与时区;按北京日历日入库);不得晚于今天;Q-A4 决议:允许资料修正)。库内 NOT NULL,**不接受 null**",
             "format": "date",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
             "example": "2026-07-01"
           },
           "expiredAt": {
             "type": "string",
-            "description": "最后有效日(纯日期 YYYY-MM-DD(不接受时分秒与时区;按北京日历日入库);Q-A4 决议:允许资料修正;不填 = 保持原值)",
+            "description": "最后有效日(纯日期 YYYY-MM-DD(不接受时分秒与时区;按北京日历日入库);Q-A4 决议:允许资料修正)。**不传 = 保持原值,传 null = 清成终身有效**",
             "format": "date",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-            "example": "2028-06-30"
+            "example": "2028-06-30",
+            "nullable": true
           }
         }
       },

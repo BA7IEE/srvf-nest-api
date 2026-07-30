@@ -17,6 +17,7 @@ import { AttachmentsService } from '../attachments/attachments.service';
 import { STORAGE_PROVIDER } from '../storage/storage.constants';
 import type { StorageProvider } from '../storage/storage.interface';
 import { CertificateEvidenceSigner } from './certificate-evidence-signer';
+import { expiryIsClientSupplied } from './certificate-standard-policy';
 import { CertificateRecognitionResolver } from './certificate-recognition-resolver';
 import {
   CertificateEvidenceUrlsResponseDto,
@@ -59,7 +60,11 @@ const CERT_STATUS_VERIFIED = 'verified';
 // §13.5 的 TTL 与签发循环已搬进 `CertificateEvidenceSigner` —— 本文件与
 // recruitment 的 Claim 取图曾各写一份,连常量都各声明了一个。
 const CERT_STATUS_REJECTED = 'rejected';
-// CERT_STATUS_EXPIRED 由 v0.47.0 ExpiryReminderService 到期扫描推动,本 service 不主动写入
+// 评审 findings F3(§9.3):`expired` 不再只由 v0.47.0 的到期扫描 cron 推动 ——
+// 核验一张最后有效日已过的证书必须**直接**落 expired。cron 只翻 verified 行,
+// 而这里正是产出 verified 行的地方:写死 verified 等于亲手造出一个 cron next-run
+// 之前一直被资质查询当有效的过期证书。
+const CERT_STATUS_EXPIRED = 'expired';
 
 // 证书标准库 PR-4a-3:「改了核心事实就回 pending」的判定改用 update 内的
 // `factsTouched`(它同时决定要不要重跑认定规则解析)。拆成两处会让「什么算核心事实」
@@ -511,7 +516,25 @@ export class CertificatesService {
         dto.expiredAt !== undefined;
 
       let effectiveExpiredAt = lockedBefore.expiredAt;
+      // R6:决定「要不要打回 pending」的不是「客户端提到了哪些字段」,
+      // 而是「Resolver 算出的最终值与库内值比,到底变没变」。见下方赋值处。
+      let factsActuallyChanged = false;
       if (factsTouched) {
+        // 「不传 expiredAt = 保持库内现值」对**派生型**规则(PERMANENT / FIXED_MONTHS)
+        // 不能照字面执行:把库内那个后端自己算出来的值回传给 Resolver,会被
+        // 「客户端不得传到期日」拒成 18016。派生型的「保持现值」= 不传,
+        // 让规则按同一个 issuedAt 重新派生出同一个值。
+        //
+        // 所以要先知道**已锁定规则**的 validityMode。换标准那一支不需要:
+        // 它本来就传 null,新规则爱怎么派生怎么派生。
+        const lockedPolicy = changingStandard
+          ? null
+          : await tx.certificateRecognitionPolicy.findFirst({
+              where: notDeletedWhere({ id: lockedBefore.recognitionPolicyId ?? '' }),
+              select: { validityMode: true },
+            });
+        const keepStoredExpiry =
+          lockedPolicy !== null && expiryIsClientSupplied(lockedPolicy.validityMode);
         // PATCH 语义:没传的字段**保持库内现值**。机构这一对尤其要小心 ——
         // 只改 expiredAt 时若把 issuingOrg 当 null 传给 Resolver,FREE_TEXT 规则会
         // 立刻以 18013 拒掉一次本来合法的日期修正。所以两个机构入参各自回落到库内值,
@@ -529,12 +552,30 @@ export class CertificatesService {
               lockedBefore.recognitionIssuerId === null
               ? lockedBefore.issuingOrg
               : null,
-          certNumber: dto.certNumber ?? lockedBefore.certNumber,
-          // issuedAt 在库内 NOT NULL,所以这里必有值;`??` 只是给类型收窄用。
+          // ⚠️ 三态判定必须用 `!== undefined` 而不是 `??`:
+          // `??` 把**显式传来的 null** 当成「没传」,于是 `certNumber: null`
+          // 清不掉编号(OPTIONAL 规则下改回无编号是合法诉求),
+          // 而 `expiredAt: null` 也清不成终身有效。
+          certNumber: dto.certNumber !== undefined ? dto.certNumber : lockedBefore.certNumber,
+          // issuedAt 在库内 NOT NULL,DTO 侧已用 @ValidateIf 拒掉显式 null。
           issuedAt: dto.issuedAt ?? (toDateOnlyString(lockedBefore.issuedAt) as string),
           expiredAt:
-            dto.expiredAt ??
-            (dto.standardId !== undefined ? null : toDateOnlyString(lockedBefore.expiredAt)),
+            dto.expiredAt !== undefined
+              ? // 显式传了(含 null = 清成终身有效)
+                dto.expiredAt
+              : changingStandard
+                ? // 换标准 = 换规则,旧到期日不再由新 Policy 背书,一律重算/重填。
+                  null
+                : keepStoredExpiry
+                  ? // 没传 + EXPLICIT 规则 → **保持库内现值**。
+                    //
+                    // 修复前这一格写的是 `dto.standardId !== undefined ? null : ...` ——
+                    // 判的是「传没传 standardId」而不是「换没换 standardId」。
+                    // 于是前端提交完整表单(带上原样的 standardId)却不带 expiredAt 时,
+                    // 一张有到期日的证书会被**静默清成终身有效**。
+                    toDateOnlyString(lockedBefore.expiredAt)
+                  : // 没传 + 派生型规则 → 不传,让规则重新派生(见上方 keepStoredExpiry)。
+                    null,
         };
         const resolved = changingStandard
           ? await this.recognitionResolver.resolveActivePolicyForNewCertificate(
@@ -562,6 +603,20 @@ export class CertificatesService {
         // PR-4b:certTypeCode 已 DROP,过渡期的回填随之删除 ——
         // 类别只有一个权威(Standard),读侧 join 即得。
         effectiveExpiredAt = resolved.expiredAt;
+
+        // R6:逐字段比对**最终值**与锁后库内值。
+        //
+        // 修复前判据是 `factsTouched`(字段在不在请求体里),后果是前端按惯例
+        // 提交整张表单 —— 哪怕一个字都没改 —— 也会把一张 verified 证书打回 pending
+        // 重审。管理端表单几乎都是「回填 + 整体提交」,所以这不是边角情况而是常态。
+        factsActuallyChanged =
+          resolved.standardId !== lockedBefore.standardId ||
+          resolved.recognitionPolicyId !== lockedBefore.recognitionPolicyId ||
+          resolved.recognitionIssuerId !== lockedBefore.recognitionIssuerId ||
+          resolved.issuingOrg !== lockedBefore.issuingOrg ||
+          resolved.certNumber !== lockedBefore.certNumber ||
+          resolved.issuedAt.getTime() !== lockedBefore.issuedAt.getTime() ||
+          (resolved.expiredAt?.getTime() ?? null) !== (lockedBefore.expiredAt?.getTime() ?? null);
       }
 
       // §9.2:`expiredAt` 最终值变化时清空 `expireNotifyDueAt`,让到期提醒按新日期
@@ -572,7 +627,9 @@ export class CertificatesService {
       }
 
       // §9.2:verified / expired / rejected 改核心事实后重回 pending(要重新复核)。
-      if (factsTouched && lockedBefore.certStatusCode !== CERT_STATUS_PENDING) {
+      // 判据是「事实**真的**变了」而不是「请求体里出现过这些字段」——
+      // 后者会让一次无变化的整表单提交把已核验证书打回重审。
+      if (factsActuallyChanged && lockedBefore.certStatusCode !== CERT_STATUS_PENDING) {
         data.certStatusCode = CERT_STATUS_PENDING;
         data.verifiedBy = null;
         data.verifiedAt = null;
@@ -675,10 +732,20 @@ export class CertificatesService {
       });
       const verifierMemberId = await this.getVerifierMemberId(currentUser.id, tx);
 
+      // §9.3:核验的落点状态由**到期日**决定,不是无条件 verified。
+      //
+      // 修复前这里写死 `verified`,理由是「expired 由每天 09:00 的到期扫描 cron 推动」。
+      // 但那条 cron 只处理**已经是 verified** 的行,而这里正在把一张最后有效日
+      // 早于今天的证书写成 verified —— 它会一直被资质查询当作有效,直到次日 09:00。
+      // 发号路径(§8.5 第 8 步)早就按同一规则分流了,管理端核验没跟上。
+      const today = beijingDateOnly(new Date());
+      const alreadyExpired =
+        before.expiredAt !== null && before.expiredAt.getTime() < today.getTime();
+
       const updated = await tx.certificate.update({
         where: { id: before.id },
         data: {
-          certStatusCode: CERT_STATUS_VERIFIED,
+          certStatusCode: alreadyExpired ? CERT_STATUS_EXPIRED : CERT_STATUS_VERIFIED,
           verifiedBy: verifierMemberId,
           verifiedAt: new Date(),
           verifyNote: dto.verifyNote ?? null,

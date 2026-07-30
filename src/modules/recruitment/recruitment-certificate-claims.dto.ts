@@ -7,6 +7,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsDateString,
   Matches,
   MaxLength,
   Min,
@@ -355,6 +356,7 @@ export class ReviewCertificateClaimDto {
   })
   @IsOptional()
   @Matches(DATE_ONLY_PATTERN, { message: 'issuedAt 必须是 YYYY-MM-DD 纯日期' })
+  @IsDateString({ strict: true })
   issuedAt?: string;
 
   @ApiPropertyOptional({
@@ -364,6 +366,7 @@ export class ReviewCertificateClaimDto {
   })
   @IsOptional()
   @Matches(DATE_ONLY_PATTERN, { message: 'expiredAt 必须是 YYYY-MM-DD 纯日期' })
+  @IsDateString({ strict: true })
   expiredAt?: string;
 
   @ApiPropertyOptional({
@@ -459,11 +462,13 @@ export class SubmitCertificateClaimDto extends PublicClaimCredentialDto {
   @ApiPropertyOptional({ ...DATE_ONLY_SCHEMA, description: '发证日期', example: '2026-07-01' })
   @IsOptional()
   @Matches(DATE_ONLY_PATTERN, { message: 'issuedAt 必须是 YYYY-MM-DD 纯日期' })
+  @IsDateString({ strict: true })
   issuedAt?: string;
 
   @ApiPropertyOptional({ ...DATE_ONLY_SCHEMA, description: '最后有效日', example: '2028-06-30' })
   @IsOptional()
   @Matches(DATE_ONLY_PATTERN, { message: 'expiredAt 必须是 YYYY-MM-DD 纯日期' })
+  @IsDateString({ strict: true })
   expiredAt?: string;
 }
 
