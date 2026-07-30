@@ -76180,6 +76180,47 @@
         ]
       }
     },
+    "/api/open/v1/recruitment/certificate-standards": {
+      "get": {
+        "operationId": "RecruitmentPublicController_certificateStandards",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/PublicCertificateStandardOptionsResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "公开证书标准选项(无账号;仅生效的正式证书标准,按招新证书类别过滤;currentlyRecognized=false 表示已收录待认定,后台不据此自动通过;不含认定规则细节;throttler recruitment) [public]",
+        "tags": [
+          "Public - Recruitment"
+        ]
+      }
+    },
     "/api/open/v1/recruitment/applications": {
       "post": {
         "operationId": "RecruitmentPublicController_submit",
@@ -105051,6 +105092,60 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PublicRecruitmentPublicityItemDto"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "PublicCertificateStandardOptionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Standard id(提交申报时作为 suggestedStandardId 回传)"
+          },
+          "code": {
+            "type": "string",
+            "description": "Standard code",
+            "example": "bsafe_l2"
+          },
+          "name": {
+            "type": "string",
+            "description": "Standard 名称"
+          },
+          "categoryCode": {
+            "type": "string",
+            "description": "类别字典 code"
+          },
+          "levelCode": {
+            "type": "string",
+            "description": "等级字典 code",
+            "nullable": true
+          },
+          "currentlyRecognized": {
+            "type": "boolean",
+            "description": "当前是否可被认定(= 有生效认定规则)。**false 代表「已收录、待认定」**——申请人可以选它作为建议,但后台不得据此直接通过(§11.2 / §13.3)",
+            "example": true
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "categoryCode",
+          "currentlyRecognized"
+        ]
+      },
+      "PublicCertificateStandardOptionsResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "description": "可供申请人选择的证书标准(仅 ACTIVE CREDENTIAL,且按招新证书类别过滤)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicCertificateStandardOptionDto"
             }
           }
         },

@@ -68,12 +68,12 @@
 | `meta` | 1 | `meta.resolve.label` |
 | `sms-send-log` | 1 | `sms-send-log.read.list` |
 
-### controller × surface 对照(83 个 @Controller)
+### controller × surface 对照(84 个 @Controller)
 
 > 权威源:`src/**/*.controller.ts` 的 `@Controller(...)` 装饰器。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 鉴权模式(R / A / P)与业务语义属人类知识,见本文件标记之外的章节。
 
-#### admin/v1(44 个 controller)
+#### admin/v1(45 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
@@ -114,6 +114,7 @@
 | `admin/v1/organizations` | `src/modules/organizations/organizations.controller.ts` |
 | `admin/v1/position-rules` | `src/modules/positions/position-rules.controller.ts` |
 | `admin/v1/positions` | `src/modules/positions/positions.controller.ts` |
+| `admin/v1/recruitment` | `src/modules/recruitment/recruitment-certificate-claims.admin.controller.ts` |
 | `admin/v1/recruitment/applications` | `src/modules/recruitment/recruitment-applications.admin.controller.ts` |
 | `admin/v1/recruitment/cycles` | `src/modules/recruitment/recruitment-cycles.controller.ts` |
 | `admin/v1/registrations` | `src/modules/activity-registrations/controllers/admin-registrations.controller.ts` |
