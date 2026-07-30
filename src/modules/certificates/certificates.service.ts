@@ -122,11 +122,19 @@ type SafeCertificate = Prisma.CertificateGetPayload<{ select: typeof certificate
 
 type PrismaTx = Prisma.TransactionClient;
 
-// PR-4b:证据来源从实例侧 `Certificate.imageKeys` 改为 `sourceClaim.imageKeys`(§13.5)。
-// 只判「有没有」,不解析内容也不外传 key。
-// ADMIN 来源的证据是 ownerType=certificate 的 Attachment,判定与取图都归 PR-5 的
-// evidence-urls 端点 —— 本布尔此刻只覆盖 RECRUITMENT 来源,不假装覆盖两种。
-function hasEvidence(sourceClaim: { imageKeys: Prisma.JsonValue } | null): boolean {
+// §13.5:证据事实源按来源分两处 —— RECRUITMENT 在 `sourceClaim.imageKeys`,
+// ADMIN 在 `ownerType='certificate'` 的 Attachment 上。
+//
+// 评审 findings F5(R10):此前只判前者,注释还写着「不假装覆盖两种」。
+// 结果是**管理端上传的证据一律显示为没有证据** —— 前端据此隐藏「查看证据」入口,
+// 那些附件等于不存在。工作台侧(`certificates-workbench.service`)早就两种都算了,
+// 于是同一张证书在工作台显示「有证据」、在详情页显示「无证据」。
+//
+// ADMIN 来源要多查一次 attachment(多态归属,无 Prisma 关联,join 不了)。
+// 单条详情多一次 count 是可接受的代价;列表侧不受影响(列表 DTO 本来就没这个字段)。
+const ATTACHMENT_OWNER_TYPE_CERTIFICATE = 'certificate';
+
+function hasClaimEvidence(sourceClaim: { imageKeys: Prisma.JsonValue } | null): boolean {
   const keys = sourceClaim?.imageKeys ?? null;
   return Array.isArray(keys) && keys.length > 0;
 }
@@ -141,7 +149,13 @@ function hasEvidence(sourceClaim: { imageKeys: Prisma.JsonValue } | null): boole
 // 普通 `certificate.read.record`:编号只给掩码、审核备注与审核人 id 恒 null。
 // 另持 scoped `certificate.read.sensitive`:明文编号 + 备注 + 审核人 id。
 // `sourceClaim` / `certNumber` 原值一律不进出参(前者含 object key)。
-function presentCertificate(cert: SafeCertificate, sensitive: boolean): CertificateResponseDto {
+function presentCertificate(
+  cert: SafeCertificate,
+  sensitive: boolean,
+  evidenceAvailable: boolean,
+): CertificateResponseDto {
+  // `sourceClaim` 一并剥掉:它含 object key,绝不能进出参(§15.6)。
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { certNumber, sourceClaim, ...rest } = cert;
   return {
     ...rest,
@@ -149,7 +163,7 @@ function presentCertificate(cert: SafeCertificate, sensitive: boolean): Certific
     certNumberFull: sensitive ? certNumber : null,
     verifyNote: sensitive ? cert.verifyNote : null,
     verifiedBy: sensitive ? cert.verifiedBy : null,
-    evidenceAvailable: hasEvidence(sourceClaim),
+    evidenceAvailable,
   };
 }
 
@@ -200,6 +214,25 @@ export class CertificatesService {
   // 一律在事务外先算,避免在事务中间引入跨连接可见性问题。
   private async canReadSensitive(user: CurrentUserPayload, ref: ResourceRef): Promise<boolean> {
     return this.authz.can(user, 'certificate.read.sensitive', ref);
+  }
+
+  /**
+   * §13.5 证据存在性:按 `sourceCode` 分流两个事实源(评审 findings F5 · R10)。
+   *
+   * RECRUITMENT → `sourceClaim.imageKeys`(随行取回,不额外查);
+   * ADMIN       → `ownerType='certificate'` 的 Attachment 计数(多态归属,只能另查)。
+   *
+   * 只返布尔 —— attachment 的 key / 文件名一律不出这个方法(§15.6)。
+   */
+  private async computeEvidenceAvailable(cert: SafeCertificate, tx?: PrismaTx): Promise<boolean> {
+    if (cert.sourceCode === CertificateSource.RECRUITMENT) {
+      return hasClaimEvidence(cert.sourceClaim);
+    }
+    const client = tx ?? this.prisma;
+    const count = await client.attachment.count({
+      where: { ownerType: ATTACHMENT_OWNER_TYPE_CERTIFICATE, ownerId: cert.id },
+    });
+    return count > 0;
   }
 
   private async findMemberOrThrow(memberId: string, tx?: PrismaTx): Promise<{ id: string }> {
@@ -388,7 +421,7 @@ export class CertificatesService {
       extra: { operation: 'detail', maskLevel: sensitive ? 'plain' : 'masked' },
     });
 
-    return presentCertificate(cert, sensitive);
+    return presentCertificate(cert, sensitive, await this.computeEvidenceAvailable(cert));
   }
 
   // ============ create ============
@@ -458,7 +491,11 @@ export class CertificatesService {
         tx,
       });
 
-      return presentCertificate(created, sensitive);
+      return presentCertificate(
+        created,
+        sensitive,
+        await this.computeEvidenceAvailable(created, tx),
+      );
     });
   }
 
@@ -498,6 +535,20 @@ export class CertificatesService {
       const changingStandard =
         dto.standardId !== undefined && dto.standardId !== lockedBefore.standardId;
       if (changingStandard && lockedBefore.certStatusCode !== CERT_STATUS_PENDING) {
+        throw new BizException(BizCode.CERTIFICATE_STANDARD_IMMUTABLE);
+      }
+      // 评审 findings F5(R7):`source=RECRUITMENT` 的证书**永远**不能改 Standard。
+      //
+      // 上面那道闸只看 `certStatusCode === pending`,而招新来源的证书是**可以**
+      // 回到 pending 的(改了别的核心事实就会 §9.2 打回)。一旦回到 pending,
+      // 它的 standardId 就可以被改成另一个标准 —— 而 `sourceClaimId` 仍然指着
+      // 原来那条 Claim:证书说自己是 A 标准,它的证据链、审核结论、锁定的 Policy
+      // 说的是 B 标准。§8.5 的「只搬不重判」在发号那一刻建立的那条对应关系,
+      // 会被一次管理端 PATCH 悄悄拆掉,而且无法从数据上还原。
+      //
+      // 要纠正招新来源证书的标准,正确路径是回到 Claim 侧撤回审核、重审、重新发号 ——
+      // 那条路会同步更新证据链与审核结论,不会留下自相矛盾的一行。
+      if (changingStandard && lockedBefore.sourceCode === CertificateSource.RECRUITMENT) {
         throw new BizException(BizCode.CERTIFICATE_STANDARD_IMMUTABLE);
       }
 
@@ -655,7 +706,11 @@ export class CertificatesService {
         tx,
       });
 
-      return presentCertificate(updated, sensitive);
+      return presentCertificate(
+        updated,
+        sensitive,
+        await this.computeEvidenceAvailable(updated, tx),
+      );
     });
   }
 
@@ -698,7 +753,11 @@ export class CertificatesService {
         tx,
       });
 
-      return presentCertificate(removed, sensitive);
+      return presentCertificate(
+        removed,
+        sensitive,
+        await this.computeEvidenceAvailable(removed, tx),
+      );
     });
   }
 
@@ -772,7 +831,11 @@ export class CertificatesService {
         tx,
       });
 
-      return presentCertificate(updated, sensitive);
+      return presentCertificate(
+        updated,
+        sensitive,
+        await this.computeEvidenceAvailable(updated, tx),
+      );
     });
   }
 
@@ -835,7 +898,11 @@ export class CertificatesService {
         tx,
       });
 
-      return presentCertificate(updated, sensitive);
+      return presentCertificate(
+        updated,
+        sensitive,
+        await this.computeEvidenceAvailable(updated, tx),
+      );
     });
   }
 

@@ -764,7 +764,13 @@ describe('recruitment certificate claims + public standard options(PR-4a-1)', ()
     expect(revoked.body.data.standard).toBeNull();
     expect(revoked.body.data.recognitionPolicyId).toBeNull();
     expect(revoked.body.data.recognitionIssuerId).toBeNull();
-    expect(revoked.body.data.reviewNote).toBe('认错了机构');
+    // 评审 findings F5(R9)**翻面**:这条原先断言撤回理由被写进 `reviewNote`,
+    // 而那三列的语义是「谁、什么时候、以什么理由**通过**了这条申报」。
+    // 撤回人写进 `reviewedByUserId` 会让一条 SUBMITTED 申报挂着「审核人:张三」,
+    // 撤回理由写进 `reviewNote` 会被申请人当成驳回说明 —— 两处都是误读。
+    // 方法的 JSDoc 本来就写着「必须清空……审核字段」,执行位没跟上。
+    // 撤回人不丢:审计的 actorUserId 就是他,并额外记了被撤销的那次审核是谁做的。
+    expect(revoked.body.data.reviewNote).toBeNull();
 
     // 已回 SUBMITTED,再撤一次就该拒。
     expectBizError(

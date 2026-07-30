@@ -214,18 +214,30 @@ export class UpdateCertificateRecognitionPolicyDto {
 
 // ============ 入参:状态迁移 ============
 
-// §13.2:「激活 DTO 只允许 ACTIVE」+「当前 ACTIVE Policy 由激活动作自动 RETIRE,
-// 不让客户端分两步操作」。所以这里也接受 RETIRED(手动退役当前 ACTIVE 而不立新版),
-// 但**不接受 DRAFT** —— 已激活/退役的规则永不可回 DRAFT(§7.2 / D-CERT-007)。
+// §13.2 逐字:「激活 DTO **只允许 ACTIVE**」+「当前 ACTIVE Policy 由激活动作自动 RETIRE,
+// 不让客户端分两步操作」。
+//
+// 评审 findings F5 + 维护者 2026-07-30 拍板:**撤掉对 `RETIRED` 的放开,恢复冻结契约。**
+//
+// 这里原先多收了一个 `RETIRED`(「手动退役当前 ACTIVE 版而不立新版」),
+// 而上一行注释自己就写着「§13.2:激活 DTO 只允许 ACTIVE」—— 描述与执行位当场矛盾,
+// 是本批抓到的三处同类问题之一。
+//
+// 更要紧的是它悄悄扩了业务语义:手动退役会让这个 Standard 进入「有标准、无生效规则」
+// 状态,此后既不能建证也不能过审(18035 / 28062)。那是一个**真实的运营动作**
+// (「暂停认定这类证书」),需要它自己的权限判定、审计语义和前端提示,
+// 不该由一次「顺手多接一个枚举值」的 DTO 改动带进来。真需要就单独立项。
 export class UpdateCertificateRecognitionPolicyStatusDto {
   @ApiProperty({
     description:
-      '目标状态。ACTIVE = 激活本版并**原子退役**该 Standard 当前 ACTIVE 版;RETIRED = 直接退役当前 ACTIVE 版。不接受 DRAFT',
-    enum: [CertificateRecognitionPolicyStatus.ACTIVE, CertificateRecognitionPolicyStatus.RETIRED],
+      '目标状态。**只接受 ACTIVE** = 激活本版并**原子退役**该 Standard 当前 ACTIVE 版。' +
+      '不接受 DRAFT(已激活/退役的规则永不可回,§7.2 / D-CERT-007);' +
+      '也不接受 RETIRED(「暂停认定」是独立业务动作,不在本接口)',
+    enum: [CertificateRecognitionPolicyStatus.ACTIVE],
     example: CertificateRecognitionPolicyStatus.ACTIVE,
   })
-  // 同 Standard status DTO:必须 `@IsIn` 而非 `@IsEnum` —— 后者会放过 DRAFT,
-  // 让「不接受 DRAFT」这句话在契约层不成立(只能靠状态机兜 409)。
-  @IsIn([CertificateRecognitionPolicyStatus.ACTIVE, CertificateRecognitionPolicyStatus.RETIRED])
+  // 必须 `@IsIn` 而非 `@IsEnum` —— 后者会放过 DRAFT / RETIRED,
+  // 让「只允许 ACTIVE」这句话在契约层不成立(只能靠状态机兜 409)。
+  @IsIn([CertificateRecognitionPolicyStatus.ACTIVE])
   status!: CertificateRecognitionPolicyStatus;
 }

@@ -178,6 +178,10 @@ function makePrismaMock() {
     findMany: jest.fn<Promise<Record<string, unknown>[]>, [unknown]>().mockResolvedValue([]),
   };
   const user = { findFirst: jest.fn<Promise<{ memberId: string | null } | null>, [unknown]>() };
+  // 评审 findings F5(R10):`evidenceAvailable` 现在按来源分流 —— ADMIN 来源
+  // 要数 `ownerType='certificate'` 的 attachment。默认 0(本 spec 的夹具不带附件),
+  // 需要测「ADMIN 有证据」的用例自行 mockResolvedValueOnce。
+  const attachment = { count: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0) };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
   const $queryRaw = jest.fn().mockResolvedValue([{ id: 'cert-1' }]);
   const prisma = {
@@ -188,6 +192,7 @@ function makePrismaMock() {
     certificateStandard,
     certificateRecognitionPolicy,
     certificateRecognitionIssuer,
+    attachment,
     $queryRaw,
     $transaction,
   };
@@ -1114,6 +1119,11 @@ describe('CertificatesService (characterization, scoped)', () => {
           certNumber: 'SZ-2026-SECRET-0001',
           verifyNote: 'private reviewer note',
           verifiedBy: 'mem-reviewer-9',
+          // 带 sourceClaim 的行**必然**是 RECRUITMENT 来源:DB 的
+          // `certificate_source_claim_consistency_check` 不允许 ADMIN 行挂 sourceClaimId。
+          // 修复前这条夹具写的是默认 ADMIN + 有 sourceClaim,是一行现实中造不出来的数据 ——
+          // R10 把 evidenceAvailable 改成按来源分流后,它立刻现了形。
+          sourceCode: 'RECRUITMENT',
           sourceClaim: { imageKeys: ['certificates/abc.jpg', 'certificates/def.jpg'] },
           certStatusCode: CERT_STATUS_VERIFIED,
         }),
@@ -1173,16 +1183,61 @@ describe('CertificatesService (characterization, scoped)', () => {
       expect(JSON.stringify(res)).not.toContain('certificates/abc.jpg');
     });
 
-    it('无证据图 → evidenceAvailable=false(空数组与 null 同解)', async () => {
+    it('RECRUITMENT 无证据图 → evidenceAvailable=false(空数组与 null 同解)', async () => {
       const prisma = makePrismaMock();
       prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
       prisma.certificate.findFirst.mockResolvedValue(
-        makeCertRow({ sourceClaim: { imageKeys: [] } }),
+        makeCertRow({ sourceCode: 'RECRUITMENT', sourceClaim: { imageKeys: [] } }),
       );
       const service = makeService(prisma);
 
       const res = await service.findOne('mem-1', 'cert-1', makeCurrentUser(), META);
       expect(res.evidenceAvailable).toBe(false);
+    });
+
+    // ===== 评审 findings F5(R10):ADMIN 来源的证据也要算 =====
+    //
+    // 修复前 `hasEvidence` 只看 `sourceClaim.imageKeys`,注释还写着「不假装覆盖两种」——
+    // 于是管理端上传的附件一律显示为「无证据」,前端据此隐藏查看入口。
+    // 而工作台侧早就两种都算了:同一张证书在两个页面显示相反的结论。
+
+    it('ADMIN 来源:有 attachment → evidenceAvailable=true(不再只看 sourceClaim)', async () => {
+      const prisma = makePrismaMock();
+      prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
+      prisma.certificate.findFirst.mockResolvedValue(
+        makeCertRow({ sourceCode: 'ADMIN', sourceClaim: null }),
+      );
+      prisma.attachment.count.mockResolvedValue(2);
+      const service = makeService(prisma);
+
+      const res = await service.findOne('mem-1', 'cert-1', makeCurrentUser(), META);
+      expect(res.evidenceAvailable).toBe(true);
+      // 只按 ownerType/ownerId 数,不取 key(§15.6)。
+      expect(prisma.attachment.count).toHaveBeenCalledWith({
+        where: { ownerType: 'certificate', ownerId: 'cert-1' },
+      });
+    });
+
+    it('ADMIN 来源:零 attachment → evidenceAvailable=false', async () => {
+      const prisma = makePrismaMock();
+      prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
+      prisma.certificate.findFirst.mockResolvedValue(
+        makeCertRow({ sourceCode: 'ADMIN', sourceClaim: null }),
+      );
+      prisma.attachment.count.mockResolvedValue(0);
+      const service = makeService(prisma);
+
+      const res = await service.findOne('mem-1', 'cert-1', makeCurrentUser(), META);
+      expect(res.evidenceAvailable).toBe(false);
+    });
+
+    it('RECRUITMENT 来源不查 attachment(证据在 Claim 上,多一次查询是白跑)', async () => {
+      const prisma = makePrismaMock();
+      primeFindOne(prisma);
+      const service = makeService(prisma);
+
+      await service.findOne('mem-1', 'cert-1', makeCurrentUser(), META);
+      expect(prisma.attachment.count).not.toHaveBeenCalled();
     });
 
     it('出参永不含 certNumber 原字段名(防前端回写陷阱的结构保证)', async () => {

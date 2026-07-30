@@ -304,18 +304,16 @@ describe('certificate standards + recognition policies(PR-3)', () => {
       expect((await createStandard({ levelCode })).status).toBe(201);
     });
 
-    it('身份字段不在 PATCH 白名单 → 40000(契约层就拦住,不靠运行时判状态)', async () => {
+    // 评审 findings F5(R2)**翻面**:这条原先断言「身份字段一律不在 PATCH 白名单」。
+    // 那条设计在本模型里走不通 —— `code` 是含软删行的全量 @unique,
+    // 软删一个填错的 DRAFT 标准之后它的 code 被永久占用,「删掉重建」只能换 code。
+    // 首批初始化打错一个字就是死胡同。现在 DRAFT 期开放**除 code 外**的身份字段。
+    //
+    // 反向断言的寿命只到它锁住的事实成立那一刻 —— 这一刀让它过期,同刀翻面。
+    it('code 与 status 永远不在 PATCH 白名单 → 40000(改 code 等于改身份;status 走独立端点)', async () => {
       const created = await createStandard();
       const id = created.body.data.id as string;
-      for (const forbidden of [
-        { code: 'x' },
-        { kind: 'FAMILY' },
-        { categoryCode: otherCategoryCode },
-        { levelCode },
-        { isInternal: true },
-        { parentId: id },
-        { status: 'ACTIVE' },
-      ]) {
+      for (const forbidden of [{ code: 'x' }, { status: 'ACTIVE' }]) {
         const res = await request(httpServer(app))
           .patch(`${base}/${id}`)
           .set('Authorization', opsAuth)
@@ -324,7 +322,66 @@ describe('certificate standards + recognition policies(PR-3)', () => {
       }
     });
 
-    it('PATCH 只接受 name / description / sortOrder', async () => {
+    it('R2 DRAFT 期可改身份字段(除 code)', async () => {
+      const created = await createStandard();
+      const id = created.body.data.id as string;
+      const res = await request(httpServer(app))
+        .patch(`${base}/${id}`)
+        .set('Authorization', opsAuth)
+        .send({ kind: 'FAMILY', categoryCode: otherCategoryCode, isInternal: true });
+      expect(res.status).toBe(200);
+      expect(res.body.data.kind).toBe('FAMILY');
+      expect(res.body.data.categoryCode).toBe(otherCategoryCode);
+      expect(res.body.data.isInternal).toBe(true);
+    });
+
+    it('R2 首次 ACTIVE 之后身份字段永久锁死 → 18033(哪怕后来又 INACTIVE)', async () => {
+      const id = await createActiveStandard();
+      expectBizError(
+        await request(httpServer(app))
+          .patch(`${base}/${id}`)
+          .set('Authorization', opsAuth)
+          .send({ categoryCode: otherCategoryCode }),
+        BizCode.CERTIFICATE_STANDARD_IMMUTABLE,
+      );
+
+      // 停用后仍然不可改 —— 判据是 `activatedAt`(首次启用过)而不是当前 status。
+      // 只看 status 会让一个 INACTIVE 标准被误判成可改身份,而它可能已被历史证书引用。
+      await request(httpServer(app))
+        .patch(`${base}/${id}/status`)
+        .set('Authorization', opsAuth)
+        .send({ status: 'INACTIVE' });
+      expectBizError(
+        await request(httpServer(app))
+          .patch(`${base}/${id}`)
+          .set('Authorization', opsAuth)
+          .send({ kind: 'FAMILY' }),
+        BizCode.CERTIFICATE_STANDARD_IMMUTABLE,
+      );
+    });
+
+    it('R2 改身份字段仍走字典与父级校验(不是把校验一起放开)', async () => {
+      const created = await createStandard();
+      const id = created.body.data.id as string;
+      expectBizError(
+        await request(httpServer(app))
+          .patch(`${base}/${id}`)
+          .set('Authorization', opsAuth)
+          .send({ categoryCode: 'no-such-category' }),
+        BizCode.CERTIFICATE_TYPE_CODE_INVALID,
+      );
+      // 自己挂自己 —— DRAFT 行此刻可能已有子节点,create 期「结构上不可能成环」
+      // 的论证在这里不成立,必须显式拦。
+      expectBizError(
+        await request(httpServer(app))
+          .patch(`${base}/${id}`)
+          .set('Authorization', opsAuth)
+          .send({ parentId: id }),
+        BizCode.CERTIFICATE_STANDARD_PARENT_INVALID,
+      );
+    });
+
+    it('PATCH 接受 name / description / sortOrder', async () => {
       const created = await createStandard();
       const res = await request(httpServer(app))
         .patch(`${base}/${created.body.data.id}`)
@@ -474,9 +531,28 @@ describe('certificate standards + recognition policies(PR-3)', () => {
       expect(res.status).toBe(204);
     });
 
-    it('被子节点引用 → 18032', async () => {
-      const familyId = await createActiveStandard({ kind: 'FAMILY' });
-      expect((await createStandard({ parentId: familyId })).status).toBe(201);
+    // 评审 findings F5(R3):**只有 DRAFT 可删**。下面两条改用 DRAFT 父/DRAFT 标准,
+    // 否则它们会因为「不是 DRAFT」而拒 —— 拒对了,但证明的不再是「被引用所以拒」。
+    it('被子节点引用 → 18032(直插构造:R3 之后这个组合经 API 已不可达)', async () => {
+      // R3 之前:建 ACTIVE FAMILY → 挂子 → 删父,靠引用计数拒。
+      // R3 之后这条路走不通了 —— 挂子要求父是 ACTIVE(18034),而 ACTIVE 不可删,
+      // 于是「有子节点的 DRAFT 父」经 API 造不出来。
+      //
+      // 守卫本身仍然保留(seed / 运维直写 / 将来放开父级规则都可能造出这种行),
+      // 所以这里直插构造那个状态,证明**守卫**没随可达性一起消失。
+      // 换成断言 18033 就是把「引用计数」这条不变量悄悄测没了。
+      const created = await createStandard({ kind: 'FAMILY' });
+      const familyId = created.body.data.id as string;
+      await prisma.certificateStandard.create({
+        data: {
+          code: `std-child-${Math.random().toString(36).slice(2, 10)}`,
+          name: '直插子节点',
+          kind: 'CREDENTIAL',
+          status: 'DRAFT',
+          categoryCode,
+          parentId: familyId,
+        },
+      });
       expectBizError(
         await request(httpServer(app)).delete(`${base}/${familyId}`).set('Authorization', opsAuth),
         BizCode.CERTIFICATE_STANDARD_IN_USE,
@@ -484,8 +560,27 @@ describe('certificate standards + recognition policies(PR-3)', () => {
     });
 
     it('被认定规则引用 → 18032', async () => {
-      const id = await createActiveStandard();
+      const created = await createStandard();
+      const id = created.body.data.id as string;
       expect((await createPolicy(id)).status).toBe(201);
+      expectBizError(
+        await request(httpServer(app)).delete(`${base}/${id}`).set('Authorization', opsAuth),
+        BizCode.CERTIFICATE_STANDARD_IN_USE,
+      );
+    });
+
+    it('R3 已启用过的标准不可删 —— 即使零引用', async () => {
+      // 修复前 ACTIVE / INACTIVE 也能软删。零引用的 ACTIVE 标准被删掉的后果是
+      // 「这个 code 被永久占用且再也建不出来」,而 code 是长期稳定标识。
+      const id = await createActiveStandard();
+      expectBizError(
+        await request(httpServer(app)).delete(`${base}/${id}`).set('Authorization', opsAuth),
+        BizCode.CERTIFICATE_STANDARD_IN_USE,
+      );
+      await request(httpServer(app))
+        .patch(`${base}/${id}/status`)
+        .set('Authorization', opsAuth)
+        .send({ status: 'INACTIVE' });
       expectBizError(
         await request(httpServer(app)).delete(`${base}/${id}`).set('Authorization', opsAuth),
         BizCode.CERTIFICATE_STANDARD_IN_USE,
@@ -855,21 +950,39 @@ describe('certificate standards + recognition policies(PR-3)', () => {
   // ============ 审计(§17)============
 
   describe('审计(§17 两个高价值事件)', () => {
-    it('Standard 创建 / 激活 / 删除各落一条 certificate-standard.change,operation 闭集', async () => {
+    it('Standard 创建 / 激活 各落一条 certificate-standard.change,operation 闭集', async () => {
       const created = await createStandard();
       const id = created.body.data.id as string;
       await activateStandard(id);
-      await request(httpServer(app)).delete(`${base}/${id}`).set('Authorization', opsAuth);
 
       const logs = await prisma.auditLog.findMany({
         where: { event: 'certificate-standard.change', resourceId: id },
         orderBy: { createdAt: 'asc' },
         select: { context: true, resourceType: true },
       });
-      expect(logs).toHaveLength(3);
+      expect(logs).toHaveLength(2);
       expect(logs.every((l) => l.resourceType === 'certificate_standard')).toBe(true);
       const ops = logs.map((l) => (l.context as { extra: { operation: string } }).extra.operation);
-      expect(ops).toEqual(['create', 'activate', 'delete']);
+      expect(ops).toEqual(['create', 'activate']);
+    });
+
+    // 删除审计单独一条:R3 之后只有 DRAFT 可删,上面那条链(建→激活→删)
+    // 在同一个标准上已经走不通了。
+    it('Standard 删除落一条 operation=delete(DRAFT 标准)', async () => {
+      const created = await createStandard();
+      const id = created.body.data.id as string;
+      expect(
+        (await request(httpServer(app)).delete(`${base}/${id}`).set('Authorization', opsAuth))
+          .status,
+      ).toBe(204);
+
+      const logs = await prisma.auditLog.findMany({
+        where: { event: 'certificate-standard.change', resourceId: id },
+        orderBy: { createdAt: 'asc' },
+        select: { context: true },
+      });
+      const ops = logs.map((l) => (l.context as { extra: { operation: string } }).extra.operation);
+      expect(ops).toEqual(['create', 'delete']);
     });
 
     it('Policy 建版与激活落 certificate-recognition-policy.change;快照含 issuerNames 不含敏感字段', async () => {

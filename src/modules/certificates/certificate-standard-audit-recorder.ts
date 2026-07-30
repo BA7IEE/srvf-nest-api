@@ -55,6 +55,9 @@ export interface PolicyAuditSnapshot {
 export type StandardAuditOperation = 'create' | 'update' | 'activate' | 'deactivate' | 'delete';
 export type PolicyAuditOperation =
   | 'create-policy'
+  // 评审 findings F5(R8):改 DRAFT 规则此前复用 `create-policy` —— 审计里
+  // 建版与改版长得一模一样,事后根本分不出「这一版是新建的」还是「被改过」。
+  | 'update-draft-policy'
   | 'activate-policy'
   | 'retire-policy'
   | 'replace-draft-issuers'
@@ -144,6 +147,12 @@ export class CertificateStandardAuditRecorder {
     operation: PolicyAuditOperation;
     before?: PolicyAuditSnapshot;
     after?: PolicyAuditSnapshot;
+    /**
+     * 激活时被**自动退役**的那一版(评审 findings F5 · R8)。
+     * 只记 id 与 version 两个闭集标识 —— 规则内容已经在被退役那一版自己的
+     * 审计快照里,这里重复一遍只会让同一事实有两个副本。
+     */
+    supersededPolicy?: { id: string; version: number } | null;
     tx: Prisma.TransactionClient;
   }): Promise<void> {
     await this.auditLogs.log({
@@ -155,7 +164,15 @@ export class CertificateStandardAuditRecorder {
       meta: input.meta,
       ...(input.before ? { before: { ...input.before } } : {}),
       ...(input.after ? { after: { ...input.after } } : {}),
-      extra: { operation: input.operation },
+      extra: {
+        operation: input.operation,
+        ...(input.supersededPolicy
+          ? {
+              supersededPolicyId: input.supersededPolicy.id,
+              supersededPolicyVersion: input.supersededPolicy.version,
+            }
+          : {}),
+      },
       tx: input.tx,
     });
   }

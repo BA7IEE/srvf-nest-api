@@ -164,7 +164,7 @@ describe('certificates RBAC 权限边界(Slow-4 T2)', () => {
         (
           await request(httpServer(app))
             .get(url)
-            .query({ certTypeCode })
+            .query({ criterionType: 'category', criterionCode: certTypeCode })
             .set('Authorization', saAuth)
         ).status,
       ).toBe(200);
@@ -172,21 +172,21 @@ describe('certificates RBAC 权限边界(Slow-4 T2)', () => {
         (
           await request(httpServer(app))
             .get(url)
-            .query({ certTypeCode })
+            .query({ criterionType: 'category', criterionCode: certTypeCode })
             .set('Authorization', admBizAuth)
         ).status,
       ).toBe(200);
       expectBizError(
         await request(httpServer(app))
           .get(url)
-          .query({ certTypeCode })
+          .query({ criterionType: 'category', criterionCode: certTypeCode })
           .set('Authorization', admDefaultAuth),
         BizCode.RBAC_FORBIDDEN,
       );
       expectBizError(
         await request(httpServer(app))
           .get(url)
-          .query({ certTypeCode })
+          .query({ criterionType: 'category', criterionCode: certTypeCode })
           .set('Authorization', userAuth),
         BizCode.RBAC_FORBIDDEN,
       );
