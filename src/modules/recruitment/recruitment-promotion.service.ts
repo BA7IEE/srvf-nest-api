@@ -13,6 +13,7 @@ import { beijingDateOnly, normalizeDateOnly } from '../../common/datetime/date-o
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -504,9 +505,54 @@ export class RecruitmentPromotionService {
     }
   }
 
+  /**
+   * §8.5 固定锁序第 1 步 + CAS —— **批量与单人共用的唯一发号内核入口**。
+   *
+   * 修复前:批量把「谁可发号」在事务**外**算完(promotable 快照),事务内直接按 id 建档并
+   * 无条件写 `promoted`;单人也只在事务外判过一次 statusCode。两条路径都不锁、不复读,
+   * 于是「读到 publicity」与「写成 promoted」之间存在一个可被并发撤销穿过的窗口:
+   * 撤销先提交(级联把 Claim 打成 WITHDRAWN),发号随后把报名从 withdrawn 强行改成 promoted,
+   * 建出一个没有任何证书、且申请人以为自己已经撤销了的队员。
+   *
+   * `claimAtStatus` 带 `WHERE statusCode = 'publicity'` 的条件行锁,一次解决三件事:
+   * 拿到锁、确认拿锁那一刻状态没变、把锁持有到提交。锁后复读拿的是锁内最新已提交行,
+   * 事务外那份快照自此只用于「要不要尝试」,不再用于「写什么」。
+   *
+   * 判失败一律整批回滚(28041)而不是跳过该行:号段已按 N 原子自增,
+   * 事务内少建一个人就会留下一个永久空洞,而「号段连续无空洞」是本模块的冻结不变量。
+   */
+  private async lockPromotableApplicationOrThrow(
+    tx: Prisma.TransactionClient,
+    pre: RecruitmentApplication,
+    channel: 'wechat' | 'phone',
+  ): Promise<RecruitmentApplication> {
+    await claimAtStatus(tx, {
+      target: 'recruitmentApplication',
+      id: pre.id,
+      expectedStatus: APP_STATUS_PUBLICITY,
+      invalidStatusBiz: BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
+    });
+    const row = await tx.recruitmentApplication.findFirst({
+      where: { id: pre.id, deletedAt: null },
+    });
+    if (!row) throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
+
+    // 锁后复核登录锚点:channel 由事务外的 openid/phone 派生,而等锁期间可以被自助换绑改掉。
+    // 锚点没了还按原 channel 建 User,会写出 `openid: null as string` 那类崩溃或错绑。
+    const anchorPresent = channel === 'wechat' ? row.openid !== null : row.phone !== null;
+    if (!anchorPresent) throw new BizException(BizCode.RECRUITMENT_LOGIN_ANCHOR_UNAVAILABLE);
+
+    // 建档必需字段同理:事务外判过一次,管理员可能在等锁期间把它改空。
+    // 下面整段建档对这三列做了 `as string` 断言,复核不做就等于把断言交给运气。
+    if (row.realName === null || row.birthDate === null || row.genderCode === null) {
+      throw new BizException(BizCode.RECRUITMENT_PROFILE_INCOMPLETE_FOR_PROMOTE);
+    }
+    return row;
+  }
+
   private async buildOnePromotion(
     tx: Prisma.TransactionClient,
-    a: RecruitmentApplication,
+    pre: RecruitmentApplication,
     memberNo: string,
     passwordHash: string,
     volOrgId: string,
@@ -516,6 +562,9 @@ export class RecruitmentPromotionService {
     now: Date,
     viaPath?: string,
   ): Promise<PromotedItemDto> {
+    // 锁 + CAS + 复读:自此以下所有字段都取锁内的 `a`,事务外那份 `pre` 不再参与写入。
+    const a = await this.lockPromotableApplicationOrThrow(tx, pre, channel);
+
     // Member:招新闭环优化 S5(§5.2a)即赋志愿者身份 —— gradeCode='volunteer' + 同事务建 VOL
     // 归口部门(下一步)。入队(team-join 一键入队)才软删 VOL 行、换目标部门并升 level-1。
     const member = await tx.member.create({
@@ -607,16 +656,36 @@ export class RecruitmentPromotionService {
     // 所以这里不锁 Standard/Policy,只校验 Claim 关系完整
     // (`materializeApprovedClaimForPromotion` 缺任何标准化字段即整批 fail-closed)。
     //
-    // §8.5 第 2 步:按稳定 id ASC 锁全部 APPROVED Claim。稳定顺序是为了让并发的
-    // 两次发号 / 审核撞同一前缀锁序,而不是交叉持锁死锁。
-    const approvedClaims = await tx.recruitmentCertificateClaim.findMany({
-      where: notDeletedWhere({
-        applicationId: a.id,
-        status: RecruitmentCertificateClaimStatus.APPROVED,
-      }),
+    // §8.5 第 2 步:按稳定 id ASC 锁该报名下**全部未软删** Claim,再在锁内复读。
+    //
+    // 修复前这里是「先 findMany(APPROVED) → 再对这批 id FOR UPDATE → 循环用锁**前**的
+    // 那份 findMany 结果」。锁只保护了写,判定依据仍是锁前快照:等锁期间一次
+    // revoke-review 把 APPROVED 打回 SUBMITTED,发号照样按旧快照给它建出正式证书,
+    // 而那张证书对应的审核结论此刻已经被撤销了。
+    //
+    // 锁范围也从 APPROVED 扩到全部:非 APPROVED 的行下面要级联成 WITHDRAWN,
+    // 不锁就会和并发的申请人重传互相覆盖。
+    const claimIds = (
+      await tx.recruitmentCertificateClaim.findMany({
+        where: notDeletedWhere({ applicationId: a.id }),
+        orderBy: { id: 'asc' },
+        select: { id: true },
+      })
+    ).map((c) => c.id);
+    if (claimIds.length > 0) {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "RecruitmentCertificateClaim" WHERE "id" IN (${Prisma.join(
+          claimIds,
+        )}) ORDER BY "id" ASC FOR UPDATE`,
+      );
+    }
+    // 锁后复读 —— 判定与写入自此都只看这一份。
+    const lockedClaims = await tx.recruitmentCertificateClaim.findMany({
+      where: notDeletedWhere({ applicationId: a.id }),
       orderBy: { id: 'asc' },
       select: {
         id: true,
+        status: true,
         standardId: true,
         recognitionPolicyId: true,
         recognitionIssuerId: true,
@@ -630,13 +699,9 @@ export class RecruitmentPromotionService {
         reviewNote: true,
       },
     });
-    if (approvedClaims.length > 0) {
-      await tx.$queryRaw(
-        Prisma.sql`SELECT "id" FROM "RecruitmentCertificateClaim" WHERE "id" IN (${Prisma.join(
-          approvedClaims.map((c) => c.id),
-        )}) ORDER BY "id" ASC FOR UPDATE`,
-      );
-    }
+    const approvedClaims = lockedClaims.filter(
+      (c) => c.status === RecruitmentCertificateClaimStatus.APPROVED,
+    );
     const today = beijingDateOnly(now);
     for (const claim of approvedClaims) {
       // 只校验完整性,一律不重新判断规则(§8.5 第 3 步)。
@@ -699,14 +764,35 @@ export class RecruitmentPromotionService {
         },
       });
     }
+    // §8.5 收尾:把**剩下的**非终态 Claim 级联成 WITHDRAWN。
+    //
+    // 修复前发号只动 APPROVED,于是一份已 promoted(终态)的报名下可以永久残留
+    // SUBMITTED / NEEDS_INFO / REJECTED 的申报 —— 它们永远不会再变成证书,却仍然
+    // 可被审核、可签发证据 URL。这正好破坏「终态报名下不存在非终态 Claim」这条不变量,
+    // 而且它不需要并发就能复现,是一条独立于竞态的缺陷。
+    //
+    // 语义与整份撤销那条路径逐字一致(`notIn [PROMOTED]` + 目标 WITHDRAWN),
+    // 两处必须同口径:否则「报名到终态后 Claim 该是什么」会有两个答案。
+    const cascaded = await tx.recruitmentCertificateClaim.updateMany({
+      where: {
+        applicationId: a.id,
+        deletedAt: null,
+        status: { notIn: [RecruitmentCertificateClaimStatus.PROMOTED] },
+      },
+      data: { status: RecruitmentCertificateClaimStatus.WITHDRAWN },
+    });
     // 标 promoted + 链 + 即时清敏感(PII 已搬 member/user;blob 归 member/user,留存 SOP 不再触 promoted 行)。
     // F12(#399):openid + reviewNote 亦属留存 SOP §1 须置 NULL 的敏感字段;promote 即时清后
     // SOP「WHERE sensitivePurgedAt IS NULL」永久跳过本行 —— 漏清则再识别字段在「已脱敏」行永久残留。
     // 十项收口刀C:补清 OCR 4 列 + 两裁剪图 key + 换绑史/原因(此前全部漏清 = promoted 行永久残留
     // 高敏 PII;民族/OCR 住址属敏感个人信息,换绑史含明文手机)。主体裁剪图 blob 已在 transaction
     // 前 fail-closed 删除；头像裁剪图 blob 已转 User.avatarKey(刀E)仅清 key。
-    await tx.recruitmentApplication.update({
-      where: { id: a.id },
+    // CAS 收尾:`updateMany` + `statusCode = 'publicity'` 条件,而不是按 id 无条件写。
+    // 本事务开头的 `claimAtStatus` 已经持有该行的条件行锁,理论上这里必然命中 1 行;
+    // 保留显式条件是因为「无条件按 id 写终态」是这批缺陷的共同形状 ——
+    // 将来谁挪走了上面的锁,这一行会立刻变红,而不是安静地退化成旧行为。
+    const promotedWrite = await tx.recruitmentApplication.updateMany({
+      where: { id: a.id, statusCode: APP_STATUS_PUBLICITY, deletedAt: null },
       data: {
         statusCode: APP_STATUS_PROMOTED,
         promotedMemberId: member.id,
@@ -737,6 +823,9 @@ export class RecruitmentPromotionService {
         phoneBindingHistory: Prisma.DbNull,
       },
     });
+    if (promotedWrite.count !== 1) {
+      throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
+    }
     await this.auditLogs.log({
       event: 'recruitment-application.promote',
       actorUserId: user.id,
@@ -757,6 +846,9 @@ export class RecruitmentPromotionService {
         // F3 单人建档 additive:viaPath + 实际登录通道(批量不传 → extra 形状逐字不变 = 行为锁;
         // 单人在 openid 被占强制手机通道时,channel 是唯一能说明真实锚点的字段)。
         ...(viaPath ? { viaPath, channel } : {}),
+        // 发号顺手终结掉的非 APPROVED 申报条数(只记条数,不记 id / 编号 / key)。
+        // 恒为 0 时说明该报名的申报要么全过审、要么本来就没有。
+        cascadedWithdrawnClaimCount: cascaded.count,
       },
       tx,
     });
