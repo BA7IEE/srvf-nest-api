@@ -899,7 +899,10 @@ describe('CertificatesService (characterization, scoped)', () => {
         }),
       );
       expect(JSON.stringify(auditLogs.log.mock.calls)).not.toContain('looks good');
-      expect(prisma.certificate.findFirst).toHaveBeenCalledTimes(1);
+      // 评审 findings G3:`claimAtStatus` 之后**必须**再读一次 —— 条件行锁只保证状态没变,
+      // 不保证 expiredAt 之类的其余字段没被并发 PATCH 改掉。所以这里恒为 2 次:
+      // 锁前定位 + 锁后复读。写成 2 而不是放宽成 `>= 1`,是为了让「谁把复读删了」当场变红。
+      expect(prisma.certificate.findFirst).toHaveBeenCalledTimes(2);
       expect(res.certStatusCode).toBe(CERT_STATUS_VERIFIED);
       expect(res.verifyNote).toBe('looks good');
     });
@@ -990,7 +993,10 @@ describe('CertificatesService (characterization, scoped)', () => {
         }),
       );
       expect(JSON.stringify(auditLogs.log.mock.calls)).not.toContain('insufficient evidence');
-      expect(prisma.certificate.findFirst).toHaveBeenCalledTimes(1);
+      // 评审 findings G3:`claimAtStatus` 之后**必须**再读一次 —— 条件行锁只保证状态没变,
+      // 不保证 expiredAt 之类的其余字段没被并发 PATCH 改掉。所以这里恒为 2 次:
+      // 锁前定位 + 锁后复读。写成 2 而不是放宽成 `>= 1`,是为了让「谁把复读删了」当场变红。
+      expect(prisma.certificate.findFirst).toHaveBeenCalledTimes(2);
       expect(res.certStatusCode).toBe(CERT_STATUS_REJECTED);
       expect(res.verifyNote).toBe('insufficient evidence');
     });

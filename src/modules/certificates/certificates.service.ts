@@ -790,6 +790,14 @@ export class CertificatesService {
         expectedStatus: before.certStatusCode,
         invalidStatusBiz: BizCode.CERTIFICATE_INVALID_STATE_TRANSITION,
       });
+      // 评审 findings G3:锁后复读,镜像同文件 `update()` 早就做对的那一步。
+      //
+      // `before` 读于 `claimAtStatus` **之前**。条件行锁只保证「状态仍是 pending」,
+      // 不保证这一行的**其余字段**没变 —— 而落点状态恰恰取决于 `expiredAt`,
+      // 它正是管理端 `PATCH` 可以改的一列。等锁期间一次改早 / 改晚提交之后,
+      // 用锁前快照判到期就是按一个**已经不存在的到期日**给证书定状态。
+      // 自此往下只看 `lockedBefore`。
+      const lockedBefore = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
       const verifierMemberId = await this.getVerifierMemberId(currentUser.id, tx);
 
       // §9.3:核验的落点状态由**到期日**决定,不是无条件 verified。
@@ -800,10 +808,10 @@ export class CertificatesService {
       // 发号路径(§8.5 第 8 步)早就按同一规则分流了,管理端核验没跟上。
       const today = beijingDateOnly(new Date());
       const alreadyExpired =
-        before.expiredAt !== null && before.expiredAt.getTime() < today.getTime();
+        lockedBefore.expiredAt !== null && lockedBefore.expiredAt.getTime() < today.getTime();
 
       const updated = await tx.certificate.update({
-        where: { id: before.id },
+        where: { id: lockedBefore.id },
         data: {
           certStatusCode: alreadyExpired ? CERT_STATUS_EXPIRED : CERT_STATUS_VERIFIED,
           verifiedBy: verifierMemberId,
@@ -813,19 +821,24 @@ export class CertificatesService {
         select: certificateSafeSelect,
       });
 
-      // verify/reject 的 before/after 仅状态相关字段(D6 v1.1 §8.2),非完整快照
+      // verify/reject 的 before/after 仅状态相关字段(D6 v1.1 §8.2),非完整快照。
+      // before 同样取锁后事实 —— 审计记的必须是这次写入真正覆盖掉的那份。
       await this.auditLogs.log({
         event: 'certificate.verify',
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
         resourceType: 'certificate',
-        resourceId: before.id,
+        resourceId: lockedBefore.id,
         meta: auditMeta,
-        before: this.toVerifyNoteAuditState(before.certStatusCode, before.verifyNote, false),
+        before: this.toVerifyNoteAuditState(
+          lockedBefore.certStatusCode,
+          lockedBefore.verifyNote,
+          false,
+        ),
         after: this.toVerifyNoteAuditState(
           updated.certStatusCode,
           updated.verifyNote,
-          before.verifyNote !== updated.verifyNote,
+          lockedBefore.verifyNote !== updated.verifyNote,
         ),
         extra: { targetMemberId: memberId, verifierMemberId },
         tx,
@@ -867,10 +880,18 @@ export class CertificatesService {
         expectedStatus: before.certStatusCode,
         invalidStatusBiz: BizCode.CERTIFICATE_INVALID_STATE_TRANSITION,
       });
+      // 评审 findings G3 的扫查产物:本方法此前也在锁后继续用 `before`。
+      //
+      // 与 `verify` 不同,这里**今天不是活 bug**:reject 的写入值全部来自 dto 与常量,
+      // 唯一读到的 `verifyNote` 在 pending 行上恒为 null(`update()` 把行退回 pending 时
+      // 会同步清空它,而 create 落的就是 null)。但那是一条要现推的性质,不是显式约束 ——
+      // 与其让下一个人重新推一遍,不如让同文件三条写路径的形状一致:
+      // 锁之后只看锁后的行。
+      const lockedBefore = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
       const verifierMemberId = await this.getVerifierMemberId(currentUser.id, tx);
 
       const updated = await tx.certificate.update({
-        where: { id: before.id },
+        where: { id: lockedBefore.id },
         data: {
           certStatusCode: CERT_STATUS_REJECTED,
           verifiedBy: verifierMemberId,
@@ -886,13 +907,17 @@ export class CertificatesService {
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
         resourceType: 'certificate',
-        resourceId: before.id,
+        resourceId: lockedBefore.id,
         meta: auditMeta,
-        before: this.toVerifyNoteAuditState(before.certStatusCode, before.verifyNote, false),
+        before: this.toVerifyNoteAuditState(
+          lockedBefore.certStatusCode,
+          lockedBefore.verifyNote,
+          false,
+        ),
         after: this.toVerifyNoteAuditState(
           updated.certStatusCode,
           updated.verifyNote,
-          before.verifyNote !== updated.verifyNote,
+          lockedBefore.verifyNote !== updated.verifyNote,
         ),
         extra: { targetMemberId: memberId, verifierMemberId },
         tx,
