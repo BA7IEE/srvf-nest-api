@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { CertificateSource, DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
 import { maskIdentifier } from '../../common/audit/mask-pii.util';
 import { beijingDateOnly } from '../../common/datetime/date-only.util';
@@ -13,8 +13,12 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
 import { RbacService } from '../permissions/rbac.service';
+import { AttachmentsService } from '../attachments/attachments.service';
+import { STORAGE_PROVIDER } from '../storage/storage.constants';
+import type { StorageProvider } from '../storage/storage.interface';
 import { CertificateRecognitionResolver } from './certificate-recognition-resolver';
 import {
+  CertificateEvidenceUrlsResponseDto,
   CertificateListItemDto,
   CertificateResponseDto,
   CreateCertificateDto,
@@ -51,6 +55,8 @@ const DICT_TYPE_CERT_TYPE = 'cert_type';
 
 const CERT_STATUS_PENDING = 'pending';
 const CERT_STATUS_VERIFIED = 'verified';
+// §13.5:证据 URL TTL 默认不超过 300 秒。
+const CERTIFICATE_EVIDENCE_URL_TTL_SECONDS = 300;
 const CERT_STATUS_REJECTED = 'rejected';
 // CERT_STATUS_EXPIRED 由 v0.47.0 ExpiryReminderService 到期扫描推动,本 service 不主动写入
 
@@ -157,6 +163,11 @@ export class CertificatesService {
     // 证书标准库 PR-4a-3(§19):与招新 Claim 审核共用同一套认定规则解析,
     // 不在建证侧复制第二套机构 / 编号 / 日期算法。
     private readonly recognitionResolver: CertificateRecognitionResolver,
+    // 证书标准库 PR-5(§13.5):RECRUITMENT 来源的证据 key 在 Claim 上,直接短 TTL 签;
+    // ADMIN 来源**必须**经 AttachmentsService 的可读性 + pinned ledger 路径,
+    // 不允许业务模块自己拼 URL(§13.5 实现约束)。
+    @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    private readonly attachments: AttachmentsService,
   ) {}
 
   // ============ helpers ============
@@ -819,6 +830,91 @@ export class CertificatesService {
       memberId,
       certTypeCode,
       qualified,
+    };
+  }
+  // ============ 证据读取(§13.5)============
+
+  /**
+   * 取某张证书的证据短 TTL signed-URL。
+   *
+   * 判权是**两道**(维护者 2026-07-30 拍板走方案 A):
+   *   ① 本方法入口要 scoped `certificate.read.sensitive` —— 证据图是 L3(§15.1);
+   *   ② ADMIN 来源再经 `AttachmentsService.listByOwner`,它自带 `attachment.view` RBAC。
+   *
+   * 为什么不给 attachments 加一个 certificate 专用 trusted 方法:
+   * `listOwnerAttachmentsTrusted` 的注释里明写「仅限 content-* owner;其余 owner 的读
+   * **必须**走 attachment.view RBAC」,并且点名了 certificate。在那道护栏上开口
+   * 换来的只是省一个权限码,代价是把一条明确的安全边界改成有例外的边界。
+   * 所以 ADMIN 来源的读者需要同时持 `certificate.read.sensitive` 与 `attachment.view`。
+   *
+   * §13.5 的其余约束:TTL ≤300s(Cache-Control: no-store 由 controller 设)、
+   * 签 URL 前重查权限与归属、已软删证书不签、provider/ledger 不确定即 fail-closed
+   * 不回退裸 key。
+   */
+  async getEvidenceUrls(
+    memberId: string,
+    certificateId: string,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<CertificateEvidenceUrlsResponseDto> {
+    const ref: ResourceRef = { type: 'certificate', id: certificateId };
+    // 入口即敏感码 —— 不是「先给列表再按码降级」,证据没有降级档。
+    await this.assertCanOrThrow(currentUser, 'certificate.read.sensitive', ref);
+    await this.findMemberOrThrow(memberId);
+    // 归属复查:软删的证书在这里就 404(findCertificateInMemberOrThrow 带 notDeleted)。
+    const cert = await this.findCertificateInMemberOrThrow(memberId, certificateId);
+
+    // 审计先落账再签 URL(fail-closed;与既有敏感读同款)。
+    // extra 只记来源与条数 —— key 与 URL 一律不入(§15.6)。
+    const claimKeys = Array.isArray(cert.sourceClaim?.imageKeys)
+      ? cert.sourceClaim.imageKeys.filter((k): k is string => typeof k === 'string')
+      : [];
+    await this.auditLogs.log({
+      event: 'certificate.read.other',
+      actorUserId: currentUser.id,
+      actorRoleSnap: currentUser.role,
+      resourceType: 'certificate',
+      resourceId: certificateId,
+      meta: auditMeta,
+      extra: {
+        operation: 'evidence-urls',
+        targetMemberId: memberId,
+        sourceCode: cert.sourceCode,
+      },
+    });
+
+    if (cert.sourceCode === CertificateSource.RECRUITMENT) {
+      const urls: string[] = [];
+      for (const key of claimKeys) {
+        const r = await this.storage.generateDownloadUrl({
+          key,
+          expiresIn: CERTIFICATE_EVIDENCE_URL_TTL_SECONDS,
+        });
+        urls.push(r.url);
+      }
+      return {
+        certificateId,
+        sourceCode: cert.sourceCode,
+        urls,
+        expiresAt: new Date(Date.now() + CERTIFICATE_EVIDENCE_URL_TTL_SECONDS * 1000),
+      };
+    }
+
+    // ADMIN 来源:整段交给 attachments —— 它负责 attachment.view 判权、可读性过滤与
+    // pinned ledger 解析。`accessUrl` 为 null 的项**直接丢掉**而不是回退裸 key:
+    // §13.5「provider 或 ledger 状态不确定时 fail-closed 返回不可读」。
+    const page = await this.attachments.listByOwner(
+      { ownerType: 'certificate', ownerId: certificateId, page: 1, pageSize: 100 },
+      currentUser,
+    );
+    return {
+      certificateId,
+      sourceCode: cert.sourceCode,
+      urls: page.items
+        .map((a) => a.accessUrl)
+        .filter((u): u is string => typeof u === 'string' && u.length > 0),
+      // TTL 由 attachments 侧决定,本端点不假称一个自己没算的过期时刻。
+      expiresAt: null,
     };
   }
 }

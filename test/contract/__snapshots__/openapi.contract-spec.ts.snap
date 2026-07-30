@@ -6426,6 +6426,40 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     },
     "type": "object",
   },
+  "CertificateEvidenceUrlsResponseDto": {
+    "properties": {
+      "certificateId": {
+        "description": "证书 id",
+        "type": "string",
+      },
+      "expiresAt": {
+        "description": "URL 过期时刻(RECRUITMENT 来源 TTL ≤300s;ADMIN 来源由 attachments 侧决定)",
+        "nullable": true,
+        "type": "object",
+      },
+      "sourceCode": {
+        "description": "证据来源:RECRUITMENT 读 sourceClaim.imageKeys;ADMIN 读 ownerType=certificate 的标准 Attachment",
+        "enum": [
+          "ADMIN",
+          "RECRUITMENT",
+        ],
+        "type": "string",
+      },
+      "urls": {
+        "description": "证据短 TTL signed-URL(**只返 URL 不返 key**;响应带 Cache-Control: no-store)。ADMIN 来源经 AttachmentsService 的可读性 + pinned ledger 解析,provider/ledger 状态不确定的项**不出现在数组里**(fail-closed,不回退裸 key)",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "certificateId",
+      "sourceCode",
+      "urls",
+    ],
+    "type": "object",
+  },
   "CertificateListItemDto": {
     "properties": {
       "certStatusCode": {
@@ -6994,6 +7028,136 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "sortOrder",
       "createdAt",
       "updatedAt",
+    ],
+    "type": "object",
+  },
+  "CertificateWorkbenchItemDto": {
+    "properties": {
+      "certNumberMasked": {
+        "description": "证书编号掩码(形如 SZ****01;无编号为 null)。**完整编号不在本端点返回**",
+        "nullable": true,
+        "type": "string",
+      },
+      "certStatusCode": {
+        "description": "持久状态(4 态闭集)",
+        "enum": [
+          "pending",
+          "verified",
+          "expired",
+          "rejected",
+        ],
+        "type": "string",
+      },
+      "createdAt": {
+        "description": "创建时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "effectiveStatusCode": {
+        "description": "当前有效展示状态(§14):\`certStatusCode=verified\` 且 \`expiredAt < 北京 today\` 时为 \`expired\`,其余等于 \`certStatusCode\`。**不是第五个持久状态** —— 它不入库,每次读时按今天算,所以不依赖到期 cron 是否已经跑过",
+        "enum": [
+          "pending",
+          "verified",
+          "expired",
+          "rejected",
+        ],
+        "type": "string",
+      },
+      "evidenceAvailable": {
+        "description": "是否存在证据(布尔;取证据走 evidence-urls 端点)",
+        "type": "boolean",
+      },
+      "expiredAt": {
+        "description": "最后有效日(null = 终身有效)",
+        "nullable": true,
+        "type": "object",
+      },
+      "id": {
+        "description": "证书 id",
+        "type": "string",
+      },
+      "issuedAt": {
+        "description": "发证日期",
+        "format": "date-time",
+        "type": "string",
+      },
+      "issuingOrg": {
+        "description": "发证机构(审核/录入时的名称快照)",
+        "type": "string",
+      },
+      "member": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/WorkbenchMemberSummaryDto",
+          },
+        ],
+        "description": "队员摘要",
+      },
+      "sourceCode": {
+        "description": "来源",
+        "enum": [
+          "ADMIN",
+          "RECRUITMENT",
+        ],
+        "type": "string",
+      },
+      "standard": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/WorkbenchStandardSummaryDto",
+          },
+        ],
+        "description": "证书标准摘要",
+      },
+    },
+    "required": [
+      "id",
+      "member",
+      "standard",
+      "issuingOrg",
+      "issuedAt",
+      "certStatusCode",
+      "effectiveStatusCode",
+      "sourceCode",
+      "evidenceAvailable",
+      "createdAt",
+    ],
+    "type": "object",
+  },
+  "CertificateWorkbenchStatsDto": {
+    "properties": {
+      "expired": {
+        "description": "已过期(certStatusCode=expired **或**〔verified 且 expiredAt < today〕)—— 第二个分支是关键:cron 每天 09:00 才翻态,只信持久状态会在它跑之前少算",
+        "type": "number",
+      },
+      "expiringWithin60Days": {
+        "description": "60 天内到期(verified 且 expiredAt ∈ [today, today+60])",
+        "type": "number",
+      },
+      "pending": {
+        "description": "待核验(certStatusCode=pending)",
+        "type": "number",
+      },
+      "permanent": {
+        "description": "终身有效(verified 且 expiredAt 为空)",
+        "type": "number",
+      },
+      "rejected": {
+        "description": "已驳回(certStatusCode=rejected)",
+        "type": "number",
+      },
+      "verified": {
+        "description": "有效(verified 且〔expiredAt 为空 或 expiredAt ≥ today〕)",
+        "type": "number",
+      },
+    },
+    "required": [
+      "pending",
+      "verified",
+      "expired",
+      "rejected",
+      "expiringWithin60Days",
+      "permanent",
     ],
     "type": "object",
   },
@@ -19318,6 +19482,60 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     },
     "required": [
       "version",
+    ],
+    "type": "object",
+  },
+  "WorkbenchMemberSummaryDto": {
+    "properties": {
+      "displayName": {
+        "description": "队员展示名",
+        "type": "string",
+      },
+      "id": {
+        "description": "Member id",
+        "type": "string",
+      },
+      "memberNo": {
+        "description": "队员编号",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "memberNo",
+      "displayName",
+    ],
+    "type": "object",
+  },
+  "WorkbenchStandardSummaryDto": {
+    "properties": {
+      "categoryCode": {
+        "description": "类别字典 code",
+        "type": "string",
+      },
+      "code": {
+        "description": "Standard code",
+        "type": "string",
+      },
+      "id": {
+        "description": "Standard id",
+        "type": "string",
+      },
+      "levelCode": {
+        "description": "等级字典 code",
+        "nullable": true,
+        "type": "string",
+      },
+      "name": {
+        "description": "Standard 名称",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "code",
+      "name",
+      "categoryCode",
     ],
     "type": "object",
   },
@@ -36999,6 +37217,632 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/admin/v1/certificates": {
+    "get": {
+      "operationId": "CertificatesWorkbenchController_list",
+      "parameters": [
+        {
+          "description": "模糊搜索:队员编号 / 队员展示名 / 证书标准名称与 code / 发证机构。**第一版刻意不搜完整证书编号** —— 那是 L2 数据,可搜即可枚举(§13.6)",
+          "in": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按队员过滤",
+          "in": "query",
+          "name": "memberId",
+          "required": false,
+          "schema": {
+            "maxLength": 32,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按组织过滤(经队员的 active PRIMARY 归属;与判权可见范围取交集)",
+          "in": "query",
+          "name": "organizationId",
+          "required": false,
+          "schema": {
+            "maxLength": 32,
+            "type": "string",
+          },
+        },
+        {
+          "description": "组织过滤是否含下级(闭包展开)",
+          "in": "query",
+          "name": "includeDescendants",
+          "required": false,
+          "schema": {
+            "default": false,
+            "type": "boolean",
+          },
+        },
+        {
+          "description": "按证书标准 code 过滤",
+          "in": "query",
+          "name": "standardCode",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按类别字典 code 过滤(经 Standard)",
+          "in": "query",
+          "name": "categoryCode",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按等级字典 code 过滤(经 Standard)",
+          "in": "query",
+          "name": "levelCode",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按持久状态过滤",
+          "in": "query",
+          "name": "certStatusCode",
+          "required": false,
+          "schema": {
+            "enum": [
+              "pending",
+              "verified",
+              "expired",
+              "rejected",
+            ],
+            "type": "string",
+          },
+        },
+        {
+          "description": "按来源过滤",
+          "in": "query",
+          "name": "sourceCode",
+          "required": false,
+          "schema": {
+            "enum": [
+              "ADMIN",
+              "RECRUITMENT",
+            ],
+            "type": "string",
+          },
+        },
+        {
+          "description": "发证日 ≥(含)",
+          "in": "query",
+          "name": "issuedFrom",
+          "required": false,
+          "schema": {
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string",
+          },
+        },
+        {
+          "description": "发证日 ≤(含)",
+          "in": "query",
+          "name": "issuedTo",
+          "required": false,
+          "schema": {
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string",
+          },
+        },
+        {
+          "description": "到期日 ≥(含);终身有效不匹配",
+          "in": "query",
+          "name": "expiresFrom",
+          "required": false,
+          "schema": {
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string",
+          },
+        },
+        {
+          "description": "到期日 ≤(含);终身有效不匹配",
+          "in": "query",
+          "name": "expiresTo",
+          "required": false,
+          "schema": {
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string",
+          },
+        },
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/CertificateWorkbenchItemDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "全局证书工作台列表(跨队员;可见组织范围先下推 SQL 再分页与计数;q 只搜队员编号/展示名/标准名称与 code/发证机构 —— **不搜完整证书编号**;出参恒不含完整编号/审核备注/审核人/图片 key;含 effectiveStatusCode 当前有效展示状态) [rbac: certificate.read.record]",
+      "tags": [
+        "Admin - Certificates Workbench",
+      ],
+    },
+  },
+  "/api/admin/v1/certificates/stats": {
+    "get": {
+      "operationId": "CertificatesWorkbenchController_stats",
+      "parameters": [
+        {
+          "description": "模糊搜索:队员编号 / 队员展示名 / 证书标准名称与 code / 发证机构。**第一版刻意不搜完整证书编号** —— 那是 L2 数据,可搜即可枚举(§13.6)",
+          "in": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按队员过滤",
+          "in": "query",
+          "name": "memberId",
+          "required": false,
+          "schema": {
+            "maxLength": 32,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按组织过滤(经队员的 active PRIMARY 归属;与判权可见范围取交集)",
+          "in": "query",
+          "name": "organizationId",
+          "required": false,
+          "schema": {
+            "maxLength": 32,
+            "type": "string",
+          },
+        },
+        {
+          "description": "组织过滤是否含下级(闭包展开)",
+          "in": "query",
+          "name": "includeDescendants",
+          "required": false,
+          "schema": {
+            "default": false,
+            "type": "boolean",
+          },
+        },
+        {
+          "description": "按证书标准 code 过滤",
+          "in": "query",
+          "name": "standardCode",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按类别字典 code 过滤(经 Standard)",
+          "in": "query",
+          "name": "categoryCode",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按等级字典 code 过滤(经 Standard)",
+          "in": "query",
+          "name": "levelCode",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按持久状态过滤",
+          "in": "query",
+          "name": "certStatusCode",
+          "required": false,
+          "schema": {
+            "enum": [
+              "pending",
+              "verified",
+              "expired",
+              "rejected",
+            ],
+            "type": "string",
+          },
+        },
+        {
+          "description": "按来源过滤",
+          "in": "query",
+          "name": "sourceCode",
+          "required": false,
+          "schema": {
+            "enum": [
+              "ADMIN",
+              "RECRUITMENT",
+            ],
+            "type": "string",
+          },
+        },
+        {
+          "description": "发证日 ≥(含)",
+          "in": "query",
+          "name": "issuedFrom",
+          "required": false,
+          "schema": {
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string",
+          },
+        },
+        {
+          "description": "发证日 ≤(含)",
+          "in": "query",
+          "name": "issuedTo",
+          "required": false,
+          "schema": {
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string",
+          },
+        },
+        {
+          "description": "到期日 ≥(含);终身有效不匹配",
+          "in": "query",
+          "name": "expiresFrom",
+          "required": false,
+          "schema": {
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string",
+          },
+        },
+        {
+          "description": "到期日 ≤(含);终身有效不匹配",
+          "in": "query",
+          "name": "expiresTo",
+          "required": false,
+          "schema": {
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/CertificateWorkbenchStatsDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "全局证书工作台统计(六个计数器:pending/verified/expired/rejected/expiringWithin60Days/permanent;接受与列表**完全相同**的非分页过滤;按北京 today 计算且**不依赖到期 cron 已翻态**〔expired 含「verified 但 expiredAt<today」〕;scope 先下推再计数) [rbac: certificate.read.record]",
+      "tags": [
+        "Admin - Certificates Workbench",
+      ],
+    },
+  },
   "/api/admin/v1/contents": {
     "get": {
       "operationId": "ContentAdminController_list",
@@ -44197,6 +45041,172 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
         },
       ],
       "summary": "部分更新证书(全字段 optional;**禁止** id / memberId / certStatusCode / verifiedBy / verifiedAt / verifyNote / isInternal / supersededByCertId / expireNotifyDueAt) [rbac: certificate.update.record]",
+      "tags": [
+        "Admin - Certificates",
+      ],
+    },
+  },
+  "/api/admin/v1/members/{memberId}/certificates/{id}/evidence-urls": {
+    "get": {
+      "operationId": "CertificatesController_evidenceUrls",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/CertificateEvidenceUrlsResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "15001: 队员不存在; 18001: 证书不存在",
+                    "enum": [
+                      15001,
+                      18001,
+                    ],
+                    "example": 15001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "队员不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "队员不存在(code=15001) / 证书不存在(code=18001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "取证书证据短 TTL signed-URL(只返 URL 不返 key;no-store;URL 不入日志/审计/snapshot;RECRUITMENT 来源读 sourceClaim.imageKeys〔TTL 300s〕,ADMIN 来源经 AttachmentsService 的可读性与 pinned ledger 解析且**另需 attachment.view**;provider/ledger 不确定的项 fail-closed 不出现在数组里,绝不回退裸 key) [rbac: certificate.read.sensitive]",
       "tags": [
         "Admin - Certificates",
       ],

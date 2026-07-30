@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Header,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
@@ -14,6 +25,7 @@ import {
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
+  CertificateEvidenceUrlsResponseDto,
   CertificateListItemDto,
   CertificateResponseDto,
   CreateCertificateDto,
@@ -250,5 +262,34 @@ export class CertificatesController {
     @Req() req: Request,
   ): Promise<CertificateResponseDto> {
     return this.service.reject(memberId, id, dto, currentUser, this.buildAuditMeta(req));
+  }
+  // 证书标准库 PR-5(冻结稿 §13.5):证据短 TTL signed-URL。
+  //
+  // `no-store` 不是装饰 —— 少了它,签名 URL 会进浏览器/代理缓存,TTL 到期后
+  // 缓存副本仍可能被取出,短 TTL 的意义就没了。
+  //
+  // ⚠️ ADMIN 来源的读者需**同时**持 `certificate.read.sensitive` 与 `attachment.view`:
+  // 那一支整段交给 AttachmentsService(它自带 attachment.view 判权 + 可读性过滤 +
+  // pinned ledger 解析),而不是在本模块自己拼 URL(§13.5 实现约束)。
+  @Get(':id/evidence-urls')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({
+    summary:
+      '取证书证据短 TTL signed-URL(只返 URL 不返 key;no-store;URL 不入日志/审计/snapshot;RECRUITMENT 来源读 sourceClaim.imageKeys〔TTL 300s〕,ADMIN 来源经 AttachmentsService 的可读性与 pinned ledger 解析且**另需 attachment.view**;provider/ledger 不确定的项 fail-closed 不出现在数组里,绝不回退裸 key) [rbac: certificate.read.sensitive]',
+  })
+  @ApiWrappedOkResponse(CertificateEvidenceUrlsResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.MEMBER_NOT_FOUND,
+    BizCode.CERTIFICATE_NOT_FOUND,
+  )
+  evidenceUrls(
+    @Param('memberId') memberId: string,
+    @Param('id') id: string,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<CertificateEvidenceUrlsResponseDto> {
+    return this.service.getEvidenceUrls(memberId, id, currentUser, this.buildAuditMeta(req));
   }
 }

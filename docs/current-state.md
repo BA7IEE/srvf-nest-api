@@ -18,8 +18,8 @@
 | 计数项 | 值 |
 |---|---|
 | 模块 | 36 |
-| Controller | 84 |
-| Endpoint | 435 |
+| Controller | 85 |
+| Endpoint | 438 |
 | Migration | 67 |
 | BizCode | 306 |
 | 权限码 | 222 |

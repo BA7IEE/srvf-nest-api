@@ -229,6 +229,10 @@ function makeService(
     makeRbacMock() as unknown as RbacService,
     (opts.authz ?? makeAuthzMock()) as unknown as AuthzService,
     new CertificateRecognitionResolver(),
+    // PR-5:evidence-urls 用的 storage / attachments。本 spec 不测该端点
+    // (它要真 attachments 判权链,行为锁在 e2e),故给空桩。
+    {} as never,
+    {} as never,
   );
 }
 

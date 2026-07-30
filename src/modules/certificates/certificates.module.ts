@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { AuthzModule } from '../authz/authz.module';
+import { AttachmentsModule } from '../attachments/attachments.module';
+import { StorageModule } from '../storage/storage.module';
+import { OrganizationsModule } from '../organizations/organizations.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { UsersModule } from '../users/users.module';
 import { AppMyCertificatesService } from './app-my-certificates.service';
@@ -11,6 +14,8 @@ import { CertificateRecognitionResolver } from './certificate-recognition-resolv
 import { CertificateStandardAuditRecorder } from './certificate-standard-audit-recorder';
 import { CertificateStandardsController } from './certificate-standards.controller';
 import { CertificateStandardsService } from './certificate-standards.service';
+import { CertificatesWorkbenchController } from './certificates-workbench.controller';
+import { CertificatesWorkbenchService } from './certificates-workbench.service';
 import { CertificatesController } from './certificates.controller';
 import { CertificatesService } from './certificates.service';
 import { AppMyCertificatesController } from './controllers/app-my-certificates.controller';
@@ -36,12 +41,28 @@ import { AppMyCertificatesController } from './controllers/app-my-certificates.c
 // 故只需已导入的 PermissionsModule,不新增 module 依赖。
 // `CertificateStandardAuditRecorder` 为两个 service 共用(§17 两个高价值事件)。
 @Module({
-  imports: [DatabaseModule, AuditLogsModule, PermissionsModule, AuthzModule, UsersModule],
+  imports: [
+    DatabaseModule,
+    AuditLogsModule,
+    PermissionsModule,
+    AuthzModule,
+    UsersModule,
+    // 证书标准库 PR-5(§13.6):工作台的 includeDescendants 复用 organizations 的
+    // `queryDescendantOrgIds()` 只读 closure helper(与 members 同款;closure 非判权)。
+    OrganizationsModule,
+    // 证书标准库 PR-5(§13.5):ADMIN 来源证据经 AttachmentsService 的可读性 +
+    // pinned ledger 路径取 URL;业务模块不自己拼 URL。
+    AttachmentsModule,
+    // PR-5:RECRUITMENT 来源的证据 key 在 Claim 上,需 STORAGE_PROVIDER 直接短 TTL 签。
+    StorageModule,
+  ],
   controllers: [
     CertificatesController,
     AppMyCertificatesController,
     CertificateStandardsController,
     CertificateRecognitionPoliciesController,
+    // 证书标准库 PR-5(§13.6):全局工作台 2 路由。跨队员面,不嵌在 members 下。
+    CertificatesWorkbenchController,
   ],
   providers: [
     CertificatesService,
@@ -50,6 +71,7 @@ import { AppMyCertificatesController } from './controllers/app-my-certificates.c
     CertificateRecognitionPoliciesService,
     CertificateStandardAuditRecorder,
     CertificateRecognitionResolver,
+    CertificatesWorkbenchService,
   ],
   // 证书标准库 PR-4a-1(§19):**只导出窄 Resolver**,供 Recruitment 的 Claim 审核复用
   // 同一套认定规则解析(机构 / 编号 / 日期),避免招新侧复制第二套 Policy 算法。
