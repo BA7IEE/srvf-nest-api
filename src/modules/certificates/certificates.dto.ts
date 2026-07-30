@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsDateString,
+  IsIn,
   IsOptional,
   IsString,
   Matches,
@@ -179,17 +180,49 @@ export class CertificateListItemDto {
   updatedAt!: Date;
 }
 
+// §12 判据级别闭集。声明在两个 DTO **之前** —— 装饰器在类定义时求值,
+// 写在后面会撞 TDZ(本仓 admin-api F-sequence 已经栽过一次)。
+export const QUALIFICATION_CRITERION_TYPES = ['category', 'standard'] as const;
+export type QualificationCriterionType = (typeof QUALIFICATION_CRITERION_TYPES)[number];
+
+// 证书标准库 · 评审 findings F4(冻结稿 §12,⚠️ **契约破坏**):
+// 出参从三字段扩到五字段,并把 `certTypeCode` 换成 `criterionType` + `criterionCode`。
+//
+// 为什么要返 `matchedCertificateId` 与 `expiredAt`:只回一个布尔,调用方拿到 `false`
+// 无法区分「没有这张证」与「有但过期了」,拿到 `true` 也无法回答「什么时候要提醒续期」。
+// 多张证书命中时选哪一张必须是**确定**的(见 service 的四级稳定排序)——
+// 否则同一个人同一次查询可能返回不同的 `matchedCertificateId`。
 export class QualificationFlagResponseDto {
   @ApiProperty({ description: '查询的 Member.id' })
   memberId!: string;
 
-  @ApiProperty({ description: '查询的证书大类 code' })
-  certTypeCode!: string;
+  @ApiProperty({
+    description: '判据级别(回显入参)',
+    enum: QUALIFICATION_CRITERION_TYPES,
+  })
+  criterionType!: QualificationCriterionType;
+
+  @ApiProperty({ description: '判据 code(回显入参)' })
+  criterionCode!: string;
 
   @ApiProperty({
-    description: '是否具备资质(已核验 + 未过期 + 未软删;草案 §9.3 / Q-S9)',
+    description: '是否具备资质(已核验 + 未过期 + 未软删;§10.5 / §12)',
   })
   qualified!: boolean;
+
+  @ApiPropertyOptional({
+    description: '命中的证书 id(四级稳定排序选出的那一张;不具备资质时为 null)',
+    type: String,
+    nullable: true,
+  })
+  matchedCertificateId!: string | null;
+
+  @ApiPropertyOptional({
+    description: '命中证书的最后有效日(null = 终身有效,或不具备资质)',
+    type: Date,
+    nullable: true,
+  })
+  expiredAt!: Date | null;
 }
 
 // ============ 日期入参口径(证书标准库 PR-1 · 冻结稿 §10.2)============
@@ -407,13 +440,41 @@ export class RejectCertificateDto {
 
 // 资质判定 query 参数 DTO。NestJS 默认不强制 @Query() 必填,
 // 需走 DTO + 全局 ValidationPipe(transform + whitelist + forbidNonWhitelisted)兜底校验。
-// 缺 certTypeCode → @IsString 失败 → 400。
+//
+// 证书标准库 · 评审 findings F4(冻结稿 §12,⚠️ **契约破坏**):
+// 旧参数 `certTypeCode` 只能表达「大类级」一种判据,而 §12 要的是两级:
+//
+//   criterionType = category  → 按 Standard.categoryCode 匹配(cert_type 字典 code)
+//   criterionType = standard  → 按 Standard.code 匹配(具体到某一个标准)
+//
+// **旧 `certTypeCode` 直接删除、不做兼容**:两套入参就是两个事实源,
+// 而且 `certTypeCode=first_aid` 与 `criterionType=category&criterionCode=first_aid`
+// 语义完全重合 —— 留着只会让下一个人以为它们有区别。
+// `forbidNonWhitelisted` 会把继续发 `certTypeCode` 的调用方直接拒成 400,
+// 而不是静默当成「没传判据」返回一个错误答案。
+//
+// 判据一律用**稳定 code**,不收 cuid(§12 明写「不使用跨环境不稳定的 cuid 作为业务规则参数」)——
+// 岗位要求、活动门槛这类配置将来会引用它,而 cuid 换个环境就失效。
 export class QualificationFlagQueryDto {
-  @ApiProperty({ description: '证书大类 code(必填)', maxLength: 64 })
+  @ApiProperty({
+    description: '判据级别:category = 按证书大类;standard = 按具体证书标准',
+    enum: QUALIFICATION_CRITERION_TYPES,
+    example: 'category',
+  })
+  @IsIn(QUALIFICATION_CRITERION_TYPES)
+  criterionType!: QualificationCriterionType;
+
+  @ApiProperty({
+    description:
+      '判据 code(稳定 code,非 cuid)。criterionType=category 时为 cert_type 字典 code;' +
+      'criterionType=standard 时为 CertificateStandard.code',
+    maxLength: 64,
+    example: 'first_aid',
+  })
   @IsString()
   @MinLength(1)
   @MaxLength(64)
-  certTypeCode!: string;
+  criterionCode!: string;
 }
 
 // ============ 证书标准库 PR-5(冻结稿 §13.5):证据读取 ============

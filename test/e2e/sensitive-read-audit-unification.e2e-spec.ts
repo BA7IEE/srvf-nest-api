@@ -318,6 +318,7 @@ describe('sensitive-read audit unification (C-2)', () => {
       case 'certificate-qualification':
         return certificates.isQualified(
           fixtures.memberId,
+          'category',
           QUALIFICATION_FILTER_VALUE,
           actor,
           AUDIT_META,
@@ -352,6 +353,7 @@ describe('sensitive-read audit unification (C-2)', () => {
     await certificates.list(fixtures.memberId, actor, AUDIT_META);
     await certificates.isQualified(
       fixtures.memberId,
+      'category',
       QUALIFICATION_FILTER_VALUE,
       actor,
       AUDIT_META,
@@ -441,7 +443,9 @@ describe('sensitive-read audit unification (C-2)', () => {
     });
     expect(contextFor('certificate.read.qualification-flag', 'qualification-flag').extra).toEqual({
       operation: 'qualification-flag',
-      filterFields: ['certTypeCode'],
+      // 评审 findings F4(§12):判据从单一 certTypeCode 改成两级。
+      // 审计仍只记「按哪些字段筛的」,不记筛选值 —— 字段名换了,这条不变量没换。
+      filterFields: ['criterionType', 'criterionCode'],
     });
     expect(contextFor('attendance-sheet.read.other', 'list').extra).toEqual({
       operation: 'list',

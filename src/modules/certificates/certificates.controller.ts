@@ -115,8 +115,12 @@ export class CertificatesController {
   }
 
   // 必须先于 @Get(':id') 声明,否则 NestJS 将 'qualification-flag' 字面值视作 :id 占位。
-  // 用 QualificationFlagQueryDto 走 ValidationPipe 强制 certTypeCode 必填(NestJS 默认 @Query
-  // 不强制 query 参数存在);缺 certTypeCode → 400。
+  // 用 QualificationFlagQueryDto 走 ValidationPipe 强制两个判据参数必填(NestJS 默认 @Query
+  // 不强制 query 参数存在);缺任一 → 400。
+  //
+  // 评审 findings F4(§12,⚠️ 契约破坏):`certTypeCode` 已删,改 `criterionType` +
+  // `criterionCode`。继续发旧参数的调用方会被 forbidNonWhitelisted 拒成 400,
+  // 而不是静默当成「没传判据」返回错误答案。
   @Get('qualification-flag')
   @ApiOperation({
     summary:
@@ -129,6 +133,7 @@ export class CertificatesController {
     BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
     BizCode.CERTIFICATE_TYPE_CODE_INVALID,
+    BizCode.CERTIFICATE_STANDARD_NOT_FOUND,
   )
   qualificationFlag(
     @Param('memberId') memberId: string,
@@ -138,7 +143,8 @@ export class CertificatesController {
   ): Promise<QualificationFlagResponseDto> {
     return this.service.isQualified(
       memberId,
-      query.certTypeCode,
+      query.criterionType,
+      query.criterionCode,
       currentUser,
       this.buildAuditMeta(req),
     );

@@ -150,7 +150,7 @@ describe('certificates 模块', () => {
       select: { code: true },
     });
     // PR-4a-3:INACTIVE cert_type 不再参与建证入参校验(字典校验移到建 Standard 时),
-    // 但 qualification-flag 的 query 仍收 certTypeCode,该 fixture 行仍需存在 ——
+    // 但 qualification-flag 的 category 判据仍走 cert_type 字典,该 fixture 行仍需存在 ——
     // 只是不再需要把 code 存进变量。
     void certTypeInactive;
 
@@ -447,7 +447,7 @@ describe('certificates 模块', () => {
     it('USER GET /qualification-flag → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/members/${memberA}/certificates/qualification-flag`)
-        .query({ certTypeCode: activeCertTypeCode })
+        .query({ criterionType: 'category', criterionCode: activeCertTypeCode })
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
@@ -1313,22 +1313,22 @@ describe('certificates 模块', () => {
     it('member 不存在 → MEMBER_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
         .get('/api/admin/v1/members/cl0000000000000000000000/certificates/qualification-flag')
-        .query({ certTypeCode: activeCertTypeCode })
+        .query({ criterionType: 'category', criterionCode: activeCertTypeCode })
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
     });
 
-    it('certTypeCode query 缺失 → 400', async () => {
+    it('判据 query 缺失 → 400(criterionType / criterionCode 都必填)', async () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/members/${qfMember}/certificates/qualification-flag`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(400);
     });
 
-    it('certTypeCode 字典 invalid → CERTIFICATE_TYPE_CODE_INVALID', async () => {
+    it('category 判据 code 不在字典 → CERTIFICATE_TYPE_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/members/${qfMember}/certificates/qualification-flag`)
-        .query({ certTypeCode: 'no-such-type' })
+        .query({ criterionType: 'category', criterionCode: 'no-such-type' })
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.CERTIFICATE_TYPE_CODE_INVALID);
     });
@@ -1336,13 +1336,16 @@ describe('certificates 模块', () => {
     it('无证书 → qualified=false', async () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/members/${qfMember}/certificates/qualification-flag`)
-        .query({ certTypeCode: activeCertTypeCode })
+        .query({ criterionType: 'category', criterionCode: activeCertTypeCode })
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual({
         memberId: qfMember,
-        certTypeCode: activeCertTypeCode,
+        criterionType: 'category',
+        criterionCode: activeCertTypeCode,
         qualified: false,
+        matchedCertificateId: null,
+        expiredAt: null,
       });
     });
 
@@ -1358,7 +1361,7 @@ describe('certificates 模块', () => {
 
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/members/${qfMember}/certificates/qualification-flag`)
-        .query({ certTypeCode: activeCertTypeCode })
+        .query({ criterionType: 'category', criterionCode: activeCertTypeCode })
         .set('Authorization', adminAuth);
       expect(res.body.data.qualified).toBe(true);
     });
@@ -1380,7 +1383,7 @@ describe('certificates 模块', () => {
 
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/members/${m.id}/certificates/qualification-flag`)
-        .query({ certTypeCode: activeCertTypeCode })
+        .query({ criterionType: 'category', criterionCode: activeCertTypeCode })
         .set('Authorization', adminAuth);
       expect(res.body.data.qualified).toBe(true);
     });
@@ -1407,7 +1410,7 @@ describe('certificates 模块', () => {
 
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/members/${m.id}/certificates/qualification-flag`)
-        .query({ certTypeCode: activeCertTypeCode })
+        .query({ criterionType: 'category', criterionCode: activeCertTypeCode })
         .set('Authorization', adminAuth);
       expect(res.body.data.qualified).toBe(false);
     });
@@ -1424,7 +1427,7 @@ describe('certificates 模块', () => {
 
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/members/${m.id}/certificates/qualification-flag`)
-        .query({ certTypeCode: activeCertTypeCode })
+        .query({ criterionType: 'category', criterionCode: activeCertTypeCode })
         .set('Authorization', adminAuth);
       expect(res.body.data.qualified).toBe(false);
     });
@@ -1445,7 +1448,7 @@ describe('certificates 模块', () => {
 
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/members/${m.id}/certificates/qualification-flag`)
-        .query({ certTypeCode: activeCertTypeCode })
+        .query({ criterionType: 'category', criterionCode: activeCertTypeCode })
         .set('Authorization', adminAuth);
       expect(res.body.data.qualified).toBe(false);
     });
@@ -1469,19 +1472,195 @@ describe('certificates 模块', () => {
 
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/members/${m.id}/certificates/qualification-flag`)
-        .query({ certTypeCode: activeCertTypeCode })
+        .query({ criterionType: 'category', criterionCode: activeCertTypeCode })
         .set('Authorization', adminAuth);
       expect(res.body.data.qualified).toBe(false);
     });
 
-    it('响应仅 3 字段(memberId / certTypeCode / qualified)', async () => {
+    it('响应恰好 5 字段(§12:两级判据回显 + 布尔 + 命中证书 + 到期日)', async () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/members/${qfMember}/certificates/qualification-flag`)
-        .query({ certTypeCode: activeCertTypeCode })
+        .query({ criterionType: 'category', criterionCode: activeCertTypeCode })
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       const dataKeys = Object.keys(res.body.data as Record<string, unknown>).sort();
-      expect(dataKeys).toEqual(['certTypeCode', 'memberId', 'qualified']);
+      expect(dataKeys).toEqual([
+        'criterionCode',
+        'criterionType',
+        'expiredAt',
+        'matchedCertificateId',
+        'memberId',
+        'qualified',
+      ]);
+    });
+
+    // ===== 评审 findings F4(§12):standard 级判据 + 四级稳定排序 =====
+    //
+    // 修复前整节 §12 未实现:query 只收 `certTypeCode`(等价于 category 一级),
+    // 出参只有三字段,全仓搜 `criterion` 零命中。
+
+    /** 直插一张 verified 证书(绕状态机,用于精确摆布排序输入)。 */
+    async function seedVerifiedCert(
+      memberIdArg: string,
+      opts: {
+        issuedAt: string;
+        expiredAt: string | null;
+        standardId?: string;
+        policyId?: string;
+      },
+    ): Promise<string> {
+      const row = await prisma.certificate.create({
+        data: {
+          memberId: memberIdArg,
+          // 复合 FK `(recognitionPolicyId, standardId)`:Policy 必须属于该 Standard。
+          // 传自定义 standardId 时必须一并传它自己的 policyId,否则撞外键。
+          standardId: opts.standardId ?? primaryStandardId,
+          recognitionPolicyId: opts.policyId ?? primaryPolicyId,
+          sourceCode: 'ADMIN',
+          issuingOrg: 'QF Ordering',
+          issuedAt: new Date(`${opts.issuedAt}T00:00:00.000Z`),
+          expiredAt: opts.expiredAt ? new Date(`${opts.expiredAt}T00:00:00.000Z`) : null,
+          certStatusCode: 'verified',
+        },
+        select: { id: true },
+      });
+      return row.id;
+    }
+
+    function qualify(memberIdArg: string, criterionType: string, criterionCode: string) {
+      return request(httpServer(app))
+        .get(`/api/admin/v1/members/${memberIdArg}/certificates/qualification-flag`)
+        .query({ criterionType, criterionCode })
+        .set('Authorization', adminAuth);
+    }
+
+    it('standard 级判据:按 Standard.code 匹配(不是 cuid —— §12 明令不用跨环境不稳定的 id)', async () => {
+      const m = await prisma.member.create({
+        data: { memberNo: 'cert-m-qf-std', displayName: 'QF Std' },
+        select: { id: true },
+      });
+      const certId = await seedVerifiedCert(m.id, {
+        issuedAt: '2026-01-01',
+        expiredAt: '2099-01-01',
+      });
+
+      const res = await qualify(m.id, 'standard', 'cert-e2e-std-primary');
+      expect(res.status).toBe(200);
+      expect(res.body.data.qualified).toBe(true);
+      expect(res.body.data.matchedCertificateId).toBe(certId);
+      expect(res.body.data.criterionType).toBe('standard');
+
+      // 反向:另一个标准的 code 不该命中同一张证书。
+      const other = await qualify(m.id, 'standard', 'cert-e2e-std-second');
+      expect(other.body.data.qualified).toBe(false);
+      expect(other.body.data.matchedCertificateId).toBeNull();
+    });
+
+    it('standard 级判据:code 不存在 → CERTIFICATE_STANDARD_NOT_FOUND(不静默返 false)', async () => {
+      // 拼错的 code 与「确实没有这张证」是两件事,而后者会被调用方
+      // (岗位资格 / 活动门槛)当成「这个人不合格」写进业务结论。
+      expectBizError(
+        await qualify(qfMember, 'standard', 'no-such-standard-code'),
+        BizCode.CERTIFICATE_STANDARD_NOT_FOUND,
+      );
+    });
+
+    it('criterionType 只接受 category | standard(闭集)', async () => {
+      expect((await qualify(qfMember, 'issuer', 'whatever')).status).toBe(400);
+    });
+
+    it('§12 四级稳定排序:永久有效优先 > expiredAt 较晚 > issuedAt 较晚 > id 字典序', async () => {
+      const m = await prisma.member.create({
+        data: { memberNo: 'cert-m-qf-order', displayName: 'QF Order' },
+        select: { id: true },
+      });
+      // 三张都有效,但只有一张是永久有效 —— 它必须赢,哪怕另外两张发证更晚。
+      await seedVerifiedCert(m.id, { issuedAt: '2026-06-01', expiredAt: '2099-01-01' });
+      await seedVerifiedCert(m.id, { issuedAt: '2026-07-01', expiredAt: '2098-01-01' });
+      const permanent = await seedVerifiedCert(m.id, { issuedAt: '2020-01-01', expiredAt: null });
+
+      const res = await qualify(m.id, 'category', activeCertTypeCode);
+      expect(res.body.data.matchedCertificateId).toBe(permanent);
+      expect(res.body.data.expiredAt).toBeNull();
+    });
+
+    it('§12 排序第二级:都不是永久有效 → expiredAt 较晚的那张胜出', async () => {
+      const m = await prisma.member.create({
+        data: { memberNo: 'cert-m-qf-order2', displayName: 'QF Order2' },
+        select: { id: true },
+      });
+      await seedVerifiedCert(m.id, { issuedAt: '2026-07-01', expiredAt: '2098-01-01' });
+      const later = await seedVerifiedCert(m.id, {
+        issuedAt: '2026-01-01',
+        expiredAt: '2099-01-01',
+      });
+
+      const res = await qualify(m.id, 'category', activeCertTypeCode);
+      // 注意 issuedAt 更早的那张赢了 —— 证明第二级(到期日)确实排在第三级之前。
+      expect(res.body.data.matchedCertificateId).toBe(later);
+      expect(res.body.data.expiredAt).toBe('2099-01-01T00:00:00.000Z');
+    });
+
+    it('§12 排序第四级:前三级全并列 → id 字典序最小的那张(结果必须完全确定)', async () => {
+      const m = await prisma.member.create({
+        data: { memberNo: 'cert-m-qf-order4', displayName: 'QF Order4' },
+        select: { id: true },
+      });
+      const ids = [
+        await seedVerifiedCert(m.id, { issuedAt: '2026-01-01', expiredAt: '2099-01-01' }),
+        await seedVerifiedCert(m.id, { issuedAt: '2026-01-01', expiredAt: '2099-01-01' }),
+        await seedVerifiedCert(m.id, { issuedAt: '2026-01-01', expiredAt: '2099-01-01' }),
+      ];
+      const smallest = [...ids].sort()[0];
+
+      // 连查三次:少了 id 兜底,选中哪张取决于物理行序,同一次查询在不同时刻可能不同。
+      for (let i = 0; i < 3; i++) {
+        const res = await qualify(m.id, 'category', activeCertTypeCode);
+        expect(res.body.data.matchedCertificateId).toBe(smallest);
+      }
+    });
+
+    it('§12 历史证书不要求 Standard 当前 ACTIVE —— 停用标准不追溯作废存量持证人', async () => {
+      const m = await prisma.member.create({
+        data: { memberNo: 'cert-m-qf-inactive', displayName: 'QF Inactive' },
+        select: { id: true },
+      });
+      const std = await prisma.certificateStandard.create({
+        data: {
+          code: 'cert-e2e-std-retired',
+          name: '已停用标准',
+          kind: 'CREDENTIAL',
+          status: 'ACTIVE',
+          categoryCode: activeCertTypeCode,
+        },
+        select: { id: true },
+      });
+      const pol = await prisma.certificateRecognitionPolicy.create({
+        data: {
+          standardId: std.id,
+          version: 1,
+          status: 'ACTIVE',
+          issuerPolicy: 'FREE_TEXT',
+          validityMode: 'EXPLICIT_OPTIONAL',
+          certNumberMode: 'OPTIONAL',
+        },
+        select: { id: true },
+      });
+      const certId = await seedVerifiedCert(m.id, {
+        issuedAt: '2026-01-01',
+        expiredAt: '2099-01-01',
+        standardId: std.id,
+        policyId: pol.id,
+      });
+      // 事后停用该标准(「不再新发」),存量证书不受影响。
+      await prisma.certificateStandard.update({
+        where: { id: std.id },
+        data: { status: 'INACTIVE' },
+      });
+
+      const res = await qualify(m.id, 'standard', 'cert-e2e-std-retired');
+      expect(res.body.data.qualified).toBe(true);
+      expect(res.body.data.matchedCertificateId).toBe(certId);
     });
   });
 

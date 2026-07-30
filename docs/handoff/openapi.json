@@ -50918,12 +50918,27 @@
             }
           },
           {
-            "name": "certTypeCode",
+            "name": "criterionType",
             "required": true,
             "in": "query",
-            "description": "证书大类 code(必填)",
+            "description": "判据级别:category = 按证书大类;standard = 按具体证书标准",
+            "schema": {
+              "example": "category",
+              "type": "string",
+              "enum": [
+                "category",
+                "standard"
+              ]
+            }
+          },
+          {
+            "name": "criterionCode",
+            "required": true,
+            "in": "query",
+            "description": "判据 code(稳定 code,非 cuid)。criterionType=category 时为 cert_type 字典 code;criterionType=standard 时为 CertificateStandard.code",
             "schema": {
               "maxLength": 64,
+              "example": "first_aid",
               "type": "string"
             }
           }
@@ -51062,7 +51077,7 @@
             }
           },
           "404": {
-            "description": "队员不存在(code=15001)",
+            "description": "队员不存在(code=15001) / 证书标准不存在(code=18002)",
             "content": {
               "application/json": {
                 "schema": {
@@ -51076,9 +51091,10 @@
                     "code": {
                       "type": "integer",
                       "enum": [
-                        15001
+                        15001,
+                        18002
                       ],
-                      "description": "15001: 队员不存在",
+                      "description": "15001: 队员不存在; 18002: 证书标准不存在",
                       "example": 15001
                     },
                     "message": {
@@ -100258,18 +100274,38 @@
             "type": "string",
             "description": "查询的 Member.id"
           },
-          "certTypeCode": {
+          "criterionType": {
             "type": "string",
-            "description": "查询的证书大类 code"
+            "description": "判据级别(回显入参)",
+            "enum": [
+              "category",
+              "standard"
+            ]
+          },
+          "criterionCode": {
+            "type": "string",
+            "description": "判据 code(回显入参)"
           },
           "qualified": {
             "type": "boolean",
-            "description": "是否具备资质(已核验 + 未过期 + 未软删;草案 §9.3 / Q-S9)"
+            "description": "是否具备资质(已核验 + 未过期 + 未软删;§10.5 / §12)"
+          },
+          "matchedCertificateId": {
+            "type": "string",
+            "description": "命中的证书 id(四级稳定排序选出的那一张;不具备资质时为 null)",
+            "nullable": true
+          },
+          "expiredAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "命中证书的最后有效日(null = 终身有效,或不具备资质)",
+            "nullable": true
           }
         },
         "required": [
           "memberId",
-          "certTypeCode",
+          "criterionType",
+          "criterionCode",
           "qualified"
         ]
       },
