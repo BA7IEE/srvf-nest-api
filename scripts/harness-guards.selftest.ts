@@ -621,6 +621,7 @@ checkEq(
     '.claude/hooks/**',
     'harness/**',
     'eslint.harness.mjs',
+    'eslint-rules/**', // 第 18 条的规则体(本仓首条自定义规则)= 与上一条同一道防线的两半
     'scripts/harness-grant.ts', // 授权工具:能改它就能自授权,最关键的一条
   ]) {
     check(`P2b redzone:裁判保护覆盖 ${must}`, selfGlobs.includes(must), '执法层可被 PR 内改松');
@@ -1307,6 +1308,14 @@ for (const [configName, config] of JEST_CONFIGS) {
       },
       { glob: '.claude/rules/**', yes: ['.claude/rules/anything.md'], no: ['.claude/rules.md'] },
       { glob: 'eslint.harness.mjs', yes: ['eslint.harness.mjs'], no: ['eslint.harness.test.mjs'] },
+      {
+        // 2026-07-31(第五轮评审 J2·L3):第 18 条从选择器换成本仓首条真自定义规则,
+        // 规则体是**新的执法体**,与 eslint.harness.mjs 是同一道防线的两半。
+        // 负样例刻意挑 src/ 下的同名目录:确认保护绑的是仓库根那一个,没有顺手捞走别处。
+        glob: 'eslint-rules/**',
+        yes: ['eslint-rules/no-nullable-is-optional.mjs'],
+        no: ['src/eslint-rules/no-nullable-is-optional.mjs'],
+      },
       { glob: 'scripts/check-*.ts', yes: ['scripts/check-redzone.ts'], no: ['scripts/checker.ts'] },
       { glob: 'scripts/check-*.sh', yes: ['scripts/check-quick.sh'], no: ['scripts/checkup.sh'] },
       {
