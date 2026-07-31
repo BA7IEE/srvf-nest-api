@@ -64975,7 +64975,7 @@
             }
           },
           "404": {
-            "description": "考勤单据不存在(code=22001) / 队员不存在(code=15001)",
+            "description": "活动不存在(code=20001) / 考勤单据不存在(code=22001) / 队员不存在(code=15001)",
             "content": {
               "application/json": {
                 "schema": {
@@ -64989,15 +64989,16 @@
                     "code": {
                       "type": "integer",
                       "enum": [
+                        20001,
                         22001,
                         15001
                       ],
-                      "description": "22001: 考勤单据不存在; 15001: 队员不存在",
-                      "example": 22001
+                      "description": "20001: 活动不存在; 22001: 考勤单据不存在; 15001: 队员不存在",
+                      "example": 20001
                     },
                     "message": {
                       "type": "string",
-                      "example": "考勤单据不存在"
+                      "example": "活动不存在"
                     },
                     "data": {
                       "type": "object",
@@ -65010,7 +65011,7 @@
             }
           },
           "409": {
-            "description": "考勤单据当前状态不允许此操作(code=22030) / 已审核通过的考勤单据不可修改(code=22040) / 已驳回的考勤单据不可直接编辑(code=22041) / 终审驳回的考勤单据不可修改(code=22043) / 出勤时间段与已有记录重叠(code=22060)",
+            "description": "活动已取消,禁止录入考勤(code=20122) / 考勤单据当前状态不允许此操作(code=22030) / 已审核通过的考勤单据不可修改(code=22040) / 已驳回的考勤单据不可直接编辑(code=22041) / 终审驳回的考勤单据不可修改(code=22043) / 出勤时间段与已有记录重叠(code=22060)",
             "content": {
               "application/json": {
                 "schema": {
@@ -65024,18 +65025,19 @@
                     "code": {
                       "type": "integer",
                       "enum": [
+                        20122,
                         22030,
                         22040,
                         22041,
                         22043,
                         22060
                       ],
-                      "description": "22030: 考勤单据当前状态不允许此操作; 22040: 已审核通过的考勤单据不可修改; 22041: 已驳回的考勤单据不可直接编辑; 22043: 终审驳回的考勤单据不可修改; 22060: 出勤时间段与已有记录重叠",
-                      "example": 22030
+                      "description": "20122: 活动已取消,禁止录入考勤; 22030: 考勤单据当前状态不允许此操作; 22040: 已审核通过的考勤单据不可修改; 22041: 已驳回的考勤单据不可直接编辑; 22043: 终审驳回的考勤单据不可修改; 22060: 出勤时间段与已有记录重叠",
+                      "example": 20122
                     },
                     "message": {
                       "type": "string",
-                      "example": "考勤单据当前状态不允许此操作"
+                      "example": "活动已取消,禁止录入考勤"
                     },
                     "data": {
                       "type": "object",
@@ -65053,7 +65055,7 @@
             "bearer": []
           }
         ],
-        "summary": "编辑 pending/returned Sheet(D38:后端生成 previousSnapshot + version+1;旧 records 软删 + 新 records 创建;其余状态拒绝) [rbac: attendance.update.sheet]",
+        "summary": "编辑 pending/returned Sheet(D38:后端生成 previousSnapshot + version+1;旧 records 软删 + 新 records 创建;其余状态拒绝;Activity cancelled 拒绝改 records) [rbac: attendance.update.sheet]",
         "tags": [
           "Admin - Attendances"
         ]
@@ -70565,7 +70567,7 @@
             }
           },
           "409": {
-            "description": "考勤单据当前状态不允许此操作(code=22030)",
+            "description": "活动已取消,禁止录入考勤(code=20122) / 考勤单据当前状态不允许此操作(code=22030)",
             "content": {
               "application/json": {
                 "schema": {
@@ -70579,14 +70581,15 @@
                     "code": {
                       "type": "integer",
                       "enum": [
+                        20122,
                         22030
                       ],
-                      "description": "22030: 考勤单据当前状态不允许此操作",
-                      "example": 22030
+                      "description": "20122: 活动已取消,禁止录入考勤; 22030: 考勤单据当前状态不允许此操作",
+                      "example": 20122
                     },
                     "message": {
                       "type": "string",
-                      "example": "考勤单据当前状态不允许此操作"
+                      "example": "活动已取消,禁止录入考勤"
                     },
                     "data": {
                       "type": "object",
@@ -70604,7 +70607,7 @@
             "bearer": []
           }
         ],
-        "summary": "App 活动考勤责任人编辑 pending 或 returned 考勤单 [auth]",
+        "summary": "App 活动考勤责任人编辑 pending 或 returned 考勤单(活动已取消拒绝改 records) [auth]",
         "tags": [
           "Mobile - Managed Activity Attendances"
         ]

@@ -31697,12 +31697,13 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "22001: 考勤单据不存在; 15001: 队员不存在",
+                    "description": "20001: 活动不存在; 22001: 考勤单据不存在; 15001: 队员不存在",
                     "enum": [
+                      20001,
                       22001,
                       15001,
                     ],
-                    "example": 22001,
+                    "example": 20001,
                     "type": "integer",
                   },
                   "data": {
@@ -31711,7 +31712,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
                     "type": "object",
                   },
                   "message": {
-                    "example": "考勤单据不存在",
+                    "example": "活动不存在",
                     "type": "string",
                   },
                 },
@@ -31724,7 +31725,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "考勤单据不存在(code=22001) / 队员不存在(code=15001)",
+          "description": "活动不存在(code=20001) / 考勤单据不存在(code=22001) / 队员不存在(code=15001)",
         },
         "409": {
           "content": {
@@ -31732,15 +31733,16 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "22030: 考勤单据当前状态不允许此操作; 22040: 已审核通过的考勤单据不可修改; 22041: 已驳回的考勤单据不可直接编辑; 22043: 终审驳回的考勤单据不可修改; 22060: 出勤时间段与已有记录重叠",
+                    "description": "20122: 活动已取消,禁止录入考勤; 22030: 考勤单据当前状态不允许此操作; 22040: 已审核通过的考勤单据不可修改; 22041: 已驳回的考勤单据不可直接编辑; 22043: 终审驳回的考勤单据不可修改; 22060: 出勤时间段与已有记录重叠",
                     "enum": [
+                      20122,
                       22030,
                       22040,
                       22041,
                       22043,
                       22060,
                     ],
-                    "example": 22030,
+                    "example": 20122,
                     "type": "integer",
                   },
                   "data": {
@@ -31749,7 +31751,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
                     "type": "object",
                   },
                   "message": {
-                    "example": "考勤单据当前状态不允许此操作",
+                    "example": "活动已取消,禁止录入考勤",
                     "type": "string",
                   },
                 },
@@ -31762,7 +31764,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "考勤单据当前状态不允许此操作(code=22030) / 已审核通过的考勤单据不可修改(code=22040) / 已驳回的考勤单据不可直接编辑(code=22041) / 终审驳回的考勤单据不可修改(code=22043) / 出勤时间段与已有记录重叠(code=22060)",
+          "description": "活动已取消,禁止录入考勤(code=20122) / 考勤单据当前状态不允许此操作(code=22030) / 已审核通过的考勤单据不可修改(code=22040) / 已驳回的考勤单据不可直接编辑(code=22041) / 终审驳回的考勤单据不可修改(code=22043) / 出勤时间段与已有记录重叠(code=22060)",
         },
       },
       "security": [
@@ -31770,7 +31772,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "编辑 pending/returned Sheet(D38:后端生成 previousSnapshot + version+1;旧 records 软删 + 新 records 创建;其余状态拒绝) [rbac: attendance.update.sheet]",
+      "summary": "编辑 pending/returned Sheet(D38:后端生成 previousSnapshot + version+1;旧 records 软删 + 新 records 创建;其余状态拒绝;Activity cancelled 拒绝改 records) [rbac: attendance.update.sheet]",
       "tags": [
         "Admin - Attendances",
       ],
@@ -82682,11 +82684,12 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "22030: 考勤单据当前状态不允许此操作",
+                    "description": "20122: 活动已取消,禁止录入考勤; 22030: 考勤单据当前状态不允许此操作",
                     "enum": [
+                      20122,
                       22030,
                     ],
-                    "example": 22030,
+                    "example": 20122,
                     "type": "integer",
                   },
                   "data": {
@@ -82695,7 +82698,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
                     "type": "object",
                   },
                   "message": {
-                    "example": "考勤单据当前状态不允许此操作",
+                    "example": "活动已取消,禁止录入考勤",
                     "type": "string",
                   },
                 },
@@ -82708,7 +82711,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "考勤单据当前状态不允许此操作(code=22030)",
+          "description": "活动已取消,禁止录入考勤(code=20122) / 考勤单据当前状态不允许此操作(code=22030)",
         },
       },
       "security": [
@@ -82716,7 +82719,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "App 活动考勤责任人编辑 pending 或 returned 考勤单 [auth]",
+      "summary": "App 活动考勤责任人编辑 pending 或 returned 考勤单(活动已取消拒绝改 records) [auth]",
       "tags": [
         "Mobile - Managed Activity Attendances",
       ],

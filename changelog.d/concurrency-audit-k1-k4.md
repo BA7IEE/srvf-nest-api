@@ -21,6 +21,10 @@
   入队 `member 键 → Application 行锁 → Cycle → source → Member 行锁 → 同人残留 Application`。
   入队那把键**必须**在任何 Application 行锁之前取:同一队员可同时有两条 approved 申请,两个终审各锁一条再反向争 Member,加上同人终态级联正好凑成 40P01。行锁图本身逐字未动。
 
+  **A-R2 拍板落地(方案乙:放行存量、掐断增量)**:`activities.cancel` 从不碰考勤单,而 `submit` 之外的九个考勤写方法从不读 `Activity.statusCode` —— 已取消活动上的考勤单能一路走完审批并结算贡献值。维护者拍板取**乙**:取消前已提交的单仍可 `approve → finalApprove` 并结算(工是真做了的,作废队员已提交的贡献代价更大);但贡献值仅剩的另一条增量来源 —— 改写既有单的 `records` —— 由新的 `ActivityParticipationPolicy.canChangeAttendanceRecords` 拦下,**复用既有 20122,零新增 BizCode**。只拦 `cancelled`,`completed`/`published`/`draft` 的编辑行为逐字不变;`cancel` **刻意不**级联终结既有考勤单(那是被否掉的方案甲),`pass` 报名也仍留在 `pass`。执行位 `test/e2e/attendance-cancelled-activity-increment-gate.e2e-spec.ts`(5 条,含全库巡检:已取消活动上的考勤单 records 数不得增长)。
+
+  ⚠️ **契约变更(前端需适配)**:`PATCH /api/admin/v1/attendance-sheets/:id` 与 `PATCH /api/app/v1/my/managed-activities/:activityId/attendance-sheets/:sheetId` 在活动已取消且请求体带 `records` 时新增返回 **20122**;不带 `records` 的 PATCH 不受影响。openapi / contract snapshot / `handoff/admin-web.md` 已同 PR 更新。
+
   ⚠️ **行为变更**:① 一键入队会把该队员名下其它进行中/已通过的入队申请一并终结(依据是「这个人已经是队员了」,**不是**「轮关闭了」—— 关轮不使 approved 资格失效那条契约不变,已由 e2e 锁住);② Admin 编辑/删除考勤单现在无条件持 Activity `FOR UPDATE`,同活动的并发考勤单写多一层串行。
 
   **真并发 e2e**(4 个新 spec,均为两个 Nest app = 两条真实连接,含「两条独立连接」元断言;每条都在修复前红):`attendance-admin-edit-registration-concurrency` · `team-join-enrollment-lifecycle-concurrency` · `attendance-final-approve-contribution-milestone-concurrency` · `registration-cancel-my-locked-snapshot-concurrency`。新增两条**全库巡检不变量**:live 考勤记录不得挂在非 pass/已软删报名上;已入队队员名下不得有 live 入队申请。

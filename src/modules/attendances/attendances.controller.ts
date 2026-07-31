@@ -211,13 +211,15 @@ export class AttendanceSheetsResourceController {
   @Patch(':id')
   @ApiOperation({
     summary:
-      '编辑 pending/returned Sheet(D38:后端生成 previousSnapshot + version+1;旧 records 软删 + 新 records 创建;其余状态拒绝) [rbac: attendance.update.sheet]',
+      '编辑 pending/returned Sheet(D38:后端生成 previousSnapshot + version+1;旧 records 软删 + 新 records 创建;其余状态拒绝;Activity cancelled 拒绝改 records) [rbac: attendance.update.sheet]',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN,
     BizCode.ATTENDANCE_SHEET_NOT_FOUND,
     BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
     BizCode.ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE,

@@ -883,6 +883,7 @@ export class AttendancesService {
     tx: PrismaTx,
   ): Promise<{
     id: string;
+    statusCode: string;
     activityTypeCode: string;
     startAt: Date;
     endAt: Date;
@@ -892,6 +893,8 @@ export class AttendancesService {
       where: notDeletedWhere({ id: activityId }),
       select: {
         id: true,
+        // A-R2 方案乙:edit 的 records 分支要按活动状态判增量闸,故此处补取 statusCode。
+        statusCode: true,
         activityTypeCode: true,
         startAt: true,
         endAt: true,
@@ -1304,6 +1307,14 @@ export class AttendancesService {
 
       // 1. 校验新 records；edit 同样按所属活动时间窗复核。
       const activity = await this.findActivityWindowOrThrow(lockedSheet.activityId, tx);
+      // A-R2 拍板(2026-07-31,方案乙):活动取消后**掐断增量** —— 已存在的考勤单可以走完
+      // 审批并结算,但不得再改写 records(那是贡献值的唯一另一条增量来源)。
+      // 这次读在 K1 的 Activity `FOR UPDATE` 之内,所以并发 cancel 不能从这道闸旁边挤进去。
+      const recordsChangeDecision =
+        this.activityParticipationPolicy.canChangeAttendanceRecords(activity);
+      if (!recordsChangeDecision.allowed) {
+        throw new BizException(recordsChangeDecision.biz);
+      }
       const now = new Date();
       const normalized = await this.validateAndNormalizeRecordsBatch(
         dto.records,

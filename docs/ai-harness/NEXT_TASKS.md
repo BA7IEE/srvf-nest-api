@@ -337,7 +337,7 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 - **候选方案**:先盘点所有 SQL/报表/导出/备份消费者,再做 Prisma field 映射过渡或单次 rename + 存量验证;同步 current-state/CODEMAP/留存 SOP 与回滚 SQL。不得先新增第二列长期双写。
 - **触发条件**:外部 BI/报表开始直读该列,或合规审查要求物理字段名也去除“外籍”误述时单独立项。
 
-### P1-26 并发写路径审计 findings 修复 — **6 🔴 + 2 🟡 已修;剩 A-R2 与 S6 三处待拍板**
+### P1-26 并发写路径审计 findings 修复 — **6 🔴 + 2 🟡 已修 · A-R2 按方案乙落地;剩 S6 三处待拍板**
 
 - **两份独立审计,同一范围、同一 base(`7b0f5c25`),都 report-only、零 `src/` 改动**:
   - **A · Claude 版** [`concurrency-write-path-audit.md`](../archive/reviews/concurrency-write-path-audit.md) —— **56 落点 / 🔴2 / 🟡2 / 🟢52**;
@@ -386,24 +386,39 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
   含两条**全库巡检不变量**:① live 考勤记录不得挂在非 pass / 已软删报名上;② 已入队队员名下不得有 live 入队申请。
 - **S5 已收口**:`attendance.recorded`「随事务回滚」是**错的**(它只是一次 Logger 输出,DB 回滚撤不回日志),注释已改正并指向 outbox 才是可回滚事件的落点;另 3 组 stale comment(App 报名「容量满拒绝」/「仅 pending|pass 可取消」、final join「消费评估延长期」)已按运行时改正。
 
+##### A-R2 已拍板并落地 —— **方案乙:放行存量、掐断增量**(维护者 2026-07-31)
+
+- **原缺陷**:`activities.cancel` 只把 `pending`/`waitlisted` 报名改 `cancelled`,**完全不碰 AttendanceSheet**;
+  `submit` 有活动状态闸(20122),但 `edit`/`approve`/`finalApprove` 等九个写方法**从不读** `Activity.statusCode` ——
+  已取消活动上的考勤单能一路走完审批并结算贡献值,喂进入队门槛。**不需要并发也可达**。
+- **拍板语义(两半,缺一半就不是方案乙)**:
+  - **放行存量** —— 取消前已提交的考勤单仍可 `approve → finalApprove` 并结算(工是真做了的,
+    作废队员已提交的贡献代价更大);`resubmit`/`reopen`/`approve`/`finalApprove` 刻意**不**加活动状态闸。
+  - **掐断增量** —— 贡献值的增量只有两条来源:新建 Sheet(`submit`,既有 20122 已拦)与
+    改写既有 Sheet 的 records(`edit` 的 records 分支,本次新拦,**复用同一个 20122,零新增 BizCode**)。
+- **落点**:`ActivityParticipationPolicy.canChangeAttendanceRecords`(唯一判定出口,**只拦 `cancelled`**,
+  draft/published/completed 编辑行为逐字不变)+ `attendances.service.ts` `edit` records 分支;
+  该读位于 K1 的 Activity `FOR UPDATE` 之内,并发 cancel 挤不进闸旁。
+- **契约变化(前端需知)**:`PATCH /api/admin/v1/attendance-sheets/:id` 与
+  `PATCH /api/app/v1/my/managed-activities/:activityId/attendance-sheets/:sheetId`
+  在活动已取消时**新增返回 20122**(仅当请求体带 `records`);两处 `@ApiBizErrorResponse` 与 openapi 已同步。
+- **执行位**:`test/e2e/attendance-cancelled-activity-increment-gate.e2e-spec.ts`(5 条,含全库巡检:
+  已取消活动上的考勤单 records 数不得增长)。修复前「掐断增量②」与巡检两条**都红**。
+- **刻意未做**:`cancel` **不**级联终结既有考勤单(那是方案甲),`pass` 报名也仍留在 `pass`。
+
 ##### 🛑 仍待维护者拍板(**AI 不得自行调和**)
 
-1. **A-R2 · 活动取消后,已在流程中的考勤单怎么办**(行为契约,不是技术修复)。
-   事实:`activities.cancel` 只把 `pending`/`waitlisted` 报名改 `cancelled`,**完全不碰 AttendanceSheet**;
-   `submit` 有活动状态闸(20122),但 `edit`/`approve`/`finalApprove` 等九个写方法**从不读** `Activity.statusCode` ——
-   已取消活动上的考勤单能一路走完审批并结算贡献值,喂进入队门槛。**不需要并发也可达**。
-   两案见下方简报;**贡献值是队员切身利益,这个决定不归 AI**。
-2. **S6 四处 canonical/runtime 分叉**(逐处「改文档还是改代码」):
+1. **S6 四处 canonical/runtime 分叉**(逐处「改文档还是改代码」):
    | # | canonical | runtime | 现状 |
    |---|---|---|---|
    | A-S6 | `handoff/admin-web.md:80` / `miniapp.md:30`:有未撤销考勤记录的报名一定取消不了(21033) | 曾可被 Admin `edit` 并发绕过 | ✅ **已随 K1 核销**(运行时现已兑现文档,文档未改) |
    | B-D1 | `admin-web.md:73`:有 live Position 时编辑 `Activity.capacity` **不再**触发递补 | `activities.service.ts` 仍算 delta 并调跨岗位递补 | ⏳ 待拍板 |
    | B-D2 | `admin-web.md:73` / `miniapp.md:108-111`:A 岗释放/扩容只递补 A 岗 | `activity-waitlist-promotion.ts` preferred 队列空后进入其它有余量岗位的全局 FIFO fallback | ⏳ 待拍板 |
    | B-D3 | `admin-web.md:198,460` / `miniapp.md:65`:只有「取消**已通过**报名」才发 `activity-changed` | pending/pass/waitlisted 自助取消都无条件 enqueue owner intent | ⏳ 待拍板 |
-3. **canonical 缺定义(先补定义再判)**:`attendances/CLAUDE.md:12` 要求所有业务写经 AttendanceAuditRecorder,
+2. **canonical 缺定义(先补定义再判)**:`attendances/CLAUDE.md:12` 要求所有业务写经 AttendanceAuditRecorder,
    而 App GPS 签到/签退成功路径直写 `ActivityCheckIn` 不落 AuditLog;`docs/handoff/**` 未定义 GPS 证据写是否豁免。
-- **本次未做**:A-R2 未动(等拍板)· B-D1/D2/D3 未调和 · `certificates`/`recruitment`/`auth`/`authz`/限流未碰(goal 禁区)· 零 schema(Migration 恒 67)。
-- **状态**:**6 🔴 + 2 🟡 已修并有 red-first 证据;剩 A-R2 与 S6 三处待拍板**。本条目**关闭前须过跨模型评审**(SOP §1.6)。
+- **本次未做**:B-D1/D2/D3 未调和(待拍板)· `cancel` 不级联既有考勤单、`pass` 报名仍留 `pass`(方案乙刻意)· `certificates`/`recruitment`/`auth`/`authz`/限流未碰(goal 禁区)· 零 schema(Migration 恒 67)。
+- **状态**:**6 🔴 + 2 🟡 已修并有 red-first 证据;A-R2 已按方案乙落地;剩 S6 三处待拍板**。本条目**关闭前须过跨模型评审**(SOP §1.6)。
 
 ### P2-6 #399 review P2 修复残余(4 项;**均无当前运行时危害,诉求/接线时处理**) — 2026-06-20 收口登记
 > #399 全仓 review P2 六项已修(#400-#404,见 [`current-state §4`](../current-state.md) + 冻结报告顶部 ✅);以下为修复时显式接受、留待后续的残余:

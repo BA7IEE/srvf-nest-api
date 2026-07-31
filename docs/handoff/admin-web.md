@@ -87,6 +87,15 @@
 
 > **考勤退回修改（v0.62.0 PR-8；production 未部署）**：一审 `POST .../:id/return`、终审 `POST .../:id/final-return`，body 均为 `{ "returnNote": "必填原因" }`；成功后状态为 `returned`，records 原样保留。普通修正先 `PATCH .../:id`（returned 可编辑），再 `POST .../:id/resubmit` 发送空对象；重提清空一审/终审/退回责任字段、`version+1`、回 `pending`，必须重新走一审。无原因返 `22082`，非 returned 重提返 `22083`。原 `reject/final-reject` 仍表示作废并软删 records，不能拿来做普通整改。终审退回同样执行 22074/22075；一级退回执行最近提交人自审限制 22081。
 
+> ⚠️ **活动取消后的考勤单(2026-07-31,A-R2 方案乙「放行存量、掐断增量」)**:活动 `cancelled` 后 ——
+> **已存在的考勤单照旧可以走完审批**(`approve` / `final-approve` / `return` / `resubmit` / `reopen` 全部不变),
+> 服务时长与贡献值正常结算,因为工是真做了的;
+> 但**不得再产生新的考勤事实** —— `POST .../attendance-sheets` 仍返 **20122**(既有),
+> 且 `PATCH /api/admin/v1/attendance-sheets/:id` **带 `records` 时新增返回 20122**
+> (App 责任人面 `PATCH /api/app/v1/my/managed-activities/:activityId/attendance-sheets/:sheetId` 同);
+> 不带 `records` 的 PATCH 不受影响。前端在活动已取消时应隐藏「编辑考勤明细 / 新增队员」入口,
+> 但**保留审批入口**。只拦 `cancelled`,`completed` 活动的考勤单编辑行为不变。
+
 > ⚠️ **考勤终审撤回(v0.47.0 F2)**:`POST /api/admin/v1/attendance-sheets/:id/reopen`,body 必填 `{ "reason": "撤回原因" }`,成功 HTTP 201。只允许 `approved → pending`;后端保留全部 records / previousSnapshot / version,清空一审与终审责任字段。前端撤回后应重新开放 records 编辑与一级/终审流程;approved-only 的队员贡献值/考勤记录会暂时消失,再次 finalApprove 后恢复。撤回本身不发通知、也不回滚历史报名准入或招新/入队晋级;再次 finalApprove 仍发既有考勤通知。权限码 `attendance.reopen.sheet` 与终审同属 `attendance-final-reviewer` scoped 角色或 SUPER_ADMIN,biz-admin 不持有;reopen 不触发 22074/22075。
 
 ### 2.2 队员 360(沿队员轴下钻)— ✅ 6 子资源(部门→memberships 升级 PR2;+任职 PR4)+ 4 跨轴查询全就绪
