@@ -122,6 +122,55 @@ Invalid Date,「先 new Date 再判 NaN」这种写法拦不住。
 **修完仍须第五轮跨模型评审**(SOP [§1.6](codex-review-sop.md)),门禁由维护者解除 ——
 本批次**未**触碰 `current-state.md` 的 🔴 NO-GO。
 
+---
+
+#### 🔴 第五轮独立评审:J1 / J3 PASS,**J2 FAIL** → 棘轮加固已交付(`main@99e7d8ca` 起 K1–K3)
+
+**J1 / J3 复核通过**:运行时 null 契约已全关闭,注释与执行位已对齐 —— 这两条不再是 open 项。
+
+**J2 判 FAIL:3 P1 + 1 P2,无 P0**,主会话全部复现(其中嵌套 null 与 inline disable
+用一份探针实测,`pnpm lint` **RC=0** 通过 —— 即绕过成立)。四条的共同形状是:
+**棘轮的判据本身是 PR 可以改的东西**,于是「防线」在最需要它的那一刻恰好失效。
+
+| # | 缺口 | 修复前实测 | 现在拦在哪 |
+|---|---|---|---|
+| L1 | 基线是 `.mjs` 里的字面量,零格式校验 | 一条 `src/**` 混进去就能整目录静默豁免 | 抽成 `harness/is-optional-null-baseline.json`,六条约束(E1–E6)**加载即抛** |
+| L2 | 新增违规 + **同 PR 加基线** / 修 A 加 B(总数不变) | 🟢 全绿 —— lint 与 selftest 读的都是 PR 自己的基线 | base-trusted 裁判硬判 `HEAD ⊆ BASE`,**审批盖不掉** |
+| L3 | inline disable(文件级 / 行级)、嵌套 null 冒充可空 | 🟢 RC=0 —— 18 条共用一个 ruleId,一句 disable 全关;`:not(:has(TSNullKeyword))` 把 `Array<T\|null>` 当可空 | 独立 ruleId 自定义规则判**顶层**类型 + DTO 范围 `noInlineConfig` |
+| L4 | 对账用 `Set`,同一身份命中 2 次与 1 次**读数相同** | 🟢 一行基线同时豁免两个字段,完全不可见 | 判据换成「每条身份**恰好**命中 1 个 AST 节点」 |
+
+**十项变异测试全建档**,索引在 `scripts/harness-eslint.selftest.ts` 顶部(唯一目录,
+含每项「修复前是否绕过」与断言落点)。修复前后对照用
+`git show HEAD:eslint.harness.mjs` 的**真实旧配置**实跑,不是重建的等价物:
+M6/M7 inline disable、M8 嵌套 null 三种写法、import 别名 —— 六项修复前全部 🟢 放行,
+修复后全部 🔴 拦下;`T | null` / `@OmittableOnly()` / 已冻结字段三条反向控制不误杀。
+
+**顺手关闭的一条 known-gap**:自定义规则拿得到 scope,`import { IsOptional as Opt }`
+已被识破(按**导入原名**判,所以 `IsString as IsOptional` 不误报)。
+⚠️ **只关了第 18 条这一条** —— 其余 17 条 `no-restricted-syntax` 选择器的同类缺口
+(`UseGuards as UG` / 变量中转 / `PickType as PT` 等 5 条)**原样存在**,继续登记为
+knownGap,不因为「自定义规则这件事发生过了」就算解决。
+
+**两处结构性收益**(换独立 ruleId 的直接结果,不是顺手):
+① 56 个基线块从「必须重列完整规则集,漏一条把其余 17 条对这些文件静默关掉」
+变成只碰自己那一个 ruleId —— **那个排序陷阱结构性消失**(补两条回归用例钉成事实);
+② 删掉自测里「报告行号 → 反查 AST 取名」的平行实现,改由规则自己吐身份串,
+少一把可能刻错的尺子(`eslint.harness.mjs` 51KB → 27KB)。
+
+`eslint-rules/**` 同 PR 纳入 `harness/redzone.json` 的 `enforcement-layer`:规则体是
+**新的执法体**,不纳入保护等于把防线搬到闸门外。加 glob 当场被仓库自己的 F4 闭环
+拦下(`缺样例的 glob:eslint-rules/**`)—— 守护正常工作,期望值表 + P2b 覆盖断言一并补。
+
+**仍未解除 🔴 NO-GO,等第六轮跨模型评审**(SOP [§1.6](codex-review-sop.md)),由维护者解除。
+
+**已知残留**(第六轮请重点看):
+- 非 `.dto.ts` 文件里的第 18 条**仍可被 inline disable 关掉** —— `noInlineConfig` 刻意
+  只配到 DTO 范围(`src/` 现有 7 处 inline disable 全是 service 侧硬删的正当具名豁免,
+  扩到全仓会误伤,而一次误伤会让下一个人来把整条 `linterOptions` 删掉)。
+  全仓实测该范围外目前 **0 处**真装饰器 —— 是零暴露,不是无风险。
+- `scripts/tsconfig.json` 仍把 `harness-eslint.selftest.ts` 放在 `exclude`(既有缺口,
+  见下方 J2 段落说明;需第三份授权,不在本 goal 范围)。
+
 ##### ✅ J2 · 立守护 + 全仓基线(**已落地**;红区授权 2026-07-31 由维护者发放)
 
 **规则(`eslint.harness.mjs` 第 18 条 `no-nullable-is-optional`)**:凡带 `@IsOptional()` 的属性,

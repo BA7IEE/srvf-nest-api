@@ -9,7 +9,7 @@
 
 | 项 | 当前值 |
 |---|---|
-| **发布边界** | 🔴 **代码 Release NO-GO**(证书标准库第四轮独立评审未通过,见 §4)——**禁止 bump / tag / Release / 生产部署**,修复并复审通过前不解除;production 本就未部署;活动责任、保险、Storage、外部通道、基础设施硬门仍开放(§4 / runbook) |
+| **发布边界** | 🔴 **代码 Release NO-GO**(证书标准库第五轮独立评审未通过,见 §4)——**禁止 bump / tag / Release / 生产部署**,修复并复审通过前不解除;production 本就未部署;活动责任、保险、Storage、外部通道、基础设施硬门仍开放(§4 / runbook) |
 | 版本 / 卫生 | 现场查:`pnpm agent:preflight`(版本三方 / main HEAD / open PR / 落后与否一次打印) |
 | 本版 footprint | 即下方计数块(生成物) |
 
@@ -65,7 +65,7 @@
 | P1 | 前端联调包剩运维演练 + 排错 SOP(系统侧无动作) |
 | P1 | 保险 gate 未启用、旧 server=0 未验证；真实 ingress/ACL、COS、worker/fleet、registry digest 未验，均为 production GO 硬门 |
 | P1 | P1-22 专业队 gate 配置化;P1-23 isForeigner 历史列改名(对外已用 isNonMainlandDocument) |
-| 🔴 **P1** | **证书标准库第四轮评审未通过**(第三轮已关闭;本轮 2 P1 + 2 P2、**无 P0**):`@IsOptional()` 对 null 与 undefined 都跳过校验、而 service 判据是 `=== undefined` ⇒ 显式 null 穿过契约层(审核 `issuedAt:null` 落成 **1970-01-01** 并派生门槛;多处 **500 而非 400**)。四条已全修:证书域全清 + eslint 第 18 条棘轮(存量 641 处逐条具名冻结,只减不增)。逐条见 [`NEXT_TASKS` P1-24](ai-harness/NEXT_TASKS.md) |
+| 🔴 **P1** | **证书标准库第五轮评审:J1/J3 PASS(运行时 null 契约已关闭)、J2 FAIL**(棘轮 3 P1 + 1 P2,**无 P0**):基线可被同 PR 加行 / A 换 B,inline disable 与嵌套 null 绕过第 18 条,身份不唯一。四条全修:基线抽 JSON(六条约束加载即抛)· 换独立 ruleId 自定义规则 + DTO 关 inline · 裁判硬判 `HEAD ⊆ BASE`(审批盖不掉)· 对账改「身份恰命中 1 次」;十项变异建档。**等第六轮复核**。见 [`NEXT_TASKS` P1-24](ai-harness/NEXT_TASKS.md) |
 | **P1** | **证书标准库未上线三件事**(P0 修完前都不要动):① PR-4b 第 67 migration 是**不可逆** contract(DROP 七列),production 未部署,须按 [`go-live`](ops/certificate-standard-library-go-live.md) 停写→备份验证→探针→deploy(AI 对 `migrate deploy` 恒无权);② #826–#834 + F1–F6 的对外契约破坏未发版,前端清单见 [`handoff/admin-web.md`](handoff/admin-web.md) §3.2 / §3.2.1;③ 首批标准与认定规则未建(刻意不 seed,认定口径归维护者拍板)—— 零标准时建证与审核一律拒、招新选择器恒空,按 [`初始化`](ops/certificate-standard-library-initialization.md) 执行,⚠️ `code` 打错不可挽回 |
 | P2 | scoped余面;god-service;单测低;snapshot勿整读;nullable primitive→OpenAPI object(D档另立) |
 | P3 | 考勤审核自由备注是否永久原文进入不可变审计，待独立隐私口径确认 |
