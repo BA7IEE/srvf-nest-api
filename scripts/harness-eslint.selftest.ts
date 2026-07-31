@@ -20,6 +20,26 @@ import { parser as tsParser, plugin as tsPlugin } from 'typescript-eslint';
 // 这份守护「eslint 规则本身还有没有约束力」。两份都不依赖 DB,秒级。
 //
 // 运行:pnpm exec tsx scripts/harness-eslint.selftest.ts(已挂 pnpm agent:check:quick)
+//
+// ── 第 18 条棘轮:十项变异测试的**索引**(第五轮跨模型评审 J2)────────────────
+// 十项分布在两个 selftest 里(`pnpm harness:selftest` 一次跑全),这里是唯一目录:
+//
+// | # | 变异 | 修复前 | 拦在哪 | 断言在哪 |
+// |---|---|---|---|---|
+// | M1 | 往已在基线的文件新增违规字段 | 🔴 已拦 | lint 豁免精确到类名.字段名 | 本文件 CASES |
+// | M2 | 同名字段挪到另一个类 | 🔴 已拦 | 同上 | 本文件 CASES |
+// | M3 | 修好却忘删基线行(陈旧行) | 🔴 已拦 | 本文件对账段 | 本文件 accountRatchet |
+// | M4 | 新增违规 **+ 同 PR 加基线** | **🟢 绕过** | base-trusted 裁判单调性 | harness-guards.selftest(F3 单调性) |
+// | M5 | 修 A 加 B(**总数不变**) | **🟢 绕过** | 同上 | 同上 |
+// | M6 | 文件级 `/* eslint-disable */` | **🟢 绕过** | 独立 ruleId + noInlineConfig | 本文件 CASES + 接线自测 |
+// | M7 | 行级 `// eslint-disable-next-line` | **🟢 绕过** | 同上 | 同上 |
+// | M8 | 嵌套 null 冒充可空(三种写法) | **🟢 绕过** | 自定义规则判**顶层**类型 | 本文件 CASES |
+// | M9 | 同文件重复身份 | **🟢 绕过**(Set 去重后读数相同) | Map<身份,次数> | 本文件 accountRatchet |
+// | M10 | 基线格式绕过(E1–E6) | **🟢 绕过**(当时零校验) | 加载即抛 | 本文件 M10 段 |
+//
+// M4 / M5 为什么只能在 harness-guards.selftest 里验:它们要**两份不同的基线**
+// (base 一份、head 一份)同时在场,而 lint 与本文件在 PR 的树上都只看得到 head
+// 那一份 —— PR 改的正是判据本身。真实 CI 行为只能在 main 上实跑验证。
 
 type Case = {
   readonly name: string;
