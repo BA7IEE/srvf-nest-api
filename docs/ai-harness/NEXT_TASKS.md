@@ -52,10 +52,25 @@
 - **⚠️ 交付后跨模型评审判 NO-GO → findings 修复批次 F1–F6**(2026-07-30):两个外部模型对 `main@bc300a66` 独立评审,21 条 findings 主会话逐条复现。修复见 [#835](https://github.com/BA7IEE/srvf-nest-api/pull/835)(并发四处统一收口)· [#836](https://github.com/BA7IEE/srvf-nest-api/pull/836)(证据授权按状态分流)· [#837](https://github.com/BA7IEE/srvf-nest-api/pull/837)(PATCH 三态 + 日期真实性 + 核验落点)· [#838](https://github.com/BA7IEE/srvf-nest-api/pull/838)(§12 资质判断)· [#839](https://github.com/BA7IEE/srvf-nest-api/pull/839)(主数据契约与审计)· F6(SOP / 初始化 / 台账)。
 - **post-freeze 修正记录**:[`archive/reviews/certificate-standard-library-t0-amendments.md`](../archive/reviews/certificate-standard-library-t0-amendments.md) —— 冻结稿正文不回改,修正逐条记在这里。**冻结稿 + amendments 两份合起来才是当前需求。**
 
-#### 🔴 第三轮独立评审未通过(`main@1560c761`)—— 发版门禁仍关闭
+#### 🔴 第三轮独立评审未通过(`main@1560c761`)—— **5 条已修完(H1–H5),门禁仍关闭等第四轮复核**
 
 **第二轮 4 条已全部修复并经第三轮复核关闭**(G1–G4 = [#843](https://github.com/BA7IEE/srvf-nest-api/pull/843)–[#846](https://github.com/BA7IEE/srvf-nest-api/pull/846),零 schema,Migration 恒 67)。
 本轮 5 条**无 P0**,主会话逐条复现,**全部属实**;其中第 ④ 条主会话判定比外部报告**更严重**(P2 → P1)。
+
+**修复已于 2026-07-31 全部合入**(H1–H5 = [#848](https://github.com/BA7IEE/srvf-nest-api/pull/848)–[#852](https://github.com/BA7IEE/srvf-nest-api/pull/852),零 schema,**Migration 恒 67**,`handoff/admin-web.md` 与 `current-state.md` 零改动)。
+两处**修复结果与报告原文不同**,已在各自 PR body 展开,复审时请重点看:
+
+- **③ 的实际范围更宽**:不止 create 的 4 个字段、也不止 500。Update DTO 有同一形状,且
+  `kind` / `categoryCode` 传 `null` 返 **200 且什么都没改**(`dto.kind ?? before.kind` 把 null 当没传吞掉)——
+  静默忽略比 500 更难查。共 9 个字段收口([#850](https://github.com/BA7IEE/srvf-nest-api/pull/850))。
+- **④ 的可达路径不成立**(实测,非推断):报告给的「建 DRAFT FAMILY A → 建 DRAFT FAMILY B 挂 A →
+  改 A 挂 B」第二步就撞 `assertParentUsable` 的**父不能是 DRAFT**(18034,既有 e2e 一直锁着);
+  报告只核了「父必为 FAMILY」「同 categoryCode」两条。进一步:**通过 API 构造不出环** ——
+  设边要求父已启用、子从未启用,沿环一圈得到首次启用时刻严格递减又必须回到自己,矛盾。
+  **但那是三条互不相关的规则撞出来的涌现性质**,三处代码里没有一个字提到「环」,
+  放松任一条(例如允许 DRAFT 父)环即刻可达且无测试会红 —— 故仍补了显式祖先链遍历 +
+  6 条单测,并删掉失效论证([#851](https://github.com/BA7IEE/srvf-nest-api/pull/851))。
+  **若维护者认为「为不可达场景加防」不值得,可只保留删注释那一半。**
 
 | # | 落点 | 机制(已复现) | 后果 |
 |---|---|---|---|
@@ -65,8 +80,17 @@
 | **P1**(外部报告列 P2,主会话上调) | `certificate-standards.service.ts:297` | 注释写「`parentId` 只在 create 期可设、Update DTO 不含它 —— 因此循环在结构上不可能形成」。**这是一条安全论证**,而 [`amendments A-3`](../archive/reviews/certificate-standard-library-t0-amendments.md) 已放开 DRAFT 改 `parentId`,论证失效。全文件**零环检查** | 冻结稿 §5.2「禁止形成父子循环」**零执法**且可达(建 FAMILY A → 建 FAMILY B 挂 A → DRAFT 期改 A 挂 B;父必为 FAMILY ✓、同 categoryCode ✓ 两条约束都过)。成环后两节点互为子节点 ⇒ 删除守卫恒非零 ⇒ **谁都删不掉**(与第 ① 条同一「冻死」形状);admin-web 要渲染树,递归渲染会挂。**后端本身是扁平一层、不递归,所以不会挂服务** —— 但注释会阻止下一个人补上这道校验 |
 | **P2** | 同文件 `:30` / `:373-376` | 「Update DTO 刻意不含 kind/categoryCode/levelCode/parentId/isInternal」「update(仅文案与排序)」「身份字段不在白名单」—— 而紧接着的执行代码正在完整处理这五个字段 | 本仓维护者看不懂代码、长期由 AI 维护,**错误注释会指挥下一个模型删掉正确实现**。这是本项目第四次抓到「注释≠执行位」 |
 
-**修复范围**(零 schema):① 抽报名终态 Claim 收尾函数,`evaluate(false)` 与 `resolveManual(false)` 共用,同事务锁 Claim 按 id ASC 转 `WITHDRAWN`(保留 `PROMOTED`),审计只记条数;② 按拍板结果收口 `updateApplication` **并同步 canonical handoff**;③ DTO 三态化 + 四个字段各一条 `null → 400` 真 HTTP e2e;④ 补环检查(祖先链遍历)+ 删掉失效论证 + 一条成环必拒的 e2e;⑤ 清理失真注释。
-**修完仍须第四轮跨模型评审**(SOP [§1.6](codex-review-sop.md)),门禁由维护者解除。
+**修复落点**(零 schema,逐条对齐上表):
+
+| # | PR | 落地内容 |
+|---|---|---|
+| ① | [#848](https://github.com/BA7IEE/srvf-nest-api/pull/848) | 抽 `withdrawClaimsOnApplicationTerminal`,**写终态的 4 条路径全部共用**(sweep 结果:评定淘汰 / 人工核验不通过此前零级联,整份撤销与发号各有一份内联实现,已收编)。同事务锁 Claim(id ASC)转 `WITHDRAWN`、保留 `PROMOTED`、审计只记条数。**曾矛盾的两条不变量现同时绿**:全库巡检已进 G1 那一组 |
+| ② | [#849](https://github.com/BA7IEE/srvf-nest-api/pull/849) | **拍板方案 A** —— `updateApplication` 改用 `lockApplicationRow`,只按 `promoted` + `sensitivePurgedAt` 两道锁后守卫 + CAS 拒。`rejected`/`withdrawn` 恢复可改非身份字段。**canonical handoff 零改动**(运行时回到它已写着的契约,净变化为零);G2 的「改资料 vs 发号」并发用例仍绿 |
+| ③ | [#850](https://github.com/BA7IEE/srvf-nest-api/pull/850) | `@OmittableOnly()`(= `@ValidateIf(v !== undefined)`)收口 **9 个字段** × 真 HTTP `null → 400`;`description` 单独判定为**允许 null**(DB 可空、运行时一直如此,只是让 DTO/OpenAPI 说出来,行为零变化);ops 初始化文档同步订正 |
+| ④ | [#851](https://github.com/BA7IEE/srvf-nest-api/pull/851) | 祖先链遍历 `assertParentChainAcyclic`(纯算法 + 注入式加载器,policy 文件仍零 DB)接进 create/update 两条路径,**排在父级校验之前**以保住 18019 错码;删失效论证;6 单测 + 3 e2e |
+| ⑤ | [#852](https://github.com/BA7IEE/srvf-nest-api/pull/852) | 清掉两处「注释≠执行位」;`certificate-standards.service.ts` **全部 18 段注释逐条核过**,其余每条描述约束的注释都对上了执行位与执行它的测试(对照表在 PR body) |
+
+**修完仍须第四轮跨模型评审**(SOP [§1.6](codex-review-sop.md)),门禁由维护者解除 —— 本批次**未**触碰 `current-state.md` 的 🔴 NO-GO。
 
 <details><summary>第二轮 findings(已全部关闭,保留作历史)</summary>
 
