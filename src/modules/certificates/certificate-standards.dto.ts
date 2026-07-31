@@ -42,11 +42,15 @@ const OmittableOnly = (): PropertyDecorator => ValidateIf((_o, value) => value !
 //
 // 出参显式列字段(永不含 deletedAt);入参严格白名单(全局 ValidationPipe forbidNonWhitelisted 兜底)。
 //
-// **身份字段创建后不可改**(D-CERT-004 / D-CERT-005):`UpdateCertificateStandardDto`
-// 刻意**不含** code / kind / categoryCode / levelCode / parentId / isInternal ——
-// 语义变化要新建 Standard,不是原地改。DRAFT 期需要改身份字段就删掉重建
-// (DRAFT 可软删,且此时不可能被任何 Policy / Claim / Certificate 引用)。
-// 这条不是「懒得做」:允许 ACTIVE 后改 category,等于让历史证书的分类事实静默漂移。
+// **身份字段首次启用后不可改**(D-CERT-004 / D-CERT-005):允许 ACTIVE 之后改 category,
+// 等于让历史证书的分类事实静默漂移。`UpdateCertificateStandardDto` 因此**含**这五个字段,
+// 由 service 判 `status === DRAFT && activatedAt === null`,否则 18033。
+//
+// 评审 findings H5:此处原先写的是「Update DTO 刻意**不含** kind / categoryCode /
+// levelCode / parentId / isInternal,DRAFT 期要改就删掉重建」—— amendments A-3 已经
+// 推翻它(理由见下方 `UpdateCertificateStandardDto` 上方那段:`code` 的 unique 含软删行,
+// 「删掉重建」在这个模型里是死胡同)。同一个文件里留着两段互相矛盾的说明,
+// 比只留一段正确的更糟 —— 读者只会读到先撞上的那一段。
 
 // code:小写字母 / 数字 / 下划线 / 中横线,1-64(§5.2)。
 // 与 positions 的 kebab-only 不同 —— 证书 code 惯用下划线(bsafe_l2、first_aid),

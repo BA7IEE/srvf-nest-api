@@ -399,14 +399,20 @@ export class CertificateStandardsService {
     });
   }
 
-  // ============ update(仅文案与排序)============
+  // ============ update(文案与排序 + DRAFT 期身份字段)============
 
-  // DTO 只有 name / description / sortOrder(§7.1「只允许修正名称、说明、排序」)。
-  // 身份字段不在白名单里,所以「ACTIVE 后身份字段不可改」这条不变量在**契约层**
-  // 就成立了,不依赖运行时判状态 —— forbidNonWhitelisted 会把 code / kind /
-  // categoryCode 之类直接拒成 40000。
-  // `CERTIFICATE_STANDARD_IMMUTABLE` 因此在本刀没有触发路径,留给 PR-4a 若开放
-  // DRAFT 期身份编辑时使用。
+  // 评审 findings H5:这里原先写着三句话 ——「DTO 只有 name / description / sortOrder」
+  // 「身份字段不在白名单,所以那条不变量在**契约层**就成立、不依赖运行时判状态」
+  // 「`CERTIFICATE_STANDARD_IMMUTABLE` 在本刀没有触发路径」。amendments A-3 放开
+  // DRAFT 期身份编辑之后三句全部作废,而紧接着的代码正在完整处理那五个身份字段、
+  // 并且真的会抛 18033。已删 —— 一条没有执行位的规则声明比没有声明更危险:
+  // 下一个人会按它做判断。
+  //
+  // 现在的事实(三条各自有 e2e 执行,见 certificate-standards.e2e-spec.ts 的 R2 组):
+  //   - 恒可改:name / description / sortOrder(§7.1「只允许修正名称、说明、排序」);
+  //   - 仅 `status === DRAFT` 且 `activatedAt === null` 可改:kind / categoryCode /
+  //     levelCode / parentId / isInternal,否则 `CERTIFICATE_STANDARD_IMMUTABLE`(18033);
+  //   - `code` 永不可改(长期稳定标识,且它的 unique **含软删行**,删了也不释放)。
   async update(
     user: CurrentUserPayload,
     id: string,
