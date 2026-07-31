@@ -497,6 +497,65 @@ describe('certificate standards + recognition policies(PR-3)', () => {
       );
     });
 
+    // 评审 findings H4:冻结稿 §5.2「禁止形成父子循环」此前**零执法** ——
+    // 全文件没有任何环检查,只有 update 路径上一句 `nextParentId === id` 的自引用拦截。
+    //
+    // ⚠️ 与 findings 原文的出入(已在 PR body 说明):原文给的两级环可达路径
+    // 「建 DRAFT FAMILY A → 建 DRAFT FAMILY B 挂 A → 改 A 挂 B」**走不通** ——
+    // 第二步就撞 `assertParentUsable` 的「父不能是 DRAFT」(上一条用例锁着)。
+    // 事实上通过 API 根本构造不出环:设边要求父**已启用**、子**从未启用**,
+    // 于是沿环一圈得到 activation 时刻严格递减又必须回到自己,矛盾。
+    //
+    // 那为什么还要补检查:那个「不可达」是三条互不相关的规则(父非 DRAFT /
+    // 首启后身份锁死 / 状态机不可回 DRAFT)撞出来的**涌现性质**,三处代码里
+    // 没有一个字提到「环」。谁哪天放松「父必须非 DRAFT」——「让我在 DRAFT 期
+    // 把整棵树搭完再启用」是很自然的诉求 —— 环当场可达,而不会有任何测试变红。
+    // 所以本刀把这条不变量做成**本地的、显式的、有执行位的**检查。
+    //
+    // 真实后果也一并记准(不夸大):后端是扁平一层查询、不做递归遍历,
+    // 成环**不会**挂服务;真实后果是两节点互为子节点 ⇒ 删除守卫的子节点计数恒非零
+    // ⇒ 谁都删不掉。admin-web 要渲染树,递归渲染遇环会挂 —— 那是另一个仓库,按推断记。
+    it('H4 自引用必拒(create 与 update 两条设 parentId 的路径)', async () => {
+      const created = await createStandard();
+      const id = created.body.data.id as string;
+      expectBizError(
+        await request(httpServer(app))
+          .patch(`${base}/${id}`)
+          .set('Authorization', opsAuth)
+          .send({ parentId: id }),
+        BizCode.CERTIFICATE_STANDARD_PARENT_INVALID,
+      );
+    });
+
+    it('H4 findings 原文那条两级环路径确实走不通 —— 第二步就被「父不能是 DRAFT」拦下', async () => {
+      const familyA = await createStandard({ kind: 'FAMILY' });
+      expect(familyA.status).toBe(201);
+      // 第 2 步:建 FAMILY B 挂在**仍是 DRAFT** 的 A 下 → 18034,环从这里就断了。
+      expectBizError(
+        await createStandard({ kind: 'FAMILY', parentId: familyA.body.data.id }),
+        BizCode.CERTIFICATE_STANDARD_STATE_INVALID,
+      );
+    });
+
+    it('H4 合法挂树仍然通过 —— 环检查不得误伤正常的多级目录', async () => {
+      const root = await createActiveStandard({ kind: 'FAMILY' });
+      const midRes = await createStandard({ kind: 'FAMILY', parentId: root });
+      expect(midRes.status).toBe(201);
+      const mid = midRes.body.data.id as string;
+      await activateStandard(mid);
+      const leaf = await createStandard({ parentId: mid });
+      expect(leaf.status).toBe(201);
+      expect(leaf.body.data.parentId).toBe(mid);
+
+      // DRAFT 期把叶子从 mid 改挂到 root(合法的重新挂树)也必须放行。
+      const moved = await request(httpServer(app))
+        .patch(`${base}/${leaf.body.data.id}`)
+        .set('Authorization', opsAuth)
+        .send({ parentId: root });
+      expect(moved.status).toBe(200);
+      expect(moved.body.data.parentId).toBe(root);
+    });
+
     it('父不存在 → 18002', async () => {
       expectBizError(
         await createStandard({ parentId: 'cl0000000000000000000000' }),
