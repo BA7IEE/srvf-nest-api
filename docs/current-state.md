@@ -65,7 +65,7 @@
 | P1 | 前端联调包剩运维演练 + 排错 SOP(系统侧无动作) |
 | P1 | 保险 gate 未启用、旧 server=0 未验证；真实 ingress/ACL、COS、worker/fleet、registry digest 未验，均为 production GO 硬门 |
 | P1 | P1-22 专业队 gate 配置化;P1-23 isForeigner 历史列改名(对外已用 isNonMainlandDocument) |
-| 🔴 **P1** | **证书标准库第四轮评审未通过**(第三轮 5 条已修关闭;本轮 2 P1 + 2 P2、**无 P0**):`@IsOptional()` 对 null 与 undefined 都跳过校验、而 service 判据是 `=== undefined` ⇒ 显式 null 穿过契约层(审核 `issuedAt:null` 落成 **1970-01-01** 并派生门槛;多处 **500 而非 400**)。证书域已全清、注释与台账已订正;**「该类无执法位」待授权后落地**。逐条见 [`NEXT_TASKS` P1-24](ai-harness/NEXT_TASKS.md) |
+| 🔴 **P1** | **证书标准库第四轮评审未通过**(第三轮已关闭;本轮 2 P1 + 2 P2、**无 P0**):`@IsOptional()` 对 null 与 undefined 都跳过校验、而 service 判据是 `=== undefined` ⇒ 显式 null 穿过契约层(审核 `issuedAt:null` 落成 **1970-01-01** 并派生门槛;多处 **500 而非 400**)。四条已全修:证书域全清 + eslint 第 18 条棘轮(存量 641 处逐条具名冻结,只减不增)。逐条见 [`NEXT_TASKS` P1-24](ai-harness/NEXT_TASKS.md) |
 | **P1** | **证书标准库未上线三件事**(P0 修完前都不要动):① PR-4b 第 67 migration 是**不可逆** contract(DROP 七列),production 未部署,须按 [`go-live`](ops/certificate-standard-library-go-live.md) 停写→备份验证→探针→deploy(AI 对 `migrate deploy` 恒无权);② #826–#834 + F1–F6 的对外契约破坏未发版,前端清单见 [`handoff/admin-web.md`](handoff/admin-web.md) §3.2 / §3.2.1;③ 首批标准与认定规则未建(刻意不 seed,认定口径归维护者拍板)—— 零标准时建证与审核一律拒、招新选择器恒空,按 [`初始化`](ops/certificate-standard-library-initialization.md) 执行,⚠️ `code` 打错不可挽回 |
 | P2 | scoped余面;god-service;单测低;snapshot勿整读;nullable primitive→OpenAPI object(D档另立) |
 | P3 | 考勤审核自由备注是否永久原文进入不可变审计，待独立隐私口径确认 |

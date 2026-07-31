@@ -101,7 +101,7 @@
 (`src/common/datetime/date-only.util.ts`),因为 `new Date(null|true|[])` 全都给 1970 而非
 Invalid Date,「先 new Date 再判 NaN」这种写法拦不住。
 
-**P1-② 这个类没有执法位**(见下方 J2,**尚未落地**)。
+**P1-② 这个类没有执法位**(见下方 J2,**已落地**)。
 
 **P2-① 注释与执行位相反**:`review()` / `revokeReview()` 的注释写「⚠️ 本刀**不重算门槛**」,
 而两个方法结尾都明确调用 `recomputeCertificateThresholds()`;文件头「也不接门槛派生……
@@ -116,16 +116,56 @@ Invalid Date,「先 new Date 再判 NaN」这种写法拦不住。
 | # | 落地内容 |
 |---|---|
 | J1 | 证书域四 DTO 47 处逐条分类;`OmittableOnly` 提到 `src/common/decorators/` 成全仓唯一定义处;service 三处正向类型检查 + resolver 兜底;新 e2e `certificate-null-contract.e2e-spec.ts`(A 段该 400 的必须 400 + B 段反向数据断言 + C 段 5 条正向可 null,防矫枉过正) |
+| J2 | `eslint.harness.mjs` 第 18 条 selector + 641 条具名基线(棘轮);selftest 加阳性对照 / 反向用例 / 「只减不增」检查 |
 | J3 | 清掉 `recruitment-certificate-claims.service.ts` 三处过期注释;台账换本轮 |
-
-**⏳ J2 未落地(等维护者授权)**:见本节末「J2 · 立守护 + 全仓基线」。
 
 **修完仍须第五轮跨模型评审**(SOP [§1.6](codex-review-sop.md)),门禁由维护者解除 ——
 本批次**未**触碰 `current-state.md` 的 🔴 NO-GO。
 
-##### ⏳ J2 · 立守护 + 全仓基线(**未落地,红区未授权**)
+##### ✅ J2 · 立守护 + 全仓基线(**已落地**;红区授权 2026-07-31 由维护者发放)
 
-规则:凡带 `@IsOptional()` 的属性,其 TS 类型必须含 `| null`;否则必须改用 `@OmittableOnly()`。
+**规则(`eslint.harness.mjs` 第 18 条 `no-nullable-is-optional`)**:凡带 `@IsOptional()` 的属性,
+其 TS 类型必须含 `| null`;否则必须改用 `@OmittableOnly()`。默认对全仓生效(含 `test/` 与
+`prisma/` —— 两处实测零违规,所以是白拿的)。
+
+**棘轮的两道执行位,各管一半 —— 少任何一道都只剩单向**:
+
+| 情形 | 谁拦 | 为什么不是另一个 |
+|---|---|---|
+| 往**已在基线的文件**新增违规字段 | `pnpm lint` | 豁免精确到 `类名.字段名`,新字段不在名单里 → 当场红 |
+| 修好了却**忘删基线行** | `pnpm harness:selftest` | 一条用不上的豁免对 lint **静默无害**,lint 拦不到 |
+
+**基线键为什么是「类名.字段名」而不是行号**:行号一改基线就变噪音;而 `description` 这类
+字段名在同一文件的多个 DTO 类里各出现一次,只写字段名**区分不开**「已冻结的那个」和
+「新加的那个」—— 后者正是棘轮要拦的东西。
+
+**阳性对照与反向用例**(`scripts/harness-eslint.selftest.ts`,选择器覆盖闭环 17 → **18**):
+
+```
+✓ @IsOptional() 但类型不含 | null 被禁(null 会穿过契约层)      ← 阳性对照
+✓ 真可空字段放行(@IsOptional() + `string | null`)              ← 反向
+✓ 仅可省略字段放行(@OmittableOnly())                          ← 反向
+✓ baseline 内已冻结的字段暂免第 18 条(PaginationQueryDto.page) ← 反向
+✓ 选择器覆盖闭环:18/18 条均有正向用例真实触发
+✓ 第 18 条棘轮:基线与现状逐条一致(641 处 / 56 文件,只减不增)
+```
+
+**棘轮双向变异测试**(故意改坏基线,断言它确实会红 —— 不是推断):
+
+```
+基线多一条陈旧行 → ✗ 已修好但基线行还在(删掉这几行):PaginationQueryDto.alreadyFixed
+基线少一条       → ✗ 新增违规未登记(基线只能缩不能涨):PaginationQueryDto.page
+往基线文件新增一个违规字段 → pnpm lint 当场红
+同名字段挪到另一个类里     → 当场红(豁免绑类名,不是全文件通配)
+```
+
+**⚠️ `pnpm typecheck` 覆盖不到这个 selftest**:`scripts/tsconfig.json` 把
+`./harness-eslint.selftest.ts` 放在 `exclude` 里(**既有缺口,非本刀引入**)。理由写在该文件
+注释内:它 import `eslint.harness.mjs`,而后者顶部有 `// @ts-check`,拉进 TS 程序会暴露
+2 处 implicit-any。**所以 typecheck 绿 ≠ 这个文件被检查过。** 该注释写的解除条件
+(「拿到授权 → 注解那两行 → 从 exclude 删掉」)现已具备前两项,但删 exclude 需要
+`scripts/tsconfig.json` 的**第三份授权**(redzone `ci-control-plane`),且不在第四轮 findings
+范围内 —— **另立一小刀**,不混进本批(J2 已 +275 行,混进来会让跨模型评审更难做)。
 
 **全仓实测规模**(本批次 J1 修完后):**641 处 / 56 文件**,全部在 `src/`(`test/` 与
 `prisma/` 零违规)。两套独立实现(esquery selector + 直接走 AST)结果逐字一致。
@@ -142,16 +182,7 @@ Invalid Date,「先 new Date 再判 NaN」这种写法拦不住。
 (J1 修完后 certificates 40→17、recruitment 49→33;全仓 680→641,恰好等于本批次收口的 39 处。)
 
 **为什么用棘轮而不是一次改完**:641 处 = 一个没人能评审的超大 diff,而跨模型评审是本仓
-唯一兜底。棘轮让「新写的代码不能再犯」立刻生效,存量按批次还。
-
-**卡住的原因**:写集 `eslint.harness.mjs` + `scripts/harness-eslint.selftest.ts` 两条都在
-`harness/redzone.json` 的 `selfGuard`(裁判保护)内,当前 worktree **无授权令牌**。
-AI 不得自行发放授权。维护者执行:
-
-```bash
-pnpm harness:grant 'eslint.harness.mjs' --reason "goal: null 契约类全清 + 立守护(第四轮评审 findings)"
-pnpm harness:grant 'scripts/harness-eslint.selftest.ts' --reason "goal: null 契约类全清 + 立守护(第四轮评审 findings)"
-```
+唯一兜底。棘轮让「新写的代码不能再犯」立刻生效,存量按批次还 —— 上表就是排期依据。
 
 #### ✅ 第三轮独立评审 findings 已全部关闭(`main@1560c761`;H1–H5 = [#848](https://github.com/BA7IEE/srvf-nest-api/pull/848)–[#852](https://github.com/BA7IEE/srvf-nest-api/pull/852))
 

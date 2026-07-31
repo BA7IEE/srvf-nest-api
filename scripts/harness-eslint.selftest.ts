@@ -242,6 +242,32 @@ const CASES: readonly Case[] = [
     expect: TS_IMPORTS,
   },
 
+  // ---- null 契约(第 18 条)----
+  {
+    name: '@IsOptional() 但类型不含 | null 被禁(null 会穿过契约层)',
+    filename: 'src/modules/x/x.dto.ts',
+    code: 'export class D { @IsOptional() foo?: string; }',
+    expect: SYNTAX,
+  },
+  {
+    name: '真可空字段放行(@IsOptional() + `string | null`)',
+    filename: 'src/modules/x/x.dto.ts',
+    code: 'export class D { @IsOptional() foo?: string | null; }',
+    expect: null,
+  },
+  {
+    name: '仅可省略字段放行(@OmittableOnly())',
+    filename: 'src/modules/x/x.dto.ts',
+    code: 'export class D { @OmittableOnly() foo?: string; }',
+    expect: null,
+  },
+  {
+    name: 'baseline 内已冻结的字段暂免第 18 条(PaginationQueryDto.page)',
+    filename: 'src/common/dto/pagination.dto.ts',
+    code: 'export class PaginationQueryDto { @IsOptional() page?: number; }',
+    expect: null,
+  },
+
   // ══════════════════════════════════════════════════════════════════════════
   // 已知缺口:对抗样例(2026-07-29 跨模型评审 finding 6,实测 5/5 全部绕过)
   //
@@ -299,9 +325,16 @@ async function main(): Promise<void> {
   // 合成片段是虚拟路径,不在任何 tsconfig 项目里,类型感知解析会直接 parsing error
   // 而让规则根本跑不到(那样「全绿」毫无意义)。harness 规则全是语法级的,不需要类型信息。
   // overrideConfigFile: true = 完全不加载项目配置文件,只用下面这份。
-  const { harnessConfigBlocks, HARNESS_SYNTAX } = (await import('../eslint.harness.mjs')) as {
+  const {
+    harnessConfigBlocks,
+    HARNESS_SYNTAX,
+    IS_OPTIONAL_NULL_BASELINE,
+    IS_OPTIONAL_NULL_SELECTOR,
+  } = (await import('../eslint.harness.mjs')) as {
     HARNESS_SYNTAX: Record<string, { message: string }>;
     harnessConfigBlocks: unknown[];
+    IS_OPTIONAL_NULL_BASELINE: Record<string, readonly string[]>;
+    IS_OPTIONAL_NULL_SELECTOR: string;
   };
   const eslint = new ESLint({
     cwd: process.cwd(),
@@ -404,6 +437,118 @@ async function main(): Promise<void> {
         '  没有阳性对照的规则 = 写错了也永远不会有人知道(INC-06 就是这么静默失效的)。' +
         '请为每条新增选择器补一个「必定违规」的用例。',
     );
+  }
+
+  // ── 第 18 条棘轮:基线**只能缩不能涨** ────────────────────────────────────────
+  //
+  // 分工要说清楚,否则下一个人会以为这段和 lint 重复:
+  //   · 「**新增**违规」由 `pnpm lint` 拦(基线块的豁免精确到 `类名.字段名`,
+  //     往基线文件里加一个新字段照样红)——那条路 lint 走得通;
+  //   · 「**修好了却忘删基线行**」lint **拦不到** —— 一条用不上的豁免是静默无害的,
+  //     于是基线会永远停在 641 这个数字上,棘轮只剩单向。这段就是补那一半。
+  //
+  // 判据用的是 `IS_OPTIONAL_NULL_SELECTOR` 本身(同一个字符串,不是抄一份等价逻辑)——
+  // 「两把刻错的尺子读数相同」是本仓 2026-07-29 跨模型评审的原话,不再重蹈。
+  // 解析只用来把命中行**取名**(类名.字段名),不参与判定。
+  {
+    const raw = new ESLint({
+      cwd: process.cwd(),
+      overrideConfigFile: true,
+      overrideConfig: [
+        {
+          files: ['**/*.ts'],
+          plugins: { '@typescript-eslint': tsPlugin as never },
+          languageOptions: {
+            parser: tsParser as never,
+            ecmaVersion: 'latest',
+            sourceType: 'module',
+          },
+          rules: {
+            'no-restricted-syntax': [
+              'error',
+              { selector: IS_OPTIONAL_NULL_SELECTOR, message: 'IS_OPTIONAL_NULL_HIT' },
+            ],
+          },
+        },
+      ] as never,
+    });
+    const results = await raw.lintFiles(['src/**/*.ts', 'test/**/*.ts', 'prisma/**/*.ts']);
+    const repoRoot = path.resolve(__dirname, '..');
+
+    // 命中行 → 「类名.字段名」。PropertyDefinition 的报告行 = 它第一个装饰器所在行。
+    const nameHitsIn = (filePath: string, lines: readonly number[]): string[] => {
+      const ast = tsParser.parseForESLint(fs.readFileSync(filePath, 'utf-8'), {
+        loc: true,
+        range: true,
+      }).ast as unknown as Record<string, unknown>;
+      const byLine = new Map<number, string>();
+      const walk = (node: unknown, className: string): void => {
+        if (node === null || typeof node !== 'object') return;
+        const n = node as Record<string, unknown> & { type?: string };
+        if (n.type === 'ClassDeclaration' || n.type === 'ClassExpression') {
+          className = ((n.id as { name?: string } | null)?.name ?? '(anonymous)') as string;
+        }
+        if (n.type === 'PropertyDefinition') {
+          const line = (n.loc as { start: { line: number } }).start.line;
+          const field = ((n.key as { name?: string } | undefined)?.name ?? '(computed)') as string;
+          byLine.set(line, `${className}.${field}`);
+        }
+        for (const key of Object.keys(n)) {
+          if (key === 'parent') continue;
+          const v = n[key];
+          if (Array.isArray(v)) {
+            for (const c of v) if (c && typeof c === 'object') walk(c, className);
+          } else if (v && typeof v === 'object') {
+            walk(v, className);
+          }
+        }
+      };
+      walk(ast, '(top)');
+      return lines.map((l) => byLine.get(l) ?? `(未定位:第 ${l} 行)`);
+    };
+
+    const live = new Map<string, Set<string>>();
+    for (const r of results) {
+      const lines = r.messages.filter((m) => m.message === 'IS_OPTIONAL_NULL_HIT').map((m) => m.line);
+      if (lines.length === 0) continue;
+      const rel = path.relative(repoRoot, r.filePath);
+      live.set(rel, new Set(nameHitsIn(r.filePath, lines)));
+    }
+
+    const problems: string[] = [];
+    // ① 基线里有、现实中已经没有 → 陈旧行,必须删(否则基线永远缩不下去)
+    for (const [file, frozen] of Object.entries(IS_OPTIONAL_NULL_BASELINE)) {
+      const actual = live.get(file) ?? new Set<string>();
+      const stale = frozen.filter((f) => !actual.has(f));
+      if (stale.length > 0) {
+        problems.push(
+          `  ${file} —— 已修好但基线行还在(删掉这几行):${stale.join(', ')}`,
+        );
+      }
+    }
+    // ② 现实中有、基线里没有 → 新增违规。正常情况下 lint 已经先红了;
+    //    这里兜住「有人往基线块里加了整文件通配」那类绕过。
+    for (const [file, actual] of live.entries()) {
+      const frozen = new Set(IS_OPTIONAL_NULL_BASELINE[file] ?? []);
+      const added = [...actual].filter((f) => !frozen.has(f));
+      if (added.length > 0) {
+        problems.push(`  ${file} —— 新增违规未登记(基线只能缩不能涨):${added.join(', ')}`);
+      }
+    }
+
+    const total = [...live.values()].reduce((n, s) => n + s.size, 0);
+    if (problems.length === 0) {
+      passed++;
+      console.log(
+        `✓ 第 18 条棘轮:基线与现状逐条一致(${total} 处 / ${live.size} 文件,只减不增)`,
+      );
+    } else {
+      failures.push(
+        `✗ 第 18 条棘轮 —— 基线与现状不一致:\n${problems.join('\n')}\n` +
+          '  基线是「存量欠账清单」,不是许可证:修好一条就删一行,新增一条一律不许加行。\n' +
+          '  改法见 eslint.harness.mjs 的 IS_OPTIONAL_NULL_BASELINE 上方说明。',
+      );
+    }
   }
 
   // ── F2:接线自测(走 `pnpm lint` 的正式入口,不 import eslint.harness.mjs)──────
