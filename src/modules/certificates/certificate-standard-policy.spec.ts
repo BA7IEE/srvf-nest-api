@@ -9,8 +9,10 @@ import {
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import {
+  MAX_STANDARD_PARENT_DEPTH,
   assertIssuerCountMatchesPolicy,
   assertParentCategoryMatches,
+  assertParentChainAcyclic,
   assertParentUsable,
   assertPolicyIsDraft,
   assertPolicyTransitionAllowed,
@@ -296,6 +298,75 @@ describe('certificate-standard-policy(纯规则)', () => {
 
     it('不做模糊匹配:近似名不相等', () => {
       expect(normalizeIssuerName('Red Cross')).not.toBe(normalizeIssuerName('Red Crescent'));
+    });
+  });
+
+  // ============ 父子循环(§5.2;评审 findings H4)============
+  //
+  // 为什么这一组是**单测**而不是 e2e:通过 API 今天根本构造不出环
+  // (设边要求父已启用、子从未启用,沿环一圈 activation 时刻矛盾 —— 见
+  //  certificate-standard-policy.ts 上方那段与 e2e 里那条「原文路径走不通」的用例)。
+  // 用真 HTTP 就只能证明「环建不出来」,证明不了「环检查真的在拦」。
+  // 纯算法 + 一张 Map 才能把两级 / 三级 / 库里已存环这些形状穷举掉 ——
+  // 这就是把它做成注入式加载器的理由。
+  describe('assertParentChainAcyclic(§5.2 禁止父子循环)', () => {
+    /** 用一张 `id → parentId` 的图当加载器;缺键 = 该行不存在 / 已到根。 */
+    const loaderOf =
+      (graph: Record<string, string | null>) =>
+      (id: string): Promise<string | null> =>
+        Promise.resolve(graph[id] ?? null);
+
+    async function expectParentInvalid(p: Promise<unknown>): Promise<void> {
+      await expect(p).rejects.toBeInstanceOf(BizException);
+      await expect(p).rejects.toMatchObject({ biz: BizCode.CERTIFICATE_STANDARD_PARENT_INVALID });
+    }
+
+    it('自引用(长度 1 的环)必拒', async () => {
+      await expectParentInvalid(assertParentChainAcyclic('a', 'a', loaderOf({ a: null })));
+    });
+
+    it('两级环必拒:A→B 时 B 的祖先链已含 A', async () => {
+      // 现状 B.parent = A;现在要写 A.parent = B → 闭环。
+      await expectParentInvalid(assertParentChainAcyclic('a', 'b', loaderOf({ b: 'a', a: null })));
+    });
+
+    it('三级环必拒:A→C 时 C 的祖先链经 B 回到 A', async () => {
+      // 现状 B.parent = A、C.parent = B;现在要写 A.parent = C → 闭环。
+      await expectParentInvalid(
+        assertParentChainAcyclic('a', 'c', loaderOf({ c: 'b', b: 'a', a: null })),
+      );
+    });
+
+    it('祖先链上**本来就**有环 → 也拒(不往坏结构上再挂东西,且遍历必然终止)', async () => {
+      // x ↔ y 已经互为父子(只可能来自数据订正 / 将来某条新路径),
+      // 此时给一个全新节点挂到 x 下:自引用判不出来,靠 visited 集拦。
+      await expectParentInvalid(assertParentChainAcyclic(null, 'x', loaderOf({ x: 'y', y: 'x' })));
+    });
+
+    it('超深链(> MAX_STANDARD_PARENT_DEPTH)拒,而不是一直走下去', async () => {
+      const graph: Record<string, string | null> = {};
+      const depth = MAX_STANDARD_PARENT_DEPTH + 5;
+      for (let i = 0; i < depth; i += 1) {
+        graph[`n${i}`] = i === depth - 1 ? null : `n${i + 1}`;
+      }
+      await expectParentInvalid(assertParentChainAcyclic('self', 'n0', loaderOf(graph)));
+    });
+
+    it('合法链(根 / 多级)放行 —— 检查不得误伤正常目录树', async () => {
+      await expect(
+        assertParentChainAcyclic('leaf', 'mid', loaderOf({ mid: 'root', root: null })),
+      ).resolves.toBeUndefined();
+      await expect(
+        assertParentChainAcyclic(null, 'root', loaderOf({ root: null })),
+      ).resolves.toBeUndefined();
+      // 恰好等于深度上限的链仍然放行(边界不得差一)。
+      const graph: Record<string, string | null> = {};
+      for (let i = 0; i < MAX_STANDARD_PARENT_DEPTH; i += 1) {
+        graph[`d${i}`] = i === MAX_STANDARD_PARENT_DEPTH - 1 ? null : `d${i + 1}`;
+      }
+      await expect(
+        assertParentChainAcyclic('self', 'd0', loaderOf(graph)),
+      ).resolves.toBeUndefined();
     });
   });
 

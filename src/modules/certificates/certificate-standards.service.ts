@@ -17,6 +17,7 @@ import { RbacService } from '../permissions/rbac.service';
 import { CertificateStandardAuditRecorder } from './certificate-standard-audit-recorder';
 import {
   assertParentCategoryMatches,
+  assertParentChainAcyclic,
   assertParentUsable,
   assertStandardTransitionAllowed,
 } from './certificate-standard-policy';
@@ -105,6 +106,27 @@ export class CertificateStandardsService {
       select: { id: true },
     });
     if (!item) throw new BizException(biz);
+  }
+
+  /**
+   * §5.2「禁止形成父子循环」的 DB 侧接线(纯算法在 certificate-standard-policy.ts)。
+   *
+   * 遍历**不**过滤 `deletedAt`:环可能经过一个已软删的节点,按未软删过滤会让遍历
+   * 提前断链、放行一条真的会闭环的边。软删节点的存在性校验归调用方那句
+   * `findFirst(notDeletedWhere(...))`,与这里的可达性判定是两件事。
+   */
+  private async assertParentChainAcyclic(
+    tx: Prisma.TransactionClient,
+    selfId: string | null,
+    parentId: string,
+  ): Promise<void> {
+    await assertParentChainAcyclic(selfId, parentId, async (id) => {
+      const row = await tx.certificateStandard.findFirst({
+        where: { id },
+        select: { parentId: true },
+      });
+      return row?.parentId ?? null;
+    });
   }
 
   private toResponseDto(row: SafeCertificateStandard): CertificateStandardResponseDto {
@@ -294,9 +316,12 @@ export class CertificateStandardsService {
   // 初始恒 DRAFT(§7.1):新标准必须显式走一次 status 迁移才可用,
   // 避免「建完就能建证」跳过人工确认。
   //
-  // 关于父子循环(§5.2「禁止形成父子循环」):`parentId` 只在 create 期可设、
-  // Update DTO 不含它,而新建行此刻还没有任何后代 —— 因此循环在结构上不可能形成,
-  // 不需要运行时环检测。这条不变量由**字段不可变性**保证,不是靠检查漏没漏。
+  // 评审 findings H4:这里原先是一段**安全论证** ——「`parentId` 只在 create 期可设、
+  // Update DTO 不含它,而新建行此刻还没有任何后代,因此循环在结构上不可能形成,
+  // 不需要运行时环检测」。amendments A-3 放开 DRAFT 期改 `parentId` 之后,
+  // 论证的两个前提都没了,而全文件零环检查 —— §5.2「禁止形成父子循环」当时零执法。
+  // 论证已删,换成真的检查:两条设 `parentId` 的路径都走
+  // `assertParentChainAcyclic`(祖先链遍历,见 certificate-standard-policy.ts)。
   async create(
     user: CurrentUserPayload,
     dto: CreateCertificateStandardDto,
@@ -320,6 +345,10 @@ export class CertificateStandardsService {
       }
 
       if (dto.parentId !== undefined) {
+        // 新建行还没有 id,自己成不了自己的祖先 → selfId 传 null。
+        // 这一遍仍要跑:它拦的是「往一条**本来就有环**的祖先链上挂新节点」。
+        // 与 update 同序(环判在父级校验之前),两条路径的错码顺序才一致。
+        await this.assertParentChainAcyclic(tx, null, dto.parentId);
         const parent = await tx.certificateStandard.findFirst({
           where: notDeletedWhere({ id: dto.parentId }),
           select: { kind: true, categoryCode: true, status: true },
@@ -434,11 +463,14 @@ export class CertificateStandardsService {
           );
         }
         if (nextParentId !== null) {
-          // 自己不能当自己的父级。DRAFT 行此刻可能已经有子节点(别的 DRAFT 挂上来),
-          // 所以 create 期「结构上不可能成环」的论证在这里不成立,必须显式拦。
-          if (nextParentId === id) {
-            throw new BizException(BizCode.CERTIFICATE_STANDARD_PARENT_INVALID);
-          }
+          // 评审 findings H4:祖先链遍历,自引用与多级环都在这里拒。
+          // (此处原先只有一句 `nextParentId === id` 的自引用拦截 —— 那只是环长为 1
+          //  的特例,现在由同一个遍历覆盖,不留两处判据。)
+          //
+          // **排在父级校验之前**,与被它取代的那句自引用拦截同一位置:
+          // 否则「自己挂自己」会先撞 `assertParentUsable` 的 kind 闸报 18012,
+          // 而错因其实是成环(18019)。错码换了前端提示就换了,那是行为变更。
+          await this.assertParentChainAcyclic(tx, id, nextParentId);
           const parent = await tx.certificateStandard.findFirst({
             where: notDeletedWhere({ id: nextParentId }),
             select: { kind: true, categoryCode: true, status: true },

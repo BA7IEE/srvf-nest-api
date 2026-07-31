@@ -80,6 +80,62 @@ export function assertParentCategoryMatches(childCategory: string, parentCategor
   }
 }
 
+// 目录树深度上限。真实证书目录不会有几十层;这个值的作用不是限制业务,
+// 是给下面的向上遍历一个**必然终止**的界 —— 万一库里已经有一个环
+// (数据订正、将来某条新路径),遍历不能变成死循环。
+export const MAX_STANDARD_PARENT_DEPTH = 32;
+
+/**
+ * 冻结稿 §5.2「禁止形成父子循环」的执行位(评审 findings H4)。
+ *
+ * 修复前这条不变量**零执法**:文件里只有一句「自己不能当自己的父级」,
+ * 而 create 那侧写着一段安全论证 ——「parentId 只在 create 期可设、Update DTO 不含它,
+ * 因此循环在结构上不可能形成」。amendments A-3 放开 DRAFT 期改 parentId 之后,
+ * 那段论证的两个前提都没了,而没有任何东西接手。
+ *
+ * ⚠️ 记准事实,不夸大:今天通过 API **仍然**构造不出环,但那是三条互不相关的规则
+ * 撞出来的涌现性质 —— 设边要求父已启用(`assertParentUsable` 拒 DRAFT 父)、
+ * 子从未启用(18033)、状态机不可回 DRAFT;沿环一圈得到「首次启用时刻严格递减
+ * 又必须回到自己」,矛盾。三处代码里没有一个字提到「环」。
+ * 谁哪天放松「父必须非 DRAFT」(「让我在 DRAFT 期把整棵树搭完再启用」是很自然的诉求),
+ * 环当场可达,而不会有任何测试变红。所以这里把它做成本地的、显式的、可单测的检查。
+ *
+ * 成环的真实后果也记准:后端是扁平一层查询、不做递归遍历,**不会**挂服务;
+ * 后果是两节点互为子节点 ⇒ 删除守卫的子节点计数恒非零 ⇒ 谁都删不掉。
+ *
+ * 刻意做成纯算法 + 注入式加载器:本文件不 import Prisma client、不碰 DB(§19 边界),
+ * 而这条规则因此可以用一张普通 Map 穷举单测,不需要起数据库。
+ *
+ * @param selfId    正在被设置 parentId 的那一行;create 期该行还不存在 → 传 null
+ * @param parentId  本次要写入的父级 id
+ * @param loadParentIdOf 取某行的 parentId;行不存在或已到根 → null
+ */
+export async function assertParentChainAcyclic(
+  selfId: string | null,
+  parentId: string,
+  loadParentIdOf: (id: string) => Promise<string | null>,
+): Promise<void> {
+  const visited = new Set<string>();
+  let cursor: string | null = parentId;
+  let depth = 0;
+  while (cursor !== null) {
+    // 走到自己 = 这条边会闭合成环(depth=0 时即「自己当自己的父级」)。
+    if (cursor === selfId) {
+      throw new BizException(BizCode.CERTIFICATE_STANDARD_PARENT_INVALID);
+    }
+    // 走回访问过的节点 = 祖先链上**本来就**有环。不静默放行:
+    // 往一个已经坏掉的结构上再挂东西只会让它更难修。
+    if (visited.has(cursor)) {
+      throw new BizException(BizCode.CERTIFICATE_STANDARD_PARENT_INVALID);
+    }
+    visited.add(cursor);
+    if (++depth > MAX_STANDARD_PARENT_DEPTH) {
+      throw new BizException(BizCode.CERTIFICATE_STANDARD_PARENT_INVALID);
+    }
+    cursor = await loadParentIdOf(cursor);
+  }
+}
+
 // ============ Policy 状态机(§7.2)============
 
 // 允许:DRAFT → ACTIVE / ACTIVE → RETIRED。
