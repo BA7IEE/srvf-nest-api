@@ -315,6 +315,27 @@ export class CertificateRecognitionPoliciesService {
     meta: AuditMeta,
   ): Promise<CertificateRecognitionPolicyResponseDto> {
     await this.assertCanOrThrow(user, 'certificate-recognition-policy.update.record');
+    // ⚠️ 第四轮评审 P1 的第二道防御(DTO 的 `@OmittableOnly()` 是第一道)。
+    //
+    // 本 DTO 五个可选字段**没有一个可为 null**:四个核心列库内非空,
+    // `validityMonths` 的 null 由 validityMode 派生而不由客户端指定。
+    // 修复前显式 `null` 会走两条不同的坏路径:
+    //   - issuerPolicy / validityMode / certNumberMode:`?? locked.x` 先把 null
+    //     当「没传」算出一个正确的最终态、通过组合校验,随后 `!== undefined`
+    //     又把它判成「传了」,于是 `data.x = null` 进 Prisma 非空列 → **500 而非 400**;
+    //   - issuers:`dto.issuers ?? []` 把 null 折成空数组,让 null 成为「清空」的
+    //     隐式同义词。实测它当前**没有**变成可达的静默清空 —— issuer 数量检查
+    //     顺手兜住了 —— 但依赖「恰好被别的规则挡住」正是这一轮反复修的形状。
+    // 放在事务与行锁之前:这是入参形状问题,与行状态无关,没必要占着锁再拒。
+    if (
+      dto.issuerPolicy === null ||
+      dto.validityMode === null ||
+      dto.validityMonths === null ||
+      dto.certNumberMode === null ||
+      dto.issuers === null
+    ) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
     return this.prisma.$transaction(async (tx) => {
       const existing = await this.findPolicyOrThrow(tx, id);
       await this.lockStandardOrThrow(tx, existing.standardId);

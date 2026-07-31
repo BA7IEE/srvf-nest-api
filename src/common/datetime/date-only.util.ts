@@ -28,6 +28,29 @@ export function normalizeDateOnly(input: string): Date {
   return beijingDateOnly(new Date(input));
 }
 
+// 纯日期的**严格**解析:形状 + 日历真实性都不过就返回 null,绝不返回一个「看起来
+// 合法但不是调用方本意」的 Date。给 service 层当第二道防御用(DTO 是第一道)。
+//
+// 存在的理由(第四轮评审 P1,实测):`new Date(x)` 对一大票非字符串输入会给出
+// **完全合法**的 1970-01-01 而不是 Invalid Date ——
+//   new Date(null)  = 1970-01-01T00:00:00.000Z
+//   new Date(true)  = 1970-01-01T00:00:00.001Z
+//   new Date([])    = 1970-01-01T00:00:00.000Z
+// 于是任何「先 new Date 再判 NaN」的写法都拦不住它们,1970-01-01 会作为一条
+// 正式业务事实落库。必须在 new Date **之前**做正向类型 + 形状检查。
+//
+// 入参声明成 `unknown` 是刻意的:这道闸的全部意义就是「TS 类型说是 string,
+// 但运行时未必」。声明成 string 会让 `typeof` 那行被 TS 判成恒真而失去意义。
+const DATE_ONLY_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function parseDateOnlyStrict(input: unknown): Date | null {
+  if (typeof input !== 'string' || !DATE_ONLY_SHAPE.test(input)) return null;
+  // 形状对了仍可能是不存在的日历日(2026-02-30 / 2026-13-01)——
+  // 那种 `new Date` 给 Invalid Date,NaN 会一路传到 beijingDateOnly 的结果里。
+  const normalized = beijingDateOnly(new Date(input));
+  return Number.isNaN(normalized.getTime()) ? null : normalized;
+}
+
 // 冻结稿 §10.4 FIXED_MONTHS:从发证日按**自然月**推进 N 个月,目标月无该日则
 // 夹取到目标月最后一天;返回值即「最后有效日」(§10.1 expiredAt 语义)。
 //

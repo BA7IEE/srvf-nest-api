@@ -19,8 +19,8 @@ import {
   MaxLength,
   Min,
   MinLength,
-  ValidateIf,
 } from 'class-validator';
+import { OmittableOnly } from '../../common/decorators/omittable-only.decorator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 
 // 评审 findings H3:`@IsOptional()` 对 `null` 与 `undefined` **都**跳过校验。
@@ -34,9 +34,9 @@ import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 //     `@IsOptional()`,并在 `@ApiPropertyOptional` 上标 `nullable: true`,让
 //     DTO / OpenAPI / DB 三处语义一致。
 //
-// 写成具名装饰器而不是每处抄一遍 `@ValidateIf`:抄写版下一次新增字段就会漏,
-// 而这正是本轮反复抓到的那个形状。
-const OmittableOnly = (): PropertyDecorator => ValidateIf((_o, value) => value !== undefined);
+// 第四轮评审:`OmittableOnly` 原先定义在本文件内,只有本文件用得上 ——
+// 而同一个缺陷在隔壁三个证书域 DTO 里原样存在。已提到
+// `src/common/decorators/omittable-only.decorator.ts` 成全仓唯一定义处。
 
 // 证书标准库 PR-3(冻结稿 §5.2 / §13.1 / §7.1):CertificateStandard 管理面 DTO。
 //
@@ -222,40 +222,45 @@ export class CertificateStandardOptionsResponseDto {
 
 // ============ 入参:查询 ============
 
+// 过滤条件一律 `@OmittableOnly()`:「不筛这一维」的表达方式是**不传这个键**,
+// 没有任何一维的语义是「筛出该字段为 null 的行」。query string 本身确实送不出
+// JSON null(`?kind=` 到手是空串,由 @MinLength(1) 拒掉),但这里不靠传输层兜底 ——
+// 契约层写死之后,将来这些 DTO 若被复用到 body(本仓已有多个 query DTO 这么用)
+// 也不会突然多出一个 null 通道。
 export class CertificateStandardQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({ description: '按 kind 过滤', enum: CertificateStandardKind })
-  @IsOptional()
+  @OmittableOnly()
   @IsEnum(CertificateStandardKind)
   kind?: CertificateStandardKind;
 
   @ApiPropertyOptional({ description: '按类别字典 code 过滤', maxLength: 64 })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(64)
   categoryCode?: string;
 
   @ApiPropertyOptional({ description: '按等级字典 code 过滤', maxLength: 64 })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(64)
   levelCode?: string;
 
   @ApiPropertyOptional({ description: '按状态过滤', enum: CertificateStandardStatus })
-  @IsOptional()
+  @OmittableOnly()
   @IsEnum(CertificateStandardStatus)
   status?: CertificateStandardStatus;
 
   @ApiPropertyOptional({ description: '按父级过滤(取某 FAMILY 的直接子节点)', maxLength: 32 })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(32)
   parentId?: string;
 
   @ApiPropertyOptional({ description: '模糊搜 name / code', maxLength: 64 })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(64)
@@ -269,27 +274,27 @@ export class CertificateStandardOptionsQueryDto {
       '不传或 false = 也返「已收录待认定」的标准',
     example: true,
   })
-  @IsOptional()
+  @OmittableOnly()
   @Type(() => Boolean)
   @IsBoolean()
   recognizedOnly?: boolean;
 
   @ApiPropertyOptional({ description: '按类别字典 code 过滤', maxLength: 64 })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(64)
   categoryCode?: string;
 
   @ApiPropertyOptional({ description: '模糊搜 name / code', maxLength: 64 })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(64)
   q?: string;
 
   @ApiPropertyOptional({ description: '条数上限(≤200,默认 50)', minimum: 1, maximum: 200 })
-  @IsOptional()
+  @OmittableOnly()
   @Type(() => Number)
   @IsInt()
   @Min(1)

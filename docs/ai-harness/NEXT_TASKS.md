@@ -52,7 +52,139 @@
 - **⚠️ 交付后跨模型评审判 NO-GO → findings 修复批次 F1–F6**(2026-07-30):两个外部模型对 `main@bc300a66` 独立评审,21 条 findings 主会话逐条复现。修复见 [#835](https://github.com/BA7IEE/srvf-nest-api/pull/835)(并发四处统一收口)· [#836](https://github.com/BA7IEE/srvf-nest-api/pull/836)(证据授权按状态分流)· [#837](https://github.com/BA7IEE/srvf-nest-api/pull/837)(PATCH 三态 + 日期真实性 + 核验落点)· [#838](https://github.com/BA7IEE/srvf-nest-api/pull/838)(§12 资质判断)· [#839](https://github.com/BA7IEE/srvf-nest-api/pull/839)(主数据契约与审计)· F6(SOP / 初始化 / 台账)。
 - **post-freeze 修正记录**:[`archive/reviews/certificate-standard-library-t0-amendments.md`](../archive/reviews/certificate-standard-library-t0-amendments.md) —— 冻结稿正文不回改,修正逐条记在这里。**冻结稿 + amendments 两份合起来才是当前需求。**
 
-#### 🔴 第三轮独立评审未通过(`main@1560c761`)—— **5 条已修完(H1–H5),门禁仍关闭等第四轮复核**
+#### 🔴 第四轮独立评审未通过(`main@7b0f5c25`)—— **4 条已修完(J1/J3),门禁仍关闭等第五轮复核**
+
+判 NO-GO,**2 P1 + 2 P2,无 P0**;主会话逐条复现,**全部属实**(含 `new Date(null) → 1970-01-01` 实测)。
+
+**本轮与前三轮的关键区别**:前三轮修「被点名的实例」,下一轮评审就在邻居文件找到同类
+(H3 修了 `certificate-standards.dto.ts`,第四轮立刻在隔壁三个证书域 DTO 找到同一形状)。
+本轮改成**修「类」+ 留机器守护** —— 判据从「还有没有漏的实例」变成「这个类有没有执法位」。
+
+**P1-① `@IsOptional()` 的 null 语义错位(证书域全清)**
+
+`@IsOptional()` 对 `null` 与 `undefined` **都**跳过后续校验,而本仓 service 判「传没传」
+一律用 `=== undefined` / `!== undefined` / `??`。语义错位 ⇒ 显式 `null` 穿过契约层抵达 service。
+三种后果,**都已在真 HTTP e2e 上复现**(修复前实测,括号内是实际返回):
+
+| 后果 | 落点 | 修复前实测 |
+|---|---|---|
+| **静默写错事实** | Claim 审核 `issuedAt: null` → `new Date(null)` = **1970-01-01**(不是 Invalid Date,躲得过任何 NaN 检查),被「不得晚于今天」放行,作为正式审核事实落库并**照常参与资质门槛派生** | **200**(应 400) |
+| **500 而非 400** | Policy PATCH `issuerPolicy: null` / `certNumberMode: null` → `?? locked.x` 先当没传算出合法最终态,`!== undefined` 又判成传了 ⇒ `data.x = null` 进 Prisma 非空列 | **500** |
+| 同上 | Certificate PATCH `standardId: null` | **500** |
+
+⚠️ 两条**与报告原文不同**,复审时请重点看:
+
+- **`validityMode: null` 修复前返 400 而不是 500** —— `assertValidityCombination(FIXED_MONTHS, null)`
+  顺手把它拒掉了。那道闸不是为 null 设的,只是**撞上了**。同理 `issuers: null`:
+  `dto.issuers ?? []` 把 null 折成空数组,让 null 成为「清空」的隐式同义词,但
+  issuer 数量检查(FIXED 恰好 1 / ALLOWLIST ≥1)顺手挡住了,**所以它当前不是可达的静默清空**
+  —— 报告与本仓早前注释都把这条写得比事实严重,已订正。两条仍一并收口:
+  依赖「恰好被别的规则挡住」正是本轮在修的形状。
+- **`validityMonths` 判定为「仅可省略」而非「可清空」**:它的 null 由 `validityMode` 派生
+  (改 mode 时 service 自动归零),不由客户端独立指定;保持 FIXED_MONTHS 却清掉 months
+  本就是非法组合。DTO 里那句「本 DTO 不接受 null」以前**只是一句话**,现在有执行位了。
+
+**逐字段分类**(证书域四个 DTO,实测 **47** 处真装饰器 —— goal 写的 51 里有 4 处是
+注释中提到 `@IsOptional()` 的文字,不是装饰器):
+
+| 文件 | 真可空(留 `@IsOptional()` + `T \| null`) | 仅可省略(改 `@OmittableOnly()`) |
+|---|---|---|
+| `recruitment-certificate-claims.dto.ts` | 0 | 16 |
+| `certificate-recognition-policies.dto.ts` | 0 | 7 |
+| `certificates.dto.ts` | 4(Update 的 `recognitionIssuerId`/`issuingOrg`/`certNumber`/`expiredAt`) | 6 + 1(`issuedAt` 原为手写 `@ValidateIf`,改具名) |
+| `certificate-standards.dto.ts` | 4(两处 `description` + Update 的 `levelCode`/`parentId`) | 10(两个 query DTO;H3 已做的 9 处不回退) |
+
+**两道防御,不只 DTO**:`@OmittableOnly()` 是第一道;service 侧换成**正向类型检查**
+(`typeof dto.issuedAt !== 'string'` 而不是 `=== undefined`)是第二道。最深的一道放在
+`CertificateRecognitionResolver.resolveDates` —— 它是**建证 / 审核通过 / 改证三个入口共用**
+的那一段,少写一处就是一个新的 1970 入口。配套新增 `parseDateOnlyStrict`
+(`src/common/datetime/date-only.util.ts`),因为 `new Date(null|true|[])` 全都给 1970 而非
+Invalid Date,「先 new Date 再判 NaN」这种写法拦不住。
+
+**P1-② 这个类没有执法位**(见下方 J2,**已落地**)。
+
+**P2-① 注释与执行位相反**:`review()` / `revokeReview()` 的注释写「⚠️ 本刀**不重算门槛**」,
+而两个方法结尾都明确调用 `recomputeCertificateThresholds()`;文件头「也不接门槛派生……
+三者必须在 4a-2 一次原子切换」描述的是一个**已经发生过**的未来(4a-2 早已接线)。
+改注释、**不改代码**(代码是对的)。这是本项目**第五次**抓到「注释≠执行位」。
+
+**P2-② 台账过期**:`current-state.md` §4 仍挂第三轮的 H1–H5,而它们已修完关闭 ——
+继续挂着会让下一个会话去重修。已换成本轮。
+
+**修复落点**(零 schema,**Migration 恒 67**):
+
+| # | 落地内容 |
+|---|---|
+| J1 | 证书域四 DTO 47 处逐条分类;`OmittableOnly` 提到 `src/common/decorators/` 成全仓唯一定义处;service 三处正向类型检查 + resolver 兜底;新 e2e `certificate-null-contract.e2e-spec.ts`(A 段该 400 的必须 400 + B 段反向数据断言 + C 段 5 条正向可 null,防矫枉过正) |
+| J2 | `eslint.harness.mjs` 第 18 条 selector + 641 条具名基线(棘轮);selftest 加阳性对照 / 反向用例 / 「只减不增」检查 |
+| J3 | 清掉 `recruitment-certificate-claims.service.ts` 三处过期注释;台账换本轮 |
+
+**修完仍须第五轮跨模型评审**(SOP [§1.6](codex-review-sop.md)),门禁由维护者解除 ——
+本批次**未**触碰 `current-state.md` 的 🔴 NO-GO。
+
+##### ✅ J2 · 立守护 + 全仓基线(**已落地**;红区授权 2026-07-31 由维护者发放)
+
+**规则(`eslint.harness.mjs` 第 18 条 `no-nullable-is-optional`)**:凡带 `@IsOptional()` 的属性,
+其 TS 类型必须含 `| null`;否则必须改用 `@OmittableOnly()`。默认对全仓生效(含 `test/` 与
+`prisma/` —— 两处实测零违规,所以是白拿的)。
+
+**棘轮的两道执行位,各管一半 —— 少任何一道都只剩单向**:
+
+| 情形 | 谁拦 | 为什么不是另一个 |
+|---|---|---|
+| 往**已在基线的文件**新增违规字段 | `pnpm lint` | 豁免精确到 `类名.字段名`,新字段不在名单里 → 当场红 |
+| 修好了却**忘删基线行** | `pnpm harness:selftest` | 一条用不上的豁免对 lint **静默无害**,lint 拦不到 |
+
+**基线键为什么是「类名.字段名」而不是行号**:行号一改基线就变噪音;而 `description` 这类
+字段名在同一文件的多个 DTO 类里各出现一次,只写字段名**区分不开**「已冻结的那个」和
+「新加的那个」—— 后者正是棘轮要拦的东西。
+
+**阳性对照与反向用例**(`scripts/harness-eslint.selftest.ts`,选择器覆盖闭环 17 → **18**):
+
+```
+✓ @IsOptional() 但类型不含 | null 被禁(null 会穿过契约层)      ← 阳性对照
+✓ 真可空字段放行(@IsOptional() + `string | null`)              ← 反向
+✓ 仅可省略字段放行(@OmittableOnly())                          ← 反向
+✓ baseline 内已冻结的字段暂免第 18 条(PaginationQueryDto.page) ← 反向
+✓ 选择器覆盖闭环:18/18 条均有正向用例真实触发
+✓ 第 18 条棘轮:基线与现状逐条一致(641 处 / 56 文件,只减不增)
+```
+
+**棘轮双向变异测试**(故意改坏基线,断言它确实会红 —— 不是推断):
+
+```
+基线多一条陈旧行 → ✗ 已修好但基线行还在(删掉这几行):PaginationQueryDto.alreadyFixed
+基线少一条       → ✗ 新增违规未登记(基线只能缩不能涨):PaginationQueryDto.page
+往基线文件新增一个违规字段 → pnpm lint 当场红
+同名字段挪到另一个类里     → 当场红(豁免绑类名,不是全文件通配)
+```
+
+**⚠️ `pnpm typecheck` 覆盖不到这个 selftest**:`scripts/tsconfig.json` 把
+`./harness-eslint.selftest.ts` 放在 `exclude` 里(**既有缺口,非本刀引入**)。理由写在该文件
+注释内:它 import `eslint.harness.mjs`,而后者顶部有 `// @ts-check`,拉进 TS 程序会暴露
+2 处 implicit-any。**所以 typecheck 绿 ≠ 这个文件被检查过。** 该注释写的解除条件
+(「拿到授权 → 注解那两行 → 从 exclude 删掉」)现已具备前两项,但删 exclude 需要
+`scripts/tsconfig.json` 的**第三份授权**(redzone `ci-control-plane`),且不在第四轮 findings
+范围内 —— **另立一小刀**,不混进本批(J2 已 +275 行,混进来会让跨模型评审更难做)。
+
+**全仓实测规模**(本批次 J1 修完后):**641 处 / 56 文件**,全部在 `src/`(`test/` 与
+`prisma/` 零违规)。两套独立实现(esquery selector + 直接走 AST)结果逐字一致。
+分布前十(供后续按批次排期):
+
+| 模块 | 处 | 模块 | 处 |
+|---|---|---|---|
+| activities | 95 | activity-registrations | 29 |
+| member-profiles | 67 | content | 26 |
+| role-bindings | 36 | announcement-import | 25 |
+| recruitment | 33 | member-departments | 23 |
+| positions | 32 | attendances | 22 |
+
+(J1 修完后 certificates 40→17、recruitment 49→33;全仓 680→641,恰好等于本批次收口的 39 处。)
+
+**为什么用棘轮而不是一次改完**:641 处 = 一个没人能评审的超大 diff,而跨模型评审是本仓
+唯一兜底。棘轮让「新写的代码不能再犯」立刻生效,存量按批次还 —— 上表就是排期依据。
+
+#### ✅ 第三轮独立评审 findings 已全部关闭(`main@1560c761`;H1–H5 = [#848](https://github.com/BA7IEE/srvf-nest-api/pull/848)–[#852](https://github.com/BA7IEE/srvf-nest-api/pull/852))
 
 **第二轮 4 条已全部修复并经第三轮复核关闭**(G1–G4 = [#843](https://github.com/BA7IEE/srvf-nest-api/pull/843)–[#846](https://github.com/BA7IEE/srvf-nest-api/pull/846),零 schema,Migration 恒 67)。
 本轮 5 条**无 P0**,主会话逐条复现,**全部属实**;其中第 ④ 条主会话判定比外部报告**更严重**(P2 → P1)。
