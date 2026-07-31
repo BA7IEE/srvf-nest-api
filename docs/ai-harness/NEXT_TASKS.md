@@ -337,7 +337,7 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 - **候选方案**:先盘点所有 SQL/报表/导出/备份消费者,再做 Prisma field 映射过渡或单次 rename + 存量验证;同步 current-state/CODEMAP/留存 SOP 与回滚 SQL。不得先新增第二列长期双写。
 - **触发条件**:外部 BI/报表开始直读该列,或合规审查要求物理字段名也去除“外籍”误述时单独立项。
 
-### P1-26 并发写路径审计 findings 修复 — **🔴 待维护者定修复范围**
+### P1-26 并发写路径审计 findings 修复 — **6 🔴 + 2 🟡 已修;剩 A-R2 与 S6 三处待拍板**
 
 - **两份独立审计,同一范围、同一 base(`7b0f5c25`),都 report-only、零 `src/` 改动**:
   - **A · Claude 版** [`concurrency-write-path-audit.md`](../archive/reviews/concurrency-write-path-audit.md) —— **56 落点 / 🔴2 / 🟡2 / 🟢52**;
@@ -358,7 +358,52 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 - **B 的 S5 / S6 扫描**:确认 `attendance.recorded` “随事务回滚”注释没有执行位及 3 组 stale source comment;确认 Activity.capacity 递补、岗位候补隔离、自助取消通知范围共 3 处 canonical/runtime 分叉。方向须维护者拍板,不在并发修复中顺手调和。
 - **B 的建议排序(其报告 §8,建议非执行)**:① Attendance Admin edit → ② Team Join submit+final join 同一 goal → ③ finalApprove 聚合 write-skew → ④ cancelMy 锁后 metadata → ⑤ submit 防御性复读。
 - **B 的未审点名**(其报告 §9):`auth`/`authz`/限流(红线)· AuditLogs/Notification Outbox/Insurance 的模块内部 · notification worker 消费侧 · **并发 e2e 未跑**(5 条红均给出源码可复核交错;真实双连接 barrier spec 留给后续获授权修复 goal)。
-- **状态**:**待维护者定修复范围**。报告 report-only,不解除任何门禁,`current-state.md` 由主会话看完报告后统一回填。
+
+#### 修复进度(2026-07-31;修复范围已由维护者以 goal 形式下达)
+
+**6 条 🔴 逐条 —— 每条都先写 red-first 并发 e2e 复现交错,再修**(去重后 A-R1 = B-F1):
+
+| 编号 | 复现结论 | 修复落点 | red-first 证据 |
+|---|---|---|---|
+| A-R1 = B-F1 · Admin `edit(records)` | ✅ 交错成立 | `attendances.service.ts` `edit`/`softDelete` **两条 surface 都取** Activity 聚合锁 + `claimAndRecheckRegistrations`(认领后复读复判) | 修复前:取消**成功提交**,edit 随后写入引用它的 live record → `cancelled 报名 + live 记录` |
+| A-Y1 · Admin `softDelete` 缺锁 | ✅ 形状成立(后果止于误报 21033) | 同上,与 `edit`/`resubmit` 收敛为同一写法 | 修复前:占住 Activity 行锁时 `softDelete` **不等待**,径直提交 |
+| B-Y1 · `submit` claim 后不复读 | ✅ 形状成立(当前被 Activity 根锁挡住) | 与 `edit` 共用 `claimAndRecheckRegistrations`,claim 后按同一批 id 复读并重判归属/状态/岗位时段 | 防御性加固,无独立红(阻断条件见 B 报告 §5) |
+| B-F2 · `finalApprove` 里程碑 write skew | ✅ 交错成立(**已实测**) | `finalApprove`/`reopen` 在读贡献快照前取共享 member 键 `lockMembersForWrite` | 修复前:正式总分 **5 分**、milestone intent **0 条** |
+| B-F3 · `cancelMy` 锁前 metadata | ✅ 交错成立 | 活动标题/发布人改到 claim + 证据守卫**之后**读 | 修复前:intent body 落的是**旧标题** |
+| B-F4 · Team Join `submit` | ✅ 交错成立 | `submit` 事务第一步取 member 键后再判「未入队」 | 修复前:一键入队在途时 submit **建行成功**,写入时人已是队员 |
+| B-F5 · final join 不级联同人申请 | ✅ 成立(不需并发) | final join 同事务按 `id ASC` 终结同人其它 live 申请为 `rejected` + `eliminationStage='already-enrolled'`,逐条写 `team-join-application.supersede` audit | 修复前:残留申请仍是 `joining`,全库巡检断言直接红 |
+
+- **共同线性化键**:新增 `src/common/prisma/member-advisory-lock.util.ts` 的 `lockMembersForWrite` —— 队员维度**唯一**一把键(单参数 `hashtext(memberId)` advisory 空间);`TimeOverlapPolicy.lockMembersForOverlapCheck` 改为委托它,语义与调用位置零变化。
+- **锁序**(修完后各路径持锁顺序,证明无环):
+  - 考勤写:`Activity 行锁 → Sheet claim → Registration claim → member 键`(`submit`/`edit`/`softDelete`/`resubmit` 同向)
+  - 考勤终审:`Sheet claim → member 键`(与考勤写同向:聚合行锁在前、member 键在后)
+  - 入队:`member 键 → Application 行锁 → Cycle → source → Member 行锁 → 同人残留 Application`
+    (键必须在**任何 Application 行锁之前**取:同一队员可同时有两条 approved 申请,两个终审各锁一条再反向争 Member + 同人级联 = 40P01;行锁图本身逐字不变)
+  - 无环依据:入队路径从不请求 Activity/Sheet/Registration 行锁;考勤路径从不请求 Application/Cycle/Member 行锁。两族唯一的交点是 member 键,而任一族内取键顺序都由排序去重固定。
+- **并发 e2e(全部真双 app 双连接 + 「两条独立连接」元断言)**:
+  `attendance-admin-edit-registration-concurrency` · `team-join-enrollment-lifecycle-concurrency` ·
+  `attendance-final-approve-contribution-milestone-concurrency` · `registration-cancel-my-locked-snapshot-concurrency`。
+  含两条**全库巡检不变量**:① live 考勤记录不得挂在非 pass / 已软删报名上;② 已入队队员名下不得有 live 入队申请。
+- **S5 已收口**:`attendance.recorded`「随事务回滚」是**错的**(它只是一次 Logger 输出,DB 回滚撤不回日志),注释已改正并指向 outbox 才是可回滚事件的落点;另 3 组 stale comment(App 报名「容量满拒绝」/「仅 pending|pass 可取消」、final join「消费评估延长期」)已按运行时改正。
+
+##### 🛑 仍待维护者拍板(**AI 不得自行调和**)
+
+1. **A-R2 · 活动取消后,已在流程中的考勤单怎么办**(行为契约,不是技术修复)。
+   事实:`activities.cancel` 只把 `pending`/`waitlisted` 报名改 `cancelled`,**完全不碰 AttendanceSheet**;
+   `submit` 有活动状态闸(20122),但 `edit`/`approve`/`finalApprove` 等九个写方法**从不读** `Activity.statusCode` ——
+   已取消活动上的考勤单能一路走完审批并结算贡献值,喂进入队门槛。**不需要并发也可达**。
+   两案见下方简报;**贡献值是队员切身利益,这个决定不归 AI**。
+2. **S6 四处 canonical/runtime 分叉**(逐处「改文档还是改代码」):
+   | # | canonical | runtime | 现状 |
+   |---|---|---|---|
+   | A-S6 | `handoff/admin-web.md:80` / `miniapp.md:30`:有未撤销考勤记录的报名一定取消不了(21033) | 曾可被 Admin `edit` 并发绕过 | ✅ **已随 K1 核销**(运行时现已兑现文档,文档未改) |
+   | B-D1 | `admin-web.md:73`:有 live Position 时编辑 `Activity.capacity` **不再**触发递补 | `activities.service.ts` 仍算 delta 并调跨岗位递补 | ⏳ 待拍板 |
+   | B-D2 | `admin-web.md:73` / `miniapp.md:108-111`:A 岗释放/扩容只递补 A 岗 | `activity-waitlist-promotion.ts` preferred 队列空后进入其它有余量岗位的全局 FIFO fallback | ⏳ 待拍板 |
+   | B-D3 | `admin-web.md:198,460` / `miniapp.md:65`:只有「取消**已通过**报名」才发 `activity-changed` | pending/pass/waitlisted 自助取消都无条件 enqueue owner intent | ⏳ 待拍板 |
+3. **canonical 缺定义(先补定义再判)**:`attendances/CLAUDE.md:12` 要求所有业务写经 AttendanceAuditRecorder,
+   而 App GPS 签到/签退成功路径直写 `ActivityCheckIn` 不落 AuditLog;`docs/handoff/**` 未定义 GPS 证据写是否豁免。
+- **本次未做**:A-R2 未动(等拍板)· B-D1/D2/D3 未调和 · `certificates`/`recruitment`/`auth`/`authz`/限流未碰(goal 禁区)· 零 schema(Migration 恒 67)。
+- **状态**:**6 🔴 + 2 🟡 已修并有 red-first 证据;剩 A-R2 与 S6 三处待拍板**。本条目**关闭前须过跨模型评审**(SOP §1.6)。
 
 ### P2-6 #399 review P2 修复残余(4 项;**均无当前运行时危害,诉求/接线时处理**) — 2026-06-20 收口登记
 > #399 全仓 review P2 六项已修(#400-#404,见 [`current-state §4`](../current-state.md) + 冻结报告顶部 ✅);以下为修复时显式接受、留待后续的残余:

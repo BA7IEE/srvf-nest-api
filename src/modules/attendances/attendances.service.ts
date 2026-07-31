@@ -8,6 +8,7 @@ import { eventPlaceholder } from '../../common/event/event-placeholder';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
+import { lockMembersForWrite } from '../../common/prisma/member-advisory-lock.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
@@ -110,9 +111,13 @@ const ATTENDANCE_EXPAND_WHITELIST = ['activity'] as const;
 // 共承担 8 处 operation,通过 `extra.operation` / `extra.action` 区分(沿 PR #4 / PR #5 范式,
 // D2 同值挪字符串);resourceType 固定 `attendance_sheet`;C-2 起 3 处 read.other 在查询完成后
 // 经 AttendanceAuditRecorder fail-closed 落库,extra 仅保留 operation/count/filterFields。
-// **`eventPlaceholder('attendance.recorded')` 与 audit 是两套独立机制,不动**(沿 D-S7;
-// final-approve 同事务触发业务事件,audit 同事务记录;
-// 若 audit 写失败 → 整个事务回滚 → 业务事件随之回滚,由 DB 事务原子性保证)。
+// **`eventPlaceholder('attendance.recorded')` 与 audit 是两套独立机制,不动**(沿 D-S7)。
+// ⚠️ 原注释曾称「audit 写失败 → 事务回滚 → 业务事件随之回滚,由 DB 事务原子性保证」——
+// 这是**错的**,已于并发审计 S5 收口(2026-07-31)改正:`eventPlaceholder` 只是一次
+// 立即执行的 Logger 输出(见 `common/event/event-placeholder.ts`),日志一旦写出,
+// 数据库回滚撤不回它。真正随事务回滚的只有 audit 与业务写这两类**库内**副作用。
+// 需要「可回滚的事件」时,唯一正确落点是 notification outbox intent(同事务落库、
+// commit 后才由 worker 执行 Effect),不是本函数。
 // records 全字段快照入 audit context:submit / edit × 2 / softDelete / finalReject / **reject**
 // (F4 #399:reject 也软删 records,审计含软删前快照,对称 finalReject)必含;
 // approve / finalApprove 只放 sheet 快照,`extra.recordsCount` 元数据(records 不变)。
@@ -379,7 +384,11 @@ export class AttendancesService {
     }
   }
 
-  private async lockActivityForManagedAttendance(activityId: string, tx: PrismaTx): Promise<void> {
+  // 考勤写路径的 Activity 聚合锁。**任何 surface 都必须取**(并发审计 K1 / 第七种形状 S7):
+  // 把它挂在 `authorization === 'managed'` / `managedActivityId !== undefined` 这类判权分支上,
+  // 会让另一条 surface 对 Activity 与 Registration 完全裸奔,单读该方法看不出来。
+  // 名字里刻意不再带 "Managed" —— 它不是 managed 面的专属物。
+  private async lockActivityForAttendanceWrite(activityId: string, tx: PrismaTx): Promise<void> {
     const rows = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT id FROM "Activity"
       WHERE id = ${activityId} AND "deletedAt" IS NULL
@@ -651,21 +660,67 @@ export class AttendancesService {
     });
   }
 
-  // submit 在普通批量校验后，以公共 CAS 原语锁住全部 pass registration。
-  // 排序去重保持多报名批次锁序稳定；并发 cancel 必须等到本事务提交，再由既有
-  // assertNoAttendanceRecords 拒绝，不能留下 cancelled registration + live record。
-  private async claimRegistrationsForSubmit(
-    registrationIds: readonly string[],
+  // submit / edit 在普通批量校验后，以公共 CAS 原语锁住全部 pass registration，
+  // **并在锁后复读复判**。排序去重保持多报名批次锁序稳定；并发 cancel 必须等到本事务提交，
+  // 再由既有 21033 参与证据守卫拒绝，不能留下 cancelled registration + live record。
+  //
+  // 为什么 claim 之后还要复读(并发审计 B-Y1 / S1):`claimAtStatus` 只保证「锁到手时
+  // statusCode 仍是 pass」,records 依赖的其余事实 —— 报名归属哪个活动、归属哪个队员、
+  // 岗位时段 —— 全部来自 claim **之前**那次普通读。它们当前不可达是因为改这些字段的
+  // 写方都得先拿 Activity 根锁,而调用方已持有它;但这份安全寄生在别处,不写在这里。
+  // 锁后按同一批 id 复读一次并重跑校验,这条路径就自洽了。
+  private async claimAndRecheckRegistrations(
+    normalized: ReadonlyArray<ReturnType<AttendancesService['normalizeRecord']>>,
+    activity: { id: string; startAt: Date; endAt: Date },
     tx: PrismaTx,
   ): Promise<void> {
-    const sortedRegistrationIds = [...new Set(registrationIds)].sort();
-    for (const registrationId of sortedRegistrationIds) {
+    const registrationIds = [
+      ...new Set(
+        normalized
+          .map((record) => record.registrationId)
+          .filter((registrationId): registrationId is string => registrationId !== null),
+      ),
+    ].sort();
+    if (registrationIds.length === 0) return;
+
+    for (const registrationId of registrationIds) {
       await claimAtStatus(tx, {
         target: 'activityRegistration',
         id: registrationId,
         expectedStatus: 'pass',
         invalidStatusBiz: BizCode.ATTENDANCE_REGISTRATION_INVALID,
       });
+    }
+
+    const lockedRegistrations = await tx.activityRegistration.findMany({
+      where: notDeletedWhere({ id: { in: registrationIds } }),
+      select: {
+        id: true,
+        activityId: true,
+        memberId: true,
+        statusCode: true,
+        activityPosition: { select: { startAt: true, endAt: true } },
+      },
+    });
+    const lockedById = new Map(
+      lockedRegistrations.map((registration) => [registration.id, registration]),
+    );
+
+    for (const record of normalized) {
+      if (record.registrationId === null) continue;
+      const registration = lockedById.get(record.registrationId);
+      if (!registration || registration.activityId !== activity.id) {
+        throw new BizException(BizCode.ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH);
+      }
+      if (registration.memberId !== record.memberId || registration.statusCode !== 'pass') {
+        throw new BizException(BizCode.ATTENDANCE_REGISTRATION_INVALID);
+      }
+      const position = registration.activityPosition;
+      const schedule =
+        position !== null && position.startAt !== null && position.endAt !== null
+          ? { startAt: position.startAt, endAt: position.endAt }
+          : activity;
+      this.assertRecordWithinActivityWindow(record, schedule);
     }
   }
 
@@ -698,7 +753,7 @@ export class AttendancesService {
       // 1. 与 pass cancel / GPS check-in 统一 Activity → Registration 锁序。
       // managed 以 FOR UPDATE 与责任撤销/移交串行并锁后重读 capability；Admin 默认仍用 FOR SHARE。
       if (authorization === 'managed') {
-        await this.lockActivityForManagedAttendance(activityId, tx);
+        await this.lockActivityForAttendanceWrite(activityId, tx);
         await this.assertManagedAttendanceAccess(activityId, currentUser, tx);
       } else {
         const lockedActivity = await tx.$queryRaw<Array<{ id: string }>>`
@@ -722,12 +777,7 @@ export class AttendancesService {
         now,
         tx,
       );
-      await this.claimRegistrationsForSubmit(
-        normalized
-          .map((record) => record.registrationId)
-          .filter((registrationId): registrationId is string => registrationId !== null),
-        tx,
-      );
+      await this.claimAndRecheckRegistrations(normalized, activity, tx);
 
       // 4. 数组内部时间不重叠 + 与已有跨 Sheet 全局不重叠
       // 抽出至 TimeOverlapPolicy(refactor PR;算法 / 边界 / excludeSheetId 语义零变化)。
@@ -1191,12 +1241,20 @@ export class AttendancesService {
       id,
     });
     return this.prisma.$transaction(async (tx) => {
+      // K1(S7 收口):Activity 聚合锁**两条 surface 都取**,不再只有 managed 分支取。
+      // managed 面必须在暴露 Sheet 存在性之前先判权,所以它按 managedActivityId 先锁再判权;
+      // Admin 面没有这道前置,读到 Sheet 后按其 activityId 取同一把锁。
+      // `assertManagedSheetActivity` 保证 managed 时两个 id 相等 —— 锁的是同一行。
+      const lockedByManagedBranch = managedActivityId !== undefined;
       if (managedActivityId !== undefined) {
-        await this.lockActivityForManagedAttendance(managedActivityId, tx);
+        await this.lockActivityForAttendanceWrite(managedActivityId, tx);
         await this.assertManagedAttendanceAccess(managedActivityId, currentUser, tx);
       }
       const sheet = await this.findSheetOrThrow(id, tx);
       this.assertManagedSheetActivity(sheet.activityId, managedActivityId);
+      if (!lockedByManagedBranch) {
+        await this.lockActivityForAttendanceWrite(sheet.activityId, tx);
+      }
 
       const editTransition = this.sheetStateMachine.decide('edit', sheet.statusCode);
       if (!editTransition.allowed) {
@@ -1253,6 +1311,9 @@ export class AttendancesService {
         now,
         tx,
       );
+      // K1:与 submit 逐字对齐 —— 引用到的 pass 报名必须在本事务内认领并锁后复判,
+      // 否则并发取消会在「读到 pass」与「写 record」之间挤进来。
+      await this.claimAndRecheckRegistrations(normalized, activity, tx);
 
       // 抽出至 TimeOverlapPolicy(refactor PR;edit 路径透传 excludeSheetId=id 语义不变)。
       this.timeOverlapPolicy.assertNoInternalOverlap(normalized);
@@ -1347,12 +1408,19 @@ export class AttendancesService {
       id,
     });
     return this.prisma.$transaction(async (tx) => {
+      // K1 / A-Y1:与 edit 同一形状 —— 两条 surface 都取 Activity 聚合锁。
+      // softDelete 的方向是移除考勤证据,最坏后果止于并发取消误报 21033;但让
+      // edit / softDelete / resubmit 收敛成同一种写法,比记住"这条为什么可以不锁"更省。
+      const lockedByManagedBranch = managedActivityId !== undefined;
       if (managedActivityId !== undefined) {
-        await this.lockActivityForManagedAttendance(managedActivityId, tx);
+        await this.lockActivityForAttendanceWrite(managedActivityId, tx);
         await this.assertManagedAttendanceAccess(managedActivityId, currentUser, tx);
       }
       const sheet = await this.findSheetOrThrow(id, tx);
       this.assertManagedSheetActivity(sheet.activityId, managedActivityId);
+      if (!lockedByManagedBranch) {
+        await this.lockActivityForAttendanceWrite(sheet.activityId, tx);
+      }
 
       const deleteTransition = this.sheetStateMachine.decide('softDelete', sheet.statusCode);
       if (!deleteTransition.allowed) {
@@ -1668,6 +1736,16 @@ export class AttendancesService {
         select: recordWithMemberSelect,
         orderBy: { checkInAt: 'asc' },
       });
+      // K3(B-F2 write skew):入队贡献值里程碑的判定依据是**跨 Sheet** 的 member 聚合,
+      // 而本事务只锁住了自己这一张 Sheet。缺共同键时两张 Sheet 同时终审会各读 before=3、
+      // 各算 after=4,谁都不跨 5 分、谁都不尝试 enqueue —— outbox 唯一键兜不住「两边都没插」,
+      // 通知就此永久丢失(同 application + 门槛只有一次首跨机会)。
+      // 取键位置固定在 **Sheet claim 之后**,与 submit/edit 的「聚合行锁在前、member 键在后」
+      // 同向;取在 claim 之前会与 edit 反向,凑出 40P01。
+      await lockMembersForWrite(
+        tx,
+        recordsForEvent.map((record) => record.memberId),
+      );
       const contributionThresholdSnapshots =
         await this.attendanceNotificationProducer.prepareContributionThresholdSnapshots(
           tx,
@@ -1914,7 +1992,7 @@ export class AttendancesService {
       const initialSheet = await this.findSheetOrThrow(id, tx);
       this.assertManagedSheetActivity(initialSheet.activityId, managedActivityId);
 
-      await this.lockActivityForManagedAttendance(initialSheet.activityId, tx);
+      await this.lockActivityForAttendanceWrite(initialSheet.activityId, tx);
       if (currentUser.role !== Role.SUPER_ADMIN) {
         await this.assertManagedAttendanceAccess(initialSheet.activityId, currentUser, tx);
       }
@@ -2004,6 +2082,13 @@ export class AttendancesService {
         select: recordWithMemberSelect,
         orderBy: { checkInAt: 'asc' },
       });
+      // K3:reopen 把 approved 撤回 pending,等于**下调**这些队员的生效贡献值 ——
+      // 它和 finalApprove 是同一个跨 Sheet 聚合的两个写方,必须共享同一把 member 键,
+      // 否则并发的终审会基于一份正在被撤回的 before 判里程碑。取键位置与 finalApprove 一致。
+      await lockMembersForWrite(
+        tx,
+        records.map((record) => record.memberId),
+      );
       const updated = await tx.attendanceSheet.update({
         where: { id: lockedSheet.id },
         data: {

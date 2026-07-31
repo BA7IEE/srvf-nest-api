@@ -5,6 +5,7 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
+import { lockMembersForWrite } from '../../common/prisma/member-advisory-lock.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
@@ -151,6 +152,11 @@ export class AppMeTeamJoinService {
   ): Promise<AppTeamJoinApplicationDto> {
     const memberId = await this.assertCanUseAppOrThrow(currentUser);
     return this.prisma.$transaction(async (tx) => {
+      // 并发审计 B-F4:「未入队」是**跨行**事实(Member.gradeCode + 归属任期),没有任何一行
+      // 能锁住它。不取共同键时,一键入队可以整个跑在本方法的「读」与「建行」之间 ——
+      // 写入发生的那一刻这个人已经是正式队员,却仍新增了一条进行中申请。
+      // 键必须在读之前取:取在读之后等于没取。
+      await lockMembersForWrite(tx, [memberId]);
       await this.assertNotEnrolledOrThrow(memberId, tx);
       const cycle = await this.findOpenCycleOrThrow(tx);
       const targets = await this.validateTargetOrgsOrThrow(dto.targetOrganizationIds, cycle, tx);

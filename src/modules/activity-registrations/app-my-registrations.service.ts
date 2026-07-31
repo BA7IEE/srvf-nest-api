@@ -124,7 +124,10 @@ export class AppMyRegistrationsService {
   //      **统一抛** ACTIVITY_NOT_FOUND=20001 / 404 防侧信道(沿 P2-4 D-P2-4-3 范式)
   //   3. thin-wrap 既有 `ActivityRegistrationsService.createMy`(沿同评审稿 §6.2 不改签名):
   //      事务内 resolveUserMemberIdOrThrow + assertActivityRegistrable(剩余只触发 20120)
-  //      + assertCapacityNotExceeded + assertNoActiveRegistration + create + audit
+  //      + 容量判定 + assertNoActiveRegistration + create + audit。
+  //      ⚠️ 并发审计 S5 收口(2026-07-31):这里原写「assertCapacityNotExceeded」,
+  //      是候补上线前的旧口径。**满员不再报错**,而是落 `waitlisted` 等递补
+  //      (见 activity-registrations/CLAUDE.md「不恢复 create 满员报错」)。
   //   4. 出参经私有 mapper 转 AppMyRegistrationDto
   //      (沿同评审稿 §8.2.2 字段集 11 项不返 memberId)
   //
@@ -167,7 +170,9 @@ export class AppMyRegistrationsService {
   //   2. thin-wrap 既有 `ActivityRegistrationsService.cancelMy`(沿同评审稿 §6.2):
   //      事务内:resolveUserMemberIdOrThrow + 反查 registration(本人 + 未软删) →
   //      404 防侧信道(他人 / 不存在 / 软删统一 ACTIVITY_REGISTRATION_NOT_FOUND=21001)→
-  //      状态机校验 pending|pass → cancelled,其它态 → ACTIVITY_REGISTRATION_STATUS_INVALID=21030
+  //      状态机校验 pending|pass|waitlisted → cancelled,其它态 → ACTIVITY_REGISTRATION_STATUS_INVALID=21030
+  //      (并发审计 S5 收口 2026-07-31:原写「仅 pending|pass」,漏了候补上线后加进来的
+  //       waitlisted;合法矩阵的唯一真源始终是 `activity-registration-state-machine.ts`)
   //      + update + audit registration.review (action='cancel', cancelledByPath='self')
   //   3. 出参经私有 mapper 转 AppMyRegistrationDto
   //

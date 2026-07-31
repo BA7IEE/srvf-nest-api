@@ -21,6 +21,18 @@ export const APP_STATUS_REJECTED = 'rejected'; // 已拒(终态)
 // ===== 淘汰环节(eliminationStage;rejected 时记)=====
 export const ELIM_STAGE_EVALUATION = 'evaluation'; // 综合评估不通过
 export const ELIM_STAGE_GATE_TIMEOUT = 'gate-timeout'; // 门槛超期 / 人工淘汰
+// 并发审计 B-F5:该队员已由**另一条**申请完成入队,本条随之收尾。
+// 注意边界:终结的依据是「这个人已经是队员了」,**不是**「所在轮关闭了」——
+// 关轮不使 approved 资格失效(docs/handoff/admin-web.md:528),那条契约不受本刀影响。
+export const ELIM_STAGE_ALREADY_ENROLLED = 'already-enrolled';
+
+// 入队申请的 live(非终态)状态集合:仍在流程里、仍可被推进的那些。
+// final join 的终态级联按它筛同一队员的残留申请。
+export const LIVE_APPLICATION_STATUS_CODES = [
+  APP_STATUS_JOINING,
+  APP_STATUS_PENDING_EVALUATION,
+  APP_STATUS_APPROVED,
+] as const;
 
 // ===== 10 项考核拆解(评审稿 §4.1;Q1 维护者会议纪要纠正后冻结)=====
 // 通用必过 = 8 admin gate(落 gateMarks JSON,各带完成日 → 有效期)+ 1 系统自动 contribution

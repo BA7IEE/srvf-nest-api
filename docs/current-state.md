@@ -3,7 +3,7 @@
 > **人类决策与现实世界状态的唯一权威源**。冲突以本文件为准;先报告,不擅自调和。
 > Harness 3.0 起本文件**只留不可从代码/GitHub 查到的东西**:现实运维态(§1)、能力指针(§2)、
 > 不做清单(§3)、债务(§4)。版本号 / main HEAD / open PR / tag run 等**机器可查事实已删** ——
-> 现场跑 `pnpm agent:preflight`(Claude 会话开工时自动执行并注入结论)。§1 计数块由 `pnpm docs:counts` 生成。
+> 现场跑 `pnpm agent:preflight`。§1 计数块由 `pnpm docs:counts` 生成。
 
 ## 1. 现实世界状态(机器查不到,必须人维护)
 
@@ -23,7 +23,7 @@
 | Migration | 67 |
 | BizCode | 306 |
 | 权限码 | 222 |
-| AuditLogEvent | 129 |
+| AuditLogEvent | 130 |
 | 内建角色 | 15 |
 | Cron | 2 |
 <!-- counts:end -->
@@ -64,7 +64,7 @@
 |---|---|
 | P1 | 前端联调包剩运维演练 + 排错 SOP(系统侧无动作) |
 | P1 | 保险 gate 未启用、旧 server=0 未验证；真实 ingress/ACL、COS、worker/fleet、registry digest 未验，均为 production GO 硬门 |
-| P1 | P1-22 专业队 gate 配置化;P1-23 isForeigner 历史列改名(对外已用 isNonMainlandDocument) |
+| P1 | P1-22 专业队 gate 配置化;P1-23 isForeigner 历史列改名;P1-26 并发审计 6 活 bug + 2 🟡 已修,**剩 2 待拍板**:活动取消是否级联考勤单 / S6 三处分叉 |
 | 🔴 **P1** | **证书标准库第五轮评审:J1/J3 PASS(运行时 null 契约已关闭)、J2 FAIL**(棘轮 3 P1 + 1 P2,**无 P0**):基线可被同 PR 加行 / A 换 B,inline disable 与嵌套 null 绕过第 18 条,身份不唯一。四条全修:基线抽 JSON(六条约束加载即抛)· 换独立 ruleId 自定义规则 + DTO 关 inline · 裁判硬判 `HEAD ⊆ BASE`(审批盖不掉)· 对账改「身份恰命中 1 次」;十项变异建档。**等第六轮复核**。见 [`NEXT_TASKS` P1-24](ai-harness/NEXT_TASKS.md) |
 | **P1** | **证书标准库未上线三件事**(P0 修完前都不要动):① PR-4b 第 67 migration 是**不可逆** contract(DROP 七列),production 未部署,须按 [`go-live`](ops/certificate-standard-library-go-live.md) 停写→备份验证→探针→deploy(AI 对 `migrate deploy` 恒无权);② #826–#834 + F1–F6 的对外契约破坏未发版,前端清单见 [`handoff/admin-web.md`](handoff/admin-web.md) §3.2 / §3.2.1;③ 首批标准与认定规则未建(刻意不 seed,认定口径归维护者拍板)—— 零标准时建证与审核一律拒、招新选择器恒空,按 [`初始化`](ops/certificate-standard-library-initialization.md) 执行,⚠️ `code` 打错不可挽回 |
 | P2 | scoped余面;god-service;单测低;snapshot勿整读;nullable primitive→OpenAPI object(D档另立) |
