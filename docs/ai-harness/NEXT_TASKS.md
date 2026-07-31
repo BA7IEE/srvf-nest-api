@@ -146,6 +146,18 @@
 - **候选方案**:先盘点所有 SQL/报表/导出/备份消费者,再做 Prisma field 映射过渡或单次 rename + 存量验证;同步 current-state/CODEMAP/留存 SOP 与回滚 SQL。不得先新增第二列长期双写。
 - **触发条件**:外部 BI/报表开始直读该列,或合规审查要求物理字段名也去除“外籍”误述时单独立项。
 
+### P1-26 并发写路径审计 findings 修复 — **🔴 待维护者定修复范围**
+
+- **报告**:[`archive/reviews/concurrency-write-path-audit.md`](../archive/reviews/concurrency-write-path-audit.md)(2026-07-31,report-only,零 `src/` 改动;base `7b0f5c25`)。
+- **覆盖**:`attendances` / `activities`(含 waitlist / positions / publish-review / responsibility)/ `activity-registrations` / `team-join` **全部写路径 56 个落点**(不只 26 处 `claimAtStatus`)。结论 **🔴 2 / 🟡 2 / 🟢 52**;`activity-registrations` 与 `team-join` **零 finding**。
+- **🔴 R1**(建议最先修,~3 行):Admin `PATCH admin/v1/attendance-sheets/:id`(`attendances.service.ts:1182` `edit`)既不锁 Activity 也不认领 registration,而同文件 `submit` 两样都做 ⇒ 可与报名取消交错,留下 **`cancelled` 报名 + live 考勤记录**,并给已取消报名结算服务时长/贡献值。**同时使 `docs/handoff/admin-web.md:80` 与 `miniapp.md:30` 承诺的 21033 不变量失效**(报告 §3.1 有逐时刻交错表)。managed surface 不受影响。
+- **🔴 R2**(需先拍板业务语义):`activities.service.ts:1093` `cancel` 不级联 `AttendanceSheet`,且 attendances 九个写方法**一次都不读 `Activity.statusCode`**(状态闸只存在于 `submit`)⇒ 已取消活动上的考勤单仍能走完 `approve → finalApprove` 并产出有效贡献值;`pass` 报名也滞留在 `pass`。**此条不需要并发即可到达**,本质是级联缺口。与 `softDelete` 拒删口径自相矛盾。
+- **🟡 Y1 / Y2**:`attendances.softDelete` 同缺 Activity 锁(后果止于误报 21033,不破坏不变量);`activity-publish-review.service.ts:790` `cancelPendingForActivity` 用锁前状态决策 + 按 id 无条件写,当前**完全靠唯一调用者持 Activity 锁**挡住,而该契约没写进签名/注释/断言。
+- **第七种形状(本次最大产出)**:**S7 —— 锁获取被绑在 authorization 分支上,另一条 surface 裸奔**。方法单独读起来「有锁且锁后复读」,只有跨 surface 对照才暴露;R1/Y1 都是它。可做成 AST 规则(锁调用位于 `authorization` / `managedActivityId` 条件分支内且无等价 else),**做成机器检查比逐条修复更值钱**。
+- **建议排序(报告 §8,建议非执行)**:① R1 → ② Y1 同刀 → ③ S7 机器检查 → ④ R2 拍板 → ⑤ Y2 加固。
+- **未审点名**(报告 §7):`auth`/`authz`/限流(红线)· `InsuranceRequirementService` 与 `member-lifecycle-lock` 内部锁序(黑盒引用)· notification worker 消费侧 · **并发 e2e 未跑**(R1/R2 判定源自代码路径 + PostgreSQL 行锁冲突矩阵 + schema 核对;要升级为「已实测」需两套 Nest/Prisma pool + `pg_blocking_pids` barrier spec)。
+- **状态**:**待维护者定修复范围**。报告 report-only,不解除任何门禁,`current-state.md` 由主会话看完报告后统一回填。
+
 ### P2-6 #399 review P2 修复残余(4 项;**均无当前运行时危害,诉求/接线时处理**) — 2026-06-20 收口登记
 > #399 全仓 review P2 六项已修(#400-#404,见 [`current-state §4`](../current-state.md) + 冻结报告顶部 ✅);以下为修复时显式接受、留待后续的残余:
 - **F2 残余:attachment key owner-绑定**(P3)— F2 现把 create() 的 key 约束到 `attachments/<envPrefix>/` 派生格式正则,关闭「任意 COS 路径」面;残余 = 命名空间内、已知**完整 96-bit 随机段** key 仍可签(已知即已有权)。彻底闭合 = key↔owner 派生绑定 / 弃用模式 A 全量走模式 B(upload-url + HMAC token)。**COS 休眠,运维接通前非紧急**。
