@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { lockMembersForWrite } from '../../common/prisma/member-advisory-lock.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 
 // V2 第一阶段批次 3B R16 / Q-S15 时间不重叠校验(单一职责)。
@@ -29,19 +30,11 @@ type OverlapRecordLike = {
 @Injectable()
 export class TimeOverlapPolicy {
   // finding #7:同一 member 的重叠检查与后续写入必须在事务内串行。
-  // 去重排序后用一条 SQL 批量取 PostgreSQL transaction advisory lock，查询次数不随成员数增长；
-  // SQL 内 ORDER BY 保证跨 batch 取锁顺序一致，避免反向取锁死锁。
+  // 取锁实现已下沉到共享原语 `lockMembersForWrite`(并发审计 K3):贡献值 write skew 要的
+  // 是**同一把** member 键,两处各写一份 SQL 迟早会漂成两把锁。语义与调用位置零变化 ——
+  // 仍在本事务内、仍在跨 Sheet 重叠查询之前,不得移到事务外或退回 read-before-write。
   async lockMembersForOverlapCheck(memberIds: readonly string[], tx: PrismaTx): Promise<void> {
-    const orderedIds = [...new Set(memberIds)].sort();
-    if (orderedIds.length === 0) return;
-    await tx.$queryRaw<Array<{ locked: string }>>(
-      Prisma.sql`
-        SELECT pg_advisory_xact_lock(hashtext(member_id))::text AS locked
-        FROM (VALUES ${Prisma.join(orderedIds.map((memberId) => Prisma.sql`(${memberId})`))})
-          AS member_ids(member_id)
-        ORDER BY member_id
-      `,
-    );
+    await lockMembersForWrite(tx, memberIds);
   }
 
   // 时间不重叠校验(R16 / Q-S15):同 memberId × [checkInAt, checkOutAt) 左闭右开

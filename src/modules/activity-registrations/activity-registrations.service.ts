@@ -1480,14 +1480,6 @@ export class ActivityRegistrationsService {
         throw new BizException(BizCode.ACTIVITY_REGISTRATION_NOT_FOUND);
       }
 
-      const activity = await tx.activity.findFirst({
-        where: notDeletedWhere({ id: reg.activityId }),
-        select: {
-          title: true,
-          publisher: { select: { memberId: true } },
-        },
-      });
-
       const transition = this.registrationStateMachine.decide('cancel', reg.statusCode);
       if (!transition.allowed) {
         throw new BizException(transition.biz);
@@ -1505,6 +1497,18 @@ export class ActivityRegistrationsService {
       const lockedReg = await this.findRegistrationOrThrow(reg.activityId, reg.id, tx);
       // 参与域生命周期收口⑦:队员自助路径共用 live 考勤记录 / 签到证据守卫。
       await this.assertNoParticipationEvidence(lockedReg.id, tx);
+      // K4(B-F3):活动标题 / 发布人必须在**锁后**读。放在锁前时,并发改名先提交,
+      // 本事务仍会用旧标题落 durable intent —— intent 一旦落库,worker 无法自行恢复正确快照,
+      // 同一次取消甚至会同时产出「旧标题的取消通知」与「新标题的候补递补通知」(递补 helper
+      // 本就是锁后复读的),两条自相矛盾。pass 分支此刻已持 Activity `FOR UPDATE`;
+      // 非 pass 分支不取活动锁(它不改容量、不触发递补),这里仍是本事务能取到的最新已提交值。
+      const activity = await tx.activity.findFirst({
+        where: notDeletedWhere({ id: lockedReg.activityId }),
+        select: {
+          title: true,
+          publisher: { select: { memberId: true } },
+        },
+      });
       const cancellingMember = await tx.member.findUnique({
         where: { id: lockedReg.memberId },
         select: { memberNo: true, displayName: true },

@@ -150,13 +150,16 @@ export class AppManagedActivityAttendancesController {
   }
 
   @Patch('attendance-sheets/:sheetId')
-  @ApiOperation({ summary: 'App 活动考勤责任人编辑 pending 或 returned 考勤单 [auth]' })
+  @ApiOperation({
+    summary: 'App 活动考勤责任人编辑 pending 或 returned 考勤单(活动已取消拒绝改 records) [auth]',
+  })
   @ApiWrappedOkResponse(AppManagedAttendanceSheetDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
     BizCode.FORBIDDEN,
     BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN,
     BizCode.ATTENDANCE_SHEET_NOT_FOUND,
     BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
   )

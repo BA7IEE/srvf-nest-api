@@ -54,6 +54,21 @@ export class ActivityParticipationPolicy {
     return { allowed: true };
   }
 
+  // A-R2 拍板(2026-07-31,方案乙「放行存量、掐断增量」):活动取消后,**已存在**的考勤单
+  // 允许走完审批并结算 —— 工是真做了的,作废队员已提交的贡献代价更大;但不得再往里写 records。
+  //
+  // 为什么只拦 cancelled、且只拦 records 分支:
+  // - 贡献值的增量只有两条来源 —— 新建 Sheet(`submit`,已由 `canSubmitAttendance` 拦)
+  //   与改写既有 Sheet 的 records(本闸)。`resubmit`/`approve`/`finalApprove` 只搬状态,
+  //   不产生新的贡献事实,所以刻意**不**加闸(那正是「放行存量」)。
+  // - draft / published / completed 的既有单编辑行为逐字不变,本闸不扩大到它们。
+  canChangeAttendanceRecords(activity: { statusCode: string }): ActivityParticipationDecision {
+    if (activity.statusCode === 'cancelled') {
+      return { allowed: false, biz: BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN };
+    }
+    return { allowed: true };
+  }
+
   canSubmitAttendance(activity: { statusCode: string }): ActivityParticipationDecision {
     if (activity.statusCode === 'published' || activity.statusCode === 'completed') {
       return { allowed: true };

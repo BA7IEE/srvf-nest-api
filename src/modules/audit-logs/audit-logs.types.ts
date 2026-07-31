@@ -152,6 +152,9 @@ export type AuditLogEvent =
   | 'team-join-application.update-targets' // 改候选部门(before/after targetCount)
   // 招新三期(入队)T4(2026-06-19;评审稿 §4.5):admin 一键入队(志愿者→队员;设部门 + 级别 level-1):
   | 'team-join-application.join' // before/after status;extra {organizationId, gradeCode, memberId}
+  // 并发审计 K2 / B-F5(2026-07-31):一键入队同事务终结同一队员名下其它 live 申请。
+  // 与 evaluate 刻意分开:没有人评估过被顶掉的那条,它是被「已入队」这个事实收尾的。
+  | 'team-join-application.supersede' // before/after status;extra {eliminationStage, supersededByApplicationId, memberId}
   // CMS 内容发布模块(第 28 模块)T2(2026-06-21;评审稿 content-module-review.md §7):admin 内容写 4 事件。
   // content.publish 为伞事件,覆盖 publish / unpublish / archive(extra.operation 区分 + before/after statusCode,
   // 沿 activity.publish 一事件多 operation 范式)。读取面 / viewCount 自增不写 audit;附件上传/删复用 attachment.{upload,delete}。

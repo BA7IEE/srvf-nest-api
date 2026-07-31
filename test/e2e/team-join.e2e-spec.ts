@@ -1783,7 +1783,11 @@ describe('招新三期(入队)admin 面 e2e', () => {
       const winner = join(appId, org).then((res) => res);
       const blockerPid = await withTimeout(reachedPromise, 'team join duplicate barrier');
       const loser = joinVia(appB, appId, org).then((res) => res);
-      await waitForBlockedQuery(blockerPid, '%FROM "team_join_applications"%FOR UPDATE%');
+      // 并发审计 K2 起,final join 在**任何 Application 行锁之前**先取 member 线性化键
+      // (`lockMembersForWrite`)—— 于是败者卡的位置从 `team_join_applications … FOR UPDATE`
+      // 前移到了 advisory 键。观测点跟着前移;下面的结果断言(赢家 200 / 败者 28240 /
+      // evidence·归属·outbox 各恰 1)**逐字未动** —— 被保护的不变量没变,变的只是它在哪一步兑现。
+      await waitForBlockedQuery(blockerPid, '%pg_advisory_xact_lock%');
       release();
       const [winnerRes, loserRes] = await Promise.all([winner, loser]);
       expect(winnerRes.status).toBe(200);
