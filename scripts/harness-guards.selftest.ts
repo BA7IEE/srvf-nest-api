@@ -1143,6 +1143,41 @@ for (const [configName, config] of JEST_CONFIGS) {
       judge.includes('failClosed') && judge.includes("emit('required', 'true')"),
       '「查不出来」永远不等于「没触碰」',
     ],
+    // ── 第五轮评审 J2 · L2:棘轮单调性 ──────────────────────────────────────
+    [
+      'F3 judge:第 18 条棘轮单调性判定在位',
+      judge.includes('judgeBaselineMonotonicity') &&
+        judge.includes('harness/is-optional-null-baseline.json'),
+      '这道闸是唯一能拦「同 PR 新增违规 + 顺手加基线」与「A 换 B」的位置;删了它,棘轮退回单向',
+    ],
+    [
+      'F3 judge:head 版本走 API 给的 contents_url,不自己拼',
+      judge.includes('contents_url'),
+      'fork PR 的 head 仓库不同,自己拼 URL 拼错就会取到 base 内容 —— 判据静默变成「自己和自己比」,永远通过',
+    ],
+    [
+      // ⚠️ 判的是**剥掉注释后的代码**:failHard 必须真的存在、真的 exit,
+      //    且单调性违规那条路真的走它。注释里写「这是硬失败」不算数
+      //    ——「描述文本 ≠ 执行位」本仓一天栽过四次。
+      'F3 judge:单调性违规是**硬失败**,不是「要求审批」',
+      /function failHard\([\s\S]*?process\.exit\(1\)/.test(judge) &&
+        /failHard\(\s*['"`]第 18 条棘轮被破坏/.test(judge),
+      '若退化成 failClosed,维护者点一下 harness-review 就能把破坏棘轮的 PR 放行 —— 那等于没有这道闸',
+    ],
+    [
+      // scan 失败 ⇒ approval job 被 skip ⇒ 没有可点的审批按钮。
+      // 这条不变式写在 redzone-trusted.yml 的 verdict 聚合里,不在 judge 里 ——
+      // 所以在这里对 yml 复查一次:它一旦被改成「scan 失败也继续」,硬闸就软了。
+      'F3 trusted:scan 失败即整体拒绝(硬闸不可被审批绕过的前提)',
+      /scan.*!=.*success/.test(yml) && yml.includes('exit 1'),
+      'verdict 若不再因 scan 失败而退出,单调性硬闸就退化成「点一下就过」',
+    ],
+    [
+      'F3 judge:head 基线**只 parse 不执行**',
+      !/import\s*\(\s*[^)]*is-optional-null-baseline/.test(judge) &&
+        !/require\s*\(\s*[^)]*is-optional-null-baseline/.test(judge),
+      'pull_request_target 下 import PR 的文件 = 在有 secrets 的进程里执行 PR 代码(这正是 L1 把基线抽成 JSON 的原因)',
+    ],
   ];
   for (const [name, ok, why] of cases) check(name, ok, why);
 
@@ -1558,6 +1593,10 @@ async function runTrustedJudgeAssertions(): Promise<void> {
     ) => Array<{ file: string; id: string }>;
     flattenRegistry: (reg: unknown) => unknown[];
     ALWAYS_REQUIRE_APPROVAL: string[];
+    judgeBaselineMonotonicity: (
+      baseText: string,
+      headText: string | null,
+    ) => { ok: boolean; added: string[]; note?: string };
   };
   const reg = JSON.parse(
     fs.readFileSync(path.resolve(__dirname, '../harness/redzone.json'), 'utf-8'),
@@ -1624,6 +1663,83 @@ async function runTrustedJudgeAssertions(): Promise<void> {
     ]).length === 3,
     '三处消费者若对同一条 glob 判得不一样,就又回到「一边拦一边放」',
   );
+
+  // ── 第 18 条棘轮单调性的**行为**断言(M4 / M5 —— 第五轮评审两条 FAIL)────────
+  //
+  // 为什么这两条只能在这里验、不能在 harness-eslint.selftest 里验:
+  // 它们要的是**两份不同的基线**(base 一份、head 一份)同时在场。
+  // `pnpm lint` 与 `harness:selftest` 在 PR 的树上都只看得到 head 那一份 ——
+  // 「新增违规 + 同 PR 加基线」于是两边全绿,因为 PR 改的正是判据本身。
+  // 真实 CI 行为(走 GitHub API 取 head 版本)只能在 main 上实跑验证一次。
+  {
+    const doc = (entries: Array<{ file: string; symbol: string }>): string =>
+      JSON.stringify({ version: 1, entries });
+    const BASE = doc([
+      { file: 'a.dto.ts', symbol: 'A.x' },
+      { file: 'a.dto.ts', symbol: 'A.y' },
+      { file: 'b.dto.ts', symbol: 'B.z' },
+    ]);
+    const verdict = (head: string | null): boolean =>
+      judge.judgeBaselineMonotonicity(BASE, head).ok;
+
+    check('F3 单调性:HEAD == BASE → 放行', verdict(BASE), '不改基线的 PR 不该被这道闸打扰');
+    check(
+      'F3 单调性:只删不增 → 放行(棘轮就是要让它缩)',
+      verdict(doc([{ file: 'a.dto.ts', symbol: 'A.x' }])),
+      '还债必须畅通,否则下一个人会绕开棘轮而不是还债',
+    );
+    check(
+      'F3 单调性 · M4:新增违规 + 同 PR 把它加进基线 → 拒',
+      !verdict(
+        doc([
+          { file: 'a.dto.ts', symbol: 'A.x' },
+          { file: 'a.dto.ts', symbol: 'A.y' },
+          { file: 'b.dto.ts', symbol: 'B.z' },
+          { file: 'c.dto.ts', symbol: 'C.brandNew' },
+        ]),
+      ),
+      'lint 与 selftest 读的都是 PR 自己的基线,这一种只有 base-trusted 裁判拦得住',
+    );
+    check(
+      'F3 单调性 · M5:A 换 B(**总数不变**)→ 拒',
+      !verdict(
+        doc([
+          { file: 'a.dto.ts', symbol: 'A.x' },
+          { file: 'a.dto.ts', symbol: 'A.y' },
+          { file: 'c.dto.ts', symbol: 'C.brandNew' },
+        ]),
+      ),
+      '按 (file, symbol) 集合判而不是看总数 —— 看总数的判据对这一种完全失明',
+    );
+    check(
+      'F3 单调性:同文件内换 symbol(总数不变)→ 拒',
+      !verdict(
+        doc([
+          { file: 'a.dto.ts', symbol: 'A.x' },
+          { file: 'a.dto.ts', symbol: 'A.RENAMED' },
+          { file: 'b.dto.ts', symbol: 'B.z' },
+        ]),
+      ),
+      '同一文件内的 A 换 B 连「文件数」都不变,更隐蔽',
+    );
+    for (const [name, bad] of [
+      ['非法 JSON', '{oops'],
+      ['缺 entries 数组', '{"version":1}'],
+      ['条目缺 symbol', '{"version":1,"entries":[{"file":"a.dto.ts"}]}'],
+    ] as const) {
+      let threw = false;
+      try {
+        judge.judgeBaselineMonotonicity(BASE, bad);
+      } catch {
+        threw = true;
+      }
+      check(
+        `F3 单调性 fail-closed:head 基线${name} → 抛(交由 failClosed 拦)`,
+        threw,
+        '判不了就必须响,静默当成「没新增」等于给畸形文档开了后门',
+      );
+    }
+  }
 }
 
 void (async (): Promise<void> => {
