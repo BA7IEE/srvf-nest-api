@@ -1987,6 +1987,60 @@ const WECHAT_INFRA_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
 ];
 
 // =========================================================================
+// 企业微信接入 T2(2026-08-01):+4 条权限码(222→226;冻结评审稿
+// docs/archive/reviews/wecom-integration-t0-terminal-review.md §11.1)。
+//
+// 端点 → permission 映射(冻结稿 §6.1):
+//   GET    /api/system/v1/wecom-settings                    → wecom-setting.read.singleton
+//   PATCH  /api/system/v1/wecom-settings                    → wecom-setting.update.singleton
+//   POST   /api/system/v1/wecom-settings/reset-credentials  → wecom-setting.reset.credentials
+//   POST   /api/system/v1/wecom-settings/test-connection    → wecom-setting.test.connection
+//
+// ops-admin 绑定:3 条;`wecom-setting.reset.credentials` **不绑**(冻结稿 §11.1,
+// 镜像 storage/sms/wechat D2=A,仅 SUPER_ADMIN 短路)。
+//
+// 本刀**不**落 `user.wecom.clear`(§11.1 第 5 条)—— 它的端点在 T4(User 生命周期闭环),
+// 那一刀连端点带码一起落。本仓已有「码先落、端点后到」的孤码先例(user.wechat.clear),
+// 但那是同一评审稿内相邻两刀的取舍;跨到 T4 再预埋两批之外的码,只会让 rbacmap 长期挂 WARN。
+// =========================================================================
+
+// 镜像 WECHAT_RESET_CREDENTIALS_CODE:凭证 reset 不绑 ops-admin
+const WECOM_RESET_CREDENTIALS_CODE = 'wecom-setting.reset.credentials';
+
+const WECOM_INFRA_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'wecom-setting.read.singleton',
+    module: 'wecom-setting',
+    action: 'read',
+    resourceType: 'singleton',
+    description: '读 WeCom Settings singleton row(不回显凭证;corpId 仅掩码)',
+  },
+  {
+    code: 'wecom-setting.update.singleton',
+    module: 'wecom-setting',
+    action: 'update',
+    resourceType: 'singleton',
+    description:
+      '更新 WeCom Settings(upsert;不含凭证;production-like 禁 DEV_STUB;corpId 仅 active identity=0 时可改)',
+  },
+  {
+    code: 'wecom-setting.test.connection',
+    module: 'wecom-setting',
+    action: 'test',
+    resourceType: 'connection',
+    description: '企业微信连接诊断(只读;只返计数,不返任何成员/部门/标签 ID;不写 audit)',
+  },
+  {
+    code: WECOM_RESET_CREDENTIALS_CODE,
+    module: 'wecom-setting',
+    action: 'reset',
+    resourceType: 'credentials',
+    description:
+      '重置企业微信 CorpSecret(镜像 storage/sms/wechat D2=A 仅 SUPER_ADMIN;不绑 ops-admin)',
+  },
+];
+
+// =========================================================================
 // 招新一期 · 实名核验通道 T1(2026-06-18):+3 条 settings 权限码(冻结评审稿
 // docs/archive/reviews/recruitment-phase1-review.md §3.4 / E-R-19)。
 //
@@ -2074,6 +2128,7 @@ const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...AUDIT_LOG_PERMISSION_SEED,
   ...SMS_INFRA_PERMISSION_SEED,
   ...WECHAT_INFRA_PERMISSION_SEED,
+  ...WECOM_INFRA_PERMISSION_SEED,
   ...REALNAME_INFRA_PERMISSION_SEED,
   ...AUTHZ_PERMISSION_SEED,
   ...ANNOUNCEMENT_IMPORT_PERMISSION_SEED,
@@ -2087,6 +2142,7 @@ const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
 // 注:`audit-log.read.entry` 整条加入,不过滤(沿 PR-4 D2=B;§6.2)
 // 注:`sms-setting.reset.credentials` 从 SMS_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;评审稿 E-3)
 // 注:`wechat-setting.reset.credentials` 从 WECHAT_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;wechat 评审稿 §3.4)
+// 注:`wecom-setting.reset.credentials` 从 WECOM_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;wecom 冻结稿 §11.1)—— ops-admin +3(96→99)
 // 注:`realname-setting.reset.credentials` 从 REALNAME_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;招新评审稿 E-R-19)
 const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RBAC_PERMISSION_SEED,
@@ -2096,6 +2152,7 @@ const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...AUDIT_LOG_PERMISSION_SEED,
   ...SMS_INFRA_PERMISSION_SEED.filter((p) => p.code !== SMS_RESET_CREDENTIALS_CODE),
   ...WECHAT_INFRA_PERMISSION_SEED.filter((p) => p.code !== WECHAT_RESET_CREDENTIALS_CODE),
+  ...WECOM_INFRA_PERMISSION_SEED.filter((p) => p.code !== WECOM_RESET_CREDENTIALS_CODE),
   ...REALNAME_INFRA_PERMISSION_SEED.filter((p) => p.code !== REALNAME_RESET_CREDENTIALS_CODE),
   ...AUTHZ_PERMISSION_SEED,
   ...ANNOUNCEMENT_IMPORT_PERMISSION_SEED,
@@ -2383,7 +2440,7 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
     });
   }
   console.log(
-    `[seed] RBAC + PR-2A + PR-2B + PR-3B + PR-4B + SMS + WECHAT + REALNAME + AUTHZ + ANNOUNCEMENT-IMPORT + META permissions ensured (${RBAC_PERMISSION_SEED.length} rbac.* + ${PR_2A_PERMISSION_SEED.length} PR-2A + ${PR_2B_PERMISSION_SEED.length} PR-2B + ${USER_PERMISSION_SEED.length} PR-3B + ${AUDIT_LOG_PERMISSION_SEED.length} PR-4B + ${SMS_INFRA_PERMISSION_SEED.length} SMS + ${WECHAT_INFRA_PERMISSION_SEED.length} WECHAT + ${REALNAME_INFRA_PERMISSION_SEED.length} REALNAME + ${AUTHZ_PERMISSION_SEED.length} AUTHZ + ${ANNOUNCEMENT_IMPORT_PERMISSION_SEED.length} ANNOUNCEMENT-IMPORT + ${META_PERMISSION_SEED.length} META = ${ALL_PERMISSION_SEED.length} entries)`,
+    `[seed] RBAC + PR-2A + PR-2B + PR-3B + PR-4B + SMS + WECHAT + WECOM + REALNAME + AUTHZ + ANNOUNCEMENT-IMPORT + META permissions ensured (${RBAC_PERMISSION_SEED.length} rbac.* + ${PR_2A_PERMISSION_SEED.length} PR-2A + ${PR_2B_PERMISSION_SEED.length} PR-2B + ${USER_PERMISSION_SEED.length} PR-3B + ${AUDIT_LOG_PERMISSION_SEED.length} PR-4B + ${SMS_INFRA_PERMISSION_SEED.length} SMS + ${WECHAT_INFRA_PERMISSION_SEED.length} WECHAT + ${WECOM_INFRA_PERMISSION_SEED.length} WECOM + ${REALNAME_INFRA_PERMISSION_SEED.length} REALNAME + ${AUTHZ_PERMISSION_SEED.length} AUTHZ + ${ANNOUNCEMENT_IMPORT_PERMISSION_SEED.length} ANNOUNCEMENT-IMPORT + ${META_PERMISSION_SEED.length} META = ${ALL_PERMISSION_SEED.length} entries)`,
   );
 
   // 2. upsert ops-admin RbacRole(公开 seed 唯一角色;沿用户拍板方案 A)

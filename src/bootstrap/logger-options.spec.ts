@@ -36,6 +36,7 @@ const fakeAppCfg: AppConfig = {
   sms: { encryptionKey: '' },
   // 微信小程序登录 T2:AppConfig 新增必填字段;本 unit test 不关心微信,仅满足接口
   wechat: { encryptionKey: '' },
+  wecom: { encryptionKey: '' },
   // 招新一期 · 实名核验通道 T2:AppConfig 新增必填字段;本 unit test 不关心实名核验,仅满足接口
   realname: { encryptionKey: '' },
   smsSendThrottle: { limit: 5, ttlSeconds: 60 },
@@ -44,6 +45,7 @@ const fakeAppCfg: AppConfig = {
   passwordResetThrottle: { limit: 3, ttlSeconds: 60 },
   loginSmsThrottle: { limit: 5, ttlSeconds: 60 },
   loginWechatThrottle: { limit: 5, ttlSeconds: 60 },
+  loginWecomThrottle: { limit: 5, ttlSeconds: 60 },
   recruitmentThrottle: { limit: 10, ttlSeconds: 3600 },
   recruitmentOcr: { dailyIpLimit: 30 },
   contentPublicThrottle: { limit: 60, ttlSeconds: 60 },

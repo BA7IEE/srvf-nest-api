@@ -17,13 +17,13 @@
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
 | 计数项 | 值 |
 |---|---|
-| 模块 | 36 |
-| Controller | 85 |
-| Endpoint | 438 |
+| 模块 | 37 |
+| Controller | 86 |
+| Endpoint | 442 |
 | Migration | 68 |
-| BizCode | 306 |
-| 权限码 | 222 |
-| AuditLogEvent | 130 |
+| BizCode | 309 |
+| 权限码 | 226 |
+| AuditLogEvent | 132 |
 | 内建角色 | 15 |
 | Cron | 2 |
 <!-- counts:end -->

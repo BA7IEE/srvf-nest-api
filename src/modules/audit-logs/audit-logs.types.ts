@@ -256,6 +256,13 @@ export type AuditLogEvent =
   | 'sms-setting.reset-credentials' // sms credentials reset;无 before/after/extra
   | 'wechat-setting.update' // wechat settings upsert;resourceType='wechat_setting';extra.changedFields
   | 'wechat-setting.reset-credentials' // wechat credentials reset;无 before/after/extra
+  // 企业微信接入 T2(2026-08-01;冻结稿 §11.3)。**只落 settings 两条**;
+  // auth.login.wecom / wecom.bind.self / wecom.rebind.self / wecom.clear.by-admin
+  // 四条属 T3-T4,由其消费方同 PR 落 —— 本刀不预埋无人写入的事件名。
+  // 红线(§11.3):CorpSecret、access token、OAuth code、state、binding ticket、
+  // 完整 wecomUserId **永不入 Audit**。
+  | 'wecom-setting.update' // wecom settings upsert;resourceType='wecom_setting';**只记 extra.changedFields**(corpId 的 value 也不写)
+  | 'wecom-setting.reset-credentials' // wecom CorpSecret reset;**不传 before/after/extra**(连字段名都不写)
   | 'realname-setting.update' // realname settings upsert;resourceType='realname_setting';extra.changedFields
   | 'realname-setting.reset-credentials'; // realname credentials reset;无 before/after/extra
 

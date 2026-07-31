@@ -76515,6 +76515,657 @@
         ]
       }
     },
+    "/api/system/v1/wecom-settings": {
+      "get": {
+        "operationId": "WecomSettingsController_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "type": "object",
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/WecomSettingsResponseDto"
+                        }
+                      ],
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100
+                      ],
+                      "description": "30100: 无权执行此操作",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "读 WeCom Settings singleton row(不存在返 data=null;不抛 BizCode;不回显凭证,corpId 仅掩码) [rbac: wecom-setting.read.singleton]",
+        "tags": [
+          "Ops - WeCom Settings"
+        ]
+      },
+      "patch": {
+        "operationId": "WecomSettingsController_update",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWecomSettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/WecomSettingsResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100
+                      ],
+                      "description": "30100: 无权执行此操作",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "已存在企业微信绑定，不能修改 CorpID(code=36020)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        36020
+                      ],
+                      "description": "36020: 已存在企业微信绑定，不能修改 CorpID",
+                      "example": 36020
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "已存在企业微信绑定，不能修改 CorpID"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "upsert 更新 WeCom Settings(不存在则创建 default providerType=DEV_STUB;production-like 拒绝 DEV_STUB;loginEnabled/messageEnabled=true 必须 enabled=true;webBaseUrl 仅 origin 且 production 必须 HTTPS;corpId 仅在 active identity=0 时可改否则 36020;**拒绝**任何凭证字段;事务提交后任一实例下一次调用直读 PostgreSQL 新值,无需 invalidate/reload/restart) [rbac: wecom-setting.update.singleton]",
+        "tags": [
+          "Ops - WeCom Settings"
+        ]
+      }
+    },
+    "/api/system/v1/wecom-settings/reset-credentials": {
+      "post": {
+        "operationId": "WecomSettingsController_resetCredentials",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetWecomCredentialsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/WecomSettingsResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100
+                      ],
+                      "description": "30100: 无权执行此操作",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "重置企业微信 CorpSecret(**仅 SUPER_ADMIN 短路通过**,码不绑 ops-admin;AES-256-GCM 加密落库,独立 WECOM_ENCRYPTION_KEY 与小程序不共域;响应不回显;audit 不含任何凭证字段名或值;不存在则 upsert 创建 default providerType=WECOM) [rbac: wecom-setting.reset.credentials]",
+        "tags": [
+          "Ops - WeCom Settings"
+        ]
+      }
+    },
+    "/api/system/v1/wecom-settings/test-connection": {
+      "post": {
+        "operationId": "WecomSettingsController_testConnection",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/WecomTestConnectionResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100
+                      ],
+                      "description": "30100: 无权执行此操作",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "企业微信服务暂时不可用，请稍后重试(code=36031)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        36031
+                      ],
+                      "description": "36031: 企业微信服务暂时不可用，请稍后重试",
+                      "example": 36031
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "企业微信服务暂时不可用，请稍后重试"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "企业微信通道未配置或未启用(code=36030)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        36030
+                      ],
+                      "description": "36030: 企业微信通道未配置或未启用",
+                      "example": 36030
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "企业微信通道未配置或未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "企业微信连接诊断(强制跳过 token 缓存取新 access_token → agent/get 核对 agentid 与 close;**不发消息、不读完整通讯录、不改身份**;可见范围**只返计数不返任何成员/部门/标签 ID**;只读诊断不写 audit;失败 36030/36031 且不回显上游 URL/token/Secret/完整 errmsg) [rbac: wecom-setting.test.connection]",
+        "tags": [
+          "Ops - WeCom Settings"
+        ]
+      }
+    },
     "/api/system/v1/realname-settings": {
       "get": {
         "operationId": "RealnameSettingsController_get",
@@ -105756,6 +106407,242 @@
             "maxLength": 500
           }
         }
+      },
+      "WecomSettingsResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "cuid 主键"
+          },
+          "providerType": {
+            "type": "string",
+            "description": "通道类型(production-like 禁 DEV_STUB)",
+            "enum": [
+              "DEV_STUB",
+              "WECOM"
+            ]
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "全局启用开关;false 时登录与消息全部 fail-closed"
+          },
+          "loginEnabled": {
+            "type": "boolean",
+            "description": "登录开关;false 时 OAuth authorize / login / bind-self 不可用"
+          },
+          "messageEnabled": {
+            "type": "boolean",
+            "description": "消息开关;false 时不创建新的 WeCom intent"
+          },
+          "corpIdMasked": {
+            "type": "object",
+            "description": "企业 CorpID 的**掩码**回显(如 ww12****cdef);全值不出响应(§5.5)",
+            "nullable": true
+          },
+          "agentId": {
+            "type": "object",
+            "description": "自建应用 AgentID(非 secret,可回显)",
+            "nullable": true
+          },
+          "webBaseUrl": {
+            "type": "object",
+            "description": "H5 站点 origin(仅 origin,不含 path/query/fragment);production 必须 HTTPS",
+            "nullable": true
+          },
+          "credentialConfigured": {
+            "type": "boolean",
+            "description": "DB 层是否已配置凭证(运行时状态看 credentialStatus)"
+          },
+          "credentialStatus": {
+            "type": "string",
+            "description": "凭证状态三档(configured / missing / invalid);CorpSecret 明文与密文永不回显。invalid = 密文在但解不开(WECOM_ENCRYPTION_KEY 轮换或密文被篡改),此时通道 fail-closed",
+            "enum": [
+              "configured",
+              "missing",
+              "invalid"
+            ]
+          },
+          "remarks": {
+            "type": "object",
+            "description": "运维备注(不参与 configurationGeneration)",
+            "nullable": true
+          },
+          "updatedBy": {
+            "type": "object",
+            "description": "最后更新人 User.id",
+            "nullable": true
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "更新时间"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "创建时间"
+          }
+        },
+        "required": [
+          "id",
+          "providerType",
+          "enabled",
+          "loginEnabled",
+          "messageEnabled",
+          "credentialConfigured",
+          "credentialStatus",
+          "updatedAt",
+          "createdAt"
+        ]
+      },
+      "WecomVisibilitySummaryDto": {
+        "type": "object",
+        "properties": {
+          "directUsers": {
+            "type": "number",
+            "description": "应用可见范围内直接成员**数量**"
+          },
+          "parties": {
+            "type": "number",
+            "description": "应用可见范围内部门**数量**"
+          },
+          "tags": {
+            "type": "number",
+            "description": "应用可见范围内标签**数量**"
+          }
+        },
+        "required": [
+          "directUsers",
+          "parties",
+          "tags"
+        ]
+      },
+      "WecomTestConnectionResponseDto": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "description": "整体连通性结论"
+          },
+          "providerType": {
+            "type": "string",
+            "description": "本次诊断使用的通道类型",
+            "enum": [
+              "DEV_STUB",
+              "WECOM"
+            ]
+          },
+          "credentialStatus": {
+            "type": "string",
+            "description": "凭证状态三档",
+            "enum": [
+              "configured",
+              "missing",
+              "invalid"
+            ]
+          },
+          "tokenAcquired": {
+            "type": "boolean",
+            "description": "是否成功取到 access token(强制跳过缓存取新的)"
+          },
+          "agentMatched": {
+            "type": "boolean",
+            "description": "`agent/get` 返回的 agentid 是否与配置一致"
+          },
+          "agentEnabled": {
+            "type": "boolean",
+            "description": "应用是否处于启用状态(上游 close=0)"
+          },
+          "agentName": {
+            "type": "object",
+            "description": "应用名称(上游回执;非敏感)",
+            "nullable": true
+          },
+          "visibilitySummary": {
+            "description": "可见范围**计数**摘要(不含任何成员/部门/标签 ID)",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WecomVisibilitySummaryDto"
+              }
+            ]
+          },
+          "redirectDomainConfigured": {
+            "type": "boolean",
+            "description": "是否已配置 webBaseUrl(可信域名的**本地**前置条件)。⚠️ 它证明不了企业微信后台那侧登记了可信域名 —— 那只能由真实 OAuth 回跳验证"
+          },
+          "checkedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "诊断时刻"
+          }
+        },
+        "required": [
+          "ok",
+          "providerType",
+          "credentialStatus",
+          "tokenAcquired",
+          "agentMatched",
+          "agentEnabled",
+          "visibilitySummary",
+          "redirectDomainConfigured",
+          "checkedAt"
+        ]
+      },
+      "UpdateWecomSettingsDto": {
+        "type": "object",
+        "properties": {
+          "providerType": {
+            "type": "string",
+            "description": "通道类型;production-like 环境拒绝 DEV_STUB(冻结稿 §5.1 规则 4 第①重)",
+            "enum": [
+              "DEV_STUB",
+              "WECOM"
+            ]
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "全局启用开关"
+          },
+          "loginEnabled": {
+            "type": "boolean",
+            "description": "登录开关;置 true 时必须同时 enabled=true(否则 40000)"
+          },
+          "messageEnabled": {
+            "type": "boolean",
+            "description": "消息开关;置 true 时必须同时 enabled=true(否则 40000)"
+          },
+          "corpId": {
+            "type": "string",
+            "description": "企业 CorpID;**仅当 active WecomIdentity 数为 0 时可改**,否则 36020(改 CorpID 等于换一整套身份口径,已绑定的人会集体失配)"
+          },
+          "agentId": {
+            "type": "number",
+            "description": "自建应用 AgentID(正整数)"
+          },
+          "webBaseUrl": {
+            "type": "string",
+            "description": "H5 站点 origin,如 https://app.example.com;**仅 origin** —— OAuth callback path 与通知 detail path 由代码固定拼接,不接受外部传入(防开放重定向)"
+          },
+          "remarks": {
+            "type": "string",
+            "description": "运维备注"
+          }
+        }
+      },
+      "ResetWecomCredentialsDto": {
+        "type": "object",
+        "properties": {
+          "corpSecret": {
+            "type": "string",
+            "description": "企业微信自建应用 CorpSecret 明文;Service 层 AES-256-GCM 加密后落库;**永不回显**",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "corpSecret"
+        ]
       },
       "RealnameSettingsResponseDto": {
         "type": "object",

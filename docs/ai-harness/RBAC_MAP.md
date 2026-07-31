@@ -19,7 +19,7 @@
 
 ## 派生对照表(生成物)
 
-### 权限码全集(222 条,按一级域分组)
+### 权限码全集(226 条,按一级域分组)
 
 > 权威源 `prisma/seed.ts`(幂等 upsert)。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 
@@ -52,6 +52,7 @@
 | `role-binding` | 4 | `role-binding.create.record` · `role-binding.delete.record` · `role-binding.read.record` · `role-binding.update.record` |
 | `supervision-assignment` | 4 | `supervision-assignment.create.record` · `supervision-assignment.read.record` · `supervision-assignment.revoke.record` · `supervision-assignment.update.record` |
 | `team-join-application` | 4 | `team-join-application.evaluate.assessment` · `team-join-application.join.member` · `team-join-application.mark.gate` · `team-join-application.read.record` |
+| `wecom-setting` | 4 | `wecom-setting.read.singleton` · `wecom-setting.reset.credentials` · `wecom-setting.test.connection` · `wecom-setting.update.singleton` |
 | `authz` | 3 | `authz.action-state.decision` · `authz.explain-batch.decision` · `authz.explain.decision` |
 | `member-department` | 3 | `member-department.clear.current` · `member-department.read.current` · `member-department.set.current` |
 | `realname-setting` | 3 | `realname-setting.read.singleton` · `realname-setting.reset.credentials` · `realname-setting.update.singleton` |
@@ -68,7 +69,7 @@
 | `meta` | 1 | `meta.resolve.label` |
 | `sms-send-log` | 1 | `sms-send-log.read.list` |
 
-### controller × surface 对照(85 个 @Controller)
+### controller × surface 对照(86 个 @Controller)
 
 > 权威源:`src/**/*.controller.ts` 的 `@Controller(...)` 装饰器。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 鉴权模式(R / A / P)与业务语义属人类知识,见本文件标记之外的章节。
@@ -159,7 +160,7 @@
 | `open/v1/contents` | `src/modules/content/content-public.controller.ts` |
 | `open/v1/recruitment` | `src/modules/recruitment/recruitment-public.controller.ts` |
 
-#### system/v1(19 个 controller)
+#### system/v1(20 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
@@ -182,6 +183,7 @@
 | `system/v1/storage-settings` | `src/modules/storage/storage-settings.controller.ts` |
 | `system/v1/users/:userId/roles` | `src/modules/permissions/user-roles.controller.ts` |
 | `system/v1/wechat-settings` | `src/modules/wechat/wechat-settings.controller.ts` |
+| `system/v1/wecom-settings` | `src/modules/wecom/wecom-settings.controller.ts` |
 
 <!-- rbac:end -->
 

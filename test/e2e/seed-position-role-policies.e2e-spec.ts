@@ -217,7 +217,7 @@ const EXPECTED_FINAL_REVIEWER_CODES = [
 // 2026-07-04 F3「C 组」authz.{explain-batch,action-state}.decision 绑 ops-admin 92→94;
 // 2026-07-07 队员账号闭环 v1 member.grant.account 绑 ops-admin 94→95;
 // 2026-07-07 队员账号闭环 v2 member.bind.account 绑 ops-admin 95→96)。
-const EXPECTED_OPS_ADMIN_BINDING_COUNT = 104; // 证书标准库 PR-2:+8 配置面码(certificate-standard 4 + certificate-recognition-policy 4)
+const EXPECTED_OPS_ADMIN_BINDING_COUNT = 107; // 企业微信 T2:+3(wecom-setting read/update/test;reset.credentials 沿 D2=A 不绑)。前值 104 = 证书标准库 PR-2 的 +8 配置面码
 const EXPECTED_MEMBER_ROLE_BINDING_COUNT = 9;
 // 证书标准库 PR-1(2026-07-30):+1 = certificate.read.sensitive(§15.3)。
 // 同刀已把该码加入 ORG_ADMIN_EXCLUDED_CODES,故 EXPECTED_ORG_ADMIN_CODES 逐字不变 ——
