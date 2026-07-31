@@ -393,6 +393,78 @@ describe('certificate standards + recognition policies(PR-3)', () => {
     });
   });
 
+  // 评审 findings H3:`@IsOptional()` 对 `null` 与 `undefined` **都**跳过校验,
+  // 而 service 的判据是 `!== undefined` —— 显式 `null` 因此穿过契约层进入
+  // 字典查询 / 父节点查询 / Prisma 写入,炸成 500。
+  //
+  // 契约上「可省略」与「可为空」是两件事,DTO 必须分开表达:
+  // 恒有值的字段用 `@ValidateIf(v !== undefined)`(传 null → 400),
+  // 真能清空的字段(Update 的 levelCode / parentId / description)才留 `@IsOptional()`。
+  //
+  // 每条都是**真 HTTP**:`null` 能不能穿过 ValidationPipe 只有真请求答得了,
+  // service 单测拿到的永远是已经过完管道的对象。
+  describe('H3 显式 null 的契约(400 而不是 500)', () => {
+    const CREATE_NON_NULLABLE = ['levelCode', 'parentId', 'isInternal', 'sortOrder'] as const;
+    for (const field of CREATE_NON_NULLABLE) {
+      it(`POST ${'`'}${field}: null${'`'} → 400(修复前 500)`, async () => {
+        const res = await createStandard({ [field]: null });
+        expect(res.status).toBe(400);
+      });
+    }
+
+    // Update DTO 含五个身份字段 + 三个文案/排序字段,同一形状要一起判。
+    // `levelCode` / `parentId` 不在这张表里 —— 它们**契约上就允许 null**(清空 / 摘到根)。
+    const UPDATE_NON_NULLABLE = [
+      'name',
+      'sortOrder',
+      'kind',
+      'categoryCode',
+      'isInternal',
+    ] as const;
+    for (const field of UPDATE_NON_NULLABLE) {
+      it(`PATCH ${'`'}${field}: null${'`'} → 400(修复前 500)`, async () => {
+        const created = await createStandard();
+        const res = await request(httpServer(app))
+          .patch(`${base}/${created.body.data.id}`)
+          .set('Authorization', opsAuth)
+          .send({ [field]: null });
+        expect(res.status).toBe(400);
+      });
+    }
+
+    // levelCode / parentId 传 null = 清空 / 摘到根 —— 这是**刻意保留**的能力,
+    // 上面那批收紧不得把它一起收掉(否则 DRAFT 期填错了等级就再也清不掉)。
+    it('PATCH levelCode: null / parentId: null 仍是「清空」而不是 400', async () => {
+      const familyId = await createActiveStandard({ kind: 'FAMILY' });
+      const created = await createStandard({ levelCode, parentId: familyId });
+      expect(created.status).toBe(201);
+      const res = await request(httpServer(app))
+        .patch(`${base}/${created.body.data.id}`)
+        .set('Authorization', opsAuth)
+        .send({ levelCode: null, parentId: null });
+      expect(res.status).toBe(200);
+      expect(res.body.data.levelCode).toBeNull();
+      expect(res.body.data.parentId).toBeNull();
+    });
+
+    // description 单独判定:DB 可空,运行时一直接受 null 且语义就是「清空说明」。
+    // 本刀让 DTO / OpenAPI 把这件既成事实说出来(`nullable: true` + `string | null`),
+    // **运行时行为一个字节不变** —— 不是顺手放开一个新能力,是让三处语义一致。
+    it('description: null 在 create 与 update 都合法,语义 = 空说明', async () => {
+      const created = await createStandard({ description: null });
+      expect(created.status).toBe(201);
+      expect(created.body.data.description).toBeNull();
+
+      const withText = await createStandard({ description: '原说明' });
+      const cleared = await request(httpServer(app))
+        .patch(`${base}/${withText.body.data.id}`)
+        .set('Authorization', opsAuth)
+        .send({ description: null });
+      expect(cleared.status).toBe(200);
+      expect(cleared.body.data.description).toBeNull();
+    });
+  });
+
   describe('Standard 父级约束(§5.2)', () => {
     it('父必须是 FAMILY:挂到 CREDENTIAL 下 → 18012', async () => {
       const credentialParent = await createActiveStandard();

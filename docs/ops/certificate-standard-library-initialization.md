@@ -46,11 +46,13 @@ POST /api/admin/v1/certificate-standards
 }
 ```
 
-> ⚠️ **可选字段要么带一个真值,要么整条省掉 —— 不要传显式 `null`。**
-> `levelCode`(cert_sub_type 字典 code)与 `parentId`(挂到某个 FAMILY 下)都是可选的,
-> 但后端判的是「这个键在不在」而不是「值是不是空」:传 `"levelCode": null` 会去字典里查一个叫 `null` 的
-> 等级码,传 `"parentId": null` 会去查一个 id 为 `null` 的父节点 —— 两者都直接失败。
-> 要用就给真值(`"levelCode": "level_2"` / `"parentId": "<FAMILY 的 id>"`),不用就别写这一行。
+> ⚠️ **建标准时,可选字段要么带一个真值,要么整条省掉 —— 不要传显式 `null`。**
+> `levelCode`(cert_sub_type 字典 code)、`parentId`(挂到某个 FAMILY 下)、`isInternal`、`sortOrder`
+> 在**建标准**这一步都只有「给真值」和「不写」两种选择:传 `null` 会被契约层拒成 `400`
+> (评审 findings H3 之前是 `500`,更难看懂)。要用就给真值,不用就别写这一行。
+>
+> 改标准(`PATCH /:id`)不同:`levelCode` / `parentId` / `description` 传 `null` 是**合法的清空动作**
+> (清等级 / 摘到根 / 清说明)。其余字段传 `null` 同样 `400`。
 
 新建为 `DRAFT`,**不能用于建证**。
 

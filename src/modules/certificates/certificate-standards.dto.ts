@@ -19,8 +19,24 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
+
+// 评审 findings H3:`@IsOptional()` 对 `null` 与 `undefined` **都**跳过校验。
+// 而所有 service 的判据都是 `!== undefined` —— 于是显式 `null` 穿过契约层,
+// 进到字典查询 / 父节点查询 / Prisma 写入里炸成 500,或者(`kind` / `categoryCode`
+// 那两个走 `?? before.x` 的)被**静默忽略**返 200,客户端以为改成功了。
+//
+// 契约上「可省略」和「可为空」是两件不同的事,DTO 必须分开表达:
+//   - 恒有值的字段 → `@OmittableOnly()`:不传就跳过,传 null 落到 @IsString 之类上 → 400;
+//   - 真能清空的字段(Update 的 levelCode / parentId、两处的 description)→ 保留
+//     `@IsOptional()`,并在 `@ApiPropertyOptional` 上标 `nullable: true`,让
+//     DTO / OpenAPI / DB 三处语义一致。
+//
+// 写成具名装饰器而不是每处抄一遍 `@ValidateIf`:抄写版下一次新增字段就会漏,
+// 而这正是本轮反复抓到的那个形状。
+const OmittableOnly = (): PropertyDecorator => ValidateIf((_o, value) => value !== undefined);
 
 // 证书标准库 PR-3(冻结稿 §5.2 / §13.1 / §7.1):CertificateStandard 管理面 DTO。
 //
@@ -299,11 +315,19 @@ export class CreateCertificateStandardDto {
   @MaxLength(128)
   name!: string;
 
-  @ApiPropertyOptional({ description: '说明', maxLength: 500 })
+  // description 可为空:DB 列可空,`null` 语义 = 无说明(与不传等价)。
+  // `type: String` 不能省 —— 只写 `nullable: true` 时 Swagger 从 `string | null`
+  // 推出的是 `"type": "object"`,契约文件里会出现一个假的对象类型(出参那侧同款写法)。
+  @ApiPropertyOptional({
+    description: '说明(可传 null)',
+    maxLength: 500,
+    nullable: true,
+    type: String,
+  })
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  description?: string;
+  description?: string | null;
 
   @ApiProperty({
     description: 'FAMILY 仅分组 / CREDENTIAL 可持有',
@@ -318,30 +342,34 @@ export class CreateCertificateStandardDto {
   @MaxLength(64)
   categoryCode!: string;
 
+  // 以下四个**只能省略,不能传 null**(H3):建标准时「没有等级」就是不传这个键。
+  // 传 null 从前会一路穿到字典查询 / 父节点查询 / Prisma 写入 → 500。
   @ApiPropertyOptional({
-    description: '等级字典 code(非空时必须是 ACTIVE cert_sub_type)',
+    description: '等级字典 code(非空时必须是 ACTIVE cert_sub_type;不设就省略,不要传 null)',
     maxLength: 64,
   })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(64)
   levelCode?: string;
 
-  @ApiPropertyOptional({ description: '父级 Standard id(必为 FAMILY 且同 categoryCode)' })
-  @IsOptional()
+  @ApiPropertyOptional({
+    description: '父级 Standard id(必为 FAMILY 且同 categoryCode;不挂树就省略,不要传 null)',
+  })
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(32)
   parentId?: string;
 
   @ApiPropertyOptional({ description: '是否本会颁发(默认 false)' })
-  @IsOptional()
+  @OmittableOnly()
   @IsBoolean()
   isInternal?: boolean;
 
   @ApiPropertyOptional({ description: '排序权重(默认 0)' })
-  @IsOptional()
+  @OmittableOnly()
   @Type(() => Number)
   @IsInt()
   @Min(0)
@@ -365,20 +393,26 @@ export class CreateCertificateStandardDto {
 // 填错 code 只能新建 —— 这一条是刻意保留的代价,不是遗漏。
 export class UpdateCertificateStandardDto {
   @ApiPropertyOptional({ description: '标准名称', maxLength: 128 })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(128)
   name?: string;
 
-  @ApiPropertyOptional({ description: '说明', maxLength: 500 })
+  // description 可为空:`null` = 清空说明(DB 列可空;运行时一直如此,本刀只是把它写进契约)。
+  @ApiPropertyOptional({
+    description: '说明(传 null = 清空)',
+    maxLength: 500,
+    nullable: true,
+    type: String,
+  })
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  description?: string;
+  description?: string | null;
 
   @ApiPropertyOptional({ description: '排序权重' })
-  @IsOptional()
+  @OmittableOnly()
   @Type(() => Number)
   @IsInt()
   @Min(0)
@@ -386,12 +420,16 @@ export class UpdateCertificateStandardDto {
   sortOrder?: number;
 
   // ===== 以下五个是身份字段:仅 DRAFT 且从未启用过时可改,否则 18033 =====
+  //
+  // H3:`kind` / `categoryCode` 传 null 从前**返 200 且什么都没改** ——
+  // service 里 `dto.kind ?? before.kind` 把 null 当成「没传」吞掉,而
+  // `identityTouched` 又算它传了。静默忽略比 500 更难查:客户端拿到 200。
 
   @ApiPropertyOptional({
     description: '类型(FAMILY 目录节点 / CREDENTIAL 可持有证书)。**仅 DRAFT 期可改**',
     enum: CertificateStandardKind,
   })
-  @IsOptional()
+  @OmittableOnly()
   @IsEnum(CertificateStandardKind)
   kind?: CertificateStandardKind;
 
@@ -399,7 +437,7 @@ export class UpdateCertificateStandardDto {
     description: '证书大类字典 code(cert_type)。**仅 DRAFT 期可改**',
     maxLength: 64,
   })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(64)
@@ -431,7 +469,7 @@ export class UpdateCertificateStandardDto {
   parentId?: string | null;
 
   @ApiPropertyOptional({ description: '是否队内自建标准。**仅 DRAFT 期可改**' })
-  @IsOptional()
+  @OmittableOnly()
   @IsBoolean()
   isInternal?: boolean;
 }

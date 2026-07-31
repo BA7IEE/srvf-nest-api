@@ -8445,8 +8445,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "description": {
-        "description": "说明",
+        "description": "说明(可传 null)",
         "maxLength": 500,
+        "nullable": true,
         "type": "string",
       },
       "isInternal": {
@@ -8462,7 +8463,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "levelCode": {
-        "description": "等级字典 code(非空时必须是 ACTIVE cert_sub_type)",
+        "description": "等级字典 code(非空时必须是 ACTIVE cert_sub_type;不设就省略,不要传 null)",
         "maxLength": 64,
         "type": "string",
       },
@@ -8473,7 +8474,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "parentId": {
-        "description": "父级 Standard id(必为 FAMILY 且同 categoryCode)",
+        "description": "父级 Standard id(必为 FAMILY 且同 categoryCode;不挂树就省略,不要传 null)",
         "type": "string",
       },
       "sortOrder": {
@@ -17868,8 +17869,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "description": {
-        "description": "说明",
+        "description": "说明(传 null = 清空)",
         "maxLength": 500,
+        "nullable": true,
         "type": "string",
       },
       "isInternal": {
