@@ -16,6 +16,7 @@
   "version": 1,
   "entries": [
     { "file": "src/common/dto/pagination.dto.ts", "symbol": "PaginationQueryDto.page" },
+    { "file": "src/common/dto/pagination.dto.ts", "symbol": "PaginationQueryDto.pageFAKE" },
     { "file": "src/common/dto/pagination.dto.ts", "symbol": "PaginationQueryDto.pageSize" },
     { "file": "src/modules/activities/activities.dto.ts", "symbol": "ActivityOptionsQueryDto.limit" },
     { "file": "src/modules/activities/activities.dto.ts", "symbol": "ActivityOptionsQueryDto.organizationId" },
