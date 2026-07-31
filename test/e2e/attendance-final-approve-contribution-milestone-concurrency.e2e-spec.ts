@@ -30,7 +30,11 @@ const META: AuditMeta = {
   ip: '127.0.0.1',
   ua: 'jest/attendance-final-approve-milestone-concurrency',
 };
-const LOCK_WAIT_TIMEOUT_MS = 3_000;
+// ⚠️ 被 barrier 钉住的是**生产事务**,它用 Prisma 默认 5s 交互事务预算。
+// 观测窗必须远小于 5s:waiter 正常 20-40ms 就出现,等不到就是「锁没取」(那正是我们要的红)。
+// 把窗开大反而会让用例在并行负载下以 P2028(事务过期)红,掩盖真正的判据 —— 实测栽过一次:
+// 5 worker 并行时轮询本身跑了 14.6s,生产事务先超时。
+const LOCK_WAIT_TIMEOUT_MS = 1_200;
 const CASE_TIMEOUT_MS = 60_000;
 const CYCLE_YEAR = 2026;
 // cutoff = 2026-04-01 00:00 +08:00;贡献值只计 checkInAt 早于它的 approved 记录。

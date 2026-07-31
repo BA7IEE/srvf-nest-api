@@ -23,7 +23,8 @@ const META: AuditMeta = {
   ip: '127.0.0.1',
   ua: 'jest/registration-cancel-my-locked-snapshot',
 };
-const LOCK_WAIT_TIMEOUT_MS = 3_000;
+// 观测窗必须远小于被钉住的生产事务的 5s 预算(见 K3 spec 同名常量的注释)。
+const LOCK_WAIT_TIMEOUT_MS = 1_200;
 const CASE_TIMEOUT_MS = 60_000;
 const OLD_TITLE = '周末巡山(旧标题)';
 const NEW_TITLE = '周末巡山(改名后)';

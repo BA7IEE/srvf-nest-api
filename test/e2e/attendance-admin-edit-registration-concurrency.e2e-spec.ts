@@ -36,7 +36,11 @@ const META: AuditMeta = {
   ip: '127.0.0.1',
   ua: 'jest/attendance-admin-edit-registration-concurrency',
 };
-const WAIT_TIMEOUT_MS = 15_000;
+// ⚠️ barrier 钉住的是**生产事务**(Prisma 默认 5s 交互事务预算),观测窗必须远小于它。
+// 用例①在窗内等两次(edit 到达 advisory 键 + 取消到达推进点),所以 2×1.2s + edit 自身工作 < 5s。
+// waiter 正常 20-40ms 就出现;等不到就是「锁没取」——那正是我们要的红。
+// 把窗开大反而会让用例在并行负载下以 P2028(事务过期)红,掩盖真正的判据。
+const WAIT_TIMEOUT_MS = 1_200;
 const CASE_TIMEOUT_MS = 60_000;
 
 const ACTIVITY_TYPE = 'aaerc-demo';
