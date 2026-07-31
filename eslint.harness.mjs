@@ -5,21 +5,35 @@
 // 阳性对照(喂必定违规的合成片段,断言确实被抓到)。若自测另起一套配置,验的就不是
 // 真正生效的规则,「全绿」将毫无意义。
 //
-// ⚠️ flat config 对同一 ruleId 是「后块整体覆盖前块」(不是数组合并)。因此:
+// ⚠️ flat config 对同一 ruleId 是「后块整体覆盖前块」(不是数组合并)。因此**在
+//    `no-restricted-syntax` 这一个 ruleId 上**:
 //   - 每个作用域块必须**显式重列完整规则集**(用 syntax(...) 组合器),
 //     窄域豁免写成 filter 减掉那一条,而不是只写要加的那条;
 //   - 块的先后顺序是语义的一部分,见各块注释里的排序约束。
 // 违反上述任一条会让规则**静默失效**(lint 依然绿,但没有防线)——
 // scripts/harness-eslint.selftest.ts 就是为了捕捉这种失效。
+//
+// 📌 2026-07-31(第五轮评审 J2)起,第 18 条**不再受这条约束** —— 它换成了独立
+//    ruleId 的自定义规则 srvf/no-nullable-is-optional。它的 56 个基线块只碰自己
+//    那一个 ruleId,与上述 17 条零交互:「重列完整规则集」这个陷阱在第 18 条上
+//    **结构性消失**,不是靠注释提醒人别踩。规则体在 eslint-rules/(同在红区)。
+
+import { readFileSync } from 'node:fs';
+
+import {
+  NULLABLE_IS_OPTIONAL_MESSAGE,
+  srvfEslintPlugin,
+} from './eslint-rules/no-nullable-is-optional.mjs';
+
+// 第 18 条的 ruleId。它**不是** no-restricted-syntax 的一条选择器,而是本仓唯一的
+// 自定义规则(eslint-rules/no-nullable-is-optional.mjs)。独立 ruleId 是刻意的:
+// 18 条共用一个 ruleId 时,一句 `// eslint-disable-next-line no-restricted-syntax`
+// 会把该行的**全部 18 条**一起关掉(第五轮评审 J2·L3 实测)。
+const NULLABLE_IS_OPTIONAL_RULE = 'srvf/no-nullable-is-optional';
 
 // ===================== Harness 3.0 · P2 执法迁移 =====================
 // 规则语义零放宽,只换执法方式。message 三段式 = 规则一句话 + AGENTS 出处 + 正确做法。
 // key 即「载体 id」,供 AGENTS §1/§2 表的「载体」列引用(AL-8/AL-9 自证的落点)。
-// 第 18 条的选择器单独提出来:基线块要拿**同一个字符串**去拼 `:not(...)`,
-// 抄第二份就会出现「规则改了、基线块没跟上」的静默失效。
-const IS_OPTIONAL_NULL_SELECTOR =
-  "PropertyDefinition:has(Decorator[expression.callee.name='IsOptional']):not(:has(TSNullKeyword))";
-
 const HARNESS_SYNTAX = {
   'no-use-guards': {
     selector: "Decorator[expression.callee.name='UseGuards']",
@@ -106,11 +120,6 @@ const HARNESS_SYNTAX = {
     message:
       '判权/身份路径禁定时器(TTL / 失效链的入口)。[AGENTS §2 身份/权限不缓存] 正确做法:不缓存,不定时刷新。',
   },
-  'no-nullable-is-optional': {
-    selector: IS_OPTIONAL_NULL_SELECTOR,
-    message:
-      '`@IsOptional()` 对 null 与 undefined **都**跳过后续校验,而本仓 service 判「传没传」用的是 `=== undefined` —— 显式 null 会穿过整个契约层(实测:审核 issuedAt:null → new Date(null) = 1970-01-01 落成正式事实;Policy/Certificate PATCH → 500 而非 400)。[AGENTS §1 校验] 正确做法:字段**真能清空** → 保留 @IsOptional() 并把 TS 类型标成 `T | null`(同时 @ApiPropertyOptional({ nullable: true, type: X }),让 DTO/OpenAPI/DB 三处一致);字段**只是可省略** → 改用 @OmittableOnly()(src/common/decorators/omittable-only.decorator.ts),null 稳定 400。存量违规在本文件 IS_OPTIONAL_NULL_BASELINE 内逐条具名冻结,**只减不增**。',
-  },
   'no-param-id-string': {
     selector: "Decorator[expression.callee.name='Param'][expression.arguments.0.value='id']",
     message:
@@ -133,9 +142,8 @@ const BASE = [
   'no-mapped-type-dto',
   'no-local-strategy',
   'no-pagination-alias',
-  // 第 18 条默认对全仓生效(含 test / prisma —— 两处实测零违规,所以是白拿的)。
-  // 存量由下方 IS_OPTIONAL_NULL_BASELINE 逐条豁免,不是整目录通配。
-  'no-nullable-is-optional',
+  // 第 18 条不在这里 —— 它是独立 ruleId 的自定义规则,接线见下方
+  // `srvf/harness:nullable-is-optional` 块。
 ];
 
 // src 业务代码 = 通用集 + 禁 process.env + 禁硬删
@@ -166,79 +174,131 @@ const LEGACY_PARAM_ID_CONTROLLERS = [
   'src/modules/team-join/team-join-cycles.controller.ts',
 ];
 
-// BASELINE(第 18 条):存量 641 处 / 56 文件,**全部在 src/**(test/ 与 prisma/ 实测零违规)。
+// ── 第 18 条的存量基线:唯一机读源 = harness/is-optional-null-baseline.json ──────
 //
-// 为什么用棘轮而不是一次改完:641 处 = 一个没人能评审的超大 diff,而跨模型评审是
-// 本仓唯一兜底。棘轮让「新写的代码不能再犯」立刻生效,存量按批次还。
+// 为什么从本文件抽成独立 JSON(第五轮评审 J2 · L1):base-trusted 裁判要读
+// **PR head 上的**这份清单,做「HEAD ⊆ BASE」的单调性比较 —— 而它的铁律是
+// **只 parse 不执行**。基线埋在 .mjs 里时,裁判只有两条路:import 它
+// (= 在有 secrets 的进程里执行 PR 代码,pull_request_target 的经典事故形态),
+// 或正则抠它(= 第二把尺子,读数迟早和真尺子不一样)。两条都不可接受。
+// 换成 JSON,「读 PR 的判据」就退化成一次纯粹的反序列化。
 //
-// 为什么键是「类名.字段名」而不是行号:行号一改就失效,基线立刻变成噪音;而
-// `description` 这类字段名在同一文件的多个 DTO 类里各出现一次,只写字段名
-// **区分不开**「已冻结的那个」和「新加的那个」—— 而后者正是棘轮要拦的东西。
+// 为什么键是「类名.字段名」而不是行号:行号一改基线就变噪音;而 `description`
+// 这类字段名在同一文件的多个 DTO 类里各出现一次,只写字段名**区分不开**
+// 「已冻结的那个」和「新加的那个」—— 而后者正是棘轮要拦的东西。
 //
-// 只减不增,两道执行位各管一半:
-//   · 往**已在基线里的文件**新增一个违规字段 → `pnpm lint` 当场红
-//     (它不在该文件被挖掉的名单里,见下方 isOptionalNullBaselineBlocks);
-//   · 修好一个存量却忘了删基线行 → `pnpm harness:selftest` 当场红
-//     (scripts/harness-eslint.selftest.ts 扫全仓比对,陈旧行 = 基线在说谎)。
-// 前者 lint 做得到、后者做不到(一条用不上的豁免是静默无害的),所以必须两道都有。
-const IS_OPTIONAL_NULL_BASELINE = {
-  'src/common/dto/pagination.dto.ts': ['PaginationQueryDto.page', 'PaginationQueryDto.pageSize'],
-  'src/modules/activities/activities.dto.ts': ['ActivityOptionsQueryDto.limit', 'ActivityOptionsQueryDto.organizationId', 'ActivityOptionsQueryDto.q', 'ActivityOptionsQueryDto.statusCode', 'CancelActivityDto.cancelReason', 'CreateActivityDto.capacity', 'CreateActivityDto.content', 'CreateActivityDto.coverImageUrl', 'CreateActivityDto.description', 'CreateActivityDto.galleryImageUrls', 'CreateActivityDto.genderRequirementCode', 'CreateActivityDto.initiatorMemberId', 'CreateActivityDto.isPublicRegistration', 'CreateActivityDto.locationLatitude', 'CreateActivityDto.locationLongitude', 'CreateActivityDto.registrationDeadline', 'CreateActivityDto.registrationNotes', 'CreateActivityDto.registrationSchema', 'CreateActivityDto.requiresInsurance', 'ListActivitiesQueryDto.activityTypeCode', 'ListActivitiesQueryDto.dateFrom', 'ListActivitiesQueryDto.dateTo', 'ListActivitiesQueryDto.includeDescendants', 'ListActivitiesQueryDto.includeStats', 'ListActivitiesQueryDto.isPublicRegistration', 'ListActivitiesQueryDto.organizationId', 'ListActivitiesQueryDto.q', 'ListActivitiesQueryDto.statusCode', 'UpdateActivityDto.activityTypeCode', 'UpdateActivityDto.content', 'UpdateActivityDto.coverImageUrl', 'UpdateActivityDto.description', 'UpdateActivityDto.endAt', 'UpdateActivityDto.galleryImageUrls', 'UpdateActivityDto.genderRequirementCode', 'UpdateActivityDto.isPublicRegistration', 'UpdateActivityDto.location', 'UpdateActivityDto.locationLatitude', 'UpdateActivityDto.locationLongitude', 'UpdateActivityDto.organizationId', 'UpdateActivityDto.registrationDeadline', 'UpdateActivityDto.registrationNotes', 'UpdateActivityDto.registrationSchema', 'UpdateActivityDto.requiresInsurance', 'UpdateActivityDto.startAt', 'UpdateActivityDto.title'],
-  'src/modules/activities/activity-publish-review.dto.ts': ['ApproveActivityPublishReviewDto.reviewNote', 'ListActivityPublishReviewsQueryDto.activityQ', 'ListActivityPublishReviewsQueryDto.includeDescendants', 'ListActivityPublishReviewsQueryDto.initiatorQ', 'ListActivityPublishReviewsQueryDto.organizationId', 'ListActivityPublishReviewsQueryDto.requestType', 'ListActivityPublishReviewsQueryDto.status', 'ListActivityPublishReviewsQueryDto.submittedFrom', 'ListActivityPublishReviewsQueryDto.submittedTo'],
-  'src/modules/activities/activity-responsibility.dto.ts': ['CreateActivityCollaboratorDto.reason'],
-  'src/modules/activities/dto/app/app-managed-activity.dto.ts': ['AppActivityChangePositionDto.activityPositionId', 'AppActivityChangePositionDto.clientRef', 'AppManagedActivitiesQueryDto.statusCode', 'AppSubmitActivityChangeReviewDto.positions', 'CreateAppManagedActivityDto.capacity', 'CreateAppManagedActivityDto.content', 'CreateAppManagedActivityDto.coverImageUrl', 'CreateAppManagedActivityDto.description', 'CreateAppManagedActivityDto.genderRequirementCode', 'CreateAppManagedActivityDto.isPublicRegistration', 'CreateAppManagedActivityDto.locationLatitude', 'CreateAppManagedActivityDto.locationLongitude', 'CreateAppManagedActivityDto.registrationDeadline', 'CreateAppManagedActivityDto.registrationNotes', 'CreateAppManagedActivityDto.registrationSchema', 'CreateAppManagedActivityDto.requiresInsurance', 'CreateAppManagedActivityPositionDto.sortOrder', 'CreateAppManagedCollaboratorDto.reason', 'UpdateAppManagedActivityDto.activityTypeCode', 'UpdateAppManagedActivityDto.content', 'UpdateAppManagedActivityDto.coverImageUrl', 'UpdateAppManagedActivityDto.description', 'UpdateAppManagedActivityDto.endAt', 'UpdateAppManagedActivityDto.genderRequirementCode', 'UpdateAppManagedActivityDto.isPublicRegistration', 'UpdateAppManagedActivityDto.location', 'UpdateAppManagedActivityDto.locationLatitude', 'UpdateAppManagedActivityDto.locationLongitude', 'UpdateAppManagedActivityDto.organizationId', 'UpdateAppManagedActivityDto.registrationDeadline', 'UpdateAppManagedActivityDto.registrationNotes', 'UpdateAppManagedActivityDto.registrationSchema', 'UpdateAppManagedActivityDto.requiresInsurance', 'UpdateAppManagedActivityDto.startAt', 'UpdateAppManagedActivityDto.title', 'UpdateAppManagedActivityPositionDto.attendanceRoleCode', 'UpdateAppManagedActivityPositionDto.name', 'UpdateAppManagedActivityPositionDto.sortOrder'],
-  'src/modules/activities/dto/app/list-app-my-activities-query.dto.ts': ['ListAppMyActivitiesQueryDto.registrationStatusCode'],
-  'src/modules/activity-registrations/activity-registrations.dto.ts': ['ApproveRegistrationDto.reviewNote', 'BulkReviewRegistrationsDto.reviewNote', 'CancelRegistrationDto.cancelReason', 'CreateMyRegistrationDto.activityPositionId', 'CreateMyRegistrationDto.extras', 'CreateRegistrationDto.activityPositionId', 'CreateRegistrationDto.extras', 'ExportRegistrationsQueryDto.format', 'ExportRegistrationsQueryDto.scope', 'ListMyRegistrationsQueryDto.statusCode', 'ListRegistrationsQueryDto.activityId', 'ListRegistrationsQueryDto.activityQ', 'ListRegistrationsQueryDto.dateFrom', 'ListRegistrationsQueryDto.dateTo', 'ListRegistrationsQueryDto.expand', 'ListRegistrationsQueryDto.includeDescendants', 'ListRegistrationsQueryDto.memberId', 'ListRegistrationsQueryDto.memberQ', 'ListRegistrationsQueryDto.organizationId', 'ListRegistrationsQueryDto.q', 'ListRegistrationsQueryDto.statusCode'],
-  'src/modules/activity-registrations/dto/app/app-managed-registration.dto.ts': ['AppManagedRegistrationsQueryDto.statusCode', 'ApproveAppManagedRegistrationDto.reviewNote', 'BulkReviewAppManagedRegistrationsDto.reviewNote', 'CancelAppManagedRegistrationDto.cancelReason'],
-  'src/modules/activity-registrations/dto/app/cancel-app-my-registration.dto.ts': ['CancelAppMyRegistrationDto.cancelReason'],
-  'src/modules/activity-registrations/dto/app/create-app-my-registration.dto.ts': ['CreateAppMyRegistrationDto.activityPositionId', 'CreateAppMyRegistrationDto.extras'],
-  'src/modules/activity-registrations/dto/app/list-app-my-registrations-query.dto.ts': ['ListAppMyRegistrationsQueryDto.statusCode'],
-  'src/modules/announcement-import/announcement-import.dto.ts': ['AnnouncementImportRequestDto.organizations', 'AnnouncementImportRequestDto.positions', 'AnnouncementImportRequestDto.supervisions', 'ImportOrganizationRowDto.code', 'ImportOrganizationRowDto.establishmentStatusCode', 'ImportOrganizationRowDto.groupFunctionCode', 'ImportOrganizationRowDto.name', 'ImportOrganizationRowDto.parentCode', 'ImportOrganizationRowDto.sortOrder', 'ImportPositionRowDto.appointmentSource', 'ImportPositionRowDto.displayName', 'ImportPositionRowDto.endedAt', 'ImportPositionRowDto.isConcurrent', 'ImportPositionRowDto.memberNo', 'ImportPositionRowDto.note', 'ImportPositionRowDto.orgCode', 'ImportPositionRowDto.positionCode', 'ImportPositionRowDto.startedAt', 'ImportSupervisionRowDto.displayName', 'ImportSupervisionRowDto.endedAt', 'ImportSupervisionRowDto.note', 'ImportSupervisionRowDto.orgCode', 'ImportSupervisionRowDto.scopeMode', 'ImportSupervisionRowDto.startedAt', 'ImportSupervisionRowDto.supervisorMemberNo'],
-  'src/modules/attachment-configs/attachment-mime-configs.dto.ts': ['CreateAttachmentMimeConfigDto.remark', 'ListAttachmentMimeConfigsQueryDto.mime', 'ListAttachmentMimeConfigsQueryDto.status', 'ListAttachmentMimeConfigsQueryDto.typeConfigId', 'UpdateAttachmentMimeConfigDto.remark'],
-  'src/modules/attachment-configs/attachment-size-limit-configs.dto.ts': ['CreateAttachmentSizeLimitConfigDto.remark', 'ListAttachmentSizeLimitConfigsQueryDto.typeConfigId', 'UpdateAttachmentSizeLimitConfigDto.maxSizeBytes', 'UpdateAttachmentSizeLimitConfigDto.remark'],
-  'src/modules/attachment-configs/attachment-type-configs.dto.ts': ['CreateAttachmentTypeConfigDto.defaultMimeWhitelist', 'CreateAttachmentTypeConfigDto.description', 'ListAttachmentTypeConfigsQueryDto.ownerTable', 'ListAttachmentTypeConfigsQueryDto.status', 'UpdateAttachmentTypeConfigDto.defaultMimeWhitelist', 'UpdateAttachmentTypeConfigDto.description', 'UpdateAttachmentTypeConfigDto.displayName', 'UpdateAttachmentTypeConfigDto.ownerTable'],
-  'src/modules/attachments/attachments.dto.ts': ['ConfirmUploadDto.checksum', 'CreateAttachmentDto.accessLevel', 'CreateAttachmentDto.description', 'CreateAttachmentDto.expireAt', 'CreateAttachmentDto.tags', 'ListAttachmentsQueryDto.accessLevel', 'ListAttachmentsQueryDto.mime', 'ListAttachmentsQueryDto.ownerId', 'ListAttachmentsQueryDto.ownerType', 'ListAttachmentsQueryDto.tags', 'ListAttachmentsQueryDto.uploadedBy', 'UpdateAttachmentDto.tags'],
-  'src/modules/attendances/attendances.dto.ts': ['ApproveAttendanceSheetDto.reviewNote', 'AttendanceRecordInputDto.note', 'AttendanceRecordInputDto.registrationId', 'AttendanceRecordInputDto.serviceHours', 'FinalApproveAttendanceSheetDto.finalReviewNote', 'ListAttendanceSheetsQueryDto.activityQ', 'ListAttendanceSheetsQueryDto.dateFrom', 'ListAttendanceSheetsQueryDto.dateTo', 'ListAttendanceSheetsQueryDto.expand', 'ListAttendanceSheetsQueryDto.includeDescendants', 'ListAttendanceSheetsQueryDto.organizationId', 'ListAttendanceSheetsQueryDto.q', 'ListAttendanceSheetsQueryDto.statusCode', 'MyAttendanceRecordsQueryDto.activityId', 'UpdateAttendanceSheetDto.records'],
-  'src/modules/attendances/dto/app/activity-check-in-location.dto.ts': ['ActivityCheckInLocationDto.accuracy'],
-  'src/modules/attendances/dto/app/app-managed-attendance.dto.ts': ['AppManagedAttendanceRecordInputDto.note', 'AppManagedAttendanceRecordInputDto.registrationId', 'AppManagedAttendanceRecordInputDto.serviceHours', 'AppManagedAttendanceSheetsQueryDto.statusCode', 'UpdateAppManagedAttendanceSheetDto.records'],
-  'src/modules/attendances/dto/app/list-app-my-attendance-records-query.dto.ts': ['ListAppMyAttendanceRecordsQueryDto.activityId'],
-  'src/modules/audit-logs/audit-logs.dto.ts': ['AuditLogQueryDto.actorUserId', 'AuditLogQueryDto.endDate', 'AuditLogQueryDto.event', 'AuditLogQueryDto.resourceId', 'AuditLogQueryDto.resourceType', 'AuditLogQueryDto.startDate'],
-  'src/modules/authz/authz.dto.ts': ['ActionStateItemDto.key', 'ExplainAuthzDto.resourceRef', 'ExplainBatchItemDto.resourceRef'],
-  'src/modules/certificates/certificates-workbench.dto.ts': ['CertificateWorkbenchFilterDto.categoryCode', 'CertificateWorkbenchFilterDto.certStatusCode', 'CertificateWorkbenchFilterDto.expiresFrom', 'CertificateWorkbenchFilterDto.expiresTo', 'CertificateWorkbenchFilterDto.includeDescendants', 'CertificateWorkbenchFilterDto.issuedFrom', 'CertificateWorkbenchFilterDto.issuedTo', 'CertificateWorkbenchFilterDto.levelCode', 'CertificateWorkbenchFilterDto.memberId', 'CertificateWorkbenchFilterDto.organizationId', 'CertificateWorkbenchFilterDto.q', 'CertificateWorkbenchFilterDto.sourceCode', 'CertificateWorkbenchFilterDto.standardCode', 'ListCertificateWorkbenchQueryDto.page', 'ListCertificateWorkbenchQueryDto.pageSize'],
-  'src/modules/certificates/dto/app/list-app-my-certificates-query.dto.ts': ['ListAppMyCertificatesQueryDto.certCategoryCode', 'ListAppMyCertificatesQueryDto.certStatusCode'],
-  'src/modules/content/content.dto.ts': ['ContentAttachmentConfirmDto.checksum', 'ContentAttachmentConfirmDto.etag', 'CreateContentDto.pinned', 'CreateContentDto.summary', 'CreateContentDto.tags', 'CreateContentDto.visibleOrganizationIds', 'ListContentAdminQueryDto.contentTypeCode', 'ListContentAdminQueryDto.keyword', 'ListContentAdminQueryDto.page', 'ListContentAdminQueryDto.pageSize', 'ListContentAdminQueryDto.pinned', 'ListContentAdminQueryDto.statusCode', 'ListContentAdminQueryDto.tags', 'ListContentAdminQueryDto.visibilityCode', 'ListContentReadQueryDto.contentTypeCode', 'ListContentReadQueryDto.keyword', 'ListContentReadQueryDto.page', 'ListContentReadQueryDto.pageSize', 'ListContentReadQueryDto.tags', 'UpdateContentDto.body', 'UpdateContentDto.contentTypeCode', 'UpdateContentDto.pinned', 'UpdateContentDto.tags', 'UpdateContentDto.title', 'UpdateContentDto.visibilityCode', 'UpdateContentDto.visibleOrganizationIds'],
-  'src/modules/contribution-rules/contribution-rules.dto.ts': ['ContributionRuleQueryDto.activityTypeCode', 'ContributionRuleQueryDto.attendanceRoleCode', 'ContributionRuleQueryDto.status', 'CreateContributionRuleDto.remark', 'CreateContributionRuleDto.status', 'UpdateContributionRuleDto.pointsBelow', 'UpdateContributionRuleDto.status'],
-  'src/modules/dictionaries/dictionaries.dto.ts': ['CreateDictItemDto.parentId', 'CreateDictItemDto.sortOrder', 'CreateDictTypeDto.sortOrder', 'DictItemTreeQueryDto.status', 'ListDictItemsQueryDto.parentId', 'ListDictItemsQueryDto.status', 'ListDictTypesQueryDto.status', 'UpdateDictItemDto.label', 'UpdateDictItemDto.sortOrder', 'UpdateDictTypeDto.label', 'UpdateDictTypeDto.sortOrder'],
-  'src/modules/emergency-contacts/emergency-contacts.dto.ts': ['CreateEmergencyContactDto.address', 'CreateEmergencyContactDto.phoneBackup', 'CreateEmergencyContactDto.priority', 'UpdateEmergencyContactDto.address', 'UpdateEmergencyContactDto.contactName', 'UpdateEmergencyContactDto.phoneBackup', 'UpdateEmergencyContactDto.phonePrimary', 'UpdateEmergencyContactDto.priority', 'UpdateEmergencyContactDto.relationCode'],
-  'src/modules/insurances/dto/app/create-app-me-insurance.dto.ts': ['CreateAppMeInsuranceDto.coverageStart'],
-  'src/modules/insurances/dto/app/delete-app-me-insurance-query.dto.ts': ['DeleteAppMeInsuranceQueryDto.expectedVersion'],
-  'src/modules/insurances/dto/app/update-app-me-insurance.dto.ts': ['UpdateAppMeInsuranceDto.coverageEnd', 'UpdateAppMeInsuranceDto.coverageStart', 'UpdateAppMeInsuranceDto.expectedVersion', 'UpdateAppMeInsuranceDto.insurerName', 'UpdateAppMeInsuranceDto.policyNumber'],
-  'src/modules/insurances/insurances.dto.ts': ['CreateTeamInsurancePolicyDto.note', 'UpdateTeamInsurancePolicyDto.coverageEnd', 'UpdateTeamInsurancePolicyDto.coverageStart', 'UpdateTeamInsurancePolicyDto.insurerName', 'UpdateTeamInsurancePolicyDto.note', 'UpdateTeamInsurancePolicyDto.policyNumber'],
-  'src/modules/member-departments/memberships.dto.ts': ['CreateMembershipDto.reason', 'MembershipConflictsQueryDto.includeDescendants', 'MembershipConflictsQueryDto.organizationId', 'OrgMembersOptionsQueryDto.includeDescendants', 'OrgMembersOptionsQueryDto.limit', 'OrgMembersOptionsQueryDto.q', 'OrgMembershipsQueryDto.expand', 'OrgMembershipsQueryDto.includeDescendants', 'OrgMembershipsQueryDto.membershipType', 'OrgMembershipsQueryDto.q', 'OrgMembershipsQueryDto.status', 'PageMembershipsQueryDto.expand', 'PageMembershipsQueryDto.includeDescendants', 'PageMembershipsQueryDto.memberId', 'PageMembershipsQueryDto.membershipType', 'PageMembershipsQueryDto.organizationId', 'PageMembershipsQueryDto.q', 'PageMembershipsQueryDto.status', 'TransferMembershipDto.reason', 'UpdateMembershipDto.endedAt', 'UpdateMembershipDto.membershipType', 'UpdateMembershipDto.reason', 'UpdateMembershipDto.startedAt'],
-  'src/modules/member-profiles/dto/create-member-profile.dto.ts': ['CreateMemberProfileDto.bloodTypeCode', 'CreateMemberProfileDto.educationCode', 'CreateMemberProfileDto.ethnicityCode', 'CreateMemberProfileDto.exerciseFrequencyCode', 'CreateMemberProfileDto.exerciseMethods', 'CreateMemberProfileDto.exerciseSportCode', 'CreateMemberProfileDto.eyesight', 'CreateMemberProfileDto.firstAidKnowledgeCode', 'CreateMemberProfileDto.firstAidSkills', 'CreateMemberProfileDto.hasVehicle', 'CreateMemberProfileDto.heightCm', 'CreateMemberProfileDto.isVeteran', 'CreateMemberProfileDto.landline', 'CreateMemberProfileDto.major', 'CreateMemberProfileDto.maritalStatusCode', 'CreateMemberProfileDto.medicalNotes', 'CreateMemberProfileDto.noCriminalRecordSigned', 'CreateMemberProfileDto.otherSkills', 'CreateMemberProfileDto.politicalStatusCode', 'CreateMemberProfileDto.privacyConsentSignedAt', 'CreateMemberProfileDto.qq', 'CreateMemberProfileDto.residenceArea', 'CreateMemberProfileDto.vehicleType', 'CreateMemberProfileDto.volunteerNo', 'CreateMemberProfileDto.wechat', 'CreateMemberProfileDto.weightKg', 'CreateMemberProfileDto.workArea', 'CreateMemberProfileDto.workNatureCode'],
-  'src/modules/member-profiles/dto/member-profile.shared.dto.ts': ['MedicalNoteItemDto.note'],
-  'src/modules/member-profiles/dto/update-member-profile.dto.ts': ['UpdateMemberProfileDto.birthDate', 'UpdateMemberProfileDto.bloodTypeCode', 'UpdateMemberProfileDto.documentNumber', 'UpdateMemberProfileDto.documentTypeCode', 'UpdateMemberProfileDto.educationCode', 'UpdateMemberProfileDto.email', 'UpdateMemberProfileDto.ethnicityCode', 'UpdateMemberProfileDto.exerciseFrequencyCode', 'UpdateMemberProfileDto.exerciseMethods', 'UpdateMemberProfileDto.exerciseSportCode', 'UpdateMemberProfileDto.eyesight', 'UpdateMemberProfileDto.firstAidKnowledgeCode', 'UpdateMemberProfileDto.firstAidSkills', 'UpdateMemberProfileDto.genderCode', 'UpdateMemberProfileDto.hasVehicle', 'UpdateMemberProfileDto.heightCm', 'UpdateMemberProfileDto.isVeteran', 'UpdateMemberProfileDto.joinSourceCode', 'UpdateMemberProfileDto.joinedDate', 'UpdateMemberProfileDto.landline', 'UpdateMemberProfileDto.major', 'UpdateMemberProfileDto.maritalStatusCode', 'UpdateMemberProfileDto.medicalNotes', 'UpdateMemberProfileDto.mobile', 'UpdateMemberProfileDto.noCriminalRecordSigned', 'UpdateMemberProfileDto.otherSkills', 'UpdateMemberProfileDto.politicalStatusCode', 'UpdateMemberProfileDto.privacyConsentSigned', 'UpdateMemberProfileDto.privacyConsentSignedAt', 'UpdateMemberProfileDto.qq', 'UpdateMemberProfileDto.realName', 'UpdateMemberProfileDto.residenceArea', 'UpdateMemberProfileDto.vehicleType', 'UpdateMemberProfileDto.volunteerNo', 'UpdateMemberProfileDto.wechat', 'UpdateMemberProfileDto.weightKg', 'UpdateMemberProfileDto.workArea', 'UpdateMemberProfileDto.workNatureCode'],
-  'src/modules/members/members.dto.ts': ['CreateMemberDto.gradeCode', 'ListMembersQueryDto.gradeCode', 'ListMembersQueryDto.hasAccount', 'ListMembersQueryDto.includeDescendants', 'ListMembersQueryDto.memberNo', 'ListMembersQueryDto.organizationId', 'ListMembersQueryDto.q', 'ListMembersQueryDto.status', 'MemberOptionsQueryDto.includeDescendants', 'MemberOptionsQueryDto.limit', 'MemberOptionsQueryDto.organizationId', 'MemberOptionsQueryDto.q', 'UpdateMemberDto.displayName', 'UpdateMemberDto.gradeCode'],
-  'src/modules/meta/participation-overview.dto.ts': ['ParticipationOverviewQueryDto.activityTypeCode', 'ParticipationOverviewQueryDto.dateFrom', 'ParticipationOverviewQueryDto.dateTo', 'ParticipationOverviewQueryDto.includeDescendants', 'ParticipationOverviewQueryDto.organizationId'],
-  'src/modules/notifications/notification.dto.ts': ['CreateNotificationDto.channels', 'CreateNotificationDto.pinned', 'CreateNotificationDto.visibleOrganizationIds', 'ListNotificationAdminQueryDto.notificationTypeCode', 'ListNotificationAdminQueryDto.page', 'ListNotificationAdminQueryDto.pageSize', 'ListNotificationAdminQueryDto.pinned', 'ListNotificationAdminQueryDto.statusCode', 'ListNotificationAdminQueryDto.visibilityCode', 'ListNotificationReadQueryDto.page', 'ListNotificationReadQueryDto.pageSize', 'UpdateNotificationDto.body', 'UpdateNotificationDto.channels', 'UpdateNotificationDto.notificationTypeCode', 'UpdateNotificationDto.pinned', 'UpdateNotificationDto.title', 'UpdateNotificationDto.visibilityCode', 'UpdateNotificationDto.visibleOrganizationIds', 'UpsertWechatSubscribeTemplateDto.enabled', 'UpsertWechatSubscribeTemplateDto.remarks', 'UpsertWechatSubscribeTemplateDto.templateId'],
-  'src/modules/organizations/organizations.dto.ts': ['CreateOrganizationDto.code', 'CreateOrganizationDto.establishmentStatusCode', 'CreateOrganizationDto.groupFunctionCode', 'CreateOrganizationDto.parentId', 'CreateOrganizationDto.sortOrder', 'ListOrganizationsQueryDto.codeContains', 'ListOrganizationsQueryDto.nameContains', 'ListOrganizationsQueryDto.nodeTypeCode', 'ListOrganizationsQueryDto.parentId', 'ListOrganizationsQueryDto.q', 'ListOrganizationsQueryDto.status', 'OrganizationOptionsQueryDto.limit', 'OrganizationOptionsQueryDto.nodeTypeCode', 'OrganizationOptionsQueryDto.q', 'OrganizationOptionsQueryDto.status', 'OrganizationTreeQueryDto.status', 'UpdateOrganizationDto.code', 'UpdateOrganizationDto.name', 'UpdateOrganizationDto.nodeTypeCode', 'UpdateOrganizationDto.sortOrder'],
-  'src/modules/permissions/permissions.dto.ts': ['CreatePermissionDto.description', 'ListPermissionsQueryDto.module', 'ListPermissionsQueryDto.resourceType', 'UpdatePermissionDto.description'],
-  'src/modules/permissions/rbac-roles.dto.ts': ['CreateRbacRoleDto.description', 'ListRbacRolesQueryDto.code', 'RoleOptionsQueryDto.limit', 'RoleOptionsQueryDto.q', 'UpdateRbacRoleDto.description', 'UpdateRbacRoleDto.displayName'],
-  'src/modules/permissions/rbac.dto.ts': ['ReloadRbacDto.roleId', 'ReloadRbacDto.scope', 'ReloadRbacDto.userId'],
-  'src/modules/position-assignments/position-assignments.dto.ts': ['CreatePositionAssignmentDto.appointmentSource', 'CreatePositionAssignmentDto.endedAt', 'CreatePositionAssignmentDto.isConcurrent', 'CreatePositionAssignmentDto.note', 'PagePositionAssignmentsQueryDto.expand', 'PagePositionAssignmentsQueryDto.includeDescendants', 'PagePositionAssignmentsQueryDto.memberId', 'PagePositionAssignmentsQueryDto.organizationId', 'PagePositionAssignmentsQueryDto.positionId', 'PagePositionAssignmentsQueryDto.q', 'PagePositionAssignmentsQueryDto.status', 'PreviewPositionAssignmentDto.appointmentSource', 'PreviewPositionAssignmentDto.endedAt', 'PreviewPositionAssignmentDto.isConcurrent', 'PreviewPositionAssignmentDto.note'],
-  'src/modules/positions/position-rules.dto.ts': ['CreatePositionRuleDto.allowConcurrent', 'CreatePositionRuleDto.requireMembership', 'CreatePositionRuleDto.required', 'CreatePositionRuleDto.status', 'PositionRuleQueryDto.nodeTypeCode', 'PositionRuleQueryDto.positionId', 'PositionRuleQueryDto.status', 'UpdatePositionRuleDto.allowConcurrent', 'UpdatePositionRuleDto.requireMembership', 'UpdatePositionRuleDto.required', 'UpdatePositionRuleDto.status'],
-  'src/modules/positions/positions.dto.ts': ['CreatePositionDto.allowConcurrent', 'CreatePositionDto.allowMultiple', 'CreatePositionDto.description', 'CreatePositionDto.isLeadership', 'CreatePositionDto.rank', 'CreatePositionDto.sortOrder', 'CreatePositionDto.status', 'PositionOptionsQueryDto.categoryCode', 'PositionOptionsQueryDto.limit', 'PositionOptionsQueryDto.q', 'PositionOptionsQueryDto.status', 'PositionQueryDto.categoryCode', 'PositionQueryDto.status', 'UpdatePositionDto.allowConcurrent', 'UpdatePositionDto.allowMultiple', 'UpdatePositionDto.categoryCode', 'UpdatePositionDto.isLeadership', 'UpdatePositionDto.name', 'UpdatePositionDto.rank', 'UpdatePositionDto.sortOrder', 'UpdatePositionDto.status'],
-  'src/modules/realname/realname.dto.ts': ['UpdateRealnameSettingsDto.enabled', 'UpdateRealnameSettingsDto.providerType', 'UpdateRealnameSettingsDto.region', 'UpdateRealnameSettingsDto.remarks'],
-  'src/modules/recruitment/recruitment.dto.ts': ['BatchMarkThresholdDto.cycleId', 'BatchMarkThresholdMatchDto.phone', 'BatchMarkThresholdMatchDto.realName', 'BatchMarkThresholdMatchDto.tempNo', 'CreateRecruitmentCycleDto.capacity', 'EvaluateRecruitmentApplicationDto.note', 'ExportRecruitmentApplicationsDto.cycleId', 'ExportRecruitmentApplicationsDto.filter', 'RecruitmentApplicationListQueryDto.cycleId', 'RecruitmentApplicationListQueryDto.riskLevel', 'RecruitmentApplicationListQueryDto.statusCode', 'RecruitmentRebindPhoneDto.reason', 'RecruitmentSubmitPayloadDto.applicantConfirmedOcrWrong', 'RecruitmentSubmitPayloadDto.privacyConsentVersion', 'RecruitmentSubmitPayloadDto.profileExtra', 'RecruitmentSubmitPayloadDto.wechatCode', 'RecruitmentWithdrawDto.code', 'RecruitmentWithdrawDto.phone', 'RecruitmentWithdrawDto.wechatCode', 'ResolveRecruitmentApplicationDto.reviewNote', 'UpdateRecruitmentApplicationDto.birthDate', 'UpdateRecruitmentApplicationDto.cityDistrict', 'UpdateRecruitmentApplicationDto.detailedAddress', 'UpdateRecruitmentApplicationDto.emergencyContacts', 'UpdateRecruitmentApplicationDto.genderCode', 'UpdateRecruitmentApplicationDto.idCardNumber', 'UpdateRecruitmentApplicationDto.profileExtra', 'UpdateRecruitmentApplicationDto.realName', 'UpdateRecruitmentApplicationDto.sourceChannel', 'UpdateRecruitmentCycleDto.meetingInfo', 'UpdateRecruitmentCycleDto.notifyTemplate', 'UpdateRecruitmentCycleDto.qqGroup', 'UpdateRecruitmentCycleDto.statusCode'],
-  'src/modules/role-bindings/role-bindings.dto.ts': ['CreateRoleBindingDto.endedAt', 'CreateRoleBindingDto.note', 'CreateRoleBindingDto.principalId', 'CreateRoleBindingDto.scopeActivityId', 'CreateRoleBindingDto.scopeOrgId', 'CreateRoleBindingDto.scopeResourceId', 'CreateRoleBindingDto.scopeResourceType', 'CreateRoleBindingDto.startedAt', 'ListRoleBindingsQueryDto.principalId', 'ListRoleBindingsQueryDto.principalType', 'ListRoleBindingsQueryDto.roleId', 'ListRoleBindingsQueryDto.scopeType', 'ListRoleBindingsQueryDto.status', 'PageRoleBindingsQueryDto.expand', 'PageRoleBindingsQueryDto.includeExpired', 'PageRoleBindingsQueryDto.principalId', 'PageRoleBindingsQueryDto.principalQ', 'PageRoleBindingsQueryDto.principalType', 'PageRoleBindingsQueryDto.q', 'PageRoleBindingsQueryDto.roleCode', 'PageRoleBindingsQueryDto.roleId', 'PageRoleBindingsQueryDto.scopeOrgId', 'PageRoleBindingsQueryDto.scopeType', 'PageRoleBindingsQueryDto.status', 'PreviewRoleBindingQueryDto.endedAt', 'PreviewRoleBindingQueryDto.note', 'PreviewRoleBindingQueryDto.principalId', 'PreviewRoleBindingQueryDto.scopeActivityId', 'PreviewRoleBindingQueryDto.scopeOrgId', 'PreviewRoleBindingQueryDto.scopeResourceId', 'PreviewRoleBindingQueryDto.scopeResourceType', 'PreviewRoleBindingQueryDto.startedAt', 'UpdateRoleBindingDto.endedAt', 'UpdateRoleBindingDto.note', 'UpdateRoleBindingDto.startedAt', 'UpdateRoleBindingDto.status'],
-  'src/modules/sms/sms.dto.ts': ['SmsSendLogQueryDto.phone', 'SmsSendLogQueryDto.status', 'UpdateSmsSettingsDto.enabled', 'UpdateSmsSettingsDto.providerType', 'UpdateSmsSettingsDto.region', 'UpdateSmsSettingsDto.remarks', 'UpdateSmsSettingsDto.sdkAppId', 'UpdateSmsSettingsDto.signName', 'UpdateSmsSettingsDto.templateIdBirthday', 'UpdateSmsSettingsDto.templateIdNotification', 'UpdateSmsSettingsDto.templateIdVerifyCode'],
-  'src/modules/storage/storage-settings.dto.ts': ['UpdateStorageSettingsDto.allowedMimePolicyMode', 'UpdateStorageSettingsDto.downloadUrlTtlSeconds', 'UpdateStorageSettingsDto.enableSignedUrl', 'UpdateStorageSettingsDto.enableVersioning', 'UpdateStorageSettingsDto.enabled', 'UpdateStorageSettingsDto.lifecycleDays', 'UpdateStorageSettingsDto.providerType', 'UpdateStorageSettingsDto.uploadUrlTtlSeconds'],
-  'src/modules/supervision-assignments/supervision-assignments.dto.ts': ['CreateSupervisionAssignmentDto.endedAt', 'CreateSupervisionAssignmentDto.note', 'CreateSupervisionAssignmentDto.scopeMode', 'PageSupervisionAssignmentsQueryDto.expand', 'PageSupervisionAssignmentsQueryDto.includeDescendants', 'PageSupervisionAssignmentsQueryDto.organizationId', 'PageSupervisionAssignmentsQueryDto.q', 'PageSupervisionAssignmentsQueryDto.scopeMode', 'PageSupervisionAssignmentsQueryDto.status', 'PageSupervisionAssignmentsQueryDto.supervisorMemberId', 'SupervisionCoveragePreviewDto.scopeMode', 'UpdateSupervisionAssignmentDto.endedAt', 'UpdateSupervisionAssignmentDto.note', 'UpdateSupervisionAssignmentDto.scopeMode', 'UpdateSupervisionAssignmentDto.startedAt'],
-  'src/modules/team-join/team-join.dto.ts': ['CreateTeamJoinCycleDto.requiresInsurance', 'EvaluateTeamJoinApplicationDto.evaluationExtendedUntil', 'EvaluateTeamJoinApplicationDto.note', 'ListTeamJoinApplicationsQueryDto.cycleId', 'ListTeamJoinApplicationsQueryDto.statusCode', 'MarkGateDto.extendedUntil', 'UpdateTeamJoinCycleDto.name', 'UpdateTeamJoinCycleDto.requiresInsurance', 'UpdateTeamJoinCycleDto.statusCode'],
-  'src/modules/users/dto/app/update-app-self-profile.dto.ts': ['UpdateAppSelfProfileDto.avatarKey', 'UpdateAppSelfProfileDto.nickname'],
-  'src/modules/users/users.dto.ts': ['CreateUserDto.avatarKey', 'CreateUserDto.email', 'CreateUserDto.nickname', 'CreateUserDto.role', 'ListUsersQueryDto.memberId', 'ListUsersQueryDto.q', 'ListUsersQueryDto.role', 'ListUsersQueryDto.status', 'UpdateMyProfileDto.avatarKey', 'UpdateMyProfileDto.nickname', 'UpdateUserDto.avatarKey', 'UpdateUserDto.email', 'UpdateUserDto.nickname', 'UserOptionsQueryDto.limit', 'UserOptionsQueryDto.q'],
-  'src/modules/wechat/wechat.dto.ts': ['UpdateWechatSettingsDto.appId', 'UpdateWechatSettingsDto.enabled', 'UpdateWechatSettingsDto.providerType', 'UpdateWechatSettingsDto.remarks'],
-};
+// 只减不增,三道执行位各管一段 —— 少任何一道棘轮都会退化成单向:
+//   · 往**已在基线的文件**新增违规字段 → `pnpm lint` 当场红(豁免精确到类名.字段名)
+//   · 修好一个存量却忘了删基线行     → `pnpm harness:selftest` 当场红(陈旧行 = 基线在说谎)
+//   · **同一个 PR 里新增违规 + 顺手把它加进基线** → base-trusted 裁判硬拦
+//     (前两道都拦不住这一种:lint 看的是 PR 自己的基线,自然放行)
+const BASELINE_PATH = 'harness/is-optional-null-baseline.json';
+
+/** 只允许这三个顶层键。多一个都拒 —— 防「加个 allowGlob: true 就放宽」那类演化。 */
+const BASELINE_TOP_KEYS = new Set(['_comment', 'version', 'entries']);
+/** glob 元字符:任何一个混进 file,一条具名豁免就变成整片豁免。 */
+const BASELINE_GLOB_META_RE = /[*?[\]{}!()+@|]/;
+/** `类名.字段名` —— 恰好一个点,两侧都是合法 JS 标识符。 */
+const BASELINE_SYMBOL_RE = /^[A-Za-z_$][A-Za-z0-9_$]*\.[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+/**
+ * 解析并**严格校验**基线文档,返回 `Map<file, symbol[]>`。
+ *
+ * 六条格式约束(E1–E6)违反任一条 → **加载即抛**,不是警告。
+ * 理由:一个格式松散的棘轮文件等于没有棘轮 —— 光是让 `src/**` 这样一条
+ * glob 混进 entries,就能把整个目录静默豁免掉,而 lint 依旧全绿。
+ * 抛在加载期意味着 `pnpm lint` 本身起不来,响亮地坏,好过静默地坏。
+ *
+ * 导出是为了让 scripts/harness-eslint.selftest.ts 直接喂畸形文档做**阳性对照** ——
+ * 六条约束逐条都要有一个「这样写会被拒」的证据,而不是靠读代码相信。
+ *
+ * @param {string} text
+ * @returns {Map<string, string[]>}
+ */
+function parseIsOptionalNullBaseline(text) {
+  const fail = (code, msg) => {
+    throw new Error(`[${BASELINE_PATH}] ${code} ${msg}`);
+  };
+
+  let doc;
+  try {
+    doc = JSON.parse(text);
+  } catch (err) {
+    fail('E0', `不是合法 JSON:${String(err)}`);
+  }
+  if (doc === null || typeof doc !== 'object' || Array.isArray(doc)) fail('E0', '顶层必须是对象');
+  for (const k of Object.keys(doc)) {
+    if (!BASELINE_TOP_KEYS.has(k)) fail('E0', `未知顶层键 ${JSON.stringify(k)}`);
+  }
+  if (doc.version !== 1) fail('E0', `version 必须是 1,实际 ${JSON.stringify(doc.version)}`);
+  if (!Array.isArray(doc.entries)) fail('E0', 'entries 必须是数组');
+
+  /** @type {Map<string, string[]>} */
+  const byFile = new Map();
+  const seen = new Set();
+  /** @type {{ file: string, symbol: string } | null} */
+  let prev = null;
+
+  for (let i = 0; i < doc.entries.length; i++) {
+    const entry = doc.entries[i];
+    const at = `entries[${i}]`;
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      fail('E0', `${at} 必须是对象`);
+    }
+    const keys = Object.keys(entry).sort();
+    if (keys.length !== 2 || keys[0] !== 'file' || keys[1] !== 'symbol') {
+      fail('E0', `${at} 只能有 file 与 symbol 两个键,实际 [${keys.join(', ')}]`);
+    }
+    const { file, symbol } = entry;
+    if (typeof file !== 'string' || typeof symbol !== 'string') {
+      fail('E0', `${at} file / symbol 必须是字符串`);
+    }
+
+    // E1 精确 .ts 路径(.d.ts 里不可能有装饰器,出现即是写错了)
+    if (!file.endsWith('.ts') || file.endsWith('.d.ts')) {
+      fail('E1', `${at} file 必须是精确的 .ts 源文件路径:${JSON.stringify(file)}`);
+    }
+    // E2 禁 glob 元字符 —— 一个 `*` 就能把一条具名豁免膨胀成整片豁免
+    if (BASELINE_GLOB_META_RE.test(file)) {
+      fail('E2', `${at} file 禁含 glob 元字符(豁免必须逐文件具名):${JSON.stringify(file)}`);
+    }
+    // E3 禁 `..` / 绝对路径 / 反斜杠 / 空段 —— 全是「豁免逃出仓库范围」的形状
+    if (
+      file.startsWith('/') ||
+      /^[A-Za-z]:/.test(file) ||
+      file.includes('\\') ||
+      file.split('/').some((seg) => seg === '' || seg === '.' || seg === '..')
+    ) {
+      fail(
+        'E3',
+        `${at} file 必须是仓库内的相对 POSIX 路径(禁 ../ 绝对路径 反斜杠 空段):${JSON.stringify(file)}`,
+      );
+    }
+    // E4 symbol 必须是「类名.字段名」 —— 只写字段名区分不开同文件的多个 DTO 类
+    if (!BASELINE_SYMBOL_RE.test(symbol)) {
+      fail('E4', `${at} symbol 必须是「类名.字段名」:${JSON.stringify(symbol)}`);
+    }
+    // E5 (file, symbol) 全局唯一 —— 重复行会让「删一条」看起来像已经删干净
+    const key = `${file} ${symbol}`;
+    if (seen.has(key)) fail('E5', `${at} 重复条目:${file} ${symbol}`);
+    seen.add(key);
+    // E6 按 (file, symbol) 严格升序 —— 排序稳定,diff 里「加了一行」才一眼可见
+    if (prev !== null && !(prev.file < file || (prev.file === file && prev.symbol < symbol))) {
+      fail('E6', `${at} 未按 (file, symbol) 严格升序:${prev.file} ${prev.symbol} → ${file} ${symbol}`);
+    }
+    prev = { file, symbol };
+
+    const list = byFile.get(file);
+    if (list) list.push(symbol);
+    else byFile.set(file, [symbol]);
+  }
+
+  return byFile;
+}
+
+const IS_OPTIONAL_NULL_BASELINE = parseIsOptionalNullBaseline(
+  readFileSync(new URL(`./${BASELINE_PATH}`, import.meta.url), 'utf-8'),
+);
 
 const FORBIDDEN_IMPORT_PATHS = [
   {
@@ -449,47 +509,60 @@ const harnessConfigBlocks = [
       ],
     },
   },
+  // (k) 第 18 条:独立 ruleId 的自定义规则(eslint-rules/no-nullable-is-optional.mjs)。
+  //     与前面 17 条**不共用** `no-restricted-syntax`,所以:
+  //       · 一句 `eslint-disable-next-line no-restricted-syntax` 不再把它连坐关掉;
+  //       · 下面的基线块只需写这一条,不必重列全部规则集(前面 (g)/(h) 那种
+  //         「漏写一条就静默关掉其余若干条」的排序陷阱在这条上**结构性消失**)。
+  //     默认对全仓生效(含 test / prisma —— 两处实测零违规,所以是白拿的)。
+  {
+    name: 'srvf/harness:nullable-is-optional',
+    files: ['src/**/*.ts', 'test/**/*.ts', 'prisma/**/*.ts'],
+    plugins: { srvf: srvfEslintPlugin },
+    rules: { [NULLABLE_IS_OPTIONAL_RULE]: 'error' },
+  },
+
+  // (l) DTO 范围关掉 inline 逃生门(第五轮评审 J2 · L3)。
+  //     实测:`/* eslint-disable */`(文件级)与 `// eslint-disable-next-line`(行级)
+  //     两种写法此前都能让一个新违规字段通过 lint,RC=0 —— 棘轮的第一道执行位
+  //     等于可以被违规者本人一行注释关掉。
+  //
+  //     ⚠️ 范围**刻意只到 DTO**:src/ 现有 7 处 inline disable 全在 service /
+  //     orchestrator(硬删的具名豁免,AGENTS §1 明文允许的正当用法),扩到全仓
+  //     会把它们一起打死 —— 「治误伤开出漏放洞」的反面同样成立,一次误伤会让
+  //     下一个人来把整条 linterOptions 删掉。实测 DTO 范围内既有 inline config 为 0,
+  //     所以这条是零代价的。代价写在明处:**非 .dto.ts 文件里的第 18 条仍可被
+  //     inline 关掉**(当前全仓实测 0 处真装饰器落在该范围外)。
+  {
+    name: 'srvf/harness:dto-no-inline-config',
+    files: ['**/*.dto.ts', 'src/**/dto/**/*.ts'],
+    linterOptions: { noInlineConfig: true },
+  },
 ];
 
-// (k) BASELINE 块:每个存量文件一块,把**该文件已冻结的那些字段**从第 18 条里挖掉。
-//     豁免用 `:not(<selector list>)` 精确到 `类名.字段名` —— 所以往一个已在基线里的
-//     文件**新增**一个违规字段依然会红。这就是「基线只能缩不能涨」在 lint 侧的执行位。
+// (m) BASELINE 块:每个存量文件一块,把**该文件已冻结的那些字段**从第 18 条里挖掉。
+//     豁免是规则的 `exempt` 选项,精确到 `类名.字段名` —— 所以往一个已在基线里的
+//     文件**新增**一个违规字段依然会红,同名字段挪到另一个类里也会红。
+//     这就是「基线只能缩不能涨」在 lint 侧的执行位。
 //
-//     ⚠️ 必须放在**所有**其他 no-restricted-syntax 块之后:flat config 同 ruleId
-//     后块整体覆盖前块。放前面会被 (b)/(f)/(h) 覆盖掉,豁免失效 → 641 处全红。
-//     ⚠️ 每块必须重列该文件作用域内的**完整**规则集(用 filter 减掉第 18 条,
-//     再把带豁免的版本加回去),只写第 18 条会把其余 17 条对这些文件静默关掉。
-//     permissions/ 下的三个文件要多带 (h) 的三条,否则它们会丢掉判权路径的防线。
-const isOptionalNullBaselineBlocks = Object.entries(IS_OPTIONAL_NULL_BASELINE).map(
-  ([file, frozenFields]) => {
-    const exemptions = frozenFields
-      .map((entry) => {
-        const dot = entry.indexOf('.');
-        const className = entry.slice(0, dot);
-        const fieldName = entry.slice(dot + 1);
-        return `ClassDeclaration[id.name='${className}'] > ClassBody > PropertyDefinition[key.name='${fieldName}']`;
-      })
-      .join(', ');
-    const scopedIds = file.startsWith('src/modules/permissions/')
-      ? [...SRC, 'no-param-id-string', 'no-identity-cache', 'no-identity-timer']
-      : SRC;
-    return {
-      name: `srvf/harness:is-optional-null-baseline:${file}`,
-      files: [file],
-      rules: {
-        'no-restricted-syntax': [
-          'error',
-          ...scopedIds.filter((id) => id !== 'no-nullable-is-optional').map((id) => HARNESS_SYNTAX[id]),
-          {
-            selector: `${IS_OPTIONAL_NULL_SELECTOR}:not(${exemptions})`,
-            message: HARNESS_SYNTAX['no-nullable-is-optional'].message,
-          },
-        ],
-      },
-    };
-  },
+//     ⚠️ 必须放在 (k) 之后:flat config 同 ruleId 后块整体覆盖前块。
+//     不再需要「重列完整规则集」—— 本块只碰 srvf/no-nullable-is-optional 这一个
+//     ruleId,`no-restricted-syntax` 的 17 条完全不受影响(换独立 ruleId 的直接收益)。
+const isOptionalNullBaselineBlocks = [...IS_OPTIONAL_NULL_BASELINE.entries()].map(
+  ([file, exempt]) => ({
+    name: `srvf/harness:is-optional-null-baseline:${file}`,
+    files: [file],
+    rules: { [NULLABLE_IS_OPTIONAL_RULE]: ['error', { exempt }] },
+  }),
 );
 
 harnessConfigBlocks.push(...isOptionalNullBaselineBlocks);
 
-export { HARNESS_SYNTAX, IS_OPTIONAL_NULL_BASELINE, IS_OPTIONAL_NULL_SELECTOR, harnessConfigBlocks };
+export {
+  HARNESS_SYNTAX,
+  IS_OPTIONAL_NULL_BASELINE,
+  NULLABLE_IS_OPTIONAL_MESSAGE,
+  NULLABLE_IS_OPTIONAL_RULE,
+  harnessConfigBlocks,
+  parseIsOptionalNullBaseline,
+};
