@@ -161,6 +161,16 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 **新的执法体**,不纳入保护等于把防线搬到闸门外。加 glob 当场被仓库自己的 F4 闭环
 拦下(`缺样例的 glob:eslint-rules/**`)—— 守护正常工作,期望值表 + P2b 覆盖断言一并补。
 
+**L2 的两条真触发证据**(不是结构断言 —— 本仓明确区分这两者):
+
+| 实跑 | 结果 |
+|---|---|
+| 新 judge 合入 main 后首次运行([run](https://github.com/BA7IEE/srvf-nest-api/actions/runs/30634899615/job/91169893305)) | `✓ 第 18 条棘轮单调性:baseline ⊆ base(未改动(HEAD == BASE);base 641 条)` |
+| 一次性对抗 PR:往基线加一行 `PaginationQueryDto.pageFAKE`([run](https://github.com/BA7IEE/srvf-nest-api/actions/runs/30635176939/job/91170830920)) | `✗ 第 18 条棘轮被破坏`,scan **fail**、approval **skipping** —— **没有可点的审批按钮**(探针 PR 已关闭删除,不合并) |
+
+第二条同时把「取 head 版本的 GitHub API 路径」也走通了 —— 第一条只走了「基线未改动」的
+快路,不足以证明整条链路。**只有第二条能证明这道闸真的会拦。**
+
 **仍未解除 🔴 NO-GO,等第六轮跨模型评审**(SOP [§1.6](codex-review-sop.md)),由维护者解除。
 
 **已知残留**(第六轮请重点看):
