@@ -16,7 +16,10 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
-import { lockMembersForWrite } from '../../common/prisma/member-advisory-lock.util';
+import {
+  lockMembersForWrite,
+  runMemberLinearizedTransaction,
+} from '../../common/prisma/member-advisory-lock.util';
 import { lockLinkedUserLifecycle, lockMemberLifecycle } from '../members/member-lifecycle-lock';
 import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import {
@@ -113,7 +116,8 @@ export class TeamJoinEnrollmentService {
   ): Promise<TeamJoinApplicationAdminDto> {
     await this.assertCanOrThrow(user, 'team-join-application.join.member');
     // 业务写与 durable notification intent 同一事务；任一失败均全部回滚。
-    const result = await this.prisma.$transaction(async (tx) => {
+    // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
+    const result = await runMemberLinearizedTransaction(this.prisma, async (tx) => {
       // 0. member 线性化键(并发审计 B-F4/B-F5)。必须在**任何 Application 行锁之前**取:
       //    同一队员可以同时存在两条 approved 申请(旧轮 + 新轮),两个终审各锁一条再反向
       //    争 Member,加上第 9 步的同人级联,就是标准的 40P01。先在队员维度串行,

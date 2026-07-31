@@ -44,9 +44,14 @@ const arg0 = (m: jest.Mock): CallArg => (m.mock.calls as unknown[][])[0]?.[0] ??
 function makeTx() {
   return {
     $queryRaw: jest.fn().mockResolvedValue([{ id: 'm1' }]),
+    // M3:runMemberLinearizedTransaction 给事务设 `SET LOCAL lock_timeout`。
+    $executeRawUnsafe: jest.fn().mockResolvedValue(0),
     member: { findFirst: jest.fn().mockResolvedValue(ACTIVE_MEMBER) },
     organization: { findFirst: jest.fn().mockResolvedValue(ACTIVE_ORG) },
+    // M2:入队身份闸读该队员的 live 申请数(0 = 没有可破的不变量,直接放行)。
+    teamJoinApplication: { count: jest.fn().mockResolvedValue(0) },
     memberOrganizationMembership: {
+      findMany: jest.fn().mockResolvedValue([]),
       findFirst: jest.fn().mockResolvedValue(null),
       findUniqueOrThrow: jest.fn().mockResolvedValue({
         status: 'ACTIVE',

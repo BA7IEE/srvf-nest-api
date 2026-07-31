@@ -85576,7 +85576,7 @@
             "bearer": []
           }
         ],
-        "summary": "一键入队(志愿者→队员):approved 申请选定单一部门 → 单事务设部门 + 级别 level-1 → joined(原子/幂等;专业队需对应 gate 过;选定部门须在候选;综合评估本轮有效/延长期) [rbac: team-join-application.join.member]",
+        "summary": "一键入队(志愿者→队员):approved 申请选定单一部门 → 单事务设部门 + 级别 level-1 → joined(原子/幂等;专业队需对应 gate 过;选定部门须在候选;approved 资格不随轮关闭失效) [rbac: team-join-application.join.member]",
         "tags": [
           "Admin - Team Join Applications"
         ]

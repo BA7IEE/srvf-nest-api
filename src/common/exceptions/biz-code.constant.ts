@@ -72,6 +72,18 @@ export const BizCode = {
     message: '请求过于频繁，请稍后再试',
     httpStatus: HttpStatus.TOO_MANY_REQUESTS,
   },
+  // M3(并发复审 P1,2026-08-01):有界锁等待。
+  // 此前所有锁等待都是**无界**的:一直等到 Prisma 默认 5s 交互事务预算耗尽 → P2028 →
+  // 全局过滤器映射 50000「服务器内部错误」。那既不是事实(服务器没坏,只是有人在排队),
+  // 也不可重试(500 语义上不该重试),排查时还看不出是并发。
+  // 现在 `withBoundedMemberLockWait` 给这些事务设 `SET LOCAL lock_timeout`,
+  // 超时以 PostgreSQL 55P03 干净失败,统一映射到本码。
+  // 号位:40900 留给未来的通用 CONFLICT,本码取 40901。
+  CONCURRENT_WRITE_LOCK_TIMEOUT: {
+    code: 40901,
+    message: '该数据正被其他操作占用,请稍后重试',
+    httpStatus: HttpStatus.CONFLICT,
+  },
   INTERNAL_ERROR: {
     code: 50000,
     message: '服务器内部错误',
@@ -1503,6 +1515,7 @@ export const BizCode = {
   // - 28201/28202:NOT_FOUND(入队轮 / 入队申请)
   // - 28203:唯一约束冲突(同轮同人活跃申请去重;partial unique P2002 兜底,T3)
   // - 28210:已入队(member 已有部门/级别,非新志愿者;T3 自助 create 前置)
+  // - 28211:有 live 申请时,非 final join 的写方不得改动「未入队志愿者」身份(M2 唯一 transition)
   // - 28230:无 open 入队轮(T3 自助 create 前置);28231:开轮唯一性冲突(十项收口刀B)
   // - 28240:状态机闸(标 gate / 综合评估 / 改候选目标态不符);28243:gate 完成日在未来(十项收口刀A)
   // 候选/选定部门 org 存在+ACTIVE 校验复用既有 ORGANIZATION_NOT_FOUND / ORGANIZATION_INACTIVE(不另开码)。
@@ -1528,6 +1541,15 @@ export const BizCode = {
   TEAM_JOIN_MEMBER_ALREADY_ENROLLED: {
     code: 28210,
     message: '你已在队(已有部门/级别),无需再次入队',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // M2(并发复审 P1,2026-08-01):「未入队志愿者」身份是入队申请**唯一**的可走通前提。
+  // 除 final join 外的任何写方把它改掉,都会让该队员名下的 live 申请变成 frozen 行 ——
+  // evaluate 还能把它推到 approved,而 final join 从此永远 28210,再没有现存终态通路。
+  // 拍板(2026-08-01)取「拒绝」:不自动终结、不静默放行,把选择权交回管理员。
+  TEAM_JOIN_MEMBER_HAS_LIVE_APPLICATION: {
+    code: 28211,
+    message: '该队员有进行中的入队申请,请先完成一键入队或综合评估淘汰,再改动其身份/部门',
     httpStatus: HttpStatus.CONFLICT,
   },
   TEAM_JOIN_CYCLE_NOT_OPEN: {

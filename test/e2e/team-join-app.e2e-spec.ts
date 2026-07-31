@@ -394,9 +394,16 @@ describe('招新三期(入队)App 自助面 e2e', () => {
     expectBizError(res, BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
   });
 
+  /**
+   * ⚠️ 观测点必须可传(M1/M5 之后):evaluate 与 updateTarges 都改成 **member-first** ——
+   * 先取队员 advisory 键、再锁申请行。于是「第一个 waiter」停在申请行锁上,而
+   * 「第二个 waiter」停在前者持有的 advisory 键上,两者的 query 形状不同。
+   * 只挪观测点,下面的结果断言一字不动。
+   */
   async function waitForDirectTeamJoinWaiter(
     directBlockerPid: number,
     operation: Promise<request.Response>,
+    queryPattern: string,
     excludedPids: number[] = [],
   ): Promise<{ pid: number; databaseName: string; blockingPids: number[] }> {
     let settled = false;
@@ -419,7 +426,7 @@ describe('招新三期(入队)App 自助面 e2e', () => {
             WHERE datname = current_database()
               AND wait_event_type = 'Lock'
               AND CAST(${directBlockerPid} AS integer) = ANY(pg_blocking_pids(pid))
-              AND query LIKE '%FROM "team_join_applications"%FOR NO KEY UPDATE%'
+              AND query LIKE ${queryPattern}
               AND NOT (pid = ANY(${excludedPids}::integer[]))
             LIMIT 1
           `,
@@ -520,7 +527,15 @@ describe('招新三期(入队)App 自助面 e2e', () => {
         );
       const first =
         firstAction === 'reject' ? (rejectRequest = reject()) : (updateRequest = update());
-      const firstWaiter = await waitForDirectTeamJoinWaiter(root.pid, first);
+      // 先到者被 root 的申请行锁挡住:reject(evaluate)走 `FOR UPDATE`,
+      // update(updateTargets)仍走 claimAtStatus 的 `FOR NO KEY UPDATE`。
+      const firstWaiter = await waitForDirectTeamJoinWaiter(
+        root.pid,
+        first,
+        firstAction === 'reject'
+          ? '%FROM "team_join_applications"%FOR UPDATE%'
+          : '%FROM "team_join_applications"%FOR NO KEY UPDATE%',
+      );
       expect(firstWaiter.databaseName).toBe(root.databaseName);
       expect(firstWaiter.blockingPids).toContain(root.pid);
       if (firstAction === 'update') {
@@ -529,7 +544,13 @@ describe('招新三期(入队)App 自助面 e2e', () => {
       }
       const second =
         firstAction === 'reject' ? (updateRequest = update()) : (rejectRequest = reject());
-      const secondWaiter = await waitForDirectTeamJoinWaiter(firstWaiter.pid, second, [root.pid]);
+      // 后到者卡在先到者持有的**队员键**上 —— 两条 surface 现在同序,谁先取到键谁先走。
+      const secondWaiter = await waitForDirectTeamJoinWaiter(
+        firstWaiter.pid,
+        second,
+        '%pg_advisory_xact_lock%',
+        [root.pid],
+      );
       expect(secondWaiter.pid).not.toBe(firstWaiter.pid);
       expect(secondWaiter.databaseName).toBe(root.databaseName);
       expect(secondWaiter.blockingPids).toContain(firstWaiter.pid);

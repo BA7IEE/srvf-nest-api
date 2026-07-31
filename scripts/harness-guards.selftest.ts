@@ -1145,10 +1145,29 @@ for (const [configName, config] of JEST_CONFIGS) {
     ],
     // ── 第五轮评审 J2 · L2:棘轮单调性 ──────────────────────────────────────
     [
-      'F3 judge:第 18 条棘轮单调性判定在位',
+      // M4:判据从「硬编码那一条基线的路径」换成「遍历注册表」。
+      // 断言随之翻面 —— 现在要证明的是**没有**硬编码路径:出现具体基线路径
+      // 恰恰说明有人又把某一条写死回去了,而写死等于新棘轮默认不在裁决范围内。
+      'F3 judge:棘轮单调性按注册表遍历判定(不硬编码任何一条基线路径)',
       judge.includes('judgeBaselineMonotonicity') &&
-        judge.includes('harness/is-optional-null-baseline.json'),
-      '这道闸是唯一能拦「同 PR 新增违规 + 顺手加基线」与「A 换 B」的位置;删了它,棘轮退回单向',
+        judge.includes('harness/ratchet-registry.json') &&
+        judge.includes('parseRatchetRegistryDoc') &&
+        !judge.includes('harness/is-optional-null-baseline.json'),
+      '这道闸是唯一能拦「同 PR 新增违规 + 顺手加基线」与「A 换 B」的位置;' +
+        '写死单一路径 = 第二条棘轮一落地就默认无人裁',
+    ],
+    [
+      'F3 judge:注册表自身只可增不可删(判据的判据也有人看)',
+      judge.includes('judgeRegistryMonotonicity') &&
+        /failHard\(\s*['"`]棘轮注册表被削减/.test(judge),
+      '允许摘条目 ⇒「先把自己从注册表摘掉、再随便改基线」是一条完整的绕过路径',
+    ],
+    [
+      // 上一版把「head 没有这份文件」判成 `{ ok: true }`,理由是 lint 侧会红 ——
+      // 而 lint 跑在 PR 自己的树上,同一个 PR 可以顺手改掉加载它的地方。
+      'F3 judge:基线被删 / 改名 = 硬失败(不再判成 HEAD = ∅ ⊆ BASE)',
+      judge.includes('removedFile') && /failHard\(`棘轮 \$\{ratchet\.id\} 的判据被移走/.test(judge),
+      '「删掉判据」与「判据通过」在门禁看来一模一样,正是本裁判存在的理由所反对的',
     ],
     [
       'F3 judge:head 版本走 API 给的 contents_url,不自己拼',
@@ -1161,7 +1180,7 @@ for (const [configName, config] of JEST_CONFIGS) {
       //    ——「描述文本 ≠ 执行位」本仓一天栽过四次。
       'F3 judge:单调性违规是**硬失败**,不是「要求审批」',
       /function failHard\([\s\S]*?process\.exit\(1\)/.test(judge) &&
-        /failHard\(\s*['"`]第 18 条棘轮被破坏/.test(judge),
+        /failHard\(`棘轮 \$\{ratchet\.id\} 被破坏/.test(judge),
       '若退化成 failClosed,维护者点一下 harness-review 就能把破坏棘轮的 PR 放行 —— 那等于没有这道闸',
     ],
     [
@@ -1173,9 +1192,10 @@ for (const [configName, config] of JEST_CONFIGS) {
       'verdict 若不再因 scan 失败而退出,单调性硬闸就退化成「点一下就过」',
     ],
     [
-      'F3 judge:head 基线**只 parse 不执行**',
-      !/import\s*\(\s*[^)]*is-optional-null-baseline/.test(judge) &&
-        !/require\s*\(\s*[^)]*is-optional-null-baseline/.test(judge),
+      'F3 judge:head 判据(注册表 + 全部基线)**只 parse 不执行**',
+      !/import\s*\(\s*[^)]*harness\//.test(judge) &&
+        !/require\s*\(\s*[^)]*harness\//.test(judge) &&
+        judge.includes('JSON.parse'),
       'pull_request_target 下 import PR 的文件 = 在有 secrets 的进程里执行 PR 代码(这正是 L1 把基线抽成 JSON 的原因)',
     ],
   ];
@@ -1596,7 +1616,16 @@ async function runTrustedJudgeAssertions(): Promise<void> {
     judgeBaselineMonotonicity: (
       baseText: string,
       headText: string | null,
-    ) => { ok: boolean; added: string[]; note?: string };
+      relPath?: string,
+    ) => { ok: boolean; added: string[]; removedFile: boolean };
+    judgeRegistryMonotonicity: (
+      baseText: string,
+      headText: string | null,
+    ) => { ok: boolean; removed: string[]; deleted: boolean };
+    parseRatchetRegistryDoc: (
+      text: string,
+      which: string,
+    ) => Array<{ id: string; baseline: string }>;
   };
   const reg = JSON.parse(
     fs.readFileSync(path.resolve(__dirname, '../harness/redzone.json'), 'utf-8'),
@@ -1739,6 +1768,65 @@ async function runTrustedJudgeAssertions(): Promise<void> {
         '判不了就必须响,静默当成「没新增」等于给畸形文档开了后门',
       );
     }
+
+    // ── M4 · 三洞封堵的**行为**断言(不是 grep 源码字符串)────────────────────
+    check(
+      'F3 单调性 · M4:基线被删 / 改名 → 拒(不再判成 HEAD = ∅ ⊆ BASE)',
+      judge.judgeBaselineMonotonicity(BASE, null).removedFile === true &&
+        judge.judgeBaselineMonotonicity(BASE, null).ok === false,
+      '上一版判成「成立」的理由是「lint 侧会红」—— 而 lint 跑在 PR 自己的树上,同一个 PR 改得掉',
+    );
+    check(
+      'F3 单调性 · M4:清零走空 entries 仍放行(留下可 review 的零,而不是消失的文件)',
+      judge.judgeBaselineMonotonicity(BASE, doc([])).ok,
+      '还债必须畅通;禁的是「文件不见了」,不是「清单空了」',
+    );
+
+    const reg = (ids: string[]): string =>
+      JSON.stringify({
+        version: 1,
+        ratchets: ids.map((id) => ({
+          id,
+          baseline: `harness/${id}.json`,
+          rule: `srvf/${id}`,
+          symbolShape: 'class-field',
+          why: 'w',
+        })),
+      });
+    const BASE_REG = reg(['a', 'b']);
+    check(
+      'F3 注册表 · M4:HEAD == BASE → 放行',
+      judge.judgeRegistryMonotonicity(BASE_REG, BASE_REG).ok,
+      '不动注册表的 PR 不该被这道闸打扰',
+    );
+    check(
+      'F3 注册表 · M4:新增一条棘轮 → 放行(只可增)',
+      judge.judgeRegistryMonotonicity(BASE_REG, reg(['a', 'b', 'c'])).ok,
+      '加棘轮必须畅通,否则下一个人会绕开注册表而不是登记',
+    );
+    check(
+      'F3 注册表 · M4:摘掉一条登记 → 拒',
+      !judge.judgeRegistryMonotonicity(BASE_REG, reg(['a'])).ok,
+      '「先把自己从注册表摘掉、再随便改基线」是一条完整的绕过路径',
+    );
+    check(
+      'F3 注册表 · M4:整份注册表被删 / 改名 → 拒',
+      judge.judgeRegistryMonotonicity(BASE_REG, null).deleted === true &&
+        !judge.judgeRegistryMonotonicity(BASE_REG, null).ok,
+      '删掉注册表 = 全仓棘轮集体退保,这必须是最响的一种失败',
+    );
+    check(
+      'F3 注册表:真实注册表登记了两条棘轮(裁判确实会遍历到 param-id 那条)',
+      judge
+        .parseRatchetRegistryDoc(
+          fs.readFileSync(path.resolve(__dirname, '../harness/ratchet-registry.json'), 'utf-8'),
+          'base',
+        )
+        .map((r) => r.id)
+        .sort()
+        .join(',') === 'is-optional-null,legacy-param-id',
+      '注册表少一条 = 那条棘轮的单调性没人裁,而 lint 与 selftest 都看不出来',
+    );
   }
 }
 

@@ -9,12 +9,14 @@ import {
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { runMemberLinearizedTransaction } from '../../common/prisma/member-advisory-lock.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { lockMemberLifecycle } from '../members/member-lifecycle-lock';
 import { RbacService } from '../permissions/rbac.service';
+import { assertEnrollmentIdentityChangeAllowed } from '../team-join/team-join-enrollment-invariant';
 import { MemberDepartmentResponseDto, SetMemberDepartmentDto } from './member-departments.dto';
 import { MembershipTermStateMachine } from './membership-term-state-machine';
 
@@ -152,7 +154,12 @@ export class MemberDepartmentsService {
     meta: AuditMeta,
   ): Promise<MemberDepartmentResponseDto> {
     await this.assertCanOrThrow(user, 'member-department.set.current');
-    return this.prisma.$transaction(async (tx) => {
+    // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
+    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
+      // M2 唯一 transition:换 PRIMARY 部门会让「未入队志愿者」判定翻 false,live 申请就地 frozen。
+      // 必须在 Member 行锁**之前**(锁序见闸内注释)。因此闸也覆盖了下面那个「同 org 幂等直返」
+      // 分支 —— 过近似,代价是一次无变更的 PUT 被拒,换来锁序不必为一次锁前读让步。
+      await assertEnrollmentIdentityChangeAllowed(tx, memberId, new Date());
       await lockMemberLifecycle(tx, memberId);
       // 1. member 校验
       const member = await this.findMemberOrThrow(memberId, tx);
@@ -254,7 +261,11 @@ export class MemberDepartmentsService {
     meta: AuditMeta,
   ): Promise<MemberDepartmentResponseDto> {
     await this.assertCanOrThrow(user, 'member-department.clear.current');
-    return this.prisma.$transaction(async (tx) => {
+    // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
+    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
+      // M2 唯一 transition:清 PRIMARY 部门同样把「未入队志愿者」翻 false(VOL 任期被结束,
+      // 归属数归零而 gradeCode 仍是 volunteer)。必须在 Member 行锁之前。
+      await assertEnrollmentIdentityChangeAllowed(tx, memberId, new Date());
       await lockMemberLifecycle(tx, memberId);
       await this.findMemberOrThrow(memberId, tx);
 

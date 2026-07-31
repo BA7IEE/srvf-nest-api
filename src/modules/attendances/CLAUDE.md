@@ -19,6 +19,15 @@
 - **records 引用的 registration 必须锁内认领 + 锁后复判**:`submit`/`edit` 共用 `claimAndRecheckRegistrations` —— 排序去重 `claimAtStatus(expected=pass)` 后**必须**按同一批 id 复读,重判归属活动 / 归属队员 / 状态 / 岗位时段。claim 只保证「锁到手时仍是 pass」,records 依赖的其余事实全部来自 claim 之前那次普通读;禁止退回「只 claim 不复读」
 - **贡献值聚合的 member 共同锁(并发审计 K3)**:`finalApprove`/`reopen` 在读贡献快照前调用 `common/prisma/member-advisory-lock.util.ts` 的 `lockMembersForWrite`。入队里程碑判定跨该成员当年**全部** approved Sheet,只锁单张 Sheet 会 write skew(两边各读 before=3、各算 after=4,跨过 5 分却零 intent,outbox 唯一键兜不住「两边都没插」)。**取键位置固定在 Sheet claim 之后**,与 submit/edit 的「聚合行锁在前、member 键在后」同向;取在 claim 之前会与 `edit` 反向凑出 40P01
 - **资格链完整性(C-QUAL)**:Admin submit/edit 每次用同一个服务端 `now` 拒绝 `checkOutAt > now`(22079),App 自助签到位置收紧见下方 GPS fail-closed 条目。`AttendanceRecordInputDto` 不接受 `contributionPoints`;submit/edit 均调 `ContributionCalculator`,无匹配规则落 0。`requiresInsurance=true` 时每条 record 必须带同活动/同成员/pass 的 `registrationId`;false 时仍可空。当前 attendance 只校验提交时的活动开关与报名关联,不能证明该报名创建时 `requiresInsurance=true`,不追溯旧报名,也不代表保险独立核验。
+- **终审批量化 + 隔离级别 + 有界锁等待(M3,2026-08-01)**:`finalApprove` 的 before/after 贡献值快照与逐条
+  outbox intent 全部批量(`computeContributionBatch` 按 cycleYear 一次;`outbox.enqueueMany` 恒 2 次 SQL)——
+  200 人考勤单实测 **810 → <40 次 SQL**,与人数无关。❌ **不许改回逐条,也不许靠调大事务 timeout 顶过去**:
+  那只是把锁持有得更久,convoy 更严重。封顶算法只有一份(`capByBeijingDay`,单人 / 批量共用),
+  ❌ 不得复制或用原始分反推。`submit`/`edit`/`finalApprove`/`reopen` 四个取 member 键的事务一律走
+  `runMemberLinearizedTransaction`:**显式 `ReadCommitted`**(库默认若是 RR,快照停在取键之前,
+  排到队也读不到刚提交的分数,write skew 完整复活 —— 有实测用例)+ `SET LOCAL lock_timeout`
+  (排队超时返 **40901** 可重试业务错误,不再 P2028 → 50000)。执行位:
+  `test/e2e/attendance-final-approve-scale-isolation.e2e-spec.ts`(200 人规模 / convoy / RR 默认库)。
 - **已知边界(finding #8,接受记录)**:数据库层未加 `btree_gist` / range exclusion constraint;原因是本仓首个 DB 扩展、托管库可用性未验且触发极罕见。当前只承诺应用写路径的事务 advisory lock;直连 SQL 绕过应用不在此保证内。
 - **审核/终审判权(活动责任闭环 PR3)**:`approve`/`reject` 禁最初提交人或最近重提人自审，映射 22081；`finalApprove`/`finalReject` 禁提交/重提人自审(22074)并禁一级审核人与终审人同人(22075)，SUPER_ADMIN 也不豁免，`ATTENDANCE_ALLOW_SAME_REVIEWER` 仅兼容解析、不放开；`reopen` 不受审核约束。终审三动作走 `assertFinalReviewAuthzOrThrow`(`authz.explain` 带 ref)，权限来源为 scoped `attendance-final-reviewer` 或 SUPER_ADMIN，biz-admin 不持码。sheet 不存在 → 回退 `rbac.can`(持码者进事务抛 22001,无码者 30100 防枚举),其余 deny → 30100。角色码集为 `attendance.{read,final-approve,final-reject,reopen}.sheet`;e2e 矩阵在 `test/e2e/attendances-final-review-authz.e2e-spec.ts`。
 - **其余调用位点判权(终态 scoped-authz PR12 + v0.49 部门范围)**:`submit`/`list`(嵌套 `:activityId`)带 `{type:'activity', id: activityId}`;`findOne`/`reviewDetail`/`edit`/`softDelete`/`approve`/`reject` 带 `{type:'attendance_sheet', id}`;`listRecordsForMemberAdmin`/`getMemberContributionSummary` 带 `{type:'member', id: memberId}`;`listAllSheetsForAdmin` 通过 `getVisibleOrganizationScope` 按 `activity.organizationId` 下推并与用户组织筛选取交集。`resource_not_found` 回退同 PR9 范式:持全局码者交回既有 NOT_FOUND,无码者 30100。scoped 生效 e2e 在 `test/e2e/participation-scoped-authz.e2e-spec.ts`。

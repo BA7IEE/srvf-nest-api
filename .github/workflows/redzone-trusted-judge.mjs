@@ -64,6 +64,7 @@ export const ALWAYS_REQUIRE_APPROVAL = [
   '.github/workflows/**', // 含本裁判与 redzone-trusted.yml 自身
   'harness/redzone.json',
   'harness/incidents.json',
+  'harness/ratchet-registry.json', // 「有哪些棘轮」的唯一真相源,与 redzone.json 同级
 ];
 
 /** 把 registry 摊平成带 kind 的条目表(纯函数,供自测复用)。 */
@@ -118,7 +119,7 @@ export function collectHits(files, entries) {
   return hits;
 }
 
-// ── 棘轮单调性:第 18 条基线**只减不增**(第五轮跨模型评审 J2 · L2)────────────
+// ── 棘轮单调性:**全部**基线只减不增(第五轮 J2·L2 起;M4 2026-08-01 改注册表驱动)──
 //
 // 它补的是前两道执行位都拦不住的那一种绕过:
 //   `pnpm lint` 读的是 **PR 自己的**基线,`harness:selftest` 也是。
@@ -136,23 +137,83 @@ export function collectHits(files, entries) {
 //    那种场景维护者必须临时授权改本裁判自身 —— 双重人闸,刻意昂贵。
 //    之所以不给「特殊情况放行」的开关:任何这样的开关都会成为绕过本条的入口,
 //    而本条要防的正是「PR 自己给自己发许可」。宁可让罕见的合法操作变贵。
-const BASELINE_REL_PATH = 'harness/is-optional-null-baseline.json';
+//
+// ⚠️ M4 的三条改动,每一条都对应一个此前**真实存在**的绕过:
+//   ① **不再硬编码单一路径**。上一版把「那一份基线」的路径写死在本文件里,于是
+//      第二条棘轮(存量裸 `@Param('id')`)一落地就天然不在裁决范围内 —— 判据只
+//      覆盖了当初写它的那一条。现在遍历 harness/ratchet-registry.json。
+//   ② **删掉 / 改名基线 = 硬失败**。上一版把「head 没有这份文件」判成
+//      「HEAD = ∅ ⊆ BASE,成立」,理由是「lint 侧加载会失败」。但 lint 跑在 PR
+//      自己的树上,同一个 PR 完全可以顺手改掉加载它的地方 —— 于是「删掉判据」
+//      与「判据通过」在门禁看来一模一样。清零也必须留一个 entries: [] 的空 JSON。
+//   ③ **注册表自身只可增不可删**。否则「先把自己从注册表摘掉,再随便改基线」
+//      是一条完整的绕过路径 —— 判据的判据同样得有人看。
+const RATCHET_REGISTRY_REL_PATH = 'harness/ratchet-registry.json';
 
-/** 把基线文档摊平成 `file\u0000symbol` 的集合(**只 parse,永不执行**)。 */
-export function baselineKeySet(text, which) {
+/**
+ * 解析注册表(**只 parse,永不执行** —— 正是当初把基线从 .mjs 抽成 JSON 的同一条理由)。
+ *
+ * @param {string} text
+ * @param {string} which
+ * @returns {Array<{ id: string, baseline: string }>}
+ */
+export function parseRatchetRegistryDoc(text, which) {
   let doc;
   try {
     doc = JSON.parse(text);
   } catch (err) {
-    throw new Error(`${which} 的 ${BASELINE_REL_PATH} 不是合法 JSON:${String(err)}`);
+    throw new Error(`${which} 的 ${RATCHET_REGISTRY_REL_PATH} 不是合法 JSON:${String(err)}`);
+  }
+  if (doc === null || typeof doc !== 'object' || !Array.isArray(doc.ratchets)) {
+    throw new Error(`${which} 的 ${RATCHET_REGISTRY_REL_PATH} 结构不对(缺 ratchets 数组)`);
+  }
+  const out = [];
+  for (const r of doc.ratchets) {
+    if (
+      r === null ||
+      typeof r !== 'object' ||
+      typeof r.id !== 'string' ||
+      typeof r.baseline !== 'string'
+    ) {
+      throw new Error(`${which} 的 ${RATCHET_REGISTRY_REL_PATH} 有条目缺 id / baseline`);
+    }
+    out.push({ id: r.id, baseline: r.baseline });
+  }
+  return out;
+}
+
+/**
+ * 注册表单调性:base 登记过的棘轮,head 里一条都不许少(纯函数,自测直接喂两份文档)。
+ *
+ * @param {string} baseText
+ * @param {string|null} headText head 上的注册表全文;null = PR 把它删了 / 改名了
+ * @returns {{ ok: boolean, removed: string[], deleted: boolean }}
+ */
+export function judgeRegistryMonotonicity(baseText, headText) {
+  const base = parseRatchetRegistryDoc(baseText, 'base');
+  if (headText === null) {
+    return { ok: false, removed: base.map((r) => r.id), deleted: true };
+  }
+  const headIds = new Set(parseRatchetRegistryDoc(headText, 'head').map((r) => r.id));
+  const removed = base.map((r) => r.id).filter((id) => !headIds.has(id));
+  return { ok: removed.length === 0, removed, deleted: false };
+}
+
+/** 把基线文档摊平成 `file\u0000symbol` 的集合(**只 parse,永不执行**)。 */
+export function baselineKeySet(text, which, relPath = '<baseline>') {
+  let doc;
+  try {
+    doc = JSON.parse(text);
+  } catch (err) {
+    throw new Error(`${which} 的 ${relPath}不是合法 JSON:${String(err)}`);
   }
   if (doc === null || typeof doc !== 'object' || !Array.isArray(doc.entries)) {
-    throw new Error(`${which} 的 ${BASELINE_REL_PATH} 结构不对(缺 entries 数组)`);
+    throw new Error(`${which} 的 ${relPath}结构不对(缺 entries 数组)`);
   }
   const keys = new Set();
   for (const e of doc.entries) {
     if (e === null || typeof e !== 'object' || typeof e.file !== 'string' || typeof e.symbol !== 'string') {
-      throw new Error(`${which} 的 ${BASELINE_REL_PATH} 有条目缺 file / symbol`);
+      throw new Error(`${which} 的 ${relPath}有条目缺 file / symbol`);
     }
     keys.add(`${e.file}\u0000${e.symbol}`);
   }
@@ -162,23 +223,28 @@ export function baselineKeySet(text, which) {
 /**
  * 单调性裁决(纯函数,自测直接喂两份合成文档)。
  *
+ * ⚠️ `headText === null`(基线被删 / 被改名)**判失败**,不再判「HEAD = ∅ ⊆ BASE 成立」。
+ * 上一版那么判的理由是「eslint 侧加载器读不到文件会抛,lint 当场红」—— 但 lint 跑在
+ * **PR 自己的树**上,同一个 PR 完全可以顺手把加载它的那几行一起改掉。于是「删掉判据」
+ * 与「判据通过」在门禁看来一模一样,而那正是本裁判存在的理由所反对的。
+ * 真要清空,留一个 `{"version":1,"entries":[]}` 的空文件 —— 那是可见的、可 review 的零。
+ *
  * @param {string} baseText base 分支上的基线全文
- * @param {string|null} headText PR head 上的基线全文;null = PR 把该文件删了
- * @returns {{ ok: boolean, added: string[], note?: string }}
+ * @param {string|null} headText PR head 上的基线全文;null = PR 把该文件删了 / 改名了
+ * @param {string} [relPath] 出错时报给人看的路径
+ * @returns {{ ok: boolean, added: string[], removedFile: boolean }}
  */
-export function judgeBaselineMonotonicity(baseText, headText) {
-  const base = baselineKeySet(baseText, 'base');
-  // 删掉整份基线 = 集合缩到空,单调性上成立(且 eslint 侧加载器会因读不到文件
-  // 直接抛,lint 当场红)。这里不越权替 lint 判事,只如实说明。
+export function judgeBaselineMonotonicity(baseText, headText, relPath = '<baseline>') {
+  const base = baselineKeySet(baseText, 'base', relPath);
   if (headText === null) {
-    return { ok: true, added: [], note: 'PR 删除了基线文件(HEAD = ∅ ⊆ BASE);lint 侧会因加载失败而红' };
+    return { ok: false, added: [], removedFile: true };
   }
-  const head = baselineKeySet(headText, 'head');
+  const head = baselineKeySet(headText, 'head', relPath);
   const added = [...head]
     .filter((k) => !base.has(k))
     .map((k) => k.replace('\u0000', '  '))
     .sort();
-  return { ok: added.length === 0, added };
+  return { ok: added.length === 0, added, removedFile: false };
 }
 
 function main() {
@@ -243,81 +309,140 @@ function main() {
   console.log('(判据与本脚本均取自 base 分支;未 checkout PR 代码、未安装 PR 依赖)\n');
 
   {
-    let baseText;
-    try {
-      baseText = readFileSync(BASELINE_REL_PATH, 'utf-8');
-    } catch (err) {
-      failClosed(
-        `读不出 base 分支的 ${BASELINE_REL_PATH}:${String(err)}。` +
-          '这份清单是第 18 条棘轮的判据,base 上没有它 = 棘轮已经不成立。',
+    /**
+     * 取某个 base 路径在 **head** 上的全文。
+     * 返回 `null` 表示 PR 把它删了 / 改名了 —— 调用方一律按硬失败处理。
+     */
+    const headTextOf = (relPath, baseText) => {
+      const touched = files.find((f) => f.filename === relPath);
+      const movedAway = files.find(
+        (f) => f.previous_filename === relPath && f.filename !== relPath,
       );
-    }
-
-    // 只有 PR 真的动了这份清单才需要去取 head 版本;没动 ⇒ HEAD == BASE,天然成立。
-    const touched = files.find((f) => f.filename === BASELINE_REL_PATH);
-    const movedAway = files.find(
-      (f) => f.previous_filename === BASELINE_REL_PATH && f.filename !== BASELINE_REL_PATH,
-    );
-
-    let headText;
-    let source;
-    if (!touched && !movedAway) {
-      headText = baseText;
-      source = '未改动(HEAD == BASE)';
-    } else if (movedAway || touched?.status === 'removed') {
-      headText = null;
-      source = movedAway ? `被改名到 ${movedAway.filename}` : '被删除';
-    } else {
+      // 没动 ⇒ HEAD == BASE,天然成立,不必多跑一次 API。
+      if (!touched && !movedAway) return { text: baseText, source: '未改动(HEAD == BASE)' };
+      if (movedAway || touched?.status === 'removed') {
+        return { text: null, source: movedAway ? `被改名到 ${movedAway.filename}` : '被删除' };
+      }
       // 用 API **自己给出的** contents_url,不自己拼 —— fork PR 的 head 仓库不同,
       // 拼错就会取到 base 的内容,判据静默变成「自己和自己比」,永远通过。
       const url = touched.contents_url;
       if (typeof url !== 'string' || url === '') {
-        failClosed(`变更清单里 ${BASELINE_REL_PATH} 没有 contents_url,取不到 head 版本`);
+        failClosed(`变更清单里 ${relPath} 没有 contents_url,取不到 head 版本`);
       }
       let payload;
       try {
         payload = JSON.parse(gh(['api', url]));
       } catch (err) {
-        failClosed(`取 head 的 ${BASELINE_REL_PATH} 失败:${String(err)}`);
+        failClosed(`取 head 的 ${relPath} 失败:${String(err)}`);
       }
-      if (payload.encoding !== 'base64' || typeof payload.content !== 'string' || payload.content === '') {
+      if (
+        payload.encoding !== 'base64' ||
+        typeof payload.content !== 'string' ||
+        payload.content === ''
+      ) {
         failClosed(
-          `head 的 ${BASELINE_REL_PATH} 内容取不到(encoding=${String(payload.encoding)})。` +
-            'GitHub contents API 对超过 1MB 的文件返回空 content —— 基线文件不该有这么大。',
+          `head 的 ${relPath} 内容取不到(encoding=${String(payload.encoding)})。` +
+            'GitHub contents API 对超过 1MB 的文件返回空 content —— 判据文件不该有这么大。',
         );
       }
-      // **只解码 + JSON.parse,永不执行**。这正是 L1 把基线从 .mjs 抽成 JSON 的原因。
-      headText = Buffer.from(payload.content, 'base64').toString('utf-8');
-      source = `head@${String(meta.head?.sha ?? '?').slice(0, 8)}`;
-    }
+      // **只解码 + JSON.parse,永不执行**。这正是把判据从 .mjs 抽成 JSON 的原因。
+      return {
+        text: Buffer.from(payload.content, 'base64').toString('utf-8'),
+        source: `head@${String(meta.head?.sha ?? '?').slice(0, 8)}`,
+      };
+    };
 
-    let verdict;
+    // ④-a 判据的判据:注册表本身只可增不可删。
+    let registryBaseText;
     try {
-      verdict = judgeBaselineMonotonicity(baseText, headText);
+      registryBaseText = readFileSync(RATCHET_REGISTRY_REL_PATH, 'utf-8');
     } catch (err) {
-      failClosed(`棘轮单调性无法判定:${String(err)}`);
+      failClosed(
+        `读不出 base 分支的 ${RATCHET_REGISTRY_REL_PATH}:${String(err)}。` +
+          '它登记着全仓有哪些棘轮,base 上没有它 = 所有棘轮都没人裁。',
+      );
     }
-
-    if (!verdict.ok) {
-      failHard('第 18 条棘轮被破坏:基线只减不增,本 PR 却新增了条目', [
-        `判据:${BASELINE_REL_PATH}(base 与 head 按 (file, symbol) 集合比,不看总数)`,
-        `新增 ${verdict.added.length} 条:`,
-        ...verdict.added.slice(0, 20).map((a) => `    + ${a}`),
-        ...(verdict.added.length > 20 ? [`    …另有 ${verdict.added.length - 20} 条`] : []),
+    const registryHead = headTextOf(RATCHET_REGISTRY_REL_PATH, registryBaseText);
+    let registryVerdict;
+    try {
+      registryVerdict = judgeRegistryMonotonicity(registryBaseText, registryHead.text);
+    } catch (err) {
+      failClosed(`棘轮注册表无法判定:${String(err)}`);
+    }
+    if (!registryVerdict.ok) {
+      failHard('棘轮注册表被削减:登记只可增不可删', [
+        `判据:${RATCHET_REGISTRY_REL_PATH}(base 的 ratchets[].id 必须全部仍在 head)`,
+        registryVerdict.deleted
+          ? `head 上整份注册表${registryHead.source} —— 等于全仓棘轮集体退保`
+          : `head 少了 ${registryVerdict.removed.length} 条:${registryVerdict.removed.join(', ')}`,
         '',
-        '这道闸专门拦两种 lint 与 selftest 都拦不住的形状:',
-        '  ① 新增一个违规字段 + 同一个 PR 里顺手把它加进基线;',
-        '  ② 修好 A、加进 B(总数不变)—— 任何看总数的判据都看不见。',
-        '两者在 PR 自己的树上都全绿,因为它们改的正是判据本身。',
+        '为什么这也要硬拦:注册表决定「有哪些棘轮受单调性保护」。允许摘条目,',
+        '「先把自己摘掉、再随便改基线」就是一条完整的绕过路径 —— 判据的判据同样得有人看。',
         '',
         '⚠️ 本失败**不能由 harness-review 审批覆盖**(scan 失败 ⇒ 审批 job 直接被跳过)。',
-        '正确做法:把新违规改成 @OmittableOnly() 或 `T | null`,不要加基线行。',
-        '若确属合法 revert 需要加回旧基线行 —— 那需要维护者临时授权改本裁判自身(双重人闸,刻意昂贵)。',
       ]);
     }
+
+    // ④-b 遍历 **base 上登记的**每一条棘轮,逐条判 HEAD ⊆ BASE。
+    //     用 base 的注册表而不是 head 的:否则 PR 只要把自己那条改个 id 就绕过了。
+    const ratchets = parseRatchetRegistryDoc(registryBaseText, 'base');
+    for (const ratchet of ratchets) {
+      let baseText;
+      try {
+        baseText = readFileSync(ratchet.baseline, 'utf-8');
+      } catch (err) {
+        failClosed(
+          `读不出 base 分支的 ${ratchet.baseline}:${String(err)}。` +
+            `它是棘轮 ${ratchet.id} 的判据,base 上没有它 = 该棘轮已经不成立。`,
+        );
+      }
+      const head = headTextOf(ratchet.baseline, baseText);
+
+      let verdict;
+      try {
+        verdict = judgeBaselineMonotonicity(baseText, head.text, ratchet.baseline);
+      } catch (err) {
+        failClosed(`棘轮 ${ratchet.id} 单调性无法判定:${String(err)}`);
+      }
+
+      if (verdict.removedFile) {
+        failHard(`棘轮 ${ratchet.id} 的判据被移走:基线文件不得删除 / 改名`, [
+          `判据:${ratchet.baseline} —— head 上它${head.source}`,
+          '',
+          '为什么不能判成「HEAD = ∅ ⊆ BASE,成立」:那个理由曾经是「lint 侧加载不到会抛」,',
+          '但 lint 跑在 **PR 自己的树**上,同一个 PR 完全可以顺手改掉加载它的地方 ——',
+          '于是「删掉判据」和「判据通过」在门禁看来一模一样。',
+          '',
+          `真要清零:留一个 {"version":1,"entries":[]} 的空 ${ratchet.baseline},`,
+          '那是可见的、可 review 的零,而不是一个消失的文件。',
+          '',
+          '⚠️ 本失败**不能由 harness-review 审批覆盖**(scan 失败 ⇒ 审批 job 直接被跳过)。',
+        ]);
+      }
+      if (!verdict.ok) {
+        failHard(`棘轮 ${ratchet.id} 被破坏:基线只减不增,本 PR 却新增了条目`, [
+          `判据:${ratchet.baseline}(base 与 head 按 (file, symbol) 集合比,不看总数)`,
+          `新增 ${verdict.added.length} 条:`,
+          ...verdict.added.slice(0, 20).map((a) => `    + ${a}`),
+          ...(verdict.added.length > 20 ? [`    …另有 ${verdict.added.length - 20} 条`] : []),
+          '',
+          '这道闸专门拦两种 lint 与 selftest 都拦不住的形状:',
+          '  ① 新增一个违规 + 同一个 PR 里顺手把它加进基线;',
+          '  ② 修好 A、加进 B(总数不变)—— 任何看总数的判据都看不见。',
+          '两者在 PR 自己的树上都全绿,因为它们改的正是判据本身。',
+          '',
+          '⚠️ 本失败**不能由 harness-review 审批覆盖**(scan 失败 ⇒ 审批 job 直接被跳过)。',
+          '正确做法:把新违规真的改掉,不要加基线行。',
+          '若确属合法 revert 需要加回旧基线行 —— 那需要维护者临时授权改本裁判自身(双重人闸,刻意昂贵)。',
+        ]);
+      }
+      console.log(
+        `✓ 棘轮 ${ratchet.id} 单调性:HEAD ⊆ BASE` +
+          `(${head.source};base ${baselineKeySet(baseText, 'base', ratchet.baseline).size} 条)`,
+      );
+    }
     console.log(
-      `✓ 第 18 条棘轮单调性:baseline ⊆ base(${source};base ${baselineKeySet(baseText, 'base').size} 条)` +
-        (verdict.note ? ` —— ${verdict.note}` : ''),
+      `✓ 棘轮注册表:${ratchets.length} 条全部在册且逐条裁过(${registryHead.source})`,
     );
   }
 

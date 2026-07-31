@@ -138,8 +138,13 @@ export class TeamJoinApplicationsAdminController {
   @Post(':id/join')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
+    // ⚠️ 「综合评估本轮有效 / 延长期」那句已于 2026-07-31 并发审计 S5 废止:
+    // approved 资格**不随轮关闭失效**,final join 不消费评估延长期
+    // (运行时事实见 team-join-enrollment.service 步骤 2;canonical 见 docs/handoff/admin-web.md:528,
+    // 边界由 team-join-enrollment-lifecycle-concurrency e2e 锁住)。
+    // 留着它就是让 OpenAPI 契约替一条不存在的行为背书 —— 前端据此做 UI 会做错。
     summary:
-      '一键入队(志愿者→队员):approved 申请选定单一部门 → 单事务设部门 + 级别 level-1 → joined(原子/幂等;专业队需对应 gate 过;选定部门须在候选;综合评估本轮有效/延长期) [rbac: team-join-application.join.member]',
+      '一键入队(志愿者→队员):approved 申请选定单一部门 → 单事务设部门 + 级别 level-1 → joined(原子/幂等;专业队需对应 gate 过;选定部门须在候选;approved 资格不随轮关闭失效) [rbac: team-join-application.join.member]',
   })
   @ApiWrappedOkResponse(TeamJoinApplicationAdminDto)
   @ApiBizErrorResponse(

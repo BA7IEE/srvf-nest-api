@@ -26,9 +26,20 @@
 - **Membership offboard 收口**:Member 行锁下逐条调用 Membership 状态机做 ACTIVE→ENDED；ACTIVE 任期按不变式必已开始且 `endedAt=null`，因此 offboard 统一以当前时刻结束，不得恢复批量盲写时间。
 - **关联账号 session 锁(2026-07-22 D-PR1)**：`reopenAccount` / `updateAccountStatus` / `offboard` 在 Member 行锁后按 linked userId 调 `lockAuthSessionUser()`，锁后复读 memberId/role/status，再做软删或禁用、refresh 全撤销与 audit；禁止恢复旧的 `memberId` 裸 User 行锁作为 session 第二轨。
 
+- **入队身份闸(M2,2026-08-01)**:`update`(改 `gradeCode`)与 `updateStatus(INACTIVE)`/`offboard` 都会把
+  「未入队志愿者」翻 false,让该队员名下的 live 入队申请变成 frozen 行。两处均调
+  [`team-join/team-join-enrollment-invariant.ts`](../team-join/team-join-enrollment-invariant.ts) 的
+  `assertEnrollmentIdentityChangeAllowed`,有 live 申请即返 **28211**(拍板:不自动终结、不静默放行;
+  管理员先一键入队或综合评估淘汰)。**闸内先取 member 键**,故必须排在 `lockMemberLifecycle` 之前
+  (offboard 里紧跟在 ops-admin 全局 invariant 锁之后);反序会与 final join 的「键 → Member 行锁」互等。
+- **事务开法(M3)**:上述两条路径改走 `runMemberLinearizedTransaction`(显式 `ReadCommitted` + 有界锁等待),
+  与 team-join / attendances 同一口径。
+
 ## Risk points
 
 - ❌ 不复用 `UsersService`、不引入模块环，也不把 policy 调用移到事务外。
+- ❌ 不把入队身份闸挪到 `lockMemberLifecycle` **之后**,也不为「离队场景不方便」给它开例外 ——
+  例外就是这条不变量唯一的漏点。
 - ❌ 不因本保护改 endpoint、DTO、OpenAPI、Permission、Role、BizCode、schema 或 migration。
 - ❌ 不改变 offboard 幂等 skip、refresh 撤销 reason、reopen username 探测与软删/建号先后序。
 - ❌ 不绕开 `member-lifecycle-lock.ts` 另造生命周期锁，也不采用 User → Member 的反向锁序。

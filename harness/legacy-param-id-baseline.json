@@ -1,0 +1,286 @@
+{
+  "_comment": "存量裸 @Param('id') 的具名冻结清单 —— **只减不增**(M4,2026-08-01)。\n身份 = `类名.方法名.参数名`,精确到一处参数;同名方法挪到别的类、同一方法新增第二个裸 :id,都不在豁免内。\n改好一处就删掉对应一行;某文件清零后该文件不再出现,规则自动对它全量生效。\n三道执行位各管一段:① 往清单内文件**新增**违规 → `pnpm lint` 当场红(豁免精确到身份);\n② 改好了却忘删行 → `pnpm harness:selftest` 当场红(0 命中 = 陈旧行);\n③ **同一个 PR 新增违规 + 顺手加清单行** → base-trusted 裁判按 harness/ratchet-registry.json 硬拦(前两道读的都是 PR 自己的清单)。\n格式约束 E0-E6 由 eslint.harness.mjs 的 parseRatchetBaseline 加载期强制,违反即抛 —— 响亮地坏好过静默地坏。",
+  "version": 1,
+  "entries": [
+    {
+      "file": "src/modules/certificates/certificates.controller.ts",
+      "symbol": "CertificatesController.evidenceUrls.id"
+    },
+    {
+      "file": "src/modules/certificates/certificates.controller.ts",
+      "symbol": "CertificatesController.findOne.id"
+    },
+    {
+      "file": "src/modules/certificates/certificates.controller.ts",
+      "symbol": "CertificatesController.reject.id"
+    },
+    {
+      "file": "src/modules/certificates/certificates.controller.ts",
+      "symbol": "CertificatesController.softDelete.id"
+    },
+    {
+      "file": "src/modules/certificates/certificates.controller.ts",
+      "symbol": "CertificatesController.update.id"
+    },
+    {
+      "file": "src/modules/certificates/certificates.controller.ts",
+      "symbol": "CertificatesController.verify.id"
+    },
+    {
+      "file": "src/modules/content/content-admin.controller.ts",
+      "symbol": "ContentAdminController.archive.id"
+    },
+    {
+      "file": "src/modules/content/content-admin.controller.ts",
+      "symbol": "ContentAdminController.confirm.id"
+    },
+    {
+      "file": "src/modules/content/content-admin.controller.ts",
+      "symbol": "ContentAdminController.detail.id"
+    },
+    {
+      "file": "src/modules/content/content-admin.controller.ts",
+      "symbol": "ContentAdminController.publish.id"
+    },
+    {
+      "file": "src/modules/content/content-admin.controller.ts",
+      "symbol": "ContentAdminController.remove.id"
+    },
+    {
+      "file": "src/modules/content/content-admin.controller.ts",
+      "symbol": "ContentAdminController.removeAttachment.id"
+    },
+    {
+      "file": "src/modules/content/content-admin.controller.ts",
+      "symbol": "ContentAdminController.setCover.id"
+    },
+    {
+      "file": "src/modules/content/content-admin.controller.ts",
+      "symbol": "ContentAdminController.unpublish.id"
+    },
+    {
+      "file": "src/modules/content/content-admin.controller.ts",
+      "symbol": "ContentAdminController.update.id"
+    },
+    {
+      "file": "src/modules/content/content-admin.controller.ts",
+      "symbol": "ContentAdminController.uploadUrl.id"
+    },
+    {
+      "file": "src/modules/content/content-app.controller.ts",
+      "symbol": "ContentAppController.detail.id"
+    },
+    {
+      "file": "src/modules/content/content-public.controller.ts",
+      "symbol": "ContentPublicController.detail.id"
+    },
+    {
+      "file": "src/modules/emergency-contacts/emergency-contacts.controller.ts",
+      "symbol": "EmergencyContactsController.softDelete.id"
+    },
+    {
+      "file": "src/modules/emergency-contacts/emergency-contacts.controller.ts",
+      "symbol": "EmergencyContactsController.update.id"
+    },
+    {
+      "file": "src/modules/insurances/controllers/app-me-insurances.controller.ts",
+      "symbol": "AppMeInsurancesController.softDelete.id"
+    },
+    {
+      "file": "src/modules/insurances/controllers/app-me-insurances.controller.ts",
+      "symbol": "AppMeInsurancesController.update.id"
+    },
+    {
+      "file": "src/modules/insurances/team-insurance-policies.controller.ts",
+      "symbol": "TeamInsurancePoliciesController.addAllActiveMembers.id"
+    },
+    {
+      "file": "src/modules/insurances/team-insurance-policies.controller.ts",
+      "symbol": "TeamInsurancePoliciesController.addMember.id"
+    },
+    {
+      "file": "src/modules/insurances/team-insurance-policies.controller.ts",
+      "symbol": "TeamInsurancePoliciesController.findOne.id"
+    },
+    {
+      "file": "src/modules/insurances/team-insurance-policies.controller.ts",
+      "symbol": "TeamInsurancePoliciesController.listCoverage.id"
+    },
+    {
+      "file": "src/modules/insurances/team-insurance-policies.controller.ts",
+      "symbol": "TeamInsurancePoliciesController.removeMember.id"
+    },
+    {
+      "file": "src/modules/insurances/team-insurance-policies.controller.ts",
+      "symbol": "TeamInsurancePoliciesController.softDelete.id"
+    },
+    {
+      "file": "src/modules/insurances/team-insurance-policies.controller.ts",
+      "symbol": "TeamInsurancePoliciesController.update.id"
+    },
+    {
+      "file": "src/modules/member-departments/memberships-admin.controller.ts",
+      "symbol": "MembershipsAdminController.findOne.id"
+    },
+    {
+      "file": "src/modules/member-departments/memberships.controller.ts",
+      "symbol": "MembershipsController.end.id"
+    },
+    {
+      "file": "src/modules/member-departments/memberships.controller.ts",
+      "symbol": "MembershipsController.update.id"
+    },
+    {
+      "file": "src/modules/notifications/notification-admin.controller.ts",
+      "symbol": "NotificationAdminController.archive.id"
+    },
+    {
+      "file": "src/modules/notifications/notification-admin.controller.ts",
+      "symbol": "NotificationAdminController.detail.id"
+    },
+    {
+      "file": "src/modules/notifications/notification-admin.controller.ts",
+      "symbol": "NotificationAdminController.publish.id"
+    },
+    {
+      "file": "src/modules/notifications/notification-admin.controller.ts",
+      "symbol": "NotificationAdminController.remove.id"
+    },
+    {
+      "file": "src/modules/notifications/notification-admin.controller.ts",
+      "symbol": "NotificationAdminController.sendSms.id"
+    },
+    {
+      "file": "src/modules/notifications/notification-admin.controller.ts",
+      "symbol": "NotificationAdminController.unpublish.id"
+    },
+    {
+      "file": "src/modules/notifications/notification-admin.controller.ts",
+      "symbol": "NotificationAdminController.update.id"
+    },
+    {
+      "file": "src/modules/notifications/notification-app.controller.ts",
+      "symbol": "NotificationAppController.detail.id"
+    },
+    {
+      "file": "src/modules/notifications/notification-app.controller.ts",
+      "symbol": "NotificationAppController.markRead.id"
+    },
+    {
+      "file": "src/modules/position-assignments/position-assignments.controller.ts",
+      "symbol": "PositionAssignmentsController.findOne.id"
+    },
+    {
+      "file": "src/modules/position-assignments/position-assignments.controller.ts",
+      "symbol": "PositionAssignmentsController.history.id"
+    },
+    {
+      "file": "src/modules/position-assignments/position-assignments.controller.ts",
+      "symbol": "PositionAssignmentsController.revoke.id"
+    },
+    {
+      "file": "src/modules/recruitment/recruitment-applications.admin.controller.ts",
+      "symbol": "RecruitmentApplicationsAdminController.detail.id"
+    },
+    {
+      "file": "src/modules/recruitment/recruitment-applications.admin.controller.ts",
+      "symbol": "RecruitmentApplicationsAdminController.evaluate.id"
+    },
+    {
+      "file": "src/modules/recruitment/recruitment-applications.admin.controller.ts",
+      "symbol": "RecruitmentApplicationsAdminController.idCardImageUrl.id"
+    },
+    {
+      "file": "src/modules/recruitment/recruitment-applications.admin.controller.ts",
+      "symbol": "RecruitmentApplicationsAdminController.markThreshold.id"
+    },
+    {
+      "file": "src/modules/recruitment/recruitment-applications.admin.controller.ts",
+      "symbol": "RecruitmentApplicationsAdminController.promoteSingle.id"
+    },
+    {
+      "file": "src/modules/recruitment/recruitment-applications.admin.controller.ts",
+      "symbol": "RecruitmentApplicationsAdminController.resolve.id"
+    },
+    {
+      "file": "src/modules/recruitment/recruitment-applications.admin.controller.ts",
+      "symbol": "RecruitmentApplicationsAdminController.update.id"
+    },
+    {
+      "file": "src/modules/recruitment/recruitment-cycles.controller.ts",
+      "symbol": "RecruitmentCyclesController.detail.id"
+    },
+    {
+      "file": "src/modules/recruitment/recruitment-cycles.controller.ts",
+      "symbol": "RecruitmentCyclesController.promote.id"
+    },
+    {
+      "file": "src/modules/recruitment/recruitment-cycles.controller.ts",
+      "symbol": "RecruitmentCyclesController.promotePrecheck.id"
+    },
+    {
+      "file": "src/modules/recruitment/recruitment-cycles.controller.ts",
+      "symbol": "RecruitmentCyclesController.publicityList.id"
+    },
+    {
+      "file": "src/modules/recruitment/recruitment-cycles.controller.ts",
+      "symbol": "RecruitmentCyclesController.stats.id"
+    },
+    {
+      "file": "src/modules/recruitment/recruitment-cycles.controller.ts",
+      "symbol": "RecruitmentCyclesController.update.id"
+    },
+    {
+      "file": "src/modules/role-bindings/role-bindings.controller.ts",
+      "symbol": "RoleBindingsController.findOne.id"
+    },
+    {
+      "file": "src/modules/role-bindings/role-bindings.controller.ts",
+      "symbol": "RoleBindingsController.remove.id"
+    },
+    {
+      "file": "src/modules/role-bindings/role-bindings.controller.ts",
+      "symbol": "RoleBindingsController.update.id"
+    },
+    {
+      "file": "src/modules/supervision-assignments/supervision-assignments.controller.ts",
+      "symbol": "SupervisionAssignmentsController.findOne.id"
+    },
+    {
+      "file": "src/modules/supervision-assignments/supervision-assignments.controller.ts",
+      "symbol": "SupervisionAssignmentsController.revoke.id"
+    },
+    {
+      "file": "src/modules/supervision-assignments/supervision-assignments.controller.ts",
+      "symbol": "SupervisionAssignmentsController.update.id"
+    },
+    {
+      "file": "src/modules/team-join/team-join-applications.admin.controller.ts",
+      "symbol": "TeamJoinApplicationsAdminController.detail.id"
+    },
+    {
+      "file": "src/modules/team-join/team-join-applications.admin.controller.ts",
+      "symbol": "TeamJoinApplicationsAdminController.evaluate.id"
+    },
+    {
+      "file": "src/modules/team-join/team-join-applications.admin.controller.ts",
+      "symbol": "TeamJoinApplicationsAdminController.join.id"
+    },
+    {
+      "file": "src/modules/team-join/team-join-applications.admin.controller.ts",
+      "symbol": "TeamJoinApplicationsAdminController.markGate.id"
+    },
+    {
+      "file": "src/modules/team-join/team-join-applications.app.controller.ts",
+      "symbol": "TeamJoinApplicationsAppController.updateTargets.id"
+    },
+    {
+      "file": "src/modules/team-join/team-join-cycles.controller.ts",
+      "symbol": "TeamJoinCyclesController.detail.id"
+    },
+    {
+      "file": "src/modules/team-join/team-join-cycles.controller.ts",
+      "symbol": "TeamJoinCyclesController.update.id"
+    }
+  ]
+}

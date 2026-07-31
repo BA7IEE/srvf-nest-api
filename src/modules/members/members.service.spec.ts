@@ -43,7 +43,11 @@ const ACTIVE_MEMBER = { id: 'm1', memberNo: 'm-001', status: 'ACTIVE' };
 function makeTx() {
   return {
     $queryRaw: jest.fn().mockResolvedValue([{ id: 'm1' }]),
+    // M3:runMemberLinearizedTransaction 给事务设 `SET LOCAL lock_timeout`。
+    $executeRawUnsafe: jest.fn().mockResolvedValue(0),
     member: { findFirst: jest.fn().mockResolvedValue(ACTIVE_MEMBER) },
+    // M2:入队身份闸(0 条 live 申请 = 没有可破的不变量,直接放行)。
+    teamJoinApplication: { count: jest.fn().mockResolvedValue(0) },
     user: {
       findFirst: jest.fn().mockResolvedValue(null), // existingLink 预检查未命中(竞态窗口)
       findUnique: jest.fn().mockResolvedValue(null), // username/phone 预检查未命中(两次调用共用)
@@ -190,9 +194,14 @@ describe('MembersService member lifecycle authorization closure', () => {
   function makeLifecycleTx() {
     return {
       $queryRaw: jest.fn().mockResolvedValue([{ id: 'm1' }]),
+      // M3:runMemberLinearizedTransaction 给事务设 `SET LOCAL lock_timeout`。
+      $executeRawUnsafe: jest.fn().mockResolvedValue(0),
       member: {
+        // 两次 ACTIVE:第 1 次是 M2 入队身份闸的读(它随后按 activeDepts 判定该队员
+        // 不是「未入队志愿者」而直接放行),第 2 次才是 offboardCore 自己的 findMemberOrThrow。
         findFirst: jest
           .fn()
+          .mockResolvedValueOnce({ ...ACTIVE_MEMBER, status: MemberStatus.ACTIVE })
           .mockResolvedValueOnce({ ...ACTIVE_MEMBER, status: MemberStatus.ACTIVE })
           .mockResolvedValue({ ...ACTIVE_MEMBER, status: MemberStatus.INACTIVE }),
         update: jest.fn().mockResolvedValue(undefined),

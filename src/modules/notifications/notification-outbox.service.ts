@@ -103,6 +103,78 @@ export class NotificationOutboxService {
     return row;
   }
 
+  /**
+   * 批量 enqueue(M3):**恒 2 次 SQL**,与条数无关。
+   *
+   * 存在的理由:考勤终审对每条 record 各发一条 intent,逐条 `enqueue()` 是
+   * 「createMany(1) + findUnique」= 2 次往返 × N 条。200 人的考勤单光这里就 400 次,
+   * 是把 Prisma 默认 5s 交互事务预算跑穿的主因之一。
+   *
+   * 语义与单条版逐字一致:
+   * - `skipDuplicates` 让重放幂等(同 eventKey 已存在就不插);
+   * - 回读后**逐条**对账 `sameIntent` —— 新插的行按构造必然相等,已存在的行若内容不同
+   *   仍抛 `NotificationOutboxInvariantError`(eventKey 被复用成别的内容 = 语义事故)。
+   *   单条版靠 `created.count === 0` 区分「这条是重复」;批量版拿不到逐条结果,
+   *   于是对全部行做对账 —— 判据更强,不更弱。
+   * - **批内先按 eventKey 去重**:`skipDuplicates` 只看表里已有的行,同一批里两条相同
+   *   eventKey 会直接撞唯一约束抛 P2002。批内重复必须是同内容,否则同样是事故。
+   */
+  async enqueueMany(
+    inputs: readonly NotificationOutboxEnqueueInput[],
+    client: OutboxClient = this.prisma,
+  ): Promise<NotificationOutboxIntent[]> {
+    if (inputs.length === 0) return [];
+    const byKey = new Map<string, NotificationOutboxEnqueueInput>();
+    for (const input of inputs) {
+      const normalized = normalizeNotificationOutboxInput(input);
+      const seen = byKey.get(normalized.eventKey);
+      if (seen === undefined) {
+        byKey.set(normalized.eventKey, normalized);
+        continue;
+      }
+      if (!sameIntentInput(seen, normalized)) {
+        throw new NotificationOutboxInvariantError(
+          `eventKey=${normalized.eventKey} appears twice in one batch with different content`,
+        );
+      }
+    }
+    const normalizedList = [...byKey.values()];
+
+    await client.notificationOutboxIntent.createMany({
+      data: normalizedList.map((normalized) => ({
+        eventKey: normalized.eventKey,
+        eventType: normalized.eventType,
+        payloadVersion: normalized.payloadVersion,
+        payload: normalized.payload,
+        aggregateType: normalized.aggregateType,
+        aggregateId: normalized.aggregateId,
+        destinationType: normalized.destinationType,
+        destinationRef: normalized.destinationRef,
+        status: OUTBOX_STATUS_PENDING,
+      })),
+      skipDuplicates: true,
+    });
+
+    const rows = await client.notificationOutboxIntent.findMany({
+      where: { eventKey: { in: [...byKey.keys()] } },
+    });
+    const rowByKey = new Map(rows.map((row) => [row.eventKey, row]));
+    return normalizedList.map((normalized) => {
+      const row = rowByKey.get(normalized.eventKey);
+      if (!row) {
+        throw new NotificationOutboxInvariantError(
+          `eventKey=${normalized.eventKey} insert disappeared`,
+        );
+      }
+      if (!sameIntent(row, normalized)) {
+        throw new NotificationOutboxInvariantError(
+          `eventKey=${normalized.eventKey} was reused with different content`,
+        );
+      }
+      return row;
+    });
+  }
+
   // 广播微信 child 每个 publish generation 保留独立 eventKey/history，但同 notification/member
   // 任一时刻只允许一条 active attempt（migration partial unique）。并发 root 撞 active slot 时
   // 复用既有 pending/processing intent；terminal 后槽位释放，下一次真实 re-publish 可新建。
@@ -631,6 +703,22 @@ function fenceWhere(
     leaseOwner: intent.leaseOwner,
     lockedAt: intent.lockedAt,
   };
+}
+
+/** 两份**入参**是否等价(批内去重用;与 sameIntent 判同一组字段,只是左侧不是 DB 行)。 */
+function sameIntentInput(
+  a: NotificationOutboxEnqueueInput,
+  b: NotificationOutboxEnqueueInput,
+): boolean {
+  return (
+    a.eventType === b.eventType &&
+    a.payloadVersion === b.payloadVersion &&
+    canonicalJson(a.payload) === canonicalJson(b.payload) &&
+    a.aggregateType === b.aggregateType &&
+    a.aggregateId === b.aggregateId &&
+    a.destinationType === b.destinationType &&
+    a.destinationRef === b.destinationRef
+  );
 }
 
 function sameIntent(row: NotificationOutboxIntent, input: NotificationOutboxEnqueueInput): boolean {
