@@ -1,11 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RecruitmentCertificateClaimStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
+import { OmittableOnly } from '../../common/decorators/omittable-only.decorator';
 import { RECRUITMENT_CERT_CATEGORIES } from './recruitment.constants';
 import {
   IsIn,
   IsInt,
-  IsOptional,
   IsString,
   IsDateString,
   Matches,
@@ -15,6 +15,22 @@ import {
 } from 'class-validator';
 
 // 证书标准库 PR-4a-1(冻结稿 §13.4 / §15.4 / §8.3):招新证书申报管理端 DTO。
+//
+// 第四轮评审 P1(null 契约,**本文件是 1970-01-01 那条的落点**):
+// 本文件全部 16 处可选入参一律 `@OmittableOnly()` —— 没有一个字段是「可清空」的。
+// 逐类理由:
+//   - 审核入参(ReviewCertificateClaimDto 七项):它们是**审核结论**,
+//     每一项要么由 decision 分支判成必填(standardId / issuedAt / note),
+//     要么由认定规则判成「必须传 / 不得传」(issuer / certNumber / expiredAt)——
+//     三种状态里没有「传 null 表示清空」这一种。
+//   - 公开面凭证(wechatCode / phone / code):二选一通道,不传即走另一条;
+//     传 null 不是「不用这条通道」,是把 null 当凭证送进去。
+//   - 申报事实(Submit / Resubmit 六项):重传是**整份替换**自报事实
+//     (service 对每个字段都无条件赋值,不做 `!== undefined` 三态),
+//     「这次不填某项」的表达就是不传;传 null 会被 `?? null` 折叠成不填,
+//     语义上恰好等价,但契约层不该留这条同义通道 —— 它是下一次误用的入口。
+// 唯一真会写 null 的是 service 自己(REJECT 清空标准化结论),那是服务端的动作,
+// 不是客户端能提交的入参。
 //
 // 敏感边界(§15.4),与 Certificate 详情同款范式:
 //   Admin 列表/详情默认只给 `certNumberMasked` + `imageCount` + 状态 + 建议 Standard;
@@ -320,7 +336,7 @@ export class ReviewCertificateClaimDto {
   @ApiPropertyOptional({
     description: 'APPROVE 必填:审核员选定的具体 CREDENTIAL Standard(可更正申请人的建议)',
   })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(32)
@@ -329,21 +345,21 @@ export class ReviewCertificateClaimDto {
   @ApiPropertyOptional({
     description: 'ALLOWLIST 规则必填;FIXED 可不传(后端选唯一);FREE_TEXT 不得传',
   })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(32)
   recognitionIssuerId?: string;
 
   @ApiPropertyOptional({ description: 'FREE_TEXT 规则必填的自由机构名', maxLength: 128 })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(128)
   issuingOrg?: string;
 
   @ApiPropertyOptional({ description: '按认定规则的 certNumberMode 校验', maxLength: 128 })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(128)
@@ -354,7 +370,7 @@ export class ReviewCertificateClaimDto {
     ...DATE_ONLY_SCHEMA,
     example: '2026-07-01',
   })
-  @IsOptional()
+  @OmittableOnly()
   @Matches(DATE_ONLY_PATTERN, { message: 'issuedAt 必须是 YYYY-MM-DD 纯日期' })
   @IsDateString({ strict: true })
   issuedAt?: string;
@@ -364,7 +380,7 @@ export class ReviewCertificateClaimDto {
     ...DATE_ONLY_SCHEMA,
     example: '2028-06-30',
   })
-  @IsOptional()
+  @OmittableOnly()
   @Matches(DATE_ONLY_PATTERN, { message: 'expiredAt 必须是 YYYY-MM-DD 纯日期' })
   @IsDateString({ strict: true })
   expiredAt?: string;
@@ -373,7 +389,7 @@ export class ReviewCertificateClaimDto {
     description: 'REJECT / NEEDS_INFO 必填的说明(申请人进度可见);APPROVE 可选',
     maxLength: 500,
   })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(500)
@@ -404,19 +420,19 @@ class PublicClaimCredentialDto {
     description: '通道①:微信 wx.login code(与 phone+code 二选一)',
     maxLength: 128,
   })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MaxLength(128)
   wechatCode?: string;
 
   @ApiPropertyOptional({ description: '通道②:手机号(配合 code)' })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MaxLength(20)
   phone?: string;
 
   @ApiPropertyOptional({ description: '通道②:短信验证码(消费一码)' })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MaxLength(10)
   code?: string;
@@ -431,7 +447,7 @@ export class SubmitCertificateClaimDto extends PublicClaimCredentialDto {
   categoryHintCode!: string;
 
   @ApiPropertyOptional({ description: '证书名称(自由文本)', maxLength: 128 })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MaxLength(128)
   rawCertificateName?: string;
@@ -441,32 +457,32 @@ export class SubmitCertificateClaimDto extends PublicClaimCredentialDto {
       '建议的证书标准 id(来自公开标准选项端点;「不确定」时不传 —— 不确定是合法选项,§8.1)',
     maxLength: 32,
   })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(32)
   suggestedStandardId?: string;
 
   @ApiPropertyOptional({ description: '发证机构(自由文本)', maxLength: 128 })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MaxLength(128)
   issuingOrg?: string;
 
   @ApiPropertyOptional({ description: '证书编号', maxLength: 128 })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MaxLength(128)
   certNumber?: string;
 
   @ApiPropertyOptional({ ...DATE_ONLY_SCHEMA, description: '发证日期', example: '2026-07-01' })
-  @IsOptional()
+  @OmittableOnly()
   @Matches(DATE_ONLY_PATTERN, { message: 'issuedAt 必须是 YYYY-MM-DD 纯日期' })
   @IsDateString({ strict: true })
   issuedAt?: string;
 
   @ApiPropertyOptional({ ...DATE_ONLY_SCHEMA, description: '最后有效日', example: '2028-06-30' })
-  @IsOptional()
+  @OmittableOnly()
   @Matches(DATE_ONLY_PATTERN, { message: 'expiredAt 必须是 YYYY-MM-DD 纯日期' })
   @IsDateString({ strict: true })
   expiredAt?: string;

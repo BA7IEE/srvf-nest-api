@@ -12,7 +12,6 @@ import {
   IsEnum,
   IsIn,
   IsInt,
-  IsOptional,
   IsString,
   Max,
   MaxLength,
@@ -20,8 +19,15 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { OmittableOnly } from '../../common/decorators/omittable-only.decorator';
 
 // 证书标准库 PR-3(冻结稿 §5.3 / §5.4 / §7.2 / §13.2):队内认定规则 DTO。
+//
+// 第四轮评审 P1(null 契约):本文件**没有任何一个字段是「可清空」的** ——
+// 认定规则的四个核心列(issuerPolicy / validityMode / certNumberMode / issuers)
+// 在库内全是非空,`validityMonths` 虽可空但它的空值**由 validityMode 派生**、
+// 不由客户端直接指定(见 UpdateCertificateRecognitionPolicyDto 上的逐字说明)。
+// 所以这里 7 处一律 `@OmittableOnly()`,`null` 稳定 400。
 //
 // 两条契约层决策:
 // 1. `version` **不接受客户端传**:它必须在 Standard 行锁内取 MAX(version)+1
@@ -118,7 +124,7 @@ export class CertificateRecognitionIssuerInputDto {
   name!: string;
 
   @ApiPropertyOptional({ description: '排序权重(默认按数组顺序)' })
-  @IsOptional()
+  @OmittableOnly()
   @Type(() => Number)
   @IsInt()
   @Min(0)
@@ -144,7 +150,7 @@ export class CreateCertificateRecognitionPolicyDto {
     minimum: 1,
     maximum: 600,
   })
-  @IsOptional()
+  @OmittableOnly()
   @Type(() => Number)
   @IsInt()
   @Min(1)
@@ -174,21 +180,32 @@ export class CreateCertificateRecognitionPolicyDto {
 // 不传 issuers = 保持原集合不动。
 export class UpdateCertificateRecognitionPolicyDto {
   @ApiPropertyOptional({ description: '机构策略', enum: CertificateIssuerPolicy })
-  @IsOptional()
+  @OmittableOnly()
   @IsEnum(CertificateIssuerPolicy)
   issuerPolicy?: CertificateIssuerPolicy;
 
   @ApiPropertyOptional({ description: '有效期模式', enum: CertificateValidityMode })
-  @IsOptional()
+  @OmittableOnly()
   @IsEnum(CertificateValidityMode)
   validityMode?: CertificateValidityMode;
 
+  // 第四轮评审 P1:这句「本 DTO 不接受 null」以前**只是一句话** ——
+  // `@IsOptional()` 对 null 照样放行,service 再 `!== undefined` 判成「传了」,
+  // 于是 `validityMonths: null` 一路写进库。现在由 `@OmittableOnly()` 执行它。
+  //
+  // 为什么它是「仅可省略」而不是「可清空」:`validityMonths` 只在 FIXED_MONTHS
+  // 模式下有值,其余模式恒 null —— 而这个 null **是 validityMode 派生出来的**,
+  // 不是客户端能独立指定的事实。想把它变回 null 的唯一正确动作是改 validityMode
+  // (service 在改 mode 时会自动把 months 归零重判)。保持 FIXED_MONTHS 却清掉
+  // months 是非法组合,本来就该 18015。
+  // description 逐字不变(同 certificates.dto.ts 的理由):契约本来就说了不接受 null,
+  // 本刀只是补上执行位;改文案会动 test/contract 快照(红区)。
   @ApiPropertyOptional({
     description: '有效月数(仅 FIXED_MONTHS;显式传 null 语义由「不传」表达,本 DTO 不接受 null)',
     minimum: 1,
     maximum: 600,
   })
-  @IsOptional()
+  @OmittableOnly()
   @Type(() => Number)
   @IsInt()
   @Min(1)
@@ -196,15 +213,23 @@ export class UpdateCertificateRecognitionPolicyDto {
   validityMonths?: number;
 
   @ApiPropertyOptional({ description: '编号规则', enum: CertificateNumberMode })
-  @IsOptional()
+  @OmittableOnly()
   @IsEnum(CertificateNumberMode)
   certNumberMode?: CertificateNumberMode;
 
+  // 「清空机构集合」的表达方式是传 `[]`(FREE_TEXT 规则下合法),不是传 null。
+  //
+  // 实测口径(别把它写得比事实严重):`dto.issuers ?? []` 会把 null 折成空数组,
+  // 于是 null 成了「清空」的一个**隐式同义词**。它当前**没有**变成可达的静默清空 ——
+  // FIXED 要求恰好 1、ALLOWLIST 要求 ≥1,`assertIssuerCountMatchesPolicy` 会先拒掉;
+  // 而 FREE_TEXT 的机构集合本来就必须是空的,没有东西可清。
+  // 那道 count 检查是**顺手**兜住的,不是为这件事设的 —— 依赖「恰好被别的规则挡住」
+  // 正是这一轮反复修的形状。这里把 null 直接拒掉,不留这条同义通道。
   @ApiPropertyOptional({
     description: '认可机构集合(传即整体替换,不做增量 merge;不传则保持不动)',
     type: [CertificateRecognitionIssuerInputDto],
   })
-  @IsOptional()
+  @OmittableOnly()
   @IsArray()
   @ArrayMaxSize(100)
   @ValidateNested({ each: true })

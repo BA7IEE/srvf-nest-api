@@ -64,10 +64,16 @@ import {
 
 // 证书标准库 PR-4a-1(冻结稿 §8.2 / §8.3 / §13.4 / §15.4):招新证书申报**管理端** service。
 //
-// 本刀是**纯新增**:只读 + 审核 Claim 行,不碰旧 `certificateImages` JSON 写路径,
-// 也不接门槛派生。理由是 §21 约束 2「不双写」——
-// 门槛一旦在这里派生,就会和仍然在线的人工 `markThreshold` 形成两个真相源。
-// 门槛派生 + `markThreshold` 拒写 + 旧 JSON 停写,三者必须在 4a-2 一次原子切换。
+// 本 service 只读 + 审核 Claim 行,不碰旧 `certificateImages` JSON 写路径。
+//
+// 门槛派生:**接**(PR-4a-2 已切换,§8.4)。审核 / 撤回 / 重传 / 撤销都在
+// 同一事务内调 `recomputeCertificateThresholds`。§21 约束 2「不双写」由另一侧保证 ——
+// 派生族的 code 在人工 `markThreshold` 与两个 DTO 上被拒(28063 + 契约层 @IsIn),
+// 所以「派生」与「人工标记」不会同时写同一个 key,不存在两个真相源。
+//
+// 第四轮评审 P2:这段原先写的是「也不接门槛派生 …… 三者必须在 4a-2 一次原子切换」,
+// 描述的是一个**已经发生过**的未来。同文件 review() / revokeReview() 的方法注释
+// 也同样过期,一并订正 —— 描述约束的注释要么有执行位,要么就该删掉。
 //
 // 判权沿招新域既有 GLOBAL 语义(`rbac.can`),不是 Certificate 实例的 scoped Authz
 // (Recruitment 尚未接入 AuthzService)。
@@ -403,8 +409,16 @@ export class RecruitmentCertificateClaimsService {
    * 三种 decision 共用一条事务与固定锁序:
    *   RecruitmentApplication → Claim → Standard → Active Policy → Issuer
    *
-   * ⚠️ 本刀**不重算门槛**:门槛派生要与 `markThreshold` 拒写、旧 JSON 停写
-   * 一起在 4a-2 原子上线,否则会和仍在线的人工标记形成两个真相源(§21 约束 2)。
+   * §8.4:Claim 状态一变,证书门槛与报名状态在**同一事务**内重算
+   * (方法末尾的 `recomputeCertificateThresholds`)。
+   *
+   * 第四轮评审 P2:这里原先写的是「⚠️ 本刀**不重算门槛**」—— 那是 PR-4a-1
+   * 刚落地、门槛派生还没接线时的事实。4a-2 接线之后代码早就在重算了,
+   * 而这句话留在原地,和它下面十几行的实际调用**直接矛盾**。
+   * 注释描述的是约束时,它要么有测试执行它,要么就该删掉 ——
+   * 一句过期的「本刀不做 X」比没有注释更糟:它会让下一个人以为这里是安全的。
+   * 执行位见 `recruitment-certificate-claims.e2e-spec.ts` 的
+   * 「§8.4 审核通过 → 派生门槛写入 thresholdMarks;撤回审核 → 聚合后清除」。
    */
   async review(
     user: CurrentUserPayload,
@@ -442,11 +456,20 @@ export class RecruitmentCertificateClaimsService {
       };
 
       if (dto.decision === 'APPROVE') {
-        // §8.3 第 3 步:必须解析到具体 Standard —— 「不确定」不能过审(D-CERT-014/015)。
-        if (dto.standardId === undefined) {
+        // ⚠️ 这三处判据必须是**正向类型检查**,不能写回 `=== undefined`
+        // (第四轮评审 P1;DTO 的 `@OmittableOnly()` 是第一道,这里是第二道)。
+        //
+        // 修复前写的是 `dto.issuedAt === undefined` —— 显式传来的 `null` 不等于
+        // undefined,于是它穿过这道闸、以 `issuedAt: null` 进 Resolver,
+        // `new Date(null)` = **1970-01-01**(不是 Invalid Date),再被
+        // 「不得晚于今天」放行,最后作为一条正式审核事实落库并参与门槛派生。
+        //
+        // 两道防御都要有:DTO 那道可能被将来某次重构绕过(改 DTO 不改 service
+        // 的 PR 一眼看不出风险),service 这道是不依赖契约层的兜底。
+        if (typeof dto.standardId !== 'string') {
           throw new BizException(BizCode.RECRUITMENT_CERTIFICATE_STANDARD_REQUIRED);
         }
-        if (dto.issuedAt === undefined) {
+        if (typeof dto.issuedAt !== 'string') {
           throw new BizException(BizCode.CERTIFICATE_VALIDITY_INVALID);
         }
         // 步骤 4-11 全在 Resolver 内(当前 ACTIVE Policy + 机构 + 编号 + 日期)。
@@ -468,10 +491,13 @@ export class RecruitmentCertificateClaimsService {
         data.certNumber = resolved.certNumber;
         data.issuedAt = resolved.issuedAt;
         data.expiredAt = resolved.expiredAt;
-        if (dto.note !== undefined) data.reviewNote = dto.note;
+        if (typeof dto.note === 'string') data.reviewNote = dto.note;
       } else {
         // §8.3:REJECT 与 NEEDS_INFO 的 note 必填(申请人进度可见)。
-        if (dto.note === undefined) throw new BizException(BizCode.BAD_REQUEST);
+        // 同样是正向类型检查:`note: null` 从前能穿过 `=== undefined`,
+        // 再以 `reviewNote = null` 落库 —— 一条「已驳回但没有驳回理由」的记录,
+        // 申请人在进度页看到的是空白,而审核员以为自己写了理由。
+        if (typeof dto.note !== 'string') throw new BizException(BizCode.BAD_REQUEST);
         data.reviewNote = dto.note;
         // NEEDS_INFO 保留图片与原始事实、**不锁定** Standard/Policy(§8.3)。
         // REJECT 清除标准化结论 —— 不允许保留伪造的 APPROVED 痕迹。
@@ -536,7 +562,8 @@ export class RecruitmentCertificateClaimsService {
    * 必须清空 resolved Standard / Policy / issuer 与审核字段,并写高价值审计。
    * 报名已 promoted 的不可撤(那时 Claim 已是 PROMOTED,状态机自然拦住)。
    *
-   * ⚠️ 本刀同样不重算门槛(见 review 的说明)。
+   * 撤回同样在**同一事务**内重算门槛(见 review 的说明)——
+   * 撤回会让一条曾经 APPROVED 的申报退出贡献,不重算就会留下已失效的门槛标记。
    */
   async revokeReview(
     user: CurrentUserPayload,

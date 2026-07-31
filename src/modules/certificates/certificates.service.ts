@@ -515,6 +515,16 @@ export class CertificatesService {
     const ref: ResourceRef = { type: 'certificate', id: certificateId };
     await this.assertCanOrThrow(currentUser, 'certificate.update.record', ref);
     const sensitive = await this.canReadSensitive(currentUser, ref);
+    // ⚠️ 第四轮评审 P1 的第二道防御(DTO 的 `@OmittableOnly()` 是第一道)。
+    //
+    // `standardId` 库内 NOT NULL,**没有「清空标准」这个动作**。修复前
+    // `standardId: null` 会被下面的 `!== undefined` 判成「要换标准」,再以
+    // `dto.standardId as string` 去查 `id: null` —— 返回的是 18010「标准不存在」,
+    // 一个把调用方引向错误方向的错误码(真正的问题是「你传了个 null」)。
+    // `issuedAt` 同理:它库内非空,清空不是合法动作。
+    if (dto.standardId === null || dto.issuedAt === null) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
       const before = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);

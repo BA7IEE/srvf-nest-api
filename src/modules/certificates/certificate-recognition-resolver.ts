@@ -6,7 +6,11 @@ import {
   CertificateValidityMode,
   Prisma,
 } from '@prisma/client';
-import { addMonthsClamped, beijingDateOnly } from '../../common/datetime/date-only.util';
+import {
+  addMonthsClamped,
+  beijingDateOnly,
+  parseDateOnlyStrict,
+} from '../../common/datetime/date-only.util';
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
@@ -305,7 +309,17 @@ export class CertificateRecognitionResolver {
     policy: LoadedPolicy,
     facts: RecognitionFactsInput,
   ): { issuedAt: Date; expiredAt: Date | null } {
-    const issuedAt = beijingDateOnly(new Date(facts.issuedAt));
+    // ⚠️ 第四轮评审 P1 的**兜底道**(DTO 的 `@OmittableOnly()` 是第一道)。
+    //
+    // 必须用 `parseDateOnlyStrict` 这种**正向类型检查**,不能写成 `=== undefined`
+    // 或 `!facts.issuedAt`:`new Date(null)` 不是 Invalid Date,它是
+    // **1970-01-01T00:00:00Z** —— 一个完全合法的 Date,后面「不得晚于今天」那道闸
+    // 只会愉快放行,于是 1970-01-01 作为一条正式审核事实落库,还照常参与资质门槛派生。
+    //
+    // 本函数是建证 / 审核通过 / 改证**三个入口共用**的那一段,所以这道闸放在这里
+    // 而不是各调用方各写一份 —— 少写一处就是一个新的 1970 入口。
+    const issuedAt = parseDateOnlyStrict(facts.issuedAt);
+    if (issuedAt === null) throw new BizException(BizCode.CERTIFICATE_VALIDITY_INVALID);
     const today = beijingDateOnly(new Date());
     if (issuedAt.getTime() > today.getTime()) {
       throw new BizException(BizCode.CERTIFICATE_ISSUED_AT_IN_FUTURE);
@@ -329,16 +343,21 @@ export class CertificateRecognitionResolver {
         return { issuedAt, expiredAt: addMonthsClamped(issuedAt, policy.validityMonths) };
       }
 
+      // 两个 EXPLICIT 分支同样走严格解析:`provided` 只判了「非 null 非空串」,
+      // 一个运行时非字符串值照样能过它,再被 `new Date()` 折成 1970 —— 与 issuedAt
+      // 同源的坑,只是它多一道 assertRange 恰好兜住。不靠「恰好」。
       case CertificateValidityMode.EXPLICIT_REQUIRED: {
         if (!provided) throw new BizException(BizCode.CERTIFICATE_VALIDITY_INVALID);
-        const expiredAt = beijingDateOnly(new Date(rawExpired));
+        const expiredAt = parseDateOnlyStrict(rawExpired);
+        if (expiredAt === null) throw new BizException(BizCode.CERTIFICATE_VALIDITY_INVALID);
         this.assertRange(issuedAt, expiredAt);
         return { issuedAt, expiredAt };
       }
 
       case CertificateValidityMode.EXPLICIT_OPTIONAL: {
         if (!provided) return { issuedAt, expiredAt: null };
-        const expiredAt = beijingDateOnly(new Date(rawExpired));
+        const expiredAt = parseDateOnlyStrict(rawExpired);
+        if (expiredAt === null) throw new BizException(BizCode.CERTIFICATE_VALIDITY_INVALID);
         this.assertRange(issuedAt, expiredAt);
         return { issuedAt, expiredAt };
       }

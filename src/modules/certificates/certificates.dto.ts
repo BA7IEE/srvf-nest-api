@@ -7,8 +7,8 @@ import {
   Matches,
   MaxLength,
   MinLength,
-  ValidateIf,
 } from 'class-validator';
+import { OmittableOnly } from '../../common/decorators/omittable-only.decorator';
 
 // V2 第一阶段批次 2 certificates 模块 DTO 集合。
 // 详见 docs:批次2_API前评审_certificates.md §3 + 草案 v1.0 §4 / §5.1 / §13。
@@ -273,11 +273,13 @@ export class CreateCertificateDto {
   @MaxLength(32)
   standardId!: string;
 
+  // 建证是**新建**,没有「清空」这回事 —— 不填某项事实的表达方式是不传这个键。
+  // 四处一律 `@OmittableOnly()`,`null` 稳定 400(第四轮评审 P1)。
   @ApiPropertyOptional({
     description: '认可机构 id。ALLOWLIST 规则**必填**;FIXED 可不传(后端选唯一);FREE_TEXT 不得传',
     maxLength: 32,
   })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(32)
@@ -287,14 +289,14 @@ export class CreateCertificateDto {
     description: 'FREE_TEXT 规则**必填**的自由机构名;FIXED / ALLOWLIST 不得传',
     maxLength: 128,
   })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(128)
   issuingOrg?: string;
 
   @ApiPropertyOptional({ description: '证书编号(中敏感)', maxLength: 128 })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(128)
@@ -314,7 +316,7 @@ export class CreateCertificateDto {
     ...DATE_ONLY_SCHEMA,
     example: '2028-06-30',
   })
-  @IsOptional()
+  @OmittableOnly()
   @Matches(DATE_ONLY_PATTERN, { message: 'expiredAt 必须是 YYYY-MM-DD 纯日期' })
   @IsDateString({ strict: true })
   expiredAt?: string;
@@ -336,15 +338,23 @@ export class CreateCertificateDto {
 //
 // 可空字段用 `string | null` + `@IsOptional()`(class-validator 对 null 与 undefined
 // 都跳过校验,所以显式 null 能穿过校验层抵达 service,由 service 区分二者)。
-// **不可空**的 `issuedAt` 不能用 `@IsOptional()` —— 那会让 `issuedAt: null` 静默通过再被
-// service 的 `??` 悄悄换成库内值,客户端以为自己清空了。改用 `@ValidateIf`:
-// 只要 key 出现就必须过 `@Matches`,null 因此稳定 400。
+// **不可空**的 `issuedAt` / `standardId` 不能用 `@IsOptional()` —— 那会让 `null` 静默通过
+// 再被 service 的 `??` 悄悄换成库内值,客户端以为自己清空了。改用 `@OmittableOnly()`:
+// 只要 key 出现就必须过后面的校验器,null 因此稳定 400。
 export class UpdateCertificateDto {
+  // 第四轮评审 P1:`standardId` 库内 NOT NULL,**没有「清空标准」这个动作** ——
+  // 一张证书必须属于某个标准。此前 `@IsOptional()` 让 `standardId: null` 穿到
+  // service,`dto.standardId !== undefined` 把它判成「要换标准」,再以
+  // `dto.standardId as string` 传给 Resolver 去查 `id: null` —— 拿到的是
+  // 18010「标准不存在」这种误导性错误码,而真正的错误是「你传了个 null」。
+  // description 保持逐字不变:OpenAPI schema **早就**把它声明成不可空的 `type: string`,
+  // 契约没变,变的是「实现终于执行了契约已经写着的东西」。改 description 会动
+  // `test/contract` 快照(红区·裁判保护),而本刀的写集应为零红区。
   @ApiPropertyOptional({
     description: '证书标准 id(**仅 pending 态可改** —— 纠正选错的标准;非 pending → 18033)',
     maxLength: 32,
   })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
   @MaxLength(32)
@@ -394,7 +404,10 @@ export class UpdateCertificateDto {
     ...DATE_ONLY_SCHEMA,
     example: '2026-07-01',
   })
-  @ValidateIf((o: UpdateCertificateDto) => o.issuedAt !== undefined)
+  // 原先是手写的 `@ValidateIf((o) => o.issuedAt !== undefined)` —— 语义正确,
+  // 但它是**抄写版**:只有想到的那个字段有,隔壁忘了写的就没有。改用具名
+  // `@OmittableOnly()` 后,这条约束对机器也可见(eslint no-nullable-is-optional)。
+  @OmittableOnly()
   @Matches(DATE_ONLY_PATTERN, { message: 'issuedAt 必须是 YYYY-MM-DD 纯日期' })
   @IsDateString({ strict: true })
   issuedAt?: string;
@@ -417,8 +430,9 @@ export class UpdateCertificateDto {
 // **不接收** certStatusCode / verifiedBy / verifiedAt / issuedAt / expiredAt(Q-A4 决议)。
 // 轻量类:仅 verifyNote 可选(verify 通过时备注非必填)。
 export class VerifyCertificateDto {
+  // 核验动作是一次性写入,没有「清空备注」的语义(要改备注走 PATCH)。
   @ApiPropertyOptional({ description: '核验备注(可选)', maxLength: 500 })
-  @IsOptional()
+  @OmittableOnly()
   @IsString()
   @MaxLength(500)
   verifyNote?: string;
