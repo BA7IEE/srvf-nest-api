@@ -6,6 +6,7 @@ import { BizException } from '../../src/common/exceptions/biz.exception';
 import { PrismaService } from '../../src/database/prisma.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { AppMeTeamJoinService } from '../../src/modules/team-join/team-join-applications.app.service';
+import { TeamJoinApplicationsService } from '../../src/modules/team-join/team-join-applications.service';
 import { TeamJoinEnrollmentService } from '../../src/modules/team-join/team-join-enrollment.service';
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
@@ -57,6 +58,7 @@ describe('team join submit × final join 生命周期并发(K2 · B-F4/B-F5)', (
   let prismaB: PrismaService;
   let enrollmentA: TeamJoinEnrollmentService;
   let appMeB: AppMeTeamJoinService;
+  let applicationsB: TeamJoinApplicationsService;
   let admin: CurrentUserPayload;
   let adminUserId: string;
   let orgSeq = 0;
@@ -117,11 +119,13 @@ describe('team join submit × final join 生命周期并发(K2 · B-F4/B-F5)', (
     throw new Error('submit 既未完成,也没有进入锁等待');
   }
 
-  function holdMemberRowLock(memberId: string): {
+  interface Barrier {
     ready: Promise<void>;
     release: () => void;
     done: Promise<void>;
-  } {
+  }
+
+  function holdInOwnTransaction(hold: (tx: Prisma.TransactionClient) => Promise<void>): Barrier {
     let signalReady!: () => void;
     let doRelease!: () => void;
     const ready = new Promise<void>((resolve) => {
@@ -132,13 +136,45 @@ describe('team join submit × final join 生命周期并发(K2 · B-F4/B-F5)', (
     });
     const done = prismaA.$transaction(
       async (tx) => {
-        await tx.$queryRaw`SELECT "id" FROM "Member" WHERE "id" = ${memberId} FOR UPDATE`;
+        await hold(tx);
         signalReady();
         await gate;
       },
       { timeout: 60_000, maxWait: 60_000 },
     );
     return { ready, release: () => doRelease(), done };
+  }
+
+  function holdMemberRowLock(memberId: string): Barrier {
+    return holdInOwnTransaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Member" WHERE "id" = ${memberId} FOR UPDATE`;
+    });
+  }
+
+  /**
+   * `audit_logs` 表级 SHARE 锁:三个 contender 都在「取到自己那把锁、改完行」之后、
+   * 提交之前写一条 audit,所以按住这张表就把它们钉在**持锁未提交**的位置上。
+   * final join 在步骤 9 之前不写任何 audit,因此它会干净地停在自己该停的那把锁上。
+   */
+  function holdAuditLogInserts(): Barrier {
+    return holdInOwnTransaction(async (tx) => {
+      await tx.$executeRawUnsafe('LOCK TABLE "audit_logs" IN SHARE MODE');
+    });
+  }
+
+  /** 等到出现第 n 个锁等待者;对方直接跑完也放行(结果断言兜底)。 */
+  async function untilWaiters(pending: Promise<unknown>, threshold: number): Promise<void> {
+    let settled = false;
+    const mark = (): void => {
+      settled = true;
+    };
+    pending.then(mark, mark);
+    const deadline = Date.now() + LOCK_WAIT_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (settled) return;
+      if ((await countAnyLockWaiters()) >= threshold) return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
   }
 
   /**
@@ -282,6 +318,7 @@ describe('team join submit × final join 生命周期并发(K2 · B-F4/B-F5)', (
     prismaB = appB.get(PrismaService);
     enrollmentA = appA.get(TeamJoinEnrollmentService);
     appMeB = appB.get(AppMeTeamJoinService);
+    applicationsB = appB.get(TeamJoinApplicationsService);
 
     const adminRow = await prismaA.user.create({
       data: {
@@ -494,6 +531,163 @@ describe('team join submit × final join 生命周期并发(K2 · B-F4/B-F5)', (
           })
         ).statusCode,
       ).toBe('joined');
+      await assertNoLiveApplicationForEnrolledMember();
+    },
+    CASE_TIMEOUT_MS,
+  );
+
+  // ── F5 双向 barrier:final join × 同人 sibling 的三个写方(M5)────────────────────
+  //
+  // B-F5 修的是「join 之后残留 live 申请」;这一组补的是**交错**:contender 和 join
+  // 各自持有对方要的东西时,不能死锁,也不能让 sibling 逃过终态级联。
+  //
+  // 两个方向都要跑 —— 只跑一个方向的并发用例是常见的假绿:锁序 bug 往往只在其中一个
+  // 交错里显形(M1 用例 ⑤ 的 40P01 就只在「join 先持键」那一侧出现)。
+  const F5_ENTRIES = ['updateTargets', 'markGate', 'evaluate'] as const;
+  type F5Entry = (typeof F5_ENTRIES)[number];
+
+  const f5Cases: Array<[F5Entry, 'join-first' | 'contender-first']> = F5_ENTRIES.flatMap(
+    (entry) =>
+      [
+        [entry, 'join-first'],
+        [entry, 'contender-first'],
+      ] as Array<[F5Entry, 'join-first' | 'contender-first']>,
+  );
+
+  it.each(f5Cases)(
+    'F5 双向:join × %s(%s)—— 无 40P01 / 无 live sibling / supersede audit 恰一',
+    async (entry, direction) => {
+      const { memberId, user } = await createVolunteerWithAccount();
+      const targetOrg = await makeOrg();
+      const siblingOrg = await makeOrg();
+      const siblingOrgAlt = await makeOrg();
+      await giveContribution(memberId, ['3.00', '2.00']);
+
+      const oldCycleId = await openCycle(`F5 旧轮 ${entry} ${direction}`);
+      const approved = await prismaA.teamJoinApplication.create({
+        data: {
+          cycleId: oldCycleId,
+          memberId,
+          statusCode: 'approved',
+          targetOrganizationIds: [targetOrg],
+          gateMarks: allGatesPassed(),
+          evaluatedByUserId: adminUserId,
+          evaluatedAt: new Date(),
+        },
+        select: { id: true },
+      });
+      await closeCycle(oldCycleId);
+
+      // sibling:同一队员名下的另一条 live 申请,正是 final join 步骤 9 会回来锁的那一条。
+      const newCycleId = await openCycle(`F5 新轮 ${entry} ${direction}`);
+      const marks = allGatesPassed() as Record<string, unknown>;
+      // markGate 要留一个没标的 gate 给它标;另外两条 contender 用全过的门槛。
+      const siblingGateMarks =
+        entry === 'markGate'
+          ? (Object.fromEntries(
+              Object.entries(marks).filter(([code]) => code !== 'intermediate-outdoor'),
+            ) as Prisma.InputJsonValue)
+          : (marks as Prisma.InputJsonValue);
+      const sibling = await prismaA.teamJoinApplication.create({
+        data: {
+          cycleId: newCycleId,
+          memberId,
+          // evaluate 走 approved=true,所以 sibling 必须已在 pending_evaluation;
+          // 另两条停在 joining(它们的合法起点)。三者写完 sibling 都仍是 live。
+          statusCode: entry === 'evaluate' ? 'pending_evaluation' : 'joining',
+          targetOrganizationIds: [siblingOrg],
+          gateMarks: siblingGateMarks,
+        },
+        select: { id: true },
+      });
+
+      const runContender = (): Promise<unknown> => {
+        if (entry === 'updateTargets') {
+          return appMeB.updateTargets(
+            sibling.id,
+            { targetOrganizationIds: [siblingOrgAlt] },
+            user,
+            META,
+            new Date(),
+          );
+        }
+        if (entry === 'markGate') {
+          return applicationsB.markGate(
+            sibling.id,
+            {
+              gateCode: 'intermediate-outdoor',
+              passed: true,
+              completionDate: new Date().toISOString(),
+            },
+            admin,
+            META,
+            new Date(),
+          );
+        }
+        return applicationsB.evaluate(sibling.id, { approved: true }, admin, META, new Date());
+      };
+      const runJoin = (): Promise<unknown> =>
+        enrollmentA.join(approved.id, { organizationId: targetOrg }, admin, META, new Date());
+
+      let joining: Promise<unknown> = Promise.resolve();
+      let contending: Promise<unknown> = Promise.resolve();
+      if (direction === 'join-first') {
+        // join 被 Member 行锁钉住:此刻它已持有 member 键 + 目标申请行锁,尚未走到步骤 9。
+        const barrier = holdMemberRowLock(memberId);
+        await barrier.ready;
+        joining = runJoin();
+        joining.catch(() => undefined);
+        try {
+          await waitForMemberRowLockWaiter();
+          contending = runContender();
+          contending.catch(() => undefined);
+          await untilWaiters(contending, 2);
+        } finally {
+          barrier.release();
+          await barrier.done;
+        }
+      } else {
+        // contender 被 audit 表锁钉住:它已改完 sibling、尚未提交;此时 join 出发。
+        const barrier = holdAuditLogInserts();
+        await barrier.ready;
+        contending = runContender();
+        contending.catch(() => undefined);
+        try {
+          await untilWaiters(contending, 1);
+          joining = runJoin();
+          joining.catch(() => undefined);
+          await untilWaiters(joining, 2);
+        } finally {
+          barrier.release();
+          await barrier.done;
+        }
+      }
+
+      const [joinResult, contendResult] = await Promise.allSettled([joining, contending]);
+      for (const result of [joinResult, contendResult]) {
+        if (result.status === 'rejected') {
+          // 断言直接吃原始错误串:死锁时 diff 里能看见是哪一对锁,不必再复现一次。
+          expect(String(result.reason)).not.toMatch(/40P01|deadlock detected/i);
+        }
+      }
+      // 无论哪个方向、谁先提交,入队都必须成功,而 sibling 必须被终态级联收走。
+      expect(joinResult.status).toBe('fulfilled');
+      const siblingAfter = await prismaA.teamJoinApplication.findUniqueOrThrow({
+        where: { id: sibling.id },
+        select: { statusCode: true, eliminationStage: true },
+      });
+      expect(siblingAfter.statusCode).toBe('rejected');
+      expect(siblingAfter.eliminationStage).toBe('already-enrolled');
+      expect(
+        await prismaA.auditLog.count({
+          where: { resourceId: sibling.id, event: 'team-join-application.supersede' },
+        }),
+      ).toBe(1);
+      expect(
+        await prismaA.teamJoinApplication.count({
+          where: { memberId, deletedAt: null, statusCode: { in: LIVE_APPLICATION_STATUSES } },
+        }),
+      ).toBe(0);
       await assertNoLiveApplicationForEnrolledMember();
     },
     CASE_TIMEOUT_MS,

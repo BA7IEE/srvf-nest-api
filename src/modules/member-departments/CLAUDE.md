@@ -27,6 +27,17 @@
 - **`memberships.update`(PATCH)不写 audit** —— 沿 `role-binding.update` / `supervision-assignment.update` 既有先例:PATCH 只改类型 / 任期 / 原因等非建 / 终字段,不构成建 / 终事件。**这是设计决定,不是遗漏**,未来若发现"PATCH 没有 audit"不要顺手加上,先确认是否有新的建 / 终语义混进 PATCH。
 - 旧面 `MemberDepartmentsService` 与新面 `MembershipsService` 构造器均已注入 `AuditLogsService`(模块 `imports` 含 `AuditLogsModule`);两 service 各自定义本地 `AUDIT_RESOURCE_TYPE = 'membership'` 常量(不抽共享类,沿本仓 service 自包含范式)。
 
+- **入队身份闸(M2,2026-08-01)**:能改动 active PRIMARY 集合的写方,都会把「未入队志愿者」翻 false,
+  让该队员名下的 live 入队申请变成 frozen 行。六处均调
+  [`team-join/team-join-enrollment-invariant.ts`](../team-join/team-join-enrollment-invariant.ts) 的
+  `assertEnrollmentIdentityChangeAllowed`,有 live 申请即返 **28211**:
+  `member-departments.set`(含同 org 幂等分支,过近似)/ `remove` 无条件过闸;
+  `memberships.create` / `transfer` 仅 `membershipType=PRIMARY` 时过闸(其余类型进不了 activeDepts);
+  `memberships.update` 仅 `dto.membershipType !== undefined` 时过闸(任期字段被状态机不变式挡住,改不动判定);
+  `memberships.end` 无条件过闸(闸必须在读到归属行之前,那时还不知道它是不是 PRIMARY)。
+  **闸内先取 member 键**,故一律排在 `lockMemberLifecycle` 之前;反序会与 final join 互等。
+- **事务开法(M3)**:这六个写方改走 `runMemberLinearizedTransaction`(显式 `ReadCommitted` + 有界锁等待)。
+
 ## Risk points(不要做)
 
 - ❌ **不**给 `memberships.update`(PATCH)加 audit,除非有新设计决议(见上"Local facts")。

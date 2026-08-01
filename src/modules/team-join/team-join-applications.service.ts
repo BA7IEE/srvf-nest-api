@@ -6,7 +6,10 @@ import { PageResultDto } from '../../common/dto/pagination.dto';
 import type { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
-import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
+import {
+  lockMembersForWrite,
+  runMemberLinearizedTransaction,
+} from '../../common/prisma/member-advisory-lock.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
@@ -72,6 +75,53 @@ export class TeamJoinApplicationsService {
     return row;
   }
 
+  /**
+   * 「先取队员键、再锁申请行」的**唯一入口**(M1;并发复审 P1)。markGate / evaluate 共用。
+   *
+   * 为什么必须取 member 键:两者都按 `computeContribution` 的读数做状态迁移,而贡献值是
+   * **跨 Sheet 的 member 聚合** —— attendances 的 finalApprove / reopen 正是在同一把键下改它。
+   * 缺键时是教科书式 write skew:evaluate 读到「≥5 满足」的同时 reopen 把某张 Sheet 撤出
+   * approved,提交后留下一条 approved 却欠贡献的申请;markGate 侧则是拿旧读数把行按回
+   * `joining`,而 finalApprove 的里程碑快照恰好扫不到它 —— 两边都没插,通知永久丢失。
+   *
+   * 为什么顺序必须是 member 在前:final join 的锁图是 `member 键 → Application FOR UPDATE`
+   * (见 team-join-enrollment.service 步骤 0 与本目录 CLAUDE.md)。反过来写 —— 先锁 Application
+   * 行、再取 member 键 —— 就与 final join 恰好反向:终审持键等行锁、本事务持行锁等键,
+   * 稳定 40P01。**这不是风格问题,是死锁**。
+   *
+   * memberId 是不可变列(全仓无改写入口),所以锁前读它是安全的;仍在锁后复核一次,
+   * 万一不一致就 fail-closed —— 说明上面那把键锁错了人,继续下去等于没锁。
+   *
+   * 取到 FOR UPDATE 之后,行的状态由本事务独占,`findOrThrow` 的复读即 authoritative ——
+   * 因此这里**不再**需要 `claimAtStatus`(它的「与锁前读数一致」断言在没有锁前状态读的
+   * 流程里没有对象;保留它只会变成一句永真的死代码)。
+   */
+  private async lockMemberThenApplication(
+    tx: Prisma.TransactionClient,
+    id: string,
+  ): Promise<TeamJoinApplicationRow> {
+    const preview = await tx.teamJoinApplication.findFirst({
+      where: { id, deletedAt: null },
+      select: { memberId: true },
+    });
+    if (!preview) throw new BizException(BizCode.TEAM_JOIN_APPLICATION_NOT_FOUND);
+    await lockMembersForWrite(tx, [preview.memberId]);
+
+    const lockedRows = await tx.$queryRaw<Array<{ id: string; memberId: string }>>(Prisma.sql`
+      SELECT "id", "memberId"
+      FROM "team_join_applications"
+      WHERE "id" = ${id}
+        AND "deletedAt" IS NULL
+      FOR UPDATE
+    `);
+    const locked = lockedRows[0];
+    if (!locked) throw new BizException(BizCode.TEAM_JOIN_APPLICATION_NOT_FOUND);
+    if (locked.memberId !== preview.memberId) {
+      throw new BizException(BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
+    }
+    return this.findOrThrow(id, tx);
+  }
+
   // ============ admin 列表(可按 cycleId / statusCode 过滤;贡献值列表不算 = null)============
   async listForAdmin(
     query: PaginationQueryDto,
@@ -117,11 +167,10 @@ export class TeamJoinApplicationsService {
     now: Date,
   ): Promise<TeamJoinApplicationAdminDto> {
     await this.assertCanOrThrow(user, 'team-join-application.mark.gate');
-    return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw(
-        Prisma.sql`SELECT "id" FROM "team_join_applications" WHERE "id" = ${id} FOR UPDATE`,
-      );
-      const row = await this.findOrThrow(id, tx);
+    // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
+    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
+      // M1:member 键 → Application FOR UPDATE → 复读复核,与 final join 同序(见方法注释)。
+      const row = await this.lockMemberThenApplication(tx, id);
       // 仅 joining / pending_evaluation 可标(approved/joined/rejected 后门槛锁死)
       if (
         row.statusCode !== APP_STATUS_JOINING &&
@@ -194,22 +243,18 @@ export class TeamJoinApplicationsService {
     now: Date,
   ): Promise<TeamJoinApplicationAdminDto> {
     await this.assertCanOrThrow(user, 'team-join-application.evaluate.assessment');
-    return this.prisma.$transaction(async (tx) => {
-      const row = await this.findOrThrow(id, tx);
+    // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
+    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
+      // M1:member 键 → Application FOR UPDATE → 复读复核,与 final join 同序(见方法注释)。
+      // 状态判定全部落在锁后的这一行上,不再有「锁前读一次、锁后再断言一致」的两段式。
+      const lockedRow = await this.lockMemberThenApplication(tx, id);
       if (
-        row.statusCode !== APP_STATUS_PENDING_EVALUATION &&
-        row.statusCode !== APP_STATUS_JOINING
+        lockedRow.statusCode !== APP_STATUS_PENDING_EVALUATION &&
+        lockedRow.statusCode !== APP_STATUS_JOINING
       ) {
         throw new BizException(BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
       }
 
-      await claimAtStatus(tx, {
-        target: 'teamJoinApplication',
-        id: row.id,
-        expectedStatus: row.statusCode,
-        invalidStatusBiz: BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE,
-      });
-      const lockedRow = await this.findOrThrow(id, tx);
       // Preserve the public injectable effective-time contract while refusing a pre-lock instant:
       // production uses the time observed after lock acquisition, and a caller-supplied future
       // effective time remains authoritative (also fail-safe across a backward wall-clock jump).

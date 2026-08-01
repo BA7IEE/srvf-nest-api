@@ -22,92 +22,42 @@
 //  ③ **import 别名缺口**:选择器只认字面名 `IsOptional`,
 //     `import { IsOptional as Opt }` + `@Opt()` 直接绕过。自定义规则拿得到
 //     scope,顺着 binding 解析到**导入原名**,别名不再是逃生门。
-//     ⚠️ 这条缺口只在本规则内关闭;其余 17 条选择器的同类缺口仍登记在
+//     ⚠️ 这条缺口只在本规则(与同为自定义规则的 srvf/no-param-id-string)内关闭;
+//     其余 16 条选择器的同类缺口仍登记在
 //     `scripts/harness-eslint.selftest.ts` 的「已知缺口」段,不假装已解决。
+//
+// 📌 2026-08-01(M4)起,别名解析下沉到 `eslint-rules/decorator-identity.mjs`,
+//    并补上此前仍漏的三种写法:namespace(`@CV.IsOptional()`)、局部变量中转
+//    (`const Opt = IsOptional`)、re-export 转一手。判据不再校验来源模块 ——
+//    校验它正是 re-export 能漏过去的原因。
 //
 // 存量豁免走 `options[0].exempt`(`类名.字段名` 具名清单),真源是
 // `harness/is-optional-null-baseline.json`,由 `eslint.harness.mjs` 加载并分发。
 // 豁免**不做整文件通配**:往已在基线的文件新增一个违规字段照样红。
 // ============================================================================
 
+import { matchDecorator } from './decorator-identity.mjs';
+
 /**
- * 规则一句话 + AGENTS 出处 + 正确做法(三段式,与其余 17 条同格式)。
+ * 规则一句话 + AGENTS 出处 + 正确做法(三段式,与其余选择器同格式)。
  * 单独导出:`eslint.harness.mjs` 与自测都引**同一个字符串**,不抄第二份 ——
  * 抄第二份就会出现「规则改了、别处没跟上」的静默失效。
  */
 export const NULLABLE_IS_OPTIONAL_MESSAGE =
   '`@IsOptional()` 对 null 与 undefined **都**跳过后续校验,而本仓 service 判「传没传」用的是 `=== undefined` —— 显式 null 会穿过整个契约层(实测:审核 issuedAt:null → new Date(null) = 1970-01-01 落成正式事实;Policy/Certificate PATCH → 500 而非 400)。[AGENTS §1 校验] 正确做法:字段**真能清空** → 保留 @IsOptional() 并把 TS 类型标成 `T | null`(同时 @ApiPropertyOptional({ nullable: true, type: X }),让 DTO/OpenAPI/DB 三处一致);字段**只是可省略** → 改用 @OmittableOnly()(src/common/decorators/omittable-only.decorator.ts),null 稳定 400。⚠️ 判的是**顶层**类型:`Array<string | null>` / `{ v: string | null }` / `Promise<string | null>` 都**不算**可空。存量违规在 harness/is-optional-null-baseline.json 内逐条具名冻结,**只减不增**。';
 
-/** class-validator 里那个装饰器的**导入原名**(别名解析后与它比对)。 */
+/** class-validator 里那个装饰器的**导入原名**(别名 / namespace / 中转解析后与它比对)。 */
 const IS_OPTIONAL = 'IsOptional';
-const CLASS_VALIDATOR = 'class-validator';
 
 /**
- * 顺作用域链找标识符对应的 variable。
- *
- * 不用 `@eslint-community/eslint-utils` 的 findVariable:那是幻影依赖
- * (不在本仓 package.json 里,只是被 pnpm 提升后偶然解析得到)——
- * 提升策略一变,执法规则会在 CI 上直接崩,而不是安静地降级。
- * 本规则只用 eslint 自带的 scope 结构,零额外依赖。
- *
- * @param {import('eslint').Scope.Scope | null} startScope
- * @param {string} name
- * @returns {import('eslint').Scope.Variable | null}
- */
-function findVariable(startScope, name) {
-  for (let scope = startScope; scope; scope = scope.upper) {
-    const found = scope.set.get(name);
-    if (found) return found;
-  }
-  return null;
-}
-
-/**
- * 取变量的**导入原名**与来源模块;不是 import 绑定则返回 null。
- *
- * @param {import('eslint').Scope.Variable} variable
- * @returns {{ name: string | null, source: unknown } | null}
- */
-function importBindingOf(variable) {
-  for (const def of variable.defs) {
-    if (def.type !== 'ImportBinding') continue;
-    const spec = /** @type {any} */ (def.node);
-    const source = /** @type {any} */ (def.parent)?.source?.value;
-    if (spec.type === 'ImportSpecifier') {
-      const imported = spec.imported;
-      const name = imported.type === 'Identifier' ? imported.name : imported.value;
-      return { name, source };
-    }
-    // default / namespace 导入:拿不到具名原名,交给调用方按 null 处理
-    return { name: null, source };
-  }
-  return null;
-}
-
-/**
- * 这个装饰器是不是 class-validator 的 `@IsOptional`(**看穿 import 别名**)。
+ * 这个装饰器是不是 `@IsOptional`(**看穿别名 / namespace / 局部中转 / re-export**)。
+ * 解析逻辑与 srvf/no-param-id-string 共用一份,见 decorator-identity.mjs。
  *
  * @param {import('eslint').SourceCode} sourceCode
  * @param {any} decorator
  */
 function isIsOptionalDecorator(sourceCode, decorator) {
-  const expr = decorator.expression;
-  // `@IsOptional()`(调用)与 `@IsOptional`(裸引用)两种写法都要认
-  const callee = expr?.type === 'CallExpression' ? expr.callee : expr;
-  if (!callee || callee.type !== 'Identifier') return false;
-
-  const variable = findVariable(sourceCode.getScope(callee), callee.name);
-  const binding = variable ? importBindingOf(variable) : null;
-
-  if (binding && binding.name !== null) {
-    // 解析得到具名 import:**以导入原名为准**,本地叫什么无关紧要。
-    // 来源模块只在能拿到时才校验 —— 拿不到(re-export 链等)不因此漏判。
-    if (binding.source !== undefined && binding.source !== CLASS_VALIDATOR) return false;
-    return binding.name === IS_OPTIONAL;
-  }
-  // 解析不到 binding(全局 / 合成片段 / default 导入)→ 退回字面名。
-  // 宁可多判不可漏判:多判会被真可空类型或具名豁免正常放行。
-  return callee.name === IS_OPTIONAL;
+  return matchDecorator(sourceCode, decorator, IS_OPTIONAL).matched;
 }
 
 /**

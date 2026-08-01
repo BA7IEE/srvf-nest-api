@@ -5,7 +5,10 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
-import { lockMembersForWrite } from '../../common/prisma/member-advisory-lock.util';
+import {
+  lockMembersForWrite,
+  runMemberLinearizedTransaction,
+} from '../../common/prisma/member-advisory-lock.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
@@ -151,7 +154,8 @@ export class AppMeTeamJoinService {
     now: Date,
   ): Promise<AppTeamJoinApplicationDto> {
     const memberId = await this.assertCanUseAppOrThrow(currentUser);
-    return this.prisma.$transaction(async (tx) => {
+    // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
+    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
       // 并发审计 B-F4:「未入队」是**跨行**事实(Member.gradeCode + 归属任期),没有任何一行
       // 能锁住它。不取共同键时,一键入队可以整个跑在本方法的「读」与「建行」之间 ——
       // 写入发生的那一刻这个人已经是正式队员,却仍新增了一条进行中申请。
@@ -221,7 +225,18 @@ export class AppMeTeamJoinService {
     now: Date,
   ): Promise<AppTeamJoinApplicationDto> {
     const memberId = await this.assertCanUseAppOrThrow(currentUser);
-    return this.prisma.$transaction(async (tx) => {
+    // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
+    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
+      // M5(F5 双向 barrier 实测抓到的 40P01):本方法此前**不取**队员键,只 claim 申请行,
+      // 于是与 final join 形成真实死锁 ——
+      //   · 本事务持 Application 行锁,随后写 audit;audit_logs 的 actorUserId FK 要在
+      //     **本人 User 行**上取 `FOR KEY SHARE`,而 final join 的 lockLinkedUserLifecycle
+      //     正把那一行 `FOR UPDATE` 攥着;
+      //   · final join 同时在步骤 9 反向争本事务持有的那条 Application 行锁。
+      // 两条边闭环 = 40P01(实测两进程互等,barrier 不参与)。
+      // 修法与 markGate / evaluate / submit / join 同一条:**队员键在最前**,
+      // 全部 team-join 写路径由此同序。
+      await lockMembersForWrite(tx, [memberId]);
       const row = await tx.teamJoinApplication.findFirst({
         where: { id, memberId, deletedAt: null },
         include: APP_APPLICATION_INCLUDE,

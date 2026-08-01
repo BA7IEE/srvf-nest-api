@@ -337,6 +337,27 @@
 10. **刀D 掩码收紧(2026-07-11,⚠️ 回写陷阱二连)**:`member-profile` 无 `member-profile.read.sensitive` 时,`birthDate/landline/email/qq/wechat/heightCm/weightKg/bloodTypeCode/eyesight/medicalNotes` 一律返 **null**(不再明文;`documentNumber/mobile` 维持掩码串;`birthDate`/`email` 类型已放宽 nullable);`members/:memberId/emergency-contacts` 四出口对无 `emergency-contact.read.sensitive`(新码,绑 biz-admin;org-admin / group-manager 默认无)者掩码 姓名/两电话/住址。**编辑表单必须沿 v0.39.0 member-profile 首例范式**:hasPerms 镜像 sensitive 码,无权字段(值为 null 或含 `*`)提交前 delete,靠「不发=保留」——否则保存即用 null/掩码覆盖真值。连带小变更:开第二个 open 轮 40000→`28032`(招新)/`28231`(入队);入队标 gate 完成日填未来→`28243`(允许"今天");`MemberProfile` 新增 `detailedAddress`/`profileExtra`(MP-34/35,promote 搬入)**本刀无读出口**,docs-json 里找不到不是丢了。
 11. **四类通道设置提交后无需刷新后端缓存**:`sms-settings` / `wechat-settings` / `storage-settings` / `realname-settings` 的 PATCH/reset 写事务提交后，任一实例下一次 settings 读取直接获得 PostgreSQL 新值，无需 restart/reload/invalidate 或等待 60s；单次发送/OCR/存储 Effect 只使用其已解析的 provider 参数快照。Storage 的 `enabled=false` 会从下一次调用起拒绝普通业务 put/delete/sign/head/read（含历史 pinned locator 与自动 worker），已开始的 Effect 不被中断；只有经过人工复核的 manual maintenance 证据采集可继续读取历史对象。production 下 provider/bucket/region 不应在 UI 暴露为任意值：后端会强制 COS + 非空 bucket/region + 可解密凭证。
 
+12. **⚠️ 有进行中入队申请时,改身份/部门一律被拒(2026-08-01 复审 M2;新码 `28211`)**:
+    「未入队志愿者」是一条 live 入队申请(`joining`/`pending_evaluation`/`approved`)**唯一**的走通前提 ——
+    把它改掉,那条申请就成了没有任何终态通路的死行(evaluate 还能推到 approved,而一键入队从此永远 `28210`)。
+    因此**八个写方**在该队员有 live 申请时统一返 **`28211`**「该队员有进行中的入队申请,请先完成一键入队或综合评估淘汰,再改动其身份/部门」:
+    `PATCH admin/v1/members/:id`(改 `gradeCode`)· `PATCH admin/v1/members/:id/status`(→ INACTIVE / 离队)·
+    `PUT|DELETE admin/v1/members/:memberId/department` · `POST admin/v1/members/:memberId/memberships`(仅 `PRIMARY`)·
+    `PATCH …/memberships/:id`(仅带 `membershipType` 时)· `DELETE …/memberships/:id` ·
+    `POST admin/v1/memberships/transfer`(仅 `PRIMARY`)。
+    **前端要做的**:这几个表单的失败分支加 `28211` 提示,并在文案里给出**两条出路**——去「入队申请」页一键入队,或综合评估淘汰。
+    ⚠️ 过近似两处(可以直接照单提示,不必特判):`PUT …/department` 即使目标部门与当前相同(幂等无写)也会被拒;
+    `DELETE …/memberships/:id` 结束的即使是一条 SECONDARY 也会被拒。
+    **反向保证**:没有 live 申请、或该队员已经不是「未入队志愿者」(已入队 / 从来不是志愿者),行为**逐字不变**。
+13. **一键入队的 Swagger 文案已订正(2026-08-01)**:`POST admin/v1/team-join/applications/:id/join` 的 summary
+    此前写「综合评估本轮有效/延长期」,与运行时和 canonical 都不符 —— **`approved` 资格不随轮关闭失效**,
+    一键入队**不消费** `evaluationExtendedUntil`(该字段继续回显但仅存档,见 §5.3 下方注)。
+    文案与 contract snapshot / openapi 已同步;**行为一字未变**,只是 OpenAPI 不再替一条不存在的规则背书。
+14. **考勤终审可能返回 `40901`(2026-08-01 复审 M3)**:同一队员的写路径在数据库层排队,排队超过预算时
+    现在返 **`40901`**「该数据正被其他操作占用,请稍后重试」(HTTP 409),而不是此前的 `50000`「服务器内部错误」。
+    **前端要做的**:把 `40901` 当**可重试**处理(提示稍后重试 / 允许再点一次),不要当成服务故障弹红。
+    出现场景:同一队员的多张考勤单被同时终审、或终审与入队/改身份撞在一起。
+
 ### 3.1 登录与令牌接线(全端通用;2026-07-17 自 srvf-admin-web 对接 guide 归一)
 
 > 权威细则 = [`reference/auth-jwt-refresh.md`](../reference/auth-jwt-refresh.md)(P0-E 冻结,动它先过决策锁);本节只保留前端必须知道的行为语义。小程序/H5 令牌语义与此完全一致(见 [`miniapp.md §1.1`](miniapp.md));纯前端侧改哪些文件(`src/api/user.ts` 等)留在姊妹仓文档,不在本层。

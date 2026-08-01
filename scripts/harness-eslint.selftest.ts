@@ -62,6 +62,8 @@ const TS_IMPORTS = '@typescript-eslint/no-restricted-imports';
 const CORE_IMPORTS = 'no-restricted-imports';
 /** 第 18 条:独立 ruleId 的自定义规则(eslint-rules/no-nullable-is-optional.mjs)。 */
 const CUSTOM = 'srvf/no-nullable-is-optional';
+/** `:id` 走 IdParamDto:M4 升格出来的第二条自定义规则(eslint-rules/no-param-id-string.mjs)。 */
+const PARAM_ID = 'srvf/no-param-id-string';
 
 const CASES: readonly Case[] = [
   // ---- 鉴权 / 判权单轨 ----
@@ -117,18 +119,8 @@ const CASES: readonly Case[] = [
     code: 'const p = new ValidationPipe({});',
     expect: null,
   },
-  {
-    name: "@Param('id') 被禁(须走 IdParamDto)",
-    filename: 'src/modules/x/x.controller.ts',
-    code: "export class C { m(@Param('id') id: string) {} }",
-    expect: SYNTAX,
-  },
-  {
-    name: 'baseline 内的存量 controller 暂免 @Param(id)',
-    filename: 'src/modules/content/content-admin.controller.ts',
-    code: "export class C { m(@Param('id') id: string) {} }",
-    expect: null,
-  },
+  // 📌 `@Param('id')` 的用例已随规则升格挪到下方 PARAM_ID 段(M4)——
+  //    它不再是 no-restricted-syntax 的一条选择器。
 
   // ---- Prisma / 软删 ----
   {
@@ -386,6 +378,93 @@ const CASES: readonly Case[] = [
     expect: null,
   },
 
+  // ---- M4 三组别名对抗样例(2026-08-01 复审点名;此前三种写法**全部**能绕过)----
+  // 别名解析上一版只认「Identifier + 具名 import + 来源模块 === class-validator」,
+  // 于是:namespace 中转不是 Identifier(直接 return false)、局部变量中转不是
+  // ImportBinding(退回字面名 `Opt` 判不中)、re-export 的来源模块对不上(显式 return false)。
+  // 三条都是**静默放行**,而自测输出与「防线完整」一模一样。
+  {
+    name: 'M4 别名 ①:namespace `@CV.IsOptional()` 被识破',
+    filename: 'src/modules/x/x.dto.ts',
+    code: "import * as CV from 'class-validator';\nexport class D { @CV.IsOptional() foo?: string; }",
+    expect: CUSTOM,
+  },
+  {
+    name: 'M4 别名 ②:局部变量中转 `const Opt = IsOptional` 被识破',
+    filename: 'src/modules/x/x.dto.ts',
+    code: "import { IsOptional } from 'class-validator';\nconst Opt = IsOptional;\nexport class D { @Opt() foo?: string; }",
+    expect: CUSTOM,
+  },
+  {
+    name: 'M4 别名 ③:re-export 转一手(来源模块不是 class-validator)被识破',
+    filename: 'src/modules/x/x.dto.ts',
+    code: "import { IsOptional } from './somewhere-reexporting';\nexport class D { @IsOptional() foo?: string; }",
+    expect: CUSTOM,
+  },
+  {
+    name: 'M4 别名反向:namespace 上取别的成员不误报(`@CV.IsString()`)',
+    filename: 'src/modules/x/x.dto.ts',
+    code: "import * as CV from 'class-validator';\nexport class D { @CV.IsString() foo?: string; }",
+    expect: null,
+  },
+
+  // ---- `:id` 走 IdParamDto(M4:第 17 条升格为独立 ruleId 的自定义规则)----
+  {
+    name: "裸 @Param('id') 被禁(须走 IdParamDto)",
+    filename: 'src/modules/x/x.controller.ts',
+    code: "export class C { m(@Param('id') id: string) {} }",
+    expect: PARAM_ID,
+  },
+  {
+    name: '@Param() 整对象走 DTO 放行(本条只拦裸 `id` 键)',
+    filename: 'src/modules/x/x.controller.ts',
+    code: 'export class C { m(@Param() params: IdParamDto) {} }',
+    expect: null,
+  },
+  {
+    name: "@Param('memberId') 放行(本条只管 `:id`)",
+    filename: 'src/modules/x/x.controller.ts',
+    code: "export class C { m(@Param('memberId') memberId: string) {} }",
+    expect: null,
+  },
+  {
+    name: "非 controller 文件不判 @Param('id')(实际不可能出现,范围写死在 (l) 块)",
+    filename: 'src/modules/x/x.service.ts',
+    code: "export class C { m(@Param('id') id: string) {} }",
+    expect: null,
+  },
+  {
+    name: "M4 别名:`import { Param as P }` + @P('id') 被识破",
+    filename: 'src/modules/x/x.controller.ts',
+    code: "import { Param as P } from '@nestjs/common';\nexport class C { m(@P('id') id: string) {} }",
+    expect: PARAM_ID,
+  },
+  {
+    name: '清单内的存量身份暂免(TeamJoinCyclesController.detail.id)',
+    filename: 'src/modules/team-join/team-join-cycles.controller.ts',
+    code: "export class TeamJoinCyclesController { detail(@Param('id') id: string) {} }",
+    expect: null,
+  },
+  // 这两条是「整文件豁免 → 具名豁免」升格的**全部价值**:上一版两条都是绿的。
+  {
+    name: '清单内文件**新增**一个裸 `:id` 照样红(清单只能缩不能涨)',
+    filename: 'src/modules/team-join/team-join-cycles.controller.ts',
+    code: "export class TeamJoinCyclesController { brandNewMethod(@Param('id') id: string) {} }",
+    expect: PARAM_ID,
+  },
+  {
+    name: '同名方法挪到另一个类照样红(身份绑「类名.方法名.参数名」)',
+    filename: 'src/modules/team-join/team-join-cycles.controller.ts',
+    code: "export class NotFrozenController { detail(@Param('id') id: string) {} }",
+    expect: PARAM_ID,
+  },
+  {
+    name: '清单内文件不因被豁免而丢掉别的规则(裸 @ApiOkResponse 照样红)',
+    filename: 'src/modules/team-join/team-join-cycles.controller.ts',
+    code: 'export class C { @ApiOkResponse({ type: D }) m() {} }',
+    expect: SYNTAX,
+  },
+
   // ══════════════════════════════════════════════════════════════════════════
   // 已知缺口:对抗样例(2026-07-29 跨模型评审 finding 6,实测 5/5 全部绕过)
   //
@@ -517,15 +596,30 @@ async function main(): Promise<void> {
   const {
     harnessConfigBlocks,
     HARNESS_SYNTAX,
-    IS_OPTIONAL_NULL_BASELINE,
     NULLABLE_IS_OPTIONAL_MESSAGE,
-    parseIsOptionalNullBaseline,
+    PARAM_ID_STRING_MESSAGE,
+    RATCHET_BASELINES,
+    RATCHET_REGISTRY,
+    parseRatchetBaseline,
+    parseRatchetRegistry,
   } = (await import('../eslint.harness.mjs')) as {
     HARNESS_SYNTAX: Record<string, { message: string }>;
     harnessConfigBlocks: unknown[];
-    IS_OPTIONAL_NULL_BASELINE: Map<string, readonly string[]>;
     NULLABLE_IS_OPTIONAL_MESSAGE: string;
-    parseIsOptionalNullBaseline: (text: string) => Map<string, string[]>;
+    PARAM_ID_STRING_MESSAGE: string;
+    RATCHET_BASELINES: Map<string, Map<string, readonly string[]>>;
+    RATCHET_REGISTRY: ReadonlyArray<{
+      id: string;
+      baseline: string;
+      rule: string;
+      symbolShape: string;
+      why: string;
+    }>;
+    parseRatchetBaseline: (
+      text: string,
+      options?: { path?: string; symbolShape?: string },
+    ) => Map<string, string[]>;
+    parseRatchetRegistry: (text: string) => unknown[];
   };
   const eslint = new ESLint({
     cwd: process.cwd(),
@@ -575,7 +669,8 @@ async function main(): Promise<void> {
         m.ruleId === SYNTAX ||
         m.ruleId === TS_IMPORTS ||
         m.ruleId === CORE_IMPORTS ||
-        m.ruleId === CUSTOM,
+        m.ruleId === CUSTOM ||
+        m.ruleId === PARAM_ID,
     );
 
     if (c.expect === null) {
@@ -610,8 +705,8 @@ async function main(): Promise<void> {
     const wanted = harnessHits.filter((m) => m.ruleId === c.expect);
     for (const m of wanted) {
       // 自定义规则本身就是独立 ruleId,不必再靠 message 反查是哪条
-      if (m.ruleId === CUSTOM) {
-        coveredSelectors.add(CUSTOM);
+      if (m.ruleId === CUSTOM || m.ruleId === PARAM_ID) {
+        coveredSelectors.add(m.ruleId);
         continue;
       }
       const id = messageToId.get(m.message);
@@ -630,15 +725,18 @@ async function main(): Promise<void> {
   }
 
   // 覆盖率闭环:每条规则都必须至少被一个正向用例真实触发过。
-  // 闭环数 = 17 条 no-restricted-syntax 选择器 + 1 条自定义规则 = 18(第 18 条改成
-  // 独立 ruleId 后**总数不变**,只是它不再从 HARNESS_SYNTAX 里数出来)。
-  const allIds = [...Object.keys(HARNESS_SYNTAX), CUSTOM];
+  // 闭环数 = 16 条 no-restricted-syntax 选择器 + 2 条自定义规则 = 18
+  // (M4 把第 17 条 `@Param('id')` 也升格成独立 ruleId 后**总数仍是 18**,
+  //  只是它不再从 HARNESS_SYNTAX 里数出来 —— 与第 18 条当初的处理同源)。
+  const CUSTOM_RULES = [CUSTOM, PARAM_ID];
+  const allIds = [...Object.keys(HARNESS_SYNTAX), ...CUSTOM_RULES];
   const uncovered = allIds.filter((id) => !coveredSelectors.has(id));
   if (uncovered.length === 0) {
     passed++;
     console.log(
       `✓ 规则覆盖闭环:${allIds.length}/${allIds.length} 条均有正向用例真实触发` +
-        `(${allIds.length - 1} 条 no-restricted-syntax 选择器 + 1 条自定义规则)`,
+        `(${allIds.length - CUSTOM_RULES.length} 条 no-restricted-syntax 选择器 + ` +
+        `${CUSTOM_RULES.length} 条自定义规则)`,
     );
   } else {
     failures.push(
@@ -664,51 +762,68 @@ async function main(): Promise<void> {
   // 取名」的平行实现已删除。「两把刻错的尺子读数相同」是本仓 2026-07-29 跨模型
   // 评审的原话,不再重蹈。
   {
-    const { srvfEslintPlugin } = (await import('../eslint-rules/no-nullable-is-optional.mjs')) as {
-      srvfEslintPlugin: unknown;
-    };
-    const scanner = new ESLint({
-      cwd: process.cwd(),
-      overrideConfigFile: true,
-      allowInlineConfig: false,
-      overrideConfig: [
-        {
-          files: ['**/*.ts'],
-          plugins: { '@typescript-eslint': tsPlugin as never, srvf: srvfEslintPlugin as never },
-          languageOptions: {
-            parser: tsParser as never,
-            ecmaVersion: 'latest',
-            sourceType: 'module',
-          },
-          // identityOnly:把上报文案换成身份串本身,自测据此直接拿到「类名.字段名」
-          rules: { [CUSTOM]: ['error', { identityOnly: true }] },
-        },
-      ] as never,
-    });
-    const results = await scanner.lintFiles(['src/**/*.ts', 'test/**/*.ts', 'prisma/**/*.ts']);
     const repoRoot = path.resolve(__dirname, '..');
+    const srvfPlugin = {
+      rules: {
+        'no-nullable-is-optional': (
+          await import('../eslint-rules/no-nullable-is-optional.mjs')
+        ).noNullableIsOptional,
+        'no-param-id-string': (await import('../eslint-rules/no-param-id-string.mjs'))
+          .noParamIdString,
+      },
+    };
 
-    // ⚠️ 刻意**不去重**:同一身份命中多次本身就是要抓的东西之一(见 accountRatchet ①)。
-    const live = new Map<string, string[]>();
-    for (const r of results) {
-      const ids = r.messages.filter((m) => m.ruleId === CUSTOM).map((m) => m.message);
-      if (ids.length === 0) continue;
-      live.set(path.relative(repoRoot, r.filePath), ids);
-    }
+    // ⚠️ **按注册表遍历**,不写死任何一条棘轮:加一条棘轮 = 注册表加一行,
+    //    本段自动开始对账。上一版只对第 18 条对账,于是第二条棘轮落地时默认无人核对。
+    for (const ratchet of RATCHET_REGISTRY) {
+      const scanner = new ESLint({
+        cwd: process.cwd(),
+        overrideConfigFile: true,
+        allowInlineConfig: false,
+        overrideConfig: [
+          {
+            files: ['**/*.ts'],
+            plugins: { '@typescript-eslint': tsPlugin as never, srvf: srvfPlugin as never },
+            languageOptions: {
+              parser: tsParser as never,
+              ecmaVersion: 'latest',
+              sourceType: 'module',
+            },
+            // identityOnly:把上报文案换成身份串本身,自测据此直接拿到身份
+            rules: { [ratchet.rule]: ['error', { identityOnly: true }] },
+          },
+        ] as never,
+      });
+      const results = await scanner.lintFiles(['src/**/*.ts', 'test/**/*.ts', 'prisma/**/*.ts']);
 
-    const problems = accountRatchet(live, IS_OPTIONAL_NULL_BASELINE);
-    const total = [...live.values()].reduce((n, ids) => n + ids.length, 0);
-    if (problems.length === 0) {
-      passed++;
-      console.log(
-        `✓ 第 18 条棘轮:基线与现状逐条一致(${total} 处 / ${live.size} 文件,身份全局唯一,只减不增)`,
-      );
-    } else {
-      failures.push(
-        `✗ 第 18 条棘轮 —— 基线与现状不一致:\n${problems.join('\n')}\n` +
-          '  基线是「存量欠账清单」,不是许可证:修好一条就删一行,新增一条一律不许加行。\n' +
-          '  改法见 harness/is-optional-null-baseline.json 顶部 _comment。',
-      );
+      // ⚠️ 刻意**不去重**:同一身份命中多次本身就是要抓的东西之一(见 accountRatchet ①)。
+      const live = new Map<string, string[]>();
+      for (const r of results) {
+        const ids = r.messages.filter((m) => m.ruleId === ratchet.rule).map((m) => m.message);
+        if (ids.length === 0) continue;
+        live.set(path.relative(repoRoot, r.filePath), ids);
+      }
+
+      const baseline = RATCHET_BASELINES.get(ratchet.id);
+      if (!baseline) {
+        failures.push(`✗ 棘轮 ${ratchet.id} —— 注册表登记了它,但基线没加载出来`);
+        continue;
+      }
+      const problems = accountRatchet(live, baseline);
+      const total = [...live.values()].reduce((n, ids) => n + ids.length, 0);
+      if (problems.length === 0) {
+        passed++;
+        console.log(
+          `✓ 棘轮 ${ratchet.id}(${ratchet.rule}):基线与现状逐条一致` +
+            `(${total} 处 / ${live.size} 文件,身份全局唯一,只减不增)`,
+        );
+      } else {
+        failures.push(
+          `✗ 棘轮 ${ratchet.id} —— 基线与现状不一致:\n${problems.join('\n')}\n` +
+            '  基线是「存量欠账清单」,不是许可证:修好一条就删一行,新增一条一律不许加行。\n' +
+            `  改法见 ${ratchet.baseline} 顶部 _comment。`,
+        );
+      }
     }
 
     // ── M3 / M9:对账逻辑本身的阳性对照(故意喂坏数据,断言它确实会红)──────────
@@ -759,7 +874,10 @@ async function main(): Promise<void> {
     const rejects = (name: string, code: string, doc: unknown): void => {
       let thrown: string | null = null;
       try {
-        parseIsOptionalNullBaseline(typeof doc === 'string' ? doc : JSON.stringify(doc));
+        parseRatchetBaseline(typeof doc === 'string' ? doc : JSON.stringify(doc), {
+          path: 'harness/is-optional-null-baseline.json',
+          symbolShape: 'class-field',
+        });
       } catch (err) {
         thrown = String(err);
       }
@@ -826,7 +944,7 @@ async function main(): Promise<void> {
 
     // 反向:合法文档必须**通过**(否则上面全绿只是因为它什么都拒)
     try {
-      const parsed = parseIsOptionalNullBaseline(JSON.stringify(ok));
+      const parsed = parseRatchetBaseline(JSON.stringify(ok), { symbolShape: 'class-field' });
       if (parsed.get('src/a.dto.ts')?.[0] === 'A.b') {
         passed++;
         console.log('✓ M10 反向:合法基线文档正常加载(不是「什么都拒」)');
@@ -835,6 +953,129 @@ async function main(): Promise<void> {
       }
     } catch (err) {
       failures.push(`✗ M10 反向 —— 合法文档被拒:${String(err)}`);
+    }
+
+    // ── symbolShape:身份粒度必须按棘轮而定,且**不可互串**(M4)────────────────
+    // 两条棘轮的身份精度不同(`类名.字段名` vs `类名.方法名.参数名`)。
+    // 若解析器把两种形状都放行,一条 `Class.field` 就能冒充 param 棘轮的身份 ——
+    // 而它匹配不到任何真实节点,于是变成一行永远陈旧、却看起来「已登记」的豁免。
+    {
+      // ⚠️ 这条必须用 param 棘轮的 shape 去解析(上面的 rejects 固定用 class-field),
+      // 否则验的是另一条棘轮,断言看着绿其实什么都没证明。
+      let thrown: string | null = null;
+      try {
+        parseRatchetBaseline(
+          JSON.stringify({ version: 1, entries: [{ file: 'src/a.controller.ts', symbol: 'A.b' }] }),
+          { path: 'harness/legacy-param-id-baseline.json', symbolShape: 'class-method-param' },
+        );
+      } catch (err) {
+        thrown = String(err);
+      }
+      if (thrown !== null && thrown.includes('] E4 ')) {
+        passed++;
+        console.log('✓ M4·E4 param 棘轮拒收「类名.字段名」(粒度不够)');
+      } else {
+        failures.push(
+          '✗ M4·E4 param 棘轮拒收「类名.字段名」—— 期望 E4,实际:' + (thrown ?? '(通过了)'),
+        );
+      }
+    }
+    try {
+      const parsed = parseRatchetBaseline(
+        JSON.stringify({
+          version: 1,
+          entries: [{ file: 'src/a.controller.ts', symbol: 'AController.detail.id' }],
+        }),
+        { symbolShape: 'class-method-param' },
+      );
+      if (parsed.get('src/a.controller.ts')?.[0] === 'AController.detail.id') {
+        passed++;
+        console.log('✓ M4 反向:param 棘轮的三段式身份正常加载');
+      } else {
+        failures.push('✗ M4 反向 —— param 棘轮合法文档解析结果不对');
+      }
+    } catch (err) {
+      failures.push(`✗ M4 反向 —— param 棘轮合法文档被拒:${String(err)}`);
+    }
+    rejects('M4·E4 null 棘轮拒收三段式身份(反向,防两种形状互串)', 'E4', {
+      ...ok,
+      entries: [{ file: 'src/a.dto.ts', symbol: 'A.b.c' }],
+    });
+  }
+
+  // ── 注册表本身的格式约束:它是「有哪些棘轮」的唯一真相源 ─────────────────────
+  //
+  // 为什么要逐条验:一条写歪的注册行会让某条棘轮**静默退出**保护范围 ——
+  // lint 不吭声(它只按注册表加载得到的东西执法),裁判也不吭声(它遍历同一份表)。
+  // 与基线文件同理:加载即抛,响亮地坏好过静默地坏。
+  {
+    const okRegistry = {
+      version: 1,
+      ratchets: [
+        {
+          id: 'x',
+          baseline: 'harness/x.json',
+          rule: 'srvf/x',
+          symbolShape: 'class-field',
+          why: 'w',
+        },
+      ],
+    };
+    const rejectsRegistry = (name: string, doc: unknown): void => {
+      let thrown: string | null = null;
+      try {
+        parseRatchetRegistry(typeof doc === 'string' ? doc : JSON.stringify(doc));
+      } catch (err) {
+        thrown = String(err);
+      }
+      if (thrown === null) {
+        failures.push(
+          `✗ ${name} —— 期望加载即抛,实际**通过了**。\n` +
+            '  含义:注册表可以被写歪,而写歪意味着某条棘轮静默退出单调性保护。',
+        );
+      } else {
+        passed++;
+        console.log(`✓ ${name}`);
+      }
+    };
+    rejectsRegistry('M4·注册表 非法 JSON 被拒', '{oops');
+    rejectsRegistry('M4·注册表 ratchets 为空数组被拒(清空 = 全仓棘轮集体退保)', {
+      ...okRegistry,
+      ratchets: [],
+    });
+    rejectsRegistry('M4·注册表 缺 baseline 字段被拒', {
+      ...okRegistry,
+      ratchets: [{ id: 'x', rule: 'srvf/x', symbolShape: 'class-field', why: 'w' }],
+    });
+    rejectsRegistry('M4·注册表 未知 symbolShape 被拒', {
+      ...okRegistry,
+      ratchets: [{ ...okRegistry.ratchets[0], symbolShape: 'whatever' }],
+    });
+    rejectsRegistry('M4·注册表 id 重复被拒', {
+      ...okRegistry,
+      ratchets: [okRegistry.ratchets[0], okRegistry.ratchets[0]],
+    });
+    rejectsRegistry('M4·注册表 baseline 逃出 harness/ 被拒', {
+      ...okRegistry,
+      ratchets: [{ ...okRegistry.ratchets[0], baseline: '../elsewhere.json' }],
+    });
+    rejectsRegistry('M4·注册表 未知顶层键被拒', { ...okRegistry, allowAnything: true });
+
+    // 真实注册表必须至少登记这两条 —— 少一条就等于某条棘轮悄悄退出了保护。
+    const registeredIds = RATCHET_REGISTRY.map((r) => r.id).sort();
+    if (
+      registeredIds.includes('is-optional-null') &&
+      registeredIds.includes('legacy-param-id') &&
+      RATCHET_BASELINES.size === RATCHET_REGISTRY.length
+    ) {
+      passed++;
+      console.log(
+        `✓ M4 注册表:${RATCHET_REGISTRY.length} 条棘轮全部登记且基线可加载(${registeredIds.join(', ')})`,
+      );
+    } else {
+      failures.push(
+        `✗ M4 注册表 —— 登记不全:ratchets=[${registeredIds.join(', ')}], baselines=${RATCHET_BASELINES.size}`,
+      );
     }
   }
 
@@ -955,8 +1196,9 @@ async function main(): Promise<void> {
       '  成因:no-restricted-syntax 匹配的是语法树的**字面形状**,不解析 import binding、\n' +
         '        不做变量指向分析。原写法拦得住,换个名字就拦不住。\n' +
         '  定性:AGENTS §1 已把该层表述为「**字面语法拦截**」而非「机器执法」。\n' +
-        '  处置:自定义规则已在**第 18 条**落地并顺手关掉了它的别名缺口\n' +
-        '        (srvf/no-nullable-is-optional 解析 import binding);上面 5 条仍是\n' +
+        '  处置:**两条自定义规则**(srvf/no-nullable-is-optional、srvf/no-param-id-string)\n' +
+        '        已共用 eslint-rules/decorator-identity.mjs 关掉别名 / namespace / 局部中转 /\n' +
+        '        re-export 四种写法(M4,2026-08-01,各有正向用例);上面 5 条仍是\n' +
         '        no-restricted-syntax 选择器,缺口原样存在,改写它们未立项。',
     );
   }

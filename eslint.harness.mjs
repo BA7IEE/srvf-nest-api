@@ -20,16 +20,23 @@
 
 import { readFileSync } from 'node:fs';
 
-import {
-  NULLABLE_IS_OPTIONAL_MESSAGE,
-  srvfEslintPlugin,
-} from './eslint-rules/no-nullable-is-optional.mjs';
+import { NULLABLE_IS_OPTIONAL_MESSAGE, noNullableIsOptional } from './eslint-rules/no-nullable-is-optional.mjs';
+import { PARAM_ID_STRING_MESSAGE, noParamIdString } from './eslint-rules/no-param-id-string.mjs';
 
-// 第 18 条的 ruleId。它**不是** no-restricted-syntax 的一条选择器,而是本仓唯一的
-// 自定义规则(eslint-rules/no-nullable-is-optional.mjs)。独立 ruleId 是刻意的:
-// 18 条共用一个 ruleId 时,一句 `// eslint-disable-next-line no-restricted-syntax`
-// 会把该行的**全部 18 条**一起关掉(第五轮评审 J2·L3 实测)。
+// 两条自定义规则的 ruleId。它们**不是** no-restricted-syntax 的选择器,而是各自独立的
+// 规则模块。独立 ruleId 是刻意的:共用一个 ruleId 时,一句
+// `// eslint-disable-next-line no-restricted-syntax` 会把该行的**全部**条目一起关掉
+// (第五轮评审 J2·L3 实测)。
 const NULLABLE_IS_OPTIONAL_RULE = 'srvf/no-nullable-is-optional';
+const PARAM_ID_STRING_RULE = 'srvf/no-param-id-string';
+
+/** 供 flat config 以 `plugins: { srvf: srvfEslintPlugin }` 挂载(两条规则同一个 plugin 命名空间)。 */
+const srvfEslintPlugin = {
+  rules: {
+    'no-nullable-is-optional': noNullableIsOptional,
+    'no-param-id-string': noParamIdString,
+  },
+};
 
 // ===================== Harness 3.0 · P2 执法迁移 =====================
 // 规则语义零放宽,只换执法方式。message 三段式 = 规则一句话 + AGENTS 出处 + 正确做法。
@@ -120,11 +127,9 @@ const HARNESS_SYNTAX = {
     message:
       '判权/身份路径禁定时器(TTL / 失效链的入口)。[AGENTS §2 身份/权限不缓存] 正确做法:不缓存,不定时刷新。',
   },
-  'no-param-id-string': {
-    selector: "Decorator[expression.callee.name='Param'][expression.arguments.0.value='id']",
-    message:
-      "`:id` 一律走 IdParamDto:@Param('id') id: string 绕过 DTO 白名单,长度/类型全不校验。[AGENTS §1 校验] 正确做法:@Param() params: IdParamDto(src/common/dto/id-param.dto.ts),取 params.id。存量 19 个 controller 已在 LEGACY_PARAM_ID_CONTROLLERS 冻结(只减不增),新文件一律禁止。",
-  },
+  // 📌 第 17 条(`@Param('id')`)已于 2026-08-01(M4)升格为独立 ruleId 的自定义规则
+  //    srvf/no-param-id-string。原因:整文件豁免 + 一句没有执行位的「只减不增」=
+  //    往名单内 controller 新增一个照样全绿。见 eslint-rules/no-param-id-string.mjs。
 };
 
 const syntax = (...ids) => ['error', ...ids.map((id) => HARNESS_SYNTAX[id])];
@@ -150,30 +155,6 @@ const BASE = [
 // (硬删只判 src:test 造数/清场硬删实测 209 处合法,prisma/seed 亦然)
 const SRC = [...BASE, 'no-process-env', 'no-hard-delete-tx', 'no-hard-delete-this-prisma'];
 
-// BASELINE:存量 71 处 @Param('id') 所在的 19 个 controller。只减不增;
-// 某文件清零后删掉对应行,规则自动对该文件生效。清零全部后整块删除。
-const LEGACY_PARAM_ID_CONTROLLERS = [
-  'src/modules/certificates/certificates.controller.ts',
-  'src/modules/content/content-admin.controller.ts',
-  'src/modules/content/content-app.controller.ts',
-  'src/modules/content/content-public.controller.ts',
-  'src/modules/emergency-contacts/emergency-contacts.controller.ts',
-  'src/modules/insurances/controllers/app-me-insurances.controller.ts',
-  'src/modules/insurances/team-insurance-policies.controller.ts',
-  'src/modules/member-departments/memberships-admin.controller.ts',
-  'src/modules/member-departments/memberships.controller.ts',
-  'src/modules/notifications/notification-admin.controller.ts',
-  'src/modules/notifications/notification-app.controller.ts',
-  'src/modules/position-assignments/position-assignments.controller.ts',
-  'src/modules/recruitment/recruitment-applications.admin.controller.ts',
-  'src/modules/recruitment/recruitment-cycles.controller.ts',
-  'src/modules/role-bindings/role-bindings.controller.ts',
-  'src/modules/supervision-assignments/supervision-assignments.controller.ts',
-  'src/modules/team-join/team-join-applications.admin.controller.ts',
-  'src/modules/team-join/team-join-applications.app.controller.ts',
-  'src/modules/team-join/team-join-cycles.controller.ts',
-];
-
 // ── 第 18 条的存量基线:唯一机读源 = harness/is-optional-null-baseline.json ──────
 //
 // 为什么从本文件抽成独立 JSON(第五轮评审 J2 · L1):base-trusted 裁判要读
@@ -192,14 +173,31 @@ const LEGACY_PARAM_ID_CONTROLLERS = [
 //   · 修好一个存量却忘了删基线行     → `pnpm harness:selftest` 当场红(陈旧行 = 基线在说谎)
 //   · **同一个 PR 里新增违规 + 顺手把它加进基线** → base-trusted 裁判硬拦
 //     (前两道都拦不住这一种:lint 看的是 PR 自己的基线,自然放行)
-const BASELINE_PATH = 'harness/is-optional-null-baseline.json';
+//
+// 📌 2026-08-01(M4)起,基线**不止一份**:全部登记在 harness/ratchet-registry.json,
+//    本文件按注册表遍历加载,base-trusted 裁判按同一份注册表遍历裁决。加一条棘轮 =
+//    加一行注册,两侧都不改代码 —— 上一版把唯一那条基线的路径硬编码在裁判里,
+//    于是第二条棘轮一落地就默认不受单调性保护。
+const RATCHET_REGISTRY_PATH = 'harness/ratchet-registry.json';
 
 /** 只允许这三个顶层键。多一个都拒 —— 防「加个 allowGlob: true 就放宽」那类演化。 */
 const BASELINE_TOP_KEYS = new Set(['_comment', 'version', 'entries']);
 /** glob 元字符:任何一个混进 file,一条具名豁免就变成整片豁免。 */
 const BASELINE_GLOB_META_RE = /[*?[\]{}!()+@|]/;
-/** `类名.字段名` —— 恰好一个点,两侧都是合法 JS 标识符。 */
-const BASELINE_SYMBOL_RE = /^[A-Za-z_$][A-Za-z0-9_$]*\.[A-Za-z_$][A-Za-z0-9_$]*$/;
+const IDENT = '[A-Za-z_$][A-Za-z0-9_$]*';
+/**
+ * symbol 的形状按棘轮而定 —— 身份精度不同,能豁免的粒度就不同:
+ *   · class-field        `类名.字段名`        (第 18 条:同文件多个 DTO 类里同名字段要分得开)
+ *   · class-method-param `类名.方法名.参数名` (`:id`:同一个类里多个方法各有一个 id 参数)
+ */
+const BASELINE_SYMBOL_SHAPES = {
+  'class-field': new RegExp(`^${IDENT}\\.${IDENT}$`),
+  'class-method-param': new RegExp(`^${IDENT}\\.${IDENT}\\.${IDENT}$`),
+};
+const BASELINE_SYMBOL_SHAPE_LABELS = {
+  'class-field': '「类名.字段名」',
+  'class-method-param': '「类名.方法名.参数名」',
+};
 
 /**
  * 解析并**严格校验**基线文档,返回 `Map<file, symbol[]>`。
@@ -213,12 +211,17 @@ const BASELINE_SYMBOL_RE = /^[A-Za-z_$][A-Za-z0-9_$]*\.[A-Za-z_$][A-Za-z0-9_$]*$
  * 六条约束逐条都要有一个「这样写会被拒」的证据,而不是靠读代码相信。
  *
  * @param {string} text
+ * @param {{ path?: string, symbolShape?: keyof typeof BASELINE_SYMBOL_SHAPES }} [options]
  * @returns {Map<string, string[]>}
  */
-function parseIsOptionalNullBaseline(text) {
+function parseRatchetBaseline(text, options = {}) {
+  const path = options.path ?? '<baseline>';
+  const symbolShape = options.symbolShape ?? 'class-field';
+  const symbolRe = BASELINE_SYMBOL_SHAPES[symbolShape];
   const fail = (code, msg) => {
-    throw new Error(`[${BASELINE_PATH}] ${code} ${msg}`);
+    throw new Error(`[${path}] ${code} ${msg}`);
   };
+  if (!symbolRe) fail('E0', `未知 symbolShape ${JSON.stringify(symbolShape)}`);
 
   let doc;
   try {
@@ -274,9 +277,12 @@ function parseIsOptionalNullBaseline(text) {
         `${at} file 必须是仓库内的相对 POSIX 路径(禁 ../ 绝对路径 反斜杠 空段):${JSON.stringify(file)}`,
       );
     }
-    // E4 symbol 必须是「类名.字段名」 —— 只写字段名区分不开同文件的多个 DTO 类
-    if (!BASELINE_SYMBOL_RE.test(symbol)) {
-      fail('E4', `${at} symbol 必须是「类名.字段名」:${JSON.stringify(symbol)}`);
+    // E4 symbol 必须符合本棘轮的身份形状 —— 粒度不够就区分不开「已冻结的那个」和「新加的那个」
+    if (!symbolRe.test(symbol)) {
+      fail(
+        'E4',
+        `${at} symbol 必须是${BASELINE_SYMBOL_SHAPE_LABELS[symbolShape]}:${JSON.stringify(symbol)}`,
+      );
     }
     // E5 (file, symbol) 全局唯一 —— 重复行会让「删一条」看起来像已经删干净
     const key = `${file} ${symbol}`;
@@ -296,9 +302,69 @@ function parseIsOptionalNullBaseline(text) {
   return byFile;
 }
 
-const IS_OPTIONAL_NULL_BASELINE = parseIsOptionalNullBaseline(
-  readFileSync(new URL(`./${BASELINE_PATH}`, import.meta.url), 'utf-8'),
+/**
+ * 解析并**严格校验**注册表本身。它是「有哪些棘轮」的唯一真相源,松一点都不行:
+ * 一条写歪的注册行会让某条棘轮静默退出保护范围,而 lint 与裁判都不会吭声。
+ *
+ * @param {string} text
+ * @returns {Array<{ id: string, baseline: string, rule: string, symbolShape: string, why: string }>}
+ */
+function parseRatchetRegistry(text) {
+  const fail = (msg) => {
+    throw new Error(`[${RATCHET_REGISTRY_PATH}] ${msg}`);
+  };
+  let doc;
+  try {
+    doc = JSON.parse(text);
+  } catch (err) {
+    fail(`不是合法 JSON:${String(err)}`);
+  }
+  if (doc === null || typeof doc !== 'object' || Array.isArray(doc)) fail('顶层必须是对象');
+  for (const k of Object.keys(doc)) {
+    if (!['_comment', 'version', 'ratchets'].includes(k)) fail(`未知顶层键 ${JSON.stringify(k)}`);
+  }
+  if (doc.version !== 1) fail(`version 必须是 1,实际 ${JSON.stringify(doc.version)}`);
+  if (!Array.isArray(doc.ratchets) || doc.ratchets.length === 0) {
+    fail('ratchets 必须是非空数组(清空注册表 = 全仓棘轮集体退保)');
+  }
+  const ids = new Set();
+  for (let i = 0; i < doc.ratchets.length; i++) {
+    const r = doc.ratchets[i];
+    const at = `ratchets[${i}]`;
+    if (r === null || typeof r !== 'object' || Array.isArray(r)) fail(`${at} 必须是对象`);
+    for (const field of ['id', 'baseline', 'rule', 'symbolShape', 'why']) {
+      if (typeof r[field] !== 'string' || r[field] === '') fail(`${at}.${field} 必须是非空字符串`);
+    }
+    if (ids.has(r.id)) fail(`${at}.id 重复:${r.id}`);
+    ids.add(r.id);
+    if (!Object.prototype.hasOwnProperty.call(BASELINE_SYMBOL_SHAPES, r.symbolShape)) {
+      fail(`${at}.symbolShape 未知:${JSON.stringify(r.symbolShape)}`);
+    }
+    if (!r.baseline.startsWith('harness/') || !r.baseline.endsWith('.json')) {
+      fail(`${at}.baseline 必须是 harness/ 下的 .json:${JSON.stringify(r.baseline)}`);
+    }
+  }
+  return doc.ratchets;
+}
+
+const RATCHET_REGISTRY = parseRatchetRegistry(
+  readFileSync(new URL(`./${RATCHET_REGISTRY_PATH}`, import.meta.url), 'utf-8'),
 );
+
+/** `Map<ratchetId, Map<file, symbol[]>>` —— 按注册表遍历加载,不写死任何一条路径。 */
+const RATCHET_BASELINES = new Map(
+  RATCHET_REGISTRY.map((r) => [
+    r.id,
+    parseRatchetBaseline(readFileSync(new URL(`./${r.baseline}`, import.meta.url), 'utf-8'), {
+      path: r.baseline,
+      symbolShape: r.symbolShape,
+    }),
+  ]),
+);
+
+/** 兼容既有消费者(自测按名字取第 18 条那份)。 */
+const IS_OPTIONAL_NULL_BASELINE = RATCHET_BASELINES.get('is-optional-null');
+const LEGACY_PARAM_ID_BASELINE = RATCHET_BASELINES.get('legacy-param-id');
 
 const FORBIDDEN_IMPORT_PATHS = [
   {
@@ -423,34 +489,17 @@ const harnessConfigBlocks = [
     },
   },
 
-  // (f) controller:额外禁 @Param('id')
-  {
-    name: 'srvf/harness:controller',
-    files: ['src/**/*.controller.ts'],
-    rules: { 'no-restricted-syntax': syntax(...SRC, 'no-param-id-string') },
-  },
-
-  // (g) BASELINE:19 个存量 controller 暂免 no-param-id-string
-  {
-    name: 'srvf/harness:controller-param-id-baseline',
-    files: LEGACY_PARAM_ID_CONTROLLERS,
-    rules: { 'no-restricted-syntax': syntax(...SRC) },
-  },
-
-  // (h) 判权 / 身份路径:额外禁缓存与定时器
-  //     ⚠ 必须放在 (f)/(g) 之后 —— flat config 同 ruleId 后块整体覆盖前块,
-  //     若放前面,permissions/*.controller.ts 会丢掉本块的两条选择器。
+  // (f) 判权 / 身份路径:额外禁缓存与定时器
+  //     ⚠ 必须放在 (b) 之后 —— flat config 同 ruleId 后块整体覆盖前块。
+  //     📌 `@Param('id')` 已升格为独立 ruleId 的自定义规则(见 (l)),不再出现在这里,
+  //        原先的 controller 块 (f) 与整文件豁免块 (g) 一并删除:
+  //        整文件豁免正是「往名单内 controller 新增一个照样全绿」的成因。
   {
     name: 'srvf/harness:no-identity-cache',
     files: ['src/modules/permissions/**/*.ts', 'src/modules/auth/strategies/**/*.ts'],
     ignores: ['src/**/*.spec.ts'],
     rules: {
-      'no-restricted-syntax': syntax(
-        ...SRC,
-        'no-param-id-string',
-        'no-identity-cache',
-        'no-identity-timer',
-      ),
+      'no-restricted-syntax': syntax(...SRC, 'no-identity-cache', 'no-identity-timer'),
     },
   },
 
@@ -510,9 +559,9 @@ const harnessConfigBlocks = [
     },
   },
   // (k) 第 18 条:独立 ruleId 的自定义规则(eslint-rules/no-nullable-is-optional.mjs)。
-  //     与前面 17 条**不共用** `no-restricted-syntax`,所以:
+  //     与其余选择器**不共用** `no-restricted-syntax`,所以:
   //       · 一句 `eslint-disable-next-line no-restricted-syntax` 不再把它连坐关掉;
-  //       · 下面的基线块只需写这一条,不必重列全部规则集(前面 (g)/(h) 那种
+  //       · 下面的基线块只需写这一条,不必重列全部规则集(原先 (g)/(h) 那种
   //         「漏写一条就静默关掉其余若干条」的排序陷阱在这条上**结构性消失**)。
   //     默认对全仓生效(含 test / prisma —— 两处实测零违规,所以是白拿的)。
   {
@@ -522,7 +571,18 @@ const harnessConfigBlocks = [
     rules: { [NULLABLE_IS_OPTIONAL_RULE]: 'error' },
   },
 
-  // (l) DTO 范围关掉 inline 逃生门(第五轮评审 J2 · L3)。
+  // (l) `:id` 走 IdParamDto:第二条独立 ruleId 的自定义规则(M4)。
+  //     只判 controller —— `@Param('id')` 只可能出现在那里。
+  //     豁免同样是规则的 `exempt` 选项、精确到「类名.方法名.参数名」,
+  //     所以往一个已在清单里的 controller 新增一个裸 `:id` 照样红。
+  {
+    name: 'srvf/harness:param-id-string',
+    files: ['src/**/*.controller.ts'],
+    plugins: { srvf: srvfEslintPlugin },
+    rules: { [PARAM_ID_STRING_RULE]: 'error' },
+  },
+
+  // (m) DTO 范围关掉 inline 逃生门(第五轮评审 J2 · L3)。
   //     实测:`/* eslint-disable */`(文件级)与 `// eslint-disable-next-line`(行级)
   //     两种写法此前都能让一个新违规字段通过 lint,RC=0 —— 棘轮的第一道执行位
   //     等于可以被违规者本人一行注释关掉。
@@ -540,29 +600,37 @@ const harnessConfigBlocks = [
   },
 ];
 
-// (m) BASELINE 块:每个存量文件一块,把**该文件已冻结的那些字段**从第 18 条里挖掉。
-//     豁免是规则的 `exempt` 选项,精确到 `类名.字段名` —— 所以往一个已在基线里的
-//     文件**新增**一个违规字段依然会红,同名字段挪到另一个类里也会红。
+// (n) BASELINE 块:**按注册表遍历**生成,每条棘轮的每个存量文件一块,
+//     把该文件已冻结的那些身份从对应规则里挖掉。
+//     豁免是规则的 `exempt` 选项,精确到身份串 —— 所以往一个已在基线里的文件
+//     **新增**一处违规依然会红,同名身份挪到另一个类 / 另一个方法里也会红。
 //     这就是「基线只能缩不能涨」在 lint 侧的执行位。
 //
-//     ⚠️ 必须放在 (k) 之后:flat config 同 ruleId 后块整体覆盖前块。
-//     不再需要「重列完整规则集」—— 本块只碰 srvf/no-nullable-is-optional 这一个
-//     ruleId,`no-restricted-syntax` 的 17 条完全不受影响(换独立 ruleId 的直接收益)。
-const isOptionalNullBaselineBlocks = [...IS_OPTIONAL_NULL_BASELINE.entries()].map(
-  ([file, exempt]) => ({
-    name: `srvf/harness:is-optional-null-baseline:${file}`,
+//     ⚠️ 必须放在 (k)/(l) 之后:flat config 同 ruleId 后块整体覆盖前块。
+//     不需要「重列完整规则集」—— 每块只碰自己那一个自定义 ruleId,
+//     `no-restricted-syntax` 的 16 条完全不受影响(换独立 ruleId 的直接收益)。
+const ratchetBaselineBlocks = RATCHET_REGISTRY.flatMap((r) =>
+  [...(RATCHET_BASELINES.get(r.id) ?? new Map()).entries()].map(([file, exempt]) => ({
+    name: `srvf/harness:${r.id}-baseline:${file}`,
     files: [file],
-    rules: { [NULLABLE_IS_OPTIONAL_RULE]: ['error', { exempt }] },
-  }),
+    plugins: { srvf: srvfEslintPlugin },
+    rules: { [r.rule]: ['error', { exempt }] },
+  })),
 );
 
-harnessConfigBlocks.push(...isOptionalNullBaselineBlocks);
+harnessConfigBlocks.push(...ratchetBaselineBlocks);
 
 export {
   HARNESS_SYNTAX,
   IS_OPTIONAL_NULL_BASELINE,
+  LEGACY_PARAM_ID_BASELINE,
   NULLABLE_IS_OPTIONAL_MESSAGE,
   NULLABLE_IS_OPTIONAL_RULE,
+  PARAM_ID_STRING_MESSAGE,
+  PARAM_ID_STRING_RULE,
+  RATCHET_BASELINES,
+  RATCHET_REGISTRY,
   harnessConfigBlocks,
-  parseIsOptionalNullBaseline,
+  parseRatchetBaseline,
+  parseRatchetRegistry,
 };

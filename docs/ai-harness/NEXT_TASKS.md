@@ -337,7 +337,7 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 - **候选方案**:先盘点所有 SQL/报表/导出/备份消费者,再做 Prisma field 映射过渡或单次 rename + 存量验证;同步 current-state/CODEMAP/留存 SOP 与回滚 SQL。不得先新增第二列长期双写。
 - **触发条件**:外部 BI/报表开始直读该列,或合规审查要求物理字段名也去除“外籍”误述时单独立项。
 
-### P1-26 并发写路径审计 findings 修复 — **6 🔴 + 2 🟡 已修 · A-R2 按方案乙落地;剩 S6 三处待拍板**
+### P1-26 并发写路径审计 findings 修复 — **6 🔴 + 2 🟡 已修 · A-R2 方案乙 · 整批复审 M1–M6 已收口;剩 S6 三处待拍板**
 
 - **两份独立审计,同一范围、同一 base(`7b0f5c25`),都 report-only、零 `src/` 改动**:
   - **A · Claude 版** [`concurrency-write-path-audit.md`](../archive/reviews/concurrency-write-path-audit.md) —— **56 落点 / 🔴2 / 🟡2 / 🟢52**;
@@ -418,6 +418,48 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 2. **canonical 缺定义(先补定义再判)**:`attendances/CLAUDE.md:12` 要求所有业务写经 AttendanceAuditRecorder,
    而 App GPS 签到/签退成功路径直写 `ActivityCheckIn` 不落 AuditLog;`docs/handoff/**` 未定义 GPS 证据写是否豁免。
 - **本次未做**:B-D1/D2/D3 未调和(待拍板)· `cancel` 不级联既有考勤单、`pass` 报名仍留 `pass`(方案乙刻意)· `certificates`/`recruitment`/`auth`/`authz`/限流未碰(goal 禁区)· 零 schema(Migration 恒 67)。
+
+##### 整批复审收口 M1–M6(2026-08-01;两份独立评审去重 6 P1 + 2 P2,无 P0)
+
+- **M1 · markGate / evaluate 接 member-first 锁序**:两者都按 `computeContribution` 的读数做状态迁移,
+  而那是**跨 Sheet 的 member 聚合** —— 与 attendances 的 `finalApprove`/`reopen` 是同一份事实的三个写方。
+  抽唯一入口 `lockMemberThenApplication`(预读 memberId → `lockMembersForWrite` → Application `FOR UPDATE` →
+  复读复核),`claimAtStatus` 随之退场(锁后读即 authoritative,它的「与锁前读数一致」断言没有对象了)。
+  **反序实测就是 40P01**:`test/e2e/team-join-gate-evaluate-member-lock-concurrency.e2e-spec.ts` 用例 ⑤ ——
+  把键挪到行锁之后,final join 持键在步骤 9 反向争同人 sibling 行锁,两进程互等,两条参数化用例全红。
+- **M2 · 入队身份收口到唯一 transition**:`isUnenrolledVolunteer` 是 live 申请**唯一**的走通前提。
+  sweep 出 8 个能把它翻 false 的写方(`members.update(gradeCode)`/`updateStatus(INACTIVE)`、
+  `member-departments.set|remove`、`memberships.create(PRIMARY)|update(type)|end|transfer(PRIMARY)`),
+  按拍板一律**拒绝**(新码 **28211**,不自动终结、不静默放行)。闸落在
+  `src/modules/team-join/team-join-enrollment-invariant.ts`,必须排在 `lockMemberLifecycle` 之前(锁序理由见文件注释)。
+  ⚠️ **行为变更**,已登记 handoff。
+- **M3 · finalApprove 批量化 + 隔离级别显式化 + 有界锁等待**:
+  贡献值快照与 outbox intent 全部批量(封顶核抽 `capByBeijingDay`,单人 / 批量共用,**不复制 cap 算法**);
+  200 人考勤单实测 **810 → <40 次 SQL**(与人数无关)。`lockMembersForWrite` 所在的 8 个事务改走
+  `runMemberLinearizedTransaction`:显式 `ReadCommitted` + `SET LOCAL lock_timeout`(超时 → **40901**,不再 P2028→50000)。
+  **RR 是真前提**:把库默认改成 `repeatable read` 后去掉那一行,milestone intent 由 1 条变 **0 条** —— write skew 完整复活。
+- **M4 · 棘轮注册表 + 三洞封堵**:新增 `harness/ratchet-registry.json`,裁判改为**遍历注册表**;
+  基线被删 / 改名 = 硬失败(上一版判成「HEAD = ∅ ⊆ BASE 成立」,而 lint 跑在 PR 自己的树上);
+  注册表自身只可增不可删。别名解析下沉 `eslint-rules/decorator-identity.mjs`,补齐 namespace /
+  局部中转 / re-export 三种写法。第 17 条 `@Param('id')` 升格为自定义规则 `srvf/no-param-id-string`,
+  存量 **70 处 / 19 文件**(评审说的 70 是对的,原注释「71」已漂)按「类名.方法名.参数名」逐条冻结 ——
+  原先是整文件豁免 + 一句没有执行位的「只减不增」。
+- **M5 · 两条 P2**:F5 双向 barrier(`join × updateTargets|markGate|evaluate` × 两个方向)——
+  **它抓到了一个真 40P01**:App 自助 `updateTargets` 持 sibling 行锁后写 audit,而 `audit_logs.actorUserId`
+  的 FK 要在**本人 User 行**上取 `FOR KEY SHARE`,那一行正被 final join 的 `lockLinkedUserLifecycle` 攥着;
+  final join 又在步骤 9 反向争 sibling 行锁。修法同 M1:`updateTargets` 也走 member-first,
+  **至此全部 team-join 写路径同序**。另删 `join` 端点 Swagger 里已废止的「综合评估本轮有效/延长期」
+  (approved 资格不随轮关闭失效),contract snapshot 与 openapi 同步。
+- **M6**:本条 + `current-state §4`。
+- **测试**:新增 3 个并发 spec(M1 7 例 / M2 11 例 / M3 4 例)+ F5 6 例;
+  既有白盒 barrier 的**观测点随锁序翻面**(`team-join.e2e` / `team-join-app.e2e`:
+  `FOR NO KEY UPDATE` → `FOR UPDATE` / `pg_advisory_xact_lock`),**结果断言一字未动**;
+  outbox 回滚用例的打桩位置随批量化下移到 `enqueueMany`,回滚不变式不变。
+- **变异对照(每刀都做,修复前后各跑一次)**:M1 去键 6/7 红、反序 2/2 红 · M2 去闸 9/11 红 ·
+  M3 去批量 810 次 SQL、去 RC 0 条 intent、去有界等待挂死 · M4 四种绕过全被裁判拒 + 名单内新增裸 `:id` lint 红。
+- **状态**:**6 P1 + 2 P2 已修并有 red-first 证据;M5 顺带修掉一个新发现的 40P01**。
+  🔴 **NO-GO 不解除**,本条目关闭前仍须过跨模型评审(SOP §1.6)。
+
 - **状态**:**6 🔴 + 2 🟡 已修并有 red-first 证据;A-R2 已按方案乙落地;剩 S6 三处待拍板**。本条目**关闭前须过跨模型评审**(SOP §1.6)。
 
 ### P2-6 #399 review P2 修复残余(4 项;**均无当前运行时危害,诉求/接线时处理**) — 2026-06-20 收口登记

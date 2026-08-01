@@ -1,0 +1,20 @@
+{
+  "_comment": "棘轮注册表 —— 全仓**所有**单调基线的唯一登记处(M4,2026-08-01)。\n\n为什么要有它:第五轮把「HEAD ⊆ BASE」的单调性裁决落进了 base-trusted 裁判,但那份实现\n把**唯一一条**基线的路径硬编码在脚本里。于是第二条棘轮(存量裸 @Param('id'))落地时,\n它天然不在裁决范围内 —— 判据只覆盖了当初写它的那一条,新的棘轮默认无人看管。\n注册表把「有哪些棘轮」变成数据,裁判改为**遍历**它;加一条棘轮 = 加一行,不改裁判。\n\n三条硬失败(裁判侧,审批盖不掉 —— scan 失败 ⇒ approval job 被 skip,没有可点的按钮):\n  ① 任何 baseline 的 (file, symbol) 集合在 HEAD 里**新增**了条目;\n  ② 任何 baseline 文件在 HEAD 被**删除或改名**(清零也必须保留一个 entries: [] 的空 JSON ——\n     「删掉判据」和「判据通过」在任何看得懂的门禁里都不该是同一件事);\n  ③ 注册表**自己**掉了条目(base 有、head 没有)——\n     否则「先把自己从注册表里摘掉,再随便改基线」就是一条完整的绕过路径。\n\nratchets[].symbolShape 决定 symbol 的格式约束,由 eslint.harness.mjs 的 parseRatchetBaseline\n在加载期强制;裁判侧只做纯粹的 JSON 反序列化 + 集合比较,**永不执行 PR 提供的代码**。",
+  "version": 1,
+  "ratchets": [
+    {
+      "id": "is-optional-null",
+      "baseline": "harness/is-optional-null-baseline.json",
+      "rule": "srvf/no-nullable-is-optional",
+      "symbolShape": "class-field",
+      "why": "第 18 条 null 契约:带 @IsOptional() 的属性其顶层类型必须含 `| null`。存量按「类名.字段名」逐条冻结。"
+    },
+    {
+      "id": "legacy-param-id",
+      "baseline": "harness/legacy-param-id-baseline.json",
+      "rule": "srvf/no-param-id-string",
+      "symbolShape": "class-method-param",
+      "why": "存量裸 @Param('id'):`:id` 一律走 IdParamDto。存量按「类名.方法名.参数名」逐条冻结(原先是整文件豁免 + 一句没有执行位的「只减不增」)。"
+    }
+  ]
+}
