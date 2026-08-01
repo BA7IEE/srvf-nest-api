@@ -47,12 +47,12 @@
 - **触发条件**:出现批量导入存量队员(> 逐个可接受量级)的真实诉求时单独立项评审(D 档,涉及 schema 是否需要新增批量端点、字段集范围、与 `POST admin/v1/members` 单条端点的关系)。
 - **与 P1-18(队员账号闭环,✅ 已完成)关系**:P1-15 解决"批量把队员**档案**（`Member`)灌进来";P1-18 解决"给**已存在**队员开**登录账号**(`User`)"。两者正交——P1-15 若落地,批量导入出的 `Member` 仍可用 P1-18 已交付的 `POST admin/v1/members/accounts/bulk-grant` 批量开号能力。
 
-### P1-24 通用证书标准库 + 队内认定规则 + 招新证书闭环 — **✅ 已交付(2026-07-30);剩发版与首批初始化**
+### P1-24 通用证书标准库 + 队内认定规则 + 招新证书闭环 — **✅ 已交付并随 v0.65.0 发版(2026-08-02);剩首批初始化(生产 runbook)**
 - **交付**:PR-0(冻结)→ PR-1 → PR-2 → PR-3 → PR-4a(拆三刀)+ PR-4b → PR-5 → PR-6 全部合入 main([#826–#834](https://github.com/BA7IEE/srvf-nest-api/pull/834));**Endpoint 435→438 · Migration 66→67 · 权限码 214→222**。
 - **⚠️ 交付后跨模型评审判 NO-GO → findings 修复批次 F1–F6**(2026-07-30):两个外部模型对 `main@bc300a66` 独立评审,21 条 findings 主会话逐条复现。修复见 [#835](https://github.com/BA7IEE/srvf-nest-api/pull/835)(并发四处统一收口)· [#836](https://github.com/BA7IEE/srvf-nest-api/pull/836)(证据授权按状态分流)· [#837](https://github.com/BA7IEE/srvf-nest-api/pull/837)(PATCH 三态 + 日期真实性 + 核验落点)· [#838](https://github.com/BA7IEE/srvf-nest-api/pull/838)(§12 资质判断)· [#839](https://github.com/BA7IEE/srvf-nest-api/pull/839)(主数据契约与审计)· F6(SOP / 初始化 / 台账)。
 - **post-freeze 修正记录**:[`archive/reviews/certificate-standard-library-t0-amendments.md`](../archive/reviews/certificate-standard-library-t0-amendments.md) —— 冻结稿正文不回改,修正逐条记在这里。**冻结稿 + amendments 两份合起来才是当前需求。**
 
-#### 🔴 第四轮独立评审未通过(`main@7b0f5c25`)—— **4 条已修完(J1/J3),门禁仍关闭等第五轮复核**
+#### 第四轮独立评审当时未通过(`main@7b0f5c25`)—— 4 条已修完(J1/J3);**后经五轮/整批/Q 复核链条终局通过(2026-08-02 GO)**
 
 判 NO-GO,**2 P1 + 2 P2,无 P0**;主会话逐条复现,**全部属实**(含 `new Date(null) → 1970-01-01` 实测)。
 
@@ -124,7 +124,14 @@ Invalid Date,「先 new Date 再判 NaN」这种写法拦不住。
 
 ---
 
-#### 🔴 整批评审(N+R+W,`43f63624..56ea8480`)未通过 —— 上轮 5 P1 全 PASS,2 新 P1 归 Q goal
+#### ✅ 整批评审(N+R+W)+ Q 复核终局通过(2026-08-02 GO,冻结范围 `56ea8480..b6a2f9d8`)—— NO-GO 已解除,v0.65.0 已发版
+
+**终局**:Q1(共享父预算批量递补,精确反例 e2e)/ Q2(rule-config 逃生门,4/4 真变异)/ Q3(企微 null≠缺席)
+全部关闭([#874](https://github.com/BA7IEE/srvf-nest-api/pull/874));[#875](https://github.com/BA7IEE/srvf-nest-api/pull/875)
+拆除当日引爆的 e2e 日期炸弹(既存类,守护另立);P2-②(多次锁等待撞总预算)**维持登记不入批**(见下表)。
+评审确认修复未引入回归、终树完整机器门禁全过。以下为该轮历史记录:
+
+#### 整批评审(N+R+W,`43f63624..56ea8480`)当时未通过 —— 上轮 5 P1 全 PASS,2 新 P1 归 Q goal(已按上述终局关闭)
 
 **先记账**:上轮 5 条 P1 **全部 PASS 关闭**(裁判四元组冻结 + 别名/namespace/computed 解析 +
 `no-decorator-realias` · 显式 ReadCommitted/4s lock/7s tx 三层预算 · 企微 Settings 锁后复读 ·
@@ -208,9 +215,10 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 第二条同时把「取 head 版本的 GitHub API 路径」也走通了 —— 第一条只走了「基线未改动」的
 快路,不足以证明整条链路。**只有第二条能证明这道闸真的会拦。**
 
-**仍未解除 🔴 NO-GO,等第六轮跨模型评审**(SOP [§1.6](codex-review-sop.md)),由维护者解除。
+(当时)仍未解除 🔴 NO-GO,等第六轮跨模型评审 —— **后续:第六轮=整批评审(N+R+W)发现下方残留之一
+成真(rule-config 逃生门),归 Q2 修复;终局 Q 复核 2026-08-02 判 GO,NO-GO 已解除**。
 
-**已知残留**(第六轮请重点看):
+**已知残留**(当时留给第六轮;其中 inline-config 缺口已由 Q2 关闭):
 - 非 `.dto.ts` 文件里的第 18 条**仍可被 inline disable 关掉** —— `noInlineConfig` 刻意
   只配到 DTO 范围(`src/` 现有 7 处 inline disable 全是 service 侧硬删的正当具名豁免,
   扩到全仓会误伤,而一次误伤会让下一个人来把整条 `linterOptions` 删掉)。
@@ -358,7 +366,7 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 
 </details>
 
-### P1-25 企业微信接入(身份入口 + 工作台入口 + 通知通道) — **T1+T2 已合入(#863),T1 schema 已过整批评审;T2 三条 P1 归 W goal**
+### P1-25 企业微信接入(身份入口 + 工作台入口 + 通知通道) — **T1+T2 已合入(#863)并随 v0.65.0 发版;T2 三条 P1 已由 W 批次修复(#869/#870),连同 Q3(null≠缺席)经终局评审通过(2026-08-02 GO);T3 起未动**
 - **冻结评审稿**:[`archive/reviews/wecom-integration-t0-terminal-review.md`](../archive/reviews/wecom-integration-t0-terminal-review.md)(2026-07-29 维护者「按推荐」整体冻结 `D-WC-1..31`)。
 - **终态**:单企业、单自建应用 Agent;`WecomIdentity → User → Member → SRVF Authz`;消息只走既有 Notification Outbox。**企业微信只回答「你是谁」,SRVF 继续回答「你能做什么」**。
 - **拆分**:T0(冻结,本 PR 完成)→ T1(schema expand-only)→ T2(通道层 + 设置 + 连接诊断)→ T3(OAuth 登录/绑定/换绑/管理员清除)→ T4(User 生命周期闭环)→ T5A(受众判定重构,行为保持)→ T5B(WeCom 消息通道)→ T6(runbook + 10–30 人分层试点)。
