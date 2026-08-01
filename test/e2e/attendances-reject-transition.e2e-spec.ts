@@ -122,8 +122,8 @@ describe('AttendancesService reject transition (characterization)', () => {
         title: 'Reject Activity',
         activityTypeCode: 'rej-type',
         organizationId: rootOrg.id,
-        startAt: new Date('2026-08-01T08:00:00.000Z'),
-        endAt: new Date('2026-08-01T12:00:00.000Z'),
+        startAt: new Date('2099-08-01T08:00:00.000Z'),
+        endAt: new Date('2099-08-01T12:00:00.000Z'),
         location: 'reject demo',
         statusCode: 'completed',
         isPublicRegistration: true,
@@ -179,7 +179,7 @@ describe('AttendancesService reject transition (characterization)', () => {
       select: { id: true },
     });
     const checkIn = new Date(
-      new Date('2026-08-10T08:00:00.000Z').getTime() + offsetHours * 60 * 60 * 1000,
+      new Date('2099-08-10T08:00:00.000Z').getTime() + offsetHours * 60 * 60 * 1000,
     );
     const checkOut = new Date(checkIn.getTime() + 4 * 60 * 60 * 1000);
     await ctx.prisma.attendanceRecord.create({

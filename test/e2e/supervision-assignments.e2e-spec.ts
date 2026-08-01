@@ -466,7 +466,7 @@ describe('supervision-assignments 分管管理', () => {
         supervisorMemberId: m,
         organizationId: orgSSDId,
         scopeMode: 'TREE',
-        startedAt: '2026-08-01T00:00:00.000Z',
+        startedAt: '2099-08-01T00:00:00.000Z',
       });
       expect(second.status).toBe(201);
       expect(second.body.data.status).toBe('ACTIVE');

@@ -214,7 +214,7 @@ describe('F5/E 组 任职/分管增强面(总表 / detail / preview / coverage-p
             organizationId: deptId,
             positionId: deptLeaderPositionId,
             memberId: mLeaderId,
-            startedAt: '2026-08-01T00:00:00.000Z',
+            startedAt: '2099-08-01T00:00:00.000Z',
           }),
         BizCode.RBAC_FORBIDDEN,
       );
@@ -356,7 +356,7 @@ describe('F5/E 组 任职/分管增强面(总表 / detail / preview / coverage-p
         organizationId: dept2.id,
         positionId: deptLeaderPositionId,
         memberId: mExLeaderId,
-        startedAt: '2026-08-01T00:00:00.000Z',
+        startedAt: '2099-08-01T00:00:00.000Z',
       });
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual({ valid: true, violations: [] });
@@ -373,7 +373,7 @@ describe('F5/E 组 任职/分管增强面(总表 / detail / preview / coverage-p
         organizationId: deptId,
         positionId: deptLeaderPositionId,
         memberId: stranger.id,
-        startedAt: '2026-08-01T00:00:00.000Z',
+        startedAt: '2099-08-01T00:00:00.000Z',
         endedAt: '2026-07-01T00:00:00.000Z',
       });
       expect(res.body.data.valid).toBe(false);
@@ -388,7 +388,7 @@ describe('F5/E 组 任职/分管增强面(总表 / detail / preview / coverage-p
         organizationId: deptId,
         positionId: deptLeaderPositionId,
         memberId: mLeaderId,
-        startedAt: '2026-08-01T00:00:00.000Z',
+        startedAt: '2099-08-01T00:00:00.000Z',
       });
       expect(dup.body.data.violations.map((v: { bizCode: number }) => v.bizCode)).toContain(
         BizCode.POSITION_ASSIGNMENT_ALREADY_EXISTS.code,
@@ -399,7 +399,7 @@ describe('F5/E 组 任职/分管增强面(总表 / detail / preview / coverage-p
         organizationId: groupId,
         positionId: deptLeaderPositionId,
         memberId: mLeaderId,
-        startedAt: '2026-08-01T00:00:00.000Z',
+        startedAt: '2099-08-01T00:00:00.000Z',
       });
       const noRuleCodes = noRule.body.data.violations.map((v: { bizCode: number }) => v.bizCode);
       expect(noRuleCodes).toContain(BizCode.POSITION_ASSIGNMENT_RULE_NOT_MATCHED.code);
@@ -408,7 +408,7 @@ describe('F5/E 组 任职/分管增强面(总表 / detail / preview / coverage-p
         organizationId: NONEXISTENT_ID,
         positionId: NONEXISTENT_ID,
         memberId: NONEXISTENT_ID,
-        startedAt: '2026-08-01T00:00:00.000Z',
+        startedAt: '2099-08-01T00:00:00.000Z',
       });
       const missingCodes = missing.body.data.violations.map((v: { bizCode: number }) => v.bizCode);
       expect(missingCodes).toEqual(
