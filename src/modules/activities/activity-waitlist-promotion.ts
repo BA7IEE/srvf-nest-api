@@ -48,6 +48,17 @@ interface ActivityWaitlistPromotionBaseArgs {
   auditLogs: Pick<AuditLogsService, 'log'>;
 }
 
+/**
+ * 两个剩余量取交集(`null` = 不限)。**全仓唯一**的容量收敛算法 —— 无论谁要算「本次最多能递补
+ * 几个」,都必须落到这一个函数上;否则「父预算 ∩ 本岗余量 ∩ 调用方上限」会被复制成第二套,
+ * 而两套迟早在 `null` 的语义上分叉(不限 vs 0)。
+ */
+function intersectHeadroom(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return Math.min(a, b);
+}
+
 function jsonAsObject(v: Prisma.JsonValue | null): Record<string, unknown> | null {
   if (v === null || typeof v !== 'object' || Array.isArray(v)) return null;
   return v;
@@ -259,18 +270,8 @@ export async function promoteActivityWaitlistWithinCapacity(
     targetActivityPosition === null || targetActivityPosition.capacity === null
       ? null
       : Math.max(targetActivityPosition.capacity - activityPositionPassCount, 0);
-  const capacityHeadroom =
-    activityHeadroom === null
-      ? activityPositionHeadroom
-      : activityPositionHeadroom === null
-        ? activityHeadroom
-        : Math.min(activityHeadroom, activityPositionHeadroom);
-  const promotionLimit =
-    capacityHeadroom === null
-      ? args.maxPromotions
-      : args.maxPromotions === null
-        ? capacityHeadroom
-        : Math.min(args.maxPromotions, capacityHeadroom);
+  const capacityHeadroom = intersectHeadroom(activityHeadroom, activityPositionHeadroom);
+  const promotionLimit = intersectHeadroom(capacityHeadroom, args.maxPromotions);
 
   return promoteActivityWaitlist({
     activityId: args.activityId,
@@ -282,4 +283,114 @@ export async function promoteActivityWaitlistWithinCapacity(
     tx: args.tx,
     auditLogs: args.auditLogs,
   });
+}
+
+// 一次事务里放开**多条**队列时的递补入口:多条队列**共享同一份父活动预算**。
+//
+// 为什么必须是批量入口而不是「调用方 for 循环调单岗版」(2026-08-01 整批评审 P1):
+// 递补写的是 `waitlisted → pending`,**不是 `pass`** —— 所以父活动的 pass 基线在整个批次里
+// 一动不动。逐岗调 `promoteActivityWaitlistWithinCapacity` 时,每一岗都会把**同一个**父剩余量
+// 重新算一遍并完整领走,N 个岗位就把父容量花了 N 次:各岗自己的 headroom 之和只要超过父
+// headroom,合计递补数就会突破活动容量。单岗调用看不出问题,只有多岗组合才暴露。
+//
+// 记账口径:预算按**实际 promoted 数**扣减,不是按发出去的额度扣。某岗队列空、或候选人
+// 因 member 非 ACTIVE 被跳过时,没用掉的份额必须留给下一条队列 —— 否则「有人没排上」会
+// 变成「名额被凭空作废」。
+//
+// 队列顺序由调用方给定且必须**稳定**(不受请求体书写顺序影响):预算不够分时,顺序决定谁被
+// 递补,不稳定的顺序会让同一份提案两次执行递补到不同的人。
+//
+// B-D2 隔离不变:本函数只是给 `promoteActivityWaitlist`(全仓唯一出队循环)分预算,
+// 一条队列的额度用不完**不会**流向另一条队列去取人 —— 流动的是父容量的剩余额度,不是候选人。
+export async function promoteActivityWaitlistsWithinSharedCapacity(args: {
+  activityId: string;
+  /** 本次被放开的队列,按稳定岗位序;`null` = 历史无岗位队列。重复项按首次出现计一次。 */
+  orderedPositionIds: ReadonlyArray<string | null>;
+  actorUserId: string;
+  actorRoleSnap: Role;
+  auditMeta: AuditMeta;
+  tx: PrismaTx;
+  auditLogs: Pick<AuditLogsService, 'log'>;
+}): Promise<ActivityWaitlistPromotionResult> {
+  const locked = await args.tx.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM "Activity"
+    WHERE id = ${args.activityId} AND "deletedAt" IS NULL
+    FOR UPDATE
+  `;
+  if (locked.length === 0) {
+    throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+  }
+
+  const activity = await args.tx.activity.findFirst({
+    where: notDeletedWhere({ id: args.activityId }),
+    select: { title: true, statusCode: true, capacity: true },
+  });
+  if (!activity) {
+    throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+  }
+
+  const promoted: ActivityWaitlistPromotionResult['promoted'] = [];
+  // 去重但保序:同一条队列在一次调用里只该分到一份预算,重复列出不等于多领一次。
+  const queues = [...new Set(args.orderedPositionIds)];
+  if (activity.statusCode !== 'published' || queues.length === 0) {
+    return { activityTitle: activity.title, promoted };
+  }
+
+  // 父容量基线在聚合锁之后读,且**整批只读一次** —— 本轮已经发出去多少由下面的
+  // remainingActivityHeadroom 记账,不靠重读 pass 数。
+  // ⚠️ 这条记账**不依赖**「promote 写 pending 不写 pass」这个当前事实:预算按实际递补数扣减,
+  // 每条队列又只被访问一次,所以哪天迁移目标改成 pass,记账仍然是对的(不留只写在注释里的不变量)。
+  const activityPassCount = await args.tx.activityRegistration.count({
+    where: notDeletedWhere({
+      activityId: args.activityId,
+      statusCode: ACTIVITY_REGISTRATION_STATUS.PASS,
+    }),
+  });
+  let remainingActivityHeadroom =
+    activity.capacity === null ? null : Math.max(activity.capacity - activityPassCount, 0);
+
+  for (const activityPositionId of queues) {
+    // 父预算已用尽:后面的队列一个都不该动(`null` = 不限,永远不等于 0)。
+    if (remainingActivityHeadroom === 0) break;
+
+    const targetActivityPosition =
+      activityPositionId === null
+        ? null
+        : await args.tx.activityPosition.findFirst({
+            where: { id: activityPositionId, activityId: args.activityId, deletedAt: null },
+            select: { capacity: true },
+          });
+    // 岗位已在本事务可见范围内被软删(或根本不属于本活动):跳过,不占用任何预算。
+    if (activityPositionId !== null && targetActivityPosition === null) continue;
+
+    const activityPositionPassCount = await args.tx.activityRegistration.count({
+      where: notDeletedWhere({
+        activityId: args.activityId,
+        activityPositionId,
+        statusCode: ACTIVITY_REGISTRATION_STATUS.PASS,
+      }),
+    });
+    // 历史无岗位队列(null)没有 child cap,只受父容量约束。
+    const activityPositionHeadroom =
+      targetActivityPosition === null || targetActivityPosition.capacity === null
+        ? null
+        : Math.max(targetActivityPosition.capacity - activityPositionPassCount, 0);
+
+    const result = await promoteActivityWaitlist({
+      activityId: args.activityId,
+      activityPositionId,
+      maxPromotions: intersectHeadroom(remainingActivityHeadroom, activityPositionHeadroom),
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      auditMeta: args.auditMeta,
+      tx: args.tx,
+      auditLogs: args.auditLogs,
+    });
+    promoted.push(...result.promoted);
+    if (remainingActivityHeadroom !== null) {
+      remainingActivityHeadroom -= result.promoted.length;
+    }
+  }
+
+  return { activityTitle: activity.title, promoted };
 }

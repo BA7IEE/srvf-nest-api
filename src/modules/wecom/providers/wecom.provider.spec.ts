@@ -121,6 +121,51 @@ describe('WecomRealProvider', () => {
       expect(err).toBeInstanceOf(WecomApiError);
     });
 
+    // ===== Q3(2026-08-01 整批评审 P2):显式 null ≠ 键缺席 =====
+    // 修复前两层的 `=== null` 都走进「缺席 → 0」那条分支,于是上游明写的 `null` 被读成
+    // 「可见范围为空」。`typeof null === 'object'` 且 `Array.isArray(null)` 为 false,
+    // 后面的结构判断一个都拦不住它 —— 必须各自显式测。
+    it.each([
+      ['外层显式 null(allow_userinfos: null)', { allow_userinfos: null }],
+      ['外层显式 null(allow_partys: null)', { allow_partys: null }],
+      ['外层显式 null(allow_tags: null)', { allow_tags: null }],
+      ['内层显式 null(allow_userinfos.user: null)', { allow_userinfos: { user: null } }],
+      ['内层显式 null(allow_partys.partyid: null)', { allow_partys: { partyid: null } }],
+      ['内层显式 null(allow_tags.tagid: null)', { allow_tags: { tagid: null } }],
+    ])('%s → 36031(修复前被当成键缺席、静默计 0)', async (_label, visibility) => {
+      mockJson({ errcode: 0, agentid: AGENT_ID, close: 0, ...visibility });
+      const err = await caughtFrom(prepared().getAgent('token', AGENT_ID));
+      expect(err).toBeInstanceOf(WecomApiError);
+      expect((err as WecomApiError).errCode).toBe('INVALID_RESPONSE');
+    });
+
+    // 反向锁:键**缺席**仍然计 0。上一组若被写成「一律拒 null-ish」就会连带打死这条,
+    // 而"没返可见范围键"是企业微信的合法回执形状。
+    it('可见范围三个键全缺席 → 计数全 0,不报错(缺席 ≠ 显式 null)', async () => {
+      mockJson({ errcode: 0, agentid: AGENT_ID, close: 0 });
+      await expect(prepared().getAgent('token', AGENT_ID)).resolves.toMatchObject({
+        allowUserCount: 0,
+        allowPartyCount: 0,
+        allowTagCount: 0,
+      });
+    });
+
+    it('内层键缺席(外层对象在、内层没写)→ 计数 0,不报错', async () => {
+      mockJson({
+        errcode: 0,
+        agentid: AGENT_ID,
+        close: 0,
+        allow_userinfos: {},
+        allow_partys: {},
+        allow_tags: {},
+      });
+      await expect(prepared().getAgent('token', AGENT_ID)).resolves.toMatchObject({
+        allowUserCount: 0,
+        allowPartyCount: 0,
+        allowTagCount: 0,
+      });
+    });
+
     it('小数型 agentid → 36031(必须是整数,不是"能转成数字就行")', async () => {
       mockJson({ errcode: 0, agentid: 1000002.5, close: 0 });
       const err = await caughtFrom(prepared().getAgent('token', AGENT_ID));

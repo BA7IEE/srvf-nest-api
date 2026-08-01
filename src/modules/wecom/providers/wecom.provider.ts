@@ -111,9 +111,13 @@ function readOptionalString(body: WecomResponseBody, key: string): string | null
 // 形状为 `{ allow_userinfos: { user: [...] } }` 这类嵌套。
 //
 // **缺席**与**读不懂**必须区分:
-//   - 整个键缺席 → 0。缺席 = 空列表,这是协议读法,不是本地兜底。
+//   - 整个键缺席(`undefined`)→ 0。缺席 = 空列表,这是协议读法,不是本地兜底。
 //   - 键在但不是对象 / 内层在但不是数组 → INVALID_RESPONSE。
 //     静默计 0 会把"读不懂上游回执"报成"没有人可见" —— 这是诊断接口最不该撒的谎。
+//   - **显式 `null` 归后者,不归前者**(2026-08-01 整批评审 P2):`null` 不是"键没出现",
+//     它是上游明确写下的一个**不是对象/不是数组**的值 —— 与 `"oops"` / `123` 同类,
+//     没有任何协议依据把它读成空列表。`typeof null === 'object'` 且 `Array.isArray(null)`
+//     为 false,所以下面两处类型判断都拦不住它,必须显式写出来。
 function countNestedStrict(
   body: WecomResponseBody,
   outerKey: string,
@@ -121,13 +125,13 @@ function countNestedStrict(
   endpoint: string,
 ): number {
   const outer = body[outerKey];
-  if (outer === undefined || outer === null) return 0;
-  if (typeof outer !== 'object' || Array.isArray(outer)) {
+  if (outer === undefined) return 0;
+  if (outer === null || typeof outer !== 'object' || Array.isArray(outer)) {
     invalidResponse(endpoint, `${outerKey} 不是对象`);
   }
   const inner = (outer as Record<string, unknown>)[innerKey];
-  if (inner === undefined || inner === null) return 0;
-  if (!Array.isArray(inner)) {
+  if (inner === undefined) return 0;
+  if (inner === null || !Array.isArray(inner)) {
     invalidResponse(endpoint, `${outerKey}.${innerKey} 不是数组`);
   }
   return inner.length;
