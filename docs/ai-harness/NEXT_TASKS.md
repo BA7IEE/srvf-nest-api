@@ -124,7 +124,19 @@ Invalid Date,「先 new Date 再判 NaN」这种写法拦不住。
 
 ---
 
-#### 🔴 整批评审(M 批次 + 企微 T1/T2,`b99548bf..43f63624`)未通过 —— 5 P1 已复现,拆 R / W 两 goal 修复
+#### 🔴 整批评审(N+R+W,`43f63624..56ea8480`)未通过 —— 上轮 5 P1 全 PASS,2 新 P1 归 Q goal
+
+**先记账**:上轮 5 条 P1 **全部 PASS 关闭**(裁判四元组冻结 + 别名/namespace/computed 解析 +
+`no-decorator-realias` · 显式 ReadCommitted/4s lock/7s tx 三层预算 · 企微 Settings 锁后复读 ·
+核心协议严格解析 · Provider 无状态化);R1 真触发已补(#870 对抗 PR,裁判 7s 硬红,run 链接见 #868 评论)。
+**#866 台账与 #869 企微核心 PASS;#867 与 #868 各留一条组合缺口:**
+
+| # | 归属 | 机制(主会话已复现) | 修复 |
+|---|---|---|---|
+| **P1-①** | #867 递补 | Proposal 多岗位同时扩容:applier 逐岗位循环调 `promoteActivityWaitlistWithinCapacity`,helper 每轮重数全活动 PASS,而递补只写 PENDING 不涨 PASS ⇒ **每个岗位都领到全额父预算**。可达数据:历史 null-position PASS + 双岗位扩容 + 岗位 headroom 之和 > 父 headroom ⇒ 多递补超父余量(错误移出候补 + 误导通知) | Q1:共享事务内父预算,按**实际 promoted 数**扣减(跳过的候选人预算留给下一岗);抽批量入口防调用方自维护第二套容量算法;e2e 覆盖该精确组合 |
+| **P1-②** | #868 扫描器 | `/* eslint srvf/no-param-id-string: "off" */` 是 ESLint **规则配置注释**,不是 disable 指令 —— 扫描器入口闸 `if (!text.includes('eslint-disable')) return []`([selftest:789](../../scripts/harness-eslint.selftest.ts))直接跳过;探针实测 lint 0 命中。可一次关掉 `srvf/*` 全部与 `no-restricted-syntax` | Q2:业务源文件禁一切 `/* eslint ... */` 配置注释(与合法的具名 `// eslint-disable-next-line ... -- 理由` 语法不同,不误伤);四组**真实 lint** 变异(不许只测纯函数) |
+| P2-① | #869 企微 | 可见范围 outer/inner 显式 `null` 被当"缺席"计 0,违反自己写的铁律「键出现但结构不对 → 36031」 | Q3:null=INVALID_RESPONSE,补 outer/inner null 用例 |
+| P2-② | #868 预算 | `lock_timeout` 4s 按**每次**等待计,两次 3.5s 等待合计可先撞 7s 总预算 → P2028 而非 40901。代码注释已诚实登记 | **不入 Q**,登记为「下次触碰该事务框架时处理」(传递剩余 wall-clock / 受控映射 P2028 / 或证明至多一次长等待) |
 
 **双 PASS 先记账**:**M 并发运行时收口全过**(markGate/evaluate 锁序、入队唯一闸、finalApprove 批量化+RC+有界等待、
 edit 状态机执行位 —— 0 P0 0 P1)· **企微 T1 schema 全过**(身份不进 User.openid、双 partial unique、
