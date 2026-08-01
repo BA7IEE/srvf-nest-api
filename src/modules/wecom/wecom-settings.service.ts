@@ -37,6 +37,17 @@ import { WecomCredentialStatus, type WecomSettingsResolved } from './wecom.types
 // 凭证安全(§5.5 L3 红线):response / 日志 / audit 永不含 CorpSecret 明文或密文;
 // update 只记 changedFields;reset 不传 before/after/extra(连字段名都不写)。
 
+// `lockAndRereadSettings` 的返回形状:**锁后**重读到的、参与本次判定的全部列。
+// 单列一个类型是为了让"哪些值必须来自锁后行"在签名上显式可见 —— 加判据时必须先加到这里。
+type LockedWecomSettings = {
+  id: string;
+  providerType: string;
+  enabled: boolean;
+  loginEnabled: boolean;
+  messageEnabled: boolean;
+  corpId: string | null;
+};
+
 @Injectable()
 export class WecomSettingsService {
   private readonly logger = new Logger(WecomSettingsService.name);
@@ -92,36 +103,40 @@ export class WecomSettingsService {
       .sort();
 
     const row = await this.runSingletonWriteWithUniqueRetry(async (tx) => {
-      // 行锁:corpId 变更判定要读 active identity 计数,读完到写之间不能有人插入新绑定。
-      // settings 是 singleton,锁它即锁住"本次配置变更"这条串行化通道(冻结稿 §9.2)。
-      const existing = await tx.wecomSettings.findFirst({
-        select: {
-          id: true,
-          providerType: true,
-          enabled: true,
-          loginEnabled: true,
-          messageEnabled: true,
-          corpId: true,
-        },
-      });
-      if (existing) {
-        await tx.$queryRaw(
-          Prisma.sql`SELECT "id" FROM "wecom_settings" WHERE "id" = ${existing.id} FOR UPDATE`,
-        );
-      }
+      // 行锁 → **锁后重读完整行**(2026-08-01 W1;S1 形状收口)。
+      //
+      // 初版是「`findFirst`(不带锁)→ `FOR UPDATE` → 拿**锁前**的行算终态」。
+      // 锁前读到的值在拿到锁的那一刻可能已被别的事务改掉:两个并发 PATCH 各自用锁前快照判
+      // 下面的组合不变量,就能合起来写出 `enabled=false + loginEnabled=true` ——
+      // 一个自相矛盾却"两边都保存成功"的配置(red-first 见
+      // test/e2e/wecom-settings-concurrency.e2e-spec.ts,两个顺序都复现)。
+      //
+      // 探测只取 id(id 一旦建成不再变);真正被用来判断的每一个值都来自**锁之后**的重读。
+      // settings 是 singleton,锁它即锁住"本次配置变更"这条串行化通道(冻结稿 §9.2);
+      // corpId 变更判定要读 active identity 计数,读完到写之间不能有人插入新绑定。
+      const probe = await tx.wecomSettings.findFirst({ select: { id: true } });
+      const lockedExisting = probe === null ? null : await this.lockAndRereadSettings(tx, probe.id);
+
+      // 终态 = 锁后行 + 本次 dto(dto 未提供的字段保持锁后行的值);行不存在时用建 default 的取值。
+      // 三个开关是**跨字段组合不变量**,必须在同一份终态上一次判完 —— 各判各的就是上面那个交错。
+      const terminal = {
+        // DB 侧 providerType 是 String 列(冻结稿 §5.1 逐字),闭集只由 DTO 的 @IsIn 在写入口把关;
+        // 这里的断言只是把"库里可能有闭集外的值"这件事收进类型,运行时第②重仍在 resolveRoute。
+        providerType: (dto.providerType ??
+          lockedExisting?.providerType ??
+          'DEV_STUB') as WecomProviderType,
+        enabled: dto.enabled ?? lockedExisting?.enabled ?? false,
+        loginEnabled: dto.loginEnabled ?? lockedExisting?.loginEnabled ?? false,
+        messageEnabled: dto.messageEnabled ?? lockedExisting?.messageEnabled ?? false,
+      };
 
       // ① production-like 禁 DEV_STUB(显式传入或"不存在则建 default"两条路径都拦;第②重在运行时 resolveRoute)
-      const effectiveProviderType: WecomProviderType =
-        dto.providerType ?? (existing?.providerType as WecomProviderType | undefined) ?? 'DEV_STUB';
-      if (isProductionLike(this.cfg.env) && effectiveProviderType === 'DEV_STUB') {
+      if (isProductionLike(this.cfg.env) && terminal.providerType === 'DEV_STUB') {
         throw new BizException(BizCode.BAD_REQUEST);
       }
 
       // ② 二级闸不得脱离总闸:loginEnabled / messageEnabled=true 必须 enabled=true
-      const effectiveEnabled = dto.enabled ?? existing?.enabled ?? false;
-      const effectiveLogin = dto.loginEnabled ?? existing?.loginEnabled ?? false;
-      const effectiveMessage = dto.messageEnabled ?? existing?.messageEnabled ?? false;
-      if ((effectiveLogin || effectiveMessage) && !effectiveEnabled) {
+      if ((terminal.loginEnabled || terminal.messageEnabled) && !terminal.enabled) {
         throw new BizException(BizCode.BAD_REQUEST);
       }
 
@@ -133,14 +148,15 @@ export class WecomSettingsService {
       // ④ corpId 仅在 active identity = 0 时可改(冻结稿 §6.1 / §5.1 规则 5)。
       // 已有人绑定时换 CorpID = 所有既有绑定静默失配(corpId 是身份键的一半),
       // 且两条 active partial unique 也按 corpId 分域 —— 换了之后旧行不再互斥,能出双 active。
+      // ⚠️ 比对基准是**锁后**的 corpId:拿锁前值比,会把"别人刚改成同值"误判成一次真变更。
       if (
         dto.corpId !== undefined &&
-        existing !== null &&
-        existing.corpId !== null &&
-        dto.corpId !== existing.corpId
+        lockedExisting !== null &&
+        lockedExisting.corpId !== null &&
+        dto.corpId !== lockedExisting.corpId
       ) {
         const activeIdentities = await tx.wecomIdentity.count({
-          where: { corpId: existing.corpId, status: 'active' },
+          where: { corpId: lockedExisting.corpId, status: 'active' },
         });
         if (activeIdentities > 0) {
           throw new BizException(BizCode.WECOM_CORP_ID_IN_USE);
@@ -148,9 +164,9 @@ export class WecomSettingsService {
       }
 
       let updated: WecomSettingsRow;
-      if (existing) {
+      if (lockedExisting) {
         updated = await tx.wecomSettings.update({
-          where: { id: existing.id },
+          where: { id: lockedExisting.id },
           data: { ...data, updatedBy: user.id },
         });
       } else {
@@ -234,6 +250,31 @@ export class WecomSettingsService {
   }
 
   // === helpers ===
+
+  /**
+   * 取 singleton 行的 `FOR UPDATE` 行锁,并**在锁之后**重读它。
+   *
+   * 返回值一定是"锁后行":调用方据此算终态、判组合不变量、比对 corpId。
+   * 若该行在探测与取锁之间被删掉,`FOR UPDATE` 取不到任何行、重读也返 `null` ——
+   * 调用方走"不存在"分支(create + P2002 兜底),与"从来没有过这一行"同解。
+   */
+  private async lockAndRereadSettings(
+    tx: Prisma.TransactionClient,
+    id: string,
+  ): Promise<LockedWecomSettings | null> {
+    await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "wecom_settings" WHERE "id" = ${id} FOR UPDATE`);
+    return tx.wecomSettings.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        providerType: true,
+        enabled: true,
+        loginEnabled: true,
+        messageEnabled: true,
+        corpId: true,
+      },
+    });
+  }
 
   private async runSingletonWriteWithUniqueRetry<T>(
     operation: (tx: Prisma.TransactionClient) => Promise<T>,
