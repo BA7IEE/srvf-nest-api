@@ -9,7 +9,7 @@
 
 | 项 | 当前值 |
 |---|---|
-| **发布边界** | 🟢 **代码 Release GO(2026-08-02;v0.65.0 已 bump+tag+Release)** —— 外部独立评审对冻结范围 `56ea8480..b6a2f9d8` 终局判 GO(P0=0 / P1=0 / 新增 P2=0;Q1/Q2/Q3 全关,见 §4);**生产部署仍是独立硬门**:第 67/68 migration 生产执行、首批证书标准初始化、前端契约适配、企微真机联调等按各 runbook 单独审批,不随本决议自动授权;production 本就未部署;活动责任、保险、Storage、外部通道、基础设施硬门仍开放(§4 / runbook) |
+| **发布边界** | 🟢 **代码 Release GO(2026-08-02,v0.65.0 已发)** —— 外部评审对 `56ea8480..b6a2f9d8` 终局判 GO(0 P0/P1);**生产部署仍是独立硬门**,migration 67/68 生产执行、首批标准初始化、前端适配、企微联调按各 runbook 单独审批;活动责任、保险、Storage、外部通道、基础设施硬门仍开放(§4 / runbook) |
 | 版本 / 卫生 | 现场查:`pnpm agent:preflight` |
 | 本版 footprint | 即下方计数块(生成物) |
 
@@ -65,7 +65,7 @@
 | P1 | 前端联调包剩运维演练 + 排错 SOP(系统侧无动作) |
 | P1 | 保险 gate 未启用、旧 server=0 未验证；真实 ingress/ACL、COS、worker/fleet、registry digest 未验，均为 production GO 硬门 |
 | P1 | P1-22 gate 配置化;P1-23 isForeigner 改名;**P1-26 + 复审 M1–M6 全收口**(锁序/入队身份/终审批量化+RC+有界等待/棘轮注册表;另修一新查出的 40P01;新码 28211/40901;⚠️行为变更);S6 亦收口 |
-| ✅ | **整批评审(N+R+W)+ Q 复核终局通过(2026-08-02 GO)**:上轮 5 P1 全 PASS(真触发见 #868);2 新 P1 由 Q 批次 [#874](https://github.com/BA7IEE/srvf-nest-api/pull/874) 关闭 —— ① Proposal 多岗位扩容改为**一次进入共享父预算递补**(按实际 promoted 扣减,「双岗位 headroom 之和>父余量」精确反例 e2e 钉死);② 扫描器识别 `/* eslint rule: "off" */` 配置注释逃生门(4/4 真变异抓获,预筛改 `'eslint'`)。P2 企微可见范围 null 当缺席已顺带关闭;**P2 多次顺序锁等待可撞 7s 总预算维持登记不入批**(触碰 member 线性化事务框架时再单独处理)。e2e 日期炸弹属既存类,[#875](https://github.com/BA7IEE/srvf-nest-api/pull/875) 拆除本次到期实例(守护另立) |
+| P2 | 多次顺序锁等待可撞 7s 总预算(评审登记不入批,触碰 member 线性化框架时处理);e2e 近未来日期炸弹类守护未立(#875 只拆当次实例) |
 | **P1** | **证书标准库未上线三件事**(P0 修完前都不要动):① PR-4b 第 67 migration 是**不可逆** contract(DROP 七列),production 未部署,须按 [`go-live`](ops/certificate-standard-library-go-live.md) 停写→备份验证→探针→deploy(AI 对 `migrate deploy` 恒无权);② #826–#834 + F1–F6 的对外契约破坏**已随 v0.65.0 发版(2026-08-02)**,前端适配仍未做,清单见 [`handoff/admin-web.md`](handoff/admin-web.md) §3.2 / §3.2.1;③ 首批标准与认定规则未建(刻意不 seed,认定口径归维护者拍板)—— 零标准时建证与审核一律拒、招新选择器恒空,按 [`初始化`](ops/certificate-standard-library-initialization.md) 执行,⚠️ `code` 打错不可挽回 |
 | P2 | scoped余面;god-service;单测低;snapshot勿整读;nullable primitive→OpenAPI object(D档另立) |
 | P3 | 考勤审核自由备注是否永久原文进入不可变审计，待独立隐私口径确认 |
