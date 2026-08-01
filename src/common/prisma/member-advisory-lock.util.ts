@@ -8,10 +8,45 @@ type PrismaTx = Prisma.TransactionClient;
 type InteractiveClient = Pick<PrismaService, '$transaction'>;
 
 /**
- * 单次锁等待的预算(毫秒)。必须**明显小于** Prisma 默认 5s 交互事务预算 ——
- * 否则先撞的仍是事务超时(P2028 → 50000),这条闸等于没设。
+ * **单次**锁等待的预算(毫秒)。注意是「单次」:`lock_timeout` 是 PostgreSQL 的
+ * per-acquisition 语义,不是整段事务的累计上限(见 MEMBER_TX_TIMEOUT_MS 的注释)。
  */
 export const MEMBER_LOCK_WAIT_BUDGET_MS = 4_000;
+
+/**
+ * 事务体内**业务工作**的预算(毫秒)—— 不含任何锁等待。
+ *
+ * 实测基数(2026-08-01,本机 + 本地 Postgres):本仓单张考勤单的规模上限 200 人,
+ * 批量化后一次终审 **14 次 SQL / 222 ms**,且与人数无关(M3 已把 N+1 砍掉)。
+ * 取 3000ms ≈ 13× 余量,给托管库的网络往返、冷缓存与并发负载留空间。
+ *
+ * ⚠️ 它**不是**给 N+1 兜底的额度。批量化的判据仍然是 **SQL 次数**
+ * (`test/e2e/attendance-final-approve-scale-isolation.e2e-spec.ts` 的 `MAX_TX_QUERIES < 40`),
+ * 而本常量同时是那条 spec 的耗时上限 —— 谁想靠「调大预算」顶过一次退化,
+ * 先要过 SQL 次数那一关,而次数关调不了。
+ */
+export const MEMBER_TX_WORK_BUDGET_MS = 3_000;
+
+/**
+ * 交互事务的**显式**总预算 = 一次完整锁等待 + 业务工作预算(M3 遗留 P2,2026-08-01)。
+ *
+ * 修的是什么:上一版没写 timeout,于是吃 Prisma 默认的 **5s**。而 `lock_timeout` 已经
+ * 先占了 4s —— 真正排过一次队的事务,留给业务的只剩 1s,而 200 人终审实测就要 222ms,
+ * 慢一个数量级的库(托管实例、冷缓存、并发高峰)当场跑穿。跑穿的结果是 P2028 → 50000
+ * 「服务器内部错误」:既不是事实(它只是排过队),也不可重试 —— 正是 M3 花力气从
+ * 500 改成 40901 的那一类失败,从另一条路又回来了。两个预算必须一起写,不能一个显式
+ * 一个继承默认值。
+ *
+ * ⚠️ **已知残留,刻意不在本条里解**:`lock_timeout` 是 per-acquisition 的,
+ * 而 finalApprove 这条路径上有**多个**会阻塞的取锁点(`claimAtStatus` 的
+ * `FOR NO KEY UPDATE` → `lockMembersForWrite` 的 advisory 键 → 写侧 FK 的
+ * `FOR KEY SHARE`)。串行等待会**相加**,极端情况仍可能越过本预算 → P2028。
+ * 本条把「等一次 + 干完活」钉进预算(实测把 3.0s + 5.8s 两段串行等待的场景从
+ * P2028 救成业务码),但没有把「等 N 次」也纳入 —— 那需要改成累计 deadline
+ * 或 NOWAIT + 重试,是一次独立的设计变更,不夹带在这条里。
+ * 执行位:`attendance-final-approve-scale-isolation.e2e-spec.ts` 的 ④ 两例。
+ */
+export const MEMBER_TX_TIMEOUT_MS = MEMBER_LOCK_WAIT_BUDGET_MS + MEMBER_TX_WORK_BUDGET_MS;
 
 /** PostgreSQL 55P03 = lock_not_available(等锁超过 lock_timeout)。 */
 function isLockWaitTimeout(err: unknown): boolean {
@@ -87,6 +122,9 @@ export async function withBoundedMemberLockWait<T>(
  *    完全掩盖:同一份代码在默认 RR 的库上跑就是错的,而没有任何用例会红。
  *    所以隔离级别必须**写在代码里**,不能继承库默认值。
  * ② **有界锁等待**(见 withBoundedMemberLockWait):排队超时以 40901 收场,不是 500。
+ * ③ **显式事务预算**(见 MEMBER_TX_TIMEOUT_MS):Prisma 默认 5s 减去 4s 锁预算只剩 1s,
+ *    排过队的事务会以 P2028 → 500 收场 —— ② 的收益在这条路上被原样抵消掉。
+ *    三件事必须一起写死在这里:任何一个留给默认值,另外两个就白做。
  */
 export async function runMemberLinearizedTransaction<T>(
   prisma: InteractiveClient,
@@ -94,6 +132,7 @@ export async function runMemberLinearizedTransaction<T>(
 ): Promise<T> {
   return prisma.$transaction((tx) => withBoundedMemberLockWait(tx, () => body(tx)), {
     isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+    timeout: MEMBER_TX_TIMEOUT_MS,
   });
 }
 

@@ -3,6 +3,11 @@ import { MemberStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { BizException } from '../../src/common/exceptions/biz.exception';
+import {
+  MEMBER_LOCK_WAIT_BUDGET_MS,
+  MEMBER_TX_TIMEOUT_MS,
+  MEMBER_TX_WORK_BUDGET_MS,
+} from '../../src/common/prisma/member-advisory-lock.util';
 import { PrismaService } from '../../src/database/prisma.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { AttendancesService } from '../../src/modules/attendances/attendances.service';
@@ -43,8 +48,21 @@ const SCALE_RECORDS = 200;
  * 但它必须远小于「随 N 增长」的量级,否则这条断言就不再是判据。
  */
 const MAX_TX_QUERIES = 40;
-/** Prisma 默认交互事务预算 5s;跑满即 P2028。留 1s 余量做门槛。 */
-const MAX_TX_DURATION_MS = 4_000;
+/**
+ * 无争用时 200 人终审的耗时上限 = **业务工作预算本身**(实测 222ms,预算 3000ms)。
+ *
+ * ⚠️ 刻意绑定到生产常量而不是另写一个数:R4 把事务预算显式抬到
+ * `MEMBER_TX_TIMEOUT_MS`(锁预算 + 工作预算),如果这里还留着一个手写的
+ * 「5s 减 1s」的 4000,它就与预算脱钩,变成第二把尺子 —— 而「调大 timeout 顶过
+ * N+1 退化」正是要靠这条断言挡住的。绑死之后:抬预算不会顺带放松这条。
+ */
+const MAX_TX_DURATION_MS = MEMBER_TX_WORK_BUDGET_MS;
+/**
+ * Prisma 未显式指定 timeout 时的交互事务预算。R4 之前本仓吃的就是它。
+ * 只用于**自证前提**:近预算用例必须把总耗时推到它以上,否则那些用例
+ * 在修复前也是绿的 —— 绿的对抗用例证明不了任何事。
+ */
+const PRISMA_DEFAULT_TX_TIMEOUT_MS = 5_000;
 
 interface QueryCounter {
   reset: () => void;
@@ -205,6 +223,38 @@ describe('考勤终审:规模、隔离级别与有界锁等待(M3)', () => {
       })),
     });
     return sheet.id;
+  }
+
+  /**
+   * 占住一把锁直到 `release()`,返回三件事:
+   *   · `acquired` —— 锁**真的到手**后才 resolve。不等它就开始被测事务 = 用竞态碰运气,
+   *     偶尔锁还没拿到,被测事务一路畅通,用例变成一条什么都没证明的绿。
+   *   · `release()` —— 放锁(提交占位事务)。
+   *   · `done` —— 占位事务的 promise,必须 await,否则连接泄漏到下一条用例。
+   */
+  function holdLock(take: (tx: Prisma.TransactionClient) => Promise<unknown>): {
+    acquired: Promise<void>;
+    release: () => void;
+    done: Promise<unknown>;
+  } {
+    let markAcquired!: () => void;
+    const acquired = new Promise<void>((resolve) => {
+      markAcquired = resolve;
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const done = prisma.$transaction(
+      async (tx) => {
+        await take(tx);
+        markAcquired();
+        await gate;
+      },
+      // 占位事务自己不受被测预算约束 —— 它是环境,不是被测对象。
+      { timeout: 120_000, maxWait: 120_000 },
+    );
+    return { acquired, release, done };
   }
 
   beforeAll(async () => {
@@ -461,6 +511,152 @@ describe('考勤终审:规模、隔离级别与有界锁等待(M3)', () => {
           `ALTER DATABASE "${databaseName}" RESET default_transaction_isolation`,
         );
       }
+    },
+    CASE_TIMEOUT_MS,
+  );
+
+  // ── ④ 近预算位(M3 遗留 P2,2026-08-01)────────────────────────────────────
+  //
+  // ②(convoy)证的是「等**超时**了要给 40901」。它证不了对称的另一半:
+  // **等到了**锁的那个事务,还有没有预算把活干完。
+  //
+  // 上一版两个预算是这样凑起来的:`lock_timeout` 显式 4s,交互事务预算**继承 Prisma
+  // 默认的 5s**。于是真正排过一次队的事务,留给业务的只剩 1s —— 而 200 人终审实测
+  // 222ms,慢一个数量级的库就跑穿,以 P2028 → 50000 收场。它排了队、拿到了锁、
+  // 什么都没做错,却拿到一个不可重试的 500:M3 花力气从 500 改成 40901 的那件事,
+  // 从另一条路原样回来了。修法是把总预算也显式写出来(MEMBER_TX_TIMEOUT_MS)。
+  //
+  // 两条用例分工不同,都要留:
+  //   ④-a = 评审点名的那一条(等 3.8s → 完整 200 人终审)。**它在本机修复前是绿的**
+  //         (3.8s + 0.22s ≈ 4.0s < 5s),写它是因为它钉住的是「余量」这个量纲:
+  //         修复前余量 1s、修复后 3s,而 200 人的活要 0.22s —— 余量必须比活大一个
+  //         数量级,不能只大 4 倍。它是回归闸,不是复现闸。
+  //   ④-b = 真正的 red-first。`lock_timeout` 是 **per-acquisition** 语义,而这条路径上
+  //         有两个会阻塞的取锁点(claimAtStatus 的 FOR NO KEY UPDATE → member advisory
+  //         键),串行等待**相加**。两段各自都在 4s 锁预算之内,加起来越过 5s ——
+  //         修复前 P2028 → 500,修复后产出业务结果。
+  it(
+    `④-a 近预算位:等 ${MEMBER_LOCK_WAIT_BUDGET_MS - 200}ms 拿到键后,${SCALE_RECORDS} 人终审仍跑完(不是 P2028→500)`,
+    async () => {
+      /** 卡在锁预算之内 —— 本例要的是「等到了」,不是「等超时」(那是 ② 的判据)。 */
+      const HOLD_MS = MEMBER_LOCK_WAIT_BUDGET_MS - 200;
+      expect(HOLD_MS).toBeLessThan(MEMBER_LOCK_WAIT_BUDGET_MS);
+
+      const memberIds: string[] = [];
+      for (let i = 0; i < SCALE_RECORDS; i += 1) memberIds.push(await makeMember());
+      for (const memberId of memberIds) await giveJoiningApplication(memberId);
+      const sheetId = await createPendingFinalReviewSheet(
+        memberIds.map((memberId) => ({ memberId, points: '1.00', checkInAt: DAY_B })),
+      );
+
+      // lockMembersForWrite 是**一条** SQL 批量取键,占住其中任意一把就足以让整条语句排队;
+      // 取排序最末那把,让它先拿到前 199 把再卡住 —— 更接近真实 convoy 的形状。
+      const heldMemberId = [...memberIds].sort().at(-1)!;
+      const holder = holdLock(
+        (tx) =>
+          tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${heldMemberId}))::text AS locked`,
+      );
+      await holder.acquired;
+
+      const startedAt = Date.now();
+      const timer = setTimeout(holder.release, HOLD_MS);
+      let caught: unknown;
+      try {
+        await attendances.finalApprove(sheetId, {}, finalReviewer, META);
+      } catch (err) {
+        caught = err;
+      }
+      const elapsedMs = Date.now() - startedAt;
+      clearTimeout(timer);
+      holder.release();
+      await holder.done;
+
+      // 判据一:产出的是业务结果,不是 P2028 → 50000。
+      expect(caught).toBeUndefined();
+      // 判据二:它**真的排过队** —— 否则本例退化成「无争用跑一遍」,什么都没证明。
+      expect(elapsedMs).toBeGreaterThanOrEqual(HOLD_MS - 300);
+      // 判据三:排队 + 干活合起来仍在显式预算内(修复前这里只有 5s 可用)。
+      expect(elapsedMs).toBeLessThan(MEMBER_TX_TIMEOUT_MS);
+
+      // 行为不许因排队而缩水:200 条结果通知一条不少,状态照常落到 approved。
+      expect(
+        (
+          await prisma.attendanceSheet.findUniqueOrThrow({
+            where: { id: sheetId },
+            select: { statusCode: true },
+          })
+        ).statusCode,
+      ).toBe('approved');
+      expect(
+        await prisma.notificationOutboxIntent.count({
+          where: { aggregateType: 'attendance_sheet', aggregateId: sheetId },
+        }),
+      ).toBe(SCALE_RECORDS);
+    },
+    CASE_TIMEOUT_MS,
+  );
+
+  it(
+    '④-b 近预算位(串行两段等待):Sheet 行锁 + member 键各自都在锁预算内,相加越过旧的 5s 默认预算',
+    async () => {
+      /** 第一段:claimAtStatus 的 FOR NO KEY UPDATE 等这么久。 */
+      const SHEET_HOLD_MS = 3_000;
+      /** 第二段结束点(从终审起算):member 键等到这一刻。 */
+      const MEMBER_HOLD_MS = MEMBER_TX_TIMEOUT_MS - 1_200;
+
+      // ── 前提自证:这四条任意一条不成立,本用例就不再是它自称的那个判据 ──
+      // 单段都必须在锁预算内,否则先撞的是 40901(那是 ② 的判据,不是本例的)。
+      expect(SHEET_HOLD_MS).toBeLessThan(MEMBER_LOCK_WAIT_BUDGET_MS);
+      expect(MEMBER_HOLD_MS - SHEET_HOLD_MS).toBeLessThan(MEMBER_LOCK_WAIT_BUDGET_MS);
+      // 相加必须越过旧的 5s 默认预算,否则修复前它也是绿的 —— 绿的对抗用例证明不了任何事。
+      expect(MEMBER_HOLD_MS).toBeGreaterThan(PRISMA_DEFAULT_TX_TIMEOUT_MS);
+      // 且必须落在新预算之内,否则修复后它也是红的。
+      expect(MEMBER_HOLD_MS).toBeLessThan(MEMBER_TX_TIMEOUT_MS);
+
+      const memberId = await makeMember();
+      const sheetId = await createPendingFinalReviewSheet([
+        { memberId, points: '1.00', checkInAt: DAY_A },
+      ]);
+
+      // 两把锁都先到手,再放终审进来 —— 顺序颠倒就变成竞态。
+      const sheetHolder = holdLock(
+        (tx) => tx.$queryRaw`SELECT "id" FROM "AttendanceSheet" WHERE "id" = ${sheetId} FOR UPDATE`,
+      );
+      const memberHolder = holdLock(
+        (tx) => tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${memberId}))::text AS locked`,
+      );
+      await Promise.all([sheetHolder.acquired, memberHolder.acquired]);
+
+      const startedAt = Date.now();
+      const timers = [
+        setTimeout(sheetHolder.release, SHEET_HOLD_MS),
+        setTimeout(memberHolder.release, MEMBER_HOLD_MS),
+      ];
+      let caught: unknown;
+      try {
+        await attendances.finalApprove(sheetId, {}, finalReviewer, META);
+      } catch (err) {
+        caught = err;
+      }
+      const elapsedMs = Date.now() - startedAt;
+      for (const t of timers) clearTimeout(t);
+      sheetHolder.release();
+      memberHolder.release();
+      await Promise.all([sheetHolder.done, memberHolder.done]);
+
+      // 修复前:两段等待相加 ≈ 5.8s > Prisma 默认 5s ⇒ P2028 ⇒ 全局过滤器 50000。
+      expect(caught).toBeUndefined();
+      // 自证它真的走完了两段等待(不是某一段没生效)。
+      expect(elapsedMs).toBeGreaterThanOrEqual(MEMBER_HOLD_MS - 300);
+      expect(elapsedMs).toBeLessThan(MEMBER_TX_TIMEOUT_MS);
+      expect(
+        (
+          await prisma.attendanceSheet.findUniqueOrThrow({
+            where: { id: sheetId },
+            select: { statusCode: true },
+          })
+        ).statusCode,
+      ).toBe('approved');
     },
     CASE_TIMEOUT_MS,
   );
