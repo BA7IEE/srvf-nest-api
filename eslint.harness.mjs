@@ -20,6 +20,7 @@
 
 import { readFileSync } from 'node:fs';
 
+import { DECORATOR_REALIAS_MESSAGE, noDecoratorRealias } from './eslint-rules/no-decorator-realias.mjs';
 import { NULLABLE_IS_OPTIONAL_MESSAGE, noNullableIsOptional } from './eslint-rules/no-nullable-is-optional.mjs';
 import { PARAM_ID_STRING_MESSAGE, noParamIdString } from './eslint-rules/no-param-id-string.mjs';
 
@@ -29,12 +30,19 @@ import { PARAM_ID_STRING_MESSAGE, noParamIdString } from './eslint-rules/no-para
 // (第五轮评审 J2·L3 实测)。
 const NULLABLE_IS_OPTIONAL_RULE = 'srvf/no-nullable-is-optional';
 const PARAM_ID_STRING_RULE = 'srvf/no-param-id-string';
+/**
+ * R3:禁把受守护装饰器**改名导出**。它与上面两条是一套 ——
+ * 上面两条保证「同一文件内换名字看得穿」,本条保证「跨文件换名字根本不许发生」。
+ * 少任何一条,`export { IsOptional as Opt } from 'class-validator'` 就是一条完整的绕过路径。
+ */
+const DECORATOR_REALIAS_RULE = 'srvf/no-decorator-realias';
 
-/** 供 flat config 以 `plugins: { srvf: srvfEslintPlugin }` 挂载(两条规则同一个 plugin 命名空间)。 */
+/** 供 flat config 以 `plugins: { srvf: srvfEslintPlugin }` 挂载(三条规则同一个 plugin 命名空间)。 */
 const srvfEslintPlugin = {
   rules: {
     'no-nullable-is-optional': noNullableIsOptional,
     'no-param-id-string': noParamIdString,
+    'no-decorator-realias': noDecoratorRealias,
   },
 };
 
@@ -582,6 +590,17 @@ const harnessConfigBlocks = [
     rules: { [PARAM_ID_STRING_RULE]: 'error' },
   },
 
+  // (l2) 禁改名导出受守护装饰器(R3,2026-08-01)。
+  //      范围必须是**全仓 TS**,不能跟着某条规则的作用域走:改名 re-export 可以写在
+  //      任何一个文件里,而它伤害的是**下游**那个文件。只在 controller / DTO 里查,
+  //      等于允许「在别处改名、在这里用」——那正是修复前实测能走通的那条路。
+  {
+    name: 'srvf/harness:decorator-realias',
+    files: ['src/**/*.ts', 'test/**/*.ts', 'prisma/**/*.ts'],
+    plugins: { srvf: srvfEslintPlugin },
+    rules: { [DECORATOR_REALIAS_RULE]: 'error' },
+  },
+
   // (m) DTO 范围关掉 inline 逃生门(第五轮评审 J2 · L3)。
   //     实测:`/* eslint-disable */`(文件级)与 `// eslint-disable-next-line`(行级)
   //     两种写法此前都能让一个新违规字段通过 lint,RC=0 —— 棘轮的第一道执行位
@@ -591,8 +610,15 @@ const harnessConfigBlocks = [
   //     orchestrator(硬删的具名豁免,AGENTS §1 明文允许的正当用法),扩到全仓
   //     会把它们一起打死 —— 「治误伤开出漏放洞」的反面同样成立,一次误伤会让
   //     下一个人来把整条 linterOptions 删掉。实测 DTO 范围内既有 inline config 为 0,
-  //     所以这条是零代价的。代价写在明处:**非 .dto.ts 文件里的第 18 条仍可被
-  //     inline 关掉**(当前全仓实测 0 处真装饰器落在该范围外)。
+  //     所以这条是零代价的。
+  //
+  //     📌 2026-08-01(R2)起,这条**不再是唯一防线**,它留下的那半边
+  //     (「非 .dto.ts 文件里 srvf/ 规则仍可被 inline 关掉」,当时实测 RC=0 可绕过)
+  //     由 scripts/harness-eslint.selftest.ts 的**全仓扫描**关闭:任何指向 srvf/ 的
+  //     disable 指令、以及任何不具名的 disable 指令,一律拒。
+  //     判据从此绑在**规则身份**上而不是文件名形状上 —— 所以「未来第三类文件」
+  //     不会再开出一个新洞。本块保留,是因为它让逃生门在 DTO 里当场**失效**
+  //     (扫描让它被**拒绝**):一个作用于 lint 之内,一个作用于 lint 之外,不重复。
   {
     name: 'srvf/harness:dto-no-inline-config',
     files: ['**/*.dto.ts', 'src/**/dto/**/*.ts'],
@@ -621,6 +647,8 @@ const ratchetBaselineBlocks = RATCHET_REGISTRY.flatMap((r) =>
 harnessConfigBlocks.push(...ratchetBaselineBlocks);
 
 export {
+  DECORATOR_REALIAS_MESSAGE,
+  DECORATOR_REALIAS_RULE,
   HARNESS_SYNTAX,
   IS_OPTIONAL_NULL_BASELINE,
   LEGACY_PARAM_ID_BASELINE,
@@ -633,4 +661,9 @@ export {
   harnessConfigBlocks,
   parseRatchetBaseline,
   parseRatchetRegistry,
+  // 导出理由:scripts/harness-eslint.selftest.ts 的「覆盖闭环」从**这里**数出
+  // 自定义规则的全集(`srvf/${name}`),而不是自己另维护一份名单。
+  // 另维护一份 = 新增一条规则却忘了加进去 ⇒ 它从此没有阳性对照,
+  // 而「写错了永远匹配不到」的自测输出和「防线完整」一模一样(INC-06 同源)。
+  srvfEslintPlugin,
 };

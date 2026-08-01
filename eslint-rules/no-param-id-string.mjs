@@ -25,8 +25,12 @@
 
 import { matchDecorator } from './decorator-identity.mjs';
 
-/** `@nestjs/common` 里那个装饰器的导入原名。 */
-const PARAM = 'Param';
+/**
+ * `@nestjs/common` 里那个装饰器的导入原名。
+ * 导出理由同 `IS_OPTIONAL_DECORATOR`:`srvf/no-decorator-realias` 引同一个常量。
+ */
+export const PARAM_DECORATOR = 'Param';
+const PARAM = PARAM_DECORATOR;
 
 export const PARAM_ID_STRING_MESSAGE =
   "`:id` 一律走 IdParamDto:@Param('id') id: string 绕过 DTO 白名单,长度/类型全不校验。[AGENTS §1 校验] 正确做法:@Param() params: IdParamDto(src/common/dto/id-param.dto.ts),取 params.id。存量违规在 harness/legacy-param-id-baseline.json 内逐条具名冻结(身份 = 类名.方法名.参数名),**只减不增** —— 往已在清单里的 controller 新增一个照样红,改好一个就删一行。";

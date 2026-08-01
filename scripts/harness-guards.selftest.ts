@@ -1621,11 +1621,20 @@ async function runTrustedJudgeAssertions(): Promise<void> {
     judgeRegistryMonotonicity: (
       baseText: string,
       headText: string | null,
-    ) => { ok: boolean; removed: string[]; deleted: boolean };
+    ) => {
+      ok: boolean;
+      removed: string[];
+      deleted: boolean;
+      mutated: Array<{ id: string; field: string; base: string; head: string }>;
+    };
+    judgeRuleUnionMonotonicity: (
+      baseUnions: Map<string, Set<string>>,
+      headUnions: Map<string, Set<string>>,
+    ) => { ok: boolean; added: Array<{ rule: string; key: string }> };
     parseRatchetRegistryDoc: (
       text: string,
       which: string,
-    ) => Array<{ id: string; baseline: string }>;
+    ) => Array<{ id: string; baseline: string; rule: string; symbolShape: string }>;
   };
   const reg = JSON.parse(
     fs.readFileSync(path.resolve(__dirname, '../harness/redzone.json'), 'utf-8'),
@@ -1815,6 +1824,131 @@ async function runTrustedJudgeAssertions(): Promise<void> {
         !judge.judgeRegistryMonotonicity(BASE_REG, null).ok,
       '删掉注册表 = 全仓棘轮集体退保,这必须是最响的一种失败',
     );
+    // ── R1 · 四元组冻结 + 并集单调性(2026-08-01 整批评审 ①)────────────────
+    //
+    // M4 只冻结 id,于是「同 id 换载体」在 M4 之后**仍然全绿**:
+    //   新增一份洗过的 harness/<旧名>-v2.json、把 baseline 指过去、**旧文件一个字不动** ——
+    //   裁判读 base 注册表拿到旧路径,旧路径没改动 ⇒ 判成 HEAD == BASE ⇒ 放行;
+    //   而 eslint.harness.mjs 读的是 head 注册表,吃的是 v2。
+    // 下面每一条都是「修复前放行 / 修复后拒」的行为断言,不是 grep 源码字符串。
+    {
+      /** 造一份注册表:ratchets[i] 可逐字段覆写,用来精确构造「只换一个字段」的变异。 */
+      const regOf = (
+        entries: ReadonlyArray<{
+          id: string;
+          baseline?: string;
+          rule?: string;
+          symbolShape?: string;
+        }>,
+      ): string =>
+        JSON.stringify({
+          version: 1,
+          ratchets: entries.map((e) => ({
+            id: e.id,
+            baseline: e.baseline ?? `harness/${e.id}.json`,
+            rule: e.rule ?? `srvf/${e.id}`,
+            symbolShape: e.symbolShape ?? 'class-field',
+            why: 'w',
+          })),
+        });
+      const BASE_Q = regOf([{ id: 'a' }, { id: 'b' }]);
+
+      check(
+        'F3 四元组 · R1:四元组一字不改 → 放行',
+        judge.judgeRegistryMonotonicity(BASE_Q, BASE_Q).ok,
+        '不动注册表的 PR 不该被这道闸打扰',
+      );
+      check(
+        'F3 四元组 · R1:**同 id 换 baseline 路径** → 拒(这正是修复前全绿的那一种)',
+        (() => {
+          const v = judge.judgeRegistryMonotonicity(
+            BASE_Q,
+            regOf([{ id: 'a', baseline: 'harness/a-v2.json' }, { id: 'b' }]),
+          );
+          return (
+            !v.ok &&
+            v.mutated.length === 1 &&
+            v.mutated[0].id === 'a' &&
+            v.mutated[0].field === 'baseline' &&
+            v.mutated[0].head === 'harness/a-v2.json'
+          );
+        })(),
+        '拷贝一份改指向、旧文件不动 —— 不涉及 rename,「基线不得删除/改名」那条完全看不见它',
+      );
+      check(
+        'F3 四元组 · R1:同 id 换 rule → 拒',
+        !judge.judgeRegistryMonotonicity(BASE_Q, regOf([{ id: 'a', rule: 'srvf/other' }, { id: 'b' }]))
+          .ok,
+        'rule 一换,那份基线就转去豁免别的规则,而原规则的存量豁免面凭空消失/转移',
+      );
+      check(
+        'F3 四元组 · R1:同 id 换 symbolShape → 拒',
+        !judge.judgeRegistryMonotonicity(
+          BASE_Q,
+          regOf([{ id: 'a', symbolShape: 'class-method-param' }, { id: 'b' }]),
+        ).ok,
+        'symbolShape 决定身份粒度 —— 粒度一粗,一行豁免就能盖住更多真实违规',
+      );
+      check(
+        'F3 四元组 · R1:新增全新 id 仍放行(否则以后没人能再落地一条新棘轮)',
+        judge.judgeRegistryMonotonicity(BASE_Q, regOf([{ id: 'a' }, { id: 'b' }, { id: 'c' }])).ok,
+        '加棘轮必须畅通,否则下一个人会绕开注册表而不是登记',
+      );
+      for (const [name, bad] of [
+        ['缺 rule', '{"version":1,"ratchets":[{"id":"a","baseline":"h.json","symbolShape":"x"}]}'],
+        ['缺 symbolShape', '{"version":1,"ratchets":[{"id":"a","baseline":"h.json","rule":"r"}]}'],
+        [
+          '重复 id',
+          '{"version":1,"ratchets":[{"id":"a","baseline":"h.json","rule":"r","symbolShape":"s"},{"id":"a","baseline":"h2.json","rule":"r","symbolShape":"s"}]}',
+        ],
+      ] as const) {
+        let threw = false;
+        try {
+          judge.judgeRegistryMonotonicity(BASE_Q, bad);
+        } catch {
+          threw = true;
+        }
+        check(
+          `F3 四元组 fail-closed:head 注册表${name} → 抛(交由 failClosed 拦)`,
+          threw,
+          '判不了就必须响 —— 四元组缺一个字段就没法判「载体有没有被换掉」',
+        );
+      }
+
+      // ── 并集单调性:借「新增全新 id」这条合法通道给既有 rule 加豁免 ──────────
+      const RULE = 'srvf/no-nullable-is-optional';
+      const unions = (m: Record<string, string[]>): Map<string, Set<string>> =>
+        new Map(Object.entries(m).map(([k, v]) => [k, new Set(v)]));
+      const BASE_U = unions({ [RULE]: ['a.dto.ts A.x', 'a.dto.ts A.y'] });
+
+      check(
+        'F3 并集 · R1:并集不变 → 放行',
+        judge.judgeRuleUnionMonotonicity(BASE_U, BASE_U).ok,
+        '不动豁免面的 PR 不该被这道闸打扰',
+      );
+      check(
+        'F3 并集 · R1:并集变小 → 放行(棘轮就是要让它缩)',
+        judge.judgeRuleUnionMonotonicity(BASE_U, unions({ [RULE]: ['a.dto.ts A.x'] })).ok,
+        '还债必须畅通',
+      );
+      check(
+        'F3 并集 · R1:**新增 id 给既有 rule 塞新豁免** → 拒(四元组冻结与逐基线单调性都看不见它)',
+        !judge.judgeRuleUnionMonotonicity(
+          BASE_U,
+          unions({ [RULE]: ['a.dto.ts A.x', 'a.dto.ts A.y', 'evil.dto.ts E.z'] }),
+        ).ok,
+        'lint 侧按 head 注册表遍历生成豁免块 —— 新文件里的豁免当场生效,而没有任何一条既有判据会去读它',
+      );
+      check(
+        'F3 并集 · R1:落地**全新 rule** 的新棘轮不受限(它冻结的是自己的存量债)',
+        judge.judgeRuleUnionMonotonicity(
+          BASE_U,
+          unions({ [RULE]: ['a.dto.ts A.x'], 'srvf/brand-new': ['x.ts X.a', 'x.ts X.b'] }),
+        ).ok,
+        '限死新 rule = 以后没人能再落地一条新棘轮,那会把「加棘轮」变成比「绕过」更贵的选择',
+      );
+    }
+
     check(
       'F3 注册表:真实注册表登记了两条棘轮(裁判确实会遍历到 param-id 那条)',
       judge

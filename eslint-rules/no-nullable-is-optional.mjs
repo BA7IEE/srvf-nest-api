@@ -46,8 +46,15 @@ import { matchDecorator } from './decorator-identity.mjs';
 export const NULLABLE_IS_OPTIONAL_MESSAGE =
   '`@IsOptional()` 对 null 与 undefined **都**跳过后续校验,而本仓 service 判「传没传」用的是 `=== undefined` —— 显式 null 会穿过整个契约层(实测:审核 issuedAt:null → new Date(null) = 1970-01-01 落成正式事实;Policy/Certificate PATCH → 500 而非 400)。[AGENTS §1 校验] 正确做法:字段**真能清空** → 保留 @IsOptional() 并把 TS 类型标成 `T | null`(同时 @ApiPropertyOptional({ nullable: true, type: X }),让 DTO/OpenAPI/DB 三处一致);字段**只是可省略** → 改用 @OmittableOnly()(src/common/decorators/omittable-only.decorator.ts),null 稳定 400。⚠️ 判的是**顶层**类型:`Array<string | null>` / `{ v: string | null }` / `Promise<string | null>` 都**不算**可空。存量违规在 harness/is-optional-null-baseline.json 内逐条具名冻结,**只减不增**。';
 
-/** class-validator 里那个装饰器的**导入原名**(别名 / namespace / 中转解析后与它比对)。 */
-const IS_OPTIONAL = 'IsOptional';
+/**
+ * class-validator 里那个装饰器的**导入原名**(别名 / namespace / 中转解析后与它比对)。
+ *
+ * 导出是为了让 `srvf/no-decorator-realias` 直接引**同一个常量**去禁改名导出 ——
+ * 那条规则守的是「跨文件换名字」,与本条守的「同文件内换名字」拼起来才是完整防线。
+ * 抄第二份字符串就会出现「这边加了守护、那边没跟上」的静默半防线。
+ */
+export const IS_OPTIONAL_DECORATOR = 'IsOptional';
+const IS_OPTIONAL = IS_OPTIONAL_DECORATOR;
 
 /**
  * 这个装饰器是不是 `@IsOptional`(**看穿别名 / namespace / 局部中转 / re-export**)。

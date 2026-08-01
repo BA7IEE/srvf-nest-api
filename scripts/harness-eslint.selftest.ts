@@ -40,6 +40,24 @@ import { parser as tsParser, plugin as tsPlugin } from 'typescript-eslint';
 // M4 / M5 为什么只能在 harness-guards.selftest 里验:它们要**两份不同的基线**
 // (base 一份、head 一份)同时在场,而 lint 与本文件在 PR 的树上都只看得到 head
 // 那一份 —— PR 改的正是判据本身。真实 CI 行为只能在 main 上实跑验证。
+//
+// ── R2 / R3(2026-08-01 整批评审 ②)——上表的**纵深遗留**,同一张索引续写 ─────
+//
+// | # | 变异 | 修复前(真实 `pnpm lint` 实测) | 拦在哪 | 断言在哪 |
+// |---|---|---|---|---|
+// | R2-1 | controller 行级 `// eslint-disable-next-line srvf/no-param-id-string` | **🟢 RC=0 零命中** | 全仓扫描拒 srvf/ 具名 disable | 本文件 R2 段 |
+// | R2-2 | controller 文件级 `/* eslint-disable srvf/… */` | **🟢 RC=0** | 同上 | 同上 |
+// | R2-3 | 非 .dto.ts 行级关第 18 条 | **🟢 RC=0** | 同上(noInlineConfig 刻意只到 DTO) | 同上 |
+// | R2-4 | **不具名** disable(`/* eslint-disable */`)—— 不写名字照样关掉 srvf/ | **🟢 RC=0** | 扫描一并拒 | 同上 |
+// | R3-1 | `@(CV['IsOptional']())` 计算属性 | **🟢 零命中** | matchDecorator 按键名判 | 本文件 CASES |
+// | R3-2 | `const Opt = CV.IsOptional` namespace→局部 | **🟢 零命中** | resolveImportedName 认 MemberExpression init | 同上 |
+// | R3-3 | `export { IsOptional as Opt } from 'class-validator'` 改名 re-export | **🟢 零命中** | srvf/no-decorator-realias 在**源头**拒 | 同上 |
+//
+// R2 为什么不做成 eslint 规则:一条 eslint 规则自己也能被 `/* eslint-disable */`
+// 关掉(那正是 R2-4)。扫描必须跑在 eslint **之外**才站得住。
+// R3-3 为什么不做进 decorator-identity:名字是在**另一个模块**换掉的,同文件解析看不见;
+// 跨模块解析要么依赖 type checker(自测里拿不到 parserServices,阳性对照做不了),
+// 要么自写模块图(第二把尺子)。所以判据换方向:不让改名这件事发生。
 
 type Case = {
   readonly name: string;
@@ -64,6 +82,8 @@ const CORE_IMPORTS = 'no-restricted-imports';
 const CUSTOM = 'srvf/no-nullable-is-optional';
 /** `:id` 走 IdParamDto:M4 升格出来的第二条自定义规则(eslint-rules/no-param-id-string.mjs)。 */
 const PARAM_ID = 'srvf/no-param-id-string';
+/** 禁改名导出受守护装饰器:R3 新增的第三条自定义规则(eslint-rules/no-decorator-realias.mjs)。 */
+const REALIAS = 'srvf/no-decorator-realias';
 
 const CASES: readonly Case[] = [
   // ---- 鉴权 / 判权单轨 ----
@@ -408,6 +428,111 @@ const CASES: readonly Case[] = [
     expect: null,
   },
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // R3 三组身份解析缺口 —— 两条规则**各**一组阳性对照(2026-08-01 整批评审 ②)
+  //
+  // 修复前实测(真实 `pnpm lint` 入口,8 个探针文件 RC=0、零命中):
+  //   ⑤ 计算属性        `@(CV['IsOptional']())`      —— matchDecorator 见 computed 直接 return false
+  //   ⑥ namespace→局部  `const Opt = CV.IsOptional;` —— init 不是 Identifier ⇒ 返回 null ⇒ 退回字面名 `Opt`
+  //   ⑧ 改名 re-export  `export { IsOptional as Opt } from 'class-validator'` —— 名字在**另一个模块**被换掉
+  //
+  // ⚠️ 裸 `@CV['IsOptional']()` 是 **TS 语法错误**(装饰器语法不接受下标访问),
+  //    真正能写出来的逃生门是加括号的 `@(CV['IsOptional']())` —— 探针必须用后者,
+  //    否则测的是「TS 不让你这么写」,不是「规则拦不拦得住」。
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    name: "R3 ⑤ 计算属性:`@(CV['IsOptional']())` 被识破",
+    filename: 'src/modules/x/x.dto.ts',
+    code: "import * as CV from 'class-validator';\nexport class D { @(CV['IsOptional']()) foo?: string; }",
+    expect: CUSTOM,
+  },
+  {
+    name: "R3 ⑤ 计算属性:`@(NC['Param']('id'))` 被识破",
+    filename: 'src/modules/x/x.controller.ts',
+    code: "import * as NC from '@nestjs/common';\nexport class C { m(@(NC['Param']('id')) id: string) {} }",
+    expect: PARAM_ID,
+  },
+  {
+    name: 'R3 ⑥ namespace→局部:`const Opt = CV.IsOptional` 被识破',
+    filename: 'src/modules/x/x.dto.ts',
+    code: "import * as CV from 'class-validator';\nconst Opt = CV.IsOptional;\nexport class D { @Opt() foo?: string; }",
+    expect: CUSTOM,
+  },
+  {
+    name: 'R3 ⑥ namespace→局部:`const P = NC.Param` 被识破',
+    filename: 'src/modules/x/x.controller.ts',
+    code: "import * as NC from '@nestjs/common';\nconst P = NC.Param;\nexport class C { m(@P('id') id: string) {} }",
+    expect: PARAM_ID,
+  },
+  {
+    name: 'R3 ⑧ 改名 re-export:`export { IsOptional as Opt }` 在源头即错',
+    filename: 'src/modules/x/x-reexport.ts',
+    code: "export { IsOptional as Opt } from 'class-validator';",
+    expect: REALIAS,
+  },
+  {
+    name: 'R3 ⑧ 改名 re-export:`export { Param as P }` 在源头即错',
+    filename: 'src/modules/x/x-reexport.ts',
+    code: "export { Param as P } from '@nestjs/common';",
+    expect: REALIAS,
+  },
+  // 顺带关掉的同类写法(与 ⑥ 同一条解析路径 / 与 ⑧ 同一条导出路径)
+  {
+    name: 'R3 ⑦ 解构中转:`const { IsOptional: Opt } = CV` 被识破',
+    filename: 'src/modules/x/x.dto.ts',
+    code: "import * as CV from 'class-validator';\nconst { IsOptional: Opt } = CV;\nexport class D { @Opt() foo?: string; }",
+    expect: CUSTOM,
+  },
+  {
+    name: 'R3 ⑧b 变量改名导出:`export const Opt = IsOptional` 在源头即错',
+    filename: 'src/modules/x/x-reexport.ts',
+    code: "import { IsOptional } from 'class-validator';\nexport const Opt = IsOptional;",
+    expect: REALIAS,
+  },
+  {
+    name: 'R3 ⑧c 默认导出:`export default Param` 在源头即错(下游可任意命名)',
+    filename: 'src/modules/x/x-reexport.ts',
+    code: "import { Param } from '@nestjs/common';\nexport default Param;",
+    expect: REALIAS,
+  },
+  {
+    name: 'R3 ⑤b 动态键:`const k = "IsOptional"; @(CV[k]())` 判成命中(宁可多判不可漏判)',
+    filename: 'src/modules/x/x.dto.ts',
+    code: "import * as CV from 'class-validator';\nconst k = 'IsOptional';\nexport class D { @(CV[k]()) foo?: string; }",
+    expect: CUSTOM,
+  },
+  // ---- R3 反向对照:三种「长得像但不是」的写法一律不许误杀 ----
+  {
+    name: "R3 反向:`@(CV['IsString']())` 不误报(计算属性按键名判,不是见 computed 就报)",
+    filename: 'src/modules/x/x.dto.ts',
+    code: "import * as CV from 'class-validator';\nexport class D { @(CV['IsString']()) foo?: string; }",
+    expect: null,
+  },
+  {
+    name: 'R3 反向:`const S = CV.IsString` 不误报',
+    filename: 'src/modules/x/x.dto.ts',
+    code: "import * as CV from 'class-validator';\nconst S = CV.IsString;\nexport class D { @S() foo?: string; }",
+    expect: null,
+  },
+  {
+    name: 'R3 反向:**同名**转发放行(`export { IsOptional } from ...` 不制造新名字)',
+    filename: 'src/modules/x/x-reexport.ts',
+    code: "export { IsOptional } from 'class-validator';\nexport * from '@nestjs/common';",
+    expect: null,
+  },
+  {
+    name: 'R3 反向:改名转发**别的**导出不误报(`export { IsString as S }`)',
+    filename: 'src/modules/x/x-reexport.ts',
+    code: "export { IsString as S } from 'class-validator';",
+    expect: null,
+  },
+  {
+    name: 'R3 反向:真可空字段仍放行(计算属性写法不改变「顶层含 null 即合法」)',
+    filename: 'src/modules/x/x.dto.ts',
+    code: "import * as CV from 'class-validator';\nexport class D { @(CV['IsOptional']()) foo?: string | null; }",
+    expect: null,
+  },
+
   // ---- `:id` 走 IdParamDto(M4:第 17 条升格为独立 ruleId 的自定义规则)----
   {
     name: "裸 @Param('id') 被禁(须走 IdParamDto)",
@@ -588,6 +713,154 @@ export function accountRatchet(
   return problems;
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// R2 · inline 逃生门:机器**拒绝**任何指向 srvf/ 规则的 disable 指令
+//
+// 修复前实测(2026-08-01,真实 `pnpm lint` 入口,RC=0、零警告):
+//   · controller 里 `// eslint-disable-next-line srvf/no-param-id-string` —— **有效**
+//   · controller 里 `/* eslint-disable srvf/no-param-id-string */`(文件级)—— **有效**
+//   · 非 .dto.ts 里 `// eslint-disable-next-line srvf/no-nullable-is-optional` —— **有效**
+//   只有 `*.dto.ts` 被 `linterOptions.noInlineConfig` 盖住 —— 那条刻意只配到 DTO。
+//
+// 为什么不是「把 noInlineConfig 扩到 controller」:
+//   ① 那只是把范围从「第一类文件」扩到「第二类文件」,第三类文件落地时又是一个洞 ——
+//      而洞是静默的(lint 依旧 RC=0)。判据必须绑在**规则身份**上,不是文件名形状上。
+//   ② `noInlineConfig` 是**整块**语义:一旦某个范围打开它,该范围内所有正当的具名
+//      豁免(src/ 现有 7 处硬删豁免,AGENTS §1 明文允许)会一起被打死。
+//      「治误伤开出漏放洞」的反面同样成立:一次误伤会让下一个人来把整条 linterOptions 删掉。
+//
+// 所以判据换成一次**源码扫描**,拒两类写法:
+//   A. 任何 disable 指令里出现 `srvf/` 开头的规则名 —— 想具名关掉执法规则,不许;
+//   B. 任何**不具名**的 disable 指令(`/* eslint-disable */`、光秃秃的
+//      `// eslint-disable-next-line`)—— 它把 srvf/ 规则一并关掉,只是没写出名字。
+//      漏掉 B 等于只关了正门:A 的绕过写法就是「别写规则名」。
+//   全仓实测 A=0 / B=0,既有 7 处具名非 srvf 豁免全部放行 —— 这条是零代价的。
+//
+// ⚠️ 为什么扫描而不是再写一条 eslint 规则:一条 eslint 规则**自己也能被 disable**
+//    (`/* eslint-disable */` 会把它连同别的一起关掉,而那正是 B 类)。
+//    扫描跑在 eslint 之外,不受 inline config 语义支配 —— 这是它唯一能站住的位置。
+//
+// ⚠️ 判据落在**注释节点**上,不是 raw 文本 grep:本文件自己的 CASES 里就带着
+//    `'/* eslint-disable srvf/... */'` 这样的字符串字面量(合成片段),
+//    raw grep 会把自测本身报成违规,然后必然催生一条 allowlist —— 而 allowlist
+//    就是下一个逃生门。走注释节点则天然区分「注释」与「字符串里的字」,不需要豁免名单。
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** 一条被拒的 inline 指令。 */
+export interface DisableEscape {
+  readonly file: string;
+  readonly line: number;
+  /** 'named-srvf' = 具名关掉 srvf/ 规则;'unscoped' = 不具名(把 srvf/ 一并关掉) */
+  readonly kind: 'named-srvf' | 'unscoped';
+  readonly text: string;
+}
+
+/**
+ * eslint 的 disable 指令必须**出现在注释开头**(`/* prettier-ignore eslint-disable *\/`
+ * 不是指令)。锚在行首正是照抄 eslint 自己的判据 —— 松一点会误报,紧一点会漏报。
+ */
+const DISABLE_DIRECTIVE_RE = /^\s*(eslint-disable(?:-next-line|-line)?)(?![\w-])([\s\S]*)$/;
+
+/**
+ * 判一条注释文本:是不是被拒的 disable 指令。纯函数,自测直接喂合成注释。
+ *
+ * @param commentValue 注释体(不含 `//` 与 `/* *\/` 定界符)
+ */
+export function classifyDisableComment(commentValue: string): DisableEscape['kind'] | null {
+  const m = DISABLE_DIRECTIVE_RE.exec(commentValue);
+  if (!m) return null;
+  // eslint 的「描述分隔符」是前后带空白的 `--`,其后是给人看的理由,不是规则名。
+  const ruleList = m[2].split(/\s-{2,}\s/)[0] ?? '';
+  const rules = ruleList
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s !== '');
+  if (rules.length === 0) return 'unscoped';
+  return rules.some((r) => r.startsWith('srvf/')) ? 'named-srvf' : null;
+}
+
+/**
+ * 扫一个文件的**全部注释**。解析用的是与 `pnpm lint` 同一个 parser(typescript-eslint),
+ * 不是手写的注释切分器 —— 手写切分器迟早在模板串 / 正则字面量 / JSX 上与真实解析漂移,
+ * 而漂移的方向恰好是漏报。
+ */
+export function scanFileForDisableEscapes(file: string, text: string): DisableEscape[] {
+  // 便宜的预筛:没有这个词就一定没有指令,省掉整棵 AST。不会漏报。
+  if (!text.includes('eslint-disable')) return [];
+  let comments: Array<{ value: string; loc?: { start: { line: number } } }>;
+  try {
+    // typescript-eslint 元包只暴露 `parseForESLint`(没有裸 `parse`)——
+    // 用它正是为了和 `pnpm lint` 共用**同一个** parser 版本,不引第二个解析器。
+    //
+    // ⚠️ 元包把它的类型窄化成了「只收 code 一个参数」,而运行时**是**收第二个
+    // options 的(@typescript-eslint/parser 的真实签名)。这里显式把函数 cast 成
+    // 真实签名,而不是把整个调用 `as unknown as` 掉 —— 后者会连返回值一起变成
+    // 「我说它是什么就是什么」,options 写错了也没人吭声。
+    const parseForESLint = tsParser.parseForESLint as unknown as (
+      code: string,
+      options: Record<string, unknown>,
+    ) => { ast: { comments?: Array<{ value: string; loc?: { start: { line: number } } }> } };
+    const { ast } = parseForESLint(text, {
+      comment: true,
+      loc: true,
+      range: true,
+      // 合成片段与 .mjs 都要能解析;不做类型感知(本扫描是纯语法级的)。
+      ecmaFeatures: { jsx: true },
+    });
+    comments = ast.comments ?? [];
+  } catch (err) {
+    // 解析不了就**响亮地坏**:静默跳过等于给「写一个 parser 噎得住的文件」开后门。
+    throw new Error(`扫描 inline 逃生门时解析失败:${file}\n  ${String(err)}`);
+  }
+  const found: DisableEscape[] = [];
+  for (const c of comments) {
+    const kind = classifyDisableComment(c.value);
+    if (kind === null) continue;
+    found.push({
+      file,
+      line: c.loc?.start.line ?? 0,
+      kind,
+      text: c.value.trim().slice(0, 120),
+    });
+  }
+  return found;
+}
+
+/**
+ * 扫描范围 = 一切**可能被 eslint 解释**的源文件类型。
+ *
+ * 刻意按扩展名而不是按 `pnpm lint` 当前的三条 glob:那三条 glob 是 PR 可以改的,
+ * 而「把文件挪出 lint 范围」本身就是一种绕过。按扩展名扫是它的超集,
+ * 新增第四类目录时不需要记得回来改这里(「未来第三类文件」正是本条要防的形状)。
+ */
+const SCANNED_SOURCE_EXT = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.mjs', '.cjs']);
+
+/** 全仓扫描(git 跟踪的文件,天然排除 node_modules / dist)。 */
+export function scanRepoForDisableEscapes(repoRoot: string): DisableEscape[] {
+  const listed = spawnSync('git', ['ls-files', '-z'], {
+    cwd: repoRoot,
+    encoding: 'utf-8',
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (listed.status !== 0) {
+    throw new Error(`git ls-files 失败(RC=${String(listed.status)}):${listed.stderr ?? ''}`);
+  }
+  const files = listed.stdout.split('\0').filter((f) => f !== '');
+  const found: DisableEscape[] = [];
+  for (const rel of files) {
+    if (!SCANNED_SOURCE_EXT.has(path.extname(rel))) continue;
+    const abs = path.join(repoRoot, rel);
+    let text: string;
+    try {
+      text = fs.readFileSync(abs, 'utf-8');
+    } catch {
+      continue; // 已删除 / 符号链接失效:git 清单与工作树的正常偏差
+    }
+    found.push(...scanFileForDisableEscapes(rel, text));
+  }
+  return found;
+}
+
 async function main(): Promise<void> {
   // 用**同一份**执法块(eslint.harness.mjs,主配置也 import 它),但换掉解析器设置:
   // 合成片段是虚拟路径,不在任何 tsconfig 项目里,类型感知解析会直接 parsing error
@@ -602,11 +875,13 @@ async function main(): Promise<void> {
     RATCHET_REGISTRY,
     parseRatchetBaseline,
     parseRatchetRegistry,
+    srvfEslintPlugin,
   } = (await import('../eslint.harness.mjs')) as {
     HARNESS_SYNTAX: Record<string, { message: string }>;
     harnessConfigBlocks: unknown[];
     NULLABLE_IS_OPTIONAL_MESSAGE: string;
     PARAM_ID_STRING_MESSAGE: string;
+    srvfEslintPlugin: { rules: Record<string, unknown> };
     RATCHET_BASELINES: Map<string, Map<string, readonly string[]>>;
     RATCHET_REGISTRY: ReadonlyArray<{
       id: string;
@@ -670,7 +945,8 @@ async function main(): Promise<void> {
         m.ruleId === TS_IMPORTS ||
         m.ruleId === CORE_IMPORTS ||
         m.ruleId === CUSTOM ||
-        m.ruleId === PARAM_ID,
+        m.ruleId === PARAM_ID ||
+        m.ruleId === REALIAS,
     );
 
     if (c.expect === null) {
@@ -705,7 +981,7 @@ async function main(): Promise<void> {
     const wanted = harnessHits.filter((m) => m.ruleId === c.expect);
     for (const m of wanted) {
       // 自定义规则本身就是独立 ruleId,不必再靠 message 反查是哪条
-      if (m.ruleId === CUSTOM || m.ruleId === PARAM_ID) {
+      if (m.ruleId === CUSTOM || m.ruleId === PARAM_ID || m.ruleId === REALIAS) {
         coveredSelectors.add(m.ruleId);
         continue;
       }
@@ -725,10 +1001,23 @@ async function main(): Promise<void> {
   }
 
   // 覆盖率闭环:每条规则都必须至少被一个正向用例真实触发过。
-  // 闭环数 = 16 条 no-restricted-syntax 选择器 + 2 条自定义规则 = 18
-  // (M4 把第 17 条 `@Param('id')` 也升格成独立 ruleId 后**总数仍是 18**,
-  //  只是它不再从 HARNESS_SYNTAX 里数出来 —— 与第 18 条当初的处理同源)。
-  const CUSTOM_RULES = [CUSTOM, PARAM_ID];
+  // 闭环数 = 16 条 no-restricted-syntax 选择器 + 3 条自定义规则 = 19
+  // (M4 把第 17 条 `@Param('id')` 升格成独立 ruleId 时总数仍是 18,只是它不再从
+  //  HARNESS_SYNTAX 里数出来;R3 新增 srvf/no-decorator-realias 才把总数推到 19。
+  //
+  // ⚠️ 名单从 `srvfEslintPlugin.rules` **数出来**,不在这里手写第二份:
+  //    手写一份就会出现「新增了第 N 条规则、忘了加进名单」⇒ 它从此没有阳性对照,
+  //    而「写错了永远匹配不到」的自测输出与「防线完整」一模一样(INC-06 同源)。
+  //    数出来之后,新增规则不补正向用例 = 本条当场红,不需要谁记得。
+  const CUSTOM_RULES = Object.keys(srvfEslintPlugin.rules).map((name) => `srvf/${name}`);
+  for (const literal of [CUSTOM, PARAM_ID, REALIAS]) {
+    if (!CUSTOM_RULES.includes(literal)) {
+      failures.push(
+        `✗ 覆盖闭环名单漂移 —— 本文件的常量 ${literal} 不在 srvfEslintPlugin.rules 里。\n` +
+          '  含义:规则被改名 / 摘掉了,而用例还在按旧 ruleId 断言(断言永远命中不了)。',
+      );
+    }
+  }
   const allIds = [...Object.keys(HARNESS_SYNTAX), ...CUSTOM_RULES];
   const uncovered = allIds.filter((id) => !coveredSelectors.has(id));
   if (uncovered.length === 0) {
@@ -1187,6 +1476,93 @@ async function main(): Promise<void> {
     }
   }
 
+  // ── R2:inline 逃生门扫描 —— 先证扫描器自己有效,再扫全仓 ─────────────────────
+  //
+  // 顺序不能反。「全仓 0 命中」既可能是真干净,也可能是扫描器写错了永远匹配不到 ——
+  // 后者是最坏的失败模式(以为有防线,其实没有,而且完全静默,和 INC-06 同源)。
+  // 所以先喂必定违规的合成注释断言它确实抓到,再喂正当写法断言它不误杀。
+  {
+    const POSITIVE: ReadonlyArray<readonly [string, string]> = [
+      ['行级具名关 srvf/ 规则', ' eslint-disable-next-line srvf/no-param-id-string'],
+      ['文件级具名关 srvf/ 规则', ' eslint-disable srvf/no-nullable-is-optional '],
+      ['行内具名关 srvf/ 规则', ' eslint-disable-line srvf/no-nullable-is-optional'],
+      ['混在别的规则里夹带 srvf/', ' eslint-disable-next-line no-restricted-syntax, srvf/no-param-id-string'],
+      ['带 -- 理由也照拦', ' eslint-disable-next-line srvf/no-param-id-string -- 有正当理由'],
+      ['不具名(文件级)—— 它把 srvf/ 一并关掉,只是没写名字', ' eslint-disable '],
+      ['不具名(行级)', ' eslint-disable-next-line'],
+      ['不具名 + 理由', ' eslint-disable-next-line -- 就想关掉'],
+    ];
+    const NEGATIVE: ReadonlyArray<readonly [string, string]> = [
+      ['具名关非 srvf/ 规则(AGENTS §1 明文允许的硬删豁免)', ' eslint-disable-next-line no-restricted-syntax -- 关联表物理清理'],
+      ['具名关 @typescript-eslint 规则', ' eslint-disable-next-line @typescript-eslint/no-unused-vars'],
+      ['只是提到这个词的普通注释', ' 见上文关于 eslint-disable 的说明'],
+      ['指令不在注释开头 ⇒ eslint 自己也不认', ' prettier-ignore eslint-disable srvf/no-param-id-string'],
+      ['eslint-enable 不是 disable', ' eslint-enable srvf/no-param-id-string'],
+      ['前缀相同但不是指令', ' eslint-disabled-by-design srvf/no-param-id-string'],
+    ];
+    let scannerOk = true;
+    for (const [name, comment] of POSITIVE) {
+      if (classifyDisableComment(comment) === null) {
+        scannerOk = false;
+        failures.push(`✗ R2 扫描器阳性对照失效 —— 「${name}」没被识别为逃生门:${comment.trim()}`);
+      }
+    }
+    for (const [name, comment] of NEGATIVE) {
+      const verdict = classifyDisableComment(comment);
+      if (verdict !== null) {
+        scannerOk = false;
+        failures.push(
+          `✗ R2 扫描器误杀 —— 「${name}」被判成 ${verdict}:${comment.trim()}\n` +
+            '  误杀会逼下一个人来把整条扫描删掉,后果比漏放更久。',
+        );
+      }
+    }
+    // 端到端:字符串字面量里的同一段文字**不算**违规(否则本文件自己就会被报出来,
+    // 然后必然催生一条 allowlist —— 而 allowlist 就是下一个逃生门)。
+    const literalOnly = scanFileForDisableEscapes(
+      '<synthetic>',
+      "export const sample = '/* eslint-disable srvf/no-nullable-is-optional */';\n",
+    );
+    const realComment = scanFileForDisableEscapes(
+      '<synthetic>',
+      '// eslint-disable-next-line srvf/no-param-id-string\nexport const x = 1;\n',
+    );
+    if (literalOnly.length !== 0) {
+      scannerOk = false;
+      failures.push('✗ R2 扫描器把**字符串字面量**报成了逃生门 —— 判据必须落在注释节点上');
+    }
+    if (realComment.length !== 1 || realComment[0].kind !== 'named-srvf') {
+      scannerOk = false;
+      failures.push('✗ R2 扫描器端到端失效 —— 真实注释里的 srvf/ disable 没被抓到');
+    }
+    if (scannerOk) {
+      passed++;
+      console.log(
+        `✓ R2 扫描器阳性对照:${POSITIVE.length} 条逃生门全抓到、${NEGATIVE.length} 条正当写法全放行`,
+      );
+    }
+
+    const escapes = scanRepoForDisableEscapes(path.resolve(__dirname, '..'));
+    if (escapes.length === 0) {
+      passed++;
+      console.log('✓ R2 全仓扫描:0 处指向 srvf/ 的 disable、0 处不具名 disable');
+    } else {
+      failures.push(
+        `✗ R2 全仓扫描 —— ${escapes.length} 处 inline 逃生门:\n` +
+          escapes
+            .map(
+              (e) =>
+                `    ${e.file}:${e.line}  [${e.kind === 'named-srvf' ? '具名关掉 srvf/ 规则' : '不具名 disable(把 srvf/ 一并关掉)'}]\n` +
+                `      ${e.text}`,
+            )
+            .join('\n') +
+          '\n  srvf/ 三条规则是执法体,不接受行内关闭:能被违规者本人一行注释关掉的防线不是防线。\n' +
+          '  正确做法:把违规真的改掉;确属存量,走对应棘轮的具名基线(harness/ratchet-registry.json)。\n' +
+          '  不具名 disable 同样拒 —— 它关掉的规则集合里就包含 srvf/,只是没写出名字。',
+      );
+    }
+  }
+
   // 已知缺口单独成段:不混进「通过」的叙事。
   // 防线的边界必须和防线本身一样显眼 —— 否则「31 passed」会被读成「全都管住了」。
   if (knownGaps.length > 0) {
@@ -1196,10 +1572,12 @@ async function main(): Promise<void> {
       '  成因:no-restricted-syntax 匹配的是语法树的**字面形状**,不解析 import binding、\n' +
         '        不做变量指向分析。原写法拦得住,换个名字就拦不住。\n' +
         '  定性:AGENTS §1 已把该层表述为「**字面语法拦截**」而非「机器执法」。\n' +
-        '  处置:**两条自定义规则**(srvf/no-nullable-is-optional、srvf/no-param-id-string)\n' +
-        '        已共用 eslint-rules/decorator-identity.mjs 关掉别名 / namespace / 局部中转 /\n' +
-        '        re-export 四种写法(M4,2026-08-01,各有正向用例);上面 5 条仍是\n' +
-        '        no-restricted-syntax 选择器,缺口原样存在,改写它们未立项。',
+        '  处置:**三条自定义规则**(srvf/no-nullable-is-optional、srvf/no-param-id-string、\n' +
+        '        srvf/no-decorator-realias)已把「换个名字就绕过」这一类关到底:\n' +
+        '        前两条共用 eslint-rules/decorator-identity.mjs 看穿别名 / namespace /\n' +
+        '        局部中转 / 同名 re-export / **计算属性** / **解构中转**(M4 + R3,各有正向用例),\n' +
+        '        第三条从源头禁掉**改名导出**——跨文件换名字因此根本发生不了。\n' +
+        '        上面 5 条仍是 no-restricted-syntax 选择器,缺口原样存在,改写它们未立项。',
     );
   }
 
