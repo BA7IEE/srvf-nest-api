@@ -153,8 +153,8 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
         title,
         activityTypeCode: 's4-type',
         organizationId: orgId,
-        startAt: new Date('2026-08-01T08:00:00.000Z'),
-        endAt: new Date('2026-08-01T12:00:00.000Z'),
+        startAt: new Date('2099-08-01T08:00:00.000Z'),
+        endAt: new Date('2099-08-01T12:00:00.000Z'),
         location: 'S4 演示',
         statusCode: 'published',
         isPublicRegistration: true,
@@ -192,7 +192,7 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
     });
     for (let i = 0; i < memberIds.length; i++) {
       const checkIn = new Date(
-        new Date('2026-08-01T08:00:00.000Z').getTime() + i * 6 * 60 * 60 * 1000,
+        new Date('2099-08-01T08:00:00.000Z').getTime() + i * 6 * 60 * 60 * 1000,
       );
       const checkOut = new Date(checkIn.getTime() + 4 * 60 * 60 * 1000);
       await prisma.attendanceRecord.create({
@@ -564,8 +564,8 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
       await activities.update(
         activityId,
         {
-          startAt: '2026-08-02T08:00:00.000Z',
-          endAt: '2026-08-02T12:00:00.000Z',
+          startAt: '2099-08-02T08:00:00.000Z',
+          endAt: '2099-08-02T12:00:00.000Z',
           location: '莲花山',
         },
         adminPayload,
@@ -587,8 +587,8 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
         new Set([alice.memberId, bob.memberId]),
       );
       for (const notification of notifications) {
-        expect(notification.body).toContain('2026-08-01T08:00:00.000Z');
-        expect(notification.body).toContain('2026-08-02T08:00:00.000Z');
+        expect(notification.body).toContain('2099-08-01T08:00:00.000Z');
+        expect(notification.body).toContain('2099-08-02T08:00:00.000Z');
         expect(notification.body).toContain('S4 演示 → 莲花山');
         expect(notification.body).toContain('保险覆盖按原日期核验');
       }

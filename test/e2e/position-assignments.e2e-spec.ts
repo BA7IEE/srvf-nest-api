@@ -795,7 +795,7 @@ describe('position-assignments 任职双轴管理', () => {
       const second = await appoint(adminAuth, orgTeamId, {
         positionId: posViceId,
         memberId,
-        startedAt: '2026-08-01T00:00:00.000Z',
+        startedAt: '2099-08-01T00:00:00.000Z',
       });
       expect(second.status).toBe(201);
 
