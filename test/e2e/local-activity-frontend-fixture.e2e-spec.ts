@@ -735,7 +735,7 @@ function createFixtureHttpFetch(options: {
         tokenType: 'Bearer',
         expiresIn: '15m',
         refreshToken: 'fixture-refresh-token',
-        refreshExpiresAt: '2026-10-01T00:00:00.000Z',
+        refreshExpiresAt: '2099-10-01T00:00:00.000Z',
       });
     }
 
