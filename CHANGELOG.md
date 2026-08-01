@@ -2,6 +2,802 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## v0.65.0 - 2026-08-02
+
+- **证书日期语义收口为「最后有效日」(2026-07-30;证书标准库 PR-1,冻结稿 [`certificate-standard-library-t0-review.md`](docs/archive/reviews/certificate-standard-library-t0-review.md) §10)**:`expiredAt` 从此明确表示**最后有效日** —— `2026-08-01` 意为当天仍有效、`08-02` 起失效。这是**行为变更**,三处此前各自把「最后有效日」算成已过期,方向一致但边界各错一处:
+
+  ① **资质判定**([`certificates.service.ts`](src/modules/certificates/certificates.service.ts) `isQualified`)原用 `expiredAt > now` —— 拿**时间戳**比一个 date-only 字段。`expiredAt` 存的是「北京日历日的 UTC 零点」,所以最后有效日一进北京 **08:00**,`now` 就越过了该零点,当天余下 **16 小时**全部误判为「无资质」。改为 `expiredAt >= today`(today = 北京日历日)。
+
+  ② **到期 cron 自动过期**([`expiry-reminder.service.ts`](src/modules/notifications/expiry-reminder.service.ts))原用 `expiredAt <= today`,在最后有效日当天 09:00 就把证书翻成 `expired`,**整整早一天**。改为严格 `expiredAt < today`。外层扫描、事务内 findFirst 复核、原子 updateMany claim **三处谓词同时收紧** —— 漏一处会变成「扫到了却 claim 不到」的静默空转。
+
+  ③ **到期 cron 提前 60 天提醒**原用 `expiredAt > today`,把「到期日 = 今天」这批**最该提醒的证书直接漏掉**。改为 `expiredAt >= today`(即冻结稿的 `BETWEEN today AND today+60`)。
+
+  **谁会感知到**:后台与 App 的资质查询,在证书最后有效日当天由「已失效」变为「仍有效」;该日的自动过期推迟到次日;到期日 = 当天的证书现在会收到提醒。
+
+- **证书日期入参收紧为纯 `YYYY-MM-DD`(行为变更,§10.2)**:`POST/PATCH .../certificates` 的 `issuedAt` / `expiredAt` 不再接受带时分秒或时区的 ISO datetime,只收 10 位纯日期。原因是放开 datetime 会让 `2026-08-01T00:00:00+08:00` 与 `...Z` 落到**不同的北京日**,同一个「意图日期」产生两种入库结果,客户端还能借时区偷偷改天。契约同步声明 `format: date` + `pattern`(不只写在 description —— `@Matches` 不会被 Swagger 推导成 `pattern`,否则前端 codegen 拿不到可执行约束)。**前端需适配**:表单提交值改为纯日期。
+
+- **新增日期基础校验(§10.3)**:`issuedAt` 不得晚于今天(`18018 CERTIFICATE_ISSUED_AT_IN_FUTURE`);`expiredAt` 不得早于 `issuedAt`(`18017 CERTIFICATE_DATE_RANGE_INVALID`,`expiredAt == issuedAt` 合法 = 当天有效一天)。PATCH 按**写入后的最终值**校验并取行锁后的基准 —— 只改 `expiredAt` 时同样与库内 `issuedAt` 比较,不存在「分两次改绕过校验」的缝。`expiredAt` 最终值变化时清空 `expireNotifyDueAt`,让到期提醒按新日期重新计算(该字段是 at-most-once 水印,不清会永久错过新窗口);传入同值不算变化,不抹掉已发提醒的事实。
+
+- **证书敏感字段分级(行为变更 + 契约破坏,§15.2/§15.3)**:新增权限码 `certificate.read.sensitive`(权限码 213 → 214),**默认只绑 biz-admin**。入口码仍是 `certificate.read.record` —— 缺敏感码**不是 403**,而是同一次 200 响应里降级:
+
+  | 出参字段 | 仅 `read.record` | 另持 `read.sensitive` |
+  |---|---|---|
+  | `certNumberMasked` | 恒返(形如 `SZ****01`;≤4 字符整体掩为 `****`) | 同 |
+  | `certNumberFull` | 恒 `null` | 明文 |
+  | `verifyNote` | 恒 `null` | 明文 |
+  | `verifiedBy` | 恒 `null` | 审核人 Member.id |
+  | `evidenceAvailable` | 布尔(恒返) | 同 |
+
+  **契约破坏**:详情与全部写回显的 `certNumber` 字段**已删除**,拆成 `certNumberMasked` + `certNumberFull`。**前端必须适配**。不沿 member-profiles 的「同名字段原地打码」是刻意的:同名打码有已知的编辑表单 round-trip 陷阱(掩码值被当真值写回覆盖真实编号),而 `certNumber` 恰是 PATCH 可写字段;改名后表单拿不到可直接回写的 `certNumber`,陷阱在结构上不成立。**写侧入参仍是 `certNumber`,未变。**
+
+  分级出口收在唯一一个 presenter,6 个返详情 DTO 的方法(findOne / create / update / softDelete / verify / reject)全部经它;`CertificateResponseDto` 不再有 `certNumber`,漏接某条路径会**编译失败**而不是静默泄露。`imageKeys` 进 select 只为算 `evidenceAvailable` 布尔,原值不进任何出参 / 日志 / 审计(D-CERT-024)。读审计增记 `maskLevel`(plain / masked),便于事后追「谁看过完整编号」,编号本身仍不入审计(§15.6)。
+
+  **`certificate.read.sensitive` 已加入 `ORG_ADMIN_EXCLUDED_CODES`** —— org-admin 码集是 biz-admin 的派生过滤,不排除就会让队长/部长随之自动继承证书明文(与既有三个 `*.read.sensitive` 同款围栏)。只读投影角色由 `isReadonlyProjectionCode` 恒排除 `.read.sensitive`,无需额外处理。
+
+  ⚠️ **与冻结稿 §16.4 的一处偏离(维护者 2026-07-30 拍板)**:表格建议 ops-admin 也绑本码,实际只绑 biz-admin。理由:本仓 ops-admin 持**零条业务码**(连 `certificate.read.record` 都没有),而敏感读是叠在 read.record 之上的降级闸 —— 只绑敏感码对它不生效;且既有三个 `*.read.sensitive` 全部只绑 biz-admin。SUPER_ADMIN 短路照旧可见,ADMIN 用户由 seed 自动补挂 biz-admin,实际运维人员可见性不受影响。
+
+- **`FIXED_MONTHS` 自然月工具就位(§10.4)**:`addMonthsClamped` 按自然月推进并做月底夹取(`2024-02-29 + 12 月 = 2025-02-28`;`2026-01-31 + 1 月 = 2026-02-28`),**明确不用 `30 天 × 月数`**(按天算会让 2 月发的证书比 1 月发的短命,且跨闰年漂移)。本刀只落工具与测试,调用方在后续 Policy 刀接入。同时把 `beijingDateOnly` 收进 [`date-only.util.ts`](src/common/datetime/date-only.util.ts) 单一实现,`normalizeDateOnly` 与 cron 的 `toBeijingDateOnly` 均改为委托(冻结稿 §19「不复制第二套日期算法」),行为逐位不变。
+
+- **证书标准库 / 队内认定规则 / 招新证书申报 schema 骨架(2026-07-30;证书标准库 PR-2,冻结稿 [`certificate-standard-library-t0-review.md`](docs/archive/reviews/certificate-standard-library-t0-review.md) §5 / §16 / §17)**:第 66 个 migration,**expand-only**,**零业务行为变更**(新模型此刻无任何 controller / service / DTO,写入口在 PR-3 起)。
+
+  **四类事实分表**(D-CERT-001)。合表的代价是冻结稿 §0 的实证:认可机构或有效期一变,同一种证就被迫复制出 v2、v3,最后是 `bsafe_l2_final_final` —— 那不是版本管理,是证书身份被炸碎。
+  - `CertificateStandard` —— 「这是什么证」,稳定身份;code 建后不可改不可复用
+  - `CertificateRecognitionPolicy` —— 「本队某时期怎么认可它」,规则版本可迭代
+  - `CertificateRecognitionIssuer` —— 认可机构;实例认可靠 issuer id **不靠机构文字匹配**(中文机构名匹配不可靠)
+  - `RecruitmentCertificateClaim` —— 「申请人拿来了什么」,**一张真实证书一条**;允许审核前未分类(「不知道」是工作流状态,不是一种正式证书)
+
+  **8 个新枚举**;`CertificateValidityMode` 刻意把 `EXPLICIT_REQUIRED` / `EXPLICIT_OPTIONAL` 拆开 —— 旧设计用一个 `MANUAL` 同时表达「必须手填到期日」和「可不填即终身」,两种语义混在一个值里校验写不出来。`CertificateSource` 只有真实存在的 `ADMIN` / `RECRUITMENT`,**不预埋** `APP_SELF` / `IMPORT`。
+
+  **`Certificate` 加 5 个 nullable 列** + 3 索引(`standardId` / `recognitionPolicyId` / `recognitionIssuerId` / `sourceClaimId`(@unique) / `sourceCode`),**本刀零写入**:PR-4a 才开始写,PR-4b 收紧 NOT NULL 并 DROP 4 个重复事实列。`sourceClaimId` 必须本刀加 —— Claim 有 `certificate Certificate?` 反向关系,缺这一侧 `prisma generate` 直接失败,而铁律 11 要求每个 PR 都能 generate。
+
+  **4 条复合 FK 提前到本刀**(维护者拍板,冻结稿原定 PR-4b):`(policyId, standardId)` → Policy`(id, standardId)` 与 `(issuerId, policyId)` → Issuer`(id, policyId)`,Certificate 与 Claim 各一对,锁死「这张证的 Policy 必须属于它的 Standard、issuer 必须属于它锁定的 Policy」。列此刻全 NULL,PostgreSQL MATCH SIMPLE 任一列 NULL 即放行,空表期不受影响;**提前落是收紧不是放松** —— PR-4a 一开始写入就有 DB 兜底,不会写完一轮不合法组合才在 PR-4b 发现。
+
+  **2 条手写 partial unique + 4 条 CHECK**(Prisma DSL 表达不了):每 Standard 至多一个 ACTIVE Policy(激活是「锁 Standard → RETIRE 旧 → 激活新」,READ COMMITTED 下两个并发激活能互相穿透,只靠 service 检查会双 ACTIVE);同 Policy 下 issuer 去重;Claim 的 APPROVED / PROMOTED 完整性、日期区间、`version >= 0`。
+
+  **权限 +8**(权限码 214 → **222**):`certificate-standard.{read,create,update,delete}.record` + `certificate-recognition-policy.{read,create,update,delete}.record`,**全绑 ops-admin**(ops-admin 96 → **104**)。Standard / Policy 是全局主数据配置面(§16.4:走 `RbacService.can()`,不是 Certificate 实例的 scoped Authz),与 `dict.*` / `position.*` / `role-binding.*` 同列 `PR_2A_PERMISSION_SEED`。
+
+  ⚠️ **一处设计订正**:起初按 §16.4 表格「biz-admin Standard read = 是」把两条 read 码同时列进业务面,被 `seed-biz-admin` 用例 5 拦下 —— 那条用例钉着本仓一条**架构不变量:业务面码集与 ops-admin 码集互不相交**。放宽它是 goal 明令禁止的,所以改为 8 码只绑 ops-admin,biz-admin / org-admin 绑定数不变(69 / 47)。§16.4 自己给了这条路:「options endpoint 可以接受 Standard read,**或由持 certificate create/verify、recruitment certificate review 的角色获得专门只读绑定**」。⇒ **PR-3 落 `/certificate-standards/options` 时判权必须接受 `certificate.create.record` / `certificate.verify.record` / `recruitment-application.review.certificate` 作为替代入口码**,否则 biz-admin / org-admin 建证时下拉是空的。
+
+  **AuditLogEvent +4**(123 → **127**):`certificate-standard.change` · `certificate-recognition-policy.change` · `recruitment-certificate-claim.review` · `recruitment-certificate-claim.review-revoke`。本刀只登记常量,消费方在 PR-3 / PR-4a —— 先落是为了让 counts / 契约一次到位,不必在后续刀里再动这类跨模块枚举。
+
+  **验证**:干净库 `migrate deploy` 重放 66 个 migration 全绿 + seed 幂等二跑(0 error、计数稳定);2 条 partial unique、4 条 CHECK、复合 FK **逐条跑过阳性对照** —— 第二个 ACTIVE Policy 被拒而第二个 DRAFT 放行、同名 issuer 被拒、APPROVED 缺字段 / PROMOTED 缺 promotedAt / `expiredAt < issuedAt` / 负 version 全被拒,而「未分类 SUBMITTED Claim」与 `expiredAt == issuedAt` 正确放行,跨 Policy 的 issuer 组合被复合 FK 拒。四条空库探针(含 PR-4b 追加的「旧列全空」)实测全 0。
+
+  ⚠️ `docs:rbacmap:check` 现有一条 **WARN**:8 条新码在 `src/` 无引用(「孤码候选,可能是刻意预埋」)。这是 PR-2 的预期状态(权限骨架先落、消费方在 PR-3),不是 FAIL。
+
+- **通用证书标准库与队内认定规则管理 API(2026-07-30;证书标准库 PR-3,冻结稿 [`certificate-standard-library-t0-review.md`](docs/archive/reviews/certificate-standard-library-t0-review.md) §13.1 / §13.2)**:13 个新端点(Endpoint 416 → **429**,Controller 81 → **83**)。**不改任何现有 Certificate / Recruitment 写路径** —— 那是 PR-4a。
+
+  | 面 | 端点 |
+  |---|---|
+  | 证书标准 7 | `GET/POST /admin/v1/certificate-standards` · `GET .../options` · `GET/PATCH/DELETE .../:id` · `PATCH .../:id/status` |
+  | 认定规则 6 | `GET/POST /admin/v1/certificate-standards/:standardId/recognition-policies` · `GET/PATCH/DELETE /admin/v1/certificate-recognition-policies/:id` · `PATCH .../:id/status` |
+
+  **`/options` 接受四条入口码任一** —— 这是 PR-2 设计订正留下的硬要求。PR-2 为保住「业务面码集与 ops-admin 互不相交」这条架构不变量,把 8 条配置面码只绑了 ops-admin;而真正要用标准下拉的是持 `certificate.create/verify.record` 或 `recruitment-application.review.certificate` 的人。少了替代清单,biz-admin / org-admin 的建证下拉会**恒空且没有任何测试会红**。e2e 用一个只持 `certificate.create.record` 的窄角色正向证明它能读 options、且读 list 仍 30100(替代码不是万能钥匙)。
+
+  **身份字段不可改做在契约层**:`UpdateCertificateStandardDto` 不含 `code` / `kind` / `categoryCode` / `levelCode` / `parentId` / `isInternal`,`forbidNonWhitelisted` 直接 400 —— 不依赖运行时判状态。DRAFT 期要改身份字段就删掉重建(DRAFT 可软删且必然零引用)。父子循环同理由**字段不可变性**保证:`parentId` 只在 create 可设,而新建行此刻没有任何后代,循环在结构上不可能形成,不需要环检测。
+
+  **并发正确性不只靠 partial unique**(§5.3 固定锁序):所有改动「某 Standard 的 Policy 集合」的写路径先锁 Standard 行(`FOR NO KEY UPDATE`)。激活是「RETIRE 旧 + ACTIVATE 新」两步写,无行锁时两个事务可各自读到「当前 ACTIVE 是 v1」、各自 RETIRE v1 再各自 ACTIVATE 自己 —— 其中一个撞 unique 回滚,但**回滚前它已经 retire 了 v1**,在 READ COMMITTED 下另一个看不到这次回滚,最终可能「谁都没生效」。行锁把这个窗口整个消掉;partial unique 退居兜底(万一将来有人加了绕过行锁的新写路径)。e2e 用真 PostgreSQL 验:同一 Policy 并发激活恰好一个 200、另一个 18037,且无论谁赢 DB 恒只有一个 ACTIVE。
+
+  **P2002 按索引名显式分流成两个码**(§5.3 第 7 步):`(standardId, version)` 撞 → `18039`(版本号被抢占,重取 MAX 再来);`one_active_per_standard` 撞 → `18040`(已有别的版本刚生效,刷新再决定)。两者语义与前端提示不同,不合并成一个「并发冲突」。
+
+  **BizCode +15(280 → 295)**。号位已 grep 真源确认 22 个 180xx/181xx 零碰撞;其中三条是按真源补的、§18 建议表未列:`18019`(父子 category 不一致 / 成环)与上述两条并发兜底码。`18014/18016/18035/18038` 属实例写路径,留给 PR-4a —— 此刻加就是孤码。
+
+  **audit 落 §17 两个高价值事件**,与 positions / dictionaries 等配置面「不落 audit」的既有范式**有意偏离**:一次 Policy 激活会改变此后所有新证书的认定依据(编号是否必填、有效期怎么算、认可哪些机构),而已锁定的历史证书又必须保持不变(D-CERT-008)——「谁在什么时候把哪版规则切上去了」是事后唯一能复原判断依据的线索。
+
+  两处订正,都是 e2e / lint 先红抓到的:
+  - status DTO 从 `@IsEnum` 改 `@IsIn`。`@IsEnum` **会放过 DRAFT**(它确实是枚举成员),而 `@ApiProperty.enum` 只是文档元数据不参与校验 —— 于是「不接受 DRAFT」这句话在契约层根本不成立,只能靠状态机兜 409。
+  - 审计断言原用 `/certNumber/i` 宽正则,误伤了 §17 明确允许的 `certNumberMode`(那是规则名 REQUIRED/OPTIONAL/NONE,不是编号)。改为逐 key 精确比对禁字段,并正向断言 `certNumberMode` 在。
+
+- **修 e2e 测试库重置漏表(PR-2 的遗漏)**:`test/setup/reset-db.ts` 的 TRUNCATE 列表补上 PR-2 的 4 张新表(55 → 59 张)。**实测证据**:逐字跑修复前那条 TRUNCATE,插入的 `CertificateStandard` / `CertificateRecognitionPolicy` / `CertificateRecognitionIssuer` 三行**全部存活**;只有 `RecruitmentCertificateClaim` 被 `recruitment_applications` 的 CASCADE 隐式带走。机理是 `TRUNCATE ... CASCADE` 只连带清「**引用**被清表」的表,而 `Certificate.standardId → CertificateStandard` 是 Certificate 引用 Standard,清 Certificate 清不到 Standard。后果是同一 worker DB 内跨 spec 累积 Standard 行,`options` 这类全量取回断言会随执行顺序时红时绿 —— 典型的「只在特定 spec 组合下才复现」的 flake 源。四张表现已显式列出(含 Claim,不再依赖隐式 CASCADE:那条依赖一旦被挪走就会静默失效)。修复后同样跑阳性对照:三张表 1/1/1 → 0/0/0。
+
+- **招新证书申报管理端 + 认定规则解析器(2026-07-30;证书标准库 PR-4a-1,冻结稿 [`certificate-standard-library-t0-review.md`](docs/archive/reviews/certificate-standard-library-t0-review.md) §8.2 / §8.3 / §11.2 / §13.3 / §13.4 / §15.4 / §17)**:6 个新端点(Endpoint 429 → **435**,Controller 83 → **84**)。**纯新增刀** —— 旧 `POST /admin/v1/recruitment/applications/:id/certificates/:category/review` 与人工门槛标记**仍然在线且行为逐字不变**。
+
+  | 面 | 端点 |
+  |---|---|
+  | 招新证书申报 5 | `GET /admin/v1/recruitment/applications/:applicationId/certificate-claims` · `GET /admin/v1/recruitment/certificate-claims/:id` · `GET .../:id/image-urls` · `POST .../:id/review` · `POST .../:id/revoke-review` |
+  | 公开标准选项 1 | `GET /open/v1/recruitment/certificate-standards` |
+
+  **零新增 RBAC 码**(权限码恒 222):读走 `recruitment-application.read.record`,完整编号 / 审核人 / 备注 / 证据图 URL 要 `recruitment-application.read.sensitive`,审核与撤回走 `recruitment-application.review.certificate`。
+
+  **一证一行取代「按类别一格」**。旧路径把 `:category` 当资源 id,于是同类别第二张证书无处存放、单证重传与单证审核都做不到。新路径的单体端点挂 `certificate-claims/:id` 扁平前缀 —— claimId 已足够定位,不需要把报名 id 再拼一层。
+
+  **§11.2「已收录、待认定」不是「已认可」**。公开选项对暂无生效认定规则的标准返 `currentlyRecognized: false`:申请人仍可选它作**建议**(比让他填自由文本可归类得多),但审核通过必须另有生效规则,否则 `28062`。e2e 正向验这一格 —— 拿一个申请人已建议的待认定标准去 APPROVE,拒 28062 且该行状态 / 锁定字段 / version **一律不落痕**。
+
+  **审核锁定的是规则,不是当时的文字**(§5.6 / D-CERT-021):APPROVE 落 `standardId` + `recognitionPolicyId` + `recognitionIssuerId` + `issuingOrg`(机构**名称快照**)+ 规范化后的编号与日期。机构认可靠 issuer id 不靠中文机构名匹配;`FIXED_MONTHS` 的到期日由后端算,客户端自带 `expiredAt` **直接拒**而非静默忽略(静默忽略会让前端以为自己填的生效了)。
+
+  **`CertificateRecognitionResolver` 是 certificates 模块唯一对外导出**(§19),招新侧复用它解析机构 / 编号 / 日期,不复制第二套认定算法。它刻意**不提供** `resolve()`,而是四个显式入口:建证与审核用**当前 ACTIVE** 规则,改证沿该证**已锁定**的规则(哪怕已 RETIRED),发号**只搬运不重判**。把四者合成一个带开关的 `resolve()`,开关就是漂移的开始。依赖方向单向 —— certificates **绝不**反向 import recruitment。
+
+  **敏感分级只有一个出口**:所有返 DTO 的方法都经 `present(row, sensitive)`。`imageKeys` **永不出现在任何响应**(两档都不返),只给 `imageCount`;取图走独立端点,TTL 300s + `Cache-Control: no-store`(少了 no-store,签名 URL 会进浏览器/代理缓存,TTL 到期后缓存副本仍可取出,短 TTL 就白设了)。审计只记条数,key 与 URL 一律不入。
+
+  **§15.4「授权不能只靠 claimId」**:详情 / 证据图 / 审核都连带校验该 Claim 挂在一个真实且未软删的报名上。只按 claimId 查到行就返回,等于让一条泄露的 claimId 变成万能钥匙;报名已软删时统一按「申报不存在」回,不泄露「claim 在但报名没了」。
+
+  **CAS + 固定锁序**:审核回传 `version` 必须等于当前值(不等 `28058`),审核自身也自增 version,让并发的申请人重传撞 CAS。事务内先锁 `RecruitmentApplication` 行再复读 Claim —— 等锁期间申请人可能已重传。锁序与发号、Policy 切换同前缀(§8.3),不制造新的死锁路径。
+
+  **状态机穷举单测 55 条**([`recruitment-certificate-claim-state-machine.spec.ts`](src/modules/recruitment/recruitment-certificate-claim-state-machine.spec.ts)):6×6 全枚举 + 门槛派生 + 报名状态重算。`PROMOTED` 与 `WITHDRAWN` 是两个空集终态。撤回审核回 `SUBMITTED` 而非 `NEEDS_INFO` —— 撤回是「审核结论错了」,不该给申请人推一条补材料通知。
+
+  **门槛派生刻意还没接线**(§21 约束 2):门槛是**聚合投影**而不是可写标记(两张急救证拒掉一张,不该清掉另一张已通过证书带来的门槛),纯函数已就位并有单测,但接线必须与「`markThreshold` 拒写证书两类」「旧 `certificateImages` JSON 停写」在 4a-2 一次原子切换 —— 提前接线会与仍在线的人工标记形成两个真相源。e2e 有一条**反向断言**锁住这件事:审核前后报名的 `statusCode` / `thresholdMarks` / `certificateImages` / `certificateReviewStatus` 逐字不变。
+
+  **BizCode +11(295 → 306)**:招新域 7 条(`28056` 申报不存在 / `28057` 状态非法 / `28058` 版本冲突 / `28059` 数量超限 / `28061` 必须指定标准 / `28062` 无生效认定规则 / `28063` 证书门槛派生只读〔消费方在 4a-2〕),证书域 4 条(`18014` 机构不在认可范围 / `18016` 编号必填 / `18020` 编号不允许填写 / `18035` 尚无生效认定规则)—— 后 4 条是 PR-3 明确留给实例写路径的号位,此刻才不是孤码。
+
+  **首次消费 PR-2 已登记的两个审计事件**(AuditLogEvent 恒 **127**,不新增):`recruitment-certificate-claim.review` / `.review-revoke`。extra 是**闭集**,e2e 逐 key 精确比对:只有 operation / applicationId / decision / standardId / policyId / issuerProvided / imageCount / certNumberProvided / expiredAtProvided。完整编号、图片 key、备注全文、申请人 PII 全部不入;同时**正向**断言 `certNumberProvided` 与 `imageCount` 在 —— 否则「不写明文」可以靠什么都不写来假装满足。撤回事件另记 `revokedStandardId` / `revokedPolicyId`,那是事后复原判断依据的唯一线索。
+
+  一处订正,是 DB 的 CHECK 先红抓到的:e2e 原本直插一条 `status = PROMOTED` 但不带完整标准化事实的 Claim 行,被 `recruitment_certificate_claim_promoted_complete_check` 以 23514 拒掉。修的是夹具不是约束 —— 造不出「已发号却没锁定规则」的行正是那条 CHECK 存在的意义。
+
+- **招新证书写路径切到 Standard/Policy/Claim(2026-07-30;证书标准库 PR-4a-2,冻结稿 [`certificate-standard-library-t0-review.md`](docs/archive/reviews/certificate-standard-library-t0-review.md) §8.1 / §8.2 / §8.4 / §8.5 / §13.3 / §13.4 / §21)**:**Endpoint 恒 435**(+3 公开申报 −1 旧公开上传 −2 旧 admin category 端点 = 净 0),Controller 恒 84,权限码恒 222,Migration 恒 66。这是一刀**原子切换**:旧路径本刀删除,不留兼容窗口。
+
+  | 变化 | 端点 |
+  |---|---|
+  | ➕ 公开申报 3 | `POST /open/v1/recruitment/certificate-claims`<br>`POST .../certificate-claims/:id/resubmit`<br>`POST .../certificate-claims/:id/withdraw` |
+  | ➖ 旧公开上传 | `POST /open/v1/recruitment/applications/certificates` |
+  | ➖ 旧 admin | `POST /admin/v1/recruitment/applications/:id/certificates/:category/review`<br>`GET /admin/v1/recruitment/applications/:id/certificate-image-urls` |
+
+  **⚠️ 前端必须适配的四处契约变化:**
+
+  1. **一证一行取代按类别整组覆盖。** 同类别可以提交多张,互不覆盖;重传只换**这一条**的图与自报事实。旧端点把 `category` 当资源 id,于是同类别第二张证书无处存放、单证重传与单证审核都做不到。
+  2. **进度模型 `certificates` 变形**:从「每个类别恰一条,status ∈ none/uploaded/approved/rejected」改为「每条申报一行」,字段为 `claimId / version / category / rawCertificateName / status / imageCount / note`,`status` 直接透传 Claim 状态机(六值),数组可能为空、也可能同类别多行。旧形状在结构上表达不了「两张急救证,一张过了一张被驳回」—— 而那正是一证一行要解决的问题。
+  3. **`PATCH .../thresholds` 与 `POST .../batch-mark-threshold` 的 `thresholdCode` 枚举从 5 项收窄到 3 项**(`patrol1 / patrol2 / training`)。传 `redCross` / `bsafe` → `40000`(契约层 `@IsIn`),**无论 `completed` 真假**。
+  4. **取证据图换端点**:`GET /admin/v1/recruitment/certificate-claims/:id/image-urls`(claim 维度,TTL 300s + `Cache-Control: no-store`)。
+
+  **§8.4 门槛派生是本刀的核心。** `redCross` / `bsafe` 不再是可人工标记的门槛,而是 Claim 审核结论的**聚合投影**:
+
+  > 某证书门槛完成 = 当前报名下至少存在一条 `status ∈ {APPROVED, PROMOTED}` 且已解析 Standard 的 `categoryCode` 对应该门槛、且未软删的 Claim。
+
+  关键是**聚合**而不是「这次审核的结论直接写 true/false」。两张急救证里拒掉一张,聚合仍看得见另一张已通过的证书;而逐次覆写的标记记不住「还有另一张」,会把已满足的门槛错误清掉。e2e 有一条专门用例锁这一格(同类别两张,撤回其中一张的审核,`redCross` 仍成立)。
+
+  门槛值仍**物化**在 `thresholdMarks` JSON 里(所有既有读侧因此逐字不变),但对这两个 code 它是**投影而不是事实源**:唯一写者是 `recomputeCertificateThresholds`,由提交 / 重传 / 撤回 / 审核 / 撤回审核 / 整份撤销六条路径在**同一事务、持有报名行锁之后**各调一次。派生标记的 `by` 是显式常量 `system:certificate-claim-derived` 而不是审核员 id —— 塞审核员会让人误以为那是一次人工标记,从而误以为可以人工撤销。
+
+  **拒写做成两道,但只有一道是当前可达的。** DTO 的 `@IsIn` 把两个 HTTP 入口都拦在 400;service 层的 `28063 RECRUITMENT_THRESHOLD_DERIVED_READONLY` 是纵深防御,挡的是**未来任何内部直调 `markThreshold` 的新路径**(它的行为锁在单测里直调 service)。这里如实订正我先前的说法:批量入口**也**过 ValidationPipe,不是「靠 service 那道兜住」。
+
+  **§8.5 发号只搬 APPROVED Claim。** 不再读旧 `certificateImages` JSON、不再按 category 猜 Standard、不再建 pending 证书。「只搬不重判」是 D-CERT-008 的落点:审核当时锁定的 Policy 就是最终依据,哪怕此刻该 Standard 已换新 ACTIVE Policy 也绝不重算 —— 所以发号不锁 Standard/Policy,只用 Resolver 校验关系完整,缺任何标准化字段整批 fail-closed(不悄悄跳过坏 Claim)。落 `sourceCode=RECRUITMENT` + `sourceClaimId`(`@unique` 防重跑重复建证);继承审核人/时间/备注;最后有效日早于今天 → `expired`,否则 `verified`;Claim 转 `PROMOTED` 并清掉与证书重复的标量(`rawCertificateName / certNumber / issuingOrg / issuedAt / expiredAt`),Standard / Policy / 审核链 / 图片证据保留。
+
+  **证据图不再搬到 Certificate**:§13.5 明确 `source=RECRUITMENT` 的 evidence 读的是 `sourceClaim.imageKeys`,blob 单一属主自本刀起是 Claim 而不是 Certificate(与旧模型相反)。好处是审核链与证据留在同一行,发号不产生第二份 key 副本。
+
+  **旧三个证书 JSON 列自此只读不写**(`certificateImages / certificateReviewStatus / certificateIssuanceInfo`)。`uploadCertificateImages` 是它们在申请人侧的唯一写者,删掉它「4a 起旧字段只读不写」就成立;promote 里剩下的三处只是清成 `DbNull`。列在 PR-4b 物理 DROP。
+
+  **§8.1 逐条**:每份报名最多 10 条未软删申报(上限在**行锁内**复查 —— 两个并发提交都会在锁外看到 9 条);1~3 张 JPEG/PNG,内容校验复用 attachments 的 `AttachmentContentValidator`(模块内不得复制 MIME 黑名单);storage key = 固定 namespace + 随机 uuid,**不含**类别 / cycleId / 姓名 / 手机 / 原文件名;免费文件闸先跑,再走可能消费短信码的凭证链。申请人自报字段走**白名单函数**而不是「写入前 delete 不该有的键」—— 前者加字段要显式加,后者加字段默认放行,于是 `standardId / policyId / issuerId / 审核字段` 在结构上不可能被申请人写入。
+
+  **§13.3「claimId 不能单独构成授权」**:三个公开端点都要求凭证解析出的报名与 claim 归属一致,不一致按「不存在」回 —— 区分「不是你的」就是枚举 id 的信号。双通道凭证抽成 `resolveActiveApplicationByCredential`,三端点共用,身份链仍只有一处实现。
+
+  **§8.4 末段整份撤销级联**:未 `PROMOTED` 的 Claim 在同一事务转 `WITHDRAWN` 并清除门槛贡献。`PROMOTED` 用 `notIn` 排除 —— 已发号的报名本就撤不掉,这是纵深防御。
+
+  **审计 +2 事件**(AuditLogEvent 127 → **129**):`recruitment-certificate-claim.submit`(提交/重传/撤回,actor 恒 null)与 `recruitment-application.threshold-recompute`(它是「为什么这份报名状态自己动了」的唯一线索)。两者 extra 都是闭集,不含完整编号 / 图片 key / 申请人 PII。
+
+  **三个 BizCode 成为孤码**:`28053`(证书图必填)、`28054`(该类证书已审核通过)、`28055`(证书尚未审核通过)——它们的语义随「按类别一格」一起消失。**保留不删**:删除已发布的错误码对前端是破坏性变化,而留着它们不会被任何路径触发。
+
+  **退役的测试都带指针,不是删掉不变量**:`uploadCertificateImages` 那组三条不变量各写明新归属;「证书图先按安全计数审计再调 provider」+「审计失败 → provider 0 次」两条 fail-closed 不变量迁到 `recruitment-certificate-claims.service.spec`;跨模块总账 `sensitive-read-audit-unification.e2e` 的证书图入口同步 retarget 到 claim 维度(operation `certificate-images` → `certificate-claim-images`,事件名与 extra 白名单不变);PR-4a-1 那条**反向**断言(「本刀不动门槛」)按新事实**翻面**为「审核通过 → 派生门槛写入 / 撤回 → 聚合后清除」——反向断言的寿命只到它锁住的事实还成立那一刻,过期不翻面就是假绿。
+
+- **管理端建证 / 改证切到 Standard/Policy(2026-07-30;证书标准库 PR-4a-3,冻结稿 [`certificate-standard-library-t0-review.md`](docs/archive/reviews/certificate-standard-library-t0-review.md) §9.1 / §9.2 / §19 / §21)**:**零新增端点**(Endpoint 恒 435 · Controller 恒 84 · 权限码恒 222 · Migration 恒 66 · BizCode 恒 306)。这一刀只换 `POST/PATCH /admin/v1/members/:memberId/certificates` 的入参与写入列。
+
+  **⚠️ 契约破坏性变化(管理端建证表单必须适配):**
+
+  | 旧入参 | 新入参 |
+  |---|---|
+  | `certTypeCode`(必填)+ `certSubTypeCode` | `standardId`(必填;须 ACTIVE 且 CREDENTIAL) |
+  | `issuingOrg`(恒必填自由文本) | `recognitionIssuerId` **或** `issuingOrg` —— 传哪个由该 Standard 当前生效认定规则的 `issuerPolicy` 决定:`ALLOWLIST` 必传 id、`FIXED` 可不传(后端选唯一)、`FREE_TEXT` 必传自由文本 |
+
+  标准来源:`GET /admin/v1/certificate-standards/options`(PR-3 已上线,四条入口码任一可读)。
+
+  **为什么不保留旧字段做兼容**:两套入参就是两个事实源,而「按 category 猜 Standard」是冻结稿明令的硬禁区。旧字段留着,下一个人就会用它。
+
+  **出参新增四列**:`standardId` / `recognitionPolicyId` / `recognitionIssuerId` / `sourceCode`(`ADMIN` = 管理端录入 / `RECRUITMENT` = 招新发号搬运)。它们是队内主数据的**引用**(L1 配置面),不是敏感字段 —— 前端靠 `standardId` 显示「这是哪个标准」,靠 `sourceCode` 决定证据从哪读(§13.5)。PR-4b 后三列恒非空。
+
+  **§9.2 改证的两条规则**,分岔点是「有没有换标准」:
+
+  - **改 Standard** → 重选**当前 ACTIVE** Policy 并完整重校验(换标准就是换规则);
+  - **只改事实** → 继续沿该证**已锁定**的 `policyId` 校验,避免规则在录入后移动。原 Policy 已 `RETIRED` 仍允许按该版本修正与复核。
+
+  `standardId` **只在 pending 态可改**(纠正选错的标准),非 pending 传它 → `18033`。这条判断依赖行状态,DTO 表达不了,所以放在**行锁之后** —— 锁前判会被并发的 verify 抢在中间。改核心事实后 verified / expired / rejected 一律回 `pending` 重新复核。
+
+  **一处实现 bug 由单测抓到**:PATCH 是部分更新,没传的字段应保持库内现值。我最初把机构一对直接当 `null` 传给 Resolver,于是「只改 `expiredAt`」会被 `FREE_TEXT` 规则以 `18013` 拒掉一次本来合法的日期修正。改为两个机构入参各自回落到库内值(显式传了哪一个就清掉另一个,它们互斥)。抓到它的是 PR-1 留下的那条「只改 expiredAt 也要与库内 issuedAt 比较」用例 —— 它本来锁的是日期基准,顺带把这个漏洞照了出来。
+
+  **`assertDateSemantics` 退役**:PR-1 加的那两条判断(`issuedAt` 不晚于今天 `18018` / `expiredAt` 不早于 `issuedAt` `18017`)已经在 `CertificateRecognitionResolver.resolveDates` + `assertRange` 里,而且那里还多了按 `validityMode` 的规则校验。留两份日期算法正是 §19 明令要避免的「第二套日期算法」—— 两份迟早会在某次改动里分叉。行为等价由既有 e2e 保证(那几条用例逐字未改,只是现在打在 Resolver 上)。
+
+  **旧列停写**(§21):`certSubTypeCode` / `isInternal` / `imageKeys` 本刀起**根本不出现在写入 data 里**(不是写 `null`),单测用 `not.toHaveProperty` 正向锁住。`certTypeCode` 仍 NOT NULL(4b 才 DROP),按已解析 Standard 的类别回填一次 —— 值派生自 Standard,**不是**第二个事实源。
+
+  **字典校验没有消失,只是搬了位置**:`cert_type` / `cert_sub_type` 的有效性现在由 PR-3 的 Standard 管理面在**建标准时**校验一次,建证时不再重复猜。`GET .../certificates/qualification-flag` 的 `certTypeCode` query 参数**不变**(它是读侧契约,不在本刀范围)。
+
+  **退役测试都换成等价的新格,不是删掉覆盖**:「字典 code 不存在 / INACTIVE / 子类型不存在」三格 → 「Standard 不存在 / 未启用(DRAFT)/ 是 FAMILY 不可持有 / 已收录但无生效认定规则」四格 + 「ALLOWLIST 机构不属于本规则 → 18014」+ 「FREE_TEXT 不传机构 → 18013」;`PATCH certTypeCode 无效` → `PATCH standardId 不存在` 与「非 pending 改 standardId → 18033、pending 可改且 policyId/certTypeCode 跟着重选」。单测净 +2 条(46 → 48)。
+
+  单测注入的是**真实 `CertificateRecognitionResolver`**(它是零依赖纯类)加三张表的 mock,而不是打桩 Resolver —— 打桩会让「机构 / 编号 / 日期按规则校验」在单测里彻底测不到。
+
+- **旧证书事实物理删除与约束收紧(2026-07-30;证书标准库 PR-4b,冻结稿 [`certificate-standard-library-t0-review.md`](docs/archive/reviews/certificate-standard-library-t0-review.md) §20 / §21)**:第 **67** 个 migration,**contract 且不可逆**。与 PR-2(expand-only)成对收口:那一刀只加列不写,这一刀把 PR-4a 三刀切完写路径后剩下的过渡状态删干。Endpoint 恒 **435** · Controller 恒 **84** · 权限码恒 **222** · BizCode 恒 **306** · AuditLogEvent 恒 **129**。
+
+  **DROP 七列**:
+
+  | 表 | 删掉的列 | 为什么 |
+  |---|---|---|
+  | `Certificate` | `certTypeCode` · `certSubTypeCode` | 类别与等级由 `standardId` 唯一决定(§6 数据权威表明令禁止实例侧副本);留着就是「按 category 猜 Standard」的现成入口 |
+  | `Certificate` | `isInternal` | 本会颁发与否是**标准**的性质,权威在 `CertificateStandard.isInternal` |
+  | `Certificate` | `imageKeys` | 证据改读 `sourceClaim.imageKeys`(§13.5),blob 单一属主是 Claim |
+  | `recruitment_applications` | `certificateImages` · `certificateReviewStatus` · `certificateIssuanceInfo` | 「按类别一格」的产物,结构上表达不了同类别多张证书 |
+
+  **三列转 NOT NULL**:`standardId` / `recognitionPolicyId` / `sourceCode`(§20.2「nullable 过渡字段不得进入 release」)。`recognitionIssuerId` **仍可空** —— FREE_TEXT 认定规则下本就没有 issuer 实体,机构名在 `issuingOrg` 快照里;把它一起收紧会逼出一个假的「自由文本 issuer 行」。
+
+  **新增来源 CHECK** `certificate_source_claim_consistency_check`:`sourceCode=RECRUITMENT` → `sourceClaimId` 非空;`ADMIN` → 为空。它挡的是「RECRUITMENT 却没有 sourceClaimId」那种行 —— §13.5 的证据读取会无处取 key,而这种坏行只在有人点开它时才显形。双向阳性对照已跑(ADMIN 无 claim 放行 / RECRUITMENT 无 claim 被 23514 拒)。
+
+  **⚠️ 两处对外契约破坏:**
+
+  1. **小程序 `GET /api/app/v1/my/certificates`**:出参 `certTypeCode` / `certSubTypeCode` → `standardId` + `standardName` + `certCategoryCode` + `certLevelCode`(字段数 12 → 14);`isInternal` 保留字段名但值取自 Standard;查询参数 `certTypeCode` → **`certCategoryCode`**(值域不变,仍是 cert_type 字典 code,只是过滤落到 `standard.categoryCode`)。
+  2. **管理端报名 DTO 的 `certificates` 证书摘要字段移除**。它原本由三个 JSON 列的类别并集拼出来。替代者是 PR-4a-1 已上线的专用端点 `GET /admin/v1/recruitment/applications/:applicationId/certificate-claims` —— 那里有正确的敏感分级。不在报名 DTO 里再拼一份:两个读路径必然出现两套掩码规则,而其中一套迟早松。
+
+  **两处「typecheck 抓不到」的真实隐患**,是本刀最值得记的部分:
+
+  - `where` 用**展开**语法时,TypeScript 的多余属性检查**不穿透 spread** —— App 列表的 `{ certTypeCode: ... }` 在列删掉之后**依然编译通过**,只会在真实请求打到 Prisma 时才炸;
+  - `notDeletedWhere(...)` 入参是宽类型,§10.5 **资质判定**(全系统最关键的一次读)里的 `certTypeCode` 同理。
+
+  两处都改成经关联走 `standard: { categoryCode }`,并各加**正向 + 反向**双断言(断言新落点在、旧 key 不在)。少了反向断言,回退到旧写法不会红 —— 而 typecheck 也不会红。
+
+  **审计快照两处改动**:`certificate.expire`(到期 cron)与 `certificate.create/update/...` 的 before/after 里,类别副本 `certTypeCode` 改为 `standardId` / `recognitionPolicyId` / `sourceCode` 引用。记引用而不是记副本:事后要看类别就 join,不必让审计自带一个会漂移的字符串。
+
+  **新增共享测试夹具** [`test/fixtures/certificate-standard.fixture.ts`](test/fixtures/certificate-standard.fixture.ts)。冻结稿 §5.6 末条要求「任何测试 fixture 或直接 Prisma 写都必须提供 Standard 和 Policy」,本刀把它从「应该」变成 DB 层强制 —— 十四个 spec 的直插证书都需要一对 id。做成一份共享夹具而不是十四份拷贝:拷贝迟早分叉,而它们描述的是同一件事。
+
+  **写集扩展一处**(维护者 2026-07-30 同意):`src/modules/notifications/expiry-reminder.service.ts` 读 `Certificate.certTypeCode`,不动它 4b 编译不过。改动限于「类别副本换成 standardId 引用」,不碰 cron 谓词或提醒语义。
+
+  **上线 SOP** 见 [`docs/ops/certificate-standard-library-go-live.md`](docs/ops/certificate-standard-library-go-live.md):执行前必跑的七条只读探针、迁移后三条结构复核、**无列级回滚**的处置边界(若 4b 完不成则回滚 4a 不发版)、以及初始化硬前提(库里必须先有 Standard + ACTIVE Policy,否则任何建证都失败)。
+
+  §20.1 探针在 head schema 干净库上**八项全 0**,空库切换、零回填。**这不能替代生产库的探针** —— runbook 里写明了这一点。
+
+- **证书证据读取 + 全局工作台(2026-07-30;证书标准库 PR-5,冻结稿 [`certificate-standard-library-t0-review.md`](docs/archive/reviews/certificate-standard-library-t0-review.md) §13.5 / §13.6 / §14 / §15.2 / §15.7)**:3 个新端点(Endpoint 435 → **438**,Controller 84 → **85**)。**零新增权限码**(恒 222):工作台复用 `certificate.read.record`,证据读取用 `certificate.read.sensitive`。
+
+  | 面 | 端点 |
+  |---|---|
+  | 证据读取 1 | `GET /admin/v1/members/:memberId/certificates/:id/evidence-urls` |
+  | 全局工作台 2 | `GET /admin/v1/certificates` · `GET /admin/v1/certificates/stats` |
+
+  **§15.7 scope 先下推再计数**,这是工作台最容易写错的一格。可见组织范围与用户请求的 `organizationId` 取交集后进 SQL,再分页、再 `count`。先查后裁会让 `total` 泄露范围外的存在数量 —— 列表看不到那些行,计数却把它们算进去了。两处细节:交集为空时返「必然不成立的条件」而不是「不加条件」(后者把无权的人放成全库可见,是越权而不是少几行);scope 与 filter 用 `AND` 组合而非浅合并(两边都可能带 `member` 键,浅合并会让 filter 覆盖 scope,正好把范围条件整段丢掉)。
+
+  **§14 `effectiveStatusCode` 不是第五个持久状态**:它不入库、每次读时按北京 today 算,所以**不依赖到期 cron 是否跑过**。`expired` 计数含第二个分支(`verified` 且 `expiredAt < today`)—— cron 每天 09:00 才翻态,只信持久状态会在它跑之前少算。e2e 造了一张「持久态仍 verified 但已过期」的证书正向锁住这一格:少了第二分支,`expired` 会是 0。
+
+  **§15.2 出参白名单**:完整 `certNumber` / `verifyNote` / `verifiedBy` / `imageKeys` / signed URL / `sourceClaimId` **不在 select 里** —— 不是「取出来再剥掉」,而是根本没查。`q` 刻意**不搜完整证书编号**(L2 数据,可搜即可枚举);出参字段集用**精确 key 集合**断言(12 项),`objectContaining` 会放行任何新增字段,而工作台扩面正是泄露 L2/L3 的最短路径。
+
+  **§13.5 证据读取的授权是两道**(维护者 2026-07-30 拍板走方案 A):入口要 scoped `certificate.read.sensitive`(证据图是 L3);`source=ADMIN` 那一支再经 `AttachmentsService.listByOwner`,它自带 `attachment.view` RBAC + 可读性过滤 + pinned ledger 解析。
+
+  **为什么不给 attachments 加一个 certificate 专用 trusted 方法**:`listOwnerAttachmentsTrusted` 的注释里明写「仅限 content-\* owner;其余 owner 的读**必须**走 `attachment.view` RBAC」并且点名了 certificate。在那道护栏上开口换来的只是省一个权限码,代价是把一条明确的安全边界改成有例外的边界。**结果**:ADMIN 来源证据的读者需同时持 `certificate.read.sensitive` 与 `attachment.view`。
+
+  其余 §13.5 约束逐条:TTL 300s(`Cache-Control: no-store` 由 controller 设 —— 少了它签名 URL 会进浏览器/代理缓存,TTL 到期后缓存副本仍可取出);签 URL 前重查权限与归属;**已软删证书 404 不签**;`accessUrl` 为 null 的项**直接丢掉而不是回退裸 key**(provider 或 ledger 状态不确定即 fail-closed);URL 不入审计(只记 `operation` 与 `sourceCode`)。
+
+  **一条真实运行期耦合**,由 e2e 先红发现:ADMIN 分支要求 `attachment_type_configs` 里有一条 ACTIVE 的 `certificate` 记录。运维把它停用,证据读取会 **400 而不是返空数组**。那是正确的 fail-closed(配置不确定就不签),但值得知道 —— e2e 里写明了这一点。
+
+  工作台的证据存在性判定用**整页一次 `groupBy`**:attachment 是多态归属(`ownerType`/`ownerId`,无 Prisma 关联),逐行 count 就是 pageSize 次往返。
+
+- **前端交接与初始化收口(2026-07-30;证书标准库 PR-6,冻结稿 [`certificate-standard-library-t0-review.md`](docs/archive/reviews/certificate-standard-library-t0-review.md) §20.3 / §23 / §15)**:**纯文档刀** —— 零端点、零 schema、零权限码、零行为变更(Endpoint 恒 438)。
+
+  两份新 SOP:
+
+  - [`ops/certificate-standard-library-initialization.md`](docs/ops/certificate-standard-library-initialization.md) —— 首批 Standard/Policy 初始化。**本仓刻意不内置任何证书标准**:§20.3 把「创建 Standard 和 RecognitionPolicy」列为部署流程第 6 步、人工动作,因为「队里认哪些证书、认哪些发证机构、有效期几年、编号必填不必填」是业务拍板,不是代码默认值。内置了就等于替维护者拍板,而拍错的默认值会被当成事实用下去。含三组规则(`issuerPolicy` / `validityMode` / `certNumberMode`)对照表、8 步最小 smoke、以及两个顺序坑(`parentId` 只能在 create 设;ALLOWLIST 名单只在 DRAFT 期可整体替换)。
+  - [`ops/certificate-evidence-retention-sop.md`](docs/ops/certificate-evidence-retention-sop.md) —— 证据(L3)留存与手动清理。第一条就是**证据的两个属主**:RECRUITMENT 来源在 Claim 上、ADMIN 来源在 Attachment 上,而 PR-4b 之后证书自己**没有** `imageKeys` 列。由此直接得出「`PROMOTED` 的 Claim 图**绝不可删**」—— 删了那张已发号证书的证据链就断了,Claim 不是临时暂存区。另有三条硬规矩:不引入 cron(两个槽位已满且自动化的收益远小于「cron 谓词写错静默删档案」的代价)、先删对象后清列(反了会留孤儿且 key 再也定位不到)、清理动作本身不写 key 到任何地方。
+
+  两份交接文档补齐这一批**共七处对外契约破坏**:
+
+  - [`handoff/admin-web.md §3.2`](docs/handoff/admin-web.md) —— 建证入参换 `standardId` + 按规则二选一的机构入参;出参去掉三个实例侧副本、加四个标准化引用;报名 DTO 的 `certificates` 摘要移除(改调专用 claims 端点);标门槛枚举 5 → 3。外加六条行为说明,其中三条最容易踩:「已收录、待认定」是正常状态不是坏数据;`effectiveStatusCode` 是展示状态、别当第五个持久状态存;ADMIN 来源证据的读者需**同时**持 `certificate.read.sensitive` 与 `attachment.view`(方案 A 的已知代价),且该分支依赖 `attachment_type_configs` 的 `certificate` 那条为 ACTIVE。
+  - [`handoff/miniapp.md §2.9`](docs/handoff/miniapp.md) —— 公开上传换端点且语义从「按类别覆盖」变成一证一行;进度模型 `certificates` 从「每类别一条」变成「每条申报一行」(可空、可同类别多行);`my/certificates` 出参 12 → 14 字段、查询参数 `certTypeCode` → `certCategoryCode`。
+
+  §23 里几条**后端无法强制**的前端约束一并写进交接(证据 URL 按需申请、不预加载、页面关闭即丢弃、不写 localStorage/sessionStorage、埋点禁止采集 URL 与表单值)—— 它们只能是约定,所以必须写在交接文档里而不是只留在评审稿。
+
+- **发号 / 申报 / 撤销三条写路径的并发收口(2026-07-30;证书标准库跨模型评审 findings F1,冻结稿 [`certificate-standard-library-t0-review.md`](docs/archive/reviews/certificate-standard-library-t0-review.md) §8.3 / §8.5)**:零新增端点、零新增权限码、零 schema 变更(Endpoint 恒 438 · 权限码恒 222 · Migration 恒 67)。
+
+  被修的是**同一个形状**在四处重复:「锁了行,但判定依据仍是锁**之前**读到的那份快照」。锁本身不刷新快照 —— 等锁期间提交的撤销 / 换绑 / 发号在锁释放后才可见,而代码从不回头看。所以修法不是在四处各补一次复读,而是把范式做成一个只能整体调用的函数:`src/modules/recruitment/recruitment-application-lock.ts`,`锁(稳定顺序) → 锁后复读整行 → 判定状态与归属 → 迁移 → CAS 收尾`。第四步复用既有的 `claimAtStatus`(`WHERE statusCode = ?` 的条件行锁),两者成对使用。
+
+  | 落点 | 修复前 | 修复后 |
+  |---|---|---|
+  | 公开提交 / 重传 / 撤回 Claim | `lockApplication()` 只 `SELECT id FOR UPDATE` 且返回 void;凭证在事务外解析,锁后既不复核状态也不复核归属 | `lockOwnActiveApplicationOrThrow()`:锁 + 复读 + 归属复核 + 非终态断言 |
+  | 批量发号 | 「谁可发号」在事务**外**算完,事务内按 id 无条件写 `promoted` | 与单人共用 `lockPromotableApplicationOrThrow()`:`claimAtStatus` 条件行锁 + 锁后复读 + 锚点/建档字段复核 |
+  | 单人发号 | 只在事务外判过一次 `statusCode` | 同上(**同一内核**,不是两份实现) |
+  | 发号读 Claim | `findMany(APPROVED)` → 对这批 id `FOR UPDATE` → 循环用**锁前**那份 | 锁全部未软删 Claim(id ASC)→ **锁内重新查询** → 再判定 |
+  | 报名终态写入 | `update({ where: { id } })` | `updateMany({ where: { id, statusCode: 'publicity' } })` + 命中数断言 |
+
+  **一条独立于竞态的缺陷**:发号此前只把 `APPROVED` Claim 搬成 `PROMOTED`,`SUBMITTED` / `NEEDS_INFO` / `REJECTED` 原封不动留在一份已经终态的报名下 —— 它们永远不会再变成证书,却仍可被审核、仍可签发证据 URL。现在发号收尾把非 `PROMOTED` 的一并级联成 `WITHDRAWN`,与整份撤销那条路径逐字同口径(审计新增 `cascadedWithdrawnClaimCount`,只记条数)。
+
+  ⚠️ **行为变更**:并发撤销与发号相撞时,发号**整批**以 `28041` 失败而不是跳过该行。号段已按 N 原子自增,事务内少建一个人就会留下永久空洞,而「号段连续无空洞」是本模块的冻结不变量 —— 所以只能整批回滚(seq 随之复位)。
+
+  **真并发 e2e**(`test/e2e/recruitment-certificate-concurrency.e2e-spec.ts`,6 条 + 1 条连接独立性自证):两个 Nest app = 两条真实连接,blocker 事务占住目标行把被测操作逼进锁等待队列,查 `pg_stat_activity` 确认「它真的在等锁」再放行 —— 不用 sleep(不够就是假绿,太长就是慢)。6 条在修复前**全部失败**、修复后全部通过。含一条数据库级全表巡检:终态报名下不得存在非终态 Claim。
+
+- **证据授权按申报状态分流(2026-07-30;证书标准库跨模型评审 findings F2,冻结稿 [`certificate-standard-library-t0-review.md`](docs/archive/reviews/certificate-standard-library-t0-review.md) §13.5 / §15.5 / §15.9)**:零新增端点、零新增权限码、零新增 BizCode、零 schema 变更。
+
+  `GET /admin/v1/recruitment/certificate-claims/:id/image-urls` 修复前只做「查 `read.sensitive` → 签全部 key」—— **申报状态完全不参与判定**。现在按状态分流:
+
+  | 状态 | 结果 | 理由 |
+  |---|---|---|
+  | `SUBMITTED` / `NEEDS_INFO` / `APPROVED` / `REJECTED` | 放行 | 都还在审核流里。`REJECTED` 尤其不能拒 —— 申请人可以从它重投,审核员必须能回看「当初拒的是什么」 |
+  | `WITHDRAWN` | **拒(28057)** | 撤回的语义就是「别再看了」。继续放行等于撤回只撤掉了列表可见性(§15.5) |
+  | `PROMOTED` | **拒(28057)** | 证据已成为正式证书的认定依据,此后只能经 `GET /admin/v1/members/:memberId/certificates/:id/evidence-urls` 读 —— 那条走 Certificate 的 **scoped** authz(能看这个队员才能看),而招新审核码是 GLOBAL 的。留着 Claim 端点等于给已发号队员的档案开了一条绕过 scope 的旁路(§15.9) |
+
+  状态闸做成纯函数 `assertClaimEvidenceReadable` 放在 Claim 状态机文件里,与既有的转移闸同侧 —— service 只能调、不能绕。
+
+  **§15.5「URL 生成前重新检查」**:入口读取与签发之间隔着一次审计写的 IO 往返,申请人完全可能在这个窗口里撤回、或管理员发号把它转成 `PROMOTED`。所以状态、归属与权限在**签发前**再验一次。审计已经落账了,这次拒签只是不发 URL,不影响「谁在什么时候试图读过」这条记录的完整性。
+
+  **§13.5「不写第二套签名逻辑」**:PR-4a-1 与 PR-5 各写了一遍「取 key → 循环 `generateDownloadUrl` → 拼 `expiresAt`」,连 TTL 常量都各声明了一个 300。现在合并为 `CertificateEvidenceSigner`(`CertificatesModule` 导出,招新侧注入)。它**只负责签**:判权在各 service 的入口码,状态闸在各自的状态机,审计必须先于签发落账 —— 把这三件事塞进签发器会让「谁把的关」变得取决于调用顺序。
+
+  测试是**正反成对**的:4 条非终态必须出图 + 2 条终态必须拒且 provider 一次都不调 + 1 条「审计后被撤回仍拒签」(专测复读那一道,少了它这一格会照常签出 URL)。原有的「正常 Claim 能返两个 URL」那条对不该出图的状态一个字都没说 —— 那正是这条规则此前可以被整段删掉而全绿的原因。
+
+- **PATCH 三态语义 + 日期真实性 + 核验落点状态(2026-07-30;证书标准库跨模型评审 findings F3,冻结稿 [`certificate-standard-library-t0-review.md`](docs/archive/reviews/certificate-standard-library-t0-review.md) §9.2 / §9.3 / §10.2 / §10.4)**:零新增端点、零新增权限码、零 schema 变更(Endpoint 恒 438 · Migration 恒 67)。⚠️ **契约收紧**,`openapi.json` 同 PR 已刷新。
+
+  ### ① PATCH 三态(V1)
+
+  ```
+  字段不出现        → 保持库内现值
+  字段出现且为 null → 清空
+  字段出现且有值    → 用新值
+  ```
+
+  修复前两条都不成立,而且是**双向**失效:
+
+  - `expiredAt` 的回落判据写的是 `dto.standardId !== undefined ? null : 库内值` —— 判的是「传没传 standardId」而不是「换没换」。管理端表单几乎都是「回填 + 整体提交」,于是**带上原样 standardId 却不带 expiredAt 的一次保存,会把一张有到期日的证书静默清成终身有效**。
+  - `dto.expiredAt ?? 库内值` / `dto.certNumber ?? 库内值` 里的 `??` 把**显式传来的 null** 当成「没传」,所以到期日清不成终身有效、`OPTIONAL` 编号也改不回无编号。
+
+  三态在**契约层**表达:可空字段类型改为 `string | null`(`@IsOptional()` 对 null 与 undefined 都跳过校验,显式 null 因此能穿过校验层抵达 service)。库内 NOT NULL 的 `issuedAt` 改用 `@ValidateIf` 而非 `@IsOptional()` —— 后者会让 `issuedAt: null` 静默通过再被 `??` 悄悄换成库内值,客户端以为自己清空了;现在稳定 400。
+
+  **一条顺带修掉的、原报告没提的缺陷**:`PERMANENT` / `FIXED_MONTHS` 是**派生型**规则,客户端不得传到期日。所以「不传 = 保持库内现值」对它们不能照字面执行 —— 把库内那个后端自己算出来的值回传给 Resolver 会被拒成 18016。结果是修复前**一张 FIXED_MONTHS 证书只改机构名会 400**。现在按 `expiryIsClientSupplied(mode)` 分流:派生型不回传,让规则按同一个 `issuedAt` 重新派生出同一个值。
+
+  ### ② 真实值变化才回 pending(R6)
+
+  「改核心事实 → 打回 pending 重审」的判据从 `factsTouched`(**字段在不在请求体里**)改为「Resolver 算出的最终值与锁后库内值逐字段比对」。修复前一次零变更的整表单提交就会把已核验证书打回重审 —— 那不是边角情况,是管理端表单的常态。
+
+  ### ③ 核验一张已过期的证书直接落 expired(V7)
+
+  `verify()` 此前写死 `verified`,理由是「`expired` 由每天 09:00 的到期扫描 cron 推动」。但那条 cron 只处理**已经是 verified** 的行,而这里正是产出 verified 行的地方 —— 于是一张最后有效日早于今天的证书被核验后,会一直被资质查询当作有效直到次日 09:00。发号路径(§8.5 第 8 步)早就按同一规则分流了,管理端核验没跟上。边界是「最后有效日当天仍有效」。
+
+  ### ④ 日期真实性补齐(V5)+ 工作台分页边界(V8)
+
+  `@IsDateString({ strict: true })` 此前只在 `certificates.dto.ts` 有,`recruitment-certificate-claims.dto.ts` 与 `certificates-workbench.dto.ts` **各 0** —— `@Matches` 只管形状,拦不住 `2026-02-30` 这类形状合法但不存在的日期。两处各补 4 个字段。
+
+  工作台 `page` / `pageSize` 此前只有 `@IsInt()`,`minimum` / `maximum` 只写在 Swagger 注解里(**文档不是校验**),`pageSize=100000` 会原样进 `take`。而那里的注释当时写着「@Min/@Max 在此复用其常量」—— 描述的规则根本不存在。这是本批第三处「注释写对、执行位没跟上」。现在 Swagger 注解与 `@Min/@Max` 引用同一个常量,文档与执行位不可能再分叉。
+
+  > V8 按 goal 原计划属 F5,实际落在本刀:它与日期校验是同一个文件、同一类缺陷,拆开会让同一个 DTO 在两个 PR 里被改两次。
+
+  ### 测试
+
+  新增 `test/e2e/certificates-patch-tristate.e2e-spec.ts`(38 条):三态矩阵(`standardId` 三态 × `expiredAt` 三态)· 四种 `validityMode` 各自「只改无关字段时到期日不动」· `certNumber` 三态 · R6 正反成对(零变更不打回 **且** 真变更仍打回)· 核验过期/当天到期两个边界 · 5 个不存在日期 × 3 个入口 · 分页 5 个越界 + 1 个恰好上限 · 「三态不等于放开规则」两条(`PERMANENT` 传到期日仍拒、`EXPLICIT_REQUIRED` 传 null 仍拒)。
+
+- **§12 资质判断落地(2026-07-30;证书标准库跨模型评审 findings F4,冻结稿 [`certificate-standard-library-t0-review.md`](docs/archive/reviews/certificate-standard-library-t0-review.md) §12)**:零新增端点、零新增权限码、零新增 BizCode、零 schema 变更(Endpoint 恒 438 · Migration 恒 67)。⚠️ **对外契约破坏**,`openapi.json` 与 [`handoff/admin-web.md`](docs/handoff/admin-web.md) §3.2.1 同 PR 已登记。
+
+  冻结稿 §12 此前**整节未实现**:query 只收 `certTypeCode`(等价于两级判据里的 category 一级),出参只有 `memberId / certTypeCode / qualified` 三字段,全仓搜 `criterion` 零命中。
+
+  `GET /admin/v1/members/:memberId/certificates/qualification-flag`
+
+  | | 旧 | 新 |
+  |---|---|---|
+  | query | `certTypeCode=first_aid` | `criterionType=category\|standard` + `criterionCode` |
+  | 出参 | 3 字段 | 5 字段(+ `matchedCertificateId` / `expiredAt`,`certTypeCode` → `criterionType` + `criterionCode`) |
+
+  **旧参数直接删除、不做兼容**:两套入参就是两个事实源,而 `certTypeCode=first_aid` 与 `criterionType=category&criterionCode=first_aid` 语义完全重合 —— 留着只会让下一个人以为它们有区别。`forbidNonWhitelisted` 会把继续发旧参数的调用方拒成 `40000`,而不是静默当成「没传判据」返回一个错误答案。
+
+  判据一律用**稳定 code**(§12:「不使用跨环境不稳定的 cuid 作为业务规则参数」)—— 岗位要求、活动门槛这类配置将来会引用它,cuid 换个环境就失效。
+
+  **四级稳定排序**(`永久有效优先 → expiredAt 较晚 → issuedAt 较晚 → id 字典序`):前两级由 `ORDER BY expiredAt DESC NULLS FIRST` 一个 clause 表达。第四级不是凑数 —— 少了它,两张同日发放、同日到期的证书谁被选中取决于 PostgreSQL 的物理行序,同一次查询在 `VACUUM` 前后可能返回不同的 `matchedCertificateId`,而那正是「稳定顺序」四个字要排除的东西。
+
+  **为什么要返 `matchedCertificateId` 与 `expiredAt`**:只回一个布尔,调用方拿到 `false` 无法区分「没有这张证」与「有但过期了」,拿到 `true` 也无法回答「什么时候要提醒续期」。
+
+  **`criterionCode` 不存在 → 400 而不是 `qualified: false`**(category 走 `18010`,standard 走 `18002`)。拼错的 code 与「确实没有这张证」是两件事,而后者会被调用方(岗位资格、活动门槛)当成「这个人不合格」写进业务结论。
+
+  **§12「历史 Certificate 不要求 Standard / Policy 当前 ACTIVE」**:standard 级判据只校验标准**存在且未软删**,不校验 `status`。校验 ACTIVE 会让「标准停用后,存量持证人一夜之间全部不合格」,而停用标准的本意是「不再新发」,不是「追溯作废」。e2e 正向锁住了这一格。
+
+  审计 extra 的 `filterFields` 随之从 `['certTypeCode']` 改为 `['criterionType', 'criterionCode']` —— 仍然只记「按哪些字段筛的」,不记筛选值本身,也不记判定结果。
+
+- **主数据契约与审计收尾(2026-07-30;证书标准库跨模型评审 findings F5,冻结稿 [`certificate-standard-library-t0-review.md`](docs/archive/reviews/certificate-standard-library-t0-review.md) §5.3 / §7.1 / §7.2 / §9.2 / §13.1 / §13.2 / §13.5 / §17)**:零新增端点、零新增权限码、零新增 BizCode、零 schema 变更(Endpoint 恒 438 · Migration 恒 67)。⚠️ 含**两处契约收紧**,`openapi.json` 同 PR 已刷新。
+
+  ### R2 · DRAFT 标准可改身份字段(除 `code`)
+
+  原设计是「身份字段一律不可改,DRAFT 期要改就删掉重建」。那条路在这个模型里**走不通** —— `code` 是全量 `@unique` 且**含软删行**(D-CERT-004「不可复用」正是靠这一点)。软删一个填错的 DRAFT 标准之后,它的 code 被永久占用,「重建」只能换 code。首批初始化打错一个字,那个 code 就永远用不了了。
+
+  现在开放 `kind` / `categoryCode` / `levelCode` / `parentId` / `isInternal`,判据是 **`status = DRAFT` 且 `activatedAt IS NULL`**。用 `activatedAt` 而不是只看 status:状态机允许 `ACTIVE → INACTIVE → ACTIVE`,而 `activatedAt` 记的是**首次**启用且永不覆盖 —— 只看 status 会把一个 INACTIVE 标准误判成可改身份,而它可能已被一批历史证书引用。`code` 仍然一个字都不能改。
+
+  ### R3 · 只有 DRAFT 可软删,且先锁再数引用
+
+  两条:**① 只有 DRAFT 可删** —— 此前 ACTIVE / INACTIVE 零引用时也能删,后果是「这个 code 被永久占用且再也建不出来」。**② 先锁再数** —— 此前引用计数在锁外跑,与「给这个标准建 Policy」并发时可留下一条指向已软删 Standard 的 Policy。现在两条路径抢同一把 Standard 行锁(与 policies service 的 `lockStandardOrThrow` 同款 `FOR NO KEY UPDATE`,各用各的锁等于没锁)。
+
+  ### R4 · 状态迁移加行锁 + 锁后复读
+
+  并发两次 `DRAFT→ACTIVE` 此前**都成功**:各自读到 DRAFT、各自过状态机、各自写 `activatedAt`(后者覆盖前者,而 §7.1 说它记的是首次),留下两条 `activate` 审计。现在后到的那个在锁后复读时看到 status 已是 ACTIVE,状态机直接拒。
+
+  ### R5 · `options` 两档都只返 ACTIVE
+
+  此前 `recognizedOnly` 缺省时返 ACTIVE + INACTIVE,而 INACTIVE 标准在 Resolver 那里是硬拒 —— 下拉里明明列着、甚至因为还挂着一条 ACTIVE Policy 而显示 `currentlyRecognized: true`,选中提交却被拒。「能选但选了就报错」是最难排查的一类前端问题:报错指向标准状态,而界面上根本没有状态这一列。两档的区别因此收窄为「要不要**同时**有 ACTIVE Policy」。
+
+  ### R7 · RECRUITMENT 来源证书永久禁改 `standardId`
+
+  原有的闸只看 `certStatusCode === pending`,而招新来源的证书**可以**回到 pending(改了别的核心事实就会 §9.2 打回)。一旦回到 pending,`standardId` 就能被改成另一个标准 —— 而 `sourceClaimId` 仍指着原来那条 Claim:证书说自己是 A 标准,它的证据链、审核结论、锁定的 Policy 说的是 B 标准。§8.5 在发号那一刻建立的对应关系被一次管理端 PATCH 悄悄拆掉,且无法从数据上还原。
+
+  ### R8 · 审计能区分建版与改版,并记录被退役的那一版
+
+  改 DRAFT 规则此前复用 `create-policy` —— 审计里建版与改版长得一模一样。新增闭集值 `update-draft-policy`。激活时新增 `supersededPolicyId` / `supersededPolicyVersion`:此前完全看不出激活 v3 的同时退役了 v2,而「上一版是什么时候、被哪次激活顶掉的」正是事后复原「这张证书当时按哪版规则认定」的关键线索。
+
+  ### R9 · 撤回审核只清不写
+
+  此前把撤回人写进 `reviewedByUserId` / `reviewedAt`、把撤回理由写进 `reviewNote` —— 而这三列的语义是「谁、什么时候、以什么理由**通过**了这条申报」。于是一条 SUBMITTED 申报上挂着「审核人:张三」,申请人侧的 `reviewNote` 会把撤回理由读成驳回说明。方法的 JSDoc 本来就写着「必须清空……审核字段」,执行位没跟上。撤回人不丢:审计的 `actorUserId` 就是他,并新增 `revokedReviewerUserId`(被撤销的那次审核是谁做的)与 `noteProvided`(§17 禁备注全文入审计)。
+
+  ### R10 · `evidenceAvailable` 覆盖两种来源
+
+  此前只判 `sourceClaim.imageKeys`,注释还写着「不假装覆盖两种」。结果是**管理端上传的证据一律显示为没有证据**,前端据此隐藏「查看证据」入口。而工作台侧早就两种都算了 —— 同一张证书在工作台显示「有证据」、在详情页显示「无证据」。现在按 `sourceCode` 分流:RECRUITMENT 看 Claim 图,ADMIN 数 `ownerType='certificate'` 的 Attachment(只数不取 key)。
+
+  ### §3-2 · 撤掉 Policy 状态接口对 `RETIRED` 的放开(维护者拍板)
+
+  §13.2 逐字是「激活 DTO **只允许 ACTIVE**」,而 DTO 多收了一个 `RETIRED`,上一行注释自己就写着「只允许 ACTIVE」—— 描述与执行位当场矛盾。更要紧的是它悄悄扩了业务语义:手动退役会让标准进入「有标准、无生效规则」状态,此后既不能建证也不能过审。那是一个真实的运营动作(「暂停认定」),需要自己的判权、审计与前端提示,不该由一次「顺手多接一个枚举值」带进来。真需要就单独立项。
+
+  ### 两条随之翻面的旧断言
+
+  §7 纪律要求「反向断言的寿命只到它锁住的事实成立那一刻;某刀让它过期,同刀必须翻面」。本刀翻了两条:「身份字段一律不在 PATCH 白名单」收窄为「`code` 与 `status` 永远不在」;「撤回理由写进 `reviewNote`」翻成「`reviewNote` 必须为 null」。另有两条因 R3 改变了可达性而重写(「被子节点引用 → 18032」经 API 已构造不出来,改直插构造以证明**守卫**没随可达性一起消失;审计三连拆成两条,因为「建→激活→删」在同一个标准上已走不通)。
+
+- **上线 SOP 顺序订正 + 留存字段补齐 + 初始化示例拆标准 + 台账回填(2026-07-30;证书标准库跨模型评审 findings F6)**:纯文档刀,零代码、零 schema、零契约变化。
+
+  ### V9 · 上线 SOP 的执行顺序是错的
+
+  原顺序 `① 探针 → ② 停止写入 → ③ migrate deploy`。探针证明的是**跑那一刻**库里没有会被 DROP 的数据 —— 如果此后还能写入,探针到停写之间那个窗口里进来的任何一行都会被不可逆地删掉,而「探针全 0」的记录会让人以为已经证明过没有数据。**探针的结论只有在库冻结之后才成立。**
+
+  且备份原本根本不在有序步骤里(只在正文别处提过一句)。这批 migration 会 DROP 七列,一旦发现探针漏判,唯一退路就是备份 —— 而一个没验证过能恢复的备份等于没有备份。
+
+  新顺序:`停写 → 备份并当场确认可恢复 → 在冻结后的库跑探针 → 任一非 0 立即停 → migrate deploy → 结构复核`。
+
+  ### R11 · 留存 SOP 只清了最显眼的那一项
+
+  清理 SQL 原本只 `imageKeys = NULL` + `sensitivePurgedAt = now()`,把申报里其余再识别字段全留下了。证书编号(L2,可用于外部查询或冒用)、发证机构、发证日 / 到期日三者合起来足以定位到一个具体的人。
+
+  更糟的是 SOP 的筛选条件是 `sensitivePurgedAt IS NULL` —— **打上标记之后这一行永不再被扫到**,漏清的字段会永久残留。这正是 promote 路径 F12 踩过的同一个坑。
+
+  补齐 `certNumber` / `issuingOrg` / `issuedAt` / `expiredAt` / `rawCertificateName` / `reviewNote`;明确**不清** `standardId` / `recognitionPolicyId` / `status`(它们是「当时被判成什么」的档案,不含再识别信息)。
+
+  另补一条**删除失败的重试口径**:存储侧删对象是 best-effort,只对确认删成功的 id 打 `sensitivePurgedAt`,失败的保持 NULL 让下一轮重新扫到 —— 这就是重试机制,不需要额外账本。判断依据只有一条:**`sensitivePurgedAt` 非空 = 这一行的敏感字段确实已经清干净了**。
+
+  ### R12 · 初始化示例把两种证书揉进了一个标准
+
+  示例把「深圳市红十字会」与「深圳市急救中心」放进同一个 `red_cross_first_aid` 的 issuer 名单。它们是**两种不同的证书**,只是同属 `first_aid` 大类 —— 培训内容、有效期、复训要求都不一样。维护者口径逐字:**「急救资质是大类,不等于红十字证书。」**
+
+  改为两个 Standard、同一个 `categoryCode`(`red_cross_first_aid` / `emergency_center_first_aid`)。`criterionType=category&criterionCode=first_aid` 的资质判定两张证都算数,要精确到某一种就用 `criterionType=standard` —— 这正是 F4 两级判据存在的理由。
+
+  同时补上判据:**什么时候才该把多个机构放进同一个名单** —— 同一张证书由多家机构联合或分区签发时。判据是「持证人拿到的是不是同一张证」,不是「都属于同一个大类」。
+
+  初始化文档另同步 A-3(DRAFT 期可改身份字段)并加了一条醒目警告:**`code` 打错一个字就永远用不了了**(含软删行的 unique),那是整份文档里最不可逆的一步。
+
+  ### amendments 文件 + 台账回填
+
+  新建 [`certificate-standard-library-t0-amendments.md`](docs/archive/reviews/certificate-standard-library-t0-amendments.md):冻结稿正文**一个字不改**,post-freeze 的 8 条修正(A-1…A-8)逐条记「原文 / 改为 / 理由 / 触发来源」。冻结的价值在于「当时到底是怎么定的」可复原 —— 回改正文会让所有引用它的 PR 描述、审计记录和评审结论指向一份已经不同的文本。**两份合起来才是当前需求,冲突以 amendments 为准。**
+
+  [`docs/README.md`](docs/README.md) 已登记该文件并把冻结稿从「已冻结未实施」移出;[`current-state.md`](docs/current-state.md) §2 补证书标准库能力指针 + 三份 ops runbook,§4 补三条 P1 债务(不可逆 migration 未部署 / 契约破坏未发版 / 首批标准未建);[`NEXT_TASKS.md`](docs/ai-harness/NEXT_TASKS.md) P1-24 从「下一个开工的 Goal」改为已交付 + F1–F6 修复批次状态 + 四条剩余挂账。
+
+- **评定接入报名锁 + 门槛复算 + CAS(2026-07-31;证书标准库第二轮跨模型评审 findings G1)**:`RecruitmentApplicationReviewService.evaluate` 此前**无锁、无锁后复读、无 CAS** —— 事务外读到 `pending_evaluation` 就无条件 `update({ where: { id } })`。**Endpoint 恒 438 · 权限码恒 222 · Migration 恒 67 · BizCode 恒 306 · AuditLogEvent 恒 129**,零 schema、零契约变化。
+
+  **修复前能发生什么。** 评定与「整份撤销」/「证书门槛回退」并发时,等锁期间提交的 `withdrawn` 或 `verified` 会被评定按锁前快照覆写回 `publicity`;而发号内核只复核「当前是不是 publicity」、**不要求存在 APPROVED Claim** —— 于是一份用户已经撤销、或门槛已经失效的报名照样能被建 Member/User 并发出永久编号。
+
+  改成 `recruitment-application-lock.ts` 的固定范式:**锁(`FOR NO KEY UPDATE`)→ 锁后复读 → 门槛重算 → 判定 → 带 `expectedStatus` 的 CAS `updateMany`(`count !== 1` 即 28041)**。
+
+  **门槛复算这一步不可省。** 锁保证的是「没人同时改」,不是「我的判断依据还成立」:`thresholdMarks` 对 `redCross` / `bsafe` 只是 Claim 审核结论的**投影**,任何漏调重算的 Claim 写路径都会让它静默落后于事实。所以 `approved=true` 且当前 `pending_evaluation` 时,先调这两个门槛的唯一写者 `recomputeCertificateThresholds` 按当前全部未软删 Claim **重新聚合**,再用重算后的行判定 —— 不另写一套聚合(第二套聚合就是第二个可漂移的真相)。重算与评定同事务:门槛不成立 → 抛 28041 → 重算刚写的修正一起回滚(本方法的职责是「不基于失效依据放行」,不是顺手修数据)。
+
+  行为差异只有一个方向:**原先会放行的失效场景现在返 28041**。`verified + approved=true` 恒拒(门槛未齐)、淘汰路径、正常通过进公示三条逐字不变。
+
+  行为锁:新增 `test/e2e/recruitment-application-write-concurrency.e2e-spec.ts`(11 条,含「两个 app 确实是两条独立连接」元断言 + 全库巡检「`publicity` 报名不得存在证书门槛不完整的状态」,巡检按 **Claim 聚合**判而不是查投影自身)。其中 6 条在修复前红。
+
+- **自助换绑与后台改资料接入同一把报名锁(2026-07-31;证书标准库第二轮跨模型评审 findings G2)**:`rebindWechat` / `rebindPhone` / `updateApplication` 三条写路径此前都在事务**之外**解析凭证 / 读报名(要调微信、要消费短信码,不能放进事务),随后进事务按**锁前那份快照**无条件写。**Endpoint 恒 438 · 权限码恒 222 · Migration 恒 67 · BizCode 恒 306 · AuditLogEvent 恒 129**,零 schema、零契约变化。
+
+  **修复前能发生什么。** 等锁期间发号可以提交 —— 发号会把报名标 `promoted` + `sensitivePurgedAt` 并清空全部 PII。旧请求醒来后把手机 / openid / 住址 / 换绑历史**写回**一行已脱敏的记录;而 `sensitivePurgedAt` 非空会让留存清理 SOP(`WHERE sensitivePurgedAt IS NULL`)**永远跳过该行** —— 这一行会永久带着本该删除的 PII(换绑历史里还含**明文旧手机号**)。
+
+  三处统一改用 `recruitment-application-lock.ts` 里已有的锁:
+
+  - **两个换绑**走 `lockOwnActiveApplicationOrThrow`(锁 + 复读 + **复核旧凭证仍匹配** + 拒终态)。`channel` 传 `'phone'` —— 复核的必须是**授权本次操作的那条凭证**(两条路径验的都是 `dto.phone` 的短信码),不是被修改的那个字段;这样也顺带覆盖「首次绑定微信」(报名此前无 openid),按 openid 复核会把这条合法路径误杀。不匹配按 `28002` 泛化返回,沿整份撤销那条路径的口径。
+  - **`phoneBindingHistory` 改为从锁后的行重新生成**,不再沿用事务外的 `priorHistory`。历史是追加型事实,用旧快照覆盖写就是丢事实:两次换绑竞速时,后到的那次会把先到那次的记录**整条抹掉**。
+  - **`updateApplication`** 走 `lockActiveApplicationOrThrow`,`promoted` / `sensitivePurgedAt` 两道守卫在**锁后重新执行**(`sensitivePurgedAt` 是独立的一根轴 —— 留存清理跑过但状态未到终态的行只有它能拦),最终写入改为带 `statusCode + sensitivePurgedAt IS NULL` 条件的 CAS `updateMany`(`count !== 1` 即 28041)。
+
+  **⚠️ 行为变化**:`updateApplication` 现在对 `rejected` / `withdrawn` 报名也返 `28041`(此前只拦 `promoted` 与已脱敏行)。终态报名的资料不该再被改 —— 与其余写路径的终态口径拉齐。其余错误码与放行条件逐字不变。
+
+  行为锁:新增 `test/e2e/recruitment-identity-write-concurrency.e2e-spec.ts`(11 条,含独立连接元断言 + 全库巡检「`sensitivePurgedAt IS NOT NULL` 的报名不得含任何应清 PII」,19 列逐字对齐发号清敏写入)。竞态编排让**真发号**排在锁队列第 1 位、被测操作第 2 位 —— 清敏字段清单因此不会与实现漂移。其中 6 条在修复前红。
+
+- **证书核验改用锁后的到期日(2026-07-31;证书标准库第二轮跨模型评审 findings G3)**:`CertificatesService.verify()` 的 `before` 读于 `claimAtStatus`(条件行锁)**之前**,而落点状态(§9.3:最后有效日早于今天 → `expired`,否则 `verified`)用的就是那份锁前快照。**Endpoint 恒 438 · 权限码恒 222 · Migration 恒 67 · BizCode 恒 306 · AuditLogEvent 恒 129**,零 schema、零契约变化。
+
+  条件行锁只保证「状态仍是 `pending`」,**不保证这一行其余字段没变** —— 而 `expiredAt` 恰恰是管理端 `PATCH` 可以改的一列。等锁期间一次改早 / 改晚提交之后,核验就是按一个**已经不存在的到期日**给证书定状态:改早 → 一张昨天就失效的证书被写成 `verified`(到期扫描 cron 只处理**已经是 verified** 的行,所以要到次日 09:00 才纠正,这期间资质判定一律认它有效);改晚 → 一张刚续期到明年的证书被写成 `expired`。
+
+  改法镜像**同文件 `update()` 早就做对的那一步**:`claimAtStatus` → 重新查 `lockedBefore` → 后续只看锁后事实(到期判定、审计 `before`、最终 `update` 的 id)。这与 F1 修掉的「发号用锁前快照」是同一个病,当时没铺到这里。
+
+  **同文件扫查(DoD 要求)**:`create`(无既有行)/ `update`(已正确)/ `verify`(本刀修)/ `reject`(本刀顺带对齐)/ `softDelete`(全程无锁,写入不依赖任何锁前事实 —— 形状不同,不在本刀范围)。`reject` **今天不是活 bug**(写入值全部来自 dto 与常量,读到的 `verifyNote` 在 pending 行上恒为 null),但它的形状与 `verify` 相同;与其让下一个人重新推一遍「为什么这里没事」,不如让三条写路径一致:锁之后只看锁后的行。
+
+  行为锁:新增 `test/e2e/certificate-verify-concurrency.e2e-spec.ts`(8 条,含独立连接元断言 + 全库巡检「`verified` 证书不得带早于今天的最后有效日」)。**两个方向各一条** —— 只测一侧证明不了「用的是锁后事实」,只能证明它在那一侧碰巧猜对了。其中 3 条在修复前红。
+
+- **首批初始化指引订正 + 文档可执行 smoke(2026-07-31;证书标准库第二轮跨模型评审 findings G4)**:`docs/ops/certificate-standard-library-initialization.md` 的建标准示例此前带着 `"levelCode": null` / `"parentId": null`,而 `certificate-standards.service.ts` 的判据是 `!== undefined` —— 显式 `null` 会掉进字典查询 / 父节点查询分支。**照着这份文档做首批初始化,第一步就撞墙**(实测返 500,连清晰的业务错误码都没有)。示例改为**直接省掉这两个可选字段**,并补一段「可选字段要么给真值、要么整条省掉」的说明。
+
+  同时删掉第五节那句过期表述:「`parentId` 只能在 create 时设,事后想挂只能删掉重建」。它与 [amendments A-3](docs/archive/reviews/certificate-standard-library-t0-amendments.md) 直接冲突 —— DRAFT 且从未启用过的标准,`PATCH /:id` 是接受 `parentId` 的。改成「两个顺序都行」并说明补设条件。
+
+  **加了一条按文档示例原样执行的 e2e**(`test/e2e/certificate-standard-library-initialization-doc.e2e-spec.ts`,4 条):它**解析文档里的请求示例并真的发出去**,而不是照抄一份等价请求 —— 抄件在文档漂移时不会红。覆盖建标准 → 启用 → 建认定规则 → 启用 → 文档第四节 smoke 的第 1、2 步,外加一条真请求证明「DRAFT 期可补设 `parentId`」不是纸面规则。解析器另有一条对账用例(断言恰好抽到两段、路径与本仓路由一致),防止「抽到 0 个块也全绿」这种最坏的假绿。
+
+  已验证反向:把示例改回带显式 `null` 的旧版本,该 smoke 立刻红(create 返 500)。
+
+- **证书域 `null` 契约收口(2026-07-31;第四轮跨模型评审 P1)**:**零 schema**(Migration 恒 67 · Endpoint 恒 438 · 权限码恒 222 · BizCode 恒 306 · Cron 恒 2),**OpenAPI 契约零变化**。
+
+  **⚠️ 行为变更(管理端 / 前端如果曾经显式发 `null`,现在会拿到 400)**:证书域四个 DTO 的可选入参,凡**业务上不可清空**的字段,显式传 `null` 从此稳定 `400`。此前它们的表现是三种里的一种:
+
+  | 端点 · 字段 | 修复前实测 | 现在 |
+  |---|---|---|
+  | Claim 审核 `issuedAt: null` | **200**,且 `new Date(null)` = **1970-01-01** 作为正式审核事实落库,并**照常参与资质门槛派生** | 400 |
+  | Claim 审核 `standardId: null` / `note: null` | 200 / 落一条没有驳回理由的 REJECTED | 400 |
+  | Policy PATCH `issuerPolicy` / `certNumberMode: null` | **500**(`null` 进 Prisma 非空列) | 400 |
+  | Certificate PATCH `standardId: null` | **500** | 400 |
+
+  **注意**:OpenAPI schema **早就**把这些字段声明成不可空(`type: string`,无 `nullable`)—— 契约一个字都没变,变的是「实现终于执行了契约已经写着的东西」。所以 `openapi.json` 与 contract 快照零 diff。
+
+  **机制**:`@IsOptional()` 对 `null` 与 `undefined` **都**跳过后续校验,而本仓 service 判「传没传」一律用 `=== undefined` / `!== undefined` / `??`。语义错位 ⇒ 显式 `null` 穿过整个契约层。三种后果里最难查的是「200 且什么都没改」—— 没有报错、没有日志、没有异常指标。
+
+  **`@OmittableOnly()` 提为全仓公共装饰器**(`src/common/decorators/omittable-only.decorator.ts`)。它原先只定义在 `certificate-standards.dto.ts` 内部(第三轮 H3),而同一个缺陷在隔壁三个证书域 DTO 里原样存在 —— 这正是「修被点名的实例、下一轮在邻居文件被找到同类」的形状。用法二选一,按字段的**业务语义**选:
+
+  - 业务上真的可以清空 → 保留 `@IsOptional()` + TS 类型标 `T | null` + `@ApiPropertyOptional({ nullable: true, type: X })`,service 显式区分 `undefined`(保持)与 `null`(清空);
+  - 业务上必须有值、只是可省略 → `@OmittableOnly()` + 原有校验器,`null` 稳定 400。
+
+  证书域四个 DTO 的 **47 处**真装饰器逐条分类完毕:**8 处判为真可空**(Certificate PATCH 的 `recognitionIssuerId`/`issuingOrg`/`certNumber`/`expiredAt`,Standard 的两处 `description` 与 Update 的 `levelCode`/`parentId`),**39 处判为仅可省略**并改用 `@OmittableOnly()`。
+
+  **两道防御,不只 DTO**。service 侧把判据从 `dto.issuedAt === undefined` 换成**正向类型检查** `typeof dto.issuedAt !== 'string'`。最深的一道放在 `CertificateRecognitionResolver.resolveDates` —— 它是**建证 / 审核通过 / 改证三个入口共用**的那一段,少写一处就是一个新的 1970 入口。配套新增 `parseDateOnlyStrict()`(`src/common/datetime/date-only.util.ts`):`new Date(null)` / `new Date(true)` / `new Date([])` **全都给 1970-01-01 而不是 Invalid Date**,所以「先 `new Date` 再判 `NaN`」这种写法根本拦不住它们,必须在 `new Date` **之前**做正向类型 + 形状检查。
+
+  **两条与评审报告原文不同,已订正**(复审请重点看):`validityMode: null` 修复前返回的是 **400 不是 500** —— `assertValidityCombination(FIXED_MONTHS, null)` 顺手把它拒掉了;`issuers: null` 被 `?? []` 折成空数组,但 issuer 数量检查(FIXED 恰好 1 / ALLOWLIST ≥1)顺手挡住,**当前不是可达的静默清空**。两条仍一并收口:依赖「恰好被别的规则挡住」正是这一轮在修的形状。`validityMonths` 判为**仅可省略** —— 它的 `null` 由 `validityMode` 派生(改 mode 时 service 自动归零),不由客户端独立指定。
+
+  **新 e2e** `test/e2e/certificate-null-contract.e2e-spec.ts`(16 例)分三段:A 段「该 400 的必须 400」+ B 段**反向数据断言**(400 之后 `Claim.status` / `version` / `thresholdMarks` 不变、不新增审核审计、**全表不存在 1970-01-01 的 `issuedAt`**)+ C 段 **5 条正向可 null**(证明没有矫枉过正 —— 真能清空的字段仍然清得掉)。只断言状态码会放过「先写坏再报错」的实现,而那正是 1970 那条缺陷的形态:它压根没报错,直接写成功了。
+
+  **立守护:`eslint.harness.mjs` 第 18 条 `no-nullable-is-optional`**(规则默认对全仓生效,含 `test/` 与 `prisma/` —— 两处实测零违规)。**存量 641 处 / 56 文件逐条具名冻结**在 `IS_OPTIONAL_NULL_BASELINE`(键是 `文件 → 类名.字段名`,不是通配、不是行号),**只减不增**。棘轮的两道执行位各管一半,少任何一道都只剩单向:
+
+  | 情形 | 谁拦 | 为什么不是另一个 |
+  |---|---|---|
+  | 往**已在基线的文件**新增违规字段 | `pnpm lint` | 豁免精确到 `类名.字段名`,新字段不在名单里 → 当场红 |
+  | 修好了却**忘删基线行** | `pnpm harness:selftest` | 一条用不上的豁免对 lint **静默无害**,lint 拦不到 |
+
+  为什么键用「类名.字段名」而不是行号:行号一改基线就变噪音;而 `description` 这类字段名在同一文件的多个 DTO 类里各出现一次,只写字段名**区分不开**「已冻结的那个」和「新加的那个」—— 而后者正是棘轮要拦的东西。为什么用棘轮而不是一次改完:641 处 = 一个没人能评审的超大 diff,而跨模型评审是本仓唯一兜底。
+
+  选择器覆盖闭环 **17 → 18**(每条规则都必须有真实触发过的阳性对照,否则「写错了永远匹配不到」会静默失效);另加 3 条反向用例(`T | null` / `@OmittableOnly()` / 基线内已冻结字段)防误杀。棘轮本身做过**双向变异测试**:基线多一条陈旧行 → 红,少一条 → 红。
+
+  ⚠️ **`pnpm typecheck` 覆盖不到 `harness-eslint.selftest.ts`** —— `scripts/tsconfig.json` 把它放在 `exclude` 里(**既有缺口,非本刀引入**,理由见该文件注释)。**typecheck 绿 ≠ 这个文件被检查过。** 关掉这个缺口需要第三份红区授权,另立一小刀。
+
+  **顺带清掉三处「注释≠执行位」**(本项目第五次抓到该形状):`recruitment-certificate-claims.service.ts` 的文件头与 `review()` / `revokeReview()` 都写着「本刀**不重算门槛**」,而 PR-4a-2 早已接线、三个方法结尾都在调 `recomputeCertificateThresholds()`。**只改注释、不改代码**(代码是对的)。
+
+- **参与域 / 入队域并发写路径收口(2026-07-31;两份独立并发审计的 6 条活 bug + 2 条理论缺陷,冻结稿 [`concurrency-write-path-audit.md`](docs/archive/reviews/concurrency-write-path-audit.md) + [`concurrency-write-path-audit-codex.md`](docs/archive/reviews/concurrency-write-path-audit-codex.md))**:零新增端点、零新增权限码、零 schema 变更(Endpoint 恒 438 · 权限码恒 222 · Migration 恒 67);新增 1 个 AuditLogEvent(`team-join-application.supersede`,129 → 130)。
+
+  这批被修的**不是**「锁用错了」,而是两种「锁本身看不出来」的形状:
+
+  1. **锁的获取被绑在判权分支上,另一条 surface 裸奔**。单读 `attendances.edit` 每一步都对 —— 它老老实实 claim 了 Sheet 又复读了;缺的是**另一个聚合**的锁,而那把锁写在 `if (managedActivityId !== undefined)` 里,Admin 分支没有 else。只有把两条 surface 并排看才发现。
+  2. **跨行不变量没有共同线性化键**。每一行都锁了,可判定依据是跨多行的聚合(某队员当年全部考勤单的贡献值总和 / 某队员是否已入队),没有任何单行锁能锁住它 —— 两个事务各读各的、各写各的,合起来违反不变量(write skew)。
+
+  | 落点 | 修复前 | 修复后 |
+  |---|---|---|
+  | Admin `attendances.edit` / `softDelete` | Admin 面既不取 Activity 聚合锁,也不认领 records 引用的报名 | **两条 surface 都无条件取** Activity 锁;managed 仍先判权再暴露 Sheet 存在性 |
+  | `submit` / `edit` 的报名认领 | `submit` 只 claim 不复读;`edit` 连 claim 都没有 | 共用 `claimAndRecheckRegistrations`:排序去重 claim → **按同一批 id 复读** → 重判归属活动/队员/状态/岗位时段 |
+  | `finalApprove` 入队里程碑 | 只 claim 当前 Sheet,而阈值判定跨该队员当年全部 approved Sheet | 读贡献快照前取共享 member 键;`reopen` 同键(它是同一聚合的反向写方) |
+  | `cancelMy` 通知快照 | 活动标题/发布人在取锁**之前**读,却写进 durable intent | 改到 claim + 证据守卫之后读 |
+  | Team Join `submit` | 用普通读判「未入队」,随后建行 | 事务第一步取 member 键,再判、再建行 |
+  | Team Join final join | 只终结目标那一条申请 | 同事务按 `id ASC` 终结同队员其它 live 申请为 `rejected` + `eliminationStage='already-enrolled'`,逐条写 `team-join-application.supersede` |
+
+  **共同线性化键做成了一个原语**:`src/common/prisma/member-advisory-lock.util.ts` 的 `lockMembersForWrite` —— 队员维度只允许存在**一把**键(单参数 `hashtext(memberId)` advisory 空间;PostgreSQL 的单参数与双参数 advisory 锁互不冲突,混用等于悄悄分裂成两把)。既有的 `TimeOverlapPolicy.lockMembersForOverlapCheck` 改为委托它,语义与调用位置零变化。
+
+  **锁序**(修完后各族持锁顺序;两族唯一交点是 member 键,故无环):
+  考勤写 `Activity 行锁 → Sheet claim → Registration claim → member 键`;考勤终审 `Sheet claim → member 键`;
+  入队 `member 键 → Application 行锁 → Cycle → source → Member 行锁 → 同人残留 Application`。
+  入队那把键**必须**在任何 Application 行锁之前取:同一队员可同时有两条 approved 申请,两个终审各锁一条再反向争 Member,加上同人终态级联正好凑成 40P01。行锁图本身逐字未动。
+
+  **A-R2 拍板落地(方案乙:放行存量、掐断增量)**:`activities.cancel` 从不碰考勤单,而 `submit` 之外的九个考勤写方法从不读 `Activity.statusCode` —— 已取消活动上的考勤单能一路走完审批并结算贡献值。维护者拍板取**乙**:取消前已提交的单仍可 `approve → finalApprove` 并结算(工是真做了的,作废队员已提交的贡献代价更大);但贡献值仅剩的另一条增量来源 —— 改写既有单的 `records` —— 由新的 `ActivityParticipationPolicy.canChangeAttendanceRecords` 拦下,**复用既有 20122,零新增 BizCode**。只拦 `cancelled`,`completed`/`published`/`draft` 的编辑行为逐字不变;`cancel` **刻意不**级联终结既有考勤单(那是被否掉的方案甲),`pass` 报名也仍留在 `pass`。执行位 `test/e2e/attendance-cancelled-activity-increment-gate.e2e-spec.ts`(5 条,含全库巡检:已取消活动上的考勤单 records 数不得增长)。
+
+  ⚠️ **契约变更(前端需适配)**:`PATCH /api/admin/v1/attendance-sheets/:id` 与 `PATCH /api/app/v1/my/managed-activities/:activityId/attendance-sheets/:sheetId` 在活动已取消且请求体带 `records` 时新增返回 **20122**;不带 `records` 的 PATCH 不受影响。openapi / contract snapshot / `handoff/admin-web.md` 已同 PR 更新。
+
+  ⚠️ **行为变更**:① 一键入队会把该队员名下其它进行中/已通过的入队申请一并终结(依据是「这个人已经是队员了」,**不是**「轮关闭了」—— 关轮不使 approved 资格失效那条契约不变,已由 e2e 锁住);② Admin 编辑/删除考勤单现在无条件持 Activity `FOR UPDATE`,同活动的并发考勤单写多一层串行。
+
+  **真并发 e2e**(4 个新 spec,均为两个 Nest app = 两条真实连接,含「两条独立连接」元断言;每条都在修复前红):`attendance-admin-edit-registration-concurrency` · `team-join-enrollment-lifecycle-concurrency` · `attendance-final-approve-contribution-milestone-concurrency` · `registration-cancel-my-locked-snapshot-concurrency`。新增两条**全库巡检不变量**:live 考勤记录不得挂在非 pass/已软删报名上;已入队队员名下不得有 live 入队申请。
+
+  **注释与执行位对齐(S5)**:`attendance.recorded`「audit 失败 → 事务回滚 → 业务事件随之回滚」是**错的** —— 它只是一次立即执行的 Logger 输出,数据库回滚撤不回日志;注释已改正并指明可回滚事件的唯一落点是 notification outbox。另 3 组 stale comment(App 报名「容量满拒绝」/「仅 pending|pass 可取消」、final join「消费评估延长期」)按运行时改正。
+
+- **整批复审收口 M1–M6(2026-08-01;两份独立评审去重 6 P1 + 2 P2,无 P0;零 schema,Migration 恒 67)**:
+
+  ① **team-join 全部写路径 member-first**(M1 + M5)—— `submit` / `updateTargets` / `markGate` / `evaluate` / final join
+  五条 surface 一律先取队员 advisory 键、再锁 Application 行。admin 两条抽唯一入口
+  `lockMemberThenApplication`;`evaluate` 因此不再用 `claimAtStatus`(锁后读即 authoritative,
+  「与锁前读数一致」的断言没有对象了)。**反序即死锁**:final join 持键并在终态级联里反向争同人
+  sibling 行锁,反序实现两进程互等,`40P01` 可稳定复现。
+  M5 的双向 barrier 另**新查出一个真死锁**:App 自助 `updateTargets` 持 sibling 行锁后写 audit,
+  而 `audit_logs.actorUserId` 的外键要在**本人 User 行**上取 `FOR KEY SHARE` —— 那一行正被 final join 的
+  `lockLinkedUserLifecycle` 攥着,而 final join 又在等 sibling 行锁。同一条修法一并收口。
+
+  ② **⚠️ 行为变更 · 入队身份收口到唯一 transition**(M2,新码 **`28211`**)—— 「未入队志愿者」是一条 live 入队申请
+  **唯一**的走通前提;把它改掉,那条申请就成了没有终态通路的死行。sweep 出 8 个能翻掉它的写方
+  (`members.update(gradeCode)` / `updateStatus(INACTIVE)`、`member-departments.set|remove`、
+  `memberships.create(PRIMARY)|update(type)|end|transfer(PRIMARY)`),按维护者拍板**一律拒绝**
+  ——不自动终结、不静默放行,把「一键入队还是综合评估淘汰」交回管理员。
+  闸在 `team-join/team-join-enrollment-invariant.ts`,必须排在 `lockMemberLifecycle` 之前。
+  前端清单见 [`handoff/admin-web.md`](docs/handoff/admin-web.md) §3 第 12 条。
+
+  ③ **考勤终审批量化 + 隔离级别显式化 + 有界锁等待**(M3,新码 **`40901`**)—— before/after 贡献值快照与逐条
+  outbox intent 全部批量化(封顶核 `capByBeijingDay` 单人/批量共用,不复制 cap 算法);
+  200 人考勤单实测 **810 → <40 次 SQL**,与人数无关(**不是**靠调大事务 timeout)。
+  取队员键的 8 个事务改走 `runMemberLinearizedTransaction`:显式 `ReadCommitted`
+  ——**RR 是真前提**,把库默认改成 `repeatable read` 后去掉那一行,里程碑 intent 由 1 条变 **0 条**,
+  write skew 完整复活;外加 `SET LOCAL lock_timeout`,排队超时返可重试的 `40901` 而不再是 `50000`。
+
+  ④ **棘轮注册表 + 三洞封堵**(M4)—— 新增 `harness/ratchet-registry.json`,base-trusted 裁判改为**遍历注册表**
+  (上一版把唯一那条基线的路径写死,新棘轮一落地就默认不受保护);**基线被删/改名 = 硬失败**
+  (上一版判成「HEAD = ∅ ⊆ BASE 成立」,理由是 lint 会红 —— 而 lint 跑在 PR 自己的树上);
+  **注册表自身只可增不可删**。别名解析下沉 `eslint-rules/decorator-identity.mjs`,补齐 namespace
+  (`@CV.IsOptional()`)/ 局部中转(`const Opt = IsOptional`)/ re-export 三种此前静默放行的写法。
+  第 17 条 `@Param('id')` 升格为自定义规则 `srvf/no-param-id-string`,存量 **70 处 / 19 文件**
+  (原注释写的「71」已漂)按「类名.方法名.参数名」逐条冻结 —— 原先是整文件豁免 +
+  一句**没有执行位**的「只减不增」,往名单内 controller 新增一个照样全绿。
+
+  ⑤ **Swagger 文案订正**(M5)—— `POST admin/v1/team-join/applications/:id/join` 的 summary 删掉已废止的
+  「综合评估本轮有效/延长期」:`approved` 资格不随轮关闭失效,一键入队不消费 `evaluationExtendedUntil`。
+  contract snapshot 与 openapi 同步;**行为一字未变**。
+
+  执行位:新增 `team-join-gate-evaluate-member-lock-concurrency` · `team-join-enrollment-identity-invariant` ·
+  `attendance-final-approve-scale-isolation` 三个并发 spec,并给
+  `team-join-enrollment-lifecycle-concurrency` 补 `join × updateTargets|markGate|evaluate` 双向 barrier。
+  既有白盒 barrier 的**观测点随锁序翻面**(`FOR NO KEY UPDATE` → `FOR UPDATE` / `pg_advisory_xact_lock`),
+  **结果断言一字未动**。🔴 Release NO-GO 不解除。
+
+- **裁判注册表失败分档修正(R1 真触发发现;2026-08-01)**:R1 落地的「四元组冻结」把
+  「换载体」判成硬失败是对的,但 `main()` 里挑分支写成了
+  `if (!registryVerdict.ok) failHard('棘轮注册表被削减' …)` —— 而 `ok` 在 `removed`
+  **或** `mutated` 任一非空时都为 false。于是**换载体**的失败一头撞进「被削减」那条分支,
+  `process.exit(1)` 之后「换了载体」那条根本到不了。
+
+  一次性对抗 PR [#870](https://github.com/BA7IEE/srvf-nest-api/pull/870)(同 id 换 baseline
+  载体,v2 为原基线逐字节副本)实测:`Red-zone trusted scan` **fail** ✓、
+  `Red-zone trusted approval` **skipping** ✓ —— **门是关住的,fail-closed 没错**;
+  但打印出来的是 `✗ 棘轮注册表被削减:登记只可增不可删` + **`head 少了 0 条:`**,
+  一句自相矛盾的话。operator 会按错误的原因去排查,而「守护说的话和它实际判的事不是
+  一回事」正是本仓反复抓的那一类(注释≠执行位的同族,这是第 N 次)。
+
+  **修法**:把「该报哪一种失败」从 if 链抽成纯函数 `registryFailureKind(verdict)`
+  (`removed` / `mutated` / `null`;removed 优先 —— 条目都没了就谈不上载体换没换),
+  `main()` 改判它的返回值。
+
+  **为什么原来的自测抓不到**:那组断言判的是 `judgeRegistryMonotonicity` 的**返回值**,
+  而返回值一直是对的(`mutated` 数组该有的都有);错的是 `main()` 里拿返回值**挑分支**
+  的那几行 —— 纯函数对照与结构断言都碰不到接线。抽成纯函数之后,分支选择本身有了
+  阳性对照(5 条,含关键的「只有 mutated 的裁决不许返回 `removed`」)。
+
+  **前后对照**(同一组 verdict 喂两种分支写法):「只有 mutated」修复前报 `removed` ❌、
+  修复后报 `mutated` ✅;其余 4 条前后一致(不误伤)。
+
+  **这次真触发的价值不在于确认门关住了**,而在于它证明了「结构断言 + 纯函数对照」
+  看不见 `main()` 的接线 —— [#868](https://github.com/BA7IEE/srvf-nest-api/pull/868)
+  当时把 R1 记为「只有结构断言,缺 run 链接」是对的,但缺的不只是一条链接。
+
+### Security
+
+- **执法层:封掉 ESLint 规则配置注释这条逃生门**(整批评审 P1)。此前的全仓扫描只拒 `eslint-disable` 家族,而 ESLint 还有一种**完全不同的语法**能关掉规则 —— 规则配置注释 `/* eslint <rule>: "off" */`。它不含 "disable" 字样,旧正则一条都匹配不到:实测 `: "off"` / `: 0` / `: ["off"]` / `no-restricted-syntax: "off"` 四种写法在真实 `pnpm lint` 下**全部退出 0、零命中**,违规者本人一行注释即可关掉执法规则。现扫描一并拒绝**一切**规则配置注释(不做规则名白名单 —— 白名单本身就是下一个逃生门,且配置注释还能把规则降级成 `warn`);只判块注释,行注释里的同样文字对 ESLint 无效,不误杀。四组变异均写进真实文件、跑正式 lint 入口 + 全仓扫描链验证,并各带「去掉注释即红」的反向对照。
+
+### Fixed
+
+- **活动候补递补:多岗位同提案扩容不再突破活动容量**(整批评审 P1)。App 变更提案在一次事务里同时扩容多个岗位时,每个岗位都会把**同一份**父活动剩余量重新算出来并完整领走 —— 递补写的是 `waitlisted → pending` 而非 `pass`,父活动的 pass 基线在整批里不动,于是 N 个岗位把父容量花了 N 次。实测:活动容量 5、已通过 3 人(父剩余 2),一次提案扩容两个岗位后递补 4 人,活动上出现 7 人占 5 个名额。现新增批量入口 `promoteActivityWaitlistsWithinSharedCapacity`,按稳定岗位序逐条 `min(剩余父预算, 本岗余量)` 并按**实际递补数**扣减(某岗队列空或候选人被跳过时,剩下的份额留给下一个岗位)。单岗位路径(名额释放 / 单岗扩容)行为不变。
+- **企业微信 `agent/get`:可见范围字段显式 `null` 不再被当成"键缺席"**(整批评审 P2)。上游回执里 `allow_userinfos` / `allow_partys` / `allow_tags` 外层或内层写成显式 `null` 时,解析按"缺席 = 空列表"静默计 0,把"读不懂上游回执"报成"没有人可见"。现两层显式 `null` 均 fail-closed 到 `36031`;**键真正缺席仍计 0**(那是企业微信的合法回执形状)。
+
+- **清账三件(2026-07-29)**:①**flake 可诊断化** —— `attendances-state-transition` 的并发线性化用例约 1/10 概率红在「首个审核应当胜出」这一行,而 Jest 只打印 `Expected: fulfilled / Received: rejected`,**拿不到拒绝原因**,于是根因始终定不了性(曾被归因为「Prisma 默认 5s 事务预算」,但实测该处 blocker 事务明确给了 20s —— **那是推断不是证据**)。断言一字未动(仍要求 fulfilled),只补失败时打印 `biz/code/message` 与完整 reason,并注明 `P2028=事务预算耗尽 / 40P01=死锁 / STATUS_INVALID=状态已被改`,下次再红即可一次定性。②**审批不再批两次** —— `ci.yml` 的 `Red-zone approval` 降级为纯报告(去掉 `environment`)。理由不是嫌麻烦:该 job 依赖的 scan 跑的是 **PR 自己提供的裁判**(正是跨模型评审 BLOCKER-1 所指),对着不可信结论要一次人类审批是**仪式而非保障** —— 摩擦真实(每个执法层 PR 要在两个不同 workflow 页面各批一次),安全增量为零。权威判定与审批留在 `Red-zone (trusted)`(base-trusted,required context)。gate 侧仍要求该报告 job 成功,判的是**接线一致性**而非授权。**「审批环境必须存在」的断言随之搬家而非删除** —— 改为钉住「trusted 侧必须挂环境 ∧ ci.yml 侧不得再挂」,双向阳性对照均实测(加回 ci.yml → 红;trusted 拿掉 → 判假)。搬家时最容易丢的正是守护本身。③**P7 埋雷考核取消,改为批次级跨模型评审**并写进 SOP §1.5 —— 实证:首次批次评审两个外部模型给出 4 个 BLOCKER **逐条实测全部属实**(含一条可对远程库全表 TRUNCATE),而同批代码的自查一个 BLOCKER 都没找到;埋雷考核由写 harness 的同一模型埋雷,埋的正是它想得到的那类缺陷,与「自写自查一起漏」是同一失效模式换层皮。SOP 另加一条:**报告里的机制描述必须自己复现后再采信** —— 首轮就有两处归因与实际不符,结论属实不等于机制正确。
+
+- **整批评审 R 批次:裁判冻结四元组 + srvf 规则关逃生门(2026-08-01;2 P1 + 1 P1 + 1 P2,零 schema,Migration 恒 68,Cron 恒 2)**:
+
+  ① **base-trusted 裁判冻结棘轮四元组**(R1)—— M4 只冻结 ratchet 的 **id**,于是「同 id 换载体」全绿:
+  新增一份洗过的 `harness/<旧名>-v2.json`(多几条豁免),把注册表那条的 `baseline` 指过去,
+  **旧文件一个字不动** —— 裁判读 base 注册表拿到旧路径,旧路径没改动 ⇒ 判成 `HEAD == BASE` ⇒ 放行;
+  而 `eslint.harness.mjs` 读的是 head 注册表,吃的是 v2。判据从此守着一份**已经没人读**的文件。
+  (改名有「基线不得删除 / 改名」兜着,但**拷贝一份再改指向**不涉及 rename,既有三条判据全都看不见它。)
+  现在 base 里每个 id 的 `{baseline, rule, symbolShape}` 在 head 上必须**逐字不变**,违反即硬失败
+  (scan 失败 ⇒ approval job 被 skip ⇒ **没有可点的审批按钮**)。仍允许新增全新 id、仍禁止摘掉登记。
+
+  **顺带关掉一条平行绕过**(主会话复核时发现,不在原 finding 内):「允许新增全新 id」这条**必须保留**的
+  合法通道自己就能洗豁免 —— 新增一条 id、`rule` 写成既有的 `srvf/no-nullable-is-optional`、
+  `baseline` 指向一份全新文件塞满新豁免。四元组冻结管不到(它是新 id),逐基线单调性也管不到
+  (base 注册表里没有它,裁判压根不会去读那份文件),而 lint 侧照样按 head 注册表**遍历**生成豁免块。
+  判据因此必须落在真正的受害者「rule」上:**base 出现过的每条 rule,head 侧全部基线的
+  `(file, symbol)` 并集 ⊆ base 侧并集**;base 里没有的 rule 不设限 —— 那正是「落地一条全新棘轮」的
+  合法形状(新棘轮天生带着自己那份存量债)。
+
+  ② **`srvf/*` 三条规则不再接受行内关闭**(R2)—— 修复前实测(真实 `pnpm lint` 入口,**RC=0 零命中无警告**):
+  controller 里 `// eslint-disable-next-line srvf/no-param-id-string` **有效**、文件级 `/* eslint-disable srvf/… */`
+  **有效**、非 `.dto.ts` 里关第 18 条**有效** —— `linterOptions.noInlineConfig` 刻意只配到 DTO。
+  修法**不是**把 `noInlineConfig` 扩到 controller:那只是把范围从第一类文件扩到第二类,第三类文件落地时
+  又是一个洞,而洞是静默的;何况 `noInlineConfig` 是整块语义,一扩就把 `src/` 现有 7 处**正当**的具名硬删豁免
+  一起打死。改成一次**源码扫描**(`scripts/harness-eslint.selftest.ts`,红区受保护),拒两类写法:
+  **A** 任何 disable 指令里出现 `srvf/` 开头的规则名;**B** 任何**不具名**的 disable(`/* eslint-disable */`)
+  —— 它把 srvf/ 一并关掉,只是没写出名字,漏掉 B 等于只关了正门。判据从此绑在**规则身份**上而不是文件名形状上。
+  扫描刻意跑在 eslint **之外**:一条 eslint 规则自己也能被 `/* eslint-disable */` 关掉。
+  判据落在**注释节点**(共用 `pnpm lint` 同一个 parser),不是 raw grep —— 否则自测自己的合成片段会被报成违规,
+  然后必然催生一条 allowlist,而 allowlist 就是下一个逃生门。全仓实测 A=0 / B=0,7 处具名非 srvf 豁免全部放行。
+
+  ③ **装饰器身份解析补三种写法 + 新增第三条自定义规则**(R3)—— 修复前实测 8 个探针文件 RC=0、零命中:
+  `@(CV['IsOptional']())` **计算属性**、`const Opt = CV.IsOptional` **namespace→局部**、
+  `export { IsOptional as Opt } from 'class-validator'` **改名 re-export**(顺带 `const { IsOptional: Opt } = CV` 解构中转)。
+  前两类(含动态键 `CV[k]`,按「宁可多判不可漏判」判成命中)在 `eslint-rules/decorator-identity.mjs` 内关掉;
+  **改名 re-export 结构上关不进那里** —— 名字是在**另一个模块**换掉的,同文件 scope 看不见,
+  跨模块解析要么依赖 type checker(自测里拿不到 parserServices,阳性对照做不了)、要么自写模块图(第二把尺子)。
+  所以判据换方向:新增 **`srvf/no-decorator-realias`**,从**源头**禁掉改名导出(re-export / 本地改名导出 /
+  `export const Opt = IsOptional` / `export default Param` 四种形态),**同名**转发与 `export *` 照常放行。
+  于是任何抵达装饰器位置的名字都必然是原名,同文件解析就足够 —— 两条规则拼起来才是完整防线。
+  ⚠️ 裸 `@CV['IsOptional']()` 是 **TS 语法错误**,真正能写出来的逃生门是加括号的 `@(CV['IsOptional']())`,
+  探针必须用后者,否则测的是「TS 不让你这么写」。覆盖闭环 18 → **19**,且名单改为从
+  `srvfEslintPlugin.rules` **数出来**:新增规则不补正向用例当场红,不再靠谁记得。
+
+  ④ **`runMemberLinearizedTransaction` 显式事务预算**(R4,M3 遗留 P2)—— `lock_timeout` 显式 4s,
+  而交互事务预算**继承 Prisma 默认的 5s**:真正排过一次队的事务,留给业务的只剩 1s,
+  而 200 人终审实测 **14 次 SQL / 222 ms**,慢一个数量级的库当场跑穿 → P2028 → 50000
+  「服务器内部错误」。它排了队、拿到了锁、什么都没做错,却拿到一个不可重试的 500 ——
+  M3 花力气从 500 改成 40901 的那件事,从另一条路原样回来了。现在
+  `MEMBER_TX_TIMEOUT_MS = MEMBER_LOCK_WAIT_BUDGET_MS(4s) + MEMBER_TX_WORK_BUDGET_MS(3s)`,
+  三件事(RC 隔离级别 / 有界锁等待 / 事务预算)一起写死 —— 任何一个留给默认值,另外两个就白做。
+  ⚠️ **不是给 N+1 兜底的额度**:批量化的判据仍是 **SQL 次数**(`MAX_TX_QUERIES < 40`),
+  且规模用例的耗时上限改为**绑定** `MEMBER_TX_WORK_BUDGET_MS` 本身,抬预算不会顺带放松它。
+  新增两条近预算 e2e:④-a 等 3.8s 拿到键后跑完整 200 人终审(回归闸);
+  ④-b **真 red-first** —— `lock_timeout` 是 per-acquisition 语义,`claimAtStatus` 的 `FOR NO KEY UPDATE`
+  与 member advisory 键两段串行等待**相加**,各自都在 4s 之内、合起来越过旧的 5s 默认预算,
+  修复前实测 `timeout was 5000 ms, however 5746 ms passed`(P2028),修复后产出业务结果。
+
+  **对照 S1–S7 形状表自审**(整批评审的教训:③⑤ 说明形状表**没有进入新代码的出生检查**)。
+  本批唯一碰运行时的是 ④,且只改 `$transaction` 的 options,**不新增、不移动、不删除任何取锁点**:
+
+  | 形状 | 本批自审结论 |
+  |---|---|
+  | S1 锁后不复读 | **不适用** —— 未改任何读写顺序;`finalApprove` 的 claim→复读→取键→再读顺序逐字未动 |
+  | S2 相对某对象完全无锁 | **不适用** —— 未新增任何写路径 |
+  | S3 守卫建立在锁前读上 | **不适用** —— 未新增守卫 |
+  | S4 父实体终态不级联子实体 | **不适用** —— 未改任何状态迁移 |
+  | S5 注释声称不变量但无执行位 | **主动核过**:本批每条新表述都配了执行位 —— 「四元组冻结」→ 裁判纯函数 + 5 条行为断言;「并集只减不增」→ 4 条行为断言;「srvf 不可行内关闭」→ 扫描器 8 正 6 反 + 全仓扫;「预算 = 锁 + 工作」→ ④-a/④-b 两条 e2e。**并且反向也钉了**:规模用例的耗时上限从手写的 4000 改成**绑定** `MEMBER_TX_WORK_BUDGET_MS`,覆盖闭环名单从手写数组改成**从 `srvfEslintPlugin.rules` 数出来** —— 两处原本都是「元数据描述实现而无人检查」的形状 |
+  | S6 运行时与 `docs/handoff/**` 分叉 | **不适用** —— 零 endpoint / 零 DTO / 零 RBAC 码变更,OpenAPI 无漂移 |
+  | S7 锁绑在 authorization 分支 / 跨行不变量无共同键 | **不适用** —— 未改锁的获取位置;`runMemberLinearizedTransaction` 的四个调用方(submit/edit/finalApprove/reopen 及 team-join / members / member-departments)全部**无条件**经它开事务,不存在「一条 surface 走、另一条裸奔」 |
+
+  **变异对照(每刀都做,修复前后各跑一次)**:R1 三种「同 id 换载体」用
+  `git show HEAD:` 取出的**真实旧裁判**实跑 —— 修复前 3/3 🟢 放行、修复后 3/3 🔴 拒,两条反向对照
+  (四元组不变 / 新增全新 id)前后都放行 · R2 三个探针修复前 `pnpm lint` RC=0,修复后 `harness:selftest` **RC=1** ·
+  R3 八个探针修复前零命中,修复后逐条命中(改名 re-export 报在**源头文件**) ·
+  R4 ④-b 修复前 P2028、修复后 6/6 全绿。
+
+- **企业微信身份与配置 schema 骨架(2026-08-01;企业微信接入 T1,冻结稿 [`wecom-integration-t0-terminal-review.md`](docs/archive/reviews/wecom-integration-t0-terminal-review.md) §5)**:第 68 个 migration,**expand-only**,**零业务行为变更**(三张新表此刻无任何 controller / service / DTO —— settings 端点在 T2,OAuth 与绑定在 T3)。
+
+  **三张新表**,按冻结稿 §5 逐字落:
+  - `WecomSettings` —— 单企业单自建应用的配置与凭证。singleton:migration 末尾 `CREATE UNIQUE INDEX ... ON ((true))` 在 **DB 层**强制全库至多一行(沿第 49 migration 四张 provider settings 表同一形状),不靠应用层自觉。三个开关 `enabled` / `loginEnabled` / `messageEnabled` **默认全 false** —— 上线是显式动作,不是部署副作用。
+  - `WecomIdentity` —— 企业微信身份 ↔ User 的绑定行。**无 soft delete**:`revoked` 本身已是终态历史语义;绑定 / 换绑 / 清除**全部保留历史行**,换绑是「结束旧 active 行 + 新建 active 行」,不覆盖旧行的 `wecomUserId`。
+  - `WecomAuthAttempt` —— OAuth state 与 binding ticket 的一次性凭证台账。**原始 state 与 binding ticket 不入库,只存 SHA-256 hash**(故列名带 `Hash` 后缀且 `@unique`);OAuth code 连 hash 都不存。
+
+  **身份绑 User 不绑 Member**(冻结稿 §1.2 结论 4):会话属于 User,Admin 账号可能没有 Member,Member 的业务准入另由 `AppIdentityResolver` 决定。故 `WecomIdentity` 既无 `memberId`,也不存通讯录快照(部门 / 姓名 / 头像 / 手机 / 邮箱一概不建)。
+
+  **`User` 只加两条反向 relation,零标量字段**(§5.4)。冻结稿 §0.3 第一条硬禁区就是「不把企业微信 `UserId` 写进 `User.openid`」:`openid` 是微信**小程序**身份键,企业微信内部成员身份键是 `corpId + wecomUserId`,塞进同一字段会让登录、换绑、通知、审计四条链路一起语义污染。身份占用全部落在 `WecomIdentity` 行上。
+
+  **`SmsPurpose` +1:`WECOM_BIND`** —— 未绑定登录时以手机号锚定到已有 User 的 pre-auth 用途。本刀一并加,把 schema 变更收进这一条 migration;**T3 才消费**。
+
+  **5 条手写约束**(Prisma DSL 表达不了 partial unique 的 WHERE 与 CHECK):
+  - `wecom_settings_singleton_unique` —— 全库至多一行 settings
+  - `wecom_identity_subject_active_unique` `(corpId, wecomUserId) WHERE status='active'` —— 一个企业微信身份至多绑一个 active User;partial 是关键,否则「解绑后换个人再绑同一个企业微信号」会被永久挡死
+  - `wecom_identity_user_active_unique` `(corpId, userId) WHERE status='active'` —— 一个 User 在当前 Corp 下至多一个 active 身份
+  - `wecom_identity_status_check` —— status 闭集 `{active, revoked}`
+  - `wecom_identity_revocation_shape_check` —— `active ⇔ revokedAt IS NULL`;防「状态说 active 却带着撤销时间」与「状态说 revoked 却查不到什么时候撤的」,后者会让审计答不出「这个绑定什么时候失效的」
+
+  **验证**:干净库 `migrate deploy` 重放 68 个 migration 全绿 + seed 幂等二跑(0 error);5 条约束**逐条跑过双向阳性对照** —— 第二行 settings 被拒、同 subject 第 2 条 active 被拒而 revoked 重复放行、同 user 第 2 条 active 被拒而换 corp 放行、两种坏撤销形状被拒而两种合法形状放行。用例见 `test/e2e/wecom-schema.e2e-spec.ts`。
+
+  ⚠️ **一处实测发现的约束重叠(非缺陷,不改冻结稿)**:任何 `status ∉ {active, revoked}` 同时也让 `revocation_shape_check` 的两个分支都为假,PostgreSQL 实际报出的是 shape check —— `status_check` **在 INSERT 路径上被完全覆盖**,不存在「只违反 status_check 却满足 shape_check」的输入。冻结稿 §5.2 两条都要求写,本刀逐字落地不擅自删其一;但 e2e 对非法 status 只断言 `23514` 与「被拒」,**不断言命中哪条** —— 断言 `status_check` 会是一条假绿(它测的其实是 shape check)。`status_check` 的价值是纵深防御的声明(将来若放宽 shape,取值闭集仍然关着),不是一道独立可达的闸。
+
+  **零回填、零删数、零 DROP、零 default 变更、零默认身份绑定、零不可逆操作**;生产未 deploy。
+
+- **企业微信通道层与配置面(2026-08-01;企业微信接入 T2,冻结稿 [`wecom-integration-t0-terminal-review.md`](docs/archive/reviews/wecom-integration-t0-terminal-review.md) §4.1 / §6.1 / §7 / §11)**:第 37 个模块 `src/modules/wecom/**`;settings 四端点上线,**默认全部开关 false**,登录与消息链路本刀不通(OAuth 与绑定在 T3,消息在 T5B 且被 Outbox 生产部署硬门锁着)。
+
+  **四端点**(Endpoint 438 → **442**):
+  - `GET /api/system/v1/wecom-settings` —— 不存在返 `data:null`;`corpId` 只回显**掩码**
+  - `PATCH` —— upsert;`loginEnabled`/`messageEnabled=true` 必须 `enabled=true`;`webBaseUrl` 仅 origin(production 强制 HTTPS);`corpId` 仅在 active identity=0 时可改,否则 **36020**
+  - `POST /reset-credentials` —— **仅 SUPER_ADMIN 短路**,码不绑 ops-admin
+  - `POST /test-connection` —— 只读诊断,强制跳过 token 缓存取新 token → `agent/get` 核对 `agentid` 与 `close`
+
+  **凭证边界(§5.5 L3)**:`WECOM_ENCRYPTION_KEY` 是**独立密钥**(D-WC-12),与 STORAGE / SMS / WECHAT / REALNAME 四把 key 互不复用且派生 salt 各异 —— 企业微信与微信小程序**不共域**,共用密钥会把"换掉小程序凭证"和"换掉企业微信凭证"绑成同一次运维动作。单测有执行位:两模块用同一份 env key 值,密文仍互相解不开。CorpSecret 明文与密文**永不**进响应 / Audit / 日志;`update` audit 只记 `changedFields`(连 `corpId` 的 value 都不写),`reset` audit **不传 before/after/extra**。
+
+  **`test-connection` 只返计数,不返任何成员 / 部门 / 标签 ID**(§6.1 第 4 条)。诊断接口回一份 ID 列表就等于把通讯录做成了导出端点,而"不接通讯录"是 §0.3 的硬禁区;计数够回答"配没配对",ID 不是诊断必需 —— 类型层兜底:`WecomAgentSnapshot` 里根本没有存放 ID 的字段。该端点**不写 audit**。
+
+  **Provider 日志纪律(§7.1 规则 2)**:`gettoken` 的 `corpsecret` 在 query string 里,`agent/get` / `message/send` 的 `access_token` 同样在 query 里。因此 Provider **绝不**冒泡 fetch 原始 error —— Node fetch 的 `TypeError.cause` 会带上完整 URL。对外可见的字符串只含固定端点名、errcode 与归一化标签。只按 `errcode` 分类,**不依赖 errmsg**(上游可随时改的展示文案)。
+
+  **Permission +4**(权限码 222 → **226**):`wecom-setting.{read.singleton,update.singleton,test.connection,reset.credentials}`;前三条绑 ops-admin(96 → **99**),`reset.credentials` **不绑**(沿 storage/sms/wechat D2=A)。**BizCode +3**(306 → **309**):`36020` / `36030` / `36031`;`36002` / `36010` / `36011` 属 T3,段位已排好但不提前占码。**AuditLogEvent +2**(130 → **132**):`wecom-setting.update` / `wecom-setting.reset-credentials`;另四条身份类事件由 T3-T4 的消费方同 PR 落,不预埋无人写入的事件名。**Cron 恒 2**。
+
+  **第 11 个 throttler 只落骨架**:新增 `login-wecom-throttle.decorator.ts` 与 `app.config` 的 limit/ttl;**实例注册与 guard 接线留到 T3**。二者必须成对改动 —— guard 靠**逐 throttler 的 name 判断跳过**,只注册实例不接 guard 会让 `login-wecom` 对所有已限流端点多计一道数,那是真行为变更;而 T2 没有任何 pre-auth 企业微信端点可挂,提前接线也没有用例能实测它。
+
+  **DTO 白名单**:`UpdateWecomSettingsDto` 八个字段全部用 `@OmittableOnly()` 而非 `@IsOptional()`(第 18 条棘轮 `srvf/no-nullable-is-optional` 当场拦下了初版)—— 这些字段业务上没有"清空"语义,显式 `null` 必须稳定 400 而不是穿过契约层。同时拒收 `corpSecret` / `corpSecretEncrypted` / `credentialConfigured` / `callbackToken` / `encodingAesKey`(§0.3:第一版连回调 Token 与 EncodingAESKey 的字段位都不开)。
+
+  **fail-closed**:`enabled=false` / settings 缺失 / 凭证 missing 或 invalid / `corpId` 或 `agentId` 缺失 / production-like 下 DEV_STUB —— 一律 36030。e2e 用阳性对照证明这些拒绝确实来自 `enabled` 闸:同一份配置只把 `enabled` 从 false 翻成 true 就通。
+
+- **企业微信 T2 收口:配置写路径锁后复读 + 上游协议严格解析 + Provider 无状态化(2026-08-01;整批评审 3 条 P1)**:零 schema、零 migration(恒 **68**)、零 cron(恒 **2**)、零新端点、零新权限码、零新 BizCode —— 三条都是**同一批新代码里的运行时缺陷**,修的是形状不是文案。
+
+  **① `wecom-settings` PATCH 锁前读、锁后不复读(S1 形状)**:`updateSettings` 原先 `findFirst`(**不带锁**)→ `SELECT … FOR UPDATE` → 然后拿**锁前**的行去算三个开关的终态。两个并发 PATCH 各自用锁前快照判"二级闸不得脱离总闸",于是**两边都保存成功**,合起来写出 `enabled=false + loginEnabled=true` —— 运维看 `loginEnabled=true` 以为能登,实际全被总闸挡掉。现在改成**先取 id → 锁 → 锁后重读完整行 → 用锁后行 + dto 算终态 → 校验组合不变量 → 写**;组合不变量在**同一份终态**上判,不再各判各的。行为变化:并发下后到的那条现在返 **400**(它看见了先到者已提交的事实),此前是两条都 200。新增真双连接并发 e2e `wecom-settings-concurrency.e2e-spec.ts`,两个顺序各一条 + 一条"互不冲突的并发变更不误杀"反向对照。
+
+  **② `agent/get` 用本地默认值冒充上游事实**:原先三处 `readNumber(body, key, 默认值)` 各自是一句谎话 —— `errcode` 缺失默认 **0(= 成功)**、`agentid` 缺失回填**本地配置的 agentId**、`close` 缺失默认 0(= 应用已启用)。三条叠加的结果是:上游返回 `{}`,`test-connection` 回答"一切正常",而 `agentMatched` 变成**自己和自己比**,恒 true。现在协议字段一律 required:`errcode` / `agentid` / `close` 必须**存在且为整数**,缺失或类型不符统一 `INVALID_RESPONSE` → **36031**;`gettoken` / `message/send` / `auth/getuserinfo` 的同类默认值一并清掉。
+
+  **可见范围区分"缺席"与"读不懂"**:`allow_userinfos` / `allow_partys` / `allow_tags` **整个键缺席**记 0(缺席 = 空列表,这是协议读法);键**出现了而结构不对**(不是对象 / 内层不是数组)⇒ 36031。静默计 0 会把"读不懂上游回执"报成"没有人可见",而这正是诊断接口最不该撒的谎。
+
+  **③ `WecomRealProvider` 是 `@Injectable` 单例却写请求级状态**:`prepare(settings)` 原先 `this.settings = settings; return this`(注释还自称镜像 wechat provider —— 实际相反)。并发请求 prepare 后互串配置快照:实测两个并发 `resolveRoute()` 之后,请求 A 的路由拿着请求 B 的 CorpID + CorpSecret 去换 token,且两者被 token cache 合并成**同一次**上游请求。现在 `prepare()` 返回**绑定不可变 ctx 的新对象**,类上零实例字段;并且本类**刻意不再 `implements WecomProvider`** —— 唯一公开入口就是 `prepare()`,于是"未 prepare 就调用"降级成**编译错误**而非运行时错误。`return this;` 此前是全 `src/` 唯一一处:`cos.provider` / `wechat.provider` / `tencent-realname.provider` 一直是 closure 范式。
+
+  **顺查结论**:`WechatMiniRealProvider` **不是**同形状 —— 它的 `prepare()` 早已返回绑定 ctx 的新对象;唯一的实例字段 `accessTokenCache` 是**按 `configurationGeneration` 校验后才命中**的进程级缓存,不是请求级状态,故不改。三处同款 provider 全仓核过,无第二例。
+
+  **新增模块 `CLAUDE.md`**([`src/modules/wecom/CLAUDE.md`](src/modules/wecom/CLAUDE.md)):把上述三条写成 **T3 / T5B 的开工前置出生检查**(配置快照无状态传递 / 写路径锁后复读 / 上游事实不得用本地默认值补),连同"为什么"和 red-first 用例的位置。教训是整批评审给的那一条:**形状表此前没有进入新代码的出生检查** —— S1 清了三轮,新模块第一版又写出来一遍。
+
+  **测试**:`providers/wecom.provider.spec.ts`(六组畸形响应 + 缺席/结构错分野 + 无状态形状 + 并发不串配置 + 日志纪律回归)· `wecom.service.spec.ts`(并发 `resolveRoute` 走真实编排路径)· `wecom-settings-concurrency.e2e-spec.ts`(真双连接锁后复读)。三条均**先写红、再修**,修复前的失败输出逐条留在 PR 描述里。
+
 ## v0.64.0 - 2026-07-29
 
 - **登记簿的「covered」不再是一句空话**:新增断言 —— `harness/incidents.json` 里标 `covered`(事故)或 `probeKind: live`(反向案例)的条目,其探针函数体**必须真的执行守护**(出现 `hookExit(` / `execFileSync(` / `spawnSync(`),只读源码字符串的一律判为名不副实。**这是同一个病的第三次复发**:①「17 条 lint 选择器都有阳性对照」实为巧合对齐 ②「37 条 parity 证明判定正确」只证明两把刻错的尺子读数相同 ③「4 条事故 covered = 会被真实回放」只是登记簿里手写的一个词。三次都是**元数据描述实现,却没有任何东西检查这个描述是真的** —— 而基于谎话做的判断(「回放 20/20,守护可信」)比没有数字更危险。判定抽成纯函数并用**合成登记簿**做阳性对照(标错必抓 / 标对不误报),因此无需为跑一次测试去申请受保护路径的授权。另加「探针体切分有效」反向断言,防止切分正则失配后「零违规」的假绿。
