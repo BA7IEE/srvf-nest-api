@@ -593,7 +593,7 @@ describe('证书域 null 契约(第四轮评审 P1)', () => {
 
   describe('C · 正向:契约上真可 null 的字段,null 必须仍然被接受并真的清空', () => {
     it('Certificate.expiredAt:null → 200 并清成终身有效', async () => {
-      const created = await createCertificate({ expiredAt: '2030-01-01' });
+      const created = await createCertificate({ expiredAt: '2102-01-01' });
       expect(created.status).toBe(201);
       const certificateId = created.body.data.id as string;
 

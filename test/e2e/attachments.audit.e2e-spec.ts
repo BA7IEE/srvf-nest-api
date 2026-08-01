@@ -509,7 +509,7 @@ describe('attachments audit_logs 集成', () => {
           description: 'updated metadata',
           tags: ['new', 'tags'],
           accessLevel: AttachmentAccessLevel.PUBLIC,
-          expireAt: '2027-01-01T00:00:00.000Z',
+          expireAt: '2099-01-01T00:00:00.000Z',
         });
       expect(patch.status).toBe(200);
 

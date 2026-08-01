@@ -109,6 +109,8 @@ const CUSTOM = 'srvf/no-nullable-is-optional';
 const PARAM_ID = 'srvf/no-param-id-string';
 /** 禁改名导出受守护装饰器:R3 新增的第三条自定义规则(eslint-rules/no-decorator-realias.mjs)。 */
 const REALIAS = 'srvf/no-decorator-realias';
+/** 测试禁「近未来」日期字面量:INC-18 新增的第四条自定义规则(eslint-rules/no-near-future-date.mjs)。 */
+const NEAR_FUTURE = 'srvf/no-near-future-date';
 
 const CASES: readonly Case[] = [
   // ---- 鉴权 / 判权单轨 ----
@@ -670,6 +672,48 @@ const CASES: readonly Case[] = [
     expect: null,
     knownGap: true,
   },
+
+  // ---- INC-18:测试禁「近未来」日期字面量(第四条自定义规则)----
+  // 阳性样本刻意用 2089-12-31:它落在 (today, 2090-01-01) 区间内直到 2089 年,
+  // 阳性对照自身不会成为一颗「几年后自测开始误绿」的炸弹。判据的逐边界钉死
+  // (today/today+1/地板/假日期/闰日/去重)在下方「INC-18 判据期望值表」——
+  // 那边时钟注入固定 today,不依赖跑测当天。
+  {
+    name: 'INC-18 ①:e2e 里的近未来 ISO 时间戳被抓',
+    filename: 'test/e2e/x.e2e-spec.ts',
+    code: "const d = new Date('2089-12-31T08:00:00.000Z');\nexport default d;",
+    expect: NEAR_FUTURE,
+  },
+  {
+    name: 'INC-18 ②:模板字符串里的近未来日期同样被抓',
+    filename: 'test/e2e/x.e2e-spec.ts',
+    code: 'export const q = `endAt=2089-06-01T00:00:00Z`;',
+    expect: NEAR_FUTURE,
+  },
+  {
+    name: 'INC-18 ③:src 里的 *.spec.ts 单测同在辖区(2026-09 引信正是在 src 单测里扫出的)',
+    filename: 'src/modules/x/x.service.spec.ts',
+    code: "const d = '2089-12-31';\nexport default d;",
+    expect: NEAR_FUTURE,
+  },
+  {
+    name: 'INC-18 反向:2099 远未来平移惯例放行',
+    filename: 'test/e2e/x.e2e-spec.ts',
+    code: "const d = new Date('2099-08-01T00:00:00.000Z');\nexport default d;",
+    expect: null,
+  },
+  {
+    name: 'INC-18 反向:历史日期放行(已爆的炸弹测试自己会红,轮不到本规则)',
+    filename: 'test/e2e/x.e2e-spec.ts',
+    code: "const d = new Date('2020-01-01T00:00:00.000Z');\nexport default d;",
+    expect: null,
+  },
+  {
+    name: 'INC-18 反向:src 业务文件不在辖区(DTO example 是业务语义,动之即撞契约快照)',
+    filename: 'src/modules/x/x.dto.ts',
+    code: "export const EXAMPLE_DATE = '2089-12-31';",
+    expect: null,
+  },
 ];
 
 /**
@@ -1026,7 +1070,8 @@ async function main(): Promise<void> {
         m.ruleId === CORE_IMPORTS ||
         m.ruleId === CUSTOM ||
         m.ruleId === PARAM_ID ||
-        m.ruleId === REALIAS,
+        m.ruleId === REALIAS ||
+        m.ruleId === NEAR_FUTURE,
     );
 
     if (c.expect === null) {
@@ -1061,7 +1106,12 @@ async function main(): Promise<void> {
     const wanted = harnessHits.filter((m) => m.ruleId === c.expect);
     for (const m of wanted) {
       // 自定义规则本身就是独立 ruleId,不必再靠 message 反查是哪条
-      if (m.ruleId === CUSTOM || m.ruleId === PARAM_ID || m.ruleId === REALIAS) {
+      if (
+        m.ruleId === CUSTOM ||
+        m.ruleId === PARAM_ID ||
+        m.ruleId === REALIAS ||
+        m.ruleId === NEAR_FUTURE
+      ) {
         coveredSelectors.add(m.ruleId);
         continue;
       }
@@ -1090,7 +1140,7 @@ async function main(): Promise<void> {
   //    而「写错了永远匹配不到」的自测输出与「防线完整」一模一样(INC-06 同源)。
   //    数出来之后,新增规则不补正向用例 = 本条当场红,不需要谁记得。
   const CUSTOM_RULES = Object.keys(srvfEslintPlugin.rules).map((name) => `srvf/${name}`);
-  for (const literal of [CUSTOM, PARAM_ID, REALIAS]) {
+  for (const literal of [CUSTOM, PARAM_ID, REALIAS, NEAR_FUTURE]) {
     if (!CUSTOM_RULES.includes(literal)) {
       failures.push(
         `✗ 覆盖闭环名单漂移 —— 本文件的常量 ${literal} 不在 srvfEslintPlugin.rules 里。\n` +
@@ -1139,6 +1189,8 @@ async function main(): Promise<void> {
         ).noNullableIsOptional,
         'no-param-id-string': (await import('../eslint-rules/no-param-id-string.mjs'))
           .noParamIdString,
+        'no-near-future-date': (await import('../eslint-rules/no-near-future-date.mjs'))
+          .noNearFutureDate,
       },
     };
 
@@ -1445,6 +1497,60 @@ async function main(): Promise<void> {
       failures.push(
         `✗ M4 注册表 —— 登记不全:ratchets=[${registeredIds.join(', ')}], baselines=${RATCHET_BASELINES.size}`,
       );
+    }
+  }
+
+  // ── INC-18 判据期望值表:nearFutureDatesIn 是纯函数,时钟注入固定 today ────────
+  // 不是断言「规则报了点什么」,是把 (today, 2090-01-01) 区间的每条边逐一钉死。
+  // 时钟必须注入:判据表若依赖跑测当天,这段自测就成了它要抓的那种东西。
+  {
+    const { FAR_FUTURE_FLOOR, beijingTodayISO, nearFutureDatesIn } = (await import(
+      '../eslint-rules/no-near-future-date.mjs'
+    )) as {
+      FAR_FUTURE_FLOOR: string;
+      beijingTodayISO: (now?: Date) => string;
+      nearFutureDatesIn: (text: string, todayISO: string) => string[];
+    };
+    const T = '2026-08-02';
+    const table: ReadonlyArray<readonly [string, string, string[]]> = [
+      ['today 本身排除(次日即史料,不制造随墙钟抖动的裁决)', "'2026-08-02'", []],
+      ['today+1 命中(最短引信)', "'2026-08-03'", ['2026-08-03']],
+      ['远未来地板 2090-01-01 排除(2099 平移惯例)', "'2090-01-01'", []],
+      ['2089-12-31 命中(区间内最后一天)', "'2089-12-31'", ['2089-12-31']],
+      ['假日期 2027-02-30 排除(Date.UTC 静默进位靠 round-trip 识破)', "'2027-02-30'", []],
+      ['非闰年 2027-02-29 排除', "'2027-02-29'", []],
+      ['闰年 2028-02-29 命中', "'2028-02-29'", ['2028-02-29']],
+      [
+        '重复去重且升序',
+        "'2033-05-01' + '2031-01-02' + '2033-05-01'",
+        ['2031-01-02', '2033-05-01'],
+      ],
+      ['长数字串里不误配(前后有数字即非独立日期)', "'12026-08-031'", []],
+    ];
+    let tableOk = true;
+    for (const [tname, text, want] of table) {
+      const got = nearFutureDatesIn(text, T);
+      if (JSON.stringify(got) !== JSON.stringify(want)) {
+        tableOk = false;
+        failures.push(
+          `✗ INC-18 判据表:${tname} —— 期望 ${JSON.stringify(want)},实际 ${JSON.stringify(got)}`,
+        );
+      }
+    }
+    if (FAR_FUTURE_FLOOR !== '2090-01-01') {
+      tableOk = false;
+      failures.push(`✗ INC-18 判据表:FAR_FUTURE_FLOOR 漂移为 ${FAR_FUTURE_FLOOR}`);
+    }
+    if (
+      beijingTodayISO(new Date('2026-08-01T15:59:59.000Z')) !== '2026-08-01' ||
+      beijingTodayISO(new Date('2026-08-01T16:00:00.000Z')) !== '2026-08-02'
+    ) {
+      tableOk = false;
+      failures.push('✗ INC-18 判据表:beijingTodayISO 北京日界漂移(UTC 16:00 应翻日)');
+    }
+    if (tableOk) {
+      passed++;
+      console.log(`✓ INC-18 判据期望值表:${table.length} 条边界 + 地板常量 + 北京日界`);
     }
   }
 

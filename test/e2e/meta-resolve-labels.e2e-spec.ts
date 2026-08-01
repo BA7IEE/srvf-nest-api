@@ -120,8 +120,8 @@ describe('POST admin/v1/meta/resolve-labels(F1/A7 批量 id→label 解析)', ()
         title: 'F1解析活动',
         activityTypeCode: 'metarl-type',
         organizationId,
-        startAt: new Date('2027-01-01T08:00:00.000Z'),
-        endAt: new Date('2027-01-01T12:00:00.000Z'),
+        startAt: new Date('2099-01-01T08:00:00.000Z'),
+        endAt: new Date('2099-01-01T12:00:00.000Z'),
         location: '测试地点',
         statusCode: 'published',
       },
@@ -166,7 +166,7 @@ describe('POST admin/v1/meta/resolve-labels(F1/A7 批量 id→label 解析)', ()
     expect(data.position[positionId]).toMatchObject({ categoryCode: 'LEADER' });
     expect(data.activity[activityId]).toEqual({
       label: 'F1解析活动',
-      startAt: '2027-01-01T08:00:00.000Z',
+      startAt: '2099-01-01T08:00:00.000Z',
       statusCode: 'published',
     });
   });

@@ -21,6 +21,7 @@
 import { readFileSync } from 'node:fs';
 
 import { DECORATOR_REALIAS_MESSAGE, noDecoratorRealias } from './eslint-rules/no-decorator-realias.mjs';
+import { NEAR_FUTURE_DATE_MESSAGE, noNearFutureDate } from './eslint-rules/no-near-future-date.mjs';
 import { NULLABLE_IS_OPTIONAL_MESSAGE, noNullableIsOptional } from './eslint-rules/no-nullable-is-optional.mjs';
 import { PARAM_ID_STRING_MESSAGE, noParamIdString } from './eslint-rules/no-param-id-string.mjs';
 
@@ -36,13 +37,19 @@ const PARAM_ID_STRING_RULE = 'srvf/no-param-id-string';
  * 少任何一条,`export { IsOptional as Opt } from 'class-validator'` 就是一条完整的绕过路径。
  */
 const DECORATOR_REALIAS_RULE = 'srvf/no-decorator-realias';
+/**
+ * INC-18:测试文件禁「近未来」日期字面量(墙钟炸弹,2026-08-01 main 全线红,同类第三次)。
+ * 独立 ruleId 理由同上;基线走棘轮注册表(symbolShape = date-literal)。
+ */
+const NEAR_FUTURE_DATE_RULE = 'srvf/no-near-future-date';
 
-/** 供 flat config 以 `plugins: { srvf: srvfEslintPlugin }` 挂载(三条规则同一个 plugin 命名空间)。 */
+/** 供 flat config 以 `plugins: { srvf: srvfEslintPlugin }` 挂载(四条规则同一个 plugin 命名空间)。 */
 const srvfEslintPlugin = {
   rules: {
     'no-nullable-is-optional': noNullableIsOptional,
     'no-param-id-string': noParamIdString,
     'no-decorator-realias': noDecoratorRealias,
+    'no-near-future-date': noNearFutureDate,
   },
 };
 
@@ -201,10 +208,15 @@ const IDENT = '[A-Za-z_$][A-Za-z0-9_$]*';
 const BASELINE_SYMBOL_SHAPES = {
   'class-field': new RegExp(`^${IDENT}\\.${IDENT}$`),
   'class-method-param': new RegExp(`^${IDENT}\\.${IDENT}\\.${IDENT}$`),
+  // 日期字面量(INC-18):一条豁免盖住该文件内这个日期的**全部**出现 —— 刻意的:
+  // 同一豁免日期在同文件再出现一次(如 checkIn/checkOut 成对)同属一次核验的语义,
+  // 而新日期 / 新文件依旧红。粒度弱于 class-field 的逐符号,强于整文件豁免。
+  'date-literal': /^20[2-9][0-9]-[01][0-9]-[0-3][0-9]$/,
 };
 const BASELINE_SYMBOL_SHAPE_LABELS = {
   'class-field': '「类名.字段名」',
   'class-method-param': '「类名.方法名.参数名」',
+  'date-literal': '「YYYY-MM-DD 日期串」',
 };
 
 /**
@@ -601,6 +613,20 @@ const harnessConfigBlocks = [
     rules: { [DECORATOR_REALIAS_RULE]: 'error' },
   },
 
+  // (l3) 测试代码禁「近未来」日期字面量(INC-18,2026-08-01 main 全线红,同类第三次)。
+  //      范围 = test/** + 全部 *.spec.ts(单测就住在 src/ 里,2026-09-01 引信的
+  //      certificates.service.spec 就是在 src/ 扫出来的);src 业务文件不拦 ——
+  //      DTO example / 拍板日期是业务语义,且 example 动一下就撞契约快照。
+  //      规则内部还有同一判据的文件守卫(isGuardedTestFile),原因见规则头注。
+  //      判据与非炸弹形态见 eslint-rules/no-near-future-date.mjs;存量豁免走棘轮基线
+  //      harness/near-future-date-baseline.json(身份 = 文件 × 日期,只减不增)。
+  {
+    name: 'srvf/harness:near-future-date',
+    files: ['test/**/*.ts', 'src/**/*.spec.ts'],
+    plugins: { srvf: srvfEslintPlugin },
+    rules: { [NEAR_FUTURE_DATE_RULE]: 'error' },
+  },
+
   // (m) DTO 范围关掉 inline 逃生门(第五轮评审 J2 · L3)。
   //     实测:`/* eslint-disable */`(文件级)与 `// eslint-disable-next-line`(行级)
   //     两种写法此前都能让一个新违规字段通过 lint,RC=0 —— 棘轮的第一道执行位
@@ -652,6 +678,8 @@ export {
   HARNESS_SYNTAX,
   IS_OPTIONAL_NULL_BASELINE,
   LEGACY_PARAM_ID_BASELINE,
+  NEAR_FUTURE_DATE_MESSAGE,
+  NEAR_FUTURE_DATE_RULE,
   NULLABLE_IS_OPTIONAL_MESSAGE,
   NULLABLE_IS_OPTIONAL_RULE,
   PARAM_ID_STRING_MESSAGE,

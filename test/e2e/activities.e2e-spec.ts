@@ -530,8 +530,8 @@ describe('activities 模块', () => {
           baseCreatePayload({
             title: 'F1统计唯一标题ABC',
             organizationId: statsParentOrgId,
-            startAt: '2027-03-01T08:00:00.000Z',
-            endAt: '2027-03-01T12:00:00.000Z',
+            startAt: '2099-03-01T08:00:00.000Z',
+            endAt: '2099-03-01T12:00:00.000Z',
           }),
         );
       activityInParent = parentAct.body.data.id;
@@ -543,8 +543,8 @@ describe('activities 模块', () => {
           baseCreatePayload({
             title: 'F1子组织活动',
             organizationId: statsChildOrgId,
-            startAt: '2027-06-01T08:00:00.000Z',
-            endAt: '2027-06-01T12:00:00.000Z',
+            startAt: '2099-06-01T08:00:00.000Z',
+            endAt: '2099-06-01T12:00:00.000Z',
           }),
         );
       activityInChild = childAct.body.data.id;
@@ -579,7 +579,7 @@ describe('activities 模块', () => {
     it('dateFrom/dateTo 按 startAt 区间过滤(含边界)', async () => {
       const res = await request(httpServer(app))
         .get('/api/admin/v1/activities')
-        .query({ dateFrom: '2027-02-01T00:00:00.000Z', dateTo: '2027-04-01T00:00:00.000Z' })
+        .query({ dateFrom: '2099-02-01T00:00:00.000Z', dateTo: '2099-04-01T00:00:00.000Z' })
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       const ids = (res.body.data.items as Array<{ id: string }>).map((i) => i.id);
@@ -642,7 +642,7 @@ describe('activities 模块', () => {
         {
           id: activityInParent,
           label: 'F1统计唯一标题ABC',
-          startAt: '2027-03-01T08:00:00.000Z',
+          startAt: '2099-03-01T08:00:00.000Z',
           statusCode: 'draft',
         },
       ]);

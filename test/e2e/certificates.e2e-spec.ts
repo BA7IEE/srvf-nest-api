@@ -520,11 +520,11 @@ describe('certificates 模块', () => {
           issuingOrg: '演示颁发机构 B',
           certNumber: 'DEMO-CERT-002',
           issuedAt: '2023-06-01',
-          expiredAt: '2030-06-01',
+          expiredAt: '2102-06-01',
         });
       expect(res.status).toBe(201);
       expect(res.body.data.certNumberFull).toBe('DEMO-CERT-002');
-      expect(res.body.data.expiredAt).toBe('2030-06-01T00:00:00.000Z');
+      expect(res.body.data.expiredAt).toBe('2102-06-01T00:00:00.000Z');
       // §9.1 步骤 7:标准化四列进出参。
       expect(res.body.data.standardId).toBe(primaryStandardId);
       expect(res.body.data.recognitionPolicyId).toEqual(expect.any(String));
@@ -682,7 +682,7 @@ describe('certificates 模块', () => {
       const res = await request(httpServer(app))
         .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
-        .send(baseCreatePayload({ expiredAt: '2030-06-01T00:00:00.000Z' }));
+        .send(baseCreatePayload({ expiredAt: '2102-06-01T00:00:00.000Z' }));
       expect(res.status).toBe(400);
     });
 
@@ -747,7 +747,7 @@ describe('certificates 模块', () => {
       const created = await request(httpServer(app))
         .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
-        .send(baseCreatePayload({ issuedAt: '2024-06-01', expiredAt: '2030-06-01' }));
+        .send(baseCreatePayload({ issuedAt: '2024-06-01', expiredAt: '2102-06-01' }));
       expect(created.status).toBe(201);
       const certId = created.body.data.id as string;
 
@@ -760,7 +760,7 @@ describe('certificates 模块', () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberA}/certificates/${certId}`)
         .set('Authorization', adminAuth)
-        .send({ expiredAt: '2031-06-01' });
+        .send({ expiredAt: '2103-06-01' });
       expect(res.status).toBe(200);
 
       const row = await prisma.certificate.findUniqueOrThrow({ where: { id: certId } });
@@ -935,11 +935,11 @@ describe('certificates 模块', () => {
         .set('Authorization', superAdminAuth)
         .send({
           issuedAt: '2024-03-01',
-          expiredAt: '2029-03-01',
+          expiredAt: '2101-03-01',
         });
       expect(res.status).toBe(200);
       expect(res.body.data.issuedAt).toBe('2024-03-01T00:00:00.000Z');
-      expect(res.body.data.expiredAt).toBe('2029-03-01T00:00:00.000Z');
+      expect(res.body.data.expiredAt).toBe('2101-03-01T00:00:00.000Z');
     });
 
     it('PATCH standardId 指向不存在的标准 → CERTIFICATE_STANDARD_NOT_FOUND', async () => {

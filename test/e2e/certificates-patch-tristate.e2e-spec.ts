@@ -153,10 +153,10 @@ describe('certificates PATCH 三态 + 日期真实性 + verify 落点(评审 fin
       standardId: std.EXPLICIT_OPTIONAL,
       issuingOrg: '深圳市红十字会',
       issuedAt: '2026-01-01',
-      expiredAt: '2030-06-30',
+      expiredAt: '2102-06-30',
     });
     expect((await patch(id, { issuingOrg: '深圳市急救中心' })).status).toBe(200);
-    expect((await readCert(id)).expiredAt?.toISOString().slice(0, 10)).toBe('2030-06-30');
+    expect((await readCert(id)).expiredAt?.toISOString().slice(0, 10)).toBe('2102-06-30');
   });
 
   it('standardId 传**同值** + expiredAt 不传 → 到期日仍保持原值(修复前会被静默清成终身有效)', async () => {
@@ -164,13 +164,13 @@ describe('certificates PATCH 三态 + 日期真实性 + verify 落点(评审 fin
       standardId: std.EXPLICIT_OPTIONAL,
       issuingOrg: '深圳市红十字会',
       issuedAt: '2026-01-01',
-      expiredAt: '2030-06-30',
+      expiredAt: '2102-06-30',
     });
     // 前端提交完整表单 = 带上原样的 standardId 但不带 expiredAt。
     // 修复前判据是 `dto.standardId !== undefined`(传没传)而不是「换没换」,
     // 于是这一格把一张有到期日的证书清成了终身有效。
     expect((await patch(id, { standardId: std.EXPLICIT_OPTIONAL })).status).toBe(200);
-    expect((await readCert(id)).expiredAt?.toISOString().slice(0, 10)).toBe('2030-06-30');
+    expect((await readCert(id)).expiredAt?.toISOString().slice(0, 10)).toBe('2102-06-30');
   });
 
   it('expiredAt 传 null → 清成终身有效(修复前 `??` 把 null 当没传,清不掉)', async () => {
@@ -178,7 +178,7 @@ describe('certificates PATCH 三态 + 日期真实性 + verify 落点(评审 fin
       standardId: std.EXPLICIT_OPTIONAL,
       issuingOrg: '深圳市红十字会',
       issuedAt: '2026-01-01',
-      expiredAt: '2030-06-30',
+      expiredAt: '2102-06-30',
     });
     expect((await patch(id, { expiredAt: null })).status).toBe(200);
     expect((await readCert(id)).expiredAt).toBeNull();
@@ -189,10 +189,10 @@ describe('certificates PATCH 三态 + 日期真实性 + verify 落点(评审 fin
       standardId: std.EXPLICIT_OPTIONAL,
       issuingOrg: '深圳市红十字会',
       issuedAt: '2026-01-01',
-      expiredAt: '2030-06-30',
+      expiredAt: '2102-06-30',
     });
-    expect((await patch(id, { expiredAt: '2031-12-31' })).status).toBe(200);
-    expect((await readCert(id)).expiredAt?.toISOString().slice(0, 10)).toBe('2031-12-31');
+    expect((await patch(id, { expiredAt: '2103-12-31' })).status).toBe(200);
+    expect((await readCert(id)).expiredAt?.toISOString().slice(0, 10)).toBe('2103-12-31');
   });
 
   it('standardId 传**异值** + expiredAt 不传 → 换标准即换规则,旧到期日不再沿用', async () => {
@@ -200,7 +200,7 @@ describe('certificates PATCH 三态 + 日期真实性 + verify 落点(评审 fin
       standardId: std.EXPLICIT_OPTIONAL,
       issuingOrg: '深圳市红十字会',
       issuedAt: '2026-01-01',
-      expiredAt: '2030-06-30',
+      expiredAt: '2102-06-30',
     });
     expect((await patch(id, { standardId: altExplicitOptionalStandardId })).status).toBe(200);
     const after = await readCert(id);
@@ -214,8 +214,8 @@ describe('certificates PATCH 三态 + 日期真实性 + verify 落点(评审 fin
   // 就会走进「expiredAt 归 null」那一支,而 PERMANENT 之外的三种到期日都有实际含义。
 
   it.each([
-    ['EXPLICIT_OPTIONAL', { expiredAt: '2030-06-30' }, '2030-06-30'],
-    ['EXPLICIT_REQUIRED', { expiredAt: '2030-06-30' }, '2030-06-30'],
+    ['EXPLICIT_OPTIONAL', { expiredAt: '2102-06-30' }, '2102-06-30'],
+    ['EXPLICIT_REQUIRED', { expiredAt: '2102-06-30' }, '2102-06-30'],
     // FIXED_MONTHS 由后端按 issuedAt + 24 个月算,客户端不得传。
     ['FIXED_MONTHS', {}, '2028-01-01'],
   ])('%s:只改机构 + 带同值 standardId → 到期日不动', async (mode, extra, expected) => {
@@ -279,7 +279,7 @@ describe('certificates PATCH 三态 + 日期真实性 + verify 落点(评审 fin
       standardId: std.EXPLICIT_OPTIONAL,
       issuingOrg: '深圳市红十字会',
       issuedAt: '2026-01-01',
-      expiredAt: '2030-06-30',
+      expiredAt: '2102-06-30',
       certNumber: 'SZ-1001',
     });
     await request(httpServer(app))
@@ -294,7 +294,7 @@ describe('certificates PATCH 三态 + 日期真实性 + verify 落点(评审 fin
       standardId: std.EXPLICIT_OPTIONAL,
       issuingOrg: '深圳市红十字会',
       issuedAt: '2026-01-01',
-      expiredAt: '2030-06-30',
+      expiredAt: '2102-06-30',
       certNumber: 'SZ-1001',
     });
     expect(res.status).toBe(200);
@@ -306,13 +306,13 @@ describe('certificates PATCH 三态 + 日期真实性 + verify 落点(评审 fin
       standardId: std.EXPLICIT_OPTIONAL,
       issuingOrg: '深圳市红十字会',
       issuedAt: '2026-01-01',
-      expiredAt: '2030-06-30',
+      expiredAt: '2102-06-30',
     });
     await request(httpServer(app))
       .patch(`/api/admin/v1/members/${memberId}/certificates/${id}/verify`)
       .set('Authorization', adminAuth)
       .send({});
-    expect((await patch(id, { expiredAt: '2031-01-01' })).status).toBe(200);
+    expect((await patch(id, { expiredAt: '2103-01-01' })).status).toBe(200);
     expect((await readCert(id)).certStatusCode).toBe(CERT_STATUS.PENDING);
   });
 
@@ -421,7 +421,7 @@ describe('certificates PATCH 三态 + 日期真实性 + verify 落点(评审 fin
       issuedAt: '2026-01-01',
     });
     expectBizError(
-      await patch(id, { expiredAt: '2030-01-01' }),
+      await patch(id, { expiredAt: '2102-01-01' }),
       BizCode.CERTIFICATE_VALIDITY_INVALID,
     );
   });
@@ -431,7 +431,7 @@ describe('certificates PATCH 三态 + 日期真实性 + verify 落点(评审 fin
       standardId: std.EXPLICIT_REQUIRED,
       issuingOrg: '深圳市红十字会',
       issuedAt: '2026-01-01',
-      expiredAt: '2030-06-30',
+      expiredAt: '2102-06-30',
     });
     expectBizError(await patch(id, { expiredAt: null }), BizCode.CERTIFICATE_VALIDITY_INVALID);
   });

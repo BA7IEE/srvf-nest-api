@@ -1,4 +1,4 @@
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -96,6 +96,28 @@ const bash = (c: string) => ({ tool_name: 'Bash', tool_input: { command: c } });
 // 探针注册表:每个返回 [是否通过, 说明]
 // 全部只读或自还原 —— 回放不得污染仓库(否则没人敢在开发中途跑)。
 const probes: Record<string, () => [boolean, string]> = {
+  'near-future-date-lint': () => {
+    // 真触发(自还原):写一个带近未来日期的临时 spec,跑仓库自己的 eslint 二进制,
+    // 断言当场红且命中 srvf/no-near-future-date。日期用「回放当天 + 30 天」动态
+    // 生成 —— 探针自己硬编码一个日期,就是在给 2090 年的同事埋下一颗新炸弹。
+    const iso = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+    const rel = 'test/e2e/__replay-inc18-datebomb-probe.e2e-spec.ts';
+    const abs = path.join(ROOT, rel);
+    try {
+      fs.writeFileSync(abs, `const d = new Date('${iso}T08:00:00.000Z');\nexport default d;\n`);
+      const r = spawnSync(path.join(ROOT, 'node_modules/.bin/eslint'), ['--format', 'json', rel], {
+        cwd: ROOT,
+        encoding: 'utf-8',
+      });
+      const ok =
+        r.status !== 0 &&
+        typeof r.stdout === 'string' &&
+        r.stdout.includes('srvf/no-near-future-date');
+      return [ok, `近未来日期(${iso})的临时 spec 未被正式 lint 拦下(exit=${String(r.status)})`];
+    } finally {
+      fs.rmSync(abs, { force: true });
+    }
+  },
   'prisma-stale': () => {
     const src = fs.readFileSync(path.join(ROOT, '.claude/hooks/preflight-gate.sh'), 'utf-8');
     const ok = src.includes('GENERATED_SCHEMA') && src.includes('prisma:generate');

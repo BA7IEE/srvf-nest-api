@@ -105,7 +105,7 @@ describe('App /api/app/v1/me/insurances(保险 T2 自助 CRUD)', () => {
     insurerName: '平安保险',
     policyNumber: `PN-${nextSeq()}`,
     coverageStart: '2026-01-01',
-    coverageEnd: '2026-12-31',
+    coverageEnd: '2098-12-31',
   });
 
   // ============== 准入与防越权 ==============
@@ -209,8 +209,8 @@ describe('App /api/app/v1/me/insurances(保险 T2 自助 CRUD)', () => {
     const me = await setupLinkedUser({ username: 'ins-create-baddate' });
     const res = await createInsurance(me.authHeader, {
       ...validBody(),
-      coverageStart: '2027-01-01',
-      coverageEnd: '2026-12-31',
+      coverageStart: '2099-01-01',
+      coverageEnd: '2098-12-31',
     });
     expectBizError(res, BizCode.INSURANCE_COVERAGE_DATE_RANGE_INVALID);
   });
@@ -262,9 +262,9 @@ describe('App /api/app/v1/me/insurances(保险 T2 自助 CRUD)', () => {
     const res = await request(httpServer(app))
       .patch(`/api/app/v1/me/insurances/${id}`)
       .set('Authorization', me.authHeader)
-      .send({ coverageEnd: '2027-06-30', expectedVersion: 0 })
+      .send({ coverageEnd: '2099-06-30', expectedVersion: 0 })
       .expect(200);
-    expect(String((res.body as ResBody).data.coverageEnd)).toContain('2027-06-30');
+    expect(String((res.body as ResBody).data.coverageEnd)).toContain('2099-06-30');
     expect((res.body as ResBody).data.version).toBe(1);
 
     const audit = await prisma.auditLog.findFirst({
@@ -275,8 +275,8 @@ describe('App /api/app/v1/me/insurances(保险 T2 自助 CRUD)', () => {
       before?: Record<string, unknown>;
       after?: Record<string, unknown>;
     };
-    expect(String(ctx.before?.coverageEnd)).toContain('2026-12-31');
-    expect(String(ctx.after?.coverageEnd)).toContain('2027-06-30');
+    expect(String(ctx.before?.coverageEnd)).toContain('2098-12-31');
+    expect(String(ctx.after?.coverageEnd)).toContain('2099-06-30');
 
     const stale = await request(httpServer(app))
       .patch(`/api/app/v1/me/insurances/${id}`)
@@ -297,7 +297,7 @@ describe('App /api/app/v1/me/insurances(保险 T2 自助 CRUD)', () => {
     const bad = await request(httpServer(app))
       .patch(`/api/app/v1/me/insurances/${id}`)
       .set('Authorization', me.authHeader)
-      .send({ coverageStart: '2027-12-31', expectedVersion: 1 });
+      .send({ coverageStart: '2099-12-31', expectedVersion: 1 });
     expectBizError(bad, BizCode.INSURANCE_COVERAGE_DATE_RANGE_INVALID);
   });
 
@@ -361,7 +361,7 @@ describe('App /api/app/v1/me/insurances(保险 T2 自助 CRUD)', () => {
       { expectedVersion: 7 },
       { expectedVersion: 7, insurerName: '  平安保险  ' },
       { expectedVersion: 7, coverageStart: '2026-01-01T23:30:00+08:00' },
-      { expectedVersion: 7, coverageEnd: '2026-12-31T08:00:00+08:00' },
+      { expectedVersion: 7, coverageEnd: '2098-12-31T08:00:00+08:00' },
     ];
     for (const body of noOps) {
       const res = await request(httpServer(app))

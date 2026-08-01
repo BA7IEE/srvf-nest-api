@@ -1049,7 +1049,7 @@ describe('attachments 主模块', () => {
           description: 'updated',
           tags: ['t1'],
           accessLevel: AttachmentAccessLevel.PUBLIC,
-          expireAt: '2027-01-01T00:00:00.000Z',
+          expireAt: '2099-01-01T00:00:00.000Z',
         });
       expect(res.status).toBe(200);
       expect(res.body.data.description).toBe('updated');

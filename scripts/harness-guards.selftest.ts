@@ -1994,7 +1994,7 @@ async function runTrustedJudgeAssertions(): Promise<void> {
     }
 
     check(
-      'F3 注册表:真实注册表登记了两条棘轮(裁判确实会遍历到 param-id 那条)',
+      'F3 注册表:真实注册表登记了三条棘轮(裁判确实会遍历到 param-id 与 near-future-date 那两条)',
       judge
         .parseRatchetRegistryDoc(
           fs.readFileSync(path.resolve(__dirname, '../harness/ratchet-registry.json'), 'utf-8'),
@@ -2002,7 +2002,7 @@ async function runTrustedJudgeAssertions(): Promise<void> {
         )
         .map((r) => r.id)
         .sort()
-        .join(',') === 'is-optional-null,legacy-param-id',
+        .join(',') === 'is-optional-null,legacy-param-id,near-future-date',
       '注册表少一条 = 那条棘轮的单调性没人裁,而 lint 与 selftest 都看不出来',
     );
   }

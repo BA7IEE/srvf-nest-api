@@ -274,7 +274,7 @@ describe('POST /api/admin/v1/members/:memberId/insurances/:insuranceId/review', 
         insurerName: `Insurer-${nextSeq()}`,
         policyNumber: `POLICY-${nextSeq()}`,
         coverageStart: new Date('2026-01-01T00:00:00.000Z'),
-        coverageEnd: new Date('2026-12-31T00:00:00.000Z'),
+        coverageEnd: new Date('2098-12-31T00:00:00.000Z'),
       },
       select: { id: true },
     });

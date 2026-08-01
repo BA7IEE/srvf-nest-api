@@ -15,6 +15,13 @@
       "rule": "srvf/no-param-id-string",
       "symbolShape": "class-method-param",
       "why": "存量裸 @Param('id'):`:id` 一律走 IdParamDto。存量按「类名.方法名.参数名」逐条冻结(原先是整文件豁免 + 一句没有执行位的「只减不增」)。"
+    },
+    {
+      "id": "near-future-date",
+      "baseline": "harness/near-future-date-baseline.json",
+      "rule": "srvf/no-near-future-date",
+      "symbolShape": "date-literal",
+      "why": "INC-18 墙钟炸弹:测试硬编码近未来日期,到点 main 全线红且与 diff 无关(2026-08-01 实爆,同类第三次)。存量按「文件 × 日期」冻结,四种非炸弹形态(时钟注入/年窗坐标/派生断言)经人工核验入册。"
     }
   ]
 }
