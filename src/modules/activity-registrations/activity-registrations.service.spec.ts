@@ -18,6 +18,9 @@ import { ActivityRegistrationsService } from './activity-registrations.service';
 
 jest.mock('../activities/activity-waitlist-promotion', () => ({
   promoteActivityWaitlist: jest.fn().mockResolvedValue({ activityTitle: '测试活动', promoted: [] }),
+  promoteActivityWaitlistWithinCapacity: jest
+    .fn()
+    .mockResolvedValue({ activityTitle: '测试活动', promoted: [] }),
 }));
 
 // activity-registrations service-level characterization spec(B 档,沿 srvf-god-service-refactor）。
@@ -780,14 +783,15 @@ describe('ActivityRegistrationsService (characterization)', () => {
       expect(recorder.logCancel).not.toHaveBeenCalled();
     });
 
-    it('cancelMy:同事务只快照 memberNo/displayName 传给通知 producer', async () => {
+    // B-D3 起只有取消 pass 才通知负责人，故快照断言必须挂在 pass 上（pending 根本不会调 producer）。
+    it('cancelMy(pass):同事务只快照 memberNo/displayName 传给通知 producer', async () => {
       const prisma = makePrismaMock();
       const recorder = makeAuditRecorderMock();
       const notificationProducer = makeNotificationProducerMock();
       const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'cancelled' });
       prisma.user.findFirst.mockResolvedValue({ memberId: 'mem-1' });
       prisma.activityRegistration.findFirst.mockResolvedValue(
-        makeRegRow({ statusCode: 'pending', activityId: 'act-1', memberId: 'mem-1' }),
+        makeRegRow({ statusCode: 'pass', activityId: 'act-1', memberId: 'mem-1' }),
       );
       prisma.activityRegistration.update.mockResolvedValue(
         makeRegRow({ statusCode: 'cancelled', activityId: 'act-1', memberId: 'mem-1' }),
@@ -817,6 +821,37 @@ describe('ActivityRegistrationsService (characterization)', () => {
       });
       expect(input).not.toHaveProperty('cancellingMemberId');
     });
+
+    // B-D3（维护者 2026-08-01 拍板）：取消非 pass 报名不打扰负责人。
+    it.each(['pending', 'waitlisted'])(
+      'cancelMy(%s):取消照常成交，但不调用通知 producer',
+      async (statusCode) => {
+        const prisma = makePrismaMock();
+        const recorder = makeAuditRecorderMock();
+        const notificationProducer = makeNotificationProducerMock();
+        const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'cancelled' });
+        prisma.user.findFirst.mockResolvedValue({ memberId: 'mem-1' });
+        prisma.activityRegistration.findFirst.mockResolvedValue(
+          makeRegRow({ statusCode, activityId: 'act-1', memberId: 'mem-1' }),
+        );
+        prisma.activityRegistration.update.mockResolvedValue(
+          makeRegRow({ statusCode: 'cancelled', activityId: 'act-1', memberId: 'mem-1' }),
+        );
+        prisma.activity.findFirst.mockResolvedValue(makeActivityRow());
+        const service = makeService(prisma, recorder, stateMachine, notificationProducer);
+
+        await service.cancelMy(
+          'reg-1',
+          {},
+          makeCurrentUser({ id: 'user-1', role: Role.USER }),
+          META,
+        );
+
+        expect(prisma.activityRegistration.update).toHaveBeenCalled();
+        expect(recorder.logCancel).toHaveBeenCalled();
+        expect(notificationProducer.enqueueSelfCancellation).not.toHaveBeenCalled();
+      },
+    );
 
     it('cancelAdmin: cancelReason 缺省时传 null,cancelledByPath=admin', async () => {
       const prisma = makePrismaMock();

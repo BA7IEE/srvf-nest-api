@@ -13,7 +13,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
 import { hasActivityCapacity } from '../activities/activity-capacity';
-import { promoteActivityWaitlistAcrossPositions } from '../activities/activity-waitlist-promotion';
+import { promoteActivityWaitlistWithinCapacity } from '../activities/activity-waitlist-promotion';
 import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import { assertActiveMemberLifecycle } from '../members/member-lifecycle-lock';
 import { OrganizationsService } from '../organizations/organizations.service';
@@ -1320,9 +1320,9 @@ export class ActivityRegistrationsService {
 
       const promotion =
         lockedReg.statusCode === REGISTRATION_STATUS_PASS
-          ? await promoteActivityWaitlistAcrossPositions({
+          ? await promoteActivityWaitlistWithinCapacity({
               activityId,
-              preferredActivityPositionId: lockedReg.activityPositionId,
+              activityPositionId: lockedReg.activityPositionId,
               maxPromotions: 1,
               actorUserId: currentUser.id,
               actorRoleSnap: currentUser.role,
@@ -1544,9 +1544,9 @@ export class ActivityRegistrationsService {
 
       const promotion =
         lockedReg.statusCode === REGISTRATION_STATUS_PASS
-          ? await promoteActivityWaitlistAcrossPositions({
+          ? await promoteActivityWaitlistWithinCapacity({
               activityId: lockedReg.activityId,
-              preferredActivityPositionId: lockedReg.activityPositionId,
+              activityPositionId: lockedReg.activityPositionId,
               maxPromotions: 1,
               actorUserId: currentUser.id,
               actorRoleSnap: currentUser.role,
@@ -1556,15 +1556,22 @@ export class ActivityRegistrationsService {
             })
           : { activityTitle: activity?.title ?? '活动', promoted: [] };
 
-      const ownerRecipientResolution = await this.notificationProducer.enqueueSelfCancellation(tx, {
-        registrationId: updated.id,
-        activityId: lockedReg.activityId,
-        activityTitle: activity?.title ?? '活动',
-        publisherMemberId: activity?.publisher?.memberId ?? null,
-        cancellingMember,
-        cancelledAt,
-        cancelReason: dto.cancelReason ?? null,
-      });
+      // B-D3（维护者 2026-08-01 拍板）：只有取消**已通过**报名才通知负责人。pending / waitlisted
+      // 的自助取消对负责人没有任何要做的事 —— 名额本来就没被占住、不用补人、不用改排班，
+      // 全发只是噪音。取消 pass 的 intent 形状（eventKey / aggregateId / 收件人解析）逐字不变，
+      // 只是不再为另两个状态多发一条。
+      const ownerRecipientResolution =
+        lockedReg.statusCode === REGISTRATION_STATUS_PASS
+          ? await this.notificationProducer.enqueueSelfCancellation(tx, {
+              registrationId: updated.id,
+              activityId: lockedReg.activityId,
+              activityTitle: activity?.title ?? '活动',
+              publisherMemberId: activity?.publisher?.memberId ?? null,
+              cancellingMember,
+              cancelledAt,
+              cancelReason: dto.cancelReason ?? null,
+            })
+          : null;
       await this.notificationProducer.enqueueWaitlistPromotions(tx, {
         activityTitle: promotion.activityTitle,
         promoted: promotion.promoted,
@@ -1576,7 +1583,7 @@ export class ActivityRegistrationsService {
       };
     });
 
-    if (result.ownerRecipientResolution.startsWith('missing-')) {
+    if (result.ownerRecipientResolution?.startsWith('missing-')) {
       this.logger.warn(
         `registration self-cancel owner notification skipped activity=${result.activityId} resolution=${result.ownerRecipientResolution}`,
       );

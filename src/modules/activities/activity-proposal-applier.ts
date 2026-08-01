@@ -10,7 +10,7 @@ import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { ActivityPositionAuditRecorder } from './activity-position-audit-recorder';
 import type { ActivityProposalSnapshot } from './activity-proposal.types';
 import { ActivityProposalValidator } from './activity-proposal-validator';
-import { promoteActivityWaitlistAcrossPositions } from './activity-waitlist-promotion';
+import { promoteActivityWaitlistWithinCapacity } from './activity-waitlist-promotion';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -183,10 +183,14 @@ export class ActivityProposalApplier {
     }
 
     const currentById = new Map(currentPositions.map((position) => [position.id, position]));
-    let capacityExpanded =
+    // B-D1 / B-D2（维护者 2026-08-01 拍板）：递补按「哪条队列的名额被放开」分别触发，不做全活动
+    // 一把梭。父容量扩容只在**无 live 岗位**时递补历史无岗位队列（与 Admin `activities.update`
+    // 同口径）；岗位扩容只递补本岗队列。新建岗位不递补 —— 它此刻不可能有候补指向它。
+    const activityCapacityExpanded =
       before.capacity !== snapshot.activity.capacity &&
       (snapshot.activity.capacity === null ||
         (before.capacity !== null && snapshot.activity.capacity > before.capacity));
+    const expandedActivityPositionIds: string[] = [];
     for (const proposal of snapshot.positions) {
       const data = {
         name: proposal.name,
@@ -203,7 +207,6 @@ export class ActivityProposalApplier {
           data: { activityId, ...data },
           select: positionApplySelect,
         });
-        capacityExpanded = true;
         await this.positionAudit.logCreate({
           activityPosition: created,
           actorUserId: actor.id,
@@ -222,7 +225,7 @@ export class ActivityProposalApplier {
         (proposal.capacity === null ||
           (current.capacity !== null && proposal.capacity > current.capacity))
       ) {
-        capacityExpanded = true;
+        expandedActivityPositionIds.push(current.id);
       }
       const changed = Object.entries(data)
         .filter(([field, value]) => {
@@ -266,18 +269,24 @@ export class ActivityProposalApplier {
       });
     }
 
-    const promotion = capacityExpanded
-      ? await promoteActivityWaitlistAcrossPositions({
-          activityId,
-          maxPromotions: null,
-          previousActivityCapacity: before.capacity,
-          actorUserId: actor.id,
-          actorRoleSnap: actor.role,
-          auditMeta,
-          tx,
-          auditLogs: this.auditLogs,
-        })
-      : { activityTitle: updated.title, promoted: [] };
+    // 无 live 岗位的活动，父容量扩容仍递补历史无岗位队列；有 live 岗位则父容量不再触发递补。
+    const promotionTargets: Array<string | null> =
+      activityCapacityExpanded && snapshot.positions.length === 0 ? [null] : [];
+    promotionTargets.push(...expandedActivityPositionIds);
+    const promoted: Array<{ registrationId: string; memberId: string }> = [];
+    for (const activityPositionId of promotionTargets) {
+      const result = await promoteActivityWaitlistWithinCapacity({
+        activityId,
+        activityPositionId,
+        maxPromotions: null,
+        actorUserId: actor.id,
+        actorRoleSnap: actor.role,
+        auditMeta,
+        tx,
+        auditLogs: this.auditLogs,
+      });
+      promoted.push(...result.promoted);
+    }
     const scheduleChanged =
       before.startAt.getTime() !== updated.startAt.getTime() ||
       before.endAt.getTime() !== updated.endAt.getTime() ||
@@ -307,7 +316,7 @@ export class ActivityProposalApplier {
       activityTitle: updated.title,
       initiatorMemberId: identity.initiatorMemberId,
       notificationMemberIds,
-      promoted: promotion.promoted,
+      promoted,
     };
   }
 

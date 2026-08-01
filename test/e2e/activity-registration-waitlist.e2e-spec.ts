@@ -604,7 +604,8 @@ describe('activity registration waitlist', () => {
     );
   });
 
-  it('全局满员时 A pass 取消且 A 无候补 → 跨岗 fallback 递补 B 队首', async () => {
+  // B-D2 翻面用例（原断言「A 无候补 → 跨岗 fallback 递补 B 队首」，2026-08-01 拍板后必须相反）。
+  it('全局满员时 A pass 取消且 A 无候补 → B 岗候补不被带走，名额空着', async () => {
     const activityId = await createActivity(1, 'activity-position-cancel-cross-fallback');
     const activityPositionAId = await createActivityPosition(activityId, 1, '跨岗取消-A');
     const activityPositionBId = await createActivityPosition(activityId, 1, '跨岗取消-B');
@@ -630,10 +631,18 @@ describe('activity registration waitlist', () => {
         where: { id: waitB.id },
         select: { statusCode: true },
       }),
-    ).toEqual({ statusCode: 'pending' });
+    ).toEqual({ statusCode: 'waitlisted' });
+    // 没有递补就不该有 promote audit —— 「谁都没动」必须同时在状态和审计两侧成立。
+    expect(
+      await prisma.auditLog.count({
+        where: { resourceId: waitB.id, event: 'registration.review' },
+      }),
+    ).toBe(0);
   });
 
-  it('父容量 1→2 增加全局 headroom → 跨岗位 FIFO 递补 B 候补', async () => {
+  // B-D1 翻面用例（原断言「父容量扩容 → 跨岗位 FIFO 递补 B」，2026-08-01 拍板后必须相反）：
+  // 有 live 岗位时，Activity.capacity 只是总上限，编辑它不再触发任何递补。
+  it('有 live 岗位时父容量 1→3 不触发递补：B 岗候补保持候补，岗位扩容才递补', async () => {
     const activityId = await createActivity(1, 'activity-parent-capacity-cross-promotion');
     const activityPositionAId = await createActivityPosition(activityId, 1, '父扩容-A');
     const activityPositionBId = await createActivityPosition(activityId, 1, '父扩容-B');
@@ -652,8 +661,29 @@ describe('activity registration waitlist', () => {
       activityPositionBId,
     );
 
-    await activities.update(activityId, { capacity: 2 }, admin, AUDIT_META);
+    // 父容量放到 3（岗位合计 1+1=2 仍在上限内），确保下面岗位扩容不会撞岗位合计闸。
+    await activities.update(activityId, { capacity: 3 }, admin, AUDIT_META);
 
+    expect(
+      await prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: waitB.id },
+        select: { statusCode: true },
+      }),
+    ).toEqual({ statusCode: 'waitlisted' });
+    expect(
+      await prisma.auditLog.count({
+        where: { resourceId: waitB.id, event: 'registration.review' },
+      }),
+    ).toBe(0);
+
+    // 放人的正路仍然通：岗位扩容只递补本岗候补。
+    await activityPositions.update(
+      activityId,
+      activityPositionBId,
+      { capacity: 2 },
+      admin,
+      AUDIT_META,
+    );
     expect(
       await prisma.activityRegistration.findUniqueOrThrow({
         where: { id: waitB.id },
@@ -662,40 +692,48 @@ describe('activity registration waitlist', () => {
     ).toEqual({ statusCode: 'pending' });
   });
 
-  it('跨岗位 fallback 遇 child 已满 → 不错误递补该岗位候补', async () => {
-    const activityId = await createActivity(2, 'activity-position-child-full-fallback');
-    const activityPositionAId = await createActivityPosition(activityId, 1, 'child-full-A');
-    const activityPositionBId = await createActivityPosition(activityId, 1, 'child-full-B');
+  // 历史无岗位候补（报名在先、建岗位在后即可达：`resolveActivityPositionForCreate` 只在报名
+  // 当刻按 live 岗位判 21035，建岗位不回溯既有报名）。B-D2 拍板后这条队列同样是隔离的：
+  // 岗位事件不许把它带走，父容量编辑（有 live 岗位）也不再递补它 —— 滞留是拍板接受的代价。
+  it('历史无岗位候补与岗位队列互不相干：岗位取消与父容量扩容都不递补它', async () => {
+    const activityId = await createActivity(9, 'activity-legacy-null-queue-isolation');
+    const legacyWait = await seedRegistration(
+      activityId,
+      await createMember('legacy-null-wait'),
+      'waitlisted',
+      new Date('2026-07-16T00:00:00.000Z'),
+    );
+    const activityPositionAId = await createActivityPosition(activityId, 1, 'legacy-null-A');
     const passA = await seedRegistration(
       activityId,
-      await createMember('child-full-pass-a'),
+      await createMember('legacy-null-pass-a'),
       'pass',
       undefined,
       activityPositionAId,
     );
-    await seedRegistration(
-      activityId,
-      await createMember('child-full-pass-b'),
-      'pass',
-      undefined,
-      activityPositionBId,
-    );
-    const waitB = await seedRegistration(
-      activityId,
-      await createMember('child-full-wait-b'),
-      'waitlisted',
-      new Date('2026-07-16T00:00:00.000Z'),
-      activityPositionBId,
-    );
 
+    // ① A 岗 pass 取消 → 只看 A 岗队列，历史无岗位候补不被带走。
     await registrations.cancelAdmin(activityId, passA.id, {}, admin, AUDIT_META);
-
     expect(
       await prisma.activityRegistration.findUniqueOrThrow({
-        where: { id: waitB.id },
+        where: { id: legacyWait.id },
         select: { statusCode: true },
       }),
     ).toEqual({ statusCode: 'waitlisted' });
+
+    // ② 有 live 岗位时父容量扩容 → 同样不递补（B-D1）。
+    await activities.update(activityId, { capacity: 20 }, admin, AUDIT_META);
+    expect(
+      await prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: legacyWait.id },
+        select: { statusCode: true },
+      }),
+    ).toEqual({ statusCode: 'waitlisted' });
+    expect(
+      await prisma.auditLog.count({
+        where: { resourceId: legacyWait.id, event: 'registration.review' },
+      }),
+    ).toBe(0);
   });
 
   it('同岗位并发 approve 由 Activity 锁串行化，pass 不超过岗位 capacity', async () => {

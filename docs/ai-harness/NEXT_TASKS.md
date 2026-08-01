@@ -337,7 +337,7 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 - **候选方案**:先盘点所有 SQL/报表/导出/备份消费者,再做 Prisma field 映射过渡或单次 rename + 存量验证;同步 current-state/CODEMAP/留存 SOP 与回滚 SQL。不得先新增第二列长期双写。
 - **触发条件**:外部 BI/报表开始直读该列,或合规审查要求物理字段名也去除“外籍”误述时单独立项。
 
-### P1-26 并发写路径审计 findings 修复 — **6 🔴 + 2 🟡 已修 · A-R2 方案乙 · 整批复审 M1–M6 已收口;剩 S6 三处待拍板**
+### P1-26 并发写路径审计 findings 修复 — **6 🔴 + 2 🟡 已修 · A-R2 方案乙 · 整批复审 M1–M6 已收口 · S6 三处分叉 + GPS 审计口径已按拍板落地(全条关闭)**
 
 - **两份独立审计,同一范围、同一 base(`7b0f5c25`),都 report-only、零 `src/` 改动**:
   - **A · Claude 版** [`concurrency-write-path-audit.md`](../archive/reviews/concurrency-write-path-audit.md) —— **56 落点 / 🔴2 / 🟡2 / 🟢52**;
@@ -406,18 +406,24 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
   已取消活动上的考勤单 records 数不得增长)。修复前「掐断增量②」与巡检两条**都红**。
 - **刻意未做**:`cancel` **不**级联终结既有考勤单(那是方案甲),`pass` 报名也仍留在 `pass`。
 
-##### 🛑 仍待维护者拍板(**AI 不得自行调和**)
+##### ✅ S6 分叉与 GPS 口径已拍板并落地(2026-08-01,维护者「都按推荐」)
 
 1. **S6 四处 canonical/runtime 分叉**(逐处「改文档还是改代码」):
    | # | canonical | runtime | 现状 |
    |---|---|---|---|
    | A-S6 | `handoff/admin-web.md:80` / `miniapp.md:30`:有未撤销考勤记录的报名一定取消不了(21033) | 曾可被 Admin `edit` 并发绕过 | ✅ **已随 K1 核销**(运行时现已兑现文档,文档未改) |
-   | B-D1 | `admin-web.md:73`:有 live Position 时编辑 `Activity.capacity` **不再**触发递补 | `activities.service.ts` 仍算 delta 并调跨岗位递补 | ⏳ 待拍板 |
-   | B-D2 | `admin-web.md:73` / `miniapp.md:108-111`:A 岗释放/扩容只递补 A 岗 | `activity-waitlist-promotion.ts` preferred 队列空后进入其它有余量岗位的全局 FIFO fallback | ⏳ 待拍板 |
-   | B-D3 | `admin-web.md:198,460` / `miniapp.md:65`:只有「取消**已通过**报名」才发 `activity-changed` | pending/pass/waitlisted 自助取消都无条件 enqueue owner intent | ⏳ 待拍板 |
-2. **canonical 缺定义(先补定义再判)**:`attendances/CLAUDE.md:12` 要求所有业务写经 AttendanceAuditRecorder,
-   而 App GPS 签到/签退成功路径直写 `ActivityCheckIn` 不落 AuditLog;`docs/handoff/**` 未定义 GPS 证据写是否豁免。
-- **本次未做**:B-D1/D2/D3 未调和(待拍板)· `cancel` 不级联既有考勤单、`pass` 报名仍留 `pass`(方案乙刻意)· `certificates`/`recruitment`/`auth`/`authz`/限流未碰(goal 禁区)· 零 schema(Migration 恒 67)。
+   | B-D1 | `admin-web.md:73`:有 live Position 时编辑 `Activity.capacity` **不再**触发递补 | `activities.service.ts` 仍算 delta 并调跨岗位递补 | ✅ **按文档改代码** —— 有 live 岗位时 `update` 不再算 delta、不再递补;无岗位活动逐字保持。App change-proposal `applier` 同口径(它原先也全局一把梭) |
+   | B-D2 | `admin-web.md:73` / `miniapp.md:108-111`:A 岗释放/扩容只递补 A 岗 | `activity-waitlist-promotion.ts` preferred 队列空后进入其它有余量岗位的全局 FIFO fallback | ✅ **按文档改代码** —— fallback 整体删除;`promoteActivityWaitlist` 成为全仓唯一出队循环，capacity 版只多算预算后委托它 |
+   | B-D3 | `admin-web.md:198,460` / `miniapp.md:65`:只有「取消**已通过**报名」才发 `activity-changed` | pending/pass/waitlisted 自助取消都无条件 enqueue owner intent | ✅ **按文档改代码** —— `cancelMy` 只在 `pass` 时 enqueue;取消 pass 的 intent 形状逐字不变 |
+2. **canonical 缺定义 → 已定义并落执行位**:签到/签退**成功豁免** AuditLog(事实记录 = `ActivityCheckIn` 行本身),
+   **管理端改/删必审**。定义已写入 `docs/handoff/miniapp.md` + `admin-web.md` 与 `attendances/CLAUDE.md`。
+   **sweep 结论:`ActivityCheckIn` 全仓恰 2 处写调用,都在 `app-activity-check-ins.service.ts`(自助 create / updateMany);
+   管理端零写路径**(只经 `activity-check-in-query.service.ts` 只读)—— 故**无审计缺口可补,AuditLogEvent 恒 132 不变(+0)**。
+   两侧执行位:豁免钉在 `app-activity-check-ins.e2e-spec.ts`(合法打卡前后 `auditLog.count()` 不变,**本就已存在**);
+   写路径集合钉在新增 `activity-check-in-audit-policy.spec.ts`(出现第三处写调用或裸 SQL 写即红,已用一次性探针实测触发)。
+- **本次未做**:`cancel` 不级联既有考勤单、`pass` 报名仍留 `pass`(方案乙刻意)· `certificates`/`recruitment`/`auth`/`authz`/限流未碰(goal 禁区)· 零 schema(Migration 恒 67)。
+- **S6 收口刀本次未做**:有 live 岗位活动上的**历史无岗位候补会滞留**(拍板接受:队员可自行取消后重报并选岗，21035 会逼他选)——
+  不做存量数据订正,也不新开"手动安排候补"端点(本仓「候补不开手动端点」铁律未松)。`activity-positions.service.ts` 的岗位扩容递补**本就只认本岗**,零改动。
 
 ##### 整批复审收口 M1–M6(2026-08-01;两份独立评审去重 6 P1 + 2 P2,无 P0)
 
