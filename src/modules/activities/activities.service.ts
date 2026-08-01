@@ -32,10 +32,7 @@ import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { deriveEffectiveActivityCapacity } from './activity-capacity';
 import { ACTIVITY_PHASE_ENDED, deriveActivityPhase } from './activity-phase';
 import { ActivityStateMachine } from './activity-state-machine';
-import {
-  promoteActivityWaitlist,
-  promoteActivityWaitlistAcrossPositions,
-} from './activity-waitlist-promotion';
+import { promoteActivityWaitlist } from './activity-waitlist-promotion';
 import { ActivityInitiationPolicy } from './activity-initiation-policy';
 import { ActivityNotificationProducer } from './activity-notification-producer';
 import { ActivityPublishReviewService } from './activity-publish-review.service';
@@ -758,7 +755,6 @@ export class ActivitiesService {
       );
 
       let waitlistPromotionLimit: number | null | undefined;
-      let promoteAcrossActivityPositions = false;
       if (dto.capacity !== undefined) {
         // delta / live 岗位 / passCount 基线都必须在 Activity 聚合锁后读取；否则并发 / 重试
         // 可能各自按陈旧 capacity 计算递补 delta，或在岗位形态已变化时仍沿 Activity.capacity 判闸。
@@ -793,8 +789,11 @@ export class ActivitiesService {
         ) {
           throw new BizException(BizCode.ACTIVITY_CAPACITY_INVALID);
         }
-        promoteAcrossActivityPositions = locked.activityPositions.length > 0;
-        if (locked.capacity !== null) {
+        // B-D1（维护者 2026-08-01 拍板）：名额语义在岗位上，`Activity.capacity` 只是总上限 ——
+        // 有 live 岗位时编辑它**不触发递补**，放人走岗位名额那条路（岗位扩容只递补本岗候补）。
+        // 无 live 岗位活动的扩容递补行为逐字保持：调大按 delta、改无限递补全部、缩容不递补。
+        const hasLiveActivityPositions = locked.activityPositions.length > 0;
+        if (!hasLiveActivityPositions && locked.capacity !== null) {
           if (dto.capacity === null) {
             waitlistPromotionLimit = null;
           } else if (dto.capacity > locked.capacity) {
@@ -866,27 +865,16 @@ export class ActivitiesService {
 
       const promotion =
         waitlistPromotionLimit !== undefined
-          ? promoteAcrossActivityPositions
-            ? await promoteActivityWaitlistAcrossPositions({
-                activityId: current.id,
-                maxPromotions: waitlistPromotionLimit,
-                previousActivityCapacity: current.capacity,
-                actorUserId: currentUser.id,
-                actorRoleSnap: currentUser.role,
-                auditMeta,
-                tx,
-                auditLogs: this.auditLogs,
-              })
-            : await promoteActivityWaitlist({
-                activityId: current.id,
-                activityPositionId: null,
-                maxPromotions: waitlistPromotionLimit,
-                actorUserId: currentUser.id,
-                actorRoleSnap: currentUser.role,
-                auditMeta,
-                tx,
-                auditLogs: this.auditLogs,
-              })
+          ? await promoteActivityWaitlist({
+              activityId: current.id,
+              activityPositionId: null,
+              maxPromotions: waitlistPromotionLimit,
+              actorUserId: currentUser.id,
+              actorRoleSnap: currentUser.role,
+              auditMeta,
+              tx,
+              auditLogs: this.auditLogs,
+            })
           : { activityTitle: updated.title, promoted: [] };
 
       const scheduleChanged =

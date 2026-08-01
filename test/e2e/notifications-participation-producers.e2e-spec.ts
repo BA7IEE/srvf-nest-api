@@ -605,7 +605,8 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
         where: { id: cancelling.memberId },
         data: { memberNo: 'LOCAL-001', displayName: '本地队员甲' },
       });
-      const registrationId = await seedRegistration(activityId, cancelling.memberId, 'pending');
+      // B-D3 起只有取消**已通过**报名才通知负责人；用 pass 才测得到收件人解析本身。
+      const registrationId = await seedRegistration(activityId, cancelling.memberId, 'pass');
       const cancellingPayload = {
         id: cancelling.userId,
         username: 's4_cancel_label_legacy',
@@ -659,6 +660,70 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
       ).toMatchObject({ statusCode: 'cancelled' });
     });
 
+    // B-D3（维护者 2026-08-01 拍板）：只有取消**已通过**报名才通知负责人。
+    // 修复前 pending / waitlisted 自助取消同样会 enqueue 一条 owner intent（本用例两条断言均红）。
+    it('B-D3 降噪：pending / waitlisted 自助取消零 owner intent，pass 取消仍恰一条', async () => {
+      const activityId = await seedActivity('自助取消降噪');
+      await prisma.activity.update({
+        where: { id: activityId },
+        data: { publishedBy: alice.userId },
+      });
+
+      for (const statusCode of ['pending', 'waitlisted']) {
+        const label = `s4_denoise_${statusCode}`;
+        const member = await makeMember(label);
+        const registrationId = await seedRegistration(activityId, member.memberId, statusCode);
+
+        await registrations.cancelMy(
+          registrationId,
+          {},
+          {
+            id: member.userId,
+            username: label,
+            role: Role.USER,
+            status: UserStatus.ACTIVE,
+            memberId: member.memberId,
+          },
+          AUDIT_META,
+        );
+
+        // 取消本身照常成交，只是不再打扰负责人。
+        expect(
+          await prisma.activityRegistration.findUniqueOrThrow({ where: { id: registrationId } }),
+        ).toMatchObject({ statusCode: 'cancelled' });
+        expect(
+          await prisma.notificationOutboxIntent.count({ where: { aggregateId: registrationId } }),
+        ).toBe(0);
+      }
+
+      // 回归锁:取消 pass 的行为逐字不变 —— 仍恰一条，且 eventKey / 目标形状不变。
+      const passMember = await makeMember('s4_denoise_pass');
+      const passRegistrationId = await seedRegistration(activityId, passMember.memberId, 'pass');
+      await registrations.cancelMy(
+        passRegistrationId,
+        {},
+        {
+          id: passMember.userId,
+          username: 's4_denoise_pass',
+          role: Role.USER,
+          status: UserStatus.ACTIVE,
+          memberId: passMember.memberId,
+        },
+        AUDIT_META,
+      );
+      const intents = await prisma.notificationOutboxIntent.findMany({
+        where: { aggregateId: passRegistrationId },
+      });
+      expect(intents).toHaveLength(1);
+      expect(intents[0]).toMatchObject({
+        eventKey: expect.stringMatching(new RegExp(`^registration-cancel:${passRegistrationId}:`)),
+        eventType: 'notification.targeted',
+        aggregateType: 'activity_registration',
+        destinationType: 'member',
+        destinationRef: alice.memberId,
+      });
+    });
+
     it('gate=true：cancelMy 只通知 ACTIVE owner，不向 publishedBy fallback', async () => {
       config.activityResponsibilityWorkflow.enabled = true;
       const activityId = await seedActivity('责任模型自助退出');
@@ -683,7 +748,8 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
         where: { id: cancelling.memberId },
         data: { memberNo: 'LOCAL-002', displayName: '本地队员乙' },
       });
-      const registrationId = await seedRegistration(activityId, cancelling.memberId, 'pending');
+      // B-D3 起只有取消**已通过**报名才通知负责人；用 pass 才测得到收件人解析本身。
+      const registrationId = await seedRegistration(activityId, cancelling.memberId, 'pass');
 
       await registrations.cancelMy(
         registrationId,
@@ -742,7 +808,9 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
         where: { id: activityId },
         data: { publishedBy: alice.userId },
       });
-      const registrationId = await seedRegistration(activityId, bob.memberId, 'pending');
+      // B-D3 起只有取消**已通过**报名才进入收件人解析；pending 会在更早一步就被降噪拦掉，
+      // 那样这条用例就测不到「缺 owner / 缺 publisher 时零 intent」这个真正的判据了。
+      const registrationId = await seedRegistration(activityId, bob.memberId, 'pass');
 
       await registrations.cancelMy(
         registrationId,
@@ -774,7 +842,9 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
 
     it('gate=false 无 legacy publisher：取消照常提交且零 intent', async () => {
       const activityId = await seedActivity('缺失 publisher 的自助退出');
-      const registrationId = await seedRegistration(activityId, bob.memberId, 'pending');
+      // B-D3 起只有取消**已通过**报名才进入收件人解析；pending 会在更早一步就被降噪拦掉，
+      // 那样这条用例就测不到「缺 owner / 缺 publisher 时零 intent」这个真正的判据了。
+      const registrationId = await seedRegistration(activityId, bob.memberId, 'pass');
 
       await registrations.cancelMy(
         registrationId,
