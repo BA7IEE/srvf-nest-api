@@ -124,7 +124,32 @@ Invalid Date,「先 new Date 再判 NaN」这种写法拦不住。
 
 ---
 
-#### 🔴 第五轮独立评审:J1 / J3 PASS,**J2 FAIL** → 棘轮加固已交付(`main@99e7d8ca` 起 K1–K3)
+#### 🔴 整批评审(M 批次 + 企微 T1/T2,`b99548bf..43f63624`)未通过 —— 5 P1 已复现,拆 R / W 两 goal 修复
+
+**双 PASS 先记账**:**M 并发运行时收口全过**(markGate/evaluate 锁序、入队唯一闸、finalApprove 批量化+RC+有界等待、
+edit 状态机执行位 —— 0 P0 0 P1)· **企微 T1 schema 全过**(身份不进 User.openid、双 partial unique、
+hash-only 凭证、singleton、additive 第 68 migration)。**业务运行时首次两批同轮零 finding。**
+
+**5 P1(主会话逐条复现属实,含探针实测)**:
+
+| # | 归属 | 机制(已验) | 修复归 |
+|---|---|---|---|
+| ① | M 棘轮 | 裁判只冻结 ratchet **id**,同 id 可换 `baseline/rule/symbolShape` 载体(judge 无四元组比较,grep 证实) | R |
+| ② | M 规则 | controller 里 `// eslint-disable-next-line srvf/no-param-id-string` **有效**(noInlineConfig 只盖 DTO;探针 0 命中无警告);`CV['IsOptional']` 计算属性与 `const X = CV.IsOptional` 中转不识别(探针 0 命中) | R |
+| ③ | 企微 T2 | `updateSettings` **锁前读、锁后不复读**(`:97` 读→`:109` 锁→`:115` 用锁前值)⇒ 并发可写出 `enabled=false + loginEnabled=true` —— **正是并发审计 S1 形状在全新代码里重生** | W |
+| ④ | 企微 T2 | `agent/get` 解析用默认值兜底:**`errcode` 缺失默认 0(=成功,比报告更糟)**、`agentid` 缺失填本地配置 ⇒ 上游返回 `{}` 也算"连接正常" | W |
+| ⑤ | 企微 T2 | `WecomRealProvider` 是 @Injectable 单例却 `this.settings = settings`(`:86`,注释自承)⇒ 并发请求串配置快照;**注释称镜像 wechat provider —— 同形状需顺查** | W |
+
+**P2**:lock_timeout 4s 与事务 ~5s 预算之间缺「等 3.8s 后跑完整 200 人终审」的临界证据(归 R)。
+
+**教训(比 findings 值钱)**:③⑤ 说明**形状表没有进入新代码的出生检查** —— S1 清了三轮,新模块第一版又写出来。
+R/W 两 goal 的 DoD 均含「对照 S1–S7 形状表自审并留记录」;长期解法是把形状表挂进 goal 模板。
+
+---
+
+<details><summary>第五轮(J2 棘轮加固,已交付并经本轮复核 —— 本轮 ① ② 是其纵深遗留)</summary>
+
+#### 第五轮独立评审:J1 / J3 PASS,**J2 FAIL** → 棘轮加固已交付(`main@99e7d8ca` 起 K1–K3)
 
 **J1 / J3 复核通过**:运行时 null 契约已全关闭,注释与执行位已对齐 —— 这两条不再是 open 项。
 
@@ -319,7 +344,9 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 - **⚠️ 跨仓破坏性变更**:门槛 `redCross` / `bsafe` 从「可人工标记」变为 **Claim 的只读派生投影**,`markThreshold` 传这两个 code 将返回业务错误(当前二者在 [`recruitment.constants.ts`](../../src/modules/recruitment/recruitment.constants.ts) `THRESHOLD_CODES` 中与 `patrol1/patrol2/training` 平级)。**`srvf-admin-web` 若已有该按钮,须同批适配**,不得等上线才发现。
 - **档位**:C/D 混合;schema / migration / Permission seed / AuditLogEvent / 敏感读语义均须维护者红区授权。**每个 PR 开工前先跑 `pnpm harness:needs <写集>`**,把授权凑成一次请求。
 
-### P1-25 企业微信接入(身份入口 + 工作台入口 + 通知通道) — **🟡 已冻结,排在 P1-24 之后**
+</details>
+
+### P1-25 企业微信接入(身份入口 + 工作台入口 + 通知通道) — **T1+T2 已合入(#863),T1 schema 已过整批评审;T2 三条 P1 归 W goal**
 - **冻结评审稿**:[`archive/reviews/wecom-integration-t0-terminal-review.md`](../archive/reviews/wecom-integration-t0-terminal-review.md)(2026-07-29 维护者「按推荐」整体冻结 `D-WC-1..31`)。
 - **终态**:单企业、单自建应用 Agent;`WecomIdentity → User → Member → SRVF Authz`;消息只走既有 Notification Outbox。**企业微信只回答「你是谁」,SRVF 继续回答「你能做什么」**。
 - **拆分**:T0(冻结,本 PR 完成)→ T1(schema expand-only)→ T2(通道层 + 设置 + 连接诊断)→ T3(OAuth 登录/绑定/换绑/管理员清除)→ T4(User 生命周期闭环)→ T5A(受众判定重构,行为保持)→ T5B(WeCom 消息通道)→ T6(runbook + 10–30 人分层试点)。
