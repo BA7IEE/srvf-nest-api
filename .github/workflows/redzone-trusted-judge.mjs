@@ -254,6 +254,34 @@ export function judgeRegistryMonotonicity(baseText, headText) {
 }
 
 /**
+ * 注册表裁决 → **该报哪一种失败**(纯函数,自测直接喂 verdict)。
+ *
+ * 为什么把 if 链抽成函数:上一版 main() 里写的是
+ *   `if (!verdict.ok) failHard('被削减' …)` ; `if (verdict.mutated.length) failHard('换了载体' …)`
+ * 而 `ok` 在 removed **或** mutated 非空时都为 false —— 于是**换载体**的失败
+ * 一头撞进「被削减」那条分支,`process.exit(1)` 之后第二条根本到不了。
+ * 2026-08-01 的一次性对抗 PR([#870](https://github.com/BA7IEE/srvf-nest-api/pull/870))
+ * 实测打印出 **`head 少了 0 条:`** —— 一句自相矛盾的话:门是关住了(fail-closed 没错),
+ * 但 operator 拿到的是错误诊断,而「守护说的话和它实际判的事不是一回事」正是本仓
+ * 反复抓的那一类(注释≠执行位的同族)。
+ *
+ * ⚠️ 这个缺陷**只有真触发抓得到**:纯函数 `judgeRegistryMonotonicity` 的返回值一直是对的,
+ * 自测断言的也正是它 —— 漏掉的是 main() 里的**分支选择**。抽成纯函数就是为了让
+ * 那段选择本身也有阳性对照,不必再靠开一个对抗 PR 才发现。
+ *
+ * 排序语义:removed / deleted 比 mutated **更根本**(条目都没了就谈不上载体换没换),
+ * 两者同时出现时报前者。
+ *
+ * @param {{ deleted: boolean, removed: string[], mutated: unknown[] }} verdict
+ * @returns {'removed' | 'mutated' | null}
+ */
+export function registryFailureKind(verdict) {
+  if (verdict.deleted || verdict.removed.length > 0) return 'removed';
+  if (verdict.mutated.length > 0) return 'mutated';
+  return null;
+}
+
+/**
  * 「同一条 rule 的豁免**并集**只减不增」(R1 顺带关闭的平行绕过)。
  *
  * 为什么光冻结四元组还不够:上面明确**允许新增全新 id** —— 那是必须允许的,
@@ -461,7 +489,11 @@ function main() {
     } catch (err) {
       failClosed(`棘轮注册表无法判定:${String(err)}`);
     }
-    if (!registryVerdict.ok) {
+    // ⚠️ 判的是 registryFailureKind(verdict),**不是** `!verdict.ok` ——
+    //    `ok` 在 removed 与 mutated 任一非空时都为 false,写成 `!ok` 会让「换载体」
+    //    一头撞进下面这条「被削减」分支,打印出 `head 少了 0 条:`(#870 实测)。
+    const registryFailure = registryFailureKind(registryVerdict);
+    if (registryFailure === 'removed') {
       failHard('棘轮注册表被削减:登记只可增不可删', [
         `判据:${RATCHET_REGISTRY_REL_PATH}(base 的 ratchets[].id 必须全部仍在 head)`,
         registryVerdict.deleted
@@ -474,7 +506,7 @@ function main() {
         '⚠️ 本失败**不能由 harness-review 审批覆盖**(scan 失败 ⇒ 审批 job 直接被跳过)。',
       ]);
     }
-    if (registryVerdict.mutated.length > 0) {
+    if (registryFailure === 'mutated') {
       failHard('棘轮登记被换了载体:既有 id 的 baseline / rule / symbolShape 逐字冻结', [
         `判据:${RATCHET_REGISTRY_REL_PATH}(base 里每个 id 的四元组必须在 head 上逐字不变)`,
         `本 PR 改动了 ${registryVerdict.mutated.length} 处:`,
