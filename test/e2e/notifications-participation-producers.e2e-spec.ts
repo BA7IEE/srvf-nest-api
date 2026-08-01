@@ -1549,12 +1549,19 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
           contributionPoints: 1,
         },
       ]);
-      const enqueue = outbox.enqueue.bind(outbox);
-      const spy = jest.spyOn(outbox, 'enqueue').mockImplementation((input, client) => {
-        if (input.eventKey === `team-join-contribution-met:${application.id}:5`) {
+      // M3:终审两条 intent 都改走批量 enqueueMany(恒 2 次 SQL,与条数无关),
+      // 所以打桩位置随之下移;**回滚不变式一字不动** —— 任一 intent 写失败,
+      // 终审、audit 与已写的普通 intent 必须整体回滚。
+      const enqueueMany = outbox.enqueueMany.bind(outbox);
+      const spy = jest.spyOn(outbox, 'enqueueMany').mockImplementation((inputs, client) => {
+        if (
+          inputs.some(
+            (input) => input.eventKey === `team-join-contribution-met:${application.id}:5`,
+          )
+        ) {
           return Promise.reject(new Error('milestone intent insert failed'));
         }
-        return enqueue(input, client);
+        return enqueueMany(inputs, client);
       });
       try {
         await expect(
@@ -1652,8 +1659,9 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
       const activityId = await seedActivity('考勤 intent 回滚');
       const sheetId = await seedSheetPendingFinal(activityId, [alice.memberId]);
 
+      // M3:同上,终审侧的 enqueue 已批量化,打桩位置随之下移。
       const spy = jest
-        .spyOn(outbox, 'enqueue')
+        .spyOn(outbox, 'enqueueMany')
         .mockRejectedValue(new Error('attendance intent insert failed'));
       try {
         await expect(

@@ -8,7 +8,10 @@ import { eventPlaceholder } from '../../common/event/event-placeholder';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
-import { lockMembersForWrite } from '../../common/prisma/member-advisory-lock.util';
+import {
+  lockMembersForWrite,
+  runMemberLinearizedTransaction,
+} from '../../common/prisma/member-advisory-lock.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
@@ -749,7 +752,8 @@ export class AttendancesService {
       type: 'activity',
       id: activityId,
     });
-    return this.prisma.$transaction(async (tx) => {
+    // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
+    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
       // 1. 与 pass cancel / GPS check-in 统一 Activity → Registration 锁序。
       // managed 以 FOR UPDATE 与责任撤销/移交串行并锁后重读 capability；Admin 默认仍用 FOR SHARE。
       if (authorization === 'managed') {
@@ -1243,7 +1247,8 @@ export class AttendancesService {
       type: 'attendance_sheet',
       id,
     });
-    return this.prisma.$transaction(async (tx) => {
+    // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
+    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
       // K1(S7 收口):Activity 聚合锁**两条 surface 都取**,不再只有 managed 分支取。
       // managed 面必须在暴露 Sheet 存在性之前先判权,所以它按 managedActivityId 先锁再判权;
       // Admin 面没有这道前置,读到 Sheet 后按其 activityId 取同一把锁。
@@ -1722,7 +1727,8 @@ export class AttendancesService {
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
     await this.assertFinalReviewAuthzOrThrow(currentUser, 'attendance.final-approve.sheet', id);
-    return this.prisma.$transaction(async (tx) => {
+    // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
+    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
       const finalApproveTransition = this.sheetStateMachine.decide(
@@ -2075,7 +2081,8 @@ export class AttendancesService {
     const reason = dto.reason.trim();
     if (reason.length === 0) throw new BizException(BizCode.BAD_REQUEST);
 
-    return this.prisma.$transaction(async (tx) => {
+    // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
+    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
       const reopenTransition = this.sheetStateMachine.decide('reopen', sheet.statusCode);
       if (!reopenTransition.allowed) throw new BizException(reopenTransition.biz);

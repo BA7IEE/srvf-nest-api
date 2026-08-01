@@ -9,7 +9,27 @@ function makeOutboxMock() {
     enqueue: jest
       .fn<Promise<{ id: string }>, [NotificationOutboxEnqueueInput, Prisma.TransactionClient]>()
       .mockResolvedValue({ id: 'intent-1' }),
+    // M3:终审两条路径改走批量 enqueue(恒 2 次 SQL,与条数无关);
+    // 退回通知仍是逐条 enqueue(收件人数天然有界,不是 N+1 热点)。
+    enqueueMany: jest
+      .fn<
+        Promise<Array<{ id: string }>>,
+        [readonly NotificationOutboxEnqueueInput[], Prisma.TransactionClient]
+      >()
+      .mockResolvedValue([{ id: 'intent-1' }]),
   };
+}
+
+/** 把批量调用摊平成「逐条 (input, client)」,让断言保持与逐条时代同形。 */
+function flatEnqueued(
+  outbox: ReturnType<typeof makeOutboxMock>,
+): Array<[NotificationOutboxEnqueueInput, Prisma.TransactionClient]> {
+  return outbox.enqueueMany.mock.calls.flatMap(([inputs, client]) =>
+    inputs.map((input): [NotificationOutboxEnqueueInput, Prisma.TransactionClient] => [
+      input,
+      client,
+    ]),
+  );
 }
 
 function makeTxMock() {
@@ -24,7 +44,7 @@ function makeTxMock() {
       findMany: jest.fn().mockResolvedValue([]),
     },
     teamJoinApplication: {
-      findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     attendanceRecord: {
       findMany: jest.fn().mockResolvedValue([]),
@@ -32,8 +52,10 @@ function makeTxMock() {
   };
 }
 
-function contributionRecord(day: string, points: string | number) {
+function contributionRecord(day: string, points: string | number, memberId = 'member-1') {
   return {
+    // 批量版按 memberId 分组,所以合成记录必须带上它(逐人查询时不需要)。
+    memberId,
     checkInAt: new Date(`${day}T01:00:00.000Z`),
     contributionPoints: new Prisma.Decimal(points),
   };
@@ -129,25 +151,27 @@ describe('AttendanceNotificationProducer', () => {
       contributionThresholdSnapshots: [],
     });
 
-    expect(outbox.enqueue).toHaveBeenCalledTimes(2);
-    expect(outbox.enqueue.mock.calls.map(([input]) => input.eventKey)).toEqual([
+    // 两条 record ⇒ 两条 intent,但只有**一次**批量调用(M3 的判据就在这里)。
+    expect(outbox.enqueueMany).toHaveBeenCalledTimes(1);
+    const enqueued = flatEnqueued(outbox);
+    expect(enqueued.map(([input]) => input.eventKey)).toEqual([
       `attendance-final:sheet-2:${finalReviewedAt.toISOString()}:record-1`,
       `attendance-final:sheet-2:${finalReviewedAt.toISOString()}:record-2`,
     ]);
     expect(
-      outbox.enqueue.mock.calls.map(
+      enqueued.map(
         ([input]) => (input.payload as unknown as { recipientMemberId: string }).recipientMemberId,
       ),
     ).toEqual(['member-1', 'member-1']);
+    for (const [, client] of enqueued) expect(client).toBe(tx);
   });
 
   it('终审前按 member 去重并快照最新 joining application 的真实 capped before', async () => {
     const outbox = makeOutboxMock();
     const tx = makeTxMock();
-    tx.teamJoinApplication.findFirst.mockResolvedValue({
-      id: 'application-1',
-      cycle: { year: 2027 },
-    });
+    tx.teamJoinApplication.findMany.mockResolvedValue([
+      { id: 'application-1', memberId: 'member-1', cycle: { year: 2027 } },
+    ]);
     tx.attendanceRecord.findMany.mockResolvedValue([
       contributionRecord('2026-08-01', 3),
       contributionRecord('2026-08-02', 1),
@@ -161,12 +185,15 @@ describe('AttendanceNotificationProducer', () => {
       [{ memberId: 'member-1' }, { memberId: 'member-1' }],
     );
 
-    expect(tx.teamJoinApplication.findFirst).toHaveBeenCalledTimes(1);
-    expect(tx.teamJoinApplication.findFirst).toHaveBeenCalledWith({
-      where: { memberId: 'member-1', statusCode: 'joining', deletedAt: null },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, cycle: { select: { year: true } } },
+    // M3:整批人**一次** findMany,而不是每人一次 findFirst。
+    expect(tx.teamJoinApplication.findMany).toHaveBeenCalledTimes(1);
+    expect(tx.teamJoinApplication.findMany).toHaveBeenCalledWith({
+      where: { memberId: { in: ['member-1'] }, statusCode: 'joining', deletedAt: null },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { id: true, memberId: true, cycle: { select: { year: true } } },
     });
+    // 贡献值也是一次(同 cycleYear 一次),不随人数增长。
+    expect(tx.attendanceRecord.findMany).toHaveBeenCalledTimes(1);
     expect(snapshots).toHaveLength(1);
     expect(snapshots[0]).toMatchObject({
       applicationId: 'application-1',
@@ -217,8 +244,9 @@ describe('AttendanceNotificationProducer', () => {
       ],
     });
 
-    expect(outbox.enqueue).toHaveBeenCalledTimes(2);
-    expect(outbox.enqueue.mock.calls[1][0]).toEqual({
+    const enqueued = flatEnqueued(outbox);
+    expect(enqueued).toHaveLength(2);
+    expect(enqueued[1][0]).toEqual({
       eventKey: 'team-join-contribution-met:application-1:5',
       eventType: 'notification.targeted',
       payloadVersion: 1,
@@ -265,8 +293,9 @@ describe('AttendanceNotificationProducer', () => {
       ],
     });
 
-    expect(outbox.enqueue).toHaveBeenCalledTimes(1);
-    expect(outbox.enqueue.mock.calls[0][0]).toMatchObject({
+    const enqueued = flatEnqueued(outbox);
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0][0]).toMatchObject({
       eventKey: `attendance-final:sheet-2:${finalReviewedAt.toISOString()}:record-1`,
     });
   });
@@ -304,8 +333,9 @@ describe('AttendanceNotificationProducer', () => {
     await producer.enqueueFinalApproved(tx as unknown as Prisma.TransactionClient, input);
     await producer.enqueueFinalApproved(tx as unknown as Prisma.TransactionClient, input);
 
-    expect(outbox.enqueue).toHaveBeenCalledTimes(6);
-    const milestones = outbox.enqueue.mock.calls
+    const enqueued = flatEnqueued(outbox);
+    expect(enqueued).toHaveLength(6);
+    const milestones = enqueued
       .map(([candidate]) => candidate)
       .filter(
         (candidate) =>

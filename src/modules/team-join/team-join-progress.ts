@@ -33,28 +33,25 @@ export interface ContributionResult {
 //   - Date  → 仅计 checkInAt < cutoff 的记录(入队 gate「本轮 3-31 截至」语义,team-join 调用方传入)
 //   - null  → 不设上界,**生涯累计**(admin 队员贡献汇总,无入队年 cutoff)
 // **禁裸 SUM**:任何贡献值总分都必须走本函数的北京日分组封顶,绕过会算多(超 3/日)。
-export async function computeCappedContribution(
-  client: PrismaService | Prisma.TransactionClient,
-  memberId: string,
-  cutoff: Date | null,
-): Promise<Prisma.Decimal> {
-  const records = await client.attendanceRecord.findMany({
-    where: {
-      memberId,
-      deletedAt: null,
-      ...(cutoff ? { checkInAt: { lt: cutoff } } : {}),
-      sheet: { statusCode: ATTENDANCE_SHEET_STATUS_APPROVED, deletedAt: null },
-    },
-    select: { checkInAt: true, contributionPoints: true },
-  });
-  // 按北京日历日分组求和(null 贡献值按 0 计)。
+interface ContributionRecordRow {
+  checkInAt: Date;
+  contributionPoints: Prisma.Decimal | null;
+}
+
+/**
+ * 封顶核的**纯函数**部分:按北京日历日分组求和 → 每日封顶 → 再加总。
+ *
+ * 单人版与批量版都必须经过这里。抽出来的唯一理由是 M3 要把逐人查询批量化,
+ * 而本目录 CLAUDE.md 明文禁止「复制 cap 算法或用原始分反推」—— 两份实现迟早读数不同,
+ * 而贡献值差 0.5 分就是「够不够 5 分入队」的分界。
+ */
+function capByBeijingDay(records: readonly ContributionRecordRow[]): Prisma.Decimal {
   const dayTotals = new Map<number, Prisma.Decimal>();
   for (const r of records) {
     const day = beijingDayNumber(r.checkInAt);
     const prev = dayTotals.get(day) ?? new Prisma.Decimal(0);
     dayTotals.set(day, prev.add(r.contributionPoints ?? new Prisma.Decimal(0)));
   }
-  // 每日总和封顶在全局上限,再加总。
   let points = new Prisma.Decimal(0);
   for (const daySum of dayTotals.values()) {
     const capped = daySum.greaterThan(GLOBAL_DAILY_CONTRIBUTION_CAP)
@@ -63,6 +60,63 @@ export async function computeCappedContribution(
     points = points.add(capped);
   }
   return points;
+}
+
+function approvedRecordsWhere(
+  memberId: string | { in: readonly string[] },
+  cutoff: Date | null,
+): Prisma.AttendanceRecordWhereInput {
+  return {
+    memberId: typeof memberId === 'string' ? memberId : { in: [...memberId.in] },
+    deletedAt: null,
+    ...(cutoff ? { checkInAt: { lt: cutoff } } : {}),
+    sheet: { statusCode: ATTENDANCE_SHEET_STATUS_APPROVED, deletedAt: null },
+  };
+}
+
+export async function computeCappedContribution(
+  client: PrismaService | Prisma.TransactionClient,
+  memberId: string,
+  cutoff: Date | null,
+): Promise<Prisma.Decimal> {
+  const records = await client.attendanceRecord.findMany({
+    where: approvedRecordsWhere(memberId, cutoff),
+    select: { checkInAt: true, contributionPoints: true },
+  });
+  return capByBeijingDay(records);
+}
+
+/**
+ * 批量版(M3):**一次** SQL 取回整批人的 approved 记录,在内存里按人分组后走同一个封顶核。
+ *
+ * 为什么必须批量:考勤终审的每条 record 都要一次 before 与一次 after 贡献值快照,
+ * 逐人查在 200 人的考勤单上就是 400 次往返 —— 加上逐条 outbox,整个事务约 1000+ 次 SQL,
+ * 直接把 Prisma 默认 5s 交互事务预算跑穿(评审实测)。调大 timeout 只是把锁持有得更久,
+ * 让 convoy 更严重,所以刀口只能落在查询次数上。
+ *
+ * 返回的 Map 对**每一个**入参 memberId 都有值(无记录者为 0),调用方不必再补默认值。
+ */
+export async function computeCappedContributionBatch(
+  client: PrismaService | Prisma.TransactionClient,
+  memberIds: readonly string[],
+  cutoff: Date | null,
+): Promise<Map<string, Prisma.Decimal>> {
+  const unique = [...new Set(memberIds)];
+  const result = new Map<string, Prisma.Decimal>(unique.map((id) => [id, new Prisma.Decimal(0)]));
+  if (unique.length === 0) return result;
+
+  const records = await client.attendanceRecord.findMany({
+    where: approvedRecordsWhere({ in: unique }, cutoff),
+    select: { memberId: true, checkInAt: true, contributionPoints: true },
+  });
+  const byMember = new Map<string, ContributionRecordRow[]>();
+  for (const r of records) {
+    const list = byMember.get(r.memberId);
+    if (list) list.push(r);
+    else byMember.set(r.memberId, [r]);
+  }
+  for (const [memberId, rows] of byMember) result.set(memberId, capByBeijingDay(rows));
+  return result;
 }
 
 // 入队三期(招新)贡献值只读汇总:封顶核 + 入队年 3-31 cutoff + ≥5 gate 判定。
@@ -75,6 +129,29 @@ export async function computeContribution(
 ): Promise<ContributionResult> {
   const points = await computeCappedContribution(client, memberId, contributionCutoff(cycleYear));
   return { points, satisfied: points.gte(CONTRIBUTION_THRESHOLD) };
+}
+
+/**
+ * 批量版(M3):同一个 cycleYear 下的一批队员,**一次** SQL 算完。
+ * cutoff 随 cycleYear 变,所以调用方必须先按年分组再调 —— 实践中终审单里的候选人
+ * 几乎总落在同一轮,分组后通常只有一次查询。
+ */
+export async function computeContributionBatch(
+  client: PrismaService | Prisma.TransactionClient,
+  memberIds: readonly string[],
+  cycleYear: number,
+): Promise<Map<string, ContributionResult>> {
+  const points = await computeCappedContributionBatch(
+    client,
+    memberIds,
+    contributionCutoff(cycleYear),
+  );
+  return new Map(
+    [...points].map(([memberId, value]) => [
+      memberId,
+      { points: value, satisfied: value.gte(CONTRIBUTION_THRESHOLD) },
+    ]),
+  );
 }
 
 const GENERAL_GATE_SET = new Set<string>(GENERAL_GATE_CODES);

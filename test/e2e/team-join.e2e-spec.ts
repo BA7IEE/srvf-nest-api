@@ -971,10 +971,13 @@ describe('招新三期(入队)admin 面 e2e', () => {
     try {
       await withTimeout(reachedPromise, 'team-join evaluate root blocker', BLOCKER_TIMEOUT_MS);
       first = Promise.resolve(evaluateVia(app, appId, firstApproved));
+      // ⚠️ 观测点随 M1 翻面(**只挪观测点,下面的结果断言一字不动**):
+      // evaluate 的行锁由 claimAtStatus 的 `FOR NO KEY UPDATE` 换成
+      // lockMemberThenApplication 的 `FOR UPDATE` —— 取到队员键之后才锁行。
       const firstWaiter = await waitForDirectStatusWaiter(
         root.pid,
         first,
-        '%FROM "team_join_applications"%FOR NO KEY UPDATE%',
+        '%FROM "team_join_applications"%FOR UPDATE%',
       );
       expect(firstWaiter.databaseName).toBe(root.databaseName);
       expect(firstWaiter.blockingPids).toContain(root.pid);
@@ -983,10 +986,13 @@ describe('招新三期(入队)admin 面 e2e', () => {
         await withTimeout(mutatedPromise, 'team-join root gate mutation', HTTP_TIMEOUT_MS);
       }
       second = Promise.resolve(evaluateVia(appB, appId, secondApproved));
+      // ⚠️ 第二个 waiter 的观测点同样翻面:M1 之后 evaluate **先取队员键**,
+      // 所以后到者被挡在 first 持有的 advisory 键上,根本走不到申请行锁那一步。
+      // 这正是 member-first 锁序的可观测形态;串行化结论与断言不变。
       const secondWaiter = await waitForDirectStatusWaiter(
         firstWaiter.pid,
         second,
-        '%FROM "team_join_applications"%FOR NO KEY UPDATE%',
+        '%pg_advisory_xact_lock%',
         [root.pid],
       );
       expect(secondWaiter.pid).not.toBe(firstWaiter.pid);
@@ -1125,10 +1131,11 @@ describe('招新三期(入队)admin 面 e2e', () => {
     try {
       await withTimeout(reachedPromise, 'team-join expiry root blocker', BLOCKER_TIMEOUT_MS);
       evaluation = Promise.resolve(evaluateVia(appB, appId, true));
+      // ⚠️ 观测点随 M1 翻面(理由同上);结果断言不动。
       const waiter = await waitForDirectStatusWaiter(
         root.pid,
         evaluation,
-        '%FROM "team_join_applications"%FOR NO KEY UPDATE%',
+        '%FROM "team_join_applications"%FOR UPDATE%',
       );
       expect(waiter.databaseName).toBe(root.databaseName);
       expect(waiter.blockingPids).toContain(root.pid);

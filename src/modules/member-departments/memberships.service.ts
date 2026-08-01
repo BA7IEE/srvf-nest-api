@@ -11,6 +11,7 @@ import type { PageResultDto } from '../../common/dto/pagination.dto';
 import { parseExpandQuery } from '../../common/dto/expand-query.util';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { runMemberLinearizedTransaction } from '../../common/prisma/member-advisory-lock.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -20,6 +21,7 @@ import { MembersService } from '../members/members.service';
 import { lockMemberLifecycle } from '../members/member-lifecycle-lock';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { RbacService } from '../permissions/rbac.service';
+import { assertEnrollmentIdentityChangeAllowed } from '../team-join/team-join-enrollment-invariant';
 import {
   CreateMembershipDto,
   MEMBERSHIP_EXPAND_TOKENS,
@@ -152,7 +154,14 @@ export class MembershipsService {
     meta: AuditMeta,
   ): Promise<MembershipResponseDto> {
     await this.assertCanOrThrow(user, 'membership.set.record');
-    return this.prisma.$transaction(async (tx) => {
+    // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
+    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
+      // M2 唯一 transition:只有 PRIMARY 进得了 `isUnenrolledVolunteer` 的 activeDepts,
+      // 所以只在建 PRIMARY 时过闸(SECONDARY/TEMPORARY/SUPPORT 改不动那条判定)。
+      // 必须在 Member 行锁之前(锁序见闸内注释)。
+      if (dto.membershipType === MembershipType.PRIMARY) {
+        await assertEnrollmentIdentityChangeAllowed(tx, memberId, new Date());
+      }
       await lockMemberLifecycle(tx, memberId);
       const member = await this.findMemberOrThrow(memberId, tx);
       if (member.status !== MemberStatus.ACTIVE) {
@@ -220,7 +229,15 @@ export class MembershipsService {
     dto: UpdateMembershipDto,
   ): Promise<MembershipResponseDto> {
     await this.assertCanOrThrow(user, 'membership.set.record');
-    return this.prisma.$transaction(async (tx) => {
+    // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
+    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
+      // M2 唯一 transition:PATCH 唯一能改动 activeDepts 的字段是 membershipType
+      // (任期字段被状态机不变式挡住:ACTIVE 恒 startedAt<=now 且 endedAt=null)。
+      // SECONDARY→PRIMARY 会给 legacy 志愿者凭空加一条 PRIMARY;PRIMARY→SECONDARY 会把
+      // VOL 任期挪出 activeDepts —— 两个方向都能翻掉判定,所以按 membershipType 触发。
+      if (dto.membershipType !== undefined) {
+        await assertEnrollmentIdentityChangeAllowed(tx, memberId, new Date());
+      }
       await lockMemberLifecycle(tx, memberId);
       const current = await tx.memberOrganizationMembership.findFirst({
         where: { id, memberId, deletedAt: null },
@@ -262,7 +279,12 @@ export class MembershipsService {
     meta: AuditMeta,
   ): Promise<MembershipResponseDto> {
     await this.assertCanOrThrow(user, 'membership.end.record');
-    return this.prisma.$transaction(async (tx) => {
+    // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
+    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
+      // M2 唯一 transition:结束的可能正是那条 VOL PRIMARY 任期。闸必须排在 Member 行锁
+      // 之前(锁序见闸内注释),而此刻还没读到归属行、不知道它是不是 PRIMARY ——
+      // 故按最保守口径无条件过闸(过近似:结束一条 SECONDARY 也会被拦)。
+      await assertEnrollmentIdentityChangeAllowed(tx, memberId, new Date());
       await lockMemberLifecycle(tx, memberId);
       const current = await tx.memberOrganizationMembership.findFirst({
         where: { id, memberId, deletedAt: null, status: MembershipStatus.ACTIVE },
@@ -612,7 +634,13 @@ export class MembershipsService {
     if (dto.fromOrganizationId === dto.toOrganizationId) {
       throw new BizException(BizCode.BAD_REQUEST);
     }
-    return this.prisma.$transaction(async (tx) => {
+    // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
+    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
+      // M2 唯一 transition:PRIMARY 迁移 = 结束旧 PRIMARY + 建新 PRIMARY,两腿都动 activeDepts。
+      // 非 PRIMARY 类型的迁移改不动 `isUnenrolledVolunteer`,不过闸。必须在 Member 行锁之前。
+      if (dto.membershipType === MembershipType.PRIMARY) {
+        await assertEnrollmentIdentityChangeAllowed(tx, dto.memberId, new Date());
+      }
       await lockMemberLifecycle(tx, dto.memberId);
       const member = await this.findMemberOrThrow(dto.memberId, tx);
       if (member.status !== MemberStatus.ACTIVE) {
