@@ -1631,6 +1631,11 @@ async function runTrustedJudgeAssertions(): Promise<void> {
       baseUnions: Map<string, Set<string>>,
       headUnions: Map<string, Set<string>>,
     ) => { ok: boolean; added: Array<{ rule: string; key: string }> };
+    registryFailureKind: (verdict: {
+      deleted: boolean;
+      removed: string[];
+      mutated: unknown[];
+    }) => 'removed' | 'mutated' | null;
     parseRatchetRegistryDoc: (
       text: string,
       which: string,
@@ -1912,6 +1917,45 @@ async function runTrustedJudgeAssertions(): Promise<void> {
           `F3 四元组 fail-closed:head 注册表${name} → 抛(交由 failClosed 拦)`,
           threw,
           '判不了就必须响 —— 四元组缺一个字段就没法判「载体有没有被换掉」',
+        );
+      }
+
+      // ── 分支选择本身的阳性对照(2026-08-01,#870 一次性对抗 PR 实测抓到)──────
+      //
+      // 上一版 main() 写的是 `if (!verdict.ok) failHard('被削减')`,而 `ok` 在 removed
+      // **或** mutated 非空时都为 false —— 于是「换载体」一头撞进「被削减」分支,
+      // 实测打印出 `head 少了 0 条:`。门是关住了(fail-closed 没错),但报的原因是错的。
+      //
+      // ⚠️ 上面那组断言**抓不到它**:它们判的是 judgeRegistryMonotonicity 的返回值,
+      // 而那个返回值一直是对的;错的是 main() 里拿返回值挑分支的那几行。
+      // 把挑分支抽成 registryFailureKind 之后,这里才有东西可断言 ——
+      // 「结构断言 + 纯函数对照看不见接线」这条教训的执行位就落在下面四条上。
+      {
+        const kind = judge.registryFailureKind;
+        check(
+          'F3 分支 · #870:**只有** mutated 的裁决必须报 mutated(不许落进「被削减」)',
+          kind({ deleted: false, removed: [], mutated: [{ id: 'a' }] }) === 'mutated',
+          '报错报错了 = operator 按错误的原因去排查;这正是 #870 实测到的 `head 少了 0 条:`',
+        );
+        check(
+          'F3 分支:只有 removed 的裁决报 removed',
+          kind({ deleted: false, removed: ['a'], mutated: [] }) === 'removed',
+          '摘登记仍须报「被削减」,不能被新分支抢走',
+        );
+        check(
+          'F3 分支:removed 与 mutated 同时出现时报 removed(条目都没了,谈不上载体换没换)',
+          kind({ deleted: false, removed: ['a'], mutated: [{ id: 'b' }] }) === 'removed',
+          '两者同时命中时的优先级必须是确定的,否则同一份输入可能报出两种原因',
+        );
+        check(
+          'F3 分支:整份注册表被删 → removed',
+          kind({ deleted: true, removed: ['a', 'b'], mutated: [] }) === 'removed',
+          'deleted 是 removed 的极端形态',
+        );
+        check(
+          'F3 分支反向:干净的裁决不报任何失败(不许「什么都拦」)',
+          kind({ deleted: false, removed: [], mutated: [] }) === null,
+          '误伤会训练出「无视门禁」的习惯,与漏放同样致命',
         );
       }
 
