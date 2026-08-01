@@ -85,7 +85,7 @@ describe('Admin team-insurance-policies + member insurances(保险 T2)', () => {
     insurerName: '太平洋保险',
     policyNumber: `TP-${nextSeq()}`,
     coverageStart: '2026-01-01',
-    coverageEnd: '2026-12-31',
+    coverageEnd: '2098-12-31',
     note: '全年队级意外险',
   });
 
@@ -170,7 +170,7 @@ describe('Admin team-insurance-policies + member insurances(保险 T2)', () => {
     const badDate = await request(httpServer(app))
       .post('/api/admin/v1/team-insurance-policies')
       .set('Authorization', bizAdminAuth)
-      .send({ ...validPolicy(), coverageStart: '2027-01-01', coverageEnd: '2026-01-01' });
+      .send({ ...validPolicy(), coverageStart: '2099-01-01', coverageEnd: '2026-01-01' });
     expectBizError(badDate, BizCode.INSURANCE_COVERAGE_DATE_RANGE_INVALID);
 
     const notFound = await request(httpServer(app))
@@ -201,7 +201,7 @@ describe('Admin team-insurance-policies + member insurances(保险 T2)', () => {
     const badDate = await request(httpServer(app))
       .patch(`/api/admin/v1/team-insurance-policies/${policyId}`)
       .set('Authorization', bizAdminAuth)
-      .send({ coverageStart: '2027-06-01' });
+      .send({ coverageStart: '2099-06-01' });
     expectBizError(badDate, BizCode.INSURANCE_COVERAGE_DATE_RANGE_INVALID);
 
     await request(httpServer(app))
@@ -393,7 +393,7 @@ describe('Admin team-insurance-policies + member insurances(保险 T2)', () => {
         memberId: member.id,
         insurerName: '平安保险',
         policyNumber: `PN-${nextSeq()}`,
-        coverageEnd: new Date('2026-12-31T00:00:00.000Z'),
+        coverageEnd: new Date('2098-12-31T00:00:00.000Z'),
       },
     });
     // 软删行不可见
@@ -402,7 +402,7 @@ describe('Admin team-insurance-policies + member insurances(保险 T2)', () => {
         memberId: member.id,
         insurerName: '已删除的保险',
         policyNumber: `PN-${nextSeq()}`,
-        coverageEnd: new Date('2026-12-31T00:00:00.000Z'),
+        coverageEnd: new Date('2098-12-31T00:00:00.000Z'),
         deletedAt: new Date(),
       },
     });

@@ -12,11 +12,11 @@ import { deriveTestDbName } from '../setup/worktree-db';
 
 const MIGRATION_PATH = 'prisma/migrations/20260719160335_insurance_constraints/migration.sql';
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
-const REQUIRED_FROM = new Date('2027-06-10T00:00:00.000Z');
-const REQUIRED_THROUGH = new Date('2027-06-11T00:00:00.000Z');
-const COVERAGE_START = new Date('2027-01-01T00:00:00.000Z');
-const COVERAGE_END = new Date('2027-12-31T00:00:00.000Z');
-const REVIEWED_AT = new Date('2027-01-02T00:00:00.000Z');
+const REQUIRED_FROM = new Date('2099-06-10T00:00:00.000Z');
+const REQUIRED_THROUGH = new Date('2099-06-11T00:00:00.000Z');
+const COVERAGE_START = new Date('2099-01-01T00:00:00.000Z');
+const COVERAGE_END = new Date('2099-12-31T00:00:00.000Z');
+const REVIEWED_AT = new Date('2099-01-02T00:00:00.000Z');
 
 interface DatabaseErrorIdentity {
   sqlState: string;
@@ -514,7 +514,7 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
         'insurance_evidence_required_interval_ck',
       ],
       [
-        selfRegistrationRow({ sourceCoverageEnd: new Date('2027-06-10T12:00:00.000Z') }),
+        selfRegistrationRow({ sourceCoverageEnd: new Date('2099-06-10T12:00:00.000Z') }),
         'insurance_evidence_source_interval_ck',
       ],
       [selfRegistrationRow({ sourceReviewedAt: null }), 'insurance_evidence_review_snapshot_ck'],
@@ -570,11 +570,11 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
 
     await prisma.memberInsurance.update({
       where: { id: fixture.memberInsuranceAId },
-      data: { coverageEnd: new Date('2028-12-31T00:00:00.000Z'), deletedAt: new Date() },
+      data: { coverageEnd: new Date('2100-12-31T00:00:00.000Z'), deletedAt: new Date() },
     });
     await prisma.teamInsurancePolicy.update({
       where: { id: fixture.teamPolicyAId },
-      data: { coverageEnd: new Date('2028-12-31T00:00:00.000Z'), deletedAt: new Date() },
+      data: { coverageEnd: new Date('2100-12-31T00:00:00.000Z'), deletedAt: new Date() },
     });
     await prisma.teamInsuranceCoverage.update({
       where: { id: fixture.teamCoverageAId },
@@ -717,8 +717,8 @@ CREATE TABLE "insurance_eligibility_evidences" (
 );
 
 INSERT INTO "member_insurances" VALUES
-  ('self-a', 'member-a', 1, 'verified', 'reviewer', '2027-01-02'),
-  ('invalid-member', 'member-a', -1, 'pending', 'reviewer', '2027-01-02');
+  ('self-a', 'member-a', 1, 'verified', 'reviewer', '2099-01-02'),
+  ('invalid-member', 'member-a', -1, 'pending', 'reviewer', '2099-01-02');
 INSERT INTO "team_insurance_policies" VALUES ('policy-a');
 INSERT INTO "team_insurance_coverages" VALUES ('coverage-a', 'policy-a', 'member-a');
 INSERT INTO "ActivityRegistration" VALUES
@@ -732,14 +732,14 @@ INSERT INTO "team_join_applications" VALUES
 
 INSERT INTO "insurance_eligibility_evidences" ("id") VALUES ('invalid-shape');
 INSERT INTO "insurance_eligibility_evidences" VALUES
-  ('duplicate-registration-1', 'member_insurance', 'self-a', NULL, 'activity_registration', 'registration-duplicate', NULL, 1, 'reviewer', '2027-01-02', '2027-06-10', '2027-06-11', '2027-01-01', '2027-12-31'),
-  ('duplicate-registration-2', 'member_insurance', 'self-a', NULL, 'activity_registration', 'registration-duplicate', NULL, 1, 'reviewer', '2027-01-02', '2027-06-10', '2027-06-11', '2027-01-01', '2027-12-31'),
-  ('duplicate-join-1', 'member_insurance', 'self-a', NULL, 'team_join_application', NULL, 'join-duplicate', 1, 'reviewer', '2027-01-02', '2027-06-10', '2027-06-11', '2027-01-01', '2027-12-31'),
-  ('duplicate-join-2', 'member_insurance', 'self-a', NULL, 'team_join_application', NULL, 'join-duplicate', 1, 'reviewer', '2027-01-02', '2027-06-10', '2027-06-11', '2027-01-01', '2027-12-31'),
-  ('mismatch-self-registration', 'member_insurance', 'self-a', NULL, 'activity_registration', 'registration-b-self', NULL, 1, 'reviewer', '2027-01-02', '2027-06-10', '2027-06-11', '2027-01-01', '2027-12-31'),
-  ('mismatch-team-registration', 'team_insurance_coverage', NULL, 'coverage-a', 'activity_registration', 'registration-b-team', NULL, NULL, NULL, NULL, '2027-06-10', '2027-06-11', '2027-01-01', '2027-12-31'),
-  ('mismatch-self-join', 'member_insurance', 'self-a', NULL, 'team_join_application', NULL, 'join-b-self', 1, 'reviewer', '2027-01-02', '2027-06-10', '2027-06-11', '2027-01-01', '2027-12-31'),
-  ('mismatch-team-join', 'team_insurance_coverage', NULL, 'coverage-a', 'team_join_application', NULL, 'join-b-team', NULL, NULL, NULL, '2027-06-10', '2027-06-11', '2027-01-01', '2027-12-31');
+  ('duplicate-registration-1', 'member_insurance', 'self-a', NULL, 'activity_registration', 'registration-duplicate', NULL, 1, 'reviewer', '2099-01-02', '2099-06-10', '2099-06-11', '2099-01-01', '2099-12-31'),
+  ('duplicate-registration-2', 'member_insurance', 'self-a', NULL, 'activity_registration', 'registration-duplicate', NULL, 1, 'reviewer', '2099-01-02', '2099-06-10', '2099-06-11', '2099-01-01', '2099-12-31'),
+  ('duplicate-join-1', 'member_insurance', 'self-a', NULL, 'team_join_application', NULL, 'join-duplicate', 1, 'reviewer', '2099-01-02', '2099-06-10', '2099-06-11', '2099-01-01', '2099-12-31'),
+  ('duplicate-join-2', 'member_insurance', 'self-a', NULL, 'team_join_application', NULL, 'join-duplicate', 1, 'reviewer', '2099-01-02', '2099-06-10', '2099-06-11', '2099-01-01', '2099-12-31'),
+  ('mismatch-self-registration', 'member_insurance', 'self-a', NULL, 'activity_registration', 'registration-b-self', NULL, 1, 'reviewer', '2099-01-02', '2099-06-10', '2099-06-11', '2099-01-01', '2099-12-31'),
+  ('mismatch-team-registration', 'team_insurance_coverage', NULL, 'coverage-a', 'activity_registration', 'registration-b-team', NULL, NULL, NULL, NULL, '2099-06-10', '2099-06-11', '2099-01-01', '2099-12-31'),
+  ('mismatch-self-join', 'member_insurance', 'self-a', NULL, 'team_join_application', NULL, 'join-b-self', 1, 'reviewer', '2099-01-02', '2099-06-10', '2099-06-11', '2099-01-01', '2099-12-31'),
+  ('mismatch-team-join', 'team_insurance_coverage', NULL, 'coverage-a', 'team_join_application', NULL, 'join-b-team', NULL, NULL, NULL, '2099-06-10', '2099-06-11', '2099-01-01', '2099-12-31');
 
 ${migration}`;
 

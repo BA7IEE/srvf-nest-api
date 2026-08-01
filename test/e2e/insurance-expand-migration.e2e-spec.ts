@@ -101,7 +101,7 @@ describe('D-INSURANCE v3 PR1 expand migration', () => {
         memberId,
         insurerName: 'legacy-live-insurer',
         policyNumber: 'legacy-live-policy',
-        coverageEnd: new Date('2027-12-31T00:00:00.000Z'),
+        coverageEnd: new Date('2099-12-31T00:00:00.000Z'),
         reviewStatusCode: 'verified',
         version: 9,
         reviewedByUserId: reviewer.id,
@@ -114,7 +114,7 @@ describe('D-INSURANCE v3 PR1 expand migration', () => {
         memberId,
         insurerName: 'legacy-deleted-insurer',
         policyNumber: 'legacy-deleted-policy',
-        coverageEnd: new Date('2027-06-30T00:00:00.000Z'),
+        coverageEnd: new Date('2099-06-30T00:00:00.000Z'),
         reviewStatusCode: 'rejected',
         version: 4,
         reviewedByUserId: reviewer.id,
@@ -128,7 +128,7 @@ describe('D-INSURANCE v3 PR1 expand migration', () => {
         memberId,
         insurerName: 'legacy-normal-insurer',
         policyNumber: 'legacy-normal-policy',
-        coverageEnd: new Date('2027-03-31T00:00:00.000Z'),
+        coverageEnd: new Date('2099-03-31T00:00:00.000Z'),
       },
       select: { id: true },
     });
@@ -340,7 +340,7 @@ ${failingMigration}`;
         memberId,
         insurerName: 'default-insurer',
         policyNumber: 'default-policy',
-        coverageEnd: new Date('2027-12-31T00:00:00.000Z'),
+        coverageEnd: new Date('2099-12-31T00:00:00.000Z'),
       },
     });
     expect(insurance).toMatchObject({

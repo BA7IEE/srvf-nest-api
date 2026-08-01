@@ -192,6 +192,16 @@
       "guard": "preflight-gate 把『落后 origin/main』列为硬条件(拦写)",
       "probe": "behind-main-blocks",
       "probeNote": "只 grep preflight-gate.sh 的两个变量名;真触发要造一个落后的 worktree 再跑门禁"
+    },
+    {
+      "id": "INC-18",
+      "title": "e2e fixture 硬编码近未来日期,墙钟到点让 main 上所有 PR 的 CI 同时红",
+      "source": "memory/v0.65.0-release-closeout.md",
+      "cost": "main 全线阻断半天 + 热修 #875(130 处平移);同类第三次发作(v0.40.0 拆过、#875 又拆)",
+      "status": "covered",
+      "guard": "srvf/no-near-future-date(test/** + *.spec.ts 禁 (today, 2090-01-01) 日期字面量)+ 棘轮基线 harness/near-future-date-baseline.json(只减不增)+ base-trusted 裁判单调性",
+      "probe": "near-future-date-lint",
+      "probeNote": "真触发:写带近未来日期的临时 spec(回放当天+30 天动态生成 —— 探针自己硬编码日期就是下一颗炸弹)跑仓库真实 eslint,断言 exit≠0 且命中本规则"
     }
   ],
   "inverse": [

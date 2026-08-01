@@ -334,7 +334,7 @@ describe('v0.49 department data scope — member axis', () => {
         memberId: sectMemberId,
         insurerName: 'v0.49 保险公司',
         policyNumber: 'V049-POLICY',
-        coverageEnd: new Date('2027-01-01T00:00:00.000Z'),
+        coverageEnd: new Date('2099-01-01T00:00:00.000Z'),
       },
     });
   });

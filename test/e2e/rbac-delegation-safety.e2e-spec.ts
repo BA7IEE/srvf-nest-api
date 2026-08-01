@@ -335,27 +335,27 @@ describe('第一档安全收口:委派、控制面授码与受保护角色', () 
         'rd-control-role',
         BindingStatus.ACTIVE,
         {
-          startedAt: new Date('2030-01-01T00:00:00.000Z'),
+          startedAt: new Date('2102-01-01T00:00:00.000Z'),
         },
       );
       expectBizError(
         await request(httpServer(app))
           .patch(`/api/admin/v1/role-bindings/${earlier.id}`)
           .set('Authorization', opsAdminAuth)
-          .send({ startedAt: '2029-01-01T00:00:00.000Z' }),
+          .send({ startedAt: '2101-01-01T00:00:00.000Z' }),
         BizCode.CANNOT_ASSIGN_HIGHER_ROLE,
       );
 
       const laterTarget = await createTarget('rd-later');
       const later = await insertBinding(laterTarget.id, 'rd-control-role', BindingStatus.ACTIVE, {
-        startedAt: new Date('2028-01-01T00:00:00.000Z'),
-        endedAt: new Date('2030-01-01T00:00:00.000Z'),
+        startedAt: new Date('2100-01-01T00:00:00.000Z'),
+        endedAt: new Date('2102-01-01T00:00:00.000Z'),
       });
       expectBizError(
         await request(httpServer(app))
           .patch(`/api/admin/v1/role-bindings/${later.id}`)
           .set('Authorization', opsAdminAuth)
-          .send({ endedAt: '2031-01-01T00:00:00.000Z' }),
+          .send({ endedAt: '2103-01-01T00:00:00.000Z' }),
         BizCode.CANNOT_ASSIGN_HIGHER_ROLE,
       );
 
