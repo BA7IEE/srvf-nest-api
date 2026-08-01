@@ -243,7 +243,7 @@ const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_CODES.filter(
 // 2026-07-04 F3「C 组」authz.{explain-batch,action-state}.decision +2 → 92→94;与 seed-rbac 的 99-5=94 推导一致;
 // 2026-07-07 队员账号闭环 v1 member.grant.account +1 → 94→95;与 seed-rbac 的 100-5=95 推导一致;
 // 2026-07-07 队员账号闭环 v2 member.bind.account +1 → 95→96;与 seed-rbac 的 101-5=96 推导一致)
-const EXPECTED_OPS_ADMIN_BINDING_COUNT = 104; // 证书标准库 PR-2:+8 配置面码(certificate-standard 4 + certificate-recognition-policy 4)
+const EXPECTED_OPS_ADMIN_BINDING_COUNT = 107; // 企业微信 T2:+3(wecom-setting read/update/test;reset.credentials 沿 D2=A 不绑)。前值 104 = 证书标准库 PR-2 的 +8 配置面码
 const EXPECTED_MEMBER_ROLE_BINDING_COUNT = 9;
 
 const SEED_ENV = {

@@ -435,6 +435,24 @@ export interface RealnameConfig {
   encryptionKey: string; // 空字符串 = 未配置(dev / test 允许;production / smoke 启动已 fail)
 }
 
+// 企业微信接入 T2(2026-08-01):wecom_settings 的 CorpSecret 加密 key(冻结稿 D-WC-12)。
+// 独立 env `WECOM_ENCRYPTION_KEY`,与 STORAGE / SMS / WECHAT / REALNAME 四把 key
+// **互不复用**且派生 salt 各异 —— 企业微信与小程序**不共域**是冻结稿点名的要求。
+// production / smoke fail-fast,dev / test 留空允许 → WecomCryptoService.isAvailable()=false。
+export interface WecomConfig {
+  encryptionKey: string; // 空字符串 = 未配置(dev / test 允许;production / smoke 启动已 fail)
+}
+
+// 企业微信接入 T2(2026-08-01):企业微信 pre-auth 端点 IP 限流配置(冻结稿 §11 第 11 个 throttler)。
+// ⚠️ **本刀只落配置骨架与装饰器文件**;throttler 实例注册(bootstrap/throttle-options.ts)与
+// ThrottlerBizGuard 接线归 T3 —— 它俩必须成对改动,只注册实例不接 guard 会让 `login-wecom`
+// 对**所有已限流端点**多计一道数(guard 靠逐 throttler 的 name 判断跳过),那是真行为变更。
+// T2 没有任何端点可挂,提前接线也无用例能实测。默认 5 次 / 60 秒(镜像 login-wechat 拍板值)。
+export interface LoginWecomThrottleConfig {
+  limit: number;
+  ttlSeconds: number;
+}
+
 export interface ActivityResponsibilityWorkflowConfig {
   enabled: boolean;
 }
@@ -540,6 +558,27 @@ function parseWechatEncryptionKey(raw: string | undefined, env: AppEnv): string 
   return trimmed;
 }
 
+// 企业微信接入 T2(2026-08-01;冻结稿 D-WC-12):沿 parseWechatEncryptionKey 同款宽松校验。
+// ⚠️ **独立 env key,与小程序不共域** —— 企业微信与微信小程序是两个独立外部主体,
+// 共用密钥会把"换掉小程序凭证"和"换掉企业微信凭证"绑成同一次运维动作。
+function parseWecomEncryptionKey(raw: string | undefined, env: AppEnv): string {
+  if (!raw || raw.trim() === '') {
+    if (isProductionLike(env)) {
+      throw new Error(
+        'WECOM_ENCRYPTION_KEY 不能为空(production / smoke);推荐 openssl rand -base64 32 生成 32 字节 key',
+      );
+    }
+    return '';
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length < 32) {
+    throw new Error(
+      `WECOM_ENCRYPTION_KEY 太短:长度 ${trimmed.length}(至少 32 字符;推荐 openssl rand -base64 32)`,
+    );
+  }
+  return trimmed;
+}
+
 // 招新一期 · 实名核验通道 T2:沿 parseWechatEncryptionKey 同款宽松校验(只挡空值与明显短;
 // 具体派生留 RealnameCryptoService)。
 function parseRealnameEncryptionKey(raw: string | undefined, env: AppEnv): string {
@@ -575,12 +614,14 @@ export interface AppConfig {
   storage: StorageConfig;
   sms: SmsConfig;
   wechat: WechatConfig;
+  wecom: WecomConfig;
   realname: RealnameConfig;
   smsSendThrottle: SmsSendThrottleConfig;
   smsVerifyThrottle: SmsVerifyThrottleConfig;
   passwordResetThrottle: PasswordResetThrottleConfig;
   loginSmsThrottle: LoginSmsThrottleConfig;
   loginWechatThrottle: LoginWechatThrottleConfig;
+  loginWecomThrottle: LoginWecomThrottleConfig;
   recruitmentThrottle: RecruitmentThrottleConfig;
   recruitmentOcr: RecruitmentOcrConfig;
   contentPublicThrottle: ContentPublicThrottleConfig;
@@ -700,6 +741,10 @@ export default registerAs('app', (): AppConfig => {
     encryptionKey: parseWechatEncryptionKey(process.env.WECHAT_ENCRYPTION_KEY, env),
   };
 
+  const wecom: WecomConfig = {
+    encryptionKey: parseWecomEncryptionKey(process.env.WECOM_ENCRYPTION_KEY, env),
+  };
+
   const realname: RealnameConfig = {
     encryptionKey: parseRealnameEncryptionKey(process.env.REALNAME_ENCRYPTION_KEY, env),
   };
@@ -779,6 +824,23 @@ export default registerAs('app', (): AppConfig => {
     ),
   };
 
+  // 企业微信接入 T2(2026-08-01):企业微信 pre-auth 端点限流配置骨架(冻结稿 §11)。
+  // T2 只有配置与装饰器,**没有端点挂它**;实例注册与 guard 接线在 T3(见上方 interface 注释)。
+  const loginWecomThrottle: LoginWecomThrottleConfig = {
+    limit: parsePositiveInt(
+      process.env.LOGIN_WECOM_THROTTLE_LIMIT,
+      5,
+      'LOGIN_WECOM_THROTTLE_LIMIT',
+      { min: 1, max: 100 },
+    ),
+    ttlSeconds: parsePositiveInt(
+      process.env.LOGIN_WECOM_THROTTLE_TTL_SECONDS,
+      60,
+      'LOGIN_WECOM_THROTTLE_TTL_SECONDS',
+      { min: 1, max: 3600 },
+    ),
+  };
+
   // 招新一期 T3(2026-06-18):招新报名公开端点限流(评审稿 E-R-25;默认 10/3600)。
   const recruitmentThrottle: RecruitmentThrottleConfig = {
     limit: parsePositiveInt(
@@ -849,12 +911,14 @@ export default registerAs('app', (): AppConfig => {
     storage,
     sms,
     wechat,
+    wecom,
     realname,
     smsSendThrottle,
     smsVerifyThrottle,
     passwordResetThrottle,
     loginSmsThrottle,
     loginWechatThrottle,
+    loginWecomThrottle,
     recruitmentThrottle,
     recruitmentOcr,
     contentPublicThrottle,

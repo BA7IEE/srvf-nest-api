@@ -1840,6 +1840,38 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // - 360xx:企业微信接入(wecom)—— T2(2026-08-01;冻结稿
+  //   docs/archive/reviews/wecom-integration-t0-terminal-review.md §11.2)。
+  //   本刀只落 T2 用得上的 3 条(36020 / 36030 / 36031);
+  //   36002 / 36010 / 36011 属 T3(OAuth 与绑定)—— 段位在冻结稿 §11.2 已排好,不提前占码。
+  //
+  //   ⚠️ 命名与 250xx(微信**小程序**)严格分家:企业微信是另一个外部主体,
+  //   共用错误码会让运维分不清"是小程序挂了还是企业微信挂了"(冻结稿命名铁律)。
+  //
+  //   不开的码(§11.2「不开」段,逐条都是防侧写或防污染):
+  //   - WECOM_NOT_BOUND:GET 返状态对象、clear 幂等,没有"未绑定"这个错误场景
+  //   - WECOM_USER_DISABLED:公开登录统一 36010 —— 区分开就是账号状态探测器
+  //   - WECOM_EXTERNAL_USER:无内部 UserId 同样统一 36010
+  //   - 发送失败码:异步落 Delivery/Outbox 状态,不污染 HTTP 业务端点
+  //
+  //   复用既有码:phone/短信无效仍 24010;P2002 身份冲突映射 36002(T3);
+  //   限流仍 42900;权限拒绝仍 30100;settings DTO 无效仍 40000。
+  WECOM_CORP_ID_IN_USE: {
+    code: 36020,
+    message: '已存在企业微信绑定，不能修改 CorpID',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  WECOM_CHANNEL_NOT_CONFIGURED: {
+    code: 36030,
+    message: '企业微信通道未配置或未启用',
+    httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
+  },
+  WECOM_API_FAILED: {
+    code: 36031,
+    message: '企业微信服务暂时不可用，请稍后重试',
+    httpStatus: HttpStatus.BAD_GATEWAY,
+  },
+
   // audit_logs 模块业务级(140xx + 141xx)。批次 6 PR #1 引入(2026-05-12)。
   // 详见 docs:批次6_audit_logs_API前评审.md(D6 v1.1)§9。
   // 段位选择:baseline §1.1 v0.5 "audit_logs 140xx + 141xx" 基线预留,本批次实装收口。

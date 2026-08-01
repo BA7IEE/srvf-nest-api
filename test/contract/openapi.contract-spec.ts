@@ -333,6 +333,15 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/system/v1/wechat-settings'],
   ['post', '/api/system/v1/wechat-settings/reset-credentials'],
 
+  // 企业微信接入 T2(2026-08-01;冻结稿 docs/archive/reviews/wecom-integration-t0-terminal-review.md §6.1):
+  // settings 四端点(438→442)—— 前三个动词镜像 wechat/sms-settings 现状,
+  // 第四个 test-connection 是本批特有的只读诊断(只返计数,不返任何成员/部门/标签 ID)。
+  // T3 将增 auth/v1 OAuth 公开端点 + app/v1/me/wecom + admin 清除端点。
+  ['get', '/api/system/v1/wecom-settings'],
+  ['patch', '/api/system/v1/wecom-settings'],
+  ['post', '/api/system/v1/wecom-settings/reset-credentials'],
+  ['post', '/api/system/v1/wecom-settings/test-connection'],
+
   // 招新一期 · 实名核验通道 T2(2026-06-18):realname-settings 三端点(评审稿 §3.2 端点 1-3;
   // 路径动词镜像 wechat/sms-settings;183→186);T3 将增 recruitment 公开/admin 端点(届时 →~196)。
   ['get', '/api/system/v1/realname-settings'],
@@ -815,6 +824,8 @@ const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
   '/api/system/v1/sms-settings',
   '/api/system/v1/wechat-settings',
+  // 企业微信 T2:GET 不存在时同样返 data:null(冻结稿 §6.1「不存在时返回 data:null」)
+  '/api/system/v1/wecom-settings',
   '/api/system/v1/realname-settings',
 ] as const;
 
@@ -1469,8 +1480,10 @@ describe('OpenAPI 契约快照', () => {
   // 所以它不会和上面的表悄悄脱钩。
   // 证书标准库 PR-4a-3 / PR-4b(2026-07-30):零新增端点(只换入参 / 删列)。
   // 证书标准库 PR-5(2026-07-30):+3(证据读取 1 + 全局工作台 2)→ 438。
-  it('证书标准库 PR-5 落地后路由足迹精确为 438', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(438);
+  // 企业微信接入 T2(2026-08-01):+4 settings 端点(GET / PATCH / reset-credentials /
+  //   test-connection)→ **442**。T3 起还会增 OAuth 公开面与 me/wecom、admin 清除。
+  it('企业微信 T2 落地后路由足迹精确为 442', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(442);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

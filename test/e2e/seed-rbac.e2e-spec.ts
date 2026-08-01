@@ -81,6 +81,8 @@ const RESET_CREDENTIALS_CODE = 'storage-setting.reset.credentials';
 const USER_UPDATE_ROLE_CODE = 'user.update.role';
 const SMS_RESET_CREDENTIALS_CODE = 'sms-setting.reset.credentials';
 const WECHAT_RESET_CREDENTIALS_CODE = 'wechat-setting.reset.credentials';
+// 企业微信 T2(2026-08-01):第 5 把不绑 ops-admin 的凭证 reset 码(冻结稿 §11.1)
+const WECOM_RESET_CREDENTIALS_CODE = 'wecom-setting.reset.credentials';
 const REALNAME_RESET_CREDENTIALS_CODE = 'realname-setting.reset.credentials';
 const EXPECTED_RBAC_PERMISSION_CODES = [
   // 14 条 rbac.*(沿 PR-1 #132)
@@ -202,6 +204,13 @@ const EXPECTED_RBAC_PERMISSION_CODES = [
   'wechat-setting.update.singleton',
   WECHAT_RESET_CREDENTIALS_CODE,
   'user.wechat.clear',
+  // 4 条 WECOM T2(2026-08-01;冻结稿 wecom-integration-t0-terminal-review.md §11.1):
+  // wecom-setting.reset.credentials 镜像 D2=A 不绑 ops-admin;其余 3 条绑 → ops-admin +3。
+  // ⚠️ 不含 `user.wecom.clear` —— 它的端点在 T4,连码带端点一起落(不预埋孤码)。
+  'wecom-setting.read.singleton',
+  'wecom-setting.update.singleton',
+  'wecom-setting.test.connection',
+  WECOM_RESET_CREDENTIALS_CODE,
   // 3 条 REALNAME T1(realname-setting.reset.credentials 镜像 D2=A 不绑 ops-admin;招新评审稿 §3.4)
   'realname-setting.read.singleton',
   'realname-setting.update.singleton',
@@ -225,14 +234,16 @@ const EXPECTED_RBAC_PERMISSION_CODES = [
 const EXPECTED_PERMISSION_COUNT = EXPECTED_RBAC_PERMISSION_CODES.length;
 // ops-admin RolePermission 数(过滤 reset.credentials(PR-2 D2=A)+ user.update.role(PR-3 D1=A)
 // + sms-setting.reset.credentials(SMS T2 镜像 D2=A)+ wechat-setting.reset.credentials(WECHAT T2)
-// + realname-setting.reset.credentials(REALNAME T1 镜像 D2=A,招新评审稿 §3.4)→ 99 - 5 = 94)
-const EXPECTED_OPS_ADMIN_ROLE_PERMISSION_COUNT = EXPECTED_PERMISSION_COUNT - 5;
+// + realname-setting.reset.credentials(REALNAME T1 镜像 D2=A,招新评审稿 §3.4)
+// + wecom-setting.reset.credentials(WECOM T2 镜像 D2=A,冻结稿 §11.1)→ 共 **6** 条不绑)
+const EXPECTED_OPS_ADMIN_ROLE_PERMISSION_COUNT = EXPECTED_PERMISSION_COUNT - 6;
 const EXPECTED_OPS_ADMIN_BOUND_CODES = EXPECTED_RBAC_PERMISSION_CODES.filter(
   (c) =>
     c !== RESET_CREDENTIALS_CODE &&
     c !== USER_UPDATE_ROLE_CODE &&
     c !== SMS_RESET_CREDENTIALS_CODE &&
     c !== WECHAT_RESET_CREDENTIALS_CODE &&
+    c !== WECOM_RESET_CREDENTIALS_CODE &&
     c !== REALNAME_RESET_CREDENTIALS_CODE,
 );
 const EXPECTED_RBAC_ONLY_COUNT = 14; // 仅 rbac.* 段位,供下面 module=rbac 断言用
@@ -304,7 +315,11 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     await resetDb(app);
   });
 
-  it('空 db + 合法 env → 101 条 permission(14 rbac + 44 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME + 3 AUTHZ + 2 ANNOUNCEMENT-IMPORT + 1 META + 2 MEMBER-ACCOUNT) + ops-admin role + 96 条 role-permission(D2=A 4 把凭证 reset + D1=A user.update.role 共 5 不绑;D2=B audit-log.read.entry 整条绑;PR11 announcement-import 2 码整条绑;F1 meta.resolve.label / F3 authz 批量 2 码 / 队员账号闭环 v1 member.grant.account + v2 member.bind.account 整条绑) + 强校验通过', async () => {
+  // ⚠️ 标题里不再写死总数 —— 两个期望值都从 EXPECTED_RBAC_PERMISSION_CODES 派生
+  // (`EXPECTED_PERMISSION_COUNT` = 清单长度;ops-admin = 长度 − 6 把不绑的码)。
+  // 此前标题写死的「101 条 / 96 条」早已与真实值脱钩,读起来像断言其实是死字符串;
+  // 企业微信 T2 又 +4,与其把错的数字改成另一个会再次过期的数字,不如让标题只讲结构。
+  it('空 db + 合法 env → 全量 permission(rbac / PR-2A / PR-2B / PR-3B / PR-4B / SMS / WECHAT / WECOM / REALNAME / AUTHZ / ANNOUNCEMENT-IMPORT / META / MEMBER-ACCOUNT)+ ops-admin role + role-permission(**6 把**不绑:4+1 既有 + WECOM T2 的 wecom-setting.reset.credentials;D1=A user.update.role 亦不绑;D2=B audit-log.read.entry 整条绑)+ 强校验通过', async () => {
     const result = runSeed({
       APP_ENV: 'test',
       SUPER_ADMIN_USERNAME: 'rbac-seed-su',

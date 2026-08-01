@@ -98,11 +98,12 @@ jobs:
         run: pnpm prisma:deploy
 
       # JWT_SECRET / SUPER_ADMIN_PASSWORD / STORAGE_ENCRYPTION_KEY / SMS_ENCRYPTION_KEY /
-      # WECHAT_ENCRYPTION_KEY 仅活在该 job 生命周期,
+      # WECHAT_ENCRYPTION_KEY / WECOM_ENCRYPTION_KEY 仅活在该 job 生命周期,
       # 不进 GitHub Secrets。写入 GITHUB_ENV 供后续 step 共享;不 echo 到日志(默认 mask 不覆盖
       # env 写入,因此这里手动 add-mask)。
       # STORAGE_ENCRYPTION_KEY 沿 V2.x C-7.5 PR #6:smoke 启动校验要求 ≥ 32 字符;
-      # smoke 容器用 APP_ENV=smoke 启动,必须注入(SMS / WECHAT 两把 key 同款 fail-fast)。
+      # smoke 容器用 APP_ENV=smoke 启动,必须注入(SMS / WECHAT / WECOM 三把 key 同款 fail-fast;
+      # WECOM 沿冻结稿 D-WC-12 独立密钥,PR #863 T2 起缺它容器直接拒启)。
       - name: Generate ephemeral secrets
         run: |
           JWT_SECRET="$(openssl rand -base64 48)"
@@ -110,6 +111,7 @@ jobs:
           STORAGE_ENCRYPTION_KEY="$(openssl rand -base64 32)"
           SMS_ENCRYPTION_KEY="$(openssl rand -base64 32)"
           WECHAT_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+          WECOM_ENCRYPTION_KEY="$(openssl rand -base64 32)"
           REALNAME_ENCRYPTION_KEY="$(openssl rand -base64 32)"
           STORAGE_SECRET_ID="$(openssl rand -base64 24)"
           STORAGE_SECRET_KEY="$(openssl rand -base64 32)"
@@ -118,6 +120,7 @@ jobs:
           echo "::add-mask::$STORAGE_ENCRYPTION_KEY"
           echo "::add-mask::$SMS_ENCRYPTION_KEY"
           echo "::add-mask::$WECHAT_ENCRYPTION_KEY"
+          echo "::add-mask::$WECOM_ENCRYPTION_KEY"
           echo "::add-mask::$REALNAME_ENCRYPTION_KEY"
           echo "::add-mask::$STORAGE_SECRET_ID"
           echo "::add-mask::$STORAGE_SECRET_KEY"
@@ -127,6 +130,7 @@ jobs:
             echo "STORAGE_ENCRYPTION_KEY=$STORAGE_ENCRYPTION_KEY"
             echo "SMS_ENCRYPTION_KEY=$SMS_ENCRYPTION_KEY"
             echo "WECHAT_ENCRYPTION_KEY=$WECHAT_ENCRYPTION_KEY"
+            echo "WECOM_ENCRYPTION_KEY=$WECOM_ENCRYPTION_KEY"
             echo "REALNAME_ENCRYPTION_KEY=$REALNAME_ENCRYPTION_KEY"
             echo "STORAGE_SECRET_ID=$STORAGE_SECRET_ID"
             echo "STORAGE_SECRET_KEY=$STORAGE_SECRET_KEY"
@@ -204,6 +208,7 @@ jobs:
             -e ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED=true \
             -e SMS_ENCRYPTION_KEY="$SMS_ENCRYPTION_KEY" \
             -e WECHAT_ENCRYPTION_KEY="$WECHAT_ENCRYPTION_KEY" \
+            -e WECOM_ENCRYPTION_KEY="$WECOM_ENCRYPTION_KEY" \
             -e REALNAME_ENCRYPTION_KEY="$REALNAME_ENCRYPTION_KEY" \
             -e DATABASE_URL="$CONTAINER_DATABASE_URL" \
             u-nest-api-starter:smoke
@@ -315,6 +320,7 @@ jobs:
             -e ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED=true \
             -e SMS_ENCRYPTION_KEY="$SMS_ENCRYPTION_KEY" \
             -e WECHAT_ENCRYPTION_KEY="$WECHAT_ENCRYPTION_KEY" \
+            -e WECOM_ENCRYPTION_KEY="$WECOM_ENCRYPTION_KEY" \
             -e REALNAME_ENCRYPTION_KEY="$REALNAME_ENCRYPTION_KEY" \
             -e DATABASE_URL="$CONTAINER_DATABASE_URL" \
             u-nest-api-starter:smoke \
