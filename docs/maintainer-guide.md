@@ -98,7 +98,7 @@ pnpm release:finish  <版本号>   # 打 tag、发 GitHub Release(不改任何�
 ```bash
 pnpm agent:preflight        # 开工体检:环境、是否落后主干、有无未合 PR
 pnpm agent:check:quick      # 快检查:lint / 类型 / 单测 / 守护自测(热缓存约 25 秒,冷跑约 1.5 分钟)
-pnpm agent:check:full       # 全量检查(含 e2e;本地约 6 分钟,需 Docker 里的数据库起着)
+pnpm agent:check:full       # 全量检查(含 e2e)—— 权威口径是 PR CI 冷跑,别在自己电脑上跑:本机连跑必出大批假失败(2026-08-02 拍板);日常用 agent:check:quick
 ```
 
 ```bash

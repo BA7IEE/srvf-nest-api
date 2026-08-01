@@ -281,7 +281,10 @@ function main(): void {
 
   console.log('\n下一步(阶段 A 到此为止,脚本**不会**自行提交 / 开 PR / 合并 / 打 tag):');
   console.log('  1. 复核 git diff(尤其 CHANGELOG 折叠段与 handoff 叙事)');
-  console.log('  2. pnpm docs:counts && pnpm agent:check:full');
+  // 2026-08-02 拍板:本地不再跑 agent:check:full —— 本机连跑全量 e2e 必出榨干假红
+  // (耗时翻倍 + 数百条假失败,三次实录;v0.65.0 发版当天差点被 365 条假红拦住),
+  // 全量的权威口径恒为 PR CI 冷跑。本地只做 quick(25s)兜底。
+  console.log('  2. pnpm docs:counts && pnpm agent:check:quick(全量以 PR CI 冷跑为准,勿本机全量 e2e)');
   console.log('  3. 提交 + 开 PR(档位 E),由**维护者**拍板合并');
   console.log(`  4. 合并后跑:pnpm release:finish ${version}`);
 }
