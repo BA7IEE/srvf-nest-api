@@ -4,7 +4,7 @@
   "ratchets": [
     {
       "id": "is-optional-null",
-      "baseline": "harness/is-optional-null-baseline.json",
+      "baseline": "harness/is-optional-null-baseline-v2.json",
       "rule": "srvf/no-nullable-is-optional",
       "symbolShape": "class-field",
       "why": "第 18 条 null 契约:带 @IsOptional() 的属性其顶层类型必须含 `| null`。存量按「类名.字段名」逐条冻结。"
