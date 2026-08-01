@@ -53,8 +53,33 @@ import { parser as tsParser, plugin as tsPlugin } from 'typescript-eslint';
 // | R3-2 | `const Opt = CV.IsOptional` namespace→局部 | **🟢 零命中** | resolveImportedName 认 MemberExpression init | 同上 |
 // | R3-3 | `export { IsOptional as Opt } from 'class-validator'` 改名 re-export | **🟢 零命中** | srvf/no-decorator-realias 在**源头**拒 | 同上 |
 //
+// ── R4(2026-08-01 整批评审 ③)—— disable 之外的**第二种** inline 语法 ──────────
+//
+// R2 关的是 `eslint-disable` 家族。ESLint 还有一种**完全不同的语法**能把规则关掉:
+// **规则配置注释** `/* eslint <rule>: <config> */`。它不含 "disable" 三个字,
+// R2 的正则一个都匹配不到 —— 修复前四组变异在真实 `pnpm lint` 下全部 **RC=0 零命中**。
+//
+// | # | 变异(写进真实 controller 跑正式 lint) | 带注释 | 去掉注释 | 拦在哪 | 断言在哪 |
+// |---|---|---|---|---|---|
+// | R4-1 | `/* eslint srvf/no-param-id-string: "off" */` | **🟢 RC=0 零命中** | 🔴 RC=1 | 全仓扫描拒规则配置注释 | 本文件 R4 段 |
+// | R4-2 | 同上但写成 `: 0` | **🟢 RC=0** | 🔴 RC=1 | 同上 | 同上 |
+// | R4-3 | 同上但写成 `: ["off"]` | **🟢 RC=0** | 🔴 RC=1 | 同上 | 同上 |
+// | R4-4 | `/* eslint no-restricted-syntax: "off" */`(关第 18 条那一族) | **🟢 RC=0** | 🔴 RC=1 | 同上 | 同上 |
+//
+// 判据为什么是「拒**一切**规则配置注释」而不是「只拒点名 srvf/ 与 no-restricted-syntax 的」:
+//   ① 规则名白名单自己就是下一个逃生门 —— 落地第四条执法规则却忘了往名单里加,
+//      缺口静默重开(和 R2 里「把 noInlineConfig 扩到第二类文件」是同一个错误的两种写法);
+//   ② 配置注释还能把规则**降级**(`: "warn"`),不只是关掉。降级同样是改判据;
+//   ③ 全仓实测**零命中**(唯一以 `eslint` 开头的注释是 selftest 自己的一句散文,
+//      而它是 **Line** 注释)—— 这条同样是零代价的。
+//
+// ⚠️ 只判 **Block** 注释:ESLint 的规则配置注释**只认块注释**,`// eslint x: "off"`
+//    对 ESLint 什么都不做。把它也报成逃生门就是误杀 —— 而误杀会逼下一个人来把整条扫描删掉。
+//    锚点照抄 ESLint 自己的判据(块注释 + 指令词恰为 `eslint`),松一点误报,紧一点漏报。
+//
 // R2 为什么不做成 eslint 规则:一条 eslint 规则自己也能被 `/* eslint-disable */`
-// 关掉(那正是 R2-4)。扫描必须跑在 eslint **之外**才站得住。
+// 关掉(那正是 R2-4)。扫描必须跑在 eslint **之外**才站得住。R4 更是如此 ——
+// 规则配置注释能直接把那条规则本身配成 off。
 // R3-3 为什么不做进 decorator-identity:名字是在**另一个模块**换掉的,同文件解析看不见;
 // 跨模块解析要么依赖 type checker(自测里拿不到 parserServices,阳性对照做不了),
 // 要么自写模块图(第二把尺子)。所以判据换方向:不让改名这件事发生。
@@ -750,10 +775,26 @@ export function accountRatchet(
 export interface DisableEscape {
   readonly file: string;
   readonly line: number;
-  /** 'named-srvf' = 具名关掉 srvf/ 规则;'unscoped' = 不具名(把 srvf/ 一并关掉) */
-  readonly kind: 'named-srvf' | 'unscoped';
+  /**
+   * 'named-srvf' = 具名关掉 srvf/ 规则;'unscoped' = 不具名(把 srvf/ 一并关掉);
+   * 'rule-config' = 规则配置注释 `/* eslint x: "off" *\/`(R4,与 disable 是两种语法)
+   */
+  readonly kind: 'named-srvf' | 'unscoped' | 'rule-config';
   readonly text: string;
 }
+
+/**
+ * 命中种类 → 给人读的标签。**必须是全覆盖的表,不能写成三元**:
+ * R4 落地时这里原本是 `kind === 'named-srvf' ? A : B` 的二元三元,新增的 'rule-config'
+ * 于是被渲染成「不具名 disable」—— 抓是抓到了,但报告在说另一件事,会把下一个人送去
+ * 改错的东西。判据本身对、消息撒谎,是最难发现的一种坏。
+ * 下面 `assertEveryKindHasLabel` 是它的执行位:新增 kind 却忘了配标签,自测直接红。
+ */
+const ESCAPE_KIND_LABEL: Record<DisableEscape['kind'], string> = {
+  'named-srvf': '具名关掉 srvf/ 规则',
+  unscoped: '不具名 disable(把 srvf/ 一并关掉)',
+  'rule-config': '规则配置注释(`/* eslint x: "off" *\\/`,关掉或降级都算)',
+};
 
 /**
  * eslint 的 disable 指令必须**出现在注释开头**(`/* prettier-ignore eslint-disable *\/`
@@ -780,14 +821,37 @@ export function classifyDisableComment(commentValue: string): DisableEscape['kin
 }
 
 /**
+ * ESLint 的**规则配置**指令词恰好是 `eslint`(后面不接 `-`)—— `eslint-disable` /
+ * `eslint-enable` / `eslint-env` 都是别的指令,不归本条。
+ */
+const RULE_CONFIG_DIRECTIVE_RE = /^\s*eslint(?![\w-])/;
+
+/**
+ * 判一条注释:是不是规则配置注释(R4)。纯函数,自测直接喂合成注释。
+ *
+ * @param commentType AST 注释节点的 `type`:'Block' | 'Line'。**必须传** ——
+ *   ESLint 只在块注释里认规则配置,行注释里的同样文字什么都不做,报它就是误杀。
+ * @param commentValue 注释体(不含 `//` 与 `/* *\/` 定界符)
+ */
+export function classifyRuleConfigComment(
+  commentType: string,
+  commentValue: string,
+): DisableEscape['kind'] | null {
+  if (commentType !== 'Block') return null;
+  return RULE_CONFIG_DIRECTIVE_RE.test(commentValue) ? 'rule-config' : null;
+}
+
+/**
  * 扫一个文件的**全部注释**。解析用的是与 `pnpm lint` 同一个 parser(typescript-eslint),
  * 不是手写的注释切分器 —— 手写切分器迟早在模板串 / 正则字面量 / JSX 上与真实解析漂移,
  * 而漂移的方向恰好是漏报。
  */
 export function scanFileForDisableEscapes(file: string, text: string): DisableEscape[] {
   // 便宜的预筛:没有这个词就一定没有指令,省掉整棵 AST。不会漏报。
-  if (!text.includes('eslint-disable')) return [];
-  let comments: Array<{ value: string; loc?: { start: { line: number } } }>;
+  // ⚠️ 预筛词是 `eslint` 而**不是** `eslint-disable`:R4 的规则配置注释里根本没有
+  // "disable" 三个字,按旧预筛剪枝会让新判据永远匹配不到 —— 那正是最坏的静默失效。
+  if (!text.includes('eslint')) return [];
+  let comments: Array<{ type?: string; value: string; loc?: { start: { line: number } } }>;
   try {
     // typescript-eslint 元包只暴露 `parseForESLint`(没有裸 `parse`)——
     // 用它正是为了和 `pnpm lint` 共用**同一个** parser 版本,不引第二个解析器。
@@ -799,7 +863,11 @@ export function scanFileForDisableEscapes(file: string, text: string): DisableEs
     const parseForESLint = tsParser.parseForESLint as unknown as (
       code: string,
       options: Record<string, unknown>,
-    ) => { ast: { comments?: Array<{ value: string; loc?: { start: { line: number } } }> } };
+    ) => {
+      ast: {
+        comments?: Array<{ type?: string; value: string; loc?: { start: { line: number } } }>;
+      };
+    };
     const { ast } = parseForESLint(text, {
       comment: true,
       loc: true,
@@ -814,7 +882,8 @@ export function scanFileForDisableEscapes(file: string, text: string): DisableEs
   }
   const found: DisableEscape[] = [];
   for (const c of comments) {
-    const kind = classifyDisableComment(c.value);
+    const kind =
+      classifyDisableComment(c.value) ?? classifyRuleConfigComment(c.type ?? '', c.value);
     if (kind === null) continue;
     found.push({
       file,
@@ -835,19 +904,16 @@ export function scanFileForDisableEscapes(file: string, text: string): DisableEs
  */
 const SCANNED_SOURCE_EXT = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.mjs', '.cjs']);
 
-/** 全仓扫描(git 跟踪的文件,天然排除 node_modules / dist)。 */
-export function scanRepoForDisableEscapes(repoRoot: string): DisableEscape[] {
-  const listed = spawnSync('git', ['ls-files', '-z'], {
-    cwd: repoRoot,
-    encoding: 'utf-8',
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  if (listed.status !== 0) {
-    throw new Error(`git ls-files 失败(RC=${String(listed.status)}):${listed.stderr ?? ''}`);
-  }
-  const files = listed.stdout.split('\0').filter((f) => f !== '');
+/**
+ * 按显式路径清单扫描。全仓扫描与 R4 真触发探针共用**同一条**读盘 → 解析 → 判定链,
+ * 两者只在「文件清单从哪来」上不同 —— 探针因此测得到真实链路,而不是另写一份判据。
+ */
+export function scanPathsForDisableEscapes(
+  repoRoot: string,
+  relPaths: readonly string[],
+): DisableEscape[] {
   const found: DisableEscape[] = [];
-  for (const rel of files) {
+  for (const rel of relPaths) {
     if (!SCANNED_SOURCE_EXT.has(path.extname(rel))) continue;
     const abs = path.join(repoRoot, rel);
     let text: string;
@@ -859,6 +925,20 @@ export function scanRepoForDisableEscapes(repoRoot: string): DisableEscape[] {
     found.push(...scanFileForDisableEscapes(rel, text));
   }
   return found;
+}
+
+/** 全仓扫描(git 跟踪的文件,天然排除 node_modules / dist)。 */
+export function scanRepoForDisableEscapes(repoRoot: string): DisableEscape[] {
+  const listed = spawnSync('git', ['ls-files', '-z'], {
+    cwd: repoRoot,
+    encoding: 'utf-8',
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (listed.status !== 0) {
+    throw new Error(`git ls-files 失败(RC=${String(listed.status)}):${listed.stderr ?? ''}`);
+  }
+  const files = listed.stdout.split('\0').filter((f) => f !== '');
+  return scanPathsForDisableEscapes(repoRoot, files);
 }
 
 async function main(): Promise<void> {
@@ -1500,6 +1580,25 @@ async function main(): Promise<void> {
       ['eslint-enable 不是 disable', ' eslint-enable srvf/no-param-id-string'],
       ['前缀相同但不是指令', ' eslint-disabled-by-design srvf/no-param-id-string'],
     ];
+    // R4:规则配置注释的合成对照。判据带 Block/Line 这一维 —— 行注释里的同样文字
+    // 对 ESLint 什么都不做,报它是误杀。
+    const CONFIG_POSITIVE: ReadonlyArray<readonly [string, string]> = [
+      ['具名关 srvf/ 规则', ' eslint srvf/no-param-id-string: "off" '],
+      ['数字 0 形态', ' eslint srvf/no-nullable-is-optional: 0 '],
+      ['数组形态', ' eslint srvf/no-decorator-realias: ["off"] '],
+      ['关第 18 条那一族', ' eslint no-restricted-syntax: "off" '],
+      ['降级成 warn —— 同样是改判据,不只是关掉', ' eslint srvf/no-param-id-string: "warn" '],
+      ['不留空格紧贴定界符', 'eslint srvf/no-param-id-string:"off"'],
+      ['夹在别的规则里', ' eslint no-console: "off", srvf/no-param-id-string: "off" '],
+    ];
+    const CONFIG_NEGATIVE: ReadonlyArray<readonly [string, string, string]> = [
+      ['行注释里的同样文字 ⇒ ESLint 自己也不认', 'Line', ' eslint srvf/no-param-id-string: "off"'],
+      ['eslint-enable 不是配置注释', 'Block', ' eslint-enable srvf/no-param-id-string'],
+      ['eslint-disable 归 R2 不归 R4(避免同一条被两处判)', 'Block', ' eslint-disable '],
+      ['eslint-env 是别的指令', 'Block', ' eslint-env node '],
+      ['以 eslint 开头的散文(全仓唯一一处,且是行注释)', 'Line', ' eslint 的「描述分隔符」是 `--`'],
+      ['普通散文提到这个词', 'Block', ' 见上文关于 eslint 的说明'],
+    ];
     let scannerOk = true;
     for (const [name, comment] of POSITIVE) {
       if (classifyDisableComment(comment) === null) {
@@ -1535,10 +1634,62 @@ async function main(): Promise<void> {
       scannerOk = false;
       failures.push('✗ R2 扫描器端到端失效 —— 真实注释里的 srvf/ disable 没被抓到');
     }
+    for (const [name, comment] of CONFIG_POSITIVE) {
+      if (classifyRuleConfigComment('Block', comment) === null) {
+        scannerOk = false;
+        failures.push(`✗ R4 扫描器阳性对照失效 —— 「${name}」没被识别为规则配置注释:${comment.trim()}`);
+      }
+    }
+    for (const [name, type, comment] of CONFIG_NEGATIVE) {
+      const verdict = classifyRuleConfigComment(type, comment);
+      if (verdict !== null) {
+        scannerOk = false;
+        failures.push(
+          `✗ R4 扫描器误杀 —— 「${name}」被判成 ${verdict}:${comment.trim()}\n` +
+            '  误杀会逼下一个人来把整条扫描删掉,后果比漏放更久。',
+        );
+      }
+    }
+    // 预筛回归:R4 的注释里没有 "disable" 三个字,旧预筛(text.includes('eslint-disable'))
+    // 会把整棵 AST 剪掉、判据永远匹配不到。这条钉住那个剪枝。
+    const configInRealFile = scanFileForDisableEscapes(
+      '<synthetic>',
+      '/* eslint srvf/no-param-id-string: "off" */\nexport const x = 1;\n',
+    );
+    if (configInRealFile.length !== 1 || configInRealFile[0].kind !== 'rule-config') {
+      scannerOk = false;
+      failures.push(
+        '✗ R4 扫描器端到端失效 —— 不含 "eslint-disable" 字样的规则配置注释没被抓到\n' +
+          '  常见成因:scanFileForDisableEscapes 的便宜预筛还写着 `text.includes(\'eslint-disable\')`。',
+      );
+    }
+    // 报告口径的执行位:两套分类器**实际吐得出**的每一种 kind 都必须在标签表里有词条。
+    // 本文件在 scripts/tsconfig.json 的 exclude 内(见该文件注释),Record 的穷尽性拿不到
+    // typecheck 兜底 —— 所以这层必须是运行时断言,不能只靠类型。
+    const emittedKinds = new Set<DisableEscape['kind']>(
+      [
+        ...POSITIVE.map(([, c]) => classifyDisableComment(c)),
+        ...CONFIG_POSITIVE.map(([, c]) => classifyRuleConfigComment('Block', c)),
+      ].filter((k): k is DisableEscape['kind'] => k !== null),
+    );
+    // 刻意放宽成「键可能缺失」的视图:Record 的类型保证在**本文件**拿不到 typecheck 兜底
+    // (见 scripts/tsconfig.json 的 exclude),所以这里要的是真运行时查表,不是类型断言。
+    const escapeKindLabels: Record<string, string | undefined> = ESCAPE_KIND_LABEL;
+    for (const kind of emittedKinds) {
+      if (escapeKindLabels[kind] === undefined) {
+        scannerOk = false;
+        failures.push(
+          `✗ R2/R4 报告口径缺词条 —— kind='${kind}' 在 ESCAPE_KIND_LABEL 里没有标签。\n` +
+            '  后果不是漏放而是**误报成别的种类**:抓得到,但报告把人送去改错的东西。',
+        );
+      }
+    }
     if (scannerOk) {
       passed++;
       console.log(
-        `✓ R2 扫描器阳性对照:${POSITIVE.length} 条逃生门全抓到、${NEGATIVE.length} 条正当写法全放行`,
+        `✓ R2/R4 扫描器阳性对照:${POSITIVE.length + CONFIG_POSITIVE.length} 条逃生门全抓到、` +
+          `${NEGATIVE.length + CONFIG_NEGATIVE.length} 条正当写法全放行、` +
+          `${emittedKinds.size} 种命中各有报告标签`,
       );
     }
 
@@ -1552,13 +1703,112 @@ async function main(): Promise<void> {
           escapes
             .map(
               (e) =>
-                `    ${e.file}:${e.line}  [${e.kind === 'named-srvf' ? '具名关掉 srvf/ 规则' : '不具名 disable(把 srvf/ 一并关掉)'}]\n` +
+                `    ${e.file}:${e.line}  [${ESCAPE_KIND_LABEL[e.kind]}]\n` +
                 `      ${e.text}`,
             )
             .join('\n') +
           '\n  srvf/ 三条规则是执法体,不接受行内关闭:能被违规者本人一行注释关掉的防线不是防线。\n' +
+          '  规则配置注释(`/* eslint x: "off" *\/`,R4)同样拒 —— 它是与 disable 并列的第二种语法,\n' +
+          '  能把规则关掉、也能把它降级成 warn,而两者都是在改判据本身。\n' +
           '  正确做法:把违规真的改掉;确属存量,走对应棘轮的具名基线(harness/ratchet-registry.json)。\n' +
           '  不具名 disable 同样拒 —— 它关掉的规则集合里就包含 srvf/,只是没写出名字。',
+      );
+    }
+  }
+
+  // ── R4:四组变异必须写进**真实文件**、跑**正式 lint 入口** + 同一条扫描链 ────
+  //
+  // 为什么不能只测纯函数:纯函数绿只证明「这个正则认得出这串字」,不证明
+  //   ① 这串字在真实 lint 下**确实**能把规则关掉(缺口是真的,不是我想象的);
+  //   ② 违规本身**确实**会被抓到(否则 RC=0 可能只是「压根没违规」——
+  //      那样「带注释 RC=0」这条断言就成了自我实现的谎话);
+  //   ③ 扫描在**真实文件**上抓得到(而不是只在合成字符串上)。
+  // 三条各自独立,缺任何一条这段就退化成结构断言。
+  {
+    const repoRoot = path.resolve(__dirname, '..');
+    const probeRel = 'src/__harness-rule-config-probe.controller.ts';
+    const probeAbs = path.join(repoRoot, probeRel);
+    // 两段探针体都必须是 prettier-clean 的:否则「带注释 RC=0」会被格式违规顶成 RC=1,
+    // 断言测的就成了排版而不是逃生门。
+    const paramBody =
+      "import { Param } from '@nestjs/common';\n" +
+      '\n' +
+      'export class HarnessRuleConfigProbeController {\n' +
+      "  m(@Param('id') id: string): string {\n" +
+      '    return id;\n' +
+      '  }\n' +
+      '}\n';
+    const wrapBody =
+      'export class HarnessRuleConfigWrapProbe {\n' +
+      '  m(): { code: number; message: string; data: number } {\n' +
+      "    return { code: 0, message: 'ok', data: 1 };\n" +
+      '  }\n' +
+      '}\n';
+    const MUTATIONS: ReadonlyArray<readonly [string, string, string, string]> = [
+      ['R4-1 `: "off"`', '/* eslint srvf/no-param-id-string: "off" */\n', paramBody, PARAM_ID_STRING_MESSAGE],
+      ['R4-2 `: 0`', '/* eslint srvf/no-param-id-string: 0 */\n', paramBody, PARAM_ID_STRING_MESSAGE],
+      ['R4-3 `: ["off"]`', '/* eslint srvf/no-param-id-string: ["off"] */\n', paramBody, PARAM_ID_STRING_MESSAGE],
+      [
+        'R4-4 `no-restricted-syntax: "off"`',
+        '/* eslint no-restricted-syntax: "off" */\n',
+        wrapBody,
+        HARNESS_SYNTAX['no-manual-response-wrap'].message,
+      ],
+    ];
+    const runLint = (): { status: number | null; stdout: string } => {
+      const r = spawnSync(
+        path.join(repoRoot, 'node_modules/.bin/eslint'),
+        ['--max-warnings', '0', '--format', 'json', probeRel],
+        { cwd: repoRoot, encoding: 'utf-8' },
+      );
+      return { status: r.status, stdout: typeof r.stdout === 'string' ? r.stdout : '' };
+    };
+    let mutationsOk = true;
+    for (const [name, directive, body, expectedMessage] of MUTATIONS) {
+      try {
+        // ① 带配置注释 ⇒ 正式 lint 放行(缺口实证)
+        fs.writeFileSync(probeAbs, directive + body);
+        const muted = runLint();
+        // ③ 同一条扫描链在真实文件上抓到它
+        const scanned = scanPathsForDisableEscapes(repoRoot, [probeRel]);
+        // ② 去掉注释 ⇒ 同一份代码被真实 lint 抓到(证明违规是真的)
+        fs.writeFileSync(probeAbs, body);
+        const bare = runLint();
+
+        if (bare.status === 0 || !bare.stdout.includes(expectedMessage)) {
+          mutationsOk = false;
+          failures.push(
+            `✗ ${name} —— 去掉配置注释后正式 lint **没有**抓到违规(exit=${String(bare.status)})。\n` +
+              '  含义:探针体本身不再违规(规则改了 / 探针写法漂移),于是「带注释 RC=0」\n' +
+              '  这条断言变成自我实现的谎话 —— 它证明的不是逃生门,而是「本来就没东西可抓」。',
+          );
+        }
+        if (muted.status !== 0) {
+          // 缺口被关掉是**好消息**,但必须来把这段文字改掉,否则索引表开始说谎。
+          mutationsOk = false;
+          failures.push(
+            `✗ ${name} —— 带配置注释时正式 lint 竟然报错了(exit=${String(muted.status)})。\n` +
+              '  若这是因为 inline config 已被全局关掉:那是好消息,请同步改上面 R4 索引表\n' +
+              '  的「修复前」列与本段断言,别让文档继续描述一个已不存在的缺口。',
+          );
+        }
+        if (scanned.length !== 1 || scanned[0].kind !== 'rule-config') {
+          mutationsOk = false;
+          failures.push(
+            `✗ ${name} —— 全仓同款扫描链在真实文件上**没抓到**规则配置注释` +
+              `(命中 ${scanned.length} 条:${scanned.map((e) => e.kind).join(',') || '无'})。`,
+          );
+        }
+      } finally {
+        // 必须清掉:留在 src/ 会让 pnpm lint 永远红(响亮地坏,好过静默地坏)
+        fs.rmSync(probeAbs, { force: true });
+      }
+    }
+    if (mutationsOk) {
+      passed++;
+      console.log(
+        `✓ R4 真触发:${MUTATIONS.length} 组规则配置注释变异在真实文件上` +
+          '「正式 lint 全放行 / 去掉注释即红 / 扫描全抓到」',
       );
     }
   }

@@ -10,7 +10,7 @@ import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { ActivityPositionAuditRecorder } from './activity-position-audit-recorder';
 import type { ActivityProposalSnapshot } from './activity-proposal.types';
 import { ActivityProposalValidator } from './activity-proposal-validator';
-import { promoteActivityWaitlistWithinCapacity } from './activity-waitlist-promotion';
+import { promoteActivityWaitlistsWithinSharedCapacity } from './activity-waitlist-promotion';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -190,7 +190,7 @@ export class ActivityProposalApplier {
       before.capacity !== snapshot.activity.capacity &&
       (snapshot.activity.capacity === null ||
         (before.capacity !== null && snapshot.activity.capacity > before.capacity));
-    const expandedActivityPositionIds: string[] = [];
+    const expandedActivityPositionIds = new Set<string>();
     for (const proposal of snapshot.positions) {
       const data = {
         name: proposal.name,
@@ -225,7 +225,7 @@ export class ActivityProposalApplier {
         (proposal.capacity === null ||
           (current.capacity !== null && proposal.capacity > current.capacity))
       ) {
-        expandedActivityPositionIds.push(current.id);
+        expandedActivityPositionIds.add(current.id);
       }
       const changed = Object.entries(data)
         .filter(([field, value]) => {
@@ -272,21 +272,27 @@ export class ActivityProposalApplier {
     // 无 live 岗位的活动，父容量扩容仍递补历史无岗位队列；有 live 岗位则父容量不再触发递补。
     const promotionTargets: Array<string | null> =
       activityCapacityExpanded && snapshot.positions.length === 0 ? [null] : [];
-    promotionTargets.push(...expandedActivityPositionIds);
-    const promoted: Array<{ registrationId: string; memberId: string }> = [];
-    for (const activityPositionId of promotionTargets) {
-      const result = await promoteActivityWaitlistWithinCapacity({
-        activityId,
-        activityPositionId,
-        maxPromotions: null,
-        actorUserId: actor.id,
-        actorRoleSnap: actor.role,
-        auditMeta,
-        tx,
-        auditLogs: this.auditLogs,
-      });
-      promoted.push(...result.promoted);
-    }
+    // **稳定岗位序**:按活动自己的岗位排序(sortOrder → createdAt → id)发放预算，而不是按
+    // proposal 数组的书写顺序。父预算不够分时顺序决定谁被递补，跟着请求体走会让同一份内容
+    // 换个数组顺序递补到不同的人。
+    promotionTargets.push(
+      ...currentPositions
+        .filter((position) => expandedActivityPositionIds.has(position.id))
+        .map((position) => position.id),
+    );
+    // 一次提案可能同时扩容多个岗位，各岗 headroom 之和可以超过父活动 headroom。**必须**走
+    // 共享父预算的批量入口:逐岗调单岗版会让每一岗都完整领走同一份父剩余量(递补写的是
+    // pending 不是 pass，父 pass 基线在批次内不动)，合计递补数因此突破活动容量。
+    // 这里刻意不自算容量 —— 预算算法只有 activity-waitlist-promotion.ts 一份。
+    const { promoted } = await promoteActivityWaitlistsWithinSharedCapacity({
+      activityId,
+      orderedPositionIds: promotionTargets,
+      actorUserId: actor.id,
+      actorRoleSnap: actor.role,
+      auditMeta,
+      tx,
+      auditLogs: this.auditLogs,
+    });
     const scheduleChanged =
       before.startAt.getTime() !== updated.startAt.getTime() ||
       before.endAt.getTime() !== updated.endAt.getTime() ||
