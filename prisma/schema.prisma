@@ -2956,6 +2956,14 @@ model NotificationOutboxIntent {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
+  // ⚠️ 本表还有**三条手写 partial unique**,Prisma DSL 表达不了 WHERE 子句,故不在此处:
+  //   notification_outbox_wechat_delivery_active_unique  (第 18 migration)
+  //   notification_outbox_admin_sms_active_unique        (第 18 migration)
+  //   notification_outbox_wecom_delivery_active_unique   (第 69 migration;T5B)
+  // 三条形状一致:键 ("eventType","aggregateId","destinationRef"),谓词 = 各自的 eventType
+  // + status IN ('pending','processing')。谓词按 eventType **分域**是刻意的 ——
+  // 合成一条不含 eventType 谓词的通用索引会让同一通知同一人的微信小程序 child 与
+  // 企业微信 child 互相占槽,两个渠道无法同时投递(企业微信冻结稿 §10.3)。
   @@index([status, availableAt, leaseExpiresAt])
   @@index([leaseExpiresAt])
   @@index([aggregateType, aggregateId])

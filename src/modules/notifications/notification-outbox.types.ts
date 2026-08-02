@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import {
   NOTIFICATION_CHANNEL_IN_APP,
   NOTIFICATION_CHANNEL_WECHAT,
+  NOTIFICATION_CHANNEL_WECOM,
   NOTIFICATION_VISIBILITIES,
   OUTBOX_EVENT_ADMIN_SMS,
   OUTBOX_EVENT_BIRTHDAY_SMS,
@@ -10,6 +11,8 @@ import {
   OUTBOX_EVENT_TARGETED_NOTIFICATION,
   OUTBOX_EVENT_WECHAT_BROADCAST,
   OUTBOX_EVENT_WECHAT_DELIVERY,
+  OUTBOX_EVENT_WECOM_BROADCAST,
+  OUTBOX_EVENT_WECOM_DELIVERY,
   OUTBOX_ADMIN_PAYLOAD_VERSION,
   OUTBOX_PAYLOAD_VERSION,
 } from './notification.constants';
@@ -55,6 +58,23 @@ export interface WechatDeliveryOutboxPayload {
   publishGeneration?: number;
 }
 
+// T5B 企业微信(冻结稿 §10.2)。形状与 Wechat 两个 payload **逐字相同**,刻意分开声明:
+// 类型合并会让"某个 handler 拿错渠道的 payload"从编译错误退化成运行时才发现。
+//
+// ⚠️ §10.2 禁字段(wecomUserId / corpId / agentId / access_token / CorpSecret / 完整深链 /
+// provider 原始报文 / 手机号 / openid / JWT / binding ticket)靠下方 `walkPayload` +
+// `FORBIDDEN_PAYLOAD_KEY` + `containsSensitiveValue` 三重兜底,不靠这里的类型自觉。
+export interface WecomBroadcastOutboxPayload {
+  notificationId: string;
+  publishGeneration: number;
+}
+
+export interface WecomDeliveryOutboxPayload {
+  notificationId: string;
+  memberId: string;
+  publishGeneration?: number;
+}
+
 export interface BirthdaySmsOutboxPayload {
   memberId: string;
   dateKey: string;
@@ -76,6 +96,8 @@ export type KnownNotificationOutboxPayload =
   | SystemBroadcastOutboxPayload
   | WechatBroadcastOutboxPayload
   | WechatDeliveryOutboxPayload
+  | WecomBroadcastOutboxPayload
+  | WecomDeliveryOutboxPayload
   | BirthdaySmsOutboxPayload
   | AdminSmsOutboxPayload;
 
@@ -89,6 +111,8 @@ export function isKnownNotificationOutboxEvent(eventType: string): boolean {
     OUTBOX_EVENT_SYSTEM_BROADCAST,
     OUTBOX_EVENT_WECHAT_BROADCAST,
     OUTBOX_EVENT_WECHAT_DELIVERY,
+    OUTBOX_EVENT_WECOM_BROADCAST,
+    OUTBOX_EVENT_WECOM_DELIVERY,
     OUTBOX_EVENT_BIRTHDAY_SMS,
     OUTBOX_EVENT_ADMIN_SMS,
   ].includes(eventType);
@@ -134,6 +158,33 @@ export function parseKnownNotificationOutboxPayload(
         publishGeneration: generation(value.publishGeneration),
       };
     case OUTBOX_EVENT_WECHAT_DELIVERY:
+      if (payloadVersion === OUTBOX_PAYLOAD_VERSION) {
+        exactKeys(value, ['notificationId', 'memberId']);
+        return {
+          notificationId: resourceRef(value.notificationId),
+          memberId: cuid(value.memberId),
+        };
+      }
+      requireVersion(payloadVersion, OUTBOX_ADMIN_PAYLOAD_VERSION, eventType);
+      exactKeys(value, ['notificationId', 'memberId', 'publishGeneration']);
+      return {
+        notificationId: resourceRef(value.notificationId),
+        memberId: cuid(value.memberId),
+        publishGeneration: generation(value.publishGeneration),
+      };
+    // 企业微信广播 root **只有 v2**:本渠道诞生于 G2 之后,不存在无 generation 的历史行。
+    // 刻意不像 wechat 那样留 v1 分支 —— 留了就等于给"直插一条无 generation 的脏 root"开门。
+    case OUTBOX_EVENT_WECOM_BROADCAST:
+      requireVersion(payloadVersion, OUTBOX_ADMIN_PAYLOAD_VERSION, eventType);
+      exactKeys(value, ['notificationId', 'publishGeneration']);
+      return {
+        notificationId: resourceRef(value.notificationId),
+        publishGeneration: generation(value.publishGeneration),
+      };
+    // 企业微信逐人 child 两个版本各有正当来源:
+    //   v1 = 系统定向通知(sourceType=system,无 generation 概念,§10.3「系统定向」)
+    //   v2 = admin 广播 fan-out 出来的 child(带 publishGeneration,§10.3「Admin广播 child」)
+    case OUTBOX_EVENT_WECOM_DELIVERY:
       if (payloadVersion === OUTBOX_PAYLOAD_VERSION) {
         exactKeys(value, ['notificationId', 'memberId']);
         return {
@@ -236,21 +287,31 @@ function enumString<const T extends readonly string[]>(value: unknown, allowed: 
   return value;
 }
 
+// 系统定向 payload 的 channel 闭集(§10.1 末条):允许 in-app / wechat / **wecom**,
+// 继续拒绝 targeted sms(短信永远只由 admin 显式计费确认端点触发,不许 producer 夹带)
+// 与任何未知值。归一化输出**恒以 in-app 打头 + 固定顺序**,故同一语义的 payload 只有
+// 一种字节形状 —— `sameIntent` 的 canonicalJson 对账因此不会被 channel 顺序抖动误判成
+// "eventKey 被复用成别的内容"。
+const TARGETED_CHANNELS_ALLOWED: ReadonlyArray<string> = [
+  NOTIFICATION_CHANNEL_IN_APP,
+  NOTIFICATION_CHANNEL_WECHAT,
+  NOTIFICATION_CHANNEL_WECOM,
+];
+
 function channelList(value: unknown): string[] {
-  if (
-    !Array.isArray(value) ||
-    value.some(
-      (channel) =>
-        channel !== NOTIFICATION_CHANNEL_IN_APP && channel !== NOTIFICATION_CHANNEL_WECHAT,
-    )
-  ) {
+  if (!Array.isArray(value) || value.some((channel) => !isTargetedChannel(channel))) {
     throw new NotificationOutboxPayloadError('invalid-channels', OUTBOX_PAYLOAD_VERSION);
   }
   const channels = new Set(value as string[]);
   return [
     NOTIFICATION_CHANNEL_IN_APP,
     ...(channels.has(NOTIFICATION_CHANNEL_WECHAT) ? [NOTIFICATION_CHANNEL_WECHAT] : []),
+    ...(channels.has(NOTIFICATION_CHANNEL_WECOM) ? [NOTIFICATION_CHANNEL_WECOM] : []),
   ];
+}
+
+function isTargetedChannel(channel: unknown): boolean {
+  return typeof channel === 'string' && TARGETED_CHANNELS_ALLOWED.includes(channel);
 }
 
 function dateKey(value: unknown): string {
@@ -405,6 +466,30 @@ function assertEnvelopePayloadCoherence(
         isWechatDeliveryEventKey(input, delivery);
       break;
     }
+    case OUTBOX_EVENT_WECOM_BROADCAST: {
+      const broadcast = payload as WecomBroadcastOutboxPayload;
+      coherent =
+        input.aggregateType === 'notification' &&
+        input.aggregateId === broadcast.notificationId &&
+        input.destinationType === 'broadcast' &&
+        input.destinationRef === broadcast.notificationId &&
+        input.eventKey ===
+          `wecom-broadcast:${broadcast.notificationId}:${broadcast.publishGeneration}`;
+      break;
+    }
+    case OUTBOX_EVENT_WECOM_DELIVERY: {
+      const delivery = payload as WecomDeliveryOutboxPayload;
+      // `destinationRef === memberId` 这条尤其硬:active-slot partial unique 的键是
+      // (eventType, aggregateId, destinationRef),envelope 与 payload 一旦允许错开,
+      // 直插脏行就能用假 destinationRef 绕过"同人同时只一条 active"。
+      coherent =
+        input.aggregateType === 'notification' &&
+        input.aggregateId === delivery.notificationId &&
+        input.destinationType === 'member' &&
+        input.destinationRef === delivery.memberId &&
+        isWecomDeliveryEventKey(input, delivery);
+      break;
+    }
     case OUTBOX_EVENT_BIRTHDAY_SMS: {
       const birthday = payload as BirthdaySmsOutboxPayload;
       coherent =
@@ -454,6 +539,33 @@ export function extractWechatDeliveryRootId(
   if (payloadVersion !== OUTBOX_ADMIN_PAYLOAD_VERSION) return null;
   const parts = eventKey.split(':');
   if (parts.length !== 4 || parts[0] !== 'wechat-delivery' || !CUID.test(parts[2] ?? '')) {
+    return null;
+  }
+  return parts[2] ?? null;
+}
+
+// 企业微信 child 的 eventKey 形状(§10.3)。与微信侧同型但**前缀不同**:
+//   v1 系统定向     `wecom-delivery:{notificationId}:{memberId}`
+//   v2 admin 广播   `wecom-delivery:{notificationId}:{rootIntentId}:{memberId}`
+function isWecomDeliveryEventKey(
+  input: NotificationOutboxSafetyInput,
+  payload: WecomDeliveryOutboxPayload,
+): boolean {
+  if (input.payloadVersion === OUTBOX_PAYLOAD_VERSION) {
+    return input.eventKey === `wecom-delivery:${payload.notificationId}:${payload.memberId}`;
+  }
+  const rootId = extractWecomDeliveryRootId(input.eventKey, input.payloadVersion);
+  const parts = input.eventKey.split(':');
+  return rootId !== null && parts[1] === payload.notificationId && parts[3] === payload.memberId;
+}
+
+export function extractWecomDeliveryRootId(
+  eventKey: string,
+  payloadVersion: number,
+): string | null {
+  if (payloadVersion !== OUTBOX_ADMIN_PAYLOAD_VERSION) return null;
+  const parts = eventKey.split(':');
+  if (parts.length !== 4 || parts[0] !== 'wecom-delivery' || !CUID.test(parts[2] ?? '')) {
     return null;
   }
   return parts[2] ?? null;

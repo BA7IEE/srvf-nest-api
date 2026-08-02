@@ -50,6 +50,18 @@ import {
 // ⚠️ T3 / T5B 加新能力请往 `prepare()` 返回的对象里加 `xxxWithContext(ctx, …)`,
 // **不要**给本类补回实例方法或实例字段 —— 那等于把编译期防线降级回运行时。
 
+// ===== message/send 的三个固定协议参数(冻结稿 §10.6 / D-WC-20;T5B 接线)=====
+//
+// 刻意声明在本文件而不是 `wecom.constants.ts`:T5B 的写集只开到 `providers/**`
+// (goal「仅接线面,HTTP 体不动」),而这三个值只有本处唯一一个调用点消费,
+// 不构成跨文件常量。若日后有第二个消费点,再按模块惯例上提到 wecom.constants.ts。
+//
+// 三个值都**不做成可配置**:可配置的重复检查窗口 = 运营可以把它调成 0,
+// 于是第二层保险悄悄消失而没有任何红。
+const WECOM_MESSAGE_ENABLE_ID_TRANS = 0;
+const WECOM_MESSAGE_ENABLE_DUPLICATE_CHECK = 1;
+const WECOM_MESSAGE_DUPLICATE_CHECK_INTERVAL_SECONDS = 1800;
+
 interface TokenCacheEntry {
   token: string;
   expiresAtMs: number;
@@ -284,7 +296,8 @@ export class WecomRealProvider {
     };
   }
 
-  // T5B 才由 Outbox 消费;T2 落形状与错误分类,不接任何调用方。
+  // T5B(2026-08-02)由 Notification Outbox 消费。T2 已落形状与错误分类,本刀只补齐
+  // §10.6 协议要求的三个固定字段 —— **不新开第二条 HTTP 路径**(整模块只此一处发消息)。
   private async sendTextCardWithContext(
     ctx: WecomContext,
     accessToken: string,
@@ -296,6 +309,10 @@ export class WecomRealProvider {
       const body = await this.postJson(
         `${WECOM_MESSAGE_SEND_URL}?access_token=${encodeURIComponent(accessToken)}`,
         {
+          // ⚠️ **只有 touser,永远没有 toparty / totag**(§10.4 业务结果第 3 条 / D-WC-27)。
+          // 逐人发送慢一些,但换来三件事:可审计的逐人 delivery、企业微信部门与 SRVF 组织
+          // 不一致时不会误发、以及"覆盖率"永远等于"我们判定过的受众"而不是企业通讯录。
+          // 想加 toparty 提覆盖率之前,请先读 §10.4 —— 那是被冻结稿点名禁止的做法。
           touser: input.toUser,
           msgtype: 'textcard',
           agentid: ctx.agentId,
@@ -305,12 +322,34 @@ export class WecomRealProvider {
             url: input.url,
             btntxt: input.btnTxt,
           },
+          // §10.6 三个固定协议字段(D-WC-20):
+          // - enable_id_trans=0:不做 userid 翻译,消息里不出现通讯录展示名
+          // - enable_duplicate_check=1 + interval=1800:企业微信侧 1800 秒重复检查。
+          //   ⚠️ 这是**第二层保险**(§10.6 第 3 条 / :1239):SRVF Outbox 幂等、
+          //   NotificationDelivery SENT guard 与 active-slot 才是主防线。开了它也
+          //   **不承诺 exactly-once** —— Provider 接受到本地 ack 之间的崩溃窗口依然存在。
+          enable_id_trans: WECOM_MESSAGE_ENABLE_ID_TRANS,
+          enable_duplicate_check: WECOM_MESSAGE_ENABLE_DUPLICATE_CHECK,
+          duplicate_check_interval: WECOM_MESSAGE_DUPLICATE_CHECK_INTERVAL_SECONDS,
         },
         'message/send',
       );
       const errcode = requireInteger(body, 'errcode', 'message/send');
       if (errcode !== 0) {
         return { ok: false, errCode: String(errcode), errMsg: `message/send errcode=${errcode}` };
+      }
+      // 我们发的是**单 touser** 请求,压根没有 party/tag 字段。上游却回报 invalidparty /
+      // invalidtag ⇒ 说明发出去的请求不是我们以为的那个(§10.7 第 5 条:视为请求契约错误,
+      // 不得忽略)。归一化成一个固定标签走 ok:false,调用方映射 provider-contract-error。
+      if (
+        this.splitUserList(body.invalidparty).length > 0 ||
+        this.splitUserList(body.invalidtag).length > 0
+      ) {
+        return {
+          ok: false,
+          errCode: 'INVALID_PARTY_OR_TAG',
+          errMsg: 'message/send 单 touser 请求收到 invalidparty/invalidtag',
+        };
       }
       // §0.5 第 1 条:invaliduser / unlicenseduser 是**投递诊断**,不得误记为 SENT。
       return {

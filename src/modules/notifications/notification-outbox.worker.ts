@@ -6,9 +6,14 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 
-import { OUTBOX_CLAIM_BATCH, OUTBOX_LEASE_MS } from './notification.constants';
+import {
+  OUTBOX_CLAIM_BATCH,
+  OUTBOX_EVENT_WECOM_BROADCAST,
+  OUTBOX_LEASE_MS,
+} from './notification.constants';
 import {
   NotificationOutboxHandlers,
+  TerminalNotificationProviderError,
   UnsupportedNotificationOutboxEventError,
 } from './notification-outbox.handlers';
 import { notificationDispatchFailureLog } from './notification-dispatch-error';
@@ -116,10 +121,22 @@ export class NotificationOutboxWorker implements OnApplicationShutdown, OnModule
 
     if (handlerFailed) {
       if (handlerError instanceof NotificationOutboxGenerationConflictError) {
-        await this.outbox.deferWechatBroadcast(refreshed, handlerError);
+        // 按 root 自己的 eventType 分派到对应渠道的 defer 入口(T5B)。
+        // **微信分支逐字不变** —— 企业微信只是多了一条并列的 else-if,不改既有路径。
+        if (refreshed.eventType === OUTBOX_EVENT_WECOM_BROADCAST) {
+          await this.outbox.deferWecomBroadcast(refreshed, handlerError);
+        } else {
+          await this.outbox.deferWechatBroadcast(refreshed, handlerError);
+        }
         return { state: 'deferred' };
       }
-      if (handlerError instanceof UnsupportedNotificationOutboxEventError) {
+      if (
+        handlerError instanceof UnsupportedNotificationOutboxEventError ||
+        // T5B:Provider 明确告知"重试没有意义"(45009 限流 / 请求契约错)。
+        // 与 unsupported-event 走同一条 dead 路径 —— 两者都需要人来接手,
+        // 差别只在原因,而原因已经落在 NotificationDelivery 的 reasonCode 上。
+        handlerError instanceof TerminalNotificationProviderError
+      ) {
         await this.outbox.deadLetter(refreshed, handlerError);
         return { state: 'failed', dead: true, error: handlerError };
       }

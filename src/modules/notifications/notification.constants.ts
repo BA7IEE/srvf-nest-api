@@ -68,16 +68,27 @@ export const NOTIFICATION_AUDIENCE_DIRECTED = 'directed';
 // sourceType:admin 撰写(S1/S2) | system 自动(S3 producer,authorUserId=null,跳过 admin 状态机直 published)。
 export const NOTIFICATION_SOURCE_ADMIN = 'admin';
 export const NOTIFICATION_SOURCE_SYSTEM = 'system';
-// channels:站内(恒发) | wechat(S2) | sms(S5);代码常量非字典(渠道是工程枚举,评审稿 §9.4)。
+// channels:站内(恒发) | wechat(S2) | wecom(T5B) | sms(S5);代码常量非字典(渠道是工程枚举,评审稿 §9.4)。
+//
+// ⚠️ 命名铁律(企业微信冻结稿开头):`wechat` **专指微信小程序**,`wecom` **专指企业微信**。
+// 两条渠道完全独立 —— 身份键(openid vs corpId+wecomUserId)、错误码段(25xxx vs 360xx)、
+// outbox 事件、active-slot 索引全部分家。看到两个词只差两个字母就想"合并一下"之前,
+// 先读冻结稿 §10.3:同一通知同一人**必须能同时收两个渠道**。
 export const NOTIFICATION_CHANNEL_IN_APP = 'in-app';
 export const NOTIFICATION_CHANNEL_WECHAT = 'wechat';
+export const NOTIFICATION_CHANNEL_WECOM = 'wecom';
 export const NOTIFICATION_CHANNEL_SMS = 'sms';
 // admin 可勾选渠道白名单(S2 = in-app + wechat;S5 放开 sms = 声明"紧急召集兜底可发短信"的意图)。
 // 站内恒发,service 归一时强制含 in-app。**声明 sms ≠ 自动发短信**:短信永不随 publish 自动发,
 // 仅 admin 经显式确认端点(POST :id/send-sms,confirmed=true,计费确认)触发(评审稿 §4 / D-N4)。
+// T5B 放开 wecom = 声明"本条也推企业微信应用消息"的意图。**与 sms 的显式确认闸不同**:
+// wecom 不计费,故随 publish 自动发(与 wechat 同型)。但通道总闸 `enabled` 与二级闸
+// `messageEnabled` 出厂皆 false(D-WC-24),默认状态下勾了也不产生任何 wecom intent。
+// 顺序逐字沿冻结稿 §10.1(in-app / wechat / wecom / sms)—— 本数组顺序会原样进 OpenAPI 枚举。
 export const NOTIFICATION_CHANNELS_ALLOWED = [
   NOTIFICATION_CHANNEL_IN_APP,
   NOTIFICATION_CHANNEL_WECHAT,
+  NOTIFICATION_CHANNEL_WECOM,
   NOTIFICATION_CHANNEL_SMS,
 ] as const;
 
@@ -112,6 +123,36 @@ export const DELIVERY_REASON_DAILY_LIMIT = 'daily-limit'; // 同号当日 SENT �
 export const DELIVERY_REASON_INTERVAL = 'interval'; // 同号上一条 SENT 短信在间隔内(继承 SMS_SEND_MIN_INTERVAL_SECONDS)
 export const DELIVERY_REASON_SEND_FAILED = 'send-failed'; // provider 发送失败(errCode 落 delivery;FAILED 逐人不阻断)
 
+// ===== 企业微信渠道 skipped / failed reasonCode(T5B;冻结稿 §10.7 逐字八条)=====
+//
+// 复用既有两条:`token-failed`(取 token 失败 / 通道不可用)与 `api-failed`(其余上游失败)——
+// 语义与微信侧完全同义,冻结稿也用的同名,故不另立 `wecom-` 前缀的第二套。
+// 下面六条是企业微信独有的语义,微信小程序没有对应概念。
+//
+// ⚠️ **运营五指标**(§10.4 末条,"不得混为同一指标")与本组常量的映射:
+//   ① SRVF 可见受众数     ← root handler 返回值 `visibleAudience`
+//   ② active identity候选数 ← root handler 返回值 `identityCandidates`(= child intent 数)
+//   ③ SENT 数             ← NotificationDelivery{channel:'wecom', status:'sent'}
+//   ④ recipient-unavailable 数 ← 下面第 3 条
+//   ⑤ recipient-unlicensed 数  ← 下面第 4 条
+// 四类"根本没走到 provider"的原因(no-wecom-identity / channel-disabled / token-failed /
+// provider-contract-error)**不属于**任何一项覆盖率指标 —— 它们是配置或链路故障,
+// 混进 ④⑤ 会让"许可没买够"和"服务挂了"看起来是同一件事。
+export const DELIVERY_REASON_NO_WECOM_IDENTITY = 'no-wecom-identity'; // 可见但当前 CorpID 下无 active WecomIdentity → 终态 skipped
+export const DELIVERY_REASON_CHANNEL_DISABLED = 'channel-disabled'; // enabled/messageEnabled 关 → 终态 skipped,**不迟到补发**(§10.7 末条)
+// 企业微信 errcode=0 但该 userid 出现在 invaliduser,或整体 81013。官方无法可靠区分
+// "userid 不存在"与"不在应用可见范围",第一版**不得伪造更细原因**(§10.7 第 3 条)。
+export const DELIVERY_REASON_RECIPIENT_UNAVAILABLE = 'recipient-unavailable';
+// 该 userid 出现在 unlicenseduser:企业未给该成员分配基础接口许可。站内信继续可用;
+// 是否购买/激活许可是运营决策,系统内不做采购也不重试(§10.7 第 4 条)。
+export const DELIVERY_REASON_RECIPIENT_UNLICENSED = 'recipient-unlicensed';
+// 45009 接口调用超限:**不自动盲重试**(官方拦截窗口内重试只会延长拦截),
+// 终态 dead 供运维在窗口结束后显式 replay(§10.7 末段 / wecom.constants 规则 8)。
+export const DELIVERY_REASON_RATE_LIMITED = 'rate-limited';
+// 单 touser 请求却收到 invalidparty/invalidtag:我们压根没发 party/tag,收到就说明
+// 请求体不是我们以为的那个 —— 视为请求契约错误,**不得忽略**(§10.7 第 5 条)。
+export const DELIVERY_REASON_PROVIDER_CONTRACT_ERROR = 'provider-contract-error';
+
 // ===== DTO 上限(评审稿 §3;站内信是短文案,body 上限远小于 content 的 50000)=====
 export const NOTIFICATION_TITLE_MAX = 200;
 export const NOTIFICATION_BODY_MAX = 5000;
@@ -132,6 +173,13 @@ export const OUTBOX_EVENT_WECHAT_BROADCAST = 'notification.wechat-broadcast';
 export const OUTBOX_EVENT_WECHAT_DELIVERY = 'notification.wechat-delivery';
 export const OUTBOX_EVENT_BIRTHDAY_SMS = 'notification.birthday-sms';
 export const OUTBOX_EVENT_ADMIN_SMS = 'notification.admin-sms';
+// T5B 企业微信应用消息(冻结稿 §10.1 逐字)。与 wechat 两个事件**同型但不同名**:
+// 独立事件名是 §10.3 那条 active-slot 硬要求的前提 —— 索引谓词按 eventType 分域,
+// 共用事件名会让同一通知同一人无法同时收微信小程序 + 企业微信两个渠道。
+// ⚠️ 旧 Worker 不认识这两个值会判 unsupported terminal dead(§10.8),故启用消息前
+// 必须先全量升级 worker,见 docs/ops/wecom-message-channel-rollout.md。
+export const OUTBOX_EVENT_WECOM_BROADCAST = 'notification.wecom-broadcast';
+export const OUTBOX_EVENT_WECOM_DELIVERY = 'notification.wecom-delivery';
 
 // 系统 producer 继续使用 v1；admin 发布链从 G2 起只写带 publishGeneration 的 v2。
 export const OUTBOX_PAYLOAD_VERSION = 1;

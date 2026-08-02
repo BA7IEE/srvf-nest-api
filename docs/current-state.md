@@ -20,7 +20,7 @@
 | 模块 | 37 |
 | Controller | 86 |
 | Endpoint | 450 |
-| Migration | 68 |
+| Migration | 69 |
 | BizCode | 314 |
 | 权限码 | 227 |
 | AuditLogEvent | 136 |

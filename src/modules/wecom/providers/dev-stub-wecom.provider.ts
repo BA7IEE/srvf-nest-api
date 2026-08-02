@@ -78,7 +78,16 @@ export class DevStubWecomProvider implements WecomProvider {
     };
   }
 
-  // T5B 才真正消费;stub 给确定性成功回执,不做投递语义模拟。
+  /**
+   * T5B(2026-08-02)真正消费。默认给确定性成功回执;并按 `toUser` 提供**投递语义故障注入**,
+   * 让 §10.7 的回执分类矩阵可以在**不实连企业微信**的前提下逐条跑通(真机联调归 T6)。
+   *
+   * 为什么按 `toUser` 而不是像 OAuth 那样按 `code`:消息路径上根本没有 code,
+   * 唯一由测试完全掌控的入参就是绑定时写进 `wecom_identities.wecomUserId` 的那个值。
+   *
+   * ⚠️ 注入前缀一律 `wecomerr-`,与真实企业微信 userid 命名空间不重叠;
+   * 且本 Provider 在 production/smoke 物理不可达(双重拒绝,见文件头),故不构成生产风险。
+   */
   async sendTextCard(
     _accessToken: string,
     input: WecomTextCardInput,
@@ -86,6 +95,41 @@ export class DevStubWecomProvider implements WecomProvider {
   ): Promise<WecomSendResult> {
     if (beforeEffect) await beforeEffect();
     this.logger.debug('[DEV_STUB] sendTextCard called');
+
+    // errcode=0 但该 userid 被上游判为无效 / 无接口许可 —— 冻结稿 §10.7 第 2 条明确
+    // 这两种**不得记 SENT**。stub 必须能造出"成功回执里带坏消息"这种形状,
+    // 否则那条判据在测试里根本没机会红。
+    if (input.toUser.includes('wecomerr-invaliduser')) {
+      return { ok: true, msgId: null, invalidUsers: [input.toUser], unlicensedUsers: [] };
+    }
+    if (input.toUser.includes('wecomerr-unlicensed')) {
+      return { ok: true, msgId: null, invalidUsers: [], unlicensedUsers: [input.toUser] };
+    }
+    // 全部无效:官方以 81013 整体报错。
+    if (input.toUser.includes('wecomerr-81013')) {
+      return { ok: false, errCode: '81013', errMsg: 'dev-stub injected 81013' };
+    }
+    // 45009 限流:终态 dead 供人工 replay,**不盲重试**。
+    if (input.toUser.includes('wecomerr-ratelimit')) {
+      return { ok: false, errCode: '45009', errMsg: 'dev-stub injected 45009' };
+    }
+    // 单 touser 请求收到 invalidparty/invalidtag(真实 Provider 归一化后的同一标签)。
+    if (input.toUser.includes('wecomerr-party')) {
+      return {
+        ok: false,
+        errCode: 'INVALID_PARTY_OR_TAG',
+        errMsg: 'dev-stub injected invalidparty',
+      };
+    }
+    // 网络 / 超时 / 5xx 类暂态:走既有重试上限。
+    if (input.toUser.includes('wecomerr-net')) {
+      return { ok: false, errCode: 'FETCH_ERROR', errMsg: 'dev-stub injected network failure' };
+    }
+    // token 失效:强刷一次后重试一次(既有 40014/42001 语义)。
+    if (input.toUser.includes('wecomerr-token')) {
+      return { ok: false, errCode: '42001', errMsg: 'dev-stub injected token invalid' };
+    }
+
     return {
       ok: true,
       msgId: `dev-wecom-msgid-${input.toUser.slice(-8)}`,

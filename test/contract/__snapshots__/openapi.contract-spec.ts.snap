@@ -9031,11 +9031,12 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "channels": {
-        "description": "目标渠道(默认仅站内 ["in-app"];可勾 "wechat" 机会式推送已订阅会员;站内恒发,服务端强制含 in-app)",
+        "description": "目标渠道(默认仅站内 ["in-app"];可勾 "wechat" 机会式推送已订阅会员;可勾 "wecom" 推送已绑定企业微信的队员,企业微信通道默认关闭;站内恒发,服务端强制含 in-app)",
         "items": {
           "enum": [
             "in-app",
             "wechat",
+            "wecom",
             "sms",
           ],
           "type": "string",
@@ -18496,6 +18497,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
           "enum": [
             "in-app",
             "wechat",
+            "wecom",
             "sms",
           ],
           "type": "string",

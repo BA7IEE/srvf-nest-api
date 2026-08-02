@@ -88,6 +88,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
   );
 
   it.each([
@@ -119,6 +122,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       {} as never,
       {} as never,
       smsDispatch as never,
+      {} as never,
+      {} as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -156,6 +162,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
     );
     const raw = {
       ...intent({}),
@@ -182,6 +191,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
     const targeted = new NotificationOutboxHandlers(
       prisma as never,
       outbox as never,
+      {} as never,
+      {} as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -269,6 +281,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       wechat as never,
       templates as never,
       {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
     );
     const source = {
       ...intent({}),
@@ -322,6 +337,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       wechat as never,
       templates as never,
       {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
     );
     const source = {
       ...intent({}),
@@ -356,6 +374,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       {} as never,
       wechat as never,
       templates as never,
+      {} as never,
+      {} as never,
+      {} as never,
       {} as never,
     );
     const source = {
@@ -392,6 +413,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       {} as never,
       wechat as never,
       templates as never,
+      {} as never,
+      {} as never,
+      {} as never,
       {} as never,
     );
     const source = {
@@ -455,6 +479,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       {} as never,
       wechat as never,
       templates as never,
+      {} as never,
+      {} as never,
+      {} as never,
       {} as never,
     );
     const source = {
@@ -560,6 +587,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       wechat as never,
       { getEnabledTemplateId: jest.fn().mockResolvedValue('template-a') } as never,
       wechatDispatch as never,
+      {} as never,
+      {} as never,
+      {} as never,
     );
     const source = {
       ...adminIntent({
@@ -653,6 +683,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       {} as never,
       wechat as never,
       templates as never,
+      {} as never,
+      {} as never,
+      {} as never,
       {} as never,
     );
     const source = {
@@ -772,6 +805,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       wechat as never,
       { getEnabledTemplateId: jest.fn().mockResolvedValue('template-a') } as never,
       wechatDispatch as never,
+      {} as never,
+      {} as never,
+      {} as never,
     );
     const source = {
       ...adminIntent({
@@ -883,6 +919,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       wechat as never,
       { getEnabledTemplateId: jest.fn().mockResolvedValue('template-a') } as never,
       wechatDispatch as never,
+      {} as never,
+      {} as never,
+      {} as never,
     );
     const source = {
       ...adminIntent({
@@ -965,6 +1004,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       wechat as never,
       { getEnabledTemplateId: jest.fn().mockResolvedValue('template-a') } as never,
       {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
     );
     const source = {
       ...adminIntent({
@@ -1045,6 +1087,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
         wechat as never,
         templates as never,
         {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
       );
       const source = {
         ...adminIntent({
@@ -1105,6 +1150,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
         {} as never,
         templates as never,
         {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
       );
       const source = {
         ...adminIntent({
@@ -1152,6 +1200,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       {} as never,
       router as never,
       settings as never,
+      {} as never,
+      {} as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -1204,6 +1255,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
     );
     const source = {
       ...intent({}),
@@ -1251,6 +1305,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       {} as never,
       router as never,
       settings as never,
+      {} as never,
+      {} as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -1310,6 +1367,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
     );
     const source = {
       ...intent({}),
@@ -1350,6 +1410,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
     );
     const beforeEffect = jest.fn().mockResolvedValue(undefined);
 
@@ -1386,6 +1449,9 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
       {} as never,
       {} as never,
       smsDispatch as never,
+      {} as never,
+      {} as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,

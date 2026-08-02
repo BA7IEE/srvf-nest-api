@@ -4,7 +4,9 @@ import { Prisma, type Notification, type NotificationOutboxIntent } from '@prism
 import { PrismaService } from '../../database/prisma.service';
 import {
   NOTIFICATION_AUDIENCE_BROADCAST,
+  NOTIFICATION_AUDIENCE_DIRECTED,
   NOTIFICATION_SOURCE_ADMIN,
+  NOTIFICATION_SOURCE_SYSTEM,
   NOTIFICATION_STATUS_PUBLISHED,
   OUTBOX_BACKOFF_BASE_MS,
   OUTBOX_BACKOFF_MAX_MS,
@@ -14,6 +16,8 @@ import {
   OUTBOX_MAX_ATTEMPTS,
   OUTBOX_EVENT_WECHAT_DELIVERY,
   OUTBOX_EVENT_WECHAT_BROADCAST,
+  OUTBOX_EVENT_WECOM_BROADCAST,
+  OUTBOX_EVENT_WECOM_DELIVERY,
   OUTBOX_STATUS_DEAD,
   OUTBOX_STATUS_PENDING,
   OUTBOX_STATUS_PROCESSING,
@@ -182,10 +186,36 @@ export class NotificationOutboxService {
     input: NotificationOutboxEnqueueInput,
     client: OutboxClient = this.prisma,
   ): Promise<NotificationOutboxIntent> {
+    return this.enqueueActiveSlotDeliveryAttempt(input, OUTBOX_EVENT_WECHAT_DELIVERY, client);
+  }
+
+  /**
+   * 企业微信 child 的 active-slot enqueue(T5B)。
+   *
+   * 与微信版**共用同一段实现、各自独立的槽位**:active-slot partial unique 的谓词按
+   * `eventType` 分域(第 69 个 migration),故同一通知同一人可以同时有一条 wechat child
+   * 和一条 wecom child —— 冻结稿 §10.3 明确点名:共用不含 eventType 的索引会让两个渠道互斥,
+   * 同一通知同一人无法同时收到两条。
+   *
+   * 做成两个具名入口而不是让调用方传 eventType:"拿错渠道的 eventType 去抢别人的槽位"
+   * 因此是一件写不出来的事。
+   */
+  async enqueueWecomDeliveryAttempt(
+    input: NotificationOutboxEnqueueInput,
+    client: OutboxClient = this.prisma,
+  ): Promise<NotificationOutboxIntent> {
+    return this.enqueueActiveSlotDeliveryAttempt(input, OUTBOX_EVENT_WECOM_DELIVERY, client);
+  }
+
+  private async enqueueActiveSlotDeliveryAttempt(
+    input: NotificationOutboxEnqueueInput,
+    expectedEventType: string,
+    client: OutboxClient,
+  ): Promise<NotificationOutboxIntent> {
     const normalized = normalizeNotificationOutboxInput(input);
-    if (normalized.eventType !== OUTBOX_EVENT_WECHAT_DELIVERY) {
+    if (normalized.eventType !== expectedEventType) {
       throw new NotificationOutboxInvariantError(
-        `eventType=${normalized.eventType} cannot use wechat delivery active slot`,
+        `eventType=${normalized.eventType} cannot use ${expectedEventType} active slot`,
       );
     }
 
@@ -220,7 +250,10 @@ export class NotificationOutboxService {
       }
       const active = await client.notificationOutboxIntent.findFirst({
         where: {
-          eventType: OUTBOX_EVENT_WECHAT_DELIVERY,
+          // ⚠️ 必须用 `expectedEventType` 而不是写死某一个渠道:两个渠道的 partial unique
+          // 各自分域,查错了 eventType 会把**另一个渠道**的 active child 当成本渠道的冲突,
+          // 于是 root 无限 defer 而消息永远发不出去。
+          eventType: expectedEventType,
           aggregateId: normalized.aggregateId,
           destinationRef: normalized.destinationRef,
           status: { in: [OUTBOX_STATUS_PENDING, OUTBOX_STATUS_PROCESSING] },
@@ -229,7 +262,7 @@ export class NotificationOutboxService {
       if (active) throw new NotificationOutboxGenerationConflictError(active);
     }
     throw new NotificationOutboxInvariantError(
-      `wechat delivery active slot churned for aggregate=${normalized.aggregateId}`,
+      `${expectedEventType} active slot churned for aggregate=${normalized.aggregateId}`,
     );
   }
 
@@ -440,27 +473,7 @@ export class NotificationOutboxService {
     authorizeRecipient?: NotificationOutboxRecipientPermission,
   ): Promise<Notification | null> {
     return this.prisma.$transaction(async (tx) => {
-      const [notification] = await tx.$queryRaw<Notification[]>(Prisma.sql`
-        SELECT n.*
-        FROM "notifications" n
-        WHERE n."id" = ${notificationId}
-        FOR SHARE
-      `);
-      await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-        SELECT "id"
-        FROM "notification_outbox_intents"
-        WHERE "id" = ${intent.id}
-        FOR UPDATE
-      `);
-      const fenceNow = now ?? new Date();
-      const currentIntent = await tx.notificationOutboxIntent.findFirst({
-        where: {
-          ...fenceWhere(intent),
-          leaseExpiresAt: { not: null, gt: fenceNow },
-        },
-        select: { id: true },
-      });
-      if (!currentIntent) throw new NotificationOutboxLeaseLostError(intent.id);
+      const notification = await this.lockNotificationWithFence(tx, intent, notificationId, now);
       if (
         !notification ||
         notification.deletedAt !== null ||
@@ -477,6 +490,84 @@ export class NotificationOutboxService {
     });
   }
 
+  /**
+   * 系统定向通知的 Provider 前授权闸(T5B)。
+   *
+   * 与 admin 版**同一段锁序、不同的通知谓词**。为什么需要单独一个:系统定向通知
+   * (`sourceType=system` / `audienceType=directed` / `authorUserId=null`)不走 admin 状态机,
+   * 没有 publishGeneration 概念 —— 拿 admin 版去判它会因 `sourceType !== admin` 恒返 null。
+   *
+   * 收件人由 producer 显式指定,故这里**不判可见档**(定向行的 `visibilityCode='member'`
+   * 只是语义占位,真正的闸是 `recipientMemberId === memberId`);但 Member/User/身份的
+   * 最终复验仍由调用方通过 `authorizeRecipient` 注入 —— 撤权 / 离队 / 解绑同样必须拦住。
+   *
+   * ⚠️ 微信小程序的 v1 系统定向路径**不**走本方法(它保持原样:无事务闸、直读 openid)。
+   * 本刀不改微信任何行为;企业微信作为新渠道,从第一天起就走完整闸。
+   */
+  async authorizeSystemDirectedNotificationEffect(
+    intent: ClaimedNotificationOutboxIntent,
+    notificationId: string,
+    recipientMemberId: string,
+    requiredChannel: string,
+    now?: Date,
+    authorizeRecipient?: NotificationOutboxRecipientPermission,
+  ): Promise<Notification | null> {
+    return this.prisma.$transaction(async (tx) => {
+      const notification = await this.lockNotificationWithFence(tx, intent, notificationId, now);
+      if (
+        !notification ||
+        notification.deletedAt !== null ||
+        notification.statusCode !== NOTIFICATION_STATUS_PUBLISHED ||
+        notification.sourceType !== NOTIFICATION_SOURCE_SYSTEM ||
+        notification.audienceType !== NOTIFICATION_AUDIENCE_DIRECTED ||
+        notification.recipientMemberId !== recipientMemberId ||
+        !notification.channels.includes(requiredChannel)
+      ) {
+        return null;
+      }
+      if (authorizeRecipient && !(await authorizeRecipient(tx, notification))) return null;
+      return notification;
+    });
+  }
+
+  /**
+   * 两个 authorize 入口共用的锁序前缀:Notification parent(FOR SHARE)→ outbox intent
+   * (FOR UPDATE)→ lease fence 复核。
+   *
+   * 抽出来是为了**只有一处**决定"先锁哪个、fence 怎么判" —— 复制第二份的那天,
+   * 两份就会开始各自演化,而锁序不一致的两条路径互相等待就是死锁。
+   * admin 版的行为逐字未变(既有 outbox/handlers/e2e spec 是它的 characterization)。
+   */
+  private async lockNotificationWithFence(
+    tx: Prisma.TransactionClient,
+    intent: ClaimedNotificationOutboxIntent,
+    notificationId: string,
+    now?: Date,
+  ): Promise<Notification | undefined> {
+    const [notification] = await tx.$queryRaw<Notification[]>(Prisma.sql`
+        SELECT n.*
+        FROM "notifications" n
+        WHERE n."id" = ${notificationId}
+        FOR SHARE
+      `);
+    await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT "id"
+        FROM "notification_outbox_intents"
+        WHERE "id" = ${intent.id}
+        FOR UPDATE
+      `);
+    const fenceNow = now ?? new Date();
+    const currentIntent = await tx.notificationOutboxIntent.findFirst({
+      where: {
+        ...fenceWhere(intent),
+        leaseExpiresAt: { not: null, gt: fenceNow },
+      },
+      select: { id: true },
+    });
+    if (!currentIntent) throw new NotificationOutboxLeaseLostError(intent.id);
+    return notification;
+  }
+
   // 新 publish generation 的 root 若撞到旧 generation active child，只允许 root 自身
   // 无损 defer：停止 heartbeat 后以原 fence CAS 回 pending，并恢复本轮 claim 消耗的 attempt。
   async deferWechatBroadcast(
@@ -484,8 +575,33 @@ export class NotificationOutboxService {
     conflict: NotificationOutboxGenerationConflictError,
     now: Date = new Date(),
   ): Promise<void> {
+    return this.deferBroadcastGeneration(intent, conflict, OUTBOX_EVENT_WECHAT_BROADCAST, now);
+  }
+
+  /**
+   * 企业微信 root 的 generation defer(T5B)。语义与微信版逐字相同,只是认另一个 eventType。
+   *
+   * **方法名保持成对而不是合并成一个**:worker 按 `intent.eventType` 分派到对应入口,
+   * 于是"微信 root 撞到企业微信 child 的槽位"这种跨渠道误判在调用层就不成立。
+   * (合并成一个通用 defer 也能工作,但那样既有 wechat worker/outbox spec 全部要改名 ——
+   * 本刀的硬约束之一是既有微信链 spec 零修改。)
+   */
+  async deferWecomBroadcast(
+    intent: ClaimedNotificationOutboxIntent,
+    conflict: NotificationOutboxGenerationConflictError,
+    now: Date = new Date(),
+  ): Promise<void> {
+    return this.deferBroadcastGeneration(intent, conflict, OUTBOX_EVENT_WECOM_BROADCAST, now);
+  }
+
+  private async deferBroadcastGeneration(
+    intent: ClaimedNotificationOutboxIntent,
+    conflict: NotificationOutboxGenerationConflictError,
+    expectedEventType: string,
+    now: Date,
+  ): Promise<void> {
     if (
-      intent.eventType !== OUTBOX_EVENT_WECHAT_BROADCAST ||
+      intent.eventType !== expectedEventType ||
       intent.preparedAt !== null ||
       intent.preparedTemplateId !== null
     ) {

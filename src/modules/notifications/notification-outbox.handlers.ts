@@ -3,6 +3,7 @@ import {
   MemberStatus,
   type Notification,
   type NotificationOutboxIntent,
+  Prisma,
   UserStatus,
 } from '@prisma/client';
 
@@ -21,12 +22,26 @@ import {
 } from '../wechat/wechat.constants';
 import { WechatService } from '../wechat/wechat.service';
 import {
+  maskWecomUserId,
+  WECOM_ERRCODE_CONFIG_FATAL,
+  WECOM_ERRCODE_RATE_LIMITED,
+  WECOM_ERRCODE_TOKEN_INVALID,
+} from '../wecom/wecom.constants';
+import { WecomService } from '../wecom/wecom.service';
+import type { WecomProvider, WecomSendResult } from '../wecom/wecom.types';
+import {
   DELIVERY_REASON_API_FAILED,
+  DELIVERY_REASON_CHANNEL_DISABLED,
   DELIVERY_REASON_INVALID_OPENID,
   DELIVERY_REASON_NEED_RESUBSCRIBE,
   DELIVERY_REASON_NO_OPENID,
   DELIVERY_REASON_NO_QUOTA,
   DELIVERY_REASON_NO_TEMPLATE,
+  DELIVERY_REASON_NO_WECOM_IDENTITY,
+  DELIVERY_REASON_PROVIDER_CONTRACT_ERROR,
+  DELIVERY_REASON_RATE_LIMITED,
+  DELIVERY_REASON_RECIPIENT_UNAVAILABLE,
+  DELIVERY_REASON_RECIPIENT_UNLICENSED,
   DELIVERY_REASON_TEMPLATE_PARAM,
   DELIVERY_REASON_TOKEN_FAILED,
   DELIVERY_STATUS_FAILED,
@@ -37,6 +52,7 @@ import {
   NOTIFICATION_CHANNEL_IN_APP,
   NOTIFICATION_CHANNEL_SMS,
   NOTIFICATION_CHANNEL_WECHAT,
+  NOTIFICATION_CHANNEL_WECOM,
   NOTIFICATION_DIRECTED_VISIBILITY,
   NOTIFICATION_SOURCE_ADMIN,
   NOTIFICATION_SOURCE_SYSTEM,
@@ -48,9 +64,21 @@ import {
   OUTBOX_EVENT_TARGETED_NOTIFICATION,
   OUTBOX_EVENT_WECHAT_BROADCAST,
   OUTBOX_EVENT_WECHAT_DELIVERY,
+  OUTBOX_EVENT_WECOM_BROADCAST,
+  OUTBOX_EVENT_WECOM_DELIVERY,
   OUTBOX_PAYLOAD_VERSION,
   WECHAT_SUBSCRIPTION_QUOTA_CAP,
 } from './notification.constants';
+import {
+  WECOM_TEXTCARD_BTN_TXT,
+  WecomDeepLinkUnavailableError,
+  WecomMessagePresenter,
+  type WecomTextCardContent,
+} from './notification-wecom.presenter';
+import {
+  NotificationWecomDispatchService,
+  type WecomRecipientAuthorization,
+} from './notification-wecom-dispatch.service';
 import { buildWechatSubscribeData } from './notification.wechat-data';
 import { NotificationSmsDispatchService } from './notification-sms-dispatch.service';
 import { NotificationWechatDispatchService } from './notification-wechat-dispatch.service';
@@ -66,10 +94,14 @@ import type {
   TargetedNotificationOutboxPayload,
   WechatBroadcastOutboxPayload,
   WechatDeliveryOutboxPayload,
+  WecomBroadcastOutboxPayload,
+  WecomDeliveryOutboxPayload,
 } from './notification-outbox.types';
 import {
   assertStoredNotificationOutboxIntentSafe,
   extractWechatDeliveryRootId,
+  extractWecomDeliveryRootId,
+  NotificationOutboxLeaseLostError,
   NotificationOutboxPayloadError,
   parseKnownNotificationOutboxPayload,
 } from './notification-outbox.types';
@@ -91,6 +123,29 @@ class TransientNotificationProviderError extends Error {
   }
 }
 
+/**
+ * Provider 侧的**终态**失败(T5B):不再重试,intent 直接 dead 等人工处置。
+ *
+ * 与 `TransientNotificationProviderError` 的分野不是"严重程度",而是"重试有没有用":
+ * - 45009 限流:官方拦截窗口内重试**只会延长拦截**(§10.7 末段 / D-WC-27)——
+ *   必须停下来,由运维在窗口结束后显式 replay。
+ * - invalidparty/invalidtag:单 touser 请求收到它 = 请求根本不是我们以为的那个,
+ *   重发同一个坏请求一万次也还是坏的(§10.7 第 5 条「不得忽略」)。
+ *
+ * 为什么要 dead 而不是像其它终态失败那样 ack:ack 掉的 intent 是 succeeded,
+ * **运维再也 replay 不了**。这两种恰恰是唯二需要人来接手的情况。
+ */
+class TerminalNotificationProviderError extends Error {
+  readonly terminal = true;
+
+  constructor(readonly errCode: string) {
+    super(`TERMINAL_NOTIFICATION_PROVIDER: ${errCode}`);
+    this.name = 'TerminalNotificationProviderError';
+  }
+}
+
+export { TerminalNotificationProviderError };
+
 export interface NotificationOutboxEffectGuard {
   beforeEffect: () => Promise<void>;
 }
@@ -106,6 +161,11 @@ export class NotificationOutboxHandlers {
     private readonly wechat: WechatService,
     private readonly wechatTemplates: WechatSubscribeTemplateService,
     private readonly wechatDispatch: NotificationWechatDispatchService,
+    // T5B 企业微信三件套:通道编排(route/凭证)· 受众与最终闸 · 呈现。
+    // 三者职责严格分开 —— presenter 不认识凭证,dispatch 不认识 HTTP,wecom 不认识受众。
+    private readonly wecom: WecomService,
+    private readonly wecomDispatch: NotificationWecomDispatchService,
+    private readonly wecomPresenter: WecomMessagePresenter,
   ) {}
 
   async execute(
@@ -126,6 +186,10 @@ export class NotificationOutboxHandlers {
         return this.expandWechatBroadcast(intent);
       case OUTBOX_EVENT_WECHAT_DELIVERY:
         return this.deliverWechat(intent, guard);
+      case OUTBOX_EVENT_WECOM_BROADCAST:
+        return this.expandWecomBroadcast(intent);
+      case OUTBOX_EVENT_WECOM_DELIVERY:
+        return this.deliverWecom(intent, guard);
       case OUTBOX_EVENT_BIRTHDAY_SMS:
         return this.deliverBirthdaySms(intent, guard);
       case OUTBOX_EVENT_ADMIN_SMS:
@@ -164,6 +228,26 @@ export class NotificationOutboxHandlers {
           {
             eventKey: `wechat-delivery:${intent.id}:${payload.recipientMemberId}`,
             eventType: OUTBOX_EVENT_WECHAT_DELIVERY,
+            payloadVersion: OUTBOX_PAYLOAD_VERSION,
+            payload: { notificationId: intent.id, memberId: payload.recipientMemberId },
+            aggregateType: 'notification',
+            aggregateId: intent.id,
+            destinationType: 'member',
+            destinationRef: payload.recipientMemberId,
+          },
+          tx,
+        );
+      }
+      // T5B:系统定向通知的企业微信 child(§10.3「系统定向」)。与微信分支**并列而非互斥** ——
+      // 同一条定向通知声明了两个渠道时,两个 child 各自独立创建、独立投递、独立记账。
+      // 用 `enqueue` 而不是 `enqueueWecomDeliveryAttempt`:v1 定向 child 的 eventKey 已经
+      // 天然唯一(notificationId 就是 intent.id,一条通知一个收件人),不存在 generation 竞争,
+      // 与微信 v1 定向分支的处置逐字一致。
+      if (payload.channels.includes(NOTIFICATION_CHANNEL_WECOM)) {
+        await this.outbox.enqueue(
+          {
+            eventKey: `wecom-delivery:${intent.id}:${payload.recipientMemberId}`,
+            eventType: OUTBOX_EVENT_WECOM_DELIVERY,
             payloadVersion: OUTBOX_PAYLOAD_VERSION,
             payload: { notificationId: intent.id, memberId: payload.recipientMemberId },
             aggregateType: 'notification',
@@ -488,6 +572,444 @@ export class NotificationOutboxHandlers {
     return { effectPerformed: true };
   }
 
+  // ==========================================================================
+  // T5B 企业微信应用消息(冻结稿 §10)
+  // ==========================================================================
+
+  /**
+   * 广播 root:算候选 → 逐人建 child intent。**自己不发任何消息**(effectPerformed 恒 false)。
+   *
+   * 返回值里的三个计数是运营五指标的前两项 + 去重项(§10.4 末条要求分开记录)。
+   * 它们进 worker 的 drain 结果与日志,**不进 payload、不进 Audit** —— 计数不是敏感信息,
+   * 但也没有理由长期落库。
+   */
+  private async expandWecomBroadcast(
+    intent: ClaimedNotificationOutboxIntent,
+  ): Promise<OutboxExecutionResult> {
+    // parser 已强制 v2(企业微信广播不存在 v1 历史行),这里无需再判版本。
+    const payload = parsePayload<WecomBroadcastOutboxPayload>(intent);
+    const notification = await this.outbox.authorizeAdminNotificationEffect(
+      intent,
+      payload.notificationId,
+      payload.publishGeneration,
+      NOTIFICATION_CHANNEL_WECOM,
+    );
+    if (!notification) {
+      return { effectPerformed: false, value: { expanded: 0, reason: 'notification-ineligible' } };
+    }
+
+    const audience = await this.wecomDispatch.resolveDurableBroadcastAudience(notification);
+    await this.prisma.$transaction(async (tx) => {
+      for (const memberId of audience.memberIds) {
+        await this.outbox.enqueueWecomDeliveryAttempt(
+          {
+            // root id 进 eventKey 区分 publish generation;active-slot partial unique 让并发
+            // root 收敛到同一条 child,terminal 后新 generation 才拿得到新 attempt。
+            // NotificationDelivery SENT guard 继续跨 generation 去重。
+            eventKey: `wecom-delivery:${notification.id}:${intent.id}:${memberId}`,
+            eventType: OUTBOX_EVENT_WECOM_DELIVERY,
+            payloadVersion: OUTBOX_ADMIN_PAYLOAD_VERSION,
+            payload: {
+              notificationId: notification.id,
+              memberId,
+              publishGeneration: payload.publishGeneration,
+            },
+            aggregateType: 'notification',
+            aggregateId: notification.id,
+            destinationType: 'member',
+            destinationRef: memberId,
+          },
+          tx,
+        );
+      }
+    });
+    return {
+      effectPerformed: false,
+      value: {
+        visibleAudience: audience.visibleAudience,
+        identityCandidates: audience.identityCandidates,
+        alreadySent: audience.alreadySent,
+        expanded: audience.memberIds.length,
+      },
+    };
+  }
+
+  /**
+   * 逐人 child:最终闸 → 呈现 → 单 touser 发送 → 回执分类记账。
+   *
+   * **顺序不可调换**。尤其"最终闸在呈现与发送之前":呈现需要的 webBaseUrl 与发送需要的
+   * wecomUserId 都只从最终闸的事务内快照来 —— 先取地址再判资格,等于给"刚被撤销的身份"
+   * 留了一个发送窗口。
+   */
+  private async deliverWecom(
+    intent: ClaimedNotificationOutboxIntent,
+    guard: NotificationOutboxEffectGuard,
+  ): Promise<OutboxExecutionResult> {
+    const payload = parsePayload<WecomDeliveryOutboxPayload>(intent);
+    const isAdminChild = intent.payloadVersion === OUTBOX_ADMIN_PAYLOAD_VERSION;
+    if (isAdminChild) {
+      await this.requireAdminWecomRoot(intent, payload);
+    }
+
+    // 幂等前置:本 intent 已记过账 / 本通知本人本渠道已 SENT 过 → 直接结束。
+    // SENT 是跨 generation 的永久事实,re-publish 不重复推同一个人。
+    const existingIntentDelivery = await this.prisma.notificationDelivery.findUnique({
+      where: { id: intent.id },
+      select: { id: true },
+    });
+    if (existingIntentDelivery) return { effectPerformed: false };
+    const existingSent = await this.prisma.notificationDelivery.findFirst({
+      where: {
+        notificationId: payload.notificationId,
+        memberId: payload.memberId,
+        channel: NOTIFICATION_CHANNEL_WECOM,
+        status: DELIVERY_STATUS_SENT,
+      },
+      select: { id: true },
+    });
+    if (existingSent) return { effectPerformed: false };
+
+    // ===== Provider 前最终闸(§10.4)=====
+    // 回调返回 true 的条件是"资格没失效",而不是"能发" —— channel-disabled 与
+    // no-wecom-identity 都要求**记一条 terminal skipped**,所以必须放行到闸外去记账;
+    // 只有真正的资格失效(退队 / 停用 / 撤权 / 通知失效)才让整个闸返 null 且不落 delivery。
+    let authorization: WecomRecipientAuthorization | undefined;
+    const authorizeRecipient = async (
+      tx: Prisma.TransactionClient,
+      locked: Notification,
+    ): Promise<boolean> => {
+      authorization = await this.wecomDispatch.authorizeDurableRecipient(
+        tx,
+        locked,
+        payload.memberId,
+      );
+      return authorization.outcome !== 'ineligible';
+    };
+    const finalNotification = isAdminChild
+      ? await this.outbox.authorizeAdminNotificationEffect(
+          intent,
+          payload.notificationId,
+          payload.publishGeneration!,
+          NOTIFICATION_CHANNEL_WECOM,
+          undefined,
+          authorizeRecipient,
+        )
+      : await this.outbox.authorizeSystemDirectedNotificationEffect(
+          intent,
+          payload.notificationId,
+          payload.memberId,
+          NOTIFICATION_CHANNEL_WECOM,
+          undefined,
+          authorizeRecipient,
+        );
+    if (!finalNotification || !authorization) return { effectPerformed: false };
+
+    if (authorization.outcome === 'channel-disabled') {
+      // §10.7 末条:通道关闭是**终态 skipped**,不允许"等恢复后迟到补发"。
+      await this.recordWecomDeliveryOnce(intent.id, {
+        notificationId: finalNotification.id,
+        memberId: payload.memberId,
+        recipientRef: '-',
+        status: DELIVERY_STATUS_SKIPPED,
+        reasonCode: DELIVERY_REASON_CHANNEL_DISABLED,
+      });
+      return { effectPerformed: false };
+    }
+    if (authorization.outcome === 'no-identity') {
+      // §14.3 #15:child 创建后身份被清除,最终闸负责记 skipped/no-wecom-identity。
+      await this.recordWecomDeliveryOnce(intent.id, {
+        notificationId: finalNotification.id,
+        memberId: payload.memberId,
+        recipientRef: '-',
+        status: DELIVERY_STATUS_SKIPPED,
+        reasonCode: DELIVERY_REASON_NO_WECOM_IDENTITY,
+      });
+      return { effectPerformed: false };
+    }
+    if (authorization.outcome !== 'authorized') return { effectPerformed: false };
+
+    const { wecomUserId, webBaseUrl } = authorization;
+    const maskedRecipient = maskWecomUserId(wecomUserId);
+
+    // ===== 呈现(纯函数;不碰 DB、不认识凭证)=====
+    let card: WecomTextCardContent;
+    try {
+      card = this.wecomPresenter.present(finalNotification, webBaseUrl);
+    } catch (error) {
+      if (!(error instanceof WecomDeepLinkUnavailableError)) throw error;
+      // webBaseUrl 缺失 / 非 https / 深链超长 = 通道没配全。归 channel-disabled 终态 skipped:
+      // 与"开关关着"同类(都是配置问题,重试不会自愈),且不把配置错误伪装成上游故障。
+      await this.recordWecomDeliveryOnce(intent.id, {
+        notificationId: finalNotification.id,
+        memberId: payload.memberId,
+        recipientRef: maskedRecipient,
+        status: DELIVERY_STATUS_SKIPPED,
+        reasonCode: DELIVERY_REASON_CHANNEL_DISABLED,
+      });
+      return { effectPerformed: false };
+    }
+
+    // ===== 发送(**恒在事务外**;每次真实外部请求紧前独立过 fence guard)=====
+    let route: WecomProvider;
+    try {
+      route = await this.wecom.resolveRoute();
+    } catch {
+      await this.recordWecomTransientAttempt({
+        notificationId: finalNotification.id,
+        memberId: payload.memberId,
+        recipientRef: maskedRecipient,
+        reasonCode: DELIVERY_REASON_TOKEN_FAILED,
+        errCode: 'CHANNEL_UNAVAILABLE',
+      });
+      throw new TransientNotificationProviderError('CHANNEL_UNAVAILABLE');
+    }
+
+    const send = async (forceRefresh: boolean): Promise<WecomSendResult> => {
+      const accessToken = await route.getAccessToken(forceRefresh, guard.beforeEffect);
+      return route.sendTextCard(
+        accessToken,
+        {
+          toUser: wecomUserId,
+          title: card.title,
+          description: card.description,
+          url: card.url,
+          btnTxt: WECOM_TEXTCARD_BTN_TXT,
+        },
+        guard.beforeEffect,
+      );
+    };
+
+    let result: WecomSendResult;
+    try {
+      result = await send(false);
+      // §10.7:40014/42001 强刷 token 后**只重试一次**。禁止刷新循环 —— 一次配置错误
+      // 会变成对上游的持续打点,而 45009 正是这么被触发的。
+      if (!result.ok && WECOM_ERRCODE_TOKEN_INVALID.includes(Number(result.errCode))) {
+        result = await send(true);
+      }
+    } catch (error) {
+      // token 取用失败 / 网络异常。fence 丢失(lease lost)必须原样冒泡:
+      // 那时 worker 不该 ack/nack/dead,更不该重新启动 Provider。
+      if (error instanceof NotificationOutboxLeaseLostError) throw error;
+      await this.recordWecomTransientAttempt({
+        notificationId: finalNotification.id,
+        memberId: payload.memberId,
+        recipientRef: maskedRecipient,
+        reasonCode: DELIVERY_REASON_TOKEN_FAILED,
+        errCode: 'TOKEN_FAILED',
+      });
+      throw new TransientNotificationProviderError('TOKEN_FAILED');
+    }
+
+    return this.recordWecomSendResult(intent, finalNotification, payload, result, maskedRecipient);
+  }
+
+  /**
+   * 回执分类(§10.7 逐条)。**这是整刀最容易写错的一段**,所以判据写死在一处:
+   *
+   * `SENT` 必须**同时**满足三条:errcode=0、当前这个 userid 不在 `invaliduser`、
+   * 也不在 `unlicenseduser`。它只表示"企业微信接口接受了且没报告该收件人无效",
+   * **不表示用户看见了或读了**。
+   */
+  private async recordWecomSendResult(
+    intent: ClaimedNotificationOutboxIntent,
+    notification: Notification,
+    payload: WecomDeliveryOutboxPayload,
+    result: WecomSendResult,
+    maskedRecipient: string,
+  ): Promise<OutboxExecutionResult> {
+    if (result.ok) {
+      // errcode=0 仍必须逐条查这两个名单(§10.4 业务结果第 4 条 / D-WC-27)。
+      // 少了这一步,"接口调用成功"会被记成"消息送到了" —— 这正是运营指标④⑤存在的理由。
+      if (result.invalidUsers.length > 0) {
+        await this.recordWecomDeliveryOnce(intent.id, {
+          notificationId: notification.id,
+          memberId: payload.memberId,
+          recipientRef: maskedRecipient,
+          status: DELIVERY_STATUS_SKIPPED,
+          reasonCode: DELIVERY_REASON_RECIPIENT_UNAVAILABLE,
+        });
+        return { effectPerformed: false };
+      }
+      if (result.unlicensedUsers.length > 0) {
+        await this.recordWecomDeliveryOnce(intent.id, {
+          notificationId: notification.id,
+          memberId: payload.memberId,
+          recipientRef: maskedRecipient,
+          status: DELIVERY_STATUS_SKIPPED,
+          reasonCode: DELIVERY_REASON_RECIPIENT_UNLICENSED,
+        });
+        return { effectPerformed: false };
+      }
+      await this.prisma.notificationDelivery.createMany({
+        data: [
+          {
+            id: intent.id,
+            notificationId: notification.id,
+            channel: NOTIFICATION_CHANNEL_WECOM,
+            memberId: payload.memberId,
+            recipientRef: maskedRecipient,
+            status: DELIVERY_STATUS_SENT,
+            // msgid 可保存;**原始 errmsg 与完整响应不保存**(§10.7 第 6 条)。
+            providerMsgId: result.msgId,
+            attemptedAt: new Date(),
+          },
+        ],
+        skipDuplicates: true,
+      });
+      return { effectPerformed: true };
+    }
+
+    const numeric = Number(result.errCode);
+    // 81013 = 全部收件人无效。单 touser 请求下它与 invaliduser 同义,
+    // 统一 terminal skipped/recipient-unavailable,**绝不记 SENT**(§10.4 业务结果第 4 条)。
+    if (numeric === WECOM_ERRCODE_ALL_RECIPIENTS_INVALID) {
+      await this.recordWecomDeliveryOnce(intent.id, {
+        notificationId: notification.id,
+        memberId: payload.memberId,
+        recipientRef: maskedRecipient,
+        status: DELIVERY_STATUS_SKIPPED,
+        reasonCode: DELIVERY_REASON_RECIPIENT_UNAVAILABLE,
+      });
+      return { effectPerformed: false };
+    }
+
+    const reasonCode = mapWecomSendError(result.errCode);
+
+    // 暂态(网络 / 超时 / 5xx / token 强刷后仍失败)→ 只记一条**不占 intent.id** 的流水,
+    // 交给 worker 退避重试,耗尽后 dead。占了 intent.id 就等于把重试判据自己关掉。
+    if (isTransientWecomError(result.errCode)) {
+      await this.recordWecomTransientAttempt({
+        notificationId: notification.id,
+        memberId: payload.memberId,
+        recipientRef: maskedRecipient,
+        reasonCode,
+        errCode: result.errCode,
+      });
+      throw new TransientNotificationProviderError(result.errCode);
+    }
+
+    // 以下都是终态:delivery 行占 intent.id,重放时直接短路。
+    await this.recordWecomDeliveryOnce(intent.id, {
+      notificationId: notification.id,
+      memberId: payload.memberId,
+      recipientRef: maskedRecipient,
+      status: DELIVERY_STATUS_FAILED,
+      reasonCode,
+      errCode: result.errCode,
+      attemptedAt: new Date(),
+    });
+
+    // 45009 与 invalidparty/invalidtag → intent 终态 dead,等人工 replay(见 TerminalNotificationProviderError)。
+    if (
+      reasonCode === DELIVERY_REASON_RATE_LIMITED ||
+      reasonCode === DELIVERY_REASON_PROVIDER_CONTRACT_ERROR
+    ) {
+      throw new TerminalNotificationProviderError(result.errCode);
+    }
+    // 其余确定性 errcode:已逐人记账,intent 本身算完成(与微信侧同一处置)。
+    return { effectPerformed: true };
+  }
+
+  /**
+   * v2 child 的 root 身份校验(镜像 `requireAdminWechatRoot`)。
+   *
+   * 防的是"直插一条 child、把 rootIntentId 指向别的通知的 root"——
+   * 那样 child 就能借另一条通知的授权把消息发给不该收的人。
+   */
+  private async requireAdminWecomRoot(
+    intent: ClaimedNotificationOutboxIntent,
+    payload: WecomDeliveryOutboxPayload,
+  ): Promise<void> {
+    const rootId = extractWecomDeliveryRootId(intent.eventKey, intent.payloadVersion);
+    const canonicalEventKey = `wecom-broadcast:${payload.notificationId}:${payload.publishGeneration}`;
+    const root = await this.outbox.findByEventKey(canonicalEventKey);
+    try {
+      if (
+        !rootId ||
+        !root ||
+        root.id !== rootId ||
+        root.eventType !== OUTBOX_EVENT_WECOM_BROADCAST ||
+        root.payloadVersion !== OUTBOX_ADMIN_PAYLOAD_VERSION ||
+        root.eventKey !== canonicalEventKey ||
+        root.aggregateType !== 'notification' ||
+        root.aggregateId !== payload.notificationId ||
+        root.destinationType !== 'broadcast' ||
+        root.destinationRef !== payload.notificationId
+      ) {
+        throw new Error('wecom root identity mismatch');
+      }
+      assertStoredNotificationOutboxIntentSafe(root);
+      const rootPayload = parseKnownNotificationOutboxPayload(
+        root.eventType,
+        root.payloadVersion,
+        root.payload,
+      ) as WecomBroadcastOutboxPayload;
+      if (
+        rootPayload.notificationId !== payload.notificationId ||
+        rootPayload.publishGeneration !== payload.publishGeneration
+      ) {
+        throw new Error('wecom root payload mismatch');
+      }
+    } catch {
+      throw new UnsupportedNotificationOutboxEventError(intent.eventType, intent.payloadVersion);
+    }
+  }
+
+  /**
+   * 终态记账:delivery 行的主键**就是** intent.id。
+   *
+   * 这把"这条 intent 已经有最终结论"变成一条数据库事实:重领同一条 intent 时,
+   * `deliverWecom` 开头的 `findUnique({ id: intent.id })` 会命中并直接结束,
+   * 于是崩溃重放不会重复发送。**只用于终态**(skipped / SENT / 确定性失败)。
+   */
+  private async recordWecomDeliveryOnce(
+    id: string,
+    input: {
+      notificationId: string;
+      memberId: string;
+      recipientRef: string;
+      status: string;
+      reasonCode: string;
+      errCode?: string;
+      attemptedAt?: Date;
+    },
+  ): Promise<void> {
+    await this.prisma.notificationDelivery.createMany({
+      data: [{ id, channel: NOTIFICATION_CHANNEL_WECOM, ...input }],
+      skipDuplicates: true,
+    });
+  }
+
+  /**
+   * **暂态**失败流水:自动主键,**绝不占用 intent.id**。
+   *
+   * ⚠️ 这条区分不是洁癖。暂态失败若也按 intent.id 落行,下一次重试一进 `deliverWecom`
+   * 就会命中"本 intent 已记过账"而直接返回 —— 于是"退避重试 8 次"变成"第一次网络抖动
+   * 即永久放弃",而且现场看起来一切正常(intent succeeded、delivery 有一行 failed)。
+   * 微信侧对 transient 用的也是自动主键 `create`,这里保持同一取舍。
+   */
+  private async recordWecomTransientAttempt(input: {
+    notificationId: string;
+    memberId: string;
+    recipientRef: string;
+    reasonCode: string;
+    errCode?: string;
+  }): Promise<void> {
+    await this.prisma.notificationDelivery.create({
+      data: {
+        notificationId: input.notificationId,
+        channel: NOTIFICATION_CHANNEL_WECOM,
+        memberId: input.memberId,
+        recipientRef: input.recipientRef,
+        status: DELIVERY_STATUS_FAILED,
+        reasonCode: input.reasonCode,
+        errCode: input.errCode ?? null,
+        attemptedAt: new Date(),
+      },
+    });
+  }
+
   private async deliverBirthdaySms(
     intent: ClaimedNotificationOutboxIntent,
     guard: NotificationOutboxEffectGuard,
@@ -731,6 +1253,51 @@ function isTransientWechatError(errCode: string): boolean {
     errCode === 'FETCH_ERROR' ||
     errCode === 'HTTP_ERROR' ||
     WECHAT_ERRCODE_TOKEN_INVALID.includes(Number(errCode))
+  );
+}
+
+// 81013 = 企业微信"全部收件人无效"。单 touser 请求下它与 invaliduser 同义(§10.7 第 3 条)。
+// 声明在本文件而不是 wecom.constants.ts:它是**投递语义**常量,只有 outbox 记账这一处消费,
+// 而 wecom.constants 里那几组 errcode 是**通道语义**(重试策略)常量,两者不该混住。
+const WECOM_ERRCODE_ALL_RECIPIENTS_INVALID = 81013;
+
+/**
+ * 企业微信 errcode / 归一化标签 → delivery reasonCode(§10.7)。
+ *
+ * 与微信版 `mapWechatError` 刻意分开:两套 errcode 数值空间不同,合并成一个函数
+ * 只需要一个数字巧合就能把"微信模板参数错"读成"企业微信限流"。
+ */
+function mapWecomSendError(errCode: string): string {
+  const numeric = Number(errCode);
+  if (numeric === WECOM_ERRCODE_RATE_LIMITED) return DELIVERY_REASON_RATE_LIMITED;
+  if (errCode === 'INVALID_PARTY_OR_TAG') return DELIVERY_REASON_PROVIDER_CONTRACT_ERROR;
+  if (WECOM_ERRCODE_TOKEN_INVALID.includes(numeric)) return DELIVERY_REASON_TOKEN_FAILED;
+  // 确定性配置 / 权限错误(Secret 错、agentid 错、IP 不在白名单…):重试解决不了,
+  // 但它确实是"上游拒绝了这次调用",归 api-failed 而不是伪装成 token 问题。
+  if (WECOM_ERRCODE_CONFIG_FATAL.includes(numeric)) return DELIVERY_REASON_API_FAILED;
+  if (errCode === 'TOKEN_FAILED' || errCode === 'CHANNEL_UNAVAILABLE') {
+    return DELIVERY_REASON_TOKEN_FAILED;
+  }
+  return DELIVERY_REASON_API_FAILED;
+}
+
+/**
+ * 是否暂态(可退避重试)。
+ *
+ * ⚠️ `45009` **不在**本集合里,而且不能在:官方拦截窗口内重试只会延长拦截。
+ * 它由 `TerminalNotificationProviderError` 直接送进 dead(§10.7 末段)。
+ * `SYSTEM_BUSY`(-1)在 Provider 内部已自动尝试 3 次,到这一层仍失败就交给 outbox 退避。
+ */
+function isTransientWecomError(errCode: string): boolean {
+  return (
+    errCode === 'TOKEN_FAILED' ||
+    errCode === 'CHANNEL_UNAVAILABLE' ||
+    errCode === 'FETCH_ERROR' ||
+    errCode === 'TIMEOUT' ||
+    errCode === 'HTTP_ERROR' ||
+    errCode === 'SYSTEM_BUSY' ||
+    Number(errCode) === -1 ||
+    WECOM_ERRCODE_TOKEN_INVALID.includes(Number(errCode))
   );
 }
 
