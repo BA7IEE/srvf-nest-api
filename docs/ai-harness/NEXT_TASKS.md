@@ -366,7 +366,9 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 
 </details>
 
-### P1-25 企业微信接入(身份入口 + 工作台入口 + 通知通道) — **T1+T2 已合入(#863)并随 v0.65.0 发版;T2 三条 P1 已由 W 批次修复(#869/#870),连同 Q3(null≠缺席)经终局评审通过(2026-08-02 GO);T3 起未动**
+### P1-25 企业微信接入(身份入口 + 工作台入口 + 通知通道) — **T1+T2 已发版(v0.65.0);T3 OAuth 登录/绑定/换绑/管理员清除已合入([#882](https://github.com/BA7IEE/srvf-nest-api/pull/882),2026-08-02,零 schema,主会话元核验过:敏感值真断言/36030 默认关/D-WC-13·14·16 落点抽查全中);T4 起未动**
+
+- **T3 后置门禁**:可信域名只能由真实 OAuth 回跳验证(test-connection 判不了,§0.5 条 5)——开 `loginEnabled` 前须工作台实跑;FE 待适配(回跳落地页/未绑定页/admin-web 清除按钮)清单在 [`handoff/miniapp.md`](../handoff/miniapp.md) §1.3 与 [`handoff/admin-web.md`](../handoff/admin-web.md) §2.4。
 - **冻结评审稿**:[`archive/reviews/wecom-integration-t0-terminal-review.md`](../archive/reviews/wecom-integration-t0-terminal-review.md)(2026-07-29 维护者「按推荐」整体冻结 `D-WC-1..31`)。
 - **终态**:单企业、单自建应用 Agent;`WecomIdentity → User → Member → SRVF Authz`;消息只走既有 Notification Outbox。**企业微信只回答「你是谁」,SRVF 继续回答「你能做什么」**。
 - **拆分**:T0(冻结,本 PR 完成)→ T1(schema expand-only)→ T2(通道层 + 设置 + 连接诊断)→ T3(OAuth 登录/绑定/换绑/管理员清除)→ T4(User 生命周期闭环)→ T5A(受众判定重构,行为保持)→ T5B(WeCom 消息通道)→ T6(runbook + 10–30 人分层试点)。
