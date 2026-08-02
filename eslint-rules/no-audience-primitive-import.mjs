@@ -24,8 +24,11 @@
 // eslint.harness.mjs —— 该文件本身在红区,改白名单天然要维护者 grant + 环境审批。
 //
 // inline disable 不是逃生门:全仓扫描拒一切指向 srvf/ 的 disable 指令与规则配置注释
-// (R2 / Q2)。已知残留面:整段复制原语实现(不 import)本规则拦不住 —— 那一档由
-// characterization 矩阵(#886)的语义分叉与评审兜,import 层是本执行位的诚实边界。
+// (R2 / Q2)。**spec 文件不在辖区**(config 块 ignores):parity spec 引原语做对拍
+// 本身就是防漂移守护 —— 首跑 CI 冷 lint 在 notification.visibility-reuse.spec.ts 上
+// 实抓后收窄,本规则只管运行时代码。已知残留面:整段复制原语实现(不 import)
+// 本规则拦不住 —— 那一档由 characterization 矩阵(#886)的语义分叉与评审兜,
+// import 层是本执行位的诚实边界。
 // ============================================================================
 
 export const AUDIENCE_PRIMITIVE_IMPORT_MESSAGE =

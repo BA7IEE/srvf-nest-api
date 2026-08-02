@@ -640,12 +640,16 @@ const harnessConfigBlocks = [
   // (l4) 通知模块内受众判定唯一入口(D-WC-19,T5A #887 挂账;2026-08-02 拍板)。
   //      范围只到 src/modules/notifications/**:content 模块消费自家原语天经地义,
   //      其他模块今日零消费(真出现新的合法消费面时再议扩围)。
+  //      **spec 文件不在辖区**:notification.visibility-reuse.spec.ts 这类 parity spec
+  //      import 原语做对拍,本身就是防漂移的守护 —— 本规则的靶是「运行时新通道
+  //      自写判定」,测试引原语验判定恰恰该被鼓励(首跑 CI 冷 lint 实抓后收窄)。
   //      allow 白名单 = 常驻设计位(判定服务本体 + 读侧),唯一定义处在此 ——
   //      本文件在红区,改白名单天然要维护者 grant + 环境审批;不进棘轮注册表的
   //      理由见 eslint-rules/no-audience-primitive-import.mjs 头注。
   {
     name: 'srvf/harness:audience-primitive-import',
     files: ['src/modules/notifications/**/*.ts'],
+    ignores: ['**/*.spec.ts'],
     plugins: { srvf: srvfEslintPlugin },
     rules: {
       [AUDIENCE_PRIMITIVE_IMPORT_RULE]: [

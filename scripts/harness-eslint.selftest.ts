@@ -768,6 +768,12 @@ const CASES: readonly Case[] = [
     code: "import { y } from '../content/other-content.visibility';\nexport const x = y;",
     expect: null,
   },
+  {
+    name: 'AUD 反向:模块内 spec 引原语做对拍放行(visibility-reuse parity spec 是守护不是漂移;首跑 CI 冷 lint 实抓)',
+    filename: 'src/modules/notifications/notification.visibility-reuse.spec.ts',
+    code: "import { canSeeContent } from '../content/content.visibility';\nexport const x = canSeeContent;",
+    expect: null,
+  },
 ];
 
 /**
