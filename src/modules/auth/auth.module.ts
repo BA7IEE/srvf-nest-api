@@ -7,11 +7,13 @@ import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { SmsModule } from '../sms/sms.module';
 import { WechatModule } from '../wechat/wechat.module';
+import { WecomModule } from '../wecom/wecom.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { IdentityStepUpService } from './identity-step-up.service';
 import { LoginSmsService } from './login-sms.service';
 import { LoginWechatService } from './login-wechat.service';
+import { LoginWecomService } from './login-wecom.service';
 import { PasswordResetService } from './password-reset.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
@@ -29,6 +31,10 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     // 微信小程序登录 T3(2026-06-12):LoginWechatService 消费 WechatService.code2session
     // (wechat-mini-login-review.md E-14;绑定锚点仍走上面 SmsModule 的 SmsCodeService)。
     WechatModule,
+    // 企业微信接入 T3(2026-08-02):LoginWecomService 消费 WecomService(闸门链 + code 换身份)
+    // 与 WecomAuthAttemptService(state / ticket 台账);冻结稿 §4.2 依赖方向 `auth → wecom`,
+    // 单向无环 —— wecom 模块对 User / Member / 业务权限无感知,身份占用与 Audit 全留在本模块。
+    WecomModule,
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -49,6 +55,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     PasswordResetService,
     LoginSmsService,
     LoginWechatService,
+    LoginWecomService,
     IdentityStepUpService,
     JwtStrategy,
   ],

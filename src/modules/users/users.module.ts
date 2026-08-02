@@ -5,12 +5,14 @@ import { AuthModule } from '../auth/auth.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { SmsModule } from '../sms/sms.module';
 import { WechatModule } from '../wechat/wechat.module';
+import { WecomModule } from '../wecom/wecom.module';
 import { AuthzModule } from '../authz/authz.module';
 import { AppCapabilityService } from './app-capability.service';
 import { AppIdentityResolver } from './app-identity.resolver';
 import { AppProfileService } from './app-profile.service';
 import { AdminMeController } from './controllers/admin-me.controller';
 import { AppMeController } from './controllers/app-me.controller';
+import { UserWecomBindingService } from './user-wecom-binding.service';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 
@@ -56,12 +58,23 @@ import { UsersService } from './users.service';
     PermissionsModule,
     SmsModule,
     WechatModule,
+    // 企业微信接入 T3(2026-08-02):UserWecomBindingService 消费 WecomService(闸门链 +
+    // code 换身份)与 WecomAuthAttemptService(bind_self state 台账)。
+    // 同款边界(冻结稿 §4.2):wecom 模块对 User 无感知 —— 身份占用、绑定落库、
+    // refresh 撤销与 audit 全部留在本模块。单向依赖 users → wecom,无环。
+    WecomModule,
     AuthzModule,
   ],
   // admin/v1/me 本人身份只读 bootstrap(2026-06-14):AdminMeController 物理隔离于 Admin surface
   // (单一 @ApiTags('Admin - Me'),非 Mixed),复用 UsersService.getMyAdminIdentity 薄读路径。
   controllers: [UsersController, AppMeController, AdminMeController],
-  providers: [UsersService, AppIdentityResolver, AppCapabilityService, AppProfileService],
+  providers: [
+    UsersService,
+    AppIdentityResolver,
+    AppCapabilityService,
+    AppProfileService,
+    UserWecomBindingService,
+  ],
   exports: [AppIdentityResolver],
 })
 export class UsersModule {}

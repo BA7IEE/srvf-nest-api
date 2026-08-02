@@ -15,6 +15,7 @@ import {
   IdentityStepUpFactor,
   IdentityStepUpService,
   type StepUpCredentialSnapshotInput,
+  type StepUpWecomIdentitySnapshotInput,
 } from './identity-step-up.service';
 
 jest.mock('bcryptjs');
@@ -43,9 +44,24 @@ function credential(overrides: Partial<StepUpCredentialSnapshotInput & { role: R
   };
 }
 
+// 企业微信接入 T3(2026-08-02;冻结稿 §7.4):WECOM_BIND 的身份指纹输入。
+// 默认"当前有一条 active 身份";测"被清除"时把 findFirst 改回 null。
+function wecomIdentity(overrides: Partial<StepUpWecomIdentitySnapshotInput> = {}) {
+  return {
+    id: 'wecom-identity-1',
+    corpId: 'ww-corp-1',
+    wecomUserId: 'zhangsan-0001',
+    status: 'active',
+    updatedAt: new Date('2026-08-01T00:00:00.000Z'),
+    ...overrides,
+  };
+}
+
 function makeHarness() {
   const prisma = {
     user: { findFirst: jest.fn().mockResolvedValue(credential()) },
+    // T3:仅 action=WECOM_BIND 的签发路径会读它;默认无绑定(null)
+    wecomIdentity: { findFirst: jest.fn().mockResolvedValue(null) },
   };
   const jwt = new JwtService();
   const smsCode = {
@@ -282,5 +298,123 @@ describe('IdentityStepUpService', () => {
         new BizException(BizCode.STEP_UP_PROOF_INVALID),
       );
     }
+  });
+
+  // ===== 企业微信接入 T3(2026-08-02;冻结稿 §7.4)=====
+  //
+  // 这一组钉的是 §7.4 的两条:
+  //   ① WECOM_BIND 的 snapshot 额外含当前 active 身份指纹
+  //   ② **其他 action 的算法逐字不变** —— 这条只能靠"改身份后 proof 仍然有效"来证,
+  //      光看代码里那句早返回不算判据(改掉它、只留注释,代码照样编译)。
+  describe('WECOM_BIND action-bound identity fingerprint(§7.4)', () => {
+    it('PHONE_BIND / WECHAT_BIND 的 proof 不受企业微信身份变化影响(算法零变化)', () => {
+      const { service } = makeHarness();
+      const row = credential();
+
+      for (const action of [StepUpAction.PHONE_BIND, StepUpAction.WECHAT_BIND]) {
+        const key = internals(service).signingKey;
+        const token = new JwtService().sign(
+          {
+            sub: row.id,
+            action,
+            factor: IdentityStepUpFactor.PASSWORD,
+            // 逐字用**旧**算法(不含任何企业微信输入)算 snapshot
+            snapshot: service.computeCredentialSnapshot(row),
+          },
+          { secret: key, audience: 'srvf.identity-step-up', expiresIn: 300 },
+        );
+        // 无论传不传身份指纹、传哪一条,非 WECOM_BIND 的判据都不该动
+        expect(() => service.verifyProof(token, row, action)).not.toThrow();
+        expect(() => service.verifyProof(token, row, action, wecomIdentity())).not.toThrow();
+        expect(() =>
+          service.verifyProof(token, row, action, wecomIdentity({ id: 'other' })),
+        ).not.toThrow();
+      }
+    });
+
+    it('WECOM_BIND:签发时有身份 → 身份被清除后同一 proof 失效', async () => {
+      const { service, prisma } = makeHarness();
+      const row = credential();
+      prisma.wecomIdentity.findFirst.mockResolvedValue(wecomIdentity());
+
+      const { stepUpToken } = await service.stepUpWithPassword(
+        CURRENT_USER,
+        { action: StepUpAction.WECOM_BIND, password: 'pw' },
+        META,
+      );
+
+      // 同一份身份 → 通过
+      expect(() =>
+        service.verifyProof(stepUpToken, row, StepUpAction.WECOM_BIND, wecomIdentity()),
+      ).not.toThrow();
+
+      // 被 admin 清除(锁后重读为 null)→ 指纹从"有"变成"无" ⇒ 拒。
+      // 这正是 §7.4 的立项理由:防止管理员刚清除绑定,旧 proof 在 5 分钟内又把身份绑回来。
+      expect(() => service.verifyProof(stepUpToken, row, StepUpAction.WECOM_BIND, null)).toThrow(
+        new BizException(BizCode.STEP_UP_PROOF_INVALID),
+      );
+    });
+
+    it('WECOM_BIND:指纹五个输入字段任一变化都会让 proof 失效', async () => {
+      const { service, prisma } = makeHarness();
+      const row = credential();
+      prisma.wecomIdentity.findFirst.mockResolvedValue(wecomIdentity());
+
+      const { stepUpToken } = await service.stepUpWithPassword(
+        CURRENT_USER,
+        { action: StepUpAction.WECOM_BIND, password: 'pw' },
+        META,
+      );
+
+      const variants: Array<Partial<StepUpWecomIdentitySnapshotInput>> = [
+        { id: 'wecom-identity-2' },
+        { corpId: 'ww-corp-2' },
+        { wecomUserId: 'lisi-0002' },
+        { status: 'revoked' },
+        { updatedAt: new Date('2026-08-01T00:00:01.000Z') },
+      ];
+      for (const variant of variants) {
+        expect(() =>
+          service.verifyProof(stepUpToken, row, StepUpAction.WECOM_BIND, wecomIdentity(variant)),
+        ).toThrow(new BizException(BizCode.STEP_UP_PROOF_INVALID));
+      }
+    });
+
+    it('WECOM_BIND:签发时无身份 → 首绑场景下同一 proof 有效,但有了身份就失效', async () => {
+      const { service, prisma } = makeHarness();
+      const row = credential();
+      prisma.wecomIdentity.findFirst.mockResolvedValue(null); // 无绑定
+
+      const { stepUpToken } = await service.stepUpWithPassword(
+        CURRENT_USER,
+        { action: StepUpAction.WECOM_BIND, password: 'pw' },
+        META,
+      );
+
+      expect(() =>
+        service.verifyProof(stepUpToken, row, StepUpAction.WECOM_BIND, null),
+      ).not.toThrow();
+      // 期间被别的请求绑上了 ⇒ 这张 proof 描述的世界已经不成立
+      expect(() =>
+        service.verifyProof(stepUpToken, row, StepUpAction.WECOM_BIND, wecomIdentity()),
+      ).toThrow(new BizException(BizCode.STEP_UP_PROOF_INVALID));
+    });
+
+    it('非 WECOM_BIND 的签发路径不读 wecom_identities(零额外查询)', async () => {
+      const { service, prisma } = makeHarness();
+      await service.stepUpWithPassword(
+        CURRENT_USER,
+        { action: StepUpAction.PHONE_BIND, password: 'pw' },
+        META,
+      );
+      expect(prisma.wecomIdentity.findFirst).not.toHaveBeenCalled();
+
+      await service.stepUpWithPassword(
+        CURRENT_USER,
+        { action: StepUpAction.WECOM_BIND, password: 'pw' },
+        META,
+      );
+      expect(prisma.wecomIdentity.findFirst).toHaveBeenCalledTimes(1);
+    });
   });
 });

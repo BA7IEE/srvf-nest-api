@@ -15,8 +15,9 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { SmsCodeService } from '../sms/sms-code.service';
 import { SMS_CODE_TTL_SECONDS } from '../sms/sms.constants';
 import { WechatService } from '../wechat/wechat.service';
+import { WECOM_IDENTITY_STATUS } from '../wecom/wecom.types';
+import { StepUpAction } from './auth.dto';
 import type {
-  StepUpAction,
   StepUpPasswordDto,
   StepUpResponseDto,
   StepUpSmsDto,
@@ -43,6 +44,20 @@ export interface StepUpCredentialSnapshotInput {
   openid: string | null;
   status: UserStatus;
   deletedAt: Date | null;
+}
+
+/**
+ * 企业微信身份指纹的输入(冻结稿 §7.4;T3 2026-08-02)。
+ *
+ * 只有 `action=WECOM_BIND` 的 proof 才把它拌进 snapshot。**原值不进 token** ——
+ * token 里只有 HMAC 结果,corpId / wecomUserId 都取不回来。
+ */
+export interface StepUpWecomIdentitySnapshotInput {
+  id: string;
+  corpId: string;
+  wecomUserId: string;
+  status: string;
+  updatedAt: Date;
 }
 
 type StepUpUserRow = StepUpCredentialSnapshotInput & {
@@ -144,10 +159,21 @@ export class IdentityStepUpService {
     return this.issueProof(user, dto.action, IdentityStepUpFactor.WECHAT, meta);
   }
 
+  /**
+   * 校验 action-bound proof。
+   *
+   * `wecomIdentity` 仅在 `expectedAction=WECOM_BIND` 时参与判据(冻结稿 §7.4);
+   * 其余 action 传不传都不影响结果 —— 见 `computeActionSnapshot` 的早返回。
+   *
+   * ⚠️ 调用方必须传**锁后重读**的身份快照,不能传锁前的:§7.4 要防的正是
+   * "admin 刚清除绑定,旧 proof 在 5 分钟内又把身份绑回来",而锁前快照恰好是
+   * 清除发生之前的那一份。
+   */
   verifyProof(
     stepUpToken: string,
     user: StepUpCredentialSnapshotInput,
     expectedAction: StepUpAction,
+    wecomIdentity: StepUpWecomIdentitySnapshotInput | null = null,
   ): void {
     try {
       const payload = this.jwt.verify<StepUpProofPayload>(stepUpToken, {
@@ -155,7 +181,7 @@ export class IdentityStepUpService {
         audience: STEP_UP_AUDIENCE,
       });
       const factorValid = Object.values(IdentityStepUpFactor).includes(payload.factor);
-      const actualSnapshot = this.computeCredentialSnapshot(user);
+      const actualSnapshot = this.computeActionSnapshot(user, expectedAction, wecomIdentity);
       if (
         payload.sub !== user.id ||
         payload.action !== expectedAction ||
@@ -169,6 +195,9 @@ export class IdentityStepUpService {
     }
   }
 
+  // ⚠️ 本方法**逐字节冻结**:PHONE_BIND / WECHAT_BIND 的 proof 算法不因企业微信而变
+  // (冻结稿 §7.4「其他 PHONE_BIND/WECHAT_BIND snapshot 算法保持逐字不变」)。
+  // 要给某个 action 加料,加在 computeActionSnapshot 里,不要动这里。
   computeCredentialSnapshot(user: StepUpCredentialSnapshotInput): string {
     const canonical = JSON.stringify([
       user.id,
@@ -180,6 +209,57 @@ export class IdentityStepUpService {
       user.deletedAt?.toISOString() ?? null,
     ]);
     return createHmac('sha256', this.snapshotKey).update(canonical).digest('base64url');
+  }
+
+  /**
+   * action-bound snapshot(冻结稿 §7.4)。
+   *
+   * 非 WECOM_BIND:**原样返回** `computeCredentialSnapshot` —— 早返回是"其他 action
+   * 算法零变化"的执行位,不是优化。删掉它,既有 proof 会在部署瞬间全部失效。
+   *
+   * WECOM_BIND:把当前 active 身份指纹再过一次同一把 snapshot key 的 HMAC。
+   * 无 active 身份时指纹为固定的 `null` 标记 —— 这一档同样参与判据,
+   * 于是"有身份 → 被 admin 清除"这个状态迁移必然改变 snapshot,旧 proof 当场失效。
+   * 这正是 §7.4 要挡的场景:管理员刚清除绑定,用户拿 5 分钟内的旧 proof 又绑回来。
+   */
+  private computeActionSnapshot(
+    user: StepUpCredentialSnapshotInput,
+    action: StepUpAction,
+    wecomIdentity: StepUpWecomIdentitySnapshotInput | null,
+  ): string {
+    const base = this.computeCredentialSnapshot(user);
+    if (action !== StepUpAction.WECOM_BIND) return base;
+
+    const fingerprint = JSON.stringify(
+      wecomIdentity === null
+        ? null
+        : [
+            wecomIdentity.id,
+            wecomIdentity.corpId,
+            wecomIdentity.wecomUserId,
+            wecomIdentity.status,
+            wecomIdentity.updatedAt.toISOString(),
+          ],
+    );
+    return createHmac('sha256', this.snapshotKey)
+      .update(`${base}|${fingerprint}`)
+      .digest('base64url');
+  }
+
+  /**
+   * 读取该 User 当前 active 企业微信身份(签发 WECOM_BIND proof 时用)。
+   *
+   * 这里**不加锁**:签发 proof 只是拍一张"此刻状态"的快照,真正的判据在最终
+   * 绑定事务里锁后重算(§7.4 末句)。在这里加锁反而会让签发端点去争 identity 行。
+   */
+  private async loadActiveWecomIdentity(
+    userId: string,
+  ): Promise<StepUpWecomIdentitySnapshotInput | null> {
+    const row = await this.prisma.wecomIdentity.findFirst({
+      where: { userId, status: WECOM_IDENTITY_STATUS.ACTIVE, revokedAt: null },
+      select: { id: true, corpId: true, wecomUserId: true, status: true, updatedAt: true },
+    });
+    return row;
   }
 
   private async loadActiveUser(id: string): Promise<StepUpUserRow> {
@@ -208,12 +288,16 @@ export class IdentityStepUpService {
     factor: IdentityStepUpFactor,
     meta: AuditMeta,
   ): Promise<StepUpResponseDto> {
+    // 仅 WECOM_BIND 需要多读一次身份行;其余 action 保持零额外查询(算法与开销都不变)
+    const wecomIdentity =
+      action === StepUpAction.WECOM_BIND ? await this.loadActiveWecomIdentity(user.id) : null;
+
     const stepUpToken = this.jwt.sign(
       {
         sub: user.id,
         action,
         factor,
-        snapshot: this.computeCredentialSnapshot(user),
+        snapshot: this.computeActionSnapshot(user, action, wecomIdentity),
       },
       {
         secret: this.signingKey,

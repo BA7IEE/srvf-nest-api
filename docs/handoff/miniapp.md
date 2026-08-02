@@ -22,8 +22,9 @@
 
 | 任务 | 端点 |
 |---|---|
-| 登录 | `POST /api/auth/v1/login`(密码) · `login-sms`(验证码) · `login-wechat`(小程序 openid;未绑返 `bindingRequired`) |
-| 身份换绑 step-up | 换手机号/微信前先按当前可用因子调用 `POST /api/auth/v1/step-up/password`、`step-up/sms{,/send-code}` 或 `step-up/wechat`，body 的 `action` 固定为目标动作 `PHONE_BIND` / `WECHAT_BIND`；成功仅返 `{stepUpToken,expiresAt}`。随后分别把 proof 作为必填 `stepUpToken` 传给 `PUT /api/app/v1/me/phone` / `me/wechat` |
+| 登录 | `POST /api/auth/v1/login`(密码) · `login-sms`(验证码) · `login-wechat`(小程序 openid;未绑返 `bindingRequired`) · **`login-wecom`(企业微信 OAuth;见下方 §1.3)** |
+| 身份换绑 step-up | 换手机号/微信/企业微信前先按当前可用因子调用 `POST /api/auth/v1/step-up/password`、`step-up/sms{,/send-code}` 或 `step-up/wechat`,body 的 `action` 固定为目标动作 `PHONE_BIND` / `WECHAT_BIND` / **`WECOM_BIND`**;成功仅返 `{stepUpToken,expiresAt}`。随后分别把 proof 作为必填 `stepUpToken` 传给 `PUT /api/app/v1/me/phone` / `me/wechat` / **`me/wecom`**。⚠️ **不新增 WECOM 因子** —— 要绑的东西不能同时当"我已经是这个人"的证据,仍用现有 PASSWORD/SMS/WECHAT 三种因子证明 |
+| **企业微信绑定状态 / 换绑** | `GET /api/app/v1/me/wecom`(未绑定返 `{bound:false,...}` 而不是错误) · `PUT /api/app/v1/me/wecom`(见 §1.3)。**没有 DELETE** —— 本人裸解绑不开(D-WC-9),释放身份只能由管理员清除 |
 | 我的身份/资料/能力 | `GET /api/app/v1/me` · `me/account` · `PATCH me/profile` · `PUT me/password` · `GET me/capabilities` |
 | 活动池 / 我的活动 | `GET /api/app/v1/activities/available`(**仅 `public` 且未结束活动;详情 `GET /api/app/v1/activities/:id` 含 `phase` / `genderRequirementCode` / `requiresInsurance` / `passCount`**) · `GET /api/app/v1/activities/:activityId/positions`（live 岗位，`remainingCapacity` / `canRegister`；余量 0 仍可进候补）· `GET /api/app/v1/my/activities`。活动 `capacity` 有岗位时为岗位总和，任一岗位不限则 null |
 | **我发起或负责的活动（v0.62.0 本地联调；production 未部署）** | 新 base `GET/POST /api/app/v1/my/managed-activities`，**不得复用**上行 `/my/activities`（后者仍只表示本人报名历史）。`GET organization-options` 返回 active membership / cross-org grant 可发起组织及 `pathLabel`；detail 返回 activity、initiator/owner/`myResponsibility`、publishReview、counts、closure。draft 可 PATCH/DELETE，并在独立 `/positions` 子资源 CRUD；初发用 `submit-publish-review` 或详情 `publishReview.canDirectPublish=true` 时的 `direct-publish`，pending 可 `withdraw-publish-review`。published 直改返 `20037`，owner 改走 `submit-change-review` 完整 proposal。职责面为 `responsibilities`、`collaborator-options`、`collaborators` add/end、`transfer-owner`；报名管理位于 `/:activityId/registrations`；考勤管理位于 `/:activityId/check-ins`、`attendance-sheet-draft`、`attendance-sheets`（list/create/detail/edit/delete/resubmit）。owner 与 active 对应能力协办可用，无关用户即使持全局业务角色也统一 30100，协办结束后下一请求立即失权。考勤 GPS 视图不返回原始经纬度/精度；退回单先 PATCH 编辑，再 POST `:sheetId/resubmit`，回 `pending` 后必须重新一审。活动结束后仅当前 owner 可 `POST /:activityId/declare-attendance-complete`；详情 `closure.status` 实时区分待声明/一审/退回整改/终审/closed。Activity=`cancelled` 时详情固定 `activity.statusCode='cancelled'`、`closure.status='cancelled'`、`closure.nextAction=null`，取消优先于全部考勤闭环状态；前端显示“已取消”，不显示考勤声明、一审、终审或完结按钮，不得映射为 published。只有 Activity=`completed`、已声明且无未解决有效 Sheet 时才 closed。列表保持扁平契约，直接读取顶层 `statusCode + nextAction`，取消项为 `cancelled + null`，**不要期待列表存在 `closure` 对象**；`unresolvedAttendanceSheets` 可辅助展示但不得覆盖取消终态。closure 是责任闭环展示状态，Activity 主状态仍是业务事实，cancelled 场景两者语义必须一致。 |
@@ -68,6 +69,55 @@
 > **登录态身份换绑**:step-up proof 固定 5 分钟且绑定 user + action + 当前 credential snapshot；换绑前 credentials 已变化、proof 过期/签名错/user 或 action 不匹配都统一 `10008`，前端应丢弃 proof 并重新 step-up。当前账号没有所选 phone/openid 因子返 `10009`，可切换 password 等可用因子。真实换绑会撤销该账号所有 refresh，当前旧 access 不主动吊销；成功后应重新登录建立新 refresh family。同目标 no-op 不撤 session。
 > **H5 链失败码**:验码错/过期统一 `24010`;token 无效/过期/已用 `28050`;无 open 轮 `28030`;换微信撞他人 `28051`;无报名 `28002`。
 > **⚠️ S5 语义变(v0.31.0)**:`GET /api/app/v1/me`(及任何回带 `Member.gradeCode` 的 app 出参)对**未入队志愿者**现返 `gradeCode='volunteer'`(S5 前恒 `null`)。前端**勿再用 `gradeCode==null` 等价"志愿者/未入队"**;"是否正式队员"应判 `gradeCode ∈ level-1..7`。历史(S5 前)发号的志愿者仍为 `null`,故"未入队志愿者"= `gradeCode ∈ {null, 'volunteer'}`。
+
+### 1.3 企业微信登录与绑定(T3,2026-08-02;冻结稿 `docs/archive/reviews/wecom-integration-t0-terminal-review.md`)
+
+> ⚠️ **第一版只面向企业微信客户端工作台 H5**(D-WC-29)。PC 管理后台登录**一字不动**,小程序也不消费本节。
+> ⚠️ **默认关闭**(D-WC-24):`wecom_settings.loginEnabled` 默认 false,五个端点在关闭时一律 `36030`。上线前由运维在
+> `system/v1/wecom-settings` 打开,并确认企业微信后台已登记可信域名(那一条只有真实 OAuth 回跳能验证)。
+> ⚠️ **命名**:WeCom = 企业微信,与微信小程序(`wechat` / `openid` / 250xx)**是两个外部主体**,错误码、端点、身份键都不共用。
+
+**登录四步(前端逐步照做)**
+
+| 步 | 端点 | 前端要做的事 |
+|---|---|---|
+| ① 取授权 URL | `POST /api/auth/v1/login-wecom/authorize`,body 可选 `{returnPath}` | 拿到 `{authorizeUrl, expiresAt}` 后**整串直接跳转**。⚠️ 不要解析或重写其中任何参数(`state` 只在这里出现一次)。`returnPath` 只接受**站内相对路径**,绝对 URL / `//` / 反斜杠 / 控制字符 / userinfo / query 里的凭证类 key(`token` `code` `state` `key` `sig` … 含 camelCase 如 `refreshToken`)一律 `40000` |
+| ② 企业微信回跳 | 固定落地页 `<webBaseUrl>/auth/wecom/callback?code=…&state=…` | 页面**立即** POST 到步骤 ③,随后 `history.replaceState` 清理地址栏。⚠️ `code` / `state` **禁止**进入埋点、错误上报、localStorage / sessionStorage 或任何日志 |
+| ③ 换会话 | `POST /api/auth/v1/login-wecom` body `{code, state}` | 出参恒 4 字段 `{bindingRequired, bindingTicket, session, returnPath}`。已绑定 → `bindingRequired:false` + `session`(与密码登录**同一个** `LoginResponseDto`,双计时器语义一致);未绑定 → `bindingRequired:true` + 一次性 `bindingTicket`(默认 10 分钟),`session:null` |
+| ④ 未绑定分流 | 见下 | 必须**同时**给出两条入口,不要只给路径 A |
+
+**未绑定时必须同时展示两条入口(冻结产品行为,不可只做一条)**
+
+- **路径 A(手机号锚定)**:`POST auth/v1/wecom-bind/send-code` `{bindingTicket, phone}` → `POST auth/v1/wecom-bind` `{bindingTicket, phone, smsCode}`,成功直接返 `LoginResponseDto`。
+- **路径 B(原账号登录后绑)**:引导用户用**原有任意可用方式**登录(密码 / 验证码 / 微信),再走下面的登录态换绑。
+  这是**未绑定手机号、收不到短信、或不便用短信**用户的正式兜底,不是人工改库。
+
+**前端不得据响应推断账号是否存在**:`send-code` 对「号码不存在 / 该账号没绑手机号 / 账号停用 / 已软删 / 号码与账号不一致」返回与有效号
+**逐字段完全相同**的 200 且不发短信;`wecom-bind` 一切号码/验证码问题统一 `24010`。收不到短信时只能提示"可使用原账号登录后绑定",
+**不能**提示"该手机号未注册/账号已停用"之类。后端也不返回 `hasPhone`、手机号尾号或账号状态。
+
+**登录态绑定 / 换绑(路径 B 的后半段,也是日常换绑入口)**
+
+1. `POST /api/auth/v1/wecom-bind/authorize`(**需登录**)拿 `authorizeUrl` → 跳转 → 回跳拿 `code` + `state`;
+2. 按当前可用因子做一次 step-up,`action` 传 `WECOM_BIND`,拿 `stepUpToken`;
+3. `PUT /api/app/v1/me/wecom` body `{code, state, stepUpToken}` → 返 `AppMeWecomDto`。
+
+⚠️ **换绑成功后必须重新登录**:真实变更会撤销该账号**全部** refresh token(旧 access token 按 15 分钟自然到期,不主动吊销)。
+⚠️ **step-up proof 绑定"当前身份状态"**:管理员刚清除绑定后,5 分钟内签发的旧 proof 立即失效(`10008`)—— 重新 step-up 即可,不是 bug。
+⚠️ 绑同一个企业微信号是**幂等**的:不重写、不撤 refresh、不写审计,直接返当前状态。
+
+**失败码速查**
+
+| 码 | HTTP | 含义与前端动作 |
+|---|---:|---|
+| `36010` | 400 | state / code 无效或过期、非本企业成员(外部联系人 / 跨企业)、绑定账号不可用 —— **一律同码同形,不可据此判断原因**。动作:回到步骤 ① 重新发起 |
+| `36011` | 401 | binding ticket 无效 / 过期 / 已用。动作:回到步骤 ① 重新走一遍 OAuth |
+| `36002` | 409 | 该企业微信身份已绑在**其他账号**上。动作:提示联系管理员先清除 |
+| `36030` | 503 | 通道未配置或开关关闭。动作:提示"企业微信登录暂未开放" |
+| `36031` | 502 | 企业微信上游 / 网络 / 超时。动作:提示稍后重试 |
+| `24010` | 400 | 手机号或短信验证码问题(路径 A;**不区分子原因**) |
+| `10008` | 401 | step-up proof 无效 / 过期 / 身份状态已变。动作:重新 step-up |
+| `42900` | 429 | 限流(第 11 个独立计数器 `login-wecom`,默认 IP 5 次/60 秒,与其他限流互不影响;`send-code` / `bind` 另叠既有短信限流) |
 
 ### 1.2 自购保险 PR3 cutover 契约(D-INSURANCE v3)
 

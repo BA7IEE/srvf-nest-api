@@ -2,6 +2,7 @@ import type { ThrottlerModuleOptions, ThrottlerStorage } from '@nestjs/throttler
 import { CONTENT_PUBLIC_THROTTLER_NAME } from '../common/decorators/content-public-throttle.decorator';
 import { LOGIN_SMS_THROTTLER_NAME } from '../common/decorators/login-sms-throttle.decorator';
 import { LOGIN_WECHAT_THROTTLER_NAME } from '../common/decorators/login-wechat-throttle.decorator';
+import { LOGIN_WECOM_THROTTLER_NAME } from '../common/decorators/login-wecom-throttle.decorator';
 import { RECRUITMENT_THROTTLER_NAME } from '../common/decorators/recruitment-throttle.decorator';
 import { PASSWORD_CHANGE_THROTTLER_NAME } from '../common/decorators/password-change-throttle.decorator';
 import { PASSWORD_RESET_THROTTLER_NAME } from '../common/decorators/password-reset-throttle.decorator';
@@ -19,7 +20,7 @@ import type { AppConfig } from '../config/app.config';
 //
 // 设计要点:
 //   - PostgreSQL shared storage,多实例共用一份额度;DB 异常严格 fail-closed,不回退本地 Map
-//   - 10 个命名 throttler 以 (throttlerName,key) **物理隔离**，任一业务面的爆破不串用其他配额
+//   - 11 个命名 throttler 以 (throttlerName,key) **物理隔离**，任一业务面的爆破不串用其他配额
 //   - ThrottlerBizGuard.shouldSkip 默认 true:仅显式挂对应 throttle metadata 的方法才走
 //     该命名 throttler 的 limit/ttl 检查
 //   - setHeaders: false 完全关闭 X-RateLimit-* / Retry-After 头(任务卡 15.7 / 评审稿 §5.4 / §5.8)
@@ -92,6 +93,17 @@ export function buildThrottlerOptions(
         name: CONTENT_PUBLIC_THROTTLER_NAME,
         limit: appCfg.contentPublicThrottle.limit,
         ttl: appCfg.contentPublicThrottle.ttlSeconds * 1000,
+      },
+      // 企业微信接入 T3(2026-08-02):企业微信 OAuth / 绑定五端点第 11 实例
+      // (冻结稿 §11 D-WC-16;默认 5/60 镜像 login-wechat,十一实例计数器互不影响)。
+      //
+      // ⚠️ 本条与 ThrottlerBizGuard 里的 `login-wecom` 分派**必须成对落地**:
+      // guard 是按逐 throttler 的 name 判断跳过的,只注册实例而不接 guard,
+      // `login-wecom` 会对**所有已挂其他限流装饰器的端点**多计一道数(T2 刻意把两者一起推到 T3)。
+      {
+        name: LOGIN_WECOM_THROTTLER_NAME,
+        limit: appCfg.loginWecomThrottle.limit,
+        ttl: appCfg.loginWecomThrottle.ttlSeconds * 1000,
       },
     ],
     setHeaders: false,

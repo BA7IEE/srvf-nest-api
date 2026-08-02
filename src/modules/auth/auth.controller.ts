@@ -13,6 +13,7 @@ import {
 import { LoginSmsThrottle } from '../../common/decorators/login-sms-throttle.decorator';
 import { LoginThrottle } from '../../common/decorators/login-throttle.decorator';
 import { LoginWechatThrottle } from '../../common/decorators/login-wechat-throttle.decorator';
+import { LoginWecomThrottle } from '../../common/decorators/login-wecom-throttle.decorator';
 import { PasswordChangeThrottle } from '../../common/decorators/password-change-throttle.decorator';
 import { PasswordResetThrottle } from '../../common/decorators/password-reset-throttle.decorator';
 import { Public } from '../../common/decorators/public.decorator';
@@ -27,6 +28,7 @@ import {
   LoginResponseDto,
   LoginSmsDto,
   LoginWechatDto,
+  LoginWecomDto,
   LogoutAllResponseDto,
   LogoutDto,
   RefreshTokenDto,
@@ -36,15 +38,21 @@ import {
   SendPasswordResetCodeResponseDto,
   SendStepUpSmsCodeDto,
   SendWechatBindCodeDto,
+  SendWecomBindCodeDto,
   StepUpPasswordDto,
   StepUpResponseDto,
   StepUpSmsDto,
   StepUpWechatDto,
   WechatBindDto,
   WechatLoginResponseDto,
+  WecomAuthorizeDto,
+  WecomAuthorizeResponseDto,
+  WecomBindDto,
+  WecomLoginResponseDto,
 } from './auth.dto';
 import { LoginSmsService } from './login-sms.service';
 import { LoginWechatService } from './login-wechat.service';
+import { LoginWecomService } from './login-wecom.service';
 import { PasswordResetService } from './password-reset.service';
 import { IdentityStepUpService } from './identity-step-up.service';
 
@@ -58,6 +66,7 @@ export class AuthController {
     private readonly passwordReset: PasswordResetService,
     private readonly loginSms: LoginSmsService,
     private readonly loginWechat: LoginWechatService,
+    private readonly loginWecom: LoginWecomService,
     private readonly identityStepUp: IdentityStepUpService,
   ) {}
 
@@ -409,6 +418,132 @@ export class AuthController {
   )
   bindWechat(@Body() dto: WechatBindDto, @Req() req: Request): Promise<LoginResponseDto> {
     return this.loginWechat.bind(dto, this.buildAuditMeta(req));
+  }
+
+  // ===== 企业微信接入 T3(2026-08-02;冻结稿 §6.2)=====
+  //
+  // 五个端点全部挂 @LoginWecomThrottle() → throttler 实例 'login-wecom'
+  // (第 11 个,IP 5/60 默认,与既有十实例物理隔离;不暴露阈值)。
+  // 三条 pre-auth 端点标 @Public();wecom-bind/authorize **不标** —— 它是登录态自助绑定的
+  // 第一步,必须知道 subjectUserId 才能把 state 锚到本人。
+  //
+  // ⚠️ 开关关闭(loginEnabled=false,D-WC-24 默认即关)时五个端点一律 36030,
+  // 由 WecomService 的闸门链判定,不在 controller 复制一份开关判断。
+
+  @Public()
+  @LoginWecomThrottle()
+  @Post('login-wecom/authorize')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '签发企业微信 OAuth 登录授权 URL(snsapi_base;state 一次性 5 分钟) [public]',
+  })
+  @ApiWrappedOkResponse(WecomAuthorizeResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.WECOM_CHANNEL_NOT_CONFIGURED,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  authorizeWecomLogin(@Body() dto: WecomAuthorizeDto): Promise<WecomAuthorizeResponseDto> {
+    return this.loginWecom.authorizeForLogin({ returnPath: dto.returnPath });
+  }
+
+  // 已绑定 → 同构签发 session;未绑定 → `{bindingRequired:true, bindingTicket}`。
+  // 未绑定响应**不含** hasPhone / 手机号尾号 / 账号状态 / wecomUserId / corpId(§6.2 规则 9)。
+  // 绑定指向 DISABLED / 软删 User → 与 code 无效同码同形 36010(防侧写)。
+  @Public()
+  @LoginWecomThrottle()
+  @Post('login-wecom')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '企业微信 OAuth code 登录(已绑同构发 token;未绑返 bindingRequired + ticket) [public]',
+  })
+  @ApiWrappedOkResponse(WecomLoginResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.WECOM_LOGIN_CREDENTIAL_INVALID,
+    BizCode.WECOM_CHANNEL_NOT_CONFIGURED,
+    BizCode.WECOM_API_FAILED,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  loginByWecom(@Body() dto: LoginWecomDto, @Req() req: Request): Promise<WecomLoginResponseDto> {
+    const safeDto: LoginWecomDto = { code: dto.code, state: dto.state };
+    return this.loginWecom.login(safeDto, this.buildAuditMeta(req));
+  }
+
+  // 同时挂 login-wecom 与 SMS send 两个限流器(§6.2:"同时挂登录 WeCom 限流和既有 SMS send 限流")。
+  // 防枚举:五种无效场景返回与有效号逐字段相同的泛化 200,不发码不留痕。
+  @Public()
+  @LoginWecomThrottle()
+  @SmsSendThrottle()
+  @Post('wecom-bind/send-code')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '发送企业微信绑定短信验证码(ticket 只校验不消费;防枚举泛化响应) [public]',
+  })
+  @ApiWrappedOkResponse(SendPasswordResetCodeResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.WECOM_BINDING_TICKET_INVALID,
+    BizCode.SMS_SEND_INTERVAL_LIMIT,
+    BizCode.SMS_PHONE_DAILY_LIMIT,
+    BizCode.SMS_CHANNEL_NOT_CONFIGURED,
+    BizCode.SMS_SEND_FAILED,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  sendWecomBindCode(
+    @Body() dto: SendWecomBindCodeDto,
+    @Req() req: Request,
+  ): Promise<SendPasswordResetCodeResponseDto> {
+    return this.loginWecom.sendBindCode(dto, req.ip ?? null);
+  }
+
+  // 首次绑定(D-WC-6:锚点 = 已验证的账号控制权 = 现有 User.phone + 短信码;禁目录猜人)。
+  // 七步校验顺序冻结(§6.2),实施不得调换。
+  @Public()
+  @LoginWecomThrottle()
+  @SmsVerifyThrottle()
+  @Post('wecom-bind')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '手机短信锚点绑定企业微信身份并登录(验码即消费;绑定后同构发 token) [public]',
+  })
+  @ApiWrappedOkResponse(LoginResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.SMS_CODE_INVALID,
+    BizCode.WECOM_IDENTITY_ALREADY_BOUND,
+    BizCode.WECOM_LOGIN_CREDENTIAL_INVALID,
+    BizCode.WECOM_BINDING_TICKET_INVALID,
+    BizCode.WECOM_CHANNEL_NOT_CONFIGURED,
+    BizCode.WECOM_API_FAILED,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  bindWecom(@Body() dto: WecomBindDto, @Req() req: Request): Promise<LoginResponseDto> {
+    return this.loginWecom.bind(dto, this.buildAuditMeta(req));
+  }
+
+  // 本人绑定 / 换绑前签发 purpose=bind_self 的 state(D-WC-8)。
+  // **需登录**:attempt 固定 subjectUserId=currentUser.id,随后 PUT app/v1/me/wecom
+  // 会校验消费到的 state 属于本人 —— "拿别人的 state 绑自己"在消费那步就断掉。
+  @LoginWecomThrottle()
+  @Post('wecom-bind/authorize')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: '签发本人企业微信绑定 / 换绑授权 URL(state 锚定当前登录用户) [auth]',
+  })
+  @ApiWrappedOkResponse(WecomAuthorizeResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.WECOM_CHANNEL_NOT_CONFIGURED,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  authorizeWecomBindSelf(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Body() dto: WecomAuthorizeDto,
+  ): Promise<WecomAuthorizeResponseDto> {
+    return this.loginWecom.authorizeForBindSelf(currentUser, { returnPath: dto.returnPath });
   }
 
   // P0-E PR-3:从 @Req() 构造 AuditMeta 显式传给 service(D6 v1.1 §11.2 / D8 拍板;

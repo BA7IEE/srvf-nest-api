@@ -1856,6 +1856,27 @@ export const BizCode = {
   //
   //   复用既有码:phone/短信无效仍 24010;P2002 身份冲突映射 36002(T3);
   //   限流仍 42900;权限拒绝仍 30100;settings DTO 无效仍 40000。
+  //
+  //   T3(2026-08-02)补齐 §11.2 表内其余 3 条(36002 / 36010 / 36011),段位与 T2 排定一致。
+  //   36010 是**防侧写归一码**:state 无效 / code 无效 / 上游返 openid 或 external_userid /
+  //   跨企业 `CorpId/userid` / 绑定指向 DISABLED 或软删 User / 锁后 identity 校验失败,
+  //   对外**逐字段同形**。任何一条单独开码,登录接口就成了账号存在性与状态探测器
+  //   (冻结稿 §6.2 规则 5 / §11.2「不开」段)。
+  WECOM_IDENTITY_ALREADY_BOUND: {
+    code: 36002,
+    message: '该企业微信身份已绑定其他账号',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  WECOM_LOGIN_CREDENTIAL_INVALID: {
+    code: 36010,
+    message: '企业微信登录凭证无效或已过期，请重新发起登录',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  WECOM_BINDING_TICKET_INVALID: {
+    code: 36011,
+    message: '绑定会话无效或已过期，请重新发起企业微信登录',
+    httpStatus: HttpStatus.UNAUTHORIZED,
+  },
   WECOM_CORP_ID_IN_USE: {
     code: 36020,
     message: '已存在企业微信绑定，不能修改 CorpID',

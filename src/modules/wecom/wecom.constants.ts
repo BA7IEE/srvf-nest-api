@@ -80,3 +80,191 @@ export function maskCorpId(corpId: string): string {
   }
   return `${corpId.slice(0, 4)}****${corpId.slice(-4)}`;
 }
+
+// ===== T3(2026-08-02):OAuth state / binding ticket / returnPath(冻结稿 §5.3 / §6.2)=====
+
+// §5.3 规则 5:state 固定 randomBytes(32).toString('hex')
+// = 64 个 ASCII 字母数字字符、256-bit 熵、≤128 字节,满足官方 `[a-zA-Z0-9]` 字符集要求。
+// **不要**改成 base64url:那会引入 `-` / `_`,超出官方声明的字符集。
+export const WECOM_OAUTH_STATE_BYTES = 32;
+export const WECOM_OAUTH_STATE_HEX_LENGTH = WECOM_OAUTH_STATE_BYTES * 2;
+export const WECOM_OAUTH_STATE_TTL_MS = 5 * 60 * 1000;
+
+// §5.3 规则 6:binding ticket 默认 10 分钟。ticket 保持"内部 opaque 随机",
+// 不承诺字符集(它只在本系统内往返,不进任何第三方 URL)。
+export const WECOM_BINDING_TICKET_BYTES = 32;
+export const WECOM_BINDING_TICKET_TTL_MS = 10 * 60 * 1000;
+
+// §6.2 规则 2:code 非空且 UTF-8 字节数 ≤512。**按字节判**不是按字符 ——
+// 长度检查的目的是挡住畸形超长入参打到上游,而 UTF-8 多字节字符会让 `.length` 低估实际体积。
+export const WECOM_OAUTH_CODE_MAX_BYTES = 512;
+
+// §6.2:redirect_uri 指向**固定**前端 GET callback 页面。
+// 这个 path 由代码固定拼接、不可配置 —— `webBaseUrl` 只允许 origin(见 wecom-settings.service
+// isValidWebBaseUrl)正是为了这条:允许配置里带 path,配置面就成了改回跳目标的入口。
+export const WECOM_OAUTH_CALLBACK_PATH = '/auth/wecom/callback';
+
+// 默认 returnPath(§6.2:login 走前台首页;bind_self 走账号安全页)
+export const WECOM_DEFAULT_LOGIN_RETURN_PATH = '/';
+export const WECOM_DEFAULT_BIND_SELF_RETURN_PATH = '/me/security';
+
+// returnPath 上限:超长一律拒(它要原样存进 attempt 行,且随后会进浏览器地址栏)
+export const WECOM_RETURN_PATH_MAX_LENGTH = 512;
+
+// §6.2:query 中的 token-like key 一律拒。
+// 为什么:returnPath 会被前端在登录成功后直接跳转,凭证类参数跟着回跳 =
+// 把一次性凭证写进浏览器历史 / Referer / 埋点。**宁可误杀**站内正常参数,
+// 也不给"凭证搭便车"留口子(客户端遇拒改用无凭证的 path 即可)。
+const WECOM_RETURN_PATH_TOKEN_LIKE_WORDS: ReadonlySet<string> = new Set([
+  'token',
+  'secret',
+  'password',
+  'passwd',
+  'pwd',
+  'code',
+  'state',
+  'ticket',
+  'key',
+  'apikey',
+  'apisecret',
+  'auth',
+  'session',
+  'sid',
+  'sig',
+  'signature',
+  'jwt',
+  'credential',
+  'assertion',
+]);
+
+/**
+ * query key 是否 token-like(**逐段精确**匹配,不是子串包含)。
+ *
+ * 判据演进的两次实测(都写在这儿,免得后来者把它"简化"回去):
+ * - 初版是带分隔符的正则 `^(.*[_-])?(token|…)([_-].*)?$`,**漏掉 camelCase**:
+ *   `refreshToken` 里 `refresh` 后面没有 `_`/`-`,整条不匹配 → 凭证直接放行。
+ * - 若改成纯子串包含,又会误杀 `keyword`(含 `key`)这类正常参数。
+ *
+ * 现在的做法:先按 camelCase 边界与所有非字母数字字符切段,再要求**某一段完整等于**
+ * 词表里的词。于是 `refreshToken` / `access_token` / `Access-Token` 全中,`keyword` 不中。
+ *
+ * ⚠️ 已知且**接受**的误杀:`sortKey` / `groupKey` 这类会被切出 `key` 段而被拒。
+ * 凭证参数漏过去的代价(一次性凭证进浏览器历史)远大于前端改个参数名的代价。
+ */
+function isTokenLikeQueryKey(key: string): boolean {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[^a-zA-Z0-9]+/)
+    .filter((segment) => segment !== '')
+    .some((segment) => WECOM_RETURN_PATH_TOKEN_LIKE_WORDS.has(segment.toLowerCase()));
+}
+
+// 控制字符 + 空格 + DEL(§6.2 明文点名的 control chars)。
+//
+// ⚠️ 用**数值比较**而不是正则字符类,是刻意的:字符类写法要么把真实控制字节敲进
+// 源文件(本刀初版这么干过一次 —— `grep FORBIDDEN` 零命中,因为 grep 把整个文件
+// 当二进制了,整段在评审和 diff 里直接不可见),要么依赖转义在各层工具链里原样存活。
+// 数值比较两样都不沾,且判据一眼可读。
+//
+// 阈值:code <= 0x20 覆盖全部 C0 控制字符**与空格**(空格 / Tab 会被部分代理和浏览器
+// 吞掉,吞掉后 path 语义就变了);0x7F 是 DEL。
+function hasForbiddenReturnPathChar(value: string): boolean {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if (code <= 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
+/**
+ * returnPath 站内相对路径判定(冻结稿 §6.2;**开放重定向的唯一防线**)。
+ *
+ * 逐条对应冻结稿列出的拒绝项:
+ * - `http:` / `https:` / 任意 scheme —— 由"必须以单个 `/` 开头"整体挡掉
+ * - `//` 协议相对 —— 显式拒(`//evil.com` 在浏览器里是**外站**)
+ * - `\` 反斜杠 —— 显式拒(浏览器把 `/\evil.com` 规范化成 `//evil.com`)
+ * - control chars —— 显式拒
+ * - 用户名密码片段 —— 拒 `@`(`/@evil.com` 经某些客户端拼接后会变成 userinfo)
+ * - query 中的 token-like key —— 逐 key 正则拒
+ *
+ * 三道判据是**递进**而不是重复:字符级黑名单挡已知写法;百分号解码后复跑一遍挡
+ * `/%2F%2Fevil.com` 这类编码绕过;最后 `new URL(raw, base)` 做语义级复核 ——
+ * 归一化后仍必须落在同一 origin。前两道挡的是想到的写法,第三道挡没想到的。
+ */
+export function isSafeWecomReturnPath(raw: string): boolean {
+  if (typeof raw !== 'string') return false;
+  if (raw === '' || raw.length > WECOM_RETURN_PATH_MAX_LENGTH) return false;
+  if (hasForbiddenReturnPathChar(raw)) return false;
+  if (raw.includes('\\') || raw.includes('@')) return false;
+  if (!raw.startsWith('/') || raw.startsWith('//')) return false;
+
+  // 百分号编码复核:`/%2F%2Fevil.com` 解码后是 `//evil.com`。
+  // 解码失败(畸形 `%` 序列)同样拒 —— 读不懂就不放行。
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    return false;
+  }
+  if (hasForbiddenReturnPathChar(decoded)) return false;
+  if (decoded.includes('\\') || decoded.includes('@')) return false;
+  if (!decoded.startsWith('/') || decoded.startsWith('//')) return false;
+
+  // 语义级复核:base 用一个**不可能解析成真实站点**的 origin(`.invalid` 是 RFC 2606 保留后缀),
+  // 归一化后 origin 没变才算"站内"。
+  const base = 'https://wecom-return-path.invalid';
+  let url: URL;
+  try {
+    url = new URL(raw, base);
+  } catch {
+    return false;
+  }
+  if (url.origin !== base) return false;
+  if (!url.pathname.startsWith('/')) return false;
+
+  for (const key of url.searchParams.keys()) {
+    if (isTokenLikeQueryKey(key)) return false;
+  }
+  return true;
+}
+
+/**
+ * 企业微信网页授权 URL(冻结稿 §6.2,参数顺序与形态**逐字冻结**)。
+ *
+ * `appid=CORPID` · `redirect_uri=encodeURIComponent(FIXED_CALLBACK_URL)` · `response_type=code`
+ * · `scope=snsapi_base` · `state=STATE` · `agentid=AGENTID` · `#wechat_redirect`
+ *
+ * ⚠️ 手工拼串而不是 `URLSearchParams`:后者对 `:` `/` 的编码策略与 `encodeURIComponent`
+ * 不一致,会让 redirect_uri 的编码结果"看起来对但和企业微信后台登记的不一样"。
+ * 冻结稿明确要求 **只编码一次**,手工拼是唯一能逐字复核的写法。
+ *
+ * `scope=snsapi_base` 是 D-WC-13:静默授权,只换 userid,不弹授权页、不取昵称头像。
+ * `agentid` 必带(D-WC-13):不带时企业微信换出的 userid 归属不可控。
+ */
+export function buildWecomAuthorizeUrl(input: {
+  corpId: string;
+  agentId: number;
+  webBaseUrl: string;
+  state: string;
+}): string {
+  // webBaseUrl 已由 settings 写入口保证为 origin(无 path / query / fragment);
+  // 这里仍去掉可能的结尾斜杠,避免拼出 `https://x//auth/wecom/callback`。
+  const origin = input.webBaseUrl.replace(/\/+$/, '');
+  const redirectUri = `${origin}${WECOM_OAUTH_CALLBACK_PATH}`;
+  return (
+    `${WECOM_OAUTH_AUTHORIZE_URL}` +
+    `?appid=${encodeURIComponent(input.corpId)}` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&response_type=code` +
+    `&scope=snsapi_base` +
+    `&state=${encodeURIComponent(input.state)}` +
+    `&agentid=${encodeURIComponent(String(input.agentId))}` +
+    `#wechat_redirect`
+  );
+}
+
+/** §6.2 规则 2:code 的 UTF-8 字节数上限校验(非空 + ≤512 字节)。 */
+export function isAcceptableWecomOAuthCode(code: string): boolean {
+  if (typeof code !== 'string' || code === '') return false;
+  return Buffer.byteLength(code, 'utf8') <= WECOM_OAUTH_CODE_MAX_BYTES;
+}

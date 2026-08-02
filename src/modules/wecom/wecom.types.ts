@@ -116,6 +116,47 @@ export class WecomApiError extends Error {
   }
 }
 
+// ===== T3(2026-08-02):OAuth attempt 台账闭集(冻结稿 §5.3)=====
+//
+// DB 侧 `purpose` / `status` 都是 String 列(§5.3 逐字;T1 刻意不加 CHECK)——
+// 闭集只由这里的常量在写入口把关。用 `as const` 对象而不是 TS enum:
+// enum 会生成运行时双向映射对象,而这两个值要直接进 Prisma where/data,
+// 字面量联合类型才能让"拼错一个状态名"变成编译错误。
+export const WECOM_ATTEMPT_PURPOSE = {
+  LOGIN: 'login',
+  BIND_SELF: 'bind_self',
+} as const;
+export type WecomAttemptPurpose =
+  (typeof WECOM_ATTEMPT_PURPOSE)[keyof typeof WECOM_ATTEMPT_PURPOSE];
+
+// 状态机(§5.3):
+//   pending ──consumeState──▶ state_consumed ──┬─(已绑定,直接签发)──▶ completed
+//                                              └─(未绑定)──▶ binding_required ──bind──▶ completed
+//   任一步失败 ──▶ failed(终态;**不回退**,state / ticket 一律不复活)
+export const WECOM_ATTEMPT_STATUS = {
+  PENDING: 'pending',
+  STATE_CONSUMED: 'state_consumed',
+  BINDING_REQUIRED: 'binding_required',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+} as const;
+export type WecomAttemptStatus = (typeof WECOM_ATTEMPT_STATUS)[keyof typeof WECOM_ATTEMPT_STATUS];
+
+// WecomIdentity.status 闭集(schema 侧已有 CHECK 强制;这里给写路径一个具名常量)
+export const WECOM_IDENTITY_STATUS = {
+  ACTIVE: 'active',
+  REVOKED: 'revoked',
+} as const;
+export type WecomIdentityStatus =
+  (typeof WECOM_IDENTITY_STATUS)[keyof typeof WECOM_IDENTITY_STATUS];
+
+// WecomIdentity.bindingSource 闭集(§5.2):pre-auth = 未绑定登录后手机锚定;me = 登录态自助换绑
+export const WECOM_BINDING_SOURCE = {
+  PRE_AUTH: 'pre-auth',
+  ME: 'me',
+} as const;
+export type WecomBindingSource = (typeof WECOM_BINDING_SOURCE)[keyof typeof WECOM_BINDING_SOURCE];
+
 // OAuth code / 身份类失败(§7.1 规则 4;T3 消费)。
 // 公开面统一映射 36010 —— 不区分"code 无效"与"这个人没绑定",防账号存在性侧写。
 export class WecomOAuthInvalidError extends Error {

@@ -28,8 +28,10 @@ import {
   SendMyPhoneCodeResponseDto,
 } from '../dto/app/app-me-phone.dto';
 import { AppMeWechatDto, BindMyWechatDto } from '../dto/app/app-me-wechat.dto';
+import { AppMeWecomDto, BindMyWecomDto } from '../dto/app/app-me-wecom.dto';
 import { AppSelfProfileDto } from '../dto/app/app-self-profile.dto';
 import { UpdateAppSelfProfileDto } from '../dto/app/update-app-self-profile.dto';
+import { UserWecomBindingService } from '../user-wecom-binding.service';
 import { ChangeMyPasswordDto, UserResponseDto } from '../users.dto';
 import { UsersService } from '../users.service';
 
@@ -65,6 +67,7 @@ export class AppMeController {
     private readonly appCapability: AppCapabilityService,
     private readonly appProfile: AppProfileService,
     private readonly usersService: UsersService,
+    private readonly userWecomBinding: UserWecomBindingService,
   ) {}
 
   @Get()
@@ -313,6 +316,55 @@ export class AppMeController {
   ): Promise<AppMeWechatDto> {
     const safeDto: BindMyWechatDto = { code: dto.code, stepUpToken: dto.stepUpToken };
     return this.usersService.bindMyWechat(currentUser, safeDto, this.buildAuditMeta(req));
+  }
+
+  // 企业微信接入 T3(2026-08-02):GET /me/wecom + PUT /me/wecom(冻结稿 §6.3)。
+  // 准入沿 me/phone、me/wechat 账号级豁免先例:企业微信身份是**账号级**字段,
+  // Admin 无 Member 也需绑定,故**不**调 appIdentity.resolve + assertCanUseApp;
+  // 豁免仅限本两端点,禁止外溢。
+  // wecomUserId 仅掩码回显(§5.5 L2);响应永不含 OAuth code / state / corpId。
+  @Get('wecom')
+  @ApiOperation({
+    summary: 'App 查询本人企业微信绑定状态(wecomUserId 一律掩码回显) [auth]',
+  })
+  @ApiWrappedOkResponse(AppMeWecomDto)
+  @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.USER_NOT_FOUND)
+  getMyWecom(@CurrentUser() currentUser: CurrentUserPayload): Promise<AppMeWecomDto> {
+    return this.userWecomBinding.getMyWecom(currentUser);
+  }
+
+  // 本人绑定 / 换绑一体(D-WC-8):JWT + action-bound step-up proof + 企业微信 OAuth code。
+  // 三者缺一不可 —— 只有 JWT 时,一个被盗的 access token 就能把账号改绑到攻击者的企业微信号。
+  // 同目标幂等;他人占用 → 36002;真实变更撤销全部 refresh(access 沿 D-4 自然到期)。
+  // **无本人裸解绑**(D-WC-9):释放身份的唯一显式路径是 DELETE admin/v1/users/:id/wecom。
+  @Put('wecom')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'App 绑定 / 换绑本人企业微信(需 WECOM_BIND step-up proof;真实变更撤销全部 refresh) [auth]',
+  })
+  @ApiWrappedOkResponse(AppMeWecomDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.USER_NOT_FOUND,
+    BizCode.WECOM_LOGIN_CREDENTIAL_INVALID,
+    BizCode.WECOM_IDENTITY_ALREADY_BOUND,
+    BizCode.WECOM_CHANNEL_NOT_CONFIGURED,
+    BizCode.WECOM_API_FAILED,
+    BizCode.STEP_UP_PROOF_INVALID,
+  )
+  bindMyWecom(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Body() dto: BindMyWecomDto,
+    @Req() req: Request,
+  ): Promise<AppMeWecomDto> {
+    const safeDto: BindMyWecomDto = {
+      code: dto.code,
+      state: dto.state,
+      stepUpToken: dto.stepUpToken,
+    };
+    return this.userWecomBinding.bindMyWecom(currentUser, safeDto, this.buildAuditMeta(req));
   }
 
   // P0-D PR-3 私有 helper(沿 users.controller.ts:121-127 逐字范式):

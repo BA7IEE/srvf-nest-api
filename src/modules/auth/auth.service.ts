@@ -10,6 +10,7 @@ import type { JwtConfig } from '../../config/jwt.config';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { WECOM_IDENTITY_STATUS } from '../wecom/wecom.types';
 import type { LoginDto, LoginResponseDto, LogoutDto, RefreshTokenDto } from './auth.dto';
 import { lockAuthSessionUser } from './auth-session-lock';
 import { generateFamilyId, generateRefreshTokenRaw, hashRefreshToken } from './refresh-token.util';
@@ -28,7 +29,17 @@ type PrismaTx = Prisma.TransactionClient;
 export type SessionIssuanceExpectation =
   | { kind: 'password-hash'; value: string }
   | { kind: 'phone'; value: string }
-  | { kind: 'openid'; value: string };
+  | { kind: 'openid'; value: string }
+  // 企业微信接入 T3(2026-08-02;冻结稿 §7.3 第四 expectation)。
+  //
+  // 前三种的"事实"都在 User 行本身(passwordHash / phone / openid 是 User 的列),
+  // 锁 User 后重读一次就够。企业微信身份**不在 User 行上** —— 它是 wecom_identities
+  // 的一条独立行,所以第四种必须在 User 锁之后**再读一次身份行**(FOR SHARE)。
+  //
+  // 三个字段全带上而不只带 identityId:corpId + wecomUserId 是身份键的两半,
+  // 只比 id 的话,一条被 admin 清除后又被别人绑走同一 wecomUserId 的场景里,
+  // 旧 id 可能仍指向一条"内容已经换了人"的行。
+  | { kind: 'wecom-identity'; identityId: string; corpId: string; wecomUserId: string };
 
 type SessionUserSnapshot = {
   id: string;
@@ -131,7 +142,7 @@ export class AuthService {
     userId: string,
     expectation: SessionIssuanceExpectation,
     meta: AuditMeta,
-    event: 'auth.login' | 'auth.login.sms' | 'auth.login.wechat',
+    event: 'auth.login' | 'auth.login.sms' | 'auth.login.wechat' | 'auth.login.wecom',
     extraAudit?: Record<string, string | number | null>,
   ): Promise<LoginResponseDto> {
     const jwtCfg = this.configService.get<JwtConfig>('jwt');
@@ -165,6 +176,15 @@ export class AuthService {
         : null;
       if (!current || !this.matchesSessionExpectation(current, expectation)) {
         throw new BizException(this.sessionIssuanceFailureCode(expectation));
+      }
+      // 第四 expectation(企业微信)的事实不在 User 行上,需在 User 锁**之后**
+      // 再读一次身份行。锁序固定 User(FOR UPDATE)→ WecomIdentity(FOR SHARE),
+      // 与 admin 清除路径同向(冻结稿 §9.1 / §9.4)—— 反序即死锁。
+      if (
+        expectation.kind === 'wecom-identity' &&
+        !(await this.matchesWecomIdentityExpectation(tx, current.id, expectation))
+      ) {
+        throw new BizException(BizCode.WECOM_LOGIN_CREDENTIAL_INVALID);
       }
 
       // 签 access token(payload zero drift)；username / role 使用锁后权威快照。
@@ -226,7 +246,50 @@ export class AuthService {
         return user.phone === expectation.value;
       case 'openid':
         return user.openid === expectation.value;
+      // 企业微信身份不是 User 的列 —— User 级判据(ACTIVE / 未软删)已在上面的
+      // 公共分支判完,身份行本身由 matchesWecomIdentityExpectation 在锁后单独校验。
+      case 'wecom-identity':
+        return true;
     }
+  }
+
+  /**
+   * 锁后校验企业微信身份行(冻结稿 §7.3 步骤 2-3)。
+   *
+   * `FOR SHARE` 而非 `FOR UPDATE`:签发会话**不修改**身份行,只需要在本事务期间
+   * 阻止它被改写或删除。用 FOR UPDATE 会让两个并发的企业微信登录互相排队,
+   * 而它们本来可以并行(§9.4:登录与清除的互斥靠 User 行,不靠身份行)。
+   *
+   * 五条判据缺一不可,任一不成立统一 36010(不区分子原因,防侧写):
+   * id 一致 / userId 归属一致 / corpId 与 wecomUserId 两半都一致 / status=active / 未撤销。
+   */
+  private async matchesWecomIdentityExpectation(
+    tx: PrismaTx,
+    userId: string,
+    expectation: Extract<SessionIssuanceExpectation, { kind: 'wecom-identity' }>,
+  ): Promise<boolean> {
+    const rows = await tx.$queryRaw<
+      Array<{
+        id: string;
+        userId: string;
+        corpId: string;
+        wecomUserId: string;
+        status: string;
+        revokedAt: Date | null;
+      }>
+    >(
+      Prisma.sql`SELECT "id", "userId", "corpId", "wecomUserId", "status", "revokedAt"
+                 FROM "wecom_identities" WHERE "id" = ${expectation.identityId} FOR SHARE`,
+    );
+    const row = rows[0];
+    return (
+      row !== undefined &&
+      row.userId === userId &&
+      row.corpId === expectation.corpId &&
+      row.wecomUserId === expectation.wecomUserId &&
+      row.status === WECOM_IDENTITY_STATUS.ACTIVE &&
+      row.revokedAt === null
+    );
   }
 
   private sessionIssuanceFailureCode(expectation: SessionIssuanceExpectation) {
@@ -237,6 +300,9 @@ export class AuthService {
         return BizCode.SMS_CODE_INVALID;
       case 'openid':
         return BizCode.WECHAT_CODE_INVALID;
+      // 冻结稿 §7.3 规则 5:企业微信侧一切签发失败统一 36010
+      case 'wecom-identity':
+        return BizCode.WECOM_LOGIN_CREDENTIAL_INVALID;
     }
   }
 
