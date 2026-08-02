@@ -9,7 +9,7 @@
 
 | 项 | 当前值 |
 |---|---|
-| **发布边界** | 🟢 **代码 Release GO(2026-08-02,v0.65.0 已发)** —— 外部评审对 `56ea8480..b6a2f9d8` 终局判 GO(0 P0/P1)。⚠️ **v0.66.0(2026-08-02)未经外部评审** —— 它收的是 v0.65.0 之后合入的企微 T3/T4/T5A/T5B 与三笔 harness/CI;GO 结论**不自动延伸到它**;**生产部署仍是独立硬门**,migration 67/68/**69** 生产执行、首批标准初始化、前端适配、企微联调按各 runbook 单独审批;活动责任、保险、Storage、外部通道、基础设施硬门仍开放(§4 / runbook) |
+| **发布边界** | 🔴 **v0.66.0 = NO-GO,禁止部署**(外部评审 2026-08-03 判 `b6a2f9d8..b97ef4a6`:**7 BLOCKER / 2 SHOULD-FIX**)。其中 T3 两条可致**账号接管**(OAuth state 未绑浏览器 / step-up proof ABA 回环),与 `messageEnabled` 开关无关 —— **`loginEnabled` 亦不得开启**。tag 与 GitHub Release 已存在但**不构成部署许可**;修复分两刀,各自修完须再投一轮评审(SOP §1.6)。逐条见 §4 与 `NEXT_TASKS` P1-27。上一版 v0.65.0 仍持 🟢 GO(外部评审对 `56ea8480..b6a2f9d8` 判 0 P0/P1);**生产部署仍是独立硬门**,migration 67/68/**69** 生产执行、首批标准初始化、前端适配、企微联调按各 runbook 单独审批;活动责任、保险、Storage、外部通道、基础设施硬门仍开放(§4 / runbook) |
 | 版本 / 卫生 | 现场查:`pnpm agent:preflight` |
 | 本版 footprint | 即下方计数块(生成物) |
 
@@ -62,6 +62,7 @@
 
 | 等级 | 债务 |
 |---|---|
+| **P0** | **v0.66.0 外部评审 NO-GO(2026-08-03),7 BLOCKER 未修 —— 禁止部署、禁开 `loginEnabled` / `messageEnabled`**。批次级根因:**多个局部状态机各自严谨,但彼此没有同一"代际"**(浏览器代际 / 身份代际 / 配置代际 / Worker 租约代际)。①T3 OAuth `state` 未绑发起浏览器 → 登录 CSRF,未绑定分支可升级为**完整账号接管**;②`WECOM_BIND` proof 无绑定态指纹为字面 `null` → `null→bind→clear→null` **ABA 回环**,admin clear 后旧 proof 复活;③36010 码形归一但**耗时不归一**(违反防枚举决策锁);④`bind(settings→User)` 与 T5B 最终闸(`User→settings`)**锁序倒置**,叠加 settings PATCH 构成三事务死锁;⑤最终闸锁旧配置身份、发送前又取最新 route → **跨 CorpID 错投**;⑥`beforeEffect` 只包 Provider 外壳,内部 3 次 fetch 无 fence,且尝试预算 3×8 未统一、`forceRefresh` 绕过 singleflight;⑦Provider 错误类型在 Outbox 边界被压成 `TOKEN_FAILED` → gettoken 阶段 45009 与 HTTP 4xx 被误当暂态重试。另 2 SHOULD-FIX(畸形回执当空名单可误记 SENT / 系统定向通知无 replay 路径)。**评审未跑测试**,给的是确定性调度与请求时序 —— 修前每条须先写出真会红的用例 |
 | P1 | 前端联调包剩运维演练 + 排错 SOP(系统侧无动作) |
 | P1 | 保险 gate 未启用、旧 server=0 未验证；真实 ingress/ACL、COS、worker/fleet、registry digest 未验，均为 production GO 硬门 |
 | P1 | P1-22 gate 配置化;P1-23 isForeigner 改名;**P1-26 + 复审 M1–M6 全收口**(锁序/入队身份/终审批量化+RC+有界等待/棘轮注册表;另修一新查出的 40P01;新码 28211/40901;⚠️行为变更);S6 亦收口 |

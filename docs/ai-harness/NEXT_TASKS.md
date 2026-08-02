@@ -9,6 +9,53 @@
 
 (P0-1 / P0-2 / P0-3 均已完成,见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
+### P1-27 v0.66.0 外部评审 NO-GO —— 7 BLOCKER 待修 · **禁止部署** 🔴
+
+> 范围 `b6a2f9d8..b97ef4a6`(19 个 PR);外部跨模型批次评审,2026-08-03 判 **NO-GO**。
+> 写集核对:19 个 PR **零越集**。身份占用并发、User 生命周期矩阵、P0-E refresh 联动 **通过**。
+> ⚠️ **评审未动态跑测试** —— 给的是确定性 barrier 调度与完整请求时序,自述"不表述成已跑红"。
+> **修前每条必须先写出真会红的用例**(SOP §1.5 末条:结论属实 ≠ 机制正确,照错机制修会修错地方)。
+
+**批次级根因(单 PR 视角看不见)**:多个局部状态机各自写得严谨,**但彼此之间缺少同一"代际"** ——
+浏览器代际、身份代际、配置代际、Worker 租约代际。齿轮单看都圆,装在一起开始咬错齿。
+
+#### 第一刀:#882 账号接管面(最急;与 wecom 两个开关**无关**)
+
+| # | BLOCKER | 落点 | 修复方向 |
+|---|---|---|---|
+| B1 | OAuth `state` **未绑定发起浏览器** → 登录 CSRF;未绑定分支可升级为**完整账号接管**(受害者输入自己手机号后,攻击者的企微身份被绑到受害者 User) | `auth.controller.ts:425-449` · `login-wecom.service.ts:63-73,119-129,296-320` · `wecom-auth-attempt.service.ts:51-119` | authorize 时另发浏览器关联 nonce,`Secure+HttpOnly+SameSite` Cookie 存原值、attempt 只存 hash;callback 必须同时携带匹配 Cookie;state/Cookie/attempt 三者原子一次性消费。**须补双 user-agent E2E** |
+| B2 | `WECOM_BIND` proof **ABA 回环**:无绑定态指纹是字面 `null`,`null→bind→admin clear→null` 后旧 proof 复活(注释只分析了 `active→clear→null`,漏了这条) | `identity-step-up.service.ts:218-279` · `user-wecom-binding.service.ts:251-282,378-426` | 加**单调身份代际**(如 `User.wecomIdentityVersion`,bind/rebind/clear/softDelete/reopen 同事务递增),proof snapshot 纳入 version。⚠️ **不要**改 P0-E(立即吊销 access / tokenVersion)—— 15 分钟自然到期本身是对的,缺的是代际 |
+| B3 | 36010 **码形归一成立、耗时不归一**(state 无效 / code 格式无效 / OAuth 拒绝 / 停用软删,四条路径查询长度不同),违反防枚举决策锁「任何耗时差异都算漏洞」 | `login-wecom.service.ts:119-169,326-346` | 所有 36010 走统一出口 + 补齐固定本地开销 + 有界最小响应时长 + 小扰动;**测试用分支 instrumentation 断言都进同一出口**,别写脆弱的毫秒阈值 E2E |
+
+> ⚠️ 评审同时**纠正了下发方的错误判据**:「未绑定」按冻结行为应返 **200 `bindingRequired`**,不是 36010。
+> 原「三者同码同形」测试矩阵本身写错了。
+
+#### 第二刀:T5B 信任根(在 `messageEnabled` 仍为 false 时一次性修)
+
+| # | BLOCKER | 落点 | 修复方向 |
+|---|---|---|---|
+| B4 | **三事务死锁**:`bind` 取 `settings→User`,T5B 最终闸取 `User→settings`,叠加 settings PATCH 的 `FOR UPDATE` 成环(PG 为防写者饿死,新 SHARE 会排在已等待的 UPDATE 之后) | `notification-wecom-dispatch.service.ts:202-249` · `user-wecom-binding.service.ts:251-282` · `login-wecom.service.ts:393-430` · `wecom-settings.service.ts:98-119,259-278` | 最终闸把 **settings SHARE 提前到 User 之前**,共同实体相对锁序统一为 `settings→User→identity`。**须补真实三连接 barrier 测试**,不接受"跑一百次没遇到" |
+| B5 | 最终闸锁的是**旧配置下的身份**,handler 事务外又 `resolveRoute()` 取最新 settings → 可**跨 CorpID 错投**(Corp A 的 userid 发进 Corp B) | `notification-wecom-dispatch.service.ts:202-249` · `notification-outbox.handlers.ts:724-807` · `wecom.service.ts:99-127` | 新增不可拆分的 `resolveMessageContext()` 返回 `provider+corpId+configurationGeneration+webBaseUrl`;闸内校验 generation 未变;提交后**只能用此前那个 Provider**。`resolveLoginContext()` 早已写明这条原则,消息链没遵守 |
+| B6 | `beforeEffect` **只包 Provider 外壳**,`request()` 内部最多 3 次 `fetch` 全无 fence;且尝试预算 3×8=24 未统一;`forceRefresh` 绕过 `refreshPromise`,并发 40014 会各自强刷 | `wecom.provider.ts:290-375,387-500` · `notification-outbox.worker.ts:246-334` | `beforeEffect` 下沉到每个 `fetch` 紧前;物理尝试预算贯通(或干脆移除 Provider transport retry 全交 Outbox);`forceRefresh` 只绕缓存不绕 singleflight。**并发 40014 须断言 gettoken 实际请求数 = 1** |
+| B7 | Provider 错误类型**在 Outbox 边界被擦除**:非 lease-lost 异常一律记 `TOKEN_FAILED` + Transient;`isTransientWecomError('HTTP_ERROR')` 不分 4xx/5xx ⇒ **gettoken 阶段的 45009、错误 CorpSecret、HTTP 4xx 全被当暂态退避** | `notification-outbox.handlers.ts:754-807,1283-1327` · `wecom.provider.ts:420-500` | Provider→Outbox 保留**类型化错误**(rate-limited / config-fatal / http-4xx / http-5xx / network / timeout / invalid-response / token-invalid / channel-disabled);Outbox 只对 network/timeout/5xx/允许的 token-invalid 退避 |
+| SF1 | 畸形回执被当空名单:`splitUserList` 对 number/array/object/null 返 `[]` ⇒ `{errcode:0, invaliduser:123}` 会**误记 SENT** | `wecom.provider.ts:334-366,502-505` · `notification-outbox.handlers.ts:811-858` | 严格三分:缺席/空串=空名单;字符串=解析;**其它类型 = `INVALID_RESPONSE`,不得 SENT**。另补 `errcode!=0` 同时带 invalidparty/invalidtag 的情形 |
+| SF2 | **系统定向通知无 replay 路径**:v1 eventKey 固定 `wecom-delivery:{nid}:{mid}` + terminal delivery 占 `intent.id`,撞 45009 后人工改回 pending 也会被幂等判据直接短路;且它没有 publish generation | `notification-outbox.handlers.ts:201-267,650-660,900-930` · `docs/ops/wecom-message-channel-rollout.md §6` | 给系统定向 child 加 replay generation / nonce,或提供显式 replay 建新 child id + 新 eventKey;跨 attempt 去重继续用 `notificationId+memberId+channel+SENT` |
+
+**⚠️ 修法纪律(评审原话,采纳)**:「不要先对某个 catch 打补丁或只调换一行 SQL。
+这里的问题都是**状态机接口错误**,局部胶带会让下一种交错从旁边钻出来。」
+
+**两刀各自修完须再投一轮评审**(SOP §1.6:修复批次是整个改造里最危险的代码)。
+
+#### 下发方(本仓 AI)在本轮的三处失手 —— 留痕,别重犯
+
+1. **注释与代码不符,且骗过了自己的审计**:锁序注释写 `identities→settings`,实际是 `settings→identity`。
+   而 S1–S7 自审**声称 S5(注释无执行位)已查** —— 实际只机核了 `toparty/totag` 与 `wecomUserId` 两条。
+   **挑着验 = 没验**;声称查过某一形状,就要把该形状的**全部**载荷点列出来逐条过。
+2. **"不可能成环"的推理只枚举了写者**:只想了 settings PATCH 只锁自己那行,
+   **从未枚举"还有谁持 settings 锁"** —— 而 bind 路径就持。**判环必须枚举全部持锁者,不是只看 writer。**
+3. **递给评审的重点清单本身带错**(把「未绑定」写成应返 36010)。下发包里的判据也会错,
+   评审纠正下发方的判据是**正常且必要**的,不要把它当噪音。
+
 ## P1(长期维护)
 
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
