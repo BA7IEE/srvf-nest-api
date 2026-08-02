@@ -37,6 +37,9 @@
 - 考勤 `firstReturn`/`finalReturn`/`finalApprove` 同样在 Sheet 状态、audit 的业务 transaction 内 enqueue；退回收件人从 active attendance assignment/提交人解析，终审逐 record snapshot；milestone payload 只含稳定 5 分门槛正文，aggregate=`team_join_application`，同 application+threshold 重放必须完整同内容。enqueue 失败整体回滚，worker/provider 失败不得重放业务写。
 - membership audience / 定向归属组织只接受当前有效 PRIMARY(`ACTIVE + startedAt<=now + endedAt=null + 未软删`)；本口径不改变 durable Outbox 的 enqueue 位置与事务顺序。
 - department 广播是独立读取可见档：App pull、SMS/WeChat 根受众与 WeChat 最终复核均接受当前有效 PRIMARY/SECONDARY/TEMPORARY/SUPPORT；不改变上一条 directed/membership audience 的 PRIMARY 语义。
+- **受众资格判定唯一真相 = [`notification-recipient-authorization.service.ts`](notification-recipient-authorization.service.ts)**(T5A；决策 D-WC-19)。两个入口：`authorizeBroadcastRecipients`(渠道无关批量判定)与 `authorizeRecipientForEffect`(Provider 前最终闸，事务内固定锁序，返回锁内 User 快照)。**新渠道一律消费这两个入口，禁止再抄第二份可见性/RBAC 口径**；渠道地址(openid / phone / 其它)由调用方经 `loadActiveUsers` 注入，判定层不认识任何投递地址。该文件导出的是**函数不是 Injectable**——三个消费方在既有 spec 里手搓 `new` 构造，加构造依赖会打穿它们。
+- ⚠️ **软删闸不在受众判定里**：`canSeeContent` 只看 `statusCode`。读侧靠 `buildVisibilityWhere` 的 `deletedAt: null`，推送侧靠 outbox `authorizeAdminNotificationEffect` 的 `deletedAt !== null` 检查。**新渠道必须复用其中之一**，只调受众判定会把软删通知发出去；该边界由 `test/e2e/notification-recipient-authorization.e2e-spec.ts` 钉住。
+- 广播**根候选**按 Member 解析，无 ACTIVE User 者仍进候选(地址为空)，由最终闸/渠道侧兜住(微信落 `skipped/no-openid`、短信直接不计入可计费受众)——这是两阶段裁决的第一阶段，不是漏判。
 - 通知派发普通日志只记录固定 `event`、闭集 `operation`、后端映射的 `safeErrorCategory/safeErrorCode`、`retryable` 与必要稳定 ID；未知错误固定 `unexpected-error/code=null`。禁止 message/stack/cause、destinationRef、手机号、openid、object key、provider URL、secret/token/Authorization；持久化 delivery/outbox/sms_send_logs 诊断语义不因此改变。
 
 ### durable outbox 不变量(从原 Scope 叙事中提取,一条未删)
@@ -110,4 +113,5 @@
 - `pnpm exec jest --config test/jest-e2e.config.ts --runInBand --no-cache --runTestsByPath test/e2e/notifications-sms.e2e-spec.ts` — S5 全链:RBAC + 31001/31013 闸 + confirmed 缺失 400 + 预览不发 + 确认逐人 send_log/delivery/maskPhone/audit + 同日幂等 + re-trigger 去重 + 仅可见有手机者 + 24030
 - `pnpm test -- notification-outbox birthday-greeting expiry-reminder` — durable outbox:payload 安全 / enqueue 内容幂等 / claim lease / fencing / retry·dead / 未知 type-version 零 Effect + 两 cron 只入队
 - `pnpm exec jest --config test/jest-e2e.config.ts --runInBand --no-cache --runTestsByPath test/e2e/notification-outbox.e2e-spec.ts` — 独立 worker + 真 PostgreSQL 并发 claim / 崩溃租约回收 / Effect 幂等 / admin SMS 首轮非最终(精确 path 可避免 worktree 绝对路径被 Jest regex 误展开；须在静态 migration review P0-P3=0 后运行派生测试库)
+- `pnpm exec jest --config test/jest-e2e.config.ts --runInBand --no-cache --runTestsByPath test/e2e/notification-recipient-authorization.e2e-spec.ts` — **受众判定行为矩阵**(T5A F0)：4 可见档 × 4 判定站点(App 读侧 / 微信根候选 / Provider 前最终闸 / 短信可计费)全集合比对 + 资格失效四形态 + 软删/未知档/public/directed 现状留痕。**改受众判定必先跑它**；任一站点多放行或少放行一人即红
 - 改启动锚行文案 → 必须同步 docker-smoke workflow 并跑该 workflow
