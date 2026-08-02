@@ -158,11 +158,20 @@ function makePrismaMock() {
   const member = {
     findFirst: jest.fn<Promise<{ status: MemberStatus } | null>, [unknown]>(),
   };
+  // 企业微信 T4:softDelete 在同事务内调 `revokeActiveWecomIdentityInTx`(D-WC-10)。
+  // 默认「该 User 无 active 身份」——既有 characterization 用例的断言(update / refresh
+  // 撤销 reason)因此逐字不变;新增行为由 test/e2e/wecom-user-lifecycle.e2e-spec.ts 钉。
+  const wecomIdentity = {
+    findMany: jest.fn<Promise<Array<{ id: string; wecomUserId: string }>>, [unknown]>(),
+    updateMany: jest.fn<Promise<{ count: number }>, [unknown]>(),
+  };
+  wecomIdentity.findMany.mockResolvedValue([]);
+  wecomIdentity.updateMany.mockResolvedValue({ count: 0 });
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
   const $queryRaw = jest
     .fn<Promise<Array<{ id: string }>>, [unknown]>()
     .mockResolvedValue([{ id: 'u-1' }]);
-  const prisma = { user, member, refreshToken, $transaction, $queryRaw };
+  const prisma = { user, member, refreshToken, wecomIdentity, $transaction, $queryRaw };
   // 双模:回调式把 prisma mock 自身当 tx 传入;数组式($transaction([findMany, count]))走 Promise.all。
   $transaction.mockImplementation((arg: unknown) =>
     typeof arg === 'function'
@@ -988,6 +997,55 @@ describe('UsersService (characterization, scoped)', () => {
         data: { revokedReason: string };
       };
       expect(revokeArg.data.revokedReason).toBe('admin-delete');
+    });
+
+    // 企业微信 T4(D-WC-10 + §11.3 末条)。这里只钉**顺序与计数来源**这两件事:
+    // 顺序由 e2e 的真事务证明不了(提交后看不出谁先谁后),而它正是锁序 §9.1 的执行位。
+    it('T4:同事务撤销 active 企业微信身份,且顺序在 refresh 撤销之前(锁序 §9.1)', async () => {
+      const prisma = makePrismaMock();
+      const auditLogs = makeAuditLogsMock();
+      prisma.user.findFirst.mockResolvedValue({
+        id: 'u-2',
+        role: Role.USER,
+        status: UserStatus.ACTIVE,
+      });
+      prisma.user.update.mockResolvedValue(
+        makeSafeUser({ id: 'u-2', status: UserStatus.DISABLED }),
+      );
+      prisma.wecomIdentity.findMany.mockResolvedValue([
+        { id: 'wi-1', wecomUserId: 'wecom-user-1' },
+      ]);
+      prisma.wecomIdentity.updateMany.mockResolvedValue({ count: 1 });
+
+      const order: string[] = [];
+      prisma.wecomIdentity.updateMany.mockImplementation(() => {
+        order.push('wecom');
+        return Promise.resolve({ count: 1 });
+      });
+      prisma.refreshToken.updateMany.mockImplementation(() => {
+        order.push('refresh');
+        return Promise.resolve({ count: 0 });
+      });
+
+      const service = makeService(prisma, { auditLogs });
+      await service.softDelete(makeCurrentUser({ id: 'admin-1' }), 'u-2', META);
+
+      expect(order).toEqual(['wecom', 'refresh']);
+      const revokeArg = prisma.wecomIdentity.updateMany.mock.calls[0][0] as {
+        data: { status: string; revokedAt: unknown; revokedByUserId: string };
+      };
+      expect(revokeArg.data.status).toBe('revoked');
+      expect(revokeArg.data.revokedAt).toBeInstanceOf(Date);
+      expect(revokeArg.data.revokedByUserId).toBe('admin-1');
+
+      const auditArg = auditLogs.log.mock.calls[0][0] as {
+        event: string;
+        extra: Record<string, unknown>;
+      };
+      expect(auditArg.event).toBe('user.soft-delete');
+      expect(auditArg.extra).toEqual({ wecomIdentitiesRevoked: 1 });
+      // 完整 wecomUserId 永不入 Audit(§11.3)—— 这条腿只贡献一个计数
+      expect(JSON.stringify(auditArg)).not.toContain('wecom-user-1');
     });
   });
 

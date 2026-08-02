@@ -34,6 +34,9 @@ import { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.
 import { RbacService } from '../permissions/rbac.service';
 import { maskPhone } from '../sms/sms.constants';
 import { assertEnrollmentIdentityChangeAllowed } from '../team-join/team-join-enrollment-invariant';
+// T4(D-WC-10):撤销原语归 users(见该文件头注「为什么落在 users 而不是 wecom」)。
+// 纯 tx 函数,与既有 `auth/auth-session-lock` 同型 —— 不注入 UsersService、不产生模块环。
+import { revokeActiveWecomIdentityInTx } from '../users/wecom-identity-revoke';
 import {
   BindMemberAccountDto,
   BulkGrantAccountResultItemDto,
@@ -874,6 +877,18 @@ export class MembersService {
         where: { id: lockedOldLink.id },
         data: { deletedAt: revokedAt, status: UserStatus.DISABLED },
       });
+
+      // 企业微信 T4(2026-08-02,D-WC-10):重开 = 旧 User **代际终止**(它已被软删,不会回来),
+      // 同事务撤销其 active 企业微信身份。新号**不继承**任何 WecomIdentity ——
+      // 身份是"这个账号是谁"的凭据,不是可随账号迁移的属性;新号要用企业微信登录,
+      // 得由本人重走一遍绑定(与 D-WC-9「无本人裸解绑、转移只能是清除+重绑」同一形状)。
+      // 位置在 refresh 撤销**之前**:锁序 §9.1 固定 `User → WecomIdentity → RefreshToken / Audit`。
+      const wecomRevocation = await revokeActiveWecomIdentityInTx(tx, {
+        userId: lockedOldLink.id,
+        revokedByUserId: currentUser.id,
+        revokedAt,
+      });
+
       await tx.refreshToken.updateMany({
         where: { userId: lockedOldLink.id, revokedAt: null, expiresAt: { gt: revokedAt } },
         data: { revokedAt, revokedReason: 'member-account-reopen' },
@@ -911,6 +926,9 @@ export class MembersService {
           oldUserId: lockedOldLink.id,
           newUserId: created.id,
           phone: maskPhone(dto.phone),
+          // T4 / 冻结稿 §11.3 末条:复用既有 umbrella 事件,extra 只加一个计数,
+          // 不为撤销这条腿另造事件。恒写数值(含 0),与 refreshTokensRevoked 同型。
+          wecomIdentitiesRevoked: wecomRevocation.count,
         },
         tx,
       });
