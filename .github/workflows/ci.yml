@@ -22,6 +22,14 @@ on:
     branches: [main, dev]
   pull_request:
 
+# 频率刀(维护者 2026-08-02 拍板):PR 上迭代推送时,被替代的旧 run 立即取消
+# (两天实测 23 条 PR run 里有多条是同 PR 的过期推送,烧完全程纯浪费)。
+# main/dev 的 push run 恒不取消 —— strict=false 下它是「合并后漂移」的唯一探测器,
+# 每次合并的 run 必须各自跑完,取消任何一条都在探测器上开洞。
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # 与 .env.test 对齐(测试环境配置在仓库公开,值均为非敏感)。
 # 见 .env.test。SUPER_ADMIN_EMAIL 故意留空,seed 校验在 APP_ENV=test 下放行默认值。
 # DATABASE_URL 的 connection_limit/pool_timeout 与 .env.test 同步(并行 e2e 连接预算)。
@@ -40,16 +48,21 @@ env:
 jobs:
   # docs-only 快速路径(2026-06-11 拍板;效率排查 goal 简报方案 A):
   # 变更文件「全部 *.md」才算 docs-only(白名单取反:任一非 .md → 全量);
-  # 判定仅在 pull_request 事件进行,push / API 失败 / 文件列表为空或被截断
-  # (changedFiles > 已列出数,>100 文件场景)→ 一律回退全量,只会多跑不会少跑。
+  # API 失败 / 文件列表为空或被截断(changedFiles > 已列出数,>100 文件场景)
+  # → 一律回退全量,只会多跑不会少跑。
   # 取文件列表用 `gh pr view --json files` 的原始路径,不用 `gh pr diff --name-only`
   # (后者对非 ASCII 路径做 C 转义加引号,行尾不再是 .md,会误判;JSON 无此问题)。
+  #
+  # push 事件自 2026-08-02(维护者拍板,CI 提效·频率刀)起同样判定:两天实测
+  # 14 条 push run 里多条是纯文档合并(#872/#877 各白烧一条全量)。判定用
+  # compare API(before...after),任何异常(比较失败 / 首推 before 全零 /
+  # 文件数≥250 触发截断风险 / 列表为空)→ 回退全量,方向与 PR 侧一致:多跑不少跑。
   changeset:
     name: Change set
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      docs_only: ${{ steps.changeset.outputs.docs_only }}
+      docs_only: ${{ steps.changeset.outputs.docs_only || steps.changeset-push.outputs.docs_only }}
     steps:
       - name: Detect docs-only change set
         id: changeset
@@ -73,14 +86,41 @@ jobs:
           fi
           echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
           echo "docs_only=$docs_only"
-      # push 事件:上一步被 skip,outputs.docs_only 为空 → 下游 != 'true' → 走全量。
+
+      - name: Detect docs-only change set (push)
+        id: changeset-push
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+        run: |
+          docs_only=false
+          # 首推 / 新分支的 before 是全零 SHA,compare 无意义 → 全量
+          if [ -n "$BEFORE" ] && [ -n "$AFTER" ] && ! printf '%s' "$BEFORE" | grep -q '^0*$'; then
+            json=$(gh api "repos/$GITHUB_REPOSITORY/compare/$BEFORE...$AFTER" 2>/dev/null) || json=""
+            if [ -n "$json" ]; then
+              listed=$(jq -r '.files | length' <<< "$json")
+              non_md=$(jq -r '[.files[].filename | select(test("\\.md$") | not)] | length' <<< "$json")
+              echo "listed=$listed non_md=$non_md"
+              # compare API 最多列 300 files;≥250 视为有截断风险 → 全量(多跑不少跑)
+              if [ "$listed" -gt 0 ] && [ "$listed" -lt 250 ] && [ "$non_md" -eq 0 ]; then
+                docs_only=true
+              fi
+            else
+              echo "compare API failed; fallback to full pipeline"
+            fi
+          fi
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          echo "docs_only=$docs_only"
 
   # 快信号线:无 Postgres 依赖的全部检查。实测 2026-08-02(run 30710337669):全跑 6m57s,
   # 其中 lint+typecheck+build+unit ≈ 3m —— 这四步的输入全是 ts / 构建产物,纯 .md 变更
   # 碰不到,docs-only 时跳过(维护者 2026-08-02 拍板,CI 提效)。
   # docs-only 仍恒跑:docs guards(md 正是其守护对象)+ harness 自测 + 事故回放
   # (两者的判据文件含 md/json,且它们红了必须当场知道,不能等下一个代码 PR)。
-  # push 事件 docs_only 为空 → 四步照跑,与旧行为一致。
+  # push 事件自 2026-08-02 起同样判定 docs-only(见 changeset 头注)——
+  # 纯文档合并的 main run 同享此跳过;判定失败恒回退全量。
   fast:
     name: Fast checks
     runs-on: ubuntu-latest
