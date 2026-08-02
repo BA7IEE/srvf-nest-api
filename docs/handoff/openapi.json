@@ -91535,7 +91535,7 @@
   "info": {
     "title": "U Nest API Starter",
     "description": "AI-friendly TypeScript API base — NestJS + Prisma + PostgreSQL",
-    "version": "0.65.0",
+    "version": "0.66.0",
     "contact": {}
   },
   "tags": [
