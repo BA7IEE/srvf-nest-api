@@ -111,6 +111,8 @@ const PARAM_ID = 'srvf/no-param-id-string';
 const REALIAS = 'srvf/no-decorator-realias';
 /** 测试禁「近未来」日期字面量:INC-18 新增的第四条自定义规则(eslint-rules/no-near-future-date.mjs)。 */
 const NEAR_FUTURE = 'srvf/no-near-future-date';
+/** 通知模块受众判定唯一入口:T5A 挂账的第五条自定义规则(eslint-rules/no-audience-primitive-import.mjs)。 */
+const AUDIENCE_IMPORT = 'srvf/no-audience-primitive-import';
 
 const CASES: readonly Case[] = [
   // ---- 鉴权 / 判权单轨 ----
@@ -714,6 +716,64 @@ const CASES: readonly Case[] = [
     code: "export const EXAMPLE_DATE = '2089-12-31';",
     expect: null,
   },
+
+  // ---- T5A 挂账:通知模块受众判定唯一入口(第五条自定义规则)----
+  // 白名单是 eslint.harness.mjs 的 allow 选项(常驻设计位,非棘轮欠账);
+  // 这里的正/反例喂的是**真实生效的 harnessConfigBlocks**,连 allow 一起验。
+  {
+    name: 'AUD ①:通知模块内直接 import 受众原语被抓(新通道自写判定 = D-WC-19 要防的漂移)',
+    filename: 'src/modules/notifications/notification-newchan-dispatch.service.ts',
+    code: "import { canSeeContent } from '../content/content.visibility';\nexport const x = canSeeContent;",
+    expect: AUDIENCE_IMPORT,
+  },
+  {
+    name: 'AUD ②:改名转发 `export { canSeeContent as see } from …` 在源头即错(R3 同型绕过路径)',
+    filename: 'src/modules/notifications/reexport.ts',
+    code: "export { canSeeContent as see } from '../content/content.visibility';",
+    expect: AUDIENCE_IMPORT,
+  },
+  {
+    name: 'AUD ③:`export * from …` 连名字都不点也被抓',
+    filename: 'src/modules/notifications/reexport-all.ts',
+    code: "export * from '../content/content.visibility';",
+    expect: AUDIENCE_IMPORT,
+  },
+  {
+    name: 'AUD ④:`import type` 同样被抓(类型层引用也是对原语形状的耦合)',
+    filename: 'src/modules/notifications/typed.ts',
+    code: "import type { CallerVisibilityContext } from '../content/content.visibility';\nexport type T = CallerVisibilityContext;",
+    expect: AUDIENCE_IMPORT,
+  },
+  {
+    name: 'AUD 反向:判定服务本体在白名单内放行',
+    filename: 'src/modules/notifications/notification-recipient-authorization.service.ts',
+    code: "import { canSeeContent } from '../content/content.visibility';\nexport const x = canSeeContent;",
+    expect: null,
+  },
+  {
+    name: 'AUD 反向:读侧 read.service 在白名单内放行(isManagement 恒求值,T5A 明确不并入)',
+    filename: 'src/modules/notifications/notification-read.service.ts',
+    code: "import { buildVisibilityWhere } from '../content/content.visibility';\nexport const x = buildVisibilityWhere;",
+    expect: null,
+  },
+  {
+    name: 'AUD 反向:content 模块消费自家原语不在辖区',
+    filename: 'src/modules/content/content.service.ts',
+    code: "import { canSeeContent } from './content.visibility';\nexport const x = canSeeContent;",
+    expect: null,
+  },
+  {
+    name: 'AUD 反向:同目录同名前缀文件不误配(other-content.visibility 不是那个原语文件)',
+    filename: 'src/modules/notifications/other.ts',
+    code: "import { y } from '../content/other-content.visibility';\nexport const x = y;",
+    expect: null,
+  },
+  {
+    name: 'AUD 反向:模块内 spec 引原语做对拍放行(visibility-reuse parity spec 是守护不是漂移;首跑 CI 冷 lint 实抓)',
+    filename: 'src/modules/notifications/notification.visibility-reuse.spec.ts',
+    code: "import { canSeeContent } from '../content/content.visibility';\nexport const x = canSeeContent;",
+    expect: null,
+  },
 ];
 
 /**
@@ -1071,7 +1131,8 @@ async function main(): Promise<void> {
         m.ruleId === CUSTOM ||
         m.ruleId === PARAM_ID ||
         m.ruleId === REALIAS ||
-        m.ruleId === NEAR_FUTURE,
+        m.ruleId === NEAR_FUTURE ||
+        m.ruleId === AUDIENCE_IMPORT,
     );
 
     if (c.expect === null) {
@@ -1110,7 +1171,8 @@ async function main(): Promise<void> {
         m.ruleId === CUSTOM ||
         m.ruleId === PARAM_ID ||
         m.ruleId === REALIAS ||
-        m.ruleId === NEAR_FUTURE
+        m.ruleId === NEAR_FUTURE ||
+        m.ruleId === AUDIENCE_IMPORT
       ) {
         coveredSelectors.add(m.ruleId);
         continue;
@@ -1140,7 +1202,7 @@ async function main(): Promise<void> {
   //    而「写错了永远匹配不到」的自测输出与「防线完整」一模一样(INC-06 同源)。
   //    数出来之后,新增规则不补正向用例 = 本条当场红,不需要谁记得。
   const CUSTOM_RULES = Object.keys(srvfEslintPlugin.rules).map((name) => `srvf/${name}`);
-  for (const literal of [CUSTOM, PARAM_ID, REALIAS, NEAR_FUTURE]) {
+  for (const literal of [CUSTOM, PARAM_ID, REALIAS, NEAR_FUTURE, AUDIENCE_IMPORT]) {
     if (!CUSTOM_RULES.includes(literal)) {
       failures.push(
         `✗ 覆盖闭环名单漂移 —— 本文件的常量 ${literal} 不在 srvfEslintPlugin.rules 里。\n` +
