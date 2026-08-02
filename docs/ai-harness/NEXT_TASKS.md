@@ -366,7 +366,13 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 
 </details>
 
-### P1-25 企业微信接入(身份入口 + 工作台入口 + 通知通道) — **T1+T2 已发版(v0.65.0);T3([#882](https://github.com/BA7IEE/srvf-nest-api/pull/882))+T4([#884](https://github.com/BA7IEE/srvf-nest-api/pull/884))+T5A([#886](https://github.com/BA7IEE/srvf-nest-api/pull/886)/[#887](https://github.com/BA7IEE/srvf-nest-api/pull/887))已合入且逐批元核验过(2026-08-02);剩 T5B(WeCom 消息通道)与 T6(试点)**
+### P1-25 企业微信接入(身份入口 + 工作台入口 + 通知通道) — **T1+T2 已发版(v0.65.0);T3([#882](https://github.com/BA7IEE/srvf-nest-api/pull/882))+T4([#884](https://github.com/BA7IEE/srvf-nest-api/pull/884))+T5A([#886](https://github.com/BA7IEE/srvf-nest-api/pull/886)/[#887](https://github.com/BA7IEE/srvf-nest-api/pull/887))+T5B([#890](https://github.com/BA7IEE/srvf-nest-api/pull/890))已合入(2026-08-02,T3/T4/T5A 逐批元核验过);**剩 T6(运维与发布收口 + 分层试点)****
+
+- **T5B 纪要**(2026-08-02,#890;**未发版·未部署·`messageEnabled` 未开**):新增第四条推送渠道 `wecom`,复用既有 durable outbox,受众判定消费 T5A 两入口(第五条 eslint 规则冷 lint 绿即证零第二份口径)。**默认关两层判据各自 red-first 实测**:短路第一层(publish 前判开关)→ 恰好 4 条「默认关」用例红;短路第二层(Provider 前 `FOR SHARE` 锁后复读 `wecom_settings`)→ 恰好 1 条红;**两组红集不重叠**,故是两个独立判据而非同一闸被观测两次。第 69 migration = WeCom 独立 active-slot partial unique(按 `eventType` 分域;干净库重放 + seed 幂等两跑 + **双向阳性对照**:同 pair 第二条 wecom child 被 23505 拒 / 同 pair 的 **wechat** child 放行 —— 后者正是该索引必须独立的理由)。**零新端点 / 零新权限码 / 零新 BizCode / 零新 cron**(450/227/314/136/2 恒等,仅 Migration 68→69);既有 e2e spec 零修改,连坐 6 组 123 tests 全绿。
+  - **交付中修掉一个真 bug**:暂态失败原本用 `intent.id` 落 delivery 行 ⇒ 下次重试撞上自己的幂等判据直接返回,「退避重试 8 次」退化成「第一次网络抖动即永久放弃」且现场毫无异常。已改为暂态走自动主键流水、只有终态占 `intent.id`。
+  - **一条已记录偏离**(报告口径,非违规):冻结稿 §10.4 写「先按 identity 收窄再判可见性」,实现改成先算完整可见受众再取交集 —— child 集合逐字相同(逐人过滤,交集可交换),但只有后者拿得到运营指标①「SRVF 可见受众数」,而 §10.4 末条恰要求它与「identity 候选数」分开记录。
+  - **条件项合规不触发**:goal DoD 写「新 BizCode 带来的契约 diff」,但冻结稿 §11.2 明写发送失败不污染 HTTP 端点 + 不新增 361xx ⇒ **零新 BizCode**,`docs:counts` 的 BizCode 314 恒等即机器自证。
+  - **T5A 挂账的执法位已落地**:第五条 eslint 规则(#889)现由 T5B 实证 —— 新渠道全程零直引 `content.visibility` 原语。
 
 - **T5A 纪要**:受众判定归一到 `notification-recipient-authorization.service.ts`(渠道无关批量判定 + Provider 前最终闸两入口,接缝签名在 #887 报告);两 PR 结构 = characterization(553 行矩阵)先合、重构 diff 零测试改动;管理层判定 3→0 处散点、TYPES 消费 3→1;**一条已记录偏离**:导出函数而非冻结稿字面的 @Injectable 类(既有 spec 手搓 new 所迫,文件名照冻结稿)。**三条现状留痕(只钉未修)**:软删闸仅 outbox 一道防线(新服务 :44 注释明载)、根候选含无 ACTIVE User 者(空转 child)、读侧不自查 User.status(闸在 JwtStrategy)。**待拍板执法位**:「新渠道必须消费这两个入口」尚无机器执法(S5 形状),建议第五条 eslint 规则 + 具名基线另立小刀。
 
@@ -377,7 +383,7 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 - **终态**:单企业、单自建应用 Agent;`WecomIdentity → User → Member → SRVF Authz`;消息只走既有 Notification Outbox。**企业微信只回答「你是谁」,SRVF 继续回答「你能做什么」**。
 - **拆分**:T0(冻结,本 PR 完成)→ T1(schema expand-only)→ T2(通道层 + 设置 + 连接诊断)→ T3(OAuth 登录/绑定/换绑/管理员清除)→ T4(User 生命周期闭环)→ T5A(受众判定重构,行为保持)→ T5B(WeCom 消息通道)→ T6(runbook + 10–30 人分层试点)。
 - **⏸ 为什么排在后面**(2026-07-29 拍板):① 与 P1-24 同为 schema-touching,受 [`process.md §8`](../process.md) 「同一时刻至多一条 schema-touching lane」约束,不并行;② 写集在 Permission seed / AuditLogEvent / openapi / CODEMAP / RBAC_MAP / counts 上重叠;③ 本任务 expand-only、开关默认全 false,**何时做成本相同**,而 P1-24 有会关闭的单向门。
-- **额外硬门**:身份链(T1–T4)可先落地;**消息链(T5B)的启用**必须等现有 Notification Outbox 在生产完成部署、Worker 同版本切换并通过硬门(见 [`current-state.md §2`](../current-state.md) Outbox 行)。代码可以先写,`messageEnabled` 默认 false。
+- **额外硬门**:身份链(T1–T4)可先落地;**消息链(T5B)的启用**必须等现有 Notification Outbox 在生产完成部署、Worker 同版本切换并通过硬门(见 [`current-state.md §2`](../current-state.md) Outbox 行)。代码可以先写,`messageEnabled` 默认 false。**代码已于 2026-08-02 写完并合入(#890),该硬门原样未解** —— 开启顺序、排空判据与回滚见 [`ops/wecom-message-channel-rollout.md`](../ops/wecom-message-channel-rollout.md);最硬的一条是 §10.8 混版本:旧 worker 会把 `notification.wecom-*` 判成 terminal dead,**dead 是终态,那条通知对那个人永远不会再发**,而现场看起来一切正常。
 - **不做清单(节选)**:不写 `User.openid`、不接通讯录同步、不加第 3 个 cron、不引入 Redis/queue、不做 PC 浏览器扫码登录、不承诺 exactly-once。全文见评审稿 §0.3 与 §17。
 
 ### P1-22 入队专业队类型 / gate 定义配置化 — **⏸ 诉求触发再立项**
