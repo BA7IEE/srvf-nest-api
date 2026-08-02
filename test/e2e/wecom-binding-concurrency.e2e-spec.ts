@@ -5,6 +5,7 @@ import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { WECOM_LOGIN_NONCE_COOKIE } from '../../src/modules/auth/wecom-browser-nonce';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -120,16 +121,34 @@ describe('企业微信绑定链路真并发(T3 e2e 组 C)', () => {
 
   // ===== 编排工具 =====
 
+  // P1-27 第一刀 B1(2026-08-03):authorize 下发的浏览器关联 nonce cookie 按 state 存档。
+  // 本文件测的是并发正确性,「换浏览器提交必须失败」在 wecom-account-takeover.e2e-spec.ts;
+  // 这里一律模拟"同一个浏览器",于是全部并发判据与终态断言逐字不动
+  // —— 包括「同一个 state 并发消费两次」:两个请求带的是**同一份** nonce,
+  // 单赢家仍然只能由 CAS 决出,而不是被 cookie 判据抢答。
+  const browserJar = new Map<string, string>();
+
   async function stateVia(app: INestApplication): Promise<string> {
     const res = await request(httpServer(app)).post(AUTHORIZE_PATH).send({});
     expect(res.status).toBe(200);
-    return /[?&]state=([^&#]+)/.exec(res.body.data.authorizeUrl as string)?.[1] as string;
+    const state = /[?&]state=([^&#]+)/.exec(res.body.data.authorizeUrl as string)?.[1] as string;
+    const raw = res.headers['set-cookie'] as unknown as string[] | undefined;
+    const line = (raw ?? []).find((c) => c.startsWith(`${WECOM_LOGIN_NONCE_COOKIE}=`));
+    expect(line).toBeDefined();
+    browserJar.set(state, (line as string).split(';')[0]);
+    return state;
+  }
+
+  /** 以"持有该 state 对应 nonce 的那个浏览器"的身份发 login 请求。 */
+  function loginVia(app: INestApplication, code: string, state: string): request.Test {
+    const req = request(httpServer(app)).post(LOGIN_PATH);
+    const cookie = browserJar.get(state);
+    if (cookie !== undefined) req.set('Cookie', cookie);
+    return req.send({ code, state });
   }
 
   async function ticketVia(app: INestApplication, code: string): Promise<string> {
-    const res = await request(httpServer(app))
-      .post(LOGIN_PATH)
-      .send({ code, state: await stateVia(app) });
+    const res = await loginVia(app, code, await stateVia(app));
     expect(res.status).toBe(200);
     expect(res.body.data.bindingRequired).toBe(true);
     return res.body.data.bindingTicket as string;
@@ -315,8 +334,8 @@ describe('企业微信绑定链路真并发(T3 e2e 组 C)', () => {
     const state = await stateVia(appA);
 
     const responses = await Promise.all([
-      request(httpServer(appA)).post(LOGIN_PATH).send({ code: 'conc-code-5', state }),
-      request(httpServer(appB)).post(LOGIN_PATH).send({ code: 'conc-code-5', state }),
+      loginVia(appA, 'conc-code-5', state),
+      loginVia(appB, 'conc-code-5', state),
     ]);
 
     for (const r of responses) expect(r.status).toBeLessThan(500);
@@ -343,7 +362,7 @@ describe('企业微信绑定链路真并发(T3 e2e 组 C)', () => {
 
     const state = await stateVia(appA);
     const [loginRes, clearRes] = await Promise.all([
-      request(httpServer(appA)).post(LOGIN_PATH).send({ code: 'conc-code-6', state }),
+      loginVia(appA, 'conc-code-6', state),
       request(httpServer(appB))
         .delete(`/api/admin/v1/users/${userAId}/wecom`)
         .set('Authorization', adminAuth),
@@ -379,9 +398,7 @@ describe('企业微信绑定链路真并发(T3 e2e 组 C)', () => {
       .set('Authorization', adminAuth)
       .expect(200);
 
-    const res = await request(httpServer(appA))
-      .post(LOGIN_PATH)
-      .send({ code: 'conc-code-7', state: await stateVia(appA) });
+    const res = await loginVia(appA, 'conc-code-7', await stateVia(appA));
     // 身份已撤销 ⇒ 回到"未绑定"形态:发 ticket,而不是签发会话
     expect(res.status).toBe(200);
     expect(res.body.data.bindingRequired).toBe(true);

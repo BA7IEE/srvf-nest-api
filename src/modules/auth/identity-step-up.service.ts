@@ -60,8 +60,27 @@ export interface StepUpWecomIdentitySnapshotInput {
   updatedAt: Date;
 }
 
+/**
+ * `WECOM_BIND` proof 的完整企业微信输入(P1-27 第一刀 B2,2026-08-03)。
+ *
+ * 为什么必须是「代际 + 当前身份」两件套,而不是只有身份:
+ * 只看身份时,**无绑定态的指纹是字面 `null`** —— `null → bind → admin clear → null`
+ * 走完之后指纹又变回 `null`,无绑定态签的旧 proof 在 5 分钟 TTL 内**复活**
+ * (取证探针在未修代码上实测:clear 之后拿旧 proof 再绑,HTTP 200)。
+ * 这是典型 ABA:用「状态值相等」当判据,而状态值本身会回到起点。
+ * `identityVersion` 单调递增,回不去,于是判据变成"世界还是不是当初那个世界"。
+ *
+ * 为什么把两者绑成一个入参而不是加第五个可选参数:可选参数漏传就静默退回旧语义,
+ * 而漏传恰好等于"把刚修好的洞重新打开"。绑成一个必填对象,漏传是**编译错误**。
+ */
+export interface StepUpWecomBindingSnapshotInput {
+  identityVersion: number;
+  identity: StepUpWecomIdentitySnapshotInput | null;
+}
+
 type StepUpUserRow = StepUpCredentialSnapshotInput & {
   role: Role;
+  wecomIdentityVersion: number;
 };
 
 interface StepUpProofPayload {
@@ -162,18 +181,20 @@ export class IdentityStepUpService {
   /**
    * 校验 action-bound proof。
    *
-   * `wecomIdentity` 仅在 `expectedAction=WECOM_BIND` 时参与判据(冻结稿 §7.4);
+   * `wecomBinding` 仅在 `expectedAction=WECOM_BIND` 时参与判据(冻结稿 §7.4 + B2);
    * 其余 action 传不传都不影响结果 —— 见 `computeActionSnapshot` 的早返回。
+   * 但 `WECOM_BIND` **必须**传:传 null 视为调用方漏传,统一 10008 拒掉
+   * (不能默默按"无绑定"处理 —— 那正好是 B2 修掉的那条回环)。
    *
-   * ⚠️ 调用方必须传**锁后重读**的身份快照,不能传锁前的:§7.4 要防的正是
+   * ⚠️ 调用方必须传**锁后重读**的快照,不能传锁前的:§7.4 要防的正是
    * "admin 刚清除绑定,旧 proof 在 5 分钟内又把身份绑回来",而锁前快照恰好是
-   * 清除发生之前的那一份。
+   * 清除发生之前的那一份。代际列同理,必须与身份行在同一次锁后读里取。
    */
   verifyProof(
     stepUpToken: string,
     user: StepUpCredentialSnapshotInput,
     expectedAction: StepUpAction,
-    wecomIdentity: StepUpWecomIdentitySnapshotInput | null = null,
+    wecomBinding: StepUpWecomBindingSnapshotInput | null = null,
   ): void {
     try {
       const payload = this.jwt.verify<StepUpProofPayload>(stepUpToken, {
@@ -181,7 +202,7 @@ export class IdentityStepUpService {
         audience: STEP_UP_AUDIENCE,
       });
       const factorValid = Object.values(IdentityStepUpFactor).includes(payload.factor);
-      const actualSnapshot = this.computeActionSnapshot(user, expectedAction, wecomIdentity);
+      const actualSnapshot = this.computeActionSnapshot(user, expectedAction, wecomBinding);
       if (
         payload.sub !== user.id ||
         payload.action !== expectedAction ||
@@ -217,30 +238,41 @@ export class IdentityStepUpService {
    * 非 WECOM_BIND:**原样返回** `computeCredentialSnapshot` —— 早返回是"其他 action
    * 算法零变化"的执行位,不是优化。删掉它,既有 proof 会在部署瞬间全部失效。
    *
-   * WECOM_BIND:把当前 active 身份指纹再过一次同一把 snapshot key 的 HMAC。
-   * 无 active 身份时指纹为固定的 `null` 标记 —— 这一档同样参与判据,
-   * 于是"有身份 → 被 admin 清除"这个状态迁移必然改变 snapshot,旧 proof 当场失效。
-   * 这正是 §7.4 要挡的场景:管理员刚清除绑定,用户拿 5 分钟内的旧 proof 又绑回来。
+   * WECOM_BIND:把**身份代际 + 当前 active 身份指纹**一起再过一次同一把 snapshot key 的 HMAC。
+   *
+   * 代际(`identityVersion`)是 B2 的核心:身份指纹在"无绑定"这一档恒为字面 `null`,
+   * 于是 `null → bind → admin clear → null` 之后它会**回到起点**,旧 proof 复活。
+   * 代际单调递增、绝不回绕,把"回到起点"这件事从状态空间里删掉了。
+   *
+   * 身份指纹本身保留(不是冗余):它挡的是"代际未变但身份行内容被改"这类更细的迁移,
+   * 也让 §7.4 原有判据逐条不减。两者是**与**关系,任一变化都让 proof 失效。
    */
   private computeActionSnapshot(
     user: StepUpCredentialSnapshotInput,
     action: StepUpAction,
-    wecomIdentity: StepUpWecomIdentitySnapshotInput | null,
+    wecomBinding: StepUpWecomBindingSnapshotInput | null,
   ): string {
     const base = this.computeCredentialSnapshot(user);
     if (action !== StepUpAction.WECOM_BIND) return base;
 
-    const fingerprint = JSON.stringify(
-      wecomIdentity === null
+    // WECOM_BIND 必须拿到代际;拿不到就让它算不出可用 snapshot(调用方漏传 = 拒)。
+    if (wecomBinding === null) {
+      throw new Error('WECOM_BIND snapshot requires a wecom binding input');
+    }
+
+    const identity = wecomBinding.identity;
+    const fingerprint = JSON.stringify([
+      wecomBinding.identityVersion,
+      identity === null
         ? null
         : [
-            wecomIdentity.id,
-            wecomIdentity.corpId,
-            wecomIdentity.wecomUserId,
-            wecomIdentity.status,
-            wecomIdentity.updatedAt.toISOString(),
+            identity.id,
+            identity.corpId,
+            identity.wecomUserId,
+            identity.status,
+            identity.updatedAt.toISOString(),
           ],
-    );
+    ]);
     return createHmac('sha256', this.snapshotKey)
       .update(`${base}|${fingerprint}`)
       .digest('base64url');
@@ -251,6 +283,8 @@ export class IdentityStepUpService {
    *
    * 这里**不加锁**:签发 proof 只是拍一张"此刻状态"的快照,真正的判据在最终
    * 绑定事务里锁后重算(§7.4 末句)。在这里加锁反而会让签发端点去争 identity 行。
+   * 代际值不在这里读 —— 它就在 `loadActiveUser` 已经取回的 User 行上,
+   * 多读一次只会多一个查询、还多一个不一致的机会。
    */
   private async loadActiveWecomIdentity(
     userId: string,
@@ -274,6 +308,10 @@ export class IdentityStepUpService {
         status: true,
         deletedAt: true,
         role: true,
+        // B2:代际列与 credential snapshot 的七个输入同一次读回来。
+        // **不进** computeCredentialSnapshot —— 那个算法逐字节冻结,
+        // 代际只在 WECOM_BIND 分支参与(见 computeActionSnapshot)。
+        wecomIdentityVersion: true,
       },
     });
     if (user === null) {
@@ -289,15 +327,20 @@ export class IdentityStepUpService {
     meta: AuditMeta,
   ): Promise<StepUpResponseDto> {
     // 仅 WECOM_BIND 需要多读一次身份行;其余 action 保持零额外查询(算法与开销都不变)
-    const wecomIdentity =
-      action === StepUpAction.WECOM_BIND ? await this.loadActiveWecomIdentity(user.id) : null;
+    const wecomBinding: StepUpWecomBindingSnapshotInput | null =
+      action === StepUpAction.WECOM_BIND
+        ? {
+            identityVersion: user.wecomIdentityVersion,
+            identity: await this.loadActiveWecomIdentity(user.id),
+          }
+        : null;
 
     const stepUpToken = this.jwt.sign(
       {
         sub: user.id,
         action,
         factor,
-        snapshot: this.computeActionSnapshot(user, action, wecomIdentity),
+        snapshot: this.computeActionSnapshot(user, action, wecomBinding),
       },
       {
         secret: this.signingKey,

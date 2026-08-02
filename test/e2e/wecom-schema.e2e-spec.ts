@@ -280,12 +280,30 @@ describe('WeCom T1 schema 约束(第 68 migration 手写 5 条)', () => {
 
   // ===== ⑦ expand-only 自证:User 侧零标量列(冻结稿 §5.4 / §0.3 硬禁区)=====
 
-  it('User 上没有任何 wecom 标量字段 —— 只有两条反向 relation', async () => {
-    const columns = await prisma.$queryRaw<Array<{ column_name: string }>>`
-      SELECT column_name FROM information_schema.columns
+  // ⚠️ 2026-08-03(P1-27 第一刀 B2)**收窄,不是放宽**:
+  // 原断言是"User 上一个 wecom 标量都不许有",它要挡的是把**企业微信身份**
+  // (corpId / wecomUserId / 绑定时间 …)写进 User —— 身份的唯一住处是 `wecom_identities`。
+  // 第 70 个 migration 加的 `wecomIdentityVersion` 不是身份值,是**代际计数器**:
+  // 它不能存在 identity 行上,因为它恰恰要在"当前没有 identity 行"时仍然单调递增
+  // (无绑定 → 绑定 → 清除 → 无绑定 的 ABA 回环就靠它区分)。
+  //
+  // 所以判据从"一个都不许有"改成**精确白名单 + 列类型**:
+  // 除了这一列(且必须是 `integer NOT NULL DEFAULT 0`),其余一律仍然拒。
+  // 将来有人加 `User.wecomUserId` / `User.wecomCorpId`,这条照样红;
+  // 把本列偷偷改成可空、或改成 text 存身份,也照样红(旧断言反而查不出列类型)。
+  it('User 上的 wecom 标量恰好只有代际列 wecomIdentityVersion,且形态受钉', async () => {
+    const columns = await prisma.$queryRaw<
+      Array<{ column_name: string; data_type: string; is_nullable: string; column_default: string }>
+    >`
+      SELECT column_name, data_type, is_nullable, column_default
+      FROM information_schema.columns
       WHERE table_name = 'User' AND column_name ILIKE '%wecom%'
+      ORDER BY column_name
     `;
-    expect(columns).toEqual([]);
+    expect(columns.map((c) => c.column_name)).toEqual(['wecomIdentityVersion']);
+    expect(columns[0].data_type).toBe('integer');
+    expect(columns[0].is_nullable).toBe('NO');
+    expect(columns[0].column_default).toBe('0');
   });
 
   it('SmsPurpose 含 WECOM_BIND(T3 才消费,本刀只加值)', async () => {

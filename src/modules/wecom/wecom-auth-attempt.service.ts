@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
 import { PrismaService } from '../../database/prisma.service';
 import {
@@ -33,6 +33,26 @@ import {
 // ⚠️ 第三条(§9.5):**Provider 调用不在事务内**。state 先 CAS 消费,再打上游;
 //   上游成功但进程随后崩溃时用户重新发起即可 —— 刻意**不复活** code / state。
 //
+// ⚠️ 第四条(P1-27 第一刀 B1,2026-08-03):**state 必须绑定发起授权的那个浏览器**。
+//   原实现里 state 只证明"这条回跳对应我方签发过的一次 attempt",不证明"提交回跳的
+//   浏览器就是发起的那个"。攻击者在自己那侧换到 `code + state` 后塞进受害者浏览器,
+//   受害者提交即得攻击者身份的会话;攻击者身份未绑定时还会升级成完整账号接管
+//   (受害者输入自己的手机号 + 短信码,把攻击者的企业微信号绑到自己账号上)。
+//
+//   修法 = 派生绑定,**不新增列**(本刀的 migration 预算恰好一列,已给 B2 的
+//   `User.wecomIdentityVersion`):
+//       browserNonce  = randomBytes(32)          ← 只走 HttpOnly Cookie,永不落库
+//       state         = sha256(browserNonce)     ← 走 authorize URL,经企业微信重定向暴露
+//       stateHash     = sha256(state)            ← 落库(与原实现同形,列没变)
+//   回跳时必须同时出示 `state`(body)与 `browserNonce`(Cookie),服务端先核
+//   `sha256(nonce) === state` 再走原来的 CAS。
+//
+//   为什么这与"把 nonce hash 也写进 CAS 的 where"等价:一个 state 有且只有一个 nonce
+//   前像,所以"nonce 配得上 state"是个**纯函数判据**,不携带独立状态,也就不可能与
+//   attempt 行失步 —— 三者仍然是一次性、原子地一起消费掉。
+//   为什么攻击者绕不过:sha256 抗原像 ⇒ 手里有 state 推不回 nonce;
+//   `__Host-` 前缀 Cookie 是 host-only 且必须 Secure ⇒ 也写不进受害者浏览器。
+//
 // retention(§5.3 规则 8):成功 / 失败 / 过期行由**手动 SOP** 清理 ——
 // §0.3 硬禁区「不新增第三个 Cron」,与 throttler_buckets 同一处置。
 
@@ -57,21 +77,25 @@ export class WecomAuthAttemptService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * 签发 OAuth state 并建 attempt 行(purpose 决定 subjectUserId 语义)。
+   * 签发 OAuth state + 浏览器关联 nonce,并建 attempt 行(purpose 决定 subjectUserId 语义)。
    *
    * §5.3 规则 3/4:`purpose=login` 时 subjectUserId 恒 null;
    * `purpose=bind_self` 时必须是发起 authorize 的登录用户 —— 由类型签名强制成对传入。
    *
-   * 返回的 `state` 是**唯一一次**能拿到原文的机会:它随即被拼进 authorize URL,
-   * 之后系统里只剩 hash。
+   * 返回的两个原值都是**唯一一次**能拿到的机会,且去向严格分开(B1):
+   * - `state` 拼进 authorize URL,会经企业微信重定向暴露在 URL / Referer / 网关日志里
+   * - `browserNonce` 只写进 `HttpOnly` Cookie,**永不**进响应体、日志、Audit、DB
+   * 之后系统里只剩 `stateHash`。
    */
   async createAttempt(input: {
     purpose: WecomAttemptPurpose;
     subjectUserId: string | null;
     returnPath: string;
-  }): Promise<{ state: string; expiresAt: Date }> {
+  }): Promise<{ state: string; browserNonce: string; expiresAt: Date }> {
     // §5.3 规则 5:randomBytes(32).toString('hex') = 64 个 [0-9a-f] 字符、256-bit 熵。
-    const state = randomBytes(WECOM_OAUTH_STATE_BYTES).toString('hex');
+    // B1:随机的是 **nonce**,state 由它派生 —— 于是"持有 state"不蕴含"持有 nonce"。
+    const browserNonce = randomBytes(WECOM_OAUTH_STATE_BYTES).toString('hex');
+    const state = deriveWecomStateFromBrowserNonce(browserNonce);
     const expiresAt = new Date(Date.now() + WECOM_OAUTH_STATE_TTL_MS);
 
     await this.prisma.wecomAuthAttempt.create({
@@ -87,23 +111,31 @@ export class WecomAuthAttemptService {
       select: { id: true },
     });
 
-    return { state, expiresAt };
+    return { state, browserNonce, expiresAt };
   }
 
   /**
-   * 原子消费 state(§9.5 CAS 第一条)。
+   * 原子消费 state + 浏览器关联 nonce(§9.5 CAS 第一条 + B1)。
    *
-   * where 同时钉住 stateHash + purpose + status=pending + 未消费 + 未过期:
-   * - `purpose` 进 where 是**目的隔离**(§14.1):login 签发的 state 不能拿去走 bind_self 路径,
-   *   反之亦然。少了这一条,一个未登录用户就能用 login state 去消费 bind_self 流程。
-   * - `count === 1` 才是赢家。并发两请求必然只有一个拿到 1,另一个拿到 0 → null → 36010。
+   * ① 先核浏览器归属:`sha256(browserNonce) === state`。
+   *    不匹配 ⇒ 立刻 null,**且不发出那条 UPDATE** —— 这一条很重要:
+   *    非发起浏览器的失败绝不能把 state 烧掉,否则任何人只要拿到 state
+   *    就能让合法用户的登录流程作废(把接管漏洞换成一个 DoS 不算修好)。
+   * ② 再走原有 CAS。where 同时钉住 stateHash + purpose + status=pending + 未消费 + 未过期:
+   *    - `purpose` 进 where 是**目的隔离**(§14.1):login 签发的 state 不能拿去走 bind_self
+   *      路径,反之亦然。少了这一条,未登录用户就能用 login state 去消费 bind_self 流程。
+   *    - `count === 1` 才是赢家。并发两请求必然只有一个拿到 1,另一个拿到 0 → null → 36010。
    *
-   * 返回 null 一律由调用方映射成 36010,**不区分**不存在 / 过期 / 已消费 / 目的不符。
+   * 返回 null 一律由调用方映射成 36010,**不区分**浏览器不符 / 不存在 / 过期 / 已消费 /
+   * 目的不符 —— 区分即 oracle。
    */
   async consumeState(input: {
     state: string;
     purpose: WecomAttemptPurpose;
+    browserNonce: string | null;
   }): Promise<ConsumedWecomAttempt | null> {
+    if (!matchesWecomBrowserNonce(input.state, input.browserNonce)) return null;
+
     const stateHash = hashOneTimeSecret(input.state);
     const now = new Date();
 
@@ -276,4 +308,31 @@ export class WecomAuthAttemptService {
  */
 function hashOneTimeSecret(raw: string): string {
   return createHash('sha256').update(raw, 'utf8').digest('hex');
+}
+
+/**
+ * `state = sha256(browserNonce)`(B1 派生绑定)。
+ *
+ * 导出是给 spec 用的:判据"两者确实是同一次派生的两端"必须能被机器核对,
+ * 不能只写在注释里。
+ */
+export function deriveWecomStateFromBrowserNonce(browserNonce: string): string {
+  return hashOneTimeSecret(browserNonce);
+}
+
+/**
+ * 提交回跳的浏览器是否就是发起授权的那个(B1 的整条判据)。
+ *
+ * ⚠️ 缺 Cookie 时**不能早返回** —— 那会让"没带 Cookie"比"带错 Cookie"少跑一次 sha256,
+ * 于是 36010 的耗时里又多出一位可测的信息(B3 正在收口的正是这类差异)。
+ * 这里改成对一个随机值做同样的派生再比,本地开销与真实分支一致,结果恒 false。
+ *
+ * 比对走 `timingSafeEqual`:两边都是定长 64 字符 hex,长度不等即判否。
+ */
+function matchesWecomBrowserNonce(state: string, browserNonce: string | null): boolean {
+  const candidate = browserNonce ?? randomBytes(WECOM_OAUTH_STATE_BYTES).toString('hex');
+  const derived = Buffer.from(deriveWecomStateFromBrowserNonce(candidate), 'utf8');
+  const presented = Buffer.from(state, 'utf8');
+  if (derived.length !== presented.length) return false;
+  return browserNonce !== null && timingSafeEqual(derived, presented);
 }

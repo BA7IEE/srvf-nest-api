@@ -1,6 +1,17 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, Put, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Patch,
+  Post,
+  Put,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { BizException } from '../../../common/exceptions/biz.exception';
 import { BizCode } from '../../../common/exceptions/biz-code.constant';
 import {
@@ -15,6 +26,11 @@ import { PasswordChangeThrottle } from '../../../common/decorators/password-chan
 import { SmsSendThrottle } from '../../../common/decorators/sms-send-throttle.decorator';
 import { SmsVerifyThrottle } from '../../../common/decorators/sms-verify-throttle.decorator';
 import type { AuditMeta } from '../../audit-logs/audit-logs.types';
+import {
+  clearWecomBrowserNonceCookie,
+  readWecomBrowserNonce,
+  WECOM_BIND_NONCE_COOKIE,
+} from '../../auth/wecom-browser-nonce';
 import { AppCapabilityService } from '../app-capability.service';
 import { AppIdentityResolver } from '../app-identity.resolver';
 import { AppProfileService } from '../app-profile.service';
@@ -358,13 +374,24 @@ export class AppMeController {
     @CurrentUser() currentUser: CurrentUserPayload,
     @Body() dto: BindMyWecomDto,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<AppMeWecomDto> {
     const safeDto: BindMyWecomDto = {
       code: dto.code,
       state: dto.state,
       stepUpToken: dto.stepUpToken,
     };
-    return this.userWecomBinding.bindMyWecom(currentUser, safeDto, this.buildAuditMeta(req));
+    // P1-27 第一刀 B1:bind_self 的 state 同样绑定发起授权的那个浏览器。
+    // 归属证据来自 `__Host-` Cookie(由 `POST auth/v1/wecom-bind/authorize` 下发),
+    // 不进 body —— 进了 body 就等于让攻击者把两半都自己填齐。
+    const browserNonce = readWecomBrowserNonce(req, WECOM_BIND_NONCE_COOKIE);
+    clearWecomBrowserNonceCookie(res, WECOM_BIND_NONCE_COOKIE);
+    return this.userWecomBinding.bindMyWecom(
+      currentUser,
+      safeDto,
+      browserNonce,
+      this.buildAuditMeta(req),
+    );
   }
 
   // P0-D PR-3 私有 helper(沿 users.controller.ts:121-127 逐字范式):

@@ -5,6 +5,7 @@ import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { WECOM_LOGIN_NONCE_COOKIE } from '../../src/modules/auth/wecom-browser-nonce';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
@@ -53,6 +54,23 @@ type IdentityRow = {
   createdAt: Date;
   updatedAt: Date;
 };
+
+// P1-27 第一刀 B1(2026-08-03):authorize 下发的浏览器关联 nonce cookie 按 state 存档,
+// 模拟"同一个浏览器把流程走完" —— 本文件既有断言逐字不动。
+// 「换一个浏览器提交必须失败」的判据在 wecom-account-takeover.e2e-spec.ts。
+const browserJar = new Map<string, string>();
+
+function rememberNonce(res: request.Response, state: string, cookieName: string): void {
+  const raw = res.headers['set-cookie'] as unknown as string[] | undefined;
+  const line = (raw ?? []).find((c) => c.startsWith(`${cookieName}=`));
+  expect(line).toBeDefined();
+  browserJar.set(state, (line as string).split(';')[0]);
+}
+
+function withBrowser(req: request.Test, state: string): request.Test {
+  const cookie = browserJar.get(state);
+  return cookie === undefined ? req : req.set('Cookie', cookie);
+}
 
 describe('企业微信 User 生命周期闭环:行为矩阵(T4 e2e 组 A)', () => {
   let app: INestApplication;
@@ -109,7 +127,9 @@ describe('企业微信 User 生命周期闭环:行为矩阵(T4 e2e 组 A)', () =
   async function stateFor(): Promise<string> {
     const res = await request(httpServer(app)).post(AUTHORIZE_PATH).send({});
     expect(res.status).toBe(200);
-    return /[?&]state=([^&#]+)/.exec(res.body.data.authorizeUrl as string)?.[1] as string;
+    const state = /[?&]state=([^&#]+)/.exec(res.body.data.authorizeUrl as string)?.[1] as string;
+    rememberNonce(res, state, WECOM_LOGIN_NONCE_COOKIE);
+    return state;
   }
 
   /**
@@ -119,9 +139,11 @@ describe('企业微信 User 生命周期闭环:行为矩阵(T4 e2e 组 A)', () =
    * 手写 fixture 一旦与生产写法漂移,保留侧的"逐字段零变化"就会变成和一个假行比对。
    */
   async function bindWecom(phone: string, code: string): Promise<void> {
-    const login = await request(httpServer(app))
-      .post(LOGIN_PATH)
-      .send({ code, state: await stateFor() });
+    const state = await stateFor();
+    const login = await withBrowser(request(httpServer(app)).post(LOGIN_PATH), state).send({
+      code,
+      state,
+    });
     expect(login.status).toBe(200);
     expect(login.body.data.bindingRequired).toBe(true);
     const bindingTicket = login.body.data.bindingTicket as string;
@@ -349,9 +371,11 @@ describe('企业微信 User 生命周期闭环:行为矩阵(T4 e2e 组 A)', () =
 
       expect((await reopen(memberId, phoneOf(nextSeq()))).status).toBe(200);
 
-      const res = await request(httpServer(app))
-        .post(LOGIN_PATH)
-        .send({ code: codeOf(n), state: await stateFor() });
+      const loginState = await stateFor();
+      const res = await withBrowser(request(httpServer(app)).post(LOGIN_PATH), loginState).send({
+        code: codeOf(n),
+        state: loginState,
+      });
       // 冻结稿 §6.2:无 active 身份 = 未绑定面 —— 签一次性 binding ticket,不签会话。
       // 响应里不得出现企业微信号本身(防侧写)。
       expect(res.status).toBe(200);
@@ -366,9 +390,11 @@ describe('企业微信 User 生命周期闭环:行为矩阵(T4 e2e 组 A)', () =
       await bindWecom(phone, codeOf(n));
       expect((await softDelete(userId)).status).toBe(200);
 
-      const res = await request(httpServer(app))
-        .post(LOGIN_PATH)
-        .send({ code: codeOf(n), state: await stateFor() });
+      const loginState = await stateFor();
+      const res = await withBrowser(request(httpServer(app)).post(LOGIN_PATH), loginState).send({
+        code: codeOf(n),
+        state: loginState,
+      });
       expect(res.status).toBe(200);
       expect(res.body.data.bindingRequired).toBe(true);
       expect(res.body.data.session).toBeNull();
@@ -446,17 +472,20 @@ describe('企业微信 User 生命周期闭环:行为矩阵(T4 e2e 组 A)', () =
       const snapshot = await identityRowOf(userId);
 
       expect((await setUserStatus(userId, UserStatus.DISABLED)).status).toBe(200);
-      const blocked = await request(httpServer(app))
-        .post(LOGIN_PATH)
-        .send({ code: codeOf(n), state: await stateFor() });
+      const loginState = await stateFor();
+      const blocked = await withBrowser(request(httpServer(app)).post(LOGIN_PATH), loginState).send(
+        { code: codeOf(n), state: loginState },
+      );
       // 账号不可用统一 36010(**不是** bindingRequired —— 那会泄露"这个企业微信号没人绑")
       expectBizError(blocked, BizCode.WECOM_LOGIN_CREDENTIAL_INVALID);
       expect(await identityRowOf(userId)).toEqual(snapshot);
 
       expect((await setUserStatus(userId, UserStatus.ACTIVE)).status).toBe(200);
-      const ok = await request(httpServer(app))
-        .post(LOGIN_PATH)
-        .send({ code: codeOf(n), state: await stateFor() });
+      const retryState = await stateFor();
+      const ok = await withBrowser(request(httpServer(app)).post(LOGIN_PATH), retryState).send({
+        code: codeOf(n),
+        state: retryState,
+      });
       expect(ok.status).toBe(200);
       expect(ok.body.data.bindingRequired).toBe(false);
       expect(ok.body.data.session).not.toBeNull();

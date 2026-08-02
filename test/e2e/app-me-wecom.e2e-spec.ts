@@ -5,6 +5,7 @@ import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { WECOM_BIND_NONCE_COOKIE } from '../../src/modules/auth/wecom-browser-nonce';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { createTestUser, TEST_PASSWORD } from '../fixtures/users.fixture';
@@ -35,6 +36,13 @@ const WEB_BASE_URL = 'https://srvf-e2e-b.example.org';
 function stubWecomUserId(code: string): string {
   return `dev-wecom-${createHash('sha256').update(code).digest('hex').slice(0, 24)}`;
 }
+
+// P1-27 第一刀 B1(2026-08-03):bind_self authorize 下发的浏览器关联 nonce cookie,按 state 存档。
+// 模拟"同一个浏览器把流程走完",于是本文件既有调用点与断言逐字不动
+// —— 包括「拿别人的 state 绑自己 → 36010」那条:cookie 按 state 取,浏览器判据会过,
+// 真正拒掉它的仍然是 attempt.subjectUserId 归属判据(这正是那条用例要钉的东西)。
+// 换浏览器必须失败的判据在 wecom-account-takeover.e2e-spec.ts。
+const browserJar = new Map<string, string>();
 
 describe('本人企业微信换绑 + 管理员清除(T3 e2e 组 B)', () => {
   let app: INestApplication;
@@ -68,11 +76,19 @@ describe('本人企业微信换绑 + 管理员清除(T3 e2e 组 B)', () => {
       .send({});
     expect(res.status).toBe(200);
     const url = res.body.data.authorizeUrl as string;
-    return /[?&]state=([^&#]+)/.exec(url)?.[1] as string;
+    const state = /[?&]state=([^&#]+)/.exec(url)?.[1] as string;
+    const raw = res.headers['set-cookie'] as unknown as string[] | undefined;
+    const line = (raw ?? []).find((c) => c.startsWith(`${WECOM_BIND_NONCE_COOKIE}=`));
+    expect(line).toBeDefined();
+    browserJar.set(state, (line as string).split(';')[0]);
+    return state;
   }
 
   function putWecom(auth: string, body: Record<string, unknown>): Promise<request.Response> {
-    return request(httpServer(app)).put(ME_WECOM_PATH).set('Authorization', auth).send(body);
+    const req = request(httpServer(app)).put(ME_WECOM_PATH).set('Authorization', auth);
+    const cookie = typeof body.state === 'string' ? browserJar.get(body.state) : undefined;
+    if (cookie !== undefined) req.set('Cookie', cookie);
+    return req.send(body);
   }
 
   function getWecom(auth: string): Promise<request.Response> {
