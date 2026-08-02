@@ -35,6 +35,10 @@
 | [`ops/sms-data-retention-sop.md`](./ops/sms-data-retention-sop.md) | SMS 数据 retention 手动清理 SOP(验证码 90 天 / 发送流水 1 年,数值可改;维护者手动 psql,**不**引入 cron 清理;SQL 已 app_test 实测冻结) |
 | [`ops/wechat-mini-production-rollout-checklist.md`](./ops/wechat-mini-production-rollout-checklist.md) | 运维侧微信小程序登录真实通道上线 SOP(注册小程序 → AppID/AppSecret → admin 录凭证〔仅 SA〕→ DevStub 全链 → 真实验收;系统侧已"正确但休眠") |
 | [`ops/scoped-authz-go-live-checklist.md`](./ops/scoped-authz-go-live-checklist.md) | 维护者/运营侧「组织职务 + 分管 + scoped RBAC + 统一鉴权」上线初始化 SOP(一次性动作:部署迁移+seed → 建管理账号 → 录入队员 → 公告 rows 导入 → BD-2 终审绑定 → authz/explain 验收 → env 项确认) |
+| [`ops/wecom-backend-configuration-sop.md`](./ops/wecom-backend-configuration-sop.md) | **企业微信后台配置 SOP + 身份链启用 runbook**(T6;冻结稿 §15.1 十五条逐条给判据 → 建应用 / 录凭证〔仅 SA〕/ 可见范围逐人 / `webBaseUrl` origin / 可信域名 / 可信 IP 生效窗口 / 密钥注入 → 「开总闸 → 诊断 → 开 `loginEnabled`」三步 → §15.4 身份链回滚。⚠️ 含「六个配置类 errcode 在 SRVF 侧全归一成 36030」的诊断边界与替代办法) |
+| [`ops/wecom-pilot-playbook.md`](./ops/wecom-pilot-playbook.md) | **企业微信 10–30 人分层试点执行手册**(T6;冻结稿 §15.3 → 六类人员构成〔含**必须有**的无手机号测试账号〕/ A-B-C 三步启用 / 十项留证逐条「怎么做+期望+不符怎么办」/ 扩大条件与签署位。红线:不得以「接口能通」或「试了几天没报错」代验收) |
+| [`ops/wecom-failure-injection-drills.md`](./ops/wecom-failure-injection-drills.md) | **企业微信消息链失败注入剧本**(T6;冻结稿 §15.2 条 8 四类 → 非生产复用 T5B 已有的 DEV_STUB `wecomerr-*` 前缀,核心断言恒为「有没有误记 SENT」。⚠️ 明写**生产只能安全做 Worker crash 一类**,其余三类给替代证据,不假装已在生产注入过) |
+| [`ops/wecom-message-channel-rollout.md`](./ops/wecom-message-channel-rollout.md) | **企业微信应用消息通道上线 runbook**(T5B 交付 · T6 收口;混版本风险〔旧 worker 把 `notification.wecom-*` 判成 terminal dead〕/ no-effect smoke / 两个开关分两次开 / 运营五指标不得混算 / 人工 replay / §15.4 排空回滚四步与判据 SQL / §15.2 十二条 GO 检查单) |
 | [`ai-harness/README.md`](./ai-harness/README.md) | **AI Harness 操作页**(derived,非规则源;规则入口在根 `AGENTS.md`):开工与守护命令 / 定位路径;同目录 `codex-review-sop.md`(跨模型评审 SOP)+ `RBAC_MAP.md`(权限地图,`docs:rbacmap:check` 守护)+ `NEXT_TASKS.md`;2026-06-10 Review 冻结档见 `archive/ai-harness/`,harness v1 快照见 `archive/harness-v1/` |
 
 V2 设计期产物(V2-D8 立项时刻 draft 历史快照,**非当前事实权威源**):

@@ -366,7 +366,14 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 
 </details>
 
-### P1-25 企业微信接入(身份入口 + 工作台入口 + 通知通道) — **T1+T2 已发版(v0.65.0);T3([#882](https://github.com/BA7IEE/srvf-nest-api/pull/882))+T4([#884](https://github.com/BA7IEE/srvf-nest-api/pull/884))+T5A([#886](https://github.com/BA7IEE/srvf-nest-api/pull/886)/[#887](https://github.com/BA7IEE/srvf-nest-api/pull/887))+T5B([#890](https://github.com/BA7IEE/srvf-nest-api/pull/890))已合入(2026-08-02,T3/T4/T5A 逐批元核验过);**剩 T6(运维与发布收口 + 分层试点)****
+### P1-25 企业微信接入(身份入口 + 工作台入口 + 通知通道) — **T1–T5B 代码全部合入;T6 文档就绪(2026-08-02);⏸ 剩下的全部是「维护者执行」,AI 无可做之事**
+
+- **T6 纪要**(2026-08-02;**A 档 docs-only,`src/` 零行、`prisma/` 零行、零端点 / 零权限码 / 零 BizCode**):把冻结稿 §15 的生产切换硬门做成四份**带判据**的可执行文档。三条边界拍板:① T6 只出文档 —— §15 硬门绝大多数是维护者在企业微信后台与生产环境的手工动作,AI 物理碰不到;② **试点期运营五指标走 SQL 手查,不做只读 admin 端点**(真要面板等试点跑出结论再另立项);③「Workbench 主页」是企业微信工作台内的 **H5 落地页**,归前端仓 + 后台配置(D-WC-29),后端 OAuth 链 T3 已备齐,本期不新建端点。
+  - **四份新文档**(全在 `docs/ops/`,不付恒读层预算):[`wecom-backend-configuration-sop.md`](../ops/wecom-backend-configuration-sop.md)(后台配置 + 身份链启用 + 回滚,含 §15.1 十五条勾选单)· [`wecom-pilot-playbook.md`](../ops/wecom-pilot-playbook.md)(六类构成 + A/B/C 三步 + 十项留证)· [`wecom-failure-injection-drills.md`](../ops/wecom-failure-injection-drills.md)(四类注入,复用 T5B 已有的 DEV_STUB `wecomerr-*` 前缀)· 扩充 [`wecom-message-channel-rollout.md`](../ops/wecom-message-channel-rollout.md)(§15.2 十二条 GO 单 + §15.4 排空回滚四步与判据 SQL)。
+  - **写文档时从代码里读出的三条运维事实**(冻结稿没写,但决定操作顺序):① **`test-connection` 自己要求 `enabled=true`**(内部走 `routeFor`),所以「开总闸 → 诊断 → 开 `loginEnabled`」不是习惯而是唯一可行顺序,`enabled=true && loginEnabled=false && messageEnabled=false` 是刻意存在的**安全诊断态**;② **可信 IP 生效的正面判据 = `test-connection` 200 且 `tokenAcquired:true`**(60020 会让 gettoken 失败),反过来不成立;③ ⚠️ **六个配置类 errcode(40001/40013/40056/50001/50003/60020)在 SRVF 侧全部归一成 36030 且 errcode 不进日志** —— 这是刻意的(errmsg 与完整 URL 带凭证),代价是运维分不出是哪一条配错了,SOP 因此改用「逐项配置 + 逐项验证」的执行顺序换回可诊断性。
+  - **一处计数订正**:goal 写「§15.2 十三条」,亲核实为 **十二条 bullet + 一句前置门**(「除身份链条件外」)。检查单按「门 + 12」出,不硬凑 13。
+  - **诚实边界(写进剧本 §6)**:四类失败注入里**生产只能安全做 Worker crash 一类**;Provider 故障 / token 失效 / DB 故障在生产**没有安全注入手段**,只能在非生产用 DEV_STUB 完成并记录替代证据。签署时按这个口径写,不得写成「四类生产注入完成」。
+  - **⏸ 剩余全部是维护者动作**:企业微信后台配置(建应用 / 可见范围 / 可信域名 / 可信 IP / 应用主页 URL)· 凭证获取与录入 · `prisma migrate deploy` · 开任何开关 · 工作台实跑 · 签署两张 GO 单与「扩大可见范围」。**AI 恒无权执行,不要在后续会话里尝试。**
 
 - **T5B 纪要**(2026-08-02,#890;**未发版·未部署·`messageEnabled` 未开**):新增第四条推送渠道 `wecom`,复用既有 durable outbox,受众判定消费 T5A 两入口(第五条 eslint 规则冷 lint 绿即证零第二份口径)。**默认关两层判据各自 red-first 实测**:短路第一层(publish 前判开关)→ 恰好 4 条「默认关」用例红;短路第二层(Provider 前 `FOR SHARE` 锁后复读 `wecom_settings`)→ 恰好 1 条红;**两组红集不重叠**,故是两个独立判据而非同一闸被观测两次。第 69 migration = WeCom 独立 active-slot partial unique(按 `eventType` 分域;干净库重放 + seed 幂等两跑 + **双向阳性对照**:同 pair 第二条 wecom child 被 23505 拒 / 同 pair 的 **wechat** child 放行 —— 后者正是该索引必须独立的理由)。**零新端点 / 零新权限码 / 零新 BizCode / 零新 cron**(450/227/314/136/2 恒等,仅 Migration 68→69);既有 e2e spec 零修改,连坐 6 组 123 tests 全绿。
   - **交付中修掉一个真 bug**:暂态失败原本用 `intent.id` 落 delivery 行 ⇒ 下次重试撞上自己的幂等判据直接返回,「退避重试 8 次」退化成「第一次网络抖动即永久放弃」且现场毫无异常。已改为暂态走自动主键流水、只有终态占 `intent.id`。

@@ -506,6 +506,19 @@
 不能合并展示 —— 两者的差就是"还没绑定企业微信的人",这是覆盖率的真实上限,
 不是投递失败。详见 [`runbook §5`](../ops/wecom-message-channel-rollout.md)。
 
+**⚠️ 试点期运维状态(T6,2026-08-02;只登记,细节在 ops 文档)**
+
+1. **试点期运营指标走 SQL 手查,后端不出只读端点**(2026-08-02 拍板):零新端点 / 零新权限码 /
+   零契约变化。**admin-web 本期不需要也不应该做企业微信投递面板** —— 真要做等试点跑出结论再另立项。
+2. **`messageEnabled` 在身份链试点期(A 步)是关的**,消息链要到 B 步才打开。这期间勾了 `wecom`
+   的通知**一条都不会投递**,且不会在恢复后补发 —— 上面 ①"勾了不等于会发"说的就是这个状态,
+   UI 不要把它呈现成失败或待重试。
+3. **`system/v1/wecom-settings` 的四个端点归运维面**,不是业务面。若要在后台露出开关,
+   注意 `reset-credentials` **只有 SUPER_ADMIN 能调**(该码不绑 ops-admin),其余三码绑 ops-admin。
+
+运维侧怎么开、怎么关、指标怎么读:[`ops/wecom-message-channel-rollout.md`](../ops/wecom-message-channel-rollout.md)
+· [`ops/wecom-pilot-playbook.md`](../ops/wecom-pilot-playbook.md)。
+
 ### 3.3 招新公开面(小程序/H5)的连带变化
 
 见 [`miniapp.md`](miniapp.md) 的证书段:公开上传换端点、进度模型 `certificates` 变形、`my/certificates` 出参与过滤参数都改了。
