@@ -21,6 +21,10 @@
 import { readFileSync } from 'node:fs';
 
 import { DECORATOR_REALIAS_MESSAGE, noDecoratorRealias } from './eslint-rules/no-decorator-realias.mjs';
+import {
+  AUDIENCE_PRIMITIVE_IMPORT_MESSAGE,
+  noAudiencePrimitiveImport,
+} from './eslint-rules/no-audience-primitive-import.mjs';
 import { NEAR_FUTURE_DATE_MESSAGE, noNearFutureDate } from './eslint-rules/no-near-future-date.mjs';
 import { NULLABLE_IS_OPTIONAL_MESSAGE, noNullableIsOptional } from './eslint-rules/no-nullable-is-optional.mjs';
 import { PARAM_ID_STRING_MESSAGE, noParamIdString } from './eslint-rules/no-param-id-string.mjs';
@@ -42,14 +46,20 @@ const DECORATOR_REALIAS_RULE = 'srvf/no-decorator-realias';
  * 独立 ruleId 理由同上;基线走棘轮注册表(symbolShape = date-literal)。
  */
 const NEAR_FUTURE_DATE_RULE = 'srvf/no-near-future-date';
+/**
+ * 通知模块内受众判定唯一入口(D-WC-19 + T5A #887 挂账,2026-08-02 拍板)。
+ * 白名单是**常驻设计位不是欠账**,刻意不进棘轮注册表 —— 理由见规则头注。
+ */
+const AUDIENCE_PRIMITIVE_IMPORT_RULE = 'srvf/no-audience-primitive-import';
 
-/** 供 flat config 以 `plugins: { srvf: srvfEslintPlugin }` 挂载(四条规则同一个 plugin 命名空间)。 */
+/** 供 flat config 以 `plugins: { srvf: srvfEslintPlugin }` 挂载(五条规则同一个 plugin 命名空间)。 */
 const srvfEslintPlugin = {
   rules: {
     'no-nullable-is-optional': noNullableIsOptional,
     'no-param-id-string': noParamIdString,
     'no-decorator-realias': noDecoratorRealias,
     'no-near-future-date': noNearFutureDate,
+    'no-audience-primitive-import': noAudiencePrimitiveImport,
   },
 };
 
@@ -627,6 +637,29 @@ const harnessConfigBlocks = [
     rules: { [NEAR_FUTURE_DATE_RULE]: 'error' },
   },
 
+  // (l4) 通知模块内受众判定唯一入口(D-WC-19,T5A #887 挂账;2026-08-02 拍板)。
+  //      范围只到 src/modules/notifications/**:content 模块消费自家原语天经地义,
+  //      其他模块今日零消费(真出现新的合法消费面时再议扩围)。
+  //      allow 白名单 = 常驻设计位(判定服务本体 + 读侧),唯一定义处在此 ——
+  //      本文件在红区,改白名单天然要维护者 grant + 环境审批;不进棘轮注册表的
+  //      理由见 eslint-rules/no-audience-primitive-import.mjs 头注。
+  {
+    name: 'srvf/harness:audience-primitive-import',
+    files: ['src/modules/notifications/**/*.ts'],
+    plugins: { srvf: srvfEslintPlugin },
+    rules: {
+      [AUDIENCE_PRIMITIVE_IMPORT_RULE]: [
+        'error',
+        {
+          allow: [
+            'src/modules/notifications/notification-recipient-authorization.service.ts',
+            'src/modules/notifications/notification-read.service.ts',
+          ],
+        },
+      ],
+    },
+  },
+
   // (m) DTO 范围关掉 inline 逃生门(第五轮评审 J2 · L3)。
   //     实测:`/* eslint-disable */`(文件级)与 `// eslint-disable-next-line`(行级)
   //     两种写法此前都能让一个新违规字段通过 lint,RC=0 —— 棘轮的第一道执行位
@@ -673,6 +706,8 @@ const ratchetBaselineBlocks = RATCHET_REGISTRY.flatMap((r) =>
 harnessConfigBlocks.push(...ratchetBaselineBlocks);
 
 export {
+  AUDIENCE_PRIMITIVE_IMPORT_MESSAGE,
+  AUDIENCE_PRIMITIVE_IMPORT_RULE,
   DECORATOR_REALIAS_MESSAGE,
   DECORATOR_REALIAS_RULE,
   HARNESS_SYNTAX,
