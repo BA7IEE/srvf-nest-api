@@ -46,11 +46,11 @@ fresh worktree 先 `pnpm install --frozen-lockfile && pnpm prisma:generate`,否�
 |---|---|---|---|---|---|
 | **A 档** | docs-only;无 `.ts` / `.prisma` / `.yml` / `.json` 变动 | 改 README / CHANGELOG Unreleased | (可省;动地图 / 链接 → `docs:codemap:check` + `docs:rbacmap:check`) | ❌ | ✅(一次会话多 A 档可串行) |
 | **B 档** | 代码小修(无新 endpoint / DTO 字段增减 / schema / enum / error code 增减) | 内部重构 / 注释 / 单测补强 | `pnpm agent:check:quick` + 受影响模块 e2e(`pnpm test:e2e -- <spec名>`) | ❌(常规) | ✅ |
-| **C 档** | API 行为变化(新 endpoint / DTO 字段增减 / 错误码增减 / 响应语义变化 / 新 Guard 装饰器) | 加新接口 / 接口入参变更 | `pnpm agent:check:full`;snapshot diff 必须逐行可解释 | ✅(范围已含于用户任务说明 / goal → 免二次确认;AI 自行发起仍须动手前确认) | ⚠ 单 PR 评审 |
-| **D 档** | schema / migration / permission seed / Role enum / 鉴权 / 存储 / 凭证 / audit / 不可逆变更 / 安全相关 | 新建表 / 加 unique / seed 改动 / 加密策略 | `agent:check:full` + 评审稿 / 立项 / 影响面分析 + handoff 段落;对应 `srvf-*` skill 必读 | ✅ + 评审稿冻结 + 立项记录 | ❌ 必须分 PR |
-| **E 档** | release / handoff / tag / GitHub Release / version bump | bump PR / handoff PR / tag + GitHub Release 收口 | `agent:check:full` + handoff 验收锚点;沿 `srvf-release-closeout` skill | ✅ | ❌ 强串行 |
+| **C 档** | API 行为变化(新 endpoint / DTO 字段增减 / 错误码增减 / 响应语义变化 / 新 Guard 装饰器) | 加新接口 / 接口入参变更 | `agent:check:full`(执行体=PR CI 冷跑;本地= `quick` + 受影响模块定向 e2e);snapshot diff 必须逐行可解释 | ✅(范围已含于用户任务说明 / goal → 免二次确认;AI 自行发起仍须动手前确认) | ⚠ 单 PR 评审 |
+| **D 档** | schema / migration / permission seed / Role enum / 鉴权 / 存储 / 凭证 / audit / 不可逆变更 / 安全相关 | 新建表 / 加 unique / seed 改动 / 加密策略 | `agent:check:full`(执行体=PR CI 冷跑,本地同 C 档)+ 评审稿 / 立项 / 影响面分析 + handoff 段落;对应 `srvf-*` skill 必读 | ✅ + 评审稿冻结 + 立项记录 | ❌ 必须分 PR |
+| **E 档** | release / handoff / tag / GitHub Release / version bump | bump PR / handoff PR / tag + GitHub Release 收口 | `agent:check:full`(执行体=PR CI 冷跑,本地同 C 档)+ handoff 验收锚点;沿 `srvf-release-closeout` skill | ✅ | ❌ 强串行 |
 
-组合命令:`agent:check:quick` = lint + typecheck + unit(无 DB);`api` = quick + `test:contract`;`full` = api + `nest build` + `test:e2e` 全量(`build` 仅 full,typecheck 后串入、与 CI 一致,拦"typecheck 过但 build 挂"的隐性回归)。contract / e2e 需本地 Docker PostgreSQL(`docker compose up -d postgres` + `pnpm db:test:init`);**无 Docker 时跑 quick 并显式声明"contract / e2e 留给 CI",不得谎报全绿**。
+组合命令:`agent:check:quick` = lint + typecheck + unit(无 DB);`api` = quick + `test:contract`;`full` = api + `nest build` + `test:e2e` 全量(`build` 仅 full,typecheck 后串入、与 CI 一致,拦"typecheck 过但 build 挂"的隐性回归)。contract / e2e 需本地 Docker PostgreSQL(`docker compose up -d postgres` + `pnpm db:test:init`);**无 Docker 时跑 quick 并显式声明"contract / e2e 留给 CI",不得谎报全绿**。**本机不跑全量 e2e**(2026-08-02 拍板):连跑必出榨干假红(耗时翻倍 + 数百条假失败,三次实录,判据=耗时是否翻倍)—— `full` 的执行体恒为 PR CI 冷跑,本地兜底 = `quick`(~25s)+ 定向 spec(单 spec ~24s);全量结论只引 CI。
 
 档位归属规则:
 
@@ -107,7 +107,7 @@ C / D 档确认、goal 模式中途新发现问题的上报,一律用本格式�
 ```bash
 pnpm release:prepare 0.63.0 --dry-run   # 先看要做什么
 pnpm release:prepare 0.63.0             # 阶段 A:一次写完全部簿记
-# → 复核 diff → pnpm docs:counts && pnpm agent:check:full → 提交 + 开 PR(E 档)
+# → 复核 diff → pnpm docs:counts && pnpm agent:check:quick(全量以 PR CI 冷跑为准)→ 提交 + 开 PR(E 档)
 # → **维护者拍板合并**(自合门不变:AI 不自开自合)
 pnpm release:finish 0.63.0              # 阶段 B:tag + push + GitHub Release
 ```
@@ -221,7 +221,7 @@ pnpm release:finish 0.63.0              # 阶段 B:tag + push + GitHub Release
 
 - 立项与出 goal(五要素,§7.1);按**写集声明**排班:写集相交或同一 bounded context → 不并行(合并 goal 或排队)
 - 持有 **migration token**:同一时刻至多一条 schema-touching lane(随 D 档拍板授予)
-- 串行集成,逐 PR:rebase → contract snapshot 复核(diff 逐行可解释)→ `agent:check:full` → `gh pr diff --name-only` 落写集核对 → squash 合并(沿 §5.4)→ 通知其余 lane rebase
+- 串行集成,逐 PR:rebase → contract snapshot 复核(diff 逐行可解释)→ `agent:check:quick` + 定向 spec(全量由该 PR 的 CI 冷跑裁决)→ `gh pr diff --name-only` 落写集核对 → squash 合并(沿 §5.4)→ 通知其余 lane rebase
 - 独占 E 档(release / tag / bump / current-state 回填)与 `pnpm changelog:merge`
 - **唯一简报流**:各 lane 拍板项汇总为一份人话简报(§4.1);执行 lane 不直接向维护者请求拍板
 - 总控不写业务代码

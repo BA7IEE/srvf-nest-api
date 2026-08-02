@@ -75,12 +75,17 @@ jobs:
           echo "docs_only=$docs_only"
       # push 事件:上一步被 skip,outputs.docs_only 为空 → 下游 != 'true' → 走全量。
 
-  # 快信号线:无 Postgres 依赖的全部检查,~3 分钟内给出结果。
-  # docs-only PR 也全跑(lint/typecheck/unit 秒级轻检;docs guards 正是 md 变更的守护对象)。
+  # 快信号线:无 Postgres 依赖的全部检查。实测 2026-08-02(run 30710337669):全跑 6m57s,
+  # 其中 lint+typecheck+build+unit ≈ 3m —— 这四步的输入全是 ts / 构建产物,纯 .md 变更
+  # 碰不到,docs-only 时跳过(维护者 2026-08-02 拍板,CI 提效)。
+  # docs-only 仍恒跑:docs guards(md 正是其守护对象)+ harness 自测 + 事故回放
+  # (两者的判据文件含 md/json,且它们红了必须当场知道,不能等下一个代码 PR)。
+  # push 事件 docs_only 为空 → 四步照跑,与旧行为一致。
   fast:
     name: Fast checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: changeset
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -112,9 +117,11 @@ jobs:
       # 本地 / CI 共用同一入口。CI 恒冷跑(无 --cache):缓存不追踪跨文件类型依赖,
       # 冷跑是 lint 的权威口径(本地 agent:check:quick 用缓存换速度)。
       - name: Lint
+        if: needs.changeset.outputs.docs_only != 'true'
         run: pnpm lint
 
       - name: Typecheck
+        if: needs.changeset.outputs.docs_only != 'true'
         run: pnpm typecheck
 
       # Harness 2.0(T0 §1.4):恒读层预算 + 事实计数守护;前四项均纯文件解析、秒级。
@@ -138,20 +145,37 @@ jobs:
 
       # 显式跑 nest build,防止"typecheck 通过但 build 失败"的隐性回归。
       - name: Build
+        if: needs.changeset.outputs.docs_only != 'true'
         run: pnpm build
 
       - name: Run unit tests
+        if: needs.changeset.outputs.docs_only != 'true'
         run: pnpm test
 
   # 慢验证线:contract + 全量 e2e(并行,JEST_MAX_WORKERS 显式给定)。
   # docs-only PR 跳过(gate 对 skipped 视为通过,与旧版步骤级跳过语义一致)。
+  #
+  # 二分片(维护者 2026-08-02 拍板,CI 提效):jest --shard 按文件把 suite 切到两台
+  # runner,每台仍是「4 vCPU + 同机 postgres + 2 worker」—— 不碰下方 JEST_MAX_WORKERS
+  # 的单独观察约束,只减少每台要跑的 suite 数(本地验证 109+108 均分,globalSetup
+  # 各自独立建库互不相扰)。实测基线:单 job 18m03s(run 30712142404,e2e 步骤 ~15m)
+  # → 预期每片 ~10m(固定 setup ~3m 不摊薄)。
+  # contract + 生产迁移命令与分片无关,只在 shard 1 跑(双跑纯浪费)。
+  # branch protection 的 required context 是聚合 gate 名,不含本 job 名 → 矩阵改
+  # 显示名安全;gate 读 needs.slow.result:全片 success 才 success、任一 failure 即
+  # failure、docs-only 全片 skipped → skipped —— 三种语义与单 job 逐字一致,gate 零改动。
   slow:
     name: Contract + E2E
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     # 旧单 job 有两次超时误杀前科(147 suites/15m → 误杀;177 suites/25m → 再误杀 → 提到 35m)。
     # 并行化实测(2026-07-28,PR #801 首跑,run 30361346317,195 suites / 4 vCPU / 2 worker):
     #   本 job 12m17s,其中 e2e 步骤 11m23s(改前单 job 25m59s、e2e 步骤 22m14s)。
-    # 取 25m ≈ 实测 2 倍余量(旧两次误杀分别只有 1.03x / 1.16x 余量)。
+    # 取 25m ≈ 实测 2 倍余量(旧两次误杀分别只有 1.03x / 1.16x 余量);二分片后每片
+    # 预期 ~10m,25m 余量只多不少,刻意不动。
     timeout-minutes: 25
     needs: changeset
     if: needs.changeset.outputs.docs_only != 'true'
@@ -211,10 +235,12 @@ jobs:
       # 复用同一份测试库(模板库);E2E 的 globalSetup 之后还会再跑一次
       # `prisma migrate deploy`,Prisma 对已应用的 migration 是 no-op。
       - name: Verify production migration command
+        if: matrix.shard == 1
         run: pnpm prisma:deploy
 
       # OpenAPI 契约快照:任何 schema 漂移(路由白名单 / DTO 字段 / 错误响应)都会被拦截。
       - name: Run contract tests
+        if: matrix.shard == 1
         run: pnpm test:contract
 
       # 句柄泄漏信号(每 PR,**告警级**;权威检测在 nightly-e2e-leaks.yml)。
@@ -229,7 +255,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p tmp
-          pnpm test:e2e 2>&1 | tee tmp/e2e.log
+          pnpm test:e2e --shard=${{ matrix.shard }}/2 2>&1 | tee tmp/e2e.log
           if grep -q 'failed to exit gracefully' tmp/e2e.log; then
             echo "::warning::并行 e2e 出现 worker 强制退出(本仓已知基线,非硬失败)。若近期新增/改动了 spec,请核对 afterAll 是否 app.close();权威检测见 nightly-e2e-leaks.yml,本地复现:pnpm test:e2e:leaks"
           fi

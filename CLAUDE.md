@@ -27,7 +27,7 @@ god-service 重构 / 前后端交接 / release 收口)—— 任务命中主题�
 pnpm agent:check:quick   # lint(缓存)+ typecheck + unit + harness 自测,并行 ~25s
 pnpm harness:selftest    # 守护不变式 + lint 阳性对照 + hook 行为
 pnpm harness:replay      # 历史事故回放 + 反向案例(改 harness 前后各跑一次对比)
-pnpm test:e2e            # 并行全量(per-worker 派生库)
+pnpm test:e2e <spec名>   # 定向 e2e(单 spec ~24s);全量恒由 PR CI 冷跑裁决,本机勿跑全量(连跑必榨干假红)
 pnpm release:prepare X.Y.Z / release:finish X.Y.Z   # 发版两段式
 ```
 
