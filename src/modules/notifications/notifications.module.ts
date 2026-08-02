@@ -6,6 +6,7 @@ import { PermissionsModule } from '../permissions/permissions.module';
 import { SmsModule } from '../sms/sms.module';
 import { UsersModule } from '../users/users.module';
 import { WechatModule } from '../wechat/wechat.module';
+import { WecomModule } from '../wecom/wecom.module';
 import { BirthdayGreetingService } from './birthday-greeting.service';
 import { ExpiryReminderService } from './expiry-reminder.service';
 import { NotificationAdminController } from './notification-admin.controller';
@@ -20,6 +21,8 @@ import { NotificationSmsDispatchService } from './notification-sms-dispatch.serv
 import { NotificationSubscriptionService } from './notification-subscription.service';
 import { NotificationWechatDispatchService } from './notification-wechat-dispatch.service';
 import { NotificationWechatTemplateAdminController } from './notification-wechat-template.admin.controller';
+import { NotificationWecomDispatchService } from './notification-wecom-dispatch.service';
+import { WecomMessagePresenter } from './notification-wecom.presenter';
 import { WechatSubscribeTemplateService } from './wechat-subscribe-template.service';
 
 // B 队列 F5-T2(2026-06-11):notifications 模块——G-7(通知/短信/推送)首个落地点
@@ -64,6 +67,12 @@ import { WechatSubscribeTemplateService } from './wechat-subscribe-template.serv
     AuditLogsModule,
     UsersModule,
     WechatModule,
+    // 统一通知 T5B 企业微信应用消息渠道(2026-08-02;企业微信冻结稿 §10):
+    // additive 第四条推送渠道。消费 WecomService(route/凭证/上游 HTTP)与
+    // WecomSettingsService(三个开关 + corpId + webBaseUrl);**受众判定不新写第二份**,
+    // 与微信小程序、短信、App 读侧共用 notification-recipient-authorization(T5A / D-WC-19)。
+    // 依赖方向单向:notifications → wecom(wecom 对 User/Member/受众无感知)。
+    WecomModule,
   ],
   controllers: [
     NotificationAdminController,
@@ -77,6 +86,8 @@ import { WechatSubscribeTemplateService } from './wechat-subscribe-template.serv
     NotificationReadService,
     NotificationSubscriptionService,
     NotificationWechatDispatchService,
+    NotificationWecomDispatchService,
+    WecomMessagePresenter,
     NotificationSmsDispatchService,
     NotificationDispatcher,
     NotificationOutboxService,

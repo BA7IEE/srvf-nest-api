@@ -24,6 +24,7 @@ import {
   NOTIFICATION_CHANNEL_IN_APP,
   NOTIFICATION_CHANNEL_SMS,
   NOTIFICATION_CHANNEL_WECHAT,
+  NOTIFICATION_CHANNEL_WECOM,
   NOTIFICATION_SOURCE_ADMIN,
   NOTIFICATION_STATUS_ARCHIVED,
   NOTIFICATION_STATUS_DRAFT,
@@ -33,8 +34,10 @@ import {
   OUTBOX_ADMIN_PAYLOAD_VERSION,
   OUTBOX_EVENT_ADMIN_SMS,
   OUTBOX_EVENT_WECHAT_BROADCAST,
+  OUTBOX_EVENT_WECOM_BROADCAST,
 } from './notification.constants';
 import { NotificationSmsDispatchService } from './notification-sms-dispatch.service';
+import { NotificationWecomDispatchService } from './notification-wecom-dispatch.service';
 import { NotificationOutboxService } from './notification-outbox.service';
 import { NotificationOutboxWorker } from './notification-outbox.worker';
 import type {
@@ -66,6 +69,9 @@ export class NotificationService {
     private readonly smsDispatch: NotificationSmsDispatchService,
     private readonly outbox: NotificationOutboxService,
     private readonly outboxWorker: NotificationOutboxWorker,
+    // T5B:只用它的 `resolveChannelReadiness`(通道三个开关)。publish 不认识 wecomUserId、
+    // 不认识凭证,也不发送任何消息 —— 外发恒由 worker 在事务外执行。
+    private readonly wecomDispatch: NotificationWecomDispatchService,
   ) {}
 
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
@@ -544,6 +550,11 @@ export class NotificationService {
   ): Promise<Notification> {
     await this.assertCanOrThrow(user, 'notification.publish.record');
 
+    // 企业微信通道就绪(T5B 第一层闸)。**在事务外读**:它只决定"要不要产生一条 root intent",
+    // 不是需要线性化的业务不变量;而把一次 settings 查询塞进 publish 事务会白白拉长事务时长。
+    // 真正需要线性化的复判在 child 的最终闸里(锁后复读 wecom_settings)。
+    const wecomReady = (await this.wecomDispatch.resolveChannelReadiness()).ready;
+
     const row = await this.prisma.$transaction(async (tx) => {
       const existing = await this.lockNotification(id, tx);
       this.assertAdminBroadcastMutable(existing);
@@ -593,6 +604,37 @@ export class NotificationService {
           {
             eventKey: `wechat-broadcast:${updated.id}:${updated.publishGeneration}`,
             eventType: OUTBOX_EVENT_WECHAT_BROADCAST,
+            payloadVersion: OUTBOX_ADMIN_PAYLOAD_VERSION,
+            payload: {
+              notificationId: updated.id,
+              publishGeneration: updated.publishGeneration,
+            },
+            aggregateType: 'notification',
+            aggregateId: updated.id,
+            destinationType: 'broadcast',
+            destinationRef: updated.id,
+          },
+          tx,
+        );
+      }
+      // T5B 企业微信广播 root(§10.1 / D-WC-24 两层判据的**第一层**)。
+      //
+      // `wecomReady` 在事务外先算好(见调用处):通道总闸或二级闸关着就**根本不建 root intent**,
+      // 出厂默认 enabled=false && messageEnabled=false,所以未配置的仓库勾了 wecom 也一条不发。
+      //
+      // ⚠️ 这一层**不是**唯一防线。开关可能在 root 入队之后、child 投递之前被关掉,
+      // 那时由最终闸的锁后复判兜住并记 terminal skipped/channel-disabled。
+      // T3 的教训正是"两段式流程的后半段漏判开关",这里两层都留。
+      if (
+        operation === 'publish' &&
+        wecomReady &&
+        updated.channels.includes(NOTIFICATION_CHANNEL_WECOM) &&
+        updated.audienceType === NOTIFICATION_AUDIENCE_BROADCAST
+      ) {
+        await this.outbox.enqueue(
+          {
+            eventKey: `wecom-broadcast:${updated.id}:${updated.publishGeneration}`,
+            eventType: OUTBOX_EVENT_WECOM_BROADCAST,
             payloadVersion: OUTBOX_ADMIN_PAYLOAD_VERSION,
             payload: {
               notificationId: updated.id,

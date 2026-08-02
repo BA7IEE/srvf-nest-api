@@ -465,6 +465,47 @@
 
 **⑤ 核验一张已过期的证书,落点是 `expired` 而不是 `verified`**(F3)。核验成功的响应里 `certStatusCode` 可能直接是 `expired` —— 前端不要假设「verify 成功 = verified」。
 
+### 3.2.2 企业微信通知渠道(T5B,2026-08-02;**加值不破坏**,但有两处必须适配)
+
+后端新增第四条推送渠道 `wecom`(企业微信应用消息)。**没有新端点、没有新权限码、没有新错误码**,
+既有请求原样发仍然工作 —— 但下面两处不适配的话,管理员会看不到已经存在的能力与结果。
+
+**① 建/改通知的 `channels` 多了一个可勾选项**
+
+`POST /admin/v1/notifications` 与 `PATCH /admin/v1/notifications/:id` 的 `channels` 枚举
+从 `in-app | wechat | sms` 变成 **`in-app | wechat | wecom | sms`**。
+
+- 前端若把渠道选项**写死**成三个,新渠道就永远勾不上 —— 改成读 OpenAPI 枚举,或补上第四项。
+- 文案建议:`wecom` = "企业微信",与 `wechat` = "微信小程序" **必须在 UI 上区分开**;
+  两者是完全独立的通道(不同身份体系、不同订阅前提),同一条通知同一个人**可以同时收到两条**。
+- 语义差别要说清楚:勾 `wecom` 会**随发布自动推送**(与 `wechat` 同型,不计费);
+  而 `sms` 仍然只是"声明意图",实际发送必须走 `POST :id/send-sms` 的 `confirmed=true` 计费确认端点。
+- ⚠️ **勾了不等于会发**:企业微信通道有总闸 `enabled` 与二级闸 `messageEnabled`,
+  出厂皆为 false。默认状态下勾了 `wecom` 也不会产生任何投递(这是刻意的,不是 bug)。
+  通道开关在 `system/v1/wecom-settings`,归运维面。
+
+**② 投递结果里多了一组 `wecom` 的 reasonCode**
+
+通知投递明细(`NotificationDelivery`)的 `channel` 现在可能是 `wecom`,并带这些新 `reasonCode`。
+前端若有"渠道→中文文案"的映射表,需要补齐;未知码建议兜底显示原值而不是空白:
+
+| reasonCode | 建议文案 | 含义 |
+|---|---|---|
+| `no-wecom-identity` | 未绑定企业微信 | 该队员当前没有有效的企业微信绑定 |
+| `channel-disabled` | 通道已关闭 | 投递前企业微信通道被关闭;**不会**在恢复后补发 |
+| `recipient-unavailable` | 企业微信侧不可达 | userid 无效或不在应用可见范围(官方无法区分两者) |
+| `recipient-unlicensed` | 缺少接口许可 | 该成员未分配企业微信基础接口许可,属**采购决策**不是故障 |
+| `rate-limited` | 触发限流 | 已终止,等运维在官方拦截窗口后人工重发 |
+| `provider-contract-error` | 请求异常 | 上游回执与请求形态不符,需后端排查 |
+| `token-failed` / `api-failed` | 通道异常 / 发送失败 | 与既有微信侧同名同义 |
+
+**成功语义要写准**:`sent` 只表示"企业微信接口接受了且没报告该收件人无效",
+**不表示用户已看见或已读**。UI 不要写成"已送达"。
+
+**③ 覆盖率口径(如果做统计面板)**:"可见受众数"与"已绑定企业微信的候选数"是**两个数**,
+不能合并展示 —— 两者的差就是"还没绑定企业微信的人",这是覆盖率的真实上限,
+不是投递失败。详见 [`runbook §5`](../ops/wecom-message-channel-rollout.md)。
+
 ### 3.3 招新公开面(小程序/H5)的连带变化
 
 见 [`miniapp.md`](miniapp.md) 的证书段:公开上传换端点、进度模型 `certificates` 变形、`my/certificates` 出参与过滤参数都改了。

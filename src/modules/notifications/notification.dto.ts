@@ -91,7 +91,7 @@ export class CreateNotificationDto {
 
   @ApiPropertyOptional({
     description:
-      '目标渠道(默认仅站内 ["in-app"];可勾 "wechat" 机会式推送已订阅会员;站内恒发,服务端强制含 in-app)',
+      '目标渠道(默认仅站内 ["in-app"];可勾 "wechat" 机会式推送已订阅会员;可勾 "wecom" 推送已绑定企业微信的队员,企业微信通道默认关闭;站内恒发,服务端强制含 in-app)',
     enum: NOTIFICATION_CHANNELS_ALLOWED as unknown as string[],
     isArray: true,
   })

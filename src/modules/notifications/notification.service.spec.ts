@@ -47,6 +47,7 @@ function build(readinessError: Error) {
     smsDispatch as never,
     outbox as never,
     outboxWorker as never,
+    {} as never,
   );
   return { service, prisma, auditLogs, smsDispatch, outbox };
 }
@@ -111,6 +112,7 @@ describe('NotificationService.sendSms readiness mapping', () => {
       smsDispatch as never,
       outbox as never,
       outboxWorker as never,
+      {} as never,
     );
 
     await expect(
@@ -160,6 +162,14 @@ describe('NotificationService publish generation 与 admin ownership gate', () =
     const rbac = { can: jest.fn().mockResolvedValue(true) };
     const auditLogs = { log: jest.fn().mockResolvedValue(undefined) };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    // T5B:publish 现在会问一次企业微信通道是否就绪。本组用例断言的是**微信** root 的
+    // generation fence,故这里固定答"通道没开" —— 于是不产生任何 wecom intent,
+    // 本文件既有断言(enqueue 调用次数与内容)逐字不变。
+    const wecomDispatch = {
+      resolveChannelReadiness: jest
+        .fn()
+        .mockResolvedValue({ ready: false, corpId: null, webBaseUrl: null }),
+    };
     const service = new NotificationService(
       prisma as never,
       rbac as never,
@@ -167,6 +177,7 @@ describe('NotificationService publish generation 与 admin ownership gate', () =
       {} as never,
       outbox as never,
       {} as never,
+      wecomDispatch as never,
     );
     return { service, tx, outbox };
   }

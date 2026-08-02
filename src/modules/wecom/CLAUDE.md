@@ -11,7 +11,14 @@
 - **凭证加密** `WecomCryptoService`(AES-256-GCM,`WECOM_ENCRYPTION_KEY` **独立密钥,与小程序不共域**)
 - **OAuth 一次性凭证台账** `WecomAuthAttemptService`(T3,2026-08-02):`wecom_auth_attempts` 的**唯一**写入点。state / binding ticket 只存 SHA-256,OAuth code 连 hash 都不存;消费一律走 `updateMany` CAS(判 + 写在一条 SQL 内),`count===1` 才是赢家
 - **登录链路闸门** `WecomService.resolveLoginContext / getAuthorizeContext / exchangeOAuthCode`(T3):在总闸之上再加二级闸 `loginEnabled`,并强制 `corpId`(DEV_STUB 也不例外 —— corpId 是身份键的一半)
-- **不负责**:微信小程序(在 [`/src/modules/wechat/`](../wechat/) —— 与本模块**严格分家**,身份键是 `corpId + wecomUserId` 而非 `openid`,不并表不混码不混渠道);`wecom_identities` 的**写**(绑定归 auth 的 `login-wecom.service` 与 users 的 `user-wecom-binding.service`;**撤销**归 users 的 [`wecom-identity-revoke.ts`](../users/wecom-identity-revoke.ts) 单一原语,T4 起由 `clearUserWecom` / `users.softDelete` / `members.reopenAccount` 三处共用 —— 它的入参是两个 userId,故也落在 users,本模块对 User 无感知);消息 outbox 与投递记账(T5B)
+- **不负责**:微信小程序(在 [`/src/modules/wechat/`](../wechat/) —— 与本模块**严格分家**,身份键是 `corpId + wecomUserId` 而非 `openid`,不并表不混码不混渠道);`wecom_identities` 的**写**(绑定归 auth 的 `login-wecom.service` 与 users 的 `user-wecom-binding.service`;**撤销**归 users 的 [`wecom-identity-revoke.ts`](../users/wecom-identity-revoke.ts) 单一原语,T4 起由 `clearUserWecom` / `users.softDelete` / `members.reopenAccount` 三处共用 —— 它的入参是两个 userId,故也落在 users,本模块对 User 无感知);**消息 outbox 与投递记账**(T5B 已交付,落在 [`notifications/`](../notifications/) —— 受众、Presenter、Delivery 全归那边,本模块只被消费 `WecomService.resolveRoute` 与 `WecomSettingsService.getActiveSettings`,依赖方向 notifications → wecom 单向)
+
+## T5B 接线面(2026-08-02;本模块只被消费,不新增职责)
+
+- `providers/wecom.provider.ts` 的 `sendTextCard` 现由 Notification Outbox 真实消费。本刀只在**既有唯一一条** `message/send` 路径上补齐 §10.6 的三个固定协议字段(`enable_id_trans=0` / `enable_duplicate_check=1` / `duplicate_check_interval=1800`),**没有第二条 HTTP 路径**。三个值声明在 provider 文件内而非 `wecom.constants.ts`:T5B 写集只开到 `providers/**`,且只有这一个调用点消费;将来出现第二个消费点再按模块惯例上提。
+- 请求体**永远只有 `touser`,没有 `toparty`/`totag`**(D-WC-27 / §10.4 明令禁止用群发提覆盖率 —— 那会绕过 SRVF 受众判定)。单 touser 请求却收到 `invalidparty`/`invalidtag` ⇒ 归一化为 `INVALID_PARTY_OR_TAG` 走 `ok:false`,调用方记 `provider-contract-error` 并终止,**不得忽略**。
+- `DevStubWecomProvider.sendTextCard` 按 `toUser` 前缀提供**投递语义故障注入**(`wecomerr-invaliduser` / `wecomerr-unlicensed` / `wecomerr-81013` / `wecomerr-ratelimit` / `wecomerr-party` / `wecomerr-net` / `wecomerr-token`),让 §10.7 的回执分类矩阵在**不实连企业微信**的前提下逐条可测。真机联调归 T6。注入前缀与真实 userid 命名空间不重叠,且 stub 在 production/smoke 物理不可达(双重拒绝)。
+- ⚠️ 通道**总闸 `enabled` 与二级闸 `messageEnabled` 出厂皆 false**(D-WC-24)。消息侧的两层判据落在 notifications:publish 时判 + Provider 前锁后复判。本模块的 `resolveRoute` 是第三道纵深防御(总闸 + 凭证 + production DEV_STUB),**不判 `messageEnabled`** —— 那是消息通道的语义,不是通道层的
 
 ## T3 / T5B 开工前置 —— 三条出生检查(2026-08-01 W 批次收口,**动手前先读完**)
 
