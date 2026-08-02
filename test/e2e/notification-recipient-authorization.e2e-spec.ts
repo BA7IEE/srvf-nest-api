@@ -46,7 +46,10 @@ import { createTestApp } from '../setup/test-app';
 //
 // ⚠️ 本 spec 是 T5A F1 的行为基线:F1 重构 PR 内**本文件必须零改动**。
 
-const TYPE_CODE = 'general';
+// 通知类型码与模板 id 都取本 spec 专属值。原因:`wechat_subscribe_templates` 没有指向
+// TRUNCATE 列表里任何表的外键,**不会**被 `resetDb` 的 CASCADE 清掉(Member / quota 会),
+// 用 'general' 会与 notifications-wechat.e2e-spec 在同一 worker 库里撞唯一键。
+const TYPE_CODE = 't5a-recipient-authz';
 const TEMPLATE_ID = 'tmpl-recipient-authz-001';
 const MANAGEMENT_PERMISSION = 'notification.read.record';
 const MANAGEMENT_ROLE_CODE = 'e2e-notification-record-reader';
@@ -326,10 +329,13 @@ describe('T5A F0 —— 通知受众判定 characterization(现状行为矩阵)'
       select: { id: true },
     });
     await prisma.dictItem.create({
-      data: { typeId: dictType.id, code: TYPE_CODE, label: '一般通知', status: 'ACTIVE' },
+      data: { typeId: dictType.id, code: TYPE_CODE, label: 'T5A 受众判定', status: 'ACTIVE' },
     });
-    await prisma.wechatSubscribeTemplate.create({
-      data: { notificationTypeCode: TYPE_CODE, templateId: TEMPLATE_ID, enabled: true },
+    // upsert 而非 create:该表不被 resetDb 清除,worker 重跑同一 spec 时行仍在。
+    await prisma.wechatSubscribeTemplate.upsert({
+      where: { notificationTypeCode: TYPE_CODE },
+      update: { templateId: TEMPLATE_ID, enabled: true },
+      create: { notificationTypeCode: TYPE_CODE, templateId: TEMPLATE_ID, enabled: true },
     });
 
     for (const [key, status] of [
