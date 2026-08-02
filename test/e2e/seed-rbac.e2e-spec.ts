@@ -206,11 +206,14 @@ const EXPECTED_RBAC_PERMISSION_CODES = [
   'user.wechat.clear',
   // 4 条 WECOM T2(2026-08-01;冻结稿 wecom-integration-t0-terminal-review.md §11.1):
   // wecom-setting.reset.credentials 镜像 D2=A 不绑 ops-admin;其余 3 条绑 → ops-admin +3。
-  // ⚠️ 不含 `user.wecom.clear` —— 它的端点在 T4,连码带端点一起落(不预埋孤码)。
   'wecom-setting.read.singleton',
   'wecom-setting.update.singleton',
   'wecom-setting.test.connection',
   WECOM_RESET_CREDENTIALS_CODE,
+  // 1 条 WECOM T3(2026-08-02;冻结稿 §11.1 第 5 行 + §13 T3 清单「Admin clear」):
+  // `DELETE admin/v1/users/:id/wecom` 连码带端点同刀落地,整条绑 ops-admin → **0 孤码**。
+  // (T2 的注释曾写"端点在 T4",与冻结稿 §13 不符,已随本刀订正。)
+  'user.wecom.clear',
   // 3 条 REALNAME T1(realname-setting.reset.credentials 镜像 D2=A 不绑 ops-admin;招新评审稿 §3.4)
   'realname-setting.read.singleton',
   'realname-setting.update.singleton',

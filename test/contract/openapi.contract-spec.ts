@@ -101,6 +101,16 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/auth/v1/login-wechat'],
   ['post', '/api/auth/v1/wechat-bind/send-code'],
   ['post', '/api/auth/v1/wechat-bind'],
+  // 企业微信接入 T3(2026-08-02;冻结稿 wecom-integration-t0-terminal-review.md §6.2):
+  // 第四个独立认证端点族,442→447(连同 me/wecom 两端点与 admin 清除 →450)。
+  // authorize 签发 snsapi_base 授权 URL(state 一次性 5 分钟);login-wecom 未绑返
+  // bindingRequired:true + 一次性 bindingTicket;wecom-bind 成功响应复用 LoginResponseDto;
+  // wecom-bind/authorize **需登录**(state 锚定 subjectUserId=本人)。
+  ['post', '/api/auth/v1/login-wecom/authorize'],
+  ['post', '/api/auth/v1/login-wecom'],
+  ['post', '/api/auth/v1/wecom-bind/send-code'],
+  ['post', '/api/auth/v1/wecom-bind'],
+  ['post', '/api/auth/v1/wecom-bind/authorize'],
   ['get', '/api/system/v1/health'],
   ['get', '/api/system/v1/health/live'],
   ['get', '/api/system/v1/health/ready'],
@@ -131,6 +141,11 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 豁免先例(E-18);GET 状态查询(openid 掩码)+ PUT 绑定/换绑一体(JWT 已证身份免短信)。
   ['get', '/api/app/v1/me/wechat'],
   ['put', '/api/app/v1/me/wechat'],
+  // 企业微信接入 T3(2026-08-02;冻结稿 §6.3):账号级企业微信绑定,沿同一豁免先例;
+  // GET 状态查询(wecomUserId 掩码)+ PUT 绑定/换绑一体(需 WECOM_BIND step-up proof)。
+  // **无** DELETE:本人裸解绑不开(D-WC-9),释放身份唯一路径是 admin 清除。
+  ['get', '/api/app/v1/me/wecom'],
+  ['put', '/api/app/v1/me/wecom'],
 
   // 保险模块 T2 + D-INSURANCE v3 PR2:App 自助自购保险
   // CRUD,self-scope 锁 currentUser.memberId 不接 RBAC(D-INS-3);无 :id 详情端点(E-14);
@@ -369,6 +384,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['delete', '/api/admin/v1/users/{id}/phone'],
   // 微信小程序登录 T3(wechat 评审稿 §3.2 ⑨):管理员清除绑定微信 openid(幂等;镜像清号)。
   ['delete', '/api/admin/v1/users/{id}/wechat'],
+  // 企业微信接入 T3(冻结稿 §6.4):管理员清除企业微信身份(幂等;镜像清号 / 清微信)。
+  ['delete', '/api/admin/v1/users/{id}/wecom'],
   ['get', '/api/admin/v1/organizations'],
   ['get', '/api/admin/v1/organizations/tree'],
   // F1/A3(admin-api-fe-integration-roadmap.md §4 A3)。
@@ -1483,7 +1500,7 @@ describe('OpenAPI 契约快照', () => {
   // 企业微信接入 T2(2026-08-01):+4 settings 端点(GET / PATCH / reset-credentials /
   //   test-connection)→ **442**。T3 起还会增 OAuth 公开面与 me/wecom、admin 清除。
   it('企业微信 T2 落地后路由足迹精确为 442', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(442);
+    expect(EXPECTED_ROUTES).toHaveLength(450);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

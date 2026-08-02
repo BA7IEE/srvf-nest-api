@@ -19,7 +19,7 @@
 
 ## 派生对照表(生成物)
 
-### 权限码全集(226 条,按一级域分组)
+### 权限码全集(227 条,按一级域分组)
 
 > 权威源 `prisma/seed.ts`(幂等 upsert)。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 
@@ -29,8 +29,8 @@
 | `rbac` | 14 | `rbac.config.reload` · `rbac.permission.create` · `rbac.permission.delete` · `rbac.permission.read` · `rbac.permission.update` · `rbac.role-permission.create` · `rbac.role-permission.delete` · `rbac.role.create` · `rbac.role.delete` · `rbac.role.read` · `rbac.role.update` · `rbac.user-role.create` · `rbac.user-role.delete` · `rbac.user-role.read` |
 | `attachment-config` | 12 | `attachment-config.create.mime` · `attachment-config.create.size-limit` · `attachment-config.create.type` · `attachment-config.delete.mime` · `attachment-config.delete.size-limit` · `attachment-config.delete.type` · `attachment-config.read.mime` · `attachment-config.read.size-limit` · `attachment-config.read.type` · `attachment-config.update.mime` · `attachment-config.update.size-limit` · `attachment-config.update.type` |
 | `attendance` | 11 | `attendance.approve.sheet` · `attendance.create.sheet` · `attendance.delete.sheet` · `attendance.final-approve.sheet` · `attendance.final-reject.sheet` · `attendance.final-return.sheet` · `attendance.read.sheet` · `attendance.reject.sheet` · `attendance.reopen.sheet` · `attendance.return.sheet` · `attendance.update.sheet` |
+| `user` | 10 | `user.create.account` · `user.delete.account` · `user.phone.clear` · `user.read.account` · `user.reset.password` · `user.update.account` · `user.update.role` · `user.update.status` · `user.wechat.clear` · `user.wecom.clear` |
 | `recruitment-application` | 9 | `recruitment-application.evaluate.assessment` · `recruitment-application.mark.threshold` · `recruitment-application.promote.member` · `recruitment-application.promote.single` · `recruitment-application.read.record` · `recruitment-application.read.sensitive` · `recruitment-application.resolve.manual` · `recruitment-application.review.certificate` · `recruitment-application.update.record` |
-| `user` | 9 | `user.create.account` · `user.delete.account` · `user.phone.clear` · `user.read.account` · `user.reset.password` · `user.update.account` · `user.update.role` · `user.update.status` · `user.wechat.clear` |
 | `dict` | 8 | `dict.create.item` · `dict.create.type` · `dict.delete.item` · `dict.delete.type` · `dict.read.item` · `dict.read.type` · `dict.update.item` · `dict.update.type` |
 | `member` | 8 | `member.bind.account` · `member.create.record` · `member.delete.record` · `member.grant.account` · `member.offboard.record` · `member.read.record` · `member.update.record` · `member.update.status` |
 | `activity` | 7 | `activity.cancel.record` · `activity.complete.record` · `activity.create.cross-org` · `activity.create.record` · `activity.delete.record` · `activity.publish.record` · `activity.update.record` |

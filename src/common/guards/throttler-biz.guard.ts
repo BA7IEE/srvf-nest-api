@@ -14,6 +14,10 @@ import {
   LOGIN_WECHAT_THROTTLER_NAME,
 } from '../decorators/login-wechat-throttle.decorator';
 import {
+  LOGIN_WECOM_THROTTLE_KEY,
+  LOGIN_WECOM_THROTTLER_NAME,
+} from '../decorators/login-wecom-throttle.decorator';
+import {
   RECRUITMENT_THROTTLE_KEY,
   RECRUITMENT_THROTTLER_NAME,
 } from '../decorators/recruitment-throttle.decorator';
@@ -53,7 +57,10 @@ import { BizException } from '../exceptions/biz.exception';
 // 微信小程序登录 T3(2026-06-12):微信 pre-auth 三端点限流入口(metadata =
 // LOGIN_WECHAT_THROTTLE_KEY,走 throttler `login-wechat`;wechat-mini-login-review.md E-17,同型扩展)。
 //
-// 十个 throttler 实例在 ThrottlerModule.forRootAsync 中注册(详见 bootstrap/throttle-options.ts),
+// 企业微信接入 T3(2026-08-02):企业微信 OAuth / 绑定五端点限流入口(metadata =
+// LOGIN_WECOM_THROTTLE_KEY,走 throttler `login-wecom`;冻结稿 D-WC-16,同型扩展)。
+//
+// 十一个 throttler 实例在 ThrottlerModule.forRootAsync 中注册(详见 bootstrap/throttle-options.ts),
 // 物理隔离:登录失败爆破不消耗改密 / refresh / 发码配额,反之亦然。
 //
 // 与 ThrottlerGuard 的三点定制:
@@ -118,6 +125,10 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
       CONTENT_PUBLIC_THROTTLE_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const loginWecomEnabled = this.reflector.getAllAndOverride<boolean | undefined>(
+      LOGIN_WECOM_THROTTLE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
     // 未标任何一种 metadata 时全部跳过;任一 metadata 命中即进入限流逻辑,
     // 由 handleRequest 按 throttler.name 决定具体走哪个 throttler。
     return Promise.resolve(
@@ -131,7 +142,8 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
         loginSmsEnabled === true ||
         loginWechatEnabled === true ||
         recruitmentEnabled === true ||
-        contentPublicEnabled === true
+        contentPublicEnabled === true ||
+        loginWecomEnabled === true
       ),
     );
   }
@@ -181,6 +193,10 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
       CONTENT_PUBLIC_THROTTLE_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const loginWecomEnabled = this.reflector.getAllAndOverride<boolean | undefined>(
+      LOGIN_WECOM_THROTTLE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     // throttler `default` 仅服务 LoginThrottle;否则直接放过
     if (throttler.name === 'default' && loginEnabled !== true) {
@@ -220,6 +236,12 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
     }
     // throttler `content-public` 仅服务 ContentPublicThrottle(open/v1 内容读取面);否则直接放过
     if (throttler.name === CONTENT_PUBLIC_THROTTLER_NAME && contentPublicEnabled !== true) {
+      return Promise.resolve(true);
+    }
+    // throttler `login-wecom` 仅服务 LoginWecomThrottle(企业微信 OAuth / 绑定五端点);否则直接放过。
+    // ⚠️ 缺了这一条,`login-wecom` 实例会对**所有已挂其他限流装饰器的端点**多计一道数 ——
+    // 那是真实行为变更(T2 因此刻意把注册与本分派一起推到 T3,不拆开落)。
+    if (throttler.name === LOGIN_WECOM_THROTTLER_NAME && loginWecomEnabled !== true) {
       return Promise.resolve(true);
     }
 

@@ -1999,9 +1999,12 @@ const WECHAT_INFRA_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
 // ops-admin 绑定:3 条;`wecom-setting.reset.credentials` **不绑**(冻结稿 §11.1,
 // 镜像 storage/sms/wechat D2=A,仅 SUPER_ADMIN 短路)。
 //
-// 本刀**不**落 `user.wecom.clear`(§11.1 第 5 条)—— 它的端点在 T4(User 生命周期闭环),
-// 那一刀连端点带码一起落。本仓已有「码先落、端点后到」的孤码先例(user.wechat.clear),
-// 但那是同一评审稿内相邻两刀的取舍;跨到 T4 再预埋两批之外的码,只会让 rbacmap 长期挂 WARN。
+// 企业微信接入 T3(2026-08-02):+1 条 `user.wecom.clear`(226→227),连端点一起落 ——
+// DELETE /api/admin/v1/users/:id/wecom,**0 孤码**。
+// ⚠️ T2 这里原写「它的端点在 T4」,是笔误:冻结稿 §13 的 T3 清单明写
+// 「Admin clear;Permission `user.wecom.clear`」,T4 只做 User 生命周期联动
+// (softDelete / reopen 撤销身份)。以冻结稿 §13 为准。
+// ops-admin 绑定:整条加入(镜像 user.wechat.clear / user.phone.clear 同族,归系统/账号面)。
 // =========================================================================
 
 // 镜像 WECHAT_RESET_CREDENTIALS_CODE:凭证 reset 不绑 ops-admin
@@ -2037,6 +2040,14 @@ const WECOM_INFRA_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
     resourceType: 'credentials',
     description:
       '重置企业微信 CorpSecret(镜像 storage/sms/wechat D2=A 仅 SUPER_ADMIN;不绑 ops-admin)',
+  },
+  {
+    code: 'user.wecom.clear',
+    module: 'user',
+    action: 'clear',
+    resourceType: 'wecom',
+    description:
+      '管理员清除用户企业微信身份(解除绑定的唯一显式路径,D-WC-9;service 内 rbac.can + assertCanManageUser;幂等)',
   },
 ];
 
@@ -2142,7 +2153,7 @@ const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
 // 注:`audit-log.read.entry` 整条加入,不过滤(沿 PR-4 D2=B;§6.2)
 // 注:`sms-setting.reset.credentials` 从 SMS_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;评审稿 E-3)
 // 注:`wechat-setting.reset.credentials` 从 WECHAT_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;wechat 评审稿 §3.4)
-// 注:`wecom-setting.reset.credentials` 从 WECOM_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;wecom 冻结稿 §11.1)—— ops-admin +3(96→99)
+// 注:`wecom-setting.reset.credentials` 从 WECOM_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;wecom 冻结稿 §11.1)—— T2 ops-admin +3(96→99);T3 追加 `user.wecom.clear` 整条绑,ops-admin +1(99→100)
 // 注:`realname-setting.reset.credentials` 从 REALNAME_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;招新评审稿 E-R-19)
 const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RBAC_PERMISSION_SEED,

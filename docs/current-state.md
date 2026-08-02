@@ -19,11 +19,11 @@
 |---|---|
 | 模块 | 37 |
 | Controller | 86 |
-| Endpoint | 442 |
+| Endpoint | 450 |
 | Migration | 68 |
-| BizCode | 311 |
-| 权限码 | 226 |
-| AuditLogEvent | 132 |
+| BizCode | 314 |
+| 权限码 | 227 |
+| AuditLogEvent | 136 |
 | 内建角色 | 15 |
 | Cron | 2 |
 <!-- counts:end -->

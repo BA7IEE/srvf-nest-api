@@ -200,6 +200,17 @@
 
 **v2 完整生命周期(单条 bind/unbind/reopen/status + 批量开号)已全部落地,`NEXT_TASKS` P1-18 已关**。
 
+**企业微信身份清除(T3,2026-08-02)— ✅ 已发 main**(冻结稿 [`wecom-integration-t0-terminal-review.md`](../archive/reviews/wecom-integration-t0-terminal-review.md) §6.4):
+
+| 任务 / 页面 | 端点 | 鉴权 |
+|---|---|---|
+| 用户详情页"清除企业微信绑定"按钮 | `DELETE /api/admin/v1/users/{id}/wecom` → 200 返更新后的用户对象。**幂等**:目标本来就没绑 → 照样 200,且**不写审计、不撤 refresh**;实际清除时把身份置 `revoked` 并撤销该账号全部未过期 refresh token(旧 access 按 15 分钟自然到期)。软删用户 `USER_NOT_FOUND` | `[rbac: user.wecom.clear]`(**绑 ops-admin**;与 `user.phone.clear` / `user.wechat.clear` 同族) |
+
+> ⚠️ **这是解除企业微信绑定的唯一路径**(D-WC-9):App 侧**没有** `DELETE me/wecom`,用户不能自助裸解绑。
+> ⚠️ **不能用它做"转移绑定"**:接口没有"目标用户"入参。要把某个企业微信号换到另一个人名下,只能"先清除,再让对方自己走一遍绑定"。
+> ⚠️ 响应与审计**都只出掩码**(如 `zhan****0001`),前端拿不到完整企业微信 UserId —— 不要设计需要完整值的 UI。
+> ⚠️ 清除会让该用户 5 分钟内已签发的 `WECOM_BIND` step-up proof 立即失效(防"刚清完就被绑回来")。
+
 > ⚠️ **一键离队前端注意**:①**幂等**——重复执行返 200，已完成的腿计数为 0，可安全重试；②`residualActivePositionAssignments`/`residualActiveSupervisions` 保留为兼容字段与锁后不变式探针，正常终态恒为 0；③队员不存在 `15001`，若关联账号已被提权为非 `USER` 则返 `15036`，须先走用户管理端点；④无关联账号时账号腿自动跳过，其他授权来源仍会正常关闭；⑤重新置 `ACTIVE` 只恢复队员状态，不自动恢复任何历史归属、账号状态、任职、分管或角色绑定。
 
 ### 2.5 通知管理(站内信撰写 / 发布 + 微信订阅渠道 + 系统定向 + 短信兜底)— ✅ S1+S2+S3+S4+S5 后端就绪(v0.32.0 已发)

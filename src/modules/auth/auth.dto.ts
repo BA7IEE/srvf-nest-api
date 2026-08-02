@@ -9,7 +9,9 @@ import {
   MinLength,
 } from 'class-validator';
 
+import { OmittableOnly } from '../../common/decorators/omittable-only.decorator';
 import { MAINLAND_PHONE_PATTERN, SMS_CODE_LENGTH } from '../sms/sms.constants';
+import { WECOM_RETURN_PATH_MAX_LENGTH } from '../wecom/wecom.constants';
 
 // 登录入参严格按 ARCHITECTURE.md §6 / §7.6:仅 username + password,
 // 不支持 email / 手机号 / 验证码登录。
@@ -122,6 +124,11 @@ export class LogoutAllResponseDto {
 export enum StepUpAction {
   PHONE_BIND = 'PHONE_BIND',
   WECHAT_BIND = 'WECHAT_BIND',
+  // 企业微信接入 T3(2026-08-02;冻结稿 §7.4)。
+  // ⚠️ 只新增 **action**,**不**新增 `IdentityStepUpFactor.WECOM` ——
+  // 用户仍用现有 PASSWORD / SMS / WECHAT 因子证明"当前账号控制权"。
+  // 拿企业微信本身当因子会绕成一个圈:正要绑的东西不能同时充当"我已经是这个人"的证据。
+  WECOM_BIND = 'WECOM_BIND',
 }
 
 export class StepUpPasswordDto {
@@ -297,6 +304,127 @@ export class WechatBindDto {
   phone!: string;
 
   @ApiProperty({ description: '6 位数字短信验证码(purpose=WECHAT_BIND)', example: '123456' })
+  @IsString()
+  @Length(SMS_CODE_LENGTH, SMS_CODE_LENGTH)
+  @Matches(/^\d{6}$/, { message: 'smsCode 必须是 6 位数字' })
+  smsCode!: string;
+}
+
+// ===== 企业微信接入 T3(2026-08-02;冻结稿 §6.2)=====
+//
+// 五个 pre-auth / authed 端点的入出参。三条贯穿全组的纪律:
+// 1. `state` / `bindingTicket` / `code` 都是**一次性凭证**:DTO 只做形状校验,
+//    值本身不进日志、不进 Audit、不落库(state/ticket 只落 SHA-256 hash)。
+// 2. 出参**不含** attempt id、wecomUserId、corpId(§5.3 规则 10)。
+// 3. 未绑定响应**不含** hasPhone / 手机号尾号 / 账号状态(§6.2 规则 9 防枚举)。
+
+export class WecomAuthorizeDto {
+  @ApiProperty({
+    description:
+      '登录成功后前端回跳的**站内相对路径**;省略则用默认值。' +
+      '拒绝绝对 URL / 协议相对 `//` / 反斜杠 / 控制字符 / userinfo / query 里的 token-like key' +
+      '(开放重定向防线,冻结稿 §6.2)',
+    required: false,
+    example: '/activities',
+    maxLength: WECOM_RETURN_PATH_MAX_LENGTH,
+  })
+  // ⚠️ `@OmittableOnly()` 而不是 `@IsOptional()`:returnPath 业务上**不可清空**,
+  // 只是可省略(省略时用默认值)。`@IsOptional()` 会让显式 `null` 跳过全部校验器,
+  // 穿到 service 后被 `?? default` 当成"没传"吞掉 —— 客户端拿到 200 却不知道
+  // 自己发的值被丢了。用 OmittableOnly 后 `null` 稳定 400。
+  @OmittableOnly()
+  @IsString()
+  @MaxLength(WECOM_RETURN_PATH_MAX_LENGTH)
+  returnPath?: string;
+}
+
+export class WecomAuthorizeResponseDto {
+  @ApiProperty({
+    description:
+      '企业微信网页授权 URL(snsapi_base 静默授权;含固定 redirect_uri 与当前 agentid);' +
+      '前端直接跳转,**不要**解析或重写其中任何参数',
+  })
+  authorizeUrl!: string;
+
+  @ApiProperty({ description: 'state 过期时刻(ISO;默认 5 分钟)', format: 'date-time' })
+  expiresAt!: string;
+}
+
+export class LoginWecomDto {
+  @ApiProperty({
+    description:
+      '企业微信回跳带回的一次性 code(仅提交给本接口;前端须随即 history.replaceState 清理地址栏,' +
+      '禁止进入埋点 / 错误上报 / 浏览器持久存储)',
+  })
+  @IsString()
+  @IsNotEmpty()
+  code!: string;
+
+  @ApiProperty({ description: 'authorize 时签发的 state(64 字符 hex;一次性)' })
+  @IsString()
+  @IsNotEmpty()
+  state!: string;
+}
+
+export class WecomLoginResponseDto {
+  @ApiProperty({
+    description:
+      '该企业微信身份是否尚未绑定账号:true = 未绑定(session=null,随 bindingTicket 走绑定流程);' +
+      'false = 已绑定并签发会话',
+  })
+  bindingRequired!: boolean;
+
+  @ApiProperty({
+    description:
+      '未绑定时的一次性绑定票据(默认 10 分钟;**唯一一次**出现在响应里);已绑定为 null。' +
+      '响应中不含 wecomUserId / corpId / attempt id',
+    nullable: true,
+  })
+  bindingTicket!: string | null;
+
+  @ApiProperty({
+    description: '已绑定时的会话(与密码登录同 LoginResponseDto / 同 refresh family);未绑定为 null',
+    type: LoginResponseDto,
+    nullable: true,
+  })
+  session!: LoginResponseDto | null;
+
+  @ApiProperty({ description: 'authorize 时登记的站内回跳路径(已过安全校验)' })
+  returnPath!: string;
+}
+
+export class SendWecomBindCodeDto {
+  @ApiProperty({ description: '未绑定登录返回的 bindingTicket(校验但**不消费**)' })
+  @IsString()
+  @IsNotEmpty()
+  bindingTicket!: string;
+
+  @ApiProperty({
+    description:
+      '账号绑定的大陆手机号(11 位);防枚举:号码不存在 / 账号无手机号 / 停用 / 软删 / 与账号绑定值不一致,' +
+      '五种场景返回与有效号**逐字段相同**的泛化 200 且不发送短信',
+    example: '13800001234',
+  })
+  @IsString()
+  @Matches(MAINLAND_PHONE_PATTERN, { message: 'phone 必须是大陆 11 位手机号' })
+  phone!: string;
+}
+
+export class WecomBindDto {
+  @ApiProperty({ description: '未绑定登录返回的 bindingTicket(本接口原子消费)' })
+  @IsString()
+  @IsNotEmpty()
+  bindingTicket!: string;
+
+  @ApiProperty({
+    description: '账号绑定的大陆手机号(11 位;须与 send-code 时一致)',
+    example: '13800001234',
+  })
+  @IsString()
+  @Matches(MAINLAND_PHONE_PATTERN, { message: 'phone 必须是大陆 11 位手机号' })
+  phone!: string;
+
+  @ApiProperty({ description: '6 位数字短信验证码(purpose=WECOM_BIND)', example: '123456' })
   @IsString()
   @Length(SMS_CODE_LENGTH, SMS_CODE_LENGTH)
   @Matches(/^\d{6}$/, { message: 'smsCode 必须是 6 位数字' })

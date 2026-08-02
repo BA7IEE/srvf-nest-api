@@ -14,6 +14,7 @@ import {
   WecomApiError,
   WecomChannelUnavailableError,
   WecomCredentialStatus,
+  WecomOAuthInvalidError,
   type WecomProvider,
   type WecomSettingsResolved,
 } from './wecom.types';
@@ -104,6 +105,89 @@ export class WecomService {
     return this.routeFor(resolved);
   }
 
+  // ===== T3(2026-08-02):登录链路(冻结稿 §6.2 / §11.2)=====
+
+  /**
+   * 登录链路专用闸门:在 `resolveRoute` 的总闸之上再加**二级闸 `loginEnabled`**,
+   * 并强制 `corpId` 存在。
+   *
+   * 为什么 corpId 对 DEV_STUB 也必须有:`corpId + wecomUserId` 是身份键的**两半**
+   * (WecomIdentity 的两条 active partial unique 按 corpId 分域)。DEV_STUB 下放行 null corpId
+   * 会写出一批 corpId 为空的身份行,等真配上 CorpID 之后它们既不互斥也匹配不上任何登录。
+   *
+   * 返回 route 与 corpId 成对 —— 让"用哪个 Provider 换的身份"和"这身份记在哪个企业名下"
+   * 在类型上不可分离(分开取两次 = 中间 settings 变更就能让两者错配)。
+   */
+  async resolveLoginContext(): Promise<{ provider: WecomProvider; corpId: string }> {
+    const resolved = await this.settings.getActiveSettings();
+    if (resolved === null) {
+      throw new BizException(BizCode.WECOM_CHANNEL_NOT_CONFIGURED);
+    }
+    if (!resolved.loginEnabled) {
+      // 二级闸关闭 → 与"通道没配"同码(36030)。D-WC-24 默认即关。
+      throw new BizException(BizCode.WECOM_CHANNEL_NOT_CONFIGURED);
+    }
+    if (resolved.corpId === null || resolved.corpId === '') {
+      throw new BizException(BizCode.WECOM_CHANNEL_NOT_CONFIGURED);
+    }
+    try {
+      return { provider: this.routeFor(resolved), corpId: resolved.corpId };
+    } catch (err) {
+      throw this.toBizException(err, 'login-context');
+    }
+  }
+
+  /**
+   * authorize URL 所需的配置三元组(冻结稿 §6.2)。
+   *
+   * `agentId` / `webBaseUrl` 缺任一即 36030:少了 agentid 的 authorize URL 换出来的
+   * userid 归属不可控(D-WC-13);少了 webBaseUrl 就拼不出 redirect_uri。
+   * 这里**不**调 `routeFor` —— 签发 authorize URL 不产生任何外部请求,
+   * 因此不需要凭证可用(CorpSecret 只在随后 code 换身份时才用得上)。
+   * 但总闸 / 二级闸仍要判:开关关着就不该把用户送去企业微信授权页再让他回来撞 36030。
+   */
+  async getAuthorizeContext(): Promise<{ corpId: string; agentId: number; webBaseUrl: string }> {
+    const resolved = await this.settings.getActiveSettings();
+    if (resolved === null || !resolved.enabled || !resolved.loginEnabled) {
+      throw new BizException(BizCode.WECOM_CHANNEL_NOT_CONFIGURED);
+    }
+    if (
+      resolved.corpId === null ||
+      resolved.corpId === '' ||
+      resolved.agentId === null ||
+      resolved.webBaseUrl === null ||
+      resolved.webBaseUrl === ''
+    ) {
+      throw new BizException(BizCode.WECOM_CHANNEL_NOT_CONFIGURED);
+    }
+    // production-like 下 DEV_STUB 仍要拒(第②重;签发 authorize URL 也算登录链路的一环)
+    if (resolved.providerType === 'DEV_STUB' && isProductionLike(this.cfg.env)) {
+      throw new BizException(BizCode.WECOM_CHANNEL_NOT_CONFIGURED);
+    }
+    return { corpId: resolved.corpId, agentId: resolved.agentId, webBaseUrl: resolved.webBaseUrl };
+  }
+
+  /**
+   * OAuth code → 本企业内部 `userid`(冻结稿 §6.2 规则 2/3)。
+   *
+   * ⚠️ code **不入日志、不入 Audit、不落库**(§5.5)—— 本方法既不打印它,
+   * 也不把它放进任何抛出的异常 message。
+   *
+   * 失败归一(§11.2):
+   * - `WecomOAuthInvalidError`(40029/42003/42022、无小写 userid、外部成员、跨企业形式)→ 36010
+   * - 通道不可用 → 36030;上游 / 网络 / 畸形回执 → 36031
+   *
+   * 36010 与"这个人没绑定"同码同形是**刻意的**:分开就等于把登录接口做成
+   * 账号存在性探测器(§11.2「不开」段第 2/3 条)。
+   */
+  async exchangeOAuthCode(provider: WecomProvider, code: string): Promise<{ wecomUserId: string }> {
+    try {
+      return await provider.exchangeOAuthCode({ code });
+    } catch (err) {
+      throw this.toBizException(err, 'oauth-exchange');
+    }
+  }
+
   // fail-closed 闸门链(冻结稿 §5.1 规则 1;goal DoD「enabled=false 时一切 Effect fail-closed」)
   private routeFor(r: WecomSettingsResolved): WecomProvider {
     if (!r.enabled) {
@@ -135,14 +219,18 @@ export class WecomService {
       this.logger.warn(`wecom ${scene}: channel unavailable`);
       return new BizException(BizCode.WECOM_CHANNEL_NOT_CONFIGURED);
     }
+    // T3(2026-08-02)补齐 §11.2 的第三条分支。errCode 只记归一化标签或 errcode 数字
+    // (`40029` / `NO_INTERNAL_USERID`),**不记** code 原文、userid、上游 errmsg。
+    if (err instanceof WecomOAuthInvalidError) {
+      this.logger.warn(`wecom ${scene}: oauth invalid errCode=${err.errCode}`);
+      return new BizException(BizCode.WECOM_LOGIN_CREDENTIAL_INVALID);
+    }
     if (err instanceof WecomApiError) {
       this.logger.warn(`wecom ${scene}: api failed errCode=${err.errCode}`);
       return new BizException(BizCode.WECOM_API_FAILED);
     }
-    // WecomOAuthInvalidError 刻意**不在这里映射**:它的目标码 36010
-    // (WECOM_LOGIN_CREDENTIAL_INVALID)属 T3(冻结稿 §11.2),本刀不提前占码。
-    // T2 没有任何路径会产生它 —— exchangeOAuthCode 在 T2 无调用方;
-    // 提前写一条指向不存在常量的映射只会是编译期谎言。T3 落 36010 时在此补一条分支。
+    // BizException 原样冒泡(routeFor 之外的调用方可能已经抛的是终态码);
+    // 其余未知错误同样原样冒泡,由全局过滤器兜底 500 —— 不吞、不改写成"通道不可用"。
     return err;
   }
 }

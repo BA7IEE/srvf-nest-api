@@ -256,13 +256,21 @@ export type AuditLogEvent =
   | 'sms-setting.reset-credentials' // sms credentials reset;无 before/after/extra
   | 'wechat-setting.update' // wechat settings upsert;resourceType='wechat_setting';extra.changedFields
   | 'wechat-setting.reset-credentials' // wechat credentials reset;无 before/after/extra
-  // 企业微信接入 T2(2026-08-01;冻结稿 §11.3)。**只落 settings 两条**;
-  // auth.login.wecom / wecom.bind.self / wecom.rebind.self / wecom.clear.by-admin
-  // 四条属 T3-T4,由其消费方同 PR 落 —— 本刀不预埋无人写入的事件名。
+  // 企业微信接入 T2(2026-08-01;冻结稿 §11.3)。T2 只落 settings 两条。
   // 红线(§11.3):CorpSecret、access token、OAuth code、state、binding ticket、
   // 完整 wecomUserId **永不入 Audit**。
   | 'wecom-setting.update' // wecom settings upsert;resourceType='wecom_setting';**只记 extra.changedFields**(corpId 的 value 也不写)
   | 'wecom-setting.reset-credentials' // wecom CorpSecret reset;**不传 before/after/extra**(连字段名都不写)
+  // 企业微信接入 T3(2026-08-02;冻结稿 §11.3 剩余四条)。写入方随本刀一并落地,不预埋空事件名:
+  // auth.login.wecom 在 AuthService.createSession 事务内(与 auth.login.sms / .wechat 同构);
+  // wecom.bind/rebind.self 分别在 pre-auth 绑定事务(extra.viaPath='pre-auth')与
+  // me/wecom 换绑事务(extra.viaPath='me');wecom.clear.by-admin 在 admin 清除事务。
+  // extra 白名单逐字沿 §11.3:login 允许 familyId / identityId / wecomUserIdMasked;
+  // bind/rebind 的 before/after **只允许掩码身份**;clear 的 before 只允许掩码身份。
+  | 'auth.login.wecom' // 企业微信 OAuth 登录签发;resourceType='user';extra.{familyId,identityId,wecomUserIdMasked}
+  | 'wecom.bind.self' // 本人首次绑定;无 before;after.wecomUserId 掩码;extra.viaPath
+  | 'wecom.rebind.self' // 本人换绑;before/after 均掩码身份;extra.viaPath
+  | 'wecom.clear.by-admin' // 管理员清除身份;before.wecomUserId 掩码;**幂等空转不写**
   | 'realname-setting.update' // realname settings upsert;resourceType='realname_setting';extra.changedFields
   | 'realname-setting.reset-credentials'; // realname credentials reset;无 before/after/extra
 

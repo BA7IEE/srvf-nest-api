@@ -9,7 +9,9 @@
 - **双 Provider**:`WecomRealProvider`(真实企业微信,原生 fetch 零新依赖)/ `DevStubWecomProvider`(非生产联调,确定性假 wecomUserId)
 - **通道编排** `WecomService`:`resolveRoute()` fail-closed 闸门链 + 域错误 → BizCode 映射边界(`WecomChannelUnavailableError` → 36030 / `WecomApiError` → 36031;36010 归 T3)
 - **凭证加密** `WecomCryptoService`(AES-256-GCM,`WECOM_ENCRYPTION_KEY` **独立密钥,与小程序不共域**)
-- **不负责**:微信小程序(在 [`/src/modules/wechat/`](../wechat/) —— 与本模块**严格分家**,身份键是 `corpId + wecomUserId` 而非 `openid`,不并表不混码不混渠道);`wecom_identities` 的**写**(T1 只落 schema,写路径归 T3);消息 outbox 与投递记账(T5B)
+- **OAuth 一次性凭证台账** `WecomAuthAttemptService`(T3,2026-08-02):`wecom_auth_attempts` 的**唯一**写入点。state / binding ticket 只存 SHA-256,OAuth code 连 hash 都不存;消费一律走 `updateMany` CAS(判 + 写在一条 SQL 内),`count===1` 才是赢家
+- **登录链路闸门** `WecomService.resolveLoginContext / getAuthorizeContext / exchangeOAuthCode`(T3):在总闸之上再加二级闸 `loginEnabled`,并强制 `corpId`(DEV_STUB 也不例外 —— corpId 是身份键的一半)
+- **不负责**:微信小程序(在 [`/src/modules/wechat/`](../wechat/) —— 与本模块**严格分家**,身份键是 `corpId + wecomUserId` 而非 `openid`,不并表不混码不混渠道);`wecom_identities` 的**写**(归 auth 的 `login-wecom.service` 与 users 的 `user-wecom-binding.service`,本模块对 User 无感知);消息 outbox 与投递记账(T5B)
 
 ## T3 / T5B 开工前置 —— 三条出生检查(2026-08-01 W 批次收口,**动手前先读完**)
 
@@ -63,7 +65,8 @@ singleton 行的任何 read-modify-write:**先取 id → `FOR UPDATE` → 锁后
 - ❌ **不**给 `WecomRealProvider` 补实例字段或实例方法(见 ①);**不**给协议解析加默认值(见 ③);**不**在写路径上用锁前快照做判断(见 ②)
 - ❌ **不**对 `errcode` 做盲重试:`-1` 系统繁忙最多 3 次;`45009` 限流**不重试**(官方拦截窗口内重试只会延长拦截);配置类错误(40001/40013/40056/50001/…)是终态,重试解决不了"Secret 错了"
 - ❌ **不**把 `wecom` 与 `wechat` 的表 / 码 / 常量 / 通知渠道并到一起,**不**把企业微信身份写进 `User.openid`
-- ❌ **不**在 T2 范围内提前占用 36010(`WECOM_LOGIN_CREDENTIAL_INVALID`,归 T3)—— 提前写一条指向不存在常量的映射只会是编译期谎言
+- ❌ **不**把 `returnPath` 的开放重定向判据放宽(`isSafeWecomReturnPath` 是整条企业微信登录链**唯一**的防线,放宽它没有任何别的检查会红);**不**把控制字符判据写成含真实控制字节的正则字面量(那会让整个文件在 grep / diff 眼里变成二进制,评审时整段不可见 —— 本刀初版踩过,现用数值比较);**不**把 token-like query key 判据改回"带分隔符的正则"(漏 `refreshToken` 这类 camelCase)或"纯子串包含"(误杀 `keyword`)—— 现用逐段精确匹配
+- ❌ **不**在绑定事务里省掉锁后复判 `enabled` / `loginEnabled`:pre-auth bind 路径**不调** `resolveLoginContext`(换身份发生在 login 那一步),少了这一判,运维关掉开关之后任何手握未过期 binding ticket 的人仍能建身份**并拿到会话**(e2e 实测)
 - ❌ 改凭证 / 加密 / 判权 / 并发锁序 **不是 docs-only**,按 D 档降速
 
 ## Validation

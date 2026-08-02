@@ -9,6 +9,7 @@ import request from 'supertest';
 import { CONTENT_PUBLIC_THROTTLER_NAME } from '../../src/common/decorators/content-public-throttle.decorator';
 import { LOGIN_SMS_THROTTLER_NAME } from '../../src/common/decorators/login-sms-throttle.decorator';
 import { LOGIN_WECHAT_THROTTLER_NAME } from '../../src/common/decorators/login-wechat-throttle.decorator';
+import { LOGIN_WECOM_THROTTLER_NAME } from '../../src/common/decorators/login-wecom-throttle.decorator';
 import { PASSWORD_CHANGE_THROTTLER_NAME } from '../../src/common/decorators/password-change-throttle.decorator';
 import { PASSWORD_RESET_THROTTLER_NAME } from '../../src/common/decorators/password-reset-throttle.decorator';
 import { RECRUITMENT_THROTTLER_NAME } from '../../src/common/decorators/recruitment-throttle.decorator';
@@ -37,6 +38,9 @@ const THROTTLER_NAMES = [
   LOGIN_WECHAT_THROTTLER_NAME,
   RECRUITMENT_THROTTLER_NAME,
   CONTENT_PUBLIC_THROTTLER_NAME,
+  // 企业微信接入 T3(2026-08-02;冻结稿 D-WC-16):第 11 个独立实例,
+  // 服务 auth/v1 的 login-wecom{,/authorize} 与 wecom-bind{,/send-code,/authorize} 五端点。
+  LOGIN_WECOM_THROTTLER_NAME,
 ] as const;
 
 function delay(milliseconds: number): Promise<void> {
@@ -178,7 +182,7 @@ describe('PostgreSQL shared throttler storage', () => {
     else process.env.LOGIN_THROTTLE_TTL_SECONDS = originalLoginTtl;
   });
 
-  it('wires 10 names to one PostgreSQL storage contract without changing tracker/key/headers', async () => {
+  it('wires 11 names to one PostgreSQL storage contract without changing tracker/key/headers', async () => {
     const options = appA.get<ThrottlerModuleOptions>(getOptionsToken());
     expect(Array.isArray(options)).toBe(false);
     if (Array.isArray(options)) throw new Error('production throttler options unexpectedly array');
@@ -459,7 +463,7 @@ describe('PostgreSQL shared throttler storage', () => {
     }
   });
 
-  it('keeps 10 names and IP-derived keys physically isolated', async () => {
+  it('keeps 11 names and IP-derived keys physically isolated', async () => {
     const sameKeyResults = await Promise.all(
       THROTTLER_NAMES.map((name, index) =>
         (index % 2 === 0 ? storageA : storageB).increment(
@@ -474,7 +478,11 @@ describe('PostgreSQL shared throttler storage', () => {
     expect(sameKeyResults.every(({ totalHits, isBlocked }) => totalHits === 1 && !isBlocked)).toBe(
       true,
     );
-    expect(await prismaA.throttlerBucket.count({ where: { key: 'same-package-key' } })).toBe(10);
+    // 同一 key 在 N 个 name 下各自独立成桶 —— 用 THROTTLER_NAMES.length 而不是写死数字,
+    // 新增 throttler 时这条断言自动跟着走,不必再改一处魔数(本刀第 11 个实例即由此暴露)。
+    expect(await prismaA.throttlerBucket.count({ where: { key: 'same-package-key' } })).toBe(
+      THROTTLER_NAMES.length,
+    );
 
     const blockedDefault = await storageB.increment('same-package-key', 5_000, 1, 5_000, 'default');
     expect(blockedDefault).toMatchObject({ totalHits: 2, isBlocked: true });

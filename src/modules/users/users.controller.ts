@@ -26,6 +26,7 @@ import {
   UserOptionsResponseDto,
   UserResponseDto,
 } from './users.dto';
+import { UserWecomBindingService } from './user-wecom-binding.service';
 import { UsersService } from './users.service';
 
 // **权限标注**(P0-F PR-3B,2026-05-18):8 个管理端点入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;
@@ -50,7 +51,12 @@ import { UsersService } from './users.service';
 @ApiBearerAuth()
 @Controller('admin/v1/users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    // 企业微信接入 T3(2026-08-02):仅 DELETE :id/wecom 使用;
+    // 身份子域独立成 service(冻结稿 §4.1 文件计划),不再往 users.service 里堆。
+    private readonly userWecomBinding: UserWecomBindingService,
+  ) {}
 
   // ===== 管理接口(P0-F PR-3B:走 rbac.can();失败 30100)=====
 
@@ -274,6 +280,32 @@ export class UsersController {
     @Req() req: Request,
   ): Promise<UserResponseDto> {
     return this.usersService.clearUserWechat(currentUser, params.id, this.buildAuditMeta(req));
+  }
+
+  // 企业微信接入 T3(2026-08-02):管理员清除用户企业微信身份(冻结稿 §6.4)。
+  // **解除绑定的唯一显式路径**(App 无自助裸解绑,D-WC-9);
+  // **幂等**:目标无 active 身份 → 200 不报错且不写 audit、不撤 refresh;
+  // 软删用户统一 USER_NOT_FOUND;实际清除时撤销该用户全部 refresh,
+  // audit wecom.clear.by-admin(before 只记掩码身份,不返回完整企业微信 UserId)。
+  // 不允许通过本接口把身份转移给另一 User —— 转移只能是"清除 + 对方重新绑定"。
+  @Delete(':id/wecom')
+  @ApiOperation({
+    summary: '清除用户企业微信身份(幂等;审计仅掩码) [rbac: user.wecom.clear]',
+  })
+  @ApiWrappedOkResponse(UserResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.FORBIDDEN_ROLE_OPERATION,
+    BizCode.USER_NOT_FOUND,
+  )
+  clearUserWecom(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Param() params: IdParamDto,
+    @Req() req: Request,
+  ): Promise<UserResponseDto> {
+    return this.userWecomBinding.clearUserWecom(currentUser, params.id, this.buildAuditMeta(req));
   }
 
   // P0-D PR-3:从 @Req() 构造 AuditMeta 显式传给 service(D6 v1.1 §11.2 / D8 拍板;
