@@ -241,9 +241,14 @@ SELECT status FROM wecom_identities WHERE "userId" = '<该 User.id>';
 
 **期望结果**:
 
-- offboard **保留 identity 但登录失败**(冻结稿 §15.1 条 13 / §8);
-- 恢复 + enable 之后可以登录;
-- 全程 identity 行 `status='active'` 不变。
+- offboard **保留 identity 但登录失败**(返 `36010`);
+- 全程 identity 行 `status='active'` 不变(冻结稿 §15.1 条 13 / §8);
+- 恢复 + enable 之后可以登录。
+
+⚠️ **为什么第 3 步要「恢复 + 确认 User 启用」两件事**:offboard 会**顺带把关联 User 置为 `DISABLED`**
+(它同事务做四件事:Member 置 INACTIVE、END 全部 ACTIVE membership、停用 linked User、保留企业微信身份)。
+所以只恢复 Member 状态**不会**让人重新登得进来 —— 那时你看到的 `36010` 是 User 还停着,不是 offboard 的锅。
+**这一步分不清就会误报一个不存在的 bug。**
 
 **不符怎么办**:offboard 后 identity 被撤销 ⇒ 与矩阵不符,上报。
 **⚠️ 注意这一项与 ③ 的区别**:两者都「保留身份」,但触发的是不同链路(User 状态 vs Member 状态),
