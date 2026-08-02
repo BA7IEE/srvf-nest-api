@@ -18,8 +18,13 @@
 ## 0. 一句话
 
 企业微信消息通道出厂 `enabled=false && messageEnabled=false`,**合入代码不等于开始发消息**。
-打开它需要三步:①确认 fleet 只剩新版本 → ②开总闸做 smoke → ③开二级闸并盯运营五指标。
+打开它需要三步:①确认 fleet 只剩新版本 → ②在 `messageEnabled=false` 下做 no-effect smoke →
+③开消息二级闸并盯运营五指标。
 任何一步不确定,就停在上一步 —— 通道关着的代价是"没发消息",打开错了的代价是"发错人"。
+
+> ⚠️ **总闸 `enabled` 在你读到本文时应该已经是 `true` 了** —— 它是身份链 GO 的一部分
+> (见 [SOP §10.1](wecom-backend-configuration-sop.md),`test-connection` 自己就要求它)。
+> 本文只负责第三个开关 `messageEnabled`。
 
 > 📋 **要签 GO 的人直接翻 [§9 消息链 GO 检查单](#9-152-消息链-go-检查单十二条)** ——
 > 那是冻结稿 §15.2 十二条的逐条勾选版,每一条都指回本文对应小节,**不重复内容**。
@@ -102,10 +107,21 @@ SELECT count(*) FROM notification_outbox_intents WHERE "eventType" LIKE 'notific
 
 ## 4. 开启(维护者执行)
 
-`PATCH /api/system/v1/wecom-settings`,先 `enabled=true`,观察一轮后再 `messageEnabled=true`。
-**两个开关分两次开** —— 一次开完就分不清"通道通了"和"消息发出去了"分别是哪一步生效的。
+**前提**:`enabled` 与 `loginEnabled` 已在身份链阶段打开并验收过(SOP §10),`messageEnabled` 仍为 `false`。
+本节只翻**第三个**开关:
 
-开启后发第一条试点通知,并按 §5 读五指标。
+```bash
+curl -X PATCH https://<API_HOST>/api/system/v1/wecom-settings -H "Authorization: Bearer <SA_TOKEN>" -H "Content-Type: application/json" -d '{"messageEnabled":true}'
+```
+
+> ⚠️ **一次只翻一个开关,翻完观察一轮再动下一个** —— 这是全链一贯的纪律(SOP §10.3 同理)。
+> 三个开关如果挤在一两次 PATCH 里开完,出问题时你分不清"通道通了""能登录了""消息发出去了"
+> 分别是哪一步生效的。
+>
+> 代码侧有跨字段不变量兜底:`messageEnabled=true` 必须 `enabled=true`,否则 `40000`。
+> 但那只保证你写不出自相矛盾的配置,**不替你保证可诊断性**。
+
+开启后先只发给 **1–3 名**试点成员(playbook B 步),按 §5 读五指标,再扩到全部试点人员。
 
 ---
 
