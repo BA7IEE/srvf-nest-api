@@ -2,18 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   MemberStatus,
   type Notification,
-  OrganizationStatus,
   Prisma,
-  Role,
   type SmsProviderType,
   UserStatus,
 } from '@prisma/client';
 
-import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
-import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
-import { isFormalMemberGradeCode } from '../members/member-grade';
 import { SmsProviderRouter } from '../sms/sms-provider.router';
 import { SmsSettingsService } from '../sms/sms-settings.service';
 import {
@@ -24,13 +19,9 @@ import {
   SMS_TEMPLATE_KEY_NOTIFICATION,
 } from '../sms/sms.constants';
 import { SmsChannelUnavailableError, SmsProviderSendError } from '../sms/sms.types';
-// 可见性**复用** content.visibility 纯函数(canSeeContent),零第二套(评审稿 §5;镜像 S2 微信派发)。
-import {
-  canSeeContent,
-  type CallerVisibilityContext,
-  DEPARTMENT_VISIBILITY_MEMBERSHIP_TYPES,
-} from '../content/content.visibility';
 import { RbacService } from '../permissions/rbac.service';
+// 受众资格判定(渠道无关)的唯一真相 —— T5A / D-WC-19;短信不再自持第二套可见性口径。
+import { authorizeBroadcastRecipients } from './notification-recipient-authorization.service';
 import {
   DELIVERY_REASON_ALREADY_SENT,
   DELIVERY_REASON_DAILY_LIMIT,
@@ -42,7 +33,6 @@ import {
   DELIVERY_STATUS_SKIPPED,
   NOTIFICATION_AUDIENCE_DIRECTED,
   NOTIFICATION_CHANNEL_SMS,
-  NOTIFICATION_VISIBILITY_MANAGEMENT,
 } from './notification.constants';
 import { notificationDispatchFailureLog } from './notification-dispatch-error';
 
@@ -349,98 +339,65 @@ export class NotificationSmsDispatchService {
     return null;
   }
 
-  // 解析可计费受众:可见(broadcast 走 canSeeContent;directed 仅收件人本人)且有 User.phone 的 active member。
-  // 仅发 User.phone(对齐生日批拍板⑤;MemberProfile.mobile 永不用于发送)。
+  // 解析可计费受众:可见(broadcast 走渠道无关受众判定;directed 仅收件人本人)且有
+  // User.phone 的 active member。仅发 User.phone(对齐生日批拍板⑤;MemberProfile.mobile 永不用于发送)。
   private async resolveSmsAudience(
     notification: Notification,
     client: SmsDispatchClient = this.prisma,
   ): Promise<SmsRecipient[]> {
-    const isDirected = notification.audienceType === NOTIFICATION_AUDIENCE_DIRECTED;
-    const candidateMemberIds = isDirected
-      ? notification.recipientMemberId
-        ? [notification.recipientMemberId]
-        : []
-      : (
-          await client.member.findMany({
-            where: notDeletedWhere({ status: MemberStatus.ACTIVE }),
-            select: { id: true },
-          })
-        ).map((m) => m.id);
+    // directed 不是「受众判定」问题:收件人已由 producer 显式指定,不过可见档。
+    if (notification.audienceType === NOTIFICATION_AUDIENCE_DIRECTED) {
+      return notification.recipientMemberId
+        ? this.resolveDirectedSmsRecipients(notification.recipientMemberId, client)
+        : [];
+    }
+
+    const candidateMemberIds = (
+      await client.member.findMany({
+        where: notDeletedWhere({ status: MemberStatus.ACTIVE }),
+        select: { id: true },
+      })
+    ).map((m) => m.id);
     if (candidateMemberIds.length === 0) return [];
 
-    // active member 再核(directed 候选可能已软删 / 非 ACTIVE)。
-    const activeMembers = await client.member.findMany({
-      where: notDeletedWhere({ id: { in: candidateMemberIds }, status: MemberStatus.ACTIVE }),
-      select: { id: true, gradeCode: true },
+    // 受众资格判定已归 `notification-recipient-authorization.service`(T5A);
+    // 本方法只剩渠道职责:注入「要哪些 User 列」(phone)并按可计费口径收窄。
+    const authorized = await authorizeBroadcastRecipients({
+      client,
+      rbac: this.rbac,
+      notification,
+      candidateMemberIds,
+      loadActiveUsers: (audienceClient, activeMemberIds) =>
+        audienceClient.user.findMany({
+          where: notDeletedWhere({ memberId: { in: activeMemberIds }, status: UserStatus.ACTIVE }),
+          select: { id: true, memberId: true, role: true, phone: true },
+        }),
     });
-    const activeMemberIds = activeMembers.map((m) => m.id);
-    const gradeCodeByMember = new Map(
-      activeMembers.map(({ id, gradeCode }) => [id, gradeCode] as const),
+
+    // 可见但无 phone:不计入可计费受众(不发 / 不落 delivery)。
+    return authorized.flatMap(({ memberId, user }) =>
+      user?.phone ? [{ memberId, phone: user.phone }] : [],
     );
-    if (activeMemberIds.length === 0) return [];
-
-    // active user 的 phone(仅 User.phone;memberId 关联)。
-    const users = await client.user.findMany({
-      where: notDeletedWhere({ memberId: { in: activeMemberIds }, status: UserStatus.ACTIVE }),
-      select: { id: true, memberId: true, role: true, phone: true },
-    });
-    const userByMember = new Map(users.flatMap((u) => (u.memberId ? [[u.memberId, u]] : [])));
-
-    // 四类有效任职部门(可见性 ctx;broadcast 用)。
-    const depts = await client.memberOrganizationMembership.findMany({
-      where: {
-        ...MembershipTermStateMachine.effectiveWhere(new Date()),
-        memberId: { in: activeMemberIds },
-        membershipType: { in: [...DEPARTMENT_VISIBILITY_MEMBERSHIP_TYPES] },
-        organization: { status: OrganizationStatus.ACTIVE, deletedAt: null },
-      },
-      select: { memberId: true, organizationId: true },
-    });
-    const orgIdsByMember = new Map<string, string[]>();
-    for (const d of depts) {
-      const list = orgIdsByMember.get(d.memberId) ?? [];
-      list.push(d.organizationId);
-      orgIdsByMember.set(d.memberId, list);
-    }
-
-    const needsManagement =
-      !isDirected && notification.visibilityCode === NOTIFICATION_VISIBILITY_MANAGEMENT;
-    const recipients: SmsRecipient[] = [];
-    for (const memberId of activeMemberIds) {
-      const user = userByMember.get(memberId);
-      const phone = user?.phone ?? null;
-      if (!phone) continue; // 可见但无 phone:不计入可计费受众(不发 / 不落 delivery)。
-      if (isDirected) {
-        // directed 仅收件人本人可见(候选已锁 recipientMemberId);有手机即收件人。
-        recipients.push({ memberId, phone });
-        continue;
-      }
-      const activeOrgIds = orgIdsByMember.get(memberId) ?? [];
-      const isManagement = needsManagement ? await this.resolveIsManagement(user) : false;
-      const ctx: CallerVisibilityContext = {
-        isMember: true,
-        isFormalMember: isFormalMemberGradeCode(gradeCodeByMember.get(memberId)),
-        activeOrgIds,
-        isManagement,
-      };
-      if (canSeeContent(ctx, notification)) recipients.push({ memberId, phone });
-    }
-    return recipients;
   }
 
-  // 管理层判定(仅 management 可见档用;镜像 S2 微信派发 resolveIsManagement)。
-  private async resolveIsManagement(
-    user: { id: string; role: Role; memberId: string | null } | undefined,
-  ): Promise<boolean> {
-    if (!user) return false;
-    const payload: CurrentUserPayload = {
-      id: user.id,
-      username: '',
-      role: user.role,
-      status: UserStatus.ACTIVE,
-      memberId: user.memberId,
-    };
-    return this.rbac.can(payload, 'notification.read.record');
+  // directed 收件人解析:active member 再核(候选可能已软删 / 非 ACTIVE)+ active user 的 phone。
+  // 不构造可见性 ctx —— 定向行的收件人就是受众本身。
+  private async resolveDirectedSmsRecipients(
+    recipientMemberId: string,
+    client: SmsDispatchClient,
+  ): Promise<SmsRecipient[]> {
+    const activeMembers = await client.member.findMany({
+      where: notDeletedWhere({ id: { in: [recipientMemberId] }, status: MemberStatus.ACTIVE }),
+      select: { id: true, gradeCode: true },
+    });
+    if (activeMembers.length === 0) return [];
+
+    const users = await client.user.findMany({
+      where: notDeletedWhere({ memberId: { in: [recipientMemberId] }, status: UserStatus.ACTIVE }),
+      select: { id: true, memberId: true, role: true, phone: true },
+    });
+    const phone = users.find((u) => u.memberId === recipientMemberId)?.phone ?? null;
+    return phone ? [{ memberId: recipientMemberId, phone }] : [];
   }
 
   private async recordDelivery(

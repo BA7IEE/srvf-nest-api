@@ -1,12 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { type Member, OrganizationStatus, Prisma, type Notification } from '@prisma/client';
+import { type Member, Prisma, type Notification } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
-import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
 import { isFormalMemberGradeCode } from '../members/member-grade';
 import { RbacService } from '../permissions/rbac.service';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
@@ -17,8 +16,12 @@ import {
   buildVisibilityWhere,
   canSeeContent,
   type CallerVisibilityContext,
-  DEPARTMENT_VISIBILITY_MEMBERSHIP_TYPES,
 } from '../content/content.visibility';
+// 四类有效任职口径与 management 权限码与推送侧共用同一处(T5A / D-WC-19)。
+import {
+  NOTIFICATION_MANAGEMENT_READ_PERMISSION,
+  resolveEffectiveOrganizationIds,
+} from './notification-recipient-authorization.service';
 import {
   NOTIFICATION_AUDIENCE_BROADCAST,
   NOTIFICATION_AUDIENCE_DIRECTED,
@@ -66,17 +69,11 @@ export class NotificationReadService {
     currentUser: CurrentUserPayload,
     member: Pick<Member, 'id' | 'gradeCode'>,
   ): Promise<CallerVisibilityContext> {
-    const depts = await this.prisma.memberOrganizationMembership.findMany({
-      where: {
-        ...MembershipTermStateMachine.effectiveWhere(new Date()),
-        memberId: member.id,
-        membershipType: { in: [...DEPARTMENT_VISIBILITY_MEMBERSHIP_TYPES] },
-        organization: { status: OrganizationStatus.ACTIVE, deletedAt: null },
-      },
-      select: { organizationId: true },
-    });
-    const activeOrgIds = depts.map((d) => d.organizationId);
-    const isManagement = await this.rbac.can(currentUser, 'notification.read.record');
+    // 四类有效任职的读取口径与推送侧共用同一份 where(T5A;避免「某一处漏了 organization ACTIVE」)。
+    const activeOrgIds = await resolveEffectiveOrganizationIds(this.prisma, member.id, new Date());
+    // 读侧与推送侧不同:list where 需要 isManagement 恒求值(buildVisibilityWhere 要据此决定
+    // 是否并入 management 档 OR 分支),故不做「仅 management 档才解析」的惰性收窄。
+    const isManagement = await this.rbac.can(currentUser, NOTIFICATION_MANAGEMENT_READ_PERMISSION);
     return {
       isMember: true,
       isFormalMember: isFormalMemberGradeCode(member.gradeCode),
