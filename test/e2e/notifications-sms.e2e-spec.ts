@@ -409,11 +409,29 @@ describe('统一通知模块 S5 短信兜底渠道 e2e', () => {
       await createMemberInOrg(org, '13912350001');
       const id = await createDeptNotification(org);
 
+      // flake 取证锚(2026-08-01 PR #875 CI attempt-1 唯一一次红):首发返回了 data:null
+      // 的错误包,而裸 `body.data` 断言把 code/message 全部丢弃,红一次只能盲重跑定性。
+      // 先钉「此刻通道事实就绪」,再以整包口径断言 —— 复发时失败输出自带 BizCode 与
+      // message(非生产环境 50000 还透传底层 exception.message),一次红即可定因。
+      expect(await prisma.smsSettings.findFirst()).toMatchObject({
+        enabled: true,
+        templateIdNotification: 'tpl-notif-1',
+      });
+
       const first = await sendSms(adminAuth, id, { confirmed: true });
-      expect(first.body.data).toMatchObject({ sent: 1, skipped: 0 });
+      expect({ status: first.status, body: first.body }).toMatchObject({
+        status: 200,
+        body: {
+          code: 0,
+          data: { confirmed: true, recipientCount: 1, sent: 1, failed: 0, skipped: 0 },
+        },
+      });
 
       const second = await sendSms(adminAuth, id, { confirmed: true });
-      expect(second.body.data).toMatchObject({ recipientCount: 1, sent: 0, skipped: 1 });
+      expect({ status: second.status, body: second.body }).toMatchObject({
+        status: 200,
+        body: { code: 0, data: { recipientCount: 1, sent: 0, skipped: 1 } },
+      });
       // 仍只一条 send_log(未重复发)
       expect(await prisma.smsSendLog.count({ where: { phone: '13912350001' } })).toBe(1);
       const skipDelivery = await prisma.notificationDelivery.findFirst({
