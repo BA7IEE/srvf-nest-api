@@ -119,6 +119,20 @@
 | `10008` | 401 | step-up proof 无效 / 过期 / 身份状态已变。动作:重新 step-up |
 | `42900` | 429 | 限流(第 11 个独立计数器 `login-wecom`,默认 IP 5 次/60 秒,与其他限流互不影响;`send-code` / `bind` 另叠既有短信限流) |
 
+**⚠️ 试点期运维状态(T6,2026-08-02;只登记,细节在 ops 文档)**
+
+首轮上线是 **10–30 人分层试点**,企业微信应用可见范围**只含名单内成员**。对前端的三条影响:
+
+1. **不在名单内的人根本打不开这个应用** —— 他们不会走到本节任何一步。企业微信登录入口
+   不要设计成"所有人都该看到并能用"的主入口;试点期它是一条**并存**的可选入口,
+   原有登录方式(密码 / 短信 / 小程序)一字不动。
+2. **通道随时可能被运维关掉**(试点验收、回滚演练都会关)。关闭期间五个端点一律 `36030` ——
+   见上表,按"暂未开放"提示,**不要**当故障重试或上报。
+3. **PC 浏览器扫码登录本版不做**(D-WC-29)。有用户反馈"PC 上扫不了码"是**预期行为**,不是缺陷。
+
+运维侧怎么开、怎么关、试点怎么验收:[`ops/wecom-backend-configuration-sop.md`](../ops/wecom-backend-configuration-sop.md)
+· [`ops/wecom-pilot-playbook.md`](../ops/wecom-pilot-playbook.md)。前端无需适配任何新契约。
+
 ### 1.2 自购保险 PR3 cutover 契约(D-INSURANCE v3)
 
 - `app/v1/me/insurances` 的保险响应 additive 增加 `reviewStatusCode`(`pending|verified|rejected`)、`version`、`reviewedAt`;不返回 reviewer 身份。客户端应保存每次成功响应中的新 `version`。
