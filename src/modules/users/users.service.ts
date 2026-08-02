@@ -41,6 +41,7 @@ import {
 } from './users.dto';
 import { canChangeRole, canCreateRole, canManageUser, canViewUser } from './users.policy';
 import { SafeUser, SafeUserWithMember, userAdminSelect, userSafeSelect } from './users.select';
+import { revokeActiveWecomIdentityInTx } from './wecom-identity-revoke';
 
 const BCRYPT_SALT_ROUNDS = 10;
 
@@ -753,6 +754,17 @@ export class UsersService {
         select: userSafeSelect,
       });
 
+      // 企业微信 T4(2026-08-02,D-WC-10):User 软删 = **代际终止**,同事务释放外部身份槽位。
+      // 与 disable / enable / offboard 的区别不在"影响多大",而在**可不可恢复** ——
+      // 临时停用的账号还会回来,绑定是组织资产不该随状态抖动;软删的 User 不会回来了,
+      // 它占着的企业微信号必须能被别人重新绑定。
+      // 位置在 refresh 撤销**之前**:锁序 §9.1 固定 `User → WecomIdentity → RefreshToken / Audit`。
+      const wecomRevocation = await revokeActiveWecomIdentityInTx(tx, {
+        userId: id,
+        revokedByUserId: currentUser.id,
+        revokedAt: new Date(),
+      });
+
       // P0-E PR-3(2026-05-18):用户被软删时**主动撤销**目标 user 全部 refresh token
       // (revokedReason='admin-delete';沿 auth-jwt-refresh 联动撤销九场景之一)。
       // access token 由 JwtStrategy 每请求查库即时阻断(deletedAt != null;沿现状)。
@@ -771,6 +783,10 @@ export class UsersService {
         meta: auditMeta,
         before: { deleted: false, status: lockedTarget.status },
         after: { deleted: true, status: updated.status },
+        // T4 / 冻结稿 §11.3 末条:复用既有 umbrella 事件,extra 只加一个计数,
+        // **不**为撤销这条腿另造事件。恒写数值(含 0)—— 与既有 refreshTokensRevoked 同型:
+        // 缺席与 0 不可区分会让"这次到底有没有身份被撤"永远查不清。
+        extra: { wecomIdentitiesRevoked: wecomRevocation.count },
         tx,
       });
 

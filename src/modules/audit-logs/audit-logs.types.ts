@@ -220,7 +220,7 @@ export type AuditLogEvent =
   // §3.4)。同 resourceType='member' / resourceId=memberId 口径。
   | 'member.account-bound' // admin 绑定既有悬空账号到队员(members.service: bindAccount 1 处;extra.{memberId,userId})
   | 'member.account-unbound' // admin 解绑队员账号(members.service: unbindAccount 1 处;extra.{memberId,userId}——userId 为断链前的值)
-  | 'member.account-reopened' // admin 退号重开(members.service: reopenAccount 1 处;extra.{memberId,oldUserId,newUserId,phone:掩码})
+  | 'member.account-reopened' // admin 退号重开(members.service: reopenAccount 1 处;extra.{memberId,oldUserId,newUserId,phone:掩码,wecomIdentitiesRevoked:number});企业微信 T4 起 extra 增 wecomIdentitiesRevoked(旧 User 代际终止时撤销的 active 身份数,恒写含 0;冻结稿 §11.3 末条:复用 umbrella 事件不另造逐腿事件)
   // 第七刀·members 轴审计残留(2026-07-14;goal 显式预授权 +1,110→111)。before/after
   // 仅含账号 status;extra 仅含 linkedUserId / refreshTokensRevoked,不含 phone/openid/secret。
   | 'member.account.status-change' // admin 从队员面启停关联 USER 账号(members.service:updateAccountStatus;与 user status 写 / refresh 撤销同事务)
@@ -249,7 +249,7 @@ export type AuditLogEvent =
   // 凭证明文、密文、字段值、passwordHash、SecretId/SecretKey/AppSecret。
   | 'user.role.update' // admin 改用户角色;resourceType='user';before/after.role
   | 'user.status.update' // admin 启停用户;resourceType='user';before/after.status
-  | 'user.soft-delete' // admin 软删用户;resourceType='user';before/after.deleted + status
+  | 'user.soft-delete' // admin 软删用户;resourceType='user';before/after.deleted + status;企业微信 T4 起 extra.wecomIdentitiesRevoked:number(同事务撤销的 active 企业微信身份数,恒写含 0;冻结稿 §11.3 末条 + D-WC-10)
   | 'storage-setting.update' // storage settings upsert;resourceType='storage_setting';extra.changedFields
   | 'storage-setting.reset-credentials' // storage credentials reset;无 before/after/extra
   | 'sms-setting.update' // sms settings upsert;resourceType='sms_setting';extra.changedFields

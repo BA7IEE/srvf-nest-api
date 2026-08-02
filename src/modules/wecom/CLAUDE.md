@@ -11,7 +11,7 @@
 - **凭证加密** `WecomCryptoService`(AES-256-GCM,`WECOM_ENCRYPTION_KEY` **独立密钥,与小程序不共域**)
 - **OAuth 一次性凭证台账** `WecomAuthAttemptService`(T3,2026-08-02):`wecom_auth_attempts` 的**唯一**写入点。state / binding ticket 只存 SHA-256,OAuth code 连 hash 都不存;消费一律走 `updateMany` CAS(判 + 写在一条 SQL 内),`count===1` 才是赢家
 - **登录链路闸门** `WecomService.resolveLoginContext / getAuthorizeContext / exchangeOAuthCode`(T3):在总闸之上再加二级闸 `loginEnabled`,并强制 `corpId`(DEV_STUB 也不例外 —— corpId 是身份键的一半)
-- **不负责**:微信小程序(在 [`/src/modules/wechat/`](../wechat/) —— 与本模块**严格分家**,身份键是 `corpId + wecomUserId` 而非 `openid`,不并表不混码不混渠道);`wecom_identities` 的**写**(归 auth 的 `login-wecom.service` 与 users 的 `user-wecom-binding.service`,本模块对 User 无感知);消息 outbox 与投递记账(T5B)
+- **不负责**:微信小程序(在 [`/src/modules/wechat/`](../wechat/) —— 与本模块**严格分家**,身份键是 `corpId + wecomUserId` 而非 `openid`,不并表不混码不混渠道);`wecom_identities` 的**写**(绑定归 auth 的 `login-wecom.service` 与 users 的 `user-wecom-binding.service`;**撤销**归 users 的 [`wecom-identity-revoke.ts`](../users/wecom-identity-revoke.ts) 单一原语,T4 起由 `clearUserWecom` / `users.softDelete` / `members.reopenAccount` 三处共用 —— 它的入参是两个 userId,故也落在 users,本模块对 User 无感知);消息 outbox 与投递记账(T5B)
 
 ## T3 / T5B 开工前置 —— 三条出生检查(2026-08-01 W 批次收口,**动手前先读完**)
 

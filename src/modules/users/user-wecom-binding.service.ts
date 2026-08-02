@@ -25,6 +25,7 @@ import {
 import { AppMeWecomDto, type BindMyWecomDto } from './dto/app/app-me-wecom.dto';
 import { canManageUser } from './users.policy';
 import { userSafeSelect } from './users.select';
+import { revokeActiveWecomIdentityInTx } from './wecom-identity-revoke';
 import type { UserResponseDto } from './users.dto';
 
 // 企业微信接入 T3(2026-08-02):本人企业微信绑定 / 换绑 + 管理员清除
@@ -195,25 +196,18 @@ export class UserWecomBindingService {
       // 锁后重判权:等锁期间目标角色可能被改(例如提到 SUPER_ADMIN)
       this.assertCanManageUser(currentUser, lockedTarget);
 
-      const active = await tx.wecomIdentity.findFirst({
-        where: { userId: id, status: WECOM_IDENTITY_STATUS.ACTIVE, revokedAt: null },
-        select: { id: true, wecomUserId: true },
+      // T4(2026-08-02):撤销动作走共享原语 —— 与 softDelete / reopenAccount 同一段代码
+      // (D-WC-10 三个落点不得各写一套)。本方法自身的行为与 Audit 逐字不变。
+      const now = new Date();
+      const revocation = await revokeActiveWecomIdentityInTx(tx, {
+        userId: id,
+        revokedByUserId: currentUser.id,
+        revokedAt: now,
       });
-      if (active === null) {
+      if (revocation.count === 0) {
         // 幂等空转:不写 Audit、不撤 refresh(什么都没变,撤 refresh 会误伤在线会话)
         return tx.user.findUniqueOrThrow({ where: { id }, select: userSafeSelect });
       }
-
-      const now = new Date();
-      await tx.wecomIdentity.update({
-        where: { id: active.id },
-        data: {
-          status: WECOM_IDENTITY_STATUS.REVOKED,
-          revokedAt: now,
-          revokedByUserId: currentUser.id,
-        },
-        select: { id: true },
-      });
 
       await tx.refreshToken.updateMany({
         where: { userId: id, revokedAt: null, expiresAt: { gt: now } },
@@ -228,7 +222,7 @@ export class UserWecomBindingService {
         resourceId: id,
         meta: auditMeta,
         // §11.3:clear 的 before **只允许掩码身份**
-        before: { wecomUserId: maskWecomUserId(active.wecomUserId) },
+        before: { wecomUserId: maskWecomUserId(revocation.revoked[0].wecomUserId) },
         tx,
       });
 
