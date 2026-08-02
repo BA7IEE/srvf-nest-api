@@ -15,7 +15,6 @@
     { "file": "src/modules/notifications/expiry-reminder.service.spec.ts", "symbol": "2026-09-12" },
     { "file": "test/e2e/certificates-patch-tristate.e2e-spec.ts", "symbol": "2028-01-01" },
     { "file": "test/e2e/notifications-expiry-reminder.e2e-spec.ts", "symbol": "2027-01-01" },
-    { "file": "test/e2e/notifications-participation-producers.e2e-spec.ts", "symbol": "2026-08-03" },
     { "file": "test/e2e/notifications-participation-producers.e2e-spec.ts", "symbol": "2026-08-04" },
     { "file": "test/e2e/notifications-participation-producers.e2e-spec.ts", "symbol": "2027-04-01" },
     { "file": "test/e2e/recruitment-certificate-claims.e2e-spec.ts", "symbol": "2028-01-31" }
