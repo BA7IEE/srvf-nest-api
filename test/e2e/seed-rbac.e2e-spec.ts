@@ -214,6 +214,11 @@ const EXPECTED_RBAC_PERMISSION_CODES = [
   // `DELETE admin/v1/users/:id/wecom` 连码带端点同刀落地,整条绑 ops-admin → **0 孤码**。
   // (T2 的注释曾写"端点在 T4",与冻结稿 §13 不符,已随本刀订正。)
   'user.wecom.clear',
+  // 1 条 WECOM T6-1(2026-08-03;第二轮外部评审 SHOULD-FIX 3 收口):系统定向通知的企业微信 replay
+  // 运维入口 `POST admin/v1/notifications/:id/replay-wecom`。归**运维面**(沿 wecom-setting.* / user.wecom.clear
+  // 同族)⇒ 整条绑 ops-admin、**不**绑 biz-admin(故进 ALL/OPS_ADMIN seed 而非 BIZ_PERMISSION_SEED);
+  // 连码带端点同刀落地 → 0 孤码。
+  'notification.replay.wecom',
   // 3 条 REALNAME T1(realname-setting.reset.credentials 镜像 D2=A 不绑 ops-admin;招新评审稿 §3.4)
   'realname-setting.read.singleton',
   'realname-setting.update.singleton',
