@@ -9,8 +9,44 @@
 
 (P0-1 / P0-2 / P0-3 均已完成,见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
-### P1-27 v0.66.0 外部评审 NO-GO —— 7 BLOCKER 待修 · **禁止部署** 🔴
+### P1-27 v0.66.0 外部评审 NO-GO —— **7 BLOCKER + 2 SHOULD-FIX 全部已修并合入**(#897/#898);⏸ 剩「修复批次再投一轮评审」 🟡
 
+> **2026-08-03 交付状态**:第一刀 [#897](https://github.com/BA7IEE/srvf-nest-api/pull/897)(B1/B2/B3,第 70 migration)
+> + 第二刀 [#898](https://github.com/BA7IEE/srvf-nest-api/pull/898)(B4–B7 + SF1/SF2,零 schema)**均已合入 main**,
+> 顺序 #897 → #898(#898 的 B4 对齐的是 bind 锁序,而 bind 在 #897 写集内)。
+> 六/三条**全部有 red-first 成对证据**;既有 spec 零修改(两刀的测试文件全是新增)。
+> **唯一剩余卡点 = SOP §1.6 修复批次再投一轮外部评审**,通过前禁止部署、禁开两个开关。
+>
+> #### ⚠️ 一条必须让下轮评审复核的**反转结论**
+>
+> 评审给的「三事务死锁」**双方独立实测均复现不出来**。
+> 环依赖第 ④ 步「最终闸的 `settings FOR SHARE` 会排在 PATCH 的 `FOR UPDATE` 等待者身后」——
+> **PG 行锁没有这种 FIFO**:后到的 `FOR SHARE` 只与**持有者**比相容性,与既有 SHARE 持有者相容
+> 就立即获准,直接越过排队中的 `FOR UPDATE`。
+> - lane 用三条 psql 连接实测(PG 16);
+> - **主会话独立复跑**:A 持 `FOR SHARE` → B 要 `FOR UPDATE`(`pg_locks` 确认 1 条未授予、
+>   `transactionid/ShareLock`)→ C 后到要 `FOR SHARE` **0ms 拿到**。读数一致。
+>
+> ⇒ **锁序倒置属实且已修**(bind 是 `settings→User`,旧闸是 `User→settings`),
+> 但性质是**结构隐患**而非已兑现的死锁 —— 当前锁模式下没有第三方能让它兑现。
+> 该 PG 语义已做成**可执行护栏**(`notifications-wecom-lock-order-concurrency.e2e-spec.ts` 第三条):
+> 升级 PG、或把闸的 User 升成 `FOR UPDATE`、或把 bind 的 settings 改成 `FOR UPDATE`,它就会红 ——
+> **那正是这个环重新可兑现的时刻**。
+>
+> #### 取证方法论:三次「仪器撒谎且读数印证预期」(同一天,三个不同的人/环节)
+>
+> 1. lane 的 B3 计时探针把**自己的 authorize 往返**算进被测分支(实参在 `Date.now()` 之后求值),
+>    读数 A=27/B=94/C=85/D=100ms **与评审的「四条路径各自可分」严丝合缝** —— 差点直接写进报告。
+>    修正后真相是「A vs 其余」可分,B/C/D 彼此几乎分不开。
+> 2. lane 的 PG 探针写成 `SELECT 'literal' … FOR SHARE` —— **目标列表不含该表任何列时 `FOR SHARE` 静默不加锁**,
+>    读数完全反了。换 `SELECT id` + `pg_locks`/`lock_timeout` 正面确认才敢下结论。
+> 3. 主会话复跑时 `sed` 未给 `3s` 加引号 → psql 语法错误 → **错误文案里含 `lock_timeout`**
+>    → 检测器判成「被挡住,评审对」。**破绽是 `0ms`**(真被挡会等满 3 秒)。
+>
+> ⇒ **读数印证预期的那一刻,正是最该怀疑仪器的时刻。** 三次都是。
+>
+> #### 原始 findings(保留归档;逐条落点与修复方向见下)
+>
 > 范围 `b6a2f9d8..b97ef4a6`(19 个 PR);外部跨模型批次评审,2026-08-03 判 **NO-GO**。
 > 写集核对:19 个 PR **零越集**。身份占用并发、User 生命周期矩阵、P0-E refresh 联动 **通过**。
 > ⚠️ **评审未动态跑测试** —— 给的是确定性 barrier 调度与完整请求时序,自述"不表述成已跑红"。
