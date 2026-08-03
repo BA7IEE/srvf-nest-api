@@ -67,9 +67,22 @@
 >
 > ⇒ **锁序倒置属实且已修**(bind 是 `settings→User`,旧闸是 `User→settings`),
 > 但性质是**结构隐患**而非已兑现的死锁 —— 当前锁模式下没有第三方能让它兑现。
-> 该 PG 语义已做成**可执行护栏**(`notifications-wecom-lock-order-concurrency.e2e-spec.ts` 第三条):
-> 升级 PG、或把闸的 User 升成 `FOR UPDATE`、或把 bind 的 settings 改成 `FOR UPDATE`,它就会红 ——
-> **那正是这个环重新可兑现的时刻**。
+> 该 PG 语义已做成**可执行护栏**(`notifications-wecom-lock-order-concurrency.e2e-spec.ts` 第三条)。
+>
+> > ⚠️ **本段原写「升级 PG、或把闸的 User 升成 `FOR UPDATE`、或把 bind 的 settings 改成
+> > `FOR UPDATE`,它就会红 —— 那正是这个环重新可兑现的时刻」。第三刀(#901)实测证明这句话错两层**:
+> > 1. **那条护栏全程用自己手写的 SQL 造锁**,不经过最终闸也不经过 bind ——
+> >    **改应用代码不会让它红**。实测把闸的 settings 改成 `FOR UPDATE`,本文件 7 条**全绿**。
+> >    它红只意味着一件事:**PG 的行锁相容/排队语义变了**。
+> > 2. **「把闸的 User 升成 `FOR UPDATE`」本来就补不上那条边** —— 缺的边在 `settings` 上,
+> >    User 那半边早已冲突,升它改变不了 settings 两侧都是 `FOR SHARE` 这件事。
+> >    旧序下要兑现,得**任一侧**把 settings 升成 `FOR NO KEY UPDATE`/`FOR UPDATE`,
+> >    或新增一条「持 User 后申请 settings 写锁」的路径(与上表第 2 行同义)。
+> >
+> > **而修完之后**两条路径同为 `settings → User`,**顺序一致就没有反向边** ——
+> > 此时再怎么调锁模式也构不成环。**做功的是顺序,不是模式。**
+> > 会让它重新可兑现的只有「把 settings 挪回 User 之后」,守这条的是该 spec 的**主用例**,
+> > 不是那条 PG 矩阵护栏。判据与四格相容矩阵见 #901。
 >
 > #### 取证方法论:三次「仪器撒谎且读数印证预期」(同一天,三个不同的人/环节)
 >
