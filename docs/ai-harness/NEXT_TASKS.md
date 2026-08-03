@@ -184,6 +184,24 @@
 
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
+### P1-28 活动业务全流程改造 v1.1(批次 0–7) — **合同已入仓冻结;⏸ 第 1 批起须维护者逐批授权**
+
+- **合同**:[`archive/reviews/activity-business-overhaul-v1.1/`](../archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效
+  (业务方案 / 详细开发文档 / 355 项追踪矩阵 / 修订说明),SHA256 入仓时原位校验全过。
+  维护者 2026-08-03 下发,基线为 `0.66.0` 快照(`47c4987514fef3772efb95a78adcd73dbd81c89c`)。
+- **合同自述状态**:业务合同 GO;详细开发合同「**有条件 GO** —— 仓库预检 + 维护者授权后开工」。
+  12 项一级阻断的修正方案、约 30 张新表、AC-001..072 + ADV-001..023 已写死在合同里。
+- **第 0 批交付进度**:合同入仓 ✅(本条);AC/ADV 编号骨架 ⏸;
+  **10000 member lock 短事务可行性原型 ⏸ 未做** —— 合同 §14 明写「未通过前不定最终 schema 细节」,
+  故第 1 批 schema 不得先于该原型定稿。
+- **未解锁项(AI 不得自启动)**:第 1 批起每批新 schema / migration / Permission seed 均落
+  `current-state` §3「暂不启动清单」的评审解锁制,**合同 GO ≠ 该清单自动解锁**,逐批人话简报 + 拍板。
+- **已知行为契约冲突**(实施期逐条走 §4.1 简报,禁止在实施 PR 内顺手改断言):
+  删 `directPublish` 成功路径 · 普通签退 36 秒 → 30 分钟 · 终审从写 `approved` 改为提交
+  `LedgerPostingBatch` · 统计读面从实时 approved 改为 committed batch。
+- **排班约束**:schema-touching lane ≤1(合同 §14.1 与仓库 lane 协议一致);
+  第 1、2 批未完成前禁止把二维码 / 批量代签 / 离线入口开放到真实环境(修订说明 §10)。
+
 ### Content / Notification 可见性业务 Decision — **✅ 已最终拍板(2026-07-27)**
 - **业务负责人最终确认日期：2026-07-27**。
 - **Decision 15.1=B**：management 只认 SUPER_ADMIN 或明确持有对应 GLOBAL `content.read.record` / `notification.read.record` 的账号；Role.ADMIN 不自动放行。

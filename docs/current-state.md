@@ -47,6 +47,8 @@
 - **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 - **证书标准库(PR-1→PR-6 + 评审 findings F1–F6)**:类别/等级唯一权威=`CertificateStandard`(实例侧零副本);认定规则由录入时锁定的 `recognitionPolicyId` 记住、换版**不追溯**;招新申报一证一行,发号只搬 APPROVED 且不重判。**需求 = 冻结稿 + [`t0-amendments`](archive/reviews/certificate-standard-library-t0-amendments.md) 两份合起来**(冲突以后者为准);三份 runbook 见 `ops/certificate-*`
 
+- **活动业务改造 v1.1(2026-08-03 入仓冻结)**:合同=[`archive/reviews/activity-business-overhaul-v1.1/`](archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效;业务 GO / 开发**有条件 GO(逐批授权)**;**代码零改动**,批次 0–7 与已知行为契约冲突见 `NEXT_TASKS` P1-28
+
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)
 
 - 新 schema / migration / Permission seed / Role 扩展;**第 3 个及以后 cron**(终态恰 2);LLM / vector / Redis / queue / 多租户
