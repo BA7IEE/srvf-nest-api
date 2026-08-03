@@ -217,13 +217,39 @@ GROUP BY 1, 2 ORDER BY 1, 2;
 | `enqueued` | 已建新 attempt,worker 下一轮就会投递 | 观察 `notification_deliveries` |
 | `already-sent` | 这个人这条通知已经收到过 | 无需处理(**不重复打扰**是硬约束) |
 | `active-attempt-exists` | 还有一条 pending/processing 在跑 | 等它跑完再看 |
-| `not-replayable` | 通知不存在 / 已软删 / 非 published / 非系统定向 / 没勾 wecom 渠道 | 看 `reason` |
+| `not-replayable` | 见下表 `reason` | 按 `reason` 处置 |
+
+#### 本节标题那句限制**现在是代码判据**(2026-08-03 第二轮外部评审 SHOULD-FIX 3)
+
+在此之前,「仅限 `rate-limited` / `provider-contract-error`」只写在本文档里 ——
+代码只看通知**形态**(published / system / directed / 含 wecom / 未 SENT),
+不看上一次尝试怎么结束的。于是 `channel-disabled`、`recipient-unlicensed`、
+乃至**从未投递过**的通知都能建出新 child,而这三类重发一次也解决不了。
+
+现在默认只放行允许集两类,`not-replayable` 的 `reason` 相应多两种:
+
+| `reason` | 含义 | 运维动作 |
+|---|---|---|
+| `never-attempted` | 这条通知对这个人**从来没有过** wecom child | 这不是"没发成功",是**根本没建 attempt**:查通道开关、查该 User 在当前 CorpID 下有没有 active 身份。replay 是**重发**入口,不是补发入口 |
+| `last-attempt-not-replayable` | 上一次不是"等人工 replay"的那种终态 —— intent 没 dead 过,或最后那条 delivery 的 `reasonCode` 不在允许集内 | 先看 `notification_deliveries.reasonCode`:`channel-disabled` → 先开通道;`recipient-unlicensed` → 先买/分配接口许可。**问题没解决之前 replay 只会再失败一次** |
+| 其余 | 通知不存在 / 已软删 / 非 published / 非系统定向 / 没勾 wecom 渠道 | 看 `reason` |
+
+**确认要绕过允许集**时传第二个实参:
+
+```ts
+await outbox.replayDirectedWecomDelivery(notificationId, { overrideReason: true });
+```
+
+它**只**绕"上一次终态"这一条。已 SENT、在途 attempt、非系统定向三条护栏一概不绕。
+做成必须显式写出来的实参,是为了让"我知道我在绕过判据"成为一个动作,而不是默认行为。
 
 ⚠️ **本方法不判断官方拦截窗口有没有过去** —— 那只有人知道。45009 之后请先确认窗口结束再 replay,
 否则只会再撞一次并再 dead 一次。
 
 ⚠️ 它是**服务层入口,不是 HTTP 端点**(F2 是零新端点、零新权限码的一刀)。
-接一个运维可点的入口属于 T6 运维面,尚未落地 —— 目前需要由维护者在应用上下文中调用。
+**服务层原语与允许集判据已就位;运维可点的入口与 replay 审计归 T6 运维面,尚未落地**
+—— 目前需要由维护者在应用上下文中调用,`overrideReason` 的人工理由也还没有落库的地方
+(T6 接入口时一并补 Audit)。
 
 ---
 

@@ -3,6 +3,8 @@ import { Prisma, type Notification, type NotificationOutboxIntent } from '@prism
 
 import { PrismaService } from '../../database/prisma.service';
 import {
+  DELIVERY_REASON_PROVIDER_CONTRACT_ERROR,
+  DELIVERY_REASON_RATE_LIMITED,
   DELIVERY_STATUS_SENT,
   NOTIFICATION_AUDIENCE_BROADCAST,
   NOTIFICATION_AUDIENCE_DIRECTED,
@@ -49,8 +51,30 @@ export type WecomDirectedReplayResult =
         | 'notification-deleted'
         | 'notification-not-published'
         | 'not-system-directed'
-        | 'channel-not-declared';
+        | 'channel-not-declared'
+        /** 这条通知对这个人从来没有过 wecom child —— 没有"上一次"可以重发。 */
+        | 'never-attempted'
+        /**
+         * 上一次不是"等人工 replay"的那种终态(SHOULD-FIX 3)。
+         * 即:intent 没 dead 过,或最后那条 delivery 的 reason 不在
+         * {@link WECOM_REPLAYABLE_DELIVERY_REASONS} 内 —— 例如 `channel-disabled`
+         * (通道自己关着)、`recipient-unlicensed`(许可没买)。这两类重发解决不了。
+         * 运维确认过确实要绕过时传 `overrideReason: true`。
+         */
+        | 'last-attempt-not-replayable';
     };
+
+/**
+ * 允许自动放行 replay 的**上一次失败原因**闭集(runbook §6;第二轮外部评审 SHOULD-FIX 3)。
+ *
+ * 只有这两类是"重发真有可能成功"的:官方拦截窗口过去之后 45009 会恢复,
+ * 请求契约错修好之后 invalidparty/invalidtag 会消失。
+ * 其余原因(通道关着 / 许可没买 / 收件人不可达)重发一百次也是同一个结果。
+ */
+const WECOM_REPLAYABLE_DELIVERY_REASONS: ReadonlySet<string> = new Set<string>([
+  DELIVERY_REASON_RATE_LIMITED,
+  DELIVERY_REASON_PROVIDER_CONTRACT_ERROR,
+]);
 
 type OutboxClient = PrismaService | Prisma.TransactionClient;
 export type NotificationOutboxRecipientPermission = (
@@ -242,18 +266,29 @@ export class NotificationOutboxService {
    * 处置:建**新 child id + 新 eventKey**(追加 `:r{n}` replay nonce),旧的 dead 行
    * 原样保留(它是历史事实,不是垃圾)。
    *
-   * 三条护栏,一条都不能少:
+   * 四条护栏,一条都不能少:
    * - **已 SENT 者不被重复打扰**:跨 attempt 去重仍是 `notificationId + memberId + channel + SENT`
    *   这条永久事实,与 re-publish 用的是同一条(不是第二套口径)。
    * - **在途 attempt 优先**:仍走 `enqueueWecomDeliveryAttempt`,active-slot partial unique
    *   照旧是"同一通知同一人任一时刻只一条 active"的唯一真相 —— replay 不给它开后门。
    * - **只认系统定向**:admin 广播有自己的 replay 路径,不该有第二条;非 published / 已软删 /
    *   没勾 wecom 渠道的通知一律拒。
+   * - **只认"重发有可能成功"的上一次终态**(第二轮外部评审 SHOULD-FIX 3):默认只放行
+   *   {@link WECOM_REPLAYABLE_DELIVERY_REASONS};`channel-disabled` / `recipient-unlicensed` /
+   *   从未尝试过一律拒。在此之前 runbook §6 的这条限制**只写在文档里**,代码不认。
    *
    * ⚠️ 这是**给人用的入口**,不是自动重试:45009 的窗口有没有过去只有人知道
    * (见 `docs/ops/wecom-message-channel-rollout.md` §6.1)。本方法不判断窗口。
+   *
+   * @param options.overrideReason 显式绕过上一条允许集判据(默认 `false`)。
+   *        运维确认"我知道这类重发通常没用,但这次情况特殊"时才传 ——
+   *        做成必须写出来的实参,而不是默认行为。**其余护栏一概不绕**
+   *        (已 SENT / 在途 attempt / 非系统定向 依旧照拒)。
    */
-  async replayDirectedWecomDelivery(notificationId: string): Promise<WecomDirectedReplayResult> {
+  async replayDirectedWecomDelivery(
+    notificationId: string,
+    options: { overrideReason?: boolean } = {},
+  ): Promise<WecomDirectedReplayResult> {
     const notification = await this.prisma.notification.findUnique({
       where: { id: notificationId },
       select: {
@@ -297,15 +332,54 @@ export class NotificationOutboxService {
     });
     if (alreadySent) return { state: 'already-sent' };
 
-    // 下一个 replay 序号 = 既有 child 里最大的那个 + 1(基础键算 0)。
+    // ── 历史终态闸(第二轮外部评审 SHOULD-FIX 3)────────────────────────────
+    //
+    // 上面五条只看通知**本身**的形态,一条都没看"上一次尝试是怎么结束的"。
+    // 于是 runbook §6 写的「仅限 rate-limited / provider-contract-error」在代码里
+    // 没有执行位:`channel-disabled`、`recipient-unlicensed`、乃至**从未尝试过**的
+    // 通知都能建出新 child —— 而这三类重发一次也解决不了,只会把上游调用量和
+    // 噪音各放大一轮。文档写了限制、代码不认,等于没限制。
     const existing = await this.prisma.notificationOutboxIntent.findMany({
       where: {
         eventType: OUTBOX_EVENT_WECOM_DELIVERY,
         aggregateId: notificationId,
         destinationRef: memberId,
       },
-      select: { eventKey: true },
+      select: { eventKey: true, status: true },
     });
+
+    // 从来没有过 child ⇒ 没有"上一次"可以 replay。replay 是**重发**入口,
+    // 不是"补发"入口:该建 child 而没建(通道关着 / 没有 active identity)是
+    // 另一类问题,凭空建一条只会掩盖它。
+    if (existing.length === 0) {
+      return { state: 'not-replayable', reason: 'never-attempted' };
+    }
+
+    // 还有在途 attempt 时**不判** reason —— 那一条还没结束,"上一次终态"根本不存在。
+    // 这里只做跳过;`active-attempt-exists` 仍由下面 enqueue 撞 active-slot partial
+    // unique 来裁决(它才是并发下的唯一真相,这里再判一次只会是第二套口径)。
+    const hasActiveAttempt = existing.some(
+      (row) => row.status === OUTBOX_STATUS_PENDING || row.status === OUTBOX_STATUS_PROCESSING,
+    );
+    if (!hasActiveAttempt && options.overrideReason !== true) {
+      // 两条判据都要过:intent 得是 dead(**等人工 replay** 的那个终态 —— ack 掉的
+      // 说明链路已按设计走完),且最后那条 delivery 的 reason 在允许集内。
+      const lastTerminal = await this.prisma.notificationDelivery.findFirst({
+        where: { notificationId, memberId, channel: NOTIFICATION_CHANNEL_WECOM },
+        orderBy: { createdAt: 'desc' },
+        select: { reasonCode: true },
+      });
+      const deadOnce = existing.some((row) => row.status === OUTBOX_STATUS_DEAD);
+      const replayableReason =
+        lastTerminal !== null &&
+        lastTerminal.reasonCode !== null &&
+        WECOM_REPLAYABLE_DELIVERY_REASONS.has(lastTerminal.reasonCode);
+      if (!deadOnce || !replayableReason) {
+        return { state: 'not-replayable', reason: 'last-attempt-not-replayable' };
+      }
+    }
+
+    // 下一个 replay 序号 = 既有 child 里最大的那个 + 1(基础键算 0)。
     const nextNonce =
       existing.reduce((max, row) => {
         const nonce = readWecomDirectedReplayNonce(row.eventKey, notificationId, memberId);

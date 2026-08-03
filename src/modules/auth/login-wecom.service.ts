@@ -540,6 +540,25 @@ export class LoginWecomService {
           select: { id: true },
         });
 
+        // 6b) 身份代际 +1(第二轮外部评审 SHOULD-FIX 1)。
+        // `User.wecomIdentityVersion` 是第一刀 B2 为挡 step-up proof 的 ABA 回环加的
+        // **单调代际**,当时只接了 authed 换绑与撤销原语两处,**漏了 pre-auth 这条**——
+        // 而第 70 个 migration 的注释写的是"递增方:**两条**绑定事务 + 撤销原语"。
+        // 这里补的就是代码欠注释的那一条。
+        //
+        // ⚠️ 位置有讲究,三点缺一不可:
+        //   ① 在 identity 真正写完**之后** —— 上面的同目标 no-op 分支已经 return,
+        //      于是"身份没变也白白作废所有 proof"这件事写不出来;
+        //   ② 在撤 refresh 与 audit **之前**,且与它们同事务 —— 后腿失败必须连它一起回滚,
+        //      否则会留下"没有任何身份变化的幽灵代际";
+        //   ③ 走 3) 已经 `FOR UPDATE` 持住的**那把 User 锁**,不另开第二个 User 锁 ——
+        //      别在这里引入新的 `User → …` 边(§9.1 锁序 settings → User → identity)。
+        await tx.user.update({
+          where: { id: me.id },
+          data: { wecomIdentityVersion: { increment: 1 } },
+          select: { id: true },
+        });
+
         // 7) 消费 binding ticket —— 与写身份同生共死。
         // 分成两个事务的话,绑定回滚而票已烧 = 用户被卡在中间态。
         if (!(await this.attempts.consumeBindingTicket(tx, input.bindingTicket))) {

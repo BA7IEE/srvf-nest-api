@@ -5,6 +5,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { WECOM_LOGIN_NONCE_COOKIE } from '../../src/modules/auth/wecom-browser-nonce';
+import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -552,6 +553,100 @@ describe('企业微信 OAuth 登录 + 首次绑定全链(T3 e2e 组 A)', () => {
       const active = await prisma.wecomIdentity.findMany({ where: { status: 'active' } });
       expect(active).toHaveLength(1);
       expect(active[0].userId).toBe(uActiveId);
+    });
+  });
+
+  // ===== ④b 身份代际:pre-auth 绑定路径(第二轮外部评审 SHOULD-FIX 1)=====
+  //
+  // `User.wecomIdentityVersion` 是 P1-27 第一刀 B2 为挡 step-up proof 的 ABA 回环加的
+  // **单调身份代际**。当时只接了两个写入点:authed 换绑(`users/user-wecom-binding.service.ts`)
+  // 与撤销原语(`users/wecom-identity-revoke.ts`)。**pre-auth 绑定这条路径漏了** ——
+  // 而第 70 个 migration 的注释白纸黑字写着"递增方:**两条**绑定事务 + 撤销原语"。
+  // 注释描述的是三个写入点,代码只有两个:**修法是让代码追上注释,不是改注释。**
+  //
+  // ⚠️ 这里**不是**在测"接管能复现" —— pre-auth 每次真实变化都会改身份指纹,
+  // clear 又会递增,所以 ABA 那条洞在这条路径上并没有重新打开。
+  // 要钉的判据就是朴素的那一条:**版本号到底动没动。**
+  // (把它写成安全用例会绿得很漂亮,却什么都没测 —— 那正是本轮评审在纠的毛病。)
+  describe('身份代际:pre-auth bind/rebind 必须递增 wecomIdentityVersion', () => {
+    const versionOf = async (userId: string): Promise<number> =>
+      (
+        await prisma.user.findUniqueOrThrow({
+          where: { id: userId },
+          select: { wecomIdentityVersion: true },
+        })
+      ).wecomIdentityVersion;
+
+    it('首绑 +1', async () => {
+      const before = await versionOf(uActiveId);
+
+      const ticket = await ticketFor('wecom-code-A');
+      await sendCode(ticket, PHONE_ACTIVE);
+      expect((await bind(ticket, PHONE_ACTIVE, FIXED_SMS_CODE)).status).toBe(200);
+
+      expect(await versionOf(uActiveId)).toBe(before + 1);
+    });
+
+    it('换绑 +1', async () => {
+      const t1 = await ticketFor('wecom-code-A');
+      await sendCode(t1, PHONE_REBIND);
+      expect((await bind(t1, PHONE_REBIND, FIXED_SMS_CODE)).status).toBe(200);
+
+      // 首绑那一次的递增不计入本例判据 —— 这里量的是**换绑**这一步。
+      const afterFirstBind = await versionOf(uRebindId);
+
+      const t2 = await ticketFor('wecom-code-C');
+      await prisma.smsVerificationCode.deleteMany();
+      await sendCode(t2, PHONE_REBIND);
+      expect((await bind(t2, PHONE_REBIND, FIXED_SMS_CODE)).status).toBe(200);
+
+      expect(await versionOf(uRebindId)).toBe(afterFirstBind + 1);
+    });
+
+    it('同目标重复绑(no-op)+0 —— 身份没变,代际就不该动', async () => {
+      // no-op 分支只有在"票已签发、绑定却已完成"时才够得着:
+      // 连签两张票(此刻都还未绑),用掉第一张建身份,第二张打到同一个目标上。
+      // 这正是现实里的重复提交 —— 用户拿票走完流程理应得到会话,但身份没变。
+      const t1 = await ticketFor('wecom-code-A');
+      const t2 = await ticketFor('wecom-code-A');
+
+      await sendCode(t1, PHONE_ACTIVE);
+      expect((await bind(t1, PHONE_ACTIVE, FIXED_SMS_CODE)).status).toBe(200);
+      const afterRealBind = await versionOf(uActiveId);
+
+      await prisma.smsVerificationCode.deleteMany();
+      await sendCode(t2, PHONE_ACTIVE);
+      expect((await bind(t2, PHONE_ACTIVE, FIXED_SMS_CODE)).status).toBe(200);
+
+      // 身份行没有新增(仍是那一条 active),代际也必须原地不动。
+      expect(await prisma.wecomIdentity.count({ where: { userId: uActiveId } })).toBe(1);
+      expect(await versionOf(uActiveId)).toBe(afterRealBind);
+    });
+
+    it('事务后腿失败 ⇒ identity 与 version 一起回滚(递增必须在同一个事务里)', async () => {
+      // 让绑定事务的**最后一步**(写 wecom.bind.self audit)抛错。
+      // 递增若被写在事务外、或写在另一个事务里,identity 会回滚而 version 留下 ——
+      // 那就是一个"没有任何身份变化却把所有 proof 作废"的幽灵代际。
+      const audit = app.get(AuditLogsService);
+      const spy = jest
+        .spyOn(audit, 'log')
+        .mockImplementation(async (input: Parameters<AuditLogsService['log']>[0]) => {
+          if (input.event === 'wecom.bind.self') throw new Error('audit boom (injected)');
+          return undefined;
+        });
+      try {
+        const before = await versionOf(uActiveId);
+        const ticket = await ticketFor('wecom-code-A');
+        await sendCode(ticket, PHONE_ACTIVE);
+
+        expect((await bind(ticket, PHONE_ACTIVE, FIXED_SMS_CODE)).status).toBe(500);
+
+        // 两件事必须**同进同退**。
+        expect(await prisma.wecomIdentity.count({ where: { userId: uActiveId } })).toBe(0);
+        expect(await versionOf(uActiveId)).toBe(before);
+      } finally {
+        spy.mockRestore();
+      }
     });
   });
 

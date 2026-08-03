@@ -215,14 +215,39 @@ export class NotificationWecomDispatchService {
    * 都取 `FOR SHARE`,彼此不冲突;实测(PostgreSQL 16)一个新的 `FOR SHARE` 只与**持有者**
    * 比相容性,**不会**排在正在等待的 `FOR UPDATE` 身后,于是旧闸根本不阻塞,环闭不上。
    * 该语义由 `test/e2e/notifications-wecom-lock-order-concurrency.e2e-spec.ts` 的
-   * "PG 语义护栏"用例钉住 —— 哪天它红了,就是这条环重新变得可兑现的时刻。
+   * "PG 语义护栏"用例钉住。⚠️ 它钉的是**数据库语义**,不是应用代码:那条用例用自己
+   * 手写的 SQL 造锁,不经过本文件也不经过 bind —— **改应用代码不会让它红**
+   * (上一版注释说会,不对;本轮实测把闸的 settings 改成 `FOR UPDATE`,它照绿)。
+   * 它红只意味着一件事:PG 的行锁相容/排队语义变了。
    *
-   * 所以本刀修的**不是**一个已在生产触发的死锁,而是那个"只差一个第三方就会兑现"的倒置:
-   * 只要有人把闸的 User 升级成 `FOR UPDATE`、或让 bind 用 `FOR UPDATE` 读 settings、
-   * 或新增一个持 User 再等 settings 的写者,环立刻成立。现在全仓**共同实体的相对锁序
-   * 统一为 `settings → User → identity`**,与绑定路径逐字一致 —— 闸在等 settings 时手里
-   * 什么都没有,上面那类改动**再也构不成环**。这条性质由同一个 spec 的主用例直接断言
-   * (闸阻塞时绑定路径仍能拿到 `User FOR UPDATE`),旧锁序下它是红的。
+   * 所以本刀修的**不是**一个已在生产触发的死锁,而是那个"缺一条边就会兑现"的倒置。
+   *
+   * ⚠️ **在旧锁序下,缺的那条边在 `wecom_settings` 上,不在 `User` 上**(第二轮评审订正)。
+   * 上一版这里写的是"把闸的 User 升级成 `FOR UPDATE`,环立刻成立"——**不对**:
+   * User 那半边本来就已经冲突(bind 要 `FOR UPDATE`,旧闸持 `FOR SHARE`),闸再怎么升级
+   * 也改变不了 settings 两侧**都是 `FOR SHARE`** 这件事,旧闸依旧不阻塞,环依旧闭不上。
+   *
+   * 同库实测(PostgreSQL 16.13,单行 + `lock_timeout`;判据同时看**耗时**,秒回=没真被挡):
+   *
+   *   settings 持有者   后到者请求           结果
+   *   FOR SHARE         FOR SHARE            立即获准(81ms)   ⇒ 相容,补不上边
+   *   FOR SHARE         FOR NO KEY UPDATE    等满 2s 被挡      ⇒ 冲突,边成立
+   *   FOR SHARE         FOR UPDATE           等满 2s 被挡      ⇒ 冲突,边成立
+   *   FOR UPDATE        FOR SHARE            等满 2s 被挡      ⇒ 冲突,边成立
+   *
+   * ⇒ 当年那个倒置要兑现,需要的是:**任一侧**把 `wecom_settings` 升成写锁模式,
+   *   或新增一条**持 User 之后再申请 settings 写锁**的路径。
+   *   单纯升 User 的锁模式、或多一个只读 settings 的第三方,**都不够**。
+   *
+   * ⚠️ **以上全部是对"旧锁序"的分析,别拿来套现在的代码。** 现在两条路径都是
+   * `settings → User`,**顺序一致就没有反向边**,此时再怎么调锁模式也构不成环
+   * (实测:把本文件的 settings 改成 `FOR UPDATE`,整个并发 spec 仍全绿 —— 这是对的,
+   * 那个改动确实没有重新武装任何东西)。**做功的是顺序,不是模式。**
+   *
+   * ⇒ 真正会让它重新可兑现的改动只有一类:**把 settings 挪回 User 之后**(退回旧序)。
+   *   守这条的是同一个 spec 的**主用例**(闸阻塞在 settings 时,绑定路径仍能拿到
+   *   `User FOR UPDATE`)—— 闸在等 settings 时手里什么都没有,是它断言的那件事。
+   *   ⚠️ "旧锁序下主用例是红的"这句来自 #898 的 red-first 记录,**本轮未重新验证**。
    *
    * Notification / intent / Member 不在绑定路径上,不参与这个环。
    *

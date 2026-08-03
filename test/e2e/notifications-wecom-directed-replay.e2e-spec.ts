@@ -2,7 +2,10 @@ import type { INestApplication } from '@nestjs/common';
 
 import { PrismaService } from '../../src/database/prisma.service';
 import {
+  DELIVERY_REASON_CHANNEL_DISABLED,
+  DELIVERY_REASON_PROVIDER_CONTRACT_ERROR,
   DELIVERY_REASON_RATE_LIMITED,
+  DELIVERY_REASON_RECIPIENT_UNLICENSED,
   DELIVERY_STATUS_FAILED,
   DELIVERY_STATUS_SENT,
   NOTIFICATION_CHANNEL_IN_APP,
@@ -41,6 +44,9 @@ const WEB_BASE_URL = 'https://srvf-f2-replay.example.org';
 // DEV_STUB 按 toUser 前缀注入故障:这个 id 会让 message/send 返 45009 ⇒ 终态 dead。
 const RATE_LIMITED_USER_ID = 'wecomerr-ratelimit-directed-0001';
 const HEALTHY_USER_ID = 'wecom-user-directed-healthy';
+// SHOULD-FIX 3 用:另外两种终态形状(一种在允许集内、一种在允许集外)。
+const PROVIDER_CONTRACT_USER_ID = 'wecomerr-party-directed-0001';
+const UNLICENSED_USER_ID = 'wecomerr-unlicensed-directed-0001';
 
 describe('F2 / SF2 —— 系统定向通知的 replay 路径', () => {
   let app: INestApplication;
@@ -252,5 +258,122 @@ describe('F2 / SF2 —— 系统定向通知的 replay 路径', () => {
     });
     const replay = await outbox.replayDirectedWecomDelivery(notificationId);
     expect(replay.state).toBe('not-replayable');
+  });
+
+  // ==========================================================================
+  // 第二轮外部评审 SHOULD-FIX 3 —— **历史终态**也必须是判据
+  // ==========================================================================
+  //
+  // 上一版只检查通知**本身**的形态(published / system / directed / 含 wecom / 未 SENT),
+  // 完全不看"上一次尝试到底怎么结束的"。于是 runbook §6 写的
+  // 「仅限 `rate-limited` / `provider-contract-error`」在代码里**没有执行位**:
+  //   · `channel-disabled`(运维自己把通道关了)   → 重建 child,再走一遍再 skipped;
+  //   · `recipient-unlicensed`(企业没买接口许可) → 重建 child,许可没买回来之前必然再失败;
+  //   · **从未尝试过**的通知(压根没有 wecom child)→ 也能凭空建出一条 child。
+  // 三类都是"重发解决不了的问题",replay 只会把噪音和上游调用量放大一轮。
+  //
+  // 修法:默认只放行允许集两类;越界要运维**显式**传 `overrideReason` ——
+  // 把"我知道我在绕过判据"变成一个必须写出来的动作,而不是默认行为。
+  const rejectionReason = (
+    replay: Awaited<ReturnType<typeof outbox.replayDirectedWecomDelivery>>,
+  ) => (replay.state === 'not-replayable' ? replay.reason : null);
+
+  /** 让 child 建出来之后再关通道 —— 关在 root 之前的话根本不会有 child。 */
+  async function deadEndByChannelDisabled(): Promise<string> {
+    const notificationId = await enqueueDirected();
+    await worker().drainEventKey(`f2-directed:${memberId}`);
+    await prisma.wecomSettings.updateMany({ data: { messageEnabled: false } });
+    await drainAll();
+    return notificationId;
+  }
+
+  it('拒绝 ①:上一次是 channel-disabled ⇒ 重发解决不了,不建新 child', async () => {
+    const notificationId = await deadEndByChannelDisabled();
+    const [delivery] = await wecomDeliveries();
+    expect(delivery.reasonCode).toBe(DELIVERY_REASON_CHANNEL_DISABLED);
+    const before = (await wecomChildren()).length;
+
+    const replay = await outbox.replayDirectedWecomDelivery(notificationId);
+    expect(replay.state).toBe('not-replayable');
+    expect(rejectionReason(replay)).toBe('last-attempt-not-replayable');
+    expect(await wecomChildren()).toHaveLength(before);
+  });
+
+  it('拒绝 ②:上一次是 recipient-unlicensed ⇒ 许可没买回来之前必然再失败', async () => {
+    await prisma.wecomIdentity.updateMany({
+      where: { userId },
+      data: { wecomUserId: UNLICENSED_USER_ID },
+    });
+    const notificationId = await enqueueDirected();
+    await drainAll();
+    const [delivery] = await wecomDeliveries();
+    expect(delivery.reasonCode).toBe(DELIVERY_REASON_RECIPIENT_UNLICENSED);
+    const before = (await wecomChildren()).length;
+
+    const replay = await outbox.replayDirectedWecomDelivery(notificationId);
+    expect(replay.state).toBe('not-replayable');
+    expect(rejectionReason(replay)).toBe('last-attempt-not-replayable');
+    expect(await wecomChildren()).toHaveLength(before);
+  });
+
+  it('拒绝 ③:从未尝试过的通知 ⇒ replay 不是"补发"入口,不凭空建 child', async () => {
+    // 形态上完全合格(published / system / directed / 含 wecom / 未 SENT),
+    // 但它从来没有过 wecom child —— 没有"上一次"可以 replay。
+    const notification = await prisma.notification.create({
+      data: {
+        title: 'F2 从未投递过的定向通知',
+        body: '这条通知没有任何 wecom child。',
+        notificationTypeCode: TYPE_CODE,
+        statusCode: 'published',
+        visibilityCode: 'member',
+        audienceType: 'directed',
+        sourceType: 'system',
+        channels: [NOTIFICATION_CHANNEL_IN_APP, NOTIFICATION_CHANNEL_WECOM],
+        recipientMemberId: memberId,
+        publishedAt: new Date(),
+      },
+      select: { id: true },
+    });
+    expect(await wecomChildren()).toHaveLength(0);
+
+    const replay = await outbox.replayDirectedWecomDelivery(notification.id);
+    expect(replay.state).toBe('not-replayable');
+    expect(rejectionReason(replay)).toBe('never-attempted');
+    expect(await wecomChildren()).toHaveLength(0);
+  });
+
+  it('overrideReason:运维显式绕过允许集 ⇒ 放行', async () => {
+    const notificationId = await deadEndByChannelDisabled();
+    expect((await outbox.replayDirectedWecomDelivery(notificationId)).state).toBe('not-replayable');
+
+    // 通道重新打开、运维明确知道自己在做什么 ⇒ 显式绕过。
+    await prisma.wecomSettings.updateMany({ data: { messageEnabled: true } });
+    const replay = await outbox.replayDirectedWecomDelivery(notificationId, {
+      overrideReason: true,
+    });
+    expect(replay.state).toBe('enqueued');
+    expect(await wecomChildren()).toHaveLength(2);
+  });
+
+  it('允许集 ①:rate-limited 照常放行', async () => {
+    const notificationId = await enqueueDirected();
+    await drainAll();
+    expect((await wecomDeliveries())[0].reasonCode).toBe(DELIVERY_REASON_RATE_LIMITED);
+
+    await clearRateLimitInjection();
+    expect((await outbox.replayDirectedWecomDelivery(notificationId)).state).toBe('enqueued');
+  });
+
+  it('允许集 ②:provider-contract-error 照常放行', async () => {
+    await prisma.wecomIdentity.updateMany({
+      where: { userId },
+      data: { wecomUserId: PROVIDER_CONTRACT_USER_ID },
+    });
+    const notificationId = await enqueueDirected();
+    await drainAll();
+    expect((await wecomChildren())[0].status).toBe(OUTBOX_STATUS_DEAD);
+    expect((await wecomDeliveries())[0].reasonCode).toBe(DELIVERY_REASON_PROVIDER_CONTRACT_ERROR);
+
+    expect((await outbox.replayDirectedWecomDelivery(notificationId)).state).toBe('enqueued');
   });
 });
