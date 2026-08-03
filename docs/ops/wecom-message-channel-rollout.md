@@ -158,21 +158,72 @@ GROUP BY 1, 2 ORDER BY 1, 2;
 | reasonCode | 含义 | 处置 |
 |---|---|---|
 | `no-wecom-identity` | 建 child 之后身份被撤销/换绑 | 正常,无需处理 |
-| `channel-disabled` | 投递前开关被关 / webBaseUrl 不可用 | 检查是不是误关;**不会**等开关恢复后补发 |
-| `token-failed` | 取 token 失败或通道不可用 | 暂态,自动退避重试;持续出现查凭证与出口 IP |
+| `channel-disabled` | 投递前开关被关 / webBaseUrl 不可用 / **凭证不可用** | 检查是不是误关或没配全;**不会**等开关恢复后补发 |
+| `token-failed` | access_token 失效(40014/42001),强刷后仍失败 | 暂态,自动退避重试;持续出现查凭证与出口 IP |
 | `rate-limited` | 45009 | **intent 已 dead**,等官方拦截窗口结束后人工 replay(§6) |
-| `provider-contract-error` | 单 touser 却收到 invalidparty/invalidtag | **intent 已 dead**,这是 bug 信号,上报 |
-| `api-failed` | 其余上游失败 | 看 `errCode` 列 |
+| `provider-contract-error` | 单 touser 却收到 invalidparty/invalidtag,**或** HTTP 4xx | **intent 已 dead**,这是 bug 信号,上报 |
+| `api-failed` | 其余上游失败(配置错 / 畸形回执 / 网络 / 超时 / 5xx / 系统繁忙) | 看 `errCode` 列 |
+
+### 5.1 什么会自动退避、什么不会(2026-08-03 外部评审 F2 收紧)
+
+判据是 Provider 给出的**错误类型**(`kind`),不是错误码字符串。**只有这五类退避**:
+
+| 类型 | 典型来源 | 处置 |
+|---|---|---|
+| `network` / `timeout` | 连不上 / 8s 超时 | 退避重试,8 次后 dead |
+| `http-5xx` | 上游 5xx | 同上 |
+| `system-busy` | `errcode=-1` | 同上(上游自己说的"稍后再试") |
+| `token-invalid` | 40014 / 42001,强刷一次后仍失败 | 同上 |
+
+其余一律**不退避**:`rate-limited`(45009)、`provider-contract` / `http-4xx` → 终态 **dead**
+等人工 replay;`config-fatal`(40001 Secret 错、40013 CorpID 错、60020 IP 不在白名单…)、
+`invalid-response`(回执读不懂)、`upstream-rejected` → 终态**已记账**,intent 算完成。
+
+⚠️ **行为变更**:F2 之前,gettoken 阶段的 45009 / HTTP 4xx / 40001 都会被压成"取 token 失败"
+而白白退避 8 次。现在它们各归各类 —— 45009 立刻 dead(不再延长官方拦截窗口),
+配置错立刻见分晓(不再让运维等 8 轮退避才看到真相)。
+
+⚠️ **物理发送次数**:每个 Outbox attempt 内 `message/send` 最多打上游 **2 次**
+(首发 + 强刷 token 后重试一次),Provider 自己**不再**做传输层重试。
 
 ---
 
 ## 6. 人工 replay(仅 `rate-limited` / `provider-contract-error`)
 
-这两类 intent 是 **dead** 终态,**不会**自动重试。replay 的正确做法**不是**手改 intent 状态,
-而是:确认官方拦截窗口已结束 → 对该通知执行 unpublish + publish(产生新 generation)→
+这两类 intent 是 **dead** 终态,**不会**自动重试。replay 的正确做法**不是**手改 intent 状态。
+**两条链路的做法不同,别用错**:
+
+### 6.1 admin 广播通知
+
+确认官方拦截窗口已结束 → 对该通知执行 unpublish + publish(产生新 generation)→
 新 root 会为**尚未 SENT** 的人重新建 child。
 
 已 SENT 的人不会被重复打扰:`NotificationDelivery` 的 SENT 是**跨 generation 的永久去重事实**。
+
+### 6.2 系统定向通知(2026-08-03 外部评审 F2 / SF2 补齐)
+
+系统定向通知(报名审批、考勤退回、发号入队这类)**没有 publish 状态机**,
+也就没有 generation 可以推进 —— 它的 child eventKey 是确定性的
+`wecom-delivery:{notificationId}:{memberId}`,dead 之后再 enqueue 只会命中那条 dead 行。
+**F2 之前这意味着:那条通知对那个人永远不会再发,而现场看起来一切正常。**
+
+现在的入口是 `NotificationOutboxService.replayDirectedWecomDelivery(notificationId)`:
+它建**新 child id + 新 eventKey**(追加 `:r{n}` replay nonce),旧的 dead 行原样保留。
+
+四种结局:
+
+| 返回 | 含义 | 运维动作 |
+|---|---|---|
+| `enqueued` | 已建新 attempt,worker 下一轮就会投递 | 观察 `notification_deliveries` |
+| `already-sent` | 这个人这条通知已经收到过 | 无需处理(**不重复打扰**是硬约束) |
+| `active-attempt-exists` | 还有一条 pending/processing 在跑 | 等它跑完再看 |
+| `not-replayable` | 通知不存在 / 已软删 / 非 published / 非系统定向 / 没勾 wecom 渠道 | 看 `reason` |
+
+⚠️ **本方法不判断官方拦截窗口有没有过去** —— 那只有人知道。45009 之后请先确认窗口结束再 replay,
+否则只会再撞一次并再 dead 一次。
+
+⚠️ 它是**服务层入口,不是 HTTP 端点**(F2 是零新端点、零新权限码的一刀)。
+接一个运维可点的入口属于 T6 运维面,尚未落地 —— 目前需要由维护者在应用上下文中调用。
 
 ---
 

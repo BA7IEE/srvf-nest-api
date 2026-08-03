@@ -52,6 +52,82 @@ export const WECOM_SYSTEM_BUSY_MAX_ATTEMPTS = 3;
 // intent 终态 dead/rate-limited,由运维在窗口结束后显式 replay。
 export const WECOM_ERRCODE_RATE_LIMITED = 45009;
 
+// ===== 类型化错误分类(外部评审 F2 / B7,2026-08-03)=====
+//
+// **为什么必须存在**:第一版把 Provider 的失败压成一个 `errCode: string`,调用方再靠
+// 字符串嗅探(`errCode === 'FETCH_ERROR' || …`)决定退避与否。两处当场失真:
+//   - `throwByErrcode(45009)` 抛的 errCode 是归一化标签 `'RATE_LIMITED'`,
+//     而 Outbox 侧用 `Number(errCode)` 比对 45009 —— `NaN`,**限流被读成"其它上游失败"**;
+//   - HTTP 4xx 与 5xx 共用同一个 `'HTTP_ERROR'` 标签 —— 确定性错误被当成暂态,退避 8 次才 dead。
+//
+// 现在 **errCode 与 kind 分成两根轴**,各自只回答一件事:
+//   - `errCode` = **上游说了什么**(原始 errcode 数字,或网络/协议层的归一化标签)。
+//     它进 `NotificationDelivery.errCode` 与安全日志,是诊断用的事实。
+//   - `kind`    = **这意味着什么**(下面这个闭集)。它是**唯一**的重试 / 终态判据。
+//
+// ⚠️ 判据只认 `kind`。任何"再按 errCode 字符串补一刀"的写法都是把擦除重新引回来 ——
+// 分类必须只发生一次,就在 Provider 里,靠近它唯一知道真相的地方。
+export const WECOM_ERROR_KIND = {
+  /** 45009 官方限流。窗口内重试**只会延长拦截** ⇒ 终态 dead,等人工 replay。 */
+  RATE_LIMITED: 'rate-limited',
+  /** 确定性配置 / 权限错(见 WECOM_ERRCODE_CONFIG_FATAL)。重试解决不了"Secret 错了"。 */
+  CONFIG_FATAL: 'config-fatal',
+  /** HTTP 4xx —— 确定性请求错,重试无意义(与 5xx **必须**分开)。 */
+  HTTP_4XX: 'http-4xx',
+  /** HTTP 5xx —— 上游侧暂态,可退避。 */
+  HTTP_5XX: 'http-5xx',
+  /** 连接失败 / DNS / 对端断开等网络错,可退避。 */
+  NETWORK: 'network',
+  /** 请求超时,可退避(与 network 同退避语义,但诊断信号不同,不合并)。 */
+  TIMEOUT: 'timeout',
+  /** 回执缺协议字段 / 类型不符 / 非 JSON —— 读不懂就不下结论,不退避。 */
+  INVALID_RESPONSE: 'invalid-response',
+  /** 40014 / 42001 access_token 失效 —— 允许强刷一次后重试一次。 */
+  TOKEN_INVALID: 'token-invalid',
+  /** 通道不可用(未配置 / 总闸关 / 凭证缺失或无效 / production-like 下 DEV_STUB)。 */
+  CHANNEL_DISABLED: 'channel-disabled',
+  /** -1 系统繁忙 —— 上游自己说的"稍后再试",与 5xx 同类,可退避。 */
+  SYSTEM_BUSY: 'system-busy',
+  /** 其余非 0 errcode:上游明确拒绝了这次调用,但不属于上面任何一类。不退避。 */
+  UPSTREAM_REJECTED: 'upstream-rejected',
+  /**
+   * 请求契约错:单 touser 请求却收到 `invalidparty` / `invalidtag`(§10.7 第 5 条)。
+   * 发出去的请求根本不是我们以为的那个 —— 重发同一个坏请求一万次也还是坏的。
+   * 与 `http-4xx` 处置相同(终态 dead 等人接手),但诊断信号完全不同,不合并。
+   */
+  PROVIDER_CONTRACT: 'provider-contract',
+} as const;
+export type WecomErrorKind = (typeof WECOM_ERROR_KIND)[keyof typeof WECOM_ERROR_KIND];
+
+/**
+ * errcode → kind(**唯一**分类点;规则 4-8 的执行位)。
+ *
+ * `40029/42003/42022` 这组 OAuth 身份类失败不经过这里 —— 它们在 `exchangeOAuthCode`
+ * 内部先被拦成 `WecomOAuthInvalidError`(§11.2 归 36010,防账号存在性侧写)。
+ */
+export function classifyWecomErrcode(errcode: number): WecomErrorKind {
+  if (errcode === WECOM_ERRCODE_RATE_LIMITED) return WECOM_ERROR_KIND.RATE_LIMITED;
+  if (errcode === WECOM_ERRCODE_SYSTEM_BUSY) return WECOM_ERROR_KIND.SYSTEM_BUSY;
+  if (WECOM_ERRCODE_TOKEN_INVALID.includes(errcode)) return WECOM_ERROR_KIND.TOKEN_INVALID;
+  if (WECOM_ERRCODE_CONFIG_FATAL.includes(errcode)) return WECOM_ERROR_KIND.CONFIG_FATAL;
+  return WECOM_ERROR_KIND.UPSTREAM_REJECTED;
+}
+
+// ===== 物理尝试预算(外部评审 F2 / B6)=====
+//
+// `message/send` 的传输层**不自己重试**:退避与放弃归 Outbox 一家。
+//
+// 修复前预算不贯通:Provider 内部对 5xx / -1 / 网络错重试 3 次,`deliverWecom` 因
+// token-invalid 再走一遍完整 `send()`,Outbox 再退避 8 次 ⇒ 一条通知最多 **48 次**
+// 物理 message/send。企业微信侧 1800s 重复检查是第二层保险,不是打点许可证。
+//
+// 现在:每个 Outbox attempt 内 message/send 物理次数 ≤ 2(首发 + 强刷 token 后重试一次),
+// 全局上限 = 8 个 attempt × 2 = 16,且每一次都紧前过 fence。
+//
+// ⚠️ gettoken / agent/get / auth/getuserinfo **不在此列**,仍用 WECOM_SYSTEM_BUSY_MAX_ATTEMPTS:
+// 它们不产生用户可见 Effect,且登录链路没有 Outbox 兜底 —— 一起砍掉等于改 T3 的行为。
+export const WECOM_MESSAGE_SEND_MAX_ATTEMPTS = 1;
+
 // ===== access token 缓存(冻结稿 §7.1 规则 9-11)=====
 // 有效期以上游返回的 `expires_in` 为准;这里只是提前刷新的安全缓冲。
 // 缓存键 = corpId + agentId + configurationGeneration ⇒ 配置一变,新 generation 不命中旧 token(规则 11)。

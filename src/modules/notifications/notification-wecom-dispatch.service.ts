@@ -4,7 +4,11 @@ import { MemberStatus, type Notification, Prisma, UserStatus } from '@prisma/cli
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { RbacService } from '../permissions/rbac.service';
-import { WecomSettingsService } from '../wecom/wecom-settings.service';
+import {
+  computeWecomConfigurationGeneration,
+  WecomSettingsService,
+  type WecomConfigurationGenerationInput,
+} from '../wecom/wecom-settings.service';
 import { WECOM_IDENTITY_STATUS } from '../wecom/wecom.types';
 // 受众资格判定(渠道无关)与 Provider 前最终闸的唯一真相 —— T5A / D-WC-19。
 // ⚠️ 本文件**禁止**直接 import `content.visibility` 的任何原语:第五条 eslint 自定义规则
@@ -38,7 +42,7 @@ export interface WecomBroadcastAudience {
   memberIds: string[];
 }
 
-// Provider 前最终闸的四种结局(§10.4 步骤 9 逐条)。
+// Provider 前最终闸的五种结局(§10.4 步骤 9 逐条 + 外部评审 F2 / B5 的代际校验)。
 // 用判别联合而不是 `null` + 布尔标志:调用方必须显式处理每一种,漏一种是编译错误。
 export type WecomRecipientAuthorization =
   // 放行:wecomUserId 是**事务内快照**,Provider 在事务外只消费它,不得回读 destination。
@@ -47,6 +51,10 @@ export type WecomRecipientAuthorization =
   | { outcome: 'channel-disabled' }
   // 身份在 child 创建后被撤销 / 换绑到别的 CorpID → 终态 skipped/no-wecom-identity。
   | { outcome: 'no-identity' }
+  // 配置在"取到 Provider 快照"与"最终闸提交"之间变了(换 CorpID / 换 Secret / 改 agentId…)。
+  // **不是**终态:这一代不发,下一次 attempt 用新一代重新走完整判定即可自然收敛
+  //(新 CorpID 下没有身份 ⇒ 那次会终态 skipped/no-wecom-identity,由那条分支负责)。
+  | { outcome: 'config-changed' }
   // 资格失效(退队 / 停用 / 撤权 / 通知被撤回或软删)→ effectPerformed=false,**不落 delivery**。
   | { outcome: 'ineligible' };
 
@@ -188,43 +196,88 @@ export class NotificationWecomDispatchService {
    * Provider 前最终闸(§10.4「Provider前最终闸」九步)。**必须在调用方已持有
    * Notification parent 与 outbox intent 锁的同一事务内调用**,故完整锁序为:
    *
-   *   Notification(FOR SHARE) → outbox intent(FOR UPDATE) → Member → shared org topology
+   *   Notification(FOR SHARE) → outbox intent(FOR UPDATE)
+   *   → **wecom_settings(FOR SHARE)**
+   *   → Member(FOR UPDATE) → shared org topology(advisory shared)
    *   → User(FOR SHARE) → RoleBinding/Role/Permission/RolePermission(FOR SHARE)
-   *   → **wecom_identities(FOR SHARE)** → **wecom_settings(FOR SHARE)**
+   *   → **wecom_identities(FOR SHARE)**
    *
-   * 前六段逐字复用 T5A 的 `authorizeRecipientForEffect`(不抄第二份);本方法只追加
-   * 企业微信自己的两段。两段都放在**最后**是刻意的:
-   * - `wecom_settings` 的写路径(PATCH)只锁自己那一行、不持有任何本链上的锁,
-   *   所以无论谁先拿到都不可能成环 —— 追加在尾部不引入新的死锁边。
-   * - 放在尾部也让既有锁序前缀**逐字不变**,微信小程序与短信的既有 barrier 断言不受影响。
+   * ⚠️ **`wecom_settings` 必须在 `User` 之前**(外部评审 F2 / B4)。上一版把它追加在尾部,
+   * 理由写的是"settings 的写路径只锁自己那一行、不持有任何本链上的锁,不可能成环"——
+   * 那次枚举**漏了绑定路径**:`users/user-wecom-binding.service.ts` 与
+   * `auth/login-wecom.service.ts` 的换绑事务是 `settings(FOR SHARE) → User(FOR UPDATE)`,
+   * 它同时持有两把锁。旧闸是 `User → settings`,与之**正好相反**:
+   *
+   *   最终闸(旧)  持 User(FOR SHARE) ── 想要 wecom_settings
+   *   绑定事务      持 wecom_settings(FOR SHARE) ── 想要 User(FOR UPDATE)
+   *
+   * ⚠️ **如实记录**:这个倒置在**当前锁模式组合下还兑现不成死锁** —— 两边对 settings
+   * 都取 `FOR SHARE`,彼此不冲突;实测(PostgreSQL 16)一个新的 `FOR SHARE` 只与**持有者**
+   * 比相容性,**不会**排在正在等待的 `FOR UPDATE` 身后,于是旧闸根本不阻塞,环闭不上。
+   * 该语义由 `test/e2e/notifications-wecom-lock-order-concurrency.e2e-spec.ts` 的
+   * "PG 语义护栏"用例钉住 —— 哪天它红了,就是这条环重新变得可兑现的时刻。
+   *
+   * 所以本刀修的**不是**一个已在生产触发的死锁,而是那个"只差一个第三方就会兑现"的倒置:
+   * 只要有人把闸的 User 升级成 `FOR UPDATE`、或让 bind 用 `FOR UPDATE` 读 settings、
+   * 或新增一个持 User 再等 settings 的写者,环立刻成立。现在全仓**共同实体的相对锁序
+   * 统一为 `settings → User → identity`**,与绑定路径逐字一致 —— 闸在等 settings 时手里
+   * 什么都没有,上面那类改动**再也构不成环**。这条性质由同一个 spec 的主用例直接断言
+   * (闸阻塞时绑定路径仍能拿到 `User FOR UPDATE`),旧锁序下它是红的。
+   *
+   * Notification / intent / Member 不在绑定路径上,不参与这个环。
+   *
+   * **锁与判据分离**:settings 在最前面**取锁并读值**,但"通道开着吗"的**判定**仍排在
+   * T5A 资格判定之后 —— 资格失效(退队/停用/撤权)必须继续赢过 channel-disabled,
+   * 否则那些人会平白多出一条 `skipped/channel-disabled` 的 delivery 行。
    *
    * 返回的 `wecomUserId` 是**锁内快照**;Provider 在事务外只消费这一份,不得回读 destination。
+   *
+   * @param expected 本次投递**开工时**取到的配置快照(`WecomService.resolveMessageContext`)。
+   *                 `null` = 那一刻通道闸就是关的。非 null 时,锁后 settings 的
+   *                 `corpId` 与 `configurationGeneration` 必须与之**逐字相同**(B5)。
    */
   async authorizeDurableRecipient(
     tx: Prisma.TransactionClient,
     notification: Notification,
     memberId: string,
+    expected: { corpId: string; configurationGeneration: string } | null,
     now: Date = new Date(),
   ): Promise<WecomRecipientAuthorization> {
+    // 步骤 1(B4):settings FOR SHARE —— **锁必须先于 User**。这里只取锁与读值,不下结论。
+    const settings = await this.readLockedSettings(tx);
+
     // 步骤 2-6:Member / 组织 topology / live User / management RBAC / 共享可见性规则。
     const authorized = await authorizeRecipientForEffect(tx, notification, memberId, now);
     if (!authorized) return { outcome: 'ineligible' };
 
-    // 步骤 7:锁当前 CorpID 下 active WecomIdentity。
-    // 先读 settings 拿 corpId —— 但**判据**用的是下面锁后重读的那一份,不是这一份。
-    const settings = await this.readLockedSettings(tx);
+    // 步骤 7a:通道开关的锁后判据(D-WC-24 两层判据的后一层)。
     if (settings === null || !settings.enabled || !settings.messageEnabled) {
       return { outcome: 'channel-disabled' };
     }
     if (settings.corpId === null || settings.corpId === '') {
       return { outcome: 'channel-disabled' };
     }
+    if (expected === null) return { outcome: 'channel-disabled' };
 
+    // 步骤 7b(B5):**同代**校验。generation 覆盖 10 个 effect 字段(含 corpSecret 密文),
+    // 单独再比一次 corpId 是刻意的冗余 —— corpId 是身份键的一半,值得一条自己的判据,
+    // 而不是隐没在一个 hash 里(读代码的人要能一眼看见"CorpID 必须没变")。
+    if (
+      settings.corpId !== expected.corpId ||
+      settings.configurationGeneration !== expected.configurationGeneration
+    ) {
+      return { outcome: 'config-changed' };
+    }
+
+    // 步骤 7c:锁当前 CorpID 下 active WecomIdentity。
+    // ⚠️ 用 `expected.corpId` 而不是 `settings.corpId`:两者此刻已被上一步证明相等,
+    // 写成 expected 是让"identity 与 Provider 用的是同一个 CorpID"在代码里直接可读 ——
+    // 这正是 B5 要钉的那件事,不该靠读者自己回溯三行去推。
     const [identity] = await tx.$queryRaw<Array<{ wecomUserId: string }>>(Prisma.sql`
         SELECT "wecomUserId"
         FROM "wecom_identities"
         WHERE "userId" = ${authorized.user.id}
-          AND "corpId" = ${settings.corpId}
+          AND "corpId" = ${expected.corpId}
           AND "status" = ${WECOM_IDENTITY_STATUS.ACTIVE}
         ORDER BY "id"
         FOR SHARE
@@ -260,21 +313,36 @@ export class NotificationWecomDispatchService {
     messageEnabled: boolean;
     corpId: string | null;
     webBaseUrl: string | null;
+    configurationGeneration: string;
   } | null> {
+    // ⚠️ 这里 select 的列 = `computeWecomConfigurationGeneration` 的**全部** 10 个入参。
+    // 少一列就算不出同一个 hash,代际校验会永远不一致(全链退化成"一条都发不出去");
+    // 多算一列则会把无关变更(如 remarks)读成"换代"。字段集只有一处定义,靠类型钉住。
     const [row] = await tx.$queryRaw<
-      Array<{
-        enabled: boolean;
-        messageEnabled: boolean;
-        corpId: string | null;
-        webBaseUrl: string | null;
-      }>
+      Array<
+        WecomConfigurationGenerationInput & {
+          enabled: boolean;
+          messageEnabled: boolean;
+          corpId: string | null;
+          webBaseUrl: string | null;
+        }
+      >
     >(Prisma.sql`
-        SELECT "enabled", "messageEnabled", "corpId", "webBaseUrl"
+        SELECT
+          "id", "providerType", "enabled", "loginEnabled", "messageEnabled",
+          "corpId", "agentId", "webBaseUrl", "credentialConfigured", "corpSecretEncrypted"
         FROM "wecom_settings"
         ORDER BY "id"
         FOR SHARE
       `);
-    return row ?? null;
+    if (!row) return null;
+    return {
+      enabled: row.enabled,
+      messageEnabled: row.messageEnabled,
+      corpId: row.corpId,
+      webBaseUrl: row.webBaseUrl,
+      configurationGeneration: computeWecomConfigurationGeneration(row),
+    };
   }
 
   /** 供 handler 记安全日志(不含 wecomUserId / token / URL)。 */

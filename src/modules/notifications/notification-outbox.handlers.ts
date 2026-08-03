@@ -21,14 +21,13 @@ import {
   WECHAT_ERRCODE_TOKEN_INVALID,
 } from '../wechat/wechat.constants';
 import { WechatService } from '../wechat/wechat.service';
+import { maskWecomUserId, WECOM_ERROR_KIND, type WecomErrorKind } from '../wecom/wecom.constants';
+import { WecomService, type WecomMessageContext } from '../wecom/wecom.service';
 import {
-  maskWecomUserId,
-  WECOM_ERRCODE_CONFIG_FATAL,
-  WECOM_ERRCODE_RATE_LIMITED,
-  WECOM_ERRCODE_TOKEN_INVALID,
-} from '../wecom/wecom.constants';
-import { WecomService } from '../wecom/wecom.service';
-import type { WecomProvider, WecomSendResult } from '../wecom/wecom.types';
+  WecomApiError,
+  WecomChannelUnavailableError,
+  type WecomSendResult,
+} from '../wecom/wecom.types';
 import {
   DELIVERY_REASON_API_FAILED,
   DELIVERY_REASON_CHANNEL_DISABLED,
@@ -669,6 +668,22 @@ export class NotificationOutboxHandlers {
     });
     if (existingSent) return { effectPerformed: false };
 
+    // ===== 同代配置快照(B5)=====
+    // **必须在最终闸之前**取一次,之后整条投递只认这一份:最终闸据它校验代际,
+    // 发送用它里面的 Provider。提交之后**不再**解析"最新 route" —— 那正是
+    // "闸按 A 企业查出收件人、事后按 B 企业的凭证发出去"的成因。
+    //
+    // 通道闸关着(null)与凭证不可用(抛)在这里**合并成同一档**:两者都让 `expected=null`,
+    // 由最终闸统一记 `skipped/channel-disabled`。在这里短路会让"资格已失效的人"
+    // (退队 / 停用)也平白落一条 delivery,而现状是不落 —— 这条不变量比少写两行重要。
+    let messageContext: WecomMessageContext | null = null;
+    try {
+      messageContext = await this.wecom.resolveMessageContext();
+    } catch (error) {
+      if (!(error instanceof WecomChannelUnavailableError)) throw error;
+      messageContext = null;
+    }
+
     // ===== Provider 前最终闸(§10.4)=====
     // 回调返回 true 的条件是"资格没失效",而不是"能发" —— channel-disabled 与
     // no-wecom-identity 都要求**记一条 terminal skipped**,所以必须放行到闸外去记账;
@@ -682,6 +697,12 @@ export class NotificationOutboxHandlers {
         tx,
         locked,
         payload.memberId,
+        messageContext === null
+          ? null
+          : {
+              corpId: messageContext.corpId,
+              configurationGeneration: messageContext.configurationGeneration,
+            },
       );
       return authorization.outcome !== 'ineligible';
     };
@@ -726,7 +747,15 @@ export class NotificationOutboxHandlers {
       });
       return { effectPerformed: false };
     }
-    if (authorization.outcome !== 'authorized') return { effectPerformed: false };
+    if (authorization.outcome === 'config-changed') {
+      // B5:配置在"取快照"与"最终闸提交"之间变了。**不落 delivery**、不发送 ——
+      // 下一次 attempt 会用新一代配置重走完整判定,自然收敛到那一代该有的结局。
+      // 记一条暂态流水都不写:什么外部动作都没发生,写了只会污染运营指标。
+      throw new TransientNotificationProviderError('CONFIG_CHANGED');
+    }
+    if (authorization.outcome !== 'authorized' || messageContext === null) {
+      return { effectPerformed: false };
+    }
 
     const { wecomUserId, webBaseUrl } = authorization;
     const maskedRecipient = maskWecomUserId(wecomUserId);
@@ -750,19 +779,8 @@ export class NotificationOutboxHandlers {
     }
 
     // ===== 发送(**恒在事务外**;每次真实外部请求紧前独立过 fence guard)=====
-    let route: WecomProvider;
-    try {
-      route = await this.wecom.resolveRoute();
-    } catch {
-      await this.recordWecomTransientAttempt({
-        notificationId: finalNotification.id,
-        memberId: payload.memberId,
-        recipientRef: maskedRecipient,
-        reasonCode: DELIVERY_REASON_TOKEN_FAILED,
-        errCode: 'CHANNEL_UNAVAILABLE',
-      });
-      throw new TransientNotificationProviderError('CHANNEL_UNAVAILABLE');
-    }
+    // route 来自闸前那一份同代快照(B5),**不再** `resolveRoute()` 重解析。
+    const route = messageContext.provider;
 
     const send = async (forceRefresh: boolean): Promise<WecomSendResult> => {
       const accessToken = await route.getAccessToken(forceRefresh, guard.beforeEffect);
@@ -784,21 +802,23 @@ export class NotificationOutboxHandlers {
       result = await send(false);
       // §10.7:40014/42001 强刷 token 后**只重试一次**。禁止刷新循环 —— 一次配置错误
       // 会变成对上游的持续打点,而 45009 正是这么被触发的。
-      if (!result.ok && WECOM_ERRCODE_TOKEN_INVALID.includes(Number(result.errCode))) {
+      // 判据只认 `kind`(B7):此前写的是 `Number(result.errCode)`,而 gettoken 阶段抛出的
+      // token 失效根本走不到这里(它被下面的 catch 一律压成 TOKEN_FAILED 了)。
+      if (!result.ok && result.kind === WECOM_ERROR_KIND.TOKEN_INVALID) {
         result = await send(true);
       }
     } catch (error) {
-      // token 取用失败 / 网络异常。fence 丢失(lease lost)必须原样冒泡:
-      // 那时 worker 不该 ack/nack/dead,更不该重新启动 Provider。
+      // fence 丢失(lease lost)必须原样冒泡:那时 worker 不该 ack/nack/dead,
+      // 更不该重新启动 Provider。
       if (error instanceof NotificationOutboxLeaseLostError) throw error;
-      await this.recordWecomTransientAttempt({
-        notificationId: finalNotification.id,
-        memberId: payload.memberId,
-        recipientRef: maskedRecipient,
-        reasonCode: DELIVERY_REASON_TOKEN_FAILED,
-        errCode: 'TOKEN_FAILED',
-      });
-      throw new TransientNotificationProviderError('TOKEN_FAILED');
+      // ⚠️ **抛出的错误与返回的失败走同一个分类器**(B7)。此前这里把**任何**错误
+      // 一律压成 `TOKEN_FAILED` 暂态 —— 于是 gettoken 阶段的 45009、HTTP 4xx、
+      // 40001 Secret 错全被当成"取 token 失败",白白退避 8 次才 dead,
+      // 而 45009 的语义恰恰是"再打就延长拦截"。Provider 已经分过类了,这里只做搬运。
+      const normalized = normalizeWecomProviderError(error);
+      // 不是企业微信域错误(DB / 编程错 / 未知)⇒ 原样冒泡,不伪装成通道问题。
+      if (normalized === null) throw error;
+      result = normalized;
     }
 
     return this.recordWecomSendResult(intent, finalNotification, payload, result, maskedRecipient);
@@ -860,10 +880,9 @@ export class NotificationOutboxHandlers {
       return { effectPerformed: true };
     }
 
-    const numeric = Number(result.errCode);
     // 81013 = 全部收件人无效。单 touser 请求下它与 invaliduser 同义,
     // 统一 terminal skipped/recipient-unavailable,**绝不记 SENT**(§10.4 业务结果第 4 条)。
-    if (numeric === WECOM_ERRCODE_ALL_RECIPIENTS_INVALID) {
+    if (Number(result.errCode) === WECOM_ERRCODE_ALL_RECIPIENTS_INVALID) {
       await this.recordWecomDeliveryOnce(intent.id, {
         notificationId: notification.id,
         memberId: payload.memberId,
@@ -874,11 +893,12 @@ export class NotificationOutboxHandlers {
       return { effectPerformed: false };
     }
 
-    const reasonCode = mapWecomSendError(result.errCode);
+    const reasonCode = mapWecomSendError(result.kind);
 
-    // 暂态(网络 / 超时 / 5xx / token 强刷后仍失败)→ 只记一条**不占 intent.id** 的流水,
-    // 交给 worker 退避重试,耗尽后 dead。占了 intent.id 就等于把重试判据自己关掉。
-    if (isTransientWecomError(result.errCode)) {
+    // 暂态 —— **只有** network / timeout / http-5xx / system-busy / token-invalid 这五种(B7)。
+    // 只记一条**不占 intent.id** 的流水,交给 worker 退避重试,耗尽后 dead。
+    // 占了 intent.id 就等于把重试判据自己关掉。
+    if (isTransientWecomKind(result.kind)) {
       await this.recordWecomTransientAttempt({
         notificationId: notification.id,
         memberId: payload.memberId,
@@ -900,14 +920,14 @@ export class NotificationOutboxHandlers {
       attemptedAt: new Date(),
     });
 
-    // 45009 与 invalidparty/invalidtag → intent 终态 dead,等人工 replay(见 TerminalNotificationProviderError)。
-    if (
-      reasonCode === DELIVERY_REASON_RATE_LIMITED ||
-      reasonCode === DELIVERY_REASON_PROVIDER_CONTRACT_ERROR
-    ) {
+    // 45009 限流 / 请求契约错(invalidparty·invalidtag / HTTP 4xx)→ intent 终态 **dead**,
+    // 等人工 replay(见 TerminalNotificationProviderError)。dead 而不是 ack:
+    // ack 掉的 intent 是 succeeded,运维再也 replay 不了。
+    if (isTerminalDeadWecomKind(result.kind)) {
       throw new TerminalNotificationProviderError(result.errCode);
     }
-    // 其余确定性 errcode:已逐人记账,intent 本身算完成(与微信侧同一处置)。
+    // 其余确定性失败(配置错 / 畸形回执 / 其它非 0 errcode):已逐人记账,
+    // intent 本身算完成(与微信侧同一处置)—— 重试改变不了结果,也没有人工 replay 的余地。
     return { effectPerformed: true };
   }
 
@@ -1262,42 +1282,97 @@ function isTransientWechatError(errCode: string): boolean {
 const WECOM_ERRCODE_ALL_RECIPIENTS_INVALID = 81013;
 
 /**
- * 企业微信 errcode / 归一化标签 → delivery reasonCode(§10.7)。
+ * Provider **抛出**的域错误 → 与 `sendTextCard` 失败分支**逐字同形**的结果对象。
+ *
+ * 这个函数的存在本身就是 B7 的执行位:分类只在 Provider 里发生一次,这里只做搬运。
+ * 上一版在 catch 里把一切压成 `TOKEN_FAILED`,等于把 Provider 刚做完的分类当场丢掉。
+ *
+ * 返回 `null` = 不是企业微信域错误(DB 异常 / 编程错 / lease 相关)⇒ 调用方原样冒泡。
+ */
+function normalizeWecomProviderError(
+  error: unknown,
+): { ok: false; kind: WecomErrorKind; errCode: string; errMsg: string } | null {
+  if (error instanceof WecomApiError) {
+    return { ok: false, kind: error.kind, errCode: error.errCode, errMsg: error.errCode };
+  }
+  if (error instanceof WecomChannelUnavailableError) {
+    return {
+      ok: false,
+      kind: error.kind,
+      errCode: 'CHANNEL_UNAVAILABLE',
+      errMsg: 'CHANNEL_UNAVAILABLE',
+    };
+  }
+  return null;
+}
+
+/**
+ * 企业微信错误 kind → delivery reasonCode(§10.7)。
+ *
+ * **只认 kind,不看 errCode**(B7)。上一版按 errCode 字符串嗅探,两处当场失真:
+ * `throwByErrcode(45009)` 抛的 errCode 是 `'RATE_LIMITED'` 而这里拿 `Number(errCode)` 比 45009
+ * (⇒ NaN,限流被读成"其它上游失败");HTTP 4xx 与 5xx 共用 `'HTTP_ERROR'`(⇒ 4xx 被当暂态)。
  *
  * 与微信版 `mapWechatError` 刻意分开:两套 errcode 数值空间不同,合并成一个函数
  * 只需要一个数字巧合就能把"微信模板参数错"读成"企业微信限流"。
  */
-function mapWecomSendError(errCode: string): string {
-  const numeric = Number(errCode);
-  if (numeric === WECOM_ERRCODE_RATE_LIMITED) return DELIVERY_REASON_RATE_LIMITED;
-  if (errCode === 'INVALID_PARTY_OR_TAG') return DELIVERY_REASON_PROVIDER_CONTRACT_ERROR;
-  if (WECOM_ERRCODE_TOKEN_INVALID.includes(numeric)) return DELIVERY_REASON_TOKEN_FAILED;
-  // 确定性配置 / 权限错误(Secret 错、agentid 错、IP 不在白名单…):重试解决不了,
-  // 但它确实是"上游拒绝了这次调用",归 api-failed 而不是伪装成 token 问题。
-  if (WECOM_ERRCODE_CONFIG_FATAL.includes(numeric)) return DELIVERY_REASON_API_FAILED;
-  if (errCode === 'TOKEN_FAILED' || errCode === 'CHANNEL_UNAVAILABLE') {
-    return DELIVERY_REASON_TOKEN_FAILED;
+function mapWecomSendError(kind: WecomErrorKind): string {
+  switch (kind) {
+    case WECOM_ERROR_KIND.RATE_LIMITED:
+      return DELIVERY_REASON_RATE_LIMITED;
+    case WECOM_ERROR_KIND.PROVIDER_CONTRACT:
+    case WECOM_ERROR_KIND.HTTP_4XX:
+      // HTTP 4xx 与 invalidparty/invalidtag 同类:发出去的请求本身就是坏的。
+      return DELIVERY_REASON_PROVIDER_CONTRACT_ERROR;
+    case WECOM_ERROR_KIND.TOKEN_INVALID:
+      return DELIVERY_REASON_TOKEN_FAILED;
+    case WECOM_ERROR_KIND.CHANNEL_DISABLED:
+      return DELIVERY_REASON_CHANNEL_DISABLED;
+    // 确定性配置 / 权限错误(Secret 错、agentid 错、IP 不在白名单…):重试解决不了,
+    // 但它确实是"上游拒绝了这次调用",归 api-failed 而不是伪装成 token 问题。
+    case WECOM_ERROR_KIND.CONFIG_FATAL:
+    case WECOM_ERROR_KIND.INVALID_RESPONSE:
+    case WECOM_ERROR_KIND.UPSTREAM_REJECTED:
+    case WECOM_ERROR_KIND.NETWORK:
+    case WECOM_ERROR_KIND.TIMEOUT:
+    case WECOM_ERROR_KIND.HTTP_5XX:
+    case WECOM_ERROR_KIND.SYSTEM_BUSY:
+      return DELIVERY_REASON_API_FAILED;
   }
-  return DELIVERY_REASON_API_FAILED;
 }
 
 /**
- * 是否暂态(可退避重试)。
+ * 是否暂态(可退避重试)—— **闭集,只有这五种**(B7 / 评审原话:
+ * Outbox 只对 network / timeout / 5xx / 明确允许的 token-invalid 退避)。
  *
- * ⚠️ `45009` **不在**本集合里,而且不能在:官方拦截窗口内重试只会延长拦截。
+ * `system-busy`(-1)也在内:那是**上游自己**说的"稍后再试",与 5xx 同类。
+ *
+ * ⚠️ `rate-limited` 不在,而且不能在:官方拦截窗口内重试只会延长拦截 ——
  * 它由 `TerminalNotificationProviderError` 直接送进 dead(§10.7 末段)。
- * `SYSTEM_BUSY`(-1)在 Provider 内部已自动尝试 3 次,到这一层仍失败就交给 outbox 退避。
+ * `config-fatal` / `invalid-response` / `http-4xx` 同样不在:退避改变不了确定性错误。
  */
-function isTransientWecomError(errCode: string): boolean {
+function isTransientWecomKind(kind: WecomErrorKind): boolean {
   return (
-    errCode === 'TOKEN_FAILED' ||
-    errCode === 'CHANNEL_UNAVAILABLE' ||
-    errCode === 'FETCH_ERROR' ||
-    errCode === 'TIMEOUT' ||
-    errCode === 'HTTP_ERROR' ||
-    errCode === 'SYSTEM_BUSY' ||
-    Number(errCode) === -1 ||
-    WECOM_ERRCODE_TOKEN_INVALID.includes(Number(errCode))
+    kind === WECOM_ERROR_KIND.NETWORK ||
+    kind === WECOM_ERROR_KIND.TIMEOUT ||
+    kind === WECOM_ERROR_KIND.HTTP_5XX ||
+    kind === WECOM_ERROR_KIND.SYSTEM_BUSY ||
+    kind === WECOM_ERROR_KIND.TOKEN_INVALID
+  );
+}
+
+/**
+ * 是否终态 **dead**(等人工 replay),而不是终态 ack。
+ *
+ * 判别标准是"人能不能做点什么让它成功":限流等窗口过去再 replay 就成;
+ * 请求契约错是 bug 信号,要人看一眼再决定。其余确定性失败(Secret 配错、回执畸形)
+ * 没有可 replay 的余地,逐人记账后 ack 即可。
+ */
+function isTerminalDeadWecomKind(kind: WecomErrorKind): boolean {
+  return (
+    kind === WECOM_ERROR_KIND.RATE_LIMITED ||
+    kind === WECOM_ERROR_KIND.PROVIDER_CONTRACT ||
+    kind === WECOM_ERROR_KIND.HTTP_4XX
   );
 }
 

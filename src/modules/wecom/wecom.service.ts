@@ -31,6 +31,19 @@ import {
 //   WecomChannelUnavailableError → 36030 / WecomApiError → 36031 / WecomOAuthInvalidError → 36010(T3)
 // 调用方只面对 BizException。
 
+/**
+ * 消息链路的**同代**配置上下文(外部评审 F2 / B5)。
+ *
+ * 四个值必须来自**同一次** settings 读取,并作为一个整体往下传 —— 拆开取就等于允许
+ * "用 A 企业解析出来的收件人、走 B 企业的凭证发出去"。类型上不可分离是执行位。
+ */
+export interface WecomMessageContext {
+  provider: WecomProvider;
+  corpId: string;
+  configurationGeneration: string;
+  webBaseUrl: string | null;
+}
+
 @Injectable()
 export class WecomService {
   private readonly logger = new Logger(WecomService.name);
@@ -103,6 +116,41 @@ export class WecomService {
       throw new WecomChannelUnavailableError('wecom_settings 未配置');
     }
     return this.routeFor(resolved);
+  }
+
+  // ===== T5B / 外部评审 F2 B5(2026-08-03):消息链路的**同代**配置上下文 =====
+
+  /**
+   * 消息链路专用:**一次读取、四个值同代不可拆分**。
+   *
+   * 与 `resolveLoginContext` 同一条原则(那里写的是"返回 route 与 corpId 成对 —— 分开取
+   * 两次 = 中间 settings 变更就能让两者错配"),消息链此前没照办:
+   * 最终闸在事务内锁读 settings 拿 CorpID=A、按 A 查出 `wecomUserId`,提交后
+   * `deliverWecom` 又调 `resolveRoute()` **重新读一次** settings —— 中间换了 CorpID,
+   * A 企业的 userid 就被发去了 B 企业。**同一次投递里读了两代配置**。
+   *
+   * 现在:
+   * 1. 投递开始时调本方法一次,拿到 `provider + corpId + configurationGeneration + webBaseUrl`;
+   * 2. 最终闸在锁后复读时校验 corpId 与 generation **仍与之一致**,identity 查询用**同一个** corpId;
+   * 3. 提交之后**只**使用这里返回的 provider,**不得**再解析"最新 route"。
+   *
+   * 返回 `null` 而不是抛错的那一档是**通道闸关着**(未配置 / 总闸 / 二级闸 / corpId 空):
+   * 它必须让调用方继续走完最终闸,由最终闸统一记 `skipped/channel-disabled`——
+   * 在这里短路会让"资格已失效的人"(退队 / 停用)也落一条 delivery,而现状是不落。
+   * 凭证不可用 / production-like 下 DEV_STUB 这类**通道开着但用不了**仍然抛
+   * `WecomChannelUnavailableError`,由调用方归类。
+   */
+  async resolveMessageContext(): Promise<WecomMessageContext | null> {
+    const resolved = await this.settings.getActiveSettings();
+    if (resolved === null) return null;
+    if (!resolved.enabled || !resolved.messageEnabled) return null;
+    if (resolved.corpId === null || resolved.corpId === '') return null;
+    return {
+      provider: this.routeFor(resolved),
+      corpId: resolved.corpId,
+      configurationGeneration: resolved.configurationGeneration,
+      webBaseUrl: resolved.webBaseUrl,
+    };
   }
 
   // ===== T3(2026-08-02):登录链路(冻结稿 §6.2 / §11.2)=====

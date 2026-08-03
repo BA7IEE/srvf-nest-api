@@ -3,8 +3,10 @@ import { Prisma, type Notification, type NotificationOutboxIntent } from '@prism
 
 import { PrismaService } from '../../database/prisma.service';
 import {
+  DELIVERY_STATUS_SENT,
   NOTIFICATION_AUDIENCE_BROADCAST,
   NOTIFICATION_AUDIENCE_DIRECTED,
+  NOTIFICATION_CHANNEL_WECOM,
   NOTIFICATION_SOURCE_ADMIN,
   NOTIFICATION_SOURCE_SYSTEM,
   NOTIFICATION_STATUS_PUBLISHED,
@@ -14,6 +16,7 @@ import {
   OUTBOX_EVENT_ADMIN_SMS,
   OUTBOX_LEASE_MS,
   OUTBOX_MAX_ATTEMPTS,
+  OUTBOX_PAYLOAD_VERSION,
   OUTBOX_EVENT_WECHAT_DELIVERY,
   OUTBOX_EVENT_WECHAT_BROADCAST,
   OUTBOX_EVENT_WECOM_BROADCAST,
@@ -24,11 +27,30 @@ import {
   OUTBOX_STATUS_SUCCEEDED,
 } from './notification.constants';
 import {
+  buildWecomDirectedDeliveryEventKey,
   normalizeNotificationOutboxInput,
   NotificationOutboxInvariantError,
   NotificationOutboxLeaseLostError,
+  readWecomDirectedReplayNonce,
   type NotificationOutboxEnqueueInput,
 } from './notification-outbox.types';
+
+/** 系统定向通知 replay 的四种结局。用判别联合:调用方必须显式处理每一种。 */
+export type WecomDirectedReplayResult =
+  | { state: 'enqueued'; intentId: string; eventKey: string }
+  /** 这个人这条通知已经收到过 —— 跨 attempt 的永久去重事实,不重复打扰。 */
+  | { state: 'already-sent' }
+  /** 还有一条 pending/processing 的 attempt 在跑,active-slot 归它。 */
+  | { state: 'active-attempt-exists'; activeIntentId: string }
+  | {
+      state: 'not-replayable';
+      reason:
+        | 'notification-not-found'
+        | 'notification-deleted'
+        | 'notification-not-published'
+        | 'not-system-directed'
+        | 'channel-not-declared';
+    };
 
 type OutboxClient = PrismaService | Prisma.TransactionClient;
 export type NotificationOutboxRecipientPermission = (
@@ -205,6 +227,110 @@ export class NotificationOutboxService {
     client: OutboxClient = this.prisma,
   ): Promise<NotificationOutboxIntent> {
     return this.enqueueActiveSlotDeliveryAttempt(input, OUTBOX_EVENT_WECOM_DELIVERY, client);
+  }
+
+  /**
+   * **系统定向通知**的企业微信投递显式 replay(外部评审 F2 / SF2)。
+   *
+   * 为什么需要它:admin 广播撞 45009 / 请求契约错而 dead 之后,运维走
+   * unpublish + publish 造新 `publishGeneration`,新 root 会为尚未 SENT 的人重建 child
+   * (runbook §6)。**系统定向通知没有 publish 状态机** —— producer 在业务事务内 enqueue、
+   * worker 直接建成 published 行,payload 里根本没有 generation。它的 v1 child eventKey
+   * `wecom-delivery:{notificationId}:{memberId}` 是**确定性**的,一旦 dead,再 enqueue
+   * 只会命中那条 dead 行 ⇒ **这条通知对这个人永远不会再发**,而现场看起来一切正常。
+   *
+   * 处置:建**新 child id + 新 eventKey**(追加 `:r{n}` replay nonce),旧的 dead 行
+   * 原样保留(它是历史事实,不是垃圾)。
+   *
+   * 三条护栏,一条都不能少:
+   * - **已 SENT 者不被重复打扰**:跨 attempt 去重仍是 `notificationId + memberId + channel + SENT`
+   *   这条永久事实,与 re-publish 用的是同一条(不是第二套口径)。
+   * - **在途 attempt 优先**:仍走 `enqueueWecomDeliveryAttempt`,active-slot partial unique
+   *   照旧是"同一通知同一人任一时刻只一条 active"的唯一真相 —— replay 不给它开后门。
+   * - **只认系统定向**:admin 广播有自己的 replay 路径,不该有第二条;非 published / 已软删 /
+   *   没勾 wecom 渠道的通知一律拒。
+   *
+   * ⚠️ 这是**给人用的入口**,不是自动重试:45009 的窗口有没有过去只有人知道
+   * (见 `docs/ops/wecom-message-channel-rollout.md` §6.1)。本方法不判断窗口。
+   */
+  async replayDirectedWecomDelivery(notificationId: string): Promise<WecomDirectedReplayResult> {
+    const notification = await this.prisma.notification.findUnique({
+      where: { id: notificationId },
+      select: {
+        id: true,
+        deletedAt: true,
+        statusCode: true,
+        sourceType: true,
+        audienceType: true,
+        recipientMemberId: true,
+        channels: true,
+      },
+    });
+    if (!notification) return { state: 'not-replayable', reason: 'notification-not-found' };
+    if (notification.deletedAt !== null) {
+      return { state: 'not-replayable', reason: 'notification-deleted' };
+    }
+    if (notification.statusCode !== NOTIFICATION_STATUS_PUBLISHED) {
+      return { state: 'not-replayable', reason: 'notification-not-published' };
+    }
+    if (
+      notification.sourceType !== NOTIFICATION_SOURCE_SYSTEM ||
+      notification.audienceType !== NOTIFICATION_AUDIENCE_DIRECTED ||
+      notification.recipientMemberId === null
+    ) {
+      // admin 广播走 unpublish + publish;这里不给它第二条路径。
+      return { state: 'not-replayable', reason: 'not-system-directed' };
+    }
+    if (!notification.channels.includes(NOTIFICATION_CHANNEL_WECOM)) {
+      return { state: 'not-replayable', reason: 'channel-not-declared' };
+    }
+
+    const memberId = notification.recipientMemberId;
+    const alreadySent = await this.prisma.notificationDelivery.findFirst({
+      where: {
+        notificationId,
+        memberId,
+        channel: NOTIFICATION_CHANNEL_WECOM,
+        status: DELIVERY_STATUS_SENT,
+      },
+      select: { id: true },
+    });
+    if (alreadySent) return { state: 'already-sent' };
+
+    // 下一个 replay 序号 = 既有 child 里最大的那个 + 1(基础键算 0)。
+    const existing = await this.prisma.notificationOutboxIntent.findMany({
+      where: {
+        eventType: OUTBOX_EVENT_WECOM_DELIVERY,
+        aggregateId: notificationId,
+        destinationRef: memberId,
+      },
+      select: { eventKey: true },
+    });
+    const nextNonce =
+      existing.reduce((max, row) => {
+        const nonce = readWecomDirectedReplayNonce(row.eventKey, notificationId, memberId);
+        return nonce === null ? max : Math.max(max, nonce);
+      }, 0) + 1;
+
+    try {
+      const intent = await this.enqueueWecomDeliveryAttempt({
+        eventKey: buildWecomDirectedDeliveryEventKey(notificationId, memberId, nextNonce),
+        eventType: OUTBOX_EVENT_WECOM_DELIVERY,
+        payloadVersion: OUTBOX_PAYLOAD_VERSION,
+        payload: { notificationId, memberId },
+        aggregateType: 'notification',
+        aggregateId: notificationId,
+        destinationType: 'member',
+        destinationRef: memberId,
+      });
+      return { state: 'enqueued', intentId: intent.id, eventKey: intent.eventKey };
+    } catch (error) {
+      // active-slot 已被占:还有一条 pending/processing 的 attempt 在跑,replay 无事可做。
+      if (error instanceof NotificationOutboxGenerationConflictError) {
+        return { state: 'active-attempt-exists', activeIntentId: error.activeIntent.id };
+      }
+      throw error;
+    }
   }
 
   private async enqueueActiveSlotDeliveryAttempt(
