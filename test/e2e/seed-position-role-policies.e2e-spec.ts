@@ -217,7 +217,7 @@ const EXPECTED_FINAL_REVIEWER_CODES = [
 // 2026-07-04 F3「C 组」authz.{explain-batch,action-state}.decision 绑 ops-admin 92→94;
 // 2026-07-07 队员账号闭环 v1 member.grant.account 绑 ops-admin 94→95;
 // 2026-07-07 队员账号闭环 v2 member.bind.account 绑 ops-admin 95→96)。
-const EXPECTED_OPS_ADMIN_BINDING_COUNT = 108; // 企业微信 T3:+1(user.wecom.clear,整条绑;冻结稿 §13 T3 清单「Admin clear」连码带端点同刀落)。前值 107 = 企业微信 T2 的 +3(wecom-setting read/update/test;reset.credentials 沿 D2=A 不绑);再前值 104 = 证书标准库 PR-2 的 +8 配置面码
+const EXPECTED_OPS_ADMIN_BINDING_COUNT = 109; // 企业微信 T6-1:+1(notification.replay.wecom —— 定向 replay 运维入口,归运维面故绑 ops-admin、**不**绑 biz-admin;本文件「职务/分管 seed 不动 ops-admin 绑定」的意图不受影响,只是基线随之平移)。前值 108 = 企业微信 T3 的 +1(user.wecom.clear,整条绑;冻结稿 §13 T3 清单「Admin clear」连码带端点同刀落);再前值 107 = 企业微信 T2 的 +3(wecom-setting read/update/test;reset.credentials 沿 D2=A 不绑);更前值 104 = 证书标准库 PR-2 的 +8 配置面码
 const EXPECTED_MEMBER_ROLE_BINDING_COUNT = 9;
 // 证书标准库 PR-1(2026-07-30):+1 = certificate.read.sensitive(§15.3)。
 // 同刀已把该码加入 ORG_ADMIN_EXCLUDED_CODES,故 EXPECTED_ORG_ADMIN_CODES 逐字不变 ——
