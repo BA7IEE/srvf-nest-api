@@ -207,17 +207,50 @@ GROUP BY 1, 2 ORDER BY 1, 2;
 `wecom-delivery:{notificationId}:{memberId}`,dead 之后再 enqueue 只会命中那条 dead 行。
 **F2 之前这意味着:那条通知对那个人永远不会再发,而现场看起来一切正常。**
 
-现在的入口是 `NotificationOutboxService.replayDirectedWecomDelivery(notificationId)`:
-它建**新 child id + 新 eventKey**(追加 `:r{n}` replay nonce),旧的 dead 行原样保留。
+现在的入口是 **admin 端点 `POST admin/v1/notifications/:id/replay-wecom`**(T6-1);
+它调的是服务层原语 `NotificationOutboxService.replayDirectedWecomDelivery(notificationId)`,
+**判据全部在那个原语里,端点层没有第二份**。
+replay 建**新 child id + 新 eventKey**(追加 `:r{n}` replay nonce),旧的 dead 行原样保留。
 
-四种结局:
+#### 运维怎么调(T6-1,2026-08-03)
 
-| 返回 | 含义 | 运维动作 |
+```
+POST /api/admin/v1/notifications/{notificationId}/replay-wecom
+Authorization: Bearer <access token>
+Content-Type: application/json
+
+{}                              # 默认:只放行允许集两类
+{ "overrideReason": true }      # 绕过允许集(见下文「越界」)
+```
+
+- **权限**:`notification.replay.wecom`,归 **ops-admin**(运维面,与 `wecom-setting.*` /
+  `user.wecom.clear` 同族);`SUPER_ADMIN` 经 `RbacService` 自然短路。
+  没有这条码 → `30100`;没带 token → `10000`。
+- **`notificationId` 从哪来**:先在 `notification_outbox_intents` 里按
+  `event_type='notification.wecom-delivery' AND status='dead'` 找 dead child,
+  它的 `aggregate_id` 就是 `notificationId`(`destination_ref` 是 memberId)。
+- **恒返 200**,连"通知不存在"都返 200 —— 结局在 `results[0].outcome` 这个**闭集**里,
+  不拆成 error/成功两条通路(这是诊断端点,"为什么没重发"比"HTTP 几"更该一眼看到)。
+
+出参形状:
+
+```jsonc
+{ "replayed": 1, "skipped": 0,
+  "results": [{ "memberId": "…", "outcome": "enqueued",
+                "newIntentId": "…", "newEventKey": "wecom-delivery:…:…:r1" }] }
+```
+
+系统定向通知恰有一个收件人,故 `results` 长度恒为 1、`replayed`/`skipped` 恒 0 或 1
+(数组形状是给"若将来立项广播 replay"留的,**现在没有**广播 replay,广播见 §6.1)。
+
+`outcome` 闭集(即原语四种结局摊平后的十种):
+
+| `outcome` | 含义 | 运维动作 |
 |---|---|---|
-| `enqueued` | 已建新 attempt,worker 下一轮就会投递 | 观察 `notification_deliveries` |
+| `enqueued` | 已建新 attempt,worker 下一轮就会投递 | 观察 `notification_deliveries`;**入队 ≠ 已送达** |
 | `already-sent` | 这个人这条通知已经收到过 | 无需处理(**不重复打扰**是硬约束) |
 | `active-attempt-exists` | 还有一条 pending/processing 在跑 | 等它跑完再看 |
-| `not-replayable` | 见下表 `reason` | 按 `reason` 处置 |
+| `never-attempted` / `last-attempt-not-replayable` / 其余形态类 | 见下表 | 按下表处置 |
 
 #### 本节标题那句限制**现在是代码判据**(2026-08-03 第二轮外部评审 SHOULD-FIX 3)
 
@@ -234,22 +267,42 @@ GROUP BY 1, 2 ORDER BY 1, 2;
 | `last-attempt-not-replayable` | 上一次不是"等人工 replay"的那种终态 —— intent 没 dead 过,或最后那条 delivery 的 `reasonCode` 不在允许集内 | 先看 `notification_deliveries.reasonCode`:`channel-disabled` → 先开通道;`recipient-unlicensed` → 先买/分配接口许可。**问题没解决之前 replay 只会再失败一次** |
 | 其余 | 通知不存在 / 已软删 / 非 published / 非系统定向 / 没勾 wecom 渠道 | 看 `reason` |
 
-**确认要绕过允许集**时传第二个实参:
+#### 越界:`overrideReason`
 
-```ts
-await outbox.replayDirectedWecomDelivery(notificationId, { overrideReason: true });
+**确认要绕过允许集**时,在 body 里显式写出来:
+
+```jsonc
+{ "overrideReason": true }
 ```
 
-它**只**绕"上一次终态"这一条。已 SENT、在途 attempt、非系统定向三条护栏一概不绕。
-做成必须显式写出来的实参,是为了让"我知道我在绕过判据"成为一个动作,而不是默认行为。
+它**只**绕"上一次终态"这一条。已 SENT、在途 attempt、非系统定向三条护栏一概不绕
+(想验证这点:对一条已 SENT 的通知带 `overrideReason: true` 调,仍返 `already-sent`)。
+做成必须显式写出来的入参,是为了让"我知道我在绕过判据"成为一个动作,而不是默认行为。
 
-⚠️ **本方法不判断官方拦截窗口有没有过去** —— 那只有人知道。45009 之后请先确认窗口结束再 replay,
+**后果**:被拒的那三类(`channel-disabled` / `recipient-unlicensed` / `never-attempted`)
+之所以被拒,是因为**重发解决不了它们**。绕过之后 worker 会真去调一次上游,
+然后大概率以同一个 reason 再失败一次 —— 你换来的是"多一条 delivery 行 + 多一次上游调用量",
+不是送达。**先修根因(开通道 / 买许可 / 查身份),再 replay。**
+
+#### 谁 replay 过?怎么查
+
+每一次**通过判权**的调用都记 audit(含被拒的那些 —— "谁试图重发了什么"同样是事实):
+
+- `audit_logs.event = 'notification.publish'`(伞事件,零新增 audit 事件串)
+- `audit_logs.resource_id = <notificationId>`
+- `context.extra.operation = 'replay-wecom'`
+- `context.extra` 还含:`overrideReason`(布尔)、`replayed` / `skipped`、
+  `outcomes`(逐 outcome 计数)、`newIntentIds`(本次新建的 child intent id 集合)
+
+**查"谁绕过了允许集"**就是筛 `extra.overrideReason = true` 这一条;
+`actor_user_id` 是登录 actor(这正是做端点而不做 CLI 的理由 —— CLI 拿不到真实登录身份,
+审计归属会变弱)。`wecomUserId` / 深链 / 凭证**一概不入 audit**(§5.5)。
+
+⚠️ **本端点不判断官方拦截窗口有没有过去** —— 那只有人知道。45009 之后请先确认窗口结束再 replay,
 否则只会再撞一次并再 dead 一次。
 
-⚠️ 它是**服务层入口,不是 HTTP 端点**(F2 是零新端点、零新权限码的一刀)。
-**服务层原语与允许集判据已就位;运维可点的入口与 replay 审计归 T6 运维面,尚未落地**
-—— 目前需要由维护者在应用上下文中调用,`overrideReason` 的人工理由也还没有落库的地方
-(T6 接入口时一并补 Audit)。
+⚠️ **前端本期没有按钮**(试点期由维护者直接调端点);FE 适配登记在
+[`docs/handoff/admin-web.md`](../handoff/admin-web.md),按需再排。
 
 ---
 

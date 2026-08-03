@@ -12578,6 +12578,69 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "NotificationWecomReplayItemDto": {
+    "properties": {
+      "memberId": {
+        "description": "收件人 memberId;通知层面就被拒时为 null(不存在 / 已软删 / 非 published / 非系统定向 / 未勾 wecom —— 这几种情况没有收件人可谈)",
+        "nullable": true,
+        "type": "string",
+      },
+      "newEventKey": {
+        "description": "新建 child 的 eventKey(带 :r{n} replay nonce;仅 outcome=enqueued 时出现)",
+        "type": "string",
+      },
+      "newIntentId": {
+        "description": "新建 child intent id(仅 outcome=enqueued 时出现)",
+        "type": "string",
+      },
+      "outcome": {
+        "description": "replay 结局(闭集)。enqueued = 已建新 attempt;already-sent = 这个人这条通知已收到过(跨 attempt 永久去重事实);active-attempt-exists = 还有一条 pending/processing 在跑;never-attempted = 从来没有过 wecom child(这不是"没发成功",replay 不是补发入口);last-attempt-not-replayable = 上一次不是"等人工 replay"的那种终态(如 channel-disabled / recipient-unlicensed);其余为通知形态类拒绝",
+        "enum": [
+          "enqueued",
+          "already-sent",
+          "active-attempt-exists",
+          "notification-not-found",
+          "notification-deleted",
+          "notification-not-published",
+          "not-system-directed",
+          "channel-not-declared",
+          "never-attempted",
+          "last-attempt-not-replayable",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "memberId",
+      "outcome",
+    ],
+    "type": "object",
+  },
+  "NotificationWecomReplayResultDto": {
+    "properties": {
+      "replayed": {
+        "description": "真建出新 attempt 的收件人数(0 或 1;不代表已送达)",
+        "type": "number",
+      },
+      "results": {
+        "description": "逐收件人结局",
+        "items": {
+          "$ref": "#/components/schemas/NotificationWecomReplayItemDto",
+        },
+        "type": "array",
+      },
+      "skipped": {
+        "description": "未建新 attempt 的收件人数(0 或 1);replayed + skipped = results 长度",
+        "type": "number",
+      },
+    },
+    "required": [
+      "replayed",
+      "skipped",
+      "results",
+    ],
+    "type": "object",
+  },
   "OrganizationOptionItemDto": {
     "properties": {
       "code": {
@@ -15488,6 +15551,16 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "required": [
       "reason",
     ],
+    "type": "object",
+  },
+  "ReplayNotificationWecomDto": {
+    "properties": {
+      "overrideReason": {
+        "default": false,
+        "description": "显式绕过「上一次终态必须在允许集内」这一条(默认 false)。只绕这一条:已 SENT / 在途 attempt / 非系统定向三条护栏一概不绕。传 true 会在审计里显式留痕(extra.overrideReason),用于事后追查谁绕过了允许集",
+        "type": "boolean",
+      },
+    },
     "type": "object",
   },
   "ResetPasswordBySmsDto": {
@@ -53753,6 +53826,177 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
         },
       ],
       "summary": "发布 admin 广播通知(draft → published,publishGeneration 原子 +1,置 publishedAt = 推送时刻;system-directed → 31030) [rbac: notification.publish.record]",
+      "tags": [
+        "Admin - Notifications",
+      ],
+    },
+  },
+  "/api/admin/v1/notifications/{id}/replay-wecom": {
+    "post": {
+      "operationId": "NotificationAdminController_replayWecom",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ReplayNotificationWecomDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/NotificationWecomReplayResultDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "重发系统定向通知的企业微信投递(建新 child + 新 eventKey;默认只放行上次是 rate-limited / provider-contract-error 的,越界需 overrideReason=true;已 SENT / 在途 attempt / 非系统定向一概拒) [rbac: notification.replay.wecom]",
       "tags": [
         "Admin - Notifications",
       ],

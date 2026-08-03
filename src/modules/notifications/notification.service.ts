@@ -46,6 +46,9 @@ import type {
   NotificationAdminDetailDto,
   NotificationAdminListItemDto,
   NotificationSmsSendResultDto,
+  NotificationWecomReplayItemDto,
+  NotificationWecomReplayResultDto,
+  ReplayNotificationWecomDto,
   SendNotificationSmsDto,
   UpdateNotificationDto,
 } from './notification.dto';
@@ -539,6 +542,70 @@ export class NotificationService {
       confirmed: true,
       ...summary,
     };
+  }
+
+  // ============ 端点:系统定向通知的企业微信 replay(T6-1 运维入口)============
+  //
+  // **本方法零判据**。允许集(`rate-limited` / `provider-contract-error`)、已 SENT 去重、
+  // 在途 attempt、非系统定向、never-attempted —— 全部留在
+  // `NotificationOutboxService.replayDirectedWecomDelivery()` 里(F3 第三刀 #901)。
+  // 这里只做三件事:判权、搬参数、记账。**在这一层重写一遍允许集正是本 finding 的成因类型**
+  // (runbook §6 写了限制、代码没有执行位 = 等于没限制;第二份判据 = 两把会各自漂移的尺子)。
+  //
+  // 因此也**不**预检"通知存不存在"—— 那会是原语已经拥有的判断的第二份拷贝。
+  // 通知不存在返 `outcome='notification-not-found'`(HTTP 200),而不是像 send-sms 那样抛 31001:
+  // 端点本身就是一个诊断入口,把结局做成闭集比拆成 error/200 两条通路更好查。
+  //
+  // **审计**:复用 `notification.publish` 伞事件 + `extra.operation='replay-wecom'`(镜像 send-sms,
+  // 零新 AuditLogEvent)。**每一次授权调用都记**(含被拒的)—— 运维面要回答的是
+  // 「谁在什么时候试图重发了什么」,被拒同样是事实。`overrideReason` 单独成字段,
+  // 使「谁绕过了允许集」可以直接按 extra 过滤查出来。
+  // 禁入 audit:wecomUserId / 深链 / 任何凭证(§5.5)—— 本方法全程不接触它们。
+  async replayWecom(
+    id: string,
+    dto: ReplayNotificationWecomDto,
+    user: CurrentUserPayload,
+    meta: AuditMeta,
+  ): Promise<NotificationWecomReplayResultDto> {
+    await this.assertCanOrThrow(user, 'notification.replay.wecom');
+    const overrideReason = dto.overrideReason === true;
+    const replay = await this.outbox.replayDirectedWecomDelivery(id, { overrideReason });
+
+    // 收件人只是**报告用的标签**,不是判据:原语判定 `not-system-directed` 的条件之一就是
+    // `recipientMemberId === null`,所以这次投影读不可能与它给出的结局矛盾(读到 null ⇔ 没有收件人)。
+    const recipient = await this.prisma.notification.findUnique({
+      where: { id },
+      select: { recipientMemberId: true },
+    });
+    const item: NotificationWecomReplayItemDto = {
+      memberId: recipient?.recipientMemberId ?? null,
+      outcome: replay.state === 'not-replayable' ? replay.reason : replay.state,
+      ...(replay.state === 'enqueued'
+        ? { newIntentId: replay.intentId, newEventKey: replay.eventKey }
+        : {}),
+    };
+    const replayed = item.outcome === 'enqueued' ? 1 : 0;
+
+    await this.auditLogs.log({
+      event: 'notification.publish', // 伞事件:operation 区分(镜像 send-sms / 状态机)
+      actorUserId: user.id,
+      actorRoleSnap: user.role,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: id,
+      meta,
+      extra: {
+        operation: 'replay-wecom',
+        overrideReason,
+        replayed,
+        skipped: 1 - replayed,
+        // 逐 outcome 计数:单收件人下恒是一个 key 计 1,但形状与"若将来有多收件人"一致,
+        // 且让「按 outcome 聚合查历史 replay」不必解析 results 数组。
+        outcomes: { [item.outcome]: 1 },
+        newIntentIds: item.newIntentId ? [item.newIntentId] : [],
+      },
+    });
+
+    return { replayed, skipped: 1 - replayed, results: [item] };
   }
 
   // 状态机内嵌(镜像 content;立即生效无 cron)。非法跃迁 → 31030。返原始 row(publish 据 channels 派发)。

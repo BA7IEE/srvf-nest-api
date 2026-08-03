@@ -25,6 +25,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+import { IdParamDto } from '../../common/dto/id-param.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
@@ -33,6 +34,9 @@ import {
   NotificationAdminDetailDto,
   NotificationAdminListItemDto,
   NotificationSmsSendResultDto,
+  NotificationWecomReplayItemDto,
+  NotificationWecomReplayResultDto,
+  ReplayNotificationWecomDto,
   SendNotificationSmsDto,
   UpdateNotificationDto,
 } from './notification.dto';
@@ -56,6 +60,8 @@ function buildAuditMeta(req: Request): AuditMeta {
   NotificationAdminDetailDto,
   NotificationAdminListItemDto,
   NotificationSmsSendResultDto,
+  NotificationWecomReplayItemDto,
+  NotificationWecomReplayResultDto,
 )
 @Controller('admin/v1/notifications')
 export class NotificationAdminController {
@@ -235,5 +241,27 @@ export class NotificationAdminController {
     @Req() req: Request,
   ): Promise<NotificationSmsSendResultDto> {
     return this.service.sendSms(id, dto, user, buildAuditMeta(req));
+  }
+
+  // T6-1 运维入口:系统定向通知的企业微信 replay。判据全在 outbox 原语,本端点零第二份。
+  // 结局做成闭集出参而非 error 分流(诊断端点:「为什么没重发」比「HTTP 几」更重要)。
+  @Post(':id/replay-wecom')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '重发系统定向通知的企业微信投递(建新 child + 新 eventKey;默认只放行上次是 rate-limited / provider-contract-error 的,越界需 overrideReason=true;已 SENT / 在途 attempt / 非系统定向一概拒) [rbac: notification.replay.wecom]',
+  })
+  @ApiWrappedOkResponse(NotificationWecomReplayResultDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  // ⚠️ `@Param() params: IdParamDto` 而不是本文件其余 8 处的 `@Param('id') id: string` ——
+  // 后者是 `harness/legacy-param-id-baseline.json` 里逐条具名冻结的**存量**,只减不增;
+  // 往已在清单里的 controller 新增一个照样红(AGENTS §1 校验)。
+  replayWecom(
+    @Param() params: IdParamDto,
+    @Body() dto: ReplayNotificationWecomDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<NotificationWecomReplayResultDto> {
+    return this.service.replayWecom(params.id, dto, user, buildAuditMeta(req));
   }
 }

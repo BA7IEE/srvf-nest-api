@@ -694,6 +694,13 @@ const EXPECTED_ROUTES: ReadonlyArray<
   //   admin/v1/notifications/:id/send-sms(显式发起短信兜底紧急召集;计费确认必需 confirmed=true 才真发,
   //   false 仅预览受众计数;R 模式 notification.send.sms 无 @RequirePermissions;短信永不随 publish 自动发)。
   ['post', '/api/admin/v1/notifications/{id}/send-sms'],
+  // 企业微信 T6-1 定向通知 replay 运维入口(2026-08-03;第二轮外部评审 SHOULD-FIX 3 收口),+1 → 451。
+  //   admin/v1/notifications/:id/replay-wecom(系统定向通知的企业微信重发;R 模式新码
+  //   notification.replay.wecom〔绑 ops-admin,不绑 biz-admin〕无 @RequirePermissions)。
+  //   **恒返 200**,结局在 outcome 十值闭集里(诊断端点:"为什么没重发"比"HTTP 几"更该一眼看到);
+  //   判据(允许集 + 已 SENT / 在途 attempt / 非系统定向三条护栏)全在 NotificationOutboxService
+  //   原语里,端点层零第二份 —— 连"通知存不存在"都不预检(那会是原语已有判断的第二份拷贝)。
+  ['post', '/api/admin/v1/notifications/{id}/replay-wecom'],
   ['get', '/api/app/v1/notifications'],
   ['get', '/api/app/v1/notifications/unread-count'],
   ['get', '/api/app/v1/notifications/{id}'],
@@ -1499,8 +1506,10 @@ describe('OpenAPI 契约快照', () => {
   // 证书标准库 PR-5(2026-07-30):+3(证据读取 1 + 全局工作台 2)→ 438。
   // 企业微信接入 T2(2026-08-01):+4 settings 端点(GET / PATCH / reset-credentials /
   //   test-connection)→ **442**。T3 起还会增 OAuth 公开面与 me/wecom、admin 清除。
+  // 企业微信 T6-1(2026-08-03):+1 定向 replay 运维入口
+  //   (POST admin/v1/notifications/:id/replay-wecom)→ **451**。
   it('企业微信 T2 落地后路由足迹精确为 442', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(450);
+    expect(EXPECTED_ROUTES).toHaveLength(451);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

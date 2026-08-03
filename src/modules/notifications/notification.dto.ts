@@ -15,6 +15,7 @@ import {
   MinLength,
 } from 'class-validator';
 
+import { OmittableOnly } from '../../common/decorators/omittable-only.decorator';
 import {
   NOTIFICATION_BODY_MAX,
   NOTIFICATION_CHANNELS_ALLOWED,
@@ -196,6 +197,87 @@ export class NotificationSmsSendResultDto {
       '本请求同步首轮观测为跳过的条数(已发送 / 同日同模板幂等 / 日封顶 / 间隔;预览恒 0;不等于 durable final)',
   })
   skipped!: number;
+}
+
+// ============ 定向通知企业微信 replay(T6-1;运维入口)============
+//
+// 服务层原语 `NotificationOutboxService.replayDirectedWecomDelivery()` 在 F3 第三刀(#901)
+// 已就位,但**没有入口** —— runbook §6.2 只能写「需维护者在应用上下文中调用」,
+// 对本项目维护者而言那不是可执行路径。本组 DTO 给它一个 admin 端点的形状。
+//
+// **端点层不复制任何判据**:允许集(`rate-limited` / `provider-contract-error`)与
+// 「已 SENT / 在途 attempt / 非系统定向」三条护栏全部留在原语里,DTO 只搬运结果。
+
+export class ReplayNotificationWecomDto {
+  @ApiPropertyOptional({
+    description:
+      '显式绕过「上一次终态必须在允许集内」这一条(默认 false)。' +
+      '只绕这一条:已 SENT / 在途 attempt / 非系统定向三条护栏一概不绕。' +
+      '传 true 会在审计里显式留痕(extra.overrideReason),用于事后追查谁绕过了允许集',
+    default: false,
+  })
+  // ⚠️ `@OmittableOnly()` 而不是 `@IsOptional()`:这个字段业务上**不可清空** ——
+  // 它只有"省略(= 不绕)"和"显式 true(= 我知道我在绕)"两种合法形态。
+  // `@IsOptional()` 会让 `null` 静默穿过校验层并被当成"没传",
+  // 而绕过允许集恰恰是最不该被静默的那个动作。用 OmittableOnly 后 `null` 稳定 400。
+  @OmittableOnly()
+  @IsBoolean()
+  overrideReason?: boolean;
+}
+
+// 逐收件人 replay 结果。系统定向通知恰有一个收件人,故本数组长度恒为 1;
+// 做成数组是为了让「广播 replay 若将来立项」不必改出参形状(现在**没有**广播 replay,
+// 广播继续走 unpublish + publish,见 runbook §6.1)。
+export class NotificationWecomReplayItemDto {
+  @ApiProperty({
+    description:
+      '收件人 memberId;通知层面就被拒时为 null(不存在 / 已软删 / 非 published / 非系统定向 / 未勾 wecom —— 这几种情况没有收件人可谈)',
+    // 显式 `type` 不能省:TS 的 `string | null` 到了 Swagger 反射里会退化成 `type: object`,
+    // 契约就说不清"它是个可空字符串"。
+    type: String,
+    nullable: true,
+  })
+  memberId!: string | null;
+  @ApiProperty({
+    description:
+      'replay 结局(闭集)。enqueued = 已建新 attempt;already-sent = 这个人这条通知已收到过(跨 attempt 永久去重事实);' +
+      'active-attempt-exists = 还有一条 pending/processing 在跑;' +
+      'never-attempted = 从来没有过 wecom child(这不是"没发成功",replay 不是补发入口);' +
+      'last-attempt-not-replayable = 上一次不是"等人工 replay"的那种终态(如 channel-disabled / recipient-unlicensed);' +
+      '其余为通知形态类拒绝',
+    enum: [
+      'enqueued',
+      'already-sent',
+      'active-attempt-exists',
+      'notification-not-found',
+      'notification-deleted',
+      'notification-not-published',
+      'not-system-directed',
+      'channel-not-declared',
+      'never-attempted',
+      'last-attempt-not-replayable',
+    ],
+  })
+  outcome!: string;
+  @ApiPropertyOptional({ description: '新建 child intent id(仅 outcome=enqueued 时出现)' })
+  newIntentId?: string;
+  @ApiPropertyOptional({
+    description: '新建 child 的 eventKey(带 :r{n} replay nonce;仅 outcome=enqueued 时出现)',
+  })
+  newEventKey?: string;
+}
+
+// replay 回执:`enqueued` 只表示新 attempt 已入队,**不**代表已送达 ——
+// 投递恒由 worker 在事务外执行,结果看 `notification_deliveries`。
+export class NotificationWecomReplayResultDto {
+  @ApiProperty({ description: '真建出新 attempt 的收件人数(0 或 1;不代表已送达)' })
+  replayed!: number;
+  @ApiProperty({
+    description: '未建新 attempt 的收件人数(0 或 1);replayed + skipped = results 长度',
+  })
+  skipped!: number;
+  @ApiProperty({ type: [NotificationWecomReplayItemDto], description: '逐收件人结局' })
+  results!: NotificationWecomReplayItemDto[];
 }
 
 // ============ admin 列表入参(评审稿 §6 端点 2;admin 见全部状态 / 全可见档)============

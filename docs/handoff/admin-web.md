@@ -228,8 +228,20 @@
 | 软删(任意态)| `DELETE /api/admin/v1/notifications/{id}` | `[rbac: notification.delete.record]` |
 | 发布 / 撤回 / 归档(状态机 draft→published→archived,立即生效无 cron;非法跃迁 31030)| `POST …/notifications/{id}/{publish,unpublish,archive}` | `[rbac: notification.publish.record]` |
 | **S5 发送短信兜底**(紧急召集;须已发布 + channels 含 sms,否则 31013;通道未配 24030)。**计费确认必需**:`confirmed:false` → 仅预览,`recipientCount` 为受众快照 / 预估(零发送,不保证最终计费);`confirmed:true` → 已确认并创建 / 尝试任务,不代表全部最终完成。`sent/failed/skipped` 仅为本请求同步首轮观测;not-claimed 计入 `failed`,其 durable final 可能随后成功;缺 `confirmed` → 400 | `POST /api/admin/v1/notifications/{id}/send-sms`(body: `confirmed: boolean`;返 `{confirmed, recipientCount, sent, failed, skipped}`)| `[rbac: notification.send.sms]` |
+| **T6-1 定向通知企业微信 replay**(运维排障入口;**本期前端不做按钮**,见下方说明)。**恒返 200**,结局在 `results[0].outcome` 闭集里;`overrideReason:true` 绕过"上一次终态必须可重发"这一条,其余护栏(已 SENT / 在途 attempt / 非系统定向)一概不绕 | `POST /api/admin/v1/notifications/{id}/replay-wecom`(body: `{ overrideReason?: boolean }`;返 `{replayed, skipped, results:[{memberId, outcome, newIntentId?, newEventKey?}]}`)| `[rbac: notification.replay.wecom]` |
 
 **字段/可见性**:可见档 4 选 1 `member` / `formal_member` / `department` / `management`(**通知去 public**,会员面专属);`formal_member` 只面向 ACTIVE 且 `gradeCode∈level-1..level-7` 的正式队员，不由组织归属推导；`department` 档独立按当前 activeOrgIds，且须填活跃部门 orgId 数组(否则 31012);`notificationTypeCode` ∈ `notification_type` 字典(含 `activity-reminder` / `activity-published` / `activity-changed` / `registration-result` / `attendance-result` / `recruitment` / `emergency` / `general`)。统一形状列 `audienceType`/`sourceType`/`channels` 出参回显。**会员侧站内信 feed**(list/未读红点/标记已读)见 [`miniapp.md`](miniapp.md)。
+
+**T6-1 定向通知企业微信 replay(2026-08-03;FE 可选适配,本期不要求做)**:企业微信应用消息通道
+撞官方限流(45009)或请求契约错时,**系统定向通知**(报名审批、考勤退回这类)的投递会进 dead 终态
+且**不会自动重试** —— 广播可以走"撤回 + 重新发布",定向没有这条路,于是需要一个显式重发入口。
+本期落的是**后端端点 + 权限码 + 审计**;**试点期由维护者直接调端点,前端不必做按钮**。
+真要做时:入口属**运维排障**面(不是通知编辑页的常规操作),权限码 `notification.replay.wecom` 归
+**ops-admin**(与 `wecom-setting.*` 同族),biz-admin **没有**这条码 —— 通知编辑页那批人默认点不到它。
+端点恒返 200,前端要读的是 `results[0].outcome`(十值闭集)而不是 HTTP 码;`enqueued` 只表示
+**已入队**,不代表已送达(投递由 worker 异步执行,结果在 `notification_deliveries`)。
+`overrideReason:true` 是"我知道我在绕过判据"的显式动作,会在审计里留痕 ——
+若做成按钮,**必须**是二次确认而不是默认勾选。详见 [`docs/ops/wecom-message-channel-rollout.md`](../ops/wecom-message-channel-rollout.md) §6.2。
 
 **S2 微信渠道勾选**:create/update 入参 `channels`(数组,值 ∈ `["in-app","wechat","sms"]`〔S5 放开 `sms`〕;**站内恒发**,后端强制含 `in-app`;不传 = 仅站内)。勾 `wechat` 后，publish 业务事务内写 durable root intent；worker 在事务提交后对「该类型已配微信模板 + 可见 + 有订阅 quota」的会员逐人执行 Effect(非订阅者不打扰)，provider 失败按 retry/dead 收口；投递成败落 `NotificationDelivery`(本期无 admin 查询端点,运维看库;`recipientRef` 为掩码 openid,非明文)。**前端只需在通知编辑页加渠道勾选**,微信推送由后端 publish 自动触发,无独立"发送"按钮。**`sms` 渠道例外**:勾 `sms` 仅"声明可短信兜底",**短信永不随 publish 自动发**;真发须 admin 在该通知详情页显式点"发送短信" → 走上表 S5 `send-sms` 端点(计费二次确认)。
 

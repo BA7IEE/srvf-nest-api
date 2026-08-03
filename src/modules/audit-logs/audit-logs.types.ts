@@ -171,10 +171,14 @@ export type AuditLogEvent =
   // 短信(紧急召集)复用本伞事件,extra.operation='send-sms' + extra.{recipientCount,sent,failed,skipped}(收件人计数,
   // **无新增 audit 事件串**——沿伞事件多 operation 范式,不破 D6 v1.1 §8.1 闭 union 铁律);逐条投递落 NotificationDelivery
   // / sms_send_logs 不入 audit(手机号经 maskPhone,audit 仅计数无明文)。
+  // 企业微信 T6-1 定向 replay 运维入口(2026-08-03;第二轮外部评审 SHOULD-FIX 3 收口):同样复用本伞事件,
+  // extra.operation='replay-wecom' + extra.{overrideReason,replayed,skipped,outcomes,newIntentIds}
+  // (**无新增 audit 事件串**,沿 send-sms 同一范式)。`overrideReason` 单独成布尔字段 ⇒
+  // 「谁绕过了允许集」可按 extra 直接筛出来;wecomUserId / 深链 / 凭证一概不入(§5.5)。
   | 'notification.create' // admin 建通知草稿(after 快照)
   | 'notification.update' // admin 更新通知(before/after)
   | 'notification.delete' // admin 软删通知(before)
-  | 'notification.publish' // admin 状态机 + S5 短信发起;extra.operation ∈ {publish, unpublish, archive, send-sms}
+  | 'notification.publish' // admin 状态机 + S5 短信发起 + T6-1 定向 replay;extra.operation ∈ {publish, unpublish, archive, send-sms, replay-wecom}
   // 终态 scoped-authz PR4「任职」(2026-07-01;冻结评审稿 org-position-scoped-authz-terminal-design-review.md
   // §1.7〔"任命/撤销...审计...复用本表,resourceType 扩 position_assignment"〕/ §11 PR4 决议):任职写 2 事件。
   // resourceType='position_assignment';create 写 after 快照 / revoke 写 before+after(status ACTIVE→REVOKED)。

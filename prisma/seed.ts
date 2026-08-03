@@ -2129,8 +2129,25 @@ const MEMBER_ACCOUNT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
+// 企业微信 T6-1(2026-08-03;第二轮外部评审 SHOULD-FIX 3 收口):系统定向通知的企业微信 replay
+// 运维入口判权码 1 条。归属**运维面**(沿 wecom-setting.* / user.wecom.clear 同族)⇒ 整条绑 ops-admin、
+// **不**绑 biz-admin —— 故进 ALL_PERMISSION_SEED + OPS_ADMIN_PERMISSION_SEED,而**不**进
+// BIZ_PERMISSION_SEED(notification.* 其余 6 条在那边,是业务面;这一条不是)。
+// 端点 POST admin/v1/notifications/:id/replay-wecom 同刀落地 ⇒ 0 孤码。
+const NOTIFICATION_REPLAY_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'notification.replay.wecom',
+    module: 'notification',
+    action: 'replay',
+    resourceType: 'wecom',
+    description:
+      '重发系统定向通知的企业微信投递(建新 child + 新 eventKey;默认只放行上次是 rate-limited / provider-contract-error 的,越界需显式 overrideReason;绑 ops-admin,不绑 biz-admin)',
+  },
+];
+
 // Permission 全集(用于 step 1 upsert;14 rbac.* + 32 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME = 81 条
-// + F1「A 组」1 META + 队员账号闭环 v1+v2 2 MEMBER-ACCOUNT = 见 ALL_PERMISSION_SEED.length 运行时校验为准)
+// + F1「A 组」1 META + 队员账号闭环 v1+v2 2 MEMBER-ACCOUNT + 企业微信 T6-1 1 NOTIFICATION-REPLAY
+// = 见 ALL_PERMISSION_SEED.length 运行时校验为准)
 const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RBAC_PERMISSION_SEED,
   ...PR_2A_PERMISSION_SEED,
@@ -2145,6 +2162,7 @@ const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...ANNOUNCEMENT_IMPORT_PERMISSION_SEED,
   ...META_PERMISSION_SEED,
   ...MEMBER_ACCOUNT_PERMISSION_SEED,
+  ...NOTIFICATION_REPLAY_PERMISSION_SEED,
 ];
 
 // ops-admin 完整绑定集合(14 rbac.* + 44 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME + 3 AUTHZ + 2 ANNOUNCEMENT-IMPORT + 1 META + 2 MEMBER-ACCOUNT = 96 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B / SMS E-3 / WECHAT 评审稿 §3.4 / REALNAME E-R-19;PR-2A 44 = base 20 + 终态 scoped-authz PR1 org.move.node + PR2 membership 4 + PR3 position 4 + position-rule 4 + PR4 position-assignment 4 + PR5 supervision-assignment 4 + PR6 role-binding 4 码,全绑 ops-admin 无过滤;AUTHZ 3 = PR10 authz.explain.decision + F3「C 组」authz.{explain-batch,action-state}.decision 诊断码,整条绑;ANNOUNCEMENT-IMPORT 2 = PR11 announcement-import.{preview,execute}.record,整条绑;META 1 = F1「A 组」meta.resolve.label 诊断码,整条绑;MEMBER-ACCOUNT 2 = 队员账号闭环 v1 member.grant.account + v2 member.bind.account,整条绑)
@@ -2155,6 +2173,9 @@ const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
 // 注:`wechat-setting.reset.credentials` 从 WECHAT_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;wechat 评审稿 §3.4)
 // 注:`wecom-setting.reset.credentials` 从 WECOM_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;wecom 冻结稿 §11.1)—— T2 ops-admin +3(96→99);T3 追加 `user.wecom.clear` 整条绑,ops-admin +1(99→100)
 // 注:`realname-setting.reset.credentials` 从 REALNAME_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;招新评审稿 E-R-19)
+// 注:NOTIFICATION-REPLAY 1 = 企业微信 T6-1 `notification.replay.wecom`(定向 replay 运维入口),整条绑 ⇒ ops-admin +1(100→101)
+//     —— 沿 T2/T3 同一记法:上方 OPS_ADMIN_DESCRIPTION 里那个 "96" 是**基线家族**历史值,由本组注释逐刀累加订正,不逐刀重写描述串
+//     (描述串是入库字段,改它等于改 seed 出来的数据)。
 const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RBAC_PERMISSION_SEED,
   ...PR_2A_PERMISSION_SEED,
@@ -2169,6 +2190,7 @@ const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...ANNOUNCEMENT_IMPORT_PERMISSION_SEED,
   ...META_PERMISSION_SEED,
   ...MEMBER_ACCOUNT_PERMISSION_SEED,
+  ...NOTIFICATION_REPLAY_PERMISSION_SEED,
 ];
 
 // 运营管理员角色 code(沿 D7 §10.1 / §10.3 ops-admin 唯一公开 placeholder)
