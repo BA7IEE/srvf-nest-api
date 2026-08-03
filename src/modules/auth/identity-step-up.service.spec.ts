@@ -15,6 +15,7 @@ import {
   IdentityStepUpFactor,
   IdentityStepUpService,
   type StepUpCredentialSnapshotInput,
+  type StepUpWecomBindingSnapshotInput,
   type StepUpWecomIdentitySnapshotInput,
 } from './identity-step-up.service';
 
@@ -30,7 +31,11 @@ const CURRENT_USER = {
   memberId: null,
 };
 
-function credential(overrides: Partial<StepUpCredentialSnapshotInput & { role: Role }> = {}) {
+function credential(
+  overrides: Partial<
+    StepUpCredentialSnapshotInput & { role: Role; wecomIdentityVersion: number }
+  > = {},
+) {
   return {
     id: 'user-1',
     passwordHash: 'hash-1',
@@ -40,6 +45,9 @@ function credential(overrides: Partial<StepUpCredentialSnapshotInput & { role: R
     status: UserStatus.ACTIVE,
     deletedAt: null,
     role: Role.USER,
+    // P1-27 第一刀 B2:身份代际与 credential 七字段同一次读回;
+    // 它**不**进 computeCredentialSnapshot(那个算法逐字节冻结)。
+    wecomIdentityVersion: 0,
     ...overrides,
   };
 }
@@ -54,6 +62,21 @@ function wecomIdentity(overrides: Partial<StepUpWecomIdentitySnapshotInput> = {}
     status: 'active',
     updatedAt: new Date('2026-08-01T00:00:00.000Z'),
     ...overrides,
+  };
+}
+
+// P1-27 第一刀 B2:`verifyProof` 的第四参现在是「代际 + 身份」两件套。
+// `identity: null` 表示"当前无绑定",与"整个入参为 null"(调用方漏传)**不同** ——
+// 后者必须被拒,那正是 ABA 回环重新打开的入口。
+function wecomBinding(
+  overrides: {
+    identityVersion?: number;
+    identity?: StepUpWecomIdentitySnapshotInput | null;
+  } = {},
+): StepUpWecomBindingSnapshotInput {
+  return {
+    identityVersion: overrides.identityVersion ?? 0,
+    identity: overrides.identity === undefined ? wecomIdentity() : overrides.identity,
   };
 }
 
@@ -323,11 +346,19 @@ describe('IdentityStepUpService', () => {
           },
           { secret: key, audience: 'srvf.identity-step-up', expiresIn: 300 },
         );
-        // 无论传不传身份指纹、传哪一条,非 WECOM_BIND 的判据都不该动
+        // 无论传不传企业微信快照、传哪一条(含代际变化),非 WECOM_BIND 的判据都不该动
         expect(() => service.verifyProof(token, row, action)).not.toThrow();
-        expect(() => service.verifyProof(token, row, action, wecomIdentity())).not.toThrow();
+        expect(() => service.verifyProof(token, row, action, wecomBinding())).not.toThrow();
         expect(() =>
-          service.verifyProof(token, row, action, wecomIdentity({ id: 'other' })),
+          service.verifyProof(
+            token,
+            row,
+            action,
+            wecomBinding({ identity: wecomIdentity({ id: 'other' }) }),
+          ),
+        ).not.toThrow();
+        expect(() =>
+          service.verifyProof(token, row, action, wecomBinding({ identityVersion: 99 })),
         ).not.toThrow();
       }
     });
@@ -343,13 +374,25 @@ describe('IdentityStepUpService', () => {
         META,
       );
 
-      // 同一份身份 → 通过
+      // 同一份身份 + 同一代际 → 通过
       expect(() =>
-        service.verifyProof(stepUpToken, row, StepUpAction.WECOM_BIND, wecomIdentity()),
+        service.verifyProof(stepUpToken, row, StepUpAction.WECOM_BIND, wecomBinding()),
       ).not.toThrow();
 
       // 被 admin 清除(锁后重读为 null)→ 指纹从"有"变成"无" ⇒ 拒。
       // 这正是 §7.4 的立项理由:防止管理员刚清除绑定,旧 proof 在 5 分钟内又把身份绑回来。
+      // 注意这里连代际都不用改就已经拒 —— §7.4 原判据逐条保留,B2 是**叠加**不是替换。
+      expect(() =>
+        service.verifyProof(
+          stepUpToken,
+          row,
+          StepUpAction.WECOM_BIND,
+          wecomBinding({ identity: null }),
+        ),
+      ).toThrow(new BizException(BizCode.STEP_UP_PROOF_INVALID));
+
+      // 第四参整体为 null = 调用方漏传 ⇒ 也必须拒。
+      // 默默当成"无绑定"处理就等于把 B2 修掉的那条回环重新打开。
       expect(() => service.verifyProof(stepUpToken, row, StepUpAction.WECOM_BIND, null)).toThrow(
         new BizException(BizCode.STEP_UP_PROOF_INVALID),
       );
@@ -375,7 +418,12 @@ describe('IdentityStepUpService', () => {
       ];
       for (const variant of variants) {
         expect(() =>
-          service.verifyProof(stepUpToken, row, StepUpAction.WECOM_BIND, wecomIdentity(variant)),
+          service.verifyProof(
+            stepUpToken,
+            row,
+            StepUpAction.WECOM_BIND,
+            wecomBinding({ identity: wecomIdentity(variant) }),
+          ),
         ).toThrow(new BizException(BizCode.STEP_UP_PROOF_INVALID));
       }
     });
@@ -392,11 +440,89 @@ describe('IdentityStepUpService', () => {
       );
 
       expect(() =>
-        service.verifyProof(stepUpToken, row, StepUpAction.WECOM_BIND, null),
+        service.verifyProof(
+          stepUpToken,
+          row,
+          StepUpAction.WECOM_BIND,
+          wecomBinding({ identity: null }),
+        ),
       ).not.toThrow();
       // 期间被别的请求绑上了 ⇒ 这张 proof 描述的世界已经不成立
       expect(() =>
-        service.verifyProof(stepUpToken, row, StepUpAction.WECOM_BIND, wecomIdentity()),
+        service.verifyProof(stepUpToken, row, StepUpAction.WECOM_BIND, wecomBinding()),
+      ).toThrow(new BizException(BizCode.STEP_UP_PROOF_INVALID));
+    });
+
+    // ===== P1-27 第一刀 B2(2026-08-03):单调身份代际,专治 ABA 回环 =====
+    //
+    // 这条是本刀的核心判据。上面那条"签发时无身份 → 首绑仍有效"在**修复前后都绿**,
+    // 因为它只走了 `null → 用` 一步;真正的洞在 `null → bind → clear → null`
+    // 这个**回环**上 —— 身份指纹字面上回到了起点,而代际不会。
+    it('WECOM_BIND:身份指纹回到 null,但代际已变 ⇒ 无绑定态签的旧 proof 不得复活(ABA)', async () => {
+      const { service, prisma } = makeHarness();
+      // 签发时:无绑定,代际 0
+      prisma.user.findFirst.mockResolvedValue(credential({ wecomIdentityVersion: 0 }));
+      prisma.wecomIdentity.findFirst.mockResolvedValue(null);
+
+      const { stepUpToken } = await service.stepUpWithPassword(
+        CURRENT_USER,
+        { action: StepUpAction.WECOM_BIND, password: 'pw' },
+        META,
+      );
+      const row = credential();
+
+      // 对照:世界没变(仍是"无绑定 + 代际 0")⇒ 仍然有效
+      expect(() =>
+        service.verifyProof(
+          stepUpToken,
+          row,
+          StepUpAction.WECOM_BIND,
+          wecomBinding({ identityVersion: 0, identity: null }),
+        ),
+      ).not.toThrow();
+
+      // ABA:bind(代际 →1)后 admin clear(代际 →2),身份指纹又是 null。
+      // **修复前**这一档与签发时逐字节相同 ⇒ 旧 proof 复活(e2e 实测 HTTP 200);
+      // 修复后代际不同 ⇒ 10008。
+      for (const identityVersion of [1, 2, 7]) {
+        expect(() =>
+          service.verifyProof(
+            stepUpToken,
+            row,
+            StepUpAction.WECOM_BIND,
+            wecomBinding({ identityVersion, identity: null }),
+          ),
+        ).toThrow(new BizException(BizCode.STEP_UP_PROOF_INVALID));
+      }
+    });
+
+    it('WECOM_BIND:代际单独变化(身份行一字未动)也让 proof 失效', async () => {
+      const { service, prisma } = makeHarness();
+      prisma.user.findFirst.mockResolvedValue(credential({ wecomIdentityVersion: 3 }));
+      prisma.wecomIdentity.findFirst.mockResolvedValue(wecomIdentity());
+
+      const { stepUpToken } = await service.stepUpWithPassword(
+        CURRENT_USER,
+        { action: StepUpAction.WECOM_BIND, password: 'pw' },
+        META,
+      );
+      const row = credential();
+
+      expect(() =>
+        service.verifyProof(
+          stepUpToken,
+          row,
+          StepUpAction.WECOM_BIND,
+          wecomBinding({ identityVersion: 3 }),
+        ),
+      ).not.toThrow();
+      expect(() =>
+        service.verifyProof(
+          stepUpToken,
+          row,
+          StepUpAction.WECOM_BIND,
+          wecomBinding({ identityVersion: 4 }),
+        ),
       ).toThrow(new BizException(BizCode.STEP_UP_PROOF_INVALID));
     });
 

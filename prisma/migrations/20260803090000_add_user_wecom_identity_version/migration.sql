@@ -1,0 +1,12 @@
+-- 企业微信 T3 账号接管面 B2(P1-27 第一刀,2026-08-03)—— 单调身份代际
+--
+-- 纯 additive:加一列 + NOT NULL DEFAULT 0,零数据修改、零索引、零约束、零删除。
+-- 存量行一律回填 0 —— 这是**正确**的起点:代际只需要"从此刻起严格单调",
+-- 不需要追溯历史绑定次数(旧 proof 最长只有 300 秒寿命,部署完成即自然清空)。
+--
+-- 消费方:`auth/identity-step-up.service.ts` 的 `WECOM_BIND` snapshot。
+-- 递增方:两条绑定事务 + `users/wecom-identity-revoke.ts` 撤销原语。
+-- ⚠️ 表名是 `User`(PascalCase)不是 `users`:User model 没有 `@@map`,
+-- 走的是 Prisma 默认表名。本仓大部分表有 @@map,这一张恰好没有 —— 写 `users` 会
+-- 在 migrate deploy 时 42P01 直接失败(本刀初版实测)。
+ALTER TABLE "User" ADD COLUMN "wecomIdentityVersion" INTEGER NOT NULL DEFAULT 0;

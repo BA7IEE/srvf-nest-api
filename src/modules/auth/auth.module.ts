@@ -14,6 +14,7 @@ import { IdentityStepUpService } from './identity-step-up.service';
 import { LoginSmsService } from './login-sms.service';
 import { LoginWechatService } from './login-wechat.service';
 import { LoginWecomService } from './login-wecom.service';
+import { WecomLoginFailureGate } from './wecom-login-failure.gate';
 import { PasswordResetService } from './password-reset.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
@@ -56,6 +57,9 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     LoginSmsService,
     LoginWechatService,
     LoginWecomService,
+    // P1-27 第一刀 B3:36010 的唯一归一化出口。做成 provider 是为了让
+    // "每一条 36010 都确实经过它"这件事能被单测 spy 出来(判据要可机器核对)。
+    WecomLoginFailureGate,
     IdentityStepUpService,
     JwtStrategy,
   ],

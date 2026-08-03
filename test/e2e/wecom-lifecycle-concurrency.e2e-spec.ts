@@ -5,6 +5,10 @@ import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import {
+  WECOM_BIND_NONCE_COOKIE,
+  WECOM_LOGIN_NONCE_COOKIE,
+} from '../../src/modules/auth/wecom-browser-nonce';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser, TEST_PASSWORD } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
@@ -39,6 +43,23 @@ const WEB_BASE_URL = 'https://srvf-e2e-t4d.example.org';
 
 function stubWecomUserId(code: string): string {
   return `dev-wecom-${createHash('sha256').update(code).digest('hex').slice(0, 24)}`;
+}
+
+// P1-27 第一刀 B1(2026-08-03):authorize 下发的浏览器关联 nonce cookie 按 state 存档,
+// 模拟"同一个浏览器把流程走完" —— 本文件既有断言逐字不动。
+// 「换一个浏览器提交必须失败」的判据在 wecom-account-takeover.e2e-spec.ts。
+const browserJar = new Map<string, string>();
+
+function rememberNonce(res: request.Response, state: string, cookieName: string): void {
+  const raw = res.headers['set-cookie'] as unknown as string[] | undefined;
+  const line = (raw ?? []).find((c) => c.startsWith(`${cookieName}=`));
+  expect(line).toBeDefined();
+  browserJar.set(state, (line as string).split(';')[0]);
+}
+
+function withBrowser(req: request.Test, state: string): request.Test {
+  const cookie = browserJar.get(state);
+  return cookie === undefined ? req : req.set('Cookie', cookie);
 }
 
 describe('企业微信 User 生命周期撤销真并发(T4 e2e 组 D)', () => {
@@ -99,14 +120,18 @@ describe('企业微信 User 生命周期撤销真并发(T4 e2e 组 D)', () => {
   async function stateVia(app: INestApplication): Promise<string> {
     const res = await request(httpServer(app)).post(AUTHORIZE_PATH).send({});
     expect(res.status).toBe(200);
-    return /[?&]state=([^&#]+)/.exec(res.body.data.authorizeUrl as string)?.[1] as string;
+    const state = /[?&]state=([^&#]+)/.exec(res.body.data.authorizeUrl as string)?.[1] as string;
+    rememberNonce(res, state, WECOM_LOGIN_NONCE_COOKIE);
+    return state;
   }
 
   /** 真实 pre-auth 绑定链路(不手写 fixture 行,理由同组 A)。 */
   async function bindWecom(app: INestApplication, phone: string, code: string): Promise<void> {
-    const login = await request(httpServer(app))
-      .post(LOGIN_PATH)
-      .send({ code, state: await stateVia(app) });
+    const state = await stateVia(app);
+    const login = await withBrowser(request(httpServer(app)).post(LOGIN_PATH), state).send({
+      code,
+      state,
+    });
     expect(login.status).toBe(200);
     expect(login.body.data.bindingRequired).toBe(true);
     const bindingTicket = login.body.data.bindingTicket as string;
@@ -179,17 +204,20 @@ describe('企业微信 User 生命周期撤销真并发(T4 e2e 组 D)', () => {
       .set('Authorization', selfAuth)
       .send({});
     expect(authorize.status).toBe(200);
-    const state = /[?&]state=([^&#]+)/.exec(authorize.body.data.authorizeUrl as string)?.[1];
+    const state = /[?&]state=([^&#]+)/.exec(
+      authorize.body.data.authorizeUrl as string,
+    )?.[1] as string;
+    rememberNonce(authorize, state, WECOM_BIND_NONCE_COOKIE);
 
     const rebindCode = codeOf(nextSeq());
     const [deleteRes, rebindRes] = await Promise.all([
       request(httpServer(appA))
         .delete(`/api/admin/v1/users/${userId}`)
         .set('Authorization', superAdminAuth),
-      request(httpServer(appB))
-        .put(ME_WECOM_PATH)
-        .set('Authorization', selfAuth)
-        .send({ code: rebindCode, state, stepUpToken }),
+      withBrowser(
+        request(httpServer(appB)).put(ME_WECOM_PATH).set('Authorization', selfAuth),
+        state,
+      ).send({ code: rebindCode, state, stepUpToken }),
     ]);
 
     // 两条路径都取同一把 User 行锁 ⇒ 严格串行;两种序都必须落到同一个终态。
@@ -291,9 +319,10 @@ describe('企业微信 User 生命周期撤销真并发(T4 e2e 组 D)', () => {
         .post(`/api/admin/v1/members/${memberId}/account/reopen`)
         .set('Authorization', superAdminAuth)
         .send({ phone: newPhone }),
-      request(httpServer(appB))
-        .post(LOGIN_PATH)
-        .send({ code: codeOf(n), state }),
+      withBrowser(request(httpServer(appB)).post(LOGIN_PATH), state).send({
+        code: codeOf(n),
+        state,
+      }),
     ]);
 
     expect(reopenRes.status).toBe(200);

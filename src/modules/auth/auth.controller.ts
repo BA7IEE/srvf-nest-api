@@ -1,6 +1,6 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, Req, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedNullResponse,
@@ -55,6 +55,13 @@ import { LoginWechatService } from './login-wechat.service';
 import { LoginWecomService } from './login-wecom.service';
 import { PasswordResetService } from './password-reset.service';
 import { IdentityStepUpService } from './identity-step-up.service';
+import {
+  clearWecomBrowserNonceCookie,
+  readWecomBrowserNonce,
+  setWecomBrowserNonceCookie,
+  WECOM_BIND_NONCE_COOKIE,
+  WECOM_LOGIN_NONCE_COOKIE,
+} from './wecom-browser-nonce';
 
 @ApiTags('Auth')
 // Route B Phase 4(2026-06-01;沿 docs/api-surface-migration-plan.md §6 Phase 4):
@@ -443,8 +450,16 @@ export class AuthController {
     BizCode.WECOM_CHANNEL_NOT_CONFIGURED,
     BizCode.TOO_MANY_REQUESTS,
   )
-  authorizeWecomLogin(@Body() dto: WecomAuthorizeDto): Promise<WecomAuthorizeResponseDto> {
-    return this.loginWecom.authorizeForLogin({ returnPath: dto.returnPath });
+  async authorizeWecomLogin(
+    @Body() dto: WecomAuthorizeDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<WecomAuthorizeResponseDto> {
+    // B1:同一次 authorize 产出两个原值,去向严格分开 ——
+    // `state` 进 URL(会经企业微信重定向暴露),nonce 只进 `__Host-` Cookie。
+    // 响应体里没有 nonce,也不该有(见 IssuedWecomAuthorize 的注释)。
+    const issued = await this.loginWecom.authorizeForLogin({ returnPath: dto.returnPath });
+    setWecomBrowserNonceCookie(res, WECOM_LOGIN_NONCE_COOKIE, issued.browserNonce);
+    return issued.dto;
   }
 
   // 已绑定 → 同构签发 session;未绑定 → `{bindingRequired:true, bindingTicket}`。
@@ -465,9 +480,20 @@ export class AuthController {
     BizCode.WECOM_API_FAILED,
     BizCode.TOO_MANY_REQUESTS,
   )
-  loginByWecom(@Body() dto: LoginWecomDto, @Req() req: Request): Promise<WecomLoginResponseDto> {
+  async loginByWecom(
+    @Body() dto: LoginWecomDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<WecomLoginResponseDto> {
     const safeDto: LoginWecomDto = { code: dto.code, state: dto.state };
-    return this.loginWecom.login(safeDto, this.buildAuditMeta(req));
+    // B1:浏览器归属证据来自 `__Host-` Cookie,不是 body ——
+    // 放 body 里等于让攻击者连这一半也能自己填。
+    const browserNonce = readWecomBrowserNonce(req, WECOM_LOGIN_NONCE_COOKIE);
+    // state 是一次性的,对应的 nonce 无论本次成败都不该再留在浏览器里
+    // (成功 = 已消费;失败 = 这个浏览器本来就配不上它)。
+    // 放在 await 之前:失败路径会抛异常,写在后面就只有成功路径清得掉。
+    clearWecomBrowserNonceCookie(res, WECOM_LOGIN_NONCE_COOKIE);
+    return this.loginWecom.login(safeDto, browserNonce, this.buildAuditMeta(req));
   }
 
   // 同时挂 login-wecom 与 SMS send 两个限流器(§6.2:"同时挂登录 WeCom 限流和既有 SMS send 限流")。
@@ -539,11 +565,18 @@ export class AuthController {
     BizCode.WECOM_CHANNEL_NOT_CONFIGURED,
     BizCode.TOO_MANY_REQUESTS,
   )
-  authorizeWecomBindSelf(
+  async authorizeWecomBindSelf(
     @CurrentUser() currentUser: CurrentUserPayload,
     @Body() dto: WecomAuthorizeDto,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<WecomAuthorizeResponseDto> {
-    return this.loginWecom.authorizeForBindSelf(currentUser, { returnPath: dto.returnPath });
+    // B1:登录态换绑同样绑定发起浏览器。Cookie 名与登录流程**刻意不同** ——
+    // 同一浏览器里两条流程并存时不该互相冲掉(purpose 在台账层本来就是隔离的)。
+    const issued = await this.loginWecom.authorizeForBindSelf(currentUser, {
+      returnPath: dto.returnPath,
+    });
+    setWecomBrowserNonceCookie(res, WECOM_BIND_NONCE_COOKIE, issued.browserNonce);
+    return issued.dto;
   }
 
   // P0-E PR-3:从 @Req() 构造 AuditMeta 显式传给 service(D6 v1.1 §11.2 / D8 拍板;
