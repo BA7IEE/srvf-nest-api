@@ -1,5 +1,5 @@
 {
-  "_comment": "srvf/no-near-future-date 的存量基线(INC-18)。身份 = 文件 × 日期字面量;一条豁免盖住该文件内此日期的全部出现,新日期/新文件照样红。只减不增,base-trusted 裁判按 ratchet-registry 裁决单调性。入册理由按 #875 拆弹实测的非炸弹形态分四组:①时钟注入/冻结型 —— notifications-expiry-reminder(e2e,job.runOnce(NOW) 时钟作参数)、certificates.service.spec(jest setSystemTime 冻结在 2026-08-01)、birthday-greeting.service.spec(runOnce 显式传参);②年窗坐标型 —— notifications-participation-producers 三条(贡献值按 cycle 年窗过滤,日期是窗内坐标,盲平移把既往 4 分移出窗);③派生断言型 —— certificates-patch-tristate 与 recruitment-certificate-claims(FIXED_MONTHS 从过去 issuedAt 算出的纯函数输出,平移期望值而输入不动断言当场红);④纯函数 I/O 表 —— date-only.util.spec(addMonthsClamped/toBeijingDateOnly 手算进出对照表,含闰日夹取 2028-02-29,与墙钟零耦合)、expiry-reminder.service.spec(2026-07-14+60=2026-09-12 手算对照)。",
+  "_comment": "srvf/no-near-future-date 的存量基线(INC-18)。身份 = 文件 × 日期字面量;一条豁免盖住该文件内此日期的全部出现,新日期/新文件照样红。只减不增,base-trusted 裁判按 ratchet-registry 裁决单调性。入册理由按 #875 拆弹实测的非炸弹形态分四组:①时钟注入/冻结型 —— notifications-expiry-reminder(e2e,job.runOnce(NOW) 时钟作参数)、certificates.service.spec(jest setSystemTime 冻结在 2026-08-01)、birthday-greeting.service.spec(runOnce 显式传参);②年窗坐标型 —— notifications-participation-producers(贡献值按 cycle 年窗过滤,日期是窗内坐标,盲平移把既往 4 分移出窗;**此处不写条数** —— 条数随日期到期逐条删除而变,写进散文两天内就错了两次,真值以下方 entries 为准);③派生断言型 —— certificates-patch-tristate 与 recruitment-certificate-claims(FIXED_MONTHS 从过去 issuedAt 算出的纯函数输出,平移期望值而输入不动断言当场红);④纯函数 I/O 表 —— date-only.util.spec(addMonthsClamped/toBeijingDateOnly 手算进出对照表,含闰日夹取 2028-02-29,与墙钟零耦合)、expiry-reminder.service.spec(2026-07-14+60=2026-09-12 手算对照)。",
   "version": 1,
   "entries": [
     { "file": "src/common/datetime/date-only.util.spec.ts", "symbol": "2026-12-31" },
@@ -15,7 +15,6 @@
     { "file": "src/modules/notifications/expiry-reminder.service.spec.ts", "symbol": "2026-09-12" },
     { "file": "test/e2e/certificates-patch-tristate.e2e-spec.ts", "symbol": "2028-01-01" },
     { "file": "test/e2e/notifications-expiry-reminder.e2e-spec.ts", "symbol": "2027-01-01" },
-    { "file": "test/e2e/notifications-participation-producers.e2e-spec.ts", "symbol": "2026-08-04" },
     { "file": "test/e2e/notifications-participation-producers.e2e-spec.ts", "symbol": "2027-04-01" },
     { "file": "test/e2e/recruitment-certificate-claims.e2e-spec.ts", "symbol": "2028-01-31" }
   ]
