@@ -9,7 +9,7 @@
 
 (P0-1 / P0-2 / P0-3 均已完成,见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
-### P1-27 v0.66.0 外部评审 NO-GO —— **7 BLOCKER + 2 SHOULD-FIX 全部已修并合入**(#897/#898);⏸ 剩「修复批次再投一轮评审」 🟡
+### P1-27 v0.66.0 外部评审 —— **两轮 findings 全部关闭**(#897/#898/#901);⏸ 剩 T6 三笔 + T6 后总评审 🟡
 
 > **2026-08-03 交付状态**:第一刀 [#897](https://github.com/BA7IEE/srvf-nest-api/pull/897)(B1/B2/B3,第 70 migration)
 > + 第二刀 [#898](https://github.com/BA7IEE/srvf-nest-api/pull/898)(B4–B7 + SF1/SF2,零 schema)**均已合入 main**,
@@ -41,13 +41,50 @@
 > 它做的是读 PG16 tuple-lock 实现说明 + 逐行审我们的三连接用例有没有踩
 > `SELECT 'literal'` 不锁行的坑。**这个自我约束比它的结论更值得信。**
 >
-> #### 剩余账(开 `loginEnabled` / `messageEnabled` 前必须关掉)
+> #### 第三刀已交付(#901,2026-08-03)—— 剩余账的 1/2/3 全部关闭
+>
+> - **① pre-auth 代际**:`login-wecom.service.ts` `runBindTransaction` 步骤 6b 补 `+1`,
+>   走步骤 3 **已持有的那把 User `FOR UPDATE`**(不开第二把锁,不引入新的 `User → …` 边);
+>   同目标 no-op 提前 return 故不递增。四条真实 DB 断言全过。
+>   ⚠️ 交付方自报:四条里「no-op +0」「后腿失败回滚」在未修代码上是**空绿** ——
+>   用变异 A(无条件递增)/ B(事务外递增)证明它们真会咬;B 的现象是 **500**
+>   (事务自己持着该 User 的 `FOR UPDATE`,事务外连接永远等不到)。
+>   **空绿用例在报告里和真判据长得一模一样**,这是本轮最值得记的取证纪律。
+> - **② 错注释**:三处订正(`notification-wecom-dispatch` / 并发 spec 前提 / `notifications/CLAUDE.md`);
+>   护栏断言从单格扩成**四格相容矩阵**。
+> - **③ replay 终态判据**:默认只放行上次是 `rate-limited` / `provider-contract-error`
+>   (intent dead 过 **且** 最后那条 delivery 的 reasonCode 在允许集内);
+>   新增 `never-attempted` / `last-attempt-not-replayable` 两个 reason;
+>   越界需显式 `{ overrideReason: true }`,**只绕这一条**。入口/RBAC/Audit 仍归 T6。
+>
+> **🔴 交付中抓到的最重要一件事:上一版护栏是假的。**
+> 第三刀的 red-first 显示:把闸的 settings 改成 `FOR UPDATE`(评审称"会让护栏红"的那个改动)
+> → **护栏照绿** ⇒ 假护栏坐实。**主会话已独立复核**:把锁序挪回 `User → settings` 后,
+> 主用例当场红(1 failed / 6 passed),而 PG 相容矩阵那 6 条全绿 ——
+> 印证交付方对自己护栏的定性(**矩阵守 PG 语义,主用例守应用锁序;矩阵用手写 SQL 造锁,
+> 改应用代码不会让它红**)是准的。
+> ⇒ `AGENTS §1` 早就写着「结构断言发现不了『代码还在但不起作用』」——
+> 这次那个"还在但不起作用"的东西**就是守护自己**;而主会话在前两轮报告里**两次**夸过它,
+> 第二轮外部评审也认可了它,**三方都没验它会不会咬**。
+>
+> **⚠️ 交付方还自报又写错一条机制描述**:初版订正说"应用侧锁模式改动由主用例负责",
+> 跑变异才发现主用例也不红。真相是 **做功的是顺序,不是模式** —— 修完两条路径同为
+> `settings → User`,顺序一致就没有反向边,此时改锁模式构不成环。同一天同一主题第二次栽在
+> "推理链很顺但没跑"。
+>
+> #### SOP §1.6 的一处**已拍板豁免**(2026-08-03)
+>
+> 按 §1.6,第三刀这批修复自己也该再投一轮。**维护者拍板:并进 T6 之后的那一轮总评审,不单独投。**
+> 理由:本批仅 3 条 SHOULD-FIX、零 schema、且交付方自己跑了变异证伪(含主动推翻自己的机制描述),
+> 主会话另做了独立变异复核;而 T6 完成后本来就要有一轮覆盖真机的总评审,合并投放注意力更集中。
+> ⇒ **豁免的是"单独投一轮",不是"免评审"** —— 开 `loginEnabled` / `messageEnabled` 之前,
+> 那轮总评审仍是硬门。
+>
+> #### 剩余账(开 `loginEnabled` / `messageEnabled` 前必须关掉)—— 只剩 T6 三笔
 >
 > | # | 项 | 归属 |
 > |---|---|---|
-> | 1 | **pre-auth bind/rebind 漏递增 `wecomIdentityVersion`** —— `login-wecom.service.ts` 零命中,而 migration 注释写着「递增方:**两条**绑定事务 + 撤销原语」。**不重开 ABA 接管**(pre-auth 每次真实变化仍改 identity 指纹、clear 又递增),但「单调身份代际」这个不变量目前**不成立**,退化成两套互补而不完整的失效机制。⚠️ **不得改已合入的 migration.sql**(A-3/A-4),修法是让代码追上注释 | **第三刀** |
-> | 2 | `notification-wecom-dispatch` 与两处 CLAUDE.md 里「把闸的 User 升成 `FOR UPDATE` 环就成立」**机制不准确** —— settings 两侧仍是 SHARE/SHARE,相容性没变。真正能补上缺失边的是:任一侧把 settings 改成 `FOR NO KEY UPDATE`/`FOR UPDATE`、或新增一条「持 User 后申请 settings 写锁」的路径 | **第三刀** |
-> | 3 | `replayDirectedWecomDelivery` **不检查历史 intent 的终态与 reason**,可对 `channel-disabled` / `recipient-unlicensed` / 从未尝试过的通知重建 child,与 runbook「仅限 rate-limited / provider-contract-error」不一致 | **第三刀**(判据)+ **T6**(入口/RBAC/Audit) |
+> | ~~1~~ | ~~pre-auth 代际~~ · ~~2 错注释~~ · ~~3 replay 终态判据~~ —— **均已由第三刀(#901)关闭**,详见上方 | ✅ 已关 |
 > | 4 | B3 真实上游耗时残余 —— 规则已按 2026-08-03 拍板收窄(AGENTS §3:我方可控分支必须归一,第三方上游墙钟只做有界缓解),**残余经维护者明确接受**;真实分布须 T6 实测,不得用 DEV_STUB 数据替代 | **T6 实测** |
 > | 5 | **NIT**:同 purpose 只有一个固定 Cookie,同一浏览器并发两个 login flow 会互相覆盖 → 两个都 36010(可用性,非安全)。既有 e2e 的「按 state 索引 cookie jar」更像多个独立浏览器,发现不了 | **T6**(真浏览器双标签页)/ FE single-flight |
 > | 6 | 真浏览器 Cookie 行为(`__Host-` 防子域投毒、`SameSite=Lax` 拦跨站 XHR)—— supertest **不执行**这些属性,只断言了 `Set-Cookie` 字符串 | **T6** |
