@@ -69,7 +69,7 @@
 | D-7 | 六类职责边界(Presenter / QueryService / Policy / StateMachine / AuditRecorder / Effect) | eslint 禁 Presenter·Policy 碰 DB;归属判断留人 |
 | P0-E | refresh token 冻结九条(opaque+sha256 / rotation always / family revoke / 90d 绝对 / 失败统一 10007 / logout 幂等无限流 / access 15m 自然过期 / 联动撤销九场景同事务 / 三 DTO zero drift) | 红区路径 + auth e2e 行为锁 |
 | 判权单轨 | 全仓活跃 `@Roles` = 0;业务判权走 Service 层 `rbac.can()`;`RolesGuard` 保留兜底不删;scope 不进权限码;`RbacService` 只读 GLOBAL | eslint + check-rbac-map |
-| 防枚举 | 登录失败四场景统一 10004 + dummy bcrypt 抗 timing;SMS / 微信沿 24010 泛化 200;refresh 失败不细分。**任何 message / 错误码 / 耗时差异都算漏洞** | contract 断言(耗时侧信道无法断言 → 判断) |
+| 防枚举 | 登录失败四场景统一 10004 + dummy bcrypt 抗 timing;SMS / 微信沿 24010 泛化 200;refresh 失败不细分。**message / 错误码差异一律算漏洞**;**耗时**:我方可控分支必须归一(统一出口 + 有界最小响应时长),**第三方上游墙钟只做有界缓解 —— 残余差异经维护者 2026-08-03 明确接受**(P1-27 评审 SHOULD-FIX 2;真实分布须在 T6 真机实测,不得用 DEV_STUB 数据替代) | contract 断言(耗时侧信道无法断言 → 判断) |
 | 身份/权限不缓存 | 每请求查库;**零跨请求 Map / TTL / invalidate 正确性链** | eslint |
 | 永久铁律 | 不引入 `LocalStrategy`;不建 `*.entity.ts`;不用 Prisma 全局软删中间件 / client extension | eslint |
 | 基础设施冻结 | cron 全仓终态**恰好 2 个**(第 3 个起 = 新 D 档评审);Redis / queue / LLM / vector / 多租户不引入;数据清理走手动 SOP | counts + eslint 禁引 |

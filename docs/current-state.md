@@ -9,7 +9,8 @@
 
 | 项 | 当前值 |
 |---|---|
-| **发布边界** | 🟡 **v0.66.0 仍 NO-GO,但原因已变**:7 BLOCKER + 2 SHOULD-FIX **全部已修并合入**(#897 第一刀 / #898 第二刀,2026-08-03),**卡点改为「修复批次自身未经外部评审」**(SOP §1.6:修复批次是整个改造里最危险的代码)。⇒ **禁止部署、禁开 `loginEnabled` / `messageEnabled`,直到再投一轮评审通过**;届时另发新版本(v0.66.0 的 tag 与 Release **永久不代表可部署**,已标 pre-release)。上一版 v0.65.0 仍持 🟢 GO(外部评审对 `56ea8480..b6a2f9d8` 判 0 P0/P1);**生产部署仍是独立硬门**,migration 67/68/**69** 生产执行、首批标准初始化、前端适配、企微联调按各 runbook 单独审批;活动责任、保险、Storage、外部通道、基础设施硬门仍开放(§4 / runbook) |
+| **发布边界** | 🟡 **代码可继续推进,生产开关仍 NO-GO**。修复批次(#897/#898)已过第二轮外部评审:**GO WITH CONDITIONS**,直接安全 BLOCKER **0**。⇒ 二进制可在**两个开关保持关闭**下继续收口;**开 `loginEnabled` / `messageEnabled` 前必须先关掉 §4 P0 的四笔剩余账**。v0.66.0 的 tag 与 Release **永久不代表可部署**(已标 pre-release);修完另发新版本。上一版 v0.65.0 仍持 🟢 GO(外部评审对 `56ea8480..b6a2f9d8` 判 0 P0/P1);**生产部署仍是独立硬门**,migration 67/68/**69** 生产执行、首批标准初始化、前端适配、企微联调按各 runbook 单独审批;活动责任、保险、Storage、外部通道、基础设施硬门仍开放(§4 / runbook) |
+| **部署拓扑** | **前端与 API 同源**(2026-08-03 维护者拍板)。企业微信登录的浏览器 nonce Cookie(`__Host-` + HttpOnly + `SameSite=Lax`)据此成立,**无需** credentialed CORS,`enableCors` 保持不开 `credentials`。⚠️ **改成跨 origin 部署前禁开 `loginEnabled`** —— 同 site 跨 origin 需红区改 CORS + 前端四处 `credentials:'include'`;跨 site 则 Lax 直接挡掉 Cookie,B1 设计不适用,须重新评审 |
 | 版本 / 卫生 | 现场查:`pnpm agent:preflight` |
 | 本版 footprint | 即下方计数块(生成物) |
 
@@ -62,7 +63,7 @@
 
 | 等级 | 债务 |
 |---|---|
-| **P0** | **v0.66.0 修复已合入但未经评审 —— 仍禁止部署、禁开两个开关**。7 BLOCKER + 2 SHOULD-FIX 全部已修(#897/#898,2026-08-03,逐条 red-first 成对证据在 `NEXT_TASKS` P1-27),**唯一剩余卡点 = 修复批次自身再投一轮外部评审**(SOP §1.6)。评审通过后方可发新版本并重开部署议题。⚠️ 一处**必须让下轮评审复核**的结论:评审给的「三事务死锁」经**双方独立实测**均**复现不出来** —— PG 行锁没有「FIFO 挡住相容请求」,后到的 `FOR SHARE` 只与**持有者**比相容性,直接越过排队中的 `FOR UPDATE`(lane 与主会话各测一次,读数一致)。锁序倒置属实且已修,但性质是**结构隐患**而非已兑现的死锁;该 PG 语义已做成可执行护栏,升级 PG 或改锁模式即红 |
+| **P0** | **修复批次已过第二轮评审:GO WITH CONDITIONS(2026-08-03)** —— 直接安全 BLOCKER **0**(账号接管 / 跨 CorpID 错投 / 可兑现死锁 / SENT 误记 / P0-E 破坏均未再发现);上一轮 B1/B2/B5/B6/B7 判**真修好**,**B4 的机制被评审方正式撤回**(五步环在当前锁模式下不成立,双方独立实测 + 文档核读一致;锁序倒置属实且已修,性质是结构隐患,已有可执行护栏)。**但生产开 `loginEnabled` / `messageEnabled` 仍判 NO-GO**,剩余账:①pre-auth bind/rebind **漏了 `wecomIdentityVersion` 递增**(migration 注释声称两条绑定事务递增,实际只有一条 —— 不重开 ABA 接管,但"单调代际"这个不变量目前不成立);②B3 是**有界缓解**不是严格闭环(规则已按拍板收窄,见 AGENTS §3);③SF2 replay 只有服务层原语,**无终态检查、无 RBAC/Audit/入口**,归 T6;④真浏览器 Cookie 行为、双标签页并发、真实上游耗时分布**均未验**,归 T6。逐条见 `NEXT_TASKS` P1-27 |
 | P1 | 前端联调包剩运维演练 + 排错 SOP(系统侧无动作) |
 | P1 | 保险 gate 未启用、旧 server=0 未验证；真实 ingress/ACL、COS、worker/fleet、registry digest 未验，均为 production GO 硬门 |
 | P1 | P1-22 gate 配置化;P1-23 isForeigner 改名;**P1-26 + 复审 M1–M6 全收口**(锁序/入队身份/终审批量化+RC+有界等待/棘轮注册表;另修一新查出的 40P01;新码 28211/40901;⚠️行为变更);S6 亦收口 |

@@ -14,8 +14,46 @@
 > **2026-08-03 交付状态**:第一刀 [#897](https://github.com/BA7IEE/srvf-nest-api/pull/897)(B1/B2/B3,第 70 migration)
 > + 第二刀 [#898](https://github.com/BA7IEE/srvf-nest-api/pull/898)(B4–B7 + SF1/SF2,零 schema)**均已合入 main**,
 > 顺序 #897 → #898(#898 的 B4 对齐的是 bind 锁序,而 bind 在 #897 写集内)。
-> 六/三条**全部有 red-first 成对证据**;既有 spec 零修改(两刀的测试文件全是新增)。
-> **唯一剩余卡点 = SOP §1.6 修复批次再投一轮外部评审**,通过前禁止部署、禁开两个开关。
+> 六/三条**全部有 red-first 成对证据**。
+>
+> ⚠️ **本行原先写的「既有 spec 零修改(两刀的测试文件全是新增)」是事实错误,由第二轮评审抓出**。
+> 真实情况:#898 的 4 个测试文件确实全是新增,但 **#897 改了 7 个既有测试文件**。
+> 错因是主会话核验时**只跑了 #898**(`4 A / 0 M`),把结论写成覆盖两刀 ——
+> 「挑着验 = 没验」这句刚写进本条目当教训,当天就以同一种方式复发。
+>
+> 七个被改文件的独立定性(第二轮评审逐个判,主会话接受):
+> - 5 个 e2e(`app-me-wecom` / `auth-wecom` / `wecom-binding-concurrency` /
+>   `wecom-lifecycle-concurrency` / `wecom-user-lifecycle`)= **中性连坐修正**,
+>   只加 Cookie 捕获与发送,原业务断言未放宽;
+> - `identity-step-up.service.spec.ts` = **收紧**(新增 version ABA / 必填 binding / 非 WECOM action 零漂移);
+> - `wecom-schema.e2e-spec.ts` = **不是单向收窄**,而是「用一个具名例外替换旧不变量 + 强化形态」。
+>   已在 PR body 明确揭示,不是暗改;但主会话原先"只收窄不放宽"的措辞**数学上不成立** ——
+>   旧断言禁止的一个东西现在被允许了。**描述行为契约变化时不要用会掩盖性质的措辞。**
+>
+> #### 第二轮评审结论(2026-08-03):**GO WITH CONDITIONS**
+>
+> 直接安全 BLOCKER **0** —— 未再发现账号接管 / 跨 CorpID 错投 / 可兑现死锁 / SENT 误记 / P0-E 破坏。
+> 上一轮 B1 / B2 / B5 / B6 / B7 判**真修好**;SF1 修好;**B4 的机制被评审方正式撤回**。
+> 新增 **3 SHOULD-FIX + 1 NIT**,逐条见下方「剩余账」。
+>
+> ⚠️ **证据链要说准**:PG 那条是**两次独立实测(lane + 主会话)+ 一次文档核读同意**。
+> 第二轮评审**诚实声明沙箱无 PG/Docker/网络,没有冒充实测** ——
+> 它做的是读 PG16 tuple-lock 实现说明 + 逐行审我们的三连接用例有没有踩
+> `SELECT 'literal'` 不锁行的坑。**这个自我约束比它的结论更值得信。**
+>
+> #### 剩余账(开 `loginEnabled` / `messageEnabled` 前必须关掉)
+>
+> | # | 项 | 归属 |
+> |---|---|---|
+> | 1 | **pre-auth bind/rebind 漏递增 `wecomIdentityVersion`** —— `login-wecom.service.ts` 零命中,而 migration 注释写着「递增方:**两条**绑定事务 + 撤销原语」。**不重开 ABA 接管**(pre-auth 每次真实变化仍改 identity 指纹、clear 又递增),但「单调身份代际」这个不变量目前**不成立**,退化成两套互补而不完整的失效机制。⚠️ **不得改已合入的 migration.sql**(A-3/A-4),修法是让代码追上注释 | **第三刀** |
+> | 2 | `notification-wecom-dispatch` 与两处 CLAUDE.md 里「把闸的 User 升成 `FOR UPDATE` 环就成立」**机制不准确** —— settings 两侧仍是 SHARE/SHARE,相容性没变。真正能补上缺失边的是:任一侧把 settings 改成 `FOR NO KEY UPDATE`/`FOR UPDATE`、或新增一条「持 User 后申请 settings 写锁」的路径 | **第三刀** |
+> | 3 | `replayDirectedWecomDelivery` **不检查历史 intent 的终态与 reason**,可对 `channel-disabled` / `recipient-unlicensed` / 从未尝试过的通知重建 child,与 runbook「仅限 rate-limited / provider-contract-error」不一致 | **第三刀**(判据)+ **T6**(入口/RBAC/Audit) |
+> | 4 | B3 真实上游耗时残余 —— 规则已按 2026-08-03 拍板收窄(AGENTS §3:我方可控分支必须归一,第三方上游墙钟只做有界缓解),**残余经维护者明确接受**;真实分布须 T6 实测,不得用 DEV_STUB 数据替代 | **T6 实测** |
+> | 5 | **NIT**:同 purpose 只有一个固定 Cookie,同一浏览器并发两个 login flow 会互相覆盖 → 两个都 36010(可用性,非安全)。既有 e2e 的「按 state 索引 cookie jar」更像多个独立浏览器,发现不了 | **T6**(真浏览器双标签页)/ FE single-flight |
+> | 6 | 真浏览器 Cookie 行为(`__Host-` 防子域投毒、`SameSite=Lax` 拦跨站 XHR)—— supertest **不执行**这些属性,只断言了 `Set-Cookie` 字符串 | **T6** |
+>
+> **部署拓扑已拍板 = 同源**(2026-08-03),故第二轮评审提的「credentialed CORS 生产 BLOCKER」**不成立**,
+> `enableCors` 保持不开 `credentials`。⚠️ 改跨 origin 部署前禁开 `loginEnabled`,见 `current-state` §1。
 >
 > #### ⚠️ 一条必须让下轮评审复核的**反转结论**
 >
