@@ -46,7 +46,7 @@
 - **安全**:审计SA全量/持码非SA仅self|USER；敏感读闭锁/extra禁PII；Decision 15.1=B/15.2=B(业务负责人最终确认:2026-07-27):C/N管理=SA|GLOBAL读码(ADMIN不直通)，部门=PRIMARY/SECONDARY/TEMPORARY/SUPPORT有效任职+组织ACTIVE；RBAC任期单轨，ops-admin现任常驻/同锁重读
 - **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 - **证书标准库(PR-1→PR-6 + 评审 findings F1–F6)**:类别/等级唯一权威=`CertificateStandard`(实例侧零副本);认定规则由录入时锁定的 `recognitionPolicyId` 记住、换版**不追溯**;招新申报一证一行,发号只搬 APPROVED 且不重判。**需求 = 冻结稿 + [`t0-amendments`](archive/reviews/certificate-standard-library-t0-amendments.md) 两份合起来**(冲突以后者为准);三份 runbook 见 `ops/certificate-*`
-- **活动业务改造 v1.1(第 0 批 ✅ 2026-08-04)**:合同=[`archive/reviews/activity-business-overhaul-v1.1/`](archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效;万人锁原型**时间预算通过**(P95 197.7ms / 24× 余量);⛔ **第 1 批开工前须拍板共享锁表容量**(两场万人并发越过 12800 保底,`out of shared memory` 是硬 ERROR 不可重试);bind 上限 32767 已有 unnest 解;逐条见 `NEXT_TASKS` P1-28
+- **活动业务改造 v1.1(第 0 批 ✅ 2026-08-04)**:合同=[`archive/reviews/activity-business-overhaul-v1.1/`](archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效;万人锁原型**时间预算通过**(P95 197.7ms);**万人统一生效恒串行**(2026-08-04 定,因两场并发越 12800 共享锁表保底而 `out of shared memory`;⚠️须带执行位不能只写成文字);bind 上限 32767 走 unnest;逐条见 `NEXT_TASKS` P1-28
 
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)
 
