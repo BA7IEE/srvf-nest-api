@@ -84,6 +84,25 @@ export const BizCode = {
     message: '该数据正被其他操作占用,请稍后重试',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 万人锁原型收口(#906 §5.1,2026-08-04):PostgreSQL 40P01 = deadlock_detected。
+  //
+  // 此前 40P01 不在 `withBoundedMemberLockWait` 的翻译范围内(那里只翻 55P03),
+  // 会以未映射错误冒出去 → 50000「服务器内部错误」。那是 M3 给 55P03 修掉的同一个毛病
+  // 从另一条路回来:数据库**主动中止**了环上的一个事务,该请求原样重发就会成功,
+  // 却拿到一个语义上不该重试的 500。
+  //
+  // 为什么**不**并进 40901:两者对运维是相反的信号。40901「有人排在你前面」是负载信号;
+  // 40P01「取锁成环」是**代码的锁序缺陷**信号。归一成一个码等于用可诊断性换少一个常量 ——
+  // 真出锁序回归时,它会伪装成一次普通拥塞。号位取 40901 之后的 40902。
+  //
+  // ⚠️ 翻译**不是**给锁序问题兜底:批内定序仍由
+  // `test/e2e/member-advisory-lock-order.e2e-spec.ts` ① 硬顶(判据是「零死锁」),
+  // 本码只负责让**批间交叉**这类真实残留死得体面。
+  CONCURRENT_WRITE_DEADLOCK: {
+    code: 40902,
+    message: '并发写入相互占用,请重试该操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
   INTERNAL_ERROR: {
     code: 50000,
     message: '服务器内部错误',

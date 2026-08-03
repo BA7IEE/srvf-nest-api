@@ -57,6 +57,15 @@ function isLockWaitTimeout(err: unknown): boolean {
   return text.includes('55P03') || text.includes('canceling statement due to lock timeout');
 }
 
+/** PostgreSQL 40P01 = deadlock_detected(数据库主动中止环上的一个事务)。 */
+function isDeadlock(err: unknown): boolean {
+  if (err instanceof BizException) return false;
+  const meta = (err as { meta?: { code?: unknown; message?: unknown } } | null)?.meta;
+  if (meta && String(meta.code) === '40P01') return true;
+  const text = err instanceof Error ? `${err.message}` : String(err);
+  return text.includes('40P01') || text.includes('deadlock detected');
+}
+
 /**
  * 给一段事务体设**有界**锁等待,并把超时翻译成可重试的业务错误(M3;并发复审 P1)。
  *
@@ -73,6 +82,15 @@ function isLockWaitTimeout(err: unknown): boolean {
  * ⚠️ 与显式 `ReadCommitted` 是一对:两者都只在「先取键、再读聚合」这个模式下才有意义。
  * 缺 RC 时快照停在取键之前,排到队也读不到前一个事务刚提交的事实(write skew 复活);
  * 缺本闸时排队会以 500 收场。
+ *
+ * **40P01 也翻**(万人锁原型收口,#906 §5.1,2026-08-04)。此前这里只翻 55P03,
+ * 死锁会以未映射错误冒出去 → 50000。两者的共同点是「重发就会成功」,所以都该给可重试
+ * 业务码;不同点是运维语义 —— 55P03 是负载、40P01 是锁序缺陷,因此给**两个**码
+ * (40901 / 40902),不归一。
+ *
+ * ⚠️ 翻译不替代锁序纪律:`lockMembersForWrite` 的批内定序仍由
+ * `test/e2e/member-advisory-lock-order.e2e-spec.ts` ① 以「零死锁」为判据硬顶。
+ * 本闸只覆盖批内定序**管不到**的那部分(调用方分两段交叉取锁、FK / 审计写入的隐式锁边)。
  */
 export async function withBoundedMemberLockWait<T>(
   tx: PrismaTx,
@@ -83,6 +101,7 @@ export async function withBoundedMemberLockWait<T>(
     return await body();
   } catch (err) {
     if (isLockWaitTimeout(err)) throw new BizException(BizCode.CONCURRENT_WRITE_LOCK_TIMEOUT);
+    if (isDeadlock(err)) throw new BizException(BizCode.CONCURRENT_WRITE_DEADLOCK);
     throw err;
   }
 }
@@ -98,10 +117,29 @@ export async function withBoundedMemberLockWait<T>(
  * 口径(不得各写各的):
  * - 键固定为 `hashtext(memberId)` 的**单参数** advisory 空间。PostgreSQL 的单参数与
  *   双参数 advisory 锁互不冲突,混用等于悄悄分裂成两把锁,所以这里只留一种写法。
- * - 一条 SQL 批量取,查询次数不随人数增长;`ORDER BY member_id` 固定取锁顺序。
- *   锁函数在 Sort **之上**的 Result 节点求值(PostgreSQL 刻意不把 volatile 函数下推),
- *   因此取锁顺序确实跟随 ORDER BY;JS 侧 `[...new Set()].sort()` 是第二层确定性排序。
- *   两层同向 ⇒ 不同批次之间不会反向取锁。
+ * - 一条 SQL 批量取,查询次数不随人数增长;**排序键必须就是锁键** ——
+ *   `ORDER BY hashtext(member_id), member_id`。锁函数在 Sort **之上**的 Result 节点求值
+ *   (PostgreSQL 刻意不把 volatile 函数下推,`EXPLAIN VERBOSE` 可见 Result → Sort),
+ *   因此取锁顺序确实跟随 ORDER BY。`hashtext` 是 IMMUTABLE,可以直接当排序键;
+ *   并列的 `member_id` 只是把它补成全序(碰撞时两行其实是同一把锁,先后无所谓)。
+ *
+ *   ⚠️ 上一版这里写的是 `ORDER BY member_id`,并声称「JS 侧 `.sort()` 与 SQL 侧
+ *   ORDER BY 两层同向 ⇒ 不同批次之间不会反向取锁」。**那个论证是错的**:两层同向的是
+ *   `member_id`,而锁键是 `hashtext(member_id)` —— 排序键与锁键不是同一个东西。
+ *   一旦 a ≠ b 而 key(a) == key(b),再有 c 满足 a < c < b:
+ *     批次 {a, c} 取序 = key(a), key(c);批次 {c, b} 取序 = key(c), key(a)
+ *   两者反序,构成死锁边。#906 §5.1 用真实碰撞对
+ *   `c841bb8f66366ad0ab58eda83` / `c86b3e165b8154656a71ffe8a`(hashtext 同为 -1901144566)
+ *   实测触发了 40P01;万人规模每场出现碰撞对的概率实测 **0.90%**。
+ *   改按锁键定序之后,任意两个批次对同一组键的取序恒同 ⇒ 批内不可能反序。
+ *   执行位:`test/e2e/member-advisory-lock-order.e2e-spec.ts` ①(判据 = 零死锁)。
+ *
+ *   ⚠️ 定序**只**约束单次批量调用内部。调用方在同一事务里分两段取键、而两段之间
+ *   与别人交叉,仍可能成环 —— 那不是本函数能修的,归宿是 40902(见
+ *   `withBoundedMemberLockWait`),执行位是同一 spec 的 ③。
+ *
+ *   JS 侧 `[...new Set()]` 去重是必需的(同 id 重复入参);其后的 `.sort()` **与取锁顺序
+ *   无关**(SQL 会重排),只为让同一组入参恒生成同一段 SQL 文本,便于日志比对。
  * - `::text` 是必需的:`pg_advisory_xact_lock` 返回 `void`,Prisma 反序列化不了 void 列。
  * - 事务级(`_xact_`):随事务提交/回滚自动释放,调用方不需要也不允许手工解锁。
  *
@@ -147,7 +185,7 @@ export async function lockMembersForWrite(
       SELECT pg_advisory_xact_lock(hashtext(member_id))::text AS locked
       FROM (VALUES ${Prisma.join(orderedIds.map((memberId) => Prisma.sql`(${memberId})`))})
         AS member_ids(member_id)
-      ORDER BY member_id
+      ORDER BY hashtext(member_id), member_id
     `,
   );
 }
