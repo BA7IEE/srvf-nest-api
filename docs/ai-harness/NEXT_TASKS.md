@@ -9,7 +9,7 @@
 
 (P0-1 / P0-2 / P0-3 均已完成,见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
-### P1-27 v0.66.0 外部评审 —— **两轮 findings 全部关闭**(#897/#898/#901);⏸ 剩 T6 三笔 + T6 后总评审 🟡
+### P1-27 v0.66.0 外部评审 —— **两轮 findings 全关 + T6-1 运维闭环已交付**(#897/#898/#901/#903);⏸ **剩两笔全部卡在「域名未下来」** + T6 后总评审 🟡
 
 > **2026-08-03 交付状态**:第一刀 [#897](https://github.com/BA7IEE/srvf-nest-api/pull/897)(B1/B2/B3,第 70 migration)
 > + 第二刀 [#898](https://github.com/BA7IEE/srvf-nest-api/pull/898)(B4–B7 + SF1/SF2,零 schema)**均已合入 main**,
@@ -80,12 +80,42 @@
 > ⇒ **豁免的是"单独投一轮",不是"免评审"** —— 开 `loginEnabled` / `messageEnabled` 之前,
 > 那轮总评审仍是硬门。
 >
-> #### 剩余账(开 `loginEnabled` / `messageEnabled` 前必须关掉)—— 只剩 T6 三笔
+> #### T6-1 已交付(#903,2026-08-03)—— replay 运维闭环补齐
+>
+> `POST /api/admin/v1/notifications/:id/replay-wecom`,**逐字镜像 `send-sms` 的形状**
+> (既有 admin controller,零新 controller / 零新 surface)。新权限码
+> **`notification.replay.wecom`** 绑 ops-admin **不绑 biz-admin**(运维面 ≠ 业务面)。
+> **Audit 复用 `notification.publish` 伞事件 + `extra.operation='replay-wecom'`**
+> ⇒ **AuditLogEvent 恒等 136**(零新事件串);`overrideReason` 单独成布尔字段,
+> 「谁绕过了允许集」可按 extra 直接筛出来。
+> 计数:Endpoint **450→451**、权限码 **227→228**;BizCode / AuditLogEvent / Migration /
+> Cron / Controller **恒等**;零 schema。
+>
+> **判据零第二份**(主会话亲核):`NotificationService.replayWecom()` 里唯一提到允许集的是
+> 一句注释「**本方法零判据**」,方法体是 `rbac.can` → `replayDirectedWecomDelivery()`
+> → `auditLogs.log` 的真转调 —— 允许集与终态检查全在 #901 的 outbox 原语里。
+>
+> **交付方自报的两条**:①既有 spec 连坐是**三处**不是两处(漏的
+> `seed-position-role-policies.e2e-spec.ts` 由 CI 抓出)——
+> **新增权限码必须按常量名全仓 grep + `seed-*.e2e-spec.ts` 整族跑**,凭印象 grep 文件名会漏;
+> ②三件复现不出来的机制(真实上游行为 / 多收件人形态 / CLI-vs-端点的审计归属对比)已如实列出。
+>
+> ⚠️ **一处交付方未申报的写集偏离**(主会话核出,不返工,记录在案):
+> `src/modules/audit-logs/audit-logs.types.ts` **不在 goal 声明的写集内**。
+> 改动本身**是对的**(给既有 `notification.publish` 那行的 `extra.operation ∈ {…}` 补上
+> `replay-wecom`,**零新增 union 项**)—— 不补反而会变成"注释与代码不符"。
+> 但它没进偏离清单。**写集是排班与集成核对的依据,漏报一次就少一次核对机会。**
+>
+> #### 剩余账(开 `loginEnabled` / `messageEnabled` 前必须关掉)—— 只剩 **T6 两笔**,全部要真机
+>
+> ⏸ **当前阻塞 = 域名未注册下来**(2026-08-03)。下面两笔与 §15.1 身份链 GO 的 OAuth 回跳全链
+> 都要真实 HTTPS 域名;`webBaseUrl` 必须是 HTTPS origin,且按已拍板的**同源部署**,
+> 前端与 API 要落在同一个 origin —— 域名/证书规划时就要按这个来,别等下来了才发现拓扑对不上。
 >
 > | # | 项 | 归属 |
 > |---|---|---|
-> | ~~1~~ | ~~pre-auth 代际~~ · ~~2 错注释~~ · ~~3 replay 终态判据~~ —— **均已由第三刀(#901)关闭**,详见上方 | ✅ 已关 |
-> | 4 | B3 真实上游耗时残余 —— 规则已按 2026-08-03 拍板收窄(AGENTS §3:我方可控分支必须归一,第三方上游墙钟只做有界缓解),**残余经维护者明确接受**;真实分布须 T6 实测,不得用 DEV_STUB 数据替代 | **T6 实测** |
+> | ~~1–3~~ | ~~pre-auth 代际 / 错注释 / replay 终态判据~~ —— **#901 已关**;~~3 的运维闭环(入口+RBAC+Audit)~~ —— **#903 已关** | ✅ |
+> | ~~4~~ | ~~B3 真实上游耗时残余~~ —— 规则已按 2026-08-03 拍板收窄(AGENTS §3),**残余经维护者明确接受**;真实分布并入下方第 6 笔一起实测 | ✅ 已拍板 |
 > | 5 | **NIT**:同 purpose 只有一个固定 Cookie,同一浏览器并发两个 login flow 会互相覆盖 → 两个都 36010(可用性,非安全)。既有 e2e 的「按 state 索引 cookie jar」更像多个独立浏览器,发现不了 | **T6**(真浏览器双标签页)/ FE single-flight |
 > | 6 | 真浏览器 Cookie 行为(`__Host-` 防子域投毒、`SameSite=Lax` 拦跨站 XHR)—— supertest **不执行**这些属性,只断言了 `Set-Cookie` 字符串 | **T6** |
 >
