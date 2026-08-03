@@ -214,7 +214,7 @@
 
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
-### P1-28 活动业务全流程改造 v1.1(批次 0–7) — **合同已入仓冻结;⏸ 第 1 批起须维护者逐批授权**
+### P1-28 活动业务全流程改造 v1.1(批次 0–7) — **第 0 批 ✅ 全部交付;⏸ 第 1 批开工前有两条必须拍板**
 
 - **合同**:[`archive/reviews/activity-business-overhaul-v1.1/`](../archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效
   (业务方案 / 详细开发文档 / 355 项追踪矩阵 / 修订说明),SHA256 入仓时原位校验全过。
@@ -223,9 +223,36 @@
   12 项一级阻断的修正方案、AC-001..072 + ADV-001..023 已写死在合同里。
   开发文档 §3 以小节标题定义 **42 个具名数据对象**(亲核:逐个与 `schema.prisma` 比对,
   其中 `Activity` / `ActivityRegistration` 两个是**改既有表**,其余 40 个当前仓内不存在)。
-- **第 0 批交付进度**:合同入仓 ✅(本条);AC/ADV 编号骨架 ⏸;
-  **10000 member lock 短事务可行性原型 ⏸ 未做** —— 合同 §14 明写「未通过前不定最终 schema 细节」,
-  故第 1 批 schema 不得先于该原型定稿。
+- **第 0 批 ✅ 全部交付**(2026-08-03/04):合同入仓 [#905](https://github.com/BA7IEE/srvf-nest-api/pull/905)
+  · AC/ADV 编号骨架 #905(95 条 `it.todo` 由合同原文解析生成 + 5 条合同完整性断言,逐条变异验证)
+  · **10000 member lock 短事务可行性原型 [#906](https://github.com/BA7IEE/srvf-nest-api/pull/906)**
+  (探针 `scripts/probe-member-lock-scale.ts` + 报告 [`lock-probe`](../archive/reviews/activity-business-overhaul-v1.1-lock-probe.md))。
+- **原型判词:时间预算这一条通过。** 10000 人在现有 7 秒预算内稳定完成 —— 360 轮零失败,
+  整事务 P95 **197.7ms** / P99 **286.8ms**(约 24× 余量);终写占 70%,advisory 取锁只占 8%
+  ⇒ **万人 member lock 本身不是瓶颈**。未改任何预算常量、未改 `lockMembersForWrite` 本体、未建新锁域。
+  ⚠️ 读数取自**零锁竞争**、**单日账期**、**合成表**;7s = 4s 锁等待 + 3s 业务工作,测的是后者。
+- **⛔ 第 1 批 schema lane 开工前的三条(主会话已逐条独立复核,不是转述)**:
+  1. **【已有解,不必再拍板】bind 参数上限 = 32767(Prisma 查询引擎,非协议 65535)**。
+     ⇒ 逐行 `VALUES` 写法下 day-state 批量 UPDATE 每人 4 参数即 **8191 < 10000 确定性失败**。
+     **出路已实测可行:改 `unnest($1::text[], $2::timestamptz[], …)` —— bind 参数恒为列数、与人数无关**
+     (主会话独立复核:10000 / 30000 / 100000 行均通过,连带解决跨天活动「行数 = 人数 × 天数」的放大器)。
+     分块写与本仓「SQL 次数固定」批量化判据冲突,**不取**。第 1 批照 unnest 写即可。
+  2. **【必须拍板】共享锁表容量**。advisory 锁占 PG **共享**锁表,公式保底
+     `max_locks_per_transaction × (max_connections + max_prepared_transactions)` = 64 × 200 = **12800**
+     (主会话查 `pg_settings` 核实);一场万人生效实占 **10000 把**(主会话在 10000 规模上数 `pg_locks` 证实),
+     占保底 **78%** ⇒ **两场万人并发即越过文档保证线,三场必然 `out of shared memory`**
+     —— 那是硬 ERROR,**不走 `lock_timeout` → 55P03 → 40901 的可重试路径**。
+     三选一,须维护者定:①提高 `max_locks_per_transaction`(生产库配置 + 重启,运维决策)
+     ②接受「同一时刻只允许一场万人活动统一生效」的业务约束 ③重新设计锁粒度(动合同)。
+  3. **【另立 goal】`hashtext` 碰撞造成取锁反序 = 真实死锁边**。`lockMembersForWrite`
+     按 `ORDER BY member_id` 定序但锁键是 `hashtext(member_id)`,**排序键 ≠ 锁键**:
+     存在 a<c<b 且 key(a)==key(b) 时两批次反序。已用真实碰撞对显式交错**实测触发 40P01**,
+     自然并发 60 次未复现 ⇒ **结构隐患非活 bug**。碰撞率 10000 人 **0.90%**(理论 1.157%),
+     但**今天代码最多锁一张考勤单 200 人 ⇒ 碰撞概率 ≈ 0.00046%,对现有代码近似为零**
+     ⇒ 不急,但万人落地前必须先修(改按锁键排序,或对 40P01 补有界重试;
+     40P01 目前不在 `withBoundedMemberLockWait` 的翻译范围内)。
+     ⚠️ `member-advisory-lock.util.ts` 注释里「两层同向 ⇒ 不会反向取锁」的论证**在碰撞下不成立**。
+     合同 §16:另立 goal 改,不在活动 PR 顺手改。
 - **未解锁项(AI 不得自启动)**:第 1 批起每批新 schema / migration / Permission seed 均落
   `current-state` §3「暂不启动清单」的评审解锁制,**合同 GO ≠ 该清单自动解锁**,逐批人话简报 + 拍板。
 - **已知行为契约冲突**(实施期逐条走 §4.1 简报,禁止在实施 PR 内顺手改断言):
