@@ -48,6 +48,55 @@ type LockedWecomSettings = {
   corpId: string | null;
 };
 
+/** `configurationGeneration` 的 10 个 effect 字段(顺序参与 hash,**不可重排**)。 */
+export type WecomConfigurationGenerationInput = Pick<
+  WecomSettingsRow,
+  | 'id'
+  | 'providerType'
+  | 'enabled'
+  | 'loginEnabled'
+  | 'messageEnabled'
+  | 'corpId'
+  | 'agentId'
+  | 'webBaseUrl'
+  | 'credentialConfigured'
+  | 'corpSecretEncrypted'
+>;
+
+/**
+ * opaque generation(冻结稿 §5.1 规则 8):字段集逐字为
+ * id/providerType/enabled/loginEnabled/messageEnabled/corpId/agentId/webBaseUrl/
+ * credentialConfigured/corpSecretEncrypted。
+ *
+ * 不含 remarks(规则 9)—— 改备注不该让全进程 token 作废;
+ * 不暴露明文 Secret —— 这是 hash 不是可逆编码,且它本身也永不出响应。
+ *
+ * ⚠️ 提成**导出的模块级纯函数**(外部评审 F2 / B5):消息链的最终闸要在**自己的事务里**
+ * 锁读同一行、算出同一个 generation 来做代际比对。回到本 Service 就等于换了一个连接、
+ * 丢掉整条锁序(那正是 T5A 直读他模块表的同一条理由)。函数只有一份 ⇒ 两处的
+ * "同代"判据不可能漂移;字段集若日后要改,改这一处、两边同时生效。
+ */
+export function computeWecomConfigurationGeneration(
+  row: WecomConfigurationGenerationInput,
+): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify([
+        row.id,
+        row.providerType,
+        row.enabled,
+        row.loginEnabled,
+        row.messageEnabled,
+        row.corpId,
+        row.agentId,
+        row.webBaseUrl,
+        row.credentialConfigured,
+        row.corpSecretEncrypted,
+      ]),
+    )
+    .digest('hex');
+}
+
 @Injectable()
 export class WecomSettingsService {
   private readonly logger = new Logger(WecomSettingsService.name);
@@ -345,28 +394,8 @@ export class WecomSettingsService {
     };
   }
 
-  // opaque generation(冻结稿 §5.1 规则 8):字段集逐字为
-  // id/providerType/enabled/loginEnabled/messageEnabled/corpId/agentId/webBaseUrl/
-  // credentialConfigured/corpSecretEncrypted。
-  // 不含 remarks(规则 9)—— 改备注不该让全进程 token 作废;
-  // 不暴露明文 Secret —— 这是 hash 不是可逆编码,且它本身也永不出响应。
   private configurationGeneration(row: WecomSettingsRow): string {
-    return createHash('sha256')
-      .update(
-        JSON.stringify([
-          row.id,
-          row.providerType,
-          row.enabled,
-          row.loginEnabled,
-          row.messageEnabled,
-          row.corpId,
-          row.agentId,
-          row.webBaseUrl,
-          row.credentialConfigured,
-          row.corpSecretEncrypted,
-        ]),
-      )
-      .digest('hex');
+    return computeWecomConfigurationGeneration(row);
   }
 
   // 三档状态合成(镜像 wechat resolveCredentials 语义;单段密文)

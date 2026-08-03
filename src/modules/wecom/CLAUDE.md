@@ -70,7 +70,10 @@ singleton 行的任何 read-modify-write:**先取 id → `FOR UPDATE` → 锁后
 - ❌ **不**给 `wecom-settings` 的任何响应回显凭证;`corpId` 只出**掩码**;`update` audit 只记 `changedFields`,`reset` audit **不传 before/after/extra**(连"改的是 corpSecret 这个字段"都不写)
 - ❌ **不**让可见范围的成员 / 部门 / 标签 **ID** 穿过 service 边界(`WecomAgentSnapshot` 里根本没有存放 ID 的字段 —— 类型系统兜底,不靠自觉)。`test-connection` 是连通性诊断,不是通讯录导出接口
 - ❌ **不**给 `WecomRealProvider` 补实例字段或实例方法(见 ①);**不**给协议解析加默认值(见 ③);**不**在写路径上用锁前快照做判断(见 ②)
-- ❌ **不**对 `errcode` 做盲重试:`-1` 系统繁忙最多 3 次;`45009` 限流**不重试**(官方拦截窗口内重试只会延长拦截);配置类错误(40001/40013/40056/50001/…)是终态,重试解决不了"Secret 错了"
+- ❌ **不**对 `errcode` 做盲重试:`-1` 系统繁忙最多 3 次(**`message/send` 除外,见下**);`45009` 限流**不重试**(官方拦截窗口内重试只会延长拦截);配置类错误(40001/40013/40056/50001/…)是终态,重试解决不了"Secret 错了"
+- ❌ **不**把失败压成一个 `errCode` 字符串交给调用方去嗅探(2026-08-03 外部评审 F2 / B7)。`errCode` 只回答"上游说了什么",`kind`(`WECOM_ERROR_KIND` 闭集)回答"这意味着什么",**分类只在本模块发生一次**。新增抛出点必须显式给 `kind` —— 它是 `WecomApiError` 的**必填首参**,忘了就是编译错误
+- ❌ **不**给 `message/send` 加传输层重试(F2 / B6):它的物理尝试预算是 **1**,退避与放弃归 Outbox 一家。此前 Provider 3 次 × token 强刷 2 轮 × Outbox 8 次 = 一条通知最多 **48** 次物理发送。gettoken / agent/get / auth/getuserinfo **不在此列**(不产生用户可见 Effect,且登录链路没有 Outbox 兜底)
+- ❌ **不**让 `forceRefresh` 绕过**在途**的 `refreshPromise`(F2 / B6):它只该绕过**已缓存的 token**。绕过在途刷新 = 一次 token 失效让 N 个并发 worker 各打一次 gettoken,45009 正是这么被自己触发的
 - ❌ **不**把 `wecom` 与 `wechat` 的表 / 码 / 常量 / 通知渠道并到一起,**不**把企业微信身份写进 `User.openid`
 - ❌ **不**把 `returnPath` 的开放重定向判据放宽(`isSafeWecomReturnPath` 是整条企业微信登录链**唯一**的防线,放宽它没有任何别的检查会红);**不**把控制字符判据写成含真实控制字节的正则字面量(那会让整个文件在 grep / diff 眼里变成二进制,评审时整段不可见 —— 本刀初版踩过,现用数值比较);**不**把 token-like query key 判据改回"带分隔符的正则"(漏 `refreshToken` 这类 camelCase)或"纯子串包含"(误杀 `keyword`)—— 现用逐段精确匹配
 - ❌ **不**在绑定事务里省掉锁后复判 `enabled` / `loginEnabled`:pre-auth bind 路径**不调** `resolveLoginContext`(换身份发生在 login 那一步),少了这一判,运维关掉开关之后任何手握未过期 binding ticket 的人仍能建身份**并拿到会话**(e2e 实测)

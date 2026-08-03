@@ -1,3 +1,5 @@
+import { WECOM_ERROR_KIND, type WecomErrorKind } from './wecom.constants';
+
 // 企业微信接入 T2(2026-08-01):运行时类型
 //
 // 冻结稿 §5.1 / §6.1 / §7.1 / §7.2。
@@ -64,9 +66,12 @@ export interface WecomTextCardInput {
 
 // 发送结果(判别联合):不抛异常,逐收件人记账(镜像 wechat SendSubscribeMessageResult)。
 // errCode 为企业微信 errcode 字符串或归一化标签,**永不含** CorpSecret / access_token / 完整 URL。
+//
+// ⚠️ 失败分支的 `kind` 是**唯一**的重试 / 终态判据(B7)。`errCode` 只回答"上游说了什么",
+// 供诊断与 `NotificationDelivery.errCode` 记账;调用方不得再拿它做字符串嗅探分类。
 export type WecomSendResult =
   | { ok: true; msgId: string | null; invalidUsers: string[]; unlicensedUsers: string[] }
-  | { ok: false; errCode: string; errMsg: string };
+  | { ok: false; kind: WecomErrorKind; errCode: string; errMsg: string };
 
 // Durable Effect caller 可在每次真实外部调用紧前重验自己的 lease/fence(§7.1 规则 13)。
 // Provider 不解释 guard 错误;必须按原值向调用方冒泡 —— fence 丢失时**不启动 Provider**。
@@ -95,8 +100,15 @@ export interface WecomProvider {
 
 // 通道不可用(settings 缺失 / 未启用 / 凭证未配置或无效 / production-like 下 DEV_STUB /
 // corpId 或 agentId 缺失)。WecomService 映射为 BizCode.WECOM_CHANNEL_NOT_CONFIGURED(36030)。
+//
+// `kind` 默认 `channel-disabled`(本地配置层面就不可用);上游用确定性 errcode 告诉我们
+// "Secret 错 / agentid 错 / IP 不在白名单"时,`throwByErrcode` 会显式传 `config-fatal` ——
+// 两者对调用方的处置相同(都不退避),但诊断信号不同,不合并。
 export class WecomChannelUnavailableError extends Error {
-  constructor(reason: string) {
+  constructor(
+    reason: string,
+    readonly kind: WecomErrorKind = WECOM_ERROR_KIND.CHANNEL_DISABLED,
+  ) {
     super(`WECOM_CHANNEL_UNAVAILABLE: ${reason}`);
     this.name = 'WecomChannelUnavailableError';
   }
@@ -106,8 +118,12 @@ export class WecomChannelUnavailableError extends Error {
 // WecomService 映射为 BizCode.WECOM_API_FAILED(36031)。
 // errMsg 为归一化标签或 errcode,**不含** CorpSecret / access_token / 完整 URL / 完整上游 errmsg
 //(§6.1 末段:失败不回显上游 URL、token、Secret、完整 errmsg 或可见范围 ID)。
+//
+// ⚠️ `kind` 是**必填首参**(B7):放在第一位是刻意的 —— 新增抛出点若忘了分类,
+// 是**编译错误**而不是"默认归到某一类"。默认值会让下一个错误类型悄悄继承别人的重试语义。
 export class WecomApiError extends Error {
   constructor(
+    readonly kind: WecomErrorKind,
     readonly errCode: string,
     readonly errMsg: string,
   ) {

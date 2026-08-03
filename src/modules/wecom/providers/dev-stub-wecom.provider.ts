@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import {
   WECOM_DEV_STUB_USER_ID_HASH_LENGTH,
   WECOM_DEV_STUB_USER_ID_PREFIX,
+  WECOM_ERROR_KIND,
 } from '../wecom.constants';
 import {
   WecomApiError,
@@ -107,27 +108,74 @@ export class DevStubWecomProvider implements WecomProvider {
     }
     // 全部无效:官方以 81013 整体报错。
     if (input.toUser.includes('wecomerr-81013')) {
-      return { ok: false, errCode: '81013', errMsg: 'dev-stub injected 81013' };
+      return {
+        ok: false,
+        kind: WECOM_ERROR_KIND.UPSTREAM_REJECTED,
+        errCode: '81013',
+        errMsg: 'dev-stub injected 81013',
+      };
     }
     // 45009 限流:终态 dead 供人工 replay,**不盲重试**。
     if (input.toUser.includes('wecomerr-ratelimit')) {
-      return { ok: false, errCode: '45009', errMsg: 'dev-stub injected 45009' };
+      return {
+        ok: false,
+        kind: WECOM_ERROR_KIND.RATE_LIMITED,
+        errCode: '45009',
+        errMsg: 'dev-stub injected 45009',
+      };
     }
     // 单 touser 请求收到 invalidparty/invalidtag(真实 Provider 归一化后的同一标签)。
     if (input.toUser.includes('wecomerr-party')) {
       return {
         ok: false,
+        kind: WECOM_ERROR_KIND.PROVIDER_CONTRACT,
         errCode: 'INVALID_PARTY_OR_TAG',
         errMsg: 'dev-stub injected invalidparty',
       };
     }
-    // 网络 / 超时 / 5xx 类暂态:走既有重试上限。
+    // 网络 / 超时 / 5xx 类暂态:交给 Outbox 退避。
     if (input.toUser.includes('wecomerr-net')) {
-      return { ok: false, errCode: 'FETCH_ERROR', errMsg: 'dev-stub injected network failure' };
+      return {
+        ok: false,
+        kind: WECOM_ERROR_KIND.NETWORK,
+        errCode: 'FETCH_ERROR',
+        errMsg: 'dev-stub injected network failure',
+      };
     }
     // token 失效:强刷一次后重试一次(既有 40014/42001 语义)。
     if (input.toUser.includes('wecomerr-token')) {
-      return { ok: false, errCode: '42001', errMsg: 'dev-stub injected token invalid' };
+      return {
+        ok: false,
+        kind: WECOM_ERROR_KIND.TOKEN_INVALID,
+        errCode: '42001',
+        errMsg: 'dev-stub injected token invalid',
+      };
+    }
+    // HTTP 4xx / 配置终态:**不得**退避,直接终态(F2 / B7 的 e2e 判据靠它)。
+    if (input.toUser.includes('wecomerr-http4xx')) {
+      return {
+        ok: false,
+        kind: WECOM_ERROR_KIND.HTTP_4XX,
+        errCode: 'HTTP_ERROR',
+        errMsg: 'dev-stub injected http 4xx',
+      };
+    }
+    if (input.toUser.includes('wecomerr-configfatal')) {
+      return {
+        ok: false,
+        kind: WECOM_ERROR_KIND.CONFIG_FATAL,
+        errCode: '40001',
+        errMsg: 'dev-stub injected config fatal',
+      };
+    }
+    // 回执读不懂(SF1 的严格解析在真实 Provider 侧;stub 直接给归一化结果)。
+    if (input.toUser.includes('wecomerr-badreceipt')) {
+      return {
+        ok: false,
+        kind: WECOM_ERROR_KIND.INVALID_RESPONSE,
+        errCode: 'INVALID_RESPONSE',
+        errMsg: 'dev-stub injected malformed receipt',
+      };
     }
 
     return {
@@ -143,10 +191,14 @@ export class DevStubWecomProvider implements WecomProvider {
       throw new WecomOAuthInvalidError('40029');
     }
     if (code.includes('wecomerr-timeout')) {
-      throw new WecomApiError('TIMEOUT', 'dev-stub injected timeout');
+      throw new WecomApiError(WECOM_ERROR_KIND.TIMEOUT, 'TIMEOUT', 'dev-stub injected timeout');
     }
     if (code.includes('wecomerr-api')) {
-      throw new WecomApiError('HTTP_ERROR', 'dev-stub injected api failure');
+      throw new WecomApiError(
+        WECOM_ERROR_KIND.HTTP_5XX,
+        'HTTP_ERROR',
+        'dev-stub injected api failure',
+      );
     }
   }
 }

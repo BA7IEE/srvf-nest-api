@@ -546,13 +546,51 @@ export function extractWechatDeliveryRootId(
 
 // 企业微信 child 的 eventKey 形状(§10.3)。与微信侧同型但**前缀不同**:
 //   v1 系统定向     `wecom-delivery:{notificationId}:{memberId}`
+//   v1 定向 replay  `wecom-delivery:{notificationId}:{memberId}:r{n}`   ← 外部评审 F2 / SF2
 //   v2 admin 广播   `wecom-delivery:{notificationId}:{rootIntentId}:{memberId}`
+//
+// ⚠️ replay nonce 只对 **v1** 开放。admin 广播的"重发"是 unpublish + publish 造新
+// publishGeneration,root 自己会为尚未 SENT 的人重建 child;定向通知没有 publish 状态机、
+// payload 里也没有 generation,所以它的确定性 eventKey 一旦 dead 就再也建不出新 attempt。
+//
+// v1 replay 键与 v2 键都是 4 段,但不会互相误判:v2 要求第 3 段是 CUID(rootIntentId)
+// 且第 4 段等于 memberId;replay 键的第 3 段是 memberId、第 4 段是 `r{n}` —— 两条都对不上。
+const WECOM_DIRECTED_REPLAY_NONCE = /^r[1-9]\d{0,3}$/;
+
+/** v1 定向 child 的 eventKey(含可选 replay nonce)。**唯一**构造点,供 replay 入口复用。 */
+export function buildWecomDirectedDeliveryEventKey(
+  notificationId: string,
+  memberId: string,
+  replayNonce = 0,
+): string {
+  const base = `wecom-delivery:${notificationId}:${memberId}`;
+  return replayNonce > 0 ? `${base}:r${replayNonce}` : base;
+}
+
+/** 从 v1 定向 child 的 eventKey 读出 replay 序号(基础键 = 0;不是本形状 = null)。 */
+export function readWecomDirectedReplayNonce(
+  eventKey: string,
+  notificationId: string,
+  memberId: string,
+): number | null {
+  const parts = eventKey.split(':');
+  if (parts[0] !== 'wecom-delivery' || parts[1] !== notificationId || parts[2] !== memberId) {
+    return null;
+  }
+  if (parts.length === 3) return 0;
+  if (parts.length !== 4 || !WECOM_DIRECTED_REPLAY_NONCE.test(parts[3] ?? '')) return null;
+  return Number((parts[3] ?? '').slice(1));
+}
+
 function isWecomDeliveryEventKey(
   input: NotificationOutboxSafetyInput,
   payload: WecomDeliveryOutboxPayload,
 ): boolean {
   if (input.payloadVersion === OUTBOX_PAYLOAD_VERSION) {
-    return input.eventKey === `wecom-delivery:${payload.notificationId}:${payload.memberId}`;
+    return (
+      readWecomDirectedReplayNonce(input.eventKey, payload.notificationId, payload.memberId) !==
+      null
+    );
   }
   const rootId = extractWecomDeliveryRootId(input.eventKey, input.payloadVersion);
   const parts = input.eventKey.split(':');
