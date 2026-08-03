@@ -39,6 +39,26 @@ model User {
   // 评审稿 E-19);admin 清除置 null(解除绑定唯一路径,D-W3)。
   openid String? @unique
 
+  // 企业微信身份**代际**(P1-27 第一刀 B2,2026-08-03;第 70 migration,additive)。
+  //
+  // 为什么需要它:`WECOM_BIND` 的 step-up proof 把"当前 active 企业微信身份指纹"
+  // 拌进 snapshot,而**无绑定态的指纹是字面 `null`**。于是
+  //   `null → bind → admin clear → null`
+  // 走完之后指纹又变回 `null`,无绑定态签发的旧 proof 在 5 分钟 TTL 内**复活**
+  // (取证探针在未修代码上实测 HTTP 200,身份被绑回去)。原注释只分析了
+  // `active → clear → null`,漏了这条回环 —— ABA 问题不能用"状态值相等"当判据。
+  //
+  // 单调递增即可,不回绕、不复用、不下降;它只被 proof snapshot 消费,
+  // **不进任何响应 / Audit / 日志**(它是判据,不是可见字段)。
+  // 递增落点恰好三处:两条绑定事务(bind / rebind)+ 撤销原语
+  // `users/wecom-identity-revoke.ts`(clear / softDelete / reopen 三个落点共用它)。
+  // "什么都没变"的路径(同目标 no-op 换绑、幂等空转 clear)**不**递增,
+  // 与"不写变更 audit"同一口径。
+  //
+  // 为什么不是"proof 快照改存最新一条 identity 历史":那条不变量靠"历史行不物理删"
+  // 这个外部前提撑着,仓里没有任何执行位守着它;代际列是显式的。
+  wecomIdentityVersion Int @default(0)
+
   // 队员账号闭环 v2(2026-07-07;评审稿 docs/archive/reviews/member-account-loop-v2-review.md
   // §3.1/E-1/E-2):去 @unique,改手写 partial unique index `User_memberId_active_key`
   // WHERE "deletedAt" IS NULL(migration 末尾追加,沿 role_bindings / member_organization_memberships

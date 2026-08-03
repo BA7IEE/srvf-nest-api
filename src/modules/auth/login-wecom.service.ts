@@ -26,6 +26,7 @@ import {
 } from '../wecom/wecom.types';
 import { AuthService } from './auth.service';
 import { lockAuthSessionUser } from './auth-session-lock';
+import { isWecomLoginCredentialInvalid, WecomLoginFailureGate } from './wecom-login-failure.gate';
 import type {
   LoginResponseDto,
   LoginWecomDto,
@@ -65,7 +66,29 @@ import type {
 //
 // ── 敏感值(§5.5)──
 //   code / 原始 state / 原始 binding ticket 三者:不落库、不入日志、不入 Audit。
+//   浏览器关联 nonce(B1)同级:只在 `Set-Cookie` 里出现一次,不进响应体 / 日志 / Audit。
 //   wecomUserId 落 wecom_identities 明文(发送消息要用),但响应 / Audit / 日志只出掩码。
+//
+// ── P1-27 第一刀(2026-08-03,外部评审 NO-GO 后)──
+//   B1:`state` 现在绑定发起授权的浏览器 —— authorize 另发 `__Host-` Cookie nonce,
+//       `state = sha256(nonce)`,callback 必须同时出示两者。
+//       修前实测:攻击者的 `code+state` 塞进受害者浏览器 → 受害者输入自己的手机号短信码
+//       → 攻击者的企业微信身份绑到受害者账号(完整接管,已端到端复现)。
+//   B3:36010 全部经 `WecomLoginFailureGate` 一个出口 —— 有界最小响应时长 + 扰动。
+//       修前实测「state 无效」比其余分支快约一半,构成"我方认不认这个 state"的 oracle。
+
+/**
+ * authorize 的内部返回:对外 DTO + 只能进 Cookie 的 nonce 原值(B1)。
+ *
+ * 拆成两块而不是往 DTO 上加字段,是**结构性**的:`WecomAuthorizeResponseDto` 会被
+ * ResponseInterceptor 原样序列化进响应体,nonce 一旦进了它就必然泄露到 body 里。
+ * 分成两个字段之后,"把 nonce 写进响应体"需要有人显式去改 controller,
+ * 而不是顺手加一行 DTO 字段就悄悄发生。
+ */
+export interface IssuedWecomAuthorize {
+  dto: WecomAuthorizeResponseDto;
+  browserNonce: string;
+}
 
 @Injectable()
 export class LoginWecomService {
@@ -76,6 +99,7 @@ export class LoginWecomService {
     private readonly smsCode: SmsCodeService,
     private readonly auth: AuthService,
     private readonly auditLogs: AuditLogsService,
+    private readonly failures: WecomLoginFailureGate,
   ) {}
 
   /**
@@ -84,7 +108,7 @@ export class LoginWecomService {
    * pre-auth:任何人都能拿到一个 authorize URL —— 这不泄露任何账号信息,
    * URL 里只有企业配置(CorpID / AgentID)与一个随机 state。
    */
-  async authorizeForLogin(dto: WecomAuthorizeDto): Promise<WecomAuthorizeResponseDto> {
+  async authorizeForLogin(dto: WecomAuthorizeDto): Promise<IssuedWecomAuthorize> {
     return this.createAuthorizeUrl({
       purpose: WECOM_ATTEMPT_PURPOSE.LOGIN,
       subjectUserId: null,
@@ -103,7 +127,7 @@ export class LoginWecomService {
   async authorizeForBindSelf(
     currentUser: CurrentUserPayload,
     dto: WecomAuthorizeDto,
-  ): Promise<WecomAuthorizeResponseDto> {
+  ): Promise<IssuedWecomAuthorize> {
     return this.createAuthorizeUrl({
       purpose: WECOM_ATTEMPT_PURPOSE.BIND_SELF,
       subjectUserId: currentUser.id,
@@ -119,11 +143,42 @@ export class LoginWecomService {
    * state 先 CAS 消费再打上游 —— 上游成功但进程随后崩溃时用户重新发起即可,
    * 刻意不复活 code / state。
    */
-  async login(dto: LoginWecomDto, meta: AuditMeta): Promise<WecomLoginResponseDto> {
-    // ① 原子消费 purpose=login state(并发两请求单赢家;失败一律 36010)
+  async login(
+    dto: LoginWecomDto,
+    browserNonce: string | null,
+    meta: AuditMeta,
+  ): Promise<WecomLoginResponseDto> {
+    // B3:计时窗从**请求处理的最开始**起算,不是从失败点。
+    // 各分支的耗时差异恰恰积累在失败点之前,从失败点起算等于没算。
+    const startedAt = Date.now();
+    try {
+      return await this.loginInner(dto, browserNonce, meta);
+    } catch (err) {
+      // 36010 的**唯一出口**。放在这里而不是逐分支调用,有两个理由:
+      //   ① 它是个 choke point —— 将来新增的 36010 分支自动被收进来,
+      //      不依赖"记得也调一次 gate"这种靠自觉的约定;
+      //   ② 深层(`WecomService.exchangeOAuthCode` → 上游 40029/42003/42022)抛出的
+      //      同码异常也走这里,否则"上游拒绝 code"那条永远绕过归一化。
+      // 其余码(36030 通道未配置 / 36031 上游异常)不归一 —— 它们本来就是可区分的码,
+      // 拖慢它们只有坏处。
+      if (isWecomLoginCredentialInvalid(err)) {
+        await this.failures.reject(startedAt);
+      }
+      throw err;
+    }
+  }
+
+  private async loginInner(
+    dto: LoginWecomDto,
+    browserNonce: string | null,
+    meta: AuditMeta,
+  ): Promise<WecomLoginResponseDto> {
+    // ① 原子消费 purpose=login state + 浏览器关联 nonce(B1)
+    // (并发两请求单赢家;失败一律 36010,不区分"state 不对"与"浏览器不对")
     const attempt = await this.attempts.consumeState({
       state: dto.state,
       purpose: WECOM_ATTEMPT_PURPOSE.LOGIN,
+      browserNonce,
     });
     if (attempt === null) {
       throw new BizException(BizCode.WECOM_LOGIN_CREDENTIAL_INVALID);
@@ -296,7 +351,7 @@ export class LoginWecomService {
     subjectUserId: string | null;
     returnPath: string | undefined;
     defaultReturnPath: string;
-  }): Promise<WecomAuthorizeResponseDto> {
+  }): Promise<IssuedWecomAuthorize> {
     // returnPath 校验在**签发之前** —— 不合法就不该建 attempt 行,
     // 否则畸形 returnPath 会以每次请求一行的速度堆进台账。
     const returnPath = input.returnPath ?? input.defaultReturnPath;
@@ -305,21 +360,26 @@ export class LoginWecomService {
     }
 
     const ctx = await this.wecom.getAuthorizeContext();
-    const { state, expiresAt } = await this.attempts.createAttempt({
+    const { state, browserNonce, expiresAt } = await this.attempts.createAttempt({
       purpose: input.purpose,
       subjectUserId: input.subjectUserId,
       returnPath,
     });
 
     return {
-      // state 原文**只**出现在这个 URL 里;响应体不单独回显它(§6.2 末条)
-      authorizeUrl: buildWecomAuthorizeUrl({
-        corpId: ctx.corpId,
-        agentId: ctx.agentId,
-        webBaseUrl: ctx.webBaseUrl,
-        state,
-      }),
-      expiresAt: expiresAt.toISOString(),
+      dto: {
+        // state 原文**只**出现在这个 URL 里;响应体不单独回显它(§6.2 末条)
+        authorizeUrl: buildWecomAuthorizeUrl({
+          corpId: ctx.corpId,
+          agentId: ctx.agentId,
+          webBaseUrl: ctx.webBaseUrl,
+          state,
+        }),
+        expiresAt: expiresAt.toISOString(),
+      },
+      // B1:nonce 原文**只**交给 controller 写进 `Set-Cookie`,
+      // 绝不进 DTO —— 进了 DTO 就等于把 HttpOnly 的意义抹掉。
+      browserNonce,
     };
   }
 

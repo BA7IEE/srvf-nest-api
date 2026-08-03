@@ -27,6 +27,10 @@ import { WECOM_IDENTITY_STATUS } from '../wecom/wecom.types';
 //
 // ⚠️ **软撤销恒定**:D-WC-10 只释放身份槽位,历史行永久保留(`status='revoked'`)。
 // 本函数没有、也不得有物理删除分支。
+//
+// ⚠️ 本原语同时**递增 `User.wecomIdentityVersion`**(P1-27 第一刀 B2,2026-08-03)。
+// 三个落点由此自动获得代际,不需要各写一次;`clearUserWecom` 的幂等空转因为在
+// `active.length === 0` 就早返回了,天然不制造代际。
 
 export interface RevokedWecomIdentity {
   readonly id: string;
@@ -79,6 +83,22 @@ export async function revokeActiveWecomIdentityInTx(
       revokedAt: input.revokedAt,
       revokedByUserId: input.revokedByUserId,
     },
+  });
+
+  // 身份代际 +1(P1-27 第一刀 B2,2026-08-03)。
+  //
+  // 放在这里而不是三个调用方各写一次:D-WC-10 已经把"撤销"收成唯一原语,
+  // 代际是撤销的**同一件事实**的另一面,分开写迟早漏一处(而漏掉的那处
+  // 恰好就是 ABA 回环重新打开的地方,且没有任何断言会红)。
+  // 只在真的撤了行时递增 —— 上面 `active.length === 0` 已经早返回,
+  // 走到这里必有 count>0,幂等空转不制造代际(与"空转不写 Audit"同口径)。
+  //
+  // ⚠️ 这是对 User 行的写。调用方按 §9.1 必须已持有该行的 `FOR UPDATE`
+  // (`lockAuthSessionUser`),所以这里既不会自取锁、也不会反序。
+  await tx.user.update({
+    where: { id: input.userId },
+    data: { wecomIdentityVersion: { increment: 1 } },
+    select: { id: true },
   });
 
   return { count: updated.count, revoked: active };

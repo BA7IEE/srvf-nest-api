@@ -11,6 +11,7 @@ import { lockAuthSessionUser } from '../auth/auth-session-lock';
 import { StepUpAction } from '../auth/auth.dto';
 import {
   IdentityStepUpService,
+  type StepUpWecomBindingSnapshotInput,
   type StepUpWecomIdentitySnapshotInput,
 } from '../auth/identity-step-up.service';
 import { RbacService } from '../permissions/rbac.service';
@@ -99,13 +100,17 @@ export class UserWecomBindingService {
   async bindMyWecom(
     currentUser: CurrentUserPayload,
     dto: BindMyWecomDto,
+    browserNonce: string | null,
     auditMeta: AuditMeta,
   ): Promise<AppMeWecomDto> {
-    // ① 原子消费 bind_self state;subjectUserId 必须等于当前登录用户。
+    // ① 原子消费 bind_self state + 浏览器关联 nonce(B1);subjectUserId 必须等于当前登录用户。
     // 后半句是"拿别人的 state 绑自己"的执行位 —— 消费成功也要再核归属。
+    // browserNonce 来自 `__Host-` Cookie,由 controller 读出后显式传进来
+    // (service 不碰 Request —— 沿本仓 AuditMeta 显式传参的同一条纪律)。
     const attempt = await this.attempts.consumeState({
       state: dto.state,
       purpose: WECOM_ATTEMPT_PURPOSE.BIND_SELF,
+      browserNonce,
     });
     if (attempt === null || attempt.subjectUserId !== currentUser.id) {
       if (attempt !== null) await this.attempts.markFailed(attempt.id);
@@ -137,7 +142,7 @@ export class UserWecomBindingService {
       dto.stepUpToken,
       preview.user,
       StepUpAction.WECOM_BIND,
-      preview.identity,
+      preview.binding,
     );
 
     // ④ 绑定事务(锁序 §9.1:settings → User → identity → attempt → refresh / audit)
@@ -283,10 +288,10 @@ export class UserWecomBindingService {
           input.stepUpToken,
           locked.user,
           StepUpAction.WECOM_BIND,
-          locked.identity,
+          locked.binding,
         );
 
-        const current = locked.identity;
+        const current = locked.binding.identity;
 
         // 4) 同目标 no-op:已绑同一个企业微信号 → 不重写、不撤 refresh、不写变更 audit
         if (current !== null && current.wecomUserId === input.wecomUserId) {
@@ -337,6 +342,15 @@ export class UserWecomBindingService {
           select: { id: true },
         });
 
+        // 6.5) 身份代际 +1(B2)。走到这里必是**真实变更**(同目标 no-op 已在 4) 返回),
+        // 与撤销侧的 `revokeActiveWecomIdentityInTx` 对称;两侧合起来,
+        // "身份状态发生过任何变化"这件事就再也回不到起点。
+        await tx.user.update({
+          where: { id: input.userId },
+          data: { wecomIdentityVersion: { increment: 1 } },
+          select: { id: true },
+        });
+
         // 7) 撤销全部活跃未过期 refresh。
         // access token 沿 P0-E D-4 **不主动吊销**,按 15 分钟自然到期(§6.3 末段)。
         await tx.refreshToken.updateMany({
@@ -375,10 +389,14 @@ export class UserWecomBindingService {
   }
 
   /**
-   * 读 User credential snapshot + 当前 active 企业微信身份指纹(step-up 判据的两个输入)。
+   * 读 User credential snapshot + 企业微信绑定快照(代际 + 当前 active 身份指纹)。
    *
    * 传 `tx` 时读的是**锁后**事实,不传时是锁外预检。两者用同一段代码,
    * 免得出现"预检算的指纹"和"终检算的指纹"字段集不一致这种最难查的错。
+   *
+   * ⚠️ 代际(B2)与 User 行**同一次 select** 取回,不另发查询:
+   * 分两次读会在两次之间留一个"代际已变、身份还没读"的窗口,
+   * 而这个窗口正好是本刀要关的那类问题。
    */
   private async loadUserWithWecomIdentity(
     userId: string,
@@ -393,11 +411,11 @@ export class UserWecomBindingService {
       status: UserStatus;
       deletedAt: Date | null;
     };
-    identity: StepUpWecomIdentitySnapshotInput | null;
+    binding: StepUpWecomBindingSnapshotInput;
     boundAt: Date | null;
   } | null> {
     const client = tx ?? this.prisma;
-    const user = await client.user.findFirst({
+    const row = await client.user.findFirst({
       where: { id: userId, deletedAt: null, status: UserStatus.ACTIVE },
       select: {
         id: true,
@@ -407,9 +425,13 @@ export class UserWecomBindingService {
         openid: true,
         status: true,
         deletedAt: true,
+        wecomIdentityVersion: true,
       },
     });
-    if (user === null) return null;
+    if (row === null) return null;
+
+    // 代际不进 credential snapshot(那个算法逐字节冻结);拆出来只喂 WECOM_BIND 分支。
+    const { wecomIdentityVersion, ...user } = row;
 
     const identity = await client.wecomIdentity.findFirst({
       where: { userId, status: WECOM_IDENTITY_STATUS.ACTIVE, revokedAt: null },
@@ -422,10 +444,21 @@ export class UserWecomBindingService {
         boundAt: true,
       },
     });
-    if (identity === null) return { user, identity: null, boundAt: null };
+    if (identity === null) {
+      return {
+        user,
+        binding: { identityVersion: wecomIdentityVersion, identity: null },
+        boundAt: null,
+      };
+    }
 
     const { boundAt, ...fingerprint } = identity;
-    return { user, identity: fingerprint, boundAt };
+    const snapshot: StepUpWecomIdentitySnapshotInput = fingerprint;
+    return {
+      user,
+      binding: { identityVersion: wecomIdentityVersion, identity: snapshot },
+      boundAt,
+    };
   }
 
   // 两层校验的第二层(沿 users.service.ts 同名 helper 的字面范式):

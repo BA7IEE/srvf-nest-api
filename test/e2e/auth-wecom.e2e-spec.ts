@@ -4,6 +4,7 @@ import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { WECOM_LOGIN_NONCE_COOKIE } from '../../src/modules/auth/wecom-browser-nonce';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -51,6 +52,18 @@ function sha256Hex(raw: string): string {
   return createHash('sha256').update(raw, 'utf8').digest('hex');
 }
 
+// P1-27 第一刀 B1(2026-08-03):authorize 下发的浏览器关联 nonce cookie,按 state 存档。
+// 模拟的就是"同一个浏览器把这条流程走完" —— 本文件测的是功能链路,
+// 换浏览器必须失败的判据在 wecom-account-takeover.e2e-spec.ts。
+const browserJar = new Map<string, string>();
+
+function rememberBrowserCookie(res: request.Response, state: string): void {
+  const raw = res.headers['set-cookie'] as unknown as string[] | undefined;
+  const line = (raw ?? []).find((c) => c.startsWith(`${WECOM_LOGIN_NONCE_COOKIE}=`));
+  expect(line).toBeDefined();
+  browserJar.set(state, (line as string).split(';')[0]);
+}
+
 describe('企业微信 OAuth 登录 + 首次绑定全链(T3 e2e 组 A)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -62,7 +75,16 @@ describe('企业微信 OAuth 登录 + 首次绑定全链(T3 e2e 组 A)', () => {
   }
 
   function login(code: string, state: string): Promise<request.Response> {
-    return request(httpServer(app)).post(LOGIN_PATH).send({ code, state });
+    const req = request(httpServer(app)).post(LOGIN_PATH);
+    // P1-27 第一刀 B1(2026-08-03):state 现在绑定发起授权的那个浏览器。
+    // `freshState()` 把那次 authorize 拿到的 nonce cookie 记进 browserJar,
+    // 这里按 state 取回 —— 等价于"同一个浏览器把流程走完",
+    // 于是本文件所有既有调用点与断言**逐字不动**。
+    // (刻意不用 supertest agent 的自动 jar:本仓另有 wecom-account-takeover.e2e-spec.ts
+    //  专门测"换一个浏览器提交必须失败",那边必须能显式控制谁持有哪份 cookie。)
+    const cookie = browserJar.get(state);
+    if (cookie !== undefined) req.set('Cookie', cookie);
+    return req.send({ code, state });
   }
 
   function sendCode(bindingTicket: string, phone: string): Promise<request.Response> {
@@ -80,6 +102,7 @@ describe('企业微信 OAuth 登录 + 首次绑定全链(T3 e2e 组 A)', () => {
     const url = res.body.data.authorizeUrl as string;
     const state = /[?&]state=([^&#]+)/.exec(url)?.[1];
     expect(state).toBeDefined();
+    rememberBrowserCookie(res, state as string);
     return state as string;
   }
 

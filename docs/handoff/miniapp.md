@@ -77,14 +77,50 @@
 > `system/v1/wecom-settings` 打开,并确认企业微信后台已登记可信域名(那一条只有真实 OAuth 回跳能验证)。
 > ⚠️ **命名**:WeCom = 企业微信,与微信小程序(`wechat` / `openid` / 250xx)**是两个外部主体**,错误码、端点、身份键都不共用。
 
+> 🔴 **破坏性变更(2026-08-03,P1-27 第一刀 B1)—— 前端必须适配,否则整条企业微信登录链 100% 失败。**
+> 详见下方 §1.3.1。一句话:企业微信登录/绑定的**每一个**请求都必须带上 Cookie
+> (`fetch` 加 `credentials: 'include'`,`axios` 加 `withCredentials: true`)。
+
 **登录四步(前端逐步照做)**
 
 | 步 | 端点 | 前端要做的事 |
 |---|---|---|
-| ① 取授权 URL | `POST /api/auth/v1/login-wecom/authorize`,body 可选 `{returnPath}` | 拿到 `{authorizeUrl, expiresAt}` 后**整串直接跳转**。⚠️ 不要解析或重写其中任何参数(`state` 只在这里出现一次)。`returnPath` 只接受**站内相对路径**,绝对 URL / `//` / 反斜杠 / 控制字符 / userinfo / query 里的凭证类 key(`token` `code` `state` `key` `sig` … 含 camelCase 如 `refreshToken`)一律 `40000` |
+| ① 取授权 URL | `POST /api/auth/v1/login-wecom/authorize`,body 可选 `{returnPath}` | 拿到 `{authorizeUrl, expiresAt}` 后**整串直接跳转**。⚠️ 不要解析或重写其中任何参数(`state` 只在这里出现一次)。⚠️ **必须带 `credentials:'include'`** —— 这一步的响应带一个 `Set-Cookie`,丢了它第 ③ 步必失败(§1.3.1)。`returnPath` 只接受**站内相对路径**,绝对 URL / `//` / 反斜杠 / 控制字符 / userinfo / query 里的凭证类 key(`token` `code` `state` `key` `sig` … 含 camelCase 如 `refreshToken`)一律 `40000` |
 | ② 企业微信回跳 | 固定落地页 `<webBaseUrl>/auth/wecom/callback?code=…&state=…` | 页面**立即** POST 到步骤 ③,随后 `history.replaceState` 清理地址栏。⚠️ `code` / `state` **禁止**进入埋点、错误上报、localStorage / sessionStorage 或任何日志 |
-| ③ 换会话 | `POST /api/auth/v1/login-wecom` body `{code, state}` | 出参恒 4 字段 `{bindingRequired, bindingTicket, session, returnPath}`。已绑定 → `bindingRequired:false` + `session`(与密码登录**同一个** `LoginResponseDto`,双计时器语义一致);未绑定 → `bindingRequired:true` + 一次性 `bindingTicket`(默认 10 分钟),`session:null` |
+| ③ 换会话 | `POST /api/auth/v1/login-wecom` body `{code, state}` | ⚠️ **必须带 `credentials:'include'`**(§1.3.1)。出参恒 4 字段 `{bindingRequired, bindingTicket, session, returnPath}`。已绑定 → `bindingRequired:false` + `session`(与密码登录**同一个** `LoginResponseDto`,双计时器语义一致);未绑定 → `bindingRequired:true` + 一次性 `bindingTicket`(默认 10 分钟),`session:null` |
 | ④ 未绑定分流 | 见下 | 必须**同时**给出两条入口,不要只给路径 A |
+
+#### 1.3.1 🔴 浏览器关联 Cookie(2026-08-03 新增,破坏性)
+
+**为什么加**:原来的 `state` 只证明"这条回跳对应后端签发过的一次授权",**不证明"提交回跳的浏览器就是发起授权的那个"**。
+攻击者在自己那侧走完企业微信授权拿到 `code + state`,再把它塞进受害者的浏览器(一条链接就够),
+受害者提交后拿到的是**攻击者身份**的会话;若攻击者的企业微信号尚未绑定任何账号,受害者会在自己页面上
+看到"请输入手机号 + 短信码",照做之后**攻击者的企业微信号就被绑到受害者账号**上 —— 完整账号接管。
+(这条不是推演:修复前已端到端复现。)
+
+**后端做了什么**:`authorize` 现在额外下发一个 `HttpOnly` Cookie,`state` 由它派生;
+`login-wecom` / `PUT me/wecom` 必须同时收到匹配的 Cookie 才受理。
+
+| Cookie 名 | 由谁下发 | 谁必须带上 |
+|---|---|---|
+| `__Host-srvf_wecom_login` | `POST auth/v1/login-wecom/authorize` | `POST auth/v1/login-wecom` |
+| `__Host-srvf_wecom_bind` | `POST auth/v1/wecom-bind/authorize` | `PUT app/v1/me/wecom` |
+
+属性固定 `HttpOnly; Secure; SameSite=Lax; Path=/`,有效期与 `state` 同为 5 分钟,消费后由后端清除。
+
+**前端要改的**(共三处,漏一处该流程恒 `36010`):
+
+1. 上表四个端点的请求全部加 `credentials: 'include'`(`axios` 是 `withCredentials: true`)。
+   `authorize` 和它对应的提交请求**必须成对**都带 —— 只在提交那一步带,Cookie 根本没存下来。
+2. **不要**尝试读取、转发或存储这个 Cookie:它是 `HttpOnly`,JS 读不到,这是设计。
+   照旧**禁止**把 `code` / `state` 放进 localStorage / sessionStorage / 埋点 / 错误上报。
+3. 用户中途换浏览器、清了 Cookie、或流程超过 5 分钟 → `36010`。文案沿用既有"登录已失效,请重新发起",
+   **不要**新增可区分的提示(它与 `code` 无效、账号停用共用同一个码,这是防枚举的一部分)。
+
+> ⚠️ **部署前提(运维 / 架构,不是前端能解决的)**:回跳页所在 origin 必须与 API **同源**,
+> 或至少与 API **同 site**(同一 eTLD+1,例如 `app.example.com` ↔ `api.example.com`)。
+> 若两者跨 site,浏览器不会带这个 Cookie,且当前后端 CORS **没有开** `Access-Control-Allow-Credentials`
+> —— 跨源部署需要先补这一项(不在本次改动范围内)。上线前请以真实域名实测走通一次。
 
 **未绑定时必须同时展示两条入口(冻结产品行为,不可只做一条)**
 
