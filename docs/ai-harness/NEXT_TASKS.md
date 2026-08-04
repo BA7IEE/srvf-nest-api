@@ -214,7 +214,25 @@
 
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
-### P1-28 活动业务全流程改造 v1.1(批次 0–7) — **第 0 批 ✅ 全交付;三条前置已全部落定,第 1 批可立项**(schema 授权仍须逐批发放)
+### P1-28 活动业务全流程改造(批次 0–7) — **第 0 批 + 第 1 批 ✅ 全部交付(39 表 / 第 71–75 migration);合同已修订至 v1.1.1;下一步 = 第 2 批行为实现**
+
+> **需求口径变更(2026-08-04)**:**= v1.1 四份 + [`AMENDMENTS-v1.1.1`](../archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md),冲突以后者为准。**
+> 第 1 批建表过程中实测撞到**五处合同内部不一致**,维护者当日**全部接受**并发布修订件。原件与 SHA256 一字未动(校验仍过)。
+> 五条现状:②已生效(快照锚点可空)· ④已解决(加开第五刀 #915)· **①归第 4 批**(`CapacityReservation` 补
+> `memberId`/`activityId` + partial unique,走 DB 保证不降级为服务层)· **⑤第 4 批开工前需业务方定四处取值集**
+> (`resultCode` / 候选唯一 / `scopeTypeCode`+`fallbackMode` / `preferenceOrder` 起点)· **③是第 6 批开工硬门**
+> (`OfflinePackage`、`OfflinePunchReviewItem` 被引用却从未定义,**禁止从 §5.7 散文推导**,已用 e2e 判据钉死)。
+> **五条均不阻塞第 2 批。**
+>
+> **第 1 批五刀**(全部 expand-only、零 runtime、零端点):
+> [#911](https://github.com/BA7IEE/srvf-nest-api/pull/911) 场次/岗位/参与身份/容量(71)·
+> [#912](https://github.com/BA7IEE/srvf-nest-api/pull/912) 报名表/资格/邀请(72)·
+> [#913](https://github.com/BA7IEE/srvf-nest-api/pull/913) 打卡/证据(73)·
+> [#914](https://github.com/BA7IEE/srvf-nest-api/pull/914) 结算/账本/更正/关账/任务(74)·
+> [#915](https://github.com/BA7IEE/srvf-nest-api/pull/915) 分配/志愿/候补/预留名额(75)。
+> **两组 append-only trigger**(`AttendancePunchEvent` / `ParticipationLedgerEntry`),
+> 四条判据含「**TRUNCATE 放行且 trigger 存活**」—— 挡住即 e2e 地基塌方。
+> 39 张新表**零调用方是预期状态**,消费方自第 2 批起。
 
 - **合同**:[`archive/reviews/activity-business-overhaul-v1.1/`](../archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效
   (业务方案 / 详细开发文档 / 355 项追踪矩阵 / 修订说明),SHA256 入仓时原位校验全过。
