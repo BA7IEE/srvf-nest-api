@@ -147,6 +147,16 @@ model User {
   attendancePunchEventsOperated  AttendancePunchEvent[]   @relation("AttendancePunchEventOperatorUser")
   evidenceSealsSealed            EvidenceSeal[]           @relation("EvidenceSealSealer")
 
+  // 第 1 批第四刀(2026-08-04;合同 §3.19 / §3.22 / §3.25 / §3.26 / §3.27):同上,零标量字段。
+  settlementVersionsCreated     AttendanceSettlementVersion[]       @relation("SettlementVersionCreator")
+  settlementReviewActions       SettlementReviewAction[]            @relation("SettlementReviewActionActor")
+  ledgerPostingBatchesPrepared  LedgerPostingBatch[]                @relation("LedgerPostingBatchPreparer")
+  ledgerPostingBatchesCommitted LedgerPostingBatch[]                @relation("LedgerPostingBatchCommitter")
+  correctionRequestsSubmitted   AttendanceCorrectionRequest[]       @relation("CorrectionRequestSubmitter")
+  correctionRequestsReviewed    AttendanceCorrectionRequest[]       @relation("CorrectionRequestReviewer")
+  settlementClosuresClosed      ActivitySettlementClosureRevision[] @relation("ClosureRevisionCloser")
+  activityBatchJobsCreated      ActivityBatchJob[]                  @relation("ActivityBatchJobCreator")
+
   @@index([deletedAt])
   @@index([status])
   @@index([memberId])
@@ -547,6 +557,11 @@ model Member {
   // 是两条独立的边,不能合并 —— 本人自助时两者相同,代打卡时不同。
   attendancePunchEvents         AttendancePunchEvent[] @relation("AttendancePunchEventMember")
   attendancePunchEventsOperated AttendancePunchEvent[] @relation("AttendancePunchEventOperatorMember")
+
+  // 第 1 批第四刀反向 relation(合同 §3.21 / §3.23 / §3.24):仅关系映射,零标量字段。
+  settlementDays        ParticipantSettlementDay[]   @relation("ParticipantSettlementDayMember")
+  ledgerEntries         ParticipationLedgerEntry[]   @relation("ParticipationLedgerEntryMember")
+  contributionDayStates MemberContributionDayState[] @relation("MemberContributionDayStateMember")
 
   @@index([gradeCode])
   @@index([status])
@@ -1210,6 +1225,15 @@ model Activity {
   punchEvents   AttendancePunchEvent[]
   evidenceState ActivityEvidenceState?
   evidenceSeals EvidenceSeal[]
+
+  // 活动改造 v1.1 第 1 批第四刀反向 relation(合同 §3.19 / §3.23 / §3.25 / §3.26 / §3.27):
+  // 仅关系映射,零标量字段。settlementRun 是 `?` 单值 —— §3.19「一活动一行」由
+  // AttendanceSettlementRun.activityId 的 unique 在 DB 侧保证。
+  settlementRun      AttendanceSettlementRun?
+  ledgerEntries      ParticipationLedgerEntry[]
+  correctionRequests AttendanceCorrectionRequest[]
+  closureRevisions   ActivitySettlementClosureRevision[]
+  batchJobs          ActivityBatchJob[]
 
   @@index([deletedAt])
   @@index([createdAt])
@@ -3341,6 +3365,10 @@ model ActivitySession {
   qrCredentials AttendanceQrCredential[]
   punchEvents   AttendancePunchEvent[]
 
+  // 第 1 批第四刀反向 relation(合同 §3.23 / §3.27):仅关系映射,零标量字段。
+  ledgerEntries ParticipationLedgerEntry[]
+  batchJobs     ActivityBatchJob[]
+
   // 复合 FK 的被引用侧:让子表 (activityId, sessionId) 双锚点由 **DB** 保证
   // 「session 属于 activity」,而不是只靠 service 自觉(合同 §3.3 原话:
   // 「双锚点,service 与 DB 约束保证 session 属于 activity」)。
@@ -3469,6 +3497,11 @@ model ActivityParticipationIdentity {
   // 第 1 批第三刀(§3.16 / §3.18):打卡事件与服务段修订的反向 relation。
   punchEvents             AttendancePunchEvent[]
   serviceSegmentRevisions ParticipantServiceSegmentRevision[]
+
+  // 第 1 批第四刀反向 relation(合同 §3.20 / §3.23 / §3.25):仅关系映射,零标量字段。
+  settlementResultRevisions ParticipantSettlementResultRevision[]
+  ledgerEntries             ParticipationLedgerEntry[]
+  correctionRequests        AttendanceCorrectionRequest[]
 
   @@unique([activityId, sessionId, memberId])
   @@index([activityId])
@@ -4110,6 +4143,13 @@ model AttendancePunchEvent {
   qrCredentialId String?
   deviceId       String?
 
+  // 🟢 **兑现第三刀欠账**(第三刀按「跨切片外键列不提前占位」暂缓,目标表 §3.27
+  //    ActivityBatchJobItem 正是本刀建的):import / bulk 来源的事件指回产生它的任务项。
+  //    可空 —— 自助 / 现场扫码等在线来源没有任务项。
+  //    ⚠️ 本表有 append-only trigger,但加列走的是 ALTER TABLE ADD COLUMN(DDL),
+  //       行级 trigger 不参与 DDL;加列后已重跑该 trigger 的四条判据(见 migration 说明)。
+  importJobItemId String?
+
   // §3.16「普通业务字段,可空」;修订说明 §7 拍板坐标按普通业务字段保存。
   // 精度沿既有 activity_check_ins:经纬度 Decimal(10,7)、精度/距离 Decimal(10,2)。
   longitude Decimal? @db.Decimal(10, 7)
@@ -4136,6 +4176,7 @@ model AttendancePunchEvent {
   operatorUser          User                          @relation("AttendancePunchEventOperatorUser", fields: [operatorUserId], references: [id], onDelete: Restrict)
   operatorMember        Member?                       @relation("AttendancePunchEventOperatorMember", fields: [operatorMemberId], references: [id], onDelete: Restrict)
   qrCredential          AttendanceQrCredential?       @relation(fields: [qrCredentialId], references: [id], onDelete: Restrict)
+  importJobItem         ActivityBatchJobItem?         @relation("PunchEventImportJobItem", fields: [importJobItemId], references: [id], onDelete: Restrict)
 
   supersedesEvent AttendancePunchEvent?  @relation("PunchEventSupersede", fields: [supersedesEventId], references: [id], onDelete: Restrict)
   supersededBy    AttendancePunchEvent[] @relation("PunchEventSupersede")
@@ -4155,6 +4196,7 @@ model AttendancePunchEvent {
   @@index([eventTypeCode])
   @@index([qrCredentialId])
   @@index([supersedesEventId])
+  @@index([importJobItemId])
 }
 
 // ===== §3.17 ActivityEvidenceState:一活动一行的证据/人口版本指针 =====
@@ -4215,6 +4257,10 @@ model EvidenceSeal {
   activity Activity @relation(fields: [activityId], references: [id], onDelete: Restrict)
   sealedBy User?    @relation("EvidenceSealSealer", fields: [sealedByUserId], references: [id], onDelete: Restrict)
 
+  // 第 1 批第四刀反向 relation(合同 §3.19 / §3.26):仅关系映射,零标量字段。
+  settlementVersions AttendanceSettlementVersion[]
+  closureRevisions   ActivitySettlementClosureRevision[]
+
   @@unique([activityId, sealRevision])
   @@index([activityId])
   @@index([statusCode])
@@ -4261,12 +4307,19 @@ model ParticipantServiceSegmentRevision {
 
   baseRevisionId String? // 首个 revision 无前驱
 
+  // 🟢 **兑现第三刀欠账**(目标表 §3.22 LedgerPostingBatch 正是本刀建的):
+  //    §3.18 字段表原文 `baseRevisionId/effectiveBatchId?` —— 合同**自带** `?`,
+  //    正式生效前(draft 段)本就没有批次。
+  effectiveBatchId String?
+
   identity           ActivityParticipationIdentity @relation(fields: [participationIdentityId], references: [id], onDelete: Restrict)
   sourceCheckInEvent AttendancePunchEvent          @relation("SegmentSourceCheckInEvent", fields: [sourceCheckInEventId], references: [id], onDelete: Restrict)
   sourceCloseEvent   AttendancePunchEvent?         @relation("SegmentSourceCloseEvent", fields: [sourceCloseEventId], references: [id], onDelete: Restrict)
 
   baseRevision     ParticipantServiceSegmentRevision?  @relation("SegmentBaseRevision", fields: [baseRevisionId], references: [id], onDelete: Restrict)
   derivedRevisions ParticipantServiceSegmentRevision[] @relation("SegmentBaseRevision")
+
+  effectiveBatch LedgerPostingBatch? @relation("SegmentEffectiveBatch", fields: [effectiveBatchId], references: [id], onDelete: Restrict)
 
   // model 名 33 字符 ⇒ 复合索引默认名普遍越过 PostgreSQL 63 字符上限,全部显式 map。
   @@unique([participationIdentityId, segmentKey, revision], map: "participant_service_segment_identity_key_revision_key")
@@ -4277,4 +4330,679 @@ model ParticipantServiceSegmentRevision {
   @@index([sourceCheckInEventId], map: "participant_service_segment_checkin_event_idx")
   @@index([sourceCloseEventId], map: "participant_service_segment_close_event_idx")
   @@index([baseRevisionId], map: "participant_service_segment_base_revision_idx")
+  @@index([effectiveBatchId], map: "participant_service_segment_effective_batch_idx")
+}
+
+// ============================================================================
+// 活动改造 v1.1 —— 第 1 批第四刀:Settlement / Ledger / Correction / Closure / Job
+// (2026-08-04;合同 docs/archive/reviews/activity-business-overhaul-v1.1/
+//  §3.19 / §3.20 / §3.21 / §3.22 / §3.23 / §3.24 / §3.25 / §3.26 / §3.27;
+//  §14「第 1 批」建议拆分第 4 项)
+//
+// 本刀是纯 schema expand:**十四张新表零调用方**是预期状态,消费方在第 2 批。
+// 沿前三刀的四条工程判断:① 只做加法 ② 跨切片外键列不提前占位
+// ③ 既有表原样保留 ④ 合同没给的一律不发明。
+//
+// 🔴 本刀语义像钱:`ParticipationLedgerEntry` 一旦随 batch committed 就是队员贡献值真值。
+//
+// 本刀**兑现**前面欠下的两个列(第三刀按 ② 暂缓,目标表正是本刀建的):
+//   - ParticipantServiceSegmentRevision.effectiveBatchId → LedgerPostingBatch(§3.22)
+//   - AttendancePunchEvent.importJobItemId               → ActivityBatchJobItem(§3.27)
+//
+// 本刀按 ② 仍**不建**:AttendancePunchEvent.offlinePackageId(OfflinePackage 是合同第三处
+// 内部矛盾,§3 从未定义该表,归第 6 批);§3.11 分配相关四表与
+// ActivityParticipationRevision.allocationBatchId(**合同第四处内部矛盾**:§14 任何一刀
+// 都没列入,而第 4 批行为实现要用 —— 维护者 2026-08-04 拍板另走第五刀)。
+//
+// ⚠️ 「日合计 0..3」(§3.24)**刻意不进任何表级 CHECK / trigger**:那是**跨行**不变量
+//    (同一 member 同一 ledgerDate 的多条分录求和),表级 CHECK 只能看单行,trigger 伪造
+//    跨行求和会在并发下骗人。跨行日上限归 service(第 2 批,在既有 member advisory lock 内)。
+//    详见 migration 末尾的具名声明段。
+//
+// ⚠️ `ledgerDate` **唯一选型 = `DateTime @db.Date`**(§3.21 明写「必须唯一选型」),
+//    三处同型:ParticipantSettlementDay / ParticipationLedgerEntry /
+//    MemberContributionDayState。混型会让 (memberId, ledgerDate) 唯一在跨表 join 时静默错位。
+//    业务侧的北京日换算统一走 BeijingCalendarService(第 2 批),本刀零转换代码。
+//
+// ⚠️ worker 协议**零新增基础设施**(§3.27):`ActivityBatchJob` 的 lease/fencing 列镜像
+//    既有 outbox / storage-operation 两张表的形状,复用 PostgreSQL `SKIP LOCKED + lease`。
+//    本刀**不新增 cron**(全仓终态恰 2)、不引入 Redis/queue、不注册 worker 进程。
+//
+// ⚠️ **不存敏感原值**(§3.27 明写):`ActivityBatchJobItem` 只有 `lastErrorCode`(编码)与
+//    `safeMessage`(已脱敏文案),**没有为异常堆栈 / SQL / 敏感原值预留任何字段**;
+//    `ActivitySettlementClosureRevision.checksJson` 只存非敏感摘要与失败计数,不复制人员明细。
+//
+// 命名沿前三刀:**不使用 @@map**,物理表名即 PascalCase model 名。
+// 状态类字段一律 String + migration CHECK 闭集兜底,不建 Prisma enum(合同 §3 前言)。
+// 本刀 model 名普遍 ≥ 24 字符 ⇒ 复合索引默认名易越过 PostgreSQL 63 字符上限并被静默截断,
+// 故**所有** @@unique / @@index 一律显式 `map:`(沿第三刀 ParticipantServiceSegmentRevision)。
+// ============================================================================
+
+// ===== §3.19 AttendanceSettlementRun:结算根,一活动一行 =====
+//
+// §3.19:「状态是页面投影和流程根,正式人员结果／账本仍由版本和 batch 主导」
+// ⇒ 本行**会被 UPDATE**(statusCode / 各 current* 指针 / version CAS),按 §3 前言带 updatedAt。
+model AttendanceSettlementRun {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activityId String @unique // §3.19「一活动一行」
+
+  // not_started / drafting / submitted / pending_first_review / pending_final_review
+  // / posting / posted / correction_open / closed(§3.19 明写九值闭集)
+  statusCode String
+
+  // 快速指针,不是真相源(真相在 Version / PostingBatch / ClosureRevision 行上)。
+  currentDraftVersion     Int?
+  currentSubmittedVersion Int?
+  currentPostedVersion    Int?
+  currentClosureRevision  Int?
+
+  version Int @default(0) // CAS
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Restrict)
+
+  versions           AttendanceSettlementVersion[]
+  postingBatches     LedgerPostingBatch[]
+  correctionRequests AttendanceCorrectionRequest[]
+
+  @@index([statusCode], map: "attendance_settlement_run_status_idx")
+}
+
+// ===== §3.19 AttendanceSettlementVersion:不可变提交版本 =====
+//
+// 「不可变」指**内容**不可变(evidenceSealId / contentHash / 三个计数快照一旦写入不改);
+// 但 §3.19 的 statusCode 闭集含 `returned/approved/voided` —— 审核结果要写回本行
+// ⇒ 本行**会被 UPDATE**,故按 §3 前言带 updatedAt,且**不装** append-only trigger。
+// 这与第三刀 EvidenceSeal 的处置逐字同源(内容不可变 ≠ 行不可变)。
+model AttendanceSettlementVersion {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  settlementRunId String
+  version         Int
+
+  evidenceSealId     String
+  evidenceRevision   Int
+  populationRevision Int
+  workflowRevision   Int
+
+  contentHash               String
+  personCount               Int
+  sessionParticipationCount Int
+  serviceSegmentCount       Int
+
+  createdByUserId String? // 沿本仓 actor FK 一律可空的既有范式
+  submittedAt     DateTime?
+
+  statusCode String // draft / submitted / returned / approved / voided(§3.19 明写五值闭集)
+
+  priorVersionId  String? // 首版无前驱
+  returnFromStage String? // 仅退回版本有值
+  returnReason    String?
+
+  operationKey String?
+  requestHash  String?
+
+  settlementRun AttendanceSettlementRun @relation(fields: [settlementRunId], references: [id], onDelete: Restrict)
+  evidenceSeal  EvidenceSeal            @relation(fields: [evidenceSealId], references: [id], onDelete: Restrict)
+  createdBy     User?                   @relation("SettlementVersionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  priorVersion    AttendanceSettlementVersion?  @relation("SettlementVersionPrior", fields: [priorVersionId], references: [id], onDelete: Restrict)
+  derivedVersions AttendanceSettlementVersion[] @relation("SettlementVersionPrior")
+
+  reviewActions      SettlementReviewAction[]
+  resultRevisions    ParticipantSettlementResultRevision[]
+  postingBatches     LedgerPostingBatch[]
+  closureRevisions   ActivitySettlementClosureRevision[]
+  correctionRequests AttendanceCorrectionRequest[]         @relation("CorrectionRequestBaseVersion")
+  correctionApplied  CorrectionApplication[]               @relation("CorrectionApplicationNewVersion")
+  batchJobs          ActivityBatchJob[]
+
+  @@unique([settlementRunId, version], map: "attendance_settlement_version_run_version_key")
+  @@index([settlementRunId], map: "attendance_settlement_version_run_idx")
+  @@index([statusCode], map: "attendance_settlement_version_status_idx")
+  @@index([evidenceSealId], map: "attendance_settlement_version_seal_idx")
+  @@index([priorVersionId], map: "attendance_settlement_version_prior_idx")
+  @@index([operationKey], map: "attendance_settlement_version_operation_key_idx")
+}
+
+// ===== §3.19 SettlementReviewAction:审核动作,append-only =====
+//
+// §3.19 明写 append-only ⇒ 按 §3 前言**不带 updatedAt / deletedAt**。
+// ⚠️ 与 ParticipationLedgerEntry 不同,合同**没有**为本表点名「数据库角色层禁止
+//    UPDATE/DELETE」(那句只写在 §3.23.8 账本上)⇒ 本刀**不装** append-only trigger,
+//    只用「无 updatedAt + 至多一个生效决定」的形状表达。沿 ④ 不自行加码。
+//
+// 🔴 actorUserId 取 NOT NULL(合同字段表未标 `?`):§3.19 的「提交人／一审人／终审人分离」
+//    是事务内硬不变量,审核动作没有 actor 就无法复判分离 —— 与第三刀
+//    AttendancePunchEvent.operatorUserId 同一处置(该列亦因合同点名而 NOT NULL)。
+model SettlementReviewAction {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  settlementVersionId String
+  stageCode           String // first / final(§3.19 明写二值闭集)
+  actionCode          String // approve / return(§3.19 明写二值闭集)
+
+  actorUserId String
+  actedAt     DateTime
+  note        String?
+
+  operationKey String  @unique // §3.19 明写 unique;单列不复合(复合恰好放行同 key 不同 payload)
+  requestHash  String?
+
+  settlementVersion AttendanceSettlementVersion @relation(fields: [settlementVersionId], references: [id], onDelete: Restrict)
+  actor             User                        @relation("SettlementReviewActionActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([settlementVersionId], map: "settlement_review_action_version_idx")
+  @@index([settlementVersionId, stageCode], map: "settlement_review_action_version_stage_idx")
+  @@index([actorUserId, actedAt], map: "settlement_review_action_actor_acted_idx")
+}
+
+// ===== §3.20 ParticipantSettlementResultRevision:人员结算结果修订 =====
+//
+// §3.20:unique `(settlementVersionId, participationIdentityId)` —— 一个 identity
+// 每个正式版本**一条**(注意:unique 不含 revision,revision 只是本条的修订序号)。
+// statusCode `draft/committed/superseded` 是投影 ⇒ 本行会被 UPDATE,带 updatedAt。
+model ParticipantSettlementResultRevision {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  settlementVersionId     String
+  participationIdentityId String
+  revision                Int
+
+  // present / leave / absent / cancelled / not_selected / waitlist_expired
+  // / review_expired / invitation_expired / exempt / early_departure_zero(§3.20 明写十值闭集)
+  resultCode String
+
+  lateFlag           Boolean @default(false)
+  earlyLeaveFlag     Boolean @default(false)
+  exceptionFlagsJson Json?
+
+  // 精度沿既有 AttendanceRecord.serviceHours / contributionPoints = Decimal(5,2)。
+  // 四列**均 NOT NULL**:请假/缺席/未入选等零结果写 0,不是写 NULL ——
+  // 「认定 ≠ 计算 ⇒ adjustmentReason 必填」那条 CHECK 依赖它们可比较。
+  recognizedServiceHours       Decimal @db.Decimal(5, 2)
+  recognizedContributionPoints Decimal @db.Decimal(5, 2)
+  calculatedServiceHours       Decimal @db.Decimal(5, 2)
+  calculatedContributionPoints Decimal @db.Decimal(5, 2)
+
+  adjustmentReason String? // §3.20:认定与计算不同**必填**(migration CHECK 兜底)
+
+  statusCode String // draft / committed / superseded(§3.20 明写三值闭集)
+
+  baseResultRevisionId String? // 首个 revision 无前驱
+  correctionRequestId  String?
+
+  settlementVersion AttendanceSettlementVersion   @relation(fields: [settlementVersionId], references: [id], onDelete: Restrict)
+  identity          ActivityParticipationIdentity @relation(fields: [participationIdentityId], references: [id], onDelete: Restrict)
+
+  baseResultRevision ParticipantSettlementResultRevision?  @relation("ResultRevisionBase", fields: [baseResultRevisionId], references: [id], onDelete: Restrict)
+  derivedRevisions   ParticipantSettlementResultRevision[] @relation("ResultRevisionBase")
+
+  correctionRequest AttendanceCorrectionRequest? @relation(fields: [correctionRequestId], references: [id], onDelete: Restrict)
+
+  settlementDays ParticipantSettlementDay[]
+  ledgerEntries  ParticipationLedgerEntry[]
+
+  @@unique([settlementVersionId, participationIdentityId], map: "participant_settlement_result_version_identity_key")
+  // §11.3 点名的两条:
+  @@index([settlementVersionId, resultCode], map: "participant_settlement_result_version_result_idx")
+  @@index([participationIdentityId, statusCode], map: "participant_settlement_result_identity_status_idx")
+  @@index([statusCode], map: "participant_settlement_result_status_idx")
+  @@index([baseResultRevisionId], map: "participant_settlement_result_base_idx")
+  @@index([correctionRequestId], map: "participant_settlement_result_correction_idx")
+}
+
+// ===== §3.21 ParticipantSettlementDay:北京日拆分 =====
+//
+// 🔴 `ledgerDate` = `DateTime @db.Date`(§3.21 明写「必须唯一选型」)—— 三处同型之一。
+//
+// ⚠️ 本表也有 recognized / credited / cappedOut 三列,但**刻意不落**
+//    `recognized = credited + cappedOut` 的等式 CHECK:§3.23.6 只把该等式加在
+//    **账本分录**上,而 §3.21 明写本表「preparing 阶段可重算」—— 重算是分步 UPDATE,
+//    中途出现不平衡是合法过程态,加等式会静默误杀合法写入(沿第三刀「过严 CHECK 会误杀
+//    合法行」的实测教训)。等式的执法位在 ParticipationLedgerEntry 上,那里 committed 即真值。
+model ParticipantSettlementDay {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  resultRevisionId String
+  memberId         String
+  ledgerDate       DateTime @db.Date
+
+  serviceHours     Decimal @db.Decimal(5, 2)
+  recognizedPoints Decimal @db.Decimal(5, 2)
+  creditedPoints   Decimal @db.Decimal(5, 2)
+  cappedOutPoints  Decimal @db.Decimal(5, 2)
+
+  sequenceStartAt DateTime // 当日服务起点,日内稳定排序的第一键
+  stableOrderKey  String // 同起点时的确定性 tiebreaker(不依赖 id 生成顺序)
+
+  resultRevision ParticipantSettlementResultRevision @relation(fields: [resultRevisionId], references: [id], onDelete: Restrict)
+  member         Member                              @relation("ParticipantSettlementDayMember", fields: [memberId], references: [id], onDelete: Restrict)
+
+  @@unique([resultRevisionId, ledgerDate], map: "participant_settlement_day_result_date_key")
+  @@index([memberId, ledgerDate], map: "participant_settlement_day_member_date_idx")
+  @@index([resultRevisionId], map: "participant_settlement_day_result_idx")
+}
+
+// ===== §3.22 LedgerPostingBatch:账本发布批次 =====
+//
+// §3.22:「准备中和 ready 分录必须对所有正常读面不可见,只允许通过
+// `batch.statusCode='committed'` join 后读取」⇒ 可见性由 batch 状态决定,
+// 本刀只建表与约束,读面切换在第 2 批。
+model LedgerPostingBatch {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  settlementRunId     String
+  settlementVersionId String
+  batchRevision       Int // 同一 run 内单调递增
+
+  statusCode String // preparing / ready / committed / failed / voided(§3.22 明写五值闭集)
+
+  requestKey  String  @unique // 幂等键;**单列**不复合(复合恰好放行同 key 不同 payload)
+  requestHash String?
+
+  baselineJsonHash String? // seal、人员、day-state 基线摘要
+
+  preparedCount Int @default(0)
+  totalCount    Int @default(0)
+  failureCount  Int @default(0)
+
+  preparedAt  DateTime?
+  committedAt DateTime?
+  failedAt    DateTime?
+  voidedAt    DateTime?
+
+  preparedByUserId  String? // 沿本仓 actor FK 一律可空的既有范式
+  committedByUserId String?
+
+  version Int @default(0) // CAS
+
+  settlementRun     AttendanceSettlementRun     @relation(fields: [settlementRunId], references: [id], onDelete: Restrict)
+  settlementVersion AttendanceSettlementVersion @relation(fields: [settlementVersionId], references: [id], onDelete: Restrict)
+  preparedBy        User?                       @relation("LedgerPostingBatchPreparer", fields: [preparedByUserId], references: [id], onDelete: Restrict)
+  committedBy       User?                       @relation("LedgerPostingBatchCommitter", fields: [committedByUserId], references: [id], onDelete: Restrict)
+
+  ledgerEntries     ParticipationLedgerEntry[]
+  dayStates         MemberContributionDayState[]
+  closureRevisions  ActivitySettlementClosureRevision[]
+  correctionApplied CorrectionApplication[]             @relation("CorrectionApplicationNewBatch")
+  batchJobs         ActivityBatchJob[]
+  effectiveSegments ParticipantServiceSegmentRevision[] @relation("SegmentEffectiveBatch")
+
+  @@unique([settlementVersionId, batchRevision], map: "ledger_posting_batch_version_revision_key")
+  // §11.3 点名的两条:
+  @@index([statusCode, createdAt], map: "ledger_posting_batch_status_created_idx")
+  @@index([settlementVersionId], map: "ledger_posting_batch_version_idx")
+  @@index([settlementRunId], map: "ledger_posting_batch_run_idx")
+}
+
+// ===== §3.23 ParticipationLedgerEntry:正式账本 =====
+//
+// 🔴 §3.23 明写「append-only,无 updatedAt/deletedAt」+ §3.23.8「只允许 INSERT;
+//    数据库角色层禁止业务账号 UPDATE/DELETE」⇒ 由 **DB trigger** 强制,
+//    镜像第三刀 AttendancePunchEvent 的函数 + trigger 两段范式(本刀第二组)。
+//
+// 🔴 §3.23.6「recognized = credited + cappedOut 对每个贡献分录成立」——
+//    四个 delta 列**全部 NOT NULL**,且 migration 里的等式 CHECK 把
+//    `IS NOT NULL` 守卫写在 AND 链**最前**(AND 是 FALSE-主导 ⇒ 整式结构上不可能塌成 NULL,
+//    不会出现「表达式为 NULL ⇒ CHECK 判通过」的静默失效)。两道防线,见 migration 说明。
+//
+// 🔴 `ledgerDate` = `DateTime @db.Date` —— 三处同型之二。
+model ParticipationLedgerEntry {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  postingBatchId String
+
+  entryKey     String  @unique // 分录级幂等键
+  operationKey String  @unique // 操作级幂等键
+  requestHash  String?
+
+  memberId                String
+  activityId              String
+  sessionId               String
+  participationIdentityId String
+  resultRevisionId        String
+
+  ledgerDate DateTime @db.Date
+
+  // service_credit / contribution_credit / service_reversal / contribution_reversal
+  entryTypeCode String
+
+  // 精度沿既有 AttendanceRecord.serviceHours / contributionPoints = Decimal(5,2)。
+  // 四列**均 NOT NULL** —— 账本没有「不知道」的余地,冲回写负数不写 NULL。
+  serviceHoursDelta     Decimal @db.Decimal(5, 2)
+  recognizedPointsDelta Decimal @db.Decimal(5, 2)
+  creditedPointsDelta   Decimal @db.Decimal(5, 2)
+  cappedOutPointsDelta  Decimal @db.Decimal(5, 2)
+
+  reversesEntryId String? // §3.23.4:reversal 必带;普通 credit 不得带(migration CHECK)
+
+  postingBatch   LedgerPostingBatch                  @relation(fields: [postingBatchId], references: [id], onDelete: Restrict)
+  member         Member                              @relation("ParticipationLedgerEntryMember", fields: [memberId], references: [id], onDelete: Restrict)
+  activity       Activity                            @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  // 双锚点复合 FK:(activityId, sessionId) → ActivitySession(activityId, id),
+  // 挡住「分录挂到别的活动的场次上」(沿第一刀 / 第三刀范式)。
+  session        ActivitySession                     @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
+  identity       ActivityParticipationIdentity       @relation(fields: [participationIdentityId], references: [id], onDelete: Restrict)
+  resultRevision ParticipantSettlementResultRevision @relation(fields: [resultRevisionId], references: [id], onDelete: Restrict)
+
+  reversesEntry ParticipationLedgerEntry?  @relation("LedgerEntryReversal", fields: [reversesEntryId], references: [id], onDelete: Restrict)
+  reversedBy    ParticipationLedgerEntry[] @relation("LedgerEntryReversal")
+
+  reversalClaim LedgerEntryReversalClaim? @relation("ReversalClaimOriginalEntry")
+
+  @@unique([postingBatchId, resultRevisionId, ledgerDate, entryTypeCode], map: "participation_ledger_entry_batch_result_date_type_key")
+  // §11.3 点名的三条:
+  @@index([memberId, ledgerDate], map: "participation_ledger_entry_member_date_idx")
+  @@index([activityId, postingBatchId], map: "participation_ledger_entry_activity_batch_idx")
+  @@index([postingBatchId, resultRevisionId], map: "participation_ledger_entry_batch_result_idx")
+  @@index([sessionId], map: "participation_ledger_entry_session_idx")
+  @@index([participationIdentityId], map: "participation_ledger_entry_identity_idx")
+  @@index([entryTypeCode], map: "participation_ledger_entry_type_idx")
+  @@index([reversesEntryId], map: "participation_ledger_entry_reverses_idx")
+}
+
+// ===== §3.23.5 LedgerEntryReversalClaim:冲回占位辅助表 =====
+//
+// §3.23.5 **点名**要这张辅助表:「一条原 entry 至多被一个 committed reversal 逻辑冲回;
+// 因跨 batch 状态,service 锁后检查 + partial unique 辅助表
+// `LedgerEntryReversalClaim(originalEntryId unique)`」。
+//
+// 沿 ④:合同只点名 `originalEntryId unique` 这一件事,故本表**只有这一列**。
+// 「是哪条 reversal 冲的」不需要再存一列 —— ParticipationLedgerEntry.reversesEntryId
+// 已经指回 originalEntryId,加列反而是两处真相源。
+model LedgerEntryReversalClaim {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  originalEntryId String @unique
+
+  originalEntry ParticipationLedgerEntry @relation("ReversalClaimOriginalEntry", fields: [originalEntryId], references: [id], onDelete: Restrict)
+}
+
+// ===== §3.24 MemberContributionDayState:持久化日版本行 =====
+//
+// §3.24 明写「**不是**新的 advisory lock」—— 本表只承载日版本与日合计,
+// 排他性仍由既有 member advisory lock 提供,本刀**不建第二套 member 锁域**。
+//
+// 🔴 `ledgerDate` = `DateTime @db.Date` —— 三处同型之三。
+//
+// ⚠️ §3.24「日合计必须 0..3」**刻意不落 CHECK** —— 见文件头与 migration 末尾具名声明。
+model MemberContributionDayState {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberId   String
+  ledgerDate DateTime @db.Date
+
+  version                 Int     @default(0)
+  committedCreditedPoints Decimal @default(0) @db.Decimal(5, 2)
+
+  latestBatchId String?
+
+  member      Member              @relation("MemberContributionDayStateMember", fields: [memberId], references: [id], onDelete: Restrict)
+  latestBatch LedgerPostingBatch? @relation(fields: [latestBatchId], references: [id], onDelete: Restrict)
+
+  @@unique([memberId, ledgerDate], map: "member_contribution_day_state_member_date_key")
+  @@index([ledgerDate], map: "member_contribution_day_state_date_idx")
+  @@index([latestBatchId], map: "member_contribution_day_state_batch_idx")
+}
+
+// ===== §3.25 AttendanceCorrectionRequest:更正申请 =====
+model AttendanceCorrectionRequest {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activityId              String
+  settlementRunId         String
+  participationIdentityId String? // §3.25 明标 `?`:活动级更正没有单人锚点
+
+  baseSettlementVersionId String
+  baseResultRevisionId    String? // §3.25 明标 `?`
+  baseClosureRevision     Int
+
+  requestTypeCode String // result / service / time / points / person_identity / other
+
+  requestedChangeJson Json
+  reason              String
+  attachmentIds       Json?
+
+  // pending / returned / approved / rejected / applying / applied / voided(§3.25 明写七值闭集)
+  statusCode String
+
+  submittedByUserId String? // 沿本仓 actor FK 一律可空的既有范式
+  submittedAt       DateTime
+  reviewedByUserId  String?
+  reviewedAt        DateTime?
+  reviewNote        String?
+
+  operationKey String?
+  requestHash  String?
+  version      Int     @default(0) // CAS
+
+  activity              Activity                       @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  settlementRun         AttendanceSettlementRun        @relation(fields: [settlementRunId], references: [id], onDelete: Restrict)
+  identity              ActivityParticipationIdentity? @relation(fields: [participationIdentityId], references: [id], onDelete: Restrict)
+  baseSettlementVersion AttendanceSettlementVersion    @relation("CorrectionRequestBaseVersion", fields: [baseSettlementVersionId], references: [id], onDelete: Restrict)
+  submittedBy           User?                          @relation("CorrectionRequestSubmitter", fields: [submittedByUserId], references: [id], onDelete: Restrict)
+  reviewedBy            User?                          @relation("CorrectionRequestReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+
+  applications      CorrectionApplication[]
+  resultRevisions   ParticipantSettlementResultRevision[]
+  supersededClosure ActivitySettlementClosureRevision[]   @relation("ClosureSupersededByCorrection")
+
+  // §11.3 点名的两条:
+  @@index([activityId, statusCode], map: "attendance_correction_request_activity_status_idx")
+  @@index([participationIdentityId, statusCode], map: "attendance_correction_request_identity_status_idx")
+  @@index([settlementRunId], map: "attendance_correction_request_run_idx")
+  @@index([baseSettlementVersionId], map: "attendance_correction_request_base_version_idx")
+  @@index([operationKey], map: "attendance_correction_request_operation_key_idx")
+}
+
+// ===== §3.25 CorrectionApplication:批准后的不可变应用版本 =====
+//
+// statusCode `preparing/committed/failed/voided` 是过程投影 ⇒ 本行会被 UPDATE,带 updatedAt。
+model CorrectionApplication {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  correctionRequestId    String
+  newSettlementVersionId String
+  newResultRevisionIds   Json // 本次应用产出的 ResultRevision id 列表
+  newPostingBatchId      String
+
+  statusCode String // preparing / committed / failed / voided(§3.25 明写四值闭集)
+
+  correctionRequest    AttendanceCorrectionRequest @relation(fields: [correctionRequestId], references: [id], onDelete: Restrict)
+  newSettlementVersion AttendanceSettlementVersion @relation("CorrectionApplicationNewVersion", fields: [newSettlementVersionId], references: [id], onDelete: Restrict)
+  newPostingBatch      LedgerPostingBatch          @relation("CorrectionApplicationNewBatch", fields: [newPostingBatchId], references: [id], onDelete: Restrict)
+
+  @@index([correctionRequestId], map: "correction_application_request_idx")
+  @@index([statusCode], map: "correction_application_status_idx")
+  @@index([newSettlementVersionId], map: "correction_application_new_version_idx")
+  @@index([newPostingBatchId], map: "correction_application_new_batch_idx")
+}
+
+// ===== §3.26 ActivitySettlementClosureRevision:关闭版本 =====
+//
+// 「不可变」同 EvidenceSeal / SettlementVersion:**内容**不可变,但 statusCode
+// `active → superseded` 是投影(§3.26「旧 active closure 在同一事务变 superseded」)
+// ⇒ 本行会被 UPDATE,带 updatedAt,不装 append-only trigger。
+//
+// ⚠️ `serviceHours` / `contributionPoints` 是**整活动合计**,不是单人值
+//    ⇒ 精度取 Decimal(12,2) 而非本刀其它表的 (5,2):万人 × 24h 会直接撑爆 999.99。
+//    这是**刻意与既有单人列不同型**,不是漂移。
+//
+// ⚠️ `checksJson` 只存非敏感摘要与失败计数(§3.26 明写「不复制人员明细」)。
+model ActivitySettlementClosureRevision {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activityId String
+  revision   Int
+
+  settlementVersionId String
+  postingBatchId      String
+  evidenceSealId      String
+
+  evidenceRevision   Int
+  populationRevision Int
+  workflowRevision   Int
+
+  personCount               Int
+  sessionParticipationCount Int
+  resultCountsJson          Json
+  serviceHours              Decimal @db.Decimal(12, 2)
+  contributionPoints        Decimal @db.Decimal(12, 2)
+
+  checksHash String
+  checksJson Json
+
+  statusCode String // active / superseded / voided(§3.26 明写三值闭集)
+
+  closedByUserId String? // 沿本仓 actor FK 一律可空的既有范式
+  closedAt       DateTime
+
+  supersededAt             DateTime?
+  supersededByCorrectionId String?
+
+  activity          Activity                    @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  settlementVersion AttendanceSettlementVersion @relation(fields: [settlementVersionId], references: [id], onDelete: Restrict)
+  postingBatch      LedgerPostingBatch          @relation(fields: [postingBatchId], references: [id], onDelete: Restrict)
+  evidenceSeal      EvidenceSeal                @relation(fields: [evidenceSealId], references: [id], onDelete: Restrict)
+  closedBy          User?                       @relation("ClosureRevisionCloser", fields: [closedByUserId], references: [id], onDelete: Restrict)
+
+  supersededByCorrection AttendanceCorrectionRequest? @relation("ClosureSupersededByCorrection", fields: [supersededByCorrectionId], references: [id], onDelete: Restrict)
+
+  @@unique([activityId, revision], map: "activity_settlement_closure_activity_revision_key")
+  @@index([activityId], map: "activity_settlement_closure_activity_idx")
+  @@index([statusCode], map: "activity_settlement_closure_status_idx")
+  @@index([settlementVersionId], map: "activity_settlement_closure_version_idx")
+  @@index([postingBatchId], map: "activity_settlement_closure_batch_idx")
+  @@index([evidenceSealId], map: "activity_settlement_closure_seal_idx")
+  @@index([supersededByCorrectionId], map: "activity_settlement_closure_superseded_by_idx")
+}
+
+// ===== §3.27 ActivityBatchJob:后台任务 =====
+//
+// §3.27:「复用现有 PostgreSQL `SKIP LOCKED + lease/fencing` 模式,在现有 worker 进程
+// 注册 ActivityBatchWorker,**不新增 cron 和外部队列**」⇒ 本刀只建表,
+// lease/fencing 列的形状镜像既有 `notification_outbox_intents` 与
+// `storage_object_operations`(两表并集恰好就是 §3.27 点名的五列:
+// leaseOwner / leaseGeneration / leaseExpiresAt / attempts / availableAt;
+// `leaseGeneration` 在 outbox 上没有、在 storage-operation 上有)。
+// `availableAt` / `leaseExpiresAt` 沿两表的 `@db.Timestamptz(3)` 逐字同型 ——
+// 领取判据要和 `now()` 直接比较,时区语义必须与既有 worker 一致。
+model ActivityBatchJob {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // settlement_prepare / bulk_proxy / import_preview / import_execute
+  // / export / notification_expand / reconciliation(§3.27 明写七值闭集)
+  jobTypeCode String
+
+  activityId          String
+  sessionId           String?
+  settlementVersionId String?
+  postingBatchId      String?
+
+  // pending / processing / succeeded / partial_failed / failed / cancelled / dead
+  statusCode String
+
+  operationKey   String  @unique // §3.27 幂等;单列不复合
+  requestHash    String?
+  payloadVersion Int
+  payload        Json
+
+  total     Int @default(0)
+  succeeded Int @default(0)
+  failed    Int @default(0)
+  skipped   Int @default(0)
+
+  // ↓ worker 协议五列,镜像既有 outbox / storage-operation,零新增基础设施。
+  leaseOwner      String?
+  leaseGeneration Int       @default(0)
+  leaseExpiresAt  DateTime? @db.Timestamptz(3)
+  attempts        Int       @default(0)
+  availableAt     DateTime  @default(now()) @db.Timestamptz(3)
+
+  createdByUserId String? // 沿本仓 actor FK 一律可空的既有范式
+  startedAt       DateTime?
+  completedAt     DateTime?
+  lastErrorCode   String? // 只存编码,不存堆栈/SQL(§3.27)
+
+  activity          Activity                     @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  session           ActivitySession?             @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
+  settlementVersion AttendanceSettlementVersion? @relation(fields: [settlementVersionId], references: [id], onDelete: Restrict)
+  postingBatch      LedgerPostingBatch?          @relation(fields: [postingBatchId], references: [id], onDelete: Restrict)
+  createdBy         User?                        @relation("ActivityBatchJobCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  items ActivityBatchJobItem[]
+
+  // §11.3 点名的两条:
+  @@index([statusCode, availableAt, leaseExpiresAt], map: "activity_batch_job_claim_idx")
+  @@index([activityId, createdAt], map: "activity_batch_job_activity_created_idx")
+  @@index([leaseExpiresAt], map: "activity_batch_job_lease_expires_idx")
+  @@index([jobTypeCode], map: "activity_batch_job_type_idx")
+  @@index([sessionId], map: "activity_batch_job_session_idx")
+  @@index([settlementVersionId], map: "activity_batch_job_version_idx")
+  @@index([postingBatchId], map: "activity_batch_job_batch_idx")
+}
+
+// ===== §3.27 ActivityBatchJobItem:逐项进度 =====
+//
+// 🔴 §3.27 明写「**不存异常堆栈、SQL 和敏感原值**」⇒ 本表只有:
+//    `lastErrorCode`(错误编码)、`safeMessage`(已脱敏的可展示文案)、
+//    `payloadHash`(摘要,不是原值)、`resultReference`(指针,不是内容)。
+//    本刀**没有为原值预留任何字段**,这条在建表时就没有落点,不靠后续代码自律。
+//
+// ⚠️ 本表 statusCode **刻意不落闭集 CHECK**:§3.27 给了 Job 的七值闭集,
+//    却**没给 Item 的取值集**(沿 ④ 不自行发明;第二刀对三处未给闭集同样处置)。
+//    已在报告与 PR body 列为合同缺口。
+model ActivityBatchJobItem {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobId   String
+  itemKey String
+
+  statusCode    String
+  attempts      Int     @default(0)
+  lastErrorCode String?
+  safeMessage   String?
+
+  // 逐项防重锚点;import_preview 这类「资源尚未创建」的任务此刻没有资源可指
+  // ⇒ 两列可空(合同字段表未标 `?`,本刀改可空并上报,沿第二刀同一处置)。
+  resourceType String?
+  resourceId   String?
+
+  payloadHash     String?
+  resultReference String?
+
+  job ActivityBatchJob @relation(fields: [jobId], references: [id], onDelete: Restrict)
+
+  punchEvents AttendancePunchEvent[] @relation("PunchEventImportJobItem")
+
+  @@unique([jobId, itemKey], map: "activity_batch_job_item_job_key_key")
+  // §11.3 点名的一条:
+  @@index([jobId, statusCode], map: "activity_batch_job_item_job_status_idx")
+  @@index([resourceType, resourceId], map: "activity_batch_job_item_resource_idx")
 }
