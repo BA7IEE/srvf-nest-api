@@ -141,6 +141,12 @@ model User {
   registrationRevisionsSubmitted ActivityRegistrationRevision[] @relation("RegistrationRevisionSubmitter")
   activityInvitationsSent        ActivityInvitation[]           @relation("ActivityInvitationInviter")
 
+  // 第 1 批第三刀(2026-08-04;合同 §3.15 / §3.16 / §3.17):同上,零标量字段。
+  attendanceQrCredentialsIssued  AttendanceQrCredential[] @relation("AttendanceQrCredentialIssuer")
+  attendanceQrCredentialsRevoked AttendanceQrCredential[] @relation("AttendanceQrCredentialRevoker")
+  attendancePunchEventsOperated  AttendancePunchEvent[]   @relation("AttendancePunchEventOperatorUser")
+  evidenceSealsSealed            EvidenceSeal[]           @relation("EvidenceSealSealer")
+
   @@index([deletedAt])
   @@index([status])
   @@index([memberId])
@@ -535,6 +541,12 @@ model Member {
   // 其 invitedByMemberId 是裸列。见该 model 注释。
   registrationUploadSessions RegistrationUploadSession[]
   activityInvitations        ActivityInvitation[]
+
+  // 第 1 批第三刀(2026-08-04;合同 §3.16):同上,零标量字段。
+  // 打卡事件的**主体**(memberId)与**操作者**(operatorMemberId,代打卡/工作人员扫码)
+  // 是两条独立的边,不能合并 —— 本人自助时两者相同,代打卡时不同。
+  attendancePunchEvents         AttendancePunchEvent[] @relation("AttendancePunchEventMember")
+  attendancePunchEventsOperated AttendancePunchEvent[] @relation("AttendancePunchEventOperatorMember")
 
   @@index([gradeCode])
   @@index([status])
@@ -1190,6 +1202,14 @@ model Activity {
   qualificationRuleSets      ActivityQualificationRuleSet[]
   invitations                ActivityInvitation[]
   visitors                   ActivityVisitor[]
+
+  // 活动改造 v1.1 第 1 批第三刀反向 relation(合同 §3.15 / §3.16 / §3.17):
+  // 仅关系映射,零标量字段。evidenceState 是 `?` 单值 —— §3.17「一活动一行」由
+  // ActivityEvidenceState.activityId 的 unique 在 DB 侧保证。
+  qrCredentials AttendanceQrCredential[]
+  punchEvents   AttendancePunchEvent[]
+  evidenceState ActivityEvidenceState?
+  evidenceSeals EvidenceSeal[]
 
   @@index([deletedAt])
   @@index([createdAt])
@@ -3317,6 +3337,10 @@ model ActivitySession {
   invitations           ActivityInvitation[]
   visitors              ActivityVisitor[]
 
+  // 第 1 批第三刀(§3.15 / §3.16):场次级二维码凭证与打卡事件。
+  qrCredentials AttendanceQrCredential[]
+  punchEvents   AttendancePunchEvent[]
+
   // 复合 FK 的被引用侧:让子表 (activityId, sessionId) 双锚点由 **DB** 保证
   // 「session 属于 activity」,而不是只靠 service 自觉(合同 §3.3 原话:
   // 「双锚点,service 与 DB 约束保证 session 属于 activity」)。
@@ -3381,10 +3405,13 @@ model ActivitySessionPosition {
   participationRevisions  ActivityParticipationRevision[]
 
   // 第 1 批第二刀(§3.3 / §3.13 / §3.14)。
-  qualificationRuleSet    ActivityQualificationRuleSet?  @relation("PositionQualificationRuleSet", fields: [qualificationRuleSetId], references: [id], onDelete: Restrict)
+  qualificationRuleSet        ActivityQualificationRuleSet?  @relation("PositionQualificationRuleSet", fields: [qualificationRuleSetId], references: [id], onDelete: Restrict)
   // §3.13 规则集反向指回岗位(岗位级作用域)与 §3.14 邀请指定岗位。
   scopedQualificationRuleSets ActivityQualificationRuleSet[] @relation("PositionQualificationRuleSetScope")
   invitations                 ActivityInvitation[]           @relation("InvitationPosition")
+
+  // 第 1 批第三刀(§3.16):打卡事件的岗位上下文(可空)。
+  punchEvents AttendancePunchEvent[] @relation("PunchEventPosition")
 
   @@index([activityId])
   @@index([sessionId])
@@ -3438,6 +3465,10 @@ model ActivityParticipationIdentity {
 
   // 第 1 批第二刀(§3.13):资格评估快照的反向 relation。
   qualificationSnapshots QualificationEvaluationSnapshot[]
+
+  // 第 1 批第三刀(§3.16 / §3.18):打卡事件与服务段修订的反向 relation。
+  punchEvents             AttendancePunchEvent[]
+  serviceSegmentRevisions ParticipantServiceSegmentRevision[]
 
   @@unique([activityId, sessionId, memberId])
   @@index([activityId])
@@ -3644,19 +3675,19 @@ model RegistrationFormVersion {
   version    Int // 1 起递增;(activityId, version) 唯一
   statusCode String // draft / active / retired(§3.12 明写闭集)
 
-  workflowRevision Int @default(0)
+  workflowRevision Int       @default(0)
   // ⚠️ 可空,合同字段表未标 `?` —— 偏离理由:schemaHash 是「字段集冻结指纹」,
   // 草稿仍在增删题目时无冻结值可言,自然在激活那一刻才落。
-  schemaHash  String?
-  activatedAt DateTime?
-  retiredAt   DateTime?
+  schemaHash       String?
+  activatedAt      DateTime?
+  retiredAt        DateTime?
 
   activity Activity @relation(fields: [activityId], references: [id], onDelete: Restrict)
 
-  fields               RegistrationFormField[]
-  registrationRevisions ActivityRegistrationRevision[]
-  uploadSessions       RegistrationUploadSession[]
-  currentForRegistrations ActivityRegistration[] @relation("RegistrationCurrentFormVersion")
+  fields                  RegistrationFormField[]
+  registrationRevisions   ActivityRegistrationRevision[]
+  uploadSessions          RegistrationUploadSession[]
+  currentForRegistrations ActivityRegistration[]         @relation("RegistrationCurrentFormVersion")
 
   // §3.12「一活动至多一个 active」是 **partial** unique(WHERE statusCode='active'),
   // Prisma DSL 表达不了 WHERE,手写在 migration 末尾。
@@ -3697,7 +3728,7 @@ model RegistrationFormField {
   maxLength     Int? // 文本长度上限
   maxSelections Int? // multi_choice 可选上限
 
-  optionsJson Json?
+  optionsJson    Json?
   // ⚠️ 合同**未给** visibilityCode 的闭集(§3.1 的 internal/invitation 是活动可见性,
   // 另一个域),故本刀**不加**闭集 CHECK,不自行发明取值(AGENTS §2)。
   visibilityCode String
@@ -3760,8 +3791,8 @@ model RegistrationUploadSession {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  activityId String
-  memberId   String
+  activityId    String
+  memberId      String
   // 上传会话必然发生在"填某一版报名表的 file 题"语境里 ⇒ 与 §3.7 不同,这里
   // NOT NULL(合同字段表也未标 `?`)。
   formVersionId String
@@ -3804,7 +3835,7 @@ model ActivityQualificationRuleSet {
   version    Int
   statusCode String
 
-  activity Activity @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  activity Activity                 @relation(fields: [activityId], references: [id], onDelete: Restrict)
   // 复合 FK(activityId, sessionId)→ ActivitySession(activityId, id):沿第一刀,
   // 让「场次属于该活动」由 DB 保证。sessionId 为 NULL 时 PostgreSQL MATCH SIMPLE
   // 不校验该 FK —— 正是活动级规则集要的行为。
@@ -3828,7 +3859,7 @@ model ActivityQualificationRule {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  ruleSetId String
+  ruleSetId       String
   // grade / organization / certificate / age / training / gender / insurance
   // (§3.13「支持 …」七种;migration CHECK 闭集 —— 与 goal 对 §3.12「支持类型」
   //  同样按闭集处理保持一致口径)
@@ -3945,8 +3976,8 @@ model ActivityVisitor {
   activityId String
   sessionId  String
 
-  name         String
-  organization String?
+  name              String
+  organization      String?
   // 🔴 裸列,**无 FK / 无 relation**(见上)。
   invitedByMemberId String?
   note              String?
@@ -3959,4 +3990,291 @@ model ActivityVisitor {
   @@index([sessionId])
   @@index([invitedByMemberId])
   @@index([attendanceCode])
+}
+
+// ============================================================================
+// 活动改造 v1.1 —— 第 1 批第三刀:Punch / Evidence
+// (2026-08-04;合同 docs/archive/reviews/activity-business-overhaul-v1.1/
+//  §3.15 / §3.16 / §3.17 / §3.18;§14「第 1 批」建议拆分第 3 项)
+//
+// 本刀是纯 schema expand:**五张新表零调用方**是预期状态,消费方在第 5 批。
+// 沿前两刀的四条工程判断:① 只做加法 ② 跨切片外键列不提前占位
+// ③ 既有表原样保留 ④ 合同没给的一律不发明。
+//
+// 本刀按 ② 明确**不建**三个列(不是漏了):
+//   - AttendancePunchEvent.importJobItemId   → ActivityBatchJobItem(§3.27,第四刀)
+//   - AttendancePunchEvent.offlinePackageId  → OfflinePackage(合同第三处内部矛盾:
+//     被 §5 列为核心新对象、被 §3.16 当外键列引用、被 §5.7 描述协议字段,
+//     但 §3 数据模型从头到尾**没有定义它**。按 ④ 不从散文推导表结构,归第 6 批)
+//   - ParticipantServiceSegmentRevision.effectiveBatchId → 结算批次(§3.19/§3.22,第四刀)
+//
+// ⚠️ 时间重叠**刻意不进 DB**:§3.18 明写「时间重叠校验在现有 member lock 内完成」
+// ⇒ 不用 exclusion constraint / btree_gist 表达段重叠,那是 service 层的事(第 5 批)。
+//
+// ⚠️ 坐标按普通业务字段保存(修订说明 §7 拍板):零加密仓、零隔离库、零专用保存期限。
+// ⚠️ tokenDigest 只存服务端签名载荷摘要,signingKeyVersion 只是整数版本号
+// ⇒ 本刀**零密钥材料、零签名实现、零 crypto 代码**(沿第二刀 tokenHash 同一纪律)。
+//
+// 命名沿前两刀:**不使用 @@map**,物理表名即 PascalCase model 名。
+// 状态类字段一律 String + migration CHECK 闭集兜底,不建 Prisma enum(合同 §3 前言)。
+// ============================================================================
+
+// ===== §3.15 AttendanceQrCredential:场次签到/签退二维码凭证 =====
+//
+// §3.15 原话:「tokenDigest = 服务端签名载荷摘要,**不保存可直接使用的完整二维码文本**」。
+// 本表因此只有摘要与整数密钥版本号,没有任何可复原成有效二维码的材料。
+//
+// §4.4:`active → revoked | expired` **不可逆**;重发建新 credentialVersion,
+// 不把旧行改回 active ⇒ 「至多一个 active」用 partial unique 落 DB(§3.15 明写要求)。
+model AttendanceQrCredential {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activityId String
+  sessionId  String
+  actionCode String // check_in / check_out(§3.15 明写二值闭集)
+
+  credentialVersion Int // 同 (sessionId, actionCode) 内单调递增
+  statusCode        String // active / revoked / expired(§3.15 明写闭集)
+
+  tokenDigest       String
+  signingKeyVersion Int
+
+  validFrom  DateTime
+  validUntil DateTime
+
+  issuedByUserId String? // 沿本仓 actor FK 一律可空的既有范式
+  issuedAt       DateTime
+
+  revokedByUserId String?
+  revokedAt       DateTime?
+  revokeReason    String?
+
+  operationKey String? // 重发／作废防重
+  requestHash  String?
+
+  activity  Activity        @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  // 双锚点复合 FK:(activityId, sessionId) → ActivitySession(activityId, id),
+  // 挡住「凭证挂到别的活动的场次上」(沿第一刀 ActivitySessionPosition 范式)。
+  session   ActivitySession @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
+  issuedBy  User?           @relation("AttendanceQrCredentialIssuer", fields: [issuedByUserId], references: [id], onDelete: Restrict)
+  revokedBy User?           @relation("AttendanceQrCredentialRevoker", fields: [revokedByUserId], references: [id], onDelete: Restrict)
+
+  punchEvents AttendancePunchEvent[]
+
+  // 默认名 AttendanceQrCredential_sessionId_actionCode_credentialVersion_key = 65 字符
+  // > PostgreSQL 63 字符标识符上限 ⇒ 必须显式 map(否则被静默截断,与既有长名漂移同源)。
+  @@unique([sessionId, actionCode, credentialVersion], map: "attendance_qr_credential_session_action_version_key")
+  @@index([activityId])
+  @@index([sessionId])
+  @@index([statusCode])
+  @@index([validUntil])
+  @@index([operationKey])
+  @@index([sessionId, actionCode, statusCode])
+}
+
+// ===== §3.16 AttendancePunchEvent:追加式打卡事件 =====
+//
+// §3.16 原话:「正式现场事实的**唯一写入表**,不提供 update/delete endpoint」
+// +「append-only trigger／权限:生产业务角色不得 UPDATE/DELETE」。
+// ⇒ 本表由 **DB trigger** 强制 append-only(migration 末尾,镜像既有
+//    trg_insurance_evidence_20_immutable 的「函数 + trigger」两段范式)。
+//
+// 不可变模型 ⇒ 按合同 §3 前言 **不带 updatedAt / deletedAt**
+// (§3.16 字段表亦明写「createdAt 入库时间;无 updatedAt/deletedAt」)。
+//
+// ⚠️ offlinePackageId / importJobItemId **本刀不建**,见文件头说明。
+model AttendancePunchEvent {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  activityId String
+  sessionId  String
+  positionId String?
+
+  participationIdentityId String
+  memberId                String
+
+  eventTypeCode String // check_in / check_out / early_departure_close / void / replace
+  sourceCode    String // self_qr / staff_scan / proxy / bulk / import / offline / correction
+
+  occurredAt DateTime // 真实发生时间;在线由服务端生成(DTO 不接客户端时间)
+  receivedAt DateTime // 服务端收到时间
+
+  operatorUserId   String // §3.16「本人自助也记录 User」⇒ 恒有值
+  operatorMemberId String?
+
+  reason String? // 特殊闭合、作废和替代必填(CHECK 兜底);见下方 reason CHECK 的口径说明
+
+  qrCredentialId String?
+  deviceId       String?
+
+  // §3.16「普通业务字段,可空」;修订说明 §7 拍板坐标按普通业务字段保存。
+  // 精度沿既有 activity_check_ins:经纬度 Decimal(10,7)、精度/距离 Decimal(10,2)。
+  longitude Decimal? @db.Decimal(10, 7)
+  latitude  Decimal? @db.Decimal(10, 7)
+  accuracy  Decimal? @db.Decimal(10, 2)
+  distance  Decimal? @db.Decimal(10, 2)
+
+  // 判定快照:写入时冻结,不回查规则(沿 §3.4「不实时继承」同一思路)。
+  geoVerified Boolean @default(false)
+  outOfRange  Boolean @default(false)
+  lowAccuracy Boolean @default(false)
+
+  eventKey    String // 客户端或任务防重号,**全局 unique**(§3.16 + §11.3)
+  requestHash String
+
+  supersedesEventId String? // void / replace 的目标事件
+  evidenceRevision  Int // 本事件提交后活动证据版本
+
+  activity              Activity                      @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  session               ActivitySession               @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
+  position              ActivitySessionPosition?      @relation("PunchEventPosition", fields: [positionId], references: [id], onDelete: Restrict)
+  participationIdentity ActivityParticipationIdentity @relation(fields: [participationIdentityId], references: [id], onDelete: Restrict)
+  member                Member                        @relation("AttendancePunchEventMember", fields: [memberId], references: [id], onDelete: Restrict)
+  operatorUser          User                          @relation("AttendancePunchEventOperatorUser", fields: [operatorUserId], references: [id], onDelete: Restrict)
+  operatorMember        Member?                       @relation("AttendancePunchEventOperatorMember", fields: [operatorMemberId], references: [id], onDelete: Restrict)
+  qrCredential          AttendanceQrCredential?       @relation(fields: [qrCredentialId], references: [id], onDelete: Restrict)
+
+  supersedesEvent AttendancePunchEvent?  @relation("PunchEventSupersede", fields: [supersedesEventId], references: [id], onDelete: Restrict)
+  supersededBy    AttendancePunchEvent[] @relation("PunchEventSupersede")
+
+  serviceSegmentCheckIns ParticipantServiceSegmentRevision[] @relation("SegmentSourceCheckInEvent")
+  serviceSegmentCloses   ParticipantServiceSegmentRevision[] @relation("SegmentSourceCloseEvent")
+
+  @@unique([eventKey])
+  // §11.3 点名的三条:
+  @@index([activityId, sessionId, occurredAt])
+  @@index([participationIdentityId, occurredAt], map: "attendance_punch_event_identity_occurred_idx")
+  @@index([operatorUserId, createdAt])
+  @@index([activityId])
+  @@index([sessionId])
+  @@index([positionId])
+  @@index([memberId])
+  @@index([eventTypeCode])
+  @@index([qrCredentialId])
+  @@index([supersedesEventId])
+}
+
+// ===== §3.17 ActivityEvidenceState:一活动一行的证据/人口版本指针 =====
+//
+// §3.17:由 PunchEvent、ParticipationRevision、场次取消／终止、人工复核正式化
+// **同事务**递增。本刀只建表与约束,不写任何递增逻辑(第 2 批)。
+model ActivityEvidenceState {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activityId String @unique // §3.17「一活动一行」
+
+  evidenceRevision   Int @default(0)
+  populationRevision Int @default(0)
+  version            Int @default(0) // CAS 版本
+
+  lastEvidenceAt   DateTime?
+  lastPopulationAt DateTime?
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Restrict)
+}
+
+// ===== §3.17 EvidenceSeal:不可变封场凭证 =====
+//
+// 「不可变」指**内容**不可变(evidenceRevision / contentHash / 计数快照一旦写入不改);
+// §4.6 明确 statusCode 走 `active → superseded` 投影(「可在新 seal 写入时把旧 active 改
+// superseded 作为投影」)⇒ 本行**会被 UPDATE**,故按合同 §3 前言默认带 updatedAt,
+// 且**不装** append-only trigger(与 AttendancePunchEvent 的处置刻意不同)。
+//
+// ⚠️ 合同**未给**「一活动至多一个 active seal」的 partial unique
+// (§11.3 只给 Closure 点了 partial unique active,Seal 没给)⇒ 按 ④ 不自行发明。
+model EvidenceSeal {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activityId   String
+  sealRevision Int
+
+  evidenceRevision   Int
+  populationRevision Int
+  workflowRevision   Int
+
+  allWindowsClosedAt       DateTime
+  openSegmentCount         Int
+  manualReviewPendingCount Int
+
+  populationCountDistinct  Int
+  populationCountBySession Json
+
+  contentHash String
+  statusCode  String // active / superseded(§3.17 明写闭集)
+
+  sealedByUserId String? // 沿本仓 actor FK 一律可空的既有范式
+  sealedAt       DateTime
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  sealedBy User?    @relation("EvidenceSealSealer", fields: [sealedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([activityId, sealRevision])
+  @@index([activityId])
+  @@index([statusCode])
+  @@index([sealedAt])
+}
+
+// ===== §3.18 ParticipantServiceSegmentRevision:服务段投影与修订 =====
+//
+// §3.18:服务段**不是**直接人工编辑的主事实 —— 普通草稿由 PunchEvent 重建;
+// 认定变更形成**新的** segment revision,不覆盖旧 revision。
+//
+// ⚠️ **时间重叠不进 DB**:§3.18 明写「时间重叠校验在现有 member lock 内完成」
+// ⇒ 刻意不用 exclusion constraint / btree_gist(见文件头)。
+// DB 只落「每个 (identityId, segmentKey) 至多一个非 superseded 当前修订」这条
+// 单点 partial unique —— 它是**点唯一**不是**区间不相交**,两者不是一回事。
+//
+// ⚠️ effectiveBatchId **本刀不建**(结算批次表在第四刀),见文件头。
+model ParticipantServiceSegmentRevision {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  participationIdentityId String
+  segmentKey              String
+  revision                Int
+
+  sourceCheckInEventId String
+  // ⚠️ 合同字段表未标 `?`,本刀**改可空并上报**:§4.5「无开放段＋check_in → open」
+  // 说明存在「已签到、尚未闭合」的段,此刻闭合事件根本不存在;NOT NULL 会让该形态
+  // 写不进来(沿第二刀 QualificationEvaluationSnapshot 同一处置)。
+  sourceCloseEventId   String?
+
+  resultCode String // valid / early_departure_zero / voided / replaced(§3.18 明写闭集)
+  statusCode String // draft / committed / superseded(§3.18 明写闭集)
+
+  checkInAt    DateTime
+  // 同上:开放段没有签退时间与时长。
+  checkOutAt   DateTime?
+  serviceHours Decimal?  @db.Decimal(5, 2) // 精度沿既有 AttendanceRecord.serviceHours
+
+  lateFlag           Boolean @default(false)
+  earlyLeaveFlag     Boolean @default(false)
+  exceptionFlagsJson Json?
+
+  baseRevisionId String? // 首个 revision 无前驱
+
+  identity           ActivityParticipationIdentity @relation(fields: [participationIdentityId], references: [id], onDelete: Restrict)
+  sourceCheckInEvent AttendancePunchEvent          @relation("SegmentSourceCheckInEvent", fields: [sourceCheckInEventId], references: [id], onDelete: Restrict)
+  sourceCloseEvent   AttendancePunchEvent?         @relation("SegmentSourceCloseEvent", fields: [sourceCloseEventId], references: [id], onDelete: Restrict)
+
+  baseRevision     ParticipantServiceSegmentRevision?  @relation("SegmentBaseRevision", fields: [baseRevisionId], references: [id], onDelete: Restrict)
+  derivedRevisions ParticipantServiceSegmentRevision[] @relation("SegmentBaseRevision")
+
+  // model 名 33 字符 ⇒ 复合索引默认名普遍越过 PostgreSQL 63 字符上限,全部显式 map。
+  @@unique([participationIdentityId, segmentKey, revision], map: "participant_service_segment_identity_key_revision_key")
+  @@index([participationIdentityId], map: "participant_service_segment_identity_idx")
+  @@index([participationIdentityId, statusCode], map: "participant_service_segment_identity_status_idx")
+  @@index([statusCode], map: "participant_service_segment_status_idx")
+  @@index([resultCode], map: "participant_service_segment_result_idx")
+  @@index([sourceCheckInEventId], map: "participant_service_segment_checkin_event_idx")
+  @@index([sourceCloseEventId], map: "participant_service_segment_close_event_idx")
+  @@index([baseRevisionId], map: "participant_service_segment_base_revision_idx")
 }
