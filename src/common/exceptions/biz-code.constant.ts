@@ -918,6 +918,50 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // ===== 活动改造 v1.1 第 2 批第二刀:结算草稿生成(合同 §5.9)=====
+  //
+  // 沿第一刀同一立场:**每一条拒绝理由一个具名码**。草稿生成的每一次拒绝都意味着
+  // "这场活动此刻还不能算账",负责人必须知道差的是哪一项 —— 笼统一个状态码会让
+  // 机器判定退化回人工排查。落 200xx 段 20047-20051(20040-20046 是第一刀封场)。
+  // 全部 409:每一条都是"当前状态不允许",不是入参错。
+
+  // §5.9 首句「输入必须是 active EvidenceSeal」的三种不满足形态,**分成三个码**:
+  // 它们对负责人意味着三件完全不同的事(去封场 / 重新封场 / 先处理新证据再封场)。
+  SETTLEMENT_DRAFT_EVIDENCE_SEAL_MISSING: {
+    code: 20047,
+    message: '活动尚未封场,不可生成结算草稿',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  SETTLEMENT_DRAFT_EVIDENCE_SEAL_SUPERSEDED: {
+    code: 20048,
+    message: '封场凭证已失效,请重新封场后再生成结算草稿',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // §3.17「新证据或人口变化会递增 state revision,使旧 seal 失配」。
+  // seal 行还是 active,但它记录的三个版本号已经不是现在的事实 ——
+  // 拿它当输入等于按一份过期的现场快照算账。
+  SETTLEMENT_DRAFT_EVIDENCE_SEAL_STALE: {
+    code: 20049,
+    message: '封场凭证与当前证据/人口版本不一致,请重新封场',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // §5.9 末句「500 人以内可同步生成 working draft;更大规模创建 ActivityBatchJob」。
+  // 本刀**只实现同步路径**,超阈值明确拒绝并提示走批处理(批处理归第五刀)——
+  // 不悄悄降级、也不硬撑着同步跑完。
+  SETTLEMENT_DRAFT_POPULATION_TOO_LARGE: {
+    code: 20050,
+    message: '结算人口超过同步生成上限,请改用批处理任务',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // §4.7:`drafting` 是唯一"正在编草稿"的结算状态。已提交/审核中/已发布/已关账的 run
+  // 再重新生成 working draft,会把审核依据从脚下抽走(§5.10「提交后 working draft
+  // 不再是审核依据。修改必须从 returned 状态创建新 version」)。
+  SETTLEMENT_DRAFT_RUN_STATUS_INVALID: {
+    code: 20051,
+    message: '当前结算状态不允许重新生成草稿',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。
   // 子段(对齐 baseline §1.3):
