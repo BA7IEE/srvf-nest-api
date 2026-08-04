@@ -157,6 +157,9 @@ model User {
   settlementClosuresClosed      ActivitySettlementClosureRevision[] @relation("ClosureRevisionCloser")
   activityBatchJobsCreated      ActivityBatchJob[]                  @relation("ActivityBatchJobCreator")
 
+  // 第 1 批第五刀(2026-08-04;合同 §3.11):同上,零标量字段。
+  allocationBatchesCreated ActivityAllocationBatch[] @relation("AllocationBatchCreator")
+
   @@index([deletedAt])
   @@index([status])
   @@index([memberId])
@@ -1234,6 +1237,10 @@ model Activity {
   correctionRequests AttendanceCorrectionRequest[]
   closureRevisions   ActivitySettlementClosureRevision[]
   batchJobs          ActivityBatchJob[]
+
+  // 活动改造 v1.1 第 1 批第五刀反向 relation(合同 §3.11):仅关系映射,零标量字段。
+  allocationBatches   ActivityAllocationBatch[]
+  reservedQuotaGroups ActivityReservedQuotaGroup[]
 
   @@index([deletedAt])
   @@index([createdAt])
@@ -3369,6 +3376,10 @@ model ActivitySession {
   ledgerEntries ParticipationLedgerEntry[]
   batchJobs     ActivityBatchJob[]
 
+  // 第 1 批第五刀反向 relation(合同 §3.11):仅关系映射,零标量字段。
+  positionPreferences ActivityPositionPreference[]
+  allocationBatches   ActivityAllocationBatch[]
+
   // 复合 FK 的被引用侧:让子表 (activityId, sessionId) 双锚点由 **DB** 保证
   // 「session 属于 activity」,而不是只靠 service 自觉(合同 §3.3 原话:
   // 「双锚点,service 与 DB 约束保证 session 属于 activity」)。
@@ -3441,6 +3452,10 @@ model ActivitySessionPosition {
   // 第 1 批第三刀(§3.16):打卡事件的岗位上下文(可空)。
   punchEvents AttendancePunchEvent[] @relation("PunchEventPosition")
 
+  // 第 1 批第五刀(§3.11):岗位志愿与岗位级分配批次。
+  positionPreferences ActivityPositionPreference[]
+  allocationBatches   ActivityAllocationBatch[]    @relation("AllocationBatchPosition")
+
   @@index([activityId])
   @@index([sessionId])
   @@index([attendanceRoleCode])
@@ -3503,6 +3518,9 @@ model ActivityParticipationIdentity {
   ledgerEntries             ParticipationLedgerEntry[]
   correctionRequests        AttendanceCorrectionRequest[]
 
+  // 第 1 批第五刀反向 relation(合同 §3.11):仅关系映射,零标量字段。
+  allocationCandidates ActivityAllocationCandidate[]
+
   @@unique([activityId, sessionId, memberId])
   @@index([activityId])
   @@index([sessionId])
@@ -3517,8 +3535,10 @@ model ActivityParticipationIdentity {
 //
 // 不可变模型 ⇒ 按合同 §3 前言**不带 updatedAt / deletedAt**。
 //
-// ⚠️ 合同字段表里的 `allocationBatchId` **本刀不建**:它指向 ActivityAllocationBatch
-// (§3.11),那是第 4 刀(Settlement / Allocation 域)才建的表。同 goal ② 口径。
+// ✅ 合同字段表里的 `allocationBatchId` 在第一刀按「跨切片外键列不提前占位」暂缓
+// (原注释预判它归第四刀,实际 §3.11 分配四表是**合同第四处内部矛盾** —— §14 任何
+// 一刀都没列入,维护者 2026-08-04 拍板另开第五刀)。目标表 ActivityAllocationBatch
+// 正是**第五刀**建的,故本刀**连列带外键一起补上**。这是「不占位」范式的最后一段。
 model ActivityParticipationRevision {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -3534,6 +3554,10 @@ model ActivityParticipationRevision {
   preferenceSnapshot Json?
   waitlistRank       Int?
 
+  // §3.9 字段表第四列。可空:先到先得直接 pass / 后台代建 / 取消重报等路径都不经过
+  // 分配批次,此刻无 batch 可指(§5.4 只有资格排序与抽签两种模式必然产生 batch)。
+  allocationBatchId String?
+
   reviewedByUserId String?
   reviewedAt       DateTime?
   reviewNote       String?
@@ -3548,11 +3572,12 @@ model ActivityParticipationRevision {
   requestKey      String?
   requestHash     String?
 
-  identity    ActivityParticipationIdentity @relation(fields: [identityId], references: [id], onDelete: Restrict)
-  position    ActivitySessionPosition?      @relation(fields: [positionId], references: [id], onDelete: Restrict)
-  reviewedBy  User?                         @relation("ParticipationRevisionReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
-  cancelledBy User?                         @relation("ParticipationRevisionCanceller", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
-  createdBy   User?                         @relation("ParticipationRevisionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  identity        ActivityParticipationIdentity @relation(fields: [identityId], references: [id], onDelete: Restrict)
+  position        ActivitySessionPosition?      @relation(fields: [positionId], references: [id], onDelete: Restrict)
+  allocationBatch ActivityAllocationBatch?      @relation(fields: [allocationBatchId], references: [id], onDelete: Restrict)
+  reviewedBy      User?                         @relation("ParticipationRevisionReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  cancelledBy     User?                         @relation("ParticipationRevisionCanceller", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
+  createdBy       User?                         @relation("ParticipationRevisionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
 
   @@unique([identityId, revision])
   @@index([identityId])
@@ -3560,6 +3585,8 @@ model ActivityParticipationRevision {
   @@index([positionId])
   @@index([effectiveAt])
   @@index([requestKey])
+  // §11.3「必需索引」逐字点名的一条:ParticipationRevision `(allocationBatchId,statusCode)`。
+  @@index([allocationBatchId, statusCode], map: "activity_participation_revision_batch_status_idx")
 }
 
 // ===== §3.10 ActivityCapacityBucket:容量桶 =====
@@ -3686,6 +3713,9 @@ model ActivityRegistrationRevision {
   nextRevisions          ActivityRegistrationRevision[]    @relation("RegistrationRevisionChain")
   answers                RegistrationFormAnswer[]
   qualificationSnapshots QualificationEvaluationSnapshot[]
+
+  // 第 1 批第五刀(§3.11):岗位志愿挂在报名修订上(志愿变更 ⇒ 新报名修订)。
+  positionPreferences ActivityPositionPreference[]
 
   @@unique([registrationId, revision])
   @@index([registrationId])
@@ -3879,6 +3909,8 @@ model ActivityQualificationRuleSet {
   evaluationSnapshots QualificationEvaluationSnapshot[]
   // §3.3 的 ActivitySessionPosition.qualificationRuleSetId 反向侧(本刀兑现第一刀的欠账)
   scopedPositions     ActivitySessionPosition[]         @relation("PositionQualificationRuleSet")
+  // 第 1 批第五刀(§3.11):预留名额组的「资格条件版本」指回本表(本表自带 version 列)。
+  reservedQuotaGroups ActivityReservedQuotaGroup[]
 
   @@index([activityId])
   @@index([sessionId])
@@ -5005,4 +5037,249 @@ model ActivityBatchJobItem {
   // §11.3 点名的一条:
   @@index([jobId, statusCode], map: "activity_batch_job_item_job_status_idx")
   @@index([resourceType, resourceId], map: "activity_batch_job_item_resource_idx")
+}
+
+// ============================================================================
+// 活动改造 v1.1 —— 第 1 批第五刀:分配 / 志愿 / 候补 / 预留名额
+// (2026-08-04;合同 docs/archive/reviews/activity-business-overhaul-v1.1/
+//  SRVF_活动业务全流程改造_详细开发文档_v1.1.md §3.11)
+//
+// ⚠️ **本刀的存在本身是在补合同的洞**:§3.11 这四张表**没有被 §14「第 1 批」建议拆分
+// 的任何一条列入**(那四条是 Activity/Session/Participation/Capacity、
+// Form/Qualification/Invitation、Punch/Evidence、Settlement/Ledger/Correction/
+// Closure/Job),而 §14「第 4 批」的交付清单里明写要用 Allocation 与 Waitlist。
+// 这是合同的**第四处内部矛盾**;维护者 2026-08-04 拍板**单独第五刀补齐**,
+// 不并进第四刀(账本链语义像钱,不与不相干的分配表混刀)。
+//
+// 与前四刀同口径:纯 schema expand,**四张新表零调用方**是预期状态 —— 不接线、
+// 不写 service / controller / DTO / policy / presenter,消费方在第 4 批。
+// ⚠️ 特别是**抽签**:`randomCommitment` 只是一个列,本刀**不实现任何随机数逻辑**。
+//
+// 命名:不使用 @@map,物理表名即 PascalCase model 名(沿前四刀)。
+// 状态类字段一律 String + migration CHECK 闭集兜底,不建 Prisma enum(§3 前言)。
+// model 名普遍 ≥ 23 字符 ⇒ 所有 @@unique / @@index 一律显式 map:,
+// 免 PG 63 字符静默截断(沿第三 / 第四刀)。
+//
+// 🔴 §3.11 对后两张表**只给了散文、没给字段表**。沿本批次一贯口径④「合同没给的
+//    一律不发明」:**只落散文明确点到的那些**,拿不准的宁可不建 ——
+//    逐列依据与「散文提到但刻意未建」清单见 PR body。
+// ============================================================================
+
+// ===== §3.11 ActivityPositionPreference:岗位志愿 =====
+//
+// 合同原文:`registrationRevisionId/sessionId/positionId/preferenceOrder`,
+// unique `(registrationRevisionId, sessionId, preferenceOrder)` 和
+// `(registrationRevisionId, sessionId, positionId)` —— 两条**缺一不可**:
+// 前者拦「同一场次里两个岗位抢同一个志愿序位」,后者拦「同一岗位被填两次志愿」。
+//
+// 不可变模型 ⇒ 按合同 §3 前言**不带 updatedAt / deletedAt**:志愿挂在**不可变的**
+// ActivityRegistrationRevision 上,改志愿 = 追加新报名修订(§3.7),不是原地改行。
+//
+// ⚠️ 本表**没有 activityId**,故 sessionId 走**单列** FK 而非前几刀的
+//    (activityId, sessionId) 双锚点复合 FK —— 合同字段表只给了四列,
+//    按④不自行加聚合根列。「志愿的场次与报名的活动一致」是跨表判据,归第 4 批 service。
+model ActivityPositionPreference {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  registrationRevisionId String
+  sessionId              String
+  positionId             String
+  preferenceOrder        Int // >= 1(migration CHECK)
+
+  registrationRevision ActivityRegistrationRevision @relation(fields: [registrationRevisionId], references: [id], onDelete: Restrict)
+  session              ActivitySession              @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  position             ActivitySessionPosition      @relation(fields: [positionId], references: [id], onDelete: Restrict)
+
+  // 🟢 两条 unique 的键列**全 NOT NULL** ⇒ 不需要 NULLS NOT DISTINCT。
+  @@unique([registrationRevisionId, sessionId, preferenceOrder], map: "activity_position_preference_order_key")
+  @@unique([registrationRevisionId, sessionId, positionId], map: "activity_position_preference_position_key")
+  @@index([sessionId], map: "activity_position_preference_session_idx")
+  @@index([positionId], map: "activity_position_preference_position_idx")
+}
+
+// ===== §3.11 ActivityAllocationBatch:分配批次 =====
+//
+// 合同字段表(§3.11 唯一给了字段的两张表之一):
+//   `activityId/sessionId/positionId?` · `modeCode` 三值闭集 ·
+//   `candidateSnapshotHash/ruleSnapshotId/randomCommitment?` ·
+//   `statusCode` 三值闭集 · `operationKey/requestHash/createdBy/committedAt`
+//
+// ⚠️ **`ruleSnapshotId` 本刀不建**:它指向 §3.4 的 `ActivityRuleSnapshot`,
+//    而那张表**至今没有建**(§14 第 3 批「Template snapshot」才实现)。
+//    沿 goal ②「跨切片外围键列不提前占位」—— 提前建一列指向不存在的表,
+//    既加不了外键也无人写入,正是前三刀反复拒绝的形态。
+//    ⇒ 建 `ActivityRuleSnapshot` 的那一刀**连列带 FK 一起补上**(欠账已在 PR body 登记)。
+//
+// ⚠️ `committedAt` 改可空(合同字段表未标 `?`):§3.11 自己的 `statusCode` 闭集里
+//    有 `preparing` —— 那一刻批次尚未提交,NOT NULL 会让 preparing 态根本写不进来,
+//    合同自相矛盾(沿第二 / 三 / 四刀同一处置口径)。
+// ⚠️ `requestHash` 可空、`createdBy` 命名为 `createdByUserId` 且可空:
+//    前者沿全仓 requestHash 一律可空的既有范式(9 处无一例外),
+//    后者沿本仓 actor FK 一律可空的既有范式。
+// ✅ `candidateSnapshotHash` **保持 NOT NULL**:同一条 bullet 里作者对
+//    `positionId` 与 `randomCommitment` 显式标了 `?`,说明"未标 = 必填"是刻意的;
+//    且找不到任何合同条款定义"该哈希此刻不存在"的合法形态,故不放宽。
+model ActivityAllocationBatch {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activityId String
+  sessionId  String
+  positionId String? // null = 场次级批次(不限定岗位)
+
+  modeCode String // first_come / qualification_rank / lottery(§3.11 明写闭集)
+
+  candidateSnapshotHash String
+  // §5.4 抽签:「保存 random commitment 和实现版本」。非抽签模式无 commitment ⇒ 可空。
+  randomCommitment      String?
+
+  statusCode String // preparing / committed / voided(§3.11 明写闭集)
+
+  // 🔴 幂等键取**单列** unique 而非 (operationKey, requestHash) 复合 ——
+  //    复合唯一恰好放行「同一个 key 配不同 payload」,那正是幂等键要拦的冲突
+  //    (第二刀实测)。单列唯一严格蕴含复合唯一,故同时满足合同字面。
+  operationKey String  @unique(map: "activity_allocation_batch_operation_key_key")
+  requestHash  String?
+
+  createdByUserId String?
+  committedAt     DateTime?
+
+  activity  Activity                 @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  // 复合 FK(activityId, sessionId)→ ActivitySession(activityId, id):沿第一刀,
+  // 让「场次属于该活动」由 DB 保证,而不是只靠 service 自觉。
+  session   ActivitySession          @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
+  position  ActivitySessionPosition? @relation("AllocationBatchPosition", fields: [positionId], references: [id], onDelete: Restrict)
+  createdBy User?                    @relation("AllocationBatchCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  candidates             ActivityAllocationCandidate[]
+  // §3.9 的 ActivityParticipationRevision.allocationBatchId 反向侧(本刀兑现第一刀欠账)
+  participationRevisions ActivityParticipationRevision[]
+
+  @@index([activityId], map: "activity_allocation_batch_activity_idx")
+  @@index([sessionId], map: "activity_allocation_batch_session_idx")
+  @@index([positionId], map: "activity_allocation_batch_position_idx")
+  @@index([statusCode], map: "activity_allocation_batch_status_idx")
+  @@index([modeCode], map: "activity_allocation_batch_mode_idx")
+}
+
+// ===== §3.11 ActivityAllocationCandidate:候选人评分与结果 =====
+//
+// 🔴 合同**只给散文不给字段表**:「保存 identity、资格评分、稳定 tie-break、
+//    抽签序号、最终结果、候补序号和解释。结果 committed 后不可改。」
+//    ⇒ 按④只落散文**明确点到**的七项(+ 批次锚点),逐项依据:
+//      · batch 锚点 `allocationBatchId` —— 结构必需,非发明:表名即「批次的候选人」,
+//        §11.4「候补排名由 AllocationCandidate 可索引 rank 读取」与
+//        §3.11「候补查询从最新 committed allocation batch 读取」都要求 batch → candidates。
+//      · identity            → `participationIdentityId`(沿全仓既有列名)
+//      · 资格评分            → `qualificationScore`,可空(§5.4 只有 qualification_rank
+//                              模式产生评分;lottery 用资格做闸门不做排序)
+//      · 稳定 tie-break      → `tieBreakKey` String,NOT NULL(它是"稳定"排序的锚,
+//                              取 String 而非 Int 是为了同时容纳 序号 / 哈希 / 复合键 三种实现)
+//      · 抽签序号            → `lotteryOrder` Int?,仅 lottery 模式有
+//      · 最终结果            → `resultCode` String?,preparing 期尚未定(见下)
+//      · 候补序号            → `waitlistRank` Int?,仅候补者有
+//                              (与 ActivityParticipationRevision.waitlistRank 同名同型)
+//      · 解释                → `explanation` Json?,取 Json 而非 String:§5.4「保存**每项**
+//                              评分和 tie-break」指向逐规则明细,结构化存放;
+//                              纯文本亦是合法 JSON,不损失表达力。
+//
+// ⚠️ `resultCode` **刻意不落闭集 CHECK**:§3.11 说了"最终结果"但**没给取值集**
+//    (沿④不自行发明;第四刀对 ActivityBatchJobItem.statusCode 同样处置)。
+//    已用「任意取值必须放行 + 本表零 resultCode CHECK」两条 e2e 把**合同缺口**
+//    钉成会变红的判据。
+//
+// 🔴 **刻意不装 append-only trigger**,理由不止一条先例:
+//    ① 先例:合同这里说的是「结果 **committed 后**不可改」,**没有**像 §3.23.8
+//       那样点名"DB 角色层禁 UPDATE/DELETE"。§3.17 EvidenceSeal(第三刀)与
+//       §3.19 SettlementReviewAction(第四刀)都按「合同没点名 ⇒ 不装」处理,本刀沿这条。
+//    ② 更硬的正面理由:这里是**条件不可变**,不是 append-only。批次 preparing 期
+//       正要往候选行里写评分 / 抽签序号 / 结果,一条无条件 append-only trigger 会把
+//       **合法写路径直接堵死**——装上就是错的。
+//    ③ 而"按父批次 statusCode 判"的条件 trigger 是**跨行**判据:行级 trigger 里读
+//       父批次在并发下会骗人(两事务互相看不见对方未提交的 status 变更),
+//       与第四刀「日合计求和 trigger 在并发下骗人」同型。执行位归第 4 批 service
+//       (Activity 锁内重读批次状态)。
+//    ⇒ 用两条会变红的 e2e 钉死"刻意":①preparing 期 UPDATE 必须放行
+//       ②本表零 trigger。
+//
+// ⚠️ **刻意不建** `(allocationBatchId, participationIdentityId)` unique:
+//    §3.11 与 §11.3 都没有给本表任何唯一约束(④)。已用一条"同批次同 identity
+//    第二行必须放行"的 e2e 把"刻意不建"钉成判据 —— 哪天有人顺手补上会立刻变红。
+model ActivityAllocationCandidate {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  allocationBatchId       String
+  participationIdentityId String
+
+  qualificationScore Decimal? @db.Decimal(12, 4)
+  tieBreakKey        String
+  lotteryOrder       Int?
+
+  resultCode   String?
+  waitlistRank Int?
+  explanation  Json?
+
+  allocationBatch       ActivityAllocationBatch       @relation(fields: [allocationBatchId], references: [id], onDelete: Restrict)
+  participationIdentity ActivityParticipationIdentity @relation(fields: [participationIdentityId], references: [id], onDelete: Restrict)
+
+  // §11.4 明写「候补排名由 AllocationCandidate **可索引 rank** 读取,
+  // 不在每次列表对全队列重新排序」⇒ 这条索引是合同点名的,不是盲加。
+  @@index([allocationBatchId, waitlistRank], map: "activity_allocation_candidate_batch_rank_idx")
+  @@index([allocationBatchId], map: "activity_allocation_candidate_batch_idx")
+  @@index([participationIdentityId], map: "activity_allocation_candidate_identity_idx")
+}
+
+// ===== §3.11 ActivityReservedQuotaGroup:预留名额组 =====
+//
+// 🔴 合同**只给散文不给字段表**:「scope、资格条件版本、capacity、releaseAt、
+//    fallbackMode。释放到公共池时走 Activity 锁和 capacity transaction。」
+//    ⇒ 按④只落散文明确点到的五项(+ 聚合根锚点),逐项依据:
+//      · 聚合根 `activityId` —— 非发明:同段原话「释放…走 **Activity 锁**」要求本表
+//        归属某个活动;且 §3.10 的姊妹表 ActivityCapacityBucket 同样是
+//        「activityId 聚合根 + scopeTypeCode/scopeId」两段式。
+//      · scope             → `scopeTypeCode` + `scopeId`,**逐字沿 §3.10 的 scope 惯用法**
+//                            (§3.10 的 scopeTypeCode 闭集里就有 `reserve_group`,
+//                             其 scopeId 指的正是本表的行 ⇒ 两表 scope 语义同族)。
+//                            多态 id ⇒ **不加 FK**(沿 ActivityCapacityBucket.scopeId
+//                            与 role_bindings.principalId 的既有范式)。
+//      · 资格条件版本      → `qualificationRuleSetId`,可空,FK → ActivityQualificationRuleSet
+//                            (§3.13,第二刀已建;该表自带 `version` 列 ⇒ 指向它就是
+//                             指向"资格条件的某个版本")。可空 = 不附加资格条件的预留组。
+//      · capacity          → `capacity` Int?,null 不限;有值 >= 1(migration CHECK,DoD 3)
+//      · releaseAt         → `releaseAt` DateTime,**保持 NOT NULL**(散文未标可空,
+//                            也找不到合同条款定义"没有释放时刻"的合法形态)
+//      · fallbackMode      → `fallbackMode`,**逐字用合同的 token**(未加 `Code` 后缀:
+//                            合同在同一节里对闭集字段写的是 `modeCode`、对本列写的是
+//                            `fallbackMode`,这个区别照抄)
+//
+// ⚠️ `scopeTypeCode` 与 `fallbackMode` 均**刻意不落闭集 CHECK**:§3.11 一个取值都没给
+//    (④)。已列为合同缺口,待补定义后由行为批次补 CHECK。
+model ActivityReservedQuotaGroup {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activityId String // 聚合根(§3.11「释放到公共池时走 Activity 锁」)
+
+  // 多态 scope,沿 §3.10 ActivityCapacityBucket 同一形状 ⇒ scopeId 不加 FK。
+  scopeTypeCode String
+  scopeId       String
+
+  qualificationRuleSetId String?
+
+  capacity     Int? // null 不限;有值 >= 1
+  releaseAt    DateTime
+  fallbackMode String
+
+  activity             Activity                      @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  qualificationRuleSet ActivityQualificationRuleSet? @relation(fields: [qualificationRuleSetId], references: [id], onDelete: Restrict)
+
+  @@index([activityId], map: "activity_reserved_quota_group_activity_idx")
+  @@index([scopeTypeCode, scopeId], map: "activity_reserved_quota_group_scope_idx")
+  @@index([releaseAt], map: "activity_reserved_quota_group_release_idx")
+  @@index([qualificationRuleSetId], map: "activity_reserved_quota_group_ruleset_idx")
 }
