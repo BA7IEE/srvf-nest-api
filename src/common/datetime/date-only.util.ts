@@ -68,3 +68,68 @@ export function addMonthsClamped(from: Date, months: number): Date {
   const day = Math.min(from.getUTCDate(), lastDayOfTargetMonth);
   return new Date(Date.UTC(targetYear, targetMonth, day));
 }
+
+// ===== 活动改造 v1.1 第 2 批第一刀:北京日拆分(合同 §3.21)=====
+//
+// §3.21 原话要求「业务转换统一调用 `BeijingCalendarService`」,并明禁散落的
+// 本地化时间格式化与字符串切割。本仓**不新建**那个类 —— 它要求的日界口径与本文件的
+// `beijingDateOnly` 是同一件事,再包一层就是冻结稿 §19 明禁的「第二套日期算法」。
+// 合同点名的是**单一入口**这个性质,不是类名;所需新能力一律加在本文件内,
+// `beijingDateOnly` 仍是全仓唯一的日界实现。
+//
+// 为什么固定 +8 而不查时区库:中国大陆 1991 年后无夏令时,与本文件既有口径
+// (以及 sms / birthday-greeting 的 UTC8_OFFSET_MS)同源;引 tz 依赖反而制造分叉。
+
+const DAY_MS = 24 * 3600 * 1000;
+
+// 一个服务段被北京日界切开后的一片。
+// `ledgerDate` 直接就是 §3.21 `ParticipantSettlementDay.ledgerDate` 的取值
+// (该列是 `@db.Date`,Prisma 侧以 UTC 午夜 Date 表达)。
+export interface BeijingDaySlice {
+  ledgerDate: Date;
+  startAt: Date;
+  endAt: Date;
+  milliseconds: number;
+}
+
+// 北京日 `ledgerDate` 实际覆盖的 UTC 区间 `[startAt, endAt)`。
+// 北京 00:00 = 该日 UTC 午夜 − 8h(即前一日 16:00Z)。
+export function beijingDayBoundsUtc(ledgerDate: Date): { startAt: Date; endAt: Date } {
+  const startAt = new Date(ledgerDate.getTime() - UTC8_OFFSET_MS);
+  return { startAt, endAt: new Date(startAt.getTime() + DAY_MS) };
+}
+
+// 把 `[startAt, endAt)` 按北京日界切成有序、无缝、不重叠的多片。
+//
+// 用途(§3.21):一段跨越北京日界的服务时长必须按**日**入账,
+// 否则 `MemberContributionDayState` 的「日合计 0..3」根本无从判定。
+//
+// 约定:
+// - 半开区间 —— 恰好落在日界上的瞬间归**后**一日,不会产生零长度片;
+// - `endAt <= startAt` 返回空数组(不抛),调用方按「无服务时长」处理;
+// - 入参必须是有效 Date,非法值直接抛 —— 沿 `parseDateOnlyStrict` 的同一立场:
+//   宁可炸,也不返回一个「看起来合法但不是调用方本意」的结果。
+//
+// ⚠️ 消费方在第 2 批后续刀(结算草稿 / 账本准备),本刀零调用方是预期状态。
+export function splitSpanByBeijingDay(startAt: Date, endAt: Date): BeijingDaySlice[] {
+  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
+    throw new RangeError('splitSpanByBeijingDay 收到无效 Date');
+  }
+  if (endAt.getTime() <= startAt.getTime()) return [];
+
+  const slices: BeijingDaySlice[] = [];
+  let cursor = startAt;
+  while (cursor.getTime() < endAt.getTime()) {
+    const ledgerDate = beijingDateOnly(cursor);
+    const bounds = beijingDayBoundsUtc(ledgerDate);
+    const sliceEnd = bounds.endAt.getTime() < endAt.getTime() ? bounds.endAt : endAt;
+    slices.push({
+      ledgerDate,
+      startAt: cursor,
+      endAt: sliceEnd,
+      milliseconds: sliceEnd.getTime() - cursor.getTime(),
+    });
+    cursor = sliceEnd;
+  }
+  return slices;
+}

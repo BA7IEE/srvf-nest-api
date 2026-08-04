@@ -868,6 +868,56 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // ===== 活动改造 v1.1 第 2 批第一刀:证据封场(合同 §5.8)=====
+  //
+  // 合同 §5.8 末句:「seal 不是"负责人承诺",没有所有条件不能写」。
+  // ⇒ **每一条拒绝理由一个具名码**,而不是笼统一个 ACTIVITY_STATUS_INVALID —— 否则
+  //    前端与运维只知道"封不了",不知道差哪一项,机器判定就退化回人工排查。
+  // 落 200xx 段 20040-20046(20001-20039 已用,与 201xx 报名态阻断家族分开)。
+  // 全部 409:每一条都是"当前状态不允许",不是入参错。
+  EVIDENCE_SEAL_CHECKOUT_WINDOW_OPEN: {
+    code: 20040,
+    message: '仍有场次的签退窗口未结束,不可封场',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  EVIDENCE_SEAL_OPEN_SEGMENT_EXISTS: {
+    code: 20041,
+    message: '仍有未闭合的服务段,不可封场',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  EVIDENCE_SEAL_MANUAL_REVIEW_PENDING: {
+    code: 20042,
+    message: '仍有待人工复核项,不可封场',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  EVIDENCE_SEAL_UNPROCESSED_EVENT_EFFECT: {
+    code: 20043,
+    message: '仍有未投影到服务段的打卡事件,不可封场',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  EVIDENCE_SEAL_CHANGE_REVIEW_PENDING: {
+    code: 20044,
+    message: '仍有待处理的变更审核,不可封场',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // §5.8 ⑦「版本在本事务内变化 ⇒ 拒绝」。ActivityEvidenceState 不在 Activity 行锁的
+  // 保护范围内,绕过锁序的写入方能在读取与落章之间改动版本 —— 那一章会记录一个
+  // 从未同时成立过的现场快照,故必须拒绝而不是覆盖。
+  EVIDENCE_SEAL_REVISION_CHANGED: {
+    code: 20045,
+    message: '证据或人口版本在封场过程中发生变化,请重试',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // §3.17「新证据或人口变化会递增 state revision,使旧 seal 失配」的**逆命题**:
+  // 版本没变 ⇒ 现有 active seal 仍然有效 ⇒ 没有可封的新事实。
+  // 这条同时是并发败者的收场码(两个并发 seal 只能成功一个,§5.8 ①的行锁串行化之后,
+  // 后到者读到的正是先到者刚写下的、版本完全吻合的 active seal)。
+  EVIDENCE_SEAL_ALREADY_ACTIVE: {
+    code: 20046,
+    message: '当前版本已有生效的封场凭证,无需重复封场',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。
   // 子段(对齐 baseline §1.3):
