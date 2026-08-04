@@ -46,6 +46,9 @@ import { ActivityNotificationProducer } from './activity-notification-producer';
 import { ActivityResponsibilityNotificationProducer } from './activity-responsibility-notification-producer';
 import { EvidenceSealAuditRecorder } from './evidence-seal-audit-recorder';
 import { EvidenceSealService } from './evidence-seal.service';
+import { ContributionCalculator } from '../attendances/contribution-calculator';
+import { SettlementDraftAuditRecorder } from './settlement-draft-audit-recorder';
+import { SettlementDraftService } from './settlement-draft.service';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activities 写操作(create / update / softDelete / publish / cancel 共 5 处共用 activity.publish)
@@ -125,10 +128,21 @@ import { EvidenceSealService } from './evidence-seal.service';
     // 本刀零端点 —— 消费方是第 2 批第二刀(结算草稿 / 提交),故先 provider + export。
     EvidenceSealAuditRecorder,
     EvidenceSealService,
+    // 活动改造 v1.1 第 2 批第二刀(合同 §5.9):结算草稿生成 + 服务段重建。
+    // 本刀同样零端点 —— 消费方是第三刀(提交不可变版本)。
+    //
+    // ⚠️ `ContributionCalculator` 在这里作为 **provider** 而不是 import AttendancesModule:
+    //    `AttendancesModule` 已经 import 了本模块,反向 import 会成环。
+    //    它无构造依赖、无状态,复用的是**同一个类**(同一套 ACTIVE pair 查找 +
+    //    「重复 pair fail-closed」不变量),不是第二套实现。
+    ContributionCalculator,
+    SettlementDraftAuditRecorder,
+    SettlementDraftService,
   ],
   exports: [
     ActivitiesService,
     EvidenceSealService,
+    SettlementDraftService,
     AppMyActivitiesService,
     ActivityParticipationPolicy,
     ActivityPublishReviewService,
