@@ -129,6 +129,14 @@ model User {
   wecomIdentities   WecomIdentity[]
   wecomAuthAttempts WecomAuthAttempt[]
 
+  // 活动改造 v1.1 第 1 批第一刀(2026-08-04;合同 docs/archive/reviews/
+  // activity-business-overhaul-v1.1/ §3.1 / §3.9):**只加反向 relation,零标量字段**
+  // (沿 R2 范式;Prisma 关系映射不算业务字段新增)。
+  activitiesTerminated            Activity[]                      @relation("ActivityTerminator")
+  participationRevisionsReviewed  ActivityParticipationRevision[] @relation("ParticipationRevisionReviewer")
+  participationRevisionsCancelled ActivityParticipationRevision[] @relation("ParticipationRevisionCanceller")
+  participationRevisionsCreated   ActivityParticipationRevision[] @relation("ParticipationRevisionCreator")
+
   @@index([deletedAt])
   @@index([status])
   @@index([memberId])
@@ -513,6 +521,10 @@ model Member {
   notificationReads     NotificationRead[]
   // 统一通知模块 S3 producer 定向(2026-06-25;Notification.recipientMemberId 反向 relation,仅关系映射)
   directedNotifications Notification[]
+
+  // 活动改造 v1.1 第 1 批第一刀(2026-08-04;合同 §3.3 / §3.8):仅关系映射,零标量字段。
+  activitySessionPositionsLed ActivitySessionPosition[]       @relation("SessionPositionLeader")
+  activityParticipations      ActivityParticipationIdentity[]
 
   @@index([gradeCode])
   @@index([status])
@@ -1105,11 +1117,48 @@ model Activity {
   locationLongitude Decimal? @db.Decimal(10, 7)
   locationLatitude  Decimal? @db.Decimal(10, 7)
 
+  // ===== 活动改造 v1.1 第 1 批第一刀:§3.1 加法部分(2026-08-04)=====
+  //
+  // 合同:docs/archive/reviews/activity-business-overhaul-v1.1/ §3.1。
+  // 本刀是 expand→migrate→contract 的 **expand 阶段**:只加列,一个 DROP / RENAME 都不做。
+  // 合同 §3.1 另要求删 attendanceDeclaredCompleteAt / attendanceDeclaredCompleteByUserId
+  // 两列、并把 `completed` 移出活动状态闭集 —— 那两项属 **contract 阶段**,等行为迁移
+  // 完成后另立 goal(`completed` 全仓 376 处引用,在建表 PR 里动它会打穿半个仓库)。
+  // 同理 statusCode 的取值闭集本刀**不动**,不加 CHECK。
+  //
+  // ⚠️ 为什么下面三列是**可空**而不是合同字面的 NOT NULL:
+  // goal DoD 2 要求「既有行零改写」⇒ 不许回填 ⇒ NOT NULL 必须配常量 default。
+  // 而 registrationModeCode 的常量 default 是**可证伪的错**:既有
+  // `isPublicRegistration=false` 的活动语义上是 `admin_only` 而非 `open_apply`,
+  // 一个常量填不对两种行。visibilityCode / defaultLocationRequired 同理是业务默认值,
+  // 不由 AI 代定。三列在本 expand 刀一律可空(null = 尚未解析),由后续 contract 刀
+  // 连同真回填一起收紧为 NOT NULL —— 沿证书标准库 PR-2 expand(standardId /
+  // recognitionPolicyId / sourceCode 先可空)→ PR-4b contract(转 NOT NULL)既有范式。
+  // 合同**明写了初值**的三列(archiveWaitingDays=7 / 两个 revision=0)则照字面带 default。
+  registrationModeCode       String? // open_apply / invitation_only / admin_only / paused
+  visibilityCode             String? // internal / invitation;不得兼任报名方式
+  defaultCheckInRadiusMeters Int? // null = 沿模板／系统默认,**不是**"不限制"
+  defaultLocationRequired    Boolean?
+  archiveWaitingDays         Int      @default(7) // 合同 §3.1:默认 7,范围 0..365(CHECK 兜底)
+  currentEvidenceRevision    Int      @default(0) // 现场事实变化同事务 +1
+  currentPopulationRevision  Int      @default(0) // 参与身份变化同事务 +1
+  currentClosureRevision     Int? // 当前生效关闭版本号,只是快速指针
+
+  // 提前终止事实(§3.1)。CHECK 只守新列自身的形状:terminatedAt 有值 ⇒ statusCode='terminated'。
+  // 既有行三列恒 NULL ⇒ 该 CHECK 对存量恒真,不可能让既有行为变红。
+  terminatedAt       DateTime?
+  terminatedByUserId String?
+  terminationReason  String?
+
+  // 当前取消操作防重;全历史操作记录另表保存(后续批次)。
+  cancelOperationKey String?
+
   organization                 Organization                       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   initiator                    Member?                            @relation("ActivityInitiator", fields: [initiatorMemberId], references: [id], onDelete: Restrict)
   publisher                    User?                              @relation("ActivityPublisher", fields: [publishedBy], references: [id], onDelete: Restrict)
   canceller                    User?                              @relation("ActivityCanceller", fields: [cancelledBy], references: [id], onDelete: Restrict)
   attendanceDeclaredCompleteBy User?                              @relation("ActivityAttendanceDeclaration", fields: [attendanceDeclaredCompleteByUserId], references: [id], onDelete: Restrict)
+  terminatedBy                 User?                              @relation("ActivityTerminator", fields: [terminatedByUserId], references: [id], onDelete: Restrict)
   registrations                ActivityRegistration[]
   activityPositions            ActivityPosition[]
   activityCheckIns             ActivityCheckIn[]
@@ -1117,6 +1166,12 @@ model Activity {
   attendanceSheets             AttendanceSheet[]
   publishReviews               ActivityPublishReview[]
   responsibilityAssignments    ActivityResponsibilityAssignment[]
+
+  // 活动改造 v1.1 第 1 批第一刀反向 relation(合同 §3.2 / §3.3 / §3.8 / §3.10)。
+  sessions                ActivitySession[]
+  sessionPositions        ActivitySessionPosition[]
+  participationIdentities ActivityParticipationIdentity[]
+  capacityBuckets         ActivityCapacityBucket[]
 
   @@index([deletedAt])
   @@index([createdAt])
@@ -1275,14 +1330,19 @@ model ActivityRegistration {
   cancelledAt       DateTime?
   cancelReason      String?
 
-  activity                      Activity                       @relation(fields: [activityId], references: [id], onDelete: Restrict)
-  activityPosition              ActivityPosition?              @relation(fields: [activityPositionId], references: [id], onDelete: Restrict)
-  member                        Member                         @relation(fields: [memberId], references: [id], onDelete: Restrict)
-  reviewer                      User?                          @relation("RegistrationReviewer", fields: [reviewedBy], references: [id], onDelete: Restrict)
-  canceller                     User?                          @relation("RegistrationCanceller", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
+  activity                      Activity                        @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  activityPosition              ActivityPosition?               @relation(fields: [activityPositionId], references: [id], onDelete: Restrict)
+  member                        Member                          @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  reviewer                      User?                           @relation("RegistrationReviewer", fields: [reviewedBy], references: [id], onDelete: Restrict)
+  canceller                     User?                           @relation("RegistrationCanceller", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
   attendanceRecords             AttendanceRecord[]
   activityCheckIns              ActivityCheckIn[]
   insuranceEligibilityEvidences InsuranceEligibilityEvidence[]
+  // 活动改造 v1.1 第 1 批第一刀反向 relation(合同 §3.8):仅关系映射,零标量字段。
+  // ⚠️ §3.6 把本表重定义为「活动级总报名头」并新增 currentRevision /
+  // currentFormVersionId / statusSummaryCode 等列 —— 那些列指向第二刀才建的
+  // RegistrationFormVersion,按 goal ②「跨切片的列不提前占位」移出本刀。
+  participationIdentities       ActivityParticipationIdentity[]
 
   @@index([activityId])
   @@index([activityPositionId])
@@ -3139,4 +3199,300 @@ model WecomAuthAttempt {
   @@index([status, stateExpiresAt])
   @@index([bindingExpiresAt])
   @@map("wecom_auth_attempts")
+}
+
+// ============================================================================
+// 活动改造 v1.1 —— 第 1 批第一刀:Session / Participation / Capacity
+// (2026-08-04;合同 docs/archive/reviews/activity-business-overhaul-v1.1/
+//  §3.2 / §3.3 / §3.8 / §3.9 / §3.10;§14「第 1 批」建议拆分第 1 项)
+//
+// 本刀是纯 schema expand:**六张新表零调用方**是预期状态,不接线、不写业务代码。
+// 既有 ActivityPosition / ActivityRegistration 一列不动、一行不迁,两表并存期间
+// 不写任何双写／双读(合同 §0.4 明禁长期双读双写);它们的退场归 contract 阶段。
+//
+// 命名:本批**不使用 @@map**(prisma/CLAUDE.md 默认禁,goal 未授权),物理表名
+// 即 PascalCase model 名 —— 沿 CertificateStandard / RecruitmentCertificateClaim
+// 等近批新表的既有做法。
+//
+// 状态类字段一律 String + migration CHECK 闭集兜底,不建 Prisma enum
+// (合同 §3 前言:「避免为了新增状态频繁修改 PostgreSQL enum」)。
+//
+// 万人量级前提(第 0 批 #906 实测):批量写恒走 unnest 数组参数,与人数无关地只占
+// 常数个 bind 参数(Prisma bind 上限 32767)。本刀不写批量逻辑,但建表按此前提设计
+// —— 不引入任何"每行一个参数"才能维护的结构。
+// ============================================================================
+
+// ===== §3.2 ActivitySession:一行 = 一个实际执行场次 =====
+//
+// 时间窗口四件套 + 定位策略在本表**冻结最终值**,运行时不再回查模板
+// (合同 §3.4:「不实时继承模板;模板变化不修改已发布活动」)。
+model ActivitySession {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // 仅草稿可软删;发布后取消走 statusCode,不删除历史
+
+  activityId String
+  code       String // 同活动稳定业务编码,创建后不可改
+  name       String
+
+  startAt DateTime
+  endAt   DateTime
+
+  locationText    String
+  meetingPoint    String?
+  executionPoint  String?
+  evacuationPoint String?
+  // 沿 Activity.locationLongitude / locationLatitude 的 Decimal(10,7)(WGS84 ~1.1cm)
+  longitude       Decimal? @db.Decimal(10, 7)
+  latitude        Decimal? @db.Decimal(10, 7)
+
+  capacity Int? // 场次参与人次上限;null 不限
+
+  checkInOpenAt      DateTime
+  checkInCloseAt     DateTime
+  checkOutOpenAt     DateTime
+  checkOutCloseAt    DateTime
+  preparationStartAt DateTime? // null = 不单独计准备时段
+
+  locationRequired           Boolean
+  radiusMeters               Int? // 要求定位时 50..10000;不要求定位时必须 null
+  locationPolicySourceCode   String // system / template / activity / session / position
+  accuracyWarningMeters      Int     @default(100) // 合同 §3.2「固定 100;本期只提醒」
+  lateGraceMinutes           Int     @default(15) // 0..60
+  earlyLeaveThresholdMinutes Int     @default(15) // 0..60
+
+  terminationCheckOutDeadline DateTime? // 场次提前终止后的真实签退截止
+
+  statusCode       String // scheduled / cancelled / terminated;进行中／结束按时间派生
+  workflowRevision Int    @default(0)
+  sortOrder        Int    @default(0)
+
+  activity                Activity                        @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  positions               ActivitySessionPosition[]
+  participationIdentities ActivityParticipationIdentity[]
+
+  // 复合 FK 的被引用侧:让子表 (activityId, sessionId) 双锚点由 **DB** 保证
+  // 「session 属于 activity」,而不是只靠 service 自觉(合同 §3.3 原话:
+  // 「双锚点,service 与 DB 约束保证 session 属于 activity」)。
+  @@unique([activityId, id])
+  @@index([activityId])
+  @@index([statusCode])
+  @@index([startAt])
+  @@index([endAt])
+  @@index([checkOutCloseAt])
+  @@index([activityId, sortOrder])
+  @@index([deletedAt])
+}
+
+// ===== §3.3 ActivitySessionPosition:场次级岗位 =====
+//
+// ⚠️ 合同 §3.3 说既有 ActivityPosition「可重命名／重建」为本模型 —— 本刀按 goal ③
+// **新建**本表,既有 activity_positions 一列不动、一行不迁,退场归 contract 阶段。
+//
+// ⚠️ 合同字段表里的 `qualificationRuleSetId` **本刀不建**:它指向
+// ActivityQualificationRuleSet(§3.13),那是第二刀(Form / Qualification / Invitation)
+// 才建的表。按 goal ②「跨切片的列不提前占位」+ AGENTS §2「先占位以后再用视作越权」,
+// 由建目标表的那一刀连列带外键一起加。
+model ActivitySessionPosition {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // 仅草稿软删;发布后用变更提案取消或替代
+
+  activityId String
+  sessionId  String
+
+  code               String
+  name               String
+  attendanceRoleCode String
+  capacity           Int? // null 不限
+
+  // 有值时必须同空同有(CHECK);「位于 session 内」是跨行判据,由 service +
+  // 后续批次的 ProposalApplier 保证,单表 CHECK 表达不了。
+  startAt DateTime?
+  endAt   DateTime?
+
+  genderRequirementCode String?
+
+  // 可空覆盖 session;发布时解析最终值进入快照(§3.4)。
+  locationRequired Boolean?
+  radiusMeters     Int?
+
+  leaderMemberId String? // 岗位负责人业务关系,**不直接产生权限**(§3.3)
+  description    String?
+  equipmentNotes String?
+  sortOrder      Int     @default(0)
+
+  activity                Activity                        @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  // 复合 FK:(activityId, sessionId) → ActivitySession(activityId, id)。
+  // 单列 sessionId FK 挡不住"岗位挂到别的活动的场次上"这种脏行。
+  session                 ActivitySession                 @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
+  leader                  Member?                         @relation("SessionPositionLeader", fields: [leaderMemberId], references: [id], onDelete: Restrict)
+  participationIdentities ActivityParticipationIdentity[]
+  participationRevisions  ActivityParticipationRevision[]
+
+  @@index([activityId])
+  @@index([sessionId])
+  @@index([attendanceRoleCode])
+  @@index([leaderMemberId])
+  @@index([sessionId, sortOrder])
+  @@index([deletedAt])
+}
+
+// ===== §3.8 ActivityParticipationIdentity:P0-04 核心模型 =====
+//
+// 一行 = 一个队员参加一个场次的**永久**身份。取消重报只追加
+// ActivityParticipationRevision 并改当前指针,**永不再建身份行**
+// ⇒ (activityId, sessionId, memberId) 是**普通 unique,不带删除条件**(§3.8 原话)。
+// 因此本表**没有 deletedAt**:永久身份不软删。
+model ActivityParticipationIdentity {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activityId     String
+  sessionId      String
+  registrationId String
+  memberId       String
+
+  currentRevision   Int     @default(0)
+  currentStatusCode String
+  currentPositionId String?
+
+  // ⚠️ DoD 7 选项 (a):**不加 FK** 的快速指针。
+  // 真值在 CapacityReservation 行上(§3.10「每个当前占位的可追溯事实」);
+  // 本列只是"当前占位记录"的快捷入口。加 FK 会与 CapacityReservation.identityId
+  // 形成**循环外键**,并给占位事务凭空多一条隐式死锁边 —— 本仓已有「audit 外键是
+  // 看不见的死锁边」的事故(见 concurrency-review-m1-m6)。
+  // 指针失同步的发现手段:LEFT JOIN 对账查询(见配套 spec 的"悬空指针"用例),
+  // 不靠 DB 兜底。
+  capacityReservationId String?
+
+  populationIncluded Boolean @default(false) // 是否进入当前应结算人口;随状态原子更新
+  version            Int     @default(0) // CAS 版本
+
+  activity     Activity                 @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  session      ActivitySession          @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
+  registration ActivityRegistration     @relation(fields: [registrationId], references: [id], onDelete: Restrict)
+  member       Member                   @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  position     ActivitySessionPosition? @relation(fields: [currentPositionId], references: [id], onDelete: Restrict)
+
+  revisions    ActivityParticipationRevision[]
+  reservations CapacityReservation[]
+
+  @@unique([activityId, sessionId, memberId])
+  @@index([activityId])
+  @@index([sessionId])
+  @@index([memberId])
+  @@index([registrationId])
+  @@index([currentStatusCode])
+  @@index([currentPositionId])
+  @@index([activityId, populationIncluded])
+}
+
+// ===== §3.9 ActivityParticipationRevision:不可变状态修订 =====
+//
+// 不可变模型 ⇒ 按合同 §3 前言**不带 updatedAt / deletedAt**。
+//
+// ⚠️ 合同字段表里的 `allocationBatchId` **本刀不建**:它指向 ActivityAllocationBatch
+// (§3.11),那是第 4 刀(Settlement / Allocation 域)才建的表。同 goal ② 口径。
+model ActivityParticipationRevision {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  identityId String
+  revision   Int
+
+  // 闭集(§3.9,14 态),由 migration CHECK 兜底;
+  // ActivityParticipationIdentity.currentStatusCode 共用同一闭集。
+  statusCode String
+
+  positionId         String?
+  preferenceSnapshot Json?
+  waitlistRank       Int?
+
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  reviewNote       String?
+
+  cancelledByUserId String?
+  cancelledAt       DateTime?
+  cancelReason      String?
+
+  effectiveAt     DateTime
+  createdByUserId String?
+  sourceCode      String
+  requestKey      String?
+  requestHash     String?
+
+  identity    ActivityParticipationIdentity @relation(fields: [identityId], references: [id], onDelete: Restrict)
+  position    ActivitySessionPosition?      @relation(fields: [positionId], references: [id], onDelete: Restrict)
+  reviewedBy  User?                         @relation("ParticipationRevisionReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  cancelledBy User?                         @relation("ParticipationRevisionCanceller", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
+  createdBy   User?                         @relation("ParticipationRevisionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([identityId, revision])
+  @@index([identityId])
+  @@index([statusCode])
+  @@index([positionId])
+  @@index([effectiveAt])
+  @@index([requestKey])
+}
+
+// ===== §3.10 ActivityCapacityBucket:容量桶 =====
+//
+// scopeId 是**多态** id(activity / session / position / reserve group),
+// 故不加 FK —— 沿 role_bindings.principalId「多态无 FK」既有范式。
+model ActivityCapacityBucket {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activityId String // 聚合根
+
+  // activity_person / session_participation / position_participation / reserve_group
+  scopeTypeCode String
+  scopeId       String
+
+  capacity Int? // null 不限;有值 >= 1
+  occupied Int  @default(0) // >= 0 且不大于 capacity
+  version  Int  @default(0) // CAS
+
+  activity     Activity              @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  reservations CapacityReservation[]
+
+  @@unique([scopeTypeCode, scopeId])
+  @@index([activityId])
+  @@index([scopeTypeCode])
+}
+
+// ===== §3.10 CapacityReservation:每个当前占位的可追溯事实 =====
+//
+// partial unique(migration 末尾手写):一个 identity 对一个 bucket 至多一条 active。
+//
+// ⚠️ 合同 §3.10 还要求第二条 partial unique「一个 member／activity 至多一条 active
+// activity-person reservation」,但 §3.10 自己的字段表**没有给 memberId / activityId
+// 两列**,该索引无从建起。goal DoD 5 也只列了第一条。本刀实现第一条,第二条作为
+// 合同内部不一致**上报维护者**,不自行发明列去补(AGENTS §2)。
+model CapacityReservation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  identityId      String
+  bucketId        String
+  reservationType String
+
+  status        String // active / released(CHECK 闭集 + 形状 CHECK)
+  releasedAt    DateTime?
+  releaseReason String?
+
+  identity ActivityParticipationIdentity @relation(fields: [identityId], references: [id], onDelete: Restrict)
+  bucket   ActivityCapacityBucket        @relation(fields: [bucketId], references: [id], onDelete: Restrict)
+
+  @@index([identityId])
+  @@index([bucketId])
+  @@index([status])
+  @@index([bucketId, status])
 }
