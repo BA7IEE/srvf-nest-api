@@ -137,6 +137,10 @@ model User {
   participationRevisionsCancelled ActivityParticipationRevision[] @relation("ParticipationRevisionCanceller")
   participationRevisionsCreated   ActivityParticipationRevision[] @relation("ParticipationRevisionCreator")
 
+  // 第 1 批第二刀(2026-08-04;合同 §3.7 / §3.14):同上,零标量字段。
+  registrationRevisionsSubmitted ActivityRegistrationRevision[] @relation("RegistrationRevisionSubmitter")
+  activityInvitationsSent        ActivityInvitation[]           @relation("ActivityInvitationInviter")
+
   @@index([deletedAt])
   @@index([status])
   @@index([memberId])
@@ -525,6 +529,12 @@ model Member {
   // 活动改造 v1.1 第 1 批第一刀(2026-08-04;合同 §3.3 / §3.8):仅关系映射,零标量字段。
   activitySessionPositionsLed ActivitySessionPosition[]       @relation("SessionPositionLeader")
   activityParticipations      ActivityParticipationIdentity[]
+
+  // 活动改造 v1.1 第 1 批第二刀(2026-08-04;合同 §3.12 / §3.14):同上,零标量字段。
+  // ⚠️ §3.14 ActivityVisitor **刻意不在此列** —— 合同明写访客与 Member 无 relation,
+  // 其 invitedByMemberId 是裸列。见该 model 注释。
+  registrationUploadSessions RegistrationUploadSession[]
+  activityInvitations        ActivityInvitation[]
 
   @@index([gradeCode])
   @@index([status])
@@ -1173,6 +1183,14 @@ model Activity {
   participationIdentities ActivityParticipationIdentity[]
   capacityBuckets         ActivityCapacityBucket[]
 
+  // 活动改造 v1.1 第 1 批第二刀反向 relation(合同 §3.12 / §3.13 / §3.14):
+  // 仅关系映射,零标量字段(沿 R2 范式)。
+  registrationFormVersions   RegistrationFormVersion[]
+  registrationUploadSessions RegistrationUploadSession[]
+  qualificationRuleSets      ActivityQualificationRuleSet[]
+  invitations                ActivityInvitation[]
+  visitors                   ActivityVisitor[]
+
   @@index([deletedAt])
   @@index([createdAt])
   @@index([statusCode])
@@ -1330,6 +1348,18 @@ model ActivityRegistration {
   cancelledAt       DateTime?
   cancelReason      String?
 
+  // ===== 活动改造 v1.1 第 1 批第二刀(2026-08-04;合同 §3.6)=====
+  // 四列全部**可空或带 default** ⇒ 有存量行的库零回填、零失败。
+  //
+  // §3.6 把本表重定义为「活动级总报名头」:一活动一队员永久唯一,不因取消重报另建头行。
+  // 这四列是那份定义缺的部分;既有列一个不动、语义一字不改(expand 段)。
+  currentRevision      Int     @default(0) // 当前修订号投影,真值在 ActivityRegistrationRevision
+  currentFormVersionId String? // 本次报名绑定的报名表版本;活动没有自定义表时恒 NULL
+  // active / completed / cancelled / not_selected / expired
+  // (§3.6 聚合规则原文给出的取值;migration CHECK 闭集,放行 NULL = 尚未聚合)
+  statusSummaryCode    String?
+  sourceCode           String? // self / admin / invitation / onsite(§3.6 明写闭集;放行 NULL)
+
   activity                      Activity                        @relation(fields: [activityId], references: [id], onDelete: Restrict)
   activityPosition              ActivityPosition?               @relation(fields: [activityPositionId], references: [id], onDelete: Restrict)
   member                        Member                          @relation(fields: [memberId], references: [id], onDelete: Restrict)
@@ -1344,6 +1374,10 @@ model ActivityRegistration {
   // RegistrationFormVersion,按 goal ②「跨切片的列不提前占位」移出本刀。
   participationIdentities       ActivityParticipationIdentity[]
 
+  // 第 1 批第二刀(合同 §3.6 / §3.7)。
+  currentFormVersion RegistrationFormVersion?       @relation("RegistrationCurrentFormVersion", fields: [currentFormVersionId], references: [id], onDelete: Restrict)
+  revisions          ActivityRegistrationRevision[]
+
   @@index([activityId])
   @@index([activityPositionId])
   @@index([memberId])
@@ -1351,6 +1385,8 @@ model ActivityRegistration {
   @@index([deletedAt])
   @@index([createdAt])
   @@index([registeredAt])
+  @@index([currentFormVersionId])
+  @@index([statusSummaryCode])
 }
 
 // ===== 活动自助 GPS 签到 F1:activity_check_ins =====
@@ -1906,6 +1942,10 @@ model Attachment {
   expireAt             DateTime? // 附件本身有效期;本期不做主动清理
 
   uploader User @relation("AttachmentUploader", fields: [uploadedBy], references: [id], onDelete: Restrict)
+
+  // 活动改造 v1.1 第 1 批第二刀(2026-08-04;合同 §3.12):file 型报名答案的反向 relation。
+  // 仅关系映射,零标量字段;FK 在 RegistrationFormAnswer 侧,Restrict。
+  registrationFormAnswers RegistrationFormAnswer[] @relation("RegistrationAnswerAttachment")
 
   @@index([ownerType, ownerId]) // 业务查询主路径:列出某业务对象的所有附件
   @@index([uploadedBy])
@@ -3272,6 +3312,11 @@ model ActivitySession {
   positions               ActivitySessionPosition[]
   participationIdentities ActivityParticipationIdentity[]
 
+  // 第 1 批第二刀(§3.13 / §3.14):场次级规则集、场次级邀请、现场访客。
+  qualificationRuleSets ActivityQualificationRuleSet[]
+  invitations           ActivityInvitation[]
+  visitors              ActivityVisitor[]
+
   // 复合 FK 的被引用侧:让子表 (activityId, sessionId) 双锚点由 **DB** 保证
   // 「session 属于 activity」,而不是只靠 service 自觉(合同 §3.3 原话:
   // 「双锚点,service 与 DB 约束保证 session 属于 activity」)。
@@ -3290,10 +3335,9 @@ model ActivitySession {
 // ⚠️ 合同 §3.3 说既有 ActivityPosition「可重命名／重建」为本模型 —— 本刀按 goal ③
 // **新建**本表,既有 activity_positions 一列不动、一行不迁,退场归 contract 阶段。
 //
-// ⚠️ 合同字段表里的 `qualificationRuleSetId` **本刀不建**:它指向
-// ActivityQualificationRuleSet(§3.13),那是第二刀(Form / Qualification / Invitation)
-// 才建的表。按 goal ②「跨切片的列不提前占位」+ AGENTS §2「先占位以后再用视作越权」,
-// 由建目标表的那一刀连列带外键一起加。
+// ✅ 合同字段表里的 `qualificationRuleSetId` 在第一刀按「跨切片的列不提前占位」暂缓,
+// **本刀(第二刀)连列带外键一起补上** —— 它指向的 ActivityQualificationRuleSet(§3.13)
+// 正是本刀建的表。这是「不占位」范式的后半程。
 model ActivitySessionPosition {
   id        String    @id @default(cuid())
   createdAt DateTime  @default(now())
@@ -3315,6 +3359,10 @@ model ActivitySessionPosition {
 
   genderRequirementCode String?
 
+  // §3.3「可空岗位资格版本」。第一刀按「跨切片不占位」暂缓,第二刀(建 §3.13 表的这一刀)
+  // 连列带 FK 补齐。可空 = 岗位不追加岗位级资格时继承场次/活动级规则集。
+  qualificationRuleSetId String?
+
   // 可空覆盖 session;发布时解析最终值进入快照(§3.4)。
   locationRequired Boolean?
   radiusMeters     Int?
@@ -3332,12 +3380,19 @@ model ActivitySessionPosition {
   participationIdentities ActivityParticipationIdentity[]
   participationRevisions  ActivityParticipationRevision[]
 
+  // 第 1 批第二刀(§3.3 / §3.13 / §3.14)。
+  qualificationRuleSet    ActivityQualificationRuleSet?  @relation("PositionQualificationRuleSet", fields: [qualificationRuleSetId], references: [id], onDelete: Restrict)
+  // §3.13 规则集反向指回岗位(岗位级作用域)与 §3.14 邀请指定岗位。
+  scopedQualificationRuleSets ActivityQualificationRuleSet[] @relation("PositionQualificationRuleSetScope")
+  invitations                 ActivityInvitation[]           @relation("InvitationPosition")
+
   @@index([activityId])
   @@index([sessionId])
   @@index([attendanceRoleCode])
   @@index([leaderMemberId])
   @@index([sessionId, sortOrder])
   @@index([deletedAt])
+  @@index([qualificationRuleSetId])
 }
 
 // ===== §3.8 ActivityParticipationIdentity:P0-04 核心模型 =====
@@ -3380,6 +3435,9 @@ model ActivityParticipationIdentity {
 
   revisions    ActivityParticipationRevision[]
   reservations CapacityReservation[]
+
+  // 第 1 批第二刀(§3.13):资格评估快照的反向 relation。
+  qualificationSnapshots QualificationEvaluationSnapshot[]
 
   @@unique([activityId, sessionId, memberId])
   @@index([activityId])
@@ -3495,4 +3553,410 @@ model CapacityReservation {
   @@index([bucketId])
   @@index([status])
   @@index([bucketId, status])
+}
+
+// ============================================================================
+// 活动改造 v1.1 —— 第 1 批第二刀:报名修订 / 报名表 / 资格 / 邀请 / 访客
+// (2026-08-04;合同 docs/archive/reviews/activity-business-overhaul-v1.1/
+//  SRVF_活动业务全流程改造_详细开发文档_v1.1.md §3.7 / §3.12 / §3.13 / §3.14;
+//  §14「第 1 批」建议拆分第 2 项)
+//
+// 与第一刀同口径:纯 schema expand,**十张新表零调用方**是预期状态 —— 不接线、
+// 不写 service / controller / DTO / policy / presenter,消费方在第 3–5 批。
+// 既有 ActivityPosition / ActivityRegistration 一行不迁、不双写。
+//
+// 命名:不使用 @@map,物理表名即 PascalCase model 名(沿第一刀)。
+// 状态类字段一律 String + migration CHECK 闭集兜底,不建 Prisma enum(§3 前言:
+// 「避免为了新增状态频繁修改 PostgreSQL enum」)。
+//
+// ⚠️ 敏感信息口径(维护者 2026-08-04 拍板):报名表题目由发布人自定义,**可能**出现
+// 身份证号 / 病史 / 紧急联系人等。按合同设计,本刀不额外设限 —— 合同已给每道题
+// `visibilityCode`(谁能看)与 `exportable`(能否导出)两个开关;答案跟随报名记录
+// 存在,**不单独设保存期限**;掩码与读侧权限在后续批次做。本刀一行读侧代码都不写。
+// ============================================================================
+
+// ===== §3.7 ActivityRegistrationRevision:不可变报名修订 =====
+//
+// 「不可变记录每次报名／重报／撤回／后台代建」⇒ 按合同 §3 前言**不带
+// updatedAt / deletedAt**(沿第一刀 ActivityParticipationRevision 同一处置)。
+//
+// ⚠️ 本表在第一刀就该建(§3.7),当时按 goal ②「跨切片外键列不提前占位」整体移出 ——
+// 它的 formVersionId 指向本刀才建的 RegistrationFormVersion。本刀连表带列一起落。
+model ActivityRegistrationRevision {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  registrationId String
+  revision       Int
+
+  // ⚠️ 可空,合同字段表未标 `?` —— 偏离理由:§3.12 **没有**要求每个活动都必须建
+  // RegistrationFormVersion(没有自定义报名表的活动是常态),无表时本列无版本可指。
+  // 有表时由 service 绑定,并禁止把新版本字段填进旧报名修订(§3.12 原话)。
+  formVersionId String?
+  // 原始答案存 RegistrationFormAnswer 行,这里只留指纹(§3.7:不在 audit context
+  // 复制敏感文件内容)。无表 / 无题时无答案可哈希 ⇒ 同样可空。
+  answersHash   String?
+
+  sourceCode        String // self / admin / invitation / onsite(§3.6 闭集,migration CHECK 兜底)
+  // ⚠️ 可空,合同字段表未标 `?` —— 沿本仓 actor FK 一律可空的既有范式
+  // (reviewedBy / cancelledByUserId / createdByUserId / terminatedByUserId 无一例外)。
+  submittedByUserId String?
+  submittedAt       DateTime
+
+  // §3.7「requestKey/requestHash unique idempotency」。两列可空 —— 非幂等入口不带 key。
+  // 唯一由 migration 末尾**手写 partial unique**,键是 **requestKey 单列**
+  // (WHERE requestKey IS NOT NULL),不是 (requestKey, requestHash) 复合:
+  // 复合唯一恰好放行「同一个 key 配不同 payload」——那正是幂等键要拒的冲突,
+  // 复合形态等于把闸门开在错误的一侧。单列唯一严格蕴含复合唯一,故同时满足合同字面。
+  requestKey  String?
+  requestHash String?
+
+  priorRevisionId String?
+  reason          String?
+
+  registration  ActivityRegistration          @relation(fields: [registrationId], references: [id], onDelete: Restrict)
+  formVersion   RegistrationFormVersion?      @relation(fields: [formVersionId], references: [id], onDelete: Restrict)
+  submittedBy   User?                         @relation("RegistrationRevisionSubmitter", fields: [submittedByUserId], references: [id], onDelete: Restrict)
+  priorRevision ActivityRegistrationRevision? @relation("RegistrationRevisionChain", fields: [priorRevisionId], references: [id], onDelete: Restrict)
+
+  nextRevisions          ActivityRegistrationRevision[]    @relation("RegistrationRevisionChain")
+  answers                RegistrationFormAnswer[]
+  qualificationSnapshots QualificationEvaluationSnapshot[]
+
+  @@unique([registrationId, revision])
+  @@index([registrationId])
+  @@index([formVersionId])
+  @@index([submittedByUserId])
+  @@index([submittedAt])
+  @@index([requestKey])
+  @@index([priorRevisionId])
+}
+
+// ===== §3.12 RegistrationFormVersion:报名表版本 =====
+//
+// 版本化模型,靠 statusCode(draft / active / retired)退场,**不软删** ⇒ 无 deletedAt。
+model RegistrationFormVersion {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activityId String
+  version    Int // 1 起递增;(activityId, version) 唯一
+  statusCode String // draft / active / retired(§3.12 明写闭集)
+
+  workflowRevision Int @default(0)
+  // ⚠️ 可空,合同字段表未标 `?` —— 偏离理由:schemaHash 是「字段集冻结指纹」,
+  // 草稿仍在增删题目时无冻结值可言,自然在激活那一刻才落。
+  schemaHash  String?
+  activatedAt DateTime?
+  retiredAt   DateTime?
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Restrict)
+
+  fields               RegistrationFormField[]
+  registrationRevisions ActivityRegistrationRevision[]
+  uploadSessions       RegistrationUploadSession[]
+  currentForRegistrations ActivityRegistration[] @relation("RegistrationCurrentFormVersion")
+
+  // §3.12「一活动至多一个 active」是 **partial** unique(WHERE statusCode='active'),
+  // Prisma DSL 表达不了 WHERE,手写在 migration 末尾。
+  @@unique([activityId, version])
+  @@index([activityId])
+  @@index([statusCode])
+}
+
+// ===== §3.12 RegistrationFormField:报名表题目 =====
+//
+// ⚠️ 本表**没有** deletedAt:题目属于某个冻结版本,改题 = 出新版本,不软删旧题。
+//
+// ⚠️ 敏感口径(见文件头):题目由发布人自定义,可能承载身份证号 / 病史 /
+// 紧急联系人。合同给的两个开关就在这张表上 —— `visibilityCode`(谁能看)与
+// `exportable`(能否导出)。**本刀只建列**,读侧过滤与导出裁剪在后续批次。
+model RegistrationFormField {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  formVersionId String
+  fieldCode     String
+  label         String
+  helpText      String?
+
+  // short_text / long_text / number / date / single_choice / multi_choice /
+  // file / confirmation(§3.12 明写八种;migration CHECK 闭集)
+  typeCode String
+
+  required Boolean @default(false)
+
+  // number 类题目的取值域;与 RegistrationFormAnswer.valueNumber 共用同一
+  // Decimal(18,6) 域 —— 边界与取值必须可直接比较,精度不同即无法比较。
+  minValue Decimal? @db.Decimal(18, 6)
+  maxValue Decimal? @db.Decimal(18, 6)
+
+  minLength     Int? // 文本长度下限
+  maxLength     Int? // 文本长度上限
+  maxSelections Int? // multi_choice 可选上限
+
+  optionsJson Json?
+  // ⚠️ 合同**未给** visibilityCode 的闭集(§3.1 的 internal/invitation 是活动可见性,
+  // 另一个域),故本刀**不加**闭集 CHECK,不自行发明取值(AGENTS §2)。
+  visibilityCode String
+  exportable     Boolean @default(false) // 默认不可导出 —— 敏感口径下的保守起点
+  sortOrder      Int     @default(0)
+
+  formVersion RegistrationFormVersion  @relation(fields: [formVersionId], references: [id], onDelete: Restrict)
+  answers     RegistrationFormAnswer[]
+
+  @@unique([formVersionId, fieldCode])
+  @@index([formVersionId])
+  @@index([typeCode])
+  @@index([formVersionId, sortOrder])
+}
+
+// ===== §3.12 RegistrationFormAnswer:一题一答 =====
+//
+// 挂在**不可变**的报名修订上 ⇒ 本表同样不可变,不带 updatedAt / deletedAt。
+//
+// exactly-one 由 migration CHECK 保证,写法是**计数式**
+// (`CASE WHEN … IS NOT NULL THEN 1 ELSE 0 END` 求和 = 1),不是 AND/OR 串:
+// `IS NOT NULL` 是二值谓词,CASE 求和恒为非 NULL 整数,`= 1` 恒为 TRUE 或 FALSE,
+// **不可能求值成 NULL** ⇒ 不存在"表达式为 NULL 时 CHECK 判通过"的静默失效
+// (第一刀 location_policy 的血教训就是踩在这上面)。
+model RegistrationFormAnswer {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  registrationRevisionId String
+  fieldId                String
+
+  valueText    String?
+  valueNumber  Decimal?  @db.Decimal(18, 6)
+  valueDate    DateTime?
+  valueJson    Json?
+  attachmentId String?
+
+  registrationRevision ActivityRegistrationRevision @relation(fields: [registrationRevisionId], references: [id], onDelete: Restrict)
+  field                RegistrationFormField        @relation(fields: [fieldId], references: [id], onDelete: Restrict)
+  // file 型答案指向 attachments。Restrict:答案一旦落定,附件不得被删走
+  // (attachments 是硬删表,无 deletedAt)。
+  attachment           Attachment?                  @relation("RegistrationAnswerAttachment", fields: [attachmentId], references: [id], onDelete: Restrict)
+
+  @@unique([registrationRevisionId, fieldId])
+  @@index([registrationRevisionId])
+  @@index([fieldId])
+  @@index([attachmentId])
+}
+
+// ===== §3.12 RegistrationUploadSession:报名附件上传会话 =====
+//
+// ⚠️ 只存 `tokenHash`(sha256 hex),**原始 token 不入库、不落日志、不进任何响应** ——
+// 沿本仓 refresh_tokens.tokenHash 的 opaque + sha256 范式(§3.12 原话:
+// 「原始 token 只返回一次,不入库」)。@unique 让"拿 token 换会话"是一次索引命中。
+//
+// §3.12 明写「不新增自动清理 cron,过期会话由现有手动 retention SOP 清理」
+// ⇒ 本刀不建任何 cron / 定时任务。
+model RegistrationUploadSession {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activityId String
+  memberId   String
+  // 上传会话必然发生在"填某一版报名表的 file 题"语境里 ⇒ 与 §3.7 不同,这里
+  // NOT NULL(合同字段表也未标 `?`)。
+  formVersionId String
+
+  tokenHash  String    @unique
+  expiresAt  DateTime // §3.12 必填 —— 无过期的上传票据等于永久凭证
+  consumedAt DateTime? // 只在 consumed 态有值(migration 形状 CHECK)
+  // ⚠️ 合同**未给** statusCode 闭集,故本刀不加闭集 CHECK;只按 DoD 落
+  // 「consumedAt 只在 consumed 态有值」这条形状约束。
+  statusCode String
+
+  activity    Activity                @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  member      Member                  @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  formVersion RegistrationFormVersion @relation(fields: [formVersionId], references: [id], onDelete: Restrict)
+
+  @@index([activityId])
+  @@index([memberId])
+  @@index([formVersionId])
+  @@index([statusCode])
+  @@index([expiresAt])
+}
+
+// ===== §3.13 ActivityQualificationRuleSet:资格规则冻结版本 =====
+//
+// 「一组规则的冻结版本,发布审核后 active」。三级作用域:活动级(session/position 皆空)、
+// 场次级(sessionId 有值)、岗位级(positionId 有值)。
+//
+// ⚠️ 合同**未给** statusCode 闭集(只说"发布审核后 active"),故本刀不加闭集 CHECK,
+// 不把 §3.12 表单版本的 draft/active/retired 挪用过来(那是另一张表的闭集)。
+// ⚠️ 合同也**未给**本表任何 unique,故不加 —— 不自行发明 (activityId, version)。
+model ActivityQualificationRuleSet {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activityId String
+  sessionId  String?
+  positionId String?
+
+  version    Int
+  statusCode String
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  // 复合 FK(activityId, sessionId)→ ActivitySession(activityId, id):沿第一刀,
+  // 让「场次属于该活动」由 DB 保证。sessionId 为 NULL 时 PostgreSQL MATCH SIMPLE
+  // 不校验该 FK —— 正是活动级规则集要的行为。
+  session  ActivitySession?         @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
+  position ActivitySessionPosition? @relation("PositionQualificationRuleSetScope", fields: [positionId], references: [id], onDelete: Restrict)
+
+  rules               ActivityQualificationRule[]
+  evaluationSnapshots QualificationEvaluationSnapshot[]
+  // §3.3 的 ActivitySessionPosition.qualificationRuleSetId 反向侧(本刀兑现第一刀的欠账)
+  scopedPositions     ActivitySessionPosition[]         @relation("PositionQualificationRuleSet")
+
+  @@index([activityId])
+  @@index([sessionId])
+  @@index([positionId])
+  @@index([statusCode])
+}
+
+// ===== §3.13 ActivityQualificationRule:单条资格规则 =====
+model ActivityQualificationRule {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ruleSetId String
+  // grade / organization / certificate / age / training / gender / insurance
+  // (§3.13「支持 …」七种;migration CHECK 闭集 —— 与 goal 对 §3.12「支持类型」
+  //  同样按闭集处理保持一致口径)
+  ruleTypeCode    String
+  enforcementCode String // block / warn(§3.13 明写闭集)
+
+  operator  String
+  valueJson Json? // 可空:存在性类算子(如"持有某证书")没有操作数
+  message   String?
+  sortOrder Int     @default(0)
+
+  ruleSet ActivityQualificationRuleSet @relation(fields: [ruleSetId], references: [id], onDelete: Restrict)
+
+  @@index([ruleSetId])
+  @@index([ruleTypeCode])
+  @@index([ruleSetId, sortOrder])
+}
+
+// ===== §3.13 QualificationEvaluationSnapshot:资格评估快照 =====
+//
+// 不可变快照 ⇒ 无 updatedAt / deletedAt。
+//
+// ⚠️ identityId / registrationRevisionId 双双可空,合同字段表未标 `?` —— 偏离理由
+// 直接来自 §3.13 同段原话:「**展示**、提交和审核三次评估分别留快照」。**展示**发生在
+// 报名之前,那一刻既没有 ParticipationIdentity 也没有 RegistrationRevision;
+// 若两列 NOT NULL,展示态快照根本写不进来,合同自相矛盾。
+//
+// §3.13 硬约束:「不把证件号、完整保单或其他高敏感原值复制进 details,
+// 只保存规则编号、结果和必要引用」—— 那是**写侧 service 的**职责,本刀只建列。
+model QualificationEvaluationSnapshot {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  identityId             String?
+  registrationRevisionId String?
+  ruleSetVersionId       String // 指向 ActivityQualificationRuleSet 行(该表自带 version 列)
+
+  evaluatedAt DateTime
+  resultCode  String // pass / warn / fail(§3.13 明写闭集)
+
+  detailsJson    Json?
+  inputFactsHash String?
+
+  identity             ActivityParticipationIdentity? @relation(fields: [identityId], references: [id], onDelete: Restrict)
+  registrationRevision ActivityRegistrationRevision?  @relation(fields: [registrationRevisionId], references: [id], onDelete: Restrict)
+  ruleSetVersion       ActivityQualificationRuleSet   @relation(fields: [ruleSetVersionId], references: [id], onDelete: Restrict)
+
+  @@index([identityId])
+  @@index([registrationRevisionId])
+  @@index([ruleSetVersionId])
+  @@index([resultCode])
+  @@index([evaluatedAt])
+}
+
+// ===== §3.14 ActivityInvitation:定向邀请 =====
+//
+// 「接受时调用同一 registration/qualification/capacity service,不直接改为 pass」
+// —— 那是后续批次的 service 纪律,本刀只建表。
+//
+// ⚠️ active partial unique 是 (activityId, memberId, sessionId),而 sessionId **可空**
+// (活动级邀请)。PostgreSQL 默认 NULL 互不相等 ⇒ 同一个人可被重复发出多张活动级
+// 邀请而不被拦。本刀显式用 **NULLS NOT DISTINCT**(PG15+;本库 postgres:16)让 NULL
+// 参与去重,沿 role_bindings_active_unique 既有先例。见 migration 末尾。
+model ActivityInvitation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activityId String
+  memberId   String
+  sessionId  String? // 空 = 活动级邀请
+  positionId String?
+
+  statusCode String // pending / accepted / declined / revoked / expired(§3.14 明写闭集)
+
+  expiresAt       DateTime
+  invitedByUserId String? // 沿本仓 actor FK 一律可空的既有范式
+  respondedAt     DateTime?
+  revokedAt       DateTime?
+  reason          String?
+
+  operationKey String?
+  requestHash  String?
+
+  activity  Activity                 @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  member    Member                   @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  session   ActivitySession?         @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
+  position  ActivitySessionPosition? @relation("InvitationPosition", fields: [positionId], references: [id], onDelete: Restrict)
+  invitedBy User?                    @relation("ActivityInvitationInviter", fields: [invitedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([activityId])
+  @@index([memberId])
+  @@index([sessionId])
+  @@index([positionId])
+  @@index([statusCode])
+  @@index([expiresAt])
+  @@index([operationKey])
+}
+
+// ===== §3.14 ActivityVisitor:现场访客 =====
+//
+// 🔴 **刻意零 Member relation**,不是漏了。合同 §3.14 原话:「与 Member、Participation、
+// Ledger 无 relation;禁止通过访客创建贡献分」。`invitedByMemberId` 只是一个**裸字符串
+// 留痕列**,不建外键、不建 relation —— 一旦接上 Member,访客就有了通往
+// Participation / Ledger 的图上路径,"禁止通过访客创建贡献分"这条不变量就只剩文字。
+// (Activity / ActivitySession 不在合同的禁止清单里,故双锚点 FK 照建。)
+//
+// 本表没有 identity / revision / 结算列,天然进不了任何贡献分链路。
+model ActivityVisitor {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activityId String
+  sessionId  String
+
+  name         String
+  organization String?
+  // 🔴 裸列,**无 FK / 无 relation**(见上)。
+  invitedByMemberId String?
+  note              String?
+  attendanceCode    String?
+
+  activity Activity        @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  session  ActivitySession @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
+
+  @@index([activityId])
+  @@index([sessionId])
+  @@index([invitedByMemberId])
+  @@index([attendanceCode])
 }
