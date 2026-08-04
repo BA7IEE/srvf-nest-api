@@ -49,6 +49,9 @@ import { EvidenceSealService } from './evidence-seal.service';
 import { ContributionCalculator } from '../attendances/contribution-calculator';
 import { SettlementDraftAuditRecorder } from './settlement-draft-audit-recorder';
 import { SettlementDraftService } from './settlement-draft.service';
+import { SettlementNotificationProducer } from './settlement-notification-producer';
+import { SettlementSubmitAuditRecorder } from './settlement-submit-audit-recorder';
+import { SettlementSubmitService } from './settlement-submit.service';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activities 写操作(create / update / softDelete / publish / cancel 共 5 处共用 activity.publish)
@@ -138,11 +141,17 @@ import { SettlementDraftService } from './settlement-draft.service';
     ContributionCalculator,
     SettlementDraftAuditRecorder,
     SettlementDraftService,
+    // 活动改造 v1.1 第 2 批第三刀(合同 §5.10):提交不可变 SettlementVersion。
+    // 同样零端点 —— 消费方是第四刀(一审/终审)。
+    SettlementNotificationProducer,
+    SettlementSubmitAuditRecorder,
+    SettlementSubmitService,
   ],
   exports: [
     ActivitiesService,
     EvidenceSealService,
     SettlementDraftService,
+    SettlementSubmitService,
     AppMyActivitiesService,
     ActivityParticipationPolicy,
     ActivityPublishReviewService,
