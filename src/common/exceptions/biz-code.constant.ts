@@ -962,6 +962,95 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // ===== 活动改造 v1.1 第 2 批第三刀:提交不可变 SettlementVersion(合同 §5.10)=====
+  //
+  // 🔴 **提交是单向门**:固化之后只能退回重来,而退回是人工成本。所以这一段的每一条
+  //    都是**拒绝**,没有一条是"警告后放行"——宁可多拒,不可少拒。
+  //    落 200xx 段 20052-20061(20040-20046 封场 / 20047-20051 草稿生成)。全部 409。
+  //
+  // ⚠️ 刻意**不复用** 20047-20051:那几条的 message 写的是"生成结算草稿",而这里
+  //    负责人面对的是完全不同的一个动作(提交送审)。同因不同果,分码。
+
+  // ① 前置:run / 草稿版本形态(§5.10 ①②)
+  //
+  // §4.7 的状态链是 `drafting → submitted`:只有 `drafting` 能提交。
+  // 已提交/审核中/已发布/已关账再提交一次,等于把审核依据从审核人脚下换掉。
+  SETTLEMENT_SUBMIT_RUN_STATUS_INVALID: {
+    code: 20052,
+    message: '当前结算状态不允许提交送审',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // run 在 drafting,但一个 draft 版本都没有 —— 没有可固化的内容。
+  SETTLEMENT_SUBMIT_DRAFT_MISSING: {
+    code: 20053,
+    message: '尚无结算草稿可提交,请先生成草稿',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // ② EvidenceSeal 复验(§5.10 ③)。本刀**只复验、不重新封场**。
+  //
+  // 两条分开:"没有 active seal"要去重新封场;"seal 还在但版本已经不是当前事实"
+  // 要先处理新证据 —— 对负责人是两件事。
+  SETTLEMENT_SUBMIT_EVIDENCE_SEAL_INACTIVE: {
+    code: 20054,
+    message: '封场凭证已失效,请重新封场后再提交',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  SETTLEMENT_SUBMIT_EVIDENCE_SEAL_STALE: {
+    code: 20055,
+    message: '封场凭证与当前证据/人口版本不一致,请重新封场并重新生成草稿',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // ③ §5.10 ④ 的五条校验,一条一个码。
+  //
+  // ⭐ 20056 是**第二刀那个设计的执行位**:第二刀把「未决」表达成"不写结果行"
+  //    (§3.20 的 resultCode 十值闭集里没有"尚未认定"),该设计成立的唯一前提就是
+  //    "人口里有他、结果表里没有他 ⇒ 提交被拒"。这条写松,未决的人会安静地不出现在
+  //    版本里,而版本自称已覆盖全部人口。
+  SETTLEMENT_SUBMIT_PENDING_RESULT: {
+    code: 20056,
+    message: '仍有队员的结算结果未认定,请先逐一认定后再提交',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // 基数式:结果行数 ≠ 人口数。与 20056 互为表里(包含式 / 基数式),各抓一侧形态,
+  // 详见 settlement-submission-validator.ts 文件头「两条闸守同一件事」。
+  SETTLEMENT_SUBMIT_ITEM_COUNT_MISMATCH: {
+    code: 20057,
+    message: '结算项数与应结算人口不一致,请重新生成草稿',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // 防御位:DB unique 已使其在应用路径上不可达(见 validator 文件头的诚实说明)。
+  SETTLEMENT_SUBMIT_DUPLICATE_IDENTITY: {
+    code: 20058,
+    message: '结算项存在重复的参与身份,请重新生成草稿',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // 还有人没签退就提交:没有签退时刻就没有时长,固化的是一笔算不出来的账。
+  SETTLEMENT_SUBMIT_OPEN_SEGMENT: {
+    code: 20059,
+    message: '仍有未闭合的服务段,请先处理签退后再提交',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // 第二刀标的「应计分无有效贡献规则」blocker,必须在这里真正挡住提交 ——
+  // 否则那条 blocker 就只是个装饰。
+  SETTLEMENT_SUBMIT_MISSING_RULE: {
+    code: 20060,
+    message: '存在缺少有效贡献规则的结算项,请先补齐规则后再提交',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // ④ 幂等(§5.10 ⑥):`operationKey + requestHash` 防重。
+  //
+  // 同 key 同 payload ⇒ 返回同一个版本(不是错误);**同 key 不同 payload ⇒ 本码**。
+  // ⚠️ 第 1 批实测:复合唯一恰好放行"同 key 不同 payload" —— 所以这条判据不能靠
+  //    复合唯一,而是在持有 run 行锁的事务内按单列 operationKey 查后显式比对。
+  SETTLEMENT_SUBMIT_OPERATION_KEY_CONFLICT: {
+    code: 20061,
+    message: '相同操作标识已用于不同的提交内容,请更换操作标识',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。
   // 子段(对齐 baseline §1.3):
