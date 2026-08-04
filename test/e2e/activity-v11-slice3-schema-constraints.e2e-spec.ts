@@ -794,14 +794,51 @@ describe('活动改造 v1.1 第 1 批第三刀 schema 约束(第 73 migration)',
   // 「本刀刻意不做」的可执行判据 —— 把 goal 的三条口径钉成会变红的东西
   // ==========================================================================
   describe('刻意不做的三条(把"不是漏了"钉成判据)', () => {
-    it('三个跨切片外键列一律不建(offlinePackageId / importJobItemId / effectiveBatchId)', async () => {
+    // ⚠️ 本条在**第四刀(第 74 migration)按计划到期** —— 原断言是
+    //    `expect(cols).toEqual([])`,钉的是"三个跨切片外键列此刻一律不建"。
+    //    第四刀建了 `ActivityBatchJobItem`(§3.27)与 `LedgerPostingBatch`(§3.22),
+    //    于是**连列带外键**兑现了其中两个(这正是本条注释原文预告的
+    //    「分别在第 6 批与第四刀」),第三个 `offlinePackageId` 仍未到期。
+    //    ⇒ 判据不是删掉,而是**收窄到仍然为真的那一个**:`OfflinePackage` 是合同第三处
+    //    内部矛盾(§3 从未定义该表),归第 6 批;在它被定义之前谁都不许提前占位。
+    it('offlinePackageId 仍然不建(第 6 批之前不得提前占位)', async () => {
       const cols = await prisma.$queryRaw<Array<{ table_name: string; column_name: string }>>`
         SELECT table_name, column_name FROM information_schema.columns
-        WHERE column_name IN ('offlinePackageId', 'importJobItemId', 'effectiveBatchId')
+        WHERE column_name = 'offlinePackageId'
       `;
-      // 目标表(OfflinePackage / ActivityBatchJobItem / 结算批次)分别在第 6 批与第四刀。
       // 提前占位 = 建一列指向不存在的表,既无法加外键也无人写入。
       expect(cols).toEqual([]);
+    });
+
+    // 到期的那两列改由「必须存在**且**带真外键」正向钉住 —— 只删旧断言会留下真空:
+    // 哪天有人把列删了或退化成无外键的裸列,没有任何用例会红。
+    it('第四刀兑现的两列必须存在且各自带真外键(欠账已还,不是删了判据)', async () => {
+      const cols = await prisma.$queryRaw<Array<{ table_name: string; column_name: string }>>`
+        SELECT table_name, column_name FROM information_schema.columns
+        WHERE column_name IN ('importJobItemId', 'effectiveBatchId')
+        ORDER BY table_name
+      `;
+      expect(cols).toEqual([
+        { table_name: 'AttendancePunchEvent', column_name: 'importJobItemId' },
+        { table_name: 'ParticipantServiceSegmentRevision', column_name: 'effectiveBatchId' },
+      ]);
+
+      const fks = await prisma.$queryRaw<Array<{ source: string; target: string }>>`
+        SELECT r.relname AS source, c.confrelid::regclass::text AS target
+        FROM pg_constraint c
+        JOIN pg_class r ON r.oid = c.conrelid
+        WHERE c.contype = 'f'
+          AND r.relname IN ('AttendancePunchEvent', 'ParticipantServiceSegmentRevision')
+          AND c.conkey = (
+            SELECT ARRAY[a.attnum] FROM pg_attribute a
+            WHERE a.attrelid = c.conrelid
+              AND a.attname IN ('importJobItemId', 'effectiveBatchId'))
+        ORDER BY r.relname
+      `;
+      expect(fks).toEqual([
+        { source: 'AttendancePunchEvent', target: '"ActivityBatchJobItem"' },
+        { source: 'ParticipantServiceSegmentRevision', target: '"LedgerPostingBatch"' },
+      ]);
     });
 
     it('时间重叠不进 DB:本刀零 exclusion constraint、零 btree_gist', async () => {
