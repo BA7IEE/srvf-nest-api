@@ -267,6 +267,7 @@ const EXPECTED_ACTIVITY_RESPONSIBILITY_ROLE_PERMISSIONS = {
     'attendance.approve.sheet',
     'attendance.reject.sheet',
     'attendance.return.sheet',
+    'activity.settlement-first-review.record',
   ],
   'activity-owner': [
     'activity.update.record',
@@ -282,6 +283,9 @@ const EXPECTED_ACTIVITY_RESPONSIBILITY_ROLE_PERMISSIONS = {
     'attendance.create.sheet',
     'attendance.update.sheet',
     'attendance.delete.sheet',
+    'activity.settlement-generate.record',
+    'activity.settlement-submit.record',
+    'activity.settlement-close.record',
   ],
   'activity-registration-collaborator': [
     'activity-registration.read.record',
@@ -296,6 +300,8 @@ const EXPECTED_ACTIVITY_RESPONSIBILITY_ROLE_PERMISSIONS = {
     'attendance.create.sheet',
     'attendance.update.sheet',
     'attendance.delete.sheet',
+    'activity.settlement-generate.record',
+    'activity.settlement-submit.record',
   ],
   'attendance-final-reviewer': [
     'attendance.read.sheet',
@@ -303,6 +309,7 @@ const EXPECTED_ACTIVITY_RESPONSIBILITY_ROLE_PERMISSIONS = {
     'attendance.final-reject.sheet',
     'attendance.reopen.sheet',
     'attendance.final-return.sheet',
+    'activity.settlement-final-review.record',
   ],
 } as const;
 

@@ -108,6 +108,10 @@ export interface ActivityClosureInput {
   operationKey: string;
   /** 与 `operationKey` 成对,决定"是重放还是撞键"。 */
   requestHash: string;
+  /** §6.14 HTTP 版本锚点;缺省保持既有内部调用的关账语义。 */
+  expectedSettlementVersionId?: string;
+  /** §6.14 HTTP 账本批次锚点;缺省保持既有内部调用的关账语义。 */
+  expectedPostingBatchId?: string;
 }
 
 export interface ActivityClosureResult {
@@ -269,6 +273,22 @@ export class ActivityClosureService {
           run.currentPostedVersion !== null
             ? await this.readPostedVersion(tx, run)
             : null;
+
+        // §6.14 HTTP 版本/批次锚点。Activity 锁、关账幂等判定与 run 重读均已完成;
+        // 比对的是本事务内当前 posted 指针实际指向的版本和 committed batch，不能由
+        // Controller 的锁外预查代替。缺省时两个分支均跳过，保留既有关账行为。
+        if (
+          input.expectedSettlementVersionId !== undefined &&
+          postedVersion?.id !== input.expectedSettlementVersionId
+        ) {
+          throw new BizException(BizCode.ACTIVITY_CLOSURE_EXPECTED_SETTLEMENT_VERSION_MISMATCH);
+        }
+        if (
+          input.expectedPostingBatchId !== undefined &&
+          postedVersion?.committedBatchId !== input.expectedPostingBatchId
+        ) {
+          throw new BizException(BizCode.ACTIVITY_CLOSURE_EXPECTED_POSTING_BATCH_MISMATCH);
+        }
         // 没有 posted 版本时用空串当版本锚点:`= ''` 是恒二值谓词,一行都匹配不上
         // ⇒ "全部人口都还没有结果"自然成立(§9.2 那句「30 个队员×场次尚未处理」)。
         // ❌ 不用 NULL —— `col = NULL` 恒 UNKNOWN,读代码的人得先想一遍三值逻辑。

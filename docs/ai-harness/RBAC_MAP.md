@@ -19,7 +19,7 @@
 
 ## 派生对照表(生成物)
 
-### 权限码全集(228 条,按一级域分组)
+### 权限码全集(233 条,按一级域分组)
 
 > 权威源 `prisma/seed.ts`(幂等 upsert)。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 
@@ -27,6 +27,7 @@
 |---|---|---|
 | `attachment` | 24 | `attachment.delete.activity` · `attachment.delete.certificate.other` · `attachment.delete.certificate.self` · `attachment.delete.content-file` · `attachment.delete.content-image` · `attachment.delete.member.other` · `attachment.delete.member.self` · `attachment.update.activity` · `attachment.update.certificate.other` · `attachment.update.certificate.self` · `attachment.update.member.other` · `attachment.update.member.self` · `attachment.upload.activity` · `attachment.upload.certificate.other` · `attachment.upload.certificate.self` · `attachment.upload.content-file` · `attachment.upload.content-image` · `attachment.upload.member.other` · `attachment.upload.member.self` · `attachment.view.activity` · `attachment.view.certificate.other` · `attachment.view.certificate.self` · `attachment.view.member.other` · `attachment.view.member.self` |
 | `rbac` | 14 | `rbac.config.reload` · `rbac.permission.create` · `rbac.permission.delete` · `rbac.permission.read` · `rbac.permission.update` · `rbac.role-permission.create` · `rbac.role-permission.delete` · `rbac.role.create` · `rbac.role.delete` · `rbac.role.read` · `rbac.role.update` · `rbac.user-role.create` · `rbac.user-role.delete` · `rbac.user-role.read` |
+| `activity` | 12 | `activity.cancel.record` · `activity.complete.record` · `activity.create.cross-org` · `activity.create.record` · `activity.delete.record` · `activity.publish.record` · `activity.settlement-close.record` · `activity.settlement-final-review.record` · `activity.settlement-first-review.record` · `activity.settlement-generate.record` · `activity.settlement-submit.record` · `activity.update.record` |
 | `attachment-config` | 12 | `attachment-config.create.mime` · `attachment-config.create.size-limit` · `attachment-config.create.type` · `attachment-config.delete.mime` · `attachment-config.delete.size-limit` · `attachment-config.delete.type` · `attachment-config.read.mime` · `attachment-config.read.size-limit` · `attachment-config.read.type` · `attachment-config.update.mime` · `attachment-config.update.size-limit` · `attachment-config.update.type` |
 | `attendance` | 11 | `attendance.approve.sheet` · `attendance.create.sheet` · `attendance.delete.sheet` · `attendance.final-approve.sheet` · `attendance.final-reject.sheet` · `attendance.final-return.sheet` · `attendance.read.sheet` · `attendance.reject.sheet` · `attendance.reopen.sheet` · `attendance.return.sheet` · `attendance.update.sheet` |
 | `user` | 10 | `user.create.account` · `user.delete.account` · `user.phone.clear` · `user.read.account` · `user.reset.password` · `user.update.account` · `user.update.role` · `user.update.status` · `user.wechat.clear` · `user.wecom.clear` |
@@ -34,7 +35,6 @@
 | `dict` | 8 | `dict.create.item` · `dict.create.type` · `dict.delete.item` · `dict.delete.type` · `dict.read.item` · `dict.read.type` · `dict.update.item` · `dict.update.type` |
 | `member` | 8 | `member.bind.account` · `member.create.record` · `member.delete.record` · `member.grant.account` · `member.offboard.record` · `member.read.record` · `member.update.record` · `member.update.status` |
 | `notification` | 8 | `notification.create.record` · `notification.delete.record` · `notification.publish.record` · `notification.read.record` · `notification.replay.wecom` · `notification.send.sms` · `notification.update.record` · `notification.update.template` |
-| `activity` | 7 | `activity.cancel.record` · `activity.complete.record` · `activity.create.cross-org` · `activity.create.record` · `activity.delete.record` · `activity.publish.record` · `activity.update.record` |
 | `certificate` | 7 | `certificate.create.record` · `certificate.delete.record` · `certificate.read.record` · `certificate.read.sensitive` · `certificate.reject.record` · `certificate.update.record` · `certificate.verify.record` |
 | `activity-registration` | 6 | `activity-registration.approve.record` · `activity-registration.cancel.record` · `activity-registration.create.record` · `activity-registration.read.record` · `activity-registration.reject.record` · `activity-registration.reopen.record` |
 | `team-insurance-policy` | 6 | `team-insurance-policy.add.member` · `team-insurance-policy.create.record` · `team-insurance-policy.delete.record` · `team-insurance-policy.read.record` · `team-insurance-policy.remove.member` · `team-insurance-policy.update.record` |
@@ -69,12 +69,12 @@
 | `meta` | 1 | `meta.resolve.label` |
 | `sms-send-log` | 1 | `sms-send-log.read.list` |
 
-### controller × surface 对照(86 个 @Controller)
+### controller × surface 对照(87 个 @Controller)
 
 > 权威源:`src/**/*.controller.ts` 的 `@Controller(...)` 装饰器。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 鉴权模式(R / A / P)与业务语义属人类知识,见本文件标记之外的章节。
 
-#### admin/v1(46 个 controller)
+#### admin/v1(47 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
@@ -96,6 +96,7 @@
 | `admin/v1/activities/:activityId/responsibilities` | `src/modules/activities/controllers/admin-activity-responsibilities.controller.ts` |
 | `admin/v1/activity-publish-reviews` | `src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts` |
 | `admin/v1/attachments` | `src/modules/attachments/attachments.controller.ts` |
+| `admin/v1/attendance-settlements` | `src/modules/activities/controllers/admin-attendance-settlements.controller.ts` |
 | `admin/v1/attendance-sheets` | `src/modules/attendances/attendances.controller.ts` |
 | `admin/v1/certificate-standards` | `src/modules/certificates/certificate-standards.controller.ts` |
 | `admin/v1/certificates` | `src/modules/certificates/certificates-workbench.controller.ts` |

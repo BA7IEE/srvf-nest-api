@@ -24,3 +24,4 @@
 
 - 默认 super admin + bootstrap global USER RoleBinding；ops-admin seed 与运行时共用当前任期真值，完成后必须同时有当前有效与 `endedAt=null` 常驻 holder。已有 ACTIVE slot 不改写任期，future/expired/仅临时配置 fail-closed；同 env 连跑不改变 binding 任期。生产启动强校验 `SUPER_ADMIN_*` / `JWT_SECRET` / `APP_CORS_ORIGIN`,任一不满足直接抛错退出。
 - v0.61.0 PR-11 contract 只改 RolePermission 映射、不删 Permission：`biz-admin/org-admin/group-manager`=68/47/20；通用角色仅定点清理活动责任旧动作，保留无关自定义映射；三个 reviewer 角色零 PositionRolePolicy。
+- 活动业务改造 v1.1 第 2 批第 ⑧b 刀的 5 个结算 action 码只在 `ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED` 中 upsert，绝不并入 `BIZ_PERMISSION_SEED`：负责人=`generate/submit/close`，考勤协办=`generate/submit`，一审员=`first-review`，终审员=`final-review`。五码同时进入 biz-admin 的定点摘权集合，避免旧通用角色因 seed 重跑意外获得结算写／审核权；不创建任何 RoleBinding 或 PositionRolePolicy。

@@ -37300,6 +37300,742 @@
         ]
       }
     },
+    "/api/app/v1/my/managed-activities/{activityId}/settlement/generate": {
+      "post": {
+        "operationId": "AppManagedActivitiesController_generateSettlement",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppSettlementGenerateCommandDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppSettlementGenerateResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300,
+                        30100
+                      ],
+                      "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动不存在(code=20001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20001
+                      ],
+                      "description": "20001: 活动不存在",
+                      "example": 20001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "活动尚未封场,不可生成结算草稿(code=20047) / 封场凭证已失效,请重新封场后再生成结算草稿(code=20048) / 封场凭证与当前证据/人口版本不一致,请重新封场(code=20049) / 当前结算状态不允许重新生成草稿(code=20051) / 相同操作标识已用于其它结算草稿生成内容,请更换操作标识(code=20113)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20047,
+                        20048,
+                        20049,
+                        20051,
+                        20113
+                      ],
+                      "description": "20047: 活动尚未封场,不可生成结算草稿; 20048: 封场凭证已失效,请重新封场后再生成结算草稿; 20049: 封场凭证与当前证据/人口版本不一致,请重新封场; 20051: 当前结算状态不允许重新生成草稿; 20113: 相同操作标识已用于其它结算草稿生成内容,请更换操作标识",
+                      "example": 20047
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动尚未封场,不可生成结算草稿"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 生成或刷新结算草稿 [rbac: activity.settlement-generate.record]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      }
+    },
+    "/api/app/v1/my/managed-activities/{activityId}/settlement/submit": {
+      "post": {
+        "operationId": "AppManagedActivitiesController_submitSettlement",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppSettlementSubmitCommandDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppSettlementSubmitResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300,
+                        30100
+                      ],
+                      "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动不存在(code=20001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20001
+                      ],
+                      "description": "20001: 活动不存在",
+                      "example": 20001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "当前结算状态不允许提交送审(code=20052) / 尚无结算草稿可提交,请先生成草稿(code=20053) / 封场凭证已失效,请重新封场后再提交(code=20054) / 封场凭证与当前证据/人口版本不一致,请重新封场并重新生成草稿(code=20055) / 结算草稿版本已变化,请刷新后重新确认提交(code=20114) / 结算草稿引用的封场凭证已变化,请刷新后重新确认提交(code=20115) / 仍有队员的结算结果未认定,请先逐一认定后再提交(code=20056) / 结算项数与应结算人口不一致,请重新生成草稿(code=20057) / 结算项存在重复的参与身份,请重新生成草稿(code=20058) / 仍有未闭合的服务段,请先处理签退后再提交(code=20059) / 存在缺少有效贡献规则的结算项,请先补齐规则后再提交(code=20060) / 相同操作标识已用于不同的提交内容,请更换操作标识(code=20061)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20052,
+                        20053,
+                        20054,
+                        20055,
+                        20114,
+                        20115,
+                        20056,
+                        20057,
+                        20058,
+                        20059,
+                        20060,
+                        20061
+                      ],
+                      "description": "20052: 当前结算状态不允许提交送审; 20053: 尚无结算草稿可提交,请先生成草稿; 20054: 封场凭证已失效,请重新封场后再提交; 20055: 封场凭证与当前证据/人口版本不一致,请重新封场并重新生成草稿; 20114: 结算草稿版本已变化,请刷新后重新确认提交; 20115: 结算草稿引用的封场凭证已变化,请刷新后重新确认提交; 20056: 仍有队员的结算结果未认定,请先逐一认定后再提交; 20057: 结算项数与应结算人口不一致,请重新生成草稿; 20058: 结算项存在重复的参与身份,请重新生成草稿; 20059: 仍有未闭合的服务段,请先处理签退后再提交; 20060: 存在缺少有效贡献规则的结算项,请先补齐规则后再提交; 20061: 相同操作标识已用于不同的提交内容,请更换操作标识",
+                      "example": 20052
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "当前结算状态不允许提交送审"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 固化当前草稿为不可变结算版本 [rbac: activity.settlement-submit.record]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      }
+    },
+    "/api/app/v1/my/managed-activities/{activityId}/settlement/close": {
+      "post": {
+        "operationId": "AppManagedActivitiesController_closeSettlement",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppSettlementCloseCommandDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppSettlementCloseResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300,
+                        30100
+                      ],
+                      "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动不存在(code=20001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20001
+                      ],
+                      "description": "20001: 活动不存在",
+                      "example": 20001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "待关账的结算版本已变化,请刷新后重新确认关账(code=20117) / 待关账的账本批次已变化,请刷新后重新确认关账(code=20118) / 相同操作标识已用于该活动的其它关账内容,请更换操作标识(code=20098) / 该活动已有生效的关闭版本,请先完成更正流程再重新关账(code=20097) / 当前结算版本未终审生效或未覆盖全部应结算人口(code=20094)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20117,
+                        20118,
+                        20098,
+                        20097,
+                        20094
+                      ],
+                      "description": "20117: 待关账的结算版本已变化,请刷新后重新确认关账; 20118: 待关账的账本批次已变化,请刷新后重新确认关账; 20098: 相同操作标识已用于该活动的其它关账内容,请更换操作标识; 20097: 该活动已有生效的关闭版本,请先完成更正流程再重新关账; 20094: 当前结算版本未终审生效或未覆盖全部应结算人口",
+                      "example": 20117
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "待关账的结算版本已变化,请刷新后重新确认关账"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 执行结算和账本检查后机器关账 [rbac: activity.settlement-close.record]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      }
+    },
     "/api/app/v1/my/managed-activities/{activityId}": {
       "get": {
         "operationId": "AppManagedActivitiesController_detail",
@@ -39113,6 +39849,867 @@
         "summary": "App 主负责人声明活动考勤已全部提交 [auth]",
         "tags": [
           "Mobile - Managed Activities"
+        ]
+      }
+    },
+    "/api/admin/v1/attendance-settlements/{id}/first-approve": {
+      "post": {
+        "operationId": "AdminAttendanceSettlementsController_firstApprove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "AttendanceSettlementVersion.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminSettlementApproveCommandDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AdminSettlementReviewResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100
+                      ],
+                      "description": "30100: 无权执行此操作",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "待审核的结算版本已变化,请刷新后重新审核(code=20116) / 当前结算状态不允许执行该审核动作(code=20065) / 该结算版本当前状态不可审核(code=20066) / 未找到待审核的结算版本(code=20067) / 封场凭证已变化,该结算版本不可审核,请重新封场并重新提交(code=20068) / 证据或人口版本已变化,该结算版本不可审核,请重新生成草稿并提交(code=20069) / 活动流程版本已变化,该结算版本不可审核,请重新生成草稿并提交(code=20070) / 审核内容摘要与该结算版本不一致,请刷新后重新审核(code=20071) / 该结算版本在此审核阶段已有生效决定(code=20072) / 相同操作标识已用于不同的审核内容,请更换操作标识(code=20073) / 不可一审自己提交的结算版本(code=20062)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20116,
+                        20065,
+                        20066,
+                        20067,
+                        20068,
+                        20069,
+                        20070,
+                        20071,
+                        20072,
+                        20073,
+                        20062
+                      ],
+                      "description": "20116: 待审核的结算版本已变化,请刷新后重新审核; 20065: 当前结算状态不允许执行该审核动作; 20066: 该结算版本当前状态不可审核; 20067: 未找到待审核的结算版本; 20068: 封场凭证已变化,该结算版本不可审核,请重新封场并重新提交; 20069: 证据或人口版本已变化,该结算版本不可审核,请重新生成草稿并提交; 20070: 活动流程版本已变化,该结算版本不可审核,请重新生成草稿并提交; 20071: 审核内容摘要与该结算版本不一致,请刷新后重新审核; 20072: 该结算版本在此审核阶段已有生效决定; 20073: 相同操作标识已用于不同的审核内容,请更换操作标识; 20062: 不可一审自己提交的结算版本",
+                      "example": 20116
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "待审核的结算版本已变化,请刷新后重新审核"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "一审通过结算版本 [rbac: activity.settlement-first-review.record]",
+        "tags": [
+          "Admin - Attendance Settlements"
+        ]
+      }
+    },
+    "/api/admin/v1/attendance-settlements/{id}/first-return": {
+      "post": {
+        "operationId": "AdminAttendanceSettlementsController_firstReturn",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "AttendanceSettlementVersion.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminSettlementReturnCommandDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AdminSettlementReviewResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100
+                      ],
+                      "description": "30100: 无权执行此操作",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "待审核的结算版本已变化,请刷新后重新审核(code=20116) / 退回结算版本必须填写退回原因(code=20075) / 当前结算状态不允许执行该审核动作(code=20065) / 该结算版本当前状态不可审核(code=20066) / 未找到待审核的结算版本(code=20067) / 封场凭证已变化,该结算版本不可审核,请重新封场并重新提交(code=20068) / 证据或人口版本已变化,该结算版本不可审核,请重新生成草稿并提交(code=20069) / 活动流程版本已变化,该结算版本不可审核,请重新生成草稿并提交(code=20070) / 审核内容摘要与该结算版本不一致,请刷新后重新审核(code=20071) / 该结算版本在此审核阶段已有生效决定(code=20072) / 相同操作标识已用于不同的审核内容,请更换操作标识(code=20073) / 不可一审自己提交的结算版本(code=20062)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20116,
+                        20075,
+                        20065,
+                        20066,
+                        20067,
+                        20068,
+                        20069,
+                        20070,
+                        20071,
+                        20072,
+                        20073,
+                        20062
+                      ],
+                      "description": "20116: 待审核的结算版本已变化,请刷新后重新审核; 20075: 退回结算版本必须填写退回原因; 20065: 当前结算状态不允许执行该审核动作; 20066: 该结算版本当前状态不可审核; 20067: 未找到待审核的结算版本; 20068: 封场凭证已变化,该结算版本不可审核,请重新封场并重新提交; 20069: 证据或人口版本已变化,该结算版本不可审核,请重新生成草稿并提交; 20070: 活动流程版本已变化,该结算版本不可审核,请重新生成草稿并提交; 20071: 审核内容摘要与该结算版本不一致,请刷新后重新审核; 20072: 该结算版本在此审核阶段已有生效决定; 20073: 相同操作标识已用于不同的审核内容,请更换操作标识; 20062: 不可一审自己提交的结算版本",
+                      "example": 20116
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "待审核的结算版本已变化,请刷新后重新审核"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "一审退回结算版本 [rbac: activity.settlement-first-review.record]",
+        "tags": [
+          "Admin - Attendance Settlements"
+        ]
+      }
+    },
+    "/api/admin/v1/attendance-settlements/{id}/final-approve": {
+      "post": {
+        "operationId": "AdminAttendanceSettlementsController_finalApprove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "AttendanceSettlementVersion.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminSettlementApproveCommandDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AdminSettlementReviewResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100
+                      ],
+                      "description": "30100: 无权执行此操作",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "待审核的结算版本已变化,请刷新后重新审核(code=20116) / 当前结算状态不允许执行该审核动作(code=20065) / 该结算版本当前状态不可审核(code=20066) / 未找到待审核的结算版本(code=20067) / 封场凭证已变化,该结算版本不可审核,请重新封场并重新提交(code=20068) / 证据或人口版本已变化,该结算版本不可审核,请重新生成草稿并提交(code=20069) / 活动流程版本已变化,该结算版本不可审核,请重新生成草稿并提交(code=20070) / 审核内容摘要与该结算版本不一致,请刷新后重新审核(code=20071) / 该结算版本在此审核阶段已有生效决定(code=20072) / 相同操作标识已用于不同的审核内容,请更换操作标识(code=20073) / 不可终审自己提交的结算版本(code=20063) / 一审人不可再对同一结算版本终审(code=20064)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20116,
+                        20065,
+                        20066,
+                        20067,
+                        20068,
+                        20069,
+                        20070,
+                        20071,
+                        20072,
+                        20073,
+                        20063,
+                        20064
+                      ],
+                      "description": "20116: 待审核的结算版本已变化,请刷新后重新审核; 20065: 当前结算状态不允许执行该审核动作; 20066: 该结算版本当前状态不可审核; 20067: 未找到待审核的结算版本; 20068: 封场凭证已变化,该结算版本不可审核,请重新封场并重新提交; 20069: 证据或人口版本已变化,该结算版本不可审核,请重新生成草稿并提交; 20070: 活动流程版本已变化,该结算版本不可审核,请重新生成草稿并提交; 20071: 审核内容摘要与该结算版本不一致,请刷新后重新审核; 20072: 该结算版本在此审核阶段已有生效决定; 20073: 相同操作标识已用于不同的审核内容,请更换操作标识; 20063: 不可终审自己提交的结算版本; 20064: 一审人不可再对同一结算版本终审",
+                      "example": 20116
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "待审核的结算版本已变化,请刷新后重新审核"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "终审通过结算版本并准备账本批次 [rbac: activity.settlement-final-review.record]",
+        "tags": [
+          "Admin - Attendance Settlements"
+        ]
+      }
+    },
+    "/api/admin/v1/attendance-settlements/{id}/final-return": {
+      "post": {
+        "operationId": "AdminAttendanceSettlementsController_finalReturn",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "AttendanceSettlementVersion.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminSettlementReturnCommandDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AdminSettlementReviewResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100
+                      ],
+                      "description": "30100: 无权执行此操作",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "待审核的结算版本已变化,请刷新后重新审核(code=20116) / 退回结算版本必须填写退回原因(code=20075) / 当前结算状态不允许执行该审核动作(code=20065) / 该结算版本当前状态不可审核(code=20066) / 未找到待审核的结算版本(code=20067) / 账本发布批次已生效,不可再退回,请改走更正流程(code=20076) / 封场凭证已变化,该结算版本不可审核,请重新封场并重新提交(code=20068) / 证据或人口版本已变化,该结算版本不可审核,请重新生成草稿并提交(code=20069) / 活动流程版本已变化,该结算版本不可审核,请重新生成草稿并提交(code=20070) / 审核内容摘要与该结算版本不一致,请刷新后重新审核(code=20071) / 该结算版本在此审核阶段已有生效决定(code=20072) / 相同操作标识已用于不同的审核内容,请更换操作标识(code=20073) / 不可终审自己提交的结算版本(code=20063) / 一审人不可再对同一结算版本终审(code=20064)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20116,
+                        20075,
+                        20065,
+                        20066,
+                        20067,
+                        20076,
+                        20068,
+                        20069,
+                        20070,
+                        20071,
+                        20072,
+                        20073,
+                        20063,
+                        20064
+                      ],
+                      "description": "20116: 待审核的结算版本已变化,请刷新后重新审核; 20075: 退回结算版本必须填写退回原因; 20065: 当前结算状态不允许执行该审核动作; 20066: 该结算版本当前状态不可审核; 20067: 未找到待审核的结算版本; 20076: 账本发布批次已生效,不可再退回,请改走更正流程; 20068: 封场凭证已变化,该结算版本不可审核,请重新封场并重新提交; 20069: 证据或人口版本已变化,该结算版本不可审核,请重新生成草稿并提交; 20070: 活动流程版本已变化,该结算版本不可审核,请重新生成草稿并提交; 20071: 审核内容摘要与该结算版本不一致,请刷新后重新审核; 20072: 该结算版本在此审核阶段已有生效决定; 20073: 相同操作标识已用于不同的审核内容,请更换操作标识; 20063: 不可终审自己提交的结算版本; 20064: 一审人不可再对同一结算版本终审",
+                      "example": 20116
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "待审核的结算版本已变化,请刷新后重新审核"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "终审退回结算版本 [rbac: activity.settlement-final-review.record]",
+        "tags": [
+          "Admin - Attendance Settlements"
         ]
       }
     },
@@ -99910,6 +101507,385 @@
           "location"
         ]
       },
+      "AppSettlementGenerateResponseDto": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "job"
+            ],
+            "description": "同步草稿或异步任务分支"
+          },
+          "activityId": {
+            "type": "string",
+            "description": "活动标识"
+          },
+          "settlementRunId": {
+            "type": "string",
+            "nullable": true,
+            "description": "草稿所属结算运行标识；异步任务时为空"
+          },
+          "settlementVersionId": {
+            "type": "string",
+            "nullable": true,
+            "description": "同步生成的草稿版本标识；异步任务时为空"
+          },
+          "settlementVersion": {
+            "type": "number",
+            "nullable": true,
+            "description": "同步生成的草稿版本号；异步任务时为空"
+          },
+          "personCount": {
+            "type": "number",
+            "nullable": true,
+            "description": "草稿包含的人员数；异步任务时为空"
+          },
+          "sessionParticipationCount": {
+            "type": "number",
+            "nullable": true,
+            "description": "草稿覆盖的场次参与数；异步任务时为空"
+          },
+          "jobId": {
+            "type": "string",
+            "nullable": true,
+            "description": "异步草稿任务标识；同步草稿时为空"
+          },
+          "statusCode": {
+            "type": "string",
+            "nullable": true,
+            "description": "异步草稿任务状态；同步草稿时为空"
+          },
+          "total": {
+            "type": "number",
+            "nullable": true,
+            "description": "异步草稿任务总项数；同步草稿时为空"
+          },
+          "replayed": {
+            "type": "boolean",
+            "description": "是否命中同一幂等键的既有结果"
+          }
+        },
+        "required": [
+          "outcome",
+          "activityId",
+          "replayed"
+        ]
+      },
+      "AppSettlementGenerateCommandDto": {
+        "type": "object",
+        "properties": {
+          "operationKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "调用方生成的结算草稿幂等键"
+          }
+        },
+        "required": [
+          "operationKey"
+        ]
+      },
+      "AppSettlementSubmitResponseDto": {
+        "type": "object",
+        "properties": {
+          "activityId": {
+            "type": "string",
+            "description": "活动标识"
+          },
+          "settlementRunId": {
+            "type": "string",
+            "description": "结算运行标识"
+          },
+          "settlementVersionId": {
+            "type": "string",
+            "description": "新建不可变结算版本标识"
+          },
+          "settlementVersion": {
+            "type": "number",
+            "minimum": 1,
+            "description": "新建不可变结算版本号"
+          },
+          "priorVersionId": {
+            "type": "string",
+            "nullable": true,
+            "description": "被本次提交替代的上一个版本标识"
+          },
+          "draftVersionId": {
+            "type": "string",
+            "nullable": true,
+            "description": "本次固化来源的草稿版本标识"
+          },
+          "evidenceSealId": {
+            "type": "string",
+            "description": "不可变版本引用的封场凭证标识"
+          },
+          "evidenceRevision": {
+            "type": "number",
+            "minimum": 0,
+            "description": "冻结的证据修订号"
+          },
+          "populationRevision": {
+            "type": "number",
+            "minimum": 0,
+            "description": "冻结的结算人口修订号"
+          },
+          "workflowRevision": {
+            "type": "number",
+            "minimum": 0,
+            "description": "冻结的活动工作流修订号"
+          },
+          "sealRevision": {
+            "type": "number",
+            "minimum": 1,
+            "description": "冻结的封场凭证修订号"
+          },
+          "personCount": {
+            "type": "number",
+            "minimum": 0,
+            "description": "不可变版本的人员数"
+          },
+          "sessionParticipationCount": {
+            "type": "number",
+            "minimum": 0,
+            "description": "不可变版本的场次参与数"
+          },
+          "serviceSegmentCount": {
+            "type": "number",
+            "minimum": 0,
+            "description": "不可变版本的服务段数"
+          },
+          "resultRowCount": {
+            "type": "number",
+            "minimum": 0,
+            "description": "不可变结算结果行数"
+          },
+          "contentHash": {
+            "type": "string",
+            "description": "不可变版本内容摘要哈希"
+          },
+          "replayed": {
+            "type": "boolean",
+            "description": "是否命中同一幂等键的既有结果"
+          }
+        },
+        "required": [
+          "activityId",
+          "settlementRunId",
+          "settlementVersionId",
+          "settlementVersion",
+          "priorVersionId",
+          "draftVersionId",
+          "evidenceSealId",
+          "evidenceRevision",
+          "populationRevision",
+          "workflowRevision",
+          "sealRevision",
+          "personCount",
+          "sessionParticipationCount",
+          "serviceSegmentCount",
+          "resultRowCount",
+          "contentHash",
+          "replayed"
+        ]
+      },
+      "AppSettlementSubmitCommandDto": {
+        "type": "object",
+        "properties": {
+          "operationKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "调用方生成的结算提交幂等键"
+          },
+          "expectedDraftVersion": {
+            "type": "number",
+            "minimum": 1,
+            "description": "客户端确认过的 working draft 版本号"
+          },
+          "evidenceSealId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 64,
+            "description": "客户端确认过的 EvidenceSeal.id"
+          },
+          "confirmation": {
+            "type": "boolean",
+            "example": true,
+            "description": "已确认将不可变版本提交送审；只能为 true"
+          }
+        },
+        "required": [
+          "operationKey",
+          "expectedDraftVersion",
+          "evidenceSealId",
+          "confirmation"
+        ]
+      },
+      "AppSettlementCloseCheckDto": {
+        "type": "object",
+        "properties": {
+          "gapCode": {
+            "type": "string",
+            "description": "关账检查标识"
+          },
+          "bizCode": {
+            "type": "number",
+            "description": "对应的业务错误码"
+          },
+          "passed": {
+            "type": "boolean",
+            "description": "该检查是否通过"
+          },
+          "count": {
+            "type": "number",
+            "minimum": 0,
+            "description": "该检查关联的数量"
+          }
+        },
+        "required": [
+          "gapCode",
+          "bizCode",
+          "passed",
+          "count"
+        ]
+      },
+      "AppSettlementCloseGapDto": {
+        "type": "object",
+        "properties": {
+          "gapCode": {
+            "type": "string",
+            "description": "未通过关账检查的缺口标识"
+          },
+          "bizCode": {
+            "type": "number",
+            "description": "对应的业务错误码"
+          },
+          "message": {
+            "type": "string",
+            "description": "可展示的缺口说明"
+          },
+          "count": {
+            "type": "number",
+            "minimum": 0,
+            "description": "命中该缺口的数量"
+          }
+        },
+        "required": [
+          "gapCode",
+          "bizCode",
+          "message",
+          "count"
+        ]
+      },
+      "AppSettlementCloseResponseDto": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "closed",
+              "blocked"
+            ],
+            "description": "关账成功或被检查缺口阻断"
+          },
+          "activityId": {
+            "type": "string",
+            "description": "活动标识"
+          },
+          "settlementRunId": {
+            "type": "string",
+            "nullable": true,
+            "description": "已关账运行标识；阻断时为空"
+          },
+          "closureRevisionId": {
+            "type": "string",
+            "nullable": true,
+            "description": "新增关账凭证标识；阻断时为空"
+          },
+          "revision": {
+            "type": "number",
+            "nullable": true,
+            "description": "新增关账凭证修订号；阻断时为空"
+          },
+          "settlementVersionId": {
+            "type": "string",
+            "nullable": true,
+            "description": "关账对应已生效结算版本；阻断时为空"
+          },
+          "postingBatchId": {
+            "type": "string",
+            "nullable": true,
+            "description": "关账对应已提交账本批次；阻断时为空"
+          },
+          "closedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "实际关账时间；阻断时为空"
+          },
+          "archiveWaitingUntil": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "最早可归档时间；阻断时为空"
+          },
+          "checks": {
+            "description": "全部关账检查的安全摘要",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppSettlementCloseCheckDto"
+            }
+          },
+          "gaps": {
+            "description": "阻断关账的缺口安全摘要",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppSettlementCloseGapDto"
+            }
+          },
+          "replayed": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "成功关账时是否命中幂等重放；阻断时为空"
+          }
+        },
+        "required": [
+          "outcome",
+          "activityId",
+          "checks",
+          "gaps"
+        ]
+      },
+      "AppSettlementCloseCommandDto": {
+        "type": "object",
+        "properties": {
+          "operationKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "调用方生成的关账幂等键"
+          },
+          "expectedSettlementVersionId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 64,
+            "description": "客户端确认过的已生效结算版本 id"
+          },
+          "expectedPostingBatchId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 64,
+            "description": "客户端确认过的 committed posting batch id"
+          }
+        },
+        "required": [
+          "operationKey",
+          "expectedSettlementVersionId",
+          "expectedPostingBatchId"
+        ]
+      },
       "UpdateAppManagedActivityDto": {
         "type": "object",
         "properties": {
@@ -100058,6 +102034,194 @@
         },
         "required": [
           "activity"
+        ]
+      },
+      "AdminSettlementReviewResponseDto": {
+        "type": "object",
+        "properties": {
+          "activityId": {
+            "type": "string",
+            "description": "所属活动标识"
+          },
+          "settlementRunId": {
+            "type": "string",
+            "description": "所属结算运行标识"
+          },
+          "settlementVersionId": {
+            "type": "string",
+            "description": "被审核的不可变结算版本标识"
+          },
+          "settlementVersion": {
+            "type": "number",
+            "minimum": 1,
+            "description": "被审核的不可变结算版本号"
+          },
+          "stageCode": {
+            "type": "string",
+            "enum": [
+              "first",
+              "final"
+            ],
+            "description": "一审或终审阶段"
+          },
+          "actionCode": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "return"
+            ],
+            "description": "通过或退回动作"
+          },
+          "reviewActionId": {
+            "type": "string",
+            "description": "append-only 审核动作标识"
+          },
+          "runStatusBefore": {
+            "type": "string",
+            "description": "动作前的结算运行状态"
+          },
+          "runStatusAfter": {
+            "type": "string",
+            "description": "动作后的结算运行状态"
+          },
+          "versionStatusAfter": {
+            "type": "string",
+            "description": "动作后的结算版本状态"
+          },
+          "ledgerPostingBatchId": {
+            "type": "string",
+            "nullable": true,
+            "description": "终审通过创建或恢复的账本批次标识"
+          },
+          "ledgerPostingBatchStatus": {
+            "type": "string",
+            "nullable": true,
+            "description": "终审账本批次状态；非终审通过时为空"
+          },
+          "replayed": {
+            "type": "boolean",
+            "description": "是否命中同一幂等键的既有审核结果"
+          }
+        },
+        "required": [
+          "activityId",
+          "settlementRunId",
+          "settlementVersionId",
+          "settlementVersion",
+          "stageCode",
+          "actionCode",
+          "reviewActionId",
+          "runStatusBefore",
+          "runStatusAfter",
+          "versionStatusAfter",
+          "ledgerPostingBatchId",
+          "ledgerPostingBatchStatus",
+          "replayed"
+        ]
+      },
+      "AdminSettlementApproveCommandDto": {
+        "type": "object",
+        "properties": {
+          "operationKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "调用方生成的审核幂等键"
+          },
+          "evidenceSealId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 64,
+            "description": "审核人确认过的封场凭证标识"
+          },
+          "evidenceRevision": {
+            "type": "number",
+            "minimum": 0,
+            "description": "审核人确认过的证据修订号"
+          },
+          "populationRevision": {
+            "type": "number",
+            "minimum": 0,
+            "description": "审核人确认过的人口修订号"
+          },
+          "workflowRevision": {
+            "type": "number",
+            "minimum": 0,
+            "description": "审核人确认过的工作流修订号"
+          },
+          "contentHash": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "审核人确认过的不可变版本内容摘要哈希"
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "通过时可选的审核备注"
+          }
+        },
+        "required": [
+          "operationKey",
+          "evidenceSealId",
+          "evidenceRevision",
+          "populationRevision",
+          "workflowRevision",
+          "contentHash"
+        ]
+      },
+      "AdminSettlementReturnCommandDto": {
+        "type": "object",
+        "properties": {
+          "operationKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "调用方生成的审核幂等键"
+          },
+          "evidenceSealId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 64,
+            "description": "审核人确认过的封场凭证标识"
+          },
+          "evidenceRevision": {
+            "type": "number",
+            "minimum": 0,
+            "description": "审核人确认过的证据修订号"
+          },
+          "populationRevision": {
+            "type": "number",
+            "minimum": 0,
+            "description": "审核人确认过的人口修订号"
+          },
+          "workflowRevision": {
+            "type": "number",
+            "minimum": 0,
+            "description": "审核人确认过的工作流修订号"
+          },
+          "contentHash": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "审核人确认过的不可变版本内容摘要哈希"
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "退回原因；不能是空白文本"
+          }
+        },
+        "required": [
+          "operationKey",
+          "evidenceSealId",
+          "evidenceRevision",
+          "populationRevision",
+          "workflowRevision",
+          "contentHash",
+          "note"
         ]
       },
       "AppManagedActivityPositionDto": {

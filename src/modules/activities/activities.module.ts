@@ -35,6 +35,7 @@ import { ActivityResponsibilityService } from './activity-responsibility.service
 import { AdminActivityResponsibilitiesController } from './controllers/admin-activity-responsibilities.controller';
 import { AppManagedActivitiesService } from './app-managed-activities.service';
 import { AppManagedActivitiesController } from './controllers/app-managed-activities.controller';
+import { AdminAttendanceSettlementsController } from './controllers/admin-attendance-settlements.controller';
 import { AppManagedActivityPositionsController } from './controllers/app-managed-activity-positions.controller';
 import { AppManagedActivityResponsibilitiesController } from './controllers/app-managed-activity-responsibilities.controller';
 import { ActivityProposalValidator } from './activity-proposal-validator';
@@ -66,6 +67,7 @@ import { ActivityClosureNotificationProducer } from './activity-closure-notifica
 import { ActivityClosureService } from './activity-closure.service';
 import { CorrectionApplicationService } from './correction-application.service';
 import { CorrectionAuditRecorder } from './correction-audit-recorder';
+import { ActivitySettlementHttpService } from './activity-settlement-http.service';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activities 写操作(create / update / softDelete / publish / cancel 共 5 处共用 activity.publish)
@@ -110,6 +112,7 @@ import { CorrectionAuditRecorder } from './correction-audit-recorder';
     AdminActivityPublishReviewsController,
     AdminActivityResponsibilitiesController,
     AppManagedActivitiesController,
+    AdminAttendanceSettlementsController,
     AppManagedActivityPositionsController,
     AppManagedActivityResponsibilitiesController,
   ],
@@ -141,6 +144,7 @@ import { CorrectionAuditRecorder } from './correction-audit-recorder';
     ActivityResponsibilityAuditRecorder,
     ActivityResponsibilityService,
     AppManagedActivitiesService,
+    ActivitySettlementHttpService,
     // 活动改造 v1.1 第 2 批第一刀(合同 §5.8):证据封场。
     // 本刀零端点 —— 消费方是第 2 批第二刀(结算草稿 / 提交),故先 provider + export。
     EvidenceSealAuditRecorder,

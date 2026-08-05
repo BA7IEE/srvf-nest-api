@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import type { INestApplication, INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { Role, UserStatus } from '@prisma/client';
+import { MemberStatus, Role, UserStatus } from '@prisma/client';
+import request from 'supertest';
 
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
@@ -12,16 +13,15 @@ import {
   ACTIVITY_BATCH_RETRY_BACKOFF_MS,
   ActivityBatchWorker,
 } from '../../src/modules/activities/activity-batch.worker';
-import { ActivityClosureService } from '../../src/modules/activities/activity-closure.service';
 import { LedgerReadyBatchCommitter } from '../../src/modules/activities/ledger-ready-batch-committer.service';
 import { LedgerQueryService } from '../../src/modules/activities/ledger-query.service';
 import { SettlementDraftDispatchService } from '../../src/modules/activities/settlement-draft-dispatch.service';
 import type { SettlementReviewExpectation } from '../../src/modules/activities/settlement-review-comparison';
-import { SettlementReviewService } from '../../src/modules/activities/settlement-review.service';
-import { SettlementSubmitService } from '../../src/modules/activities/settlement-submit.service';
 import { StorageConsistencyWorkerModule } from '../../src/modules/attachments/storage-consistency-worker.module';
 import { NotificationOutboxWorkerModule } from '../../src/modules/notifications/notification-outbox-worker.module';
+import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
+import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
@@ -45,23 +45,24 @@ interface ReviewedFixture extends InitialFixture {
   expectation: SettlementReviewExpectation;
 }
 
+interface HttpActor extends CurrentUserPayload {
+  authHeader: string;
+}
+
 describe('第 2 批第 ⑧a 刀 —— generate dispatch → worker auto commit → closure', () => {
   let app: INestApplication;
   let notificationContext: INestApplicationContext;
   let storageContext: INestApplicationContext;
   let prisma: PrismaService;
   let drafts: SettlementDraftDispatchService;
-  let submit: SettlementSubmitService;
-  let reviews: SettlementReviewService;
-  let closure: ActivityClosureService;
   let notificationActivityWorker: ActivityBatchWorker;
   let storageActivityWorker: ActivityBatchWorker;
   let notificationCommitter: LedgerReadyBatchCommitter;
   let ledgerQuery: LedgerQueryService;
 
-  let submitter: CurrentUserPayload;
-  let firstReviewer: CurrentUserPayload;
-  let finalReviewer: CurrentUserPayload;
+  let submitter: HttpActor;
+  let firstReviewer: HttpActor;
+  let finalReviewer: HttpActor;
   let organizationId: string;
   let sequence = 0;
 
@@ -72,9 +73,6 @@ describe('第 2 批第 ⑧a 刀 —— generate dispatch → worker auto commit 
     await resetDb(app);
     prisma = app.get(PrismaService);
     drafts = app.get(SettlementDraftDispatchService);
-    submit = app.get(SettlementSubmitService);
-    reviews = app.get(SettlementReviewService);
-    closure = app.get(ActivityClosureService);
     ledgerQuery = app.get(LedgerQueryService);
 
     submitter = await makeActor('batch2-8a-submitter');
@@ -121,14 +119,25 @@ describe('第 2 批第 ⑧a 刀 —— generate dispatch → worker auto commit 
     await app.close();
   });
 
-  async function makeActor(username: string): Promise<CurrentUserPayload> {
+  async function makeActor(username: string): Promise<HttpActor> {
     const user = await createTestUser(app, { username, role: Role.SUPER_ADMIN });
+    const member = await prisma.member.create({
+      data: {
+        memberNo: `${username}-member`,
+        displayName: `${username} 队员`,
+        gradeCode: 'level-2',
+        status: MemberStatus.ACTIVE,
+      },
+      select: { id: true },
+    });
+    await prisma.user.update({ where: { id: user.id }, data: { memberId: member.id } });
     return {
       id: user.id,
       username: user.username,
       role: user.role,
       status: UserStatus.ACTIVE,
-      memberId: null,
+      memberId: member.id,
+      authHeader: (await loginAs(app, username)).authHeader,
     };
   }
 
@@ -300,15 +309,27 @@ describe('第 2 批第 ⑧a 刀 —— generate dispatch → worker auto commit 
   }
 
   async function generateSubmitAndReview(fixture: InitialFixture): Promise<ReviewedFixture> {
-    const generateInput = {
-      activityId: fixture.activityId,
-      operationKey: `${fixture.tag}-generate`,
-      requestHash: `${fixture.tag}-generate-hash`,
+    // DoD 6:这一条闭环的所有**人发起**动作从 HTTP 进入；worker 自动提交仍在后面的
+    // drainOnce，既不伪造请求也不直调 worker 的业务 service。
+    const generatedResponse = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${fixture.activityId}/settlement/generate`)
+      .set('Authorization', submitter.authHeader)
+      .send({ operationKey: `${fixture.tag}-generate` });
+    expect(generatedResponse.status).toBe(200);
+    const generated = generatedResponse.body.data as {
+      outcome: string;
+      settlementRunId: string;
+      settlementVersionId: string;
+      settlementVersion: number;
     };
-    const generated = await drafts.generate(generateInput, submitter, auditMeta);
-    if (generated.outcome !== 'draft') throw new Error('期望同步草稿,实际返回 job');
-    const replay = await drafts.generate(generateInput, submitter, auditMeta);
-    expect(replay).toMatchObject({
+    expect(generated.outcome).toBe('draft');
+
+    const replayResponse = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${fixture.activityId}/settlement/generate`)
+      .set('Authorization', submitter.authHeader)
+      .send({ operationKey: `${fixture.tag}-generate` });
+    expect(replayResponse.status).toBe(200);
+    expect(replayResponse.body.data).toMatchObject({
       outcome: 'draft',
       settlementVersionId: generated.settlementVersionId,
       replayed: true,
@@ -319,44 +340,43 @@ describe('第 2 批第 ⑧a 刀 —— generate dispatch → worker auto commit 
       }),
     ).resolves.toBe(1);
 
-    const submitted = await submit.submit(
-      {
-        activityId: fixture.activityId,
+    const submittedResponse = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${fixture.activityId}/settlement/submit`)
+      .set('Authorization', submitter.authHeader)
+      .send({
         operationKey: `${fixture.tag}-submit`,
-        requestHash: `${fixture.tag}-submit-hash`,
-      },
-      submitter,
-      auditMeta,
-    );
+        expectedDraftVersion: generated.settlementVersion,
+        evidenceSealId: fixture.sealId,
+        confirmation: true,
+      });
+    expect(submittedResponse.status).toBe(200);
+    const submitted = submittedResponse.body.data as {
+      settlementVersionId: string;
+      evidenceSealId: string;
+      evidenceRevision: number;
+      populationRevision: number;
+      workflowRevision: number;
+      contentHash: string;
+    };
     const expectation: SettlementReviewExpectation = {
       evidenceSealId: submitted.evidenceSealId,
-      evidenceRevision: 0,
-      populationRevision: 0,
-      workflowRevision: 0,
+      evidenceRevision: submitted.evidenceRevision,
+      populationRevision: submitted.populationRevision,
+      workflowRevision: submitted.workflowRevision,
       contentHash: submitted.contentHash,
     };
-    await reviews.firstReview(
-      {
-        activityId: fixture.activityId,
-        actionCode: 'approve',
-        operationKey: `${fixture.tag}-first-review`,
-        requestHash: `${fixture.tag}-first-review-hash`,
-        expectation,
-      },
-      firstReviewer,
-      auditMeta,
-    );
-    const final = await reviews.finalReview(
-      {
-        activityId: fixture.activityId,
-        actionCode: 'approve',
-        operationKey: `${fixture.tag}-final-review`,
-        requestHash: `${fixture.tag}-final-review-hash`,
-        expectation,
-      },
-      finalReviewer,
-      auditMeta,
-    );
+    const firstResponse = await request(httpServer(app))
+      .post(`/api/admin/v1/attendance-settlements/${submitted.settlementVersionId}/first-approve`)
+      .set('Authorization', firstReviewer.authHeader)
+      .send({ operationKey: `${fixture.tag}-first-review`, ...expectation });
+    expect(firstResponse.status).toBe(200);
+
+    const finalResponse = await request(httpServer(app))
+      .post(`/api/admin/v1/attendance-settlements/${submitted.settlementVersionId}/final-approve`)
+      .set('Authorization', finalReviewer.authHeader)
+      .send({ operationKey: `${fixture.tag}-final-review`, ...expectation });
+    expect(finalResponse.status).toBe(200);
+    const final = finalResponse.body.data as { ledgerPostingBatchId: string | null };
     if (final.ledgerPostingBatchId === null) throw new Error('终审未创建 posting batch');
     return {
       ...fixture,
@@ -405,20 +425,15 @@ describe('第 2 批第 ⑧a 刀 —— generate dispatch → worker auto commit 
   });
 
   it('storage worker 真领 job：含 >500 分流；生成→提交→一审→终审→准备→自动提交→关账', async () => {
-    // 同一条 e2e 先走 §5.9 的规模分叉，再走一场可同步活动的完整服务层闭环。
+    // 同一条 e2e 先走 §5.9 的规模分叉，再走一场可同步活动的完整 HTTP 闭环。
     // 大规模 job 的本刀判据是 durable 创建 + 返回；其消费协议不复制旧草稿算法。
     const large = await createInitialFixture(501);
-    await expect(
-      drafts.generate(
-        {
-          activityId: large.activityId,
-          operationKey: `${large.tag}-generate`,
-          requestHash: `${large.tag}-generate-hash`,
-        },
-        submitter,
-        auditMeta,
-      ),
-    ).resolves.toMatchObject({ outcome: 'job', statusCode: 'pending' });
+    const largeGenerated = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${large.activityId}/settlement/generate`)
+      .set('Authorization', submitter.authHeader)
+      .send({ operationKey: `${large.tag}-generate` });
+    expect(largeGenerated.status).toBe(200);
+    expect(largeGenerated.body.data).toMatchObject({ outcome: 'job', statusCode: 'pending' });
 
     const fixture = await createInitialFixture(1, { withPunches: true, withCapacity: true });
     const reviewed = await generateSubmitAndReview(fixture);
@@ -437,20 +452,17 @@ describe('第 2 批第 ⑧a 刀 —— generate dispatch → worker auto commit 
     });
     expect(batch).toEqual({ statusCode: 'committed', committedByUserId: finalReviewer.id });
 
-    const outcome = await closure.close(
-      reviewed.activityId,
-      {
+    const closed = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${reviewed.activityId}/settlement/close`)
+      .set('Authorization', submitter.authHeader)
+      .send({
         operationKey: `${reviewed.tag}-close`,
-        requestHash: `${reviewed.tag}-close-hash`,
-      },
-      submitter,
-      auditMeta,
-    );
-    if (outcome.outcome !== 'closed') {
-      throw new Error(`完整闭环关账被挡:${JSON.stringify(outcome.gaps)}`);
-    }
-    expect(outcome.closure.postingBatchId).toBe(reviewed.batchId);
-    expect(outcome.closure.checks.every((check) => check.passed)).toBe(true);
+        expectedSettlementVersionId: reviewed.settlementVersionId,
+        expectedPostingBatchId: reviewed.batchId,
+      });
+    expect(closed.status).toBe(200);
+    expect(closed.body.data).toMatchObject({ outcome: 'closed', postingBatchId: reviewed.batchId });
+    expect(closed.body.data.checks.every((check: { passed: boolean }) => check.passed)).toBe(true);
   });
 
   it('notification worker 真领 job：baseline 漂移后 ready + 零部分生效；修复后同批重试成功', async () => {

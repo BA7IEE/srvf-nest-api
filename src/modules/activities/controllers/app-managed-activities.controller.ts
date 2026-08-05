@@ -29,6 +29,7 @@ import { BizException } from '../../../common/exceptions/biz.exception';
 import type { AuditMeta } from '../../audit-logs/audit-logs.types';
 import { AppIdentityResolver } from '../../users/app-identity.resolver';
 import { AppManagedActivitiesService } from '../app-managed-activities.service';
+import { ActivitySettlementHttpService } from '../activity-settlement-http.service';
 import type { CreateActivityDto, UpdateActivityDto } from '../activities.dto';
 import { ActivityPublishReviewResponseDto } from '../activity-publish-review.dto';
 import {
@@ -42,6 +43,14 @@ import {
   CreateAppManagedActivityDto,
   UpdateAppManagedActivityDto,
 } from '../dto/app/app-managed-activity.dto';
+import {
+  AppSettlementCloseCommandDto,
+  AppSettlementCloseResponseDto,
+  AppSettlementGenerateCommandDto,
+  AppSettlementGenerateResponseDto,
+  AppSettlementSubmitCommandDto,
+  AppSettlementSubmitResponseDto,
+} from '../dto/app/app-settlement-command.dto';
 
 @ApiTags('Mobile - Managed Activities')
 @ApiBearerAuth()
@@ -50,6 +59,7 @@ export class AppManagedActivitiesController {
   constructor(
     private readonly identity: AppIdentityResolver,
     private readonly service: AppManagedActivitiesService,
+    private readonly settlements: ActivitySettlementHttpService,
   ) {}
 
   @Get('organization-options')
@@ -98,6 +108,119 @@ export class AppManagedActivitiesController {
   ): Promise<AppManagedActivityDetailDto> {
     await this.resolveMemberId(user);
     return this.service.create(this.toCreateDto(dto), user, this.auditMeta(req));
+  }
+
+  @Post(':activityId/settlement/generate')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'App 生成或刷新结算草稿 [rbac: activity.settlement-generate.record]' })
+  @ApiWrappedOkResponse(AppSettlementGenerateResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.SETTLEMENT_DRAFT_EVIDENCE_SEAL_MISSING,
+    BizCode.SETTLEMENT_DRAFT_EVIDENCE_SEAL_SUPERSEDED,
+    BizCode.SETTLEMENT_DRAFT_EVIDENCE_SEAL_STALE,
+    BizCode.SETTLEMENT_DRAFT_RUN_STATUS_INVALID,
+    BizCode.SETTLEMENT_DRAFT_OPERATION_KEY_CONFLICT,
+  )
+  async generateSettlement(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Body() dto: AppSettlementGenerateCommandDto,
+    @Req() req: Request,
+  ): Promise<AppSettlementGenerateResponseDto> {
+    await this.resolveMemberId(user);
+    return await this.settlements.generate(
+      params.activityId,
+      dto.operationKey,
+      user,
+      this.auditMeta(req),
+    );
+  }
+
+  @Post(':activityId/settlement/submit')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'App 固化当前草稿为不可变结算版本 [rbac: activity.settlement-submit.record]',
+  })
+  @ApiWrappedOkResponse(AppSettlementSubmitResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.SETTLEMENT_SUBMIT_RUN_STATUS_INVALID,
+    BizCode.SETTLEMENT_SUBMIT_DRAFT_MISSING,
+    BizCode.SETTLEMENT_SUBMIT_EVIDENCE_SEAL_INACTIVE,
+    BizCode.SETTLEMENT_SUBMIT_EVIDENCE_SEAL_STALE,
+    BizCode.SETTLEMENT_SUBMIT_EXPECTED_DRAFT_VERSION_MISMATCH,
+    BizCode.SETTLEMENT_SUBMIT_EXPECTED_EVIDENCE_SEAL_MISMATCH,
+    BizCode.SETTLEMENT_SUBMIT_PENDING_RESULT,
+    BizCode.SETTLEMENT_SUBMIT_ITEM_COUNT_MISMATCH,
+    BizCode.SETTLEMENT_SUBMIT_DUPLICATE_IDENTITY,
+    BizCode.SETTLEMENT_SUBMIT_OPEN_SEGMENT,
+    BizCode.SETTLEMENT_SUBMIT_MISSING_RULE,
+    BizCode.SETTLEMENT_SUBMIT_OPERATION_KEY_CONFLICT,
+  )
+  async submitSettlement(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Body() dto: AppSettlementSubmitCommandDto,
+    @Req() req: Request,
+  ): Promise<AppSettlementSubmitResponseDto> {
+    await this.resolveMemberId(user);
+    return await this.settlements.submit(
+      params.activityId,
+      {
+        operationKey: dto.operationKey,
+        expectedDraftVersion: dto.expectedDraftVersion,
+        evidenceSealId: dto.evidenceSealId,
+        confirmation: dto.confirmation,
+      },
+      user,
+      this.auditMeta(req),
+    );
+  }
+
+  @Post(':activityId/settlement/close')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'App 执行结算和账本检查后机器关账 [rbac: activity.settlement-close.record]',
+  })
+  @ApiWrappedOkResponse(AppSettlementCloseResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_CLOSURE_EXPECTED_SETTLEMENT_VERSION_MISMATCH,
+    BizCode.ACTIVITY_CLOSURE_EXPECTED_POSTING_BATCH_MISMATCH,
+    BizCode.ACTIVITY_CLOSURE_OPERATION_KEY_CONFLICT,
+    BizCode.ACTIVITY_CLOSURE_ALREADY_ACTIVE,
+    BizCode.ACTIVITY_CLOSURE_SETTLEMENT_INCOMPLETE,
+  )
+  async closeSettlement(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Body() dto: AppSettlementCloseCommandDto,
+    @Req() req: Request,
+  ): Promise<AppSettlementCloseResponseDto> {
+    await this.resolveMemberId(user);
+    return await this.settlements.close(
+      params.activityId,
+      {
+        operationKey: dto.operationKey,
+        expectedSettlementVersionId: dto.expectedSettlementVersionId,
+        expectedPostingBatchId: dto.expectedPostingBatchId,
+      },
+      user,
+      this.auditMeta(req),
+    );
   }
 
   @Get(':activityId')

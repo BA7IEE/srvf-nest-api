@@ -3020,7 +3020,7 @@ const ATTENDANCE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
-// v0.61.0 活动责任闭环 expand：六个新权限只由下方显式 reviewer / 发起 /
+// v0.61.0 活动责任闭环 expand：十一项权限只由下方显式 reviewer / 发起 /
 // 系统投影角色承载。本阶段不把它们并入 BIZ_PERMISSION_SEED，避免在 contract 摘权前
 // 意外给旧通用角色扩大权限面；SUPER_ADMIN 仍由 RbacService 固有短路。
 const ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
@@ -3030,6 +3030,41 @@ const ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED: ReadonlyArray<RbacPermis
     action: 'create-cross-org',
     resourceType: 'record',
     description: '为本人非当前归属组织发起活动',
+  },
+  {
+    code: 'activity.settlement-generate.record',
+    module: 'activity',
+    action: 'settlement-generate',
+    resourceType: 'record',
+    description: '生成或刷新活动结算草稿',
+  },
+  {
+    code: 'activity.settlement-submit.record',
+    module: 'activity',
+    action: 'settlement-submit',
+    resourceType: 'record',
+    description: '固化活动结算草稿为不可变送审版本',
+  },
+  {
+    code: 'activity.settlement-first-review.record',
+    module: 'activity',
+    action: 'settlement-first-review',
+    resourceType: 'record',
+    description: '一审活动结算版本',
+  },
+  {
+    code: 'activity.settlement-final-review.record',
+    module: 'activity',
+    action: 'settlement-final-review',
+    resourceType: 'record',
+    description: '终审活动结算版本并准备账本批次',
+  },
+  {
+    code: 'activity.settlement-close.record',
+    module: 'activity',
+    action: 'settlement-close',
+    resourceType: 'record',
+    description: '申请活动结算机器关账',
   },
   {
     code: 'activity-review.read.request',
@@ -3475,6 +3510,11 @@ const ATTENDANCE_REVIEWER_ONLY_CODES = [
 // v0.61.0 PR-11 contract:活动动作不再由通用管理角色天然获得。两条 return 码在 expand
 // 阶段从未进入 BIZ_PERMISSION_SEED,仍纳入 targeted cleanup，防止人工/旧环境残留。
 const ACTIVITY_RESPONSIBILITY_CONTRACT_REMOVED_FROM_BIZ_CODES = [
+  'activity.settlement-generate.record',
+  'activity.settlement-submit.record',
+  'activity.settlement-first-review.record',
+  'activity.settlement-final-review.record',
+  'activity.settlement-close.record',
   'activity.publish.record',
   'activity.update.record',
   'activity.cancel.record',
@@ -3503,8 +3543,8 @@ const BIZ_ADMIN_TARGETED_REMOVAL_CODES = [
   ...ACTIVITY_RESPONSIBILITY_CONTRACT_REMOVED_FROM_BIZ_CODES,
 ] as const;
 
-// biz-admin 不绑 20 码:member.delete.record(D1=A 镜像)+ 终审/撤回三码+
-// 活动责任闭环 contract 十六码（其中两条 return 从未进入业务面集合）。
+// biz-admin 不绑 25 码:member.delete.record(D1=A 镜像)+ 终审/撤回三码+
+// 活动责任闭环 contract 二十一码（其中两条 return 从未进入业务面集合）。
 const BIZ_ADMIN_EXCLUDED_CODES: ReadonlySet<string> = new Set([
   MEMBER_DELETE_RECORD_CODE,
   ...BIZ_ADMIN_TARGETED_REMOVAL_CODES,
@@ -4149,6 +4189,7 @@ const ACTIVITY_RESPONSIBILITY_WORKFLOW_ROLE_SEED: ReadonlyArray<ActivityResponsi
         'attendance.approve.sheet',
         'attendance.reject.sheet',
         'attendance.return.sheet',
+        'activity.settlement-first-review.record',
       ],
     },
     {
@@ -4170,6 +4211,9 @@ const ACTIVITY_RESPONSIBILITY_WORKFLOW_ROLE_SEED: ReadonlyArray<ActivityResponsi
         'attendance.create.sheet',
         'attendance.update.sheet',
         'attendance.delete.sheet',
+        'activity.settlement-generate.record',
+        'activity.settlement-submit.record',
+        'activity.settlement-close.record',
       ],
     },
     {
@@ -4196,6 +4240,8 @@ const ACTIVITY_RESPONSIBILITY_WORKFLOW_ROLE_SEED: ReadonlyArray<ActivityResponsi
         'attendance.create.sheet',
         'attendance.update.sheet',
         'attendance.delete.sheet',
+        'activity.settlement-generate.record',
+        'activity.settlement-submit.record',
       ],
     },
   ];
@@ -4331,9 +4377,10 @@ async function seedActivityResponsibilityWorkflowRbac(prisma: PrismaClient): Pro
 // 第 7 个内置角色:`attendance-final-reviewer` —— 终审中枢的**显式绑定**载体:业务上的终审部门
 // 部长/副部长经 RoleBinding(标准形态 principalType=POSITION_ASSIGNMENT + ORGANIZATION_TREE@root)
 // 持有本角色行使终审;换届 = 任职 ENDED 即失权,零代码改动(BD-2「只改绑定行不改代码」)。
-// v0.61.0 expand 后绑 5 条码:attendance.final-approve.sheet / attendance.final-reject.sheet /
-// attendance.reopen.sheet / attendance.final-return.sheet + attendance.read.sheet(读码让终审人可看单;一级
-// approve/reject 不含 —— 同人约束语义下终审与一级分人)。
+// v0.61.0 expand 后绑 6 条码:attendance.final-approve.sheet / attendance.final-reject.sheet /
+// attendance.reopen.sheet / attendance.final-return.sheet + attendance.read.sheet +
+// activity.settlement-final-review.record(读码让终审人可看单;一级 approve/reject 不含 —— 同人
+// 约束语义下终审与一级分人)。
 //
 // **🔴 本 seed 零持有、零 policy 行**:不 seed 任何 RoleBinding(生产绑定 = PR11 公告导入建立真实
 // 任职后运营挂),也绝不进 PositionRolePolicy(终审不随职务自动推导,必须显式绑定 —— 冻结稿 BD-2);
@@ -4352,6 +4399,7 @@ const ATTENDANCE_FINAL_REVIEWER_PERMISSION_CODES: ReadonlyArray<string> = [
   'attendance.read.sheet',
   ...ATTENDANCE_REVIEWER_ONLY_CODES,
   'attendance.final-return.sheet',
+  'activity.settlement-final-review.record',
 ];
 
 // 幂等:RbacRole.upsert by code / RolePermission.upsert by (roleId,permissionId);
@@ -4506,7 +4554,7 @@ async function main(): Promise<void> {
     //   保持"先 RBAC meta 再业务权限点"语义顺序;依赖 SUPER_ADMIN/ADMIN 用户已就位。
     await seedBizAdminRbac(prisma);
 
-    // v0.61.0 活动责任闭环 PR-2 expand：6 Permission + 6 Role；三类责任角色仅由后续
+    // v0.61.0 活动责任闭环 PR-2 expand：11 Permission + 6 Role；三类责任角色仅由后续
     // ActivityResponsibilityGrantProjector 自动维护。依赖 seedBizAdminRbac 已建立复用码。
     await seedActivityResponsibilityWorkflowRbac(prisma);
 
@@ -4517,7 +4565,7 @@ async function main(): Promise<void> {
     await seedPositionRolePolicies(prisma);
 
     // 终态 scoped-authz PR9「考勤终审员」(2026-07-02;冻结稿场景 4 / BD-2):第 7 内置角色
-    //   attendance-final-reviewer,绑 5 条 attendance 码;零持有、零 policy(生产绑定 =
+    //   attendance-final-reviewer,绑 5 条 attendance 码 + 1 条活动结算终审码;零持有、零 policy(生产绑定 =
     //   PR11 公告导入建立真实任职后,运营经 role-bindings CRUD 显式挂)。依赖 seedBizAdminRbac
     //   与 seedActivityResponsibilityWorkflowRbac 已把所需 attendance.* 码 upsert 进 Permission 表。
     await seedAttendanceFinalReviewerRole(prisma);

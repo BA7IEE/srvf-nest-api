@@ -199,7 +199,7 @@ const NEW_ROLE_CODES = [
 ] as const;
 
 // 终态 scoped-authz PR9:第 7 内置角色(冻结稿场景 4 / BD-2);
-// v0.61.0 PR-2 后承载 read + 终审两码 + reopen + final-return 共 5 码。
+// 第 2 批第 ⑧b 刀后承载 read + 终审两码 + reopen + final-return + 结算终审，共 6 码。
 const FINAL_REVIEWER_ROLE_CODE = 'attendance-final-reviewer';
 const EXPECTED_FINAL_REVIEWER_CODES = [
   'attendance.read.sheet',
@@ -207,6 +207,7 @@ const EXPECTED_FINAL_REVIEWER_CODES = [
   'attendance.final-reject.sheet',
   'attendance.reopen.sheet',
   'attendance.final-return.sheet',
+  'activity.settlement-final-review.record',
 ] as const;
 
 // 既有 3 角色绑定数零漂移基线(seed-rbac 95 / seed-attachment 9 / seed-biz-admin 74〔§F&A-3 起〕同口径;
@@ -225,6 +226,11 @@ const EXPECTED_MEMBER_ROLE_BINDING_COUNT = 9;
 const EXPECTED_BIZ_ADMIN_BINDING_COUNT = 69; // PR-2 的 8 条配置面码只绑 ops-admin,biz-admin 不变
 
 const CONTRACT_REMOVED_FROM_BIZ_AND_ORG_CODES = [
+  'activity.settlement-generate.record',
+  'activity.settlement-submit.record',
+  'activity.settlement-first-review.record',
+  'activity.settlement-final-review.record',
+  'activity.settlement-close.record',
   'activity.publish.record',
   'activity.update.record',
   'activity.cancel.record',
@@ -544,6 +550,37 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
         'attendance.approve.sheet',
         'attendance.reject.sheet',
         'attendance.return.sheet',
+        'activity.settlement-first-review.record',
+      ].sort(),
+    );
+    expect(await boundCodesOf(prisma, 'activity-owner')).toEqual(
+      [
+        'activity.update.record',
+        'activity.cancel.record',
+        'activity.complete.record',
+        'activity-registration.read.record',
+        'activity-registration.create.record',
+        'activity-registration.approve.record',
+        'activity-registration.reject.record',
+        'activity-registration.cancel.record',
+        'activity-registration.reopen.record',
+        'attendance.read.sheet',
+        'attendance.create.sheet',
+        'attendance.update.sheet',
+        'attendance.delete.sheet',
+        'activity.settlement-generate.record',
+        'activity.settlement-submit.record',
+        'activity.settlement-close.record',
+      ].sort(),
+    );
+    expect(await boundCodesOf(prisma, 'activity-attendance-collaborator')).toEqual(
+      [
+        'attendance.read.sheet',
+        'attendance.create.sheet',
+        'attendance.update.sheet',
+        'attendance.delete.sheet',
+        'activity.settlement-generate.record',
+        'activity.settlement-submit.record',
       ].sort(),
     );
     expect(await boundCodesOf(prisma, FINAL_REVIEWER_ROLE_CODE)).toEqual(

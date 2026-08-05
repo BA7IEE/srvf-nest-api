@@ -129,6 +129,13 @@ export interface SettlementSubmitInput {
   operationKey: string;
   /** 提交内容的调用方摘要。与 `operationKey` 成对,决定"是重放还是撞键"。 */
   requestHash: string;
+  /**
+   * §6.14 HTTP 版本锚点。缺省时保持既有内部调用的提交语义;入口调用必须提供。
+   * 真正比较落在事务内、Activity/Run 锁之后,不能由 Controller 锁外预查代替。
+   */
+  expectedDraftVersion?: number;
+  /** §6.14 HTTP 看到的草稿封场凭证;缺省时保持既有内部调用语义。 */
+  expectedEvidenceSealId?: string;
 }
 
 export interface SettlementSubmitResult {
@@ -636,6 +643,22 @@ export class SettlementSubmitService {
           draft,
           activity.workflowRevision,
         );
+
+        // §6.14 HTTP 版本锚点。必须在既有 Activity → Run 锁和幂等重放之后,并且使用
+        // 本事务刚读到的 draft / active seal 比对:Controller 锁外预查在这里不能替代。
+        // 两项缺省时不进入分支，既有内部调用的语义与查询/写入序列保持不变。
+        if (
+          input.expectedDraftVersion !== undefined &&
+          draft.version !== input.expectedDraftVersion
+        ) {
+          throw new BizException(BizCode.SETTLEMENT_SUBMIT_EXPECTED_DRAFT_VERSION_MISMATCH);
+        }
+        if (
+          input.expectedEvidenceSealId !== undefined &&
+          seal.id !== input.expectedEvidenceSealId
+        ) {
+          throw new BizException(BizCode.SETTLEMENT_SUBMIT_EXPECTED_EVIDENCE_SEAL_MISMATCH);
+        }
 
         // ④ 五条校验。任一不过 ⇒ 具名码拒绝,整个事务回滚(零副作用)。
         const facts = await this.readSubmissionFacts(tx, activityId, draft.id);
