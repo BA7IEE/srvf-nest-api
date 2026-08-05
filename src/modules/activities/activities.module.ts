@@ -50,6 +50,8 @@ import { ContributionCalculator } from '../attendances/contribution-calculator';
 import { SettlementDraftAuditRecorder } from './settlement-draft-audit-recorder';
 import { SettlementDraftService } from './settlement-draft.service';
 import { SettlementNotificationProducer } from './settlement-notification-producer';
+import { SettlementReviewAuditRecorder } from './settlement-review-audit-recorder';
+import { SettlementReviewService } from './settlement-review.service';
 import { SettlementSubmitAuditRecorder } from './settlement-submit-audit-recorder';
 import { SettlementSubmitService } from './settlement-submit.service';
 
@@ -146,12 +148,17 @@ import { SettlementSubmitService } from './settlement-submit.service';
     SettlementNotificationProducer,
     SettlementSubmitAuditRecorder,
     SettlementSubmitService,
+    // 活动改造 v1.1 第 2 批第四刀(合同 §5.11):一审 / 终审。
+    // 同样零端点 —— 消费方是第 2 批收尾那一刀(整条结算流程的对外入口)。
+    SettlementReviewAuditRecorder,
+    SettlementReviewService,
   ],
   exports: [
     ActivitiesService,
     EvidenceSealService,
     SettlementDraftService,
     SettlementSubmitService,
+    SettlementReviewService,
     AppMyActivitiesService,
     ActivityParticipationPolicy,
     ActivityPublishReviewService,
