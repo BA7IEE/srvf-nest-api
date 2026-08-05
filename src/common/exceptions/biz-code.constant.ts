@@ -1507,6 +1507,37 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // ===== 活动改造 v1.1 第 2 批第 ⑧b 刀:HTTP 版本锚点(合同 §6.14) =====
+  //
+  // HTTP 请求携带的是操作者刚刚确认过的版本锚点。比较必须落在既有事务、既有锁之后:
+  // 锁外预查在并发下只能说明“刚才看见过”,不能说明“此刻将要提交/审核/关账的就是它”。
+  // 五条各自指向一个客户端可刷新的对象,故不合并成笼统的“版本已变化”。
+  SETTLEMENT_SUBMIT_EXPECTED_DRAFT_VERSION_MISMATCH: {
+    code: 20114,
+    message: '结算草稿版本已变化,请刷新后重新确认提交',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  SETTLEMENT_SUBMIT_EXPECTED_EVIDENCE_SEAL_MISMATCH: {
+    code: 20115,
+    message: '结算草稿引用的封场凭证已变化,请刷新后重新确认提交',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  SETTLEMENT_REVIEW_EXPECTED_VERSION_MISMATCH: {
+    code: 20116,
+    message: '待审核的结算版本已变化,请刷新后重新审核',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CLOSURE_EXPECTED_SETTLEMENT_VERSION_MISMATCH: {
+    code: 20117,
+    message: '待关账的结算版本已变化,请刷新后重新确认关账',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CLOSURE_EXPECTED_POSTING_BATCH_MISMATCH: {
+    code: 20118,
+    message: '待关账的账本批次已变化,请刷新后重新确认关账',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。
   // 子段(对齐 baseline §1.3):

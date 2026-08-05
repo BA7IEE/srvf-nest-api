@@ -83,6 +83,11 @@ export interface SettlementReviewInput {
   returnReason?: string | null;
   /** 审核人看到的那一版。四项比对的 `expected` 侧,见 comparison 文件头。 */
   expectation: SettlementReviewExpectation;
+  /**
+   * §6.11 路径中的 `settlementVersionId` 作为 HTTP 版本锚点传入。缺省时保持既有内部调用
+   * 的审核语义;比较必须在 Activity → Run → Version 三把既有锁之后。
+   */
+  expectedSettlementVersionId?: string;
 }
 
 export interface SettlementReviewResult {
@@ -520,6 +525,16 @@ export class SettlementReviewService {
         //    这里要先拿到版本 id 才能判"是不是同一条决定",所以版本行必须先锁上 ——
         //    锁序不变(版本本来就是第三把)。
         const version = await this.lockSubmittedVersion(tx, run);
+
+        // §6.11 路径 `:settlementVersionId` 的 HTTP 锚点。此处已经持有 Activity → Run
+        // → Version 三把既有锁；锁外“看过 v1”不能替代对当前指针实际锁到版本的复核。
+        // 缺省时不进入分支，既有内部调用的幂等、状态闸与审核语义保持不变。
+        if (
+          input.expectedSettlementVersionId !== undefined &&
+          version.id !== input.expectedSettlementVersionId
+        ) {
+          throw new BizException(BizCode.SETTLEMENT_REVIEW_EXPECTED_VERSION_MISMATCH);
+        }
 
         const replay = await this.resolveIdempotency(tx, {
           settlementVersionId: version.id,

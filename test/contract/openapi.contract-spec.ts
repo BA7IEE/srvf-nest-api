@@ -200,6 +200,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/app/v1/my/managed-activities/{activityId}/submit-change-review'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/withdraw-publish-review'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/declare-attendance-complete'],
+  // 活动业务改造 v1.1 第 2 批第 ⑧b 刀:结算最小 HTTP 闭环;读面、items、resubmit/archive 留第 ⑨ 刀。
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/settlement/generate'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/settlement/submit'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/settlement/close'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/positions'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/positions'],
   ['patch', '/api/app/v1/my/managed-activities/{activityId}/positions/{activityPositionId}'],
@@ -548,6 +552,11 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/admin/v1/attendance-sheets/{id}/final-return'],
   ['post', '/api/admin/v1/attendance-sheets/{id}/resubmit'],
   ['post', '/api/admin/v1/attendance-sheets/{id}/reopen'],
+  // 活动业务改造 v1.1 第 2 批第 ⑧b 刀:独立 Admin 审核 action surface;不含跨活动工作台／读面。
+  ['post', '/api/admin/v1/attendance-settlements/{id}/first-approve'],
+  ['post', '/api/admin/v1/attendance-settlements/{id}/first-return'],
+  ['post', '/api/admin/v1/attendance-settlements/{id}/final-approve'],
+  ['post', '/api/admin/v1/attendance-settlements/{id}/final-return'],
   // 队员/审批跨轴只读查询(2026-06-23;前端任务驱动后台 · GAP-001 Tier2 / GAP-002 Tier3):
   //   5 个 admin 只读端点,224→229(仅新增;复用 read 码零新码 / 零 schema 列 / 零 migration)。
   //   Tier2 跨活动横扫(审批工作台):registrations + attendance-sheets(根 @Get 加在既有
@@ -983,6 +992,15 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'TransferAppManagedActivityOwnerDto',
   'AppManagedResponsibilityAssignmentDto',
   'AppManagedResponsibilitiesDto',
+  // 活动业务改造 v1.1 第 2 批第 ⑧b 刀:App 结算写面独立 DTO；不派生 Admin DTO，关账只返安全摘要。
+  'AppSettlementGenerateCommandDto',
+  'AppSettlementSubmitCommandDto',
+  'AppSettlementCloseCommandDto',
+  'AppSettlementGenerateResponseDto',
+  'AppSettlementSubmitResponseDto',
+  'AppSettlementCloseGapDto',
+  'AppSettlementCloseCheckDto',
+  'AppSettlementCloseResponseDto',
   // 活动责任闭环 PR-7:App managed registration 独立 DTO。
   'AppManagedRegistrationPositionDto',
   'AppManagedRegistrationMemberDto',
@@ -1025,6 +1043,10 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // V2 第一阶段批次 4-B(APD 部门部长 / 副部长终审)
   'FinalApproveAttendanceSheetDto',
   'FinalRejectAttendanceSheetDto',
+  // 活动业务改造 v1.1 第 2 批第 ⑧b 刀:Admin 结算审核写面；Params DTO 内联为 path parameter。
+  'AdminSettlementApproveCommandDto',
+  'AdminSettlementReturnCommandDto',
+  'AdminSettlementReviewResponseDto',
 
   // V2 第一阶段批次 5-A contribution-rules
   // 注:ContributionRuleQueryDto 是 @Query() DTO,NestJS Swagger 把其属性内联为
@@ -1507,9 +1529,9 @@ describe('OpenAPI 契约快照', () => {
   // 企业微信接入 T2(2026-08-01):+4 settings 端点(GET / PATCH / reset-credentials /
   //   test-connection)→ **442**。T3 起还会增 OAuth 公开面与 me/wecom、admin 清除。
   // 企业微信 T6-1(2026-08-03):+1 定向 replay 运维入口
-  //   (POST admin/v1/notifications/:id/replay-wecom)→ **451**。
-  it('企业微信 T2 落地后路由足迹精确为 442', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(451);
+  //   (POST admin/v1/notifications/:id/replay-wecom)→451；第 2 批第 ⑧b 刀结算最小 HTTP 闭环 +7 → **458**。
+  it('路由足迹精确为 458', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(458);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {
