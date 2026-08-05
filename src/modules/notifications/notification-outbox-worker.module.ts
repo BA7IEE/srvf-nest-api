@@ -8,6 +8,7 @@ import { PermissionsModule } from '../permissions/permissions.module';
 import { SmsModule } from '../sms/sms.module';
 import { WechatModule } from '../wechat/wechat.module';
 import { WecomModule } from '../wecom/wecom.module';
+import { ActivityBatchWorkerModule } from '../activities/activity-batch-worker.module';
 import { NotificationOutboxHandlers } from './notification-outbox.handlers';
 import { NotificationOutboxService } from './notification-outbox.service';
 import { NotificationOutboxWorker } from './notification-outbox.worker';
@@ -33,6 +34,7 @@ import { WechatSubscribeTemplateService } from './wechat-subscribe-template.serv
     SmsModule,
     WechatModule,
     WecomModule,
+    ActivityBatchWorkerModule,
   ],
   providers: [
     NotificationOutboxService,
