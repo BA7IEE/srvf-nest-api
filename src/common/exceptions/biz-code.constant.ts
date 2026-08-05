@@ -1387,6 +1387,111 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // ===== 活动改造 v1.1 第 2 批第七刀:更正应用(合同 §5.14 + §3.25)=====
+  //
+  // 🔴🔴 **更正是全仓唯一能改动"已生效账本"的通路。** 冲错、冲两次、冲了没补、
+  //    补了没冲 —— 每一种都会产出一个看起来完全正常的账本,而维护者看不懂代码、
+  //    发现不了。故本段每一条都是**拒绝**,没有一条是"警告后放行"。
+  //    落 200xx→201xx 段 20099-20111(20090-20098 是第六刀关账)。
+  //
+  // ⚠️ **号段说明**:200xx 到 20099 就用满了,本段续到 2010x。头部索引把 XX1xx 标为
+  //    「权限边界」,但 activities 段的 20120-20127 早已是**业务码**(报名截止、
+  //    已取消禁报名等),⇒ 201xx 在本模块**事实上**已是业务码续段,本段沿这一既成口径,
+  //    不另开新段位(新开段位会让 activities 的码散落在两个不相邻的段里)。
+  //
+  // ⚠️ 全段 409:每一条都是"当前事实不允许这么做",不是入参格式错。
+  //    唯一例外是 20102(400):它判的是 `requestedChangeJson` 的**形状**。
+  //
+  // 逐条与合同步骤的对应:
+  //   20099 ← §5.14 ① run 状态      20100 ← §5.14 ① base 版本
+  //   20101 ← §3.25 partial unique   20102 ← §3.25 `requestedChangeJson`(合同未给字段表)
+  //   20103 ← §5.14 ② 状态闸         20104 ← §7.5 人员隔离
+  //   20105 ← §3.25 末句 base 漂移    20106 ← §5.14 ③ 应用状态闸
+  //   20107 ← §3.23.5 至多冲一次
+  //   20108/20109/20110 ← §5.14 ④ 配对三条(只冲不补 / 只补不冲 / 金额不相反)
+  //   20111 ← 幂等撞键(与 20061 / 20073 / 20098 同一范式)
+
+  CORRECTION_SUBMIT_RUN_STATUS_INVALID: {
+    code: 20099,
+    message: '该活动的结算尚未生效,不可提交更正申请',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  CORRECTION_SUBMIT_BASE_VERSION_INVALID: {
+    code: 20100,
+    message: '未找到可作为更正基础的已生效结算版本',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // §3.25「partial unique 保证同一 target 同一时刻至多一个 pending/returned/approved/applying」。
+  // 🔴 service 锁后检查是第一道,DB `attendance_correction_request_open_unique` 是第二道;
+  //    P2002 也翻成本码,**不让 Prisma 异常裸奔成 500**(与 20083 / 20097 同一范式)。
+  CORRECTION_TARGET_ALREADY_OPEN: {
+    code: 20101,
+    message: '该对象已有处理中的更正申请,请先完成或撤销后再提交',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // ⚠️ 400 而非 409:它判的是入参形状。§3.25 **没有给** `requestedChangeJson` 的字段表
+  //    (合同在这里是空的),闭集由本刀 `correction-change-set.ts` 补齐并在报告列明。
+  CORRECTION_CHANGE_SET_INVALID: {
+    code: 20102,
+    message: '更正内容的格式或取值不合法',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  CORRECTION_REVIEW_STATUS_INVALID: {
+    code: 20103,
+    message: '该更正申请当前状态不允许此审核动作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // §7.5「Correction review:request submitter != reviewer;**若更正由原结算提交人提出仍适用**」。
+  // 后半句不是废话:它堵的正是"他最了解账、让他自己批"这条很自然的口子。
+  CORRECTION_REVIEW_SELF_FORBIDDEN: {
+    code: 20104,
+    message: '更正申请的提交人不能审核本人提交的申请',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // §3.25 末句「审核时基础版本变化则置 voided 并要求新申请」。
+  // ⚠️ 审核路径上这**不是**异常:置 voided 要落库,故 `review` 走**返回值**
+  //    (`{ outcome:'voided' }`);抛本码的只有 `prepare`(那时申请已被独立事务置 voided)。
+  CORRECTION_BASE_VERSION_CHANGED: {
+    code: 20105,
+    message: '更正所依据的结算版本已变化,该申请已作废,请重新提交',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  CORRECTION_APPLY_STATUS_INVALID: {
+    code: 20106,
+    message: '该更正申请当前状态不可应用',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // §3.23.5「一条原 entry 至多被一个 committed reversal 逻辑冲回」。
+  // service 锁后检查 + `LedgerEntryReversalClaim.originalEntryId` unique 两道,同翻本码。
+  CORRECTION_REVERSAL_ALREADY_CLAIMED: {
+    code: 20107,
+    message: '存在已被冲回过的原始账本分录,不可重复冲回',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // ⭐ §5.14 ④ 的配对三条**分三个码**(不合并):合并成一条会让"哪一种残缺没有执法位"
+  //    再也读不出来(沿 20062-20064 / 20090-20097 的分码理由)。
+  //    三条各读**自己那几个计数**,卸掉任一条只有它对应的用例会红。
+  CORRECTION_POSTING_REPLACEMENT_MISSING: {
+    code: 20108,
+    message: '更正批次只有冲回、缺少对应的补记分录,不可生效',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  CORRECTION_POSTING_REVERSAL_MISSING: {
+    code: 20109,
+    message: '更正批次未把原有已生效分录全部冲回,不可生效',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  CORRECTION_POSTING_REVERSAL_AMOUNT_INVALID: {
+    code: 20110,
+    message: '冲回分录的金额不是原分录的相反数,不可生效',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  CORRECTION_OPERATION_KEY_CONFLICT: {
+    code: 20111,
+    message: '相同操作标识已用于该活动的其它更正内容,请更换操作标识',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。
   // 子段(对齐 baseline §1.3):
