@@ -62,6 +62,8 @@ import { LedgerQueryService } from './ledger-query.service';
 import { ActivityClosureAuditRecorder } from './activity-closure-audit-recorder';
 import { ActivityClosureNotificationProducer } from './activity-closure-notification-producer';
 import { ActivityClosureService } from './activity-closure.service';
+import { CorrectionApplicationService } from './correction-application.service';
+import { CorrectionAuditRecorder } from './correction-audit-recorder';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activities 写操作(create / update / softDelete / publish / cancel 共 5 处共用 activity.publish)
@@ -184,6 +186,15 @@ import { ActivityClosureService } from './activity-closure.service';
     ActivityClosureAuditRecorder,
     ActivityClosureNotificationProducer,
     ActivityClosureService,
+    // 活动改造 v1.1 第 2 批第七刀(合同 §5.14 + §3.25):更正应用。
+    // 🔴 **全仓唯一能改动"已生效账本"的通路**,语义像钱:它成功的那一刻,
+    //    队员账上的贡献值就换了一份真值。
+    // ⭐ 复用而非另写:生效走第五刀 `LedgerPostingService.commitBatchWithin`
+    //    (member lock / day-state CAS / 日合计 0..3 / 零部分生效),
+    //    重新关账走第六刀 `ActivityClosureService` —— 本刀两者都只调用,不复制。
+    // 同样零端点 / 零 DTO / 零权限码 —— 消费方是第 ⑧ 刀。
+    CorrectionAuditRecorder,
+    CorrectionApplicationService,
   ],
   exports: [
     ActivitiesService,
@@ -196,6 +207,7 @@ import { ActivityClosureService } from './activity-closure.service';
     LedgerPostingService,
     LedgerQueryService,
     ActivityClosureService,
+    CorrectionApplicationService,
     AppMyActivitiesService,
     ActivityParticipationPolicy,
     ActivityPublishReviewService,

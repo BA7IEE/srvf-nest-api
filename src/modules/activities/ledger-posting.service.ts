@@ -12,6 +12,10 @@ import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { LedgerPostingAuditRecorder } from './ledger-posting-audit-recorder';
 import {
+  evaluateCorrectionPostingShape,
+  type CorrectionPostingShapeViolation,
+} from './correction-posting-shape';
+import {
   ledgerCommitExceedsTotalBudget,
   ledgerCommitRequiredSlots,
   tryAcquireLedgerCommitSlots,
@@ -94,6 +98,21 @@ import { SettlementNotificationProducer } from './settlement-notification-produc
 
 type PrismaTx = Prisma.TransactionClient;
 
+/**
+ * 更正批次的三种配对违例 → 三个具名码(第七刀,§5.14 ④)。
+ *
+ * **一一对应,没有兜底码** —— 漏一种编译不过。三条各读自己那几个计数,
+ * 卸掉任一条只有它对应的用例会红(红集矩阵见第七刀报告)。
+ */
+const CORRECTION_SHAPE_TO_BIZ_CODE: Record<
+  CorrectionPostingShapeViolation,
+  (typeof BizCode)[keyof typeof BizCode]
+> = {
+  replacement_missing: BizCode.CORRECTION_POSTING_REPLACEMENT_MISSING,
+  reversal_missing: BizCode.CORRECTION_POSTING_REVERSAL_MISSING,
+  reversal_amount_invalid: BizCode.CORRECTION_POSTING_REVERSAL_AMOUNT_INVALID,
+};
+
 export interface LedgerCommitInput {
   postingBatchId: string;
   /** 只进 audit 与 outbox eventKey;幂等锚点是 `postingBatchId` 本身(见 biz-code 段注释)。 */
@@ -163,7 +182,36 @@ export class LedgerPostingService {
     if (anchor === null) throw new BizException(BizCode.LEDGER_COMMIT_BATCH_STATUS_INVALID);
     const activityId = anchor.settlementRun.activityId;
 
-    return await runMemberLinearizedTransaction(this.prisma, async (tx) => {
+    return await runMemberLinearizedTransaction(
+      this.prisma,
+      async (tx) => await this.commitBatchWithin(tx, activityId, input, currentUser, auditMeta),
+    );
+  }
+
+  /**
+   * ⭐ **第七刀(更正应用)复用点** —— 协议体本身,**在调用方的事务里**执行。
+   *
+   * 🔴 本方法的代码就是原来 `commitBatch` 事务体的**逐字内容**(第七刀只把它从
+   *    lambda 抽成方法,一个判定、一条 SQL、一个顺序都没改)。抽出来的理由是硬的:
+   *    §5.14 ⑥ 要求「旧 revisions superseded、新 revisions committed、旧 active closure
+   *    superseded、`Activity.currentClosureRevision` 清空、correction → applied」
+   *    **与本协议同一事务**,而 Prisma 的交互事务**无法从外部加入** ——
+   *    先调 `commitBatch` 再另开事务做切换,中间崩溃就会留下"账已生效、旧版本还挂着
+   *    current"的读面(同时看到两份真值)。
+   *
+   * ⚠️ 调用方必须自己开 `runMemberLinearizedTransaction`(本方法内会取 member advisory
+   *    lock 与恒串行闸,它们都是**事务级**的,脱离交互事务没有意义)。
+   *
+   * 判据:第五刀既有 e2e 全绿 —— 那是"抽方法之后行为零变化"的正对照。
+   */
+  async commitBatchWithin(
+    tx: PrismaTx,
+    activityId: string,
+    input: LedgerCommitInput,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<LedgerCommitResult> {
+    {
       // ===== ①②③④ 固定锁序 =====
       const activity = await this.lockActivity(tx, activityId);
       const run = await this.lockRun(tx, activityId);
@@ -293,7 +341,7 @@ export class LedgerPostingService {
       });
 
       return result;
-    });
+    }
   }
 
   // ===== 锁序四把 =========================================================
@@ -415,6 +463,21 @@ export class LedgerPostingService {
     settlementVersionId: string,
     deltas: readonly DayDelta[],
   ): Promise<void> {
+    // ⭐⭐ 第七刀(更正应用,§5.14 ④)按场景**放宽**下面那条 `nonCreditCount !== 0`。
+    //
+    // 🔴 **放宽的是适用范围,不是判据本身**:
+    //   - 批次被某条 `CorrectionApplication` 指向 ⇒ 走更正侧配对判据(见下方方法),
+    //     它**比本判据更严**(冲回必须成对、等额、有 claim、把旧账冲干净);
+    //   - 否则 ⇒ **逐字**走本判据,普通结算批次里出现任何 `*_reversal` 仍然 20089。
+    //
+    // 判别式取自 **DB 上的事实**(`CorrectionApplication` 行),不是调用方传进来的
+    // flag —— flag 是"调用方说自己是更正",事实是"确实有一份更正申请把这条批次登记
+    // 成了自己的产物"。前者任何调用点都能伪造,后者不行。
+    // 判据:e2e「普通批次里塞一条 reversal 仍然被拒」那一条(卸掉判别式即变红)。
+    if (await this.isCorrectionBatch(tx, batch.id)) {
+      return await this.assertCorrectionSetConsistent(tx, batch, settlementVersionId);
+    }
+
     const [shape] = await tx.$queryRaw<
       Array<{ entryCount: number; pairCount: number; nonCreditCount: number }>
     >`
@@ -443,6 +506,106 @@ export class LedgerPostingService {
     ) {
       throw new BizException(BizCode.LEDGER_COMMIT_ENTRY_SET_MISMATCH);
     }
+  }
+
+  // ===== 更正批次的判别式与配对判据(第七刀,§5.14 ④ + §3.23.5)=============
+
+  /** 事实判别:有没有一条 `CorrectionApplication` 把本批次登记成自己的产物。 */
+  private async isCorrectionBatch(tx: PrismaTx, postingBatchId: string): Promise<boolean> {
+    const application = await tx.correctionApplication.findFirst({
+      where: { newPostingBatchId: postingBatchId },
+      select: { id: true },
+    });
+    return application !== null;
+  }
+
+  /**
+   * 更正批次的形状判据。判定本身是纯函数(`correction-posting-shape.ts`),
+   * 本方法只负责把**事实计数**取回来 —— 让"判据"与"取数"分开,判据可被单测逐条钉住。
+   *
+   * 🔴 `settlementVersionId` 是**新**版本(批次挂在它下面);冲回侧的锚点是
+   *    **基础版本** —— 由新版本任一结果行的 `baseResultRevisionId` 指回去解析,
+   *    不靠调用方传:传进来的东西可以是错的,指针不会。
+   */
+  private async assertCorrectionSetConsistent(
+    tx: PrismaTx,
+    batch: LockedBatch,
+    settlementVersionId: string,
+  ): Promise<void> {
+    const [facts] = await tx.$queryRaw<
+      Array<{
+        creditEntryCount: number;
+        creditPairCount: number;
+        settlementDayCount: number;
+        reversalEntryCount: number;
+        reversalPairCount: number;
+        reversalClaimCount: number;
+        unreversedOriginalCount: number;
+        reversalOfUncommittedCount: number;
+        mismatchedReversalAmountCount: number;
+      }>
+    >`
+      WITH base AS (
+        SELECT DISTINCT prior."settlementVersionId" AS id
+        FROM "ParticipantSettlementResultRevision" rr
+        JOIN "ParticipantSettlementResultRevision" prior ON prior.id = rr."baseResultRevisionId"
+        WHERE rr."settlementVersionId" = ${settlementVersionId}
+      ),
+      mine AS (
+        SELECT e.* FROM "ParticipationLedgerEntry" e WHERE e."postingBatchId" = ${batch.id}
+      )
+      SELECT
+        (SELECT count(*) FROM mine
+          WHERE "entryTypeCode" IN ('service_credit', 'contribution_credit'))::int
+          AS "creditEntryCount",
+        (SELECT count(DISTINCT ("resultRevisionId", "ledgerDate")) FROM mine
+          WHERE "entryTypeCode" IN ('service_credit', 'contribution_credit'))::int
+          AS "creditPairCount",
+        (SELECT count(*) FROM "ParticipantSettlementDay" d
+           JOIN "ParticipantSettlementResultRevision" rr ON rr.id = d."resultRevisionId"
+          WHERE rr."settlementVersionId" = ${settlementVersionId})::int
+          AS "settlementDayCount",
+        (SELECT count(*) FROM mine
+          WHERE "entryTypeCode" IN ('service_reversal', 'contribution_reversal'))::int
+          AS "reversalEntryCount",
+        (SELECT count(DISTINCT ("resultRevisionId", "ledgerDate")) FROM mine
+          WHERE "entryTypeCode" IN ('service_reversal', 'contribution_reversal'))::int
+          AS "reversalPairCount",
+        (SELECT count(*) FROM mine
+           JOIN "LedgerEntryReversalClaim" c ON c."originalEntryId" = mine."reversesEntryId"
+          WHERE mine."entryTypeCode" IN ('service_reversal', 'contribution_reversal'))::int
+          AS "reversalClaimCount",
+        -- 🔴「只补不冲」的执行位:基础版本下已生效的 credit 分录,只要有一条没被本批次
+        --    冲回,那笔钱就在队员账上留了两遍。
+        (SELECT count(*) FROM "ParticipationLedgerEntry" o
+           JOIN "LedgerPostingBatch" ob ON ob.id = o."postingBatchId"
+           JOIN "ParticipantSettlementResultRevision" orr ON orr.id = o."resultRevisionId"
+          WHERE orr."settlementVersionId" IN (SELECT id FROM base)
+            AND ob."statusCode" = 'committed'
+            AND o."entryTypeCode" IN ('service_credit', 'contribution_credit')
+            AND NOT EXISTS (SELECT 1 FROM mine WHERE mine."reversesEntryId" = o.id))::int
+          AS "unreversedOriginalCount",
+        (SELECT count(*) FROM mine
+           JOIN "ParticipationLedgerEntry" o ON o.id = mine."reversesEntryId"
+           JOIN "LedgerPostingBatch" ob ON ob.id = o."postingBatchId"
+          WHERE mine."entryTypeCode" IN ('service_reversal', 'contribution_reversal')
+            AND ob."statusCode" <> 'committed')::int
+          AS "reversalOfUncommittedCount",
+        -- 🔴 四列逐列取反。光"有一条冲回"不够:冲 1.2 分的账只冲 0.2 分,配对计数
+        --    完全正确,而队员账上凭空多出 1.0 分。
+        (SELECT count(*) FROM mine
+           JOIN "ParticipationLedgerEntry" o ON o.id = mine."reversesEntryId"
+          WHERE mine."entryTypeCode" IN ('service_reversal', 'contribution_reversal')
+            AND (mine."serviceHoursDelta" <> -o."serviceHoursDelta"
+              OR mine."recognizedPointsDelta" <> -o."recognizedPointsDelta"
+              OR mine."creditedPointsDelta" <> -o."creditedPointsDelta"
+              OR mine."cappedOutPointsDelta" <> -o."cappedOutPointsDelta"))::int
+          AS "mismatchedReversalAmountCount"
+    `;
+    if (facts === undefined) throw new BizException(BizCode.LEDGER_COMMIT_ENTRY_SET_MISMATCH);
+
+    const violation = evaluateCorrectionPostingShape(facts);
+    if (violation !== null) throw new BizException(CORRECTION_SHAPE_TO_BIZ_CODE[violation]);
   }
 
   // ===== ⑤ 恒串行闸 ======================================================
@@ -676,3 +839,20 @@ export class LedgerPostingService {
 // 等第六刀真的要写 reversal 时,那条判据会**当场变红**,逼它在同一刀里把
 // 「service 锁后检查 + `LedgerEntryReversalClaim` unique」一起做出来,
 // 而不是悄悄绕过。执行位见 e2e ⑧。
+//
+// ===== 🟢 上面这条闸的后续:第七刀(更正应用)的兑现记录 =============================
+//
+// 预言应验了,但**顺延了一刀**:reversal 的唯一来源是更正(§5.14),而更正落在
+// **第七刀**(第六刀是机器关账,它只读账)。第七刀开工即撞红本闸,处置**不是删掉它**,
+// 而是按 goal 要求「按更正场景放宽适用范围」:
+//
+//   - `assertPreparedSetConsistent` 开头加一个**事实判别式**(本批次有没有被某条
+//     `CorrectionApplication` 指向)。是 ⇒ 走 `assertCorrectionSetConsistent`;
+//     否 ⇒ **逐字**走本判据。
+//   - 更正侧那套判据**比本判据更严**,而不是更松:冲回必须成对(每个
+//     `(旧 resultRevision, ledgerDate)` 恰好两条)、必须逐列等额取反、必须有
+//     `LedgerEntryReversalClaim` 占住原分录、且必须把基础版本下**全部**已生效
+//     credit 分录冲干净(`unreversedOriginalCount = 0`)。
+//   - ⇒ **普通结算批次里出现 reversal 仍然 20089**,一个字没放松。
+//     执行位:第七刀 e2e 的「普通批次仍被拒」那一条(它专门造一条不带
+//     `CorrectionApplication` 的批次并塞进 reversal 分录,断言仍拿到 20089)。
