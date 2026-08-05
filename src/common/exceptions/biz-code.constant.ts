@@ -1051,6 +1051,126 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // ===== 活动改造 v1.1 第 2 批第四刀:一审 / 终审(合同 §5.11 + §3.19)=====
+  //
+  // 🔴 **这一段守的是"谁说了算"。** 隔离漏一条,自提自审就成立(合同 §4.1 与修订说明
+  //    列为一级阻断的同一类问题);并发漏一条,同一版本会有两个互相矛盾的生效决定。
+  //    落 200xx 段 20062-20076。**全部 409**:每一条都是"当前状态/当前人不允许",
+  //    不是入参格式错。
+  //
+  // ⚠️ 刻意**不复用** 20052-20061(提交段):那几条的 message 面向的是"提交送审"的
+  //    负责人,而这里面对的是**审核人**。同因不同果,分码。
+
+  // ① 三方分离(§3.19「事务内锁后复判提交人／一审人／终审人分离」)。
+  //
+  // 🔴 三条**各一个码,不合并**:合并成一个"人员隔离不通过"会让"哪一条没有执法位"
+  //    再也读不出来 —— 卸掉任意一条,红集都指向同一个码。判定见
+  //    `activities/settlement-review-separation.ts`(三条互不重叠是那里的结构前提)。
+  //
+  // 命名与 22074/22075(考勤三审隔离)**逐字对齐**,因为它们是同一条域不变量在
+  // 两个业务对象上的两次落地;码值分开是因为对外 message 面向不同的动作。
+  SETTLEMENT_SELF_FIRST_REVIEW_FORBIDDEN: {
+    code: 20062,
+    message: '不可一审自己提交的结算版本',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  SETTLEMENT_SELF_FINAL_REVIEW_FORBIDDEN: {
+    code: 20063,
+    message: '不可终审自己提交的结算版本',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  SETTLEMENT_SAME_REVIEWER_FORBIDDEN: {
+    code: 20064,
+    message: '一审人不可再对同一结算版本终审',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // ② 状态闸。run 与 version 各判各的:run 是流程根(§3.19「页面投影和流程根」),
+  //    version 是审核对象本身;两者不同步(如版本已被别的路径 void)时必须各自拒。
+  SETTLEMENT_REVIEW_RUN_STATUS_INVALID: {
+    code: 20065,
+    message: '当前结算状态不允许执行该审核动作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  SETTLEMENT_REVIEW_VERSION_STATUS_INVALID: {
+    code: 20066,
+    message: '该结算版本当前状态不可审核',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // run 指针指向的提交版本行取不到 —— 没有审核对象。
+  SETTLEMENT_REVIEW_VERSION_MISSING: {
+    code: 20067,
+    message: '未找到待审核的结算版本',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // ③ §5.11「比较 seal / revisions / workflow / contentHash」的四项,一项一个码。
+  //    判定见 `activities/settlement-review-comparison.ts`(四项读互不相交的字段)。
+  //
+  // ⭐ 20071 是**第三刀 canonical contentHash 的执行位**:本刀**只比对不重算**
+  //    (重算等于把"审的是哪一版"又交回给可变数据)。这条写松,审核人就可能在
+  //    不知情的情况下批准了一份他没看过的内容。
+  SETTLEMENT_REVIEW_EVIDENCE_SEAL_STALE: {
+    code: 20068,
+    message: '封场凭证已变化,该结算版本不可审核,请重新封场并重新提交',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  SETTLEMENT_REVIEW_EVIDENCE_REVISION_CHANGED: {
+    code: 20069,
+    message: '证据或人口版本已变化,该结算版本不可审核,请重新生成草稿并提交',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  SETTLEMENT_REVIEW_WORKFLOW_REVISION_CHANGED: {
+    code: 20070,
+    message: '活动流程版本已变化,该结算版本不可审核,请重新生成草稿并提交',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  SETTLEMENT_REVIEW_CONTENT_HASH_CHANGED: {
+    code: 20071,
+    message: '审核内容摘要与该结算版本不一致,请刷新后重新审核',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // ④ §3.19「一版本一阶段只允许一个生效决定」。
+  //
+  // ⚠️ 这条**不是**靠 DB 唯一约束:`SettlementReviewAction` 上只有 `operationKey`
+  //    单列 unique(§3.19 点名的那一条),没有 `(settlementVersionId, stageCode)` 唯一。
+  //    正确性来自 **SettlementVersion 行锁**把同一版本上的并发审核串行化,
+  //    锁后再查一次已有决定。approve 与 return 并发时,败者收这个码。
+  SETTLEMENT_REVIEW_ALREADY_DECIDED: {
+    code: 20072,
+    message: '该结算版本在此审核阶段已有生效决定',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // 同 key 同 payload ⇒ 返回同一条决定(不是错误);**同 key 不同 payload ⇒ 本码**。
+  // 与 20061 同一范式:`operationKey` 单列 unique,P2002 也翻成本码,不裸奔成 500。
+  SETTLEMENT_REVIEW_OPERATION_KEY_CONFLICT: {
+    code: 20073,
+    message: '相同操作标识已用于不同的审核内容,请更换操作标识',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // ⑤ 动作面。§5.11「只允许 approve 或 return」——**第三种动作不存在**。
+  //    类型联合是编译期闸;本码是运行期兜底(调用方绕过类型时不得裸奔成 500)。
+  SETTLEMENT_REVIEW_ACTION_INVALID: {
+    code: 20074,
+    message: '结算审核只支持通过或退回',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // §5.11「return 写原因」。退回没有原因,负责人不知道要改什么 —— 那条退回等于噪音。
+  SETTLEMENT_REVIEW_RETURN_REASON_REQUIRED: {
+    code: 20075,
+    message: '退回结算版本必须填写退回原因',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // §5.11「return 只能在 batch 未 committed 前执行」。批次一旦 committed,钱已经记进
+  // 账本 —— 那时"退回"不是退回,是需要走更正流程(§5.14)。
+  SETTLEMENT_REVIEW_BATCH_ALREADY_COMMITTED: {
+    code: 20076,
+    message: '账本发布批次已生效,不可再退回,请改走更正流程',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。
   // 子段(对齐 baseline §1.3):
