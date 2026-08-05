@@ -99,7 +99,14 @@ async function bootstrap(): Promise<void> {
     if (args.objectKey || args.kind || args.manualOnly) {
       throw new Error('--key/--kind/--manual-only 只能与 --once 一起使用');
     }
-    await Promise.all([worker.run(), activityWorker.run()]);
+    // ⚠️ 同 `notification-outbox-worker.ts`:**不用 `Promise.all`** —— 它把两个循环的
+    //    失败模式耦合起来,任一方 reject 就让整个进程退出、另一个 worker 陪葬。
+    //    本刀边界是「只加注册,不改既有 worker 的语义」,进程寿命正是既有语义的一部分。
+    const outcomes = await Promise.allSettled([worker.run(), activityWorker.run()]);
+    for (const outcome of outcomes) {
+      if (outcome.status === 'rejected')
+        console.error('[worker] loop exited abnormally', outcome.reason);
+    }
   } finally {
     await app.close();
   }
