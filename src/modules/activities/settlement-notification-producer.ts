@@ -126,4 +126,49 @@ export class SettlementNotificationProducer {
       tx,
     );
   }
+
+  /**
+   * 账本批次已统一生效、结算入账完成(合同 §5.13 ⑦)。
+   *
+   * `eventKey` 用 `postingBatchId` 做稳定键 —— 与「一个版本至多一个 committed 批次」
+   * 同粒度。重放 `commitBatch`(批次已 committed)走的是不 enqueue 的那条路,
+   * 这里再多一道:即便有人绕过重放路径再调一次,outbox 也只会有一条 intent。
+   *
+   * ⚠️ 收件人与本类另外两个方法逐字同口径(当前 active owner),
+   *    没有 active owner 时**跳过 enqueue,不拒绝入账** —— 通知缺席不该把一笔
+   *    已经算清楚的账挡回去。
+   */
+  async enqueuePosted(
+    tx: Prisma.TransactionClient,
+    input: {
+      activityId: string;
+      activityTitle: string;
+      settlementVersionId: string;
+      settlementVersion: number;
+      postingBatchId: string;
+      memberCount: number;
+      ownerMemberId: string | null;
+    },
+  ): Promise<void> {
+    if (input.ownerMemberId === null) return;
+    await this.outbox.enqueue(
+      {
+        eventKey: `settlement-ledger-commit:${input.postingBatchId}`,
+        eventType: OUTBOX_EVENT_TARGETED_NOTIFICATION,
+        payloadVersion: OUTBOX_PAYLOAD_VERSION,
+        payload: {
+          recipientMemberId: input.ownerMemberId,
+          notificationTypeCode: NOTIFICATION_TYPE_ATTENDANCE_RESULT,
+          title: '结算已入账',
+          body: `「${input.activityTitle}」第 ${input.settlementVersion} 版结算已正式入账,共 ${input.memberCount} 名队员的服务时长与贡献值已生效。如需调整请走更正流程。`,
+          channels: [NOTIFICATION_CHANNEL_IN_APP],
+        },
+        aggregateType: 'activity',
+        aggregateId: input.activityId,
+        destinationType: 'member',
+        destinationRef: input.ownerMemberId,
+      },
+      tx,
+    );
+  }
 }
