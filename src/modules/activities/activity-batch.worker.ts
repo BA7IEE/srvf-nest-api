@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  type OnApplicationShutdown,
+  type OnModuleDestroy,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
@@ -9,6 +15,9 @@ import {
   LedgerPreparationService,
   type LedgerPrepareLeaseFence,
 } from './ledger-preparation.service';
+import { LedgerReadyBatchCommitter } from './ledger-ready-batch-committer.service';
+
+export const ACTIVITY_BATCH_AUTO_COMMIT_ENABLED = Symbol('ACTIVITY_BATCH_AUTO_COMMIT_ENABLED');
 
 // ===== 活动改造 v1.1 第 2 批第五刀:`ActivityBatchWorker`(合同 §3.27)=====
 //
@@ -27,17 +36,14 @@ import {
 //    没有新进程。`ActivityBatchJob` 的五列 lease/fencing 是第 1 批第四刀建表时
 //    就照既有两张表的形状留好的。
 //
-// ## ⚠️ 与合同的一处**显式偏离**:本刀不把 worker 挂进任何进程入口
+// ## 第 ⑧a 刀补齐进程注册与 ready 自动提交
 //
-// §3.27 说「在现有 worker 进程注册」。本刀的写集是 `src/modules/activities/**`,
-// 而两个 worker 的进程入口(`src/notification-outbox-worker.ts` /
-// `src/storage-consistency-worker.ts`)与它们的 module 都在写集之外 ——
-// 顺手改别人的 worker 进程属于越界(process §4.1)。
+// `ActivityBatchWorkerModule` 已被两个既有 worker application context import,两个入口
+// 都把本类的 `run()` 与原循环并行启动。它仍没有 cron、Redis、外部 queue 或新进程。
 //
-// 因此本刀交付的是**可被任一进程注册的 provider**:`drainOnce()` / `drainUntilIdle()`
-// 都是显式调用的纯方法,**没有定时器、没有自启动**。进程注册与前四刀的「零端点」
-// 同一处置 —— 消费方(第 2 批收尾那一刀,它本来就要开整条流程的对外入口)接线。
-// 在那之前,唯一的驱动方是 e2e,与第 1-4 刀「零调用方是预期状态」逐字同源。
+// prepare 收口到 `ready` 后,本类只调用 `LedgerReadyBatchCommitter`；后者从
+// `SettlementReviewAction(final/approve)` 取 actor,再调用第五刀唯一的 `commitBatch`。
+// commit 失败只把同一 prepare job 退回 pending,批次保持 ready,不重算 baseline。
 //
 // ## 本 worker 只认 `settlement_prepare` 一种任务
 //
@@ -68,26 +74,61 @@ export interface ActivityBatchDrainResult {
   itemsFailed: number;
   /** 收口后的批次状态(未收口时 null)。 */
   batchStatus: string | null;
+  /** 本轮是否进入过 ready → committed 自动提交。 */
+  commitAttempted: boolean;
+  /** 自动提交失败的脱敏错误类名;成功或未尝试为 null。 */
+  commitErrorCode: string | null;
 }
 
 @Injectable()
-export class ActivityBatchWorker {
+export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestroy {
   private readonly logger = new Logger(ActivityBatchWorker.name);
+  private stopping = false;
+  private wakeIdle: (() => void) | null = null;
+  private activeRound: Promise<ActivityBatchDrainResult> | null = null;
+  private shutdownPromise: Promise<void> | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly preparation: LedgerPreparationService,
+    private readonly committer: LedgerReadyBatchCommitter,
+    @Inject(ACTIVITY_BATCH_AUTO_COMMIT_ENABLED)
+    private readonly autoCommitEnabled: boolean,
   ) {}
+
+  onApplicationShutdown(): Promise<void> {
+    return this.stopAndDrain();
+  }
+
+  onModuleDestroy(): Promise<void> {
+    return this.stopAndDrain();
+  }
+
+  /** 现有两个进程共同启动的守护循环；空队列时短轮询，不新增 cron / queue。 */
+  async run(): Promise<void> {
+    this.logger.log('activity batch worker started');
+    while (!this.stopping) {
+      try {
+        this.activeRound = this.drainOnce();
+        const result = await this.activeRound;
+        if (!result.jobClaimed && result.jobsEnqueued === 0) await this.waitForNextPoll(500);
+      } catch (error) {
+        this.logger.warn(`activity batch drain failed error=${errorName(error)}`);
+        await this.waitForNextPoll(500);
+      } finally {
+        this.activeRound = null;
+      }
+    }
+  }
 
   /**
    * 跑一轮:补建任务 → 领一个任务 → 逐块处理 → 收口。
    *
-   * **不循环、不睡眠**:循环由调用方决定(见 `drainUntilIdle`)。这样本方法在 e2e 里
-   * 是完全确定性的 —— 一次调用做且只做一轮。
+   * `run()` 的每轮与测试显式调用都复用这里；本方法本身不睡眠,一次只做一轮。
    */
   async drainOnce(options: { now?: Date } = {}): Promise<ActivityBatchDrainResult> {
     const now = options.now ?? new Date();
-    const jobsEnqueued = await this.enqueuePreparingBatches();
+    const jobsEnqueued = await this.enqueuePreparingBatches(now);
 
     const claimed = await this.claimJob(now);
     if (claimed === null) {
@@ -99,6 +140,8 @@ export class ActivityBatchWorker {
         itemsSkipped: 0,
         itemsFailed: 0,
         batchStatus: null,
+        commitAttempted: false,
+        commitErrorCode: null,
       };
     }
 
@@ -132,6 +175,8 @@ export class ActivityBatchWorker {
             itemsSkipped,
             itemsFailed,
             batchStatus: null,
+            commitAttempted: false,
+            commitErrorCode: null,
           };
         }
         itemsFailed += 1;
@@ -150,10 +195,56 @@ export class ActivityBatchWorker {
         itemsSkipped,
         itemsFailed,
         batchStatus: null,
+        commitAttempted: false,
+        commitErrorCode: null,
       };
     }
 
     const finalized = await this.preparation.finalize(claimed.id);
+    if (finalized.batchStatus === 'ready' && this.autoCommitEnabled) {
+      try {
+        // `commitBatch` 会把成功的 settlement_prepare job 当作 baseline 明细真源。
+        // 重试领取会把 job 暂时改成 processing,故调用统一生效协议前先恢复 succeeded;
+        // lease 仍保留到 commit ack,崩溃后由下一轮的过期 lease 恢复器重新排队。
+        await this.markReadyForCommit(claimed.id);
+        const committed = await this.committer.commitReadyBatch(finalized.postingBatchId);
+        await this.markCommitSucceeded(claimed.id);
+        return {
+          jobsEnqueued,
+          jobClaimed: true,
+          jobId: claimed.id,
+          itemsProcessed,
+          itemsSkipped,
+          itemsFailed,
+          batchStatus: committed.batchStatus,
+          commitAttempted: true,
+          commitErrorCode: null,
+        };
+      } catch (error) {
+        // commitBatch 自己的事务保证任何失败都零部分生效。这里只退回**同一条 job**,
+        // 不改 ready 批次、不重算 baseline,下一轮仍会拿同一批次重试。
+        await this.releaseForRetry(claimed.id, now, error);
+        this.logger.warn(
+          `activity ledger auto commit deferred job=${claimed.id} error=${errorName(error)}`,
+        );
+        return {
+          jobsEnqueued,
+          jobClaimed: true,
+          jobId: claimed.id,
+          itemsProcessed,
+          itemsSkipped,
+          itemsFailed,
+          batchStatus: finalized.batchStatus,
+          commitAttempted: true,
+          commitErrorCode: errorName(error),
+        };
+      }
+    }
+    if (finalized.batchStatus === 'committed' && this.autoCommitEnabled) {
+      // commit 已成功、但上一任在 ack job 前崩溃时,过期 lease 会重领到这里。
+      // 批次本身就是幂等真源,只需把同一 job 收口,绝不再次写账。
+      await this.markCommitSucceeded(claimed.id);
+    }
     return {
       jobsEnqueued,
       jobClaimed: true,
@@ -162,6 +253,8 @@ export class ActivityBatchWorker {
       itemsSkipped,
       itemsFailed,
       batchStatus: finalized.batchStatus,
+      commitAttempted: false,
+      commitErrorCode: null,
     };
   }
 
@@ -185,7 +278,24 @@ export class ActivityBatchWorker {
    * 幂等靠 `ActivityBatchJob.operationKey` 单列 unique(`settlement_prepare:{batchId}`)——
    * 这里的 `none` 过滤只是省掉无谓的事务,不是正确性来源。
    */
-  private async enqueuePreparingBatches(): Promise<number> {
+  private async enqueuePreparingBatches(now: Date): Promise<number> {
+    // commit 前已把准备 job 收成 succeeded,若进程在真正 commit / ack 前崩溃,
+    // batch 会保持 ready。等原 lease 过期后把**同一 job**恢复 pending,不新建、不重算。
+    if (this.autoCommitEnabled) {
+      await this.prisma.activityBatchJob.updateMany({
+        where: {
+          jobTypeCode: LEDGER_PREPARE_JOB_TYPE,
+          statusCode: 'succeeded',
+          postingBatch: { statusCode: 'ready' },
+          OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { lte: now } }],
+        },
+        data: {
+          statusCode: 'pending',
+          availableAt: now,
+          completedAt: null,
+        },
+      });
+    }
     const batches = await this.prisma.ledgerPostingBatch.findMany({
       where: {
         statusCode: 'preparing',
@@ -293,7 +403,7 @@ export class ActivityBatchWorker {
    * ⚠️ **不改批次状态**:块失败是可重试的(下一轮从失败的那个块继续,已成功的块
    * 靠 item 状态跳过)。真正让批次落 `failed` 的只有 `finalize` 里的数量不一致。
    */
-  private async releaseForRetry(jobId: string, now: Date): Promise<void> {
+  private async releaseForRetry(jobId: string, now: Date, error?: unknown): Promise<void> {
     await this.prisma.activityBatchJob.update({
       where: { id: jobId },
       data: {
@@ -301,6 +411,8 @@ export class ActivityBatchWorker {
         leaseOwner: null,
         leaseExpiresAt: null,
         availableAt: new Date(now.getTime() + ACTIVITY_BATCH_RETRY_BACKOFF_MS),
+        completedAt: null,
+        ...(error === undefined ? {} : { lastErrorCode: errorName(error) }),
       },
     });
   }
@@ -320,9 +432,62 @@ export class ActivityBatchWorker {
       },
     });
   }
+
+  private async markCommitSucceeded(jobId: string): Promise<void> {
+    await this.prisma.activityBatchJob.update({
+      where: { id: jobId },
+      data: {
+        statusCode: 'succeeded',
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        completedAt: new Date(),
+        lastErrorCode: null,
+      },
+    });
+  }
+
+  private async markReadyForCommit(jobId: string): Promise<void> {
+    await this.prisma.activityBatchJob.update({
+      where: { id: jobId },
+      data: {
+        statusCode: 'succeeded',
+        completedAt: new Date(),
+        lastErrorCode: null,
+      },
+    });
+  }
+
+  private stopAndDrain(): Promise<void> {
+    if (this.shutdownPromise !== null) return this.shutdownPromise;
+    this.stopping = true;
+    this.wakeIdle?.();
+    this.shutdownPromise = (async () => {
+      if (this.activeRound !== null) await Promise.allSettled([this.activeRound]);
+    })();
+    return this.shutdownPromise;
+  }
+
+  private async waitForNextPoll(ms: number): Promise<void> {
+    if (this.stopping) return;
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = (): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (this.wakeIdle === finish) this.wakeIdle = null;
+        resolve();
+      };
+      const timer = setTimeout(finish, ms);
+      this.wakeIdle = finish;
+      if (this.stopping) finish();
+    });
+  }
 }
 
 function errorName(error: unknown): string {
+  const bizCode = (error as { biz?: { code?: unknown } } | null)?.biz?.code;
+  if (typeof bizCode === 'number') return `BizException:${bizCode}`;
   if (error instanceof Error && error.name.length > 0) return error.name;
   return 'UnknownError';
 }

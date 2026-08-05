@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 
+import { ActivityBatchWorker } from '../../src/modules/activities/activity-batch.worker';
 import { NotificationOutboxHandlers } from '../../src/modules/notifications/notification-outbox.handlers';
 import { NotificationOutboxWorkerModule } from '../../src/modules/notifications/notification-outbox-worker.module';
 import { NotificationOutboxService } from '../../src/modules/notifications/notification-outbox.service';
@@ -19,10 +20,21 @@ async function main(): Promise<void> {
   try {
     if (command === 'boot') {
       app.get(NotificationOutboxWorker);
-      write({ booted: true, pid: process.pid });
+      app.get(ActivityBatchWorker);
+      write({
+        booted: true,
+        notificationOutboxWorker: true,
+        activityBatchWorker: true,
+        pid: process.pid,
+      });
       return;
     }
-    const outbox = app.get(NotificationOutboxService);
+    // ActivityBatchWorkerModule 也为独立 storage worker 提供一份 outbox service。
+    // crash barrier 必须 patch 本 module 中 NotificationOutboxWorker/Handlers 实际注入的
+    // 那份实例；全局 app.get() 在同 token 有两份 provider 时会取到另一份。
+    const outbox = app
+      .select(NotificationOutboxWorkerModule)
+      .get(NotificationOutboxService, { strict: true });
     if (command === 'run-slow-sigterm') {
       const worker = app.get(NotificationOutboxWorker);
       const handlers = app.get(NotificationOutboxHandlers);
@@ -189,7 +201,11 @@ function write(value: unknown): void {
 }
 
 function waitForever(): Promise<never> {
-  return new Promise(() => undefined);
+  // 悬空 Promise 本身不会保活 Node 事件循环。这里的真实 OS child 必须停在 crash
+  // barrier，直到父进程显式 SIGKILL；不能依赖某张 worker module 图碰巧留下的 DB handle。
+  return new Promise(() => {
+    setInterval(() => undefined, 60_000);
+  });
 }
 
 function pause(ms: number): Promise<void> {

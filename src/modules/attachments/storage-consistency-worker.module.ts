@@ -5,6 +5,7 @@ import appConfig from '../../config/app.config';
 import databaseConfig from '../../config/database.config';
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { ActivityBatchWorkerModule } from '../activities/activity-batch-worker.module';
 import { StorageModule } from '../storage/storage.module';
 import { AttachmentAuditRecorder } from './attachment-audit-recorder';
 import { AttachmentContentValidator } from './attachment-content-validator';
@@ -19,6 +20,7 @@ import { StorageConsistencyWorker } from './storage-consistency.worker';
     DatabaseModule,
     AuditLogsModule,
     StorageModule,
+    ActivityBatchWorkerModule,
   ],
   providers: [
     AttachmentAuditRecorder,

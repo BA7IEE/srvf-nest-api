@@ -4,7 +4,7 @@ import { HttpStatus } from '@nestjs/common';
 //
 // 当前状态(随实施滚动维护;每次新增模块码后校对):
 // - 招新证书闭环刀A(2026-07-13):28xxx +2(28054 已审核通过禁止重传 / 28055 未审核通过禁止标门槛)
-// - 278 个 BizCode(2026-07-28;当前总数以 docs/current-state.md §1 + `pnpm docs:counts:check` 真源为准)
+// - 389 个 BizCode(2026-08-05;当前总数以 docs/current-state.md §1 + `pnpm docs:counts:check` 真源为准)
 // - 历史 2026-06-25 快照为 175 个 BizCode(彼时含 CMS content 290xx +5
 //   + 活动闭环硬化 20123 报名截止 +1 + 统一通知 310xx +5;2026-06-13 的「141」系彼时快照,此后 realname 27xxx
 //   + 招新·入队 28xxx(280xx/281xx/282xx)+ #399 review 错误码增量(13014 / 19010 / 30103)+ CMS content 290xx 5 码
@@ -1489,6 +1489,21 @@ export const BizCode = {
   CORRECTION_OPERATION_KEY_CONFLICT: {
     code: 20111,
     message: '相同操作标识已用于该活动的其它更正内容,请更换操作标识',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // ===== 活动改造 v1.1 第 2 批第 ⑧a 刀:worker 自动提交 =====
+  //
+  // §5.11 的终审 approve 是账本责任人的唯一真源。批次创建者字段只是准备动作的
+  // 过程留痕,系统账号则根本没有拍板责任;两者都不得拿来替代终审人。
+  LEDGER_COMMIT_FINAL_APPROVER_MISSING: {
+    code: 20112,
+    message: '未找到该结算版本的终审通过记录,账本批次不可自动生效',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  SETTLEMENT_DRAFT_OPERATION_KEY_CONFLICT: {
+    code: 20113,
+    message: '相同操作标识已用于其它结算草稿生成内容,请更换操作标识',
     httpStatus: HttpStatus.CONFLICT,
   },
 

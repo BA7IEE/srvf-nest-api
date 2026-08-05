@@ -49,16 +49,18 @@ import { EvidenceSealService } from './evidence-seal.service';
 import { ContributionCalculator } from '../attendances/contribution-calculator';
 import { SettlementDraftAuditRecorder } from './settlement-draft-audit-recorder';
 import { SettlementDraftService } from './settlement-draft.service';
+import { SettlementDraftDispatchService } from './settlement-draft-dispatch.service';
 import { SettlementNotificationProducer } from './settlement-notification-producer';
 import { SettlementReviewAuditRecorder } from './settlement-review-audit-recorder';
 import { SettlementReviewService } from './settlement-review.service';
 import { SettlementSubmitAuditRecorder } from './settlement-submit-audit-recorder';
 import { SettlementSubmitService } from './settlement-submit.service';
-import { ActivityBatchWorker } from './activity-batch.worker';
+import { ACTIVITY_BATCH_AUTO_COMMIT_ENABLED, ActivityBatchWorker } from './activity-batch.worker';
 import { LedgerPostingAuditRecorder } from './ledger-posting-audit-recorder';
 import { LedgerPostingService } from './ledger-posting.service';
 import { LedgerPreparationService } from './ledger-preparation.service';
 import { LedgerQueryService } from './ledger-query.service';
+import { LedgerReadyBatchCommitter } from './ledger-ready-batch-committer.service';
 import { ActivityClosureAuditRecorder } from './activity-closure-audit-recorder';
 import { ActivityClosureNotificationProducer } from './activity-closure-notification-producer';
 import { ActivityClosureService } from './activity-closure.service';
@@ -153,6 +155,7 @@ import { CorrectionAuditRecorder } from './correction-audit-recorder';
     ContributionCalculator,
     SettlementDraftAuditRecorder,
     SettlementDraftService,
+    SettlementDraftDispatchService,
     // 活动改造 v1.1 第 2 批第三刀(合同 §5.10):提交不可变 SettlementVersion。
     // 同样零端点 —— 消费方是第四刀(一审/终审)。
     SettlementNotificationProducer,
@@ -167,12 +170,14 @@ import { CorrectionAuditRecorder } from './correction-audit-recorder';
     // 🔴 本刀语义像钱:`LedgerPostingService.commitBatch` 成功的那一刻,
     //    `ParticipationLedgerEntry` 就是队员贡献值真值。
     //
-    // ⚠️ `ActivityBatchWorker` 在这里只是一个**普通 provider**:它没有定时器、
-    //    不自启动,`drainOnce()` / `drainUntilIdle()` 都必须被显式调用。
-    //    §3.27 说的「在现有 worker 进程注册」需要改两个 worker 进程入口,那在本刀
-    //    写集之外 ⇒ 进程注册与整条流程的对外入口一起留到第 2 批收尾(报告已逐条列明)。
-    //    **零新增 cron**(全仓终态仍恰 2)、零 Redis / queue、零新进程。
+    // `ActivityBatchWorker` 的 daemon 只由两个既有 worker 专用 module 启动；HTTP app
+    // 保留 provider 只供显式 service/e2e 调用,不自启动。全仓仍零新增 cron、Redis、
+    // 外部 queue 或新进程。
     LedgerPreparationService,
+    LedgerReadyBatchCommitter,
+    // HTTP application context 不启动 worker daemon；保留显式 drain 的第五刀测试探针为
+    // prepare-only。两个真实 worker process 的专用 module 把本 token 置 true。
+    { provide: ACTIVITY_BATCH_AUTO_COMMIT_ENABLED, useValue: false },
     ActivityBatchWorker,
     LedgerPostingAuditRecorder,
     LedgerPostingService,
@@ -200,6 +205,7 @@ import { CorrectionAuditRecorder } from './correction-audit-recorder';
     ActivitiesService,
     EvidenceSealService,
     SettlementDraftService,
+    SettlementDraftDispatchService,
     SettlementSubmitService,
     SettlementReviewService,
     LedgerPreparationService,

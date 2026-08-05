@@ -43,6 +43,8 @@ interface Refs {
 
 interface ChildResult {
   booted?: boolean;
+  notificationOutboxWorker?: boolean;
+  activityBatchWorker?: boolean;
   phase?:
     | 'claimed'
     | 'not-claimed'
@@ -2132,8 +2134,12 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
     });
   });
 
-  it('独立 worker module 可由 child application context 启动且不依赖 AppModule/ScheduleModule', async () => {
-    await expect(runChild(['boot'])).resolves.toMatchObject({ booted: true });
+  it('独立 worker module 可由 child application context 启动且取得两个 worker provider', async () => {
+    await expect(runChild(['boot'])).resolves.toMatchObject({
+      booted: true,
+      notificationOutboxWorker: true,
+      activityBatchWorker: true,
+    });
   });
 });
 
