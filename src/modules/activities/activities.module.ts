@@ -59,6 +59,9 @@ import { LedgerPostingAuditRecorder } from './ledger-posting-audit-recorder';
 import { LedgerPostingService } from './ledger-posting.service';
 import { LedgerPreparationService } from './ledger-preparation.service';
 import { LedgerQueryService } from './ledger-query.service';
+import { ActivityClosureAuditRecorder } from './activity-closure-audit-recorder';
+import { ActivityClosureNotificationProducer } from './activity-closure-notification-producer';
+import { ActivityClosureService } from './activity-closure.service';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activities 写操作(create / update / softDelete / publish / cancel 共 5 处共用 activity.publish)
@@ -172,6 +175,15 @@ import { LedgerQueryService } from './ledger-query.service';
     LedgerPostingAuditRecorder,
     LedgerPostingService,
     LedgerQueryService,
+    // 活动改造 v1.1 第 2 批第六刀(合同 §5.15 + §3.26):机器关账。
+    //
+    // 🔴 关账是"这场活动的账算完了"的唯一权威(合同 §1.2 把它从负责人**声明**
+    //    改成**机器检查**)。同样零端点 / 零 DTO / 零权限码 —— 消费方是第 ⑧ 刀。
+    // ⚠️ 本刀**与旧关账路径并存**:不删 `declareAttendanceComplete`、不改
+    //    `activity-closure-policy.ts`(那是既有行为契约变更,另立一刀单独拍板)。
+    ActivityClosureAuditRecorder,
+    ActivityClosureNotificationProducer,
+    ActivityClosureService,
   ],
   exports: [
     ActivitiesService,
@@ -183,6 +195,7 @@ import { LedgerQueryService } from './ledger-query.service';
     ActivityBatchWorker,
     LedgerPostingService,
     LedgerQueryService,
+    ActivityClosureService,
     AppMyActivitiesService,
     ActivityParticipationPolicy,
     ActivityPublishReviewService,
