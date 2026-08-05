@@ -54,6 +54,11 @@ import { SettlementReviewAuditRecorder } from './settlement-review-audit-recorde
 import { SettlementReviewService } from './settlement-review.service';
 import { SettlementSubmitAuditRecorder } from './settlement-submit-audit-recorder';
 import { SettlementSubmitService } from './settlement-submit.service';
+import { ActivityBatchWorker } from './activity-batch.worker';
+import { LedgerPostingAuditRecorder } from './ledger-posting-audit-recorder';
+import { LedgerPostingService } from './ledger-posting.service';
+import { LedgerPreparationService } from './ledger-preparation.service';
+import { LedgerQueryService } from './ledger-query.service';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activities 写操作(create / update / softDelete / publish / cancel 共 5 处共用 activity.publish)
@@ -152,6 +157,21 @@ import { SettlementSubmitService } from './settlement-submit.service';
     // 同样零端点 —— 消费方是第 2 批收尾那一刀(整条结算流程的对外入口)。
     SettlementReviewAuditRecorder,
     SettlementReviewService,
+    // 活动改造 v1.1 第 2 批第五刀(合同 §5.12 + §5.13):账本分块准备 + 短事务统一生效。
+    //
+    // 🔴 本刀语义像钱:`LedgerPostingService.commitBatch` 成功的那一刻,
+    //    `ParticipationLedgerEntry` 就是队员贡献值真值。
+    //
+    // ⚠️ `ActivityBatchWorker` 在这里只是一个**普通 provider**:它没有定时器、
+    //    不自启动,`drainOnce()` / `drainUntilIdle()` 都必须被显式调用。
+    //    §3.27 说的「在现有 worker 进程注册」需要改两个 worker 进程入口,那在本刀
+    //    写集之外 ⇒ 进程注册与整条流程的对外入口一起留到第 2 批收尾(报告已逐条列明)。
+    //    **零新增 cron**(全仓终态仍恰 2)、零 Redis / queue、零新进程。
+    LedgerPreparationService,
+    ActivityBatchWorker,
+    LedgerPostingAuditRecorder,
+    LedgerPostingService,
+    LedgerQueryService,
   ],
   exports: [
     ActivitiesService,
@@ -159,6 +179,10 @@ import { SettlementSubmitService } from './settlement-submit.service';
     SettlementDraftService,
     SettlementSubmitService,
     SettlementReviewService,
+    LedgerPreparationService,
+    ActivityBatchWorker,
+    LedgerPostingService,
+    LedgerQueryService,
     AppMyActivitiesService,
     ActivityParticipationPolicy,
     ActivityPublishReviewService,

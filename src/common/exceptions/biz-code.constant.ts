@@ -1171,6 +1171,138 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // ===== 活动改造 v1.1 第 2 批第五刀:账本分块准备 + 短事务统一生效 =====
+  // (合同 §5.12 + §5.13 + §3.22 / §3.23 / §3.24)
+  //
+  // 🔴🔴 **这一段是全仓语义最像钱的一段。** committed 之后的 `ParticipationLedgerEntry`
+  //    就是队员贡献值真值,而维护者看不懂代码、发现不了账错。所以这里**没有一条**
+  //    走"警告后放行":每一条都是**拒绝**,宁可多拒,不可少拒。
+  //    落 200xx 段 20077-20089(20062-20076 是第四刀审核)。
+  //
+  // ⚠️ 全段 **409**,只有一条例外(20087 是 429):它不是"你做错了",而是
+  //    "此刻并发预算不够,过一会儿重发就行" —— 语义上属于限流而不是冲突。
+
+  // ① §5.12 准备阶段(worker)。
+  //
+  // 批次不在 `preparing` 却被要求准备:要么已经 ready/committed(重复准备会写第二遍分录),
+  // 要么已 voided/failed(照着一条已作废的批次入账 = 记一份被退回的账)。
+  LEDGER_PREPARE_BATCH_STATUS_INVALID: {
+    code: 20077,
+    message: '账本发布批次当前状态不允许准备',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // 🔴 §3.21「按北京日拆分」的 fail-closed 位:结果修订上有非零认定值,却找不到任何
+  //    可归属的服务日(一条服务段都没有 ⇒ 没有 `ledgerDate` 可挂)。
+  //    这时**不能**随手挂到活动日或场次日 —— 那是发明一个从未发生过的服务事实,
+  //    并且会直接影响该队员当日的贡献值上限分配。只能拒绝并等人处理。
+  LEDGER_PREPARE_DAY_SPLIT_UNRESOLVED: {
+    code: 20078,
+    message: '存在无法归属到服务日的结算认定值,不可准备入账',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // 结果修订不是 `draft`:`committed` 说明它已经随别的批次入过账(重复入账),
+  // `superseded` 说明它已被更正取代(照着旧版入账)。两种都是账错,不是流程问题。
+  LEDGER_PREPARE_RESULT_REVISION_STATUS_INVALID: {
+    code: 20079,
+    message: '结算结果修订当前状态不允许入账',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // ② §5.13 统一生效的前置状态闸。三条分开:三者不同步时(如批次被别的路径作废、
+  //    run 被退回)负责人面对的是三件不同的事。
+  LEDGER_COMMIT_BATCH_STATUS_INVALID: {
+    code: 20080,
+    message: '账本发布批次尚未准备就绪,不可生效',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  LEDGER_COMMIT_RUN_STATUS_INVALID: {
+    code: 20081,
+    message: '当前结算状态不允许账本生效',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  LEDGER_COMMIT_VERSION_STATUS_INVALID: {
+    code: 20082,
+    message: '该结算版本当前状态不可入账',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // §3.22「一个 SettlementVersion 至多一个 committed posting batch」——
+  // DB 上有 partial unique 兜底(`ledger_posting_batch_committed_unique`),
+  // 本码是锁后的显式判定,让并发败者收到具名结论而不是 P2002 裸奔。
+  LEDGER_COMMIT_VERSION_ALREADY_POSTED: {
+    code: 20083,
+    message: '该结算版本已有生效的账本批次,不可重复入账',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // ③ ⭐⭐ §5.13 ⑤⑥ **baseline 比对** —— 本刀最核心的正确性判据。
+  //
+  // 准备阶段按当时的 day-state 版本算出 credited / cappedOut;若在准备完成之后、
+  // 生效之前有别的批次动过同一 member/date,那份 credited 就是按一份过期的世界算的。
+  // **整批拒绝,不允许部分生效** —— 部分生效会产出一个看起来正常、实则半新半旧的账本。
+  LEDGER_COMMIT_BASELINE_CHANGED: {
+    code: 20084,
+    message: '队员日账基线在准备之后发生变化,本批次不可生效,请重新准备',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // baseline 明细(存于 job payload)与批次上记录的摘要 `baselineJsonHash` 不符。
+  // 正常路径不可达 —— 它守的是"有人绕过应用层改了准备结果"这一形态。
+  // 与 20084 分码:那条是**世界变了**,这条是**记录被动过**,运维含义完全不同。
+  LEDGER_COMMIT_BASELINE_DIGEST_MISMATCH: {
+    code: 20085,
+    message: '账本批次基线摘要校验不通过,本批次不可生效',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // ④ ⭐⭐ §3.24 末句「日合计必须 0..3」的**唯一执行位**。
+  //
+  // 🔴 这是**跨行**不变量(同 member 同 ledgerDate 多条分录求和),第 1 批已实测判定
+  //    「表级 CHECK 只看单行、trigger 求和在并发下骗人」⇒ 刻意零 DB 执行位。
+  //    因此本码所在的那次判定(member advisory lock 内、day-state `FOR UPDATE` 之后)
+  //    是全仓唯一挡住它的地方。写松 = 队员贡献值当日可以无声地超过上限。
+  LEDGER_COMMIT_DAILY_CAP_EXCEEDED: {
+    code: 20086,
+    message: '本批次会使队员当日贡献值合计超出上限,不可生效',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // ⑤ ⭐⭐ 「万人统一生效恒串行」的执行位(维护者 2026-08-04 拍板;
+  //    `docs/current-state.md` §「活动业务改造」逐字记录)。
+  //
+  // 背景实测(第 0 批锁原型 `docs/archive/reviews/activity-business-overhaul-v1.1-lock-probe.md`):
+  //   advisory 锁占 PostgreSQL **共享**锁表,公式保底
+  //   `max_locks_per_transaction × (max_connections + max_prepared_transactions)` = 64×200 = **12800**;
+  //   一场万人生效实占 10000 把(78%)⇒ 两场并发即越过保底,落进 `out of shared memory`。
+  //   那是**硬 ERROR**,不走 `lock_timeout` → 55P03 → 40901 的可重试路径,事务直接中止。
+  //
+  // 20087:此刻并发预算不够 —— **可重试**,过一会儿重发即可(故 429 而非 409)。
+  // 20088:这一场自己就超过预算总量 —— **重试无用**,须运维提高
+  //        `max_locks_per_transaction`(生产库配置 + 重启)或重新拍板生效粒度。
+  //        两者分码正是因为「该不该重试」相反。
+  LEDGER_COMMIT_LOCK_BUDGET_EXHAUSTED: {
+    code: 20087,
+    message: '已有其它账本批次正在生效,当前并发锁预算不足,请稍后重试',
+    httpStatus: HttpStatus.TOO_MANY_REQUESTS,
+  },
+  LEDGER_COMMIT_SCALE_EXCEEDS_LOCK_BUDGET: {
+    code: 20088,
+    message: '本场结算人数超过数据库共享锁预算总量,须先调整数据库配置',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // ⑥ §5.12 ⑧「全部 item 成功且数量、摘要一致时 batch 才进 ready」的生效侧复核:
+  //    真实分录集合与批次自称的准备结果不一致 ⇒ 不生效。
+  LEDGER_COMMIT_ENTRY_SET_MISMATCH: {
+    code: 20089,
+    message: '账本批次的准备分录与批次记录不一致,不可生效',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // ⚠️ **刻意没有** `LEDGER_COMMIT_OPERATION_KEY_CONFLICT`(对照 20061 / 20073)。
+  //    生效动作的 payload **完全由 batchId 决定** —— 不存在"同 key 不同 payload"这种形态,
+  //    造一个码出来只会是永远打不到的死码。幂等锚点就是 batchId 本身:
+  //    重放时批次已是 `committed` ⇒ 原样返回上一次的结论(`replayed: true`),
+  //    而"一个版本至多一个 committed 批次"由 DB partial unique
+  //    `ledger_posting_batch_committed_unique` 兜底(20083 是它的锁后具名版本)。
+
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。
   // 子段(对齐 baseline §1.3):
