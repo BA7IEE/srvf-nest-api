@@ -1303,6 +1303,90 @@ export const BizCode = {
   //    而"一个版本至多一个 committed 批次"由 DB partial unique
   //    `ledger_posting_batch_committed_unique` 兜底(20083 是它的锁后具名版本)。
 
+  // ===== 活动改造 v1.1 第 2 批第六刀:机器关账(合同 §5.15 + §3.26)=====
+  //
+  // 🔴 **关账是"这场活动的账算完了"的唯一权威。** 合同 §1.2 把它从「负责人声明」
+  //    改成机器检查:八类判定全过才追加一张 `ActivitySettlementClosureRevision`。
+  //    落 200xx 段 20090-20098(20077-20089 是第五刀账本)。
+  //
+  // ⭐ **前八条不是"错误码",是缺口码**(§5.15 ⑫「返回**结构化缺口码和数量**」)。
+  //    它们由 `ActivityClosureService.close()` 以 `{ outcome:'blocked', gaps:[...] }`
+  //    **返回**(不是抛出)—— 因为一次关账尝试可能同时缺好几类,而维护者看不懂代码,
+  //    只告诉他"关账失败"等于把排查成本原样推给他。返回体逐类带 `count` 与
+  //    `details`(逐项计数),页面就能直接渲染成合同 §6 说的那份"缺口清单"。
+  //    ⇒ 本仓 `BizException` 只能携带一个 `BizCodeEntry`(且 `biz.exception.ts` 不在
+  //      本刀写集内),这是"返回而非抛出"的第二个、也是结构性的理由。
+  //
+  // ⚠️ 全段 409:每一条都是"当前事实还不允许关账",不是入参格式错。
+  //
+  // 八类与合同步骤的对应(逐条,报告里另有对照表):
+  //   20090 ← §5.15 ③ 的执行态一半(§9.2 ①)
+  //   20091 ← §5.15 ③ 的封场一半(§9.2 ②)
+  //   20092 ← §5.15 ④   20093 ← §5.15 ⑤   20094 ← §5.15 ⑥
+  //   20095 ← §5.15 ⑦   20096 ← §5.15 ⑧   20097 ← §5.15 ⑨
+  // §5.15 ③ 拆成两类**不是自作主张**:§9.2 把"已结束/已终止"与"已封场"列为**两道**
+  // 硬检查,合并成一个码会让"哪一道没有执法位"再也读不出来(沿 20062-20064 的分码理由)。
+
+  ACTIVITY_CLOSURE_EXECUTION_NOT_ENDED: {
+    code: 20090,
+    message: '活动尚未自然结束或正式提前终止,不可关账',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CLOSURE_EVIDENCE_NOT_SEALED: {
+    code: 20091,
+    message: '当前证据版本尚未封场或封场凭证已失配,不可关账',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CLOSURE_PENDING_WORK_EXISTS: {
+    code: 20092,
+    message: '仍有待处理的变更、更正、人工复核、开放服务段或未完成批量任务',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // ⭐ §9.2 的那句话就是这条码:「30 人报名通过、0 打卡、0 人员结果时……必须拒绝关闭,
+  //    并清楚提示 30 个队员×场次尚未处理」—— `count` 就是那个 30。
+  ACTIVITY_CLOSURE_PARTICIPATION_UNRESOLVED: {
+    code: 20093,
+    message: '仍有报名、邀请或参与身份未形成终态,或与应结算人口不一致',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CLOSURE_SETTLEMENT_INCOMPLETE: {
+    code: 20094,
+    message: '当前结算版本未终审生效或未覆盖全部应结算人口',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CLOSURE_RESULT_INCONSISTENT: {
+    code: 20095,
+    message: '存在服务段缺失、零时长结果金额不为零或标签不一致的人员结果',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CLOSURE_LEDGER_INCOMPLETE: {
+    code: 20096,
+    message: '正式账本尚未全部生效,或存在日上限、重复入账、时间重叠、名额对账异常',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // §5.15 ⑨。更正后重新关账**不走特例分支**:§5.14 ⑥ 要求更正 commit 事务内先把旧
+  // active closure 投影成 superseded,届时本条自然为真(DB partial unique
+  // `activity_settlement_closure_active_unique` 也只允许这一条路)。
+  // 🔴 并发败者(P2002 撞该 partial unique)也翻成本码,**不让 Prisma 异常裸奔成 500**。
+  ACTIVITY_CLOSURE_ALREADY_ACTIVE: {
+    code: 20097,
+    message: '该活动已有生效的关闭版本,请先完成更正流程再重新关账',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // 幂等(§5.15 ②)。同 key 同 payload ⇒ 返回同一张 closure(不是错误);
+  // **同 key 不同 payload ⇒ 本码**。与 20061 / 20073 同一范式。
+  //
+  // ⚠️ 与那两条的**唯一实质差别**:§3.26 的字段表没有给 `ActivitySettlementClosureRevision`
+  //    任何 operationKey / requestHash 列(而 §5.15 ② 又要求按它们防重)——
+  //    合同内部不一致,已在报告作为新 finding 上报。本刀零 schema,幂等键存进
+  //    `checksJson.idempotency`,去重域因此是 **(activityId, operationKey)**,
+  //    正确性来自**第一把 Activity 行锁**(所有关账写入都先取它),不是 DB unique。
+  ACTIVITY_CLOSURE_OPERATION_KEY_CONFLICT: {
+    code: 20098,
+    message: '相同操作标识已用于该活动的其它关账内容,请更换操作标识',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。
   // 子段(对齐 baseline §1.3):
