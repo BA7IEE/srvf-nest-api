@@ -48,9 +48,20 @@ import {
   AppSettlementCloseResponseDto,
   AppSettlementGenerateCommandDto,
   AppSettlementGenerateResponseDto,
+  AppSettlementResubmitCommandDto,
   AppSettlementSubmitCommandDto,
   AppSettlementSubmitResponseDto,
 } from '../dto/app/app-settlement-command.dto';
+import {
+  AppSettlementItemDto,
+  AppSettlementItemParamsDto,
+  AppSettlementItemsQueryDto,
+  AppSettlementUpdatedDraftItemResponseDto,
+  AppSettlementVersionDetailResponseDto,
+  AppSettlementVersionParamsDto,
+  AppSettlementWorkbenchResponseDto,
+  AppSettlementUpdateDraftItemDto,
+} from '../dto/app/app-settlement-workbench.dto';
 
 @ApiTags('Mobile - Managed Activities')
 @ApiBearerAuth()
@@ -217,6 +228,151 @@ export class AppManagedActivitiesController {
         operationKey: dto.operationKey,
         expectedSettlementVersionId: dto.expectedSettlementVersionId,
         expectedPostingBatchId: dto.expectedPostingBatchId,
+      },
+      user,
+      this.auditMeta(req),
+    );
+  }
+
+  @Get(':activityId/settlement')
+  @ApiOperation({
+    summary: 'App 查看负责人结算工作台摘要 [rbac: activity.settlement-generate.record]',
+  })
+  @ApiWrappedOkResponse(AppSettlementWorkbenchResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+  )
+  async settlementWorkbench(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+  ): Promise<AppSettlementWorkbenchResponseDto> {
+    await this.resolveMemberId(user);
+    return await this.settlements.workbench(params.activityId, user);
+  }
+
+  @Get(':activityId/settlement/items')
+  @ApiOperation({
+    summary: 'App 分页查看负责人结算逐人结果 [rbac: activity.settlement-generate.record]',
+  })
+  @ApiWrappedPageResponse(AppSettlementItemDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+  )
+  async settlementItems(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Query() query: AppSettlementItemsQueryDto,
+  ) {
+    await this.resolveMemberId(user);
+    return await this.settlements.items(params.activityId, query, user);
+  }
+
+  @Patch(':activityId/settlement/items/:identityId')
+  @ApiOperation({
+    summary:
+      'App 负责人编辑当前 working draft 结算项 [rbac: activity.settlement-update-draft.record]',
+  })
+  @ApiWrappedOkResponse(AppSettlementUpdatedDraftItemResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.SETTLEMENT_DRAFT_UPDATE_RUN_STATUS_INVALID,
+    BizCode.SETTLEMENT_DRAFT_UPDATE_EXPECTED_DRAFT_VERSION_MISMATCH,
+    BizCode.SETTLEMENT_SUBMIT_DRAFT_MISSING,
+  )
+  async updateSettlementDraftItem(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppSettlementItemParamsDto,
+    @Body() dto: AppSettlementUpdateDraftItemDto,
+  ): Promise<AppSettlementUpdatedDraftItemResponseDto> {
+    await this.resolveMemberId(user);
+    return await this.settlements.updateDraftItem(
+      {
+        activityId: params.activityId,
+        participationIdentityId: params.identityId,
+        expectedDraftVersion: dto.expectedDraftVersion,
+        resultCode: dto.resultCode,
+        recognizedServiceHours: dto.recognizedServiceHours,
+        recognizedContributionPoints: dto.recognizedContributionPoints,
+        reason: dto.reason,
+      },
+      user,
+    );
+  }
+
+  @Get(':activityId/settlement/versions/:versionId')
+  @ApiOperation({
+    summary: 'App 查看不可变结算版本、差异和封场修订 [rbac: activity.settlement-generate.record]',
+  })
+  @ApiWrappedOkResponse(AppSettlementVersionDetailResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+  )
+  async settlementVersionDetail(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppSettlementVersionParamsDto,
+  ): Promise<AppSettlementVersionDetailResponseDto> {
+    await this.resolveMemberId(user);
+    return await this.settlements.versionDetail(params.activityId, params.versionId, user);
+  }
+
+  @Post(':activityId/settlement/versions/:versionId/resubmit')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'App 将 returned 结算版本基于当前 working draft 重新提交 [rbac: activity.settlement-submit.record]',
+  })
+  @ApiWrappedOkResponse(AppSettlementSubmitResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.SETTLEMENT_RESUBMIT_VERSION_NOT_RETURNED,
+    BizCode.SETTLEMENT_SUBMIT_RUN_STATUS_INVALID,
+    BizCode.SETTLEMENT_SUBMIT_DRAFT_MISSING,
+    BizCode.SETTLEMENT_SUBMIT_EVIDENCE_SEAL_INACTIVE,
+    BizCode.SETTLEMENT_SUBMIT_EVIDENCE_SEAL_STALE,
+    BizCode.SETTLEMENT_SUBMIT_EXPECTED_DRAFT_VERSION_MISMATCH,
+    BizCode.SETTLEMENT_SUBMIT_EXPECTED_EVIDENCE_SEAL_MISMATCH,
+    BizCode.SETTLEMENT_SUBMIT_PENDING_RESULT,
+    BizCode.SETTLEMENT_SUBMIT_ITEM_COUNT_MISMATCH,
+    BizCode.SETTLEMENT_SUBMIT_DUPLICATE_IDENTITY,
+    BizCode.SETTLEMENT_SUBMIT_OPEN_SEGMENT,
+    BizCode.SETTLEMENT_SUBMIT_MISSING_RULE,
+    BizCode.SETTLEMENT_SUBMIT_OPERATION_KEY_CONFLICT,
+  )
+  async resubmitSettlement(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppSettlementVersionParamsDto,
+    @Body() dto: AppSettlementResubmitCommandDto,
+    @Req() req: Request,
+  ): Promise<AppSettlementSubmitResponseDto> {
+    await this.resolveMemberId(user);
+    return await this.settlements.resubmit(
+      params.activityId,
+      params.versionId,
+      {
+        operationKey: dto.operationKey,
+        expectedDraftVersion: dto.expectedDraftVersion,
+        evidenceSealId: dto.evidenceSealId,
+        confirmation: dto.confirmation,
       },
       user,
       this.auditMeta(req),

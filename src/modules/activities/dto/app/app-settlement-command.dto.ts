@@ -34,6 +34,31 @@ export class AppSettlementSubmitCommandDto {
   confirmation!: boolean;
 }
 
+/** returned 版本重新提交时的显式确认锚点；不复用 Admin DTO。 */
+export class AppSettlementResubmitCommandDto {
+  @ApiProperty({ minLength: 1, maxLength: 128, description: '调用方生成的重新提交幂等键' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(128)
+  operationKey!: string;
+
+  @ApiProperty({ minLength: 8, maxLength: 64, description: '客户端确认过的 EvidenceSeal.id' })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(64)
+  evidenceSealId!: string;
+
+  @ApiProperty({ minimum: 1, description: '客户端确认过的 returned 后当前 working draft 版本号' })
+  @IsInt()
+  @Min(1)
+  expectedDraftVersion!: number;
+
+  @ApiProperty({ example: true, description: '已确认将新版本重新提交送审；只能为 true' })
+  @IsBoolean()
+  @Equals(true)
+  confirmation!: boolean;
+}
+
 export class AppSettlementCloseCommandDto {
   @ApiProperty({ minLength: 1, maxLength: 128, description: '调用方生成的关账幂等键' })
   @IsString()

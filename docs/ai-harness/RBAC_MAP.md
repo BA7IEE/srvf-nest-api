@@ -19,7 +19,7 @@
 
 ## 派生对照表(生成物)
 
-### 权限码全集(233 条,按一级域分组)
+### 权限码全集(234 条,按一级域分组)
 
 > 权威源 `prisma/seed.ts`(幂等 upsert)。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 
@@ -27,7 +27,7 @@
 |---|---|---|
 | `attachment` | 24 | `attachment.delete.activity` · `attachment.delete.certificate.other` · `attachment.delete.certificate.self` · `attachment.delete.content-file` · `attachment.delete.content-image` · `attachment.delete.member.other` · `attachment.delete.member.self` · `attachment.update.activity` · `attachment.update.certificate.other` · `attachment.update.certificate.self` · `attachment.update.member.other` · `attachment.update.member.self` · `attachment.upload.activity` · `attachment.upload.certificate.other` · `attachment.upload.certificate.self` · `attachment.upload.content-file` · `attachment.upload.content-image` · `attachment.upload.member.other` · `attachment.upload.member.self` · `attachment.view.activity` · `attachment.view.certificate.other` · `attachment.view.certificate.self` · `attachment.view.member.other` · `attachment.view.member.self` |
 | `rbac` | 14 | `rbac.config.reload` · `rbac.permission.create` · `rbac.permission.delete` · `rbac.permission.read` · `rbac.permission.update` · `rbac.role-permission.create` · `rbac.role-permission.delete` · `rbac.role.create` · `rbac.role.delete` · `rbac.role.read` · `rbac.role.update` · `rbac.user-role.create` · `rbac.user-role.delete` · `rbac.user-role.read` |
-| `activity` | 12 | `activity.cancel.record` · `activity.complete.record` · `activity.create.cross-org` · `activity.create.record` · `activity.delete.record` · `activity.publish.record` · `activity.settlement-close.record` · `activity.settlement-final-review.record` · `activity.settlement-first-review.record` · `activity.settlement-generate.record` · `activity.settlement-submit.record` · `activity.update.record` |
+| `activity` | 13 | `activity.cancel.record` · `activity.complete.record` · `activity.create.cross-org` · `activity.create.record` · `activity.delete.record` · `activity.publish.record` · `activity.settlement-close.record` · `activity.settlement-final-review.record` · `activity.settlement-first-review.record` · `activity.settlement-generate.record` · `activity.settlement-submit.record` · `activity.settlement-update-draft.record` · `activity.update.record` |
 | `attachment-config` | 12 | `attachment-config.create.mime` · `attachment-config.create.size-limit` · `attachment-config.create.type` · `attachment-config.delete.mime` · `attachment-config.delete.size-limit` · `attachment-config.delete.type` · `attachment-config.read.mime` · `attachment-config.read.size-limit` · `attachment-config.read.type` · `attachment-config.update.mime` · `attachment-config.update.size-limit` · `attachment-config.update.type` |
 | `attendance` | 11 | `attendance.approve.sheet` · `attendance.create.sheet` · `attendance.delete.sheet` · `attendance.final-approve.sheet` · `attendance.final-reject.sheet` · `attendance.final-return.sheet` · `attendance.read.sheet` · `attendance.reject.sheet` · `attendance.reopen.sheet` · `attendance.return.sheet` · `attendance.update.sheet` |
 | `user` | 10 | `user.create.account` · `user.delete.account` · `user.phone.clear` · `user.read.account` · `user.reset.password` · `user.update.account` · `user.update.role` · `user.update.status` · `user.wechat.clear` · `user.wecom.clear` |

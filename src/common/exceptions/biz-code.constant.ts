@@ -1537,6 +1537,30 @@ export const BizCode = {
     message: '待关账的账本批次已变化,请刷新后重新确认关账',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // ===== 活动改造 v1.1 第 2 批第 ⑨a 刀：负责人 working draft 编辑 =====
+  //
+  // PATCH 的锚点仍然是 run.currentDraftVersion，但它和 submit 是两个不同动作：客户端
+  // 要据此分别决定「刷新后继续编辑」还是「刷新后重新确认提交」，不得复用 20114。
+  SETTLEMENT_DRAFT_UPDATE_EXPECTED_DRAFT_VERSION_MISMATCH: {
+    code: 20119,
+    message: '结算草稿版本已变化,请刷新后重新编辑',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // 20120–20127 已是既有活动报名状态码；本刀从其后首个空位续号，不能重用旧语义。
+  // `drafting` 是工作区唯一可编辑态；`closed` 是 `posted` 的下游态，统一走这条闸，
+  // 不能只列 submitted / posted 而遗漏关账后继续改草稿的旁路。
+  SETTLEMENT_DRAFT_UPDATE_RUN_STATUS_INVALID: {
+    code: 20128,
+    message: '当前结算状态不允许编辑草稿',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // resubmit 的 path anchor 必须是已经被审核退回的 immutable version，不能把任一版本
+  // 当作「重提」理由而静默提交当前草稿。
+  SETTLEMENT_RESUBMIT_VERSION_NOT_RETURNED: {
+    code: 20129,
+    message: '该结算版本尚未退回,不可重新提交',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。
