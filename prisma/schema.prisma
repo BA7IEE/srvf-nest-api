@@ -1190,8 +1190,16 @@ model Activity {
   terminatedByUserId String?
   terminationReason  String?
 
-  // 当前取消操作防重;全历史操作记录另表保存(后续批次)。
-  cancelOperationKey String?
+  // §10.3 取消:当前取消操作防重。单列 unique 不把相同 key + 不同 payload 误放行。
+  // 全历史操作记录另表尚未定义(合同缺口 #12),本刀不自造该表。
+  cancelOperationKey String? @unique(map: "activity_cancel_operation_key_key")
+  // §10.3 取消:与 cancelOperationKey 配对持久化的 canonical requestHash。
+  cancelRequestHash  String?
+
+  // §10.3 提前终止:当前终止操作防重，单列 unique。
+  terminateOperationKey String? @unique(map: "activity_terminate_operation_key_key")
+  // §10.3 提前终止:与 terminateOperationKey 配对持久化的 canonical requestHash。
+  terminateRequestHash  String?
 
   organization                 Organization                       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   initiator                    Member?                            @relation("ActivityInitiator", fields: [initiatorMemberId], references: [id], onDelete: Restrict)
@@ -1242,6 +1250,9 @@ model Activity {
   allocationBatches   ActivityAllocationBatch[]
   reservedQuotaGroups ActivityReservedQuotaGroup[]
 
+  // 活动改造 v1.1 第 3 批①.5(合同 §3.4):发布审核通过后生成的不可变规则快照。
+  ruleSnapshots ActivityRuleSnapshot[]
+
   @@index([deletedAt])
   @@index([createdAt])
   @@index([statusCode])
@@ -1273,12 +1284,23 @@ model ActivityPublishReview {
   reviewedAt        DateTime?
   reviewNote        String?
 
+  // §10.3 发布提交:同一 operationKey 必须唯一;同一活动可用不同 key 多次提交。
+  operationKey String? @unique(map: "activity_publish_review_operation_key_key")
+  // §10.3 发布提交:与 operationKey 配对持久化的 canonical requestHash。
+  requestHash  String?
+
+  // §10.3 审核通过／退回:本表就是成功结果 reference，故本次审核动作 key 单列 unique。
+  reviewOperationKey String? @unique(map: "activity_publish_review_review_operation_key_key")
+  // §10.3 审核通过／退回:与 reviewOperationKey 配对持久化的 canonical requestHash。
+  reviewRequestHash  String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  activity    Activity @relation(fields: [activityId], references: [id], onDelete: Restrict)
-  submittedBy User     @relation("ActivityPublishReviewSubmitter", fields: [submittedByUserId], references: [id], onDelete: Restrict)
-  reviewedBy  User?    @relation("ActivityPublishReviewReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  activity      Activity               @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  submittedBy   User                   @relation("ActivityPublishReviewSubmitter", fields: [submittedByUserId], references: [id], onDelete: Restrict)
+  reviewedBy    User?                  @relation("ActivityPublishReviewReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  ruleSnapshots ActivityRuleSnapshot[]
 
   @@unique([activityId, requestVersion])
   @@index([activityId, status])
@@ -1286,6 +1308,74 @@ model ActivityPublishReview {
   @@index([submittedByUserId])
   @@index([reviewedByUserId])
   @@map("activity_publish_reviews")
+}
+
+// ===== §3.4 ActivityTemplate:可版本化默认配置 =====
+//
+// 模板更新新建版本,不覆盖已发布活动;故唯一键是 (code, version),绝不把 code 单列 unique。
+// statusCode 的取值集未被合同定义:保留 String,刻意不加 CHECK(缺口 #13)。
+// 各默认列均以当前 Activity / ActivitySession 的最终字段为来源;解析与继承归第 3 批第二刀。
+model ActivityTemplate {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  code             String
+  name             String
+  activityTypeCode String
+  statusCode       String // 取值集待合同修订件;不加 CHECK。
+  version          Int
+
+  // 默认报名方式 → Activity.registrationModeCode。
+  defaultRegistrationModeCode       String?
+  // 默认定位 → Activity.defaultLocationRequired / defaultCheckInRadiusMeters。
+  defaultLocationRequired           Boolean?
+  defaultCheckInRadiusMeters        Int?
+  // 窗口偏移 → ActivitySession 的四个窗口边界;签到开／关相对 session.startAt，
+  // 签退开／关相对 session.endAt，单位均为分钟。
+  checkInOpenOffsetMinutes          Int?
+  checkInCloseOffsetMinutes         Int?
+  checkOutOpenOffsetMinutes         Int?
+  checkOutCloseOffsetMinutes        Int?
+  // 迟到／早退 → ActivitySession 两个最终阈值。
+  defaultLateGraceMinutes           Int?
+  defaultEarlyLeaveThresholdMinutes Int?
+  // 归档等待 → Activity.archiveWaitingDays。
+  defaultArchiveWaitingDays         Int?
+  // 常用岗位模板:数组元素结构由第 3 批第二刀的 template-resolution 合同定义。
+  commonPositionTemplates           Json?
+
+  ruleSnapshots ActivityRuleSnapshot[]
+
+  @@unique([code, version])
+  @@index([activityTypeCode])
+  @@index([statusCode])
+}
+
+// ===== §3.4 ActivityRuleSnapshot:发布／关键变更审核通过后的不可变规则快照 =====
+//
+// 不带 updatedAt / deletedAt;migration 另以 trigger 禁 UPDATE / DELETE。
+model ActivityRuleSnapshot {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  activityId        String
+  workflowRevision  Int
+  templateVersionId String
+  // canonical JSON 的完整解析配置,含活动默认及每个 session / position 的最终值。
+  resolvedConfig    Json
+  snapshotHash      String
+  createdByReviewId String
+
+  activity          Activity                  @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  templateVersion   ActivityTemplate          @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
+  createdByReview   ActivityPublishReview     @relation(fields: [createdByReviewId], references: [id], onDelete: Restrict)
+  allocationBatches ActivityAllocationBatch[]
+
+  // 一个活动的一个 workflow revision 只能对应一份最终规则快照。createdByReviewId
+  // 只保存审核来源，不假定合同未声明的“一审核请求至多一快照”。
+  @@unique([activityId, workflowRevision])
+  @@index([templateVersionId])
 }
 
 // ===== 活动责任闭环 PR1:负责人 / 协办历史 =====
@@ -5105,11 +5195,11 @@ model ActivityPositionPreference {
 //   `candidateSnapshotHash/ruleSnapshotId/randomCommitment?` ·
 //   `statusCode` 三值闭集 · `operationKey/requestHash/createdBy/committedAt`
 //
-// ⚠️ **`ruleSnapshotId` 本刀不建**:它指向 §3.4 的 `ActivityRuleSnapshot`,
-//    而那张表**至今没有建**(§14 第 3 批「Template snapshot」才实现)。
-//    沿 goal ②「跨切片外围键列不提前占位」—— 提前建一列指向不存在的表,
+// ⚠️ **`ruleSnapshotId` 第 1 批第五刀未建**:它指向 §3.4 的 `ActivityRuleSnapshot`,
+//    目标表当时尚未建(§14 第 3 批「Template snapshot」才实现)。
+//    沿 goal ②「跨切片外键列不提前占位」—— 提前建一列指向不存在的表,
 //    既加不了外键也无人写入,正是前三刀反复拒绝的形态。
-//    ⇒ 建 `ActivityRuleSnapshot` 的那一刀**连列带 FK 一起补上**(欠账已在 PR body 登记)。
+//    ⇒ 第 3 批①.5 建表时已**连列带 FK 一起补上**(兑现该刀欠账)。
 //
 // ⚠️ `committedAt` 改可空(合同字段表未标 `?`):§3.11 自己的 `statusCode` 闭集里
 //    有 `preparing` —— 那一刻批次尚未提交,NOT NULL 会让 preparing 态根本写不进来,
@@ -5125,9 +5215,11 @@ model ActivityAllocationBatch {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  activityId String
-  sessionId  String
-  positionId String? // null = 场次级批次(不限定岗位)
+  activityId     String
+  sessionId      String
+  positionId     String? // null = 场次级批次(不限定岗位)
+  // §3.11:由建 §3.4 ActivityRuleSnapshot 的本刀连列带 FK 补齐;null = 尚未消费快照的旧／草稿批次。
+  ruleSnapshotId String?
 
   modeCode String // first_come / qualification_rank / lottery(§3.11 明写闭集)
 
@@ -5146,12 +5238,13 @@ model ActivityAllocationBatch {
   createdByUserId String?
   committedAt     DateTime?
 
-  activity  Activity                 @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  activity     Activity                 @relation(fields: [activityId], references: [id], onDelete: Restrict)
   // 复合 FK(activityId, sessionId)→ ActivitySession(activityId, id):沿第一刀,
   // 让「场次属于该活动」由 DB 保证,而不是只靠 service 自觉。
-  session   ActivitySession          @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
-  position  ActivitySessionPosition? @relation("AllocationBatchPosition", fields: [positionId], references: [id], onDelete: Restrict)
-  createdBy User?                    @relation("AllocationBatchCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  session      ActivitySession          @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
+  position     ActivitySessionPosition? @relation("AllocationBatchPosition", fields: [positionId], references: [id], onDelete: Restrict)
+  ruleSnapshot ActivityRuleSnapshot?    @relation(fields: [ruleSnapshotId], references: [id], onDelete: Restrict)
+  createdBy    User?                    @relation("AllocationBatchCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
 
   candidates             ActivityAllocationCandidate[]
   // §3.9 的 ActivityParticipationRevision.allocationBatchId 反向侧(本刀兑现第一刀欠账)
@@ -5160,6 +5253,7 @@ model ActivityAllocationBatch {
   @@index([activityId], map: "activity_allocation_batch_activity_idx")
   @@index([sessionId], map: "activity_allocation_batch_session_idx")
   @@index([positionId], map: "activity_allocation_batch_position_idx")
+  @@index([ruleSnapshotId], map: "activity_allocation_batch_rule_snapshot_idx")
   @@index([statusCode], map: "activity_allocation_batch_status_idx")
   @@index([modeCode], map: "activity_allocation_batch_mode_idx")
 }
