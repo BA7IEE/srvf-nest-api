@@ -9,11 +9,11 @@ import {
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
-// 活动责任闭环 PR3:ResourceResolver 13 类逐类 service 级测试。
+// 活动责任闭环 PR3:ResourceResolver 14 类逐类 service 级测试。
 // 沿 characterization 先例(createTestApp + resetDb + 真实 PrismaService,直调 service 绕过 HTTP)。
 //
 // 覆盖(goal DoD 4):
-//   1. 13 类逐类正向解析:organizationId / organizationPath(root 在前含自身)/ ownerMemberId /
+//   1. 14 类逐类正向解析:organizationId / organizationPath(root 在前含自身)/ ownerMemberId /
 //      ownerUserId / activityId / statusCode / sensitivityLevel / extra 逐字段断言
 //   2. attachment 按 ownerType 委派(member / certificate / activity;content-* 未映射 → null;
 //      委派目标软删 → 整体 null)
@@ -25,7 +25,7 @@ import { createTestApp } from '../setup/test-app';
 // 组织树 fixture(手写 closure,含 depth-0 自环行,镜像 PR1 闭包表口径):
 //   root(RR-ROOT) → dept(RR-DEPT) → grp(RR-GRP)
 
-describe('authz ResourceResolver(13 类资源归属解析)', () => {
+describe('authz ResourceResolver(14 类资源归属解析)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let certStd: SeededCertificateStandard;
@@ -46,6 +46,7 @@ describe('authz ResourceResolver(13 类资源归属解析)', () => {
   let activityId: string;
   let publishReviewId: string;
   let sheetId: string;
+  let settlementVersionId: string;
   let recordId: string;
   let registrationId: string;
   let profileId: string;
@@ -179,6 +180,61 @@ describe('authz ResourceResolver(13 类资源归属解析)', () => {
       select: { id: true },
     });
     sheetId = sheet.id;
+    const settlementSeal = await prisma.evidenceSeal.create({
+      data: {
+        activityId,
+        sealRevision: 1,
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        allWindowsClosedAt: new Date('2026-07-01T06:00:00.000Z'),
+        openSegmentCount: 0,
+        manualReviewPendingCount: 0,
+        populationCountDistinct: 0,
+        populationCountBySession: {},
+        contentHash: 'rr-settlement-seal',
+        statusCode: 'active',
+        sealedByUserId: submitterUserId,
+        sealedAt: new Date('2026-07-01T06:00:00.000Z'),
+      },
+      select: { id: true },
+    });
+    const settlementRun = await prisma.attendanceSettlementRun.create({
+      data: { activityId, statusCode: 'pending_final_review', currentSubmittedVersion: 1 },
+      select: { id: true },
+    });
+    const settlementVersion = await prisma.attendanceSettlementVersion.create({
+      data: {
+        settlementRunId: settlementRun.id,
+        version: 1,
+        evidenceSealId: settlementSeal.id,
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        contentHash: 'rr-settlement-version',
+        personCount: 0,
+        sessionParticipationCount: 0,
+        serviceSegmentCount: 0,
+        createdByUserId: submitterUserId,
+        submittedAt: new Date('2026-07-01T06:00:00.000Z'),
+        statusCode: 'submitted',
+        operationKey: 'rr-settlement-submit',
+        requestHash: 'rr-settlement-submit-hash',
+      },
+      select: { id: true },
+    });
+    settlementVersionId = settlementVersion.id;
+    await prisma.settlementReviewAction.create({
+      data: {
+        settlementVersionId,
+        stageCode: 'first',
+        actionCode: 'approve',
+        actorUserId: reviewerUserId,
+        actedAt: new Date('2026-07-01T07:00:00.000Z'),
+        operationKey: 'rr-settlement-first-review',
+        requestHash: 'rr-settlement-first-review-hash',
+      },
+    });
     const record = await prisma.attendanceRecord.create({
       data: {
         sheetId,
@@ -408,6 +464,25 @@ describe('authz ResourceResolver(13 类资源归属解析)', () => {
     });
   });
 
+  it('attendance_settlement_version:org 经 run→activity；extra 携提交人与首位一审人', async () => {
+    const r = await resolver.resolve({
+      type: 'attendance_settlement_version',
+      id: settlementVersionId,
+    });
+    expect(r).toMatchObject({
+      resourceType: 'attendance_settlement_version',
+      resourceId: settlementVersionId,
+      organizationId: grpId,
+      organizationPath: [rootId, deptId, grpId],
+      ownerMemberId: null,
+      ownerUserId: null,
+      activityId,
+      statusCode: 'submitted',
+      sensitivityLevel: null,
+      extra: { submitterUserId, reviewerUserId },
+    });
+  });
+
   it('attendance_record:org 经 sheet→activity;owner=record.memberId', async () => {
     const r = await resolver.resolve({ type: 'attendance_record', id: recordId });
     expect(r).toMatchObject({
@@ -631,10 +706,13 @@ describe('authz ResourceResolver(13 类资源归属解析)', () => {
       await resolver.resolve({ type: 'activity_publish_review', id: 'no-such-id' }),
     ).toBeNull();
     expect(await resolver.resolve({ type: 'activity', id: 'no-such-id' })).toBeNull();
+    expect(
+      await resolver.resolve({ type: 'attendance_settlement_version', id: 'no-such-id' }),
+    ).toBeNull();
     expect(await resolver.resolve({ type: 'member', id: 'no-such-id' })).toBeNull();
   });
 
-  it('软删模型逐类 → null；无软删列资源 / attachment 硬删 → null', async () => {
+  it('软删目标模型逐类 → null；结算版本不因链上 Activity 软删而失去归属；无软删列资源 / attachment 硬删 → null', async () => {
     const deletedAt = new Date();
     await prisma.organization.update({ where: { id: grpId }, data: { deletedAt } });
     await prisma.activityPublishReview.delete({ where: { id: publishReviewId } });
@@ -658,6 +736,13 @@ describe('authz ResourceResolver(13 类资源归属解析)', () => {
 
     expect(await resolver.resolve({ type: 'organization', id: grpId })).toBeNull();
     expect(await resolver.resolve({ type: 'activity', id: activityId })).toBeNull();
+    await expect(
+      resolver.resolve({ type: 'attendance_settlement_version', id: settlementVersionId }),
+    ).resolves.toMatchObject({
+      organizationId: grpId,
+      activityId,
+      extra: { submitterUserId, reviewerUserId },
+    });
     expect(
       await resolver.resolve({ type: 'activity_publish_review', id: publishReviewId }),
     ).toBeNull();

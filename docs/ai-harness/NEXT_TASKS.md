@@ -218,7 +218,7 @@
 
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
-### P1-28 活动业务全流程改造(批次 0–7) — **第 0 批 + 第 1 批 + 第 2 批第 ⑧b 刀 ✅ 已交付(39 表 / 第 71–75 migration);合同已修订至 v1.1.1;下一步 = 第 ⑨ / ⑩ 刀**
+### P1-28 活动业务全流程改造(批次 0–7) — **第 0 批 + 第 1 批 + 第 2 批 ✅ 代码面已齐（第 ⑩ 刀待 PR CI / `harness-review`）；合同已修订至 v1.1.1；下一步 = 第 3 批**
 
 > **需求口径变更(2026-08-04)**:**= v1.1 四份 + [`AMENDMENTS-v1.1.1`](../archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md),冲突以后者为准。**
 > 第 1 批建表过程中实测撞到**五处合同内部不一致**,维护者当日**全部接受**并发布修订件。原件与 SHA256 一字未动(校验仍过)。
@@ -243,7 +243,7 @@
 > 四条判据含「**TRUNCATE 放行且 trigger 存活**」—— 挡住即 e2e 地基塌方。
 > 39 张新表**零调用方是预期状态**,消费方自第 2 批起。
 >
-> **第 2 批九刀(截至 ⑧b)**:
+> **第 2 批代码面切片（⑧b 前九刀 + ⑨a / ⑨b / ⑩ 收尾）**:
 > [#917](https://github.com/BA7IEE/srvf-nest-api/pull/917) 北京日历收口 + 封场算法 ·
 > [#918](https://github.com/BA7IEE/srvf-nest-api/pull/918) 结算草稿生成 + 服务段重建 ·
 > [#919](https://github.com/BA7IEE/srvf-nest-api/pull/919) 提交不可变 `SettlementVersion` ·
@@ -253,6 +253,10 @@
 > [#923](https://github.com/BA7IEE/srvf-nest-api/pull/923) 更正应用 ·
 > [#924](https://github.com/BA7IEE/srvf-nest-api/pull/924) 账本自动提交者 + worker 接线 ·
 > [#925](https://github.com/BA7IEE/srvf-nest-api/pull/925) 结算 HTTP 入口(7 端点 / 5 权限码)。
+> ⑨a 负责人结算工作台 · ⑨b 审核／账本读面 · ⑩ 结算审核入口层 `ActionConstraint`（本分支，待 PR CI / `harness-review`）。
+>
+> **第 2 批验收回填（⑩ 复核）**：0 条已转真用例 / 10 条已标注去向 / 18 条仍 todo = 28。
+> 本刀强化 AC-053 的入口层／锁后层独立短路探针；未出现新增可覆盖的 ADV，已知合同缺口 #6–#10 仍原样。
 
 - **合同**:[`archive/reviews/activity-business-overhaul-v1.1/`](../archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效
   (业务方案 / 详细开发文档 / 355 项追踪矩阵 / 修订说明),SHA256 入仓时原位校验全过。

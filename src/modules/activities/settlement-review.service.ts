@@ -57,11 +57,10 @@ import {
 //   ⑧ **三方分离(锁后复判)** —— 见 `settlement-review-separation.ts` 文件头。
 //   ⑨ 四项比对 —— 见 `settlement-review-comparison.ts` 文件头。
 //
-// ## 本刀不做的事
+// ## 责任边界
 //
-// ❌ 零端点 / 零 DTO / 零权限码(整条结算流程的对外入口统一留到第 2 批收尾);判权在调用方。
-//    ⇒ 三方分离的**入口层**(`ActionConstraint`)因此无处注册,留到开端点那一刀 ——
-//      这是**显式偏离**,见 `settlement-review-separation.ts` 与报告。
+// HTTP 端点已由第 ⑧b 刀接线；第 ⑩ 刀又在入口层以 ActionConstraint 先判一次三方
+// 分离。这里仍只负责事务内、行锁之后的 authoritative 复判，入口快照绝不能替代它。
 // ❌ 零 schema 变更;❌ 零 Punch 写路径;❌ 不重算 contentHash(只比对)。
 // ❌ 不 update / 不软删 `SettlementReviewAction`(append-only,表上本就没有 updatedAt)。
 

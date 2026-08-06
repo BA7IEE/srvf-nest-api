@@ -30,8 +30,8 @@ import { canonicalize } from './settlement-content-hash';
 // 第 2 批第 ⑧b 刀唯一的 HTTP 接线层：Controller 只做 JWT / DTO / audit meta，本 service
 // 统一做端点 action 码的 Authz 判定和 canonical requestHash，再调用已交付的服务链。
 //
-// ⚠️ 本刀**没有**入口层 ActionConstraint。ACTION_CONSTRAINTS 是 authz 红区内的硬编码 Map，
-// 已按维护者决策移到第 ⑩ 刀；当前防线只有这里的端点 RBAC + 第四刀 service 的锁后人员隔离。
+// 第 2 批第 ⑩ 刀补上入口层 ActionConstraint：审核端点以精确 SettlementVersion resource
+// 判权，先做提交人/一审人快速否决；SettlementReviewService 仍在事务锁后复判同一不变量。
 export const ACTIVITY_SETTLEMENT_ACTION = {
   generate: 'activity.settlement-generate.record',
   updateDraft: 'activity.settlement-update-draft.record',
@@ -895,12 +895,12 @@ export class ActivitySettlementHttpService {
     auditMeta: AuditMeta,
   ) {
     const activityId = await this.resolveReviewActivityId(settlementVersionId);
-    await this.assertCanActivity(
+    await this.assertCanSettlementReview(
       currentUser,
       stageCode === 'first'
         ? ACTIVITY_SETTLEMENT_ACTION.firstReview
         : ACTIVITY_SETTLEMENT_ACTION.finalReview,
-      activityId,
+      settlementVersionId,
     );
     const input = {
       activityId,
@@ -1156,7 +1156,7 @@ export class ActivitySettlementHttpService {
       },
       select: { settlementRun: { select: { activityId: true } } },
     });
-    // 先解析版本才能取得 Activity resource ref；不给未授权调用者暴露版本是否存在。
+    // 先解析版本才能取得 service 所需 Activity id；不给未授权调用者暴露版本是否存在。
     if (version === null) throw new BizException(BizCode.RBAC_FORBIDDEN);
     return version.settlementRun.activityId;
   }
@@ -1173,6 +1173,41 @@ export class ActivitySettlementHttpService {
     if (decision.allow) return;
     // 资源解析失败时，沿既有 activity 写面回退 GLOBAL rbac.can：持码者可继续由业务
     // service 给真实资源错误，无码者始终拿 30100，避免用端点枚举活动。
+    if (decision.reason === 'resource_not_found' && (await this.rbac.can(currentUser, action))) {
+      return;
+    }
+    throw new BizException(BizCode.RBAC_FORBIDDEN);
+  }
+
+  // ActionConstraint 的 reason 是 authz 内部枚举，不能越过 HTTP 边界。结算侧已存在三条
+  // 分阶段 BizCode，且锁后层使用同一组三码；入口与锁后命中同一事实时必须返回同一码。
+  private async assertCanSettlementReview(
+    currentUser: CurrentUserPayload,
+    action: string,
+    settlementVersionId: string,
+  ): Promise<void> {
+    const decision = await this.authz.explain(currentUser, action, {
+      type: 'attendance_settlement_version',
+      id: settlementVersionId,
+    });
+    if (decision.allow) return;
+
+    if (decision.reason === 'self_approval_forbidden') {
+      throw new BizException(
+        action === ACTIVITY_SETTLEMENT_ACTION.firstReview
+          ? BizCode.SETTLEMENT_SELF_FIRST_REVIEW_FORBIDDEN
+          : BizCode.SETTLEMENT_SELF_FINAL_REVIEW_FORBIDDEN,
+      );
+    }
+    if (
+      decision.reason === 'same_reviewer_forbidden' &&
+      action === ACTIVITY_SETTLEMENT_ACTION.finalReview
+    ) {
+      throw new BizException(BizCode.SETTLEMENT_SAME_REVIEWER_FORBIDDEN);
+    }
+
+    // 与既有 activity 写面同口径：解析失败时只有已持该 action 的主体才交由 service
+    // 给出真实业务错误；无码者始终 30100，避免版本存在性成为枚举面。
     if (decision.reason === 'resource_not_found' && (await this.rbac.can(currentUser, action))) {
       return;
     }

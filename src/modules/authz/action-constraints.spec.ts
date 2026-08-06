@@ -7,8 +7,9 @@ import {
 } from './action-constraints';
 import type { ResolvedResource } from './authz.types';
 
-// 活动责任闭环 PR3:ActionConstraint 注册表单测。
-// 一审三动作均禁最初提交人 / 最近重提人自审；终审三动作在此基础上再禁一级审核人。
+// ActionConstraint 注册表单测。
+// 考勤三动作与结算一审 action 均禁提交人自审；考勤终审三动作与结算终审 action
+// 在此基础上再禁一级审核人。结算的 approve / return 共用 action，必须显式覆盖。
 // 兼容配置 true / false 均不得放开同人终审。
 
 const FINAL_APPROVE_ACTION = 'attendance.final-approve.sheet';
@@ -23,6 +24,8 @@ const FINAL_REVIEW_ACTIONS = [
   'attendance.final-reject.sheet',
   'attendance.final-return.sheet',
 ] as const;
+const SETTLEMENT_FIRST_REVIEW_ACTION = 'activity.settlement-first-review.record';
+const SETTLEMENT_FINAL_REVIEW_ACTION = 'activity.settlement-final-review.record';
 
 const DEFAULT_CTX: ActionConstraintContext = { attendanceAllowSameReviewer: false };
 const COMPAT_TRUE_CTX: ActionConstraintContext = { attendanceAllowSameReviewer: true };
@@ -47,10 +50,12 @@ function sheetResource(extra: Record<string, unknown>): ResolvedResource {
 }
 
 describe('action-constraints(§5.3 域不变量注册表)', () => {
-  it('注册表全集 = 一审三动作各一条 + 终审三动作各两条；未注册 action 零约束', () => {
+  it('注册表全集 = 考勤一审三动作、结算一审 action 各一条；考勤终审三动作、结算终审 action 各两条；未注册 action 零约束', () => {
     expect([...ACTION_CONSTRAINTS.keys()]).toEqual([
       ...FIRST_REVIEW_ACTIONS,
       ...FINAL_REVIEW_ACTIONS,
+      SETTLEMENT_FIRST_REVIEW_ACTION,
+      SETTLEMENT_FINAL_REVIEW_ACTION,
     ]);
     for (const action of FIRST_REVIEW_ACTIONS) {
       expect(ACTION_CONSTRAINTS.get(action)?.map((constraint) => constraint.reason)).toEqual([
@@ -63,7 +68,31 @@ describe('action-constraints(§5.3 域不变量注册表)', () => {
         'same_reviewer_forbidden',
       ]);
     }
+    expect(
+      ACTION_CONSTRAINTS.get(SETTLEMENT_FIRST_REVIEW_ACTION)?.map(
+        (constraint) => constraint.reason,
+      ),
+    ).toEqual(['self_approval_forbidden']);
+    expect(
+      ACTION_CONSTRAINTS.get(SETTLEMENT_FINAL_REVIEW_ACTION)?.map(
+        (constraint) => constraint.reason,
+      ),
+    ).toEqual(['self_approval_forbidden', 'same_reviewer_forbidden']);
     expect(getConstraintsForAction('member.read.record')).toHaveLength(0);
+  });
+
+  it('结算审核的两个 action 按权限码覆盖 approve 与 return：一审只禁自审，终审同时禁自审与同人', () => {
+    const me = userPayload('user-a');
+    const submittedByMe = sheetResource({ submitterUserId: me.id });
+    const firstReviewedByMe = sheetResource({ reviewerUserId: me.id });
+
+    const firstConstraints = getConstraintsForAction(SETTLEMENT_FIRST_REVIEW_ACTION);
+    expect(firstConstraints[0].vetoes(me, submittedByMe, DEFAULT_CTX)).toBe(true);
+    expect(firstConstraints).toHaveLength(1);
+
+    const finalConstraints = getConstraintsForAction(SETTLEMENT_FINAL_REVIEW_ACTION);
+    expect(finalConstraints[0].vetoes(me, submittedByMe, DEFAULT_CTX)).toBe(true);
+    expect(finalConstraints[1].vetoes(me, firstReviewedByMe, DEFAULT_CTX)).toBe(true);
   });
 
   it('self_approval_forbidden:最初提交人或最近重提人==判权人 → 否决', () => {
