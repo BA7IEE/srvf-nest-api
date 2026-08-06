@@ -50,12 +50,13 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "resourceType": {
-        "description": "资源类型(ResourceResolver 支持的 13 类;同 explain 白名单)",
+        "description": "资源类型(ResourceResolver 支持的 14 类;同 explain 白名单)",
         "enum": [
           "organization",
           "activity",
           "activity_publish_review",
           "attendance_sheet",
+          "attendance_settlement_version",
           "attendance_record",
           "activity_registration",
           "member",
@@ -122,6 +123,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
           "activity",
           "activity_publish_review",
           "attendance_sheet",
+          "attendance_settlement_version",
           "attendance_record",
           "activity_registration",
           "member",
@@ -11886,12 +11888,13 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "type": {
-        "description": "资源类型(ResourceResolver 支持的 13 类)",
+        "description": "资源类型(ResourceResolver 支持的 14 类)",
         "enum": [
           "organization",
           "activity",
           "activity_publish_review",
           "attendance_sheet",
+          "attendance_settlement_version",
           "attendance_record",
           "activity_registration",
           "member",

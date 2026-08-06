@@ -18,6 +18,8 @@ import type { ResolvedResource, ResourceRef, ResourceSensitivityLevel } from './
 // - activity_publish_review:org 经 activity;extra = {requestType,submittedByUserId,directPublish}
 // - attendance_sheet:      org 经 activity;extra = {submitterUserId,lastSubmittedByUserId,reviewerUserId}
 //                          (自审 / 同人复核约束用)
+// - attendance_settlement_version: org 经 settlementRun→activity;extra = {submitterUserId,reviewerUserId}
+//                          (结算一审 / 终审隔离约束用)
 // - attendance_record:     org 经 sheet→activity;owner = record.memberId
 // - activity_registration: org 经 activity;owner = reg.memberId
 // - member:                org = 该 member 的 active PRIMARY membership(可 null);ownerUserId = member.user?.id
@@ -57,6 +59,8 @@ export class ResourceResolverService {
         return this.resolveActivityPublishReview(ref.id);
       case 'attendance_sheet':
         return this.resolveAttendanceSheet(ref.id);
+      case 'attendance_settlement_version':
+        return this.resolveAttendanceSettlementVersion(ref.id);
       case 'attendance_record':
         return this.resolveAttendanceRecord(ref.id);
       case 'activity_registration':
@@ -180,6 +184,52 @@ export class ResourceResolverService {
         submitterUserId: row.submitterUserId,
         lastSubmittedByUserId: row.lastSubmittedByUserId,
         reviewerUserId: row.reviewerUserId,
+      },
+    };
+  }
+
+  // 结算审核入口的 resource 必须是**请求中的精确版本**，不能退化为 Activity 当前指针：
+  // 一场活动可先后有多个提交版本，入口层的快照只负责快速拒绝，锁后层仍会在同一版本行
+  // 上作 authoritative 复判。这里与 SettlementReviewService.readFirstReviewerUserId 的
+  // `actedAt asc` 口径一致，避免两层对损坏历史的“第一位审核人”取法不同。
+  private async resolveAttendanceSettlementVersion(id: string): Promise<ResolvedResource | null> {
+    const row = await this.prisma.attendanceSettlementVersion.findFirst({
+      // 沿本 resolver 的统一口径：只看目标版本是否存在；链上的 Activity 即使已软删，
+      // 它的组织归属仍是版本的事实属性。HTTP 写入口另有自己的活动存在性闸。
+      where: { id },
+      select: {
+        id: true,
+        statusCode: true,
+        createdByUserId: true,
+        settlementRun: {
+          select: {
+            activityId: true,
+            activity: { select: { organizationId: true } },
+          },
+        },
+        reviewActions: {
+          where: { stageCode: 'first' },
+          orderBy: { actedAt: 'asc' },
+          take: 1,
+          select: { actorUserId: true },
+        },
+      },
+    });
+    if (!row) return null;
+    return {
+      resourceType: 'attendance_settlement_version',
+      resourceId: row.id,
+      organizationId: row.settlementRun.activity.organizationId,
+      organizationPath: await this.organizationPath(row.settlementRun.activity.organizationId),
+      ownerMemberId: null,
+      ownerUserId: null,
+      activityId: row.settlementRun.activityId,
+      statusCode: row.statusCode,
+      sensitivityLevel: null,
+      extra: {
+        // ActionConstraint 复用考勤同一组字段名；结算版本没有“最近重提人”，故不伪造该字段。
+        submitterUserId: row.createdByUserId,
+        reviewerUserId: row.reviewActions[0]?.actorUserId ?? null,
       },
     };
   }

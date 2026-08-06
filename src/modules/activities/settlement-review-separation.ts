@@ -3,30 +3,22 @@
 // 🔴 **这是本刀守的那件事**:隔离漏一条,自提自审就成立 —— 合同 §4.1 与修订说明把
 //    它列为一级阻断的同一类问题。所以这里的每一条都走**拒绝**,没有"警告后放行"。
 //
-// ## 为什么是纯函数,而不是又一个 `ActionConstraint`
-//
-// 仓内既有的三审隔离(考勤)是**两层**,不是一层:
-//
-//   - **入口层** = `authz` 的 `ActionConstraint` 注册表(`attendance.final-approve.sheet`
-//     等六个 action),在 `AuthzService.explain` 里、事务之外、按 `ResolvedResource`
-//     判定;`attendances.service.ts` 把 `self_approval_forbidden` /
-//     `same_reviewer_forbidden` 映射成 22074 / 22075(见该文件 :336 一线注释)。
-//   - **锁后层** = 同文件 `assertLockedReviewSeparation`(:366):**事务内、行锁之后**
-//     用当前行上的 `submitterUserId / lastSubmittedByUserId / reviewerUserId` 与
-//     当前操作人**再判一次**,抛的是同一组码。
+// ## 两层均已落地
 //
 // 合同 §3.19 明写「Authz action constraint **和**事务内锁后复判提交人／一审人／
-// 终审人分离」—— **两层都要**。本刀落的是**锁后层**,原因是硬的:
+// 终审人分离」—— 两层都要，且必须判同一件事:
 //
-//   1. 本刀**零端点 / 零权限码**(与前三刀同,整条结算流程的对外入口留到第 2 批收尾),
-//      而 `ActionConstraint` 的键**就是 action(权限码)字符串** —— 没有 action 就没有
-//      注册点。给它编一个此刻无人调用的 action,注册表会返回一条**永远不被触发**的
-//      约束:那是"描述文本冒充执行位",本仓栽过四次。
-//   2. `ACTION_CONSTRAINTS` 与 `ResourceResolverService` 都在 `src/modules/authz/**`,
-//      是本刀的**红区**(授权清单明列),不得改。
+//   - **入口层** = `authz/action-constraints.ts` 的两条注册：
+//     `activity.settlement-first-review.record` → `selfApprovalForbidden`；
+//     `activity.settlement-final-review.record` → `selfApprovalForbidden` +
+//     `sameReviewerForbidden`。第 ⑩ 刀以请求中的精确 `AttendanceSettlementVersion`
+//     resource 解析 `createdByUserId / first reviewer`，故 approve 与 return 共用 action
+//     时也同时受约束。
+//   - **锁后层** = 本纯函数，由 `SettlementReviewService` 在事务内、版本行锁之后用
+//     当前行事实再判一次。入口快照在并发换版/一审落地期间可能过时，不能替代它。
 //
-// ⇒ 入口层留到**开端点那一刀**接(那一刀本来就要新增 action 与权限码,注册点届时才
-//    真实存在)。**本刀在报告里把这条列为显式偏离**,不假装两层都齐了。
+// ⇒ 两层均已落地，入口层见 `authz/action-constraints.ts` 的两条注册；两层各自有
+// `activity-batch2-10-action-constraints.e2e-spec.ts` 的短路探针，不能互相冒充执行位。
 //
 // ## 判定语义:逐字沿用考勤那一套,不另立一套
 //

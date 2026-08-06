@@ -26,7 +26,7 @@ import type { ActionStateReason } from './action-state-checks';
 
 // ============ 运行时枚举数组(Swagger enum + 校验白名单)============
 
-// resourceRef.type 白名单 = ResourceResolverService.resolve() switch 的 13 类,
+// resourceRef.type 白名单 = ResourceResolverService.resolve() switch 的 14 类,
 // 顺序与 resolver 分发一致。未来 resolver 扩类时须同步本表(漏加只会 400 拒收,fail-safe 收紧方向,
 // 不会误放行);消费面迁移(PR12)扩类时随刀更新。
 export const EXPLAINABLE_RESOURCE_TYPES = [
@@ -34,6 +34,7 @@ export const EXPLAINABLE_RESOURCE_TYPES = [
   'activity',
   'activity_publish_review',
   'attendance_sheet',
+  'attendance_settlement_version',
   'attendance_record',
   'activity_registration',
   'member',
@@ -83,7 +84,7 @@ const ACTION_CODE_PATTERN = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2,3}$/;
 
 export class ExplainResourceRefDto {
   @ApiProperty({
-    description: '资源类型(ResourceResolver 支持的 13 类)',
+    description: '资源类型(ResourceResolver 支持的 14 类)',
     enum: EXPLAINABLE_RESOURCE_TYPES,
     example: 'attendance_sheet',
   })
@@ -368,7 +369,7 @@ export class ActionStateItemDto {
   action!: string;
 
   @ApiProperty({
-    description: '资源类型(ResourceResolver 支持的 13 类;同 explain 白名单)',
+    description: '资源类型(ResourceResolver 支持的 14 类;同 explain 白名单)',
     enum: EXPLAINABLE_RESOURCE_TYPES,
     example: 'attendance_sheet',
   })

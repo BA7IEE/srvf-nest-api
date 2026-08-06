@@ -44,7 +44,7 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 //     ⑤ out_of_scope(scoped 绑定 + 树外 ref)⑥ self_approval_forbidden(final-approve + 提交人==目标;
 //     2026-07-03 摘码微刀后目标用 SA〔持权者才进约束评估〕,SA 亦拒的注册表语义在 three-source;
 //     此处锁 HTTP 面 200 形状)⑦ resource_not_found(200 decision,非 404)
-//   输入错误(异常):⑧ 目标用户不存在 / 已软删 → 10001;type ∉ 13 类 / action 非法格式 / 未知字段 → 400
+//   输入错误(异常):⑧ 目标用户不存在 / 已软删 → 10001;type ∉ 14 类 / action 非法格式 / 未知字段 → 400
 //   决断③:DISABLED 目标也可 explain,status 原样返
 //   §9 行 20:reason ∈ AuthzReason 稳定枚举(Record 完备性双向锁 + 实测响应 ⊆ 枚举)
 
@@ -105,6 +105,7 @@ describe('authz/explain 权限解释端点(PR10:可解释性出口)', () => {
   // submitter = tSa(自审约束;2026-07-03 摘码微刀后 biz-admin 无终审码 —— 无码者先吃
   // no_permission,self_approval_forbidden 须由持权者〔SA super_admin_pass〕承载)
   let sheetByTSaId: string;
+  let settlementVersionByTSaId: string;
 
   // 实测出现过的 reason 全集(最终断言 ⊆ AUTHZ_REASON_VALUES,§9 行 20)
   const seenReasons = new Set<string>();
@@ -309,6 +310,55 @@ describe('authz/explain 权限解释端点(PR10:可解释性出口)', () => {
         select: { id: true },
       })
     ).id;
+    const settlementSeal = await prisma.evidenceSeal.create({
+      data: {
+        activityId: activity.id,
+        sealRevision: 1,
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        allWindowsClosedAt: new Date('2026-06-01T06:00:00.000Z'),
+        openSegmentCount: 0,
+        manualReviewPendingCount: 0,
+        populationCountDistinct: 0,
+        populationCountBySession: {},
+        contentHash: 'aex-settlement-seal',
+        statusCode: 'active',
+        sealedByUserId: tSaId,
+        sealedAt: new Date('2026-06-01T06:00:00.000Z'),
+      },
+      select: { id: true },
+    });
+    const settlementRun = await prisma.attendanceSettlementRun.create({
+      data: {
+        activityId: activity.id,
+        statusCode: 'pending_first_review',
+        currentSubmittedVersion: 1,
+      },
+      select: { id: true },
+    });
+    settlementVersionByTSaId = (
+      await prisma.attendanceSettlementVersion.create({
+        data: {
+          settlementRunId: settlementRun.id,
+          version: 1,
+          evidenceSealId: settlementSeal.id,
+          evidenceRevision: 0,
+          populationRevision: 0,
+          workflowRevision: 0,
+          contentHash: 'aex-settlement-version',
+          personCount: 0,
+          sessionParticipationCount: 0,
+          serviceSegmentCount: 0,
+          createdByUserId: tSaId,
+          submittedAt: new Date('2026-06-01T06:00:00.000Z'),
+          statusCode: 'submitted',
+          operationKey: 'aex-settlement-submit',
+          requestHash: 'aex-settlement-submit-hash',
+        },
+        select: { id: true },
+      })
+    ).id;
   }, 120_000);
 
   afterAll(async () => {
@@ -445,6 +495,24 @@ describe('authz/explain 权限解释端点(PR10:可解释性出口)', () => {
     expect(data.decision.resource?.extra?.submitterUserId).toBe(tSaId);
   });
 
+  it('⑥b settlement version 已在诊断白名单：一审 action 对提交人(SA)仍返 self_approval_forbidden', async () => {
+    const data = await explainOk(opsAuth, {
+      userId: tSaId,
+      action: 'activity.settlement-first-review.record',
+      resourceRef: {
+        type: 'attendance_settlement_version',
+        id: settlementVersionByTSaId,
+      },
+    });
+    expect(data.decision.allow).toBe(false);
+    expect(data.decision.reason).toBe('self_approval_forbidden');
+    expect(data.decision.resource).toMatchObject({
+      resourceType: 'attendance_settlement_version',
+      resourceId: settlementVersionByTSaId,
+      extra: { submitterUserId: tSaId, reviewerUserId: null },
+    });
+  });
+
   it('⑦ resource_not_found 是 200 的 decision reason(诊断端点回答"为什么",不抛业务错)', async () => {
     const data = await explainOk(opsAuth, {
       userId: tBizId,
@@ -475,7 +543,7 @@ describe('authz/explain 权限解释端点(PR10:可解释性出口)', () => {
     );
   });
 
-  it('入参白名单:type ∉ 13 类 / action 非法格式 / resourceRef 未知字段 → 400(不新增 BizCode)', async () => {
+  it('入参白名单:type ∉ 14 类 / action 非法格式 / resourceRef 未知字段 → 400(不新增 BizCode)', async () => {
     const badType = await explain(opsAuth, {
       userId: tBizId,
       action: 'member.read.record',
@@ -526,10 +594,11 @@ describe('authz/explain 权限解释端点(PR10:可解释性出口)', () => {
     };
     expect([...GRANT_SOURCE_VALUES].sort()).toEqual(Object.keys(sourceCover).sort());
 
-    // resourceRef.type 白名单 = resolver 13 类
-    expect(EXPLAINABLE_RESOURCE_TYPES).toHaveLength(13);
+    // resourceRef.type 白名单 = resolver 14 类
+    expect(EXPLAINABLE_RESOURCE_TYPES).toHaveLength(14);
     expect(EXPLAINABLE_RESOURCE_TYPES).toContain('organization');
     expect(EXPLAINABLE_RESOURCE_TYPES).toContain('activity_publish_review');
+    expect(EXPLAINABLE_RESOURCE_TYPES).toContain('attendance_settlement_version');
 
     // 本 spec 实测出现过的每个 reason 都必须落在稳定枚举内(响应契约,§9 行 20)
     expect(seenReasons.size).toBeGreaterThanOrEqual(6);

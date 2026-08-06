@@ -126,8 +126,16 @@ const BATCH2_ACCEPTANCE_DESTINATIONS: Readonly<Record<string, readonly Acceptanc
       needle: 'resubmit 在 returned 后创建新的 SettlementVersion，而不是复活旧版',
     },
   ],
-  // AC-053 → test/e2e/activity-settlement-review*.e2e-spec.ts ›「三方分离 / 锁后复判」
+  // AC-053 → review service 的锁后复判 + 第 ⑩ 刀入口层短路探针。
   'AC-053': [
+    {
+      file: 'test/e2e/activity-batch2-10-action-constraints.e2e-spec.ts',
+      needle: '入口层独立：一审 approve / return 共用 action',
+    },
+    {
+      file: 'test/e2e/activity-batch2-10-action-constraints.e2e-spec.ts',
+      needle: '锁后层独立：直接调用 service 时，三方分离仍按 20062 / 20063 / 20064 拒绝',
+    },
     {
       file: 'test/e2e/activity-settlement-review.e2e-spec.ts',
       needle: '提交人不可一审自己提交的版本',

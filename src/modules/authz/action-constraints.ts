@@ -32,7 +32,8 @@ export interface ActionConstraint {
   ): boolean;
 }
 
-// 自己不能审核自己最初提交或最近一次重提的考勤单；SUPER_ADMIN 亦拒。
+// 自己不能审核自己最初提交或最近一次重提的审核对象；SUPER_ADMIN 亦拒。
+// 考勤单与结算版本都复用这条不变量，resource resolver 负责提供同名事实字段。
 const selfApprovalForbidden: ActionConstraint = {
   reason: 'self_approval_forbidden',
   vetoes: (user, resource) => {
@@ -62,6 +63,8 @@ export const ACTION_CONSTRAINTS: ReadonlyMap<string, readonly ActionConstraint[]
   ['attendance.final-approve.sheet', [selfApprovalForbidden, sameReviewerForbidden]],
   ['attendance.final-reject.sheet', [selfApprovalForbidden, sameReviewerForbidden]],
   ['attendance.final-return.sheet', [selfApprovalForbidden, sameReviewerForbidden]],
+  ['activity.settlement-first-review.record', [selfApprovalForbidden]],
+  ['activity.settlement-final-review.record', [selfApprovalForbidden, sameReviewerForbidden]],
 ]);
 
 export function getConstraintsForAction(action: string): readonly ActionConstraint[] {
