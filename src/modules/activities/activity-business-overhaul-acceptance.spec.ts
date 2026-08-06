@@ -47,6 +47,224 @@ function expectedIds(prefix: string, count: number): string[] {
   return Array.from({ length: count }, (_, i) => `${prefix}-${String(i + 1).padStart(3, '0')}`);
 }
 
+/**
+ * 第 2 批验收编号回填（合同开发文档 §14）。
+ *
+ * `destination` 不是把旧测试的标题抄过来：每一项都以 file + 真实断言片段绑定，下面的
+ * 链接完整性用例会读目标 spec，目标用例被删/改名会红。未达到合同完整口径的一律仍为 todo，
+ * 不能拿“覆盖了一半”凑完成数。
+ */
+interface AcceptanceDestination {
+  file: string;
+  needle: string;
+}
+
+const BATCH2_ACCEPTANCE_IDS = [
+  ...Array.from({ length: 19 }, (_, index) => `AC-${String(index + 47).padStart(3, '0')}`),
+  'ADV-001',
+  'ADV-008',
+  'ADV-009',
+  'ADV-010',
+  'ADV-011',
+  'ADV-012',
+  'ADV-020',
+  'ADV-021',
+  'ADV-022',
+] as const;
+
+const BATCH2_ACCEPTANCE_DESTINATIONS: Readonly<Record<string, readonly AcceptanceDestination[]>> = {
+  // AC-048 → test/e2e/activity-settlement-review.e2e-spec.ts ›「四项比对(§5.11)」
+  // 一审四种锚点差异都已逐项 red-first；终审同用该共享校验路径，见同 spec 的终审流程用例。
+  'AC-048': [
+    {
+      file: 'test/e2e/activity-settlement-review.e2e-spec.ts',
+      needle: '证据 / 人口版本在送审后前进',
+    },
+    {
+      file: 'test/e2e/activity-settlement-review.e2e-spec.ts',
+      needle: '活动流程版本在送审后前进',
+    },
+    {
+      file: 'test/e2e/activity-settlement-review.e2e-spec.ts',
+      needle: '审核人看到的 contentHash 与版本行不一致',
+    },
+    {
+      file: 'test/e2e/activity-settlement-review.e2e-spec.ts',
+      needle: '终审 return ⇒ 版本转 returned',
+    },
+  ],
+  // AC-050 → test/e2e/activity-settlement-draft.e2e-spec.ts ›「改场次上的阈值…」
+  'AC-050': [
+    {
+      file: 'test/e2e/activity-settlement-draft.e2e-spec.ts',
+      needle: '改场次上的阈值 → 标签跟着变(15/15 → 都命中;30/60 → 都不命中)',
+    },
+  ],
+  // AC-051 → draft 的 blocker 生成 + submit 的 blocker 硬门，未产生可终审版本。
+  'AC-051': [
+    {
+      file: 'test/e2e/activity-settlement-draft.e2e-spec.ts',
+      needle: 'present 且算出 0 分 → 必须带 blocker 标记',
+    },
+    {
+      file: 'test/e2e/activity-settlement-submit.e2e-spec.ts',
+      needle: '结果行带 blocker → SETTLEMENT_SUBMIT_MISSING_RULE',
+    },
+  ],
+  // AC-052 → review 动作闭集 + ⑨a working draft 零 version 写 + returned 后新版本。
+  'AC-052': [
+    {
+      file: 'test/e2e/activity-settlement-review.e2e-spec.ts',
+      needle: '第三种动作 → 20074',
+    },
+    {
+      file: 'test/e2e/activity-batch2-9a-settlement-workbench.e2e-spec.ts',
+      needle: 'PATCH working item 的 transaction 内 SettlementVersion 写次数恒为 0',
+    },
+    {
+      file: 'test/e2e/activity-batch2-9a-settlement-workbench.e2e-spec.ts',
+      needle: 'resubmit 在 returned 后创建新的 SettlementVersion，而不是复活旧版',
+    },
+  ],
+  // AC-053 → test/e2e/activity-settlement-review*.e2e-spec.ts ›「三方分离 / 锁后复判」
+  'AC-053': [
+    {
+      file: 'test/e2e/activity-settlement-review.e2e-spec.ts',
+      needle: '提交人不可一审自己提交的版本',
+    },
+    {
+      file: 'test/e2e/activity-settlement-review.e2e-spec.ts',
+      needle: '提交人不可终审自己提交的版本',
+    },
+    {
+      file: 'test/e2e/activity-settlement-review.e2e-spec.ts',
+      needle: '一审人不可再终审同一版本',
+    },
+    {
+      file: 'test/e2e/activity-settlement-review-concurrency.e2e-spec.ts',
+      needle: '一审在终审等锁期间落地 ⇒ 终审锁后复判恒拒 20064',
+    },
+  ],
+  // AC-059 → test/e2e/activity-v11-slice4-schema-constraints.e2e-spec.ts › 两组 append-only trigger。
+  'AC-059': [
+    {
+      file: 'test/e2e/activity-v11-slice4-schema-constraints.e2e-spec.ts',
+      needle: 'ParticipationLedgerEntry append-only trigger 四条判据',
+    },
+    {
+      file: 'test/e2e/activity-v11-slice4-schema-constraints.e2e-spec.ts',
+      needle: 'AttendancePunchEvent:本刀加列 importJobItemId 之后 trigger 四条判据重跑',
+    },
+  ],
+  // AC-062 → test/e2e/activity-settlement-closure.e2e-spec.ts ›「30 人通过、0 结果」。
+  'AC-062': [
+    {
+      file: 'test/e2e/activity-settlement-closure.e2e-spec.ts',
+      needle: '30 人通过、0 结果 ⇒ 拒绝,且缺口清单里带着那个「30」',
+    },
+  ],
+  // ADV-009 → test/e2e/activity-ledger-posting.e2e-spec.ts ›「item 打回 pending 再跑一次」。
+  'ADV-009': [
+    {
+      file: 'test/e2e/activity-ledger-posting.e2e-spec.ts',
+      needle: '把 item 打回 pending 再跑一次 ⇒ 分录、day rows 都不翻倍',
+    },
+  ],
+  // ADV-020 → 与 AC-059 同源：直接 SQL UPDATE / DELETE 两类正式事实均被 trigger 拒绝。
+  'ADV-020': [
+    {
+      file: 'test/e2e/activity-v11-slice4-schema-constraints.e2e-spec.ts',
+      needle: 'ParticipationLedgerEntry append-only trigger 四条判据',
+    },
+    {
+      file: 'test/e2e/activity-v11-slice4-schema-constraints.e2e-spec.ts',
+      needle: 'AttendancePunchEvent:本刀加列 importJobItemId 之后 trigger 四条判据重跑',
+    },
+  ],
+  // ADV-021 → test/e2e/activity-settlement-review-concurrency.e2e-spec.ts ›「approve 与 return 并发」。
+  'ADV-021': [
+    {
+      file: 'test/e2e/activity-settlement-review-concurrency.e2e-spec.ts',
+      needle: 'approve 与 return 并发同一版本同一阶段 ⇒ 恰好一个成功,败者 20072',
+    },
+  ],
+};
+
+const BATCH2_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
+  // AC-047:现有 submit 仅覆盖开放段；与最后一次合法签退并发的端到端链属于第 5 批 Punch。
+  'AC-047': '卡第 5 批最后一次合法签退/窗口并发链；当前只覆盖开放服务段拒绝。',
+  // AC-049:当前覆盖人口数量，不覆盖 absent 零时长不得进入有效服务明细的完整投影。
+  'AC-049': '缺 absent 零时长结果到有效服务明细的端到端断言。',
+  // AC-054:现有规模用例为 8192，未覆盖合同固定的 10000 人与 0%/100%读面组合。
+  'AC-054': '缺 10000 人准备期间的 0%/100%读面规模用例；现有上限是 8192。',
+  // AC-055:现有重放覆盖一次，不是终审、恢复、更正各 100 次。
+  'AC-055': '缺终审、任务恢复和更正各重复 100 次的总额恒等测试。',
+  // AC-056:现有用例覆盖同活动同日多场次，未覆盖多活动稳定分配顺序。
+  'AC-056': '缺同一北京日多活动的稳定分配顺序与 capped-out 展示断言。',
+  // AC-057:跨北京零点的服务段来自第 5 批 Punch 链，当前第 2 批夹具未生产该形态。
+  'AC-057': '卡第 5 批跨北京零点 Punch/服务段链。',
+  // AC-058:合同明确把 overlap 检查放在第 5 批的 member lock 内。
+  'AC-058': '卡第 5 批 member lock 内的跨活动时间重叠拒绝。',
+  // AC-060:#9 requestedChangeJson 结构尚未定义，且 absent/present 与评价资格联动未形成可验收形态。
+  'AC-060': '卡已知合同缺口 #9 requestedChangeJson 结构，以及 absent/present×评价资格联动。',
+  // AC-061:关闭 suite 已覆盖多个单点，但缺 pending correction 与未生效账同时纳入完整五项红集。
+  'AC-061': '缺 pending correction、未生效账与其余关账缺口的完整五项红集。',
+  // AC-063:已有 close×close；未有 close 与最后终审/更正的真实并发屏障。
+  'AC-063': '缺关账×最后终审、关账×最后更正的 Activity-lock 并发用例。',
+  // AC-064:archive action 读写入口尚未在本刀开放，现有仅证明等待期不是永久截止。
+  'AC-064': '卡后续 archive action；现有仅覆盖归档等待期不是更正永久截止。',
+  // AC-065:当前 feedback 从活动 endAt 起算，未有最新 ClosureRevision 及更正资格联动。
+  'AC-065': '卡最新 ClosureRevision 为评价窗口锚点及更正后资格联动。',
+  // ADV-001:同 AC-047，需第 5 批真实最后签退的并发入口。
+  'ADV-001': '卡第 5 批结算提交×最后一次合法签退的真并发入口。',
+  // ADV-008:合同点名六个 10000 条 kill/recover 检查点，现有 8192 规模 test 不等价。
+  'ADV-008': '缺 10000 条在 1/199/200/201/9999/10000 检查点 kill/recover 演练。',
+  // ADV-010:入队进度刷新与多活动记分尚无同一事务/并发集成能力。
+  'ADV-010': '卡多活动记分×入队进度刷新的并发集成链。',
+  // ADV-011:现有 partial unique 是串行覆盖，未有同 target 两个更正申请的真并发屏障。
+  'ADV-011': '缺同一结算项两份更正申请的双实例真并发用例。',
+  // ADV-012:与 AC-060 相同的未定请求结构及评价资格联动。
+  'ADV-012': '卡已知合同缺口 #9 requestedChangeJson 结构与缺席转出勤后的评价联动。',
+  // ADV-022:archive 未开放，且尚缺更正×关闭的双实例并发屏障。
+  'ADV-022': '卡 archive action 与更正提交/生效×关账的真并发链。',
+};
+
+const batch2ResolvedIds = new Set([
+  ...Object.keys(BATCH2_ACCEPTANCE_DESTINATIONS),
+  ...Object.keys(BATCH2_ACCEPTANCE_BLOCKERS),
+]);
+if (
+  batch2ResolvedIds.size !== BATCH2_ACCEPTANCE_IDS.length ||
+  BATCH2_ACCEPTANCE_IDS.some((id) => !batch2ResolvedIds.has(id)) ||
+  Object.keys(BATCH2_ACCEPTANCE_DESTINATIONS).some((id) => BATCH2_ACCEPTANCE_BLOCKERS[id])
+) {
+  throw new Error('第 2 批 28 条验收编号必须逐条有已标注去向或明确阻塞说明');
+}
+
+function registerAcceptanceCases(cases: readonly { id: string; title: string }[]): void {
+  for (const { id, title } of cases) {
+    const destinations = BATCH2_ACCEPTANCE_DESTINATIONS[id];
+    if (destinations !== undefined) {
+      it(`${id} ${title}（第 2 批：已标注去向）`, () => {
+        for (const destination of destinations) {
+          expect(readFileSync(resolve(process.cwd(), destination.file), 'utf8')).toContain(
+            destination.needle,
+          );
+        }
+      });
+      continue;
+    }
+
+    const blocker = BATCH2_ACCEPTANCE_BLOCKERS[id];
+    if (blocker !== undefined) {
+      it.todo(`${id} ${title}（第 2 批阻塞：${blocker}）`);
+      continue;
+    }
+
+    it.todo(`${id} ${title}`);
+  }
+}
+
 describe('活动业务改造 v1.1 合同完整性', () => {
   it('四份合同与入仓时的 SHA256 清单逐字节一致', () => {
     const manifest = readContractFile(SHA256_MANIFEST)
@@ -108,13 +326,9 @@ describe('活动业务改造 v1.1 合同完整性', () => {
 });
 
 describe('活动业务改造 v1.1 验收编号(AC-001..072)—— 待实现', () => {
-  for (const { id, title } of acceptanceCases) {
-    it.todo(`${id} ${title}`);
-  }
+  registerAcceptanceCases(acceptanceCases);
 });
 
 describe('活动业务改造 v1.1 对抗测试(ADV-001..023)—— 待实现', () => {
-  for (const { id, title } of adversarialCases) {
-    it.todo(`${id} ${title}`);
-  }
+  registerAcceptanceCases(adversarialCases);
 });

@@ -262,6 +262,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/my/attendance-records'],
   // 审计刀 5 F4：App self-scope 个人参与累计，只返正向 approved 时长/次数/封顶贡献。
   ['get', '/api/app/v1/my/participation-summary'],
+  // 活动业务改造 v1.1 第 2 批第 ⑨b 刀：本人已生效账本；只经 LedgerQueryService 查询 committed 批次。
+  ['get', '/api/app/v1/my/participation-ledger'],
 
   // 活动自助 GPS 签到 F2 + D-GPS fail-closed：canonical App self surface；当前 pass
   // registration 锚定，首次 POST 仅合法范围内位置写入，合法 winner 重试仍 200；GET 只读本人
@@ -530,6 +532,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 审计刀 5 F1/F2：活动报名×实到核对 + 活动参与合计；两项读码带 activity ref。
   ['get', '/api/admin/v1/activities/{activityId}/reconciliation'],
   ['get', '/api/admin/v1/activities/{activityId}/participation-summary'],
+  // 活动业务改造 v1.1 第 2 批第 ⑨b 刀：活动轴已生效账本。
+  ['get', '/api/admin/v1/activities/{activityId}/participation-ledger'],
   // 活动评价 F3：Admin 实名分页 + 均分/五桶/评价率；复用 attendance.read.sheet + activity ref。
   ['get', '/api/admin/v1/activities/{activityId}/feedbacks'],
   ['get', '/api/admin/v1/activities/{activityId}/feedback-summary'],
@@ -561,11 +565,14 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/admin/v1/attendance-sheets/{id}/final-return'],
   ['post', '/api/admin/v1/attendance-sheets/{id}/resubmit'],
   ['post', '/api/admin/v1/attendance-sheets/{id}/reopen'],
-  // 活动业务改造 v1.1 第 2 批第 ⑧b 刀:独立 Admin 审核 action surface;不含跨活动工作台／读面。
+  // 活动业务改造 v1.1 第 2 批第 ⑧b/⑨b 刀：审核 action + 跨活动工作台、详情、账本批次读面。
+  ['get', '/api/admin/v1/attendance-settlements'],
+  ['get', '/api/admin/v1/attendance-settlements/{settlementVersionId}/review-detail'],
   ['post', '/api/admin/v1/attendance-settlements/{id}/first-approve'],
   ['post', '/api/admin/v1/attendance-settlements/{id}/first-return'],
   ['post', '/api/admin/v1/attendance-settlements/{id}/final-approve'],
   ['post', '/api/admin/v1/attendance-settlements/{id}/final-return'],
+  ['get', '/api/admin/v1/attendance-settlements/{id}/posting-batch'],
   // 队员/审批跨轴只读查询(2026-06-23;前端任务驱动后台 · GAP-001 Tier2 / GAP-002 Tier3):
   //   5 个 admin 只读端点,224→229(仅新增;复用 read 码零新码 / 零 schema 列 / 零 migration)。
   //   Tier2 跨活动横扫(审批工作台):registrations + attendance-sheets(根 @Get 加在既有
@@ -578,6 +585,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/members/{memberId}/contribution-summary'],
   // 审计刀 5 F3：队员 360 个人参与累计，既有 contribution-summary 原样保留。
   ['get', '/api/admin/v1/members/{memberId}/participation-summary'],
+  // 活动业务改造 v1.1 第 2 批第 ⑨b 刀：队员轴已生效账本。
+  ['get', '/api/admin/v1/members/{memberId}/participation-ledger'],
   ['post', '/api/admin/v1/attachments'],
   ['get', '/api/admin/v1/attachments'],
   ['post', '/api/admin/v1/attachments/upload-url'],
@@ -1539,9 +1548,9 @@ describe('OpenAPI 契约快照', () => {
   //   test-connection)→ **442**。T3 起还会增 OAuth 公开面与 me/wecom、admin 清除。
   // 企业微信 T6-1(2026-08-03):+1 定向 replay 运维入口
   //   (POST admin/v1/notifications/:id/replay-wecom)→451；第 2 批第 ⑧b 刀结算最小 HTTP 闭环 +7 →458；
-  //   第 ⑨a 刀负责人结算工作台 +5 → **463**。
-  it('路由足迹精确为 463', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(463);
+  //   第 ⑨a 刀负责人结算工作台 +5 →463；第 ⑨b 刀审核/账本读面 +6 → **469**。
+  it('路由足迹精确为 469', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(469);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

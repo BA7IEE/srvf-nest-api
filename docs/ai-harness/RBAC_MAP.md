@@ -69,12 +69,12 @@
 | `meta` | 1 | `meta.resolve.label` |
 | `sms-send-log` | 1 | `sms-send-log.read.list` |
 
-### controller × surface 对照(87 个 @Controller)
+### controller × surface 对照(89 个 @Controller)
 
 > 权威源:`src/**/*.controller.ts` 的 `@Controller(...)` 装饰器。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 鉴权模式(R / A / P)与业务语义属人类知识,见本文件标记之外的章节。
 
-#### admin/v1(47 个 controller)
+#### admin/v1(48 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
@@ -103,6 +103,7 @@
 | `admin/v1/contents` | `src/modules/content/content-admin.controller.ts` |
 | `admin/v1/me` | `src/modules/users/controllers/admin-me.controller.ts` |
 | `admin/v1/members` | `src/modules/members/members.controller.ts` |
+| `admin/v1/members/:memberId` | `src/modules/activities/controllers/admin-member-participation-ledger.controller.ts` |
 | `admin/v1/members/:memberId` | `src/modules/attendances/controllers/admin-member-attendance.controller.ts` |
 | `admin/v1/members/:memberId/certificates` | `src/modules/certificates/certificates.controller.ts` |
 | `admin/v1/members/:memberId/department` | `src/modules/member-departments/member-departments.controller.ts` |
@@ -126,7 +127,7 @@
 | `admin/v1/team-join/cycles` | `src/modules/team-join/team-join-cycles.controller.ts` |
 | `admin/v1/users` | `src/modules/users/users.controller.ts` |
 
-#### app/v1(17 个 controller)
+#### app/v1(18 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
@@ -135,6 +136,7 @@
 | `app/v1/me` | `src/modules/users/controllers/app-me.controller.ts` |
 | `app/v1/me/insurances` | `src/modules/insurances/controllers/app-me-insurances.controller.ts` |
 | `app/v1/me/team-join` | `src/modules/team-join/team-join-applications.app.controller.ts` |
+| `app/v1/my` | `src/modules/activities/controllers/app-my-participation-ledger.controller.ts` |
 | `app/v1/my` | `src/modules/activity-registrations/controllers/app-my-registrations.controller.ts` |
 | `app/v1/my` | `src/modules/attendances/controllers/app-my-attendance-records.controller.ts` |
 | `app/v1/my` | `src/modules/attendances/controllers/app-my-participation-summary.controller.ts` |

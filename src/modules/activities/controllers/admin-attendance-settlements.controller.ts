@@ -1,15 +1,27 @@
-import { Body, Controller, HttpCode, HttpStatus, Param, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
+  ApiWrappedPageResponse,
 } from '../../../common/decorators/api-response.decorator';
 import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../../common/decorators/current-user.decorator';
+import { PageResultDto } from '../../../common/dto/pagination.dto';
 import { BizCode } from '../../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../../audit-logs/audit-logs.types';
 import {
@@ -22,12 +34,65 @@ import {
   AdminSettlementReviewResponseDto,
   AdminSettlementReturnCommandDto,
 } from '../dto/admin/admin-settlement-review.dto';
+import {
+  AdminAttendanceSettlementListItemDto,
+  AdminSettlementPostingBatchDto,
+  AdminSettlementPostingBatchParamsDto,
+  AdminSettlementReviewDetailDto,
+  AdminSettlementVersionReadParamsDto,
+  ListAdminAttendanceSettlementsQueryDto,
+} from '../dto/admin/admin-settlement-read.dto';
 
 @ApiTags('Admin - Attendance Settlements')
 @ApiBearerAuth()
 @Controller('admin/v1/attendance-settlements')
 export class AdminAttendanceSettlementsController {
   constructor(private readonly settlements: ActivitySettlementHttpService) {}
+
+  @Get()
+  @ApiOperation({ summary: '跨活动结算审核工作台（分页） [rbac: attendance.read.sheet]' })
+  @ApiWrappedPageResponse(AdminAttendanceSettlementListItemDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  list(
+    @Query() query: ListAdminAttendanceSettlementsQueryDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<PageResultDto<AdminAttendanceSettlementListItemDto>> {
+    return this.settlements.reviewWorkbench(query, user);
+  }
+
+  @Get(':settlementVersionId/review-detail')
+  @ApiOperation({
+    summary: '查看结算版本不可变审核详情、seal、差异与缺口 [rbac: attendance.read.sheet]',
+  })
+  @ApiWrappedOkResponse(AdminSettlementReviewDetailDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+  )
+  reviewDetail(
+    @Param() params: AdminSettlementVersionReadParamsDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<AdminSettlementReviewDetailDto> {
+    return this.settlements.reviewDetail(params.settlementVersionId, user);
+  }
+
+  @Get(':id/posting-batch')
+  @ApiOperation({ summary: '查看结算版本账本批次进度 [rbac: attendance.read.sheet]' })
+  @ApiWrappedOkResponse(AdminSettlementPostingBatchDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+  )
+  postingBatch(
+    @Param() params: AdminSettlementPostingBatchParamsDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<AdminSettlementPostingBatchDto> {
+    return this.settlements.postingBatch(params.id, user);
+  }
 
   @Post(':id/first-approve')
   @HttpCode(HttpStatus.OK)
