@@ -12,9 +12,10 @@
 ### P1-27 v0.66.0 外部评审 —— **两轮 findings 全关 + T6-1 运维闭环已交付**(#897/#898/#901/#903);⏸ **剩两笔全部卡在「域名未下来」** + T6 后总评审 🟡
 
 > **2026-08-03 交付状态**:第一刀 [#897](https://github.com/BA7IEE/srvf-nest-api/pull/897)(B1/B2/B3,第 70 migration)
-> + 第二刀 [#898](https://github.com/BA7IEE/srvf-nest-api/pull/898)(B4–B7 + SF1/SF2,零 schema)**均已合入 main**,
-> 顺序 #897 → #898(#898 的 B4 对齐的是 bind 锁序,而 bind 在 #897 写集内)。
-> 六/三条**全部有 red-first 成对证据**。
+>
+> - 第二刀 [#898](https://github.com/BA7IEE/srvf-nest-api/pull/898)(B4–B7 + SF1/SF2,零 schema)**均已合入 main**,
+>   顺序 #897 → #898(#898 的 B4 对齐的是 bind 锁序,而 bind 在 #897 写集内)。
+>   六/三条**全部有 red-first 成对证据**。
 >
 > ⚠️ **本行原先写的「既有 spec 零修改(两刀的测试文件全是新增)」是事实错误,由第二轮评审抓出**。
 > 真实情况:#898 的 4 个测试文件确实全是新增,但 **#897 改了 7 个既有测试文件**。
@@ -22,6 +23,7 @@
 > 「挑着验 = 没验」这句刚写进本条目当教训,当天就以同一种方式复发。
 >
 > 七个被改文件的独立定性(第二轮评审逐个判,主会话接受):
+>
 > - 5 个 e2e(`app-me-wecom` / `auth-wecom` / `wecom-binding-concurrency` /
 >   `wecom-lifecycle-concurrency` / `wecom-user-lifecycle`)= **中性连坐修正**,
 >   只加 Cookie 捕获与发送,原业务断言未放宽;
@@ -112,12 +114,12 @@
 > 都要真实 HTTPS 域名;`webBaseUrl` 必须是 HTTPS origin,且按已拍板的**同源部署**,
 > 前端与 API 要落在同一个 origin —— 域名/证书规划时就要按这个来,别等下来了才发现拓扑对不上。
 >
-> | # | 项 | 归属 |
-> |---|---|---|
-> | ~~1–3~~ | ~~pre-auth 代际 / 错注释 / replay 终态判据~~ —— **#901 已关**;~~3 的运维闭环(入口+RBAC+Audit)~~ —— **#903 已关** | ✅ |
-> | ~~4~~ | ~~B3 真实上游耗时残余~~ —— 规则已按 2026-08-03 拍板收窄(AGENTS §3),**残余经维护者明确接受**;真实分布并入下方第 6 笔一起实测 | ✅ 已拍板 |
-> | 5 | **NIT**:同 purpose 只有一个固定 Cookie,同一浏览器并发两个 login flow 会互相覆盖 → 两个都 36010(可用性,非安全)。既有 e2e 的「按 state 索引 cookie jar」更像多个独立浏览器,发现不了 | **T6**(真浏览器双标签页)/ FE single-flight |
-> | 6 | 真浏览器 Cookie 行为(`__Host-` 防子域投毒、`SameSite=Lax` 拦跨站 XHR)—— supertest **不执行**这些属性,只断言了 `Set-Cookie` 字符串 | **T6** |
+> | #       | 项                                                                                                                                                                                | 归属                                       |
+> | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+> | ~~1–3~~ | ~~pre-auth 代际 / 错注释 / replay 终态判据~~ —— **#901 已关**;~~3 的运维闭环(入口+RBAC+Audit)~~ —— **#903 已关**                                                                  | ✅                                         |
+> | ~~4~~   | ~~B3 真实上游耗时残余~~ —— 规则已按 2026-08-03 拍板收窄(AGENTS §3),**残余经维护者明确接受**;真实分布并入下方第 6 笔一起实测                                                       | ✅ 已拍板                                  |
+> | 5       | **NIT**:同 purpose 只有一个固定 Cookie,同一浏览器并发两个 login flow 会互相覆盖 → 两个都 36010(可用性,非安全)。既有 e2e 的「按 state 索引 cookie jar」更像多个独立浏览器,发现不了 | **T6**(真浏览器双标签页)/ FE single-flight |
+> | 6       | 真浏览器 Cookie 行为(`__Host-` 防子域投毒、`SameSite=Lax` 拦跨站 XHR)—— supertest **不执行**这些属性,只断言了 `Set-Cookie` 字符串                                                 | **T6**                                     |
 >
 > **部署拓扑已拍板 = 同源**(2026-08-03),故第二轮评审提的「credentialed CORS 生产 BLOCKER」**不成立**,
 > `enableCors` 保持不开 `credentials`。⚠️ 改跨 origin 部署前禁开 `loginEnabled`,见 `current-state` §1。
@@ -128,6 +130,7 @@
 > 环依赖第 ④ 步「最终闸的 `settings FOR SHARE` 会排在 PATCH 的 `FOR UPDATE` 等待者身后」——
 > **PG 行锁没有这种 FIFO**:后到的 `FOR SHARE` 只与**持有者**比相容性,与既有 SHARE 持有者相容
 > 就立即获准,直接越过排队中的 `FOR UPDATE`。
+>
 > - lane 用三条 psql 连接实测(PG 16);
 > - **主会话独立复跑**:A 持 `FOR SHARE` → B 要 `FOR UPDATE`(`pg_locks` 确认 1 条未授予、
 >   `transactionid/ShareLock`)→ C 后到要 `FOR SHARE` **0ms 拿到**。读数一致。
@@ -138,6 +141,7 @@
 >
 > > ⚠️ **本段原写「升级 PG、或把闸的 User 升成 `FOR UPDATE`、或把 bind 的 settings 改成
 > > `FOR UPDATE`,它就会红 —— 那正是这个环重新可兑现的时刻」。第三刀(#901)实测证明这句话错两层**:
+> >
 > > 1. **那条护栏全程用自己手写的 SQL 造锁**,不经过最终闸也不经过 bind ——
 > >    **改应用代码不会让它红**。实测把闸的 settings 改成 `FOR UPDATE`,本文件 7 条**全绿**。
 > >    它红只意味着一件事:**PG 的行锁相容/排队语义变了**。
@@ -175,25 +179,25 @@
 
 #### 第一刀:#882 账号接管面(最急;与 wecom 两个开关**无关**)
 
-| # | BLOCKER | 落点 | 修复方向 |
-|---|---|---|---|
-| B1 | OAuth `state` **未绑定发起浏览器** → 登录 CSRF;未绑定分支可升级为**完整账号接管**(受害者输入自己手机号后,攻击者的企微身份被绑到受害者 User) | `auth.controller.ts:425-449` · `login-wecom.service.ts:63-73,119-129,296-320` · `wecom-auth-attempt.service.ts:51-119` | authorize 时另发浏览器关联 nonce,`Secure+HttpOnly+SameSite` Cookie 存原值、attempt 只存 hash;callback 必须同时携带匹配 Cookie;state/Cookie/attempt 三者原子一次性消费。**须补双 user-agent E2E** |
-| B2 | `WECOM_BIND` proof **ABA 回环**:无绑定态指纹是字面 `null`,`null→bind→admin clear→null` 后旧 proof 复活(注释只分析了 `active→clear→null`,漏了这条) | `identity-step-up.service.ts:218-279` · `user-wecom-binding.service.ts:251-282,378-426` | 加**单调身份代际**(如 `User.wecomIdentityVersion`,bind/rebind/clear/softDelete/reopen 同事务递增),proof snapshot 纳入 version。⚠️ **不要**改 P0-E(立即吊销 access / tokenVersion)—— 15 分钟自然到期本身是对的,缺的是代际 |
-| B3 | 36010 **码形归一成立、耗时不归一**(state 无效 / code 格式无效 / OAuth 拒绝 / 停用软删,四条路径查询长度不同),违反防枚举决策锁「任何耗时差异都算漏洞」 | `login-wecom.service.ts:119-169,326-346` | 所有 36010 走统一出口 + 补齐固定本地开销 + 有界最小响应时长 + 小扰动;**测试用分支 instrumentation 断言都进同一出口**,别写脆弱的毫秒阈值 E2E |
+| #   | BLOCKER                                                                                                                                              | 落点                                                                                                                   | 修复方向                                                                                                                                                                                                                 |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| B1  | OAuth `state` **未绑定发起浏览器** → 登录 CSRF;未绑定分支可升级为**完整账号接管**(受害者输入自己手机号后,攻击者的企微身份被绑到受害者 User)          | `auth.controller.ts:425-449` · `login-wecom.service.ts:63-73,119-129,296-320` · `wecom-auth-attempt.service.ts:51-119` | authorize 时另发浏览器关联 nonce,`Secure+HttpOnly+SameSite` Cookie 存原值、attempt 只存 hash;callback 必须同时携带匹配 Cookie;state/Cookie/attempt 三者原子一次性消费。**须补双 user-agent E2E**                         |
+| B2  | `WECOM_BIND` proof **ABA 回环**:无绑定态指纹是字面 `null`,`null→bind→admin clear→null` 后旧 proof 复活(注释只分析了 `active→clear→null`,漏了这条)    | `identity-step-up.service.ts:218-279` · `user-wecom-binding.service.ts:251-282,378-426`                                | 加**单调身份代际**(如 `User.wecomIdentityVersion`,bind/rebind/clear/softDelete/reopen 同事务递增),proof snapshot 纳入 version。⚠️ **不要**改 P0-E(立即吊销 access / tokenVersion)—— 15 分钟自然到期本身是对的,缺的是代际 |
+| B3  | 36010 **码形归一成立、耗时不归一**(state 无效 / code 格式无效 / OAuth 拒绝 / 停用软删,四条路径查询长度不同),违反防枚举决策锁「任何耗时差异都算漏洞」 | `login-wecom.service.ts:119-169,326-346`                                                                               | 所有 36010 走统一出口 + 补齐固定本地开销 + 有界最小响应时长 + 小扰动;**测试用分支 instrumentation 断言都进同一出口**,别写脆弱的毫秒阈值 E2E                                                                              |
 
 > ⚠️ 评审同时**纠正了下发方的错误判据**:「未绑定」按冻结行为应返 **200 `bindingRequired`**,不是 36010。
 > 原「三者同码同形」测试矩阵本身写错了。
 
 #### 第二刀:T5B 信任根(在 `messageEnabled` 仍为 false 时一次性修)
 
-| # | BLOCKER | 落点 | 修复方向 |
-|---|---|---|---|
-| B4 | **三事务死锁**:`bind` 取 `settings→User`,T5B 最终闸取 `User→settings`,叠加 settings PATCH 的 `FOR UPDATE` 成环(PG 为防写者饿死,新 SHARE 会排在已等待的 UPDATE 之后) | `notification-wecom-dispatch.service.ts:202-249` · `user-wecom-binding.service.ts:251-282` · `login-wecom.service.ts:393-430` · `wecom-settings.service.ts:98-119,259-278` | 最终闸把 **settings SHARE 提前到 User 之前**,共同实体相对锁序统一为 `settings→User→identity`。**须补真实三连接 barrier 测试**,不接受"跑一百次没遇到" |
-| B5 | 最终闸锁的是**旧配置下的身份**,handler 事务外又 `resolveRoute()` 取最新 settings → 可**跨 CorpID 错投**(Corp A 的 userid 发进 Corp B) | `notification-wecom-dispatch.service.ts:202-249` · `notification-outbox.handlers.ts:724-807` · `wecom.service.ts:99-127` | 新增不可拆分的 `resolveMessageContext()` 返回 `provider+corpId+configurationGeneration+webBaseUrl`;闸内校验 generation 未变;提交后**只能用此前那个 Provider**。`resolveLoginContext()` 早已写明这条原则,消息链没遵守 |
-| B6 | `beforeEffect` **只包 Provider 外壳**,`request()` 内部最多 3 次 `fetch` 全无 fence;且尝试预算 3×8=24 未统一;`forceRefresh` 绕过 `refreshPromise`,并发 40014 会各自强刷 | `wecom.provider.ts:290-375,387-500` · `notification-outbox.worker.ts:246-334` | `beforeEffect` 下沉到每个 `fetch` 紧前;物理尝试预算贯通(或干脆移除 Provider transport retry 全交 Outbox);`forceRefresh` 只绕缓存不绕 singleflight。**并发 40014 须断言 gettoken 实际请求数 = 1** |
-| B7 | Provider 错误类型**在 Outbox 边界被擦除**:非 lease-lost 异常一律记 `TOKEN_FAILED` + Transient;`isTransientWecomError('HTTP_ERROR')` 不分 4xx/5xx ⇒ **gettoken 阶段的 45009、错误 CorpSecret、HTTP 4xx 全被当暂态退避** | `notification-outbox.handlers.ts:754-807,1283-1327` · `wecom.provider.ts:420-500` | Provider→Outbox 保留**类型化错误**(rate-limited / config-fatal / http-4xx / http-5xx / network / timeout / invalid-response / token-invalid / channel-disabled);Outbox 只对 network/timeout/5xx/允许的 token-invalid 退避 |
-| SF1 | 畸形回执被当空名单:`splitUserList` 对 number/array/object/null 返 `[]` ⇒ `{errcode:0, invaliduser:123}` 会**误记 SENT** | `wecom.provider.ts:334-366,502-505` · `notification-outbox.handlers.ts:811-858` | 严格三分:缺席/空串=空名单;字符串=解析;**其它类型 = `INVALID_RESPONSE`,不得 SENT**。另补 `errcode!=0` 同时带 invalidparty/invalidtag 的情形 |
-| SF2 | **系统定向通知无 replay 路径**:v1 eventKey 固定 `wecom-delivery:{nid}:{mid}` + terminal delivery 占 `intent.id`,撞 45009 后人工改回 pending 也会被幂等判据直接短路;且它没有 publish generation | `notification-outbox.handlers.ts:201-267,650-660,900-930` · `docs/ops/wecom-message-channel-rollout.md §6` | 给系统定向 child 加 replay generation / nonce,或提供显式 replay 建新 child id + 新 eventKey;跨 attempt 去重继续用 `notificationId+memberId+channel+SENT` |
+| #   | BLOCKER                                                                                                                                                                                                                | 落点                                                                                                                                                                       | 修复方向                                                                                                                                                                                                                  |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B4  | **三事务死锁**:`bind` 取 `settings→User`,T5B 最终闸取 `User→settings`,叠加 settings PATCH 的 `FOR UPDATE` 成环(PG 为防写者饿死,新 SHARE 会排在已等待的 UPDATE 之后)                                                    | `notification-wecom-dispatch.service.ts:202-249` · `user-wecom-binding.service.ts:251-282` · `login-wecom.service.ts:393-430` · `wecom-settings.service.ts:98-119,259-278` | 最终闸把 **settings SHARE 提前到 User 之前**,共同实体相对锁序统一为 `settings→User→identity`。**须补真实三连接 barrier 测试**,不接受"跑一百次没遇到"                                                                      |
+| B5  | 最终闸锁的是**旧配置下的身份**,handler 事务外又 `resolveRoute()` 取最新 settings → 可**跨 CorpID 错投**(Corp A 的 userid 发进 Corp B)                                                                                  | `notification-wecom-dispatch.service.ts:202-249` · `notification-outbox.handlers.ts:724-807` · `wecom.service.ts:99-127`                                                   | 新增不可拆分的 `resolveMessageContext()` 返回 `provider+corpId+configurationGeneration+webBaseUrl`;闸内校验 generation 未变;提交后**只能用此前那个 Provider**。`resolveLoginContext()` 早已写明这条原则,消息链没遵守      |
+| B6  | `beforeEffect` **只包 Provider 外壳**,`request()` 内部最多 3 次 `fetch` 全无 fence;且尝试预算 3×8=24 未统一;`forceRefresh` 绕过 `refreshPromise`,并发 40014 会各自强刷                                                 | `wecom.provider.ts:290-375,387-500` · `notification-outbox.worker.ts:246-334`                                                                                              | `beforeEffect` 下沉到每个 `fetch` 紧前;物理尝试预算贯通(或干脆移除 Provider transport retry 全交 Outbox);`forceRefresh` 只绕缓存不绕 singleflight。**并发 40014 须断言 gettoken 实际请求数 = 1**                          |
+| B7  | Provider 错误类型**在 Outbox 边界被擦除**:非 lease-lost 异常一律记 `TOKEN_FAILED` + Transient;`isTransientWecomError('HTTP_ERROR')` 不分 4xx/5xx ⇒ **gettoken 阶段的 45009、错误 CorpSecret、HTTP 4xx 全被当暂态退避** | `notification-outbox.handlers.ts:754-807,1283-1327` · `wecom.provider.ts:420-500`                                                                                          | Provider→Outbox 保留**类型化错误**(rate-limited / config-fatal / http-4xx / http-5xx / network / timeout / invalid-response / token-invalid / channel-disabled);Outbox 只对 network/timeout/5xx/允许的 token-invalid 退避 |
+| SF1 | 畸形回执被当空名单:`splitUserList` 对 number/array/object/null 返 `[]` ⇒ `{errcode:0, invaliduser:123}` 会**误记 SENT**                                                                                                | `wecom.provider.ts:334-366,502-505` · `notification-outbox.handlers.ts:811-858`                                                                                            | 严格三分:缺席/空串=空名单;字符串=解析;**其它类型 = `INVALID_RESPONSE`,不得 SENT**。另补 `errcode!=0` 同时带 invalidparty/invalidtag 的情形                                                                                |
+| SF2 | **系统定向通知无 replay 路径**:v1 eventKey 固定 `wecom-delivery:{nid}:{mid}` + terminal delivery 占 `intent.id`,撞 45009 后人工改回 pending 也会被幂等判据直接短路;且它没有 publish generation                         | `notification-outbox.handlers.ts:201-267,650-660,900-930` · `docs/ops/wecom-message-channel-rollout.md §6`                                                                 | 给系统定向 child 加 replay generation / nonce,或提供显式 replay 建新 child id + 新 eventKey;跨 attempt 去重继续用 `notificationId+memberId+channel+SENT`                                                                  |
 
 **⚠️ 修法纪律(评审原话,采纳)**:「不要先对某个 catch 打补丁或只调换一行 SQL。
 这里的问题都是**状态机接口错误**,局部胶带会让下一种交错从旁边钻出来。」
@@ -226,6 +230,8 @@
 > **待折进下一版修订件的已知合同缺口(#6–#10,未裁定)**:#6 `workflowRevision` 来源未定义 ·
 > #7 `resultCode` 无「未定」取值 · #8 关账幂等列缺失 · #9 `requestedChangeJson` 结构未定义 ·
 > #10 无人触发 `commitBatch`。
+> **账本读面权限口径（维护者 2026-08-06 拍板）**：复用 `attendance.read.sheet`；合同 §6.11
+> 未规定，若日后要收紧需另立权限码 + 三处 seed spec 连坐。
 >
 > **第 1 批五刀**(全部 expand-only、零 runtime、零端点):
 > [#911](https://github.com/BA7IEE/srvf-nest-api/pull/911) 场次/岗位/参与身份/容量(71)·
@@ -306,6 +312,7 @@
   第 1、2 批未完成前禁止把二维码 / 批量代签 / 离线入口开放到真实环境(修订说明 §10)。
 
 ### Content / Notification 可见性业务 Decision — **✅ 已最终拍板(2026-07-27)**
+
 - **业务负责人最终确认日期：2026-07-27**。
 - **Decision 15.1=B**：management 只认 SUPER_ADMIN 或明确持有对应 GLOBAL `content.read.record` / `notification.read.record` 的账号；Role.ADMIN 不自动放行。
 - **Decision 15.2=B**：department 认当前有效 PRIMARY / SECONDARY / TEMPORARY / SUPPORT Membership，且 Organization 必须 ACTIVE、未软删；适用于 App Content、App Notification、SMS/WeChat 根受众及微信实际 Effect 前最终收件人复核。
@@ -315,6 +322,7 @@
 > (与 `current-state.md` / `notifications/CLAUDE.md` 三处互证)。它是**当前生效的业务决议**,不是完成的任务。
 
 ### P1-10 D-INSURANCE v3 顺序四 PR 收口 — **PR1–PR4 代码均已交付；PR3 runtime enable 与 PR4 migration deploy 待后续运维窗口**
+
 - **PR1 expand-only(已交付)**:`MemberInsurance` pending/v0/nullable reviewer + nullable 双 source/双 owner Evidence RESTRICT FK 骨架 + `TeamJoinCycle.requiresInsurance=false`；约束刻意留 PR4。
 - **PR2 compatibility window(已交付)**:唯一 review route + optional App expectedVersion + telemetry；consumer 保持旧语义、0 evidence。
 - **PR3 enforcement cutover(本次代码交付，不含部署)**:`INSURANCE_ENFORCEMENT_ENABLED` 单 gate 同时切 App required CAS、verified-only、Activity/Team Join 最小 evidence 与 final join 保险闸；production missing/empty/invalid fail-fast，显式 false 可启动。维护者于 2026-07-19 逐字确认“旧客户端都没上线，放心操作执行”，仅解除客户端兼容等待，**不构成旧 server=0 运行证据**；真正 enable 前仍须 drain 旧 server 且禁止 true/false fleet 混跑。
@@ -322,6 +330,7 @@
 - Admin 队员 360 的团队保险覆盖安全投影已交付；小程序/App 端保险展示仍不在本任务范围。理赔、到期主动提醒(新增 cron 须 D 档)与保单图 attachments 接线也仍须真实诉求触发后另立项。
 
 ### P1-14 GAP-005 统一通知模块后续(S1–S5 已发,余项 ⏸ 诉求触发再立项)
+
 - **真·全员短信批处理异步**(S5 末位切片经 D-Outbox 收口):admin `confirmed=true` 现先持久化逐收件人 generation intent，再由 HTTP 做首轮、独立 worker 续跑失败项；跨进程 active-slot 防并发重复，真实 `NotificationDelivery SENT` 才是永久去重事实。实现未新增 cron/Redis/queue/事件总线；若未来受众规模需要分片、吞吐控制或专用队列，仍须另立 D 档，不在 durable outbox 基础能力中暗增。
 - **报名前 openid 非会员推送路**(S3/S5 均标注另立项):招新报名前 5 触发(报名受理/转人工/门槛/评定/公示)申请人**非队员**,站内/微信/短信(均需 member)够不着 → 现维持**查询进度 pull**;若需主动推送给未入队报名人(微信 openid 锚点),单独立项。
 - **短信 admin 投递查询端点**(可选):当前 `NotificationDelivery`(channel=sms)+ `sms_send_logs` 落库,admin 查投递成败靠 `sms-send-logs` 列表(已有)/ 运维看库;若需「按通知查短信投递明细」admin 端点,诉求触发再加(沿 S2 微信 delivery 无专属查询端点的口径)。
@@ -329,17 +338,20 @@
 (P1-11 招新一期〔招新前段〕+ P1-12 招新二期〔招新后段〕+ **P1-13 招新三期〔入队:志愿者→队员〕** 均已完成,见[已收口项归档](../archive/ai-harness/next-tasks-completed.md);**招新业务域三段闭环**:报名前段〔临时编号〕→ 转正后段〔建 User+Member,无部门无级别〕→ 入队〔10 项考核 + 综合评估 → 设部门 + 级别 level-1〕。**P1-12 当时拍板的「admin 手工建档 = v1 边界外」已由 v0.41.0 招新可用性收口还账关闭**:F2 admin 改资料〔PATCH,R1 白名单〕+ F3 单人手动建档〔promote-single,放行外籍+锚点择优〕——批量发号全部 skip 类自此有出路;冻结评审稿 [`recruitment-usability-closeout-review.md`](../archive/reviews/recruitment-usability-closeout-review.md)。)
 
 ### P1-20 app 侧证书图暴露给队员本人 — **⏸ 诉求触发再立项**
+
 - **背景**:v0.41.0 招新可用性收口 F7(评审稿 §2.9 R6)落地了证书图长期档案:申请人公开上传(`certificateImages`)→ promote 建 pending `Certificate` + 图 key 搬 `Certificate.imageKeys Json`。**app 侧 `GET app/v1/my/certificates` 的 `AppMyCertificateDto` v1 刻意不含 imageKeys/图 URL**(v1 契约不动,goal 拍板另议)。
 - **候选方案**:若队员需要在小程序回看本人证书图,镜像 admin 取图口径加 `GET app/v1/my/certificates/:id/image-urls`(self-scope 锁本人 memberId;短 TTL signed-URL;L3 不入日志)——须先过 App surface 语义评审(api-surface-policy §9)。
 - **触发条件**:小程序前端出现真实页面诉求时单独立项(C 档;0 schema——列已在)。
 
 ### P1-15 存量队员批量导入工具 — **⏸ 不自动启动,诉求触发再立项**
+
 - **背景**:终态 scoped-authz 序列(GAP-007,PR1–PR12 + 摘码微刀,已全量落地)的 PR11 只建了 `announcement-import`(preview/execute 两段式,导组织/任职/分管),**不建 `Member`**——双锚铁律(R7)要求执行前每条行都能按 `memberNo` 命中已存在的队员。当前给全新队员群体(如整队历史存量数据)批量建 `Member` 记录尚无专用端点,只能逐个 `POST admin/v1/members` 或运维 `psql` 直灌([`ops/scoped-authz-go-live-checklist.md` §3`](../ops/scoped-authz-go-live-checklist.md) 已登记此缺口)。
 - **候选方案**:镜像 `announcement-import` 的 preview/execute 两段式设计(零写入诊断 + 幂等落库 + 逐行 `ok`/`blocked`/`already-exists` 结果),但目标表是 `Member`(可能含基础档案字段)而非组织/任职/分管;**同样受 R13 约束**——测试与文档示例一律用假数据,真实姓名/证件信息不进本仓库任何位置。
 - **触发条件**:出现批量导入存量队员(> 逐个可接受量级)的真实诉求时单独立项评审(D 档,涉及 schema 是否需要新增批量端点、字段集范围、与 `POST admin/v1/members` 单条端点的关系)。
 - **与 P1-18(队员账号闭环,✅ 已完成)关系**:P1-15 解决"批量把队员**档案**（`Member`)灌进来";P1-18 解决"给**已存在**队员开**登录账号**(`User`)"。两者正交——P1-15 若落地,批量导入出的 `Member` 仍可用 P1-18 已交付的 `POST admin/v1/members/accounts/bulk-grant` 批量开号能力。
 
 ### P1-24 通用证书标准库 + 队内认定规则 + 招新证书闭环 — **✅ 已交付并随 v0.65.0 发版(2026-08-02);剩首批初始化(生产 runbook)**
+
 - **交付**:PR-0(冻结)→ PR-1 → PR-2 → PR-3 → PR-4a(拆三刀)+ PR-4b → PR-5 → PR-6 全部合入 main([#826–#834](https://github.com/BA7IEE/srvf-nest-api/pull/834));**Endpoint 435→438 · Migration 66→67 · 权限码 214→222**。
 - **⚠️ 交付后跨模型评审判 NO-GO → findings 修复批次 F1–F6**(2026-07-30):两个外部模型对 `main@bc300a66` 独立评审,21 条 findings 主会话逐条复现。修复见 [#835](https://github.com/BA7IEE/srvf-nest-api/pull/835)(并发四处统一收口)· [#836](https://github.com/BA7IEE/srvf-nest-api/pull/836)(证据授权按状态分流)· [#837](https://github.com/BA7IEE/srvf-nest-api/pull/837)(PATCH 三态 + 日期真实性 + 核验落点)· [#838](https://github.com/BA7IEE/srvf-nest-api/pull/838)(§12 资质判断)· [#839](https://github.com/BA7IEE/srvf-nest-api/pull/839)(主数据契约与审计)· F6(SOP / 初始化 / 台账)。
 - **post-freeze 修正记录**:[`archive/reviews/certificate-standard-library-t0-amendments.md`](../archive/reviews/certificate-standard-library-t0-amendments.md) —— 冻结稿正文不回改,修正逐条记在这里。**冻结稿 + amendments 两份合起来才是当前需求。**
@@ -358,11 +370,11 @@
 一律用 `=== undefined` / `!== undefined` / `??`。语义错位 ⇒ 显式 `null` 穿过契约层抵达 service。
 三种后果,**都已在真 HTTP e2e 上复现**(修复前实测,括号内是实际返回):
 
-| 后果 | 落点 | 修复前实测 |
-|---|---|---|
+| 后果             | 落点                                                                                                                                                                         | 修复前实测      |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
 | **静默写错事实** | Claim 审核 `issuedAt: null` → `new Date(null)` = **1970-01-01**(不是 Invalid Date,躲得过任何 NaN 检查),被「不得晚于今天」放行,作为正式审核事实落库并**照常参与资质门槛派生** | **200**(应 400) |
-| **500 而非 400** | Policy PATCH `issuerPolicy: null` / `certNumberMode: null` → `?? locked.x` 先当没传算出合法最终态,`!== undefined` 又判成传了 ⇒ `data.x = null` 进 Prisma 非空列 | **500** |
-| 同上 | Certificate PATCH `standardId: null` | **500** |
+| **500 而非 400** | Policy PATCH `issuerPolicy: null` / `certNumberMode: null` → `?? locked.x` 先当没传算出合法最终态,`!== undefined` 又判成传了 ⇒ `data.x = null` 进 Prisma 非空列              | **500**         |
+| 同上             | Certificate PATCH `standardId: null`                                                                                                                                         | **500**         |
 
 ⚠️ 两条**与报告原文不同**,复审时请重点看:
 
@@ -379,12 +391,12 @@
 **逐字段分类**(证书域四个 DTO,实测 **47** 处真装饰器 —— goal 写的 51 里有 4 处是
 注释中提到 `@IsOptional()` 的文字,不是装饰器):
 
-| 文件 | 真可空(留 `@IsOptional()` + `T \| null`) | 仅可省略(改 `@OmittableOnly()`) |
-|---|---|---|
-| `recruitment-certificate-claims.dto.ts` | 0 | 16 |
-| `certificate-recognition-policies.dto.ts` | 0 | 7 |
-| `certificates.dto.ts` | 4(Update 的 `recognitionIssuerId`/`issuingOrg`/`certNumber`/`expiredAt`) | 6 + 1(`issuedAt` 原为手写 `@ValidateIf`,改具名) |
-| `certificate-standards.dto.ts` | 4(两处 `description` + Update 的 `levelCode`/`parentId`) | 10(两个 query DTO;H3 已做的 9 处不回退) |
+| 文件                                      | 真可空(留 `@IsOptional()` + `T \| null`)                                 | 仅可省略(改 `@OmittableOnly()`)                 |
+| ----------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------- |
+| `recruitment-certificate-claims.dto.ts`   | 0                                                                        | 16                                              |
+| `certificate-recognition-policies.dto.ts` | 0                                                                        | 7                                               |
+| `certificates.dto.ts`                     | 4(Update 的 `recognitionIssuerId`/`issuingOrg`/`certNumber`/`expiredAt`) | 6 + 1(`issuedAt` 原为手写 `@ValidateIf`,改具名) |
+| `certificate-standards.dto.ts`            | 4(两处 `description` + Update 的 `levelCode`/`parentId`)                 | 10(两个 query DTO;H3 已做的 9 处不回退)         |
 
 **两道防御,不只 DTO**:`@OmittableOnly()` 是第一道;service 侧换成**正向类型检查**
 (`typeof dto.issuedAt !== 'string'` 而不是 `=== undefined`)是第二道。最深的一道放在
@@ -405,11 +417,11 @@ Invalid Date,「先 new Date 再判 NaN」这种写法拦不住。
 
 **修复落点**(零 schema,**Migration 恒 67**):
 
-| # | 落地内容 |
-|---|---|
-| J1 | 证书域四 DTO 47 处逐条分类;`OmittableOnly` 提到 `src/common/decorators/` 成全仓唯一定义处;service 三处正向类型检查 + resolver 兜底;新 e2e `certificate-null-contract.e2e-spec.ts`(A 段该 400 的必须 400 + B 段反向数据断言 + C 段 5 条正向可 null,防矫枉过正) |
-| J2 | `eslint.harness.mjs` 第 18 条 selector + 641 条具名基线(棘轮);selftest 加阳性对照 / 反向用例 / 「只减不增」检查 |
-| J3 | 清掉 `recruitment-certificate-claims.service.ts` 三处过期注释;台账换本轮 |
+| #   | 落地内容                                                                                                                                                                                                                                                      |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| J1  | 证书域四 DTO 47 处逐条分类;`OmittableOnly` 提到 `src/common/decorators/` 成全仓唯一定义处;service 三处正向类型检查 + resolver 兜底;新 e2e `certificate-null-contract.e2e-spec.ts`(A 段该 400 的必须 400 + B 段反向数据断言 + C 段 5 条正向可 null,防矫枉过正) |
+| J2  | `eslint.harness.mjs` 第 18 条 selector + 641 条具名基线(棘轮);selftest 加阳性对照 / 反向用例 / 「只减不增」检查                                                                                                                                               |
+| J3  | 清掉 `recruitment-certificate-claims.service.ts` 三处过期注释;台账换本轮                                                                                                                                                                                      |
 
 **修完仍须第五轮跨模型评审**(SOP [§1.6](codex-review-sop.md)),门禁由维护者解除 ——
 本批次**未**触碰 `current-state.md` 的 🔴 NO-GO。
@@ -430,12 +442,12 @@ Invalid Date,「先 new Date 再判 NaN」这种写法拦不住。
 核心协议严格解析 · Provider 无状态化);R1 真触发已补(#870 对抗 PR,裁判 7s 硬红,run 链接见 #868 评论)。
 **#866 台账与 #869 企微核心 PASS;#867 与 #868 各留一条组合缺口:**
 
-| # | 归属 | 机制(主会话已复现) | 修复 |
-|---|---|---|---|
-| **P1-①** | #867 递补 | Proposal 多岗位同时扩容:applier 逐岗位循环调 `promoteActivityWaitlistWithinCapacity`,helper 每轮重数全活动 PASS,而递补只写 PENDING 不涨 PASS ⇒ **每个岗位都领到全额父预算**。可达数据:历史 null-position PASS + 双岗位扩容 + 岗位 headroom 之和 > 父 headroom ⇒ 多递补超父余量(错误移出候补 + 误导通知) | Q1:共享事务内父预算,按**实际 promoted 数**扣减(跳过的候选人预算留给下一岗);抽批量入口防调用方自维护第二套容量算法;e2e 覆盖该精确组合 |
-| **P1-②** | #868 扫描器 | `/* eslint srvf/no-param-id-string: "off" */` 是 ESLint **规则配置注释**,不是 disable 指令 —— 扫描器入口闸 `if (!text.includes('eslint-disable')) return []`([selftest:789](../../scripts/harness-eslint.selftest.ts))直接跳过;探针实测 lint 0 命中。可一次关掉 `srvf/*` 全部与 `no-restricted-syntax` | Q2:业务源文件禁一切 `/* eslint ... */` 配置注释(与合法的具名 `// eslint-disable-next-line ... -- 理由` 语法不同,不误伤);四组**真实 lint** 变异(不许只测纯函数) |
-| P2-① | #869 企微 | 可见范围 outer/inner 显式 `null` 被当"缺席"计 0,违反自己写的铁律「键出现但结构不对 → 36031」 | Q3:null=INVALID_RESPONSE,补 outer/inner null 用例 |
-| P2-② | #868 预算 | `lock_timeout` 4s 按**每次**等待计,两次 3.5s 等待合计可先撞 7s 总预算 → P2028 而非 40901。代码注释已诚实登记 | **不入 Q**,登记为「下次触碰该事务框架时处理」(传递剩余 wall-clock / 受控映射 P2028 / 或证明至多一次长等待) |
+| #        | 归属        | 机制(主会话已复现)                                                                                                                                                                                                                                                                                      | 修复                                                                                                                                                           |
+| -------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P1-①** | #867 递补   | Proposal 多岗位同时扩容:applier 逐岗位循环调 `promoteActivityWaitlistWithinCapacity`,helper 每轮重数全活动 PASS,而递补只写 PENDING 不涨 PASS ⇒ **每个岗位都领到全额父预算**。可达数据:历史 null-position PASS + 双岗位扩容 + 岗位 headroom 之和 > 父 headroom ⇒ 多递补超父余量(错误移出候补 + 误导通知) | Q1:共享事务内父预算,按**实际 promoted 数**扣减(跳过的候选人预算留给下一岗);抽批量入口防调用方自维护第二套容量算法;e2e 覆盖该精确组合                           |
+| **P1-②** | #868 扫描器 | `/* eslint srvf/no-param-id-string: "off" */` 是 ESLint **规则配置注释**,不是 disable 指令 —— 扫描器入口闸 `if (!text.includes('eslint-disable')) return []`([selftest:789](../../scripts/harness-eslint.selftest.ts))直接跳过;探针实测 lint 0 命中。可一次关掉 `srvf/*` 全部与 `no-restricted-syntax`  | Q2:业务源文件禁一切 `/* eslint ... */` 配置注释(与合法的具名 `// eslint-disable-next-line ... -- 理由` 语法不同,不误伤);四组**真实 lint** 变异(不许只测纯函数) |
+| P2-①     | #869 企微   | 可见范围 outer/inner 显式 `null` 被当"缺席"计 0,违反自己写的铁律「键出现但结构不对 → 36031」                                                                                                                                                                                                            | Q3:null=INVALID_RESPONSE,补 outer/inner null 用例                                                                                                              |
+| P2-②     | #868 预算   | `lock_timeout` 4s 按**每次**等待计,两次 3.5s 等待合计可先撞 7s 总预算 → P2028 而非 40901。代码注释已诚实登记                                                                                                                                                                                            | **不入 Q**,登记为「下次触碰该事务框架时处理」(传递剩余 wall-clock / 受控映射 P2028 / 或证明至多一次长等待)                                                     |
 
 **双 PASS 先记账**:**M 并发运行时收口全过**(markGate/evaluate 锁序、入队唯一闸、finalApprove 批量化+RC+有界等待、
 edit 状态机执行位 —— 0 P0 0 P1)· **企微 T1 schema 全过**(身份不进 User.openid、双 partial unique、
@@ -443,13 +455,13 @@ hash-only 凭证、singleton、additive 第 68 migration)。**业务运行时首
 
 **5 P1(主会话逐条复现属实,含探针实测)**:
 
-| # | 归属 | 机制(已验) | 修复归 |
-|---|---|---|---|
-| ① | M 棘轮 | 裁判只冻结 ratchet **id**,同 id 可换 `baseline/rule/symbolShape` 载体(judge 无四元组比较,grep 证实) | R |
-| ② | M 规则 | controller 里 `// eslint-disable-next-line srvf/no-param-id-string` **有效**(noInlineConfig 只盖 DTO;探针 0 命中无警告);`CV['IsOptional']` 计算属性与 `const X = CV.IsOptional` 中转不识别(探针 0 命中) | R |
-| ③ | 企微 T2 | `updateSettings` **锁前读、锁后不复读**(`:97` 读→`:109` 锁→`:115` 用锁前值)⇒ 并发可写出 `enabled=false + loginEnabled=true` —— **正是并发审计 S1 形状在全新代码里重生** | W |
-| ④ | 企微 T2 | `agent/get` 解析用默认值兜底:**`errcode` 缺失默认 0(=成功,比报告更糟)**、`agentid` 缺失填本地配置 ⇒ 上游返回 `{}` 也算"连接正常" | W |
-| ⑤ | 企微 T2 | `WecomRealProvider` 是 @Injectable 单例却 `this.settings = settings`(`:86`,注释自承)⇒ 并发请求串配置快照;**注释称镜像 wechat provider —— 同形状需顺查** | W |
+| #   | 归属    | 机制(已验)                                                                                                                                                                                              | 修复归 |
+| --- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| ①   | M 棘轮  | 裁判只冻结 ratchet **id**,同 id 可换 `baseline/rule/symbolShape` 载体(judge 无四元组比较,grep 证实)                                                                                                     | R      |
+| ②   | M 规则  | controller 里 `// eslint-disable-next-line srvf/no-param-id-string` **有效**(noInlineConfig 只盖 DTO;探针 0 命中无警告);`CV['IsOptional']` 计算属性与 `const X = CV.IsOptional` 中转不识别(探针 0 命中) | R      |
+| ③   | 企微 T2 | `updateSettings` **锁前读、锁后不复读**(`:97` 读→`:109` 锁→`:115` 用锁前值)⇒ 并发可写出 `enabled=false + loginEnabled=true` —— **正是并发审计 S1 形状在全新代码里重生**                                 | W      |
+| ④   | 企微 T2 | `agent/get` 解析用默认值兜底:**`errcode` 缺失默认 0(=成功,比报告更糟)**、`agentid` 缺失填本地配置 ⇒ 上游返回 `{}` 也算"连接正常"                                                                        | W      |
+| ⑤   | 企微 T2 | `WecomRealProvider` 是 @Injectable 单例却 `this.settings = settings`(`:86`,注释自承)⇒ 并发请求串配置快照;**注释称镜像 wechat provider —— 同形状需顺查**                                                 | W      |
 
 **P2**:lock_timeout 4s 与事务 ~5s 预算之间缺「等 3.8s 后跑完整 200 人终审」的临界证据(归 R)。
 
@@ -468,12 +480,12 @@ R/W 两 goal 的 DoD 均含「对照 S1–S7 形状表自审并留记录」;长�
 用一份探针实测,`pnpm lint` **RC=0** 通过 —— 即绕过成立)。四条的共同形状是:
 **棘轮的判据本身是 PR 可以改的东西**,于是「防线」在最需要它的那一刻恰好失效。
 
-| # | 缺口 | 修复前实测 | 现在拦在哪 |
-|---|---|---|---|
-| L1 | 基线是 `.mjs` 里的字面量,零格式校验 | 一条 `src/**` 混进去就能整目录静默豁免 | 抽成 `harness/is-optional-null-baseline.json`,六条约束(E1–E6)**加载即抛** |
-| L2 | 新增违规 + **同 PR 加基线** / 修 A 加 B(总数不变) | 🟢 全绿 —— lint 与 selftest 读的都是 PR 自己的基线 | base-trusted 裁判硬判 `HEAD ⊆ BASE`,**审批盖不掉** |
-| L3 | inline disable(文件级 / 行级)、嵌套 null 冒充可空 | 🟢 RC=0 —— 18 条共用一个 ruleId,一句 disable 全关;`:not(:has(TSNullKeyword))` 把 `Array<T\|null>` 当可空 | 独立 ruleId 自定义规则判**顶层**类型 + DTO 范围 `noInlineConfig` |
-| L4 | 对账用 `Set`,同一身份命中 2 次与 1 次**读数相同** | 🟢 一行基线同时豁免两个字段,完全不可见 | 判据换成「每条身份**恰好**命中 1 个 AST 节点」 |
+| #   | 缺口                                              | 修复前实测                                                                                               | 现在拦在哪                                                                |
+| --- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| L1  | 基线是 `.mjs` 里的字面量,零格式校验               | 一条 `src/**` 混进去就能整目录静默豁免                                                                   | 抽成 `harness/is-optional-null-baseline.json`,六条约束(E1–E6)**加载即抛** |
+| L2  | 新增违规 + **同 PR 加基线** / 修 A 加 B(总数不变) | 🟢 全绿 —— lint 与 selftest 读的都是 PR 自己的基线                                                       | base-trusted 裁判硬判 `HEAD ⊆ BASE`,**审批盖不掉**                        |
+| L3  | inline disable(文件级 / 行级)、嵌套 null 冒充可空 | 🟢 RC=0 —— 18 条共用一个 ruleId,一句 disable 全关;`:not(:has(TSNullKeyword))` 把 `Array<T\|null>` 当可空 | 独立 ruleId 自定义规则判**顶层**类型 + DTO 范围 `noInlineConfig`          |
+| L4  | 对账用 `Set`,同一身份命中 2 次与 1 次**读数相同** | 🟢 一行基线同时豁免两个字段,完全不可见                                                                   | 判据换成「每条身份**恰好**命中 1 个 AST 节点」                            |
 
 **十项变异测试全建档**,索引在 `scripts/harness-eslint.selftest.ts` 顶部(唯一目录,
 含每项「修复前是否绕过」与断言落点)。修复前后对照用
@@ -499,9 +511,9 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 
 **L2 的两条真触发证据**(不是结构断言 —— 本仓明确区分这两者):
 
-| 实跑 | 结果 |
-|---|---|
-| 新 judge 合入 main 后首次运行([run](https://github.com/BA7IEE/srvf-nest-api/actions/runs/30634899615/job/91169893305)) | `✓ 第 18 条棘轮单调性:baseline ⊆ base(未改动(HEAD == BASE);base 641 条)` |
+| 实跑                                                                                                                                              | 结果                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 新 judge 合入 main 后首次运行([run](https://github.com/BA7IEE/srvf-nest-api/actions/runs/30634899615/job/91169893305))                            | `✓ 第 18 条棘轮单调性:baseline ⊆ base(未改动(HEAD == BASE);base 641 条)`                                         |
 | 一次性对抗 PR:往基线加一行 `PaginationQueryDto.pageFAKE`([run](https://github.com/BA7IEE/srvf-nest-api/actions/runs/30635176939/job/91170830920)) | `✗ 第 18 条棘轮被破坏`,scan **fail**、approval **skipping** —— **没有可点的审批按钮**(探针 PR 已关闭删除,不合并) |
 
 第二条同时把「取 head 版本的 GitHub API 路径」也走通了 —— 第一条只走了「基线未改动」的
@@ -511,6 +523,7 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 成真(rule-config 逃生门),归 Q2 修复;终局 Q 复核 2026-08-02 判 GO,NO-GO 已解除**。
 
 **已知残留**(当时留给第六轮;其中 inline-config 缺口已由 Q2 关闭):
+
 - 非 `.dto.ts` 文件里的第 18 条**仍可被 inline disable 关掉** —— `noInlineConfig` 刻意
   只配到 DTO 范围(`src/` 现有 7 处 inline disable 全是 service 侧硬删的正当具名豁免,
   扩到全仓会误伤,而一次误伤会让下一个人来把整条 `linterOptions` 删掉)。
@@ -526,10 +539,10 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 
 **棘轮的两道执行位,各管一半 —— 少任何一道都只剩单向**:
 
-| 情形 | 谁拦 | 为什么不是另一个 |
-|---|---|---|
-| 往**已在基线的文件**新增违规字段 | `pnpm lint` | 豁免精确到 `类名.字段名`,新字段不在名单里 → 当场红 |
-| 修好了却**忘删基线行** | `pnpm harness:selftest` | 一条用不上的豁免对 lint **静默无害**,lint 拦不到 |
+| 情形                             | 谁拦                    | 为什么不是另一个                                   |
+| -------------------------------- | ----------------------- | -------------------------------------------------- |
+| 往**已在基线的文件**新增违规字段 | `pnpm lint`             | 豁免精确到 `类名.字段名`,新字段不在名单里 → 当场红 |
+| 修好了却**忘删基线行**           | `pnpm harness:selftest` | 一条用不上的豁免对 lint **静默无害**,lint 拦不到   |
 
 **基线键为什么是「类名.字段名」而不是行号**:行号一改基线就变噪音;而 `description` 这类
 字段名在同一文件的多个 DTO 类里各出现一次,只写字段名**区分不开**「已冻结的那个」和
@@ -567,13 +580,13 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 `prisma/` 零违规)。两套独立实现(esquery selector + 直接走 AST)结果逐字一致。
 分布前十(供后续按批次排期):
 
-| 模块 | 处 | 模块 | 处 |
-|---|---|---|---|
-| activities | 95 | activity-registrations | 29 |
-| member-profiles | 67 | content | 26 |
-| role-bindings | 36 | announcement-import | 25 |
-| recruitment | 33 | member-departments | 23 |
-| positions | 32 | attendances | 22 |
+| 模块            | 处  | 模块                   | 处  |
+| --------------- | --- | ---------------------- | --- |
+| activities      | 95  | activity-registrations | 29  |
+| member-profiles | 67  | content                | 26  |
+| role-bindings   | 36  | announcement-import    | 25  |
+| recruitment     | 33  | member-departments     | 23  |
+| positions       | 32  | attendances            | 22  |
 
 (J1 修完后 certificates 40→17、recruitment 49→33;全仓 680→641,恰好等于本批次收口的 39 处。)
 
@@ -600,23 +613,23 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
   6 条单测,并删掉失效论证([#851](https://github.com/BA7IEE/srvf-nest-api/pull/851))。
   **若维护者认为「为不可达场景加防」不值得,可只保留删注释那一半。**
 
-| # | 落点 | 机制(已复现) | 后果 |
-|---|---|---|---|
-| **P1** | `evaluate(false)` / `resolveManual(false)` | 只写 `recruitment_applications.statusCode = rejected`,**零 Claim 级联**。而 `APP_INACTIVE_STATUS_CODES` 含 `REJECTED` ⇒ `lockActiveApplicationOrThrow` 之后拒绝一切 Claim 写路径 | 该报名下的 `APPROVED` Claim **永久卡在非终态**:不能撤回审核 / 拒绝 / 重传 / 撤回 / 转 PROMOTED。留存 SOP 只扫 `status IN ('REJECTED','WITHDRAWN')` ⇒ **永远清理不到**;证据闸 `CLAIM_EVIDENCE_DENIED` 只含 `{WITHDRAWN, PROMOTED}` ⇒ **图片仍可签 URL**。⚠️ 与既有全库不变量**直接矛盾** —— `recruitment-certificate-concurrency` 断言「`a.statusCode IN ('promoted','withdrawn','rejected')` 下不得有非终态 Claim」,而 G1 新增的正常淘汰用例正好造出 `rejected + APPROVED`。两份 spec 在各自派生库里都绿,**合起来系统规则不能同时成立** |
-| **P1** | `updateApplication()` | G2 改用 `lockActiveApplicationOrThrow`,该函数把 `rejected / withdrawn / promoted` 一律视为终态返 28041 | canonical [`handoff/admin-web.md`](../handoff/admin-web.md) 仍写「非身份字段**恒可改**…promoted/已脱敏行 → 28041」,**没说 rejected/withdrawn**。运行时与 canonical 契约分叉。**需要维护者在 A(恢复可改,仅按 promoted + sensitivePurgedAt 拒)/ B(终态一律不可改,同步改 handoff+DTO+前端+CHANGELOG breaking)之间拍板** —— 「实现变了」不自动等于「契约变了」 |
-| **P1** | `POST /certificate-standards` | `CreateCertificateStandardDto` 的 `levelCode`/`parentId`(以及 `isInternal`/`sortOrder`)仍是 `@IsOptional() @IsString()`;`@IsOptional()` 对 `null` 与 `undefined` 都跳过校验,而 service 判据是 `!== undefined` ⇒ 显式 `null` 穿过 DTO 后进入字典 / 父节点查询 | **500 而非 400**。G4 只改了文档示例不再发 `null`,没修接口本身。修法:`@ValidateIf((_o, v) => v !== undefined)` 让 `null` 落进 `@IsString()` |
-| **P1**(外部报告列 P2,主会话上调) | `certificate-standards.service.ts:297` | 注释写「`parentId` 只在 create 期可设、Update DTO 不含它 —— 因此循环在结构上不可能形成」。**这是一条安全论证**,而 [`amendments A-3`](../archive/reviews/certificate-standard-library-t0-amendments.md) 已放开 DRAFT 改 `parentId`,论证失效。全文件**零环检查** | 冻结稿 §5.2「禁止形成父子循环」**零执法**且可达(建 FAMILY A → 建 FAMILY B 挂 A → DRAFT 期改 A 挂 B;父必为 FAMILY ✓、同 categoryCode ✓ 两条约束都过)。成环后两节点互为子节点 ⇒ 删除守卫恒非零 ⇒ **谁都删不掉**(与第 ① 条同一「冻死」形状);admin-web 要渲染树,递归渲染会挂。**后端本身是扁平一层、不递归,所以不会挂服务** —— 但注释会阻止下一个人补上这道校验 |
-| **P2** | 同文件 `:30` / `:373-376` | 「Update DTO 刻意不含 kind/categoryCode/levelCode/parentId/isInternal」「update(仅文案与排序)」「身份字段不在白名单」—— 而紧接着的执行代码正在完整处理这五个字段 | 本仓维护者看不懂代码、长期由 AI 维护,**错误注释会指挥下一个模型删掉正确实现**。这是本项目第四次抓到「注释≠执行位」 |
+| #                                | 落点                                       | 机制(已复现)                                                                                                                                                                                                                                                   | 后果                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| -------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P1**                           | `evaluate(false)` / `resolveManual(false)` | 只写 `recruitment_applications.statusCode = rejected`,**零 Claim 级联**。而 `APP_INACTIVE_STATUS_CODES` 含 `REJECTED` ⇒ `lockActiveApplicationOrThrow` 之后拒绝一切 Claim 写路径                                                                               | 该报名下的 `APPROVED` Claim **永久卡在非终态**:不能撤回审核 / 拒绝 / 重传 / 撤回 / 转 PROMOTED。留存 SOP 只扫 `status IN ('REJECTED','WITHDRAWN')` ⇒ **永远清理不到**;证据闸 `CLAIM_EVIDENCE_DENIED` 只含 `{WITHDRAWN, PROMOTED}` ⇒ **图片仍可签 URL**。⚠️ 与既有全库不变量**直接矛盾** —— `recruitment-certificate-concurrency` 断言「`a.statusCode IN ('promoted','withdrawn','rejected')` 下不得有非终态 Claim」,而 G1 新增的正常淘汰用例正好造出 `rejected + APPROVED`。两份 spec 在各自派生库里都绿,**合起来系统规则不能同时成立** |
+| **P1**                           | `updateApplication()`                      | G2 改用 `lockActiveApplicationOrThrow`,该函数把 `rejected / withdrawn / promoted` 一律视为终态返 28041                                                                                                                                                         | canonical [`handoff/admin-web.md`](../handoff/admin-web.md) 仍写「非身份字段**恒可改**…promoted/已脱敏行 → 28041」,**没说 rejected/withdrawn**。运行时与 canonical 契约分叉。**需要维护者在 A(恢复可改,仅按 promoted + sensitivePurgedAt 拒)/ B(终态一律不可改,同步改 handoff+DTO+前端+CHANGELOG breaking)之间拍板** —— 「实现变了」不自动等于「契约变了」                                                                                                                                                                              |
+| **P1**                           | `POST /certificate-standards`              | `CreateCertificateStandardDto` 的 `levelCode`/`parentId`(以及 `isInternal`/`sortOrder`)仍是 `@IsOptional() @IsString()`;`@IsOptional()` 对 `null` 与 `undefined` 都跳过校验,而 service 判据是 `!== undefined` ⇒ 显式 `null` 穿过 DTO 后进入字典 / 父节点查询   | **500 而非 400**。G4 只改了文档示例不再发 `null`,没修接口本身。修法:`@ValidateIf((_o, v) => v !== undefined)` 让 `null` 落进 `@IsString()`                                                                                                                                                                                                                                                                                                                                                                                              |
+| **P1**(外部报告列 P2,主会话上调) | `certificate-standards.service.ts:297`     | 注释写「`parentId` 只在 create 期可设、Update DTO 不含它 —— 因此循环在结构上不可能形成」。**这是一条安全论证**,而 [`amendments A-3`](../archive/reviews/certificate-standard-library-t0-amendments.md) 已放开 DRAFT 改 `parentId`,论证失效。全文件**零环检查** | 冻结稿 §5.2「禁止形成父子循环」**零执法**且可达(建 FAMILY A → 建 FAMILY B 挂 A → DRAFT 期改 A 挂 B;父必为 FAMILY ✓、同 categoryCode ✓ 两条约束都过)。成环后两节点互为子节点 ⇒ 删除守卫恒非零 ⇒ **谁都删不掉**(与第 ① 条同一「冻死」形状);admin-web 要渲染树,递归渲染会挂。**后端本身是扁平一层、不递归,所以不会挂服务** —— 但注释会阻止下一个人补上这道校验                                                                                                                                                                             |
+| **P2**                           | 同文件 `:30` / `:373-376`                  | 「Update DTO 刻意不含 kind/categoryCode/levelCode/parentId/isInternal」「update(仅文案与排序)」「身份字段不在白名单」—— 而紧接着的执行代码正在完整处理这五个字段                                                                                               | 本仓维护者看不懂代码、长期由 AI 维护,**错误注释会指挥下一个模型删掉正确实现**。这是本项目第四次抓到「注释≠执行位」                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 **修复落点**(零 schema,逐条对齐上表):
 
-| # | PR | 落地内容 |
-|---|---|---|
-| ① | [#848](https://github.com/BA7IEE/srvf-nest-api/pull/848) | 抽 `withdrawClaimsOnApplicationTerminal`,**写终态的 4 条路径全部共用**(sweep 结果:评定淘汰 / 人工核验不通过此前零级联,整份撤销与发号各有一份内联实现,已收编)。同事务锁 Claim(id ASC)转 `WITHDRAWN`、保留 `PROMOTED`、审计只记条数。**曾矛盾的两条不变量现同时绿**:全库巡检已进 G1 那一组 |
-| ② | [#849](https://github.com/BA7IEE/srvf-nest-api/pull/849) | **拍板方案 A** —— `updateApplication` 改用 `lockApplicationRow`,只按 `promoted` + `sensitivePurgedAt` 两道锁后守卫 + CAS 拒。`rejected`/`withdrawn` 恢复可改非身份字段。**canonical handoff 零改动**(运行时回到它已写着的契约,净变化为零);G2 的「改资料 vs 发号」并发用例仍绿 |
-| ③ | [#850](https://github.com/BA7IEE/srvf-nest-api/pull/850) | `@OmittableOnly()`(= `@ValidateIf(v !== undefined)`)收口 **9 个字段** × 真 HTTP `null → 400`;`description` 单独判定为**允许 null**(DB 可空、运行时一直如此,只是让 DTO/OpenAPI 说出来,行为零变化);ops 初始化文档同步订正 |
-| ④ | [#851](https://github.com/BA7IEE/srvf-nest-api/pull/851) | 祖先链遍历 `assertParentChainAcyclic`(纯算法 + 注入式加载器,policy 文件仍零 DB)接进 create/update 两条路径,**排在父级校验之前**以保住 18019 错码;删失效论证;6 单测 + 3 e2e |
-| ⑤ | [#852](https://github.com/BA7IEE/srvf-nest-api/pull/852) | 清掉两处「注释≠执行位」;`certificate-standards.service.ts` **全部 18 段注释逐条核过**,其余每条描述约束的注释都对上了执行位与执行它的测试(对照表在 PR body) |
+| #   | PR                                                       | 落地内容                                                                                                                                                                                                                                                                                 |
+| --- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ①   | [#848](https://github.com/BA7IEE/srvf-nest-api/pull/848) | 抽 `withdrawClaimsOnApplicationTerminal`,**写终态的 4 条路径全部共用**(sweep 结果:评定淘汰 / 人工核验不通过此前零级联,整份撤销与发号各有一份内联实现,已收编)。同事务锁 Claim(id ASC)转 `WITHDRAWN`、保留 `PROMOTED`、审计只记条数。**曾矛盾的两条不变量现同时绿**:全库巡检已进 G1 那一组 |
+| ②   | [#849](https://github.com/BA7IEE/srvf-nest-api/pull/849) | **拍板方案 A** —— `updateApplication` 改用 `lockApplicationRow`,只按 `promoted` + `sensitivePurgedAt` 两道锁后守卫 + CAS 拒。`rejected`/`withdrawn` 恢复可改非身份字段。**canonical handoff 零改动**(运行时回到它已写着的契约,净变化为零);G2 的「改资料 vs 发号」并发用例仍绿            |
+| ③   | [#850](https://github.com/BA7IEE/srvf-nest-api/pull/850) | `@OmittableOnly()`(= `@ValidateIf(v !== undefined)`)收口 **9 个字段** × 真 HTTP `null → 400`;`description` 单独判定为**允许 null**(DB 可空、运行时一直如此,只是让 DTO/OpenAPI 说出来,行为零变化);ops 初始化文档同步订正                                                                  |
+| ④   | [#851](https://github.com/BA7IEE/srvf-nest-api/pull/851) | 祖先链遍历 `assertParentChainAcyclic`(纯算法 + 注入式加载器,policy 文件仍零 DB)接进 create/update 两条路径,**排在父级校验之前**以保住 18019 错码;删失效论证;6 单测 + 3 e2e                                                                                                               |
+| ⑤   | [#852](https://github.com/BA7IEE/srvf-nest-api/pull/852) | 清掉两处「注释≠执行位」;`certificate-standards.service.ts` **全部 18 段注释逐条核过**,其余每条描述约束的注释都对上了执行位与执行它的测试(对照表在 PR body)                                                                                                                               |
 
 **修完仍须第四轮跨模型评审**(SOP [§1.6](codex-review-sop.md)),门禁由维护者解除 —— 本批次**未**触碰 `current-state.md` 的 🔴 NO-GO。
 
@@ -629,12 +642,12 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 发号内核本身在 F1 已修好(`claimAtStatus` + `WHERE statusCode='publicity'` 条件行锁 + 锁后复读 + CAS),
 **这轮不是上轮问题反复**。
 
-| # | 落点 | 机制(已复现) | 后果 |
-|---|---|---|---|
-| **P0** | `recruitment-application-review.service.ts` `evaluate()` | `findFirst`(无 `FOR UPDATE`)读 `statusCode` → 算 `nextStatus` → `update({ where: { id } })` 无条件写。无锁、无锁后复读、无 CAS | 可把并发提交的 `withdrawn`、或证书门槛回退后的 `verified`,**覆盖回 `publicity`**。发号内核只复核「当前是不是 publicity」,且**不要求存在 APPROVED Claim** ⇒ **已撤销的报名仍可能被建 Member/User 并发出永久编号** |
-| **P1** | 同文件 `updateApplication()`;`recruitment-identity.service.ts` `rebindWechat()` / `rebindPhone()` | 三处都未接入 `lockApplicationRow`。`updateApplication` 的 `promoted` / `sensitivePurgedAt` 守卫建立在**锁前**的 `findFirst` 上;换绑事务内只做冲突查询后按 `id` 无条件 `update` | 发号已脱敏(`sensitivePurgedAt` 非空、PII 已清)之后,等锁的旧请求仍可**把手机 / openid / 地址 / 换绑历史写回**;而 `sensitivePurgedAt` 非空会让留存清理**永远跳过该行** |
-| **P1** | `certificates.service.ts` `verify()` | `before` 读于 `claimAtStatus()` **之前**,`alreadyExpired` 用的就是这份锁前快照,锁后未复读 | 并发 PATCH 改到期日 → 核验写错终态(两个方向都会错)。与 F1 修掉的「发号用锁前快照」是同一个病,只是没修到这儿 |
-| **P2** | `ops/certificate-standard-library-initialization.md` | 示例传 `"levelCode": null` / `"parentId": null`,而 `certificate-standards.service.ts` 分支判据是 `!== undefined` —— 显式 `null` 会进字典 / 父节点查询分支 | 示例**不能按原样执行**。同文档「先建 FAMILY 还是先建 CREDENTIAL」一段仍写「`parentId` 只能创建时设、事后只能删掉重建」,与 [`amendments A-3`](../archive/reviews/certificate-standard-library-t0-amendments.md) 直接冲突 |
+| #      | 落点                                                                                              | 机制(已复现)                                                                                                                                                                   | 后果                                                                                                                                                                                                                    |
+| ------ | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P0** | `recruitment-application-review.service.ts` `evaluate()`                                          | `findFirst`(无 `FOR UPDATE`)读 `statusCode` → 算 `nextStatus` → `update({ where: { id } })` 无条件写。无锁、无锁后复读、无 CAS                                                 | 可把并发提交的 `withdrawn`、或证书门槛回退后的 `verified`,**覆盖回 `publicity`**。发号内核只复核「当前是不是 publicity」,且**不要求存在 APPROVED Claim** ⇒ **已撤销的报名仍可能被建 Member/User 并发出永久编号**        |
+| **P1** | 同文件 `updateApplication()`;`recruitment-identity.service.ts` `rebindWechat()` / `rebindPhone()` | 三处都未接入 `lockApplicationRow`。`updateApplication` 的 `promoted` / `sensitivePurgedAt` 守卫建立在**锁前**的 `findFirst` 上;换绑事务内只做冲突查询后按 `id` 无条件 `update` | 发号已脱敏(`sensitivePurgedAt` 非空、PII 已清)之后,等锁的旧请求仍可**把手机 / openid / 地址 / 换绑历史写回**;而 `sensitivePurgedAt` 非空会让留存清理**永远跳过该行**                                                    |
+| **P1** | `certificates.service.ts` `verify()`                                                              | `before` 读于 `claimAtStatus()` **之前**,`alreadyExpired` 用的就是这份锁前快照,锁后未复读                                                                                      | 并发 PATCH 改到期日 → 核验写错终态(两个方向都会错)。与 F1 修掉的「发号用锁前快照」是同一个病,只是没修到这儿                                                                                                             |
+| **P2** | `ops/certificate-standard-library-initialization.md`                                              | 示例传 `"levelCode": null` / `"parentId": null`,而 `certificate-standards.service.ts` 分支判据是 `!== undefined` —— 显式 `null` 会进字典 / 父节点查询分支                      | 示例**不能按原样执行**。同文档「先建 FAMILY 还是先建 CREDENTIAL」一段仍写「`parentId` 只能创建时设、事后只能删掉重建」,与 [`amendments A-3`](../archive/reviews/certificate-standard-library-t0-amendments.md) 直接冲突 |
 
 **修复范围**(零 schema,Migration 应恒 67):上表四个落点 + 三组真 PostgreSQL 并发 e2e ——
 ① 评定 vs 报名撤销 / Claim 撤回审核;② 换绑与后台改资料 vs 发号;③ PATCH 到期日 vs 核验(两个方向)。
@@ -677,7 +690,7 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 
 - **T4 纪要**:softDelete / reopen 同事务撤销 active 绑定(唯一原语 `wecom-identity-revoke.ts`,三调用点);disable/enable/offboard 保留侧执行位=**整行快照相等含 updatedAt**;umbrella Audit extra 记 `wecomIdentitiesRevoked`;四计数恒等(450/227/314/136)、零 schema、FE 零适配。
 - **T3 后置门禁**:可信域名只能由真实 OAuth 回跳验证(test-connection 判不了,§0.5 条 5)——开 `loginEnabled` 前须工作台实跑;FE 待适配(回跳落地页/未绑定页/admin-web 清除按钮)清单在 [`handoff/miniapp.md`](../handoff/miniapp.md) §1.3 与 [`handoff/admin-web.md`](../handoff/admin-web.md) §2.4。
-- **已知 CI 竞态(复发即单开一刀,涉 `.github/workflows/**` 红区)**:contract 与 e2e 在 shard 1 同 job 共用 `app_test` 模板库,contract 侧连接未排空可撞 e2e globalSetup(#884 CI 出现一次假红,重跑即绿);对每个 PR 都潜在。
+- **已知 CI 竞态(复发即单开一刀,涉 `.github/workflows/**`红区)**:contract 与 e2e 在 shard 1 同 job 共用`app_test` 模板库,contract 侧连接未排空可撞 e2e globalSetup(#884 CI 出现一次假红,重跑即绿);对每个 PR 都潜在。
 - **冻结评审稿**:[`archive/reviews/wecom-integration-t0-terminal-review.md`](../archive/reviews/wecom-integration-t0-terminal-review.md)(2026-07-29 维护者「按推荐」整体冻结 `D-WC-1..31`)。
 - **终态**:单企业、单自建应用 Agent;`WecomIdentity → User → Member → SRVF Authz`;消息只走既有 Notification Outbox。**企业微信只回答「你是谁」,SRVF 继续回答「你能做什么」**。
 - **拆分**:T0(冻结,本 PR 完成)→ T1(schema expand-only)→ T2(通道层 + 设置 + 连接诊断)→ T3(OAuth 登录/绑定/换绑/管理员清除)→ T4(User 生命周期闭环)→ T5A(受众判定重构,行为保持)→ T5B(WeCom 消息通道)→ T6(runbook + 10–30 人分层试点)。
@@ -686,11 +699,13 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 - **不做清单(节选)**:不写 `User.openid`、不接通讯录同步、不加第 3 个 cron、不引入 Redis/queue、不做 PC 浏览器扫码登录、不承诺 exactly-once。全文见评审稿 §0.3 与 §17。
 
 ### P1-22 入队专业队类型 / gate 定义配置化 — **⏸ 诉求触发再立项**
+
 - **背景**(招新/入队十三项收口问题⑨):`PROFESSIONAL_GATE_CODES` / `GATE_VALIDITY` / `PROFESSIONAL_TEAM_GATE_BY_NODE_TYPE` 当前在 `team-join.constants.ts` 硬编码 4 种专业队及全部 gate 有效期;新增专业队、改 gate 或调整有效期都必须发后端版本。P⑦ 已拍板本 goal 只挂账,不顺手扩动态配置面。
 - **候选方案**:D 档新增 gate 定义表(建议字段:`code`/`professional`/`validityType`/`validityYears`/`extendable`/`status`) + 专业队 nodeType→gate 映射表(建议字段:`nodeTypeCode`/`gateCode`/`status`),由 Query/Policy 层一次加载后供标 gate、进度派生与一键入队重校验共用;须同步设计 admin 配置端点、RBAC、audit、缓存失效与存量常量迁移/回滚方案,禁止只把其中一个消费者改成读表造成双轨。
 - **触发条件**:业务提出新增第 5 种专业队、运营需自行调整 gate/有效期,或 node_type 约定开始跨版本频繁变化时单独立项。
 
 ### P1-23 `recruitment_applications.isForeigner` 历史 DB 列改名 — **⏸ 数据治理诉求触发再立项**
+
 - **背景**(招新/入队十三项收口刀C2 遗留):API DTO/CSV/stats/audit 对外已统一改为 `isNonMainlandDocument` / `is_non_mainland_document`,含义锁定为「非大陆证件,不代表国籍」;仅 Prisma/DB 历史列仍名 `isForeigner`。直接 rename 属 D 档破坏性 schema 变更,本 goal 明确禁区,故不改列名。
 - **候选方案**:先盘点所有 SQL/报表/导出/备份消费者,再做 Prisma field 映射过渡或单次 rename + 存量验证;同步 current-state/CODEMAP/留存 SOP 与回滚 SQL。不得先新增第二列长期双写。
 - **触发条件**:外部 BI/报表开始直读该列,或合规审查要求物理字段名也去除“外籍”误述时单独立项。
@@ -721,15 +736,15 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 
 **6 条 🔴 逐条 —— 每条都先写 red-first 并发 e2e 复现交错,再修**(去重后 A-R1 = B-F1):
 
-| 编号 | 复现结论 | 修复落点 | red-first 证据 |
-|---|---|---|---|
-| A-R1 = B-F1 · Admin `edit(records)` | ✅ 交错成立 | `attendances.service.ts` `edit`/`softDelete` **两条 surface 都取** Activity 聚合锁 + `claimAndRecheckRegistrations`(认领后复读复判) | 修复前:取消**成功提交**,edit 随后写入引用它的 live record → `cancelled 报名 + live 记录` |
-| A-Y1 · Admin `softDelete` 缺锁 | ✅ 形状成立(后果止于误报 21033) | 同上,与 `edit`/`resubmit` 收敛为同一写法 | 修复前:占住 Activity 行锁时 `softDelete` **不等待**,径直提交 |
-| B-Y1 · `submit` claim 后不复读 | ✅ 形状成立(当前被 Activity 根锁挡住) | 与 `edit` 共用 `claimAndRecheckRegistrations`,claim 后按同一批 id 复读并重判归属/状态/岗位时段 | 防御性加固,无独立红(阻断条件见 B 报告 §5) |
-| B-F2 · `finalApprove` 里程碑 write skew | ✅ 交错成立(**已实测**) | `finalApprove`/`reopen` 在读贡献快照前取共享 member 键 `lockMembersForWrite` | 修复前:正式总分 **5 分**、milestone intent **0 条** |
-| B-F3 · `cancelMy` 锁前 metadata | ✅ 交错成立 | 活动标题/发布人改到 claim + 证据守卫**之后**读 | 修复前:intent body 落的是**旧标题** |
-| B-F4 · Team Join `submit` | ✅ 交错成立 | `submit` 事务第一步取 member 键后再判「未入队」 | 修复前:一键入队在途时 submit **建行成功**,写入时人已是队员 |
-| B-F5 · final join 不级联同人申请 | ✅ 成立(不需并发) | final join 同事务按 `id ASC` 终结同人其它 live 申请为 `rejected` + `eliminationStage='already-enrolled'`,逐条写 `team-join-application.supersede` audit | 修复前:残留申请仍是 `joining`,全库巡检断言直接红 |
+| 编号                                    | 复现结论                              | 修复落点                                                                                                                                                | red-first 证据                                                                           |
+| --------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| A-R1 = B-F1 · Admin `edit(records)`     | ✅ 交错成立                           | `attendances.service.ts` `edit`/`softDelete` **两条 surface 都取** Activity 聚合锁 + `claimAndRecheckRegistrations`(认领后复读复判)                     | 修复前:取消**成功提交**,edit 随后写入引用它的 live record → `cancelled 报名 + live 记录` |
+| A-Y1 · Admin `softDelete` 缺锁          | ✅ 形状成立(后果止于误报 21033)       | 同上,与 `edit`/`resubmit` 收敛为同一写法                                                                                                                | 修复前:占住 Activity 行锁时 `softDelete` **不等待**,径直提交                             |
+| B-Y1 · `submit` claim 后不复读          | ✅ 形状成立(当前被 Activity 根锁挡住) | 与 `edit` 共用 `claimAndRecheckRegistrations`,claim 后按同一批 id 复读并重判归属/状态/岗位时段                                                          | 防御性加固,无独立红(阻断条件见 B 报告 §5)                                                |
+| B-F2 · `finalApprove` 里程碑 write skew | ✅ 交错成立(**已实测**)               | `finalApprove`/`reopen` 在读贡献快照前取共享 member 键 `lockMembersForWrite`                                                                            | 修复前:正式总分 **5 分**、milestone intent **0 条**                                      |
+| B-F3 · `cancelMy` 锁前 metadata         | ✅ 交错成立                           | 活动标题/发布人改到 claim + 证据守卫**之后**读                                                                                                          | 修复前:intent body 落的是**旧标题**                                                      |
+| B-F4 · Team Join `submit`               | ✅ 交错成立                           | `submit` 事务第一步取 member 键后再判「未入队」                                                                                                         | 修复前:一键入队在途时 submit **建行成功**,写入时人已是队员                               |
+| B-F5 · final join 不级联同人申请        | ✅ 成立(不需并发)                     | final join 同事务按 `id ASC` 终结同人其它 live 申请为 `rejected` + `eliminationStage='already-enrolled'`,逐条写 `team-join-application.supersede` audit | 修复前:残留申请仍是 `joining`,全库巡检断言直接红                                         |
 
 - **共同线性化键**:新增 `src/common/prisma/member-advisory-lock.util.ts` 的 `lockMembersForWrite` —— 队员维度**唯一**一把键(单参数 `hashtext(memberId)` advisory 空间);`TimeOverlapPolicy.lockMembersForOverlapCheck` 改为委托它,语义与调用位置零变化。
 - **锁序**(修完后各路径持锁顺序,证明无环):
@@ -779,6 +794,7 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
    管理端零写路径**(只经 `activity-check-in-query.service.ts` 只读)—— 故**无审计缺口可补,AuditLogEvent 恒 132 不变(+0)**。
    两侧执行位:豁免钉在 `app-activity-check-ins.e2e-spec.ts`(合法打卡前后 `auditLog.count()` 不变,**本就已存在**);
    写路径集合钉在新增 `activity-check-in-audit-policy.spec.ts`(出现第三处写调用或裸 SQL 写即红,已用一次性探针实测触发)。
+
 - **本次未做**:`cancel` 不级联既有考勤单、`pass` 报名仍留 `pass`(方案乙刻意)· `certificates`/`recruitment`/`auth`/`authz`/限流未碰(goal 禁区)· 零 schema(Migration 恒 67)。
 - **S6 收口刀本次未做**:有 live 岗位活动上的**历史无岗位候补会滞留**(拍板接受:队员可自行取消后重报并选岗，21035 会逼他选)——
   不做存量数据订正,也不新开"手动安排候补"端点(本仓「候补不开手动端点」铁律未松)。`activity-positions.service.ts` 的岗位扩容递补**本就只认本岗**,零改动。
@@ -827,7 +843,9 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 - **状态**:**6 🔴 + 2 🟡 已修并有 red-first 证据;A-R2 已按方案乙落地;S6 三处分叉 + GPS 审计口径已按拍板落地(均改代码兑现文档,⚠️行为变更)**。本条目**关闭前须过跨模型评审**(SOP §1.6)。
 
 ### P2-6 #399 review P2 修复残余(4 项;**均无当前运行时危害,诉求/接线时处理**) — 2026-06-20 收口登记
+
 > #399 全仓 review P2 六项已修(#400-#404,见 [`current-state §4`](../current-state.md) + 冻结报告顶部 ✅);以下为修复时显式接受、留待后续的残余:
+
 - **F2 残余:attachment key owner-绑定**(P3)— F2 现把 create() 的 key 约束到 `attachments/<envPrefix>/` 派生格式正则,关闭「任意 COS 路径」面;残余 = 命名空间内、已知**完整 96-bit 随机段** key 仍可签(已知即已有权)。彻底闭合 = key↔owner 派生绑定 / 弃用模式 A 全量走模式 B(upload-url + HMAC token)。**COS 休眠,运维接通前非紧急**。
 - **F1 关联:attachment.`*.other` 接 enforcement 时复核保留集**(P3)— **8 条**(review #484 G26 true-up:实测非「11」)`attachment.*.other` 权限码(member/certificate 两 owner × upload/view/update/delete 四动作);**PR7 起 `group-manager` 已绑其中 4 条**(`upload`/`view` × member/certificate,设计内决定非疏漏——绑了也不授能力因全 8 条均无 enforcement,scoping 对);余 4 条(`update`/`delete` × member/certificate)当前 seed 不绑任何 meta 角色。**将来 attachment.other 接线启用 enforcement 时**,需复核是否纳入 F1 `RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES`(`seed-rbac.e2e` 漂移哨兵 + 常量 completeness 测试会抓不一致)。
 - **F5/F6 关联:dev-only 依赖 CVE**(P3)— ~~`fast-uri`(`@nestjs/cli>…>ajv`,path-traversal/host-confusion high)~~ **✅ 已随 review #484 G25 批的全局 `fast-uri` override 一并解决(2026-07-03;见下)**;~~`@types/supertest>…>form-data`(CRLF high)~~ **✅ 已修复**:当前 `@types/supertest@7.2.0 → @types/superagent@8.1.9 → form-data@4.0.5`,`pnpm why form-data` 可复核该 dev 链已解析到修复版。**+ `cos>fast-xml-parser` <5.7.0 moderate**(XMLBuilder 注入;需 4→5 **breaking major**,cos 仅解析腾讯云响应、不以不可信输入构造 XML,低危,本批拍板范围外,现状不变)。
@@ -837,7 +855,9 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 - **v0.61.0 `fast-uri` 安全补丁** ✅(2026-07-23,#749)— 上述 `^3.1.2` 是 2026-07-03 初次 override 的历史值；当前已提升为 `^3.1.4`，production graph 唯一解析到 `fast-uri@3.1.4`，消除 `cos-nodejs-sdk-v5 > conf > ajv` 链的 `GHSA-v2hh-gcrm-f6hx` High。COS SDK/conf/ajv 未升级；审计仍仅有与 v0.60.0 完全相同的 3 个 COS 传递链 moderate。
 
 ### P2-7 #399 review P3 处理残余(接受+登记 2 项;**均无当前运行时危害**) — 2026-06-20 收口登记
+
 > #399 §3 的 13 项 P3:**9 项已修**(#409-#413,见归档区 + 冻结报告 ✅ P3 处理状态)、**1 项已完成**(F18 CI audit gate,见上 P2-6 末项)、**1 项已完成移入已完成项归档区**(F13,见文末;review #484 G27),以下 2 项 R0 triage 复核后**接受+登记**:
+
 - **F7 付费核验 cost-DoS**(P3)— 同 openid 可用不同伪造身份证号无限提交、每条直达付费实名核验(去重键 `(cycleId,idCardNumber)` 无 per-openid 上限),与已接受的 28003 枚举面**同源**(current-state §4)。**真实腾讯云实名核验休眠(DevStub 免费)→ 今日零成本**;接通才激活(类 F2/COS 接通前非紧急)。彻底修 = per-openid 配额(改报名去重语义,属产品决策)→ **真实通道接通触发再评**。
 - **F8 promote 写字典码契约**(P3)— promote 写 `MemberProfile.genderCode`/`documentTypeCode` 不经 canonical 字典校验。**R0 复核降级**:`isForeignDocument` 令非 `mainland_id` 即 foreign(不进一键发号),故 promote 只写固定 canonical 码 `mainland_id`/`male`/`female`(身份证派生 / 非用户可控,**无 F3 式注入污染**),且 profile 码当前无字典校验消费点 → **零运行时危害**。真修 = 保证 prod 字典 seed 含 `male`/`female`/`mainland_id` item code(**seed/ops 不变量**;加 promote 断言反会把潜在不一致硬化成 promote 失败、且 demo seed `demo-*` 会打挂既有 e2e)→ seed/字典治理时一并保障。
 

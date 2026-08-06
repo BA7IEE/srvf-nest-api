@@ -4,6 +4,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
@@ -38,6 +39,8 @@ export const ACTIVITY_SETTLEMENT_ACTION = {
   firstReview: 'activity.settlement-first-review.record',
   finalReview: 'activity.settlement-final-review.record',
   close: 'activity.settlement-close.record',
+  // ⑨b 审核/账本读面复用既有考勤读码；不新开权限码，也不把 read 偷挂到写码上。
+  attendanceRead: 'attendance.read.sheet',
 } as const;
 
 export interface SettlementHttpSubmitCommand {
@@ -227,6 +230,33 @@ export interface SettlementHttpVersionDetailResult {
     manualReviewPendingCount: number;
     sealedAt: Date;
   }>;
+}
+
+export interface SettlementHttpReviewDetailResult extends SettlementHttpVersionDetailResult {
+  gaps: SettlementHttpGap[];
+}
+
+export interface SettlementHttpReviewListItem {
+  settlementVersionId: string;
+  activityId: string;
+  activityTitle: string;
+  version: number;
+  statusCode: string;
+  submittedAt: Date | null;
+  postingBatchStatusCode: string | null;
+}
+
+export interface SettlementHttpPostingBatchResult {
+  id: string;
+  settlementVersionId: string;
+  statusCode: string;
+  preparedCount: number;
+  totalCount: number;
+  failureCount: number;
+  effective: boolean;
+  effectiveLabel: string;
+  preparedAt: Date | null;
+  committedAt: Date | null;
 }
 
 type SettlementVersionForDiff = {
@@ -592,6 +622,14 @@ export class ActivitySettlementHttpService {
     currentUser: CurrentUserPayload,
   ): Promise<SettlementHttpVersionDetailResult> {
     await this.assertCanActivity(currentUser, ACTIVITY_SETTLEMENT_ACTION.generate, activityId);
+    return await this.loadVersionDetail(activityId, versionId);
+  }
+
+  /** 不带鉴权的 immutable projection；所有公开调用者必须先完成自己的 resource 判权。 */
+  private async loadVersionDetail(
+    activityId: string,
+    versionId: string,
+  ): Promise<SettlementHttpVersionDetailResult> {
     const version = await this.prisma.attendanceSettlementVersion.findFirst({
       where: {
         id: versionId,
@@ -680,6 +718,119 @@ export class ActivitySettlementHttpService {
       },
       diff: this.diffVersionResults(version.priorVersionId, priorRows, version.resultRevisions),
       sealRevisions,
+    };
+  }
+
+  /** 跨活动审核工作台：授权范围沿既有 attendance.read.sheet 的组织 scope 下推。 */
+  async reviewWorkbench(
+    query: { page: number; pageSize: number },
+    currentUser: CurrentUserPayload,
+  ): Promise<PageResultDto<SettlementHttpReviewListItem>> {
+    const scope = await this.authz.getVisibleOrganizationScope(
+      currentUser,
+      ACTIVITY_SETTLEMENT_ACTION.attendanceRead,
+    );
+    if (!scope.hasPermission) throw new BizException(BizCode.RBAC_FORBIDDEN);
+
+    const visibleOrganizationIds = scope.global ? undefined : scope.organizationIds;
+    const where: Prisma.AttendanceSettlementVersionWhereInput = {
+      // draft 是负责人可变工作区，审核根只列 immutable submit/review/posting 历史。
+      statusCode: { not: 'draft' },
+      settlementRun: {
+        activity: {
+          deletedAt: null,
+          ...(visibleOrganizationIds === undefined
+            ? {}
+            : { organizationId: { in: visibleOrganizationIds } }),
+        },
+      },
+    };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.attendanceSettlementVersion.findMany({
+        where,
+        select: {
+          id: true,
+          version: true,
+          statusCode: true,
+          submittedAt: true,
+          settlementRun: { select: { activity: { select: { id: true, title: true } } } },
+          postingBatches: {
+            select: { statusCode: true },
+            orderBy: { batchRevision: 'desc' },
+            take: 1,
+          },
+        },
+        orderBy: [{ submittedAt: 'desc' }, { id: 'desc' }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+      this.prisma.attendanceSettlementVersion.count({ where }),
+    ]);
+    return {
+      items: rows.map((row) => ({
+        settlementVersionId: row.id,
+        activityId: row.settlementRun.activity.id,
+        activityTitle: row.settlementRun.activity.title,
+        version: row.version,
+        statusCode: row.statusCode,
+        submittedAt: row.submittedAt,
+        postingBatchStatusCode: row.postingBatches[0]?.statusCode ?? null,
+      })),
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
+  }
+
+  /** 审核详情使用考勤读码，不复用负责人工作台的 generate 写码。 */
+  async reviewDetail(
+    settlementVersionId: string,
+    currentUser: CurrentUserPayload,
+  ): Promise<SettlementHttpReviewDetailResult> {
+    const activityId = await this.resolveReviewActivityId(settlementVersionId);
+    await this.assertCanActivity(
+      currentUser,
+      ACTIVITY_SETTLEMENT_ACTION.attendanceRead,
+      activityId,
+    );
+    const [detail, gaps] = await Promise.all([
+      this.loadVersionDetail(activityId, settlementVersionId),
+      this.readReviewGaps(activityId),
+    ]);
+    return { ...detail, gaps };
+  }
+
+  /** 批次进度是事实投影；只有 committed 才能标为已正式生效。 */
+  async postingBatch(
+    settlementVersionId: string,
+    currentUser: CurrentUserPayload,
+  ): Promise<SettlementHttpPostingBatchResult> {
+    const activityId = await this.resolveReviewActivityId(settlementVersionId);
+    await this.assertCanActivity(
+      currentUser,
+      ACTIVITY_SETTLEMENT_ACTION.attendanceRead,
+      activityId,
+    );
+    const batch = await this.prisma.ledgerPostingBatch.findFirst({
+      where: { settlementVersionId },
+      orderBy: { batchRevision: 'desc' },
+      select: {
+        id: true,
+        settlementVersionId: true,
+        statusCode: true,
+        preparedCount: true,
+        totalCount: true,
+        failureCount: true,
+        preparedAt: true,
+        committedAt: true,
+      },
+    });
+    if (batch === null) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+    const effective = batch.statusCode === 'committed';
+    return {
+      ...batch,
+      effective,
+      effectiveLabel: effective ? '已正式生效' : '尚未正式生效',
     };
   }
 
@@ -894,6 +1045,107 @@ export class ActivitySettlementHttpService {
       calculatedContributionPoints: row.calculatedContributionPoints.toFixed(2),
       adjustmentReason: row.adjustmentReason,
     });
+  }
+
+  /**
+   * 审核详情里的缺口与负责人工作台同一套事实口径，但不复用 workbench()：后者的
+   * generate 写码是负责人权限，审核读面必须只要求 attendance.read.sheet。
+   */
+  private async readReviewGaps(activityId: string): Promise<SettlementHttpGap[]> {
+    const activity = await this.prisma.activity.findFirst({
+      where: { id: activityId, deletedAt: null },
+      select: {
+        workflowRevision: true,
+        evidenceState: { select: { evidenceRevision: true, populationRevision: true } },
+        settlementRun: { select: { id: true, currentDraftVersion: true } },
+      },
+    });
+    if (activity === null) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+
+    const [seal, draft] = await Promise.all([
+      this.prisma.evidenceSeal.findFirst({
+        where: { activityId, statusCode: 'active' },
+        orderBy: { sealRevision: 'desc' },
+        select: {
+          id: true,
+          evidenceRevision: true,
+          populationRevision: true,
+          workflowRevision: true,
+          manualReviewPendingCount: true,
+        },
+      }),
+      activity.settlementRun?.currentDraftVersion === null ||
+      activity.settlementRun?.currentDraftVersion === undefined
+        ? Promise.resolve(null)
+        : this.prisma.attendanceSettlementVersion.findFirst({
+            where: {
+              settlementRunId: activity.settlementRun.id,
+              version: activity.settlementRun.currentDraftVersion,
+            },
+            select: {
+              id: true,
+              evidenceSealId: true,
+              evidenceRevision: true,
+              populationRevision: true,
+              workflowRevision: true,
+            },
+          }),
+    ]);
+    const gaps: SettlementHttpGap[] = [];
+    if (activity.settlementRun === null) gaps.push({ gapCode: 'settlement_run_missing', count: 1 });
+    if (seal === null) {
+      gaps.push({ gapCode: 'evidence_seal_missing', count: 1 });
+    } else if (seal.manualReviewPendingCount > 0) {
+      gaps.push({ gapCode: 'manual_review_pending', count: seal.manualReviewPendingCount });
+    }
+    if (draft === null) {
+      gaps.push({ gapCode: 'draft_missing', count: 1 });
+      return gaps;
+    }
+
+    const liveEvidenceRevision = activity.evidenceState?.evidenceRevision ?? 0;
+    const livePopulationRevision = activity.evidenceState?.populationRevision ?? 0;
+    if (
+      seal !== null &&
+      (draft.evidenceSealId !== seal.id ||
+        draft.evidenceRevision !== seal.evidenceRevision ||
+        draft.populationRevision !== seal.populationRevision ||
+        draft.workflowRevision !== seal.workflowRevision ||
+        seal.evidenceRevision !== liveEvidenceRevision ||
+        seal.populationRevision !== livePopulationRevision ||
+        seal.workflowRevision !== activity.workflowRevision)
+    ) {
+      gaps.push({ gapCode: 'draft_version_stale', count: 1 });
+    }
+    const [pendingResultCount, openSegmentCount, resultRows] = await Promise.all([
+      this.prisma.activityParticipationIdentity.count({
+        where: {
+          activityId,
+          populationIncluded: true,
+          settlementResultRevisions: { none: { settlementVersionId: draft.id } },
+        },
+      }),
+      this.prisma.participantServiceSegmentRevision.count({
+        where: {
+          identity: { activityId, populationIncluded: true },
+          statusCode: { not: 'superseded' },
+          checkOutAt: null,
+        },
+      }),
+      this.prisma.participantSettlementResultRevision.findMany({
+        where: { settlementVersionId: draft.id },
+        select: { exceptionFlagsJson: true },
+      }),
+    ]);
+    if (pendingResultCount > 0) gaps.push({ gapCode: 'pending_result', count: pendingResultCount });
+    if (openSegmentCount > 0) gaps.push({ gapCode: 'open_segment', count: openSegmentCount });
+    const missingRuleCount = resultRows.filter((row) =>
+      hasNonEmptyBlockers(row.exceptionFlagsJson),
+    ).length;
+    if (missingRuleCount > 0) {
+      gaps.push({ gapCode: 'missing_contribution_rule', count: missingRuleCount });
+    }
+    return gaps;
   }
 
   private async resolveReviewActivityId(settlementVersionId: string): Promise<string> {

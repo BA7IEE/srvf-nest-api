@@ -38,6 +38,8 @@ import { AppManagedActivitiesController } from './controllers/app-managed-activi
 import { AdminAttendanceSettlementsController } from './controllers/admin-attendance-settlements.controller';
 import { AppManagedActivityPositionsController } from './controllers/app-managed-activity-positions.controller';
 import { AppManagedActivityResponsibilitiesController } from './controllers/app-managed-activity-responsibilities.controller';
+import { AppMyParticipationLedgerController } from './controllers/app-my-participation-ledger.controller';
+import { AdminMemberParticipationLedgerController } from './controllers/admin-member-participation-ledger.controller';
 import { ActivityProposalValidator } from './activity-proposal-validator';
 import { ActivityProposalApplier } from './activity-proposal-applier';
 import { ActivityClosurePolicy } from './activity-closure-policy';
@@ -115,6 +117,8 @@ import { ActivitySettlementHttpService } from './activity-settlement-http.servic
     AdminAttendanceSettlementsController,
     AppManagedActivityPositionsController,
     AppManagedActivityResponsibilitiesController,
+    AppMyParticipationLedgerController,
+    AdminMemberParticipationLedgerController,
   ],
   providers: [
     ActivitiesService,

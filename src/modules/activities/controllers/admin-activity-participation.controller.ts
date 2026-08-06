@@ -1,13 +1,15 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
+  ApiWrappedPageResponse,
 } from '../../../common/decorators/api-response.decorator';
 import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../../common/decorators/current-user.decorator';
+import { PageResultDto, PaginationQueryDto } from '../../../common/dto/pagination.dto';
 import { BizCode } from '../../../common/exceptions/biz-code.constant';
 import {
   ActivityParticipationIdParamDto,
@@ -15,6 +17,8 @@ import {
   ActivityReconciliationDto,
 } from '../activity-participation.dto';
 import { ActivityParticipationQueryService } from '../activity-participation-query.service';
+import { AdminParticipationLedgerEntryDto } from '../dto/admin/admin-participation-ledger.dto';
+import { LedgerQueryService } from '../ledger-query.service';
 
 // 审计刀 5 F1/F2：活动级跨子表只读投影。独立 Controller + QueryService，保持
 // ActivitiesService 零增长；两端点都在 service 逐一校验 attendance.read.sheet 与
@@ -23,7 +27,28 @@ import { ActivityParticipationQueryService } from '../activity-participation-que
 @ApiBearerAuth()
 @Controller('admin/v1/activities/:activityId')
 export class AdminActivityParticipationController {
-  constructor(private readonly query: ActivityParticipationQueryService) {}
+  constructor(
+    private readonly query: ActivityParticipationQueryService,
+    private readonly ledgerQuery: LedgerQueryService,
+  ) {}
+
+  // 账本权限口径见 LedgerQueryService 的 LEDGER_READ_ACTION：合同 §6.11 空白，2026-08-06 显式接受复用考勤读码。
+  @Get('participation-ledger')
+  @ApiOperation({ summary: '活动已生效参与账本（分页） [rbac: attendance.read.sheet]' })
+  @ApiWrappedPageResponse(AdminParticipationLedgerEntryDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+  )
+  participationLedger(
+    @Param() params: ActivityParticipationIdParamDto,
+    @Query() query: PaginationQueryDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+  ): Promise<PageResultDto<AdminParticipationLedgerEntryDto>> {
+    return this.ledgerQuery.listForAdminActivity(params.activityId, query, currentUser);
+  }
 
   @Get('reconciliation')
   @ApiOperation({
