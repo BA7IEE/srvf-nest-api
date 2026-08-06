@@ -227,11 +227,12 @@
 > (`resultCode` / 候选唯一 / `scopeTypeCode`+`fallbackMode` / `preferenceOrder` 起点)· **③是第 6 批开工硬门**
 > (`OfflinePackage`、`OfflinePunchReviewItem` 被引用却从未定义,**禁止从 §5.7 散文推导**,已用 e2e 判据钉死)。
 > **五条均不阻塞第 2 批。**
-> **待折进下一版修订件的已知合同缺口(#6–#13,未裁定)**:#6 `workflowRevision` 来源未定义 ·
+> **待折进下一版修订件的已知合同缺口(#6–#14；#14 已裁定，其余未裁定)**:#6 `workflowRevision` 来源未定义 ·
 > #7 `resultCode` 无「未定」取值 · #8 关账幂等列缺失 · #9 `requestedChangeJson` 结构未定义 ·
 > #10 无人触发 `commitBatch` · **#11** §6.1/§6.2 要求草稿动作携带 `operationKey`，但 §10.3 必须覆盖闭集不含它、§3 也没有持久化落点；本刀按 §10.3 不接收该字段 ·
 > **#12** §3.1 的 `cancelOperationKey` 提到“全历史操作记录另表保存”，但该表全合同未定义，禁止从散文自造 ·
-> **#13** §3.4 `ActivityTemplate.statusCode` 取值集未定义；①.5 只落 `String`，刻意不加 CHECK，待合同修订件。
+> **#13** §3.4 `ActivityTemplate.statusCode` 取值集未定义；①.5 只落 `String`，刻意不加 CHECK，待合同修订件 ·
+> **#14** §3.4 将 `ActivityRuleSnapshot.templateVersionId` 写成必填，却没有 `Activity` 模板绑定列，且 `ActivityTemplate` 按零 seed 原则无数据；三者合取会令无模板活动在审核通过时无法生成快照。**裁定（维护者 2026-08-06「同意」）**：无模板活动合法，按活动自身值 + 系统默认解析；第 77 migration 放开该列可空并保留可选 FK，待修订件更正原文。
 > **账本读面权限口径（维护者 2026-08-06 拍板）**：复用 `attendance.read.sheet`；合同 §6.11
 > 未规定，若日后要收紧需另立权限码 + 三处 seed spec 连坐。
 >

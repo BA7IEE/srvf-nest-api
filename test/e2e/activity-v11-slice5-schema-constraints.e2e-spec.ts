@@ -900,7 +900,7 @@ describe('活动改造 v1.1 第 1 批第五刀 schema 约束(第 75 migration)',
         { column_name: 'createdByReviewId', data_type: 'text', is_nullable: 'NO' },
         { column_name: 'resolvedConfig', data_type: 'jsonb', is_nullable: 'NO' },
         { column_name: 'snapshotHash', data_type: 'text', is_nullable: 'NO' },
-        { column_name: 'templateVersionId', data_type: 'text', is_nullable: 'NO' },
+        { column_name: 'templateVersionId', data_type: 'text', is_nullable: 'YES' },
         { column_name: 'workflowRevision', data_type: 'integer', is_nullable: 'NO' },
       ]);
 
