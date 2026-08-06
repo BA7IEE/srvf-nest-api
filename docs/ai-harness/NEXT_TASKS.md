@@ -218,7 +218,7 @@
 
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
-### P1-28 活动业务全流程改造(批次 0–7) — **第 0 批 + 第 1 批 + 第 2 批 ✅ 代码面已齐；第 3 批第一刀（草稿地基）本分支待 PR CI / `harness-review`；合同已修订至 v1.1.1**
+### P1-28 活动业务全流程改造(批次 0–7) — **第 0 批 + 第 1 批 + 第 2 批 ✅ 代码面已齐；第 3 批第一刀 ✅ 已合 main [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)，①.5 模板两表／幂等列 D 档 schema 本分支待 PR CI / `harness-review`；合同已修订至 v1.1.1**
 
 > **需求口径变更(2026-08-04)**:**= v1.1 四份 + [`AMENDMENTS-v1.1.1`](../archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md),冲突以后者为准。**
 > 第 1 批建表过程中实测撞到**五处合同内部不一致**,维护者当日**全部接受**并发布修订件。原件与 SHA256 一字未动(校验仍过)。
@@ -227,10 +227,11 @@
 > (`resultCode` / 候选唯一 / `scopeTypeCode`+`fallbackMode` / `preferenceOrder` 起点)· **③是第 6 批开工硬门**
 > (`OfflinePackage`、`OfflinePunchReviewItem` 被引用却从未定义,**禁止从 §5.7 散文推导**,已用 e2e 判据钉死)。
 > **五条均不阻塞第 2 批。**
-> **待折进下一版修订件的已知合同缺口(#6–#12,未裁定)**:#6 `workflowRevision` 来源未定义 ·
+> **待折进下一版修订件的已知合同缺口(#6–#13,未裁定)**:#6 `workflowRevision` 来源未定义 ·
 > #7 `resultCode` 无「未定」取值 · #8 关账幂等列缺失 · #9 `requestedChangeJson` 结构未定义 ·
 > #10 无人触发 `commitBatch` · **#11** §6.1/§6.2 要求草稿动作携带 `operationKey`，但 §10.3 必须覆盖闭集不含它、§3 也没有持久化落点；本刀按 §10.3 不接收该字段 ·
-> **#12** §3.1 的 `cancelOperationKey` 提到“全历史操作记录另表保存”，但该表全合同未定义，禁止从散文自造。
+> **#12** §3.1 的 `cancelOperationKey` 提到“全历史操作记录另表保存”，但该表全合同未定义，禁止从散文自造 ·
+> **#13** §3.4 `ActivityTemplate.statusCode` 取值集未定义；①.5 只落 `String`，刻意不加 CHECK，待合同修订件。
 > **账本读面权限口径（维护者 2026-08-06 拍板）**：复用 `attendance.read.sheet`；合同 §6.11
 > 未规定，若日后要收紧需另立权限码 + 三处 seed spec 连坐。
 >
@@ -259,7 +260,7 @@
 > **第 2 批验收回填（⑩ 复核）**：0 条已转真用例 / 10 条已标注去向 / 18 条仍 todo = 28。
 > 本刀强化 AC-053 的入口层／锁后层独立短路探针；未出现新增可覆盖的 ADV，已知合同缺口 #6–#10 仍原样（#11/#12 见下方第 3 批裁定）。
 
-> **第 3 批第一刀（本分支，草稿地基）**：App `managed-activities` 建草稿、草稿 PATCH/DELETE、
+> **第 3 批第一刀（已合 main #952，草稿地基）**：App `managed-activities` 建草稿、草稿 PATCH/DELETE、
 > `sessions` 与新表 `ActivitySessionPosition` 的嵌套 CRUD 已实现；所有直写以
 > `statusCode !== 'draft'` 正向白名单收口，published 返回既有专门码
 > `ACTIVITY_CHANGE_REVIEW_REQUIRED`，跨 activity/session/position 与非发起人一律
@@ -269,15 +270,21 @@
 > 映射均由独立测试锁定。为保持已冻结的既有 App POST 行为，旧负载缺省时仅在服务端收敛为
 > `open_apply / internal / false`，新落库行仍不留空值。
 >
-> **明确不做的接缝**：①.5 D 档补 `ActivityTemplate` / `ActivityRuleSnapshot` 两张缺表，
-> `template-resolution` 与 `templateId` 都归第二刀；发布/变更 proposal、删除 `directPublish`
+> **第 3 批①.5（本分支，模板／快照 schema）**：仅新增 `ActivityTemplate` / 不可变
+> `ActivityRuleSnapshot`，以 `(code,version)` 和 `(activityId,workflowRevision)` 锚定版本，
+> 以 DB trigger 禁 snapshot `UPDATE/DELETE`（TRUNCATE 保持放行）；补
+> `ActivityAllocationBatch.ruleSnapshotId` 可空 FK，以及 §10.3 闭集内发布提交、审核、取消、
+> 提前终止的 key/hash 落点。零 seed、零回填、零 endpoint、零 runtime；模板解析／消费仍归第二刀。
+>
+> **明确不做的接缝**：①.5 已补 `ActivityTemplate` / `ActivityRuleSnapshot` 两张缺表，
+> `template-resolution` 与 `templateId` 仍归第二刀；发布/变更 proposal、删除 `directPublish`
 > 归第二刀；cancel/terminate/clone 归第三刀；registration form/qualification rules 归第四批。
 > §3.5 的 `draft_editor` 七值责任模型及两布尔退场另立 **D 档责任模型刀**；在它落地前仅发起人
 > （及 SUPER_ADMIN 兜底）可编辑草稿，不能用伪 collaborator 行占位。
 >
 > **第 3 批验收回填（第一刀）**：2 条已转真用例 / 2 条已标注去向 / 17 条仍 todo = 19。
 > AC-001、AC-002 已分别绑定真实发起人/代建审计与跨组织授权证据；其余 todo 的逐条卡点见
-> `activity-business-overhaul-acceptance.spec.ts`，其中模板/解析项卡 **①.5 两表 + 第二刀读面**。
+> `activity-business-overhaul-acceptance.spec.ts`，其中模板两表已落、解析项仍卡 **第二刀读面**。
 
 - **合同**:[`archive/reviews/activity-business-overhaul-v1.1/`](../archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效
   (业务方案 / 详细开发文档 / 355 项追踪矩阵 / 修订说明),SHA256 入仓时原位校验全过。

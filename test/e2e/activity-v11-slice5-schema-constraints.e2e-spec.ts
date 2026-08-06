@@ -870,22 +870,63 @@ describe('活动改造 v1.1 第 1 批第五刀 schema 约束(第 75 migration)',
   // ⑥ 「本刀刻意不做」的其余口径 + DoD 8 地基判据
   // ==========================================================================
   describe('刻意不做与地基判据', () => {
-    it('🔴 ruleSnapshotId 仍然不建(§3.4 ActivityRuleSnapshot 归第 3 批,不提前占位)', async () => {
-      // 合同 §3.11 字段表第三行给了 `ruleSnapshotId`,但它指向的 §3.4
-      // `ActivityRuleSnapshot` 至今没有建(§14 第 3 批「Template snapshot」才实现)。
-      // 提前建一列指向不存在的表 = 既加不了外键也无人写入,正是前三刀反复拒绝的形态。
-      // ⇒ 由建 ActivityRuleSnapshot 的那一刀**连列带 FK** 补齐。
-      const cols = await prisma.$queryRaw<Array<{ table_name: string; column_name: string }>>`
-        SELECT table_name, column_name FROM information_schema.columns
-        WHERE column_name = 'ruleSnapshotId'
-      `;
-      expect(cols).toEqual([]);
-      // 目标表此刻确实不存在 —— 这是上面那条"不占位"的前提,一并钉住。
+    it('✅ 到期翻面:§3.4 两表已建,ruleSnapshotId 可空且带真 FK', async () => {
+      // 原判据的到期条件已经成立:第 3 批①.5 建 ActivityTemplate /
+      // ActivityRuleSnapshot 后,§3.11 的跨切片列必须**连列带 FK**补齐,不能删掉
+      // 原用例来掩盖变化。
       const tables = await prisma.$queryRaw<Array<{ table_name: string }>>`
         SELECT table_name FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'ActivityRuleSnapshot'
+        WHERE table_schema = 'public'
+          AND table_name IN ('ActivityTemplate', 'ActivityRuleSnapshot')
+        ORDER BY table_name
       `;
-      expect(tables).toEqual([]);
+      expect(tables).toEqual([
+        { table_name: 'ActivityRuleSnapshot' },
+        { table_name: 'ActivityTemplate' },
+      ]);
+
+      // 「形状正确」的最小闭环:模板版本键 / snapshot 的活动与审核锚点都真的在表中。
+      const snapshotCols = await prisma.$queryRaw<
+        Array<{ column_name: string; data_type: string; is_nullable: string }>
+      >`
+        SELECT column_name, data_type, is_nullable FROM information_schema.columns
+        WHERE table_name = 'ActivityRuleSnapshot'
+          AND column_name IN ('activityId', 'workflowRevision', 'templateVersionId',
+                              'resolvedConfig', 'snapshotHash', 'createdByReviewId')
+        ORDER BY column_name
+      `;
+      expect(snapshotCols).toEqual([
+        { column_name: 'activityId', data_type: 'text', is_nullable: 'NO' },
+        { column_name: 'createdByReviewId', data_type: 'text', is_nullable: 'NO' },
+        { column_name: 'resolvedConfig', data_type: 'jsonb', is_nullable: 'NO' },
+        { column_name: 'snapshotHash', data_type: 'text', is_nullable: 'NO' },
+        { column_name: 'templateVersionId', data_type: 'text', is_nullable: 'NO' },
+        { column_name: 'workflowRevision', data_type: 'integer', is_nullable: 'NO' },
+      ]);
+
+      const col = await prisma.$queryRaw<
+        Array<{ data_type: string; is_nullable: string; column_default: string | null }>
+      >`
+        SELECT data_type, is_nullable, column_default FROM information_schema.columns
+        WHERE table_name = 'ActivityAllocationBatch' AND column_name = 'ruleSnapshotId'
+      `;
+      expect(col).toEqual([{ data_type: 'text', is_nullable: 'YES', column_default: null }]);
+
+      const fks = await prisma.$queryRaw<Array<{ conname: string; target: string }>>`
+        SELECT c.conname, c.confrelid::regclass::text AS target
+        FROM pg_constraint c
+        WHERE c.contype = 'f'
+          AND c.conrelid = '"ActivityAllocationBatch"'::regclass
+          AND c.conkey = (
+            SELECT ARRAY[a.attnum] FROM pg_attribute a
+            WHERE a.attrelid = c.conrelid AND a.attname = 'ruleSnapshotId')
+      `;
+      expect(fks).toEqual([
+        {
+          conname: 'ActivityAllocationBatch_ruleSnapshotId_fkey',
+          target: '"ActivityRuleSnapshot"',
+        },
+      ]);
     });
 
     it('🔴 DoD 8:四张新表**零出向外键的表 = 空集**(否则 resetDb 的 CASCADE 清不到)', async () => {

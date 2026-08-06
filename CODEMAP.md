@@ -81,7 +81,7 @@
 | 路径 | 职责 | 主要风险 / 本地铁律 | 本地约束 |
 |---|---|---|---|
 | `schema.prisma` | **数据模型唯一权威源**(字段 / 类型 / 约束 / 索引) | 修改前必先说明影响面 | [`CLAUDE.md`](prisma/CLAUDE.md) |
-| `migrations/` | 75 个 migration。最近三个(新→旧):`20260804100000_activity_v11_slice5_allocation_waitlist_reserved_quota` ← `20260804080000_activity_v11_slice4_settlement_ledger_correction_closure_job` ← `20260804060000_activity_v11_slice3_punch_evidence`。每个 migration 做了什么,以其自身 SQL 与对应 PR 为准;2026-07-23 前的历史链见[归档](docs/archive/prisma-migration-history.md) | **禁止** `prisma migrate dev` / `reset` / `db push` 自动跑 | [`CLAUDE.md`](prisma/CLAUDE.md) · [`AGENTS.md §3`](AGENTS.md) |
+| `migrations/` | 76 个 migration。最近三个(新→旧):`20260806212358_activity_v11_batch3_slice1p5_templates_rule_snapshots_idempotency` ← `20260804100000_activity_v11_slice5_allocation_waitlist_reserved_quota` ← `20260804080000_activity_v11_slice4_settlement_ledger_correction_closure_job`。每个 migration 做了什么,以其自身 SQL 与对应 PR 为准;2026-07-23 前的历史链见[归档](docs/archive/prisma-migration-history.md) | **禁止** `prisma migrate dev` / `reset` / `db push` 自动跑 | [`CLAUDE.md`](prisma/CLAUDE.md) · [`AGENTS.md §3`](AGENTS.md) |
 | `seed.ts` | 默认 super admin + bootstrap global RoleBinding + 内置 **15** 角色；v0.61.0 PR-11 contract 后 biz-admin/org-admin/group-manager=68/47/20，三个 reviewer 精确码集且零 PositionRolePolicy，owner/协办角色由业务投影器托管；通用角色只做 targeted 残留清理 | 生产环境强校验启动(`SUPER_ADMIN_*` / `JWT_SECRET` / `APP_CORS_ORIGIN`)；不 exact-delete 无关自定义 RolePermission | [`docs/deployment.md`](docs/deployment.md) |
 
 ---
@@ -99,7 +99,7 @@
 | 路径 | 职责 |
 |---|---|
 | `contract/` | OpenAPI snapshot + `EXPECTED_ROUTES`(接口契约权威源) |
-| `e2e/` | E2E spec(253 个 `*.e2e-spec.ts`) |
+| `e2e/` | E2E spec(254 个 `*.e2e-spec.ts`) |
 | `fixtures/` / `helpers/` / `setup/` | 测试工具 |
 | `jest-unit.config.ts` / `jest-e2e.config.ts` / `jest-contract.config.ts` | 三套独立 jest 配置 |
 
