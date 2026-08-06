@@ -146,6 +146,45 @@ export interface SettlementDraftResult {
   segmentsUnchanged: number;
 }
 
+// §3.20 的 `early_departure_zero` 是现场证据投影，不是负责人可凭空选出的结算结论。
+// 负责人编辑 working draft 时可从其余九个业务结论中选择；已有早退项仍会原样读取并
+// 可调整认定值，但 PATCH 不会伪造 `earlyLeaveFlag=true` 的现场事实。
+export const SETTLEMENT_DRAFT_EDITABLE_RESULT_CODES = [
+  'present',
+  'leave',
+  'absent',
+  'cancelled',
+  'not_selected',
+  'waitlist_expired',
+  'review_expired',
+  'invitation_expired',
+  'exempt',
+] as const;
+
+export interface SettlementDraftItemUpdateInput {
+  activityId: string;
+  participationIdentityId: string;
+  expectedDraftVersion: number;
+  resultCode: string;
+  recognizedServiceHours: number;
+  recognizedContributionPoints: number;
+  reason: string;
+}
+
+export interface SettlementDraftItemUpdateResult {
+  settlementVersionId: string;
+  settlementVersion: number;
+  participationIdentityId: string;
+  resultCode: string;
+  recognizedServiceHours: number;
+  recognizedContributionPoints: number;
+  calculatedServiceHours: number;
+  calculatedContributionPoints: number;
+  adjustmentReason: string | null;
+  lateFlag: boolean;
+  earlyLeaveFlag: boolean;
+}
+
 interface PopulationIdentity {
   id: string;
   memberId: string;
@@ -296,6 +335,157 @@ export class SettlementDraftService {
       select: { id: true, statusCode: true, version: true },
     });
     return created;
+  }
+
+  // ===== 第 ⑨a 刀：working draft 单项编辑 =====
+  //
+  // 锁序仍是 Activity → SettlementRun，且到此为止**不锁、不写**任何
+  // AttendanceSettlementVersion。提交版的不可变性不是「更新后再补回去」的行为约定，
+  // 而是本 PATCH 路径在结构上根本没有 Version 写调用。
+  private async lockRunForDraftUpdate(
+    tx: PrismaTx,
+    activityId: string,
+  ): Promise<{ id: string; statusCode: string; currentDraftVersion: number | null }> {
+    const rows = await tx.$queryRaw<
+      Array<{ id: string; statusCode: string; currentDraftVersion: number | null }>
+    >`
+      SELECT id, "statusCode", "currentDraftVersion"
+      FROM "AttendanceSettlementRun"
+      WHERE "activityId" = ${activityId}
+      FOR UPDATE
+    `;
+    const run = rows[0];
+    if (run === undefined)
+      throw new BizException(BizCode.SETTLEMENT_DRAFT_UPDATE_RUN_STATUS_INVALID);
+    return run;
+  }
+
+  async updateItem(
+    input: SettlementDraftItemUpdateInput,
+  ): Promise<SettlementDraftItemUpdateResult> {
+    const reason = input.reason.trim();
+    if (
+      reason.length === 0 ||
+      !SETTLEMENT_DRAFT_EDITABLE_RESULT_CODES.includes(
+        input.resultCode as (typeof SETTLEMENT_DRAFT_EDITABLE_RESULT_CODES)[number],
+      )
+    ) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+
+    return await this.prisma.$transaction(async (tx) => {
+      // ①② 锁序固定。`closed` 是 `posted` 下游态，下面 `!== drafting` 一次覆盖，不会
+      // 因枚举漏项留出关账后的编辑旁路。
+      await this.lockActivity(tx, input.activityId);
+      const run = await this.lockRunForDraftUpdate(tx, input.activityId);
+      if (run.statusCode !== 'drafting') {
+        throw new BizException(BizCode.SETTLEMENT_DRAFT_UPDATE_RUN_STATUS_INVALID);
+      }
+      if (run.currentDraftVersion !== input.expectedDraftVersion) {
+        throw new BizException(BizCode.SETTLEMENT_DRAFT_UPDATE_EXPECTED_DRAFT_VERSION_MISMATCH);
+      }
+
+      const draft = await tx.attendanceSettlementVersion.findFirst({
+        where: {
+          settlementRunId: run.id,
+          version: run.currentDraftVersion,
+          statusCode: 'draft',
+        },
+        select: { id: true, version: true },
+      });
+      if (draft === null) throw new BizException(BizCode.SETTLEMENT_SUBMIT_DRAFT_MISSING);
+
+      // 身份必须属于这场活动且在当前结算人口内；用 Activity_NOT_FOUND 隐去跨活动
+      // identityId，避免负责人借本端点探测其它活动的参与身份。
+      const identity = await tx.activityParticipationIdentity.findFirst({
+        where: {
+          id: input.participationIdentityId,
+          activityId: input.activityId,
+          populationIncluded: true,
+        },
+        select: { id: true },
+      });
+      if (identity === null) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+
+      const existing = await tx.participantSettlementResultRevision.findUnique({
+        where: {
+          settlementVersionId_participationIdentityId: {
+            settlementVersionId: draft.id,
+            participationIdentityId: identity.id,
+          },
+        },
+        select: {
+          id: true,
+          calculatedServiceHours: true,
+          calculatedContributionPoints: true,
+          lateFlag: true,
+          earlyLeaveFlag: true,
+        },
+      });
+
+      const result =
+        existing === null
+          ? await tx.participantSettlementResultRevision.create({
+              data: {
+                settlementVersionId: draft.id,
+                participationIdentityId: identity.id,
+                revision: 1,
+                resultCode: input.resultCode,
+                // 无结果行就是第二刀定义的「未决」。该形态没有可持久化的系统建议值；
+                // 只能如实以零计算基线记录负责人认定，不能捏造一份不存在的机器计算。
+                recognizedServiceHours: input.recognizedServiceHours,
+                recognizedContributionPoints: input.recognizedContributionPoints,
+                calculatedServiceHours: 0,
+                calculatedContributionPoints: 0,
+                adjustmentReason: reason,
+                statusCode: 'draft',
+              },
+              select: {
+                resultCode: true,
+                recognizedServiceHours: true,
+                recognizedContributionPoints: true,
+                calculatedServiceHours: true,
+                calculatedContributionPoints: true,
+                adjustmentReason: true,
+                lateFlag: true,
+                earlyLeaveFlag: true,
+              },
+            })
+          : await tx.participantSettlementResultRevision.update({
+              where: { id: existing.id },
+              data: {
+                revision: { increment: 1 },
+                resultCode: input.resultCode,
+                recognizedServiceHours: input.recognizedServiceHours,
+                recognizedContributionPoints: input.recognizedContributionPoints,
+                adjustmentReason: reason,
+              },
+              select: {
+                resultCode: true,
+                recognizedServiceHours: true,
+                recognizedContributionPoints: true,
+                calculatedServiceHours: true,
+                calculatedContributionPoints: true,
+                adjustmentReason: true,
+                lateFlag: true,
+                earlyLeaveFlag: true,
+              },
+            });
+
+      return {
+        settlementVersionId: draft.id,
+        settlementVersion: draft.version,
+        participationIdentityId: identity.id,
+        resultCode: result.resultCode,
+        recognizedServiceHours: result.recognizedServiceHours.toNumber(),
+        recognizedContributionPoints: result.recognizedContributionPoints.toNumber(),
+        calculatedServiceHours: result.calculatedServiceHours.toNumber(),
+        calculatedContributionPoints: result.calculatedContributionPoints.toNumber(),
+        adjustmentReason: result.adjustmentReason,
+        lateFlag: result.lateFlag,
+        earlyLeaveFlag: result.earlyLeaveFlag,
+      };
+    });
   }
 
   // ===== §5.9:人口来源 = ParticipationIdentity current revision + populationIncluded =====

@@ -38036,6 +38036,1204 @@
         ]
       }
     },
+    "/api/app/v1/my/managed-activities/{activityId}/settlement": {
+      "get": {
+        "operationId": "AppManagedActivitiesController_settlementWorkbench",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppSettlementWorkbenchResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300,
+                        30100
+                      ],
+                      "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动不存在(code=20001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20001
+                      ],
+                      "description": "20001: 活动不存在",
+                      "example": 20001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 查看负责人结算工作台摘要 [rbac: activity.settlement-generate.record]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      }
+    },
+    "/api/app/v1/my/managed-activities/{activityId}/settlement/items": {
+      "get": {
+        "operationId": "AppManagedActivitiesController_settlementItems",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页数量",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "session",
+            "required": false,
+            "in": "query",
+            "description": "按 ActivitySession.id 过滤",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "result",
+            "required": false,
+            "in": "query",
+            "description": "按已认定结果过滤",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "present",
+                "leave",
+                "absent",
+                "cancelled",
+                "not_selected",
+                "waitlist_expired",
+                "review_expired",
+                "invitation_expired",
+                "exempt",
+                "early_departure_zero"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "按队员编号或姓名模糊搜索",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/PageResultDto"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "items",
+                            "total",
+                            "page",
+                            "pageSize"
+                          ],
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/AppSettlementItemDto"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300,
+                        30100
+                      ],
+                      "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动不存在(code=20001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20001
+                      ],
+                      "description": "20001: 活动不存在",
+                      "example": 20001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 分页查看负责人结算逐人结果 [rbac: activity.settlement-generate.record]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      }
+    },
+    "/api/app/v1/my/managed-activities/{activityId}/settlement/items/{identityId}": {
+      "patch": {
+        "operationId": "AppManagedActivitiesController_updateSettlementDraftItem",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "identityId",
+            "required": true,
+            "in": "path",
+            "description": "ActivityParticipationIdentity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppSettlementUpdateDraftItemDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppSettlementUpdatedDraftItemResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300,
+                        30100
+                      ],
+                      "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动不存在(code=20001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20001
+                      ],
+                      "description": "20001: 活动不存在",
+                      "example": 20001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "当前结算状态不允许编辑草稿(code=20128) / 结算草稿版本已变化,请刷新后重新编辑(code=20119) / 尚无结算草稿可提交,请先生成草稿(code=20053)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20128,
+                        20119,
+                        20053
+                      ],
+                      "description": "20128: 当前结算状态不允许编辑草稿; 20119: 结算草稿版本已变化,请刷新后重新编辑; 20053: 尚无结算草稿可提交,请先生成草稿",
+                      "example": 20128
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "当前结算状态不允许编辑草稿"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 负责人编辑当前 working draft 结算项 [rbac: activity.settlement-update-draft.record]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      }
+    },
+    "/api/app/v1/my/managed-activities/{activityId}/settlement/versions/{versionId}": {
+      "get": {
+        "operationId": "AppManagedActivitiesController_settlementVersionDetail",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "versionId",
+            "required": true,
+            "in": "path",
+            "description": "AttendanceSettlementVersion.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppSettlementVersionDetailResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300,
+                        30100
+                      ],
+                      "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动不存在(code=20001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20001
+                      ],
+                      "description": "20001: 活动不存在",
+                      "example": 20001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 查看不可变结算版本、差异和封场修订 [rbac: activity.settlement-generate.record]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      }
+    },
+    "/api/app/v1/my/managed-activities/{activityId}/settlement/versions/{versionId}/resubmit": {
+      "post": {
+        "operationId": "AppManagedActivitiesController_resubmitSettlement",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "versionId",
+            "required": true,
+            "in": "path",
+            "description": "AttendanceSettlementVersion.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppSettlementResubmitCommandDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppSettlementSubmitResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300,
+                        30100
+                      ],
+                      "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动不存在(code=20001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20001
+                      ],
+                      "description": "20001: 活动不存在",
+                      "example": 20001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "该结算版本尚未退回,不可重新提交(code=20129) / 当前结算状态不允许提交送审(code=20052) / 尚无结算草稿可提交,请先生成草稿(code=20053) / 封场凭证已失效,请重新封场后再提交(code=20054) / 封场凭证与当前证据/人口版本不一致,请重新封场并重新生成草稿(code=20055) / 结算草稿版本已变化,请刷新后重新确认提交(code=20114) / 结算草稿引用的封场凭证已变化,请刷新后重新确认提交(code=20115) / 仍有队员的结算结果未认定,请先逐一认定后再提交(code=20056) / 结算项数与应结算人口不一致,请重新生成草稿(code=20057) / 结算项存在重复的参与身份,请重新生成草稿(code=20058) / 仍有未闭合的服务段,请先处理签退后再提交(code=20059) / 存在缺少有效贡献规则的结算项,请先补齐规则后再提交(code=20060) / 相同操作标识已用于不同的提交内容,请更换操作标识(code=20061)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20129,
+                        20052,
+                        20053,
+                        20054,
+                        20055,
+                        20114,
+                        20115,
+                        20056,
+                        20057,
+                        20058,
+                        20059,
+                        20060,
+                        20061
+                      ],
+                      "description": "20129: 该结算版本尚未退回,不可重新提交; 20052: 当前结算状态不允许提交送审; 20053: 尚无结算草稿可提交,请先生成草稿; 20054: 封场凭证已失效,请重新封场后再提交; 20055: 封场凭证与当前证据/人口版本不一致,请重新封场并重新生成草稿; 20114: 结算草稿版本已变化,请刷新后重新确认提交; 20115: 结算草稿引用的封场凭证已变化,请刷新后重新确认提交; 20056: 仍有队员的结算结果未认定,请先逐一认定后再提交; 20057: 结算项数与应结算人口不一致,请重新生成草稿; 20058: 结算项存在重复的参与身份,请重新生成草稿; 20059: 仍有未闭合的服务段,请先处理签退后再提交; 20060: 存在缺少有效贡献规则的结算项,请先补齐规则后再提交; 20061: 相同操作标识已用于不同的提交内容,请更换操作标识",
+                      "example": 20129
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "该结算版本尚未退回,不可重新提交"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 将 returned 结算版本基于当前 working draft 重新提交 [rbac: activity.settlement-submit.record]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      }
+    },
     "/api/app/v1/my/managed-activities/{activityId}": {
       "get": {
         "operationId": "AppManagedActivitiesController_detail",
@@ -101884,6 +103082,653 @@
           "operationKey",
           "expectedSettlementVersionId",
           "expectedPostingBatchId"
+        ]
+      },
+      "AppSettlementRunSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "statusCode": {
+            "type": "string"
+          },
+          "currentDraftVersion": {
+            "type": "number",
+            "nullable": true
+          },
+          "currentSubmittedVersion": {
+            "type": "number",
+            "nullable": true
+          },
+          "currentPostedVersion": {
+            "type": "number",
+            "nullable": true
+          },
+          "currentClosureRevision": {
+            "type": "number",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "statusCode"
+        ]
+      },
+      "AppSettlementSealSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "sealRevision": {
+            "type": "number",
+            "minimum": 1
+          },
+          "statusCode": {
+            "type": "string"
+          },
+          "evidenceRevision": {
+            "type": "number",
+            "minimum": 0
+          },
+          "populationRevision": {
+            "type": "number",
+            "minimum": 0
+          },
+          "workflowRevision": {
+            "type": "number",
+            "minimum": 0
+          },
+          "manualReviewPendingCount": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id",
+          "sealRevision",
+          "statusCode",
+          "evidenceRevision",
+          "populationRevision",
+          "workflowRevision",
+          "manualReviewPendingCount"
+        ]
+      },
+      "AppSettlementVersionPointerDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number",
+            "minimum": 1
+          },
+          "statusCode": {
+            "type": "string"
+          },
+          "evidenceSealId": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "statusCode",
+          "evidenceSealId"
+        ]
+      },
+      "AppSettlementClosureSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "number",
+            "minimum": 1
+          },
+          "statusCode": {
+            "type": "string"
+          },
+          "settlementVersionId": {
+            "type": "string"
+          },
+          "postingBatchId": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "statusCode",
+          "settlementVersionId",
+          "postingBatchId",
+          "closedAt"
+        ]
+      },
+      "AppSettlementGapDto": {
+        "type": "object",
+        "properties": {
+          "gapCode": {
+            "type": "string",
+            "description": "可定位的结算缺口码"
+          },
+          "count": {
+            "type": "number",
+            "minimum": 0,
+            "description": "命中该缺口的数量"
+          }
+        },
+        "required": [
+          "gapCode",
+          "count"
+        ]
+      },
+      "AppSettlementWorkbenchResponseDto": {
+        "type": "object",
+        "properties": {
+          "activityId": {
+            "type": "string"
+          },
+          "run": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AppSettlementRunSummaryDto"
+              }
+            ]
+          },
+          "seal": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AppSettlementSealSummaryDto"
+              }
+            ]
+          },
+          "draft": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AppSettlementVersionPointerDto"
+              }
+            ]
+          },
+          "submitted": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AppSettlementVersionPointerDto"
+              }
+            ]
+          },
+          "posted": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AppSettlementVersionPointerDto"
+              }
+            ]
+          },
+          "closure": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AppSettlementClosureSummaryDto"
+              }
+            ]
+          },
+          "gaps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppSettlementGapDto"
+            }
+          }
+        },
+        "required": [
+          "activityId",
+          "gaps"
+        ]
+      },
+      "AppSettlementItemSessionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name"
+        ]
+      },
+      "AppSettlementItemMemberDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "memberNo": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "memberNo",
+          "displayName"
+        ]
+      },
+      "AppSettlementItemDto": {
+        "type": "object",
+        "properties": {
+          "identityId": {
+            "type": "string"
+          },
+          "decisionCode": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "determined"
+            ]
+          },
+          "session": {
+            "$ref": "#/components/schemas/AppSettlementItemSessionDto"
+          },
+          "member": {
+            "$ref": "#/components/schemas/AppSettlementItemMemberDto"
+          },
+          "resultCode": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "present",
+              "leave",
+              "absent",
+              "cancelled",
+              "not_selected",
+              "waitlist_expired",
+              "review_expired",
+              "invitation_expired",
+              "exempt",
+              "early_departure_zero"
+            ]
+          },
+          "recognizedServiceHours": {
+            "type": "number",
+            "nullable": true
+          },
+          "recognizedContributionPoints": {
+            "type": "number",
+            "nullable": true
+          },
+          "calculatedServiceHours": {
+            "type": "number",
+            "nullable": true
+          },
+          "calculatedContributionPoints": {
+            "type": "number",
+            "nullable": true
+          },
+          "adjustmentReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "lateFlag": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "earlyLeaveFlag": {
+            "type": "boolean",
+            "nullable": true
+          }
+        },
+        "required": [
+          "identityId",
+          "decisionCode",
+          "session",
+          "member"
+        ]
+      },
+      "AppSettlementUpdatedDraftItemResponseDto": {
+        "type": "object",
+        "properties": {
+          "settlementVersionId": {
+            "type": "string"
+          },
+          "settlementVersion": {
+            "type": "number",
+            "minimum": 1
+          },
+          "identityId": {
+            "type": "string"
+          },
+          "resultCode": {
+            "type": "string",
+            "enum": [
+              "present",
+              "leave",
+              "absent",
+              "cancelled",
+              "not_selected",
+              "waitlist_expired",
+              "review_expired",
+              "invitation_expired",
+              "exempt",
+              "early_departure_zero"
+            ]
+          },
+          "recognizedServiceHours": {
+            "type": "number"
+          },
+          "recognizedContributionPoints": {
+            "type": "number"
+          },
+          "calculatedServiceHours": {
+            "type": "number"
+          },
+          "calculatedContributionPoints": {
+            "type": "number"
+          },
+          "adjustmentReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "lateFlag": {
+            "type": "boolean"
+          },
+          "earlyLeaveFlag": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "settlementVersionId",
+          "settlementVersion",
+          "identityId",
+          "resultCode",
+          "recognizedServiceHours",
+          "recognizedContributionPoints",
+          "calculatedServiceHours",
+          "calculatedContributionPoints",
+          "lateFlag",
+          "earlyLeaveFlag"
+        ]
+      },
+      "AppSettlementUpdateDraftItemDto": {
+        "type": "object",
+        "properties": {
+          "expectedDraftVersion": {
+            "type": "number",
+            "minimum": 1,
+            "description": "客户端读取到的 currentDraftVersion"
+          },
+          "resultCode": {
+            "type": "string",
+            "enum": [
+              "present",
+              "leave",
+              "absent",
+              "cancelled",
+              "not_selected",
+              "waitlist_expired",
+              "review_expired",
+              "invitation_expired",
+              "exempt"
+            ],
+            "description": "负责人认定的结算结果；early_departure_zero 仅由现场事实投影产生"
+          },
+          "recognizedServiceHours": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 999.99,
+            "description": "负责人认定的服务时长"
+          },
+          "recognizedContributionPoints": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 999.99,
+            "description": "负责人认定的贡献值"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "本次负责人调整原因"
+          }
+        },
+        "required": [
+          "expectedDraftVersion",
+          "resultCode",
+          "recognizedServiceHours",
+          "recognizedContributionPoints",
+          "reason"
+        ]
+      },
+      "AppSettlementVersionDetailHeaderDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number",
+            "minimum": 1
+          },
+          "statusCode": {
+            "type": "string"
+          },
+          "evidenceSealId": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "contentHash": {
+            "type": "string"
+          },
+          "evidenceRevision": {
+            "type": "number",
+            "minimum": 0
+          },
+          "populationRevision": {
+            "type": "number",
+            "minimum": 0
+          },
+          "workflowRevision": {
+            "type": "number",
+            "minimum": 0
+          },
+          "personCount": {
+            "type": "number",
+            "minimum": 0
+          },
+          "sessionParticipationCount": {
+            "type": "number",
+            "minimum": 0
+          },
+          "serviceSegmentCount": {
+            "type": "number",
+            "minimum": 0
+          },
+          "priorVersionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "returnFromStage": {
+            "type": "string",
+            "nullable": true
+          },
+          "returnReason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "statusCode",
+          "evidenceSealId",
+          "contentHash",
+          "evidenceRevision",
+          "populationRevision",
+          "workflowRevision",
+          "personCount",
+          "sessionParticipationCount",
+          "serviceSegmentCount"
+        ]
+      },
+      "AppSettlementVersionDiffDto": {
+        "type": "object",
+        "properties": {
+          "priorVersionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "addedItemCount": {
+            "type": "number",
+            "minimum": 0
+          },
+          "removedItemCount": {
+            "type": "number",
+            "minimum": 0
+          },
+          "changedItemCount": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "addedItemCount",
+          "removedItemCount",
+          "changedItemCount"
+        ]
+      },
+      "AppSettlementSealRevisionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "sealRevision": {
+            "type": "number",
+            "minimum": 1
+          },
+          "statusCode": {
+            "type": "string"
+          },
+          "evidenceRevision": {
+            "type": "number",
+            "minimum": 0
+          },
+          "populationRevision": {
+            "type": "number",
+            "minimum": 0
+          },
+          "workflowRevision": {
+            "type": "number",
+            "minimum": 0
+          },
+          "manualReviewPendingCount": {
+            "type": "number",
+            "minimum": 0
+          },
+          "sealedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "sealRevision",
+          "statusCode",
+          "evidenceRevision",
+          "populationRevision",
+          "workflowRevision",
+          "manualReviewPendingCount",
+          "sealedAt"
+        ]
+      },
+      "AppSettlementVersionDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "$ref": "#/components/schemas/AppSettlementVersionDetailHeaderDto"
+          },
+          "diff": {
+            "$ref": "#/components/schemas/AppSettlementVersionDiffDto"
+          },
+          "sealRevisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppSettlementSealRevisionDto"
+            }
+          }
+        },
+        "required": [
+          "version",
+          "diff",
+          "sealRevisions"
+        ]
+      },
+      "AppSettlementResubmitCommandDto": {
+        "type": "object",
+        "properties": {
+          "operationKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "调用方生成的重新提交幂等键"
+          },
+          "evidenceSealId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 64,
+            "description": "客户端确认过的 EvidenceSeal.id"
+          },
+          "expectedDraftVersion": {
+            "type": "number",
+            "minimum": 1,
+            "description": "客户端确认过的 returned 后当前 working draft 版本号"
+          },
+          "confirmation": {
+            "type": "boolean",
+            "example": true,
+            "description": "已确认将新版本重新提交送审；只能为 true"
+          }
+        },
+        "required": [
+          "operationKey",
+          "evidenceSealId",
+          "expectedDraftVersion",
+          "confirmation"
         ]
       },
       "UpdateAppManagedActivityDto": {

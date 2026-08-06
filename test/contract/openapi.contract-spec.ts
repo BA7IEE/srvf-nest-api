@@ -200,10 +200,19 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/app/v1/my/managed-activities/{activityId}/submit-change-review'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/withdraw-publish-review'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/declare-attendance-complete'],
-  // 活动业务改造 v1.1 第 2 批第 ⑧b 刀:结算最小 HTTP 闭环;读面、items、resubmit/archive 留第 ⑨ 刀。
+  // 活动业务改造 v1.1 第 2 批第 ⑧b 刀:结算最小 HTTP 闭环。
   ['post', '/api/app/v1/my/managed-activities/{activityId}/settlement/generate'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/settlement/submit'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/settlement/close'],
+  // 第 ⑨a 刀:负责人结算工作台读面 + working draft 单项编辑；Admin 审核和账本读面留 ⑨b。
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/settlement'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/settlement/items'],
+  ['patch', '/api/app/v1/my/managed-activities/{activityId}/settlement/items/{identityId}'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/settlement/versions/{versionId}'],
+  [
+    'post',
+    '/api/app/v1/my/managed-activities/{activityId}/settlement/versions/{versionId}/resubmit',
+  ],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/positions'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/positions'],
   ['patch', '/api/app/v1/my/managed-activities/{activityId}/positions/{activityPositionId}'],
@@ -1529,9 +1538,10 @@ describe('OpenAPI 契约快照', () => {
   // 企业微信接入 T2(2026-08-01):+4 settings 端点(GET / PATCH / reset-credentials /
   //   test-connection)→ **442**。T3 起还会增 OAuth 公开面与 me/wecom、admin 清除。
   // 企业微信 T6-1(2026-08-03):+1 定向 replay 运维入口
-  //   (POST admin/v1/notifications/:id/replay-wecom)→451；第 2 批第 ⑧b 刀结算最小 HTTP 闭环 +7 → **458**。
-  it('路由足迹精确为 458', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(458);
+  //   (POST admin/v1/notifications/:id/replay-wecom)→451；第 2 批第 ⑧b 刀结算最小 HTTP 闭环 +7 →458；
+  //   第 ⑨a 刀负责人结算工作台 +5 → **463**。
+  it('路由足迹精确为 463', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(463);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

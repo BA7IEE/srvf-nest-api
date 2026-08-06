@@ -214,7 +214,7 @@
 
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
-### P1-28 活动业务全流程改造(批次 0–7) — **第 0 批 + 第 1 批 ✅ 全部交付(39 表 / 第 71–75 migration);合同已修订至 v1.1.1;下一步 = 第 2 批行为实现**
+### P1-28 活动业务全流程改造(批次 0–7) — **第 0 批 + 第 1 批 + 第 2 批第 ⑧b 刀 ✅ 已交付(39 表 / 第 71–75 migration);合同已修订至 v1.1.1;下一步 = 第 ⑨ / ⑩ 刀**
 
 > **需求口径变更(2026-08-04)**:**= v1.1 四份 + [`AMENDMENTS-v1.1.1`](../archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md),冲突以后者为准。**
 > 第 1 批建表过程中实测撞到**五处合同内部不一致**,维护者当日**全部接受**并发布修订件。原件与 SHA256 一字未动(校验仍过)。
@@ -223,6 +223,9 @@
 > (`resultCode` / 候选唯一 / `scopeTypeCode`+`fallbackMode` / `preferenceOrder` 起点)· **③是第 6 批开工硬门**
 > (`OfflinePackage`、`OfflinePunchReviewItem` 被引用却从未定义,**禁止从 §5.7 散文推导**,已用 e2e 判据钉死)。
 > **五条均不阻塞第 2 批。**
+> **待折进下一版修订件的已知合同缺口(#6–#10,未裁定)**:#6 `workflowRevision` 来源未定义 ·
+> #7 `resultCode` 无「未定」取值 · #8 关账幂等列缺失 · #9 `requestedChangeJson` 结构未定义 ·
+> #10 无人触发 `commitBatch`。
 >
 > **第 1 批五刀**(全部 expand-only、零 runtime、零端点):
 > [#911](https://github.com/BA7IEE/srvf-nest-api/pull/911) 场次/岗位/参与身份/容量(71)·
@@ -233,6 +236,17 @@
 > **两组 append-only trigger**(`AttendancePunchEvent` / `ParticipationLedgerEntry`),
 > 四条判据含「**TRUNCATE 放行且 trigger 存活**」—— 挡住即 e2e 地基塌方。
 > 39 张新表**零调用方是预期状态**,消费方自第 2 批起。
+>
+> **第 2 批九刀(截至 ⑧b)**:
+> [#917](https://github.com/BA7IEE/srvf-nest-api/pull/917) 北京日历收口 + 封场算法 ·
+> [#918](https://github.com/BA7IEE/srvf-nest-api/pull/918) 结算草稿生成 + 服务段重建 ·
+> [#919](https://github.com/BA7IEE/srvf-nest-api/pull/919) 提交不可变 `SettlementVersion` ·
+> [#920](https://github.com/BA7IEE/srvf-nest-api/pull/920) 结算一审/终审 ·
+> [#921](https://github.com/BA7IEE/srvf-nest-api/pull/921) 账本分块准备 + 短事务统一生效 ·
+> [#922](https://github.com/BA7IEE/srvf-nest-api/pull/922) 机器关账 ·
+> [#923](https://github.com/BA7IEE/srvf-nest-api/pull/923) 更正应用 ·
+> [#924](https://github.com/BA7IEE/srvf-nest-api/pull/924) 账本自动提交者 + worker 接线 ·
+> [#925](https://github.com/BA7IEE/srvf-nest-api/pull/925) 结算 HTTP 入口(7 端点 / 5 权限码)。
 
 - **合同**:[`archive/reviews/activity-business-overhaul-v1.1/`](../archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效
   (业务方案 / 详细开发文档 / 355 项追踪矩阵 / 修订说明),SHA256 入仓时原位校验全过。

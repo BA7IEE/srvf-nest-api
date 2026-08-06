@@ -284,6 +284,7 @@ const EXPECTED_ACTIVITY_RESPONSIBILITY_ROLE_PERMISSIONS = {
     'attendance.update.sheet',
     'attendance.delete.sheet',
     'activity.settlement-generate.record',
+    'activity.settlement-update-draft.record',
     'activity.settlement-submit.record',
     'activity.settlement-close.record',
   ],
@@ -301,6 +302,7 @@ const EXPECTED_ACTIVITY_RESPONSIBILITY_ROLE_PERMISSIONS = {
     'attendance.update.sheet',
     'attendance.delete.sheet',
     'activity.settlement-generate.record',
+    'activity.settlement-update-draft.record',
     'activity.settlement-submit.record',
   ],
   'attendance-final-reviewer': [

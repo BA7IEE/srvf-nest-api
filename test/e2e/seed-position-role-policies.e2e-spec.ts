@@ -227,6 +227,7 @@ const EXPECTED_BIZ_ADMIN_BINDING_COUNT = 69; // PR-2 的 8 条配置面码只绑
 
 const CONTRACT_REMOVED_FROM_BIZ_AND_ORG_CODES = [
   'activity.settlement-generate.record',
+  'activity.settlement-update-draft.record',
   'activity.settlement-submit.record',
   'activity.settlement-first-review.record',
   'activity.settlement-final-review.record',
@@ -569,6 +570,7 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
         'attendance.update.sheet',
         'attendance.delete.sheet',
         'activity.settlement-generate.record',
+        'activity.settlement-update-draft.record',
         'activity.settlement-submit.record',
         'activity.settlement-close.record',
       ].sort(),
@@ -580,6 +582,7 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
         'attendance.update.sheet',
         'attendance.delete.sheet',
         'activity.settlement-generate.record',
+        'activity.settlement-update-draft.record',
         'activity.settlement-submit.record',
       ].sort(),
     );

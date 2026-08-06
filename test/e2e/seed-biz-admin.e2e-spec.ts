@@ -197,6 +197,7 @@ const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 8
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
 const ACTIVITY_RESPONSIBILITY_CONTRACT_ACTION_CODES: ReadonlyArray<string> = [
   'activity.settlement-generate.record',
+  'activity.settlement-update-draft.record',
   'activity.settlement-submit.record',
   'activity.settlement-first-review.record',
   'activity.settlement-final-review.record',
@@ -219,7 +220,7 @@ const ACTIVITY_RESPONSIBILITY_CONTRACT_ACTION_CODES: ReadonlyArray<string> = [
   'attendance.final-return.sheet',
 ];
 
-// biz-admin 不绑 member.delete + reviewer-only 三码 + v0.61.0 contract 二十一码。
+// biz-admin 不绑 member.delete + reviewer-only 三码 + v0.61.0 contract 二十二码。
 const BIZ_ADMIN_UNBOUND_CODES: ReadonlyArray<string> = [
   MEMBER_DELETE_RECORD_CODE,
   'attendance.final-approve.sheet',

@@ -3020,7 +3020,7 @@ const ATTENDANCE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
-// v0.61.0 活动责任闭环 expand：十一项权限只由下方显式 reviewer / 发起 /
+// v0.61.0 活动责任闭环 expand：十二项权限只由下方显式 reviewer / 发起 /
 // 系统投影角色承载。本阶段不把它们并入 BIZ_PERMISSION_SEED，避免在 contract 摘权前
 // 意外给旧通用角色扩大权限面；SUPER_ADMIN 仍由 RbacService 固有短路。
 const ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
@@ -3037,6 +3037,13 @@ const ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED: ReadonlyArray<RbacPermis
     action: 'settlement-generate',
     resourceType: 'record',
     description: '生成或刷新活动结算草稿',
+  },
+  {
+    code: 'activity.settlement-update-draft.record',
+    module: 'activity',
+    action: 'settlement-update-draft',
+    resourceType: 'record',
+    description: '编辑活动结算 working draft 单项',
   },
   {
     code: 'activity.settlement-submit.record',
@@ -3511,6 +3518,7 @@ const ATTENDANCE_REVIEWER_ONLY_CODES = [
 // 阶段从未进入 BIZ_PERMISSION_SEED,仍纳入 targeted cleanup，防止人工/旧环境残留。
 const ACTIVITY_RESPONSIBILITY_CONTRACT_REMOVED_FROM_BIZ_CODES = [
   'activity.settlement-generate.record',
+  'activity.settlement-update-draft.record',
   'activity.settlement-submit.record',
   'activity.settlement-first-review.record',
   'activity.settlement-final-review.record',
@@ -3543,8 +3551,8 @@ const BIZ_ADMIN_TARGETED_REMOVAL_CODES = [
   ...ACTIVITY_RESPONSIBILITY_CONTRACT_REMOVED_FROM_BIZ_CODES,
 ] as const;
 
-// biz-admin 不绑 25 码:member.delete.record(D1=A 镜像)+ 终审/撤回三码+
-// 活动责任闭环 contract 二十一码（其中两条 return 从未进入业务面集合）。
+// biz-admin 不绑 26 码:member.delete.record(D1=A 镜像)+ 终审/撤回三码+
+// 活动责任闭环 contract 二十二码（其中两条 return 从未进入业务面集合）。
 const BIZ_ADMIN_EXCLUDED_CODES: ReadonlySet<string> = new Set([
   MEMBER_DELETE_RECORD_CODE,
   ...BIZ_ADMIN_TARGETED_REMOVAL_CODES,
@@ -4212,6 +4220,7 @@ const ACTIVITY_RESPONSIBILITY_WORKFLOW_ROLE_SEED: ReadonlyArray<ActivityResponsi
         'attendance.update.sheet',
         'attendance.delete.sheet',
         'activity.settlement-generate.record',
+        'activity.settlement-update-draft.record',
         'activity.settlement-submit.record',
         'activity.settlement-close.record',
       ],
@@ -4241,6 +4250,7 @@ const ACTIVITY_RESPONSIBILITY_WORKFLOW_ROLE_SEED: ReadonlyArray<ActivityResponsi
         'attendance.update.sheet',
         'attendance.delete.sheet',
         'activity.settlement-generate.record',
+        'activity.settlement-update-draft.record',
         'activity.settlement-submit.record',
       ],
     },
