@@ -249,11 +249,97 @@ if (
   throw new Error('第 2 批 28 条验收编号必须逐条有已标注去向或明确阻塞说明');
 }
 
+/**
+ * 第 3 批第一刀只完成草稿地基。这里故意不把「已覆盖其中一小段」的总验收号提前结案：
+ * AC-009 等跨发布/表单/资格/定位的整项仍留 todo，并把已完成的 root/session/position
+ * 直写拒绝作为后续刀可复用的真实证据。
+ */
+const BATCH3_SLICE1_ACCEPTANCE_IDS = [
+  ...Array.from({ length: 15 }, (_, index) => `AC-${String(index + 1).padStart(3, '0')}`),
+  'ADV-004',
+  'ADV-017',
+  'ADV-018',
+  'ADV-019',
+] as const;
+
+const BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS: Readonly<
+  Record<string, readonly AcceptanceDestination[]>
+> = {
+  // AC-001:真实发起人资格由 policy 兜底；本刀补上管理员代建时 actor 与 initiator
+  // 分离、且草稿责任表零写的端到端锚点。
+  'AC-001': [
+    {
+      file: 'src/modules/activities/activity-initiation-policy.spec.ts',
+      needle: 'rejects non-formal grade %s',
+    },
+    {
+      file: 'src/modules/activities/activity-initiation-policy.spec.ts',
+      needle: 'rejects a formal member without an ACTIVE non-deleted User',
+    },
+    {
+      file: 'test/e2e/activity-batch3-1-draft-foundation.e2e-spec.ts',
+      needle:
+        'keeps the delegated creator and the real formal initiator distinct while anchoring the draft on the latter',
+    },
+    {
+      file: 'test/e2e/activity-batch3-1-draft-foundation.e2e-spec.ts',
+      needle: 'actorUserId: delegatedCreator.userId',
+    },
+  ],
+  // AC-002:policy 的 scope 成功路径与 App 入口的跨组织拒绝共同覆盖，不以“知道 id”替代授权。
+  'AC-002': [
+    {
+      file: 'src/modules/activities/activity-initiation-policy.spec.ts',
+      needle: 'accepts cross-org initiation when authz matches %s scope',
+    },
+    {
+      file: 'test/e2e/app-managed-activities.e2e-spec.ts',
+      needle: 'rejects an A-member moving a draft to B without cross-org grant',
+    },
+  ],
+};
+
+const BATCH3_SLICE1_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
+  'AC-003': '卡第 3 刀 clone 生命周期端点；本刀不建 clone。',
+  'AC-004': '卡第 3 刀 archive 生命周期读写；本刀不新增归档动作或定时任务。',
+  'AC-005': '缺“报名截止清空后页面与数据库均不出现 1970 年”的 App 端到端读写断言。',
+  'AC-006': '卡第 2 刀初次发布/关键变更审核链。',
+  'AC-007': '卡第 2 刀删除 directPublish 的行为契约变更；本刀按 S3 原样不动。',
+  'AC-008': '卡第 2 刀 proposal 完整快照与审核时重算。',
+  'AC-009':
+    '本刀已覆盖 Activity/ActivitySession/ActivitySessionPosition 的直写拒绝；表单、资格、可见性、签到和计分规则仍卡第 2/4 批，整项不能提前结案。',
+  'AC-010': '卡第 2 刀单场次取消或改期的 change review 与下游影响链。',
+  'AC-011': '卡第 3 刀普通活动可见性/可报名原因读面。',
+  'AC-012': '卡第 3 刀邀请可见性读面。',
+  'AC-013': '卡 S6：draft_editor 七值责任模型另立 D 档刀；本刀不给协作人草稿编辑能力。',
+  'AC-014': '卡第 3 刀 cancel 与现场事实并发语义。',
+  'AC-015': '卡第 3 刀 terminate 后 30 分钟签退窗口。',
+  'ADV-004': '卡第 3 刀普通取消×第一条现场签到真实并发。',
+  'ADV-017': '卡第 1 批 allocation/reservation 占用事实与第 2 刀已发布变更审核链。',
+  'ADV-018': '卡第 2/3 刀单场次取消的人员和通知影响链。',
+  'ADV-019': '卡第 3 刀正式/停用/非正式/未受邀可见性组合读面。',
+};
+
+const batch3Slice1ResolvedIds = new Set([
+  ...Object.keys(BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS),
+  ...Object.keys(BATCH3_SLICE1_ACCEPTANCE_BLOCKERS),
+]);
+if (
+  batch3Slice1ResolvedIds.size !== BATCH3_SLICE1_ACCEPTANCE_IDS.length ||
+  BATCH3_SLICE1_ACCEPTANCE_IDS.some((id) => !batch3Slice1ResolvedIds.has(id)) ||
+  Object.keys(BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS).some(
+    (id) => BATCH3_SLICE1_ACCEPTANCE_BLOCKERS[id],
+  )
+) {
+  throw new Error('第 3 批第一刀 19 条验收编号必须逐条有已标注去向或明确阻塞说明');
+}
+
 function registerAcceptanceCases(cases: readonly { id: string; title: string }[]): void {
   for (const { id, title } of cases) {
-    const destinations = BATCH2_ACCEPTANCE_DESTINATIONS[id];
+    const destinations =
+      BATCH2_ACCEPTANCE_DESTINATIONS[id] ?? BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS[id];
     if (destinations !== undefined) {
-      it(`${id} ${title}（第 2 批：已标注去向）`, () => {
+      it(`${id} ${title}（已标注去向）`, () => {
         for (const destination of destinations) {
           expect(readFileSync(resolve(process.cwd(), destination.file), 'utf8')).toContain(
             destination.needle,
@@ -263,9 +349,9 @@ function registerAcceptanceCases(cases: readonly { id: string; title: string }[]
       continue;
     }
 
-    const blocker = BATCH2_ACCEPTANCE_BLOCKERS[id];
+    const blocker = BATCH2_ACCEPTANCE_BLOCKERS[id] ?? BATCH3_SLICE1_ACCEPTANCE_BLOCKERS[id];
     if (blocker !== undefined) {
-      it.todo(`${id} ${title}（第 2 批阻塞：${blocker}）`);
+      it.todo(`${id} ${title}（阻塞：${blocker}）`);
       continue;
     }
 

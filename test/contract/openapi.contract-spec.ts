@@ -195,6 +195,22 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/my/managed-activities/{activityId}'],
   ['patch', '/api/app/v1/my/managed-activities/{activityId}'],
   ['delete', '/api/app/v1/my/managed-activities/{activityId}'],
+  // 活动业务改造 v1.1 第 3 批第一刀：草稿场次/新表岗位嵌套 CRUD。
+  // 只允许发起人（SUPER_ADMIN 兜底）操作 draft；published 直写返回 change-review-required。
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/sessions'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/sessions'],
+  ['patch', '/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}'],
+  ['delete', '/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}/positions'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}/positions'],
+  [
+    'patch',
+    '/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}/positions/{positionId}',
+  ],
+  [
+    'delete',
+    '/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}/positions/{positionId}',
+  ],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/submit-publish-review'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/direct-publish'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/submit-change-review'],
@@ -1548,9 +1564,10 @@ describe('OpenAPI 契约快照', () => {
   //   test-connection)→ **442**。T3 起还会增 OAuth 公开面与 me/wecom、admin 清除。
   // 企业微信 T6-1(2026-08-03):+1 定向 replay 运维入口
   //   (POST admin/v1/notifications/:id/replay-wecom)→451；第 2 批第 ⑧b 刀结算最小 HTTP 闭环 +7 →458；
-  //   第 ⑨a 刀负责人结算工作台 +5 →463；第 ⑨b 刀审核/账本读面 +6 → **469**。
-  it('路由足迹精确为 469', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(469);
+  //   第 ⑨a 刀负责人结算工作台 +5 →463；第 ⑨b 刀审核/账本读面 +6 →469；
+  //   第 3 批第一刀草稿场次/新表岗位嵌套 CRUD +8 → **477**。
+  it('路由足迹精确为 477', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(477);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

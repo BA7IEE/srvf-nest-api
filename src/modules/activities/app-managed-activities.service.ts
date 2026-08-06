@@ -10,6 +10,7 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AuthzService } from '../authz/authz.service';
 import { isFormalMemberGradeCode } from '../members/member-grade';
 import { ActivityAuditRecorder } from './activity-audit-recorder';
+import { ActivityDraftService } from './activity-draft.service';
 import type {
   CreateActivityPositionDto,
   UpdateActivityPositionDto,
@@ -33,6 +34,14 @@ import type {
   AppManagedActivityDetailDto,
   AppManagedActivityProjectionDto,
 } from './dto/app/app-managed-activity.dto';
+import type {
+  AppManagedActivitySessionPositionsQueryDto,
+  AppManagedActivitySessionsQueryDto,
+  CreateAppManagedActivitySessionDto,
+  CreateAppManagedActivitySessionPositionDto,
+  UpdateAppManagedActivitySessionDto,
+  UpdateAppManagedActivitySessionPositionDto,
+} from './dto/app/app-managed-activity-draft.dto';
 
 @Injectable()
 export class AppManagedActivitiesService {
@@ -41,6 +50,7 @@ export class AppManagedActivitiesService {
     private readonly authz: AuthzService,
     private readonly activities: ActivitiesService,
     private readonly positions: ActivityPositionsService,
+    private readonly drafts: ActivityDraftService,
     private readonly reviews: ActivityPublishReviewService,
     private readonly responsibilities: ActivityResponsibilityService,
     private readonly workflowQuery: ActivityWorkflowQueryService,
@@ -148,7 +158,16 @@ export class AppManagedActivitiesService {
       throw new BizException(BizCode.ACTIVITY_ATTENDANCE_DECLARATION_INVALID);
     }
     if (!user.memberId) throw new BizException(BizCode.FORBIDDEN);
-    const created = await this.activities.create(dto, user, auditMeta, 'managed');
+    // 新行必须持久化闭集值；但既有 App POST 负载早于这些 additive 字段，不能把
+    // 受行为冻结保护的调用突然变成 400。缺省只在这个兼容入口收敛，永不留下 null。
+    const normalizedDto: CreateActivityDto = {
+      ...dto,
+      registrationModeCode: dto.registrationModeCode ?? 'open_apply',
+      visibilityCode: dto.visibilityCode ?? 'internal',
+      defaultLocationRequired: dto.defaultLocationRequired ?? false,
+    };
+    this.assertManagedDraftConfiguration(normalizedDto);
+    const created = await this.activities.create(normalizedDto, user, auditMeta, 'managed');
     return this.detail(created.id, user.memberId, user);
   }
 
@@ -183,9 +202,90 @@ export class AppManagedActivitiesService {
       workflowRevision: deleted.workflowRevision,
       requiresInsurance: deleted.requiresInsurance,
       isPublicRegistration: deleted.isPublicRegistration,
+      registrationModeCode: deleted.registrationModeCode,
+      visibilityCode: deleted.visibilityCode,
+      defaultCheckInRadiusMeters: deleted.defaultCheckInRadiusMeters,
+      defaultLocationRequired: deleted.defaultLocationRequired,
+      archiveWaitingDays: deleted.archiveWaitingDays,
       createdAt: deleted.createdAt,
       updatedAt: deleted.updatedAt,
     };
+  }
+
+  async listSessions(
+    activityId: string,
+    query: AppManagedActivitySessionsQueryDto,
+    user: CurrentUserPayload,
+  ) {
+    return this.drafts.listSessions(activityId, query, user);
+  }
+
+  async createSession(
+    activityId: string,
+    dto: CreateAppManagedActivitySessionDto,
+    user: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ) {
+    return this.drafts.createSession(activityId, dto, user, auditMeta);
+  }
+
+  async updateSession(
+    activityId: string,
+    sessionId: string,
+    dto: UpdateAppManagedActivitySessionDto,
+    user: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ) {
+    return this.drafts.updateSession(activityId, sessionId, dto, user, auditMeta);
+  }
+
+  async deleteSession(
+    activityId: string,
+    sessionId: string,
+    user: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ) {
+    return this.drafts.deleteSession(activityId, sessionId, user, auditMeta);
+  }
+
+  async listSessionPositions(
+    activityId: string,
+    sessionId: string,
+    query: AppManagedActivitySessionPositionsQueryDto,
+    user: CurrentUserPayload,
+  ) {
+    return this.drafts.listPositions(activityId, sessionId, query, user);
+  }
+
+  async createSessionPosition(
+    activityId: string,
+    sessionId: string,
+    dto: CreateAppManagedActivitySessionPositionDto,
+    user: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ) {
+    return this.drafts.createPosition(activityId, sessionId, dto, user, auditMeta);
+  }
+
+  async updateSessionPosition(
+    activityId: string,
+    sessionId: string,
+    positionId: string,
+    dto: UpdateAppManagedActivitySessionPositionDto,
+    user: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ) {
+    return this.drafts.updatePosition(activityId, sessionId, positionId, dto, user, auditMeta);
+  }
+
+  async deleteSessionPosition(
+    activityId: string,
+    sessionId: string,
+    positionId: string,
+    user: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ) {
+    return this.drafts.deletePosition(activityId, sessionId, positionId, user, auditMeta);
   }
 
   async submitInitial(activityId: string, user: CurrentUserPayload, auditMeta: AuditMeta) {
@@ -428,6 +528,20 @@ export class AppManagedActivitiesService {
     auditMeta: AuditMeta,
   ) {
     return this.responsibilities.transferInitiator(activityId, dto, user, auditMeta);
+  }
+
+  private assertManagedDraftConfiguration(dto: CreateActivityDto): void {
+    const registrationModes = ['open_apply', 'invitation_only', 'admin_only', 'paused'];
+    const visibilityModes = ['internal', 'invitation'];
+    if (
+      dto.registrationModeCode === undefined ||
+      dto.visibilityCode === undefined ||
+      dto.defaultLocationRequired === undefined ||
+      !registrationModes.includes(dto.registrationModeCode) ||
+      !visibilityModes.includes(dto.visibilityCode)
+    ) {
+      throw new BizException(BizCode.ACTIVITY_DRAFT_CONFIGURATION_INVALID);
+    }
   }
 
   private async assertFormalMember(memberId: string): Promise<void> {

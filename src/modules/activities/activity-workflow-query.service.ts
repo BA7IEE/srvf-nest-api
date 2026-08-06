@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { Role, type Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import type { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -31,6 +31,11 @@ export const managedActivitySelect = {
   workflowRevision: true,
   requiresInsurance: true,
   isPublicRegistration: true,
+  registrationModeCode: true,
+  visibilityCode: true,
+  defaultCheckInRadiusMeters: true,
+  defaultLocationRequired: true,
+  archiveWaitingDays: true,
   attendanceDeclaredCompleteAt: true,
   createdAt: true,
   updatedAt: true,
@@ -178,7 +183,7 @@ export class ActivityWorkflowQueryService {
     memberId: string,
     user: CurrentUserPayload,
   ): Promise<AppManagedActivityDetailDto> {
-    const row = await this.loadManaged(activityId, memberId);
+    const row = await this.loadManaged(activityId, memberId, user.role);
     const [registrationGroups, attendanceGroups, canPublish] = await Promise.all([
       this.prisma.activityRegistration.groupBy({
         by: ['statusCode'],
@@ -265,15 +270,23 @@ export class ActivityWorkflowQueryService {
     return activity;
   }
 
-  async loadManaged(activityId: string, memberId: string): Promise<ManagedActivityRow> {
+  async loadManaged(
+    activityId: string,
+    memberId: string,
+    role: Role = Role.USER,
+  ): Promise<ManagedActivityRow> {
     const activity = await this.prisma.activity.findFirst({
       where: {
         id: activityId,
         deletedAt: null,
-        OR: [
-          { initiatorMemberId: memberId },
-          { responsibilityAssignments: { some: { memberId, status: 'active' } } },
-        ],
+        ...(role === Role.SUPER_ADMIN
+          ? {}
+          : {
+              OR: [
+                { initiatorMemberId: memberId },
+                { responsibilityAssignments: { some: { memberId, status: 'active' } } },
+              ],
+            }),
       },
       select: managedActivitySelect,
     });
@@ -325,6 +338,11 @@ export class ActivityWorkflowQueryService {
       workflowRevision: row.workflowRevision,
       requiresInsurance: row.requiresInsurance,
       isPublicRegistration: row.isPublicRegistration,
+      registrationModeCode: row.registrationModeCode,
+      visibilityCode: row.visibilityCode,
+      defaultCheckInRadiusMeters: row.defaultCheckInRadiusMeters,
+      defaultLocationRequired: row.defaultLocationRequired,
+      archiveWaitingDays: row.archiveWaitingDays,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

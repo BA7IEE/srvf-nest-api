@@ -11,6 +11,8 @@ import { UsersModule } from '../users/users.module';
 import { ActivitiesController } from './activities.controller';
 import { ActivitiesService } from './activities.service';
 import { ActivityAuditRecorder } from './activity-audit-recorder';
+import { ActivityDraftAuditRecorder } from './activity-draft-audit-recorder';
+import { ActivityDraftService } from './activity-draft.service';
 import { ActivityStateMachine } from './activity-state-machine';
 import { ActivityParticipationPolicy } from './activity-participation-policy';
 import { AppActivitiesService } from './app-activities.service';
@@ -123,6 +125,8 @@ import { ActivitySettlementHttpService } from './activity-settlement-http.servic
   providers: [
     ActivitiesService,
     ActivityAuditRecorder,
+    ActivityDraftAuditRecorder,
+    ActivityDraftService,
     ActivityNotificationProducer,
     ActivityResponsibilityNotificationProducer,
     ActivityStateMachine,

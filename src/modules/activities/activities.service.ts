@@ -105,6 +105,11 @@ const activitySafeSelect = {
   cancelReason: true,
   isPublicRegistration: true,
   requiresInsurance: true,
+  registrationModeCode: true,
+  visibilityCode: true,
+  defaultCheckInRadiusMeters: true,
+  defaultLocationRequired: true,
+  archiveWaitingDays: true,
   registrationSchema: true,
   coverImageUrl: true,
   galleryImageUrls: true,
@@ -246,6 +251,11 @@ export class ActivitiesService {
       cancelReason: row.cancelReason,
       isPublicRegistration: row.isPublicRegistration,
       requiresInsurance: row.requiresInsurance,
+      registrationModeCode: row.registrationModeCode,
+      visibilityCode: row.visibilityCode,
+      defaultCheckInRadiusMeters: row.defaultCheckInRadiusMeters,
+      defaultLocationRequired: row.defaultLocationRequired,
+      archiveWaitingDays: row.archiveWaitingDays,
       registrationSchema: this.jsonAsObject(row.registrationSchema),
       coverImageUrl: row.coverImageUrl,
       galleryImageUrls: this.jsonAsStringArray(row.galleryImageUrls),
@@ -336,6 +346,24 @@ export class ActivitiesService {
     }
   }
 
+  private assertV11DraftConfiguration(dto: CreateActivityDto | UpdateActivityDto): void {
+    if (
+      dto.archiveWaitingDays !== undefined &&
+      (!Number.isInteger(dto.archiveWaitingDays) ||
+        dto.archiveWaitingDays < 0 ||
+        dto.archiveWaitingDays > 365)
+    ) {
+      throw new BizException(BizCode.ACTIVITY_DRAFT_CONFIGURATION_INVALID);
+    }
+    if (
+      dto.defaultCheckInRadiusMeters !== undefined &&
+      dto.defaultCheckInRadiusMeters !== null &&
+      !Number.isInteger(dto.defaultCheckInRadiusMeters)
+    ) {
+      throw new BizException(BizCode.ACTIVITY_DRAFT_CONFIGURATION_INVALID);
+    }
+  }
+
   private async assertLivePositionWindowsWithinActivity(
     activityId: string,
     activityStartAt: Date,
@@ -359,6 +387,27 @@ export class ActivitiesService {
     }
   }
 
+  private async assertLiveSessionWindowsWithinActivity(
+    activityId: string,
+    activityStartAt: Date,
+    activityEndAt: Date,
+    tx: PrismaTx,
+  ): Promise<void> {
+    const sessions = await tx.activitySession.findMany({
+      where: { activityId, deletedAt: null },
+      select: { startAt: true, endAt: true },
+    });
+    const hasInvalidWindow = sessions.some(
+      ({ startAt, endAt }) =>
+        startAt.getTime() >= endAt.getTime() ||
+        startAt.getTime() < activityStartAt.getTime() ||
+        endAt.getTime() > activityEndAt.getTime(),
+    );
+    if (hasInvalidWindow) {
+      throw new BizException(BizCode.ACTIVITY_SESSION_TIME_RANGE_INVALID);
+    }
+  }
+
   private async findActivityOrThrow(id: string, tx?: PrismaTx): Promise<ActivityFullRow> {
     const client = tx ?? this.prisma;
     const found = await client.activity.findFirst({
@@ -377,6 +426,35 @@ export class ActivitiesService {
     `;
     if (locked.length === 0) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
     return this.findActivityOrThrow(id, tx);
+  }
+
+  /**
+   * App 草稿侧的归属锚只有发起人字段。责任行在发布时才由既有发布链建立，
+   * 因此这里不能回退到 responsibilityAssignments，也不能把越权活动暴露成 403。
+   */
+  private async lockAndFindManagedActivityOrThrow(
+    id: string,
+    currentUser: CurrentUserPayload,
+    tx: PrismaTx,
+  ): Promise<ActivityFullRow> {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "Activity"
+      WHERE id = ${id} AND "deletedAt" IS NULL
+      FOR UPDATE
+    `;
+    if (locked.length === 0) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+
+    const found = await tx.activity.findFirst({
+      where: notDeletedWhere({
+        id,
+        ...(currentUser.role === Role.SUPER_ADMIN
+          ? {}
+          : { initiatorMemberId: currentUser.memberId ?? '__missing_member__' }),
+      }),
+      select: activitySafeSelect,
+    });
+    if (!found) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+    return found;
   }
 
   // ============ list ============
@@ -553,6 +631,7 @@ export class ActivitiesService {
       dto.registrationDeadline !== undefined ? new Date(dto.registrationDeadline) : null,
       endAt,
     );
+    this.assertV11DraftConfiguration(dto);
 
     return this.prisma.$transaction(async (tx) => {
       const initiatorMemberId = this.config.activityResponsibilityWorkflow.enabled
@@ -604,6 +683,19 @@ export class ActivitiesService {
       if (dto.requiresInsurance !== undefined) {
         data.requiresInsurance = dto.requiresInsurance;
       }
+      if (dto.registrationModeCode !== undefined) {
+        data.registrationModeCode = dto.registrationModeCode;
+      }
+      if (dto.visibilityCode !== undefined) data.visibilityCode = dto.visibilityCode;
+      if (dto.defaultCheckInRadiusMeters !== undefined) {
+        data.defaultCheckInRadiusMeters = dto.defaultCheckInRadiusMeters;
+      }
+      if (dto.defaultLocationRequired !== undefined) {
+        data.defaultLocationRequired = dto.defaultLocationRequired;
+      }
+      if (dto.archiveWaitingDays !== undefined) {
+        data.archiveWaitingDays = dto.archiveWaitingDays;
+      }
       if (dto.registrationSchema !== undefined) {
         data.registrationSchema = dto.registrationSchema as Prisma.InputJsonValue;
       }
@@ -651,25 +743,43 @@ export class ActivitiesService {
     }
     return this.prisma.$transaction(async (tx) => {
       // 所有活动写入口统一先锁 Activity，再重读状态、时间窗、岗位与 passCount 基线。
-      const current = await this.lockAndFindActivityOrThrow(id, tx);
+      const current =
+        authorization === 'managed'
+          ? await this.lockAndFindManagedActivityOrThrow(id, currentUser, tx)
+          : await this.lockAndFindActivityOrThrow(id, tx);
+
+      // App 草稿写先裁定状态；已发布活动即使请求体恰有别的校验问题，也必须明确
+      // 告知客户端走 change review，不能因参数校验掩掉阶段语义。
+      if (authorization !== 'managed') this.assertV11DraftConfiguration(dto);
 
       if (this.config.activityResponsibilityWorkflow.enabled) {
-        const pendingReview = await tx.activityPublishReview.count({
-          where: { activityId: id, status: 'pending' },
-        });
-        if (pendingReview > 0) {
-          throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
-        }
-        if (current.statusCode === ACTIVITY_STATUS_PUBLISHED) {
-          throw new BizException(BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED);
-        }
-        if (
-          current.statusCode === ACTIVITY_STATUS_DRAFT &&
-          current.initiatorMemberId !== currentUser.memberId &&
-          currentUser.role !== Role.SUPER_ADMIN &&
-          !(await this.rbac.can(currentUser, 'activity-responsibility.override.record'))
-        ) {
-          throw new BizException(BizCode.RBAC_FORBIDDEN);
+        if (authorization === 'managed') {
+          // 第 3 批第一刀的正向白名单：只要不是 draft，任何同路径直改都不得放行。
+          // 这里刻意用 `!== 'draft'` 结构，新增下游状态不会悄然进入可编辑集合。
+          if (current.statusCode !== 'draft') {
+            throw new BizException(
+              current.statusCode === ACTIVITY_STATUS_PUBLISHED
+                ? BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED
+                : BizCode.ACTIVITY_STATUS_INVALID,
+            );
+          }
+          const pendingReview = await tx.activityPublishReview.count({
+            where: { activityId: id, status: 'pending' },
+          });
+          if (pendingReview > 0) {
+            throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
+          }
+          this.assertV11DraftConfiguration(dto);
+        } else {
+          const pendingReview = await tx.activityPublishReview.count({
+            where: { activityId: id, status: 'pending' },
+          });
+          if (pendingReview > 0) {
+            throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
+          }
+          if (current.statusCode === ACTIVITY_STATUS_PUBLISHED) {
+            throw new BizException(BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED);
+          }
         }
       }
 
@@ -736,6 +846,7 @@ export class ActivitiesService {
         this.assertRegistrationDeadlineValid(nextDeadline, nextEnd);
         if (dto.startAt !== undefined || dto.endAt !== undefined) {
           await this.assertLivePositionWindowsWithinActivity(current.id, nextStart, nextEnd, tx);
+          await this.assertLiveSessionWindowsWithinActivity(current.id, nextStart, nextEnd, tx);
         }
       }
 
@@ -825,6 +936,19 @@ export class ActivitiesService {
       }
       if (dto.requiresInsurance !== undefined) {
         data.requiresInsurance = dto.requiresInsurance;
+      }
+      if (dto.registrationModeCode !== undefined) {
+        data.registrationModeCode = dto.registrationModeCode;
+      }
+      if (dto.visibilityCode !== undefined) data.visibilityCode = dto.visibilityCode;
+      if (dto.defaultCheckInRadiusMeters !== undefined) {
+        data.defaultCheckInRadiusMeters = dto.defaultCheckInRadiusMeters;
+      }
+      if (dto.defaultLocationRequired !== undefined) {
+        data.defaultLocationRequired = dto.defaultLocationRequired;
+      }
+      if (dto.archiveWaitingDays !== undefined) {
+        data.archiveWaitingDays = dto.archiveWaitingDays;
       }
       if (dto.registrationSchema !== undefined) {
         data.registrationSchema = dto.registrationSchema as Prisma.InputJsonValue;
@@ -936,36 +1060,63 @@ export class ActivitiesService {
       throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
     }
     return this.prisma.$transaction(async (tx) => {
-      const current = await this.lockAndFindActivityOrThrow(id, tx);
-      if (
-        authorization === 'managed' &&
-        (current.statusCode !== ACTIVITY_STATUS_DRAFT ||
-          current.initiatorMemberId !== currentUser.memberId)
-      ) {
-        throw new BizException(BizCode.RBAC_FORBIDDEN);
-      }
-      if (
-        this.config.activityResponsibilityWorkflow.enabled &&
-        (await tx.activityPublishReview.count({
-          where: { activityId: id, status: 'pending' },
-        })) > 0
-      ) {
-        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
-      }
+      const current =
+        authorization === 'managed'
+          ? await this.lockAndFindManagedActivityOrThrow(id, currentUser, tx)
+          : await this.lockAndFindActivityOrThrow(id, tx);
+      if (authorization === 'managed') {
+        // 与 PATCH 同一正向白名单：published 必须给出 change-review-required，而不是
+        // 用 RBAC 或通用 status 码掩盖“应走变更审核”的语义。
+        if (current.statusCode !== 'draft') {
+          throw new BizException(
+            current.statusCode === ACTIVITY_STATUS_PUBLISHED
+              ? BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED
+              : BizCode.ACTIVITY_STATUS_INVALID,
+          );
+        }
+        const [reviewCount, registrationCount, attendanceSheetCount, checkInCount, identityCount] =
+          await Promise.all([
+            tx.activityPublishReview.count({ where: { activityId: current.id } }),
+            tx.activityRegistration.count({ where: { activityId: current.id } }),
+            tx.attendanceSheet.count({ where: { activityId: current.id } }),
+            tx.activityCheckIn.count({ where: { activityId: current.id } }),
+            tx.activityParticipationIdentity.count({ where: { activityId: current.id } }),
+          ]);
+        if (reviewCount > 0) {
+          throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+        }
+        if (
+          registrationCount > 0 ||
+          attendanceSheetCount > 0 ||
+          checkInCount > 0 ||
+          identityCount > 0
+        ) {
+          throw new BizException(BizCode.ACTIVITY_PARTICIPATION_EXISTS_DELETE_FORBIDDEN);
+        }
+      } else {
+        if (
+          this.config.activityResponsibilityWorkflow.enabled &&
+          (await tx.activityPublishReview.count({
+            where: { activityId: id, status: 'pending' },
+          })) > 0
+        ) {
+          throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
+        }
 
-      const [activeRegistrations, attendanceSheets] = await Promise.all([
-        tx.activityRegistration.count({
-          where: notDeletedWhere({
-            activityId: current.id,
-            statusCode: { in: [...ACTIVE_REGISTRATION_STATUS_CODES] },
+        const [activeRegistrations, attendanceSheets] = await Promise.all([
+          tx.activityRegistration.count({
+            where: notDeletedWhere({
+              activityId: current.id,
+              statusCode: { in: [...ACTIVE_REGISTRATION_STATUS_CODES] },
+            }),
           }),
-        }),
-        tx.attendanceSheet.count({
-          where: notDeletedWhere({ activityId: current.id }),
-        }),
-      ]);
-      if (activeRegistrations > 0 || attendanceSheets > 0) {
-        throw new BizException(BizCode.ACTIVITY_PARTICIPATION_EXISTS_DELETE_FORBIDDEN);
+          tx.attendanceSheet.count({
+            where: notDeletedWhere({ activityId: current.id }),
+          }),
+        ]);
+        if (activeRegistrations > 0 || attendanceSheets > 0) {
+          throw new BizException(BizCode.ACTIVITY_PARTICIPATION_EXISTS_DELETE_FORBIDDEN);
+        }
       }
 
       await claimAtStatus(tx, {

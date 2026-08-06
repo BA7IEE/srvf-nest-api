@@ -18,7 +18,7 @@
 
 | 路径 | 体量 | 职责 | 主要风险 / 本地铁律 | 本地约束 |
 |---|---|---|---|---|
-| `activities/` | XL ⚠G 27893L · svc 2140L(correction-application.service.ts) | 活动主资源 4 态 + ActivityPosition + ActivityPublishReview + ActivityResponsibilityAssignment；Admin 发布审核/责任配置；App managed activities 核心/岗位/职责 20 路 | 主 service 1224L；岗位 623L；发布审核 868L、责任 755L；App managed orchestration 441L + workflow query 332L + closure policy 61L，list/detail 统计固定批量 groupBy、声明写锁 Activity 根；发布/变更审核锁序 Activity→review，责任投影锁序 Activity→Members→assignment→RoleBinding；PR-11 已完成通用角色摘权，smoke gate=true，production 切换仍按只读 preflight+drain runbook | [`CLAUDE.md`](src/modules/activities/CLAUDE.md) · [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md) |
+| `activities/` | XL ⚠G 30208L · svc 2140L(correction-application.service.ts) | 活动主资源 4 态 + ActivityPosition + ActivityPublishReview + ActivityResponsibilityAssignment；Admin 发布审核/责任配置；App managed activities 核心/岗位/职责 20 路 | 主 service 1375L；岗位 623L；发布审核 868L、责任 755L；App managed orchestration 441L + workflow query 332L + closure policy 61L，list/detail 统计固定批量 groupBy、声明写锁 Activity 根；发布/变更审核锁序 Activity→review，责任投影锁序 Activity→Members→assignment→RoleBinding；PR-11 已完成通用角色摘权，smoke gate=true，production 切换仍按只读 preflight+drain runbook | [`CLAUDE.md`](src/modules/activities/CLAUDE.md) · [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md) |
 | `activity-registrations/` | XL ⚠G 4695L · svc 1668L | 活动报名,5 态 + partial unique + 岗位级 FIFO 候补/自动递补 + CSV export + 跨轴只读 + App managed 报名 7 路 | service 1668L(沿 §4 体量观察)；既有 `(activityId,memberId)` active partial unique 逐字不动；三路 create 接 `activityPositionId`，容量/approve/cancel/promotion/排位按 `(activityId,activityPositionId)` 隔离，null 无岗位路径沿旧；PR-7 managed App 以独立 DTO/application service 复用单条 service + bulk wrapper，owner/报名协办双重校验 scoped RoleBinding 与 active responsibility capability，写固定 Activity→Registration 锁序，撤权下一请求失效；Admin 默认行为不变；v0.49.0 起扁平列表按组织范围下推 | [`CLAUDE.md`](src/modules/activity-registrations/CLAUDE.md) · [`docs/api-surface-policy.md §5`](docs/api-surface-policy.md) |
 | `activity-feedbacks/` | M 636L · svc 193L | 活动评价；completed 活动按 endAt 窗口、approved-only 到场资格、App self-scope / Admin 实名聚合 | App PUT/GET 固定 3 读（PUT +1 写）；Admin list/summary 固定 3/4 读；QueryService 单次 aggregate 接入 activity participation-summary；live partial unique P2002→35002；F4 真实 DB E2E 锁资格/统计/并发/no-audit；禁止 import 三个 participation god-service，评价不进 audit/结算 | [`CLAUDE.md`](src/modules/activity-feedbacks/CLAUDE.md) · [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md) |
 | `ai/` | S 0L | LLM / 向量占位 | **本期不实现**;README 占位 | [`docs/current-state.md §3`](docs/current-state.md) |
@@ -99,7 +99,7 @@
 | 路径 | 职责 |
 |---|---|
 | `contract/` | OpenAPI snapshot + `EXPECTED_ROUTES`(接口契约权威源) |
-| `e2e/` | E2E spec(252 个 `*.e2e-spec.ts`) |
+| `e2e/` | E2E spec(253 个 `*.e2e-spec.ts`) |
 | `fixtures/` / `helpers/` / `setup/` | 测试工具 |
 | `jest-unit.config.ts` / `jest-e2e.config.ts` / `jest-contract.config.ts` | 三套独立 jest 配置 |
 
