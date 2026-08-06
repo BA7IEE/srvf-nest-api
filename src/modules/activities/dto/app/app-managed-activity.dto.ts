@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsDateString,
   IsIn,
@@ -15,6 +16,7 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
+import { OmittableOnly } from '../../../../common/decorators/omittable-only.decorator';
 import { PaginationQueryDto } from '../../../../common/dto/pagination.dto';
 
 export class AppManagedActivityParamsDto {
@@ -92,6 +94,41 @@ export class CreateAppManagedActivityDto {
   @MaxLength(64)
   organizationId!: string;
 
+  @ApiPropertyOptional({
+    enum: ['open_apply', 'invitation_only', 'admin_only', 'paused'],
+    description: '未传时兼容既有 App 草稿调用并收敛为 open_apply',
+  })
+  @OmittableOnly()
+  @IsString()
+  @IsIn(['open_apply', 'invitation_only', 'admin_only', 'paused'])
+  registrationModeCode?: string;
+
+  @ApiPropertyOptional({
+    enum: ['internal', 'invitation'],
+    description: '未传时兼容既有 App 草稿调用并收敛为 internal',
+  })
+  @OmittableOnly()
+  @IsString()
+  @IsIn(['internal', 'invitation'])
+  visibilityCode?: string;
+
+  @ApiPropertyOptional({
+    description: '活动默认是否要求定位；未传时以 false 落库，兼容既有草稿调用',
+  })
+  @OmittableOnly()
+  @IsBoolean()
+  defaultLocationRequired?: boolean;
+
+  @ApiPropertyOptional({ nullable: true, type: Number })
+  @ValidateIf((_, value) => value !== undefined && value !== null)
+  @IsInt()
+  defaultCheckInRadiusMeters?: number | null;
+
+  @ApiPropertyOptional({ minimum: 0, maximum: 365, type: Number })
+  @OmittableOnly()
+  @IsInt()
+  archiveWaitingDays?: number;
+
   @ApiProperty()
   @IsDateString()
   startAt!: string;
@@ -157,6 +194,12 @@ export class CreateAppManagedActivityDto {
   @MaxLength(512)
   coverImageUrl?: string;
 
+  @ApiPropertyOptional({ type: [String] })
+  @OmittableOnly()
+  @IsArray()
+  @IsString({ each: true })
+  galleryImageUrls?: string[];
+
   @ApiPropertyOptional({ type: 'object', additionalProperties: true })
   @IsOptional()
   @IsObject()
@@ -194,6 +237,33 @@ export class UpdateAppManagedActivityDto {
   @MinLength(8)
   @MaxLength(64)
   organizationId?: string;
+
+  @ApiPropertyOptional({ enum: ['open_apply', 'invitation_only', 'admin_only', 'paused'] })
+  @OmittableOnly()
+  @IsString()
+  @IsIn(['open_apply', 'invitation_only', 'admin_only', 'paused'])
+  registrationModeCode?: string;
+
+  @ApiPropertyOptional({ enum: ['internal', 'invitation'] })
+  @OmittableOnly()
+  @IsString()
+  @IsIn(['internal', 'invitation'])
+  visibilityCode?: string;
+
+  @ApiPropertyOptional({ type: Boolean })
+  @OmittableOnly()
+  @IsBoolean()
+  defaultLocationRequired?: boolean;
+
+  @ApiPropertyOptional({ nullable: true, type: Number })
+  @ValidateIf((_, value) => value !== undefined && value !== null)
+  @IsInt()
+  defaultCheckInRadiusMeters?: number | null;
+
+  @ApiPropertyOptional({ minimum: 0, maximum: 365, type: Number })
+  @OmittableOnly()
+  @IsInt()
+  archiveWaitingDays?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -262,6 +332,12 @@ export class UpdateAppManagedActivityDto {
   @IsString()
   @MaxLength(512)
   coverImageUrl?: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @OmittableOnly()
+  @IsArray()
+  @IsString({ each: true })
+  galleryImageUrls?: string[];
 
   @ApiPropertyOptional({ type: 'object', additionalProperties: true })
   @IsOptional()
@@ -377,6 +453,24 @@ export class AppManagedActivityProjectionDto {
 
   @ApiProperty()
   isPublicRegistration!: boolean;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    enum: ['open_apply', 'invitation_only', 'admin_only', 'paused'],
+  })
+  registrationModeCode!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, enum: ['internal', 'invitation'] })
+  visibilityCode!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, type: Number })
+  defaultCheckInRadiusMeters!: number | null;
+
+  @ApiPropertyOptional({ nullable: true, type: Boolean })
+  defaultLocationRequired!: boolean | null;
+
+  @ApiProperty()
+  archiveWaitingDays!: number;
 
   @ApiProperty()
   createdAt!: Date;

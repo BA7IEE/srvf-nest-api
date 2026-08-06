@@ -37539,6 +37539,2008 @@
         ]
       }
     },
+    "/api/app/v1/my/managed-activities/{activityId}/sessions": {
+      "get": {
+        "operationId": "AppManagedActivitiesController_listSessions",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页数量",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/PageResultDto"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "items",
+                            "total",
+                            "page",
+                            "pageSize"
+                          ],
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/AppManagedActivitySessionDto"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动不存在(code=20001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20001
+                      ],
+                      "description": "20001: 活动不存在",
+                      "example": 20001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 分页查看本人草稿活动的场次 [auth]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      },
+      "post": {
+        "operationId": "AppManagedActivitiesController_createSession",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAppManagedActivitySessionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppManagedActivitySessionDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 场次名额配置无效(code=20133) / 场次时间范围无效(code=20134) / 场次签到或签退窗口无效(code=20135) / 场次定位策略无效(code=20136)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        20133,
+                        20134,
+                        20135,
+                        20136
+                      ],
+                      "description": "40000: 请求参数错误; 20133: 场次名额配置无效; 20134: 场次时间范围无效; 20135: 场次签到或签退窗口无效; 20136: 场次定位策略无效",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动不存在(code=20001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20001
+                      ],
+                      "description": "20001: 活动不存在",
+                      "example": 20001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "已发布活动修改需先提交审核(code=20037) / 活动当前状态不允许此操作(code=20030) / 同一活动已存在相同场次编码(code=20131) / 同一活动已存在同名场次(code=20132)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20037,
+                        20030,
+                        20131,
+                        20132
+                      ],
+                      "description": "20037: 已发布活动修改需先提交审核; 20030: 活动当前状态不允许此操作; 20131: 同一活动已存在相同场次编码; 20132: 同一活动已存在同名场次",
+                      "example": 20037
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "已发布活动修改需先提交审核"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 为本人 draft 活动新增场次 [auth]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      }
+    },
+    "/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}": {
+      "patch": {
+        "operationId": "AppManagedActivitiesController_updateSession",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "description": "ActivitySession.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAppManagedActivitySessionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppManagedActivitySessionDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 场次名额配置无效(code=20133) / 场次时间范围无效(code=20134) / 场次签到或签退窗口无效(code=20135) / 场次定位策略无效(code=20136)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        20133,
+                        20134,
+                        20135,
+                        20136
+                      ],
+                      "description": "40000: 请求参数错误; 20133: 场次名额配置无效; 20134: 场次时间范围无效; 20135: 场次签到或签退窗口无效; 20136: 场次定位策略无效",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动不存在(code=20001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20001
+                      ],
+                      "description": "20001: 活动不存在",
+                      "example": 20001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "已发布活动修改需先提交审核(code=20037) / 活动当前状态不允许此操作(code=20030) / 同一活动已存在同名场次(code=20132)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20037,
+                        20030,
+                        20132
+                      ],
+                      "description": "20037: 已发布活动修改需先提交审核; 20030: 活动当前状态不允许此操作; 20132: 同一活动已存在同名场次",
+                      "example": 20037
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "已发布活动修改需先提交审核"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 修改本人 draft 活动场次 [auth]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      },
+      "delete": {
+        "operationId": "AppManagedActivitiesController_deleteSession",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "description": "ActivitySession.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppManagedActivitySessionDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动不存在(code=20001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20001
+                      ],
+                      "description": "20001: 活动不存在",
+                      "example": 20001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "已发布活动修改需先提交审核(code=20037) / 活动当前状态不允许此操作(code=20030) / 活动已有报名或考勤记录,请先取消活动(code=20127)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20037,
+                        20030,
+                        20127
+                      ],
+                      "description": "20037: 已发布活动修改需先提交审核; 20030: 活动当前状态不允许此操作; 20127: 活动已有报名或考勤记录,请先取消活动",
+                      "example": 20037
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "已发布活动修改需先提交审核"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 软删本人 draft 活动场次 [auth]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      }
+    },
+    "/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}/positions": {
+      "get": {
+        "operationId": "AppManagedActivitiesController_listSessionPositions",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "description": "ActivitySession.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页数量",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/PageResultDto"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "items",
+                            "total",
+                            "page",
+                            "pageSize"
+                          ],
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/AppManagedActivitySessionPositionDto"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动不存在(code=20001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20001
+                      ],
+                      "description": "20001: 活动不存在",
+                      "example": 20001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 分页查看本人草稿场次岗位 [auth]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      },
+      "post": {
+        "operationId": "AppManagedActivitiesController_createSessionPosition",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "description": "ActivitySession.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAppManagedActivitySessionPositionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppManagedActivitySessionPositionDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 考勤角色字典 code 不存在或已停用(code=22051) / 活动性别要求字典 code 不存在或已停用(code=20013) / 责任人或协办人不符合条件(code=20035) / 场次岗位名额配置无效(code=20139) / 场次岗位时间范围无效(code=20140) / 场次岗位定位策略无效(code=20141)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        22051,
+                        20013,
+                        20035,
+                        20139,
+                        20140,
+                        20141
+                      ],
+                      "description": "40000: 请求参数错误; 22051: 考勤角色字典 code 不存在或已停用; 20013: 活动性别要求字典 code 不存在或已停用; 20035: 责任人或协办人不符合条件; 20139: 场次岗位名额配置无效; 20140: 场次岗位时间范围无效; 20141: 场次岗位定位策略无效",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动不存在(code=20001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20001
+                      ],
+                      "description": "20001: 活动不存在",
+                      "example": 20001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "已发布活动修改需先提交审核(code=20037) / 活动当前状态不允许此操作(code=20030) / 同一场次已存在相同岗位编码(code=20137) / 同一场次已存在同名岗位(code=20138)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20037,
+                        20030,
+                        20137,
+                        20138
+                      ],
+                      "description": "20037: 已发布活动修改需先提交审核; 20030: 活动当前状态不允许此操作; 20137: 同一场次已存在相同岗位编码; 20138: 同一场次已存在同名岗位",
+                      "example": 20037
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "已发布活动修改需先提交审核"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 为本人 draft 场次新增岗位 [auth]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      }
+    },
+    "/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}/positions/{positionId}": {
+      "patch": {
+        "operationId": "AppManagedActivitiesController_updateSessionPosition",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "description": "ActivitySession.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "positionId",
+            "required": true,
+            "in": "path",
+            "description": "ActivitySessionPosition.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAppManagedActivitySessionPositionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppManagedActivitySessionPositionDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 考勤角色字典 code 不存在或已停用(code=22051) / 活动性别要求字典 code 不存在或已停用(code=20013) / 责任人或协办人不符合条件(code=20035) / 场次岗位名额配置无效(code=20139) / 场次岗位时间范围无效(code=20140) / 场次岗位定位策略无效(code=20141)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        22051,
+                        20013,
+                        20035,
+                        20139,
+                        20140,
+                        20141
+                      ],
+                      "description": "40000: 请求参数错误; 22051: 考勤角色字典 code 不存在或已停用; 20013: 活动性别要求字典 code 不存在或已停用; 20035: 责任人或协办人不符合条件; 20139: 场次岗位名额配置无效; 20140: 场次岗位时间范围无效; 20141: 场次岗位定位策略无效",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动不存在(code=20001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20001
+                      ],
+                      "description": "20001: 活动不存在",
+                      "example": 20001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "已发布活动修改需先提交审核(code=20037) / 活动当前状态不允许此操作(code=20030) / 同一场次已存在同名岗位(code=20138)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20037,
+                        20030,
+                        20138
+                      ],
+                      "description": "20037: 已发布活动修改需先提交审核; 20030: 活动当前状态不允许此操作; 20138: 同一场次已存在同名岗位",
+                      "example": 20037
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "已发布活动修改需先提交审核"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 修改本人 draft 场次岗位 [auth]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      },
+      "delete": {
+        "operationId": "AppManagedActivitiesController_deleteSessionPosition",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "description": "ActivitySession.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "positionId",
+            "required": true,
+            "in": "path",
+            "description": "ActivitySessionPosition.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppManagedActivitySessionPositionDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动不存在(code=20001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20001
+                      ],
+                      "description": "20001: 活动不存在",
+                      "example": 20001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "已发布活动修改需先提交审核(code=20037) / 活动当前状态不允许此操作(code=20030) / 活动已有报名或考勤记录,请先取消活动(code=20127)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20037,
+                        20030,
+                        20127
+                      ],
+                      "description": "20037: 已发布活动修改需先提交审核; 20030: 活动当前状态不允许此操作; 20127: 活动已有报名或考勤记录,请先取消活动",
+                      "example": 20037
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "已发布活动修改需先提交审核"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 软删本人 draft 场次岗位 [auth]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      }
+    },
     "/api/app/v1/my/managed-activities/{activityId}/settlement/generate": {
       "post": {
         "operationId": "AppManagedActivitiesController_generateSettlement",
@@ -102208,6 +104210,40 @@
             "type": "boolean",
             "description": "是否要求保险(默认 false;true 时报名校验队员有覆盖活动日期的有效保险,否则 26030;保险 T3,评审稿 insurance-module-review.md §4)"
           },
+          "registrationModeCode": {
+            "type": "string",
+            "description": "报名方式",
+            "nullable": true,
+            "enum": [
+              "open_apply",
+              "invitation_only",
+              "admin_only",
+              "paused"
+            ]
+          },
+          "visibilityCode": {
+            "type": "string",
+            "description": "可见范围",
+            "nullable": true,
+            "enum": [
+              "internal",
+              "invitation"
+            ]
+          },
+          "defaultCheckInRadiusMeters": {
+            "type": "number",
+            "description": "默认签到半径(米)",
+            "nullable": true
+          },
+          "defaultLocationRequired": {
+            "type": "boolean",
+            "description": "默认是否要求定位",
+            "nullable": true
+          },
+          "archiveWaitingDays": {
+            "type": "number",
+            "description": "归档等待天数(0..365)"
+          },
           "registrationSchema": {
             "type": "object",
             "description": "报名表自定义字段 schema(Json;Q-A13 不做嵌套校验)",
@@ -102268,6 +104304,7 @@
           "phase",
           "isPublicRegistration",
           "requiresInsurance",
+          "archiveWaitingDays",
           "createdAt",
           "updatedAt"
         ]
@@ -102337,6 +104374,38 @@
           "requiresInsurance": {
             "type": "boolean",
             "description": "是否要求保险(默认 false = 不校验,迁移安全;发布时可设;保险 T3)"
+          },
+          "registrationModeCode": {
+            "type": "string",
+            "description": "报名方式；App 草稿创建时由 App DTO 设为必填",
+            "enum": [
+              "open_apply",
+              "invitation_only",
+              "admin_only",
+              "paused"
+            ]
+          },
+          "visibilityCode": {
+            "type": "string",
+            "description": "可见范围；App 草稿创建时由 App DTO 设为必填",
+            "enum": [
+              "internal",
+              "invitation"
+            ]
+          },
+          "defaultCheckInRadiusMeters": {
+            "type": "number",
+            "description": "默认签到半径(米)",
+            "nullable": true
+          },
+          "defaultLocationRequired": {
+            "type": "boolean",
+            "description": "默认是否要求定位",
+            "nullable": true
+          },
+          "archiveWaitingDays": {
+            "type": "number",
+            "description": "归档等待天数(0..365)"
           },
           "registrationSchema": {
             "type": "object",
@@ -102441,6 +104510,38 @@
           "requiresInsurance": {
             "type": "boolean",
             "description": "是否要求保险(改 true 仅影响其后新报名,快照语义不回溯;保险 T3 E-12)"
+          },
+          "registrationModeCode": {
+            "type": "string",
+            "description": "报名方式",
+            "enum": [
+              "open_apply",
+              "invitation_only",
+              "admin_only",
+              "paused"
+            ]
+          },
+          "visibilityCode": {
+            "type": "string",
+            "description": "可见范围",
+            "enum": [
+              "internal",
+              "invitation"
+            ]
+          },
+          "defaultCheckInRadiusMeters": {
+            "type": "number",
+            "description": "默认签到半径(米)",
+            "nullable": true
+          },
+          "defaultLocationRequired": {
+            "type": "boolean",
+            "description": "默认是否要求定位",
+            "nullable": true
+          },
+          "archiveWaitingDays": {
+            "type": "number",
+            "description": "归档等待天数(0..365)"
           },
           "registrationSchema": {
             "type": "object",
@@ -103765,6 +105866,35 @@
           "isPublicRegistration": {
             "type": "boolean"
           },
+          "registrationModeCode": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "open_apply",
+              "invitation_only",
+              "admin_only",
+              "paused"
+            ]
+          },
+          "visibilityCode": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "internal",
+              "invitation"
+            ]
+          },
+          "defaultCheckInRadiusMeters": {
+            "type": "number",
+            "nullable": true
+          },
+          "defaultLocationRequired": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "archiveWaitingDays": {
+            "type": "number"
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -103786,6 +105916,7 @@
           "workflowRevision",
           "requiresInsurance",
           "isPublicRegistration",
+          "archiveWaitingDays",
           "createdAt",
           "updatedAt"
         ]
@@ -103993,6 +106124,37 @@
             "type": "string",
             "maxLength": 64
           },
+          "registrationModeCode": {
+            "type": "string",
+            "enum": [
+              "open_apply",
+              "invitation_only",
+              "admin_only",
+              "paused"
+            ],
+            "description": "未传时兼容既有 App 草稿调用并收敛为 open_apply"
+          },
+          "visibilityCode": {
+            "type": "string",
+            "enum": [
+              "internal",
+              "invitation"
+            ],
+            "description": "未传时兼容既有 App 草稿调用并收敛为 internal"
+          },
+          "defaultLocationRequired": {
+            "type": "boolean",
+            "description": "活动默认是否要求定位；未传时以 false 落库，兼容既有草稿调用"
+          },
+          "defaultCheckInRadiusMeters": {
+            "type": "number",
+            "nullable": true
+          },
+          "archiveWaitingDays": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 365
+          },
           "startAt": {
             "type": "string"
           },
@@ -104036,6 +106198,12 @@
             "type": "string",
             "maxLength": 512
           },
+          "galleryImageUrls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "content": {
             "type": "object",
             "additionalProperties": true
@@ -104055,6 +106223,547 @@
           "endAt",
           "location"
         ]
+      },
+      "AppManagedActivitySessionDto": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "activityId": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "startAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "endAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "locationText": {
+            "type": "string"
+          },
+          "meetingPoint": {
+            "type": "string",
+            "nullable": true
+          },
+          "executionPoint": {
+            "type": "string",
+            "nullable": true
+          },
+          "evacuationPoint": {
+            "type": "string",
+            "nullable": true
+          },
+          "capacity": {
+            "type": "number",
+            "nullable": true
+          },
+          "checkInOpenAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "checkInCloseAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "checkOutOpenAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "checkOutCloseAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "preparationStartAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "locationRequired": {
+            "type": "boolean"
+          },
+          "radiusMeters": {
+            "type": "number",
+            "nullable": true
+          },
+          "locationPolicySourceCode": {
+            "type": "string",
+            "enum": [
+              "system",
+              "template",
+              "activity",
+              "session",
+              "position"
+            ]
+          },
+          "accuracyWarningMeters": {
+            "type": "number"
+          },
+          "lateGraceMinutes": {
+            "type": "number"
+          },
+          "earlyLeaveThresholdMinutes": {
+            "type": "number"
+          },
+          "statusCode": {
+            "type": "string"
+          },
+          "workflowRevision": {
+            "type": "number"
+          },
+          "sortOrder": {
+            "type": "number"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "activityId",
+          "code",
+          "name",
+          "startAt",
+          "endAt",
+          "locationText",
+          "checkInOpenAt",
+          "checkInCloseAt",
+          "checkOutOpenAt",
+          "checkOutCloseAt",
+          "locationRequired",
+          "locationPolicySourceCode",
+          "accuracyWarningMeters",
+          "lateGraceMinutes",
+          "earlyLeaveThresholdMinutes",
+          "statusCode",
+          "workflowRevision",
+          "sortOrder",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CreateAppManagedActivitySessionDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "locationText": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "meetingPoint": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 200
+          },
+          "executionPoint": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 200
+          },
+          "evacuationPoint": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 200
+          },
+          "longitude": {
+            "type": "number",
+            "nullable": true
+          },
+          "latitude": {
+            "type": "number",
+            "nullable": true
+          },
+          "capacity": {
+            "type": "number",
+            "nullable": true
+          },
+          "checkInOpenAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "checkInCloseAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "checkOutOpenAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "checkOutCloseAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "preparationStartAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "locationRequired": {
+            "type": "boolean"
+          },
+          "radiusMeters": {
+            "type": "number",
+            "nullable": true
+          },
+          "lateGraceMinutes": {
+            "type": "number",
+            "default": 15
+          },
+          "earlyLeaveThresholdMinutes": {
+            "type": "number",
+            "default": 15
+          },
+          "sortOrder": {
+            "type": "number",
+            "default": 0
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "startAt",
+          "endAt",
+          "locationText",
+          "checkInOpenAt",
+          "checkInCloseAt",
+          "checkOutOpenAt",
+          "checkOutCloseAt",
+          "locationRequired"
+        ]
+      },
+      "UpdateAppManagedActivitySessionDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "locationText": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "meetingPoint": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 200
+          },
+          "executionPoint": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 200
+          },
+          "evacuationPoint": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 200
+          },
+          "longitude": {
+            "type": "number",
+            "nullable": true
+          },
+          "latitude": {
+            "type": "number",
+            "nullable": true
+          },
+          "capacity": {
+            "type": "number",
+            "nullable": true
+          },
+          "checkInOpenAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "checkInCloseAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "checkOutOpenAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "checkOutCloseAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "preparationStartAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "locationRequired": {
+            "type": "boolean"
+          },
+          "radiusMeters": {
+            "type": "number",
+            "nullable": true
+          },
+          "lateGraceMinutes": {
+            "type": "number"
+          },
+          "earlyLeaveThresholdMinutes": {
+            "type": "number"
+          },
+          "sortOrder": {
+            "type": "number"
+          }
+        }
+      },
+      "AppManagedActivitySessionPositionDto": {
+        "type": "object",
+        "properties": {
+          "positionId": {
+            "type": "string"
+          },
+          "activityId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "attendanceRoleCode": {
+            "type": "string"
+          },
+          "capacity": {
+            "type": "number",
+            "nullable": true
+          },
+          "startAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "endAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "genderRequirementCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "locationRequired": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "radiusMeters": {
+            "type": "number",
+            "nullable": true
+          },
+          "leaderMemberId": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "equipmentNotes": {
+            "type": "string",
+            "nullable": true
+          },
+          "sortOrder": {
+            "type": "number"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "positionId",
+          "activityId",
+          "sessionId",
+          "code",
+          "name",
+          "attendanceRoleCode",
+          "sortOrder",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CreateAppManagedActivitySessionPositionDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "attendanceRoleCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "capacity": {
+            "type": "number",
+            "nullable": true
+          },
+          "startAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "endAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "genderRequirementCode": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 64
+          },
+          "locationRequired": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "radiusMeters": {
+            "type": "number",
+            "nullable": true
+          },
+          "leaderMemberId": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 8,
+            "maxLength": 64
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 500
+          },
+          "equipmentNotes": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 500
+          },
+          "sortOrder": {
+            "type": "number",
+            "default": 0
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "attendanceRoleCode"
+        ]
+      },
+      "UpdateAppManagedActivitySessionPositionDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "attendanceRoleCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "capacity": {
+            "type": "number",
+            "nullable": true
+          },
+          "startAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "endAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "genderRequirementCode": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 64
+          },
+          "locationRequired": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "radiusMeters": {
+            "type": "number",
+            "nullable": true
+          },
+          "leaderMemberId": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 8,
+            "maxLength": 64
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 500
+          },
+          "equipmentNotes": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 500
+          },
+          "sortOrder": {
+            "type": "number"
+          }
+        }
       },
       "AppSettlementGenerateResponseDto": {
         "type": "object",
@@ -105097,6 +107806,34 @@
             "type": "string",
             "maxLength": 64
           },
+          "registrationModeCode": {
+            "type": "string",
+            "enum": [
+              "open_apply",
+              "invitation_only",
+              "admin_only",
+              "paused"
+            ]
+          },
+          "visibilityCode": {
+            "type": "string",
+            "enum": [
+              "internal",
+              "invitation"
+            ]
+          },
+          "defaultLocationRequired": {
+            "type": "boolean"
+          },
+          "defaultCheckInRadiusMeters": {
+            "type": "number",
+            "nullable": true
+          },
+          "archiveWaitingDays": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 365
+          },
           "startAt": {
             "type": "string"
           },
@@ -105141,6 +107878,12 @@
           "coverImageUrl": {
             "type": "string",
             "maxLength": 512
+          },
+          "galleryImageUrls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "content": {
             "type": "object",

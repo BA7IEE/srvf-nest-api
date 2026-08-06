@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsDateString,
   Equals,
+  IsIn,
   IsInt,
   IsNumber,
   IsObject,
@@ -14,7 +15,9 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
+import { OmittableOnly } from '../../common/decorators/omittable-only.decorator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { ACTIVITY_PHASE_VALUES, type ActivityPhase } from './activity-phase';
 
@@ -140,6 +143,29 @@ export class ActivityResponseDto {
       '是否要求保险(默认 false;true 时报名校验队员有覆盖活动日期的有效保险,否则 26030;保险 T3,评审稿 insurance-module-review.md §4)',
   })
   requiresInsurance!: boolean;
+
+  @ApiPropertyOptional({
+    description: '报名方式',
+    nullable: true,
+    enum: ['open_apply', 'invitation_only', 'admin_only', 'paused'],
+  })
+  registrationModeCode!: string | null;
+
+  @ApiPropertyOptional({
+    description: '可见范围',
+    nullable: true,
+    enum: ['internal', 'invitation'],
+  })
+  visibilityCode!: string | null;
+
+  @ApiPropertyOptional({ description: '默认签到半径(米)', nullable: true, type: Number })
+  defaultCheckInRadiusMeters!: number | null;
+
+  @ApiPropertyOptional({ description: '默认是否要求定位', nullable: true, type: Boolean })
+  defaultLocationRequired!: boolean | null;
+
+  @ApiProperty({ description: '归档等待天数(0..365)' })
+  archiveWaitingDays!: number;
 
   @ApiPropertyOptional({
     description: '报名表自定义字段 schema(Json;Q-A13 不做嵌套校验)',
@@ -369,6 +395,39 @@ export class CreateActivityDto {
   requiresInsurance?: boolean;
 
   @ApiPropertyOptional({
+    description: '报名方式；App 草稿创建时由 App DTO 设为必填',
+    enum: ['open_apply', 'invitation_only', 'admin_only', 'paused'],
+  })
+  @OmittableOnly()
+  @IsString()
+  @IsIn(['open_apply', 'invitation_only', 'admin_only', 'paused'])
+  registrationModeCode?: string;
+
+  @ApiPropertyOptional({
+    description: '可见范围；App 草稿创建时由 App DTO 设为必填',
+    enum: ['internal', 'invitation'],
+  })
+  @OmittableOnly()
+  @IsString()
+  @IsIn(['internal', 'invitation'])
+  visibilityCode?: string;
+
+  @ApiPropertyOptional({ description: '默认签到半径(米)', nullable: true, type: Number })
+  @ValidateIf((_, value) => value !== undefined && value !== null)
+  @IsInt()
+  defaultCheckInRadiusMeters?: number | null;
+
+  @ApiPropertyOptional({ description: '默认是否要求定位', nullable: true, type: Boolean })
+  @IsOptional()
+  @IsBoolean()
+  defaultLocationRequired?: boolean | null;
+
+  @ApiPropertyOptional({ description: '归档等待天数(0..365)', type: Number })
+  @OmittableOnly()
+  @IsInt()
+  archiveWaitingDays?: number;
+
+  @ApiPropertyOptional({
     description: '报名表自定义字段 schema(Json;Q-A13 不做嵌套校验)',
     type: 'object',
     additionalProperties: true,
@@ -510,6 +569,36 @@ export class UpdateActivityDto {
   @IsOptional()
   @IsBoolean()
   requiresInsurance?: boolean;
+
+  @ApiPropertyOptional({
+    description: '报名方式',
+    enum: ['open_apply', 'invitation_only', 'admin_only', 'paused'],
+  })
+  @OmittableOnly()
+  @IsString()
+  @IsIn(['open_apply', 'invitation_only', 'admin_only', 'paused'])
+  registrationModeCode?: string;
+
+  @ApiPropertyOptional({ description: '可见范围', enum: ['internal', 'invitation'] })
+  @OmittableOnly()
+  @IsString()
+  @IsIn(['internal', 'invitation'])
+  visibilityCode?: string;
+
+  @ApiPropertyOptional({ description: '默认签到半径(米)', nullable: true, type: Number })
+  @ValidateIf((_, value) => value !== undefined && value !== null)
+  @IsInt()
+  defaultCheckInRadiusMeters?: number | null;
+
+  @ApiPropertyOptional({ description: '默认是否要求定位', nullable: true, type: Boolean })
+  @IsOptional()
+  @IsBoolean()
+  defaultLocationRequired?: boolean | null;
+
+  @ApiPropertyOptional({ description: '归档等待天数(0..365)', type: Number })
+  @OmittableOnly()
+  @IsInt()
+  archiveWaitingDays?: number;
 
   @ApiPropertyOptional({
     description: '报名表自定义字段 schema',

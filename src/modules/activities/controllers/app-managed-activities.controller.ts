@@ -44,6 +44,18 @@ import {
   UpdateAppManagedActivityDto,
 } from '../dto/app/app-managed-activity.dto';
 import {
+  AppManagedActivitySessionDto,
+  AppManagedActivitySessionPositionDto,
+  AppManagedActivitySessionPositionParamsDto,
+  AppManagedActivitySessionPositionsQueryDto,
+  AppManagedActivitySessionParamsDto,
+  AppManagedActivitySessionsQueryDto,
+  CreateAppManagedActivitySessionDto,
+  CreateAppManagedActivitySessionPositionDto,
+  UpdateAppManagedActivitySessionDto,
+  UpdateAppManagedActivitySessionPositionDto,
+} from '../dto/app/app-managed-activity-draft.dto';
+import {
   AppSettlementCloseCommandDto,
   AppSettlementCloseResponseDto,
   AppSettlementGenerateCommandDto,
@@ -119,6 +131,226 @@ export class AppManagedActivitiesController {
   ): Promise<AppManagedActivityDetailDto> {
     await this.resolveMemberId(user);
     return this.service.create(this.toCreateDto(dto), user, this.auditMeta(req));
+  }
+
+  @Get(':activityId/sessions')
+  @ApiOperation({ summary: 'App 分页查看本人草稿活动的场次 [auth]' })
+  @ApiWrappedPageResponse(AppManagedActivitySessionDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+  )
+  async listSessions(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Query() query: AppManagedActivitySessionsQueryDto,
+  ) {
+    await this.resolveMemberId(user);
+    return this.service.listSessions(params.activityId, query, user);
+  }
+
+  @Post(':activityId/sessions')
+  @ApiOperation({ summary: 'App 为本人 draft 活动新增场次 [auth]' })
+  @ApiWrappedCreatedResponse(AppManagedActivitySessionDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ACTIVITY_SESSION_CODE_ALREADY_EXISTS,
+    BizCode.ACTIVITY_SESSION_NAME_ALREADY_EXISTS,
+    BizCode.ACTIVITY_SESSION_CAPACITY_INVALID,
+    BizCode.ACTIVITY_SESSION_TIME_RANGE_INVALID,
+    BizCode.ACTIVITY_SESSION_WINDOW_INVALID,
+    BizCode.ACTIVITY_SESSION_LOCATION_POLICY_INVALID,
+  )
+  async createSession(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Body() dto: CreateAppManagedActivitySessionDto,
+    @Req() req: Request,
+  ): Promise<AppManagedActivitySessionDto> {
+    await this.resolveMemberId(user);
+    return this.service.createSession(params.activityId, dto, user, this.auditMeta(req));
+  }
+
+  @Patch(':activityId/sessions/:sessionId')
+  @ApiOperation({ summary: 'App 修改本人 draft 活动场次 [auth]' })
+  @ApiWrappedOkResponse(AppManagedActivitySessionDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ACTIVITY_SESSION_NAME_ALREADY_EXISTS,
+    BizCode.ACTIVITY_SESSION_CAPACITY_INVALID,
+    BizCode.ACTIVITY_SESSION_TIME_RANGE_INVALID,
+    BizCode.ACTIVITY_SESSION_WINDOW_INVALID,
+    BizCode.ACTIVITY_SESSION_LOCATION_POLICY_INVALID,
+  )
+  async updateSession(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivitySessionParamsDto,
+    @Body() dto: UpdateAppManagedActivitySessionDto,
+    @Req() req: Request,
+  ): Promise<AppManagedActivitySessionDto> {
+    await this.resolveMemberId(user);
+    return this.service.updateSession(
+      params.activityId,
+      params.sessionId,
+      dto,
+      user,
+      this.auditMeta(req),
+    );
+  }
+
+  @Delete(':activityId/sessions/:sessionId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'App 软删本人 draft 活动场次 [auth]' })
+  @ApiWrappedOkResponse(AppManagedActivitySessionDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ACTIVITY_PARTICIPATION_EXISTS_DELETE_FORBIDDEN,
+  )
+  async deleteSession(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivitySessionParamsDto,
+    @Req() req: Request,
+  ): Promise<AppManagedActivitySessionDto> {
+    await this.resolveMemberId(user);
+    return this.service.deleteSession(
+      params.activityId,
+      params.sessionId,
+      user,
+      this.auditMeta(req),
+    );
+  }
+
+  @Get(':activityId/sessions/:sessionId/positions')
+  @ApiOperation({ summary: 'App 分页查看本人草稿场次岗位 [auth]' })
+  @ApiWrappedPageResponse(AppManagedActivitySessionPositionDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+  )
+  async listSessionPositions(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivitySessionParamsDto,
+    @Query() query: AppManagedActivitySessionPositionsQueryDto,
+  ) {
+    await this.resolveMemberId(user);
+    return this.service.listSessionPositions(params.activityId, params.sessionId, query, user);
+  }
+
+  @Post(':activityId/sessions/:sessionId/positions')
+  @ApiOperation({ summary: 'App 为本人 draft 场次新增岗位 [auth]' })
+  @ApiWrappedCreatedResponse(AppManagedActivitySessionPositionDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ATTENDANCE_ROLE_CODE_INVALID,
+    BizCode.ACTIVITY_GENDER_REQUIREMENT_CODE_INVALID,
+    BizCode.ACTIVITY_RESPONSIBILITY_TARGET_INVALID,
+    BizCode.ACTIVITY_SESSION_POSITION_CODE_ALREADY_EXISTS,
+    BizCode.ACTIVITY_SESSION_POSITION_NAME_ALREADY_EXISTS,
+    BizCode.ACTIVITY_SESSION_POSITION_CAPACITY_INVALID,
+    BizCode.ACTIVITY_SESSION_POSITION_TIME_RANGE_INVALID,
+    BizCode.ACTIVITY_SESSION_POSITION_LOCATION_POLICY_INVALID,
+  )
+  async createSessionPosition(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivitySessionParamsDto,
+    @Body() dto: CreateAppManagedActivitySessionPositionDto,
+    @Req() req: Request,
+  ): Promise<AppManagedActivitySessionPositionDto> {
+    await this.resolveMemberId(user);
+    return this.service.createSessionPosition(
+      params.activityId,
+      params.sessionId,
+      dto,
+      user,
+      this.auditMeta(req),
+    );
+  }
+
+  @Patch(':activityId/sessions/:sessionId/positions/:positionId')
+  @ApiOperation({ summary: 'App 修改本人 draft 场次岗位 [auth]' })
+  @ApiWrappedOkResponse(AppManagedActivitySessionPositionDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ATTENDANCE_ROLE_CODE_INVALID,
+    BizCode.ACTIVITY_GENDER_REQUIREMENT_CODE_INVALID,
+    BizCode.ACTIVITY_RESPONSIBILITY_TARGET_INVALID,
+    BizCode.ACTIVITY_SESSION_POSITION_NAME_ALREADY_EXISTS,
+    BizCode.ACTIVITY_SESSION_POSITION_CAPACITY_INVALID,
+    BizCode.ACTIVITY_SESSION_POSITION_TIME_RANGE_INVALID,
+    BizCode.ACTIVITY_SESSION_POSITION_LOCATION_POLICY_INVALID,
+  )
+  async updateSessionPosition(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivitySessionPositionParamsDto,
+    @Body() dto: UpdateAppManagedActivitySessionPositionDto,
+    @Req() req: Request,
+  ): Promise<AppManagedActivitySessionPositionDto> {
+    await this.resolveMemberId(user);
+    return this.service.updateSessionPosition(
+      params.activityId,
+      params.sessionId,
+      params.positionId,
+      dto,
+      user,
+      this.auditMeta(req),
+    );
+  }
+
+  @Delete(':activityId/sessions/:sessionId/positions/:positionId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'App 软删本人 draft 场次岗位 [auth]' })
+  @ApiWrappedOkResponse(AppManagedActivitySessionPositionDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ACTIVITY_PARTICIPATION_EXISTS_DELETE_FORBIDDEN,
+  )
+  async deleteSessionPosition(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivitySessionPositionParamsDto,
+    @Req() req: Request,
+  ): Promise<AppManagedActivitySessionPositionDto> {
+    await this.resolveMemberId(user);
+    return this.service.deleteSessionPosition(
+      params.activityId,
+      params.sessionId,
+      params.positionId,
+      user,
+      this.auditMeta(req),
+    );
   }
 
   @Post(':activityId/settlement/generate')
@@ -571,6 +803,9 @@ export class AppManagedActivitiesController {
       title: dto.title,
       activityTypeCode: dto.activityTypeCode,
       organizationId: dto.organizationId,
+      registrationModeCode: dto.registrationModeCode,
+      visibilityCode: dto.visibilityCode,
+      defaultLocationRequired: dto.defaultLocationRequired,
       startAt: dto.startAt,
       endAt: dto.endAt,
       location: dto.location,
@@ -591,9 +826,16 @@ export class AppManagedActivitiesController {
         ? {}
         : { registrationSchema: dto.registrationSchema }),
       ...(dto.coverImageUrl === undefined ? {} : { coverImageUrl: dto.coverImageUrl }),
+      ...(dto.galleryImageUrls === undefined ? {} : { galleryImageUrls: dto.galleryImageUrls }),
       ...(dto.content === undefined ? {} : { content: dto.content }),
       ...(dto.locationLongitude === undefined ? {} : { locationLongitude: dto.locationLongitude }),
       ...(dto.locationLatitude === undefined ? {} : { locationLatitude: dto.locationLatitude }),
+      ...(dto.defaultCheckInRadiusMeters === undefined
+        ? {}
+        : { defaultCheckInRadiusMeters: dto.defaultCheckInRadiusMeters }),
+      ...(dto.archiveWaitingDays === undefined
+        ? {}
+        : { archiveWaitingDays: dto.archiveWaitingDays }),
     };
   }
 
@@ -602,6 +844,19 @@ export class AppManagedActivitiesController {
       ...(dto.title === undefined ? {} : { title: dto.title }),
       ...(dto.activityTypeCode === undefined ? {} : { activityTypeCode: dto.activityTypeCode }),
       ...(dto.organizationId === undefined ? {} : { organizationId: dto.organizationId }),
+      ...(dto.registrationModeCode === undefined
+        ? {}
+        : { registrationModeCode: dto.registrationModeCode }),
+      ...(dto.visibilityCode === undefined ? {} : { visibilityCode: dto.visibilityCode }),
+      ...(dto.defaultLocationRequired === undefined
+        ? {}
+        : { defaultLocationRequired: dto.defaultLocationRequired }),
+      ...(dto.defaultCheckInRadiusMeters === undefined
+        ? {}
+        : { defaultCheckInRadiusMeters: dto.defaultCheckInRadiusMeters }),
+      ...(dto.archiveWaitingDays === undefined
+        ? {}
+        : { archiveWaitingDays: dto.archiveWaitingDays }),
       ...(dto.startAt === undefined ? {} : { startAt: dto.startAt }),
       ...(dto.endAt === undefined ? {} : { endAt: dto.endAt }),
       ...(dto.location === undefined ? {} : { location: dto.location }),
@@ -622,6 +877,7 @@ export class AppManagedActivitiesController {
         ? {}
         : { registrationSchema: dto.registrationSchema }),
       ...(dto.coverImageUrl === undefined ? {} : { coverImageUrl: dto.coverImageUrl }),
+      ...(dto.galleryImageUrls === undefined ? {} : { galleryImageUrls: dto.galleryImageUrls }),
       ...(dto.content === undefined ? {} : { content: dto.content }),
       ...(dto.locationLongitude === undefined ? {} : { locationLongitude: dto.locationLongitude }),
       ...(dto.locationLatitude === undefined ? {} : { locationLatitude: dto.locationLatitude }),

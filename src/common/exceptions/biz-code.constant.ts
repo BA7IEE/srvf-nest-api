@@ -1562,6 +1562,70 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // ===== 活动改造 v1.1 第 3 批第一刀:草稿 / 场次 / 场次岗位 =====
+  // 草稿创建的 v1.1 配置字段、以及后续场次约束均由服务层先行校验；数据库 CHECK/unique
+  // 只是并发与绕过应用层时的最后防线，不能把 Prisma 错误裸露给调用方。
+  ACTIVITY_DRAFT_CONFIGURATION_INVALID: {
+    code: 20130,
+    message: '活动草稿配置无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_SESSION_CODE_ALREADY_EXISTS: {
+    code: 20131,
+    message: '同一活动已存在相同场次编码',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_SESSION_NAME_ALREADY_EXISTS: {
+    code: 20132,
+    message: '同一活动已存在同名场次',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_SESSION_CAPACITY_INVALID: {
+    code: 20133,
+    message: '场次名额配置无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_SESSION_TIME_RANGE_INVALID: {
+    code: 20134,
+    message: '场次时间范围无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_SESSION_WINDOW_INVALID: {
+    code: 20135,
+    message: '场次签到或签退窗口无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_SESSION_LOCATION_POLICY_INVALID: {
+    code: 20136,
+    message: '场次定位策略无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_SESSION_POSITION_CODE_ALREADY_EXISTS: {
+    code: 20137,
+    message: '同一场次已存在相同岗位编码',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_SESSION_POSITION_NAME_ALREADY_EXISTS: {
+    code: 20138,
+    message: '同一场次已存在同名岗位',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_SESSION_POSITION_CAPACITY_INVALID: {
+    code: 20139,
+    message: '场次岗位名额配置无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_SESSION_POSITION_TIME_RANGE_INVALID: {
+    code: 20140,
+    message: '场次岗位时间范围无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_SESSION_POSITION_LOCATION_POLICY_INVALID: {
+    code: 20141,
+    message: '场次岗位定位策略无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。
   // 子段(对齐 baseline §1.3):
