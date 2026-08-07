@@ -261,6 +261,17 @@ describe('Activity batch3 slice3 lifecycle and member read surfaces', () => {
       .send(body);
   }
 
+  async function databaseNow(): Promise<Date> {
+    const rows = await prisma.$queryRaw<Array<{ authoritativeNow: Date }>>`
+      SELECT now() AS "authoritativeNow"
+    `;
+    const authoritativeNow = rows[0]?.authoritativeNow;
+    if (!authoritativeNow) {
+      throw new Error('database clock query returned no value');
+    }
+    return authoritativeNow;
+  }
+
   // ===== 1. cancel / terminate: 白名单时间闸 + 两套独立幂等三元组 =====
 
   it('red-first: exposes the new member directory root rather than shadowing the existing detail route', async () => {
@@ -455,12 +466,12 @@ describe('Activity batch3 slice3 lifecycle and member read surfaces', () => {
         })
       ).status,
     ).toBe(200);
-    const beforeTerminate = new Date();
+    const beforeTerminate = await databaseNow();
     const terminated = await terminate(terminateActivity.id, owner.auth, {
       reason: '提前收场',
       operationKey: sharedKey,
     });
-    const afterTerminate = new Date();
+    const afterTerminate = await databaseNow();
     expect(terminated.status).toBe(200);
     const terminatedRow = await prisma.activity.findUniqueOrThrow({
       where: { id: terminateActivity.id },
