@@ -10,6 +10,7 @@
 - 配置三表在独立模块 `attachment-configs/`:`AttachmentTypeConfig` / `AttachmentMimeConfig` / `AttachmentSizeLimitConfig`。
 - **上传内容校验(findings 9/10)**:`AttachmentContentValidator` 是唯一可注入内容校验入口,由 `AttachmentsModule` 导出并复用 `attachment-validation.ts` 黑名单 + `attachment-signature.ts` 签名表。对象链(`confirm-upload` / legacy create)核对对象存在、实际大小、黑名单与最多 12 字节签名;buffer 链覆盖招新证件照/签名图/证书图/OCR 裁剪图及 realname OCR 转发。JPG/PNG/WEBP/GIF/PDF 不符统一返既有 `13016`,黑名单返既有 `13033`;签名表外 Office MIME 保持原契约。
 - **registration-upload-session trusted facade**:内部 owner 只接受经过 branded handle 的四阶段调用：事务外配置/MIME/size/PII/魔数与 key，调用方锁内复校/准备 intent，事务外 Provider put+HEAD，调用方第二次锁内原子完成 Attachment + AVAILABLE ledger + `attachment.upload` audit。复用 `attachment_legacy`，固定 JPEG/PNG/WebP/PDF、10 MiB；不新增 storage source 或 audit event。
+- **报名提交终态**:上传完成只使 `registration-upload-session` 保持 active；canonical command 在同一事务重新核验 activity/member/Form/session/AVAILABLE 与唯一附件，先创建不可变 `RegistrationFormAnswer`，再把附件转为最终 `registration-form-answer` owner、绑定 answer 的 `attachmentId` 并把 upload session 改为 consumed。提交失败必须整体回滚，不得留半转绑或已 consumed 的会话。
 - **过期访问(findings 11)**:签名 URL 解析统一先检查 `Attachment.expireAt`;`expireAt <= now` 时不签发 URL。公开 content owner 列表还必须过滤过期附件行;未来时间/null 的行为不变。
 - **列表性能边界(v0.44.0 findings #10/#11/#12)**:certificate owner 的 scope 映射必须先 collect ownerId、一次 `certificate.findMany in` 后走 Map,K 张证书附件只查 1 次 Certificate;`list`/`listByOwner` 的全量 ownership 过滤后内存分页暂接受(#10/#12,现规模理论问题),不得把 #11 优化误写回逐行 `findFirst`。
 
@@ -24,4 +25,4 @@
 - ❌ **不**把 `StorageProvider.readObjectPrefix` 用作文件下载/全量读取,也不因 COS `Content-Type` 声明正确而跳过 confirm-upload 魔数校验。
 - ❌ **不**新增 Mixed Controller(class-level + 方法级双 `@ApiTags`)。历史 mobile-like `GET /me/uploaded`(原 `Mobile - Attachments`)已于 Route B Phase 4e 删除,未建 App 替代;`listMyUploaded` service 保留为未来 `app/v1/my/attachments` building block(沿 [`/docs/api-surface-migration-plan.md §3.3`](../../../docs/api-surface-migration-plan.md))。
 - ❌ **不**把 attachment 写路径绕过 `attachment-audit-recorder.ts`。
-- ❌ `registration-upload-session` 是内部 owner：所有通用 Admin list/detail/create/upload-url/confirm/delete 都必须 fail-closed（列表也不泄露 total），绝不签 URL 或暴露 key/owner/tokenHash/locator。
+- ❌ `registration-upload-session`（中间 owner）与 `registration-form-answer`（最终 owner）都是内部 owner：所有通用 Admin list/detail/create/upload-url/confirm/delete 都必须 fail-closed（列表也不泄露 total），绝不签 URL 或暴露 key/owner/tokenHash/locator。

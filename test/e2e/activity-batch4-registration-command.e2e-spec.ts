@@ -30,7 +30,12 @@ describe('activity batch4 canonical registration command', () => {
   let applicantAuth: string;
   let otherAuth: string;
   let superAuth: string;
+  let applicantUserId: string;
+  let otherUserId: string;
   let applicantMemberId: string;
+  let otherMemberId: string;
+  let superUserId: string;
+  let organizationId: string;
   let activityId: string;
   let noFormActivityId: string;
   let formVersionId: string;
@@ -39,12 +44,15 @@ describe('activity batch4 canonical registration command', () => {
   let positionA1Id: string;
   let positionA2Id: string;
   let positionB1Id: string;
+  let previousInsuranceGate: string | undefined;
 
   const commandPath = (id = activityId) => `/api/app/v1/activities/${id}/registrations`;
   const uploadSessionPath = (id = activityId) =>
     `/api/app/v1/activities/${id}/registration-upload-sessions`;
 
   beforeAll(async () => {
+    previousInsuranceGate = process.env.INSURANCE_ENFORCEMENT_ENABLED;
+    process.env.INSURANCE_ENFORCEMENT_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
@@ -53,6 +61,7 @@ describe('activity batch4 canonical registration command', () => {
       data: { name: 'Batch4 Registration Command', nodeTypeCode: 'team', sortOrder: 0 },
       select: { id: true },
     });
+    organizationId = org.id;
     const [applicant, other, superUser] = await Promise.all([
       createTestUser(app, { username: 'batch4-command-applicant' }),
       createTestUser(app, { username: 'batch4-command-other' }),
@@ -78,7 +87,11 @@ describe('activity batch4 canonical registration command', () => {
         select: { id: true },
       }),
     ]);
+    applicantUserId = applicant.id;
+    otherUserId = other.id;
     applicantMemberId = applicantMember.id;
+    otherMemberId = otherMember.id;
+    superUserId = superUser.id;
     await Promise.all([
       prisma.user.update({ where: { id: applicant.id }, data: { memberId: applicantMember.id } }),
       prisma.user.update({ where: { id: other.id }, data: { memberId: otherMember.id } }),
@@ -299,6 +312,8 @@ describe('activity batch4 canonical registration command', () => {
 
   afterAll(async () => {
     await app.close();
+    if (previousInsuranceGate === undefined) delete process.env.INSURANCE_ENFORCEMENT_ENABLED;
+    else process.env.INSURANCE_ENFORCEMENT_ENABLED = previousInsuranceGate;
   });
 
   async function uploadSession(auth = applicantAuth, routeActivityId = activityId) {
@@ -335,6 +350,116 @@ describe('activity batch4 canonical registration command', () => {
         { sessionId: sessionBId, positionIds: [positionB1Id] },
       ],
     };
+  }
+
+  async function createNoFormCommandActivity(input: {
+    title: string;
+    genderRequirementCode?: string | null;
+    requiresInsurance?: boolean;
+  }): Promise<{ id: string }> {
+    return prisma.activity.create({
+      data: {
+        title: input.title,
+        activityTypeCode: 'training',
+        organizationId,
+        startAt: FAR.start,
+        endAt: FAR.end,
+        registrationDeadline: FAR.deadline,
+        location: 'Canonical Command Gate Field',
+        statusCode: 'published',
+        isPublicRegistration: true,
+        publishedAt: new Date(),
+        genderRequirementCode: input.genderRequirementCode ?? null,
+        requiresInsurance: input.requiresInsurance ?? false,
+      },
+      select: { id: true },
+    });
+  }
+
+  async function createScheduledCommandSession(
+    targetActivityId: string,
+    code: string,
+  ): Promise<{ id: string }> {
+    return prisma.activitySession.create({
+      data: {
+        activityId: targetActivityId,
+        code,
+        name: `Command ${code}`,
+        startAt: FAR.start,
+        endAt: FAR.end,
+        locationText: 'Gate session',
+        checkInOpenAt: new Date('2099-11-01T07:30:00.000Z'),
+        checkInCloseAt: new Date('2099-11-01T09:00:00.000Z'),
+        checkOutOpenAt: new Date('2099-11-01T11:00:00.000Z'),
+        checkOutCloseAt: FAR.end,
+        locationRequired: false,
+        locationPolicySourceCode: 'activity',
+        statusCode: 'scheduled',
+      },
+      select: { id: true },
+    });
+  }
+
+  async function commandAuditCount(actorUserId: string): Promise<number> {
+    return prisma.auditLog.count({
+      where: {
+        event: 'registration.create',
+        resourceType: 'activity_registration',
+        actorUserId,
+      },
+    });
+  }
+
+  async function expectNoCanonicalCommandWrites(input: {
+    activityId: string;
+    memberId: string;
+    actorUserId: string;
+    auditCountBefore: number;
+  }): Promise<void> {
+    expect(
+      await prisma.activityRegistration.count({
+        where: { activityId: input.activityId, memberId: input.memberId },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.activityRegistrationRevision.count({
+        where: { registration: { activityId: input.activityId, memberId: input.memberId } },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.registrationFormAnswer.count({
+        where: {
+          registrationRevision: {
+            registration: { activityId: input.activityId, memberId: input.memberId },
+          },
+        },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.activityPositionPreference.count({
+        where: {
+          registrationRevision: {
+            registration: { activityId: input.activityId, memberId: input.memberId },
+          },
+        },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.activityParticipationIdentity.count({
+        where: { activityId: input.activityId, memberId: input.memberId },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.activityParticipationRevision.count({
+        where: { identity: { activityId: input.activityId, memberId: input.memberId } },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.insuranceEligibilityEvidence.count({
+        where: { activityRegistration: { activityId: input.activityId, memberId: input.memberId } },
+      }),
+    ).toBe(0);
+    expect(await commandAuditCount(input.actorUserId)).toBe(input.auditCountBefore);
   }
 
   it('creates the v1.1 immutable chain, transfers the file, then replays consumed-session retry by hash', async () => {
@@ -689,6 +814,247 @@ describe('activity batch4 canonical registration command', () => {
       BizCode.BAD_REQUEST,
       { strictMessage: false },
     );
+  });
+
+  it('keeps the activity gender hard gate for missing and mismatched MemberProfile before any canonical write', async () => {
+    const [missingProfileActivity, mismatchedProfileActivity] = await Promise.all([
+      createNoFormCommandActivity({
+        title: 'Canonical Command Missing Profile Gate',
+        genderRequirementCode: 'female',
+      }),
+      createNoFormCommandActivity({
+        title: 'Canonical Command Mismatched Profile Gate',
+        genderRequirementCode: 'female',
+      }),
+    ]);
+    await prisma.memberProfile.create({
+      data: {
+        memberId: otherMemberId,
+        realName: 'Command Gender Mismatch',
+        genderCode: 'male',
+        birthDate: new Date('1990-01-01T00:00:00.000Z'),
+        documentTypeCode: 'id_card',
+        documentNumber: 'batch4-command-gender-mismatch',
+        mobile: '13800000001',
+        joinedDate: new Date('2020-01-01T00:00:00.000Z'),
+        joinSourceCode: 'recommend',
+        privacyConsentSigned: true,
+      },
+    });
+    const [applicantAuditBefore, otherAuditBefore] = await Promise.all([
+      commandAuditCount(applicantUserId),
+      commandAuditCount(otherUserId),
+    ]);
+    const [missingProfile, mismatch] = await Promise.all([
+      request(httpServer(app))
+        .post(commandPath(missingProfileActivity.id))
+        .set('Authorization', applicantAuth)
+        .send({
+          operationKey: 'batch4-command-gender-missing-profile-0001',
+          formVersion: null,
+          answers: [],
+          preferences: [],
+        }),
+      request(httpServer(app))
+        .post(commandPath(mismatchedProfileActivity.id))
+        .set('Authorization', otherAuth)
+        .send({
+          operationKey: 'batch4-command-gender-mismatch-0001',
+          formVersion: null,
+          answers: [],
+          preferences: [],
+        }),
+    ]);
+    expect([missingProfile.status, mismatch.status]).toEqual([409, 409]);
+    expect([missingProfile.body.code, mismatch.body.code]).toEqual([
+      BizCode.ACTIVITY_REGISTRATION_GENDER_MISMATCH.code,
+      BizCode.ACTIVITY_REGISTRATION_GENDER_MISMATCH.code,
+    ]);
+    await Promise.all([
+      expectNoCanonicalCommandWrites({
+        activityId: missingProfileActivity.id,
+        memberId: applicantMemberId,
+        actorUserId: applicantUserId,
+        auditCountBefore: applicantAuditBefore,
+      }),
+      expectNoCanonicalCommandWrites({
+        activityId: mismatchedProfileActivity.id,
+        memberId: otherMemberId,
+        actorUserId: otherUserId,
+        auditCountBefore: otherAuditBefore,
+      }),
+    ]);
+  });
+
+  it('rechecks insurance through the canonical command and creates exactly one first-registration evidence', async () => {
+    const insuredActivity = await createNoFormCommandActivity({
+      title: 'Canonical Command Insurance Gate',
+      requiresInsurance: true,
+    });
+    const auditBeforeMissingInsurance = await commandAuditCount(applicantUserId);
+    const missingInsurance = await request(httpServer(app))
+      .post(commandPath(insuredActivity.id))
+      .set('Authorization', applicantAuth)
+      .send({
+        operationKey: 'batch4-command-insurance-missing-0001',
+        formVersion: null,
+        answers: [],
+        preferences: [],
+      });
+    expectBizError(missingInsurance, BizCode.INSURANCE_REQUIRED);
+    await expectNoCanonicalCommandWrites({
+      activityId: insuredActivity.id,
+      memberId: applicantMemberId,
+      actorUserId: applicantUserId,
+      auditCountBefore: auditBeforeMissingInsurance,
+    });
+
+    const insurance = await prisma.memberInsurance.create({
+      data: {
+        memberId: applicantMemberId,
+        insurerName: 'Canonical Command Insurance',
+        policyNumber: 'B4-COMMAND-INSURANCE-0001',
+        coverageStart: new Date('2099-01-01T00:00:00.000Z'),
+        coverageEnd: new Date('2099-12-31T00:00:00.000Z'),
+        reviewStatusCode: 'verified',
+        reviewedByUserId: superUserId,
+        reviewedAt: new Date('2099-01-01T00:00:00.000Z'),
+      },
+      select: { id: true },
+    });
+    const first = await request(httpServer(app))
+      .post(commandPath(insuredActivity.id))
+      .set('Authorization', applicantAuth)
+      .send({
+        operationKey: 'batch4-command-insurance-first-0001',
+        formVersion: null,
+        answers: [],
+        preferences: [],
+      });
+    expect(first.status).toBe(201);
+    const registrationId = first.body.data.registrationId as string;
+    const evidence = await prisma.insuranceEligibilityEvidence.findMany({
+      where: { activityRegistrationId: registrationId },
+      select: {
+        ownerKind: true,
+        activityRegistrationId: true,
+        teamJoinApplicationId: true,
+        sourceKind: true,
+        memberInsuranceId: true,
+        teamInsuranceCoverageId: true,
+      },
+    });
+    expect(evidence).toEqual([
+      {
+        ownerKind: 'activity_registration',
+        activityRegistrationId: registrationId,
+        teamJoinApplicationId: null,
+        sourceKind: 'member_insurance',
+        memberInsuranceId: insurance.id,
+        teamInsuranceCoverageId: null,
+      },
+    ]);
+
+    const resubmission = await request(httpServer(app))
+      .post(commandPath(insuredActivity.id))
+      .set('Authorization', applicantAuth)
+      .send({
+        operationKey: 'batch4-command-insurance-resubmit-0001',
+        formVersion: null,
+        answers: [],
+        preferences: [],
+      });
+    expect(resubmission.status).toBe(201);
+    expect(resubmission.body.data).toMatchObject({ registrationId, revision: 2 });
+    expect(
+      await prisma.insuranceEligibilityEvidence.count({ where: { activityRegistrationId: registrationId } }),
+    ).toBe(1);
+
+    await prisma.memberInsurance.update({
+      where: { id: insurance.id },
+      data: { deletedAt: new Date() },
+    });
+    const auditBeforeIneligibleResubmission = await commandAuditCount(applicantUserId);
+    const ineligibleResubmission = await request(httpServer(app))
+      .post(commandPath(insuredActivity.id))
+      .set('Authorization', applicantAuth)
+      .send({
+        operationKey: 'batch4-command-insurance-ineligible-resubmit-0001',
+        formVersion: null,
+        answers: [],
+        preferences: [],
+      });
+    expectBizError(ineligibleResubmission, BizCode.INSURANCE_REQUIRED);
+    expect(
+      await prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: registrationId },
+        select: { currentRevision: true },
+      }),
+    ).toEqual({ currentRevision: 2 });
+    expect(
+      await prisma.activityRegistrationRevision.count({ where: { registrationId } }),
+    ).toBe(2);
+    expect(
+      await prisma.insuranceEligibilityEvidence.count({ where: { activityRegistrationId: registrationId } }),
+    ).toBe(1);
+    expect(await commandAuditCount(applicantUserId)).toBe(auditBeforeIneligibleResubmission);
+  });
+
+  it('requires one or more positions when a selected scheduled session has live positions', async () => {
+    const positionActivity = await createNoFormCommandActivity({
+      title: 'Canonical Command Position Required',
+    });
+    const positionSession = await createScheduledCommandSession(positionActivity.id, 'position-required');
+    const position = await prisma.activitySessionPosition.create({
+      data: {
+        activityId: positionActivity.id,
+        sessionId: positionSession.id,
+        code: 'position-required',
+        name: 'Position Required',
+        attendanceRoleCode: 'volunteer',
+      },
+      select: { id: true },
+    });
+    const auditBeforeMissingPosition = await commandAuditCount(applicantUserId);
+    const missingPosition = await request(httpServer(app))
+      .post(commandPath(positionActivity.id))
+      .set('Authorization', applicantAuth)
+      .send({
+        operationKey: 'batch4-command-position-missing-0001',
+        formVersion: null,
+        answers: [],
+        preferences: [{ sessionId: positionSession.id, positionIds: [] }],
+      });
+    expectBizError(missingPosition, BizCode.ACTIVITY_POSITION_REQUIRED);
+    await expectNoCanonicalCommandWrites({
+      activityId: positionActivity.id,
+      memberId: applicantMemberId,
+      actorUserId: applicantUserId,
+      auditCountBefore: auditBeforeMissingPosition,
+    });
+
+    const validPosition = await request(httpServer(app))
+      .post(commandPath(positionActivity.id))
+      .set('Authorization', applicantAuth)
+      .send({
+        operationKey: 'batch4-command-position-valid-0001',
+        formVersion: null,
+        answers: [],
+        preferences: [{ sessionId: positionSession.id, positionIds: [position.id] }],
+      });
+    expect(validPosition.status).toBe(201);
+    expect(
+      await prisma.activityPositionPreference.findMany({
+        where: { registrationRevisionId: validPosition.body.data.registrationRevisionId },
+        select: { sessionId: true, positionId: true, preferenceOrder: true },
+      }),
+    ).toEqual([
+      {
+        sessionId: positionSession.id,
+        positionId: position.id,
+        preferenceOrder: 1,
+      },
+    ]);
   });
 
   it('fails closed on old App/Admin create paths once a live v1.1 session or Form exists, while a legacy activity remains unchanged', async () => {

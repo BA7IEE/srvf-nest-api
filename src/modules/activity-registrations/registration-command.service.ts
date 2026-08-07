@@ -11,6 +11,7 @@ import {
   AttachmentsService,
   type RegistrationUploadSubmissionBinding,
 } from '../attachments/attachments.service';
+import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
 import {
   validateRegistrationFormAnswers,
@@ -66,6 +67,7 @@ export class RegistrationCommandService {
     private readonly prisma: PrismaService,
     private readonly appIdentity: AppIdentityResolver,
     private readonly participationPolicy: ActivityParticipationPolicy,
+    private readonly insuranceRequirement: InsuranceRequirementService,
     private readonly attachments: AttachmentsService,
     private readonly registrationAuditRecorder: ActivityRegistrationAuditRecorder,
   ) {}
@@ -127,10 +129,21 @@ export class RegistrationCommandService {
         statusCode: string;
         isPublicRegistration: boolean;
         registrationDeadline: Date | null;
+        genderRequirementCode: string | null;
+        requiresInsurance: boolean;
+        startAt: Date;
         endAt: Date;
       }>
     >(Prisma.sql`
-      SELECT "id", "statusCode", "isPublicRegistration", "registrationDeadline", "endAt"
+      SELECT
+        "id",
+        "statusCode",
+        "isPublicRegistration",
+        "registrationDeadline",
+        "genderRequirementCode",
+        "requiresInsurance",
+        "startAt",
+        "endAt"
       FROM "Activity"
       WHERE "id" = ${input.activityId} AND "deletedAt" IS NULL
       FOR UPDATE
@@ -188,8 +201,9 @@ export class RegistrationCommandService {
       };
     }
 
-    // The D-5 decision was made before opening the transaction; lock and recheck both sides so a
-    // concurrent offboard/deactivation cannot turn that decision into a write-time bypass.
+    // The D-5 decision was made before opening the transaction; shared locks still block every
+    // lifecycle/association write while avoiding a reverse edge against team insurance's
+    // Policy -> Coverage -> Member source lock sequence.
     await this.assertAppAdmissionStillLive(input.tx, input.currentUser.id, input.memberId);
 
     if (lockedHeader) {
@@ -217,6 +231,14 @@ export class RegistrationCommandService {
 
     const participationDecision = this.participationPolicy.canRegisterSelf(activity, now);
     if (!participationDecision.allowed) throw new BizException(participationDecision.biz);
+
+    // The canonical v1.1 chain retains the legacy activity-level gender hard gate.  A missing
+    // live profile and a mismatched value intentionally collapse to the same 21034 response.
+    await this.assertGenderRequirement(
+      input.tx,
+      input.memberId,
+      activity.genderRequirementCode,
+    );
 
     // 4. Form recheck and the one answer validator for all eight types.
     const activeForm = await input.tx.registrationFormVersion.findFirst({
@@ -281,6 +303,16 @@ export class RegistrationCommandService {
       : [];
     const uploadBySession = new Map(uploadBindings.map((binding) => [binding.sessionId, binding]));
 
+    // Do not fork the insurance decision: the established service locks/rereads the same source
+    // and preserves its 26030 anti-enumeration result.  It follows all Form/session/upload
+    // rereads but still precedes every command write, so an ineligible first submission leaves
+    // no header, revision, identity or audit.
+    const insuranceEligibility = await this.insuranceRequirement.requireForActivityRegistration(
+      input.memberId,
+      activity,
+      input.tx,
+    );
+
     // 7. Append-only registration/participation revisions, answers and preferences.  A new header
     // is intentionally created only after all no-write validation succeeds.
     const previousRevision =
@@ -307,6 +339,14 @@ export class RegistrationCommandService {
         },
         select: { id: true, currentRevision: true },
       }));
+    if (!lockedHeader) {
+      await this.insuranceRequirement.createActivityRegistrationEvidence(
+        header.id,
+        input.memberId,
+        insuranceEligibility,
+        input.tx,
+      );
+    }
     const revisionNumber = header.currentRevision + 1;
     const registrationRevision = await input.tx.activityRegistrationRevision.create({
       data: {
@@ -450,7 +490,7 @@ export class RegistrationCommandService {
       Prisma.sql`
         SELECT "id", "status", "deletedAt" FROM "Member"
         WHERE "id" = ${memberId}
-        FOR UPDATE
+        FOR SHARE
       `,
     );
     const users = await tx.$queryRaw<
@@ -459,7 +499,7 @@ export class RegistrationCommandService {
       SELECT "id", "status", "deletedAt" FROM "User"
       WHERE "id" = ${userId}
         AND "memberId" = ${memberId}
-      FOR UPDATE
+      FOR SHARE
     `);
     if (
       members.length !== 1 ||
@@ -470,6 +510,21 @@ export class RegistrationCommandService {
       users[0]?.status !== UserStatus.ACTIVE
     ) {
       throw new BizException(BizCode.FORBIDDEN);
+    }
+  }
+
+  private async assertGenderRequirement(
+    tx: PrismaTx,
+    memberId: string,
+    genderRequirementCode: string | null,
+  ): Promise<void> {
+    if (genderRequirementCode === null || genderRequirementCode === 'any') return;
+    const profile = await tx.memberProfile.findFirst({
+      where: { memberId, deletedAt: null },
+      select: { genderCode: true },
+    });
+    if (!profile || profile.genderCode !== genderRequirementCode) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_GENDER_MISMATCH);
     }
   }
 
@@ -526,6 +581,28 @@ export class RegistrationCommandService {
       )
     ) {
       invalidPreference();
+    }
+
+    // A session with live v1.1 positions is not a free-form attendance selection: the client
+    // must name at least one of those positions.  Lock every live position in deterministic id
+    // order before deriving this decision, then preserve the supplied order as 1-based storage
+    // preferenceOrder below.
+    const livePositionRows = await tx.$queryRaw<Array<{ sessionId: string }>>(Prisma.sql`
+      SELECT "sessionId"
+      FROM "ActivitySessionPosition"
+      WHERE "activityId" = ${activityId}
+        AND "sessionId" IN (${Prisma.join(sessionIds)})
+        AND "deletedAt" IS NULL
+      ORDER BY "id" ASC
+      FOR UPDATE
+    `);
+    const sessionsWithLivePositions = new Set(
+      livePositionRows.map((position) => position.sessionId),
+    );
+    for (const [sessionId, requestedPositionIds] of preferences) {
+      if (requestedPositionIds.length === 0 && sessionsWithLivePositions.has(sessionId)) {
+        throw new BizException(BizCode.ACTIVITY_POSITION_REQUIRED);
+      }
     }
 
     const positionIds = [...preferences.values()].flat().sort();

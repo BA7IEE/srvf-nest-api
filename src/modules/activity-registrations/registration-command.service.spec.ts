@@ -6,6 +6,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import type { PrismaService } from '../../database/prisma.service';
 import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
 import type { AttachmentsService } from '../attachments/attachments.service';
+import type { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import type { AppIdentityResolver } from '../users/app-identity.resolver';
 import type { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import type { AppActivityRegistrationCommandDto } from './dto/app/app-activity-registration-command.dto';
@@ -46,6 +47,9 @@ function makeTx() {
           statusCode: 'published',
           isPublicRegistration: true,
           registrationDeadline: null,
+          genderRequirementCode: null,
+          requiresInsurance: false,
+          startAt: new Date('2099-12-30T00:00:00.000Z'),
           endAt: new Date('2099-12-31T00:00:00.000Z'),
         },
       ])
@@ -61,6 +65,7 @@ function makeTx() {
       create: jest.fn().mockResolvedValue({ id: 'registration-1', currentRevision: 0 }),
       update: jest.fn().mockResolvedValue({}),
     },
+    memberProfile: { findFirst: jest.fn().mockResolvedValue(null) },
     registrationFormAnswer: {
       create: jest.fn(),
       findFirst: jest.fn(),
@@ -92,18 +97,24 @@ function makeService(tx: ReturnType<typeof makeTx>, opts: { transactionError?: E
     inspectRegistrationUploadsForSubmissionInTransactionTrusted: jest.fn(),
     consumeRegistrationUploadsForFormAnswersInTransactionTrusted: jest.fn(),
   };
+  const insuranceRequirement = {
+    requireForActivityRegistration: jest.fn().mockResolvedValue(null),
+    createActivityRegistrationEvidence: jest.fn().mockResolvedValue(undefined),
+  };
   const audit = { logCommandCreate: jest.fn().mockResolvedValue(undefined) };
   return {
     service: new RegistrationCommandService(
       prisma as unknown as PrismaService,
       appIdentity as unknown as AppIdentityResolver,
       new ActivityParticipationPolicy(),
+      insuranceRequirement as unknown as InsuranceRequirementService,
       attachments as unknown as AttachmentsService,
       audit as unknown as ActivityRegistrationAuditRecorder,
     ),
     prisma,
     appIdentity,
     attachments,
+    insuranceRequirement,
     audit,
   };
 }
@@ -111,7 +122,7 @@ function makeService(tx: ReturnType<typeof makeTx>, opts: { transactionError?: E
 describe('RegistrationCommandService', () => {
   it('creates a minimal first immutable command chain only after all pre-write rereads', async () => {
     const tx = makeTx();
-    const { service, audit } = makeService(tx);
+    const { service, audit, insuranceRequirement } = makeService(tx);
 
     const receipt = await service.submit('activity-1', command(), user(), {
       requestId: 'request-1',
@@ -146,6 +157,74 @@ describe('RegistrationCommandService', () => {
     expect(audit.logCommandCreate).toHaveBeenCalledWith(
       expect.objectContaining({ answerCount: 0, preferenceCount: 0, source: 'self' }),
     );
+    expect(insuranceRequirement.requireForActivityRegistration).toHaveBeenCalledWith(
+      'member-1',
+      expect.objectContaining({ id: 'activity-1', requiresInsurance: false }),
+      tx,
+    );
+    expect(insuranceRequirement.createActivityRegistrationEvidence).toHaveBeenCalledWith(
+      'registration-1',
+      'member-1',
+      null,
+      tx,
+    );
+  });
+
+  it('rejects a missing MemberProfile against a required activity gender before Form or header writes', async () => {
+    const tx = makeTx();
+    tx.$queryRaw.mockReset().mockResolvedValueOnce([
+      {
+        id: 'activity-1',
+        statusCode: 'published',
+        isPublicRegistration: true,
+        registrationDeadline: null,
+        genderRequirementCode: 'female',
+        requiresInsurance: false,
+        startAt: new Date('2099-12-30T00:00:00.000Z'),
+        endAt: new Date('2099-12-31T00:00:00.000Z'),
+      },
+    ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'member-1', status: 'ACTIVE', deletedAt: null }])
+      .mockResolvedValueOnce([{ id: 'user-1', status: 'ACTIVE', deletedAt: null }]);
+    const { service, insuranceRequirement } = makeService(tx);
+
+    await expect(
+      service.submit('activity-1', command(), user(), {
+        requestId: 'request-1',
+        ip: null,
+        ua: null,
+      }),
+    ).rejects.toEqual(new BizException(BizCode.ACTIVITY_REGISTRATION_GENDER_MISMATCH));
+    expect(tx.registrationFormVersion.findFirst).not.toHaveBeenCalled();
+    expect(tx.activityRegistration.create).not.toHaveBeenCalled();
+    expect(insuranceRequirement.requireForActivityRegistration).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty position list for a selected session with a live position before header writes', async () => {
+    const tx = makeTx();
+    tx.$queryRaw
+      .mockResolvedValueOnce([
+        {
+          id: 'session-1',
+          activityId: 'activity-1',
+          statusCode: 'scheduled',
+          deletedAt: null,
+        },
+      ])
+      .mockResolvedValueOnce([{ sessionId: 'session-1' }]);
+    const { service } = makeService(tx);
+
+    await expect(
+      service.submit(
+        'activity-1',
+        command({ preferences: [{ sessionId: 'session-1', positionIds: [] }] }),
+        user(),
+        { requestId: 'request-1', ip: null, ua: null },
+      ),
+    ).rejects.toEqual(new BizException(BizCode.ACTIVITY_POSITION_REQUIRED));
+    expect(tx.activityRegistration.create).not.toHaveBeenCalled();
+    expect(tx.activityRegistrationRevision.create).not.toHaveBeenCalled();
   });
 
   it('returns the immutable winner before Form/upload revalidation for same key/hash', async () => {
