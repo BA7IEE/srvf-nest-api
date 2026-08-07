@@ -218,7 +218,7 @@
 
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
-### P1-28 活动业务全流程改造(批次 0–7) — **第 0 批 + 第 1 批 + 第 2 批 ✅ 代码面已齐；第 3 批第一刀 ✅ 已合 main [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)，①.5 模板两表／幂等列 D 档 schema 本分支待 PR CI / `harness-review`；合同已修订至 v1.1.1**
+### P1-28 活动业务全流程改造(批次 0–7) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));下一步 = 第 4 批,开工双硬门:缺口①容量占位补列 D 档微刀 + 缺口⑤四处取值集拍板(简报已交维护者);合同已修订至 v1.1.1,缺口台账累计 #15**
 
 > **需求口径变更(2026-08-04)**:**= v1.1 四份 + [`AMENDMENTS-v1.1.1`](../archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md),冲突以后者为准。**
 > 第 1 批建表过程中实测撞到**五处合同内部不一致**,维护者当日**全部接受**并发布修订件。原件与 SHA256 一字未动(校验仍过)。
