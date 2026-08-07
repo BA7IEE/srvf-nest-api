@@ -234,11 +234,7 @@ export class RegistrationCommandService {
 
     // The canonical v1.1 chain retains the legacy activity-level gender hard gate.  A missing
     // live profile and a mismatched value intentionally collapse to the same 21034 response.
-    await this.assertGenderRequirement(
-      input.tx,
-      input.memberId,
-      activity.genderRequirementCode,
-    );
+    await this.assertGenderRequirement(input.tx, input.memberId, activity.genderRequirementCode);
 
     // 4. Form recheck and the one answer validator for all eight types.
     const activeForm = await input.tx.registrationFormVersion.findFirst({

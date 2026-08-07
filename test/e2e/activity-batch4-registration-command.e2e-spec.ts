@@ -967,7 +967,9 @@ describe('activity batch4 canonical registration command', () => {
     expect(resubmission.status).toBe(201);
     expect(resubmission.body.data).toMatchObject({ registrationId, revision: 2 });
     expect(
-      await prisma.insuranceEligibilityEvidence.count({ where: { activityRegistrationId: registrationId } }),
+      await prisma.insuranceEligibilityEvidence.count({
+        where: { activityRegistrationId: registrationId },
+      }),
     ).toBe(1);
 
     await prisma.memberInsurance.update({
@@ -991,11 +993,11 @@ describe('activity batch4 canonical registration command', () => {
         select: { currentRevision: true },
       }),
     ).toEqual({ currentRevision: 2 });
+    expect(await prisma.activityRegistrationRevision.count({ where: { registrationId } })).toBe(2);
     expect(
-      await prisma.activityRegistrationRevision.count({ where: { registrationId } }),
-    ).toBe(2);
-    expect(
-      await prisma.insuranceEligibilityEvidence.count({ where: { activityRegistrationId: registrationId } }),
+      await prisma.insuranceEligibilityEvidence.count({
+        where: { activityRegistrationId: registrationId },
+      }),
     ).toBe(1);
     expect(await commandAuditCount(applicantUserId)).toBe(auditBeforeIneligibleResubmission);
   });
@@ -1004,7 +1006,10 @@ describe('activity batch4 canonical registration command', () => {
     const positionActivity = await createNoFormCommandActivity({
       title: 'Canonical Command Position Required',
     });
-    const positionSession = await createScheduledCommandSession(positionActivity.id, 'position-required');
+    const positionSession = await createScheduledCommandSession(
+      positionActivity.id,
+      'position-required',
+    );
     const position = await prisma.activitySessionPosition.create({
       data: {
         activityId: positionActivity.id,

@@ -172,18 +172,20 @@ describe('RegistrationCommandService', () => {
 
   it('rejects a missing MemberProfile against a required activity gender before Form or header writes', async () => {
     const tx = makeTx();
-    tx.$queryRaw.mockReset().mockResolvedValueOnce([
-      {
-        id: 'activity-1',
-        statusCode: 'published',
-        isPublicRegistration: true,
-        registrationDeadline: null,
-        genderRequirementCode: 'female',
-        requiresInsurance: false,
-        startAt: new Date('2099-12-30T00:00:00.000Z'),
-        endAt: new Date('2099-12-31T00:00:00.000Z'),
-      },
-    ])
+    tx.$queryRaw
+      .mockReset()
+      .mockResolvedValueOnce([
+        {
+          id: 'activity-1',
+          statusCode: 'published',
+          isPublicRegistration: true,
+          registrationDeadline: null,
+          genderRequirementCode: 'female',
+          requiresInsurance: false,
+          startAt: new Date('2099-12-30T00:00:00.000Z'),
+          endAt: new Date('2099-12-31T00:00:00.000Z'),
+        },
+      ])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'member-1', status: 'ACTIVE', deletedAt: null }])
       .mockResolvedValueOnce([{ id: 'user-1', status: 'ACTIVE', deletedAt: null }]);
