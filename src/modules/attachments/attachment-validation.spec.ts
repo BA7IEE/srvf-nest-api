@@ -5,6 +5,10 @@ describe('attachment system MIME blocklist', () => {
     expect(isKnownAttachmentOwnerType('registration-upload-session')).toBe(true);
   });
 
+  it('recognizes registration-form-answer as the final internal-only owner type', () => {
+    expect(isKnownAttachmentOwnerType('registration-form-answer')).toBe(true);
+  });
+
   it.each(['image/svg+xml', 'text/html', 'application/xhtml+xml'])(
     'v0.44.0 finding #24 永久拒绝 %s',
     (mime) => {

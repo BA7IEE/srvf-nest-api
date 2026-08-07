@@ -69779,7 +69779,7 @@
             }
           },
           "409": {
-            "description": "队员状态非活跃,不能挂部门(code=17030) / 活动未开放报名(code=20120) / 活动已取消,禁止报名(code=20121) / 活动报名已截止(code=20123) / 同一活动同一队员已有有效报名(code=21002) / 该活动报名必须选择活动岗位(code=21035) / 报名者性别不符合活动要求(code=21034) / 活动名额已满(code=21032)",
+            "description": "队员状态非活跃,不能挂部门(code=17030) / 活动未开放报名(code=20120) / 活动已取消,禁止报名(code=20121) / 活动报名已截止(code=20123) / 同一活动同一队员已有有效报名(code=21002) / 该活动报名必须选择活动岗位(code=21035) / 报名者性别不符合活动要求(code=21034) / 活动名额已满(code=21032) / 该活动必须使用报名主链提交(code=21038)",
             "content": {
               "application/json": {
                 "schema": {
@@ -69800,9 +69800,10 @@
                         21002,
                         21035,
                         21034,
-                        21032
+                        21032,
+                        21038
                       ],
-                      "description": "17030: 队员状态非活跃,不能挂部门; 20120: 活动未开放报名; 20121: 活动已取消,禁止报名; 20123: 活动报名已截止; 21002: 同一活动同一队员已有有效报名; 21035: 该活动报名必须选择活动岗位; 21034: 报名者性别不符合活动要求; 21032: 活动名额已满",
+                      "description": "17030: 队员状态非活跃,不能挂部门; 20120: 活动未开放报名; 20121: 活动已取消,禁止报名; 20123: 活动报名已截止; 21002: 同一活动同一队员已有有效报名; 21035: 该活动报名必须选择活动岗位; 21034: 报名者性别不符合活动要求; 21032: 活动名额已满; 21038: 该活动必须使用报名主链提交",
                       "example": 17030
                     },
                     "message": {
@@ -72339,7 +72340,7 @@
             }
           },
           "409": {
-            "description": "活动未开放报名(code=20120) / 活动报名已截止(code=20123) / 同一活动同一队员已有有效报名(code=21002) / 该活动报名必须选择活动岗位(code=21035) / 报名者性别不符合活动要求(code=21034) / 活动名额已满(code=21032) / 队员状态非活跃,不能挂部门(code=17030) / 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名(code=26030)",
+            "description": "活动未开放报名(code=20120) / 活动报名已截止(code=20123) / 同一活动同一队员已有有效报名(code=21002) / 该活动报名必须选择活动岗位(code=21035) / 报名者性别不符合活动要求(code=21034) / 活动名额已满(code=21032) / 该活动必须使用报名主链提交(code=21038) / 队员状态非活跃,不能挂部门(code=17030) / 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名(code=26030)",
             "content": {
               "application/json": {
                 "schema": {
@@ -72359,10 +72360,11 @@
                         21035,
                         21034,
                         21032,
+                        21038,
                         17030,
                         26030
                       ],
-                      "description": "20120: 活动未开放报名; 20123: 活动报名已截止; 21002: 同一活动同一队员已有有效报名; 21035: 该活动报名必须选择活动岗位; 21034: 报名者性别不符合活动要求; 21032: 活动名额已满; 17030: 队员状态非活跃,不能挂部门; 26030: 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名",
+                      "description": "20120: 活动未开放报名; 20123: 活动报名已截止; 21002: 同一活动同一队员已有有效报名; 21035: 该活动报名必须选择活动岗位; 21034: 报名者性别不符合活动要求; 21032: 活动名额已满; 21038: 该活动必须使用报名主链提交; 17030: 队员状态非活跃,不能挂部门; 26030: 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名",
                       "example": 20120
                     },
                     "message": {
@@ -72385,7 +72387,7 @@
             "bearer": []
           }
         ],
-        "summary": "本人报名活动(入参 activityId + 可选 activityPositionId/extras;非 published 统一 404) [auth]",
+        "summary": "本人报名活动(仅 legacy 活动；v1.1 live session 或 active Form 必须走 canonical 报名命令；非 published 统一 404) [auth]",
         "tags": [
           "Mobile - My Registrations"
         ]
@@ -75114,6 +75116,252 @@
         "summary": "App 后端中转上传一次性报名附件；token/session/route/member/form/expiry 不匹配统一 13001 [auth]",
         "tags": [
           "Mobile - Activity Registration Upload Sessions"
+        ]
+      }
+    },
+    "/api/app/v1/activities/{activityId}/registrations": {
+      "post": {
+        "operationId": "AppActivityRegistrationsController_submit",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppActivityRegistrationCommandDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppActivityRegistrationCommandReceiptDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 报名表答案不合法(code=21037)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        21037
+                      ],
+                      "description": "40000: 请求参数错误; 21037: 报名表答案不合法",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动不存在(code=20001) / 附件不存在(code=13001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20001,
+                        13001
+                      ],
+                      "description": "20001: 活动不存在; 13001: 附件不存在",
+                      "example": 20001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "活动未开放报名(code=20120) / 活动未发布,不可报名、审批或提交考勤(code=20126) / 活动已取消,禁止报名(code=20121) / 活动报名已截止(code=20123) / 活动已结束,不可报名(code=20125) / 报名操作键与首次请求不一致(code=21003) / 报名记录当前状态不允许此操作(code=21030) / 报名表版本不匹配或已失效(code=21036)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20120,
+                        20126,
+                        20121,
+                        20123,
+                        20125,
+                        21003,
+                        21030,
+                        21036
+                      ],
+                      "description": "20120: 活动未开放报名; 20126: 活动未发布,不可报名、审批或提交考勤; 20121: 活动已取消,禁止报名; 20123: 活动报名已截止; 20125: 活动已结束,不可报名; 21003: 报名操作键与首次请求不一致; 21030: 报名记录当前状态不允许此操作; 21036: 报名表版本不匹配或已失效",
+                      "example": 20120
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动未开放报名"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "本人提交或审批前重提报名主链；请求含 operationKey、冻结表单答案与有序场次岗位志愿 [auth]",
+        "tags": [
+          "Mobile - Activity Registrations"
         ]
       }
     },
@@ -118451,6 +118699,128 @@
           "mime",
           "size",
           "createdAt"
+        ]
+      },
+      "AppActivityRegistrationCommandReceiptDto": {
+        "type": "object",
+        "properties": {
+          "registrationId": {
+            "type": "string"
+          },
+          "registrationRevisionId": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "number",
+            "minimum": 1
+          },
+          "submittedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "registrationId",
+          "registrationRevisionId",
+          "revision",
+          "submittedAt"
+        ]
+      },
+      "AppActivityRegistrationAnswerCommandDto": {
+        "type": "object",
+        "properties": {
+          "fieldCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "value": {
+            "description": "除 file 题外的原始答案；类型、范围及选项由冻结表单在服务端校验",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "object",
+                "additionalProperties": true
+              }
+            ]
+          },
+          "uploadSessionId": {
+            "type": "string",
+            "description": "仅 file 题接受的一次性上传会话 id；不接受 attachmentId、token、key 或 URL",
+            "minLength": 8,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "fieldCode"
+        ]
+      },
+      "AppActivityRegistrationPreferenceCommandDto": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 64
+          },
+          "positionIds": {
+            "description": "按数组顺序派生服务端 preferenceOrder（从 1 开始）",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "sessionId",
+          "positionIds"
+        ]
+      },
+      "AppActivityRegistrationCommandDto": {
+        "type": "object",
+        "properties": {
+          "operationKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "调用方生成的幂等操作键"
+          },
+          "formVersion": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "answers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppActivityRegistrationAnswerCommandDto"
+            }
+          },
+          "preferences": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppActivityRegistrationPreferenceCommandDto"
+            }
+          }
+        },
+        "required": [
+          "operationKey",
+          "formVersion",
+          "answers",
+          "preferences"
         ]
       },
       "AttendanceSheetResponseDto": {

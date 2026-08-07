@@ -46,4 +46,13 @@ describe('BizCode httpStatus ↔ HTTP status 一致性(抽样)', () => {
     expect(res.status).toBe(BizCode.BAD_REQUEST.httpStatus);
     expect(res.body.code).toBe(BizCode.BAD_REQUEST.code);
   });
+
+  it.each([
+    [BizCode.ACTIVITY_REGISTRATION_OPERATION_KEY_CONFLICT, 409],
+    [BizCode.REGISTRATION_FORM_VERSION_INVALID, 409],
+    [BizCode.REGISTRATION_FORM_ANSWER_INVALID, 400],
+    [BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED, 409],
+  ])('报名命令 BizCode %s 固定映射 HTTP %i', (bizCode, expectedStatus) => {
+    expect(bizCode.httpStatus).toBe(expectedStatus);
+  });
 });

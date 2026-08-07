@@ -114,7 +114,7 @@ export class AppMyRegistrationsController {
   @Post('registrations')
   @ApiOperation({
     summary:
-      '本人报名活动(入参 activityId + 可选 activityPositionId/extras;非 published 统一 404) [auth]',
+      '本人报名活动(仅 legacy 活动；v1.1 live session 或 active Form 必须走 canonical 报名命令；非 published 统一 404) [auth]',
   })
   @ApiWrappedCreatedResponse(AppMyRegistrationDto)
   @ApiBizErrorResponse(
@@ -129,6 +129,7 @@ export class AppMyRegistrationsController {
     BizCode.ACTIVITY_POSITION_REQUIRED,
     BizCode.ACTIVITY_REGISTRATION_GENDER_MISMATCH,
     BizCode.ACTIVITY_CAPACITY_EXCEEDED,
+    BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED,
     BizCode.MEMBER_NOT_FOUND,
     BizCode.MEMBER_INACTIVE,
     BizCode.INSURANCE_REQUIRED,

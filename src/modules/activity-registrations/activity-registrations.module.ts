@@ -25,6 +25,8 @@ import { ActivityRegistrationWaitlistQueryService } from './activity-registratio
 import { AppManagedActivityRegistrationsService } from './app-managed-activity-registrations.service';
 import { AppManagedActivityRegistrationsController } from './controllers/app-managed-activity-registrations.controller';
 import { AppRegistrationUploadSessionsController } from './controllers/app-registration-upload-sessions.controller';
+import { AppActivityRegistrationsController } from './controllers/app-activity-registrations.controller';
+import { RegistrationCommandService } from './registration-command.service';
 import { RegistrationUploadSessionService } from './registration-upload-session.service';
 
 // V2 批次 6 PR #5(D6 v1.1 §8 / 第二波第三步):导入 AuditLogsModule 以注入 AuditLogsService,
@@ -70,6 +72,7 @@ import { RegistrationUploadSessionService } from './registration-upload-session.
     AppMyRegistrationsController,
     AppManagedActivityRegistrationsController,
     AppRegistrationUploadSessionsController,
+    AppActivityRegistrationsController,
   ],
   providers: [
     ActivityRegistrationsService,
@@ -81,6 +84,7 @@ import { RegistrationUploadSessionService } from './registration-upload-session.
     ActivityRegistrationWaitlistQueryService,
     AppManagedActivityRegistrationsService,
     RegistrationUploadSessionService,
+    RegistrationCommandService,
   ],
 })
 export class ActivityRegistrationsModule {}

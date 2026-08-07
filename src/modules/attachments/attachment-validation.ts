@@ -25,6 +25,8 @@ export const ATTACHMENT_OWNER_TYPES = [
   // Internal-only owner. It is deliberately known to the trusted facade but fail-closed on every
   // generic Admin attachment endpoint.
   'registration-upload-session',
+  // Final immutable registration-answer owner. It has no generic read/write surface either.
+  'registration-form-answer',
 ] as const;
 export type AttachmentOwnerType = (typeof ATTACHMENT_OWNER_TYPES)[number];
 
