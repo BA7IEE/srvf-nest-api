@@ -250,9 +250,9 @@ if (
 }
 
 /**
- * 第 3 批第一刀只完成草稿地基。这里故意不把「已覆盖其中一小段」的总验收号提前结案：
- * AC-009 等跨发布/表单/资格/定位的整项仍留 todo，并把已完成的 root/session/position
- * 直写拒绝作为后续刀可复用的真实证据。
+ * 第 3 批第一刀先完成草稿地基，第二刀再回填发布链。这里仍故意不把「已覆盖其中一小段」
+ * 的总验收号提前结案：AC-009 等跨表单/资格/定位的整项仍留 todo；已完成的 root/session/
+ * position 直写拒绝与发布审核证据可被后续刀复用。
  */
 const BATCH3_SLICE1_ACCEPTANCE_IDS = [
   ...Array.from({ length: 15 }, (_, index) => `AC-${String(index + 1).padStart(3, '0')}`),
@@ -297,18 +297,43 @@ const BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS: Readonly<
       needle: 'rejects an A-member moving a draft to B without cross-org grant',
     },
   ],
+  // AC-006: V2 review keeps the same self-review ban for a SUPER_ADMIN and replays return safely.
+  'AC-006': [
+    {
+      file: 'test/e2e/activity-batch3-2-publish-review.e2e-spec.ts',
+      needle: 'makes return idempotent and rejects a SUPER_ADMIN reviewing their own proposal',
+    },
+  ],
+  // AC-007: the state machine has no direct transition and the public compatibility route remains draft
+  // until an independent review approval creates the owner projection.
+  'AC-007': [
+    {
+      file: 'src/modules/activities/activity-publish-review-state-machine.spec.ts',
+      needle: 'does not expose a direct-publish transition',
+    },
+    {
+      file: 'test/e2e/app-managed-activities.e2e-spec.ts',
+      needle:
+        'converts direct-publish compatibility calls into review, then projects owner after approval',
+    },
+  ],
+  // AC-008: the V2 approval path compares its frozen base snapshot against the locked current state.
+  'AC-008': [
+    {
+      file: 'test/e2e/activity-batch3-2-publish-review.e2e-spec.ts',
+      needle: 'rejects stale change proposals and leaves critical published fields behind review',
+    },
+  ],
 };
 
 const BATCH3_SLICE1_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
   'AC-003': '卡第 3 刀 clone 生命周期端点；本刀不建 clone。',
   'AC-004': '卡第 3 刀 archive 生命周期读写；本刀不新增归档动作或定时任务。',
   'AC-005': '缺“报名截止清空后页面与数据库均不出现 1970 年”的 App 端到端读写断言。',
-  'AC-006': '卡第 2 刀初次发布/关键变更审核链。',
-  'AC-007': '卡第 2 刀删除 directPublish 的行为契约变更；本刀按 S3 原样不动。',
-  'AC-008': '卡第 2 刀 proposal 完整快照与审核时重算。',
   'AC-009':
-    '本刀已覆盖 Activity/ActivitySession/ActivitySessionPosition 的直写拒绝；表单、资格、可见性、签到和计分规则仍卡第 2/4 批，整项不能提前结案。',
-  'AC-010': '卡第 2 刀单场次取消或改期的 change review 与下游影响链。',
+    '发布链已覆盖根活动展示白名单与 Session/Position proposal；表单、资格、可见性、签到和计分规则仍卡第 4/5 批，整项不能提前结案。',
+  'AC-010':
+    '本刀已覆盖单场次 create/update/cancel 的变更审核；容量桶、二维码、人员影响、通知与结算人口仍是第 4/5/7 批接缝，整项不能提前结案。',
   'AC-011': '卡第 3 刀普通活动可见性/可报名原因读面。',
   'AC-012': '卡第 3 刀邀请可见性读面。',
   'AC-013': '卡 S6：draft_editor 七值责任模型另立 D 档刀；本刀不给协作人草稿编辑能力。',
@@ -331,7 +356,7 @@ if (
     (id) => BATCH3_SLICE1_ACCEPTANCE_BLOCKERS[id],
   )
 ) {
-  throw new Error('第 3 批第一刀 19 条验收编号必须逐条有已标注去向或明确阻塞说明');
+  throw new Error('第 3 批已落地切片的 19 条验收编号必须逐条有已标注去向或明确阻塞说明');
 }
 
 function registerAcceptanceCases(cases: readonly { id: string; title: string }[]): void {

@@ -1,12 +1,14 @@
 import { BizCode } from '../../common/exceptions/biz-code.constant';
-import { ActivityPublishReviewStateMachine } from './activity-publish-review-state-machine';
+import {
+  ACTIVITY_PUBLISH_REVIEW_ACTIONS,
+  ActivityPublishReviewStateMachine,
+} from './activity-publish-review-state-machine';
 
 describe('ActivityPublishReviewStateMachine', () => {
   const machine = new ActivityPublishReviewStateMachine();
 
   it.each([
     ['submit', undefined, 'pending'],
-    ['direct-publish', undefined, 'approved'],
     ['approve', 'pending', 'approved'],
     ['return', 'pending', 'returned'],
     ['withdraw', 'pending', 'withdrawn'],
@@ -24,4 +26,8 @@ describe('ActivityPublishReviewStateMachine', () => {
       });
     },
   );
+
+  it('does not expose a direct-publish transition', () => {
+    expect(ACTIVITY_PUBLISH_REVIEW_ACTIONS).not.toContain('direct-publish');
+  });
 });

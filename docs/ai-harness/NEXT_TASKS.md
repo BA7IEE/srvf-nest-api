@@ -287,6 +287,17 @@
 > AC-001、AC-002 已分别绑定真实发起人/代建审计与跨组织授权证据；其余 todo 的逐条卡点见
 > `activity-business-overhaul-acceptance.spec.ts`，其中模板两表已落、解析项仍卡 **第二刀读面**。
 >
+> **第 3 批第二刀（本分支，发布 proposal／审批闭环）**：App 初次发布与关键变更统一在
+> Activity 锁内重建 canonical 快照；变更请求覆盖 Session／Position 的 create/update/cancel 完整集合。
+> 审批重锁并比对 `workflowRevision + snapshotHash`，同事务按固定顺序应用 Activity → Sessions →
+> Positions → 第 4/5 批显式空占位 → population revision，并为每次通过写入一条不可变 RuleSnapshot。
+> 旧 direct-publish 兼容入口只会创建 pending review，绝不直接 approved；已发布根 PATCH 仅保留显式
+> 展示白名单，其余关键变更强制走 change review。Form/Rules、capacity 桶、QR 与收件人冻结仍未实装。
+>
+> **第 3 批验收回填（第二刀）**：5 条已转真用例 / 5 条已标注去向 / 14 条仍 todo = 19。
+> AC-006、AC-007、AC-008 分别绑定自审禁令与退回幂等、directPublish 封死、锁后 stale CAS；AC-009、
+> AC-010 仍因表单/资格、容量桶/二维码/通知/结算接缝保持 todo。
+>
 > **第 3 批第三刀（本分支，生命周期／队员读面）**：App 负责人锚新增首场开始前的
 > cancel（沿 v0.62.0 既有取消闭环，cancelled/null 终态语义不变）与已开始 published
 > 活动的 terminate（服务端 `terminatedAt`）；两者分别复用 ①.5 的 key/hash 落点并各自

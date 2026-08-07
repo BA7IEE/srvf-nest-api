@@ -184,7 +184,7 @@ export class ActivityWorkflowQueryService {
     user: CurrentUserPayload,
   ): Promise<AppManagedActivityDetailDto> {
     const row = await this.loadManaged(activityId, memberId, user.role);
-    const [registrationGroups, attendanceGroups, canPublish] = await Promise.all([
+    const [registrationGroups, attendanceGroups] = await Promise.all([
       this.prisma.activityRegistration.groupBy({
         by: ['statusCode'],
         where: {
@@ -199,7 +199,6 @@ export class ActivityWorkflowQueryService {
         where: { activityId, deletedAt: null },
         _count: { _all: true },
       }),
-      this.authz.can(user, 'activity.publish.record', { type: 'activity', id: activityId }),
     ]);
     const registrationCount = (statusCode: string) =>
       registrationGroups.find((group) => group.statusCode === statusCode)?._count._all ?? 0;
@@ -240,7 +239,8 @@ export class ActivityWorkflowQueryService {
             ? latest.status
             : null,
         reviewNote: latest?.reviewNote ?? null,
-        canDirectPublish: row.initiator?.id === memberId && canPublish,
+        // 第 3 批第二刀封死 directPublish：发布能力只表示可发起审核，不再表示可直接 approved。
+        canDirectPublish: false,
       },
       counts: {
         pendingRegistrations: registrationCount('pending'),

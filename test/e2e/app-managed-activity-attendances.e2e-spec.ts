@@ -17,6 +17,7 @@ describe('App managed activity attendances', () => {
   let prisma: PrismaService;
   let organizationId: string;
   let bizAdminRoleId: string;
+  let reviewerAuth: string;
   let sequence = 0;
   const previousGate = process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
 
@@ -27,6 +28,11 @@ describe('App managed activity attendances', () => {
     prisma = app.get(PrismaService);
     await seedActivityResponsibilitySystemRoles(app);
     bizAdminRoleId = (await seedBizAdminPermissionsAndRole(app)).bizAdminRoleId;
+    const reviewer = await createTestUser(app, {
+      username: 'managed-attendance-reviewer',
+      role: Role.SUPER_ADMIN,
+    });
+    reviewerAuth = (await loginAs(app, reviewer.username)).authHeader;
 
     const nodeType = await prisma.dictType.create({
       data: { code: 'node_type', label: '节点类型' },
@@ -124,8 +130,33 @@ describe('App managed activity attendances', () => {
     if (created.status !== 201) throw new Error(JSON.stringify(created.body));
     const activityId = created.body.data.activity.id as string;
     await request(httpServer(app))
-      .post(`/api/app/v1/my/managed-activities/${activityId}/direct-publish`)
+      .post(`/api/app/v1/my/managed-activities/${activityId}/sessions`)
       .set('Authorization', owner.auth)
+      .send({
+        code: `attendance-session-${sequence}`,
+        name: '发布审核主场次',
+        startAt: '2099-11-01T01:00:00.000Z',
+        endAt: '2099-11-01T05:00:00.000Z',
+        locationText: '深圳会场',
+        checkInOpenAt: '2099-11-01T00:30:00.000Z',
+        checkInCloseAt: '2099-11-01T02:00:00.000Z',
+        checkOutOpenAt: '2099-11-01T03:00:00.000Z',
+        checkOutCloseAt: '2099-11-01T05:00:00.000Z',
+        locationRequired: false,
+      })
+      .expect(201);
+    const submittedForPublish = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${activityId}/publish-reviews`)
+      .set('Authorization', owner.auth)
+      .send({ operationKey: `attendance-initial-submit-${sequence}`, confirmation: true })
+      .expect(200);
+    await request(httpServer(app))
+      .post(`/api/admin/v1/activity-publish-reviews/${submittedForPublish.body.data.id}/approve`)
+      .set('Authorization', reviewerAuth)
+      .send({
+        requiresInsuranceConfirmed: true,
+        operationKey: `attendance-initial-approve-${sequence}`,
+      })
       .expect(200);
     await prisma.activity.update({
       where: { id: activityId },

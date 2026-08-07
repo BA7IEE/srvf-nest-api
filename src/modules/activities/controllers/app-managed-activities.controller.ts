@@ -32,7 +32,12 @@ import { AppManagedActivitiesService } from '../app-managed-activities.service';
 import { ActivityLifecycleService } from '../activity-lifecycle.service';
 import { ActivitySettlementHttpService } from '../activity-settlement-http.service';
 import type { CreateActivityDto, UpdateActivityDto } from '../activities.dto';
-import { ActivityPublishReviewResponseDto } from '../activity-publish-review.dto';
+import {
+  ActivityPublishReviewResponseDto,
+  ActivityTemplateResolutionResponseDto,
+  ChangeReviewDto,
+  SubmitActivityPublishReviewDto,
+} from '../activity-publish-review.dto';
 import {
   AppActivityInitiationOrganizationOptionDto,
   AppManagedActivitiesQueryDto,
@@ -718,6 +723,23 @@ export class AppManagedActivitiesController {
     );
   }
 
+  @Get(':activityId/template-resolution')
+  @ApiOperation({ summary: 'App 查看模板、活动、场次和岗位的最终解析值及来源 [auth]' })
+  @ApiWrappedOkResponse(ActivityTemplateResolutionResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+  )
+  async templateResolution(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+  ) {
+    await this.resolveMemberId(user);
+    return this.service.templateResolution(params.activityId, user);
+  }
+
   @Get(':activityId')
   @ApiOperation({ summary: 'App 我管理的活动详情、责任、审核与待办摘要 [auth]' })
   @ApiWrappedOkResponse(AppManagedActivityDetailDto)
@@ -778,6 +800,73 @@ export class AppManagedActivitiesController {
   ): Promise<AppManagedActivityProjectionDto> {
     await this.resolveMemberId(user);
     return this.service.softDelete(params.activityId, user, this.auditMeta(req));
+  }
+
+  @Post(':activityId/publish-reviews')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'App 发起人提交初次发布审核；服务端冻结 canonical 快照 [auth]' })
+  @ApiWrappedOkResponse(ActivityPublishReviewResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING,
+    BizCode.ACTIVITY_PUBLISH_REVIEW_OPERATION_KEY_CONFLICT,
+  )
+  async createPublishReview(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Body() dto: SubmitActivityPublishReviewDto,
+    @Req() req: Request,
+  ): Promise<ActivityPublishReviewResponseDto> {
+    await this.resolveMemberId(user);
+    return this.service.submitInitialProposal(params.activityId, dto, user, this.auditMeta(req));
+  }
+
+  @Post(':activityId/change-reviews')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'App 提交已发布活动的完整场次/岗位变更审核 proposal [auth]' })
+  @ApiWrappedOkResponse(ActivityPublishReviewResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING,
+    BizCode.ACTIVITY_PUBLISH_REVIEW_OPERATION_KEY_CONFLICT,
+    BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID,
+  )
+  async createChangeReview(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Body() dto: ChangeReviewDto,
+    @Req() req: Request,
+  ): Promise<ActivityPublishReviewResponseDto> {
+    await this.resolveMemberId(user);
+    return this.service.submitChangeProposal(params.activityId, dto, user, this.auditMeta(req));
+  }
+
+  @Post(':activityId/reviews/withdraw')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'App 提交人撤回本人当前 pending 发布申请 [auth]' })
+  @ApiWrappedOkResponse(ActivityPublishReviewResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_PUBLISH_REVIEW_NOT_FOUND,
+    BizCode.ACTIVITY_PUBLISH_REVIEW_STATUS_INVALID,
+  )
+  async withdrawReview(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Req() req: Request,
+  ): Promise<ActivityPublishReviewResponseDto> {
+    await this.resolveMemberId(user);
+    return this.service.withdraw(params.activityId, user, this.auditMeta(req));
   }
 
   @Post(':activityId/submit-publish-review')

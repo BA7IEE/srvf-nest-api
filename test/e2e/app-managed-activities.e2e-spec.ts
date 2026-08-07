@@ -219,6 +219,42 @@ describe('App managed activities core', () => {
     return response.body.data.activity.id as string;
   }
 
+  async function addLiveSession(actor: { auth: string }, activityId: string): Promise<void> {
+    const response = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${activityId}/sessions`)
+      .set('Authorization', actor.auth)
+      .send({
+        code: `managed-session-${sequence}`,
+        name: '发布审核主场次',
+        startAt: '2099-10-01T01:00:00.000Z',
+        endAt: '2099-10-01T05:00:00.000Z',
+        locationText: '深圳会场',
+        checkInOpenAt: '2099-10-01T00:30:00.000Z',
+        checkInCloseAt: '2099-10-01T02:00:00.000Z',
+        checkOutOpenAt: '2099-10-01T03:00:00.000Z',
+        checkOutCloseAt: '2099-10-01T05:00:00.000Z',
+        locationRequired: false,
+      });
+    expect(response.status).toBe(201);
+  }
+
+  async function publishThroughReview(actor: { auth: string }, activityId: string): Promise<void> {
+    await addLiveSession(actor, activityId);
+    const submitted = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${activityId}/publish-reviews`)
+      .set('Authorization', actor.auth)
+      .send({ operationKey: `managed-initial-submit-${sequence}`, confirmation: true });
+    expect(submitted.status).toBe(200);
+    await request(httpServer(app))
+      .post(`/api/admin/v1/activity-publish-reviews/${submitted.body.data.id}/approve`)
+      .set('Authorization', reviewerAuth)
+      .send({
+        requiresInsuranceConfirmed: true,
+        operationKey: `managed-initial-approve-${sequence}`,
+      })
+      .expect(200);
+  }
+
   async function grantCrossOrgInitiation(
     memberId: string,
     scopeType: BindingScopeType,
@@ -490,7 +526,7 @@ describe('App managed activities core', () => {
     ).resolves.toEqual({ organizationId, initiatorMemberId: null });
   });
 
-  it('direct publishes, projects owner, manages collaborators and transfers ownership', async () => {
+  it('converts direct-publish compatibility calls into review, then projects owner after approval', async () => {
     const owner = await createMember('owner', 'level-4', true);
     const collaborator = await createMember('collaborator');
     const newOwner = await createMember('new-owner');
@@ -499,10 +535,29 @@ describe('App managed activities core', () => {
       .set('Authorization', owner.auth)
       .send(createPayload('Managed direct publish'));
     const activityId = created.body.data.activity.id as string;
-    const published = await request(httpServer(app))
+    await addLiveSession(owner, activityId);
+    const compatibilitySubmission = await request(httpServer(app))
       .post(`/api/app/v1/my/managed-activities/${activityId}/direct-publish`)
       .set('Authorization', owner.auth);
-    expect(published.status).toBe(200);
+    expect(compatibilitySubmission.status).toBe(200);
+    expect(compatibilitySubmission.body.data.activity.statusCode).toBe('draft');
+    const pendingReview = await prisma.activityPublishReview.findFirstOrThrow({
+      where: { activityId, requestType: 'initial', status: 'pending' },
+      select: { id: true, directPublish: true },
+    });
+    expect(pendingReview).toEqual({ id: expect.any(String), directPublish: false });
+    await request(httpServer(app))
+      .post(`/api/admin/v1/activity-publish-reviews/${pendingReview.id}/approve`)
+      .set('Authorization', reviewerAuth)
+      .send({
+        requiresInsuranceConfirmed: true,
+        operationKey: `managed-compat-approve-${sequence}`,
+      })
+      .expect(200);
+    const published = await request(httpServer(app))
+      .get(`/api/app/v1/my/managed-activities/${activityId}`)
+      .set('Authorization', owner.auth)
+      .expect(200);
     expect(published.body.data.activity.statusCode).toBe('published');
     expect(published.body.data.owner.id).toBe(owner.memberId);
 
@@ -559,16 +614,18 @@ describe('App managed activities core', () => {
       .set('Authorization', owner.auth)
       .send({ name: '原岗位', attendanceRoleCode, capacity: 5, sortOrder: 1 });
     const activityPositionId = position.body.data.activityPositionId as string;
-    await request(httpServer(app))
-      .post(`/api/app/v1/my/managed-activities/${activityId}/direct-publish`)
-      .set('Authorization', owner.auth)
-      .expect(200);
+    await publishThroughReview(owner, activityId);
 
     const directPatch = await request(httpServer(app))
       .patch(`/api/app/v1/my/managed-activities/${activityId}`)
       .set('Authorization', owner.auth)
       .send({ title: 'Must not apply directly' });
     expectBizError(directPatch, BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED);
+    const criticalPatch = await request(httpServer(app))
+      .patch(`/api/app/v1/my/managed-activities/${activityId}`)
+      .set('Authorization', owner.auth)
+      .send({ capacity: 99 });
+    expectBizError(criticalPatch, BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED);
 
     const submitted = await request(httpServer(app))
       .post(`/api/app/v1/my/managed-activities/${activityId}/submit-change-review`)
@@ -631,10 +688,7 @@ describe('App managed activities core', () => {
   it('rejects a published change proposal that changes organizationId', async () => {
     const owner = await createMember('change-org-rejected', 'level-5', true);
     const activityId = await createManagedDraft(owner, 'Published organization change');
-    await request(httpServer(app))
-      .post(`/api/app/v1/my/managed-activities/${activityId}/direct-publish`)
-      .set('Authorization', owner.auth)
-      .expect(200);
+    await publishThroughReview(owner, activityId);
 
     const beforeReviewCount = await prisma.activityPublishReview.count({
       where: { activityId, status: 'pending' },

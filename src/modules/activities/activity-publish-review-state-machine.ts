@@ -3,7 +3,6 @@ import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.con
 
 export const ACTIVITY_PUBLISH_REVIEW_ACTIONS = [
   'submit',
-  'direct-publish',
   'approve',
   'return',
   'withdraw',
@@ -22,7 +21,6 @@ export class ActivityPublishReviewStateMachine {
     currentStatus?: string,
   ): ActivityPublishReviewDecision {
     if (action === 'submit') return { allowed: true, nextStatus: 'pending' };
-    if (action === 'direct-publish') return { allowed: true, nextStatus: 'approved' };
     if (currentStatus !== 'pending') {
       return { allowed: false, biz: BizCode.ACTIVITY_PUBLISH_REVIEW_STATUS_INVALID };
     }
