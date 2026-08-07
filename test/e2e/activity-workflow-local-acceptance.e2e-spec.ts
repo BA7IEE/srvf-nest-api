@@ -530,7 +530,7 @@ describe('activity responsibility workflow local acceptance', () => {
 
     const activityId = await createManagedDraft(owner, 'Local Complete Workflow Activity');
     const activityPositionId = await addPosition(owner, activityId);
-    await addLiveSession(owner, activityId);
+    const sessionId = await addLiveSession(owner, activityId);
     const directResponse = await request(httpServer(app))
       .post(`/api/app/v1/my/managed-activities/${activityId}/direct-publish`)
       .set('Authorization', owner.auth)
@@ -559,6 +559,13 @@ describe('activity responsibility workflow local acceptance', () => {
       .set('Authorization', publishReviewer.auth)
       .send({ requiresInsuranceConfirmed: true, operationKey: 'local-complete-approve-0001' })
       .expect(200);
+    // This fixture exercises the legacy ActivityPosition → attendance workflow.  The session is
+    // required to publish the draft, but is no longer live before the legacy registration step;
+    // live v1.1 sessions are covered by the canonical-command fail-closed E2E.
+    await prisma.activitySession.update({
+      where: { id: sessionId },
+      data: { statusCode: 'cancelled' },
+    });
     const directAudit = await prisma.auditLog.findFirstOrThrow({
       where: {
         event: 'activity.publish',
