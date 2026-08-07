@@ -1632,6 +1632,29 @@ export const BizCode = {
     message: '相同操作标识已用于不同的活动生命周期内容,请更换操作标识',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 第 3 批第二刀发布提案链：提交与审核动作各自使用 operationKey + canonical requestHash。
+  // 同 key 的语义内容不一致不能静默覆盖已存在审核记录；审批前 Activity 现场发生变化
+  // 也不能“以新现场代替旧提案”继续通过，客户端必须刷新并重新发起提案。
+  ACTIVITY_PUBLISH_REVIEW_OPERATION_KEY_CONFLICT: {
+    code: 20143,
+    message: '相同操作标识已用于不同的发布审核内容,请更换操作标识',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_PUBLISH_REVIEW_EXPECTED_SNAPSHOT_MISMATCH: {
+    code: 20144,
+    message: '发布审核预期的活动快照已变化,请刷新后重新提交',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_PUBLISH_REVIEW_LIVE_SESSION_REQUIRED: {
+    code: 20145,
+    message: '发布活动至少需要一个有效场次',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_PUBLISH_REVIEW_SELF_REVIEW_FORBIDDEN: {
+    code: 20146,
+    message: '发布审核申请人不得审核本人提交的申请',
+    httpStatus: HttpStatus.FORBIDDEN,
+  },
 
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。

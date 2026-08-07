@@ -143,6 +143,23 @@ describe('activity publish review multi-instance concurrency', () => {
       },
       select: { id: true },
     });
+    await prismaA.activitySession.create({
+      data: {
+        activityId: activity.id,
+        code: `concurrency-session-${sequence}`,
+        name: '并发发布场次',
+        startAt: new Date('2099-09-01T01:00:00.000Z'),
+        endAt: new Date('2099-09-01T05:00:00.000Z'),
+        locationText: '深圳会场',
+        checkInOpenAt: new Date('2099-09-01T00:30:00.000Z'),
+        checkInCloseAt: new Date('2099-09-01T02:00:00.000Z'),
+        checkOutOpenAt: new Date('2099-09-01T03:00:00.000Z'),
+        checkOutCloseAt: new Date('2099-09-01T05:00:00.000Z'),
+        locationRequired: false,
+        locationPolicySourceCode: 'session',
+        statusCode: 'scheduled',
+      },
+    });
     const review = await reviewServiceA.submitInitial(activity.id, creator, {
       requestId: `activity-review-concurrency-${sequence}`,
       ip: null,

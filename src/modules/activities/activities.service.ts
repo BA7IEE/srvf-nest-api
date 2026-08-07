@@ -80,6 +80,20 @@ const TERMINAL_ACTIVITY_UPDATE_FIELDS = new Set<keyof UpdateActivityDto>([
   'registrationNotes',
 ]);
 
+// 第 3 批第二刀：published 根活动只允许不改变执行、名额、组织、模板或状态语义的展示字段。
+// title 是报名者的关键识别信息，直改必须走 change-review；这必须是显式正向闭集，任何新字段
+// 默认进入 change-review，而不是随 DTO 增长悄然放行。
+export const PUBLISHED_ACTIVITY_DISPLAY_FIELDS = [
+  'description',
+  'registrationNotes',
+  'coverImageUrl',
+  'galleryImageUrls',
+  'content',
+] as const satisfies ReadonlyArray<keyof UpdateActivityDto>;
+const PUBLISHED_ACTIVITY_DISPLAY_FIELD_SET = new Set<keyof UpdateActivityDto>(
+  PUBLISHED_ACTIVITY_DISPLAY_FIELDS,
+);
+
 // USER 角色可见的状态白名单(Q-A7)。
 const USER_VISIBLE_STATUS_CODES = [ACTIVITY_STATUS_PUBLISHED, ACTIVITY_STATUS_COMPLETED] as const;
 
@@ -771,31 +785,36 @@ export class ActivitiesService {
       if (authorization !== 'managed') this.assertV11DraftConfiguration(dto);
 
       if (this.config.activityResponsibilityWorkflow.enabled) {
+        const publishedDisplayOnly =
+          current.statusCode === ACTIVITY_STATUS_PUBLISHED && this.isPublishedDisplayOnly(dto);
         if (authorization === 'managed') {
-          // 第 3 批第一刀的正向白名单：只要不是 draft，任何同路径直改都不得放行。
-          // 这里刻意用 `!== 'draft'` 结构，新增下游状态不会悄然进入可编辑集合。
-          if (current.statusCode !== 'draft') {
+          // Published 只有这一个显式展示白名单可走原 PATCH；其余字段仍必须走 change review。
+          if (current.statusCode !== 'draft' && !publishedDisplayOnly) {
             throw new BizException(
               current.statusCode === ACTIVITY_STATUS_PUBLISHED
                 ? BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED
                 : BizCode.ACTIVITY_STATUS_INVALID,
             );
           }
-          const pendingReview = await tx.activityPublishReview.count({
-            where: { activityId: id, status: 'pending' },
-          });
-          if (pendingReview > 0) {
-            throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
+          if (!publishedDisplayOnly) {
+            const pendingReview = await tx.activityPublishReview.count({
+              where: { activityId: id, status: 'pending' },
+            });
+            if (pendingReview > 0) {
+              throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
+            }
+            this.assertV11DraftConfiguration(dto);
           }
-          this.assertV11DraftConfiguration(dto);
         } else {
-          const pendingReview = await tx.activityPublishReview.count({
-            where: { activityId: id, status: 'pending' },
-          });
-          if (pendingReview > 0) {
-            throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
+          if (!publishedDisplayOnly) {
+            const pendingReview = await tx.activityPublishReview.count({
+              where: { activityId: id, status: 'pending' },
+            });
+            if (pendingReview > 0) {
+              throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
+            }
           }
-          if (current.statusCode === ACTIVITY_STATUS_PUBLISHED) {
+          if (current.statusCode === ACTIVITY_STATUS_PUBLISHED && !publishedDisplayOnly) {
             throw new BizException(BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED);
           }
         }
@@ -1413,5 +1432,12 @@ export class ActivitiesService {
 
       return this.toResponseDto(updated);
     });
+  }
+
+  private isPublishedDisplayOnly(dto: UpdateActivityDto): boolean {
+    const fields = Object.keys(dto) as Array<keyof UpdateActivityDto>;
+    return (
+      fields.length > 0 && fields.every((field) => PUBLISHED_ACTIVITY_DISPLAY_FIELD_SET.has(field))
+    );
   }
 }

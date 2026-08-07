@@ -242,7 +242,35 @@ describe('activity responsibility workflow gate=true publish review', () => {
     expect(response.status).toBe(201);
     expect(response.body.data.initiatorMemberId).toBe(creatorPayload.memberId);
     expect(response.body.data.workflowRevision).toBe(0);
-    return response.body.data.id as string;
+    const activityId = response.body.data.id as string;
+    await prisma.activitySession.create({
+      data: {
+        activityId,
+        code: `publish-review-session-${sequence}`,
+        name: '发布审核场次',
+        startAt: new Date('2099-08-01T01:00:00.000Z'),
+        endAt: new Date('2099-08-01T05:00:00.000Z'),
+        locationText: '深圳会场',
+        checkInOpenAt: new Date('2099-08-01T00:30:00.000Z'),
+        checkInCloseAt: new Date('2099-08-01T02:00:00.000Z'),
+        checkOutOpenAt: new Date('2099-08-01T03:00:00.000Z'),
+        checkOutCloseAt: new Date('2099-08-01T05:00:00.000Z'),
+        locationRequired: false,
+        locationPolicySourceCode: 'session',
+        statusCode: 'scheduled',
+      },
+    });
+    return activityId;
+  }
+
+  async function publishThroughReview(activityId: string): Promise<string> {
+    const review = await reviewService.submitInitial(activityId, creatorPayload, AUDIT_META);
+    await request(httpServer(app))
+      .post(`/api/admin/v1/activity-publish-reviews/${review.id}/approve`)
+      .set('Authorization', reviewerAuth)
+      .send({ requiresInsuranceConfirmed: true })
+      .expect(200);
+    return review.id;
   }
 
   async function workflowWriteCounts() {
@@ -440,7 +468,7 @@ describe('activity responsibility workflow gate=true publish review', () => {
     expectBizError(publishedPositionEdit, BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED);
   });
 
-  it('legacy publish direct-publishes only the initiator with publish scope', async () => {
+  it('legacy publish only creates a pending review for the initiator; it never direct-publishes', async () => {
     const activityId = await createActivity();
     const response = await request(httpServer(app))
       .patch(`/api/admin/v1/activities/${activityId}/publish`)
@@ -449,8 +477,8 @@ describe('activity responsibility workflow gate=true publish review', () => {
     expect(response.status).toBe(200);
     expect(response.body.data).toMatchObject({
       id: activityId,
-      statusCode: 'published',
-      workflowRevision: 1,
+      statusCode: 'draft',
+      workflowRevision: 0,
     });
     const review = await prisma.activityPublishReview.findFirstOrThrow({
       where: { activityId },
@@ -458,29 +486,42 @@ describe('activity responsibility workflow gate=true publish review', () => {
     expect(review).toMatchObject({
       requestType: 'initial',
       requestVersion: 1,
-      status: 'approved',
-      directPublish: true,
+      status: 'pending',
+      directPublish: false,
       submittedByUserId: creatorPayload.id,
-      reviewedByUserId: creatorPayload.id,
+      reviewedByUserId: null,
     });
     await expect(
-      prisma.activityResponsibilityAssignment.findFirstOrThrow({
+      prisma.activityResponsibilityAssignment.count({
         where: { activityId, responsibilityType: 'owner', status: 'active' },
-        select: { memberId: true, assignedByUserId: true },
       }),
-    ).resolves.toEqual({
-      memberId: creatorPayload.memberId,
-      assignedByUserId: creatorPayload.id,
-    });
-  });
+    ).resolves.toBe(0);
 
-  it('change approve/return resolves current ACTIVE owner and never publishedBy reviewer', async () => {
-    const activityId = await createActivity();
+    await request(httpServer(app))
+      .post(`/api/admin/v1/activity-publish-reviews/${review.id}/return`)
+      .set('Authorization', reviewerAuth)
+      .send({ reviewNote: '请补充材料', operationKey: 'legacy-publish-return-0001' })
+      .expect(200);
     await request(httpServer(app))
       .patch(`/api/admin/v1/activities/${activityId}/publish`)
       .set('Authorization', creatorAuth)
       .send({ requiresInsuranceConfirmed: true })
       .expect(200);
+    await expect(
+      prisma.activityPublishReview.findMany({
+        where: { activityId },
+        orderBy: { requestVersion: 'asc' },
+        select: { requestVersion: true, status: true, directPublish: true },
+      }),
+    ).resolves.toEqual([
+      { requestVersion: 1, status: 'returned', directPublish: false },
+      { requestVersion: 2, status: 'pending', directPublish: false },
+    ]);
+  });
+
+  it('change approve/return resolves current ACTIVE owner and never publishedBy reviewer', async () => {
+    const activityId = await createActivity();
+    await publishThroughReview(activityId);
     await prisma.activity.update({
       where: { id: activityId },
       data: { publishedBy: reviewerUserId },
@@ -549,25 +590,20 @@ describe('activity responsibility workflow gate=true publish review', () => {
     ).resolves.toBe(0);
   });
 
-  it('legacy publish approves the current pending initial review when actor has review scope', async () => {
+  it('legacy publish rejects a pending initial review instead of approving it', async () => {
     const activityId = await createActivity();
     const review = await reviewService.submitInitial(activityId, creatorPayload, AUDIT_META);
     const response = await request(httpServer(app))
       .patch(`/api/admin/v1/activities/${activityId}/publish`)
       .set('Authorization', reviewerAuth)
       .send({ requiresInsuranceConfirmed: true });
-    expect(response.status).toBe(200);
-    expect(response.body.data).toMatchObject({
-      id: activityId,
-      statusCode: 'published',
-      workflowRevision: 1,
-    });
+    expectBizError(response, BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
     await expect(
       prisma.activityPublishReview.findUniqueOrThrow({
         where: { id: review.id },
         select: { status: true, reviewNote: true },
       }),
-    ).resolves.toEqual({ status: 'approved', reviewNote: null });
+    ).resolves.toEqual({ status: 'pending', reviewNote: null });
   });
 
   it('revalidates the server snapshot under lock before approval', async () => {
@@ -592,11 +628,7 @@ describe('activity responsibility workflow gate=true publish review', () => {
 
   it('rejects approval when a pending change snapshot is tampered to another organization', async () => {
     const activityId = await createActivity();
-    await request(httpServer(app))
-      .patch(`/api/admin/v1/activities/${activityId}/publish`)
-      .set('Authorization', creatorAuth)
-      .send({ requiresInsuranceConfirmed: true })
-      .expect(200);
+    await publishThroughReview(activityId);
     const review = await reviewService.submitChange(
       activityId,
       { title: 'Legitimate same-organization proposal', organizationId },

@@ -153,6 +153,23 @@ describe('activity waitlist promotion shares one parent capacity budget', () => 
       },
       select: { id: true },
     });
+    await prisma.activitySession.create({
+      data: {
+        activityId: activity.id,
+        code: `waitlist-session-${sequence}`,
+        name: '共享预算发布场次',
+        startAt: new Date('2099-09-01T01:00:00.000Z'),
+        endAt: new Date('2099-09-01T09:00:00.000Z'),
+        locationText: '深圳会场',
+        checkInOpenAt: new Date('2099-09-01T00:30:00.000Z'),
+        checkInCloseAt: new Date('2099-09-01T02:00:00.000Z'),
+        checkOutOpenAt: new Date('2099-09-01T03:00:00.000Z'),
+        checkOutCloseAt: new Date('2099-09-01T09:00:00.000Z'),
+        locationRequired: false,
+        locationPolicySourceCode: 'session',
+        statusCode: 'scheduled',
+      },
+    });
     const review = await reviewService.submitInitial(activity.id, owner, {
       ...AUDIT_META,
       requestId: `waitlist-shared-initial-${sequence}`,

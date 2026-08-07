@@ -111,6 +111,83 @@ export class ActivityPublishReviewQueryService {
       select: activityPublishReviewViewSelect,
     });
     if (!row) throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_NOT_FOUND);
-    return this.presenter.toDto(row);
+    const affectedMembers = await this.prisma.activityParticipationIdentity.findMany({
+      where: { activityId: row.activityId, populationIncluded: true },
+      distinct: ['memberId'],
+      select: { memberId: true },
+    });
+    return {
+      ...this.presenter.toDto(row),
+      changeDiff: this.changeDiff(row.snapshot),
+      affectedMemberCount: affectedMembers.length,
+    };
+  }
+
+  private changeDiff(snapshot: Prisma.JsonValue): Record<string, unknown> {
+    if (snapshot === null || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+      return { kind: 'unparseable' };
+    }
+    const record = snapshot as Record<string, unknown>;
+    if (record.schemaVersion !== 2 || !this.isRecord(record.base)) {
+      return { kind: 'legacy', requestSchemaVersion: record.schemaVersion ?? null };
+    }
+    const base = record.base;
+    const activity = this.isRecord(record.activity) ? record.activity : {};
+    const baseActivity = this.isRecord(base.activity) ? base.activity : {};
+    return {
+      kind: 'proposal-v2',
+      activityFields: Object.keys(activity)
+        .filter((key) => JSON.stringify(activity[key]) !== JSON.stringify(baseActivity[key]))
+        .sort(),
+      sessions: this.collectionDiff(
+        Array.isArray(base.sessions) ? base.sessions : [],
+        Array.isArray(record.sessions) ? record.sessions : [],
+        'sessionId',
+      ),
+    };
+  }
+
+  private collectionDiff(
+    before: unknown[],
+    after: unknown[],
+    idKey: 'sessionId' | 'positionId',
+  ): Record<string, unknown> {
+    const beforeById = new Map(
+      before
+        .filter(this.isRecord)
+        .map((item) => [String(item[idKey] ?? item.clientRef ?? item.code), item]),
+    );
+    return {
+      create: after
+        .filter(this.isRecord)
+        .filter((item) => !beforeById.has(String(item[idKey] ?? item.clientRef ?? item.code)))
+        .map((item) => ({ id: item[idKey] ?? item.clientRef ?? item.code, code: item.code })),
+      update: after.filter(this.isRecord).flatMap((item) => {
+        const id = String(item[idKey] ?? item.clientRef ?? item.code);
+        const previous = beforeById.get(id);
+        if (!previous) return [];
+        const changedFields = Object.keys(item)
+          .filter((key) => key !== 'positions')
+          .filter((key) => JSON.stringify(item[key]) !== JSON.stringify(previous[key]))
+          .sort();
+        const result: Record<string, unknown> = { id, changedFields };
+        if (idKey === 'sessionId') {
+          result.positions = this.collectionDiff(
+            Array.isArray(previous.positions) ? previous.positions : [],
+            Array.isArray(item.positions) ? item.positions : [],
+            'positionId',
+          );
+        }
+        return [result];
+      }),
+      cancel: after
+        .filter(this.isRecord)
+        .filter((item) => item.cancelled === true || item.statusCode === 'cancelled')
+        .map((item) => ({ id: item[idKey] ?? item.clientRef ?? item.code, code: item.code })),
+    };
+  }
+
+  private isRecord(this: void, value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
   }
 }

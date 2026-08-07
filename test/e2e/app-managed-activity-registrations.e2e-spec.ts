@@ -18,6 +18,7 @@ describe('App managed activity registrations', () => {
   let organizationId: string;
   let activityTypeCode: string;
   let bizAdminRoleId: string;
+  let reviewerAuth: string;
   let sequence = 0;
   const previousGate = process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
 
@@ -28,6 +29,11 @@ describe('App managed activity registrations', () => {
     prisma = app.get(PrismaService);
     await seedActivityResponsibilitySystemRoles(app);
     bizAdminRoleId = (await seedBizAdminPermissionsAndRole(app)).bizAdminRoleId;
+    const reviewer = await createTestUser(app, {
+      username: 'managed-registration-reviewer',
+      role: Role.SUPER_ADMIN,
+    });
+    reviewerAuth = (await loginAs(app, reviewer.username)).authHeader;
 
     const root = await prisma.organization.create({
       data: { name: 'Managed Registration Root', nodeTypeCode: 'managed-registration-root' },
@@ -137,8 +143,33 @@ describe('App managed activity registrations', () => {
     expect(created.status).toBe(201);
     const activityId = created.body.data.activity.id as string;
     await request(httpServer(app))
-      .post(`/api/app/v1/my/managed-activities/${activityId}/direct-publish`)
+      .post(`/api/app/v1/my/managed-activities/${activityId}/sessions`)
       .set('Authorization', ownerAuth)
+      .send({
+        code: `registration-session-${sequence}`,
+        name: '发布审核主场次',
+        startAt: '2099-11-01T01:00:00.000Z',
+        endAt: '2099-11-01T05:00:00.000Z',
+        locationText: '深圳会场',
+        checkInOpenAt: '2099-11-01T00:30:00.000Z',
+        checkInCloseAt: '2099-11-01T02:00:00.000Z',
+        checkOutOpenAt: '2099-11-01T03:00:00.000Z',
+        checkOutCloseAt: '2099-11-01T05:00:00.000Z',
+        locationRequired: false,
+      })
+      .expect(201);
+    const submitted = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${activityId}/publish-reviews`)
+      .set('Authorization', ownerAuth)
+      .send({ operationKey: `registration-initial-submit-${sequence}`, confirmation: true })
+      .expect(200);
+    await request(httpServer(app))
+      .post(`/api/admin/v1/activity-publish-reviews/${submitted.body.data.id}/approve`)
+      .set('Authorization', reviewerAuth)
+      .send({
+        requiresInsuranceConfirmed: true,
+        operationKey: `registration-initial-approve-${sequence}`,
+      })
       .expect(200);
     return { activityId };
   }

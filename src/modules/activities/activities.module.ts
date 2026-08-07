@@ -28,6 +28,7 @@ import { ActivityPublishReviewStateMachine } from './activity-publish-review-sta
 import { ActivityPublishReviewPresenter } from './activity-publish-review-presenter';
 import { ActivityPublishReviewAuditRecorder } from './activity-publish-review-audit-recorder';
 import { ActivityPublishReviewService } from './activity-publish-review.service';
+import { ActivityPublishProposalV2Service } from './activity-publish-proposal-v2.service';
 import { ActivityPublishReviewQueryService } from './activity-publish-review-query.service';
 import { AdminActivityPublishReviewsController } from './controllers/admin-activity-publish-reviews.controller';
 import { ActivityResponsibilityPolicy } from './activity-responsibility-policy';
@@ -141,6 +142,7 @@ import { ActivityLifecycleService } from './activity-lifecycle.service';
     ActivityPublishReviewStateMachine,
     ActivityPublishReviewPresenter,
     ActivityPublishReviewAuditRecorder,
+    ActivityPublishProposalV2Service,
     ActivityProposalValidator,
     ActivityProposalApplier,
     ActivityClosurePolicy,

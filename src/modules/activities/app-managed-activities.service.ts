@@ -17,6 +17,10 @@ import type {
 } from './activity-positions.dto';
 import { ActivityPositionsService } from './activity-positions.service';
 import { ActivityPublishReviewService } from './activity-publish-review.service';
+import type {
+  ChangeReviewDto,
+  SubmitActivityPublishReviewDto,
+} from './activity-publish-review.dto';
 import { ActivityWorkflowQueryService } from './activity-workflow-query.service';
 import type {
   CreateActivityCollaboratorDto,
@@ -292,6 +296,15 @@ export class AppManagedActivitiesService {
     return this.reviews.submitInitial(activityId, user, auditMeta);
   }
 
+  async submitInitialProposal(
+    activityId: string,
+    dto: SubmitActivityPublishReviewDto,
+    user: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ) {
+    return this.reviews.submitInitialProposal(activityId, dto, user, auditMeta);
+  }
+
   async submitChange(
     activityId: string,
     activityPatch: UpdateActivityDto,
@@ -300,6 +313,19 @@ export class AppManagedActivitiesService {
     auditMeta: AuditMeta,
   ) {
     return this.reviews.submitChange(activityId, activityPatch, positions, user, auditMeta);
+  }
+
+  async submitChangeProposal(
+    activityId: string,
+    dto: ChangeReviewDto,
+    user: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ) {
+    return this.reviews.submitChangeProposal(activityId, dto, user, auditMeta);
+  }
+
+  async templateResolution(activityId: string, user: CurrentUserPayload) {
+    return this.reviews.templateResolution(activityId, user);
   }
 
   async directPublish(

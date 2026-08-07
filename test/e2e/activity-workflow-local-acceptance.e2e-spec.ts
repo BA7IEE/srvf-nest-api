@@ -50,6 +50,7 @@ describe('activity responsibility workflow local acceptance', () => {
   let finalReviewerRoleId: string;
   let crossOrgInitiatorRoleId: string;
   let sequence = 0;
+  let sessionSequence = 0;
   const previousGate = process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
 
   beforeAll(async () => {
@@ -319,6 +320,27 @@ describe('activity responsibility workflow local acceptance', () => {
     return created.body.data.activityPositionId as string;
   }
 
+  async function addLiveSession(actor: LocalActor, activityId: string): Promise<string> {
+    sessionSequence += 1;
+    const created = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${activityId}/sessions`)
+      .set('Authorization', actor.auth)
+      .send({
+        code: `local-session-${sessionSequence}`,
+        name: `Local Session ${sessionSequence}`,
+        startAt: '2099-08-01T01:00:00.000Z',
+        endAt: '2099-08-01T05:00:00.000Z',
+        locationText: 'Local Session Location',
+        checkInOpenAt: '2099-08-01T00:30:00.000Z',
+        checkInCloseAt: '2099-08-01T02:00:00.000Z',
+        checkOutOpenAt: '2099-08-01T03:00:00.000Z',
+        checkOutCloseAt: '2099-08-01T05:00:00.000Z',
+        locationRequired: false,
+      })
+      .expect(201);
+    return created.body.data.sessionId as string;
+  }
+
   async function selfRegister(
     actor: LocalActor,
     activityId: string,
@@ -359,6 +381,7 @@ describe('activity responsibility workflow local acceptance', () => {
     await bindUserRole(reviewer, publishReviewerRoleId, organizationAId);
 
     const activityId = await createManagedDraft(owner, 'Local Ordinary Publish Review Activity');
+    await addLiveSession(owner, activityId);
     const updated = await request(httpServer(app))
       .patch(`/api/app/v1/my/managed-activities/${activityId}`)
       .set('Authorization', owner.auth)
@@ -484,8 +507,9 @@ describe('activity responsibility workflow local acceptance', () => {
     const finalReviewerA = await createActor('Local Final Reviewer A');
     const finalReviewerB = await createActor('Local Final Reviewer B');
     const newOwner = await createActor('Local New Activity Owner');
+    const publishReviewer = await createActor('Local Publish Reviewer');
 
-    await bindUserRole(owner, publishReviewerRoleId, organizationAId);
+    await bindUserRole(publishReviewer, publishReviewerRoleId, organizationAId);
     await bindUserRole(firstReviewerA, firstReviewerRoleId, organizationAId);
     await bindUserRole(firstReviewerB, firstReviewerRoleId, organizationAId);
     await bindUserRole(finalReviewerA, finalReviewerRoleId, organizationAId);
@@ -506,38 +530,46 @@ describe('activity responsibility workflow local acceptance', () => {
 
     const activityId = await createManagedDraft(owner, 'Local Complete Workflow Activity');
     const activityPositionId = await addPosition(owner, activityId);
-    await request(httpServer(app))
+    await addLiveSession(owner, activityId);
+    const directResponse = await request(httpServer(app))
       .post(`/api/app/v1/my/managed-activities/${activityId}/direct-publish`)
       .set('Authorization', owner.auth)
       .send({})
       .expect(200);
+    expect(directResponse.body.data.activity.statusCode).toBe('draft');
 
     const directReview = await prisma.activityPublishReview.findFirstOrThrow({
       where: { activityId },
       select: {
+        id: true,
         directPublish: true,
         status: true,
         submittedByUserId: true,
         reviewedByUserId: true,
       },
     });
-    expect(directReview).toEqual({
-      directPublish: true,
-      status: 'approved',
+    expect(directReview).toMatchObject({
+      directPublish: false,
+      status: 'pending',
       submittedByUserId: owner.userId,
-      reviewedByUserId: owner.userId,
+      reviewedByUserId: null,
     });
+    await request(httpServer(app))
+      .post(`/api/admin/v1/activity-publish-reviews/${directReview.id}/approve`)
+      .set('Authorization', publishReviewer.auth)
+      .send({ requiresInsuranceConfirmed: true, operationKey: 'local-complete-approve-0001' })
+      .expect(200);
     const directAudit = await prisma.auditLog.findFirstOrThrow({
       where: {
         event: 'activity.publish',
         resourceId: activityId,
-        actorUserId: owner.userId,
+        actorUserId: publishReviewer.userId,
       },
       orderBy: { createdAt: 'desc' },
       select: { context: true },
     });
     expect(directAudit.context).toMatchObject({
-      extra: { operation: 'publish-review-direct', directPublish: true },
+      extra: { operation: 'publish-review-approve', directPublish: false },
     });
 
     await addCollaborator(owner, activityId, registrationCollaborator, {
@@ -938,11 +970,18 @@ describe('activity responsibility workflow local acceptance', () => {
       'Local Organization B Owned Activity',
       organizationBId,
     );
-    await request(httpServer(app))
+    const compatibilityPublish = await request(httpServer(app))
       .post(`/api/app/v1/my/managed-activities/${otherActivityId}/direct-publish`)
       .set('Authorization', organizationBOwner.auth)
       .send({})
       .expect(200);
+    expect(compatibilityPublish.body.data.activity.statusCode).toBe('draft');
+    await expect(
+      prisma.activityPublishReview.findFirstOrThrow({
+        where: { activityId: otherActivityId },
+        select: { status: true, directPublish: true },
+      }),
+    ).resolves.toEqual({ status: 'pending', directPublish: false });
 
     expectBizError(
       await request(httpServer(app))

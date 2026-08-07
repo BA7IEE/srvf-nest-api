@@ -12,7 +12,6 @@ export class ActivityPublishReviewAuditRecorder {
     reviewId: string;
     operation:
       | 'publish-review-submit'
-      | 'publish-review-direct'
       | 'publish-review-approve'
       | 'publish-review-return'
       | 'publish-review-withdraw';

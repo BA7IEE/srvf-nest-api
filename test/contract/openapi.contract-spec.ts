@@ -221,6 +221,11 @@ const EXPECTED_ROUTES: ReadonlyArray<
     'delete',
     '/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}/positions/{positionId}',
   ],
+  // 第 3 批第二刀：canonical 发布/变更 proposal、本人撤回与模板解析读面。
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/publish-reviews'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/change-reviews'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/reviews/withdraw'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/template-resolution'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/submit-publish-review'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/direct-publish'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/submit-change-review'],
@@ -1584,9 +1589,9 @@ describe('OpenAPI 契约快照', () => {
   //   (POST admin/v1/notifications/:id/replay-wecom)→451；第 2 批第 ⑧b 刀结算最小 HTTP 闭环 +7 →458；
   //   第 ⑨a 刀负责人结算工作台 +5 →463；第 ⑨b 刀审核/账本读面 +6 →469；
   //   第 3 批第一刀草稿场次/新表岗位嵌套 CRUD +8 →477；第三刀目录 + 生命周期/clone/seal
-  //   +5 → **482**。
-  it('路由足迹精确为 482', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(482);
+  //   +5 →482；第 3 批第二刀 proposal / withdraw / resolution +4 → **486**。
+  it('路由足迹精确为 486', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(486);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

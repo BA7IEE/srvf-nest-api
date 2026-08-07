@@ -1,16 +1,28 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   Equals,
+  IsArray,
   IsBoolean,
   IsDateString,
+  IsDefined,
   IsIn,
+  IsObject,
   IsOptional,
   IsString,
   MaxLength,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { OmittableOnly } from '../../common/decorators/omittable-only.decorator';
+import { UpdateAppManagedActivityDto } from './dto/app/app-managed-activity.dto';
+import {
+  CreateAppManagedActivitySessionDto,
+  CreateAppManagedActivitySessionPositionDto,
+  UpdateAppManagedActivitySessionDto,
+  UpdateAppManagedActivitySessionPositionDto,
+} from './dto/app/app-managed-activity-draft.dto';
 
 const parseQueryBoolean = ({ value }: { value: unknown }): unknown =>
   value === true || value === 'true' ? true : value === false || value === 'false' ? false : value;
@@ -52,6 +64,16 @@ export class ActivityPublishReviewResponseDto {
   organizationId!: string;
   @ApiProperty({ nullable: true, type: String })
   initiatorMemberId!: string | null;
+
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: true,
+    description: '详情读面返回的服务端变更差异',
+  })
+  changeDiff?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ description: '详情读面返回的当前受影响参与身份人数' })
+  affectedMemberCount?: number;
 }
 
 export class ListActivityPublishReviewsQueryDto extends PaginationQueryDto {
@@ -112,6 +134,13 @@ export class ApproveActivityPublishReviewDto {
   @IsBoolean()
   @Equals(true)
   requiresInsuranceConfirmed!: boolean;
+
+  @ApiPropertyOptional({ description: '审核操作幂等标识', minLength: 8, maxLength: 128 })
+  @OmittableOnly()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  operationKey?: string;
 }
 
 export class ReturnActivityPublishReviewDto {
@@ -120,4 +149,178 @@ export class ReturnActivityPublishReviewDto {
   @MinLength(1)
   @MaxLength(500)
   reviewNote!: string;
+
+  @ApiPropertyOptional({ description: '审核操作幂等标识', minLength: 8, maxLength: 128 })
+  @OmittableOnly()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  operationKey?: string;
+}
+
+/**
+ * 初次发布提审只接受明确确认与客户端幂等键；快照永远从受锁的数据库现场生成，
+ * 不接受客户端传入的 Activity / Session JSON。
+ */
+export class SubmitActivityPublishReviewDto {
+  @ApiProperty({ description: '客户端幂等操作标识', minLength: 8, maxLength: 128 })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  operationKey!: string;
+
+  @ApiProperty({ description: '提交发布审核的明确确认；只能为 true', example: true })
+  @IsBoolean()
+  @Equals(true)
+  confirmation!: boolean;
+}
+
+export class ChangeReviewSessionUpdateDto extends UpdateAppManagedActivitySessionDto {
+  @ApiProperty({ minLength: 8, maxLength: 64 })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(64)
+  sessionId!: string;
+}
+
+export class ChangeReviewSessionCreateDto extends CreateAppManagedActivitySessionDto {
+  @ApiPropertyOptional({
+    description: '本次 proposal 内新场次的稳定引用；岗位 create 可用该值作为 sessionId',
+    minLength: 1,
+    maxLength: 64,
+  })
+  @OmittableOnly()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  clientRef?: string;
+}
+
+export class ChangeReviewSessionCancelDto {
+  @ApiProperty({ minLength: 8, maxLength: 64 })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(64)
+  sessionId!: string;
+}
+
+export class ChangeReviewSessionCollectionsDto {
+  @ApiProperty({ type: [ChangeReviewSessionCreateDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ChangeReviewSessionCreateDto)
+  create!: ChangeReviewSessionCreateDto[];
+
+  @ApiProperty({ type: [ChangeReviewSessionUpdateDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ChangeReviewSessionUpdateDto)
+  update!: ChangeReviewSessionUpdateDto[];
+
+  @ApiProperty({ type: [ChangeReviewSessionCancelDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ChangeReviewSessionCancelDto)
+  cancel!: ChangeReviewSessionCancelDto[];
+}
+
+export class ChangeReviewSessionPositionCreateDto extends CreateAppManagedActivitySessionPositionDto {
+  @ApiProperty({ minLength: 8, maxLength: 64 })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(64)
+  sessionId!: string;
+}
+
+export class ChangeReviewSessionPositionUpdateDto extends UpdateAppManagedActivitySessionPositionDto {
+  @ApiProperty({ minLength: 8, maxLength: 64 })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(64)
+  sessionId!: string;
+
+  @ApiProperty({ minLength: 8, maxLength: 64 })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(64)
+  positionId!: string;
+}
+
+export class ChangeReviewSessionPositionCancelDto {
+  @ApiProperty({ minLength: 8, maxLength: 64 })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(64)
+  sessionId!: string;
+
+  @ApiProperty({ minLength: 8, maxLength: 64 })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(64)
+  positionId!: string;
+}
+
+export class ChangeReviewSessionPositionCollectionsDto {
+  @ApiProperty({ type: [ChangeReviewSessionPositionCreateDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ChangeReviewSessionPositionCreateDto)
+  create!: ChangeReviewSessionPositionCreateDto[];
+
+  @ApiProperty({ type: [ChangeReviewSessionPositionUpdateDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ChangeReviewSessionPositionUpdateDto)
+  update!: ChangeReviewSessionPositionUpdateDto[];
+
+  @ApiProperty({ type: [ChangeReviewSessionPositionCancelDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ChangeReviewSessionPositionCancelDto)
+  cancel!: ChangeReviewSessionPositionCancelDto[];
+}
+
+/**
+ * 已发布活动的唯一变更申请。children 三组都是完整集合，故单一场次的改动只是
+ * `sessions.update` 只有一项的特例，不另设旁路 endpoint。
+ */
+export class ChangeReviewDto extends SubmitActivityPublishReviewDto {
+  @ApiProperty({ type: UpdateAppManagedActivityDto })
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => UpdateAppManagedActivityDto)
+  activityPatch!: UpdateAppManagedActivityDto;
+
+  @ApiProperty({ type: ChangeReviewSessionCollectionsDto })
+  @IsDefined()
+  @ValidateNested()
+  @Type(() => ChangeReviewSessionCollectionsDto)
+  sessions!: ChangeReviewSessionCollectionsDto;
+
+  @ApiProperty({ type: ChangeReviewSessionPositionCollectionsDto })
+  @IsDefined()
+  @ValidateNested()
+  @Type(() => ChangeReviewSessionPositionCollectionsDto)
+  positions!: ChangeReviewSessionPositionCollectionsDto;
+}
+
+export class ActivityTemplateResolutionResponseDto {
+  @ApiProperty({ nullable: true, type: String })
+  templateVersionId!: string | null;
+
+  @ApiProperty({
+    type: 'object',
+    additionalProperties: true,
+    description: '活动级最终解析值及 template/activity/system-default 来源',
+  })
+  activity!: Record<string, unknown>;
+
+  @ApiProperty({
+    type: 'array',
+    items: { type: 'object', additionalProperties: true },
+    description:
+      '场次及岗位的最终解析值与来源；每个 resolution.source 仅为 template、activity 或 system-default',
+  })
+  sessions!: Array<Record<string, unknown>>;
 }
