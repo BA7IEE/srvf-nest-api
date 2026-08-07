@@ -286,6 +286,20 @@
 > **第 3 批验收回填（第一刀）**：2 条已转真用例 / 2 条已标注去向 / 17 条仍 todo = 19。
 > AC-001、AC-002 已分别绑定真实发起人/代建审计与跨组织授权证据；其余 todo 的逐条卡点见
 > `activity-business-overhaul-acceptance.spec.ts`，其中模板两表已落、解析项仍卡 **第二刀读面**。
+>
+> **第 3 批第三刀（本分支，生命周期／队员读面）**：App 负责人锚新增首场开始前的
+> cancel（沿 v0.62.0 既有取消闭环，cancelled/null 终态语义不变）与已开始 published
+> 活动的 terminate（服务端 `terminatedAt`）；两者分别复用 ①.5 的 key/hash 落点并各自
+> 做同 key 同载荷重放、异载荷冲突。clone 仅复制活动配置、场次和 `ActivitySessionPosition`
+> 到新 draft，发起人固定为操作者，事实表零写；机器封场 HTTP 层透传既有 `seal()` 结果。
+> App 根列表和详情仅向队员投影 published，`invitation` 需本人 pending/accepted 邀请，未获邀及
+> draft/cancelled/terminated 均为 404 式隐藏；详情的 `formVersion` 本刀恒为 null。
+>
+> **第三刀 AC／接缝登记**：AC-003（clone）已由配置复制与事务事实表零写 spy 真用例接住。
+> AC-004 的准确卡点为**归档端点尚未排批，且没有 `archivedAt` 等事实列**，本刀不建端点或
+> 占位；其余验收项仍按原分区守卫计数，不翻面既有断言。`completed` 仍保留既有 21 个依赖面
+> （含 feedback 资格窗），本刀只加 `terminated`；报名／邀请申请与真实 formVersion 绑定归第
+> 4 批。clone 的 operationKey 因 §10.3 闭集与存储均无落点，按缺口 #15 不接收、不伪造。
 
 - **合同**:[`archive/reviews/activity-business-overhaul-v1.1/`](../archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效
   (业务方案 / 详细开发文档 / 355 项追踪矩阵 / 修订说明),SHA256 入仓时原位校验全过。

@@ -29,6 +29,7 @@ import { BizException } from '../../../common/exceptions/biz.exception';
 import type { AuditMeta } from '../../audit-logs/audit-logs.types';
 import { AppIdentityResolver } from '../../users/app-identity.resolver';
 import { AppManagedActivitiesService } from '../app-managed-activities.service';
+import { ActivityLifecycleService } from '../activity-lifecycle.service';
 import { ActivitySettlementHttpService } from '../activity-settlement-http.service';
 import type { CreateActivityDto, UpdateActivityDto } from '../activities.dto';
 import { ActivityPublishReviewResponseDto } from '../activity-publish-review.dto';
@@ -56,6 +57,14 @@ import {
   UpdateAppManagedActivitySessionPositionDto,
 } from '../dto/app/app-managed-activity-draft.dto';
 import {
+  AppActivityLifecycleResultDto,
+  AppEvidenceSealResultDto,
+  AppManagedActivityCancelCommandDto,
+  AppManagedActivityCloneCommandDto,
+  AppManagedActivityCloneResultDto,
+  AppManagedActivityTerminateCommandDto,
+} from '../dto/app/app-activity-lifecycle.dto';
+import {
   AppSettlementCloseCommandDto,
   AppSettlementCloseResponseDto,
   AppSettlementGenerateCommandDto,
@@ -82,6 +91,7 @@ export class AppManagedActivitiesController {
   constructor(
     private readonly identity: AppIdentityResolver,
     private readonly service: AppManagedActivitiesService,
+    private readonly lifecycle: ActivityLifecycleService,
     private readonly settlements: ActivitySettlementHttpService,
   ) {}
 
@@ -131,6 +141,103 @@ export class AppManagedActivitiesController {
   ): Promise<AppManagedActivityDetailDto> {
     await this.resolveMemberId(user);
     return this.service.create(this.toCreateDto(dto), user, this.auditMeta(req));
+  }
+
+  @Post(':activityId/cancel')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'App 发起人/负责人在首场开始前取消活动 [auth]' })
+  @ApiWrappedOkResponse(AppActivityLifecycleResultDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ACTIVITY_LIFECYCLE_OPERATION_KEY_CONFLICT,
+  )
+  async cancel(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Body() dto: AppManagedActivityCancelCommandDto,
+    @Req() req: Request,
+  ): Promise<AppActivityLifecycleResultDto> {
+    await this.resolveMemberId(user);
+    return await this.lifecycle.cancel(params.activityId, dto, user, this.auditMeta(req));
+  }
+
+  @Post(':activityId/terminate')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'App 负责人提前终止已开始的 published 活动 [auth]' })
+  @ApiWrappedOkResponse(AppActivityLifecycleResultDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ACTIVITY_LIFECYCLE_OPERATION_KEY_CONFLICT,
+  )
+  async terminate(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Body() dto: AppManagedActivityTerminateCommandDto,
+    @Req() req: Request,
+  ): Promise<AppActivityLifecycleResultDto> {
+    await this.resolveMemberId(user);
+    return await this.lifecycle.terminate(params.activityId, dto, user, this.auditMeta(req));
+  }
+
+  @Post(':activityId/clone')
+  @ApiOperation({ summary: 'App 发起人/负责人仅复制活动配置为新 draft [auth]' })
+  @ApiWrappedCreatedResponse(AppManagedActivityCloneResultDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ORGANIZATION_NOT_FOUND,
+    BizCode.ORGANIZATION_INACTIVE,
+    BizCode.ACTIVITY_ORGANIZATION_ROOT_FORBIDDEN,
+    BizCode.ACTIVITY_INITIATOR_NOT_FORMAL,
+    BizCode.ACTIVITY_INITIATION_ORG_FORBIDDEN,
+  )
+  async clone(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Body() dto: AppManagedActivityCloneCommandDto,
+    @Req() req: Request,
+  ): Promise<AppManagedActivityCloneResultDto> {
+    await this.resolveMemberId(user);
+    return await this.lifecycle.clone(params.activityId, dto, user, this.auditMeta(req));
+  }
+
+  @Post(':activityId/evidence-seals')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'App 负责人执行机器证据封场；缺口与 seal 结果沿既有服务透传 [auth]' })
+  @ApiWrappedOkResponse(AppEvidenceSealResultDto)
+  @ApiBizErrorResponse(
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.EVIDENCE_SEAL_CHECKOUT_WINDOW_OPEN,
+    BizCode.EVIDENCE_SEAL_OPEN_SEGMENT_EXISTS,
+    BizCode.EVIDENCE_SEAL_MANUAL_REVIEW_PENDING,
+    BizCode.EVIDENCE_SEAL_UNPROCESSED_EVENT_EFFECT,
+    BizCode.EVIDENCE_SEAL_CHANGE_REVIEW_PENDING,
+    BizCode.EVIDENCE_SEAL_REVISION_CHANGED,
+    BizCode.EVIDENCE_SEAL_ALREADY_ACTIVE,
+  )
+  async evidenceSeal(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Req() req: Request,
+  ): Promise<AppEvidenceSealResultDto> {
+    await this.resolveMemberId(user);
+    return await this.lifecycle.seal(params.activityId, user, this.auditMeta(req));
   }
 
   @Get(':activityId/sessions')

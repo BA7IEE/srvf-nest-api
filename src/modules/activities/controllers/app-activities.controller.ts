@@ -19,6 +19,10 @@ import { AppActivitiesService } from '../app-activities.service';
 import { AppActivityDetailDto } from '../dto/app/app-activity-detail.dto';
 import { AppAvailableActivityListItemDto } from '../dto/app/app-available-activity-list-item.dto';
 import {
+  AppActivityDirectoryListItemDto,
+  AppActivityDirectoryQueryDto,
+} from '../dto/app/app-activity-directory.dto';
+import {
   AppActivityPositionDto,
   AppActivityPositionsParamsDto,
 } from '../dto/app/app-activity-position.dto';
@@ -38,6 +42,23 @@ export class AppActivitiesController {
     private readonly appIdentity: AppIdentityResolver,
     private readonly appActivities: AppActivitiesService,
   ) {}
+
+  @Get()
+  @ApiOperation({
+    summary: 'App 队员内部活动目录(仅 published；invitation 仅本人受邀可见) [auth]',
+  })
+  @ApiWrappedPageResponse(AppActivityDirectoryListItemDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
+  async listDirectory(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Query() query: AppActivityDirectoryQueryDto,
+  ): Promise<PageResultDto<AppActivityDirectoryListItemDto>> {
+    const access = await this.appIdentity.resolve(currentUser);
+    if (!access.canUseApp || access.member === null) {
+      throw new BizException(BizCode.FORBIDDEN);
+    }
+    return this.appActivities.listDirectoryForMember(access.member.id, query);
+  }
 
   @Get('available')
   @ApiOperation({
@@ -84,7 +105,7 @@ export class AppActivitiesController {
   @Get(':id')
   @ApiOperation({
     summary:
-      'App 视角活动详情(仅 published 可见;draft / cancelled / completed / 软删 / 不存在统一 → 404) [auth]',
+      'App 视角活动详情(仅 published；invitation 仅本人受邀；draft / cancelled / terminated / completed / 软删 / 不存在统一 → 404) [auth]',
   })
   @ApiWrappedOkResponse(AppActivityDetailDto)
   @ApiBizErrorResponse(

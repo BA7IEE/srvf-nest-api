@@ -1625,6 +1625,13 @@ export const BizCode = {
     message: '场次岗位定位策略无效',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+  // 第 3 批第三刀取消/提前终止各自有一组单列 operationKey + requestHash。
+  // 同 key 同 canonical payload 必须重放原结果；同 key 但内容不同才走本冲突码。
+  ACTIVITY_LIFECYCLE_OPERATION_KEY_CONFLICT: {
+    code: 20142,
+    message: '相同操作标识已用于不同的活动生命周期内容,请更换操作标识',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。
