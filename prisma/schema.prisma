@@ -548,6 +548,8 @@ model Member {
   // 活动改造 v1.1 第 1 批第一刀(2026-08-04;合同 §3.3 / §3.8):仅关系映射,零标量字段。
   activitySessionPositionsLed ActivitySessionPosition[]       @relation("SessionPositionLeader")
   activityParticipations      ActivityParticipationIdentity[]
+  // 第 4 批前置微刀(第 78 migration):activity-person capacity reservation 的直接锚点。
+  capacityReservations        CapacityReservation[]
 
   // 活动改造 v1.1 第 1 批第二刀(2026-08-04;合同 §3.12 / §3.14):同上,零标量字段。
   // ⚠️ §3.14 ActivityVisitor **刻意不在此列** —— 合同明写访客与 Member 无 relation,
@@ -1220,6 +1222,8 @@ model Activity {
   sessionPositions        ActivitySessionPosition[]
   participationIdentities ActivityParticipationIdentity[]
   capacityBuckets         ActivityCapacityBucket[]
+  // 第 4 批前置微刀(第 78 migration):activity-person capacity reservation 的直接锚点。
+  capacityReservations    CapacityReservation[]
 
   // 活动改造 v1.1 第 1 批第二刀反向 relation(合同 §3.12 / §3.13 / §3.14):
   // 仅关系映射,零标量字段(沿 R2 范式)。
@@ -3708,12 +3712,8 @@ model ActivityCapacityBucket {
 
 // ===== §3.10 CapacityReservation:每个当前占位的可追溯事实 =====
 //
-// partial unique(migration 末尾手写):一个 identity 对一个 bucket 至多一条 active。
-//
-// ⚠️ 合同 §3.10 还要求第二条 partial unique「一个 member／activity 至多一条 active
-// activity-person reservation」,但 §3.10 自己的字段表**没有给 memberId / activityId
-// 两列**,该索引无从建起。goal DoD 5 也只列了第一条。本刀实现第一条,第二条作为
-// 合同内部不一致**上报维护者**,不自行发明列去补(AGENTS §2)。
+// partial unique(迁移末尾手写):一个 identity 对一个 bucket 至多一条 active;
+// 第 78 migration 再补一个 member/activity 至多一条 active activity-person 的保证。
 model CapacityReservation {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -3722,6 +3722,10 @@ model CapacityReservation {
   identityId      String
   bucketId        String
   reservationType String
+  // 第 78 migration:仅 activity_person active 行必须同时带两锚点；其余既有 reservation
+  // 保持可空、无 default、零回填，避免改写 session / position 历史。
+  memberId        String?
+  activityId      String?
 
   status        String // active / released(CHECK 闭集 + 形状 CHECK)
   releasedAt    DateTime?
@@ -3729,6 +3733,8 @@ model CapacityReservation {
 
   identity ActivityParticipationIdentity @relation(fields: [identityId], references: [id], onDelete: Restrict)
   bucket   ActivityCapacityBucket        @relation(fields: [bucketId], references: [id], onDelete: Restrict)
+  member   Member?                       @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  activity Activity?                     @relation(fields: [activityId], references: [id], onDelete: Restrict)
 
   @@index([identityId])
   @@index([bucketId])
