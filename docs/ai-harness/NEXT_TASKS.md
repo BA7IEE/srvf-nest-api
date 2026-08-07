@@ -218,7 +218,7 @@
 
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
-### P1-28 活动业务全流程改造(批次 0–7) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件)、③ Form runtime / 一次性附件会话([#960](https://github.com/BA7IEE/srvf-nest-api/pull/960));合同已修订至 v1.1.1,缺口台账累计 #20**
+### P1-28 活动业务全流程改造(批次 0–7) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件，[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960))、③ Form runtime / 一次性附件会话([#961](https://github.com/BA7IEE/srvf-nest-api/pull/961));合同已修订至 v1.1.1,缺口台账累计 #20**
 
 > **需求口径变更(2026-08-04)**:**= v1.1 四份 + [`AMENDMENTS-v1.1.1`](../archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md),冲突以后者为准。**
 > 第 1 批建表过程中实测撞到**五处合同内部不一致**,维护者当日**全部接受**并发布修订件。原件与 SHA256 一字未动(校验仍过)。
@@ -320,7 +320,7 @@
 > （含 feedback 资格窗），本刀只加 `terminated`；报名／邀请申请与真实 formVersion 绑定归第
 > 4 批。clone 的 operationKey 因 §10.3 闭集与存储均无落点，按缺口 #15 不接收、不伪造。
 
-> **第 4 批③（[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960)，Form runtime / 一次性附件会话）**：managed Form 定义、draft/active 版本、初发/变更审核/clone 与 App detail 安全读面已接通；v3 proposal 把 canonical Form 纳入 stale hash，历史 v2 审批逐字兼容。附件会话只存 token SHA-256、创建响应明文仅一次；后端中转 multipart 固定 JPEG/PNG/WebP/PDF、10 MiB、单会话单附件和安全重放，不返回 provider signed upload URL 或内部存储字段。报名答案、报名 revision、提交时 consumed/绑定、资格/分配/候补/邀请消费均未实现。
+> **第 4 批③（[#961](https://github.com/BA7IEE/srvf-nest-api/pull/961)，Form runtime / 一次性附件会话）**：managed Form 定义、draft/active 版本、初发/变更审核/clone 与 App detail 安全读面已接通；v3 proposal 把 canonical Form 纳入 stale hash，历史 v2 审批逐字兼容。附件会话只存 token SHA-256、创建响应明文仅一次；后端中转 multipart 固定 JPEG/PNG/WebP/PDF、10 MiB、单会话单附件和安全重放，不返回 provider signed upload URL 或内部存储字段。报名答案、报名 revision、提交时 consumed/绑定、资格/分配/候补/邀请消费均未实现。
 >
 > **第 4 批验收回填**：AC-016 只登记完整 Form 读取已覆盖，答案提交校验仍阻塞；AC-017 继续 todo（三入口共享答案 validator 未实现）；AC-029 只登记会话创建/上传已覆盖，提交报名时绑定与换报名防串仍阻塞。部分完成不降低 todo 数。
 
