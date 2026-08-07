@@ -298,6 +298,67 @@ describe('AttachmentStorageOrchestrator JIT locator candidates', () => {
   });
 });
 
+describe('AttachmentStorageOrchestrator multipart boundary', () => {
+  it('runs content magic validation synchronously and Provider put/HEAD proof outside any caller transaction', async () => {
+    const validateFromBuffer = jest.fn();
+    const putObjectAt = jest.fn().mockResolvedValue({ key: 'attachments/upload.png' });
+    const orchestrator = new AttachmentStorageOrchestrator(
+      { $transaction: jest.fn() } as unknown as PrismaService,
+      {} as StorageObjectLedgerService,
+      { validateFromBuffer } as unknown as AttachmentContentValidator,
+      {} as AttachmentAuditRecorder,
+      {
+        getCurrentLocator: jest.fn(),
+        putObjectAt,
+        deleteObjectAt: jest.fn(),
+        generateUploadUrlAt: jest.fn(),
+        generateDownloadUrlAt: jest.fn(),
+        headObjectAt: jest.fn(),
+        readObjectPrefixAt: jest.fn(),
+        hashObjectSha256At: jest.fn(),
+      } as unknown as PinnedStorageProvider,
+    );
+    const verify = jest.spyOn(orchestrator, 'verifyUploadEvidence').mockResolvedValue({
+      exists: true,
+      size: 8,
+      contentType: 'image/png',
+    });
+    const identity: AttachmentUploadStorageIdentity = {
+      key: 'attachments/upload.png',
+      ownerType: 'registration-upload-session',
+      ownerId: 'upload-session-1',
+      originalName: 'proof.png',
+      mime: 'image/png',
+      size: 8,
+      uploadedByUserId: 'user-1',
+    };
+
+    orchestrator.validateUploadBufferOutsideTransaction('image/png', Buffer.alloc(8));
+    await expect(
+      orchestrator.putUploadObjectAtAndVerifyOutsideTransaction(
+        identity,
+        'attachment_legacy',
+        CURRENT_LOCAL,
+        Buffer.alloc(8),
+      ),
+    ).resolves.toEqual({ exists: true, size: 8, contentType: 'image/png' });
+
+    expect(validateFromBuffer).toHaveBeenCalledWith({
+      mime: 'image/png',
+      buffer: expect.any(Buffer) as unknown,
+    });
+    expect(putObjectAt).toHaveBeenCalledWith(
+      CURRENT_LOCAL,
+      expect.objectContaining({
+        key: identity.key,
+        body: expect.any(Buffer) as unknown,
+        contentType: 'image/png',
+      }),
+    );
+    expect(verify).toHaveBeenCalledWith(identity, 'attachment_legacy');
+  });
+});
+
 describe('AttachmentStorageOrchestrator upload identity boundary', () => {
   const identity: AttachmentUploadStorageIdentity = {
     key: 'attachments/unit/exact-upload.txt',

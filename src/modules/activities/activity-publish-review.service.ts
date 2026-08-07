@@ -32,6 +32,7 @@ import { ActivityNotificationProducer } from './activity-notification-producer';
 import {
   ActivityPublishProposalV2Service,
   type ActivityTemplateResolution,
+  type ActivityTemplateResolutionWithRegistrationForm,
 } from './activity-publish-proposal-v2.service';
 import {
   parseActivityProposalSnapshot,
@@ -837,7 +838,11 @@ export class ActivityPublishReviewService {
       activity.organizationId,
       snapshot.activity.organizationId,
     );
-    const current = await this.proposalV2.rebuildCurrent(tx, review.activityId);
+    const current = await this.proposalV2.rebuildCurrent(
+      tx,
+      review.activityId,
+      snapshot.schemaVersion,
+    );
     if (
       review.baseRevision !== activity.workflowRevision ||
       snapshot.baseWorkflowRevision !== review.baseRevision ||
@@ -876,7 +881,9 @@ export class ActivityPublishReviewService {
     // templateVersionId even if template administration changes between submit and approval.
     await this.writeRuleSnapshot(tx, review.activityId, review.id, {
       expectedWorkflowRevision: applied.workflowRevision,
-      resolvedConfig: snapshot.resolvedConfig,
+      resolvedConfig:
+        snapshot.schemaVersion === 2 ? snapshot.resolvedConfig : applied.resolvedConfig,
+      schemaVersion: snapshot.schemaVersion,
     });
     const updatedReview = await tx.activityPublishReview.update({
       where: { id: review.id },
@@ -1235,7 +1242,8 @@ export class ActivityPublishReviewService {
     reviewId: string,
     options: {
       expectedWorkflowRevision?: number;
-      resolvedConfig?: ActivityTemplateResolution;
+      resolvedConfig?: ActivityTemplateResolution | ActivityTemplateResolutionWithRegistrationForm;
+      schemaVersion?: 2 | 3;
     } = {},
   ): Promise<void> {
     const activity = await tx.activity.findUniqueOrThrow({
@@ -1256,7 +1264,7 @@ export class ActivityPublishReviewService {
         workflowRevision: activity.workflowRevision,
         templateVersionId: resolvedConfig.templateVersionId,
         resolvedConfig: JSON.parse(JSON.stringify(resolvedConfig)) as Prisma.InputJsonValue,
-        snapshotHash: hashCanonical({ schemaVersion: 2, resolvedConfig }),
+        snapshotHash: hashCanonical({ schemaVersion: options.schemaVersion ?? 2, resolvedConfig }),
         createdByReviewId: reviewId,
       },
     });

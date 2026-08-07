@@ -15,6 +15,7 @@ import { AppActivityPositionDto } from './dto/app/app-activity-position.dto';
 import { deriveEffectiveActivityCapacity } from './activity-capacity';
 import { deriveActivityPhase } from './activity-phase';
 import { ActivityParticipationPolicy } from './activity-participation-policy';
+import { registrationFormDefinitionFromStoredFields } from './registration-form-definition';
 
 // Phase 2 P2-4a/P2-4b App /api/app/v1/activities/* service。
 // 沿 docs/app-api-p2-4-activities-review.md §8.2 决议 D-P2-4-4 = 方案 B:
@@ -109,6 +110,33 @@ const appActivityDetailSelect = {
           description: true,
           equipmentNotes: true,
           sortOrder: true,
+        },
+      },
+    },
+  },
+  registrationFormVersions: {
+    where: { statusCode: 'active' },
+    orderBy: [{ version: 'desc' }, { id: 'desc' }],
+    take: 1,
+    select: {
+      version: true,
+      fields: {
+        orderBy: [{ sortOrder: 'asc' }, { fieldCode: 'asc' }],
+        select: {
+          fieldCode: true,
+          typeCode: true,
+          label: true,
+          helpText: true,
+          required: true,
+          visibilityCode: true,
+          exportable: true,
+          sortOrder: true,
+          minValue: true,
+          maxValue: true,
+          minLength: true,
+          maxLength: true,
+          maxSelections: true,
+          optionsJson: true,
         },
       },
     },
@@ -366,6 +394,13 @@ export class AppActivitiesService {
   }
 
   private toDetailDto(row: AppActivityDetailRow, passCount: number): AppActivityDetailDto {
+    const activeForm = row.registrationFormVersions[0] ?? null;
+    const registrationForm = activeForm
+      ? {
+          version: activeForm.version,
+          fields: registrationFormDefinitionFromStoredFields(activeForm.fields).definition.fields,
+        }
+      : null;
     return {
       id: row.id,
       title: row.title,
@@ -385,8 +420,8 @@ export class AppActivitiesService {
       coverImageUrl: row.coverImageUrl,
       createdAt: row.createdAt,
       registrationMode: row.registrationModeCode,
-      // 第 4 批才接 RegistrationFormVersion；本刀绝不假装已有绑定真源。
-      formVersion: null,
+      formVersion: registrationForm?.version ?? null,
+      registrationForm,
       sessions: row.sessions.map((session) => ({
         id: session.id,
         code: session.code,

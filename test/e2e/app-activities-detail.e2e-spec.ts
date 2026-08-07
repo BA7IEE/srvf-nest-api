@@ -46,6 +46,7 @@ const APP_DETAIL_KEYS = [
   'registrationDeadline',
   'registrationMode',
   'registrationNotes',
+  'registrationForm',
   'requiresInsurance',
   'sessions',
   'startAt',
@@ -241,12 +242,69 @@ describe('App GET /api/app/v1/activities/:id (P2-4b)', () => {
       expect(data.statusCode).toBe('published');
       expect(data.genderRequirementCode).toBeNull();
       expect(data.requiresInsurance).toBe(false);
+      expect(data.registrationForm).toBeNull();
       expect(data.passCount).toBe(0);
       expect(data.phase).toBe('ended');
 
       for (const forbiddenKey of FORBIDDEN_KEYS_ON_DETAIL) {
         expect(data).not.toHaveProperty(forbiddenKey);
       }
+    });
+
+    it('active Form is an additive safe projection: real version + full fields, without ids/hash/workflow/storage data', async () => {
+      const { authHeader } = await setupLinkedUser({
+        username: 'p24b_active_form',
+        memberNo: 'P24B-FORM-1',
+      });
+      const activity = await createActivity('published', 'active-form');
+      await prisma.registrationFormVersion.create({
+        data: {
+          activityId: activity.id,
+          version: 4,
+          statusCode: 'active',
+          workflowRevision: 9,
+          schemaHash: 'a'.repeat(64),
+          activatedAt: new Date(),
+          fields: {
+            create: [
+              {
+                fieldCode: 'experience',
+                typeCode: 'short_text',
+                label: '相关经验',
+                required: true,
+                visibilityCode: 'self_only',
+                exportable: false,
+                sortOrder: 1,
+                minLength: 1,
+                maxLength: 100,
+              },
+              {
+                fieldCode: 'proof',
+                typeCode: 'file',
+                label: '证明附件',
+                required: false,
+                visibilityCode: 'self_and_owner',
+                exportable: false,
+                sortOrder: 2,
+              },
+            ],
+          },
+        },
+      });
+
+      const res = await get('/api/app/v1/activities/' + activity.id, authHeader);
+      expect(res.status).toBe(200);
+      expect(res.body.data.formVersion).toBe(4);
+      expect(res.body.data.registrationForm).toEqual({
+        version: 4,
+        fields: [
+          expect.objectContaining({ fieldCode: 'experience', typeCode: 'short_text' }),
+          expect.objectContaining({ fieldCode: 'proof', typeCode: 'file' }),
+        ],
+      });
+      expect(JSON.stringify(res.body.data.registrationForm)).not.toMatch(
+        /schemaHash|workflowRevision|createdAt|updatedAt|storage|"id"/,
+      );
     });
   });
 

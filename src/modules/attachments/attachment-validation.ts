@@ -22,6 +22,9 @@ export const ATTACHMENT_OWNER_TYPES = [
   'activity',
   'content-image',
   'content-file',
+  // Internal-only owner. It is deliberately known to the trusted facade but fail-closed on every
+  // generic Admin attachment endpoint.
+  'registration-upload-session',
 ] as const;
 export type AttachmentOwnerType = (typeof ATTACHMENT_OWNER_TYPES)[number];
 

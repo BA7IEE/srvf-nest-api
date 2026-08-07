@@ -4554,6 +4554,8 @@ async function main(): Promise<void> {
 
     // CMS 内容模块(2026-06-21,评审稿 §5.1):content-image / content-file 附件类型默认配置行(幂等)
     await seedContentAttachmentTypeConfigs(prisma);
+    // 活动改造 v1.1 第 4 批:一次性报名附件会话内部 owner 配置(幂等,不 seed 权限码)。
+    await seedRegistrationUploadSessionAttachmentTypeConfig(prisma);
 
     // 统一通知 S2(2026-06-25,评审稿 §3.5):微信订阅模板配置默认行(templateId=null 待运营填;幂等)
     await seedWechatSubscribeTemplates(prisma);
@@ -4626,6 +4628,33 @@ async function seedContentAttachmentTypeConfigs(prisma: PrismaClient): Promise<v
   console.log(
     `[seed] content attachment type configs ensured (${CONTENT_ATTACHMENT_TYPE_CONFIG_SEED.length}: content-image / content-file)`,
   );
+}
+
+const REGISTRATION_UPLOAD_SESSION_ATTACHMENT_TYPE_CONFIG = {
+  code: 'registration-upload-session',
+  displayName: '报名一次性上传附件',
+  ownerTable: 'registration_upload_sessions',
+  defaultMaxSizeBytes: 10 * 1024 * 1024,
+  defaultMimeWhitelist: ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'],
+} as const;
+
+// 运营已调整的 MIME/大小/status 不得被 deploy/seed 回退：唯一允许的 update 是空对象。
+async function seedRegistrationUploadSessionAttachmentTypeConfig(
+  prisma: PrismaClient,
+): Promise<void> {
+  const cfg = REGISTRATION_UPLOAD_SESSION_ATTACHMENT_TYPE_CONFIG;
+  await prisma.attachmentTypeConfig.upsert({
+    where: { code: cfg.code },
+    update: {},
+    create: {
+      code: cfg.code,
+      displayName: cfg.displayName,
+      ownerTable: cfg.ownerTable,
+      defaultMaxSizeBytes: cfg.defaultMaxSizeBytes,
+      defaultMimeWhitelist: [...cfg.defaultMimeWhitelist],
+    },
+  });
+  console.log(`[seed] registration upload attachment type config ensured (${cfg.code})`);
 }
 
 // 统一通知 S2(2026-06-25;微信订阅 quota 渠道,评审稿 §3.5 / D-N3):各 notification_type 的微信订阅模板

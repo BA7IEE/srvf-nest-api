@@ -95,6 +95,29 @@ export type ContentUploadConfirmFinalized = Readonly<{
   [contentUploadConfirmFinalizedBrand]: never;
 }>;
 
+// Registration upload-session uses a separate opaque capability family. These handles never
+// expose the token, session binding, storage key/locator, Provider evidence or audit envelope.
+declare const registrationUploadValidatedBrand: unique symbol;
+declare const registrationUploadPreparedBrand: unique symbol;
+declare const registrationUploadVerifiedBrand: unique symbol;
+declare const registrationUploadFinalizedBrand: unique symbol;
+
+export type RegistrationUploadValidated = Readonly<{
+  [registrationUploadValidatedBrand]: never;
+}>;
+
+export type RegistrationUploadPrepared = Readonly<{
+  [registrationUploadPreparedBrand]: never;
+}>;
+
+export type RegistrationUploadVerified = Readonly<{
+  [registrationUploadVerifiedBrand]: never;
+}>;
+
+export type RegistrationUploadFinalized = Readonly<{
+  [registrationUploadFinalizedBrand]: never;
+}>;
+
 export interface PrepareAttachmentDeleteInput {
   attachmentId: string;
   actorUserId: string;

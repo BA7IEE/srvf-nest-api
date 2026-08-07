@@ -192,6 +192,7 @@ Certificate (不在 participation 图内)
 | `activity-registrations` 在事务内读 `tx.attendanceRecord` / `tx.activityCheckIn` | ✅ 仅限取消证据守卫 | pass cancel 在已取得 Activity → Registration 锁后按 `registrationId + deletedAt:null` 计数；pending/waitlisted cancel 也执行相同 live 计数，但不宣称持有 Activity 锁。任一 live 证据存在即复用 21033；禁止写/删考勤证据、禁止引入 attendances service |
 | `activity-registrations` 在事务内写 `tx.attendanceSheet` / `tx.attendanceRecord` / `tx.activityCheckIn` | ❌ 不允许 | 上游报名不得改删下游参与历史 |
 | `activity-registrations` 读 / 写 `InsuranceEligibilityEvidence` | ✅ 限定例外 | 只允许 create 根事务调用 `InsuranceRequirementService` 在 Registration 后、Audit 前生成一条；禁止本模块直接 Prisma 改删，PR4 migration deploy 后由 immutable + owner unique 兜底 |
+| `activity-registrations` → `attachments` 的 registration-upload-session trusted facade | ✅ 限定例外 | 只供一次性报名附件会话：调用方在 Activity/Form/Session 根锁内做两次复校和 durable intent，facade 在事务外完成内容校验、Provider put/HEAD；禁止反向 `attachments → activity-registrations` 依赖，通用 Admin attachment 面也必须对该内部 owner fail-closed |
 | `contribution-rules` 在事务内读 / 写其它 participation 表 | ❌ 不允许 | ContributionRule 是配置实体,只被读,不读人 |
 | `activity-feedbacks` 读取 `Activity` / `AttendanceSheet` / `AttendanceRecord` | ✅ 限定例外 | 只为 completed/window、approved-only 到场资格与 Admin 评价率分母；直接读 Prisma，不 import 三个兄弟 god-service |
 | `activity-feedbacks` 写其它 participation 表 | ❌ 不允许 | 评价写只落 `ActivityFeedback`；不得改 Attendance / Contribution / settlement |
