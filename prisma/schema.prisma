@@ -1361,14 +1361,14 @@ model ActivityRuleSnapshot {
 
   activityId        String
   workflowRevision  Int
-  templateVersionId String
+  templateVersionId String?
   // canonical JSON 的完整解析配置,含活动默认及每个 session / position 的最终值。
   resolvedConfig    Json
   snapshotHash      String
   createdByReviewId String
 
   activity          Activity                  @relation(fields: [activityId], references: [id], onDelete: Restrict)
-  templateVersion   ActivityTemplate          @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
+  templateVersion   ActivityTemplate?         @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
   createdByReview   ActivityPublishReview     @relation(fields: [createdByReviewId], references: [id], onDelete: Restrict)
   allocationBatches ActivityAllocationBatch[]
 

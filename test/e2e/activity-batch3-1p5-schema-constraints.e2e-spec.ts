@@ -148,7 +148,7 @@ describe('活动改造 v1.1 第 3 批①.5 schema 约束(第 76 migration)', () 
     o: {
       activityId?: string;
       workflowRevision?: number;
-      templateVersionId?: string;
+      templateVersionId?: string | null;
       createdByReviewId?: string;
       resolvedConfig?: string;
       snapshotHash?: string;
@@ -165,7 +165,7 @@ describe('活动改造 v1.1 第 3 批①.5 schema 约束(第 76 migration)', () 
     };
     return `INSERT INTO "ActivityRuleSnapshot"
       ("id","activityId","workflowRevision","templateVersionId","resolvedConfig","snapshotHash","createdByReviewId")
-      VALUES ('${id}', '${v.activityId}', ${v.workflowRevision}, '${v.templateVersionId}',
+      VALUES ('${id}', '${v.activityId}', ${v.workflowRevision}, ${sqlText(v.templateVersionId)},
        '${v.resolvedConfig}'::jsonb, '${v.snapshotHash}', '${v.createdByReviewId}')`;
   };
 
@@ -375,7 +375,7 @@ describe('活动改造 v1.1 第 3 批①.5 schema 约束(第 76 migration)', () 
         { column_name: 'createdAt', data_type: 'timestamp without time zone', is_nullable: 'NO' },
         { column_name: 'activityId', data_type: 'text', is_nullable: 'NO' },
         { column_name: 'workflowRevision', data_type: 'integer', is_nullable: 'NO' },
-        { column_name: 'templateVersionId', data_type: 'text', is_nullable: 'NO' },
+        { column_name: 'templateVersionId', data_type: 'text', is_nullable: 'YES' },
         { column_name: 'resolvedConfig', data_type: 'jsonb', is_nullable: 'NO' },
         { column_name: 'snapshotHash', data_type: 'text', is_nullable: 'NO' },
         { column_name: 'createdByReviewId', data_type: 'text', is_nullable: 'NO' },
@@ -404,6 +404,15 @@ describe('活动改造 v1.1 第 3 批①.5 schema 约束(第 76 migration)', () 
         SELECT id, "snapshotHash" FROM "ActivityRuleSnapshot" WHERE id = 'snapshot-1'
       `;
       expect(rows).toEqual([{ id: 'snapshot-1', snapshotHash: 'canonical-snapshot-1' }]);
+    });
+
+    it('立正对照:无模板活动的快照可以插入', async () => {
+      await expectAccepted(snapshotSql('snapshot-without-template', { templateVersionId: null }));
+      const rows = await prisma.$queryRaw<Array<{ id: string; templateVersionId: string | null }>>`
+        SELECT id, "templateVersionId" FROM "ActivityRuleSnapshot"
+        WHERE id = 'snapshot-without-template'
+      `;
+      expect(rows).toEqual([{ id: 'snapshot-without-template', templateVersionId: null }]);
     });
 
     it('三根 FK 分别拒绝不存在的活动、模板版本与审核请求', async () => {
