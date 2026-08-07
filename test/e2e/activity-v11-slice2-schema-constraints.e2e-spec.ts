@@ -6,7 +6,9 @@ import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
 // 活动改造 v1.1 —— 第 1 批第二刀(2026-08-04;第 72 migration
-// `20260804040000_activity_v11_slice2_form_qualification_invitation`)。
+// `20260804040000_activity_v11_slice2_form_qualification_invitation`) + 第 4 批 Form
+// 前置微刀 D-FORM-0(2026-08-07;第 79 migration
+// `20260807183000_activity_v11_batch4_form_closed_sets`)。
 // 合同:docs/archive/reviews/activity-business-overhaul-v1.1/
 //       SRVF_活动业务全流程改造_详细开发文档_v1.1.md §3.6 / §3.7 / §3.12 / §3.13 / §3.14
 //
@@ -267,6 +269,7 @@ describe('活动改造 v1.1 第 1 批第二刀 schema 约束(第 72 migration)',
   async function makeField(
     overrides: Partial<{
       typeCode: string;
+      visibilityCode: string;
       minValue: number | null;
       maxValue: number | null;
       minLength: number | null;
@@ -282,7 +285,7 @@ describe('活动改造 v1.1 第 1 批第二刀 schema 约束(第 72 migration)',
           fieldCode: code,
           label: code,
           typeCode: overrides.typeCode ?? 'short_text',
-          visibilityCode: 'internal',
+          visibilityCode: overrides.visibilityCode ?? 'self_only',
           minValue: overrides.minValue ?? null,
           maxValue: overrides.maxValue ?? null,
           minLength: overrides.minLength ?? null,
@@ -452,6 +455,7 @@ describe('活动改造 v1.1 第 1 批第二刀 schema 约束(第 72 migration)',
   describe('§3.12 RegistrationFormField', () => {
     const insertField = (cols: {
       typeCode?: string;
+      visibilityCode?: string;
       minValue?: number | null;
       maxValue?: number | null;
       minLength?: number | null;
@@ -463,7 +467,7 @@ describe('活动改造 v1.1 第 1 批第二刀 schema 约束(第 72 migration)',
         ("id","formVersionId","fieldCode","label","typeCode","visibilityCode",
          "minValue","maxValue","minLength","maxLength","maxSelections","updatedAt")
        VALUES (${sqlText(code)},${sqlText(draftFormVersionId)},${sqlText(code)},${sqlText(code)},
-        ${sqlText(cols.typeCode ?? 'short_text')},'internal',
+        ${sqlText(cols.typeCode ?? 'short_text')},${sqlText(cols.visibilityCode ?? 'self_only')},
         ${sqlNum(cols.minValue ?? null)},${sqlNum(cols.maxValue ?? null)},
         ${sqlNum(cols.minLength ?? null)},${sqlNum(cols.maxLength ?? null)},
         ${sqlNum(cols.maxSelections ?? null)},now())`;
@@ -485,6 +489,16 @@ describe('活动改造 v1.1 第 1 批第二刀 schema 约束(第 72 migration)',
         'confirmation',
       ]) {
         await expectAccepted(insertField({ typeCode }));
+      }
+    });
+
+    it('第 79 migration:visibilityCode 闭集外被拒;冻结三值全部放行', async () => {
+      await expectRejected(insertField({ visibilityCode: 'internal' }), {
+        sqlState: '23514',
+        constraint: 'registration_form_field_visibility_code_check',
+      });
+      for (const visibilityCode of ['self_and_registration_staff', 'self_and_owner', 'self_only']) {
+        await expectAccepted(insertField({ visibilityCode }));
       }
     });
 
@@ -542,7 +556,7 @@ describe('活动改造 v1.1 第 1 批第二刀 schema 约束(第 72 migration)',
       const insertWithCode = (id: string) =>
         `INSERT INTO "RegistrationFormField"
           ("id","formVersionId","fieldCode","label","typeCode","visibilityCode","updatedAt")
-         VALUES (${sqlText(id)},${sqlText(draftFormVersionId)},${sqlText(fieldCode)},'x','short_text','internal',now())`;
+         VALUES (${sqlText(id)},${sqlText(draftFormVersionId)},${sqlText(fieldCode)},'x','short_text','self_only',now())`;
       await expectAccepted(insertWithCode(uniq('f')));
       await expectRejected(insertWithCode(uniq('f')), { sqlState: '23505', key: 'formVersionId' });
     });
@@ -725,6 +739,7 @@ describe('活动改造 v1.1 第 1 批第二刀 schema 约束(第 72 migration)',
 
   describe('§3.12 RegistrationUploadSession', () => {
     const insertSession = (cols: {
+      id?: string;
       tokenHash?: string;
       expiresAt?: string | null;
       consumedAt?: string | null;
@@ -732,26 +747,48 @@ describe('活动改造 v1.1 第 1 批第二刀 schema 约束(第 72 migration)',
     }) =>
       `INSERT INTO "RegistrationUploadSession"
         ("id","activityId","memberId","formVersionId","tokenHash","expiresAt","consumedAt","statusCode","updatedAt")
-       VALUES (${sqlText(uniq('ups'))},${sqlText(activityId)},${sqlText(memberId)},
+       VALUES (${sqlText(cols.id ?? uniq('ups'))},${sqlText(activityId)},${sqlText(memberId)},
         ${sqlText(draftFormVersionId)},${sqlText(cols.tokenHash ?? uniq('hash'))},
         ${sqlTime(cols.expiresAt === undefined ? EXPIRES_AT : cols.expiresAt)},
-        ${sqlTime(cols.consumedAt ?? null)},${sqlText(cols.statusCode ?? 'pending')},now())`;
+        ${sqlTime(cols.consumedAt ?? null)},${sqlText(cols.statusCode ?? 'active')},now())`;
 
     it('expiresAt 必填:缺失被拒(23502 非空,不是 CHECK —— CHECK 对 NULL 判通过,表达不了必填)', async () => {
       await expectRejected(insertSession({ expiresAt: null }), { sqlState: '23502' });
       await expectAccepted(insertSession({}));
     });
 
-    it('consumedAt 只在 consumed 态有值:非 consumed 带 consumedAt 被拒;★consumedAt 为 NULL 时任何状态放行', async () => {
-      await expectRejected(insertSession({ consumedAt: NOW_ISO, statusCode: 'pending' }), {
+    it('第 72 migration 的既有单向 consumedAt 守卫仍在:非 consumed 带 consumedAt 被拒', async () => {
+      await expectRejected(insertSession({ consumedAt: NOW_ISO, statusCode: 'active' }), {
         sqlState: '23514',
         constraint: 'registration_upload_session_consumed_shape_check',
       });
       await expectAccepted(insertSession({ consumedAt: NOW_ISO, statusCode: 'consumed' }));
-      // ★NULL 边界:单向蕴含 ⇒ consumedAt 为空时不约束状态。
-      await expectAccepted(insertSession({ consumedAt: null, statusCode: 'pending' }));
-      await expectAccepted(insertSession({ consumedAt: null, statusCode: 'expired' }));
-      await expectAccepted(insertSession({ consumedAt: null, statusCode: 'consumed' }));
+    });
+
+    it('第 79 migration:statusCode 闭集与 consumedAt 双向生命周期', async () => {
+      // statusCode 闭集先关未知值;expiresAt 过期由读取时派生,不是持久化状态。
+      await expectRejected(insertSession({ statusCode: 'expired', consumedAt: null }), {
+        sqlState: '23514',
+        constraint: 'registration_upload_session_status_code_check',
+      });
+      // 生命周期的反向半边只能由第 79 migration 新 CHECK 拦住:第 72 migration 的
+      // 单向约束对 consumed/null 不做功。
+      await expectRejected(insertSession({ statusCode: 'consumed', consumedAt: null }), {
+        sqlState: '23514',
+        constraint: 'registration_upload_session_lifecycle_shape_check',
+      });
+      // 两个非 consumed 状态带 consumedAt 都必须拒;第 72 的既有单向 CHECK 与新
+      // 生命周期 CHECK 都会拦,故这里仅断言 SQLSTATE,不把裁决绑定到任一重叠约束。
+      await expectRejected(insertSession({ statusCode: 'active', consumedAt: NOW_ISO }), {
+        sqlState: '23514',
+      });
+      await expectRejected(insertSession({ statusCode: 'revoked', consumedAt: NOW_ISO }), {
+        sqlState: '23514',
+      });
+
+      await expectAccepted(insertSession({ statusCode: 'active', consumedAt: null }));
+      await expectAccepted(insertSession({ statusCode: 'revoked', consumedAt: null }));
+      await expectAccepted(insertSession({ statusCode: 'consumed', consumedAt: NOW_ISO }));
     });
 
     it('tokenHash 全局唯一:重复被拒', async () => {
@@ -760,6 +797,123 @@ describe('活动改造 v1.1 第 1 批第二刀 schema 约束(第 72 migration)',
         sqlState: '23505',
         key: 'tokenHash',
       });
+    });
+  });
+
+  // ==========================================================================
+  // 第 79 migration —— 报名上传会话的附件归属与数据库结构
+  // ==========================================================================
+
+  describe('第 79 migration Form closed sets', () => {
+    const insertAttachment = (ownerId: string, ownerType: string) =>
+      `INSERT INTO "attachments"
+        ("id","updatedAt","key","originalName","mime","size","uploadedBy","ownerType","ownerId")
+       VALUES (${sqlText(uniq('upload-attachment'))},now(),${sqlText(uniq('upload-key'))},
+        'form-upload.png','image/png',10,${sqlText(userId)},${sqlText(ownerType)},${sqlText(ownerId)})`;
+
+    async function makeUploadSession(): Promise<string> {
+      return (
+        await prisma.registrationUploadSession.create({
+          data: {
+            activityId,
+            memberId,
+            formVersionId: draftFormVersionId,
+            tokenHash: uniq('upload-token-hash'),
+            expiresAt: new Date(EXPIRES_AT),
+            statusCode: 'active',
+          },
+          select: { id: true },
+        })
+      ).id;
+    }
+
+    it('同一上传会话首附件放行、第二附件拒绝;不同会话与其它 ownerType 均可多附件', async () => {
+      const firstSessionId = await makeUploadSession();
+      const secondSessionId = await makeUploadSession();
+
+      await expectAccepted(insertAttachment(firstSessionId, 'registration-upload-session'));
+      await expectRejected(insertAttachment(firstSessionId, 'registration-upload-session'), {
+        sqlState: '23505',
+        key: 'Key ("ownerId")',
+      });
+      await expectAccepted(insertAttachment(secondSessionId, 'registration-upload-session'));
+
+      // partial 谓词必须严格限于 registration-upload-session:现有 activity 附件与
+      // 后续新增的两条仍都能共享同一个 ownerId。
+      await expectAccepted(insertAttachment(activityId, 'activity'));
+      await expectAccepted(insertAttachment(activityId, 'activity'));
+    });
+
+    it('pg 结构精确命中第 79 migration 的三条 CHECK 与 partial unique', async () => {
+      const checks = await prisma.$queryRaw<Array<{ conname: string; definition: string }>>`
+        SELECT conname, pg_get_constraintdef(oid) AS definition
+        FROM pg_constraint
+        WHERE contype = 'c'
+          AND conname IN (
+            'registration_form_field_visibility_code_check',
+            'registration_upload_session_status_code_check',
+            'registration_upload_session_lifecycle_shape_check'
+          )
+        ORDER BY conname
+      `;
+      expect(checks.map((check) => check.conname)).toEqual([
+        'registration_form_field_visibility_code_check',
+        'registration_upload_session_lifecycle_shape_check',
+        'registration_upload_session_status_code_check',
+      ]);
+
+      const checkDefs = new Map(checks.map((check) => [check.conname, check.definition]));
+      expect(checkDefs.get('registration_form_field_visibility_code_check')).toContain(
+        'self_and_registration_staff',
+      );
+      expect(checkDefs.get('registration_form_field_visibility_code_check')).toContain(
+        'self_and_owner',
+      );
+      expect(checkDefs.get('registration_form_field_visibility_code_check')).toContain('self_only');
+      expect(checkDefs.get('registration_upload_session_status_code_check')).toContain("'active'");
+      expect(checkDefs.get('registration_upload_session_status_code_check')).toContain(
+        "'consumed'",
+      );
+      expect(checkDefs.get('registration_upload_session_status_code_check')).toContain("'revoked'");
+      expect(checkDefs.get('registration_upload_session_lifecycle_shape_check')).toContain(
+        '"consumedAt" IS NOT NULL',
+      );
+      expect(checkDefs.get('registration_upload_session_lifecycle_shape_check')).toContain(
+        '"statusCode"',
+      );
+
+      const indexes = await prisma.$queryRaw<
+        Array<{
+          indexName: string;
+          isUnique: boolean;
+          keyColumns: string[];
+          predicate: string | null;
+        }>
+      >`
+        SELECT index_class.relname AS "indexName",
+               index_meta.indisunique AS "isUnique",
+               ARRAY(
+                 SELECT attribute.attname
+                 FROM unnest(index_meta.indkey) WITH ORDINALITY AS key_column(attnum, ordinal)
+                 JOIN pg_attribute attribute
+                   ON attribute.attrelid = index_meta.indrelid
+                  AND attribute.attnum = key_column.attnum
+                 ORDER BY key_column.ordinal
+               ) AS "keyColumns",
+               pg_get_expr(index_meta.indpred, index_meta.indrelid) AS predicate
+        FROM pg_index index_meta
+        JOIN pg_class index_class ON index_class.oid = index_meta.indexrelid
+        WHERE index_meta.indrelid = 'attachments'::regclass
+          AND index_class.relname = 'attachments_registration_upload_session_owner_unique'
+      `;
+      expect(indexes).toEqual([
+        {
+          indexName: 'attachments_registration_upload_session_owner_unique',
+          isUnique: true,
+          keyColumns: ['ownerId'],
+          predicate: `("ownerType" = 'registration-upload-session'::text)`,
+        },
+      ]);
     });
   });
 

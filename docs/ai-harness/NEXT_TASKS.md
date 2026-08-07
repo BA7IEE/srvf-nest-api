@@ -218,24 +218,27 @@
 
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
-### P1-28 活动业务全流程改造(批次 0–7) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，本 PR),缺口⑤四处业务口径已拍板;合同已修订至 v1.1.1,缺口台账累计 #15**
+### P1-28 活动业务全流程改造(批次 0–7) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件),缺口⑤及 #16–#18 已拍板;合同已修订至 v1.1.1,缺口台账累计 #18**
 
 > **需求口径变更(2026-08-04)**:**= v1.1 四份 + [`AMENDMENTS-v1.1.1`](../archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md),冲突以后者为准。**
 > 第 1 批建表过程中实测撞到**五处合同内部不一致**,维护者当日**全部接受**并发布修订件。原件与 SHA256 一字未动(校验仍过)。
 > 五条现状:②已生效(快照锚点可空)· ④已解决(加开第五刀 #915)· **①已由第 4 批前置微刀兑现**
-> (第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，本 PR：`CapacityReservation` 补
+> (第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959)：`CapacityReservation` 补
 > `memberId`/`activityId` + partial unique,走 DB 保证不降级为服务层)· **⑤已由维护者 2026-08-07「按推荐」拍板**:
 > `resultCode` 闭集=`allocated/waitlisted/not_selected`;同一 `(allocationBatchId, participationIdentityId)` 唯一;
 > `scopeTypeCode` 沿 §3.10 容量桶口径,`fallbackMode` 仅「到期释放公共池/到期作废」且默认释放;
 > `preferenceOrder` 从 1 起算· **③是第 6 批开工硬门**
 > (`OfflinePackage`、`OfflinePunchReviewItem` 被引用却从未定义,**禁止从 §5.7 散文推导**,已用 e2e 判据钉死)。
 > **五条均不阻塞第 2 批。**
-> **待折进下一版修订件的已知合同缺口(#6–#14；#14 已裁定，其余未裁定)**:#6 `workflowRevision` 来源未定义 ·
+> **待折进下一版修订件的已知合同缺口(#6–#18；#14、#16–#18 已裁定，其余未裁定)**:#6 `workflowRevision` 来源未定义 ·
 > #7 `resultCode` 无「未定」取值 · #8 关账幂等列缺失 · #9 `requestedChangeJson` 结构未定义 ·
 > #10 无人触发 `commitBatch` · **#11** §6.1/§6.2 要求草稿动作携带 `operationKey`，但 §10.3 必须覆盖闭集不含它、§3 也没有持久化落点；本刀按 §10.3 不接收该字段 ·
 > **#12** §3.1 的 `cancelOperationKey` 提到“全历史操作记录另表保存”，但该表全合同未定义，禁止从散文自造 ·
 > **#13** §3.4 `ActivityTemplate.statusCode` 取值集未定义；①.5 只落 `String`，刻意不加 CHECK，待合同修订件 ·
 > **#14** §3.4 将 `ActivityRuleSnapshot.templateVersionId` 写成必填，却没有 `Activity` 模板绑定列，且 `ActivityTemplate` 按零 seed 原则无数据；三者合取会令无模板活动在审核通过时无法生成快照。**裁定（维护者 2026-08-06「同意」）**：无模板活动合法，按活动自身值 + 系统默认解析；第 77 migration 放开该列可空并保留可选 FK，待修订件更正原文。
+> **#16（维护者 2026-08-07「按推荐」裁定）**：§3.12 未定义 `RegistrationFormField.visibilityCode` 闭集；固定为 `self_and_registration_staff` / `self_and_owner` / `self_only`，第 79 migration 已以 CHECK 落库。
+> **#17（同上）**：§3.12 未定义 `RegistrationUploadSession.statusCode` 闭集及 `consumedAt` 双向形状；固定为 `active` / `consumed` / `revoked`，过期由 `expiresAt` 推导、零 cron，`consumed` 当且仅当 `consumedAt` 非空；第 79 migration 已加双 CHECK，保留第 72 migration 的既有单向 CHECK。
+> **#18（同上）**：报名附件 MIME / 大小 / 单会话附件数未定义；固定 JPEG/PNG/WebP/PDF、单文件 10 MiB、每会话最多一个完成附件。第 79 migration 本次只落实 `registration-upload-session` 的单附件 partial unique；MIME / 10 MiB seed 与 runtime 归下一把 Form 行为刀。
 > **账本读面权限口径（维护者 2026-08-06 拍板）**：复用 `attendance.read.sheet`；合同 §6.11
 > 未规定，若日后要收紧需另立权限码 + 三处 seed spec 连坐。
 >
