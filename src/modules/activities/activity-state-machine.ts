@@ -16,6 +16,7 @@ import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.con
 // - update:  状态机不改 status；completed/cancelled 的字段白名单由 service 校验
 // - publish:  draft → published;其他态拒(沿 service line 573 + PR #199 A1 / A2 ×3)
 // - cancel:   draft|published → cancelled；completed/cancelled 拒
+// - terminate:published → terminated；只由已开始活动的生命周期入口在时间闸后调用
 // - complete: published → completed(v0.40.0 管理端手动完结;其他态拒)
 //
 // 错误码统一沿现状:wrong state → `BizCode.ACTIVITY_STATUS_INVALID`
@@ -31,6 +32,7 @@ export const ACTIVITY_STATE_ACTIONS = [
   'update',
   'publish',
   'cancel',
+  'terminate',
   'complete',
 ] as const;
 
@@ -58,6 +60,11 @@ export class ActivityStateMachine {
           return { allowed: false, biz: BizCode.ACTIVITY_STATUS_INVALID };
         }
         return { allowed: true, nextStatusCode: 'cancelled' };
+      case 'terminate':
+        if (currentStatusCode !== 'published') {
+          return { allowed: false, biz: BizCode.ACTIVITY_STATUS_INVALID };
+        }
+        return { allowed: true, nextStatusCode: 'terminated' };
       case 'complete':
         // v0.40.0 参与域生命周期收口③:管理端手动完结,仅 published → completed;其他态拒。
         if (currentStatusCode !== 'published') {

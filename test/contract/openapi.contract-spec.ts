@@ -156,6 +156,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/app/v1/me/insurances/{id}'],
   ['delete', '/api/app/v1/me/insurances/{id}'],
 
+  // 第 3 批第三刀：App 内部活动目录。published-only；显式 invitation 只给本人
+  // pending/accepted 邀请，详情同一栅栏统一 404 式隐藏。
+  ['get', '/api/app/v1/activities'],
+
   // Phase 2 P2-4a(2026-05-20):App /api/app/v1/activities/available 列表
   // 沿 docs/app-api-p2-4-activities-review.md §1 接口清单 + §4.1 字段集恰好 11 项;
   // 可见性沿 D-P2-4-1 = A:仅 statusCode='published' AND deletedAt IS NULL;
@@ -167,9 +171,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/activities/{activityId}/positions'],
 
   // Phase 2 P2-4b(2026-05-20):App /api/app/v1/activities/{id} 详情
-  // 沿 docs/app-api-p2-4-activities-review.md §1 接口清单 + §5.1 字段集恰好 13 项;
-  // 可见性沿 D-P2-4-1 = A:仅 statusCode='published' AND deletedAt IS NULL;
-  // 不可见(draft / cancelled / completed / 软删 / 不存在)统一 → 404 ACTIVITY_NOT_FOUND
+  // 第 3 批第三刀在原字段上仅加 registrationMode / formVersion(null seam) / sessions.positions；
+  // 可见性沿 D-P2-4-1 = A:仅 statusCode='published' AND deletedAt IS NULL，且 invitation
+  // 对无邀请队员隐藏；不可见(draft / cancelled / terminated / completed / 软删 / 不存在)
+  // 统一 → 404 ACTIVITY_NOT_FOUND
   // (沿 D-P2-4-3 v0.1 锁定;避免存在性侧信道);
   // 0 新 BizCode(复用既有 ACTIVITY_NOT_FOUND=20001);0 schema 变更;
   // 行为契约沿 §11.4 锁定。
@@ -192,6 +197,11 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/my/managed-activities/organization-options'],
   ['get', '/api/app/v1/my/managed-activities'],
   ['post', '/api/app/v1/my/managed-activities'],
+  // 第 3 批第三刀：App 生命周期命令、配置 clone 与既有 evidence seal 的 HTTP 接线。
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/cancel'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/terminate'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/clone'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/evidence-seals'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}'],
   ['patch', '/api/app/v1/my/managed-activities/{activityId}'],
   ['delete', '/api/app/v1/my/managed-activities/{activityId}'],
@@ -1224,10 +1234,18 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'AppAvailableActivityListItemDto',
 
   // Phase 2 P2-4b(2026-05-20):App /api/app/v1/activities/{id} 详情 DTO
-  // AppActivityDetailDto:详情出参 additive 扩为 17 项；在原 13 项基础上增加
-  // phase / genderRequirementCode / requiresInsurance / passCount；独立 class,**禁止**继承 / Pick / Omit
-  // Admin DTO(沿 §5.4 + Phase 0.7 §2.2)。@ApiWrappedOkResponse 自动注册到 schemas。
+  // AppActivityDetailDto:详情出参在旧 17 项基础上只加 registrationMode / formVersion /
+  // sessions；sessions 的岗位 projection 独立 App DTO，禁止继承 Admin DTO。
   'AppActivityDetailDto',
+  'AppActivityDetailSessionDto',
+  'AppActivityDetailSessionPositionDto',
+  'AppActivityDirectoryListItemDto',
+  'AppActivityLifecycleResultDto',
+  'AppEvidenceSealResultDto',
+  'AppManagedActivityCancelCommandDto',
+  'AppManagedActivityTerminateCommandDto',
+  'AppManagedActivityCloneCommandDto',
+  'AppManagedActivityCloneResultDto',
 
   // Phase 2 P2-5a(2026-05-20):App /my/* registrations DTO(3 核心出参)
   // 字段集严格沿 docs/app-api-p2-5-registrations-review.md §8.2.1 (11 项) / §8.2.2
@@ -1565,9 +1583,10 @@ describe('OpenAPI 契约快照', () => {
   // 企业微信 T6-1(2026-08-03):+1 定向 replay 运维入口
   //   (POST admin/v1/notifications/:id/replay-wecom)→451；第 2 批第 ⑧b 刀结算最小 HTTP 闭环 +7 →458；
   //   第 ⑨a 刀负责人结算工作台 +5 →463；第 ⑨b 刀审核/账本读面 +6 →469；
-  //   第 3 批第一刀草稿场次/新表岗位嵌套 CRUD +8 → **477**。
-  it('路由足迹精确为 477', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(477);
+  //   第 3 批第一刀草稿场次/新表岗位嵌套 CRUD +8 →477；第三刀目录 + 生命周期/clone/seal
+  //   +5 → **482**。
+  it('路由足迹精确为 482', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(482);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

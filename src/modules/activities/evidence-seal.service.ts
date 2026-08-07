@@ -79,6 +79,8 @@ export interface EvidenceSealResult {
   supersededSealCount: number;
 }
 
+export type EvidenceSealAuthorizer = (tx: Prisma.TransactionClient) => Promise<void>;
+
 @Injectable()
 export class EvidenceSealService {
   constructor(
@@ -286,6 +288,7 @@ export class EvidenceSealService {
     activityId: string,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    authorize?: EvidenceSealAuthorizer,
   ): Promise<EvidenceSealResult> {
     return await this.prisma.$transaction(async (tx) => {
       // ① Activity FOR UPDATE + authoritative now。
@@ -293,6 +296,9 @@ export class EvidenceSealService {
         tx,
         activityId,
       );
+      // 既有 direct/service 调用不传 authorize，语义逐字不变；HTTP 接线把负责人锚
+      // 放在同一把 Activity 锁里，避免先判后封的 TOCTOU 窗口。
+      if (authorize) await authorize(tx);
 
       // ② 重读 live sessions 与 termination deadlines。
       const sessionDeadlines = await this.readLiveSessionDeadlines(tx, activityId);

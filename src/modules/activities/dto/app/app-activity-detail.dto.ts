@@ -1,6 +1,67 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ACTIVITY_PHASE_VALUES, type ActivityPhase } from '../../activity-phase';
 
+export class AppActivityDetailSessionPositionDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  code!: string;
+
+  @ApiProperty()
+  name!: string;
+
+  @ApiProperty()
+  attendanceRoleCode!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  capacity!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  startAt!: Date | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  endAt!: Date | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  genderRequirementCode!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  description!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  equipmentNotes!: string | null;
+
+  @ApiProperty()
+  sortOrder!: number;
+}
+
+export class AppActivityDetailSessionDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  code!: string;
+
+  @ApiProperty()
+  name!: string;
+
+  @ApiProperty()
+  startAt!: Date;
+
+  @ApiProperty()
+  endAt!: Date;
+
+  @ApiProperty()
+  locationText!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  capacity!: number | null;
+
+  @ApiProperty({ type: () => [AppActivityDetailSessionPositionDto] })
+  positions!: AppActivityDetailSessionPositionDto[];
+}
+
 // Phase 2 P2-4b App /api/app/v1/activities/:id 详情出参。
 // 原 v0.1 13 字段；2026-07-15 additive 增 phase / genderRequirementCode /
 // requiresInsurance / passCount，当前恰好 17 个。
@@ -96,4 +157,23 @@ export class AppActivityDetailDto {
 
   @ApiProperty({ description: '创建时间' })
   createdAt!: Date;
+
+  @ApiPropertyOptional({
+    description: '报名方式 code；旧活动未解析时为 NULL',
+    nullable: true,
+  })
+  registrationMode!: string | null;
+
+  @ApiPropertyOptional({
+    description: '报名表版本；第 4 批接线前恒为 NULL',
+    nullable: true,
+    type: Number,
+  })
+  formVersion!: number | null;
+
+  @ApiProperty({
+    description: '活动场次与其岗位的安全投影；不返回定位坐标、负责人或资格规则内部字段',
+    type: () => [AppActivityDetailSessionDto],
+  })
+  sessions!: AppActivityDetailSessionDto[];
 }

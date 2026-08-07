@@ -7,6 +7,10 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AppActivityDetailDto } from './dto/app/app-activity-detail.dto';
 import { AppAvailableActivityListItemDto } from './dto/app/app-available-activity-list-item.dto';
+import {
+  AppActivityDirectoryListItemDto,
+  AppActivityDirectoryQueryDto,
+} from './dto/app/app-activity-directory.dto';
 import { AppActivityPositionDto } from './dto/app/app-activity-position.dto';
 import { deriveEffectiveActivityCapacity } from './activity-capacity';
 import { deriveActivityPhase } from './activity-phase';
@@ -72,15 +76,62 @@ const appActivityDetailSelect = {
   registrationNotes: true,
   genderRequirementCode: true,
   requiresInsurance: true,
+  registrationModeCode: true,
   coverImageUrl: true,
   createdAt: true,
   activityPositions: {
     where: { deletedAt: null },
     select: { capacity: true },
   },
+  sessions: {
+    where: { deletedAt: null },
+    orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      startAt: true,
+      endAt: true,
+      locationText: true,
+      capacity: true,
+      positions: {
+        where: { deletedAt: null },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          attendanceRoleCode: true,
+          capacity: true,
+          startAt: true,
+          endAt: true,
+          genderRequirementCode: true,
+          description: true,
+          equipmentNotes: true,
+          sortOrder: true,
+        },
+      },
+    },
+  },
 } as const satisfies Prisma.ActivitySelect;
 
 type AppActivityDetailRow = Prisma.ActivityGetPayload<{ select: typeof appActivityDetailSelect }>;
+
+const appActivityDirectorySelect = {
+  id: true,
+  title: true,
+  activityTypeCode: true,
+  statusCode: true,
+  startAt: true,
+  endAt: true,
+  location: true,
+  registrationModeCode: true,
+  createdAt: true,
+} as const satisfies Prisma.ActivitySelect;
+
+type AppActivityDirectoryRow = Prisma.ActivityGetPayload<{
+  select: typeof appActivityDirectorySelect;
+}>;
 
 @Injectable()
 export class AppActivitiesService {
@@ -125,22 +176,60 @@ export class AppActivitiesService {
     };
   }
 
-  // 入参 memberId 同 list 在 v0.1 实际**未参与 where 过滤**(沿评审稿 §6.5 + §8.3):
-  // 详情可见集合 = published 活动全员共享。保留 memberId 入参为后续 P2-5+ 扩展槽 +
-  // 调用链显式语义。
-  //
+  /**
+   * 内部活动目录与旧 `/available` 刻意分面：它不要求公开报名、也不按活动结束时刻
+   * 收缩，但仍只读 published，并在 SQL where 内完成 invitation 可见性过滤。
+   */
+  async listDirectoryForMember(
+    memberId: string,
+    query: AppActivityDirectoryQueryDto,
+  ): Promise<PageResultDto<AppActivityDirectoryListItemDto>> {
+    const filters: Prisma.ActivityWhereInput[] = [this.memberVisibilityWhere(memberId)];
+    if (query.q !== undefined) {
+      filters.push({ title: { contains: query.q, mode: 'insensitive' } });
+    }
+    if (query.type !== undefined) filters.push({ activityTypeCode: query.type });
+    if (query.organization !== undefined) filters.push({ organizationId: query.organization });
+    if (query.date !== undefined) {
+      const dayStart = new Date(`${query.date}T00:00:00.000Z`);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+      // 与该 UTC 自然日有交集：活动在日末前开始、且在日初后结束。
+      filters.push({ startAt: { lt: dayEnd }, endAt: { gt: dayStart } });
+    }
+
+    const where = notDeletedWhere({ statusCode: 'published', AND: filters });
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.activity.findMany({
+        where,
+        select: appActivityDirectorySelect,
+        orderBy: [{ startAt: 'asc' }, { createdAt: 'desc' }, { id: 'asc' }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+      this.prisma.activity.count({ where }),
+    ]);
+    return {
+      items: rows.map((row) => this.toDirectoryListItemDto(row)),
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
+  }
+
   // 关键铁律(沿评审稿 §8.3 / D-P2-4-3 / 风险 13.9):
   // - statusCode='published' 直接在 where 子句过滤,**不**走"先查再判断"模式
   //   (避免存在性侧信道:draft / cancelled / completed / softDeleted / 不存在均走同一
   //   查询 → null → throw,SQL plan 一致)
   // - findFirst 命中 null 统一抛 ACTIVITY_NOT_FOUND(D-P2-4-3 v0.1 锁定 404,不返 403)
-  async findVisibleByIdForMember(id: string, _memberId: string): Promise<AppActivityDetailDto> {
-    // _memberId 是扩展槽(沿 listAvailableForMember 范式;v0.1 未参与 where 过滤,
-    // 保留调用链显式语义);void 表达式标记刻意未用,避免触发 no-unused-vars。
-    void _memberId;
+  async findVisibleByIdForMember(id: string, memberId: string): Promise<AppActivityDetailDto> {
     const [row, passCount] = await this.prisma.$transaction([
       this.prisma.activity.findFirst({
-        where: notDeletedWhere({ id, statusCode: 'published' }),
+        where: notDeletedWhere({
+          id,
+          statusCode: 'published',
+          ...this.memberVisibilityWhere(memberId),
+        }),
         select: appActivityDetailSelect,
       }),
       this.prisma.activityRegistration.count({
@@ -240,6 +329,25 @@ export class AppActivitiesService {
     }));
   }
 
+  private memberVisibilityWhere(memberId: string): Prisma.ActivityWhereInput {
+    // `visibilityCode=null` 是 expand 期间尚未解析的旧行，沿本刀“内部读面优先复用”
+    // 收敛为 internal；只有显式 invitation 才要求本人有有效邀请记录。
+    return {
+      OR: [
+        { visibilityCode: null },
+        { visibilityCode: { not: 'invitation' } },
+        {
+          invitations: {
+            some: {
+              memberId,
+              statusCode: { in: ['pending', 'accepted'] },
+            },
+          },
+        },
+      ],
+    };
+  }
+
   // 私有 mapper(沿评审稿 §8.3.3;第一版不抽独立 Presenter class)。
   private toListItemDto(row: AppActivityListRow): AppAvailableActivityListItemDto {
     return {
@@ -275,6 +383,46 @@ export class AppActivitiesService {
       requiresInsurance: row.requiresInsurance,
       passCount,
       coverImageUrl: row.coverImageUrl,
+      createdAt: row.createdAt,
+      registrationMode: row.registrationModeCode,
+      // 第 4 批才接 RegistrationFormVersion；本刀绝不假装已有绑定真源。
+      formVersion: null,
+      sessions: row.sessions.map((session) => ({
+        id: session.id,
+        code: session.code,
+        name: session.name,
+        startAt: session.startAt,
+        endAt: session.endAt,
+        locationText: session.locationText,
+        capacity: session.capacity,
+        positions: session.positions.map((position) => ({
+          id: position.id,
+          code: position.code,
+          name: position.name,
+          attendanceRoleCode: position.attendanceRoleCode,
+          capacity: position.capacity,
+          startAt: position.startAt,
+          endAt: position.endAt,
+          genderRequirementCode: position.genderRequirementCode,
+          description: position.description,
+          equipmentNotes: position.equipmentNotes,
+          sortOrder: position.sortOrder,
+        })),
+      })),
+    };
+  }
+
+  private toDirectoryListItemDto(row: AppActivityDirectoryRow): AppActivityDirectoryListItemDto {
+    return {
+      id: row.id,
+      title: row.title,
+      activityTypeCode: row.activityTypeCode,
+      // where 已钉 published，DTO 用 literal 是为了不把未来状态意外露到 App。
+      statusCode: 'published',
+      startAt: row.startAt,
+      endAt: row.endAt,
+      location: row.location,
+      registrationMode: row.registrationModeCode,
       createdAt: row.createdAt,
     };
   }

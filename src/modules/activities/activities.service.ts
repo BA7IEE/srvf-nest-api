@@ -65,10 +65,12 @@ const ACTIVITY_STATUS_DRAFT = 'draft';
 const ACTIVITY_STATUS_PUBLISHED = 'published';
 const ACTIVITY_STATUS_COMPLETED = 'completed';
 const ACTIVITY_STATUS_CANCELLED = 'cancelled';
+const ACTIVITY_STATUS_TERMINATED = 'terminated';
 
 const TERMINAL_ACTIVITY_STATUS_CODES = new Set([
   ACTIVITY_STATUS_COMPLETED,
   ACTIVITY_STATUS_CANCELLED,
+  ACTIVITY_STATUS_TERMINATED,
 ]);
 const TERMINAL_ACTIVITY_UPDATE_FIELDS = new Set<keyof UpdateActivityDto>([
   'description',
@@ -103,6 +105,13 @@ const activitySafeSelect = {
   cancelledBy: true,
   cancelledAt: true,
   cancelReason: true,
+  terminatedAt: true,
+  terminatedByUserId: true,
+  terminationReason: true,
+  cancelOperationKey: true,
+  cancelRequestHash: true,
+  terminateOperationKey: true,
+  terminateRequestHash: true,
   isPublicRegistration: true,
   requiresInsurance: true,
   registrationModeCode: true,
@@ -152,7 +161,7 @@ const activityListItemSelect = {
   },
 } as const satisfies Prisma.ActivitySelect;
 
-type ActivityFullRow = Prisma.ActivityGetPayload<{ select: typeof activitySafeSelect }>;
+export type ActivityFullRow = Prisma.ActivityGetPayload<{ select: typeof activitySafeSelect }>;
 type ActivityListRow = Prisma.ActivityGetPayload<{ select: typeof activityListItemSelect }>;
 type PrismaTx = Prisma.TransactionClient;
 
@@ -426,6 +435,15 @@ export class ActivitiesService {
     `;
     if (locked.length === 0) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
     return this.findActivityOrThrow(id, tx);
+  }
+
+  /**
+   * 只给同 aggregate 内的生命周期编排复用：锁顺序、软删过滤与完整旧取消快照必须
+   * 与 Admin cancel 走同一条路径。它不做判权；调用方必须先在同一 tx 内完成自己的
+   * 发起人／负责人锚校验。
+   */
+  async lockActivityForLifecycle(id: string, tx: PrismaTx): Promise<ActivityFullRow> {
+    return this.lockAndFindActivityOrThrow(id, tx);
   }
 
   /**
@@ -1239,83 +1257,107 @@ export class ActivitiesService {
     return this.prisma.$transaction(async (tx) => {
       const current = await this.lockAndFindActivityOrThrow(id, tx);
 
-      const transition = this.activityStateMachine.decide('cancel', current.statusCode);
-      if (!transition.allowed) {
-        throw new BizException(transition.biz);
-      }
-      const { nextStatusCode } = transition;
+      return this.cancelLocked({ current, dto, currentUser, auditMeta, tx });
+    });
+  }
 
-      const cancelledAt = new Date();
+  /**
+   * Admin cancel 与 App 生命周期 cancel 共用的取消闭环。此处刻意保留旧闭环的
+   * 状态机、pending review 撤回、报名联动取消、audit 与 durable notification；
+   * 只有 App 调用方可在同一 Activity 锁事务里额外写入它的 operationKey/hash。
+   */
+  async cancelLocked(args: {
+    current: ActivityFullRow;
+    dto: CancelActivityDto;
+    currentUser: CurrentUserPayload;
+    auditMeta: AuditMeta;
+    tx: PrismaTx;
+    idempotency?: { operationKey: string; requestHash: string };
+  }): Promise<ActivityResponseDto> {
+    const { current, dto, currentUser, auditMeta, tx, idempotency } = args;
 
-      if (this.config.activityResponsibilityWorkflow.enabled) {
-        await this.publishReviewService.cancelPendingForActivity(id, tx);
-      }
+    const transition = this.activityStateMachine.decide('cancel', current.statusCode);
+    if (!transition.allowed) {
+      throw new BizException(transition.biz);
+    }
+    const { nextStatusCode } = transition;
 
-      await claimAtStatus(tx, {
-        target: 'activity',
-        id: current.id,
-        expectedStatus: current.statusCode,
-        invalidStatusBiz: BizCode.ACTIVITY_STATUS_INVALID,
-      });
+    const cancelledAt = new Date();
 
-      // registration create 同样先锁 Activity；claim 后再取 active 收件集，确保等待期间提交、
-      // 且会被本事务联动取消的新报名者不会漏出 commit 后的取消通知。
-      const registrations = await tx.activityRegistration.findMany({
-        where: notDeletedWhere({
-          activityId: current.id,
-          statusCode: { in: [...ACTIVE_REGISTRATION_STATUS_CODES] },
-        }),
-        select: { memberId: true },
-      });
-      const notificationMemberIds = [...new Set(registrations.map((row) => row.memberId))];
+    if (this.config.activityResponsibilityWorkflow.enabled) {
+      await this.publishReviewService.cancelPendingForActivity(current.id, tx);
+    }
 
-      const updated = await tx.activity.update({
-        where: { id: current.id },
-        data: {
-          statusCode: nextStatusCode,
-          cancelledBy: currentUser.id,
-          cancelledAt,
-          cancelReason: dto.cancelReason ?? null,
-        },
-        select: activitySafeSelect,
-      });
+    await claimAtStatus(tx, {
+      target: 'activity',
+      id: current.id,
+      expectedStatus: current.statusCode,
+      invalidStatusBiz: BizCode.ACTIVITY_STATUS_INVALID,
+    });
 
-      const cancelledPending = await tx.activityRegistration.updateMany({
-        where: notDeletedWhere({
-          activityId: current.id,
-          statusCode: { in: [...ACTIVITY_CANCELLED_REGISTRATION_STATUS_CODES] },
-        }),
-        data: {
-          statusCode: 'cancelled',
-          cancelledByUserId: currentUser.id,
-          cancelledAt,
-          cancelReason: '活动已取消',
-        },
-      });
-
-      await this.activityAuditRecorder.logCancel({
+    // registration create 同样先锁 Activity；claim 后再取 active 收件集，确保等待期间提交、
+    // 且会被本事务联动取消的新报名者不会漏出 commit 后的取消通知。
+    const registrations = await tx.activityRegistration.findMany({
+      where: notDeletedWhere({
         activityId: current.id,
-        before: current,
-        after: updated,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        priorStatusCode: current.statusCode,
-        nextStatusCode,
-        cancelReason: dto.cancelReason ?? null,
-        pendingRegistrationsCancelled: cancelledPending.count,
-        auditMeta,
-        tx,
-      });
+        statusCode: { in: [...ACTIVE_REGISTRATION_STATUS_CODES] },
+      }),
+      select: { memberId: true },
+    });
+    const notificationMemberIds = [...new Set(registrations.map((row) => row.memberId))];
 
-      await this.notificationProducer.enqueueCancellation(tx, {
-        activityId: current.id,
-        activityTitle: updated.title,
+    const updated = await tx.activity.update({
+      where: { id: current.id },
+      data: {
+        statusCode: nextStatusCode,
+        cancelledBy: currentUser.id,
         cancelledAt,
         cancelReason: dto.cancelReason ?? null,
-        memberIds: notificationMemberIds,
-      });
-      return this.toResponseDto(updated);
+        ...(idempotency === undefined
+          ? {}
+          : {
+              cancelOperationKey: idempotency.operationKey,
+              cancelRequestHash: idempotency.requestHash,
+            }),
+      },
+      select: activitySafeSelect,
     });
+
+    const cancelledPending = await tx.activityRegistration.updateMany({
+      where: notDeletedWhere({
+        activityId: current.id,
+        statusCode: { in: [...ACTIVITY_CANCELLED_REGISTRATION_STATUS_CODES] },
+      }),
+      data: {
+        statusCode: 'cancelled',
+        cancelledByUserId: currentUser.id,
+        cancelledAt,
+        cancelReason: '活动已取消',
+      },
+    });
+
+    await this.activityAuditRecorder.logCancel({
+      activityId: current.id,
+      before: current,
+      after: updated,
+      actorUserId: currentUser.id,
+      actorRoleSnap: currentUser.role,
+      priorStatusCode: current.statusCode,
+      nextStatusCode,
+      cancelReason: dto.cancelReason ?? null,
+      pendingRegistrationsCancelled: cancelledPending.count,
+      auditMeta,
+      tx,
+    });
+
+    await this.notificationProducer.enqueueCancellation(tx, {
+      activityId: current.id,
+      activityTitle: updated.title,
+      cancelledAt,
+      cancelReason: dto.cancelReason ?? null,
+      memberIds: notificationMemberIds,
+    });
+    return this.toResponseDto(updated);
   }
 
   // ============ complete(v0.40.0 参与域生命周期收口③ 管理端手动完结)============

@@ -291,6 +291,68 @@ export class ActivityAuditRecorder {
     });
   }
 
+  // ============ logTerminate(第 3 批第三刀提前终止) ============
+  // 仍复用 activity.publish 伞事件；completed 的既有含义与其 audit 形状不动。
+  async logTerminate(args: {
+    activityId: string;
+    before: AuditActivitySnapshotInput;
+    after: AuditActivitySnapshotInput;
+    actorUserId: string;
+    actorRoleSnap: Role;
+    priorStatusCode: string;
+    nextStatusCode: string;
+    terminatedAt: Date;
+    terminationReason: string;
+    auditMeta: AuditMeta;
+    tx: PrismaTx;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: ACTIVITY_AUDIT_EVENT,
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: args.activityId,
+      meta: args.auditMeta,
+      before: this.toAuditSnapshot(args.before),
+      after: this.toAuditSnapshot(args.after),
+      extra: {
+        operation: 'terminate',
+        priorStatusCode: args.priorStatusCode,
+        nextStatusCode: args.nextStatusCode,
+        terminatedAt: args.terminatedAt,
+        terminationReason: args.terminationReason,
+      },
+      tx: args.tx,
+    });
+  }
+
+  // ============ logClone(第 3 批第三刀配置复制) ============
+  // clone 是新草稿创建，不复用 create 的 operation 字面量，避免审计把“从何处复制”丢掉。
+  async logClone(args: {
+    sourceActivityId: string;
+    created: AuditActivitySnapshotInput & { id: string };
+    actorUserId: string;
+    actorRoleSnap: Role;
+    auditMeta: AuditMeta;
+    tx: PrismaTx;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: ACTIVITY_AUDIT_EVENT,
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: args.created.id,
+      meta: args.auditMeta,
+      after: this.toAuditSnapshot(args.created),
+      extra: {
+        operation: 'clone',
+        sourceActivityId: args.sourceActivityId,
+        nextStatusCode: 'draft',
+      },
+      tx: args.tx,
+    });
+  }
+
   // ============ logComplete(v0.40.0 参与域生命周期收口③ 管理端手动完结) ============
   // event: 'activity.publish'(第 6 处调用点,复用既有伞事件,event 名不动);
   // before + after = toAuditSnapshot(...);
