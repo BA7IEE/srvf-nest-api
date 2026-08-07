@@ -1134,5 +1134,256 @@ describe('活动改造 v1.1 第 1 批第一刀 schema 约束(第 71 migration)',
       );
       await expectAccepted(insertReservation({ bucketId: otherBucket }));
     });
+
+    interface ActivityPersonReservationFixture {
+      identityId: string;
+      bucketId: string;
+      memberId: string;
+      activityId: string;
+    }
+
+    async function createActivityPersonReservationFixture(
+      overrides: {
+        activityId?: string;
+        memberId?: string;
+        registrationId?: string;
+      } = {},
+    ): Promise<ActivityPersonReservationFixture> {
+      const targetActivityId = overrides.activityId ?? activityId;
+      const targetMemberId = overrides.memberId ?? memberId;
+      const targetRegistrationId = overrides.registrationId ?? registrationId;
+      const session = await prisma.activitySession.create({
+        data: {
+          activityId: targetActivityId,
+          code: uniq('activity-person-session'),
+          name: uniq('activity-person-session'),
+          startAt: new Date(START_AT),
+          endAt: new Date(END_AT),
+          locationText: 'constraint fixture',
+          checkInOpenAt: new Date(CHECKIN_OPEN),
+          checkInCloseAt: new Date(CHECKIN_CLOSE),
+          checkOutOpenAt: new Date(CHECKOUT_OPEN),
+          checkOutCloseAt: new Date(CHECKOUT_CLOSE),
+          locationRequired: false,
+          locationPolicySourceCode: 'system',
+          statusCode: 'scheduled',
+        },
+        select: { id: true },
+      });
+      const identity = await prisma.activityParticipationIdentity.create({
+        data: {
+          activityId: targetActivityId,
+          sessionId: session.id,
+          registrationId: targetRegistrationId,
+          memberId: targetMemberId,
+          currentStatusCode: 'pending',
+        },
+        select: { id: true },
+      });
+      const bucket = await prisma.activityCapacityBucket.create({
+        data: {
+          activityId: targetActivityId,
+          scopeTypeCode: 'activity_person',
+          scopeId: uniq('activity-person-bucket'),
+          capacity: 5,
+        },
+        select: { id: true },
+      });
+      return {
+        identityId: identity.id,
+        bucketId: bucket.id,
+        memberId: targetMemberId,
+        activityId: targetActivityId,
+      };
+    }
+
+    async function createRegistrationFor(
+      targetActivityId: string,
+      targetMemberId: string,
+    ): Promise<string> {
+      const registration = await prisma.activityRegistration.create({
+        data: { activityId: targetActivityId, memberId: targetMemberId, statusCode: 'pending' },
+        select: { id: true },
+      });
+      return registration.id;
+    }
+
+    function insertActivityPersonReservation(
+      fixture: ActivityPersonReservationFixture,
+      overrides: {
+        id?: string;
+        memberId?: string | null;
+        activityId?: string | null;
+        status?: string;
+        releasedAt?: string | null;
+      } = {},
+    ): string {
+      const label = uniq('activity-person-resv');
+      const {
+        id = label,
+        memberId: reservationMemberId = fixture.memberId,
+        activityId: reservationActivityId = fixture.activityId,
+        status = 'active',
+        releasedAt = null,
+      } = overrides;
+      return `INSERT INTO "CapacityReservation" (
+        "id","identityId","bucketId","memberId","activityId","reservationType","status","releasedAt","updatedAt"
+      ) VALUES (
+        ${sqlText(id)},${sqlText(fixture.identityId)},${sqlText(fixture.bucketId)},
+        ${sqlText(reservationMemberId)},${sqlText(reservationActivityId)},'activity_person',
+        ${sqlText(status)},${sqlTime(releasedAt)},now()
+      )`;
+    }
+
+    it('第 78 migration:两列是 nullable text，且各自为 Restrict FK', async () => {
+      const columns = await prisma.$queryRawUnsafe<
+        Array<{ column_name: string; data_type: string; is_nullable: string }>
+      >(
+        `SELECT column_name, data_type, is_nullable
+         FROM information_schema.columns
+         WHERE table_schema = current_schema()
+           AND table_name = 'CapacityReservation'
+           AND column_name IN ('memberId', 'activityId')
+         ORDER BY column_name`,
+      );
+      expect(columns).toEqual([
+        { column_name: 'activityId', data_type: 'text', is_nullable: 'YES' },
+        { column_name: 'memberId', data_type: 'text', is_nullable: 'YES' },
+      ]);
+
+      const foreignKeys = await prisma.$queryRawUnsafe<
+        Array<{
+          column_name: string;
+          foreign_table_name: string;
+          delete_rule: string;
+          update_rule: string;
+        }>
+      >(
+        `SELECT kcu.column_name, ccu.table_name AS foreign_table_name,
+                rc.delete_rule, rc.update_rule
+         FROM information_schema.table_constraints tc
+         JOIN information_schema.key_column_usage kcu
+           ON tc.constraint_catalog = kcu.constraint_catalog
+          AND tc.constraint_schema = kcu.constraint_schema
+          AND tc.constraint_name = kcu.constraint_name
+         JOIN information_schema.referential_constraints rc
+           ON tc.constraint_catalog = rc.constraint_catalog
+          AND tc.constraint_schema = rc.constraint_schema
+          AND tc.constraint_name = rc.constraint_name
+         JOIN information_schema.constraint_column_usage ccu
+           ON rc.unique_constraint_catalog = ccu.constraint_catalog
+          AND rc.unique_constraint_schema = ccu.constraint_schema
+          AND rc.unique_constraint_name = ccu.constraint_name
+         WHERE tc.table_schema = current_schema()
+           AND tc.table_name = 'CapacityReservation'
+           AND tc.constraint_type = 'FOREIGN KEY'
+           AND kcu.column_name IN ('memberId', 'activityId')
+         ORDER BY kcu.column_name`,
+      );
+      expect(foreignKeys).toEqual([
+        {
+          column_name: 'activityId',
+          foreign_table_name: 'Activity',
+          delete_rule: 'RESTRICT',
+          update_rule: 'CASCADE',
+        },
+        {
+          column_name: 'memberId',
+          foreign_table_name: 'Member',
+          delete_rule: 'RESTRICT',
+          update_rule: 'CASCADE',
+        },
+      ]);
+    });
+
+    it('active activity-person reservation 带完整 member/activity 锚点时放行', async () => {
+      const fixture = await createActivityPersonReservationFixture();
+      await expectAccepted(insertActivityPersonReservation(fixture));
+    });
+
+    it('active activity-person reservation 缺任一 member/activity 锚点均被具名 CHECK 拒绝', async () => {
+      const fixture = await createActivityPersonReservationFixture();
+      await expectRejected(insertActivityPersonReservation(fixture, { memberId: null }), {
+        sqlState: '23514',
+        constraint: 'capacity_reservation_active_activity_person_anchor_check',
+      });
+      await expectRejected(insertActivityPersonReservation(fixture, { activityId: null }), {
+        sqlState: '23514',
+        constraint: 'capacity_reservation_active_activity_person_anchor_check',
+      });
+      await expectAccepted(insertActivityPersonReservation(fixture));
+    });
+
+    it('两个不同 identity、不同 bucket 的同 member/activity active activity-person 第二条被拒', async () => {
+      const first = await createActivityPersonReservationFixture();
+      const second = await createActivityPersonReservationFixture();
+      expect(second.identityId).not.toBe(first.identityId);
+      expect(second.bucketId).not.toBe(first.bucketId);
+      expect(second.memberId).toBe(first.memberId);
+      expect(second.activityId).toBe(first.activityId);
+
+      await expectAccepted(insertActivityPersonReservation(first));
+      const err = await expectRejected(insertActivityPersonReservation(second), {
+        sqlState: '23505',
+        key: 'Key ("memberId", "activityId")',
+      });
+      expect(err.message).toContain('already exists');
+    });
+
+    it('active activity-person 释放后，相同 member/activity 可重新 active', async () => {
+      const first = await createActivityPersonReservationFixture();
+      const second = await createActivityPersonReservationFixture();
+      const firstId = uniq('activity-person-first');
+      await expectAccepted(insertActivityPersonReservation(first, { id: firstId }));
+      await expectAccepted(
+        `UPDATE "CapacityReservation" SET "status" = 'released', "releasedAt" = now()
+         WHERE "id" = ${sqlText(firstId)}`,
+      );
+      await expectAccepted(insertActivityPersonReservation(second));
+    });
+
+    it('同 member、不同 activity 的 active activity-person reservation 同时放行', async () => {
+      const first = await createActivityPersonReservationFixture();
+      const otherRegistrationId = await createRegistrationFor(otherActivityId, memberId);
+      const second = await createActivityPersonReservationFixture({
+        activityId: otherActivityId,
+        registrationId: otherRegistrationId,
+      });
+      expect(second.memberId).toBe(first.memberId);
+      expect(second.activityId).not.toBe(first.activityId);
+
+      await expectAccepted(insertActivityPersonReservation(first));
+      await expectAccepted(insertActivityPersonReservation(second));
+    });
+
+    it('不同 member、同 activity 的 active activity-person reservation 同时放行', async () => {
+      const first = await createActivityPersonReservationFixture();
+      const otherMember = await prisma.member.create({
+        data: { memberNo: uniq('other-member'), displayName: 'V11 Slice1 Other Member' },
+        select: { id: true },
+      });
+      const otherRegistrationId = await createRegistrationFor(activityId, otherMember.id);
+      const second = await createActivityPersonReservationFixture({
+        memberId: otherMember.id,
+        registrationId: otherRegistrationId,
+      });
+      expect(second.memberId).not.toBe(first.memberId);
+      expect(second.activityId).toBe(first.activityId);
+
+      await expectAccepted(insertActivityPersonReservation(first));
+      await expectAccepted(insertActivityPersonReservation(second));
+    });
+
+    it('session_participation reservation 仍可让两列保持 NULL', async () => {
+      const id = uniq('session-reservation-null-anchor');
+      await expectAccepted(insertReservation({ id }));
+      const rows = await prisma.$queryRawUnsafe<
+        Array<{ memberId: string | null; activityId: string | null }>
+      >(
+        `SELECT "memberId", "activityId" FROM "CapacityReservation"
+         WHERE "id" = ${sqlText(id)}`,
+      );
+      expect(rows).toEqual([{ memberId: null, activityId: null }]);
+    });
   });
 });
