@@ -32,6 +32,6 @@ CHECK (
 -- 第 71 migration 的 identity/bucket active unique 保持不动。
 -- 此索引的 target 谓词由上方 CHECK 保证两个键均非 NULL，故不使用 NULLS NOT DISTINCT:
 -- NULL 在该 target 集合里根本不是合法状态；加它不会增加保证，反而掩盖 anchor 形状错误。
-CREATE UNIQUE INDEX "capacity_reservation_member_activity_active_activity_person_unique"
+CREATE UNIQUE INDEX "capacity_reservation_member_activity_active_person_unique"
 ON "CapacityReservation" ("memberId", "activityId")
 WHERE "status" = 'active' AND "reservationType" = 'activity_person';

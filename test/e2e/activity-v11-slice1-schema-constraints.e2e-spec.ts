@@ -1294,6 +1294,18 @@ describe('活动改造 v1.1 第 1 批第一刀 schema 约束(第 71 migration)',
           update_rule: 'CASCADE',
         },
       ]);
+
+      const indexes = await prisma.$queryRawUnsafe<Array<{ indexname: string }>>(
+        `SELECT indexname
+         FROM pg_indexes
+         WHERE schemaname = current_schema()
+           AND tablename = 'CapacityReservation'
+           AND indexname LIKE 'capacity_reservation_member_activity%'
+         ORDER BY indexname`,
+      );
+      expect(indexes).toEqual([
+        { indexname: 'capacity_reservation_member_activity_active_person_unique' },
+      ]);
     });
 
     it('active activity-person reservation 带完整 member/activity 锚点时放行', async () => {
