@@ -6,6 +6,7 @@ import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { RegistrationUploadSessionService } from '../../src/modules/activity-registrations/registration-upload-session.service';
 import { attachmentBytesForMime, VALID_PNG_IMAGE } from '../helpers/file-fixtures';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -239,6 +240,43 @@ describe('activity batch4 one-time registration upload sessions', () => {
       expect(JSON.stringify(response.body.data)).not.toMatch(
         /key|accessUrl|signed|ownerType|ownerId|tokenHash|locator/i,
       );
+    }
+  });
+
+  it('rejects 10 MiB + 1 byte in multipart before the upload service', async () => {
+    const uploadSpy = jest.spyOn(app.get(RegistrationUploadSessionService), 'upload');
+    try {
+      const oversized = await createSession();
+      expectBizError(
+        await upload(oversized.id, oversized.token, {
+          filename: 'parser-too-large.png',
+          body: attachmentBytesForMime('image/png', MAX_BYTES + 1),
+        }),
+        BizCode.ATTACHMENT_SIZE_EXCEEDED,
+      );
+      expect(uploadSpy).not.toHaveBeenCalled();
+    } finally {
+      uploadSpy.mockRestore();
+    }
+  });
+
+  it('allows exactly 10 MiB through multipart into normal upload validation', async () => {
+    const uploadSpy = jest.spyOn(app.get(RegistrationUploadSessionService), 'upload');
+    try {
+      const exactLimit = await createSession();
+      const response = await upload(exactLimit.id, exactLimit.token, {
+        filename: 'parser-exact-limit.png',
+        body: attachmentBytesForMime('image/png', MAX_BYTES),
+      });
+      expect(response.status).toBe(200);
+      expect(response.body.data).toMatchObject({
+        mime: 'image/png',
+        originalName: 'parser-exact-limit.png',
+        size: MAX_BYTES,
+      });
+      expect(uploadSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      uploadSpy.mockRestore();
     }
   });
 

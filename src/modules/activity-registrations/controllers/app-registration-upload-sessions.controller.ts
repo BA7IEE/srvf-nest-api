@@ -1,17 +1,22 @@
 import {
+  ArgumentsHost,
   Body,
+  Catch,
   Controller,
+  ExceptionFilter,
   HttpCode,
   HttpStatus,
   Param,
+  PayloadTooLargeException,
   Post,
   Req,
   UploadedFile,
+  UseFilters,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 import {
   ApiBizErrorResponse,
@@ -40,6 +45,25 @@ type MultipartUploadFile = {
   size: number;
   buffer: Buffer;
 };
+
+const REGISTRATION_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+// Busboy emits its `limit` event when the parsed size equals the configured value. Keep the
+// externally accepted maximum at 10 MiB while rejecting its first excess byte before the route.
+const REGISTRATION_UPLOAD_MULTIPART_FILE_SIZE_LIMIT = REGISTRATION_UPLOAD_MAX_BYTES + 1;
+
+// The global filter intentionally keeps generic multipart 413 responses at 40000. This App route
+// has a fixed attachment contract, so its parser-level file-size rejection must preserve 13013.
+@Catch(PayloadTooLargeException)
+class RegistrationUploadFileSizeFilter implements ExceptionFilter<PayloadTooLargeException> {
+  catch(_exception: PayloadTooLargeException, host: ArgumentsHost): void {
+    const response = host.switchToHttp().getResponse<Response>();
+    response.status(BizCode.ATTACHMENT_SIZE_EXCEEDED.httpStatus).json({
+      code: BizCode.ATTACHMENT_SIZE_EXCEEDED.code,
+      message: BizCode.ATTACHMENT_SIZE_EXCEEDED.message,
+      data: null,
+    });
+  }
+}
 
 @ApiTags('Mobile - Activity Registration Upload Sessions')
 @ApiBearerAuth()
@@ -77,7 +101,12 @@ export class AppRegistrationUploadSessionsController {
 
   @Post(':activityId/registration-upload-sessions/:sessionId/files')
   @HttpCode(HttpStatus.OK)
-  @UseInterceptors(FileInterceptor('file', { limits: { files: 1 } }))
+  @UseFilters(RegistrationUploadFileSizeFilter)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: REGISTRATION_UPLOAD_MULTIPART_FILE_SIZE_LIMIT, files: 1 },
+    }),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
