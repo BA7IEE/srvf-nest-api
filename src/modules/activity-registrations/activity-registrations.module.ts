@@ -8,6 +8,7 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { UsersModule } from '../users/users.module';
+import { AttachmentsModule } from '../attachments/attachments.module';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import { ActivityRegistrationNotificationProducer } from './activity-registration-notification-producer';
 import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
@@ -23,6 +24,8 @@ import { ActivityRegistrationBulkService } from './activity-registration-bulk.se
 import { ActivityRegistrationWaitlistQueryService } from './activity-registration-waitlist-query.service';
 import { AppManagedActivityRegistrationsService } from './app-managed-activity-registrations.service';
 import { AppManagedActivityRegistrationsController } from './controllers/app-managed-activity-registrations.controller';
+import { AppRegistrationUploadSessionsController } from './controllers/app-registration-upload-sessions.controller';
+import { RegistrationUploadSessionService } from './registration-upload-session.service';
 
 // V2 批次 6 PR #5(D6 v1.1 §8 / 第二波第三步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activity-registrations 6 处写操作(create / createMy / approve / reject / cancelAdmin / cancelMy)
@@ -58,6 +61,7 @@ import { AppManagedActivityRegistrationsController } from './controllers/app-man
     // F2/B1(admin-api-fe-integration-roadmap.md §4 B1;D7 拍板):供 listAllForAdmin 注入
     // OrganizationsService.queryDescendantOrgIds()(closure 只读展开,非判权)。
     OrganizationsModule,
+    AttachmentsModule,
   ],
   controllers: [
     ActivityRegistrationsAdminController,
@@ -65,6 +69,7 @@ import { AppManagedActivityRegistrationsController } from './controllers/app-man
     AdminMemberRegistrationsController,
     AppMyRegistrationsController,
     AppManagedActivityRegistrationsController,
+    AppRegistrationUploadSessionsController,
   ],
   providers: [
     ActivityRegistrationsService,
@@ -75,6 +80,7 @@ import { AppManagedActivityRegistrationsController } from './controllers/app-man
     ActivityRegistrationNotificationProducer,
     ActivityRegistrationWaitlistQueryService,
     AppManagedActivityRegistrationsService,
+    RegistrationUploadSessionService,
   ],
 })
 export class ActivityRegistrationsModule {}

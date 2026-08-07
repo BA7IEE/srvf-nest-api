@@ -213,6 +213,11 @@ export class AttachmentStorageOrchestrator {
     }
   }
 
+  /** Multipart bytes are validated before any caller opens an aggregate transaction. */
+  validateUploadBufferOutsideTransaction(mime: string, buffer: Buffer): void {
+    this.contentValidator.validateFromBuffer({ mime, buffer });
+  }
+
   async prepareUploadUrl(
     identity: AttachmentUploadStorageIdentity,
     unboundExpiresAt: Date,
@@ -300,6 +305,28 @@ export class AttachmentStorageOrchestrator {
       }
       throw error;
     }
+  }
+
+  /**
+   * Backend-mediated multipart effect. The durable intent already exists when this runs; both
+   * Provider I/O and HEAD/signature proof stay outside every database transaction.
+   */
+  async putUploadObjectAtAndVerifyOutsideTransaction(
+    identity: AttachmentUploadStorageIdentity,
+    source: 'attachment_legacy',
+    locator: StorageObjectLocator,
+    body: Buffer,
+  ): Promise<HeadObjectResult> {
+    try {
+      await this.pinnedProvider().putObjectAt(locator, {
+        key: identity.key,
+        body,
+        contentType: identity.mime,
+      });
+    } catch {
+      throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
+    }
+    return this.verifyUploadEvidence(identity, source);
   }
 
   async finalizeUpload(
@@ -2245,6 +2272,20 @@ export class AttachmentStorageOrchestrator {
       }
       if (content.statusCode !== 'draft' || content.publishedAt !== null) {
         throw new BizException(BizCode.CONTENT_INVALID_STATUS_TRANSITION);
+      }
+      return;
+    }
+    if (
+      ownerType === 'registration-upload-session' &&
+      ownerTable === 'registration_upload_sessions'
+    ) {
+      const sessionRows = await tx.$queryRaw<Array<{ id: string; statusCode: string }>>(Prisma.sql`
+        SELECT "id", "statusCode" FROM "RegistrationUploadSession"
+        WHERE "id" = ${ownerId}
+        FOR UPDATE
+      `);
+      if (sessionRows.length !== 1 || sessionRows[0]?.statusCode !== 'active') {
+        throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
       }
       return;
     }

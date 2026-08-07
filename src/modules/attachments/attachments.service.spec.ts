@@ -359,6 +359,12 @@ function makeStorageConsistencyMock(provider: ProviderMock, recorder: RecorderMo
       region: null,
       localNamespace: '/fixture/storage',
     }),
+    validateUploadBufferOutsideTransaction: jest.fn().mockReturnValue(undefined),
+    putUploadObjectAtAndVerifyOutsideTransaction: jest.fn().mockResolvedValue({
+      exists: true,
+      size: 1024,
+      contentType: 'image/png',
+    }),
     prepareUploadUrl: jest.fn(
       async (
         identity: { key: string; mime: string; size: number },
@@ -2043,6 +2049,187 @@ describe('AttachmentsService (characterization)', () => {
         new BizException(BizCode.RBAC_FORBIDDEN),
       );
       expect(provider.generateUploadUrl).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('registration-upload-session internal owner — generic Admin surfaces fail closed', () => {
+    it('create and upload-url reject the internal owner before config, RBAC, ledger, or Provider work', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      const storageConsistency = makeStorageConsistencyMock(provider, makeRecorderMock());
+      const service = makeService(prisma, { provider, storageConsistency });
+
+      await expect(
+        service.create(
+          makeCreateDto({ ownerType: 'registration-upload-session' }),
+          makeCurrentUser(),
+          META,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
+      await expect(
+        service.createUploadUrl(
+          makeUploadUrlDto({ ownerType: 'registration-upload-session' }),
+          makeCurrentUser(),
+        ),
+      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
+
+      expect(prisma.attachmentTypeConfig.findFirst).not.toHaveBeenCalled();
+      expect(storageConsistency.prepareUpload).not.toHaveBeenCalled();
+      expect(storageConsistency.prepareUploadUrl).not.toHaveBeenCalled();
+      expect(provider.generateUploadUrl).not.toHaveBeenCalled();
+    });
+
+    it('list/list-by-owner hide rows and totals without querying the internal owner', async () => {
+      const prisma = makePrismaMock();
+      const service = makeService(prisma);
+
+      await expect(
+        service.list(
+          { page: 1, pageSize: 20, ownerType: 'registration-upload-session' },
+          makeCurrentUser(),
+        ),
+      ).resolves.toEqual({ items: [], total: 0, page: 1, pageSize: 20 });
+      await expect(
+        service.listByOwner(
+          {
+            page: 1,
+            pageSize: 20,
+            ownerType: 'registration-upload-session',
+            ownerId: 'upload-session-1',
+          },
+          makeCurrentUser(),
+        ),
+      ).resolves.toEqual({ items: [], total: 0, page: 1, pageSize: 20 });
+
+      expect(prisma.attachment.findMany).not.toHaveBeenCalled();
+      expect(prisma.attachmentTypeConfig.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('detail, update, delete, and token confirm all collapse the internal owner to 13001 with no URL/ledger work', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      const recorder = makeRecorderMock();
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
+      const internal = makeAttachmentRow({ ownerType: 'registration-upload-session' });
+      prisma.attachment.findFirst.mockResolvedValue(internal);
+      const service = makeService(prisma, { provider, recorder, storageConsistency });
+
+      await expect(service.getById('internal-1', makeCurrentUser())).rejects.toEqual(
+        new BizException(BizCode.ATTACHMENT_NOT_FOUND),
+      );
+      await expect(service.update('internal-1', makeUpdateDto(), makeCurrentUser())).rejects.toEqual(
+        new BizException(BizCode.ATTACHMENT_NOT_FOUND),
+      );
+      await expect(service.delete('internal-1', makeCurrentUser(), META)).rejects.toEqual(
+        new BizException(BizCode.ATTACHMENT_NOT_FOUND),
+      );
+      await expect(
+        service.confirmUpload(
+          makeConfirmDto(makeUploadToken({ ownerType: 'registration-upload-session' })),
+          makeCurrentUser(),
+          META,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
+
+      expect(prisma.attachment.update).not.toHaveBeenCalled();
+      expect(storageConsistency.prepareUploadInTransaction).not.toHaveBeenCalled();
+      expect(storageConsistency.finalizeUploadInTransaction).not.toHaveBeenCalled();
+      expect(provider.generateDownloadUrl).not.toHaveBeenCalled();
+      expect(provider.headObject).not.toHaveBeenCalled();
+      expect(recorder.logUploadConfirmed).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('registration-upload-session trusted facade — exact MIME, size, and magic fences', () => {
+    it.each(['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])(
+      'accepts configured %s only after the exact registration hard cap and content validator',
+      async (mime) => {
+        const prisma = makePrismaMock();
+        const provider = makeProviderMock();
+        const storageConsistency = makeStorageConsistencyMock(provider, makeRecorderMock());
+        prisma.attachmentTypeConfig.findFirst.mockResolvedValue(
+          makeTypeConfig({
+            ownerTable: 'registration_upload_sessions',
+            defaultMaxSizeBytes: 10 * 1024 * 1024,
+            defaultMimeWhitelist: ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'],
+          }),
+        );
+        prisma.attachmentMimeConfig.findFirst.mockResolvedValue(null);
+        prisma.attachmentSizeLimitConfig.findFirst.mockResolvedValue(null);
+        const service = makeService(prisma, { provider, storageConsistency });
+
+        await expect(
+          service.validateRegistrationUploadOutsideTransactionTrusted({
+            sessionId: 'upload-session-1',
+            originalName: 'proof.bin',
+            mime,
+            size: 12,
+            body: Buffer.alloc(12),
+            uploadedByUserId: 'u1',
+            user: makeCurrentUser(),
+            expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+          }),
+        ).resolves.toBeDefined();
+        expect(storageConsistency.validateUploadBufferOutsideTransaction).toHaveBeenCalledWith(
+          mime,
+          expect.any(Buffer),
+        );
+      },
+    );
+
+    it('rejects over 10 MiB before configuration or Provider work', async () => {
+      const prisma = makePrismaMock();
+      const storageConsistency = makeStorageConsistencyMock(makeProviderMock(), makeRecorderMock());
+      const service = makeService(prisma, { storageConsistency });
+      const oversized = Buffer.alloc(10 * 1024 * 1024 + 1);
+
+      await expect(
+        service.validateRegistrationUploadOutsideTransactionTrusted({
+          sessionId: 'upload-session-1',
+          originalName: 'large.png',
+          mime: 'image/png',
+          size: oversized.length,
+          body: oversized,
+          uploadedByUserId: 'u1',
+          user: makeCurrentUser(),
+          expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+        }),
+      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_SIZE_EXCEEDED));
+      expect(prisma.attachmentTypeConfig.findFirst).not.toHaveBeenCalled();
+      expect(storageConsistency.validateUploadBufferOutsideTransaction).not.toHaveBeenCalled();
+    });
+
+    it('maps declared MIME versus magic mismatch to the existing 13016 and never prepares storage', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      const storageConsistency = makeStorageConsistencyMock(provider, makeRecorderMock());
+      storageConsistency.validateUploadBufferOutsideTransaction.mockImplementation(() => {
+        throw new BizException(BizCode.ATTACHMENT_CONTENT_TYPE_MISMATCH);
+      });
+      prisma.attachmentTypeConfig.findFirst.mockResolvedValue(
+        makeTypeConfig({
+          ownerTable: 'registration_upload_sessions',
+          defaultMaxSizeBytes: 10 * 1024 * 1024,
+          defaultMimeWhitelist: ['image/png'],
+        }),
+      );
+      prisma.attachmentMimeConfig.findFirst.mockResolvedValue(null);
+      prisma.attachmentSizeLimitConfig.findFirst.mockResolvedValue(null);
+      const service = makeService(prisma, { provider, storageConsistency });
+
+      await expect(
+        service.validateRegistrationUploadOutsideTransactionTrusted({
+          sessionId: 'upload-session-1',
+          originalName: 'forged.png',
+          mime: 'image/png',
+          size: 12,
+          body: Buffer.alloc(12),
+          uploadedByUserId: 'u1',
+          user: makeCurrentUser(),
+          expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+        }),
+      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_CONTENT_TYPE_MISMATCH));
+      expect(storageConsistency.prepareUploadInTransaction).not.toHaveBeenCalled();
     });
   });
 

@@ -7,6 +7,14 @@ import type { AppConfig } from '../../config/app.config';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { canonicalize, type CanonicalValue } from './settlement-content-hash';
+import {
+  canonicalizeRegistrationFormDefinition,
+} from './registration-form-definition';
+import {
+  RegistrationFormVersionService,
+  type RegistrationFormResolvedConfig,
+  type RegistrationFormTarget,
+} from './registration-form-version.service';
 import type {
   ChangeReviewDto,
   ChangeReviewSessionCreateDto,
@@ -146,6 +154,11 @@ export interface ActivityTemplateResolution {
   }>;
 }
 
+/** RuleSnapshot may append only the frozen active Form pointer, never question definitions. */
+export interface ActivityTemplateResolutionWithRegistrationForm extends ActivityTemplateResolution {
+  registrationForm: RegistrationFormResolvedConfig | null;
+}
+
 export interface ActivityPublishProposalSnapshotV2 {
   schemaVersion: 2;
   baseWorkflowRevision: number;
@@ -163,12 +176,40 @@ export interface ActivityPublishProposalSnapshotV2 {
   sessions: ProposalSession[];
 }
 
+/**
+ * v3 is additive over the v2 proposal envelope. The full target is canonical and hash-bound in
+ * the snapshot; it is not copied into RuleSnapshot after approval.
+ */
+export interface ActivityPublishProposalSnapshotV3 {
+  schemaVersion: 3;
+  baseWorkflowRevision: number;
+  baseSnapshotHash: string;
+  snapshotHash: string;
+  base: {
+    templateVersionId: string | null;
+    resolvedConfig: ActivityTemplateResolution;
+    activity: ProposalActivity;
+    sessions: ProposalSession[];
+    registrationForm: RegistrationFormTarget | null;
+  };
+  templateVersionId: string | null;
+  resolvedConfig: ActivityTemplateResolution;
+  activity: ProposalActivity;
+  sessions: ProposalSession[];
+  registrationForm: RegistrationFormTarget | null;
+}
+
+export type ActivityPublishProposalSnapshot =
+  | ActivityPublishProposalSnapshotV2
+  | ActivityPublishProposalSnapshotV3;
+
 interface CurrentProposalState {
   workflowRevision: number;
   activity: ProposalActivity;
   sessions: ProposalSession[];
   templateVersionId: string | null;
   resolvedConfig: ActivityTemplateResolution;
+  registrationForm: RegistrationFormTarget | null;
 }
 
 interface TemplateRow {
@@ -181,6 +222,7 @@ interface TemplateRow {
 
 const proposalActivitySelect = {
   id: true,
+  statusCode: true,
   workflowRevision: true,
   title: true,
   activityTypeCode: true,
@@ -317,17 +359,21 @@ function compareIdentity(
 
 @Injectable()
 export class ActivityPublishProposalV2Service {
-  constructor(private readonly config: ConfigService<AppConfig, true>) {}
+  constructor(
+    private readonly config: ConfigService<AppConfig, true>,
+    private readonly registrationForms: RegistrationFormVersionService,
+  ) {}
 
-  async buildInitial(tx: PrismaTx, activityId: string): Promise<ActivityPublishProposalSnapshotV2> {
+  async buildInitial(tx: PrismaTx, activityId: string): Promise<ActivityPublishProposalSnapshotV3> {
     const current = await this.currentState(tx, activityId);
     this.assertProposalValid(current.activity, current.sessions);
-    return this.toSnapshot(
+    return this.toSnapshotV3(
       current,
       current.activity,
       current.sessions,
       current.templateVersionId,
       current.resolvedConfig,
+      current.registrationForm,
     );
   }
 
@@ -335,7 +381,7 @@ export class ActivityPublishProposalV2Service {
     tx: PrismaTx,
     activityId: string,
     dto: ChangeReviewDto,
-  ): Promise<ActivityPublishProposalSnapshotV2> {
+  ): Promise<ActivityPublishProposalSnapshotV3> {
     const current = await this.currentState(tx, activityId);
     const activity = clone(current.activity);
     const sessions = clone(current.sessions);
@@ -347,20 +393,31 @@ export class ActivityPublishProposalV2Service {
 
     const template = await this.findTemplate(tx, activity.activityTypeCode);
     const resolvedConfig = this.resolveConfig(activity, sessions, template);
-    const snapshot = this.toSnapshot(
+    const registrationForm =
+      dto.registrationForm === undefined
+        ? current.registrationForm
+        : dto.registrationForm === null
+          ? null
+          : (() => {
+              const canonical = canonicalizeRegistrationFormDefinition(dto.registrationForm);
+              return { definition: canonical.definition, schemaHash: canonical.schemaHash };
+            })();
+    const snapshot = this.toSnapshotV3(
       current,
       activity,
       sessions,
       template?.id ?? null,
       resolvedConfig,
+      registrationForm,
     );
     if (
       snapshot.snapshotHash ===
-      this.hashTarget(
+      this.hashTargetV3(
         current.activity,
         current.sessions,
         current.templateVersionId,
         current.resolvedConfig,
+        current.registrationForm,
       )
     ) {
       throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
@@ -371,16 +428,28 @@ export class ActivityPublishProposalV2Service {
   async rebuildCurrent(
     tx: PrismaTx,
     activityId: string,
+    schemaVersion: 2 | 3,
   ): Promise<{ workflowRevision: number; snapshotHash: string }> {
-    const current = await this.currentState(tx, activityId);
+    // Historical v2 approvals must retain their former read/hashing behavior: do not touch the
+    // Form tables at all while reconstructing a v2 stale guard.
+    const current = await this.currentState(tx, activityId, schemaVersion === 3);
     return {
       workflowRevision: current.workflowRevision,
-      snapshotHash: this.hashTarget(
-        current.activity,
-        current.sessions,
-        current.templateVersionId,
-        current.resolvedConfig,
-      ),
+      snapshotHash:
+        schemaVersion === 2
+          ? this.hashTarget(
+              current.activity,
+              current.sessions,
+              current.templateVersionId,
+              current.resolvedConfig,
+            )
+          : this.hashTargetV3(
+              current.activity,
+              current.sessions,
+              current.templateVersionId,
+              current.resolvedConfig,
+              current.registrationForm,
+            ),
     };
   }
 
@@ -388,24 +457,30 @@ export class ActivityPublishProposalV2Service {
     tx: PrismaTx,
     activityId: string,
   ): Promise<ActivityTemplateResolution> {
-    return (await this.currentState(tx, activityId)).resolvedConfig;
+    // Resolved template config has no Form dependency. Keeping this false preserves the
+    // historical v2 approval read path while v3 asks for its active Form pointer explicitly.
+    return (await this.currentState(tx, activityId, false)).resolvedConfig;
   }
 
   isSnapshot(value: Prisma.JsonValue): boolean {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
     const row = value as Record<string, unknown>;
-    return row.schemaVersion === 2 && typeof row.snapshotHash === 'string';
+    return (row.schemaVersion === 2 || row.schemaVersion === 3) && typeof row.snapshotHash === 'string';
   }
 
-  parseSnapshot(value: Prisma.JsonValue): ActivityPublishProposalSnapshotV2 {
+  parseSnapshot(value: Prisma.JsonValue): ActivityPublishProposalSnapshot {
     if (!this.isSnapshot(value))
       throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
-    const snapshot = value as unknown as ActivityPublishProposalSnapshotV2;
+    const snapshot = value as unknown as ActivityPublishProposalSnapshot;
     const { snapshotHash, ...unsigned } = snapshot;
     if (sha256(unsigned) !== snapshotHash) {
       throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
     }
     this.assertProposalValid(snapshot.activity, snapshot.sessions);
+    if (snapshot.schemaVersion === 3) {
+      this.assertSnapshotFormTarget(snapshot.registrationForm);
+      this.assertSnapshotFormTarget(snapshot.base.registrationForm);
+    }
     return snapshot;
   }
 
@@ -417,13 +492,31 @@ export class ActivityPublishProposalV2Service {
   async apply(
     tx: PrismaTx,
     activityId: string,
-    snapshot: ActivityPublishProposalSnapshotV2,
+    snapshot: ActivityPublishProposalSnapshot,
     input: { publish: boolean; publishedByUserId: string; at: Date },
-  ): Promise<{ workflowRevision: number; resolvedConfig: ActivityTemplateResolution }> {
+  ): Promise<{
+    workflowRevision: number;
+    resolvedConfig: ActivityTemplateResolution | ActivityTemplateResolutionWithRegistrationForm;
+  }> {
     await this.applyActivity(tx, activityId, snapshot.activity);
     const sessionIds = await this.applySessions(tx, activityId, snapshot.sessions, input.at);
     await this.applyPositions(tx, activityId, snapshot.sessions, sessionIds, input.at);
-    await this.applyFormAndRulesPlaceholder(tx, activityId); // 第 4 批占位，刻意空实现。
+    let registrationForm: RegistrationFormResolvedConfig | null = null;
+    if (snapshot.schemaVersion === 3) {
+      const currentActivity = await tx.activity.findUniqueOrThrow({
+        where: { id: activityId },
+        select: { workflowRevision: true },
+      });
+      registrationForm = await this.registrationForms.applyPublishedTarget(tx, {
+        activityId,
+        requestType: input.publish ? 'initial' : 'change',
+        target: snapshot.registrationForm,
+        nextWorkflowRevision: currentActivity.workflowRevision + 1,
+        at: input.at,
+      });
+    } else {
+      await this.applyFormAndRulesPlaceholder(tx, activityId);
+    }
     await this.applyCapacityBucketsPlaceholder(tx, activityId); // 第 4 批占位，刻意空实现。
     await this.applyQrCredentialsPlaceholder(tx, activityId); // 第 5 批占位，刻意空实现。
     const activity = await tx.activity.update({
@@ -437,11 +530,21 @@ export class ActivityPublishProposalV2Service {
       },
       select: { workflowRevision: true },
     });
-    const resolvedConfig = await this.getTemplateResolution(tx, activityId);
+    // The existing rule resolution is frozen when the proposal is submitted. v3 only appends
+    // this approval's compact active Form pointer; it must not re-resolve a template that changed
+    // while the review was pending.
+    const resolvedConfig =
+      snapshot.schemaVersion === 3
+        ? { ...snapshot.resolvedConfig, registrationForm }
+        : await this.getTemplateResolution(tx, activityId);
     return { workflowRevision: activity.workflowRevision, resolvedConfig };
   }
 
-  private async currentState(tx: PrismaTx, activityId: string): Promise<CurrentProposalState> {
+  private async currentState(
+    tx: PrismaTx,
+    activityId: string,
+    includeRegistrationForm: boolean = true,
+  ): Promise<CurrentProposalState> {
     const row = await tx.activity.findUniqueOrThrow({
       where: { id: activityId },
       select: proposalActivitySelect,
@@ -526,6 +629,9 @@ export class ActivityPublishProposalV2Service {
       sessions,
       templateVersionId: template?.id ?? null,
       resolvedConfig: this.resolveConfig(activity, sessions, template),
+      registrationForm: includeRegistrationForm
+        ? await this.registrationForms.currentTarget(tx, activityId, row.statusCode)
+        : null,
     };
   }
 
@@ -574,6 +680,41 @@ export class ActivityPublishProposalV2Service {
     return { ...unsigned, snapshotHash: sha256(unsigned) };
   }
 
+  private toSnapshotV3(
+    current: CurrentProposalState,
+    activity: ProposalActivity,
+    sessions: ProposalSession[],
+    templateVersionId: string | null,
+    resolvedConfig: ActivityTemplateResolution,
+    registrationForm: RegistrationFormTarget | null,
+  ): ActivityPublishProposalSnapshotV3 {
+    const baseSnapshotHash = this.hashTargetV3(
+      current.activity,
+      current.sessions,
+      current.templateVersionId,
+      current.resolvedConfig,
+      current.registrationForm,
+    );
+    const unsigned = {
+      schemaVersion: 3 as const,
+      baseWorkflowRevision: current.workflowRevision,
+      baseSnapshotHash,
+      base: {
+        templateVersionId: current.templateVersionId,
+        resolvedConfig: current.resolvedConfig,
+        activity: current.activity,
+        sessions: current.sessions,
+        registrationForm: current.registrationForm,
+      },
+      templateVersionId,
+      resolvedConfig,
+      activity,
+      sessions,
+      registrationForm,
+    };
+    return { ...unsigned, snapshotHash: sha256(unsigned) };
+  }
+
   private hashTarget(
     activity: ProposalActivity,
     sessions: ProposalSession[],
@@ -581,6 +722,34 @@ export class ActivityPublishProposalV2Service {
     resolvedConfig: ActivityTemplateResolution,
   ): string {
     return sha256({ activity, sessions, templateVersionId, resolvedConfig });
+  }
+
+  private hashTargetV3(
+    activity: ProposalActivity,
+    sessions: ProposalSession[],
+    templateVersionId: string | null,
+    resolvedConfig: ActivityTemplateResolution,
+    registrationForm: RegistrationFormTarget | null,
+  ): string {
+    return sha256({ activity, sessions, templateVersionId, resolvedConfig, registrationForm });
+  }
+
+  private assertSnapshotFormTarget(target: RegistrationFormTarget | null): void {
+    if (target === null) return;
+    if (!target || typeof target !== 'object' || typeof target.schemaHash !== 'string') {
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    }
+    try {
+      const canonical = canonicalizeRegistrationFormDefinition(target.definition);
+      if (canonical.schemaHash !== target.schemaHash) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+    } catch (error) {
+      if (error instanceof BizException) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      throw error;
+    }
   }
 
   private applyActivityPatch(activity: ProposalActivity, patch: Partial<ProposalActivity>): void {

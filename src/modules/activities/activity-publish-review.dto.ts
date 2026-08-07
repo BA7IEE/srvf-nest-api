@@ -12,11 +12,13 @@ import {
   IsString,
   MaxLength,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { OmittableOnly } from '../../common/decorators/omittable-only.decorator';
 import { UpdateAppManagedActivityDto } from './dto/app/app-managed-activity.dto';
+import { RegistrationFormDefinitionInputDto } from './dto/app/app-registration-form.dto';
 import {
   CreateAppManagedActivitySessionDto,
   CreateAppManagedActivitySessionPositionDto,
@@ -303,6 +305,18 @@ export class ChangeReviewDto extends SubmitActivityPublishReviewDto {
   @ValidateNested()
   @Type(() => ChangeReviewSessionPositionCollectionsDto)
   positions!: ChangeReviewSessionPositionCollectionsDto;
+
+  /**
+   * Omitted keeps the active Form; explicit null retires it on approval; an object replaces it.
+   * The proposal service, not this DTO, canonicalizes and binds it into the v3 snapshot.
+   */
+  @ApiPropertyOptional({ nullable: true, type: () => RegistrationFormDefinitionInputDto })
+  @IsOptional()
+  @ValidateIf((_object, value: unknown) => value !== null)
+  @IsObject()
+  @ValidateNested()
+  @Type(() => RegistrationFormDefinitionInputDto)
+  registrationForm?: RegistrationFormDefinitionInputDto | null;
 }
 
 export class ActivityTemplateResolutionResponseDto {

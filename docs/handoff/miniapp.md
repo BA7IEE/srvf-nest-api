@@ -35,6 +35,14 @@
 | 公开(无账号) | `POST /api/open/v1/recruitment/applications/*`(招新报名) · `GET /api/open/v1/contents`(内容;`expireAt <= now` 的附件行不返回、过期封面 URL 为 null,未来时间/null 不变) |
 | 招新本人进度(无账号) | `POST /api/open/v1/recruitment/applications/query`(凭 wx.login code 换 openid;**返进度模型**:业务态 `stage` + 字典 `stageText` + `nextAction` + 门槛 `todoList` 真投影 + 临时编号;`memberNo` 恒 null——发号后经登录态 app 侧查,见 §3 GAP-006)。**F4(v0.41.0)**:发号后(报名行 openid 已清)不再「查无 28002」——经账号 openid 锚 fall-through 返 **stage=volunteer 引导态**(「已转志愿者 / 待入队」+ `nextAction=apply-teamjoin`),前端见此态引导用户登录小程序/申请入队;已离队(INACTIVE)或非招新出身仍 28002 |
 
+### 1.1.1 活动报名表与一次性附件会话（第 4 批）
+
+- 管理 Form：`GET/PUT /api/app/v1/my/managed-activities/:activityId/registration-form`。PUT body 固定为 `{form:null|{fields:[...]}}`；`null` 是明确移除/不用自定义表，object 的 `fields` 必须非空。草稿仅沿既有发起人直改权限；published PUT 返回 `20037`，改动应走 change review。相同 canonical 定义是 no-op，不会产生新版本或 audit。
+- 队员活动详情：`GET /api/app/v1/activities/:activityId` 保留 `formVersion:number|null`，并新增 `registrationForm:null|{version,fields}`。只有 active Form 才返回安全题目定义；绝不依赖或展示 DB id、hash、workflowRevision、时间戳或存储信息。
+- 创建会话：`POST /api/app/v1/activities/:activityId/registration-upload-sessions`。仅当前公开可报名、未结束且 active Form 含 file 题的活动可创建；成功**仅此一次**返回 `{id,token,expiresAt,formVersion}`，token 30 分钟有效，客户端须立刻临时保存，不能期望后续读取或恢复明文 token。
+- 上传：`POST /api/app/v1/activities/:activityId/registration-upload-sessions/:sessionId/files` 是后端中转 `multipart/form-data`，文本字段名 `token`、**单个**文件字段名 `file`。仅 JPEG/PNG/WebP/PDF，最大 10 MiB，声明 MIME、大小和文件魔数都须通过。成功仅返回 `{attachmentId,originalName,mime,size,createdAt}`；同 token 重试返回同一安全元数据。
+- **没有 Provider signed upload URL**：任何响应都不返回 key、accessUrl/signed URL、owner、tokenHash 或存储 locator。当前会话上传不等于报名提交：答案、报名 revision、提交时 consumed/绑定均尚未开放。
+
 ### 活动责任闭环的五类视图与按钮
 
 1. **我参与的活动**：App `/api/app/v1/my/activities`，只表示本人报名/参与历史。

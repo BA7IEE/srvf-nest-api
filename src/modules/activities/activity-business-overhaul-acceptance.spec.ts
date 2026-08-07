@@ -345,6 +345,28 @@ const BATCH3_SLICE1_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
   'ADV-019': '卡第 3 刀正式/停用/非正式/未受邀可见性组合读面。',
 };
 
+/**
+ * 第 4 批 Form runtime 只回填已完整闭环的验收号。下列三项均有可复用的局部证据，
+ * 但合同要求的报名答案、三入口共享校验和提交时附件绑定尚未实现，故必须继续保留 todo。
+ */
+const BATCH4_FORM_RUNTIME_PARTIAL_ACCEPTANCE_IDS = ['AC-016', 'AC-017', 'AC-029'] as const;
+
+const BATCH4_FORM_RUNTIME_PARTIAL_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
+  'AC-016': '完整安全 Form 读取已覆盖；报名答案提交校验仍未实现。',
+  'AC-017': '三入口共享答案 validator 尚未实现。',
+  'AC-029': '会话创建/上传已覆盖；报名提交时绑定与重报名跨会话防串仍未实现。',
+};
+
+if (
+  Object.keys(BATCH4_FORM_RUNTIME_PARTIAL_ACCEPTANCE_BLOCKERS).length !==
+    BATCH4_FORM_RUNTIME_PARTIAL_ACCEPTANCE_IDS.length ||
+  BATCH4_FORM_RUNTIME_PARTIAL_ACCEPTANCE_IDS.some(
+    (id) => BATCH4_FORM_RUNTIME_PARTIAL_ACCEPTANCE_BLOCKERS[id] === undefined,
+  )
+) {
+  throw new Error('第 4 批 Form runtime 的部分验收项必须继续逐条保留阻塞说明');
+}
+
 const batch3Slice1ResolvedIds = new Set([
   ...Object.keys(BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS),
   ...Object.keys(BATCH3_SLICE1_ACCEPTANCE_BLOCKERS),
@@ -375,6 +397,11 @@ function registerAcceptanceCases(cases: readonly { id: string; title: string }[]
     }
 
     const blocker = BATCH2_ACCEPTANCE_BLOCKERS[id] ?? BATCH3_SLICE1_ACCEPTANCE_BLOCKERS[id];
+    const batch4Blocker = BATCH4_FORM_RUNTIME_PARTIAL_ACCEPTANCE_BLOCKERS[id];
+    if (batch4Blocker !== undefined) {
+      it.todo(`${id} ${title}（阻塞：${batch4Blocker}）`);
+      continue;
+    }
     if (blocker !== undefined) {
       it.todo(`${id} ${title}（阻塞：${blocker}）`);
       continue;

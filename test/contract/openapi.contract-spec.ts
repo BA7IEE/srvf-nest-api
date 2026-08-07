@@ -180,6 +180,11 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 行为契约沿 §11.4 锁定。
   ['get', '/api/app/v1/activities/{id}'],
 
+  // 活动业务改造 v1.1 第 4 批：队员只读 active Form；附件会话由后端中转 multipart，
+  // 不开放 provider signed upload URL。
+  ['post', '/api/app/v1/activities/{activityId}/registration-upload-sessions'],
+  ['post', '/api/app/v1/activities/{activityId}/registration-upload-sessions/{sessionId}/files'],
+
   // Phase 2 P2-5a(2026-05-20):App /api/app/v1/my/* 3 只读 endpoint
   // 沿 docs/app-api-p2-5-registrations-review.md §13.7 + D-P2-5-5;5 endpoint 全部
   // 挂在 AppMyRegistrationsController @Controller('app/v1/my');本 PR 仅落 3 GET,
@@ -205,6 +210,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/my/managed-activities/{activityId}'],
   ['patch', '/api/app/v1/my/managed-activities/{activityId}'],
   ['delete', '/api/app/v1/my/managed-activities/{activityId}'],
+  // 第 4 批：草稿发起人直改 Form；published 仍由 change review 接管。
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/registration-form'],
+  ['put', '/api/app/v1/my/managed-activities/{activityId}/registration-form'],
   // 活动业务改造 v1.1 第 3 批第一刀：草稿场次/新表岗位嵌套 CRUD。
   // 只允许发起人（SUPER_ADMIN 兜底）操作 draft；published 直写返回 change-review-required。
   ['get', '/api/app/v1/my/managed-activities/{activityId}/sessions'],
@@ -1589,9 +1597,10 @@ describe('OpenAPI 契约快照', () => {
   //   (POST admin/v1/notifications/:id/replay-wecom)→451；第 2 批第 ⑧b 刀结算最小 HTTP 闭环 +7 →458；
   //   第 ⑨a 刀负责人结算工作台 +5 →463；第 ⑨b 刀审核/账本读面 +6 →469；
   //   第 3 批第一刀草稿场次/新表岗位嵌套 CRUD +8 →477；第三刀目录 + 生命周期/clone/seal
-  //   +5 →482；第 3 批第二刀 proposal / withdraw / resolution +4 → **486**。
-  it('路由足迹精确为 486', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(486);
+  //   +5 →482；第 3 批第二刀 proposal / withdraw / resolution +4 →486；第 4 批
+  //   Form GET/PUT + 一次性上传会话 POST/POST +4 → **490**。
+  it('路由足迹精确为 490', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(490);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

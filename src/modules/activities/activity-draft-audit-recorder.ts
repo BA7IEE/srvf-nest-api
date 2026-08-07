@@ -16,13 +16,15 @@ export class ActivityDraftAuditRecorder {
       | 'draft-session-delete'
       | 'draft-session-position-create'
       | 'draft-session-position-update'
-      | 'draft-session-position-delete';
+      | 'draft-session-position-delete'
+      | 'draft-registration-form-update';
     actorUserId: string;
     actorRoleSnap: Role;
     auditMeta: AuditMeta;
     tx: Prisma.TransactionClient;
-    sessionId: string;
+    sessionId?: string;
     positionId?: string;
+    formVersionId?: string;
     changedFields?: string[];
   }): Promise<void> {
     await this.auditLogs.log({
@@ -34,8 +36,9 @@ export class ActivityDraftAuditRecorder {
       meta: args.auditMeta,
       extra: {
         operation: args.operation,
-        sessionId: args.sessionId,
+        ...(args.sessionId ? { sessionId: args.sessionId } : {}),
         ...(args.positionId ? { positionId: args.positionId } : {}),
+        ...(args.formVersionId ? { formVersionId: args.formVersionId } : {}),
         ...(args.changedFields ? { changedFields: args.changedFields } : {}),
       },
       tx: args.tx,

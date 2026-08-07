@@ -15,6 +15,7 @@ import { ActivityResponsibilityPolicy } from './activity-responsibility-policy';
 import { ActivityStateMachine } from './activity-state-machine';
 import { ActivitiesService, type ActivityFullRow } from './activities.service';
 import { EvidenceSealService, type EvidenceSealResult } from './evidence-seal.service';
+import { RegistrationFormVersionService } from './registration-form-version.service';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -161,6 +162,7 @@ export class ActivityLifecycleService {
     private readonly initiationPolicy: ActivityInitiationPolicy,
     private readonly auditRecorder: ActivityAuditRecorder,
     private readonly evidenceSeal: EvidenceSealService,
+    private readonly registrationForms: RegistrationFormVersionService,
   ) {}
 
   async cancel(
@@ -425,6 +427,13 @@ export class ActivityLifecycleService {
           });
         }
       }
+
+      await this.registrationForms.cloneFromSource(
+        tx,
+        source.id,
+        current.statusCode,
+        created.id,
+      );
 
       await this.auditRecorder.logClone({
         sourceActivityId: source.id,

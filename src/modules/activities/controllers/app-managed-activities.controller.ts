@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
 } from '@nestjs/common';
@@ -17,6 +18,7 @@ import {
   ApiBizErrorResponse,
   ApiWrappedArrayResponse,
   ApiWrappedCreatedResponse,
+  ApiWrappedNullableResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
 } from '../../../common/decorators/api-response.decorator';
@@ -88,6 +90,11 @@ import {
   AppSettlementWorkbenchResponseDto,
   AppSettlementUpdateDraftItemDto,
 } from '../dto/app/app-settlement-workbench.dto';
+import {
+  AppRegistrationFormDto,
+  PutAppManagedRegistrationFormDto,
+} from '../dto/app/app-registration-form.dto';
+import { RegistrationFormVersionService } from '../registration-form-version.service';
 
 @ApiTags('Mobile - Managed Activities')
 @ApiBearerAuth()
@@ -98,6 +105,7 @@ export class AppManagedActivitiesController {
     private readonly service: AppManagedActivitiesService,
     private readonly lifecycle: ActivityLifecycleService,
     private readonly settlements: ActivitySettlementHttpService,
+    private readonly registrationForms: RegistrationFormVersionService,
   ) {}
 
   @Get('organization-options')
@@ -217,6 +225,45 @@ export class AppManagedActivitiesController {
   ): Promise<AppManagedActivityCloneResultDto> {
     await this.resolveMemberId(user);
     return await this.lifecycle.clone(params.activityId, dto, user, this.auditMeta(req));
+  }
+
+  @Get(':activityId/registration-form')
+  @ApiOperation({ summary: 'App 获取本人 managed 活动当前报名表定义 [auth]' })
+  @ApiWrappedNullableResponse(AppRegistrationFormDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_STATUS_INVALID,
+  )
+  async getRegistrationForm(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+  ): Promise<AppRegistrationFormDto | null> {
+    await this.resolveMemberId(user);
+    return this.registrationForms.getManaged(params.activityId, user);
+  }
+
+  @Put(':activityId/registration-form')
+  @ApiOperation({ summary: 'App 直改本人 draft 活动报名表定义；已发布活动须走变更审核 [auth]' })
+  @ApiWrappedNullableResponse(AppRegistrationFormDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED,
+    BizCode.ACTIVITY_STATUS_INVALID,
+  )
+  async putRegistrationForm(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Body() dto: PutAppManagedRegistrationFormDto,
+    @Req() req: Request,
+  ): Promise<AppRegistrationFormDto | null> {
+    await this.resolveMemberId(user);
+    return this.registrationForms.putManaged(params.activityId, dto, user, this.auditMeta(req));
   }
 
   @Post(':activityId/evidence-seals')

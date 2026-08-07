@@ -17,6 +17,7 @@
 - Admin Controller:`activity-registrations.controller.ts` `@Controller('admin/v1/activities/:activityId/registrations')` `@ApiTags('Admin - Registrations')`
 - App Controller:`controllers/app-my-registrations.controller.ts` `@Controller('app/v1/my')` `@ApiTags('Mobile - My Registrations')`;**方法级**追加 `@ApiTags('Mobile - My Activities')` 于 `GET /my/activities`(刻意保留)
 - Managed App Controller:`controllers/app-managed-activity-registrations.controller.ts`，7 路 list/approve/reject/cancel/reopen/bulk-approve/bulk-reject；薄 application service 只做 App safe projection，动作仍复用本模块单条 service 与 bulk wrapper，禁止复制第二套状态机/容量/候补/audit
+- **一次性报名附件会话**:`controllers/app-registration-upload-sessions.controller.ts` 只暴露 create/upload 两路；token 用 CSPRNG 生成、库内仅 SHA-256，创建响应明文只一次、固定 30 分钟。每次 upload 都在 Activity/Form/Session 根锁内复校 member/route/activity/formVersion/status/expiry，任一失配在 Provider/ledger/audit 前统一 `ATTACHMENT_NOT_FOUND=13001`；session 上传后仍为 active，只有未来报名提交才可 consumed。
 - DTO 隔离:Admin DTO 在 `activity-registrations.dto.ts`;App DTO 在 `dto/app/`(6 文件)，managed 出参刻意不含 `reviewedBy` / `cancelledByUserId`
 - **Partial unique** `activity_registrations_activity_member_active_unique` 由 migration 直写(Prisma schema 上**不可见**);service 用 `P2002` 兜底转 `BizCode.ACTIVITY_REGISTRATION_ALREADY_EXISTS = 21002`
 - **D-INSURANCE v3 PR3**:single gate=true 且 Activity.requiresInsurance=true 时，Admin/App create 共用 `Activity→source→Registration→Evidence→Audit` 根事务；source 只认覆盖活动北京日闭区间的 verified self，随后才尝试 live Team Policy+Coverage。成功恰一条最小 evidence，任一腿失败全回滚；pending/rejected/软删/不覆盖均 26030。gate=false 保留旧 consumer 且 0 evidence。
@@ -53,6 +54,7 @@
 - ❌ **不**在 CSV 导出路径引入 `csv-stringify` 等新依赖(沿 Q-A6 + [`/AGENTS.md §3`](../../../AGENTS.md))
 - ❌ **不**把递补改成 waitlisted → pass；腾出名额只自动进 pending，仍必须走 approve
 - ❌ **不**把报名通知改回 commit 后 best-effort 直调 dispatcher；不得在业务事务内调用 provider，且 gate=true 不得用 `publishedBy` 冒充当前 owner
+- ❌ **不**把 upload session 当作报名答案、RegistrationRevision 或永久报名身份；不得在本模块提前 consumed/转绑，也不得把 Provider/签名/文件内容校验放进数据库事务。
 
 ## Before editing
 

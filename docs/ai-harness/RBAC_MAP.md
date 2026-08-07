@@ -69,7 +69,7 @@
 | `meta` | 1 | `meta.resolve.label` |
 | `sms-send-log` | 1 | `sms-send-log.read.list` |
 
-### controller × surface 对照(89 个 @Controller)
+### controller × surface 对照(90 个 @Controller)
 
 > 权威源:`src/**/*.controller.ts` 的 `@Controller(...)` 装饰器。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 鉴权模式(R / A / P)与业务语义属人类知识,见本文件标记之外的章节。
@@ -127,11 +127,12 @@
 | `admin/v1/team-join/cycles` | `src/modules/team-join/team-join-cycles.controller.ts` |
 | `admin/v1/users` | `src/modules/users/users.controller.ts` |
 
-#### app/v1(18 个 controller)
+#### app/v1(19 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
 | `app/v1/activities` | `src/modules/activities/controllers/app-activities.controller.ts` |
+| `app/v1/activities` | `src/modules/activity-registrations/controllers/app-registration-upload-sessions.controller.ts` |
 | `app/v1/contents` | `src/modules/content/content-app.controller.ts` |
 | `app/v1/me` | `src/modules/users/controllers/app-me.controller.ts` |
 | `app/v1/me/insurances` | `src/modules/insurances/controllers/app-me-insurances.controller.ts` |

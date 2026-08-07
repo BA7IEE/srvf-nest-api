@@ -1,6 +1,10 @@
-import { isMimeBlocked } from './attachment-validation';
+import { isKnownAttachmentOwnerType, isMimeBlocked } from './attachment-validation';
 
 describe('attachment system MIME blocklist', () => {
+  it('recognizes registration-upload-session as an internal attachment owner type', () => {
+    expect(isKnownAttachmentOwnerType('registration-upload-session')).toBe(true);
+  });
+
   it.each(['image/svg+xml', 'text/html', 'application/xhtml+xml'])(
     'v0.44.0 finding #24 永久拒绝 %s',
     (mime) => {

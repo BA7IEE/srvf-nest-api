@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ACTIVITY_PHASE_VALUES, type ActivityPhase } from '../../activity-phase';
+import { AppRegistrationFormDto } from './app-registration-form.dto';
 
 export class AppActivityDetailSessionPositionDto {
   @ApiProperty()
@@ -165,11 +166,18 @@ export class AppActivityDetailDto {
   registrationMode!: string | null;
 
   @ApiPropertyOptional({
-    description: '报名表版本；第 4 批接线前恒为 NULL',
+    description: '当前 active 报名表版本；无自定义报名表时为 NULL',
     nullable: true,
     type: Number,
   })
   formVersion!: number | null;
+
+  @ApiPropertyOptional({
+    description: '当前 active 报名表的安全完整定义；无自定义报名表时为 NULL',
+    nullable: true,
+    type: () => AppRegistrationFormDto,
+  })
+  registrationForm!: AppRegistrationFormDto | null;
 
   @ApiProperty({
     description: '活动场次与其岗位的安全投影；不返回定位坐标、负责人或资格规则内部字段',

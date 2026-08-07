@@ -36,6 +36,10 @@ import type {
   ContentUploadConfirmPrepared,
   ContentUploadConfirmVerified,
   PreparedAttachmentStorageUpload,
+  RegistrationUploadFinalized,
+  RegistrationUploadPrepared,
+  RegistrationUploadValidated,
+  RegistrationUploadVerified,
 } from './attachment-storage.types';
 import {
   ATTACHMENT_OWNER_TYPES,
@@ -85,6 +89,14 @@ import { mimeToExt } from './mime-to-ext';
 
 type SafeAttachment = Prisma.AttachmentGetPayload<{ select: typeof attachmentSelect }>;
 
+const REGISTRATION_UPLOAD_ALLOWED_MIME = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+]);
+const REGISTRATION_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+
 // CMS(content-module-review §5.2 / §5.4;α 决议):content 读取面用的「可信附件视图」——已签名下载
 // URL;调用方(content)负责在取此视图**之前**完成文章可见级校验,本视图**不**经 attachment.view RBAC
 //(公开读者零权限亦可见,附件继承文章可见级)。仅 content 模块消费;其余 owner 读仍走 RBAC。
@@ -96,6 +108,15 @@ export interface OwnerAttachmentView {
   size: number;
   createdAt: Date;
   accessUrl: string | null;
+}
+
+/** The App registration-upload route returns this deliberately small safe projection only. */
+export interface RegistrationUploadAttachmentView {
+  attachmentId: string;
+  originalName: string;
+  mime: string;
+  size: number;
+  createdAt: Date;
 }
 
 interface UploadConfirmContextBase {
@@ -123,9 +144,36 @@ type UploadConfirmContextState =
       row: SafeAttachment;
     });
 
+interface RegistrationUploadContextBase {
+  identity: AttachmentUploadStorageIdentity;
+  body: Buffer;
+  locator: StorageObjectLocator;
+  expiresAt: Date;
+  user: CurrentUserPayload;
+}
+
+type RegistrationUploadContextState =
+  | (RegistrationUploadContextBase & { stage: 'validated' })
+  | (RegistrationUploadContextBase & {
+      stage: 'prepared';
+      prepared: PreparedAttachmentStorageUpload;
+    })
+  | (RegistrationUploadContextBase & {
+      stage: 'verified';
+      prepared: PreparedAttachmentStorageUpload;
+      head: HeadObjectResult;
+    })
+  | (RegistrationUploadContextBase & {
+      stage: 'finalized';
+      prepared: PreparedAttachmentStorageUpload;
+      head: HeadObjectResult;
+      row: SafeAttachment;
+    });
+
 @Injectable()
 export class AttachmentsService {
   private readonly uploadConfirmContexts = new WeakMap<object, UploadConfirmContextState>();
+  private readonly registrationUploadContexts = new WeakMap<object, RegistrationUploadContextState>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -314,6 +362,178 @@ export class AttachmentsService {
   ): Promise<AttachmentResponseDto> {
     const state = this.requireUploadConfirmContext(context, 'finalized', true);
     return this.toResponseDto(state.row);
+  }
+
+  // ===== Registration upload-session trusted facade =====
+  // The App route owns token/session authorization. This facade owns storage configuration,
+  // filename PII, magic validation, durable intent and terminal attachment binding only.
+  async validateRegistrationUploadOutsideTransactionTrusted(input: {
+    sessionId: string;
+    originalName: string;
+    mime: string;
+    size: number;
+    body: Buffer;
+    uploadedByUserId: string;
+    user: CurrentUserPayload;
+    expiresAt: Date;
+  }): Promise<RegistrationUploadValidated> {
+    if (
+      !Number.isSafeInteger(input.size) ||
+      input.size < 0 ||
+      input.body.length !== input.size ||
+      typeof input.mime !== 'string' ||
+      input.mime.length === 0
+    ) {
+      throw new BizException(BizCode.ATTACHMENT_SIZE_EXCEEDED);
+    }
+    if (!REGISTRATION_UPLOAD_ALLOWED_MIME.has(input.mime)) {
+      throw new BizException(BizCode.ATTACHMENT_MIME_NOT_ALLOWED);
+    }
+    if (input.size > REGISTRATION_UPLOAD_MAX_BYTES) {
+      throw new BizException(BizCode.ATTACHMENT_SIZE_EXCEEDED);
+    }
+    const ownerType = 'registration-upload-session';
+    const { ownerTable } = await this.assertOwnerTypeAllowed(ownerType);
+    if (ownerTable !== 'registration_upload_sessions') {
+      throw new BizException(BizCode.ATTACHMENT_OWNER_TYPE_INVALID);
+    }
+    await this.assertMimeAllowed(ownerType, input.mime);
+    await this.assertSizeAllowed(ownerType, input.size);
+    this.assertNoPii({ originalName: input.originalName });
+    this.storageConsistency.validateUploadBufferOutsideTransaction(input.mime, input.body);
+
+    const settings = await this.storageSettings.getActiveSettings();
+    const key = this.generateAttachmentKey(settings?.envPrefix ?? this.cfg.env, input.mime);
+    const locator = await this.storageConsistency.resolveUploadLocatorForTransaction(key);
+    return this.issueRegistrationUploadContext({
+      stage: 'validated',
+      identity: {
+        key,
+        ownerType,
+        ownerId: input.sessionId,
+        originalName: input.originalName,
+        mime: input.mime,
+        size: input.size,
+        uploadedByUserId: input.uploadedByUserId,
+      },
+      body: input.body,
+      locator,
+      expiresAt: input.expiresAt,
+      user: { ...input.user },
+    }) as RegistrationUploadValidated;
+  }
+
+  /** Caller holds Activity/session locks and has revalidated the one-time token binding. */
+  async prepareRegistrationUploadInTransactionTrusted(
+    tx: Prisma.TransactionClient,
+    context: RegistrationUploadValidated,
+  ): Promise<RegistrationUploadPrepared> {
+    const state = this.consumeRegistrationUploadContext(context, 'validated');
+    const prepared = await this.storageConsistency.prepareUploadInTransaction(
+      tx,
+      state.identity,
+      'attachment_legacy',
+      new Date(state.expiresAt.getTime() + STORAGE_UNBOUND_GRACE_MS),
+      state.locator,
+    );
+    return this.issueRegistrationUploadContext({
+      ...state,
+      stage: 'prepared',
+      prepared,
+    }) as RegistrationUploadPrepared;
+  }
+
+  /** Provider put + pinned HEAD/signature proof; deliberately called between two short txs. */
+  async putRegistrationUploadAndVerifyOutsideTransactionTrusted(
+    context: RegistrationUploadPrepared,
+  ): Promise<RegistrationUploadVerified> {
+    const state = this.consumeRegistrationUploadContext(context, 'prepared');
+    const head = await this.storageConsistency.putUploadObjectAtAndVerifyOutsideTransaction(
+      state.identity,
+      'attachment_legacy',
+      state.prepared.locator,
+      state.body,
+    );
+    return this.issueRegistrationUploadContext({
+      ...state,
+      stage: 'verified',
+      head,
+    }) as RegistrationUploadVerified;
+  }
+
+  /** Caller has acquired the same root/session locks again and revalidated its binding. */
+  async finalizeRegistrationUploadInTransactionTrusted(
+    tx: Prisma.TransactionClient,
+    context: RegistrationUploadVerified,
+    auditMeta: AuditMeta,
+  ): Promise<RegistrationUploadFinalized> {
+    const state = this.consumeRegistrationUploadContext(context, 'verified');
+    const row = await this.storageConsistency.finalizeUploadInTransaction(
+      tx,
+      {
+        identity: state.identity,
+        requestHash: state.prepared.requestHash,
+        data: {
+          key: state.identity.key,
+          originalName: state.identity.originalName,
+          mime: state.identity.mime,
+          size: state.identity.size,
+          uploadedBy: state.identity.uploadedByUserId,
+          ownerType: state.identity.ownerType,
+          ownerId: state.identity.ownerId,
+          originalUploaderName: state.user.username,
+          etag: state.head.etag ?? null,
+        },
+        auditKind: 'legacy',
+        actorRoleSnap: state.user.role,
+        scope: null,
+        ownerTable: 'registration_upload_sessions',
+        auditMeta,
+      },
+      state.head,
+    );
+    return this.issueRegistrationUploadContext({
+      ...state,
+      stage: 'finalized',
+      row,
+    }) as RegistrationUploadFinalized;
+  }
+
+  registrationUploadResponseTrusted(
+    context: RegistrationUploadFinalized,
+  ): RegistrationUploadAttachmentView {
+    const state = this.requireRegistrationUploadContext(context, 'finalized');
+    return {
+      attachmentId: state.row.id,
+      originalName: state.row.originalName,
+      mime: state.row.mime,
+      size: state.row.size,
+      createdAt: state.row.createdAt,
+    };
+  }
+
+  private issueRegistrationUploadContext(state: RegistrationUploadContextState): object {
+    const context = Object.freeze(Object.create(null)) as object;
+    this.registrationUploadContexts.set(context, state);
+    return context;
+  }
+
+  private requireRegistrationUploadContext<Stage extends RegistrationUploadContextState['stage']>(
+    context: object,
+    stage: Stage,
+  ): Extract<RegistrationUploadContextState, { stage: Stage }> {
+    const state = this.registrationUploadContexts.get(context);
+    if (!state || state.stage !== stage) throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    return state as Extract<RegistrationUploadContextState, { stage: Stage }>;
+  }
+
+  private consumeRegistrationUploadContext<Stage extends RegistrationUploadContextState['stage']>(
+    context: object,
+    stage: Stage,
+  ): Extract<RegistrationUploadContextState, { stage: Stage }> {
+    const state = this.requireRegistrationUploadContext(context, stage);
+    this.registrationUploadContexts.delete(context);
+    return state;
   }
 
   // ============ helpers:校验链(沿 D7 v1.0 §6.2 9 步)============
@@ -531,6 +751,9 @@ export class AttachmentsService {
       select: attachmentSelect,
     });
     if (!found) throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    if (isInternalRegistrationUploadOwner(found.ownerType)) {
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
     return found;
   }
 
@@ -574,6 +797,10 @@ export class AttachmentsService {
         throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
       }
       throw error;
+    }
+
+    if (isInternalRegistrationUploadOwner(claims.ownerType)) {
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
     }
 
     const contentOwner = isContentAttachmentOwnerType(claims.ownerType);
@@ -786,6 +1013,9 @@ export class AttachmentsService {
     user: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttachmentResponseDto> {
+    if (isInternalRegistrationUploadOwner(dto.ownerType)) {
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
     // 1. ownerType 双层校验(返 ownerTable;PR #6c 进 audit extra)
     const { ownerTable } = await this.assertOwnerTypeAllowed(dto.ownerType);
 
@@ -877,9 +1107,14 @@ export class AttachmentsService {
     user: CurrentUserPayload,
   ): Promise<PageResultDto<AttachmentResponseDto>> {
     const { page, pageSize, ownerType, ownerId, uploadedBy, mime, accessLevel, tags } = query;
+    if (ownerType !== undefined && isInternalRegistrationUploadOwner(ownerType)) {
+      return { items: [], total: 0, page, pageSize };
+    }
 
     const where: Prisma.AttachmentWhereInput = {
-      ...(ownerType !== undefined ? { ownerType } : {}),
+      ...(ownerType !== undefined
+        ? { ownerType }
+        : { ownerType: { not: 'registration-upload-session' } }),
       ...(ownerId !== undefined ? { ownerId } : {}),
       ...(uploadedBy !== undefined ? { uploadedBy } : {}),
       ...(mime !== undefined ? { mime } : {}),
@@ -1052,6 +1287,9 @@ export class AttachmentsService {
       }
       throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
     }
+    if (isInternalRegistrationUploadOwner(row.ownerType)) {
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
 
     return this.deleteResolvedAttachment(row, user, auditMeta, BizCode.ATTACHMENT_NOT_FOUND);
   }
@@ -1084,6 +1322,9 @@ export class AttachmentsService {
     auditMeta: AuditMeta,
     missingContentBiz: typeof BizCode.CONTENT_NOT_FOUND | typeof BizCode.ATTACHMENT_NOT_FOUND,
   ): Promise<AttachmentResponseDto> {
+    if (isInternalRegistrationUploadOwner(row.ownerType)) {
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
     // 判 delete 权限(写路径;失败 → 30100)
     const { resource, scope } = await this.buildRbacResourceAndScope(
       row.ownerType as AttachmentOwnerType,
@@ -1160,6 +1401,9 @@ export class AttachmentsService {
     query: ListAttachmentsByOwnerQueryDto,
     user: CurrentUserPayload,
   ): Promise<PageResultDto<AttachmentResponseDto>> {
+    if (isInternalRegistrationUploadOwner(query.ownerType)) {
+      return { items: [], total: 0, page: query.page, pageSize: query.pageSize };
+    }
     // 1. ownerType 双层校验(避免 enum 之外的字符串被传)
     await this.assertOwnerTypeAllowed(query.ownerType);
 
@@ -1205,7 +1449,10 @@ export class AttachmentsService {
     user: CurrentUserPayload,
   ): Promise<PageResultDto<AttachmentResponseDto>> {
     const { page, pageSize } = query;
-    const where: Prisma.AttachmentWhereInput = { uploadedBy: user.id };
+    const where: Prisma.AttachmentWhereInput = {
+      uploadedBy: user.id,
+      ownerType: { not: 'registration-upload-session' },
+    };
 
     const rows = await this.prisma.attachment.findMany({
       where,
@@ -1234,6 +1481,7 @@ export class AttachmentsService {
     row: SafeAttachment,
     certificateMemberById?: ReadonlyMap<string, string>,
   ): Promise<boolean> {
+    if (isInternalRegistrationUploadOwner(row.ownerType)) return false;
     if (!ATTACHMENT_OWNER_TYPES.includes(row.ownerType as AttachmentOwnerType)) {
       // 数据库行 ownerType 不在 enum 内(理论上不该发生;防御性返 false)
       return false;
@@ -1263,6 +1511,9 @@ export class AttachmentsService {
     dto: GenerateUploadUrlDto,
     user: CurrentUserPayload,
   ): Promise<UploadUrlResponseDto> {
+    if (isInternalRegistrationUploadOwner(dto.ownerType)) {
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
     // === Step 1-7:沿现有 create() 校验链(§6.2 9 步) ===
     await this.assertOwnerTypeAllowed(dto.ownerType);
     await this.assertOwnerExists(dto.ownerType as AttachmentOwnerType, dto.ownerId);
@@ -1412,6 +1663,10 @@ export class AttachmentsService {
 
 function isContentAttachmentOwnerType(ownerType: string): ownerType is ContentAttachmentOwnerType {
   return ownerType === 'content-image' || ownerType === 'content-file';
+}
+
+function isInternalRegistrationUploadOwner(ownerType: string): boolean {
+  return ownerType === 'registration-upload-session';
 }
 
 function requireUploadTokenExpiry(identity: AttachmentUploadStorageIdentity): number {
