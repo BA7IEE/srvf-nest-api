@@ -2117,9 +2117,9 @@ describe('AttachmentsService (characterization)', () => {
       await expect(service.getById('internal-1', makeCurrentUser())).rejects.toEqual(
         new BizException(BizCode.ATTACHMENT_NOT_FOUND),
       );
-      await expect(service.update('internal-1', makeUpdateDto(), makeCurrentUser())).rejects.toEqual(
-        new BizException(BizCode.ATTACHMENT_NOT_FOUND),
-      );
+      await expect(
+        service.update('internal-1', makeUpdateDto(), makeCurrentUser()),
+      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
       await expect(service.delete('internal-1', makeCurrentUser(), META)).rejects.toEqual(
         new BizException(BizCode.ATTACHMENT_NOT_FOUND),
       );

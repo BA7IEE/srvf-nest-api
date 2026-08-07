@@ -16,19 +16,24 @@ import { createTestApp } from '../setup/test-app';
 
 const MAX_BYTES = 10 * 1024 * 1024;
 
+function objectKeys(value: unknown): string[] {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Expected response data to be an object');
+  }
+  return Object.keys(value);
+}
+
 describe('activity batch4 one-time registration upload sessions', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let ownerAuth: string;
   let otherAuth: string;
-  let ownerUserId: string;
   let ownerMemberId: string;
   let activityId: string;
   let otherActivityId: string;
   let formVersionId: string;
 
-  const createPath = () =>
-    `/api/app/v1/activities/${activityId}/registration-upload-sessions`;
+  const createPath = () => `/api/app/v1/activities/${activityId}/registration-upload-sessions`;
   const uploadPath = (sessionId: string, routeActivityId = activityId) =>
     `/api/app/v1/activities/${routeActivityId}/registration-upload-sessions/${sessionId}/files`;
 
@@ -42,7 +47,6 @@ describe('activity batch4 one-time registration upload sessions', () => {
     });
     const owner = await createTestUser(app, { username: 'batch4-upload-owner' });
     const other = await createTestUser(app, { username: 'batch4-upload-other' });
-    ownerUserId = owner.id;
     const [ownerMember, otherMember] = await Promise.all([
       prisma.member.create({
         data: {
@@ -83,7 +87,10 @@ describe('activity batch4 one-time registration upload sessions', () => {
       publishedAt: new Date(),
     };
     const [activity, otherActivity] = await Promise.all([
-      prisma.activity.create({ data: { ...baseActivity, title: 'Batch4 Upload' }, select: { id: true } }),
+      prisma.activity.create({
+        data: { ...baseActivity, title: 'Batch4 Upload' },
+        select: { id: true },
+      }),
       prisma.activity.create({
         data: { ...baseActivity, title: 'Batch4 Other Upload Activity' },
         select: { id: true },
@@ -131,11 +138,23 @@ describe('activity batch4 one-time registration upload sessions', () => {
   });
 
   async function createSession() {
-    const response = await request(httpServer(app)).post(createPath()).set('Authorization', ownerAuth);
+    const response = await request(httpServer(app))
+      .post(createPath())
+      .set('Authorization', ownerAuth);
     expect(response.status).toBe(201);
-    expect(Object.keys(response.body.data).sort()).toEqual(['expiresAt', 'formVersion', 'id', 'token']);
+    expect(objectKeys(response.body.data).sort()).toEqual([
+      'expiresAt',
+      'formVersion',
+      'id',
+      'token',
+    ]);
     expect(response.body.data.formVersion).toBe(1);
-    return response.body.data as { id: string; token: string; expiresAt: string; formVersion: number };
+    return response.body.data as {
+      id: string;
+      token: string;
+      expiresAt: string;
+      formVersion: number;
+    };
   }
 
   function upload(
@@ -163,7 +182,13 @@ describe('activity batch4 one-time registration upload sessions', () => {
     const session = await createSession();
     const stored = await prisma.registrationUploadSession.findUniqueOrThrow({
       where: { id: session.id },
-      select: { tokenHash: true, memberId: true, activityId: true, formVersionId: true, statusCode: true },
+      select: {
+        tokenHash: true,
+        memberId: true,
+        activityId: true,
+        formVersionId: true,
+        statusCode: true,
+      },
     });
     expect(stored).toEqual({
       tokenHash: createHash('sha256').update(session.token, 'utf8').digest('hex'),
@@ -203,7 +228,7 @@ describe('activity batch4 one-time registration upload sessions', () => {
         body: attachmentBytesForMime(mime, 64),
       });
       expect(response.status).toBe(200);
-      expect(Object.keys(response.body.data).sort()).toEqual([
+      expect(objectKeys(response.body.data).sort()).toEqual([
         'attachmentId',
         'createdAt',
         'mime',

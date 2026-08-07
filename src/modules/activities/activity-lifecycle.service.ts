@@ -428,12 +428,7 @@ export class ActivityLifecycleService {
         }
       }
 
-      await this.registrationForms.cloneFromSource(
-        tx,
-        source.id,
-        current.statusCode,
-        created.id,
-      );
+      await this.registrationForms.cloneFromSource(tx, source.id, current.statusCode, created.id);
 
       await this.auditRecorder.logClone({
         sourceActivityId: source.id,

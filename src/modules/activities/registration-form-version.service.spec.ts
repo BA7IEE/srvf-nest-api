@@ -64,6 +64,10 @@ function input(label = '姓名') {
   };
 }
 
+function objectContaining(value: object): unknown {
+  return expect.objectContaining(value) as unknown;
+}
+
 function harness(options: { existing?: Record<string, unknown> | null } = {}) {
   const existing = options.existing === undefined ? storedVersion() : options.existing;
   const tx = {
@@ -94,10 +98,11 @@ describe('RegistrationFormVersionService', () => {
   it('makes a same canonical draft PUT a true no-op: no version write and no audit', async () => {
     const { service, tx, audit } = harness();
 
-    await expect(service.putManaged('activity-form-1', input(), USER, META)).resolves.toEqual({
-      version: 1,
-      fields: expect.any(Array),
-    });
+    const result = await service.putManaged('activity-form-1', input(), USER, META);
+    expect(result).not.toBeNull();
+    if (result === null) throw new Error('Expected a stored draft form');
+    expect(result).toEqual(expect.objectContaining({ version: 1 }));
+    expect(result.fields).toEqual(expect.any(Array));
 
     expect(tx.registrationFormVersion.update).not.toHaveBeenCalled();
     expect(tx.registrationFormVersion.create).not.toHaveBeenCalled();
@@ -113,7 +118,7 @@ describe('RegistrationFormVersionService', () => {
     expect(tx.registrationFormVersion.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'form-version-1' },
-        data: expect.objectContaining({ statusCode: 'retired' }),
+        data: objectContaining({ statusCode: 'retired' }),
       }),
     );
     expect(tx.registrationFormVersion.aggregate).toHaveBeenCalledWith({
@@ -122,7 +127,7 @@ describe('RegistrationFormVersionService', () => {
     });
     expect(tx.registrationFormVersion.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ version: 2, statusCode: 'draft', schemaHash: null }),
+        data: objectContaining({ version: 2, statusCode: 'draft', schemaHash: null }),
       }),
     );
     expect(audit.log).toHaveBeenCalledWith(
@@ -181,12 +186,12 @@ describe('RegistrationFormVersionService', () => {
     expect(tx.registrationFormVersion.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'form-active-1' },
-        data: expect.objectContaining({ statusCode: 'retired' }),
+        data: objectContaining({ statusCode: 'retired' }),
       }),
     );
     expect(tx.registrationFormVersion.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({
+        data: objectContaining({
           version: 5,
           statusCode: 'active',
           workflowRevision: 8,
@@ -194,15 +199,20 @@ describe('RegistrationFormVersionService', () => {
         }),
       }),
     );
-    expect(result).toEqual({ formVersionId: 'form-active-2', version: 5, schemaHash: 'b'.repeat(64) });
+    expect(result).toEqual({
+      formVersionId: 'form-active-2',
+      version: 5,
+      schemaHash: 'b'.repeat(64),
+    });
   });
 
   it('activates the matching latest draft on initial approval with that approval workflow revision', async () => {
     const draft = storedVersion({ id: 'form-draft-1', version: 3, statusCode: 'draft' });
-    const target = registrationFormDefinitionFromStoredFields(draft.fields as never);
+    const target = registrationFormDefinitionFromStoredFields(draft.fields);
     const { service, tx } = harness({ existing: null });
-    tx.registrationFormVersion.findFirst.mockImplementation(async ({ where }: { where: { statusCode: string } }) =>
-      where.statusCode === 'active' ? null : draft,
+    tx.registrationFormVersion.findFirst.mockImplementation(
+      ({ where }: { where: { statusCode: string } }) =>
+        where.statusCode === 'active' ? null : draft,
     );
     tx.registrationFormVersion.update.mockResolvedValue({
       id: draft.id,
@@ -227,7 +237,7 @@ describe('RegistrationFormVersionService', () => {
     expect(tx.registrationFormVersion.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'form-draft-1' },
-        data: expect.objectContaining({
+        data: objectContaining({
           statusCode: 'active',
           workflowRevision: 8,
           schemaHash: target.schemaHash,
@@ -240,7 +250,7 @@ describe('RegistrationFormVersionService', () => {
 
   it('keeps a same canonical active Form version and retires/revokes an explicit null target', async () => {
     const base = storedVersion({ id: 'form-active-1', version: 4, statusCode: 'active' });
-    const target = registrationFormDefinitionFromStoredFields(base.fields as never);
+    const target = registrationFormDefinitionFromStoredFields(base.fields);
     const active = { ...base, schemaHash: target.schemaHash };
     const { service, tx } = harness({ existing: active });
     tx.registrationFormVersion.findFirst.mockResolvedValue(active);
@@ -253,7 +263,11 @@ describe('RegistrationFormVersionService', () => {
         nextWorkflowRevision: 8,
         at: new Date('2099-01-01T00:00:00.000Z'),
       }),
-    ).resolves.toEqual({ formVersionId: 'form-active-1', version: 4, schemaHash: target.schemaHash });
+    ).resolves.toEqual({
+      formVersionId: 'form-active-1',
+      version: 4,
+      schemaHash: target.schemaHash,
+    });
     expect(tx.registrationFormVersion.create).not.toHaveBeenCalled();
     expect(tx.registrationUploadSession.updateMany).not.toHaveBeenCalled();
 
@@ -273,22 +287,21 @@ describe('RegistrationFormVersionService', () => {
     expect(tx.registrationFormVersion.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'form-active-1' },
-        data: expect.objectContaining({ statusCode: 'retired' }),
+        data: objectContaining({ statusCode: 'retired' }),
       }),
     );
   });
 
   it('clones the source definition into target draft v1 with no active hash or source upload-session identity', async () => {
-    const source = storedVersion({ activityId: 'source-activity', version: 8, statusCode: 'active' });
+    const source = storedVersion({
+      activityId: 'source-activity',
+      version: 8,
+      statusCode: 'active',
+    });
     const { service, tx } = harness({ existing: source });
     tx.registrationFormVersion.findFirst.mockResolvedValue(source);
 
-    await service.cloneFromSource(
-      tx as never,
-      'source-activity',
-      'published',
-      'target-activity',
-    );
+    await service.cloneFromSource(tx as never, 'source-activity', 'published', 'target-activity');
 
     expect(tx.registrationFormVersion.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -297,7 +310,7 @@ describe('RegistrationFormVersionService', () => {
     );
     expect(tx.registrationFormVersion.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({
+        data: objectContaining({
           activityId: 'target-activity',
           version: 1,
           statusCode: 'draft',

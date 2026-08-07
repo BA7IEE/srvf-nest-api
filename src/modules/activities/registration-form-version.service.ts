@@ -84,7 +84,11 @@ export class RegistrationFormVersionService {
     if (activity.statusCode !== 'draft' && activity.statusCode !== 'published') {
       throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
     }
-    const version = await this.currentVersionForActivity(this.prisma, activityId, activity.statusCode);
+    const version = await this.currentVersionForActivity(
+      this.prisma,
+      activityId,
+      activity.statusCode,
+    );
     return version ? this.toDto(version) : null;
   }
 
@@ -180,7 +184,8 @@ export class RegistrationFormVersionService {
       select: { id: true, version: true, schemaHash: true },
     });
     if (!version) return null;
-    if (!version.schemaHash) throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    if (!version.schemaHash)
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
     return { formVersionId: version.id, version: version.version, schemaHash: version.schemaHash };
   }
 
@@ -228,7 +233,8 @@ export class RegistrationFormVersionService {
         },
         select: { id: true, version: true, schemaHash: true },
       });
-      if (!activated.schemaHash) throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      if (!activated.schemaHash)
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
       return {
         formVersionId: activated.id,
         version: activated.version,
@@ -257,7 +263,8 @@ export class RegistrationFormVersionService {
       activatedAt: input.at,
       definition: input.target.definition,
     });
-    if (!created.schemaHash) throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    if (!created.schemaHash)
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
     return { formVersionId: created.id, version: created.version, schemaHash: created.schemaHash };
   }
 

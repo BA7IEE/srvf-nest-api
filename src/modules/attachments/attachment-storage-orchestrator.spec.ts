@@ -345,13 +345,13 @@ describe('AttachmentStorageOrchestrator multipart boundary', () => {
 
     expect(validateFromBuffer).toHaveBeenCalledWith({
       mime: 'image/png',
-      buffer: expect.any(Buffer),
+      buffer: expect.any(Buffer) as unknown,
     });
     expect(putObjectAt).toHaveBeenCalledWith(
       CURRENT_LOCAL,
       expect.objectContaining({
         key: identity.key,
-        body: expect.any(Buffer),
+        body: expect.any(Buffer) as unknown,
         contentType: 'image/png',
       }),
     );

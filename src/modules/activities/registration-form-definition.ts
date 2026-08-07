@@ -24,8 +24,7 @@ export const REGISTRATION_FORM_FIELD_VISIBILITIES = [
   'self_and_owner',
   'self_only',
 ] as const;
-export type RegistrationFormFieldVisibility =
-  (typeof REGISTRATION_FORM_FIELD_VISIBILITIES)[number];
+export type RegistrationFormFieldVisibility = (typeof REGISTRATION_FORM_FIELD_VISIBILITIES)[number];
 
 export interface RegistrationFormChoiceInput {
   value: string;
@@ -169,14 +168,16 @@ function canonicalField(input: RegistrationFormFieldInput): CanonicalRegistratio
   if (!input || typeof input !== 'object') invalid();
   if (!isNonEmptyString(input.fieldCode) || !isNonEmptyString(input.label)) invalid();
   if (!(REGISTRATION_FORM_FIELD_TYPES as readonly string[]).includes(input.typeCode)) invalid();
-  if (
-    !(REGISTRATION_FORM_FIELD_VISIBILITIES as readonly string[]).includes(input.visibilityCode)
-  ) {
+  if (!(REGISTRATION_FORM_FIELD_VISIBILITIES as readonly string[]).includes(input.visibilityCode)) {
     invalid();
   }
   if (typeof input.required !== 'boolean' || typeof input.exportable !== 'boolean') invalid();
   if (!Number.isSafeInteger(input.sortOrder) || input.sortOrder < 0) invalid();
-  if (input.helpText !== undefined && input.helpText !== null && typeof input.helpText !== 'string') {
+  if (
+    input.helpText !== undefined &&
+    input.helpText !== null &&
+    typeof input.helpText !== 'string'
+  ) {
     invalid();
   }
 
@@ -187,20 +188,18 @@ function canonicalField(input: RegistrationFormFieldInput): CanonicalRegistratio
   const maxSelections = nullablePositiveInteger(input.maxSelections);
   const options = normalizeOptions(input.options);
 
-  if (
-    minValue !== null &&
-    maxValue !== null &&
-    compareNormalizedDecimals(minValue, maxValue) > 0
-  ) {
+  if (minValue !== null && maxValue !== null && compareNormalizedDecimals(minValue, maxValue) > 0) {
     invalid();
   }
   if (minLength !== null && maxLength !== null && minLength > maxLength) invalid();
 
   const isText = input.typeCode === 'short_text' || input.typeCode === 'long_text';
   if (isText) {
-    if (minValue !== null || maxValue !== null || maxSelections !== null || options !== null) invalid();
+    if (minValue !== null || maxValue !== null || maxSelections !== null || options !== null)
+      invalid();
   } else if (input.typeCode === 'number') {
-    if (minLength !== null || maxLength !== null || maxSelections !== null || options !== null) invalid();
+    if (minLength !== null || maxLength !== null || maxSelections !== null || options !== null)
+      invalid();
   } else if (input.typeCode === 'single_choice') {
     if (
       minValue !== null ||

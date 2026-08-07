@@ -4639,7 +4639,9 @@ const REGISTRATION_UPLOAD_SESSION_ATTACHMENT_TYPE_CONFIG = {
 } as const;
 
 // 运营已调整的 MIME/大小/status 不得被 deploy/seed 回退：唯一允许的 update 是空对象。
-async function seedRegistrationUploadSessionAttachmentTypeConfig(prisma: PrismaClient): Promise<void> {
+async function seedRegistrationUploadSessionAttachmentTypeConfig(
+  prisma: PrismaClient,
+): Promise<void> {
   const cfg = REGISTRATION_UPLOAD_SESSION_ATTACHMENT_TYPE_CONFIG;
   await prisma.attachmentTypeConfig.upsert({
     where: { code: cfg.code },

@@ -1,4 +1,14 @@
-import { ActivityPublishProposalV2Service } from './activity-publish-proposal-v2.service';
+import type { Prisma } from '@prisma/client';
+
+import {
+  ActivityPublishProposalV2Service,
+  type ActivityPublishProposalSnapshotV2,
+} from './activity-publish-proposal-v2.service';
+
+type ProposalV2Internals = {
+  currentState: jest.Mock;
+  toSnapshot: (...args: unknown[]) => ActivityPublishProposalSnapshotV2;
+};
 
 describe('ActivityPublishProposalV2Service', () => {
   const registrationForms = {
@@ -17,7 +27,7 @@ describe('ActivityPublishProposalV2Service', () => {
       service.isSnapshot({
         schemaVersion: 3,
         snapshotHash: 'form-bearing-proposal',
-      } as never),
+      }),
     ).toBe(true);
   });
 
@@ -26,7 +36,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { get: jest.fn() } as never,
       registrationForms as never,
     );
-    const internals = service as unknown as Record<string, jest.Mock>;
+    const internals = service as unknown as ProposalV2Internals;
     const activity = {
       startAt: '2099-01-01T00:00:00.000Z',
       endAt: '2099-01-01T01:00:00.000Z',
@@ -63,14 +73,8 @@ describe('ActivityPublishProposalV2Service', () => {
       },
     };
     internals.currentState = jest.fn().mockResolvedValue(baseState);
-    const v2 = internals.toSnapshot(
-      baseState,
-      activity,
-      [],
-      null,
-      baseState.resolvedConfig,
-    );
-    expect(service.parseSnapshot(v2)).toEqual(v2);
+    const v2 = internals.toSnapshot(baseState, activity, [], null, baseState.resolvedConfig);
+    expect(service.parseSnapshot(v2 as unknown as Prisma.JsonValue)).toEqual(v2);
 
     const v2Before = await service.rebuildCurrent({} as never, 'activity-1', 2);
     const v3Before = await service.rebuildCurrent({} as never, 'activity-1', 3);
@@ -85,10 +89,30 @@ describe('ActivityPublishProposalV2Service', () => {
     // blind, while the historical v2 hash deliberately remains unchanged.
     expect(v2After.snapshotHash).toBe(v2Before.snapshotHash);
     expect(v3After.snapshotHash).not.toBe(v3Before.snapshotHash);
-    expect(internals.currentState).toHaveBeenNthCalledWith(1, expect.anything(), 'activity-1', false);
-    expect(internals.currentState).toHaveBeenNthCalledWith(2, expect.anything(), 'activity-1', true);
-    expect(internals.currentState).toHaveBeenNthCalledWith(3, expect.anything(), 'activity-1', false);
-    expect(internals.currentState).toHaveBeenNthCalledWith(4, expect.anything(), 'activity-1', true);
+    expect(internals.currentState).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      'activity-1',
+      false,
+    );
+    expect(internals.currentState).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      'activity-1',
+      true,
+    );
+    expect(internals.currentState).toHaveBeenNthCalledWith(
+      3,
+      expect.anything(),
+      'activity-1',
+      false,
+    );
+    expect(internals.currentState).toHaveBeenNthCalledWith(
+      4,
+      expect.anything(),
+      'activity-1',
+      true,
+    );
   });
 
   it('keeps template resolution Form-free until v3 explicitly reads its active pointer', async () => {
@@ -97,7 +121,9 @@ describe('ActivityPublishProposalV2Service', () => {
       registrationForms as never,
     );
     const internals = service as unknown as Record<string, jest.Mock>;
-    internals.currentState = jest.fn().mockResolvedValue({ resolvedConfig: { templateVersionId: null } });
+    internals.currentState = jest
+      .fn()
+      .mockResolvedValue({ resolvedConfig: { templateVersionId: null } });
 
     await expect(service.getTemplateResolution({} as never, 'activity-1')).resolves.toEqual({
       templateVersionId: null,
@@ -177,7 +203,10 @@ describe('ActivityPublishProposalV2Service', () => {
       activeResolvedConfig: jest.fn().mockResolvedValue(null),
       applyPublishedTarget: jest.fn().mockResolvedValue(activeForm),
     };
-    const service = new ActivityPublishProposalV2Service({ get: jest.fn() } as never, forms as never);
+    const service = new ActivityPublishProposalV2Service(
+      { get: jest.fn() } as never,
+      forms as never,
+    );
     const calls: string[] = [];
     const internals = service as unknown as Record<string, jest.Mock>;
     internals.applyActivity = jest.fn(() => Promise.resolve());

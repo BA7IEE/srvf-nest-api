@@ -18,6 +18,21 @@ const USER: CurrentUserPayload = {
 const META: AuditMeta = { requestId: 'upload-unit', ip: null, ua: null };
 const TOKEN = 'one-time-raw-token';
 
+function record(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Expected a record');
+  }
+  return value as Record<string, unknown>;
+}
+
+function firstMockArgument(mock: jest.Mock): unknown {
+  const calls = mock.mock.calls as unknown;
+  if (!Array.isArray(calls) || !Array.isArray(calls[0])) {
+    throw new Error('Expected a mock call');
+  }
+  return calls[0][0];
+}
+
 function liveActivity() {
   return {
     statusCode: 'published',
@@ -45,7 +60,7 @@ function harness(options: { session?: Record<string, unknown>; existing?: unknow
   const calls: string[] = [];
   const session = options.session ?? activeSession();
   const tx = {
-    $queryRaw: jest.fn().mockImplementation(async (query: { strings?: readonly string[] }) => {
+    $queryRaw: jest.fn().mockImplementation((query: { strings?: readonly string[] }) => {
       const text = query.strings?.join('') ?? '';
       if (text.includes('"Activity"')) return [{ id: 'upload-activity-1' }];
       return [session];
@@ -53,7 +68,10 @@ function harness(options: { session?: Record<string, unknown>; existing?: unknow
     activity: { findFirst: jest.fn().mockResolvedValue(liveActivity()) },
     registrationFormVersion: { findFirst: jest.fn().mockResolvedValue({ id: 'upload-form-1' }) },
     registrationUploadSession: {
-      create: jest.fn().mockResolvedValue({ id: 'upload-session-created', expiresAt: new Date('2099-01-01T00:00:00.000Z') }),
+      create: jest.fn().mockResolvedValue({
+        id: 'upload-session-created',
+        expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+      }),
     },
     attachment: { findFirst: jest.fn().mockResolvedValue(options.existing ?? null) },
   };
@@ -71,25 +89,25 @@ function harness(options: { session?: Record<string, unknown>; existing?: unknow
     attachment: { findFirst: jest.fn().mockResolvedValue(options.existing ?? null) },
   };
   const attachments = {
-    validateRegistrationUploadOutsideTransactionTrusted: jest.fn().mockImplementation(async () => {
+    validateRegistrationUploadOutsideTransactionTrusted: jest.fn().mockImplementation(() => {
       expect(transactionDepth).toBe(0);
       calls.push('validate');
-      return { opaque: 'validated' };
+      return Promise.resolve({ opaque: 'validated' });
     }),
-    prepareRegistrationUploadInTransactionTrusted: jest.fn().mockImplementation(async () => {
+    prepareRegistrationUploadInTransactionTrusted: jest.fn().mockImplementation(() => {
       expect(transactionDepth).toBe(1);
       calls.push('prepare');
-      return { opaque: 'prepared' };
+      return Promise.resolve({ opaque: 'prepared' });
     }),
-    putRegistrationUploadAndVerifyOutsideTransactionTrusted: jest.fn().mockImplementation(async () => {
+    putRegistrationUploadAndVerifyOutsideTransactionTrusted: jest.fn().mockImplementation(() => {
       expect(transactionDepth).toBe(0);
       calls.push('provider');
-      return { opaque: 'verified' };
+      return Promise.resolve({ opaque: 'verified' });
     }),
-    finalizeRegistrationUploadInTransactionTrusted: jest.fn().mockImplementation(async () => {
+    finalizeRegistrationUploadInTransactionTrusted: jest.fn().mockImplementation(() => {
       expect(transactionDepth).toBe(1);
       calls.push('finalize');
-      return { opaque: 'finalized' };
+      return Promise.resolve({ opaque: 'finalized' });
     }),
     registrationUploadResponseTrusted: jest.fn().mockReturnValue({
       attachmentId: 'attachment-1',
@@ -101,7 +119,11 @@ function harness(options: { session?: Record<string, unknown>; existing?: unknow
   };
   const policy = { canRegisterSelf: jest.fn().mockReturnValue({ allowed: true }) };
   return {
-    service: new RegistrationUploadSessionService(prisma as never, policy as never, attachments as never),
+    service: new RegistrationUploadSessionService(
+      prisma as never,
+      policy as never,
+      attachments as never,
+    ),
     tx,
     prisma,
     attachments,
@@ -125,23 +147,21 @@ describe('RegistrationUploadSessionService', () => {
     tx.registrationFormVersion.findFirst.mockResolvedValue({ id: 'upload-form-1', version: 6 });
     const created = await service.create('upload-activity-1', USER, 'upload-member-1');
 
-    const persisted = tx.registrationUploadSession.create.mock.calls[0]?.[0].data;
-    expect(created).toEqual({
-      id: 'upload-session-created',
-      token: expect.stringMatching(/^[A-Za-z0-9_-]{40,}$/),
-      expiresAt: expect.any(Date),
-      formVersion: 6,
-    });
-    expect(persisted.tokenHash).toBe(
-      createHash('sha256').update(created.token, 'utf8').digest('hex'),
-    );
-    expect(persisted.tokenHash).not.toBe(created.token);
+    const persisted = record(record(firstMockArgument(tx.registrationUploadSession.create)).data);
+    const tokenHash = persisted.tokenHash;
+    if (typeof tokenHash !== 'string') throw new Error('Expected a token hash');
+    expect(created.id).toBe('upload-session-created');
+    expect(created.token).toMatch(/^[A-Za-z0-9_-]{40,}$/);
+    expect(created.expiresAt).toBeInstanceOf(Date);
+    expect(created.formVersion).toBe(6);
+    expect(tokenHash).toBe(createHash('sha256').update(created.token, 'utf8').digest('hex'));
+    expect(tokenHash).not.toBe(created.token);
     expect(created.expiresAt.getTime() - Date.now()).toBeGreaterThan(29 * 60 * 1000);
   });
 
   it('delegates published/window/public-registration eligibility to ActivityParticipationPolicy', async () => {
     const { service, tx, policy } = harness();
-    tx.activity.findFirst.mockImplementation(async ({ where }: { where: Record<string, unknown> }) => {
+    tx.activity.findFirst.mockImplementation(({ where }: { where: Record<string, unknown> }) => {
       expect(where.statusCode).toBeUndefined();
       return { ...liveActivity(), statusCode: 'draft' };
     });
@@ -169,28 +189,39 @@ describe('RegistrationUploadSessionService', () => {
   it.each([
     ['wrong member', activeSession({ memberId: 'someone-else' }), 'upload-member-1'],
     ['wrong route activity', activeSession({ activityId: 'other-activity' }), 'upload-member-1'],
-    ['expired', activeSession({ expiresAt: new Date('2000-01-01T00:00:00.000Z') }), 'upload-member-1'],
+    [
+      'expired',
+      activeSession({ expiresAt: new Date('2000-01-01T00:00:00.000Z') }),
+      'upload-member-1',
+    ],
     ['revoked', activeSession({ statusCode: 'revoked' }), 'upload-member-1'],
-  ])('%s short-circuits as 13001 before attachment/provider/audit work', async (_label, session, memberId) => {
-    const { service, attachments } = harness({ session });
+  ])(
+    '%s short-circuits as 13001 before attachment/provider/audit work',
+    async (_label, session, memberId) => {
+      const { service, attachments } = harness({ session });
 
-    await expect(
-      service.upload({
-        activityId: 'upload-activity-1',
-        sessionId: 'upload-session-1',
-        token: TOKEN,
-        file: file(),
-        user: USER,
-        memberId,
-        auditMeta: META,
-      }),
-    ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
+      await expect(
+        service.upload({
+          activityId: 'upload-activity-1',
+          sessionId: 'upload-session-1',
+          token: TOKEN,
+          file: file(),
+          user: USER,
+          memberId,
+          auditMeta: META,
+        }),
+      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
 
-    expect(attachments.validateRegistrationUploadOutsideTransactionTrusted).not.toHaveBeenCalled();
-    expect(attachments.prepareRegistrationUploadInTransactionTrusted).not.toHaveBeenCalled();
-    expect(attachments.putRegistrationUploadAndVerifyOutsideTransactionTrusted).not.toHaveBeenCalled();
-    expect(attachments.finalizeRegistrationUploadInTransactionTrusted).not.toHaveBeenCalled();
-  });
+      expect(
+        attachments.validateRegistrationUploadOutsideTransactionTrusted,
+      ).not.toHaveBeenCalled();
+      expect(attachments.prepareRegistrationUploadInTransactionTrusted).not.toHaveBeenCalled();
+      expect(
+        attachments.putRegistrationUploadAndVerifyOutsideTransactionTrusted,
+      ).not.toHaveBeenCalled();
+      expect(attachments.finalizeRegistrationUploadInTransactionTrusted).not.toHaveBeenCalled();
+    },
+  );
 
   it('replays existing safe metadata without making a second attachment/provider attempt', async () => {
     const existing = {
@@ -220,7 +251,9 @@ describe('RegistrationUploadSessionService', () => {
       createdAt: existing.createdAt,
     });
     expect(attachments.validateRegistrationUploadOutsideTransactionTrusted).not.toHaveBeenCalled();
-    expect(attachments.putRegistrationUploadAndVerifyOutsideTransactionTrusted).not.toHaveBeenCalled();
+    expect(
+      attachments.putRegistrationUploadAndVerifyOutsideTransactionTrusted,
+    ).not.toHaveBeenCalled();
   });
 
   it('does validation and Provider work outside the three caller transactions, then finalizes exactly once', async () => {

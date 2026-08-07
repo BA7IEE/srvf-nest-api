@@ -7,9 +7,7 @@ import type { AppConfig } from '../../config/app.config';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { canonicalize, type CanonicalValue } from './settlement-content-hash';
-import {
-  canonicalizeRegistrationFormDefinition,
-} from './registration-form-definition';
+import { canonicalizeRegistrationFormDefinition } from './registration-form-definition';
 import {
   RegistrationFormVersionService,
   type RegistrationFormResolvedConfig,
@@ -465,7 +463,9 @@ export class ActivityPublishProposalV2Service {
   isSnapshot(value: Prisma.JsonValue): boolean {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
     const row = value as Record<string, unknown>;
-    return (row.schemaVersion === 2 || row.schemaVersion === 3) && typeof row.snapshotHash === 'string';
+    return (
+      (row.schemaVersion === 2 || row.schemaVersion === 3) && typeof row.snapshotHash === 'string'
+    );
   }
 
   parseSnapshot(value: Prisma.JsonValue): ActivityPublishProposalSnapshot {

@@ -173,7 +173,10 @@ type RegistrationUploadContextState =
 @Injectable()
 export class AttachmentsService {
   private readonly uploadConfirmContexts = new WeakMap<object, UploadConfirmContextState>();
-  private readonly registrationUploadContexts = new WeakMap<object, RegistrationUploadContextState>();
+  private readonly registrationUploadContexts = new WeakMap<
+    object,
+    RegistrationUploadContextState
+  >();
 
   constructor(
     private readonly prisma: PrismaService,

@@ -85,17 +85,15 @@ export class RegistrationUploadSessionService {
     });
   }
 
-  async upload(
-    input: {
-      activityId: string;
-      sessionId: string;
-      token: string;
-      file: { originalName: string; mime: string; size: number; buffer: Buffer };
-      user: CurrentUserPayload;
-      memberId: string;
-      auditMeta: AuditMeta;
-    },
-  ): Promise<AppRegistrationUploadAttachmentDto> {
+  async upload(input: {
+    activityId: string;
+    sessionId: string;
+    token: string;
+    file: { originalName: string; mime: string; size: number; buffer: Buffer };
+    user: CurrentUserPayload;
+    memberId: string;
+    auditMeta: AuditMeta;
+  }): Promise<AppRegistrationUploadAttachmentDto> {
     if (!input.token || typeof input.token !== 'string') {
       throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
     }
@@ -139,7 +137,10 @@ export class RegistrationUploadSessionService {
       if (existing) return { existing, prepared: null };
       return {
         existing: null,
-        prepared: await this.attachments.prepareRegistrationUploadInTransactionTrusted(tx, validated),
+        prepared: await this.attachments.prepareRegistrationUploadInTransactionTrusted(
+          tx,
+          validated,
+        ),
       };
     });
     if (preparedOrExisting.existing) return this.toDto(preparedOrExisting.existing);
@@ -304,7 +305,9 @@ export class RegistrationUploadSessionService {
   }
 
   private toDto(
-    row: Prisma.AttachmentGetPayload<{ select: typeof attachmentResponseSelect }> | RegistrationUploadAttachmentView,
+    row:
+      | Prisma.AttachmentGetPayload<{ select: typeof attachmentResponseSelect }>
+      | RegistrationUploadAttachmentView,
   ): AppRegistrationUploadAttachmentDto {
     return {
       attachmentId: 'attachmentId' in row ? row.attachmentId : row.id,
