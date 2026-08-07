@@ -2093,6 +2093,9 @@ model Attachment {
   registrationFormAnswers RegistrationFormAnswer[] @relation("RegistrationAnswerAttachment")
 
   @@index([ownerType, ownerId]) // 业务查询主路径:列出某业务对象的所有附件
+  // 第 79 migration(维护者 2026-08-07 按推荐拍板)另手写 partial unique:
+  // ownerType='registration-upload-session' 时一个 ownerId 至多一条附件。Prisma DSL
+  // 无法表达 WHERE predicate，故不新增 @@unique / @@index DSL；其它 ownerType 仍可多附件。
   @@index([uploadedBy])
   @@index([mime]) // 按 MIME 筛选(后台用)
   @@index([createdAt])
@@ -3888,8 +3891,9 @@ model RegistrationFormField {
   maxSelections Int? // multi_choice 可选上限
 
   optionsJson    Json?
-  // ⚠️ 合同**未给** visibilityCode 的闭集(§3.1 的 internal/invitation 是活动可见性,
-  // 另一个域),故本刀**不加**闭集 CHECK,不自行发明取值(AGENTS §2)。
+  // 维护者 2026-08-07 按推荐拍板的闭集:self_and_registration_staff /
+  // self_and_owner / self_only。第 79 migration 用 CHECK 兜底；§3.1 的
+  // internal/invitation 是活动可见性，仍是另一个域。
   visibilityCode String
   exportable     Boolean @default(false) // 默认不可导出 —— 敏感口径下的保守起点
   sortOrder      Int     @default(0)
@@ -3958,9 +3962,10 @@ model RegistrationUploadSession {
 
   tokenHash  String    @unique
   expiresAt  DateTime // §3.12 必填 —— 无过期的上传票据等于永久凭证
-  consumedAt DateTime? // 只在 consumed 态有值(migration 形状 CHECK)
-  // ⚠️ 合同**未给** statusCode 闭集,故本刀不加闭集 CHECK;只按 DoD 落
-  // 「consumedAt 只在 consumed 态有值」这条形状约束。
+  consumedAt DateTime? // statusCode=consumed 当且仅当非空(第 79 migration 双向 CHECK)
+  // 维护者 2026-08-07 按推荐拍板的闭集:active / consumed / revoked。第 79 migration
+  // 落 statusCode CHECK；过期由 expiresAt 推导，不新增 cron。第 72 migration 的既有
+  // 单向 consumedAt shape CHECK 保留，第 79 migration 只补反向半边。
   statusCode String
 
   activity    Activity                @relation(fields: [activityId], references: [id], onDelete: Restrict)
