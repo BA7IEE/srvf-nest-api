@@ -218,7 +218,7 @@
 
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
-### P1-28 活动业务全流程改造(批次 0–7) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件，[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960))、③ Form runtime / 一次性附件会话([#961](https://github.com/BA7IEE/srvf-nest-api/pull/961))、④ canonical 报名命令主链（本分支）；合同已修订至 v1.1.1,缺口台账累计 #21**
+### P1-28 活动业务全流程改造(批次 0–7) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件，[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960))、③ Form runtime / 一次性附件会话([#961](https://github.com/BA7IEE/srvf-nest-api/pull/961))、④ canonical 报名命令主链（本分支）；合同已修订至 v1.1.1,缺口台账累计 #22**
 
 > **需求口径变更(2026-08-04)**:**= v1.1 四份 + [`AMENDMENTS-v1.1.1`](../archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md),冲突以后者为准。**
 > 第 1 批建表过程中实测撞到**五处合同内部不一致**,维护者当日**全部接受**并发布修订件。原件与 SHA256 一字未动(校验仍过)。
@@ -229,9 +229,15 @@
 > `scopeTypeCode` 沿 §3.10 容量桶口径,`fallbackMode` 仅「到期释放公共池/到期作废」且默认释放;
 > `preferenceOrder` 从 1 起算· **③是第 6 批开工硬门**
 > (`OfflinePackage`、`OfflinePunchReviewItem` 被引用却从未定义,**禁止从 §5.7 散文推导**,已用 e2e 判据钉死)。
+> **第 4 批缺口⑤已兑现（第 80 migration `20260808133500_activity_v11_batch4_allocation_contract_guards`）**：
+> `preferenceOrder >= 1` CHECK；candidate 的 nullable `resultCode` 三值闭集和同批次 identity 普通 unique；
+> quota 的四值 `scopeTypeCode` CHECK、二值 `fallbackMode` CHECK 与 DB 默认。工程编码固定为
+> `activity_person` / `session_participation` / `position_participation` / `reserve_group`，以及
+> `release_to_public_pool` / `void_on_expiry`，默认 `release_to_public_pool`。canonical 报名命令已有
+> 从 1 开始写入 `preferenceOrder` 的生产 writer；本刀不改该 writer。
 > **五条均不阻塞第 2 批。**
-> **待折进下一版修订件的已知合同缺口(#6–#20；#14、#16–#18 已裁定，#19/#20 为本刀保守工程裁定，其余未裁定)**:#6 `workflowRevision` 来源未定义；**本刀局部执行口径**：draft FormVersion 取创建时 Activity 当前值，initial/change 审批激活取该次审批产生的新值；这不代表 #6 已整体解决 ·
-> #7 `resultCode` 无「未定」取值 · #8 关账幂等列缺失 · #9 `requestedChangeJson` 结构未定义 ·
+> **待折进下一版修订件的已知合同缺口(#6–#22；#7、#14、#16–#18 已裁定，#19–#21 为本刀保守工程裁定，#22 未裁定)**:#6 `workflowRevision` 来源未定义；**本刀局部执行口径**：draft FormVersion 取创建时 Activity 当前值，initial/change 审批激活取该次审批产生的新值；这不代表 #6 已整体解决 ·
+> #7 `resultCode` 无「未定」取值（2026-08-07 已裁定：preparing=`null`，非空为三值闭集，待折进修订件）· #8 关账幂等列缺失 · #9 `requestedChangeJson` 结构未定义 ·
 > #10 无人触发 `commitBatch` · **#11** §6.1/§6.2 要求草稿动作携带 `operationKey`，但 §10.3 必须覆盖闭集不含它、§3 也没有持久化落点；本刀按 §10.3 不接收该字段 ·
 > **#12** §3.1 的 `cancelOperationKey` 提到“全历史操作记录另表保存”，但该表全合同未定义，禁止从散文自造 ·
 > **#13** §3.4 `ActivityTemplate.statusCode` 取值集未定义；①.5 只落 `String`，刻意不加 CHECK，待合同修订件 ·
@@ -242,6 +248,7 @@
 > **#19（本刀保守工程裁定）**：合同未逐字规定 managed Form 的 wire/null/no-op 口径；固定 `form:null|{fields}`、object 的非空 fields、canonical SHA-256 与相同 canonical PUT 无写入/无新版本/无 audit。该裁定可逆，不能表述为原合同已有明文。
 > **#20（本刀保守工程裁定）**：第 79 migration 注释的“token 不进任何响应”按同段“原始 token 只返回一次”收窄为“除创建响应外不再返回”；上传路由、后端中转 multipart、30 分钟 TTL 与复用 `attachment_legacy` storage source 均为未逐字规定的执行口径，且不改 schema 注释。
 > **#21（本刀保守工程裁定）**：合同未逐字定义 canonical 报名 wire 的 `preferences[].positionIds[]` 顺序如何落库、file 题最终附件 owner；固定按数组顺序派生从 1 开始的 `preferenceOrder`，最终 owner 固定 `registration-form-answer`。两者均可逆，不宣称为原合同明文。
+> **#22（本刀新登记，未实现）**：§3.13 七类资格规则虽已列出，但每类 `operator` / `valueJson` 的合法形状、以及 active RuleSet 的解析口径未定义；本刀只登记，零资格 runtime / DB 规则实现。
 > **账本读面权限口径（维护者 2026-08-06 拍板）**：复用 `attendance.read.sheet`；合同 §6.11
 > 未规定，若日后要收紧需另立权限码 + 三处 seed spec 连坐。
 >
