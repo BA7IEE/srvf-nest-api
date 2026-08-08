@@ -165,6 +165,40 @@ export class ActivityRegistrationAuditRecorder {
     });
   }
 
+  /**
+   * Managed onsite conversion audit.  The approval reason, insurance decision, Form details and
+   * capacity reservation ids stay in their bounded facts and deliberately never enter audit JSON.
+   */
+  async logOnsiteCreate(args: {
+    registrationId: string;
+    registrationRevisionId: string;
+    participationIdentityId: string;
+    participationRevisionId: string;
+    actorUserId: string;
+    actorRoleSnap: Role;
+    requestHash: string;
+    auditMeta: AuditMeta;
+    tx: PrismaTx;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: 'registration.create',
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: args.registrationId,
+      meta: args.auditMeta,
+      extra: {
+        operation: 'onsite',
+        source: 'onsite',
+        registrationRevisionId: args.registrationRevisionId,
+        participationIdentityId: args.participationIdentityId,
+        participationRevisionId: args.participationRevisionId,
+        requestHash: args.requestHash,
+      },
+      tx: args.tx,
+    });
+  }
+
   // ============ logReview(approve / reject / reopen 共用) ============
   // event: `registration.review`;
   // `before` = `toAuditSnapshot(before)`;`after` = `toAuditSnapshot(after)`;

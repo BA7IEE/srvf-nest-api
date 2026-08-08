@@ -221,6 +221,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/app/v1/my/managed-activities/{activityId}/invitations/{invitationId}/revoke'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/visitors'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/visitors'],
+  // 第 4 批⑧：负责人现场临时参加，受 D-5、scoped permission 与责任事实共同约束。
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/onsite-participations'],
   ['post', '/api/app/v1/my/activity-invitations/{invitationId}/decline'],
   // 活动业务改造 v1.1 第 3 批第一刀：草稿场次/新表岗位嵌套 CRUD。
   // 只允许发起人（SUPER_ADMIN 兜底）操作 draft；published 直写返回 change-review-required。
@@ -1608,9 +1610,10 @@ describe('OpenAPI 契约快照', () => {
   //   第 3 批第一刀草稿场次/新表岗位嵌套 CRUD +8 →477；第三刀目录 + 生命周期/clone/seal
   //   +5 →482；第 3 批第二刀 proposal / withdraw / resolution +4 →486；第 4 批
   //   Form GET/PUT + 一次性上传会话 POST/POST +4 →490；第 4 批④ canonical 报名命令
-  //   POST +1 →491；第 4 批⑦邀请/访客五路 managed + 本人 decline 一路 → **497**。
-  it('路由足迹精确为 497', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(497);
+  //   POST +1 →491；第 4 批⑦邀请/访客五路 managed + 本人 decline 一路 →497；
+  //   第 4 批⑧ managed onsite 临时参加 POST +1 → **498**。
+  it('路由足迹精确为 498', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(498);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {
