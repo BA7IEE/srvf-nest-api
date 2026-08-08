@@ -75,6 +75,7 @@ import { CorrectionAuditRecorder } from './correction-audit-recorder';
 import { ActivitySettlementHttpService } from './activity-settlement-http.service';
 import { ActivityLifecycleService } from './activity-lifecycle.service';
 import { RegistrationFormVersionService } from './registration-form-version.service';
+import { ActivityCapacityBucketProjector } from './activity-capacity-bucket-projector';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activities 写操作(create / update / softDelete / publish / cancel 共 5 处共用 activity.publish)
@@ -144,6 +145,7 @@ import { RegistrationFormVersionService } from './registration-form-version.serv
     ActivityPublishReviewPresenter,
     ActivityPublishReviewAuditRecorder,
     ActivityPublishProposalV2Service,
+    ActivityCapacityBucketProjector,
     RegistrationFormVersionService,
     ActivityProposalValidator,
     ActivityProposalApplier,

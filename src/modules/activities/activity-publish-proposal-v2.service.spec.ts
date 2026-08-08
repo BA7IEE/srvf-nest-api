@@ -21,6 +21,7 @@ describe('ActivityPublishProposalV2Service', () => {
     const service = new ActivityPublishProposalV2Service(
       { get: jest.fn() } as never,
       registrationForms as never,
+      { apply: jest.fn() } as never,
     );
 
     expect(
@@ -35,6 +36,7 @@ describe('ActivityPublishProposalV2Service', () => {
     const service = new ActivityPublishProposalV2Service(
       { get: jest.fn() } as never,
       registrationForms as never,
+      { apply: jest.fn() } as never,
     );
     const internals = service as unknown as ProposalV2Internals;
     const activity = {
@@ -119,6 +121,7 @@ describe('ActivityPublishProposalV2Service', () => {
     const service = new ActivityPublishProposalV2Service(
       { get: jest.fn() } as never,
       registrationForms as never,
+      { apply: jest.fn() } as never,
     );
     const internals = service as unknown as Record<string, jest.Mock>;
     internals.currentState = jest
@@ -131,10 +134,12 @@ describe('ActivityPublishProposalV2Service', () => {
     expect(internals.currentState).toHaveBeenCalledWith(expect.anything(), 'activity-1', false);
   });
 
-  it('runs the proposal application sequence through every explicit batch placeholder', async () => {
+  it('runs the proposal application sequence through the capacity projector', async () => {
+    const capacityBuckets = { apply: jest.fn() };
     const service = new ActivityPublishProposalV2Service(
       { get: jest.fn() } as never,
       registrationForms as never,
+      capacityBuckets as never,
     );
     const calls: string[] = [];
     const internals = service as unknown as Record<string, jest.Mock>;
@@ -155,7 +160,7 @@ describe('ActivityPublishProposalV2Service', () => {
       calls.push('form-rules-batch4');
       return Promise.resolve();
     });
-    internals.applyCapacityBucketsPlaceholder = jest.fn(() => {
+    capacityBuckets.apply.mockImplementation(() => {
       calls.push('capacity-batch4');
       return Promise.resolve();
     });
@@ -203,9 +208,11 @@ describe('ActivityPublishProposalV2Service', () => {
       activeResolvedConfig: jest.fn().mockResolvedValue(null),
       applyPublishedTarget: jest.fn().mockResolvedValue(activeForm),
     };
+    const capacityBuckets = { apply: jest.fn() };
     const service = new ActivityPublishProposalV2Service(
       { get: jest.fn() } as never,
       forms as never,
+      capacityBuckets as never,
     );
     const calls: string[] = [];
     const internals = service as unknown as Record<string, jest.Mock>;
@@ -216,7 +223,7 @@ describe('ActivityPublishProposalV2Service', () => {
       calls.push('legacy-placeholder');
       return Promise.resolve();
     });
-    internals.applyCapacityBucketsPlaceholder = jest.fn(() => Promise.resolve());
+    capacityBuckets.apply.mockResolvedValue(undefined);
     internals.applyQrCredentialsPlaceholder = jest.fn(() => Promise.resolve());
     internals.getTemplateResolution = jest.fn(() => Promise.resolve({ templateVersionId: null }));
     const tx = {
