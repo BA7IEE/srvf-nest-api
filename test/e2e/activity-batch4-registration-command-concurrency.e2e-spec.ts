@@ -229,7 +229,7 @@ describe('activity batch4 registration command concurrency', () => {
         const rows = await args[2].$queryRaw<Array<{ pid: number }>>(
           Prisma.sql`SELECT pg_backend_pid() AS pid`,
         );
-        registrationReached(rows[0]!.pid);
+        registrationReached(rows[0].pid);
         await releaseRegistrationPromise;
         return originalRequire(...args);
       });
@@ -245,7 +245,7 @@ describe('activity batch4 registration command concurrency', () => {
           const rows = await input.tx.$queryRaw<Array<{ pid: number }>>(
             Prisma.sql`SELECT pg_backend_pid() AS pid`,
           );
-          coverageWriterReached(rows[0]!.pid);
+          coverageWriterReached(rows[0].pid);
           await releaseCoverageWriterPromise;
         }
         return originalLog(...args);
