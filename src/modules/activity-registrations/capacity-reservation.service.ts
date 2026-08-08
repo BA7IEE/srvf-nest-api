@@ -89,6 +89,13 @@ interface LockedPosition {
   deletedAt: Date | null;
 }
 
+interface LockedSession {
+  id: string;
+  activityId: string;
+  statusCode: string;
+  deletedAt: Date | null;
+}
+
 interface LockedReservation {
   id: string;
   identityId: string;
@@ -228,8 +235,11 @@ export function isCapacityReservationNoop(missingReservationCount: number): bool
 /**
  * Owns only reservation and bucket occupancy facts inside a caller-supplied transaction.
  *
- * Lock order is Activity → identity(id ASC) → bucket(scopeTypeCode, scopeId, id) →
- * active reservation(id ASC). It never starts another transaction or writes registration,
+ * Lock order is Activity → complete member/activity identity context(id ASC) →
+ * reserve target session(id ASC) → bucket(scopeTypeCode, scopeId, id) → active
+ * reservation(id ASC). Complete identity context is deliberately wider than the request:
+ * every session bucket that can affect the final-active-session decision is locked and
+ * reconciled before any DML. It never starts another transaction or writes registration,
  * participation, audit, or outbox state.
  */
 @Injectable()
@@ -242,7 +252,16 @@ export class CapacityReservationService {
     if (!selections || !input.activityId || !input.memberId) this.failClosed();
 
     await this.lockActivity(tx, input.activityId);
-    const identities = await this.lockIdentities(tx, input.activityId, input.memberId, selections);
+    const reconciliationIdentities = await this.lockMemberActivityIdentityContext(
+      tx,
+      input.activityId,
+      input.memberId,
+    );
+    const identities = this.selectRequestedIdentities(
+      reconciliationIdentities,
+      selections.map((selection) => selection.identityId),
+    );
+    await this.lockAndVerifyReserveSessions(tx, input.activityId, identities);
     const selectedPositions = await this.lockAndVerifyReservePositions(
       tx,
       input.activityId,
@@ -250,13 +269,17 @@ export class CapacityReservationService {
       selections,
     );
     const targets = this.reserveTargets(input.activityId, identities, selections);
-    const buckets = await this.lockBucketsForSessions(tx, input.activityId, identities);
+    const buckets = await this.lockBucketsForSessions(
+      tx,
+      input.activityId,
+      reconciliationIdentities,
+    );
     const bucketsByTarget = this.assertExactTargetBuckets(buckets, targets, input.activityId);
     const reservations = await this.lockRelatedActiveReservations(
       tx,
       input.activityId,
       input.memberId,
-      identities.map((identity) => identity.id),
+      reconciliationIdentities.map((identity) => identity.id),
       buckets.map((bucket) => bucket.id),
     );
     const positions = await this.loadPositionFactsForReservations(
@@ -316,13 +339,17 @@ export class CapacityReservationService {
     }
 
     await this.lockActivity(tx, input.activityId);
-    const identities = await this.lockIdentitiesByIds(
+    const reconciliationIdentities = await this.lockMemberActivityIdentityContext(
       tx,
       input.activityId,
       input.memberId,
-      identityIds,
     );
-    const buckets = await this.lockBucketsForSessions(tx, input.activityId, identities);
+    const identities = this.selectRequestedIdentities(reconciliationIdentities, identityIds);
+    const buckets = await this.lockBucketsForSessions(
+      tx,
+      input.activityId,
+      reconciliationIdentities,
+    );
     const requiredTargets = this.releaseRequiredTargets(input.activityId, identities);
     const bucketsByTarget = this.assertExactTargetBuckets(
       buckets,
@@ -333,7 +360,7 @@ export class CapacityReservationService {
       tx,
       input.activityId,
       input.memberId,
-      identityIds,
+      reconciliationIdentities.map((identity) => identity.id),
       buckets.map((bucket) => bucket.id),
     );
     const positions = await this.loadPositionFactsForReservations(tx, reservations, new Map());
@@ -377,40 +404,63 @@ export class CapacityReservationService {
     if (rows.length !== 1) this.failClosed();
   }
 
-  private async lockIdentities(
+  private async lockMemberActivityIdentityContext(
     tx: PrismaTx,
     activityId: string,
     memberId: string,
-    selections: readonly NormalizedSelection[],
-  ): Promise<LockedIdentity[]> {
-    return this.lockIdentitiesByIds(
-      tx,
-      activityId,
-      memberId,
-      selections.map((selection) => selection.identityId),
-    );
-  }
-
-  private async lockIdentitiesByIds(
-    tx: PrismaTx,
-    activityId: string,
-    memberId: string,
-    identityIds: readonly string[],
   ): Promise<LockedIdentity[]> {
     const rows = await tx.$queryRaw<LockedIdentity[]>(Prisma.sql`
       SELECT "id", "activityId", "memberId", "sessionId"
       FROM "ActivityParticipationIdentity"
-      WHERE "id" IN (${Prisma.join(identityIds)})
+      WHERE "activityId" = ${activityId} AND "memberId" = ${memberId}
+      ORDER BY "id" ASC
+      FOR UPDATE
+    `);
+    return rows;
+  }
+
+  private selectRequestedIdentities(
+    reconciliationIdentities: readonly LockedIdentity[],
+    requestedIdentityIds: readonly string[],
+  ): LockedIdentity[] {
+    const identitiesById = new Map(
+      reconciliationIdentities.map((identity) => [identity.id, identity]),
+    );
+    const identities: LockedIdentity[] = [];
+    for (const identityId of requestedIdentityIds) {
+      const identity = identitiesById.get(identityId);
+      if (!identity) this.failClosed();
+      identities.push(identity);
+    }
+    return identities;
+  }
+
+  private async lockAndVerifyReserveSessions(
+    tx: PrismaTx,
+    activityId: string,
+    identities: readonly LockedIdentity[],
+  ): Promise<void> {
+    const sessionIds = [...new Set(identities.map((identity) => identity.sessionId))].sort(
+      (left, right) => left.localeCompare(right),
+    );
+    const sessions = await tx.$queryRaw<LockedSession[]>(Prisma.sql`
+      SELECT "id", "activityId", "statusCode", "deletedAt"
+      FROM "ActivitySession"
+      WHERE "id" IN (${Prisma.join(sessionIds)})
       ORDER BY "id" ASC
       FOR UPDATE
     `);
     if (
-      rows.length !== identityIds.length ||
-      rows.some((row) => row.activityId !== activityId || row.memberId !== memberId)
+      sessions.length !== sessionIds.length ||
+      sessions.some(
+        (session) =>
+          session.activityId !== activityId ||
+          session.statusCode !== 'scheduled' ||
+          session.deletedAt !== null,
+      )
     ) {
       this.failClosed();
     }
-    return rows;
   }
 
   private async lockAndVerifyReservePositions(
@@ -484,9 +534,11 @@ export class CapacityReservationService {
   private async lockBucketsForSessions(
     tx: PrismaTx,
     activityId: string,
-    identities: readonly LockedIdentity[],
+    reconciliationIdentities: readonly LockedIdentity[],
   ): Promise<LockedBucket[]> {
-    const sessionIds = identities.map((identity) => identity.sessionId);
+    const sessionIds = [
+      ...new Set(reconciliationIdentities.map((identity) => identity.sessionId)),
+    ].sort((left, right) => left.localeCompare(right));
     return tx.$queryRaw<LockedBucket[]>(Prisma.sql`
       SELECT b."id", b."activityId", b."scopeTypeCode", b."scopeId", b."capacity", b."occupied", b."version"
       FROM "ActivityCapacityBucket" b

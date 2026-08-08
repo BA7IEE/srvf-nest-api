@@ -241,6 +241,45 @@ describe('batch4 capacity reservation kernel', () => {
     });
   }
 
+  async function capacityOperationFacts(activityId: string, identityIds: readonly string[]) {
+    const [buckets, reservations, identities, auditCount, outboxCount] = await Promise.all([
+      bucketFacts(activityId),
+      prisma.capacityReservation.findMany({
+        where: { identity: { activityId } },
+        select: {
+          id: true,
+          identityId: true,
+          bucketId: true,
+          reservationType: true,
+          memberId: true,
+          activityId: true,
+          status: true,
+          releasedAt: true,
+          releaseReason: true,
+          updatedAt: true,
+        },
+        orderBy: { id: 'asc' },
+      }),
+      prisma.activityParticipationIdentity.findMany({
+        where: { id: { in: [...identityIds] } },
+        select: {
+          id: true,
+          currentRevision: true,
+          currentStatusCode: true,
+          currentPositionId: true,
+          capacityReservationId: true,
+          populationIncluded: true,
+          version: true,
+          updatedAt: true,
+        },
+        orderBy: { id: 'asc' },
+      }),
+      prisma.auditLog.count(),
+      prisma.notificationOutboxIntent.count(),
+    ]);
+    return { buckets, reservations, identities, auditCount, outboxCount };
+  }
+
   async function expectReconciliationFailure(operation: Promise<unknown>): Promise<void> {
     await expect(operation).rejects.toEqual(
       new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED),
@@ -674,6 +713,97 @@ describe('batch4 capacity reservation kernel', () => {
     await expect(
       prisma.capacityReservation.count({ where: { identityId, status: 'released' } }),
     ).resolves.toBe(3);
+  });
+
+  it('fails closed before a partial release when another active member session bucket is drifted', async () => {
+    const fixture = await createFixture({
+      activityCapacity: 3,
+      sessionCapacities: [3, 3],
+      positionCapacitiesBySession: [[], []],
+    });
+    const member = await createMember(fixture, 'context-reconciliation');
+    const firstIdentityId = identityFor(member, fixture.sessions[0]);
+    const secondIdentityId = identityFor(member, fixture.sessions[1]);
+    await reserve({
+      activityId: fixture.activityId,
+      memberId: member.memberId,
+      selections: [{ identityId: firstIdentityId }, { identityId: secondIdentityId }],
+    });
+    const nonRequestedSessionBucket = await bucketFor(
+      fixture.activityId,
+      'session_participation',
+      fixture.sessions[1].id,
+    );
+    await prisma.activityCapacityBucket.update({
+      where: { id: nonRequestedSessionBucket.id },
+      data: { occupied: 2, version: { increment: 1 } },
+    });
+    const before = await capacityOperationFacts(
+      fixture.activityId,
+      member.identities.map((identity) => identity.id),
+    );
+
+    await expectReconciliationFailure(
+      release({
+        activityId: fixture.activityId,
+        memberId: member.memberId,
+        identityIds: [firstIdentityId],
+        releaseReason: 'complete context reconciliation control',
+      }),
+    );
+    await expect(
+      capacityOperationFacts(
+        fixture.activityId,
+        member.identities.map((identity) => identity.id),
+      ),
+    ).resolves.toEqual(before);
+  });
+
+  it('rejects cancelled or soft-deleted target sessions before reservation DML', async () => {
+    const cases = [
+      ['cancelled', { statusCode: 'cancelled' }],
+      ['soft-deleted', { deletedAt: new Date() }],
+    ] as const;
+    for (const [suffix, sessionChange] of cases) {
+      const fixture = await createFixture({ positionCapacitiesBySession: [[]] });
+      const historicalMember = await createMember(fixture, `historical-${suffix}`);
+      const historicalIdentityId = identityFor(historicalMember, fixture.sessions[0]);
+      await reserve({
+        activityId: fixture.activityId,
+        memberId: historicalMember.memberId,
+        selections: [{ identityId: historicalIdentityId }],
+      });
+      await prisma.activitySession.update({
+        where: { id: fixture.sessions[0].id },
+        data: sessionChange,
+      });
+      await expect(
+        release({
+          activityId: fixture.activityId,
+          memberId: historicalMember.memberId,
+          identityIds: [historicalIdentityId],
+          releaseReason: `historical ${suffix} cleanup`,
+        }),
+      ).resolves.toMatchObject({ outcome: 'released' });
+
+      const blockedMember = await createMember(fixture, `non-live-${suffix}`);
+      const blockedIdentityId = identityFor(blockedMember, fixture.sessions[0]);
+      const before = await capacityOperationFacts(fixture.activityId, [
+        historicalIdentityId,
+        blockedIdentityId,
+      ]);
+
+      await expectReconciliationFailure(
+        reserve({
+          activityId: fixture.activityId,
+          memberId: blockedMember.memberId,
+          selections: [{ identityId: blockedIdentityId }],
+        }),
+      );
+      await expect(
+        capacityOperationFacts(fixture.activityId, [historicalIdentityId, blockedIdentityId]),
+      ).resolves.toEqual(before);
+    }
   });
 
   it('fails closed on occupied drift without changing identity, audit, outbox, or candidate facts', async () => {
