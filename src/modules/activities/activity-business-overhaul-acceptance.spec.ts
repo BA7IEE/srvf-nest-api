@@ -391,6 +391,20 @@ const BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_BLOCKERS: Readonly<Record<string, s
   'AC-017': '后台代报名与导入未接入本刀，三入口共享答案 validator 仍未实现。',
 };
 
+/**
+ * 第 4 批 reservation kernel 只交付同一事务内的事实原语，不能把 service 直调误记为
+ * 最终报名链。AC-022/023 仍必须保留 todo，直到 HTTP request、状态写与分配 policy caller
+ * 在同一条用户链中接入。
+ */
+const BATCH4_RESERVATION_KERNEL_ACCEPTANCE_IDS = ['AC-022', 'AC-023'] as const;
+
+const BATCH4_RESERVATION_KERNEL_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
+  'AC-022':
+    '三层 reservation 内核已有真实 PostgreSQL 100人×3场与释放证据；尚缺 HTTP request、canonical 状态写和分配 policy caller。',
+  'AC-023':
+    '内核已有两 pool、capacity=1、100 并发的最后一席证据；尚缺 HTTP/policy caller，不能把 service 直调当最终用户链。',
+};
+
 if (
   Object.keys(BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS).some(
     (id) => BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_BLOCKERS[id],
@@ -429,6 +443,16 @@ if (
   throw new Error('第 4 批④三条验收编号必须逐条有真实证据去向或明确阻塞说明');
 }
 
+const batch4ReservationKernelResolvedIds = new Set([
+  ...Object.keys(BATCH4_RESERVATION_KERNEL_ACCEPTANCE_BLOCKERS),
+]);
+if (
+  batch4ReservationKernelResolvedIds.size !== BATCH4_RESERVATION_KERNEL_ACCEPTANCE_IDS.length ||
+  BATCH4_RESERVATION_KERNEL_ACCEPTANCE_IDS.some((id) => !batch4ReservationKernelResolvedIds.has(id))
+) {
+  throw new Error('第 4 批 reservation kernel 两条验收编号必须保持明确 blocker');
+}
+
 function registerAcceptanceCases(cases: readonly { id: string; title: string }[]): void {
   for (const { id, title } of cases) {
     const destinations =
@@ -448,8 +472,13 @@ function registerAcceptanceCases(cases: readonly { id: string; title: string }[]
 
     const blocker = BATCH2_ACCEPTANCE_BLOCKERS[id] ?? BATCH3_SLICE1_ACCEPTANCE_BLOCKERS[id];
     const batch4Blocker = BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_BLOCKERS[id];
+    const batch4ReservationKernelBlocker = BATCH4_RESERVATION_KERNEL_ACCEPTANCE_BLOCKERS[id];
     if (batch4Blocker !== undefined) {
       it.todo(`${id} ${title}（阻塞：${batch4Blocker}）`);
+      continue;
+    }
+    if (batch4ReservationKernelBlocker !== undefined) {
+      it.todo(`${id} ${title}（阻塞：${batch4ReservationKernelBlocker}）`);
       continue;
     }
     if (blocker !== undefined) {

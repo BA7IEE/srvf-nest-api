@@ -218,7 +218,7 @@
 
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
-### P1-28 活动业务全流程改造(批次 0–7) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件，[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960))、③ Form runtime / 一次性附件会话([#961](https://github.com/BA7IEE/srvf-nest-api/pull/961))、④ canonical 报名命令主链([#962](https://github.com/BA7IEE/srvf-nest-api/pull/962))、⑤分配/预留名额 DB guards([#963](https://github.com/BA7IEE/srvf-nest-api/pull/963))、发布审核容量桶投影（本分支）；合同已修订至 v1.1.1,缺口台账累计 #22**
+### P1-28 活动业务全流程改造(批次 0–7) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件，[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960))、③ Form runtime / 一次性附件会话([#961](https://github.com/BA7IEE/srvf-nest-api/pull/961))、④ canonical 报名命令主链([#962](https://github.com/BA7IEE/srvf-nest-api/pull/962))、⑤分配/预留名额 DB guards([#963](https://github.com/BA7IEE/srvf-nest-api/pull/963))、发布审核容量桶投影([#964](https://github.com/BA7IEE/srvf-nest-api/pull/964))、三层 CapacityReservation 内核（本分支）；合同已修订至 v1.1.1,缺口台账累计 #24**
 
 > **需求口径变更(2026-08-04)**:**= v1.1 四份 + [`AMENDMENTS-v1.1.1`](../archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md),冲突以后者为准。**
 > 第 1 批建表过程中实测撞到**五处合同内部不一致**,维护者当日**全部接受**并发布修订件。原件与 SHA256 一字未动(校验仍过)。
@@ -236,7 +236,7 @@
 > `release_to_public_pool` / `void_on_expiry`，默认 `release_to_public_pool`。canonical 报名命令已有
 > 从 1 开始写入 `preferenceOrder` 的生产 writer；本刀不改该 writer。
 > **五条均不阻塞第 2 批。**
-> **待折进下一版修订件的已知合同缺口(#6–#22；#7、#14、#16–#18 已裁定，#19–#21 为本刀保守工程裁定，#22 未裁定)**:#6 `workflowRevision` 来源未定义；**本刀局部执行口径**：draft FormVersion 取创建时 Activity 当前值，initial/change 审批激活取该次审批产生的新值；这不代表 #6 已整体解决 ·
+> **待折进下一版修订件的已知合同缺口(#6–#24；#7、#14、#16–#18 已裁定，#19–#21 为本刀保守工程裁定，#22–#24 未裁定)**:#6 `workflowRevision` 来源未定义；**本刀局部执行口径**：draft FormVersion 取创建时 Activity 当前值，initial/change 审批激活取该次审批产生的新值；这不代表 #6 已整体解决 ·
 > #7 `resultCode` 无「未定」取值（2026-08-07 已裁定：preparing=`null`，非空为三值闭集，待折进修订件）· #8 关账幂等列缺失 · #9 `requestedChangeJson` 结构未定义 ·
 > #10 无人触发 `commitBatch` · **#11** §6.1/§6.2 要求草稿动作携带 `operationKey`，但 §10.3 必须覆盖闭集不含它、§3 也没有持久化落点；本刀按 §10.3 不接收该字段 ·
 > **#12** §3.1 的 `cancelOperationKey` 提到“全历史操作记录另表保存”，但该表全合同未定义，禁止从散文自造 ·
@@ -249,6 +249,8 @@
 > **#20（本刀保守工程裁定）**：第 79 migration 注释的“token 不进任何响应”按同段“原始 token 只返回一次”收窄为“除创建响应外不再返回”；上传路由、后端中转 multipart、30 分钟 TTL 与复用 `attachment_legacy` storage source 均为未逐字规定的执行口径，且不改 schema 注释。
 > **#21（本刀保守工程裁定）**：合同未逐字定义 canonical 报名 wire 的 `preferences[].positionIds[]` 顺序如何落库、file 题最终附件 owner；固定按数组顺序派生从 1 开始的 `preferenceOrder`，最终 owner 固定 `registration-form-answer`。两者均可逆，不宣称为原合同明文。
 > **#22（本刀新登记，未实现）**：§3.13 七类资格规则虽已列出，但每类 `operator` / `valueJson` 的合法形状、以及 active RuleSet 的解析口径未定义；本刀只登记，零资格 runtime / DB 规则实现。
+> **#23（本刀新登记，未实现）**：业务合同要求发布人选择 `first_come` / `qualification_rank` / `lottery` 三种分配方式，但详细 §3.1、`Activity`、proposal/rule snapshot 都没有持久化字段或作用域；本刀不默认 `first_come`。
+> **#24（本刀新登记，未实现）**：一个 identity 可以同时有 session＋position 等多条 active reservation，而 `capacityReservationId` 只有单指针；合同未定义它指向哪一条。本刀不写 pointer；若未来 caller 需要单指针，只能先明确它是否采用本刀已返回的 session reservation id，不能从多条 active 行自行猜测。
 > **账本读面权限口径（维护者 2026-08-06 拍板）**：复用 `attendance.read.sheet`；合同 §6.11
 > 未规定，若日后要收紧需另立权限码 + 三处 seed spec 连坐。
 >
@@ -332,9 +334,11 @@
 
 > **第 4 批④（[#962](https://github.com/BA7IEE/srvf-nest-api/pull/962)，报名命令主链）**：App canonical `POST /api/app/v1/activities/:activityId/registrations` 已在 Activity 锁内完成 D-5 重验、Form/八题型答案、session/position、一次性附件与 immutable registration/participation revision 链；同 key+hash 在 consumed session 前安全重放，不同 hash `21003`，附件最终转内部 `registration-form-answer` owner。旧 App/Admin create 在 v1.1 live session 或 active Form 统一 `21038`，没有后台代报名/导入替代口；不变式不占容量、不建 Reservation。**后续 D 刀**仍需维护者拍板全局永久 `ActivityRegistration` 头唯一，不能改变既有“取消后可建第二头”的 E2E。
 >
-> **第 4 批⑤（本分支，发布审核容量桶真实投影）**：`ActivityCapacityBucketProjector` 在既有 Activity → review 锁序内、Form/Rules 后且 QR/population revision 前，重读已应用的 Activity / scheduled Session / live Position，稳定投影 `activity_person`、`session_participation`、`position_participation` 三类目标桶；不建 `reserve_group`。缺桶仅建 `occupied=0/version=0`，同容量零 UPDATE，变容只以锁后 CAS 递增 version 一次；任何 `occupied` 与 active `CapacityReservation` 数量漂移、错误锚定、历史取消 scope 仍有占用、或降容低于占用，均以 `20147` fail-closed 并回滚整笔 approve。新桶仅初始化 `occupied=0`；既有 `occupied` 不修改、不增加、不减少、不重算；生产代码零 `CapacityReservation` DML，占位/释放留下一刀。
+> **第 4 批⑤（[#964](https://github.com/BA7IEE/srvf-nest-api/pull/964)，发布审核容量桶真实投影）**：已 squash merge 至 main `a6904b84e8077cbeb20b6234ec23cd07fb763d4a`，final-main CI [31252496260](https://github.com/BA7IEE/srvf-nest-api/actions/runs/31252496260) success。`ActivityCapacityBucketProjector` 在既有 Activity → review 锁序内、Form/Rules 后且 QR/population revision 前，重读已应用的 Activity / scheduled Session / live Position，稳定投影 `activity_person`、`session_participation`、`position_participation` 三类目标桶；不建 `reserve_group`。缺桶仅建 `occupied=0/version=0`，同容量零 UPDATE，变容只以锁后 CAS 递增 version 一次；任何 `occupied` 与 active `CapacityReservation` 数量漂移、错误锚定、历史取消 scope 仍有占用、或降容低于占用，均以 `20147` fail-closed 并回滚整笔 approve。新桶仅初始化 `occupied=0`；既有 `occupied` 不修改、不增加、不减少、不重算；生产代码零 `CapacityReservation` DML，占位/释放留下一刀。
 >
-> **第 4 批验收回填**：AC-016、AC-029 已各有真实 canonical App E2E（答案/revision 与提交时附件绑定/防串）；AC-017 继续 todo（后台代报名与导入未接入，三入口共享 validator 未实现）。ADV-017 已绑定 activity/session 降容 HTTP 针；AC-018、AC-021、AC-022..028、ADV-005/014 仍 todo；本刀不宣称全局永久报名头唯一、占位/释放或资格 runtime。
+> **第 4 批⑥（本分支，CapacityReservation 内核）**：`CapacityReservationService` 只接 caller 提供的同一外层 transaction，固定 `Activity → identity(id ASC) → bucket(scopeTypeCode,scopeId,id) → active reservation(id ASC)`；预检三层 bucket/active 行对账后，reserve 以 `activity_person`（活动按 member 去重）＋每个 identity 的 `session_participation`＋可选 `position_participation` 原子占位，release 先释放 position/session，最后一个 active session 才释放 activity-person。有限容量不足仅返回稳定 `capacity_unavailable`，其余不可解释形态/CAS miss 均 `20147` fail-closed；只写 `CapacityReservation` 与 bucket `occupied/version`，零 `CapacityReservation` 以外的报名状态、pointer、revision、audit/outbox DML。新 activity-person 取本批稳定排序的最小 identityId 作锚，已有锚保留至最后释放。这是内核而非用户链：零 endpoint、零 canonical/approve/allocation caller，AC-022/023 仍 todo，尚缺 HTTP request、状态写和分配 policy 接缝。
+>
+> **第 4 批验收回填**：AC-016、AC-029 已各有真实 canonical App E2E（答案/revision 与提交时附件绑定/防串）；AC-017 继续 todo（后台代报名与导入未接入，三入口共享 validator 未实现）。ADV-017 已绑定 activity/session 降容 HTTP 针；AC-022/023 仅有内核的 100人×3场、两 pool capacity=1 100 并发、释放/对账 PostgreSQL 证据，尚无 HTTP/policy caller，继续 todo；AC-018、AC-021、AC-024..028、ADV-005/014 仍 todo；本刀不宣称全局永久报名头唯一、最终用户占位/释放链或资格 runtime。
 
 - **合同**:[`archive/reviews/activity-business-overhaul-v1.1/`](../archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效
   (业务方案 / 详细开发文档 / 355 项追踪矩阵 / 修订说明),SHA256 入仓时原位校验全过。
