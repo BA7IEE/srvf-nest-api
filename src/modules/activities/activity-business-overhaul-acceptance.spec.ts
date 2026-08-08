@@ -405,6 +405,33 @@ const BATCH4_RESERVATION_KERNEL_ACCEPTANCE_BLOCKERS: Readonly<Record<string, str
     '内核已有两 pool、capacity=1、100 并发的最后一席证据；尚缺 HTTP/policy caller，不能把 service 直调当最终用户链。',
 };
 
+/**
+ * 第 4 批⑦只翻访客名单的完整零串入证据。邀请 accept 仍依赖未裁定的资格/容量 caller，
+ * 因而 AC-019 必须保留 todo；活动开始时的批量 expiry 也不借本刀提前结案。
+ */
+const BATCH4_INVITATION_VISITOR_ACCEPTANCE_IDS = ['AC-019', 'AC-027'] as const;
+
+const BATCH4_INVITATION_VISITOR_ACCEPTANCE_DESTINATIONS: Readonly<
+  Record<string, readonly AcceptanceDestination[]>
+> = {
+  'AC-027': [
+    {
+      file: 'test/e2e/activity-batch4-invitation-visitor.e2e-spec.ts',
+      needle:
+        'creates an external visitor in the visitor list only, keeps attendanceCode null, and rejects an uncontracted attendanceCode input',
+    },
+    {
+      file: 'test/e2e/activity-batch4-invitation-visitor.e2e-spec.ts',
+      needle: 'expect(await externalParticipantSnapshot()).toEqual(before);',
+    },
+  ],
+};
+
+const BATCH4_INVITATION_VISITOR_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
+  'AC-019':
+    'create/list/revoke/decline 与过期可见性已接；accept 仍卡 #22 资格 runtime、保险/容量 caller，活动开始批量 expiry 仍归 AC-028。',
+};
+
 if (
   Object.keys(BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS).some(
     (id) => BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_BLOCKERS[id],
@@ -453,12 +480,29 @@ if (
   throw new Error('第 4 批 reservation kernel 两条验收编号必须保持明确 blocker');
 }
 
+const batch4InvitationVisitorResolvedIds = new Set([
+  ...Object.keys(BATCH4_INVITATION_VISITOR_ACCEPTANCE_DESTINATIONS),
+  ...Object.keys(BATCH4_INVITATION_VISITOR_ACCEPTANCE_BLOCKERS),
+]);
+if (
+  batch4InvitationVisitorResolvedIds.size !== BATCH4_INVITATION_VISITOR_ACCEPTANCE_IDS.length ||
+  BATCH4_INVITATION_VISITOR_ACCEPTANCE_IDS.some(
+    (id) => !batch4InvitationVisitorResolvedIds.has(id),
+  ) ||
+  Object.keys(BATCH4_INVITATION_VISITOR_ACCEPTANCE_DESTINATIONS).some(
+    (id) => BATCH4_INVITATION_VISITOR_ACCEPTANCE_BLOCKERS[id],
+  )
+) {
+  throw new Error('第 4 批⑦两条验收编号必须逐条有真实去向或明确 blocker');
+}
+
 function registerAcceptanceCases(cases: readonly { id: string; title: string }[]): void {
   for (const { id, title } of cases) {
     const destinations =
       BATCH2_ACCEPTANCE_DESTINATIONS[id] ??
       BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS[id] ??
-      BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS[id];
+      BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS[id] ??
+      BATCH4_INVITATION_VISITOR_ACCEPTANCE_DESTINATIONS[id];
     if (destinations !== undefined) {
       it(`${id} ${title}（已标注去向）`, () => {
         for (const destination of destinations) {
@@ -473,12 +517,17 @@ function registerAcceptanceCases(cases: readonly { id: string; title: string }[]
     const blocker = BATCH2_ACCEPTANCE_BLOCKERS[id] ?? BATCH3_SLICE1_ACCEPTANCE_BLOCKERS[id];
     const batch4Blocker = BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_BLOCKERS[id];
     const batch4ReservationKernelBlocker = BATCH4_RESERVATION_KERNEL_ACCEPTANCE_BLOCKERS[id];
+    const batch4InvitationVisitorBlocker = BATCH4_INVITATION_VISITOR_ACCEPTANCE_BLOCKERS[id];
     if (batch4Blocker !== undefined) {
       it.todo(`${id} ${title}（阻塞：${batch4Blocker}）`);
       continue;
     }
     if (batch4ReservationKernelBlocker !== undefined) {
       it.todo(`${id} ${title}（阻塞：${batch4ReservationKernelBlocker}）`);
+      continue;
+    }
+    if (batch4InvitationVisitorBlocker !== undefined) {
+      it.todo(`${id} ${title}（阻塞：${batch4InvitationVisitorBlocker}）`);
       continue;
     }
     if (blocker !== undefined) {

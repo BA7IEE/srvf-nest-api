@@ -69,7 +69,7 @@
 | `meta` | 1 | `meta.resolve.label` |
 | `sms-send-log` | 1 | `sms-send-log.read.list` |
 
-### controller × surface 对照(91 个 @Controller)
+### controller × surface 对照(93 个 @Controller)
 
 > 权威源:`src/**/*.controller.ts` 的 `@Controller(...)` 装饰器。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 鉴权模式(R / A / P)与业务语义属人类知识,见本文件标记之外的章节。
@@ -127,7 +127,7 @@
 | `admin/v1/team-join/cycles` | `src/modules/team-join/team-join-cycles.controller.ts` |
 | `admin/v1/users` | `src/modules/users/users.controller.ts` |
 
-#### app/v1(20 个 controller)
+#### app/v1(22 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
@@ -145,8 +145,10 @@
 | `app/v1/my` | `src/modules/certificates/controllers/app-my-certificates.controller.ts` |
 | `app/v1/my/activities/:activityId` | `src/modules/attendances/controllers/app-activity-check-ins.controller.ts` |
 | `app/v1/my/activities/:activityId/feedback` | `src/modules/activity-feedbacks/controllers/app-activity-feedbacks.controller.ts` |
+| `app/v1/my/activity-invitations` | `src/modules/activity-registrations/controllers/app-my-activity-invitations.controller.ts` |
 | `app/v1/my/managed-activities` | `src/modules/activities/controllers/app-managed-activities.controller.ts` |
 | `app/v1/my/managed-activities/:activityId` | `src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts` |
+| `app/v1/my/managed-activities/:activityId` | `src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts` |
 | `app/v1/my/managed-activities/:activityId` | `src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts` |
 | `app/v1/my/managed-activities/:activityId/positions` | `src/modules/activities/controllers/app-managed-activity-positions.controller.ts` |
 | `app/v1/my/managed-activities/:activityId/registrations` | `src/modules/activity-registrations/controllers/app-managed-activity-registrations.controller.ts` |

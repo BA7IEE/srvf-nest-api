@@ -145,6 +145,14 @@ const appActivityDetailSelect = {
 
 type AppActivityDetailRow = Prisma.ActivityGetPayload<{ select: typeof appActivityDetailSelect }>;
 
+type AppActivityDetailInvitationRow = {
+  id: string;
+  sessionId: string | null;
+  positionId: string | null;
+  statusCode: string;
+  expiresAt: Date;
+};
+
 const appActivityDirectorySelect = {
   id: true,
   title: true,
@@ -212,7 +220,8 @@ export class AppActivitiesService {
     memberId: string,
     query: AppActivityDirectoryQueryDto,
   ): Promise<PageResultDto<AppActivityDirectoryListItemDto>> {
-    const filters: Prisma.ActivityWhereInput[] = [this.memberVisibilityWhere(memberId)];
+    const now = new Date();
+    const filters: Prisma.ActivityWhereInput[] = [this.memberVisibilityWhere(memberId, now)];
     if (query.q !== undefined) {
       filters.push({ title: { contains: query.q, mode: 'insensitive' } });
     }
@@ -251,17 +260,29 @@ export class AppActivitiesService {
   //   查询 → null → throw,SQL plan 一致)
   // - findFirst 命中 null 统一抛 ACTIVITY_NOT_FOUND(D-P2-4-3 v0.1 锁定 404,不返 403)
   async findVisibleByIdForMember(id: string, memberId: string): Promise<AppActivityDetailDto> {
-    const [row, passCount] = await this.prisma.$transaction([
+    const now = new Date();
+    const [row, passCount, invitations] = await this.prisma.$transaction([
       this.prisma.activity.findFirst({
         where: notDeletedWhere({
           id,
           statusCode: 'published',
-          ...this.memberVisibilityWhere(memberId),
+          ...this.memberVisibilityWhere(memberId, now),
         }),
         select: appActivityDetailSelect,
       }),
       this.prisma.activityRegistration.count({
         where: notDeletedWhere({ activityId: id, statusCode: 'pass' }),
+      }),
+      this.prisma.activityInvitation.findMany({
+        where: { activityId: id, memberId },
+        select: {
+          id: true,
+          sessionId: true,
+          positionId: true,
+          statusCode: true,
+          expiresAt: true,
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       }),
     ]);
 
@@ -269,7 +290,7 @@ export class AppActivitiesService {
       throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
     }
 
-    return this.toDetailDto(row, passCount);
+    return this.toDetailDto(row, passCount, invitations, now);
   }
 
   async listPositionsForMember(
@@ -357,7 +378,7 @@ export class AppActivitiesService {
     }));
   }
 
-  private memberVisibilityWhere(memberId: string): Prisma.ActivityWhereInput {
+  private memberVisibilityWhere(memberId: string, now: Date): Prisma.ActivityWhereInput {
     // `visibilityCode=null` 是 expand 期间尚未解析的旧行，沿本刀“内部读面优先复用”
     // 收敛为 internal；只有显式 invitation 才要求本人有有效邀请记录。
     return {
@@ -368,7 +389,7 @@ export class AppActivitiesService {
           invitations: {
             some: {
               memberId,
-              statusCode: { in: ['pending', 'accepted'] },
+              OR: [{ statusCode: 'accepted' }, { statusCode: 'pending', expiresAt: { gt: now } }],
             },
           },
         },
@@ -393,7 +414,12 @@ export class AppActivitiesService {
     };
   }
 
-  private toDetailDto(row: AppActivityDetailRow, passCount: number): AppActivityDetailDto {
+  private toDetailDto(
+    row: AppActivityDetailRow,
+    passCount: number,
+    invitations: AppActivityDetailInvitationRow[],
+    now: Date,
+  ): AppActivityDetailDto {
     const activeForm = row.registrationFormVersions[0] ?? null;
     const registrationForm = activeForm
       ? {
@@ -422,6 +448,20 @@ export class AppActivitiesService {
       registrationMode: row.registrationModeCode,
       formVersion: registrationForm?.version ?? null,
       registrationForm,
+      myInvitations: invitations.map((invitation) => ({
+        invitationId: invitation.id,
+        scope:
+          invitation.positionId !== null
+            ? 'position'
+            : invitation.sessionId !== null
+              ? 'session'
+              : 'activity',
+        status:
+          invitation.statusCode === 'pending' && invitation.expiresAt.getTime() <= now.getTime()
+            ? 'expired'
+            : invitation.statusCode,
+        expiresAt: invitation.expiresAt,
+      })),
       sessions: row.sessions.map((session) => ({
         id: session.id,
         code: session.code,

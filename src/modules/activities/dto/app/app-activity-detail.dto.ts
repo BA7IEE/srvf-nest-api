@@ -63,9 +63,26 @@ export class AppActivityDetailSessionDto {
   positions!: AppActivityDetailSessionPositionDto[];
 }
 
+export class AppActivityDetailInvitationDto {
+  @ApiProperty({ description: '调用者自己的邀请 id' })
+  invitationId!: string;
+
+  @ApiProperty({ description: '邀请范围', enum: ['activity', 'session', 'position'] })
+  scope!: 'activity' | 'session' | 'position';
+
+  @ApiProperty({
+    description: '邀请状态',
+    enum: ['pending', 'accepted', 'declined', 'revoked', 'expired'],
+  })
+  status!: string;
+
+  @ApiProperty({ description: '过期时间' })
+  expiresAt!: Date;
+}
+
 // Phase 2 P2-4b App /api/app/v1/activities/:id 详情出参。
 // 原 v0.1 13 字段；2026-07-15 additive 增 phase / genderRequirementCode /
-// requiresInsurance / passCount，当前恰好 17 个。
+// requiresInsurance / passCount；P1-28 再纯加法追加调用者自己的 myInvitations。
 // **严禁**继承 / Pick / Omit / Mapped Types Admin DTO(沿 Phase 0.7 §2.2 +
 // 评审稿 §5.4)。物理隔离于 src/modules/activities/dto/app/。
 //
@@ -178,6 +195,12 @@ export class AppActivityDetailDto {
     type: () => AppRegistrationFormDto,
   })
   registrationForm!: AppRegistrationFormDto | null;
+
+  @ApiProperty({
+    description: '调用者自己的邀请安全摘要；不返回任何他人的邀请或拒绝原因',
+    type: () => [AppActivityDetailInvitationDto],
+  })
+  myInvitations!: AppActivityDetailInvitationDto[];
 
   @ApiProperty({
     description: '活动场次与其岗位的安全投影；不返回定位坐标、负责人或资格规则内部字段',

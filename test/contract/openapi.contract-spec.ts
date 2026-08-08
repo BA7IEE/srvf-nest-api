@@ -215,6 +215,13 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 第 4 批：草稿发起人直改 Form；published 仍由 change review 接管。
   ['get', '/api/app/v1/my/managed-activities/{activityId}/registration-form'],
   ['put', '/api/app/v1/my/managed-activities/{activityId}/registration-form'],
+  // 第 4 批⑦：负责人/报名协办管理邀请与独立访客名单；本人拒绝固定在 self surface。
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/invitations'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/invitations'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/invitations/{invitationId}/revoke'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/visitors'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/visitors'],
+  ['post', '/api/app/v1/my/activity-invitations/{invitationId}/decline'],
   // 活动业务改造 v1.1 第 3 批第一刀：草稿场次/新表岗位嵌套 CRUD。
   // 只允许发起人（SUPER_ADMIN 兜底）操作 draft；published 直写返回 change-review-required。
   ['get', '/api/app/v1/my/managed-activities/{activityId}/sessions'],
@@ -1601,9 +1608,9 @@ describe('OpenAPI 契约快照', () => {
   //   第 3 批第一刀草稿场次/新表岗位嵌套 CRUD +8 →477；第三刀目录 + 生命周期/clone/seal
   //   +5 →482；第 3 批第二刀 proposal / withdraw / resolution +4 →486；第 4 批
   //   Form GET/PUT + 一次性上传会话 POST/POST +4 →490；第 4 批④ canonical 报名命令
-  //   POST +1 → **491**。
-  it('路由足迹精确为 491', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(491);
+  //   POST +1 →491；第 4 批⑦邀请/访客五路 managed + 本人 decline 一路 → **497**。
+  it('路由足迹精确为 497', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(497);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {
@@ -1785,6 +1792,39 @@ describe('OpenAPI 契约快照', () => {
       ]),
     );
   });
+
+  it.each([
+    [
+      'POST',
+      'post',
+      '/api/app/v1/my/managed-activities/{activityId}/invitations',
+      [
+        BizCode.ACTIVITY_INVITATION_NOT_FOUND.code,
+        BizCode.ACTIVITY_INVITATION_ALREADY_PENDING.code,
+      ],
+    ],
+    [
+      'POST',
+      'post',
+      '/api/app/v1/my/managed-activities/{activityId}/invitations/{invitationId}/revoke',
+      [BizCode.ACTIVITY_INVITATION_NOT_FOUND.code, BizCode.ACTIVITY_INVITATION_STATUS_INVALID.code],
+    ],
+    [
+      'POST',
+      'post',
+      '/api/app/v1/my/activity-invitations/{invitationId}/decline',
+      [
+        BizCode.ACTIVITY_INVITATION_NOT_FOUND.code,
+        BizCode.ACTIVITY_INVITATION_STATUS_INVALID.code,
+        BizCode.ACTIVITY_INVITATION_OPERATION_KEY_CONFLICT.code,
+      ],
+    ],
+  ] as const)(
+    '%s invitation endpoint declares its stable business errors',
+    (_label, method, path, codes) => {
+      expect(documented4xxCodes(doc.paths[path]?.[method])).toEqual(expect.arrayContaining(codes));
+    },
+  );
 
   it('paths 段快照(锁定每个 operation 的响应结构)', () => {
     // 仅快照 paths,排除 info.version(随发布递增,不视作 schema 漂移)。
