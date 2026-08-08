@@ -324,6 +324,20 @@ const BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS: Readonly<
       needle: 'rejects stale change proposals and leaves critical published fields behind review',
     },
   ],
+  // ADV-017:发布审核已在同一事务内投影真实 capacity bucket；活动和场次降容各有
+  // “occupied=capacity 放行 → 降一拒 20147” 的 HTTP 针对性证据。
+  'ADV-017': [
+    {
+      file: 'test/e2e/activity-batch4-capacity-projection.e2e-spec.ts',
+      needle:
+        'allows activity-person occupancy at its current capacity and rejects an activity capacity reduction below it',
+    },
+    {
+      file: 'test/e2e/activity-batch4-capacity-projection.e2e-spec.ts',
+      needle:
+        'allows session participation occupancy at its current capacity and rejects a session capacity reduction below it',
+    },
+  ],
 };
 
 const BATCH3_SLICE1_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
@@ -340,7 +354,6 @@ const BATCH3_SLICE1_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
   'AC-014': '卡第 3 刀 cancel 与现场事实并发语义。',
   'AC-015': '卡第 3 刀 terminate 后 30 分钟签退窗口。',
   'ADV-004': '卡第 3 刀普通取消×第一条现场签到真实并发。',
-  'ADV-017': '卡第 1 批 allocation/reservation 占用事实与第 2 刀已发布变更审核链。',
   'ADV-018': '卡第 2/3 刀单场次取消的人员和通知影响链。',
   'ADV-019': '卡第 3 刀正式/停用/非正式/未受邀可见性组合读面。',
 };

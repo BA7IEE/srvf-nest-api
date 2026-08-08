@@ -218,7 +218,7 @@
 
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
-### P1-28 活动业务全流程改造(批次 0–7) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件，[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960))、③ Form runtime / 一次性附件会话([#961](https://github.com/BA7IEE/srvf-nest-api/pull/961))、④ canonical 报名命令主链（本分支）；合同已修订至 v1.1.1,缺口台账累计 #22**
+### P1-28 活动业务全流程改造(批次 0–7) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件，[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960))、③ Form runtime / 一次性附件会话([#961](https://github.com/BA7IEE/srvf-nest-api/pull/961))、④ canonical 报名命令主链([#962](https://github.com/BA7IEE/srvf-nest-api/pull/962))、⑤分配/预留名额 DB guards([#963](https://github.com/BA7IEE/srvf-nest-api/pull/963))、发布审核容量桶投影（本分支）；合同已修订至 v1.1.1,缺口台账累计 #22**
 
 > **需求口径变更(2026-08-04)**:**= v1.1 四份 + [`AMENDMENTS-v1.1.1`](../archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md),冲突以后者为准。**
 > 第 1 批建表过程中实测撞到**五处合同内部不一致**,维护者当日**全部接受**并发布修订件。原件与 SHA256 一字未动(校验仍过)。
@@ -330,9 +330,11 @@
 
 > **第 4 批③（[#961](https://github.com/BA7IEE/srvf-nest-api/pull/961)，Form runtime / 一次性附件会话）**：managed Form 定义、draft/active 版本、初发/变更审核/clone 与 App detail 安全读面已接通；v3 proposal 把 canonical Form 纳入 stale hash，历史 v2 审批逐字兼容。附件会话只存 token SHA-256、创建响应明文仅一次；后端中转 multipart 固定 JPEG/PNG/WebP/PDF、10 MiB、单会话单附件和安全重放，不返回 provider signed upload URL 或内部存储字段。
 
-> **第 4 批④（本分支，报名命令主链）**：App canonical `POST /api/app/v1/activities/:activityId/registrations` 已在 Activity 锁内完成 D-5 重验、Form/八题型答案、session/position、一次性附件与 immutable registration/participation revision 链；同 key+hash 在 consumed session 前安全重放，不同 hash `21003`，附件最终转内部 `registration-form-answer` owner。旧 App/Admin create 在 v1.1 live session 或 active Form 统一 `21038`，没有后台代报名/导入替代口；不变式不占容量、不建 Reservation。**后续 D 刀**仍需维护者拍板全局永久 `ActivityRegistration` 头唯一，不能改变既有“取消后可建第二头”的 E2E。
+> **第 4 批④（[#962](https://github.com/BA7IEE/srvf-nest-api/pull/962)，报名命令主链）**：App canonical `POST /api/app/v1/activities/:activityId/registrations` 已在 Activity 锁内完成 D-5 重验、Form/八题型答案、session/position、一次性附件与 immutable registration/participation revision 链；同 key+hash 在 consumed session 前安全重放，不同 hash `21003`，附件最终转内部 `registration-form-answer` owner。旧 App/Admin create 在 v1.1 live session 或 active Form 统一 `21038`，没有后台代报名/导入替代口；不变式不占容量、不建 Reservation。**后续 D 刀**仍需维护者拍板全局永久 `ActivityRegistration` 头唯一，不能改变既有“取消后可建第二头”的 E2E。
 >
-> **第 4 批验收回填**：AC-016、AC-029 已各有真实 canonical App E2E（答案/revision 与提交时附件绑定/防串）；AC-017 继续 todo（后台代报名与导入未接入，三入口共享 validator 未实现）。AC-018、AC-021、AC-022..028、ADV-005/014/017 仍 todo；本刀不宣称全局永久报名头唯一。
+> **第 4 批⑤（本分支，发布审核容量桶真实投影）**：`ActivityCapacityBucketProjector` 在既有 Activity → review 锁序内、Form/Rules 后且 QR/population revision 前，重读已应用的 Activity / scheduled Session / live Position，稳定投影 `activity_person`、`session_participation`、`position_participation` 三类目标桶；不建 `reserve_group`。缺桶仅建 `occupied=0/version=0`，同容量零 UPDATE，变容只以锁后 CAS 递增 version 一次；任何 `occupied` 与 active `CapacityReservation` 数量漂移、错误锚定、历史取消 scope 仍有占用、或降容低于占用，均以 `20147` fail-closed 并回滚整笔 approve。新桶仅初始化 `occupied=0`；既有 `occupied` 不修改、不增加、不减少、不重算；生产代码零 `CapacityReservation` DML，占位/释放留下一刀。
+>
+> **第 4 批验收回填**：AC-016、AC-029 已各有真实 canonical App E2E（答案/revision 与提交时附件绑定/防串）；AC-017 继续 todo（后台代报名与导入未接入，三入口共享 validator 未实现）。ADV-017 已绑定 activity/session 降容 HTTP 针；AC-018、AC-021、AC-022..028、ADV-005/014 仍 todo；本刀不宣称全局永久报名头唯一、占位/释放或资格 runtime。
 
 - **合同**:[`archive/reviews/activity-business-overhaul-v1.1/`](../archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效
   (业务方案 / 详细开发文档 / 355 项追踪矩阵 / 修订说明),SHA256 入仓时原位校验全过。

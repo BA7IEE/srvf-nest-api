@@ -13,6 +13,7 @@ import {
   type RegistrationFormResolvedConfig,
   type RegistrationFormTarget,
 } from './registration-form-version.service';
+import { ActivityCapacityBucketProjector } from './activity-capacity-bucket-projector';
 import type {
   ChangeReviewDto,
   ChangeReviewSessionCreateDto,
@@ -360,6 +361,7 @@ export class ActivityPublishProposalV2Service {
   constructor(
     private readonly config: ConfigService<AppConfig, true>,
     private readonly registrationForms: RegistrationFormVersionService,
+    private readonly capacityBuckets: ActivityCapacityBucketProjector,
   ) {}
 
   async buildInitial(tx: PrismaTx, activityId: string): Promise<ActivityPublishProposalSnapshotV3> {
@@ -486,7 +488,7 @@ export class ActivityPublishProposalV2Service {
 
   /**
    * Apply order is intentionally visible and mechanically asserted by the batch-3 suite:
-   * Activity → Sessions → Positions → batch-4 Form/Rules → batch-4 capacity → batch-5 QR
+   * Activity → Sessions → Positions → batch-4 Form/Rules → batch-4 capacity projector → batch-5 QR
    * → population revision. Do not fold placeholders into a neighbouring write.
    */
   async apply(
@@ -517,7 +519,7 @@ export class ActivityPublishProposalV2Service {
     } else {
       await this.applyFormAndRulesPlaceholder(tx, activityId);
     }
-    await this.applyCapacityBucketsPlaceholder(tx, activityId); // 第 4 批占位，刻意空实现。
+    await this.capacityBuckets.apply(tx, activityId);
     await this.applyQrCredentialsPlaceholder(tx, activityId); // 第 5 批占位，刻意空实现。
     const activity = await tx.activity.update({
       where: { id: activityId },
@@ -1401,13 +1403,6 @@ export class ActivityPublishProposalV2Service {
     void tx;
     void activityId;
     // 第 4 批：Form / Rules proposal application。此刀必须显式经过但不得抢跑实装。
-    return Promise.resolve();
-  }
-
-  private applyCapacityBucketsPlaceholder(tx: PrismaTx, activityId: string): Promise<void> {
-    void tx;
-    void activityId;
-    // 第 4 批：capacity bucket application。此刀必须显式经过但不得抢跑实装。
     return Promise.resolve();
   }
 

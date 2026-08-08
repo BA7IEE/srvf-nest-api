@@ -1655,6 +1655,11 @@ export const BizCode = {
     message: '发布审核申请人不得审核本人提交的申请',
     httpStatus: HttpStatus.FORBIDDEN,
   },
+  ACTIVITY_CAPACITY_RECONCILIATION_FAILED: {
+    code: 20147,
+    message: '活动容量与当前占用不一致',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。
