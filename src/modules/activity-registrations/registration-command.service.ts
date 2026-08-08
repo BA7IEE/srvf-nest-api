@@ -555,7 +555,23 @@ export class RegistrationCommandService {
     preferences: NormalizedPreferences,
   ): Promise<void> {
     const sessionIds = [...preferences.keys()].sort();
-    if (sessionIds.length === 0) return;
+    if (sessionIds.length === 0) {
+      // The activity-level rule is intentionally checked even when the client has named no
+      // session at all.  Lock every live position in id order so a concurrent position mutation
+      // cannot turn an otherwise empty preference list into a bypass after the Activity root lock.
+      const livePositions = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT "id"
+        FROM "ActivitySessionPosition"
+        WHERE "activityId" = ${activityId}
+          AND "deletedAt" IS NULL
+        ORDER BY "id" ASC
+        FOR UPDATE
+      `);
+      if (livePositions.length > 0) {
+        throw new BizException(BizCode.ACTIVITY_POSITION_REQUIRED);
+      }
+      return;
+    }
     const sessions = await tx.$queryRaw<
       Array<{ id: string; activityId: string; statusCode: string; deletedAt: Date | null }>
     >(

@@ -1002,6 +1002,44 @@ describe('activity batch4 canonical registration command', () => {
     expect(await commandAuditCount(applicantUserId)).toBe(auditBeforeIneligibleResubmission);
   });
 
+  it('requires preferences when the activity has any live position before any canonical write', async () => {
+    const positionActivity = await createNoFormCommandActivity({
+      title: 'Canonical Command Preferences Required',
+    });
+    const positionSession = await createScheduledCommandSession(
+      positionActivity.id,
+      'preferences-required',
+    );
+    await prisma.activitySessionPosition.create({
+      data: {
+        activityId: positionActivity.id,
+        sessionId: positionSession.id,
+        code: 'preferences-required',
+        name: 'Preferences Required',
+        attendanceRoleCode: 'volunteer',
+      },
+    });
+    const auditBeforeMissingPreferences = await commandAuditCount(applicantUserId);
+
+    const missingPreferences = await request(httpServer(app))
+      .post(commandPath(positionActivity.id))
+      .set('Authorization', applicantAuth)
+      .send({
+        operationKey: 'batch4-command-preferences-missing-0001',
+        formVersion: null,
+        answers: [],
+        preferences: [],
+      });
+
+    expectBizError(missingPreferences, BizCode.ACTIVITY_POSITION_REQUIRED);
+    await expectNoCanonicalCommandWrites({
+      activityId: positionActivity.id,
+      memberId: applicantMemberId,
+      actorUserId: applicantUserId,
+      auditCountBefore: auditBeforeMissingPreferences,
+    });
+  });
+
   it('requires one or more positions when a selected scheduled session has live positions', async () => {
     const positionActivity = await createNoFormCommandActivity({
       title: 'Canonical Command Position Required',

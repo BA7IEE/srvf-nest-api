@@ -1774,6 +1774,18 @@ describe('OpenAPI 契约快照', () => {
     },
   );
 
+  it('canonical 报名命令显式声明性别、岗位与保险准入错误', () => {
+    const operation = doc.paths['/api/app/v1/activities/{activityId}/registrations']?.post;
+
+    expect(documented4xxCodes(operation)).toEqual(
+      expect.arrayContaining([
+        BizCode.ACTIVITY_REGISTRATION_GENDER_MISMATCH.code,
+        BizCode.ACTIVITY_POSITION_REQUIRED.code,
+        BizCode.INSURANCE_REQUIRED.code,
+      ]),
+    );
+  });
+
   it('paths 段快照(锁定每个 operation 的响应结构)', () => {
     // 仅快照 paths,排除 info.version(随发布递增,不视作 schema 漂移)。
     expect(doc.paths).toMatchSnapshot();

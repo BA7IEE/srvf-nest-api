@@ -55,7 +55,8 @@ function makeTx() {
       ])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'member-1', status: 'ACTIVE', deletedAt: null }])
-      .mockResolvedValueOnce([{ id: 'user-1', status: 'ACTIVE', deletedAt: null }]),
+      .mockResolvedValueOnce([{ id: 'user-1', status: 'ACTIVE', deletedAt: null }])
+      .mockResolvedValueOnce([]),
     activityRegistrationRevision: {
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ id: 'registration-revision-1', submittedAt: NOW }),
@@ -206,6 +207,22 @@ describe('RegistrationCommandService', () => {
   it('rejects an empty position list for a selected session with a live position before header writes', async () => {
     const tx = makeTx();
     tx.$queryRaw
+      .mockReset()
+      .mockResolvedValueOnce([
+        {
+          id: 'activity-1',
+          statusCode: 'published',
+          isPublicRegistration: true,
+          registrationDeadline: null,
+          genderRequirementCode: null,
+          requiresInsurance: false,
+          startAt: new Date('2099-12-30T00:00:00.000Z'),
+          endAt: new Date('2099-12-31T00:00:00.000Z'),
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'member-1', status: 'ACTIVE', deletedAt: null }])
+      .mockResolvedValueOnce([{ id: 'user-1', status: 'ACTIVE', deletedAt: null }])
       .mockResolvedValueOnce([
         {
           id: 'session-1',
@@ -227,6 +244,40 @@ describe('RegistrationCommandService', () => {
     ).rejects.toEqual(new BizException(BizCode.ACTIVITY_POSITION_REQUIRED));
     expect(tx.activityRegistration.create).not.toHaveBeenCalled();
     expect(tx.activityRegistrationRevision.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty preference list when the activity has any live position before header writes', async () => {
+    const tx = makeTx();
+    tx.$queryRaw
+      .mockReset()
+      .mockResolvedValueOnce([
+        {
+          id: 'activity-1',
+          statusCode: 'published',
+          isPublicRegistration: true,
+          registrationDeadline: null,
+          genderRequirementCode: null,
+          requiresInsurance: false,
+          startAt: new Date('2099-12-30T00:00:00.000Z'),
+          endAt: new Date('2099-12-31T00:00:00.000Z'),
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'member-1', status: 'ACTIVE', deletedAt: null }])
+      .mockResolvedValueOnce([{ id: 'user-1', status: 'ACTIVE', deletedAt: null }])
+      .mockResolvedValueOnce([{ id: 'position-1' }]);
+    const { service, insuranceRequirement } = makeService(tx);
+
+    await expect(
+      service.submit('activity-1', command(), user(), {
+        requestId: 'request-1',
+        ip: null,
+        ua: null,
+      }),
+    ).rejects.toEqual(new BizException(BizCode.ACTIVITY_POSITION_REQUIRED));
+    expect(tx.activityRegistration.create).not.toHaveBeenCalled();
+    expect(tx.activityRegistrationRevision.create).not.toHaveBeenCalled();
+    expect(insuranceRequirement.requireForActivityRegistration).not.toHaveBeenCalled();
   });
 
   it('returns the immutable winner before Form/upload revalidation for same key/hash', async () => {
