@@ -181,7 +181,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/activities/{id}'],
 
   // 活动业务改造 v1.1 第 4 批：队员只读 active Form；附件会话由后端中转 multipart，
-  // 不开放 provider signed upload URL。
+  // 不开放 provider signed upload URL。④的 canonical 报名命令只接受 operationKey、
+  // formVersion、answers 与有序 preferences，旧 App/Admin 创建入口对 v1.1 活动 fail-closed。
+  ['post', '/api/app/v1/activities/{activityId}/registrations'],
   ['post', '/api/app/v1/activities/{activityId}/registration-upload-sessions'],
   ['post', '/api/app/v1/activities/{activityId}/registration-upload-sessions/{sessionId}/files'],
 
@@ -1598,9 +1600,10 @@ describe('OpenAPI 契约快照', () => {
   //   第 ⑨a 刀负责人结算工作台 +5 →463；第 ⑨b 刀审核/账本读面 +6 →469；
   //   第 3 批第一刀草稿场次/新表岗位嵌套 CRUD +8 →477；第三刀目录 + 生命周期/clone/seal
   //   +5 →482；第 3 批第二刀 proposal / withdraw / resolution +4 →486；第 4 批
-  //   Form GET/PUT + 一次性上传会话 POST/POST +4 → **490**。
-  it('路由足迹精确为 490', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(490);
+  //   Form GET/PUT + 一次性上传会话 POST/POST +4 →490；第 4 批④ canonical 报名命令
+  //   POST +1 → **491**。
+  it('路由足迹精确为 491', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(491);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {
@@ -1770,6 +1773,18 @@ describe('OpenAPI 契约快照', () => {
       expect(documented4xxCodes(operation)).toEqual(expect.arrayContaining(expectedCodes));
     },
   );
+
+  it('canonical 报名命令显式声明性别、岗位与保险准入错误', () => {
+    const operation = doc.paths['/api/app/v1/activities/{activityId}/registrations']?.post;
+
+    expect(documented4xxCodes(operation)).toEqual(
+      expect.arrayContaining([
+        BizCode.ACTIVITY_REGISTRATION_GENDER_MISMATCH.code,
+        BizCode.ACTIVITY_POSITION_REQUIRED.code,
+        BizCode.INSURANCE_REQUIRED.code,
+      ]),
+    );
+  });
 
   it('paths 段快照(锁定每个 operation 的响应结构)', () => {
     // 仅快照 paths,排除 info.version(随发布递增,不视作 schema 漂移)。

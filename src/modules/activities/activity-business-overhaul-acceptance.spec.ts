@@ -345,26 +345,45 @@ const BATCH3_SLICE1_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
   'ADV-019': '卡第 3 刀正式/停用/非正式/未受邀可见性组合读面。',
 };
 
-/**
- * 第 4 批 Form runtime 只回填已完整闭环的验收号。下列三项均有可复用的局部证据，
- * 但合同要求的报名答案、三入口共享校验和提交时附件绑定尚未实现，故必须继续保留 todo。
- */
-const BATCH4_FORM_RUNTIME_PARTIAL_ACCEPTANCE_IDS = ['AC-016', 'AC-017', 'AC-029'] as const;
+/** 第 4 批④只翻有真实端到端命令链证据的编号；三入口统一校验仍不得提前结案。 */
+const BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_IDS = ['AC-016', 'AC-017', 'AC-029'] as const;
 
-const BATCH4_FORM_RUNTIME_PARTIAL_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
-  'AC-016': '完整安全 Form 读取已覆盖；报名答案提交校验仍未实现。',
-  'AC-017': '三入口共享答案 validator 尚未实现。',
-  'AC-029': '会话创建/上传已覆盖；报名提交时绑定与重报名跨会话防串仍未实现。',
+const BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS: Readonly<
+  Record<string, readonly AcceptanceDestination[]>
+> = {
+  'AC-016': [
+    {
+      file: 'test/e2e/activity-batch4-registration-command.e2e-spec.ts',
+      needle:
+        'creates the v1.1 immutable chain, transfers the file, then replays consumed-session retry by hash',
+    },
+    {
+      file: 'test/e2e/activity-batch4-registration-command.e2e-spec.ts',
+      needle: 'expectBizError(invalidAnswer, BizCode.REGISTRATION_FORM_ANSWER_INVALID);',
+    },
+  ],
+  'AC-029': [
+    {
+      file: 'test/e2e/activity-batch4-registration-command.e2e-spec.ts',
+      needle: "ownerType: 'registration-form-answer'",
+    },
+    {
+      file: 'test/e2e/activity-batch4-registration-command.e2e-spec.ts',
+      needle: 'expectBizError(foreignUse, BizCode.ATTACHMENT_NOT_FOUND);',
+    },
+  ],
+};
+
+const BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
+  'AC-017': '后台代报名与导入未接入本刀，三入口共享答案 validator 仍未实现。',
 };
 
 if (
-  Object.keys(BATCH4_FORM_RUNTIME_PARTIAL_ACCEPTANCE_BLOCKERS).length !==
-    BATCH4_FORM_RUNTIME_PARTIAL_ACCEPTANCE_IDS.length ||
-  BATCH4_FORM_RUNTIME_PARTIAL_ACCEPTANCE_IDS.some(
-    (id) => BATCH4_FORM_RUNTIME_PARTIAL_ACCEPTANCE_BLOCKERS[id] === undefined,
+  Object.keys(BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS).some(
+    (id) => BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_BLOCKERS[id],
   )
 ) {
-  throw new Error('第 4 批 Form runtime 的部分验收项必须继续逐条保留阻塞说明');
+  throw new Error('第 4 批④验收编号不能同时登记已完成与阻塞');
 }
 
 const batch3Slice1ResolvedIds = new Set([
@@ -381,10 +400,28 @@ if (
   throw new Error('第 3 批已落地切片的 19 条验收编号必须逐条有已标注去向或明确阻塞说明');
 }
 
+const batch4RegistrationCommandResolvedIds = new Set([
+  ...Object.keys(BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS),
+  ...Object.keys(BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_BLOCKERS),
+]);
+if (
+  batch4RegistrationCommandResolvedIds.size !== BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_IDS.length ||
+  BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_IDS.some(
+    (id) => !batch4RegistrationCommandResolvedIds.has(id),
+  ) ||
+  Object.keys(BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS).some(
+    (id) => BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_BLOCKERS[id],
+  )
+) {
+  throw new Error('第 4 批④三条验收编号必须逐条有真实证据去向或明确阻塞说明');
+}
+
 function registerAcceptanceCases(cases: readonly { id: string; title: string }[]): void {
   for (const { id, title } of cases) {
     const destinations =
-      BATCH2_ACCEPTANCE_DESTINATIONS[id] ?? BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS[id];
+      BATCH2_ACCEPTANCE_DESTINATIONS[id] ??
+      BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS[id] ??
+      BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS[id];
     if (destinations !== undefined) {
       it(`${id} ${title}（已标注去向）`, () => {
         for (const destination of destinations) {
@@ -397,7 +434,7 @@ function registerAcceptanceCases(cases: readonly { id: string; title: string }[]
     }
 
     const blocker = BATCH2_ACCEPTANCE_BLOCKERS[id] ?? BATCH3_SLICE1_ACCEPTANCE_BLOCKERS[id];
-    const batch4Blocker = BATCH4_FORM_RUNTIME_PARTIAL_ACCEPTANCE_BLOCKERS[id];
+    const batch4Blocker = BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_BLOCKERS[id];
     if (batch4Blocker !== undefined) {
       it.todo(`${id} ${title}（阻塞：${batch4Blocker}）`);
       continue;

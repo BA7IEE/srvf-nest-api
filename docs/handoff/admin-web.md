@@ -46,7 +46,7 @@
 | 活动头部 + 发布/取消/完结 | `GET /api/admin/v1/activities/:id`(含派生 `phase`) · `PATCH .../:id/publish`(body 必填 `{requiresInsuranceConfirmed:true}`) · `PATCH .../:id/cancel`(仅 draft|published) · `POST .../:id/complete`(**唯一**完结通路 published→completed) |
 | 负责人 / 协办 tab（v0.62.0；production 未部署） | `GET /api/admin/v1/activities/:activityId/responsibilities` · `POST/DELETE .../collaborators[/:assignmentId]` · `POST .../transfer`；legacy 仅管理员用 `POST .../claim` / `POST .../assign-initiator` |
 | 岗位 tab | `POST/GET /api/admin/v1/activities/:activityId/positions` · `GET/PATCH/DELETE .../positions/:activityPositionId`；读仅登录，写复用 `activity.update.record` + activity scope |
-| 报名 tab | `GET /api/admin/v1/activities/:id/registrations?statusCode=` · `POST` 代报名 · `PATCH .../:rid/{approve,reject,cancel}` · `POST .../:rid/reopen`(v0.40.0 审批后悔药 reject→pending)· `PATCH .../{bulk-approve,bulk-reject}`(1–100 条逐项结果) · `GET .../export`(CSV) |
+| 报名 tab | `GET /api/admin/v1/activities/:id/registrations?statusCode=` · `POST` 代报名（仅 legacy 活动；v1.1 live session 或 active Form 统一返 `21038`，本刀没有后台代报名/导入替代入口） · `PATCH .../:rid/{approve,reject,cancel}` · `POST .../:rid/reopen`(v0.40.0 审批后悔药 reject→pending)· `PATCH .../{bulk-approve,bulk-reject}`(1–100 条逐项结果) · `GET .../export`(CSV) |
 | 考勤 tab | `GET /api/admin/v1/activities/:id/attendance-sheets?statusCode=` · `POST` 提交单据 |
 | GPS 打卡证据 / 考勤草稿 | `GET /api/admin/v1/activities/:id/check-ins?page=&pageSize=` · `GET .../:id/attendance-sheet-draft`(只读、不落 Sheet/Record) |
 | 评价 tab / 汇总卡 | `GET /api/admin/v1/activities/:id/feedbacks?page=&pageSize=` · `GET .../:id/feedback-summary`；两者复用 `attendance.read.sheet` + activity ref |
@@ -72,7 +72,7 @@
 
 > **活动岗位(F2–F4)**:创建/更新 body 白名单为 `name/attendanceRoleCode/capacity/startAt/endAt/genderRequirementCode/description/sortOrder`；响应主键字段为 `activityPositionId`。`capacity=null` 表示不限，岗位时段必须同空同有且落在活动窗内。列表固定 `sortOrder ASC,createdAt ASC,id ASC`。同活动 live 重名返 `20003`，软删/跨活动岗位详情统一 `20002`，存在 pending/pass/waitlisted 报名时删除返 `20031`。有 live 岗位时活动 list/detail 的 `capacity` 是岗位名额派生值（任一不限→null，否则求和），编辑 Activity.capacity 不再触发递补。岗位报名的 App 签到/签退与 Admin 考勤 record 都按岗位窗 ± 既有容差，草稿角色自动取岗位 `attendanceRoleCode`；岗位没配独立时段才回落活动窗。前端路由参数必须使用全称 `activityPositionId`，不要复用组织职务的 `positionId` 命名。
 >
-> **报名岗位列(F3)**:Admin 报名列表 item additive 返回 `activityPosition:null|{activityPositionId,name}`；代报名 body 可传 `activityPositionId`。活动有 live 岗位未传返 `21035`，不存在/跨活动/已删返 `20002`，同人报第二岗位仍返 `21002`。候补排位、取消递补与岗位扩容递补均按 `(activityId,activityPositionId)` 隔离。
+> **报名岗位列(F3)**:Admin 报名列表 item additive 返回 `activityPosition:null|{activityPositionId,name}`；代报名 body 可传 `activityPositionId`。活动有 live 岗位未传返 `21035`，不存在/跨活动/已删返 `20002`，同人报第二岗位仍返 `21002`。候补排位、取消递补与岗位扩容递补均按 `(activityId,activityPositionId)` 隔离。**第 4 批④边界**：含 live session 或 active Form 的 v1.1 活动不得从此 legacy POST 建报名，统一 `21038`；后台代报名、导入及三入口共享答案校验仍待后续刀，不得以 admin surface 绕过 canonical App 主链。
 
 > ⚠️ **报名审批生命周期新规(v0.40.0 参与域生命周期收口)**:
 > ① **未发布/取消/完结/已结束活动禁批报名** —— `approve` 仅在 activity=published 且 `endAt >= now` 时允许；draft 返 `20126`，cancelled/completed/已结束返 `20124`。`reject` / `cancel` 仍可用于清理残留队列。

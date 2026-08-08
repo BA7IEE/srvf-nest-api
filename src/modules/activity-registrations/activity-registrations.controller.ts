@@ -135,6 +135,7 @@ export class ActivityRegistrationsAdminController {
     BizCode.ACTIVITY_POSITION_REQUIRED,
     BizCode.ACTIVITY_REGISTRATION_GENDER_MISMATCH,
     BizCode.ACTIVITY_CAPACITY_EXCEEDED,
+    BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED,
   )
   create(
     @Param() params: ActivityIdParamDto,

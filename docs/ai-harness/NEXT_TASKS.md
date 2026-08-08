@@ -218,7 +218,7 @@
 
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
-### P1-28 活动业务全流程改造(批次 0–7) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件，[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960))、③ Form runtime / 一次性附件会话([#961](https://github.com/BA7IEE/srvf-nest-api/pull/961));合同已修订至 v1.1.1,缺口台账累计 #20**
+### P1-28 活动业务全流程改造(批次 0–7) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件，[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960))、③ Form runtime / 一次性附件会话([#961](https://github.com/BA7IEE/srvf-nest-api/pull/961))、④ canonical 报名命令主链（本分支）；合同已修订至 v1.1.1,缺口台账累计 #21**
 
 > **需求口径变更(2026-08-04)**:**= v1.1 四份 + [`AMENDMENTS-v1.1.1`](../archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md),冲突以后者为准。**
 > 第 1 批建表过程中实测撞到**五处合同内部不一致**,维护者当日**全部接受**并发布修订件。原件与 SHA256 一字未动(校验仍过)。
@@ -241,6 +241,7 @@
 > **#18（同上）**：报名附件 MIME / 大小 / 单会话附件数未定义；固定 JPEG/PNG/WebP/PDF、单文件 10 MiB、每会话最多一个完成附件。第 79 migration 落实 `registration-upload-session` 的单附件 partial unique；本刀完成 MIME / 10 MiB seed 与 runtime。
 > **#19（本刀保守工程裁定）**：合同未逐字规定 managed Form 的 wire/null/no-op 口径；固定 `form:null|{fields}`、object 的非空 fields、canonical SHA-256 与相同 canonical PUT 无写入/无新版本/无 audit。该裁定可逆，不能表述为原合同已有明文。
 > **#20（本刀保守工程裁定）**：第 79 migration 注释的“token 不进任何响应”按同段“原始 token 只返回一次”收窄为“除创建响应外不再返回”；上传路由、后端中转 multipart、30 分钟 TTL 与复用 `attachment_legacy` storage source 均为未逐字规定的执行口径，且不改 schema 注释。
+> **#21（本刀保守工程裁定）**：合同未逐字定义 canonical 报名 wire 的 `preferences[].positionIds[]` 顺序如何落库、file 题最终附件 owner；固定按数组顺序派生从 1 开始的 `preferenceOrder`，最终 owner 固定 `registration-form-answer`。两者均可逆，不宣称为原合同明文。
 > **账本读面权限口径（维护者 2026-08-06 拍板）**：复用 `attendance.read.sheet`；合同 §6.11
 > 未规定，若日后要收紧需另立权限码 + 三处 seed spec 连坐。
 >
@@ -320,9 +321,11 @@
 > （含 feedback 资格窗），本刀只加 `terminated`；报名／邀请申请与真实 formVersion 绑定归第
 > 4 批。clone 的 operationKey 因 §10.3 闭集与存储均无落点，按缺口 #15 不接收、不伪造。
 
-> **第 4 批③（[#961](https://github.com/BA7IEE/srvf-nest-api/pull/961)，Form runtime / 一次性附件会话）**：managed Form 定义、draft/active 版本、初发/变更审核/clone 与 App detail 安全读面已接通；v3 proposal 把 canonical Form 纳入 stale hash，历史 v2 审批逐字兼容。附件会话只存 token SHA-256、创建响应明文仅一次；后端中转 multipart 固定 JPEG/PNG/WebP/PDF、10 MiB、单会话单附件和安全重放，不返回 provider signed upload URL 或内部存储字段。报名答案、报名 revision、提交时 consumed/绑定、资格/分配/候补/邀请消费均未实现。
+> **第 4 批③（[#961](https://github.com/BA7IEE/srvf-nest-api/pull/961)，Form runtime / 一次性附件会话）**：managed Form 定义、draft/active 版本、初发/变更审核/clone 与 App detail 安全读面已接通；v3 proposal 把 canonical Form 纳入 stale hash，历史 v2 审批逐字兼容。附件会话只存 token SHA-256、创建响应明文仅一次；后端中转 multipart 固定 JPEG/PNG/WebP/PDF、10 MiB、单会话单附件和安全重放，不返回 provider signed upload URL 或内部存储字段。
+
+> **第 4 批④（本分支，报名命令主链）**：App canonical `POST /api/app/v1/activities/:activityId/registrations` 已在 Activity 锁内完成 D-5 重验、Form/八题型答案、session/position、一次性附件与 immutable registration/participation revision 链；同 key+hash 在 consumed session 前安全重放，不同 hash `21003`，附件最终转内部 `registration-form-answer` owner。旧 App/Admin create 在 v1.1 live session 或 active Form 统一 `21038`，没有后台代报名/导入替代口；不变式不占容量、不建 Reservation。**后续 D 刀**仍需维护者拍板全局永久 `ActivityRegistration` 头唯一，不能改变既有“取消后可建第二头”的 E2E。
 >
-> **第 4 批验收回填**：AC-016 只登记完整 Form 读取已覆盖，答案提交校验仍阻塞；AC-017 继续 todo（三入口共享答案 validator 未实现）；AC-029 只登记会话创建/上传已覆盖，提交报名时绑定与换报名防串仍阻塞。部分完成不降低 todo 数。
+> **第 4 批验收回填**：AC-016、AC-029 已各有真实 canonical App E2E（答案/revision 与提交时附件绑定/防串）；AC-017 继续 todo（后台代报名与导入未接入，三入口共享 validator 未实现）。AC-018、AC-021、AC-022..028、ADV-005/014/017 仍 todo；本刀不宣称全局永久报名头唯一。
 
 - **合同**:[`archive/reviews/activity-business-overhaul-v1.1/`](../archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效
   (业务方案 / 详细开发文档 / 355 项追踪矩阵 / 修订说明),SHA256 入仓时原位校验全过。

@@ -1674,6 +1674,11 @@ export const BizCode = {
     message: '同一活动同一队员已有有效报名',
     httpStatus: HttpStatus.CONFLICT,
   },
+  ACTIVITY_REGISTRATION_OPERATION_KEY_CONFLICT: {
+    code: 21003,
+    message: '报名操作键与首次请求不一致',
+    httpStatus: HttpStatus.CONFLICT,
+  },
   ACTIVITY_REGISTRATION_STATUS_INVALID: {
     code: 21030,
     message: '报名记录当前状态不允许此操作',
@@ -1700,6 +1705,21 @@ export const BizCode = {
   ACTIVITY_POSITION_REQUIRED: {
     code: 21035,
     message: '该活动报名必须选择活动岗位',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  REGISTRATION_FORM_VERSION_INVALID: {
+    code: 21036,
+    message: '报名表版本不匹配或已失效',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  REGISTRATION_FORM_ANSWER_INVALID: {
+    code: 21037,
+    message: '报名表答案不合法',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED: {
+    code: 21038,
+    message: '该活动必须使用报名主链提交',
     httpStatus: HttpStatus.CONFLICT,
   },
 

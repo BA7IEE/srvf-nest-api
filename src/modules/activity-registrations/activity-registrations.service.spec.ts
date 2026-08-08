@@ -179,6 +179,8 @@ function makePrismaMock() {
     findMany: jest.fn().mockResolvedValue([]),
     findFirst: jest.fn().mockResolvedValue(null),
   };
+  const activitySession = { findFirst: jest.fn().mockResolvedValue(null) };
+  const registrationFormVersion = { findFirst: jest.fn().mockResolvedValue(null) };
   const member = {
     findFirst: jest.fn<Promise<MemberRow | null>, [unknown]>().mockResolvedValue(makeMemberRow()),
     findUnique: jest.fn<Promise<MemberRow | null>, [unknown]>().mockResolvedValue(makeMemberRow()),
@@ -201,6 +203,8 @@ function makePrismaMock() {
     activityRegistration,
     activity,
     activityPosition,
+    activitySession,
+    registrationFormVersion,
     member,
     memberProfile,
     user,
@@ -396,6 +400,25 @@ describe('ActivityRegistrationsService (characterization)', () => {
   });
 
   describe('duplicate / capacity guards (create)', () => {
+    it.each([
+      ['live session', 'activitySession'],
+      ['active Form', 'registrationFormVersion'],
+    ])('legacy create is fail-closed with 21038 when %s exists', async (_name, gate) => {
+      const prisma = makePrismaMock();
+      prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ capacity: null }));
+      if (gate === 'activitySession')
+        prisma.activitySession.findFirst.mockResolvedValue({ id: 'session-1' });
+      else prisma.registrationFormVersion.findFirst.mockResolvedValue({ id: 'form-1' });
+      const recorder = makeAuditRecorderMock();
+      const service = makeService(prisma, recorder, makeStateMachineMock(DENY_DECISION));
+
+      await expect(
+        service.create('act-1', { memberId: 'mem-1' }, makeCurrentUser(), META),
+      ).rejects.toEqual(new BizException(BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED));
+      expect(prisma.activityRegistration.create).not.toHaveBeenCalled();
+      expect(recorder.logCreate).not.toHaveBeenCalled();
+    });
+
     it('active duplicate → ACTIVITY_REGISTRATION_ALREADY_EXISTS;不写库 / 不审计', async () => {
       const prisma = makePrismaMock();
       const recorder = makeAuditRecorderMock();

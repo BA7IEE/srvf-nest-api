@@ -119,6 +119,12 @@ export interface RegistrationUploadAttachmentView {
   createdAt: Date;
 }
 
+/** Internal-only binding; never serialized by an HTTP controller or audit payload. */
+export interface RegistrationUploadSubmissionBinding {
+  sessionId: string;
+  attachmentId: string;
+}
+
 interface UploadConfirmContextBase {
   identity: AttachmentUploadStorageIdentity;
   checksum: string | null;
@@ -515,6 +521,179 @@ export class AttachmentsService {
     };
   }
 
+  /**
+   * Revalidates every file answer against the currently locked submission aggregate.  The
+   * returned IDs stay inside trusted services; neither this method nor its caller turns them into
+   * a response, exception, audit field, log line, token, key, URL, or locator.
+   */
+  async inspectRegistrationUploadsForSubmissionInTransactionTrusted(
+    tx: Prisma.TransactionClient,
+    input: {
+      activityId: string;
+      memberId: string;
+      formVersionId: string;
+      sessionIds: readonly string[];
+      now: Date;
+    },
+  ): Promise<RegistrationUploadSubmissionBinding[]> {
+    if (input.sessionIds.length === 0) return [];
+    if (new Set(input.sessionIds).size !== input.sessionIds.length) {
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
+    const sessions = await tx.$queryRaw<
+      Array<{
+        id: string;
+        activityId: string;
+        memberId: string;
+        formVersionId: string;
+        statusCode: string;
+        consumedAt: Date | null;
+        expiresAt: Date;
+      }>
+    >(Prisma.sql`
+      SELECT "id", "activityId", "memberId", "formVersionId", "statusCode", "consumedAt", "expiresAt"
+      FROM "RegistrationUploadSession"
+      WHERE "id" IN (${Prisma.join([...input.sessionIds])})
+      ORDER BY "id" ASC
+      FOR UPDATE
+    `);
+    if (sessions.length !== input.sessionIds.length) {
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
+    for (const session of sessions) {
+      if (
+        session.activityId !== input.activityId ||
+        session.memberId !== input.memberId ||
+        session.formVersionId !== input.formVersionId ||
+        session.statusCode !== 'active' ||
+        session.consumedAt !== null ||
+        session.expiresAt.getTime() <= input.now.getTime()
+      ) {
+        throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+      }
+    }
+
+    const attachments = await tx.attachment.findMany({
+      where: {
+        ownerType: 'registration-upload-session',
+        ownerId: { in: [...input.sessionIds] },
+      },
+      select: { id: true, ownerId: true, key: true },
+      orderBy: { id: 'asc' },
+    });
+    if (attachments.length !== sessions.length) {
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
+    const attachmentBySession = new Map<string, { id: string; key: string }>();
+    for (const attachment of attachments) {
+      if (attachmentBySession.has(attachment.ownerId)) {
+        throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+      }
+      attachmentBySession.set(attachment.ownerId, { id: attachment.id, key: attachment.key });
+    }
+    if (attachmentBySession.size !== sessions.length) {
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
+
+    const attachmentIds = attachments.map((attachment) => attachment.id);
+    const availableObjects = await tx.storageObject.findMany({
+      where: { key: { in: attachments.map((attachment) => attachment.key) }, state: 'available' },
+      select: { key: true },
+    });
+    if (availableObjects.length !== attachments.length) {
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
+    const alreadyBound = await tx.registrationFormAnswer.findFirst({
+      where: { attachmentId: { in: attachmentIds } },
+      select: { id: true },
+    });
+    if (alreadyBound) throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+
+    return sessions.map((session) => ({
+      sessionId: session.id,
+      attachmentId: attachmentBySession.get(session.id)!.id,
+    }));
+  }
+
+  /**
+   * Finalizes the single-use upload state after answer rows exist.  Every guard is repeated in
+   * the same transaction so an accidental caller/order change cannot attach a foreign, expired,
+   * revoked, consumed, unavailable, or already-bound file.
+   */
+  async consumeRegistrationUploadsForFormAnswersInTransactionTrusted(
+    tx: Prisma.TransactionClient,
+    input: {
+      activityId: string;
+      memberId: string;
+      formVersionId: string;
+      bindings: readonly (RegistrationUploadSubmissionBinding & { answerId: string })[];
+      now: Date;
+    },
+  ): Promise<void> {
+    for (const binding of input.bindings) {
+      const attachment = await tx.attachment.findFirst({
+        where: {
+          id: binding.attachmentId,
+          ownerType: 'registration-upload-session',
+          ownerId: binding.sessionId,
+        },
+        select: { id: true, key: true },
+      });
+      const session = await tx.registrationUploadSession.findFirst({
+        where: {
+          id: binding.sessionId,
+          activityId: input.activityId,
+          memberId: input.memberId,
+          formVersionId: input.formVersionId,
+          statusCode: 'active',
+          consumedAt: null,
+          expiresAt: { gt: input.now },
+        },
+        select: { id: true },
+      });
+      const available = attachment
+        ? await tx.storageObject.findFirst({
+            where: { key: attachment.key, state: 'available' },
+            select: { key: true },
+          })
+        : null;
+      const answer = await tx.registrationFormAnswer.findFirst({
+        where: { id: binding.answerId, attachmentId: binding.attachmentId },
+        select: { id: true },
+      });
+      const alreadyBound = await tx.registrationFormAnswer.findFirst({
+        where: { attachmentId: binding.attachmentId, id: { not: binding.answerId } },
+        select: { id: true },
+      });
+      if (!attachment || !session || !available || !answer || alreadyBound) {
+        throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+      }
+      const transferred = await tx.attachment.updateMany({
+        where: {
+          id: binding.attachmentId,
+          ownerType: 'registration-upload-session',
+          ownerId: binding.sessionId,
+        },
+        data: { ownerType: 'registration-form-answer', ownerId: binding.answerId },
+      });
+      const consumed = await tx.registrationUploadSession.updateMany({
+        where: {
+          id: binding.sessionId,
+          activityId: input.activityId,
+          memberId: input.memberId,
+          formVersionId: input.formVersionId,
+          statusCode: 'active',
+          consumedAt: null,
+          expiresAt: { gt: input.now },
+        },
+        data: { statusCode: 'consumed', consumedAt: input.now },
+      });
+      if (transferred.count !== 1 || consumed.count !== 1) {
+        throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+      }
+    }
+  }
+
   private issueRegistrationUploadContext(state: RegistrationUploadContextState): object {
     const context = Object.freeze(Object.create(null)) as object;
     this.registrationUploadContexts.set(context, state);
@@ -754,7 +933,7 @@ export class AttachmentsService {
       select: attachmentSelect,
     });
     if (!found) throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
-    if (isInternalRegistrationUploadOwner(found.ownerType)) {
+    if (isInternalRegistrationAttachmentOwner(found.ownerType)) {
       throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
     }
     return found;
@@ -802,7 +981,7 @@ export class AttachmentsService {
       throw error;
     }
 
-    if (isInternalRegistrationUploadOwner(claims.ownerType)) {
+    if (isInternalRegistrationAttachmentOwner(claims.ownerType)) {
       throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
     }
 
@@ -1016,7 +1195,7 @@ export class AttachmentsService {
     user: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttachmentResponseDto> {
-    if (isInternalRegistrationUploadOwner(dto.ownerType)) {
+    if (isInternalRegistrationAttachmentOwner(dto.ownerType)) {
       throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
     }
     // 1. ownerType 双层校验(返 ownerTable;PR #6c 进 audit extra)
@@ -1110,14 +1289,14 @@ export class AttachmentsService {
     user: CurrentUserPayload,
   ): Promise<PageResultDto<AttachmentResponseDto>> {
     const { page, pageSize, ownerType, ownerId, uploadedBy, mime, accessLevel, tags } = query;
-    if (ownerType !== undefined && isInternalRegistrationUploadOwner(ownerType)) {
+    if (ownerType !== undefined && isInternalRegistrationAttachmentOwner(ownerType)) {
       return { items: [], total: 0, page, pageSize };
     }
 
     const where: Prisma.AttachmentWhereInput = {
       ...(ownerType !== undefined
         ? { ownerType }
-        : { ownerType: { not: 'registration-upload-session' } }),
+        : { ownerType: { notIn: ['registration-upload-session', 'registration-form-answer'] } }),
       ...(ownerId !== undefined ? { ownerId } : {}),
       ...(uploadedBy !== undefined ? { uploadedBy } : {}),
       ...(mime !== undefined ? { mime } : {}),
@@ -1290,7 +1469,7 @@ export class AttachmentsService {
       }
       throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
     }
-    if (isInternalRegistrationUploadOwner(row.ownerType)) {
+    if (isInternalRegistrationAttachmentOwner(row.ownerType)) {
       throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
     }
 
@@ -1325,7 +1504,7 @@ export class AttachmentsService {
     auditMeta: AuditMeta,
     missingContentBiz: typeof BizCode.CONTENT_NOT_FOUND | typeof BizCode.ATTACHMENT_NOT_FOUND,
   ): Promise<AttachmentResponseDto> {
-    if (isInternalRegistrationUploadOwner(row.ownerType)) {
+    if (isInternalRegistrationAttachmentOwner(row.ownerType)) {
       throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
     }
     // 判 delete 权限(写路径;失败 → 30100)
@@ -1404,7 +1583,7 @@ export class AttachmentsService {
     query: ListAttachmentsByOwnerQueryDto,
     user: CurrentUserPayload,
   ): Promise<PageResultDto<AttachmentResponseDto>> {
-    if (isInternalRegistrationUploadOwner(query.ownerType)) {
+    if (isInternalRegistrationAttachmentOwner(query.ownerType)) {
       return { items: [], total: 0, page: query.page, pageSize: query.pageSize };
     }
     // 1. ownerType 双层校验(避免 enum 之外的字符串被传)
@@ -1454,7 +1633,7 @@ export class AttachmentsService {
     const { page, pageSize } = query;
     const where: Prisma.AttachmentWhereInput = {
       uploadedBy: user.id,
-      ownerType: { not: 'registration-upload-session' },
+      ownerType: { notIn: ['registration-upload-session', 'registration-form-answer'] },
     };
 
     const rows = await this.prisma.attachment.findMany({
@@ -1484,7 +1663,7 @@ export class AttachmentsService {
     row: SafeAttachment,
     certificateMemberById?: ReadonlyMap<string, string>,
   ): Promise<boolean> {
-    if (isInternalRegistrationUploadOwner(row.ownerType)) return false;
+    if (isInternalRegistrationAttachmentOwner(row.ownerType)) return false;
     if (!ATTACHMENT_OWNER_TYPES.includes(row.ownerType as AttachmentOwnerType)) {
       // 数据库行 ownerType 不在 enum 内(理论上不该发生;防御性返 false)
       return false;
@@ -1514,7 +1693,7 @@ export class AttachmentsService {
     dto: GenerateUploadUrlDto,
     user: CurrentUserPayload,
   ): Promise<UploadUrlResponseDto> {
-    if (isInternalRegistrationUploadOwner(dto.ownerType)) {
+    if (isInternalRegistrationAttachmentOwner(dto.ownerType)) {
       throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
     }
     // === Step 1-7:沿现有 create() 校验链(§6.2 9 步) ===
@@ -1668,8 +1847,8 @@ function isContentAttachmentOwnerType(ownerType: string): ownerType is ContentAt
   return ownerType === 'content-image' || ownerType === 'content-file';
 }
 
-function isInternalRegistrationUploadOwner(ownerType: string): boolean {
-  return ownerType === 'registration-upload-session';
+function isInternalRegistrationAttachmentOwner(ownerType: string): boolean {
+  return ownerType === 'registration-upload-session' || ownerType === 'registration-form-answer';
 }
 
 function requireUploadTokenExpiry(identity: AttachmentUploadStorageIdentity): number {

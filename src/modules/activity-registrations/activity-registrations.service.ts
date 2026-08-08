@@ -532,6 +532,28 @@ export class ActivityRegistrationsService {
     }
   }
 
+  // v1.1 canonical command owns Form answers, permanent participation identities and final file
+  // binding.  Legacy App/Admin creation remains byte-for-byte available for old activities, but it
+  // must not create a bypass once either v1.1 runtime prerequisite is live.
+  private async assertLegacyRegistrationFlowAllowed(
+    activityId: string,
+    tx: PrismaTx,
+  ): Promise<void> {
+    const [liveSession, activeForm] = await Promise.all([
+      tx.activitySession.findFirst({
+        where: { activityId, deletedAt: null, statusCode: 'scheduled' },
+        select: { id: true },
+      }),
+      tx.registrationFormVersion.findFirst({
+        where: { activityId, statusCode: 'active' },
+        select: { id: true },
+      }),
+    ]);
+    if (liveSession || activeForm) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED);
+    }
+  }
+
   private async assertGenderRequirement(
     memberId: string,
     genderRequirementCode: string | null,
@@ -927,6 +949,7 @@ export class ActivityRegistrationsService {
     await this.assertCanOrThrow(currentUser, 'activity-registration.create.record');
     return this.prisma.$transaction(async (tx) => {
       await this.lockActivityForRegistrationCreate(activityId, tx);
+      await this.assertLegacyRegistrationFlowAllowed(activityId, tx);
       const act = await this.assertActivityRegistrable(activityId, 'admin', tx);
       await this.assertMemberActiveSnapshot(dto.memberId, tx);
       await this.assertGenderRequirement(dto.memberId, act.genderRequirementCode, tx);
@@ -1003,6 +1026,7 @@ export class ActivityRegistrationsService {
     return this.prisma.$transaction(async (tx) => {
       const memberId = await this.resolveUserMemberIdOrThrow(currentUser.id, tx);
       await this.lockActivityForRegistrationCreate(activityId, tx);
+      await this.assertLegacyRegistrationFlowAllowed(activityId, tx);
       const act = await this.assertActivityRegistrable(activityId, 'self', tx);
       await this.assertMemberActiveSnapshot(memberId, tx);
       await this.assertGenderRequirement(memberId, act.genderRequirementCode, tx);

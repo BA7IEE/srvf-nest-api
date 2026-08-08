@@ -215,6 +215,7 @@ function makePrismaMock() {
     findMany: jest.fn<Promise<AttachmentRow[]>, [unknown]>(),
     create: jest.fn<Promise<AttachmentRow>, [unknown]>(),
     update: jest.fn<Promise<AttachmentRow>, [unknown]>(),
+    updateMany: jest.fn<Promise<{ count: number }>, [unknown]>(),
     delete: jest.fn<Promise<AttachmentRow>, [unknown]>(),
     count: jest.fn<Promise<number>, [unknown]>(),
   };
@@ -230,6 +231,13 @@ function makePrismaMock() {
       resourceId: 'att-1',
       deleteRequestedAt: null,
     }),
+    findFirst: jest.fn<Promise<unknown>, [unknown]>(),
+    findMany: jest.fn<Promise<unknown[]>, [unknown]>(),
+  };
+  const registrationFormAnswer = { findFirst: jest.fn<Promise<unknown>, [unknown]>() };
+  const registrationUploadSession = {
+    findFirst: jest.fn<Promise<unknown>, [unknown]>(),
+    updateMany: jest.fn<Promise<{ count: number }>, [unknown]>(),
   };
   const member = { findFirst: jest.fn<Promise<{ id: string } | null>, [unknown]>() };
   const certificate = {
@@ -248,6 +256,8 @@ function makePrismaMock() {
   const prisma = {
     attachment,
     storageObject,
+    registrationFormAnswer,
+    registrationUploadSession,
     attachmentTypeConfig,
     attachmentMimeConfig,
     attachmentSizeLimitConfig,
@@ -542,6 +552,18 @@ describe('AttachmentsService (characterization)', () => {
       );
     });
 
+    it('registration-form-answer final owner is fail-closed on generic detail surface', async () => {
+      const prisma = makePrismaMock();
+      prisma.attachment.findFirst.mockResolvedValue(
+        makeAttachmentRow({ ownerType: 'registration-form-answer', ownerId: 'answer-1' }),
+      );
+      const service = makeService(prisma);
+
+      await expect(service.getById('att-1', makeCurrentUser())).rejects.toEqual(
+        new BizException(BizCode.ATTACHMENT_NOT_FOUND),
+      );
+    });
+
     it('member owner + 本人 → action=attachment.view.member.self,resource={member,ownerId}', async () => {
       const prisma = makePrismaMock();
       const rbac = makeRbacMock(true);
@@ -573,6 +595,130 @@ describe('AttachmentsService (characterization)', () => {
         'attachment.view.activity',
         undefined,
       );
+    });
+  });
+
+  describe('registration submission trusted binding', () => {
+    it('requires matching active session, one AVAILABLE attachment and no prior answer before exposing an internal binding', async () => {
+      const prisma = makePrismaMock();
+      prisma.$queryRaw.mockResolvedValue([
+        {
+          id: 'session-1',
+          activityId: 'activity-1',
+          memberId: 'member-1',
+          formVersionId: 'form-1',
+          statusCode: 'active',
+          consumedAt: null,
+          expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+        },
+      ]);
+      prisma.attachment.findMany.mockResolvedValue([
+        makeAttachmentRow({
+          id: 'attachment-1',
+          ownerType: 'registration-upload-session',
+          ownerId: 'session-1',
+          key: 'attachments/test/2099/01/01/abcdefghijklmnop.png',
+        }),
+      ]);
+      prisma.storageObject.findMany.mockResolvedValue([
+        { key: 'attachments/test/2099/01/01/abcdefghijklmnop.png' },
+      ]);
+      prisma.registrationFormAnswer.findFirst.mockResolvedValue(null);
+      const service = makeService(prisma);
+
+      await expect(
+        service.inspectRegistrationUploadsForSubmissionInTransactionTrusted(prisma as never, {
+          activityId: 'activity-1',
+          memberId: 'member-1',
+          formVersionId: 'form-1',
+          sessionIds: ['session-1'],
+          now: new Date('2098-01-01T00:00:00.000Z'),
+        }),
+      ).resolves.toEqual([{ sessionId: 'session-1', attachmentId: 'attachment-1' }]);
+    });
+
+    it.each([
+      ['another member', { memberId: 'member-2' }],
+      ['another activity', { activityId: 'activity-2' }],
+      ['another Form version', { formVersionId: 'form-2' }],
+    ])('rejects a session belonging to %s before any attachment read', async (_label, mismatch) => {
+      const prisma = makePrismaMock();
+      prisma.$queryRaw.mockResolvedValue([
+        {
+          id: 'session-1',
+          activityId: 'activity-1',
+          memberId: 'member-1',
+          formVersionId: 'form-1',
+          statusCode: 'active',
+          consumedAt: null,
+          expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+          ...mismatch,
+        },
+      ]);
+      const service = makeService(prisma);
+
+      await expect(
+        service.inspectRegistrationUploadsForSubmissionInTransactionTrusted(prisma as never, {
+          activityId: 'activity-1',
+          memberId: 'member-1',
+          formVersionId: 'form-1',
+          sessionIds: ['session-1'],
+          now: new Date('2098-01-01T00:00:00.000Z'),
+        }),
+      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
+      expect(prisma.attachment.findMany).not.toHaveBeenCalled();
+    });
+
+    it('transfers the final owner and consumes the exact active session in one trusted transaction', async () => {
+      const prisma = makePrismaMock();
+      prisma.attachment.findFirst.mockResolvedValue(
+        makeAttachmentRow({
+          id: 'attachment-1',
+          key: 'attachments/test/2099/01/01/abcdefghijklmnop.png',
+          ownerType: 'registration-upload-session',
+          ownerId: 'session-1',
+        }),
+      );
+      prisma.registrationUploadSession.findFirst.mockResolvedValue({ id: 'session-1' });
+      prisma.storageObject.findFirst.mockResolvedValue({
+        key: 'attachments/test/2099/01/01/abcdefghijklmnop.png',
+      });
+      prisma.registrationFormAnswer.findFirst
+        .mockResolvedValueOnce({ id: 'answer-1' })
+        .mockResolvedValueOnce(null);
+      prisma.attachment.updateMany.mockResolvedValue({ count: 1 });
+      prisma.registrationUploadSession.updateMany.mockResolvedValue({ count: 1 });
+      const service = makeService(prisma);
+
+      await expect(
+        service.consumeRegistrationUploadsForFormAnswersInTransactionTrusted(prisma as never, {
+          activityId: 'activity-1',
+          memberId: 'member-1',
+          formVersionId: 'form-1',
+          bindings: [
+            { sessionId: 'session-1', attachmentId: 'attachment-1', answerId: 'answer-1' },
+          ],
+          now: new Date('2098-01-01T00:00:00.000Z'),
+        }),
+      ).resolves.toBeUndefined();
+      expect(prisma.attachment.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { ownerType: 'registration-form-answer', ownerId: 'answer-1' },
+        }),
+      );
+      const updateCalls = prisma.registrationUploadSession.updateMany.mock
+        .calls as unknown as readonly [unknown][];
+      expect(updateCalls[0]?.[0]).toMatchObject({
+        where: {
+          id: 'session-1',
+          activityId: 'activity-1',
+          memberId: 'member-1',
+          formVersionId: 'form-1',
+          statusCode: 'active',
+          consumedAt: null,
+        },
+        data: { statusCode: 'consumed' },
+      });
     });
   });
 

@@ -72,4 +72,23 @@ describe('BizCode', () => {
     const keys = entries.map(([key]) => key);
     expect(new Set(keys).size).toBe(keys.length);
   });
+
+  it('报名命令主链 BizCode 固定映射', () => {
+    expect(BizCode.ACTIVITY_REGISTRATION_OPERATION_KEY_CONFLICT).toMatchObject({
+      code: 21003,
+      httpStatus: HttpStatus.CONFLICT,
+    });
+    expect(BizCode.REGISTRATION_FORM_VERSION_INVALID).toMatchObject({
+      code: 21036,
+      httpStatus: HttpStatus.CONFLICT,
+    });
+    expect(BizCode.REGISTRATION_FORM_ANSWER_INVALID).toMatchObject({
+      code: 21037,
+      httpStatus: HttpStatus.BAD_REQUEST,
+    });
+    expect(BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED).toMatchObject({
+      code: 21038,
+      httpStatus: HttpStatus.CONFLICT,
+    });
+  });
 });

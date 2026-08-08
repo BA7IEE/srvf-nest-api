@@ -130,6 +130,41 @@ export class ActivityRegistrationAuditRecorder {
     });
   }
 
+  /**
+   * Canonical v1.1 command audit.  The immutable answer/file payload deliberately never leaves
+   * the registration transaction: this event records only the revision, source, cardinalities and
+   * canonical request hash required to correlate a retry.
+   */
+  async logCommandCreate(args: {
+    registrationId: string;
+    actorUserId: string;
+    actorRoleSnap: Role;
+    revision: number;
+    source: 'self';
+    answerCount: number;
+    preferenceCount: number;
+    requestHash: string;
+    auditMeta: AuditMeta;
+    tx: PrismaTx;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: 'registration.create',
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: args.registrationId,
+      meta: args.auditMeta,
+      extra: {
+        revision: args.revision,
+        source: args.source,
+        answerCount: args.answerCount,
+        preferenceCount: args.preferenceCount,
+        requestHash: args.requestHash,
+      },
+      tx: args.tx,
+    });
+  }
+
   // ============ logReview(approve / reject / reopen 共用) ============
   // event: `registration.review`;
   // `before` = `toAuditSnapshot(before)`;`after` = `toAuditSnapshot(after)`;
