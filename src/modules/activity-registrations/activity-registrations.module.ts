@@ -28,6 +28,7 @@ import { AppRegistrationUploadSessionsController } from './controllers/app-regis
 import { AppActivityRegistrationsController } from './controllers/app-activity-registrations.controller';
 import { RegistrationCommandService } from './registration-command.service';
 import { RegistrationUploadSessionService } from './registration-upload-session.service';
+import { CapacityReservationService } from './capacity-reservation.service';
 
 // V2 批次 6 PR #5(D6 v1.1 §8 / 第二波第三步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activity-registrations 6 处写操作(create / createMy / approve / reject / cancelAdmin / cancelMy)
@@ -85,6 +86,7 @@ import { RegistrationUploadSessionService } from './registration-upload-session.
     AppManagedActivityRegistrationsService,
     RegistrationUploadSessionService,
     RegistrationCommandService,
+    CapacityReservationService,
   ],
 })
 export class ActivityRegistrationsModule {}
