@@ -29,6 +29,11 @@ import { AppActivityRegistrationsController } from './controllers/app-activity-r
 import { RegistrationCommandService } from './registration-command.service';
 import { RegistrationUploadSessionService } from './registration-upload-session.service';
 import { CapacityReservationService } from './capacity-reservation.service';
+import { ActivityInvitationAuditRecorder } from './activity-invitation-audit-recorder';
+import { ActivityInvitationService } from './activity-invitation.service';
+import { ActivityVisitorService } from './activity-visitor.service';
+import { AppManagedActivityGuestsController } from './controllers/app-managed-activity-guests.controller';
+import { AppMyActivityInvitationsController } from './controllers/app-my-activity-invitations.controller';
 
 // V2 批次 6 PR #5(D6 v1.1 §8 / 第二波第三步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activity-registrations 6 处写操作(create / createMy / approve / reject / cancelAdmin / cancelMy)
@@ -74,6 +79,8 @@ import { CapacityReservationService } from './capacity-reservation.service';
     AppManagedActivityRegistrationsController,
     AppRegistrationUploadSessionsController,
     AppActivityRegistrationsController,
+    AppManagedActivityGuestsController,
+    AppMyActivityInvitationsController,
   ],
   providers: [
     ActivityRegistrationsService,
@@ -87,6 +94,9 @@ import { CapacityReservationService } from './capacity-reservation.service';
     RegistrationUploadSessionService,
     RegistrationCommandService,
     CapacityReservationService,
+    ActivityInvitationAuditRecorder,
+    ActivityInvitationService,
+    ActivityVisitorService,
   ],
 })
 export class ActivityRegistrationsModule {}

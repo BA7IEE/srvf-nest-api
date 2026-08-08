@@ -878,6 +878,101 @@ describe('Activity batch3 slice3 lifecycle and member read surfaces', () => {
     }
   });
 
+  it('treats only unexpired pending invitations as visibility grants and exposes only the caller own invitation summaries', async () => {
+    const viewer = await createMember('invitation-expiry-viewer');
+    const other = await createMember('invitation-expiry-other');
+    const expiredOnly = await createActivity({
+      title: '过期 pending 不可见',
+      statusCode: 'published',
+      visibilityCode: 'invitation',
+      startAt: FUTURE_START,
+      endAt: FUTURE_END,
+    });
+    const accepted = await createActivity({
+      title: 'accepted 保持可见',
+      statusCode: 'published',
+      visibilityCode: 'invitation',
+      startAt: FUTURE_START,
+      endAt: FUTURE_END,
+    });
+    const internal = await createActivity({
+      title: '详情仅返本人邀请',
+      statusCode: 'published',
+      visibilityCode: 'internal',
+      startAt: FUTURE_START,
+      endAt: FUTURE_END,
+    });
+    const expiredAt = new Date('2020-01-01T00:00:00.000Z');
+    await prisma.activityInvitation.createMany({
+      data: [
+        {
+          activityId: expiredOnly.id,
+          memberId: viewer.memberId,
+          statusCode: 'pending',
+          expiresAt: expiredAt,
+        },
+        {
+          activityId: accepted.id,
+          memberId: viewer.memberId,
+          statusCode: 'accepted',
+          expiresAt: expiredAt,
+          respondedAt: new Date('2019-12-31T00:00:00.000Z'),
+        },
+        {
+          activityId: internal.id,
+          memberId: viewer.memberId,
+          statusCode: 'pending',
+          expiresAt: expiredAt,
+        },
+        {
+          activityId: internal.id,
+          memberId: other.memberId,
+          statusCode: 'pending',
+          expiresAt: new Date('2099-12-31T00:00:00.000Z'),
+        },
+      ],
+    });
+
+    const list = await request(httpServer(app))
+      .get('/api/app/v1/activities?page=1&pageSize=100')
+      .set('Authorization', viewer.auth);
+    const ids = (list.body.data.items as Array<{ id: string }>).map((item) => item.id);
+    expect(ids).not.toContain(expiredOnly.id);
+    expect(ids).toContain(accepted.id);
+
+    expectBizError(
+      await request(httpServer(app))
+        .get(`/api/app/v1/activities/${expiredOnly.id}`)
+        .set('Authorization', viewer.auth),
+      BizCode.ACTIVITY_NOT_FOUND,
+    );
+
+    const acceptedDetail = await request(httpServer(app))
+      .get(`/api/app/v1/activities/${accepted.id}`)
+      .set('Authorization', viewer.auth);
+    expect(acceptedDetail.status).toBe(200);
+    expect(acceptedDetail.body.data.myInvitations).toEqual([
+      expect.objectContaining({
+        scope: 'activity',
+        status: 'accepted',
+        expiresAt: expiredAt.toISOString(),
+      }),
+    ]);
+
+    const internalDetail = await request(httpServer(app))
+      .get(`/api/app/v1/activities/${internal.id}`)
+      .set('Authorization', viewer.auth);
+    expect(internalDetail.status).toBe(200);
+    expect(internalDetail.body.data.myInvitations).toEqual([
+      expect.objectContaining({
+        scope: 'activity',
+        status: 'expired',
+        expiresAt: expiredAt.toISOString(),
+      }),
+    ]);
+    expect(JSON.stringify(internalDetail.body.data.myInvitations)).not.toContain(other.memberId);
+  });
+
   it('applies q/type/date/organization inside the same published-and-visible directory fence', async () => {
     const viewer = await createMember('directory-filters');
     const otherOrganization = await prisma.organization.create({

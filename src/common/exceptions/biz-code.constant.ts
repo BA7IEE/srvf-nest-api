@@ -1660,6 +1660,26 @@ export const BizCode = {
     message: '活动容量与当前占用不一致',
     httpStatus: HttpStatus.CONFLICT,
   },
+  ACTIVITY_INVITATION_NOT_FOUND: {
+    code: 20148,
+    message: '活动邀请不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_INVITATION_STATUS_INVALID: {
+    code: 20149,
+    message: '活动邀请当前状态不允许此操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_INVITATION_ALREADY_PENDING: {
+    code: 20150,
+    message: '该活动范围内已有未过期的待处理邀请',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_INVITATION_OPERATION_KEY_CONFLICT: {
+    code: 20151,
+    message: '相同操作标识已用于不同的邀请拒绝内容,请更换操作标识',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。

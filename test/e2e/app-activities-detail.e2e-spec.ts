@@ -41,6 +41,7 @@ const APP_DETAIL_KEYS = [
   'genderRequirementCode',
   'id',
   'location',
+  'myInvitations',
   'passCount',
   'phase',
   'registrationDeadline',
