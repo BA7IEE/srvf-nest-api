@@ -5290,10 +5290,8 @@ model ActivityAllocationBatch {
 //                              评分和 tie-break」指向逐规则明细,结构化存放;
 //                              纯文本亦是合法 JSON,不损失表达力。
 //
-// ⚠️ `resultCode` **刻意不落闭集 CHECK**:§3.11 说了"最终结果"但**没给取值集**
-//    (沿④不自行发明;第四刀对 ActivityBatchJobItem.statusCode 同样处置)。
-//    已用「任意取值必须放行 + 本表零 resultCode CHECK」两条 e2e 把**合同缺口**
-//    钉成会变红的判据。
+// `resultCode` 保持可空:preparing 期尚未形成结果。维护者 2026-08-07 对缺口⑤拍板，
+// 非空仅 allocated / waitlisted / not_selected；第 80 migration 以 CHECK 落库。
 //
 // 🔴 **刻意不装 append-only trigger**,理由不止一条先例:
 //    ① 先例:合同这里说的是「结果 **committed 后**不可改」,**没有**像 §3.23.8
@@ -5309,9 +5307,8 @@ model ActivityAllocationBatch {
 //    ⇒ 用两条会变红的 e2e 钉死"刻意":①preparing 期 UPDATE 必须放行
 //       ②本表零 trigger。
 //
-// ⚠️ **刻意不建** `(allocationBatchId, participationIdentityId)` unique:
-//    §3.11 与 §11.3 都没有给本表任何唯一约束(④)。已用一条"同批次同 identity
-//    第二行必须放行"的 e2e 把"刻意不建"钉成判据 —— 哪天有人顺手补上会立刻变红。
+// 同一 `(allocationBatchId, participationIdentityId)` 永久唯一(维护者 2026-08-07
+// 对缺口⑤拍板)。两键均 NOT NULL，普通 unique 即可，不需要 NULLS NOT DISTINCT。
 model ActivityAllocationCandidate {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -5333,6 +5330,7 @@ model ActivityAllocationCandidate {
 
   // §11.4 明写「候补排名由 AllocationCandidate **可索引 rank** 读取,
   // 不在每次列表对全队列重新排序」⇒ 这条索引是合同点名的,不是盲加。
+  @@unique([allocationBatchId, participationIdentityId], map: "activity_allocation_candidate_batch_identity_key")
   @@index([allocationBatchId, waitlistRank], map: "activity_allocation_candidate_batch_rank_idx")
   @@index([allocationBatchId], map: "activity_allocation_candidate_batch_idx")
   @@index([participationIdentityId], map: "activity_allocation_candidate_identity_idx")
@@ -5361,8 +5359,8 @@ model ActivityAllocationCandidate {
 //                            合同在同一节里对闭集字段写的是 `modeCode`、对本列写的是
 //                            `fallbackMode`,这个区别照抄)
 //
-// ⚠️ `scopeTypeCode` 与 `fallbackMode` 均**刻意不落闭集 CHECK**:§3.11 一个取值都没给
-//    (④)。已列为合同缺口,待补定义后由行为批次补 CHECK。
+// 维护者 2026-08-07 对缺口⑤拍板：scope 沿 §3.10 容量桶闭集；fallback 仅释放公共池
+// 或到期作废，默认释放公共池。第 80 migration 以 CHECK 和 DB default 落库。
 model ActivityReservedQuotaGroup {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -5370,6 +5368,7 @@ model ActivityReservedQuotaGroup {
 
   activityId String // 聚合根(§3.11「释放到公共池时走 Activity 锁」)
 
+  // activity_person / session_participation / position_participation / reserve_group
   // 多态 scope,沿 §3.10 ActivityCapacityBucket 同一形状 ⇒ scopeId 不加 FK。
   scopeTypeCode String
   scopeId       String
@@ -5378,7 +5377,7 @@ model ActivityReservedQuotaGroup {
 
   capacity     Int? // null 不限;有值 >= 1
   releaseAt    DateTime
-  fallbackMode String
+  fallbackMode String   @default("release_to_public_pool")
 
   activity             Activity                      @relation(fields: [activityId], references: [id], onDelete: Restrict)
   qualificationRuleSet ActivityQualificationRuleSet? @relation(fields: [qualificationRuleSetId], references: [id], onDelete: Restrict)

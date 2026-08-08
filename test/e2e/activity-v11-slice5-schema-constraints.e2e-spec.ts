@@ -5,8 +5,8 @@ import { PrismaService } from '../../src/database/prisma.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
-// 活动改造 v1.1 —— 第 1 批**第五刀**(2026-08-04;第 75 migration
-// `20260804100000_activity_v11_slice5_allocation_waitlist_reserved_quota`)。
+// 活动改造 v1.1 —— 第 1 批**第五刀**(第 75 migration)与第 4 批缺口⑤
+// (第 80 migration `20260808133500_activity_v11_batch4_allocation_contract_guards`)。
 // 合同:docs/archive/reviews/activity-business-overhaul-v1.1/
 //       SRVF_活动业务全流程改造_详细开发文档_v1.1.md §3.11
 //
@@ -46,7 +46,7 @@ interface RawDbError {
   message: string;
 }
 
-describe('活动改造 v1.1 第 1 批第五刀 schema 约束(第 75 migration)', () => {
+describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约束(第 75 / 80 migration)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
@@ -221,12 +221,12 @@ describe('活动改造 v1.1 第 1 批第五刀 schema 约束(第 75 migration)',
     } = {},
   ) => {
     const v = {
-      scopeTypeCode: 'session',
+      scopeTypeCode: 'session_participation',
       scopeId: sessionId,
       qualificationRuleSetId: null as string | null,
       capacity: null as number | null,
       releaseAt: SESSION_START as string | null,
-      fallbackMode: 'release_to_public',
+      fallbackMode: 'release_to_public_pool',
       ...o,
     };
     return `INSERT INTO "ActivityReservedQuotaGroup"
@@ -420,6 +420,33 @@ describe('活动改造 v1.1 第 1 批第五刀 schema 约束(第 75 migration)',
         {
           sqlState: '23505',
           key: 'Key ("registrationRevisionId", "sessionId", "positionId")',
+        },
+      );
+    });
+
+    it('preferenceOrder 从 1 起:1 / 2 放行，0 / 负数被精确 CHECK 拒绝', async () => {
+      await expectAccepted(preferenceSql('p-one', { preferenceOrder: 1, positionId }));
+      await expectAccepted(preferenceSql('p-two', { preferenceOrder: 2, positionId: positionId2 }));
+      await expectRejected(
+        preferenceSql('p-zero', {
+          registrationRevisionId: registrationRevisionId2,
+          preferenceOrder: 0,
+          positionId,
+        }),
+        {
+          sqlState: '23514',
+          constraint: 'activity_position_preference_order_one_based_check',
+        },
+      );
+      await expectRejected(
+        preferenceSql('p-negative', {
+          registrationRevisionId: registrationRevisionId2,
+          preferenceOrder: -1,
+          positionId: positionId2,
+        }),
+        {
+          sqlState: '23514',
+          constraint: 'activity_position_preference_order_one_based_check',
         },
       );
     });
@@ -636,7 +663,7 @@ describe('活动改造 v1.1 第 1 批第五刀 schema 约束(第 75 migration)',
   });
 
   // ==========================================================================
-  // ③ §3.11 ActivityAllocationCandidate:合同只给散文 ⇒ 大量"刻意不做"
+  // ③ §3.11 ActivityAllocationCandidate:结果闭集与同批次 identity 唯一
   // ==========================================================================
   describe('§3.11 ActivityAllocationCandidate 约束与刻意不做', () => {
     it('立正对照:最小行(七个可空列全 NULL)与满行都必须能进', async () => {
@@ -646,13 +673,18 @@ describe('活动改造 v1.1 第 1 批第五刀 schema 约束(第 75 migration)',
           allocationBatchId: 'batch-b',
           qualificationScore: 87.5,
           lotteryOrder: 7,
-          resultCode: 'pass',
+          resultCode: 'allocated',
           waitlistRank: 3,
           explanation: '{"rules":[{"code":"grade","score":40}]}',
         }),
       );
       // 纯文本也是合法 JSON —— explanation 取 Json 不损失"就想存一句话"的表达力
-      await expectAccepted(candidateSql('c-text', { explanation: '"名额已满,进入候补"' }));
+      await expectAccepted(
+        candidateSql('c-text', {
+          participationIdentityId: identityId2,
+          explanation: '"名额已满,进入候补"',
+        }),
+      );
     });
 
     it('两条外键都是真外键(批次 / 参与身份)', async () => {
@@ -672,7 +704,7 @@ describe('活动改造 v1.1 第 1 批第五刀 schema 约束(第 75 migration)',
       expect(err!.sqlState).toBe('23502');
     });
 
-    // ---- 以下四条把"刻意不做"钉成会变红的判据 ----
+    // ---- 以下两条继续把不应落 DB 的 append-only 语义钉成会变红的判据 ----
 
     it('🔴 刻意不装 append-only trigger:preparing 期 UPDATE **必须放行**', async () => {
       // 这不是"忘了装",是装上就**错**:批次 preparing 期正要往候选行里写
@@ -707,33 +739,51 @@ describe('活动改造 v1.1 第 1 批第五刀 schema 约束(第 75 migration)',
       // 与第四刀「日合计求和 trigger 在并发下骗人」同型。
     });
 
-    it('🔴 resultCode 无闭集(合同缺口):任意取值必须放行,且本表零 resultCode CHECK', async () => {
-      await expectAccepted(candidateSql('c-any', { resultCode: '完全不在任何闭集里的取值' }));
-      const checks = await prisma.$queryRaw<Array<{ conname: string; def: string }>>`
-        SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint
-        WHERE contype = 'c' AND conrelid = '"ActivityAllocationCandidate"'::regclass
-      `;
-      expect(checks.filter((c) => c.def.includes('resultCode'))).toEqual([]);
-      // §3.11 说了"最终结果"却没给取值集 ⇒ 按④不发明(沿第四刀
-      // ActivityBatchJobItem.statusCode 同一处置)。已作为**合同缺口**上报。
+    it('resultCode 保持 nullable，非空仅三值闭集', async () => {
+      await expectRejected(candidateSql('c-invalid', { resultCode: '完全不在闭集里的取值' }), {
+        sqlState: '23514',
+        constraint: 'activity_allocation_candidate_result_code_check',
+      });
+      await expectAccepted(candidateSql('c-null', { resultCode: null }));
+      await expectAccepted(
+        candidateSql('c-allocated', {
+          participationIdentityId: identityId2,
+          resultCode: 'allocated',
+        }),
+      );
+      await expectAccepted(
+        candidateSql('c-waitlisted', {
+          allocationBatchId: 'batch-b',
+          resultCode: 'waitlisted',
+        }),
+      );
+      await expectAccepted(
+        candidateSql('c-not-selected', {
+          allocationBatchId: 'batch-b',
+          participationIdentityId: identityId2,
+          resultCode: 'not_selected',
+        }),
+      );
     });
 
-    it('🔴 刻意不建 (batchId, identityId) unique:同批次同 identity 的第二行必须放行', async () => {
+    it('同批次同 identity 第二行拒绝；换 identity 或换批次放行', async () => {
       await expectAccepted(candidateSql('c-1'));
-      // 同批次、**同一个** identity 的第二行 —— 若有 (batchId, identityId) unique 会被拒
-      await expectAccepted(candidateSql('c-2'));
-      // 对照:同批次、**不同** identity 的行本来就该放行 ——
-      // 两条一起才能分辨"没有唯一约束"与"唯一约束键选错了"。
+      await expectRejected(candidateSql('c-2'), {
+        sqlState: '23505',
+        key: 'Key ("allocationBatchId", "participationIdentityId")',
+      });
       await expectAccepted(candidateSql('c-3', { participationIdentityId: identityId2 }));
-      // §3.11 与 §11.3 对本表**一条唯一约束都没给**(④)。
-      // 沿第三刀 EvidenceSeal「一活动至多一个 active seal 刻意不建」的处置。
-      const uniques = await prisma.$queryRaw<Array<{ indexname: string }>>`
-        SELECT indexname FROM pg_indexes
+      await expectAccepted(candidateSql('c-4', { allocationBatchId: 'batch-b' }));
+      const uniques = await prisma.$queryRaw<Array<{ indexname: string; indexdef: string }>>`
+        SELECT indexname, indexdef FROM pg_indexes
         WHERE tablename = 'ActivityAllocationCandidate' AND indexdef LIKE '%UNIQUE%'
         ORDER BY indexname
       `;
-      // 只剩主键(pkey)——没有任何业务唯一。
-      expect(uniques.map((u) => u.indexname)).toEqual(['ActivityAllocationCandidate_pkey']);
+      expect(uniques.map((u) => u.indexname)).toEqual([
+        'ActivityAllocationCandidate_pkey',
+        'activity_allocation_candidate_batch_identity_key',
+      ]);
+      expect(uniques.every((u) => !u.indexdef.includes('NULLS NOT DISTINCT'))).toBe(true);
     });
 
     it('§11.4 点名的可索引 rank 确实存在(候补排名不靠每次全队列重排)', async () => {
@@ -747,7 +797,7 @@ describe('活动改造 v1.1 第 1 批第五刀 schema 约束(第 75 migration)',
   });
 
   // ==========================================================================
-  // ④ §3.11 ActivityReservedQuotaGroup:capacity 有值时 >= 1
+  // ④ §3.11 ActivityReservedQuotaGroup:capacity 与拍板的 scope / fallback 闭集
   // ==========================================================================
   describe('§3.11 ActivityReservedQuotaGroup 约束与刻意不做', () => {
     it('立正对照:capacity 为 NULL(不限)必须**放行** —— NULL 边界的正对照', async () => {
@@ -785,19 +835,43 @@ describe('活动改造 v1.1 第 1 批第五刀 schema 约束(第 75 migration)',
       });
     });
 
-    it('🔴 scopeTypeCode / fallbackMode 无闭集(合同缺口):任意取值放行且零 CHECK', async () => {
-      await expectAccepted(
-        quotaGroupSql('rq-any', { scopeTypeCode: '任意作用域码', fallbackMode: '任意兜底模式' }),
+    it('scopeTypeCode 四值闭集，任意第五值被精确 CHECK 拒绝', async () => {
+      for (const [id, scopeTypeCode] of [
+        ['rq-activity-person', 'activity_person'],
+        ['rq-session-participation', 'session_participation'],
+        ['rq-position-participation', 'position_participation'],
+        ['rq-reserve-group', 'reserve_group'],
+      ]) {
+        await expectAccepted(quotaGroupSql(id, { scopeTypeCode }));
+      }
+      await expectRejected(quotaGroupSql('rq-invalid-scope', { scopeTypeCode: 'other_scope' }), {
+        sqlState: '23514',
+        constraint: 'activity_reserved_quota_group_scope_type_code_check',
+      });
+    });
+
+    it('fallbackMode 两值闭集，任意第三值被精确 CHECK 拒绝', async () => {
+      await expectAccepted(quotaGroupSql('rq-release', { fallbackMode: 'release_to_public_pool' }));
+      await expectAccepted(quotaGroupSql('rq-void', { fallbackMode: 'void_on_expiry' }));
+      await expectRejected(
+        quotaGroupSql('rq-invalid-fallback', { fallbackMode: 'keep_reserved' }),
+        {
+          sqlState: '23514',
+          constraint: 'activity_reserved_quota_group_fallback_mode_check',
+        },
       );
-      const checks = await prisma.$queryRaw<Array<{ conname: string; def: string }>>`
-        SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint
-        WHERE contype = 'c' AND conrelid = '"ActivityReservedQuotaGroup"'::regclass
+    });
+
+    it('省略 fallbackMode 时，数据库默认真实落为 release_to_public_pool', async () => {
+      await expectAccepted(`INSERT INTO "ActivityReservedQuotaGroup"
+        ("id","updatedAt","activityId","scopeTypeCode","scopeId","qualificationRuleSetId",
+         "capacity","releaseAt")
+        VALUES ('rq-default', ${T(SESSION_START)}, '${activityId}', 'session_participation', '${sessionId}',
+         NULL, NULL, ${T(SESSION_START)})`);
+      const [row] = await prisma.$queryRaw<Array<{ fallbackMode: string }>>`
+        SELECT "fallbackMode" FROM "ActivityReservedQuotaGroup" WHERE id = 'rq-default'
       `;
-      expect(
-        checks.filter((c) => c.def.includes('scopeTypeCode') || c.def.includes('fallbackMode')),
-      ).toEqual([]);
-      // ⚠️ 照搬 §3.10 容量桶的 scope 闭集看着"很自然",但那是**容量桶**的闭集;
-      //    把它写进预留组等于替维护者定口径。已作为**合同缺口**上报。
+      expect(row).toEqual({ fallbackMode: 'release_to_public_pool' });
     });
 
     it('scopeId 刻意零外键(多态 id,沿 ActivityCapacityBucket.scopeId 既有范式)', async () => {
@@ -988,7 +1062,7 @@ describe('活动改造 v1.1 第 1 批第五刀 schema 约束(第 75 migration)',
       expect(exclusions).toEqual([]);
     });
 
-    it('本刀四张新表上的 CHECK 恰好四条(多一条少一条都要是显式决定)', async () => {
+    it('两刀四张目标表上的 CHECK 恰好八条(多一条少一条都要是显式决定)', async () => {
       const checks = await prisma.$queryRaw<Array<{ conname: string }>>`
         SELECT conname FROM pg_constraint
         WHERE contype = 'c'
@@ -1001,7 +1075,11 @@ describe('活动改造 v1.1 第 1 批第五刀 schema 约束(第 75 migration)',
         'activity_allocation_batch_committed_shape_check',
         'activity_allocation_batch_mode_code_check',
         'activity_allocation_batch_status_code_check',
+        'activity_allocation_candidate_result_code_check',
+        'activity_position_preference_order_one_based_check',
         'activity_reserved_quota_group_capacity_positive_check',
+        'activity_reserved_quota_group_fallback_mode_check',
+        'activity_reserved_quota_group_scope_type_code_check',
       ]);
     });
   });
