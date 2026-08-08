@@ -55,4 +55,46 @@ describe('ActivityRegistrationAuditRecorder canonical command audit', () => {
     expect(payload).not.toHaveProperty('before');
     expect(payload).not.toHaveProperty('after');
   });
+
+  it('records the onsite approval without reason, insurance, Form or reservation payloads', async () => {
+    const auditLogs = {
+      log: jest.fn<Promise<void>, [Record<string, unknown>]>().mockResolvedValue(undefined),
+    };
+    const recorder = new ActivityRegistrationAuditRecorder(auditLogs as never);
+    const tx = {} as never;
+
+    await recorder.logOnsiteCreate({
+      registrationId: 'registration-1',
+      registrationRevisionId: 'registration-revision-2',
+      participationIdentityId: 'identity-3',
+      participationRevisionId: 'participation-revision-4',
+      actorUserId: 'user-1',
+      actorRoleSnap: Role.USER,
+      requestHash: 'b'.repeat(64),
+      auditMeta: { requestId: 'request-1', ip: '127.0.0.1', ua: 'jest' },
+      tx,
+    });
+
+    expect(auditLogs.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'registration.create',
+        resourceType: 'activity_registration',
+        resourceId: 'registration-1',
+        tx,
+        extra: {
+          operation: 'onsite',
+          source: 'onsite',
+          registrationRevisionId: 'registration-revision-2',
+          participationIdentityId: 'identity-3',
+          participationRevisionId: 'participation-revision-4',
+          requestHash: 'b'.repeat(64),
+        },
+      }),
+    );
+    const payload = auditLogs.log.mock.calls[0]?.[0];
+    if (!payload) throw new Error('expected onsite audit payload');
+    expect(JSON.stringify(payload)).not.toMatch(
+      /reason|insurance|answer|attachment|reservation|capacityReservationId|token|url/i,
+    );
+  });
 });
