@@ -209,12 +209,14 @@ describe('batch4 activity capacity bucket projection', () => {
     return position.body.data.positionId as string;
   }
 
-  async function createDraftWithCapacityTargets(options: {
-    activityCapacity?: number | null;
-    sessionCapacity?: number | null;
-    positionCapacity?: number | null;
-    includePosition?: boolean;
-  } = {}): Promise<{
+  async function createDraftWithCapacityTargets(
+    options: {
+      activityCapacity?: number | null;
+      sessionCapacity?: number | null;
+      positionCapacity?: number | null;
+      includePosition?: boolean;
+    } = {},
+  ): Promise<{
     activityId: string;
     sessionId: string;
     positionId: string | null;
@@ -396,7 +398,13 @@ describe('batch4 activity capacity bucket projection', () => {
     await expect(
       prisma.activityCapacityBucket.findMany({
         where: { activityId },
-        select: { scopeTypeCode: true, scopeId: true, capacity: true, occupied: true, version: true },
+        select: {
+          scopeTypeCode: true,
+          scopeId: true,
+          capacity: true,
+          occupied: true,
+          version: true,
+        },
         orderBy: [{ scopeTypeCode: 'asc' }, { scopeId: 'asc' }],
       }),
     ).resolves.toEqual([

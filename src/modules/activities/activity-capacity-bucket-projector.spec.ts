@@ -40,9 +40,11 @@ function createTx(input: {
           })),
         ),
       },
-      $queryRaw: jest.fn().mockResolvedValue(
-        (input.buckets ?? []).map((bucket) => ({ activityId: 'activity-1', ...bucket })),
-      ),
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValue(
+          (input.buckets ?? []).map((bucket) => ({ activityId: 'activity-1', ...bucket })),
+        ),
     },
     activityCapacityBucket,
   };
@@ -65,7 +67,10 @@ describe('ActivityCapacityBucketProjector', () => {
     await new ActivityCapacityBucketProjector().apply(tx as never, 'activity-1');
 
     expect(activityCapacityBucket.create).toHaveBeenCalledTimes(5);
-    expect(activityCapacityBucket.create.mock.calls.map(([call]) => call.data)).toEqual([
+    const createdBucketData = activityCapacityBucket.create.mock.calls.map(
+      ([call]) => (call as { data: unknown }).data,
+    );
+    expect(createdBucketData).toEqual([
       {
         activityId: 'activity-1',
         scopeTypeCode: 'activity_person',
@@ -172,9 +177,9 @@ describe('ActivityCapacityBucketProjector', () => {
       activeReservationCounts: [{ bucketId: 'bucket-activity', count: 2 }],
     });
 
-    await expect(new ActivityCapacityBucketProjector().apply(tx as never, 'activity-1')).rejects.toEqual(
-      new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED),
-    );
+    await expect(
+      new ActivityCapacityBucketProjector().apply(tx as never, 'activity-1'),
+    ).rejects.toEqual(new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED));
     expect(activityCapacityBucket.updateMany).not.toHaveBeenCalled();
   });
 
@@ -194,9 +199,9 @@ describe('ActivityCapacityBucketProjector', () => {
       activeReservationCounts: [{ bucketId: 'bucket-activity', count: 0 }],
     });
 
-    await expect(new ActivityCapacityBucketProjector().apply(tx as never, 'activity-1')).rejects.toEqual(
-      new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED),
-    );
+    await expect(
+      new ActivityCapacityBucketProjector().apply(tx as never, 'activity-1'),
+    ).rejects.toEqual(new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED));
     expect(activityCapacityBucket.create).not.toHaveBeenCalled();
     expect(activityCapacityBucket.updateMany).not.toHaveBeenCalled();
   });
@@ -217,9 +222,9 @@ describe('ActivityCapacityBucketProjector', () => {
       ],
     });
 
-    await expect(new ActivityCapacityBucketProjector().apply(tx as never, 'activity-1')).rejects.toEqual(
-      new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED),
-    );
+    await expect(
+      new ActivityCapacityBucketProjector().apply(tx as never, 'activity-1'),
+    ).rejects.toEqual(new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED));
     expect(activityCapacityBucket.create).not.toHaveBeenCalled();
     expect(activityCapacityBucket.updateMany).not.toHaveBeenCalled();
   });
@@ -240,9 +245,9 @@ describe('ActivityCapacityBucketProjector', () => {
       activeReservationCounts: [{ bucketId: 'bucket-historical', count: 1 }],
     });
 
-    await expect(new ActivityCapacityBucketProjector().apply(tx as never, 'activity-1')).rejects.toEqual(
-      new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED),
-    );
+    await expect(
+      new ActivityCapacityBucketProjector().apply(tx as never, 'activity-1'),
+    ).rejects.toEqual(new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED));
     expect(activityCapacityBucket.create).not.toHaveBeenCalled();
     expect(activityCapacityBucket.updateMany).not.toHaveBeenCalled();
   });
@@ -263,8 +268,8 @@ describe('ActivityCapacityBucketProjector', () => {
       updateCount: 0,
     });
 
-    await expect(new ActivityCapacityBucketProjector().apply(tx as never, 'activity-1')).rejects.toEqual(
-      new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED),
-    );
+    await expect(
+      new ActivityCapacityBucketProjector().apply(tx as never, 'activity-1'),
+    ).rejects.toEqual(new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED));
   });
 });

@@ -5,10 +5,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 
 type PrismaTx = Prisma.TransactionClient;
 
-type CapacityScopeTypeCode =
-  | 'activity_person'
-  | 'position_participation'
-  | 'session_participation';
+type CapacityScopeTypeCode = 'activity_person' | 'position_participation' | 'session_participation';
 
 interface CapacityTarget {
   scopeTypeCode: CapacityScopeTypeCode;
@@ -32,7 +29,8 @@ function targetKey(scopeTypeCode: string, scopeId: string): string {
 
 function compareTarget(left: CapacityTarget, right: CapacityTarget): number {
   return (
-    left.scopeTypeCode.localeCompare(right.scopeTypeCode) || left.scopeId.localeCompare(right.scopeId)
+    left.scopeTypeCode.localeCompare(right.scopeTypeCode) ||
+    left.scopeId.localeCompare(right.scopeId)
   );
 }
 
