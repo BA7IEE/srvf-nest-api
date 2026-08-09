@@ -11,13 +11,20 @@ function invalid(): never {
 
 /** The canonical command remains an approval-prelude only. */
 export function assertRegistrationCommandHeaderStatus(statusCode: string): void {
-  if (statusCode !== 'pending' && statusCode !== 'waitlisted') invalid();
+  if (
+    statusCode !== 'pending' &&
+    statusCode !== 'waitlisted' &&
+    statusCode !== 'cancelled' &&
+    statusCode !== 'reject'
+  ) {
+    invalid();
+  }
 }
 
 /**
  * Existing participation identities are permanent; this function only decides whether this
- * command appends an immutable revision.  It never turns an approved/rejected/onsite identity
- * back into a mutable application.
+ * command appends an immutable revision.  A cancelled/rejected identity may start a new pending
+ * revision; approved/attended/settled/onsite identities remain final.
  */
 export function decideParticipationRevision(
   currentStatusCode: string,
@@ -26,7 +33,7 @@ export function decideParticipationRevision(
   if (currentStatusCode === 'pending' || currentStatusCode === 'waitlisted') {
     return { kind: 'append', statusCode: selected ? 'pending' : 'cancelled' };
   }
-  if (currentStatusCode === 'cancelled') {
+  if (currentStatusCode === 'cancelled' || currentStatusCode === 'rejected') {
     return selected ? { kind: 'append', statusCode: 'pending' } : { kind: 'noop' };
   }
   return invalid();

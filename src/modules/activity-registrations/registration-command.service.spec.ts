@@ -9,6 +9,7 @@ import type { AttachmentsService } from '../attachments/attachments.service';
 import type { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import type { AppIdentityResolver } from '../users/app-identity.resolver';
 import type { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
+import type { ActivityRegistrationLifecycleService } from './activity-registration-lifecycle.service';
 import type { AppActivityRegistrationCommandDto } from './dto/app/app-activity-registration-command.dto';
 import { hashRegistrationCommand } from './registration-command-hash';
 import { RegistrationCommandService } from './registration-command.service';
@@ -54,6 +55,7 @@ function makeTx() {
         },
       ])
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'member-1', status: 'ACTIVE', deletedAt: null }])
       .mockResolvedValueOnce([{ id: 'user-1', status: 'ACTIVE', deletedAt: null }])
       .mockResolvedValueOnce([]),
@@ -64,7 +66,7 @@ function makeTx() {
     registrationFormVersion: { findFirst: jest.fn().mockResolvedValue(null) },
     activityRegistration: {
       create: jest.fn().mockResolvedValue({ id: 'registration-1', currentRevision: 0 }),
-      update: jest.fn().mockResolvedValue({}),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     memberProfile: { findFirst: jest.fn().mockResolvedValue(null) },
     registrationFormAnswer: {
@@ -72,7 +74,10 @@ function makeTx() {
       findFirst: jest.fn(),
     },
     activityPositionPreference: { createMany: jest.fn() },
-    activityParticipationIdentity: { create: jest.fn(), update: jest.fn() },
+    activityParticipationIdentity: {
+      create: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
     activityParticipationRevision: { create: jest.fn() },
     attendanceRecord: { findFirst: jest.fn() },
     activityCheckIn: { findFirst: jest.fn() },
@@ -103,6 +108,12 @@ function makeService(tx: ReturnType<typeof makeTx>, opts: { transactionError?: E
     createActivityRegistrationEvidence: jest.fn().mockResolvedValue(undefined),
   };
   const audit = { logCommandCreate: jest.fn().mockResolvedValue(undefined) };
+  const lifecycle = {
+    assertCapacityPointersReconciledInTransactionTrusted: jest.fn().mockResolvedValue(undefined),
+    assertParticipationRevisionsReconciledInTransactionTrusted: jest
+      .fn()
+      .mockResolvedValue(undefined),
+  };
   return {
     service: new RegistrationCommandService(
       prisma as unknown as PrismaService,
@@ -111,6 +122,7 @@ function makeService(tx: ReturnType<typeof makeTx>, opts: { transactionError?: E
       insuranceRequirement as unknown as InsuranceRequirementService,
       attachments as unknown as AttachmentsService,
       audit as unknown as ActivityRegistrationAuditRecorder,
+      lifecycle as unknown as ActivityRegistrationLifecycleService,
     ),
     prisma,
     appIdentity,
@@ -165,6 +177,7 @@ describe('RegistrationCommandService', () => {
     );
     expect(insuranceRequirement.createActivityRegistrationEvidence).toHaveBeenCalledWith(
       'registration-1',
+      'registration-revision-1',
       'member-1',
       null,
       tx,
@@ -187,6 +200,7 @@ describe('RegistrationCommandService', () => {
           endAt: new Date('2099-12-31T00:00:00.000Z'),
         },
       ])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'member-1', status: 'ACTIVE', deletedAt: null }])
       .mockResolvedValueOnce([{ id: 'user-1', status: 'ACTIVE', deletedAt: null }]);
@@ -220,6 +234,7 @@ describe('RegistrationCommandService', () => {
           endAt: new Date('2099-12-31T00:00:00.000Z'),
         },
       ])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'member-1', status: 'ACTIVE', deletedAt: null }])
       .mockResolvedValueOnce([{ id: 'user-1', status: 'ACTIVE', deletedAt: null }])
@@ -262,6 +277,7 @@ describe('RegistrationCommandService', () => {
           endAt: new Date('2099-12-31T00:00:00.000Z'),
         },
       ])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'member-1', status: 'ACTIVE', deletedAt: null }])
       .mockResolvedValueOnce([{ id: 'user-1', status: 'ACTIVE', deletedAt: null }])

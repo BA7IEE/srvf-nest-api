@@ -7,26 +7,26 @@ import {
 
 const identity = (registrationId: string): OnsiteLockedIdentity => ({
   id: 'identity-1',
+  activityId: 'activity-1',
+  memberId: 'member-1',
   registrationId,
   sessionId: 'session-1',
   currentRevision: 1,
   currentStatusCode: 'pending',
   currentPositionId: null,
+  capacityReservationId: null,
   populationIncluded: false,
   version: 1,
 });
 
 describe('OnsiteParticipationCommandService canonical-header boundary', () => {
-  it('reuses the one live header when every permanent identity belongs to it', () => {
+  it('reuses the one cancelled live header when every permanent identity belongs to it', () => {
     expect(
       selectOnsiteCanonicalHeader(
-        [
-          { id: 'cancelled-header', statusCode: 'cancelled', currentRevision: 4 },
-          { id: 'live-header', statusCode: 'pending', currentRevision: 2 },
-        ],
-        [identity('live-header')],
+        [{ id: 'cancelled-header', statusCode: 'cancelled', currentRevision: 4 }],
+        [identity('cancelled-header')],
       ),
-    ).toEqual({ id: 'live-header', statusCode: 'pending', currentRevision: 2 });
+    ).toEqual({ id: 'cancelled-header', statusCode: 'cancelled', currentRevision: 4 });
   });
 
   it('fails closed rather than relinking an identity from a historical header', () => {

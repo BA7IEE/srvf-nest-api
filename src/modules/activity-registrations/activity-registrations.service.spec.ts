@@ -11,6 +11,7 @@ import type { AuthzService } from '../authz/authz.service';
 import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
+import type { ActivityRegistrationLifecycleService } from './activity-registration-lifecycle.service';
 import type { ActivityRegistrationNotificationProducer } from './activity-registration-notification-producer';
 import type { ActivityRegistrationTransitionDecision } from './activity-registration-state-machine';
 import type { ActivityRegistrationWaitlistQueryService } from './activity-registration-waitlist-query.service';
@@ -53,6 +54,7 @@ interface RegRow {
   cancelReason: string | null;
   createdAt: Date;
   updatedAt: Date;
+  currentRevision: number;
   member?: { memberNo: string; displayName: string } | null;
   activityPosition?: { id: string; name: string } | null;
 }
@@ -122,6 +124,7 @@ function makeRegRow(overrides: Partial<RegRow> = {}): RegRow {
     cancelReason: null,
     createdAt: FIXED_DATE,
     updatedAt: FIXED_DATE,
+    currentRevision: 0,
     member: null,
     activityPosition: null,
     ...overrides,
@@ -167,6 +170,10 @@ function makePrismaMock() {
     updateMany: jest.fn<Promise<{ count: number }>, [unknown]>().mockResolvedValue({ count: 1 }),
     count: jest.fn<Promise<number>, [unknown]>(),
   };
+  const activityRegistrationRevision = {
+    findFirst: jest.fn().mockResolvedValue(null),
+    create: jest.fn().mockResolvedValue({ id: 'registration-revision-1' }),
+  };
   const activity = {
     findFirst: jest.fn<Promise<ActivityRow | null>, [unknown]>(),
     // 统一通知 S4:审批后 commit 外的派发 helper 读活动名(this.prisma.activity.findUnique);
@@ -198,9 +205,28 @@ function makePrismaMock() {
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
   // create / approve / pass cancel 的 Activity 聚合锁默认命中测试活动；不存在场景仍由
   // activity.findFirst fixture 驱动既有 ACTIVITY_NOT_FOUND 断言。
-  const $queryRaw = jest.fn().mockResolvedValue([{ id: 'act-1' }]);
+  const $queryRaw = jest.fn().mockImplementation((query: unknown) => {
+    const candidate = query as { sql?: string; text?: string; strings?: readonly string[] };
+    const text = candidate.sql ?? candidate.text ?? candidate.strings?.join('?') ?? String(query);
+    if (
+      text.includes('FROM "ActivityRegistration"') &&
+      text.includes('"activityId"') &&
+      text.includes('"memberId"')
+    ) {
+      return Promise.resolve([]);
+    }
+    if (
+      text.includes('FROM "ActivityParticipationIdentity"') &&
+      text.includes('"activityId"') &&
+      text.includes('"memberId"')
+    ) {
+      return Promise.resolve([]);
+    }
+    return Promise.resolve([{ id: 'act-1' }]);
+  });
   const prisma = {
     activityRegistration,
+    activityRegistrationRevision,
     activity,
     activityPosition,
     activitySession,
@@ -311,6 +337,34 @@ function makeOrganizationsMock() {
 }
 type OrganizationsMock = ReturnType<typeof makeOrganizationsMock>;
 
+function makeRegistrationLifecycleMock() {
+  return {
+    rejectInTransactionTrusted: jest.fn().mockResolvedValue(undefined),
+    reopenInTransactionTrusted: jest.fn().mockResolvedValue(undefined),
+    cancelInTransactionTrusted: jest
+      .fn<
+        Promise<void>,
+        [
+          PrismaMock,
+          Parameters<ActivityRegistrationLifecycleService['cancelInTransactionTrusted']>[1],
+        ]
+      >()
+      .mockImplementation(async (tx, input) => {
+        const updated = await tx.activityRegistration.update({
+          where: { id: input.registrationId },
+          data: {
+            statusCode: 'cancelled',
+            cancelledByUserId: input.actorUserId,
+            cancelledAt: input.cancelledAt,
+            cancelReason: input.cancelReason,
+          },
+        });
+        tx.activityRegistration.findFirst.mockResolvedValue(updated);
+      }),
+    incrementPopulationRevisionInTransactionTrusted: jest.fn(),
+  };
+}
+
 function makeWaitlistQueryMock() {
   return {
     getPosition: jest.fn<Promise<number | null>, [RegRow]>().mockResolvedValue(null),
@@ -342,6 +396,7 @@ function makeService(
     organizations as unknown as OrganizationsService,
     new ActivityParticipationPolicy(),
     makeWaitlistQueryMock() as unknown as ActivityRegistrationWaitlistQueryService,
+    makeRegistrationLifecycleMock() as unknown as ActivityRegistrationLifecycleService,
   );
 }
 
@@ -424,7 +479,14 @@ describe('ActivityRegistrationsService (characterization)', () => {
       const recorder = makeAuditRecorderMock();
       prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ capacity: null }));
       prisma.member.findFirst.mockResolvedValue(makeMemberRow());
-      prisma.activityRegistration.findFirst.mockResolvedValue(makeRegRow({ id: 'dup-1' }));
+      prisma.$queryRaw.mockResolvedValueOnce([{ id: 'act-1' }]).mockResolvedValueOnce([
+        {
+          id: 'dup-1',
+          statusCode: 'pending',
+          currentRevision: 1,
+          deletedAt: null,
+        },
+      ]);
       const service = makeService(prisma, recorder, makeStateMachineMock(DENY_DECISION));
 
       await expect(
@@ -434,11 +496,49 @@ describe('ActivityRegistrationsService (characterization)', () => {
       expect(recorder.logCreate).not.toHaveBeenCalled();
     });
 
+    it('cancelled legacy head with a permanent identity stays on the v1.1 flow and writes nothing', async () => {
+      const prisma = makePrismaMock();
+      const recorder = makeAuditRecorderMock();
+      prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ capacity: null }));
+      prisma.member.findFirst.mockResolvedValue(makeMemberRow());
+      prisma.$queryRaw
+        .mockResolvedValueOnce([{ id: 'act-1' }])
+        .mockResolvedValueOnce([
+          {
+            id: 'cancelled-head-1',
+            statusCode: 'cancelled',
+            currentRevision: 1,
+            deletedAt: null,
+          },
+        ])
+        .mockResolvedValueOnce([{ id: 'permanent-identity-1' }]);
+      const insurance = makeInsuranceRequirementMock();
+      const service = makeService(
+        prisma,
+        recorder,
+        makeStateMachineMock(DENY_DECISION),
+        makeNotificationProducerMock(),
+        makeAuthzMock(),
+        makeOrganizationsMock(),
+        insurance,
+      );
+
+      await expect(
+        service.create('act-1', { memberId: 'mem-1' }, makeCurrentUser(), META),
+      ).rejects.toEqual(new BizException(BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED));
+      expect(insurance.requireForActivityRegistration).not.toHaveBeenCalled();
+      expect(prisma.activityRegistrationRevision.create).not.toHaveBeenCalled();
+      expect(prisma.activityRegistration.updateMany).not.toHaveBeenCalled();
+      expect(recorder.logCreate).not.toHaveBeenCalled();
+    });
+
     it('create 抛 P2002 → ACTIVITY_REGISTRATION_ALREADY_EXISTS(unique 兜底)', async () => {
       const prisma = makePrismaMock();
       prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ capacity: null }));
       prisma.member.findFirst.mockResolvedValue(makeMemberRow());
-      prisma.activityRegistration.findFirst.mockResolvedValue(null);
+      prisma.activityRegistration.findFirst.mockResolvedValue(
+        makeRegRow({ statusCode: 'pending', currentRevision: 1 }),
+      );
       prisma.activityRegistration.create.mockRejectedValue(
         new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
           code: 'P2002',
@@ -461,7 +561,9 @@ describe('ActivityRegistrationsService (characterization)', () => {
       const recorder = makeAuditRecorderMock();
       prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ capacity: null }));
       prisma.member.findFirst.mockResolvedValue(makeMemberRow());
-      prisma.activityRegistration.findFirst.mockResolvedValue(null);
+      prisma.activityRegistration.findFirst.mockResolvedValue(
+        makeRegRow({ statusCode: 'pending', currentRevision: 1 }),
+      );
       prisma.activityRegistration.create.mockResolvedValue(makeRegRow({ statusCode: 'pending' }));
       const service = makeService(prisma, recorder, makeStateMachineMock(DENY_DECISION));
 
@@ -480,7 +582,9 @@ describe('ActivityRegistrationsService (characterization)', () => {
       const recorder = makeAuditRecorderMock();
       prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ capacity: 1 }));
       prisma.member.findFirst.mockResolvedValue(makeMemberRow());
-      prisma.activityRegistration.findFirst.mockResolvedValue(null);
+      prisma.activityRegistration.findFirst.mockResolvedValue(
+        makeRegRow({ statusCode: 'waitlisted', currentRevision: 1 }),
+      );
       prisma.activityRegistration.count.mockResolvedValue(1);
       prisma.activityRegistration.create.mockResolvedValue(
         makeRegRow({ statusCode: 'waitlisted' }),
@@ -602,21 +706,22 @@ describe('ActivityRegistrationsService (characterization)', () => {
         expect.objectContaining({ action: 'approve', nextStatusCode: 'pass', tx: prisma }),
       );
       expect(insuranceRequirement.revalidateActivityRegistrationApproval).toHaveBeenCalledWith(
-        { id: 'reg-1', memberId: 'mem-1' },
+        { id: 'reg-1', memberId: 'mem-1', currentRevision: 0 },
         expect.objectContaining({ id: 'act-1', requiresInsurance: false }),
         prisma,
       );
       expect(
         insuranceRequirement.revalidateActivityRegistrationApproval.mock.invocationCallOrder[0],
-      ).toBeGreaterThan(prisma.$queryRaw.mock.invocationCallOrder[0]);
-      expect(prisma.$queryRaw.mock.invocationCallOrder[1]).toBeGreaterThan(
-        insuranceRequirement.revalidateActivityRegistrationApproval.mock.invocationCallOrder[0],
+      ).toBeGreaterThan(
+        prisma.$queryRaw.mock.invocationCallOrder[
+          prisma.$queryRaw.mock.invocationCallOrder.length - 1
+        ],
       );
       expect(recorder.logReview).toHaveBeenCalledWith(expect.objectContaining({ before: locked }));
       expect(result.statusCode).toBe('pass');
     });
 
-    it('approve 保险重验失败 → registration 仍 pending，零 claim / update / audit / notification', async () => {
+    it('approve 保险重验失败 → registration 已 claim，但零 update / audit / notification', async () => {
       const prisma = makePrismaMock();
       const recorder = makeAuditRecorderMock();
       const notificationProducer = makeNotificationProducerMock();
@@ -644,6 +749,14 @@ describe('ActivityRegistrationsService (characterization)', () => {
         new BizException(BizCode.INSURANCE_REQUIRED),
       );
 
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
+      expect(
+        insuranceRequirement.revalidateActivityRegistrationApproval.mock.invocationCallOrder[0],
+      ).toBeGreaterThan(
+        prisma.$queryRaw.mock.invocationCallOrder[
+          prisma.$queryRaw.mock.invocationCallOrder.length - 1
+        ],
+      );
       expect(prisma.activityRegistration.updateMany).not.toHaveBeenCalled();
       expect(prisma.activityRegistration.update).not.toHaveBeenCalled();
       expect(recorder.logReview).not.toHaveBeenCalled();
@@ -715,6 +828,11 @@ describe('ActivityRegistrationsService (characterization)', () => {
         META,
       );
       expect(result.statusCode).toBe('reject');
+      expect(prisma.activityRegistration.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ statusSummaryCode: 'not_selected' }) as unknown,
+        }),
+      );
       const [, reviewIntent] = notificationProducer.enqueueReview.mock.calls[0];
       expect(reviewIntent).toMatchObject({
         registrationId: 'reg-1',
@@ -926,12 +1044,14 @@ describe('ActivityRegistrationsService (characterization)', () => {
           reviewedAt: unknown;
           reviewNote: unknown;
           statusCode: unknown;
+          statusSummaryCode: unknown;
         };
       };
       expect(updateArg.data.reviewedBy).toBeNull();
       expect(updateArg.data.reviewedAt).toBeNull();
       expect(updateArg.data.reviewNote).toBeNull();
       expect(updateArg.data.statusCode).toBe('pending');
+      expect(updateArg.data.statusSummaryCode).toBe('active');
       expect(recorder.logReview).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'reopen', nextStatusCode: 'pending' }),
       );

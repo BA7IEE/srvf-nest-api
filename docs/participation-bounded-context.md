@@ -34,7 +34,7 @@
 
 | 模块 | Prisma 模型 | 边界关系 |
 |---|---|---|
-| [`src/modules/insurances/`](../src/modules/insurances/) | `MemberInsurance` / `TeamInsuranceCoverage` / `InsuranceEligibilityEvidence` | 保险是报名资格的上游上下文。D-INSURANCE v3 PR3 single gate=true 时，`requiresInsurance` 活动只认覆盖完整北京日区间的 verified self，随后才尝试 live Team Policy+Coverage；报名 create 根事务按 `Activity→source→Registration→Evidence→Audit` 固化唯一最小 evidence。gate=false 保留旧 consumer/0 evidence |
+| [`src/modules/insurances/`](../src/modules/insurances/) | `MemberInsurance` / `TeamInsuranceCoverage` / `InsuranceEligibilityEvidence` | 保险是报名资格的上游上下文。D-INSURANCE v3 PR3 single gate=true 时，`requiresInsurance` 活动只认覆盖完整北京日区间的 verified self，随后才尝试 live Team Policy+Coverage；报名/重报根事务按 `Activity→永久报名头/identity→source→revision/evidence→Audit` 固化当次最小 evidence。gate=false 或活动不要求保险时为 0 evidence |
 | [`src/modules/team-join/`](../src/modules/team-join/) | `TeamJoinCycle` / `TeamJoinApplication` | 入队是 evidence 的另一 owner 上下文。`requiresInsurance` 可配置/返回；仅 single gate=true 时在 final join 按同一来源规则消费北京入队日并生成 application evidence，无来源 26031。申请创建/评估阶段不提前生成 evidence |
 
 ### 2.3 Explicitly excluded(明确不在 participation 范围内)
@@ -91,7 +91,7 @@ Activity (statusCode: draft / published / completed / cancelled)
                           │   tx.contributionRule.findMany
 AttendanceRecord.roleCode ┘
 
-InsuranceEligibilityEvidence (D-INSURANCE v3 PR4 migration source;未 deploy)
+InsuranceEligibilityEvidence (D-INSURANCE v3 + 第 82 migration；未 deploy)
   ├─ source: memberInsuranceId? / teamInsuranceCoverageId? [均 Restrict]
   └─ owner: activityRegistrationId? / teamJoinApplicationId? [均 Restrict]
        └─ activityRegistrationRevisionId? [与 registrationId 复合 Restrict FK]
@@ -121,7 +121,7 @@ Certificate (不在 participation 图内)
 | `MemberInsurance` ← `InsuranceEligibilityEvidence.memberInsuranceId` | FK **NULLABLE** | Restrict | self source；同行必须与 team source exactly-one，snapshot 必含 version/reviewer/time |
 | `TeamInsuranceCoverage` ← `InsuranceEligibilityEvidence.teamInsuranceCoverageId` | FK **NULLABLE** | Restrict | team source；同行必须与 self source exactly-one，review snapshot 三字段固定 null |
 | `ActivityRegistration` ← `InsuranceEligibilityEvidence.activityRegistrationId` | FK **NULLABLE** | Restrict | registration owner；Evidence 必须先于 Registration reset |
-| `ActivityRegistrationRevision(registrationId,id)` ← `InsuranceEligibilityEvidence(activityRegistrationId,activityRegistrationRevisionId)` | 复合 FK **NULLABLE / MATCH SIMPLE** | Restrict | 第 82 migration 同头桥；旧 header-only 行 revisionId=NULL，零回填；producer/approval 待 runtime C 刀切换 |
+| `ActivityRegistrationRevision(registrationId,id)` ← `InsuranceEligibilityEvidence(activityRegistrationId,activityRegistrationRevisionId)` | 复合 FK **NULLABLE / MATCH SIMPLE** | Restrict | 第 82 migration 同头桥；旧 header-only 行 revisionId=NULL、零回填；新报名/重报写当次 revision，approval 按 currentRevision 精确取证 |
 | `TeamJoinApplication` ← `InsuranceEligibilityEvidence.teamJoinApplicationId` | FK **NULLABLE** | Restrict | join owner；仅 single gate=true + cycle requiresInsurance final join 生成 |
 | `User` ← `InsuranceEligibilityEvidence.sourceReviewedByUserId` | FK **NULLABLE** | Restrict | self reviewer 快照必填；team source 固定 null |
 | `Activity` ← `ActivityFeedback.activityId` | FK NOT NULL | Restrict | 评价稳定锚定活动；不级联删除 |
@@ -137,10 +137,10 @@ Certificate (不在 participation 图内)
 |---|---|---|---|
 | 1. 活动起草 | activities | `create` → `statusCode='draft'` | 仅创建,无下游 |
 | 2. 活动发布 | activities | `publish` → `draft → published` | 解锁 Registration 创建与 AttendanceSheet 提交；公开活动发布广播 intent 与业务/audit 同事务 |
-| 3. 活动取消 | activities | `cancel` → `* → cancelled` | 同事务联动 live `pending + waitlisted → cancelled`(pass 保留历史审批结果)，并为已报名成员写取消通知 intent；阻断所有下游写;attendances 在 `findActivityForSubmissionFull` 内会拒绝 `ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN` |
-| 4. 报名(admin / app) | activity-registrations | `create` / `createMy` → `pending \| waitlisted` | 全部前置闸通过后，`capacity=null` 或未满落 pending，已满落 waitlisted；永久报名头 unique 防重复，legacy 历史头重报暂 21002，runtime 复用待后续刀；**报名截止生效**(`registrationDeadline` 非 null 且 `now > deadline` → `ACTIVITY_REGISTRATION_DEADLINE_PASSED=20123`;approve 不加此闸) |
+| 3. 活动取消 | activities | `cancel` → `* → cancelled` | 同事务联动 live `pending + waitlisted → cancelled`(pass 保留历史审批结果)，并为已报名成员写取消通知 intent；阻断下游写。⚠️ 该整单 writer 尚未接个人取消的 revision/capacity/pointer lifecycle，属已登记旁路债务 |
+| 4. 报名(admin / app) | activity-registrations | `create` / `createMy` → `pending \| waitlisted` | 永久报名头跨历史唯一；live cancelled/reject 头同头追加 RegistrationRevision，soft-deleted 不复活。legacy 仅在无永久 identity 时可重报，有 identity 返回 21038；canonical/onsite 复用既有 identity。报名截止仍按 `now > deadline` 生效，approve 不加此闸 |
 | 5. 报名审核 / 递补 | activity-registrations + activities | `approve: pending → pass`;`reject: pending\|waitlisted → reject`;`promote: waitlisted → pending` | promote 仅事务内 FIFO 引擎使用，不开手动端点，不开 waitlisted → pass 直通 |
-| 6. 报名取消 | activity-registrations | `cancelAdmin` / `cancelMy`: `pending\|pass\|waitlisted → cancelled` | live `AttendanceRecord` 或 `ActivityCheckIn` 已引用报名时复用 21033 拒绝取消；否则取消 pass 同事务 FIFO 递补队首一人至 pending；取消 pending/waitlisted 不递补；`cancelMy` 通知正文只展示 `displayName（memberNo）`，标签不可用匿名兜底且不暴露 `Member.id`；永久报名头下取消后重报 runtime 复用仍待，legacy 当前 21002 fail-closed |
+| 6. 报名取消 | activity-registrations | `cancelAdmin` / `cancelMy`: `pending\|pass\|waitlisted → cancelled` | live Attendance/CheckIn 证据仍以 21033 拒绝；否则同一 Activity 事务追加报名/参与取消 revision、释放 position/session/最后 activity-person、清 session pointer/currentPosition/populationIncluded，并仅在人口真变化时 bump 一次。取消 pass 仍同事务 FIFO 递补；永久 head/identity 留作重报复用 |
 | 7. 考勤表首次提交 | attendances | `submit` → `Sheet.statusCode='pending'` + 多条 `Record` 同事务建立 | **不再推动 Activity.completed**；用服务端 `now` 拒绝未来签退;`contributionPoints` 不接受输入,submit/edit 均读 `tx.contributionRule.findMany` 计算(无规则落 0,**不再 per-record dailyCap 钳制**);`requiresInsurance=true` 时每条 record 必须带同活动/同成员/pass 的 `registrationId`,但不证明报名创建时已开启该门槛 |
 | 8. APD 一级审核 | attendances | `approve` → `pending → pending_final_review`;`reject` → `pending → rejected` | **不**触发 `attendance.recorded`(沿 D-S7;触发点已移到 final-approve) |
 | 9. APD 终审通过 | attendances | `finalApprove` → `pending_final_review → approved` | **`contributionPoints` 在此刻语义上生效**;同事务内 `eventPlaceholder('attendance.recorded')` 发出；普通结果通知仍逐 Record。最新 joining application 的 5 分达标只在正式 capped before<5 且 approved 后 capped after≥5 时按 application+threshold 稳定 key 入队一次 |
@@ -151,7 +151,7 @@ Certificate (不在 participation 图内)
 | 14. 活动评价（F2 App） | activity-feedbacks | 本人 `PUT/GET feedback`；completed + `endAt + N 天` + approved AttendanceRecord 资格 | PUT 在模块自有事务内 create/update `ActivityFeedback`；GET 无评价恒 200/null；不改变 Attendance / Contribution / settlement 语义 |
 | —. ContributionRule 维护 | contribution-rules | ops 后台 CRUD;`status: ACTIVE / INACTIVE` | **不是流程状态实体**;仅作为预填配置,在 Step 7 被读取;`active_unique (activityTypeCode, attendanceRoleCode) WHERE deletedAt IS NULL AND status = 'ACTIVE'` 由 migration SQL 加 partial unique |
 
-> **D-INSURANCE v3 PR4 当前事实**：migration/约束代码已交付于本 PR，尚未 deploy、生产未生效。deploy 后 INSERT 的结构非法/缺 FK/跨 member 分别由 CHECK 23514/FK 23503/`insurance_evidence_member_match` 23514 拒绝；对已命中 Evidence 的 UPDATE，仅结构合法、目标存在且跨 member 先得 23514/`insurance_evidence_member_match`，结构非法、缺 FK、同 member 任意字段及 DELETE 均得 55000/`insurance_evidence_immutable`。source/owner 后续软删或编辑不改历史 snapshot；gate=false 仍 0 evidence。
+> **D-INSURANCE v3 + D82 当前事实**：旧 header-only evidence 永久保留且不回填；新报名/重报在创建 RegistrationRevision 后写同头 revision-bound evidence。approval 对 currentRevision>0 只认该 revision 恰一份 evidence，不回落旧头证据；currentRevision=0 仅兼容恰一份 revisionId=NULL legacy evidence。结构/FK/member/immutable 约束仍分别以 23514/23503/55000 fail-closed；gate=false 仍 0 evidence。上线须 drain→独立 deploy D81/D82→保持 drain 切整批 runtime，禁新旧混跑或旧版回滚。
 
 > **F2/F3 当前事实**:`ActivityCheckIn` 已提供 App 本人签到/签退/当前状态 3 个 canonical 端点，
 > 以及 Admin 证据列表/只读考勤草稿 2 个 canonical 端点。首次 App create / checkout CAS 统一先过
@@ -191,9 +191,9 @@ Certificate (不在 participation 图内)
 | `attendances` 在事务内读 `tx.contributionRule.findMany` | ✅ 允许 | D14 5.B 系统预填;走 [`contribution-calculator.ts`](../src/modules/attendances/contribution-calculator.ts) |
 | `activities` 在事务内读 / 写 `tx.attendanceSheet` / `tx.attendanceRecord` | ❌ 不允许 | Activity 是上游,不下探;若需要派生统计,通过 `attendance.recorded` 事件或独立 service |
 | `activities` / `activity-registrations` 在调用方事务内执行 `promoteActivityWaitlist` | ✅ 限定例外 | 纯函数入口，固定 Activity → Registration 锁序，只写 waitlisted → pending + 同事务 `registration.review(action=promote)`；不引入兄弟 Service 依赖 |
-| `activity-registrations` 在事务内读 `tx.attendanceRecord` / `tx.activityCheckIn` | ✅ 仅限取消证据守卫 | pass cancel 在已取得 Activity → Registration 锁后按 `registrationId + deletedAt:null` 计数；pending/waitlisted cancel 也执行相同 live 计数，但不宣称持有 Activity 锁。任一 live 证据存在即复用 21033；禁止写/删考勤证据、禁止引入 attendances service |
+| `activity-registrations` 在事务内读 `tx.attendanceRecord` / `tx.activityCheckIn` | ✅ 仅限取消证据守卫 | pass/pending/waitlisted cancel 均在已取得 Activity → Registration 锁后按 `registrationId + deletedAt:null` 计数。任一 live 证据存在即复用 21033；禁止写/删考勤证据、禁止引入 attendances service |
 | `activity-registrations` 在事务内写 `tx.attendanceSheet` / `tx.attendanceRecord` / `tx.activityCheckIn` | ❌ 不允许 | 上游报名不得改删下游参与历史 |
-| `activity-registrations` 读 / 写 `InsuranceEligibilityEvidence` | ✅ 限定例外 | 只允许 create 根事务调用 `InsuranceRequirementService` 在 Registration 后、Audit 前生成一条；禁止本模块直接 Prisma 改删，PR4 migration deploy 后由 immutable + owner unique 兜底 |
+| `activity-registrations` 读 / 写 `InsuranceEligibilityEvidence` | ✅ 限定例外 | 只允许报名/重报根事务调用 `InsuranceRequirementService` 在 RegistrationRevision 后、current pointer/Audit 前生成当次 revision evidence；approval 也只经该 service 按 currentRevision 读取，禁止直接 Prisma 改删 |
 | `activity-registrations` → `attachments` 的 registration-upload-session trusted facade | ✅ 限定例外 | 只供一次性报名附件会话：调用方在 Activity/Form/Session 根锁内做两次复校和 durable intent，facade 在事务外完成内容校验、Provider put/HEAD；禁止反向 `attachments → activity-registrations` 依赖，通用 Admin attachment 面也必须对该内部 owner fail-closed |
 | `contribution-rules` 在事务内读 / 写其它 participation 表 | ❌ 不允许 | ContributionRule 是配置实体,只被读,不读人 |
 | `activity-feedbacks` 读取 `Activity` / `AttendanceSheet` / `AttendanceRecord` | ✅ 限定例外 | 只为 completed/window、approved-only 到场资格与 Admin 评价率分母；直接读 Prisma，不 import 三个兄弟 god-service |
@@ -205,7 +205,7 @@ Certificate (不在 participation 图内)
 ### 5.3 Transaction boundary
 
 - **岗位 capacity 更新**:事务内固定先锁 `Activity`，再重读 `ActivityPosition.capacity` 与同岗位 passCount；扩容递补只消费同 `activityPositionId` 候补队列，不增加第二把聚合行锁。
-- **报名 approve / cancel / promote**:锁序固定 `Activity → ActivityRegistration`；pass cancel 在锁内检查同报名 live `AttendanceRecord` / `ActivityCheckIn`，与 App 打卡共享的 Activity → Registration 锁序串行收敛，任一证据存在复用 21033 且不取消、不审计、不递补；capacity 与 FIFO 域均显式包含 `activityPositionId`（无岗位为 null），跨岗位不借位、不递补。
+- **报名 approve / cancel / promote**:approve/promote 保持既有边界；cancelAdmin/cancelMy 固定 Activity→永久 head→同 member/activity identities(id ASC)→session/position bucket/reservation→immutable revisions/current pointers→population→audit/outbox。先核 active session reservation 与 identity pointer 的 exact activity/session 锚及当前 ParticipationRevision；漂移 20147 整笔回滚。`ActivitiesService.cancel` 与旧 waitlist writer 未接该 lifecycle，禁止复制 capacity DML 临时补洞。
 - **submit/edit 路径**:同一事务内固定一个服务端 `now`,校验活动/报名/时间窗与未来签退,再由 ContributionRule 计算并写入 records;submit 不写 Activity 状态。
 - **finalApprove 路径**:claim 后先读 Record，并在 Sheet 仍为 `pending_final_review` 时为去重 Member 选最新 joining application、以其 cycle.year 调 `computeContribution` 快照 capped before；Sheet 翻为 approved 后，对同 application/cycle 再算 capped after。状态、`attendance.recorded`、audit、逐 Record 结果 intent 与满足 `before<5≤after` 的 application milestone intent **全部在一个 `prisma.$transaction(...)` 内**。
 - **ActivityCheckIn F2**:App 自助打卡写事务固定按 Activity → 当前 pass ActivityRegistration

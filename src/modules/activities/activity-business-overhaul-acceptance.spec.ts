@@ -455,6 +455,37 @@ const BATCH4_INVITATION_VISITOR_ACCEPTANCE_BLOCKERS: Readonly<Record<string, str
     'create/list/revoke/decline 与过期可见性已接；accept 仍卡 #22 资格 runtime、保险/容量 caller，活动开始批量 expiry 仍归 AC-028。',
 };
 
+/** 第 4 批永久头 runtime 只翻真实十轮取消/重报闭环；资格、分配与整单取消旁路不借此结案。 */
+const BATCH4_PERMANENT_REGISTRATION_ACCEPTANCE_IDS = ['AC-021', 'ADV-005'] as const;
+
+const BATCH4_PERMANENT_REGISTRATION_ACCEPTANCE_DESTINATIONS: Readonly<
+  Record<string, readonly AcceptanceDestination[]>
+> = {
+  'AC-021': [
+    {
+      file: 'test/e2e/activity-registration-permanent-head-runtime.e2e-spec.ts',
+      needle: 'reuses one permanent head and identity through ten cancel/reapply rounds',
+    },
+    {
+      file: 'test/e2e/activity-registration-permanent-head-runtime.e2e-spec.ts',
+      needle:
+        'expect(await prisma.activityParticipationIdentity.count({ where: { id: identityId } })).toBe(1);',
+    },
+  ],
+  'ADV-005': [
+    {
+      file: 'test/e2e/activity-registration-permanent-head-runtime.e2e-spec.ts',
+      needle:
+        'expect(await prisma.activityRegistrationRevision.count({ where: { registrationId } })).toBe(21);',
+    },
+    {
+      file: 'test/e2e/activity-registration-permanent-head-runtime.e2e-spec.ts',
+      needle:
+        'expect(await prisma.activityParticipationRevision.count({ where: { identityId } })).toBe(21);',
+    },
+  ],
+};
+
 if (
   Object.keys(BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS).some(
     (id) => BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_BLOCKERS[id],
@@ -531,6 +562,19 @@ if (
   throw new Error('第 4 批⑦两条验收编号必须逐条有真实去向或明确 blocker');
 }
 
+const batch4PermanentRegistrationResolvedIds = new Set([
+  ...Object.keys(BATCH4_PERMANENT_REGISTRATION_ACCEPTANCE_DESTINATIONS),
+]);
+if (
+  batch4PermanentRegistrationResolvedIds.size !==
+    BATCH4_PERMANENT_REGISTRATION_ACCEPTANCE_IDS.length ||
+  BATCH4_PERMANENT_REGISTRATION_ACCEPTANCE_IDS.some(
+    (id) => !batch4PermanentRegistrationResolvedIds.has(id),
+  )
+) {
+  throw new Error('第 4 批永久头 runtime 的 AC-021/ADV-005 必须绑定十轮真实 E2E');
+}
+
 function registerAcceptanceCases(cases: readonly { id: string; title: string }[]): void {
   for (const { id, title } of cases) {
     const destinations =
@@ -538,7 +582,8 @@ function registerAcceptanceCases(cases: readonly { id: string; title: string }[]
       BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS[id] ??
       BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS[id] ??
       BATCH4_ONSITE_PARTICIPATION_ACCEPTANCE_DESTINATIONS[id] ??
-      BATCH4_INVITATION_VISITOR_ACCEPTANCE_DESTINATIONS[id];
+      BATCH4_INVITATION_VISITOR_ACCEPTANCE_DESTINATIONS[id] ??
+      BATCH4_PERMANENT_REGISTRATION_ACCEPTANCE_DESTINATIONS[id];
     if (destinations !== undefined) {
       it(`${id} ${title}（已标注去向）`, () => {
         for (const destination of destinations) {

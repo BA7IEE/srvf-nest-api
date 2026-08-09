@@ -41,7 +41,7 @@
 - 队员活动详情：`GET /api/app/v1/activities/:activityId` 保留 `formVersion:number|null`，并新增 `registrationForm:null|{version,fields}`。只有 active Form 才返回安全题目定义；绝不依赖或展示 DB id、hash、workflowRevision、时间戳或存储信息。
 - 创建会话：`POST /api/app/v1/activities/:activityId/registration-upload-sessions`。仅当前公开可报名、未结束且 active Form 含 file 题的活动可创建；成功**仅此一次**返回 `{id,token,expiresAt,formVersion}`，token 30 分钟有效，客户端须立刻临时保存，不能期望后续读取或恢复明文 token。
 - 上传：`POST /api/app/v1/activities/:activityId/registration-upload-sessions/:sessionId/files` 是后端中转 `multipart/form-data`，文本字段名 `token`、**单个**文件字段名 `file`。仅 JPEG/PNG/WebP/PDF，最大 10 MiB，声明 MIME、大小和文件魔数都须通过。成功仅返回 `{attachmentId,originalName,mime,size,createdAt}`；同 token 重试返回同一安全元数据。
-- **提交报名（第 4 批④）**：`POST /api/app/v1/activities/:activityId/registrations` 必填 `operationKey`、`formVersion`、`answers`、`preferences`。同一请求可安全重试；成功后同 key + 同 canonical 请求即使 upload session 已 consumed 也返回首次安全回执，不同请求返 `21003`。审批前可重提 pending/waitlisted 报名；旧 revision、旧答案与旧志愿不可改写，移除场次仅追加 cancelled participation revision，再选回复用原永久 identity。
+- **提交/重报（第 4 批）**：`POST /api/app/v1/activities/:activityId/registrations` 必填 `operationKey`、`formVersion`、`answers`、`preferences`。同 key+同 canonical 请求即使 upload session 已 consumed 也返回首次回执；同 key 异载荷返 `21003`。pending/waitlisted 以及 live cancelled/reject 头的新 key 都只在原 head/identity 上追加 revision；soft-deleted 头不复活。旧 revision/答案/志愿/保险 evidence 不改写；仅 single gate=true 且活动 `requiresInsurance=true` 时，每次成功报名/重报产生当次 revision evidence，gate=false 或活动不要求保险时为 0。客户端应保存新回执的 revision/id，不要把“取消后重报”建模成第二份报名。
 - **file 题最终绑定**：答案只传 `uploadSessionId`，不传 attachmentId/token/key/URL。事务内会核验本人、活动、Form 版本、会话状态及唯一 AVAILABLE 文件；成功后将附件转为内部 `registration-form-answer` owner 并消费会话。安全回执、异常和通用附件读写面都不会返回最终附件 id、文件名、token、key、URL 或 locator。
 - **没有 Provider signed upload URL**：任何响应都不返回 key、accessUrl/signed URL、owner、tokenHash 或存储 locator。
 
@@ -185,7 +185,7 @@
 - `PATCH /api/app/v1/me/insurances/:id` 在 body 回传 `expectedVersion`;`DELETE` 同路径在 query 回传 `expectedVersion`。OpenAPI/客户端契约自 PR3 起均为**必填**；single gate=true 时缺失、`null`、空串或纯空白统一 `40000`，并保证 0 mutation/0 audit。显式旧版本仍返 `26011`：先刷新该保险、保留用户输入并让用户确认后再重试，禁止拿旧版本盲重放。
 - 实质 PATCH 会 `version + 1` 并把审核态重置为 `pending`、清空审核责任时间；空 body、仅 `expectedVersion`、trim 后相同字符串或北京 date-only 相同都是真 no-op，`version/status/updatedAt` 不变。DELETE 会 `version + 1`，但保留删除前审核态与审核责任时间。
 - single gate=true 后，`requiresInsurance=true` 的活动只接受覆盖完整北京日区间的 **verified 自购保险**，否则再尝试 live 团队保单覆盖；pending/rejected/软删/日期不覆盖都返既有 `26030`。报名成功会在同一事务生成恰一条最小 evidence，前端无新字段可消费；evidence 不保存保险公司、保单号、note/reason、图片/key/URL。
-- PR4 migration/约束代码已交付但本 PR 未 deploy、生产尚未生效；deploy 后单 source/owner、kind/区间/review snapshot、同 member、owner 全局唯一与 immutable 才由数据库兜底，source/owner 后续编辑或软删不改历史 evidence。**没有新增 route、DTO、字段或前端动作，客户端契约 0 diff**。
+- PR4 + 第 82 migration/约束与 revision-bound runtime 已交付但未 production deploy；新报名/重报 evidence 绑定当次 RegistrationRevision，旧 header-only evidence 不回填。上线须 drain 后由维护者独立 deploy D81/D82+探针，并保持 drain 整批切 runtime exact SHA，禁新旧混跑/旧版回滚。**没有新增 route、DTO 或前端字段，客户端契约 0 diff**。
 - gate=false 保留 PR2 运行时兼容（缺版本仍可接受、活动 consumer 旧语义、0 evidence）；这只是 rollout 档位，不改变客户端“expectedVersion 必填”的终态契约。维护者于 2026-07-19 仅确认“旧客户端都没上线，放心操作执行”，**没有验证旧 server=0**；本 PR 不部署/启用。production 切 true 前必须 drain 全部旧 server/旧事务，并确保 fleet 不出现 true/false 混跑。Admin final join 与配置细节见 [`admin-web.md §2.2`](admin-web.md)。
 
 ### 2.1 活动 GPS 自助打卡(F2)
@@ -214,7 +214,7 @@
 ### 2.4 活动岗位与时段（审计刀 6 · 第四件 / 收官）
 
 - **先选岗位再报名**：对公开报名活动调用 `GET /api/app/v1/activities/:activityId/positions`，按 `sortOrder` 展示 `name/description/attendanceRoleCode/startAt/endAt/genderRequirementCode/capacity/remainingCapacity/canRegister`。`remainingCapacity=0` 不代表按钮禁用——满员仍可提交并进入候补；`capacity/remainingCapacity=null` 表示不限。不可见活动统一 20001，避免存在性枚举。
-- **报名 body**：`POST /api/app/v1/my/registrations` additive 接收 `activityPositionId`。活动有 live 岗位时必填，缺失返 `21035`；不存在/跨活动/已删返 `20002`；同人已在该活动有 pending/pass/waitlisted 报名时，换另一个岗位仍返 `21002`。本期无换岗端点；取消不会释放永久报名头，前端不得指引“先取消再重新报名”。legacy 历史头重报暂返 `21002`，canonical 新 key 暂返 `21003`，旧精确回执可重放，同头复用待后续 runtime。
+- **报名 body**：`POST /api/app/v1/my/registrations` additive 接收 `activityPositionId`，legacy 路由**没有** `operationKey`。活动有 live 岗位时必填，缺失返 `21035`；不存在/跨活动/已删返 `20002`；同人已有 pending/pass/waitlisted 报名时，换另一个岗位仍返 `21002`。无 permanent identity 的 live cancelled/reject legacy 头可由一次新提交在原头追加 revision；一旦已有 canonical/onsite identity，legacy 新请求返 `21038`，应回到 canonical/managed 流程。soft-deleted 头不复活。
 - **岗位级候补**：`waitlistPosition` 只在所选岗位队列内编号；A 岗释放或扩容只递补 A 岗，不影响 B 岗。收到「候补已递补」后仍是 pending 待审核，不是 pass。
 - **岗位级性别与名额**：`canRegister=false` 可由活动状态/截止、已报名、活动性别闸或岗位性别闸导致；最终提交仍会复做全部闸与活动级保险校验，客户端不可把 `canRegister` 当授权证明。活动详情 `capacity` 在有岗位时是岗位名额派生值（任一岗位不限则 null），不要再取原活动 capacity 自行判断。
 - **岗位打卡窗**：报名岗位配置 `startAt/endAt` 时，签到/签退按岗位窗 ± 既有容差；岗位无独立时段或无岗位报名才沿活动窗。客户端仍只处理既有 `22077`，但提示文案应写“超出当前岗位/活动的有效打卡时间”。

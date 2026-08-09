@@ -72,7 +72,7 @@
 
 > **活动岗位(F2–F4)**:创建/更新 body 白名单为 `name/attendanceRoleCode/capacity/startAt/endAt/genderRequirementCode/description/sortOrder`；响应主键字段为 `activityPositionId`。`capacity=null` 表示不限，岗位时段必须同空同有且落在活动窗内。列表固定 `sortOrder ASC,createdAt ASC,id ASC`。同活动 live 重名返 `20003`，软删/跨活动岗位详情统一 `20002`，存在 pending/pass/waitlisted 报名时删除返 `20031`。有 live 岗位时活动 list/detail 的 `capacity` 是岗位名额派生值（任一不限→null，否则求和），编辑 Activity.capacity 不再触发递补。岗位报名的 App 签到/签退与 Admin 考勤 record 都按岗位窗 ± 既有容差，草稿角色自动取岗位 `attendanceRoleCode`；岗位没配独立时段才回落活动窗。前端路由参数必须使用全称 `activityPositionId`，不要复用组织职务的 `positionId` 命名。
 >
-> **报名岗位列(F3)**:Admin 报名列表 item additive 返回 `activityPosition:null|{activityPositionId,name}`；代报名 body 可传 `activityPositionId`。活动有 live 岗位未传返 `21035`，不存在/跨活动/已删返 `20002`，同人报第二岗位仍返 `21002`。候补排位、取消递补与岗位扩容递补均按 `(activityId,activityPositionId)` 隔离。**第 4 批④边界**：含 live session 或 active Form 的 v1.1 活动不得从此 legacy POST 建报名，统一 `21038`；后台代报名、导入及三入口共享答案校验仍待后续刀，不得以 admin surface 绕过 canonical App 主链。
+> **报名岗位列(F3)**:Admin 报名列表 item additive 返回 `activityPosition:null|{activityPositionId,name}`；代报名 body 可传 `activityPositionId`。活动有 live 岗位未传返 `21035`，不存在/跨活动/已删返 `20002`，同人报第二岗位仍返 `21002`。候补排位、取消递补与岗位扩容递补均按 `(activityId,activityPositionId)` 隔离。无 permanent identity 的 cancelled/reject legacy 头可由 Admin 同头重报并追加 revision；已有 canonical/onsite identity 时 legacy POST 返 `21038`，不得借后台面绕过 canonical 主链。含 live session 或 active Form 的 v1.1 活动仍统一 `21038`；后台代录 Form/导入及三入口共享答案校验仍未接。审核 requiresInsurance 报名时只看 head.currentRevision 对应 evidence；旧 currentRevision=0 才兼容唯一 header-only evidence，当前版本缺证据返 `26030`，后台不得手选旧证据。
 
 > ⚠️ **报名审批生命周期新规(v0.40.0 参与域生命周期收口)**:
 > ① **未发布/取消/完结/已结束活动禁批报名** —— `approve` 仅在 activity=published 且 `endAt >= now` 时允许；draft 返 `20126`，cancelled/completed/已结束返 `20124`。`reject` / `cancel` 仍可用于清理残留队列。
@@ -128,7 +128,7 @@
 >
 > **单 gate 与 Team Join final join**：`Create/UpdateTeamJoinCycleDto` 可配置 `requiresInsurance`（create 缺省 false），response 始终回显。只有 `INSURANCE_ENFORCEMENT_ENABLED=true && cycle.requiresInsurance=true` 时，admin final join 才按 verified self → live team policy coverage 固定优先级校验入队北京日，并在根事务生成绑定 application 的恰一条最小 evidence；无来源返 `26031`（“本轮入队要求保险,当前队员无覆盖入队日期的有效保险,无法入队”），不得复用活动的 `26030`。gate=false 时字段仍可配置/展示，但不查资格、不写 evidence；活动保险失败继续 `26030`。
 >
-> **PR4 migration 终态**：约束代码已交付但本 PR 未 deploy、生产尚未生效；deploy 后 Evidence 的单 source/owner、kind/区间/review snapshot、同 member、owner 全局唯一与 immutable 才由 PostgreSQL 兜底，source/owner 后续编辑或软删不改历史 snapshot。该收口没有新增 route、DTO、权限、审核动作或前端字段，Admin 契约 0 diff。
+> **PR4 + 第 82 migration 终态**：约束与 revision-bound runtime 已交付但未 production deploy；新报名/重报 evidence 绑定当次 RegistrationRevision，旧 header-only evidence 不回填。审核 currentRevision>0 只认对应 evidence，currentRevision=0 才兼容唯一 legacy NULL evidence。上线须 drain→维护者独立 deploy D81/D82+探针→保持 drain 整批切 runtime exact SHA，禁新旧混跑/旧版回滚。无新增 route/DTO/权限/前端字段，Admin 契约 0 diff。
 >
 > **rollout 边界**：维护者于 2026-07-19 逐字确认“旧客户端都没上线，放心操作执行”，这只解除客户端兼容等待，**不代表旧 server=0 已验证**。本 PR 不 release/deploy/启用；production 配置必须显式 true/false，切 true 前先 drain 旧 server/旧事务，且整个 fleet 必须同档位，禁止 true/false 混跑。App expectedVersion 与活动 consumer 细节见 [`miniapp.md §1.2`](miniapp.md)。
 

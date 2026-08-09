@@ -283,12 +283,13 @@ export class InsuranceRequirementService {
   }
 
   async revalidateActivityRegistrationApproval(
-    registration: { id: string; memberId: string },
+    registration: { id: string; memberId: string; currentRevision: number },
     activity: { requiresInsurance: boolean; startAt: Date; endAt: Date },
     tx: PrismaTx,
   ): Promise<void> {
-    // Even when insurance is disabled/not required, approval upgrades current participation and
-    // therefore takes the shared Member lifecycle lock before registration claim/write.
+    // The caller already holds the Activity root and Registration claim/currentRevision snapshot.
+    // Even when insurance is disabled/not required, revalidation still locks the shared Member
+    // lifecycle before every capacity/registration/audit/outbox write.
     if (!this.isEnforcementEnabled() || !activity.requiresInsurance) {
       await assertActiveMemberLifecycle(tx, registration.memberId);
       return;
@@ -297,9 +298,23 @@ export class InsuranceRequirementService {
     const fail = (): never => {
       throw new BizException(BizCode.INSURANCE_REQUIRED);
     };
+    if (!Number.isInteger(registration.currentRevision) || registration.currentRevision < 0) {
+      fail();
+    }
     const { requiredFrom, requiredThrough } = this.activityInterval(activity);
+    const revisionWhere =
+      registration.currentRevision > 0
+        ? {
+            activityRegistrationRevision: {
+              is: { revision: registration.currentRevision },
+            },
+          }
+        : { activityRegistrationRevisionId: null };
     const evidences = await tx.insuranceEligibilityEvidence.findMany({
-      where: { activityRegistrationId: registration.id },
+      where: {
+        activityRegistrationId: registration.id,
+        ...revisionWhere,
+      },
       select: {
         id: true,
         sourceKind: true,
@@ -307,6 +322,7 @@ export class InsuranceRequirementService {
         teamInsuranceCoverageId: true,
         ownerKind: true,
         activityRegistrationId: true,
+        activityRegistrationRevisionId: true,
         teamJoinApplicationId: true,
         sourceRevision: true,
         sourceReviewedByUserId: true,
@@ -327,6 +343,7 @@ export class InsuranceRequirementService {
     if (
       evidence.ownerKind !== 'activity_registration' ||
       evidence.activityRegistrationId !== registration.id ||
+      registration.currentRevision > 0 !== (evidence.activityRegistrationRevisionId !== null) ||
       evidence.teamJoinApplicationId !== null ||
       evidence.activityRegistration?.id !== registration.id ||
       evidence.activityRegistration.memberId !== registration.memberId ||
@@ -575,11 +592,15 @@ export class InsuranceRequirementService {
 
   async createActivityRegistrationEvidence(
     activityRegistrationId: string,
+    activityRegistrationRevisionId: string,
     memberId: string,
     decision: InsuranceEligibilityDecision | null,
     tx: PrismaTx,
   ): Promise<void> {
     if (!decision) return;
+    if (activityRegistrationRevisionId.length === 0) {
+      throw new BizException(BizCode.INSURANCE_REQUIRED);
+    }
     const owners = await tx.$queryRaw<LockedOwnerRow[]>(Prisma.sql`
       SELECT "id", "memberId"
       FROM "ActivityRegistration"
@@ -593,7 +614,7 @@ export class InsuranceRequirementService {
     }
     this.assertEvidenceDecisionValid(decision, memberId, BizCode.INSURANCE_REQUIRED);
     const existing = await tx.insuranceEligibilityEvidence.findFirst({
-      where: { activityRegistrationId },
+      where: { activityRegistrationId, activityRegistrationRevisionId },
       select: { id: true },
     });
     if (existing) throw new BizException(BizCode.INSURANCE_REQUIRED);
@@ -603,6 +624,7 @@ export class InsuranceRequirementService {
         ...this.evidenceSourceData(decision),
         ownerKind: 'activity_registration',
         activityRegistrationId,
+        activityRegistrationRevisionId,
         teamJoinApplicationId: null,
       },
       select: { id: true },

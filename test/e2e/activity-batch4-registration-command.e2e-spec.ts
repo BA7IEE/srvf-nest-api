@@ -542,6 +542,7 @@ describe('activity batch4 canonical registration command', () => {
           currentRevision: true,
           currentStatusCode: true,
           currentPositionId: true,
+          capacityReservationId: true,
           populationIncluded: true,
           version: true,
           updatedAt: true,
@@ -769,7 +770,7 @@ describe('activity batch4 canonical registration command', () => {
     expectBizError(conflict, BizCode.ACTIVITY_REGISTRATION_OPERATION_KEY_CONFLICT);
   });
 
-  it('keeps a cancelled canonical history on 21003 for a new key and replays the exact old key', async () => {
+  it('reuses a cancelled canonical history for a new key and replays the exact old key', async () => {
     const activity = await createNoFormCommandActivity({
       title: 'Canonical Cancelled Historical Header',
     });
@@ -803,14 +804,24 @@ describe('activity batch4 canonical registration command', () => {
       .post(commandPath(activity.id))
       .set('Authorization', applicantAuth)
       .send({ ...firstBody, operationKey: 'batch4-command-cancelled-history-new-0002' });
-    expectBizError(newKey, BizCode.ACTIVITY_REGISTRATION_OPERATION_KEY_CONFLICT);
-    await expect(
-      canonicalHistoricalHeadWriteChain({
-        activityId: activity.id,
-        memberId: applicantMemberId,
-        actorUserId: applicantUserId,
+    expect(newKey.status).toBe(201);
+    expect(newKey.body.data.registrationId).toBe(registrationId);
+    const afterNewKey = await canonicalHistoricalHeadWriteChain({
+      activityId: activity.id,
+      memberId: applicantMemberId,
+      actorUserId: applicantUserId,
+    });
+    expect(afterNewKey.headers).toEqual([
+      expect.objectContaining({
+        id: registrationId,
+        statusCode: 'pending',
+        statusSummaryCode: 'active',
+        currentRevision: 2,
+        cancelledAt: null,
       }),
-    ).resolves.toEqual(before);
+    ]);
+    expect(afterNewKey.registrationRevisions).toHaveLength(before.registrationRevisions.length + 1);
+    expect(afterNewKey.audits).toBe(before.audits + 1);
 
     const replay = await request(httpServer(app))
       .post(commandPath(activity.id))
@@ -821,6 +832,53 @@ describe('activity batch4 canonical registration command', () => {
     await expect(
       canonicalHistoricalHeadWriteChain({
         activityId: activity.id,
+        memberId: applicantMemberId,
+        actorUserId: applicantUserId,
+      }),
+    ).resolves.toEqual(afterNewKey);
+  });
+
+  it('fails closed with 20147 before any canonical write when an identity pointer drifts', async () => {
+    const pointerActivity = await createNoFormCommandActivity({
+      title: 'Canonical Pointer Reconciliation',
+    });
+    const pointerSession = await createScheduledCommandSession(
+      pointerActivity.id,
+      'pointer-reconciliation',
+    );
+    const firstBody = {
+      operationKey: 'batch4-command-pointer-first-0001',
+      formVersion: null,
+      answers: [],
+      preferences: [{ sessionId: pointerSession.id, positionIds: [] }],
+    };
+    const first = await request(httpServer(app))
+      .post(commandPath(pointerActivity.id))
+      .set('Authorization', applicantAuth)
+      .send(firstBody);
+    expect(first.status).toBe(201);
+    const identity = await prisma.activityParticipationIdentity.findFirstOrThrow({
+      where: { activityId: pointerActivity.id, memberId: applicantMemberId },
+      select: { id: true },
+    });
+    await prisma.activityParticipationIdentity.update({
+      where: { id: identity.id },
+      data: { capacityReservationId: 'drifted-session-reservation' },
+    });
+    const before = await canonicalHistoricalHeadWriteChain({
+      activityId: pointerActivity.id,
+      memberId: applicantMemberId,
+      actorUserId: applicantUserId,
+    });
+
+    const response = await request(httpServer(app))
+      .post(commandPath(pointerActivity.id))
+      .set('Authorization', applicantAuth)
+      .send({ ...firstBody, operationKey: 'batch4-command-pointer-drift-new-0002' });
+    expectBizError(response, BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+    await expect(
+      canonicalHistoricalHeadWriteChain({
+        activityId: pointerActivity.id,
         memberId: applicantMemberId,
         actorUserId: applicantUserId,
       }),
@@ -1126,6 +1184,7 @@ describe('activity batch4 canonical registration command', () => {
       select: {
         ownerKind: true,
         activityRegistrationId: true,
+        activityRegistrationRevisionId: true,
         teamJoinApplicationId: true,
         sourceKind: true,
         memberInsuranceId: true,
@@ -1136,6 +1195,7 @@ describe('activity batch4 canonical registration command', () => {
       {
         ownerKind: 'activity_registration',
         activityRegistrationId: registrationId,
+        activityRegistrationRevisionId: first.body.data.registrationRevisionId,
         teamJoinApplicationId: null,
         sourceKind: 'member_insurance',
         memberInsuranceId: insurance.id,
@@ -1155,10 +1215,15 @@ describe('activity batch4 canonical registration command', () => {
     expect(resubmission.status).toBe(201);
     expect(resubmission.body.data).toMatchObject({ registrationId, revision: 2 });
     expect(
-      await prisma.insuranceEligibilityEvidence.count({
+      await prisma.insuranceEligibilityEvidence.findMany({
         where: { activityRegistrationId: registrationId },
+        orderBy: { createdAt: 'asc' },
+        select: { activityRegistrationRevisionId: true },
       }),
-    ).toBe(1);
+    ).toEqual([
+      { activityRegistrationRevisionId: first.body.data.registrationRevisionId },
+      { activityRegistrationRevisionId: resubmission.body.data.registrationRevisionId },
+    ]);
 
     await prisma.memberInsurance.update({
       where: { id: insurance.id },
@@ -1186,7 +1251,7 @@ describe('activity batch4 canonical registration command', () => {
       await prisma.insuranceEligibilityEvidence.count({
         where: { activityRegistrationId: registrationId },
       }),
-    ).toBe(1);
+    ).toBe(2);
     expect(await commandAuditCount(applicantUserId)).toBe(auditBeforeIneligibleResubmission);
   });
 

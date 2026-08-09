@@ -409,7 +409,7 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
         .spyOn(requirement, 'createActivityRegistrationEvidence')
         .mockImplementation(async (...args) => {
           await original(...args);
-          const rows = await args[3].$queryRaw<Array<{ pid: number }>>(
+          const rows = await args[4].$queryRaw<Array<{ pid: number }>>(
             Prisma.sql`SELECT pg_backend_pid() AS pid`,
           );
           reached(rows[0].pid);
@@ -949,7 +949,7 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
     const barrier = jest
       .spyOn(requirement, 'createActivityRegistrationEvidence')
       .mockImplementation(async (...args) => {
-        const rows = await args[3].$queryRaw<Array<{ pid: number }>>(
+        const rows = await args[4].$queryRaw<Array<{ pid: number }>>(
           Prisma.sql`SELECT pg_backend_pid() AS pid`,
         );
         reached(rows[0].pid);
@@ -1002,7 +1002,7 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
     const barrier = jest
       .spyOn(requirement, 'createActivityRegistrationEvidence')
       .mockImplementation(async (...args) => {
-        const rows = await args[3].$queryRaw<Array<{ pid: number }>>(
+        const rows = await args[4].$queryRaw<Array<{ pid: number }>>(
           Prisma.sql`SELECT pg_backend_pid() AS pid`,
         );
         reached(rows[0].pid);
@@ -1103,7 +1103,7 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
     const barrier = jest
       .spyOn(requirement, 'createActivityRegistrationEvidence')
       .mockImplementation(async (...args) => {
-        const rows = await args[3].$queryRaw<Array<{ pid: number }>>(
+        const rows = await args[4].$queryRaw<Array<{ pid: number }>>(
           Prisma.sql`SELECT pg_backend_pid() AS pid`,
         );
         reached(rows[0].pid);
@@ -1248,32 +1248,37 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
     const requirement = app.get(InsuranceRequirementService);
     const failure = jest
       .spyOn(requirement, 'createActivityRegistrationEvidence')
-      .mockImplementation(async (registrationId, _memberId, decision, tx) => {
-        if (!decision) throw new Error('insurance decision unexpectedly missing');
-        const decisionSource = decision.source;
-        await tx.insuranceEligibilityEvidence.create({
-          data: {
-            id: sentinelId,
-            sourceKind: decisionSource.kind,
-            memberInsuranceId:
-              decisionSource.kind === 'member_insurance' ? decisionSource.memberInsuranceId : null,
-            teamInsuranceCoverageId:
-              decisionSource.kind === 'team_insurance_coverage'
-                ? decisionSource.teamInsuranceCoverageId
-                : null,
-            ownerKind: 'activity_registration',
-            activityRegistrationId: registrationId,
-            teamJoinApplicationId: null,
-            sourceRevision: decisionSource.sourceRevision,
-            sourceReviewedByUserId: decisionSource.sourceReviewedByUserId,
-            sourceReviewedAt: decisionSource.sourceReviewedAt,
-            requiredFrom: decision.requiredFrom,
-            requiredThrough: decision.requiredThrough,
-            sourceCoverageStart: decisionSource.coverageStart,
-            sourceCoverageEnd: decisionSource.coverageEnd,
-          },
-        });
-      });
+      .mockImplementation(
+        async (registrationId, registrationRevisionId, _memberId, decision, tx) => {
+          if (!decision) throw new Error('insurance decision unexpectedly missing');
+          const decisionSource = decision.source;
+          await tx.insuranceEligibilityEvidence.create({
+            data: {
+              id: sentinelId,
+              sourceKind: decisionSource.kind,
+              memberInsuranceId:
+                decisionSource.kind === 'member_insurance'
+                  ? decisionSource.memberInsuranceId
+                  : null,
+              teamInsuranceCoverageId:
+                decisionSource.kind === 'team_insurance_coverage'
+                  ? decisionSource.teamInsuranceCoverageId
+                  : null,
+              ownerKind: 'activity_registration',
+              activityRegistrationId: registrationId,
+              activityRegistrationRevisionId: registrationRevisionId,
+              teamJoinApplicationId: null,
+              sourceRevision: decisionSource.sourceRevision,
+              sourceReviewedByUserId: decisionSource.sourceReviewedByUserId,
+              sourceReviewedAt: decisionSource.sourceReviewedAt,
+              requiredFrom: decision.requiredFrom,
+              requiredThrough: decision.requiredThrough,
+              sourceCoverageStart: decisionSource.coverageStart,
+              sourceCoverageEnd: decisionSource.coverageEnd,
+            },
+          });
+        },
+      );
     try {
       await registerSelf(me.authHeader, act.id).expect(500);
     } finally {
