@@ -275,7 +275,7 @@
 > **#19（本刀保守工程裁定）**：合同未逐字规定 managed Form 的 wire/null/no-op 口径；固定 `form:null|{fields}`、object 的非空 fields、canonical SHA-256 与相同 canonical PUT 无写入/无新版本/无 audit。该裁定可逆，不能表述为原合同已有明文。
 > **#20（本刀保守工程裁定）**：第 79 migration 注释的“token 不进任何响应”按同段“原始 token 只返回一次”收窄为“除创建响应外不再返回”；上传路由、后端中转 multipart、30 分钟 TTL 与复用 `attachment_legacy` storage source 均为未逐字规定的执行口径，且不改 schema 注释。
 > **#21（本刀保守工程裁定）**：合同未逐字定义 canonical 报名 wire 的 `preferences[].positionIds[]` 顺序如何落库、file 题最终附件 owner；固定按数组顺序派生从 1 开始的 `preferenceOrder`，最终 owner 固定 `registration-form-answer`。两者均可逆，不宣称为原合同明文。
-> **#22（待下一 D 刀冻结）**：资格规则 `operator` / `valueJson` 精确编码。
+> **#22（第 83 migration 已冻结，runtime 待后续批次）**：资格规则 wire 固定为 `grade/gender=in+codes`、`organization=in_subtree+organizationIds`、`certificate/training=has_any+standardIds`、`insurance=covers_activity`（无 `valueJson`）和 `age=between+minYears/maxYears`（可单边、数组去重）；作用域双向复合 FK、版本/active NULL 去重与冻结快照合同已落，`submit/review` 只强制 registration revision。evaluator / writer / endpoint 仍未实现。
 > **#23（维护者 2026-08-09 已裁定，实施待后续批次）**：每活动唯一分配方式；新活动显式选择、存量为 `first_come`；first_come 按服务器受理时间，rank/lottery 截止后冻结，rank 同分按 acceptedAt 再永久 identity，lottery 可复查重放并保存批次与候补顺序。
 > **#24（维护者 2026-08-09 已裁定，实施待后续 caller）**：`capacityReservationId` 固定指向 session reservation；释放清空，不一致为 20147。
 > **#25（维护者 2026-08-09 已裁定）**：visitor `attendanceCode` 恒为 null，且无写入口。

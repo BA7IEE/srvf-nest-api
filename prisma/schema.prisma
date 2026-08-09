@@ -3517,15 +3517,14 @@ model ActivitySessionPosition {
   attendanceRoleCode String
   capacity           Int? // null 不限
 
-  // 有值时必须同空同有(CHECK);「位于 session 内」是跨行判据,由 service +
-  // 后续批次的 ProposalApplier 保证,单表 CHECK 表达不了。
+  // 有值时必须同空同有(CHECK);「位于 session 内」由复合 FK 保证。
   startAt DateTime?
   endAt   DateTime?
 
   genderRequirementCode String?
 
-  // §3.3「可空岗位资格版本」。第一刀按「跨切片不占位」暂缓,第二刀(建 §3.13 表的这一刀)
-  // 连列带 FK 补齐。可空 = 岗位不追加岗位级资格时继承场次/活动级规则集。
+  // 可空 = 岗位不追加岗位级资格时继承场次/活动级规则集；第 83 migration 的完整
+  // 复合 FK 同时保证它只能指向本活动、本场次、本岗位的规则集。
   qualificationRuleSetId String?
 
   // 可空覆盖 session;发布时解析最终值进入快照(§3.4)。
@@ -3546,7 +3545,7 @@ model ActivitySessionPosition {
   participationRevisions  ActivityParticipationRevision[]
 
   // 第 1 批第二刀(§3.3 / §3.13 / §3.14)。
-  qualificationRuleSet        ActivityQualificationRuleSet?  @relation("PositionQualificationRuleSet", fields: [qualificationRuleSetId], references: [id], onDelete: Restrict)
+  qualificationRuleSet        ActivityQualificationRuleSet?  @relation("PositionQualificationRuleSet", fields: [activityId, sessionId, id, qualificationRuleSetId], references: [activityId, sessionId, positionId, id], onDelete: Restrict)
   // §3.13 规则集反向指回岗位(岗位级作用域)与 §3.14 邀请指定岗位。
   scopedQualificationRuleSets ActivityQualificationRuleSet[] @relation("PositionQualificationRuleSetScope")
   invitations                 ActivityInvitation[]           @relation("InvitationPosition")
@@ -3565,6 +3564,7 @@ model ActivitySessionPosition {
   @@index([sessionId, sortOrder])
   @@index([deletedAt])
   @@index([qualificationRuleSetId])
+  @@unique([activityId, sessionId, id], map: "activity_session_position_activity_session_id_key")
 }
 
 // ===== §3.8 ActivityParticipationIdentity:P0-04 核心模型 =====
@@ -3991,9 +3991,8 @@ model RegistrationUploadSession {
 // 「一组规则的冻结版本,发布审核后 active」。三级作用域:活动级(session/position 皆空)、
 // 场次级(sessionId 有值)、岗位级(positionId 有值)。
 //
-// ⚠️ 合同**未给** statusCode 闭集(只说"发布审核后 active"),故本刀不加闭集 CHECK,
-// 不把 §3.12 表单版本的 draft/active/retired 挪用过来(那是另一张表的闭集)。
-// ⚠️ 合同也**未给**本表任何 unique,故不加 —— 不自行发明 (activityId, version)。
+// 第 83 migration 明确闭集为 draft / active / retired；同一作用域的版本与 active
+// 版本均由 NULLS NOT DISTINCT 索引去重，NULL 也参与作用域判定。
 model ActivityQualificationRuleSet {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -4011,7 +4010,7 @@ model ActivityQualificationRuleSet {
   // 让「场次属于该活动」由 DB 保证。sessionId 为 NULL 时 PostgreSQL MATCH SIMPLE
   // 不校验该 FK —— 正是活动级规则集要的行为。
   session  ActivitySession?         @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
-  position ActivitySessionPosition? @relation("PositionQualificationRuleSetScope", fields: [positionId], references: [id], onDelete: Restrict)
+  position ActivitySessionPosition? @relation("PositionQualificationRuleSetScope", fields: [activityId, sessionId, positionId], references: [activityId, sessionId, id], onDelete: Restrict)
 
   rules               ActivityQualificationRule[]
   evaluationSnapshots QualificationEvaluationSnapshot[]
@@ -4024,6 +4023,7 @@ model ActivityQualificationRuleSet {
   @@index([sessionId])
   @@index([positionId])
   @@index([statusCode])
+  @@unique([activityId, sessionId, positionId, id], map: "activity_qualification_rule_set_scope_pointer_key")
 }
 
 // ===== §3.13 ActivityQualificationRule:单条资格规则 =====
@@ -4039,8 +4039,12 @@ model ActivityQualificationRule {
   ruleTypeCode    String
   enforcementCode String // block / warn(§3.13 明写闭集)
 
+  // 第 83 migration 固定 wire：grade/gender=in+codes；organization=in_subtree+
+  // organizationIds；certificate/training=has_any+standardIds；age=between+
+  // minYears/maxYears(可单边)；insurance=covers_activity 且 valueJson 为 NULL。
   operator  String
-  valueJson Json? // 可空:存在性类算子(如"持有某证书")没有操作数
+  valueJson Json?
+  warnScore Int?
   message   String?
   sortOrder Int     @default(0)
 
@@ -4072,6 +4076,8 @@ model QualificationEvaluationSnapshot {
 
   evaluatedAt DateTime
   resultCode  String // pass / warn / fail(§3.13 明写闭集)
+  // display 必须双锚点为 NULL；submit/review 只要求 registrationRevisionId，identityId 可空。
+  evaluationPhaseCode String
 
   detailsJson    Json?
   inputFactsHash String?

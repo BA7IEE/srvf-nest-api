@@ -45,6 +45,8 @@
 - **报名截止**(活动闭环硬化 2026-06-21):`assertActivityRegistrable`(create 代报名 + createMy 自助 + App `createMyForApp` 共用闸)在 isPublicRegistration 之后判 `registrationDeadline !== null && now > deadline` → `ACTIVITY_REGISTRATION_DEADLINE_PASSED=20123`(精确时刻,不做北京日归一);**approve 不加此闸**(截止只管报名动作,截止前已报 pending 仍可批)
 - E2E:`activity-registration-waitlist.e2e-spec.ts` + 既有 `activity-registrations*.e2e-spec.ts` / `app-my-registrations-*.e2e-spec.ts`
 
+- **资格规则结构（第 83 migration）**：资格三表现有精确 wire/作用域/冻结 DB 合同，但本模块尚无 evaluator 或 writer；create/approve/onsite 不能猜测规则结果，现场 Form/RuleSet 未定义面继续 `21039` fail-closed。
+
 ## Risk points (不要做)
 
 - ❌ **不**绕过 `activity-registration-state-machine.ts` 在 service 内裸写态迁移

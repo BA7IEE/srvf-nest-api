@@ -159,6 +159,8 @@ Certificate (不在 participation 图内)
 > 活动定位异常/策略层非法坐标/超范围返回 22080，请求 DTO 缺失或非法沿 40000，均零派生写；已有合法 winner 的幂等重试仍 200。Admin 两端点不写
 > `ActivityCheckIn`、Sheet 或 Record，历史 `geoVerified/outOfRange` 异常证据继续可读。
 
+> **D83 资格规则结构当前事实**：`ActivityQualificationRuleSet` 的 activity/session/position 作用域与岗位指针由双向完整复合 FK 固定；同一作用域版本与 active 槽位均把 NULL 纳入去重。RuleSet/Rule 在 active 或 retired 后冻结，`QualificationEvaluationSnapshot` 只追加；规则 wire 固定为 `grade/gender=in+codes`、`organization=in_subtree+organizationIds`、`certificate/training=has_any+standardIds`、`insurance=covers_activity`（无 `valueJson`）及 `age=between+minYears/maxYears`（允许单边，数组去重）。`display` 双锚点为 NULL，`submit/review` 只强制 `registrationRevisionId`，`identityId` 可空。本刀零 runtime evaluator、零报名/审核写方，未定义结果仍由后续批次处理。
+
 **关键 invariant**:
 
 - `AttendanceRecord.contributionPoints` 字段层为历史兼容仍可空;业务写路不接受人工最终分,submit/edit 一律从 ContributionRule 计算,无规则落 0;仅 approved 时"语义生效"。

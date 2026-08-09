@@ -59,6 +59,10 @@ function sqlTime(value: string | null): string {
   return value === null ? 'NULL' : T(value);
 }
 
+function sqlJson(value: unknown): string {
+  return `${sqlText(JSON.stringify(value))}::jsonb`;
+}
+
 describe('活动改造 v1.1 第 1 批第二刀 schema 约束(第 72 migration)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -114,7 +118,7 @@ describe('活动改造 v1.1 第 1 批第二刀 schema 约束(第 72 migration)',
   //   无歧义;partial 谓词由配套的"放行"用例反向锁死)。
   async function expectRejected(
     sql: string,
-    expected: { sqlState: string; constraint?: string; key?: string },
+    expected: { sqlState: string; constraint?: string; key?: string; message?: string },
   ): Promise<RawDbError> {
     const err = await run(sql);
     expect(err).not.toBeNull();
@@ -124,6 +128,9 @@ describe('活动改造 v1.1 第 1 批第二刀 schema 约束(第 72 migration)',
     }
     if (expected.key !== undefined) {
       expect(err!.message).toContain(expected.key);
+    }
+    if (expected.message !== undefined) {
+      expect(err!.message).toContain(expected.message);
     }
     return err!;
   }
@@ -363,7 +370,14 @@ describe('活动改造 v1.1 第 1 批第二刀 schema 约束(第 72 migration)',
       `UPDATE "ActivitySessionPosition" SET ${setClause} WHERE "id" = ${sqlText(positionId)}`;
 
     it('列存在且带 FK:指向真规则集放行,指向不存在的被拒,NULL 放行', async () => {
-      await expectAccepted(upd(`"qualificationRuleSetId" = ${sqlText(ruleSetId)}`));
+      const scopedRuleSetId = uniq('position-rule-set');
+      await expectAccepted(
+        `INSERT INTO "ActivityQualificationRuleSet"
+          ("id","activityId","sessionId","positionId","version","statusCode","updatedAt")
+         VALUES (${sqlText(scopedRuleSetId)},${sqlText(activityId)},${sqlText(sessionId)},
+          ${sqlText(positionId)},1,'draft',now())`,
+      );
+      await expectAccepted(upd(`"qualificationRuleSetId" = ${sqlText(scopedRuleSetId)}`));
       await expectRejected(upd(`"qualificationRuleSetId" = 'NO-SUCH-RULE-SET'`), {
         sqlState: '23503',
         constraint: 'ActivitySessionPosition_qualificationRuleSetId_fkey',
@@ -964,9 +978,10 @@ describe('活动改造 v1.1 第 1 批第二刀 schema 约束(第 72 migration)',
     it('enforcementCode 闭集外被拒;block / warn 放行', async () => {
       const insertRule = (ruleTypeCode: string, enforcementCode: string) =>
         `INSERT INTO "ActivityQualificationRule"
-          ("id","ruleSetId","ruleTypeCode","enforcementCode","operator","updatedAt")
+          ("id","ruleSetId","ruleTypeCode","enforcementCode","operator","valueJson","warnScore","updatedAt")
          VALUES (${sqlText(uniq('ru'))},${sqlText(ruleSetId)},${sqlText(ruleTypeCode)},
-          ${sqlText(enforcementCode)},'eq',now())`;
+          ${sqlText(enforcementCode)},'in',${sqlJson({ codes: ['undergraduate'] })},
+          ${sqlNum(enforcementCode === 'warn' ? 60 : null)},now())`;
       await expectRejected(insertRule('grade', 'info'), {
         sqlState: '23514',
         constraint: 'activity_qualification_rule_enforcement_code_check',
@@ -976,10 +991,34 @@ describe('活动改造 v1.1 第 1 批第二刀 schema 约束(第 72 migration)',
     });
 
     it('ruleTypeCode 闭集外被拒;合同七种全部放行', async () => {
-      const insertRule = (ruleTypeCode: string) =>
-        `INSERT INTO "ActivityQualificationRule"
-          ("id","ruleSetId","ruleTypeCode","enforcementCode","operator","updatedAt")
-         VALUES (${sqlText(uniq('ru'))},${sqlText(ruleSetId)},${sqlText(ruleTypeCode)},'block','eq',now())`;
+      const insertRule = (ruleTypeCode: string) => {
+        const wireByRuleType: Record<string, { operator: string; valueJson: string }> = {
+          grade: { operator: 'in', valueJson: sqlJson({ codes: ['fixture-grade'] }) },
+          organization: {
+            operator: 'in_subtree',
+            valueJson: sqlJson({ organizationIds: ['fixture-organization'] }),
+          },
+          certificate: {
+            operator: 'has_any',
+            valueJson: sqlJson({ standardIds: ['fixture-certificate'] }),
+          },
+          age: { operator: 'between', valueJson: sqlJson({ minYears: 18, maxYears: 65 }) },
+          training: {
+            operator: 'has_any',
+            valueJson: sqlJson({ standardIds: ['fixture-training'] }),
+          },
+          gender: { operator: 'in', valueJson: sqlJson({ codes: ['fixture-gender'] }) },
+          insurance: { operator: 'covers_activity', valueJson: 'NULL' },
+        };
+        const { operator, valueJson } = wireByRuleType[ruleTypeCode] ?? {
+          operator: 'in',
+          valueJson: sqlJson({ codes: ['fixture-code'] }),
+        };
+        return `INSERT INTO "ActivityQualificationRule"
+          ("id","ruleSetId","ruleTypeCode","enforcementCode","operator","valueJson","updatedAt")
+         VALUES (${sqlText(uniq('ru'))},${sqlText(ruleSetId)},${sqlText(ruleTypeCode)},'block',
+          ${sqlText(operator)},${valueJson},now())`;
+      };
       await expectRejected(insertRule('blood_type'), {
         sqlState: '23514',
         constraint: 'activity_qualification_rule_type_code_check',
@@ -1000,8 +1039,8 @@ describe('活动改造 v1.1 第 1 批第二刀 schema 约束(第 72 migration)',
     it('Snapshot resultCode 闭集外被拒;pass / warn / fail 放行', async () => {
       const insertSnapshot = (resultCode: string) =>
         `INSERT INTO "QualificationEvaluationSnapshot"
-          ("id","ruleSetVersionId","evaluatedAt","resultCode")
-         VALUES (${sqlText(uniq('sn'))},${sqlText(ruleSetId)},${T(NOW_ISO)},${sqlText(resultCode)})`;
+          ("id","ruleSetVersionId","evaluatedAt","resultCode","evaluationPhaseCode")
+         VALUES (${sqlText(uniq('sn'))},${sqlText(ruleSetId)},${T(NOW_ISO)},${sqlText(resultCode)},'display')`;
       await expectRejected(insertSnapshot('unknown'), {
         sqlState: '23514',
         constraint: 'qualification_evaluation_snapshot_result_code_check',
@@ -1012,20 +1051,392 @@ describe('活动改造 v1.1 第 1 批第二刀 schema 约束(第 72 migration)',
     });
 
     it('★Snapshot 展示态:identityId 与 registrationRevisionId 双双为 NULL 必须放行(§3.13「展示、提交、审核三次评估」)', async () => {
-      const insertSnapshot = (identity: string | null, revision: string | null) =>
-        `INSERT INTO "QualificationEvaluationSnapshot"
-          ("id","identityId","registrationRevisionId","ruleSetVersionId","evaluatedAt","resultCode")
+      const insertSnapshot = (
+        evaluationPhaseCode: 'display' | 'submit' | 'review',
+        identity: string | null,
+        revision: string | null,
+      ) => {
+        return `INSERT INTO "QualificationEvaluationSnapshot"
+          ("id","identityId","registrationRevisionId","ruleSetVersionId","evaluatedAt","resultCode","evaluationPhaseCode")
          VALUES (${sqlText(uniq('sn'))},${sqlText(identity)},${sqlText(revision)},
-          ${sqlText(ruleSetId)},${T(NOW_ISO)},'pass')`;
+          ${sqlText(ruleSetId)},${T(NOW_ISO)},'pass',${sqlText(evaluationPhaseCode)})`;
+      };
       // 展示评估发生在报名之前 —— 那一刻两个锚点都不存在。若两列 NOT NULL,
       // 这条合同明写的形态根本写不进来。
-      await expectAccepted(insertSnapshot(null, null));
-      await expectAccepted(insertSnapshot(null, revisionId));
-      await expectAccepted(insertSnapshot(identityId, revisionId));
+      await expectAccepted(insertSnapshot('display', null, null));
+      // submit/review 只要求注册修订锚点；identity 是可选的评估上下文。
+      await expectAccepted(insertSnapshot('submit', null, revisionId));
+      await expectAccepted(insertSnapshot('submit', identityId, revisionId));
+      await expectAccepted(insertSnapshot('review', null, revisionId));
+      await expectAccepted(insertSnapshot('review', identityId, revisionId));
       // 但有值时外键仍然生效,不是"可空 = 不校验"。
-      await expectRejected(insertSnapshot('NO-SUCH-IDENTITY', null), {
+      await expectRejected(insertSnapshot('review', 'NO-SUCH-IDENTITY', revisionId), {
         sqlState: '23503',
         constraint: 'QualificationEvaluationSnapshot_identityId_fkey',
+      });
+    });
+
+    // 第 83 migration 的判据先于 SQL 落地。此组在第 82 migration 上必须真实变红：
+    // 旧库会接受这些反例；迁移后的每一条又有先行的合法正对照，避免 CHECK(false) 假绿。
+    describe('第 83 migration：作用域、精确编码与冻结（red-first）', () => {
+      const insertRuleSet = (input: {
+        activity?: string;
+        session?: string | null;
+        position?: string | null;
+        version: number;
+        status?: string;
+      }) =>
+        `INSERT INTO "ActivityQualificationRuleSet"
+          ("id","activityId","sessionId","positionId","version","statusCode","updatedAt")
+         VALUES (${sqlText(uniq('q83-rs'))},${sqlText(input.activity ?? activityId)},
+          ${sqlText(input.session ?? null)},${sqlText(input.position ?? null)},${sqlNum(input.version)},
+          ${sqlText(input.status ?? 'draft')},now())`;
+
+      it('岗位级作用域必须带同活动同场次锚点，且岗位指针反向同样受完整复合 FK 约束', async () => {
+        const scopedRuleSetId = uniq('q83-scoped-rs');
+        const secondPositionId = (
+          await prisma.activitySessionPosition.create({
+            data: {
+              activityId,
+              sessionId,
+              code: uniq('q83-position'),
+              name: uniq('q83-position'),
+              attendanceRoleCode: 'volunteer',
+            },
+            select: { id: true },
+          })
+        ).id;
+        await expectAccepted(
+          `INSERT INTO "ActivityQualificationRuleSet"
+            ("id","activityId","sessionId","positionId","version","statusCode","updatedAt")
+           VALUES (${sqlText(scopedRuleSetId)},${sqlText(activityId)},${sqlText(sessionId)},
+            ${sqlText(positionId)},80,'draft',now())`,
+        );
+        await expectAccepted(
+          `UPDATE "ActivitySessionPosition" SET "qualificationRuleSetId" = ${sqlText(scopedRuleSetId)}
+           WHERE "id" = ${sqlText(positionId)}`,
+        );
+        await expectRejected(insertRuleSet({ position: positionId, version: 81 }), {
+          sqlState: '23514',
+          constraint: 'activity_qualification_rule_set_scope_shape_check',
+        });
+        await expectRejected(
+          `UPDATE "ActivitySessionPosition" SET "qualificationRuleSetId" = ${sqlText(scopedRuleSetId)}
+           WHERE "id" = ${sqlText(secondPositionId)}`,
+          {
+            sqlState: '23503',
+            constraint: 'activity_session_position_qualification_rule_set_scope_fkey',
+          },
+        );
+      });
+
+      it('规则集不能拿本活动场次去锚定另一活动的岗位', async () => {
+        const otherActivityId = (
+          await prisma.activity.create({
+            data: {
+              title: uniq('q83-other-activity'),
+              activityTypeCode: 'v11-slice2',
+              organizationId,
+              startAt: new Date(SESSION_START),
+              endAt: new Date(SESSION_END),
+              location: 'q83 other activity',
+              statusCode: 'draft',
+            },
+            select: { id: true },
+          })
+        ).id;
+        const otherSessionId = (
+          await prisma.activitySession.create({
+            data: {
+              activityId: otherActivityId,
+              code: uniq('q83-other-session'),
+              name: uniq('q83-other-session'),
+              startAt: new Date(SESSION_START),
+              endAt: new Date(SESSION_END),
+              locationText: 'q83 other activity',
+              checkInOpenAt: new Date(CHECKIN_OPEN),
+              checkInCloseAt: new Date(CHECKIN_CLOSE),
+              checkOutOpenAt: new Date(CHECKOUT_OPEN),
+              checkOutCloseAt: new Date(CHECKOUT_CLOSE),
+              locationRequired: false,
+              locationPolicySourceCode: 'system',
+              statusCode: 'scheduled',
+            },
+            select: { id: true },
+          })
+        ).id;
+        const otherPositionId = (
+          await prisma.activitySessionPosition.create({
+            data: {
+              activityId: otherActivityId,
+              sessionId: otherSessionId,
+              code: uniq('q83-other-position'),
+              name: uniq('q83-other-position'),
+              attendanceRoleCode: 'volunteer',
+            },
+            select: { id: true },
+          })
+        ).id;
+        await expectAccepted(
+          insertRuleSet({ session: sessionId, position: positionId, version: 82 }),
+        );
+        await expectRejected(
+          insertRuleSet({ session: sessionId, position: otherPositionId, version: 83 }),
+          {
+            sqlState: '23503',
+            constraint: 'activity_qualification_rule_set_activity_session_position_fkey',
+          },
+        );
+      });
+
+      it('七类规则只接受各自精确的 operator/valueJson wire 形状', async () => {
+        const legalWires: Array<{ ruleTypeCode: string; operator: string; valueJson: string }> = [
+          {
+            ruleTypeCode: 'grade',
+            operator: 'in',
+            valueJson: sqlJson({ codes: ['undergraduate', 'postgraduate'] }),
+          },
+          {
+            ruleTypeCode: 'organization',
+            operator: 'in_subtree',
+            valueJson: sqlJson({ organizationIds: ['team-a', 'team-b'] }),
+          },
+          {
+            ruleTypeCode: 'certificate',
+            operator: 'has_any',
+            valueJson: sqlJson({ standardIds: ['first-aid', 'cpr'] }),
+          },
+          {
+            ruleTypeCode: 'age',
+            operator: 'between',
+            valueJson: sqlJson({ minYears: 18, maxYears: 65 }),
+          },
+          { ruleTypeCode: 'age', operator: 'between', valueJson: sqlJson({ minYears: 18 }) },
+          { ruleTypeCode: 'age', operator: 'between', valueJson: sqlJson({ maxYears: 65 }) },
+          {
+            ruleTypeCode: 'training',
+            operator: 'has_any',
+            valueJson: sqlJson({ standardIds: ['safety', 'fire'] }),
+          },
+          {
+            ruleTypeCode: 'gender',
+            operator: 'in',
+            valueJson: sqlJson({ codes: ['female', 'male'] }),
+          },
+          { ruleTypeCode: 'insurance', operator: 'covers_activity', valueJson: 'NULL' },
+        ];
+        for (const wire of legalWires) {
+          await expectAccepted(
+            `INSERT INTO "ActivityQualificationRule"
+              ("id","ruleSetId","ruleTypeCode","enforcementCode","operator","valueJson","updatedAt")
+             VALUES (${sqlText(uniq('q83-rule'))},${sqlText(ruleSetId)},${sqlText(wire.ruleTypeCode)},
+              'block',${sqlText(wire.operator)},${wire.valueJson},now())`,
+          );
+        }
+
+        const illegalWires: Array<{ ruleTypeCode: string; operator: string; valueJson: string }> = [
+          { ruleTypeCode: 'grade', operator: 'eq', valueJson: 'NULL' },
+          {
+            ruleTypeCode: 'grade',
+            operator: 'in',
+            valueJson: sqlJson({ codes: ['same', 'same'] }),
+          },
+          {
+            ruleTypeCode: 'organization',
+            operator: 'in',
+            valueJson: sqlJson({ codes: ['team-a'] }),
+          },
+          {
+            ruleTypeCode: 'organization',
+            operator: 'in_subtree',
+            valueJson: sqlJson({ organizationIds: ['team-a', 'team-a'] }),
+          },
+          {
+            ruleTypeCode: 'certificate',
+            operator: 'in',
+            valueJson: sqlJson({ codes: ['first-aid'] }),
+          },
+          {
+            ruleTypeCode: 'certificate',
+            operator: 'has_any',
+            valueJson: sqlJson({ standardIds: ['first-aid', 'first-aid'] }),
+          },
+          { ruleTypeCode: 'age', operator: 'between', valueJson: sqlJson({ min: 18, max: 65 }) },
+          { ruleTypeCode: 'age', operator: 'between', valueJson: sqlJson({}) },
+          {
+            ruleTypeCode: 'age',
+            operator: 'between',
+            valueJson: sqlJson({ minYears: 65, maxYears: 18 }),
+          },
+          { ruleTypeCode: 'training', operator: 'in', valueJson: sqlJson({ codes: ['safety'] }) },
+          {
+            ruleTypeCode: 'training',
+            operator: 'has_any',
+            valueJson: sqlJson({ standardIds: ['safety', 'safety'] }),
+          },
+          { ruleTypeCode: 'gender', operator: 'eq', valueJson: 'NULL' },
+          {
+            ruleTypeCode: 'gender',
+            operator: 'in',
+            valueJson: sqlJson({ codes: ['female', 'female'] }),
+          },
+          {
+            ruleTypeCode: 'insurance',
+            operator: 'covered',
+            valueJson: 'NULL',
+          },
+          {
+            ruleTypeCode: 'insurance',
+            operator: 'covers_activity',
+            valueJson: sqlJson({ codes: ['basic'] }),
+          },
+        ];
+        for (const wire of illegalWires) {
+          await expectRejected(
+            `INSERT INTO "ActivityQualificationRule"
+              ("id","ruleSetId","ruleTypeCode","enforcementCode","operator","valueJson","updatedAt")
+             VALUES (${sqlText(uniq('q83-rule'))},${sqlText(ruleSetId)},${sqlText(wire.ruleTypeCode)},
+              'block',${sqlText(wire.operator)},${wire.valueJson},now())`,
+            {
+              sqlState: '23514',
+              constraint: 'activity_qualification_rule_operator_value_json_check',
+            },
+          );
+        }
+      });
+
+      it('warnScore 仅属于 warn，且范围为 0 到 100', async () => {
+        const insertRule = (enforcementCode: string, warnScore: number | null) =>
+          `INSERT INTO "ActivityQualificationRule"
+            ("id","ruleSetId","ruleTypeCode","enforcementCode","operator","valueJson","warnScore","updatedAt")
+           VALUES (${sqlText(uniq('q83-rule'))},${sqlText(ruleSetId)},'grade',${sqlText(enforcementCode)},
+            'in',${sqlJson({ codes: ['undergraduate'] })},${sqlNum(warnScore)},now())`;
+        await expectAccepted(insertRule('warn', 0));
+        await expectAccepted(insertRule('warn', 100));
+        await expectAccepted(insertRule('block', null));
+        for (const [enforcementCode, warnScore] of [
+          ['block', 1],
+          ['warn', null],
+          ['warn', -1],
+          ['warn', 101],
+        ] as Array<[string, number | null]>) {
+          await expectRejected(insertRule(enforcementCode, warnScore), {
+            sqlState: '23514',
+            constraint: 'activity_qualification_rule_warn_score_check',
+          });
+        }
+      });
+
+      it('RuleSet status 闭集、每作用域版本唯一与 active partial unique 都让 NULL 作用域参与判定', async () => {
+        for (const [version, statusCode] of [
+          [87, 'draft'],
+          [88, 'active'],
+          [89, 'retired'],
+        ] as Array<[number, string]>) {
+          await expectAccepted(insertRuleSet({ version, status: statusCode }));
+        }
+        await expectRejected(insertRuleSet({ version: 90, status: 'published' }), {
+          sqlState: '23514',
+          constraint: 'activity_qualification_rule_set_status_code_check',
+        });
+        await expectRejected(insertRuleSet({ version: 87, status: 'draft' }), {
+          sqlState: '23505',
+          key: '("activityId", "sessionId", "positionId", version)',
+        });
+        await expectRejected(insertRuleSet({ version: 91, status: 'active' }), {
+          sqlState: '23505',
+          key: '("activityId", "sessionId", "positionId")',
+        });
+      });
+
+      it('展示、提交、审核快照的 phase/anchor 必须成对，且 phase 闭集不扩值', async () => {
+        const insertSnapshot = (
+          evaluationPhaseCode: string,
+          identity: string | null,
+          revision: string | null,
+        ) =>
+          `INSERT INTO "QualificationEvaluationSnapshot"
+            ("id","identityId","registrationRevisionId","ruleSetVersionId","evaluatedAt","resultCode","evaluationPhaseCode")
+           VALUES (${sqlText(uniq('q83-snapshot'))},${sqlText(identity)},${sqlText(revision)},
+            ${sqlText(ruleSetId)},${T(NOW_ISO)},'pass',${sqlText(evaluationPhaseCode)})`;
+        await expectAccepted(insertSnapshot('display', null, null));
+        await expectAccepted(insertSnapshot('submit', null, revisionId));
+        await expectAccepted(insertSnapshot('submit', identityId, revisionId));
+        await expectAccepted(insertSnapshot('review', null, revisionId));
+        await expectAccepted(insertSnapshot('review', identityId, revisionId));
+        await expectRejected(insertSnapshot('queued', null, null), {
+          sqlState: '23514',
+          constraint: 'qualification_evaluation_snapshot_phase_code_check',
+        });
+        await expectRejected(insertSnapshot('display', null, revisionId), {
+          sqlState: '23514',
+          constraint: 'qualification_evaluation_snapshot_phase_anchor_check',
+        });
+        await expectRejected(insertSnapshot('submit', null, null), {
+          sqlState: '23514',
+          constraint: 'qualification_evaluation_snapshot_phase_anchor_check',
+        });
+        await expectRejected(insertSnapshot('review', identityId, null), {
+          sqlState: '23514',
+          constraint: 'qualification_evaluation_snapshot_phase_anchor_check',
+        });
+      });
+
+      it('每个作用域仅可有一份 active，NULL 作用域也参与去重', async () => {
+        await expectAccepted(insertRuleSet({ version: 84, status: 'active' }));
+        await expectRejected(insertRuleSet({ version: 85, status: 'active' }), {
+          sqlState: '23505',
+          key: '("activityId", "sessionId", "positionId")',
+        });
+      });
+
+      it('active 规则与快照写入后不可修改', async () => {
+        const frozenRuleSetId = uniq('q83-frozen-rs');
+        const frozenRuleId = uniq('q83-frozen-rule');
+        const snapshotId = uniq('q83-snapshot');
+        await expectAccepted(
+          `INSERT INTO "ActivityQualificationRuleSet"
+            ("id","activityId","version","statusCode","updatedAt")
+           VALUES (${sqlText(frozenRuleSetId)},${sqlText(activityId)},86,'draft',now())`,
+        );
+        await expectAccepted(
+          `INSERT INTO "ActivityQualificationRule"
+            ("id","ruleSetId","ruleTypeCode","enforcementCode","operator","valueJson","updatedAt")
+           VALUES (${sqlText(frozenRuleId)},${sqlText(frozenRuleSetId)},'insurance','block','covers_activity',NULL,now())`,
+        );
+        await expectAccepted(
+          `UPDATE "ActivityQualificationRuleSet" SET "statusCode" = 'active'
+           WHERE "id" = ${sqlText(frozenRuleSetId)}`,
+        );
+        await expectRejected(
+          `UPDATE "ActivityQualificationRuleSet" SET "version" = 87
+           WHERE "id" = ${sqlText(frozenRuleSetId)}`,
+          { sqlState: '55000', message: 'activity_qualification_rule_set_frozen' },
+        );
+        await expectRejected(
+          `UPDATE "ActivityQualificationRule" SET "message" = 'changed'
+           WHERE "id" = ${sqlText(frozenRuleId)}`,
+          { sqlState: '55000', message: 'activity_qualification_rule_parent_frozen' },
+        );
+        await expectAccepted(
+          `UPDATE "ActivityQualificationRuleSet" SET "statusCode" = 'retired'
+           WHERE "id" = ${sqlText(frozenRuleSetId)}`,
+        );
+        await expectRejected(
+          `UPDATE "ActivityQualificationRuleSet" SET "statusCode" = 'draft'
+           WHERE "id" = ${sqlText(frozenRuleSetId)}`,
+          { sqlState: '55000', message: 'activity_qualification_rule_set_frozen' },
+        );
+        await expectAccepted(
+          `INSERT INTO "QualificationEvaluationSnapshot"
+            ("id","ruleSetVersionId","evaluatedAt","resultCode","evaluationPhaseCode")
+           VALUES (${sqlText(snapshotId)},${sqlText(ruleSetId)},${T(NOW_ISO)},'pass','display')`,
+        );
+        await expectRejected(
+          `UPDATE "QualificationEvaluationSnapshot" SET "resultCode" = 'warn'
+           WHERE "id" = ${sqlText(snapshotId)}`,
+          { sqlState: '55000', message: 'qualification_evaluation_snapshot_append_only' },
+        );
       });
     });
   });

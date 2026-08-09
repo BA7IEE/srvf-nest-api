@@ -47,6 +47,8 @@
 - **受保护状态写(2026-07-21)**:`update`/`softDelete`/`publish`/`cancel`/`complete` 在持有 Activity 聚合锁并重读后，统一调用 [`/src/common/prisma/claim-at-status.util.ts`](../../common/prisma/claim-at-status.util.ts) 的条件 `SELECT ... FOR NO KEY UPDATE`；不产生 no-op tuple，调用方在 claim 后继续以既有锁后行完成真实写。并发败者复用 `ACTIVITY_STATUS_INVALID`；helper **只认领、不判断迁移合法性**，合法矩阵仍只在 `activity-state-machine.ts`。
 - E2E:`activities.e2e-spec.ts` / `activities-rbac-boundary.e2e-spec.ts` / `activities-state-transition.e2e-spec.ts` / `activities-audit-characterization.e2e-spec.ts` / `activity-publish-review.e2e-spec.ts` / `activity-publish-review-concurrency.e2e-spec.ts` / `activity-responsibilities.e2e-spec.ts` / `activity-responsibility-concurrency.e2e-spec.ts` / `activity-responsibility-rollout.e2e-spec.ts` / `app-activities-available.e2e-spec.ts` / `app-activities-detail.e2e-spec.ts` / `activity-waitlist-shared-capacity.e2e-spec.ts`(多队列共享父预算);scoped 判权矩阵在 `participation-scoped-authz.e2e-spec.ts`
 
+- **资格规则结构（第 83 migration）**：RuleSet 的活动/场次/岗位作用域由双向完整复合 FK 固定，`draft/active/retired` 版本与 active 槽位均按 NULL 参与去重；active/retired 及子 Rule 冻结、EvaluationSnapshot append-only。这里只是 schema 合同，发布审核与活动写路径**不**计算资格、也不创建规则/快照。
+
 ## Risk points (不要做)
 
 - ❌ **不**绕过 `activity-state-machine.ts` 在 service 内裸写状态变更
