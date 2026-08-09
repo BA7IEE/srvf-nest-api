@@ -1,11 +1,13 @@
 import type { INestApplication } from '@nestjs/common';
 import { PrismaClient, Role, UserStatus } from '@prisma/client';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { cpSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
 import { PrismaService } from '../../src/database/prisma.service';
-import { dropWorkerDatabase, recreateWorkerDatabase } from '../setup/test-db';
+import { assertDroppableTestDbName, dropWorkerDatabase } from '../setup/test-db';
 import { createTestApp } from '../setup/test-app';
 import { deriveWorkerTestDbName } from '../setup/worktree-db';
 
@@ -104,46 +106,80 @@ function successfulMigrationCount(databaseName: string): number {
   );
 }
 
-function recreateMigration81Scratch(): string {
-  const databaseName = recreateWorkerDatabase(SCRATCH_WORKER_ID);
-  const migration82Count = runPsql(
-    databaseName,
-    `SELECT COUNT(*)
-     FROM "_prisma_migrations"
-     WHERE migration_name = ${sqlValue(MIGRATION_NAME)}
-       AND finished_at IS NOT NULL
-       AND rolled_back_at IS NULL`,
-  );
-  if (migration82Count !== '1') {
-    throw new Error(`scratch template is missing applied ${MIGRATION_NAME}`);
+function recreateEmptyScratchDatabase(): string {
+  const databaseName = deriveWorkerTestDbName(SCRATCH_WORKER_ID);
+  assertDroppableTestDbName(databaseName);
+  // 复用统一护栏先核本机 Docker/Postgres 与精确派生库名，再创建真正空库。
+  dropWorkerDatabase(SCRATCH_WORKER_ID);
+  execFileSync('docker', ['exec', POSTGRES_CONTAINER, 'createdb', '-U', 'postgres', databaseName], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  return databaseName;
+}
+
+function deployMigrationsThrough81(databaseName: string): void {
+  const prismaRoot = path.resolve(process.cwd(), 'prisma');
+  const sourceMigrationsRoot = path.join(prismaRoot, 'migrations');
+  const migrationNames = readdirSync(sourceMigrationsRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  const migration82Index = migrationNames.indexOf(MIGRATION_NAME);
+  if (migration82Index !== 81) {
+    throw new Error(`expected ${MIGRATION_NAME} at migration index 81; got ${migration82Index}`);
   }
+  const priorMigrationNames = migrationNames.slice(0, migration82Index);
 
-  runPsql(
-    databaseName,
-    `BEGIN;
-     LOCK TABLE "insurance_eligibility_evidences" IN ACCESS EXCLUSIVE MODE;
-     LOCK TABLE "ActivityRegistrationRevision" IN ACCESS EXCLUSIVE MODE;
+  const temporaryPrismaRoot = mkdtempSync(path.join(tmpdir(), 'srvf-migration81-prisma-'));
+  const temporaryMigrationsRoot = path.join(temporaryPrismaRoot, 'migrations');
+  const temporarySchemaPath = path.join(temporaryPrismaRoot, 'schema.prisma');
+  try {
+    mkdirSync(temporaryMigrationsRoot);
+    copyFileSync(path.join(prismaRoot, 'schema.prisma'), temporarySchemaPath);
+    copyFileSync(
+      path.join(sourceMigrationsRoot, 'migration_lock.toml'),
+      path.join(temporaryMigrationsRoot, 'migration_lock.toml'),
+    );
+    for (const migrationName of priorMigrationNames) {
+      cpSync(
+        path.join(sourceMigrationsRoot, migrationName),
+        path.join(temporaryMigrationsRoot, migrationName),
+        { recursive: true, force: false, errorOnExist: true },
+      );
+    }
 
-     ALTER TABLE "insurance_eligibility_evidences"
-       DROP CONSTRAINT "insurance_evidence_registration_revision_same_head_fkey";
-     ALTER TABLE "insurance_eligibility_evidences"
-       DROP CONSTRAINT "insurance_evidence_registration_revision_owner_ck";
-     DROP INDEX "insurance_evidence_activity_registration_revision_unique";
-     DROP INDEX "insurance_evidence_activity_registration_unique";
-     CREATE UNIQUE INDEX "insurance_evidence_activity_registration_unique"
-       ON "insurance_eligibility_evidences" ("activityRegistrationId")
-       WHERE "activityRegistrationId" IS NOT NULL;
-     ALTER TABLE "insurance_eligibility_evidences"
-       DROP COLUMN "activityRegistrationRevisionId";
-     ALTER TABLE "ActivityRegistrationRevision"
-       DROP CONSTRAINT "activity_registration_revisions_registration_id_id_unique";
-     DELETE FROM "_prisma_migrations"
-       WHERE migration_name = ${sqlValue(MIGRATION_NAME)};
-     COMMIT;`,
-  );
+    execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy', '--schema', temporarySchemaPath], {
+      cwd: process.cwd(),
+      env: { ...process.env, DATABASE_URL: scratchDatabaseUrl(databaseName) },
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } finally {
+    rmSync(temporaryPrismaRoot, { recursive: true, force: true });
+  }
+}
 
-  if (successfulMigrationCount(databaseName) !== 81) {
-    throw new Error('failed to reconstruct exact 81-migration scratch database');
+function recreateMigration81Scratch(): string {
+  const databaseName = recreateEmptyScratchDatabase();
+  try {
+    deployMigrationsThrough81(databaseName);
+    const migration82Count = runPsql(
+      databaseName,
+      `SELECT COUNT(*)
+       FROM "_prisma_migrations"
+       WHERE migration_name = ${sqlValue(MIGRATION_NAME)}`,
+    );
+    if (
+      successfulMigrationCount(databaseName) !== 81 ||
+      migration82Count !== '0' ||
+      newArtifactCount(databaseName) !== 0
+    ) {
+      throw new Error('failed to build a true empty-database 81-migration scratch database');
+    }
+  } catch (error) {
+    dropWorkerDatabase(SCRATCH_WORKER_ID);
+    throw error;
   }
   return databaseName;
 }
@@ -299,6 +335,19 @@ describe('第 82 migration registration revision bridge', () => {
   });
 
   it('installs the exact nullable same-head registration revision bridge', async () => {
+    const [schemaSource, migrationSource] = await Promise.all([
+      readFile(path.resolve(process.cwd(), 'prisma/schema.prisma'), 'utf8'),
+      readFile(path.resolve(process.cwd(), MIGRATION_PATH), 'utf8'),
+    ]);
+    expect(
+      schemaSource.match(/map: "insurance_evidence_registration_revision_same_head_fkey"/g),
+    ).toHaveLength(1);
+    expect(
+      migrationSource.match(
+        /ADD CONSTRAINT "insurance_evidence_registration_revision_same_head_fkey"/g,
+      ),
+    ).toHaveLength(1);
+
     const columns = await prisma.$queryRaw<
       Array<{ table_name: string; column_name: string; is_nullable: string }>
     >`

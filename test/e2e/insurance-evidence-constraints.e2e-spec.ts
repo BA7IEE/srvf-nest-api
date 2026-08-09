@@ -661,6 +661,9 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
         activityRegistrationRevisionId: fixture.registrationA1Revision2Id,
       }),
       teamRegistrationRow(),
+      teamRegistrationRow({
+        activityRegistrationRevisionId: fixture.registrationA2Revision1Id,
+      }),
       selfJoinRow(),
       teamJoinRow(),
     ];
@@ -691,7 +694,7 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
       where: { id: { in: rows.map((row) => row.id) } },
       orderBy: { id: 'asc' },
     });
-    expect(history).toHaveLength(6);
+    expect(history).toHaveLength(7);
     expect(history.every((row) => row.sourceCoverageEnd.getTime() === COVERAGE_END.getTime())).toBe(
       true,
     );

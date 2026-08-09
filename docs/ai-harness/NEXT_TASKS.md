@@ -279,7 +279,7 @@
 > **#23（维护者 2026-08-09 已裁定，实施待后续批次）**：每活动唯一分配方式；新活动显式选择、存量为 `first_come`；first_come 按服务器受理时间，rank/lottery 截止后冻结，rank 同分按 acceptedAt 再永久 identity，lottery 可复查重放并保存批次与候补顺序。
 > **#24（维护者 2026-08-09 已裁定，实施待后续 caller）**：`capacityReservationId` 固定指向 session reservation；释放清空，不一致为 20147。
 > **#25（维护者 2026-08-09 已裁定）**：visitor `attendanceCode` 恒为 null，且无写入口。
-> **#27（维护者 2026-08-09 已裁定；第 82 migration 仅地基）**：每次报名/重报的保险 evidence 绑定当次 `ActivityRegistrationRevision`；旧 header-only evidence 不改不回填。第 82 以 nullable composite FK + legacy/revision 两类 partial unique 落兼容地基；producer 与审核 currentRevision 归紧接 runtime C 刀。
+> **#27（维护者 2026-08-09 已裁定；第 82 migration 仅地基）**：每次报名/重报的保险 evidence 绑定当次 `ActivityRegistrationRevision`；旧 header-only evidence 不改不回填。第 82 以 nullable composite FK + legacy/revision 两类 partial unique 落兼容地基；上线先 drain 独立 deploy D82，runtime C 再整齐切换 producer/审核 currentRevision，禁新旧混跑（否则旧 approval 在多 evidence 时 fail-closed 26030）。
 > **账本读面权限口径（维护者 2026-08-06 拍板）**：复用 `attendance.read.sheet`；合同 §6.11
 > 未规定，若日后要收紧需另立权限码 + 三处 seed spec 连坐。
 >

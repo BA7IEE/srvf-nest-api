@@ -1,10 +1,11 @@
 -- 活动改造 v1.1 第 4 批:保险资格证据按不可变报名修订冻结。
 -- 本 migration 只铺兼容地基:旧 header-only evidence 原样保留且不回填；
--- producer / approval 仍保持既有行为，按 currentRevision 读写留给后续 runtime C 刀。
+-- producer / approval 仍保持既有行为；须先独立 drain deploy D82，再由 runtime C 整齐
+-- 切换 currentRevision 读写，禁止新旧版本混跑。
 
 BEGIN;
 
--- 一次拿最终锁级，且全仓固定 evidence -> revision，避免中途锁升级窗口。
+-- 一次拿最终锁级；锁序沿当前旧 writer 的 evidence -> revision，避免中途锁升级窗口。
 LOCK TABLE "insurance_eligibility_evidences" IN ACCESS EXCLUSIVE MODE;
 LOCK TABLE "ActivityRegistrationRevision" IN ACCESS EXCLUSIVE MODE;
 

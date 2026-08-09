@@ -2652,7 +2652,7 @@ model InsuranceEligibilityEvidence {
   memberInsurance       MemberInsurance?       @relation(fields: [memberInsuranceId], references: [id], onDelete: Restrict)
   teamInsuranceCoverage TeamInsuranceCoverage? @relation(fields: [teamInsuranceCoverageId], references: [id], onDelete: Restrict)
   activityRegistration  ActivityRegistration?  @relation(fields: [activityRegistrationId], references: [id], onDelete: Restrict)
-  activityRegistrationRevision ActivityRegistrationRevision? @relation("InsuranceEvidenceRegistrationRevision", fields: [activityRegistrationId, activityRegistrationRevisionId], references: [registrationId, id], onDelete: Restrict, onUpdate: Restrict)
+  activityRegistrationRevision ActivityRegistrationRevision? @relation("InsuranceEvidenceRegistrationRevision", fields: [activityRegistrationId, activityRegistrationRevisionId], references: [registrationId, id], onDelete: Restrict, onUpdate: Restrict, map: "insurance_evidence_registration_revision_same_head_fkey")
   teamJoinApplication   TeamJoinApplication?   @relation(fields: [teamJoinApplicationId], references: [id], onDelete: Restrict)
   sourceReviewer        User?                  @relation("InsuranceEvidenceSourceReviewer", fields: [sourceReviewedByUserId], references: [id], onDelete: Restrict)
 
