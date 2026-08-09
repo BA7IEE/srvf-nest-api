@@ -94,9 +94,10 @@ AttendanceRecord.roleCode ┘
 InsuranceEligibilityEvidence (D-INSURANCE v3 PR4 migration source;未 deploy)
   ├─ source: memberInsuranceId? / teamInsuranceCoverageId? [均 Restrict]
   └─ owner: activityRegistrationId? / teamJoinApplicationId? [均 Restrict]
+       └─ activityRegistrationRevisionId? [与 registrationId 复合 Restrict FK]
   source/owner FK 各自可空但同行 exactly-one + kind 对齐；required interval 必填，
-  review snapshot 按 self/team 条件冻结；7 CHECK + global single-owner + 四组合同 member +
-  immutable，owner 表不增加 evidenceId。
+  review snapshot 按 self/team 条件冻结；旧 header-only revision=NULL 永久保留；8 CHECK +
+  legacy/revision/join 分槽唯一 + 四组合同 member + immutable，owner 表不增加 evidenceId。
 
 Certificate (不在 participation 图内)
   └─ FK memberId → Member.id
@@ -120,6 +121,7 @@ Certificate (不在 participation 图内)
 | `MemberInsurance` ← `InsuranceEligibilityEvidence.memberInsuranceId` | FK **NULLABLE** | Restrict | self source；同行必须与 team source exactly-one，snapshot 必含 version/reviewer/time |
 | `TeamInsuranceCoverage` ← `InsuranceEligibilityEvidence.teamInsuranceCoverageId` | FK **NULLABLE** | Restrict | team source；同行必须与 self source exactly-one，review snapshot 三字段固定 null |
 | `ActivityRegistration` ← `InsuranceEligibilityEvidence.activityRegistrationId` | FK **NULLABLE** | Restrict | registration owner；Evidence 必须先于 Registration reset |
+| `ActivityRegistrationRevision(registrationId,id)` ← `InsuranceEligibilityEvidence(activityRegistrationId,activityRegistrationRevisionId)` | 复合 FK **NULLABLE / MATCH SIMPLE** | Restrict | 第 82 migration 同头桥；旧 header-only 行 revisionId=NULL，零回填；producer/approval 待 runtime C 刀切换 |
 | `TeamJoinApplication` ← `InsuranceEligibilityEvidence.teamJoinApplicationId` | FK **NULLABLE** | Restrict | join owner；仅 single gate=true + cycle requiresInsurance final join 生成 |
 | `User` ← `InsuranceEligibilityEvidence.sourceReviewedByUserId` | FK **NULLABLE** | Restrict | self reviewer 快照必填；team source 固定 null |
 | `Activity` ← `ActivityFeedback.activityId` | FK NOT NULL | Restrict | 评价稳定锚定活动；不级联删除 |
