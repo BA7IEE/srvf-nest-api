@@ -76793,6 +76793,7 @@
             "name": "activityId",
             "required": true,
             "in": "path",
+            "description": "当前受管活动 Activity.id",
             "schema": {
               "minLength": 8,
               "maxLength": 64,
@@ -120767,36 +120768,44 @@
         "type": "object",
         "properties": {
           "registrationId": {
-            "type": "string"
+            "type": "string",
+            "description": "canonical ActivityRegistration.id"
           },
           "registrationRevisionId": {
-            "type": "string"
+            "type": "string",
+            "description": "本次新增的 immutable ActivityRegistrationRevision.id"
           },
           "participationIdentityId": {
-            "type": "string"
+            "type": "string",
+            "description": "永久 ActivityParticipationIdentity.id"
           },
           "participationRevisionId": {
-            "type": "string"
+            "type": "string",
+            "description": "本次新增的 immutable ActivityParticipationRevision.id"
           },
           "statusCode": {
             "type": "string",
             "enum": [
               "pass"
-            ]
+            ],
+            "description": "固定为 pass，表示现场参加已批准"
           },
           "sourceCode": {
             "type": "string",
             "enum": [
               "onsite"
-            ]
+            ],
+            "description": "固定为 onsite，表示现场临时补录"
           },
           "positionId": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "本次现场参加对应的场次岗位 id；无岗位时为 null"
           },
           "approvedAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "description": "本次现场批准时间（ISO 8601）"
           }
         },
         "required": [

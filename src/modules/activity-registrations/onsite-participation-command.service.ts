@@ -169,12 +169,11 @@ export class OnsiteParticipationCommandService {
     actorMemberId: string;
     auditMeta: AuditMeta;
   }): Promise<OnsiteParticipationReceipt> {
-    const now = new Date();
-
     // Fixed caller lock order: Activity → heads → every member/activity permanent identity →
     // session/position/requirements/insurance → capacity → immutable revisions/pointers →
     // population projection → audit.
     const activity = await this.lockActivity(input.tx, input.activityId);
+    const now = new Date();
     if (activity.statusCode !== 'published') {
       throw new BizException(BizCode.ACTIVITY_NOT_PUBLISHED_PARTICIPATION_FORBIDDEN);
     }
@@ -199,6 +198,11 @@ export class OnsiteParticipationCommandService {
     // later administrator changed requirements.
     const replay = await this.findExistingReceipt(input.tx, input.operationKey, input.requestHash);
     if (replay !== null) return replay;
+
+    // This is deliberately after exact replay: a receipt that succeeded before natural end,
+    // posting, or closure must remain replayable forever.  Activity is still FOR UPDATE here;
+    // formal posting and closure writers take that same root lock before changing their facts.
+    await this.assertNewOnsiteParticipationIsStillOpen(input.tx, activity, now);
 
     const selectedPosition = await this.lockSessionAndPosition(
       input.tx,
@@ -446,6 +450,35 @@ export class OnsiteParticipationCommandService {
     const activity = rows[0];
     if (rows.length !== 1 || !activity) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
     return activity;
+  }
+
+  private async assertNewOnsiteParticipationIsStillOpen(
+    tx: PrismaTx,
+    activity: LockedActivity,
+    now: Date,
+  ): Promise<void> {
+    if (activity.endAt.getTime() <= now.getTime()) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+    }
+
+    // The root Activity lock serializes all formal posting/closure writers.  These are reads,
+    // not new locks: the onsite caller never writes settlement or closure facts, so taking their
+    // rows would widen the caller's fixed lock sequence without strengthening the root protocol.
+    const postedRun = await tx.attendanceSettlementRun.findUnique({
+      where: { activityId: activity.id },
+      select: { currentPostedVersion: true },
+    });
+    if (postedRun !== null && postedRun.currentPostedVersion !== null) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+    }
+
+    const activeClosure = await tx.activitySettlementClosureRevision.findFirst({
+      where: { activityId: activity.id, statusCode: 'active' },
+      select: { id: true },
+    });
+    if (activeClosure !== null) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+    }
   }
 
   private async lockRegistrationHeaders(

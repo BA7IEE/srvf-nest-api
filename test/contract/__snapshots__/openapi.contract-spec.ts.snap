@@ -4175,32 +4175,40 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   "AppManagedActivityOnsiteParticipationReceiptDto": {
     "properties": {
       "approvedAt": {
+        "description": "本次现场批准时间（ISO 8601）",
         "format": "date-time",
         "type": "string",
       },
       "participationIdentityId": {
+        "description": "永久 ActivityParticipationIdentity.id",
         "type": "string",
       },
       "participationRevisionId": {
+        "description": "本次新增的 immutable ActivityParticipationRevision.id",
         "type": "string",
       },
       "positionId": {
+        "description": "本次现场参加对应的场次岗位 id；无岗位时为 null",
         "nullable": true,
         "type": "string",
       },
       "registrationId": {
+        "description": "canonical ActivityRegistration.id",
         "type": "string",
       },
       "registrationRevisionId": {
+        "description": "本次新增的 immutable ActivityRegistrationRevision.id",
         "type": "string",
       },
       "sourceCode": {
+        "description": "固定为 onsite，表示现场临时补录",
         "enum": [
           "onsite",
         ],
         "type": "string",
       },
       "statusCode": {
+        "description": "固定为 pass，表示现场参加已批准",
         "enum": [
           "pass",
         ],
@@ -94412,6 +94420,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "operationId": "AppManagedActivityOnsiteParticipationsController_create",
       "parameters": [
         {
+          "description": "当前受管活动 Activity.id",
           "in": "path",
           "name": "activityId",
           "required": true,

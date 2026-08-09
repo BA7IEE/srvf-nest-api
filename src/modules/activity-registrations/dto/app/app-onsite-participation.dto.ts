@@ -5,7 +5,7 @@ import { IsString, MaxLength, MinLength } from 'class-validator';
 import { OmittableOnly } from '../../../../common/decorators/omittable-only.decorator';
 
 export class AppManagedActivityOnsiteParticipationParamsDto {
-  @ApiProperty({ minLength: 8, maxLength: 64 })
+  @ApiProperty({ minLength: 8, maxLength: 64, description: '当前受管活动 Activity.id' })
   @IsString()
   @MinLength(8)
   @MaxLength(64)
@@ -55,27 +55,31 @@ export class CreateAppManagedActivityOnsiteParticipationDto {
 }
 
 export class AppManagedActivityOnsiteParticipationReceiptDto {
-  @ApiProperty()
+  @ApiProperty({ description: 'canonical ActivityRegistration.id' })
   registrationId!: string;
 
-  @ApiProperty()
+  @ApiProperty({ description: '本次新增的 immutable ActivityRegistrationRevision.id' })
   registrationRevisionId!: string;
 
-  @ApiProperty()
+  @ApiProperty({ description: '永久 ActivityParticipationIdentity.id' })
   participationIdentityId!: string;
 
-  @ApiProperty()
+  @ApiProperty({ description: '本次新增的 immutable ActivityParticipationRevision.id' })
   participationRevisionId!: string;
 
-  @ApiProperty({ enum: ['pass'] })
+  @ApiProperty({ enum: ['pass'], description: '固定为 pass，表示现场参加已批准' })
   statusCode!: 'pass';
 
-  @ApiProperty({ enum: ['onsite'] })
+  @ApiProperty({ enum: ['onsite'], description: '固定为 onsite，表示现场临时补录' })
   sourceCode!: 'onsite';
 
-  @ApiProperty({ type: String, nullable: true })
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: '本次现场参加对应的场次岗位 id；无岗位时为 null',
+  })
   positionId!: string | null;
 
-  @ApiProperty({ type: String, format: 'date-time' })
+  @ApiProperty({ type: String, format: 'date-time', description: '本次现场批准时间（ISO 8601）' })
   approvedAt!: Date;
 }

@@ -17,6 +17,11 @@ const FUTURE = {
   endAt: new Date('2099-12-15T12:00:00.000Z'),
 };
 
+const PAST = {
+  startAt: new Date('2020-12-15T08:00:00.000Z'),
+  endAt: new Date('2020-12-15T12:00:00.000Z'),
+};
+
 type Scenario = {
   activityId: string;
   sessions: Array<{ id: string; positionId: string | null }>;
@@ -31,6 +36,8 @@ type ScenarioOptions = {
   requiresInsurance?: boolean;
   activityGenderRequirementCode?: string | null;
   activityStatusCode?: string;
+  startAt?: Date;
+  endAt?: Date;
 };
 
 function receiptKeys(value: unknown): string[] {
@@ -131,6 +138,8 @@ describe('activity batch4 onsite participation', () => {
     const positionCapacity = options.positionCapacity ?? sessionCapacity;
     const sessionCount = options.sessionCount ?? 1;
     const withPosition = options.withPosition ?? false;
+    const startAt = options.startAt ?? FUTURE.startAt;
+    const endAt = options.endAt ?? FUTURE.endAt;
     const organization = await prisma.organization.create({
       data: {
         name: 'Onsite participation team ' + index,
@@ -143,8 +152,8 @@ describe('activity batch4 onsite participation', () => {
         title: 'Onsite participation activity ' + index,
         activityTypeCode: 'training',
         organizationId: organization.id,
-        startAt: FUTURE.startAt,
-        endAt: FUTURE.endAt,
+        startAt,
+        endAt,
         location: '现场集合点',
         statusCode: options.activityStatusCode ?? 'published',
         publishedAt: new Date(),
@@ -185,14 +194,14 @@ describe('activity batch4 onsite participation', () => {
           activityId: activity.id,
           code: 'onsite-session-' + index + '-' + position,
           name: '现场场次 ' + index + '-' + position,
-          startAt: FUTURE.startAt,
-          endAt: FUTURE.endAt,
+          startAt,
+          endAt,
           locationText: '现场集合点',
           capacity: sessionCapacity,
-          checkInOpenAt: new Date(FUTURE.startAt.getTime() - 30 * 60_000),
-          checkInCloseAt: new Date(FUTURE.startAt.getTime() + 30 * 60_000),
-          checkOutOpenAt: new Date(FUTURE.endAt.getTime() - 60 * 60_000),
-          checkOutCloseAt: new Date(FUTURE.endAt.getTime() + 30 * 60_000),
+          checkInOpenAt: new Date(startAt.getTime() - 30 * 60_000),
+          checkInCloseAt: new Date(startAt.getTime() + 30 * 60_000),
+          checkOutOpenAt: new Date(endAt.getTime() - 60 * 60_000),
+          checkOutCloseAt: new Date(endAt.getTime() + 30 * 60_000),
           locationRequired: false,
           locationPolicySourceCode: 'session',
           statusCode: 'scheduled',
@@ -305,6 +314,120 @@ describe('activity batch4 onsite participation', () => {
       .send(body);
   }
 
+  async function seedPostedSettlement(
+    scenario: Scenario,
+    options: { currentPostedVersion?: boolean; runStatusCode?: string } = {},
+  ) {
+    const tag = 'onsite-finality-' + ++sequence;
+    const settledAt = new Date('2099-12-16T12:00:00.000Z');
+    const [evidenceState, populationCount] = await Promise.all([
+      prisma.activityEvidenceState.findUniqueOrThrow({
+        where: { activityId: scenario.activityId },
+        select: { evidenceRevision: true, populationRevision: true },
+      }),
+      prisma.activityParticipationIdentity.count({
+        where: { activityId: scenario.activityId, populationIncluded: true },
+      }),
+    ]);
+    const seal = await prisma.evidenceSeal.create({
+      data: {
+        activityId: scenario.activityId,
+        sealRevision: 1,
+        evidenceRevision: evidenceState.evidenceRevision,
+        populationRevision: evidenceState.populationRevision,
+        workflowRevision: 0,
+        allWindowsClosedAt: settledAt,
+        openSegmentCount: 0,
+        manualReviewPendingCount: 0,
+        populationCountDistinct: populationCount,
+        populationCountBySession: {},
+        contentHash: tag + '-seal',
+        statusCode: 'active',
+        sealedAt: settledAt,
+      },
+      select: { id: true },
+    });
+    const run = await prisma.attendanceSettlementRun.create({
+      data: {
+        activityId: scenario.activityId,
+        statusCode: options.runStatusCode ?? 'posted',
+        currentPostedVersion: options.currentPostedVersion === false ? null : 1,
+      },
+      select: { id: true },
+    });
+    const version = await prisma.attendanceSettlementVersion.create({
+      data: {
+        settlementRunId: run.id,
+        version: 1,
+        evidenceSealId: seal.id,
+        evidenceRevision: evidenceState.evidenceRevision,
+        populationRevision: evidenceState.populationRevision,
+        workflowRevision: 0,
+        contentHash: tag + '-version',
+        personCount: populationCount,
+        sessionParticipationCount: populationCount,
+        serviceSegmentCount: 0,
+        submittedAt: settledAt,
+        statusCode: 'approved',
+        operationKey: tag + '-submit',
+        requestHash: tag + '-submit-hash',
+      },
+      select: { id: true },
+    });
+    const batch = await prisma.ledgerPostingBatch.create({
+      data: {
+        settlementRunId: run.id,
+        settlementVersionId: version.id,
+        batchRevision: 1,
+        statusCode: 'committed',
+        requestKey: tag + '-batch',
+        requestHash: tag + '-batch-hash',
+        totalCount: populationCount,
+        committedAt: settledAt,
+      },
+      select: { id: true },
+    });
+    return {
+      tag,
+      settledAt,
+      sealId: seal.id,
+      versionId: version.id,
+      batchId: batch.id,
+      populationCount,
+    };
+  }
+
+  async function seedActiveClosure(
+    scenario: Scenario,
+    settlement: Awaited<ReturnType<typeof seedPostedSettlement>>,
+  ): Promise<void> {
+    const evidenceState = await prisma.activityEvidenceState.findUniqueOrThrow({
+      where: { activityId: scenario.activityId },
+      select: { evidenceRevision: true, populationRevision: true },
+    });
+    await prisma.activitySettlementClosureRevision.create({
+      data: {
+        activityId: scenario.activityId,
+        revision: 1,
+        settlementVersionId: settlement.versionId,
+        postingBatchId: settlement.batchId,
+        evidenceSealId: settlement.sealId,
+        evidenceRevision: evidenceState.evidenceRevision,
+        populationRevision: evidenceState.populationRevision,
+        workflowRevision: 0,
+        personCount: settlement.populationCount,
+        sessionParticipationCount: settlement.populationCount,
+        resultCountsJson: {},
+        serviceHours: '0.00',
+        contributionPoints: '0.00',
+        checksHash: settlement.tag + '-closure',
+        checksJson: { schemaVersion: 1, checks: [] },
+        statusCode: 'active',
+        closedAt: settlement.settledAt,
+      },
+    });
+  }
+
   async function onsiteFacts(scenario: Scenario, memberId: string) {
     const [
       headers,
@@ -358,6 +481,60 @@ describe('activity batch4 onsite participation', () => {
     before: Awaited<ReturnType<typeof onsiteFacts>>,
   ): Promise<void> {
     await expect(onsiteFacts(scenario, memberId)).resolves.toEqual(before);
+  }
+
+  async function onsiteFinalityFacts(scenario: Scenario) {
+    const [activity, run, seals, versions, batches, closures] = await Promise.all([
+      prisma.activity.findUniqueOrThrow({
+        where: { id: scenario.activityId },
+        select: {
+          statusCode: true,
+          endAt: true,
+          currentEvidenceRevision: true,
+          currentPopulationRevision: true,
+          currentClosureRevision: true,
+          workflowRevision: true,
+        },
+      }),
+      prisma.attendanceSettlementRun.findUnique({
+        where: { activityId: scenario.activityId },
+        select: {
+          statusCode: true,
+          currentDraftVersion: true,
+          currentSubmittedVersion: true,
+          currentPostedVersion: true,
+          currentClosureRevision: true,
+          version: true,
+        },
+      }),
+      prisma.evidenceSeal.count({ where: { activityId: scenario.activityId } }),
+      prisma.attendanceSettlementVersion.count({
+        where: { settlementRun: { activityId: scenario.activityId } },
+      }),
+      prisma.ledgerPostingBatch.count({
+        where: { settlementRun: { activityId: scenario.activityId } },
+      }),
+      prisma.activitySettlementClosureRevision.findMany({
+        where: { activityId: scenario.activityId },
+        orderBy: { revision: 'asc' },
+        select: {
+          revision: true,
+          statusCode: true,
+          settlementVersionId: true,
+          postingBatchId: true,
+          populationRevision: true,
+        },
+      }),
+    ]);
+    return { activity, run, seals, versions, batches, closures };
+  }
+
+  async function onsiteAllFacts(scenario: Scenario, memberId: string) {
+    const [command, finality] = await Promise.all([
+      onsiteFacts(scenario, memberId),
+      onsiteFinalityFacts(scenario),
+    ]);
+    return { command, finality };
   }
 
   async function seedRejectedIdentity(
@@ -638,6 +815,77 @@ describe('activity batch4 onsite participation', () => {
     });
     expectBizError(second, BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
     await expectNoOnsiteWrites(scenario, target.id, before);
+  });
+
+  it('rejects a new operation key after the activity naturally ends with every fact unchanged', async () => {
+    const scenario = await createScenario(PAST);
+    const target = await createTarget();
+    const before = await onsiteAllFacts(scenario, target.id);
+
+    const response = await onsite(scenario, {
+      memberId: target.id,
+      operationKey: 'onsite-after-natural-end-0001',
+    });
+
+    expectBizError(response, BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+    await expect(onsiteAllFacts(scenario, target.id)).resolves.toEqual(before);
+  });
+
+  it('rejects a new operation key when a formal posted version exists with every fact unchanged', async () => {
+    const scenario = await createScenario();
+    const target = await createTarget();
+    await seedPostedSettlement(scenario);
+    const before = await onsiteAllFacts(scenario, target.id);
+
+    const response = await onsite(scenario, {
+      memberId: target.id,
+      operationKey: 'onsite-after-posted-version-0001',
+    });
+
+    expectBizError(response, BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+    await expect(onsiteAllFacts(scenario, target.id)).resolves.toEqual(before);
+  });
+
+  it('rejects a new operation key when an active closure exists with every fact unchanged', async () => {
+    const scenario = await createScenario();
+    const target = await createTarget();
+    // The active closure row is the source of truth; clear the fast posted pointer so this case
+    // proves the closure gate itself rather than passing through the posted-version gate.
+    const settlement = await seedPostedSettlement(scenario, {
+      currentPostedVersion: false,
+      runStatusCode: 'closed',
+    });
+    await seedActiveClosure(scenario, settlement);
+    const before = await onsiteAllFacts(scenario, target.id);
+
+    const response = await onsite(scenario, {
+      memberId: target.id,
+      operationKey: 'onsite-after-active-closure-0001',
+    });
+
+    expectBizError(response, BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+    await expect(onsiteAllFacts(scenario, target.id)).resolves.toEqual(before);
+  });
+
+  it('replays an old exact receipt after closure and adds no facts', async () => {
+    const scenario = await createScenario();
+    const target = await createTarget();
+    const request = {
+      memberId: target.id,
+      operationKey: 'onsite-replay-after-closure-0001',
+      reason: '关账前现场补录',
+    };
+    const first = await onsite(scenario, request);
+    expect(first.status).toBe(201);
+    const settlement = await seedPostedSettlement(scenario);
+    await seedActiveClosure(scenario, settlement);
+    const before = await onsiteAllFacts(scenario, target.id);
+
+    const replay = await onsite(scenario, request);
+
+    expect(replay.status).toBe(201);
+    expect(replay.body.data).toEqual(first.body.data);
+    await expect(onsiteAllFacts(scenario, target.id)).resolves.toEqual(before);
   });
 
   it('serializes two independent capacity pools at one and returns exactly 1 success plus 99 capacity errors', async () => {
