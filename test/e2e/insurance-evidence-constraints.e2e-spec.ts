@@ -652,20 +652,27 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
   });
 
   it('accepts legacy plus two revisions and every source/owner combination while preserving immutable history', async () => {
+    const selfRegistrationLegacy = selfRegistrationRow();
+    const teamRegistrationLegacy = teamRegistrationRow();
+    const selfJoin = selfJoinRow();
+    const teamJoin = teamJoinRow();
+    const selfRegistrationRevision1 = selfRegistrationRow({
+      activityRegistrationRevisionId: fixture.registrationA1Revision1Id,
+    });
+    const selfRegistrationRevision2 = selfRegistrationRow({
+      activityRegistrationRevisionId: fixture.registrationA1Revision2Id,
+    });
+    const teamRegistrationRevision = teamRegistrationRow({
+      activityRegistrationRevisionId: fixture.registrationA2Revision1Id,
+    });
     const rows = [
-      selfRegistrationRow(),
-      selfRegistrationRow({
-        activityRegistrationRevisionId: fixture.registrationA1Revision1Id,
-      }),
-      selfRegistrationRow({
-        activityRegistrationRevisionId: fixture.registrationA1Revision2Id,
-      }),
-      teamRegistrationRow(),
-      teamRegistrationRow({
-        activityRegistrationRevisionId: fixture.registrationA2Revision1Id,
-      }),
-      selfJoinRow(),
-      teamJoinRow(),
+      selfRegistrationLegacy,
+      teamRegistrationLegacy,
+      selfJoin,
+      teamJoin,
+      selfRegistrationRevision1,
+      selfRegistrationRevision2,
+      teamRegistrationRevision,
     ];
     for (const row of rows) runPsql(`${evidenceInsertSql(row)};`);
 
@@ -702,24 +709,24 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
     expectDatabaseError(
       `UPDATE "insurance_eligibility_evidences"
        SET "requiredThrough" = ${sqlValue(REQUIRED_FROM)}
-       WHERE "id" = ${sqlValue(rows[0].id)}`,
+       WHERE "id" = ${sqlValue(selfRegistrationLegacy.id)}`,
       '55000',
       'insurance_evidence_immutable',
     );
     expectDatabaseError(
-      `DELETE FROM "insurance_eligibility_evidences" WHERE "id" = ${sqlValue(rows[1].id)}`,
+      `DELETE FROM "insurance_eligibility_evidences" WHERE "id" = ${sqlValue(teamRegistrationLegacy.id)}`,
       '55000',
       'insurance_evidence_immutable',
     );
     expectDatabaseError(
       `UPDATE "insurance_eligibility_evidences"
        SET "requiredThrough" = ${sqlValue(REQUIRED_FROM)}
-       WHERE "id" = ${sqlValue(rows[2].id)}`,
+       WHERE "id" = ${sqlValue(selfRegistrationRevision2.id)}`,
       '55000',
       'insurance_evidence_immutable',
     );
     expectDatabaseError(
-      `DELETE FROM "insurance_eligibility_evidences" WHERE "id" = ${sqlValue(rows[2].id)}`,
+      `DELETE FROM "insurance_eligibility_evidences" WHERE "id" = ${sqlValue(selfRegistrationRevision2.id)}`,
       '55000',
       'insurance_evidence_immutable',
     );
