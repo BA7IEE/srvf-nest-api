@@ -472,7 +472,8 @@ function property(object: ts.ObjectLiteralExpression, key: string): ts.Expressio
 
 function summaryOf(items: readonly ts.Decorator[]): string {
   const decorator = items.find((item) => nameOf(item) === 'ApiOperation');
-  const first = callOf(decorator as ts.Decorator | undefined)?.arguments[0];
+  if (decorator === undefined) return '';
+  const first = callOf(decorator)?.arguments[0];
   if (first === undefined || !ts.isObjectLiteralExpression(first)) return '';
   const summary = property(first, 'summary');
   return summary !== undefined && ts.isStringLiteral(summary) ? summary.text : '';
@@ -480,8 +481,9 @@ function summaryOf(items: readonly ts.Decorator[]): string {
 
 function tagsOf(items: readonly ts.Decorator[]): string[] {
   const decorator = items.find((item) => nameOf(item) === 'ApiTags');
+  if (decorator === undefined) return [];
   return (
-    callOf(decorator as ts.Decorator | undefined)
+    callOf(decorator)
       ?.arguments.filter(ts.isStringLiteral)
       .map((item) => item.text) ?? []
   );
