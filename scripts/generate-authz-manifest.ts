@@ -62,6 +62,8 @@ interface Policy {
   engine: 'rbac-global' | 'authz-scoped' | null;
 }
 
+type DecisionStatus = 'needs-decision' | 'decided';
+
 interface OverlayEntry {
   routeKey: string;
   method: string;
@@ -71,7 +73,7 @@ interface OverlayEntry {
   tags: string[];
   sourceSummary: string;
   policy: Policy;
-  decisionStatus: 'needs-decision';
+  decisionStatus: DecisionStatus;
   evidence: Evidence[];
   implementationSignals: string[];
   unresolvedImplementationEvidence: string[];
@@ -699,8 +701,8 @@ function validate(endpointList: Endpoint[], input: Overlay): void {
       throw new Error('duplicate classification entry: ' + entry.routeKey);
     if (!actual.has(entry.routeKey))
       throw new Error('stale classification entry: ' + entry.routeKey);
-    if (entry.decisionStatus !== 'needs-decision')
-      throw new Error('decision status must remain needs-decision: ' + entry.routeKey);
+    if (entry.decisionStatus !== 'decided')
+      throw new Error('decision status must be decided: ' + entry.routeKey);
     if (
       entry.policy === undefined ||
       !Object.hasOwn(entry.policy, 'admission') ||
@@ -770,7 +772,9 @@ function decisionRows(auth: Endpoint[], byKey: Map<string, OverlayEntry>): strin
         endpoint.path +
         ' | ' +
         cell(label(entry.policy)) +
-        ' | needs-decision | ' +
+        ' | ' +
+        entry.decisionStatus +
+        ' | ' +
         cell(entry.evidence.map((item) => item.file + ':' + item.line).join('; ')) +
         ' |',
     );
@@ -794,7 +798,9 @@ function decisionRows(auth: Endpoint[], byKey: Map<string, OverlayEntry>): strin
         endpoints.length +
         ') | ' +
         cell(label(entry.policy)) +
-        ' | needs-decision | ' +
+        ' | ' +
+        entry.decisionStatus +
+        ' | ' +
         cell(entry.evidence[0].file + ':' + entry.evidence[0].line) +
         ' |',
     );
@@ -811,7 +817,9 @@ function decisionRows(auth: Endpoint[], byKey: Map<string, OverlayEntry>): strin
         endpoint.path +
         ' | ' +
         cell(label(entry.policy)) +
-        ' | needs-decision | ' +
+        ' | ' +
+        entry.decisionStatus +
+        ' | ' +
         cell(entry.evidence.map((item) => item.file + ':' + item.line).join('; ')) +
         ' |',
     );
@@ -891,9 +899,9 @@ function render(endpointList: Endpoint[], input: Overlay): string {
     '',
     '## Maintainer decision table',
     '',
-    '> All legacy [auth] entries have a complete structured policy shape, but remain needs-decision until the maintainer confirms semantics. Evidence records the handler, statically reached implementation methods, and recognized authorization signals; it is not a formal whole-program proof.',
+    '> All legacy [auth] entries have a maintainer-decided structured policy. Evidence records the handler, statically reached implementation methods, and recognized authorization signals; it is not a formal whole-program proof.',
     '',
-    '| review scope | endpoint or family | provisional policy | status | evidence |',
+    '| review scope | endpoint or family | decided policy | status | evidence |',
     '|---|---|---|---|---|',
     ...decisionRows(auth, byKey),
     '',
