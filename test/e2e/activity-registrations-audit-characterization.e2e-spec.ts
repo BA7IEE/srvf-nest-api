@@ -6,6 +6,7 @@ import { ActivityRegistrationsService } from '../../src/modules/activity-registr
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { resetDb } from '../setup/reset-db';
+import { assertConnectedTestDatabase } from '../setup/test-db';
 import { createTestApp } from '../setup/test-app';
 
 // activity-registrations audit characterization tests
@@ -164,9 +165,16 @@ describe('ActivityRegistrationsService audit characterization', () => {
     await app.close();
   });
 
+  async function truncateActivityRegistrations(): Promise<void> {
+    await assertConnectedTestDatabase(ctx.prisma);
+    await ctx.prisma.$executeRawUnsafe(
+      'TRUNCATE TABLE "ActivityRegistration" RESTART IDENTITY CASCADE',
+    );
+  }
+
   // 每个 case 清:ActivityRegistration + AuditLog;保留 User / Member / Org / Activity。
   async function isolateFixtures(): Promise<void> {
-    await ctx.prisma.activityRegistration.deleteMany({});
+    await truncateActivityRegistrations();
     await ctx.prisma.auditLog.deleteMany({});
   }
 

@@ -24,6 +24,13 @@ import { decideOnsiteParticipationPass } from './onsite-participation-state-mach
 
 type PrismaTx = Prisma.TransactionClient;
 
+// The Activity root intentionally serializes onsite writes for one activity. Under a real
+// 100-request last-seat convoy, Prisma's 2s/5s interactive-transaction defaults can expire before
+// a loser reaches the capacity check and leak an infrastructure 500. Keep the wait finite, but
+// give the established serialization enough room to return the truthful capacity business result.
+const ONSITE_PARTICIPATION_TX_MAX_WAIT_MS = 10_000;
+const ONSITE_PARTICIPATION_TX_TIMEOUT_MS = 15_000;
+
 type LockedActivity = {
   id: string;
   statusCode: string;
@@ -140,20 +147,25 @@ export class OnsiteParticipationCommandService {
     const requestHash = hashOnsiteParticipationRequest(requestHashInput);
 
     try {
-      return await this.prisma.$transaction((tx) =>
-        this.createInTransaction({
-          tx,
-          activityId,
-          operationKey: dto.operationKey,
-          targetMemberId: dto.memberId,
-          sessionId: dto.sessionId,
-          positionId: dto.positionId ?? null,
-          reason,
-          requestHash,
-          currentUser,
-          actorMemberId: access.member!.id,
-          auditMeta,
-        }),
+      return await this.prisma.$transaction(
+        (tx) =>
+          this.createInTransaction({
+            tx,
+            activityId,
+            operationKey: dto.operationKey,
+            targetMemberId: dto.memberId,
+            sessionId: dto.sessionId,
+            positionId: dto.positionId ?? null,
+            reason,
+            requestHash,
+            currentUser,
+            actorMemberId: access.member!.id,
+            auditMeta,
+          }),
+        {
+          maxWait: ONSITE_PARTICIPATION_TX_MAX_WAIT_MS,
+          timeout: ONSITE_PARTICIPATION_TX_TIMEOUT_MS,
+        },
       );
     } catch (error) {
       // Only an exact successful receipt may turn a P2002 race into a replay. Every unmatched

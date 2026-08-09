@@ -1239,6 +1239,21 @@ describe('activity batch4 onsite participation', () => {
     const failures = responses.filter((response) => response.status !== 201);
     expect(successes).toHaveLength(1);
     expect(failures).toHaveLength(99);
+    const unexpectedCapacityResponses = failures
+      .map((response) => ({ status: response.status, body: response.body as unknown }))
+      .filter(({ status, body }) => {
+        const code =
+          typeof body === 'object' && body !== null && 'code' in body
+            ? (body as { code?: unknown }).code
+            : undefined;
+        return (
+          status !== Number(BizCode.ACTIVITY_CAPACITY_EXCEEDED.httpStatus) ||
+          code !== BizCode.ACTIVITY_CAPACITY_EXCEEDED.code
+        );
+      });
+    // Keep the full sanitized status/body in Jest's diff when a concurrency failure is not the
+    // promised business result. A bare status assertion hid the exact Prisma/global-filter cause.
+    expect(unexpectedCapacityResponses).toEqual([]);
     for (const failure of failures) expectBizError(failure, BizCode.ACTIVITY_CAPACITY_EXCEEDED);
 
     const [

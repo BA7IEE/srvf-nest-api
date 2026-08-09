@@ -9,6 +9,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { truncateAuditLogsTestOnly } from '../helpers/audit-logs-cleanup';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
+import { assertConnectedTestDatabase } from '../setup/test-db';
 import { createTestApp } from '../setup/test-app';
 
 // V2 第一阶段批次 6 PR #2 / PR #3 e2e:
@@ -40,6 +41,13 @@ describe('audit-logs 写入迁移', () => {
   // PR #3 fixtures
   let activityTypeCode: string;
   let roleCode: string;
+
+  async function truncateActivityRegistrations(): Promise<void> {
+    await assertConnectedTestDatabase(prisma);
+    await prisma.$executeRawUnsafe(
+      'TRUNCATE TABLE "ActivityRegistration" RESTART IDENTITY CASCADE',
+    );
+  }
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -1349,7 +1357,7 @@ describe('audit-logs 写入迁移', () => {
 
     // 每个 it 前清 registration / activity,避免相互干扰;外层 beforeEach 已清 audit_logs
     beforeEach(async () => {
-      await prisma.activityRegistration.deleteMany({});
+      await truncateActivityRegistrations();
       await prisma.activity.deleteMany({});
     });
 
@@ -1771,7 +1779,7 @@ describe('audit-logs 写入迁移', () => {
       await prisma.attendanceRecord.deleteMany({});
       await prisma.attendanceSheet.deleteMany({});
       // PR #5 测试留下的 ActivityRegistration 持有 activityId FK,必须先于 activity 清
-      await prisma.activityRegistration.deleteMany({});
+      await truncateActivityRegistrations();
       await prisma.activity.deleteMany({});
     });
 
