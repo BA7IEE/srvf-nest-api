@@ -406,6 +406,29 @@ const BATCH4_RESERVATION_KERNEL_ACCEPTANCE_BLOCKERS: Readonly<Record<string, str
 };
 
 /**
+ * 第 4 批⑧只将现场临时参加的窄安全子集接成真实 HTTP caller。Form/资格 evaluator、
+ * invitation accept 和 allocation 仍不在本 destination 的完成口径里。
+ */
+const BATCH4_ONSITE_PARTICIPATION_ACCEPTANCE_IDS = ['AC-026'] as const;
+
+const BATCH4_ONSITE_PARTICIPATION_ACCEPTANCE_DESTINATIONS: Readonly<
+  Record<string, readonly AcceptanceDestination[]>
+> = {
+  'AC-026': [
+    {
+      file: 'test/e2e/activity-batch4-onsite-participation.e2e-spec.ts',
+      needle:
+        'red-first destination creates one header with three capacity layers and replays 20 concurrent calls exactly',
+    },
+    {
+      file: 'test/e2e/activity-batch4-onsite-participation.e2e-spec.ts',
+      needle:
+        'fails closed before all writes for Form fields, applicable RuleSets, and explicit position bindings',
+    },
+  ],
+};
+
+/**
  * 第 4 批⑦只翻访客名单的完整零串入证据。邀请 accept 仍依赖未裁定的资格/容量 caller，
  * 因而 AC-019 必须保留 todo；活动开始时的批量 expiry 也不借本刀提前结案。
  */
@@ -480,6 +503,18 @@ if (
   throw new Error('第 4 批 reservation kernel 两条验收编号必须保持明确 blocker');
 }
 
+const batch4OnsiteParticipationResolvedIds = new Set([
+  ...Object.keys(BATCH4_ONSITE_PARTICIPATION_ACCEPTANCE_DESTINATIONS),
+]);
+if (
+  batch4OnsiteParticipationResolvedIds.size !== BATCH4_ONSITE_PARTICIPATION_ACCEPTANCE_IDS.length ||
+  BATCH4_ONSITE_PARTICIPATION_ACCEPTANCE_IDS.some(
+    (id) => !batch4OnsiteParticipationResolvedIds.has(id),
+  )
+) {
+  throw new Error('第 4 批⑧ AC-026 必须绑定真实现场临时参加 E2E destination');
+}
+
 const batch4InvitationVisitorResolvedIds = new Set([
   ...Object.keys(BATCH4_INVITATION_VISITOR_ACCEPTANCE_DESTINATIONS),
   ...Object.keys(BATCH4_INVITATION_VISITOR_ACCEPTANCE_BLOCKERS),
@@ -502,6 +537,7 @@ function registerAcceptanceCases(cases: readonly { id: string; title: string }[]
       BATCH2_ACCEPTANCE_DESTINATIONS[id] ??
       BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS[id] ??
       BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS[id] ??
+      BATCH4_ONSITE_PARTICIPATION_ACCEPTANCE_DESTINATIONS[id] ??
       BATCH4_INVITATION_VISITOR_ACCEPTANCE_DESTINATIONS[id];
     if (destinations !== undefined) {
       it(`${id} ${title}（已标注去向）`, () => {

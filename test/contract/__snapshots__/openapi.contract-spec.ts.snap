@@ -4172,6 +4172,61 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppManagedActivityOnsiteParticipationReceiptDto": {
+    "properties": {
+      "approvedAt": {
+        "description": "本次现场批准时间（ISO 8601）",
+        "format": "date-time",
+        "type": "string",
+      },
+      "participationIdentityId": {
+        "description": "永久 ActivityParticipationIdentity.id",
+        "type": "string",
+      },
+      "participationRevisionId": {
+        "description": "本次新增的 immutable ActivityParticipationRevision.id",
+        "type": "string",
+      },
+      "positionId": {
+        "description": "本次现场参加对应的场次岗位 id；无岗位时为 null",
+        "nullable": true,
+        "type": "string",
+      },
+      "registrationId": {
+        "description": "canonical ActivityRegistration.id",
+        "type": "string",
+      },
+      "registrationRevisionId": {
+        "description": "本次新增的 immutable ActivityRegistrationRevision.id",
+        "type": "string",
+      },
+      "sourceCode": {
+        "description": "固定为 onsite，表示现场临时补录",
+        "enum": [
+          "onsite",
+        ],
+        "type": "string",
+      },
+      "statusCode": {
+        "description": "固定为 pass，表示现场参加已批准",
+        "enum": [
+          "pass",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "registrationId",
+      "registrationRevisionId",
+      "participationIdentityId",
+      "participationRevisionId",
+      "statusCode",
+      "sourceCode",
+      "positionId",
+      "approvedAt",
+    ],
+    "type": "object",
+  },
   "AppManagedActivityPositionDto": {
     "properties": {
       "activityId": {
@@ -11353,6 +11408,47 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "required": [
       "memberId",
       "expiresAt",
+    ],
+    "type": "object",
+  },
+  "CreateAppManagedActivityOnsiteParticipationDto": {
+    "properties": {
+      "memberId": {
+        "description": "现场参加的目标队员 id",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "operationKey": {
+        "description": "调用方生成的幂等操作键",
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string",
+      },
+      "positionId": {
+        "description": "该场次的现场岗位 id；有 live 岗位时必填",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "reason": {
+        "description": "现场临时参加的批准原因；服务端会 trim 后保存",
+        "maxLength": 500,
+        "minLength": 1,
+        "type": "string",
+      },
+      "sessionId": {
+        "description": "目标已排期场次 id",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "memberId",
+      "sessionId",
+      "reason",
     ],
     "type": "object",
   },
@@ -94316,6 +94412,255 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "App 活动负责人或报名协办撤回未过期的 pending 邀请 [auth]",
       "tags": [
         "Mobile - Managed Activity Guests",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/onsite-participations": {
+    "post": {
+      "operationId": "AppManagedActivityOnsiteParticipationsController_create",
+      "parameters": [
+        {
+          "description": "当前受管活动 Activity.id",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CreateAppManagedActivityOnsiteParticipationDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppManagedActivityOnsiteParticipationReceiptDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在; 15001: 队员不存在",
+                    "enum": [
+                      20001,
+                      15001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001) / 队员不存在(code=15001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20126: 活动未发布,不可报名、审批或提交考勤; 17030: 队员状态非活跃,不能挂部门; 21003: 报名操作键与首次请求不一致; 21030: 报名记录当前状态不允许此操作; 21032: 活动名额已满; 21034: 报名者性别不符合活动要求; 21035: 该活动报名必须选择活动岗位; 21039: 活动现场临时参加条件暂无法安全判定; 26030: 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名; 20147: 活动容量与当前占用不一致",
+                    "enum": [
+                      20126,
+                      17030,
+                      21003,
+                      21030,
+                      21032,
+                      21034,
+                      21035,
+                      21039,
+                      26030,
+                      20147,
+                    ],
+                    "example": 20126,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动未发布,不可报名、审批或提交考勤",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动未发布,不可报名、审批或提交考勤(code=20126) / 队员状态非活跃,不能挂部门(code=17030) / 报名操作键与首次请求不一致(code=21003) / 报名记录当前状态不允许此操作(code=21030) / 活动名额已满(code=21032) / 报名者性别不符合活动要求(code=21034) / 该活动报名必须选择活动岗位(code=21035) / 活动现场临时参加条件暂无法安全判定(code=21039) / 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名(code=26030) / 活动容量与当前占用不一致(code=20147)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "App 活动负责人现场临时补录参加并占用容量 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Onsite Participations",
       ],
     },
   },

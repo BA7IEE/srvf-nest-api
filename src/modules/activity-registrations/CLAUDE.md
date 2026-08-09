@@ -6,7 +6,7 @@
 
 - **活动报名记录**:create / approve / reject / cancel / reopen + 内部 promote，5 态闭集
 - **状态机 5 态**:`pending → pass|reject`;`waitlisted → pending`(仅自动递补，不开手动端点)；`pending|waitlisted → reject`；`pending|pass|waitlisted → cancelled`；`reject → pending`(reopen)。**不开 waitlisted → pass / reject → pass 直通**；只 pass 占 capacity
-- **三 surface**:Admin 代报名 + 审核 + CSV 导出(`admin/v1/activities/:activityId/registrations`);App 本人报名 / 查询 / 取消(`app/v1/my`);App 活动负责人/报名协办管理(`app/v1/my/managed-activities/:activityId/registrations`)。历史 Legacy `/v2/users/me/*` 4 端点已于 Route B Phase 4d2 删除(队员流由 App surface 承载)
+- **三 surface**:Admin 代报名 + 审核 + CSV 导出(`admin/v1/activities/:activityId/registrations`);App 本人报名 / 查询 / 取消(`app/v1/my`);App 活动负责人/报名协办管理（含 `POST app/v1/my/managed-activities/:activityId/onsite-participations` 的现场临时参加）;历史 Legacy `/v2/users/me/*` 4 端点已于 Route B Phase 4d2 删除(队员流由 App surface 承载)
 - **不负责**:活动主资源生命周期(`activities/`)、考勤(`attendances/`)、贡献值预填(`contribution-rules/` + `attendances/contribution-calculator.ts`);`AttendanceRecord.registrationId` 由 attendances 反向引用,本模块**不**主动维护
 
 ## Local facts
@@ -33,6 +33,7 @@
 - **报名通知 durable outbox**:approve/reject 审批结果、取消后的候补递补、自助取消告知均在业务 update + `registration.review` audit 的同一事务内 enqueue `notification.targeted@1`;**自助取消告知只在取消 `pass` 报名时发(B-D3,维护者 2026-08-01 拍板)** —— pending/waitlisted 的取消对负责人没有要做的事,名额本就没被占住,全发是噪音;取消 pass 的 intent 形状(eventKey/aggregate/收件人解析)逐字不变,只是不再为另两个状态多发;enqueue 失败整体回滚，worker 仅在 commit 后执行 Effect。review eventKey 绑定 registration + reviewedAt + review audit 序号，递补/取消绑定对应状态写时间。自助取消正文只使用同事务快照 `displayName（memberNo）`，任一标签不可用即用固定匿名提示，绝不暴露 `Member.id`。责任制 gate=true 仍只通知当前 ACTIVE owner，缺 owner fail-closed，绝不回退 `publishedBy`；gate=false 才显式沿用 publisher；eventKey / aggregate / destination 语义不变。
 - **managed 报名判权与锁序(PR-7)**:单条写先走既有 `authz.explain`，再在同一事务的 Activity 根锁后重读 active responsibility 的 `canManageRegistrations=true`；因此 owner/报名协办可管理，global 旧角色、考勤协办不可旁路，协办 end/owner transfer 与在途写串行。默认 `authorization='authz'` 保持 Admin 调用逐字行为，managed 路径显式传 `'managed'`
 - **邀请/访客 runtime（第 4 批⑦）**:managed invitations/visitors 先 D-5、既有 `activity-registration.*.record` 权限，再在 Activity 锁后重读 active `canManageRegistrations=true`；GLOBAL 码不旁路。邀请 create/list/revoke 与本人 decline 固定 Activity→Invitation，pending 过期只投影/转 expired，decline 的 operationKey+canonical SHA-256 同 key 同载荷重放、异 hash `20151`；访客 writer 只写 `ActivityVisitor` + 同事务 `visitor.create` audit，新行 `attendanceCode=null`，禁止触报名/参与/预留/考勤/结算/账本/贡献/进度。
+- **现场临时参加（第 4 批⑧）**:`OnsiteParticipationCommandService` 仅服务 managed route；先 D-5 + `activity-registration.create.record`，再在同一事务 Activity 根锁后重读 active `canManageRegistrations=true`，GLOBAL/SUPER_ADMIN 都不能绕过责任。Activity 根锁后先重读 actor D-5/责任；新事实锁序为 Activity→全部活动报名头→member/activity 全部永久 identity→session/position/Form/RuleSet/保险→三层 CapacityReservation→immutable revision/current pointer→population revision→`registration.create` audit。只允许明确的前置参与态转 `pass`；`pass/attended/settled/cancellation_requested` 和跨历史报名头一律 21030。D-5/责任重读后精确同 key+hash 的旧成功回执优先返回；仅新 key 在同一 Activity 锁内遇 `now > endAt`、run `statusCode ∈ {posting, posted}`、`currentPostedVersion != null` 或 active closure 才 21030。Form 含字段、适用 active RuleSet 或岗位显式 RuleSet 指向一律 21039 fail-closed，**不**猜 `operator/valueJson`、不实现 evaluator。容量只调用 trusted 内核，绝不写 `capacityReservationId`；audit 不复制 reason/保险/答案/文件，零 outbox/通知。
 - **approve 保险锁序**:Activity 后按 evidence 类型分支：self=`Member lifecycle FOR UPDATE→MemberInsurance→Registration`，team=`Policy→Coverage→Member lifecycle FOR UPDATE→Registration`；无保险分支=`Member→Registration`。与现有 self review、队保覆盖写同向；锁住生命周期/来源后才 claim Registration。
 - **create / approve Member ACTIVE**:Admin create 与 App core createMy 都先做无锁 live+ACTIVE snapshot 以稳定 15001/17030 优先级，保险 source 选择后再 `assertActiveMemberLifecycle()` 排他锁并重读；approve 同样先 snapshot，再由保险 service 在既有 source 锁位最终加锁。reopen 刻意不查 ACTIVE，只恢复 pending，后续 approve 必须重验。
 - **候补排位**:`activity-registration-waitlist-query.service.ts` 批量按 `(activityId,activityPositionId)` 计算，`null` 是无岗位旧队列，列表禁止 N+1；非 waitlisted 返 null
@@ -58,6 +59,7 @@
 - ❌ **不**把递补改成 waitlisted → pass；腾出名额只自动进 pending，仍必须走 approve
 - ❌ **不**把报名通知改回 commit 后 best-effort 直调 dispatcher；不得在业务事务内调用 provider，且 gate=true 不得用 `publishedBy` 冒充当前 owner
 - ❌ **不**把 upload session 当作报名答案、RegistrationRevision 或永久报名身份；不得在 Form/session/AVAILABLE 全部复核和不可变答案行创建之前提前 consumed/转绑。最终转为 `registration-form-answer` owner 与 consumed 只能由 canonical command 通过 trusted facade 在同一事务完成；不得把 Provider/签名/文件内容校验放进数据库事务。
+- ❌ 现场临时参加不得复活或 relink 历史报名头、不得把 `pass` 当非幂等重试、不得接 Form 答案/上传、不得扩展为邀请 accept / allocation / waitlist / cancel；资格条件未定义时必须保留 21039，而非以“现场”理由跳过。
 
 ## Before editing
 
@@ -74,3 +76,4 @@
 - 改 audit event / extra → 必须跑 `activity-registrations-audit-characterization.e2e-spec.ts`
 - 改状态机 → 必须跑 `activity-registrations-state-transition.e2e-spec.ts`
 - 改 DTO 字段 / endpoint path / Swagger schema / 错误码 → 必须再跑 `pnpm test:contract`
+- 改现场临时参加 → `pnpm test:e2e -- activity-batch4-onsite-participation.e2e-spec.ts`（含 20 同键并发、100 人 capacity=1 与 Form/RuleSet fail-closed）

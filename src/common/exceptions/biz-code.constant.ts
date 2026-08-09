@@ -1747,6 +1747,13 @@ export const BizCode = {
     message: '该活动必须使用报名主链提交',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 第 4 批⑧现场临时参加:Form / 资格规则的 operator 与 valueJson runtime 尚未定义。
+  // 现场补录绝不猜测或跳过这些条件；一旦命中适用条件，整笔在写入前 fail-closed。
+  ACTIVITY_ONSITE_REQUIREMENTS_UNAVAILABLE: {
+    code: 21039,
+    message: '活动现场临时参加条件暂无法安全判定',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // attendances 模块业务级(220xx + 221xx)。批次 3B 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.8 / §1.14 + 批次3_schema草案 §18.2。
