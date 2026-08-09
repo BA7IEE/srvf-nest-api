@@ -21,7 +21,7 @@
 | 模块 | 37 |
 | Controller | 94 |
 | Endpoint | 498 |
-| Migration | 80 |
+| Migration | 81 |
 | BizCode | 424 |
 | 权限码 | 234 |
 | AuditLogEvent | 138 |
@@ -46,7 +46,7 @@
 - **安全**:审计SA全量/持码非SA仅self|USER；敏感读闭锁/extra禁PII；Decision 15.1=B/15.2=B(业务负责人最终确认:2026-07-27):C/N管理=SA|GLOBAL读码(ADMIN不直通)，部门=PRIMARY/SECONDARY/TEMPORARY/SUPPORT有效任职+组织ACTIVE；RBAC任期单轨，ops-admin现任常驻/同锁重读
 - **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 - **证书标准库(PR-1→PR-6 + 评审 findings F1–F6)**:类别/等级唯一权威=`CertificateStandard`(实例侧零副本);认定规则由录入时锁定的 `recognitionPolicyId` 记住、换版**不追溯**;招新申报一证一行,发号只搬 APPROVED 且不重判。**需求 = 冻结稿 + [`t0-amendments`](archive/reviews/certificate-standard-library-t0-amendments.md) 两份合起来**(冲突以后者为准);三份 runbook 见 `ops/certificate-*`
-- **活动业务改造**:第 0–3 批已收口;第 4 批 Form/附件会话/canonical 报名命令、容量桶投影、⑦邀请/访客及⑧ managed 现场临时参加 runtime 已接通。⑧只覆盖无 Form/资格条件的安全桥：D-5 + scoped permission + active responsibility、保险、三层容量、immutable revision/population/audit 与同键幂等；新key在Activity锁内遇now>endAt、posting/posted或active closure均21030，旧成功key先精确重放原回执；Form 含字段/适用 RuleSet/岗位显式 RuleSet 一律 21039，资格 evaluator 与跨历史报名头策略仍未做。旧创建入口对 v1.1 fail-closed；合同 [`activity-business-overhaul-v1.1`](archive/reviews/activity-business-overhaul-v1.1/README.md)，执行位 `NEXT_TASKS` P1-28。
+- **活动业务改造**（activity-business-overhaul-v1.1）：81 已落；永久报名头 runtime 复用仍待（NEXT_TASKS P1-28）。
 
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)
 

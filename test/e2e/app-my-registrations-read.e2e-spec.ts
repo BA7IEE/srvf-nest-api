@@ -603,20 +603,22 @@ describe('App /api/app/v1/my/* (P2-5a 只读 3 endpoint)', () => {
       }
     });
 
-    it('同活动多 registration → 取最新有效优先级 active > reject > cancelled', async () => {
+    it('同一永久报名头状态更新 → 取当前 pending 状态', async () => {
       const u = nextSeq();
       const { memberId, authHeader } = await setupLinkedUser({
         username: `p25a-prio-${u}`,
         memberNo: `P25A-PRIO-${u}`,
       });
       const act = await createActivity('published', `prio-${u}`);
-      // 老 cancelled
-      await createRegistration({ memberId, activityId: act.id, statusCode: 'cancelled' });
-      // 新 pending(active)
-      const active = await createRegistration({
+      const header = await createRegistration({
         memberId,
         activityId: act.id,
-        statusCode: 'pending',
+        statusCode: 'cancelled',
+      });
+      const active = await prisma.activityRegistration.update({
+        where: { id: header.id },
+        data: { statusCode: 'pending', cancelledAt: null },
+        select: { id: true },
       });
 
       const res = await get('/api/app/v1/my/activities', authHeader);

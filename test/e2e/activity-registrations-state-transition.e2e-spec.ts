@@ -19,18 +19,16 @@ import { createTestApp } from '../setup/test-app';
 //
 // 目标:在抽 `ActivityRegistrationStateMachine` / `ActivityRegistrationAuditRecorder` 之前,
 // 显式锁定 `activity-registrations.service.ts` 当前状态机 + 唯一性 + 容量 + 事务回滚的全部 invariant。
-// 本 PR 严格 test-only(沿 docs/api-surface-policy.md §8 P1 禁止事项 +
-// docs/architecture-boundary.md §8 deferred);**不**改 src/**,**不**抽任何 class。
+// 本 spec 只锁既有 service 行为；第 81 migration 的永久报名头结构切换不改本文件外的 runtime。
 //
 // 测试策略选择(沿 attendances-state-transition spec 范式):
 //   - 选 service-level e2e(`test/e2e/*.e2e-spec.ts`)而非 unit spec:
-//     * 项目 unit jest 配置无 DB,无法实测 `$transaction` / partial unique / audit 写入;
+//     * 项目 unit jest 配置无 DB,无法实测 `$transaction` / DB unique / audit 写入;
 //     * `createTestApp()` + `app.get(ActivityRegistrationsService)` 直接调用 service 方法,
 //       **绕过 HTTP / JwtAuthGuard / RolesGuard**,纯锁 service 层行为。
 //   - 直接 Prisma seed 非 pending 起始状态(approved / cancelled / rejected),
 //     避免为造状态绕完整业务流程(approve / cancel / reject 多步)。
-//     partial unique `(activityId, memberId) WHERE deletedAt IS NULL AND statusCode != 'cancelled'`
-//     允许多条 cancelled 共存,不影响 seed。
+//     永久报名头 unique 下每个 fixture 均使用独立 `(activityId, memberId)`,不造历史双头。
 //   - audit failure rollback case 用 jest.spyOn(auditLogs, 'log').mockRejectedValueOnce 触发
 //     auditLogs.log 抛错,断言 service throw + DB 无落库 + audit 不存在
 //     (沿 attendances-audit-characterization spec D1 范式)。
@@ -40,7 +38,7 @@ import { createTestApp } from '../setup/test-app';
 //   B. reject(pending|waitlisted → reject + 3 个 wrong source state)
 //   C. cancelAdmin(pending|pass|waitlisted → cancelled + 2 个 wrong source state)
 //   D. cancelMy(pending|pass|waitlisted → cancelled + 2 个 wrong source state + ownership)
-//   E. Uniqueness & capacity(active dup + cancelled allows re-register + capacity full ×2)
+//   E. Uniqueness & capacity(active dup + cancelled re-register 暂 21002 + capacity full ×2)
 //   F. Audit failure rollback(create 路径)
 
 type RegistrationStatus = 'pending' | 'pass' | 'reject' | 'cancelled' | 'waitlisted';
@@ -416,8 +414,7 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
   }
 
   // 直接 prisma seed 任意起始状态的 registration(绕过 service 业务流)。
-  // partial unique 约束:`(activityId, memberId) WHERE deletedAt IS NULL AND statusCode != 'cancelled'`
-  //   pending / pass / reject 同 (activityId, memberId) 只能一条 active;cancelled 可多条。
+  // 永久报名头约束:同一 (activityId, memberId) 跨全部历史只能一条。
   async function seedRegistration(opts: {
     activityId?: string;
     memberId: string;
@@ -1505,7 +1502,7 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       expect(afterAuditCount).toBe(beforeAuditCount); // 无新 audit
     });
 
-    it('E2. cancelled 后允许重新报名:同一 (activity, member) 多条 cancelled + 新 pending', async () => {
+    it('E2. cancelled 后 legacy 重报暂 21002:仍一条 cancelled、零新 audit/保险 evidence', async () => {
       // 先 seed 一条 cancelled(模拟历史取消记录)
       const cancelledRegId = await seedRegistration({
         memberId: ctx.memberCId,
@@ -1515,30 +1512,33 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
         cancelReason: '之前取消',
       });
 
-      // 重新报名应成功
-      const result = await ctx.service.create(
-        ctx.publishedActivityId,
-        { memberId: ctx.memberCId },
-        ctx.adminPayload,
-        AUDIT_META,
-      );
-      expect(result.statusCode).toBe('pending');
-      expect(result.id).not.toBe(cancelledRegId);
+      const beforeAuditCount = await ctx.prisma.auditLog.count({
+        where: { event: 'registration.create' },
+      });
+      const beforeInsuranceEvidenceCount = await ctx.prisma.insuranceEligibilityEvidence.count();
 
-      // DB 两条共存:1 cancelled + 1 pending
+      await expect(
+        ctx.service.create(
+          ctx.publishedActivityId,
+          { memberId: ctx.memberCId },
+          ctx.adminPayload,
+          AUDIT_META,
+        ),
+      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_REGISTRATION_ALREADY_EXISTS });
+
       const allRows = await ctx.prisma.activityRegistration.findMany({
         where: { activityId: ctx.publishedActivityId, memberId: ctx.memberCId },
         select: { id: true, statusCode: true },
       });
-      expect(allRows).toHaveLength(2);
-      const statuses = allRows.map((r) => r.statusCode).sort();
-      expect(statuses).toEqual(['cancelled', 'pending']);
+      expect(allRows).toEqual([{ id: cancelledRegId, statusCode: 'cancelled' }]);
 
-      // create audit 写了一条
-      const audits = await ctx.prisma.auditLog.findMany({
-        where: { event: 'registration.create', resourceId: result.id },
+      const afterAuditCount = await ctx.prisma.auditLog.count({
+        where: { event: 'registration.create' },
       });
-      expect(audits).toHaveLength(1);
+      expect(afterAuditCount).toBe(beforeAuditCount);
+      expect(await ctx.prisma.insuranceEligibilityEvidence.count()).toBe(
+        beforeInsuranceEvidenceCount,
+      );
     });
 
     it('E3. capacity=1 + 1 pass 时,create 新 reg → waitlisted + create audit', async () => {

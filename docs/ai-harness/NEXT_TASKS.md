@@ -218,10 +218,34 @@
 
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
-### P1-28 活动业务全流程改造(批次 0–8) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件，[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960))、③ Form runtime / 一次性附件会话([#961](https://github.com/BA7IEE/srvf-nest-api/pull/961))、④ canonical 报名命令主链([#962](https://github.com/BA7IEE/srvf-nest-api/pull/962))、⑤分配/预留名额 DB guards([#963](https://github.com/BA7IEE/srvf-nest-api/pull/963))、发布审核容量桶投影([#964](https://github.com/BA7IEE/srvf-nest-api/pull/964))、三层 CapacityReservation 内核([#965](https://github.com/BA7IEE/srvf-nest-api/pull/965) 已合 main)；合同已修订至 v1.1.1,缺口台账累计 #26**
+### P1-28 活动业务全流程改造(批次 0–8) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件，[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960))、③ Form runtime / 一次性附件会话([#961](https://github.com/BA7IEE/srvf-nest-api/pull/961))、④ canonical 报名命令主链([#962](https://github.com/BA7IEE/srvf-nest-api/pull/962))、⑤分配/预留名额 DB guards([#963](https://github.com/BA7IEE/srvf-nest-api/pull/963))、发布审核容量桶投影([#964](https://github.com/BA7IEE/srvf-nest-api/pull/964))、三层 CapacityReservation 内核([#965](https://github.com/BA7IEE/srvf-nest-api/pull/965) 已合 main)、⑨永久报名头 DB 地基与 onsite 历史头 fail-closed([#968](https://github.com/BA7IEE/srvf-nest-api/pull/968))；合同已修订至 v1.1.1,缺口台账累计 #26**
 
 > **需求口径变更(2026-08-04)**:**= v1.1 四份 + [`AMENDMENTS-v1.1.1`](../archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md),冲突以后者为准。**
 > 第 1 批建表过程中实测撞到**五处合同内部不一致**,维护者当日**全部接受**并发布修订件。原件与 SHA256 一字未动(校验仍过)。
+> **2026-08-09 维护者 A–I 拍板（第 4 批⑨，第 81 migration）**：ActivityRegistration 已在 DB 层成为
+> 跨 cancelled / soft-deleted 全历史的永久报名头；migration 单事务锁表、先全历史查重复组，任一组
+> 仅报组数并以 23505 fail-closed，零删数/合并/修数，再把旧 active partial 换成普通 unique。
+> 取消/重报同头复用 runtime 仍待；本 PR 仅补 onsite 全历史头锁与新 key 的写前 fail-closed。
+>
+> - **A 资格**：上级是底线、下级只能收紧；规则间 AND、规则内 OR；结果分 block/warn。年龄按活动开始日，
+>   证书须 approved 且覆盖活动，保险须覆盖全程，组织认直属或子树，培训可复用证书/结业证明；warn score
+>   为 0–100，发布时冻结。
+> - **B 分配**：每活动唯一方式；新活动显式选择，存量为 first_come。first_come 以服务器受理时间排序；
+>   rank/lottery 截止后冻结，rank 同分按 acceptedAt 再按永久 identity，lottery 必须可复查重放，并保存批次和候补顺序。
+> - **C 永久报名头**：取消/重报/拒绝后重报只追加版本，永不建第二头。
+> - **D onsite**：不得绕过硬资格、保险、性别或名额；warn 留痕。普通题可代录，文件与本人同意不得代办；
+>   必记批准人、原因、时间。
+> - **E 职责与 scope**：沿七职责，分别覆盖活动、场次、岗位三层 scope。
+> - **F 离线**：加密离线包延至 v1.2；v1.1 保留在线扫码、代签、导入。
+> - **G visitor**：attendanceCode 永远为 null，且无写入口。
+> - **H 更正**：追认现有严格版本化更正 JSON。
+> - **I reservation pointer**：capacityReservationId 固定指向 session reservation；释放时清空，不一致为 20147。
+>
+> **仍待下一刀**：资格 operator / valueJson 精确编码归下一 D 刀冻结；ADV-014 按激进安全版归第 6 批导入刀。
+> **当前过渡行为**：legacy Admin/self 取消后重报暂 21002；canonical 新 key 暂 21003，旧精确回执重放不变；
+> onsite 锁同一 activity/member 的全部历史报名头（含 soft-deleted），有历史头但无可复用 live 头的新 key
+> 在 create 前 21030，旧精确回执重放不变；全部零写 fail-closed。AC-021、ADV-005 继续 todo，由紧接的 runtime 大刀解决。
+>
 > 五条现状:②已生效(快照锚点可空)· ④已解决(加开第五刀 #915)· **①已由第 4 批前置微刀兑现**
 > (第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959)：`CapacityReservation` 补
 > `memberId`/`activityId` + partial unique,走 DB 保证不降级为服务层)· **⑤已由维护者 2026-08-07「按推荐」拍板**:
@@ -236,7 +260,7 @@
 > `release_to_public_pool` / `void_on_expiry`，默认 `release_to_public_pool`。canonical 报名命令已有
 > 从 1 开始写入 `preferenceOrder` 的生产 writer；本刀不改该 writer。
 > **五条均不阻塞第 2 批。**
-> **待折进下一版修订件的已知合同缺口(#6–#25；#7、#14、#16–#18 已裁定，#19–#21 为本刀保守工程裁定，#22–#25 未裁定)**:#6 `workflowRevision` 来源未定义；**本刀局部执行口径**：draft FormVersion 取创建时 Activity 当前值，initial/change 审批激活取该次审批产生的新值；这不代表 #6 已整体解决 ·
+> **待折进下一版修订件的已知合同缺口(#6–#25；#7、#14、#16–#18、#23–#25 已裁定，#19–#21 为本刀保守工程裁定，#22 未裁定)**:#6 `workflowRevision` 来源未定义；**本刀局部执行口径**：draft FormVersion 取创建时 Activity 当前值，initial/change 审批激活取该次审批产生的新值；这不代表 #6 已整体解决 ·
 > #7 `resultCode` 无「未定」取值（2026-08-07 已裁定：preparing=`null`，非空为三值闭集，待折进修订件）· #8 关账幂等列缺失 · #9 `requestedChangeJson` 结构未定义 ·
 > #10 无人触发 `commitBatch` · **#11** §6.1/§6.2 要求草稿动作携带 `operationKey`，但 §10.3 必须覆盖闭集不含它、§3 也没有持久化落点；本刀按 §10.3 不接收该字段 ·
 > **#12** §3.1 的 `cancelOperationKey` 提到“全历史操作记录另表保存”，但该表全合同未定义，禁止从散文自造 ·
@@ -248,10 +272,10 @@
 > **#19（本刀保守工程裁定）**：合同未逐字规定 managed Form 的 wire/null/no-op 口径；固定 `form:null|{fields}`、object 的非空 fields、canonical SHA-256 与相同 canonical PUT 无写入/无新版本/无 audit。该裁定可逆，不能表述为原合同已有明文。
 > **#20（本刀保守工程裁定）**：第 79 migration 注释的“token 不进任何响应”按同段“原始 token 只返回一次”收窄为“除创建响应外不再返回”；上传路由、后端中转 multipart、30 分钟 TTL 与复用 `attachment_legacy` storage source 均为未逐字规定的执行口径，且不改 schema 注释。
 > **#21（本刀保守工程裁定）**：合同未逐字定义 canonical 报名 wire 的 `preferences[].positionIds[]` 顺序如何落库、file 题最终附件 owner；固定按数组顺序派生从 1 开始的 `preferenceOrder`，最终 owner 固定 `registration-form-answer`。两者均可逆，不宣称为原合同明文。
-> **#22（本刀新登记，未实现）**：§3.13 七类资格规则虽已列出，但每类 `operator` / `valueJson` 的合法形状、以及 active RuleSet 的解析口径未定义；本刀只登记，零资格 runtime / DB 规则实现。
-> **#23（本刀新登记，未实现）**：业务合同要求发布人选择 `first_come` / `qualification_rank` / `lottery` 三种分配方式，但详细 §3.1、`Activity`、proposal/rule snapshot 都没有持久化字段或作用域；本刀不默认 `first_come`。
-> **#24（本刀新登记，未实现）**：一个 identity 可以同时有 session＋position 等多条 active reservation，而 `capacityReservationId` 只有单指针；合同未定义它指向哪一条。本刀不写 pointer；若未来 caller 需要单指针，只能先明确它是否采用本刀已返回的 session reservation id，不能从多条 active 行自行猜测。
-> **#25（本刀新登记，未实现）**：§6.6 未定义 visitor `attendanceCode` 闭集、写入时机或更新入口；本刀不接收该字段，新建行恒为 null。
+> **#22（待下一 D 刀冻结）**：资格规则 `operator` / `valueJson` 精确编码。
+> **#23（维护者 2026-08-09 已裁定，实施待后续批次）**：每活动唯一分配方式；新活动显式选择、存量为 `first_come`；first_come 按服务器受理时间，rank/lottery 截止后冻结，rank 同分按 acceptedAt 再永久 identity，lottery 可复查重放并保存批次与候补顺序。
+> **#24（维护者 2026-08-09 已裁定，实施待后续 caller）**：`capacityReservationId` 固定指向 session reservation；释放清空，不一致为 20147。
+> **#25（维护者 2026-08-09 已裁定）**：visitor `attendanceCode` 恒为 null，且无写入口。
 > **账本读面权限口径（维护者 2026-08-06 拍板）**：复用 `attendance.read.sheet`；合同 §6.11
 > 未规定，若日后要收紧需另立权限码 + 三处 seed spec 连坐。
 >
@@ -333,7 +357,7 @@
 
 > **第 4 批③（[#961](https://github.com/BA7IEE/srvf-nest-api/pull/961)，Form runtime / 一次性附件会话）**：managed Form 定义、draft/active 版本、初发/变更审核/clone 与 App detail 安全读面已接通；v3 proposal 把 canonical Form 纳入 stale hash，历史 v2 审批逐字兼容。附件会话只存 token SHA-256、创建响应明文仅一次；后端中转 multipart 固定 JPEG/PNG/WebP/PDF、10 MiB、单会话单附件和安全重放，不返回 provider signed upload URL 或内部存储字段。
 
-> **第 4 批④（[#962](https://github.com/BA7IEE/srvf-nest-api/pull/962)，报名命令主链）**：App canonical `POST /api/app/v1/activities/:activityId/registrations` 已在 Activity 锁内完成 D-5 重验、Form/八题型答案、session/position、一次性附件与 immutable registration/participation revision 链；同 key+hash 在 consumed session 前安全重放，不同 hash `21003`，附件最终转内部 `registration-form-answer` owner。旧 App/Admin create 在 v1.1 live session 或 active Form 统一 `21038`，没有后台代报名/导入替代口；不变式不占容量、不建 Reservation。**后续 D 刀**仍需维护者拍板全局永久 `ActivityRegistration` 头唯一，不能改变既有“取消后可建第二头”的 E2E。
+> **第 4 批④（[#962](https://github.com/BA7IEE/srvf-nest-api/pull/962)，报名命令主链）**：App canonical `POST /api/app/v1/activities/:activityId/registrations` 已在 Activity 锁内完成 D-5 重验、Form/八题型答案、session/position、一次性附件与 immutable registration/participation revision 链；同 key+hash 在 consumed session 前安全重放，不同 hash `21003`，附件最终转内部 `registration-form-answer` owner。旧 App/Admin create 在 v1.1 live session 或 active Form 统一 `21038`，没有后台代报名/导入替代口；不变式不占容量、不建 Reservation。第 81 migration 已落全局永久 `ActivityRegistration` 头唯一；取消/拒绝后同头复用仍待后续 runtime。当前 cancelled 历史头下 canonical 新 key 为 21003，旧精确回执重放不变。
 >
 > **第 4 批⑤（[#964](https://github.com/BA7IEE/srvf-nest-api/pull/964)，发布审核容量桶真实投影）**：已 squash merge 至 main `a6904b84e8077cbeb20b6234ec23cd07fb763d4a`，final-main CI [31252496260](https://github.com/BA7IEE/srvf-nest-api/actions/runs/31252496260) success。`ActivityCapacityBucketProjector` 在既有 Activity → review 锁序内、Form/Rules 后且 QR/population revision 前，重读已应用的 Activity / scheduled Session / live Position，稳定投影 `activity_person`、`session_participation`、`position_participation` 三类目标桶；不建 `reserve_group`。缺桶仅建 `occupied=0/version=0`，同容量零 UPDATE，变容只以锁后 CAS 递增 version 一次；任何 `occupied` 与 active `CapacityReservation` 数量漂移、错误锚定、历史取消 scope 仍有占用、或降容低于占用，均以 `20147` fail-closed 并回滚整笔 approve。新桶仅初始化 `occupied=0`；既有 `occupied` 不修改、不增加、不减少、不重算；生产代码零 `CapacityReservation` DML，占位/释放留下一刀。
 >
@@ -341,9 +365,9 @@
 
 > **第 4 批⑦（邀请拒绝/撤回与访客名单 runtime）**：managed create/list/revoke、本人 decline 与过期 pending 可见性已接；访客真实 HTTP E2E 对报名、参与、预留、考勤、服务段、结算、账本、贡献、批任务前后快照均零串入，AC-027 转 destination。AC-019 保持 todo：accept 仍卡 #22 资格 runtime、保险/容量 caller；活动开始批量 expiry 仍归 AC-028。
 >
-> **第 4 批⑧（managed 现场临时参加 + 容量 caller）**：新增 `POST /api/app/v1/my/managed-activities/:activityId/onsite-participations`，只走 D-5 + `activity-registration.create.record` + 当前活动 active `canManageRegistrations=true` 三重门；Activity 根锁后先重读 actor D-5/责任，新事实固定锁序为 Activity → 报名头 → member/activity 全部 identity → session/position/requirements/保险 → 三层容量 → revision/pointer → population → audit。新头或复用 canonical active 头均追加 `sourceCode='onsite'` immutable revision；永久 identity 只复用，明确的非最终状态转 pass，最终状态或跨历史头一律 `21030`。同 Activity 锁内，D-5/责任复读后精确同 key+hash 的旧成功回执先返回（即使其后 completed/posted/closed 也零新增）；仅新 key 在 `now > endAt`、run `statusCode ∈ {posting, posted}`、`currentPostedVersion != null` 或存在 active closure 时一律 `21030`。Form 含字段、适用 active RuleSet、岗位显式 RuleSet 均 `21039`，零猜 evaluator；首头 evidence 恰一份、复用头重验不重复，容量不足 `21032`、漂移 `20147`，零 capacity pointer/outbox/通知。同 key+hash 20 并发只落一份事实、异 hash `21003`。**缺口 #26**：现场补录的 Form/资格覆盖、跨历史报名头处理及精确 wire 未定义，继续 fail-closed；AC-018、019、022、023 保持原状态。
+> **第 4 批⑧（managed 现场临时参加 + 容量 caller）**：新增 `POST /api/app/v1/my/managed-activities/:activityId/onsite-participations`，只走 D-5 + `activity-registration.create.record` + 当前活动 active `canManageRegistrations=true` 三重门；Activity 根锁后先重读 actor D-5/责任，新事实固定锁序为 Activity → 同一 member/activity 全部报名头（含 soft-deleted）→ member/activity 全部 identity → session/position/requirements/保险 → 三层容量 → revision/pointer → population → audit。无历史头才建新头，可复用 live canonical 头才追加 `sourceCode='onsite'` immutable revision；存在任一历史头而无可复用 live 头时，新 key 在 create 前 `21030`、全链零写。永久 identity 只复用，明确的非最终状态转 pass。D-5/责任复读后精确同 key+hash 的旧成功回执先返回（即使其后 completed/posted/closed 或头已成为历史也零新增）；仅新 key 在 `now > endAt`、run `statusCode ∈ {posting, posted}`、`currentPostedVersion != null` 或存在 active closure 时一律 `21030`。Form 含字段、适用 active RuleSet、岗位显式 RuleSet 均 `21039`，零猜 evaluator；首头 evidence 恰一份、复用头重验不重复，容量不足 `21032`、漂移 `20147`，零 capacity pointer/outbox/通知。同 key+hash 20 并发只落一份事实、异 hash `21003`。**缺口 #26**：现场补录的 Form/资格覆盖及精确 wire 未定义，继续 fail-closed；AC-018、019、022、023 保持原状态。
 >
-> **第 4 批验收回填**：AC-016、AC-029 已各有真实 canonical App E2E（答案/revision 与提交时附件绑定/防串）；AC-017 继续 todo（后台代报名与导入未接入，三入口共享 validator 未实现）。ADV-017 已绑定 activity/session 降容 HTTP 针；AC-022/023 仍仅有内核的 100人×3场、两 pool capacity=1 100 并发、释放/对账 PostgreSQL 证据，尚无 canonical/approve/allocation HTTP policy caller，继续 todo；AC-026 已由⑧真实 managed onsite HTTP E2E 转 destination；AC-027 已由访客零串入真实 HTTP E2E 转 destination，AC-019 保持 todo；AC-018、AC-021、AC-024、AC-028、ADV-005/014 仍 todo；本刀不宣称全局永久报名头唯一、最终用户占位/释放链或资格 runtime。
+> **第 4 批验收回填**：AC-016、AC-029 已各有真实 canonical App E2E（答案/revision 与提交时附件绑定/防串）；AC-017 继续 todo（后台代报名与导入未接入，三入口共享 validator 未实现）。ADV-017 已绑定 activity/session 降容 HTTP 针；AC-022/023 仍仅有内核的 100人×3场、两 pool capacity=1 100 并发、释放/对账 PostgreSQL 证据，尚无 canonical/approve/allocation HTTP policy caller，继续 todo；AC-026 已由⑧真实 managed onsite HTTP E2E 转 destination；AC-027 已由访客零串入真实 HTTP E2E 转 destination，AC-019 保持 todo；第 81 migration 已落全局永久报名头 unique，本 PR 补 onsite cancelled/soft-deleted 空头新 key→21030 且全链零写、旧 key/hash 精确重放，及 canonical cancelled 历史头新 key→21003、旧 key 重放；AC-018、AC-021、AC-024、AC-028、ADV-005/014 与取消/重报同头复用 runtime 仍 todo。
 
 - **合同**:[`archive/reviews/activity-business-overhaul-v1.1/`](../archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效
   (业务方案 / 详细开发文档 / 355 项追踪矩阵 / 修订说明),SHA256 入仓时原位校验全过。

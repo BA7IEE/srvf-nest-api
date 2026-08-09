@@ -214,7 +214,7 @@
 ### 2.4 活动岗位与时段（审计刀 6 · 第四件 / 收官）
 
 - **先选岗位再报名**：对公开报名活动调用 `GET /api/app/v1/activities/:activityId/positions`，按 `sortOrder` 展示 `name/description/attendanceRoleCode/startAt/endAt/genderRequirementCode/capacity/remainingCapacity/canRegister`。`remainingCapacity=0` 不代表按钮禁用——满员仍可提交并进入候补；`capacity/remainingCapacity=null` 表示不限。不可见活动统一 20001，避免存在性枚举。
-- **报名 body**：`POST /api/app/v1/my/registrations` additive 接收 `activityPositionId`。活动有 live 岗位时必填，缺失返 `21035`；不存在/跨活动/已删返 `20002`；同人已在该活动有 pending/pass/waitlisted 报名时，换另一个岗位仍返 `21002`。换岗流程是先取消原报名再重新报名，本期无换岗端点。
+- **报名 body**：`POST /api/app/v1/my/registrations` additive 接收 `activityPositionId`。活动有 live 岗位时必填，缺失返 `21035`；不存在/跨活动/已删返 `20002`；同人已在该活动有 pending/pass/waitlisted 报名时，换另一个岗位仍返 `21002`。本期无换岗端点；取消不会释放永久报名头，前端不得指引“先取消再重新报名”。legacy 历史头重报暂返 `21002`，canonical 新 key 暂返 `21003`，旧精确回执可重放，同头复用待后续 runtime。
 - **岗位级候补**：`waitlistPosition` 只在所选岗位队列内编号；A 岗释放或扩容只递补 A 岗，不影响 B 岗。收到「候补已递补」后仍是 pending 待审核，不是 pass。
 - **岗位级性别与名额**：`canRegister=false` 可由活动状态/截止、已报名、活动性别闸或岗位性别闸导致；最终提交仍会复做全部闸与活动级保险校验，客户端不可把 `canRegister` 当授权证明。活动详情 `capacity` 在有岗位时是岗位名额派生值（任一岗位不限则 null），不要再取原活动 capacity 自行判断。
 - **岗位打卡窗**：报名岗位配置 `startAt/endAt` 时，签到/签退按岗位窗 ± 既有容差；岗位无独立时段或无岗位报名才沿活动窗。客户端仍只处理既有 `22077`，但提示文案应写“超出当前岗位/活动的有效打卡时间”。

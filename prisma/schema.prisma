@@ -1463,10 +1463,10 @@ model ActivityPosition {
 // - cancelledByUserId  → User.id               (可空,Q-D16 v0.3)
 // - activityPositionId → activity_positions.id (可空,无岗位活动 / 存量报名)
 //
-// 业务唯一约束(partial unique;Q-D4 + Q-D17 v1.2 修订):
-// - (activityId, memberId) WHERE deleted_at IS NULL AND status_code != 'cancelled'
-// - 索引名 activity_registrations_activity_member_active_unique
-// - Prisma DSL 不支持带 WHERE,migration.sql 末尾手动追加(沿 MemberDepartment 范式)
+// 业务唯一约束(永久报名头;活动改造 v1.1 第 4 批第九刀):
+// - (activityId, memberId) 跨 cancelled / soft-deleted 全历史只能有一个头
+// - 索引名 activity_registrations_activity_member_permanent_unique
+// - 取消/重报的 runtime 复用仍属后续刀;本刀只落 DB 地基
 //
 // extras Json?(D12 字段位预留)。
 //
@@ -1523,6 +1523,7 @@ model ActivityRegistration {
   currentFormVersion RegistrationFormVersion?       @relation("RegistrationCurrentFormVersion", fields: [currentFormVersionId], references: [id], onDelete: Restrict)
   revisions          ActivityRegistrationRevision[]
 
+  @@unique([activityId, memberId], map: "activity_registrations_activity_member_permanent_unique")
   @@index([activityId])
   @@index([activityPositionId])
   @@index([memberId])

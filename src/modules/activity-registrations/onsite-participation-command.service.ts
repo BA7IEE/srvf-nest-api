@@ -35,6 +35,9 @@ export type OnsiteLockedHeader = {
   id: string;
   statusCode: string;
   currentRevision: number;
+  // Production rows always select this column.  Keeping it optional preserves the existing
+  // pure selector fixture for corrupted historical double-head defensive coverage.
+  deletedAt?: Date | null;
 };
 
 export type OnsiteLockedIdentity = {
@@ -71,29 +74,31 @@ export type OnsiteParticipationReceipt = {
 };
 
 /**
- * The legacy registration head is intentionally not made permanently unique by this caller.
- * A permanent identity attached to another (historical) head would require a relink/revival
- * policy that this slice is not authorized to invent, so it fails closed with 21030.
+ * The database now enforces a permanent registration head. Onsite nevertheless locks every
+ * historical row so a cancelled or soft-deleted head cannot fall through to create. Reusing a
+ * historical head would require an unauthorized relink/revival policy, so it fails closed.
  */
 export function selectOnsiteCanonicalHeader(
   headers: readonly OnsiteLockedHeader[],
   identities: readonly OnsiteLockedIdentity[],
 ): OnsiteLockedHeader | null {
-  const activeHeaders = headers.filter((header) => header.statusCode !== 'cancelled');
-  if (activeHeaders.length > 1) {
+  const reusableLiveHeaders = headers.filter(
+    (header) => (header.deletedAt ?? null) === null && header.statusCode !== 'cancelled',
+  );
+  if (reusableLiveHeaders.length > 1) {
     throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
   }
-  const activeHeader = activeHeaders[0] ?? null;
-  if (activeHeader === null) {
-    if (identities.length > 0) {
+  const reusableLiveHeader = reusableLiveHeaders[0] ?? null;
+  if (reusableLiveHeader === null) {
+    if (headers.length > 0 || identities.length > 0) {
       throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
     }
     return null;
   }
-  if (identities.some((identity) => identity.registrationId !== activeHeader.id)) {
+  if (identities.some((identity) => identity.registrationId !== reusableLiveHeader.id)) {
     throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
   }
-  return activeHeader;
+  return reusableLiveHeader;
 }
 
 @Injectable()
@@ -148,6 +153,9 @@ export class OnsiteParticipationCommandService {
         }),
       );
     } catch (error) {
+      // Only an exact successful receipt may turn a P2002 race into a replay. Every unmatched
+      // P2002 is rethrown unchanged; historical-head handling is the explicit pre-create lock
+      // below and must never be implemented as a broad unique-error translation.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         const replay = await this.findExistingReceipt(this.prisma, dto.operationKey, requestHash);
         if (replay !== null) return replay;
@@ -492,11 +500,10 @@ export class OnsiteParticipationCommandService {
     memberId: string,
   ): Promise<OnsiteLockedHeader[]> {
     return tx.$queryRaw<OnsiteLockedHeader[]>(Prisma.sql`
-      SELECT "id", "statusCode", "currentRevision"
+      SELECT "id", "statusCode", "currentRevision", "deletedAt"
       FROM "ActivityRegistration"
       WHERE "activityId" = ${activityId}
         AND "memberId" = ${memberId}
-        AND "deletedAt" IS NULL
       ORDER BY "createdAt" ASC, "id" ASC
       FOR UPDATE
     `);

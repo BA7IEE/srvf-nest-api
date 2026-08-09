@@ -55,8 +55,8 @@ type RegistrationExpandKey = (typeof REGISTRATION_EXPAND_WHITELIST)[number];
 // - cancel:  pending|pass|waitlisted → cancelled(cancelled 释放名额 / 退出候补)
 // - Q-A3:USER 自助 vs ADMIN 代报名拆开;USER 路径 memberId 强制注入 currentUser.user.memberId
 // - 报名前校验:activity 存在 + 未取消 + 公开报名;满员时创建 waitlisted
-// - partial unique:同 activity 同 member active 报名唯一(deletedAt IS NULL AND statusCode != 'cancelled');
-//   P2002 兜底 → ACTIVITY_REGISTRATION_ALREADY_EXISTS(21002)
+// - permanent unique:同 activity 同 member 跨 cancelled / soft-deleted 全历史只有一个报名头;
+//   legacy active-only 预检查暂不复用历史头,P2002 兜底仍为 ACTIVITY_REGISTRATION_ALREADY_EXISTS(21002)
 // - USER 越权访问他人 registration → 404
 //   (统一抛 BizCode.ACTIVITY_REGISTRATION_NOT_FOUND,避免存在性泄漏)
 // - audit:create / review(approve/reject/cancel)hook
@@ -692,8 +692,8 @@ export class ActivityRegistrationsService {
       : REGISTRATION_STATUS_WAITLISTED;
   }
 
-  // partial unique 预检查:同 activity 同 member 已有 active(deletedAt=null AND
-  // statusCode != 'cancelled')报名 → 21002。
+  // 过渡期 active-only 预检查:同 activity 同 member 已有 active(deletedAt=null AND
+  // statusCode != 'cancelled')报名 → 21002；历史头的 runtime 复用留待后续刀。
   private async assertNoActiveRegistration(
     activityId: string,
     memberId: string,
@@ -733,7 +733,7 @@ export class ActivityRegistrationsService {
     }
   }
 
-  // P2002 兜底(partial unique index name:activity_registrations_activity_member_active_unique)。
+  // P2002 兜底(永久报名头 unique;legacy Admin/self 的历史头重报暂保持 21002)。
   private async runWithUniqueConstraintGuard<T>(fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();

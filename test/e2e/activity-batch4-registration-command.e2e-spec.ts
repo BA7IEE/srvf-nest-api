@@ -462,6 +462,136 @@ describe('activity batch4 canonical registration command', () => {
     expect(await commandAuditCount(input.actorUserId)).toBe(input.auditCountBefore);
   }
 
+  async function canonicalHistoricalHeadWriteChain(input: {
+    activityId: string;
+    memberId: string;
+    actorUserId: string;
+  }) {
+    const [
+      activity,
+      headers,
+      registrationRevisions,
+      answers,
+      preferences,
+      identities,
+      participationRevisions,
+      evidence,
+      audits,
+    ] = await Promise.all([
+      prisma.activity.findUniqueOrThrow({
+        where: { id: input.activityId },
+        select: {
+          statusCode: true,
+          currentEvidenceRevision: true,
+          currentPopulationRevision: true,
+          currentClosureRevision: true,
+          workflowRevision: true,
+        },
+      }),
+      prisma.activityRegistration.findMany({
+        where: { activityId: input.activityId, memberId: input.memberId },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          statusCode: true,
+          statusSummaryCode: true,
+          currentRevision: true,
+          currentFormVersionId: true,
+          sourceCode: true,
+          cancelledAt: true,
+          deletedAt: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.activityRegistrationRevision.findMany({
+        where: { registration: { activityId: input.activityId, memberId: input.memberId } },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          registrationId: true,
+          revision: true,
+          sourceCode: true,
+          requestKey: true,
+          requestHash: true,
+        },
+      }),
+      prisma.registrationFormAnswer.findMany({
+        where: {
+          registrationRevision: {
+            registration: { activityId: input.activityId, memberId: input.memberId },
+          },
+        },
+        orderBy: { id: 'asc' },
+        select: { id: true, registrationRevisionId: true, fieldId: true },
+      }),
+      prisma.activityPositionPreference.findMany({
+        where: {
+          registrationRevision: {
+            registration: { activityId: input.activityId, memberId: input.memberId },
+          },
+        },
+        orderBy: { id: 'asc' },
+        select: { id: true, registrationRevisionId: true, sessionId: true, positionId: true },
+      }),
+      prisma.activityParticipationIdentity.findMany({
+        where: { activityId: input.activityId, memberId: input.memberId },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          registrationId: true,
+          currentRevision: true,
+          currentStatusCode: true,
+          currentPositionId: true,
+          populationIncluded: true,
+          version: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.activityParticipationRevision.findMany({
+        where: { identity: { activityId: input.activityId, memberId: input.memberId } },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          identityId: true,
+          revision: true,
+          statusCode: true,
+          sourceCode: true,
+          requestKey: true,
+          requestHash: true,
+        },
+      }),
+      prisma.insuranceEligibilityEvidence.findMany({
+        where: { activityRegistration: { activityId: input.activityId, memberId: input.memberId } },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          activityRegistrationId: true,
+          sourceKind: true,
+          memberInsuranceId: true,
+          teamInsuranceCoverageId: true,
+        },
+      }),
+      prisma.auditLog.count({
+        where: {
+          event: 'registration.create',
+          resourceType: 'activity_registration',
+          actorUserId: input.actorUserId,
+        },
+      }),
+    ]);
+    return {
+      activity,
+      headers,
+      registrationRevisions,
+      answers,
+      preferences,
+      identities,
+      participationRevisions,
+      evidence,
+      audits,
+    };
+  }
+
   it('creates the v1.1 immutable chain, transfers the file, then replays consumed-session retry by hash', async () => {
     const upload = await uploadSession();
     const body = validBody('batch4-command-first-0001', upload.id);
@@ -637,6 +767,64 @@ describe('activity batch4 canonical registration command', () => {
       .set('Authorization', applicantAuth)
       .send({ ...body, answers: [{ fieldCode: 'short', value: '不同' }] });
     expectBizError(conflict, BizCode.ACTIVITY_REGISTRATION_OPERATION_KEY_CONFLICT);
+  });
+
+  it('keeps a cancelled canonical history on 21003 for a new key and replays the exact old key', async () => {
+    const activity = await createNoFormCommandActivity({
+      title: 'Canonical Cancelled Historical Header',
+    });
+    const firstBody = {
+      operationKey: 'batch4-command-cancelled-history-first-0001',
+      formVersion: null,
+      answers: [],
+      preferences: [],
+    };
+    const first = await request(httpServer(app))
+      .post(commandPath(activity.id))
+      .set('Authorization', applicantAuth)
+      .send(firstBody);
+    expect(first.status).toBe(201);
+    const registrationId = first.body.data.registrationId as string;
+    await prisma.activityRegistration.update({
+      where: { id: registrationId },
+      data: {
+        statusCode: 'cancelled',
+        statusSummaryCode: 'cancelled',
+        cancelledAt: new Date('2099-01-01T00:00:00.000Z'),
+      },
+    });
+    const before = await canonicalHistoricalHeadWriteChain({
+      activityId: activity.id,
+      memberId: applicantMemberId,
+      actorUserId: applicantUserId,
+    });
+
+    const newKey = await request(httpServer(app))
+      .post(commandPath(activity.id))
+      .set('Authorization', applicantAuth)
+      .send({ ...firstBody, operationKey: 'batch4-command-cancelled-history-new-0002' });
+    expectBizError(newKey, BizCode.ACTIVITY_REGISTRATION_OPERATION_KEY_CONFLICT);
+    await expect(
+      canonicalHistoricalHeadWriteChain({
+        activityId: activity.id,
+        memberId: applicantMemberId,
+        actorUserId: applicantUserId,
+      }),
+    ).resolves.toEqual(before);
+
+    const replay = await request(httpServer(app))
+      .post(commandPath(activity.id))
+      .set('Authorization', applicantAuth)
+      .send(firstBody);
+    expect(replay.status).toBe(201);
+    expect(replay.body.data).toEqual(first.body.data);
+    await expect(
+      canonicalHistoricalHeadWriteChain({
+        activityId: activity.id,
+        memberId: applicantMemberId,
+        actorUserId: applicantUserId,
+      }),
+    ).resolves.toEqual(before);
   });
 
   it('keeps all write roots zero on invalid answer/version/upload ownership and appends immutable pending resubmissions', async () => {

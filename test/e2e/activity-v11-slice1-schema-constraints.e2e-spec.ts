@@ -56,7 +56,7 @@ function sqlTime(value: string | null): string {
   return value === null ? 'NULL' : T(value);
 }
 
-describe('活动改造 v1.1 第 1 批第一刀 schema 约束(第 71 migration)', () => {
+describe('活动改造 v1.1 schema 约束(第 71–81 migration)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
@@ -1396,6 +1396,117 @@ describe('活动改造 v1.1 第 1 批第一刀 schema 约束(第 71 migration)',
          WHERE "id" = ${sqlText(id)}`,
       );
       expect(rows).toEqual([{ memberId: null, activityId: null }]);
+    });
+  });
+
+  // ==========================================================================
+  // ⑧ ActivityRegistration 永久报名头(第 81 migration)
+  // ==========================================================================
+
+  describe('第 81 migration:ActivityRegistration 永久报名头 unique', () => {
+    function insertRegistration(
+      overrides: {
+        id?: string;
+        targetActivityId?: string;
+        targetMemberId?: string;
+        statusCode?: string;
+      } = {},
+    ): string {
+      const {
+        id = uniq('permanent-registration'),
+        targetActivityId = activityId,
+        targetMemberId = memberId,
+        statusCode = 'pending',
+      } = overrides;
+      return (
+        'INSERT INTO "ActivityRegistration" ' +
+        '("id", "updatedAt", "activityId", "memberId", "statusCode") VALUES (' +
+        [
+          sqlText(id),
+          'now()',
+          sqlText(targetActivityId),
+          sqlText(targetMemberId),
+          sqlText(statusCode),
+        ].join(', ') +
+        ')'
+      );
+    }
+
+    it('普通 unique 存在且无 WHERE；旧 active partial index 已不存在', async () => {
+      const indexes = await prisma.$queryRawUnsafe<
+        Array<{
+          indexName: string;
+          isUnique: boolean;
+          hasNoPredicate: boolean;
+          indexDef: string;
+        }>
+      >(
+        'SELECT c.relname AS "indexName", ' +
+          'i.indisunique AS "isUnique", ' +
+          'i.indpred IS NULL AS "hasNoPredicate", ' +
+          'pg_get_indexdef(i.indexrelid) AS "indexDef" ' +
+          'FROM pg_index i ' +
+          'JOIN pg_class c ON c.oid = i.indexrelid ' +
+          'JOIN pg_class t ON t.oid = i.indrelid ' +
+          'JOIN pg_namespace n ON n.oid = t.relnamespace ' +
+          'WHERE n.nspname = current_schema() ' +
+          "AND t.relname = 'ActivityRegistration' " +
+          'AND c.relname IN (' +
+          "'activity_registrations_activity_member_active_unique', " +
+          "'activity_registrations_activity_member_permanent_unique') " +
+          'ORDER BY c.relname',
+      );
+
+      expect(indexes).toHaveLength(1);
+      expect(indexes[0]).toMatchObject({
+        indexName: 'activity_registrations_activity_member_permanent_unique',
+        isUnique: true,
+        hasNoPredicate: true,
+      });
+      expect(indexes[0].indexDef.toUpperCase()).not.toContain('WHERE');
+    });
+
+    it('换 activity、换 member 都合法', async () => {
+      const otherMember = await prisma.member.create({
+        data: { memberNo: uniq('permanent-other-member'), displayName: 'Permanent Other Member' },
+        select: { id: true },
+      });
+
+      await expectAccepted(insertRegistration({ targetActivityId: otherActivityId }));
+      await expectAccepted(insertRegistration({ targetMemberId: otherMember.id }));
+    });
+
+    it('active 重复精确 23505', async () => {
+      await expectRejected(insertRegistration(), {
+        sqlState: '23505',
+        key: 'Key ("activityId", "memberId")',
+      });
+    });
+
+    it('cancelled 后重复精确 23505', async () => {
+      await expectAccepted(
+        'UPDATE "ActivityRegistration" ' +
+          'SET "statusCode" = \'cancelled\', "cancelledAt" = now() ' +
+          'WHERE "id" = ' +
+          sqlText(registrationId),
+      );
+      await expectRejected(insertRegistration(), {
+        sqlState: '23505',
+        key: 'Key ("activityId", "memberId")',
+      });
+    });
+
+    it('soft-deleted 后重复精确 23505', async () => {
+      await expectAccepted(
+        'UPDATE "ActivityRegistration" ' +
+          'SET "deletedAt" = now() ' +
+          'WHERE "id" = ' +
+          sqlText(registrationId),
+      );
+      await expectRejected(insertRegistration(), {
+        sqlState: '23505',
+        key: 'Key ("activityId", "memberId")',
+      });
     });
   });
 });
