@@ -128,6 +128,30 @@ describe('activity batch4 onsite participation', () => {
     else process.env.INSURANCE_ENFORCEMENT_ENABLED = previousInsuranceGate;
   });
 
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  function freezeSystemTime(now: Date): void {
+    // Only Date is faked: HTTP, Prisma, and Node scheduling must stay real so Supertest does not
+    // stall while asserting the exact activity-end boundary.
+    jest.useFakeTimers({
+      doNotFake: [
+        'hrtime',
+        'nextTick',
+        'performance',
+        'queueMicrotask',
+        'setImmediate',
+        'clearImmediate',
+        'setInterval',
+        'clearInterval',
+        'setTimeout',
+        'clearTimeout',
+      ],
+    });
+    jest.setSystemTime(now);
+  }
+
   const onsitePath = (activityId: string) =>
     '/api/app/v1/my/managed-activities/' + activityId + '/onsite-participations';
 
@@ -320,6 +344,8 @@ describe('activity batch4 onsite participation', () => {
   ) {
     const tag = 'onsite-finality-' + ++sequence;
     const settledAt = new Date('2099-12-16T12:00:00.000Z');
+    const runStatusCode = options.runStatusCode ?? 'posted';
+    const isPosting = runStatusCode === 'posting';
     const [evidenceState, populationCount] = await Promise.all([
       prisma.activityEvidenceState.findUniqueOrThrow({
         where: { activityId: scenario.activityId },
@@ -350,7 +376,8 @@ describe('activity batch4 onsite participation', () => {
     const run = await prisma.attendanceSettlementRun.create({
       data: {
         activityId: scenario.activityId,
-        statusCode: options.runStatusCode ?? 'posted',
+        statusCode: runStatusCode,
+        currentSubmittedVersion: isPosting ? 1 : null,
         currentPostedVersion: options.currentPostedVersion === false ? null : 1,
       },
       select: { id: true },
@@ -379,11 +406,11 @@ describe('activity batch4 onsite participation', () => {
         settlementRunId: run.id,
         settlementVersionId: version.id,
         batchRevision: 1,
-        statusCode: 'committed',
+        statusCode: isPosting ? 'preparing' : 'committed',
         requestKey: tag + '-batch',
         requestHash: tag + '-batch-hash',
         totalCount: populationCount,
-        committedAt: settledAt,
+        committedAt: isPosting ? null : settledAt,
       },
       select: { id: true },
     });
@@ -846,6 +873,57 @@ describe('activity batch4 onsite participation', () => {
     await expect(onsiteAllFacts(scenario, target.id)).resolves.toEqual(before);
   });
 
+  it('rejects a new operation key while final review has moved the run to posting before currentPostedVersion exists', async () => {
+    const scenario = await createScenario();
+    const target = await createTarget();
+    await seedPostedSettlement(scenario, {
+      currentPostedVersion: false,
+      runStatusCode: 'posting',
+    });
+    const before = await onsiteAllFacts(scenario, target.id);
+
+    const response = await onsite(scenario, {
+      memberId: target.id,
+      operationKey: 'onsite-during-posting-null-pointer-0001',
+    });
+
+    expectBizError(response, BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+    await expect(onsiteAllFacts(scenario, target.id)).resolves.toEqual(before);
+  });
+
+  it('allows a new operation key exactly at endAt because the activity is still ongoing at that boundary', async () => {
+    const scenario = await createScenario();
+    const target = await createTarget();
+    const endAt = new Date(Date.now());
+    const startAt = new Date(endAt.getTime() - 60_000);
+    await Promise.all([
+      prisma.activity.update({
+        where: { id: scenario.activityId },
+        data: { startAt, endAt },
+      }),
+      prisma.activitySession.updateMany({
+        where: { activityId: scenario.activityId },
+        data: {
+          startAt,
+          endAt,
+          checkInOpenAt: new Date(startAt.getTime() - 30 * 60_000),
+          checkInCloseAt: new Date(startAt.getTime() + 30 * 60_000),
+          checkOutOpenAt: new Date(endAt.getTime() - 60 * 60_000),
+          checkOutCloseAt: new Date(endAt.getTime() + 30 * 60_000),
+        },
+      }),
+    ]);
+    freezeSystemTime(endAt);
+
+    const response = await onsite(scenario, {
+      memberId: target.id,
+      operationKey: 'onsite-exact-activity-end-boundary-0001',
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.statusCode).toBe('pass');
+  });
+
   it('rejects a new operation key when an active closure exists with every fact unchanged', async () => {
     const scenario = await createScenario();
     const target = await createTarget();
@@ -879,6 +957,29 @@ describe('activity batch4 onsite participation', () => {
     expect(first.status).toBe(201);
     const settlement = await seedPostedSettlement(scenario);
     await seedActiveClosure(scenario, settlement);
+    const before = await onsiteAllFacts(scenario, target.id);
+
+    const replay = await onsite(scenario, request);
+
+    expect(replay.status).toBe(201);
+    expect(replay.body.data).toEqual(first.body.data);
+    await expect(onsiteAllFacts(scenario, target.id)).resolves.toEqual(before);
+  });
+
+  it('replays an old exact receipt after the activity becomes completed and adds no facts', async () => {
+    const scenario = await createScenario();
+    const target = await createTarget();
+    const request = {
+      memberId: target.id,
+      operationKey: 'onsite-replay-after-completed-0001',
+      reason: '完结前现场补录',
+    };
+    const first = await onsite(scenario, request);
+    expect(first.status).toBe(201);
+    await prisma.activity.update({
+      where: { id: scenario.activityId },
+      data: { statusCode: 'completed' },
+    });
     const before = await onsiteAllFacts(scenario, target.id);
 
     const replay = await onsite(scenario, request);

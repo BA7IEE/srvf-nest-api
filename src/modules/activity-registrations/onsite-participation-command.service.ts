@@ -169,14 +169,29 @@ export class OnsiteParticipationCommandService {
     actorMemberId: string;
     auditMeta: AuditMeta;
   }): Promise<OnsiteParticipationReceipt> {
-    // Fixed caller lock order: Activity → heads → every member/activity permanent identity →
-    // session/position/requirements/insurance → capacity → immutable revisions/pointers →
-    // population projection → audit.
+    // After the Activity-root actor D-5/responsibility recheck, new-fact aggregate locks stay
+    // Activity → heads → every member/activity permanent identity → session/position/requirements/
+    // insurance → capacity → immutable revisions/pointers → population projection → audit. Exact
+    // replays intentionally stop before every mutable activity-state gate.
     const activity = await this.lockActivity(input.tx, input.activityId);
-    const now = new Date();
+
+    await this.assertAppAdmissionStillLive(input.tx, input.currentUser.id, input.actorMemberId);
+    await this.assertManagedResponsibility(input.tx, input.activityId, input.actorMemberId);
+
+    // An exact successful receipt survives every later mutable activity state, including completed,
+    // natural end, posting, posted, and closure. It is still subject to the current actor D-5 and
+    // responsibility recheck above, but never consumes capacity or appends any new fact.
+    const replay = await this.findExistingReceipt(input.tx, input.operationKey, input.requestHash);
+    if (replay !== null) return replay;
+
     if (activity.statusCode !== 'published') {
       throw new BizException(BizCode.ACTIVITY_NOT_PUBLISHED_PARTICIPATION_FORBIDDEN);
     }
+
+    // Activity is still FOR UPDATE here; formal posting and closure writers take that same root
+    // lock before changing their facts. A new key therefore observes a serialized finality state.
+    const now = new Date();
+    await this.assertNewOnsiteParticipationIsStillOpen(input.tx, activity, now);
 
     const headers = await this.lockRegistrationHeaders(
       input.tx,
@@ -188,21 +203,6 @@ export class OnsiteParticipationCommandService {
       input.activityId,
       input.targetMemberId,
     );
-
-    await this.assertAppAdmissionStillLive(input.tx, input.currentUser.id, input.actorMemberId);
-    await this.assertManagedResponsibility(input.tx, input.activityId, input.actorMemberId);
-
-    // A completed receipt is intentionally returned before mutable Form/qualification checks, but
-    // only after the caller's current D-5 and responsibility facts have been locked/rechecked.
-    // A retry must never consume capacity, create a revision, or become non-replayable because a
-    // later administrator changed requirements.
-    const replay = await this.findExistingReceipt(input.tx, input.operationKey, input.requestHash);
-    if (replay !== null) return replay;
-
-    // This is deliberately after exact replay: a receipt that succeeded before natural end,
-    // posting, or closure must remain replayable forever.  Activity is still FOR UPDATE here;
-    // formal posting and closure writers take that same root lock before changing their facts.
-    await this.assertNewOnsiteParticipationIsStillOpen(input.tx, activity, now);
 
     const selectedPosition = await this.lockSessionAndPosition(
       input.tx,
@@ -457,7 +457,7 @@ export class OnsiteParticipationCommandService {
     activity: LockedActivity,
     now: Date,
   ): Promise<void> {
-    if (activity.endAt.getTime() <= now.getTime()) {
+    if (now.getTime() > activity.endAt.getTime()) {
       throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
     }
 
@@ -466,9 +466,14 @@ export class OnsiteParticipationCommandService {
     // rows would widen the caller's fixed lock sequence without strengthening the root protocol.
     const postedRun = await tx.attendanceSettlementRun.findUnique({
       where: { activityId: activity.id },
-      select: { currentPostedVersion: true },
+      select: { statusCode: true, currentPostedVersion: true },
     });
-    if (postedRun !== null && postedRun.currentPostedVersion !== null) {
+    if (
+      postedRun !== null &&
+      (postedRun.statusCode === 'posting' ||
+        postedRun.statusCode === 'posted' ||
+        postedRun.currentPostedVersion !== null)
+    ) {
       throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
     }
 
