@@ -33,8 +33,12 @@ interface ConstraintFixture {
   teamCoverageAId: string;
   teamCoverageBId: string;
   registrationA1Id: string;
+  registrationA1Revision1Id: string;
+  registrationA1Revision2Id: string;
   registrationA2Id: string;
+  registrationA2Revision1Id: string;
   registrationBId: string;
+  registrationBRevision1Id: string;
   joinA1Id: string;
   joinA2Id: string;
   joinBId: string;
@@ -47,6 +51,7 @@ interface EvidenceSqlRow {
   teamInsuranceCoverageId: string | null;
   ownerKind: string;
   activityRegistrationId: string | null;
+  activityRegistrationRevisionId: string | null;
   teamJoinApplicationId: string | null;
   sourceRevision: number | null;
   sourceReviewedByUserId: string | null;
@@ -72,6 +77,7 @@ function evidenceInsertSql(row: EvidenceSqlRow): string {
     "teamInsuranceCoverageId",
     "ownerKind",
     "activityRegistrationId",
+    "activityRegistrationRevisionId",
     "teamJoinApplicationId",
     "sourceRevision",
     "sourceReviewedByUserId",
@@ -87,6 +93,7 @@ function evidenceInsertSql(row: EvidenceSqlRow): string {
     ${sqlValue(row.teamInsuranceCoverageId)},
     ${sqlValue(row.ownerKind)},
     ${sqlValue(row.activityRegistrationId)},
+    ${sqlValue(row.activityRegistrationRevisionId)},
     ${sqlValue(row.teamJoinApplicationId)},
     ${sqlValue(row.sourceRevision)},
     ${sqlValue(row.sourceReviewedByUserId)},
@@ -196,6 +203,7 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
       teamInsuranceCoverageId: null,
       ownerKind: 'activity_registration',
       activityRegistrationId: fixture.registrationA1Id,
+      activityRegistrationRevisionId: null,
       teamJoinApplicationId: null,
       sourceRevision: 1,
       sourceReviewedByUserId: fixture.reviewerId,
@@ -216,6 +224,7 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
       teamInsuranceCoverageId: fixture.teamCoverageAId,
       ownerKind: 'activity_registration',
       activityRegistrationId: fixture.registrationA2Id,
+      activityRegistrationRevisionId: null,
       teamJoinApplicationId: null,
       sourceRevision: null,
       sourceReviewedByUserId: null,
@@ -315,6 +324,29 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
     const registrationA1Id = await createRegistration(memberA.id, 'a1');
     const registrationA2Id = await createRegistration(memberA.id, 'a2');
     const registrationBId = await createRegistration(memberB.id, 'b');
+    const createRevision = async (
+      registrationId: string,
+      revision: number,
+      label: string,
+    ): Promise<string> => {
+      return (
+        await prisma.activityRegistrationRevision.create({
+          data: {
+            registrationId,
+            revision,
+            sourceCode: 'self',
+            submittedAt: REQUIRED_FROM,
+            requestKey: nextId(`revision-${label}`),
+            requestHash: nextId(`revision-hash-${label}`),
+          },
+          select: { id: true },
+        })
+      ).id;
+    };
+    const registrationA1Revision1Id = await createRevision(registrationA1Id, 1, 'a1-1');
+    const registrationA1Revision2Id = await createRevision(registrationA1Id, 2, 'a1-2');
+    const registrationA2Revision1Id = await createRevision(registrationA2Id, 1, 'a2-1');
+    const registrationBRevision1Id = await createRevision(registrationBId, 1, 'b-1');
     const joinA1Id = await createJoin(memberA.id, 'a1', 2027);
     const joinA2Id = await createJoin(memberA.id, 'a2', 2028);
     const joinBId = await createJoin(memberB.id, 'b', 2029);
@@ -375,8 +407,12 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
       teamCoverageAId: teamCoverageA.id,
       teamCoverageBId: teamCoverageB.id,
       registrationA1Id,
+      registrationA1Revision1Id,
+      registrationA1Revision2Id,
       registrationA2Id,
+      registrationA2Revision1Id,
       registrationBId,
+      registrationBRevision1Id,
       joinA1Id,
       joinA2Id,
       joinBId,
@@ -407,6 +443,20 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
     expect(requiredColumns).toHaveLength(5);
     expect(requiredColumns.every((column) => column.is_nullable === 'NO')).toBe(true);
 
+    const [revisionBridgeColumn] = await prisma.$queryRaw<
+      Array<{ column_name: string; is_nullable: string }>
+    >`
+      SELECT column_name, is_nullable
+      FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name = 'insurance_eligibility_evidences'
+        AND column_name = 'activityRegistrationRevisionId'
+    `;
+    expect(revisionBridgeColumn).toEqual({
+      column_name: 'activityRegistrationRevisionId',
+      is_nullable: 'YES',
+    });
+
     const checks = await prisma.$queryRaw<Array<{ constraint_name: string }>>`
       SELECT conname AS constraint_name
       FROM pg_constraint
@@ -425,6 +475,7 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
       'insurance_evidence_exactly_one_owner_ck',
       'insurance_evidence_exactly_one_source_ck',
       'insurance_evidence_owner_kind_ck',
+      'insurance_evidence_registration_revision_owner_ck',
       'insurance_evidence_required_interval_ck',
       'insurance_evidence_review_snapshot_ck',
       'insurance_evidence_source_interval_ck',
@@ -443,6 +494,7 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
       ORDER BY index_class.relname
     `;
     expect(uniqueIndexes.map((row) => row.index_name)).toEqual([
+      'insurance_evidence_activity_registration_revision_unique',
       'insurance_evidence_activity_registration_unique',
       'insurance_evidence_team_join_application_unique',
     ]);
@@ -526,7 +578,7 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
     }
   });
 
-  it('returns missing targets to all four native FKs with exact 23503 identities', () => {
+  it('returns missing targets to all five native FKs with exact 23503 identities', () => {
     const missingId = nextId('missing-fk');
     const cases: Array<[EvidenceSqlRow, string]> = [
       [
@@ -544,6 +596,10 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
       [
         selfJoinRow({ teamJoinApplicationId: missingId }),
         'insurance_eligibility_evidences_teamJoinApplicationId_fkey',
+      ],
+      [
+        selfRegistrationRow({ activityRegistrationRevisionId: missingId }),
+        'insurance_evidence_registration_revision_same_head_fkey',
       ],
     ];
 
@@ -564,8 +620,60 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
     }
   });
 
-  it('accepts all four legal combinations and preserves immutable history after source/owner edits and soft deletes', async () => {
-    const rows = [selfRegistrationRow(), teamRegistrationRow(), selfJoinRow(), teamJoinRow()];
+  it('enforces the registration revision owner shape and same-head composite FK exactly', () => {
+    expectDatabaseError(
+      evidenceInsertSql(
+        selfRegistrationRow({
+          activityRegistrationRevisionId: fixture.registrationA2Revision1Id,
+        }),
+      ),
+      '23503',
+      'insurance_evidence_registration_revision_same_head_fkey',
+    );
+
+    expectDatabaseError(
+      evidenceInsertSql(
+        selfJoinRow({ activityRegistrationRevisionId: fixture.registrationA1Revision1Id }),
+      ),
+      '23514',
+      'insurance_evidence_registration_revision_owner_ck',
+    );
+
+    expectDatabaseError(
+      evidenceInsertSql(
+        selfRegistrationRow({
+          activityRegistrationId: fixture.registrationBId,
+          activityRegistrationRevisionId: fixture.registrationBRevision1Id,
+        }),
+      ),
+      '23514',
+      'insurance_evidence_member_match',
+    );
+  });
+
+  it('accepts legacy plus two revisions and every source/owner combination while preserving immutable history', async () => {
+    const selfRegistrationLegacy = selfRegistrationRow();
+    const teamRegistrationLegacy = teamRegistrationRow();
+    const selfJoin = selfJoinRow();
+    const teamJoin = teamJoinRow();
+    const selfRegistrationRevision1 = selfRegistrationRow({
+      activityRegistrationRevisionId: fixture.registrationA1Revision1Id,
+    });
+    const selfRegistrationRevision2 = selfRegistrationRow({
+      activityRegistrationRevisionId: fixture.registrationA1Revision2Id,
+    });
+    const teamRegistrationRevision = teamRegistrationRow({
+      activityRegistrationRevisionId: fixture.registrationA2Revision1Id,
+    });
+    const rows = [
+      selfRegistrationLegacy,
+      teamRegistrationLegacy,
+      selfJoin,
+      teamJoin,
+      selfRegistrationRevision1,
+      selfRegistrationRevision2,
+      teamRegistrationRevision,
+    ];
     for (const row of rows) runPsql(`${evidenceInsertSql(row)};`);
 
     await prisma.memberInsurance.update({
@@ -593,7 +701,7 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
       where: { id: { in: rows.map((row) => row.id) } },
       orderBy: { id: 'asc' },
     });
-    expect(history).toHaveLength(4);
+    expect(history).toHaveLength(7);
     expect(history.every((row) => row.sourceCoverageEnd.getTime() === COVERAGE_END.getTime())).toBe(
       true,
     );
@@ -601,12 +709,24 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
     expectDatabaseError(
       `UPDATE "insurance_eligibility_evidences"
        SET "requiredThrough" = ${sqlValue(REQUIRED_FROM)}
-       WHERE "id" = ${sqlValue(rows[0].id)}`,
+       WHERE "id" = ${sqlValue(selfRegistrationLegacy.id)}`,
       '55000',
       'insurance_evidence_immutable',
     );
     expectDatabaseError(
-      `DELETE FROM "insurance_eligibility_evidences" WHERE "id" = ${sqlValue(rows[1].id)}`,
+      `DELETE FROM "insurance_eligibility_evidences" WHERE "id" = ${sqlValue(teamRegistrationLegacy.id)}`,
+      '55000',
+      'insurance_evidence_immutable',
+    );
+    expectDatabaseError(
+      `UPDATE "insurance_eligibility_evidences"
+       SET "requiredThrough" = ${sqlValue(REQUIRED_FROM)}
+       WHERE "id" = ${sqlValue(selfRegistrationRevision2.id)}`,
+      '55000',
+      'insurance_evidence_immutable',
+    );
+    expectDatabaseError(
+      `DELETE FROM "insurance_eligibility_evidences" WHERE "id" = ${sqlValue(selfRegistrationRevision2.id)}`,
       '55000',
       'insurance_evidence_immutable',
     );
@@ -621,6 +741,21 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
       ),
       '23505',
       'insurance_evidence_activity_registration_unique',
+    );
+
+    const revision = selfRegistrationRow({
+      activityRegistrationRevisionId: fixture.registrationA1Revision1Id,
+    });
+    runPsql(`${evidenceInsertSql(revision)};`);
+    expectDatabaseError(
+      evidenceInsertSql(
+        teamRegistrationRow({
+          activityRegistrationId: revision.activityRegistrationId,
+          activityRegistrationRevisionId: revision.activityRegistrationRevisionId,
+        }),
+      ),
+      '23505',
+      'insurance_evidence_activity_registration_revision_unique',
     );
 
     const join = selfJoinRow();

@@ -1380,6 +1380,7 @@ describe('招新三期(入队)admin 面 e2e', () => {
         'teamInsuranceCoverageId',
         'ownerKind',
         'activityRegistrationId',
+        'activityRegistrationRevisionId',
         'teamJoinApplicationId',
         'sourceRevision',
         'sourceReviewedByUserId',

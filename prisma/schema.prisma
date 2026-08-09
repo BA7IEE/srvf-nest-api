@@ -2637,6 +2637,9 @@ model InsuranceEligibilityEvidence {
   teamInsuranceCoverageId String?
   ownerKind               String
   activityRegistrationId  String?
+  // 第 82 migration:旧 header-only evidence 永久保持 NULL；新 writer 才会绑定
+  // 当次不可变报名修订。与 activityRegistrationId 组成复合 FK，DB 保证同头。
+  activityRegistrationRevisionId String?
   teamJoinApplicationId   String?
   sourceRevision          Int?
   sourceReviewedByUserId  String?
@@ -2649,6 +2652,7 @@ model InsuranceEligibilityEvidence {
   memberInsurance       MemberInsurance?       @relation(fields: [memberInsuranceId], references: [id], onDelete: Restrict)
   teamInsuranceCoverage TeamInsuranceCoverage? @relation(fields: [teamInsuranceCoverageId], references: [id], onDelete: Restrict)
   activityRegistration  ActivityRegistration?  @relation(fields: [activityRegistrationId], references: [id], onDelete: Restrict)
+  activityRegistrationRevision ActivityRegistrationRevision? @relation("InsuranceEvidenceRegistrationRevision", fields: [activityRegistrationId, activityRegistrationRevisionId], references: [registrationId, id], onDelete: Restrict, onUpdate: Restrict, map: "insurance_evidence_registration_revision_same_head_fkey")
   teamJoinApplication   TeamJoinApplication?   @relation(fields: [teamJoinApplicationId], references: [id], onDelete: Restrict)
   sourceReviewer        User?                  @relation("InsuranceEvidenceSourceReviewer", fields: [sourceReviewedByUserId], references: [id], onDelete: Restrict)
 
@@ -3813,11 +3817,13 @@ model ActivityRegistrationRevision {
   nextRevisions          ActivityRegistrationRevision[]    @relation("RegistrationRevisionChain")
   answers                RegistrationFormAnswer[]
   qualificationSnapshots QualificationEvaluationSnapshot[]
+  insuranceEligibilityEvidences InsuranceEligibilityEvidence[] @relation("InsuranceEvidenceRegistrationRevision")
 
   // 第 1 批第五刀(§3.11):岗位志愿挂在报名修订上(志愿变更 ⇒ 新报名修订)。
   positionPreferences ActivityPositionPreference[]
 
   @@unique([registrationId, revision])
+  @@unique([registrationId, id], map: "activity_registration_revisions_registration_id_id_unique")
   @@index([registrationId])
   @@index([formVersionId])
   @@index([submittedByUserId])
