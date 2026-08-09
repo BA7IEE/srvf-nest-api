@@ -1686,8 +1686,8 @@ export const BizCode = {
   // 子段(对齐 baseline §1.3):
   // - 21001:NOT_FOUND(含 USER 越权访问他人 → 404;
   //   以 ACTIVITY_REGISTRATION_NOT_FOUND 隐藏资源存在性)
-  // - 21002-21009:唯一约束冲突(partial unique:同活动同 member active 报名唯一)
-  // - 21030-21099:状态机转移非法
+  // - 21002-21009:唯一约束冲突（永久报名头 unique；legacy 历史头重报暂为 21002）
+  // - 21030-21099:状态机转移非法；onsite 全历史头无可复用 live 头时也以 21030 fail-closed
   // - 211xx:暂留(USER NOT_OWNED / FORBIDDEN_REGISTRATION_REVIEW 不开,沿 baseline)
   ACTIVITY_REGISTRATION_NOT_FOUND: {
     code: 21001,

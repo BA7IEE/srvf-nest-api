@@ -564,6 +564,170 @@ describe('activity batch4 onsite participation', () => {
     return { command, finality };
   }
 
+  async function onsiteHistoricalHeadWriteChain(scenario: Scenario, memberId: string) {
+    const [
+      activity,
+      headers,
+      identities,
+      registrationRevisions,
+      participationRevisions,
+      reservations,
+      evidence,
+      buckets,
+      state,
+      audits,
+      outbox,
+    ] = await Promise.all([
+      prisma.activity.findUniqueOrThrow({
+        where: { id: scenario.activityId },
+        select: {
+          statusCode: true,
+          currentEvidenceRevision: true,
+          currentPopulationRevision: true,
+          currentClosureRevision: true,
+          workflowRevision: true,
+        },
+      }),
+      prisma.activityRegistration.findMany({
+        where: { activityId: scenario.activityId, memberId },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          statusCode: true,
+          statusSummaryCode: true,
+          currentRevision: true,
+          currentFormVersionId: true,
+          sourceCode: true,
+          cancelledAt: true,
+          deletedAt: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.activityParticipationIdentity.findMany({
+        where: { activityId: scenario.activityId, memberId },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          registrationId: true,
+          currentRevision: true,
+          currentStatusCode: true,
+          currentPositionId: true,
+          capacityReservationId: true,
+          populationIncluded: true,
+          version: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.activityRegistrationRevision.findMany({
+        where: { registration: { activityId: scenario.activityId, memberId } },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          registrationId: true,
+          revision: true,
+          sourceCode: true,
+          requestKey: true,
+          requestHash: true,
+        },
+      }),
+      prisma.activityParticipationRevision.findMany({
+        where: { identity: { activityId: scenario.activityId, memberId } },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          identityId: true,
+          revision: true,
+          statusCode: true,
+          sourceCode: true,
+          requestKey: true,
+          requestHash: true,
+        },
+      }),
+      prisma.capacityReservation.findMany({
+        where: { identity: { activityId: scenario.activityId, memberId } },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          identityId: true,
+          bucketId: true,
+          reservationType: true,
+          status: true,
+          releasedAt: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.insuranceEligibilityEvidence.findMany({
+        where: { activityRegistration: { activityId: scenario.activityId, memberId } },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          activityRegistrationId: true,
+          sourceKind: true,
+          memberInsuranceId: true,
+          teamInsuranceCoverageId: true,
+        },
+      }),
+      prisma.activityCapacityBucket.findMany({
+        where: { activityId: scenario.activityId },
+        orderBy: [{ scopeTypeCode: 'asc' }, { scopeId: 'asc' }],
+        select: {
+          id: true,
+          scopeTypeCode: true,
+          scopeId: true,
+          occupied: true,
+          version: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.activityEvidenceState.findUniqueOrThrow({
+        where: { activityId: scenario.activityId },
+        select: {
+          evidenceRevision: true,
+          populationRevision: true,
+          version: true,
+          lastPopulationAt: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.auditLog.count(),
+      prisma.notificationOutboxIntent.count(),
+    ]);
+    return {
+      activity,
+      headers,
+      identities,
+      registrationRevisions,
+      participationRevisions,
+      reservations,
+      evidence,
+      buckets,
+      state,
+      audits,
+      outbox,
+    };
+  }
+
+  async function seedEmptyHistoricalHeader(
+    scenario: Scenario,
+    memberId: string,
+    kind: 'cancelled' | 'soft-deleted',
+  ): Promise<void> {
+    const at = new Date('2099-01-01T00:00:00.000Z');
+    await prisma.activityRegistration.create({
+      data: {
+        activityId: scenario.activityId,
+        memberId,
+        statusCode: kind === 'cancelled' ? 'cancelled' : 'pending',
+        currentRevision: 0,
+        currentFormVersionId: null,
+        statusSummaryCode: kind === 'cancelled' ? 'cancelled' : 'active',
+        sourceCode: 'self',
+        cancelledAt: kind === 'cancelled' ? at : null,
+        deletedAt: kind === 'soft-deleted' ? at : null,
+      },
+    });
+  }
+
   async function seedRejectedIdentity(
     scenario: Scenario,
     memberId: string,
@@ -618,6 +782,55 @@ describe('activity batch4 onsite participation', () => {
     });
     return { registrationId: header.id, identityId: identity.id };
   }
+
+  it.each(['cancelled', 'soft-deleted'] as const)(
+    'fails before every onsite write for a %s empty historical header and a new key',
+    async (kind) => {
+      const scenario = await createScenario();
+      const target = await createTarget();
+      await seedEmptyHistoricalHeader(scenario, target.id, kind);
+      const before = await onsiteHistoricalHeadWriteChain(scenario, target.id);
+
+      const response = await onsite(scenario, {
+        memberId: target.id,
+        operationKey: 'onsite-' + kind + '-empty-head-new-key-0001',
+      });
+
+      expectBizError(response, BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+      await expect(onsiteHistoricalHeadWriteChain(scenario, target.id)).resolves.toEqual(before);
+    },
+  );
+
+  it.each(['cancelled', 'soft-deleted'] as const)(
+    'replays the exact onsite receipt after its header becomes %s without any new write',
+    async (kind) => {
+      const scenario = await createScenario();
+      const target = await createTarget();
+      const body = {
+        memberId: target.id,
+        operationKey: 'onsite-' + kind + '-historical-replay-0001',
+        reason: '历史头精确重放',
+      };
+      const first = await onsite(scenario, body);
+      expect(first.status).toBe(201);
+      const registrationId = first.body.data.registrationId as string;
+      const at = new Date('2099-01-01T00:00:00.000Z');
+      await prisma.activityRegistration.update({
+        where: { id: registrationId },
+        data:
+          kind === 'cancelled'
+            ? { statusCode: 'cancelled', statusSummaryCode: 'cancelled', cancelledAt: at }
+            : { deletedAt: at },
+      });
+      const before = await onsiteHistoricalHeadWriteChain(scenario, target.id);
+
+      const replay = await onsite(scenario, body);
+
+      expect(replay.status).toBe(201);
+      expect(replay.body.data).toEqual(first.body.data);
+      await expect(onsiteHistoricalHeadWriteChain(scenario, target.id)).resolves.toEqual(before);
+    },
+  );
 
   it('red-first destination creates one header with three capacity layers and replays 20 concurrent calls exactly', async () => {
     const scenario = await createScenario({
