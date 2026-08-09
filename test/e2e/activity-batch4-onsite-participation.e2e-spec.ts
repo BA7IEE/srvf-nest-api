@@ -1524,12 +1524,18 @@ describe('activity batch4 onsite participation', () => {
 
     const bindingScenario = await createScenario({ withPosition: true });
     const bindingTarget = await createTarget();
-    const boundRuleSet = await prisma.activityQualificationRuleSet.create({
-      data: { activityId: bindingScenario.activityId, version: 1, statusCode: 'draft' },
-      select: { id: true },
-    });
     const boundPositionId = bindingScenario.sessions[0].positionId;
     if (boundPositionId === null) throw new Error('onsite fixture position is missing');
+    const boundRuleSet = await prisma.activityQualificationRuleSet.create({
+      data: {
+        activityId: bindingScenario.activityId,
+        sessionId: bindingScenario.sessions[0].id,
+        positionId: boundPositionId,
+        version: 1,
+        statusCode: 'draft',
+      },
+      select: { id: true },
+    });
     await prisma.activitySessionPosition.update({
       where: { id: boundPositionId },
       data: { qualificationRuleSetId: boundRuleSet.id },
