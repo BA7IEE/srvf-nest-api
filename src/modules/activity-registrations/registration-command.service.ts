@@ -151,8 +151,9 @@ export class RegistrationCommandService {
     const activity = activityRows[0];
     if (activityRows.length !== 1 || !activity) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
 
-    // 2. Lock the one currently-active legacy/v1.1 header.  The pre-existing partial unique is
-    // intentionally preserved: a historical cancelled header is not globally resurrected here.
+    // 2. Lock the one currently-active legacy/v1.1 header. DB 已改为永久报名头 unique，
+    // 但本过渡期查询不复用 cancelled / soft-deleted 历史头；新 canonical key 保持既有 21003
+    // 路径，旧精确回执重放仍在后续既有链路处理。
     const headerRows = await input.tx.$queryRaw<LockedRegistration[]>(Prisma.sql`
       SELECT "id", "statusCode", "currentRevision"
       FROM "ActivityRegistration"

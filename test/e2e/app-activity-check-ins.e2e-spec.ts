@@ -882,7 +882,7 @@ describe('App activity GPS self check-in (F2)', () => {
     expect(expectSafeSuccess(res.body as SuccessBody).registrationId).toBe(mine.id);
   });
 
-  it('GET 不做 Activity 状态闸，但取消旧报名后旧行出局，新 pass 可另建一行', async () => {
+  it('GET 不做 Activity 状态闸；同一报名头取消后复用时旧行出局，新 pass 仍可写新证据', async () => {
     const activity = await createActivity({ statusCode: 'draft' });
     const oldRegistration = await createRegistration(activity.id, main.memberId);
     const oldEvidence = await seedEvidence(activity.id, main.memberId, oldRegistration.id);
@@ -897,7 +897,16 @@ describe('App activity GPS self check-in (F2)', () => {
       BizCode.ACTIVITY_CHECK_IN_NOT_FOUND,
     );
 
-    const current = await createRegistration(activity.id, main.memberId);
+    await prisma.activityCheckIn.update({
+      where: { id: oldEvidence.id },
+      data: { deletedAt: new Date() },
+    });
+    const current = await prisma.activityRegistration.update({
+      where: { id: oldRegistration.id },
+      data: { statusCode: 'pass', cancelledAt: null },
+      select: { id: true },
+    });
+    expect(current.id).toBe(oldRegistration.id);
     await prisma.activity.update({
       where: { id: activity.id },
       data: { statusCode: 'published', publishedAt: new Date() },

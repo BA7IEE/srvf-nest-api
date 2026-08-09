@@ -59,8 +59,8 @@ Activity (statusCode: draft / published / completed / cancelled)
   │                                 Restrict;无岗位活动 / 存量报名为 null]
   ├─ ActivityRegistration[]   [FK activityId → Activity.id, Restrict;
   │     │                      statusCode: pending/pass/reject/cancelled/waitlisted;
-  │     │                      partial unique (activityId, memberId)
-  │     │                      WHERE deletedAt IS NULL AND statusCode != 'cancelled']
+  │     │                      permanent unique (activityId, memberId)
+  │     │                      跨 cancelled / soft-deleted 全历史]
   │     ├─ AttendanceRecord[]  [FK registrationId → ActivityRegistration.id,
   │     │                       NULLABLE, Restrict(Q-S21:不是 SetNull)]
   │     └─ InsuranceEligibilityEvidence[]
@@ -110,9 +110,9 @@ Certificate (不在 participation 图内)
 |---|---|---|---|
 | `Activity` ← `ActivityPosition.activityId` | FK NOT NULL | Restrict | 岗位是 Activity 内嵌子资源；live `(activityId,name)` partial unique |
 | `Activity` ← `ActivityRegistration.activityId` | FK NOT NULL | Restrict | 报名必须挂在 Activity 上 |
-| `ActivityPosition` ← `ActivityRegistration.activityPositionId` | FK **NULLABLE** | Restrict | 无岗位活动与存量报名为 null；既有报名 active partial unique 不含该列且逐字不动 |
+| `ActivityPosition` ← `ActivityRegistration.activityPositionId` | FK **NULLABLE** | Restrict | 无岗位活动与存量报名为 null；报名头按 (activityId,memberId) 跨历史永久唯一，不含本列 |
 | `Activity` ← `ActivityCheckIn.activityId` | FK NOT NULL | Restrict | 打卡证据稳定锚定活动 |
-| `ActivityRegistration` ← `ActivityCheckIn.registrationId` | FK NOT NULL | Restrict | live registrationId partial unique；取消旧报名后新报名可产生新证据 |
+| `ActivityRegistration` ← `ActivityCheckIn.registrationId` | FK NOT NULL | Restrict | live registrationId partial unique；报名头永久唯一，历史证据软删后才能在同一头上建立新 live 证据 |
 | `Member` ← `ActivityCheckIn.memberId` | FK NOT NULL | Restrict | 打卡证据稳定锚定队员 |
 | `Activity` ← `AttendanceSheet.activityId` | FK NOT NULL | Restrict | 1 Activity 多 Sheet |
 | `AttendanceSheet` ← `AttendanceRecord.sheetId` | FK NOT NULL | Restrict | 记录必须挂在 Sheet 上 |
@@ -136,9 +136,9 @@ Certificate (不在 participation 图内)
 | 1. 活动起草 | activities | `create` → `statusCode='draft'` | 仅创建,无下游 |
 | 2. 活动发布 | activities | `publish` → `draft → published` | 解锁 Registration 创建与 AttendanceSheet 提交；公开活动发布广播 intent 与业务/audit 同事务 |
 | 3. 活动取消 | activities | `cancel` → `* → cancelled` | 同事务联动 live `pending + waitlisted → cancelled`(pass 保留历史审批结果)，并为已报名成员写取消通知 intent；阻断所有下游写;attendances 在 `findActivityForSubmissionFull` 内会拒绝 `ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN` |
-| 4. 报名(admin / app) | activity-registrations | `create` / `createMy` → `pending \| waitlisted` | 全部前置闸通过后，`capacity=null` 或未满落 pending，已满落 waitlisted；partial unique 防重复;**报名截止生效**(`registrationDeadline` 非 null 且 `now > deadline` → `ACTIVITY_REGISTRATION_DEADLINE_PASSED=20123`;approve 不加此闸) |
+| 4. 报名(admin / app) | activity-registrations | `create` / `createMy` → `pending \| waitlisted` | 全部前置闸通过后，`capacity=null` 或未满落 pending，已满落 waitlisted；永久报名头 unique 防重复，legacy 历史头重报暂 21002，runtime 复用待后续刀；**报名截止生效**(`registrationDeadline` 非 null 且 `now > deadline` → `ACTIVITY_REGISTRATION_DEADLINE_PASSED=20123`;approve 不加此闸) |
 | 5. 报名审核 / 递补 | activity-registrations + activities | `approve: pending → pass`;`reject: pending\|waitlisted → reject`;`promote: waitlisted → pending` | promote 仅事务内 FIFO 引擎使用，不开手动端点，不开 waitlisted → pass 直通 |
-| 6. 报名取消 | activity-registrations | `cancelAdmin` / `cancelMy`: `pending\|pass\|waitlisted → cancelled` | live `AttendanceRecord` 或 `ActivityCheckIn` 已引用报名时复用 21033 拒绝取消；否则取消 pass 同事务 FIFO 递补队首一人至 pending；取消 pending/waitlisted 不递补；`cancelMy` 通知正文只展示 `displayName（memberNo）`，标签不可用匿名兜底且不暴露 `Member.id`；partial unique 允许同人再次报名 |
+| 6. 报名取消 | activity-registrations | `cancelAdmin` / `cancelMy`: `pending\|pass\|waitlisted → cancelled` | live `AttendanceRecord` 或 `ActivityCheckIn` 已引用报名时复用 21033 拒绝取消；否则取消 pass 同事务 FIFO 递补队首一人至 pending；取消 pending/waitlisted 不递补；`cancelMy` 通知正文只展示 `displayName（memberNo）`，标签不可用匿名兜底且不暴露 `Member.id`；永久报名头下取消后重报 runtime 复用仍待，legacy 当前 21002 fail-closed |
 | 7. 考勤表首次提交 | attendances | `submit` → `Sheet.statusCode='pending'` + 多条 `Record` 同事务建立 | **不再推动 Activity.completed**；用服务端 `now` 拒绝未来签退;`contributionPoints` 不接受输入,submit/edit 均读 `tx.contributionRule.findMany` 计算(无规则落 0,**不再 per-record dailyCap 钳制**);`requiresInsurance=true` 时每条 record 必须带同活动/同成员/pass 的 `registrationId`,但不证明报名创建时已开启该门槛 |
 | 8. APD 一级审核 | attendances | `approve` → `pending → pending_final_review`;`reject` → `pending → rejected` | **不**触发 `attendance.recorded`(沿 D-S7;触发点已移到 final-approve) |
 | 9. APD 终审通过 | attendances | `finalApprove` → `pending_final_review → approved` | **`contributionPoints` 在此刻语义上生效**;同事务内 `eventPlaceholder('attendance.recorded')` 发出；普通结果通知仍逐 Record。最新 joining application 的 5 分达标只在正式 capped before<5 且 approved 后 capped after≥5 时按 application+threshold 稳定 key 入队一次 |

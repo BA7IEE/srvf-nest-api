@@ -222,6 +222,29 @@
 
 > **需求口径变更(2026-08-04)**:**= v1.1 四份 + [`AMENDMENTS-v1.1.1`](../archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md),冲突以后者为准。**
 > 第 1 批建表过程中实测撞到**五处合同内部不一致**,维护者当日**全部接受**并发布修订件。原件与 SHA256 一字未动(校验仍过)。
+> **2026-08-09 维护者 A–I 拍板（第 4 批⑨，第 81 migration）**：ActivityRegistration 已在 DB 层成为
+> 跨 cancelled / soft-deleted 全历史的永久报名头；migration 单事务锁表、先全历史查重复组，任一组
+> 仅报组数并以 23505 fail-closed，零删数/合并/修数，再把旧 active partial 换成普通 unique。**本刀不做**
+> 取消/重报 runtime 复用。
+>
+> - **A 资格**：上级是底线、下级只能收紧；规则间 AND、规则内 OR；结果分 block/warn。年龄按活动开始日，
+>   证书须 approved 且覆盖活动，保险须覆盖全程，组织认直属或子树，培训可复用证书/结业证明；warn score
+>   为 0–100，发布时冻结。
+> - **B 分配**：每活动唯一方式；新活动显式选择，存量为 first_come。first_come 以服务器受理时间排序；
+>   rank/lottery 截止后冻结，rank 同分按 acceptedAt 再按永久 identity，lottery 必须可复查重放，并保存批次和候补顺序。
+> - **C 永久报名头**：取消/重报/拒绝后重报只追加版本，永不建第二头。
+> - **D onsite**：不得绕过硬资格、保险、性别或名额；warn 留痕。普通题可代录，文件与本人同意不得代办；
+>   必记批准人、原因、时间。
+> - **E 职责与 scope**：沿七职责，分别覆盖活动、场次、岗位三层 scope。
+> - **F 离线**：加密离线包延至 v1.2；v1.1 保留在线扫码、代签、导入。
+> - **G visitor**：attendanceCode 永远为 null，且无写入口。
+> - **H 更正**：追认现有严格版本化更正 JSON。
+> - **I reservation pointer**：capacityReservationId 固定指向 session reservation；释放时清空，不一致为 20147。
+>
+> **仍待下一刀**：资格 operator / valueJson 精确编码归下一 D 刀冻结；ADV-014 按激进安全版归第 6 批导入刀。
+> **当前过渡行为**：legacy Admin/self 取消后重报暂 21002；canonical 新 key 暂 21003，旧精确回执重放不变；
+> onsite 跨历史头仍 21030；全部零写 fail-closed。AC-021、ADV-005 继续 todo，由紧接的 runtime 大刀解决。
+>
 > 五条现状:②已生效(快照锚点可空)· ④已解决(加开第五刀 #915)· **①已由第 4 批前置微刀兑现**
 > (第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959)：`CapacityReservation` 补
 > `memberId`/`activityId` + partial unique,走 DB 保证不降级为服务层)· **⑤已由维护者 2026-08-07「按推荐」拍板**:

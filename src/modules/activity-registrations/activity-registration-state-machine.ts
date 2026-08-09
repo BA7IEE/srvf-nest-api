@@ -19,8 +19,8 @@ import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.con
 //   注:`cancelAdmin` 与 `cancelMy` 共用同一 `cancel` action;路径差异(admin vs self)由调用方
 //      service 通过 `auditLogs.log` extra.cancelledByPath 字段记录,**不进** StateMachine。
 // - reopen:       reject → pending(其他态拒;v0.40.0 参与域生命周期收口②「审批后悔药」新增唯一边)。
-//   撤销驳回、回待审;**刻意不开 reject → pass 直通**(改判必须重走审批)。顺带解开「被拒者仍占
-//   partial unique 槽(reject != cancelled)无法重报」死锁 —— reopen 后重审,不动 unique 语义。
+//   撤销驳回、回待审;**刻意不开 reject → pass 直通**(改判必须重走审批)。永久报名头下仍在
+//   同一头上重审；取消/重报的 runtime 复用不属于本状态机、留给后续刀。
 // - promote:      waitlisted → pending(仅递补引擎内部使用;无手动端点,不开 waitlisted → pass)。
 //
 // 错误码统一沿现状:wrong state → `BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID`(沿 PR #196 全部
