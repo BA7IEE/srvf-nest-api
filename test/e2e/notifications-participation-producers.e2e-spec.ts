@@ -23,6 +23,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
+import { assertConnectedTestDatabase } from '../setup/test-db';
 import { createTestApp } from '../setup/test-app';
 
 // 统一通知 S4 + durable outbox L1:
@@ -120,6 +121,13 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
   let charlie: Member;
   let diana: Member;
   let orgId: string;
+
+  async function truncateActivityRegistrations(): Promise<void> {
+    await assertConnectedTestDatabase(prisma);
+    await prisma.$executeRawUnsafe(
+      'TRUNCATE TABLE "ActivityRegistration" RESTART IDENTITY CASCADE',
+    );
+  }
 
   async function makeMember(username: string): Promise<Member> {
     const user = await createTestUser(app, { username, role: Role.USER });
@@ -455,7 +463,7 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
     await prisma.activityResponsibilityAssignment.deleteMany({});
     await prisma.attendanceRecord.deleteMany({});
     await prisma.attendanceSheet.deleteMany({});
-    await prisma.activityRegistration.deleteMany({});
+    await truncateActivityRegistrations();
     await prisma.activity.deleteMany({});
   });
 

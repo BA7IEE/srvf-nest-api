@@ -12,6 +12,7 @@ import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
+import { assertConnectedTestDatabase } from '../setup/test-db';
 import { createTestApp } from '../setup/test-app';
 
 // activity-registrations state transitions characterization tests
@@ -38,7 +39,7 @@ import { createTestApp } from '../setup/test-app';
 //   B. reject(pending|waitlisted → reject + 3 个 wrong source state)
 //   C. cancelAdmin(pending|pass|waitlisted → cancelled + 2 个 wrong source state)
 //   D. cancelMy(pending|pass|waitlisted → cancelled + 2 个 wrong source state + ownership)
-//   E. Uniqueness & capacity(active dup + cancelled re-register 暂 21002 + capacity full ×2)
+//   E. Uniqueness & capacity(active dup + cancelled same-head reapply + capacity full ×2)
 //   F. Audit failure rollback(create 路径)
 
 type RegistrationStatus = 'pending' | 'pass' | 'reject' | 'cancelled' | 'waitlisted';
@@ -409,7 +410,13 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
     await ctx.prisma.notificationRead.deleteMany({});
     await ctx.prisma.notificationOutboxIntent.deleteMany({});
     await ctx.prisma.notification.deleteMany({});
-    await ctx.prisma.activityRegistration.deleteMany({});
+    // Cancellation now appends immutable registration/participation revisions. Row-level
+    // immutability deliberately rejects DELETE, so this spec-local isolation must use the same
+    // guarded TRUNCATE shape as resetDb rather than weakening the production trigger.
+    await assertConnectedTestDatabase(ctx.prisma);
+    await ctx.prisma.$executeRawUnsafe(
+      'TRUNCATE TABLE "ActivityRegistration" RESTART IDENTITY CASCADE',
+    );
     await ctx.prisma.auditLog.deleteMany({});
   }
 
@@ -710,7 +717,7 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
         prismaA,
         firstWaiter,
         second,
-        '%FROM "ActivityRegistration"%FOR NO KEY UPDATE%',
+        '%FROM "Activity"%FOR UPDATE%',
       );
       expect(secondWaiter.pid).not.toBe(rootBackend.pid);
       expect(secondWaiter.pid).not.toBe(firstWaiter.pid);
@@ -1502,7 +1509,7 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       expect(afterAuditCount).toBe(beforeAuditCount); // 无新 audit
     });
 
-    it('E2. cancelled 后 legacy 重报暂 21002:仍一条 cancelled、零新 audit/保险 evidence', async () => {
+    it('E2. cancelled 后 legacy 同头重报并追加新 revision/保险 evidence', async () => {
       // 先 seed 一条 cancelled(模拟历史取消记录)
       const cancelledRegId = await seedRegistration({
         memberId: ctx.memberCId,
@@ -1516,29 +1523,187 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
         where: { event: 'registration.create' },
       });
       const beforeInsuranceEvidenceCount = await ctx.prisma.insuranceEligibilityEvidence.count();
+      const beforeRevisionCount = await ctx.prisma.activityRegistrationRevision.count({
+        where: { registrationId: cancelledRegId },
+      });
 
-      await expect(
-        ctx.service.create(
-          ctx.publishedActivityId,
-          { memberId: ctx.memberCId },
-          ctx.adminPayload,
-          AUDIT_META,
-        ),
-      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_REGISTRATION_ALREADY_EXISTS });
+      const result = await ctx.service.create(
+        ctx.publishedActivityId,
+        { memberId: ctx.memberCId },
+        ctx.adminPayload,
+        AUDIT_META,
+      );
+      expect(result.id).toBe(cancelledRegId);
 
       const allRows = await ctx.prisma.activityRegistration.findMany({
         where: { activityId: ctx.publishedActivityId, memberId: ctx.memberCId },
         select: { id: true, statusCode: true },
       });
-      expect(allRows).toEqual([{ id: cancelledRegId, statusCode: 'cancelled' }]);
+      expect(allRows).toEqual([{ id: cancelledRegId, statusCode: 'pending' }]);
+      expect(
+        await ctx.prisma.activityRegistrationRevision.count({
+          where: { registrationId: cancelledRegId },
+        }),
+      ).toBe(beforeRevisionCount + 1);
 
       const afterAuditCount = await ctx.prisma.auditLog.count({
         where: { event: 'registration.create' },
       });
-      expect(afterAuditCount).toBe(beforeAuditCount);
+      expect(afterAuditCount).toBe(beforeAuditCount + 1);
       expect(await ctx.prisma.insuranceEligibilityEvidence.count()).toBe(
         beforeInsuranceEvidenceCount,
       );
+    });
+
+    it('E2b. cancelled 头仍有永久 identity 时 legacy 新请求返回 21038 且零写', async () => {
+      const cancelledRegId = await seedRegistration({
+        memberId: ctx.memberCId,
+        statusCode: 'cancelled',
+        cancelledByUserId: ctx.adminUserId,
+        cancelledAtIso: '2026-04-05T10:00:00.000Z',
+        cancelReason: '历史 canonical 取消',
+      });
+      const historicalSession = await ctx.prisma.activitySession.create({
+        data: {
+          activityId: ctx.publishedActivityId,
+          code: `legacy-identity-guard-${Date.now()}`,
+          name: 'Legacy identity guard session',
+          startAt: new Date('2099-04-01T08:00:00.000Z'),
+          endAt: new Date('2099-04-01T12:00:00.000Z'),
+          locationText: 'state',
+          checkInOpenAt: new Date('2099-04-01T07:30:00.000Z'),
+          checkInCloseAt: new Date('2099-04-01T09:00:00.000Z'),
+          checkOutOpenAt: new Date('2099-04-01T11:00:00.000Z'),
+          checkOutCloseAt: new Date('2099-04-01T12:30:00.000Z'),
+          locationRequired: false,
+          locationPolicySourceCode: 'activity',
+          statusCode: 'scheduled',
+          deletedAt: new Date('2026-04-05T11:00:00.000Z'),
+        },
+        select: { id: true },
+      });
+      const historicalIdentity = await ctx.prisma.activityParticipationIdentity.create({
+        data: {
+          activityId: ctx.publishedActivityId,
+          sessionId: historicalSession.id,
+          registrationId: cancelledRegId,
+          memberId: ctx.memberCId,
+          currentStatusCode: 'cancelled',
+        },
+        select: { id: true },
+      });
+      const before = {
+        revisions: await ctx.prisma.activityRegistrationRevision.count({
+          where: { registrationId: cancelledRegId },
+        }),
+        audits: await ctx.prisma.auditLog.count({ where: { resourceId: cancelledRegId } }),
+        evidences: await ctx.prisma.insuranceEligibilityEvidence.count({
+          where: { activityRegistrationId: cancelledRegId },
+        }),
+      };
+
+      try {
+        await expect(
+          ctx.service.create(
+            ctx.publishedActivityId,
+            { memberId: ctx.memberCId },
+            ctx.adminPayload,
+            AUDIT_META,
+          ),
+        ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED });
+        expect(
+          await ctx.prisma.activityRegistration.findUniqueOrThrow({
+            where: { id: cancelledRegId },
+            select: { statusCode: true, currentRevision: true },
+          }),
+        ).toEqual({ statusCode: 'cancelled', currentRevision: 0 });
+        await expect(
+          Promise.all([
+            ctx.prisma.activityRegistrationRevision.count({
+              where: { registrationId: cancelledRegId },
+            }),
+            ctx.prisma.auditLog.count({ where: { resourceId: cancelledRegId } }),
+            ctx.prisma.insuranceEligibilityEvidence.count({
+              where: { activityRegistrationId: cancelledRegId },
+            }),
+          ]),
+        ).resolves.toEqual([before.revisions, before.audits, before.evidences]);
+      } finally {
+        await ctx.prisma.activityParticipationIdentity.delete({
+          where: { id: historicalIdentity.id },
+        });
+        await ctx.prisma.activitySession.delete({ where: { id: historicalSession.id } });
+      }
+    });
+
+    it('E2c. 无本人报名头但 identity 错挂他人头时 legacy 新请求返回 21038 且零写', async () => {
+      const foreignRegistrationId = await seedRegistration({
+        memberId: ctx.memberAId,
+        statusCode: 'cancelled',
+      });
+      const historicalSession = await ctx.prisma.activitySession.create({
+        data: {
+          activityId: ctx.publishedActivityId,
+          code: `legacy-foreign-head-${Date.now()}`,
+          name: 'Legacy foreign-head identity session',
+          startAt: new Date('2099-04-01T08:00:00.000Z'),
+          endAt: new Date('2099-04-01T12:00:00.000Z'),
+          locationText: 'state',
+          checkInOpenAt: new Date('2099-04-01T07:30:00.000Z'),
+          checkInCloseAt: new Date('2099-04-01T09:00:00.000Z'),
+          checkOutOpenAt: new Date('2099-04-01T11:00:00.000Z'),
+          checkOutCloseAt: new Date('2099-04-01T12:30:00.000Z'),
+          locationRequired: false,
+          locationPolicySourceCode: 'activity',
+          statusCode: 'scheduled',
+          deletedAt: new Date('2026-04-05T11:00:00.000Z'),
+        },
+        select: { id: true },
+      });
+      const foreignHeadIdentity = await ctx.prisma.activityParticipationIdentity.create({
+        data: {
+          activityId: ctx.publishedActivityId,
+          sessionId: historicalSession.id,
+          registrationId: foreignRegistrationId,
+          memberId: ctx.memberCId,
+          currentStatusCode: 'cancelled',
+        },
+        select: { id: true },
+      });
+      const before = await Promise.all([
+        ctx.prisma.activityRegistration.count({
+          where: { activityId: ctx.publishedActivityId, memberId: ctx.memberCId },
+        }),
+        ctx.prisma.activityRegistrationRevision.count(),
+        ctx.prisma.insuranceEligibilityEvidence.count(),
+        ctx.prisma.auditLog.count({ where: { event: 'registration.create' } }),
+      ]);
+
+      try {
+        await expect(
+          ctx.service.create(
+            ctx.publishedActivityId,
+            { memberId: ctx.memberCId },
+            ctx.adminPayload,
+            AUDIT_META,
+          ),
+        ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED });
+        await expect(
+          Promise.all([
+            ctx.prisma.activityRegistration.count({
+              where: { activityId: ctx.publishedActivityId, memberId: ctx.memberCId },
+            }),
+            ctx.prisma.activityRegistrationRevision.count(),
+            ctx.prisma.insuranceEligibilityEvidence.count(),
+            ctx.prisma.auditLog.count({ where: { event: 'registration.create' } }),
+          ]),
+        ).resolves.toEqual(before);
+      } finally {
+        await ctx.prisma.activityParticipationIdentity.delete({
+          where: { id: foreignHeadIdentity.id },
+        });
+        await ctx.prisma.activitySession.delete({ where: { id: historicalSession.id } });
+      }
     });
 
     it('E3. capacity=1 + 1 pass 时,create 新 reg → waitlisted + create audit', async () => {

@@ -13,25 +13,52 @@ describe('participation revision state machine', () => {
     ['waitlisted', false, { kind: 'append', statusCode: 'cancelled' }],
     ['cancelled', true, { kind: 'append', statusCode: 'pending' }],
     ['cancelled', false, { kind: 'noop' }],
+    ['rejected', true, { kind: 'append', statusCode: 'pending' }],
+    ['rejected', false, { kind: 'noop' }],
   ])('%s selected=%s → %j', (statusCode, selected, expected) => {
     expect(decideParticipationRevision(statusCode, selected)).toEqual(expected);
   });
 
-  it.each(['pass', 'reject', 'onsite', 'unexpected'])(
-    'rejects immutable/final identity state %s',
+  it.each([
+    ['pass', true],
+    ['pass', false],
+    ['attended', true],
+    ['attended', false],
+    ['settled', true],
+    ['settled', false],
+    ['cancellation_requested', true],
+    ['cancellation_requested', false],
+    ['onsite', true],
+    ['onsite', false],
+    ['reject', true],
+    ['reject', false],
+    ['unexpected', true],
+    ['unexpected', false],
+  ])('rejects immutable/final identity state %s selected=%s', (statusCode, selected) => {
+    expect(() => decideParticipationRevision(statusCode, selected)).toThrow(BizException);
+    try {
+      decideParticipationRevision(statusCode, selected);
+    } catch (error) {
+      expect(error).toEqual(new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID));
+    }
+  });
+
+  it.each(['pending', 'waitlisted', 'cancelled', 'reject'])(
+    'allows resumable registration head %s',
     (statusCode) => {
-      expect(() => decideParticipationRevision(statusCode, true)).toThrow(BizException);
+      expect(() => assertRegistrationCommandHeaderStatus(statusCode)).not.toThrow();
+    },
+  );
+
+  it.each(['pass', 'attended', 'settled', 'cancellation_requested', 'rejected', 'unexpected'])(
+    'rejects immutable/final registration head %s',
+    (statusCode) => {
+      expect(() => assertRegistrationCommandHeaderStatus(statusCode)).toThrow(BizException);
       try {
-        decideParticipationRevision(statusCode, true);
+        assertRegistrationCommandHeaderStatus(statusCode);
       } catch (error) {
         expect(error).toEqual(new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID));
       }
     },
   );
-
-  it('allows only pending/waitlisted registration heads', () => {
-    expect(() => assertRegistrationCommandHeaderStatus('pending')).not.toThrow();
-    expect(() => assertRegistrationCommandHeaderStatus('waitlisted')).not.toThrow();
-    expect(() => assertRegistrationCommandHeaderStatus('pass')).toThrow(BizException);
-  });
 });

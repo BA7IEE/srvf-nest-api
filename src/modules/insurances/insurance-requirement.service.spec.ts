@@ -91,6 +91,7 @@ describe('InsuranceRequirementService evidence fail-closed validation', () => {
     await expect(
       service.createActivityRegistrationEvidence(
         'registration-1',
+        'registration-revision-1',
         'member-1',
         decision,
         tx as never,
@@ -104,6 +105,7 @@ describe('InsuranceRequirementService evidence fail-closed validation', () => {
     const { service, tx, evidence } = makeHarness();
     await service.createActivityRegistrationEvidence(
       'registration-1',
+      'registration-revision-1',
       'member-1',
       baseDecision(),
       tx as never,
@@ -114,6 +116,7 @@ describe('InsuranceRequirementService evidence fail-closed validation', () => {
     expect(Object.keys(data).sort()).toEqual(
       [
         'activityRegistrationId',
+        'activityRegistrationRevisionId',
         'memberInsuranceId',
         'ownerKind',
         'requiredFrom',
@@ -128,6 +131,13 @@ describe('InsuranceRequirementService evidence fail-closed validation', () => {
         'teamJoinApplicationId',
       ].sort(),
     );
+    expect(evidence.findFirst).toHaveBeenCalledWith({
+      where: {
+        activityRegistrationId: 'registration-1',
+        activityRegistrationRevisionId: 'registration-revision-1',
+      },
+      select: { id: true },
+    });
   });
 });
 
@@ -251,7 +261,7 @@ describe('InsuranceRequirementService approval evidence revalidation', () => {
     startAt: new Date('2099-07-01T00:00:00.000Z'),
     endAt: new Date('2099-07-02T00:00:00.000Z'),
   };
-  const registration = { id: 'registration-1', memberId: 'member-1' };
+  const registration = { id: 'registration-1', memberId: 'member-1', currentRevision: 1 };
   const selfEvidence = {
     id: 'evidence-1',
     sourceKind: 'member_insurance',
@@ -259,6 +269,7 @@ describe('InsuranceRequirementService approval evidence revalidation', () => {
     teamInsuranceCoverageId: null,
     ownerKind: 'activity_registration',
     activityRegistrationId: 'registration-1',
+    activityRegistrationRevisionId: 'registration-revision-1',
     teamJoinApplicationId: null,
     sourceRevision: 3,
     sourceReviewedByUserId: 'reviewer-1',
@@ -316,6 +327,69 @@ describe('InsuranceRequirementService approval evidence revalidation', () => {
       expect(memberFindFirst).toHaveBeenCalledTimes(1);
     },
   );
+
+  it('current revision selects only evidence anchored to that exact registration revision', async () => {
+    const { service, tx, findMany, $queryRaw } = makeHarness();
+    findMany.mockResolvedValue([]);
+
+    await expect(
+      service.revalidateActivityRegistrationApproval(registration, activity, tx as never),
+    ).rejects.toEqual(new BizException(BizCode.INSURANCE_REQUIRED));
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        activityRegistrationId: 'registration-1',
+        activityRegistrationRevision: { is: { revision: 1 } },
+      },
+      select: expect.objectContaining({ activityRegistrationRevisionId: true }) as unknown,
+      orderBy: { id: 'asc' },
+      take: 2,
+    });
+    expect($queryRaw).not.toHaveBeenCalled();
+  });
+
+  it('current revision rejects legacy header-only evidence without falling back', async () => {
+    const { service, tx, findMany, $queryRaw } = makeHarness();
+    findMany.mockResolvedValue([{ ...selfEvidence, activityRegistrationRevisionId: null }]);
+
+    await expect(
+      service.revalidateActivityRegistrationApproval(registration, activity, tx as never),
+    ).rejects.toEqual(new BizException(BizCode.INSURANCE_REQUIRED));
+    expect($queryRaw).not.toHaveBeenCalled();
+  });
+
+  it('revision zero accepts exactly one legacy header-only evidence', async () => {
+    const { service, tx, findMany, $queryRaw } = makeHarness();
+    findMany.mockResolvedValue([{ ...selfEvidence, activityRegistrationRevisionId: null }]);
+    $queryRaw.mockResolvedValueOnce([{ id: 'member-1' }]).mockResolvedValueOnce([
+      {
+        id: 'insurance-1',
+        memberId: 'member-1',
+        coverageStart: selfEvidence.sourceCoverageStart,
+        coverageEnd: selfEvidence.sourceCoverageEnd,
+        version: 3,
+        reviewedByUserId: 'reviewer-1',
+        reviewedAt: selfEvidence.sourceReviewedAt,
+      },
+    ]);
+
+    await service.revalidateActivityRegistrationApproval(
+      { ...registration, currentRevision: 0 },
+      activity,
+      tx as never,
+    );
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        activityRegistrationId: 'registration-1',
+        activityRegistrationRevisionId: null,
+      },
+      select: expect.objectContaining({ activityRegistrationRevisionId: true }) as unknown,
+      orderBy: { id: 'asc' },
+      take: 2,
+    });
+    expect($queryRaw).toHaveBeenCalledTimes(2);
+  });
 
   it.each([
     ['missing evidence', []],

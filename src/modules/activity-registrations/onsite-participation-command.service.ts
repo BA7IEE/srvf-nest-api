@@ -12,15 +12,24 @@ import { assertActiveMemberLifecycle } from '../members/member-lifecycle-lock';
 import { RbacService } from '../permissions/rbac.service';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
+import { ActivityRegistrationLifecycleService } from './activity-registration-lifecycle.service';
 import { CapacityReservationService } from './capacity-reservation.service';
 import type { CreateAppManagedActivityOnsiteParticipationDto } from './dto/app/app-onsite-participation.dto';
 import {
   hashOnsiteParticipationRequest,
   type OnsiteParticipationRequestHashInput,
 } from './onsite-participation-request-hash';
+import { assertRegistrationCommandHeaderStatus } from './participation-revision-state-machine';
 import { decideOnsiteParticipationPass } from './onsite-participation-state-machine';
 
 type PrismaTx = Prisma.TransactionClient;
+
+// The Activity root intentionally serializes onsite writes for one activity. Under a real
+// 100-request last-seat convoy, Prisma's 2s/5s interactive-transaction defaults can expire before
+// a loser reaches the capacity check and leak an infrastructure 500. Keep the wait finite, but
+// give the established serialization enough room to return the truthful capacity business result.
+const ONSITE_PARTICIPATION_TX_MAX_WAIT_MS = 10_000;
+const ONSITE_PARTICIPATION_TX_TIMEOUT_MS = 15_000;
 
 type LockedActivity = {
   id: string;
@@ -42,11 +51,14 @@ export type OnsiteLockedHeader = {
 
 export type OnsiteLockedIdentity = {
   id: string;
+  activityId: string;
+  memberId: string;
   registrationId: string;
   sessionId: string;
   currentRevision: number;
   currentStatusCode: string;
   currentPositionId: string | null;
+  capacityReservationId: string | null;
   populationIncluded: boolean;
   version: number;
 };
@@ -74,17 +86,14 @@ export type OnsiteParticipationReceipt = {
 };
 
 /**
- * The database now enforces a permanent registration head. Onsite nevertheless locks every
- * historical row so a cancelled or soft-deleted head cannot fall through to create. Reusing a
- * historical head would require an unauthorized relink/revival policy, so it fails closed.
+ * The database enforces a permanent registration head. A live cancelled/rejected head is reused;
+ * a soft-deleted head remains final and cannot fall through to create.
  */
 export function selectOnsiteCanonicalHeader(
   headers: readonly OnsiteLockedHeader[],
   identities: readonly OnsiteLockedIdentity[],
 ): OnsiteLockedHeader | null {
-  const reusableLiveHeaders = headers.filter(
-    (header) => (header.deletedAt ?? null) === null && header.statusCode !== 'cancelled',
-  );
+  const reusableLiveHeaders = headers.filter((header) => (header.deletedAt ?? null) === null);
   if (reusableLiveHeaders.length > 1) {
     throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
   }
@@ -110,6 +119,7 @@ export class OnsiteParticipationCommandService {
     private readonly rbac: RbacService,
     private readonly insuranceRequirement: InsuranceRequirementService,
     private readonly capacityReservations: CapacityReservationService,
+    private readonly registrationLifecycle: ActivityRegistrationLifecycleService,
     private readonly registrationAudit: ActivityRegistrationAuditRecorder,
   ) {}
 
@@ -137,20 +147,25 @@ export class OnsiteParticipationCommandService {
     const requestHash = hashOnsiteParticipationRequest(requestHashInput);
 
     try {
-      return await this.prisma.$transaction((tx) =>
-        this.createInTransaction({
-          tx,
-          activityId,
-          operationKey: dto.operationKey,
-          targetMemberId: dto.memberId,
-          sessionId: dto.sessionId,
-          positionId: dto.positionId ?? null,
-          reason,
-          requestHash,
-          currentUser,
-          actorMemberId: access.member!.id,
-          auditMeta,
-        }),
+      return await this.prisma.$transaction(
+        (tx) =>
+          this.createInTransaction({
+            tx,
+            activityId,
+            operationKey: dto.operationKey,
+            targetMemberId: dto.memberId,
+            sessionId: dto.sessionId,
+            positionId: dto.positionId ?? null,
+            reason,
+            requestHash,
+            currentUser,
+            actorMemberId: access.member!.id,
+            auditMeta,
+          }),
+        {
+          maxWait: ONSITE_PARTICIPATION_TX_MAX_WAIT_MS,
+          timeout: ONSITE_PARTICIPATION_TX_TIMEOUT_MS,
+        },
       );
     } catch (error) {
       // Only an exact successful receipt may turn a P2002 race into a replay. Every unmatched
@@ -249,11 +264,37 @@ export class OnsiteParticipationCommandService {
     const canonicalHeader = selectOnsiteCanonicalHeader(headers, identities);
     const targetIdentity =
       identities.find((identity) => identity.sessionId === input.sessionId) ?? null;
+    await this.registrationLifecycle.assertCapacityPointersReconciledInTransactionTrusted(
+      input.tx,
+      identities,
+      { activityId: input.activityId, memberId: input.targetMemberId },
+    );
+    await this.registrationLifecycle.assertParticipationRevisionsReconciledInTransactionTrusted(
+      input.tx,
+      identities,
+    );
+    if (
+      identities.some(
+        (identity) =>
+          decideOnsiteParticipationPass(identity.currentStatusCode).allowed &&
+          (identity.capacityReservationId !== null ||
+            identity.currentPositionId !== null ||
+            identity.populationIncluded),
+      )
+    ) {
+      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+    }
     if (
       targetIdentity !== null &&
       !decideOnsiteParticipationPass(targetIdentity.currentStatusCode).allowed
     ) {
       throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+    }
+    if (targetIdentity !== null && targetIdentity.capacityReservationId !== null) {
+      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+    }
+    if (canonicalHeader !== null) {
+      assertRegistrationCommandHeaderStatus(canonicalHeader.statusCode);
     }
 
     const previousRegistrationRevision =
@@ -288,15 +329,6 @@ export class OnsiteParticipationCommandService {
         },
         select: { id: true, currentRevision: true },
       }));
-    if (canonicalHeader === null) {
-      await this.insuranceRequirement.createActivityRegistrationEvidence(
-        header.id,
-        input.targetMemberId,
-        insuranceEligibility,
-        input.tx,
-      );
-    }
-
     const identity =
       targetIdentity ??
       (await input.tx.activityParticipationIdentity.create({
@@ -313,11 +345,14 @@ export class OnsiteParticipationCommandService {
         },
         select: {
           id: true,
+          activityId: true,
+          memberId: true,
           registrationId: true,
           sessionId: true,
           currentRevision: true,
           currentStatusCode: true,
           currentPositionId: true,
+          capacityReservationId: true,
           populationIncluded: true,
           version: true,
         },
@@ -330,6 +365,12 @@ export class OnsiteParticipationCommandService {
     });
     if (capacityResult.outcome === 'capacity_unavailable') {
       throw new BizException(BizCode.ACTIVITY_CAPACITY_EXCEEDED);
+    }
+    const reservedIdentity = capacityResult.identities.find(
+      (reservation) => reservation.identityId === identity.id,
+    );
+    if (reservedIdentity === undefined) {
+      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
     }
 
     const registrationRevisionNumber = header.currentRevision + 1;
@@ -349,6 +390,13 @@ export class OnsiteParticipationCommandService {
       },
       select: { id: true },
     });
+    await this.insuranceRequirement.createActivityRegistrationEvidence(
+      header.id,
+      registrationRevision.id,
+      input.targetMemberId,
+      insuranceEligibility,
+      input.tx,
+    );
     const participationRevision = await input.tx.activityParticipationRevision.create({
       data: {
         identityId: identity.id,
@@ -367,8 +415,6 @@ export class OnsiteParticipationCommandService {
       select: { id: true },
     });
 
-    // No capacityReservationId shortcut pointer is written here.  Reservation truth remains in
-    // CapacityReservation and this projection changes only the authorized status fields.
     const identityUpdate = await input.tx.activityParticipationIdentity.updateMany({
       where: {
         id: identity.id,
@@ -379,6 +425,7 @@ export class OnsiteParticipationCommandService {
         currentRevision: identity.currentRevision + 1,
         currentStatusCode: 'pass',
         currentPositionId: input.positionId,
+        capacityReservationId: reservedIdentity.sessionReservationId,
         populationIncluded: true,
         version: { increment: 1 },
       },
@@ -389,17 +436,31 @@ export class OnsiteParticipationCommandService {
     const headerUpdate = await input.tx.activityRegistration.updateMany({
       where: { id: header.id, currentRevision: header.currentRevision },
       data: {
+        activityPositionId: null,
+        statusCode: 'pending',
+        registeredAt: now,
+        extras: Prisma.JsonNull,
         currentRevision: registrationRevisionNumber,
         currentFormVersionId: null,
         statusSummaryCode: 'active',
         sourceCode: 'onsite',
+        reviewedBy: null,
+        reviewedAt: null,
+        reviewNote: null,
+        cancelledByUserId: null,
+        cancelledAt: null,
+        cancelReason: null,
       },
     });
     if (headerUpdate.count !== 1) {
       throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
     }
 
-    await this.incrementPopulationRevision(input.tx, input.activityId, now);
+    await this.registrationLifecycle.incrementPopulationRevisionInTransactionTrusted(
+      input.tx,
+      input.activityId,
+      now,
+    );
     await this.registrationAudit.logOnsiteCreate({
       registrationId: header.id,
       registrationRevisionId: registrationRevision.id,
@@ -517,11 +578,14 @@ export class OnsiteParticipationCommandService {
     return tx.$queryRaw<OnsiteLockedIdentity[]>(Prisma.sql`
       SELECT
         "id",
+        "activityId",
+        "memberId",
         "registrationId",
         "sessionId",
         "currentRevision",
         "currentStatusCode",
         "currentPositionId",
+        "capacityReservationId",
         "populationIncluded",
         "version"
       FROM "ActivityParticipationIdentity"
@@ -689,46 +753,6 @@ export class OnsiteParticipationCommandService {
     });
     if (profile === null || profile.genderCode !== genderRequirementCode) {
       throw new BizException(BizCode.ACTIVITY_REGISTRATION_GENDER_MISMATCH);
-    }
-  }
-
-  private async incrementPopulationRevision(
-    tx: PrismaTx,
-    activityId: string,
-    now: Date,
-  ): Promise<void> {
-    const states = await tx.$queryRaw<Array<{ id: string; version: number }>>(Prisma.sql`
-      SELECT "id", "version"
-      FROM "ActivityEvidenceState"
-      WHERE "activityId" = ${activityId}
-      FOR UPDATE
-    `);
-    if (states.length > 1) {
-      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
-    }
-    const state = states[0];
-    if (!state) {
-      await tx.activityEvidenceState.create({
-        data: {
-          activityId,
-          populationRevision: 1,
-          version: 1,
-          lastPopulationAt: now,
-        },
-        select: { id: true },
-      });
-      return;
-    }
-    const updated = await tx.activityEvidenceState.updateMany({
-      where: { id: state.id, version: state.version },
-      data: {
-        populationRevision: { increment: 1 },
-        version: { increment: 1 },
-        lastPopulationAt: now,
-      },
-    });
-    if (updated.count !== 1) {
-      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
     }
   }
 

@@ -784,7 +784,7 @@ describe('activity batch4 onsite participation', () => {
   }
 
   it.each(['cancelled', 'soft-deleted'] as const)(
-    'fails before every onsite write for a %s empty historical header and a new key',
+    'reuses a cancelled onsite head but rejects a %s empty historical header when soft-deleted',
     async (kind) => {
       const scenario = await createScenario();
       const target = await createTarget();
@@ -796,8 +796,12 @@ describe('activity batch4 onsite participation', () => {
         operationKey: 'onsite-' + kind + '-empty-head-new-key-0001',
       });
 
-      expectBizError(response, BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
-      await expect(onsiteHistoricalHeadWriteChain(scenario, target.id)).resolves.toEqual(before);
+      if (kind === 'cancelled') {
+        expect(response.status).toBe(201);
+      } else {
+        expectBizError(response, BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+        await expect(onsiteHistoricalHeadWriteChain(scenario, target.id)).resolves.toEqual(before);
+      }
     },
   );
 
@@ -914,13 +918,21 @@ describe('activity batch4 onsite participation', () => {
         capacityReservationId: true,
       },
     });
+    const sessionReservation = await prisma.capacityReservation.findFirstOrThrow({
+      where: {
+        identityId: receipt.participationIdentityId as string,
+        status: 'active',
+        reservationType: 'session_participation',
+      },
+      select: { id: true },
+    });
     expect(identity).toEqual({
       currentRevision: 1,
       currentStatusCode: 'pass',
       currentPositionId: scenario.sessions[0].positionId,
       populationIncluded: true,
       version: 1,
-      capacityReservationId: null,
+      capacityReservationId: sessionReservation.id,
     });
     const participationRevision = await prisma.activityParticipationRevision.findUniqueOrThrow({
       where: { id: receipt.participationRevisionId as string },
@@ -997,7 +1009,17 @@ describe('activity batch4 onsite participation', () => {
     });
     expect(second.status).toBe(201);
     expect(second.body.data.registrationId).toBe(receipt.registrationId);
-    expect((await onsiteFacts(scenario, target.id)).evidence).toBe(1);
+    expect((await onsiteFacts(scenario, target.id)).evidence).toBe(2);
+    expect(
+      await prisma.insuranceEligibilityEvidence.findMany({
+        where: { activityRegistrationId: receipt.registrationId as string },
+        orderBy: { createdAt: 'asc' },
+        select: { activityRegistrationRevisionId: true },
+      }),
+    ).toEqual([
+      { activityRegistrationRevisionId: receipt.registrationRevisionId },
+      { activityRegistrationRevisionId: second.body.data.registrationRevisionId },
+    ]);
     expect(
       await prisma.activityEvidenceState.findUniqueOrThrow({
         where: { activityId: scenario.activityId },
@@ -1217,6 +1239,21 @@ describe('activity batch4 onsite participation', () => {
     const failures = responses.filter((response) => response.status !== 201);
     expect(successes).toHaveLength(1);
     expect(failures).toHaveLength(99);
+    const unexpectedCapacityResponses = failures
+      .map((response) => ({ status: response.status, body: response.body as unknown }))
+      .filter(({ status, body }) => {
+        const code =
+          typeof body === 'object' && body !== null && 'code' in body
+            ? (body as { code?: unknown }).code
+            : undefined;
+        return (
+          status !== Number(BizCode.ACTIVITY_CAPACITY_EXCEEDED.httpStatus) ||
+          code !== BizCode.ACTIVITY_CAPACITY_EXCEEDED.code
+        );
+      });
+    // Keep the full sanitized status/body in Jest's diff when a concurrency failure is not the
+    // promised business result. A bare status assertion hid the exact Prisma/global-filter cause.
+    expect(unexpectedCapacityResponses).toEqual([]);
     for (const failure of failures) expectBizError(failure, BizCode.ACTIVITY_CAPACITY_EXCEEDED);
 
     const [
@@ -1289,6 +1326,30 @@ describe('activity batch4 onsite participation', () => {
     });
     expectBizError(response, BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
     await expectNoOnsiteWrites(scenario, target.id, before);
+  });
+
+  it('fails closed when a non-target identity pointer drifts before another session is added', async () => {
+    const scenario = await createScenario({ sessionCount: 2 });
+    const target = await createTarget();
+    const first = await onsite(scenario, {
+      memberId: target.id,
+      operationKey: 'onsite-non-target-pointer-first-0001',
+      sessionIndex: 0,
+    });
+    expect(first.status).toBe(201);
+    await prisma.activityParticipationIdentity.update({
+      where: { id: first.body.data.participationIdentityId as string },
+      data: { capacityReservationId: null },
+    });
+    const before = await onsiteHistoricalHeadWriteChain(scenario, target.id);
+
+    const response = await onsite(scenario, {
+      memberId: target.id,
+      operationKey: 'onsite-non-target-pointer-second-0002',
+      sessionIndex: 1,
+    });
+    expectBizError(response, BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+    await expect(onsiteHistoricalHeadWriteChain(scenario, target.id)).resolves.toEqual(before);
   });
 
   it('requires D-5, the reusable permission, and active activity responsibility independently', async () => {

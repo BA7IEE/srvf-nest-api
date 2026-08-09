@@ -14,13 +14,17 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
 import { hasActivityCapacity } from '../activities/activity-capacity';
 import { promoteActivityWaitlistWithinCapacity } from '../activities/activity-waitlist-promotion';
-import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
+import {
+  InsuranceRequirementService,
+  type InsuranceEligibilityDecision,
+} from '../insurances/insurance-requirement.service';
 import { assertActiveMemberLifecycle } from '../members/member-lifecycle-lock';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { RbacService } from '../permissions/rbac.service';
 import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
+import { ActivityRegistrationLifecycleService } from './activity-registration-lifecycle.service';
 import { ActivityRegistrationNotificationProducer } from './activity-registration-notification-producer';
 import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
 import { ActivityRegistrationWaitlistQueryService } from './activity-registration-waitlist-query.service';
@@ -97,6 +101,7 @@ const registrationSafeSelect = {
   cancelReason: true,
   createdAt: true,
   updatedAt: true,
+  currentRevision: true,
 } as const satisfies Prisma.ActivityRegistrationSelect;
 
 // 列表精简 select:仅必要字段 + Member 摘要(memberNo / displayName)。
@@ -193,6 +198,13 @@ type RegistrationAdminListRow = Prisma.ActivityRegistrationGetPayload<{
 type PrismaTx = Prisma.TransactionClient;
 export type RegistrationAuthorization = 'authz' | 'managed';
 
+type LockedLegacyRegistrationHead = {
+  id: string;
+  statusCode: string;
+  currentRevision: number;
+  deletedAt: Date | null;
+};
+
 @Injectable()
 export class ActivityRegistrationsService {
   private readonly logger = new Logger(ActivityRegistrationsService.name);
@@ -216,6 +228,7 @@ export class ActivityRegistrationsService {
     private readonly organizations: OrganizationsService,
     private readonly activityParticipationPolicy: ActivityParticipationPolicy,
     private readonly waitlistQuery: ActivityRegistrationWaitlistQueryService,
+    private readonly registrationLifecycle: ActivityRegistrationLifecycleService,
   ) {}
 
   // ============ helpers ============
@@ -692,25 +705,137 @@ export class ActivityRegistrationsService {
       : REGISTRATION_STATUS_WAITLISTED;
   }
 
-  // 过渡期 active-only 预检查:同 activity 同 member 已有 active(deletedAt=null AND
-  // statusCode != 'cancelled')报名 → 21002；历史头的 runtime 复用留待后续刀。
-  private async assertNoActiveRegistration(
+  private async lockLegacyRegistrationHeadForCreate(
     activityId: string,
     memberId: string,
     tx: PrismaTx,
-  ): Promise<void> {
-    const existing = await tx.activityRegistration.findFirst({
-      where: {
-        activityId,
-        memberId,
-        deletedAt: null,
-        statusCode: { not: REGISTRATION_STATUS_CANCELLED },
+  ): Promise<LockedLegacyRegistrationHead | null> {
+    const rows = await tx.$queryRaw<LockedLegacyRegistrationHead[]>(Prisma.sql`
+      SELECT "id", "statusCode", "currentRevision", "deletedAt"
+      FROM "ActivityRegistration"
+      WHERE "activityId" = ${activityId} AND "memberId" = ${memberId}
+      ORDER BY "createdAt" ASC, "id" ASC
+      FOR UPDATE
+    `);
+    if (rows.length > 1) {
+      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+    }
+    const existing = rows[0] ?? null;
+    const identities = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id"
+      FROM "ActivityParticipationIdentity"
+      WHERE "activityId" = ${activityId} AND "memberId" = ${memberId}
+      ORDER BY "id" ASC
+      FOR UPDATE
+    `);
+    if (existing === null) {
+      if (identities.length > 0) {
+        throw new BizException(BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED);
+      }
+      return null;
+    }
+    if (
+      existing.deletedAt !== null ||
+      (existing.statusCode !== REGISTRATION_STATUS_CANCELLED && existing.statusCode !== 'reject')
+    ) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_ALREADY_EXISTS);
+    }
+    if (identities.length > 0) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED);
+    }
+    return existing;
+  }
+
+  private async persistLegacyRegistrationSubmission(input: {
+    tx: PrismaTx;
+    activityId: string;
+    memberId: string;
+    activityPositionId: string | null;
+    statusCode: typeof REGISTRATION_STATUS_PENDING | typeof REGISTRATION_STATUS_WAITLISTED;
+    extras: Record<string, unknown> | undefined;
+    sourceCode: 'admin' | 'self';
+    submittedByUserId: string;
+    insuranceEligibility: InsuranceEligibilityDecision | null;
+    reusableHead: LockedLegacyRegistrationHead | null;
+  }): Promise<RegistrationFullRow> {
+    const submittedAt = new Date();
+    const header =
+      input.reusableHead ??
+      (await this.runWithUniqueConstraintGuard(() =>
+        input.tx.activityRegistration.create({
+          data: {
+            activityId: input.activityId,
+            activityPositionId: input.activityPositionId,
+            memberId: input.memberId,
+            statusCode: input.statusCode,
+            currentRevision: 0,
+            currentFormVersionId: null,
+            statusSummaryCode: 'active',
+            sourceCode: input.sourceCode,
+            ...(input.extras !== undefined
+              ? { extras: input.extras as Prisma.InputJsonValue }
+              : {}),
+          },
+          select: { id: true, currentRevision: true },
+        }),
+      ));
+
+    const previousRevision =
+      header.currentRevision > 0
+        ? await input.tx.activityRegistrationRevision.findFirst({
+            where: { registrationId: header.id, revision: header.currentRevision },
+            select: { id: true },
+          })
+        : null;
+    if (header.currentRevision > 0 && previousRevision === null) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+    }
+
+    const revisionNumber = header.currentRevision + 1;
+    const revision = await input.tx.activityRegistrationRevision.create({
+      data: {
+        registrationId: header.id,
+        revision: revisionNumber,
+        formVersionId: null,
+        answersHash: null,
+        sourceCode: input.sourceCode,
+        submittedByUserId: input.submittedByUserId,
+        submittedAt,
+        priorRevisionId: previousRevision?.id ?? null,
       },
       select: { id: true },
     });
-    if (existing) {
-      throw new BizException(BizCode.ACTIVITY_REGISTRATION_ALREADY_EXISTS);
+    await this.insuranceRequirement.createActivityRegistrationEvidence(
+      header.id,
+      revision.id,
+      input.memberId,
+      input.insuranceEligibility,
+      input.tx,
+    );
+    const updated = await input.tx.activityRegistration.updateMany({
+      where: { id: header.id, currentRevision: header.currentRevision },
+      data: {
+        activityPositionId: input.activityPositionId,
+        statusCode: input.statusCode,
+        registeredAt: submittedAt,
+        extras:
+          input.extras === undefined ? Prisma.JsonNull : (input.extras as Prisma.InputJsonValue),
+        reviewedBy: null,
+        reviewedAt: null,
+        reviewNote: null,
+        cancelledByUserId: null,
+        cancelledAt: null,
+        cancelReason: null,
+        currentRevision: revisionNumber,
+        currentFormVersionId: null,
+        statusSummaryCode: 'active',
+        sourceCode: input.sourceCode,
+      },
+    });
+    if (updated.count !== 1) {
+      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
     }
+    return this.findRegistrationOrThrow(input.activityId, header.id, input.tx);
   }
 
   // 参与域生命周期收口⑦(v0.40.0):已有参与证据的报名禁取消守卫。cancelAdmin + cancelMy 两路共用。
@@ -733,7 +858,7 @@ export class ActivityRegistrationsService {
     }
   }
 
-  // P2002 兜底(永久报名头 unique;legacy Admin/self 的历史头重报暂保持 21002)。
+  // P2002 兜底：并发首建仍稳定映射 21002；cancelled/reject 历史头在上方锁内直接复用。
   private async runWithUniqueConstraintGuard<T>(fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();
@@ -963,7 +1088,11 @@ export class ActivityRegistrationsService {
         activityPosition?.genderRequirementCode ?? null,
         tx,
       );
-      await this.assertNoActiveRegistration(activityId, dto.memberId, tx);
+      const reusableHead = await this.lockLegacyRegistrationHeadForCreate(
+        activityId,
+        dto.memberId,
+        tx,
+      );
       // 保险 T3 报名门槛(admin 代报名同样拦截,C015 无旁路;requiresInsurance=false 零查询,
       // 既有断言零回归;评审稿 §4 / E-10:位于 assertNoActiveRegistration 之后、create 之前)
       const insuranceEligibility = await this.insuranceRequirement.requireForActivityRegistration(
@@ -980,25 +1109,18 @@ export class ActivityRegistrationsService {
         tx,
       );
 
-      const created = await this.runWithUniqueConstraintGuard(() =>
-        tx.activityRegistration.create({
-          data: {
-            activityId,
-            activityPositionId: activityPosition?.id ?? null,
-            memberId: dto.memberId,
-            statusCode: initialStatusCode,
-            ...(dto.extras !== undefined ? { extras: dto.extras as Prisma.InputJsonValue } : {}),
-          },
-          select: registrationSafeSelect,
-        }),
-      );
-
-      await this.insuranceRequirement.createActivityRegistrationEvidence(
-        created.id,
-        dto.memberId,
-        insuranceEligibility,
+      const created = await this.persistLegacyRegistrationSubmission({
         tx,
-      );
+        activityId,
+        memberId: dto.memberId,
+        activityPositionId: activityPosition?.id ?? null,
+        statusCode: initialStatusCode,
+        extras: dto.extras,
+        sourceCode: 'admin',
+        submittedByUserId: currentUser.id,
+        insuranceEligibility,
+        reusableHead,
+      });
 
       await this.registrationAuditRecorder.logCreate({
         created,
@@ -1040,7 +1162,7 @@ export class ActivityRegistrationsService {
         activityPosition?.genderRequirementCode ?? null,
         tx,
       );
-      await this.assertNoActiveRegistration(activityId, memberId, tx);
+      const reusableHead = await this.lockLegacyRegistrationHeadForCreate(activityId, memberId, tx);
       // 保险 T3 报名门槛(自助路径;App createMyForApp 薄壳经此同样拦截;评审稿 §4 / E-10)
       const insuranceEligibility = await this.insuranceRequirement.requireForActivityRegistration(
         memberId,
@@ -1056,25 +1178,18 @@ export class ActivityRegistrationsService {
         tx,
       );
 
-      const created = await this.runWithUniqueConstraintGuard(() =>
-        tx.activityRegistration.create({
-          data: {
-            activityId,
-            activityPositionId: activityPosition?.id ?? null,
-            memberId,
-            statusCode: initialStatusCode,
-            ...(dto.extras !== undefined ? { extras: dto.extras as Prisma.InputJsonValue } : {}),
-          },
-          select: registrationSafeSelect,
-        }),
-      );
-
-      await this.insuranceRequirement.createActivityRegistrationEvidence(
-        created.id,
-        memberId,
-        insuranceEligibility,
+      const created = await this.persistLegacyRegistrationSubmission({
         tx,
-      );
+        activityId,
+        memberId,
+        activityPositionId: activityPosition?.id ?? null,
+        statusCode: initialStatusCode,
+        extras: dto.extras,
+        sourceCode: 'self',
+        submittedByUserId: currentUser.id,
+        insuranceEligibility,
+        reusableHead,
+      });
 
       await this.registrationAuditRecorder.logCreate({
         created,
@@ -1106,15 +1221,14 @@ export class ActivityRegistrationsService {
       id,
     });
     const result = await this.prisma.$transaction(async (tx) => {
+      await this.lockActivityForRegistrationCreate(activityId, tx);
       if (authorization === 'managed') {
-        await this.lockActivityForRegistrationCreate(activityId, tx);
         await this.assertManagedRegistrationAccess(activityId, currentUser, tx);
       }
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
-
-      const transition = this.registrationStateMachine.decide('approve', reg.statusCode);
-      if (!transition.allowed) {
-        throw new BizException(transition.biz);
+      const observedTransition = this.registrationStateMachine.decide('approve', reg.statusCode);
+      if (!observedTransition.allowed) {
+        throw new BizException(observedTransition.biz);
       }
 
       // capacity 复核(approve 转 pass 占名额)。F11(#399):READ COMMITTED 下普通 COUNT 复核无行锁,
@@ -1125,19 +1239,6 @@ export class ActivityRegistrationsService {
         await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${activityId} FOR UPDATE`;
       }
       const act = await this.findActivityOrThrow(activityId, tx);
-      const participationDecision = this.activityParticipationPolicy.canApprove(act);
-      if (!participationDecision.allowed) {
-        throw new BizException(participationDecision.biz);
-      }
-      // Pre-read gives MEMBER_NOT_FOUND / MEMBER_INACTIVE precedence over insurance evidence
-      // diagnostics. InsuranceRequirementService then takes the lifecycle lock at the existing
-      // self/team source position and re-reads ACTIVE before registration claim/write.
-      await this.assertMemberActiveSnapshot(reg.memberId, tx);
-      await this.insuranceRequirement.revalidateActivityRegistrationApproval(
-        { id: reg.id, memberId: reg.memberId },
-        act,
-        tx,
-      );
       await claimAtStatus(tx, {
         target: 'activityRegistration',
         id: reg.id,
@@ -1145,6 +1246,28 @@ export class ActivityRegistrationsService {
         invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
       });
       const lockedReg = await this.findRegistrationOrThrow(activityId, reg.id, tx);
+      const transition = this.registrationStateMachine.decide('approve', lockedReg.statusCode);
+      if (!transition.allowed) {
+        throw new BizException(transition.biz);
+      }
+      const participationDecision = this.activityParticipationPolicy.canApprove(act);
+      if (!participationDecision.allowed) {
+        throw new BizException(participationDecision.biz);
+      }
+      // The Registration claim/currentRevision snapshot is fixed before insurance revalidation.
+      // The following pre-read preserves MEMBER_NOT_FOUND / MEMBER_INACTIVE precedence; the
+      // insurance service then locks/rereads the Member and exact source/evidence before capacity
+      // or any registration/audit/outbox write.
+      await this.assertMemberActiveSnapshot(lockedReg.memberId, tx);
+      await this.insuranceRequirement.revalidateActivityRegistrationApproval(
+        {
+          id: lockedReg.id,
+          memberId: lockedReg.memberId,
+          currentRevision: lockedReg.currentRevision,
+        },
+        act,
+        tx,
+      );
       const effectiveCapacity = await this.resolveApproveCapacity(
         activityId,
         lockedReg.activityPositionId,
@@ -1214,8 +1337,8 @@ export class ActivityRegistrationsService {
       id,
     });
     const result = await this.prisma.$transaction(async (tx) => {
+      await this.lockActivityForRegistrationCreate(activityId, tx);
       if (authorization === 'managed') {
-        await this.lockActivityForRegistrationCreate(activityId, tx);
         await this.assertManagedRegistrationAccess(activityId, currentUser, tx);
       }
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
@@ -1233,10 +1356,19 @@ export class ActivityRegistrationsService {
       });
       const lockedReg = await this.findRegistrationOrThrow(activityId, reg.id, tx);
       const reviewedAt = new Date();
+      await this.registrationLifecycle.rejectInTransactionTrusted(tx, {
+        activityId,
+        registrationId: lockedReg.id,
+        memberId: lockedReg.memberId,
+        actorUserId: currentUser.id,
+        reviewNote: dto.reviewNote,
+        reviewedAt,
+      });
       const updated = await tx.activityRegistration.update({
         where: { id: lockedReg.id },
         data: {
           statusCode: transition.nextStatusCode,
+          statusSummaryCode: 'not_selected',
           reviewedBy: currentUser.id,
           reviewedAt,
           reviewNote: dto.reviewNote,
@@ -1288,8 +1420,8 @@ export class ActivityRegistrationsService {
       id,
     });
     const result = await this.prisma.$transaction(async (tx) => {
+      await this.lockActivityForRegistrationCreate(activityId, tx);
       if (authorization === 'managed') {
-        await this.lockActivityForRegistrationCreate(activityId, tx);
         await this.assertManagedRegistrationAccess(activityId, currentUser, tx);
       }
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
@@ -1299,11 +1431,6 @@ export class ActivityRegistrationsService {
         throw new BizException(transition.biz);
       }
 
-      // pass 取消会进入 Activity 候补队列，必须先按 Activity→Registration 固定锁序取聚合锁。
-      // 否则并发取消会先各持一条 pass registration，再争 Activity 锁形成 40P01 死锁。
-      if (authorization === 'authz' && reg.statusCode === REGISTRATION_STATUS_PASS) {
-        await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${activityId} FOR UPDATE`;
-      }
       await claimAtStatus(tx, {
         target: 'activityRegistration',
         id: reg.id,
@@ -1315,16 +1442,16 @@ export class ActivityRegistrationsService {
       await this.assertNoParticipationEvidence(lockedReg.id, tx);
 
       const cancelledAt = new Date();
-      const updated = await tx.activityRegistration.update({
-        where: { id: lockedReg.id },
-        data: {
-          statusCode: transition.nextStatusCode,
-          cancelledByUserId: currentUser.id,
-          cancelledAt,
-          cancelReason: dto.cancelReason ?? null,
-        },
-        select: registrationSafeSelect,
+      await this.registrationLifecycle.cancelInTransactionTrusted(tx, {
+        activityId,
+        registrationId: lockedReg.id,
+        memberId: lockedReg.memberId,
+        actorUserId: currentUser.id,
+        sourceCode: 'admin',
+        cancelReason: dto.cancelReason ?? null,
+        cancelledAt,
       });
+      const updated = await this.findRegistrationOrThrow(activityId, lockedReg.id, tx);
 
       await this.registrationAuditRecorder.logCancel({
         registrationId: lockedReg.id,
@@ -1385,8 +1512,8 @@ export class ActivityRegistrationsService {
       id,
     });
     return this.prisma.$transaction(async (tx) => {
+      await this.lockActivityForRegistrationCreate(activityId, tx);
       if (authorization === 'managed') {
-        await this.lockActivityForRegistrationCreate(activityId, tx);
         await this.assertManagedRegistrationAccess(activityId, currentUser, tx);
       }
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
@@ -1403,10 +1530,18 @@ export class ActivityRegistrationsService {
         invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
       });
       const lockedReg = await this.findRegistrationOrThrow(activityId, reg.id, tx);
+      await this.registrationLifecycle.reopenInTransactionTrusted(tx, {
+        activityId,
+        registrationId: lockedReg.id,
+        memberId: lockedReg.memberId,
+        actorUserId: currentUser.id,
+        reopenedAt: new Date(),
+      });
       const updated = await tx.activityRegistration.update({
         where: { id: lockedReg.id },
         data: {
           statusCode: transition.nextStatusCode,
+          statusSummaryCode: 'active',
           reviewedBy: null,
           reviewedAt: null,
           reviewNote: null,
@@ -1496,11 +1631,16 @@ export class ActivityRegistrationsService {
     const result = await this.prisma.$transaction(async (tx) => {
       const memberId = await this.resolveUserMemberIdOrThrow(currentUser.id, tx);
 
-      const reg = await tx.activityRegistration.findFirst({
+      const registrationRef = await tx.activityRegistration.findFirst({
         where: notDeletedWhere({ id }),
-        select: registrationSafeSelect,
+        select: { id: true, activityId: true, memberId: true },
       });
-      if (!reg || reg.memberId !== memberId) {
+      if (!registrationRef || registrationRef.memberId !== memberId) {
+        throw new BizException(BizCode.ACTIVITY_REGISTRATION_NOT_FOUND);
+      }
+      await this.lockActivityForRegistrationCreate(registrationRef.activityId, tx);
+      const reg = await this.findRegistrationOrThrow(registrationRef.activityId, id, tx);
+      if (reg.memberId !== memberId) {
         throw new BizException(BizCode.ACTIVITY_REGISTRATION_NOT_FOUND);
       }
 
@@ -1509,9 +1649,6 @@ export class ActivityRegistrationsService {
         throw new BizException(transition.biz);
       }
 
-      if (reg.statusCode === REGISTRATION_STATUS_PASS) {
-        await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${reg.activityId} FOR UPDATE`;
-      }
       await claimAtStatus(tx, {
         target: 'activityRegistration',
         id: reg.id,
@@ -1524,8 +1661,8 @@ export class ActivityRegistrationsService {
       // K4(B-F3):活动标题 / 发布人必须在**锁后**读。放在锁前时,并发改名先提交,
       // 本事务仍会用旧标题落 durable intent —— intent 一旦落库,worker 无法自行恢复正确快照,
       // 同一次取消甚至会同时产出「旧标题的取消通知」与「新标题的候补递补通知」(递补 helper
-      // 本就是锁后复读的),两条自相矛盾。pass 分支此刻已持 Activity `FOR UPDATE`;
-      // 非 pass 分支不取活动锁(它不改容量、不触发递补),这里仍是本事务能取到的最新已提交值。
+      // 本就是锁后复读的),两条自相矛盾。本路径此刻已持 Activity `FOR UPDATE`，这里读取
+      // 同一根事务下的最新已提交快照。
       const activity = await tx.activity.findFirst({
         where: notDeletedWhere({ id: lockedReg.activityId }),
         select: {
@@ -1539,16 +1676,16 @@ export class ActivityRegistrationsService {
       });
 
       const cancelledAt = new Date();
-      const updated = await tx.activityRegistration.update({
-        where: { id: lockedReg.id },
-        data: {
-          statusCode: transition.nextStatusCode,
-          cancelledByUserId: currentUser.id,
-          cancelledAt,
-          cancelReason: dto.cancelReason ?? null,
-        },
-        select: registrationSafeSelect,
+      await this.registrationLifecycle.cancelInTransactionTrusted(tx, {
+        activityId: lockedReg.activityId,
+        registrationId: lockedReg.id,
+        memberId: lockedReg.memberId,
+        actorUserId: currentUser.id,
+        sourceCode: 'self',
+        cancelReason: dto.cancelReason ?? null,
+        cancelledAt,
       });
+      const updated = await this.findRegistrationOrThrow(lockedReg.activityId, lockedReg.id, tx);
 
       await this.registrationAuditRecorder.logCancel({
         registrationId: lockedReg.id,

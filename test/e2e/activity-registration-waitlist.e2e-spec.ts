@@ -1069,7 +1069,7 @@ describe('activity registration waitlist', () => {
     ).toBe(1);
   });
 
-  it('promote×cancel:root候补锁 → pass cancel/promote direct waiter → 候补 cancel soft waiter', async () => {
+  it('promote×cancel:root候补锁 → pass cancel/promote Registration waiter → 候补 cancel Activity waiter后合法取消', async () => {
     const activityId = await createActivity(1, 'promote-cancel-linear');
     const pass = await seedRegistration(activityId, await createMember('linear-pass'), 'pass');
     const waitingMemberId = await createMember('linear-waiting');
@@ -1122,11 +1122,13 @@ describe('activity registration waitlist', () => {
       mutateRoot.resolve();
       await withTimeout(rootMutated.promise, 'promotion root mutation', OPERATION_TIMEOUT_MS);
       candidateCancel = registrationsB.cancelAdmin(activityId, waiting.id, {}, admin, AUDIT_META);
+      // Activity-first cancellation waits on the Activity root held by the promoted pass cancel,
+      // rather than attempting a second ActivityRegistration row lock.
       const secondWaiter = await waitForDirectWaiter(
         prisma,
         firstWaiter.pid,
         candidateCancel,
-        '%FROM "ActivityRegistration"%FOR NO KEY UPDATE%',
+        '%FROM "Activity"%FOR UPDATE%',
         [root.pid],
       );
       expect(secondWaiter.pid).not.toBe(firstWaiter.pid);
@@ -1141,8 +1143,8 @@ describe('activity registration waitlist', () => {
       );
       expect(results[0].status).toBe('fulfilled');
       expect(results[1]).toMatchObject({
-        status: 'rejected',
-        reason: { biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID },
+        status: 'fulfilled',
+        value: { id: waiting.id, statusCode: 'cancelled' },
       });
       expect(JSON.stringify(results[1])).not.toContain('40P01');
       expect(
@@ -1154,7 +1156,7 @@ describe('activity registration waitlist', () => {
       ).toEqual(
         [
           { id: pass.id, statusCode: 'cancelled', reviewNote: null },
-          { id: waiting.id, statusCode: 'pending', reviewNote: rootReviewNote },
+          { id: waiting.id, statusCode: 'cancelled', reviewNote: rootReviewNote },
         ].sort((a, b) => a.id.localeCompare(b.id)),
       );
       const promotionAudit = await prisma.auditLog.findFirstOrThrow({
@@ -1178,7 +1180,26 @@ describe('activity registration waitlist', () => {
           },
         }),
       ).toBe(1);
-      expect(await prisma.auditLog.count({ where: { resourceId: waiting.id } })).toBe(1);
+      const cancellationAudit = await prisma.auditLog.findFirstOrThrow({
+        where: {
+          resourceId: waiting.id,
+          event: 'registration.review',
+          context: { path: ['extra', 'action'], equals: 'cancel' },
+        },
+        select: { context: true },
+      });
+      expect(cancellationAudit.context).toMatchObject({
+        before: { statusCode: 'pending', reviewNote: rootReviewNote },
+        after: { statusCode: 'cancelled', reviewNote: rootReviewNote },
+        extra: {
+          action: 'cancel',
+          priorStatusCode: 'pending',
+          nextStatusCode: 'cancelled',
+          cancelledByPath: 'admin',
+          cancelReason: null,
+        },
+      });
+      expect(await prisma.auditLog.count({ where: { resourceId: waiting.id } })).toBe(2);
       const intents = await prisma.notificationOutboxIntent.findMany({
         where: {
           aggregateType: 'activity_registration',

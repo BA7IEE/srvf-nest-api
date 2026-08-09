@@ -18,6 +18,7 @@ import {
   type ValidatedRegistrationAnswer,
 } from './activity-registration-answer-validator';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
+import { ActivityRegistrationLifecycleService } from './activity-registration-lifecycle.service';
 import {
   AppActivityRegistrationCommandDto,
   type AppActivityRegistrationPreferenceCommandDto,
@@ -41,13 +42,21 @@ type LockedRegistration = {
   id: string;
   statusCode: string;
   currentRevision: number;
+  deletedAt: Date | null;
 };
 
 type LockedIdentity = {
   id: string;
+  activityId: string;
+  memberId: string;
+  registrationId: string;
   sessionId: string;
   currentRevision: number;
   currentStatusCode: string;
+  currentPositionId: string | null;
+  capacityReservationId: string | null;
+  populationIncluded: boolean;
+  version: number;
 };
 
 type ExistingIdentityPlan = {
@@ -70,6 +79,7 @@ export class RegistrationCommandService {
     private readonly insuranceRequirement: InsuranceRequirementService,
     private readonly attachments: AttachmentsService,
     private readonly registrationAuditRecorder: ActivityRegistrationAuditRecorder,
+    private readonly registrationLifecycle: ActivityRegistrationLifecycleService,
   ) {}
 
   async submit(
@@ -151,16 +161,13 @@ export class RegistrationCommandService {
     const activity = activityRows[0];
     if (activityRows.length !== 1 || !activity) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
 
-    // 2. Lock the one currently-active legacy/v1.1 header. DB 已改为永久报名头 unique，
-    // 但本过渡期查询不复用 cancelled / soft-deleted 历史头；新 canonical key 保持既有 21003
-    // 路径，旧精确回执重放仍在后续既有链路处理。
+    // 2. Lock the permanent header including cancelled/rejected/soft-deleted history. Exact replay
+    // below wins first; a new request may reuse only a live resumable head.
     const headerRows = await input.tx.$queryRaw<LockedRegistration[]>(Prisma.sql`
-      SELECT "id", "statusCode", "currentRevision"
+      SELECT "id", "statusCode", "currentRevision", "deletedAt"
       FROM "ActivityRegistration"
       WHERE "activityId" = ${input.activityId}
         AND "memberId" = ${input.memberId}
-        AND "deletedAt" IS NULL
-        AND "statusCode" <> 'cancelled'
       ORDER BY "createdAt" DESC
       LIMIT 1
       FOR UPDATE
@@ -168,15 +175,28 @@ export class RegistrationCommandService {
     const lockedHeader = headerRows[0] ?? null;
 
     // 3. Existing permanent identities are locked in id order before their state is inspected.
-    const identities = lockedHeader
-      ? await input.tx.$queryRaw<LockedIdentity[]>(Prisma.sql`
-          SELECT "id", "sessionId", "currentRevision", "currentStatusCode"
-          FROM "ActivityParticipationIdentity"
-          WHERE "registrationId" = ${lockedHeader.id}
-          ORDER BY "id" ASC
-          FOR UPDATE
-        `)
-      : [];
+    const identities = await input.tx.$queryRaw<LockedIdentity[]>(Prisma.sql`
+      SELECT
+        "id",
+        "activityId",
+        "memberId",
+        "registrationId",
+        "sessionId",
+        "currentRevision",
+        "currentStatusCode",
+        "currentPositionId",
+        "capacityReservationId",
+        "populationIncluded",
+        "version"
+      FROM "ActivityParticipationIdentity"
+      WHERE "activityId" = ${input.activityId} AND "memberId" = ${input.memberId}
+      ORDER BY "id" ASC
+      FOR UPDATE
+    `);
+
+    // Authorization is mutable state too.  A safe retry may bypass Form/finality checks, but it
+    // must never replay after the app admission facts changed while waiting on the Activity lock.
+    await this.assertAppAdmissionStillLive(input.tx, input.currentUser.id, input.memberId);
 
     // Idempotency must win before any Form/upload session validation, so a safe retry remains
     // replayable after the first request has consumed its one-time sessions.
@@ -202,13 +222,42 @@ export class RegistrationCommandService {
       };
     }
 
-    // The D-5 decision was made before opening the transaction; shared locks still block every
-    // lifecycle/association write while avoiding a reverse edge against team insurance's
-    // Policy -> Coverage -> Member source lock sequence.
-    await this.assertAppAdmissionStillLive(input.tx, input.currentUser.id, input.memberId);
+    if (lockedHeader !== null && lockedHeader.deletedAt !== null) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_OPERATION_KEY_CONFLICT);
+    }
+    if (
+      identities.some(
+        (identity) => lockedHeader === null || identity.registrationId !== lockedHeader.id,
+      )
+    ) {
+      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+    }
+    await this.registrationLifecycle.assertCapacityPointersReconciledInTransactionTrusted(
+      input.tx,
+      identities,
+      { activityId: input.activityId, memberId: input.memberId },
+    );
+    await this.registrationLifecycle.assertParticipationRevisionsReconciledInTransactionTrusted(
+      input.tx,
+      identities,
+    );
 
     if (lockedHeader) {
       assertRegistrationCommandHeaderStatus(lockedHeader.statusCode);
+      if (
+        identities.some(
+          (identity) =>
+            (identity.currentStatusCode === 'pending' ||
+              identity.currentStatusCode === 'waitlisted' ||
+              identity.currentStatusCode === 'cancelled' ||
+              identity.currentStatusCode === 'rejected') &&
+            (identity.capacityReservationId !== null ||
+              identity.currentPositionId !== null ||
+              identity.populationIncluded),
+        )
+      ) {
+        throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+      }
       const [legacyAttendance, legacyCheckIn, punchedIdentity] = await Promise.all([
         input.tx.attendanceRecord.findFirst({
           where: { registrationId: lockedHeader.id, deletedAt: null },
@@ -336,14 +385,6 @@ export class RegistrationCommandService {
         },
         select: { id: true, currentRevision: true },
       }));
-    if (!lockedHeader) {
-      await this.insuranceRequirement.createActivityRegistrationEvidence(
-        header.id,
-        input.memberId,
-        insuranceEligibility,
-        input.tx,
-      );
-    }
     const revisionNumber = header.currentRevision + 1;
     const registrationRevision = await input.tx.activityRegistrationRevision.create({
       data: {
@@ -360,6 +401,14 @@ export class RegistrationCommandService {
       },
       select: { id: true, submittedAt: true },
     });
+
+    await this.insuranceRequirement.createActivityRegistrationEvidence(
+      header.id,
+      registrationRevision.id,
+      input.memberId,
+      insuranceEligibility,
+      input.tx,
+    );
 
     const answerRows = await this.createAnswers(
       input.tx,
@@ -407,26 +456,47 @@ export class RegistrationCommandService {
 
     // 9. Only after all immutable rows and file transfer succeed do current pointers move.
     for (const update of identityPointerUpdates) {
-      await input.tx.activityParticipationIdentity.update({
-        where: { id: update.id },
+      const pointerUpdate = await input.tx.activityParticipationIdentity.updateMany({
+        where: {
+          id: update.id,
+          currentRevision: update.expectedCurrentRevision,
+          version: update.expectedVersion,
+        },
         data: {
           currentRevision: update.revision,
           currentStatusCode: update.statusCode,
           currentPositionId: null,
+          capacityReservationId: null,
           populationIncluded: false,
           version: { increment: 1 },
         },
       });
+      if (pointerUpdate.count !== 1) {
+        throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+      }
     }
-    await input.tx.activityRegistration.update({
-      where: { id: header.id },
+    const headerUpdate = await input.tx.activityRegistration.updateMany({
+      where: { id: header.id, currentRevision: header.currentRevision },
       data: {
+        activityPositionId: null,
+        statusCode: 'pending',
+        registeredAt: now,
+        extras: Prisma.JsonNull,
         currentRevision: revisionNumber,
         currentFormVersionId: activeForm?.id ?? null,
         statusSummaryCode: 'active',
         sourceCode: 'self',
+        reviewedBy: null,
+        reviewedAt: null,
+        reviewNote: null,
+        cancelledByUserId: null,
+        cancelledAt: null,
+        cancelReason: null,
       },
     });
+    if (headerUpdate.count !== 1) {
+      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+    }
 
     // 10. Safe audit last, in the same transaction.  The recorder accepts no raw answer/file
     // material, storage locator, attachment ID, token, key or URL.
@@ -726,7 +796,15 @@ export class RegistrationCommandService {
     now: Date;
     requestKey: string;
     requestHash: string;
-  }): Promise<Array<{ id: string; revision: number; statusCode: 'pending' | 'cancelled' }>> {
+  }): Promise<
+    Array<{
+      id: string;
+      revision: number;
+      statusCode: 'pending' | 'cancelled';
+      expectedCurrentRevision: number;
+      expectedVersion: number;
+    }>
+  > {
     const existingBySession = new Map(
       input.existingPlans.map(({ identity }) => [identity.sessionId, identity]),
     );
@@ -734,6 +812,8 @@ export class RegistrationCommandService {
       id: string;
       revision: number;
       statusCode: 'pending' | 'cancelled';
+      expectedCurrentRevision: number;
+      expectedVersion: number;
     }> = [];
 
     for (const { identity, statusCode } of input.existingPlans) {
@@ -760,7 +840,13 @@ export class RegistrationCommandService {
             : {}),
         },
       });
-      pointerUpdates.push({ id: identity.id, revision, statusCode });
+      pointerUpdates.push({
+        id: identity.id,
+        revision,
+        statusCode,
+        expectedCurrentRevision: identity.currentRevision,
+        expectedVersion: identity.version,
+      });
     }
 
     for (const sessionId of input.selectedSessionIds) {
@@ -792,7 +878,13 @@ export class RegistrationCommandService {
           requestHash: input.requestHash,
         },
       });
-      pointerUpdates.push({ id: identity.id, revision: 1, statusCode: 'pending' });
+      pointerUpdates.push({
+        id: identity.id,
+        revision: 1,
+        statusCode: 'pending',
+        expectedCurrentRevision: 0,
+        expectedVersion: 0,
+      });
     }
     return pointerUpdates;
   }
