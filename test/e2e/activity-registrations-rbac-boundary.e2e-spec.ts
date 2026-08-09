@@ -15,7 +15,7 @@ import { createTestApp } from '../setup/test-app';
 // 沿冻结评审稿 slow4-rbac-business-face-review.md §7 零行为漂移验收
 // v0.61.0 PR-11 contract:biz-admin 仅保留 read，create/approve/reject/cancel/reopen 翻 30100。
 // list / export 共用 activity-registration.read.record(D4=A 判例)。
-// 业务行为细节(状态机 / capacity / partial unique)由 activity-registrations.e2e-spec.ts 锁定。
+// 业务行为细节(状态机 / capacity / 永久头普通 unique)由 activity-registrations.e2e-spec.ts 锁定。
 
 describe('activity-registrations RBAC 权限边界(Slow-4 T3)', () => {
   let app: INestApplication;

@@ -11,7 +11,7 @@
 
 - **管理面 / 配置面 / System surface**:controller 不标 `@Roles`，入口仅要求登录；未接线面继续 Service 层 `rbac.can('<code>')`，SUPER_ADMIN 短路。授权诊断、考勤终审、participation 与 v0.49.0 队员轴/扁平列表改走 `AuthzService`；不能把“全仓判权入口”再简化成只有 `RbacService.can()`。
 - **业务面**:Slow-4 已摘清全部 `@Roles`；v0.49.0 当前 scoped 消费者 = participation 点动作 + 两条扁平列表 + 三条 member-axis 查询、members 列表/options/detail/写、certificates/member-profiles/emergency-contacts/member-insurances。列表级组织范围由 `getVisibleOrganizationScope` 下推；member/certificate 只认 active PRIMARY membership，participation 取 activity.organizationId。users/content/notifications/audit-logs、Recruitment、team-join 仍按各自既有 GLOBAL/显式授权语义。**全仓活跃 `@Roles` = 0**；`RolesGuard` 机制与装饰器保留 Guard 链。
-- **App surface**——本人 self-scope 仍仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`)；capabilities 返回产品级能力而非 raw permission code(D-5.3)。managed 活动写面（含⑧现场临时参加）是例外：须同持既有 `activity-registration.create.record` 的 scoped Authz grant 与当前活动 active `canManageRegistrations=true` responsibility；GLOBAL/SUPER_ADMIN 不旁路责任事实。onsite 锁全历史头（含 soft-deleted）并以 21030 收口是数据状态闸，零新权限码，不改变这两项授权条件。
+- **App surface**——本人 self-scope 仍仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`)；capabilities 返回产品级能力而非 raw permission code(D-5.3)。managed 活动写面（含⑧现场临时参加）是例外：须同持既有 `activity-registration.create.record` 的 scoped Authz grant 与当前活动 active `canManageRegistrations=true` responsibility；GLOBAL/SUPER_ADMIN 不旁路责任事实。
 - **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。`RbacService` 的 GLOBAL permission resolution 每请求从 PostgreSQL 解析当前在期 USER RoleBinding → RolePermission → Permission；`AuthzService` 同样不缓存判权/可见范围结果。
 
 <!-- rbac:begin -->
