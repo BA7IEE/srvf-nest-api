@@ -390,10 +390,12 @@ function runMetadata(): void {
       errors.push('kernel.primitives must declare exactly the four Phase 0 primitives');
     }
     if (map.kernel.confirmed !== false) errors.push('kernel.confirmed must be false');
-    if (map.kernel.kernelReadFields?.confirmed !== false)
-      errors.push('kernelReadFields.confirmed must be false');
-    if (map.kernel.kernelPredicateFields?.confirmed !== false) {
-      errors.push('kernelPredicateFields.confirmed must be false');
+    // 2026-08-10 maintainer decision confirms these two field-list proposals only.
+    // The kernel root and its four primitives remain separately pending.
+    if (map.kernel.kernelReadFields?.confirmed !== true)
+      errors.push('kernelReadFields.confirmed must be true after maintainer decision');
+    if (map.kernel.kernelPredicateFields?.confirmed !== true) {
+      errors.push('kernelPredicateFields.confirmed must be true after maintainer decision');
     }
     for (const [modelName, fields] of Object.entries(map.kernel.kernelReadFields?.fields ?? {})) {
       const model = models.find((item) => item.name === modelName);

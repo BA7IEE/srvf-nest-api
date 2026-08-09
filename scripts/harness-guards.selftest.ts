@@ -802,7 +802,18 @@ checkEq(
       'docs/archive/reviews/architecture-governance-v4/README.md',
       'docs/archive/reviews/architecture-governance-v4/README.md',
     ],
-    ['changelog.d/architecture-governance-phase0.added.md', 'changelog.d/architecture-governance-phase0.added.md'],
+    [
+      'docs/archive/reviews/architecture-governance-v4/DECISIONS-2026-08-09.md',
+      'docs/archive/reviews/architecture-governance-v4/DECISIONS-2026-08-09.md',
+    ],
+    [
+      'changelog.d/architecture-governance-phase0.added.md',
+      'changelog.d/architecture-governance-phase0.added.md',
+    ],
+    [
+      'changelog.d/architecture-governance-phase0-gate.added.md',
+      'changelog.d/architecture-governance-phase0-gate.added.md',
+    ],
   ];
   for (const [file, glob] of phase0Files) {
     check(
@@ -825,11 +836,14 @@ checkEq(
 
   const ci = codeOnly(read('.github/workflows/ci.yml'));
   check(
-    'P0 ci:边界 / 授权清单仅以恒 exit 0 的 report-only 方式运行',
-    ci.includes('- name: Architecture governance reports (report-only)') &&
+    'P0 ci:A 类元数据在既有 Fast checks 内阻断，B 类违规恒 report-only',
+    ci.includes('- name: Architecture governance A-metadata gate (B reports only)') &&
       ci.includes('pnpm docs:boundaries || true') &&
-      ci.includes('pnpm docs:authz:check || true'),
-    '报告步骤缺失或会把 Phase 0 盘点误升级为硬门禁。',
+      ci.includes('pnpm docs:boundaries:check') &&
+      ci.includes('pnpm docs:authz:check') &&
+      !ci.includes('pnpm docs:boundaries:check || true') &&
+      !ci.includes('pnpm docs:authz:check || true'),
+    'A 类完整性翻闸缺失，或 B 类违规被误升级为硬门禁。',
   );
 
   const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'srvf-phase0-input-digest-'));
@@ -886,6 +900,26 @@ checkEq(
       runFixture('scripts/check-boundaries.ts', ['--metadata']).code,
       0,
     );
+    const fixtureDomainMap = path.join(fixtureRoot, 'harness/domain-map.json');
+    const originalDomainMap = fs.readFileSync(fixtureDomainMap, 'utf8');
+    const unconfirmedKernelMap = JSON.parse(originalDomainMap) as {
+      kernel: {
+        kernelReadFields: { confirmed: boolean };
+        kernelPredicateFields: { confirmed: boolean };
+      };
+    };
+    unconfirmedKernelMap.kernel.kernelReadFields.confirmed = false;
+    unconfirmedKernelMap.kernel.kernelPredicateFields.confirmed = false;
+    fs.writeFileSync(fixtureDomainMap, JSON.stringify(unconfirmedKernelMap, null, 2) + '\n', 'utf8');
+    const unconfirmedKernel = runFixture('scripts/check-boundaries.ts', ['--metadata']);
+    fs.writeFileSync(fixtureDomainMap, originalDomainMap, 'utf8');
+    check(
+      'P0 domain-map 定性阳性:已拍板的 kernel 字段清单不得退回未确认',
+      unconfirmedKernel.code !== 0 &&
+        unconfirmedKernel.out.includes('kernelReadFields.confirmed must be true after maintainer decision') &&
+        unconfirmedKernel.out.includes('kernelPredicateFields.confirmed must be true after maintainer decision'),
+      unconfirmedKernel.out,
+    );
     const staleDomainMap = mutateInputAndRun(
       'src/app.module.ts',
       'scripts/check-boundaries.ts',
@@ -912,6 +946,20 @@ checkEq(
       'P0 authz:临时副本 --check 的干净输入通过',
       runFixture('scripts/generate-authz-manifest.ts', ['--check']).code,
       0,
+    );
+    const fixtureClassification = path.join(fixtureRoot, 'harness/route-authz-classification.json');
+    const originalClassification = fs.readFileSync(fixtureClassification, 'utf8');
+    const undecidedClassification = JSON.parse(originalClassification) as {
+      entries: Array<{ decisionStatus: string }>;
+    };
+    undecidedClassification.entries[0].decisionStatus = 'needs-decision';
+    fs.writeFileSync(fixtureClassification, JSON.stringify(undecidedClassification, null, 2) + '\n', 'utf8');
+    const undecidedAuthz = runFixture('scripts/generate-authz-manifest.ts', ['--check']);
+    fs.writeFileSync(fixtureClassification, originalClassification, 'utf8');
+    check(
+      'P0 authz 定性阳性:任一 needs-decision 必被 --check 拒绝',
+      undecidedAuthz.code !== 0 && undecidedAuthz.out.includes('decision status must be decided'),
+      undecidedAuthz.out,
     );
     const staleAuthz = mutateInputAndRun(
       'src/app.module.ts',
@@ -1606,9 +1654,19 @@ for (const [configName, config] of JEST_CONFIGS) {
         no: ['docs/archive/reviews/architecture-governance-v4/README-draft.md'],
       },
       {
+        glob: 'docs/archive/reviews/architecture-governance-v4/DECISIONS-2026-08-09.md',
+        yes: ['docs/archive/reviews/architecture-governance-v4/DECISIONS-2026-08-09.md'],
+        no: ['docs/archive/reviews/architecture-governance-v4/DECISIONS-draft.md'],
+      },
+      {
         glob: 'changelog.d/architecture-governance-phase0.added.md',
         yes: ['changelog.d/architecture-governance-phase0.added.md'],
         no: ['changelog.d/architecture-governance-phase0-draft.added.md'],
+      },
+      {
+        glob: 'changelog.d/architecture-governance-phase0-gate.added.md',
+        yes: ['changelog.d/architecture-governance-phase0-gate.added.md'],
+        no: ['changelog.d/architecture-governance-phase0-gate-draft.added.md'],
       },
       { glob: 'package.json', yes: ['package.json'], no: ['src/vendor/package.json'] },
       { glob: 'pnpm-lock.yaml', yes: ['pnpm-lock.yaml'], no: ['pnpm-workspace.yaml'] },

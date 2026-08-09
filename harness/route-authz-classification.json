@@ -23,10 +23,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/insurances/controllers/app-me-insurances.controller.ts",
@@ -135,10 +137,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -287,10 +291,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts",
@@ -456,10 +462,12 @@
           }
         ],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts",
@@ -622,10 +630,12 @@
           }
         ],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activity-positions.controller.ts",
@@ -763,10 +773,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -869,10 +881,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -978,13 +992,15 @@
       "sourceSummary": "列出活动(分页 + 多字段过滤;Q-A7 USER 强制只见 published/completed,忽略入参 statusCode) [auth]",
       "policy": {
         "admission": null,
-        "mode": "LOGIN_ONLY",
+        "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
-        "engine": null
+        "scopes": [
+          "activity-visibility"
+        ],
+        "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/activities.controller.ts",
@@ -1053,13 +1069,22 @@
       "sourceSummary": "活动参与合计(报名状态/实到/到场率/approved 时长与贡献/固定时长桶；需同时持两项参与域读权限) [auth]",
       "policy": {
         "admission": null,
-        "mode": "LOGIN_SCOPED",
-        "codes": [],
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "attendance.read.sheet",
+            "scope": null
+          },
+          {
+            "code": "activity-registration.read.record",
+            "scope": null
+          }
+        ],
         "require": "all",
         "scopes": [],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/admin-activity-participation.controller.ts",
@@ -1138,13 +1163,15 @@
       "sourceSummary": "活动岗位列表(sortOrder/createdAt/id 升序) [auth]",
       "policy": {
         "admission": null,
-        "mode": "LOGIN_ONLY",
+        "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
-        "engine": null
+        "scopes": [
+          "activity-visibility"
+        ],
+        "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/admin-activity-positions.controller.ts",
@@ -1195,13 +1222,15 @@
       "sourceSummary": "活动岗位详情(软删/跨活动统一 20002) [auth]",
       "policy": {
         "admission": null,
-        "mode": "LOGIN_ONLY",
+        "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
-        "engine": null
+        "scopes": [
+          "activity-visibility"
+        ],
+        "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/admin-activity-positions.controller.ts",
@@ -1258,13 +1287,22 @@
       "sourceSummary": "活动报名×实到核对(completed only；pass 逐人 attended/no-show + 临时参加名单；需同时持两项参与域读权限) [auth]",
       "policy": {
         "admission": null,
-        "mode": "LOGIN_SCOPED",
-        "codes": [],
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "attendance.read.sheet",
+            "scope": null
+          },
+          {
+            "code": "activity-registration.read.record",
+            "scope": null
+          }
+        ],
         "require": "all",
         "scopes": [],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/admin-activity-participation.controller.ts",
@@ -1331,13 +1369,15 @@
       "sourceSummary": "活动详情(Q-A7 USER 仅可见 published/completed,其他 → 404) [auth]",
       "policy": {
         "admission": null,
-        "mode": "LOGIN_ONLY",
+        "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
-        "engine": null
+        "scopes": [
+          "activity-visibility"
+        ],
+        "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/activities.controller.ts",
@@ -1406,13 +1446,15 @@
       "sourceSummary": "活动选择器投影(q 模糊 title;USER 强制只见 published/completed) [auth]",
       "policy": {
         "admission": null,
-        "mode": "LOGIN_ONLY",
+        "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
-        "engine": null
+        "scopes": [
+          "activity-visibility"
+        ],
+        "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/activities.controller.ts",
@@ -1463,7 +1505,7 @@
         "scopes": [],
         "engine": null
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/users/controllers/admin-me.controller.ts",
@@ -1516,7 +1558,7 @@
         ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/meta/meta.controller.ts",
@@ -1581,15 +1623,22 @@
       "sourceSummary": "参与度月度总览(活动日期/类型/组织筛选；两项读权限可见组织范围求交；无可见范围返空) [auth]",
       "policy": {
         "admission": null,
-        "mode": "LOGIN_SCOPED",
-        "codes": [],
-        "require": "all",
-        "scopes": [
-          "visibility:organization"
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "attendance.read.sheet",
+            "scope": null
+          },
+          {
+            "code": "activity-registration.read.record",
+            "scope": null
+          }
         ],
+        "require": "all",
+        "scopes": [],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/meta/meta.controller.ts",
@@ -1655,10 +1704,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "visibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-activities.controller.ts",
@@ -1719,10 +1770,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "visibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-activities.controller.ts",
@@ -1789,10 +1842,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "visibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-activities.controller.ts",
@@ -1853,10 +1908,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "visibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-activities.controller.ts",
@@ -1916,10 +1973,12 @@
           }
         ],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "visibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/content/content-app.controller.ts",
@@ -2016,10 +2075,12 @@
           }
         ],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "visibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/content/content-app.controller.ts",
@@ -2117,10 +2178,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/users/controllers/app-me.controller.ts",
@@ -2163,10 +2226,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/users/controllers/app-me.controller.ts",
@@ -2210,11 +2275,11 @@
         "codes": [],
         "require": "all",
         "scopes": [
-          "visibility:organization"
+          "self"
         ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/users/controllers/app-me.controller.ts",
@@ -2289,10 +2354,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/insurances/controllers/app-me-insurances.controller.ts",
@@ -2353,10 +2420,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/users/controllers/app-me.controller.ts",
@@ -2423,10 +2492,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/team-join/team-join-applications.app.controller.ts",
@@ -2487,10 +2558,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/users/controllers/app-me.controller.ts",
@@ -2539,10 +2612,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/users/controllers/app-me.controller.ts",
@@ -2585,10 +2660,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-my-registrations.controller.ts",
@@ -2643,10 +2720,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/attendances/controllers/app-activity-check-ins.controller.ts",
@@ -2719,10 +2798,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-feedbacks/controllers/app-activity-feedbacks.controller.ts",
@@ -2801,10 +2882,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/attendances/controllers/app-my-attendance-records.controller.ts",
@@ -2883,10 +2966,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/certificates/controllers/app-my-certificates.controller.ts",
@@ -2941,10 +3026,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -3023,10 +3110,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -3117,10 +3206,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts",
@@ -3239,10 +3330,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts",
@@ -3361,10 +3454,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts",
@@ -3513,10 +3608,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts",
@@ -3629,10 +3726,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts",
@@ -3693,10 +3792,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts",
@@ -3797,10 +3898,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activity-positions.controller.ts",
@@ -3879,10 +3982,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -3961,10 +4066,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-managed-activity-registrations.controller.ts",
@@ -4077,10 +4184,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts",
@@ -4153,10 +4262,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -4235,10 +4346,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -4317,10 +4430,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -4399,10 +4514,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts",
@@ -4498,11 +4615,11 @@
         "codes": [],
         "require": "all",
         "scopes": [
-          "visibility:organization"
+          "responsibility"
         ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -4568,10 +4685,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-my-participation-ledger.controller.ts",
@@ -4632,10 +4751,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/attendances/controllers/app-my-participation-summary.controller.ts",
@@ -4690,10 +4811,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-my-registrations.controller.ts",
@@ -4772,10 +4895,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-my-registrations.controller.ts",
@@ -4860,10 +4985,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/notifications/notification-app.controller.ts",
@@ -4956,10 +5083,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/notifications/notification-app.controller.ts",
@@ -5046,10 +5175,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/notifications/notification-app.controller.ts",
@@ -5104,10 +5235,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/notifications/notification-app.controller.ts",
@@ -5191,7 +5324,7 @@
         "scopes": [],
         "engine": null
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/authz/effective-permissions.controller.ts",
@@ -5230,7 +5363,7 @@
         "scopes": [],
         "engine": null
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/permissions/rbac.controller.ts",
@@ -5266,10 +5399,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/insurances/controllers/app-me-insurances.controller.ts",
@@ -5384,10 +5519,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/users/controllers/app-me.controller.ts",
@@ -5485,10 +5622,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/team-join/team-join-applications.app.controller.ts",
@@ -5566,10 +5705,12 @@
           }
         ],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -5869,10 +6010,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts",
@@ -6116,10 +6259,12 @@
           }
         ],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activity-positions.controller.ts",
@@ -6317,10 +6462,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-managed-activity-registrations.controller.ts",
@@ -6541,10 +6688,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-managed-activity-registrations.controller.ts",
@@ -6759,10 +6908,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-managed-activity-registrations.controller.ts",
@@ -6977,10 +7128,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-managed-activity-registrations.controller.ts",
@@ -7159,10 +7312,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-managed-activity-registrations.controller.ts",
@@ -7311,10 +7466,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -7447,10 +7604,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -7601,10 +7760,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-my-registrations.controller.ts",
@@ -7795,12 +7956,17 @@
       "policy": {
         "admission": null,
         "mode": "RBAC",
-        "codes": [],
+        "codes": [
+          {
+            "code": "attachment.upload.content-*",
+            "scope": null
+          }
+        ],
         "require": "all",
         "scopes": [],
         "engine": "rbac-global"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/content/content-admin.controller.ts",
@@ -7970,10 +8136,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-registration-upload-sessions.controller.ts",
@@ -8064,10 +8232,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-registration-upload-sessions.controller.ts",
@@ -8350,10 +8520,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-activity-registrations.controller.ts",
@@ -8576,10 +8748,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/insurances/controllers/app-me-insurances.controller.ts",
@@ -8664,10 +8838,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/users/controllers/app-me.controller.ts",
@@ -8746,10 +8922,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/team-join/team-join-applications.app.controller.ts",
@@ -8834,10 +9012,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/attendances/controllers/app-activity-check-ins.controller.ts",
@@ -8982,10 +9162,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/attendances/controllers/app-activity-check-ins.controller.ts",
@@ -9124,10 +9306,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-my-activity-invitations.controller.ts",
@@ -9239,10 +9423,12 @@
           }
         ],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -9483,10 +9669,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts",
@@ -9683,10 +9871,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts",
@@ -9852,10 +10042,12 @@
           }
         ],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -10085,10 +10277,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -10296,10 +10490,12 @@
           }
         ],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -10500,10 +10696,12 @@
           }
         ],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts",
@@ -10667,10 +10865,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -10785,10 +10985,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -10968,10 +11170,12 @@
           }
         ],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -11117,10 +11321,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts",
@@ -11269,10 +11475,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts",
@@ -11417,7 +11625,7 @@
         "scopes": [],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-managed-activity-onsite-participations.controller.ts",
@@ -11786,10 +11994,12 @@
           }
         ],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activity-positions.controller.ts",
@@ -11969,10 +12179,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -12123,10 +12335,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-managed-activity-registrations.controller.ts",
@@ -12317,10 +12531,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -12423,10 +12639,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -12559,10 +12777,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -12713,10 +12933,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -12855,10 +13077,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -12984,10 +13208,12 @@
           }
         ],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -13184,10 +13410,12 @@
           }
         ],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts",
@@ -13315,10 +13543,12 @@
           }
         ],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts",
@@ -13500,10 +13730,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts",
@@ -13622,10 +13854,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",
@@ -13728,10 +13962,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-registrations/controllers/app-my-registrations.controller.ts",
@@ -13966,10 +14202,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/notifications/notification-app.controller.ts",
@@ -14050,10 +14288,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/notifications/notification-app.controller.ts",
@@ -14117,7 +14357,7 @@
         "scopes": [],
         "engine": null
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/auth/auth.controller.ts",
@@ -14174,7 +14414,7 @@
         "scopes": [],
         "engine": null
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/auth/auth.controller.ts",
@@ -14261,7 +14501,7 @@
         "scopes": [],
         "engine": null
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/auth/auth.controller.ts",
@@ -14366,7 +14606,7 @@
         "scopes": [],
         "engine": null
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/auth/auth.controller.ts",
@@ -14453,7 +14693,7 @@
         "scopes": [],
         "engine": null
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/auth/auth.controller.ts",
@@ -14564,7 +14804,7 @@
         "scopes": [],
         "engine": null
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/auth/auth.controller.ts",
@@ -14630,10 +14870,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/users/controllers/app-me.controller.ts",
@@ -14700,10 +14942,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/users/controllers/app-me.controller.ts",
@@ -14806,10 +15050,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/users/controllers/app-me.controller.ts",
@@ -14918,10 +15164,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/users/controllers/app-me.controller.ts",
@@ -15072,10 +15320,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "self"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activity-feedbacks/controllers/app-activity-feedbacks.controller.ts",
@@ -15160,10 +15410,12 @@
         "mode": "LOGIN_SCOPED",
         "codes": [],
         "require": "all",
-        "scopes": [],
+        "scopes": [
+          "responsibility"
+        ],
         "engine": "authz-scoped"
       },
-      "decisionStatus": "needs-decision",
+      "decisionStatus": "decided",
       "evidence": [
         {
           "file": "src/modules/activities/controllers/app-managed-activities.controller.ts",

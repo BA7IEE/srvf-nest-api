@@ -164,9 +164,11 @@
         "docs/ai-harness/EXTERNAL_IO_INVENTORY.md",
         "docs/ai-harness/ROUTE_AUTHZ.md",
         "docs/archive/reviews/architecture-governance-v4/README.md",
-        "changelog.d/architecture-governance-phase0.added.md"
+        "docs/archive/reviews/architecture-governance-v4/DECISIONS-2026-08-09.md",
+        "changelog.d/architecture-governance-phase0.added.md",
+        "changelog.d/architecture-governance-phase0-gate.added.md"
       ],
-      "why": "架构治理 v4 Phase 0 的其余新增取证产物。五个 harness JSON 已由 harness/** 覆盖，两支扫描/生成器已由 scripts/check-*.ts 与 scripts/generate-*.ts 覆盖；此处补齐此前未落入 selfGuard 的文档与 changelog fragment，保证本 goal 的全部新增文件都走可信红区审批。"
+      "why": "架构治理 v4 Phase 0 的其余新增取证产物、维护者拍板纪要与 A 类翻闸记录。五个 harness JSON 已由 harness/** 覆盖，两支扫描/生成器已由 scripts/check-*.ts 与 scripts/generate-*.ts 覆盖；此处补齐此前未落入 selfGuard 的文档与 changelog fragment，保证本 goal 的全部新增文件都走可信红区审批。"
     }
   ],
   "grantFile": "srvf-redzone-grant.json",
