@@ -1,0 +1,167 @@
+{
+  "schemaVersion": "1.0.0",
+  "recordKind": "observational-baseline",
+  "source": {
+    "sourceRevision": "65475504533ba84fcb7a00a8fa835779f70705e9",
+    "branch": "main",
+    "ciRun": {
+      "id": 31318061317,
+      "name": "CI",
+      "event": "push",
+      "conclusion": "success",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/31318061317",
+      "createdAt": "2026-08-09T14:17:35Z",
+      "updatedAt": "2026-08-09T14:30:30Z"
+    },
+    "collectionMethod": "GitHub Actions latest successful main push CI; test counts taken from job logs",
+    "scopeNote": "This is an observational record, not a deterministic generated registry. Full E2E was not run locally."
+  },
+  "testHealth": {
+    "unit": {
+      "unit": "tests",
+      "total": 5186,
+      "passed": 5113,
+      "failed": 0,
+      "todo": 73,
+      "suiteTotal": 196,
+      "suitePassed": 196,
+      "sourceJob": "Fast checks"
+    },
+    "e2e": {
+      "unit": "tests",
+      "total": 4861,
+      "passed": 4861,
+      "failed": 0,
+      "suiteTotal": 267,
+      "suitePassed": 267,
+      "shards": [
+        {
+          "job": "Contract + E2E (1)",
+          "total": 2587,
+          "passed": 2587,
+          "failed": 0,
+          "suiteTotal": 134,
+          "suitePassed": 134
+        },
+        {
+          "job": "Contract + E2E (2)",
+          "total": 2274,
+          "passed": 2274,
+          "failed": 0,
+          "suiteTotal": 133,
+          "suitePassed": 133
+        }
+      ]
+    },
+    "contract": {
+      "unit": "tests",
+      "total": 875,
+      "passed": 875,
+      "failed": 0,
+      "suiteTotal": 1,
+      "suitePassed": 1,
+      "snapshots": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0
+      },
+      "sourceJob": "Contract + E2E (1)"
+    },
+    "lint": {
+      "unit": "CI step executions",
+      "cold": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "sourceJob": "Fast checks"
+      },
+      "cached": {
+        "total": null,
+        "passed": null,
+        "failed": null,
+        "status": "not-observed-in-cold-run"
+      }
+    },
+    "openapi": {
+      "unit": "CI check executions",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "sourceJob": "Fast checks / Docs guards"
+    }
+  },
+  "requiredChecks": {
+    "branch": "main",
+    "strict": false,
+    "contexts": [
+      "Lint / Typecheck / E2E",
+      "Docker image build",
+      "Diff guards",
+      "Red-zone (trusted)"
+    ],
+    "source": "GitHub branch protection required_status_checks"
+  },
+  "jobDurations": [
+    {
+      "job": "Docker image build",
+      "durationSeconds": 72,
+      "conclusion": "success"
+    },
+    {
+      "job": "Diff guards",
+      "durationSeconds": 18,
+      "conclusion": "success"
+    },
+    {
+      "job": "Change set",
+      "durationSeconds": 6,
+      "conclusion": "success"
+    },
+    {
+      "job": "Contract + E2E (1)",
+      "durationSeconds": 758,
+      "conclusion": "success"
+    },
+    {
+      "job": "Contract + E2E (2)",
+      "durationSeconds": 727,
+      "conclusion": "success"
+    },
+    {
+      "job": "Fast checks",
+      "durationSeconds": 578,
+      "conclusion": "success"
+    },
+    {
+      "job": "Lint / Typecheck / E2E",
+      "durationSeconds": 2,
+      "conclusion": "success"
+    }
+  ],
+  "knownFlaky": [
+    {
+      "id": "auth-jwt-guard",
+      "status": "watchlist",
+      "latestRunObservation": "passed in this aggregate run; no frequency claim is made"
+    },
+    {
+      "id": "users-last-super-admin",
+      "status": "watchlist",
+      "latestRunObservation": "passed in this aggregate run; no frequency claim is made"
+    },
+    {
+      "id": "attendances-state-transition",
+      "status": "watchlist",
+      "latestRunObservation": "passed in this aggregate run; no frequency claim is made"
+    }
+  ],
+  "longRunningRedItems": [],
+  "failureClassification": {
+    "scope": "latest successful cold CI only; zero values are not a historical prevalence claim",
+    "infra": 0,
+    "flake": 0,
+    "regression": 0,
+    "environment": 0,
+    "unclassified": 0
+  }
+}

@@ -1,0 +1,768 @@
+{
+  "schemaVersion": "1.0.0",
+  "generatorVersion": "1.0.0",
+  "inputDigest": "sha256:3157f91e1d2527a4bb8ac93a8fb632659df25e1abd7510c1dc194329483d1cf8",
+  "inputClosure": {
+    "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
+    "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
+    "noTimestampOrGitSha": true
+  },
+  "domains": {
+    "platform-core": {
+      "confirmed": true,
+      "modules": [
+        "ai",
+        "attachment-configs",
+        "attachments",
+        "audit-logs",
+        "dictionaries",
+        "health",
+        "meta",
+        "storage"
+      ]
+    },
+    "platform-access": { "confirmed": true, "modules": ["authz", "permissions", "role-bindings"] },
+    "comms": {
+      "confirmed": true,
+      "modules": ["announcement-import", "notifications", "sms", "wechat", "wecom"]
+    },
+    "identity-org": {
+      "confirmed": false,
+      "modules": [
+        "auth",
+        "emergency-contacts",
+        "member-departments",
+        "member-profiles",
+        "members",
+        "organizations",
+        "position-assignments",
+        "positions",
+        "realname",
+        "supervision-assignments",
+        "users"
+      ],
+      "observedSubdomains": {
+        "accounts": { "confirmed": false },
+        "people": { "confirmed": false },
+        "structure": { "confirmed": false }
+      }
+    },
+    "engagement": { "confirmed": true, "modules": ["recruitment", "team-join"] },
+    "participation": {
+      "confirmed": false,
+      "modules": [
+        "activities",
+        "activity-feedbacks",
+        "activity-registrations",
+        "attendances",
+        "contribution-rules"
+      ],
+      "observedSubdomains": {
+        "lifecycle": { "confirmed": false },
+        "registration": { "confirmed": false },
+        "attendance": { "confirmed": false },
+        "settlement-ledger": { "confirmed": false }
+      }
+    },
+    "insurance": { "confirmed": true, "modules": ["insurances"] },
+    "credentials": { "confirmed": true, "modules": ["certificates"] },
+    "content": { "confirmed": true, "modules": ["content"] }
+  },
+  "moduleOwnership": {
+    "ai": { "domain": "platform-core", "confirmed": false },
+    "attachment-configs": { "domain": "platform-core", "confirmed": true },
+    "attachments": { "domain": "platform-core", "confirmed": true },
+    "audit-logs": { "domain": "platform-core", "confirmed": true },
+    "dictionaries": { "domain": "platform-core", "confirmed": true },
+    "health": { "domain": "platform-core", "confirmed": true },
+    "meta": { "domain": "platform-core", "confirmed": true },
+    "storage": { "domain": "platform-core", "confirmed": true },
+    "authz": { "domain": "platform-access", "confirmed": true },
+    "permissions": { "domain": "platform-access", "confirmed": true },
+    "role-bindings": { "domain": "platform-access", "confirmed": true },
+    "announcement-import": { "domain": "comms", "confirmed": true },
+    "notifications": { "domain": "comms", "confirmed": true },
+    "sms": { "domain": "comms", "confirmed": true },
+    "wechat": { "domain": "comms", "confirmed": true },
+    "wecom": { "domain": "comms", "confirmed": true },
+    "auth": { "domain": "identity-org", "subdomain": "accounts", "confirmed": false },
+    "emergency-contacts": { "domain": "identity-org", "subdomain": "people", "confirmed": false },
+    "member-departments": {
+      "domain": "identity-org",
+      "subdomain": "structure",
+      "confirmed": false
+    },
+    "member-profiles": { "domain": "identity-org", "subdomain": "people", "confirmed": false },
+    "members": { "domain": "identity-org", "subdomain": "people", "confirmed": false },
+    "organizations": { "domain": "identity-org", "subdomain": "structure", "confirmed": false },
+    "position-assignments": {
+      "domain": "identity-org",
+      "subdomain": "structure",
+      "confirmed": false
+    },
+    "positions": { "domain": "identity-org", "subdomain": "structure", "confirmed": false },
+    "realname": { "domain": "identity-org", "subdomain": "people", "confirmed": false },
+    "supervision-assignments": {
+      "domain": "identity-org",
+      "subdomain": "structure",
+      "confirmed": false
+    },
+    "users": { "domain": "identity-org", "subdomain": "accounts", "confirmed": false },
+    "recruitment": { "domain": "engagement", "confirmed": true },
+    "team-join": { "domain": "engagement", "confirmed": true },
+    "activities": { "domain": "participation", "subdomain": "lifecycle", "confirmed": false },
+    "activity-feedbacks": {
+      "domain": "participation",
+      "subdomain": "attendance",
+      "confirmed": false
+    },
+    "activity-registrations": {
+      "domain": "participation",
+      "subdomain": "registration",
+      "confirmed": false
+    },
+    "attendances": { "domain": "participation", "subdomain": "attendance", "confirmed": false },
+    "contribution-rules": {
+      "domain": "participation",
+      "subdomain": "settlement-ledger",
+      "confirmed": false
+    },
+    "insurances": { "domain": "insurance", "confirmed": true },
+    "certificates": { "domain": "credentials", "confirmed": true },
+    "content": { "domain": "content", "confirmed": true }
+  },
+  "modelOwnership": {
+    "User": {
+      "domain": "identity-org",
+      "ownerModule": "users",
+      "subdomain": "accounts",
+      "confirmed": false
+    },
+    "WecomIdentity": {
+      "domain": "identity-org",
+      "ownerModule": "users",
+      "subdomain": "accounts",
+      "confirmed": false
+    },
+    "DictType": { "domain": "platform-core", "ownerModule": "dictionaries", "confirmed": true },
+    "DictItem": { "domain": "platform-core", "ownerModule": "dictionaries", "confirmed": true },
+    "Organization": {
+      "domain": "identity-org",
+      "ownerModule": "organizations",
+      "subdomain": "structure",
+      "confirmed": false
+    },
+    "OrganizationClosure": {
+      "domain": "identity-org",
+      "ownerModule": "organizations",
+      "subdomain": "structure",
+      "confirmed": false
+    },
+    "OrganizationPosition": {
+      "domain": "identity-org",
+      "ownerModule": "positions",
+      "subdomain": "structure",
+      "confirmed": false
+    },
+    "OrganizationPositionRule": {
+      "domain": "identity-org",
+      "ownerModule": "positions",
+      "subdomain": "structure",
+      "confirmed": false
+    },
+    "OrganizationPositionAssignment": {
+      "domain": "identity-org",
+      "ownerModule": "position-assignments",
+      "subdomain": "structure",
+      "confirmed": false
+    },
+    "OrganizationSupervisionAssignment": {
+      "domain": "identity-org",
+      "ownerModule": "supervision-assignments",
+      "subdomain": "structure",
+      "confirmed": false
+    },
+    "Member": {
+      "domain": "identity-org",
+      "ownerModule": "members",
+      "subdomain": "people",
+      "confirmed": false
+    },
+    "MemberOrganizationMembership": {
+      "domain": "identity-org",
+      "ownerModule": "member-departments",
+      "subdomain": "structure",
+      "confirmed": false
+    },
+    "MemberProfile": {
+      "domain": "identity-org",
+      "ownerModule": "member-profiles",
+      "subdomain": "people",
+      "confirmed": false
+    },
+    "EmergencyContact": {
+      "domain": "identity-org",
+      "ownerModule": "emergency-contacts",
+      "subdomain": "people",
+      "confirmed": false
+    },
+    "Certificate": { "domain": "credentials", "ownerModule": "certificates", "confirmed": true },
+    "CertificateStandard": {
+      "domain": "credentials",
+      "ownerModule": "certificates",
+      "confirmed": true
+    },
+    "CertificateRecognitionPolicy": {
+      "domain": "credentials",
+      "ownerModule": "certificates",
+      "confirmed": true
+    },
+    "CertificateRecognitionIssuer": {
+      "domain": "credentials",
+      "ownerModule": "certificates",
+      "confirmed": true
+    },
+    "RecruitmentCertificateClaim": {
+      "domain": "engagement",
+      "ownerModule": "recruitment",
+      "confirmed": true
+    },
+    "RecruitmentCycle": { "domain": "engagement", "ownerModule": "recruitment", "confirmed": true },
+    "RecruitmentApplication": {
+      "domain": "engagement",
+      "ownerModule": "recruitment",
+      "confirmed": true
+    },
+    "RecruitmentIdentitySession": {
+      "domain": "engagement",
+      "ownerModule": "recruitment",
+      "confirmed": true
+    },
+    "RecruitmentOcrDailyCounter": {
+      "domain": "engagement",
+      "ownerModule": "recruitment",
+      "confirmed": true
+    },
+    "Activity": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "ActivityPublishReview": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "ActivityTemplate": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "ActivityRuleSnapshot": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "ActivityResponsibilityAssignment": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "ActivityPosition": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "ActivitySession": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "ActivitySessionPosition": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "ActivityParticipationIdentity": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "ActivityParticipationRevision": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "ActivityEvidenceState": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "EvidenceSeal": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "ParticipantServiceSegmentRevision": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "AttendanceSettlementRun": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "AttendanceSettlementVersion": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "SettlementReviewAction": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "ParticipantSettlementResultRevision": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "ParticipantSettlementDay": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "LedgerPostingBatch": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "ParticipationLedgerEntry": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "LedgerEntryReversalClaim": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "MemberContributionDayState": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "ActivitySettlementClosureRevision": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "ActivityBatchJob": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "ActivityBatchJobItem": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": false
+    },
+    "ActivityRegistration": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": false
+    },
+    "ActivityCheckIn": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": false
+    },
+    "ActivityCapacityBucket": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": false
+    },
+    "CapacityReservation": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": false
+    },
+    "ActivityRegistrationRevision": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": false
+    },
+    "RegistrationFormVersion": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": false
+    },
+    "RegistrationFormField": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": false
+    },
+    "RegistrationFormAnswer": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": false
+    },
+    "RegistrationUploadSession": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": false
+    },
+    "ActivityQualificationRuleSet": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": false
+    },
+    "ActivityQualificationRule": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": false
+    },
+    "QualificationEvaluationSnapshot": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": false
+    },
+    "ActivityInvitation": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": false
+    },
+    "ActivityVisitor": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": false
+    },
+    "ActivityPositionPreference": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": false
+    },
+    "ActivityAllocationBatch": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": false
+    },
+    "ActivityAllocationCandidate": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": false
+    },
+    "ActivityReservedQuotaGroup": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": false
+    },
+    "ActivityFeedback": {
+      "domain": "participation",
+      "ownerModule": "activity-feedbacks",
+      "subdomain": "attendance",
+      "confirmed": false
+    },
+    "AttendanceSheet": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": false
+    },
+    "AttendanceRecord": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": false
+    },
+    "AttendanceQrCredential": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": false
+    },
+    "AttendancePunchEvent": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": false
+    },
+    "AttendanceCorrectionRequest": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": false
+    },
+    "CorrectionApplication": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": false
+    },
+    "ContributionRule": {
+      "domain": "participation",
+      "ownerModule": "contribution-rules",
+      "subdomain": "settlement-ledger",
+      "confirmed": false
+    },
+    "AuditLog": { "domain": "platform-core", "ownerModule": "audit-logs", "confirmed": true },
+    "RbacRole": { "domain": "platform-access", "ownerModule": "permissions", "confirmed": true },
+    "Permission": { "domain": "platform-access", "ownerModule": "permissions", "confirmed": true },
+    "RolePermission": {
+      "domain": "platform-access",
+      "ownerModule": "permissions",
+      "confirmed": true
+    },
+    "RoleBinding": {
+      "domain": "platform-access",
+      "ownerModule": "role-bindings",
+      "confirmed": true
+    },
+    "OrganizationPositionRolePolicy": {
+      "domain": "platform-access",
+      "ownerModule": "role-bindings",
+      "confirmed": true
+    },
+    "Attachment": { "domain": "platform-core", "ownerModule": "attachments", "confirmed": true },
+    "StorageObject": { "domain": "platform-core", "ownerModule": "storage", "confirmed": true },
+    "StorageObjectOperation": {
+      "domain": "platform-core",
+      "ownerModule": "storage",
+      "confirmed": true
+    },
+    "StorageSettings": { "domain": "platform-core", "ownerModule": "storage", "confirmed": true },
+    "AttachmentTypeConfig": {
+      "domain": "platform-core",
+      "ownerModule": "attachment-configs",
+      "confirmed": true
+    },
+    "AttachmentMimeConfig": {
+      "domain": "platform-core",
+      "ownerModule": "attachment-configs",
+      "confirmed": true
+    },
+    "AttachmentSizeLimitConfig": {
+      "domain": "platform-core",
+      "ownerModule": "attachment-configs",
+      "confirmed": true
+    },
+    "RefreshToken": {
+      "domain": "identity-org",
+      "ownerModule": "auth",
+      "subdomain": "accounts",
+      "confirmed": false
+    },
+    "WecomAuthAttempt": {
+      "domain": "identity-org",
+      "ownerModule": "auth",
+      "subdomain": "accounts",
+      "confirmed": false
+    },
+    "SmsSettings": { "domain": "comms", "ownerModule": "sms", "confirmed": true },
+    "SmsVerificationCode": { "domain": "comms", "ownerModule": "sms", "confirmed": true },
+    "SmsSendLog": { "domain": "comms", "ownerModule": "sms", "confirmed": true },
+    "WechatSettings": { "domain": "comms", "ownerModule": "wechat", "confirmed": true },
+    "MemberInsurance": { "domain": "insurance", "ownerModule": "insurances", "confirmed": true },
+    "TeamInsurancePolicy": {
+      "domain": "insurance",
+      "ownerModule": "insurances",
+      "confirmed": true
+    },
+    "TeamInsuranceCoverage": {
+      "domain": "insurance",
+      "ownerModule": "insurances",
+      "confirmed": true
+    },
+    "InsuranceEligibilityEvidence": {
+      "domain": "insurance",
+      "ownerModule": "insurances",
+      "confirmed": true
+    },
+    "RealnameVerificationSettings": {
+      "domain": "identity-org",
+      "ownerModule": "realname",
+      "subdomain": "people",
+      "confirmed": false
+    },
+    "TeamJoinCycle": { "domain": "engagement", "ownerModule": "team-join", "confirmed": true },
+    "TeamJoinApplication": {
+      "domain": "engagement",
+      "ownerModule": "team-join",
+      "confirmed": true
+    },
+    "Content": { "domain": "content", "ownerModule": "content", "confirmed": true },
+    "Notification": { "domain": "comms", "ownerModule": "notifications", "confirmed": true },
+    "NotificationRead": { "domain": "comms", "ownerModule": "notifications", "confirmed": true },
+    "NotificationDelivery": {
+      "domain": "comms",
+      "ownerModule": "notifications",
+      "confirmed": true
+    },
+    "WechatSubscriptionQuota": {
+      "domain": "comms",
+      "ownerModule": "notifications",
+      "confirmed": true
+    },
+    "WechatSubscribeTemplate": {
+      "domain": "comms",
+      "ownerModule": "notifications",
+      "confirmed": true
+    },
+    "NotificationOutboxIntent": {
+      "domain": "comms",
+      "ownerModule": "notifications",
+      "confirmed": true
+    },
+    "ThrottlerBucket": { "domain": "platform-core", "ownerModule": "health", "confirmed": true },
+    "WecomSettings": { "domain": "comms", "ownerModule": "wecom", "confirmed": true }
+  },
+  "allowedEdges": [
+    { "from": "identity-org", "to": "platform-core", "kind": "public-surface" },
+    { "from": "identity-org", "to": "platform-access", "kind": "public-surface" },
+    { "from": "identity-org", "to": "comms", "kind": "public-surface" },
+    { "from": "engagement", "to": "identity-org", "kind": "declared-business" },
+    { "from": "engagement", "to": "credentials", "kind": "declared-business" },
+    { "from": "engagement", "to": "participation", "kind": "declared-business" },
+    { "from": "engagement", "to": "platform-core", "kind": "public-surface" },
+    { "from": "engagement", "to": "platform-access", "kind": "public-surface" },
+    { "from": "engagement", "to": "comms", "kind": "public-surface" },
+    { "from": "participation", "to": "identity-org", "kind": "declared-business" },
+    { "from": "participation", "to": "insurance", "kind": "declared-business" },
+    { "from": "participation", "to": "platform-core", "kind": "public-surface" },
+    { "from": "participation", "to": "platform-access", "kind": "public-surface" },
+    { "from": "participation", "to": "comms", "kind": "public-surface" },
+    { "from": "insurance", "to": "identity-org", "kind": "declared-business" },
+    { "from": "insurance", "to": "credentials", "kind": "declared-business" },
+    { "from": "insurance", "to": "platform-core", "kind": "public-surface" },
+    { "from": "insurance", "to": "platform-access", "kind": "public-surface" },
+    { "from": "credentials", "to": "identity-org", "kind": "declared-business" },
+    { "from": "credentials", "to": "platform-core", "kind": "public-surface" },
+    { "from": "credentials", "to": "platform-access", "kind": "public-surface" },
+    { "from": "content", "to": "platform-core", "kind": "declared-business" },
+    { "from": "content", "to": "platform-access", "kind": "public-surface" },
+    { "from": "content", "to": "comms", "kind": "public-surface" },
+    { "from": "comms", "to": "identity-org", "kind": "read-only-query" },
+    { "from": "comms", "to": "platform-core", "kind": "public-surface" },
+    { "from": "comms", "to": "platform-access", "kind": "public-surface" },
+    { "from": "platform-access", "to": "platform-core", "kind": "public-surface" }
+  ],
+  "publicSurface": {
+    "confirmed": false,
+    "purpose": "Phase 0 declaration slots only; exact exports require maintainer confirmation before enforcement.",
+    "byDomain": {
+      "platform-core": {
+        "modules": ["storage", "attachments", "attachment-configs", "dictionaries", "audit-logs"],
+        "exports": []
+      },
+      "platform-access": {
+        "modules": ["permissions", "authz", "role-bindings"],
+        "exports": ["rbac.can", "authz.can", "authz.explain", "stable registration token"]
+      },
+      "identity-org": {
+        "modules": ["users", "members", "member-departments"],
+        "exports": ["kernel queries", "lifecycle primitives"]
+      },
+      "credentials": {
+        "modules": ["certificates"],
+        "exports": ["certificate issuance primitive (proposed)"]
+      }
+    }
+  },
+  "kernel": {
+    "confirmed": false,
+    "primitives": [
+      {
+        "name": "app-identity.resolver",
+        "path": "src/modules/users/app-identity.resolver.ts",
+        "ownerDomain": "identity-org",
+        "confirmed": false
+      },
+      {
+        "name": "member-lifecycle-lock",
+        "path": "src/modules/members/member-lifecycle-lock.ts",
+        "ownerDomain": "identity-org",
+        "confirmed": false
+      },
+      {
+        "name": "membership-term-state-machine",
+        "path": "src/modules/member-departments/membership-term-state-machine.ts",
+        "ownerDomain": "identity-org",
+        "confirmed": false
+      },
+      {
+        "name": "wecom-identity-revoke",
+        "path": "src/modules/users/wecom-identity-revoke.ts",
+        "ownerDomain": "identity-org",
+        "confirmed": false
+      }
+    ],
+    "kernelReadFields": {
+      "confirmed": false,
+      "fields": {
+        "User": ["id", "username", "nickname", "status", "memberId"],
+        "Member": ["id", "memberNo", "displayName", "gradeCode", "status"],
+        "Organization": ["id", "name", "code", "nodeTypeCode", "status", "parentId"]
+      }
+    },
+    "kernelPredicateFields": {
+      "confirmed": false,
+      "fields": {
+        "User": ["id", "status", "memberId"],
+        "Member": ["id", "status", "gradeCode"],
+        "Organization": ["id", "status", "nodeTypeCode", "parentId"]
+      }
+    }
+  },
+  "crossDomainReadAllowlist": [],
+  "decisionsPending": [
+    "identity-org and participation governance-domain boundaries and observed subdomains",
+    "auth belongs to identity-org.accounts",
+    "ai placeholder domain assignment",
+    "kernelReadFields and kernelPredicateFields field lists",
+    "allowed edges and public surface declarations"
+  ]
+}

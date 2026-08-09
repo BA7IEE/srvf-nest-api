@@ -432,6 +432,15 @@
 - **排班约束**:schema-touching lane ≤1(合同 §14.1 与仓库 lane 协议一致);
   第 1、2 批未完成前禁止把二维码 / 批量代签 / 离线入口开放到真实环境(修订说明 §10)。
 
+### P1-29 架构治理 Phase 0 — 拍照·登记·健康基线（执行中；纯取证，零业务代码）
+
+- **依据**：[v4 冻结方案](../archive/reviews/architecture-governance-v4/README.md)；[本 goal 的 Phase 0 交付物](../archive/reviews/architecture-governance-v4/README.md#12-phase-0-真实交付物清单)。
+- **执行位**：`harness/domain-map.json`、`architecture-debt.json`、`state-machines.json`、
+  `route-authz-classification.json`、`baseline-health.json` 与 `check-boundaries` / Route Authorization
+  Policy 生成器；首轮恒 report 级，未满足 Exit Criteria 前不得翻闸。
+- **边界**：仅治理登记、报告与健康基线；不改 `src/**`、Prisma schema/migration、测试行为或 CI
+  控制面，不执行 Phase 1 Guard / ALS / enforce。128 个 `[auth]` 结构化定性、域/owner 与 kernel 字段均交维护者拍板。
+
 ### Content / Notification 可见性业务 Decision — **✅ 已最终拍板(2026-07-27)**
 
 - **业务负责人最终确认日期：2026-07-27**。
