@@ -1,0 +1,326 @@
+{
+  "schemaVersion": "1.0.0",
+  "generatorVersion": "1.0.0",
+  "inputDigest": "sha256:555138292c267738b5db5532d7c18ed34f112ce092965f3e568ef632e2ef15aa",
+  "headerNote": "登记≠已治理。全部条目均为 Phase 0 inventory，不构成状态机治理承诺。",
+  "entries": [
+    {
+      "model": "Activity",
+      "field": "registrationModeCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "Activity",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "ActivityAllocationBatch",
+      "field": "modeCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "ActivityAllocationBatch",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "ActivityBatchJob",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "ActivityBatchJobItem",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "ActivityInvitation",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "ActivityParticipationIdentity",
+      "field": "currentStatusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "ActivityParticipationRevision",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "ActivityPublishReview",
+      "field": "status",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "ActivityQualificationRuleSet",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "ActivityRegistration",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "ActivityReservedQuotaGroup",
+      "field": "fallbackMode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "ActivityResponsibilityAssignment",
+      "field": "status",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "ActivitySession",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "ActivitySettlementClosureRevision",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "ActivityTemplate",
+      "field": "defaultRegistrationModeCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "ActivityTemplate",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "AttendanceCorrectionRequest",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "AttendanceQrCredential",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "AttendanceRecord",
+      "field": "attendanceStatusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "AttendanceSettlementRun",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "AttendanceSettlementVersion",
+      "field": "returnFromStage",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "AttendanceSettlementVersion",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "AttendanceSheet",
+      "field": "returnedFromStageCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "AttendanceSheet",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "CapacityReservation",
+      "field": "status",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "Certificate",
+      "field": "certStatusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "Content",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "CorrectionApplication",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "EvidenceSeal",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "LedgerPostingBatch",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "MemberInsurance",
+      "field": "reviewStatusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "Notification",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "NotificationDelivery",
+      "field": "status",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "NotificationOutboxIntent",
+      "field": "status",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "Organization",
+      "field": "establishmentStatusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "ParticipantServiceSegmentRevision",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "ParticipantSettlementResultRevision",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "RecruitmentApplication",
+      "field": "eliminationStage",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "RecruitmentApplication",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "RecruitmentCycle",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "RegistrationFormVersion",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "RegistrationUploadSession",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "SettlementReviewAction",
+      "field": "stageCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "StorageObject",
+      "field": "state",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "StorageObjectOperation",
+      "field": "effectState",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "StorageObjectOperation",
+      "field": "status",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "TeamJoinApplication",
+      "field": "eliminationStage",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "TeamJoinApplication",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "TeamJoinCycle",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "WecomAuthAttempt",
+      "field": "status",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "WecomIdentity",
+      "field": "status",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    }
+  ]
+}
