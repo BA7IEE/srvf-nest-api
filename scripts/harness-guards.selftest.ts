@@ -13,6 +13,7 @@
 
 import { execFileSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { checkFragment, mergeIntoChangelog } from './changelog-merge';
 import {
@@ -771,6 +772,170 @@ checkEq(
 
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Phase 0 — 架构治理登记表 / 生成器的阳性对照
+//
+// Phase 0 的扫描器仍是 report-only，但 inputDigest 是「这份盘点是否对应当前输入」
+// 的唯一新鲜度证据。只断言当前 --check 为绿还不够：若把 digest 计算缩成常量，
+// 绿得再漂亮也是假绿。因此在临时副本中实际改动输入文件，要求两个入口立刻拒绝。
+// 临时副本避免碰 src/ 与 prisma，既不污染业务工作树，也不会把测试行为带入业务代码。
+// ---------------------------------------------------------------------------
+{
+  const REPO = path.resolve(__dirname, '..');
+  const read = (rel: string): string => fs.readFileSync(path.join(REPO, rel), 'utf8');
+  const registry = JSON.parse(read('harness/redzone.json')) as {
+    selfGuard: Array<{ globs: string[] }>;
+  };
+  const selfGlobs = registry.selfGuard.flatMap((entry) => entry.globs);
+  const phase0Files: Array<readonly [string, string]> = [
+    ['harness/domain-map.json', 'harness/**'],
+    ['harness/architecture-debt.json', 'harness/**'],
+    ['harness/state-machines.json', 'harness/**'],
+    ['harness/route-authz-classification.json', 'harness/**'],
+    ['harness/baseline-health.json', 'harness/**'],
+    ['scripts/check-boundaries.ts', 'scripts/check-*.ts'],
+    ['scripts/generate-authz-manifest.ts', 'scripts/generate-*.ts'],
+    ['docs/ai-harness/BASELINE_HEALTH.md', 'docs/ai-harness/BASELINE_HEALTH.md'],
+    ['docs/ai-harness/EXTERNAL_IO_INVENTORY.md', 'docs/ai-harness/EXTERNAL_IO_INVENTORY.md'],
+    ['docs/ai-harness/ROUTE_AUTHZ.md', 'docs/ai-harness/ROUTE_AUTHZ.md'],
+    [
+      'docs/archive/reviews/architecture-governance-v4/README.md',
+      'docs/archive/reviews/architecture-governance-v4/README.md',
+    ],
+    ['changelog.d/architecture-governance-phase0.added.md', 'changelog.d/architecture-governance-phase0.added.md'],
+  ];
+  for (const [file, glob] of phase0Files) {
+    check(
+      `P0 selfGuard:Phase 0 新文件 ${file} 已由 ${glob} 收编`,
+      selfGlobs.includes(glob),
+      '新增取证产物若未进入 selfGuard，可在同一 PR 内静默篡改基线或生成器。',
+    );
+  }
+
+  const pkg = JSON.parse(read('package.json')) as { scripts: Record<string, string> };
+  const expectedScripts: Record<string, string> = {
+    'docs:boundaries': 'tsx scripts/check-boundaries.ts --violations',
+    'docs:boundaries:check': 'tsx scripts/check-boundaries.ts --metadata',
+    'docs:authz': 'tsx scripts/generate-authz-manifest.ts --write',
+    'docs:authz:check': 'tsx scripts/generate-authz-manifest.ts --check',
+  };
+  for (const [name, command] of Object.entries(expectedScripts)) {
+    checkEq(`P0 package:${name} 接到物理入口`, pkg.scripts[name], command);
+  }
+
+  const ci = codeOnly(read('.github/workflows/ci.yml'));
+  check(
+    'P0 ci:边界 / 授权清单仅以恒 exit 0 的 report-only 方式运行',
+    ci.includes('- name: Architecture governance reports (report-only)') &&
+      ci.includes('pnpm docs:boundaries || true') &&
+      ci.includes('pnpm docs:authz:check || true'),
+    '报告步骤缺失或会把 Phase 0 盘点误升级为硬门禁。',
+  );
+
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'srvf-phase0-input-digest-'));
+  const copyIntoFixture = (rel: string): void => {
+    const source = path.join(REPO, rel);
+    const target = path.join(fixtureRoot, rel);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.cpSync(source, target, { recursive: true });
+  };
+  const runFixture = (script: string, args: string[]): { code: number; out: string } => {
+    const result = spawnSync(
+      path.join(REPO, 'node_modules', '.bin', 'tsx'),
+      [path.join(fixtureRoot, script), ...args],
+      { cwd: fixtureRoot, encoding: 'utf8' },
+    );
+    return {
+      code: result.status ?? -1,
+      out: `${result.stdout ?? ''}${result.stderr ?? ''}`,
+    };
+  };
+  const mutateInputAndRun = (
+    rel: string,
+    script: string,
+    args: string[],
+  ): { code: number; out: string } => {
+    const target = path.join(fixtureRoot, rel);
+    const original = fs.readFileSync(target, 'utf8');
+    fs.appendFileSync(target, '\n// Phase 0 selftest input mutation\n', 'utf8');
+    try {
+      return runFixture(script, args);
+    } finally {
+      fs.writeFileSync(target, original, 'utf8');
+    }
+  };
+
+  try {
+    for (const rel of [
+      'src',
+      'prisma/schema.prisma',
+      'harness/domain-map.json',
+      'harness/state-machines.json',
+      'harness/route-authz-classification.json',
+      'docs/ai-harness/ROUTE_AUTHZ.md',
+      'test/contract/openapi.contract-spec.ts',
+      'scripts/check-boundaries.ts',
+      'scripts/generate-authz-manifest.ts',
+    ]) {
+      copyIntoFixture(rel);
+    }
+    fs.symlinkSync(path.join(REPO, 'node_modules'), path.join(fixtureRoot, 'node_modules'), 'dir');
+
+    checkEq(
+      'P0 boundaries:临时副本 --metadata 的干净输入通过',
+      runFixture('scripts/check-boundaries.ts', ['--metadata']).code,
+      0,
+    );
+    const staleDomainMap = mutateInputAndRun(
+      'src/app.module.ts',
+      'scripts/check-boundaries.ts',
+      ['--metadata'],
+    );
+    check(
+      'P0 inputDigest 阳性:触碰任一 domain-map 输入文件必使 metadata 拒绝',
+      staleDomainMap.code !== 0 && staleDomainMap.out.includes('inputDigest stale'),
+      staleDomainMap.out,
+    );
+    const staleStateMachines = mutateInputAndRun(
+      'prisma/schema.prisma',
+      'scripts/check-boundaries.ts',
+      ['--metadata'],
+    );
+    check(
+      'P0 inputDigest 阳性:触碰 state-machine 输入文件必使登记表拒绝',
+      staleStateMachines.code !== 0 &&
+        staleStateMachines.out.includes('state-machines.json.inputDigest stale'),
+      staleStateMachines.out,
+    );
+
+    checkEq(
+      'P0 authz:临时副本 --check 的干净输入通过',
+      runFixture('scripts/generate-authz-manifest.ts', ['--check']).code,
+      0,
+    );
+    const staleAuthz = mutateInputAndRun(
+      'src/app.module.ts',
+      'scripts/generate-authz-manifest.ts',
+      ['--check'],
+    );
+    check(
+      'P0 inputDigest 阳性:触碰任一 authz 输入文件必使生成器拒绝',
+      staleAuthz.code !== 0 && staleAuthz.out.includes('classification inputDigest stale'),
+      staleAuthz.out,
+    );
+  } catch (error) {
+    check(
+      'P0 inputDigest 阳性:临时副本可真实执行登记表与生成器',
+      false,
+      error instanceof Error ? error.message : String(error),
+    );
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
+
 // R5-05 — Jest discovery/haste map 必须同时隔离两类仓内 worktree
 const JEST_CONFIGS = [
   ['unit', unitJestConfig],
@@ -1419,6 +1584,31 @@ for (const [configName, config] of JEST_CONFIGS) {
         glob: 'test/contract/**',
         yes: ['test/contract/openapi.contract-spec.ts'],
         no: ['test/contracts.ts'],
+      },
+      {
+        glob: 'docs/ai-harness/BASELINE_HEALTH.md',
+        yes: ['docs/ai-harness/BASELINE_HEALTH.md'],
+        no: ['docs/ai-harness/BASELINE_HEALTH-draft.md'],
+      },
+      {
+        glob: 'docs/ai-harness/EXTERNAL_IO_INVENTORY.md',
+        yes: ['docs/ai-harness/EXTERNAL_IO_INVENTORY.md'],
+        no: ['docs/ai-harness/EXTERNAL_IO_INVENTORY-draft.md'],
+      },
+      {
+        glob: 'docs/ai-harness/ROUTE_AUTHZ.md',
+        yes: ['docs/ai-harness/ROUTE_AUTHZ.md'],
+        no: ['docs/ai-harness/ROUTE_AUTHZ-draft.md'],
+      },
+      {
+        glob: 'docs/archive/reviews/architecture-governance-v4/README.md',
+        yes: ['docs/archive/reviews/architecture-governance-v4/README.md'],
+        no: ['docs/archive/reviews/architecture-governance-v4/README-draft.md'],
+      },
+      {
+        glob: 'changelog.d/architecture-governance-phase0.added.md',
+        yes: ['changelog.d/architecture-governance-phase0.added.md'],
+        no: ['changelog.d/architecture-governance-phase0-draft.added.md'],
       },
       { glob: 'package.json', yes: ['package.json'], no: ['src/vendor/package.json'] },
       { glob: 'pnpm-lock.yaml', yes: ['pnpm-lock.yaml'], no: ['pnpm-workspace.yaml'] },

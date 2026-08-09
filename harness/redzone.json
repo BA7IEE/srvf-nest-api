@@ -156,6 +156,17 @@
       ],
       "why": "决定「检查本身还成不成立」的那一层。2026-07-29 跨模型评审 F2 实测 12/12 全部不在保护内:把 package.json 里 lint / typecheck / test 的脚本体改成恒成功,fast 与 slow 两个 job 就全绿 —— 检查名一字未动,CI 一片绿,而什么都没跑。",
       "scopeNote": "逐条理由:package.json = 所有检查命令的真身;pnpm-lock.yaml = 依赖真身(换掉 eslint / tsc 即换掉裁判);eslint.config.mjs = **执法块的接线**(eslint.harness.mjs 早在保护内,但把 `...harnessConfigBlocks` 从接线里删掉,17 条规则静默全失效、lint 照绿 —— 已实测:同一违规文件 exit 1 → exit 0);三份 tsconfig + prisma/tsconfig.eslint.json = 类型检查与 lint 的覆盖范围(缩 include 即缩掉被检查的代码);三份 jest config = 跑哪些 spec(testRegex 一改,e2e 可以一个用例都不跑却报绿);nest-cli.json = 构建入口;scripts/harness-needs.ts = 授权预算工具,改它可以让它少报需要授权的路径,把维护者骗成「这次不用授权」。prisma/tsconfig.eslint.json 是 DoD 清单外的一条,因为锁了 eslint.config.mjs 却不锁它指向的 project 等于留门 —— 在 PR 里已具名说明,不是顺手扩集。"
+    },
+    {
+      "id": "architecture-governance-phase0-artifacts",
+      "globs": [
+        "docs/ai-harness/BASELINE_HEALTH.md",
+        "docs/ai-harness/EXTERNAL_IO_INVENTORY.md",
+        "docs/ai-harness/ROUTE_AUTHZ.md",
+        "docs/archive/reviews/architecture-governance-v4/README.md",
+        "changelog.d/architecture-governance-phase0.added.md"
+      ],
+      "why": "架构治理 v4 Phase 0 的其余新增取证产物。五个 harness JSON 已由 harness/** 覆盖，两支扫描/生成器已由 scripts/check-*.ts 与 scripts/generate-*.ts 覆盖；此处补齐此前未落入 selfGuard 的文档与 changelog fragment，保证本 goal 的全部新增文件都走可信红区审批。"
     }
   ],
   "grantFile": "srvf-redzone-grant.json",
