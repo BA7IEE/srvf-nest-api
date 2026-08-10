@@ -990,12 +990,12 @@ async function seedPositionRules(prisma: PrismaClient): Promise<void> {
 // 跳过 4 条 attachment.*(沿用户拍板方案 A;留 C-7 attachments)。
 // 注:code 必须满足 PR #2 实装的 Permission code 正则 `^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2}$`
 // (固定 3 段;首段小写字母开头);本表全部 14 条均符合。
-interface RbacPermissionSeed {
-  code: string;
-  module: string;
-  action: string;
-  resourceType: string;
-  description: string;
+export interface RbacPermissionSeed {
+  readonly code: string;
+  readonly module: string;
+  readonly action: string;
+  readonly resourceType: string;
+  readonly description: string;
 }
 
 const RBAC_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
@@ -4453,7 +4453,7 @@ async function seedAttendanceFinalReviewerRole(prisma: PrismaClient): Promise<vo
   );
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const usernameRaw = process.env.SUPER_ADMIN_USERNAME ?? '';
   const username = usernameRaw.trim().toLowerCase();
   const password = process.env.SUPER_ADMIN_PASSWORD ?? '';
@@ -4669,6 +4669,107 @@ const WECHAT_SUBSCRIBE_TEMPLATE_SEED = [
   'expiry-reminder',
 ] as const;
 
+/**
+ * RBAC seed 的只读声明目录。
+ *
+ * 供 seed 校验、控制面保留码与 e2e 共同消费；避免在测试或业务侧再维护第二份权限码、
+ * 角色绑定与职务 policy 清单。这里仅投影已定义的 seed 常量，不参与 seed 的写入流程。
+ */
+function readonlyPermissionSeeds(
+  permissions: ReadonlyArray<RbacPermissionSeed>,
+): ReadonlyArray<RbacPermissionSeed> {
+  return Object.freeze(permissions.map((permission) => Object.freeze({ ...permission })));
+}
+
+function readonlyCodes(codes: ReadonlyArray<string>): readonly string[] {
+  return Object.freeze([...codes]);
+}
+
+function roleSeed(code: string, permissionCodes: ReadonlyArray<string>) {
+  return Object.freeze({ code, permissionCodes: readonlyCodes(permissionCodes) });
+}
+
+const OPS_ADMIN_PERMISSION_CODES = readonlyCodes(
+  OPS_ADMIN_PERMISSION_SEED.map((item) => item.code),
+);
+const ALL_PERMISSION_CODES = readonlyCodes(ALL_PERMISSION_SEED.map((item) => item.code));
+const OPS_ADMIN_EXCLUDED_PERMISSION_CODES = readonlyCodes(
+  ALL_PERMISSION_CODES.filter((code) => !OPS_ADMIN_PERMISSION_CODES.includes(code)),
+);
+const ACTIVITY_RESPONSIBILITY_ROLE_CATALOG = Object.freeze(
+  ACTIVITY_RESPONSIBILITY_WORKFLOW_ROLE_SEED.map((role) =>
+    roleSeed(role.code, role.permissionCodes),
+  ),
+);
+const POSITION_ROLE_POLICY_CATALOG = Object.freeze(
+  POSITION_ROLE_POLICY_SEED.map((policy) =>
+    Object.freeze({
+      positionCode: policy.positionCode,
+      roleCode: policy.roleCode,
+      scopeMode: policy.scopeMode,
+    }),
+  ),
+);
+
+export const RBAC_SEED_CATALOG = Object.freeze({
+  permissions: Object.freeze({
+    rbac: readonlyPermissionSeeds(RBAC_PERMISSION_SEED),
+    bootstrap: readonlyPermissionSeeds(ALL_PERMISSION_SEED),
+    attachment: readonlyPermissionSeeds(ATTACHMENT_PERMISSION_SEED),
+    business: readonlyPermissionSeeds(BIZ_PERMISSION_SEED),
+  }),
+  roles: Object.freeze({
+    opsAdmin: roleSeed(OPS_ADMIN_ROLE_CODE, OPS_ADMIN_PERMISSION_CODES),
+    member: roleSeed(MEMBER_ROLE_CODE, MEMBER_ROLE_PERMISSION_CODES),
+    bizAdmin: roleSeed(
+      BIZ_ADMIN_ROLE_CODE,
+      BIZ_ADMIN_PERMISSION_SEED.map((permission) => permission.code),
+    ),
+    orgAdmin: roleSeed(
+      ORG_ADMIN_ROLE_CODE,
+      ORG_ADMIN_PERMISSION_SEED.map((permission) => permission.code),
+    ),
+    groupManager: roleSeed(GROUP_MANAGER_ROLE_CODE, GROUP_MANAGER_PERMISSION_CODES),
+    orgReadonly: roleSeed(ORG_READONLY_ROLE_CODE, ORG_READONLY_PERMISSION_CODES),
+    groupReadonly: roleSeed(GROUP_READONLY_ROLE_CODE, GROUP_READONLY_PERMISSION_CODES),
+    orgSupervisor: roleSeed(ORG_SUPERVISOR_ROLE_CODE, ORG_SUPERVISOR_PERMISSION_CODES),
+    attendanceFinalReviewer: roleSeed(
+      ATTENDANCE_FINAL_REVIEWER_ROLE_CODE,
+      ATTENDANCE_FINAL_REVIEWER_PERMISSION_CODES,
+    ),
+    activityResponsibility: ACTIVITY_RESPONSIBILITY_ROLE_CATALOG,
+  }),
+  positionRolePolicies: Object.freeze({
+    all: POSITION_ROLE_POLICY_CATALOG,
+    vice: Object.freeze(
+      POSITION_ROLE_POLICY_CATALOG.filter((policy) =>
+        R5_VICE_POLICY_EXPECTED.has(policy.positionCode),
+      ),
+    ),
+  }),
+  contract: Object.freeze({
+    opsAdminExcludedPermissionCodes: OPS_ADMIN_EXCLUDED_PERMISSION_CODES,
+    reservedSuperAdminOnlyPermissionCodes: readonlyCodes([
+      PR_3B_USER_UPDATE_ROLE_CODE,
+      PR_2B_RESET_CREDENTIALS_CODE,
+      SMS_RESET_CREDENTIALS_CODE,
+      WECHAT_RESET_CREDENTIALS_CODE,
+      REALNAME_RESET_CREDENTIALS_CODE,
+      MEMBER_DELETE_RECORD_CODE,
+    ]),
+    bizAdminExcludedPermissionCodes: readonlyCodes([...BIZ_ADMIN_EXCLUDED_CODES]),
+    bizAdminTargetedRemovalCodes: readonlyCodes(BIZ_ADMIN_TARGETED_REMOVAL_CODES),
+    attendanceReviewerOnlyCodes: readonlyCodes(ATTENDANCE_REVIEWER_ONLY_CODES),
+    activityResponsibilityRemovedFromBizAdminCodes: readonlyCodes(
+      ACTIVITY_RESPONSIBILITY_CONTRACT_REMOVED_FROM_BIZ_CODES,
+    ),
+    orgAdminTargetedRemovalCodes: readonlyCodes(BIZ_ADMIN_TARGETED_REMOVAL_CODES),
+    groupManagerTargetedRemovalCodes: readonlyCodes(
+      ACTIVITY_RESPONSIBILITY_CONTRACT_REMOVED_FROM_GROUP_CODES,
+    ),
+  }),
+});
+
 async function seedWechatSubscribeTemplates(prisma: PrismaClient): Promise<void> {
   for (const notificationTypeCode of WECHAT_SUBSCRIBE_TEMPLATE_SEED) {
     await prisma.wechatSubscribeTemplate.upsert({
@@ -4682,7 +4783,9 @@ async function seedWechatSubscribeTemplates(prisma: PrismaClient): Promise<void>
   );
 }
 
-main().catch((err: unknown) => {
-  console.error(err instanceof Error ? err.message : String(err));
-  process.exit(1);
-});
+if (require.main === module) {
+  void main().catch((err: unknown) => {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  });
+}

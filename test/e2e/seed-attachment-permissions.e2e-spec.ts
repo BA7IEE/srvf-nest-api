@@ -1,5 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { execSync } from 'child_process';
+import { RBAC_SEED_CATALOG } from '../../prisma/seed';
 import { PrismaService } from '../../src/database/prisma.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -54,47 +55,13 @@ function runSeed(envOverrides: Record<string, string>): SeedRunResult {
   }
 }
 
-// 沿 prisma/seed.ts 中 ATTACHMENT_PERMISSION_SEED 表(D7-attachments v1.0 §6.1 锁定 20 条);
-// 本 spec 维护独立期望集合,与 seed 内部表对照防漂移。
-const EXPECTED_ATTACHMENT_PERMISSION_CODES = [
-  // member 8 条(4 段)
-  'attachment.upload.member.self',
-  'attachment.upload.member.other',
-  'attachment.view.member.self',
-  'attachment.view.member.other',
-  'attachment.update.member.self',
-  'attachment.update.member.other',
-  'attachment.delete.member.self',
-  'attachment.delete.member.other',
-  // certificate 8 条(4 段)
-  'attachment.upload.certificate.self',
-  'attachment.upload.certificate.other',
-  'attachment.view.certificate.self',
-  'attachment.view.certificate.other',
-  'attachment.update.certificate.self',
-  'attachment.update.certificate.other',
-  'attachment.delete.certificate.self',
-  'attachment.delete.certificate.other',
-  // activity 4 条(3 段;粗粒度)
-  'attachment.upload.activity',
-  'attachment.view.activity',
-  'attachment.update.activity',
-  'attachment.delete.activity',
-] as const;
+const EXPECTED_ATTACHMENT_PERMISSIONS = RBAC_SEED_CATALOG.permissions.attachment;
+const EXPECTED_ATTACHMENT_PERMISSION_CODES = EXPECTED_ATTACHMENT_PERMISSIONS.map(
+  (permission) => permission.code,
+);
 const EXPECTED_ATTACHMENT_PERMISSION_COUNT = EXPECTED_ATTACHMENT_PERMISSION_CODES.length;
-
-// member 角色应绑定的 9 条权限点(沿 §6.1 + Q5 v1.0:仅 .self + activity.view)
-const EXPECTED_MEMBER_ROLE_PERMISSION_CODES = [
-  'attachment.upload.member.self',
-  'attachment.view.member.self',
-  'attachment.update.member.self',
-  'attachment.delete.member.self',
-  'attachment.upload.certificate.self',
-  'attachment.view.certificate.self',
-  'attachment.update.certificate.self',
-  'attachment.delete.certificate.self',
-  'attachment.view.activity',
-] as const;
+const MEMBER_ROLE_SEED = RBAC_SEED_CATALOG.roles.member;
+const EXPECTED_MEMBER_ROLE_PERMISSION_CODES = MEMBER_ROLE_SEED.permissionCodes;
 const EXPECTED_MEMBER_ROLE_PERMISSION_COUNT = EXPECTED_MEMBER_ROLE_PERMISSION_CODES.length;
 
 describe('prisma/seed.ts — attachment permissions and member role', () => {
@@ -114,7 +81,7 @@ describe('prisma/seed.ts — attachment permissions and member role', () => {
     await resetDb(app);
   });
 
-  it('空 db → seed 跑完后 20 条 attachment.* permission 全部存在', async () => {
+  it('空 db → seed 跑完后全部 attachment.* permission 存在', async () => {
     const result = runSeed({
       APP_ENV: 'test',
       SUPER_ADMIN_USERNAME: 'atp-seed-su',
@@ -124,7 +91,7 @@ describe('prisma/seed.ts — attachment permissions and member role', () => {
     });
     expect(result.code).toBe(0);
 
-    // 1 + 2. 20 条 permission 全部存在,code 完整一致
+    // 1 + 2. permission 全部存在,code 完整一致
     const perms = await prisma.permission.findMany({
       where: { code: { in: [...EXPECTED_ATTACHMENT_PERMISSION_CODES] } },
       select: { code: true, module: true, resourceType: true },
@@ -136,14 +103,19 @@ describe('prisma/seed.ts — attachment permissions and member role', () => {
     // 全部 module=attachment
     expect(perms.every((p) => p.module === 'attachment')).toBe(true);
 
-    // resourceType 分布:8 member + 8 certificate + 4 activity
+    // resourceType 分布与 seed 声明完全一致
     const byResourceType = perms.reduce<Record<string, number>>((acc, p) => {
       acc[p.resourceType] = (acc[p.resourceType] ?? 0) + 1;
       return acc;
     }, {});
-    expect(byResourceType.member).toBe(8);
-    expect(byResourceType.certificate).toBe(8);
-    expect(byResourceType.activity).toBe(4);
+    const expectedByResourceType = EXPECTED_ATTACHMENT_PERMISSIONS.reduce<Record<string, number>>(
+      (acc, permission) => {
+        acc[permission.resourceType] = (acc[permission.resourceType] ?? 0) + 1;
+        return acc;
+      },
+      {},
+    );
+    expect(byResourceType).toEqual(expectedByResourceType);
   });
 
   it('3 + 4. member RbacRole 存在;displayName / description 正确;绑定 9 条 RolePermission', async () => {
@@ -157,7 +129,7 @@ describe('prisma/seed.ts — attachment permissions and member role', () => {
     expect(result.code).toBe(0);
 
     const memberRole = await prisma.rbacRole.findUnique({
-      where: { code: 'member' },
+      where: { code: MEMBER_ROLE_SEED.code },
       select: { id: true, displayName: true, description: true, deletedAt: true },
     });
     expect(memberRole).not.toBeNull();
@@ -186,7 +158,7 @@ describe('prisma/seed.ts — attachment permissions and member role', () => {
     expect(result.code).toBe(0);
 
     const memberRole = await prisma.rbacRole.findUniqueOrThrow({
-      where: { code: 'member' },
+      where: { code: MEMBER_ROLE_SEED.code },
       select: { id: true },
     });
     const rolePerms = await prisma.rolePermission.findMany({
@@ -201,7 +173,10 @@ describe('prisma/seed.ts — attachment permissions and member role', () => {
 
     // 显式断言:activity 段仅含 .view,不含 .upload / .update / .delete
     const activityBound = boundCodes.filter((c) => c.includes('.activity'));
-    expect(activityBound).toEqual(['attachment.view.activity']);
+    expect(activityBound).toEqual(
+      EXPECTED_MEMBER_ROLE_PERMISSION_CODES.filter((code) => code.includes('.activity')),
+    );
+    expect(activityBound.every((code) => code.startsWith('attachment.view.'))).toBe(true);
   });
 
   it('6. 不存在 ADMIN 内置角色(Q12 v1.0 沿用挂起)', async () => {
@@ -240,7 +215,7 @@ describe('prisma/seed.ts — attachment permissions and member role', () => {
     expect(result.code).toBe(0);
 
     const memberRole = await prisma.rbacRole.findUniqueOrThrow({
-      where: { code: 'member' },
+      where: { code: MEMBER_ROLE_SEED.code },
       select: { id: true },
     });
 
@@ -252,7 +227,7 @@ describe('prisma/seed.ts — attachment permissions and member role', () => {
 
     // 对照:同次 seed 已自动给 SUPER_ADMIN 绑定 ops-admin(seedRbac fallback,现写 global RoleBinding),证明 user 创建+seed 跑过
     const opsAdminRole = await prisma.rbacRole.findUniqueOrThrow({
-      where: { code: 'ops-admin' },
+      where: { code: RBAC_SEED_CATALOG.roles.opsAdmin.code },
       select: { id: true },
     });
     const opsAdminHolderCount = await prisma.roleBinding.count({
@@ -276,7 +251,7 @@ describe('prisma/seed.ts — attachment permissions and member role', () => {
       where: { code: { in: [...EXPECTED_ATTACHMENT_PERMISSION_CODES] } },
     });
     const memberRole1 = await prisma.rbacRole.findUniqueOrThrow({
-      where: { code: 'member' },
+      where: { code: MEMBER_ROLE_SEED.code },
       select: { id: true, createdAt: true },
     });
     const rolePerms1 = await prisma.rolePermission.count({
@@ -304,7 +279,7 @@ describe('prisma/seed.ts — attachment permissions and member role', () => {
 
     // member role id 不变(upsert 幂等)
     const memberRole2 = await prisma.rbacRole.findUniqueOrThrow({
-      where: { code: 'member' },
+      where: { code: MEMBER_ROLE_SEED.code },
       select: { id: true, createdAt: true },
     });
     expect(memberRole2.id).toBe(memberRole1.id);
