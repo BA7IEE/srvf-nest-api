@@ -11,6 +11,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -56,6 +57,7 @@ export class AttachmentSizeLimitConfigsController {
   }
 
   @Get()
+  @RequiresPermission('attachment-config.read.size-limit')
   @ApiOperation({
     summary:
       '列出附件尺寸限制配置(分页;可选 typeConfigId 过滤;默认排序 createdAt DESC) [rbac: attachment-config.read.size-limit]',
@@ -70,6 +72,7 @@ export class AttachmentSizeLimitConfigsController {
   }
 
   @Post()
+  @RequiresPermission('attachment-config.create.size-limit')
   @ApiOperation({
     summary:
       '创建附件尺寸限制配置(1:1 与 typeConfig;typeConfigId 不存在 → 13020;重复 → 13027;含软删历史) [rbac: attachment-config.create.size-limit]',
@@ -91,6 +94,7 @@ export class AttachmentSizeLimitConfigsController {
   }
 
   @Get(':id')
+  @RequiresPermission('attachment-config.read.size-limit')
   @ApiOperation({
     summary:
       '附件尺寸限制配置详情(不存在 / 已软删统一返 13026) [rbac: attachment-config.read.size-limit]',
@@ -110,6 +114,7 @@ export class AttachmentSizeLimitConfigsController {
   }
 
   @Patch(':id')
+  @RequiresPermission('attachment-config.update.size-limit')
   @ApiOperation({
     summary:
       '更新附件尺寸限制配置(仅 maxSizeBytes / remark;**禁止** typeConfigId(Q4 PR #4)/ deletedAt / id;Q5 v1.0:maxSizeBytes 不允许 null) [rbac: attachment-config.update.size-limit]',
@@ -131,6 +136,7 @@ export class AttachmentSizeLimitConfigsController {
   }
 
   @Delete(':id')
+  @RequiresPermission('attachment-config.delete.size-limit')
   @ApiOperation({
     summary:
       '软删附件尺寸限制配置(deletedAt = now();本表无 status 字段不需要同步置;V2.x Slow-6:同 type 仍被附件引用时返 13032) [rbac: attachment-config.delete.size-limit]',

@@ -9,6 +9,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { SmsSendLogQueryDto, SmsSendLogResponseDto } from './sms.dto';
@@ -28,6 +29,7 @@ export class SmsSendLogsController {
   constructor(private readonly service: SmsSendLogsService) {}
 
   @Get()
+  @RequiresPermission('sms-send-log.read.list')
   @ApiOperation({
     summary:
       '分页查询短信发送日志(只读;响应手机号一律掩码 138****1234;可选 status / phone 精确过滤) [rbac: sms-send-log.read.list]',

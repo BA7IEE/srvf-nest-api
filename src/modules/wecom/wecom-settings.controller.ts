@@ -11,6 +11,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
@@ -50,6 +51,7 @@ export class WecomSettingsController {
   ) {}
 
   @Get()
+  @RequiresPermission('wecom-setting.read.singleton')
   @ApiOperation({
     summary:
       '读 WeCom Settings singleton row(不存在返 data=null;不抛 BizCode;不回显凭证,corpId 仅掩码) [rbac: wecom-setting.read.singleton]',
@@ -61,6 +63,7 @@ export class WecomSettingsController {
   }
 
   @Patch()
+  @RequiresPermission('wecom-setting.update.singleton')
   @ApiOperation({
     summary:
       'upsert 更新 WeCom Settings(不存在则创建 default providerType=DEV_STUB;production-like 拒绝 DEV_STUB;loginEnabled/messageEnabled=true 必须 enabled=true;webBaseUrl 仅 origin 且 production 必须 HTTPS;corpId 仅在 active identity=0 时可改否则 36020;**拒绝**任何凭证字段;事务提交后任一实例下一次调用直读 PostgreSQL 新值,无需 invalidate/reload/restart) [rbac: wecom-setting.update.singleton]',
@@ -81,6 +84,7 @@ export class WecomSettingsController {
   }
 
   @Post('reset-credentials')
+  @RequiresPermission('wecom-setting.reset.credentials')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -97,6 +101,7 @@ export class WecomSettingsController {
   }
 
   @Post('test-connection')
+  @RequiresPermission('wecom-setting.test.connection')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

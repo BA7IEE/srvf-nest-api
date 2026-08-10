@@ -24,6 +24,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -62,6 +63,7 @@ export class ContributionRulesController {
   }
 
   @Get()
+  @RequiresPermission('contribution.read.rule')
   @ApiOperation({
     summary:
       '列出贡献值规则(分页 + 过滤 activityTypeCode / attendanceRoleCode / status;沿基础稳定排序) [rbac: contribution.read.rule]',
@@ -76,6 +78,7 @@ export class ContributionRulesController {
   }
 
   @Post()
+  @RequiresPermission('contribution.create.rule')
   @ApiOperation({
     summary:
       '创建贡献值规则(字典校验 + 字段语义 + ACTIVE 唯一性兜底含 NULL durationThreshold) [rbac: contribution.create.rule]',
@@ -99,6 +102,7 @@ export class ContributionRulesController {
   }
 
   @Get(':id')
+  @RequiresPermission('contribution.read.rule')
   @ApiOperation({ summary: '贡献值规则详情(含软删返 404) [rbac: contribution.read.rule]' })
   @ApiWrappedOkResponse(ContributionRuleResponseDto)
   @ApiBizErrorResponse(
@@ -115,6 +119,7 @@ export class ContributionRulesController {
   }
 
   @Patch(':id')
+  @RequiresPermission('contribution.update.rule')
   @ApiOperation({
     summary:
       '部分更新贡献值规则(白名单仅 pointsBelow / pointsAbove / status / remark;禁改 activityTypeCode / attendanceRoleCode / durationThreshold,由 ValidationPipe 拦截抛 40000) [rbac: contribution.update.rule]',
@@ -138,6 +143,7 @@ export class ContributionRulesController {
   }
 
   @Delete(':id')
+  @RequiresPermission('contribution.delete.rule')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary:

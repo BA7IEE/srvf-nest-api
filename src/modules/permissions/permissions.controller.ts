@@ -9,6 +9,7 @@ import {
 } from '../../common/decorators/api-response.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -51,6 +52,7 @@ export class PermissionsController {
   constructor(private readonly service: PermissionsService) {}
 
   @Get()
+  @RequiresPermission('rbac.permission.read')
   @ApiOperation({
     summary: '列出权限点(分页;按 module / resourceType 过滤) [rbac: rbac.permission.read]',
   })
@@ -64,6 +66,7 @@ export class PermissionsController {
   }
 
   @Post()
+  @RequiresPermission('rbac.permission.create')
   @ApiOperation({
     summary:
       '创建权限点(code 格式 <module>.<action>.<resource_type>;失败抛 30008) [rbac: rbac.permission.create]',
@@ -85,6 +88,7 @@ export class PermissionsController {
   }
 
   @Patch(':id')
+  @RequiresPermission('rbac.permission.update')
   @ApiOperation({
     summary:
       '更新权限点(仅 description;code / module / action / resourceType 不可改) [rbac: rbac.permission.update]',
@@ -106,6 +110,7 @@ export class PermissionsController {
   }
 
   @Delete(':id')
+  @RequiresPermission('rbac.permission.delete')
   @ApiOperation({
     summary:
       '物理删除权限点(D4 v1.0;RolePermission FK Cascade 自动联级清理) [rbac: rbac.permission.delete]',

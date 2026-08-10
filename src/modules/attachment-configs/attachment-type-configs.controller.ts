@@ -11,6 +11,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -57,6 +58,7 @@ export class AttachmentTypeConfigsController {
   }
 
   @Get()
+  @RequiresPermission('attachment-config.read.type')
   @ApiOperation({
     summary:
       '列出附件类型配置(分页;可选 status / ownerTable 过滤;默认排序 createdAt DESC) [rbac: attachment-config.read.type]',
@@ -71,6 +73,7 @@ export class AttachmentTypeConfigsController {
   }
 
   @Post()
+  @RequiresPermission('attachment-config.create.type')
   @ApiOperation({
     summary:
       '创建附件类型配置(code 全局唯一 / kebab-case 3-32;失败抛 13023 / 13021;status 默认 ACTIVE) [rbac: attachment-config.create.type]',
@@ -92,6 +95,7 @@ export class AttachmentTypeConfigsController {
   }
 
   @Get(':id')
+  @RequiresPermission('attachment-config.read.type')
   @ApiOperation({
     summary: '附件类型配置详情(不存在 / 已软删统一返 13020) [rbac: attachment-config.read.type]',
   })
@@ -110,6 +114,7 @@ export class AttachmentTypeConfigsController {
   }
 
   @Patch(':id')
+  @RequiresPermission('attachment-config.update.type')
   @ApiOperation({
     summary:
       '更新附件类型配置(仅 displayName / description / ownerTable / defaultMaxSizeBytes / defaultMimeWhitelist;**禁止** code / status / deletedAt / id) [rbac: attachment-config.update.type]',
@@ -131,6 +136,7 @@ export class AttachmentTypeConfigsController {
   }
 
   @Patch(':id/status')
+  @RequiresPermission('attachment-config.update.type')
   @ApiOperation({
     summary:
       '更新附件类型配置启停状态(沿 dictionaries 独立 status 端点范式;V2.x Slow-6:ACTIVE → INACTIVE 仍被附件引用时返 13030) [rbac: attachment-config.update.type]',
@@ -153,6 +159,7 @@ export class AttachmentTypeConfigsController {
   }
 
   @Delete(':id')
+  @RequiresPermission('attachment-config.delete.type')
   @ApiOperation({
     summary:
       '软删附件类型配置(deletedAt = now() + 同步置 status=INACTIVE;V2.x Slow-6:仍被附件引用时返 13030) [rbac: attachment-config.delete.type]',

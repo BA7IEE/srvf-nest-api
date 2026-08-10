@@ -7,6 +7,7 @@ import type { Params } from 'nestjs-pino';
 import { buildLoggerModuleParams } from './bootstrap/logger-options';
 import { PostgresqlThrottlerStorage } from './bootstrap/postgresql-throttler-storage';
 import { buildThrottlerOptions } from './bootstrap/throttle-options';
+import { AuthzDeclarationGuard } from './common/guards/authz-declaration.guard';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { ThrottlerBizGuard } from './common/guards/throttler-biz.guard';
@@ -211,9 +212,11 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     // 全局 Guard 顺序(NestJS 按 providers 数组顺序执行):
     //   ThrottlerBizGuard 先挡爆破(IP 维度,粗粒度),避免攻击流量打到 JWT 解析。
     //   JwtAuthGuard 验登录(@Public 跳过)。
+    //   AuthzDeclarationGuard 只验证声明存在(report 模式),不做业务判权。
     //   RolesGuard 验角色(详见 docs/reference/auth-jwt-refresh.md §8)。
     { provide: APP_GUARD, useClass: ThrottlerBizGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: AuthzDeclarationGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
 })

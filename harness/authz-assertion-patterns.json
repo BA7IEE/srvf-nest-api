@@ -1,0 +1,78 @@
+{
+  "version": "1.0.0",
+  "families": [
+    {
+      "id": "rbac-can",
+      "runtimeMarker": "rbac.can",
+      "callShapes": [
+        "RbacService.can(action)"
+      ],
+      "requiredOutcomes": [
+        "throw",
+        "early-return",
+        "guard"
+      ],
+      "axes": [
+        "codes"
+      ]
+    },
+    {
+      "id": "authz-can-explain",
+      "runtimeMarker": "authz.can|explain",
+      "callShapes": [
+        "AuthzService.can(action, ref)",
+        "AuthzService.explain(action, ref)"
+      ],
+      "requiredOutcomes": [
+        "deny-to-BizCode",
+        "early-return",
+        "guard"
+      ],
+      "axes": [
+        "codes",
+        "engine"
+      ]
+    },
+    {
+      "id": "visible-organization-scope",
+      "runtimeMarker": null,
+      "callShapes": [
+        "AuthzService.getVisibleOrganizationScope(action)"
+      ],
+      "requiredOutcomes": [
+        "query-filter-pushdown"
+      ],
+      "axes": [
+        "scopes"
+      ]
+    },
+    {
+      "id": "app-identity-resolve",
+      "runtimeMarker": "AppIdentityResolver.resolve",
+      "callShapes": [
+        "AppIdentityResolver.resolve(currentUser)"
+      ],
+      "requiredOutcomes": [
+        "app-admission-branch"
+      ],
+      "axes": [
+        "admission"
+      ]
+    },
+    {
+      "id": "responsibility-check",
+      "runtimeMarker": null,
+      "callShapes": [
+        "registered responsibility policy check"
+      ],
+      "requiredOutcomes": [
+        "throw",
+        "early-return",
+        "guard"
+      ],
+      "axes": [
+        "scopes"
+      ]
+    }
+  ]
+}

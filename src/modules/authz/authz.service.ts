@@ -12,6 +12,7 @@ import {
   SupervisionScopeMode,
   SupervisionStatus,
 } from '@prisma/client';
+import { recordAuthzAssertion } from '../../common/authz/authz-context';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import type { AppConfig } from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
@@ -132,6 +133,7 @@ export class AuthzService {
 
   // 薄包装:终判布尔。
   async can(user: CurrentUserPayload, action: string, ref?: ResourceRef): Promise<boolean> {
+    recordAuthzAssertion({ pattern: 'authz-can-explain', codes: [action], resourceRef: ref });
     const decision = await this.explain(user, action, ref);
     return decision.allow;
   }
@@ -229,6 +231,7 @@ export class AuthzService {
     action: string,
     ref?: ResourceRef,
   ): Promise<AuthzDecision> {
+    recordAuthzAssertion({ pattern: 'authz-can-explain', codes: [action], resourceRef: ref });
     // 0. 身份有效性(ACTIVE + 未软删)已由 JwtStrategy 每请求保证,此处不再查(§5.2 step 0)
 
     // 1. SUPER_ADMIN 全局短路;资源仅为 ActionConstraint 解析(解析失败不掀翻短路,约束判不了则不判)

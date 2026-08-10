@@ -9,6 +9,7 @@ import {
 } from '../../common/decorators/api-response.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -60,6 +61,7 @@ export class RbacRolesController {
   constructor(private readonly service: RbacRolesService) {}
 
   @Get()
+  @RequiresPermission('rbac.role.read')
   @ApiOperation({ summary: '列出角色(分页;按 code 模糊过滤;排除已软删) [rbac: rbac.role.read]' })
   @ApiWrappedPageResponse(RbacRoleResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -72,6 +74,7 @@ export class RbacRolesController {
 
   // F1/A4(路线图 §4;D2/D3/D4 拍板):选择器投影,必须先于 /:id 定义(specific-before-dynamic)。
   @Get('options')
+  @RequiresPermission('rbac.role.read')
   @ApiOperation({
     summary: '角色选择器投影(q 模糊 code+displayName;limit≤100,默认 20) [rbac: rbac.role.read]',
   })
@@ -85,6 +88,7 @@ export class RbacRolesController {
   }
 
   @Get(':id')
+  @RequiresPermission('rbac.role.read')
   @ApiOperation({
     summary:
       '角色详情(含已分配 permissions 数组;不存在返 30003 / 已软删返 30005) [rbac: rbac.role.read]',
@@ -105,6 +109,7 @@ export class RbacRolesController {
   }
 
   @Post()
+  @RequiresPermission('rbac.role.create')
   @ApiOperation({
     summary:
       '创建角色(code 格式 kebab-case 3-32 字符;失败抛 30009;含软删历史撞唯一抛 30004) [rbac: rbac.role.create]',
@@ -126,6 +131,7 @@ export class RbacRolesController {
   }
 
   @Patch(':id')
+  @RequiresPermission('rbac.role.update')
   @ApiOperation({
     summary:
       '更新角色(仅 displayName / description;code 不可改;不存在或已软删返 30003) [rbac: rbac.role.update]',
@@ -147,6 +153,7 @@ export class RbacRolesController {
   }
 
   @Delete(':id')
+  @RequiresPermission('rbac.role.delete')
   @ApiOperation({
     summary:
       '软删角色(D4 v1.0;update deletedAt;user_roles / role_permissions 不联动;不存在或已软删返 30003) [rbac: rbac.role.delete]',
