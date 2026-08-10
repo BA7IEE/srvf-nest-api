@@ -31,6 +31,7 @@
     "test:e2e:watch": "jest --config test/jest-e2e.config.ts --watch",
     "test:e2e:failed": "jest --config test/jest-e2e.config.ts --onlyFailures --runInBand",
     "test:e2e:leaks": "jest --config test/jest-e2e.config.ts --runInBand --detectOpenHandles",
+    "test:journeys": "jest --config test/jest-journeys.config.ts",
     "db:test:init": "docker exec u-nest-api-postgres psql -U postgres -d postgres -tAc \"SELECT 1 FROM pg_database WHERE datname='app_test'\" | grep -q 1 || docker exec u-nest-api-postgres createdb -U postgres app_test",
     "db:test:reset": "tsx test/setup/reset-test-db-cli.ts",
     "db:test:prune": "tsx scripts/db-test-prune.ts",
