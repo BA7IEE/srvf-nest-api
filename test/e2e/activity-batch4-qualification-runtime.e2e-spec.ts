@@ -52,6 +52,61 @@ type QualifiedFixture = {
   membershipId: string;
 };
 
+type QualificationSnapshotScope = {
+  level: 'activity' | 'session' | 'position';
+  sessionId: string | null;
+  positionId: string | null;
+};
+
+type QualificationSnapshotDetails = {
+  schemaVersion: 1;
+  ruleSetVersionId: string;
+  scope: QualificationSnapshotScope;
+  rules: Array<{ ruleId: string; resultCode: 'pass' | 'warn' | 'fail' }>;
+};
+
+const QUALIFICATION_SNAPSHOT_IDENTIFIER_KEYS = new Set([
+  'ruleSetVersionId',
+  'ruleId',
+  'sessionId',
+  'positionId',
+]);
+
+const QUALIFICATION_SNAPSHOT_SENSITIVE_FACTS = [
+  'L1',
+  'female',
+  '2181-11-01',
+  '2181-11-01T00:00:00.000Z',
+  'QUAL-POLICY-SECRET',
+] as const;
+
+function collectNonIdentifierStrings(value: unknown, key?: string): string[] {
+  if (key !== undefined && QUALIFICATION_SNAPSHOT_IDENTIFIER_KEYS.has(key)) return [];
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap((item) => collectNonIdentifierStrings(item));
+  if (value !== null && typeof value === 'object') {
+    return Object.entries(value).flatMap(([nestedKey, nestedValue]) =>
+      collectNonIdentifierStrings(nestedValue, nestedKey),
+    );
+  }
+  return [];
+}
+
+function expectNoSensitiveQualificationSnapshotFacts(detailsJson: unknown): void {
+  const nonIdentifierStrings = collectNonIdentifierStrings(detailsJson);
+  for (const sensitiveFact of QUALIFICATION_SNAPSHOT_SENSITIVE_FACTS) {
+    expect(nonIdentifierStrings).not.toContain(sensitiveFact);
+  }
+}
+
+function expectSafeQualificationSnapshotDetails(
+  detailsJson: unknown,
+  expected: QualificationSnapshotDetails,
+): void {
+  expect(detailsJson).toStrictEqual(expected);
+  expectNoSensitiveQualificationSnapshotFacts(detailsJson);
+}
+
 describe('activity batch4 qualification runtime', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -636,13 +691,97 @@ describe('activity batch4 qualification runtime', () => {
       select: { detailsJson: true, inputFactsHash: true, ruleSetVersionId: true },
       orderBy: { ruleSetVersionId: 'asc' },
     });
+    const ruleSets = await prisma.activityQualificationRuleSet.findMany({
+      where: {
+        id: {
+          in: [fixture.activityRuleSetId, fixture.sessionRuleSetId, fixture.positionRuleSetId],
+        },
+      },
+      select: {
+        id: true,
+        rules: {
+          select: { id: true },
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        },
+      },
+    });
     expect(initialSnapshots).toHaveLength(3);
+    expect(ruleSets).toHaveLength(3);
+    const ruleIdsByRuleSet = new Map(
+      ruleSets.map((ruleSet) => [ruleSet.id, ruleSet.rules.map((rule) => rule.id)]),
+    );
+    const requireRuleIds = (ruleSetId: string): string[] => {
+      const ruleIds = ruleIdsByRuleSet.get(ruleSetId);
+      if (!ruleIds) throw new Error(`missing fixture RuleSet ${ruleSetId}`);
+      return ruleIds;
+    };
+    const expectedDetailsByRuleSet = new Map<string, QualificationSnapshotDetails>([
+      [
+        fixture.activityRuleSetId,
+        {
+          schemaVersion: 1,
+          ruleSetVersionId: fixture.activityRuleSetId,
+          scope: { level: 'activity', sessionId: null, positionId: null },
+          rules: requireRuleIds(fixture.activityRuleSetId).map((ruleId) => ({
+            ruleId,
+            resultCode: 'pass',
+          })),
+        },
+      ],
+      [
+        fixture.sessionRuleSetId,
+        {
+          schemaVersion: 1,
+          ruleSetVersionId: fixture.sessionRuleSetId,
+          scope: { level: 'session', sessionId: fixture.sessionId, positionId: null },
+          rules: requireRuleIds(fixture.sessionRuleSetId).map((ruleId) => ({
+            ruleId,
+            resultCode: 'warn',
+          })),
+        },
+      ],
+      [
+        fixture.positionRuleSetId,
+        {
+          schemaVersion: 1,
+          ruleSetVersionId: fixture.positionRuleSetId,
+          scope: {
+            level: 'position',
+            sessionId: fixture.sessionId,
+            positionId: fixture.positionId,
+          },
+          rules: requireRuleIds(fixture.positionRuleSetId).map((ruleId) => ({
+            ruleId,
+            resultCode: 'pass',
+          })),
+        },
+      ],
+    ]);
     for (const snapshot of initialSnapshots) {
-      const details = JSON.stringify(snapshot.detailsJson);
-      expect(details).not.toMatch(
-        /L1|female|2181|QUAL-POLICY-SECRET|qualification-standard|valueJson|birthDate|organizationIds/i,
-      );
+      const expectedDetails = expectedDetailsByRuleSet.get(snapshot.ruleSetVersionId);
+      if (!expectedDetails) {
+        throw new Error(`unexpected snapshot RuleSet ${snapshot.ruleSetVersionId}`);
+      }
+      expectSafeQualificationSnapshotDetails(snapshot.detailsJson, expectedDetails);
     }
+    const snapshotForLeakControl = initialSnapshots[0];
+    if (!snapshotForLeakControl) throw new Error('expected a display snapshot for leak control');
+    const expectedLeakControlDetails = expectedDetailsByRuleSet.get(
+      snapshotForLeakControl.ruleSetVersionId,
+    );
+    if (!expectedLeakControlDetails) {
+      throw new Error(`missing leak-control RuleSet ${snapshotForLeakControl.ruleSetVersionId}`);
+    }
+    const injectedValueJson = {
+      ...(snapshotForLeakControl.detailsJson as QualificationSnapshotDetails),
+      rules: (snapshotForLeakControl.detailsJson as QualificationSnapshotDetails).rules.map(
+        (rule, index) => (index === 0 ? { ...rule, valueJson: { codes: ['L1'] } } : rule),
+      ),
+    };
+    expect(() => expectNoSensitiveQualificationSnapshotFacts(injectedValueJson)).toThrow();
+    expect(() =>
+      expectSafeQualificationSnapshotDetails(injectedValueJson, expectedLeakControlDetails),
+    ).toThrow();
     const snapshotFactsBeforeFailedDisplays = initialSnapshots.map((snapshot) => ({
       ruleSetVersionId: snapshot.ruleSetVersionId,
       inputFactsHash: snapshot.inputFactsHash,
