@@ -1,7 +1,8 @@
-import { Logger } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
+import { Get, Logger } from '@nestjs/common';
+import { ModulesContainer, Reflector } from '@nestjs/core';
 import type { ExecutionContext } from '@nestjs/common';
 import { LoginOnly } from '../decorators/route-authz.decorator';
+import { Public } from '../decorators/public.decorator';
 import { AuthzDeclarationGuard } from './authz-declaration.guard';
 
 type Handler = (this: void) => void;
@@ -19,15 +20,31 @@ function contextFor(handler: Handler, controller: Controller): ExecutionContext 
   } as unknown as ExecutionContext;
 }
 
+function modulesFor(...controllers: Controller[]): ModulesContainer {
+  const modules = new ModulesContainer();
+  modules.set('test', {
+    controllers: new Map(
+      controllers.map((controller) => [
+        controller.name,
+        { metatype: controller, instance: new controller() },
+      ]),
+    ),
+  } as never);
+  return modules;
+}
+
 describe('AuthzDeclarationGuard', () => {
   let warn: jest.SpyInstance;
+  let log: jest.SpyInstance;
 
   beforeEach(() => {
     warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
   });
 
   afterEach(() => {
     warn.mockRestore();
+    log.mockRestore();
   });
 
   it('reports an undeclared HTTP handler without blocking it in report mode', () => {
@@ -45,7 +62,7 @@ describe('AuthzDeclarationGuard', () => {
       expect.objectContaining({
         event: 'authz_declaration_undeclared',
         mode: 'report',
-        undeclaredRouteCount: 1,
+        observedUndeclaredRouteCount: 1,
       }),
       expect.any(String),
     );
@@ -67,6 +84,52 @@ describe('AuthzDeclarationGuard', () => {
     expect(result).toBe(true);
     expect(warn).not.toHaveBeenCalledWith(
       expect.objectContaining({ event: 'authz_declaration_undeclared' }),
+      expect.any(String),
+    );
+  });
+
+  it('logs a static inventory separately from traffic-observed undeclared routes', () => {
+    class InventoryController {
+      @Get('undeclared')
+      undeclared(this: void): void {}
+
+      @Get('declared')
+      @LoginOnly()
+      declared(this: void): void {}
+
+      helper(this: void): void {}
+    }
+
+    class PublicController {
+      @Get('public')
+      @Public()
+      publicRoute(this: void): void {}
+    }
+
+    const guard = new AuthzDeclarationGuard(
+      new Reflector(),
+      modulesFor(InventoryController, PublicController),
+    );
+    guard.onApplicationBootstrap();
+
+    expect(log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'authz_declaration_inventory',
+        mode: 'report',
+        totalUndeclaredRouteCount: 1,
+      }),
+      expect.any(String),
+    );
+
+    expect(
+      guard.canActivate(contextFor(InventoryController.prototype.undeclared, InventoryController)),
+    ).toBe(true);
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'authz_declaration_undeclared',
+        totalUndeclaredRouteCount: 1,
+        observedUndeclaredRouteCount: 1,
+      }),
       expect.any(String),
     );
   });

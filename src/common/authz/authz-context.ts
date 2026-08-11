@@ -136,15 +136,21 @@ function canonicalScope(value: string, label: string): RouteAuthzScope {
     throw new Error('Route authorization declaration must name a visibility predicate');
   }
   if (scope === 'organization' || scope === 'visibility:organization') {
-    throw new Error('Route authorization declaration must use org-scope for organization visibility');
+    throw new Error(
+      'Route authorization declaration must use org-scope for organization visibility',
+    );
   }
   if (scope.startsWith('visibility:')) {
     const predicate = scope.slice('visibility:'.length);
     if (predicate === 'visibility') {
-      throw new Error('Route authorization declaration cannot use self-referential visibility predicate');
+      throw new Error(
+        'Route authorization declaration cannot use self-referential visibility predicate',
+      );
     }
     if (!registeredVisibilityPredicates.has(predicate)) {
-      throw new Error(`Route authorization declaration has unregistered visibility predicate: ${predicate}`);
+      throw new Error(
+        `Route authorization declaration has unregistered visibility predicate: ${predicate}`,
+      );
     }
     return scope as RouteAuthzScope;
   }
@@ -159,7 +165,8 @@ function canonicalCodes(
   for (const fragment of fragments) {
     for (const declared of fragment.codes ?? []) {
       const code = nonBlank(declared.code, 'permission code');
-      const scope = declared.scope === null ? null : canonicalScope(declared.scope, 'permission scope');
+      const scope =
+        declared.scope === null ? null : canonicalScope(declared.scope, 'permission scope');
       const key = `${code}\u0000${scope ?? ''}`;
       if (seen.has(key)) continue;
       seen.add(key);

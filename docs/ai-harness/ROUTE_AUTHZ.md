@@ -16,7 +16,7 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 1.0.0 |
-| inputDigest | sha256:3eda4a7ef2977ffb2129e949e8186a1dbcb11d323f2ca4e968f4cefc7dd47aee |
+| inputDigest | sha256:051c5b610391b04f29e6b84095e4ce5126fadac822ec0c5fb8ee4bab565249a3 |
 | endpoint count | 498 |
 | legacy [auth] count | 128 |
 | classification JSON | harness/route-authz-classification.json |

@@ -85,8 +85,16 @@ describe('route authorization declaration normalizer', () => {
 
   it.each([
     ['bare visibility', 'visibility', 'must name a visibility predicate'],
-    ['self-referential visibility predicate', 'visibility:visibility', 'cannot use self-referential'],
-    ['unregistered visibility predicate', 'visibility:unregistered', 'unregistered visibility predicate'],
+    [
+      'self-referential visibility predicate',
+      'visibility:visibility',
+      'cannot use self-referential',
+    ],
+    [
+      'unregistered visibility predicate',
+      'visibility:unregistered',
+      'unregistered visibility predicate',
+    ],
     ['legacy organization scope', 'organization', 'must use org-scope'],
     ['legacy organization visibility', 'visibility:organization', 'must use org-scope'],
   ])('rejects %s', (_name, scope, message) => {

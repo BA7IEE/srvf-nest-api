@@ -1,5 +1,13 @@
-import { CanActivate, ExecutionContext, Injectable, Logger } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  Logger,
+  type OnApplicationBootstrap,
+  type Type,
+} from '@nestjs/common';
+import { METHOD_METADATA } from '@nestjs/common/constants';
+import { MetadataScanner, ModulesContainer, Reflector } from '@nestjs/core';
 import {
   beginAuthzRequestObservation,
   findAuthzObservationGap,
@@ -22,14 +30,38 @@ type ResponseWithFinishListener = {
   once?: (event: 'finish', listener: () => void) => unknown;
 };
 
+// Nest's ExecutionContext currently exposes the handler as Function; keep the framework's exact
+// contract behind a named alias instead of widening our own API with a bare Function annotation.
+type RouteHandler = ReturnType<ExecutionContext['getHandler']>;
+type RouteMetadataTarget = RouteHandler | Type<unknown>;
+
 @Injectable()
-export class AuthzDeclarationGuard implements CanActivate {
+export class AuthzDeclarationGuard implements CanActivate, OnApplicationBootstrap {
   private readonly logger = new Logger(AuthzDeclarationGuard.name);
+  private readonly metadataScanner = new MetadataScanner();
+  // This is a startup inventory, not a request-derived measurement. It is the
+  // authoritative report-mode progress number for declaration backfill.
+  private totalUndeclaredRouteCount: number | null = null;
   // Observability only: this Set is never read to make an access decision and
   // deliberately tracks handlers, not URLs containing user-supplied params.
   private readonly observedUndeclaredRoutes = new Set<string>();
 
-  constructor(private readonly reflector: Reflector) {}
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly modulesContainer: ModulesContainer = new ModulesContainer(),
+  ) {}
+
+  onApplicationBootstrap(): void {
+    this.totalUndeclaredRouteCount = this.countUndeclaredHttpRoutes();
+    this.logger.log(
+      {
+        event: 'authz_declaration_inventory',
+        mode: AUTHZ_DECLARATION_MODE,
+        totalUndeclaredRouteCount: this.totalUndeclaredRouteCount,
+      },
+      'Route authorization declaration inventory',
+    );
+  }
 
   canActivate(context: ExecutionContext): boolean {
     if (context.getType() !== 'http') return true;
@@ -37,18 +69,9 @@ export class AuthzDeclarationGuard implements CanActivate {
     const handler = context.getHandler();
     const controller = context.getClass();
     const route = `${controller.name}.${handler.name}`;
-    const targets = [handler, controller];
-    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, targets) === true;
-    const fragments = targets.flatMap(
-      (target) =>
-        (Reflect.getMetadata(ROUTE_AUTHZ_DECLARATION_KEY, target) as
-          | RouteAuthzDeclarationFragment[]
-          | undefined) ?? [],
-    );
-
     let declaration;
     try {
-      declaration = normalizeRouteAuthzDeclaration({ isPublic, fragments });
+      declaration = this.normalizedDeclaration(handler, controller);
     } catch (error) {
       this.logger.warn(
         {
@@ -78,7 +101,8 @@ export class AuthzDeclarationGuard implements CanActivate {
           route,
           method: request.method ?? 'UNKNOWN',
           path: request.originalUrl ?? 'UNKNOWN',
-          undeclaredRouteCount: this.observedUndeclaredRoutes.size,
+          totalUndeclaredRouteCount: this.totalUndeclaredRouteCount,
+          observedUndeclaredRouteCount: this.observedUndeclaredRoutes.size,
         },
         'Route has no authorization declaration',
       );
@@ -110,5 +134,43 @@ export class AuthzDeclarationGuard implements CanActivate {
       );
     });
     return true;
+  }
+
+  private countUndeclaredHttpRoutes(): number {
+    let total = 0;
+    for (const module of this.modulesContainer.values()) {
+      for (const wrapper of module.controllers.values()) {
+        const controller = wrapper.metatype;
+        const instance = wrapper.instance;
+        if (controller === null || instance === null || instance === undefined) continue;
+        const prototype = Object.getPrototypeOf(instance) as object | null;
+        if (prototype === null) continue;
+        for (const methodName of this.metadataScanner.getAllMethodNames(prototype)) {
+          const handler = Reflect.get(prototype, methodName) as unknown;
+          if (typeof handler !== 'function') continue;
+          if (Reflect.getMetadata(METHOD_METADATA, handler) === undefined) continue;
+          try {
+            if (this.normalizedDeclaration(handler, controller) === null) total++;
+          } catch {
+            // Invalid declarations are also not enforceable, so the inventory
+            // deliberately keeps them inside the remediation total.
+            total++;
+          }
+        }
+      }
+    }
+    return total;
+  }
+
+  private normalizedDeclaration(handler: RouteHandler, controller: RouteMetadataTarget) {
+    const targets = [handler, controller];
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, targets) === true;
+    const fragments = targets.flatMap(
+      (target) =>
+        (Reflect.getMetadata(ROUTE_AUTHZ_DECLARATION_KEY, target) as
+          | RouteAuthzDeclarationFragment[]
+          | undefined) ?? [],
+    );
+    return normalizeRouteAuthzDeclaration({ isPublic, fragments });
   }
 }
