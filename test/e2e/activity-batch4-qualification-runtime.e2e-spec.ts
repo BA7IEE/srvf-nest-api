@@ -612,6 +612,7 @@ describe('activity batch4 qualification runtime', () => {
       .send({
         memberId: onsiteTarget.id,
         sessionId: onsiteSession.id,
+        reason: '资格运行时现场补录',
         operationKey: 'qualification-runtime-onsite-0001',
       });
     expect(onsite.status).toBe(201);
