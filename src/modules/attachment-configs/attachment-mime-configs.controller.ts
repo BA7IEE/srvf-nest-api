@@ -11,6 +11,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -57,6 +58,7 @@ export class AttachmentMimeConfigsController {
   }
 
   @Get()
+  @RequiresPermission('attachment-config.read.mime')
   @ApiOperation({
     summary:
       '列出附件 MIME 配置(分页;可选 typeConfigId / status / mime 过滤;默认排序 createdAt DESC) [rbac: attachment-config.read.mime]',
@@ -71,6 +73,7 @@ export class AttachmentMimeConfigsController {
   }
 
   @Post()
+  @RequiresPermission('attachment-config.create.mime')
   @ApiOperation({
     summary:
       '创建附件 MIME 配置(typeConfigId 不存在 → 13020;mime 格式不合法 → 13025;(typeConfigId, mime) 重复 → 13024;含软删历史) [rbac: attachment-config.create.mime]',
@@ -93,6 +96,7 @@ export class AttachmentMimeConfigsController {
   }
 
   @Get(':id')
+  @RequiresPermission('attachment-config.read.mime')
   @ApiOperation({
     summary: '附件 MIME 配置详情(不存在 / 已软删统一返 13022) [rbac: attachment-config.read.mime]',
   })
@@ -111,6 +115,7 @@ export class AttachmentMimeConfigsController {
   }
 
   @Patch(':id')
+  @RequiresPermission('attachment-config.update.mime')
   @ApiOperation({
     summary:
       '更新附件 MIME 配置(仅 remark;**禁止** mime(Q3 v1.0)/ typeConfigId(Q4 v1.0)/ status / deletedAt / id) [rbac: attachment-config.update.mime]',
@@ -132,6 +137,7 @@ export class AttachmentMimeConfigsController {
   }
 
   @Patch(':id/status')
+  @RequiresPermission('attachment-config.update.mime')
   @ApiOperation({
     summary:
       '更新附件 MIME 配置启停状态(沿 PR #3 type config status 端点范式;V2.x Slow-6:ACTIVE → INACTIVE 仍被附件引用时返 13031) [rbac: attachment-config.update.mime]',
@@ -154,6 +160,7 @@ export class AttachmentMimeConfigsController {
   }
 
   @Delete(':id')
+  @RequiresPermission('attachment-config.delete.mime')
   @ApiOperation({
     summary:
       '软删附件 MIME 配置(deletedAt = now() + 同步置 status=INACTIVE;V2.x Slow-6:仍被附件引用时返 13031) [rbac: attachment-config.delete.mime]',

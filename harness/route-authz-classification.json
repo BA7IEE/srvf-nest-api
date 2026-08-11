@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:367322ae1609843e04f71f06ab0e5c6faaf5f2f1f4ce2673777b68dd828ef630",
+  "inputDigest": "sha256:418608c90ca2ff72293de5ee8a99595ee804caf38e7e89f2df9618772f0dba81",
   "truthSource": "classification-overlay",
   "coverage": {
     "endpoints": 498,
@@ -996,7 +996,7 @@
         "codes": [],
         "require": "all",
         "scopes": [
-          "activity-visibility"
+          "visibility:activity-visibility"
         ],
         "engine": "authz-scoped"
       },
@@ -1072,11 +1072,11 @@
         "mode": "RBAC",
         "codes": [
           {
-            "code": "attendance.read.sheet",
+            "code": "activity-registration.read.record",
             "scope": null
           },
           {
-            "code": "activity-registration.read.record",
+            "code": "attendance.read.sheet",
             "scope": null
           }
         ],
@@ -1167,7 +1167,7 @@
         "codes": [],
         "require": "all",
         "scopes": [
-          "activity-visibility"
+          "visibility:activity-visibility"
         ],
         "engine": "authz-scoped"
       },
@@ -1226,7 +1226,7 @@
         "codes": [],
         "require": "all",
         "scopes": [
-          "activity-visibility"
+          "visibility:activity-visibility"
         ],
         "engine": "authz-scoped"
       },
@@ -1290,11 +1290,11 @@
         "mode": "RBAC",
         "codes": [
           {
-            "code": "attendance.read.sheet",
+            "code": "activity-registration.read.record",
             "scope": null
           },
           {
-            "code": "activity-registration.read.record",
+            "code": "attendance.read.sheet",
             "scope": null
           }
         ],
@@ -1373,7 +1373,7 @@
         "codes": [],
         "require": "all",
         "scopes": [
-          "activity-visibility"
+          "visibility:activity-visibility"
         ],
         "engine": "authz-scoped"
       },
@@ -1450,7 +1450,7 @@
         "codes": [],
         "require": "all",
         "scopes": [
-          "activity-visibility"
+          "visibility:activity-visibility"
         ],
         "engine": "authz-scoped"
       },
@@ -1554,7 +1554,7 @@
         "codes": [],
         "require": "all",
         "scopes": [
-          "visibility:organization"
+          "org-scope"
         ],
         "engine": "authz-scoped"
       },
@@ -1626,11 +1626,11 @@
         "mode": "RBAC",
         "codes": [
           {
-            "code": "attendance.read.sheet",
+            "code": "activity-registration.read.record",
             "scope": null
           },
           {
-            "code": "activity-registration.read.record",
+            "code": "attendance.read.sheet",
             "scope": null
           }
         ],
@@ -1705,7 +1705,7 @@
         "codes": [],
         "require": "all",
         "scopes": [
-          "visibility"
+          "visibility:app-activity-catalog"
         ],
         "engine": "authz-scoped"
       },
@@ -1771,7 +1771,7 @@
         "codes": [],
         "require": "all",
         "scopes": [
-          "visibility"
+          "visibility:app-activity-catalog"
         ],
         "engine": "authz-scoped"
       },
@@ -1843,7 +1843,7 @@
         "codes": [],
         "require": "all",
         "scopes": [
-          "visibility"
+          "visibility:app-activity-catalog"
         ],
         "engine": "authz-scoped"
       },
@@ -1909,7 +1909,7 @@
         "codes": [],
         "require": "all",
         "scopes": [
-          "visibility"
+          "visibility:app-activity-catalog"
         ],
         "engine": "authz-scoped"
       },
@@ -1974,7 +1974,7 @@
         ],
         "require": "all",
         "scopes": [
-          "visibility"
+          "visibility:content-visibility"
         ],
         "engine": "authz-scoped"
       },
@@ -2076,7 +2076,7 @@
         ],
         "require": "all",
         "scopes": [
-          "visibility"
+          "visibility:content-visibility"
         ],
         "engine": "authz-scoped"
       },
@@ -5312,6 +5312,7 @@
       "path": "/api/system/v1/authz/me/effective-permissions",
       "controller": "EffectivePermissionsController",
       "handler": "getEffectivePermissions",
+      "truthSource": "code",
       "tags": [
         "Ops - Authz"
       ],
@@ -5351,6 +5352,7 @@
       "path": "/api/system/v1/rbac/me/permissions",
       "controller": "RbacController",
       "handler": "getMyPermissions",
+      "truthSource": "code",
       "tags": [
         "Ops - RBAC"
       ],
@@ -14345,6 +14347,7 @@
       "path": "/api/auth/v1/logout-all",
       "controller": "AuthController",
       "handler": "logoutAll",
+      "truthSource": "code",
       "tags": [
         "Auth"
       ],
@@ -14402,6 +14405,7 @@
       "path": "/api/auth/v1/step-up/password",
       "controller": "AuthController",
       "handler": "stepUpWithPassword",
+      "truthSource": "code",
       "tags": [
         "Auth"
       ],
@@ -14489,6 +14493,7 @@
       "path": "/api/auth/v1/step-up/sms",
       "controller": "AuthController",
       "handler": "stepUpWithSms",
+      "truthSource": "code",
       "tags": [
         "Auth"
       ],
@@ -14594,6 +14599,7 @@
       "path": "/api/auth/v1/step-up/sms/send-code",
       "controller": "AuthController",
       "handler": "sendStepUpSmsCode",
+      "truthSource": "code",
       "tags": [
         "Auth"
       ],
@@ -14681,6 +14687,7 @@
       "path": "/api/auth/v1/step-up/wechat",
       "controller": "AuthController",
       "handler": "stepUpWithWechat",
+      "truthSource": "code",
       "tags": [
         "Auth"
       ],
@@ -14792,6 +14799,7 @@
       "path": "/api/auth/v1/wecom-bind/authorize",
       "controller": "AuthController",
       "handler": "authorizeWecomBindSelf",
+      "truthSource": "code",
       "tags": [
         "Auth"
       ],

@@ -9,6 +9,7 @@ import {
 } from '../../common/decorators/api-response.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
@@ -54,6 +55,7 @@ export class UserRolesController {
   constructor(private readonly service: UserRolesService) {}
 
   @Get()
+  @RequiresPermission('rbac.user-role.read')
   @ApiOperation({ summary: '查用户角色列表(排除已软删 RBAC 角色) [rbac: rbac.user-role.read]' })
   @ApiWrappedArrayResponse(UserRoleResponseDto)
   @ApiBizErrorResponse(
@@ -70,6 +72,7 @@ export class UserRolesController {
   }
 
   @Post()
+  @RequiresPermission('rbac.user-role.create')
   @ApiOperation({
     summary:
       '给用户分配角色(入参 roleCode;Q7 角色分级 C2 中庸:SUPER_ADMIN 通过任何 / 持 ops-admin 通过非 ops-admin / 其他 30102;重复分配 30006) [rbac: rbac.user-role.create]',
@@ -95,6 +98,7 @@ export class UserRolesController {
   }
 
   @Delete(':roleId')
+  @RequiresPermission('rbac.user-role.delete')
   @ApiOperation({
     summary:
       '撤销用户角色(路径 :roleId 是 RbacRole.id;Q7 角色分级判定;撤 ops-admin 时事务内"最后一个 ops-admin 保护"30101;关系不存在 30007) [rbac: rbac.user-role.delete]',

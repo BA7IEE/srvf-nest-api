@@ -6,6 +6,7 @@ import {
 } from '../../common/decorators/api-response.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { LoginOnly } from '../../common/decorators/route-authz.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { AuthzService } from './authz.service';
 import { EffectivePermissionsResponseDto } from './effective-permissions.dto';
@@ -19,6 +20,7 @@ export class EffectivePermissionsController {
   constructor(private readonly authz: AuthzService) {}
 
   @Get('me/effective-permissions')
+  @LoginOnly()
   @ApiOperation({
     summary:
       '查当前用户三源授权合并后的有效权限码(直接绑定 + 职务策略 + 分管;SUPER_ADMIN 返全集) [auth]',

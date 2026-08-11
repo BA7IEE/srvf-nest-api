@@ -787,11 +787,12 @@ checkEq(
     selfGuard: Array<{ globs: string[] }>;
   };
   const selfGlobs = registry.selfGuard.flatMap((entry) => entry.globs);
-  const phase0Files: Array<readonly [string, string]> = [
+  const governanceFiles: Array<readonly [string, string]> = [
     ['harness/domain-map.json', 'harness/**'],
     ['harness/architecture-debt.json', 'harness/**'],
     ['harness/state-machines.json', 'harness/**'],
     ['harness/route-authz-classification.json', 'harness/**'],
+    ['harness/authz-assertion-patterns.json', 'harness/**'],
     ['harness/baseline-health.json', 'harness/**'],
     ['scripts/check-boundaries.ts', 'scripts/check-*.ts'],
     ['scripts/generate-authz-manifest.ts', 'scripts/generate-*.ts'],
@@ -815,9 +816,9 @@ checkEq(
       'changelog.d/architecture-governance-phase0-gate.added.md',
     ],
   ];
-  for (const [file, glob] of phase0Files) {
+  for (const [file, glob] of governanceFiles) {
     check(
-      `P0 selfGuard:Phase 0 新文件 ${file} 已由 ${glob} 收编`,
+      `Governance selfGuard:${file} 已由 ${glob} 收编`,
       selfGlobs.includes(glob),
       '新增取证产物若未进入 selfGuard，可在同一 PR 内静默篡改基线或生成器。',
     );
@@ -886,6 +887,7 @@ checkEq(
       'harness/domain-map.json',
       'harness/state-machines.json',
       'harness/route-authz-classification.json',
+      'harness/authz-assertion-patterns.json',
       'docs/ai-harness/ROUTE_AUTHZ.md',
       'test/contract/openapi.contract-spec.ts',
       'scripts/check-boundaries.ts',
@@ -896,35 +898,52 @@ checkEq(
     fs.symlinkSync(path.join(REPO, 'node_modules'), path.join(fixtureRoot, 'node_modules'), 'dir');
 
     checkEq(
-      'P0 boundaries:临时副本 --metadata 的干净输入通过',
+      'P1 domain-map 定性正例:confirmed 与 decisionsPending 一致时通过',
       runFixture('scripts/check-boundaries.ts', ['--metadata']).code,
       0,
     );
     const fixtureDomainMap = path.join(fixtureRoot, 'harness/domain-map.json');
     const originalDomainMap = fs.readFileSync(fixtureDomainMap, 'utf8');
-    const unconfirmedKernelMap = JSON.parse(originalDomainMap) as {
-      kernel: {
-        kernelReadFields: { confirmed: boolean };
-        kernelPredicateFields: { confirmed: boolean };
-      };
+    const confirmedButPendingMap = JSON.parse(originalDomainMap) as {
+      publicSurface: { confirmed: boolean };
+      decisionsPending: string[];
     };
-    unconfirmedKernelMap.kernel.kernelReadFields.confirmed = false;
-    unconfirmedKernelMap.kernel.kernelPredicateFields.confirmed = false;
-    fs.writeFileSync(fixtureDomainMap, JSON.stringify(unconfirmedKernelMap, null, 2) + '\n', 'utf8');
-    const unconfirmedKernel = runFixture('scripts/check-boundaries.ts', ['--metadata']);
+    confirmedButPendingMap.publicSurface.confirmed = true;
+    fs.writeFileSync(
+      fixtureDomainMap,
+      JSON.stringify(confirmedButPendingMap, null, 2) + '\n',
+      'utf8',
+    );
+    const confirmedButPending = runFixture('scripts/check-boundaries.ts', ['--metadata']);
     fs.writeFileSync(fixtureDomainMap, originalDomainMap, 'utf8');
     check(
-      'P0 domain-map 定性阳性:已拍板的 kernel 字段清单不得退回未确认',
-      unconfirmedKernel.code !== 0 &&
-        unconfirmedKernel.out.includes('kernelReadFields.confirmed must be true after maintainer decision') &&
-        unconfirmedKernel.out.includes('kernelPredicateFields.confirmed must be true after maintainer decision'),
-      unconfirmedKernel.out,
+      'P1 domain-map 定性负例:pending 指向 confirmed:true 对象必被拒绝',
+      confirmedButPending.code !== 0 &&
+        confirmedButPending.out.includes(
+          'decisionsPending lists confirmed governance object: publicSurface',
+        ),
+      confirmedButPending.out,
     );
-    const staleDomainMap = mutateInputAndRun(
-      'src/app.module.ts',
-      'scripts/check-boundaries.ts',
-      ['--metadata'],
+    const unlistedPendingMap = JSON.parse(originalDomainMap) as {
+      decisionsPending: string[];
+    };
+    unlistedPendingMap.decisionsPending = unlistedPendingMap.decisionsPending.filter(
+      (decision) => decision !== 'publicSurface',
     );
+    fs.writeFileSync(fixtureDomainMap, JSON.stringify(unlistedPendingMap, null, 2) + '\n', 'utf8');
+    const unlistedPending = runFixture('scripts/check-boundaries.ts', ['--metadata']);
+    fs.writeFileSync(fixtureDomainMap, originalDomainMap, 'utf8');
+    check(
+      'P1 domain-map 定性负例:confirmed:false 对象缺 pending 必被拒绝',
+      unlistedPending.code !== 0 &&
+        unlistedPending.out.includes(
+          'confirmed:false governance object missing from decisionsPending: publicSurface',
+        ),
+      unlistedPending.out,
+    );
+    const staleDomainMap = mutateInputAndRun('src/app.module.ts', 'scripts/check-boundaries.ts', [
+      '--metadata',
+    ]);
     check(
       'P0 inputDigest 阳性:触碰任一 domain-map 输入文件必使 metadata 拒绝',
       staleDomainMap.code !== 0 && staleDomainMap.out.includes('inputDigest stale'),
@@ -947,13 +966,35 @@ checkEq(
       runFixture('scripts/generate-authz-manifest.ts', ['--check']).code,
       0,
     );
+    const fixtureAssertionPatterns = path.join(
+      fixtureRoot,
+      'harness/authz-assertion-patterns.json',
+    );
+    const originalAssertionPatterns = fs.readFileSync(fixtureAssertionPatterns, 'utf8');
+    fs.writeFileSync(
+      fixtureAssertionPatterns,
+      originalAssertionPatterns.replace('rbac-can', 'rbac-can-mutated'),
+      'utf8',
+    );
+    const staleAssertionPatterns = runFixture('scripts/generate-authz-manifest.ts', ['--check']);
+    fs.writeFileSync(fixtureAssertionPatterns, originalAssertionPatterns, 'utf8');
+    check(
+      'P1 assertion patterns:手改 JSON 必被单一来源新鲜度检查拒绝',
+      staleAssertionPatterns.code !== 0 &&
+        staleAssertionPatterns.out.includes('harness/authz-assertion-patterns.json is stale'),
+      staleAssertionPatterns.out,
+    );
     const fixtureClassification = path.join(fixtureRoot, 'harness/route-authz-classification.json');
     const originalClassification = fs.readFileSync(fixtureClassification, 'utf8');
     const undecidedClassification = JSON.parse(originalClassification) as {
       entries: Array<{ decisionStatus: string }>;
     };
     undecidedClassification.entries[0].decisionStatus = 'needs-decision';
-    fs.writeFileSync(fixtureClassification, JSON.stringify(undecidedClassification, null, 2) + '\n', 'utf8');
+    fs.writeFileSync(
+      fixtureClassification,
+      JSON.stringify(undecidedClassification, null, 2) + '\n',
+      'utf8',
+    );
     const undecidedAuthz = runFixture('scripts/generate-authz-manifest.ts', ['--check']);
     fs.writeFileSync(fixtureClassification, originalClassification, 'utf8');
     check(

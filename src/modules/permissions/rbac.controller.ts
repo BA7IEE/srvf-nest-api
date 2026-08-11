@@ -6,6 +6,7 @@ import {
 } from '../../common/decorators/api-response.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { LoginOnly, RequiresPermission } from '../../common/decorators/route-authz.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import {
   EffectiveRoleDto,
@@ -41,6 +42,7 @@ export class RbacController {
   constructor(private readonly service: RbacService) {}
 
   @Get('me/permissions')
+  @LoginOnly()
   @ApiTags('Mobile - Capabilities')
   @ApiOperation({
     summary:
@@ -53,6 +55,7 @@ export class RbacController {
   }
 
   @Post('reload')
+  @RequiresPermission('rbac.config.reload')
   // POST 默认 201,这里是无资源创建的兼容动作端点,沿 v1 / V2 同类动作端点
   // (verify / approve / publish / cancel 等)统一用 HTTP 200
   @HttpCode(HttpStatus.OK)

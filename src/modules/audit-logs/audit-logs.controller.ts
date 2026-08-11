@@ -9,6 +9,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -35,6 +36,7 @@ export class AuditLogsController {
   constructor(private readonly service: AuditLogsService) {}
 
   @Get()
+  @RequiresPermission('audit-log.read.entry')
   @ApiOperation({
     summary:
       '列出审计记录(分页 + 过滤 resourceType / resourceId / event / actorUserId / startDate / endDate;SUPER_ADMIN 可读取全部;其他持有 audit-log.read.entry 的账号仅能读取本人或 USER 操作的记录;稳定排序 createdAt desc + id desc) [rbac: audit-log.read.entry]',
@@ -49,6 +51,7 @@ export class AuditLogsController {
   }
 
   @Get(':id')
+  @RequiresPermission('audit-log.read.entry')
   @ApiOperation({
     summary:
       '审计记录详情(SUPER_ADMIN 可读取全部;其他持有 audit-log.read.entry 的账号仅能读取本人或 USER 操作的记录;超出范围 → 14101;不存在 → 14001;无 update / delete 接口) [rbac: audit-log.read.entry]',

@@ -14,6 +14,7 @@ import { LoginSmsThrottle } from '../../common/decorators/login-sms-throttle.dec
 import { LoginThrottle } from '../../common/decorators/login-throttle.decorator';
 import { LoginWechatThrottle } from '../../common/decorators/login-wechat-throttle.decorator';
 import { LoginWecomThrottle } from '../../common/decorators/login-wecom-throttle.decorator';
+import { LoginOnly } from '../../common/decorators/route-authz.decorator';
 import { PasswordChangeThrottle } from '../../common/decorators/password-change-throttle.decorator';
 import { PasswordResetThrottle } from '../../common/decorators/password-reset-throttle.decorator';
 import { Public } from '../../common/decorators/public.decorator';
@@ -146,6 +147,7 @@ export class AuthController {
   // 不吊销 access token(沿 D-4);返 { revokedCount }。
   @PasswordChangeThrottle()
   @Post('logout-all')
+  @LoginOnly()
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
   @ApiOperation({
@@ -162,6 +164,7 @@ export class AuthController {
 
   @PasswordChangeThrottle()
   @Post('step-up/password')
+  @LoginOnly()
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
   @ApiOperation({ summary: '使用当前密码签发 5 分钟身份绑定 step-up proof [auth]' })
@@ -183,6 +186,7 @@ export class AuthController {
 
   @SmsSendThrottle()
   @Post('step-up/sms/send-code')
+  @LoginOnly()
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
   @ApiOperation({ summary: '向当前绑定手机号发送 identity step-up 验证码 [auth]' })
@@ -207,6 +211,7 @@ export class AuthController {
 
   @SmsVerifyThrottle()
   @Post('step-up/sms')
+  @LoginOnly()
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
   @ApiOperation({ summary: '使用当前手机号验证码签发 5 分钟身份绑定 step-up proof [auth]' })
@@ -229,6 +234,7 @@ export class AuthController {
 
   @LoginWechatThrottle()
   @Post('step-up/wechat')
+  @LoginOnly()
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
   @ApiOperation({ summary: '使用当前微信 openid 签发 5 分钟身份绑定 step-up proof [auth]' })
@@ -553,6 +559,7 @@ export class AuthController {
   // 会校验消费到的 state 属于本人 —— "拿别人的 state 绑自己"在消费那步就断掉。
   @LoginWecomThrottle()
   @Post('wecom-bind/authorize')
+  @LoginOnly()
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
   @ApiOperation({

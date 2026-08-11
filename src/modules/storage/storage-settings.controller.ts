@@ -11,6 +11,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
@@ -46,6 +47,7 @@ export class StorageSettingsController {
   constructor(private readonly service: StorageSettingsService) {}
 
   @Get()
+  @RequiresPermission('storage-setting.read.singleton')
   @ApiOperation({
     summary:
       '读 Storage Settings singleton row(沿 Q-11-1:不存在返 data=null;不抛 BizCode;不回显凭证) [rbac: storage-setting.read.singleton]',
@@ -57,6 +59,7 @@ export class StorageSettingsController {
   }
 
   @Patch()
+  @RequiresPermission('storage-setting.update.singleton')
   @ApiOperation({
     summary:
       'upsert 更新 Storage Settings(沿 Q-11-1 + Q-11-17:不存在则创建 default;providerType 缺省 LOCAL;**拒绝**任何凭证字段;事务提交后任一实例下一次调用直读 PostgreSQL 新值,无需 invalidate/reload/restart) [rbac: storage-setting.update.singleton]',
@@ -72,6 +75,7 @@ export class StorageSettingsController {
   }
 
   @Post('reset-credentials')
+  @RequiresPermission('storage-setting.reset.credentials')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

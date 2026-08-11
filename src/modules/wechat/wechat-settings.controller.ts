@@ -11,6 +11,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
@@ -42,6 +43,7 @@ export class WechatSettingsController {
   constructor(private readonly service: WechatSettingsService) {}
 
   @Get()
+  @RequiresPermission('wechat-setting.read.singleton')
   @ApiOperation({
     summary:
       '读 WeChat Settings singleton row(不存在返 data=null;不抛 BizCode;不回显凭证) [rbac: wechat-setting.read.singleton]',
@@ -53,6 +55,7 @@ export class WechatSettingsController {
   }
 
   @Patch()
+  @RequiresPermission('wechat-setting.update.singleton')
   @ApiOperation({
     summary:
       'upsert 更新 WeChat Settings(不存在则创建 default providerType=DEV_STUB;production-like 拒绝 DEV_STUB;**拒绝**任何凭证字段;事务提交后任一实例下一次调用直读 PostgreSQL 新值,无需 invalidate/reload/restart) [rbac: wechat-setting.update.singleton]',
@@ -68,6 +71,7 @@ export class WechatSettingsController {
   }
 
   @Post('reset-credentials')
+  @RequiresPermission('wechat-setting.reset.credentials')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

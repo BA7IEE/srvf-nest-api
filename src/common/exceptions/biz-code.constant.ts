@@ -108,6 +108,12 @@ export const BizCode = {
     message: '服务器内部错误',
     httpStatus: HttpStatus.INTERNAL_SERVER_ERROR,
   },
+  // 架构治理 Phase 1:路由缺失访问声明属于服务端配置错误；enforce 时在 handler 前拒绝。
+  AUTHZ_UNDECLARED: {
+    code: 50001,
+    message: '接口访问声明缺失',
+    httpStatus: HttpStatus.INTERNAL_SERVER_ERROR,
+  },
 
   // users 模块业务级(100xx)—— 实际 throw 点在第 7/8 阶段落地
   USER_NOT_FOUND: { code: 10001, message: '用户不存在', httpStatus: HttpStatus.NOT_FOUND },

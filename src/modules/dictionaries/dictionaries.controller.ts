@@ -9,6 +9,7 @@ import {
 } from '../../common/decorators/api-response.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -48,6 +49,7 @@ export class DictTypesController {
   constructor(private readonly service: DictionariesService) {}
 
   @Get()
+  @RequiresPermission('dict.read.type')
   @ApiOperation({ summary: '列出字典类型(分页) [rbac: dict.read.type]' })
   @ApiWrappedPageResponse(DictTypeResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -59,6 +61,7 @@ export class DictTypesController {
   }
 
   @Post()
+  @RequiresPermission('dict.create.type')
   @ApiOperation({ summary: '创建字典类型 [rbac: dict.create.type]' })
   @ApiWrappedCreatedResponse(DictTypeResponseDto)
   @ApiBizErrorResponse(
@@ -75,6 +78,7 @@ export class DictTypesController {
   }
 
   @Get(':id')
+  @RequiresPermission('dict.read.type')
   @ApiOperation({ summary: '字典类型详情 [rbac: dict.read.type]' })
   @ApiWrappedOkResponse(DictTypeResponseDto)
   @ApiBizErrorResponse(
@@ -91,6 +95,7 @@ export class DictTypesController {
   }
 
   @Patch(':id')
+  @RequiresPermission('dict.update.type')
   @ApiOperation({ summary: '更新字典类型(label / sortOrder;禁止改 code) [rbac: dict.update.type]' })
   @ApiWrappedOkResponse(DictTypeResponseDto)
   @ApiBizErrorResponse(
@@ -108,6 +113,7 @@ export class DictTypesController {
   }
 
   @Patch(':id/status')
+  @RequiresPermission('dict.update.type')
   @ApiOperation({ summary: '启停字典类型(只改 status) [rbac: dict.update.type]' })
   @ApiWrappedOkResponse(DictTypeResponseDto)
   @ApiBizErrorResponse(
@@ -125,6 +131,7 @@ export class DictTypesController {
   }
 
   @Delete(':id')
+  @RequiresPermission('dict.delete.type')
   @ApiOperation({
     summary:
       '软删字典类型(P0-F PR-2A D3=A 放宽:ops-admin 可调;系统内置类型拒删;有 dict_items / organizations / members 引用则拒绝) [rbac: dict.delete.type]',
@@ -155,6 +162,7 @@ export class DictItemsController {
   constructor(private readonly service: DictionariesService) {}
 
   @Get()
+  @RequiresPermission('dict.read.item')
   @ApiOperation({ summary: '列出字典项(分页;typeId 必填) [rbac: dict.read.item]' })
   @ApiWrappedPageResponse(DictItemResponseDto)
   @ApiBizErrorResponse(
@@ -171,6 +179,7 @@ export class DictItemsController {
   }
 
   @Post()
+  @RequiresPermission('dict.create.item')
   @ApiOperation({ summary: '创建字典项 [rbac: dict.create.item]' })
   @ApiWrappedCreatedResponse(DictItemResponseDto)
   @ApiBizErrorResponse(
@@ -193,6 +202,7 @@ export class DictItemsController {
   // /tree 必须在 /:id 之前定义(specific-before-dynamic):NestJS / Express
   // 路由匹配 first-match,避免 'tree' 被当作 :id 路径参数。
   @Get('tree')
+  @RequiresPermission('dict.read.item')
   @ApiOperation({ summary: '字典项树形(按 typeId 过滤;深度无限制) [rbac: dict.read.item]' })
   @ApiWrappedArrayResponse(DictItemTreeNodeDto)
   @ApiBizErrorResponse(
@@ -209,6 +219,7 @@ export class DictItemsController {
   }
 
   @Get(':id')
+  @RequiresPermission('dict.read.item')
   @ApiOperation({ summary: '字典项详情 [rbac: dict.read.item]' })
   @ApiWrappedOkResponse(DictItemResponseDto)
   @ApiBizErrorResponse(
@@ -225,6 +236,7 @@ export class DictItemsController {
   }
 
   @Patch(':id')
+  @RequiresPermission('dict.update.item')
   @ApiOperation({
     summary:
       '更新字典项(label / sortOrder;禁止改 typeId / code / parentId) [rbac: dict.update.item]',
@@ -245,6 +257,7 @@ export class DictItemsController {
   }
 
   @Patch(':id/status')
+  @RequiresPermission('dict.update.item')
   @ApiOperation({ summary: '启停字典项(只改 status) [rbac: dict.update.item]' })
   @ApiWrappedOkResponse(DictItemResponseDto)
   @ApiBizErrorResponse(
@@ -262,6 +275,7 @@ export class DictItemsController {
   }
 
   @Delete(':id')
+  @RequiresPermission('dict.delete.item')
   @ApiOperation({
     summary:
       '软删字典项(P0-F PR-2A D3=A 放宽:ops-admin 可调;闭集 / 国标 / 队内内置类型下的项拒删;有子节点 / organizations / members 引用则拒绝) [rbac: dict.delete.item]',

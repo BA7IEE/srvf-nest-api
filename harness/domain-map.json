@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:7675e13938cdfab08bd152d89b51afe4bd4550cdcdd55ee27b98de42cfcad7aa",
+  "inputDigest": "sha256:4b0a77110987d51c3a904b92830941e4e57e7fc177cbb8f0542456ecac86a3c6",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -661,34 +661,34 @@
     "WecomSettings": { "domain": "comms", "ownerModule": "wecom", "confirmed": true }
   },
   "allowedEdges": [
-    { "from": "identity-org", "to": "platform-core", "kind": "public-surface" },
-    { "from": "identity-org", "to": "platform-access", "kind": "public-surface" },
-    { "from": "identity-org", "to": "comms", "kind": "public-surface" },
-    { "from": "engagement", "to": "identity-org", "kind": "declared-business" },
-    { "from": "engagement", "to": "credentials", "kind": "declared-business" },
-    { "from": "engagement", "to": "participation", "kind": "declared-business" },
-    { "from": "engagement", "to": "platform-core", "kind": "public-surface" },
-    { "from": "engagement", "to": "platform-access", "kind": "public-surface" },
-    { "from": "engagement", "to": "comms", "kind": "public-surface" },
-    { "from": "participation", "to": "identity-org", "kind": "declared-business" },
-    { "from": "participation", "to": "insurance", "kind": "declared-business" },
-    { "from": "participation", "to": "platform-core", "kind": "public-surface" },
-    { "from": "participation", "to": "platform-access", "kind": "public-surface" },
-    { "from": "participation", "to": "comms", "kind": "public-surface" },
-    { "from": "insurance", "to": "identity-org", "kind": "declared-business" },
-    { "from": "insurance", "to": "credentials", "kind": "declared-business" },
-    { "from": "insurance", "to": "platform-core", "kind": "public-surface" },
-    { "from": "insurance", "to": "platform-access", "kind": "public-surface" },
-    { "from": "credentials", "to": "identity-org", "kind": "declared-business" },
-    { "from": "credentials", "to": "platform-core", "kind": "public-surface" },
-    { "from": "credentials", "to": "platform-access", "kind": "public-surface" },
-    { "from": "content", "to": "platform-core", "kind": "declared-business" },
-    { "from": "content", "to": "platform-access", "kind": "public-surface" },
-    { "from": "content", "to": "comms", "kind": "public-surface" },
-    { "from": "comms", "to": "identity-org", "kind": "read-only-query" },
-    { "from": "comms", "to": "platform-core", "kind": "public-surface" },
-    { "from": "comms", "to": "platform-access", "kind": "public-surface" },
-    { "from": "platform-access", "to": "platform-core", "kind": "public-surface" }
+    { "from": "identity-org", "to": "platform-core", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "identity-org", "to": "platform-access", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "identity-org", "to": "comms", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "engagement", "to": "identity-org", "kind": "declared-business", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "engagement", "to": "credentials", "kind": "declared-business", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "engagement", "to": "participation", "kind": "declared-business", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "engagement", "to": "platform-core", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "engagement", "to": "platform-access", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "engagement", "to": "comms", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "participation", "to": "identity-org", "kind": "declared-business", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "participation", "to": "insurance", "kind": "declared-business", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "participation", "to": "platform-core", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "participation", "to": "platform-access", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "participation", "to": "comms", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "insurance", "to": "identity-org", "kind": "declared-business", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "insurance", "to": "credentials", "kind": "declared-business", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "insurance", "to": "platform-core", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "insurance", "to": "platform-access", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "credentials", "to": "identity-org", "kind": "declared-business", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "credentials", "to": "platform-core", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "credentials", "to": "platform-access", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "content", "to": "platform-core", "kind": "declared-business", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "content", "to": "platform-access", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "content", "to": "comms", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "comms", "to": "identity-org", "kind": "read-only-query", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "comms", "to": "platform-core", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "comms", "to": "platform-access", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
+    { "from": "platform-access", "to": "platform-core", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" }
   ],
   "publicSurface": {
     "confirmed": false,
@@ -713,31 +713,31 @@
     }
   },
   "kernel": {
-    "confirmed": false,
+    "confirmed": true,
     "primitives": [
       {
         "name": "app-identity.resolver",
         "path": "src/modules/users/app-identity.resolver.ts",
         "ownerDomain": "identity-org",
-        "confirmed": false
+        "confirmed": true
       },
       {
         "name": "member-lifecycle-lock",
         "path": "src/modules/members/member-lifecycle-lock.ts",
         "ownerDomain": "identity-org",
-        "confirmed": false
+        "confirmed": true
       },
       {
         "name": "membership-term-state-machine",
         "path": "src/modules/member-departments/membership-term-state-machine.ts",
         "ownerDomain": "identity-org",
-        "confirmed": false
+        "confirmed": true
       },
       {
         "name": "wecom-identity-revoke",
         "path": "src/modules/users/wecom-identity-revoke.ts",
         "ownerDomain": "identity-org",
-        "confirmed": false
+        "confirmed": true
       }
     ],
     "kernelReadFields": {
@@ -758,7 +758,5 @@
     }
   },
   "crossDomainReadAllowlist": [],
-  "decisionsPending": [
-    "allowed edges and public surface declarations"
-  ]
+  "decisionsPending": ["allowedEdges", "publicSurface"]
 }

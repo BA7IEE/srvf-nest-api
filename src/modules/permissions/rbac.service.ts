@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Role } from '@prisma/client';
+import { recordAuthzAssertion } from '../../common/authz/authz-context';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -103,6 +104,7 @@ export class RbacService {
 
   // 判权主函数(沿 D7 §8.2 实现伪代码)。
   async can(user: CurrentUserPayload, action: string, resource?: RbacResource): Promise<boolean> {
+    recordAuthzAssertion({ pattern: 'rbac-can', codes: [action], resourceRef: resource });
     const result = await this.judge(user, action, resource);
     return result.allowed;
   }

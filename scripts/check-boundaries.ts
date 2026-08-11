@@ -48,6 +48,12 @@ interface Edge {
   kind?: string;
 }
 
+interface GovernanceConfirmation {
+  id: string;
+  path: string;
+  confirmed: boolean;
+}
+
 interface DomainMap {
   schemaVersion: string;
   generatorVersion: string;
@@ -56,6 +62,8 @@ interface DomainMap {
   moduleOwnership: Record<string, Owner>;
   modelOwnership: Record<string, Owner>;
   allowedEdges: Edge[];
+  decisionsPending: string[];
+  confirmations: GovernanceConfirmation[];
   kernel: {
     confirmed?: boolean;
     primitives?: JsonRecord[];
@@ -122,6 +130,11 @@ function objectOf(value: unknown, label: string): JsonRecord {
 
 function stringOf(value: unknown, label: string): string {
   if (typeof value !== 'string' || value.length === 0) fail(label + ' must be a non-empty string');
+  return value;
+}
+
+function booleanOf(value: unknown, label: string): boolean {
+  if (typeof value !== 'boolean') fail(label + ' must be a boolean');
   return value;
 }
 
@@ -221,7 +234,7 @@ function ownerOf(value: unknown, label: string): Owner {
     domain: stringOf(record.domain, label + '.domain'),
     ownerModule: typeof record.ownerModule === 'string' ? record.ownerModule : undefined,
     subdomain: typeof record.subdomain === 'string' ? record.subdomain : undefined,
-    confirmed: typeof record.confirmed === 'boolean' ? record.confirmed : undefined,
+    confirmed: booleanOf(record.confirmed, label + '.confirmed'),
   };
 }
 
@@ -237,12 +250,42 @@ function edgeList(value: unknown): Edge[] {
   if (!Array.isArray(value)) fail('allowedEdges must be an array');
   return value.map((item, index) => {
     const record = objectOf(item, 'allowedEdges[' + index + ']');
+    booleanOf(record.confirmed, 'allowedEdges[' + index + '].confirmed');
     return {
       from: stringOf(record.from, 'allowedEdges[' + index + '].from'),
       to: stringOf(record.to, 'allowedEdges[' + index + '].to'),
       kind: typeof record.kind === 'string' ? record.kind : undefined,
     };
   });
+}
+
+function collectGovernanceConfirmations(
+  value: unknown,
+  path: string,
+  output: GovernanceConfirmation[],
+): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) =>
+      collectGovernanceConfirmations(item, `${path}[${index}]`, output),
+    );
+    return;
+  }
+  if (value === null || typeof value !== 'object') return;
+
+  const record = value as JsonRecord;
+  if (Object.hasOwn(record, 'confirmed')) {
+    const id =
+      record.decisionId === undefined ? path : stringOf(record.decisionId, `${path}.decisionId`);
+    output.push({
+      id,
+      path,
+      confirmed: booleanOf(record.confirmed, `${path}.confirmed`),
+    });
+  }
+  for (const [key, child] of Object.entries(record)) {
+    if (key === 'confirmed' || key === 'decisionId') continue;
+    collectGovernanceConfirmations(child, path ? `${path}.${key}` : key, output);
+  }
 }
 
 function kernelFields(
@@ -258,7 +301,7 @@ function kernelFields(
     }
   }
   return {
-    confirmed: typeof record.confirmed === 'boolean' ? record.confirmed : undefined,
+    confirmed: booleanOf(record.confirmed, label + '.confirmed'),
     fields,
   };
 }
@@ -267,18 +310,40 @@ function domainMap(): DomainMap {
   const raw = objectOf(JSON.parse(read(DOMAIN_MAP)) as unknown, DOMAIN_MAP);
   const kernelRaw = objectOf(raw.kernel, 'kernel');
   const primitives = Array.isArray(kernelRaw.primitives)
-    ? kernelRaw.primitives.map((item, index) => objectOf(item, 'kernel.primitives[' + index + ']'))
+    ? kernelRaw.primitives.map((item, index) => {
+        const primitive = objectOf(item, 'kernel.primitives[' + index + ']');
+        booleanOf(primitive.confirmed, 'kernel.primitives[' + index + '].confirmed');
+        return primitive;
+      })
     : [];
+  const domains = objectOf(raw.domains, 'domains');
+  for (const [domainName, domain] of Object.entries(domains)) {
+    const record = objectOf(domain, 'domains.' + domainName);
+    booleanOf(record.confirmed, 'domains.' + domainName + '.confirmed');
+    if (record.observedSubdomains === undefined) continue;
+    for (const [subdomainName, subdomain] of Object.entries(
+      objectOf(record.observedSubdomains, 'domains.' + domainName + '.observedSubdomains'),
+    )) {
+      const label = 'domains.' + domainName + '.observedSubdomains.' + subdomainName;
+      booleanOf(objectOf(subdomain, label).confirmed, label + '.confirmed');
+    }
+  }
+  const publicSurface = objectOf(raw.publicSurface, 'publicSurface');
+  booleanOf(publicSurface.confirmed, 'publicSurface.confirmed');
+  const confirmations: GovernanceConfirmation[] = [];
+  collectGovernanceConfirmations(raw, '', confirmations);
   return {
     schemaVersion: stringOf(raw.schemaVersion, 'schemaVersion'),
     generatorVersion: stringOf(raw.generatorVersion, 'generatorVersion'),
     inputDigest: stringOf(raw.inputDigest, 'inputDigest'),
-    domains: objectOf(raw.domains, 'domains'),
+    domains,
     moduleOwnership: ownershipMap(raw.moduleOwnership, 'moduleOwnership'),
     modelOwnership: ownershipMap(raw.modelOwnership, 'modelOwnership'),
     allowedEdges: edgeList(raw.allowedEdges),
+    decisionsPending: stringsOf(raw.decisionsPending, 'decisionsPending'),
+    confirmations,
     kernel: {
-      confirmed: typeof kernelRaw.confirmed === 'boolean' ? kernelRaw.confirmed : undefined,
+      confirmed: booleanOf(kernelRaw.confirmed, 'kernel.confirmed'),
       primitives,
       kernelReadFields: kernelFields(kernelRaw.kernelReadFields, 'kernel.kernelReadFields'),
       kernelPredicateFields: kernelFields(
@@ -292,6 +357,46 @@ function domainMap(): DomainMap {
         )
       : [],
   };
+}
+
+function decisionPendingErrors(map: DomainMap): string[] {
+  const errors: string[] = [];
+  const pending = new Set<string>();
+  for (const id of map.decisionsPending) {
+    if (pending.has(id)) errors.push('decisionsPending has duplicate decision id: ' + id);
+    pending.add(id);
+  }
+
+  const byId = new Map<string, GovernanceConfirmation[]>();
+  for (const confirmation of map.confirmations) {
+    const entries = byId.get(confirmation.id) ?? [];
+    entries.push(confirmation);
+    byId.set(confirmation.id, entries);
+  }
+  for (const [id, entries] of byId) {
+    const states = new Set(entries.map((entry) => entry.confirmed));
+    if (states.size > 1) {
+      errors.push(
+        'governance decision has mixed confirmed flags: ' +
+          id +
+          ' (' +
+          entries.map((entry) => entry.path).join(', ') +
+          ')',
+      );
+      continue;
+    }
+    const confirmed = entries[0].confirmed;
+    if (confirmed && pending.has(id)) {
+      errors.push('decisionsPending lists confirmed governance object: ' + id);
+    }
+    if (!confirmed && !pending.has(id)) {
+      errors.push('confirmed:false governance object missing from decisionsPending: ' + id);
+    }
+  }
+  for (const id of pending) {
+    if (!byId.has(id)) errors.push('decisionsPending references unknown governance object: ' + id);
+  }
+  return errors;
 }
 
 function stateRegistryErrors(errors: string[]): void {
@@ -389,14 +494,11 @@ function runMetadata(): void {
     ) {
       errors.push('kernel.primitives must declare exactly the four Phase 0 primitives');
     }
-    if (map.kernel.confirmed !== false) errors.push('kernel.confirmed must be false');
-    // 2026-08-10 maintainer decision confirms these two field-list proposals only.
-    // The kernel root and its four primitives remain separately pending.
-    if (map.kernel.kernelReadFields?.confirmed !== true)
-      errors.push('kernelReadFields.confirmed must be true after maintainer decision');
-    if (map.kernel.kernelPredicateFields?.confirmed !== true) {
-      errors.push('kernelPredicateFields.confirmed must be true after maintainer decision');
-    }
+    errors.push(...decisionPendingErrors(map));
+    if (map.kernel.kernelReadFields === undefined)
+      errors.push('kernelReadFields governance object is missing');
+    if (map.kernel.kernelPredicateFields === undefined)
+      errors.push('kernelPredicateFields governance object is missing');
     for (const [modelName, fields] of Object.entries(map.kernel.kernelReadFields?.fields ?? {})) {
       const model = models.find((item) => item.name === modelName);
       if (model === undefined) {

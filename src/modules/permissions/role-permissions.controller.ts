@@ -8,6 +8,7 @@ import {
 } from '../../common/decorators/api-response.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
@@ -52,6 +53,7 @@ export class RolePermissionsController {
   constructor(private readonly service: RolePermissionsService) {}
 
   @Post()
+  @RequiresPermission('rbac.role-permission.create')
   @ApiOperation({
     summary:
       '批量给角色加权限点(幂等:已存在的 (roleId, permissionId) 静默跳过;入参 permissionCodes[],非 ids;SA-only 保留码仅 SUPER_ADMIN 可分配,否则 30103) [rbac: rbac.role-permission.create]',
@@ -76,6 +78,7 @@ export class RolePermissionsController {
   }
 
   @Delete(':permissionId')
+  @RequiresPermission('rbac.role-permission.delete')
   @ApiOperation({
     summary:
       '撤销角色的某个权限点(精确路径 :permissionId 是 permission.id 非 code;关系不存在返 30011) [rbac: rbac.role-permission.delete]',

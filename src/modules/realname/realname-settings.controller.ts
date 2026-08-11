@@ -11,6 +11,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
@@ -42,6 +43,7 @@ export class RealnameSettingsController {
   constructor(private readonly service: RealnameSettingsService) {}
 
   @Get()
+  @RequiresPermission('realname-setting.read.singleton')
   @ApiOperation({
     summary:
       '读 Realname Verification Settings singleton row(不存在返 data=null;不抛 BizCode;不回显凭证) [rbac: realname-setting.read.singleton]',
@@ -53,6 +55,7 @@ export class RealnameSettingsController {
   }
 
   @Patch()
+  @RequiresPermission('realname-setting.update.singleton')
   @ApiOperation({
     summary:
       'upsert 更新实名核验设置(不存在则创建 default providerType=DEV_STUB;production-like 拒绝 DEV_STUB;**拒绝**任何凭证字段;事务提交后任一实例下一次调用直读 PostgreSQL 新值,无需 invalidate/reload/restart) [rbac: realname-setting.update.singleton]',
@@ -68,6 +71,7 @@ export class RealnameSettingsController {
   }
 
   @Post('reset-credentials')
+  @RequiresPermission('realname-setting.reset.credentials')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

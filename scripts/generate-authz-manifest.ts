@@ -1,22 +1,32 @@
 /**
- * generate-authz-manifest.ts - Phase 0 Route Authorization Policy inventory.
+ * generate-authz-manifest.ts - Route Authorization Policy manifest generator.
  *
- * It inventories controller routes only. No decorator, Guard, ALS, or runtime
- * authorization behavior is changed here.
+ * Phase 0 used the classification overlay as a temporary truth source. Phase 1
+ * transfers a route one at a time to its normalized declaration in code; the
+ * overlay remains the maintainer decision record until its final retirement.
  *
  * Modes:
  *   --bootstrap: create the provisional classification overlay and ROUTE_AUTHZ.
  *   --write: regenerate ROUTE_AUTHZ from the existing overlay.
  *   --check: verify controller coverage and generated-document freshness.
+ *   --check-surface=system,auth: additionally require every route in the
+ *     named surfaces to have transferred to a code declaration.
  */
 
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
+import {
+  AUTHZ_ASSERTION_PATTERNS,
+  AUTHZ_VISIBILITY_PREDICATES,
+  normalizeRouteAuthzDeclaration,
+  type RouteAuthzDeclarationFragment,
+} from '../src/common/authz/authz-context';
 
 const ROOT = path.resolve(__dirname, '..');
 const CLASSIFICATION = 'harness/route-authz-classification.json';
+const ASSERTION_PATTERNS = 'harness/authz-assertion-patterns.json';
 const DOCUMENT = 'docs/ai-harness/ROUTE_AUTHZ.md';
 const VERSION = '1.0.0';
 const HTTP_NAMES = new Set(['Get', 'Post', 'Put', 'Patch', 'Delete']);
@@ -50,6 +60,7 @@ interface Endpoint {
   summary: string;
   legacy: Legacy;
   rbacCodes: string[];
+  codePolicy: Policy | null;
   evidence: Evidence[];
 }
 
@@ -63,6 +74,8 @@ interface Policy {
 }
 
 type DecisionStatus = 'needs-decision' | 'decided';
+type EntryTruthSource = 'classification-overlay' | 'code';
+type Surface = 'admin' | 'app' | 'system' | 'auth' | 'open' | 'other';
 
 interface OverlayEntry {
   routeKey: string;
@@ -73,6 +86,7 @@ interface OverlayEntry {
   tags: string[];
   sourceSummary: string;
   policy: Policy;
+  truthSource?: EntryTruthSource;
   decisionStatus: DecisionStatus;
   evidence: Evidence[];
   implementationSignals: string[];
@@ -111,6 +125,64 @@ interface ClassificationResult {
   evidence: Evidence[];
   implementationSignals: string[];
   unresolvedImplementationEvidence: string[];
+}
+
+function normalizePolicy(policy: Policy): Policy {
+  const fragments: RouteAuthzDeclarationFragment[] =
+    policy.mode === 'PUBLIC'
+      ? []
+      : [
+          {
+            ...(policy.admission === null ? {} : { admission: policy.admission }),
+            mode: policy.mode,
+            codes: policy.codes,
+            require: policy.require,
+            scopes: policy.scopes,
+            ...(policy.engine === null ? {} : { engine: policy.engine }),
+          },
+        ];
+  const normalized = normalizeRouteAuthzDeclaration({
+    isPublic: policy.mode === 'PUBLIC',
+    fragments,
+  });
+  if (normalized === null) throw new Error('policy normalization produced no declaration');
+  return normalized;
+}
+
+function samePolicy(left: Policy, right: Policy): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function normalizeOverlay(input: Overlay): Overlay {
+  return {
+    ...input,
+    inputDigest: computeControllerInputDigest(),
+    entries: input.entries.map((entry) => ({
+      ...entry,
+      policy: normalizePolicy(entry.policy),
+    })),
+  };
+}
+
+function entryTruthSource(entry: OverlayEntry): EntryTruthSource {
+  const source = entry.truthSource ?? 'classification-overlay';
+  if (source !== 'classification-overlay' && source !== 'code') {
+    throw new Error('invalid entry truthSource: ' + entry.routeKey);
+  }
+  return source;
+}
+
+function assertionPatternsDocument(): string {
+  return (
+    JSON.stringify(
+      {
+        version: '1.0.0',
+        families: AUTHZ_ASSERTION_PATTERNS,
+      },
+      null,
+      2,
+    ) + '\n'
+  );
 }
 
 function read(rel: string): string {
@@ -180,6 +252,167 @@ function nameOf(decorator: ts.Decorator): string | null {
   if (ts.isIdentifier(expression)) return expression.text;
   if (ts.isPropertyAccessExpression(expression)) return expression.name.text;
   return null;
+}
+
+function literalProperty(object: ts.ObjectLiteralExpression, key: string): ts.Expression | undefined {
+  for (const property of object.properties) {
+    if (!ts.isPropertyAssignment(property)) continue;
+    const name =
+      ts.isIdentifier(property.name) || ts.isStringLiteral(property.name) ? property.name.text : '';
+    if (name === key) return property.initializer;
+  }
+  return undefined;
+}
+
+function literalString(expression: ts.Expression | undefined, label: string): string {
+  if (expression !== undefined && (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression))) {
+    return expression.text;
+  }
+  throw new Error(label + ' must be a string literal');
+}
+
+function routeAuthzOptions(
+  expression: ts.Expression | undefined,
+  label: string,
+): RouteAuthzDeclarationFragment {
+  if (expression === undefined) return {};
+  if (!ts.isObjectLiteralExpression(expression)) throw new Error(label + ' must be an object literal');
+
+  const output: RouteAuthzDeclarationFragment = {};
+  for (const property of expression.properties) {
+    if (!ts.isPropertyAssignment(property)) throw new Error(label + ' cannot contain spread properties');
+    const key =
+      ts.isIdentifier(property.name) || ts.isStringLiteral(property.name) ? property.name.text : '';
+    if (key === 'admission') {
+      const admission = literalString(property.initializer, label + '.admission');
+      if (admission !== 'app-member') throw new Error(label + '.admission is invalid');
+      output.admission = admission;
+      continue;
+    }
+    if (key === 'require') {
+      const require = literalString(property.initializer, label + '.require');
+      if (require !== 'all' && require !== 'any') throw new Error(label + '.require is invalid');
+      output.require = require;
+      continue;
+    }
+    if (key === 'scopes') {
+      if (!ts.isArrayLiteralExpression(property.initializer))
+        throw new Error(label + '.scopes must be an array literal');
+      output.scopes = property.initializer.elements.map((item) => {
+        if (!ts.isExpression(item)) throw new Error(label + '.scopes cannot contain spread');
+        return literalString(item, label + '.scopes item');
+      });
+      continue;
+    }
+    if (key === 'engine') {
+      const engine = literalString(property.initializer, label + '.engine');
+      if (engine !== 'rbac-global' && engine !== 'authz-scoped')
+        throw new Error(label + '.engine is invalid');
+      output.engine = engine;
+      continue;
+    }
+    throw new Error(label + ' has unsupported option: ' + key);
+  }
+  return output;
+}
+
+function permissionCode(expression: ts.Expression, label: string): { code: string; scope: string | null } {
+  if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) {
+    return { code: expression.text, scope: null };
+  }
+  if (!ts.isObjectLiteralExpression(expression))
+    throw new Error(label + ' must be a code string or object literal');
+  const code = literalString(literalProperty(expression, 'code'), label + '.code');
+  const scopeExpression = literalProperty(expression, 'scope');
+  const scope =
+    scopeExpression === undefined || scopeExpression.kind === ts.SyntaxKind.NullKeyword
+      ? null
+      : literalString(scopeExpression, label + '.scope');
+  return { code, scope };
+}
+
+function declarationPolicy(
+  classDecorators: readonly ts.Decorator[],
+  methodDecorators: readonly ts.Decorator[],
+  label: string,
+): Policy | null {
+  let isPublic = false;
+  let hasDeclaration = false;
+  const fragments: RouteAuthzDeclarationFragment[] = [];
+
+  for (const decorator of [...methodDecorators, ...classDecorators]) {
+    const name = nameOf(decorator);
+    if (name === 'Public') {
+      isPublic = true;
+      hasDeclaration = true;
+      continue;
+    }
+    if (!['LoginOnly', 'LoginScoped', 'ResponsibilityScoped', 'RequiresPermission'].includes(name ?? '')) {
+      continue;
+    }
+    hasDeclaration = true;
+    const call = callOf(decorator);
+    if (call === undefined) throw new Error(label + ': ' + name + ' must be called');
+
+    if (name === 'LoginOnly') {
+      if (call.arguments.length > 1) throw new Error(label + ': LoginOnly accepts at most one options object');
+      fragments.push({ ...routeAuthzOptions(call.arguments[0], label + ': LoginOnly'), mode: 'LOGIN_ONLY' });
+      continue;
+    }
+    if (name === 'LoginScoped') {
+      if (call.arguments.length > 2) throw new Error(label + ': LoginScoped accepts a rule name and options');
+      const first = call.arguments[0];
+      const optionsOnly = first !== undefined && ts.isObjectLiteralExpression(first);
+      const options = routeAuthzOptions(
+        optionsOnly ? first : call.arguments[1],
+        label + ': LoginScoped options',
+      );
+      const scopes = [...(options.scopes ?? [])];
+      if (!optionsOnly && first !== undefined) {
+        scopes.push('visibility:' + literalString(first, label + ': LoginScoped rule name'));
+      }
+      fragments.push({
+        ...options,
+        ...(scopes.length === 0 ? {} : { scopes }),
+        mode: 'LOGIN_SCOPED',
+        engine: options.engine ?? 'authz-scoped',
+      });
+      continue;
+    }
+    if (name === 'ResponsibilityScoped') {
+      if (call.arguments.length > 1)
+        throw new Error(label + ': ResponsibilityScoped accepts at most one options object');
+      const options = routeAuthzOptions(call.arguments[0], label + ': ResponsibilityScoped');
+      fragments.push({
+        ...options,
+        scopes: [...new Set([...(options.scopes ?? []), 'responsibility'])],
+        mode: 'RESPONSIBILITY_SCOPED',
+        engine: options.engine ?? 'authz-scoped',
+      });
+      continue;
+    }
+
+    const argumentsList = [...call.arguments];
+    const last = argumentsList.at(-1);
+    const hasOptions =
+      last !== undefined && ts.isObjectLiteralExpression(last) && literalProperty(last, 'code') === undefined;
+    const options = routeAuthzOptions(
+      hasOptions ? argumentsList.pop() : undefined,
+      label + ': RequiresPermission options',
+    );
+    if (argumentsList.length === 0) throw new Error(label + ': RequiresPermission needs a code');
+    fragments.push({
+      ...options,
+      codes: argumentsList.map((argument, index) =>
+        permissionCode(argument, label + ': RequiresPermission[' + index + ']'),
+      ),
+    });
+  }
+
+  if (!hasDeclaration) return null;
+  const normalized = normalizeRouteAuthzDeclaration({ isPublic, fragments });
+  if (normalized === null) throw new Error(label + ': declaration unexpectedly normalized to null');
+  return normalized;
 }
 
 function stringArgument(call: ts.CallExpression | undefined): string {
@@ -579,6 +812,11 @@ function endpoints(): Endpoint[] {
           const route = joinRoute(prefix, stringArgument(callOf(decorator)));
           const summary = summaryOf(methodDecorators);
           const classified = marker(summary);
+          const codePolicy = declarationPolicy(
+            classDecorators,
+            methodDecorators,
+            file + ':' + lineOf(member, source) + ' ' + node.name.text + '.' + member.name.getText(source),
+          );
           output.push({
             key: HTTP[name] + ' ' + route,
             method: HTTP[name],
@@ -591,6 +829,7 @@ function endpoints(): Endpoint[] {
             summary,
             legacy: classified.legacy,
             rbacCodes: classified.rbacCodes,
+            codePolicy,
             evidence: evidenceFor(file, source, node.name.text, member, summary),
           });
         }
@@ -732,11 +971,65 @@ function validate(endpointList: Endpoint[], input: Overlay): void {
     ) {
       throw new Error('incomplete structured policy/evidence: ' + entry.routeKey);
     }
+    if (!samePolicy(entry.policy, normalizePolicy(entry.policy))) {
+      throw new Error('policy is not canonical: ' + entry.routeKey);
+    }
+    const source = entryTruthSource(entry);
+    const codePolicy = actual.get(entry.routeKey)?.codePolicy ?? null;
+    if (source === 'code') {
+      if (codePolicy === null)
+        throw new Error('code truth source has no declaration: ' + entry.routeKey);
+      if (!samePolicy(entry.policy, codePolicy))
+        throw new Error('code declaration differs from decided policy: ' + entry.routeKey);
+    } else if (codePolicy !== null) {
+      throw new Error(
+        'declaration exists but entry truthSource remains classification-overlay: ' + entry.routeKey,
+      );
+    }
     declared.set(entry.routeKey, entry);
   }
   for (const endpoint of auth) {
     if (!declared.has(endpoint.key))
       throw new Error('missing classification entry: ' + endpoint.key);
+  }
+}
+
+function surfaceOf(endpoint: Endpoint): Surface {
+  if (endpoint.path.startsWith('/api/admin/')) return 'admin';
+  if (endpoint.path.startsWith('/api/app/')) return 'app';
+  if (endpoint.path.startsWith('/api/system/')) return 'system';
+  if (endpoint.path.startsWith('/api/auth/')) return 'auth';
+  if (endpoint.path.startsWith('/api/open/')) return 'open';
+  return 'other';
+}
+
+function validateSurfaceCodeTruth(
+  endpointList: Endpoint[],
+  input: Overlay,
+  requested: readonly Surface[],
+): void {
+  if (requested.length === 0) return;
+  const selected = new Set(requested);
+  const byKey = new Map(input.entries.map((entry) => [entry.routeKey, entry]));
+  const missingDeclarations = endpointList
+    .filter((endpoint) => selected.has(surfaceOf(endpoint)) && endpoint.codePolicy === null)
+    .map((endpoint) => endpoint.key);
+  if (missingDeclarations.length > 0) {
+    throw new Error(
+      'surface code truth is missing declarations:\n' + missingDeclarations.map((key) => '- ' + key).join('\n'),
+    );
+  }
+  const remainingOverlay = endpointList
+    .filter((endpoint) => selected.has(surfaceOf(endpoint)))
+    .flatMap((endpoint) => {
+      const entry = byKey.get(endpoint.key);
+      return entry !== undefined && entryTruthSource(entry) !== 'code' ? [endpoint.key] : [];
+    });
+  if (remainingOverlay.length > 0) {
+    throw new Error(
+      'surface code truth still has classification-overlay entries:\n' +
+        remainingOverlay.map((key) => '- ' + key).join('\n'),
+    );
   }
 }
 
@@ -760,18 +1053,27 @@ function label(policy: Policy): string {
   );
 }
 
+function effectivePolicy(endpoint: Endpoint, entry: OverlayEntry | undefined): Policy | null {
+  if (entry !== undefined) {
+    return entryTruthSource(entry) === 'code' ? endpoint.codePolicy : entry.policy;
+  }
+  return endpoint.codePolicy;
+}
+
 function decisionRows(auth: Endpoint[], byKey: Map<string, OverlayEntry>): string[] {
   const rows: string[] = [];
   for (const endpoint of auth.filter((item) => item.path.startsWith('/api/admin/'))) {
     const entry = byKey.get(endpoint.key);
     if (entry === undefined) continue;
+    const policy = effectivePolicy(endpoint, entry);
+    if (policy === null) throw new Error('decision row lacks policy: ' + endpoint.key);
     rows.push(
       '| admin individual | ' +
         endpoint.method +
         ' ' +
         endpoint.path +
         ' | ' +
-        cell(label(entry.policy)) +
+        cell(label(policy)) +
         ' | ' +
         entry.decisionStatus +
         ' | ' +
@@ -791,13 +1093,15 @@ function decisionRows(auth: Endpoint[], byKey: Map<string, OverlayEntry>): strin
   )) {
     const entry = byKey.get(endpoints[0].key);
     if (entry === undefined) continue;
+    const policy = effectivePolicy(endpoints[0], entry);
+    if (policy === null) throw new Error('decision row lacks policy: ' + endpoints[0].key);
     rows.push(
       '| app tag family | ' +
         cell(family) +
         ' (' +
         endpoints.length +
         ') | ' +
-        cell(label(entry.policy)) +
+        cell(label(policy)) +
         ' | ' +
         entry.decisionStatus +
         ' | ' +
@@ -810,13 +1114,15 @@ function decisionRows(auth: Endpoint[], byKey: Map<string, OverlayEntry>): strin
   )) {
     const entry = byKey.get(endpoint.key);
     if (entry === undefined) continue;
+    const policy = effectivePolicy(endpoint, entry);
+    if (policy === null) throw new Error('decision row lacks policy: ' + endpoint.key);
     rows.push(
       '| auth/system individual | ' +
         endpoint.method +
         ' ' +
         endpoint.path +
         ' | ' +
-        cell(label(entry.policy)) +
+        cell(label(policy)) +
         ' | ' +
         entry.decisionStatus +
         ' | ' +
@@ -825,6 +1131,29 @@ function decisionRows(auth: Endpoint[], byKey: Map<string, OverlayEntry>): strin
     );
   }
   return rows;
+}
+
+function declarationTransferRows(
+  endpointList: Endpoint[],
+  byKey: Map<string, OverlayEntry>,
+): string[] {
+  const surfaces: Surface[] = ['admin', 'app', 'system', 'auth', 'open', 'other'];
+  return surfaces.flatMap((surface) => {
+    const routes = endpointList.filter((endpoint) => surfaceOf(endpoint) === surface);
+    if (routes.length === 0) return [];
+    const declarations = routes.filter((endpoint) => endpoint.codePolicy !== null).length;
+    const codeTruth = routes.filter((endpoint) => {
+      const entry = byKey.get(endpoint.key);
+      return entry === undefined || entryTruthSource(entry) === 'code';
+    }).length;
+    const overlayTruth = routes.filter((endpoint) => {
+      const entry = byKey.get(endpoint.key);
+      return entry !== undefined && entryTruthSource(entry) === 'classification-overlay';
+    }).length;
+    return [
+      '| ' + surface + ' | ' + routes.length + ' | ' + declarations + ' | ' + codeTruth + ' | ' + overlayTruth + ' |',
+    ];
+  });
 }
 
 function render(endpointList: Endpoint[], input: Overlay): string {
@@ -843,14 +1172,15 @@ function render(endpointList: Endpoint[], input: Overlay): string {
   const auth = endpointList.filter((endpoint) => endpoint.legacy === 'auth');
   const allRows = endpointList.map((endpoint) => {
     const entry = byKey.get(endpoint.key);
+    const declaredPolicy = effectivePolicy(endpoint, entry);
     const policy =
-      entry === undefined
+      declaredPolicy === null
         ? endpoint.legacy === 'public'
           ? 'PUBLIC'
           : endpoint.legacy === 'rbac'
             ? 'RBAC; codes=' + endpoint.rbacCodes.join(',')
             : 'UNCLASSIFIED'
-        : label(entry.policy);
+        : label(declaredPolicy);
     const evidence = entry === undefined ? endpoint.evidence : entry.evidence;
     return (
       '| ' +
@@ -864,17 +1194,26 @@ function render(endpointList: Endpoint[], input: Overlay): string {
       ' | ' +
       cell(policy) +
       ' | ' +
-      (entry === undefined ? 'code' : 'classification-overlay') +
+      (entry === undefined ? 'code' : entryTruthSource(entry)) +
       ' | ' +
       cell(evidence.map((item) => item.file + ':' + item.line).join('; ')) +
       ' |'
     );
   });
   return [
-    '# Route Authorization Policy - Phase 0 inventory',
+    '# Route Authorization Policy',
     '',
     '> Generated by scripts/generate-authz-manifest.ts. Do not hand-edit.',
-    '> Phase 0 is inventory only: no decorator, Guard, ALS, or runtime behavior is changed.',
+    '> Phase 1 transition: classification-overlay remains the source only until each route is transferred to a normalized declaration in code.',
+    '',
+    '## Declaration conventions',
+    '',
+    '- Policy scopes are canonicalized only by `normalizeRouteAuthzDeclaration`; endpoint and code-bound scopes share the same rules.',
+    '- `visibility:<predicate>` is reserved for a named business-domain visibility predicate. A predicate belongs to the domain owning its implementation, and one name maps to one implementation (predicate ownership). Registered predicates: ' +
+      AUTHZ_VISIBILITY_PREDICATES.map((predicate) => '`' + predicate + '`').join(', ') +
+      '.',
+    '- Bare `visibility`, unregistered predicates, and self-referential `visibility:visibility` are invalid.',
+    '- `org-scope` is the sole canonical form for authorization-engine visible-organization expansion, whether endpoint or code-bound; it requires `engine=authz-scoped`.',
     '',
     '## Registry',
     '',
@@ -886,7 +1225,15 @@ function render(endpointList: Endpoint[], input: Overlay): string {
     '| endpoint count | ' + endpointList.length + ' |',
     '| legacy [auth] count | ' + auth.length + ' |',
     '| classification JSON | ' + CLASSIFICATION + ' |',
-    '| truth source for [auth] | classification-overlay |',
+    '| per-route truth source | code or classification-overlay |',
+    '',
+    '## Declaration transfer coverage',
+    '',
+    '> `declared in code` counts routes with a normalized decorator declaration. `code truth` additionally records a transferred legacy `[auth]` decision; an ordinary legacy `public` or `rbac` marker remains listed as `code` in the endpoint inventory until that route is backfilled.',
+    '',
+    '| surface | routes | declared in code | code truth | classification-overlay truth |',
+    '|---|---:|---:|---:|---:|',
+    ...declarationTransferRows(endpointList, byKey),
     '',
     '## Legacy declaration summary',
     '',
@@ -914,12 +1261,32 @@ function render(endpointList: Endpoint[], input: Overlay): string {
   ].join('\n');
 }
 
+function requestedSurfaceChecks(): Surface[] {
+  const option = process.argv.find((argument) => argument.startsWith('--check-surface='));
+  if (option === undefined) return [];
+  const allowed = new Set<Surface>(['admin', 'app', 'system', 'auth', 'open', 'other']);
+  const requested = option
+    .slice('--check-surface='.length)
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (requested.length === 0) throw new Error('--check-surface requires at least one surface');
+  const invalid = requested.filter((value): value is string => !allowed.has(value as Surface));
+  if (invalid.length > 0)
+    throw new Error('--check-surface has unsupported surface: ' + invalid.join(','));
+  return [...new Set(requested as Surface[])];
+}
+
 function main(): void {
   const bootstrapMode = process.argv.includes('--bootstrap');
   const checkMode = process.argv.includes('--check');
   const writeMode = process.argv.includes('--write') || (!bootstrapMode && !checkMode);
+  const surfaceChecks = requestedSurfaceChecks();
   if ((bootstrapMode ? 1 : 0) + (checkMode ? 1 : 0) + (writeMode ? 1 : 0) !== 1) {
     throw new Error('use exactly one of --bootstrap, --write, or --check');
+  }
+  if (surfaceChecks.length > 0 && !checkMode) {
+    throw new Error('--check-surface requires --check');
   }
   const endpointList = endpoints();
   const expected = contractCount();
@@ -937,12 +1304,24 @@ function main(): void {
     write(CLASSIFICATION, JSON.stringify(input, null, 2) + '\n');
   } else {
     input = overlay();
+    if (writeMode) {
+      input = normalizeOverlay(input);
+      write(CLASSIFICATION, JSON.stringify(input, null, 2) + '\n');
+    }
   }
   validate(endpointList, input);
+  validateSurfaceCodeTruth(endpointList, input, surfaceChecks);
   const next = render(endpointList, input);
+  const assertionPatterns = assertionPatternsDocument();
   if (checkMode) {
     if (!fs.existsSync(path.join(ROOT, DOCUMENT)) || read(DOCUMENT) !== next) {
       throw new Error(DOCUMENT + ' is stale; run generator with --write');
+    }
+    if (
+      !fs.existsSync(path.join(ROOT, ASSERTION_PATTERNS)) ||
+      read(ASSERTION_PATTERNS) !== assertionPatterns
+    ) {
+      throw new Error(ASSERTION_PATTERNS + ' is stale; run generator with --write');
     }
     process.stdout.write(
       'Route Authorization Policy current: ' +
@@ -954,6 +1333,7 @@ function main(): void {
     return;
   }
   write(DOCUMENT, next);
+  write(ASSERTION_PATTERNS, assertionPatterns);
   process.stdout.write(
     'Generated Route Authorization Policy: ' +
       endpointList.length +
