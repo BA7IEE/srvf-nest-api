@@ -303,7 +303,7 @@ describe('activity batch4 qualification runtime', () => {
                 ruleTypeCode: 'insurance',
                 enforcementCode: 'block',
                 operator: 'covers_activity',
-                valueJson: Prisma.JsonNull,
+                valueJson: Prisma.DbNull,
                 sortOrder: 7,
               },
             ],
