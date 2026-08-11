@@ -38,12 +38,14 @@
 ### 1.1.1 活动报名表与一次性附件会话（第 4 批）
 
 - 管理 Form：`GET/PUT /api/app/v1/my/managed-activities/:activityId/registration-form`。PUT body 固定为 `{form:null|{fields:[...]}}`；`null` 是明确移除/不用自定义表，object 的 `fields` 必须非空。草稿仅沿既有发起人直改权限；published PUT 返回 `20037`，改动应走 change review。相同 canonical 定义是 no-op，不会产生新版本或 audit。
-- 队员活动详情：`GET /api/app/v1/activities/:activityId` 保留 `formVersion:number|null`，并新增 `registrationForm:null|{version,fields}`。只有 active Form 才返回安全题目定义；绝不依赖或展示 DB id、hash、workflowRevision、时间戳或存储信息。
+- 队员活动详情：`GET /api/app/v1/activities/:activityId` 保留 `formVersion:number|null`，并新增 `registrationForm:null|{version,fields}` 与资格安全投影：顶层 `qualification`、每个 session 的 `qualification`、每个 position 的 `qualification`。资格对象只含 `resultCode` 和未满足项 `{ruleId,enforcementCode,resultCode,message,warnScore}`；前端可展示 warn 提示，不能据此推测或缓存等级、性别、生日、组织、证书或保险事实。只有 active Form 才返回安全题目定义；绝不依赖或展示 DB id、hash、workflowRevision、时间戳或存储信息。
 - 创建会话：`POST /api/app/v1/activities/:activityId/registration-upload-sessions`。仅当前公开可报名、未结束且 active Form 含 file 题的活动可创建；成功**仅此一次**返回 `{id,token,expiresAt,formVersion}`，token 30 分钟有效，客户端须立刻临时保存，不能期望后续读取或恢复明文 token。
 - 上传：`POST /api/app/v1/activities/:activityId/registration-upload-sessions/:sessionId/files` 是后端中转 `multipart/form-data`，文本字段名 `token`、**单个**文件字段名 `file`。仅 JPEG/PNG/WebP/PDF，最大 10 MiB，声明 MIME、大小和文件魔数都须通过。成功仅返回 `{attachmentId,originalName,mime,size,createdAt}`；同 token 重试返回同一安全元数据。
-- **提交/重报（第 4 批）**：`POST /api/app/v1/activities/:activityId/registrations` 必填 `operationKey`、`formVersion`、`answers`、`preferences`。同 key+同 canonical 请求即使 upload session 已 consumed 也返回首次回执；同 key 异载荷返 `21003`。pending/waitlisted 以及 live cancelled/reject 头的新 key 都只在原 head/identity 上追加 revision；soft-deleted 头不复活。旧 revision/答案/志愿/保险 evidence 不改写；仅 single gate=true 且活动 `requiresInsurance=true` 时，每次成功报名/重报产生当次 revision evidence，gate=false 或活动不要求保险时为 0。客户端应保存新回执的 revision/id，不要把“取消后重报”建模成第二份报名。
+- **提交/重报（第 4 批）**：`POST /api/app/v1/activities/:activityId/registrations` 必填 `operationKey`、`formVersion`、`answers`、`preferences`。同 key+同 canonical 请求即使 upload session 已 consumed 也返回首次回执；同 key 异载荷返 `21003`。提交会按活动/已选场次/已选岗位以当前事实重评资格：block 返 `409/21040`，配置无法安全判定返 `409/21041`，warn 仍成功但应按活动详情投影提示。pending/waitlisted 以及 live cancelled/reject 头的新 key 都只在原 head/identity 上追加 revision；soft-deleted 头不复活。旧 revision/答案/志愿/保险 evidence 不改写；仅 single gate=true 且活动 `requiresInsurance=true` 时，每次成功报名/重报产生当次 revision evidence，gate=false 或活动不要求保险时为 0。客户端应保存新回执的 revision/id，不要把“取消后重报”建模成第二份报名。
 - **file 题最终绑定**：答案只传 `uploadSessionId`，不传 attachmentId/token/key/URL。事务内会核验本人、活动、Form 版本、会话状态及唯一 AVAILABLE 文件；成功后将附件转为内部 `registration-form-answer` owner 并消费会话。安全回执、异常和通用附件读写面都不会返回最终附件 id、文件名、token、key、URL 或 locator。
 - **没有 Provider signed upload URL**：任何响应都不返回 key、accessUrl/signed URL、owner、tokenHash 或存储 locator。
+
+- **资格错误与 legacy**：canonical 报名的资格 block 返 `21040`，配置漂移返 `21041`，warn 不拦截；legacy 只在没有 live session、active Form 和 active 场次/岗位资格规则时可用，否则继续 `21038`。managed approve 面对旧 legacy pending 无 identity/preference、但后续已出现 active 场次/岗位 RuleSet 时同样返回 `21038`；不要把活动详情的安全投影当作可自行重算的事实来源。
 
 ### 活动责任闭环的五类视图与按钮
 

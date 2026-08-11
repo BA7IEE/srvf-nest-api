@@ -10,6 +10,7 @@ import type { InsuranceRequirementService } from '../insurances/insurance-requir
 import type { AppIdentityResolver } from '../users/app-identity.resolver';
 import type { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import type { ActivityRegistrationLifecycleService } from './activity-registration-lifecycle.service';
+import type { ActivityQualificationEvaluatorService } from './activity-qualification-evaluator.service';
 import type { AppActivityRegistrationCommandDto } from './dto/app/app-activity-registration-command.dto';
 import { hashRegistrationCommand } from './registration-command-hash';
 import { RegistrationCommandService } from './registration-command.service';
@@ -114,6 +115,17 @@ function makeService(tx: ReturnType<typeof makeTx>, opts: { transactionError?: E
       .fn()
       .mockResolvedValue(undefined),
   };
+  const qualificationEvaluator = {
+    evaluate: jest.fn().mockResolvedValue({
+      resultCode: 'pass',
+      activity: { resultCode: 'pass', unmetRules: [] },
+      sessions: new Map(),
+      positions: new Map(),
+      snapshotCandidates: [],
+    }),
+    assertNoBlock: jest.fn(),
+    appendSnapshots: jest.fn().mockResolvedValue(undefined),
+  };
   return {
     service: new RegistrationCommandService(
       prisma as unknown as PrismaService,
@@ -123,12 +135,14 @@ function makeService(tx: ReturnType<typeof makeTx>, opts: { transactionError?: E
       attachments as unknown as AttachmentsService,
       audit as unknown as ActivityRegistrationAuditRecorder,
       lifecycle as unknown as ActivityRegistrationLifecycleService,
+      qualificationEvaluator as unknown as ActivityQualificationEvaluatorService,
     ),
     prisma,
     appIdentity,
     attachments,
     insuranceRequirement,
     audit,
+    qualificationEvaluator,
   };
 }
 

@@ -7,6 +7,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
+import { ActivityQualificationEvaluatorService } from './activity-qualification-evaluator.service';
 import {
   AttachmentsService,
   type RegistrationUploadSubmissionBinding,
@@ -80,6 +81,7 @@ export class RegistrationCommandService {
     private readonly attachments: AttachmentsService,
     private readonly registrationAuditRecorder: ActivityRegistrationAuditRecorder,
     private readonly registrationLifecycle: ActivityRegistrationLifecycleService,
+    private readonly qualificationEvaluator: ActivityQualificationEvaluatorService,
   ) {}
 
   async submit(
@@ -325,6 +327,16 @@ export class RegistrationCommandService {
     const preferences = this.normalizePreferences(input.dto.preferences);
     const selectedSessionIds = [...preferences.keys()].sort();
     await this.assertSessionsAndPositions(input.tx, input.activityId, preferences);
+    const qualification = await this.qualificationEvaluator.evaluate({
+      activity,
+      memberId: input.memberId,
+      targets: selectedSessionIds.flatMap((sessionId) => [
+        { sessionId, positionId: null },
+        ...(preferences.get(sessionId) ?? []).map((positionId) => ({ sessionId, positionId })),
+      ]),
+      tx: input.tx,
+    });
+    this.qualificationEvaluator.assertNoBlock(qualification);
     const identityPlans = this.planExistingIdentityRevisions(
       identities,
       new Set(selectedSessionIds),
@@ -497,6 +509,20 @@ export class RegistrationCommandService {
     if (headerUpdate.count !== 1) {
       throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
     }
+
+    const identityIdBySession = new Map<string, string>(
+      identities.map((identity) => [identity.sessionId, identity.id]),
+    );
+    for (const update of identityPointerUpdates) {
+      identityIdBySession.set(update.sessionId, update.id);
+    }
+    await this.qualificationEvaluator.appendSnapshots({
+      evaluation: qualification,
+      phase: 'submit',
+      registrationRevisionId: registrationRevision.id,
+      identityIdBySession,
+      tx: input.tx,
+    });
 
     // 10. Safe audit last, in the same transaction.  The recorder accepts no raw answer/file
     // material, storage locator, attachment ID, token, key or URL.
@@ -799,6 +825,7 @@ export class RegistrationCommandService {
   }): Promise<
     Array<{
       id: string;
+      sessionId: string;
       revision: number;
       statusCode: 'pending' | 'cancelled';
       expectedCurrentRevision: number;
@@ -810,6 +837,7 @@ export class RegistrationCommandService {
     );
     const pointerUpdates: Array<{
       id: string;
+      sessionId: string;
       revision: number;
       statusCode: 'pending' | 'cancelled';
       expectedCurrentRevision: number;
@@ -842,6 +870,7 @@ export class RegistrationCommandService {
       });
       pointerUpdates.push({
         id: identity.id,
+        sessionId: identity.sessionId,
         revision,
         statusCode,
         expectedCurrentRevision: identity.currentRevision,
@@ -880,6 +909,7 @@ export class RegistrationCommandService {
       });
       pointerUpdates.push({
         id: identity.id,
+        sessionId,
         revision: 1,
         statusCode: 'pending',
         expectedCurrentRevision: 0,

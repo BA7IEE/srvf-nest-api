@@ -10,6 +10,7 @@ import type { RbacService } from '../permissions/rbac.service';
 import type { AppIdentityResolver } from '../users/app-identity.resolver';
 import type { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import type { ActivityRegistrationLifecycleService } from './activity-registration-lifecycle.service';
+import type { ActivityQualificationEvaluatorService } from './activity-qualification-evaluator.service';
 import type { CapacityReservationService } from './capacity-reservation.service';
 import {
   OnsiteParticipationCommandService,
@@ -93,6 +94,7 @@ describe('OnsiteParticipationCommandService transaction budget', () => {
       {} as CapacityReservationService,
       {} as ActivityRegistrationLifecycleService,
       {} as ActivityRegistrationAuditRecorder,
+      {} as ActivityQualificationEvaluatorService,
     );
     const currentUser: CurrentUserPayload = {
       id: 'actor-user',

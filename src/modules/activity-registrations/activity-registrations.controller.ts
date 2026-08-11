@@ -136,6 +136,8 @@ export class ActivityRegistrationsAdminController {
     BizCode.ACTIVITY_REGISTRATION_GENDER_MISMATCH,
     BizCode.ACTIVITY_CAPACITY_EXCEEDED,
     BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED,
+    BizCode.ACTIVITY_QUALIFICATION_NOT_MET,
+    BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID,
   )
   create(
     @Param() params: ActivityIdParamDto,
@@ -231,6 +233,9 @@ export class ActivityRegistrationsAdminController {
     BizCode.MEMBER_NOT_FOUND,
     BizCode.MEMBER_INACTIVE,
     BizCode.INSURANCE_REQUIRED,
+    BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED,
+    BizCode.ACTIVITY_QUALIFICATION_NOT_MET,
+    BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID,
   )
   approve(
     @Param() params: ActivityRegistrationIdParamDto,

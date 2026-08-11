@@ -113,6 +113,7 @@ export class AppActivitiesController {
     BizCode.UNAUTHORIZED,
     BizCode.FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID,
   )
   async findOne(
     @CurrentUser() currentUser: CurrentUserPayload,

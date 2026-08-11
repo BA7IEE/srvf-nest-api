@@ -13,6 +13,7 @@ import { RbacService } from '../permissions/rbac.service';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import { ActivityRegistrationLifecycleService } from './activity-registration-lifecycle.service';
+import { ActivityQualificationEvaluatorService } from './activity-qualification-evaluator.service';
 import { CapacityReservationService } from './capacity-reservation.service';
 import type { CreateAppManagedActivityOnsiteParticipationDto } from './dto/app/app-onsite-participation.dto';
 import {
@@ -121,6 +122,7 @@ export class OnsiteParticipationCommandService {
     private readonly capacityReservations: CapacityReservationService,
     private readonly registrationLifecycle: ActivityRegistrationLifecycleService,
     private readonly registrationAudit: ActivityRegistrationAuditRecorder,
+    private readonly qualificationEvaluator: ActivityQualificationEvaluatorService,
   ) {}
 
   async create(
@@ -233,12 +235,7 @@ export class OnsiteParticipationCommandService {
       input.sessionId,
       input.positionId,
     );
-    await this.assertOnsiteRequirementsAvailable(
-      input.tx,
-      input.activityId,
-      input.sessionId,
-      selectedPosition,
-    );
+    await this.assertOnsiteRequirementsAvailable(input.tx, input.activityId);
     await this.assertActiveTargetMember(input.tx, input.targetMemberId);
     await this.assertGenderRequirement(
       input.tx,
@@ -250,6 +247,13 @@ export class OnsiteParticipationCommandService {
       input.targetMemberId,
       selectedPosition?.genderRequirementCode ?? null,
     );
+    const qualification = await this.qualificationEvaluator.evaluate({
+      activity,
+      memberId: input.targetMemberId,
+      targets: [{ sessionId: input.sessionId, positionId: input.positionId }],
+      tx: input.tx,
+    });
+    this.qualificationEvaluator.assertNoBlock(qualification);
 
     // Reuse the existing insurance source decision and snapshot writer.  The initial lifecycle
     // read is non-locking so this keeps the established Policy → Coverage → Member final-lock
@@ -455,6 +459,13 @@ export class OnsiteParticipationCommandService {
     if (headerUpdate.count !== 1) {
       throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
     }
+    await this.qualificationEvaluator.appendSnapshots({
+      evaluation: qualification,
+      phase: 'submit',
+      registrationRevisionId: registrationRevision.id,
+      identityIdBySession: new Map([[input.sessionId, identity.id]]),
+      tx: input.tx,
+    });
 
     await this.registrationLifecycle.incrementPopulationRevisionInTransactionTrusted(
       input.tx,
@@ -683,12 +694,7 @@ export class OnsiteParticipationCommandService {
     return selectedPosition;
   }
 
-  private async assertOnsiteRequirementsAvailable(
-    tx: PrismaTx,
-    activityId: string,
-    sessionId: string,
-    selectedPosition: LockedPosition | null,
-  ): Promise<void> {
+  private async assertOnsiteRequirementsAvailable(tx: PrismaTx, activityId: string): Promise<void> {
     const forms = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       SELECT "id"
       FROM "RegistrationFormVersion"
@@ -707,26 +713,6 @@ export class OnsiteParticipationCommandService {
       if (fields.length > 0) {
         throw new BizException(BizCode.ACTIVITY_ONSITE_REQUIREMENTS_UNAVAILABLE);
       }
-    }
-
-    const rules = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT "id"
-      FROM "ActivityQualificationRuleSet"
-      WHERE "activityId" = ${activityId}
-        AND "statusCode" = 'active'
-        AND (
-          ("sessionId" IS NULL AND "positionId" IS NULL)
-          OR ("sessionId" = ${sessionId} AND "positionId" IS NULL)
-          OR "positionId" = ${selectedPosition?.id ?? null}
-        )
-      ORDER BY "id" ASC
-      FOR SHARE
-    `);
-    if (
-      rules.length > 0 ||
-      (selectedPosition !== null && selectedPosition.qualificationRuleSetId !== null)
-    ) {
-      throw new BizException(BizCode.ACTIVITY_ONSITE_REQUIREMENTS_UNAVAILABLE);
     }
   }
 

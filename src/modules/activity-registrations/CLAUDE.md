@@ -33,7 +33,7 @@
 - **报名通知 durable outbox**:approve/reject 审批结果、取消后的候补递补、自助取消告知均在业务 update + `registration.review` audit 的同一事务内 enqueue `notification.targeted@1`;**自助取消告知只在取消 `pass` 报名时发(B-D3,维护者 2026-08-01 拍板)** —— pending/waitlisted 的取消对负责人没有要做的事,名额本就没被占住,全发是噪音;取消 pass 的 intent 形状(eventKey/aggregate/收件人解析)逐字不变,只是不再为另两个状态多发;enqueue 失败整体回滚，worker 仅在 commit 后执行 Effect。review eventKey 绑定 registration + reviewedAt + review audit 序号，递补/取消绑定对应状态写时间。自助取消正文只使用同事务快照 `displayName（memberNo）`，任一标签不可用即用固定匿名提示，绝不暴露 `Member.id`。责任制 gate=true 仍只通知当前 ACTIVE owner，缺 owner fail-closed，绝不回退 `publishedBy`；gate=false 才显式沿用 publisher；eventKey / aggregate / destination 语义不变。
 - **managed 报名判权与锁序(PR-7)**:单条写先走既有 `authz.explain`，再在同一事务的 Activity 根锁后重读 active responsibility 的 `canManageRegistrations=true`；因此 owner/报名协办可管理，global 旧角色、考勤协办不可旁路，协办 end/owner transfer 与在途写串行。默认 `authorization='authz'` 保持 Admin 调用逐字行为，managed 路径显式传 `'managed'`
 - **邀请/访客 runtime（第 4 批⑦）**:managed invitations/visitors 先 D-5、既有 `activity-registration.*.record` 权限，再在 Activity 锁后重读 active `canManageRegistrations=true`；GLOBAL 码不旁路。邀请 create/list/revoke 与本人 decline 固定 Activity→Invitation，pending 过期只投影/转 expired，decline 的 operationKey+canonical SHA-256 同 key 同载荷重放、异 hash `20151`；访客 writer 只写 `ActivityVisitor` + 同事务 `visitor.create` audit，新行 `attendanceCode=null`，禁止触报名/参与/预留/考勤/结算/账本/贡献/进度。
-- **现场临时参加（第 4 批⑧+永久头 runtime）**:`OnsiteParticipationCommandService` 仅服务 managed route；D-5/权限后在 Activity 根锁内复读责任。锁序为 Activity→全部历史 head→member/activity 全 identities→session/position/Form/RuleSet/保险→三层容量→immutable revision/evidence/current pointers→population→audit。live cancelled/reject head/identity 可复用，soft-deleted 新 key 21030；精确 replay 位于 D-5/责任后、mutable finality 前。成功 pointer 必须等于该 identity 的 active session reservation ID；对全部 identities 先核 bucket activity/session 锚、pointer 与当前 immutable revision，任一漂移 20147。Form/RuleSet 未定义面仍 21039，零猜 evaluator。
+- **现场临时参加（第 4 批⑧/⑪+永久头 runtime）**:`OnsiteParticipationCommandService` 仅服务 managed route；D-5/权限后在 Activity 根锁内复读责任。锁序为 Activity→全部历史 head→member/activity 全 identities→session/position/Form/RuleSet/保险→三层容量→immutable revision/evidence/current pointers→population→audit。live cancelled/reject head/identity 可复用，soft-deleted 新 key 21030；精确 replay 位于 D-5/责任后、mutable finality 前。合法 RuleSet 必须交统一 evaluator：block `21040` 零写，warn 可继续并追加 submit snapshot；空/重复/错配 active RuleSet 为 `21041`。只有 Form 有字段仍 `21039`。成功 pointer 必须等于该 identity 的 active session reservation ID；对全部 identities 先核 bucket activity/session 锚、pointer 与当前 immutable revision，任一漂移 20147。
 - **个人取消 lifecycle**:`cancelAdmin`/`cancelMy` 在 Activity→永久 head→member/activity identities(id ASC) 后，先核 pointer↔active session reservation 与 current ParticipationRevision，再只对 pending/waitlisted/pass identity 释放 position/session/最后 activity-person；cancelled/rejected/not_selected 只能在 pointer/position/population 均空时 noop，attended/settled/cancellation_requested/未知状态 20147。随后追加 Registration/Participation cancel revision、CAS 清 pointer/currentPosition/populationIncluded；人口真变化时同 tx 只 bump 一次 populationRevision。
 - **拒绝/重开 participation lifecycle**:`reject` 在同一 Activity 根事务把 pending/waitlisted identity 追加 rejected；pass 先经容量内核释放三层占位，再追加 rejected 并清 pointer/position/population，人口只 bump 一次，header `statusSummaryCode=not_selected`。`reopen` 只把 coherent rejected identity 追加 pending并恢复 header summary=`active`；cancelled/not_selected 空投影 noop。两者都不新增 RegistrationRevision/evidence，未知状态、active reservation 或任何投影漂移统一 20147 并回滚 header/audit/outbox。
 - **approve 保险锁序**:先 `Activity→Registration claim/currentRevision`，再按 evidence 类型分支：self=`Member lifecycle FOR UPDATE→MemberInsurance`，team=`Policy→Coverage→Member lifecycle FOR UPDATE`，无保险分支=`Member lifecycle FOR UPDATE`；最后才 capacity/registration/audit/outbox 写。审核失败会回滚 Registration 行锁但不会产生 update/audit/notification。
@@ -45,7 +45,7 @@
 - **报名截止**(活动闭环硬化 2026-06-21):`assertActivityRegistrable`(create 代报名 + createMy 自助 + App `createMyForApp` 共用闸)在 isPublicRegistration 之后判 `registrationDeadline !== null && now > deadline` → `ACTIVITY_REGISTRATION_DEADLINE_PASSED=20123`(精确时刻,不做北京日归一);**approve 不加此闸**(截止只管报名动作,截止前已报 pending 仍可批)
 - E2E:`activity-registration-waitlist.e2e-spec.ts` + 既有 `activity-registrations*.e2e-spec.ts` / `app-my-registrations-*.e2e-spec.ts`
 
-- **资格规则结构（第 83 migration）**：资格三表现有精确 wire/作用域/冻结 DB 合同，但本模块尚无 evaluator 或 writer；create/approve/onsite 不能猜测规则结果，现场 Form/RuleSet 未定义面继续 `21039` fail-closed。
+- **资格 runtime（第 83 migration）**：`ActivityQualificationEvaluatorService` 严格消费 D83 wire，活动/场次/岗位逐层 AND、同规则数组 OR，结果 `fail > warn > pass`。它只经 member-profiles/certificates/insurances 的窄 service 取事实；不得复制查询或另造保险算法。canonical submit、onsite、legacy（仅活动级）与 approve 都在锁内重评；approve 的目标必须从 current RegistrationRevision preferences/identities 重建，不得信旧 snapshot。block `21040` 整笔零写，配置漂移 `21041`；pass/warn 才追加不可变 display/submit/review snapshot。legacy 遇 active 场次/岗位 RuleSet 必须 `21038`，绝不猜场次。
 
 ## Risk points (不要做)
 
@@ -63,7 +63,7 @@
 - ❌ **不**把递补改成 waitlisted → pass；腾出名额只自动进 pending，仍必须走 approve
 - ❌ **不**把报名通知改回 commit 后 best-effort 直调 dispatcher；不得在业务事务内调用 provider，且 gate=true 不得用 `publishedBy` 冒充当前 owner
 - ❌ **不**把 upload session 当作报名答案、RegistrationRevision 或永久报名身份；不得在 Form/session/AVAILABLE 全部复核和不可变答案行创建之前提前 consumed/转绑。最终转为 `registration-form-answer` owner 与 consumed 只能由 canonical command 通过 trusted facade 在同一事务完成；不得把 Provider/签名/文件内容校验放进数据库事务。
-- ❌ 现场临时参加不得复活 soft-deleted 头、不得新建第二 identity、不得把 `pass` 当新请求重放；不得接 Form 答案/上传、邀请 accept、allocation 或 waitlist。资格条件未定义时必须保留 21039，而非以“现场”理由跳过。
+- ❌ 现场临时参加不得复活 soft-deleted 头、不得新建第二 identity、不得把 `pass` 当新请求重放；不得接 Form 答案/上传、邀请 accept、allocation 或 waitlist。Form 未接通时保留 21039；合法 RuleSet 不得以“现场”理由跳过 evaluator 或一律 21039。
 
 ## Before editing
 
@@ -80,4 +80,4 @@
 - 改 audit event / extra → 必须跑 `activity-registrations-audit-characterization.e2e-spec.ts`
 - 改状态机 → 必须跑 `activity-registrations-state-transition.e2e-spec.ts`
 - 改 DTO 字段 / endpoint path / Swagger schema / 错误码 → 必须再跑 `pnpm test:contract`
-- 改现场临时参加 → `pnpm test:e2e -- activity-batch4-onsite-participation.e2e-spec.ts`（含 20 同键并发、100 人 capacity=1 与 Form/RuleSet fail-closed）
+- 改现场临时参加或资格 runtime → `pnpm test:e2e -- activity-batch4-onsite-participation.e2e-spec.ts` 与 `activity-batch4-qualification-runtime.e2e-spec.ts`（含 Form=21039、RuleSet evaluator、block 零写与 snapshot 锚点）
