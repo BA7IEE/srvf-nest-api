@@ -1,5 +1,9 @@
 import { PolicyScopeMode, PositionCategory, PrismaClient, Role, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import {
+  RBAC_SEED_FACTS,
+  type RbacPermissionSeedFact,
+} from '../src/modules/permissions/rbac-seed-facts';
 import { effectiveGlobalOpsAdminBindingWhere } from '../src/modules/permissions/role-binding-validity';
 
 // v1 唯一允许创建 SUPER_ADMIN 的入口(详见 ARCHITECTURE.md §7.11 + §8 + §13)。
@@ -990,119 +994,9 @@ async function seedPositionRules(prisma: PrismaClient): Promise<void> {
 // 跳过 4 条 attachment.*(沿用户拍板方案 A;留 C-7 attachments)。
 // 注:code 必须满足 PR #2 实装的 Permission code 正则 `^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2}$`
 // (固定 3 段;首段小写字母开头);本表全部 14 条均符合。
-export interface RbacPermissionSeed {
-  readonly code: string;
-  readonly module: string;
-  readonly action: string;
-  readonly resourceType: string;
-  readonly description: string;
-}
+export type RbacPermissionSeed = RbacPermissionSeedFact;
 
-const RBAC_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
-  // rbac.permission.* (4):权限点 CRUD(沿 D7 §10.2)
-  {
-    code: 'rbac.permission.read',
-    module: 'rbac',
-    action: 'read',
-    resourceType: 'permission',
-    description: '查看权限点',
-  },
-  {
-    code: 'rbac.permission.create',
-    module: 'rbac',
-    action: 'create',
-    resourceType: 'permission',
-    description: '创建权限点',
-  },
-  {
-    code: 'rbac.permission.update',
-    module: 'rbac',
-    action: 'update',
-    resourceType: 'permission',
-    description: '更新权限点',
-  },
-  {
-    code: 'rbac.permission.delete',
-    module: 'rbac',
-    action: 'delete',
-    resourceType: 'permission',
-    description: '删除权限点',
-  },
-  // rbac.role.* (4)
-  {
-    code: 'rbac.role.read',
-    module: 'rbac',
-    action: 'read',
-    resourceType: 'role',
-    description: '查看角色',
-  },
-  {
-    code: 'rbac.role.create',
-    module: 'rbac',
-    action: 'create',
-    resourceType: 'role',
-    description: '创建角色',
-  },
-  {
-    code: 'rbac.role.update',
-    module: 'rbac',
-    action: 'update',
-    resourceType: 'role',
-    description: '更新角色',
-  },
-  {
-    code: 'rbac.role.delete',
-    module: 'rbac',
-    action: 'delete',
-    resourceType: 'role',
-    description: '软删角色',
-  },
-  // rbac.role-permission.* (2)
-  {
-    code: 'rbac.role-permission.create',
-    module: 'rbac',
-    action: 'create',
-    resourceType: 'role-permission',
-    description: '角色加权限点',
-  },
-  {
-    code: 'rbac.role-permission.delete',
-    module: 'rbac',
-    action: 'delete',
-    resourceType: 'role-permission',
-    description: '撤角色权限点',
-  },
-  // rbac.user-role.* (3)
-  {
-    code: 'rbac.user-role.read',
-    module: 'rbac',
-    action: 'read',
-    resourceType: 'user-role',
-    description: '查看用户角色',
-  },
-  {
-    code: 'rbac.user-role.create',
-    module: 'rbac',
-    action: 'create',
-    resourceType: 'user-role',
-    description: '分配用户角色',
-  },
-  {
-    code: 'rbac.user-role.delete',
-    module: 'rbac',
-    action: 'delete',
-    resourceType: 'user-role',
-    description: '撤用户角色',
-  },
-  // rbac.config.* (1)
-  {
-    code: 'rbac.config.reload',
-    module: 'rbac',
-    action: 'reload',
-    resourceType: 'config',
-    description: '触发 RBAC 缓存失效',
-  },
-];
+const RBAC_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = RBAC_SEED_FACTS.permissions.rbac;
 
 // P0-F PR-2A(2026-05-18):配置类接口 RBAC 接入第一批(19 条)。
 // 沿评审稿 [`docs/first-release-p0f-pr2-config-rbac-review.md`](../docs/first-release-p0f-pr2-config-rbac-review.md)
@@ -2165,6 +2059,13 @@ const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...NOTIFICATION_REPLAY_PERMISSION_SEED,
 ];
 
+const RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODE_SET: ReadonlySet<string> = new Set(
+  RBAC_SEED_FACTS.contract.reservedSuperAdminOnlyPermissionCodes,
+);
+
+const isNotReservedSuperAdminOnlyPermission = (permission: RbacPermissionSeed): boolean =>
+  !RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODE_SET.has(permission.code);
+
 // ops-admin 完整绑定集合(14 rbac.* + 44 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME + 3 AUTHZ + 2 ANNOUNCEMENT-IMPORT + 1 META + 2 MEMBER-ACCOUNT = 96 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B / SMS E-3 / WECHAT 评审稿 §3.4 / REALNAME E-R-19;PR-2A 44 = base 20 + 终态 scoped-authz PR1 org.move.node + PR2 membership 4 + PR3 position 4 + position-rule 4 + PR4 position-assignment 4 + PR5 supervision-assignment 4 + PR6 role-binding 4 码,全绑 ops-admin 无过滤;AUTHZ 3 = PR10 authz.explain.decision + F3「C 组」authz.{explain-batch,action-state}.decision 诊断码,整条绑;ANNOUNCEMENT-IMPORT 2 = PR11 announcement-import.{preview,execute}.record,整条绑;META 1 = F1「A 组」meta.resolve.label 诊断码,整条绑;MEMBER-ACCOUNT 2 = 队员账号闭环 v1 member.grant.account + v2 member.bind.account,整条绑)
 // 注:`storage-setting.reset.credentials` 从 PR_2B_PERMISSION_SEED 过滤掉(沿 PR-2 D2=A;§6.2)
 // 注:`user.update.role` 从 USER_PERMISSION_SEED 过滤掉(沿 PR-3 D1=A;§6.2)
@@ -2179,13 +2080,13 @@ const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
 const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RBAC_PERMISSION_SEED,
   ...PR_2A_PERMISSION_SEED,
-  ...PR_2B_PERMISSION_SEED.filter((p) => p.code !== PR_2B_RESET_CREDENTIALS_CODE),
-  ...USER_PERMISSION_SEED.filter((p) => p.code !== PR_3B_USER_UPDATE_ROLE_CODE),
+  ...PR_2B_PERMISSION_SEED.filter(isNotReservedSuperAdminOnlyPermission),
+  ...USER_PERMISSION_SEED.filter(isNotReservedSuperAdminOnlyPermission),
   ...AUDIT_LOG_PERMISSION_SEED,
-  ...SMS_INFRA_PERMISSION_SEED.filter((p) => p.code !== SMS_RESET_CREDENTIALS_CODE),
-  ...WECHAT_INFRA_PERMISSION_SEED.filter((p) => p.code !== WECHAT_RESET_CREDENTIALS_CODE),
+  ...SMS_INFRA_PERMISSION_SEED.filter(isNotReservedSuperAdminOnlyPermission),
+  ...WECHAT_INFRA_PERMISSION_SEED.filter(isNotReservedSuperAdminOnlyPermission),
   ...WECOM_INFRA_PERMISSION_SEED.filter((p) => p.code !== WECOM_RESET_CREDENTIALS_CODE),
-  ...REALNAME_INFRA_PERMISSION_SEED.filter((p) => p.code !== REALNAME_RESET_CREDENTIALS_CODE),
+  ...REALNAME_INFRA_PERMISSION_SEED.filter(isNotReservedSuperAdminOnlyPermission),
   ...AUTHZ_PERMISSION_SEED,
   ...ANNOUNCEMENT_IMPORT_PERMISSION_SEED,
   ...META_PERMISSION_SEED,
@@ -4749,14 +4650,8 @@ export const RBAC_SEED_CATALOG = Object.freeze({
   }),
   contract: Object.freeze({
     opsAdminExcludedPermissionCodes: OPS_ADMIN_EXCLUDED_PERMISSION_CODES,
-    reservedSuperAdminOnlyPermissionCodes: readonlyCodes([
-      PR_3B_USER_UPDATE_ROLE_CODE,
-      PR_2B_RESET_CREDENTIALS_CODE,
-      SMS_RESET_CREDENTIALS_CODE,
-      WECHAT_RESET_CREDENTIALS_CODE,
-      REALNAME_RESET_CREDENTIALS_CODE,
-      MEMBER_DELETE_RECORD_CODE,
-    ]),
+    reservedSuperAdminOnlyPermissionCodes:
+      RBAC_SEED_FACTS.contract.reservedSuperAdminOnlyPermissionCodes,
     bizAdminExcludedPermissionCodes: readonlyCodes([...BIZ_ADMIN_EXCLUDED_CODES]),
     bizAdminTargetedRemovalCodes: readonlyCodes(BIZ_ADMIN_TARGETED_REMOVAL_CODES),
     attendanceReviewerOnlyCodes: readonlyCodes(ATTENDANCE_REVIEWER_ONLY_CODES),

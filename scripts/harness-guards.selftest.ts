@@ -1526,6 +1526,11 @@ for (const [configName, config] of JEST_CONFIGS) {
       },
       { glob: 'prisma/seed.ts', yes: ['prisma/seed.ts'], no: ['prisma/seed-helpers.ts'] },
       {
+        glob: 'src/modules/permissions/rbac-seed-facts.ts',
+        yes: ['src/modules/permissions/rbac-seed-facts.ts'],
+        no: ['src/modules/permissions/rbac-seed-fact.ts'],
+      },
+      {
         glob: 'src/common/guards/**',
         yes: ['src/common/guards/jwt-auth.guard.ts'],
         no: ['src/common/guards.ts'],

@@ -40,6 +40,11 @@
       "why": "schema / migration / seed 恒 D 档,不可逆"
     },
     {
+      "id": "permission-seed-facts",
+      "globs": ["src/modules/permissions/rbac-seed-facts.ts"],
+      "why": "跨运行时共享的权限 seed 事实；seed、生产控制面与 seed e2e 均消费，改动等同权限定义 / seed 语义变更"
+    },
+    {
       "id": "global-pipeline",
       "globs": [
         "src/common/guards/**",

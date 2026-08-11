@@ -2,6 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import { execSync } from 'child_process';
 import { RBAC_SEED_CATALOG } from '../../prisma/seed';
 import { PrismaService } from '../../src/database/prisma.service';
+import { RBAC_SEED_FACTS } from '../../src/modules/permissions/rbac-seed-facts';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
@@ -90,6 +91,10 @@ describe('prisma/seed.ts — attachment permissions and member role', () => {
       RBAC_INITIAL_OPS_ADMIN_USER_ID: '',
     });
     expect(result.code).toBe(0);
+    expect(RBAC_SEED_CATALOG.permissions.rbac).toEqual(RBAC_SEED_FACTS.permissions.rbac);
+    expect(RBAC_SEED_CATALOG.contract.reservedSuperAdminOnlyPermissionCodes).toEqual(
+      RBAC_SEED_FACTS.contract.reservedSuperAdminOnlyPermissionCodes,
+    );
 
     // 1 + 2. permission 全部存在,code 完整一致
     const perms = await prisma.permission.findMany({
