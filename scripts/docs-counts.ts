@@ -18,9 +18,11 @@
  *                   toHaveLength(N) 断言交叉核对,不一致 → exit 2)
  *   Migration     = prisma/migrations 一级目录数(migration_lock.toml 为文件不计)
  *   BizCode       = biz-code.constant.ts 内 `httpStatus` 属性赋值数(每码恰一处,见 docs/reference/response-pagination-errors.md)
- *   权限码        = prisma/seed.ts 权限码集合大小(AST:`code: '…'` 属性 + `*_CODE` 常量;
- *                   同时保留 scripts/check-rbac-map.ts 镜像正则做第二口径交叉校验,
- *                   双口径分歧 → exit 2 —— 守住 seed 书写契约并强制两守卫同步)
+ *   权限码        = seed 事实闭包(`prisma/seed.ts` +
+ *                   `src/modules/permissions/rbac-seed-facts.ts`)权限码集合大小
+ *                   (AST:`code: '…'` 属性 + `*_CODE` 常量;同时保留
+ *                   scripts/check-rbac-map.ts 镜像正则做第二口径交叉校验,
+ *                   双口径分歧 → exit 2 —— 守住闭包书写契约并强制三解析器同步)
  *   AuditLogEvent = audit-logs.types.ts `AuditLogEvent` 联合类型字符串成员数(同行 / 多行书写均可)
  *   内建角色      = prisma/seed.ts `*.rbacRole.upsert(…)` 调用数
  *   Cron          = src/**\/*.ts 中 @Cron(...) 装饰器数
@@ -42,8 +44,27 @@ const CURRENT_STATE = 'docs/current-state.md';
 const BEGIN = '<!-- counts:begin -->';
 const END = '<!-- counts:end -->';
 
+// 权限事实只允许来自这两个具名文件；禁止改成目录扫描，避免把业务字符串误算成权限码。
+// generate-rbac-map.ts / check-rbac-map.ts 各自保留同款清单，守卫自测会交叉核验。
+export const SEED_FACTS_CLOSURE = Object.freeze([
+  'prisma/seed.ts',
+  'src/modules/permissions/rbac-seed-facts.ts',
+] as const);
+
+export function assertSeedFactsClosure(files: readonly string[]): void {
+  const expected = SEED_FACTS_CLOSURE;
+  if (files.length !== expected.length || files.some((file, index) => file !== expected[index])) {
+    throw new Error(`seed 事实闭包必须精确为: ${expected.join(' + ')}`);
+  }
+}
+
 function read(rel: string): string {
   return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+}
+
+export function readSeedFactsClosure(files: readonly string[] = SEED_FACTS_CLOSURE): string[] {
+  assertSeedFactsClosure(files);
+  return files.map((file) => read(file));
 }
 
 function listDirs(rel: string): string[] {
@@ -188,6 +209,39 @@ export function diffSeedPermissionExtractions(seedSource: string): {
   return { ast, onlyAst, onlyLegacy };
 }
 
+function unionPermissionCodes(
+  sources: readonly string[],
+  extract: (source: string) => Set<string>,
+): Set<string> {
+  const codes = new Set<string>();
+  for (const source of sources) {
+    for (const code of extract(source)) codes.add(code);
+  }
+  return codes;
+}
+
+export function extractSeedFactsPermissionCodesAst(sources: readonly string[]): Set<string> {
+  return unionPermissionCodes(sources, extractSeedPermissionCodesAst);
+}
+
+export function extractSeedFactsPermissionCodesLegacyRegex(
+  sources: readonly string[],
+): Set<string> {
+  return unionPermissionCodes(sources, extractSeedPermissionCodesLegacyRegex);
+}
+
+export function diffSeedFactsPermissionExtractions(sources: readonly string[]): {
+  ast: Set<string>;
+  onlyAst: string[];
+  onlyLegacy: string[];
+} {
+  const ast = extractSeedFactsPermissionCodesAst(sources);
+  const legacy = extractSeedFactsPermissionCodesLegacyRegex(sources);
+  const onlyAst = [...ast].filter((code) => !legacy.has(code)).sort();
+  const onlyLegacy = [...legacy].filter((code) => !ast.has(code)).sort();
+  return { ast, onlyAst, onlyLegacy };
+}
+
 export function countAuditLogEventMembers(source: string): number {
   const sf = parseSource(source);
   let result: number | null = null;
@@ -271,11 +325,11 @@ export function countExpectedRoutesInSource(source: string): number {
 // 计数装配
 // ---------------------------------------------------------------------------
 
-function countPermissions(seedSource: string): number {
-  const { ast, onlyAst, onlyLegacy } = diffSeedPermissionExtractions(seedSource);
+function countPermissions(seedFactSources: readonly string[]): number {
+  const { ast, onlyAst, onlyLegacy } = diffSeedFactsPermissionExtractions(seedFactSources);
   if (onlyAst.length > 0 || onlyLegacy.length > 0) {
     process.stderr.write(
-      '✗ seed 权限码双口径不一致(AST 真源 vs check-rbac-map 镜像正则)——多半是注释/字符串中的示例码、双引号或模板字面量书写;请按 seed 书写契约改回 `code: \'<literal>\'` 单引号形态,或同步 scripts/check-rbac-map.ts 后再同步本脚本\n',
+      "✗ seed 事实闭包权限码双口径不一致(AST 真源 vs check-rbac-map 镜像正则)——多半是注释/字符串中的示例码、双引号或模板字面量书写;请按闭包书写契约改回 `code: '<literal>'` 单引号形态,或同步三解析器后再同步本脚本\n",
     );
     if (onlyAst.length > 0) process.stderr.write(`  仅 AST 提到:${onlyAst.join(', ')}\n`);
     if (onlyLegacy.length > 0) process.stderr.write(`  仅镜像正则提到:${onlyLegacy.join(', ')}\n`);
@@ -300,6 +354,7 @@ function countEndpoints(): number {
 function gather(): ReadonlyArray<readonly [string, number]> {
   const srcFiles = walkTsFiles('src');
   const seedSource = read('prisma/seed.ts');
+  const seedFactSources = readSeedFactsClosure();
   let cron = 0;
   let controllers = 0;
   for (const f of srcFiles) {
@@ -319,7 +374,7 @@ function gather(): ReadonlyArray<readonly [string, number]> {
     ['Endpoint', countEndpoints()],
     ['Migration', listDirs('prisma/migrations').length],
     ['BizCode', countHttpStatusProps(read('src/common/exceptions/biz-code.constant.ts'))],
-    ['权限码', countPermissions(seedSource)],
+    ['权限码', countPermissions(seedFactSources)],
     ['AuditLogEvent', countAuditLogEventMembers(read('src/modules/audit-logs/audit-logs.types.ts'))],
     ['内建角色', countRbacRoleUpserts(seedSource)],
     ['Cron', cron],

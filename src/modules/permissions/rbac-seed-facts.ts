@@ -3,6 +3,10 @@
  *
  * 方向恒为 seed → src：`prisma/seed.ts` 消费这里的事实，生产权限策略与 seed e2e
  * 也直接消费同一对象；本模块不得反向导入 `prisma/seed.ts`。
+ *
+ * 权限码书写契约：本文件内的权限码只能写成 `code: '<literal>'` 或
+ * `*_CODE = '<literal>'`；禁止模板、拼接或其他计算构造。`docs-counts` 的 AST/镜像正则、
+ * RBAC 地图与 RBAC 检查器均读取 seed 事实闭包，违反此形态必须同步解析器并重新拍板。
  */
 export interface RbacPermissionSeedFact {
   readonly code: string;

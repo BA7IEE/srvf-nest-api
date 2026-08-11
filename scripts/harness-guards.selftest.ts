@@ -17,14 +17,21 @@ import * as os from 'os';
 import * as path from 'path';
 import { checkFragment, mergeIntoChangelog } from './changelog-merge';
 import {
+  SEED_FACTS_CLOSURE as DOCS_COUNTS_SEED_FACTS_CLOSURE,
+  assertSeedFactsClosure,
   countAuditLogEventMembers,
   countDecoratorUsage,
   countExpectedRoutesInSource,
   countHttpStatusProps,
   countRbacRoleUpserts,
+  diffSeedFactsPermissionExtractions,
   diffSeedPermissionExtractions,
+  extractSeedFactsPermissionCodesAst,
   extractSeedPermissionCodesAst,
+  readSeedFactsClosure,
 } from './docs-counts';
+import { SEED_FACTS_CLOSURE as RBAC_MAP_SEED_FACTS_CLOSURE } from './generate-rbac-map';
+import { SEED_FACTS_CLOSURE as RBAC_CHECK_SEED_FACTS_CLOSURE } from './check-rbac-map';
 import {
   assertConnectedTestDatabase,
   assertDroppableTestDbName,
@@ -200,6 +207,51 @@ const list = [{ code: 'c.d' }, { code: 'e.f-g' }];
     'R5-02 权限码:真实 prisma/seed.ts 双口径一致(与 check-rbac-map 同拍)',
     realDiff.onlyAst.length === 0 && realDiff.onlyLegacy.length === 0,
     `onlyAst=[${realDiff.onlyAst.join(',')}] onlyLegacy=[${realDiff.onlyLegacy.join(',')}]`,
+  );
+}
+
+// seed 事实闭包必须由三个独立解析器精确具名；漏掉 facts 时 14 条 rbac.* 必须立刻显形。
+{
+  const expectedClosure = ['prisma/seed.ts', 'src/modules/permissions/rbac-seed-facts.ts'];
+  const closures = [
+    DOCS_COUNTS_SEED_FACTS_CLOSURE,
+    RBAC_MAP_SEED_FACTS_CLOSURE,
+    RBAC_CHECK_SEED_FACTS_CLOSURE,
+  ];
+  check(
+    'R5-02 权限码:三解析器 seed 事实闭包逐项一致',
+    closures.every(
+      (closure) =>
+        closure.length === expectedClosure.length &&
+        closure.every((file, index) => file === expectedClosure[index]),
+    ),
+  );
+
+  const closureSources = readSeedFactsClosure();
+  const closureDiff = diffSeedFactsPermissionExtractions(closureSources);
+  check(
+    'R5-02 权限码:真实 seed 事实闭包双口径一致且为 234',
+    closureDiff.onlyAst.length === 0 &&
+      closureDiff.onlyLegacy.length === 0 &&
+      closureDiff.ast.size === 234,
+    `ast=${closureDiff.ast.size} onlyAst=[${closureDiff.onlyAst.join(',')}] onlyLegacy=[${closureDiff.onlyLegacy.join(',')}]`,
+  );
+
+  const withoutFacts = DOCS_COUNTS_SEED_FACTS_CLOSURE.filter(
+    (file) => file !== 'src/modules/permissions/rbac-seed-facts.ts',
+  );
+  const incompleteSources = withoutFacts.map((file) =>
+    fs.readFileSync(path.resolve(__dirname, '..', file), 'utf-8'),
+  );
+  checkEq(
+    'R5-02 权限码:剔除 facts 后码数跌至 220',
+    extractSeedFactsPermissionCodesAst(incompleteSources).size,
+    220,
+  );
+  checkThrows(
+    'R5-02 权限码:剔除 facts 的闭包被拒',
+    () => assertSeedFactsClosure(withoutFacts),
+    'seed 事实闭包必须精确为',
   );
 }
 
