@@ -159,7 +159,7 @@ Certificate (不在 participation 图内)
 > 活动定位异常/策略层非法坐标/超范围返回 22080，请求 DTO 缺失或非法沿 40000，均零派生写；已有合法 winner 的幂等重试仍 200。Admin 两端点不写
 > `ActivityCheckIn`、Sheet 或 Record，历史 `geoVerified/outOfRange` 异常证据继续可读。
 
-> **D83 资格规则结构当前事实**：`ActivityQualificationRuleSet` 的 activity/session/position 作用域与岗位指针由双向完整复合 FK 固定；同一作用域版本与 active 槽位均把 NULL 纳入去重。RuleSet/Rule 在 active 或 retired 后冻结，`QualificationEvaluationSnapshot` 只追加；规则 wire 固定为 `grade/gender=in+codes`、`organization=in_subtree+organizationIds`、`certificate/training=has_any+standardIds`、`insurance=covers_activity`（无 `valueJson`）及 `age=between+minYears/maxYears`（允许单边，数组去重）。`display` 双锚点为 NULL，`submit/review` 只强制 `registrationRevisionId`，`identityId` 可空。本刀零 runtime evaluator、零报名/审核写方，未定义结果仍由后续批次处理。
+> **D83 资格规则 runtime 当前事实**：`ActivityQualificationRuleSet` 的 activity/session/position 作用域与岗位指针由双向完整复合 FK 固定；同一作用域版本与 active 槽位均把 NULL 纳入去重。RuleSet/Rule 在 active 或 retired 后冻结，`QualificationEvaluationSnapshot` 只追加；规则 wire 固定为 `grade/gender=in+codes`、`organization=in_subtree+organizationIds`、`certificate/training=has_any+standardIds`、`insurance=covers_activity`（无 `valueJson`）及 `age=between+minYears/maxYears`（允许单边，数组去重）。统一 evaluator 对活动/场次/岗位逐层 AND、同规则数组 OR，`fail > warn > pass`；配置漂移（空 active RuleSet、重复 active scope、岗位指针错配）一律 `21041` fail-closed。App detail 安全投影活动、场次、岗位资格；canonical submit、managed onsite 与 approve 均以当前事实重评，block 为 `21040` 且整笔零写，warn 只提示并可继续；aggregate fail（包括 display）不写 snapshot。旧 legacy pending 若没有 identity/preference、但随后已出现 active 场次/岗位 RuleSet，approve 固定 `21038`，不猜目标且零写。display/submit/review 只有 aggregate pass 或 warn 才追加不可变 snapshot：display 双锚点为 NULL，submit/review 绑定当前 revision，下级 scope 绑定 identity；详情和 snapshot 都不保存或返回资格敏感原值。资格配置、发布激活、邀请接受、分配和候补排序仍未在本刀实现。
 
 **关键 invariant**:
 
@@ -196,6 +196,7 @@ Certificate (不在 participation 图内)
 | `activity-registrations` 在事务内读 `tx.attendanceRecord` / `tx.activityCheckIn` | ✅ 仅限取消证据守卫 | pass/pending/waitlisted cancel 均在已取得 Activity → Registration 锁后按 `registrationId + deletedAt:null` 计数。任一 live 证据存在即复用 21033；禁止写/删考勤证据、禁止引入 attendances service |
 | `activity-registrations` 在事务内写 `tx.attendanceSheet` / `tx.attendanceRecord` / `tx.activityCheckIn` | ❌ 不允许 | 上游报名不得改删下游参与历史 |
 | `activity-registrations` 读 / 写 `InsuranceEligibilityEvidence` | ✅ 限定例外 | 只允许报名/重报根事务调用 `InsuranceRequirementService` 在 RegistrationRevision 后、current pointer/Audit 前生成当次 revision evidence；approval 也只经该 service 按 currentRevision 读取，禁止直接 Prisma 改删 |
+| `activity-registrations` → `member-profiles` / `certificates` / `insurances` 的资格事实读取 | ✅ 限定例外 | 统一 evaluator 只能调用三个所属模块的窄 read service：grade/profile/ACTIVE membership 与组织 closure、证书/培训标准完整覆盖、既有保险 single gate；不得在报名模块复制查询或另造保险算法，三个上游模块不得反向依赖 participation |
 | `activity-registrations` → `attachments` 的 registration-upload-session trusted facade | ✅ 限定例外 | 只供一次性报名附件会话：调用方在 Activity/Form/Session 根锁内做两次复校和 durable intent，facade 在事务外完成内容校验、Provider put/HEAD；禁止反向 `attachments → activity-registrations` 依赖，通用 Admin attachment 面也必须对该内部 owner fail-closed |
 | `contribution-rules` 在事务内读 / 写其它 participation 表 | ❌ 不允许 | ContributionRule 是配置实体,只被读,不读人 |
 | `activity-feedbacks` 读取 `Activity` / `AttendanceSheet` / `AttendanceRecord` | ✅ 限定例外 | 只为 completed/window、approved-only 到场资格与 Admin 评价率分母；直接读 Prisma，不 import 三个兄弟 god-service |
@@ -335,7 +336,8 @@ Certificate (不在 participation 图内)
 - 不移动既有 Prisma model 在 [`prisma/schema.prisma`](../prisma/schema.prisma) 内的位置,不改既有 FK / 字段；`ActivityCheckIn`、`ActivityFeedback` 与本批 `ActivityPosition` / `ActivityRegistration.activityPositionId` 及各自 FK 是已冻结的 additive 例外。
 - 不改 [`src/modules/permissions/`](../src/modules/permissions/) / RBAC 权限点(沿现行 P0-F 收紧范围)。
 - 不改 BizCode 段位(沿现行 [`biz-code.constant.ts`](../src/common/exceptions/biz-code.constant.ts) 与 BizCode range index)。
-- 不动 [`src/modules/certificates/`](../src/modules/certificates/) — 它是独立的 member-qualifications 上下文,本文只是把它从 participation 排除。
+- 不把 [`src/modules/certificates/`](../src/modules/certificates/) 并入 participation，也不改变证书配置/审核资源；资格 runtime 仅通过其窄只读覆盖查询出口消费当前事实。
+- 不新增资格配置 GET/PUT、发布激活、邀请接受、分配、候补排序或任何资格 cron。
 - 不引入新业务 event 主题;`attendance.recorded` 仍然是唯一对外事件出口。v0.47.0 F2 仅新增内部审计事件 `attendance-sheet.reopen`,与业务 event 分层。
 - 不新增 canonical `app/v1/*` 之外的第二套移动端路径。
 - 不动 [`src/common/exceptions/biz-code.constant.ts`](../src/common/exceptions/biz-code.constant.ts) 中跨 participation 的共享 BizCode 命名(`ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN` / `ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH` / `CONTRIBUTION_RULE_*` 等)。

@@ -971,6 +971,84 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       expect(await ctx.prisma.notificationOutboxIntent.count()).toBe(0);
     });
 
+    it('A3-Q. approves against current qualification facts, so a grade changed after registration blocks without pass/audit/outbox writes', async () => {
+      const activityId = await createActivity({});
+      const member = await ctx.prisma.member.create({
+        data: {
+          memberNo: `reg-state-qualification-grade-${Date.now()}`,
+          displayName: 'Qualification review target',
+          gradeCode: 'L1',
+          status: MemberStatus.ACTIVE,
+        },
+        select: { id: true },
+      });
+      const ruleSet = await ctx.prisma.activityQualificationRuleSet.create({
+        data: {
+          activityId,
+          version: 1,
+          statusCode: 'draft',
+          rules: {
+            create: {
+              ruleTypeCode: 'grade',
+              enforcementCode: 'block',
+              operator: 'in',
+              valueJson: { codes: ['L1'] },
+              sortOrder: 1,
+            },
+          },
+        },
+        select: { id: true },
+      });
+      await ctx.prisma.activityQualificationRuleSet.update({
+        where: { id: ruleSet.id },
+        data: { statusCode: 'active' },
+      });
+      const regId = await seedRegistration({
+        activityId,
+        memberId: member.id,
+        statusCode: 'pending',
+      });
+      await ctx.prisma.member.update({
+        where: { id: member.id },
+        data: { gradeCode: 'L0' },
+      });
+      const before = await Promise.all([
+        ctx.prisma.activityRegistration.findUniqueOrThrow({
+          where: { id: regId },
+          select: { statusCode: true, reviewedAt: true },
+        }),
+        ctx.prisma.auditLog.count({ where: { resourceId: regId } }),
+        ctx.prisma.notificationOutboxIntent.count({ where: { aggregateId: regId } }),
+        ctx.prisma.qualificationEvaluationSnapshot.count({
+          where: { ruleSetVersionId: ruleSet.id },
+        }),
+      ]);
+
+      await expect(
+        ctx.service.approve(
+          activityId,
+          regId,
+          { reviewNote: '资格变化后不得通过' },
+          ctx.adminPayload,
+          AUDIT_META,
+        ),
+      ).rejects.toMatchObject({ biz: { code: 21040 } });
+
+      await expect(
+        Promise.all([
+          ctx.prisma.activityRegistration.findUniqueOrThrow({
+            where: { id: regId },
+            select: { statusCode: true, reviewedAt: true },
+          }),
+          ctx.prisma.auditLog.count({ where: { resourceId: regId } }),
+          ctx.prisma.notificationOutboxIntent.count({ where: { aggregateId: regId } }),
+          ctx.prisma.qualificationEvaluationSnapshot.count({
+            where: { ruleSetVersionId: ruleSet.id },
+          }),
+        ]),
+      ).resolves.toEqual(before);
+    });
+
     it('A4. Member 已软删 → approve 拒 MEMBER_NOT_FOUND，报名保持 pending 且零副作用', async () => {
       const member = await ctx.prisma.member.create({
         data: {
@@ -2171,6 +2249,280 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
         AUDIT_META,
       );
       expect(cancelled.statusCode).toBe('cancelled');
+    });
+  });
+
+  describe('J. legacy qualification bypass guard', () => {
+    beforeEach(isolateFixtures);
+
+    async function activateScopedRuleSetAfterLegacyRegistration(
+      activityId: string,
+      scope: 'session' | 'position',
+    ): Promise<string> {
+      const session = await ctx.prisma.activitySession.create({
+        data: {
+          activityId,
+          code: `legacy-review-qualification-${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          name: 'Legacy review qualification guard session',
+          startAt: new Date('2099-04-15T08:00:00.000Z'),
+          endAt: new Date('2099-04-15T12:00:00.000Z'),
+          locationText: 'state',
+          checkInOpenAt: new Date('2099-04-15T07:30:00.000Z'),
+          checkInCloseAt: new Date('2099-04-15T09:00:00.000Z'),
+          checkOutOpenAt: new Date('2099-04-15T11:00:00.000Z'),
+          checkOutCloseAt: new Date('2099-04-15T12:30:00.000Z'),
+          locationRequired: false,
+          locationPolicySourceCode: 'activity',
+          statusCode: 'scheduled',
+        },
+        select: { id: true },
+      });
+      const position =
+        scope === 'position'
+          ? await ctx.prisma.activitySessionPosition.create({
+              data: {
+                activityId,
+                sessionId: session.id,
+                code: `legacy-review-position-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                name: 'Legacy review qualification guard position',
+                attendanceRoleCode: 'volunteer',
+              },
+              select: { id: true },
+            })
+          : null;
+      const ruleSet = await ctx.prisma.activityQualificationRuleSet.create({
+        data: {
+          activityId,
+          sessionId: session.id,
+          positionId: position?.id,
+          version: 1,
+          statusCode: 'draft',
+          rules: {
+            create: {
+              ruleTypeCode: 'grade',
+              enforcementCode: 'block',
+              operator: 'in',
+              valueJson: { codes: ['L1'] },
+              sortOrder: 1,
+            },
+          },
+        },
+        select: { id: true },
+      });
+      if (position !== null) {
+        await ctx.prisma.activitySessionPosition.update({
+          where: { id: position.id },
+          data: { qualificationRuleSetId: ruleSet.id },
+        });
+      }
+      await ctx.prisma.activityQualificationRuleSet.update({
+        where: { id: ruleSet.id },
+        data: { statusCode: 'active' },
+      });
+      return ruleSet.id;
+    }
+
+    it('J1. active session-level RuleSet blocks legacy admin create even when the session is no longer scheduled', async () => {
+      const activityId = await createActivity({});
+      const session = await ctx.prisma.activitySession.create({
+        data: {
+          activityId,
+          code: `legacy-qualification-${Date.now()}`,
+          name: 'Legacy qualification guard session',
+          startAt: new Date('2099-04-15T08:00:00.000Z'),
+          endAt: new Date('2099-04-15T12:00:00.000Z'),
+          locationText: 'state',
+          checkInOpenAt: new Date('2099-04-15T07:30:00.000Z'),
+          checkInCloseAt: new Date('2099-04-15T09:00:00.000Z'),
+          checkOutOpenAt: new Date('2099-04-15T11:00:00.000Z'),
+          checkOutCloseAt: new Date('2099-04-15T12:30:00.000Z'),
+          locationRequired: false,
+          locationPolicySourceCode: 'activity',
+          statusCode: 'cancelled',
+        },
+        select: { id: true },
+      });
+      const ruleSet = await ctx.prisma.activityQualificationRuleSet.create({
+        data: {
+          activityId,
+          sessionId: session.id,
+          version: 1,
+          statusCode: 'draft',
+          rules: {
+            create: {
+              ruleTypeCode: 'grade',
+              enforcementCode: 'block',
+              operator: 'in',
+              valueJson: { codes: ['L1'] },
+              sortOrder: 1,
+            },
+          },
+        },
+        select: { id: true },
+      });
+      await ctx.prisma.activityQualificationRuleSet.update({
+        where: { id: ruleSet.id },
+        data: { statusCode: 'active' },
+      });
+
+      await expect(
+        ctx.service.create(activityId, { memberId: ctx.memberCId }, ctx.adminPayload, AUDIT_META),
+      ).rejects.toMatchObject({ biz: { code: 21038 } });
+      expect(
+        await ctx.prisma.activityRegistration.count({
+          where: { activityId, memberId: ctx.memberCId },
+        }),
+      ).toBe(0);
+    });
+
+    it.each(['session', 'position'] as const)(
+      'J2. legacy pending created before active %s RuleSet cannot bypass approve and leaves every write target unchanged',
+      async (scope) => {
+        const activityId = await createActivity({});
+        const legacy = await ctx.service.create(
+          activityId,
+          { memberId: ctx.memberCId },
+          ctx.adminPayload,
+          AUDIT_META,
+        );
+        const revision = await ctx.prisma.activityRegistrationRevision.findFirstOrThrow({
+          where: { registrationId: legacy.id },
+          select: { id: true },
+        });
+        await expect(
+          Promise.all([
+            ctx.prisma.activityParticipationIdentity.count({
+              where: { registrationId: legacy.id },
+            }),
+            ctx.prisma.activityPositionPreference.count({
+              where: { registrationRevisionId: revision.id },
+            }),
+          ]),
+        ).resolves.toEqual([0, 0]);
+
+        const ruleSetId = await activateScopedRuleSetAfterLegacyRegistration(activityId, scope);
+        const before = await Promise.all([
+          ctx.prisma.activityRegistration.findUniqueOrThrow({
+            where: { id: legacy.id },
+            select: {
+              statusCode: true,
+              reviewedBy: true,
+              reviewedAt: true,
+              reviewNote: true,
+              currentRevision: true,
+            },
+          }),
+          ctx.prisma.activityRegistrationRevision.count({ where: { registrationId: legacy.id } }),
+          ctx.prisma.activityParticipationIdentity.count({ where: { registrationId: legacy.id } }),
+          ctx.prisma.activityPositionPreference.count({
+            where: { registrationRevision: { registrationId: legacy.id } },
+          }),
+          ctx.prisma.auditLog.count({ where: { resourceId: legacy.id } }),
+          ctx.prisma.notificationOutboxIntent.count({ where: { aggregateId: legacy.id } }),
+          ctx.prisma.qualificationEvaluationSnapshot.findMany({
+            where: { ruleSetVersionId: ruleSetId },
+            select: { id: true, inputFactsHash: true },
+            orderBy: { id: 'asc' },
+          }),
+        ]);
+
+        await expect(
+          ctx.service.approve(
+            activityId,
+            legacy.id,
+            { reviewNote: '旧报名不得猜测场次或岗位' },
+            ctx.adminPayload,
+            AUDIT_META,
+          ),
+        ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED });
+
+        await expect(
+          Promise.all([
+            ctx.prisma.activityRegistration.findUniqueOrThrow({
+              where: { id: legacy.id },
+              select: {
+                statusCode: true,
+                reviewedBy: true,
+                reviewedAt: true,
+                reviewNote: true,
+                currentRevision: true,
+              },
+            }),
+            ctx.prisma.activityRegistrationRevision.count({ where: { registrationId: legacy.id } }),
+            ctx.prisma.activityParticipationIdentity.count({
+              where: { registrationId: legacy.id },
+            }),
+            ctx.prisma.activityPositionPreference.count({
+              where: { registrationRevision: { registrationId: legacy.id } },
+            }),
+            ctx.prisma.auditLog.count({ where: { resourceId: legacy.id } }),
+            ctx.prisma.notificationOutboxIntent.count({ where: { aggregateId: legacy.id } }),
+            ctx.prisma.qualificationEvaluationSnapshot.findMany({
+              where: { ruleSetVersionId: ruleSetId },
+              select: { id: true, inputFactsHash: true },
+              orderBy: { id: 'asc' },
+            }),
+          ]),
+        ).resolves.toEqual(before);
+      },
+    );
+
+    it('J3. an activity-only active RuleSet still permits legacy approve without an identity or preference', async () => {
+      const member = await ctx.prisma.member.create({
+        data: {
+          memberNo: `legacy-activity-only-${Date.now()}`,
+          displayName: 'Legacy activity-only qualification target',
+          gradeCode: 'L1',
+          status: MemberStatus.ACTIVE,
+        },
+        select: { id: true },
+      });
+      const activityId = await createActivity({});
+      const legacy = await ctx.service.create(
+        activityId,
+        { memberId: member.id },
+        ctx.adminPayload,
+        AUDIT_META,
+      );
+      const ruleSet = await ctx.prisma.activityQualificationRuleSet.create({
+        data: {
+          activityId,
+          version: 1,
+          statusCode: 'draft',
+          rules: {
+            create: {
+              ruleTypeCode: 'grade',
+              enforcementCode: 'block',
+              operator: 'in',
+              valueJson: { codes: ['L1'] },
+              sortOrder: 1,
+            },
+          },
+        },
+        select: { id: true },
+      });
+      await ctx.prisma.activityQualificationRuleSet.update({
+        where: { id: ruleSet.id },
+        data: { statusCode: 'active' },
+      });
+
+      await expect(
+        Promise.all([
+          ctx.prisma.activityParticipationIdentity.count({ where: { registrationId: legacy.id } }),
+          ctx.prisma.activityPositionPreference.count({
+            where: { registrationRevision: { registrationId: legacy.id } },
+          }),
+        ]),
+      ).resolves.toEqual([0, 0]);
+      await expect(
+        ctx.service.approve(activityId, legacy.id, {}, ctx.adminPayload, AUDIT_META),
+      ).resolves.toMatchObject({ statusCode: 'pass' });
+      await expect(
+        ctx.prisma.qualificationEvaluationSnapshot.findMany({
+          where: { ruleSetVersionId: ruleSet.id, evaluationPhaseCode: 'review' },
+          select: { identityId: true, resultCode: true },
+        }),
+      ).resolves.toEqual([{ identityId: null, resultCode: 'pass' }]);
     });
   });
 });

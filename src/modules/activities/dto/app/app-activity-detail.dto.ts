@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ACTIVITY_PHASE_VALUES, type ActivityPhase } from '../../activity-phase';
 import { AppRegistrationFormDto } from './app-registration-form.dto';
+import { AppActivityQualificationDto } from './app-activity-qualification.dto';
 
 export class AppActivityDetailSessionPositionDto {
   @ApiProperty()
@@ -35,6 +36,9 @@ export class AppActivityDetailSessionPositionDto {
 
   @ApiProperty()
   sortOrder!: number;
+
+  @ApiProperty({ type: () => AppActivityQualificationDto })
+  qualification!: AppActivityQualificationDto;
 }
 
 export class AppActivityDetailSessionDto {
@@ -61,6 +65,9 @@ export class AppActivityDetailSessionDto {
 
   @ApiProperty({ type: () => [AppActivityDetailSessionPositionDto] })
   positions!: AppActivityDetailSessionPositionDto[];
+
+  @ApiProperty({ type: () => AppActivityQualificationDto })
+  qualification!: AppActivityQualificationDto;
 }
 
 export class AppActivityDetailInvitationDto {
@@ -201,6 +208,9 @@ export class AppActivityDetailDto {
     type: () => [AppActivityDetailInvitationDto],
   })
   myInvitations!: AppActivityDetailInvitationDto[];
+
+  @ApiProperty({ type: () => AppActivityQualificationDto })
+  qualification!: AppActivityQualificationDto;
 
   @ApiProperty({
     description: '活动场次与其岗位的安全投影；不返回定位坐标、负责人或资格规则内部字段',

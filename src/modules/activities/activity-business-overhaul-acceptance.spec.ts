@@ -391,6 +391,26 @@ const BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_BLOCKERS: Readonly<Record<string, s
   'AC-017': '后台代报名与导入未接入本刀，三入口共享答案 validator 仍未实现。',
 };
 
+/** 第 4 批⑪把已冻结 D83 规则接入 display / submit / onsite / review 四阶段。 */
+const BATCH4_QUALIFICATION_RUNTIME_ACCEPTANCE_IDS = ['AC-018'] as const;
+
+const BATCH4_QUALIFICATION_RUNTIME_ACCEPTANCE_DESTINATIONS: Readonly<
+  Record<string, readonly AcceptanceDestination[]>
+> = {
+  'AC-018': [
+    {
+      file: 'test/e2e/activity-batch4-qualification-runtime.e2e-spec.ts',
+      needle:
+        'AC-018 qualification runtime evaluates all seven D83 rule types across display, submit, onsite, and review',
+    },
+    {
+      file: 'test/e2e/activity-batch4-qualification-runtime.e2e-spec.ts',
+      needle:
+        'does not leak qualification facts into immutable snapshots and keeps their count and hashes unchanged for failed displays',
+    },
+  ],
+};
+
 /**
  * 第 4 批 reservation kernel 只交付同一事务内的事实原语，不能把 service 直调误记为
  * 最终报名链。AC-022/023 仍必须保留 todo，直到 HTTP request、状态写与分配 policy caller
@@ -423,7 +443,7 @@ const BATCH4_ONSITE_PARTICIPATION_ACCEPTANCE_DESTINATIONS: Readonly<
     {
       file: 'test/e2e/activity-batch4-onsite-participation.e2e-spec.ts',
       needle:
-        'fails closed before all writes for Form fields, applicable RuleSets, and explicit position bindings',
+        'fails closed before all writes for Form fields and qualification configuration drift',
     },
   ],
 };
@@ -524,6 +544,19 @@ if (
   throw new Error('第 4 批④三条验收编号必须逐条有真实证据去向或明确阻塞说明');
 }
 
+const batch4QualificationRuntimeResolvedIds = new Set([
+  ...Object.keys(BATCH4_QUALIFICATION_RUNTIME_ACCEPTANCE_DESTINATIONS),
+]);
+if (
+  batch4QualificationRuntimeResolvedIds.size !==
+    BATCH4_QUALIFICATION_RUNTIME_ACCEPTANCE_IDS.length ||
+  BATCH4_QUALIFICATION_RUNTIME_ACCEPTANCE_IDS.some(
+    (id) => !batch4QualificationRuntimeResolvedIds.has(id),
+  )
+) {
+  throw new Error('第 4 批⑪ AC-018 必须绑定真实资格运行时 E2E destination');
+}
+
 const batch4ReservationKernelResolvedIds = new Set([
   ...Object.keys(BATCH4_RESERVATION_KERNEL_ACCEPTANCE_BLOCKERS),
 ]);
@@ -581,6 +614,7 @@ function registerAcceptanceCases(cases: readonly { id: string; title: string }[]
       BATCH2_ACCEPTANCE_DESTINATIONS[id] ??
       BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS[id] ??
       BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS[id] ??
+      BATCH4_QUALIFICATION_RUNTIME_ACCEPTANCE_DESTINATIONS[id] ??
       BATCH4_ONSITE_PARTICIPATION_ACCEPTANCE_DESTINATIONS[id] ??
       BATCH4_INVITATION_VISITOR_ACCEPTANCE_DESTINATIONS[id] ??
       BATCH4_PERMANENT_REGISTRATION_ACCEPTANCE_DESTINATIONS[id];

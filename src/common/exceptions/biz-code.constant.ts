@@ -1753,11 +1753,20 @@ export const BizCode = {
     message: '该活动必须使用报名主链提交',
     httpStatus: HttpStatus.CONFLICT,
   },
-  // 第 4 批⑧现场临时参加:Form / 资格规则的 operator 与 valueJson runtime 尚未定义。
-  // 现场补录绝不猜测或跳过这些条件；一旦命中适用条件，整笔在写入前 fail-closed。
+  // 现场 Form 尚未接通时保持 fail-closed；合法资格 RuleSet 由统一 evaluator 处理。
   ACTIVITY_ONSITE_REQUIREMENTS_UNAVAILABLE: {
     code: 21039,
     message: '活动现场临时参加条件暂无法安全判定',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_QUALIFICATION_NOT_MET: {
+    code: 21040,
+    message: '报名者未满足活动资格条件',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID: {
+    code: 21041,
+    message: '资格规则配置无法安全判定',
     httpStatus: HttpStatus.CONFLICT,
   },
 

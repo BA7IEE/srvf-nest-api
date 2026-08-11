@@ -18,6 +18,7 @@ import { CertificateStandardsService } from './certificate-standards.service';
 import { CertificatesWorkbenchController } from './certificates-workbench.controller';
 import { CertificatesWorkbenchService } from './certificates-workbench.service';
 import { CertificatesController } from './certificates.controller';
+import { CertificateQualificationService } from './certificate-qualification.service';
 import { CertificatesService } from './certificates.service';
 import { AppMyCertificatesController } from './controllers/app-my-certificates.controller';
 
@@ -74,6 +75,7 @@ import { AppMyCertificatesController } from './controllers/app-my-certificates.c
     CertificateRecognitionResolver,
     CertificateEvidenceSigner,
     CertificatesWorkbenchService,
+    CertificateQualificationService,
   ],
   // 证书标准库 PR-4a-1(§19):**只导出窄 Resolver**,供 Recruitment 的 Claim 审核复用
   // 同一套认定规则解析(机构 / 编号 / 日期),避免招新侧复制第二套 Policy 算法。
@@ -81,6 +83,10 @@ import { AppMyCertificatesController } from './controllers/app-my-certificates.c
   //
   // 评审 findings F2(§13.5):再导出证据签发器 —— 招新 Claim 取图与证书证据读取
   // 必须共用同一套签名逻辑,而不是各写一份各带一个 TTL 常量。
-  exports: [CertificateRecognitionResolver, CertificateEvidenceSigner],
+  exports: [
+    CertificateRecognitionResolver,
+    CertificateEvidenceSigner,
+    CertificateQualificationService,
+  ],
 })
 export class CertificatesModule {}

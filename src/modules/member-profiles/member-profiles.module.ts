@@ -4,6 +4,7 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { AuthzModule } from '../authz/authz.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { MemberProfilesController } from './member-profiles.controller';
+import { MemberQualificationFactsService } from './member-qualification-facts.service';
 import { MemberProfilesService } from './member-profiles.service';
 
 // Slow-4 T2(2026-06-11):imports PermissionsModule 供 MemberProfilesService 注入 RbacService
@@ -12,6 +13,7 @@ import { MemberProfilesService } from './member-profiles.service';
 @Module({
   imports: [DatabaseModule, AuditLogsModule, PermissionsModule, AuthzModule],
   controllers: [MemberProfilesController],
-  providers: [MemberProfilesService],
+  providers: [MemberProfilesService, MemberQualificationFactsService],
+  exports: [MemberQualificationFactsService],
 })
 export class MemberProfilesModule {}

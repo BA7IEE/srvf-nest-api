@@ -1479,7 +1479,55 @@ describe('activity batch4 onsite participation', () => {
     await expectNoOnsiteWrites(positionScenario, positionTarget.id, omittedBefore);
   });
 
-  it('fails closed before all writes for Form fields, applicable RuleSets, and explicit position bindings', async () => {
+  it('evaluates a legal active RuleSet during onsite creation and appends a submit snapshot', async () => {
+    const scenario = await createScenario();
+    const target = await createTarget();
+    const ruleSet = await prisma.activityQualificationRuleSet.create({
+      data: {
+        activityId: scenario.activityId,
+        version: 1,
+        statusCode: 'draft',
+        rules: {
+          create: {
+            ruleTypeCode: 'grade',
+            enforcementCode: 'block',
+            operator: 'in',
+            valueJson: { codes: ['L1'] },
+            sortOrder: 1,
+          },
+        },
+      },
+      select: { id: true },
+    });
+    await prisma.activityQualificationRuleSet.update({
+      where: { id: ruleSet.id },
+      data: { statusCode: 'active' },
+    });
+
+    const response = await onsite(scenario, {
+      memberId: target.id,
+      operationKey: 'onsite-legal-qualification-0001',
+    });
+
+    expect(response.status).toBe(201);
+    await expect(
+      prisma.qualificationEvaluationSnapshot.findMany({
+        where: {
+          ruleSetVersionId: ruleSet.id,
+          registrationRevisionId: response.body.data.registrationRevisionId,
+        },
+        select: { identityId: true, evaluationPhaseCode: true, resultCode: true },
+      }),
+    ).resolves.toEqual([
+      {
+        identityId: null,
+        evaluationPhaseCode: 'submit',
+        resultCode: 'pass',
+      },
+    ]);
+  });
+
+  it('fails closed before all writes for Form fields and qualification configuration drift', async () => {
     const formScenario = await createScenario();
     const formTarget = await createTarget();
     await prisma.registrationFormVersion.create({
@@ -1519,7 +1567,9 @@ describe('activity batch4 onsite participation', () => {
       memberId: rulesTarget.id,
       operationKey: 'onsite-rules-blocked-0001',
     });
-    expectBizError(rulesBlocked, BizCode.ACTIVITY_ONSITE_REQUIREMENTS_UNAVAILABLE);
+    expect(rulesBlocked.status).toBe(409);
+    expect(rulesBlocked.body.code).toBe(21041);
+    expect(rulesBlocked.body.data).toBeNull();
     await expectNoOnsiteWrites(rulesScenario, rulesTarget.id, rulesBefore);
 
     const bindingScenario = await createScenario({ withPosition: true });
@@ -1545,7 +1595,9 @@ describe('activity batch4 onsite participation', () => {
       memberId: bindingTarget.id,
       operationKey: 'onsite-position-ruleset-blocked-0001',
     });
-    expectBizError(bindingBlocked, BizCode.ACTIVITY_ONSITE_REQUIREMENTS_UNAVAILABLE);
+    expect(bindingBlocked.status).toBe(409);
+    expect(bindingBlocked.body.code).toBe(21041);
+    expect(bindingBlocked.body.data).toBeNull();
     await expectNoOnsiteWrites(bindingScenario, bindingTarget.id, bindingBefore);
   });
 });

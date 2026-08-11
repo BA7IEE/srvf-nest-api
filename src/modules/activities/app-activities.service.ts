@@ -15,6 +15,11 @@ import { AppActivityPositionDto } from './dto/app/app-activity-position.dto';
 import { deriveEffectiveActivityCapacity } from './activity-capacity';
 import { deriveActivityPhase } from './activity-phase';
 import { ActivityParticipationPolicy } from './activity-participation-policy';
+import {
+  ActivityQualificationEvaluatorService,
+  type ActivityQualificationEvaluation,
+  type QualificationProjection,
+} from '../activity-registrations/activity-qualification-evaluator.service';
 import { registrationFormDefinitionFromStoredFields } from './registration-form-definition';
 
 // Phase 2 P2-4a/P2-4b App /api/app/v1/activities/* service。
@@ -174,6 +179,7 @@ export class AppActivitiesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly activityParticipationPolicy: ActivityParticipationPolicy,
+    private readonly qualificationEvaluator: ActivityQualificationEvaluatorService,
   ) {}
 
   // 入参 memberId 在 v0.1 实际**未参与 where 过滤**(沿评审稿 §6.5 + §8.3):published
@@ -261,36 +267,57 @@ export class AppActivitiesService {
   // - findFirst 命中 null 统一抛 ACTIVITY_NOT_FOUND(D-P2-4-3 v0.1 锁定 404,不返 403)
   async findVisibleByIdForMember(id: string, memberId: string): Promise<AppActivityDetailDto> {
     const now = new Date();
-    const [row, passCount, invitations] = await this.prisma.$transaction([
-      this.prisma.activity.findFirst({
-        where: notDeletedWhere({
-          id,
-          statusCode: 'published',
-          ...this.memberVisibilityWhere(memberId, now),
+    return this.prisma.$transaction(async (tx) => {
+      const [row, passCount, invitations] = await Promise.all([
+        tx.activity.findFirst({
+          where: notDeletedWhere({
+            id,
+            statusCode: 'published',
+            ...this.memberVisibilityWhere(memberId, now),
+          }),
+          select: appActivityDetailSelect,
         }),
-        select: appActivityDetailSelect,
-      }),
-      this.prisma.activityRegistration.count({
-        where: notDeletedWhere({ activityId: id, statusCode: 'pass' }),
-      }),
-      this.prisma.activityInvitation.findMany({
-        where: { activityId: id, memberId },
-        select: {
-          id: true,
-          sessionId: true,
-          positionId: true,
-          statusCode: true,
-          expiresAt: true,
-        },
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      }),
-    ]);
+        tx.activityRegistration.count({
+          where: notDeletedWhere({ activityId: id, statusCode: 'pass' }),
+        }),
+        tx.activityInvitation.findMany({
+          where: { activityId: id, memberId },
+          select: {
+            id: true,
+            sessionId: true,
+            positionId: true,
+            statusCode: true,
+            expiresAt: true,
+          },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        }),
+      ]);
 
-    if (row === null) {
-      throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-    }
+      if (row === null) {
+        throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+      }
 
-    return this.toDetailDto(row, passCount, invitations, now);
+      const qualification = await this.qualificationEvaluator.evaluate({
+        activity: row,
+        memberId,
+        targets: row.sessions.flatMap((session) => [
+          { sessionId: session.id, positionId: null },
+          ...session.positions.map((position) => ({
+            sessionId: session.id,
+            positionId: position.id,
+          })),
+        ]),
+        tx,
+      });
+      await this.qualificationEvaluator.appendSnapshots({
+        evaluation: qualification,
+        phase: 'display',
+        registrationRevisionId: null,
+        tx,
+      });
+
+      return this.toDetailDto(row, passCount, invitations, now, qualification);
+    });
   }
 
   async listPositionsForMember(
@@ -419,6 +446,7 @@ export class AppActivitiesService {
     passCount: number,
     invitations: AppActivityDetailInvitationRow[],
     now: Date,
+    qualification: ActivityQualificationEvaluation,
   ): AppActivityDetailDto {
     const activeForm = row.registrationFormVersions[0] ?? null;
     const registrationForm = activeForm
@@ -448,6 +476,7 @@ export class AppActivitiesService {
       registrationMode: row.registrationModeCode,
       formVersion: registrationForm?.version ?? null,
       registrationForm,
+      qualification: qualification.activity,
       myInvitations: invitations.map((invitation) => ({
         invitationId: invitation.id,
         scope:
@@ -470,6 +499,7 @@ export class AppActivitiesService {
         endAt: session.endAt,
         locationText: session.locationText,
         capacity: session.capacity,
+        qualification: this.sessionQualification(qualification, session.id),
         positions: session.positions.map((position) => ({
           id: position.id,
           code: position.code,
@@ -482,9 +512,24 @@ export class AppActivitiesService {
           description: position.description,
           equipmentNotes: position.equipmentNotes,
           sortOrder: position.sortOrder,
+          qualification: this.positionQualification(qualification, position.id),
         })),
       })),
     };
+  }
+
+  private sessionQualification(
+    evaluation: ActivityQualificationEvaluation,
+    sessionId: string,
+  ): QualificationProjection {
+    return evaluation.sessions.get(sessionId) ?? evaluation.activity;
+  }
+
+  private positionQualification(
+    evaluation: ActivityQualificationEvaluation,
+    positionId: string,
+  ): QualificationProjection {
+    return evaluation.positions.get(positionId) ?? evaluation.activity;
   }
 
   private toDirectoryListItemDto(row: AppActivityDirectoryRow): AppActivityDirectoryListItemDto {

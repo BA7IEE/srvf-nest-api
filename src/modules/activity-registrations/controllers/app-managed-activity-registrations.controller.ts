@@ -111,6 +111,9 @@ export class AppManagedActivityRegistrationsController {
     BizCode.MEMBER_NOT_FOUND,
     BizCode.MEMBER_INACTIVE,
     BizCode.INSURANCE_REQUIRED,
+    BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED,
+    BizCode.ACTIVITY_QUALIFICATION_NOT_MET,
+    BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID,
   )
   async approve(
     @CurrentUser() user: CurrentUserPayload,

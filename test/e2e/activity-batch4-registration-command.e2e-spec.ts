@@ -459,6 +459,11 @@ describe('activity batch4 canonical registration command', () => {
         where: { activityRegistration: { activityId: input.activityId, memberId: input.memberId } },
       }),
     ).toBe(0);
+    expect(
+      await prisma.qualificationEvaluationSnapshot.count({
+        where: { ruleSetVersion: { activityId: input.activityId } },
+      }),
+    ).toBe(0);
     expect(await commandAuditCount(input.actorUserId)).toBe(input.auditCountBefore);
   }
 
@@ -1394,5 +1399,117 @@ describe('activity batch4 canonical registration command', () => {
       .set('Authorization', applicantAuth)
       .send({ activityId: legacy.id });
     expect(legacyCreate.status).toBe(201);
+  });
+
+  it('rejects a canonical submit before any write when an active block qualification RuleSet is not met', async () => {
+    const activity = await createNoFormCommandActivity({
+      title: 'Qualification Block Command Activity',
+    });
+    const ruleSet = await prisma.activityQualificationRuleSet.create({
+      data: {
+        activityId: activity.id,
+        version: 1,
+        statusCode: 'draft',
+        rules: {
+          create: {
+            ruleTypeCode: 'grade',
+            enforcementCode: 'block',
+            operator: 'in',
+            valueJson: { codes: ['L2'] },
+            sortOrder: 1,
+          },
+        },
+      },
+      select: { id: true },
+    });
+    await prisma.activityQualificationRuleSet.update({
+      where: { id: ruleSet.id },
+      data: { statusCode: 'active' },
+    });
+    const auditCountBefore = await commandAuditCount(applicantUserId);
+
+    const response = await request(httpServer(app))
+      .post(commandPath(activity.id))
+      .set('Authorization', applicantAuth)
+      .send({
+        operationKey: 'batch4-command-qualification-block-0001',
+        formVersion: null,
+        answers: [],
+        preferences: [],
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe(21040);
+    expect(response.body.data).toBeNull();
+    await expectNoCanonicalCommandWrites({
+      activityId: activity.id,
+      memberId: applicantMemberId,
+      actorUserId: applicantUserId,
+      auditCountBefore,
+    });
+  });
+
+  it('persists a warn snapshot and continues a canonical submit when a warn qualification RuleSet is not met', async () => {
+    const activity = await createNoFormCommandActivity({
+      title: 'Qualification Warn Command Activity',
+    });
+    const ruleSet = await prisma.activityQualificationRuleSet.create({
+      data: {
+        activityId: activity.id,
+        version: 1,
+        statusCode: 'draft',
+        rules: {
+          create: {
+            ruleTypeCode: 'grade',
+            enforcementCode: 'warn',
+            operator: 'in',
+            valueJson: { codes: ['L2'] },
+            warnScore: 70,
+            sortOrder: 1,
+          },
+        },
+      },
+      select: { id: true },
+    });
+    await prisma.activityQualificationRuleSet.update({
+      where: { id: ruleSet.id },
+      data: { statusCode: 'active' },
+    });
+
+    const response = await request(httpServer(app))
+      .post(commandPath(activity.id))
+      .set('Authorization', applicantAuth)
+      .send({
+        operationKey: 'batch4-command-qualification-warn-0001',
+        formVersion: null,
+        answers: [],
+        preferences: [],
+      });
+
+    expect(response.status).toBe(201);
+    const snapshot = await prisma.qualificationEvaluationSnapshot.findFirstOrThrow({
+      where: {
+        ruleSetVersionId: ruleSet.id,
+        registrationRevisionId: response.body.data.registrationRevisionId,
+      },
+      select: {
+        identityId: true,
+        evaluationPhaseCode: true,
+        resultCode: true,
+        detailsJson: true,
+        inputFactsHash: true,
+      },
+    });
+    expect(snapshot).toEqual(
+      expect.objectContaining({
+        identityId: null,
+        evaluationPhaseCode: 'submit',
+        resultCode: 'warn',
+        inputFactsHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    );
+    expect(JSON.stringify(snapshot.detailsJson)).not.toMatch(
+      /grade|gender|birth|organization|certificate|insurance|valueJson/i,
+    );
   });
 });

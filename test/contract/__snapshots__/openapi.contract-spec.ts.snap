@@ -2771,6 +2771,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         ],
         "type": "string",
       },
+      "qualification": {
+        "$ref": "#/components/schemas/AppActivityQualificationDto",
+      },
       "registrationDeadline": {
         "description": "报名截止时间(ISO 8601;NULL = 不限)",
         "nullable": true,
@@ -2836,6 +2839,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "passCount",
       "createdAt",
       "myInvitations",
+      "qualification",
       "sessions",
     ],
     "type": "object",
@@ -2908,6 +2912,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         },
         "type": "array",
       },
+      "qualification": {
+        "$ref": "#/components/schemas/AppActivityQualificationDto",
+      },
       "startAt": {
         "format": "date-time",
         "type": "string",
@@ -2921,6 +2928,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "endAt",
       "locationText",
       "positions",
+      "qualification",
     ],
     "type": "object",
   },
@@ -2958,6 +2966,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "name": {
         "type": "string",
       },
+      "qualification": {
+        "$ref": "#/components/schemas/AppActivityQualificationDto",
+      },
       "sortOrder": {
         "type": "number",
       },
@@ -2972,6 +2983,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "name",
       "attendanceRoleCode",
       "sortOrder",
+      "qualification",
     ],
     "type": "object",
   },
@@ -3290,6 +3302,73 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "attendanceRoleCode",
       "sortOrder",
       "canRegister",
+    ],
+    "type": "object",
+  },
+  "AppActivityQualificationDto": {
+    "properties": {
+      "resultCode": {
+        "description": "当前调用者的资格结论",
+        "enum": [
+          "pass",
+          "warn",
+          "fail",
+        ],
+        "type": "string",
+      },
+      "unmetRules": {
+        "description": "未满足规则的安全摘要；不返回任何个人事实或 valueJson",
+        "items": {
+          "$ref": "#/components/schemas/AppActivityQualificationUnmetRuleDto",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "resultCode",
+      "unmetRules",
+    ],
+    "type": "object",
+  },
+  "AppActivityQualificationUnmetRuleDto": {
+    "properties": {
+      "enforcementCode": {
+        "description": "规则不满足时的执行级别",
+        "enum": [
+          "block",
+          "warn",
+        ],
+        "type": "string",
+      },
+      "message": {
+        "description": "规则配置的安全提示文案",
+        "nullable": true,
+        "type": "string",
+      },
+      "resultCode": {
+        "description": "该未满足规则的结果",
+        "enum": [
+          "warn",
+          "fail",
+        ],
+        "type": "string",
+      },
+      "ruleId": {
+        "description": "冻结资格规则主键",
+        "type": "string",
+      },
+      "warnScore": {
+        "description": "warn 规则的提示分值",
+        "nullable": true,
+        "type": "number",
+      },
+    },
+    "required": [
+      "ruleId",
+      "enforcementCode",
+      "resultCode",
+      "message",
+      "warnScore",
     ],
     "type": "object",
   },
@@ -28473,7 +28552,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "17030: 队员状态非活跃,不能挂部门; 20120: 活动未开放报名; 20121: 活动已取消,禁止报名; 20123: 活动报名已截止; 21002: 同一活动同一队员已有有效报名; 21035: 该活动报名必须选择活动岗位; 21034: 报名者性别不符合活动要求; 21032: 活动名额已满; 21038: 该活动必须使用报名主链提交",
+                    "description": "17030: 队员状态非活跃,不能挂部门; 20120: 活动未开放报名; 20121: 活动已取消,禁止报名; 20123: 活动报名已截止; 21002: 同一活动同一队员已有有效报名; 21035: 该活动报名必须选择活动岗位; 21034: 报名者性别不符合活动要求; 21032: 活动名额已满; 21038: 该活动必须使用报名主链提交; 21040: 报名者未满足活动资格条件; 21041: 资格规则配置无法安全判定",
                     "enum": [
                       17030,
                       20120,
@@ -28484,6 +28563,8 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
                       21034,
                       21032,
                       21038,
+                      21040,
+                      21041,
                     ],
                     "example": 17030,
                     "type": "integer",
@@ -28507,7 +28588,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "队员状态非活跃,不能挂部门(code=17030) / 活动未开放报名(code=20120) / 活动已取消,禁止报名(code=20121) / 活动报名已截止(code=20123) / 同一活动同一队员已有有效报名(code=21002) / 该活动报名必须选择活动岗位(code=21035) / 报名者性别不符合活动要求(code=21034) / 活动名额已满(code=21032) / 该活动必须使用报名主链提交(code=21038)",
+          "description": "队员状态非活跃,不能挂部门(code=17030) / 活动未开放报名(code=20120) / 活动已取消,禁止报名(code=20121) / 活动报名已截止(code=20123) / 同一活动同一队员已有有效报名(code=21002) / 该活动报名必须选择活动岗位(code=21035) / 报名者性别不符合活动要求(code=21034) / 活动名额已满(code=21032) / 该活动必须使用报名主链提交(code=21038) / 报名者未满足活动资格条件(code=21040) / 资格规则配置无法安全判定(code=21041)",
         },
       },
       "security": [
@@ -29210,13 +29291,16 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "21030: 报名记录当前状态不允许此操作; 20124: 活动已取消或已完结,报名不可审批通过; 21032: 活动名额已满; 17030: 队员状态非活跃,不能挂部门; 26030: 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名",
+                    "description": "21030: 报名记录当前状态不允许此操作; 20124: 活动已取消或已完结,报名不可审批通过; 21032: 活动名额已满; 17030: 队员状态非活跃,不能挂部门; 26030: 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名; 21038: 该活动必须使用报名主链提交; 21040: 报名者未满足活动资格条件; 21041: 资格规则配置无法安全判定",
                     "enum": [
                       21030,
                       20124,
                       21032,
                       17030,
                       26030,
+                      21038,
+                      21040,
+                      21041,
                     ],
                     "example": 21030,
                     "type": "integer",
@@ -29240,7 +29324,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "报名记录当前状态不允许此操作(code=21030) / 活动已取消或已完结,报名不可审批通过(code=20124) / 活动名额已满(code=21032) / 队员状态非活跃,不能挂部门(code=17030) / 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名(code=26030)",
+          "description": "报名记录当前状态不允许此操作(code=21030) / 活动已取消或已完结,报名不可审批通过(code=20124) / 活动名额已满(code=21032) / 队员状态非活跃,不能挂部门(code=17030) / 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名(code=26030) / 该活动必须使用报名主链提交(code=21038) / 报名者未满足活动资格条件(code=21040) / 资格规则配置无法安全判定(code=21041)",
         },
       },
       "security": [
@@ -82522,7 +82606,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "20120: 活动未开放报名; 20126: 活动未发布,不可报名、审批或提交考勤; 20121: 活动已取消,禁止报名; 20123: 活动报名已截止; 20125: 活动已结束,不可报名; 21003: 报名操作键与首次请求不一致; 21030: 报名记录当前状态不允许此操作; 21034: 报名者性别不符合活动要求; 21035: 该活动报名必须选择活动岗位; 21036: 报名表版本不匹配或已失效; 26030: 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名",
+                    "description": "20120: 活动未开放报名; 20126: 活动未发布,不可报名、审批或提交考勤; 20121: 活动已取消,禁止报名; 20123: 活动报名已截止; 20125: 活动已结束,不可报名; 21003: 报名操作键与首次请求不一致; 21030: 报名记录当前状态不允许此操作; 21034: 报名者性别不符合活动要求; 21035: 该活动报名必须选择活动岗位; 21036: 报名表版本不匹配或已失效; 26030: 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名; 21040: 报名者未满足活动资格条件; 21041: 资格规则配置无法安全判定",
                     "enum": [
                       20120,
                       20126,
@@ -82535,6 +82619,8 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
                       21035,
                       21036,
                       26030,
+                      21040,
+                      21041,
                     ],
                     "example": 20120,
                     "type": "integer",
@@ -82558,7 +82644,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "活动未开放报名(code=20120) / 活动未发布,不可报名、审批或提交考勤(code=20126) / 活动已取消,禁止报名(code=20121) / 活动报名已截止(code=20123) / 活动已结束,不可报名(code=20125) / 报名操作键与首次请求不一致(code=21003) / 报名记录当前状态不允许此操作(code=21030) / 报名者性别不符合活动要求(code=21034) / 该活动报名必须选择活动岗位(code=21035) / 报名表版本不匹配或已失效(code=21036) / 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名(code=26030)",
+          "description": "活动未开放报名(code=20120) / 活动未发布,不可报名、审批或提交考勤(code=20126) / 活动已取消,禁止报名(code=20121) / 活动报名已截止(code=20123) / 活动已结束,不可报名(code=20125) / 报名操作键与首次请求不一致(code=21003) / 报名记录当前状态不允许此操作(code=21030) / 报名者性别不符合活动要求(code=21034) / 该活动报名必须选择活动岗位(code=21035) / 报名表版本不匹配或已失效(code=21036) / 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名(code=26030) / 报名者未满足活动资格条件(code=21040) / 资格规则配置无法安全判定(code=21041)",
         },
       },
       "security": [
@@ -82754,6 +82840,40 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
             },
           },
           "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "21041: 资格规则配置无法安全判定",
+                    "enum": [
+                      21041,
+                    ],
+                    "example": 21041,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "资格规则配置无法安全判定",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "资格规则配置无法安全判定(code=21041)",
         },
       },
       "security": [
@@ -94615,7 +94735,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "20126: 活动未发布,不可报名、审批或提交考勤; 17030: 队员状态非活跃,不能挂部门; 21003: 报名操作键与首次请求不一致; 21030: 报名记录当前状态不允许此操作; 21032: 活动名额已满; 21034: 报名者性别不符合活动要求; 21035: 该活动报名必须选择活动岗位; 21039: 活动现场临时参加条件暂无法安全判定; 26030: 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名; 20147: 活动容量与当前占用不一致",
+                    "description": "20126: 活动未发布,不可报名、审批或提交考勤; 17030: 队员状态非活跃,不能挂部门; 21003: 报名操作键与首次请求不一致; 21030: 报名记录当前状态不允许此操作; 21032: 活动名额已满; 21034: 报名者性别不符合活动要求; 21035: 该活动报名必须选择活动岗位; 21039: 活动现场临时参加条件暂无法安全判定; 21040: 报名者未满足活动资格条件; 21041: 资格规则配置无法安全判定; 26030: 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名; 20147: 活动容量与当前占用不一致",
                     "enum": [
                       20126,
                       17030,
@@ -94625,6 +94745,8 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
                       21034,
                       21035,
                       21039,
+                      21040,
+                      21041,
                       26030,
                       20147,
                     ],
@@ -94650,7 +94772,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "活动未发布,不可报名、审批或提交考勤(code=20126) / 队员状态非活跃,不能挂部门(code=17030) / 报名操作键与首次请求不一致(code=21003) / 报名记录当前状态不允许此操作(code=21030) / 活动名额已满(code=21032) / 报名者性别不符合活动要求(code=21034) / 该活动报名必须选择活动岗位(code=21035) / 活动现场临时参加条件暂无法安全判定(code=21039) / 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名(code=26030) / 活动容量与当前占用不一致(code=20147)",
+          "description": "活动未发布,不可报名、审批或提交考勤(code=20126) / 队员状态非活跃,不能挂部门(code=17030) / 报名操作键与首次请求不一致(code=21003) / 报名记录当前状态不允许此操作(code=21030) / 活动名额已满(code=21032) / 报名者性别不符合活动要求(code=21034) / 该活动报名必须选择活动岗位(code=21035) / 活动现场临时参加条件暂无法安全判定(code=21039) / 报名者未满足活动资格条件(code=21040) / 资格规则配置无法安全判定(code=21041) / 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名(code=26030) / 活动容量与当前占用不一致(code=20147)",
         },
       },
       "security": [
@@ -97103,13 +97225,16 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "21030: 报名记录当前状态不允许此操作; 20124: 活动已取消或已完结,报名不可审批通过; 21032: 活动名额已满; 17030: 队员状态非活跃,不能挂部门; 26030: 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名",
+                    "description": "21030: 报名记录当前状态不允许此操作; 20124: 活动已取消或已完结,报名不可审批通过; 21032: 活动名额已满; 17030: 队员状态非活跃,不能挂部门; 26030: 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名; 21038: 该活动必须使用报名主链提交; 21040: 报名者未满足活动资格条件; 21041: 资格规则配置无法安全判定",
                     "enum": [
                       21030,
                       20124,
                       21032,
                       17030,
                       26030,
+                      21038,
+                      21040,
+                      21041,
                     ],
                     "example": 21030,
                     "type": "integer",
@@ -97133,7 +97258,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "报名记录当前状态不允许此操作(code=21030) / 活动已取消或已完结,报名不可审批通过(code=20124) / 活动名额已满(code=21032) / 队员状态非活跃,不能挂部门(code=17030) / 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名(code=26030)",
+          "description": "报名记录当前状态不允许此操作(code=21030) / 活动已取消或已完结,报名不可审批通过(code=20124) / 活动名额已满(code=21032) / 队员状态非活跃,不能挂部门(code=17030) / 该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名(code=26030) / 该活动必须使用报名主链提交(code=21038) / 报名者未满足活动资格条件(code=21040) / 资格规则配置无法安全判定(code=21041)",
         },
       },
       "security": [

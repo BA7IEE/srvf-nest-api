@@ -48,6 +48,7 @@ const APP_DETAIL_KEYS = [
   'registrationMode',
   'registrationNotes',
   'registrationForm',
+  'qualification',
   'requiresInsurance',
   'sessions',
   'startAt',
@@ -250,6 +251,64 @@ describe('App GET /api/app/v1/activities/:id (P2-4b)', () => {
       for (const forbiddenKey of FORBIDDEN_KEYS_ON_DETAIL) {
         expect(data).not.toHaveProperty(forbiddenKey);
       }
+    });
+
+    it('returns a safe failed qualification projection without creating or changing display snapshots', async () => {
+      const { authHeader } = await setupLinkedUser({
+        username: 'p24b_qualification_display',
+        memberNo: 'P24B-QUAL-DISPLAY',
+      });
+      const activity = await createActivity('published', 'qualification-display');
+      const ruleSet = await prisma.activityQualificationRuleSet.create({
+        data: {
+          activityId: activity.id,
+          version: 1,
+          statusCode: 'draft',
+          rules: {
+            create: {
+              ruleTypeCode: 'grade',
+              enforcementCode: 'block',
+              operator: 'in',
+              valueJson: { codes: ['L2'] },
+              message: '需达到 L2',
+              sortOrder: 1,
+            },
+          },
+        },
+        select: { id: true },
+      });
+      await prisma.activityQualificationRuleSet.update({
+        where: { id: ruleSet.id },
+        data: { statusCode: 'active' },
+      });
+
+      const snapshotsBefore = await prisma.qualificationEvaluationSnapshot.findMany({
+        where: { ruleSetVersionId: ruleSet.id },
+        select: { id: true, inputFactsHash: true },
+        orderBy: { id: 'asc' },
+      });
+
+      const response = await get(`/api/app/v1/activities/${activity.id}`, authHeader);
+      expect(response.status).toBe(200);
+      expect(response.body.data.qualification).toEqual({
+        resultCode: 'fail',
+        unmetRules: [
+          {
+            ruleId: expect.any(String),
+            enforcementCode: 'block',
+            resultCode: 'fail',
+            message: '需达到 L2',
+            warnScore: null,
+          },
+        ],
+      });
+      const snapshotsAfter = await prisma.qualificationEvaluationSnapshot.findMany({
+        where: { ruleSetVersionId: ruleSet.id },
+        select: { id: true, inputFactsHash: true },
+        orderBy: { id: 'asc' },
+      });
+      expect(snapshotsAfter).toEqual(snapshotsBefore);
+      expect(snapshotsAfter).toHaveLength(0);
     });
 
     it('active Form is an additive safe projection: real version + full fields, without ids/hash/workflow/storage data', async () => {

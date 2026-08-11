@@ -12,6 +12,7 @@ import { ActivityParticipationPolicy } from '../activities/activity-participatio
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import type { ActivityRegistrationLifecycleService } from './activity-registration-lifecycle.service';
+import type { ActivityQualificationEvaluatorService } from './activity-qualification-evaluator.service';
 import type { ActivityRegistrationNotificationProducer } from './activity-registration-notification-producer';
 import type { ActivityRegistrationTransitionDecision } from './activity-registration-state-machine';
 import type { ActivityRegistrationWaitlistQueryService } from './activity-registration-waitlist-query.service';
@@ -187,6 +188,7 @@ function makePrismaMock() {
     findFirst: jest.fn().mockResolvedValue(null),
   };
   const activitySession = { findFirst: jest.fn().mockResolvedValue(null) };
+  const activityQualificationRuleSet = { findFirst: jest.fn().mockResolvedValue(null) };
   const registrationFormVersion = { findFirst: jest.fn().mockResolvedValue(null) };
   const member = {
     findFirst: jest.fn<Promise<MemberRow | null>, [unknown]>().mockResolvedValue(makeMemberRow()),
@@ -230,6 +232,7 @@ function makePrismaMock() {
     activity,
     activityPosition,
     activitySession,
+    activityQualificationRuleSet,
     registrationFormVersion,
     member,
     memberProfile,
@@ -365,6 +368,21 @@ function makeRegistrationLifecycleMock() {
   };
 }
 
+function makeQualificationEvaluatorMock() {
+  return {
+    evaluate: jest.fn().mockResolvedValue({
+      resultCode: 'pass',
+      activity: { resultCode: 'pass', unmetRules: [] },
+      sessions: new Map(),
+      positions: new Map(),
+      snapshotCandidates: [],
+    }),
+    assertNoBlock: jest.fn(),
+    appendSnapshots: jest.fn().mockResolvedValue(undefined),
+  };
+}
+type QualificationEvaluatorMock = ReturnType<typeof makeQualificationEvaluatorMock>;
+
 function makeWaitlistQueryMock() {
   return {
     getPosition: jest.fn<Promise<number | null>, [RegRow]>().mockResolvedValue(null),
@@ -382,6 +400,7 @@ function makeService(
   authz: AuthzMock = makeAuthzMock(),
   organizations: OrganizationsMock = makeOrganizationsMock(),
   insuranceRequirement: InsuranceRequirementMock = makeInsuranceRequirementMock(),
+  qualificationEvaluator: QualificationEvaluatorMock = makeQualificationEvaluatorMock(),
 ): ActivityRegistrationsService {
   // stateMachine mock 仅含 decide,结构上可直接赋给 ActivityRegistrationStateMachine,无需断言。
   return new ActivityRegistrationsService(
@@ -392,6 +411,7 @@ function makeService(
     makeRbacMock() as unknown as RbacService,
     authz as unknown as AuthzService,
     insuranceRequirement as unknown as InsuranceRequirementService,
+    qualificationEvaluator as unknown as ActivityQualificationEvaluatorService,
     notificationProducer as unknown as ActivityRegistrationNotificationProducer,
     organizations as unknown as OrganizationsService,
     new ActivityParticipationPolicy(),
@@ -758,6 +778,67 @@ describe('ActivityRegistrationsService (characterization)', () => {
         ],
       );
       expect(prisma.activityRegistration.updateMany).not.toHaveBeenCalled();
+      expect(prisma.activityRegistration.update).not.toHaveBeenCalled();
+      expect(recorder.logReview).not.toHaveBeenCalled();
+      expect(notificationProducer.enqueueReview).not.toHaveBeenCalled();
+    });
+
+    it('active scoped RuleSet cannot make a legacy pending head without identity or preference guess a review target', async () => {
+      const prisma = makePrismaMock();
+      const recorder = makeAuditRecorderMock();
+      const notificationProducer = makeNotificationProducerMock();
+      const insuranceRequirement = makeInsuranceRequirementMock();
+      const qualificationEvaluator = makeQualificationEvaluatorMock();
+      const observed = makeRegRow({
+        statusCode: 'pending',
+        activityId: 'act-1',
+        currentRevision: 1,
+      });
+      const locked = makeRegRow({
+        statusCode: 'pending',
+        activityId: 'act-1',
+        currentRevision: 1,
+      });
+      prisma.activityRegistration.findFirst
+        .mockResolvedValueOnce(observed)
+        .mockResolvedValueOnce(locked);
+      prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ capacity: null }));
+      prisma.activityQualificationRuleSet.findFirst
+        .mockResolvedValueOnce({ id: 'active-rule-set' })
+        .mockResolvedValueOnce({ id: 'active-scoped-rule-set' });
+      prisma.$queryRaw.mockImplementation((query: unknown) => {
+        const candidate = query as { sql?: string; text?: string; strings?: readonly string[] };
+        const text =
+          candidate.sql ?? candidate.text ?? candidate.strings?.join('?') ?? String(query);
+        if (text.includes('ActivityRegistrationRevision')) {
+          return Promise.resolve([{ id: 'revision-1' }]);
+        }
+        if (
+          text.includes('ActivityParticipationIdentity') ||
+          text.includes('ActivityPositionPreference')
+        ) {
+          return Promise.resolve([]);
+        }
+        return Promise.resolve([{ id: 'act-1' }]);
+      });
+      const service = makeService(
+        prisma,
+        recorder,
+        makeStateMachineMock({ allowed: true, nextStatusCode: 'pass' }),
+        notificationProducer,
+        undefined,
+        undefined,
+        insuranceRequirement,
+        qualificationEvaluator,
+      );
+
+      await expect(service.approve('act-1', 'reg-1', {}, makeCurrentUser(), META)).rejects.toEqual(
+        new BizException(BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED),
+      );
+
+      expect(qualificationEvaluator.evaluate).not.toHaveBeenCalled();
+      expect(qualificationEvaluator.appendSnapshots).not.toHaveBeenCalled();
+      expect(insuranceRequirement.revalidateActivityRegistrationApproval).not.toHaveBeenCalled();
       expect(prisma.activityRegistration.update).not.toHaveBeenCalled();
       expect(recorder.logReview).not.toHaveBeenCalled();
       expect(notificationProducer.enqueueReview).not.toHaveBeenCalled();

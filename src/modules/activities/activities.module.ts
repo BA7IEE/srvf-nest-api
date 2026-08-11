@@ -6,6 +6,8 @@ import { OrganizationsModule } from '../organizations/organizations.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { InsurancesModule } from '../insurances/insurances.module';
+import { CertificatesModule } from '../certificates/certificates.module';
+import { MemberProfilesModule } from '../member-profiles/member-profiles.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { ActivitiesController } from './activities.controller';
@@ -76,6 +78,7 @@ import { ActivitySettlementHttpService } from './activity-settlement-http.servic
 import { ActivityLifecycleService } from './activity-lifecycle.service';
 import { RegistrationFormVersionService } from './registration-form-version.service';
 import { ActivityCapacityBucketProjector } from './activity-capacity-bucket-projector';
+import { ActivityQualificationEvaluatorService } from '../activity-registrations/activity-qualification-evaluator.service';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activities 写操作(create / update / softDelete / publish / cancel 共 5 处共用 activity.publish)
@@ -108,6 +111,8 @@ import { ActivityCapacityBucketProjector } from './activity-capacity-bucket-proj
     AuthzModule,
     UsersModule,
     InsurancesModule,
+    CertificatesModule,
+    MemberProfilesModule,
     NotificationsModule,
     OrganizationsModule,
     ActivityFeedbacksModule,
@@ -146,6 +151,7 @@ import { ActivityCapacityBucketProjector } from './activity-capacity-bucket-proj
     ActivityPublishReviewAuditRecorder,
     ActivityPublishProposalV2Service,
     ActivityCapacityBucketProjector,
+    ActivityQualificationEvaluatorService,
     RegistrationFormVersionService,
     ActivityProposalValidator,
     ActivityProposalApplier,
@@ -242,6 +248,7 @@ import { ActivityCapacityBucketProjector } from './activity-capacity-bucket-proj
     AppManagedActivitiesService,
     ActivityWorkflowQueryService,
     ActivityMemberOffboardImpactService,
+    ActivityQualificationEvaluatorService,
   ],
 })
 export class ActivitiesModule {}

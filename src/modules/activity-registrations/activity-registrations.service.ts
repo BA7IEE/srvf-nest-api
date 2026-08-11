@@ -25,6 +25,11 @@ import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import { ActivityRegistrationLifecycleService } from './activity-registration-lifecycle.service';
+import {
+  ActivityQualificationEvaluatorService,
+  type ActivityQualificationEvaluation,
+  type ActivityQualificationTarget,
+} from './activity-qualification-evaluator.service';
 import { ActivityRegistrationNotificationProducer } from './activity-registration-notification-producer';
 import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
 import { ActivityRegistrationWaitlistQueryService } from './activity-registration-waitlist-query.service';
@@ -205,6 +210,14 @@ type LockedLegacyRegistrationHead = {
   deletedAt: Date | null;
 };
 
+type ReviewQualificationContext = {
+  registrationRevisionId: string | null;
+  targets: ActivityQualificationTarget[];
+  identityIdBySession: Map<string, string>;
+  identityCount: number;
+  preferenceCount: number;
+};
+
 @Injectable()
 export class ActivityRegistrationsService {
   private readonly logger = new Logger(ActivityRegistrationsService.name);
@@ -220,6 +233,7 @@ export class ActivityRegistrationsService {
     private readonly authz: AuthzService,
     // 保险 T3:报名门槛(跨模块单向依赖 activity-registration → insurances,评审稿 E-13)
     private readonly insuranceRequirement: InsuranceRequirementService,
+    private readonly qualificationEvaluator: ActivityQualificationEvaluatorService,
     // PR-L1:业务写 + audit + durable intent 共用调用方事务；provider/Notification Effect
     // 仅由独立 outbox worker 在 commit 后执行。
     private readonly notificationProducer: ActivityRegistrationNotificationProducer,
@@ -552,7 +566,7 @@ export class ActivityRegistrationsService {
     activityId: string,
     tx: PrismaTx,
   ): Promise<void> {
-    const [liveSession, activeForm] = await Promise.all([
+    const [liveSession, activeForm, activeScopedRuleSet] = await Promise.all([
       tx.activitySession.findFirst({
         where: { activityId, deletedAt: null, statusCode: 'scheduled' },
         select: { id: true },
@@ -561,8 +575,16 @@ export class ActivityRegistrationsService {
         where: { activityId, statusCode: 'active' },
         select: { id: true },
       }),
+      tx.activityQualificationRuleSet.findFirst({
+        where: {
+          activityId,
+          statusCode: 'active',
+          OR: [{ sessionId: { not: null } }, { positionId: { not: null } }],
+        },
+        select: { id: true },
+      }),
     ]);
-    if (liveSession || activeForm) {
+    if (liveSession || activeForm || activeScopedRuleSet) {
       throw new BizException(BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED);
     }
   }
@@ -838,6 +860,117 @@ export class ActivityRegistrationsService {
     return this.findRegistrationOrThrow(input.activityId, header.id, input.tx);
   }
 
+  private async appendLegacyQualificationSnapshots(input: {
+    tx: PrismaTx;
+    registrationId: string;
+    revision: number;
+    evaluation: ActivityQualificationEvaluation;
+  }): Promise<void> {
+    if (input.evaluation.snapshotCandidates.length === 0) return;
+    const registrationRevision = await input.tx.activityRegistrationRevision.findFirst({
+      where: { registrationId: input.registrationId, revision: input.revision },
+      select: { id: true },
+    });
+    if (registrationRevision === null) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+    }
+    await this.qualificationEvaluator.appendSnapshots({
+      evaluation: input.evaluation,
+      phase: 'submit',
+      registrationRevisionId: registrationRevision.id,
+      tx: input.tx,
+    });
+  }
+
+  private async evaluateQualificationForApproval(
+    tx: PrismaTx,
+    activity: { id: string; startAt: Date; endAt: Date },
+    registration: Pick<RegistrationFullRow, 'id' | 'memberId' | 'currentRevision'>,
+    hasActiveScopedRuleSet: boolean,
+  ): Promise<{ context: ReviewQualificationContext; evaluation: ActivityQualificationEvaluation }> {
+    const context = await this.buildReviewQualificationContext(tx, activity.id, registration);
+    // A pre-v1.1 legacy head has neither a permanent session identity nor a recorded preference.
+    // Once a scoped RuleSet exists, inferring either target would silently weaken that RuleSet.
+    // Activity-only rules remain evaluable for those historical heads.
+    if (hasActiveScopedRuleSet && context.identityCount === 0 && context.preferenceCount === 0) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED);
+    }
+    const evaluation = await this.qualificationEvaluator.evaluate({
+      activity,
+      memberId: registration.memberId,
+      targets: context.targets,
+      tx,
+    });
+    this.qualificationEvaluator.assertNoBlock(evaluation);
+    return { context, evaluation };
+  }
+
+  private async buildReviewQualificationContext(
+    tx: PrismaTx,
+    activityId: string,
+    registration: Pick<RegistrationFullRow, 'id' | 'currentRevision'>,
+  ): Promise<ReviewQualificationContext> {
+    let registrationRevisionId: string | null = null;
+    if (registration.currentRevision > 0) {
+      const revisions = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT "id"
+        FROM "ActivityRegistrationRevision"
+        WHERE "registrationId" = ${registration.id}
+          AND "revision" = ${registration.currentRevision}
+        FOR SHARE
+      `);
+      if (revisions.length !== 1 || !revisions[0]) {
+        throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+      }
+      registrationRevisionId = revisions[0].id;
+    }
+    const identities = await tx.$queryRaw<
+      Array<{ id: string; sessionId: string; currentStatusCode: string }>
+    >(Prisma.sql`
+      SELECT "id", "sessionId", "currentStatusCode"
+      FROM "ActivityParticipationIdentity"
+      WHERE "activityId" = ${activityId}
+        AND "registrationId" = ${registration.id}
+      ORDER BY "id" ASC
+      FOR UPDATE
+    `);
+    const identityIdBySession = new Map<string, string>();
+    for (const identity of identities) {
+      if (identityIdBySession.has(identity.sessionId)) {
+        throw new BizException(BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID);
+      }
+      if (identity.currentStatusCode !== 'cancelled' && identity.currentStatusCode !== 'rejected') {
+        identityIdBySession.set(identity.sessionId, identity.id);
+      }
+    }
+    const preferenceRows =
+      registrationRevisionId === null
+        ? []
+        : await tx.$queryRaw<Array<{ sessionId: string; positionId: string }>>(Prisma.sql`
+            SELECT "sessionId", "positionId"
+            FROM "ActivityPositionPreference"
+            WHERE "registrationRevisionId" = ${registrationRevisionId}
+            ORDER BY "sessionId" ASC, "preferenceOrder" ASC, "positionId" ASC
+            FOR SHARE
+          `);
+    const targets: ActivityQualificationTarget[] = [...identityIdBySession.keys()]
+      .sort()
+      .map((sessionId) => ({ sessionId, positionId: null }));
+    for (const preference of preferenceRows) {
+      if (!identityIdBySession.has(preference.sessionId)) {
+        throw new BizException(BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID);
+      }
+      targets.push({ sessionId: preference.sessionId, positionId: preference.positionId });
+    }
+    return {
+      registrationRevisionId,
+      targets,
+      identityIdBySession,
+      identityCount: identities.length,
+      preferenceCount: preferenceRows.length,
+    };
+  }
+
   // 参与域生命周期收口⑦(v0.40.0):已有参与证据的报名禁取消守卫。cancelAdmin + cancelMy 两路共用。
   // 直连 prisma 查 AttendanceRecord / ActivityCheckIn 的 registrationId 反向引用(未软删)
   // ——**不引 attendances service**(防跨模块环:attendances → activity-registration 是既有单向依赖,
@@ -1093,6 +1226,12 @@ export class ActivityRegistrationsService {
         dto.memberId,
         tx,
       );
+      const qualification = await this.qualificationEvaluator.evaluate({
+        activity: act,
+        memberId: dto.memberId,
+        tx,
+      });
+      this.qualificationEvaluator.assertNoBlock(qualification);
       // 保险 T3 报名门槛(admin 代报名同样拦截,C015 无旁路;requiresInsurance=false 零查询,
       // 既有断言零回归;评审稿 §4 / E-10:位于 assertNoActiveRegistration 之后、create 之前)
       const insuranceEligibility = await this.insuranceRequirement.requireForActivityRegistration(
@@ -1120,6 +1259,12 @@ export class ActivityRegistrationsService {
         submittedByUserId: currentUser.id,
         insuranceEligibility,
         reusableHead,
+      });
+      await this.appendLegacyQualificationSnapshots({
+        tx,
+        registrationId: created.id,
+        revision: created.currentRevision,
+        evaluation: qualification,
       });
 
       await this.registrationAuditRecorder.logCreate({
@@ -1163,6 +1308,12 @@ export class ActivityRegistrationsService {
         tx,
       );
       const reusableHead = await this.lockLegacyRegistrationHeadForCreate(activityId, memberId, tx);
+      const qualification = await this.qualificationEvaluator.evaluate({
+        activity: act,
+        memberId,
+        tx,
+      });
+      this.qualificationEvaluator.assertNoBlock(qualification);
       // 保险 T3 报名门槛(自助路径;App createMyForApp 薄壳经此同样拦截;评审稿 §4 / E-10)
       const insuranceEligibility = await this.insuranceRequirement.requireForActivityRegistration(
         memberId,
@@ -1189,6 +1340,12 @@ export class ActivityRegistrationsService {
         submittedByUserId: currentUser.id,
         insuranceEligibility,
         reusableHead,
+      });
+      await this.appendLegacyQualificationSnapshots({
+        tx,
+        registrationId: created.id,
+        revision: created.currentRevision,
+        evaluation: qualification,
       });
 
       await this.registrationAuditRecorder.logCreate({
@@ -1259,6 +1416,29 @@ export class ActivityRegistrationsService {
       // insurance service then locks/rereads the Member and exact source/evidence before capacity
       // or any registration/audit/outbox write.
       await this.assertMemberActiveSnapshot(lockedReg.memberId, tx);
+      const [activeQualificationRuleSet, activeScopedQualificationRuleSet] = await Promise.all([
+        tx.activityQualificationRuleSet.findFirst({
+          where: { activityId, statusCode: 'active' },
+          select: { id: true },
+        }),
+        tx.activityQualificationRuleSet.findFirst({
+          where: {
+            activityId,
+            statusCode: 'active',
+            OR: [{ sessionId: { not: null } }, { positionId: { not: null } }],
+          },
+          select: { id: true },
+        }),
+      ]);
+      const reviewQualification =
+        activeQualificationRuleSet === null
+          ? null
+          : await this.evaluateQualificationForApproval(
+              tx,
+              act,
+              lockedReg,
+              activeScopedQualificationRuleSet !== null,
+            );
       await this.insuranceRequirement.revalidateActivityRegistrationApproval(
         {
           id: lockedReg.id,
@@ -1292,6 +1472,21 @@ export class ActivityRegistrationsService {
         },
         select: registrationSafeSelect,
       });
+      if (
+        reviewQualification !== null &&
+        reviewQualification.evaluation.snapshotCandidates.length > 0
+      ) {
+        if (reviewQualification.context.registrationRevisionId === null) {
+          throw new BizException(BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID);
+        }
+        await this.qualificationEvaluator.appendSnapshots({
+          evaluation: reviewQualification.evaluation,
+          phase: 'review',
+          registrationRevisionId: reviewQualification.context.registrationRevisionId,
+          identityIdBySession: reviewQualification.context.identityIdBySession,
+          tx,
+        });
+      }
 
       await this.registrationAuditRecorder.logReview({
         registrationId: lockedReg.id,
