@@ -2,7 +2,7 @@
 /**
  * check-rbac-map.ts — RBAC_MAP 漂移检查
  *
- * 用途:校验 prisma/seed.ts 权限码与 src/ 实际使用的**代码对代码**不变量。
+ * 用途:校验 seed 事实闭包权限码与 src/ 实际使用的**代码对代码**不变量。
  * (P4a 起 RBAC_MAP.md 的派生段由 generate-rbac-map.ts 生成,文档计数类检查已移除。)
  * 输出 PASS / WARN / FAIL / INFO。只读检查,不修改任何文件,不接入 CI。
  * 沿 scripts/check-codemap.ts 范式(零依赖;承接 docs/ai-harness/NEXT_TASKS.md P1-1 立项)。
@@ -14,12 +14,12 @@
  *   1 — 存在 FAIL(权限事实或地图结构性漂移)
  *
  * 检查项:
- *   A. seed-codes-extract        — seed 权限码可提取且非空(FAIL on empty)
+ *   A. seed-codes-extract        — seed 事实闭包权限码可提取且非空(FAIL on empty)
  *   D. controller-prefix-canonical — 全部 @Controller 前缀落在 CANONICAL_PREFIXES 内 (FAIL on violation)
- *   E. direct-call-codes-seeded  — rbac.can()/judge() 同行字面量码必须在 seed 中 (FAIL on miss)
- *   F. seed-codes-referenced     — seed 码在 src 中有字面量引用或被动态模板前缀覆盖 (WARN on orphan)
- *   G. swagger-auth-suffix       — @ApiOperation summary 鉴权后缀(P2-2 惯例)与装饰器/seed 一致
- *                                  (FAIL on 缺失 / @Roles-@Public 不符 / rbac 码不在 seed)
+ *   E. direct-call-codes-seeded  — rbac.can()/judge() 同行字面量码必须在闭包中 (FAIL on miss)
+ *   F. seed-codes-referenced     — 闭包码在 src 中有字面量引用或被动态模板前缀覆盖 (WARN on orphan)
+ *   G. swagger-auth-suffix       — @ApiOperation summary 鉴权后缀(P2-2 惯例)与装饰器/闭包一致
+ *                                  (FAIL on 缺失 / @Roles-@Public 不符 / rbac 码不在闭包)
  *
  * 已知边界(刻意,如需更强保证再立项):
  *   - 权限码经 helper 间接传参(assertCan(user, 'x.y.z'))由 F 的全源字面量扫描覆盖;
@@ -28,7 +28,8 @@
  *   - 扫描前仅剥离 // 行注释(本仓库注释惯例),避免注释中的示例码被记作"已引用";
  *     块注释**不**剥离——正则剥块注释会被字符串/注释里的 MIME 通配符 `type/*` 误触
  *     (实测踩坑:attachment-mime-configs.service.ts);块注释内示例码会被记作已引用,接受该边界。
- *   - seed 新增权限码必须保持 `code: '<literal>'` 或 `*_CODE = '<literal>'` 形态,否则 A 会漏提取。
+ *   - seed 事实闭包新增权限码必须保持 `code: '<literal>'` 或 `*_CODE = '<literal>'` 形态,
+ *     否则 A 会漏提取。
  *   - G 校验 `[roles:]`/`[public]` 与装饰器严格互证、`[rbac:]` 码(含 `<family>.*` 通配族)必在 seed;
  *     但**不**解析 service 调用链,即不校验"该方法实际调的码 = 后缀声明的码"(同 E 的边界);
  *     `[auth]`(仅登录)只要求该方法无 @Roles/@Public。summary 形态须为单行字面量或
@@ -37,6 +38,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { assertSeedFactsClosure } from './docs-counts';
 
 type Severity = 'PASS' | 'WARN' | 'FAIL' | 'INFO';
 
@@ -48,7 +50,10 @@ interface CheckResult {
 }
 
 const repoRoot = process.cwd();
-const seedRelPath = 'prisma/seed.ts';
+export const SEED_FACTS_CLOSURE = Object.freeze([
+  'prisma/seed.ts',
+  'src/modules/permissions/rbac-seed-facts.ts',
+] as const);
 // 招新一期(招新前段)T3(2026-06-18):open/v1 首用——无账号公开报名 surface(api-surface-policy §0
 // 「预留→首用」解锁;第 5 canonical 前缀,与 test/contract/openapi.contract-spec.ts CANONICAL_PREFIXES 同步)。
 const CANONICAL_PREFIXES = ['admin/v1', 'app/v1', 'auth/v1', 'system/v1', 'open/v1'] as const;
@@ -92,13 +97,15 @@ function stripComments(source: string): string {
 // Extractors
 // ---------------------------------------------------------------------------
 
-function extractSeedCodes(seedSource: string): Set<string> {
+function extractSeedCodes(seedFactSources: readonly string[]): Set<string> {
   const codes = new Set<string>();
-  const propRe = new RegExp(`code:\\s*'(${CODE_SHAPE})'`, 'g');
-  const constRe = new RegExp(`_CODE\\s*=\\s*'(${CODE_SHAPE})'`, 'g');
-  for (const re of [propRe, constRe]) {
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(seedSource)) !== null) codes.add(m[1]);
+  for (const seedSource of seedFactSources) {
+    const propRe = new RegExp(`code:\\s*'(${CODE_SHAPE})'`, 'g');
+    const constRe = new RegExp(`_CODE\\s*=\\s*'(${CODE_SHAPE})'`, 'g');
+    for (const re of [propRe, constRe]) {
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(seedSource)) !== null) codes.add(m[1]);
+    }
   }
   return codes;
 }
@@ -246,13 +253,13 @@ function checkSeedCodesExtract(codes: Set<string>): CheckResult {
     return {
       id: 'seed-codes-extract',
       severity: 'FAIL',
-      summary: `0 permission codes extracted from ${seedRelPath}(提取形态约定可能被破坏)`,
+      summary: '0 permission codes extracted from seed 事实闭包(提取形态约定可能被破坏)',
     };
   }
   return {
     id: 'seed-codes-extract',
     severity: 'PASS',
-    summary: `${codes.size} permission code(s) extracted from ${seedRelPath}`,
+    summary: `${codes.size} permission code(s) extracted from seed 事实闭包`,
   };
 }
 
@@ -281,13 +288,13 @@ function checkDirectCallCodesSeeded(scan: SrcScan, seedCodes: Set<string>): Chec
     return {
       id: 'direct-call-codes-seeded',
       severity: 'PASS',
-      summary: `${scan.directCallCodes.size} 个直调字面量码均存在于 seed`,
+      summary: `${scan.directCallCodes.size} 个直调字面量码均存在于 seed 事实闭包`,
     };
   }
   return {
     id: 'direct-call-codes-seeded',
     severity: 'FAIL',
-    summary: `${missing.length} 个直调字面量码不在 seed 中(运行时将对所有人返 30100)`,
+    summary: `${missing.length} 个直调字面量码不在 seed 事实闭包中(运行时将对所有人返 30100)`,
     details: missing.map(([code, where]) => `'${code}' @ ${[...new Set(where)].join(', ')}`),
   };
 }
@@ -309,7 +316,7 @@ function checkSeedCodesReferenced(scan: SrcScan, seedCodes: Set<string>): CheckR
     results.push({
       id: 'dynamic-prefixes-found',
       severity: 'INFO',
-      summary: `${prefixes.length} 个动态模板前缀(覆盖 ${dynamicCovered} 条 seed 码)`,
+      summary: `${prefixes.length} 个动态模板前缀(覆盖 ${dynamicCovered} 条 seed 事实闭包码)`,
       details: prefixes
         .sort()
         .map(
@@ -321,13 +328,13 @@ function checkSeedCodesReferenced(scan: SrcScan, seedCodes: Set<string>): CheckR
     results.push({
       id: 'seed-codes-referenced',
       severity: 'PASS',
-      summary: `${seedCodes.size} 条 seed 码全部被 src 字面量或动态前缀覆盖`,
+      summary: `${seedCodes.size} 条 seed 事实闭包码全部被 src 字面量或动态前缀覆盖`,
     });
   } else {
     results.push({
       id: 'seed-codes-referenced',
       severity: 'WARN',
-      summary: `${orphans.length} 条 seed 码在 src 无字面量引用且不被动态前缀覆盖(孤码候选,可能是刻意预埋)`,
+      summary: `${orphans.length} 条 seed 事实闭包码在 src 无字面量引用且不被动态前缀覆盖(孤码候选,可能是刻意预埋)`,
       details: orphans,
     });
   }
@@ -373,16 +380,16 @@ function checkSwaggerAuthSuffix(endpoints: EndpointSuffix[], seedCodes: Set<stri
     if (code.endsWith('.*')) {
       const prefix = code.slice(0, -1); // 'attachment.upload.'
       if (![...seedCodes].some((c) => c.startsWith(prefix)))
-        problems.push(`${at}:通配族 ${code} 无任何 seed 码匹配`);
+        problems.push(`${at}:通配族 ${code} 无任何 seed 事实闭包码匹配`);
     } else if (!seedCodes.has(code)) {
-      problems.push(`${at}:[rbac: ${code}] 不在 seed 权限码中`);
+      problems.push(`${at}:[rbac: ${code}] 不在 seed 事实闭包权限码中`);
     }
   }
   if (problems.length === 0) {
     return {
       id: 'swagger-auth-suffix',
       severity: 'PASS',
-      summary: `${endpoints.length} 个 @ApiOperation 鉴权后缀与装饰器/seed 一致(P2-2 惯例)`,
+      summary: `${endpoints.length} 个 @ApiOperation 鉴权后缀与装饰器/seed 事实闭包一致(P2-2 惯例)`,
     };
   }
   return {
@@ -422,16 +429,20 @@ function printSummary(results: CheckResult[]): void {
 function main(): void {
   // P4a 起本检查只做「代码对代码」不变量,不再读 RBAC_MAP.md
   // (该文档的派生段由 generate-rbac-map.ts 生成并自带新鲜度校验)。
-  const seedSource = readRepoFile(seedRelPath);
-  if (seedSource === '') {
-    console.log(`[FAIL] inputs-exist (${seedRelPath} 不存在/为空)`);
+  assertSeedFactsClosure(SEED_FACTS_CLOSURE);
+  const seedFactSources = SEED_FACTS_CLOSURE.map(readRepoFile);
+  const missingInputs = SEED_FACTS_CLOSURE.filter(
+    (relPath, index) => seedFactSources[index] === '',
+  );
+  if (missingInputs.length > 0) {
+    console.log(`[FAIL] inputs-exist (${missingInputs.join(', ')} 不存在/为空)`);
     console.log('');
     console.log('Summary: 1 FAIL, 0 WARN, 0 INFO, 0 PASS');
     process.exitCode = 1;
     return;
   }
 
-  const seedCodes = extractSeedCodes(seedSource);
+  const seedCodes = extractSeedCodes(seedFactSources);
   const srcFiles = listSourceFiles('src');
   const controllers = extractControllers(srcFiles);
   const scan = scanSources(srcFiles);
@@ -457,4 +468,4 @@ function main(): void {
   process.exitCode = hasFail ? 1 : 0;
 }
 
-main();
+if (require.main === module) main();

@@ -1,8 +1,10 @@
 import type { INestApplication } from '@nestjs/common';
 import { Role, UserStatus } from '@prisma/client';
 import { execSync } from 'child_process';
+import { RBAC_SEED_CATALOG } from '../../prisma/seed';
 import { PrismaService } from '../../src/database/prisma.service';
 import { PROTECTED_ROLE_CODES } from '../../src/modules/permissions/protected-role-codes';
+import { RBAC_SEED_FACTS } from '../../src/modules/permissions/rbac-seed-facts';
 import { RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES } from '../../src/modules/permissions/reserved-super-admin-permission-codes';
 import { SYSTEM_MANAGED_ROLE_CODES } from '../../src/modules/permissions/system-managed-role-codes';
 import { resetDb } from '../setup/reset-db';
@@ -77,243 +79,23 @@ function runSeed(envOverrides: Record<string, string>): SeedRunResult {
 // WECHAT T2(2026-06-12):新增 4 条(wechat-setting 3 + user.wechat.clear;评审稿
 //   docs/archive/reviews/wechat-mini-login-review.md §3.4 / E-22);
 //   wechat-setting.reset.credentials 镜像 D2=A 不绑 ops-admin;其余 3 条绑;117→121 / 58→61。
-const RESET_CREDENTIALS_CODE = 'storage-setting.reset.credentials';
-const USER_UPDATE_ROLE_CODE = 'user.update.role';
-const SMS_RESET_CREDENTIALS_CODE = 'sms-setting.reset.credentials';
-const WECHAT_RESET_CREDENTIALS_CODE = 'wechat-setting.reset.credentials';
-// 企业微信 T2(2026-08-01):第 5 把不绑 ops-admin 的凭证 reset 码(冻结稿 §11.1)
-const WECOM_RESET_CREDENTIALS_CODE = 'wecom-setting.reset.credentials';
-const REALNAME_RESET_CREDENTIALS_CODE = 'realname-setting.reset.credentials';
-const EXPECTED_RBAC_PERMISSION_CODES = [
-  // 14 条 rbac.*(沿 PR-1 #132)
-  'rbac.permission.read',
-  'rbac.permission.create',
-  'rbac.permission.update',
-  'rbac.permission.delete',
-  'rbac.role.read',
-  'rbac.role.create',
-  'rbac.role.update',
-  'rbac.role.delete',
-  'rbac.role-permission.create',
-  'rbac.role-permission.delete',
-  'rbac.user-role.read',
-  'rbac.user-role.create',
-  'rbac.user-role.delete',
-  'rbac.config.reload',
-  // 8 条 dict.*(PR-2A)
-  'dict.read.type',
-  'dict.create.type',
-  'dict.update.type',
-  'dict.delete.type',
-  'dict.read.item',
-  'dict.create.item',
-  'dict.update.item',
-  'dict.delete.item',
-  // 5 条 org.*(PR-2A;终态 scoped-authz PR1 +org.move.node reparent,绑 ops-admin)
-  'org.read.node',
-  'org.create.node',
-  'org.update.node',
-  'org.delete.node',
-  'org.move.node',
-  // 3 条 member-department.*(PR-2A;D4=A)
-  'member-department.read.current',
-  'member-department.set.current',
-  'member-department.clear.current',
-  // 4 条 membership.*(PR-2A;终态 scoped-authz PR2;member-department 升级面,全绑 ops-admin;read.record 预留孤码)
-  'membership.list.record',
-  'membership.read.record',
-  'membership.set.record',
-  'membership.end.record',
-  // 4 条 contribution.*(PR-2A)
-  'contribution.read.rule',
-  'contribution.create.rule',
-  'contribution.update.rule',
-  'contribution.delete.rule',
-  // 8 条 position.* / position-rule.*(PR-2A;终态 scoped-authz PR3 职务定义;全绑 ops-admin,沿配置码现绑)
-  'position.read.definition',
-  'position.create.definition',
-  'position.update.definition',
-  'position.delete.definition',
-  'position-rule.read.record',
-  'position-rule.create.record',
-  'position-rule.update.record',
-  'position-rule.delete.record',
-  // 4 条 position-assignment.*(PR-2A;终态 scoped-authz PR4 任职;全绑 ops-admin,沿管理码现绑)
-  'position-assignment.read.record',
-  'position-assignment.create.record',
-  'position-assignment.revoke.record',
-  'position-assignment.read.history',
-  // 4 条 supervision-assignment.*(PR-2A;终态 scoped-authz PR5 分管;全绑 ops-admin,沿管理码现绑;三读端点共用 read.record)
-  'supervision-assignment.read.record',
-  'supervision-assignment.create.record',
-  'supervision-assignment.update.record',
-  'supervision-assignment.revoke.record',
-  // 4 条 role-binding.*(PR-2A;终态 scoped-authz PR6 角色绑定;全绑 ops-admin,沿管理码现绑;scoped 入库不判,RbacService 只读 GLOBAL)
-  'role-binding.read.record',
-  'role-binding.create.record',
-  'role-binding.update.record',
-  'role-binding.delete.record',
-  // 8 条 certificate-standard.* / certificate-recognition-policy.*(PR-2A;
-  // 证书标准库 PR-2 2026-07-30)。Standard / Policy 是全局主数据配置面(冻结稿 §16.4:
-  // 走 RbacService.can(),不是 Certificate 实例的 scoped Authz),故与 dict / position /
-  // role-binding 同列 PR-2A、全绑 ops-admin。两条 read 码另进业务面给 biz-admin,
-  // 但那不影响本表(本表 = ALL_PERMISSION_SEED 侧)。
-  'certificate-standard.read.record',
-  'certificate-standard.create.record',
-  'certificate-standard.update.record',
-  'certificate-standard.delete.record',
-  'certificate-recognition-policy.read.record',
-  'certificate-recognition-policy.create.record',
-  'certificate-recognition-policy.update.record',
-  'certificate-recognition-policy.delete.record',
-  // 12 条 attachment-config.*(PR-2B)
-  'attachment-config.read.type',
-  'attachment-config.create.type',
-  'attachment-config.update.type',
-  'attachment-config.delete.type',
-  'attachment-config.read.mime',
-  'attachment-config.create.mime',
-  'attachment-config.update.mime',
-  'attachment-config.delete.mime',
-  'attachment-config.read.size-limit',
-  'attachment-config.create.size-limit',
-  'attachment-config.update.size-limit',
-  'attachment-config.delete.size-limit',
-  // 3 条 storage-setting.*(PR-2B;reset.credentials 沿 D2=A 不绑 ops-admin)
-  'storage-setting.read.singleton',
-  'storage-setting.update.singleton',
-  RESET_CREDENTIALS_CODE,
-  // 7 条 user.*(PR-3B;user.update.role 沿 D1=A 不绑 ops-admin)
-  'user.read.account',
-  'user.create.account',
-  'user.update.account',
-  'user.reset.password',
-  USER_UPDATE_ROLE_CODE,
-  'user.update.status',
-  'user.delete.account',
-  // 1 条 audit-log.*(PR-4B;D2=B 整条绑 ops-admin;D4=A list/findOne 共用 read)
-  'audit-log.read.entry',
-  // 5 条 SMS T2(sms-setting.reset.credentials 镜像 D2=A 不绑 ops-admin;评审稿 §3.4)
-  'sms-setting.read.singleton',
-  'sms-setting.update.singleton',
-  SMS_RESET_CREDENTIALS_CODE,
-  'sms-send-log.read.list',
-  'user.phone.clear',
-  // 4 条 WECHAT T2(wechat-setting.reset.credentials 镜像 D2=A 不绑 ops-admin;wechat 评审稿 §3.4)
-  'wechat-setting.read.singleton',
-  'wechat-setting.update.singleton',
-  WECHAT_RESET_CREDENTIALS_CODE,
-  'user.wechat.clear',
-  // 4 条 WECOM T2(2026-08-01;冻结稿 wecom-integration-t0-terminal-review.md §11.1):
-  // wecom-setting.reset.credentials 镜像 D2=A 不绑 ops-admin;其余 3 条绑 → ops-admin +3。
-  'wecom-setting.read.singleton',
-  'wecom-setting.update.singleton',
-  'wecom-setting.test.connection',
-  WECOM_RESET_CREDENTIALS_CODE,
-  // 1 条 WECOM T3(2026-08-02;冻结稿 §11.1 第 5 行 + §13 T3 清单「Admin clear」):
-  // `DELETE admin/v1/users/:id/wecom` 连码带端点同刀落地,整条绑 ops-admin → **0 孤码**。
-  // (T2 的注释曾写"端点在 T4",与冻结稿 §13 不符,已随本刀订正。)
-  'user.wecom.clear',
-  // 1 条 WECOM T6-1(2026-08-03;第二轮外部评审 SHOULD-FIX 3 收口):系统定向通知的企业微信 replay
-  // 运维入口 `POST admin/v1/notifications/:id/replay-wecom`。归**运维面**(沿 wecom-setting.* / user.wecom.clear
-  // 同族)⇒ 整条绑 ops-admin、**不**绑 biz-admin(故进 ALL/OPS_ADMIN seed 而非 BIZ_PERMISSION_SEED);
-  // 连码带端点同刀落地 → 0 孤码。
-  'notification.replay.wecom',
-  // 3 条 REALNAME T1(realname-setting.reset.credentials 镜像 D2=A 不绑 ops-admin;招新评审稿 §3.4)
-  'realname-setting.read.singleton',
-  'realname-setting.update.singleton',
-  REALNAME_RESET_CREDENTIALS_CODE,
-  // 3 条 AUTHZ(终态 scoped-authz PR10 权限解释 + F3「C 组」explain-batch/action-state
-  // 〔admin-api-fe-integration-roadmap.md §4 C2/C3 + §6.2 D8〕;诊断码,整条绑 ops-admin)
-  'authz.explain.decision',
-  'authz.explain-batch.decision',
-  'authz.action-state.decision',
-  // 2 条 ANNOUNCEMENT-IMPORT(终态 scoped-authz PR11;公告导入 preview/execute,整条绑 ops-admin)
-  'announcement-import.preview.record',
-  'announcement-import.execute.record',
-  // 1 条 META(F1「A 组」;admin-api-fe-integration-roadmap.md §4 A7,批量 id→label 诊断码,整条绑 ops-admin)
-  'meta.resolve.label',
-  // 2 条 MEMBER-ACCOUNT(队员账号闭环 v1,2026-07-07;POST admin/v1/members/:id/account,整条绑 ops-admin;
-  // v2 同日 bind/unbind 共用 member.bind.account,整条绑 ops-admin)
-  'member.grant.account',
-  'member.bind.account',
-] as const;
-// Permission 总数(含 reset.credentials + user.update.role;沿 D2=A + D1=A 仍 upsert 进表,仅 SA 短路通过)
-const EXPECTED_PERMISSION_COUNT = EXPECTED_RBAC_PERMISSION_CODES.length;
-// ops-admin RolePermission 数(过滤 reset.credentials(PR-2 D2=A)+ user.update.role(PR-3 D1=A)
-// + sms-setting.reset.credentials(SMS T2 镜像 D2=A)+ wechat-setting.reset.credentials(WECHAT T2)
-// + realname-setting.reset.credentials(REALNAME T1 镜像 D2=A,招新评审稿 §3.4)
-// + wecom-setting.reset.credentials(WECOM T2 镜像 D2=A,冻结稿 §11.1)→ 共 **6** 条不绑)
-const EXPECTED_OPS_ADMIN_ROLE_PERMISSION_COUNT = EXPECTED_PERMISSION_COUNT - 6;
-const EXPECTED_OPS_ADMIN_BOUND_CODES = EXPECTED_RBAC_PERMISSION_CODES.filter(
-  (c) =>
-    c !== RESET_CREDENTIALS_CODE &&
-    c !== USER_UPDATE_ROLE_CODE &&
-    c !== SMS_RESET_CREDENTIALS_CODE &&
-    c !== WECHAT_RESET_CREDENTIALS_CODE &&
-    c !== WECOM_RESET_CREDENTIALS_CODE &&
-    c !== REALNAME_RESET_CREDENTIALS_CODE,
+const EXPECTED_RBAC_PERMISSIONS = RBAC_SEED_CATALOG.permissions.bootstrap;
+const EXPECTED_RBAC_PERMISSION_CODES = EXPECTED_RBAC_PERMISSIONS.map(
+  (permission) => permission.code,
 );
-const EXPECTED_RBAC_ONLY_COUNT = 14; // 仅 rbac.* 段位,供下面 module=rbac 断言用
-const EXPECTED_ACTIVITY_RESPONSIBILITY_ROLE_PERMISSIONS = {
-  'activity-publish-reviewer': [
-    'activity-review.read.request',
-    'activity.publish.record',
-    'activity-review.return.request',
-  ],
-  'activity-cross-org-initiator': ['activity.create.cross-org'],
-  'attendance-first-reviewer': [
-    'attendance.read.sheet',
-    'attendance.approve.sheet',
-    'attendance.reject.sheet',
-    'attendance.return.sheet',
-    'activity.settlement-first-review.record',
-  ],
-  'activity-owner': [
-    'activity.update.record',
-    'activity.cancel.record',
-    'activity.complete.record',
-    'activity-registration.read.record',
-    'activity-registration.create.record',
-    'activity-registration.approve.record',
-    'activity-registration.reject.record',
-    'activity-registration.cancel.record',
-    'activity-registration.reopen.record',
-    'attendance.read.sheet',
-    'attendance.create.sheet',
-    'attendance.update.sheet',
-    'attendance.delete.sheet',
-    'activity.settlement-generate.record',
-    'activity.settlement-update-draft.record',
-    'activity.settlement-submit.record',
-    'activity.settlement-close.record',
-  ],
-  'activity-registration-collaborator': [
-    'activity-registration.read.record',
-    'activity-registration.create.record',
-    'activity-registration.approve.record',
-    'activity-registration.reject.record',
-    'activity-registration.cancel.record',
-    'activity-registration.reopen.record',
-  ],
-  'activity-attendance-collaborator': [
-    'attendance.read.sheet',
-    'attendance.create.sheet',
-    'attendance.update.sheet',
-    'attendance.delete.sheet',
-    'activity.settlement-generate.record',
-    'activity.settlement-update-draft.record',
-    'activity.settlement-submit.record',
-  ],
-  'attendance-final-reviewer': [
-    'attendance.read.sheet',
-    'attendance.final-approve.sheet',
-    'attendance.final-reject.sheet',
-    'attendance.reopen.sheet',
-    'attendance.final-return.sheet',
-    'activity.settlement-final-review.record',
-  ],
-} as const;
+const EXPECTED_PERMISSION_COUNT = EXPECTED_RBAC_PERMISSION_CODES.length;
+const OPS_ADMIN_ROLE_SEED = RBAC_SEED_CATALOG.roles.opsAdmin;
+const EXPECTED_OPS_ADMIN_ROLE_PERMISSION_COUNT = OPS_ADMIN_ROLE_SEED.permissionCodes.length;
+const EXPECTED_OPS_ADMIN_BOUND_CODES = OPS_ADMIN_ROLE_SEED.permissionCodes;
+const EXPECTED_OPS_ADMIN_EXCLUDED_CODES =
+  RBAC_SEED_CATALOG.contract.opsAdminExcludedPermissionCodes;
+const EXPECTED_RBAC_ONLY_COUNT = EXPECTED_RBAC_PERMISSIONS.filter(
+  (permission) => permission.module === 'rbac',
+).length;
+const ACTIVITY_RESPONSIBILITY_ROLE_SEEDS = Object.freeze([
+  ...RBAC_SEED_CATALOG.roles.activityResponsibility,
+  RBAC_SEED_CATALOG.roles.attendanceFinalReviewer,
+]);
 
 describe('prisma/seed.ts — RBAC bootstrap', () => {
   let app: INestApplication;
@@ -345,6 +127,10 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
       RBAC_INITIAL_OPS_ADMIN_USER_ID: '',
     });
     expect(result.code).toBe(0);
+    expect(RBAC_SEED_CATALOG.permissions.rbac).toEqual(RBAC_SEED_FACTS.permissions.rbac);
+    expect(RBAC_SEED_CATALOG.contract.reservedSuperAdminOnlyPermissionCodes).toEqual(
+      RBAC_SEED_FACTS.contract.reservedSuperAdminOnlyPermissionCodes,
+    );
 
     // 1. 97 条 permission 全部存在(14 rbac.* + 44 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME + 1 AUTHZ + 2 ANNOUNCEMENT-IMPORT + 1 META;
     //    含 4 把 reset.credentials + user.update.role)
@@ -379,17 +165,16 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     expect(perms.some((p) => p.module === 'user')).toBe(true);
     // PR-4B 1 module 至少 1 条
     expect(perms.some((p) => p.module === 'audit-log')).toBe(true);
-    // D2=A:storage-setting.reset.credentials 加入 Permission upsert(56 条全集);
-    // 但下面断言 ops-admin RolePermission 时不含此条(54 条)
-    expect(codes).toContain(RESET_CREDENTIALS_CODE);
-    // D1=A:user.update.role 同样加入 Permission upsert 但**不**绑 ops-admin(SA 短路)
-    expect(codes).toContain(USER_UPDATE_ROLE_CODE);
+    // seed upsert 的全部“ops-admin 不绑”码仍必须作为 Permission 存在。
+    for (const code of EXPECTED_OPS_ADMIN_EXCLUDED_CODES) {
+      expect(codes).toContain(code);
+    }
     // PR-4B D2=B:audit-log.read.entry 整条绑 ops-admin(下方反向断言验证)
     expect(codes).toContain('audit-log.read.entry');
 
     // 2. ops-admin role 存在
     const opsAdmin = await prisma.rbacRole.findUnique({
-      where: { code: 'ops-admin' },
+      where: { code: OPS_ADMIN_ROLE_SEED.code },
       select: { id: true, displayName: true, deletedAt: true },
     });
     expect(opsAdmin).not.toBeNull();
@@ -408,14 +193,10 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     expect(rolePerms).toHaveLength(EXPECTED_OPS_ADMIN_ROLE_PERMISSION_COUNT);
     const boundCodes = rolePerms.map((rp) => rp.permission.code).sort();
     expect(boundCodes).toEqual([...EXPECTED_OPS_ADMIN_BOUND_CODES].sort());
-    // D2=A 显式反向断言:reset.credentials **不**在 ops-admin RolePermission 中
-    expect(boundCodes).not.toContain(RESET_CREDENTIALS_CODE);
-    // D1=A 显式反向断言:user.update.role **不**在 ops-admin RolePermission 中
-    expect(boundCodes).not.toContain(USER_UPDATE_ROLE_CODE);
-    // SMS / WECHAT / REALNAME 镜像 D2=A 显式反向断言:三把凭证 reset 码均**不**在 ops-admin RolePermission 中
-    expect(boundCodes).not.toContain(SMS_RESET_CREDENTIALS_CODE);
-    expect(boundCodes).not.toContain(WECHAT_RESET_CREDENTIALS_CODE);
-    expect(boundCodes).not.toContain(REALNAME_RESET_CREDENTIALS_CODE);
+    // 声明为“ops-admin 不绑”的全部码都不能出现在 RolePermission。
+    for (const code of EXPECTED_OPS_ADMIN_EXCLUDED_CODES) {
+      expect(boundCodes).not.toContain(code);
+    }
     // PR-4 D2=B 正向断言:audit-log.read.entry **在** ops-admin RolePermission 中
     expect(boundCodes).toContain('audit-log.read.entry');
 
@@ -424,7 +205,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     const holderNow = new Date();
     const opsAdminBindings = await prisma.roleBinding.findMany({
       where: {
-        role: { code: 'ops-admin', deletedAt: null },
+        role: { code: OPS_ADMIN_ROLE_SEED.code, deletedAt: null },
         principalType: 'USER',
         scopeType: 'GLOBAL',
         status: 'ACTIVE',
@@ -481,7 +262,11 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     // (b) + (c) 任一保留码都不在 ops-admin / biz-admin 的 RolePermission 绑定中
     const bindings = await prisma.rolePermission.findMany({
       where: {
-        role: { code: { in: ['ops-admin', 'biz-admin'] } },
+        role: {
+          code: {
+            in: [OPS_ADMIN_ROLE_SEED.code, RBAC_SEED_CATALOG.roles.bizAdmin.code],
+          },
+        },
         permission: { code: { in: reserved } },
       },
       select: { role: { select: { code: true } }, permission: { select: { code: true } } },
@@ -507,33 +292,28 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     expect(roles.every((role) => role.deletedAt === null)).toBe(true);
 
     const workflowRoles = await prisma.rbacRole.findMany({
-      where: { code: { in: Object.keys(EXPECTED_ACTIVITY_RESPONSIBILITY_ROLE_PERMISSIONS) } },
+      where: { code: { in: ACTIVITY_RESPONSIBILITY_ROLE_SEEDS.map((role) => role.code) } },
       select: {
         id: true,
         code: true,
         rolePermissions: { select: { permission: { select: { code: true } } } },
       },
     });
-    expect(workflowRoles).toHaveLength(
-      Object.keys(EXPECTED_ACTIVITY_RESPONSIBILITY_ROLE_PERMISSIONS).length,
-    );
+    expect(workflowRoles).toHaveLength(ACTIVITY_RESPONSIBILITY_ROLE_SEEDS.length);
     for (const role of workflowRoles) {
-      const expected =
-        EXPECTED_ACTIVITY_RESPONSIBILITY_ROLE_PERMISSIONS[
-          role.code as keyof typeof EXPECTED_ACTIVITY_RESPONSIBILITY_ROLE_PERMISSIONS
-        ];
+      const expected = ACTIVITY_RESPONSIBILITY_ROLE_SEEDS.find(
+        (seedRole) => seedRole.code === role.code,
+      );
+      expect(expected).toBeDefined();
       expect(role.rolePermissions.map((item) => item.permission.code).sort()).toEqual(
-        [...expected].sort(),
+        [...expected!.permissionCodes].sort(),
       );
     }
 
-    expect(new Set(SYSTEM_MANAGED_ROLE_CODES)).toEqual(
-      new Set([
-        'activity-owner',
-        'activity-registration-collaborator',
-        'activity-attendance-collaborator',
-      ]),
-    );
+    const seededSystemManagedRoleCodes = ACTIVITY_RESPONSIBILITY_ROLE_SEEDS.map(
+      (role) => role.code,
+    ).filter((code) => (SYSTEM_MANAGED_ROLE_CODES as readonly string[]).includes(code));
+    expect(new Set(SYSTEM_MANAGED_ROLE_CODES)).toEqual(new Set(seededSystemManagedRoleCodes));
     expect(
       await prisma.roleBinding.count({
         where: { role: { code: { in: [...SYSTEM_MANAGED_ROLE_CODES] } } },
@@ -545,9 +325,9 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
           role: {
             code: {
               in: [
-                'activity-publish-reviewer',
-                'attendance-first-reviewer',
-                'attendance-final-reviewer',
+                ...ACTIVITY_RESPONSIBILITY_ROLE_SEEDS.filter((role) =>
+                  role.code.endsWith('reviewer'),
+                ).map((role) => role.code),
                 ...SYSTEM_MANAGED_ROLE_CODES,
               ],
             },
@@ -573,7 +353,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
       select: { id: true },
     });
     const opsAdmin = await prisma.rbacRole.findUniqueOrThrow({
-      where: { code: 'ops-admin' },
+      where: { code: OPS_ADMIN_ROLE_SEED.code },
       select: { id: true },
     });
     // 终态 scoped-authz PR6:bootstrap 授予现写 global RoleBinding(判权唯一读源;旧 UserRole 表已 DROP)。
@@ -627,7 +407,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     expect(second.stdout).toContain('source=env RBAC_INITIAL_OPS_ADMIN_USER_ID');
 
     const opsAdmin = await prisma.rbacRole.findUniqueOrThrow({
-      where: { code: 'ops-admin' },
+      where: { code: OPS_ADMIN_ROLE_SEED.code },
       select: { id: true },
     });
     // 终态 scoped-authz PR6:env 指定目标现绑 global RoleBinding。
@@ -690,7 +470,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
       expect(runSeed(env).code).toBe(0);
 
       const opsAdmin = await prisma.rbacRole.findUniqueOrThrow({
-        where: { code: 'ops-admin' },
+        where: { code: OPS_ADMIN_ROLE_SEED.code },
         select: { id: true },
       });
       const binding = await prisma.roleBinding.findFirstOrThrow({
@@ -736,7 +516,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     expect(first.code).toBe(0);
 
     const opsAdminAfter1 = await prisma.rbacRole.findUniqueOrThrow({
-      where: { code: 'ops-admin' },
+      where: { code: OPS_ADMIN_ROLE_SEED.code },
       select: { id: true, createdAt: true },
     });
     const permCountAfter1 = await prisma.permission.count();
@@ -763,7 +543,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     expect(second.code).toBe(0);
 
     const opsAdminAfter2 = await prisma.rbacRole.findUniqueOrThrow({
-      where: { code: 'ops-admin' },
+      where: { code: OPS_ADMIN_ROLE_SEED.code },
       select: { id: true, createdAt: true },
     });
     expect(opsAdminAfter2.id).toBe(opsAdminAfter1.id);

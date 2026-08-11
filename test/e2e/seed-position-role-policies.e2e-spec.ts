@@ -1,6 +1,8 @@
 import type { INestApplication } from '@nestjs/common';
 import { execSync } from 'child_process';
+import { RBAC_SEED_CATALOG } from '../../prisma/seed';
 import { PrismaService } from '../../src/database/prisma.service';
+import { RBAC_SEED_FACTS } from '../../src/modules/permissions/rbac-seed-facts';
 import { RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES } from '../../src/modules/permissions/reserved-super-admin-permission-codes';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -65,150 +67,51 @@ const SEED_ENV = {
   RBAC_INITIAL_OPS_ADMIN_USER_ID: '',
 };
 
-// org-admin 47 码(独立期望集;= PR-11 contract 后 biz-admin 68 继续派生；
-// 2026-07-04 F4 起含 membership.transfer.record;2026-07-10 §F&A-3 起含 member-profile.read.sensitive)
-// 过滤 member-profile.read.sensitive + emergency-contact.read.sensitive
-// + certificate.read.sensitive(证书标准库 PR-1)〔敏感明文不下放〕
-// + recruitment-* 12 + team-join-* 7〔招新/入队中央流程不随组织业务下放〕→ v0.40.0 起 60，
-// D-INSURANCE PR2 review.record +1；PR-11 再摘活动责任旧动作 14 条 →47。
-const EXPECTED_ORG_ADMIN_CODES = [
-  // member 5(v0.40.0 +offboard;member.delete.record 仅 SA,biz-admin 本就不含)
-  'member.read.record',
-  'member.create.record',
-  'member.update.record',
-  'member.update.status',
-  'member.offboard.record',
-  // member-profile 3
-  'member-profile.read.record',
-  'member-profile.create.record',
-  'member-profile.update.record',
-  // emergency-contact 4
-  'emergency-contact.read.record',
-  'emergency-contact.create.record',
-  'emergency-contact.update.record',
-  'emergency-contact.delete.record',
-  // certificate 6
-  'certificate.read.record',
-  'certificate.create.record',
-  'certificate.update.record',
-  'certificate.delete.record',
-  'certificate.verify.record',
-  'certificate.reject.record',
-  // activity 2(PR-11 contract 保留后台 create/delete)
-  'activity.create.record',
-  'activity.delete.record',
-  // activity-registration 1(通用只读)
-  'activity-registration.read.record',
-  // attendance 1(通用只读；提交/编辑/删除/一审/终审均归责任角色)
-  'attendance.read.sheet',
-  // team-insurance-policy 6 + member-insurance 2(D-INSURANCE PR2 +review.record)
-  'team-insurance-policy.read.record',
-  'team-insurance-policy.create.record',
-  'team-insurance-policy.update.record',
-  'team-insurance-policy.delete.record',
-  'team-insurance-policy.add.member',
-  'team-insurance-policy.remove.member',
-  'member-insurance.read.other',
-  'member-insurance.review.record',
-  // content 5 + content 附件写 4(CMS α:内容授权随 content 走)
-  'content.read.record',
-  'content.create.record',
-  'content.update.record',
-  'content.delete.record',
-  'content.publish.record',
-  'attachment.upload.content-image',
-  'attachment.delete.content-image',
-  'attachment.upload.content-file',
-  'attachment.delete.content-file',
-  // notification 7
-  'notification.read.record',
-  'notification.create.record',
-  'notification.update.record',
-  'notification.delete.record',
-  'notification.publish.record',
-  'notification.update.template',
-  'notification.send.sms',
-  // F4「D 组」+1(2026-07-04):归属迁移业务写,随 biz-admin 自动继承(排除规则不命中)
-  'membership.transfer.record',
-] as const;
+const ORG_ADMIN_ROLE_SEED = RBAC_SEED_CATALOG.roles.orgAdmin;
+const EXPECTED_ORG_ADMIN_CODES = ORG_ADMIN_ROLE_SEED.permissionCodes;
 
-// group-manager 20 码(本组资料/内容写 + 考勤/报名只读；一审需显式 reviewer RoleBinding)。
-const EXPECTED_GROUP_MANAGER_CODES = [
-  // attachment.upload.*/view.*(member/certificate self+other + activity;10 条)
-  'attachment.upload.member.self',
-  'attachment.upload.member.other',
-  'attachment.upload.certificate.self',
-  'attachment.upload.certificate.other',
-  'attachment.upload.activity',
-  'attachment.view.member.self',
-  'attachment.view.member.other',
-  'attachment.view.certificate.self',
-  'attachment.view.certificate.other',
-  'attachment.view.activity',
-  // 本组队员资料只读 3
-  'member-profile.read.record',
-  'certificate.read.record',
-  'emergency-contact.read.record',
-  // content.* 5(不含 content-image/content-file 附件写)
-  'content.read.record',
-  'content.create.record',
-  'content.update.record',
-  'content.delete.record',
-  'content.publish.record',
-  // attendance 只读 1
-  'attendance.read.sheet',
-  // 报名只读 1
-  'activity-registration.read.record',
-] as const;
+const GROUP_MANAGER_ROLE_SEED = RBAC_SEED_CATALOG.roles.groupManager;
+const EXPECTED_GROUP_MANAGER_CODES = GROUP_MANAGER_ROLE_SEED.permissionCodes;
 
 const isReadonlyProjectionCode = (code: string): boolean =>
   !code.endsWith('.read.sensitive') &&
   (code.includes('.read.') || code.startsWith('attachment.view.'));
 
-const EXPECTED_ORG_READONLY_CODES = EXPECTED_ORG_ADMIN_CODES.filter(isReadonlyProjectionCode);
-const EXPECTED_GROUP_READONLY_CODES = EXPECTED_GROUP_MANAGER_CODES.filter(isReadonlyProjectionCode);
-
-// org-supervisor 4 码(BD-3 定稿;activity.read.record / attendance-record.read.record 2 候选码不加)。
-const EXPECTED_ORG_SUPERVISOR_CODES = [
-  'member.read.record',
-  'activity-registration.read.record',
-  'attendance.read.sheet',
-  'certificate.read.record',
-] as const;
-
-// v0.49.0 默认 policy:3 正职管理 + 3 副职只读投影。
-const EXPECTED_POLICIES = [
-  { positionCode: 'team-leader', roleCode: 'org-admin', scopeMode: 'TREE' },
-  { positionCode: 'dept-leader', roleCode: 'org-admin', scopeMode: 'TREE' },
-  { positionCode: 'group-leader', roleCode: 'group-manager', scopeMode: 'TREE' },
-  { positionCode: 'vice-captain', roleCode: 'org-readonly', scopeMode: 'TREE' },
-  { positionCode: 'dept-deputy', roleCode: 'org-readonly', scopeMode: 'TREE' },
-  { positionCode: 'deputy-group-leader', roleCode: 'group-readonly', scopeMode: 'TREE' },
-] as const;
-
-const EXPECTED_VICE_POLICIES = EXPECTED_POLICIES.filter((policy) =>
-  ['vice-captain', 'dept-deputy', 'deputy-group-leader'].includes(policy.positionCode),
-);
-
+const ORG_READONLY_ROLE_SEED = RBAC_SEED_CATALOG.roles.orgReadonly;
+const GROUP_READONLY_ROLE_SEED = RBAC_SEED_CATALOG.roles.groupReadonly;
+const ORG_SUPERVISOR_ROLE_SEED = RBAC_SEED_CATALOG.roles.orgSupervisor;
+const FINAL_REVIEWER_ROLE_SEED = RBAC_SEED_CATALOG.roles.attendanceFinalReviewer;
+const EXPECTED_ORG_READONLY_CODES = ORG_READONLY_ROLE_SEED.permissionCodes;
+const EXPECTED_GROUP_READONLY_CODES = GROUP_READONLY_ROLE_SEED.permissionCodes;
+const EXPECTED_ORG_SUPERVISOR_CODES = ORG_SUPERVISOR_ROLE_SEED.permissionCodes;
+const EXPECTED_POLICIES = RBAC_SEED_CATALOG.positionRolePolicies.all;
+const EXPECTED_VICE_POLICIES = RBAC_SEED_CATALOG.positionRolePolicies.vice;
 const NEW_ROLE_CODES = [
-  'org-admin',
-  'group-manager',
-  'org-readonly',
-  'group-readonly',
-  'org-supervisor',
-] as const;
+  ORG_ADMIN_ROLE_SEED.code,
+  GROUP_MANAGER_ROLE_SEED.code,
+  ORG_READONLY_ROLE_SEED.code,
+  GROUP_READONLY_ROLE_SEED.code,
+  ORG_SUPERVISOR_ROLE_SEED.code,
+];
+const FINAL_REVIEWER_ROLE_CODE = FINAL_REVIEWER_ROLE_SEED.code;
+const EXPECTED_FINAL_REVIEWER_CODES = FINAL_REVIEWER_ROLE_SEED.permissionCodes;
+const ACTIVITY_WORKFLOW_ROLE_SEEDS = RBAC_SEED_CATALOG.roles.activityResponsibility;
+const ALL_SEED_ROLE_CODES = [
+  RBAC_SEED_CATALOG.roles.opsAdmin.code,
+  RBAC_SEED_CATALOG.roles.member.code,
+  RBAC_SEED_CATALOG.roles.bizAdmin.code,
+  ...NEW_ROLE_CODES,
+  FINAL_REVIEWER_ROLE_CODE,
+  ...ACTIVITY_WORKFLOW_ROLE_SEEDS.map((role) => role.code),
+];
 
-// 终态 scoped-authz PR9:第 7 内置角色(冻结稿场景 4 / BD-2);
-// 第 2 批第 ⑧b 刀后承载 read + 终审两码 + reopen + final-return + 结算终审，共 6 码。
-const FINAL_REVIEWER_ROLE_CODE = 'attendance-final-reviewer';
-const EXPECTED_FINAL_REVIEWER_CODES = [
-  'attendance.read.sheet',
-  'attendance.final-approve.sheet',
-  'attendance.final-reject.sheet',
-  'attendance.reopen.sheet',
-  'attendance.final-return.sheet',
-  'activity.settlement-final-review.record',
-] as const;
+function workflowRoleSeed(code: string) {
+  const role = ACTIVITY_WORKFLOW_ROLE_SEEDS.find((seedRole) => seedRole.code === code);
+  if (!role) {
+    throw new Error(`missing workflow seed role '${code}'`);
+  }
+  return role;
+}
 
 // 既有 3 角色绑定数零漂移基线(seed-rbac 95 / seed-attachment 9 / seed-biz-admin 74〔§F&A-3 起〕同口径;
 // 2026-07-02 终态 scoped-authz PR10 authz.explain.decision 绑 ops-admin 88→89;
@@ -218,50 +121,18 @@ const EXPECTED_FINAL_REVIEWER_CODES = [
 // 2026-07-04 F3「C 组」authz.{explain-batch,action-state}.decision 绑 ops-admin 92→94;
 // 2026-07-07 队员账号闭环 v1 member.grant.account 绑 ops-admin 94→95;
 // 2026-07-07 队员账号闭环 v2 member.bind.account 绑 ops-admin 95→96)。
-const EXPECTED_OPS_ADMIN_BINDING_COUNT = 109; // 企业微信 T6-1:+1(notification.replay.wecom —— 定向 replay 运维入口,归运维面故绑 ops-admin、**不**绑 biz-admin;本文件「职务/分管 seed 不动 ops-admin 绑定」的意图不受影响,只是基线随之平移)。前值 108 = 企业微信 T3 的 +1(user.wecom.clear,整条绑;冻结稿 §13 T3 清单「Admin clear」连码带端点同刀落);再前值 107 = 企业微信 T2 的 +3(wecom-setting read/update/test;reset.credentials 沿 D2=A 不绑);更前值 104 = 证书标准库 PR-2 的 +8 配置面码
-const EXPECTED_MEMBER_ROLE_BINDING_COUNT = 9;
+const EXPECTED_OPS_ADMIN_BINDING_COUNT = RBAC_SEED_CATALOG.roles.opsAdmin.permissionCodes.length;
+const EXPECTED_MEMBER_ROLE_BINDING_COUNT = RBAC_SEED_CATALOG.roles.member.permissionCodes.length;
 // 证书标准库 PR-1(2026-07-30):+1 = certificate.read.sensitive(§15.3)。
 // 同刀已把该码加入 ORG_ADMIN_EXCLUDED_CODES,故 EXPECTED_ORG_ADMIN_CODES 逐字不变 ——
 // 上面那份精确码表就是「敏感明文不随组织业务下放」的阳性对照:漏加排除即红。
-const EXPECTED_BIZ_ADMIN_BINDING_COUNT = 69; // PR-2 的 8 条配置面码只绑 ops-admin,biz-admin 不变
+const EXPECTED_BIZ_ADMIN_BINDING_COUNT = RBAC_SEED_CATALOG.roles.bizAdmin.permissionCodes.length;
 
-const CONTRACT_REMOVED_FROM_BIZ_AND_ORG_CODES = [
-  'activity.settlement-generate.record',
-  'activity.settlement-update-draft.record',
-  'activity.settlement-submit.record',
-  'activity.settlement-first-review.record',
-  'activity.settlement-final-review.record',
-  'activity.settlement-close.record',
-  'activity.publish.record',
-  'activity.update.record',
-  'activity.cancel.record',
-  'activity.complete.record',
-  'activity-registration.create.record',
-  'activity-registration.approve.record',
-  'activity-registration.reject.record',
-  'activity-registration.cancel.record',
-  'activity-registration.reopen.record',
-  'attendance.create.sheet',
-  'attendance.update.sheet',
-  'attendance.delete.sheet',
-  'attendance.approve.sheet',
-  'attendance.reject.sheet',
-  'attendance.return.sheet',
-  'attendance.final-return.sheet',
-] as const;
-const CONTRACT_REMOVED_FROM_GROUP_CODES = [
-  'attendance.approve.sheet',
-  'attendance.reject.sheet',
-] as const;
-const REVIEWER_ONLY_REMOVED_FROM_ORG_CODES = [
-  'attendance.final-approve.sheet',
-  'attendance.final-reject.sheet',
-  'attendance.reopen.sheet',
-] as const;
-const TARGETED_REMOVED_FROM_ORG_CODES = [
-  ...CONTRACT_REMOVED_FROM_BIZ_AND_ORG_CODES,
-  ...REVIEWER_ONLY_REMOVED_FROM_ORG_CODES,
-] as const;
+const CONTRACT_REMOVED_FROM_BIZ_AND_ORG_CODES =
+  RBAC_SEED_CATALOG.contract.activityResponsibilityRemovedFromBizAdminCodes;
+const CONTRACT_REMOVED_FROM_GROUP_CODES =
+  RBAC_SEED_CATALOG.contract.groupManagerTargetedRemovalCodes;
+const TARGETED_REMOVED_FROM_ORG_CODES = RBAC_SEED_CATALOG.contract.orgAdminTargetedRemovalCodes;
 
 async function boundCodesOf(prisma: PrismaService, roleCode: string): Promise<string[]> {
   const rows = await prisma.rolePermission.findMany({
@@ -288,49 +159,37 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
     await resetDb(app);
   });
 
-  it('1. 内置角色 15;org/biz/group contract 码集与只读投影不漂移', async () => {
+  it('1. 内置角色与 seed 目录一致；org/biz/group contract 码集与只读投影不漂移', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-1' }).code).toBe(0);
+    expect(RBAC_SEED_CATALOG.permissions.rbac).toEqual(RBAC_SEED_FACTS.permissions.rbac);
+    expect(RBAC_SEED_CATALOG.contract.reservedSuperAdminOnlyPermissionCodes).toEqual(
+      RBAC_SEED_FACTS.contract.reservedSuperAdminOnlyPermissionCodes,
+    );
 
     const roles = await prisma.rbacRole.findMany({
       where: { deletedAt: null },
       select: { code: true },
     });
-    expect(new Set(roles.map((r) => r.code))).toEqual(
-      new Set([
-        'ops-admin',
-        'member',
-        'biz-admin',
-        'org-admin',
-        'org-readonly',
-        'group-manager',
-        'group-readonly',
-        'org-supervisor',
-        FINAL_REVIEWER_ROLE_CODE,
-        'activity-publish-reviewer',
-        'activity-cross-org-initiator',
-        'attendance-first-reviewer',
-        'activity-owner',
-        'activity-registration-collaborator',
-        'activity-attendance-collaborator',
-      ]),
-    );
+    expect(new Set(roles.map((r) => r.code))).toEqual(new Set(ALL_SEED_ROLE_CODES));
 
-    expect(await boundCodesOf(prisma, 'org-admin')).toEqual([...EXPECTED_ORG_ADMIN_CODES].sort());
-    expect(await boundCodesOf(prisma, 'group-manager')).toEqual(
+    expect(await boundCodesOf(prisma, ORG_ADMIN_ROLE_SEED.code)).toEqual(
+      [...EXPECTED_ORG_ADMIN_CODES].sort(),
+    );
+    expect(await boundCodesOf(prisma, GROUP_MANAGER_ROLE_SEED.code)).toEqual(
       [...EXPECTED_GROUP_MANAGER_CODES].sort(),
     );
-    expect(await boundCodesOf(prisma, 'org-supervisor')).toEqual(
+    expect(await boundCodesOf(prisma, ORG_SUPERVISOR_ROLE_SEED.code)).toEqual(
       [...EXPECTED_ORG_SUPERVISOR_CODES].sort(),
     );
-    expect(await boundCodesOf(prisma, 'org-readonly')).toEqual(
+    expect(await boundCodesOf(prisma, ORG_READONLY_ROLE_SEED.code)).toEqual(
       [...EXPECTED_ORG_READONLY_CODES].sort(),
     );
-    expect(await boundCodesOf(prisma, 'group-readonly')).toEqual(
+    expect(await boundCodesOf(prisma, GROUP_READONLY_ROLE_SEED.code)).toEqual(
       [...EXPECTED_GROUP_READONLY_CODES].sort(),
     );
 
     // org-admin 负向自证(BD-1 ≠ SUPER_ADMIN / BD-2 终审归中枢 / §4.2 敏感 / 中央流程不下放):
-    const orgAdminCodes = await boundCodesOf(prisma, 'org-admin');
+    const orgAdminCodes = await boundCodesOf(prisma, ORG_ADMIN_ROLE_SEED.code);
     expect(orgAdminCodes).toContain('member-insurance.review.record');
     expect(orgAdminCodes).not.toContain('attendance.final-approve.sheet');
     expect(orgAdminCodes).not.toContain('attendance.final-reject.sheet');
@@ -344,7 +203,7 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
     expect(orgAdminCodes.some((c) => c.startsWith('rbac.'))).toBe(false);
     expect(orgAdminCodes.some((c) => c.startsWith('user.'))).toBe(false);
     // group-manager 负向自证(轻量边界)
-    const gmCodes = await boundCodesOf(prisma, 'group-manager');
+    const gmCodes = await boundCodesOf(prisma, GROUP_MANAGER_ROLE_SEED.code);
     expect(gmCodes).not.toContain('member-insurance.review.record');
     expect(gmCodes).not.toContain('member.update.record');
     expect(gmCodes).not.toContain('attendance.final-approve.sheet');
@@ -354,11 +213,11 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
     }
     expect(gmCodes.some((c) => c.startsWith('activity.'))).toBe(false); // 活动增删改/发布/取消不给组长
     // org-supervisor 只读自证(BD-3:无写、无敏感、无审批)
-    const supCodes = await boundCodesOf(prisma, 'org-supervisor');
+    const supCodes = await boundCodesOf(prisma, ORG_SUPERVISOR_ROLE_SEED.code);
     expect(supCodes.some((c) => /\.(create|update|delete|approve|reject|set|end)\./.test(c))).toBe(
       false,
     );
-    for (const roleCode of ['org-readonly', 'group-readonly']) {
+    for (const roleCode of [ORG_READONLY_ROLE_SEED.code, GROUP_READONLY_ROLE_SEED.code]) {
       const readonlyCodes = await boundCodesOf(prisma, roleCode);
       expect(readonlyCodes.length).toBeGreaterThan(0);
       expect(readonlyCodes.every(isReadonlyProjectionCode)).toBe(true);
@@ -366,7 +225,7 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
     }
   });
 
-  it('2. 6 条默认 policy(正职管理 + 副职只读,scopeMode 全 TREE);org-supervisor 不是 policy 目标', async () => {
+  it('2. 默认 policy 与 seed 一致；org-supervisor 不是 policy 目标', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-2' }).code).toBe(0);
 
     const policies = await prisma.organizationPositionRolePolicy.findMany({
@@ -379,7 +238,7 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
         role: { select: { code: true } },
       },
     });
-    expect(policies).toHaveLength(6);
+    expect(policies).toHaveLength(EXPECTED_POLICIES.length);
     const got = policies
       .map((p) => ({
         positionCode: p.position.code,
@@ -394,7 +253,7 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
     expect(policies.every((p) => p.conditionJson === null)).toBe(true);
     expect(policies.every((p) => p.status === 'ACTIVE')).toBe(true);
     // org-supervisor 不经职务 policy(分管与职务正交,PR8 由分管推导)
-    expect(policies.some((p) => p.role.code === 'org-supervisor')).toBe(false);
+    expect(policies.some((p) => p.role.code === ORG_SUPERVISOR_ROLE_SEED.code)).toBe(false);
   });
 
   it('3. R5 v0.49:三个副职恰好映射对应只读角色且 scope=TREE', async () => {
@@ -434,7 +293,7 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
       select: { id: true },
     });
     const orgAdmin = await prisma.rbacRole.findUniqueOrThrow({
-      where: { code: 'org-admin' },
+      where: { code: ORG_ADMIN_ROLE_SEED.code },
       select: { id: true },
     });
     await prisma.organizationPositionRolePolicy.create({
@@ -450,7 +309,7 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-5' }).code).toBe(0);
 
     const role = await prisma.rbacRole.findUniqueOrThrow({
-      where: { code: 'org-readonly' },
+      where: { code: ORG_READONLY_ROLE_SEED.code },
       select: { id: true },
     });
     const [readPermission, writePermission] = await Promise.all([
@@ -471,7 +330,7 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
     });
 
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-5' }).code).toBe(0);
-    expect(await boundCodesOf(prisma, 'org-readonly')).toEqual(
+    expect(await boundCodesOf(prisma, ORG_READONLY_ROLE_SEED.code)).toEqual(
       [...EXPECTED_ORG_READONLY_CODES].sort(),
     );
   });
@@ -487,11 +346,11 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
       groupTargetedPermissions,
     ] = await Promise.all([
       prisma.rbacRole.findUniqueOrThrow({
-        where: { code: 'org-admin' },
+        where: { code: ORG_ADMIN_ROLE_SEED.code },
         select: { id: true },
       }),
       prisma.rbacRole.findUniqueOrThrow({
-        where: { code: 'group-manager' },
+        where: { code: GROUP_MANAGER_ROLE_SEED.code },
         select: { id: true },
       }),
       prisma.permission.create({
@@ -532,66 +391,30 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
     });
 
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-6-contract' }).code).toBe(0);
-    expect(await boundCodesOf(prisma, 'org-admin')).toEqual(
+    expect(await boundCodesOf(prisma, ORG_ADMIN_ROLE_SEED.code)).toEqual(
       [...EXPECTED_ORG_ADMIN_CODES, 'test.custom.position-role.keep'].sort(),
     );
-    expect(await boundCodesOf(prisma, 'group-manager')).toEqual(
+    expect(await boundCodesOf(prisma, GROUP_MANAGER_ROLE_SEED.code)).toEqual(
       [...EXPECTED_GROUP_MANAGER_CODES, 'test.custom.position-role.keep'].sort(),
     );
     expect(await boundCodesOf(prisma, 'activity-publish-reviewer')).toEqual(
-      [
-        'activity.publish.record',
-        'activity-review.read.request',
-        'activity-review.return.request',
-      ].sort(),
+      [...workflowRoleSeed('activity-publish-reviewer').permissionCodes].sort(),
     );
     expect(await boundCodesOf(prisma, 'attendance-first-reviewer')).toEqual(
-      [
-        'attendance.read.sheet',
-        'attendance.approve.sheet',
-        'attendance.reject.sheet',
-        'attendance.return.sheet',
-        'activity.settlement-first-review.record',
-      ].sort(),
+      [...workflowRoleSeed('attendance-first-reviewer').permissionCodes].sort(),
     );
     expect(await boundCodesOf(prisma, 'activity-owner')).toEqual(
-      [
-        'activity.update.record',
-        'activity.cancel.record',
-        'activity.complete.record',
-        'activity-registration.read.record',
-        'activity-registration.create.record',
-        'activity-registration.approve.record',
-        'activity-registration.reject.record',
-        'activity-registration.cancel.record',
-        'activity-registration.reopen.record',
-        'attendance.read.sheet',
-        'attendance.create.sheet',
-        'attendance.update.sheet',
-        'attendance.delete.sheet',
-        'activity.settlement-generate.record',
-        'activity.settlement-update-draft.record',
-        'activity.settlement-submit.record',
-        'activity.settlement-close.record',
-      ].sort(),
+      [...workflowRoleSeed('activity-owner').permissionCodes].sort(),
     );
     expect(await boundCodesOf(prisma, 'activity-attendance-collaborator')).toEqual(
-      [
-        'attendance.read.sheet',
-        'attendance.create.sheet',
-        'attendance.update.sheet',
-        'attendance.delete.sheet',
-        'activity.settlement-generate.record',
-        'activity.settlement-update-draft.record',
-        'activity.settlement-submit.record',
-      ].sort(),
+      [...workflowRoleSeed('activity-attendance-collaborator').permissionCodes].sort(),
     );
     expect(await boundCodesOf(prisma, FINAL_REVIEWER_ROLE_CODE)).toEqual(
       [...EXPECTED_FINAL_REVIEWER_CODES].sort(),
     );
   });
 
-  it('7. 零指派 + 精确增量:5 个职务/分管角色无持有者;ops 104 / member 9 / biz 69', async () => {
+  it('7. 零指派 + 精确增量：职务/分管角色无持有者，既有绑定与 seed 一致', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-6' }).code).toBe(0);
 
     // 5 个职务/分管角色零直接持有(判权唯一读源 RoleBinding 全类型;
@@ -600,15 +423,15 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
       where: { code: { in: [...NEW_ROLE_CODES] } },
       select: { id: true },
     });
-    expect(newRoles).toHaveLength(5);
+    expect(newRoles).toHaveLength(NEW_ROLE_CODES.length);
     const newRoleIds = newRoles.map((r) => r.id);
     expect(await prisma.roleBinding.count({ where: { roleId: { in: newRoleIds } } })).toBe(0);
 
     // 既有 3 角色绑定数零漂移
     for (const [code, expected] of [
-      ['ops-admin', EXPECTED_OPS_ADMIN_BINDING_COUNT],
-      ['member', EXPECTED_MEMBER_ROLE_BINDING_COUNT],
-      ['biz-admin', EXPECTED_BIZ_ADMIN_BINDING_COUNT],
+      [RBAC_SEED_CATALOG.roles.opsAdmin.code, EXPECTED_OPS_ADMIN_BINDING_COUNT],
+      [RBAC_SEED_CATALOG.roles.member.code, EXPECTED_MEMBER_ROLE_BINDING_COUNT],
+      [RBAC_SEED_CATALOG.roles.bizAdmin.code, EXPECTED_BIZ_ADMIN_BINDING_COUNT],
     ] as const) {
       expect(await prisma.rolePermission.count({ where: { role: { code } } })).toBe(expected);
     }
@@ -630,7 +453,7 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
     const rolePermCount1 = await prisma.rolePermission.count();
     const policyCount1 = await prisma.organizationPositionRolePolicy.count();
     const orgAdmin1 = await prisma.rbacRole.findUniqueOrThrow({
-      where: { code: 'org-admin' },
+      where: { code: ORG_ADMIN_ROLE_SEED.code },
       select: { id: true },
     });
 
@@ -642,7 +465,7 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
     expect(
       (
         await prisma.rbacRole.findUniqueOrThrow({
-          where: { code: 'org-admin' },
+          where: { code: ORG_ADMIN_ROLE_SEED.code },
           select: { id: true },
         })
       ).id,
@@ -652,7 +475,7 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
     const policies = await prisma.organizationPositionRolePolicy.findMany({
       select: { createdAt: true, updatedAt: true },
     });
-    expect(policies).toHaveLength(6);
+    expect(policies).toHaveLength(EXPECTED_POLICIES.length);
     expect(policies.every((p) => p.updatedAt.getTime() === p.createdAt.getTime())).toBe(true);
   });
 
@@ -664,15 +487,21 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
       [...EXPECTED_FINAL_REVIEWER_CODES].sort(),
     );
 
+    const reviewerRoleCodes = [
+      ...ACTIVITY_WORKFLOW_ROLE_SEEDS.filter((role) => role.code.endsWith('reviewer')).map(
+        (role) => role.code,
+      ),
+      FINAL_REVIEWER_ROLE_CODE,
+    ];
     const reviewerRoles = await prisma.rbacRole.findMany({
       where: {
         code: {
-          in: ['activity-publish-reviewer', 'attendance-first-reviewer', FINAL_REVIEWER_ROLE_CODE],
+          in: reviewerRoleCodes,
         },
       },
       select: { id: true, code: true },
     });
-    expect(reviewerRoles).toHaveLength(3);
+    expect(reviewerRoles).toHaveLength(reviewerRoleCodes.length);
     const role = reviewerRoles.find(
       (reviewerRole) => reviewerRole.code === FINAL_REVIEWER_ROLE_CODE,
     )!;

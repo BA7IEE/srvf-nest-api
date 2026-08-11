@@ -1,11 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { assertSeedFactsClosure } from './docs-counts';
 
 // Harness 3.0 P4a — RBAC_MAP 派生段生成器(镜像反转:AI 生成给人看,不再人写给 AI 读)。
 //
 // 背景:RBAC_MAP.md 曾是 130KB 手工维护的镜像 —— 每改一次权限就要人肉同步,
 // 再靠 496 行 check 脚本检测它有没有漂移。「检测漂移」是在给一个不该存在的问题打补丁:
-// 权限事实的权威源本来就是 prisma/seed.ts 与 controller 装饰器,文档只是它们的视图。
+// 权限事实的权威源本来就是 seed 事实闭包与 controller 装饰器,文档只是它们的视图。
 //
 // 本脚本把「视图」真正变成生成物:
 //   pnpm docs:rbacmap        写入(在 <!-- rbac:begin --> / <!-- rbac:end --> 之间)
@@ -14,12 +15,18 @@ import * as path from 'path';
 // 只生成**纯派生**的两节(权限码全集 / controller × surface);
 // 人类知识(保护不变式、缺口与冻结存量、AI 硬规则)在标记之外,生成器不碰。
 //
-// 权威源:prisma/seed.ts(权限码)+ src/**/*.controller.ts(@Controller 前缀)。
+// 权威源:seed 事实闭包(权限码)+ src/**/*.controller.ts(@Controller 前缀)。
 
 const ROOT = path.resolve(__dirname, '..');
 const DOC_REL = 'docs/ai-harness/RBAC_MAP.md';
 const BEGIN = '<!-- rbac:begin -->';
 const END = '<!-- rbac:end -->';
+
+// 闭包必须与 docs-counts.ts / check-rbac-map.ts 逐项一致；selftest 交叉核验三份声明。
+export const SEED_FACTS_CLOSURE = Object.freeze([
+  'prisma/seed.ts',
+  'src/modules/permissions/rbac-seed-facts.ts',
+] as const);
 
 // 与 scripts/check-rbac-map.ts 同源(改一处须同步另一处;由 harness-guards.selftest 守护)
 const CODE_SHAPE = '[a-z][a-z-]*(?:\\.[a-z-]+)+';
@@ -43,14 +50,17 @@ function listControllerFiles(): string[] {
 }
 
 function extractSeedCodes(): string[] {
-  const source = read('prisma/seed.ts');
+  assertSeedFactsClosure(SEED_FACTS_CLOSURE);
   const codes = new Set<string>();
-  for (const re of [
-    new RegExp(`code:\\s*'(${CODE_SHAPE})'`, 'g'),
-    new RegExp(`_CODE\\s*=\\s*'(${CODE_SHAPE})'`, 'g'),
-  ]) {
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(source)) !== null) codes.add(m[1]);
+  for (const relPath of SEED_FACTS_CLOSURE) {
+    const source = read(relPath);
+    for (const re of [
+      new RegExp(`code:\\s*'(${CODE_SHAPE})'`, 'g'),
+      new RegExp(`_CODE\\s*=\\s*'(${CODE_SHAPE})'`, 'g'),
+    ]) {
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(source)) !== null) codes.add(m[1]);
+    }
   }
   return [...codes].sort();
 }
@@ -91,7 +101,7 @@ function renderPermissionCodes(codes: string[]): string {
   return [
     `### 权限码全集(${codes.length} 条,按一级域分组)`,
     '',
-    '> 权威源 `prisma/seed.ts`(幂等 upsert)。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。',
+    '> 权威源 seed 事实闭包：`prisma/seed.ts`(幂等 upsert) + `src/modules/permissions/rbac-seed-facts.ts`(权限定义)。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。',
     '',
     '| 一级域 | 条数 | 权限码 |',
     '|---|---|---|',
@@ -129,20 +139,30 @@ function renderControllers(controllers: ControllerDecl[]): string {
   ].join('\n');
 }
 
-function buildBlock(): string {
+interface GeneratedRbacBlock {
+  readonly content: string;
+  readonly permissionCodeCount: number;
+  readonly controllerCount: number;
+}
+
+function buildBlock(): GeneratedRbacBlock {
   const codes = extractSeedCodes();
   const controllers = extractControllers(listControllerFiles());
-  return [
-    BEGIN,
-    '<!-- 由 `pnpm docs:rbacmap` 生成;禁止手改。新鲜度由 `pnpm docs:rbacmap:check` 守护。 -->',
-    '',
-    '## 派生对照表(生成物)',
-    '',
-    renderPermissionCodes(codes),
-    '',
-    renderControllers(controllers),
-    END,
-  ].join('\n');
+  return {
+    content: [
+      BEGIN,
+      '<!-- 由 `pnpm docs:rbacmap` 生成;禁止手改。新鲜度由 `pnpm docs:rbacmap:check` 守护。 -->',
+      '',
+      '## 派生对照表(生成物)',
+      '',
+      renderPermissionCodes(codes),
+      '',
+      renderControllers(controllers),
+      END,
+    ].join('\n'),
+    permissionCodeCount: codes.length,
+    controllerCount: controllers.length,
+  };
 }
 
 function splice(doc: string, block: string): string {
@@ -161,7 +181,8 @@ function main(): void {
   const checkMode = process.argv.includes('--check');
   const docPath = path.join(ROOT, DOC_REL);
   const current = read(DOC_REL);
-  const next = splice(current, buildBlock());
+  const generated = buildBlock();
+  const next = splice(current, generated.content);
 
   if (!checkMode) {
     if (next === current) {
@@ -169,21 +190,25 @@ function main(): void {
       return;
     }
     fs.writeFileSync(docPath, next);
-    console.log(`✓ 已重新生成 ${DOC_REL} 的派生段`);
+    console.log(
+      `✓ 已重新生成 ${DOC_REL} 的派生段(${generated.permissionCodeCount} 条权限码 / ${generated.controllerCount} 个 controller)`,
+    );
     return;
   }
 
   if (next === current) {
-    console.log(`✓ rbacmap 生成段与代码一致(权限码 / controller 对照表)`);
+    console.log(
+      `✓ rbacmap 生成段与代码一致(${generated.permissionCodeCount} 条权限码 / ${generated.controllerCount} 个 controller)`,
+    );
     return;
   }
   console.error(
     `✗ ${DOC_REL} 的派生段与代码不一致(权限码或 controller 有变动却未重新生成)。\n` +
       `  修复:pnpm docs:rbacmap\n` +
-      `  说明:该段是 prisma/seed.ts 与 @Controller 装饰器的**视图**,不是独立事实源;\n` +
+      `  说明:该段是 seed 事实闭包与 @Controller 装饰器的**视图**,不是独立事实源;\n` +
       `       改了权限或路由就该重新生成,而不是手工同步文档。`,
   );
   process.exit(1);
 }
 
-main();
+if (require.main === module) main();

@@ -1,3 +1,5 @@
+import { RBAC_SEED_FACTS } from './rbac-seed-facts';
+
 // F1(全仓 review #399):role-permission.assign 分级闸的「SA-only 保留码」集合。
 //
 // 这 6 条权限点在 `prisma/seed.ts` 中**有意不绑**任何内置 RBAC 角色
@@ -14,18 +16,11 @@
 // SA-only 能力(#399 F1 授权洞)。2026-07-13 起由 `isControlPlanePermissionCode()` 引用
 // 本 SoT,与 `rbac.*` / `role-binding.*` 前缀合并后统一在授码与角色委派入口拦截。
 //
-// **单一事实来源**:本集合与 seed「不绑」清单一一对应。改动 seed 的角色绑定矩阵
-// (新增/重命名/改绑任一保留码)时**必须同步本集合**;`seed-rbac.e2e-spec.ts` 的
-// 漂移哨兵会断言"本集合每一条都存在为 Permission 且未绑 ops-admin / biz-admin",
-// 任一不符即红,守住二者不漂移。
-export const RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES: readonly string[] = [
-  'user.update.role',
-  'storage-setting.reset.credentials',
-  'sms-setting.reset.credentials',
-  'wechat-setting.reset.credentials',
-  'realname-setting.reset.credentials',
-  'member.delete.record',
-] as const;
+// **单一事实来源**:`rbac-seed-facts.ts`。`prisma/seed.ts` 消费该事实生成 seed 目录；控制面
+// 保留码与四个 seed e2e 也消费同一事实，方向恒为 seed → src，禁止 src → prisma。
+// 漂移哨兵继续断言每条码都存在为 Permission 且未绑 ops-admin / biz-admin。
+export const RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES: readonly string[] =
+  RBAC_SEED_FACTS.contract.reservedSuperAdminOnlyPermissionCodes;
 
 export const RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODE_SET: ReadonlySet<string> = new Set(
   RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES,
