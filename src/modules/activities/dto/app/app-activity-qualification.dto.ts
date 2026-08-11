@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class AppActivityQualificationUnmetRuleDto {
   @ApiProperty({ description: '冻结资格规则主键' })
@@ -10,10 +10,10 @@ export class AppActivityQualificationUnmetRuleDto {
   @ApiProperty({ enum: ['warn', 'fail'], description: '该未满足规则的结果' })
   resultCode!: 'warn' | 'fail';
 
-  @ApiPropertyOptional({ nullable: true, description: '规则配置的安全提示文案' })
+  @ApiProperty({ type: String, nullable: true, description: '规则配置的安全提示文案' })
   message!: string | null;
 
-  @ApiPropertyOptional({ nullable: true, description: 'warn 规则的提示分值' })
+  @ApiProperty({ type: Number, nullable: true, description: 'warn 规则的提示分值' })
   warnScore!: number | null;
 }
 

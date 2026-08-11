@@ -3343,7 +3343,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "message": {
         "description": "规则配置的安全提示文案",
         "nullable": true,
-        "type": "object",
+        "type": "string",
       },
       "resultCode": {
         "description": "该未满足规则的结果",
@@ -3360,13 +3360,15 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "warnScore": {
         "description": "warn 规则的提示分值",
         "nullable": true,
-        "type": "object",
+        "type": "number",
       },
     },
     "required": [
       "ruleId",
       "enforcementCode",
       "resultCode",
+      "message",
+      "warnScore",
     ],
     "type": "object",
   },

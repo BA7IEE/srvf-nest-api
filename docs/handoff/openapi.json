@@ -109971,12 +109971,12 @@
             "description": "该未满足规则的结果"
           },
           "message": {
-            "type": "object",
+            "type": "string",
             "nullable": true,
             "description": "规则配置的安全提示文案"
           },
           "warnScore": {
-            "type": "object",
+            "type": "number",
             "nullable": true,
             "description": "warn 规则的提示分值"
           }
@@ -109984,7 +109984,9 @@
         "required": [
           "ruleId",
           "enforcementCode",
-          "resultCode"
+          "resultCode",
+          "message",
+          "warnScore"
         ]
       },
       "AppActivityQualificationDto": {
