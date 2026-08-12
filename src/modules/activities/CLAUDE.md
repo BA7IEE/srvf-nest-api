@@ -48,6 +48,7 @@
 - E2E:`activities.e2e-spec.ts` / `activities-rbac-boundary.e2e-spec.ts` / `activities-state-transition.e2e-spec.ts` / `activities-audit-characterization.e2e-spec.ts` / `activity-publish-review.e2e-spec.ts` / `activity-publish-review-concurrency.e2e-spec.ts` / `activity-responsibilities.e2e-spec.ts` / `activity-responsibility-concurrency.e2e-spec.ts` / `activity-responsibility-rollout.e2e-spec.ts` / `app-activities-available.e2e-spec.ts` / `app-activities-detail.e2e-spec.ts` / `activity-waitlist-shared-capacity.e2e-spec.ts`(多队列共享父预算);scoped 判权矩阵在 `participation-scoped-authz.e2e-spec.ts`
 
 - **资格 runtime（第 83 migration）**：RuleSet 的活动/场次/岗位作用域由双向完整复合 FK 固定，`draft/active/retired` 版本与 active 槽位均按 NULL 参与去重；active/retired 及子 Rule 冻结、EvaluationSnapshot append-only。`AppActivitiesService` 在 detail 事务中调用统一 evaluator，安全投影顶层/session/position `qualification` 并按实际命中 RuleSet 各写一份 display snapshot；不得回显资格敏感原值。发布审核与活动配置写路径仍不计算资格、不创建/激活规则。
+- **分配方式地基（第 84 migration）**：`Activity.allocationModeCode` 是每活动唯一权威标量，DB 仅接受 `first_come/qualification_rank/lottery`；存量与旧 server 缺省读 `first_come`。本刀无 DTO/API/分配执行，default 不代表新活动已满足显式选择；下一 C 刀才在 Activity 根锁内完成显式选择、发布硬门与 `ActivityAllocationBatch.modeCode` 一致性。
 
 ## Risk points (不要做)
 
