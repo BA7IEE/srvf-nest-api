@@ -19,6 +19,7 @@ import {
   UpdateEmergencyContactDto,
 } from './emergency-contacts.dto';
 import { EmergencyContactsService } from './emergency-contacts.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // V2 第一阶段批次 1 emergency_contacts controller。
 // 路径嵌套在 members/:memberId/emergency-contacts 下,N:1 子资源 + 单条 CRUD。
@@ -44,6 +45,7 @@ export class EmergencyContactsController {
   }
 
   @Get()
+  @RequiresPermission('emergency-contact.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '列出队员紧急联系人(无分页;按 priority ASC, createdAt ASC 排序;软删项不返回) [rbac: emergency-contact.read.record]',
@@ -64,6 +66,7 @@ export class EmergencyContactsController {
   }
 
   @Post()
+  @RequiresPermission('emergency-contact.create.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '新增一条紧急联系人 [rbac: emergency-contact.create.record]' })
   @ApiWrappedCreatedResponse(EmergencyContactResponseDto)
   @ApiBizErrorResponse(
@@ -83,6 +86,7 @@ export class EmergencyContactsController {
   }
 
   @Patch(':id')
+  @RequiresPermission('emergency-contact.update.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '更新一条紧急联系人(全字段 optional;**禁止** memberId / id 入参) [rbac: emergency-contact.update.record]',
@@ -108,6 +112,7 @@ export class EmergencyContactsController {
   }
 
   @Delete(':id')
+  @RequiresPermission('emergency-contact.delete.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '软删一条紧急联系人(写 deletedAt;不物理删除) [rbac: emergency-contact.delete.record]',
   })

@@ -19,6 +19,7 @@ import {
 import { ActivityParticipationQueryService } from '../activity-participation-query.service';
 import { AdminParticipationLedgerEntryDto } from '../dto/admin/admin-participation-ledger.dto';
 import { LedgerQueryService } from '../ledger-query.service';
+import { RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 
 // 审计刀 5 F1/F2：活动级跨子表只读投影。独立 Controller + QueryService，保持
 // ActivitiesService 零增长；两端点都在 service 逐一校验 attendance.read.sheet 与
@@ -34,6 +35,7 @@ export class AdminActivityParticipationController {
 
   // 账本权限口径见 LedgerQueryService 的 LEDGER_READ_ACTION：合同 §6.11 空白，2026-08-06 显式接受复用考勤读码。
   @Get('participation-ledger')
+  @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '活动已生效参与账本（分页） [rbac: attendance.read.sheet]' })
   @ApiWrappedPageResponse(AdminParticipationLedgerEntryDto)
   @ApiBizErrorResponse(
@@ -51,9 +53,13 @@ export class AdminActivityParticipationController {
   }
 
   @Get('reconciliation')
+  @RequiresPermission('activity-registration.read.record', 'attendance.read.sheet', {
+    require: 'all',
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary:
-      '活动报名×实到核对(completed only；pass 逐人 attended/no-show + 临时参加名单；需同时持两项参与域读权限) [auth]',
+      '活动报名×实到核对(completed only；pass 逐人 attended/no-show + 临时参加名单；需同时持 attendance.read.sheet 与 activity-registration.read.record，按活动资源范围判定) [auth]',
   })
   @ApiWrappedOkResponse(ActivityReconciliationDto)
   @ApiBizErrorResponse(
@@ -71,9 +77,13 @@ export class AdminActivityParticipationController {
   }
 
   @Get('participation-summary')
+  @RequiresPermission('activity-registration.read.record', 'attendance.read.sheet', {
+    require: 'all',
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary:
-      '活动参与合计(报名状态/实到/到场率/approved 时长与贡献/固定时长桶；需同时持两项参与域读权限) [auth]',
+      '活动参与合计(报名状态/实到/到场率/approved 时长与贡献/固定时长桶；需同时持 attendance.read.sheet 与 activity-registration.read.record，按活动资源范围判定) [auth]',
   })
   @ApiWrappedOkResponse(ActivityParticipationSummaryDto)
   @ApiBizErrorResponse(

@@ -14,6 +14,7 @@ import {
   ExplainAuthzDto,
   ExplainAuthzResponseDto,
 } from './authz.dto';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 终态 scoped-authz PR10「authz/explain 端点」(2026-07-02;冻结稿 §7.6 + §9 行 20):
 // authz 模块第一个 controller(1 路由)—— 可解释性出口:「谁,因哪个角色/职务/分管,在什么范围,
@@ -28,6 +29,7 @@ export class AuthzController {
   constructor(private readonly service: AuthzExplainService) {}
 
   @Post('authz/explain')
+  @RequiresPermission('authz.explain.decision', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -50,6 +52,7 @@ export class AuthzController {
   // F3/C2(路线图 §4 C2 / D8 拍板;2026-07-04):单条 explain 的批量壳(≤200)。
   // 同一套 AuthzReason 11 值枚举;deny 仍是 200 数据;任一 userId 不存在/已软删 → 整请求 10001(镜像单条输入错误语义)。
   @Post('authz/explain-batch')
+  @RequiresPermission('authz.explain-batch.decision', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

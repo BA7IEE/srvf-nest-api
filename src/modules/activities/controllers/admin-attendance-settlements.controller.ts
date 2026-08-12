@@ -42,6 +42,7 @@ import {
   AdminSettlementVersionReadParamsDto,
   ListAdminAttendanceSettlementsQueryDto,
 } from '../dto/admin/admin-settlement-read.dto';
+import { RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 
 @ApiTags('Admin - Attendance Settlements')
 @ApiBearerAuth()
@@ -50,6 +51,7 @@ export class AdminAttendanceSettlementsController {
   constructor(private readonly settlements: ActivitySettlementHttpService) {}
 
   @Get()
+  @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '跨活动结算审核工作台（分页） [rbac: attendance.read.sheet]' })
   @ApiWrappedPageResponse(AdminAttendanceSettlementListItemDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -61,6 +63,7 @@ export class AdminAttendanceSettlementsController {
   }
 
   @Get(':settlementVersionId/review-detail')
+  @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '查看结算版本不可变审核详情、seal、差异与缺口 [rbac: attendance.read.sheet]',
   })
@@ -79,6 +82,7 @@ export class AdminAttendanceSettlementsController {
   }
 
   @Get(':id/posting-batch')
+  @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '查看结算版本账本批次进度 [rbac: attendance.read.sheet]' })
   @ApiWrappedOkResponse(AdminSettlementPostingBatchDto)
   @ApiBizErrorResponse(
@@ -95,6 +99,10 @@ export class AdminAttendanceSettlementsController {
   }
 
   @Post(':id/first-approve')
+  @RequiresPermission('activity.settlement-first-review.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '一审通过结算版本 [rbac: activity.settlement-first-review.record]' })
   @ApiWrappedOkResponse(AdminSettlementReviewResponseDto)
@@ -131,6 +139,10 @@ export class AdminAttendanceSettlementsController {
   }
 
   @Post(':id/first-return')
+  @RequiresPermission('activity.settlement-first-review.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '一审退回结算版本 [rbac: activity.settlement-first-review.record]' })
   @ApiWrappedOkResponse(AdminSettlementReviewResponseDto)
@@ -168,6 +180,10 @@ export class AdminAttendanceSettlementsController {
   }
 
   @Post(':id/final-approve')
+  @RequiresPermission('activity.settlement-final-review.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: '终审通过结算版本并准备账本批次 [rbac: activity.settlement-final-review.record]',
@@ -207,6 +223,10 @@ export class AdminAttendanceSettlementsController {
   }
 
   @Post(':id/final-return')
+  @RequiresPermission('activity.settlement-final-review.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '终审退回结算版本 [rbac: activity.settlement-final-review.record]' })
   @ApiWrappedOkResponse(AdminSettlementReviewResponseDto)

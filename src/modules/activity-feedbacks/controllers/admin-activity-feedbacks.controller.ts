@@ -17,6 +17,7 @@ import {
   AdminActivityFeedbackSummaryDto,
 } from '../activity-feedback.dto';
 import { ActivityFeedbacksQueryService } from '../activity-feedbacks-query.service';
+import { RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 
 @ApiTags('Admin - Activities')
 @ApiBearerAuth()
@@ -26,6 +27,7 @@ export class AdminActivityFeedbacksController {
   constructor(private readonly feedbacks: ActivityFeedbacksQueryService) {}
 
   @Get('feedbacks')
+  @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '分页查看活动评价与评价人摘要 [rbac: attendance.read.sheet]',
   })
@@ -45,6 +47,7 @@ export class AdminActivityFeedbacksController {
   }
 
   @Get('feedback-summary')
+  @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '查看活动评价均分、直方图与评价率 [rbac: attendance.read.sheet]',
   })

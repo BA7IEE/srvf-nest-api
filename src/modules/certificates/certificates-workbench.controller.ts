@@ -22,6 +22,7 @@ import {
   WorkbenchStandardSummaryDto,
 } from './certificates-workbench.dto';
 import { CertificatesWorkbenchService } from './certificates-workbench.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 证书标准库 PR-5(冻结稿 §13.6 / §14):全局证书工作台(2 路由)。
 //
@@ -47,6 +48,7 @@ export class CertificatesWorkbenchController {
   }
 
   @Get()
+  @RequiresPermission('certificate.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '全局证书工作台列表(跨队员;可见组织范围先下推 SQL 再分页与计数;q 只搜队员编号/展示名/标准名称与 code/发证机构 —— **不搜完整证书编号**;出参恒不含完整编号/审核备注/审核人/图片 key;含 effectiveStatusCode 当前有效展示状态) [rbac: certificate.read.record]',
@@ -62,6 +64,7 @@ export class CertificatesWorkbenchController {
   }
 
   @Get('stats')
+  @RequiresPermission('certificate.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '全局证书工作台统计(六个计数器:pending/verified/expired/rejected/expiringWithin60Days/permanent;接受与列表**完全相同**的非分页过滤;按北京 today 计算且**不依赖到期 cron 已翻态**〔expired 含「verified 但 expiredAt<today」〕;scope 先下推再计数) [rbac: certificate.read.record]',

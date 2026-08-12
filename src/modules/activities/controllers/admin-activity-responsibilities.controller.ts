@@ -33,6 +33,7 @@ import {
   TransferActivityOwnerDto,
 } from '../activity-responsibility.dto';
 import { ActivityResponsibilityService } from '../activity-responsibility.service';
+import { RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 
 @ApiTags('Admin - Activity Responsibilities')
 @ApiBearerAuth()
@@ -49,6 +50,10 @@ export class AdminActivityResponsibilitiesController {
   }
 
   @Get()
+  @RequiresPermission('activity-responsibility.override.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary: '查看活动当前负责人和协办人 [rbac: activity-responsibility.override.record]',
   })
@@ -67,6 +72,10 @@ export class AdminActivityResponsibilitiesController {
   }
 
   @Post('collaborators')
+  @RequiresPermission('activity-responsibility.override.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '新增活动协办人(owner 或 override；至少一项管理能力) [rbac: activity-responsibility.override.record]',
@@ -90,6 +99,10 @@ export class AdminActivityResponsibilitiesController {
   }
 
   @Delete('collaborators/:assignmentId')
+  @RequiresPermission('activity-responsibility.override.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -117,6 +130,10 @@ export class AdminActivityResponsibilitiesController {
   }
 
   @Post('transfer')
+  @RequiresPermission('activity-responsibility.override.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -142,6 +159,10 @@ export class AdminActivityResponsibilitiesController {
   }
 
   @Post('claim')
+  @RequiresPermission('activity-responsibility.override.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -167,6 +188,10 @@ export class AdminActivityResponsibilitiesController {
   }
 
   @Post('assign-initiator')
+  @RequiresPermission('activity-responsibility.override.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: '为 legacy draft 活动补录正式发起人 [rbac: activity-responsibility.override.record]',

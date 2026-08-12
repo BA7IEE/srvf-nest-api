@@ -28,6 +28,7 @@ import {
 } from './users.dto';
 import { UserWecomBindingService } from './user-wecom-binding.service';
 import { UsersService } from './users.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // **权限标注**(P0-F PR-3B,2026-05-18):8 个管理端点入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;
 // 全部判权迁移到 Service 内 `rbac.can()`,失败抛 `RBAC_FORBIDDEN(30100)`。
@@ -61,6 +62,7 @@ export class UsersController {
   // ===== 管理接口(P0-F PR-3B:走 rbac.can();失败 30100)=====
 
   @Get()
+  @RequiresPermission('user.read.account', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '用户列表(分页;ADMIN 仅能看到 USER) [rbac: user.read.account]' })
   @ApiWrappedPageResponse(UserResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -73,6 +75,7 @@ export class UsersController {
 
   // F1/A2(路线图 §4;D2/D3 拍板):选择器投影,必须先于 /:id 定义(specific-before-dynamic)。
   @Get('options')
+  @RequiresPermission('user.read.account', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '用户选择器投影(q 模糊 username+nickname+email+phone;canViewUser 可见性裁剪保留) [rbac: user.read.account]',
@@ -87,6 +90,7 @@ export class UsersController {
   }
 
   @Post()
+  @RequiresPermission('user.create.account', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '创建用户;SUPER_ADMIN 可创建 ADMIN/USER,ADMIN 只能创建 USER [rbac: user.create.account]',
@@ -108,6 +112,7 @@ export class UsersController {
   }
 
   @Get(':id')
+  @RequiresPermission('user.read.account', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '用户详情(ADMIN 仅能查看 USER) [rbac: user.read.account]' })
   @ApiWrappedOkResponse(UserResponseDto)
   @ApiBizErrorResponse(
@@ -125,6 +130,7 @@ export class UsersController {
   }
 
   @Patch(':id')
+  @RequiresPermission('user.update.account', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '修改用户资料(不含 username / 密码 / 角色 / 状态) [rbac: user.update.account]',
   })
@@ -146,6 +152,7 @@ export class UsersController {
   }
 
   @Put(':id/password')
+  @RequiresPermission('user.reset.password', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '管理员重置用户密码(无需 oldPassword) [rbac: user.reset.password]' })
   @ApiWrappedOkResponse(UserResponseDto)
   @ApiBizErrorResponse(
@@ -165,6 +172,7 @@ export class UsersController {
   }
 
   @Patch(':id/role')
+  @RequiresPermission('user.update.role', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '修改用户角色(D1=A:仅 SUPER_ADMIN 短路;ops-admin 不绑 user.update.role) [rbac: user.update.role]',
@@ -189,6 +197,7 @@ export class UsersController {
   }
 
   @Patch(':id/status')
+  @RequiresPermission('user.update.status', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '启用/禁用用户(只改 status) [rbac: user.update.status]' })
   @ApiWrappedOkResponse(UserResponseDto)
   @ApiBizErrorResponse(
@@ -210,6 +219,7 @@ export class UsersController {
   }
 
   @Delete(':id')
+  @RequiresPermission('user.delete.account', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '软删除用户(同时置 deletedAt 与 status=DISABLED) [rbac: user.delete.account]',
   })
@@ -237,6 +247,7 @@ export class UsersController {
   // 软删用户统一 USER_NOT_FOUND(沿 docs/reference/soft-delete-transactions.md §10);
   // audit phone.clear.by-admin(号码掩码)。
   @Delete(':id/phone')
+  @RequiresPermission('user.phone.clear', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '清除用户绑定手机号(幂等;同时置空 phoneVerifiedAt;审计号码掩码) [rbac: user.phone.clear]',
@@ -263,6 +274,7 @@ export class UsersController {
   // 软删用户统一 USER_NOT_FOUND(沿 docs/reference/soft-delete-transactions.md §10);
   // audit wechat.clear.by-admin(openid 掩码)。
   @Delete(':id/wechat')
+  @RequiresPermission('user.wechat.clear', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '清除用户绑定微信 openid(幂等;审计 openid 掩码) [rbac: user.wechat.clear]',
   })
@@ -289,6 +301,7 @@ export class UsersController {
   // audit wecom.clear.by-admin(before 只记掩码身份,不返回完整企业微信 UserId)。
   // 不允许通过本接口把身份转移给另一 User —— 转移只能是"清除 + 对方重新绑定"。
   @Delete(':id/wecom')
+  @RequiresPermission('user.wecom.clear', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '清除用户企业微信身份(幂等;审计仅掩码) [rbac: user.wecom.clear]',
   })

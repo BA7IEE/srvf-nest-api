@@ -13,6 +13,7 @@ import {
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { UpsertWechatSubscribeTemplateDto, WechatSubscribeTemplateDto } from './notification.dto';
 import { WechatSubscribeTemplateService } from './wechat-subscribe-template.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 统一通知 S2:微信订阅模板配置 admin 面(D-N3 运营可配;notificationTypeCode → templateId)。
 // 入口仅 JwtAuthGuard;R 模式 service rbac.can(读 notification.read.record / 写 notification.update.template),
@@ -26,6 +27,7 @@ export class NotificationWechatTemplateAdminController {
   constructor(private readonly service: WechatSubscribeTemplateService) {}
 
   @Get()
+  @RequiresPermission('notification.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '列出微信订阅模板配置(各通知类型 → templateId / 启用态;运维查哪些类型可发微信) [rbac: notification.read.record]',
@@ -37,6 +39,7 @@ export class NotificationWechatTemplateAdminController {
   }
 
   @Put(':typeCode')
+  @RequiresPermission('notification.update.template', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '配置某通知类型的微信模板 ID + 启用态(upsert;运营改不重部署;类型须 ∈ notification_type 字典) [rbac: notification.update.template]',

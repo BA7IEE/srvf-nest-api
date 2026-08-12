@@ -13,6 +13,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { CreateMembershipDto, MembershipResponseDto, UpdateMembershipDto } from './memberships.dto';
 import { MembershipsService } from './memberships.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 终态 scoped-authz PR2(2026-07-01;冻结稿 §7.1):组织归属(memberships)管理面,沿队员轴嵌套。
 // 独立 controller class(与旧 member-departments 单部门端点分列;controller 计数 +1)。
@@ -37,6 +38,7 @@ export class MembershipsController {
   constructor(private readonly service: MembershipsService) {}
 
   @Get()
+  @RequiresPermission('membership.list.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '列出队员全部组织归属(主/兼/临时/支援 + 任期;含历史) [rbac: membership.list.record]',
   })
@@ -55,6 +57,7 @@ export class MembershipsController {
   }
 
   @Post()
+  @RequiresPermission('membership.set.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '新增队员归属(指定 membershipType) [rbac: membership.set.record]',
   })
@@ -79,6 +82,7 @@ export class MembershipsController {
   }
 
   @Patch(':id')
+  @RequiresPermission('membership.set.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '改归属类型 / 任期 / 原因(不改 status) [rbac: membership.set.record]',
   })
@@ -100,6 +104,7 @@ export class MembershipsController {
   }
 
   @Delete(':id')
+  @RequiresPermission('membership.end.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '结束队员归属(status=ENDED + endedAt,保留留痕) [rbac: membership.end.record]',
   })

@@ -32,6 +32,7 @@ import {
   TransferMembershipDto,
 } from './memberships.dto';
 import { MembershipsService } from './memberships.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // F4「D 组」memberships 扁平/组织轴增强面(2026-07-04;冻结路线图
 // admin-api-fe-integration-roadmap.md §4 D 组):分页总表 / detail / 冲突诊断 / 组织轴列表 /
@@ -57,6 +58,7 @@ export class MembershipsAdminController {
   constructor(private readonly service: MembershipsService) {}
 
   @Get('memberships')
+  @RequiresPermission('membership.list.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '分页列组织归属总表(memberId/organizationId/includeDescendants/membershipType/status/q 过滤 + expand=member,organization;缺省含 ENDED 历史) [rbac: membership.list.record]',
@@ -71,6 +73,7 @@ export class MembershipsAdminController {
   }
 
   @Get('memberships/conflicts')
+  @RequiresPermission('membership.list.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '归属冲突只读诊断(多 ACTIVE PRIMARY / 悬空队员 / 悬空组织 / 停用组织在任归属;零写入,数据体检面) [rbac: membership.list.record]',
@@ -86,6 +89,7 @@ export class MembershipsAdminController {
 
   // F4 唯一写端点:单事务 end 旧 + create 新(受既有 partial unique 约束;audit `membership.transfer`)。
   @Post('memberships/transfer')
+  @RequiresPermission('membership.transfer.record', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -112,6 +116,7 @@ export class MembershipsAdminController {
   }
 
   @Get('memberships/:id')
+  @RequiresPermission('membership.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '查单条归属(detail;找不到未软删记录 → 17003) [rbac: membership.read.record]',
   })
@@ -130,6 +135,7 @@ export class MembershipsAdminController {
   }
 
   @Get('organizations/:orgId/memberships')
+  @RequiresPermission('membership.list.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '组织轴列归属(分页;includeDescendants 展开后代 + membershipType/status/q 过滤 + expand=member,organization;含历史与暂停,组织成员页请传 status=ACTIVE;组织不存在 → 11001) [rbac: membership.list.record]',
@@ -150,6 +156,7 @@ export class MembershipsAdminController {
   }
 
   @Get('organizations/:orgId/members/options')
+  @RequiresPermission('member.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '组织轴队员下拉(该组织±后代的可选队员;复用 F1 members/options 投影;组织不存在 → 11001) [rbac: member.read.record]',

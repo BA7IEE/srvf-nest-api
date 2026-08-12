@@ -45,6 +45,7 @@ import {
 } from './activity-registrations.dto';
 import { ActivityRegistrationBulkService } from './activity-registration-bulk.service';
 import { ActivityRegistrationsService } from './activity-registrations.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // V2 批次 6 PR #5 helper:从 @Req() 构造 AuditMeta(D6 v1.1 §11.2 / D8 拍板;
 // 不引入 cls-rs / AsyncLocalStorage)。
@@ -96,6 +97,10 @@ export class ActivityRegistrationsAdminController {
   ) {}
 
   @Get()
+  @RequiresPermission('activity-registration.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary: '列出该活动所有报名(分页;含已取消 / 已拒绝) [rbac: activity-registration.read.record]',
   })
@@ -115,6 +120,10 @@ export class ActivityRegistrationsAdminController {
   }
 
   @Post()
+  @RequiresPermission('activity-registration.create.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       'ADMIN 代报名(Q-A3 与 USER 自助拆开;必填 memberId;校验 capacity + 公开报名 + 未重复) [rbac: activity-registration.create.record]',
@@ -150,6 +159,10 @@ export class ActivityRegistrationsAdminController {
 
   // 必须先于 :id/<action> 声明:export 是字面段。
   @Get('export')
+  @RequiresPermission('activity-registration.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '名单导出 CSV(Q-A6:第一版仅 CSV;默认 scope=pass,可选 scope=all;XLSX 不支持 → 400) [rbac: activity-registration.read.record]',
@@ -185,6 +198,10 @@ export class ActivityRegistrationsAdminController {
 
   // 字面段必须先于 :id/<action>，防止 bulk-approve/bulk-reject 被解析为报名 id。
   @Patch('bulk-approve')
+  @RequiresPermission('activity-registration.approve.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '批量审核通过(ids 1–100；逐条独立事务/判权/capacity/audit/通知；部分成功) [rbac: activity-registration.approve.record]',
@@ -201,6 +218,10 @@ export class ActivityRegistrationsAdminController {
   }
 
   @Patch('bulk-reject')
+  @RequiresPermission('activity-registration.reject.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '批量审核拒绝(ids 1–100；逐条独立事务/判权/audit/通知；部分成功；空备注默认“批量驳回”) [rbac: activity-registration.reject.record]',
@@ -217,6 +238,10 @@ export class ActivityRegistrationsAdminController {
   }
 
   @Patch(':id/approve')
+  @RequiresPermission('activity-registration.approve.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary: '审核通过(pending → pass;capacity 复核) [rbac: activity-registration.approve.record]',
   })
@@ -253,6 +278,10 @@ export class ActivityRegistrationsAdminController {
   }
 
   @Patch(':id/reject')
+  @RequiresPermission('activity-registration.reject.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '审核拒绝(pending → reject;reviewNote 必填) [rbac: activity-registration.reject.record]',
@@ -276,6 +305,10 @@ export class ActivityRegistrationsAdminController {
   }
 
   @Patch(':id/cancel')
+  @RequiresPermission('activity-registration.cancel.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '管理员代取消(pending|pass → cancelled;cancelled 释放名额;已有考勤记录 → 拒) [rbac: activity-registration.cancel.record]',
@@ -308,6 +341,10 @@ export class ActivityRegistrationsAdminController {
   // 参与域生命周期收口②(v0.40.0):审批后悔药。撤销驳回、回待审(reject → pending)。
   // POST(action 非幂等创建/更新语义,沿 goal 指定动词);置 pending 同时清空审核三字段;不发通知。
   @Post(':id/reopen')
+  @RequiresPermission('activity-registration.reopen.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

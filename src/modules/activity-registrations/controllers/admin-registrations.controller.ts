@@ -15,6 +15,7 @@ import {
   ListRegistrationsQueryDto,
 } from '../activity-registrations.dto';
 import { ActivityRegistrationsService } from '../activity-registrations.service';
+import { RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 
 // 跨轴只读 admin controller(2026-06-23;队员/审批跨轴只读查询 goal)。
 //
@@ -37,6 +38,10 @@ export class AdminRegistrationsController {
   constructor(private readonly service: ActivityRegistrationsService) {}
 
   @Get()
+  @RequiresPermission('activity-registration.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '跨活动报名横扫(审批工作台;分页 + 可选 statusCode/q/memberQ/activityQ/memberId/activityId/organizationId/includeDescendants/dateFrom/dateTo/expand=member,activity;脱离 :activityId 路径段;item 带 activity 上下文) [rbac: activity-registration.read.record]',
@@ -58,6 +63,10 @@ export class AdminMemberRegistrationsController {
   constructor(private readonly service: ActivityRegistrationsService) {}
 
   @Get()
+  @RequiresPermission('activity-registration.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '某队员报名履历(队员 360;分页 + 可选 statusCode;item 带 activity 上下文;不存在/软删 → MEMBER_NOT_FOUND) [rbac: activity-registration.read.record]',

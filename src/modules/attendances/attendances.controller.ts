@@ -45,6 +45,7 @@ import {
   UpdateAttendanceSheetDto,
 } from './attendances.dto';
 import { AttendancesService } from './attendances.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // V2 批次 6 PR #6 共享 helper:从 @Req() 构造 AuditMeta(D6 v1.1 §11.2 / D8 拍板;
 // 不引入 cls-rs / AsyncLocalStorage)。
@@ -89,6 +90,7 @@ export class AttendanceSheetsCollectionController {
   constructor(private readonly service: AttendancesService) {}
 
   @Post()
+  @RequiresPermission('attendance.create.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '提交考勤单据(事务内一次性 create Sheet + N records;初始 statusCode=pending,version=1;Activity cancelled 拒绝) [rbac: attendance.create.sheet]',
@@ -121,6 +123,7 @@ export class AttendanceSheetsCollectionController {
   }
 
   @Get()
+  @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '列出该活动所有考勤单据(分页 + 可选 statusCode 过滤) [rbac: attendance.read.sheet]',
   })
@@ -153,6 +156,7 @@ export class AttendanceSheetsResourceController {
   // 考勤单据(脱离 :activityId 路径段)。根路径精确匹配空段,与 :id / :id/review-detail 无声明顺序冲突。
   // 判权复用 attendance.read.sheet;item 自带 activity 上下文(AdminAttendanceSheetListItemDto)。
   @Get()
+  @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '跨活动考勤单据横扫(审批工作台;分页 + 可选 statusCode/q/activityQ/organizationId/includeDescendants/dateFrom/dateTo/expand=activity;脱离 :activityId 路径段;item 带 activity 上下文) [rbac: attendance.read.sheet]',
@@ -168,6 +172,7 @@ export class AttendanceSheetsResourceController {
 
   // review-detail 必须先于 :id 声明(字面段优先于占位段)
   @Get(':id/review-detail')
+  @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       'APD 审核完整视图(R25):Activity 摘要 + Sheet 详情 + Records[含 Member 嵌套] [rbac: attendance.read.sheet]',
@@ -189,6 +194,7 @@ export class AttendanceSheetsResourceController {
   }
 
   @Get(':id')
+  @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       'Sheet 简化详情(不含 records 数组;不返 previousSnapshot) [rbac: attendance.read.sheet]',
@@ -209,6 +215,7 @@ export class AttendanceSheetsResourceController {
   }
 
   @Patch(':id')
+  @RequiresPermission('attendance.update.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '编辑 pending/returned Sheet(D38:后端生成 previousSnapshot + version+1;旧 records 软删 + 新 records 创建;其余状态拒绝;Activity cancelled 拒绝改 records) [rbac: attendance.update.sheet]',
@@ -246,6 +253,7 @@ export class AttendanceSheetsResourceController {
   }
 
   @Delete(':id')
+  @RequiresPermission('attendance.delete.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '软删 pending Sheet(事务内级联软删 records;approved/rejected/pending_final_review/final_rejected 拒绝) [rbac: attendance.delete.sheet]',
@@ -270,6 +278,7 @@ export class AttendanceSheetsResourceController {
   }
 
   @Patch(':id/approve')
+  @RequiresPermission('attendance.approve.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       'APD 一级通过(pending → pending_final_review;批次 4-B 升级,沿 D-S6;R31 所有 records.contributionPoints 必填;**不再触发** attendance.recorded — 触发位置移到 final-approve;待终审) [rbac: attendance.approve.sheet]',
@@ -294,6 +303,7 @@ export class AttendanceSheetsResourceController {
   }
 
   @Patch(':id/reject')
+  @RequiresPermission('attendance.reject.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: 'APD 一级驳回(pending → rejected;reviewNote 必填) [rbac: attendance.reject.sheet]',
   })
@@ -316,6 +326,7 @@ export class AttendanceSheetsResourceController {
   }
 
   @Post(':id/return')
+  @RequiresPermission('attendance.return.sheet', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -346,6 +357,7 @@ export class AttendanceSheetsResourceController {
   // 不开 22044 模块码(沿 D-S2 / batch 3A 不开 FORBIDDEN_*);判权不足走 RBAC_FORBIDDEN(30100)。
 
   @Patch(':id/final-approve')
+  @RequiresPermission('attendance.final-approve.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '终审通过(ADMIN 级终审沿 P1-5 方案 A,部门级细分挂 Slow-3;pending_final_review → approved;贡献值正式生效;**触发** attendance.recorded;沿 D-S5 / D-S7) [rbac: attendance.final-approve.sheet]',
@@ -370,6 +382,7 @@ export class AttendanceSheetsResourceController {
   }
 
   @Patch(':id/final-reject')
+  @RequiresPermission('attendance.final-reject.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '终审驳回(ADMIN 级终审沿 P1-5 方案 A,部门级细分挂 Slow-3;pending_final_review → final_rejected;finalReviewNote 必填;records 跟随软删;**不触发** attendance.recorded) [rbac: attendance.final-reject.sheet]',
@@ -395,6 +408,7 @@ export class AttendanceSheetsResourceController {
   }
 
   @Post(':id/final-return')
+  @RequiresPermission('attendance.final-return.sheet', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -421,6 +435,7 @@ export class AttendanceSheetsResourceController {
   }
 
   @Post(':id/resubmit')
+  @RequiresPermission('attendance.update.sheet', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -444,6 +459,7 @@ export class AttendanceSheetsResourceController {
   }
 
   @Post(':id/reopen')
+  @RequiresPermission('attendance.reopen.sheet', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

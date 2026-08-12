@@ -46,6 +46,7 @@ import { RecruitmentApplicationReviewService } from './recruitment-application-r
 import { RecruitmentApplicationsQueryService } from './recruitment-applications-query.service';
 import { RecruitmentApplicationsService } from './recruitment-applications.service';
 import { RecruitmentPromotionService } from './recruitment-promotion.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 招新一期 T3(2026-06-18):招新报名 admin surface(评审稿 §3.2 端点 10-13)。
 // 入口仅 JwtAuthGuard,判权全在 service rbac.can();读 PII fail-closed 落真实审计。
@@ -81,6 +82,10 @@ export class RecruitmentApplicationsAdminController {
   ) {}
 
   @Get()
+  @RequiresPermission('recruitment-application.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '招新报名分页列表(可按 cycleId / statusCode / riskLevel〔S4b 人工队列三栏 normal/high/system〕过滤;身份证号/手机列表掩码) [rbac: recruitment-application.read.record]',
@@ -105,6 +110,10 @@ export class RecruitmentApplicationsAdminController {
   // 招新闭环优化 S6:批量标门槛 / 批量导出。字面段 export / batch-mark-threshold 在 :id 路由**之前**声明
   // (沿 activity-registrations export 路由顺序铁律;防 Nest 把字面段解析为 :id 参数)。
   @Post('batch-mark-threshold')
+  @RequiresPermission('recruitment-application.mark.threshold', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -128,6 +137,10 @@ export class RecruitmentApplicationsAdminController {
   }
 
   @Post('export')
+  @RequiresPermission('recruitment-application.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -151,6 +164,10 @@ export class RecruitmentApplicationsAdminController {
   }
 
   @Get(':id')
+  @RequiresPermission('recruitment-application.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '招新报名详情(敏感分级 S3:持 read.sensitive 看明文身份证号/手机,仅 read.record 看脱敏;字段集不变;读 PII 记审计) [rbac: recruitment-application.read.record]',
@@ -171,6 +188,10 @@ export class RecruitmentApplicationsAdminController {
 
   // 招新可用性收口 F2(评审稿 recruitment-usability-closeout-review.md §3 R1):admin 改报名资料。
   @Patch(':id')
+  @RequiresPermission('recruitment-application.update.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       'admin 改报名资料(R1 白名单:非身份字段恒可改;身份字段 realName/idCardNumber/birthDate/genderCode 仅 manual_review 或非大陆证件记录,verified 大陆 → 28045;大陆 birthDate/genderCode 恒由证件号派生不可直改;大陆改证件号 → 校验位/年龄复检 + 重派生 + 同轮去重;promoted/已脱敏行 → 28041;不含 phone/openid〔走自助换绑〕;必落 audit) [rbac: recruitment-application.update.record]',
@@ -197,6 +218,10 @@ export class RecruitmentApplicationsAdminController {
   }
 
   @Get(':id/id-card-image-url')
+  @RequiresPermission('recruitment-application.read.sensitive', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '取证件照短 TTL signed-URL(L3;不入日志/snapshot;读图记审计;敏感分级 S3) [rbac: recruitment-application.read.sensitive]',
@@ -222,6 +247,10 @@ export class RecruitmentApplicationsAdminController {
   // 旧端点把 category 当资源 id,做不到同类别多张证书、单证重传与单证审核。
 
   @Post(':id/resolve')
+  @RequiresPermission('recruitment-application.resolve.manual', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -250,6 +279,10 @@ export class RecruitmentApplicationsAdminController {
   // 原先的两条前置条件(该类别有图 + 已 approved)随之退役:它们现在由
   // Claim 状态机本身保证,不再是本端点的入参校验。
   @Patch(':id/thresholds')
+  @RequiresPermission('recruitment-application.mark.threshold', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '标/清门槛(仅巡山×2/培训三项人工门槛;⚠️ 契约收紧:急救资质 redCross 与 BSAFE 已改为证书申报审核结论的派生投影,传这两个 code 无论 completed 真假一律 28063;清标不受闸;幂等;仅 verified/pending_evaluation 态;末次完成自动→待综合评定) [rbac: recruitment-application.mark.threshold]',
@@ -274,6 +307,10 @@ export class RecruitmentApplicationsAdminController {
 
   // 招新可用性收口 F3(评审稿 §3 R3 / §6.1 E-U-3/E-U-4):单人手动建档(批量 skip 项收尾通道)。
   @Post(':id/promote-single')
+  @RequiresPermission('recruitment-application.promote.single', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -302,6 +339,10 @@ export class RecruitmentApplicationsAdminController {
   }
 
   @Post(':id/evaluate')
+  @RequiresPermission('recruitment-application.evaluate.assessment', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

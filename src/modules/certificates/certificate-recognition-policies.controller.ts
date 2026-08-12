@@ -34,6 +34,7 @@ import {
 } from './certificate-recognition-policies.dto';
 import { CertificateRecognitionPoliciesService } from './certificate-recognition-policies.service';
 import { CertificateStandardIdParamDto } from './certificate-standards.dto';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 证书标准库 PR-3(冻结稿 §13.2):队内认定规则管理面 controller(6 路由)。
 //
@@ -60,6 +61,10 @@ export class CertificateRecognitionPoliciesController {
   }
 
   @Get('certificate-standards/:standardId/recognition-policies')
+  @RequiresPermission('certificate-recognition-policy.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '列出某证书标准的全部认定规则版本(version DESC;含 DRAFT / ACTIVE / RETIRED) [rbac: certificate-recognition-policy.read.record]',
@@ -79,6 +84,10 @@ export class CertificateRecognitionPoliciesController {
   }
 
   @Post('certificate-standards/:standardId/recognition-policies')
+  @RequiresPermission('certificate-recognition-policy.create.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '为某证书标准新建认定规则版本(恒 DRAFT;version 服务端在 Standard 行锁内分配) [rbac: certificate-recognition-policy.create.record]',
@@ -104,6 +113,10 @@ export class CertificateRecognitionPoliciesController {
   }
 
   @Get('certificate-recognition-policies/:id')
+  @RequiresPermission('certificate-recognition-policy.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary: '认定规则详情(含认可机构集合) [rbac: certificate-recognition-policy.read.record]',
   })
@@ -122,6 +135,10 @@ export class CertificateRecognitionPoliciesController {
   }
 
   @Patch('certificate-recognition-policies/:id')
+  @RequiresPermission('certificate-recognition-policy.update.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '修改 DRAFT 认定规则(传 issuers 即整体替换;ACTIVE / RETIRED 恒 18036) [rbac: certificate-recognition-policy.update.record]',
@@ -146,6 +163,10 @@ export class CertificateRecognitionPoliciesController {
   }
 
   @Patch('certificate-recognition-policies/:id/status')
+  @RequiresPermission('certificate-recognition-policy.update.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '激活 / 退役认定规则(ACTIVE 会原子退役该标准当前生效版;不接受 DRAFT) [rbac: certificate-recognition-policy.update.record]',
@@ -174,6 +195,10 @@ export class CertificateRecognitionPoliciesController {
   }
 
   @Delete('certificate-recognition-policies/:id')
+  @RequiresPermission('certificate-recognition-policy.delete.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary:

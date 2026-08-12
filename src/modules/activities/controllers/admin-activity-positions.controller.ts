@@ -21,6 +21,7 @@ import {
   UpdateActivityPositionDto,
 } from '../activity-positions.dto';
 import { ActivityPositionsService } from '../activity-positions.service';
+import { LoginScoped, RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 
 @ApiTags('Admin - Activity Positions')
 @ApiBearerAuth()
@@ -29,6 +30,7 @@ export class AdminActivityPositionsController {
   constructor(private readonly service: ActivityPositionsService) {}
 
   @Post(':activityId/positions')
+  @RequiresPermission('activity.update.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '创建活动岗位 [rbac: activity.update.record]',
   })
@@ -54,6 +56,7 @@ export class AdminActivityPositionsController {
   }
 
   @Get(':activityId/positions')
+  @LoginScoped('activity-visibility', { require: 'all', engine: 'authz-scoped' })
   @ApiOperation({ summary: '活动岗位列表(sortOrder/createdAt/id 升序) [auth]' })
   @ApiWrappedArrayResponse(ActivityPositionResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.ACTIVITY_NOT_FOUND)
@@ -64,6 +67,7 @@ export class AdminActivityPositionsController {
   }
 
   @Get(':activityId/positions/:activityPositionId')
+  @LoginScoped('activity-visibility', { require: 'all', engine: 'authz-scoped' })
   @ApiOperation({ summary: '活动岗位详情(软删/跨活动统一 20002) [auth]' })
   @ApiWrappedOkResponse(ActivityPositionResponseDto)
   @ApiBizErrorResponse(
@@ -77,6 +81,7 @@ export class AdminActivityPositionsController {
   }
 
   @Patch(':activityId/positions/:activityPositionId')
+  @RequiresPermission('activity.update.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '部分更新活动岗位(容量锁后重读) [rbac: activity.update.record]',
   })
@@ -109,6 +114,7 @@ export class AdminActivityPositionsController {
   }
 
   @Delete(':activityId/positions/:activityPositionId')
+  @RequiresPermission('activity.update.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '软删活动岗位(pending/pass/waitlisted 报名守卫) [rbac: activity.update.record]',
   })

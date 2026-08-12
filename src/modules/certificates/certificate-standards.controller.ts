@@ -38,6 +38,7 @@ import {
   UpdateCertificateStandardStatusDto,
 } from './certificate-standards.dto';
 import { CertificateStandardsService } from './certificate-standards.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 证书标准库 PR-3(冻结稿 §13.1):通用证书标准管理面 controller(7 路由)。
 // 判权单轨 service 层 `rbac.can(certificate-standard.*.record)`;入口仅全局
@@ -57,6 +58,7 @@ export class CertificateStandardsController {
   }
 
   @Get()
+  @RequiresPermission('certificate-standard.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '列出证书标准(分页 + kind / category / level / status / parentId / q) [rbac: certificate-standard.read.record]',
@@ -74,6 +76,13 @@ export class CertificateStandardsController {
   // 否则 `/certificate-standards/options` 会被 `:id` 吞掉,当成一个 id='options'
   // 的详情请求 → 恒 404,且不会有任何编译期报错。
   @Get('options')
+  @RequiresPermission(
+    'certificate-standard.read.record',
+    'certificate.create.record',
+    'certificate.verify.record',
+    'recruitment-application.review.certificate',
+    { require: 'any', engine: 'rbac-global' },
+  )
   @ApiOperation({
     // 后缀只放**规范码**(`[rbac: <单码>]` 是 docs:rbacmap:check 的可解析形态);
     // §16.4 的三条替代入口码写在前面的说明里 —— 它们同样放行,但后缀语法不支持并列。
@@ -92,6 +101,10 @@ export class CertificateStandardsController {
   }
 
   @Post()
+  @RequiresPermission('certificate-standard.create.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '创建证书标准(初始恒 DRAFT;code 唯一且不可复用) [rbac: certificate-standard.create.record]',
@@ -118,6 +131,7 @@ export class CertificateStandardsController {
   }
 
   @Get(':id')
+  @RequiresPermission('certificate-standard.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '证书标准详情(软删返 404) [rbac: certificate-standard.read.record]' })
   @ApiWrappedOkResponse(CertificateStandardResponseDto)
   @ApiBizErrorResponse(
@@ -134,6 +148,10 @@ export class CertificateStandardsController {
   }
 
   @Patch(':id')
+  @RequiresPermission('certificate-standard.update.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '修正证书标准文案与排序(只接受 name / description / sortOrder;身份字段永不可改) [rbac: certificate-standard.update.record]',
@@ -155,6 +173,10 @@ export class CertificateStandardsController {
   }
 
   @Patch(':id/status')
+  @RequiresPermission('certificate-standard.update.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '证书标准状态迁移(DRAFT→ACTIVE / ACTIVE→INACTIVE / INACTIVE→ACTIVE;恢复 ACTIVE 前重校验字典与父级) [rbac: certificate-standard.update.record]',
@@ -181,6 +203,10 @@ export class CertificateStandardsController {
   }
 
   @Delete(':id')
+  @RequiresPermission('certificate-standard.delete.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary:

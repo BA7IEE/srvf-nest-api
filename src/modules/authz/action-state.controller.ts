@@ -9,6 +9,7 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { ActionStateService } from './action-state.service';
 import { ActionStateBatchDto, ActionStateBatchResponseDto } from './authz.dto';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // F3/C3「action-state/batch」(路线图 §4 C3 / D8 拍板;2026-07-04):authz 模块第二个 controller ——
 // 批量业务态闸(D8 推荐落位:独立 ActionStateController,authz 模块内)。判定对象 = 调用者本人;
@@ -23,6 +24,7 @@ export class ActionStateController {
   constructor(private readonly service: ActionStateService) {}
 
   @Post('authz/action-state/batch')
+  @RequiresPermission('authz.action-state.decision', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

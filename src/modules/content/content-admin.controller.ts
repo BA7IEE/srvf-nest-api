@@ -41,6 +41,7 @@ import {
   UpdateContentDto,
 } from './content.dto';
 import { ContentService } from './content.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // CMS 内容发布模块(第 28 模块)T2(2026-06-21):content admin surface(评审稿 §8 端点 1-12)。
 // 入口仅 JwtAuthGuard(全局),**不**挂 @Roles;判权全在 service rbac.can()(R 模式)。
@@ -69,6 +70,7 @@ export class ContentAdminController {
   constructor(private readonly service: ContentService) {}
 
   @Post()
+  @RequiresPermission('content.create.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '新建内容草稿(create → draft) [rbac: content.create.record]' })
   @ApiWrappedCreatedResponse(ContentAdminDetailDto)
   @ApiBizErrorResponse(
@@ -87,6 +89,7 @@ export class ContentAdminController {
   }
 
   @Get()
+  @RequiresPermission('content.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '内容分页列表(status/type/visibility/keyword/tags/pinned 过滤;admin 见全部状态全可见档) [rbac: content.read.record]',
@@ -98,6 +101,7 @@ export class ContentAdminController {
   }
 
   @Get(':id')
+  @RequiresPermission('content.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '内容详情(含附件签名 URL + 正文占位改写 + viewCount〔不自增〕) [rbac: content.read.record]',
@@ -112,6 +116,7 @@ export class ContentAdminController {
   }
 
   @Patch(':id')
+  @RequiresPermission('content.update.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '更新内容(draft/published 可改,archived 冻结 → 29030) [rbac: content.update.record]',
   })
@@ -136,6 +141,7 @@ export class ContentAdminController {
   }
 
   @Delete(':id')
+  @RequiresPermission('content.delete.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '软删内容(任意态) [rbac: content.delete.record]' })
   @ApiWrappedNullResponse()
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN, BizCode.CONTENT_NOT_FOUND)
@@ -150,6 +156,7 @@ export class ContentAdminController {
   }
 
   @Post(':id/publish')
+  @RequiresPermission('content.publish.record', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: '发布内容(draft → published,置 publishedAt) [rbac: content.publish.record]',
@@ -170,6 +177,7 @@ export class ContentAdminController {
   }
 
   @Post(':id/unpublish')
+  @RequiresPermission('content.publish.record', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: '撤回内容(published → draft,保留 publishedAt) [rbac: content.publish.record]',
@@ -190,6 +198,7 @@ export class ContentAdminController {
   }
 
   @Post(':id/archive')
+  @RequiresPermission('content.publish.record', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: '归档内容(published → archived,终态不可逆) [rbac: content.publish.record]',
@@ -210,6 +219,7 @@ export class ContentAdminController {
   }
 
   @Post(':id/attachments/upload-url')
+  @RequiresPermission('attachment.upload.*', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -236,10 +246,14 @@ export class ContentAdminController {
   }
 
   @Post(':id/attachments/confirm')
+  @RequiresPermission('attachment.upload.content-file', 'attachment.upload.content-image', {
+    require: 'any',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      '确认附件上传(token 校验 + headObject;落 Attachment 行 + audit attachment.upload) [auth]',
+      '确认附件上传(token 校验 + headObject；按 token ownerType 要求 attachment.upload.content-image 或 attachment.upload.content-file；落 Attachment 行 + audit attachment.upload) [auth]',
   })
   @ApiWrappedOkResponse(AttachmentResponseDto)
   @ApiBizErrorResponse(
@@ -261,6 +275,7 @@ export class ContentAdminController {
   }
 
   @Delete(':id/attachments/:attachmentId')
+  @RequiresPermission('attachment.delete.*', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -286,6 +301,7 @@ export class ContentAdminController {
   }
 
   @Put(':id/cover')
+  @RequiresPermission('content.update.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '设 / 清封面({attachmentId|null};非本文章 content-image 附件 → 404) [rbac: content.update.record]',

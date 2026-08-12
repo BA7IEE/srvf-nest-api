@@ -35,6 +35,7 @@ import {
   UpdateSupervisionAssignmentDto,
 } from './supervision-assignments.dto';
 import { SupervisionAssignmentsService } from './supervision-assignments.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 终态 scoped-authz PR5(2026-07-01;冻结稿 §7.4):分管(supervision-assignments)管理面 controller(6 路由)。
 // 单 controller 跨 3 根路径(扁平 supervision-assignments/* + 队员轴 members/:memberId/supervision-scope +
@@ -60,6 +61,10 @@ export class SupervisionAssignmentsController {
   // ============ 扁平:列 / 建 ============
 
   @Get('supervision-assignments')
+  @RequiresPermission('supervision-assignment.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary: '列出当前在任分管(status=ACTIVE) [rbac: supervision-assignment.read.record]',
   })
@@ -72,6 +77,10 @@ export class SupervisionAssignmentsController {
   // F5/E2(路线图 §4;D9 同型):/page 兄弟路由 —— 旧 bare 数组端点逐字不动。
   // 静态段路由(page / coverage-preview)须先于下方 GET :id 声明(Nest 按声明序注册)。
   @Get('supervision-assignments/page')
+  @RequiresPermission('supervision-assignment.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '分页分管总表(supervisorMemberId/organizationId+includeDescendants/scopeMode/status/q 过滤 + expand=supervisor,organization;缺省含 REVOKED 历史) [rbac: supervision-assignment.read.record]',
@@ -87,6 +96,10 @@ export class SupervisionAssignmentsController {
 
   // 显式 @HttpCode(200):dry-run 展示读(沿 authz/explain 决断②范式)。
   @Post('supervision-assignments/coverage-preview')
+  @RequiresPermission('supervision-assignment.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -107,6 +120,10 @@ export class SupervisionAssignmentsController {
   }
 
   @Get('supervision-assignments/:id')
+  @RequiresPermission('supervision-assignment.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '查单条分管(detail;找不到未软删记录 → 33001) [rbac: supervision-assignment.read.record]',
@@ -126,6 +143,10 @@ export class SupervisionAssignmentsController {
   }
 
   @Post('supervision-assignments')
+  @RequiresPermission('supervision-assignment.create.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '建分管(supervisor × org × scopeMode + 任期;与职务正交,不要求 supervisor 持职务) [rbac: supervision-assignment.create.record]',
@@ -153,6 +174,10 @@ export class SupervisionAssignmentsController {
   // ============ 队员轴:分管范围 ============
 
   @Get('members/:memberId/supervision-scope')
+  @RequiresPermission('supervision-assignment.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '某分管人的分管范围(TREE 经 closure 展开含全部后代 / EXACT 仅该节点;展示读非判权) [rbac: supervision-assignment.read.record]',
@@ -174,6 +199,10 @@ export class SupervisionAssignmentsController {
   // ============ 组织轴:被谁分管 ============
 
   @Get('organizations/:orgId/supervisors')
+  @RequiresPermission('supervision-assignment.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '某组织被谁分管(直接分管 + 祖先 TREE 继承覆盖,标 coverage;展示读 closure 非判权) [rbac: supervision-assignment.read.record]',
@@ -195,6 +224,10 @@ export class SupervisionAssignmentsController {
   // ============ 扁平:改 / 撤销 ============
 
   @Patch('supervision-assignments/:id')
+  @RequiresPermission('supervision-assignment.update.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '改分管(scopeMode / 任期 / note;不可改 supervisor/organization) [rbac: supervision-assignment.update.record]',
@@ -216,6 +249,10 @@ export class SupervisionAssignmentsController {
   }
 
   @Post('supervision-assignments/:id/revoke')
+  @RequiresPermission('supervision-assignment.revoke.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

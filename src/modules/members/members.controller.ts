@@ -45,6 +45,7 @@ import {
   UpdateMemberStatusDto,
 } from './members.dto';
 import { MembersService } from './members.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // /api/admin/v1/members(14 接口,含 F1/A1 options 与队员账号闭环 v1+v2 account 全生命周期 + 批量开号 + v0.40.0 一键离队 offboard);
 // 路径前缀:全局 /api(main.ts)+ 'admin/v1/members'。
@@ -65,6 +66,7 @@ export class MembersController {
   constructor(private readonly service: MembersService) {}
 
   @Get()
+  @RequiresPermission('member.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '列出队员(分页;memberNo 精确查询 / gradeCode / status 过滤) [rbac: member.read.record]',
@@ -80,6 +82,7 @@ export class MembersController {
 
   // F1/A1(路线图 §4;D2/D3 拍板):选择器投影,必须先于 /:id 定义(specific-before-dynamic)。
   @Get('options')
+  @RequiresPermission('member.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '队员选择器投影(q 模糊 displayName+memberNo;limit≤100,默认 20) [rbac: member.read.record]',
@@ -97,6 +100,7 @@ export class MembersController {
   // §1.2 E-12):批量开号,必须先于 /:id 定义(specific-before-dynamic,镜像 options 先例)。
   // 镜像 announcement-import 批模式:逐行 skip-on-error + 逐行结果回报,非全或无。
   @Post('accounts/bulk-grant')
+  @RequiresPermission('member.grant.account', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -113,6 +117,7 @@ export class MembersController {
   }
 
   @Post()
+  @RequiresPermission('member.create.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '创建队员(memberNo 必填,全局唯一不复用;不接收任何敏感字段) [rbac: member.create.record]',
@@ -133,6 +138,7 @@ export class MembersController {
   }
 
   @Get(':id')
+  @RequiresPermission('member.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '队员详情(返回 memberNo) [rbac: member.read.record]' })
   @ApiWrappedOkResponse(MemberResponseDto)
   @ApiBizErrorResponse(
@@ -149,6 +155,7 @@ export class MembersController {
   }
 
   @Patch(':id')
+  @RequiresPermission('member.update.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '更新队员(displayName / gradeCode;**禁止改 memberNo / status**) [rbac: member.update.record]',
@@ -170,6 +177,7 @@ export class MembersController {
   }
 
   @Patch(':id/status')
+  @RequiresPermission('member.update.status', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '切换队员 status；置 INACTIVE 时同步结束全部当前授权来源 [rbac: member.update.status]',
   })
@@ -192,6 +200,7 @@ export class MembersController {
   }
 
   @Delete(':id')
+  @RequiresPermission('member.delete.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '软删队员(码不绑 biz-admin,仅 SUPER_ADMIN 短路;有 active 部门归属 / 绑定 user 则拒绝;非常规离队入口) [rbac: member.delete.record]',
@@ -215,6 +224,7 @@ export class MembersController {
   // 队员账号闭环 v1(MVP,2026-07-07):给已存在队员开通"手机验证码登录"账号(不设密码)。
   // 以后想设密码走既有"手机验证码找回/设置密码"(auth/v1/password-reset,队员自己手机号收码)。
   @Post(':id/account')
+  @RequiresPermission('member.grant.account', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '给已存在队员开通登录账号(手机验证码登录,不设密码;队员已有绑定账号则拒绝) [rbac: member.grant.account]',
@@ -243,6 +253,7 @@ export class MembersController {
   // 绑定既有悬空账号 / 解绑(只断链)/ 退号重开 / 队员面启停账号。均在 admin/v1、member 轴,
   // 无 App 自助面;`src/modules/auth/**` 零改动。
   @Post(':id/account/bind')
+  @RequiresPermission('member.bind.account', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: '绑定既有悬空账号到队员(账号保留原登录方式,不强制手机号) [rbac: member.bind.account]',
@@ -270,6 +281,7 @@ export class MembersController {
   }
 
   @Post(':id/account/unbind')
+  @RequiresPermission('member.bind.account', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: '解绑队员账号(只断链,不停用/软删账号) [rbac: member.bind.account]',
@@ -290,6 +302,7 @@ export class MembersController {
   }
 
   @Post(':id/account/reopen')
+  @RequiresPermission('member.grant.account', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -317,6 +330,7 @@ export class MembersController {
   }
 
   @Patch(':id/account/status')
+  @RequiresPermission('user.update.status', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '队员面启/停关联账号(禁自我操作;置 DISABLED 时联动撤销 refresh) [rbac: user.update.status]',
@@ -341,6 +355,7 @@ export class MembersController {
   }
 
   @Get(':id/offboard-impact')
+  @RequiresPermission('member.offboard.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '离队影响预检(活动发起/负责人/协办及当前未来报名安全摘要) [rbac: member.offboard.record]',
@@ -363,6 +378,7 @@ export class MembersController {
   // 单事务关闭 member、全部 active 归属、linked 账号/refresh、任职、分管与直接 RoleBinding，
   // 并写 1 条伞 audit；响应中的残留数是锁后不变式探针，正常终态恒为 0。
   @Post(':id/offboard')
+  @RequiresPermission('member.offboard.record', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
