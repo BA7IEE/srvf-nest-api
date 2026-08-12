@@ -304,7 +304,7 @@ export class ActivityListItemDto {
 
 // ============ 入参:Create ============
 
-// 必填 6 字段:title / activityTypeCode / organizationId / startAt / endAt / location。
+// 必填 7 字段:title / activityTypeCode / allocationModeCode / organizationId / startAt / endAt / location。
 // description 可空(Q-D14 v1.4)。capacity 可空(NULL = 不限名额)。
 // isPublicRegistration 不传走 Prisma default=true。
 export class CreateActivityDto {

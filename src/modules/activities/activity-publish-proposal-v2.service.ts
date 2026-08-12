@@ -495,7 +495,8 @@ export class ActivityPublishProposalV2Service {
     activityId: string,
   ): Promise<ActivityTemplateResolution> {
     // Resolved template config has no Form dependency. Keeping this false preserves the
-    // historical v2 approval read path while v3 asks for its active Form pointer explicitly.
+    // historical v2 approval read path; v3/v4 read the active Form pointer through their
+    // snapshot-specific paths.
     return (await this.currentState(tx, activityId, false)).resolvedConfig;
   }
 
@@ -582,8 +583,8 @@ export class ActivityPublishProposalV2Service {
       },
       select: { workflowRevision: true },
     });
-    // The existing rule resolution is frozen when the proposal is submitted. v3 only appends
-    // this approval's compact active Form pointer; it must not re-resolve a template that changed
+    // The existing rule resolution is frozen when the proposal is submitted. v3/v4 append this
+    // approval's compact active Form pointer; they must not re-resolve a template that changed
     // while the review was pending.
     const resolvedConfig =
       snapshot.schemaVersion === 3 || snapshot.schemaVersion === 4
