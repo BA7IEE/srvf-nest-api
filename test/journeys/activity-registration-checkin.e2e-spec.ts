@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { Logger } from '@nestjs/common';
 
 import {
@@ -6,6 +9,32 @@ import {
   runActivityRegistrationCheckInJourney,
 } from '../support/journey-activity-registration-checkin';
 import { createJourneyRuntime, type JourneyRuntime } from '../support/journey-runtime';
+
+const ROUTE_AUTHZ_MANIFEST_PATH = resolve(__dirname, '../../docs/ai-harness/ROUTE_AUTHZ.md');
+
+function countManifestUndeclaredRoutes(): number {
+  const manifest = readFileSync(ROUTE_AUTHZ_MANIFEST_PATH, 'utf8');
+  const allEndpointsOffset = manifest.indexOf('## All endpoints\n');
+  if (allEndpointsOffset < 0) throw new Error('ROUTE_AUTHZ manifest has no endpoint inventory');
+
+  const rows = manifest
+    .slice(allEndpointsOffset)
+    .split('\n')
+    .filter(
+      (line) =>
+        line.startsWith('| ') && !line.startsWith('| method |') && !line.startsWith('|---|'),
+    );
+
+  return rows.reduce((count, row) => {
+    const columns = row
+      .split('|')
+      .slice(1, -1)
+      .map((column) => column.trim());
+    if (columns.length !== 7 || columns[5] === '')
+      throw new Error('ROUTE_AUTHZ manifest endpoint row has an invalid truth source');
+    return columns[5] === 'code' ? count : count + 1;
+  }, 0);
+}
 
 describe('旅程金五条② 活动报名审批签到（当前真实部分链）', () => {
   let runtime: JourneyRuntime;
@@ -23,11 +52,14 @@ describe('旅程金五条② 活动报名审批签到（当前真实部分链）
   });
 
   it('经真实 HTTP 留下 ActivityCheckIn 证据，并登记结算账本的具名缺口', async () => {
+    // 禁止改回硬编码计数：每个回填面都必须让 Guard 静态库存与生成 manifest 的
+    // truth source 同步，而不是再为一个实例数字改既有旅程断言。
+    const manifestUndeclaredRouteCount = countManifestUndeclaredRoutes();
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'authz_declaration_inventory',
         mode: 'report',
-        totalUndeclaredRouteCount: 387,
+        totalUndeclaredRouteCount: manifestUndeclaredRouteCount,
       }),
       'Route authorization declaration inventory',
     );

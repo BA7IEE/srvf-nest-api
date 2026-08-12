@@ -1508,23 +1508,21 @@ function decisionRows(auth: Endpoint[], byKey: Map<string, OverlayEntry>): strin
   return rows;
 }
 
-function declarationTransferRows(
-  endpointList: Endpoint[],
-  byKey: Map<string, OverlayEntry>,
-): string[] {
+function manifestTruthSource(endpoint: Endpoint): EntryTruthSource {
+  // This is the declaration manifest's truth source, not the historical
+  // classification-record source. Only a normalized decorator can be `code`;
+  // every other route stays non-code until its declaration is backfilled.
+  return endpoint.codePolicy === null ? 'classification-overlay' : 'code';
+}
+
+function declarationTransferRows(endpointList: Endpoint[]): string[] {
   const surfaces: Surface[] = ['admin', 'app', 'system', 'auth', 'open', 'other'];
   return surfaces.flatMap((surface) => {
     const routes = endpointList.filter((endpoint) => surfaceOf(endpoint) === surface);
     if (routes.length === 0) return [];
     const declarations = routes.filter((endpoint) => endpoint.codePolicy !== null).length;
-    const codeTruth = routes.filter((endpoint) => {
-      const entry = byKey.get(endpoint.key);
-      return entry === undefined || entryTruthSource(entry) === 'code';
-    }).length;
-    const overlayTruth = routes.filter((endpoint) => {
-      const entry = byKey.get(endpoint.key);
-      return entry !== undefined && entryTruthSource(entry) === 'classification-overlay';
-    }).length;
+    const codeTruth = routes.filter((endpoint) => manifestTruthSource(endpoint) === 'code').length;
+    const overlayTruth = routes.length - codeTruth;
     return [
       '| ' +
         surface +
@@ -1579,7 +1577,7 @@ function render(endpointList: Endpoint[], input: Overlay): string {
       ' | ' +
       cell(policy) +
       ' | ' +
-      (entry === undefined ? 'code' : entryTruthSource(entry)) +
+      manifestTruthSource(endpoint) +
       ' | ' +
       cell(evidence.map((item) => item.file + ':' + item.line).join('; ')) +
       ' |'
@@ -1614,11 +1612,11 @@ function render(endpointList: Endpoint[], input: Overlay): string {
     '',
     '## Declaration transfer coverage',
     '',
-    '> `declared in code` counts routes with a normalized decorator declaration. `code truth` additionally records a transferred legacy `[auth]` decision; an ordinary legacy `public` or `rbac` marker remains listed as `code` in the endpoint inventory until that route is backfilled.',
+    '> `declared in code` and `code truth` both require a normalized decorator declaration. Until then every route remains `classification-overlay` in the endpoint inventory, including a legacy `public` or `rbac` marker with a statically inferred policy. Therefore the non-code truth count is exactly the Guard startup inventory of undeclared routes.',
     '',
     '| surface | routes | declared in code | code truth | classification-overlay truth |',
     '|---|---:|---:|---:|---:|',
-    ...declarationTransferRows(endpointList, byKey),
+    ...declarationTransferRows(endpointList),
     '',
     '## Legacy declaration summary',
     '',
