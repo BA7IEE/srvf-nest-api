@@ -22,7 +22,7 @@ const SCRATCH_WORKER_ID = 83;
 const MIGRATION_NAME = '20260809223000_activity_v11_batch4_qualification_contract_guards';
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
 const MIGRATION_82_COUNT = 82;
-const MIGRATION_83_COUNT = 83;
+const CURRENT_MIGRATION_COUNT = 84;
 // 这两例分别完整执行一次和五次冷库 82→83 重放；不能由 Jest 默认 30 秒截断。
 const COLD_MIGRATION_REPLAY_TIMEOUT_MS = 180_000;
 
@@ -340,18 +340,15 @@ async function createQualificationFixture(
       data: { name: `qualification83 organization ${suffix}`, nodeTypeCode: 'qualification-83' },
       select: { id: true },
     });
-    const activity = await prisma.activity.create({
-      data: {
-        title: `qualification83 activity ${suffix}`,
-        activityTypeCode: 'qualification-83',
-        organizationId: organization.id,
-        startAt,
-        endAt,
-        location: 'qualification migration fixture',
-        statusCode: 'draft',
-      },
-      select: { id: true },
-    });
+    const activity = { id: `qualification83-activity-${suffix}` };
+    runPsql(
+      databaseName,
+      `INSERT INTO "Activity"
+         ("id","title","activityTypeCode","organizationId","startAt","endAt","location","statusCode","updatedAt")
+       VALUES (${sqlValue(activity.id)},${sqlValue(`qualification83 activity ${suffix}`)},
+         'qualification-83',${sqlValue(organization.id)},${sqlValue(startAt.toISOString())},
+         ${sqlValue(endAt.toISOString())},'qualification migration fixture','draft',CURRENT_TIMESTAMP);`,
+    );
     const session = await prisma.activitySession.create({
       data: {
         activityId: activity.id,
@@ -380,18 +377,15 @@ async function createQualificationFixture(
       },
       select: { id: true },
     });
-    const otherActivity = await prisma.activity.create({
-      data: {
-        title: `qualification83 other activity ${suffix}`,
-        activityTypeCode: 'qualification-83',
-        organizationId: organization.id,
-        startAt,
-        endAt,
-        location: 'qualification migration fixture other',
-        statusCode: 'draft',
-      },
-      select: { id: true },
-    });
+    const otherActivity = { id: `qualification83-other-activity-${suffix}` };
+    runPsql(
+      databaseName,
+      `INSERT INTO "Activity"
+         ("id","title","activityTypeCode","organizationId","startAt","endAt","location","statusCode","updatedAt")
+       VALUES (${sqlValue(otherActivity.id)},${sqlValue(`qualification83 other activity ${suffix}`)},
+         'qualification-83',${sqlValue(organization.id)},${sqlValue(startAt.toISOString())},
+         ${sqlValue(endAt.toISOString())},'qualification migration fixture other','draft',CURRENT_TIMESTAMP);`,
+    );
     const otherSession = await prisma.activitySession.create({
       data: {
         activityId: otherActivity.id,
@@ -643,7 +637,7 @@ describe('第 83 migration qualification contract guards', () => {
       const legacyDefinitions = tableObjectDefinitions(databaseName);
       deployCurrentMigrations(databaseName);
 
-      expect(successfulMigrationCount(databaseName)).toBe(MIGRATION_83_COUNT);
+      expect(successfulMigrationCount(databaseName)).toBe(CURRENT_MIGRATION_COUNT);
       expect(qualificationArtifactCount(databaseName)).toBe(22);
       expect(
         preserveLegacyDefinitions(legacyDefinitions, tableObjectDefinitions(databaseName)),
@@ -741,11 +735,11 @@ describe('第 83 migration qualification contract guards', () => {
     }
   });
 
-  it('replays all 83 migrations from a literally empty database', () => {
+  it('replays all current 84 migrations from a literally empty database', () => {
     const databaseName = recreateEmptyScratchDatabase();
     try {
       deployCurrentMigrations(databaseName);
-      expect(successfulMigrationCount(databaseName)).toBe(MIGRATION_83_COUNT);
+      expect(successfulMigrationCount(databaseName)).toBe(CURRENT_MIGRATION_COUNT);
       expect(qualificationArtifactCount(databaseName)).toBe(22);
     } finally {
       dropWorkerDatabase(SCRATCH_WORKER_ID);
@@ -753,7 +747,7 @@ describe('第 83 migration qualification contract guards', () => {
   });
 
   it(
-    'cold 83 database enforces the exact qualification wires, de-duplicates arrays, and permits nullable identity for submit/review',
+    'cold current database enforces the D83 exact qualification wires, de-duplicates arrays, and permits nullable identity for submit/review',
     async () => {
       const databaseName = recreateEmptyScratchDatabase();
       try {
@@ -940,7 +934,7 @@ describe('第 83 migration qualification contract guards', () => {
   );
 
   it(
-    'five independent migration mutations each rebuild a cold 83 database and make its protected violation pass',
+    'five independent D83 migration mutations each rebuild a cold current 84 database and make its protected violation pass',
     async () => {
       const fullCompositeFk = `ALTER TABLE "ActivityQualificationRuleSet"
   ADD CONSTRAINT "activity_qualification_rule_set_activity_session_position_fkey"
@@ -1105,7 +1099,7 @@ FOR EACH ROW EXECUTE FUNCTION qualification_evaluation_snapshot_append_only_guar
         const databaseName = recreateEmptyScratchDatabase();
         try {
           deployMutatedMigration(databaseName, mutation.name, mutation.mutate);
-          expect(successfulMigrationCount(databaseName)).toBe(MIGRATION_83_COUNT);
+          expect(successfulMigrationCount(databaseName)).toBe(CURRENT_MIGRATION_COUNT);
           const fixture = await createQualificationFixture(databaseName, mutation.name);
           await mutation.proveViolationPasses(databaseName, fixture);
         } finally {

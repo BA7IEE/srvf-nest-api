@@ -211,18 +211,15 @@ async function createLegacyFixture(databaseName: string, suffix: string): Promis
       },
       select: { id: true },
     });
-    const activity = await prisma.activity.create({
-      data: {
-        title: `Migration 82 Activity ${suffix}`,
-        activityTypeCode: 'migration-82',
-        organizationId: organization.id,
-        startAt: new Date('2099-06-10T00:00:00.000Z'),
-        endAt: new Date('2099-06-11T00:00:00.000Z'),
-        location: 'migration-82',
-        statusCode: 'published',
-      },
-      select: { id: true },
-    });
+    const activity = { id: `migration82-activity-${suffix}` };
+    runPsql(
+      databaseName,
+      `INSERT INTO "Activity"
+         ("id","title","activityTypeCode","organizationId","startAt","endAt","location","statusCode","updatedAt")
+       VALUES (${sqlValue(activity.id)},${sqlValue(`Migration 82 Activity ${suffix}`)},
+         'migration-82',${sqlValue(organization.id)},TIMESTAMP '2099-06-10 00:00:00',
+         TIMESTAMP '2099-06-11 00:00:00','migration-82','published',CURRENT_TIMESTAMP);`,
+    );
     const registration = await prisma.activityRegistration.create({
       data: {
         activityId: activity.id,
@@ -500,7 +497,7 @@ describe('第 82 migration registration revision bridge', () => {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
-      expect(successfulMigrationCount(databaseName)).toBe(83);
+      expect(successfulMigrationCount(databaseName)).toBe(84);
       expect(
         runPsql(
           databaseName,

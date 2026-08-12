@@ -21,7 +21,7 @@
 | 模块 | 37 |
 | Controller | 94 |
 | Endpoint | 498 |
-| Migration | 83 |
+| Migration | 84 |
 | BizCode | 427 |
 | 权限码 | 234 |
 | AuditLogEvent | 138 |
@@ -46,7 +46,7 @@
 - **安全**:审计SA全量/持码非SA仅self|USER；敏感读闭锁/extra禁PII；Decision 15.1=B/15.2=B(业务负责人最终确认:2026-07-27):C/N管理=SA|GLOBAL读码(ADMIN不直通)，部门=PRIMARY/SECONDARY/TEMPORARY/SUPPORT有效任职+组织ACTIVE；RBAC任期单轨，ops-admin现任常驻/同锁重读
 - **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 - **证书标准库(PR-1→PR-6 + 评审 findings F1–F6)**:类别/等级唯一权威=`CertificateStandard`(实例侧零副本);认定规则由录入时锁定的 `recognitionPolicyId` 记住、换版**不追溯**;招新申报一证一行,发号只搬 APPROVED 且不重判。**需求 = 冻结稿 + [`t0-amendments`](archive/reviews/certificate-standard-library-t0-amendments.md) 两份合起来**(冲突以后者为准);三份 runbook 见 `ops/certificate-*`
-- **活动业务改造**（activity-business-overhaul-v1.1）：83、永久头同头重报、保险 revision 取证及个人取消/拒绝/重开参与投影闭环已落；D83 资格统一 runtime 已接 App detail、canonical submit、managed onsite 与 approve 当前事实复核，aggregate fail 不写 snapshot；旧 legacy pending 若没有 identity/preference 而后续出现 scoped RuleSet，approve 固定 21038、不猜目标；资格配置/发布激活、邀请接受、分配和候补排序仍待（NEXT_TASKS P1-28）。
+- **活动业务改造**（activity-business-overhaul-v1.1）：84、永久头/保险 revision/参与投影及 D83 资格 runtime 已落；D84 已加每活动唯一 `allocationModeCode` 三值地基，default 仅作旧 server/存量兼容。下一 C 刀补新活动显式选择、发布硬门与 Activity 根锁内父子 mode 一致性；资格配置/发布激活、邀请接受、实际分配和候补排序仍待（NEXT_TASKS P1-28）。
 
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)
 

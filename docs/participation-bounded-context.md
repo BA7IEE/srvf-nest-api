@@ -161,6 +161,8 @@ Certificate (不在 participation 图内)
 
 > **D83 资格规则 runtime 当前事实**：`ActivityQualificationRuleSet` 的 activity/session/position 作用域与岗位指针由双向完整复合 FK 固定；同一作用域版本与 active 槽位均把 NULL 纳入去重。RuleSet/Rule 在 active 或 retired 后冻结，`QualificationEvaluationSnapshot` 只追加；规则 wire 固定为 `grade/gender=in+codes`、`organization=in_subtree+organizationIds`、`certificate/training=has_any+standardIds`、`insurance=covers_activity`（无 `valueJson`）及 `age=between+minYears/maxYears`（允许单边，数组去重）。统一 evaluator 对活动/场次/岗位逐层 AND、同规则数组 OR，`fail > warn > pass`；配置漂移（空 active RuleSet、重复 active scope、岗位指针错配）一律 `21041` fail-closed。App detail 安全投影活动、场次、岗位资格；canonical submit、managed onsite 与 approve 均以当前事实重评，block 为 `21040` 且整笔零写，warn 只提示并可继续；aggregate fail（包括 display）不写 snapshot。旧 legacy pending 若没有 identity/preference、但随后已出现 active 场次/岗位 RuleSet，approve 固定 `21038`，不猜目标且零写。display/submit/review 只有 aggregate pass 或 warn 才追加不可变 snapshot：display 双锚点为 NULL，submit/review 绑定当前 revision，下级 scope 绑定 identity；详情和 snapshot 都不保存或返回资格敏感原值。资格配置、发布激活、邀请接受、分配和候补排序仍未在本刀实现。
 
+> **D84 分配方式地基当前事实**：`Activity.allocationModeCode` 是每活动唯一权威标量，DB 三值闭集为 `first_come/qualification_rank/lottery`，存量统一由兼容 default 读为 `first_come`。本刀不接 API、不执行分配，也不约束历史 `ActivityAllocationBatch.modeCode`；新活动显式选择、发布硬门及父子 mode 一致性由下一 C 刀在 Activity 根锁内完成。
+
 **关键 invariant**:
 
 - `AttendanceRecord.contributionPoints` 字段层为历史兼容仍可空;业务写路不接受人工最终分,submit/edit 一律从 ContributionRule 计算,无规则落 0;仅 approved 时"语义生效"。
