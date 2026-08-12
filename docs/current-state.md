@@ -21,7 +21,7 @@
 | 模块 | 37 |
 | Controller | 94 |
 | Endpoint | 498 |
-| Migration | 84 |
+| Migration | 85 |
 | BizCode | 428 |
 | 权限码 | 234 |
 | AuditLogEvent | 138 |
@@ -46,7 +46,7 @@
 - **安全**:审计SA全量/持码非SA仅self|USER；敏感读闭锁/extra禁PII；Decision 15.1=B/15.2=B(业务负责人最终确认:2026-07-27):C/N管理=SA|GLOBAL读码(ADMIN不直通)，部门=PRIMARY/SECONDARY/TEMPORARY/SUPPORT有效任职+组织ACTIVE；RBAC任期单轨，ops-admin现任常驻/同锁重读
 - **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 - **证书标准库(PR-1→PR-6 + 评审 findings F1–F6)**:类别/等级唯一权威=`CertificateStandard`(实例侧零副本);认定规则由录入时锁定的 `recognitionPolicyId` 记住、换版**不追溯**;招新申报一证一行,发号只搬 APPROVED 且不重判。**需求 = 冻结稿 + [`t0-amendments`](archive/reviews/certificate-standard-library-t0-amendments.md) 两份合起来**(冲突以后者为准);三份 runbook 见 `ops/certificate-*`
-- **活动业务改造**（activity-business-overhaul-v1.1）：84、永久头/保险 revision/参与投影及 D83 资格 runtime 已落；D84 + 第 4 批⑫已把 `Activity.allocationModeCode` 接入 runtime：Admin/App 新建显式三选一，draft 可改、published 只走 change review，Admin/App managed 投影与公共 App detail 已闭合；新 proposal 为 schemaVersion=4，v4 才冻结/应用 mode，v1/v2/v3 历史 hash 与审批口径保留。所有 draft PATCH、发布提交/变更提交/审批在 Activity 根锁内核对全部历史 batch，不一致 `409/20152` 且零自动修复。default 仍只作旧 server/存量兼容；资格配置/发布激活、邀请接受、实际分配和候补排序仍待（NEXT_TASKS P1-28）。
+- **活动业务改造**（activity-business-overhaul-v1.1）：85、永久头/保险 revision/参与投影及 D83 资格 runtime 已落；D84 + 第 4 批⑫已把 `Activity.allocationModeCode` 接入 runtime，并以 v4 proposal、Activity 根锁与 `20152` 闭合父子 mode。D85 + 第 4 批⑬已冻结算法版本、候选/资格 SHA-256、lottery commitment/reveal、永久头/revision/acceptedAt 与稳定顺序 DB 合同；双表非空会 23514 原子失败，零回填。default 仍只作旧 server/存量兼容；资格配置/发布激活、邀请接受、实际分配、容量 caller 和候补排序仍待（NEXT_TASKS P1-28）。
 
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)
 

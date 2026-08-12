@@ -172,9 +172,10 @@ describe('活动改造 v1.1 第 3 批①.5 schema 约束(第 76 migration)', () 
   const batchSql = (id: string, ruleSnapshotId: string | null) =>
     `INSERT INTO "ActivityAllocationBatch"
       ("id","updatedAt","activityId","sessionId","modeCode","candidateSnapshotHash",
-       "statusCode","operationKey","ruleSnapshotId")
+       "algorithmVersionCode","statusCode","operationKey","ruleSnapshotId")
       VALUES ('${id}', ${T(SESSION_START)}, '${activityId}', '${sessionId}', 'first_come',
-       'candidate-hash', 'preparing', 'batch-key-${id}', ${sqlText(ruleSnapshotId)})`;
+       '${'a'.repeat(64)}', 'allocation-v1', 'preparing', 'batch-key-${id}',
+       ${sqlText(ruleSnapshotId)})`;
 
   const publishReviewSql = (
     id: string,

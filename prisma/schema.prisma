@@ -1148,7 +1148,7 @@ model Activity {
   requiresInsurance                  Boolean   @default(false)
   // 第 4 批⑫前置 D84:每个 Activity 只保存一个当前分配方式。
   // default 仅作旧 server / 存量兼容桥；新活动显式选择由紧接的 C 刀 DTO + 发布硬门完成。
-  allocationModeCode                String    @default("first_come") // first_come / qualification_rank / lottery
+  allocationModeCode                 String    @default("first_come") // first_come / qualification_rank / lottery
   registrationSchema                 Json? // v0.2 D12 报名表自定义字段 schema 字段位预留
   attendanceDeclaredCompleteAt       DateTime?
   attendanceDeclaredCompleteByUserId String?
@@ -2635,29 +2635,29 @@ model InsuranceEligibilityEvidence {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
 
-  sourceKind              String
-  memberInsuranceId       String?
-  teamInsuranceCoverageId String?
-  ownerKind               String
-  activityRegistrationId  String?
+  sourceKind                     String
+  memberInsuranceId              String?
+  teamInsuranceCoverageId        String?
+  ownerKind                      String
+  activityRegistrationId         String?
   // 第 82 migration:旧 header-only evidence 永久保持 NULL；新 writer 才会绑定
   // 当次不可变报名修订。与 activityRegistrationId 组成复合 FK，DB 保证同头。
   activityRegistrationRevisionId String?
-  teamJoinApplicationId   String?
-  sourceRevision          Int?
-  sourceReviewedByUserId  String?
-  sourceReviewedAt        DateTime?
-  requiredFrom            DateTime
-  requiredThrough         DateTime
-  sourceCoverageStart     DateTime?
-  sourceCoverageEnd       DateTime
+  teamJoinApplicationId          String?
+  sourceRevision                 Int?
+  sourceReviewedByUserId         String?
+  sourceReviewedAt               DateTime?
+  requiredFrom                   DateTime
+  requiredThrough                DateTime
+  sourceCoverageStart            DateTime?
+  sourceCoverageEnd              DateTime
 
-  memberInsurance       MemberInsurance?       @relation(fields: [memberInsuranceId], references: [id], onDelete: Restrict)
-  teamInsuranceCoverage TeamInsuranceCoverage? @relation(fields: [teamInsuranceCoverageId], references: [id], onDelete: Restrict)
-  activityRegistration  ActivityRegistration?  @relation(fields: [activityRegistrationId], references: [id], onDelete: Restrict)
+  memberInsurance              MemberInsurance?              @relation(fields: [memberInsuranceId], references: [id], onDelete: Restrict)
+  teamInsuranceCoverage        TeamInsuranceCoverage?        @relation(fields: [teamInsuranceCoverageId], references: [id], onDelete: Restrict)
+  activityRegistration         ActivityRegistration?         @relation(fields: [activityRegistrationId], references: [id], onDelete: Restrict)
   activityRegistrationRevision ActivityRegistrationRevision? @relation("InsuranceEvidenceRegistrationRevision", fields: [activityRegistrationId, activityRegistrationRevisionId], references: [registrationId, id], onDelete: Restrict, onUpdate: Restrict, map: "insurance_evidence_registration_revision_same_head_fkey")
-  teamJoinApplication   TeamJoinApplication?   @relation(fields: [teamJoinApplicationId], references: [id], onDelete: Restrict)
-  sourceReviewer        User?                  @relation("InsuranceEvidenceSourceReviewer", fields: [sourceReviewedByUserId], references: [id], onDelete: Restrict)
+  teamJoinApplication          TeamJoinApplication?          @relation(fields: [teamJoinApplicationId], references: [id], onDelete: Restrict)
+  sourceReviewer               User?                         @relation("InsuranceEvidenceSourceReviewer", fields: [sourceReviewedByUserId], references: [id], onDelete: Restrict)
 
   @@index([memberInsuranceId])
   @@index([teamInsuranceCoverageId])
@@ -3560,6 +3560,7 @@ model ActivitySessionPosition {
   positionPreferences ActivityPositionPreference[]
   allocationBatches   ActivityAllocationBatch[]    @relation("AllocationBatchPosition")
 
+  @@unique([activityId, sessionId, id], map: "activity_session_position_activity_session_id_key")
   @@index([activityId])
   @@index([sessionId])
   @@index([attendanceRoleCode])
@@ -3567,7 +3568,6 @@ model ActivitySessionPosition {
   @@index([sessionId, sortOrder])
   @@index([deletedAt])
   @@index([qualificationRuleSetId])
-  @@unique([activityId, sessionId, id], map: "activity_session_position_activity_session_id_key")
 }
 
 // ===== §3.8 ActivityParticipationIdentity:P0-04 核心模型 =====
@@ -3627,6 +3627,9 @@ model ActivityParticipationIdentity {
   allocationCandidates ActivityAllocationCandidate[]
 
   @@unique([activityId, sessionId, memberId])
+  // 第 85 migration：AllocationCandidate 以 identity + registration 复合 FK
+  // 证明候选身份与永久报名头同锚；id 单列主键不能替代 PostgreSQL 的被引用复合 unique。
+  @@unique([id, registrationId], map: "activity_participation_identity_id_registration_id_unique")
   @@index([activityId])
   @@index([sessionId])
   @@index([memberId])
@@ -3817,13 +3820,15 @@ model ActivityRegistrationRevision {
   submittedBy   User?                         @relation("RegistrationRevisionSubmitter", fields: [submittedByUserId], references: [id], onDelete: Restrict)
   priorRevision ActivityRegistrationRevision? @relation("RegistrationRevisionChain", fields: [priorRevisionId], references: [id], onDelete: Restrict)
 
-  nextRevisions          ActivityRegistrationRevision[]    @relation("RegistrationRevisionChain")
-  answers                RegistrationFormAnswer[]
-  qualificationSnapshots QualificationEvaluationSnapshot[]
-  insuranceEligibilityEvidences InsuranceEligibilityEvidence[] @relation("InsuranceEvidenceRegistrationRevision")
+  nextRevisions                 ActivityRegistrationRevision[]    @relation("RegistrationRevisionChain")
+  answers                       RegistrationFormAnswer[]
+  qualificationSnapshots        QualificationEvaluationSnapshot[]
+  insuranceEligibilityEvidences InsuranceEligibilityEvidence[]    @relation("InsuranceEvidenceRegistrationRevision")
 
   // 第 1 批第五刀(§3.11):岗位志愿挂在报名修订上(志愿变更 ⇒ 新报名修订)。
-  positionPreferences ActivityPositionPreference[]
+  positionPreferences  ActivityPositionPreference[]
+  // 第 85 migration：候选人冻结到精确报名 revision，不允许跨永久头拼接。
+  allocationCandidates ActivityAllocationCandidate[]
 
   @@unique([registrationId, revision])
   @@unique([registrationId, id], map: "activity_registration_revisions_registration_id_id_unique")
@@ -4022,11 +4027,11 @@ model ActivityQualificationRuleSet {
   // 第 1 批第五刀(§3.11):预留名额组的「资格条件版本」指回本表(本表自带 version 列)。
   reservedQuotaGroups ActivityReservedQuotaGroup[]
 
+  @@unique([activityId, sessionId, positionId, id], map: "activity_qualification_rule_set_scope_pointer_key")
   @@index([activityId])
   @@index([sessionId])
   @@index([positionId])
   @@index([statusCode])
-  @@unique([activityId, sessionId, positionId, id], map: "activity_qualification_rule_set_scope_pointer_key")
 }
 
 // ===== §3.13 ActivityQualificationRule:单条资格规则 =====
@@ -4077,8 +4082,8 @@ model QualificationEvaluationSnapshot {
   registrationRevisionId String?
   ruleSetVersionId       String // 指向 ActivityQualificationRuleSet 行(该表自带 version 列)
 
-  evaluatedAt DateTime
-  resultCode  String // pass / warn / fail(§3.13 明写闭集)
+  evaluatedAt         DateTime
+  resultCode          String // pass / warn / fail(§3.13 明写闭集)
   // display 必须双锚点为 NULL；submit/review 只要求 registrationRevisionId，identityId 可空。
   evaluationPhaseCode String
 
@@ -5251,8 +5256,12 @@ model ActivityAllocationBatch {
   modeCode String // first_come / qualification_rank / lottery(§3.11 明写闭集)
 
   candidateSnapshotHash String
+  // 非闭集算法版本；历史批次必须能按保存的版本原样重放，未来升级不改旧行。
+  algorithmVersionCode  String
   // §5.4 抽签:「保存 random commitment 和实现版本」。非抽签模式无 commitment ⇒ 可空。
   randomCommitment      String?
+  // lottery 提交前只保存 commitment；提交后保存 64 位十六进制 seed reveal。
+  randomSeedReveal      String?
 
   statusCode String // preparing / committed / voided(§3.11 明写闭集)
 
@@ -5330,8 +5339,12 @@ model ActivityAllocationCandidate {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  allocationBatchId       String
-  participationIdentityId String
+  allocationBatchId         String
+  participationIdentityId   String
+  registrationId            String
+  registrationRevisionId    String
+  acceptedAt                DateTime
+  qualificationSnapshotHash String
 
   qualificationScore Decimal? @db.Decimal(12, 4)
   tieBreakKey        String
@@ -5339,17 +5352,20 @@ model ActivityAllocationCandidate {
 
   resultCode   String?
   waitlistRank Int?
-  explanation  Json?
+  explanation  Json
 
   allocationBatch       ActivityAllocationBatch       @relation(fields: [allocationBatchId], references: [id], onDelete: Restrict)
-  participationIdentity ActivityParticipationIdentity @relation(fields: [participationIdentityId], references: [id], onDelete: Restrict)
+  participationIdentity ActivityParticipationIdentity @relation(fields: [participationIdentityId, registrationId], references: [id, registrationId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_identity_registration_fkey")
+  registrationRevision  ActivityRegistrationRevision  @relation(fields: [registrationId, registrationRevisionId], references: [registrationId, id], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_registration_revision_fkey")
 
   // §11.4 明写「候补排名由 AllocationCandidate **可索引 rank** 读取,
   // 不在每次列表对全队列重新排序」⇒ 这条索引是合同点名的,不是盲加。
   @@unique([allocationBatchId, participationIdentityId], map: "activity_allocation_candidate_batch_identity_key")
+  @@unique([allocationBatchId, tieBreakKey], map: "activity_allocation_candidate_batch_tie_break_key")
   @@index([allocationBatchId, waitlistRank], map: "activity_allocation_candidate_batch_rank_idx")
   @@index([allocationBatchId], map: "activity_allocation_candidate_batch_idx")
   @@index([participationIdentityId], map: "activity_allocation_candidate_identity_idx")
+  @@index([registrationId, registrationRevisionId], map: "activity_allocation_candidate_registration_revision_idx")
 }
 
 // ===== §3.11 ActivityReservedQuotaGroup:预留名额组 =====

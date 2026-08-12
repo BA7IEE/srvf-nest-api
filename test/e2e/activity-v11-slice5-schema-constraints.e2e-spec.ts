@@ -39,6 +39,9 @@ const CHECKIN_OPEN = '2099-06-01T08:00:00.000Z';
 const CHECKIN_CLOSE = '2099-06-01T10:00:00.000Z';
 const CHECKOUT_OPEN = '2099-06-01T16:00:00.000Z';
 const CHECKOUT_CLOSE = '2099-06-01T18:00:00.000Z';
+const HASH_A = 'a'.repeat(64);
+const HASH_B = 'b'.repeat(64);
+const HASH_C = 'c'.repeat(64);
 
 interface RawDbError {
   sqlState: string;
@@ -147,6 +150,8 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
       modeCode?: string;
       candidateSnapshotHash?: string | null;
       randomCommitment?: string | null;
+      randomSeedReveal?: string | null;
+      algorithmVersionCode?: string;
       statusCode?: string;
       operationKey?: string;
       requestHash?: string | null;
@@ -157,21 +162,35 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
       sessionId,
       positionId: null as string | null,
       modeCode: 'lottery',
-      candidateSnapshotHash: 'snap-hash' as string | null,
-      randomCommitment: null as string | null,
+      candidateSnapshotHash: HASH_A as string | null,
       statusCode: 'preparing',
+      algorithmVersionCode: 'allocation-v1',
       operationKey: `ob-${id}`,
       requestHash: null as string | null,
       committedAt: null as string | null,
       ...o,
     };
+    const randomCommitment =
+      o.randomCommitment !== undefined
+        ? o.randomCommitment
+        : v.modeCode === 'lottery'
+          ? HASH_B
+          : null;
+    const randomSeedReveal =
+      o.randomSeedReveal !== undefined
+        ? o.randomSeedReveal
+        : v.modeCode === 'lottery' && v.statusCode === 'committed'
+          ? HASH_C
+          : null;
     const s = (x: string | null) => (x === null ? 'NULL' : `'${x}'`);
     return `INSERT INTO "ActivityAllocationBatch"
       ("id","updatedAt","activityId","sessionId","positionId","modeCode","candidateSnapshotHash",
-       "randomCommitment","statusCode","operationKey","requestHash","createdByUserId","committedAt")
+       "algorithmVersionCode","randomCommitment","randomSeedReveal","statusCode","operationKey",
+       "requestHash","createdByUserId","committedAt")
       VALUES ('${id}', ${T(SESSION_START)}, '${activityId}', '${v.sessionId}', ${s(v.positionId)},
-       '${v.modeCode}', ${s(v.candidateSnapshotHash)}, ${s(v.randomCommitment)}, '${v.statusCode}',
-       '${v.operationKey}', ${s(v.requestHash)}, '${userId}',
+       '${v.modeCode}', ${s(v.candidateSnapshotHash)}, '${v.algorithmVersionCode}',
+       ${s(randomCommitment)}, ${s(randomSeedReveal)}, '${v.statusCode}', '${v.operationKey}',
+       ${s(v.requestHash)}, '${userId}',
        ${v.committedAt === null ? 'NULL' : T(v.committedAt)})`;
   };
 
@@ -180,33 +199,44 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
     o: {
       allocationBatchId?: string;
       participationIdentityId?: string;
+      registrationId?: string;
+      registrationRevisionId?: string;
+      acceptedAt?: string;
+      qualificationSnapshotHash?: string;
       qualificationScore?: number | null;
       tieBreakKey?: string | null;
       lotteryOrder?: number | null;
       resultCode?: string | null;
       waitlistRank?: number | null;
-      explanation?: string | null;
+      explanation?: string;
     } = {},
   ) => {
     const v = {
       allocationBatchId: 'batch-a',
       participationIdentityId: identityId,
+      registrationId,
+      registrationRevisionId,
+      acceptedAt: SESSION_START,
+      qualificationSnapshotHash: HASH_A,
       qualificationScore: null as number | null,
       tieBreakKey: `tb-${id}` as string | null,
       lotteryOrder: null as number | null,
       resultCode: null as string | null,
       waitlistRank: null as number | null,
-      explanation: null as string | null,
+      explanation: '{}',
       ...o,
     };
     const s = (x: string | null) => (x === null ? 'NULL' : `'${x}'`);
     const n = (x: number | null) => (x === null ? 'NULL' : String(x));
     return `INSERT INTO "ActivityAllocationCandidate"
       ("id","updatedAt","allocationBatchId","participationIdentityId","qualificationScore",
+       "registrationId","registrationRevisionId","acceptedAt","qualificationSnapshotHash",
        "tieBreakKey","lotteryOrder","resultCode","waitlistRank","explanation")
       VALUES ('${id}', ${T(SESSION_START)}, '${v.allocationBatchId}', '${v.participationIdentityId}',
-       ${n(v.qualificationScore)}, ${s(v.tieBreakKey)}, ${n(v.lotteryOrder)}, ${s(v.resultCode)},
-       ${n(v.waitlistRank)}, ${v.explanation === null ? 'NULL' : `'${v.explanation}'::jsonb`})`;
+       ${n(v.qualificationScore)}, '${v.registrationId}', '${v.registrationRevisionId}',
+       ${T(v.acceptedAt)}, '${v.qualificationSnapshotHash}', ${s(v.tieBreakKey)},
+       ${n(v.lotteryOrder)}, ${s(v.resultCode)}, ${n(v.waitlistRank)},
+       '${v.explanation}'::jsonb)`;
   };
 
   const quotaGroupSql = (
@@ -535,7 +565,7 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
     it('立正对照:三种 modeCode × 三种 statusCode 的合法形态都必须能进', async () => {
       await expectAccepted(batchSql('m1', { modeCode: 'first_come' }));
       await expectAccepted(batchSql('m2', { modeCode: 'qualification_rank' }));
-      await expectAccepted(batchSql('m3', { modeCode: 'lottery', randomCommitment: 'commit-abc' }));
+      await expectAccepted(batchSql('m3', { modeCode: 'lottery' }));
       // preparing:committedAt 必须允许为 NULL —— 这正是把它放宽成可空的**唯一**理由
       await expectAccepted(batchSql('s1', { statusCode: 'preparing', committedAt: null }));
       await expectAccepted(batchSql('s2', { statusCode: 'committed', committedAt: SESSION_END }));
@@ -550,12 +580,14 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
     it('modeCode 越出三值闭集必须被拒', async () => {
       await expectRejected(batchSql('x', { modeCode: 'random_pick' }), {
         sqlState: '23514',
-        constraint: 'activity_allocation_batch_mode_code_check',
+        // D85 的 seed shape 同样闭合 mode；其名称排序早于旧 mode CHECK，
+        // PostgreSQL 会先报告这一条。下方精确集合仍钉住旧 CHECK 没被删除。
+        constraint: 'activity_allocation_batch_lottery_seed_shape_check',
       });
     });
 
     it('statusCode 越出三值闭集必须被拒', async () => {
-      await expectRejected(batchSql('x', { statusCode: 'done' }), {
+      await expectRejected(batchSql('x', { modeCode: 'first_come', statusCode: 'done' }), {
         sqlState: '23514',
         constraint: 'activity_allocation_batch_status_code_check',
       });
@@ -564,10 +596,13 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
     // 🔴🔴 DoD 4 的 NULL 边界主判据:涉及**可空列** committedAt 的 CHECK,
     //     必须给出「该列为 NULL 时被**拒绝**」的证据。
     it('🔴 NULL 边界:statusCode=committed 却 committedAt 为 NULL 必须被拒', async () => {
-      await expectRejected(batchSql('x', { statusCode: 'committed', committedAt: null }), {
-        sqlState: '23514',
-        constraint: 'activity_allocation_batch_committed_shape_check',
-      });
+      await expectRejected(
+        batchSql('x', { modeCode: 'first_come', statusCode: 'committed', committedAt: null }),
+        {
+          sqlState: '23514',
+          constraint: 'activity_allocation_batch_committed_shape_check',
+        },
+      );
     });
 
     it('🔴 该 CHECK 用的是**守卫前置**式,不是靠 statusCode 的 NOT NULL 兜底', async () => {
@@ -595,7 +630,7 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
         batchSql('k1', {
           operationKey: 'op-same',
           requestHash: 'rh-1',
-          candidateSnapshotHash: 'h1',
+          candidateSnapshotHash: HASH_A,
         }),
       );
       // 若唯一键是 (operationKey, requestHash) 复合,这一行会被**放行** ——
@@ -604,7 +639,7 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
         batchSql('k2', {
           operationKey: 'op-same',
           requestHash: 'COMPLETELY-DIFFERENT',
-          candidateSnapshotHash: 'DIFFERENT',
+          candidateSnapshotHash: HASH_B,
         }),
         { sqlState: '23505', key: 'Key ("operationKey")=(op-same)' },
       );
@@ -666,7 +701,7 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
   // ③ §3.11 ActivityAllocationCandidate:结果闭集与同批次 identity 唯一
   // ==========================================================================
   describe('§3.11 ActivityAllocationCandidate 约束与刻意不做', () => {
-    it('立正对照:最小行(七个可空列全 NULL)与满行都必须能进', async () => {
+    it('立正对照:最小冻结行与满行都必须能进', async () => {
       await expectAccepted(candidateSql('c-min'));
       await expectAccepted(
         candidateSql('c-full', {
@@ -674,15 +709,14 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
           qualificationScore: 87.5,
           lotteryOrder: 7,
           resultCode: 'allocated',
-          waitlistRank: 3,
           explanation: '{"rules":[{"code":"grade","score":40}]}',
         }),
       );
-      // 纯文本也是合法 JSON —— explanation 取 Json 不损失"就想存一句话"的表达力
+      // D85 冻结逐规则明细，解释必须是 JSON object，不能再用纯文本占位。
       await expectAccepted(
-        candidateSql('c-text', {
+        candidateSql('c-object', {
           participationIdentityId: identityId2,
-          explanation: '"名额已满,进入候补"',
+          explanation: '{"reason":"名额已满,进入候补"}',
         }),
       );
     });
@@ -694,7 +728,7 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
       });
       await expectRejected(candidateSql('y', { participationIdentityId: 'no-such-identity' }), {
         sqlState: '23503',
-        constraint: 'ActivityAllocationCandidate_participationIdentityId_fkey',
+        constraint: 'activity_allocation_candidate_identity_registration_fkey',
       });
     });
 
@@ -755,6 +789,7 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
         candidateSql('c-waitlisted', {
           allocationBatchId: 'batch-b',
           resultCode: 'waitlisted',
+          waitlistRank: 1,
         }),
       );
       await expectAccepted(
@@ -782,6 +817,9 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
       expect(uniques.map((u) => u.indexname)).toEqual([
         'ActivityAllocationCandidate_pkey',
         'activity_allocation_candidate_batch_identity_key',
+        'activity_allocation_candidate_batch_lottery_order_unique',
+        'activity_allocation_candidate_batch_tie_break_key',
+        'activity_allocation_candidate_batch_waitlist_rank_unique',
       ]);
       expect(uniques.every((u) => !u.indexdef.includes('NULLS NOT DISTINCT'))).toBe(true);
     });
@@ -1062,7 +1100,7 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
       expect(exclusions).toEqual([]);
     });
 
-    it('两刀四张目标表上的 CHECK 恰好八条(多一条少一条都要是显式决定)', async () => {
+    it('第 75/80/85 migration 的四张目标表 CHECK 集合精确冻结', async () => {
       const checks = await prisma.$queryRaw<Array<{ conname: string }>>`
         SELECT conname FROM pg_constraint
         WHERE contype = 'c'
@@ -1072,10 +1110,21 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
         ORDER BY conname
       `;
       expect(checks.map((c) => c.conname)).toEqual([
+        'activity_allocation_batch_algorithm_version_code_check',
+        'activity_allocation_batch_candidate_snapshot_hash_check',
         'activity_allocation_batch_committed_shape_check',
+        'activity_allocation_batch_lottery_seed_shape_check',
         'activity_allocation_batch_mode_code_check',
         'activity_allocation_batch_status_code_check',
+        'activity_allocation_batch_status_committed_at_check',
+        'activity_allocation_candidate_explanation_object_check',
+        'activity_allocation_candidate_lottery_order_one_based_check',
+        'activity_allocation_candidate_qualification_score_range_check',
+        'activity_allocation_candidate_qualification_snapshot_hash_check',
         'activity_allocation_candidate_result_code_check',
+        'activity_allocation_candidate_result_rank_shape_check',
+        'activity_allocation_candidate_tie_break_key_nonempty_check',
+        'activity_allocation_candidate_waitlist_rank_one_based_check',
         'activity_position_preference_order_one_based_check',
         'activity_reserved_quota_group_capacity_positive_check',
         'activity_reserved_quota_group_fallback_mode_check',

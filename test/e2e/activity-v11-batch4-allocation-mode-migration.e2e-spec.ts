@@ -21,7 +21,7 @@ const SCRATCH_WORKER_ID = 84;
 const MIGRATION_NAME = '20260812100000_activity_v11_batch4_activity_allocation_mode';
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
 const MIGRATION_83_COUNT = 83;
-const MIGRATION_84_COUNT = 84;
+const CURRENT_MIGRATION_COUNT = 85;
 const ALLOCATION_MODE_CONSTRAINT = 'activity_allocation_mode_code_ck';
 const COLD_MIGRATION_REPLAY_TIMEOUT_MS = 300_000;
 
@@ -353,7 +353,7 @@ describe('第 84 migration activity allocation mode', () => {
         deployCurrentMigrations(databaseName);
 
         expect(allocationMode(databaseName, fixture.activityId)).toBe('first_come');
-        expect(successfulMigrationCount(databaseName)).toBe(MIGRATION_84_COUNT);
+        expect(successfulMigrationCount(databaseName)).toBe(CURRENT_MIGRATION_COUNT);
         expect(activityWithoutAllocationMode(databaseName, fixture.activityId)).toBe(rowBefore);
         expect(activityXmin(databaseName, fixture.activityId)).toBe(xminBefore);
       } finally {
@@ -385,12 +385,12 @@ describe('第 84 migration activity allocation mode', () => {
   });
 
   it(
-    'replays all 84 migrations from an empty database and enforces the exact column contract',
+    'replays all current 85 migrations from an empty database and enforces the exact column contract',
     () => {
       const databaseName = recreateEmptyScratchDatabase();
       try {
         deployCurrentMigrations(databaseName);
-        expect(successfulMigrationCount(databaseName)).toBe(MIGRATION_84_COUNT);
+        expect(successfulMigrationCount(databaseName)).toBe(CURRENT_MIGRATION_COUNT);
         expect(allocationArtifactCount(databaseName)).toBe(2);
         expect(columnContract(databaseName)).toEqual({
           columnDefault: "'first_come'::text",

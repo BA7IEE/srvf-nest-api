@@ -215,7 +215,10 @@ describe('batch4 allocation mode runtime', () => {
         activityId,
         sessionId,
         modeCode: 'lottery',
-        candidateSnapshotHash: `batch4-allocation-snapshot-${sequence}`,
+        candidateSnapshotHash: 'a'.repeat(64),
+        algorithmVersionCode: 'allocation-v1',
+        randomCommitment: 'b'.repeat(64),
+        ...(statusCode === 'committed' ? { randomSeedReveal: 'c'.repeat(64) } : {}),
         statusCode,
         ...(statusCode === 'committed'
           ? { committedAt: new Date('2099-01-01T00:00:00.000Z') }

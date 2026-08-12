@@ -49,6 +49,7 @@
 
 - **资格 runtime（第 83 migration）**：RuleSet 的活动/场次/岗位作用域由双向完整复合 FK 固定，`draft/active/retired` 版本与 active 槽位均按 NULL 参与去重；active/retired 及子 Rule 冻结、EvaluationSnapshot append-only。`AppActivitiesService` 在 detail 事务中调用统一 evaluator，安全投影顶层/session/position `qualification` 并按实际命中 RuleSet 各写一份 display snapshot；不得回显资格敏感原值。发布审核与活动配置写路径仍不计算资格、不创建/激活规则。
 - **分配方式运行时（第 4 批⑫）**：`Activity.allocationModeCode` 是每活动唯一权威标量，DB 仅接受 `first_come/qualification_rank/lottery`；Admin/App 新建必须显式选择，service 复核闭集，Prisma default 仅留给存量/旧 server。draft PATCH 可改，published 只能经 change review；Admin/App managed 投影返 `allocationModeCode`，公共 App detail 返 `allocationMode`（列表不扩大）。`ActivityAllocationModeService` 只能在持有 Activity `FOR UPDATE` 后调用，所有 draft PATCH、发布提交/变更提交/审批均检查全部 `preparing/committed/voided` batch 与目标 mode 一致，不自动改写历史 batch；未来 batch writer 必须先锁 Activity 并复制其 mode。本刀不实现分配、candidate、容量或候补算法。
+- **D85 可重放分配地基（第 4 批⑬）**：Batch 必存 `algorithmVersionCode` 与 64 位小写十六进制 `candidateSnapshotHash`；lottery preparing 只存 server seed commitment，committed 才存 64 位 reveal，非 lottery 两列恒空。Candidate 必存永久头/revision、`acceptedAt`、资格快照 hash 和对象解释；同批 tie-break、非空 lotteryOrder、非空 waitlistRank 各自唯一，score 仅 0..100，identity/header 与 header/revision 由 DB 复合 FK 同锚。当前模块仍无 batch/candidate 生产 writer；不得把 D85 说成已执行 first_come、rank、抽签、容量或候补递补。
 
 ## Risk points (不要做)
 
