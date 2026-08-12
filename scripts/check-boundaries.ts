@@ -1033,7 +1033,7 @@ function finding(
   file: string,
   source: ts.SourceFile,
   node: ts.Node,
-  ordinal: number,
+  ordinal: number | string,
   details: JsonRecord,
 ): Finding {
   const symbol = symbolOf(node);
@@ -1086,7 +1086,15 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
       operation: string,
       node: ts.Node,
       details: JsonRecord,
+      identity: 'legacy' | 'new-observation' = 'legacy',
     ): void => {
+      // Phase 0 的 callSiteId 以当时扫描到的语法节点序号为输入。新增的
+      // relation 观察若继续占用这个序号，会让后续一行未动的存量债改号。
+      // 新观察改用节点位置派生的隔离 discriminator，保留已有登记表的身份。
+      const ordinal =
+        identity === 'legacy'
+          ? next(file, symbolOf(node))
+          : `new:${node.getStart(source)}:${node.getEnd()}`;
       findings.push(
         finding(
           kind,
@@ -1098,7 +1106,7 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
           file,
           source,
           node,
-          next(file, symbolOf(node)),
+          ordinal,
           details,
         ),
       );
@@ -1132,11 +1140,20 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
           'i',
         );
         if (tableRe.test(sql.text)) {
-          emit('raw-cross-domain-table', 'report', owner.domain, model.name, 'raw', node, {
-            physicalTable: model.tableName,
-            physicalTableSource: model.tableNameSource,
-            sqlHasInterpolation: sql.hasInterpolation,
-          });
+          emit(
+            'raw-cross-domain-table',
+            'report',
+            owner.domain,
+            model.name,
+            'raw',
+            node,
+            {
+              physicalTable: model.tableName,
+              physicalTableSource: model.tableNameSource,
+              sqlHasInterpolation: sql.hasInterpolation,
+            },
+            'legacy',
+          );
         }
       }
     };
@@ -1147,6 +1164,7 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
       operation: string,
       node: ts.Node,
       accessPath: string,
+      identity: 'legacy' | 'new-observation',
     ): void => {
       const targetOwner = map.modelOwnership[targetModel.name];
       if (targetOwner === undefined || targetOwner.domain === sourceDomain) return;
@@ -1185,6 +1203,7 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
             ...details,
             requiredExit: '应消费属主导出的业务谓词；不得在调用域内联时间窗与状态组合。',
           },
+          identity,
         );
         return;
       }
@@ -1202,6 +1221,7 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
             ...details,
             reason: 'omit 不构成 select 白名单出口。',
           },
+          identity,
         );
         return;
       }
@@ -1217,6 +1237,7 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
             ...details,
             reason: '未显式 select；裸 include / 默认 delegate 读会取得目标 model 的整行。',
           },
+          identity,
         );
         return;
       }
@@ -1232,6 +1253,7 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
             ...details,
             reason: 'select/include/谓词含动态构造，无法静态证明其属于任何读档。',
           },
+          identity,
         );
         return;
       }
@@ -1253,6 +1275,7 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
               ...details,
               allowlist: allowlistEntry,
             },
+            identity,
           );
         } else {
           emit(
@@ -1266,6 +1289,7 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
               ...details,
               requiredExit: '审核为按 id / schema 可见事实后，精确登记 crossDomainReadAllowlist。',
             },
+            identity,
           );
         }
         return;
@@ -1290,6 +1314,7 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
             {
               ...details,
             },
+            identity,
           );
         } else {
           emit(
@@ -1304,6 +1329,7 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
               nonKernelPredicateFields: nonKernelPredicates,
               reason: '返回字段合规不等于可作谓词；该条件应改用 kernelPredicateFields 或属主谓词。',
             },
+            identity,
           );
         }
         return;
@@ -1322,6 +1348,7 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
             ...details,
             allowlist: allowlistEntry,
           },
+          identity,
         );
       } else {
         emit(
@@ -1335,6 +1362,7 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
             ...details,
             requiredExit: '审核为按 id / schema 可见事实后，精确登记 crossDomainReadAllowlist。',
           },
+          identity,
         );
       }
     };
@@ -1350,6 +1378,7 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
           operation,
           access.node,
           access.path,
+          'new-observation',
         );
         inspectRelationAccesses(access.selection.relationAccesses, operation);
       }
@@ -1436,6 +1465,7 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
                     targetSubdomain: targetOwner.subdomain,
                     purpose: '治理大域内的观察记录；不改变当前域边界或业务行为。',
                   },
+                  'new-observation',
                 );
               }
             } else if (reads.has(operation)) {
@@ -1455,7 +1485,7 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
                 argument === undefined
                   ? { ...predicateAnalysis(), dynamic: true }
                   : analyzePredicates(argument, model);
-              emitRead(model, selection, predicates, operation, node, model.name);
+              emitRead(model, selection, predicates, operation, node, model.name, 'legacy');
               inspectRelationAccesses(selection.relationAccesses, operation);
             }
           }

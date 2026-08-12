@@ -1035,6 +1035,7 @@ checkEq(
     );
     const phase2Map = JSON.parse(originalDomainMap) as {
       crossDomainReadAllowlist: Array<Record<string, string>>;
+      moduleOwnership: Record<string, { subdomain?: string }>;
     };
     phase2Map.crossDomainReadAllowlist.push({
       sourceDomain: 'participation',
@@ -1048,24 +1049,47 @@ checkEq(
       observedBy: 'Phase 2 synthetic positive control',
       reviewTrigger: 'selftest only',
     });
+    const phase2WithoutObservedSubdomainWrite = JSON.parse(JSON.stringify(phase2Map)) as typeof phase2Map;
+    phase2WithoutObservedSubdomainWrite.moduleOwnership['activity-registrations'].subdomain =
+      phase2WithoutObservedSubdomainWrite.moduleOwnership.activities.subdomain;
+    fs.writeFileSync(
+      fixtureDomainMap,
+      JSON.stringify(phase2WithoutObservedSubdomainWrite, null, 2) + '\n',
+      'utf8',
+    );
+    const phase2WithoutObservedSubdomainWriteScan = runFixture('scripts/check-boundaries.ts', [
+      '--violations',
+    ]);
     fs.writeFileSync(fixtureDomainMap, JSON.stringify(phase2Map, null, 2) + '\n', 'utf8');
     const phase2Scan = runFixture('scripts/check-boundaries.ts', ['--violations']);
     fs.writeFileSync(fixtureDomainMap, originalDomainMap, 'utf8');
     fs.rmSync(phase2FixtureFile, { force: true });
-    let phase2Findings: Array<{
+    type Phase2Finding = {
       kind: string;
       disposition: string;
       prismaModel: string | null;
+      callSiteId: string;
       location: { file: string; symbol: string };
       details: Record<string, unknown>;
-    }> = [];
+    };
+    let phase2Findings: Phase2Finding[] = [];
+    let phase2WithoutObservedSubdomainWriteFindings: Phase2Finding[] = [];
     try {
       phase2Findings = (JSON.parse(phase2Scan.out) as { findings: typeof phase2Findings }).findings;
+      phase2WithoutObservedSubdomainWriteFindings = (
+        JSON.parse(phase2WithoutObservedSubdomainWriteScan.out) as {
+          findings: typeof phase2WithoutObservedSubdomainWriteFindings;
+        }
+      ).findings;
     } catch {
       // 由下一个断言输出原始执行结果，避免 JSON 解析异常遮住真正的自测原因。
     }
     const phase2Detail = phase2Scan.out.slice(-8000);
     const phase2Local = phase2Findings.filter((item) => item.location.file === phase2FixtureRel);
+    const phase2WithoutObservedSubdomainWriteLocal =
+      phase2WithoutObservedSubdomainWriteFindings.filter(
+        (item) => item.location.file === phase2FixtureRel,
+      );
     const localKind = (kind: string, symbol: string): typeof phase2Local =>
       phase2Local.filter((item) => item.kind === kind && item.location.symbol === symbol);
     check(
@@ -1167,6 +1191,20 @@ checkEq(
         'Phase2BoundaryFixture.observedSubdomainWriteViolation',
       ).length === 1,
       phase2Detail,
+    );
+    const observedWriteSymbol = 'Phase2BoundaryFixture.observedSubdomainWriteViolation';
+    const originalDirectWrite = phase2Local.filter(
+      (item) => item.kind === 'cross-owner-write' && item.location.symbol === observedWriteSymbol,
+    );
+    const noObservationDirectWrite = phase2WithoutObservedSubdomainWriteLocal.filter(
+      (item) => item.kind === 'cross-owner-write' && item.location.symbol === observedWriteSymbol,
+    );
+    check(
+      'P2 R6 新增子域观察不改变同一真实写的既有 callSiteId',
+      originalDirectWrite.length === 1 &&
+        noObservationDirectWrite.length === 1 &&
+        originalDirectWrite[0].callSiteId === noObservationDirectWrite[0].callSiteId,
+      `${phase2Detail}\n${phase2WithoutObservedSubdomainWriteScan.out.slice(-4000)}`,
     );
     const confirmedButPendingMap = JSON.parse(originalDomainMap) as {
       publicSurface: { confirmed: boolean };
