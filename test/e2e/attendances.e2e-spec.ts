@@ -189,6 +189,7 @@ describe('attendances 模块', () => {
         startAt: pastIso('06-01T08:00:00.000Z'),
         endAt: futureIso('07-31T18:00:00.000Z'),
         location: '演示',
+        allocationModeCode: 'first_come',
       });
     activityId = actCreate.body.data.id;
     await request(httpServer(app))
@@ -207,6 +208,7 @@ describe('attendances 模块', () => {
         startAt: pastIso('06-01T08:00:00.000Z'),
         endAt: futureIso('06-01T18:00:00.000Z'),
         location: '演示',
+        allocationModeCode: 'first_come',
       });
     activityCancelledId = actCancel.body.data.id;
     await request(httpServer(app))
@@ -229,6 +231,7 @@ describe('attendances 模块', () => {
         startAt: pastIso('06-02T08:00:00.000Z'),
         endAt: futureIso('06-30T18:00:00.000Z'),
         location: '演示',
+        allocationModeCode: 'first_come',
       });
     activityOtherId = actOther.body.data.id;
     await request(httpServer(app))

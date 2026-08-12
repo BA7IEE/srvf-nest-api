@@ -207,6 +207,7 @@ describe('App managed activities core', () => {
       registrationDeadline: '2099-09-30T12:00:00.000Z',
       location: '深圳',
       capacity: 20,
+      allocationModeCode: 'first_come',
     };
   }
 

@@ -1044,6 +1044,7 @@ describe('audit-logs 写入迁移', () => {
           startAt: '2099-06-01T08:00:00.000Z',
           endAt: '2099-06-01T12:00:00.000Z',
           location: '梧桐山',
+          allocationModeCode: 'first_come',
           ...overrides,
         });
       expect(res.status).toBe(201);
@@ -1267,6 +1268,7 @@ describe('audit-logs 写入迁移', () => {
           startAt: '2099-06-01T08:00:00.000Z',
           endAt: '2099-06-01T12:00:00.000Z',
           location: 'X',
+          allocationModeCode: 'first_come',
         });
       expect(res.status).toBe(400);
 

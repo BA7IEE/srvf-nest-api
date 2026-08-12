@@ -290,6 +290,7 @@ describe('activity responsibility workflow local acceptance', () => {
       registrationDeadline: '2099-07-31T12:00:00.000Z',
       location: 'Local Activity Location',
       capacity: 20,
+      allocationModeCode: 'first_come',
       isPublicRegistration: true,
     };
   }

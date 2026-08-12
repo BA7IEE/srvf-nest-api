@@ -968,6 +968,7 @@ export class AppManagedActivitiesController {
     BizCode.FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
     BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING,
+    BizCode.ACTIVITY_ALLOCATION_MODE_INCONSISTENT,
     BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED,
     BizCode.ORGANIZATION_NOT_FOUND,
     BizCode.ORGANIZATION_INACTIVE,
@@ -1028,6 +1029,7 @@ export class AppManagedActivitiesController {
     BizCode.ACTIVITY_NOT_FOUND,
     BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING,
     BizCode.ACTIVITY_PUBLISH_REVIEW_OPERATION_KEY_CONFLICT,
+    BizCode.ACTIVITY_ALLOCATION_MODE_INCONSISTENT,
   )
   async createPublishReview(
     @CurrentUser() user: CurrentUserPayload,
@@ -1059,6 +1061,7 @@ export class AppManagedActivitiesController {
     BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING,
     BizCode.ACTIVITY_PUBLISH_REVIEW_OPERATION_KEY_CONFLICT,
     BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID,
+    BizCode.ACTIVITY_ALLOCATION_MODE_INCONSISTENT,
   )
   async createChangeReview(
     @CurrentUser() user: CurrentUserPayload,
@@ -1112,6 +1115,7 @@ export class AppManagedActivitiesController {
     BizCode.FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
     BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING,
+    BizCode.ACTIVITY_ALLOCATION_MODE_INCONSISTENT,
   )
   async submitPublishReview(
     @CurrentUser() user: CurrentUserPayload,
@@ -1139,6 +1143,7 @@ export class AppManagedActivitiesController {
     BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
     BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING,
+    BizCode.ACTIVITY_ALLOCATION_MODE_INCONSISTENT,
   )
   async directPublish(
     @CurrentUser() user: CurrentUserPayload,
@@ -1168,6 +1173,7 @@ export class AppManagedActivitiesController {
     BizCode.ACTIVITY_STATUS_INVALID,
     BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING,
     BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID,
+    BizCode.ACTIVITY_ALLOCATION_MODE_INCONSISTENT,
   )
   async submitChangeReview(
     @CurrentUser() user: CurrentUserPayload,
@@ -1255,6 +1261,7 @@ export class AppManagedActivitiesController {
     return {
       title: dto.title,
       activityTypeCode: dto.activityTypeCode,
+      allocationModeCode: dto.allocationModeCode,
       organizationId: dto.organizationId,
       registrationModeCode: dto.registrationModeCode,
       visibilityCode: dto.visibilityCode,
@@ -1296,6 +1303,9 @@ export class AppManagedActivitiesController {
     return {
       ...(dto.title === undefined ? {} : { title: dto.title }),
       ...(dto.activityTypeCode === undefined ? {} : { activityTypeCode: dto.activityTypeCode }),
+      ...(dto.allocationModeCode === undefined
+        ? {}
+        : { allocationModeCode: dto.allocationModeCode }),
       ...(dto.organizationId === undefined ? {} : { organizationId: dto.organizationId }),
       ...(dto.registrationModeCode === undefined
         ? {}

@@ -17,7 +17,7 @@ describe('ActivityPublishProposalV2Service', () => {
     applyPublishedTarget: jest.fn(),
   };
 
-  it('recognizes a schemaVersion 3 form-bearing proposal for the new approval path', () => {
+  it('recognizes a historical schemaVersion 3 form-bearing proposal for approval compatibility', () => {
     const service = new ActivityPublishProposalV2Service(
       { get: jest.fn() } as never,
       registrationForms as never,
@@ -115,6 +115,112 @@ describe('ActivityPublishProposalV2Service', () => {
       'activity-1',
       true,
     );
+  });
+
+  it('keeps v2 and v3 mode-free while v4 freezes allocation mode in its stale hash', async () => {
+    const service = new ActivityPublishProposalV2Service(
+      { get: jest.fn() } as never,
+      registrationForms as never,
+      { apply: jest.fn() } as never,
+    );
+    const internals = service as unknown as { currentState: jest.Mock };
+    const state = {
+      workflowRevision: 7,
+      activity: { title: 'allocation probe', allocationModeCode: 'first_come' },
+      sessions: [],
+      templateVersionId: null,
+      resolvedConfig: { templateVersionId: null },
+      registrationForm: null,
+    };
+    internals.currentState = jest.fn().mockResolvedValue(state);
+
+    const before = await Promise.all([
+      service.rebuildCurrent({} as never, 'activity-1', 2),
+      service.rebuildCurrent({} as never, 'activity-1', 3),
+      service.rebuildCurrent({} as never, 'activity-1', 4),
+    ]);
+    internals.currentState.mockResolvedValue({
+      ...state,
+      activity: { ...state.activity, allocationModeCode: 'lottery' },
+    });
+    const after = await Promise.all([
+      service.rebuildCurrent({} as never, 'activity-1', 2),
+      service.rebuildCurrent({} as never, 'activity-1', 3),
+      service.rebuildCurrent({} as never, 'activity-1', 4),
+    ]);
+
+    expect(after[0].snapshotHash).toBe(before[0].snapshotHash);
+    expect(after[1].snapshotHash).toBe(before[1].snapshotHash);
+    expect(after[2].snapshotHash).not.toBe(before[2].snapshotHash);
+  });
+
+  it('never forwards allocation mode into v2/v3 applyActivity, but does forward the v4 target', async () => {
+    const service = new ActivityPublishProposalV2Service(
+      { get: jest.fn() } as never,
+      registrationForms as never,
+      { apply: jest.fn() } as never,
+    );
+    const internals = service as unknown as Record<string, jest.Mock>;
+    const appliedAllocationModes: Array<string | undefined> = [];
+    internals.applyActivity = jest.fn(
+      (
+        _tx: unknown,
+        _activityId: string,
+        _activity: unknown,
+        allocationMode: string | undefined,
+      ) => {
+        appliedAllocationModes.push(allocationMode);
+        return Promise.resolve();
+      },
+    );
+    internals.applySessions = jest.fn().mockResolvedValue(new Map());
+    internals.applyPositions = jest.fn().mockResolvedValue(undefined);
+    internals.applyFormAndRulesPlaceholder = jest.fn().mockResolvedValue(undefined);
+    internals.applyQrCredentialsPlaceholder = jest.fn().mockResolvedValue(undefined);
+    internals.getTemplateResolution = jest.fn().mockResolvedValue({ templateVersionId: null });
+    const capacityBuckets = { apply: jest.fn().mockResolvedValue(undefined) };
+    (service as unknown as { capacityBuckets: typeof capacityBuckets }).capacityBuckets =
+      capacityBuckets;
+    const tx = {
+      activity: {
+        update: jest.fn().mockResolvedValue({ workflowRevision: 1 }),
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ workflowRevision: 0 }),
+      },
+    };
+    const common = {
+      baseWorkflowRevision: 0,
+      baseSnapshotHash: 'base',
+      snapshotHash: 'target',
+      base: {
+        templateVersionId: null,
+        resolvedConfig: { templateVersionId: null },
+        activity: { title: 'before' },
+        sessions: [],
+        registrationForm: null,
+      },
+      templateVersionId: null,
+      resolvedConfig: { templateVersionId: null },
+      activity: { title: 'after' },
+      sessions: [],
+      registrationForm: null,
+    };
+    const input = { publish: false, publishedByUserId: 'reviewer-1', at: new Date('2099-01-01') };
+
+    await service.apply(tx as never, 'activity-1', { ...common, schemaVersion: 2 } as never, input);
+    await service.apply(tx as never, 'activity-1', { ...common, schemaVersion: 3 } as never, input);
+    await service.apply(
+      tx as never,
+      'activity-1',
+      {
+        ...common,
+        schemaVersion: 4,
+        base: { ...common.base, activity: { title: 'before', allocationModeCode: 'first_come' } },
+        activity: { title: 'after', allocationModeCode: 'lottery' },
+      } as never,
+      input,
+    );
+
+    expect(appliedAllocationModes).toEqual([undefined, undefined, 'lottery']);
   });
 
   it('keeps template resolution Form-free until v3 explicitly reads its active pointer', async () => {

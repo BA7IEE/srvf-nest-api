@@ -1,4 +1,5 @@
 import type { PrismaService } from '../../database/prisma.service';
+import { Role } from '@prisma/client';
 import type { AuthzService } from '../authz/authz.service';
 import { ActivityClosurePolicy } from './activity-closure-policy';
 import { ActivityWorkflowQueryService } from './activity-workflow-query.service';
@@ -79,5 +80,50 @@ describe('ActivityWorkflowQueryService', () => {
     expect(attendanceGroupBy).toHaveBeenCalledTimes(1);
     expect(activityFindMany).toHaveBeenCalledTimes(1);
     expect(activityCount).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns allocation mode in the managed activity detail projection', async () => {
+    const registrationGroupBy = jest.fn().mockResolvedValue([]);
+    const attendanceGroupBy = jest.fn().mockResolvedValue([]);
+    const prisma = {
+      activityRegistration: { groupBy: registrationGroupBy },
+      attendanceSheet: { groupBy: attendanceGroupBy },
+    } as unknown as PrismaService;
+    const service = new ActivityWorkflowQueryService(
+      prisma,
+      {} as AuthzService,
+      new ActivityClosurePolicy(),
+    );
+    jest.spyOn(service, 'loadManaged').mockResolvedValue({
+      id: 'activity-1',
+      title: 'Allocation detail',
+      activityTypeCode: 'training',
+      allocationModeCode: 'lottery',
+      organizationId: 'org-1',
+      startAt: new Date('2026-07-24T01:00:00.000Z'),
+      endAt: new Date('2026-07-24T02:00:00.000Z'),
+      location: '深圳',
+      description: null,
+      capacity: null,
+      statusCode: 'draft',
+      workflowRevision: 1,
+      requiresInsurance: false,
+      isPublicRegistration: true,
+      registrationModeCode: 'open_apply',
+      visibilityCode: 'internal',
+      defaultCheckInRadiusMeters: null,
+      defaultLocationRequired: false,
+      archiveWaitingDays: 0,
+      attendanceDeclaredCompleteAt: null,
+      createdAt: new Date('2026-07-20T00:00:00.000Z'),
+      updatedAt: new Date('2026-07-24T03:00:00.000Z'),
+      initiator: null,
+      responsibilityAssignments: [],
+      publishReviews: [],
+    } as never);
+
+    const result = await service.detail('activity-1', 'member-1', { role: Role.USER } as never);
+
+    expect(result.activity).toEqual(expect.objectContaining({ allocationModeCode: 'lottery' }));
   });
 });

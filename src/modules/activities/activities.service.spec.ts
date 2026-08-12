@@ -1,16 +1,18 @@
 import { Prisma, Role, UserStatus } from '@prisma/client';
+import { validate } from 'class-validator';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
-import type {
-  CancelActivityDto,
+import {
   CreateActivityDto,
-  ListActivitiesQueryDto,
-  UpdateActivityDto,
+  type CancelActivityDto,
+  type ListActivitiesQueryDto,
+  type UpdateActivityDto,
 } from './activities.dto';
+import { CreateAppManagedActivityDto } from './dto/app/app-managed-activity.dto';
 import { ActivitiesService } from './activities.service';
 import type { ActivityAuditRecorder } from './activity-audit-recorder';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -151,6 +153,7 @@ function makeCreateDto(overrides: Partial<Record<string, unknown>> = {}): Create
     startAt: '2099-01-01T00:00:00.000Z',
     endAt: '2099-01-02T00:00:00.000Z',
     location: 'HQ',
+    allocationModeCode: 'first_come',
     ...overrides,
   };
 }
@@ -166,6 +169,41 @@ function makeCancelDto(cancelReason?: string): CancelActivityDto {
 function makeListQuery(overrides: Partial<Record<string, unknown>> = {}): ListActivitiesQueryDto {
   return { page: 1, pageSize: 20, ...overrides };
 }
+
+describe('activity allocation mode DTO contract', () => {
+  it('keeps Admin and physically independent App create payloads required and closed', async () => {
+    const adminMissing = Object.assign(new CreateActivityDto(), makeCreateDto());
+    delete (adminMissing as Partial<CreateActivityDto>).allocationModeCode;
+    const appMissing = Object.assign(new CreateAppManagedActivityDto(), {
+      title: 'App activity',
+      activityTypeCode: 'rescue',
+      organizationId: 'org-1',
+      startAt: '2099-01-01T00:00:00.000Z',
+      endAt: '2099-01-02T00:00:00.000Z',
+      location: 'HQ',
+    });
+    const appInvalid = Object.assign(new CreateAppManagedActivityDto(), {
+      ...appMissing,
+      allocationModeCode: 'not-an-allocation-mode',
+    });
+
+    const [adminErrors, appMissingErrors, appInvalidErrors] = await Promise.all([
+      validate(adminMissing),
+      validate(appMissing),
+      validate(appInvalid),
+    ]);
+
+    expect(adminErrors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ property: 'allocationModeCode' })]),
+    );
+    expect(appMissingErrors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ property: 'allocationModeCode' })]),
+    );
+    expect(appInvalidErrors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ property: 'allocationModeCode' })]),
+    );
+  });
+});
 
 // ============ mock 工厂 ============
 
@@ -342,6 +380,10 @@ function makeService(
       cancelPendingForActivity: jest.fn(),
       assertNoPendingChangeReview: jest.fn(),
     } as unknown as ActivityPublishReviewService,
+    {
+      assertValidMode: jest.fn(),
+      assertLockedActivityConsistent: jest.fn().mockResolvedValue(undefined),
+    },
     {
       activityResponsibilityWorkflow: { enabled: opts.workflowEnabled ?? false },
     } as ConfigType<typeof appConfig>,

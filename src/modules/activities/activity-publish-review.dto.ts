@@ -308,7 +308,7 @@ export class ChangeReviewDto extends SubmitActivityPublishReviewDto {
 
   /**
    * Omitted keeps the active Form; explicit null retires it on approval; an object replaces it.
-   * The proposal service, not this DTO, canonicalizes and binds it into the v3 snapshot.
+   * The proposal service, not this DTO, canonicalizes and binds it into the generated v4 snapshot.
    */
   @ApiPropertyOptional({ nullable: true, type: () => RegistrationFormDefinitionInputDto })
   @IsOptional()

@@ -166,6 +166,7 @@ export class ActivitiesController {
     BizCode.ACTIVITY_START_END_INVALID,
     BizCode.ACTIVITY_REGISTRATION_DEADLINE_INVALID,
     BizCode.ACTIVITY_CAPACITY_INVALID,
+    BizCode.ACTIVITY_ALLOCATION_MODE_INCONSISTENT,
   )
   update(
     @Param() params: IdParamDto,
@@ -212,6 +213,7 @@ export class ActivitiesController {
     BizCode.ACTIVITY_NOT_FOUND,
     BizCode.ACTIVITY_STATUS_INVALID,
     BizCode.ACTIVITY_REGISTRATION_DEADLINE_PASSED,
+    BizCode.ACTIVITY_ALLOCATION_MODE_INCONSISTENT,
   )
   publish(
     @Param() params: IdParamDto,

@@ -1686,6 +1686,11 @@ export const BizCode = {
     message: '相同操作标识已用于不同的邀请拒绝内容,请更换操作标识',
     httpStatus: HttpStatus.CONFLICT,
   },
+  ACTIVITY_ALLOCATION_MODE_INCONSISTENT: {
+    code: 20152,
+    message: '活动分配方式与既有分配批次不一致',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。

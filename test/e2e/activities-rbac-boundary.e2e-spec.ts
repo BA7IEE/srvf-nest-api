@@ -41,6 +41,7 @@ describe('activities RBAC 权限边界(Slow-4 T3)', () => {
         startAt: '2099-08-01T08:00:00.000Z',
         endAt: '2099-08-01T12:00:00.000Z',
         location: '边界演示',
+        allocationModeCode: 'first_come',
       });
     return res.body.data.id as string;
   };
@@ -130,6 +131,7 @@ describe('activities RBAC 权限边界(Slow-4 T3)', () => {
         startAt: '2099-08-02T08:00:00.000Z',
         endAt: '2099-08-02T12:00:00.000Z',
         location: 'X',
+        allocationModeCode: 'first_come',
       };
       expectBizError(
         await request(httpServer(app))

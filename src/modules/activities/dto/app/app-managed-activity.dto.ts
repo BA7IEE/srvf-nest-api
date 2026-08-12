@@ -88,6 +88,14 @@ export class CreateAppManagedActivityDto {
   @MaxLength(64)
   activityTypeCode!: string;
 
+  @ApiProperty({
+    description: '活动分配方式(必填；物理独立于 Admin DTO)',
+    enum: ['first_come', 'qualification_rank', 'lottery'],
+  })
+  @IsString()
+  @IsIn(['first_come', 'qualification_rank', 'lottery'])
+  allocationModeCode!: string;
+
   @ApiProperty({ maxLength: 64 })
   @IsString()
   @MinLength(8)
@@ -230,6 +238,15 @@ export class UpdateAppManagedActivityDto {
   @MinLength(1)
   @MaxLength(64)
   activityTypeCode?: string;
+
+  @ApiPropertyOptional({
+    description: '活动分配方式；draft 可直改，published 须经变更审核',
+    enum: ['first_come', 'qualification_rank', 'lottery'],
+  })
+  @OmittableOnly()
+  @IsString()
+  @IsIn(['first_come', 'qualification_rank', 'lottery'])
+  allocationModeCode?: string;
 
   @ApiPropertyOptional({ maxLength: 64 })
   @IsOptional()
@@ -423,6 +440,9 @@ export class AppManagedActivityProjectionDto {
 
   @ApiProperty()
   activityTypeCode!: string;
+
+  @ApiProperty({ enum: ['first_come', 'qualification_rank', 'lottery'] })
+  allocationModeCode!: string;
 
   @ApiProperty()
   organizationId!: string;

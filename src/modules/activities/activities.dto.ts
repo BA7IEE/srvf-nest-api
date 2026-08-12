@@ -55,6 +55,12 @@ export class ActivityResponseDto {
   @ApiProperty({ description: '活动类型字典 code(typeCode=activity_type;2 级树)' })
   activityTypeCode!: string;
 
+  @ApiProperty({
+    description: '活动分配方式(新活动创建时显式选择；存量活动保留已落库值)',
+    enum: ['first_come', 'qualification_rank', 'lottery'],
+  })
+  allocationModeCode!: string;
+
   @ApiProperty({ description: '承办组织节点 Organization.id(NOT NULL;禁根节点)' })
   organizationId!: string;
 
@@ -298,7 +304,7 @@ export class ActivityListItemDto {
 
 // ============ 入参:Create ============
 
-// 必填 6 字段:title / activityTypeCode / organizationId / startAt / endAt / location。
+// 必填 7 字段:title / activityTypeCode / allocationModeCode / organizationId / startAt / endAt / location。
 // description 可空(Q-D14 v1.4)。capacity 可空(NULL = 不限名额)。
 // isPublicRegistration 不传走 Prisma default=true。
 export class CreateActivityDto {
@@ -316,6 +322,14 @@ export class CreateActivityDto {
   @MinLength(1)
   @MaxLength(64)
   activityTypeCode!: string;
+
+  @ApiProperty({
+    description: '活动分配方式(必填；first_come / qualification_rank / lottery)',
+    enum: ['first_come', 'qualification_rank', 'lottery'],
+  })
+  @IsString()
+  @IsIn(['first_come', 'qualification_rank', 'lottery'])
+  allocationModeCode!: string;
 
   @ApiProperty({
     description: '承办组织节点 Organization.id(必填;不允许根节点)',
@@ -495,6 +509,15 @@ export class UpdateActivityDto {
   @MinLength(1)
   @MaxLength(64)
   activityTypeCode?: string;
+
+  @ApiPropertyOptional({
+    description: '活动分配方式；draft 可直改，published 须经变更审核',
+    enum: ['first_come', 'qualification_rank', 'lottery'],
+  })
+  @OmittableOnly()
+  @IsString()
+  @IsIn(['first_come', 'qualification_rank', 'lottery'])
+  allocationModeCode?: string;
 
   @ApiPropertyOptional({
     description: '承办组织节点 id(不允许根节点)',

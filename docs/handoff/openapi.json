@@ -31406,7 +31406,7 @@
             }
           },
           "409": {
-            "description": "活动当前状态不允许此操作(code=20030) / 组织节点状态非活跃,不能挂队员(code=17031)",
+            "description": "活动当前状态不允许此操作(code=20030) / 组织节点状态非活跃,不能挂队员(code=17031) / 活动分配方式与既有分配批次不一致(code=20152)",
             "content": {
               "application/json": {
                 "schema": {
@@ -31421,9 +31421,10 @@
                       "type": "integer",
                       "enum": [
                         20030,
-                        17031
+                        17031,
+                        20152
                       ],
-                      "description": "20030: 活动当前状态不允许此操作; 17031: 组织节点状态非活跃,不能挂队员",
+                      "description": "20030: 活动当前状态不允许此操作; 17031: 组织节点状态非活跃,不能挂队员; 20152: 活动分配方式与既有分配批次不一致",
                       "example": 20030
                     },
                     "message": {
@@ -31873,7 +31874,7 @@
             }
           },
           "409": {
-            "description": "活动当前状态不允许此操作(code=20030) / 活动报名已截止(code=20123)",
+            "description": "活动当前状态不允许此操作(code=20030) / 活动报名已截止(code=20123) / 活动分配方式与既有分配批次不一致(code=20152)",
             "content": {
               "application/json": {
                 "schema": {
@@ -31888,9 +31889,10 @@
                       "type": "integer",
                       "enum": [
                         20030,
-                        20123
+                        20123,
+                        20152
                       ],
-                      "description": "20030: 活动当前状态不允许此操作; 20123: 活动报名已截止",
+                      "description": "20030: 活动当前状态不允许此操作; 20123: 活动报名已截止; 20152: 活动分配方式与既有分配批次不一致",
                       "example": 20030
                     },
                     "message": {
@@ -35631,7 +35633,7 @@
             }
           },
           "409": {
-            "description": "发布审核当前状态不允许此操作(code=20033) / 活动审核快照无效或已过期(code=20022) / 发布审核预期的活动快照已变化,请刷新后重新提交(code=20144) / 发布活动至少需要一个有效场次(code=20145) / 相同操作标识已用于不同的发布审核内容,请更换操作标识(code=20143) / 活动容量与当前占用不一致(code=20147)",
+            "description": "发布审核当前状态不允许此操作(code=20033) / 活动审核快照无效或已过期(code=20022) / 发布审核预期的活动快照已变化,请刷新后重新提交(code=20144) / 发布活动至少需要一个有效场次(code=20145) / 相同操作标识已用于不同的发布审核内容,请更换操作标识(code=20143) / 活动容量与当前占用不一致(code=20147) / 活动分配方式与既有分配批次不一致(code=20152)",
             "content": {
               "application/json": {
                 "schema": {
@@ -35650,9 +35652,10 @@
                         20144,
                         20145,
                         20143,
-                        20147
+                        20147,
+                        20152
                       ],
-                      "description": "20033: 发布审核当前状态不允许此操作; 20022: 活动审核快照无效或已过期; 20144: 发布审核预期的活动快照已变化,请刷新后重新提交; 20145: 发布活动至少需要一个有效场次; 20143: 相同操作标识已用于不同的发布审核内容,请更换操作标识; 20147: 活动容量与当前占用不一致",
+                      "description": "20033: 发布审核当前状态不允许此操作; 20022: 活动审核快照无效或已过期; 20144: 发布审核预期的活动快照已变化,请刷新后重新提交; 20145: 发布活动至少需要一个有效场次; 20143: 相同操作标识已用于不同的发布审核内容,请更换操作标识; 20147: 活动容量与当前占用不一致; 20152: 活动分配方式与既有分配批次不一致",
                       "example": 20033
                     },
                     "message": {
@@ -43738,7 +43741,7 @@
             }
           },
           "409": {
-            "description": "活动已有待处理的发布审核(code=20032) / 已发布活动修改需先提交审核(code=20037) / 组织节点状态非活跃,不能挂队员(code=17031)",
+            "description": "活动已有待处理的发布审核(code=20032) / 活动分配方式与既有分配批次不一致(code=20152) / 已发布活动修改需先提交审核(code=20037) / 组织节点状态非活跃,不能挂队员(code=17031)",
             "content": {
               "application/json": {
                 "schema": {
@@ -43753,10 +43756,11 @@
                       "type": "integer",
                       "enum": [
                         20032,
+                        20152,
                         20037,
                         17031
                       ],
-                      "description": "20032: 活动已有待处理的发布审核; 20037: 已发布活动修改需先提交审核; 17031: 组织节点状态非活跃,不能挂队员",
+                      "description": "20032: 活动已有待处理的发布审核; 20152: 活动分配方式与既有分配批次不一致; 20037: 已发布活动修改需先提交审核; 17031: 组织节点状态非活跃,不能挂队员",
                       "example": 20032
                     },
                     "message": {
@@ -44204,7 +44208,7 @@
             }
           },
           "409": {
-            "description": "活动已有待处理的发布审核(code=20032) / 相同操作标识已用于不同的发布审核内容,请更换操作标识(code=20143)",
+            "description": "活动已有待处理的发布审核(code=20032) / 相同操作标识已用于不同的发布审核内容,请更换操作标识(code=20143) / 活动分配方式与既有分配批次不一致(code=20152)",
             "content": {
               "application/json": {
                 "schema": {
@@ -44219,9 +44223,10 @@
                       "type": "integer",
                       "enum": [
                         20032,
-                        20143
+                        20143,
+                        20152
                       ],
-                      "description": "20032: 活动已有待处理的发布审核; 20143: 相同操作标识已用于不同的发布审核内容,请更换操作标识",
+                      "description": "20032: 活动已有待处理的发布审核; 20143: 相同操作标识已用于不同的发布审核内容,请更换操作标识; 20152: 活动分配方式与既有分配批次不一致",
                       "example": 20032
                     },
                     "message": {
@@ -44444,7 +44449,7 @@
             }
           },
           "409": {
-            "description": "活动当前状态不允许此操作(code=20030) / 活动已有待处理的发布审核(code=20032) / 相同操作标识已用于不同的发布审核内容,请更换操作标识(code=20143) / 活动审核快照无效或已过期(code=20022)",
+            "description": "活动当前状态不允许此操作(code=20030) / 活动已有待处理的发布审核(code=20032) / 相同操作标识已用于不同的发布审核内容,请更换操作标识(code=20143) / 活动审核快照无效或已过期(code=20022) / 活动分配方式与既有分配批次不一致(code=20152)",
             "content": {
               "application/json": {
                 "schema": {
@@ -44461,9 +44466,10 @@
                         20030,
                         20032,
                         20143,
-                        20022
+                        20022,
+                        20152
                       ],
-                      "description": "20030: 活动当前状态不允许此操作; 20032: 活动已有待处理的发布审核; 20143: 相同操作标识已用于不同的发布审核内容,请更换操作标识; 20022: 活动审核快照无效或已过期",
+                      "description": "20030: 活动当前状态不允许此操作; 20032: 活动已有待处理的发布审核; 20143: 相同操作标识已用于不同的发布审核内容,请更换操作标识; 20022: 活动审核快照无效或已过期; 20152: 活动分配方式与既有分配批次不一致",
                       "example": 20030
                     },
                     "message": {
@@ -44903,7 +44909,7 @@
             }
           },
           "409": {
-            "description": "活动已有待处理的发布审核(code=20032)",
+            "description": "活动已有待处理的发布审核(code=20032) / 活动分配方式与既有分配批次不一致(code=20152)",
             "content": {
               "application/json": {
                 "schema": {
@@ -44917,9 +44923,10 @@
                     "code": {
                       "type": "integer",
                       "enum": [
-                        20032
+                        20032,
+                        20152
                       ],
-                      "description": "20032: 活动已有待处理的发布审核",
+                      "description": "20032: 活动已有待处理的发布审核; 20152: 活动分配方式与既有分配批次不一致",
                       "example": 20032
                     },
                     "message": {
@@ -45132,7 +45139,7 @@
             }
           },
           "409": {
-            "description": "活动已有待处理的发布审核(code=20032)",
+            "description": "活动已有待处理的发布审核(code=20032) / 活动分配方式与既有分配批次不一致(code=20152)",
             "content": {
               "application/json": {
                 "schema": {
@@ -45146,9 +45153,10 @@
                     "code": {
                       "type": "integer",
                       "enum": [
-                        20032
+                        20032,
+                        20152
                       ],
-                      "description": "20032: 活动已有待处理的发布审核",
+                      "description": "20032: 活动已有待处理的发布审核; 20152: 活动分配方式与既有分配批次不一致",
                       "example": 20032
                     },
                     "message": {
@@ -45371,7 +45379,7 @@
             }
           },
           "409": {
-            "description": "活动当前状态不允许此操作(code=20030) / 活动已有待处理的发布审核(code=20032) / 活动审核快照无效或已过期(code=20022)",
+            "description": "活动当前状态不允许此操作(code=20030) / 活动已有待处理的发布审核(code=20032) / 活动审核快照无效或已过期(code=20022) / 活动分配方式与既有分配批次不一致(code=20152)",
             "content": {
               "application/json": {
                 "schema": {
@@ -45387,9 +45395,10 @@
                       "enum": [
                         20030,
                         20032,
-                        20022
+                        20022,
+                        20152
                       ],
-                      "description": "20030: 活动当前状态不允许此操作; 20032: 活动已有待处理的发布审核; 20022: 活动审核快照无效或已过期",
+                      "description": "20030: 活动当前状态不允许此操作; 20032: 活动已有待处理的发布审核; 20022: 活动审核快照无效或已过期; 20152: 活动分配方式与既有分配批次不一致",
                       "example": 20030
                     },
                     "message": {
@@ -109122,6 +109131,15 @@
             "type": "string",
             "description": "活动类型字典 code(typeCode=activity_type;2 级树)"
           },
+          "allocationModeCode": {
+            "type": "string",
+            "description": "活动分配方式(新活动创建时显式选择；存量活动保留已落库值)",
+            "enum": [
+              "first_come",
+              "qualification_rank",
+              "lottery"
+            ]
+          },
           "organizationId": {
             "type": "string",
             "description": "承办组织节点 Organization.id(NOT NULL;禁根节点)"
@@ -109304,6 +109322,7 @@
           "id",
           "title",
           "activityTypeCode",
+          "allocationModeCode",
           "organizationId",
           "initiatorMemberId",
           "workflowRevision",
@@ -109331,6 +109350,15 @@
             "type": "string",
             "description": "活动类型字典 code(必填;typeCode=activity_type)",
             "maxLength": 64
+          },
+          "allocationModeCode": {
+            "type": "string",
+            "description": "活动分配方式(必填；first_come / qualification_rank / lottery)",
+            "enum": [
+              "first_come",
+              "qualification_rank",
+              "lottery"
+            ]
           },
           "organizationId": {
             "type": "string",
@@ -109451,6 +109479,7 @@
         "required": [
           "title",
           "activityTypeCode",
+          "allocationModeCode",
           "organizationId",
           "startAt",
           "endAt",
@@ -109469,6 +109498,15 @@
             "type": "string",
             "description": "活动类型字典 code",
             "maxLength": 64
+          },
+          "allocationModeCode": {
+            "type": "string",
+            "description": "活动分配方式；draft 可直改，published 须经变更审核",
+            "enum": [
+              "first_come",
+              "qualification_rank",
+              "lottery"
+            ]
           },
           "organizationId": {
             "type": "string",
@@ -110140,6 +110178,15 @@
             "description": "活动类型字典 code(typeCode=activity_type)",
             "example": "training"
           },
+          "allocationMode": {
+            "type": "string",
+            "description": "活动分配方式",
+            "enum": [
+              "first_come",
+              "qualification_rank",
+              "lottery"
+            ]
+          },
           "statusCode": {
             "type": "string",
             "description": "活动状态字典 code(App 视角恒为 published;字段保留便于前端泛化)",
@@ -110250,6 +110297,7 @@
           "id",
           "title",
           "activityTypeCode",
+          "allocationMode",
           "statusCode",
           "phase",
           "startAt",
@@ -111277,6 +111325,14 @@
           "activityTypeCode": {
             "type": "string"
           },
+          "allocationModeCode": {
+            "type": "string",
+            "enum": [
+              "first_come",
+              "qualification_rank",
+              "lottery"
+            ]
+          },
           "organizationId": {
             "type": "string"
           },
@@ -111353,6 +111409,7 @@
           "id",
           "title",
           "activityTypeCode",
+          "allocationModeCode",
           "organizationId",
           "startAt",
           "endAt",
@@ -111565,6 +111622,15 @@
             "type": "string",
             "maxLength": 64
           },
+          "allocationModeCode": {
+            "type": "string",
+            "description": "活动分配方式(必填；物理独立于 Admin DTO)",
+            "enum": [
+              "first_come",
+              "qualification_rank",
+              "lottery"
+            ]
+          },
           "organizationId": {
             "type": "string",
             "maxLength": 64
@@ -111663,6 +111729,7 @@
         "required": [
           "title",
           "activityTypeCode",
+          "allocationModeCode",
           "organizationId",
           "startAt",
           "endAt",
@@ -113587,6 +113654,15 @@
           "activityTypeCode": {
             "type": "string",
             "maxLength": 64
+          },
+          "allocationModeCode": {
+            "type": "string",
+            "description": "活动分配方式；draft 可直改，published 须经变更审核",
+            "enum": [
+              "first_come",
+              "qualification_rank",
+              "lottery"
+            ]
           },
           "organizationId": {
             "type": "string",

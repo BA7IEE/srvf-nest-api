@@ -29,6 +29,7 @@ import type { AppActivityChangePositionDto } from './dto/app/app-managed-activit
 import { ActivityProposalValidator } from './activity-proposal-validator';
 import { ActivityProposalApplier } from './activity-proposal-applier';
 import { ActivityNotificationProducer } from './activity-notification-producer';
+import { ActivityAllocationModeService } from './activity-allocation-mode.service';
 import {
   ActivityPublishProposalV2Service,
   type ActivityTemplateResolution,
@@ -92,6 +93,7 @@ export class ActivityPublishReviewService {
     private readonly proposalValidator: ActivityProposalValidator,
     private readonly proposalApplier: ActivityProposalApplier,
     private readonly proposalV2: ActivityPublishProposalV2Service,
+    private readonly allocationModes: ActivityAllocationModeService,
   ) {}
 
   private async lockActivity(activityId: string, tx: PrismaTx): Promise<void> {
@@ -263,6 +265,7 @@ export class ActivityPublishReviewService {
           select: {
             statusCode: true,
             workflowRevision: true,
+            allocationModeCode: true,
             initiatorMemberId: true,
             startAt: true,
             endAt: true,
@@ -272,6 +275,10 @@ export class ActivityPublishReviewService {
         if (!user.memberId || activity.initiatorMemberId !== user.memberId) {
           throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
         }
+        await this.allocationModes.assertLockedActivityConsistent(tx, {
+          id: activityId,
+          allocationModeCode: activity.allocationModeCode,
+        });
         this.ensureInitialPublishable(activity);
         const decision = this.stateMachine.decide('submit');
         if (!decision.allowed) throw new BizException(decision.biz);
@@ -322,11 +329,15 @@ export class ActivityPublishReviewService {
         await this.lockActivity(activityId, tx);
         const activity = await tx.activity.findUniqueOrThrow({
           where: { id: activityId },
-          select: { statusCode: true, workflowRevision: true },
+          select: { statusCode: true, workflowRevision: true, allocationModeCode: true },
         });
         if (activity.statusCode !== 'published') {
           throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
         }
+        await this.allocationModes.assertLockedActivityConsistent(tx, {
+          id: activityId,
+          allocationModeCode: activity.allocationModeCode,
+        });
         await this.responsibilityPolicy.assertOwner(tx, activityId, user);
         const pendingCount = await tx.activityPublishReview.count({
           where: { activityId, status: 'pending' },
@@ -342,6 +353,10 @@ export class ActivityPublishReviewService {
           activityPatch,
           positions,
         );
+        await this.allocationModes.assertLockedActivityConsistent(tx, {
+          id: activityId,
+          allocationModeCode: snapshot.activity.allocationModeCode ?? activity.allocationModeCode,
+        });
         const review = await tx.activityPublishReview.create({
           data: {
             activityId,
@@ -393,6 +408,7 @@ export class ActivityPublishReviewService {
           select: {
             statusCode: true,
             workflowRevision: true,
+            allocationModeCode: true,
             initiatorMemberId: true,
             startAt: true,
             endAt: true,
@@ -402,6 +418,10 @@ export class ActivityPublishReviewService {
         if (!user.memberId || activity.initiatorMemberId !== user.memberId) {
           throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
         }
+        await this.allocationModes.assertLockedActivityConsistent(tx, {
+          id: activityId,
+          allocationModeCode: activity.allocationModeCode,
+        });
         const replay = await this.findSubmitReplay(tx, dto.operationKey, requestHash);
         if (replay) return replay;
         this.ensureInitialPublishable(activity);
@@ -459,11 +479,20 @@ export class ActivityPublishReviewService {
         await this.lockActivity(activityId, tx);
         const activity = await tx.activity.findUniqueOrThrow({
           where: { id: activityId },
-          select: { statusCode: true, workflowRevision: true, organizationId: true },
+          select: {
+            statusCode: true,
+            workflowRevision: true,
+            organizationId: true,
+            allocationModeCode: true,
+          },
         });
         // Ownership precedes lifecycle disclosure on the App surface: callers outside the
         // responsibility graph must not distinguish a draft from a published activity.
         await this.assertOwnerHidden(tx, activityId, user);
+        await this.allocationModes.assertLockedActivityConsistent(tx, {
+          id: activityId,
+          allocationModeCode: activity.allocationModeCode,
+        });
         if (activity.statusCode !== 'published') {
           throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
         }
@@ -476,6 +505,10 @@ export class ActivityPublishReviewService {
         const decision = this.stateMachine.decide('submit');
         if (!decision.allowed) throw new BizException(decision.biz);
         const snapshot = await this.proposalV2.buildChange(tx, activityId, dto);
+        await this.allocationModes.assertLockedActivityConsistent(tx, {
+          id: activityId,
+          allocationModeCode: snapshot.activity.allocationModeCode,
+        });
         this.proposalValidator.assertOrganizationUnchanged(
           activity.organizationId,
           snapshot.activity.organizationId,
@@ -611,10 +644,6 @@ export class ActivityPublishReviewService {
         if (this.proposalV2.isSnapshot(review.snapshot) && dto.operationKey === undefined) {
           throw new BizException(BizCode.BAD_REQUEST);
         }
-        if (dto.operationKey !== undefined && reviewRequestHash !== null) {
-          const replay = await this.findReviewReplay(tx, dto.operationKey, reviewRequestHash);
-          if (replay) return { dto: replay, missingChangeOwner: false };
-        }
         if (review.submittedByUserId === user.id) {
           throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SELF_REVIEW_FORBIDDEN);
         }
@@ -628,8 +657,17 @@ export class ActivityPublishReviewService {
             endAt: true,
             registrationDeadline: true,
             initiatorMemberId: true,
+            allocationModeCode: true,
           },
         });
+        await this.allocationModes.assertLockedActivityConsistent(tx, {
+          id: review.activityId,
+          allocationModeCode: activity.allocationModeCode,
+        });
+        if (dto.operationKey !== undefined && reviewRequestHash !== null) {
+          const replay = await this.findReviewReplay(tx, dto.operationKey, reviewRequestHash);
+          if (replay) return { dto: replay, missingChangeOwner: false };
+        }
         if (this.proposalV2.isSnapshot(review.snapshot)) {
           return this.approveV2Locked(
             tx,
@@ -670,6 +708,11 @@ export class ActivityPublishReviewService {
             changeSnapshot.activity.organizationId,
           );
           await this.proposalValidator.validate(tx, review.activityId, changeSnapshot);
+          await this.allocationModes.assertLockedActivityConsistent(tx, {
+            id: review.activityId,
+            allocationModeCode:
+              changeSnapshot.activity.allocationModeCode ?? activity.allocationModeCode,
+          });
         }
         const liveSessionCount = await tx.activitySession.count({
           where: { activityId: review.activityId, deletedAt: null, statusCode: 'scheduled' },
@@ -822,6 +865,7 @@ export class ActivityPublishReviewService {
       endAt: Date;
       registrationDeadline: Date | null;
       initiatorMemberId: string | null;
+      allocationModeCode: string;
     },
     dto: ApproveActivityPublishReviewDto,
     reviewRequestHash: string | null,
@@ -850,6 +894,13 @@ export class ActivityPublishReviewService {
     ) {
       throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_EXPECTED_SNAPSHOT_MISMATCH);
     }
+    await this.allocationModes.assertLockedActivityConsistent(tx, {
+      id: review.activityId,
+      allocationModeCode:
+        snapshot.schemaVersion === 4
+          ? snapshot.activity.allocationModeCode
+          : activity.allocationModeCode,
+    });
     if (review.requestType === 'initial') {
       this.ensureInitialPublishable(activity);
     } else if (activity.statusCode !== 'published') {
@@ -1243,7 +1294,7 @@ export class ActivityPublishReviewService {
     options: {
       expectedWorkflowRevision?: number;
       resolvedConfig?: ActivityTemplateResolution | ActivityTemplateResolutionWithRegistrationForm;
-      schemaVersion?: 2 | 3;
+      schemaVersion?: 2 | 3 | 4;
     } = {},
   ): Promise<void> {
     const activity = await tx.activity.findUniqueOrThrow({
