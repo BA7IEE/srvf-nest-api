@@ -1088,7 +1088,6 @@ async function main(): Promise<void> {
     (await import('../eslint-rules/authz-declaration-closure.mjs')) as {
       scanRouteAuthzClosure: (options?: {
         rootDir?: string;
-        includeOverlay?: boolean;
         entries?: unknown[];
         cacheKey?: string;
       }) => Array<{
@@ -1241,7 +1240,7 @@ async function main(): Promise<void> {
         routeKey: `GET /api/harness/r8/${name}`,
         controller: 'HarnessAuthzR8ProbeController',
         handler: 'run',
-        truthSource: 'code',
+        legacy: 'auth',
         policy,
       },
     ];
@@ -1628,10 +1627,7 @@ async function main(): Promise<void> {
               files: [probeRel],
               plugins: { srvf: srvfEslintPlugin as never },
               rules: {
-                [AUTHZ_DECLARATION_CLOSURE_RULE]: [
-                  'warn',
-                  { includeOverlay: true, entries, cacheKey },
-                ],
+                [AUTHZ_DECLARATION_CLOSURE_RULE]: ['warn', { entries, cacheKey }],
               },
             },
           ] as never,
@@ -1643,7 +1639,6 @@ async function main(): Promise<void> {
         );
         const records = scanRouteAuthzClosure({
           rootDir: repoRoot,
-          includeOverlay: true,
           entries,
           cacheKey,
         });
@@ -1682,7 +1677,6 @@ async function main(): Promise<void> {
 
     const full = scanRouteAuthzClosure({
       rootDir: repoRoot,
-      includeOverlay: true,
       cacheKey: 'r8-full-repository-scan',
     });
     const distribution = full.reduce<Record<string, number>>((counts, record) => {

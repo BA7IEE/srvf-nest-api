@@ -39,6 +39,7 @@ import {
   CancelAppManagedRegistrationDto,
   RejectAppManagedRegistrationDto,
 } from '../dto/app/app-managed-registration.dto';
+import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 
 @ApiTags('Mobile - Managed Activity Registrations')
 @ApiBearerAuth()
@@ -50,6 +51,12 @@ export class AppManagedActivityRegistrationsController {
   ) {}
 
   @Get()
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 活动负责人或报名协办查看报名列表 [auth]' })
   @ApiWrappedPageResponse(AppManagedRegistrationListItemDto)
   @ApiBizErrorResponse(
@@ -69,6 +76,12 @@ export class AppManagedActivityRegistrationsController {
   }
 
   @Patch('bulk-approve')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 批量通过活动报名；逐条独立事务并返回部分成功结果 [auth]' })
   @ApiWrappedOkResponse(AppManagedRegistrationBulkResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
@@ -83,6 +96,12 @@ export class AppManagedActivityRegistrationsController {
   }
 
   @Patch('bulk-reject')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 批量拒绝活动报名；逐条独立事务并返回部分成功结果 [auth]' })
   @ApiWrappedOkResponse(AppManagedRegistrationBulkResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
@@ -97,6 +116,12 @@ export class AppManagedActivityRegistrationsController {
   }
 
   @Patch(':registrationId/approve')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 活动负责人或报名协办通过待审报名 [auth]' })
   @ApiWrappedOkResponse(AppManagedRegistrationDto)
   @ApiBizErrorResponse(
@@ -132,6 +157,12 @@ export class AppManagedActivityRegistrationsController {
   }
 
   @Patch(':registrationId/reject')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 活动负责人或报名协办拒绝待审或候补报名 [auth]' })
   @ApiWrappedOkResponse(AppManagedRegistrationDto)
   @ApiBizErrorResponse(
@@ -159,6 +190,12 @@ export class AppManagedActivityRegistrationsController {
   }
 
   @Patch(':registrationId/cancel')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 活动负责人或报名协办代取消报名 [auth]' })
   @ApiWrappedOkResponse(AppManagedRegistrationDto)
   @ApiBizErrorResponse(
@@ -187,6 +224,12 @@ export class AppManagedActivityRegistrationsController {
   }
 
   @Post(':registrationId/reopen')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 活动负责人或报名协办将已拒报名重开为待审 [auth]' })
   @ApiWrappedOkResponse(AppManagedRegistrationDto)

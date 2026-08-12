@@ -38,6 +38,7 @@ import {
   AppRegistrationUploadSessionFileParamsDto,
 } from '../dto/app/app-registration-upload-session.dto';
 import { RegistrationUploadSessionService } from '../registration-upload-session.service';
+import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 
 type MultipartUploadFile = {
   originalname: string;
@@ -75,6 +76,12 @@ export class AppRegistrationUploadSessionsController {
   ) {}
 
   @Post(':activityId/registration-upload-sessions')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary:
       'App 创建一次性报名附件上传会话；原始 token 仅本次返回，不签发 Provider upload URL [auth]',
@@ -100,6 +107,12 @@ export class AppRegistrationUploadSessionsController {
   }
 
   @Post(':activityId/registration-upload-sessions/:sessionId/files')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @UseFilters(RegistrationUploadFileSizeFilter)
   @UseInterceptors(

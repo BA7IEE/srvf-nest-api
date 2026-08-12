@@ -95,6 +95,7 @@ import {
   PutAppManagedRegistrationFormDto,
 } from '../dto/app/app-registration-form.dto';
 import { RegistrationFormVersionService } from '../registration-form-version.service';
+import { LoginScoped, RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 
 @ApiTags('Mobile - Managed Activities')
 @ApiBearerAuth()
@@ -109,6 +110,12 @@ export class AppManagedActivitiesController {
   ) {}
 
   @Get('organization-options')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 获取当前队员可发起活动的组织 options [auth]' })
   @ApiWrappedArrayResponse(AppActivityInitiationOrganizationOptionDto)
   @ApiBizErrorResponse(
@@ -124,6 +131,12 @@ export class AppManagedActivitiesController {
   }
 
   @Get()
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 我发起或承担责任的活动分页 [auth]' })
   @ApiWrappedPageResponse(AppManagedActivityListItemDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
@@ -135,6 +148,13 @@ export class AppManagedActivitiesController {
   }
 
   @Post()
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @RequiresPermission('activity-responsibility.override.record', 'activity.create.cross-org')
   @ApiOperation({ summary: 'App 正式队员创建本人作为发起人的活动草稿 [auth]' })
   @ApiWrappedCreatedResponse(AppManagedActivityDetailDto)
   @ApiBizErrorResponse(
@@ -157,6 +177,13 @@ export class AppManagedActivitiesController {
   }
 
   @Post(':activityId/cancel')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @RequiresPermission('activity-responsibility.override.record')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 发起人/负责人在首场开始前取消活动 [auth]' })
   @ApiWrappedOkResponse(AppActivityLifecycleResultDto)
@@ -180,6 +207,13 @@ export class AppManagedActivitiesController {
   }
 
   @Post(':activityId/terminate')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @RequiresPermission('activity-responsibility.override.record')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 负责人提前终止已开始的 published 活动 [auth]' })
   @ApiWrappedOkResponse(AppActivityLifecycleResultDto)
@@ -203,6 +237,13 @@ export class AppManagedActivitiesController {
   }
 
   @Post(':activityId/clone')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @RequiresPermission('activity-responsibility.override.record', 'activity.create.cross-org')
   @ApiOperation({ summary: 'App 发起人/负责人仅复制活动配置为新 draft [auth]' })
   @ApiWrappedCreatedResponse(AppManagedActivityCloneResultDto)
   @ApiBizErrorResponse(
@@ -228,6 +269,12 @@ export class AppManagedActivitiesController {
   }
 
   @Get(':activityId/registration-form')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 获取本人 managed 活动当前报名表定义 [auth]' })
   @ApiWrappedNullableResponse(AppRegistrationFormDto)
   @ApiBizErrorResponse(
@@ -246,6 +293,12 @@ export class AppManagedActivitiesController {
   }
 
   @Put(':activityId/registration-form')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 直改本人 draft 活动报名表定义；已发布活动须走变更审核 [auth]' })
   @ApiWrappedNullableResponse(AppRegistrationFormDto)
   @ApiBizErrorResponse(
@@ -267,6 +320,13 @@ export class AppManagedActivitiesController {
   }
 
   @Post(':activityId/evidence-seals')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @RequiresPermission('activity-responsibility.override.record')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 负责人执行机器证据封场；缺口与 seal 结果沿既有服务透传 [auth]' })
   @ApiWrappedOkResponse(AppEvidenceSealResultDto)
@@ -293,6 +353,12 @@ export class AppManagedActivitiesController {
   }
 
   @Get(':activityId/sessions')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 分页查看本人草稿活动的场次 [auth]' })
   @ApiWrappedPageResponse(AppManagedActivitySessionDto)
   @ApiBizErrorResponse(
@@ -311,6 +377,12 @@ export class AppManagedActivitiesController {
   }
 
   @Post(':activityId/sessions')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 为本人 draft 活动新增场次 [auth]' })
   @ApiWrappedCreatedResponse(AppManagedActivitySessionDto)
   @ApiBizErrorResponse(
@@ -338,6 +410,12 @@ export class AppManagedActivitiesController {
   }
 
   @Patch(':activityId/sessions/:sessionId')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 修改本人 draft 活动场次 [auth]' })
   @ApiWrappedOkResponse(AppManagedActivitySessionDto)
   @ApiBizErrorResponse(
@@ -370,6 +448,12 @@ export class AppManagedActivitiesController {
   }
 
   @Delete(':activityId/sessions/:sessionId')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 软删本人 draft 活动场次 [auth]' })
   @ApiWrappedOkResponse(AppManagedActivitySessionDto)
@@ -397,6 +481,12 @@ export class AppManagedActivitiesController {
   }
 
   @Get(':activityId/sessions/:sessionId/positions')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 分页查看本人草稿场次岗位 [auth]' })
   @ApiWrappedPageResponse(AppManagedActivitySessionPositionDto)
   @ApiBizErrorResponse(
@@ -415,6 +505,12 @@ export class AppManagedActivitiesController {
   }
 
   @Post(':activityId/sessions/:sessionId/positions')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 为本人 draft 场次新增岗位 [auth]' })
   @ApiWrappedCreatedResponse(AppManagedActivitySessionPositionDto)
   @ApiBizErrorResponse(
@@ -450,6 +546,12 @@ export class AppManagedActivitiesController {
   }
 
   @Patch(':activityId/sessions/:sessionId/positions/:positionId')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 修改本人 draft 场次岗位 [auth]' })
   @ApiWrappedOkResponse(AppManagedActivitySessionPositionDto)
   @ApiBizErrorResponse(
@@ -485,6 +587,12 @@ export class AppManagedActivitiesController {
   }
 
   @Delete(':activityId/sessions/:sessionId/positions/:positionId')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 软删本人 draft 场次岗位 [auth]' })
   @ApiWrappedOkResponse(AppManagedActivitySessionPositionDto)
@@ -513,6 +621,10 @@ export class AppManagedActivitiesController {
   }
 
   @Post(':activityId/settlement/generate')
+  @RequiresPermission('activity.settlement-generate.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 生成或刷新结算草稿 [rbac: activity.settlement-generate.record]' })
   @ApiWrappedOkResponse(AppSettlementGenerateResponseDto)
@@ -544,6 +656,10 @@ export class AppManagedActivitiesController {
   }
 
   @Post(':activityId/settlement/submit')
+  @RequiresPermission('activity.settlement-submit.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'App 固化当前草稿为不可变结算版本 [rbac: activity.settlement-submit.record]',
@@ -589,6 +705,7 @@ export class AppManagedActivitiesController {
   }
 
   @Post(':activityId/settlement/close')
+  @RequiresPermission('activity.settlement-close.record', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'App 执行结算和账本检查后机器关账 [rbac: activity.settlement-close.record]',
@@ -626,6 +743,10 @@ export class AppManagedActivitiesController {
   }
 
   @Get(':activityId/settlement')
+  @RequiresPermission('activity.settlement-generate.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary: 'App 查看负责人结算工作台摘要 [rbac: activity.settlement-generate.record]',
   })
@@ -646,6 +767,10 @@ export class AppManagedActivitiesController {
   }
 
   @Get(':activityId/settlement/items')
+  @RequiresPermission('activity.settlement-generate.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary: 'App 分页查看负责人结算逐人结果 [rbac: activity.settlement-generate.record]',
   })
@@ -667,6 +792,10 @@ export class AppManagedActivitiesController {
   }
 
   @Patch(':activityId/settlement/items/:identityId')
+  @RequiresPermission('activity.settlement-update-draft.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       'App 负责人编辑当前 working draft 结算项 [rbac: activity.settlement-update-draft.record]',
@@ -703,6 +832,10 @@ export class AppManagedActivitiesController {
   }
 
   @Get(':activityId/settlement/versions/:versionId')
+  @RequiresPermission('activity.settlement-generate.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary: 'App 查看不可变结算版本、差异和封场修订 [rbac: activity.settlement-generate.record]',
   })
@@ -723,6 +856,10 @@ export class AppManagedActivitiesController {
   }
 
   @Post(':activityId/settlement/versions/:versionId/resubmit')
+  @RequiresPermission('activity.settlement-submit.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -771,6 +908,12 @@ export class AppManagedActivitiesController {
   }
 
   @Get(':activityId/template-resolution')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 查看模板、活动、场次和岗位的最终解析值及来源 [auth]' })
   @ApiWrappedOkResponse(ActivityTemplateResolutionResponseDto)
   @ApiBizErrorResponse(
@@ -788,6 +931,12 @@ export class AppManagedActivitiesController {
   }
 
   @Get(':activityId')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 我管理的活动详情、责任、审核与待办摘要 [auth]' })
   @ApiWrappedOkResponse(AppManagedActivityDetailDto)
   @ApiBizErrorResponse(
@@ -804,6 +953,13 @@ export class AppManagedActivitiesController {
   }
 
   @Patch(':activityId')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @RequiresPermission('activity.create.cross-org')
   @ApiOperation({ summary: 'App 发起人修改 draft 活动 [auth]' })
   @ApiWrappedOkResponse(AppManagedActivityDetailDto)
   @ApiBizErrorResponse(
@@ -830,6 +986,12 @@ export class AppManagedActivitiesController {
   }
 
   @Delete(':activityId')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 发起人删除无参与数据的 draft 活动 [auth]' })
   @ApiWrappedOkResponse(AppManagedActivityProjectionDto)
@@ -850,6 +1012,12 @@ export class AppManagedActivitiesController {
   }
 
   @Post(':activityId/publish-reviews')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 发起人提交初次发布审核；服务端冻结 canonical 快照 [auth]' })
   @ApiWrappedOkResponse(ActivityPublishReviewResponseDto)
@@ -872,6 +1040,12 @@ export class AppManagedActivitiesController {
   }
 
   @Post(':activityId/change-reviews')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 提交已发布活动的完整场次/岗位变更审核 proposal [auth]' })
   @ApiWrappedOkResponse(ActivityPublishReviewResponseDto)
@@ -897,6 +1071,12 @@ export class AppManagedActivitiesController {
   }
 
   @Post(':activityId/reviews/withdraw')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 提交人撤回本人当前 pending 发布申请 [auth]' })
   @ApiWrappedOkResponse(ActivityPublishReviewResponseDto)
@@ -917,6 +1097,12 @@ export class AppManagedActivitiesController {
   }
 
   @Post(':activityId/submit-publish-review')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 发起人提交初次发布审核 [auth]' })
   @ApiWrappedOkResponse(ActivityPublishReviewResponseDto)
@@ -937,6 +1123,12 @@ export class AppManagedActivitiesController {
   }
 
   @Post(':activityId/direct-publish')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 发起人在持有效发布审核 grant 时直接发布 [auth]' })
   @ApiWrappedOkResponse(AppManagedActivityDetailDto)
@@ -958,6 +1150,12 @@ export class AppManagedActivitiesController {
   }
 
   @Post(':activityId/submit-change-review')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 活动负责人提交已发布活动的完整变更 proposal [auth]' })
   @ApiWrappedOkResponse(ActivityPublishReviewResponseDto)
@@ -988,6 +1186,12 @@ export class AppManagedActivitiesController {
   }
 
   @Post(':activityId/withdraw-publish-review')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 提交人撤回当前 pending 发布审核 [auth]' })
   @ApiWrappedOkResponse(ActivityPublishReviewResponseDto)
@@ -1008,6 +1212,12 @@ export class AppManagedActivitiesController {
   }
 
   @Post(':activityId/declare-attendance-complete')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 主负责人声明活动考勤已全部提交 [auth]' })
   @ApiWrappedOkResponse(AppManagedActivityDetailDto)

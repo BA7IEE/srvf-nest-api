@@ -42,6 +42,7 @@ import {
   AppManagedActivityVisitorsQueryDto,
   CreateAppManagedActivityVisitorDto,
 } from '../dto/app/app-activity-visitor.dto';
+import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 
 @ApiTags('Mobile - Managed Activity Guests')
 @ApiBearerAuth()
@@ -54,6 +55,12 @@ export class AppManagedActivityGuestsController {
   ) {}
 
   @Get('invitations')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 活动负责人或报名协办查看邀请列表 [auth]' })
   @ApiWrappedPageResponse(AppActivityInvitationDto)
   @ApiBizErrorResponse(
@@ -73,6 +80,12 @@ export class AppManagedActivityGuestsController {
   }
 
   @Post('invitations')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 活动负责人或报名协办创建定向邀请 [auth]' })
   @ApiWrappedCreatedResponse(AppActivityInvitationDto)
   @ApiBizErrorResponse(
@@ -97,6 +110,12 @@ export class AppManagedActivityGuestsController {
   }
 
   @Post('invitations/:invitationId/revoke')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 活动负责人或报名协办撤回未过期的 pending 邀请 [auth]' })
   @ApiWrappedOkResponse(AppActivityInvitationDto)
@@ -126,6 +145,12 @@ export class AppManagedActivityGuestsController {
   }
 
   @Get('visitors')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 活动负责人或报名协办查看访客名单 [auth]' })
   @ApiWrappedPageResponse(AppActivityVisitorDto)
   @ApiBizErrorResponse(
@@ -145,6 +170,12 @@ export class AppManagedActivityGuestsController {
   }
 
   @Post('visitors')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 活动负责人或报名协办登记外部访客 [auth]' })
   @ApiWrappedCreatedResponse(AppActivityVisitorDto)
   @ApiBizErrorResponse(

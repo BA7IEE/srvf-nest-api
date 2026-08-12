@@ -23,6 +23,7 @@ import { CreateAppMyRegistrationDto } from '../dto/app/create-app-my-registratio
 import { AppMyRegistrationListItemDto } from '../dto/app/app-my-registration-list-item.dto';
 import { AppMyRegistrationDto } from '../dto/app/app-my-registration.dto';
 import { ListAppMyRegistrationsQueryDto } from '../dto/app/list-app-my-registrations-query.dto';
+import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 
 // Phase 2 P2-5a/P2-5b App /api/app/v1/my/* registrations Mobile Controller(5 endpoint)。
 // 沿历史评审稿 docs/archive/reviews/app-api-p2-5-registrations-review.md
@@ -59,6 +60,12 @@ export class AppMyRegistrationsController {
   // ============ GET /api/app/v1/my/registrations(P2-5a)============
 
   @Get('registrations')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary: '我的报名列表(分页 + 可选 statusCode 过滤;sensitive admin 字段不返) [auth]',
   })
@@ -74,6 +81,12 @@ export class AppMyRegistrationsController {
   // ============ GET /api/app/v1/my/registrations/:id(P2-5a)============
 
   @Get('registrations/:id')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary:
       '我的报名详情(owner 校验:memberId !== currentUser.memberId 统一返 404 防侧信道) [auth]',
@@ -95,6 +108,12 @@ export class AppMyRegistrationsController {
   // ============ GET /api/app/v1/my/activities(P2-5a)============
 
   @Get('activities')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiTags('Mobile - My Activities')
   @ApiOperation({
     summary:
@@ -112,6 +131,12 @@ export class AppMyRegistrationsController {
   // ============ POST /api/app/v1/my/registrations(P2-5b)============
 
   @Post('registrations')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary:
       '本人报名活动(仅 legacy 活动；v1.1 live session 或 active Form 必须走 canonical 报名命令；非 published 统一 404) [auth]',
@@ -145,6 +170,12 @@ export class AppMyRegistrationsController {
   // ============ PATCH /api/app/v1/my/registrations/:id/cancel(P2-5b)============
 
   @Patch('registrations/:id/cancel')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary:
       '取消本人报名(pending|pass → cancelled;reject / cancelled / 他人 / 软删 / 不存在统一返 404 防侧信道或 21030) [auth]',

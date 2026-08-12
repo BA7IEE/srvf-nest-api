@@ -20,6 +20,7 @@ import {
   CreateAppManagedActivityOnsiteParticipationDto,
 } from '../dto/app/app-onsite-participation.dto';
 import { OnsiteParticipationCommandService } from '../onsite-participation-command.service';
+import { LoginScoped, RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 
 @ApiTags('Mobile - Managed Activity Onsite Participations')
 @ApiBearerAuth()
@@ -31,6 +32,8 @@ export class AppManagedActivityOnsiteParticipationsController {
   ) {}
 
   @Post('onsite-participations')
+  @LoginScoped({ admission: 'app-member', require: 'all', engine: 'authz-scoped' })
+  @RequiresPermission('activity-registration.create.record')
   @ApiOperation({ summary: 'App 活动负责人现场临时补录参加并占用容量 [auth]' })
   @ApiWrappedCreatedResponse(AppManagedActivityOnsiteParticipationReceiptDto)
   @ApiBizErrorResponse(

@@ -15,6 +15,7 @@ import {
   AppActivityFeedbackResponseDto,
   UpsertActivityFeedbackDto,
 } from '../dto/app/activity-feedback.dto';
+import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 
 // 全新 canonical App self surface：只走全局 JwtAuthGuard + AppIdentityResolver；无 RBAC / @Roles / alias。
 @ApiTags('Mobile - My Activity Feedback')
@@ -24,6 +25,12 @@ export class AppActivityFeedbacksController {
   constructor(private readonly feedbacks: ActivityFeedbacksService) {}
 
   @Put()
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '窗口内创建或更新本人活动评价 [auth]' })
   @ApiWrappedOkResponse(AppActivityFeedbackResponseDto)
@@ -46,6 +53,12 @@ export class AppActivityFeedbacksController {
   }
 
   @Get()
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: '读取本人活动评价与当前提交按钮态 [auth]' })
   @ApiWrappedOkResponse(AppActivityFeedbackResponseDto)
   @ApiBizErrorResponse(

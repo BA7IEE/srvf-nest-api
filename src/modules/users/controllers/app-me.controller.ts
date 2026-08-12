@@ -50,6 +50,7 @@ import { UpdateAppSelfProfileDto } from '../dto/app/update-app-self-profile.dto'
 import { UserWecomBindingService } from '../user-wecom-binding.service';
 import { ChangeMyPasswordDto, UserResponseDto } from '../users.dto';
 import { UsersService } from '../users.service';
+import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 
 // Phase 2 P2-1 App /api/app/v1/me* Mobile Controller。
 // 沿 docs/app-api-phase-2-review.md §2 + §6.1 + §7.1;migration-plan §5 方案 C;
@@ -87,6 +88,12 @@ export class AppMeController {
   ) {}
 
   @Get()
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 视角本人 user + member 摘要(含 canUseApp 标志) [auth]' })
   @ApiWrappedOkResponse(AppMeResponseDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.INTERNAL_ERROR)
@@ -120,6 +127,12 @@ export class AppMeController {
   }
 
   @Get('account')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary: 'App 视角本人账号信息(username / status / lastLoginAt / canUseApp) [auth]',
   })
@@ -148,6 +161,12 @@ export class AppMeController {
   }
 
   @Get('capabilities')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiTags('Mobile - Capabilities')
   @ApiOperation({ summary: 'App 视角本人 capability map(product-level;非 raw RBAC code) [auth]' })
   @ApiWrappedOkResponse(AppCapabilityResponseDto)
@@ -161,6 +180,12 @@ export class AppMeController {
   // Phase 2 P2-2:GET /me/profile(沿评审稿 §7.3 / §2.4 v0.1 字段集恰好 9 个)。
   // canUseApp=false → service 内显式抛 FORBIDDEN(沿 §5.4 + §6.1);不返"空 profile"。
   @Get('profile')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary:
       'App 视角本人 profile(User + Member 基础摘要 + hasMemberProfile 派生;canUseApp=true 必要) [auth]',
@@ -177,6 +202,12 @@ export class AppMeController {
   // (沿 docs/reference/naming-dto-validation.md §7);
   // canUseApp=false → FORBIDDEN。沿 §6.1 不新增 BizCode。
   @Patch('profile')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 视角本人改 profile(严格白名单 nickname / avatarKey) [auth]' })
   @ApiWrappedOkResponse(AppSelfProfileDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
@@ -197,6 +228,12 @@ export class AppMeController {
   // admin without member 允许使用(沿评审稿 §4.2.1 / §4.3 锁定理由 + §4.6 例外边界)。
   @PasswordChangeThrottle()
   @Put('password')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'App 视角本人自助改密(需 oldPassword;不主动吊销 access token;撤销全部 refresh) [auth]',
@@ -232,6 +269,12 @@ export class AppMeController {
   // 防刷三层:同号 60s 间隔 + 同号自然日上限(DB 层,SmsCodeService)+ 本层 IP throttler。
   @SmsSendThrottle()
   @Post('phone/send-code')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -262,6 +305,12 @@ export class AppMeController {
   // 绑定成功事务内写 phone.bind.self / phone.rebind.self audit(手机号掩码)。
   @SmsVerifyThrottle()
   @Put('phone')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -296,6 +345,12 @@ export class AppMeController {
   // **不**调 appIdentity.resolve + assertCanUseApp;豁免仅限本两端点,禁止外溢。
   // openid 仅掩码回显(非 L3 但不滥回显);响应永不含 wx code / session_key。
   @Get('wechat')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary: 'App 查询本人微信绑定状态(openid 一律掩码回显) [auth]',
   })
@@ -309,6 +364,12 @@ export class AppMeController {
   // 同 openid 幂等;他人占用(含软删占用)→ 25002;不挂限流(登录态 + wx code 单次有效
   // 天然限频,无可爆破 secret,评审稿 E-17)。
   @Put('wechat')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -340,6 +401,12 @@ export class AppMeController {
   // 豁免仅限本两端点,禁止外溢。
   // wecomUserId 仅掩码回显(§5.5 L2);响应永不含 OAuth code / state / corpId。
   @Get('wecom')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary: 'App 查询本人企业微信绑定状态(wecomUserId 一律掩码回显) [auth]',
   })
@@ -354,6 +421,12 @@ export class AppMeController {
   // 同目标幂等;他人占用 → 36002;真实变更撤销全部 refresh(access 沿 D-4 自然到期)。
   // **无本人裸解绑**(D-WC-9):释放身份的唯一显式路径是 DELETE admin/v1/users/:id/wecom。
   @Put('wecom')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

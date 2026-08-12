@@ -860,7 +860,6 @@ checkEq(
     ['harness/domain-map.json', 'harness/**'],
     ['harness/architecture-debt.json', 'harness/**'],
     ['harness/state-machines.json', 'harness/**'],
-    ['harness/route-authz-classification.json', 'harness/**'],
     ['harness/authz-assertion-patterns.json', 'harness/**'],
     ['harness/baseline-health.json', 'harness/**'],
     ['scripts/check-boundaries.ts', 'scripts/check-*.ts'],
@@ -955,7 +954,6 @@ checkEq(
       'prisma/schema.prisma',
       'harness/domain-map.json',
       'harness/state-machines.json',
-      'harness/route-authz-classification.json',
       'harness/authz-assertion-patterns.json',
       'docs/ai-harness/ROUTE_AUTHZ.md',
       'test/contract/openapi.contract-spec.ts',
@@ -1035,81 +1033,41 @@ checkEq(
       runFixture('scripts/generate-authz-manifest.ts', ['--check']).code,
       0,
     );
-    const adminPlan = runFixture('scripts/generate-authz-manifest.ts', ['--plan-surface=admin']);
-    check(
-      'P1 admin 回填 codemod:已回填面计划幂等',
-      adminPlan.code === 0 &&
-        adminPlan.out.includes(
-          'Route declaration plan (admin): 270 routes, 0 declarations to insert, 0 overlay entries to transfer.',
-        ),
-      adminPlan.out,
-    );
-    const appliedAdmin = runFixture('scripts/generate-authz-manifest.ts', [
-      '--apply-surface=admin',
-    ]);
-    check(
-      'P1 admin 回填 codemod:重复应用零写入',
-      appliedAdmin.code === 0 &&
-        appliedAdmin.out.includes(
-          'Applied route declarations (admin): 270 routes, 0 declarations inserted, 0 overlay entries transferred.',
-        ),
-      appliedAdmin.out,
-    );
-    const adminCodeTruth = runFixture('scripts/generate-authz-manifest.ts', [
-      '--check',
-      '--check-surface=admin',
-    ]);
-    const fixtureParticipationController = fs.readFileSync(
-      path.join(
-        fixtureRoot,
-        'src/modules/activities/controllers/admin-activity-participation.controller.ts',
-      ),
-      'utf8',
-    );
-    const fixtureContentController = fs.readFileSync(
-      path.join(fixtureRoot, 'src/modules/content/content-admin.controller.ts'),
-      'utf8',
-    );
-    check(
-      'P1 admin 回填 codemod:code truth 与三条关键声明一致',
-      adminCodeTruth.code === 0 &&
-        fixtureParticipationController.includes(
-          "@RequiresPermission('activity-registration.read.record', 'attendance.read.sheet', {\n    require: 'all',\n    engine: 'authz-scoped',\n  })",
-        ) &&
-        fixtureContentController.includes(
-          "@RequiresPermission('attachment.upload.content-file', 'attachment.upload.content-image', {\n    require: 'any',\n    engine: 'rbac-global',\n  })",
-        ),
-      adminCodeTruth.out,
-    );
     const fixtureClassification = path.join(fixtureRoot, 'harness/route-authz-classification.json');
-    const originalClassification = fs.readFileSync(fixtureClassification, 'utf8');
-    const inconsistentClassification = JSON.parse(originalClassification) as {
-      entries: Array<{ routeKey: string; truthSource?: string }>;
-    };
-    const inconsistentAdminEntry = inconsistentClassification.entries.find(
-      (entry) => entry.routeKey === 'GET /api/admin/v1/activities/:activityId/reconciliation',
+    fs.writeFileSync(fixtureClassification, '{"retired":true}\n', 'utf8');
+    const residualOverlay = runFixture('scripts/generate-authz-manifest.ts', ['--check']);
+    fs.rmSync(fixtureClassification, { force: true });
+    check(
+      'P1 overlay 退役负例:残留 classification 文件必被 --check 拒绝',
+      residualOverlay.code !== 0 &&
+        residualOverlay.out.includes(
+          'retired classification overlay must not exist: harness/route-authz-classification.json',
+        ),
+      residualOverlay.out,
     );
-    if (inconsistentAdminEntry === undefined) {
-      throw new Error('admin reconciliation classification entry missing from selftest fixture');
-    }
-    inconsistentAdminEntry.truthSource = 'classification-overlay';
+    const retiredMode = runFixture('scripts/generate-authz-manifest.ts', ['--plan-surface=admin']);
+    check(
+      'P1 overlay 退役负例:旧 codemod mode 不再可用',
+      retiredMode.code !== 0 && retiredMode.out.includes('overlay transition modes are retired'),
+      retiredMode.out,
+    );
+    const fixtureAppActivities = path.join(
+      fixtureRoot,
+      'src/modules/activities/controllers/app-activities.controller.ts',
+    );
+    const originalAppActivities = fs.readFileSync(fixtureAppActivities, 'utf8');
     fs.writeFileSync(
-      fixtureClassification,
-      JSON.stringify(inconsistentClassification, null, 2) + '\n',
+      fixtureAppActivities,
+      originalAppActivities.replace('@LoginScoped(', '@LoginScopedRetired('),
       'utf8',
     );
-    const inconsistentCodeTruth = runFixture('scripts/generate-authz-manifest.ts', [
-      '--check',
-      '--check-surface=admin',
-    ]);
-    fs.writeFileSync(fixtureClassification, originalClassification, 'utf8');
+    const missingDeclaration = runFixture('scripts/generate-authz-manifest.ts', ['--check']);
+    fs.writeFileSync(fixtureAppActivities, originalAppActivities, 'utf8');
     check(
-      'P1 admin 回填 codemod:声明与 truthSource 不一致必被拒绝',
-      inconsistentCodeTruth.code !== 0 &&
-        inconsistentCodeTruth.out.includes(
-          'declaration exists but entry truthSource remains classification-overlay',
-        ),
-      inconsistentCodeTruth.out,
+      'P1 全量声明负例:任一路由缺声明必被 --check 拒绝',
+      missingDeclaration.code !== 0 &&
+        missingDeclaration.out.includes('route authorization declaration missing:'),
+      missingDeclaration.out,
     );
     const fixtureAssertionPatterns = path.join(
       fixtureRoot,
@@ -1129,30 +1087,17 @@ checkEq(
         staleAssertionPatterns.out.includes('harness/authz-assertion-patterns.json is stale'),
       staleAssertionPatterns.out,
     );
-    const undecidedClassification = JSON.parse(originalClassification) as {
-      entries: Array<{ decisionStatus: string }>;
-    };
-    undecidedClassification.entries[0].decisionStatus = 'needs-decision';
-    fs.writeFileSync(
-      fixtureClassification,
-      JSON.stringify(undecidedClassification, null, 2) + '\n',
-      'utf8',
-    );
-    const undecidedAuthz = runFixture('scripts/generate-authz-manifest.ts', ['--check']);
-    fs.writeFileSync(fixtureClassification, originalClassification, 'utf8');
-    check(
-      'P0 authz 定性阳性:任一 needs-decision 必被 --check 拒绝',
-      undecidedAuthz.code !== 0 && undecidedAuthz.out.includes('decision status must be decided'),
-      undecidedAuthz.out,
-    );
     const staleAuthz = mutateInputAndRun(
       'src/app.module.ts',
       'scripts/generate-authz-manifest.ts',
       ['--check'],
     );
     check(
-      'P0 inputDigest 阳性:触碰任一 authz 输入文件必使生成器拒绝',
-      staleAuthz.code !== 0 && staleAuthz.out.includes('classification inputDigest stale'),
+      'P1 inputDigest 阳性:触碰任一 authz 输入文件必使生成物过期',
+      staleAuthz.code !== 0 &&
+        staleAuthz.out.includes(
+          'docs/ai-harness/ROUTE_AUTHZ.md is stale; run generator with --write',
+        ),
       staleAuthz.out,
     );
   } catch (error) {

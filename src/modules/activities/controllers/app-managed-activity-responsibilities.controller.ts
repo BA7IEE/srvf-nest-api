@@ -35,6 +35,7 @@ import {
   TransferAppManagedActivityInitiatorDto,
   TransferAppManagedActivityOwnerDto,
 } from '../dto/app/app-managed-activity.dto';
+import { LoginScoped, RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 
 @ApiTags('Mobile - Managed Activity Responsibilities')
 @ApiBearerAuth()
@@ -46,6 +47,12 @@ export class AppManagedActivityResponsibilitiesController {
   ) {}
 
   @Get('responsibilities')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 查看我管理活动的负责人和协办人 [auth]' })
   @ApiWrappedOkResponse(AppManagedResponsibilitiesDto)
   @ApiBizErrorResponse(
@@ -62,6 +69,12 @@ export class AppManagedActivityResponsibilitiesController {
   }
 
   @Get('collaborator-options')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 获取本活动可选协办人（到场者或活动组织有效成员） [auth]' })
   @ApiWrappedOkResponse(AppCollaboratorOptionsResponseDto)
   @ApiBizErrorResponse(
@@ -78,6 +91,13 @@ export class AppManagedActivityResponsibilitiesController {
   }
 
   @Post('collaborators')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @RequiresPermission('activity-responsibility.override.record')
   @ApiOperation({ summary: 'App 活动负责人新增协办人 [auth]' })
   @ApiWrappedCreatedResponse(AppManagedResponsibilityAssignmentDto)
   @ApiBizErrorResponse(
@@ -109,6 +129,13 @@ export class AppManagedActivityResponsibilitiesController {
   }
 
   @Delete('collaborators/:assignmentId')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @RequiresPermission('activity-responsibility.override.record')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 活动负责人结束协办职责 [auth]' })
   @ApiWrappedOkResponse(AppManagedResponsibilityAssignmentDto)
@@ -133,6 +160,13 @@ export class AppManagedActivityResponsibilitiesController {
   }
 
   @Post('transfer-initiator')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @RequiresPermission('activity-responsibility.override.record', 'activity.create.cross-org')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'App 草稿活动移交发起人(当前发起人或 responsibility override) [auth]',
@@ -171,6 +205,13 @@ export class AppManagedActivityResponsibilitiesController {
   }
 
   @Post('transfer-owner')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @RequiresPermission('activity-responsibility.override.record')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 活动负责人移交责任并原子切换授权 [auth]' })
   @ApiWrappedOkResponse(AppManagedResponsibilitiesDto)

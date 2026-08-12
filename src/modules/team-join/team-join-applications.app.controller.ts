@@ -20,6 +20,7 @@ import {
   UpdateAppTeamJoinTargetsDto,
 } from './dto/app/app-team-join.dto';
 import { AppMeTeamJoinService } from './team-join-applications.app.service';
+import { LoginScoped } from '../../common/decorators/route-authz.decorator';
 
 // 招新三期(入队)T3(2026-06-19):App 自助面 Mobile Controller(评审稿 §3.2 / E-J-5)。
 // 入口仅全局 JwtAuthGuard;**不**挂 @Roles / @Public / RBAC / 限流;准入 + self-scope 全前置在 service;
@@ -41,6 +42,12 @@ export class TeamJoinApplicationsAppController {
   constructor(private readonly service: AppMeTeamJoinService) {}
 
   @Post('applications')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary:
       '发起入队申请(候选须属于本轮开放清单且不超过轮上限;需有 open 入队轮 + 本人未入队;同轮防重) [auth]',
@@ -66,6 +73,12 @@ export class TeamJoinApplicationsAppController {
   }
 
   @Get('applications/current')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary: '查本人当前入队进度(状态 / 各 gate 实况 / 实时贡献值 / 候选部门;无申请→404) [auth]',
   })
@@ -80,6 +93,12 @@ export class TeamJoinApplicationsAppController {
   }
 
   @Patch('applications/:id/targets')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary:
       '改候选目标部门(仅本人 + joining 态;每个 org 须存在+ACTIVE、属于本轮开放清单且不超过轮上限) [auth]',

@@ -18,6 +18,7 @@ import {
   AppActivityRegistrationCommandReceiptDto,
 } from '../dto/app/create-app-activity-registration.dto';
 import { RegistrationCommandService } from '../registration-command.service';
+import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 
 @ApiTags('Mobile - Activity Registrations')
 @ApiBearerAuth()
@@ -26,6 +27,12 @@ export class AppActivityRegistrationsController {
   constructor(private readonly registrationCommand: RegistrationCommandService) {}
 
   @Post(':activityId/registrations')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary:
       '本人提交或审批前重提报名主链；请求含 operationKey、冻结表单答案与有序场次岗位志愿 [auth]',

@@ -13,6 +13,7 @@ import { BizCode } from '../../../common/exceptions/biz-code.constant';
 import { AppMyAttendanceRecordsService } from '../app-my-attendance-records.service';
 import { AppMyAttendanceRecordDto } from '../dto/app/app-my-attendance-record.dto';
 import { ListAppMyAttendanceRecordsQueryDto } from '../dto/app/list-app-my-attendance-records-query.dto';
+import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 
 // Phase 2 P2-6 App /api/app/v1/my/attendance-records Mobile Controller(1 endpoint)。
 // 沿 docs/app-api-p2-6-attendance-records-review.md §7.2 + D-P2-6-3:
@@ -45,6 +46,12 @@ export class AppMyAttendanceRecordsController {
   // ============ GET /api/app/v1/my/attendance-records(P2-6)============
 
   @Get('attendance-records')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary:
       '我的考勤记录列表(仅 approved Sheet 内 records;分页 + 可选 activityId 过滤;含 activity 派生字段) [auth]',

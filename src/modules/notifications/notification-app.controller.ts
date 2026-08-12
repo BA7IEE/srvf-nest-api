@@ -24,6 +24,7 @@ import {
 } from './notification.dto';
 import { NotificationReadService } from './notification-read.service';
 import { NotificationSubscriptionService } from './notification-subscription.service';
+import { LoginScoped } from '../../common/decorators/route-authz.decorator';
 
 // 统一通知模块 S1 站内信渠道(第 28 模块 notifications 扩 controller)app/v1 会员读取面
 // (评审稿 unified-notification-dispatcher-review.md §5 / member-notification-review.md §7 端点 9-12)。
@@ -49,6 +50,12 @@ export class NotificationAppController {
   ) {}
 
   @Get()
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary: '会员通知列表(准入 canUseApp;按 4 档可见性过滤;每项带 read 已读标志) [auth]',
   })
@@ -64,6 +71,12 @@ export class NotificationAppController {
   // ===== 微信订阅 quota(统一通知 S2;字面段 subscriptions/* 声明于 :id 之前)=====
 
   @Post('subscriptions/ack')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -79,6 +92,12 @@ export class NotificationAppController {
   }
 
   @Get('subscriptions/status')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary: '查微信订阅剩余配额(逐模板 availableCount;前端据此判断是否需补授权) [auth]',
   })
@@ -93,6 +112,12 @@ export class NotificationAppController {
 
   // 字面段:必须在 `:id` 之前声明(否则 'unread-count' 被当作 :id)。
   @Get('unread-count')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: '会员未读通知数(badge;可见 + published − 本人已读) [auth]' })
   @ApiWrappedOkResponse(NotificationUnreadCountDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
@@ -101,6 +126,12 @@ export class NotificationAppController {
   }
 
   @Get(':id')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary: '会员通知详情(准入 canUseApp;可见级不通过 → 404 防枚举;不自动已读) [auth]',
   })
@@ -114,6 +145,12 @@ export class NotificationAppController {
   }
 
   @Post(':id/read')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
