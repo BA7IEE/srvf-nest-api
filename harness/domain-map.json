@@ -873,18 +873,6 @@
     {
       "sourceDomain": "platform-core",
       "sourceModule": "attachments",
-      "targetDomain": "participation",
-      "prismaModel": "RegistrationFormAnswer",
-      "operation": "findFirst",
-      "sourceFile": "src/modules/attachments/attachments.service.ts",
-      "sourceSymbol": "AttachmentsService.consumeRegistrationUploadsForFormAnswersInTransactionTrusted",
-      "accessPath": "RegistrationFormAnswer",
-      "observedBy": "Phase 2 docs:boundaries R5/R6 实测",
-      "reviewTrigger": "调用形态、读取字段或属主调整时复核；语义时间窗加状态组合不得以本项豁免。"
-    },
-    {
-      "sourceDomain": "platform-core",
-      "sourceModule": "attachments",
       "targetDomain": "content",
       "prismaModel": "Content",
       "operation": "findUnique",
@@ -1095,18 +1083,6 @@
       "sourceFile": "src/modules/authz/resource-resolver.service.ts",
       "sourceSymbol": "ResourceResolverService.organizationPath",
       "accessPath": "OrganizationClosure",
-      "observedBy": "Phase 2 docs:boundaries R5/R6 实测",
-      "reviewTrigger": "调用形态、读取字段或属主调整时复核；语义时间窗加状态组合不得以本项豁免。"
-    },
-    {
-      "sourceDomain": "credentials",
-      "sourceModule": "certificates",
-      "targetDomain": "engagement",
-      "prismaModel": "RecruitmentCertificateClaim",
-      "operation": "count",
-      "sourceFile": "src/modules/certificates/certificate-standards.service.ts",
-      "sourceSymbol": "CertificateStandardsService.softDelete",
-      "accessPath": "RecruitmentCertificateClaim",
       "observedBy": "Phase 2 docs:boundaries R5/R6 实测",
       "reviewTrigger": "调用形态、读取字段或属主调整时复核；语义时间窗加状态组合不得以本项豁免。"
     },
@@ -1353,18 +1329,6 @@
     {
       "sourceDomain": "engagement",
       "sourceModule": "recruitment",
-      "targetDomain": "identity-org",
-      "prismaModel": "User",
-      "operation": "findMany",
-      "sourceFile": "src/modules/recruitment/recruitment-applications-query.service.ts",
-      "sourceSymbol": "RecruitmentApplicationsQueryService.buildPublicityList",
-      "accessPath": "User",
-      "observedBy": "Phase 2 docs:boundaries R5/R6 实测",
-      "reviewTrigger": "调用形态、读取字段或属主调整时复核；语义时间窗加状态组合不得以本项豁免。"
-    },
-    {
-      "sourceDomain": "engagement",
-      "sourceModule": "recruitment",
       "targetDomain": "credentials",
       "prismaModel": "CertificateRecognitionPolicy",
       "operation": "findMany",
@@ -1418,18 +1382,6 @@
       "operation": "findMany",
       "sourceFile": "src/modules/recruitment/recruitment-promotion.service.ts",
       "sourceSymbol": "RecruitmentPromotionService.loadBoundPhones",
-      "accessPath": "User",
-      "observedBy": "Phase 2 docs:boundaries R5/R6 实测",
-      "reviewTrigger": "调用形态、读取字段或属主调整时复核；语义时间窗加状态组合不得以本项豁免。"
-    },
-    {
-      "sourceDomain": "engagement",
-      "sourceModule": "recruitment",
-      "targetDomain": "identity-org",
-      "prismaModel": "User",
-      "operation": "findMany",
-      "sourceFile": "src/modules/recruitment/recruitment-stats.service.ts",
-      "sourceSymbol": "RecruitmentStatsService.getCycleStats",
       "accessPath": "User",
       "observedBy": "Phase 2 docs:boundaries R5/R6 实测",
       "reviewTrigger": "调用形态、读取字段或属主调整时复核；语义时间窗加状态组合不得以本项豁免。"
