@@ -163,6 +163,8 @@ Certificate (不在 participation 图内)
 
 > **D84 + 第 4 批⑫ 分配方式当前事实**：`Activity.allocationModeCode` 是每活动唯一权威标量，DB 三值闭集为 `first_come/qualification_rank/lottery`，存量仍由兼容 default 读为 `first_come`；但 Admin/App 新建均必须显式传闭集值，service 也会复核，不能依赖 default。draft PATCH 可改，published 只能经 change review；Admin/App managed projection 返 `allocationModeCode`，公共 App detail 返 `allocationMode`（列表不扩大）。新发布 proposal 固定 schemaVersion=4，把 mode 纳入 target/base/hash/stale guard，只有 v4 apply 可写回；v1 缺字段保留 locked Activity 当前值，v2/v3 hash 与审批逐字不纳入 mode。`ActivityAllocationModeService` 只允许在 Activity `FOR UPDATE` 后调用，draft PATCH、初发/变更提交及审批均查询全部 preparing/committed/voided batch；任一 mode 不同即 `409/20152`、整笔零写，不自动修改、删除或重建历史 batch。未来 batch writer 必须先锁 Activity 并复制其 mode；本刀仍不执行 first_come、rank/lottery、candidate、容量或候补排序。
 
+> **D85 + 第 4 批⑬ 可重放分配合同当前事实**：Batch 冻结算法版本、候选集合 SHA-256；lottery 先存 server seed commitment，提交后保存 reveal，非 lottery 不得携带 seed。Candidate 冻结永久 identity、报名头与精确 revision、服务器受理时间、资格快照 SHA-256、0..100 分数、稳定 tie-break、抽签/候补序号、结果与对象解释；两条复合 FK 防身份/报名头/revision 拼错，同批非空 tie-break、抽签序号和候补序号分别唯一。migration 只允许双表为空时落库，旧行不猜不回填；本刀没有 writer、endpoint、容量 caller、抽签执行或递补行为。
+
 **关键 invariant**:
 
 - `AttendanceRecord.contributionPoints` 字段层为历史兼容仍可空;业务写路不接受人工最终分,submit/edit 一律从 ContributionRule 计算,无规则落 0;仅 approved 时"语义生效"。

@@ -244,7 +244,8 @@
 > - **H 更正**：追认现有严格版本化更正 JSON。
 > - **I reservation pointer**：capacityReservationId 固定指向 session reservation；释放时清空，不一致为 20147。
 >
-> **仍待下一刀**：资格 operator / valueJson 精确编码归下一 D 刀冻结；ADV-014 按激进安全版归第 6 批导入刀。
+> **D85 / 第 4 批⑬ 已落可重放分配 DB 地基**：Batch 冻结算法版本、候选 SHA-256 与 lottery commitment/reveal；Candidate 冻结永久头/revision、acceptedAt、资格快照 SHA-256、分数/结果/排名/对象解释，并由两条复合 FK 和同批唯一序号防错锚。migration 仅接受双表为空，旧行 23514 原子失败；零 writer、零实际分配、零容量/候补 caller。
+> **仍待下一刀**：资格配置/发布激活、邀请接受、实际分配与候补 caller；ADV-014 按激进安全版归第 6 批导入刀。
 > **当前行为**：live cancelled/reject 头按入口同头追加 immutable revision；soft-deleted 头的新请求仍按入口
 > 21002/21003/21030 fail-closed，旧 operationKey+hash 精确回执保持优先重放。legacy 若已存在永久 identity
 > 则 21038，不制造头/身份投影裂缝。AC-021、ADV-005 已由十轮真实 HTTP 链转 destination。
@@ -276,7 +277,7 @@
 > **#20（本刀保守工程裁定）**：第 79 migration 注释的“token 不进任何响应”按同段“原始 token 只返回一次”收窄为“除创建响应外不再返回”；上传路由、后端中转 multipart、30 分钟 TTL 与复用 `attachment_legacy` storage source 均为未逐字规定的执行口径，且不改 schema 注释。
 > **#21（本刀保守工程裁定）**：合同未逐字定义 canonical 报名 wire 的 `preferences[].positionIds[]` 顺序如何落库、file 题最终附件 owner；固定按数组顺序派生从 1 开始的 `preferenceOrder`，最终 owner 固定 `registration-form-answer`。两者均可逆，不宣称为原合同明文。
 > **#22（第 83 migration + 第 4 批⑪ runtime 已兑现）**：资格规则 wire 固定为 `grade/gender=in+codes`、`organization=in_subtree+organizationIds`、`certificate/training=has_any+standardIds`、`insurance=covers_activity`（无 `valueJson`）和 `age=between+minYears/maxYears`（可单边、数组去重）；作用域双向复合 FK、版本/active NULL 去重与冻结快照合同已落。统一 evaluator 与 display/submit/review snapshot writer 已接 App detail、canonical submit、managed onsite 与 approve；资格配置/发布激活 endpoint 仍未实现。
-> **#23（第 84 migration + 第 4 批⑫ runtime 已兑现）**：`Activity.allocationModeCode` 是每活动唯一权威标量，DB 仅接受 `first_come/qualification_rank/lottery`；存量/旧 server 仍兼容 default，新 Admin/App create 必须显式选择，draft 可改、published 走 change review。新发布快照为 v4，mode 纳入 activity target/base/hash/stale guard；v1/v2/v3 的历史 hash 与审批行为不漂移。Activity 根锁内的 draft PATCH、初发/变更提交和审批均检查全部 preparing/committed/voided batch，任一与目标 mode 不同即 `409/20152`、零写且不改历史 batch。first_come 的受理队列、rank/lottery 截止与可重放抽签、candidate 与候补顺序仍待后续 caller。
+> **#23（第 84/85 migration + 第 4 批⑫/⑬）**：`Activity.allocationModeCode` 是每活动唯一权威标量，DB 仅接受 `first_come/qualification_rank/lottery`；存量/旧 server 仍兼容 default，新 Admin/App create 必须显式选择，draft 可改、published 走 change review。v4 发布快照纳入 mode，v1/v2/v3 历史行为不漂移；Activity 根锁内所有写入口对历史 batch mode 不一致返回 `409/20152`。D85 已冻结算法版本、候选/资格哈希、server seed commitment/reveal、永久头/revision/acceptedAt 与稳定顺序约束；first_come 队列、rank/lottery 执行、容量和候补 caller 仍待下一 C 刀。
 > **#24（维护者 2026-08-09 已裁定，实施待后续 caller）**：`capacityReservationId` 固定指向 session reservation；释放清空，不一致为 20147。
 > **#25（维护者 2026-08-09 已裁定）**：visitor `attendanceCode` 恒为 null，且无写入口。
 > **#27（维护者 2026-08-09 已裁定；第 82 migration + 第 4 批⑩已兑现）**：每次报名/重报的保险 evidence 绑定当次 `ActivityRegistrationRevision`；旧 header-only evidence 不改不回填。第 82 以 nullable composite FK + legacy/revision 两类 partial unique 落兼容地基；runtime producer 已写当次 revision，approval 对 currentRevision>0 只认对应 evidence，currentRevision=0 才兼容唯一 legacy NULL evidence。上线须 drain→独立 deploy D81/D82+探针→保持 drain 切整批 runtime exact SHA，禁新旧混跑或旧版回滚。
@@ -376,6 +377,8 @@
 > **第 4 批验收回填**：AC-016、AC-029 已各有真实 canonical App E2E；AC-017 继续 todo（后台代报名与导入未接入）。ADV-017 已绑定 activity/session 降容 HTTP 针；AC-022/023 仍仅有 reservation 内核证据，尚无 canonical approve/allocation policy caller；AC-026/027 已有 managed onsite/访客真实 HTTP destination，AC-019 保持 todo。AC-021、ADV-005 已绑定十轮永久 head/identity/revision/capacity/pointer/population/evidence 完整链；**AC-018 已翻为 `activity-batch4-qualification-runtime.e2e-spec.ts` 的真实 display/submit/onsite/review destination，最终只能由冷启动 CI 新库裁决；旧 `app_test` 的 23514 不是绿。** AC-024、AC-028、ADV-014 仍 todo。
 
 > **第 4 批⑫（分配方式显式选择、发布快照冻结与父子一致性）**：新建/草稿/读面、v4 proposal 与历史 v1/v2/v3 兼容、`20152` fail-closed 和两套 Nest/Prisma pool 的根锁交错均已落真实测试；不引入任何 allocation batch 生产 writer，也不执行 first_come 排队、资格排序、抽签、candidate、capacity caller、候补排序或递补。**AC-022、AC-023、AC-025 继续 todo，不得按本刀翻为完成。**
+
+> **第 4 批⑬（D85 可重放分配合同地基）**：双表空库门、两条同头复合 FK、64 位小写十六进制 hash/seed、算法版本、acceptedAt、score/result/rank/tie-break/explanation 形状与同批唯一顺序已由真实 84→85、空库重放、非空 fail-fast、late rollback 和五组独立变异锁定。仍为纯 DB 地基，AC-022/023/025 不翻面。
 
 - **合同**:[`archive/reviews/activity-business-overhaul-v1.1/`](../archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效
   (业务方案 / 详细开发文档 / 355 项追踪矩阵 / 修订说明),SHA256 入仓时原位校验全过。
