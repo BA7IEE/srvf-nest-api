@@ -12,7 +12,8 @@ name: CI
 #   changeset(docs-only 判定)──┐
 #   fast(lint/typecheck/docs guards/build/unit;无 Postgres,~3m)──┤
 #   slow(contract + e2e 并行;docs-only 跳过,~8-12m)◄─ changeset ──┤
-#   gate(name 恒为 'Lint / Typecheck / E2E';needs: [fast, slow])◄──┘
+#   journeys(金五条独立库 / 单 worker;docs-only 跳过)◄─ changeset ─┤
+#   gate(name 恒为 'Lint / Typecheck / E2E';needs: [fast, slow, journeys])◄──┘
 #
 # e2e 并行化(per-worker 派生库)见 test/setup/;句柄泄漏检测由
 # nightly-e2e-leaks.yml 串行线承接(detectOpenHandles 与并行互斥)。
@@ -124,7 +125,7 @@ jobs:
   fast:
     name: Fast checks
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     needs: changeset
     steps:
       - name: Checkout
@@ -308,8 +309,62 @@ jobs:
             echo "::warning::并行 e2e 出现 worker 强制退出(本仓已知基线,非硬失败)。若近期新增/改动了 spec,请核对 afterAll 是否 app.close();权威检测见 nightly-e2e-leaks.yml,本地复现:pnpm test:e2e:leaks"
           fi
 
+  # 金五条与既有 e2e 物理隔离：独立 Jest config、独立派生库、单 worker。
+  # 它们跨越招新、活动、证书、出箱等域，不能混入 e2e shard 后被偶然的执行顺序掩盖。
+  # docs-only 时同 slow 合法跳过，gate 会正面核验跳过理由。
+  journeys:
+    name: Golden journeys
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: changeset
+    if: needs.changeset.outputs.docs_only != 'true'
+    env:
+      JEST_MAX_WORKERS: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start PostgreSQL 16 service container
+        run: docker compose up -d postgres
+
+      - name: Wait for PostgreSQL ready
+        run: |
+          for i in $(seq 1 60); do
+            if docker exec u-nest-api-postgres pg_isready -U postgres -d app >/dev/null 2>&1; then
+              echo "PostgreSQL is ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "PostgreSQL not ready after 60s; dumping logs:"
+          docker compose logs postgres
+          exit 1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      - name: Initialize test database
+        run: pnpm db:test:init
+
+      - name: Run golden journeys (isolated, serial)
+        run: pnpm test:journeys
+
   # 保名 gate:branch protection 的 required context 逐字指向本 job 的 name。
-  # fast 必须 success;slow 允许 success(全量)或 skipped(docs-only)。
+  # fast 必须 success;slow / journeys 允许 success(全量)或 skipped(docs-only)。
   # 其余一切结果(failure / cancelled)→ gate 红。
   # ── Harness 3.0 P2c:红区触碰的 agent 无关守护 ────────────────────────────
   # 为什么在 CI 而不只在 hook:`.claude/hooks/redzone-guard.sh` 只对 Claude Code
@@ -407,12 +462,12 @@ jobs:
     name: Lint / Typecheck / E2E
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [changeset, fast, slow, redzone-scan, redzone-approval]
+    needs: [changeset, fast, slow, journeys, redzone-scan, redzone-approval]
     if: always()
     steps:
       - name: Aggregate results
         run: |
-          echo "changeset=${{ needs.changeset.result }} fast=${{ needs.fast.result }} slow=${{ needs.slow.result }} docs_only=${{ needs.changeset.outputs.docs_only }}"
+          echo "changeset=${{ needs.changeset.result }} fast=${{ needs.fast.result }} slow=${{ needs.slow.result }} journeys=${{ needs.journeys.result }} docs_only=${{ needs.changeset.outputs.docs_only }}"
           # ① changeset 必须成功:它失败 → slow 被 GitHub 标 skipped(不是 failure),
           #    若不判这一条,gate 会在 contract+e2e 一次都没跑的情况下放行(fail-open 假绿)。
           if [ "${{ needs.changeset.result }}" != "success" ]; then
@@ -423,21 +478,25 @@ jobs:
             echo "::error::fast checks 未通过"
             exit 1
           fi
-          # ② slow 允许 skipped 的**唯一**合法理由必须被正面证明(docs_only == 'true'),
-          #    不从 skipped 反推。
-          if [ "${{ needs.slow.result }}" = "skipped" ]; then
+          # ② slow / journeys 允许 skipped 的**唯一**合法理由必须被正面证明
+          #    (docs_only == 'true'),不从 skipped 反推。
+          if [ "${{ needs.slow.result }}" = "skipped" ] || [ "${{ needs.journeys.result }}" = "skipped" ]; then
             if [ "${{ needs.changeset.outputs.docs_only }}" != "true" ]; then
-              echo "::error::slow 被跳过但变更集并非 docs-only —— 拒绝放行"
+              echo "::error::slow 或 journeys 被跳过但变更集并非 docs-only —— 拒绝放行"
               exit 1
             fi
-            echo "✓ gate passed (docs-only:slow 合法跳过)"
+            echo "✓ gate passed (docs-only:slow / journeys 合法跳过)"
             exit 0
           fi
           if [ "${{ needs.slow.result }}" != "success" ]; then
             echo "::error::contract/e2e 未通过"
             exit 1
           fi
-          echo "✓ gate passed (fast + slow 均通过)"
+          if [ "${{ needs.journeys.result }}" != "success" ]; then
+            echo "::error::golden journeys 未通过"
+            exit 1
+          fi
+          echo "✓ gate passed (fast + slow + journeys 均通过)"
 
       # ③ 红区审批(P2c)。与 slow 同一套「不从 skipped 反推」的判法:
       #    redzone-approval 被跳过的**唯一**合法理由是 scan 明确报告 touched=false。

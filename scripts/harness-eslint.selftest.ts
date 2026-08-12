@@ -113,6 +113,8 @@ const REALIAS = 'srvf/no-decorator-realias';
 const NEAR_FUTURE = 'srvf/no-near-future-date';
 /** 通知模块受众判定唯一入口:T5A 挂账的第五条自定义规则(eslint-rules/no-audience-primitive-import.mjs)。 */
 const AUDIENCE_IMPORT = 'srvf/no-audience-primitive-import';
+/** R8:声明 canonical policy 与 T1/T2 字面断言闭环；不确定路径诚实落 T3。 */
+const AUTHZ_DECLARATION_CLOSURE = 'srvf/authz-declaration-closure';
 
 const CASES: readonly Case[] = [
   // ---- 鉴权 / 判权单轨 ----
@@ -1053,6 +1055,7 @@ async function main(): Promise<void> {
   const {
     harnessConfigBlocks,
     HARNESS_SYNTAX,
+    AUTHZ_DECLARATION_CLOSURE_RULE,
     NULLABLE_IS_OPTIONAL_MESSAGE,
     PARAM_ID_STRING_MESSAGE,
     RATCHET_BASELINES,
@@ -1062,6 +1065,7 @@ async function main(): Promise<void> {
     srvfEslintPlugin,
   } = (await import('../eslint.harness.mjs')) as {
     HARNESS_SYNTAX: Record<string, { message: string }>;
+    AUTHZ_DECLARATION_CLOSURE_RULE: string;
     harnessConfigBlocks: unknown[];
     NULLABLE_IS_OPTIONAL_MESSAGE: string;
     PARAM_ID_STRING_MESSAGE: string;
@@ -1080,6 +1084,19 @@ async function main(): Promise<void> {
     ) => Map<string, string[]>;
     parseRatchetRegistry: (text: string) => unknown[];
   };
+  const { scanRouteAuthzClosure } =
+    (await import('../eslint-rules/authz-declaration-closure.mjs')) as {
+      scanRouteAuthzClosure: (options?: {
+        rootDir?: string;
+        includeOverlay?: boolean;
+        entries?: unknown[];
+        cacheKey?: string;
+      }) => Array<{
+        tier: string;
+        closure: string;
+        missing: string[];
+      }>;
+    };
   const eslint = new ESLint({
     cwd: process.cwd(),
     overrideConfigFile: true,
@@ -1113,10 +1130,7 @@ async function main(): Promise<void> {
   // 顺带把断言从「有 harness 规则响了」升级成「**是这一条**响了」,
   // misattribution(A 的用例被 B 抓到)也一并堵上。
   const messageToId = new Map<string, string>(
-    Object.entries(HARNESS_SYNTAX).map(([id, def]) => [
-      def.message,
-      id,
-    ]),
+    Object.entries(HARNESS_SYNTAX).map(([id, def]) => [def.message, id]),
   );
   const coveredSelectors = new Set<string>();
 
@@ -1132,7 +1146,8 @@ async function main(): Promise<void> {
         m.ruleId === PARAM_ID ||
         m.ruleId === REALIAS ||
         m.ruleId === NEAR_FUTURE ||
-        m.ruleId === AUDIENCE_IMPORT,
+        m.ruleId === AUDIENCE_IMPORT ||
+        m.ruleId === AUTHZ_DECLARATION_CLOSURE,
     );
 
     if (c.expect === null) {
@@ -1172,7 +1187,8 @@ async function main(): Promise<void> {
         m.ruleId === PARAM_ID ||
         m.ruleId === REALIAS ||
         m.ruleId === NEAR_FUTURE ||
-        m.ruleId === AUDIENCE_IMPORT
+        m.ruleId === AUDIENCE_IMPORT ||
+        m.ruleId === AUTHZ_DECLARATION_CLOSURE
       ) {
         coveredSelectors.add(m.ruleId);
         continue;
@@ -1186,23 +1202,546 @@ async function main(): Promise<void> {
     } else {
       failures.push(
         `✗ ${c.name} — 期望命中 ${c.expect},实际 ${
-          harnessHits.length === 0 ? '零违规(规则可能已失效!)' : harnessHits.map((m) => m.ruleId ?? '?').join(',')
+          harnessHits.length === 0
+            ? '零违规(规则可能已失效!)'
+            : harnessHits.map((m) => m.ruleId ?? '?').join(',')
         }`,
       );
     }
   }
 
+  // ── R8:声明↔实现闭环 —— 用真实规则、真实文件验证边界 ─────────────────────
+  //
+  // 这里故意不重写一份 AST 检查器。探针直接喂已经挂到 eslint.harness.mjs 的
+  // srvf/authz-declaration-closure，并用它导出的同一个 scanner 核对分类结果。
+  // 否则「rule 绿」和「首扫报告绿」可以各自用不同语义，正好重演 R8 要消灭的
+  // 两把尺子问题。
+  {
+    type ProbePolicy = {
+      admission: string | null;
+      mode: string;
+      codes: Array<{ code: string; scope: string | null }>;
+      require: 'all' | 'any';
+      scopes: string[];
+      engine: string | null;
+    };
+    type R8Probe = {
+      name: string;
+      source: string;
+      policy: ProbePolicy;
+      tier: string;
+      closure: string;
+      diagnostic?: string;
+    };
+    const repoRoot = path.resolve(__dirname, '..');
+    const probeRel = 'src/__harness-authz-r8-probe.controller.ts';
+    const probeAbs = path.join(repoRoot, probeRel);
+    const entryOf = (name: string, policy: ProbePolicy) => [
+      {
+        routeKey: `GET /api/harness/r8/${name}`,
+        controller: 'HarnessAuthzR8ProbeController',
+        handler: 'run',
+        truthSource: 'code',
+        policy,
+      },
+    ];
+    const controller = (body: string) =>
+      `${body}\n\nexport class HarnessAuthzR8ProbeController {\n` +
+      '  constructor(private readonly service: HarnessAuthzR8ProbeService) {}\n\n' +
+      '  async run(user: unknown): Promise<unknown> {\n' +
+      '    const invoke = this.service.authorize.bind(this.service);\n' +
+      '    return invoke(user);\n' +
+      '  }\n' +
+      '}\n';
+    const probes: readonly R8Probe[] = [
+      {
+        name: 'alias-and-one-layer-intermediate',
+        source: controller(
+          'class RbacService {\n' +
+            '  async can(_user: unknown, _action: string): Promise<boolean> {\n' +
+            '    return true;\n' +
+            '  }\n' +
+            '}\n\n' +
+            'class HarnessAuthzR8ProbeService {\n' +
+            '  constructor(private readonly rbac: RbacService) {}\n\n' +
+            '  async authorize(user: unknown): Promise<string> {\n' +
+            "    const action = 'probe.alias.read';\n" +
+            '    const forwardedAction = action;\n' +
+            '    const can = this.rbac.can.bind(this.rbac);\n' +
+            '    if (!(await can(user, forwardedAction))) {\n' +
+            "      throw new Error('forbidden');\n" +
+            '    }\n' +
+            "    return 'ok';\n" +
+            '  }\n' +
+            '}',
+        ),
+        policy: {
+          admission: null,
+          mode: 'RBAC',
+          codes: [{ code: 'probe.alias.read', scope: null }],
+          require: 'all',
+          scopes: [],
+          engine: 'rbac-global',
+        },
+        tier: 'T2',
+        closure: 'closed',
+      },
+      {
+        name: 'authz-can-explain-positive',
+        source: controller(
+          'class AuthzService {\n' +
+            '  async can(_user: unknown, _action: string, _ref: unknown): Promise<boolean> {\n' +
+            '    return true;\n' +
+            '  }\n' +
+            '}\n\n' +
+            'class HarnessAuthzR8ProbeService {\n' +
+            '  constructor(private readonly authz: AuthzService) {}\n\n' +
+            '  async authorize(user: unknown): Promise<string> {\n' +
+            "    const action = 'probe.authz.read';\n" +
+            "    if (!(await this.authz.can(user, action, { type: 'probe', id: '1' }))) {\n" +
+            "      throw new Error('forbidden');\n" +
+            '    }\n' +
+            "    return 'ok';\n" +
+            '  }\n' +
+            '}',
+        ),
+        policy: {
+          admission: null,
+          mode: 'RBAC',
+          codes: [{ code: 'probe.authz.read', scope: null }],
+          require: 'all',
+          scopes: [],
+          engine: 'authz-scoped',
+        },
+        tier: 'T2',
+        closure: 'closed',
+      },
+      {
+        name: 'visible-scope-positive',
+        source: controller(
+          'class AuthzService {\n' +
+            '  async can(_user: unknown, _action: string, _ref: unknown): Promise<boolean> {\n' +
+            '    return true;\n' +
+            '  }\n\n' +
+            '  async getVisibleOrganizationScope(_user: unknown, _action: string) {\n' +
+            "    return { organizationIds: ['org-1'] };\n" +
+            '  }\n' +
+            '}\n\n' +
+            'class HarnessAuthzR8ProbeService {\n' +
+            '  constructor(private readonly authz: AuthzService) {}\n\n' +
+            '  async authorize(user: unknown): Promise<unknown> {\n' +
+            "    if (!(await this.authz.can(user, 'probe.visible.read', { type: 'probe', id: '1' }))) {\n" +
+            "      throw new Error('forbidden');\n" +
+            '    }\n' +
+            "    const scope = await this.authz.getVisibleOrganizationScope(user, 'probe.visible.read');\n" +
+            '    return { where: { organizationId: { in: scope.organizationIds } } };\n' +
+            '  }\n' +
+            '}',
+        ),
+        policy: {
+          admission: null,
+          mode: 'RBAC',
+          codes: [{ code: 'probe.visible.read', scope: null }],
+          require: 'all',
+          scopes: ['org-scope'],
+          engine: 'authz-scoped',
+        },
+        tier: 'T2',
+        closure: 'closed',
+      },
+      {
+        name: 'app-identity-positive',
+        source: controller(
+          'class AppIdentityResolver {\n' +
+            '  async resolve(_user: unknown): Promise<{ canUseApp: boolean }> {\n' +
+            '    return { canUseApp: true };\n' +
+            '  }\n' +
+            '}\n\n' +
+            'class HarnessAuthzR8ProbeService {\n' +
+            '  constructor(private readonly identity: AppIdentityResolver) {}\n\n' +
+            '  async authorize(user: unknown): Promise<string> {\n' +
+            '    const identity = await this.identity.resolve(user);\n' +
+            '    if (!identity.canUseApp) {\n' +
+            "      throw new Error('app-member-required');\n" +
+            '    }\n' +
+            "    return 'ok';\n" +
+            '  }\n' +
+            '}',
+        ),
+        policy: {
+          admission: 'app-member',
+          mode: 'LOGIN_ONLY',
+          codes: [],
+          require: 'all',
+          scopes: [],
+          engine: null,
+        },
+        tier: 'T2',
+        closure: 'closed',
+      },
+      {
+        name: 'responsibility-positive',
+        source: controller(
+          'class AuthzService {\n' +
+            '  async can(_user: unknown, _action: string, _ref: unknown): Promise<boolean> {\n' +
+            '    return true;\n' +
+            '  }\n' +
+            '}\n\n' +
+            'class ActivityResponsibilityPolicy {\n' +
+            '  async assertOwner(_tx: unknown, _activityId: string, _user: unknown): Promise<void> {}\n' +
+            '}\n\n' +
+            'class HarnessAuthzR8ProbeService {\n' +
+            '  constructor(\n' +
+            '    private readonly authz: AuthzService,\n' +
+            '    private readonly responsibility: ActivityResponsibilityPolicy,\n' +
+            '  ) {}\n\n' +
+            '  async authorize(user: unknown): Promise<string> {\n' +
+            "    if (!(await this.authz.can(user, 'probe.responsibility.read', { type: 'probe', id: '1' }))) {\n" +
+            "      throw new Error('forbidden');\n" +
+            '    }\n' +
+            "    await this.responsibility.assertOwner({}, 'activity-1', user);\n" +
+            "    return 'ok';\n" +
+            '  }\n' +
+            '}',
+        ),
+        policy: {
+          admission: null,
+          mode: 'RESPONSIBILITY_SCOPED',
+          codes: [],
+          require: 'all',
+          scopes: ['responsibility'],
+          engine: 'authz-scoped',
+        },
+        tier: 'T2',
+        closure: 'closed',
+      },
+      {
+        name: 'registered-call-without-outcome-is-t3',
+        source: controller(
+          'class RbacService {\n' +
+            '  async can(_user: unknown, _action: string): Promise<boolean> {\n' +
+            '    return true;\n' +
+            '  }\n' +
+            '}\n\n' +
+            'class HarnessAuthzR8ProbeService {\n' +
+            '  constructor(private readonly rbac: RbacService) {}\n\n' +
+            '  async authorize(user: unknown): Promise<string> {\n' +
+            "    await this.rbac.can(user, 'probe.no-outcome.read');\n" +
+            "    return 'side-effect-would-have-run';\n" +
+            '  }\n' +
+            '}',
+        ),
+        policy: {
+          admission: null,
+          mode: 'RBAC',
+          codes: [{ code: 'probe.no-outcome.read', scope: null }],
+          require: 'all',
+          scopes: [],
+          engine: 'rbac-global',
+        },
+        tier: 'T3',
+        closure: 'candidate',
+        diagnostic: 'probe.no-outcome.read',
+      },
+      {
+        name: 'authz-call-without-outcome-is-t3',
+        source: controller(
+          'class AuthzService {\n' +
+            '  async can(_user: unknown, _action: string, _ref: unknown): Promise<boolean> {\n' +
+            '    return true;\n' +
+            '  }\n' +
+            '}\n\n' +
+            'class HarnessAuthzR8ProbeService {\n' +
+            '  constructor(private readonly authz: AuthzService) {}\n\n' +
+            '  async authorize(user: unknown): Promise<string> {\n' +
+            "    await this.authz.can(user, 'probe.authz.no-outcome', { type: 'probe', id: '1' });\n" +
+            "    return 'side-effect-would-have-run';\n" +
+            '  }\n' +
+            '}',
+        ),
+        policy: {
+          admission: null,
+          mode: 'RBAC',
+          codes: [{ code: 'probe.authz.no-outcome', scope: null }],
+          require: 'all',
+          scopes: [],
+          engine: 'authz-scoped',
+        },
+        tier: 'T3',
+        closure: 'candidate',
+        diagnostic: 'probe.authz.no-outcome',
+      },
+      {
+        name: 'visibility-call-without-filter-pushdown-is-mismatch',
+        source: controller(
+          'class AuthzService {\n' +
+            '  async can(_user: unknown, _action: string, _ref: unknown): Promise<boolean> {\n' +
+            '    return true;\n' +
+            '  }\n\n' +
+            '  async getVisibleOrganizationScope(_user: unknown, _action: string) {\n' +
+            "    return { organizationIds: ['org-1'] };\n" +
+            '  }\n' +
+            '}\n\n' +
+            'class HarnessAuthzR8ProbeService {\n' +
+            '  constructor(private readonly authz: AuthzService) {}\n\n' +
+            '  async authorize(user: unknown): Promise<unknown> {\n' +
+            "    if (!(await this.authz.can(user, 'probe.visibility.no-pushdown', { type: 'probe', id: '1' }))) {\n" +
+            "      throw new Error('forbidden');\n" +
+            '    }\n' +
+            "    return this.authz.getVisibleOrganizationScope(user, 'probe.visibility.no-pushdown');\n" +
+            '  }\n' +
+            '}',
+        ),
+        policy: {
+          admission: null,
+          mode: 'RBAC',
+          codes: [{ code: 'probe.visibility.no-pushdown', scope: null }],
+          require: 'all',
+          scopes: ['org-scope'],
+          engine: 'authz-scoped',
+        },
+        tier: 'T2',
+        closure: 'mismatch',
+        diagnostic: 'scope org-scope',
+      },
+      {
+        name: 'app-identity-call-without-deny-branch-is-t3',
+        source: controller(
+          'class AppIdentityResolver {\n' +
+            '  async resolve(_user: unknown): Promise<{ canUseApp: boolean }> {\n' +
+            '    return { canUseApp: true };\n' +
+            '  }\n' +
+            '}\n\n' +
+            'class HarnessAuthzR8ProbeService {\n' +
+            '  constructor(private readonly identity: AppIdentityResolver) {}\n\n' +
+            '  async authorize(user: unknown): Promise<string> {\n' +
+            '    await this.identity.resolve(user);\n' +
+            "    return 'side-effect-would-have-run';\n" +
+            '  }\n' +
+            '}',
+        ),
+        policy: {
+          admission: 'app-member',
+          mode: 'LOGIN_ONLY',
+          codes: [],
+          require: 'all',
+          scopes: [],
+          engine: null,
+        },
+        tier: 'T3',
+        closure: 'candidate',
+        diagnostic: 'admission app-member',
+      },
+      {
+        name: 'unregistered-responsibility-call-is-not-an-assertion',
+        source: controller(
+          'class AuthzService {\n' +
+            '  async can(_user: unknown, _action: string, _ref: unknown): Promise<boolean> {\n' +
+            '    return true;\n' +
+            '  }\n' +
+            '}\n\n' +
+            'class ActivityResponsibilityPolicy {\n' +
+            '  async checkCollaborator(_activityId: string, _user: unknown): Promise<boolean> {\n' +
+            '    return true;\n' +
+            '  }\n' +
+            '}\n\n' +
+            'class HarnessAuthzR8ProbeService {\n' +
+            '  constructor(\n' +
+            '    private readonly authz: AuthzService,\n' +
+            '    private readonly responsibility: ActivityResponsibilityPolicy,\n' +
+            '  ) {}\n\n' +
+            '  async authorize(user: unknown): Promise<string> {\n' +
+            "    if (!(await this.authz.can(user, 'probe.responsibility.unregistered', { type: 'probe', id: '1' }))) {\n" +
+            "      throw new Error('forbidden');\n" +
+            '    }\n' +
+            "    await this.responsibility.checkCollaborator('activity-1', user);\n" +
+            "    return 'side-effect-would-have-run';\n" +
+            '  }\n' +
+            '}',
+        ),
+        policy: {
+          admission: null,
+          mode: 'RESPONSIBILITY_SCOPED',
+          codes: [],
+          require: 'all',
+          scopes: ['responsibility'],
+          engine: 'authz-scoped',
+        },
+        tier: 'T2',
+        closure: 'mismatch',
+        diagnostic: 'scope responsibility',
+      },
+      {
+        name: 'require-any-still-needs-every-declared-or-branch',
+        source: controller(
+          'class RbacService {\n' +
+            '  async can(_user: unknown, _action: string): Promise<boolean> {\n' +
+            '    return true;\n' +
+            '  }\n' +
+            '}\n\n' +
+            'class HarnessAuthzR8ProbeService {\n' +
+            '  constructor(private readonly rbac: RbacService) {}\n\n' +
+            '  async authorize(user: unknown): Promise<string> {\n' +
+            "    if (!(await this.rbac.can(user, 'probe.any.one'))) {\n" +
+            "      throw new Error('forbidden');\n" +
+            '    }\n' +
+            "    return 'ok';\n" +
+            '  }\n' +
+            '}',
+        ),
+        policy: {
+          admission: null,
+          mode: 'RBAC',
+          codes: [
+            { code: 'probe.any.one', scope: null },
+            { code: 'probe.any.two', scope: null },
+          ],
+          require: 'any',
+          scopes: [],
+          engine: 'rbac-global',
+        },
+        tier: 'T2',
+        closure: 'mismatch',
+        diagnostic: 'probe.any.two',
+      },
+    ];
+
+    let r8Ok = true;
+    try {
+      for (const [index, probe] of probes.entries()) {
+        fs.writeFileSync(probeAbs, probe.source);
+        const entries = entryOf(probe.name, probe.policy);
+        const cacheKey = `r8-selftest-${index}`;
+        const scanner = new ESLint({
+          cwd: repoRoot,
+          overrideConfigFile: true,
+          allowInlineConfig: false,
+          overrideConfig: [
+            {
+              languageOptions: {
+                parser: tsParser as never,
+                ecmaVersion: 'latest',
+                sourceType: 'module',
+              },
+            },
+            {
+              files: [probeRel],
+              plugins: { srvf: srvfEslintPlugin as never },
+              rules: {
+                [AUTHZ_DECLARATION_CLOSURE_RULE]: [
+                  'warn',
+                  { includeOverlay: true, entries, cacheKey },
+                ],
+              },
+            },
+          ] as never,
+        });
+        const linted = await scanner.lintFiles([probeRel]);
+        const messages = linted.flatMap((result) => result.messages);
+        const diagnostics = messages.filter(
+          (message) => message.ruleId === AUTHZ_DECLARATION_CLOSURE_RULE,
+        );
+        const records = scanRouteAuthzClosure({
+          rootDir: repoRoot,
+          includeOverlay: true,
+          entries,
+          cacheKey,
+        });
+        const record = records[0];
+        const expectedDiagnostic = probe.diagnostic;
+        const diagnosticOk =
+          expectedDiagnostic === undefined
+            ? diagnostics.length === 0
+            : diagnostics.length === 1 && diagnostics[0].message.includes(expectedDiagnostic);
+        if (
+          record === undefined ||
+          record.tier !== probe.tier ||
+          record.closure !== probe.closure ||
+          !diagnosticOk
+        ) {
+          r8Ok = false;
+          failures.push(
+            `✗ R8 ${probe.name} —— 期望 ${probe.tier}/${probe.closure}` +
+              `${expectedDiagnostic === undefined ? ' 且零 warning' : ` 且 warning 含 ${expectedDiagnostic}`}，` +
+              `实际 ${record?.tier ?? '无记录'}/${record?.closure ?? '无记录'}，` +
+              `warning=${diagnostics.map((item) => item.message).join(' | ') || '0'}`,
+          );
+        }
+      }
+    } finally {
+      fs.rmSync(probeAbs, { force: true });
+    }
+    if (r8Ok) {
+      coveredSelectors.add(AUTHZ_DECLARATION_CLOSURE);
+      passed++;
+      console.log(
+        '✓ R8 真触发:别名 + 一层 service 中转、五类已登记断言模式的逐轴闭环、' +
+          '无后果调用与 require:any 漏 OR 分支均按预期出数',
+      );
+    }
+
+    const full = scanRouteAuthzClosure({
+      rootDir: repoRoot,
+      includeOverlay: true,
+      cacheKey: 'r8-full-repository-scan',
+    });
+    const distribution = full.reduce<Record<string, number>>((counts, record) => {
+      const key = `${record.tier}/${record.closure}`;
+      counts[key] = (counts[key] ?? 0) + 1;
+      return counts;
+    }, {});
+    const total = Object.values(distribution).reduce((sum, count) => sum + count, 0);
+    if (full.length === 0 || total !== full.length) {
+      failures.push(`✗ R8 全仓首扫出数异常 —— entries=${full.length},分类合计=${total}`);
+    } else {
+      passed++;
+      console.log(
+        `✓ R8 全仓首扫(report-only):可判 T1=${(distribution['T1/closed'] ?? 0) + (distribution['T1/mismatch'] ?? 0)}` +
+          `(closed=${distribution['T1/closed'] ?? 0}, mismatch=${distribution['T1/mismatch'] ?? 0})，` +
+          `T2=${(distribution['T2/closed'] ?? 0) + (distribution['T2/mismatch'] ?? 0)}` +
+          `(closed=${distribution['T2/closed'] ?? 0}, mismatch=${distribution['T2/mismatch'] ?? 0})；` +
+          `T3 candidate=${distribution['T3/candidate'] ?? 0}；` +
+          `N/A=${distribution['N/A/not-applicable'] ?? 0}；总计=${full.length}`,
+      );
+    }
+
+    const packageJson = JSON.parse(
+      fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf-8'),
+    ) as { scripts?: Record<string, unknown> };
+    const reportScript = packageJson.scripts?.['lint:authz:report'];
+    if (
+      typeof reportScript === 'string' &&
+      reportScript.includes('SRVF_AUTHZ_R8_REPORT=1') &&
+      reportScript.includes('eslint')
+    ) {
+      passed++;
+      console.log('✓ R8 report 接线:lint:authz:report 显式开启 warning 扫描，不污染普通 lint');
+    } else {
+      failures.push(
+        '✗ R8 report 接线缺失 —— package.json 必须提供 lint:authz:report，' +
+          '以 SRVF_AUTHZ_R8_REPORT=1 运行 eslint；普通 lint 的 --max-warnings=0 不能承载 report-only 候选。',
+      );
+    }
+  }
+
   // 覆盖率闭环:每条规则都必须至少被一个正向用例真实触发过。
-  // 闭环数 = 16 条 no-restricted-syntax 选择器 + 3 条自定义规则 = 19
-  // (M4 把第 17 条 `@Param('id')` 升格成独立 ruleId 时总数仍是 18,只是它不再从
-  //  HARNESS_SYNTAX 里数出来;R3 新增 srvf/no-decorator-realias 才把总数推到 19。
+  // 当前闭环数 = 16 条 no-restricted-syntax 选择器 + 6 条自定义规则 = 22。
+  // 具体数值仍从 plugin 实时枚举，不手写第二份名单；R8 加入后若忘了正向探针，
+  // 本段会直接把它列为 uncovered。
   //
   // ⚠️ 名单从 `srvfEslintPlugin.rules` **数出来**,不在这里手写第二份:
   //    手写一份就会出现「新增了第 N 条规则、忘了加进名单」⇒ 它从此没有阳性对照,
   //    而「写错了永远匹配不到」的自测输出与「防线完整」一模一样(INC-06 同源)。
   //    数出来之后,新增规则不补正向用例 = 本条当场红,不需要谁记得。
   const CUSTOM_RULES = Object.keys(srvfEslintPlugin.rules).map((name) => `srvf/${name}`);
-  for (const literal of [CUSTOM, PARAM_ID, REALIAS, NEAR_FUTURE, AUDIENCE_IMPORT]) {
+  for (const literal of [
+    CUSTOM,
+    PARAM_ID,
+    REALIAS,
+    NEAR_FUTURE,
+    AUDIENCE_IMPORT,
+    AUTHZ_DECLARATION_CLOSURE,
+  ]) {
     if (!CUSTOM_RULES.includes(literal)) {
       failures.push(
         `✗ 覆盖闭环名单漂移 —— 本文件的常量 ${literal} 不在 srvfEslintPlugin.rules 里。\n` +
@@ -1246,9 +1785,8 @@ async function main(): Promise<void> {
     const repoRoot = path.resolve(__dirname, '..');
     const srvfPlugin = {
       rules: {
-        'no-nullable-is-optional': (
-          await import('../eslint-rules/no-nullable-is-optional.mjs')
-        ).noNullableIsOptional,
+        'no-nullable-is-optional': (await import('../eslint-rules/no-nullable-is-optional.mjs'))
+          .noNullableIsOptional,
         'no-param-id-string': (await import('../eslint-rules/no-param-id-string.mjs'))
           .noParamIdString,
         'no-near-future-date': (await import('../eslint-rules/no-near-future-date.mjs'))
@@ -1566,13 +2104,12 @@ async function main(): Promise<void> {
   // 不是断言「规则报了点什么」,是把 (today, 2090-01-01) 区间的每条边逐一钉死。
   // 时钟必须注入:判据表若依赖跑测当天,这段自测就成了它要抓的那种东西。
   {
-    const { FAR_FUTURE_FLOOR, beijingTodayISO, nearFutureDatesIn } = (await import(
-      '../eslint-rules/no-near-future-date.mjs'
-    )) as {
-      FAR_FUTURE_FLOOR: string;
-      beijingTodayISO: (now?: Date) => string;
-      nearFutureDatesIn: (text: string, todayISO: string) => string[];
-    };
+    const { FAR_FUTURE_FLOOR, beijingTodayISO, nearFutureDatesIn } =
+      (await import('../eslint-rules/no-near-future-date.mjs')) as {
+        FAR_FUTURE_FLOOR: string;
+        beijingTodayISO: (now?: Date) => string;
+        nearFutureDatesIn: (text: string, todayISO: string) => string[];
+      };
     const T = '2026-08-02';
     const table: ReadonlyArray<readonly [string, string, string[]]> = [
       ['today 本身排除(次日即史料,不制造随墙钟抖动的裁决)', "'2026-08-02'", []],
@@ -1734,17 +2271,29 @@ async function main(): Promise<void> {
       ['行级具名关 srvf/ 规则', ' eslint-disable-next-line srvf/no-param-id-string'],
       ['文件级具名关 srvf/ 规则', ' eslint-disable srvf/no-nullable-is-optional '],
       ['行内具名关 srvf/ 规则', ' eslint-disable-line srvf/no-nullable-is-optional'],
-      ['混在别的规则里夹带 srvf/', ' eslint-disable-next-line no-restricted-syntax, srvf/no-param-id-string'],
+      [
+        '混在别的规则里夹带 srvf/',
+        ' eslint-disable-next-line no-restricted-syntax, srvf/no-param-id-string',
+      ],
       ['带 -- 理由也照拦', ' eslint-disable-next-line srvf/no-param-id-string -- 有正当理由'],
       ['不具名(文件级)—— 它把 srvf/ 一并关掉,只是没写名字', ' eslint-disable '],
       ['不具名(行级)', ' eslint-disable-next-line'],
       ['不具名 + 理由', ' eslint-disable-next-line -- 就想关掉'],
     ];
     const NEGATIVE: ReadonlyArray<readonly [string, string]> = [
-      ['具名关非 srvf/ 规则(AGENTS §1 明文允许的硬删豁免)', ' eslint-disable-next-line no-restricted-syntax -- 关联表物理清理'],
-      ['具名关 @typescript-eslint 规则', ' eslint-disable-next-line @typescript-eslint/no-unused-vars'],
+      [
+        '具名关非 srvf/ 规则(AGENTS §1 明文允许的硬删豁免)',
+        ' eslint-disable-next-line no-restricted-syntax -- 关联表物理清理',
+      ],
+      [
+        '具名关 @typescript-eslint 规则',
+        ' eslint-disable-next-line @typescript-eslint/no-unused-vars',
+      ],
       ['只是提到这个词的普通注释', ' 见上文关于 eslint-disable 的说明'],
-      ['指令不在注释开头 ⇒ eslint 自己也不认', ' prettier-ignore eslint-disable srvf/no-param-id-string'],
+      [
+        '指令不在注释开头 ⇒ eslint 自己也不认',
+        ' prettier-ignore eslint-disable srvf/no-param-id-string',
+      ],
       ['eslint-enable 不是 disable', ' eslint-enable srvf/no-param-id-string'],
       ['前缀相同但不是指令', ' eslint-disabled-by-design srvf/no-param-id-string'],
     ];
@@ -1805,7 +2354,9 @@ async function main(): Promise<void> {
     for (const [name, comment] of CONFIG_POSITIVE) {
       if (classifyRuleConfigComment('Block', comment) === null) {
         scannerOk = false;
-        failures.push(`✗ R4 扫描器阳性对照失效 —— 「${name}」没被识别为规则配置注释:${comment.trim()}`);
+        failures.push(
+          `✗ R4 扫描器阳性对照失效 —— 「${name}」没被识别为规则配置注释:${comment.trim()}`,
+        );
       }
     }
     for (const [name, type, comment] of CONFIG_NEGATIVE) {
@@ -1828,7 +2379,7 @@ async function main(): Promise<void> {
       scannerOk = false;
       failures.push(
         '✗ R4 扫描器端到端失效 —— 不含 "eslint-disable" 字样的规则配置注释没被抓到\n' +
-          '  常见成因:scanFileForDisableEscapes 的便宜预筛还写着 `text.includes(\'eslint-disable\')`。',
+          "  常见成因:scanFileForDisableEscapes 的便宜预筛还写着 `text.includes('eslint-disable')`。",
       );
     }
     // 报告口径的执行位:两套分类器**实际吐得出**的每一种 kind 都必须在标签表里有词条。
@@ -1871,8 +2422,7 @@ async function main(): Promise<void> {
           escapes
             .map(
               (e) =>
-                `    ${e.file}:${e.line}  [${ESCAPE_KIND_LABEL[e.kind]}]\n` +
-                `      ${e.text}`,
+                `    ${e.file}:${e.line}  [${ESCAPE_KIND_LABEL[e.kind]}]\n` + `      ${e.text}`,
             )
             .join('\n') +
           '\n  srvf/ 三条规则是执法体,不接受行内关闭:能被违规者本人一行注释关掉的防线不是防线。\n' +
@@ -1913,9 +2463,24 @@ async function main(): Promise<void> {
       '  }\n' +
       '}\n';
     const MUTATIONS: ReadonlyArray<readonly [string, string, string, string]> = [
-      ['R4-1 `: "off"`', '/* eslint srvf/no-param-id-string: "off" */\n', paramBody, PARAM_ID_STRING_MESSAGE],
-      ['R4-2 `: 0`', '/* eslint srvf/no-param-id-string: 0 */\n', paramBody, PARAM_ID_STRING_MESSAGE],
-      ['R4-3 `: ["off"]`', '/* eslint srvf/no-param-id-string: ["off"] */\n', paramBody, PARAM_ID_STRING_MESSAGE],
+      [
+        'R4-1 `: "off"`',
+        '/* eslint srvf/no-param-id-string: "off" */\n',
+        paramBody,
+        PARAM_ID_STRING_MESSAGE,
+      ],
+      [
+        'R4-2 `: 0`',
+        '/* eslint srvf/no-param-id-string: 0 */\n',
+        paramBody,
+        PARAM_ID_STRING_MESSAGE,
+      ],
+      [
+        'R4-3 `: ["off"]`',
+        '/* eslint srvf/no-param-id-string: ["off"] */\n',
+        paramBody,
+        PARAM_ID_STRING_MESSAGE,
+      ],
       [
         'R4-4 `no-restricted-syntax: "off"`',
         '/* eslint no-restricted-syntax: "off" */\n',

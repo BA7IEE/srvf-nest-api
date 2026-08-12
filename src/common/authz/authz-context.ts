@@ -73,6 +73,23 @@ export interface AuthzAssertionPatternDefinition {
   callShapes: string[];
   requiredOutcomes: string[];
   axes: string[];
+  staticMatchers: AuthzAssertionStaticMatcher[];
+}
+
+// The static matcher is deliberately data, not a second parser embedded in
+// R8.  The manifest generator projects this same registry for the ESLint rule,
+// while runtimeMarker remains the production ALS projection.  A pattern must
+// name both the receiver type and the observable consequence before static
+// analysis may count it as an authorization assertion.
+export interface AuthzAssertionStaticMatcher {
+  receiverTypes: string[];
+  methods: string[];
+  actionArgument: number | null;
+  outcome:
+    | 'boolean-deny-branch'
+    | 'query-filter-pushdown'
+    | 'app-admission-branch'
+    | 'throwing-assertion';
 }
 
 export const AUTHZ_ASSERTION_PATTERNS: readonly AuthzAssertionPatternDefinition[] = [
@@ -82,6 +99,14 @@ export const AUTHZ_ASSERTION_PATTERNS: readonly AuthzAssertionPatternDefinition[
     callShapes: ['RbacService.can(action)'],
     requiredOutcomes: ['throw', 'early-return', 'guard'],
     axes: ['codes'],
+    staticMatchers: [
+      {
+        receiverTypes: ['RbacService'],
+        methods: ['can'],
+        actionArgument: 1,
+        outcome: 'boolean-deny-branch',
+      },
+    ],
   },
   {
     id: 'authz-can-explain',
@@ -89,6 +114,14 @@ export const AUTHZ_ASSERTION_PATTERNS: readonly AuthzAssertionPatternDefinition[
     callShapes: ['AuthzService.can(action, ref)', 'AuthzService.explain(action, ref)'],
     requiredOutcomes: ['deny-to-BizCode', 'early-return', 'guard'],
     axes: ['codes', 'engine'],
+    staticMatchers: [
+      {
+        receiverTypes: ['AuthzService'],
+        methods: ['can', 'explain'],
+        actionArgument: 1,
+        outcome: 'boolean-deny-branch',
+      },
+    ],
   },
   {
     id: 'visible-organization-scope',
@@ -96,6 +129,14 @@ export const AUTHZ_ASSERTION_PATTERNS: readonly AuthzAssertionPatternDefinition[
     callShapes: ['AuthzService.getVisibleOrganizationScope(action)'],
     requiredOutcomes: ['query-filter-pushdown'],
     axes: ['scopes'],
+    staticMatchers: [
+      {
+        receiverTypes: ['AuthzService'],
+        methods: ['getVisibleOrganizationScope'],
+        actionArgument: 1,
+        outcome: 'query-filter-pushdown',
+      },
+    ],
   },
   {
     id: 'app-identity-resolve',
@@ -103,6 +144,14 @@ export const AUTHZ_ASSERTION_PATTERNS: readonly AuthzAssertionPatternDefinition[
     callShapes: ['AppIdentityResolver.resolve(currentUser)'],
     requiredOutcomes: ['app-admission-branch'],
     axes: ['admission'],
+    staticMatchers: [
+      {
+        receiverTypes: ['AppIdentityResolver'],
+        methods: ['resolve'],
+        actionArgument: null,
+        outcome: 'app-admission-branch',
+      },
+    ],
   },
   {
     id: 'responsibility-check',
@@ -110,6 +159,14 @@ export const AUTHZ_ASSERTION_PATTERNS: readonly AuthzAssertionPatternDefinition[
     callShapes: ['registered responsibility policy check'],
     requiredOutcomes: ['throw', 'early-return', 'guard'],
     axes: ['scopes'],
+    staticMatchers: [
+      {
+        receiverTypes: ['ActivityResponsibilityPolicy'],
+        methods: ['assertOwner', 'assertOwnerOrOverride', 'assertInitiatorOrOverride'],
+        actionArgument: null,
+        outcome: 'throwing-assertion',
+      },
+    ],
   },
 ];
 

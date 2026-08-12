@@ -25,6 +25,10 @@ import {
   AUDIENCE_PRIMITIVE_IMPORT_MESSAGE,
   noAudiencePrimitiveImport,
 } from './eslint-rules/no-audience-primitive-import.mjs';
+import {
+  AUTHZ_DECLARATION_CLOSURE_RULE,
+  authzDeclarationClosure,
+} from './eslint-rules/authz-declaration-closure.mjs';
 import { NEAR_FUTURE_DATE_MESSAGE, noNearFutureDate } from './eslint-rules/no-near-future-date.mjs';
 import { NULLABLE_IS_OPTIONAL_MESSAGE, noNullableIsOptional } from './eslint-rules/no-nullable-is-optional.mjs';
 import { PARAM_ID_STRING_MESSAGE, noParamIdString } from './eslint-rules/no-param-id-string.mjs';
@@ -51,8 +55,14 @@ const NEAR_FUTURE_DATE_RULE = 'srvf/no-near-future-date';
  * 白名单是**常驻设计位不是欠账**,刻意不进棘轮注册表 —— 理由见规则头注。
  */
 const AUDIENCE_PRIMITIVE_IMPORT_RULE = 'srvf/no-audience-primitive-import';
+// R8 is deliberately report-only in Phase 1.  The repository's ordinary lint
+// command uses --max-warnings=0, so wiring a warning there would silently turn
+// T3 inventory into a hard gate.  The dedicated report command flips this
+// switch and exits 0 with warnings; T1/T2 blocking is a later Exit-Criteria
+// decision, not an accidental CLI side effect.
+const AUTHZ_R8_REPORT_MODE = process.env.SRVF_AUTHZ_R8_REPORT === '1';
 
-/** 供 flat config 以 `plugins: { srvf: srvfEslintPlugin }` 挂载(五条规则同一个 plugin 命名空间)。 */
+/** 供 flat config 以 `plugins: { srvf: srvfEslintPlugin }` 挂载(六条规则同一个 plugin 命名空间)。 */
 const srvfEslintPlugin = {
   rules: {
     'no-nullable-is-optional': noNullableIsOptional,
@@ -60,6 +70,7 @@ const srvfEslintPlugin = {
     'no-decorator-realias': noDecoratorRealias,
     'no-near-future-date': noNearFutureDate,
     'no-audience-primitive-import': noAudiencePrimitiveImport,
+    'authz-declaration-closure': authzDeclarationClosure,
   },
 };
 
@@ -480,6 +491,25 @@ const harnessConfigBlocks = [
     },
   },
 
+  // (b2) R8 声明↔实现闭环:专用 lint:authz:report 入口才以 warn 级扫描全量
+  //      policy。普通 lint 固定 --max-warnings=0，故这里默认 off，避免把存量 T3
+  //      候选伪装成现阶段的 lint hard gate。classification overlay 的全量首扫同样
+  //      由 harness-eslint.selftest 调同一规则逻辑产出。
+  //
+  //      `require:any` 仍逐码验证全部合法 OR 分支；一个码被判过不等于其余声明码
+  //      可以成为死声明。T1=handler，T2=同模块一层公开 service；再深则诚实归 T3。
+  {
+    name: 'srvf/harness:authz-declaration-closure-report',
+    files: ['src/**/*.controller.ts'],
+    plugins: { srvf: srvfEslintPlugin },
+    rules: {
+      [AUTHZ_DECLARATION_CLOSURE_RULE]: [
+        AUTHZ_R8_REPORT_MODE ? 'warn' : 'off',
+        { includeOverlay: AUTHZ_R8_REPORT_MODE },
+      ],
+    },
+  },
+
   // (c) src 内单测:可直连另一模块 providers 做桩、可 new ValidationPipe 验 DTO
   {
     name: 'srvf/harness:src-spec',
@@ -712,6 +742,7 @@ harnessConfigBlocks.push(...ratchetBaselineBlocks);
 export {
   AUDIENCE_PRIMITIVE_IMPORT_MESSAGE,
   AUDIENCE_PRIMITIVE_IMPORT_RULE,
+  AUTHZ_DECLARATION_CLOSURE_RULE,
   DECORATOR_REALIAS_MESSAGE,
   DECORATOR_REALIAS_RULE,
   HARNESS_SYNTAX,

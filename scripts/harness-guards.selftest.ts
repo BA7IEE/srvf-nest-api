@@ -1281,7 +1281,7 @@ for (const [configName, config] of JEST_CONFIGS) {
   const cases: Array<[string, boolean, string]> = [
     [
       'P2c ci:gate 依赖 redzone-scan 与 redzone-approval',
-      /needs:\s*\[changeset, fast, slow, redzone-scan, redzone-approval\]/.test(ci),
+      /needs:\s*\[changeset, fast, slow, journeys, redzone-scan, redzone-approval\]/.test(ci),
       'gate 不依赖这两个 job = 审批不影响放行,门形同虚设',
     ],
     [
