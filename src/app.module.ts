@@ -212,7 +212,7 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     // 全局 Guard 顺序(NestJS 按 providers 数组顺序执行):
     //   ThrottlerBizGuard 先挡爆破(IP 维度,粗粒度),避免攻击流量打到 JWT 解析。
     //   JwtAuthGuard 验登录(@Public 跳过)。
-    //   AuthzDeclarationGuard 只验证声明存在(report 模式),不做业务判权。
+    //   AuthzDeclarationGuard 在 enforce 模式下验证声明存在，不替代 Service 层业务判权。
     //   RolesGuard 验角色(详见 docs/reference/auth-jwt-refresh.md §8)。
     { provide: APP_GUARD, useClass: ThrottlerBizGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
