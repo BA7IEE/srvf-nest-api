@@ -120,6 +120,7 @@ export async function runActivityRegistrationCheckInJourney(
     .send({
       title: '旅程二活动报名签到',
       activityTypeCode: fixture.activityTypeCode,
+      allocationModeCode: 'first_come',
       organizationId: fixture.organizationId,
       startAt: new Date(now - 60_000).toISOString(),
       endAt: new Date(now + 60 * 60_000).toISOString(),
