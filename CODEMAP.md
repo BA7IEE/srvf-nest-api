@@ -99,7 +99,7 @@
 | 路径                                                                     | 职责                                                 |
 | ------------------------------------------------------------------------ | ---------------------------------------------------- |
 | `contract/`                                                              | OpenAPI snapshot + `EXPECTED_ROUTES`(接口契约权威源) |
-| `e2e/`                                                                   | E2E spec(271 个 `*.e2e-spec.ts`) |
+| `e2e/`                                                                   | E2E spec(272 个 `*.e2e-spec.ts`) |
 | `fixtures/` / `helpers/` / `setup/`                                      | 测试工具                                             |
 | `jest-unit.config.ts` / `jest-e2e.config.ts` / `jest-contract.config.ts` | 三套独立 jest 配置                                   |
 

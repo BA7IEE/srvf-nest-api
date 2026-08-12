@@ -1,8 +1,9 @@
-import { Get, Logger } from '@nestjs/common';
+import { Get, Logger, type ExecutionContext } from '@nestjs/common';
 import { ModulesContainer, Reflector } from '@nestjs/core';
-import type { ExecutionContext } from '@nestjs/common';
 import { LoginOnly } from '../decorators/route-authz.decorator';
 import { Public } from '../decorators/public.decorator';
+import { BizCode } from '../exceptions/biz-code.constant';
+import { BizException } from '../exceptions/biz.exception';
 import { AuthzDeclarationGuard } from './authz-declaration.guard';
 
 type Handler = (this: void) => void;
@@ -47,21 +48,25 @@ describe('AuthzDeclarationGuard', () => {
     log.mockRestore();
   });
 
-  it('reports an undeclared HTTP handler without blocking it in report mode', () => {
+  it('rejects an undeclared HTTP handler in enforce mode', () => {
     class UndeclaredController {
       handler(this: void): void {}
     }
 
     const guard = new AuthzDeclarationGuard(new Reflector());
-    const result = guard.canActivate(
-      contextFor(UndeclaredController.prototype.handler, UndeclaredController),
-    );
+    let thrown: unknown;
+    try {
+      guard.canActivate(contextFor(UndeclaredController.prototype.handler, UndeclaredController));
+    } catch (error) {
+      thrown = error;
+    }
 
-    expect(result).toBe(true);
+    expect(thrown).toBeInstanceOf(BizException);
+    expect((thrown as BizException).biz).toBe(BizCode.AUTHZ_UNDECLARED);
     expect(warn).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'authz_declaration_undeclared',
-        mode: 'report',
+        mode: 'enforce',
         observedUndeclaredRouteCount: 1,
       }),
       expect.any(String),
@@ -115,18 +120,24 @@ describe('AuthzDeclarationGuard', () => {
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'authz_declaration_inventory',
-        mode: 'report',
+        mode: 'enforce',
         totalUndeclaredRouteCount: 1,
       }),
       expect.any(String),
     );
 
-    expect(
-      guard.canActivate(contextFor(InventoryController.prototype.undeclared, InventoryController)),
-    ).toBe(true);
+    let thrown: unknown;
+    try {
+      guard.canActivate(contextFor(InventoryController.prototype.undeclared, InventoryController));
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(BizException);
+    expect((thrown as BizException).biz).toBe(BizCode.AUTHZ_UNDECLARED);
     expect(warn).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'authz_declaration_undeclared',
+        mode: 'enforce',
         totalUndeclaredRouteCount: 1,
         observedUndeclaredRouteCount: 1,
       }),

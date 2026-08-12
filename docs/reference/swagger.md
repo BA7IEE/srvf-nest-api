@@ -18,3 +18,8 @@
 - 所有响应装饰器集中放在 `common/decorators/api-response.decorator.ts`
 - POST 创建资源保持 Nest 默认 201 并声明 Created response；action / command 若约定 200 必须显式 `@HttpCode(HttpStatus.OK)`，禁止只改文档状态
 - `PageResultDto<T>` 是 TS 泛型,`@nestjs/swagger` 无法 reflect 泛型参数,因此分页接口**必须**用 `@ApiWrappedPageResponse(Dto)`,装饰器内部用 `getSchemaPath(Dto)` + `allOf` 显式描述 `data: { items, total, page, pageSize }`,否则前端 SDK 生成器拿到的是单对象 schema。需要在 controller 类上配套 `@ApiExtraModels(Dto, PageResultDto)`
+
+## 7. 路由权限声明
+
+- 新增 Controller 路由必须带一项结构化权限声明装饰器；在 enforce 模式下，未声明路由会由 `AuthzDeclarationGuard` 在 handler 执行前以 `AUTHZ_UNDECLARED` 拒绝。
+- 声明族、scope canonical 和示例以 [`ROUTE_AUTHZ`](../ai-harness/ROUTE_AUTHZ.md) 为准。
