@@ -14,6 +14,7 @@ import {
   type RegistrationFormTarget,
 } from './registration-form-version.service';
 import { ActivityCapacityBucketProjector } from './activity-capacity-bucket-projector';
+import { isActivityAllocationModeCode } from './activity-allocation-mode';
 import type {
   ChangeReviewDto,
   ChangeReviewSessionCreateDto,
@@ -29,6 +30,7 @@ type ResolutionSource = 'template' | 'activity' | 'system-default';
 interface ProposalActivity {
   title: string;
   activityTypeCode: string;
+  allocationModeCode: string;
   organizationId: string;
   startAt: string;
   endAt: string;
@@ -52,6 +54,11 @@ interface ProposalActivity {
   defaultLocationRequired: boolean | null;
   archiveWaitingDays: number;
 }
+
+type ProposalActivityWithoutAllocationMode = Omit<ProposalActivity, 'allocationModeCode'>;
+type ProposalActivityInput = ProposalActivityWithoutAllocationMode & {
+  allocationModeCode?: string;
+};
 
 interface ProposalPosition {
   positionId: string | null;
@@ -166,12 +173,12 @@ export interface ActivityPublishProposalSnapshotV2 {
   base: {
     templateVersionId: string | null;
     resolvedConfig: ActivityTemplateResolution;
-    activity: ProposalActivity;
+    activity: ProposalActivityWithoutAllocationMode;
     sessions: ProposalSession[];
   };
   templateVersionId: string | null;
   resolvedConfig: ActivityTemplateResolution;
-  activity: ProposalActivity;
+  activity: ProposalActivityWithoutAllocationMode;
   sessions: ProposalSession[];
 }
 
@@ -181,6 +188,26 @@ export interface ActivityPublishProposalSnapshotV2 {
  */
 export interface ActivityPublishProposalSnapshotV3 {
   schemaVersion: 3;
+  baseWorkflowRevision: number;
+  baseSnapshotHash: string;
+  snapshotHash: string;
+  base: {
+    templateVersionId: string | null;
+    resolvedConfig: ActivityTemplateResolution;
+    activity: ProposalActivityWithoutAllocationMode;
+    sessions: ProposalSession[];
+    registrationForm: RegistrationFormTarget | null;
+  };
+  templateVersionId: string | null;
+  resolvedConfig: ActivityTemplateResolution;
+  activity: ProposalActivityWithoutAllocationMode;
+  sessions: ProposalSession[];
+  registrationForm: RegistrationFormTarget | null;
+}
+
+/** v4 adds the Activity allocation mode to both target/base and to every stale hash. */
+export interface ActivityPublishProposalSnapshotV4 {
+  schemaVersion: 4;
   baseWorkflowRevision: number;
   baseSnapshotHash: string;
   snapshotHash: string;
@@ -200,7 +227,8 @@ export interface ActivityPublishProposalSnapshotV3 {
 
 export type ActivityPublishProposalSnapshot =
   | ActivityPublishProposalSnapshotV2
-  | ActivityPublishProposalSnapshotV3;
+  | ActivityPublishProposalSnapshotV3
+  | ActivityPublishProposalSnapshotV4;
 
 interface CurrentProposalState {
   workflowRevision: number;
@@ -225,6 +253,7 @@ const proposalActivitySelect = {
   workflowRevision: true,
   title: true,
   activityTypeCode: true,
+  allocationModeCode: true,
   organizationId: true,
   startAt: true,
   endAt: true,
@@ -364,10 +393,10 @@ export class ActivityPublishProposalV2Service {
     private readonly capacityBuckets: ActivityCapacityBucketProjector,
   ) {}
 
-  async buildInitial(tx: PrismaTx, activityId: string): Promise<ActivityPublishProposalSnapshotV3> {
+  async buildInitial(tx: PrismaTx, activityId: string): Promise<ActivityPublishProposalSnapshotV4> {
     const current = await this.currentState(tx, activityId);
     this.assertProposalValid(current.activity, current.sessions);
-    return this.toSnapshotV3(
+    return this.toSnapshotV4(
       current,
       current.activity,
       current.sessions,
@@ -381,7 +410,7 @@ export class ActivityPublishProposalV2Service {
     tx: PrismaTx,
     activityId: string,
     dto: ChangeReviewDto,
-  ): Promise<ActivityPublishProposalSnapshotV3> {
+  ): Promise<ActivityPublishProposalSnapshotV4> {
     const current = await this.currentState(tx, activityId);
     const activity = clone(current.activity);
     const sessions = clone(current.sessions);
@@ -402,7 +431,7 @@ export class ActivityPublishProposalV2Service {
               const canonical = canonicalizeRegistrationFormDefinition(dto.registrationForm);
               return { definition: canonical.definition, schemaHash: canonical.schemaHash };
             })();
-    const snapshot = this.toSnapshotV3(
+    const snapshot = this.toSnapshotV4(
       current,
       activity,
       sessions,
@@ -412,7 +441,7 @@ export class ActivityPublishProposalV2Service {
     );
     if (
       snapshot.snapshotHash ===
-      this.hashTargetV3(
+      this.hashTargetV4(
         current.activity,
         current.sessions,
         current.templateVersionId,
@@ -428,11 +457,11 @@ export class ActivityPublishProposalV2Service {
   async rebuildCurrent(
     tx: PrismaTx,
     activityId: string,
-    schemaVersion: 2 | 3,
+    schemaVersion: 2 | 3 | 4,
   ): Promise<{ workflowRevision: number; snapshotHash: string }> {
     // Historical v2 approvals must retain their former read/hashing behavior: do not touch the
     // Form tables at all while reconstructing a v2 stale guard.
-    const current = await this.currentState(tx, activityId, schemaVersion === 3);
+    const current = await this.currentState(tx, activityId, schemaVersion !== 2);
     return {
       workflowRevision: current.workflowRevision,
       snapshotHash:
@@ -443,13 +472,21 @@ export class ActivityPublishProposalV2Service {
               current.templateVersionId,
               current.resolvedConfig,
             )
-          : this.hashTargetV3(
-              current.activity,
-              current.sessions,
-              current.templateVersionId,
-              current.resolvedConfig,
-              current.registrationForm,
-            ),
+          : schemaVersion === 3
+            ? this.hashTargetV3(
+                current.activity,
+                current.sessions,
+                current.templateVersionId,
+                current.resolvedConfig,
+                current.registrationForm,
+              )
+            : this.hashTargetV4(
+                current.activity,
+                current.sessions,
+                current.templateVersionId,
+                current.resolvedConfig,
+                current.registrationForm,
+              ),
     };
   }
 
@@ -466,7 +503,8 @@ export class ActivityPublishProposalV2Service {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
     const row = value as Record<string, unknown>;
     return (
-      (row.schemaVersion === 2 || row.schemaVersion === 3) && typeof row.snapshotHash === 'string'
+      (row.schemaVersion === 2 || row.schemaVersion === 3 || row.schemaVersion === 4) &&
+      typeof row.snapshotHash === 'string'
     );
   }
 
@@ -479,9 +517,16 @@ export class ActivityPublishProposalV2Service {
       throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
     }
     this.assertProposalValid(snapshot.activity, snapshot.sessions);
-    if (snapshot.schemaVersion === 3) {
+    if (snapshot.schemaVersion === 3 || snapshot.schemaVersion === 4) {
       this.assertSnapshotFormTarget(snapshot.registrationForm);
       this.assertSnapshotFormTarget(snapshot.base.registrationForm);
+    }
+    if (
+      snapshot.schemaVersion === 4 &&
+      (!isActivityAllocationModeCode(snapshot.activity.allocationModeCode) ||
+        !isActivityAllocationModeCode(snapshot.base.activity.allocationModeCode))
+    ) {
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
     }
     return snapshot;
   }
@@ -500,11 +545,16 @@ export class ActivityPublishProposalV2Service {
     workflowRevision: number;
     resolvedConfig: ActivityTemplateResolution | ActivityTemplateResolutionWithRegistrationForm;
   }> {
-    await this.applyActivity(tx, activityId, snapshot.activity);
+    await this.applyActivity(
+      tx,
+      activityId,
+      snapshot.activity,
+      snapshot.schemaVersion === 4 ? snapshot.activity.allocationModeCode : undefined,
+    );
     const sessionIds = await this.applySessions(tx, activityId, snapshot.sessions, input.at);
     await this.applyPositions(tx, activityId, snapshot.sessions, sessionIds, input.at);
     let registrationForm: RegistrationFormResolvedConfig | null = null;
-    if (snapshot.schemaVersion === 3) {
+    if (snapshot.schemaVersion === 3 || snapshot.schemaVersion === 4) {
       const currentActivity = await tx.activity.findUniqueOrThrow({
         where: { id: activityId },
         select: { workflowRevision: true },
@@ -536,7 +586,7 @@ export class ActivityPublishProposalV2Service {
     // this approval's compact active Form pointer; it must not re-resolve a template that changed
     // while the review was pending.
     const resolvedConfig =
-      snapshot.schemaVersion === 3
+      snapshot.schemaVersion === 3 || snapshot.schemaVersion === 4
         ? { ...snapshot.resolvedConfig, registrationForm }
         : await this.getTemplateResolution(tx, activityId);
     return { workflowRevision: activity.workflowRevision, resolvedConfig };
@@ -554,6 +604,7 @@ export class ActivityPublishProposalV2Service {
     const activity: ProposalActivity = {
       title: row.title,
       activityTypeCode: row.activityTypeCode,
+      allocationModeCode: row.allocationModeCode,
       organizationId: row.organizationId,
       startAt: row.startAt.toISOString(),
       endAt: row.endAt.toISOString(),
@@ -671,12 +722,12 @@ export class ActivityPublishProposalV2Service {
       base: {
         templateVersionId: current.templateVersionId,
         resolvedConfig: current.resolvedConfig,
-        activity: current.activity,
+        activity: this.withoutAllocationMode(current.activity),
         sessions: current.sessions,
       },
       templateVersionId,
       resolvedConfig,
-      activity,
+      activity: this.withoutAllocationMode(activity),
       sessions,
     };
     return { ...unsigned, snapshotHash: sha256(unsigned) };
@@ -704,6 +755,41 @@ export class ActivityPublishProposalV2Service {
       base: {
         templateVersionId: current.templateVersionId,
         resolvedConfig: current.resolvedConfig,
+        activity: this.withoutAllocationMode(current.activity),
+        sessions: current.sessions,
+        registrationForm: current.registrationForm,
+      },
+      templateVersionId,
+      resolvedConfig,
+      activity: this.withoutAllocationMode(activity),
+      sessions,
+      registrationForm,
+    };
+    return { ...unsigned, snapshotHash: sha256(unsigned) };
+  }
+
+  private toSnapshotV4(
+    current: CurrentProposalState,
+    activity: ProposalActivity,
+    sessions: ProposalSession[],
+    templateVersionId: string | null,
+    resolvedConfig: ActivityTemplateResolution,
+    registrationForm: RegistrationFormTarget | null,
+  ): ActivityPublishProposalSnapshotV4 {
+    const baseSnapshotHash = this.hashTargetV4(
+      current.activity,
+      current.sessions,
+      current.templateVersionId,
+      current.resolvedConfig,
+      current.registrationForm,
+    );
+    const unsigned = {
+      schemaVersion: 4 as const,
+      baseWorkflowRevision: current.workflowRevision,
+      baseSnapshotHash,
+      base: {
+        templateVersionId: current.templateVersionId,
+        resolvedConfig: current.resolvedConfig,
         activity: current.activity,
         sessions: current.sessions,
         registrationForm: current.registrationForm,
@@ -717,16 +803,45 @@ export class ActivityPublishProposalV2Service {
     return { ...unsigned, snapshotHash: sha256(unsigned) };
   }
 
+  private withoutAllocationMode(
+    activity: ProposalActivityInput,
+  ): ProposalActivityWithoutAllocationMode {
+    const withoutAllocationMode = { ...activity };
+    delete withoutAllocationMode.allocationModeCode;
+    return withoutAllocationMode;
+  }
+
   private hashTarget(
-    activity: ProposalActivity,
+    activity: ProposalActivityInput,
     sessions: ProposalSession[],
     templateVersionId: string | null,
     resolvedConfig: ActivityTemplateResolution,
   ): string {
-    return sha256({ activity, sessions, templateVersionId, resolvedConfig });
+    return sha256({
+      activity: this.withoutAllocationMode(activity),
+      sessions,
+      templateVersionId,
+      resolvedConfig,
+    });
   }
 
   private hashTargetV3(
+    activity: ProposalActivityInput,
+    sessions: ProposalSession[],
+    templateVersionId: string | null,
+    resolvedConfig: ActivityTemplateResolution,
+    registrationForm: RegistrationFormTarget | null,
+  ): string {
+    return sha256({
+      activity: this.withoutAllocationMode(activity),
+      sessions,
+      templateVersionId,
+      resolvedConfig,
+      registrationForm,
+    });
+  }
+
+  private hashTargetV4(
     activity: ProposalActivity,
     sessions: ProposalSession[],
     templateVersionId: string | null,
@@ -1009,7 +1124,13 @@ export class ActivityPublishProposalV2Service {
     }
   }
 
-  private assertProposalValid(activity: ProposalActivity, sessions: ProposalSession[]): void {
+  private assertProposalValid(activity: ProposalActivityInput, sessions: ProposalSession[]): void {
+    if (
+      activity.allocationModeCode !== undefined &&
+      !isActivityAllocationModeCode(activity.allocationModeCode)
+    ) {
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    }
     const activityStart = new Date(activity.startAt);
     const activityEnd = new Date(activity.endAt);
     if (activityStart >= activityEnd) throw new BizException(BizCode.ACTIVITY_START_END_INVALID);
@@ -1238,13 +1359,15 @@ export class ActivityPublishProposalV2Service {
   private async applyActivity(
     tx: PrismaTx,
     activityId: string,
-    activity: ProposalActivity,
+    activity: ProposalActivityInput,
+    allocationModeCode: string | undefined,
   ): Promise<void> {
     await tx.activity.update({
       where: { id: activityId },
       data: {
         title: activity.title,
         activityTypeCode: activity.activityTypeCode,
+        ...(allocationModeCode === undefined ? {} : { allocationModeCode }),
         organizationId: activity.organizationId,
         startAt: new Date(activity.startAt),
         endAt: new Date(activity.endAt),

@@ -3,6 +3,9 @@ import type { Prisma } from '@prisma/client';
 export interface ActivityProposalActivity {
   title: string;
   activityTypeCode: string;
+  // Historical v1 snapshots did not freeze allocation mode. New compatible v1 change snapshots
+  // may carry it only when the caller explicitly requested a mode change.
+  allocationModeCode?: string;
   organizationId: string;
   startAt: string;
   endAt: string;

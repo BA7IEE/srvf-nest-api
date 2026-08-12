@@ -36,6 +36,7 @@ import { promoteActivityWaitlist } from './activity-waitlist-promotion';
 import { ActivityInitiationPolicy } from './activity-initiation-policy';
 import { ActivityNotificationProducer } from './activity-notification-producer';
 import { ActivityPublishReviewService } from './activity-publish-review.service';
+import { ActivityAllocationModeService } from './activity-allocation-mode.service';
 
 // V2 第一阶段批次 3A activities service。
 // 详见 docs:
@@ -102,6 +103,7 @@ const activitySafeSelect = {
   id: true,
   title: true,
   activityTypeCode: true,
+  allocationModeCode: true,
   organizationId: true,
   initiatorMemberId: true,
   workflowRevision: true,
@@ -206,6 +208,7 @@ export class ActivitiesService {
     private readonly insuranceRequirement: InsuranceRequirementService,
     private readonly initiationPolicy: ActivityInitiationPolicy,
     private readonly publishReviewService: ActivityPublishReviewService,
+    private readonly allocationModes: ActivityAllocationModeService,
     @Inject(appConfig.KEY)
     private readonly config: ConfigType<typeof appConfig>,
   ) {}
@@ -254,6 +257,7 @@ export class ActivitiesService {
       id: row.id,
       title: row.title,
       activityTypeCode: row.activityTypeCode,
+      allocationModeCode: row.allocationModeCode,
       organizationId: row.organizationId,
       initiatorMemberId: row.initiatorMemberId,
       workflowRevision: row.workflowRevision,
@@ -658,6 +662,9 @@ export class ActivitiesService {
     }
     const startAt = new Date(dto.startAt);
     const endAt = new Date(dto.endAt);
+    // Service callers may bypass Controller ValidationPipe; new runtime creates never rely on the
+    // Prisma default as an implicit allocation policy.
+    this.allocationModes.assertValidMode(dto.allocationModeCode);
     this.assertStartEndValid(startAt, endAt);
     this.assertRegistrationDeadlineValid(
       dto.registrationDeadline !== undefined ? new Date(dto.registrationDeadline) : null,
@@ -693,6 +700,7 @@ export class ActivitiesService {
       const data: Prisma.ActivityUncheckedCreateInput = {
         title: dto.title,
         activityTypeCode: dto.activityTypeCode,
+        allocationModeCode: dto.allocationModeCode,
         organizationId: dto.organizationId,
         startAt,
         endAt,
@@ -773,12 +781,24 @@ export class ActivitiesService {
     } else if (!this.config.activityResponsibilityWorkflow.enabled) {
       throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
     }
+    if (dto.allocationModeCode !== undefined) {
+      this.allocationModes.assertValidMode(dto.allocationModeCode);
+    }
     return this.prisma.$transaction(async (tx) => {
       // 所有活动写入口统一先锁 Activity，再重读状态、时间窗、岗位与 passCount 基线。
       const current =
         authorization === 'managed'
           ? await this.lockAndFindManagedActivityOrThrow(id, currentUser, tx)
           : await this.lockAndFindActivityOrThrow(id, tx);
+
+      // Caller holds Activity FOR UPDATE through lockAndFind* above. Draft writes can change the
+      // parent mode, so every historical child batch must agree before any validation or write.
+      if (current.statusCode === ACTIVITY_STATUS_DRAFT) {
+        await this.allocationModes.assertLockedActivityConsistent(tx, {
+          ...current,
+          allocationModeCode: dto.allocationModeCode ?? current.allocationModeCode,
+        });
+      }
 
       // App 草稿写先裁定状态；已发布活动即使请求体恰有别的校验问题，也必须明确
       // 告知客户端走 change review，不能因参数校验掩掉阶段语义。
@@ -953,6 +973,7 @@ export class ActivitiesService {
       const data: Prisma.ActivityUpdateInput = {};
       if (dto.title !== undefined) data.title = dto.title;
       if (dto.activityTypeCode !== undefined) data.activityTypeCode = dto.activityTypeCode;
+      if (dto.allocationModeCode !== undefined) data.allocationModeCode = dto.allocationModeCode;
       if (dto.organizationId !== undefined) {
         data.organization = { connect: { id: dto.organizationId } };
       }
@@ -1204,6 +1225,7 @@ export class ActivitiesService {
     }
     return this.prisma.$transaction(async (tx) => {
       const current = await this.lockAndFindActivityOrThrow(id, tx);
+      await this.allocationModes.assertLockedActivityConsistent(tx, current);
 
       const transition = this.activityStateMachine.decide('publish', current.statusCode);
       if (!transition.allowed) {

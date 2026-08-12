@@ -126,6 +126,7 @@ describe('App managed activity attendances', () => {
         registrationDeadline: '2099-10-31T12:00:00.000Z',
         location: '深圳',
         capacity: 50,
+        allocationModeCode: 'first_come',
       });
     if (created.status !== 201) throw new Error(JSON.stringify(created.body));
     const activityId = created.body.data.activity.id as string;

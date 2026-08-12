@@ -122,6 +122,12 @@ export class AppActivityDetailDto {
   activityTypeCode!: string;
 
   @ApiProperty({
+    description: '活动分配方式',
+    enum: ['first_come', 'qualification_rank', 'lottery'],
+  })
+  allocationMode!: string;
+
+  @ApiProperty({
     description: '活动状态字典 code(App 视角恒为 published;字段保留便于前端泛化)',
     example: 'published',
   })

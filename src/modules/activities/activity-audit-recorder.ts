@@ -42,6 +42,7 @@ const ACTIVITY_AUDIT_EVENT = 'activity.publish';
 type AuditActivitySnapshotInput = {
   title: string;
   activityTypeCode: string;
+  allocationModeCode?: string;
   organizationId: string;
   startAt: Date;
   endAt: Date;
@@ -102,6 +103,9 @@ export class ActivityAuditRecorder {
     return {
       title: row.title,
       activityTypeCode: row.activityTypeCode,
+      ...(row.allocationModeCode === undefined
+        ? {}
+        : { allocationModeCode: row.allocationModeCode }),
       organizationId: row.organizationId,
       startAt: row.startAt,
       endAt: row.endAt,

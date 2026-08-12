@@ -230,6 +230,7 @@ describe('activity responsibility workflow gate=true publish review', () => {
       endAt: '2099-08-01T05:00:00.000Z',
       registrationDeadline: '2099-07-31T12:00:00.000Z',
       location: '深圳',
+      allocationModeCode: 'first_come',
       ...overrides,
     };
   }

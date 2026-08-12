@@ -289,6 +289,7 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
         startAt: pastIso('06-01T08:00:00.000Z'),
         endAt: futureIso('06-01T18:00:00.000Z'),
         location: '梧桐山',
+        allocationModeCode: 'first_come',
         coverImageUrl: 'https://example.com/cover-1.png',
       });
     activity1Id = a1.body.data.id;
@@ -307,6 +308,7 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
         startAt: pastIso('06-02T08:00:00.000Z'),
         endAt: futureIso('06-02T18:00:00.000Z'),
         location: '七娘山',
+        allocationModeCode: 'first_come',
       });
     activity2Id = a2.body.data.id;
     await request(httpServer(app))
@@ -324,6 +326,7 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
         startAt: pastIso('06-03T08:00:00.000Z'),
         endAt: futureIso('06-03T18:00:00.000Z'),
         location: '南山',
+        allocationModeCode: 'first_come',
       });
     activity3Id = a3.body.data.id;
     await request(httpServer(app))

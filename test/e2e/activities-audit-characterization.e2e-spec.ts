@@ -148,6 +148,7 @@ describe('ActivitiesService audit characterization', () => {
     return {
       title: '审计形状测试活动',
       activityTypeCode: ctx.activityTypeCode,
+      allocationModeCode: 'first_come',
       organizationId: ctx.childOrgId,
       startAt: '2099-08-01T08:00:00.000Z',
       endAt: '2099-08-01T12:00:00.000Z',

@@ -162,8 +162,8 @@ export class AppManagedActivitiesService {
       throw new BizException(BizCode.ACTIVITY_ATTENDANCE_DECLARATION_INVALID);
     }
     if (!user.memberId) throw new BizException(BizCode.FORBIDDEN);
-    // 新行必须持久化闭集值；但既有 App POST 负载早于这些 additive 字段，不能把
-    // 受行为冻结保护的调用突然变成 400。缺省只在这个兼容入口收敛，永不留下 null。
+    // 仅兼容既有的 App 管理草稿默认字段；allocationModeCode 不在这里兜底，所有新建
+    // 活动都必须由 DTO 与 ActivitiesService 显式确认闭集值。
     const normalizedDto: CreateActivityDto = {
       ...dto,
       registrationModeCode: dto.registrationModeCode ?? 'open_apply',
@@ -196,6 +196,7 @@ export class AppManagedActivitiesService {
       id: deleted.id,
       title: deleted.title,
       activityTypeCode: deleted.activityTypeCode,
+      allocationModeCode: deleted.allocationModeCode,
       organizationId: deleted.organizationId,
       startAt: deleted.startAt,
       endAt: deleted.endAt,

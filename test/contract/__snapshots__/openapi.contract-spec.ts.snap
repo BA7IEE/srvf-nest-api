@@ -999,6 +999,15 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "活动类型字典 code(typeCode=activity_type;2 级树)",
         "type": "string",
       },
+      "allocationModeCode": {
+        "description": "活动分配方式(新活动创建时显式选择；存量活动保留已落库值)",
+        "enum": [
+          "first_come",
+          "qualification_rank",
+          "lottery",
+        ],
+        "type": "string",
+      },
       "archiveWaitingDays": {
         "description": "归档等待天数(0..365)",
         "type": "number",
@@ -1191,6 +1200,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "id",
       "title",
       "activityTypeCode",
+      "allocationModeCode",
       "organizationId",
       "initiatorMemberId",
       "workflowRevision",
@@ -2705,6 +2715,15 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "example": "training",
         "type": "string",
       },
+      "allocationMode": {
+        "description": "活动分配方式",
+        "enum": [
+          "first_come",
+          "qualification_rank",
+          "lottery",
+        ],
+        "type": "string",
+      },
       "capacity": {
         "description": "名额上限(NULL = 不限名额)",
         "example": 30,
@@ -2830,6 +2849,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "id",
       "title",
       "activityTypeCode",
+      "allocationMode",
       "statusCode",
       "phase",
       "startAt",
@@ -4370,6 +4390,14 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "activityTypeCode": {
         "type": "string",
       },
+      "allocationModeCode": {
+        "enum": [
+          "first_come",
+          "qualification_rank",
+          "lottery",
+        ],
+        "type": "string",
+      },
       "archiveWaitingDays": {
         "type": "number",
       },
@@ -4452,6 +4480,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "id",
       "title",
       "activityTypeCode",
+      "allocationModeCode",
       "organizationId",
       "startAt",
       "endAt",
@@ -11154,6 +11183,15 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "maxLength": 64,
         "type": "string",
       },
+      "allocationModeCode": {
+        "description": "活动分配方式(必填；first_come / qualification_rank / lottery)",
+        "enum": [
+          "first_come",
+          "qualification_rank",
+          "lottery",
+        ],
+        "type": "string",
+      },
       "archiveWaitingDays": {
         "description": "归档等待天数(0..365)",
         "type": "number",
@@ -11278,6 +11316,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "required": [
       "title",
       "activityTypeCode",
+      "allocationModeCode",
       "organizationId",
       "startAt",
       "endAt",
@@ -11345,6 +11384,15 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "properties": {
       "activityTypeCode": {
         "maxLength": 64,
+        "type": "string",
+      },
+      "allocationModeCode": {
+        "description": "活动分配方式(必填；物理独立于 Admin DTO)",
+        "enum": [
+          "first_come",
+          "qualification_rank",
+          "lottery",
+        ],
         "type": "string",
       },
       "archiveWaitingDays": {
@@ -11449,6 +11497,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "required": [
       "title",
       "activityTypeCode",
+      "allocationModeCode",
       "organizationId",
       "startAt",
       "endAt",
@@ -21379,6 +21428,15 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "maxLength": 64,
         "type": "string",
       },
+      "allocationModeCode": {
+        "description": "活动分配方式；draft 可直改，published 须经变更审核",
+        "enum": [
+          "first_come",
+          "qualification_rank",
+          "lottery",
+        ],
+        "type": "string",
+      },
       "archiveWaitingDays": {
         "description": "归档等待天数(0..365)",
         "type": "number",
@@ -21555,6 +21613,15 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "properties": {
       "activityTypeCode": {
         "maxLength": 64,
+        "type": "string",
+      },
+      "allocationModeCode": {
+        "description": "活动分配方式；draft 可直改，published 须经变更审核",
+        "enum": [
+          "first_come",
+          "qualification_rank",
+          "lottery",
+        ],
         "type": "string",
       },
       "archiveWaitingDays": {
@@ -32011,10 +32078,11 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "20030: 活动当前状态不允许此操作; 17031: 组织节点状态非活跃,不能挂队员",
+                    "description": "20030: 活动当前状态不允许此操作; 17031: 组织节点状态非活跃,不能挂队员; 20152: 活动分配方式与既有分配批次不一致",
                     "enum": [
                       20030,
                       17031,
+                      20152,
                     ],
                     "example": 20030,
                     "type": "integer",
@@ -32038,7 +32106,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "活动当前状态不允许此操作(code=20030) / 组织节点状态非活跃,不能挂队员(code=17031)",
+          "description": "活动当前状态不允许此操作(code=20030) / 组织节点状态非活跃,不能挂队员(code=17031) / 活动分配方式与既有分配批次不一致(code=20152)",
         },
       },
       "security": [
@@ -32719,10 +32787,11 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "20030: 活动当前状态不允许此操作; 20123: 活动报名已截止",
+                    "description": "20030: 活动当前状态不允许此操作; 20123: 活动报名已截止; 20152: 活动分配方式与既有分配批次不一致",
                     "enum": [
                       20030,
                       20123,
+                      20152,
                     ],
                     "example": 20030,
                     "type": "integer",
@@ -32746,7 +32815,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "活动当前状态不允许此操作(code=20030) / 活动报名已截止(code=20123)",
+          "description": "活动当前状态不允许此操作(code=20030) / 活动报名已截止(code=20123) / 活动分配方式与既有分配批次不一致(code=20152)",
         },
       },
       "security": [
@@ -33428,7 +33497,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "20033: 发布审核当前状态不允许此操作; 20022: 活动审核快照无效或已过期; 20144: 发布审核预期的活动快照已变化,请刷新后重新提交; 20145: 发布活动至少需要一个有效场次; 20143: 相同操作标识已用于不同的发布审核内容,请更换操作标识; 20147: 活动容量与当前占用不一致",
+                    "description": "20033: 发布审核当前状态不允许此操作; 20022: 活动审核快照无效或已过期; 20144: 发布审核预期的活动快照已变化,请刷新后重新提交; 20145: 发布活动至少需要一个有效场次; 20143: 相同操作标识已用于不同的发布审核内容,请更换操作标识; 20147: 活动容量与当前占用不一致; 20152: 活动分配方式与既有分配批次不一致",
                     "enum": [
                       20033,
                       20022,
@@ -33436,6 +33505,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
                       20145,
                       20143,
                       20147,
+                      20152,
                     ],
                     "example": 20033,
                     "type": "integer",
@@ -33459,7 +33529,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "发布审核当前状态不允许此操作(code=20033) / 活动审核快照无效或已过期(code=20022) / 发布审核预期的活动快照已变化,请刷新后重新提交(code=20144) / 发布活动至少需要一个有效场次(code=20145) / 相同操作标识已用于不同的发布审核内容,请更换操作标识(code=20143) / 活动容量与当前占用不一致(code=20147)",
+          "description": "发布审核当前状态不允许此操作(code=20033) / 活动审核快照无效或已过期(code=20022) / 发布审核预期的活动快照已变化,请刷新后重新提交(code=20144) / 发布活动至少需要一个有效场次(code=20145) / 相同操作标识已用于不同的发布审核内容,请更换操作标识(code=20143) / 活动容量与当前占用不一致(code=20147) / 活动分配方式与既有分配批次不一致(code=20152)",
         },
       },
       "security": [
@@ -89912,9 +89982,10 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "20032: 活动已有待处理的发布审核; 20037: 已发布活动修改需先提交审核; 17031: 组织节点状态非活跃,不能挂队员",
+                    "description": "20032: 活动已有待处理的发布审核; 20152: 活动分配方式与既有分配批次不一致; 20037: 已发布活动修改需先提交审核; 17031: 组织节点状态非活跃,不能挂队员",
                     "enum": [
                       20032,
+                      20152,
                       20037,
                       17031,
                     ],
@@ -89940,7 +90011,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "活动已有待处理的发布审核(code=20032) / 已发布活动修改需先提交审核(code=20037) / 组织节点状态非活跃,不能挂队员(code=17031)",
+          "description": "活动已有待处理的发布审核(code=20032) / 活动分配方式与既有分配批次不一致(code=20152) / 已发布活动修改需先提交审核(code=20037) / 组织节点状态非活跃,不能挂队员(code=17031)",
         },
       },
       "security": [
@@ -91981,12 +92052,13 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "20030: 活动当前状态不允许此操作; 20032: 活动已有待处理的发布审核; 20143: 相同操作标识已用于不同的发布审核内容,请更换操作标识; 20022: 活动审核快照无效或已过期",
+                    "description": "20030: 活动当前状态不允许此操作; 20032: 活动已有待处理的发布审核; 20143: 相同操作标识已用于不同的发布审核内容,请更换操作标识; 20022: 活动审核快照无效或已过期; 20152: 活动分配方式与既有分配批次不一致",
                     "enum": [
                       20030,
                       20032,
                       20143,
                       20022,
+                      20152,
                     ],
                     "example": 20030,
                     "type": "integer",
@@ -92010,7 +92082,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "活动当前状态不允许此操作(code=20030) / 活动已有待处理的发布审核(code=20032) / 相同操作标识已用于不同的发布审核内容,请更换操作标识(code=20143) / 活动审核快照无效或已过期(code=20022)",
+          "description": "活动当前状态不允许此操作(code=20030) / 活动已有待处理的发布审核(code=20032) / 相同操作标识已用于不同的发布审核内容,请更换操作标识(code=20143) / 活动审核快照无效或已过期(code=20022) / 活动分配方式与既有分配批次不一致(code=20152)",
         },
       },
       "security": [
@@ -93562,9 +93634,10 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "20032: 活动已有待处理的发布审核",
+                    "description": "20032: 活动已有待处理的发布审核; 20152: 活动分配方式与既有分配批次不一致",
                     "enum": [
                       20032,
+                      20152,
                     ],
                     "example": 20032,
                     "type": "integer",
@@ -93588,7 +93661,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "活动已有待处理的发布审核(code=20032)",
+          "description": "活动已有待处理的发布审核(code=20032) / 活动分配方式与既有分配批次不一致(code=20152)",
         },
       },
       "security": [
@@ -95903,10 +95976,11 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "20032: 活动已有待处理的发布审核; 20143: 相同操作标识已用于不同的发布审核内容,请更换操作标识",
+                    "description": "20032: 活动已有待处理的发布审核; 20143: 相同操作标识已用于不同的发布审核内容,请更换操作标识; 20152: 活动分配方式与既有分配批次不一致",
                     "enum": [
                       20032,
                       20143,
+                      20152,
                     ],
                     "example": 20032,
                     "type": "integer",
@@ -95930,7 +96004,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "活动已有待处理的发布审核(code=20032) / 相同操作标识已用于不同的发布审核内容,请更换操作标识(code=20143)",
+          "description": "活动已有待处理的发布审核(code=20032) / 相同操作标识已用于不同的发布审核内容,请更换操作标识(code=20143) / 活动分配方式与既有分配批次不一致(code=20152)",
         },
       },
       "security": [
@@ -102570,11 +102644,12 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "20030: 活动当前状态不允许此操作; 20032: 活动已有待处理的发布审核; 20022: 活动审核快照无效或已过期",
+                    "description": "20030: 活动当前状态不允许此操作; 20032: 活动已有待处理的发布审核; 20022: 活动审核快照无效或已过期; 20152: 活动分配方式与既有分配批次不一致",
                     "enum": [
                       20030,
                       20032,
                       20022,
+                      20152,
                     ],
                     "example": 20030,
                     "type": "integer",
@@ -102598,7 +102673,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "活动当前状态不允许此操作(code=20030) / 活动已有待处理的发布审核(code=20032) / 活动审核快照无效或已过期(code=20022)",
+          "description": "活动当前状态不允许此操作(code=20030) / 活动已有待处理的发布审核(code=20032) / 活动审核快照无效或已过期(code=20022) / 活动分配方式与既有分配批次不一致(code=20152)",
         },
       },
       "security": [
@@ -102800,9 +102875,10 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "20032: 活动已有待处理的发布审核",
+                    "description": "20032: 活动已有待处理的发布审核; 20152: 活动分配方式与既有分配批次不一致",
                     "enum": [
                       20032,
+                      20152,
                     ],
                     "example": 20032,
                     "type": "integer",
@@ -102826,7 +102902,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "活动已有待处理的发布审核(code=20032)",
+          "description": "活动已有待处理的发布审核(code=20032) / 活动分配方式与既有分配批次不一致(code=20152)",
         },
       },
       "security": [

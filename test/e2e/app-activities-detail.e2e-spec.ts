@@ -32,6 +32,7 @@ interface ResBody {
 // 字段集在既有 13 项上加性补齐性别/保险/通过数/时间阶段。
 const APP_DETAIL_KEYS = [
   'activityTypeCode',
+  'allocationMode',
   'capacity',
   'coverImageUrl',
   'createdAt',
@@ -242,6 +243,7 @@ describe('App GET /api/app/v1/activities/:id (P2-4b)', () => {
       expect(Object.keys(data).sort()).toEqual(APP_DETAIL_KEYS);
       expect(data.id).toBe(activity.id);
       expect(data.statusCode).toBe('published');
+      expect(data.allocationMode).toBe('first_come');
       expect(data.genderRequirementCode).toBeNull();
       expect(data.requiresInsurance).toBe(false);
       expect(data.registrationForm).toBeNull();

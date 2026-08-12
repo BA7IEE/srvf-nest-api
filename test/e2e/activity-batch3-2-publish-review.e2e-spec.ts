@@ -183,6 +183,7 @@ describe('batch3 slice2 activity publish proposal workflow', () => {
         endAt: '2099-08-01T05:00:00.000Z',
         registrationDeadline: '2099-07-31T12:00:00.000Z',
         location: '深圳',
+        allocationModeCode: 'first_come',
       });
     expect(activity.status).toBe(201);
     const activityId = activity.body.data.id as string;
@@ -278,7 +279,7 @@ describe('batch3 slice2 activity publish proposal workflow', () => {
       requestType: 'initial',
       status: 'pending',
       directPublish: false,
-      snapshot: expect.objectContaining({ schemaVersion: 3, snapshotHash: expect.any(String) }),
+      snapshot: expect.objectContaining({ schemaVersion: 4, snapshotHash: expect.any(String) }),
     });
 
     const replay = await request(httpServer(app))
@@ -586,7 +587,7 @@ describe('batch3 slice2 activity publish proposal workflow', () => {
       .expect(200);
     expect(detail.body.data).toMatchObject({
       id: submitted.body.data.id,
-      snapshot: expect.objectContaining({ schemaVersion: 3 }),
+      snapshot: expect.objectContaining({ schemaVersion: 4 }),
       changeDiff: expect.objectContaining({
         kind: 'proposal-v2',
         activityFields: expect.arrayContaining(['title']),

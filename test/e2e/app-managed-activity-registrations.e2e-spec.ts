@@ -139,6 +139,7 @@ describe('App managed activity registrations', () => {
         registrationDeadline: '2099-10-31T12:00:00.000Z',
         location: '深圳',
         capacity: 50,
+        allocationModeCode: 'first_come',
       });
     expect(created.status).toBe(201);
     const activityId = created.body.data.activity.id as string;

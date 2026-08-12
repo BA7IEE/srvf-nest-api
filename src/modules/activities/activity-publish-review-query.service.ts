@@ -128,9 +128,12 @@ export class ActivityPublishReviewQueryService {
       return { kind: 'unparseable' };
     }
     const record = snapshot as Record<string, unknown>;
-    // v3 only adds the hash-bound Form target; its Activity/Session diff projection is deliberately
-    // wire-compatible with v2 so existing review-detail consumers do not lose their change list.
-    if ((record.schemaVersion !== 2 && record.schemaVersion !== 3) || !this.isRecord(record.base)) {
+    // v3 adds Form and v4 adds allocation mode. All three proposal generations share the same
+    // Activity/Session diff envelope, so a v4 allocation change appears in activityFields.
+    if (
+      (record.schemaVersion !== 2 && record.schemaVersion !== 3 && record.schemaVersion !== 4) ||
+      !this.isRecord(record.base)
+    ) {
       return { kind: 'legacy', requestSchemaVersion: record.schemaVersion ?? null };
     }
     const base = record.base;

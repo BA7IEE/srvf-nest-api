@@ -206,6 +206,7 @@ describe('Activity batch3 slice1 draft foundation', () => {
       startAt: '2099-10-01T01:00:00.000Z',
       endAt: '2099-10-01T08:00:00.000Z',
       location: '深圳',
+      allocationModeCode: 'first_come',
       registrationModeCode: 'open_apply',
       visibilityCode: 'internal',
       defaultLocationRequired: false,

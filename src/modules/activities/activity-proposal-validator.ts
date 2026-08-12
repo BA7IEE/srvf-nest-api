@@ -9,6 +9,7 @@ import type {
   ActivityProposalPosition,
   ActivityProposalSnapshot,
 } from './activity-proposal.types';
+import { isActivityAllocationModeCode } from './activity-allocation-mode';
 
 type PrismaTx = Prisma.TransactionClient;
 type ProposalClient = Pick<
@@ -68,6 +69,9 @@ export class ActivityProposalValidator {
     const activity: ActivityProposalActivity = {
       title: activityPatch.title ?? current.title,
       activityTypeCode: activityPatch.activityTypeCode ?? current.activityTypeCode,
+      ...(activityPatch.allocationModeCode === undefined
+        ? {}
+        : { allocationModeCode: activityPatch.allocationModeCode }),
       organizationId: activityPatch.organizationId ?? current.organizationId,
       startAt: activityPatch.startAt ?? current.startAt.toISOString(),
       endAt: activityPatch.endAt ?? current.endAt.toISOString(),
@@ -287,6 +291,12 @@ export class ActivityProposalValidator {
       typeof activity.location !== 'string' ||
       (activity.capacity !== null &&
         (!Number.isInteger(activity.capacity) || activity.capacity < 1))
+    ) {
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    }
+    if (
+      activity.allocationModeCode !== undefined &&
+      !isActivityAllocationModeCode(activity.allocationModeCode)
     ) {
       throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
     }

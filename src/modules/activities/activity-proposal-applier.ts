@@ -18,6 +18,7 @@ const activityApplySelect = {
   id: true,
   title: true,
   activityTypeCode: true,
+  allocationModeCode: true,
   organizationId: true,
   startAt: true,
   endAt: true,
@@ -135,6 +136,9 @@ export class ActivityProposalApplier {
       data: {
         title: snapshot.activity.title,
         activityTypeCode: snapshot.activity.activityTypeCode,
+        ...(snapshot.activity.allocationModeCode === undefined
+          ? {}
+          : { allocationModeCode: snapshot.activity.allocationModeCode }),
         organizationId: snapshot.activity.organizationId,
         startAt: nextStartAt,
         endAt: nextEndAt,
@@ -333,6 +337,9 @@ export class ActivityProposalApplier {
     const comparable: Record<string, unknown> = {
       title: snapshot.activity.title,
       activityTypeCode: snapshot.activity.activityTypeCode,
+      ...(snapshot.activity.allocationModeCode === undefined
+        ? {}
+        : { allocationModeCode: snapshot.activity.allocationModeCode }),
       organizationId: snapshot.activity.organizationId,
       startAt: new Date(snapshot.activity.startAt),
       endAt: new Date(snapshot.activity.endAt),

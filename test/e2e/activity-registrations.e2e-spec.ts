@@ -173,6 +173,7 @@ describe('activity-registrations 模块', () => {
         startAt: opts.startAt ?? '2099-06-01T08:00:00.000Z',
         endAt: opts.endAt ?? '2099-06-01T12:00:00.000Z',
         location: '演示地点',
+        allocationModeCode: 'first_come',
         isPublicRegistration: opts.isPublicRegistration,
         ...(opts.capacity !== undefined ? { capacity: opts.capacity } : {}),
         ...(opts.registrationDeadline !== undefined
