@@ -1668,16 +1668,37 @@ function runViolations(): void {
   );
 }
 
+function runDebtCheck(): void {
+  const debtRegistry = architectureDebtReport();
+  process.stdout.write(
+    JSON.stringify(
+      {
+        mode: 'debt-check',
+        enforcement: 'registry-integrity-only',
+        reportOnly: true,
+        debtRegistry,
+      },
+      null,
+      2,
+    ) + '\n',
+  );
+  if (debtRegistry.semanticFieldsComplete !== true) process.exitCode = 1;
+}
+
 function main(): void {
   const metadata = process.argv.includes('--metadata');
   const violations = process.argv.includes('--violations');
-  if (metadata === violations) {
-    process.stderr.write('Usage: pnpm tsx scripts/check-boundaries.ts --metadata | --violations\n');
+  const debtCheck = process.argv.includes('--debt-check');
+  if ([metadata, violations, debtCheck].filter(Boolean).length !== 1) {
+    process.stderr.write(
+      'Usage: pnpm tsx scripts/check-boundaries.ts --metadata | --violations | --debt-check\n',
+    );
     process.exit(2);
   }
   try {
     if (metadata) runMetadata();
-    else runViolations();
+    else if (violations) runViolations();
+    else runDebtCheck();
   } catch (error) {
     process.stderr.write(
       'check-boundaries failed: ' + (error instanceof Error ? error.message : String(error)) + '\n',

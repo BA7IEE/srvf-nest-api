@@ -53,6 +53,7 @@
     "docs:authz:check": "tsx scripts/generate-authz-manifest.ts --check",
     "docs:boundaries": "tsx scripts/check-boundaries.ts --violations",
     "docs:boundaries:check": "tsx scripts/check-boundaries.ts --metadata",
+    "docs:boundaries:debt:check": "tsx scripts/check-boundaries.ts --debt-check",
     "docs:codemap": "tsx scripts/generate-codemap.ts",
     "docs:codemap:check": "tsx scripts/generate-codemap.ts --check && tsx scripts/check-codemap.ts",
     "docs:rbacmap": "tsx scripts/generate-rbac-map.ts",
