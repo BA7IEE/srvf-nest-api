@@ -23,7 +23,7 @@ export type AuthzDeclarationMode = 'report' | 'enforce';
 
 // Phase 1A starts in report mode. Phase 1D changes only this value after all
 // six enforce gates have independently passed.
-export const AUTHZ_DECLARATION_MODE: AuthzDeclarationMode = 'report';
+export const AUTHZ_DECLARATION_MODE: AuthzDeclarationMode = 'enforce';
 
 type ResponseWithFinishListener = {
   statusCode?: number;

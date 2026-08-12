@@ -58,7 +58,7 @@ describe('旅程金五条② 活动报名审批签到（当前真实部分链）
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'authz_declaration_inventory',
-        mode: 'report',
+        mode: 'enforce',
         totalUndeclaredRouteCount: manifestUndeclaredRouteCount,
       }),
       'Route authorization declaration inventory',
