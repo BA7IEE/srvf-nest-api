@@ -735,7 +735,7 @@ describe('第 83 migration qualification contract guards', () => {
     }
   });
 
-  it('replays all 83 migrations from a literally empty database', () => {
+  it('replays all current 84 migrations from a literally empty database', () => {
     const databaseName = recreateEmptyScratchDatabase();
     try {
       deployCurrentMigrations(databaseName);
@@ -747,7 +747,7 @@ describe('第 83 migration qualification contract guards', () => {
   });
 
   it(
-    'cold 83 database enforces the exact qualification wires, de-duplicates arrays, and permits nullable identity for submit/review',
+    'cold current database enforces the D83 exact qualification wires, de-duplicates arrays, and permits nullable identity for submit/review',
     async () => {
       const databaseName = recreateEmptyScratchDatabase();
       try {
@@ -934,7 +934,7 @@ describe('第 83 migration qualification contract guards', () => {
   );
 
   it(
-    'five independent migration mutations each rebuild a cold 83 database and make its protected violation pass',
+    'five independent D83 migration mutations each rebuild a cold current 84 database and make its protected violation pass',
     async () => {
       const fullCompositeFk = `ALTER TABLE "ActivityQualificationRuleSet"
   ADD CONSTRAINT "activity_qualification_rule_set_activity_session_position_fkey"
