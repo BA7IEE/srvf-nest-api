@@ -34,6 +34,7 @@ import {
 } from './team-join.dto';
 import { TeamJoinApplicationsService } from './team-join-applications.service';
 import { TeamJoinEnrollmentService } from './team-join-enrollment.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 招新三期(入队)T2/T4(2026-06-19):入队申请 admin surface(评审稿 §3.2)。
 // 入口仅 JwtAuthGuard,判权全在 service rbac.can()。标 gate(幂等;末次全过 + 贡献值≥5 自动推进)/
@@ -58,6 +59,10 @@ export class TeamJoinApplicationsAdminController {
   ) {}
 
   @Get()
+  @RequiresPermission('team-join-application.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '入队申请分页列表(可按 cycleId / statusCode 过滤;贡献值列表不算) [rbac: team-join-application.read.record]',
@@ -73,6 +78,10 @@ export class TeamJoinApplicationsAdminController {
   }
 
   @Get(':id')
+  @RequiresPermission('team-join-application.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '入队申请详情(含各 gate 实况 + 实时贡献值汇总) [rbac: team-join-application.read.record]',
@@ -91,6 +100,7 @@ export class TeamJoinApplicationsAdminController {
   }
 
   @Patch(':id/gates')
+  @RequiresPermission('team-join-application.mark.gate', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '标 gate(8 通用 + 4 专业队;通过/未通过 + 完成日 + dept-assessment 可延长期;幂等;仅 joining/pending_evaluation 态;末次 8 通用全过 + 贡献值≥5 自动→待综合评估) [rbac: team-join-application.mark.gate]',
@@ -113,6 +123,10 @@ export class TeamJoinApplicationsAdminController {
   }
 
   @Post(':id/evaluate')
+  @RequiresPermission('team-join-application.evaluate.assessment', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -136,6 +150,10 @@ export class TeamJoinApplicationsAdminController {
   }
 
   @Post(':id/join')
+  @RequiresPermission('team-join-application.join.member', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     // ⚠️ 「综合评估本轮有效 / 延长期」那句已于 2026-07-31 并发审计 S5 废止:

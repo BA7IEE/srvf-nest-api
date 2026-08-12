@@ -16,6 +16,7 @@ import { MemberInsuranceAdminResponseDto, ReviewMemberInsuranceDto } from './ins
 import { MemberInsuranceOverviewResponseDto } from './member-insurance-overview.dto';
 import { MemberInsuranceOverviewService } from './member-insurance-overview.service';
 import { MemberInsurancesService } from './member-insurances.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 保险模块 T2:admin 查队员自购保险 controller(2026-06-13)。
 // 冻结评审稿 docs/archive/reviews/insurance-module-review.md §3.2 端点 14 / E-15。
@@ -40,6 +41,7 @@ export class AdminMemberInsurancesController {
   }
 
   @Get()
+  @RequiresPermission('member-insurance.read.other', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '列出队员自购保险(无分页;coverageEnd desc;软删过滤;本人侧走 app/v1/me/insurances) [rbac: member-insurance.read.other]',
@@ -61,6 +63,7 @@ export class AdminMemberInsurancesController {
 
   // 队员轴聚合只读模型；旧 GET 保持只返回个人自购保险。
   @Get('overview')
+  @RequiresPermission('member-insurance.read.other', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '获取队员统一保险概览（个人自购 + 队内统一覆盖安全投影） [rbac: member-insurance.read.other]',
@@ -81,6 +84,7 @@ export class AdminMemberInsurancesController {
   }
 
   @Post(':insuranceId/review')
+  @RequiresPermission('member-insurance.review.record', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

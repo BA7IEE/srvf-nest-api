@@ -21,6 +21,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { MemberDepartmentResponseDto, SetMemberDepartmentDto } from './member-departments.dto';
 import { MemberDepartmentsService } from './member-departments.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 从 @Req() 构造 AuditMeta(沿 position-assignments / content-admin 范式;D8 拍板不引入 ALS)。
 function buildAuditMeta(req: Request): AuditMeta {
@@ -52,6 +53,7 @@ export class MemberDepartmentsController {
   constructor(private readonly service: MemberDepartmentsService) {}
 
   @Get()
+  @RequiresPermission('member-department.read.current', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '查队员当前部门归属(无归属返 data: null) [rbac: member-department.read.current]',
   })
@@ -70,6 +72,7 @@ export class MemberDepartmentsController {
   }
 
   @Put()
+  @RequiresPermission('member-department.set.current', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -96,6 +99,7 @@ export class MemberDepartmentsController {
   }
 
   @Delete()
+  @RequiresPermission('member-department.clear.current', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '解除当前部门归属(软删中间表行;非 SA 也可) [rbac: member-department.clear.current]',
   })

@@ -20,6 +20,7 @@ import {
   ParticipationOverviewResponseDto,
 } from './participation-overview.dto';
 import { ParticipationOverviewQueryService } from './participation-overview-query.service';
+import { LoginScoped, RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // F1/A7(路线图 §4 A7;net-new 模块):跨资源批量 id→label 解析,供前端选择器/详情页
 // 回显用。POST 语义 = 批量查询(入参是结构体,复用 announcement-import/authz-explain
@@ -36,6 +37,7 @@ export class MetaController {
   ) {}
 
   @Post('resolve-labels')
+  @RequiresPermission('meta.resolve.label', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -55,6 +57,7 @@ export class MetaController {
   // 故鉴权后缀为 [auth] 而非某个单一 [rbac: ...] 码(镜像 activities list 的 [auth] 用法,
   // 那也是"无单一码但内部另有过滤"的先例)。
   @Get('dashboard-summary')
+  @LoginScoped({ require: 'all', scopes: ['org-scope'], engine: 'authz-scoped' })
   @ApiOperation({
     summary:
       '工作台/首页待办汇总(报名/考勤/发布审核按对应 action 的授权组织范围统计;activities 无码;无权块或字段静默省略) [auth]',
@@ -66,6 +69,10 @@ export class MetaController {
   }
 
   @Get('participation-overview')
+  @RequiresPermission('activity-registration.read.record', 'attendance.read.sheet', {
+    require: 'all',
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary:
       '参与度月度总览(活动日期/类型/组织筛选；两项读权限可见组织范围求交；无可见范围返空) [auth]',

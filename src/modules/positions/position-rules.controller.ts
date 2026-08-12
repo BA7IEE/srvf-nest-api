@@ -32,6 +32,7 @@ import {
   UpdatePositionRuleDto,
 } from './position-rules.dto';
 import { PositionRulesService } from './position-rules.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 终态 scoped-authz PR3(2026-07-01;冻结稿 §7.2):职务规则(position-rules)全局配置面 controller(4 路由)。
 // 路径前缀:全局 /api(main.ts)+ 'admin/v1/position-rules'。判权单轨 service 层 rbac.can(position-rule.*.record);
@@ -43,6 +44,7 @@ export class PositionRulesController {
   constructor(private readonly service: PositionRulesService) {}
 
   @Get()
+  @RequiresPermission('position-rule.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '列出职务规则(分页 + 过滤 nodeTypeCode / positionId / status) [rbac: position-rule.read.record]',
@@ -57,6 +59,7 @@ export class PositionRulesController {
   }
 
   @Post()
+  @RequiresPermission('position-rule.create.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '创建职务规则(校验字典/职务/唯一键 + required/min/max 一致性) [rbac: position-rule.create.record]',
@@ -78,6 +81,7 @@ export class PositionRulesController {
   }
 
   @Patch(':id')
+  @RequiresPermission('position-rule.update.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '部分更新职务规则(合并现值校验 required/min/max；禁改 nodeTypeCode/positionId) [rbac: position-rule.update.record]',
@@ -98,6 +102,7 @@ export class PositionRulesController {
   }
 
   @Delete(':id')
+  @RequiresPermission('position-rule.delete.record', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '软删职务规则 [rbac: position-rule.delete.record]' })
   @ApiNoContentResponse()

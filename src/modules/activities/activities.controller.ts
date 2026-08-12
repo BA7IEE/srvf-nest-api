@@ -39,6 +39,7 @@ import {
   UpdateActivityDto,
 } from './activities.dto';
 import { ActivitiesService } from './activities.service';
+import { LoginScoped, RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // V2 第一阶段批次 3A activities controller(8 路由;v0.40.0 +complete)。
 // 路径前缀:全局 /api(main.ts)+ 'admin/v1/activities'。
@@ -69,6 +70,7 @@ export class ActivitiesController {
   }
 
   @Get()
+  @LoginScoped('activity-visibility', { require: 'all', engine: 'authz-scoped' })
   @ApiOperation({
     summary:
       '列出活动(分页 + 多字段过滤;Q-A7 USER 强制只见 published/completed,忽略入参 statusCode) [auth]',
@@ -85,6 +87,7 @@ export class ActivitiesController {
   // F1/A6(路线图 §4;D2/D3 拍板):选择器投影,必须先于 /:id 定义(specific-before-dynamic)。
   // 无码仅登录(镜像 list/findOne 现状;RBAC_MAP §2.4 BD-3 已决 won't-do 新增 activity.read.* 码)。
   @Get('options')
+  @LoginScoped('activity-visibility', { require: 'all', engine: 'authz-scoped' })
   @ApiOperation({
     summary: '活动选择器投影(q 模糊 title;USER 强制只见 published/completed) [auth]',
   })
@@ -98,6 +101,7 @@ export class ActivitiesController {
   }
 
   @Post()
+  @RequiresPermission('activity.create.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '创建活动(initial statusCode=draft;禁 statusCode / audit 字段) [rbac: activity.create.record]',
@@ -126,6 +130,7 @@ export class ActivitiesController {
   }
 
   @Get(':id')
+  @LoginScoped('activity-visibility', { require: 'all', engine: 'authz-scoped' })
   @ApiOperation({
     summary: '活动详情(Q-A7 USER 仅可见 published/completed,其他 → 404) [auth]',
   })
@@ -139,6 +144,7 @@ export class ActivitiesController {
   }
 
   @Patch(':id')
+  @RequiresPermission('activity.update.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '部分更新活动(completed/cancelled 仅展示字段可改;事实字段锁定) [rbac: activity.update.record]',
@@ -171,6 +177,7 @@ export class ActivitiesController {
   }
 
   @Delete(':id')
+  @RequiresPermission('activity.delete.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '软删活动(存在 pending/pass 报名或未软删考勤单时拒绝，须先取消活动) [rbac: activity.delete.record]',
@@ -192,6 +199,7 @@ export class ActivitiesController {
   }
 
   @Patch(':id/publish')
+  @RequiresPermission('activity.publish.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '发布活动(draft → published;请求体须显式确认保险，且活动/报名截止时间有效) [rbac: activity.publish.record]',
@@ -215,6 +223,7 @@ export class ActivitiesController {
   }
 
   @Patch(':id/cancel')
+  @RequiresPermission('activity.cancel.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '取消活动(draft|published → cancelled；pending 报名联动取消，pass 保留) [rbac: activity.cancel.record]',
@@ -238,6 +247,7 @@ export class ActivitiesController {
 
   // 参与域生命周期收口③(v0.40.0):管理端手动完结活动。POST(action 非幂等更新语义,沿 goal 指定动词)。
   @Post(':id/complete')
+  @RequiresPermission('activity.complete.record', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

@@ -34,6 +34,7 @@ import {
   UpdatePositionDto,
 } from './positions.dto';
 import { PositionsService } from './positions.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 终态 scoped-authz PR3(2026-07-01;冻结稿 §7.2):职务定义(positions)全局配置面 controller(5 路由)。
 // 路径前缀:全局 /api(main.ts)+ 'admin/v1/positions'(沿 admin 面 organizations / memberships 现范式)。
@@ -45,6 +46,7 @@ export class PositionsController {
   constructor(private readonly service: PositionsService) {}
 
   @Get()
+  @RequiresPermission('position.read.definition', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '列出职务定义(分页 + 过滤 categoryCode / status) [rbac: position.read.definition]',
   })
@@ -59,6 +61,7 @@ export class PositionsController {
 
   // F1/A5(路线图 §4;D2/D3 拍板):选择器投影,必须先于 /:id 定义(specific-before-dynamic)。
   @Get('options')
+  @RequiresPermission('position.read.definition', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '职务选择器投影(q 模糊 name;limit≤100,默认 20) [rbac: position.read.definition]',
   })
@@ -72,6 +75,7 @@ export class PositionsController {
   }
 
   @Post()
+  @RequiresPermission('position.create.definition', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '创建职务定义(code kebab 唯一) [rbac: position.create.definition]',
   })
@@ -90,6 +94,7 @@ export class PositionsController {
   }
 
   @Get(':id')
+  @RequiresPermission('position.read.definition', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '职务定义详情(软删返 404) [rbac: position.read.definition]' })
   @ApiWrappedOkResponse(PositionResponseDto)
   @ApiBizErrorResponse(
@@ -106,6 +111,7 @@ export class PositionsController {
   }
 
   @Patch(':id')
+  @RequiresPermission('position.update.definition', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '部分更新职务定义(白名单禁改 code,由 ValidationPipe 拦截) [rbac: position.update.definition]',
@@ -126,6 +132,7 @@ export class PositionsController {
   }
 
   @Delete(':id')
+  @RequiresPermission('position.delete.definition', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: '软删职务定义(被职务规则引用时禁删 → 32003) [rbac: position.delete.definition]',

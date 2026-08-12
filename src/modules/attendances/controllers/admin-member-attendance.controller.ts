@@ -15,6 +15,7 @@ import { AdminMemberAttendanceRecordDto, MemberContributionSummaryDto } from '..
 import { AttendancesService } from '../attendances.service';
 import { MemberParticipationSummaryDto } from '../participation-summary.dto';
 import { ParticipationSummaryQueryService } from '../participation-summary-query.service';
+import { RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 
 // 跨轴只读 admin controller(2026-06-23;队员/审批跨轴只读查询 goal · 队员 360 Tier3)。
 //
@@ -39,6 +40,7 @@ export class AdminMemberAttendanceController {
   ) {}
 
   @Get('attendance-records')
+  @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '某队员考勤记录(队员 360;分页;仅 approved Sheet 内 records;item 带 activity 上下文;不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet]',
@@ -59,6 +61,7 @@ export class AdminMemberAttendanceController {
   }
 
   @Get('contribution-summary')
+  @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '某队员贡献值生涯累计 capped 总分(队员 360;实时算不落库;approved sheet + 北京日封顶 3;不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet]',
@@ -78,6 +81,7 @@ export class AdminMemberAttendanceController {
   }
 
   @Get('participation-summary')
+  @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '某队员参与累计(approved 时长/活动次数/记录数/生涯封顶贡献；member ref 点判) [rbac: attendance.read.sheet]',

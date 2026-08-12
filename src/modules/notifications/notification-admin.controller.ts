@@ -41,6 +41,7 @@ import {
   UpdateNotificationDto,
 } from './notification.dto';
 import { NotificationService } from './notification.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 统一通知模块 S1 站内信渠道(第 28 模块 notifications 扩 controller)admin surface
 // (评审稿 unified-notification-dispatcher-review.md §5 / member-notification-review.md §6 端点 1-8)。
@@ -68,6 +69,7 @@ export class NotificationAdminController {
   constructor(private readonly service: NotificationService) {}
 
   @Post()
+  @RequiresPermission('notification.create.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '新建通知草稿(create → draft) [rbac: notification.create.record]' })
   @ApiWrappedCreatedResponse(NotificationAdminDetailDto)
   @ApiBizErrorResponse(
@@ -87,6 +89,7 @@ export class NotificationAdminController {
   }
 
   @Get()
+  @RequiresPermission('notification.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '通知分页列表(status/type/visibility/pinned 过滤;admin 见全部状态全可见档;回显 readCount) [rbac: notification.read.record]',
@@ -98,6 +101,7 @@ export class NotificationAdminController {
   }
 
   @Get(':id')
+  @RequiresPermission('notification.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '通知详情(回显 readCount〔不自增〕) [rbac: notification.read.record]',
   })
@@ -111,6 +115,7 @@ export class NotificationAdminController {
   }
 
   @Patch(':id')
+  @RequiresPermission('notification.update.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '更新 admin 广播通知(published 的 Effect 字段真实变化自动回 draft;pinned/语义等价更新不撤回;archived/system-directed → 31030) [rbac: notification.update.record]',
@@ -136,6 +141,7 @@ export class NotificationAdminController {
   }
 
   @Delete(':id')
+  @RequiresPermission('notification.delete.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '软删 admin 广播通知(system-directed → 31030) [rbac: notification.delete.record]',
   })
@@ -157,6 +163,7 @@ export class NotificationAdminController {
   }
 
   @Post(':id/publish')
+  @RequiresPermission('notification.publish.record', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -178,6 +185,7 @@ export class NotificationAdminController {
   }
 
   @Post(':id/unpublish')
+  @RequiresPermission('notification.publish.record', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -199,6 +207,7 @@ export class NotificationAdminController {
   }
 
   @Post(':id/archive')
+  @RequiresPermission('notification.publish.record', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -220,6 +229,7 @@ export class NotificationAdminController {
   }
 
   @Post(':id/send-sms')
+  @RequiresPermission('notification.send.sms', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -246,6 +256,7 @@ export class NotificationAdminController {
   // T6-1 运维入口:系统定向通知的企业微信 replay。判据全在 outbox 原语,本端点零第二份。
   // 结局做成闭集出参而非 error 分流(诊断端点:「为什么没重发」比「HTTP 几」更重要)。
   @Post(':id/replay-wecom')
+  @RequiresPermission('notification.replay.wecom', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

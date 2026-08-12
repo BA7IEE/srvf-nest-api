@@ -49,6 +49,7 @@ import { RecruitmentApplicationsQueryService } from './recruitment-applications-
 import { RecruitmentCyclesService } from './recruitment-cycles.service';
 import { RecruitmentPromotionService } from './recruitment-promotion.service';
 import { RecruitmentStatsService } from './recruitment-stats.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 招新一期 T3(2026-06-18):招新轮次 admin surface(评审稿 §3.2 端点 6-9)。
 // 入口仅 JwtAuthGuard,**不**挂 @Roles;判权全在 service rbac.can()(R 模式)。
@@ -91,6 +92,7 @@ export class RecruitmentCyclesController {
   ) {}
 
   @Post()
+  @RequiresPermission('recruitment-cycle.create.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '创建招新轮次(默认 closed,需显式开轮) [rbac: recruitment-cycle.create.record]',
   })
@@ -105,6 +107,7 @@ export class RecruitmentCyclesController {
   }
 
   @Get()
+  @RequiresPermission('recruitment-cycle.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '招新轮次分页列表 [rbac: recruitment-cycle.read.record]' })
   @ApiWrappedPageResponse(RecruitmentCycleResponseDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -113,6 +116,7 @@ export class RecruitmentCyclesController {
   }
 
   @Get(':id')
+  @RequiresPermission('recruitment-cycle.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '招新轮次详情 [rbac: recruitment-cycle.read.record]' })
   @ApiWrappedOkResponse(RecruitmentCycleResponseDto)
   @ApiBizErrorResponse(
@@ -128,6 +132,7 @@ export class RecruitmentCyclesController {
   }
 
   @Patch(':id')
+  @RequiresPermission('recruitment-cycle.update.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '更新招新轮次(开/关轮、容量、见面会/QQ群/通知模板;开 open 轮要求当前无其它 open 轮) [rbac: recruitment-cycle.update.record]',
@@ -149,6 +154,10 @@ export class RecruitmentCyclesController {
   }
 
   @Get(':id/publicity-list')
+  @RequiresPermission('recruitment-application.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '公示名单(姓名 + 拟发编号,拼音序,零敏感;资料或登录锚不齐的项 needsManualBuild=true 不占号) [rbac: recruitment-application.read.record]',
@@ -167,6 +176,10 @@ export class RecruitmentCyclesController {
   }
 
   @Get(':id/stats')
+  @RequiresPermission('recruitment-application.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '招新工作台聚合 stats(今日数据/待处理事项/门槛进度/综合评定/公示发号 五组;纯读零写;各业务态计数与 stage 派生同源) [rbac: recruitment-application.read.record]',
@@ -185,6 +198,10 @@ export class RecruitmentCyclesController {
   }
 
   @Get(':id/promote-precheck')
+  @RequiresPermission('recruitment-application.promote.member', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '一键发号前预检(纯读;复用 decidePromotionIssuance 结构性保证「预检=实发」;逐行可发/跳过 + 六类跳过原因 + 重复 openid 高亮 + 缺手机/生日/性别 + 特殊证件标识 + 汇总) [rbac: recruitment-application.promote.member]',
@@ -204,6 +221,10 @@ export class RecruitmentCyclesController {
   }
 
   @Post(':id/promote')
+  @RequiresPermission('recruitment-application.promote.member', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

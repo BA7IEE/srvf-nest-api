@@ -14,6 +14,7 @@ import {
   AnnouncementImportRequestDto,
   AnnouncementImportResultDto,
 } from './announcement-import.dto';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 终态 scoped-authz PR11(2026-07-02;冻结稿 §8.4 / §11 PR11):公告导入两段式管理面 controller(2 路由)。
 // 判权单轨 service 层 rbac.can(announcement-import.{preview,execute}.record);入口仅全局 JwtAuthGuard,
@@ -35,6 +36,10 @@ export class AnnouncementImportController {
   constructor(private readonly service: AnnouncementImportService) {}
 
   @Post('announcement-import/preview')
+  @RequiresPermission('announcement-import.preview.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -51,6 +56,10 @@ export class AnnouncementImportController {
   }
 
   @Post('announcement-import/execute')
+  @RequiresPermission('announcement-import.execute.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

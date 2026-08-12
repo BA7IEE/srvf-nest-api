@@ -21,6 +21,7 @@ import {
   UpdateTeamJoinCycleDto,
 } from './team-join.dto';
 import { TeamJoinCyclesService } from './team-join-cycles.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 招新三期(入队)T2(2026-06-19):入队轮 admin surface(评审稿 §3.2)。
 // 入口仅 JwtAuthGuard,**不**挂 @Roles;判权全在 service rbac.can()(R 模式)。
@@ -42,6 +43,7 @@ export class TeamJoinCyclesController {
   constructor(private readonly service: TeamJoinCyclesService) {}
 
   @Post()
+  @RequiresPermission('team-join-cycle.create.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '创建入队轮(默认 closed;可配置开放候选部门清单与候选数上限,清单 org 须 ACTIVE) [rbac: team-join-cycle.create.record]',
@@ -63,6 +65,7 @@ export class TeamJoinCyclesController {
   }
 
   @Get()
+  @RequiresPermission('team-join-cycle.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '入队轮分页列表 [rbac: team-join-cycle.read.record]' })
   @ApiWrappedPageResponse(TeamJoinCycleResponseDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -71,6 +74,7 @@ export class TeamJoinCyclesController {
   }
 
   @Get(':id')
+  @RequiresPermission('team-join-cycle.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '入队轮详情 [rbac: team-join-cycle.read.record]' })
   @ApiWrappedOkResponse(TeamJoinCycleResponseDto)
   @ApiBizErrorResponse(
@@ -88,6 +92,7 @@ export class TeamJoinCyclesController {
   }
 
   @Patch(':id')
+  @RequiresPermission('team-join-cycle.update.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '更新入队轮(开/关轮、轮次名、开放候选部门清单与候选数上限;开 open 轮要求当前无其它 open 轮) [rbac: team-join-cycle.update.record]',

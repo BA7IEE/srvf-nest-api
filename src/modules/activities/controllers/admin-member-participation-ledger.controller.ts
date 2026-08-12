@@ -17,6 +17,7 @@ import {
   ListAdminMemberParticipationLedgerQueryDto,
 } from '../dto/admin/admin-settlement-read.dto';
 import { LedgerQueryService } from '../ledger-query.service';
+import { RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 
 // 与既有 admin/v1/members/:memberId 跨轴读面并列；判权和防枚举在服务层完成。
 @ApiTags('Admin - Participation Ledger')
@@ -27,6 +28,7 @@ export class AdminMemberParticipationLedgerController {
 
   // 账本权限口径见 LedgerQueryService 的 LEDGER_READ_ACTION：合同 §6.11 空白，2026-08-06 显式接受复用考勤读码。
   @Get('participation-ledger')
+  @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '某队员已生效参与账本（分页，可选 ledgerDate 区间） [rbac: attendance.read.sheet]',
   })

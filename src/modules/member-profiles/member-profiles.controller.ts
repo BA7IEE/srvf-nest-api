@@ -16,6 +16,7 @@ import { CreateMemberProfileDto } from './dto/create-member-profile.dto';
 import { MemberProfileResponseDto } from './dto/member-profile-response.dto';
 import { UpdateMemberProfileDto } from './dto/update-member-profile.dto';
 import { MemberProfilesService } from './member-profiles.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 function buildAuditMeta(req: Request): AuditMeta {
   return {
@@ -44,6 +45,7 @@ export class MemberProfilesController {
   constructor(private readonly service: MemberProfilesService) {}
 
   @Get()
+  @RequiresPermission('member-profile.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '查队员扩展档案(无则返 data: null;documentNumber / mobile 默认掩码,持 member-profile.read.sensitive 见明文) [rbac: member-profile.read.record]',
@@ -64,6 +66,7 @@ export class MemberProfilesController {
   }
 
   @Post()
+  @RequiresPermission('member-profile.create.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '创建队员扩展档案(1:1;重复创建 → MEMBER_PROFILE_ALREADY_EXISTS;回显 documentNumber / mobile 默认掩码,持 member-profile.read.sensitive 见明文) [rbac: member-profile.create.record]',
@@ -90,6 +93,7 @@ export class MemberProfilesController {
   }
 
   @Patch()
+  @RequiresPermission('member-profile.update.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '部分更新队员扩展档案(全字段 optional;**禁止** id / memberId / 系统字段;回显 documentNumber / mobile 默认掩码,持 member-profile.read.sensitive 见明文) [rbac: member-profile.update.record]',

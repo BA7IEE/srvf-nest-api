@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:71ad5fd344dda6faf2c9dd6735b3ed43e21e3c1f6b1c10230444e5e366632659",
+  "inputDigest": "sha256:9abf797d191a3a6cde640a32d07ce4408ec66c479e18bbb097a0677097e8e47c",
   "truthSource": "classification-overlay",
   "coverage": {
     "endpoints": 498,
@@ -1055,7 +1055,8 @@
       "unresolvedImplementationEvidence": [
         "No recognized authorization signal found in the explored static implementation path.",
         "No statically provable scope was inferred; empty scopes are provisional pending review."
-      ]
+      ],
+      "truthSource": "code"
     },
     {
       "routeKey": "GET /api/admin/v1/activities/:activityId/participation-summary",
@@ -1066,7 +1067,7 @@
       "tags": [
         "Admin - Activities"
       ],
-      "sourceSummary": "活动参与合计(报名状态/实到/到场率/approved 时长与贡献/固定时长桶；需同时持两项参与域读权限) [auth]",
+      "sourceSummary": "活动参与合计(报名状态/实到/到场率/approved 时长与贡献/固定时长桶；需同时持 attendance.read.sheet 与 activity-registration.read.record，按活动资源范围判定) [auth]",
       "policy": {
         "admission": null,
         "mode": "RBAC",
@@ -1149,7 +1150,8 @@
         "No statically provable scope was inferred; empty scopes are provisional pending review.",
         "src/modules/activities/activity-participation-query.service.ts:39 uses a non-literal authorization action (this.authz.explain).",
         "src/modules/activities/activity-participation-query.service.ts:41 uses a non-literal authorization action (this.rbac.can)."
-      ]
+      ],
+      "truthSource": "code"
     },
     {
       "routeKey": "GET /api/admin/v1/activities/:activityId/positions",
@@ -1208,7 +1210,8 @@
       "unresolvedImplementationEvidence": [
         "No recognized authorization signal found in the explored static implementation path.",
         "No statically provable scope was inferred; empty scopes are provisional pending review."
-      ]
+      ],
+      "truthSource": "code"
     },
     {
       "routeKey": "GET /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -1273,7 +1276,8 @@
       "unresolvedImplementationEvidence": [
         "No recognized authorization signal found in the explored static implementation path.",
         "No statically provable scope was inferred; empty scopes are provisional pending review."
-      ]
+      ],
+      "truthSource": "code"
     },
     {
       "routeKey": "GET /api/admin/v1/activities/:activityId/reconciliation",
@@ -1284,7 +1288,7 @@
       "tags": [
         "Admin - Activities"
       ],
-      "sourceSummary": "活动报名×实到核对(completed only；pass 逐人 attended/no-show + 临时参加名单；需同时持两项参与域读权限) [auth]",
+      "sourceSummary": "活动报名×实到核对(completed only；pass 逐人 attended/no-show + 临时参加名单；需同时持 attendance.read.sheet 与 activity-registration.read.record，按活动资源范围判定) [auth]",
       "policy": {
         "admission": null,
         "mode": "RBAC",
@@ -1355,7 +1359,8 @@
         "No statically provable scope was inferred; empty scopes are provisional pending review.",
         "src/modules/activities/activity-participation-query.service.ts:39 uses a non-literal authorization action (this.authz.explain).",
         "src/modules/activities/activity-participation-query.service.ts:41 uses a non-literal authorization action (this.rbac.can)."
-      ]
+      ],
+      "truthSource": "code"
     },
     {
       "routeKey": "GET /api/admin/v1/activities/:id",
@@ -1432,7 +1437,8 @@
       "unresolvedImplementationEvidence": [
         "No recognized authorization signal found in the explored static implementation path.",
         "No statically provable scope was inferred; empty scopes are provisional pending review."
-      ]
+      ],
+      "truthSource": "code"
     },
     {
       "routeKey": "GET /api/admin/v1/activities/options",
@@ -1485,7 +1491,8 @@
       "unresolvedImplementationEvidence": [
         "No recognized authorization signal found in the explored static implementation path.",
         "No statically provable scope was inferred; empty scopes are provisional pending review."
-      ]
+      ],
+      "truthSource": "code"
     },
     {
       "routeKey": "GET /api/admin/v1/me",
@@ -1536,7 +1543,8 @@
       "unresolvedImplementationEvidence": [
         "No recognized authorization signal found in the explored static implementation path.",
         "No statically provable scope was inferred; empty scopes are provisional pending review."
-      ]
+      ],
+      "truthSource": "code"
     },
     {
       "routeKey": "GET /api/admin/v1/meta/dashboard-summary",
@@ -1609,7 +1617,8 @@
         "visibility-scope src/modules/meta/meta.service.ts:109 this.authz.getVisibleOrganizationScope ['attendance.approve.sheet']",
         "visibility-scope src/modules/meta/meta.service.ts:110 this.authz.getVisibleOrganizationScope ['activity-review.read.request']"
       ],
-      "unresolvedImplementationEvidence": []
+      "unresolvedImplementationEvidence": [],
+      "truthSource": "code"
     },
     {
       "routeKey": "GET /api/admin/v1/meta/participation-overview",
@@ -1687,7 +1696,8 @@
         "visibility-scope src/modules/meta/participation-overview-query.service.ts:42 this.authz.getVisibleOrganizationScope ['attendance.read.sheet']",
         "visibility-scope src/modules/meta/participation-overview-query.service.ts:43 this.authz.getVisibleOrganizationScope ['activity-registration.read.record']"
       ],
-      "unresolvedImplementationEvidence": []
+      "unresolvedImplementationEvidence": [],
+      "truthSource": "code"
     },
     {
       "routeKey": "GET /api/app/v1/activities",
@@ -7954,17 +7964,21 @@
       "tags": [
         "Admin - Content"
       ],
-      "sourceSummary": "确认附件上传(token 校验 + headObject;落 Attachment 行 + audit attachment.upload) [auth]",
+      "sourceSummary": "确认附件上传(token 校验 + headObject；按 token ownerType 要求 attachment.upload.content-image 或 attachment.upload.content-file；落 Attachment 行 + audit attachment.upload) [auth]",
       "policy": {
         "admission": null,
         "mode": "RBAC",
         "codes": [
           {
-            "code": "attachment.upload.content-*",
+            "code": "attachment.upload.content-file",
+            "scope": null
+          },
+          {
+            "code": "attachment.upload.content-image",
             "scope": null
           }
         ],
-        "require": "all",
+        "require": "any",
         "scopes": [],
         "engine": "rbac-global"
       },
@@ -8121,7 +8135,8 @@
       "unresolvedImplementationEvidence": [
         "No statically provable scope was inferred; empty scopes are provisional pending review.",
         "src/modules/attachments/attachments.service.ts:1009 uses a non-literal authorization action (this.rbac.can)."
-      ]
+      ],
+      "truthSource": "code"
     },
     {
       "routeKey": "POST /api/app/v1/activities/:activityId/registration-upload-sessions",

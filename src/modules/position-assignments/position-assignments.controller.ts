@@ -31,6 +31,7 @@ import {
   PreviewPositionAssignmentDto,
 } from './position-assignments.dto';
 import { PositionAssignmentsService } from './position-assignments.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 终态 scoped-authz PR4(2026-07-01;冻结稿 §7.3):任职(position-assignments)双轴管理面 controller(8 路由)。
 // 单 controller 跨 3 根路径(组织轴 organizations/:orgId/* + 队员轴 members/:memberId/* + 扁平 position-assignments/*),
@@ -56,6 +57,7 @@ export class PositionAssignmentsController {
   // ============ 组织轴 ============
 
   @Get('organizations/:orgId/position-assignments')
+  @RequiresPermission('position-assignment.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '列出某组织在任职务(status=ACTIVE) [rbac: position-assignment.read.record]',
   })
@@ -74,6 +76,10 @@ export class PositionAssignmentsController {
   }
 
   @Post('organizations/:orgId/position-assignments')
+  @RequiresPermission('position-assignment.create.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '任命(校验 active 职务/规则、严格兼任交集、人数上限、归属要求、任期；锁后重算) [rbac: position-assignment.create.record]',
@@ -105,6 +111,7 @@ export class PositionAssignmentsController {
   // ============ 队员轴 ============
 
   @Get('members/:memberId/position-assignments')
+  @RequiresPermission('position-assignment.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '列出某队员任职(含 ENDED / REVOKED 历史) [rbac: position-assignment.read.record]',
   })
@@ -125,6 +132,7 @@ export class PositionAssignmentsController {
   // ============ F5/E1(路线图 §4):扁平总表 / 预检 / detail ============
 
   @Get('position-assignments')
+  @RequiresPermission('position-assignment.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '全局分页任职总表(organizationId+includeDescendants/memberId/positionId/status/q 过滤 + expand=member,position,organization;缺省含 REVOKED 历史) [rbac: position-assignment.read.record]',
@@ -140,6 +148,7 @@ export class PositionAssignmentsController {
 
   // 显式 @HttpCode(200):dry-run 诊断读,violations 是数据不是错误(沿 authz/explain 决断②范式)。
   @Post('position-assignments/preview')
+  @RequiresPermission('position-assignment.read.record', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -155,6 +164,7 @@ export class PositionAssignmentsController {
   }
 
   @Get('position-assignments/:id')
+  @RequiresPermission('position-assignment.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '查单条任职(detail;找不到未软删记录 → 32020) [rbac: position-assignment.read.record]',
   })
@@ -175,6 +185,10 @@ export class PositionAssignmentsController {
   // ============ 扁平:撤销 + 历史 ============
 
   @Post('position-assignments/:id/revoke')
+  @RequiresPermission('position-assignment.revoke.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -197,6 +211,7 @@ export class PositionAssignmentsController {
   }
 
   @Get('position-assignments/:id/history')
+  @RequiresPermission('position-assignment.read.history', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '任职变更/历史链(以 :id 锚定人-组织-职务三元组) [rbac: position-assignment.read.history]',

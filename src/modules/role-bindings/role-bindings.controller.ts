@@ -37,6 +37,7 @@ import {
   UpdateRoleBindingDto,
 } from './role-bindings.dto';
 import { RoleBindingsService } from './role-bindings.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 终态 scoped-authz PR6「RoleBinding」(2026-07-01;冻结稿 §7.5):带 scope 的角色绑定管理面 controller(4 路由)。
 // @Controller('admin/v1') + 完整子路径 role-bindings[/:id];判权单轨 service 层 rbac.can(role-binding.*);
@@ -59,6 +60,7 @@ export class RoleBindingsController {
   constructor(private readonly service: RoleBindingsService) {}
 
   @Get('role-bindings')
+  @RequiresPermission('role-binding.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '列角色绑定(可按 principalType × principalId × role × scopeType × status 过滤;含 scoped 各型) [rbac: role-binding.read.record]',
@@ -75,6 +77,7 @@ export class RoleBindingsController {
   // F3/C1(路线图 §4;D9 拍板):/page 兄弟路由 —— 旧 bare 数组端点逐字不动。
   // 静态段路由(page / preview)须先于下方 GET :id 声明(Nest 按声明序注册,后声明的 :id 才不吞静态段)。
   @Get('role-bindings/page')
+  @RequiresPermission('role-binding.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '分页列角色绑定(既有 5 过滤 + scopeOrgId/roleCode/principalQ/includeExpired/q + expand=role,principal;默认仅当前生效) [rbac: role-binding.read.record]',
@@ -89,6 +92,7 @@ export class RoleBindingsController {
   }
 
   @Get('role-bindings/preview')
+  @RequiresPermission('role-binding.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '预检待建角色绑定(dry-run:与 create 同参同校验,零写入;冲突/非法逐项返 conflicts,deny 是数据) [rbac: role-binding.read.record]',
@@ -103,6 +107,7 @@ export class RoleBindingsController {
   }
 
   @Get('role-bindings/:id')
+  @RequiresPermission('role-binding.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '查单条角色绑定(detail;找不到未软删记录 → 34001) [rbac: role-binding.read.record]',
   })
@@ -123,6 +128,7 @@ export class RoleBindingsController {
   // F3/C1:批量建绑定(逐条独立;单条失败不影响其它条,镜像 announcement-import 幂等范式)。
   // 显式 @HttpCode(200):blocked/already-exists 是数据不是错误(沿 announcement-import 决断④范式)。
   @Post('role-bindings/batch')
+  @RequiresPermission('role-binding.create.record', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -139,6 +145,7 @@ export class RoleBindingsController {
   }
 
   @Post('role-bindings')
+  @RequiresPermission('role-binding.create.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '建角色绑定(principal × role × scope + 任期;GLOBAL/ORGANIZATION/TREE/ACTIVITY/RESOURCE/SELF;scoped 入库不判,判权是 PR8) [rbac: role-binding.create.record]',
@@ -172,6 +179,7 @@ export class RoleBindingsController {
   }
 
   @Patch('role-bindings/:id')
+  @RequiresPermission('role-binding.update.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '改角色绑定(状态 / 任期 / note;不可改 principal/role/scope) [rbac: role-binding.update.record]',
@@ -199,6 +207,7 @@ export class RoleBindingsController {
   }
 
   @Delete('role-bindings/:id')
+  @RequiresPermission('role-binding.delete.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '软删角色绑定(status=ENDED + endedAt + deletedAt;保历史) [rbac: role-binding.delete.record]',

@@ -37,6 +37,7 @@ import {
   UpdateTeamInsurancePolicyDto,
 } from './insurances.dto';
 import { TeamInsurancePoliciesService } from './team-insurance-policies.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 保险模块 T2:队统一保单 + 覆盖名单 admin controller(2026-06-13)。
 // 冻结评审稿 docs/archive/reviews/insurance-module-review.md §3.2 端点 5-13。
@@ -72,6 +73,10 @@ export class TeamInsurancePoliciesController {
   }
 
   @Get()
+  @RequiresPermission('team-insurance-policy.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary: '队保单分页列表(软删过滤;createdAt desc) [rbac: team-insurance-policy.read.record]',
   })
@@ -85,6 +90,10 @@ export class TeamInsurancePoliciesController {
   }
 
   @Post()
+  @RequiresPermission('team-insurance-policy.create.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '创建队保单(一张 = 一条;起保 ≤ 到期否则 26010) [rbac: team-insurance-policy.create.record]',
@@ -105,6 +114,10 @@ export class TeamInsurancePoliciesController {
   }
 
   @Get(':id')
+  @RequiresPermission('team-insurance-policy.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '队保单详情(不含覆盖名单,名单走 :id/members) [rbac: team-insurance-policy.read.record]',
@@ -124,6 +137,10 @@ export class TeamInsurancePoliciesController {
   }
 
   @Patch(':id')
+  @RequiresPermission('team-insurance-policy.update.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '部分更新队保单(终态起保 ≤ 到期否则 26010;note 传空串清空) [rbac: team-insurance-policy.update.record]',
@@ -146,6 +163,10 @@ export class TeamInsurancePoliciesController {
   }
 
   @Delete(':id')
+  @RequiresPermission('team-insurance-policy.delete.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '软删队保单(不级联覆盖行,门槛查询对被删保单自然失效) [rbac: team-insurance-policy.delete.record]',
@@ -166,6 +187,10 @@ export class TeamInsurancePoliciesController {
   }
 
   @Get(':id/members')
+  @RequiresPermission('team-insurance-policy.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary: '保单覆盖名单分页列表(含队员编号/姓名摘要) [rbac: team-insurance-policy.read.record]',
   })
@@ -185,6 +210,7 @@ export class TeamInsurancePoliciesController {
   }
 
   @Post(':id/members')
+  @RequiresPermission('team-insurance-policy.add.member', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '覆盖名单单加队员(重复 → 26004;队员须存在未软删) [rbac: team-insurance-policy.add.member]',
@@ -208,6 +234,7 @@ export class TeamInsurancePoliciesController {
   }
 
   @Post(':id/members/add-all-active')
+  @RequiresPermission('team-insurance-policy.add.member', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -229,6 +256,10 @@ export class TeamInsurancePoliciesController {
   }
 
   @Delete(':id/members/:memberId')
+  @RequiresPermission('team-insurance-policy.remove.member', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '覆盖名单移除队员(软删覆盖行;partial unique 允许重新加入;不在名单 → 26003) [rbac: team-insurance-policy.remove.member]',

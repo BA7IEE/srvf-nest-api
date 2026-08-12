@@ -18,6 +18,7 @@ import {
   ListActivityCheckInsQueryDto,
 } from '../activity-check-ins.dto';
 import { ActivityIdParamDto } from '../attendances.dto';
+import { RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 
 @ApiTags('Admin - Attendances')
 @ApiBearerAuth()
@@ -26,6 +27,7 @@ export class AdminActivityCheckInsController {
   constructor(private readonly checkIns: AdminActivityCheckInsService) {}
 
   @Get('check-ins')
+  @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '分页查看活动 GPS 打卡证据 [rbac: attendance.read.sheet]',
   })
@@ -45,6 +47,7 @@ export class AdminActivityCheckInsController {
   }
 
   @Get('attendance-sheet-draft')
+  @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '生成活动考勤提交草稿（只读不落库） [rbac: attendance.read.sheet]',
   })

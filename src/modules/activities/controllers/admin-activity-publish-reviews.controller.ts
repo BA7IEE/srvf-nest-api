@@ -32,6 +32,7 @@ import {
 } from '../activity-publish-review.dto';
 import { ActivityPublishReviewQueryService } from '../activity-publish-review-query.service';
 import { ActivityPublishReviewService } from '../activity-publish-review.service';
+import { RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 
 @ApiTags('Admin - Activity Publish Reviews')
 @ApiBearerAuth()
@@ -51,6 +52,7 @@ export class AdminActivityPublishReviewsController {
   }
 
   @Get()
+  @RequiresPermission('activity-review.read.request', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '发布审核工作台(按显式 reviewer RoleBinding 的组织范围过滤) [rbac: activity-review.read.request]',
@@ -65,6 +67,7 @@ export class AdminActivityPublishReviewsController {
   }
 
   @Get(':id')
+  @RequiresPermission('activity-review.read.request', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '发布审核详情 [rbac: activity-review.read.request]',
   })
@@ -83,6 +86,7 @@ export class AdminActivityPublishReviewsController {
   }
 
   @Post(':id/approve')
+  @RequiresPermission('activity.publish.record', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: '通过待处理发布审核并发布活动 [rbac: activity.publish.record]',
@@ -111,6 +115,7 @@ export class AdminActivityPublishReviewsController {
   }
 
   @Post(':id/return')
+  @RequiresPermission('activity-review.return.request', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: '退回待处理发布审核 [rbac: activity-review.return.request]',

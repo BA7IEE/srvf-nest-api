@@ -36,6 +36,7 @@ import {
   VerifyCertificateDto,
 } from './certificates.dto';
 import { CertificatesService } from './certificates.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // V2 第一阶段批次 2 certificates controller。
 // 路径嵌套在 members/:memberId/certificates 下,N:1 子资源 + 4 动作接口。
@@ -72,6 +73,7 @@ export class CertificatesController {
   }
 
   @Get()
+  @RequiresPermission('certificate.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '列出队员证书(无分页;按 certStatusCode ASC, createdAt DESC 排序;软删过滤;精简字段) [rbac: certificate.read.record]',
@@ -92,6 +94,7 @@ export class CertificatesController {
   }
 
   @Post()
+  @RequiresPermission('certificate.create.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '新增一条证书(默认 certStatusCode=pending / isInternal=false) [rbac: certificate.create.record]',
@@ -122,6 +125,7 @@ export class CertificatesController {
   // `criterionCode`。继续发旧参数的调用方会被 forbidNonWhitelisted 拒成 400,
   // 而不是静默当成「没传判据」返回错误答案。
   @Get('qualification-flag')
+  @RequiresPermission('certificate.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '资质判定(已核验 + 未过期 + 未软删 = qualified=true;只返布尔 + 摘要) [rbac: certificate.read.record]',
@@ -151,6 +155,7 @@ export class CertificatesController {
   }
 
   @Get(':id')
+  @RequiresPermission('certificate.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '查证书详情(含敏感字段;不返 deletedAt) [rbac: certificate.read.record]',
   })
@@ -173,6 +178,7 @@ export class CertificatesController {
   }
 
   @Patch(':id')
+  @RequiresPermission('certificate.update.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '部分更新证书(全字段 optional;**禁止** id / memberId / certStatusCode / verifiedBy / verifiedAt / verifyNote / isInternal / supersededByCertId / expireNotifyDueAt) [rbac: certificate.update.record]',
@@ -199,6 +205,7 @@ export class CertificatesController {
   }
 
   @Delete(':id')
+  @RequiresPermission('certificate.delete.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '软删证书(写 deletedAt;不物理删除) [rbac: certificate.delete.record]',
   })
@@ -221,6 +228,7 @@ export class CertificatesController {
   }
 
   @Patch(':id/verify')
+  @RequiresPermission('certificate.verify.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '核验通过(pending → verified;不接收 issuedAt / expiredAt / certStatusCode / verifiedBy / verifiedAt) [rbac: certificate.verify.record]',
@@ -246,6 +254,7 @@ export class CertificatesController {
   }
 
   @Patch(':id/reject')
+  @RequiresPermission('certificate.reject.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '核验拒绝(pending → rejected;verifyNote 必填;不接收其他系统字段) [rbac: certificate.reject.record]',
@@ -278,6 +287,7 @@ export class CertificatesController {
   // 那一支整段交给 AttachmentsService(它自带 attachment.view 判权 + 可读性过滤 +
   // pinned ledger 解析),而不是在本模块自己拼 URL(§13.5 实现约束)。
   @Get(':id/evidence-urls')
+  @RequiresPermission('certificate.read.sensitive', { require: 'all', engine: 'rbac-global' })
   @Header('Cache-Control', 'no-store')
   @ApiOperation({
     summary:

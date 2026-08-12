@@ -31,6 +31,7 @@ import {
   RevokeCertificateClaimReviewDto,
 } from './recruitment-certificate-claims.dto';
 import { RecruitmentCertificateClaimsService } from './recruitment-certificate-claims.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // 证书标准库 PR-4a-1(冻结稿 §13.4):招新证书申报管理端 controller(5 路由)。
 //
@@ -54,6 +55,10 @@ export class RecruitmentCertificateClaimsAdminController {
   }
 
   @Get('applications/:applicationId/certificate-claims')
+  @RequiresPermission('recruitment-application.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '列出某报名的全部证书申报(一证一行;编号默认掩码、imageCount 代替 key;明文与审核人需敏感码) [rbac: recruitment-application.read.record]',
@@ -78,6 +83,10 @@ export class RecruitmentCertificateClaimsAdminController {
   }
 
   @Get('certificate-claims/:id')
+  @RequiresPermission('recruitment-application.read.record', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @ApiOperation({
     summary:
       '证书申报详情(授权不只靠 claimId —— 连带校验其报名真实且未软删) [rbac: recruitment-application.read.record]',
@@ -101,6 +110,10 @@ export class RecruitmentCertificateClaimsAdminController {
   // no-store 不是装饰 —— 少了它,签名 URL 会进浏览器/代理缓存,
   // TTL 到期后缓存副本仍可能被取出,短 TTL 的意义就没了。
   @Get('certificate-claims/:id/image-urls')
+  @RequiresPermission('recruitment-application.read.sensitive', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @Header('Cache-Control', 'no-store')
   @ApiOperation({
     summary:
@@ -122,6 +135,10 @@ export class RecruitmentCertificateClaimsAdminController {
   }
 
   @Post('certificate-claims/:id/review')
+  @RequiresPermission('recruitment-application.review.certificate', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -158,6 +175,10 @@ export class RecruitmentCertificateClaimsAdminController {
   }
 
   @Post('certificate-claims/:id/revoke-review')
+  @RequiresPermission('recruitment-application.review.certificate', {
+    require: 'all',
+    engine: 'rbac-global',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

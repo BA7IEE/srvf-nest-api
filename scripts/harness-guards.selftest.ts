@@ -97,7 +97,11 @@ function checkThrows(name: string, fn: () => unknown, msgPart: string): void {
   }
 }
 
-async function checkRejects(name: string, fn: () => Promise<unknown>, msgPart: string): Promise<void> {
+async function checkRejects(
+  name: string,
+  fn: () => Promise<unknown>,
+  msgPart: string,
+): Promise<void> {
   try {
     await fn();
     failures.push(name);
@@ -461,9 +465,17 @@ checkEq(
 
   // 非法 worker 号必须抛错(拒绝任意字符串拼进库名)
   process.env.JEST_WORKER_ID = 'evil;DROP';
-  checkThrows('P1 db:非法 JEST_WORKER_ID 拒绝派生', () => deriveTestDbName(), '非法 JEST_WORKER_ID');
+  checkThrows(
+    'P1 db:非法 JEST_WORKER_ID 拒绝派生',
+    () => deriveTestDbName(),
+    '非法 JEST_WORKER_ID',
+  );
   process.env.JEST_WORKER_ID = '123';
-  checkThrows('P1 db:三位 worker 号拒绝(超出预期规模)', () => deriveTestDbName(), '非法 JEST_WORKER_ID');
+  checkThrows(
+    'P1 db:三位 worker 号拒绝(超出预期规模)',
+    () => deriveTestDbName(),
+    '非法 JEST_WORKER_ID',
+  );
 
   // jest 之外(无 JEST_WORKER_ID)→ 模板库名,与 checkout 级派生一致
   delete process.env.JEST_WORKER_ID;
@@ -472,7 +484,11 @@ checkEq(
   // worker 展开:长 slug + 两位 worker 号仍 ≤63 且互不相同
   {
     const longBase = deriveTestDbNameFrom(`/w/${'y'.repeat(40)}-lane`, true);
-    check('P1 db:长 slug 模板 + _w 后缀总长安全余量', longBase.length + 4 <= 63, `${longBase.length}`);
+    check(
+      'P1 db:长 slug 模板 + _w 后缀总长安全余量',
+      longBase.length + 4 <= 63,
+      `${longBase.length}`,
+    );
   }
 
   if (savedWorkerId === undefined) delete process.env.JEST_WORKER_ID;
@@ -616,12 +632,12 @@ checkEq(
   // 曾经 fail-open:changeset 失败 → slow skipped → required check 变绿而 e2e 从未跑。
   check(
     'P1 gate:校验 changeset 结果',
-    ci.includes("needs.changeset.result }}\" != \"success\""),
+    ci.includes('needs.changeset.result }}" != "success"'),
     'gate 未校验 changeset,存在 fail-open 假绿路径',
   );
   check(
     'P1 gate:slow=skipped 需 docs_only 正面证明',
-    ci.includes("needs.changeset.outputs.docs_only }}\" != \"true\""),
+    ci.includes('needs.changeset.outputs.docs_only }}" != "true"'),
     'gate 未正面证明 docs-only',
   );
 
@@ -802,7 +818,8 @@ checkEq(
   // ⑦ 集群级目录视图(pg_locks / pg_stat_activity)必须按当前库收敛。
   // TEMPLATE 克隆使各 worker 库的 pg_class.oid 完全相同(已实测),
   // 不加库谓词的观测会计入别的 worker 的锁 → 并发屏障提前放行 → 测试假绿。
-  const DB_SCOPED = /datname\s*=\s*current_database\(\)|lock\.database\s*=|pid\s*=\s*pg_backend_pid\(\)|pid\s*=\s*CAST\(/;
+  const DB_SCOPED =
+    /datname\s*=\s*current_database\(\)|lock\.database\s*=|pid\s*=\s*pg_backend_pid\(\)|pid\s*=\s*CAST\(/;
   const e2eDir = path.join(repoRoot, 'test/e2e');
   const offenders: string[] = [];
   for (const file of fs.readdirSync(e2eDir).filter((f) => f.endsWith('.e2e-spec.ts'))) {
@@ -1018,6 +1035,82 @@ checkEq(
       runFixture('scripts/generate-authz-manifest.ts', ['--check']).code,
       0,
     );
+    const adminPlan = runFixture('scripts/generate-authz-manifest.ts', ['--plan-surface=admin']);
+    check(
+      'P1 admin 回填 codemod:已回填面计划幂等',
+      adminPlan.code === 0 &&
+        adminPlan.out.includes(
+          'Route declaration plan (admin): 270 routes, 0 declarations to insert, 0 overlay entries to transfer.',
+        ),
+      adminPlan.out,
+    );
+    const appliedAdmin = runFixture('scripts/generate-authz-manifest.ts', [
+      '--apply-surface=admin',
+    ]);
+    check(
+      'P1 admin 回填 codemod:重复应用零写入',
+      appliedAdmin.code === 0 &&
+        appliedAdmin.out.includes(
+          'Applied route declarations (admin): 270 routes, 0 declarations inserted, 0 overlay entries transferred.',
+        ),
+      appliedAdmin.out,
+    );
+    const adminCodeTruth = runFixture('scripts/generate-authz-manifest.ts', [
+      '--check',
+      '--check-surface=admin',
+    ]);
+    const fixtureParticipationController = fs.readFileSync(
+      path.join(
+        fixtureRoot,
+        'src/modules/activities/controllers/admin-activity-participation.controller.ts',
+      ),
+      'utf8',
+    );
+    const fixtureContentController = fs.readFileSync(
+      path.join(fixtureRoot, 'src/modules/content/content-admin.controller.ts'),
+      'utf8',
+    );
+    check(
+      'P1 admin 回填 codemod:code truth 与三条关键声明一致',
+      adminCodeTruth.code === 0 &&
+        fixtureParticipationController.includes(
+          "@RequiresPermission('activity-registration.read.record', 'attendance.read.sheet', {\n    require: 'all',\n    engine: 'authz-scoped',\n  })",
+        ) &&
+        fixtureContentController.includes(
+          "@RequiresPermission('attachment.upload.content-file', 'attachment.upload.content-image', {\n    require: 'any',\n    engine: 'rbac-global',\n  })",
+        ),
+      adminCodeTruth.out,
+    );
+    const fixtureClassification = path.join(fixtureRoot, 'harness/route-authz-classification.json');
+    const originalClassification = fs.readFileSync(fixtureClassification, 'utf8');
+    const inconsistentClassification = JSON.parse(originalClassification) as {
+      entries: Array<{ routeKey: string; truthSource?: string }>;
+    };
+    const inconsistentAdminEntry = inconsistentClassification.entries.find(
+      (entry) => entry.routeKey === 'GET /api/admin/v1/activities/:activityId/reconciliation',
+    );
+    if (inconsistentAdminEntry === undefined) {
+      throw new Error('admin reconciliation classification entry missing from selftest fixture');
+    }
+    inconsistentAdminEntry.truthSource = 'classification-overlay';
+    fs.writeFileSync(
+      fixtureClassification,
+      JSON.stringify(inconsistentClassification, null, 2) + '\n',
+      'utf8',
+    );
+    const inconsistentCodeTruth = runFixture('scripts/generate-authz-manifest.ts', [
+      '--check',
+      '--check-surface=admin',
+    ]);
+    fs.writeFileSync(fixtureClassification, originalClassification, 'utf8');
+    check(
+      'P1 admin 回填 codemod:声明与 truthSource 不一致必被拒绝',
+      inconsistentCodeTruth.code !== 0 &&
+        inconsistentCodeTruth.out.includes(
+          'declaration exists but entry truthSource remains classification-overlay',
+        ),
+      inconsistentCodeTruth.out,
+    );
     const fixtureAssertionPatterns = path.join(
       fixtureRoot,
       'harness/authz-assertion-patterns.json',
@@ -1036,8 +1129,6 @@ checkEq(
         staleAssertionPatterns.out.includes('harness/authz-assertion-patterns.json is stale'),
       staleAssertionPatterns.out,
     );
-    const fixtureClassification = path.join(fixtureRoot, 'harness/route-authz-classification.json');
-    const originalClassification = fs.readFileSync(fixtureClassification, 'utf8');
     const undecidedClassification = JSON.parse(originalClassification) as {
       entries: Array<{ decisionStatus: string }>;
     };
@@ -1118,7 +1209,10 @@ for (const [configName, config] of JEST_CONFIGS) {
     const out: string[] = [];
     let inSec = false;
     for (const line of doc.split('\n')) {
-      if (line.startsWith('## src/modules/')) { inSec = true; continue; }
+      if (line.startsWith('## src/modules/')) {
+        inSec = true;
+        continue;
+      }
       if (inSec && line.startsWith('## ')) break;
       if (!inSec) continue;
       const m = /^\|\s*`([a-z0-9-]+)\/`\s*\|/.exec(line);
@@ -1146,17 +1240,10 @@ for (const [configName, config] of JEST_CONFIGS) {
 
     // 2) 幂等:再生成一次不应产生 diff
     runGen([]);
-    checkEq(
-      'P4b codemap:生成幂等(第二次无改动)',
-      fs.readFileSync(codemapPath, 'utf8'),
-      original,
-    );
+    checkEq('P4b codemap:生成幂等(第二次无改动)', fs.readFileSync(codemapPath, 'utf8'), original);
 
     // 3) 正向对照:体量列被篡改 → --check 必须 exit 1
-    const tampered = original.replace(
-      /^(\|\s*`activities\/`\s*\|)[^|]*\|/m,
-      '$1 S 1L |',
-    );
+    const tampered = original.replace(/^(\|\s*`activities\/`\s*\|)[^|]*\|/m, '$1 S 1L |');
     check('P4b codemap:篡改样本确实改动了文本', tampered !== original);
     fs.writeFileSync(codemapPath, tampered, 'utf8');
     const bad = runGen(['--check']);
@@ -1291,7 +1378,7 @@ for (const [configName, config] of JEST_CONFIGS) {
     ],
     [
       'P2c ci:approval 跳过必须由 touched=false 正面证明',
-      ci.includes("case \"$touched\" in") && ci.includes('未触碰红区却跑了审批'),
+      ci.includes('case "$touched" in') && ci.includes('未触碰红区却跑了审批'),
       '从 skipped 反推「没触碰」= INC-09 原样复发',
     ],
     [
@@ -1328,9 +1415,9 @@ for (const [configName, config] of JEST_CONFIGS) {
       (() => {
         // `ci` 在本块开头已经过 codeOnly 剥注释 —— 否则「注释里**描述**这个错误」
         // 的那句话自己会被判成配置(实测踩到过)。
-        const refs = [
-          ...ci.matchAll(/(?:node-version-file|env-file|args-file):\s*([^\s#]+)/g),
-        ].map((m) => m[1]);
+        const refs = [...ci.matchAll(/(?:node-version-file|env-file|args-file):\s*([^\s#]+)/g)].map(
+          (m) => m[1],
+        );
         return refs.every((r) => fs.existsSync(path.resolve(__dirname, '..', r)));
       })(),
       'workflow 指向不存在的文件 → 该 job 直接失败',
@@ -1570,7 +1657,11 @@ for (const [configName, config] of JEST_CONFIGS) {
         yes: ['.github/workflows/ci.yml', '.github/workflows/redzone-trusted-judge.mjs'],
         no: ['.github/ISSUE_TEMPLATE.md'],
       },
-      { glob: 'prisma/schema.prisma', yes: ['prisma/schema.prisma'], no: ['prisma/schema.prisma.bak'] },
+      {
+        glob: 'prisma/schema.prisma',
+        yes: ['prisma/schema.prisma'],
+        no: ['prisma/schema.prisma.bak'],
+      },
       {
         glob: 'prisma/migrations/**',
         yes: ['prisma/migrations/20260101_x/migration.sql'],
@@ -1656,7 +1747,11 @@ for (const [configName, config] of JEST_CONFIGS) {
         no: ['docker-compose.override.yml'],
       },
       // ── selfGuard ──
-      { glob: 'harness/**', yes: ['harness/redzone.json', 'harness/incidents.json'], no: ['harness.md'] },
+      {
+        glob: 'harness/**',
+        yes: ['harness/redzone.json', 'harness/incidents.json'],
+        no: ['harness.md'],
+      },
       {
         glob: '.claude/hooks/**',
         yes: ['.claude/hooks/redzone-guard.sh'],
@@ -1699,7 +1794,11 @@ for (const [configName, config] of JEST_CONFIGS) {
         yes: ['scripts/agent-preflight.sh'],
         no: ['scripts/agent-preflight.ts'],
       },
-      { glob: 'scripts/docs-counts.ts', yes: ['scripts/docs-counts.ts'], no: ['scripts/docs-count.ts'] },
+      {
+        glob: 'scripts/docs-counts.ts',
+        yes: ['scripts/docs-counts.ts'],
+        no: ['scripts/docs-count.ts'],
+      },
       {
         glob: 'scripts/docs-readtax.ts',
         yes: ['scripts/docs-readtax.ts'],
@@ -1883,7 +1982,11 @@ for (const [configName, config] of JEST_CONFIGS) {
       }
     }
     check(`F4 三方比对:${total} 条样例 TS 裁决 == 期望值`, tsWrong === 0, `${tsWrong} 条不符`);
-    check(`F4 三方比对:${total} 条样例 Hook 裁决 == 期望值`, hookWrong === 0, `${hookWrong} 条不符`);
+    check(
+      `F4 三方比对:${total} 条样例 Hook 裁决 == 期望值`,
+      hookWrong === 0,
+      `${hookWrong} 条不符`,
+    );
     check(`F4 三方比对:${total} 条样例 TS 与 Hook 一致`, disagree === 0, `${disagree} 条分歧`);
   } finally {
     if (hadGrant && fs.existsSync(bak)) fs.renameSync(bak, grantAbs);
@@ -1901,7 +2004,7 @@ for (const [configName, config] of JEST_CONFIGS) {
 async function runConnectedDbAssertions(): Promise<void> {
   const expectedDb = deriveTestDbName();
   const fakeClient = (rows: unknown): RawQueryClient => ({
-    $queryRawUnsafe: <T = unknown,>(): Promise<T> => Promise.resolve(rows as T),
+    $queryRawUnsafe: <T = unknown>(): Promise<T> => Promise.resolve(rows as T),
   });
 
   // 正常路径:库名对上 + 服务端地址在 docker 网桥段 / unix socket
@@ -2228,8 +2331,10 @@ async function runTrustedJudgeAssertions(): Promise<void> {
       );
       check(
         'F3 四元组 · R1:同 id 换 rule → 拒',
-        !judge.judgeRegistryMonotonicity(BASE_Q, regOf([{ id: 'a', rule: 'srvf/other' }, { id: 'b' }]))
-          .ok,
+        !judge.judgeRegistryMonotonicity(
+          BASE_Q,
+          regOf([{ id: 'a', rule: 'srvf/other' }, { id: 'b' }]),
+        ).ok,
         'rule 一换,那份基线就转去豁免别的规则,而原规则的存量豁免面凭空消失/转移',
       );
       check(
@@ -2375,9 +2480,7 @@ void (async (): Promise<void> => {
   // ---------------------------------------------------------------------------
   {
     const REPO = path.resolve(__dirname, '..');
-    const reg = JSON.parse(
-      fs.readFileSync(path.join(REPO, 'harness/incidents.json'), 'utf-8'),
-    ) as {
+    const reg = JSON.parse(fs.readFileSync(path.join(REPO, 'harness/incidents.json'), 'utf-8')) as {
       incidents: Array<{ id: string; status: string; probe?: string }>;
       inverse: Array<{ id: string; probeKind?: string; probe: string }>;
     };
@@ -2414,7 +2517,8 @@ void (async (): Promise<void> => {
         }
         const body = resolve(inc.probe);
         if (body === null) out.push(`${inc.id}:probe '${inc.probe}' 在 replay 里不存在`);
-        else if (!EXECUTES.test(body)) out.push(`${inc.id}(${inc.probe}):标 covered 但只做静态检查`);
+        else if (!EXECUTES.test(body))
+          out.push(`${inc.id}(${inc.probe}):标 covered 但只做静态检查`);
       }
       for (const inv of registry.inverse ?? []) {
         if (inv.probeKind !== 'live') continue;

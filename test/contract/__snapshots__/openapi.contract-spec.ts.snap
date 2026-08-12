@@ -26706,7 +26706,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "活动参与合计(报名状态/实到/到场率/approved 时长与贡献/固定时长桶；需同时持两项参与域读权限) [auth]",
+      "summary": "活动参与合计(报名状态/实到/到场率/approved 时长与贡献/固定时长桶；需同时持 attendance.read.sheet 与 activity-registration.read.record，按活动资源范围判定) [auth]",
       "tags": [
         "Admin - Activities",
       ],
@@ -27998,7 +27998,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "活动报名×实到核对(completed only；pass 逐人 attended/no-show + 临时参加名单；需同时持两项参与域读权限) [auth]",
+      "summary": "活动报名×实到核对(completed only；pass 逐人 attended/no-show + 临时参加名单；需同时持 attendance.read.sheet 与 activity-registration.read.record，按活动资源范围判定) [auth]",
       "tags": [
         "Admin - Activities",
       ],
@@ -45556,7 +45556,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "确认附件上传(token 校验 + headObject;落 Attachment 行 + audit attachment.upload) [auth]",
+      "summary": "确认附件上传(token 校验 + headObject；按 token ownerType 要求 attachment.upload.content-image 或 attachment.upload.content-file；落 Attachment 行 + audit attachment.upload) [auth]",
       "tags": [
         "Admin - Content",
       ],

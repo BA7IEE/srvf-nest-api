@@ -38,6 +38,7 @@ import {
   UploadUrlResponseDto,
 } from './attachments.dto';
 import { AttachmentsService } from './attachments.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // V2.x C-7 attachments 实施 PR #6b(2026-05-15):attachments 主模块 Controller。
 //
@@ -79,6 +80,7 @@ export class AttachmentsController {
   }
 
   @Post()
+  @RequiresPermission('attachment.upload.*', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '创建附件元数据(先落 durable storage intent,按 pinned locator 校验对象,再将 Attachment + audit + storage available 原子提交;存储状态不确定返 13034;其余校验:ownerType 13010 / ownerId 13011 / RBAC 30100 / MIME 13033或13012 / size 13013 / key 13014 / PII 13015) [rbac: attachment.upload.*]',
@@ -106,6 +108,7 @@ export class AttachmentsController {
   }
 
   @Get()
+  @RequiresPermission('attachment.view.*', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '列出附件(分页;可选 ownerType / ownerId / uploadedBy / mime / accessLevel / tags 过滤;tags OR 语义;total 按可见数量返;默认排序 createdAt DESC) [rbac: attachment.view.*]',
@@ -122,6 +125,7 @@ export class AttachmentsController {
   // V2.x C-7.5 PR #10:upload-url + confirm-upload(沿评审 §8.1 / §8.2 / §8.3 / §8.4)
   // 路径顺序铁律:字面段优先,必须放在 `:id` 之前(沿 §8.2)
   @Post('upload-url')
+  @RequiresPermission('attachment.upload.*', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -148,6 +152,7 @@ export class AttachmentsController {
   }
 
   @Post('confirm-upload')
+  @RequiresPermission('attachment.upload.*', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -174,6 +179,7 @@ export class AttachmentsController {
   }
 
   @Get('by-owner')
+  @RequiresPermission('attachment.view.*', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '按 ownerType + ownerId 列出某业务对象的全部附件(业务模块常用入口;ownerType / ownerId 必填;逐条 ownership 过滤) [rbac: attachment.view.*]',
@@ -193,6 +199,7 @@ export class AttachmentsController {
   }
 
   @Get(':id')
+  @RequiresPermission('attachment.view.*', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '附件详情(不存在 / 无权统一返 13001;Q13 v1.0 信息泄漏防御) [rbac: attachment.view.*]',
   })
@@ -206,6 +213,7 @@ export class AttachmentsController {
   }
 
   @Patch(':id')
+  @RequiresPermission('attachment.update.*', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '更新附件元数据(仅 description / accessLevel / tags / expireAt;不存在返 13001;无权返 30100;PII 命中返 13015) [rbac: attachment.update.*]',
@@ -227,6 +235,7 @@ export class AttachmentsController {
   }
 
   @Delete(':id')
+  @RequiresPermission('attachment.delete.*', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '删除附件(content-* 另需 Content 更新权且仅草稿未引用;durable delete + HEAD absent 后原子 finalize;未完成返 13034) [rbac: attachment.delete.*]',

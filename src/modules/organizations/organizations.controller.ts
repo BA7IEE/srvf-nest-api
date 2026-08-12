@@ -41,6 +41,7 @@ import {
   UpdateOrganizationStatusDto,
 } from './organizations.dto';
 import { OrganizationsService } from './organizations.service';
+import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // /api/admin/v1/organizations(7 接口);路径前缀:全局 /api(main.ts)+ 'admin/v1/organizations'。
 //
@@ -69,6 +70,7 @@ export class OrganizationsController {
   constructor(private readonly service: OrganizationsService) {}
 
   @Get()
+  @RequiresPermission('org.read.node', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '列出组织节点(分页;parentId=null 过滤根节点) [rbac: org.read.node]' })
   @ApiWrappedPageResponse(OrganizationResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -81,6 +83,7 @@ export class OrganizationsController {
 
   // /tree 必须**先于** /:id 定义(specific-before-dynamic;沿用 dictionaries 经验)。
   @Get('tree')
+  @RequiresPermission('org.read.node', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '组织树形(从根开始嵌套;深度无限制) [rbac: org.read.node]' })
   @ApiWrappedArrayResponse(OrganizationTreeNodeDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -93,6 +96,7 @@ export class OrganizationsController {
 
   // F1/A3(路线图 §4;D2/D3 拍板):选择器投影,必须先于 /:id 定义(specific-before-dynamic)。
   @Get('options')
+  @RequiresPermission('org.read.node', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '组织选择器投影(q 模糊 name+code;limit≤100,默认 20) [rbac: org.read.node]',
   })
@@ -106,6 +110,7 @@ export class OrganizationsController {
   }
 
   @Get('tree-options')
+  @RequiresPermission('org.read.node', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '组织树极简投影(id/label/code/children,表单级联选择器用) [rbac: org.read.node]',
   })
@@ -121,6 +126,7 @@ export class OrganizationsController {
   // F4/D 组(路线图 §4):树 + 每节点 ACTIVE 归属计数(直属 + 子树合计;单 groupBy 批量聚合禁 N+1)。
   // 静态段须先于下方 GET :id 声明(specific-before-dynamic;沿 /tree、/options 既例)。
   @Get('tree-with-summary')
+  @RequiresPermission('org.read.node', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '组织树 + 每节点归属计数(directMembershipCount 直属 / subtreeMembershipCount 含后代;ACTIVE 归属条数,展示读) [rbac: org.read.node]',
@@ -135,6 +141,7 @@ export class OrganizationsController {
   }
 
   @Post()
+  @RequiresPermission('org.create.node', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary: '创建组织节点(parentId 不传 = 根节点;V2 第一阶段单根上限 1) [rbac: org.create.node]',
   })
@@ -158,6 +165,7 @@ export class OrganizationsController {
   }
 
   @Get(':id')
+  @RequiresPermission('org.read.node', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({ summary: '组织节点详情 [rbac: org.read.node]' })
   @ApiWrappedOkResponse(OrganizationResponseDto)
   @ApiBizErrorResponse(
@@ -174,6 +182,7 @@ export class OrganizationsController {
   }
 
   @Patch(':id')
+  @RequiresPermission('org.update.node', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '更新组织节点(name / sortOrder / nodeTypeCode;**禁止改 parentId**) [rbac: org.update.node]',
@@ -197,6 +206,7 @@ export class OrganizationsController {
   }
 
   @Patch(':id/status')
+  @RequiresPermission('org.update.node', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '启停组织节点(只改 status;停用唯一活跃根 → LAST_ROOT_PROTECTED) [rbac: org.update.node]',
@@ -221,6 +231,7 @@ export class OrganizationsController {
   // 终态 scoped-authz PR1(2026-07-01 goal「组织基座」;冻结稿 §8.3/§11 PR1):reparent 重挂父级。
   // 命令式(沿 promote/join/send-sms 现役 POST 范式);判权 service 层 rbac.can('org.move.node'),0 @Roles。
   @Post(':id/move')
+  @RequiresPermission('org.move.node', { require: 'all', engine: 'rbac-global' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -246,6 +257,7 @@ export class OrganizationsController {
   }
 
   @Delete(':id')
+  @RequiresPermission('org.delete.node', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
       '软删组织节点(P0-F PR-2A D3=A 放宽:ops-admin 可调;有子节点 / 成员归属 / 唯一活跃根则拒绝) [rbac: org.delete.node]',
