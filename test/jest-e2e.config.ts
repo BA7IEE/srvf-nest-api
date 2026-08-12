@@ -21,6 +21,8 @@ const config: Config = {
   testPathIgnorePatterns: [
     '/node_modules/',
     '/dist/',
+    // Golden journeys 由独立串行 config/job 执行，不能被普通 E2E shard 重复收集。
+    '<rootDir>/test/journeys/',
     '<rootDir>/.claude/worktrees/',
     '<rootDir>/\\.worktrees/',
   ],
