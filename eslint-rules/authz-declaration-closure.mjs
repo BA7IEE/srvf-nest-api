@@ -13,10 +13,10 @@
 //   result reaches a deny/early-return branch (or the pattern's registered
 //   equivalent consequence).
 //
-// Report mode is warning-only.  Normal lint analyses already-transferred code
-// policy entries; the selftest runs the exact same scanner over the overlay to
-// publish the initial T1/T2/T3 distribution without making existing debt a
-// hidden blocking condition.
+// Report mode is warning-only. It scans the generated manifest's historical
+// [auth] review records, preserving the initial T1/T2/T3 scope without
+// reviving the retired classification overlay or making existing debt a hidden
+// blocking condition.
 // ============================================================================
 
 import fs from 'node:fs';
@@ -28,8 +28,10 @@ export const AUTHZ_DECLARATION_CLOSURE_MESSAGE =
   'R8 授权声明与实现闭环未获静态证明。声明的每个码、scope、engine 与 app-member 准入都必须有已登记的字面断言模式；' +
   'T1=handler，T2=同模块一层公开 service，超过该边界或动态码一律诚实列为 T3 候选。';
 
-const CLASSIFICATION_PATH = 'harness/route-authz-classification.json';
+const ROUTE_AUTHZ_PATH = 'docs/ai-harness/ROUTE_AUTHZ.md';
 const PATTERNS_PATH = 'harness/authz-assertion-patterns.json';
+const ROUTE_AUTHZ_MANIFEST_START = '<!-- route-authz-manifest-json\n';
+const ROUTE_AUTHZ_MANIFEST_END = '\n-->';
 
 /** @type {Map<string, SourceIndex>} */
 const sourceIndexCache = new Map();
@@ -37,7 +39,7 @@ const sourceIndexCache = new Map();
 /**
  * @typedef {{ code: string, scope: string | null }} PolicyCode
  * @typedef {{ admission: string | null, mode: string, codes: PolicyCode[], require: 'all' | 'any', scopes: string[], engine: string | null }} Policy
- * @typedef {{ routeKey?: string, controller: string, handler: string, truthSource?: string, policy: Policy }} PolicyEntry
+ * @typedef {{ routeKey?: string, controller: string, handler: string, legacy?: string, policy: Policy }} PolicyEntry
  * @typedef {{ receiverTypes: string[], methods: string[], actionArgument: number | null, outcome: string }} StaticMatcher
  * @typedef {{ id: string, axes: string[], staticMatchers: StaticMatcher[] }} AssertionPattern
  * @typedef {{ name: string, file: string, moduleKey: string, source: import('typescript').SourceFile, declaration: import('typescript').ClassDeclaration, methods: Map<string, import('typescript').MethodDeclaration>, dependencies: Map<string, string> }} ClassInfo
@@ -183,6 +185,31 @@ function readJson(root, file) {
   return JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));
 }
 
+function routeAuthzManifestEntries(root) {
+  const document = fs.readFileSync(path.join(root, ROUTE_AUTHZ_PATH), 'utf8');
+  const start = document.indexOf(ROUTE_AUTHZ_MANIFEST_START);
+  if (start < 0) {
+    throw new Error(`R8 generated route manifest is missing; run pnpm docs:authz`);
+  }
+  const jsonStart = start + ROUTE_AUTHZ_MANIFEST_START.length;
+  const end = document.indexOf(ROUTE_AUTHZ_MANIFEST_END, jsonStart);
+  if (end < 0) {
+    throw new Error(`R8 generated route manifest is unterminated; run pnpm docs:authz`);
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(document.slice(jsonStart, end));
+  } catch (error) {
+    throw new Error(
+      `R8 generated route manifest is invalid JSON; run pnpm docs:authz (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
+  if (manifest === null || typeof manifest !== 'object' || !Array.isArray(manifest.entries)) {
+    throw new Error(`R8 generated route manifest is invalid; run pnpm docs:authz`);
+  }
+  return manifest.entries;
+}
+
 function isStringArray(value) {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
@@ -259,19 +286,10 @@ function assertionPatterns(root) {
 }
 
 function policyEntries(root, options) {
-  const includeOverlay = options.includeOverlay === true;
-  const rawEntries =
-    options.entries ??
-    (() => {
-      const document = readJson(root, CLASSIFICATION_PATH);
-      if (!Array.isArray(document.entries)) {
-        throw new Error(`R8 policy registry is invalid; run pnpm docs:authz`);
-      }
-      return document.entries;
-    })();
-  return rawEntries
-    .map(normalizeEntry)
-    .filter((entry) => includeOverlay || entry.truthSource === 'code');
+  if (options.entries !== undefined) return options.entries.map(normalizeEntry);
+  return routeAuthzManifestEntries(root)
+    .filter((entry) => entry !== null && typeof entry === 'object' && entry.legacy === 'auth')
+    .map(normalizeEntry);
 }
 
 function unwrap(expression) {
@@ -791,7 +809,7 @@ function classifyEntry(index, patterns, entry) {
  * produces the warning diagnostics, rather than re-implementing a report-only
  * second scanner.
  *
- * @param {{ rootDir?: string, includeOverlay?: boolean, entries?: PolicyEntry[], cacheKey?: string }} [options]
+ * @param {{ rootDir?: string, entries?: PolicyEntry[], cacheKey?: string }} [options]
  * @returns {ClosureRecord[]}
  */
 export function scanRouteAuthzClosure(options = {}) {
@@ -817,7 +835,6 @@ export const authzDeclarationClosure = {
       {
         type: 'object',
         properties: {
-          includeOverlay: { type: 'boolean' },
           rootDir: { type: 'string' },
           cacheKey: { type: 'string' },
           entries: { type: 'array', items: { type: 'object' } },

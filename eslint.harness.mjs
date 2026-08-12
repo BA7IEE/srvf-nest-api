@@ -491,10 +491,10 @@ const harnessConfigBlocks = [
     },
   },
 
-  // (b2) R8 声明↔实现闭环:专用 lint:authz:report 入口才以 warn 级扫描全量
-  //      policy。普通 lint 固定 --max-warnings=0，故这里默认 off，避免把存量 T3
-  //      候选伪装成现阶段的 lint hard gate。classification overlay 的全量首扫同样
-  //      由 harness-eslint.selftest 调同一规则逻辑产出。
+  // (b2) R8 声明↔实现闭环:专用 lint:authz:report 入口才以 warn 级扫描生成
+  //      ROUTE_AUTHZ 内历史 [auth] 的 policy。普通 lint 固定 --max-warnings=0，故这里默认
+  //      off，避免把存量 T3 候选伪装成现阶段的 lint hard gate。全量首扫同样由
+  //      harness-eslint.selftest 调同一规则逻辑产出。
   //
   //      `require:any` 仍逐码验证全部合法 OR 分支；一个码被判过不等于其余声明码
   //      可以成为死声明。T1=handler，T2=同模块一层公开 service；再深则诚实归 T3。
@@ -503,10 +503,7 @@ const harnessConfigBlocks = [
     files: ['src/**/*.controller.ts'],
     plugins: { srvf: srvfEslintPlugin },
     rules: {
-      [AUTHZ_DECLARATION_CLOSURE_RULE]: [
-        AUTHZ_R8_REPORT_MODE ? 'warn' : 'off',
-        { includeOverlay: AUTHZ_R8_REPORT_MODE },
-      ],
+      [AUTHZ_DECLARATION_CLOSURE_RULE]: AUTHZ_R8_REPORT_MODE ? 'warn' : 'off',
     },
   },
 

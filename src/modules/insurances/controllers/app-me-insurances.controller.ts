@@ -20,6 +20,7 @@ import { CreateAppMeInsuranceDto } from '../dto/app/create-app-me-insurance.dto'
 import { DeleteAppMeInsuranceQueryDto } from '../dto/app/delete-app-me-insurance-query.dto';
 import { ListAppMeInsurancesQueryDto } from '../dto/app/list-app-me-insurances-query.dto';
 import { UpdateAppMeInsuranceDto } from '../dto/app/update-app-me-insurance.dto';
+import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 
 // 保险模块 T2:App 自助自购保险 Mobile Controller(2026-06-13;4 endpoint)。
 // 冻结评审稿 docs/archive/reviews/insurance-module-review.md §3.2 端点 1-4 / E-14 / D-INS-3:
@@ -47,6 +48,12 @@ export class AppMeInsurancesController {
   }
 
   @Get()
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary: '我的自购保险分页列表(仅本人;软删不可见;createdAt desc) [auth]',
   })
@@ -60,6 +67,12 @@ export class AppMeInsurancesController {
   }
 
   @Post()
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary:
       '新增自购保险(自报即可,无核验;保险公司/保单号/到期必填,起保可选;起保 ≤ 到期否则 26010) [auth]',
@@ -80,6 +93,12 @@ export class AppMeInsurancesController {
   }
 
   @Patch(':id')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary:
       '部分更新自购保险(expectedVersion 必填;旧版本 26011;实质变更重置审核为 pending;等值为空操作) [auth]',
@@ -103,6 +122,12 @@ export class AppMeInsurancesController {
   }
 
   @Delete(':id')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary: '删除自购保险(软删;expectedVersion query 必填;旧版本 26011;保留原审核结论) [auth]',
   })

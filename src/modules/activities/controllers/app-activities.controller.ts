@@ -26,6 +26,7 @@ import {
   AppActivityPositionDto,
   AppActivityPositionsParamsDto,
 } from '../dto/app/app-activity-position.dto';
+import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 
 // Phase 2 P2-4a/P2-4b App /api/app/v1/activities/* Mobile Controller。
 // 沿 docs/app-api-p2-4-activities-review.md §1 + §6.1 + §11.3:
@@ -44,6 +45,11 @@ export class AppActivitiesController {
   ) {}
 
   @Get()
+  @LoginScoped('app-activity-catalog', {
+    admission: 'app-member',
+    require: 'all',
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary: 'App 队员内部活动目录(仅 published；invitation 仅本人受邀可见) [auth]',
   })
@@ -61,6 +67,11 @@ export class AppActivitiesController {
   }
 
   @Get('available')
+  @LoginScoped('app-activity-catalog', {
+    admission: 'app-member',
+    require: 'all',
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary: 'App 视角可参加活动列表(分页;仅 published + 公开报名 + 未结束 + 未软删) [auth]',
   })
@@ -81,6 +92,11 @@ export class AppActivitiesController {
   }
 
   @Get(':activityId/positions')
+  @LoginScoped('app-activity-catalog', {
+    admission: 'app-member',
+    require: 'all',
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary: 'App 视角公开报名活动岗位列表(含余量与当前队员是否可报) [auth]',
   })
@@ -103,6 +119,11 @@ export class AppActivitiesController {
   }
 
   @Get(':id')
+  @LoginScoped('app-activity-catalog', {
+    admission: 'app-member',
+    require: 'all',
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary:
       'App 视角活动详情(仅 published；invitation 仅本人受邀；draft / cancelled / terminated / completed / 软删 / 不存在统一 → 404) [auth]',

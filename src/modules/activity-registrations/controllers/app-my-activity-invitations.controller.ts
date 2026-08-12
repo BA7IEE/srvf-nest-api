@@ -19,6 +19,7 @@ import {
   AppMyActivityInvitationParamsDto,
   DeclineAppMyActivityInvitationDto,
 } from '../dto/app/app-activity-invitation.dto';
+import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 
 @ApiTags('Mobile - My Activity Invitations')
 @ApiBearerAuth()
@@ -30,6 +31,12 @@ export class AppMyActivityInvitationsController {
   ) {}
 
   @Post(':invitationId/decline')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 队员拒绝自己的未过期 pending 邀请 [auth]' })
   @ApiWrappedOkResponse(AppActivityInvitationDto)

@@ -11,6 +11,7 @@ import {
 import { BizCode } from '../../../common/exceptions/biz-code.constant';
 import { AppMyParticipationSummaryDto } from '../dto/app/app-my-participation-summary.dto';
 import { ParticipationSummaryQueryService } from '../participation-summary-query.service';
+import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 
 @ApiTags('Mobile - My Attendance')
 @ApiBearerAuth()
@@ -19,6 +20,12 @@ export class AppMyParticipationSummaryController {
   constructor(private readonly query: ParticipationSummaryQueryService) {}
 
   @Get('participation-summary')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary:
       '我的参与累计(approved 时长/活动次数/记录数/生涯封顶贡献；仅正向数据；恒本人范围) [auth]',

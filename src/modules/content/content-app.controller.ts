@@ -18,6 +18,7 @@ import {
   ListContentReadQueryDto,
 } from './content.dto';
 import { ContentReadService } from './content-read.service';
+import { LoginScoped, RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // CMS 内容发布模块(第 28 模块)T4(2026-06-21):app/v1 会员读取面(评审稿 §4/§8 app)。
 //
@@ -33,6 +34,12 @@ export class ContentAppController {
   constructor(private readonly service: ContentReadService) {}
 
   @Get()
+  @LoginScoped('content-visibility', {
+    admission: 'app-member',
+    require: 'all',
+    engine: 'authz-scoped',
+  })
+  @RequiresPermission('content.read.record')
   @ApiOperation({
     summary:
       '会员内容列表(准入 canUseApp;按 5 档可见性过滤;keyword/tags/contentTypeCode;无 body) [auth]',
@@ -44,6 +51,12 @@ export class ContentAppController {
   }
 
   @Get(':id')
+  @LoginScoped('content-visibility', {
+    admission: 'app-member',
+    require: 'all',
+    engine: 'authz-scoped',
+  })
+  @RequiresPermission('content.read.record')
   @ApiOperation({
     summary:
       '会员内容详情(准入 canUseApp;可见级不通过 → 404 防枚举;正文占位改写 + 附件签名 + viewCount 自增) [auth]',

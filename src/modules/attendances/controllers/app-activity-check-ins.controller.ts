@@ -15,6 +15,7 @@ import {
   ActivityCheckInLocationDto,
   AppActivityCheckInActivityIdParamDto,
 } from '../dto/app/activity-check-in-location.dto';
+import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 
 // 活动 GPS 自助签到是全新 canonical App self surface：无 @Roles / @Public / legacy alias。
 // AppIdentityResolver 与 service 内 memberId 锁定共同保证 linked-member self perspective。
@@ -25,6 +26,12 @@ export class AppActivityCheckInsController {
   constructor(private readonly checkIns: AppActivityCheckInsService) {}
 
   @Post('check-in')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '本人 GPS 签到（首次与合法重试均返回当前证据） [auth]' })
   @ApiWrappedOkResponse(AppActivityCheckInDto)
@@ -49,6 +56,12 @@ export class AppActivityCheckInsController {
   }
 
   @Post('check-out')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '本人 GPS 签退（首次与合法重试均返回当前证据） [auth]' })
   @ApiWrappedOkResponse(AppActivityCheckInDto)
@@ -75,6 +88,12 @@ export class AppActivityCheckInsController {
   }
 
   @Get('check-in')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: '读取本人当前审核通过报名的打卡状态 [auth]' })
   @ApiWrappedOkResponse(AppActivityCheckInDto)
   @ApiBizErrorResponse(

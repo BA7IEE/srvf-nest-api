@@ -1,27 +1,19 @@
 /**
  * generate-authz-manifest.ts - Route Authorization Policy manifest generator.
  *
- * Phase 0 used the classification overlay as a temporary truth source. Phase 1
- * transfers a route one at a time to its normalized declaration in code; the
- * overlay remains the maintainer decision record until its final retirement.
+ * Phase 1 has retired the Phase 0 classification overlay. Normalized route
+ * declarations in controller code are now the only authorization policy source
+ * of truth.
  *
  * Modes:
- *   --bootstrap: create the provisional classification overlay and ROUTE_AUTHZ.
- *   --write: regenerate ROUTE_AUTHZ from the existing overlay.
- *   --check: verify controller coverage and generated-document freshness.
- *   --check-surface=system,auth: additionally require every route in the
- *     named surfaces to have transferred to a code declaration.
- *   --plan-surface=admin: print the exact declaration transfer plan without
- *     changing source files.
- *   --apply-surface=admin: materialize declarations from the decided policy,
- *     transfer matching overlay entries to code truth, and regenerate outputs.
+ *   --write: regenerate ROUTE_AUTHZ from controller declarations (default).
+ *   --check: verify full declaration coverage and generated-document freshness.
  */
 
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
-import { format, resolveConfig } from 'prettier';
 import {
   AUTHZ_ASSERTION_PATTERNS,
   AUTHZ_VISIBILITY_PREDICATES,
@@ -30,12 +22,11 @@ import {
 } from '../src/common/authz/authz-context';
 
 const ROOT = path.resolve(__dirname, '..');
-const CLASSIFICATION = 'harness/route-authz-classification.json';
+const RETIRED_CLASSIFICATION = 'harness/route-authz-classification.json';
 const ASSERTION_PATTERNS = 'harness/authz-assertion-patterns.json';
 const DOCUMENT = 'docs/ai-harness/ROUTE_AUTHZ.md';
-const ROUTE_AUTHZ_DECORATOR = 'src/common/decorators/route-authz.decorator';
-const PUBLIC_DECORATOR = 'src/common/decorators/public.decorator';
-const VERSION = '1.0.0';
+const SCHEMA_VERSION = '1.0.0';
+const GENERATOR_VERSION = '2.0.0';
 const HTTP_NAMES = new Set(['Get', 'Post', 'Put', 'Patch', 'Delete']);
 const HTTP: Record<string, string> = {
   Get: 'GET',
@@ -69,7 +60,6 @@ interface Endpoint {
   rbacCodes: string[];
   codePolicy: Policy | null;
   evidence: Evidence[];
-  routeDecorator: ts.Decorator;
 }
 
 interface Policy {
@@ -81,132 +71,7 @@ interface Policy {
   engine: 'rbac-global' | 'authz-scoped' | null;
 }
 
-// Most legacy RBAC summaries encode one require=all code list directly.
-// This route is the documented exception: its API summary can only carry one
-// parser-compatible suffix, while the service has a frozen literal OR list.
-// Keep the route-level metadata faithful to that implementation instead of
-// pretending the primary summary code is the sole admission path.
-const LEGACY_POLICY_OVERRIDES: Readonly<Record<string, Policy>> = {
-  'GET /api/admin/v1/certificate-standards/options': {
-    admission: null,
-    mode: 'RBAC',
-    codes: [
-      { code: 'certificate-standard.read.record', scope: null },
-      { code: 'certificate.create.record', scope: null },
-      { code: 'certificate.verify.record', scope: null },
-      { code: 'recruitment-application.review.certificate', scope: null },
-    ],
-    require: 'any',
-    scopes: [],
-    engine: 'rbac-global',
-  },
-};
-
-interface DeclarationPlan {
-  endpoint: Endpoint;
-  policy: Policy;
-  decorators: string[];
-  imports: Array<{ from: 'route-authz' | 'public'; name: string }>;
-}
-
-type DecisionStatus = 'needs-decision' | 'decided';
-type EntryTruthSource = 'classification-overlay' | 'code';
 type Surface = 'admin' | 'app' | 'system' | 'auth' | 'open' | 'other';
-
-interface OverlayEntry {
-  routeKey: string;
-  method: string;
-  path: string;
-  controller: string;
-  handler: string;
-  tags: string[];
-  sourceSummary: string;
-  policy: Policy;
-  truthSource?: EntryTruthSource;
-  decisionStatus: DecisionStatus;
-  evidence: Evidence[];
-  implementationSignals: string[];
-  unresolvedImplementationEvidence: string[];
-}
-
-interface Overlay {
-  schemaVersion: string;
-  generatorVersion: string;
-  inputDigest: string;
-  truthSource: 'classification-overlay';
-  coverage: { endpoints: number; authDeclared: number };
-  entries: OverlayEntry[];
-}
-
-interface ClassInfo {
-  name: string;
-  file: string;
-  source: ts.SourceFile;
-  declaration: ts.ClassDeclaration;
-  methods: Map<string, ts.MethodDeclaration>;
-  dependencies: Map<string, string>;
-}
-
-interface AuthorizationSignal {
-  kind: 'app-identity' | 'rbac' | 'authz' | 'visibility-scope';
-  file: string;
-  line: number;
-  symbol: string;
-  action: string | null;
-  call: string;
-}
-
-interface ClassificationResult {
-  policy: Policy;
-  evidence: Evidence[];
-  implementationSignals: string[];
-  unresolvedImplementationEvidence: string[];
-}
-
-function normalizePolicy(policy: Policy): Policy {
-  const fragments: RouteAuthzDeclarationFragment[] =
-    policy.mode === 'PUBLIC'
-      ? []
-      : [
-          {
-            ...(policy.admission === null ? {} : { admission: policy.admission }),
-            mode: policy.mode,
-            codes: policy.codes,
-            require: policy.require,
-            scopes: policy.scopes,
-            ...(policy.engine === null ? {} : { engine: policy.engine }),
-          },
-        ];
-  const normalized = normalizeRouteAuthzDeclaration({
-    isPublic: policy.mode === 'PUBLIC',
-    fragments,
-  });
-  if (normalized === null) throw new Error('policy normalization produced no declaration');
-  return normalized;
-}
-
-function samePolicy(left: Policy, right: Policy): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function normalizeOverlay(input: Overlay): Overlay {
-  return {
-    ...input,
-    inputDigest: computeControllerInputDigest(),
-    entries: input.entries.map((entry) => ({
-      ...entry,
-      policy: normalizePolicy(entry.policy),
-    })),
-  };
-}
-
-function entryTruthSource(entry: OverlayEntry): EntryTruthSource {
-  const source = entry.truthSource ?? 'classification-overlay';
-  if (source !== 'classification-overlay' && source !== 'code') {
-    throw new Error('invalid entry truthSource: ' + entry.routeKey);
-  }
-  return source;
-}
 
 function assertionPatternsDocument(): string {
   return (
@@ -497,278 +362,6 @@ function lineOf(node: ts.Node, source: ts.SourceFile): number {
   return source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
 }
 
-let classCache: Map<string, ClassInfo> | undefined;
-
-function typeName(type: ts.TypeNode | undefined, source: ts.SourceFile): string | undefined {
-  if (type === undefined || !ts.isTypeReferenceNode(type)) return undefined;
-  if (ts.isIdentifier(type.typeName)) return type.typeName.text;
-  return type.typeName.getText(source).split('.').at(-1);
-}
-
-function classes(): Map<string, ClassInfo> {
-  if (classCache !== undefined) return classCache;
-  const output = new Map<string, ClassInfo>();
-  for (const file of sourceFiles()) {
-    const source = ts.createSourceFile(file, read(file), ts.ScriptTarget.Latest, true);
-    const visit = (node: ts.Node): void => {
-      if (!ts.isClassDeclaration(node) || node.name === undefined) {
-        node.forEachChild(visit);
-        return;
-      }
-      const methods = new Map<string, ts.MethodDeclaration>();
-      const dependencies = new Map<string, string>();
-      for (const member of node.members) {
-        if (ts.isMethodDeclaration(member) && member.name !== undefined) {
-          methods.set(member.name.getText(source), member);
-          continue;
-        }
-        if (!ts.isConstructorDeclaration(member)) continue;
-        for (const parameter of member.parameters) {
-          if (!ts.isIdentifier(parameter.name)) continue;
-          const propertyParameter = (parameter.modifiers ?? []).some((modifier) =>
-            [
-              ts.SyntaxKind.PrivateKeyword,
-              ts.SyntaxKind.ProtectedKeyword,
-              ts.SyntaxKind.PublicKeyword,
-              ts.SyntaxKind.ReadonlyKeyword,
-            ].includes(modifier.kind),
-          );
-          const dependency = typeName(parameter.type, source);
-          if (propertyParameter && dependency !== undefined)
-            dependencies.set(parameter.name.text, dependency);
-        }
-      }
-      if (!output.has(node.name.text)) {
-        output.set(node.name.text, {
-          name: node.name.text,
-          file,
-          source,
-          declaration: node,
-          methods,
-          dependencies,
-        });
-      }
-      node.forEachChild(visit);
-    };
-    visit(source);
-  }
-  classCache = output;
-  return output;
-}
-
-function propertyChain(expression: ts.Expression): string[] {
-  if (expression.kind === ts.SyntaxKind.ThisKeyword) return ['this'];
-  if (ts.isIdentifier(expression)) return [expression.text];
-  if (ts.isPropertyAccessExpression(expression))
-    return [...propertyChain(expression.expression), expression.name.text];
-  return [];
-}
-
-function literalAction(call: ts.CallExpression): string | null {
-  const action = call.arguments[1];
-  if (action === undefined) return null;
-  if (ts.isStringLiteral(action) || ts.isNoSubstitutionTemplateLiteral(action)) return action.text;
-  return null;
-}
-
-function classifyEndpoint(endpoint: Endpoint): ClassificationResult {
-  const index = classes();
-  const root = index.get(endpoint.controller);
-  const evidence = [...endpoint.evidence];
-  const signals: AuthorizationSignal[] = [];
-  const unresolved = new Set<string>();
-  const visited = new Set<string>();
-
-  const addEvidence = (item: Evidence): void => {
-    if (
-      !evidence.some(
-        (existing) =>
-          existing.file === item.file &&
-          existing.line === item.line &&
-          existing.assertion === item.assertion,
-      )
-    ) {
-      evidence.push(item);
-    }
-  };
-
-  const addSignal = (
-    kind: AuthorizationSignal['kind'],
-    info: ClassInfo,
-    methodName: string,
-    call: ts.CallExpression,
-  ): void => {
-    const action = kind === 'app-identity' ? null : literalAction(call);
-    const callText = call.expression.getText(info.source);
-    const line = lineOf(call, info.source);
-    if (
-      !signals.some(
-        (signal) => signal.kind === kind && signal.file === info.file && signal.line === line,
-      )
-    ) {
-      signals.push({
-        kind,
-        file: info.file,
-        line,
-        symbol: info.name + '.' + methodName,
-        action,
-        call: callText,
-      });
-      addEvidence({
-        file: info.file,
-        line,
-        symbol: info.name + '.' + methodName,
-        assertion:
-          kind === 'app-identity'
-            ? 'Implementation invokes ' + callText + ' for app admission.'
-            : action === null
-              ? 'Implementation invokes ' + callText + ' with a non-literal action.'
-              : 'Implementation invokes ' + callText + " for '" + action + "'.",
-      });
-    }
-    if (kind !== 'app-identity' && action === null) {
-      unresolved.add(
-        info.file + ':' + line + ' uses a non-literal authorization action (' + callText + ').',
-      );
-    }
-  };
-
-  const visitMethod = (
-    info: ClassInfo,
-    methodName: string,
-    trail: string[],
-    depth: number,
-  ): void => {
-    const method = info.methods.get(methodName);
-    const key = info.name + '.' + methodName;
-    if (method === undefined || visited.has(key) || depth > 4) return;
-    visited.add(key);
-    if (depth > 0) {
-      addEvidence({
-        file: info.file,
-        line: lineOf(method, info.source),
-        symbol: key,
-        assertion: 'Reached through static call chain: ' + trail.join(' -> ') + '.',
-      });
-    }
-    const inspect = (node: ts.Node): void => {
-      if (ts.isCallExpression(node)) {
-        const chain = propertyChain(node.expression);
-        const operation = chain.at(-1);
-        const receiver = chain.at(-2);
-        if (receiver === 'rbac' && operation === 'can') addSignal('rbac', info, methodName, node);
-        if (receiver === 'authz' && (operation === 'can' || operation === 'explain'))
-          addSignal('authz', info, methodName, node);
-        if (receiver === 'authz' && operation === 'getVisibleOrganizationScope')
-          addSignal('visibility-scope', info, methodName, node);
-
-        if (chain[0] === 'this') {
-          if (chain.length === 2) {
-            visitMethod(info, chain[1], [...trail, key + '.' + chain[1]], depth + 1);
-          } else if (chain.length === 3) {
-            const dependencyName = info.dependencies.get(chain[1]);
-            const target = dependencyName === undefined ? undefined : index.get(dependencyName);
-            if (dependencyName === 'AppIdentityResolver' && chain[2] === 'resolve') {
-              addSignal('app-identity', info, methodName, node);
-            }
-            if (
-              target !== undefined &&
-              !['PrismaService', 'RbacService', 'AuthzService', 'AppIdentityResolver'].includes(
-                dependencyName ?? '',
-              )
-            ) {
-              visitMethod(
-                target,
-                chain[2],
-                [...trail, key + '.' + chain[1] + '.' + chain[2]],
-                depth + 1,
-              );
-            }
-          }
-        }
-      }
-      node.forEachChild(inspect);
-    };
-    method.forEachChild(inspect);
-  };
-
-  if (root === undefined) {
-    unresolved.add(
-      'Controller class could not be resolved from source index: ' + endpoint.controller + '.',
-    );
-  } else {
-    visitMethod(root, endpoint.handler, [endpoint.controller + '.' + endpoint.handler], 0);
-  }
-
-  const actionCodes = [
-    ...new Set(
-      signals
-        .filter(
-          (signal) => (signal.kind === 'rbac' || signal.kind === 'authz') && signal.action !== null,
-        )
-        .map((signal) => signal.action as string),
-    ),
-  ].sort();
-  const hasRbac = signals.some((signal) => signal.kind === 'rbac');
-  const hasScoped = signals.some(
-    (signal) => signal.kind === 'authz' || signal.kind === 'visibility-scope',
-  );
-  const hasIdentity = signals.some((signal) => signal.kind === 'app-identity');
-  const appRoute = endpoint.path.startsWith('/api/app/');
-  const scopes = signals.some((signal) => signal.kind === 'visibility-scope')
-    ? ['visibility:organization']
-    : [];
-  let mode: Mode = 'LOGIN_ONLY';
-  let engine: Policy['engine'] = null;
-  if (hasScoped || appRoute) {
-    mode = 'LOGIN_SCOPED';
-    engine = 'authz-scoped';
-  } else if (hasRbac) {
-    mode = 'RBAC';
-    engine = 'rbac-global';
-  }
-  if (signals.length === 0)
-    unresolved.add(
-      'No recognized authorization signal found in the explored static implementation path.',
-    );
-  if (appRoute && !hasIdentity)
-    unresolved.add(
-      'App admission is inferred from the route surface; resolver path still needs maintainer review.',
-    );
-  if (scopes.length === 0)
-    unresolved.add(
-      'No statically provable scope was inferred; empty scopes are provisional pending review.',
-    );
-
-  return {
-    policy: {
-      admission: appRoute ? 'app-member' : null,
-      mode,
-      codes: actionCodes.map((code) => ({ code, scope: null })),
-      require: 'all',
-      scopes,
-      engine,
-    },
-    evidence,
-    implementationSignals: signals
-      .sort((left, right) =>
-        (left.file + ':' + left.line).localeCompare(right.file + ':' + right.line),
-      )
-      .map(
-        (signal) =>
-          signal.kind +
-          ' ' +
-          signal.file +
-          ':' +
-          signal.line +
-          ' ' +
-          signal.call +
-          (signal.action === null ? ' [dynamic action]' : " ['" + signal.action + "']"),
-      ),
-    unresolvedImplementationEvidence: [...unresolved].sort(),
-  };
-}
-
 function property(object: ts.ObjectLiteralExpression, key: string): ts.Expression | undefined {
   for (const item of object.properties) {
     if (!ts.isPropertyAssignment(item)) continue;
@@ -910,7 +503,6 @@ function endpoints(): Endpoint[] {
             rbacCodes: classified.rbacCodes,
             codePolicy,
             evidence: evidenceFor(file, source, node.name.text, member, summary),
-            routeDecorator: decorator,
           });
         }
       }
@@ -962,116 +554,20 @@ function contractCount(): number {
   return count;
 }
 
-function bootstrap(endpointList: Endpoint[]): Overlay {
-  const auth = endpointList.filter((endpoint) => endpoint.legacy === 'auth');
-  return {
-    schemaVersion: VERSION,
-    generatorVersion: VERSION,
-    inputDigest: computeControllerInputDigest(),
-    truthSource: 'classification-overlay',
-    coverage: { endpoints: endpointList.length, authDeclared: auth.length },
-    entries: auth.map((endpoint) => {
-      const classified = classifyEndpoint(endpoint);
-      return {
-        routeKey: endpoint.key,
-        method: endpoint.method,
-        path: endpoint.path,
-        controller: endpoint.controller,
-        handler: endpoint.handler,
-        tags: endpoint.tags,
-        sourceSummary: endpoint.summary,
-        policy: classified.policy,
-        decisionStatus: 'needs-decision',
-        evidence: classified.evidence,
-        implementationSignals: classified.implementationSignals,
-        unresolvedImplementationEvidence: classified.unresolvedImplementationEvidence,
-      };
-    }),
-  };
+function rejectRetiredOverlay(): void {
+  if (fs.existsSync(path.join(ROOT, RETIRED_CLASSIFICATION))) {
+    throw new Error('retired classification overlay must not exist: ' + RETIRED_CLASSIFICATION);
+  }
 }
 
-function overlay(): Overlay {
-  const raw = JSON.parse(read(CLASSIFICATION)) as unknown;
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw))
-    throw new Error(CLASSIFICATION + ' must be an object');
-  const value = raw as Overlay;
-  if (value.schemaVersion !== VERSION || value.generatorVersion !== VERSION)
-    throw new Error('classification version mismatch');
-  if (value.truthSource !== 'classification-overlay')
-    throw new Error('classification truthSource mismatch');
-  if (!Array.isArray(value.entries)) throw new Error('classification entries missing');
-  return value;
-}
-
-function validate(endpointList: Endpoint[], input: Overlay): void {
-  const auth = endpointList.filter((endpoint) => endpoint.legacy === 'auth');
-  if (input.inputDigest !== computeControllerInputDigest())
-    throw new Error('classification inputDigest stale');
-  if (
-    input.coverage.endpoints !== endpointList.length ||
-    input.coverage.authDeclared !== auth.length
-  ) {
-    throw new Error('classification coverage stale');
-  }
-  const actual = new Map(auth.map((endpoint) => [endpoint.key, endpoint]));
-  const declared = new Map<string, OverlayEntry>();
-  for (const entry of input.entries) {
-    if (declared.has(entry.routeKey))
-      throw new Error('duplicate classification entry: ' + entry.routeKey);
-    if (!actual.has(entry.routeKey))
-      throw new Error('stale classification entry: ' + entry.routeKey);
-    if (entry.decisionStatus !== 'decided')
-      throw new Error('decision status must be decided: ' + entry.routeKey);
-    if (
-      entry.policy === undefined ||
-      !Object.hasOwn(entry.policy, 'admission') ||
-      !['PUBLIC', 'LOGIN_ONLY', 'LOGIN_SCOPED', 'RESPONSIBILITY_SCOPED', 'RBAC'].includes(
-        entry.policy.mode,
-      ) ||
-      !Array.isArray(entry.policy.codes) ||
-      !entry.policy.codes.every(
-        (item) =>
-          typeof item.code === 'string' && (typeof item.scope === 'string' || item.scope === null),
-      ) ||
-      !Array.isArray(entry.policy.scopes) ||
-      !entry.policy.scopes.every((scope) => typeof scope === 'string') ||
-      (entry.policy.require !== 'all' && entry.policy.require !== 'any') ||
-      !Object.hasOwn(entry.policy, 'engine') ||
-      !['rbac-global', 'authz-scoped', null].includes(entry.policy.engine) ||
-      !Array.isArray(entry.evidence) ||
-      entry.evidence.length === 0 ||
-      !entry.evidence.every(
-        (item) =>
-          typeof item.file === 'string' &&
-          Number.isInteger(item.line) &&
-          typeof item.symbol === 'string',
-      ) ||
-      !Array.isArray(entry.implementationSignals) ||
-      !Array.isArray(entry.unresolvedImplementationEvidence)
-    ) {
-      throw new Error('incomplete structured policy/evidence: ' + entry.routeKey);
-    }
-    if (!samePolicy(entry.policy, normalizePolicy(entry.policy))) {
-      throw new Error('policy is not canonical: ' + entry.routeKey);
-    }
-    const source = entryTruthSource(entry);
-    const codePolicy = actual.get(entry.routeKey)?.codePolicy ?? null;
-    if (source === 'code') {
-      if (codePolicy === null)
-        throw new Error('code truth source has no declaration: ' + entry.routeKey);
-      if (!samePolicy(entry.policy, codePolicy))
-        throw new Error('code declaration differs from decided policy: ' + entry.routeKey);
-    } else if (codePolicy !== null) {
-      throw new Error(
-        'declaration exists but entry truthSource remains classification-overlay: ' +
-          entry.routeKey,
-      );
-    }
-    declared.set(entry.routeKey, entry);
-  }
-  for (const endpoint of auth) {
-    if (!declared.has(endpoint.key))
-      throw new Error('missing classification entry: ' + endpoint.key);
+function validateDeclarations(endpointList: Endpoint[]): void {
+  const missing = endpointList
+    .filter((endpoint) => endpoint.codePolicy === null)
+    .map((endpoint) => endpoint.key);
+  if (missing.length > 0) {
+    throw new Error(
+      'route authorization declaration missing:\n' + missing.map((key) => '- ' + key).join('\n'),
+    );
   }
 }
 
@@ -1082,330 +578,6 @@ function surfaceOf(endpoint: Endpoint): Surface {
   if (endpoint.path.startsWith('/api/auth/')) return 'auth';
   if (endpoint.path.startsWith('/api/open/')) return 'open';
   return 'other';
-}
-
-function requestedSurfaces(optionName: string): Surface[] {
-  const option = process.argv.find((argument) => argument.startsWith(optionName));
-  if (option === undefined) return [];
-  const allowed = new Set<Surface>(['admin', 'app', 'system', 'auth', 'open', 'other']);
-  const requested = option
-    .slice(optionName.length)
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-  if (requested.length === 0)
-    throw new Error(optionName.slice(0, -1) + ' requires at least one surface');
-  const invalid = requested.filter((value): value is string => !allowed.has(value as Surface));
-  if (invalid.length > 0)
-    throw new Error(optionName.slice(0, -1) + ' has unsupported surface: ' + invalid.join(','));
-  return [...new Set(requested as Surface[])];
-}
-
-function policyForTransfer(endpoint: Endpoint, byKey: ReadonlyMap<string, OverlayEntry>): Policy {
-  const decided = byKey.get(endpoint.key);
-  if (decided !== undefined) return normalizePolicy(decided.policy);
-  const override = LEGACY_POLICY_OVERRIDES[endpoint.key];
-  if (override !== undefined) return normalizePolicy(override);
-  if (endpoint.legacy === 'rbac') {
-    return normalizePolicy({
-      admission: null,
-      mode: 'RBAC',
-      codes: endpoint.rbacCodes.map((code) => ({ code, scope: null })),
-      require: 'all',
-      scopes: [],
-      engine: 'rbac-global',
-    });
-  }
-  if (endpoint.legacy === 'public') {
-    return normalizePolicy({
-      admission: null,
-      mode: 'PUBLIC',
-      codes: [],
-      require: 'all',
-      scopes: [],
-      engine: null,
-    });
-  }
-  throw new Error(
-    'surface transfer requires a decided policy for ' +
-      endpoint.key +
-      ' (legacy=' +
-      endpoint.legacy +
-      ')',
-  );
-}
-
-function quote(value: string): string {
-  return "'" + value.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
-}
-
-function optionsText(policy: Policy, omittedScopes: readonly string[] = []): string {
-  const omitted = new Set(omittedScopes);
-  const scopes = policy.scopes.filter((scope) => !omitted.has(scope));
-  const fields: string[] = [];
-  if (policy.admission !== null) fields.push('admission: ' + quote(policy.admission));
-  fields.push('require: ' + quote(policy.require));
-  if (scopes.length > 0) fields.push('scopes: [' + scopes.map(quote).join(', ') + ']');
-  if (policy.engine !== null) fields.push('engine: ' + quote(policy.engine));
-  return '{ ' + fields.join(', ') + ' }';
-}
-
-function permissionArgument(code: Policy['codes'][number]): string {
-  if (code.scope === null) return quote(code.code);
-  return '{ code: ' + quote(code.code) + ', scope: ' + quote(code.scope) + ' }';
-}
-
-function callText(name: string, argumentsList: readonly string[]): string {
-  const oneLine = '@' + name + '(' + argumentsList.join(', ') + ')';
-  if (oneLine.length <= 110) return oneLine;
-  return '@' + name + '(\n  ' + argumentsList.join(',\n  ') + ',\n)';
-}
-
-function declarationForPolicy(endpoint: Endpoint, policy: Policy): DeclarationPlan {
-  if (policy.mode === 'PUBLIC') {
-    return {
-      endpoint,
-      policy,
-      decorators: ['@Public()'],
-      imports: [{ from: 'public', name: 'Public' }],
-    };
-  }
-
-  const decorators: string[] = [];
-  const imports: DeclarationPlan['imports'] = [];
-  if (policy.mode === 'LOGIN_ONLY') {
-    decorators.push(callText('LoginOnly', [optionsText(policy)]));
-    imports.push({ from: 'route-authz', name: 'LoginOnly' });
-  } else if (policy.mode === 'LOGIN_SCOPED') {
-    const visibilityScopes = policy.scopes.filter((scope) => scope.startsWith('visibility:'));
-    if (visibilityScopes.length > 1) {
-      throw new Error('LOGIN_SCOPED has multiple visibility predicates: ' + endpoint.key);
-    }
-    const predicate = visibilityScopes[0]?.slice('visibility:'.length);
-    decorators.push(
-      callText(
-        'LoginScoped',
-        predicate === undefined
-          ? [optionsText(policy)]
-          : [quote(predicate), optionsText(policy, [visibilityScopes[0]])],
-      ),
-    );
-    imports.push({ from: 'route-authz', name: 'LoginScoped' });
-  } else if (policy.mode === 'RESPONSIBILITY_SCOPED') {
-    if (!policy.scopes.includes('responsibility')) {
-      throw new Error('RESPONSIBILITY_SCOPED is missing responsibility scope: ' + endpoint.key);
-    }
-    decorators.push(callText('ResponsibilityScoped', [optionsText(policy, ['responsibility'])]));
-    imports.push({ from: 'route-authz', name: 'ResponsibilityScoped' });
-  }
-
-  if (policy.mode === 'RBAC' && policy.codes.length === 0) {
-    throw new Error('RBAC declaration has no permission code: ' + endpoint.key);
-  }
-  if (policy.codes.length > 0) {
-    const argumentsList = policy.codes.map(permissionArgument);
-    if (policy.mode === 'RBAC') argumentsList.push(optionsText(policy));
-    decorators.push(callText('RequiresPermission', argumentsList));
-    imports.push({ from: 'route-authz', name: 'RequiresPermission' });
-  }
-
-  if (decorators.length === 0) {
-    throw new Error('cannot render declaration for ' + endpoint.key + ' (' + policy.mode + ')');
-  }
-  return { endpoint, policy, decorators, imports };
-}
-
-function selectedEndpoints(endpointList: Endpoint[], surfaces: readonly Surface[]): Endpoint[] {
-  const selected = new Set(surfaces);
-  return endpointList.filter((endpoint) => selected.has(surfaceOf(endpoint)));
-}
-
-function transferPlans(
-  endpointList: Endpoint[],
-  input: Overlay,
-  surfaces: readonly Surface[],
-): {
-  selected: Endpoint[];
-  plans: DeclarationPlan[];
-  transferredOverlayEntries: number;
-} {
-  const selected = selectedEndpoints(endpointList, surfaces);
-  const byKey = new Map(input.entries.map((entry) => [entry.routeKey, entry]));
-  const plans: DeclarationPlan[] = [];
-  for (const endpoint of selected) {
-    const policy = policyForTransfer(endpoint, byKey);
-    if (endpoint.codePolicy !== null) {
-      if (!samePolicy(endpoint.codePolicy, policy)) {
-        throw new Error('existing declaration differs from decided policy: ' + endpoint.key);
-      }
-      continue;
-    }
-    plans.push(declarationForPolicy(endpoint, policy));
-  }
-  const transferredOverlayEntries = selected.filter((endpoint) => {
-    const entry = byKey.get(endpoint.key);
-    return entry !== undefined && entryTruthSource(entry) === 'classification-overlay';
-  }).length;
-  return { selected, plans, transferredOverlayEntries };
-}
-
-function relativeImport(fromFile: string, target: string): string {
-  const relative = path.posix.relative(path.posix.dirname(fromFile), target);
-  return relative.startsWith('.') ? relative : './' + relative;
-}
-
-interface Insert {
-  at: number;
-  text: string;
-}
-
-function applyInserts(source: string, inserts: readonly Insert[]): string {
-  const ordered = [...inserts].sort((left, right) => right.at - left.at);
-  for (let index = 1; index < ordered.length; index += 1) {
-    if (ordered[index - 1].at === ordered[index].at)
-      throw new Error('ambiguous declaration insertion position');
-  }
-  let output = source;
-  for (const insert of ordered)
-    output = output.slice(0, insert.at) + insert.text + output.slice(insert.at);
-  return output;
-}
-
-function importedNames(declaration: ts.ImportDeclaration): Set<string> {
-  const bindings = declaration.importClause?.namedBindings;
-  if (bindings === undefined || !ts.isNamedImports(bindings)) return new Set();
-  return new Set(bindings.elements.map((element) => element.name.text));
-}
-
-function indent(text: string, prefix: string): string {
-  return text
-    .split('\n')
-    .map((line) => prefix + line)
-    .join('\n');
-}
-
-async function formatControllerSource(file: string, source: string): Promise<string> {
-  const config = await resolveConfig(path.join(ROOT, file));
-  return format(source, { ...config, filepath: path.join(ROOT, file) });
-}
-
-async function writeControllerDeclarations(plans: readonly DeclarationPlan[]): Promise<void> {
-  const byFile = new Map<string, DeclarationPlan[]>();
-  for (const plan of plans) {
-    const filePlans = byFile.get(plan.endpoint.file) ?? [];
-    filePlans.push(plan);
-    byFile.set(plan.endpoint.file, filePlans);
-  }
-
-  for (const [file, filePlans] of byFile) {
-    const sourceText = read(file);
-    const source = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true);
-    const requested = new Map<string, Set<string>>();
-    for (const plan of filePlans) {
-      for (const imported of plan.imports) {
-        const target = imported.from === 'route-authz' ? ROUTE_AUTHZ_DECORATOR : PUBLIC_DECORATOR;
-        const specifier = relativeImport(file, target);
-        const names = requested.get(specifier) ?? new Set<string>();
-        names.add(imported.name);
-        requested.set(specifier, names);
-      }
-    }
-
-    const imports = source.statements.filter(ts.isImportDeclaration);
-    const inserts: Insert[] = [];
-    const newImports: string[] = [];
-    for (const [specifier, names] of requested) {
-      const existing = imports.find(
-        (statement) =>
-          ts.isStringLiteral(statement.moduleSpecifier) &&
-          statement.moduleSpecifier.text === specifier,
-      );
-      if (existing !== undefined) {
-        const present = importedNames(existing);
-        const missing = [...names].filter((name) => !present.has(name));
-        if (missing.length > 0) {
-          throw new Error(
-            file + ' already imports ' + specifier + ' but is missing ' + missing.join(', ') + '.',
-          );
-        }
-        continue;
-      }
-      newImports.push('import { ' + [...names].sort().join(', ') + " } from '" + specifier + "';");
-    }
-    if (newImports.length > 0) {
-      const lastImport = imports.at(-1);
-      inserts.push({
-        at: lastImport?.getEnd() ?? 0,
-        text: (lastImport === undefined ? '' : '\n') + newImports.sort().join('\n'),
-      });
-    }
-    for (const plan of filePlans) {
-      inserts.push({
-        at: plan.endpoint.routeDecorator.getEnd(),
-        text: '\n' + indent(plan.decorators.join('\n'), '  '),
-      });
-    }
-    write(file, await formatControllerSource(file, applyInserts(sourceText, inserts)));
-  }
-}
-
-async function applySurfaceTransfer(
-  endpointList: Endpoint[],
-  input: Overlay,
-  surfaces: readonly Surface[],
-): Promise<{
-  inserted: number;
-  selected: number;
-  transferredOverlayEntries: number;
-  input: Overlay;
-}> {
-  const transfer = transferPlans(endpointList, input, surfaces);
-  await writeControllerDeclarations(transfer.plans);
-  const selectedKeys = new Set(transfer.selected.map((endpoint) => endpoint.key));
-  const next = normalizeOverlay({
-    ...input,
-    entries: input.entries.map((entry) =>
-      selectedKeys.has(entry.routeKey) ? { ...entry, truthSource: 'code' } : entry,
-    ),
-  });
-  write(CLASSIFICATION, JSON.stringify(next, null, 2) + '\n');
-  return {
-    inserted: transfer.plans.length,
-    selected: transfer.selected.length,
-    transferredOverlayEntries: transfer.transferredOverlayEntries,
-    input: next,
-  };
-}
-
-function validateSurfaceCodeTruth(
-  endpointList: Endpoint[],
-  input: Overlay,
-  requested: readonly Surface[],
-): void {
-  if (requested.length === 0) return;
-  const selected = new Set(requested);
-  const byKey = new Map(input.entries.map((entry) => [entry.routeKey, entry]));
-  const missingDeclarations = endpointList
-    .filter((endpoint) => selected.has(surfaceOf(endpoint)) && endpoint.codePolicy === null)
-    .map((endpoint) => endpoint.key);
-  if (missingDeclarations.length > 0) {
-    throw new Error(
-      'surface code truth is missing declarations:\n' +
-        missingDeclarations.map((key) => '- ' + key).join('\n'),
-    );
-  }
-  const remainingOverlay = endpointList
-    .filter((endpoint) => selected.has(surfaceOf(endpoint)))
-    .flatMap((endpoint) => {
-      const entry = byKey.get(endpoint.key);
-      return entry !== undefined && entryTruthSource(entry) !== 'code' ? [endpoint.key] : [];
-    });
-  if (remainingOverlay.length > 0) {
-    throw new Error(
-      'surface code truth still has classification-overlay entries:\n' +
-        remainingOverlay.map((key) => '- ' + key).join('\n'),
-    );
-  }
 }
 
 function cell(value: string): string {
@@ -1428,20 +600,16 @@ function label(policy: Policy): string {
   );
 }
 
-function effectivePolicy(endpoint: Endpoint, entry: OverlayEntry | undefined): Policy | null {
-  if (entry !== undefined) {
-    return entryTruthSource(entry) === 'code' ? endpoint.codePolicy : entry.policy;
-  }
+function declaredPolicy(endpoint: Endpoint): Policy {
+  if (endpoint.codePolicy === null)
+    throw new Error('decision row lacks route declaration: ' + endpoint.key);
   return endpoint.codePolicy;
 }
 
-function decisionRows(auth: Endpoint[], byKey: Map<string, OverlayEntry>): string[] {
+function decisionRows(auth: Endpoint[]): string[] {
   const rows: string[] = [];
   for (const endpoint of auth.filter((item) => item.path.startsWith('/api/admin/'))) {
-    const entry = byKey.get(endpoint.key);
-    if (entry === undefined) continue;
-    const policy = effectivePolicy(endpoint, entry);
-    if (policy === null) throw new Error('decision row lacks policy: ' + endpoint.key);
+    const policy = declaredPolicy(endpoint);
     rows.push(
       '| admin individual | ' +
         endpoint.method +
@@ -1450,9 +618,9 @@ function decisionRows(auth: Endpoint[], byKey: Map<string, OverlayEntry>): strin
         ' | ' +
         cell(label(policy)) +
         ' | ' +
-        entry.decisionStatus +
+        'code' +
         ' | ' +
-        cell(entry.evidence.map((item) => item.file + ':' + item.line).join('; ')) +
+        cell(endpoint.evidence.map((item) => item.file + ':' + item.line).join('; ')) +
         ' |',
     );
   }
@@ -1466,10 +634,7 @@ function decisionRows(auth: Endpoint[], byKey: Map<string, OverlayEntry>): strin
   for (const [family, endpoints] of [...groups.entries()].sort((a, b) =>
     a[0].localeCompare(b[0]),
   )) {
-    const entry = byKey.get(endpoints[0].key);
-    if (entry === undefined) continue;
-    const policy = effectivePolicy(endpoints[0], entry);
-    if (policy === null) throw new Error('decision row lacks policy: ' + endpoints[0].key);
+    const policy = declaredPolicy(endpoints[0]);
     rows.push(
       '| app tag family | ' +
         cell(family) +
@@ -1478,19 +643,16 @@ function decisionRows(auth: Endpoint[], byKey: Map<string, OverlayEntry>): strin
         ') | ' +
         cell(label(policy)) +
         ' | ' +
-        entry.decisionStatus +
+        'code' +
         ' | ' +
-        cell(entry.evidence[0].file + ':' + entry.evidence[0].line) +
+        cell(endpoints[0].evidence[0].file + ':' + endpoints[0].evidence[0].line) +
         ' |',
     );
   }
   for (const endpoint of auth.filter(
     (item) => item.path.startsWith('/api/auth/') || item.path.startsWith('/api/system/'),
   )) {
-    const entry = byKey.get(endpoint.key);
-    if (entry === undefined) continue;
-    const policy = effectivePolicy(endpoint, entry);
-    if (policy === null) throw new Error('decision row lacks policy: ' + endpoint.key);
+    const policy = declaredPolicy(endpoint);
     rows.push(
       '| auth/system individual | ' +
         endpoint.method +
@@ -1499,72 +661,56 @@ function decisionRows(auth: Endpoint[], byKey: Map<string, OverlayEntry>): strin
         ' | ' +
         cell(label(policy)) +
         ' | ' +
-        entry.decisionStatus +
+        'code' +
         ' | ' +
-        cell(entry.evidence.map((item) => item.file + ':' + item.line).join('; ')) +
+        cell(endpoint.evidence.map((item) => item.file + ':' + item.line).join('; ')) +
         ' |',
     );
   }
   return rows;
 }
 
-function manifestTruthSource(endpoint: Endpoint): EntryTruthSource {
-  // This is the declaration manifest's truth source, not the historical
-  // classification-record source. Only a normalized decorator can be `code`;
-  // every other route stays non-code until its declaration is backfilled.
-  return endpoint.codePolicy === null ? 'classification-overlay' : 'code';
-}
-
-function declarationTransferRows(endpointList: Endpoint[]): string[] {
+function declarationCoverageRows(endpointList: Endpoint[]): string[] {
   const surfaces: Surface[] = ['admin', 'app', 'system', 'auth', 'open', 'other'];
   return surfaces.flatMap((surface) => {
     const routes = endpointList.filter((endpoint) => surfaceOf(endpoint) === surface);
     if (routes.length === 0) return [];
     const declarations = routes.filter((endpoint) => endpoint.codePolicy !== null).length;
-    const codeTruth = routes.filter((endpoint) => manifestTruthSource(endpoint) === 'code').length;
-    const overlayTruth = routes.length - codeTruth;
+    const undeclared = routes.length - declarations;
     return [
-      '| ' +
-        surface +
-        ' | ' +
-        routes.length +
-        ' | ' +
-        declarations +
-        ' | ' +
-        codeTruth +
-        ' | ' +
-        overlayTruth +
-        ' |',
+      '| ' + surface + ' | ' + routes.length + ' | ' + declarations + ' | ' + undeclared + ' |',
     ];
   });
 }
 
-function render(endpointList: Endpoint[], input: Overlay): string {
-  const byKey = new Map<string, OverlayEntry>(
-    input.entries.map((entry) => [entry.routeKey, entry]),
+function machineReadableManifest(endpointList: Endpoint[]): string {
+  return JSON.stringify(
+    {
+      schemaVersion: SCHEMA_VERSION,
+      generatorVersion: GENERATOR_VERSION,
+      inputDigest: computeControllerInputDigest(),
+      entries: endpointList.map((endpoint) => ({
+        routeKey: endpoint.key,
+        controller: endpoint.controller,
+        handler: endpoint.handler,
+        legacy: endpoint.legacy,
+        policy: declaredPolicy(endpoint),
+      })),
+    },
+    null,
+    2,
   );
+}
+
+function render(endpointList: Endpoint[]): string {
   const counts = endpointList.reduce<Record<string, number>>((all, endpoint) => {
     all[endpoint.legacy] = (all[endpoint.legacy] ?? 0) + 1;
     return all;
   }, {});
-  const documentDigest = digest([
-    ...sourceFiles(),
-    'test/contract/openapi.contract-spec.ts',
-    CLASSIFICATION,
-  ]);
+  const documentDigest = computeControllerInputDigest();
   const auth = endpointList.filter((endpoint) => endpoint.legacy === 'auth');
   const allRows = endpointList.map((endpoint) => {
-    const entry = byKey.get(endpoint.key);
-    const declaredPolicy = effectivePolicy(endpoint, entry);
-    const policy =
-      declaredPolicy === null
-        ? endpoint.legacy === 'public'
-          ? 'PUBLIC'
-          : endpoint.legacy === 'rbac'
-            ? 'RBAC; codes=' + endpoint.rbacCodes.join(',')
-            : 'UNCLASSIFIED'
-        : label(declaredPolicy);
-    const evidence = entry === undefined ? endpoint.evidence : entry.evidence;
+    const policy = declaredPolicy(endpoint);
     return (
       '| ' +
       endpoint.method +
@@ -1575,11 +721,11 @@ function render(endpointList: Endpoint[], input: Overlay): string {
       ' | ' +
       endpoint.legacy +
       ' | ' +
-      cell(policy) +
+      cell(label(policy)) +
       ' | ' +
-      manifestTruthSource(endpoint) +
+      'code' +
       ' | ' +
-      cell(evidence.map((item) => item.file + ':' + item.line).join('; ')) +
+      cell(endpoint.evidence.map((item) => item.file + ':' + item.line).join('; ')) +
       ' |'
     );
   });
@@ -1587,7 +733,7 @@ function render(endpointList: Endpoint[], input: Overlay): string {
     '# Route Authorization Policy',
     '',
     '> Generated by scripts/generate-authz-manifest.ts. Do not hand-edit.',
-    '> Phase 1 transition: classification-overlay remains the source only until each route is transferred to a normalized declaration in code.',
+    '> Phase 1 canonical source: each route has a normalized declaration in controller code. The Phase 0 classification overlay is retired.',
     '',
     '## Declaration conventions',
     '',
@@ -1602,21 +748,22 @@ function render(endpointList: Endpoint[], input: Overlay): string {
     '',
     '| field | value |',
     '|---|---|',
-    '| schemaVersion | ' + VERSION + ' |',
-    '| generatorVersion | ' + VERSION + ' |',
+    '| schemaVersion | ' + SCHEMA_VERSION + ' |',
+    '| generatorVersion | ' + GENERATOR_VERSION + ' |',
     '| inputDigest | ' + documentDigest + ' |',
     '| endpoint count | ' + endpointList.length + ' |',
     '| legacy [auth] count | ' + auth.length + ' |',
-    '| classification JSON | ' + CLASSIFICATION + ' |',
-    '| per-route truth source | code or classification-overlay |',
+    '| source of truth | normalized controller declarations |',
+    '| retired overlay | ' + RETIRED_CLASSIFICATION + ' must be absent |',
+    '| per-route truth source | code |',
     '',
-    '## Declaration transfer coverage',
+    '## Declaration coverage',
     '',
-    '> `declared in code` and `code truth` both require a normalized decorator declaration. Until then every route remains `classification-overlay` in the endpoint inventory, including a legacy `public` or `rbac` marker with a statically inferred policy. Therefore the non-code truth count is exactly the Guard startup inventory of undeclared routes.',
+    '> Every route must carry a normalized declaration. `undeclared` is therefore the Guard startup inventory of routes that would be rejected in enforce mode.',
     '',
-    '| surface | routes | declared in code | code truth | classification-overlay truth |',
-    '|---|---:|---:|---:|---:|',
-    ...declarationTransferRows(endpointList),
+    '| surface | routes | declared in code | undeclared |',
+    '|---|---:|---:|---:|',
+    ...declarationCoverageRows(endpointList),
     '',
     '## Legacy declaration summary',
     '',
@@ -1627,13 +774,21 @@ function render(endpointList: Endpoint[], input: Overlay): string {
     '| auth | ' + (counts.auth ?? 0) + ' |',
     '| unclassified | ' + (counts.unclassified ?? 0) + ' |',
     '',
-    '## Maintainer decision table',
+    '## Phase 0 decision record',
     '',
-    '> All legacy [auth] entries have a maintainer-decided structured policy. Evidence records the handler, statically reached implementation methods, and recognized authorization signals; it is not a formal whole-program proof.',
+    '> All legacy [auth] entries were maintainer-decided in Phase 0 and are now represented by code declarations. Evidence records the handler and its direct delegate; it is not a formal whole-program proof.',
     '',
-    '| review scope | endpoint or family | decided policy | status | evidence |',
+    '| review scope | endpoint or family | declared policy | status | evidence |',
     '|---|---|---|---|---|',
-    ...decisionRows(auth, byKey),
+    ...decisionRows(auth),
+    '',
+    '## Machine-readable manifest',
+    '',
+    '> This generated JSON is the R8 scanner input. It preserves the historical `[auth]` review scope without reviving the retired overlay.',
+    '',
+    '<!-- route-authz-manifest-json',
+    machineReadableManifest(endpointList),
+    '-->',
     '',
     '## All endpoints',
     '',
@@ -1644,51 +799,16 @@ function render(endpointList: Endpoint[], input: Overlay): string {
   ].join('\n');
 }
 
-function printTransferPlan(
-  surfaces: readonly Surface[],
-  transfer: ReturnType<typeof transferPlans>,
-): void {
-  process.stdout.write(
-    'Route declaration plan (' +
-      surfaces.join(',') +
-      '): ' +
-      transfer.selected.length +
-      ' routes, ' +
-      transfer.plans.length +
-      ' declarations to insert, ' +
-      transfer.transferredOverlayEntries +
-      ' overlay entries to transfer.\n',
-  );
-  for (const plan of transfer.plans) {
-    process.stdout.write(plan.endpoint.key + ' -> ' + plan.decorators.join(' + ') + '\n');
-  }
-}
-
 async function main(): Promise<void> {
-  const bootstrapMode = process.argv.includes('--bootstrap');
-  const checkMode = process.argv.includes('--check');
-  const surfaceChecks = requestedSurfaces('--check-surface=');
-  const planSurfaces = requestedSurfaces('--plan-surface=');
-  const applySurfaces = requestedSurfaces('--apply-surface=');
-  const writeMode =
-    process.argv.includes('--write') ||
-    (!bootstrapMode && !checkMode && planSurfaces.length === 0 && applySurfaces.length === 0);
-  if (
-    (bootstrapMode ? 1 : 0) +
-      (checkMode ? 1 : 0) +
-      (writeMode ? 1 : 0) +
-      (planSurfaces.length > 0 ? 1 : 0) +
-      (applySurfaces.length > 0 ? 1 : 0) !==
-    1
-  ) {
-    throw new Error(
-      'use exactly one of --bootstrap, --write, --check, --plan-surface, or --apply-surface',
-    );
+  const args = process.argv.slice(2);
+  const checkMode = args.length === 1 && args[0] === '--check';
+  const writeMode = args.length === 0 || (args.length === 1 && args[0] === '--write');
+  if (!checkMode && !writeMode) {
+    throw new Error('use --write or --check; overlay transition modes are retired');
   }
-  if (surfaceChecks.length > 0 && !checkMode) {
-    throw new Error('--check-surface requires --check');
-  }
-  let endpointList = endpoints();
+
+  rejectRetiredOverlay();
+  const endpointList = endpoints();
   const expected = contractCount();
   if (endpointList.length !== expected) {
     throw new Error(
@@ -1698,42 +818,8 @@ async function main(): Promise<void> {
         expected,
     );
   }
-  let input: Overlay;
-  if (bootstrapMode) {
-    input = bootstrap(endpointList);
-    write(CLASSIFICATION, JSON.stringify(input, null, 2) + '\n');
-  } else {
-    input = overlay();
-    if (planSurfaces.length > 0) {
-      validate(endpointList, input);
-      printTransferPlan(planSurfaces, transferPlans(endpointList, input, planSurfaces));
-      return;
-    }
-    if (applySurfaces.length > 0) {
-      validate(endpointList, input);
-      const applied = await applySurfaceTransfer(endpointList, input, applySurfaces);
-      classCache = undefined;
-      endpointList = endpoints();
-      input = applied.input;
-      process.stdout.write(
-        'Applied route declarations (' +
-          applySurfaces.join(',') +
-          '): ' +
-          applied.selected +
-          ' routes, ' +
-          applied.inserted +
-          ' declarations inserted, ' +
-          applied.transferredOverlayEntries +
-          ' overlay entries transferred.\n',
-      );
-    } else if (writeMode) {
-      input = normalizeOverlay(input);
-      write(CLASSIFICATION, JSON.stringify(input, null, 2) + '\n');
-    }
-  }
-  validate(endpointList, input);
-  validateSurfaceCodeTruth(endpointList, input, surfaceChecks);
-  const next = render(endpointList, input);
+  validateDeclarations(endpointList);
+  const next = render(endpointList);
   const assertionPatterns = assertionPatternsDocument();
   if (checkMode) {
     if (!fs.existsSync(path.join(ROOT, DOCUMENT)) || read(DOCUMENT) !== next) {
@@ -1748,9 +834,7 @@ async function main(): Promise<void> {
     process.stdout.write(
       'Route Authorization Policy current: ' +
         endpointList.length +
-        ' endpoints, ' +
-        input.entries.length +
-        ' [auth] entries.\n',
+        ' endpoints, all code-declared.\n',
     );
     return;
   }
@@ -1759,9 +843,7 @@ async function main(): Promise<void> {
   process.stdout.write(
     'Generated Route Authorization Policy: ' +
       endpointList.length +
-      ' endpoints, ' +
-      input.entries.length +
-      ' [auth] entries.\n',
+      ' endpoints, all code-declared.\n',
   );
 }
 

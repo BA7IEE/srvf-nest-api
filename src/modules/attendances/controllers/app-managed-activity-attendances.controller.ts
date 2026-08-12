@@ -43,6 +43,7 @@ import {
   ResubmitAppManagedAttendanceSheetDto,
   UpdateAppManagedAttendanceSheetDto,
 } from '../dto/app/app-managed-attendance.dto';
+import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 
 @ApiTags('Mobile - Managed Activity Attendances')
 @ApiBearerAuth()
@@ -54,6 +55,12 @@ export class AppManagedActivityAttendancesController {
   ) {}
 
   @Get('check-ins')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 活动考勤责任人分页查看 GPS 打卡证据 [auth]' })
   @ApiWrappedPageResponse(AppManagedActivityCheckInDto)
   @ApiBizErrorResponse(
@@ -73,6 +80,12 @@ export class AppManagedActivityAttendancesController {
   }
 
   @Get('attendance-sheet-draft')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 活动考勤责任人生成考勤提交草稿（只读不落库） [auth]' })
   @ApiWrappedOkResponse(AppManagedAttendanceSheetDraftDto)
   @ApiBizErrorResponse(
@@ -91,6 +104,12 @@ export class AppManagedActivityAttendancesController {
   }
 
   @Get('attendance-sheets')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 活动考勤责任人查看考勤单列表 [auth]' })
   @ApiWrappedPageResponse(AppManagedAttendanceSheetListItemDto)
   @ApiBizErrorResponse(
@@ -111,6 +130,12 @@ export class AppManagedActivityAttendancesController {
   }
 
   @Post('attendance-sheets')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 活动考勤责任人提交考勤单 [auth]' })
   @ApiWrappedCreatedResponse(AppManagedAttendanceSheetDto)
   @ApiBizErrorResponse(
@@ -131,6 +156,12 @@ export class AppManagedActivityAttendancesController {
   }
 
   @Get('attendance-sheets/:sheetId')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 活动考勤责任人查看考勤单与 records 详情 [auth]' })
   @ApiWrappedOkResponse(AppManagedAttendanceSheetDetailDto)
   @ApiBizErrorResponse(
@@ -150,6 +181,12 @@ export class AppManagedActivityAttendancesController {
   }
 
   @Patch('attendance-sheets/:sheetId')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary: 'App 活动考勤责任人编辑 pending 或 returned 考勤单(活动已取消拒绝改 records) [auth]',
   })
@@ -174,6 +211,12 @@ export class AppManagedActivityAttendancesController {
   }
 
   @Delete('attendance-sheets/:sheetId')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 活动考勤责任人软删 pending 考勤单 [auth]' })
   @ApiWrappedOkResponse(AppManagedAttendanceSheetDto)
   @ApiBizErrorResponse(
@@ -194,6 +237,12 @@ export class AppManagedActivityAttendancesController {
   }
 
   @Post('attendance-sheets/:sheetId/resubmit')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 活动考勤责任人重提 returned 考勤单 [auth]' })
   @ApiWrappedOkResponse(AppManagedAttendanceSheetDto)

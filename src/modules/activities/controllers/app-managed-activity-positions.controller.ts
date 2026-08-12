@@ -38,6 +38,7 @@ import {
   CreateAppManagedActivityPositionDto,
   UpdateAppManagedActivityPositionDto,
 } from '../dto/app/app-managed-activity.dto';
+import { LoginScoped, RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 
 @ApiTags('Mobile - Managed Activity Positions')
 @ApiBearerAuth()
@@ -49,6 +50,12 @@ export class AppManagedActivityPositionsController {
   ) {}
 
   @Get()
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: 'App 查看我管理活动的岗位 [auth]' })
   @ApiWrappedArrayResponse(AppManagedActivityPositionDto)
   @ApiBizErrorResponse(
@@ -65,6 +72,13 @@ export class AppManagedActivityPositionsController {
   }
 
   @Post()
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @RequiresPermission('activity-responsibility.override.record')
   @ApiOperation({ summary: 'App 发起人为 draft 活动新增岗位 [auth]' })
   @ApiWrappedCreatedResponse(AppManagedActivityPositionDto)
   @ApiBizErrorResponse(
@@ -90,6 +104,13 @@ export class AppManagedActivityPositionsController {
   }
 
   @Patch(':activityPositionId')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @RequiresPermission('activity-responsibility.override.record')
   @ApiOperation({ summary: 'App 发起人修改 draft 活动岗位 [auth]' })
   @ApiWrappedOkResponse(AppManagedActivityPositionDto)
   @ApiBizErrorResponse(
@@ -116,6 +137,13 @@ export class AppManagedActivityPositionsController {
   }
 
   @Delete(':activityPositionId')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @RequiresPermission('activity-responsibility.override.record')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'App 发起人删除 draft 活动岗位 [auth]' })
   @ApiWrappedOkResponse(AppManagedActivityPositionDto)

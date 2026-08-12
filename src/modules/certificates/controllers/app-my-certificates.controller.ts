@@ -13,6 +13,7 @@ import { BizCode } from '../../../common/exceptions/biz-code.constant';
 import { AppMyCertificatesService } from '../app-my-certificates.service';
 import { AppMyCertificateDto } from '../dto/app/app-my-certificate.dto';
 import { ListAppMyCertificatesQueryDto } from '../dto/app/list-app-my-certificates-query.dto';
+import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 
 // Phase 2 P2-7 App /api/app/v1/my/certificates Mobile Controller(1 endpoint)。
 // 沿 docs/app-api-p2-7-my-certificates-review.md §7.2 + D-P2-7-10:
@@ -41,6 +42,12 @@ export class AppMyCertificatesController {
   // ============ GET /api/app/v1/my/certificates(P2-7)============
 
   @Get('certificates')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({
     summary:
       '我的证书列表(本人 pending / verified / expired / rejected 全部可见;分页 + 可选 certStatusCode / certTypeCode 过滤) [auth]',
