@@ -22,7 +22,7 @@ const SCRATCH_WORKER_ID = 83;
 const MIGRATION_NAME = '20260809223000_activity_v11_batch4_qualification_contract_guards';
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
 const MIGRATION_82_COUNT = 82;
-const CURRENT_MIGRATION_COUNT = 86;
+const CURRENT_MIGRATION_COUNT = 87;
 // 这两例分别完整执行一次和五次冷库 82→83 重放；不能由 Jest 默认 30 秒截断。
 const COLD_MIGRATION_REPLAY_TIMEOUT_MS = 180_000;
 
@@ -735,7 +735,7 @@ describe('第 83 migration qualification contract guards', () => {
     }
   });
 
-  it('replays all current 86 migrations from a literally empty database', () => {
+  it('replays all current 87 migrations from a literally empty database', () => {
     const databaseName = recreateEmptyScratchDatabase();
     try {
       deployCurrentMigrations(databaseName);
@@ -934,7 +934,7 @@ describe('第 83 migration qualification contract guards', () => {
   );
 
   it(
-    'five independent D83 migration mutations each rebuild a cold current 86 database and make its protected violation pass',
+    'five independent D83 migration mutations each rebuild a cold current 87 database and make its protected violation pass',
     async () => {
       const fullCompositeFk = `ALTER TABLE "ActivityQualificationRuleSet"
   ADD CONSTRAINT "activity_qualification_rule_set_activity_session_position_fkey"

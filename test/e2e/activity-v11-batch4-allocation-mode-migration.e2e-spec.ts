@@ -21,7 +21,7 @@ const SCRATCH_WORKER_ID = 84;
 const MIGRATION_NAME = '20260812100000_activity_v11_batch4_activity_allocation_mode';
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
 const MIGRATION_83_COUNT = 83;
-const CURRENT_MIGRATION_COUNT = 86;
+const CURRENT_MIGRATION_COUNT = 87;
 const ALLOCATION_MODE_CONSTRAINT = 'activity_allocation_mode_code_ck';
 const COLD_MIGRATION_REPLAY_TIMEOUT_MS = 300_000;
 
@@ -385,7 +385,7 @@ describe('第 84 migration activity allocation mode', () => {
   });
 
   it(
-    'replays all current 86 migrations from an empty database and enforces the exact column contract',
+    'replays all current 87 migrations from an empty database and enforces the exact column contract',
     () => {
       const databaseName = recreateEmptyScratchDatabase();
       try {
