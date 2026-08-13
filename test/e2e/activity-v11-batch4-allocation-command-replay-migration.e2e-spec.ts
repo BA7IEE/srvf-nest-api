@@ -22,6 +22,7 @@ const MIGRATION_NAME = '20260813100000_activity_v11_batch4_allocation_command_re
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
 const MIGRATION_85_COUNT = 85;
 const MIGRATION_86_COUNT = 86;
+const CURRENT_MIGRATION_COUNT = 87;
 const COLD_REPLAY_TIMEOUT_MS = 300_000;
 const RESPONSE_SCHEMA_VERSION = 'allocation-command-response-v1';
 const HASH_A = 'a'.repeat(64);
@@ -149,6 +150,12 @@ interface CandidateOptions {
   registrationRevisionId?: string;
   resultCode?: 'allocated' | 'waitlisted' | 'not_selected' | null;
   waitlistRank?: number | null;
+}
+
+interface D87CandidateAnchors {
+  activityId: string;
+  sessionId: string;
+  waitlistPositionId: string | null;
 }
 
 interface RevisionOptions {
@@ -333,7 +340,12 @@ function deployMigrationsThrough85(databaseName: string): void {
   const sourceMigrationsRoot = path.join(prismaRoot, 'migrations');
   const names = migrationNames();
   const migration86Index = names.indexOf(MIGRATION_NAME);
-  const baselineEnd = migration86Index === -1 ? names.length : migration86Index;
+  if (migration86Index + 1 !== MIGRATION_86_COUNT) {
+    throw new Error(
+      `expected D86 to be migration ${MIGRATION_86_COUNT}; got ${migration86Index + 1}`,
+    );
+  }
+  const baselineEnd = migration86Index;
   if (baselineEnd !== MIGRATION_85_COUNT) {
     throw new Error(`expected an exact 85-migration baseline; got ${baselineEnd}`);
   }
@@ -621,21 +633,41 @@ function legacyBatchSql(fixture: Fixture, id: string): string {
      ${sqlValue(`operation-${id}`)},NULL)`;
 }
 
-function candidateSql(fixture: Fixture, id: string, options: CandidateOptions): string {
+function candidateSql(
+  fixture: Fixture,
+  id: string,
+  options: CandidateOptions,
+  d87Anchors?: D87CandidateAnchors,
+): string {
   const identityId = options.participationIdentityId ?? fixture.identityId;
   const registration = identityRegistration(fixture, identityId);
   const resultCode = valueOr(options, 'resultCode', null);
   const waitlistRank = valueOr(options, 'waitlistRank', resultCode === 'waitlisted' ? 1 : null);
+  const d87Columns = d87Anchors ? ',"activityId","sessionId","waitlistPositionId"' : '';
+  const d87Values = d87Anchors
+    ? `,${sqlValue(d87Anchors.activityId)},${sqlValue(d87Anchors.sessionId)},${sqlNullable(d87Anchors.waitlistPositionId)}`
+    : '';
   return `INSERT INTO "ActivityAllocationCandidate"
-    ("id","updatedAt","allocationBatchId","participationIdentityId","registrationId",
+    ("id","updatedAt","allocationBatchId"${d87Columns},"participationIdentityId","registrationId",
      "registrationRevisionId","acceptedAt","qualificationSnapshotHash","qualificationScore",
      "tieBreakKey","lotteryOrder","resultCode","waitlistRank","explanation")
    VALUES
-    (${sqlValue(id)},CURRENT_TIMESTAMP,${sqlValue(options.allocationBatchId)},${sqlValue(identityId)},
+    (${sqlValue(id)},CURRENT_TIMESTAMP,${sqlValue(options.allocationBatchId)}${d87Values},${sqlValue(identityId)},
      ${sqlValue(options.registrationId ?? registration.registrationId)},
      ${sqlValue(options.registrationRevisionId ?? registration.registrationRevisionId)},
      TIMESTAMP '${ACCEPTED_AT}',${sqlValue(HASH_D)},NULL,${sqlValue(`tie-${id}`)},NULL,
      ${sqlNullable(resultCode)},${waitlistRank === null ? 'NULL' : String(waitlistRank)},'{}'::jsonb)`;
+}
+
+function currentCandidateSql(fixture: Fixture, id: string, options: CandidateOptions): string {
+  const identityId = options.participationIdentityId ?? fixture.identityId;
+  const identity = identityProjectionFacts(fixture, identityId);
+  const resultCode = valueOr(options, 'resultCode', null);
+  return candidateSql(fixture, id, options, {
+    activityId: fixture.activityId,
+    sessionId: identity.sessionId,
+    waitlistPositionId: resultCode === 'waitlisted' ? fixture.positionId : null,
+  });
 }
 
 function revisionSql(fixture: Fixture, id: string, options: RevisionOptions): string {
@@ -805,6 +837,7 @@ function insertProjectionSubject(
   resultCode: ProjectionOptions['appliedResultCode'],
   identityId = fixture.identityId,
   revision = 1,
+  includeD87Anchors = false,
 ): ProjectionSubject {
   const batchId = `batch-${suffix}`;
   const candidateId = `candidate-${suffix}`;
@@ -816,7 +849,7 @@ function insertProjectionSubject(
   );
   runPsql(
     databaseName,
-    candidateSql(fixture, candidateId, {
+    (includeD87Anchors ? currentCandidateSql : candidateSql)(fixture, candidateId, {
       allocationBatchId: batchId,
       participationIdentityId: identityId,
       resultCode,
@@ -832,6 +865,25 @@ function insertProjectionSubject(
     }),
   );
   return { batchId, candidateId, revisionId, identityId };
+}
+
+function insertCurrentProjectionSubject(
+  databaseName: string,
+  fixture: Fixture,
+  suffix: string,
+  resultCode: ProjectionOptions['appliedResultCode'],
+  identityId = fixture.identityId,
+  revision = 1,
+): ProjectionSubject {
+  return insertProjectionSubject(
+    databaseName,
+    fixture,
+    suffix,
+    resultCode,
+    identityId,
+    revision,
+    true,
+  );
 }
 
 function d86ArtifactCount(databaseName: string): number {
@@ -1309,12 +1361,12 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
   });
 
   it(
-    'upgrades a true D85 database with no D86 migration/schema drift and exposes D86 relations by introspection',
+    'upgrades a true D85 database through current D87 with no D86 migration/schema drift and exposes D86 relations by introspection',
     () => {
       const databaseName = recreateMigration85Scratch();
       try {
         deployCurrentMigrations(databaseName);
-        expect(successfulMigrationCount(databaseName)).toBe(MIGRATION_86_COUNT);
+        expect(successfulMigrationCount(databaseName)).toBe(CURRENT_MIGRATION_COUNT);
         const sourceDiff = migrationDiffFromMigrations();
         const after = migrationDiffFromDatabase(databaseName);
         expect(sourceDiff).toBe(EXPECTED_PRISMA_LEGACY_DIFF);
@@ -1337,12 +1389,12 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
   );
 
   it(
-    'replays all 86 migrations from empty and accepts prepare, commit, void receipts plus every legal projection shape',
+    'replays all 87 migrations from empty and accepts prepare, commit, void receipts plus every legal projection shape',
     () => {
       const databaseName = recreateEmptyScratchDatabase();
       try {
         deployCurrentMigrations(databaseName);
-        expect(successfulMigrationCount(databaseName)).toBe(MIGRATION_86_COUNT);
+        expect(successfulMigrationCount(databaseName)).toBe(CURRENT_MIGRATION_COUNT);
         const fixture = createFixture(databaseName, 'legal-shapes');
 
         runPsql(databaseName, batchSql(fixture, 'batch-receipt-prepare'));
@@ -1361,7 +1413,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
         );
         runPsql(databaseName, receiptSql(fixture, 'receipt-void', 'batch-receipt-void', 'void'));
 
-        const allocatedNoPosition = insertProjectionSubject(
+        const allocatedNoPosition = insertCurrentProjectionSubject(
           databaseName,
           fixture,
           'legal-allocated-no-position',
@@ -1378,7 +1430,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
             appliedResultCode: 'allocated',
           }),
         );
-        const allocatedPosition = insertProjectionSubject(
+        const allocatedPosition = insertCurrentProjectionSubject(
           databaseName,
           fixture,
           'legal-allocated-position',
@@ -1398,7 +1450,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
             positionBucketId: fixture.positionBucketId,
           }),
         );
-        const sharedActivityPersonFirstSession = insertProjectionSubject(
+        const sharedActivityPersonFirstSession = insertCurrentProjectionSubject(
           databaseName,
           fixture,
           'legal-shared-activity-person-first-session',
@@ -1415,7 +1467,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
             appliedResultCode: 'allocated',
           }),
         );
-        const sharedActivityPersonSecondSession = insertProjectionSubject(
+        const sharedActivityPersonSecondSession = insertCurrentProjectionSubject(
           databaseName,
           fixture,
           'legal-shared-activity-person-second-session',
@@ -1446,7 +1498,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
                 'projection-shared-activity-person-second-session')`,
           ),
         ).toBe('2:1:2:2');
-        const waitlisted = insertProjectionSubject(
+        const waitlisted = insertCurrentProjectionSubject(
           databaseName,
           fixture,
           'legal-waitlisted',
@@ -1464,7 +1516,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
             appliedResultCode: 'waitlisted',
           }),
         );
-        const notSelected = insertProjectionSubject(
+        const notSelected = insertCurrentProjectionSubject(
           databaseName,
           fixture,
           'legal-not-selected',
@@ -1631,7 +1683,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
       try {
         deployCurrentMigrations(databaseName);
         const fixture = createFixture(databaseName, 'projection-violations');
-        const missingPointer = insertProjectionSubject(
+        const missingPointer = insertCurrentProjectionSubject(
           databaseName,
           fixture,
           'missing-pointer',
@@ -1653,7 +1705,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
           '23514',
           'activity_allocation_app_projection_active_res_shape_check',
         );
-        const wrongPopulation = insertProjectionSubject(
+        const wrongPopulation = insertCurrentProjectionSubject(
           databaseName,
           fixture,
           'wrong-population',
@@ -1673,7 +1725,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
           '23514',
           'activity_allocation_app_projection_result_status_check',
         );
-        const positionHalf = insertProjectionSubject(
+        const positionHalf = insertCurrentProjectionSubject(
           databaseName,
           fixture,
           'position-half',
@@ -1693,7 +1745,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
           '23514',
           'activity_allocation_app_projection_position_shape_check',
         );
-        const reservationHalf = insertProjectionSubject(
+        const reservationHalf = insertCurrentProjectionSubject(
           databaseName,
           fixture,
           'reservation-half',
@@ -1713,7 +1765,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
           '23514',
           'activity_allocation_app_projection_active_res_shape_check',
         );
-        const inactiveResidual = insertProjectionSubject(
+        const inactiveResidual = insertCurrentProjectionSubject(
           databaseName,
           fixture,
           'inactive-residual',
@@ -1740,7 +1792,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
         runPsql(databaseName, batchSql(fixture, 'batch-anchor-b', { statusCode: 'committed' }));
         runPsql(
           databaseName,
-          candidateSql(fixture, 'candidate-anchor-a', {
+          currentCandidateSql(fixture, 'candidate-anchor-a', {
             allocationBatchId: 'batch-anchor-a',
             resultCode: 'waitlisted',
           }),
@@ -1776,7 +1828,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
           'activity_allocation_app_projection_revision_anchor_fkey',
         );
 
-        const wrongMemberReservation = insertProjectionSubject(
+        const wrongMemberReservation = insertCurrentProjectionSubject(
           databaseName,
           fixture,
           'wrong-member-activity-person-reservation',
@@ -1801,7 +1853,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
           databaseName,
           fixture,
         );
-        const wrongActivity = insertProjectionSubject(
+        const wrongActivity = insertCurrentProjectionSubject(
           databaseName,
           fixture,
           'wrong-activity-activity-person-reservation',
@@ -1822,7 +1874,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
           'activity_allocation_app_projection_activity_reservation_fkey',
         );
 
-        const wrongSessionReservation = insertProjectionSubject(
+        const wrongSessionReservation = insertCurrentProjectionSubject(
           databaseName,
           fixture,
           'wrong-session-reservation',
@@ -1844,7 +1896,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
           'activity_allocation_app_projection_session_reservation_fkey',
         );
 
-        const wrongPositionReservation = insertProjectionSubject(
+        const wrongPositionReservation = insertCurrentProjectionSubject(
           databaseName,
           fixture,
           'wrong-position-reservation',
@@ -1870,7 +1922,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
         runPsql(databaseName, batchSql(fixture, 'batch-preparing-mutability'));
         runPsql(
           databaseName,
-          candidateSql(fixture, 'candidate-preparing-mutability', {
+          currentCandidateSql(fixture, 'candidate-preparing-mutability', {
             allocationBatchId: 'batch-preparing-mutability',
           }),
         );
@@ -1887,7 +1939,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
           ),
         ).toBe('0');
 
-        const immutable = insertProjectionSubject(
+        const immutable = insertCurrentProjectionSubject(
           databaseName,
           fixture,
           'projection-immutable',

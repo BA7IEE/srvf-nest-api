@@ -21,7 +21,7 @@
 | 模块 | 37 |
 | Controller | 94 |
 | Endpoint | 498 |
-| Migration | 86 |
+| Migration | 87 |
 | BizCode | 428 |
 | 权限码 | 234 |
 | AuditLogEvent | 138 |
@@ -46,7 +46,7 @@
 - **安全**:审计SA全量/持码非SA仅self|USER；敏感读闭锁/extra禁PII；Decision 15.1=B/15.2=B(业务负责人最终确认:2026-07-27):C/N管理=SA|GLOBAL读码(ADMIN不直通)，部门=PRIMARY/SECONDARY/TEMPORARY/SUPPORT有效任职+组织ACTIVE；RBAC任期单轨，ops-admin现任常驻/同锁重读
 - **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 - **证书标准库(PR-1→PR-6 + 评审 findings F1–F6)**:类别/等级唯一权威=`CertificateStandard`(实例侧零副本);认定规则由录入时锁定的 `recognitionPolicyId` 记住、换版**不追溯**;招新申报一证一行,发号只搬 APPROVED 且不重判。**需求 = 冻结稿 + [`t0-amendments`](archive/reviews/certificate-standard-library-t0-amendments.md) 两份合起来**(冲突以后者为准);三份 runbook 见 `ops/certificate-*`
-- **活动业务改造**（activity-business-overhaul-v1.1）：86；永久头/保险revision/参与投影、D83资格runtime已落。D84 allocationMode runtime以v4根锁/20152闭合父子mode；D85冻结算法/候选资格hash/lottery commit-reveal/顺序DB合同。D86 immutable prepare/commit/void receipt、batch void、每candidate projection（identity=id/activity/session/member；同member跨session共用activity-person；session/position=identity+bucket；FK/CHECK/guard；hash排除responseHash，JSONB不保序，DB不重算）。D85/86非空→count-only 23514原子失败、零回填。default仅兼容旧server/存量；资格配置/发布/邀请/命令/20147/容量/候补待（NEXT_TASKS P1-28）。
+- **活动（activity-business-overhaul-v1.1）**：87；永久头/保险revision/参与投影、D83资格runtime已落。D84 allocationMode以v4根锁/20152闭合父子；D85冻结算法、资格hash、lottery承诺揭示、排序DB合同。D86冻结备/交/废回执、batch作废、候选投影（身份四键、跨session共用activity-person、session/position键+bucket、FK/CHECK/guard；hash排除responseHash，JSONB不保序，DB不重算）。D87候选必填activityId/sessionId、waitlistPositionId可空；批次/岗位均复合FK；result/rank/position闭集；rank按batch+position分区。D85–87候选非空preflight均count-only 23514原子失败、零回填。default只兼容旧server/存量；资格配置/发布/邀请/命令/20147/容量/候补caller待（NEXT_TASKS P1-28）。
 
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)
 
