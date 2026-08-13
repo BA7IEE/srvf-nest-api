@@ -405,13 +405,15 @@ function targetOf(expression, info, receiverAliases, targetAliases) {
 function localBindings(method, info) {
   /** @type {Array<import('typescript').VariableDeclaration>} */
   const declarations = [];
+  /** @type {Array<import('typescript').VariableDeclaration>} */
+  const destructurings = [];
   const visit = (node) => {
-    if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      node.initializer !== undefined
-    ) {
-      declarations.push(node);
+    if (ts.isVariableDeclaration(node) && node.initializer !== undefined) {
+      if (ts.isIdentifier(node.name)) declarations.push(node);
+      // `const { can } = this.authz` — the method is lifted off the service and
+      // called bare, so there is no receiver left in the call expression for the
+      // property-access reading to match. Collected separately below.
+      else if (ts.isObjectBindingPattern(node.name)) destructurings.push(node);
     }
     node.forEachChild(visit);
   };
@@ -452,6 +454,27 @@ function localBindings(method, info) {
       }
     }
     if (!changed) break;
+  }
+  // Destructured methods resolve after the alias fixed point, so that
+  // `const svc = this.authz; const { can } = svc;` also lands. Each bound name
+  // becomes the same {receiver, receiverType, method} triple a property access
+  // would have produced — the registered matcher is unchanged, only the way the
+  // call is written differs.
+  for (const declaration of destructurings) {
+    const receiver = resolvedReceiver(declaration.initializer, receiverAliases);
+    if (receiver === null) continue;
+    const receiverType = info.dependencies.get(receiver) ?? null;
+    for (const element of /** @type {import('typescript').ObjectBindingPattern} */ (
+      declaration.name
+    ).elements) {
+      if (!ts.isIdentifier(element.name)) continue;
+      // `const { can: check } = ...` — the *property* is the method name.
+      const method =
+        element.propertyName !== undefined && ts.isIdentifier(element.propertyName)
+          ? element.propertyName.text
+          : element.name.text;
+      targetAliases.set(element.name.text, { receiver, receiverType, method });
+    }
   }
   return { strings, receiverAliases, targetAliases };
 }

@@ -131,9 +131,16 @@ per-(file, symbol) 计数器，同方法内**别的**发现增减就会移位；
 4. 动态 `select`/`include`/`where` 形状无法证明归入任何读档。（未变）
 5. 语义读只识别「静态时间窗 + 状态谓词」组合。（未变）
 6. raw SQL 只匹配由 `@@map` / Prisma 默认表名派生的字面物理表名。（未变）
-7. **R8 的接收者*表达式*形态未 typed 化**：本刀只把接收者**类型名**的解析改为 typed，
-   `const svc = this.authz; svc.can(...)` 这类**中转/解构接收者**仍不识别。
-   ⇒ 见 §6 的 EC-COMMON 第 4 条达标声明。
+7. **R8 的 `scope self` 判据缺失**（43 条 T3 的成因，见 §9）。`self` 在本仓**没有断言调用**，
+   是「由构造保证」——handler 把 `@CurrentUser()` 的身份传下去、从不接受调用方提供的主体 id。
+   它需要的是**数据流判据**（主体源自 `@CurrentUser()` 且无调用方可控 id 到达主体位置），
+   属于**新的 matcher 类别**，不是往现有 `staticMatchers` 表里加一行 —— 现有 matcher 形状
+   （receiverTypes / methods / outcome）在这里匹配不到任何东西，硬塞一行等于编造一个不存在
+   的调用。且其单源 `AUTHZ_ASSERTION_PATTERNS` 位于 `src/common/authz/authz-context.ts`
+   （`harness/authz-assertion-patterns.json` 是 `generate-authz-manifest.ts --write` 的投影，
+   直接改 JSON 会被 stale 检查拦下），改动落在 `src/**` 且受 R15 治理。
+   **维护者 2026-08-13 拍板：另立项**，本刀不做（判据写松会给真实越权端点盖上「self 已证明」
+   的章，负样例正是 IDOR 形状，比不做更糟）。
 8. ESLint `no-restricted-syntax` 那一层（`eslint.harness.mjs` 内 5 条对抗样例）仍是**字面
    语法拦截**，其中就有 `const db = this.prisma; db.user.delete()` 这条中转绕过。
    本刀关掉的是**边界扫描器**里的同形缺口，**不是**那一层 —— 两层各自记账，别混算。
@@ -145,17 +152,40 @@ per-(file, symbol) 计数器，同方法内**别的**发现增减就会移位；
 | R5 跨域写 | ✅ 已达标 | ✅ alias / destructuring / variable-forwarding / re-export 各有正样例，另加 tx 改名、窄口、计算属性，及 2 条负样例 |
 | R6 跨域读 | ✅ 同上（同一解析层） | ✅ 同上 |
 | R2/R3 依赖与环 | ✅ import 图 AST 天然可靠；四形态全覆盖 | ✅ re-export 正样例 + 三形态「当前为 0」到期闸（EC 表已注明 R2/R3 不适用第 5 条） |
-| R8 T1/T2 | ⚠️ **部分达标** —— 接收者**类型名**解析已 typed；接收者**表达式**（中转 / 解构）未做 | ⚠️ **未达标** —— 只有别名一类有正样例；destructuring / variable-forwarding / re-export 三类**没有** R8 侧样例 |
+| R8 T1/T2 | ✅ 已达标 —— 接收者**类型名**按声明处解析；接收者**表达式**的中转与解构均已覆盖 | ✅ 四类各一正一负，共 8 条样例 |
 
-**R8 的第 3/4 条是本刀未做完的部分，须在 R8 转 blocking 前补齐**（见 §7）。
-其余规则的第 3/4 条已达标。第 5 条（`$queryRaw` 通道）R5/R6 已纳入且接收者亦按类型判定。
+第 5 条（`$queryRaw` 通道）R5/R6 已纳入且接收者亦按类型判定。
+
+### 6.1 R8 四类样例实测（收尾一刀补齐）
+
+| 绕过类 | 正样例 | 负样例（形似但无后果分支，不得算断言） |
+|---|---|---|
+| 别名 | `type RenamedAuthz = AuthzService` → T2/closed | 同别名但裸调用 → T3/candidate |
+| 中转 | `const svc = this.authz; svc.can(...)` → T2/closed | 同中转但裸调用 → T3/candidate |
+| 解构 | `const { can } = this.authz; can(...)` → T2/closed | 同解构但裸调用 → T3/candidate |
+| re-export | origin → hub → 探针（**真跨文件三段链**） → T2/closed | 同链但裸调用 → T3/candidate |
+
+两处需要如实记账：
+
+1. **中转本来就已支持**。上一版报告写「接收者表达式（中转/解构）仍不识别」是**错的** ——
+   规则早有 `receiverAliases` 定点求解，中转正样例第一次跑就绿。真正缺的只有**解构**
+   （`localBindings` 用 `ts.isIdentifier(node.name)` 过滤，`ObjectBindingPattern` 被丢掉）。
+   本刀补的是解构一类，其余三类是**补样例、证明既有能力**，不是补能力。
+2. **负样例落 T3/candidate 而不是 T2/mismatch**。没有任何观察命中时，规则连「够到了一层
+   service」都没证成，于是诚实报不可判。两者都是「未获证明」，T3 更保守。样例钉的是
+   **实测行为**，不是预期行为。
+
+补完后**全仓分布不变**（T1=4 / T2=2 / T3=113 / N-A=9）—— 本仓没有解构接收者的实例，
+与 D1/D2/D3 同形：新增的是免疫力，不是当期发现。
 
 ## 7. 本次未做
 
 - **不转任何规则为 blocking**（转闸需观察期数据 + Exit Criteria 打勾单，另立项）。
 - **不做 T3 标注补齐**（本刀只重扫出数）。
 - **不做 R6 升级**（永久 report 已拍板）。
-- **R8 接收者表达式的 typed 化**与其 destructuring / forwarding / re-export 三类样例（§6）。
+- **`scope self` 数据流判据**（§5 第 7 条）—— 维护者拍板另立项。该刀须自带：新 matcher 类别
+  的设计、IDOR 形状负样例的 red-first、`src/common/authz/authz-context.ts` 的授权（R15 治理面）。
+  本刀因此**未消解那 43 条 T3**。
 - **`require:any` 的 OR 结构完整性**：现规则要求**每个**声明码都有对应断言（v4 逐码要求已满足），
   但**不验证这些分支确实是 OR 组合**。全仓仅 2 个端点声明 `require:any`，影响面已知且极小。
 - **CI 接线**：`pnpm docs:boundaries:ids:check` 已可用，但未写入 `.github/workflows/ci.yml`
