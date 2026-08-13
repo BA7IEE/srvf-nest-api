@@ -3560,6 +3560,7 @@ model ActivitySessionPosition {
   // 第 1 批第五刀(§3.11):岗位志愿与岗位级分配批次。
   positionPreferences ActivityPositionPreference[]
   allocationBatches   ActivityAllocationBatch[]    @relation("AllocationBatchPosition")
+  allocationWaitlistCandidates ActivityAllocationCandidate[] @relation("AllocationCandidateWaitlistPosition")
   allocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionPosition")
 
   @@unique([activityId, sessionId, id], map: "activity_session_position_activity_session_id_key")
@@ -5366,6 +5367,11 @@ model ActivityAllocationCandidate {
   updatedAt DateTime @updatedAt
 
   allocationBatchId         String
+  // D87：Candidate 自身冻结 batch 的活动/场次事实；两列必填且不靠 runtime 回推。
+  activityId                String
+  sessionId                 String
+  // 仅 waitlisted 结果非空；与 activityId/sessionId 一起复合锚定真实场次岗位。
+  waitlistPositionId        String?
   participationIdentityId   String
   registrationId            String
   registrationRevisionId    String
@@ -5380,9 +5386,10 @@ model ActivityAllocationCandidate {
   waitlistRank Int?
   explanation  Json
 
-  allocationBatch       ActivityAllocationBatch       @relation(fields: [allocationBatchId], references: [id], onDelete: Restrict)
-  participationIdentity ActivityParticipationIdentity @relation(fields: [participationIdentityId, registrationId], references: [id, registrationId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_identity_registration_fkey")
-  registrationRevision  ActivityRegistrationRevision  @relation(fields: [registrationId, registrationRevisionId], references: [registrationId, id], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_registration_revision_fkey")
+  allocationBatch        ActivityAllocationBatch                   @relation(fields: [allocationBatchId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_batch_anchor_fkey")
+  waitlistPosition       ActivitySessionPosition?                  @relation("AllocationCandidateWaitlistPosition", fields: [activityId, sessionId, waitlistPositionId], references: [activityId, sessionId, id], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_waitlist_position_fkey")
+  participationIdentity  ActivityParticipationIdentity             @relation(fields: [participationIdentityId, registrationId], references: [id, registrationId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_identity_registration_fkey")
+  registrationRevision   ActivityRegistrationRevision              @relation(fields: [registrationId, registrationRevisionId], references: [registrationId, id], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_registration_revision_fkey")
   // Prisma 对复合 FK + 被引用方单列 unique 无法同时表达 1:1；DB 的 projection
   // candidate 单列 unique 才是权威一对一保证，关系仍保留完整同 batch/identity 锚。
   applicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationCandidateApplicationProjection")
@@ -5392,7 +5399,7 @@ model ActivityAllocationCandidate {
   @@unique([allocationBatchId, participationIdentityId], map: "activity_allocation_candidate_batch_identity_key")
   @@unique([id, allocationBatchId, participationIdentityId], map: "activity_allocation_candidate_id_batch_identity_unique")
   @@unique([allocationBatchId, tieBreakKey], map: "activity_allocation_candidate_batch_tie_break_key")
-  @@index([allocationBatchId, waitlistRank], map: "activity_allocation_candidate_batch_rank_idx")
+  @@index([allocationBatchId, waitlistPositionId, waitlistRank], map: "activity_allocation_candidate_batch_position_rank_idx")
   @@index([allocationBatchId], map: "activity_allocation_candidate_batch_idx")
   @@index([participationIdentityId], map: "activity_allocation_candidate_identity_idx")
   @@index([registrationId, registrationRevisionId], map: "activity_allocation_candidate_registration_revision_idx")

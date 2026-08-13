@@ -209,6 +209,9 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
     id: string,
     o: {
       allocationBatchId?: string;
+      activityId?: string;
+      sessionId?: string;
+      waitlistPositionId?: string | null;
       participationIdentityId?: string;
       registrationId?: string;
       registrationRevisionId?: string;
@@ -224,6 +227,9 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
   ) => {
     const v = {
       allocationBatchId: 'batch-a',
+      activityId,
+      sessionId,
+      waitlistPositionId: null as string | null,
       participationIdentityId: identityId,
       registrationId,
       registrationRevisionId,
@@ -240,10 +246,12 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
     const s = (x: string | null) => (x === null ? 'NULL' : `'${x}'`);
     const n = (x: number | null) => (x === null ? 'NULL' : String(x));
     return `INSERT INTO "ActivityAllocationCandidate"
-      ("id","updatedAt","allocationBatchId","participationIdentityId","qualificationScore",
+      ("id","updatedAt","allocationBatchId","activityId","sessionId","waitlistPositionId",
+       "participationIdentityId","qualificationScore",
        "registrationId","registrationRevisionId","acceptedAt","qualificationSnapshotHash",
        "tieBreakKey","lotteryOrder","resultCode","waitlistRank","explanation")
-      VALUES ('${id}', ${T(SESSION_START)}, '${v.allocationBatchId}', '${v.participationIdentityId}',
+      VALUES ('${id}', ${T(SESSION_START)}, '${v.allocationBatchId}', '${v.activityId}',
+       '${v.sessionId}', ${s(v.waitlistPositionId)}, '${v.participationIdentityId}',
        ${n(v.qualificationScore)}, '${v.registrationId}', '${v.registrationRevisionId}',
        ${T(v.acceptedAt)}, '${v.qualificationSnapshotHash}', ${s(v.tieBreakKey)},
        ${n(v.lotteryOrder)}, ${s(v.resultCode)}, ${n(v.waitlistRank)},
@@ -735,10 +743,10 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
       );
     });
 
-    it('两条外键都是真外键(批次 / 参与身份)', async () => {
+    it('批次复合锚与参与身份外键都是真外键', async () => {
       await expectRejected(candidateSql('x', { allocationBatchId: 'no-such-batch' }), {
         sqlState: '23503',
-        constraint: 'ActivityAllocationCandidate_allocationBatchId_fkey',
+        constraint: 'activity_allocation_candidate_batch_anchor_fkey',
       });
       await expectRejected(candidateSql('y', { participationIdentityId: 'no-such-identity' }), {
         sqlState: '23503',
@@ -763,7 +771,8 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
       await expectAccepted(candidateSql('c-1'));
       await expectAccepted(
         `UPDATE "ActivityAllocationCandidate"
-         SET "resultCode" = 'waitlisted', "waitlistRank" = 5, "updatedAt" = ${T(SESSION_END)}
+         SET "resultCode" = 'waitlisted', "waitlistRank" = 5,
+             "waitlistPositionId" = '${positionId}', "updatedAt" = ${T(SESSION_END)}
          WHERE "id" = 'c-1'`,
       );
       const [row] = await prisma.$queryRaw<Array<{ resultCode: string; waitlistRank: number }>>`
@@ -804,6 +813,7 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
           allocationBatchId: 'batch-b',
           resultCode: 'waitlisted',
           waitlistRank: 1,
+          waitlistPositionId: positionId,
         }),
       );
       await expectAccepted(
@@ -832,18 +842,18 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
         'ActivityAllocationCandidate_pkey',
         'activity_allocation_candidate_batch_identity_key',
         'activity_allocation_candidate_batch_lottery_order_unique',
+        'activity_allocation_candidate_batch_position_rank_unique',
         'activity_allocation_candidate_batch_tie_break_key',
-        'activity_allocation_candidate_batch_waitlist_rank_unique',
         'activity_allocation_candidate_id_batch_identity_unique',
       ]);
       expect(uniques.every((u) => !u.indexdef.includes('NULLS NOT DISTINCT'))).toBe(true);
     });
 
-    it('§11.4 点名的可索引 rank 确实存在(候补排名不靠每次全队列重排)', async () => {
+    it('D87 点名的岗位候补 rank 查询索引确实存在', async () => {
       const indexes = await prisma.$queryRaw<Array<{ indexname: string }>>`
         SELECT indexname FROM pg_indexes
         WHERE tablename = 'ActivityAllocationCandidate'
-          AND indexname = 'activity_allocation_candidate_batch_rank_idx'
+          AND indexname = 'activity_allocation_candidate_batch_position_rank_idx'
       `;
       expect(indexes).toHaveLength(1);
     });

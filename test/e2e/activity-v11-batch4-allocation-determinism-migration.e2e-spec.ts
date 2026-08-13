@@ -20,7 +20,8 @@ const SCRATCH_WORKER_ID = 85;
 const MIGRATION_NAME = '20260812180000_activity_v11_batch4_allocation_determinism_guards';
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
 const MIGRATION_84_COUNT = 84;
-const CURRENT_MIGRATION_COUNT = 86;
+const MIGRATION_85_COUNT = 85;
+const CURRENT_MIGRATION_COUNT = 87;
 const COLD_REPLAY_TIMEOUT_MS = 300_000;
 const HASH_A = 'a'.repeat(64);
 const HASH_B = 'b'.repeat(64);
@@ -196,6 +197,44 @@ function deployMigrationsThrough84(databaseName: string): void {
   }
 
   const temporaryPrismaRoot = mkdtempSync(path.join(tmpdir(), 'srvf-allocation-d85-84-'));
+  const temporaryMigrationsRoot = path.join(temporaryPrismaRoot, 'migrations');
+  const temporarySchemaPath = path.join(temporaryPrismaRoot, 'schema.prisma');
+  try {
+    mkdirSync(temporaryMigrationsRoot);
+    copyFileSync(path.join(prismaRoot, 'schema.prisma'), temporarySchemaPath);
+    copyFileSync(
+      path.join(sourceMigrationsRoot, 'migration_lock.toml'),
+      path.join(temporaryMigrationsRoot, 'migration_lock.toml'),
+    );
+    for (const name of names.slice(0, baselineEnd)) {
+      cpSync(path.join(sourceMigrationsRoot, name), path.join(temporaryMigrationsRoot, name), {
+        recursive: true,
+        force: false,
+        errorOnExist: true,
+      });
+    }
+    execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy', '--schema', temporarySchemaPath], {
+      cwd: process.cwd(),
+      env: { ...process.env, DATABASE_URL: scratchDatabaseUrl(databaseName) },
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } finally {
+    rmSync(temporaryPrismaRoot, { recursive: true, force: true });
+  }
+}
+
+function deployMigrationsThrough85(databaseName: string): void {
+  const prismaRoot = path.resolve(process.cwd(), 'prisma');
+  const sourceMigrationsRoot = path.join(prismaRoot, 'migrations');
+  const names = migrationNames();
+  const migration85Index = names.indexOf(MIGRATION_NAME);
+  const baselineEnd = migration85Index + 1;
+  if (migration85Index < 0 || baselineEnd !== MIGRATION_85_COUNT) {
+    throw new Error(`expected an exact 85-migration historical chain; got ${baselineEnd}`);
+  }
+
+  const temporaryPrismaRoot = mkdtempSync(path.join(tmpdir(), 'srvf-allocation-d85-85-'));
   const temporaryMigrationsRoot = path.join(temporaryPrismaRoot, 'migrations');
   const temporarySchemaPath = path.join(temporaryPrismaRoot, 'schema.prisma');
   try {
@@ -669,8 +708,8 @@ describe('Activity v1.1 batch4 allocation determinism migration', () => {
         expect(oldCandidateForeignKey(databaseName)).toBe(
           'ActivityAllocationCandidate_participationIdentityId_fkey',
         );
-        deployCurrentMigrations(databaseName);
-        expect(successfulMigrationCount(databaseName)).toBe(CURRENT_MIGRATION_COUNT);
+        deployMigrationsThrough85(databaseName);
+        expect(successfulMigrationCount(databaseName)).toBe(MIGRATION_85_COUNT);
         expect(oldCandidateForeignKey(databaseName)).toBe('');
         expect(d85Artifacts(databaseName)).toEqual([
           'column:ActivityAllocationBatch.algorithmVersionCode',
@@ -765,7 +804,7 @@ describe('Activity v1.1 batch4 allocation determinism migration', () => {
   );
 
   it(
-    'replays all current 86 migrations from empty and enforces batch hashes, versions and seed lifecycle',
+    'replays all current 87 migrations from empty and enforces batch hashes, versions and seed lifecycle',
     () => {
       const databaseName = recreateEmptyScratchDatabase();
       try {
@@ -899,7 +938,7 @@ describe('Activity v1.1 batch4 allocation determinism migration', () => {
     () => {
       const databaseName = recreateMigration84Scratch();
       try {
-        deployCurrentMigrations(databaseName);
+        deployMigrationsThrough85(databaseName);
         const fixture = createFixture(databaseName, 'candidate-shapes');
         runPsql(databaseName, batchSql(fixture, 'batch-main', { modeCode: 'lottery' }));
         runPsql(
