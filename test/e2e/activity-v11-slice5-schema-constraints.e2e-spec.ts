@@ -156,6 +156,8 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
       operationKey?: string;
       requestHash?: string | null;
       committedAt?: string | null;
+      voidReason?: string | null;
+      voidedAt?: string | null;
     } = {},
   ) => {
     const v = {
@@ -182,16 +184,25 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
         : v.modeCode === 'lottery' && v.statusCode === 'committed'
           ? HASH_C
           : null;
+    const voidReason =
+      o.voidReason !== undefined
+        ? o.voidReason
+        : v.statusCode === 'voided'
+          ? 'D86 legal voided batch fixture'
+          : null;
+    const voidedAt =
+      o.voidedAt !== undefined ? o.voidedAt : v.statusCode === 'voided' ? SESSION_END : null;
     const s = (x: string | null) => (x === null ? 'NULL' : `'${x}'`);
     return `INSERT INTO "ActivityAllocationBatch"
       ("id","updatedAt","activityId","sessionId","positionId","modeCode","candidateSnapshotHash",
        "algorithmVersionCode","randomCommitment","randomSeedReveal","statusCode","operationKey",
-       "requestHash","createdByUserId","committedAt")
+       "requestHash","createdByUserId","committedAt","voidReason","voidedAt")
       VALUES ('${id}', ${T(SESSION_START)}, '${activityId}', '${v.sessionId}', ${s(v.positionId)},
        '${v.modeCode}', ${s(v.candidateSnapshotHash)}, '${v.algorithmVersionCode}',
        ${s(randomCommitment)}, ${s(randomSeedReveal)}, '${v.statusCode}', '${v.operationKey}',
        ${s(v.requestHash)}, '${userId}',
-       ${v.committedAt === null ? 'NULL' : T(v.committedAt)})`;
+       ${v.committedAt === null ? 'NULL' : T(v.committedAt)}, ${s(voidReason)},
+       ${voidedAt === null ? 'NULL' : T(voidedAt)})`;
   };
 
   const candidateSql = (
@@ -569,7 +580,7 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
       // preparing:committedAt 必须允许为 NULL —— 这正是把它放宽成可空的**唯一**理由
       await expectAccepted(batchSql('s1', { statusCode: 'preparing', committedAt: null }));
       await expectAccepted(batchSql('s2', { statusCode: 'committed', committedAt: SESSION_END }));
-      // voided 两种形态都合法:从未提交就作废 / 先提交后作废(§5.4 重新抽签 void 旧 batch)
+      // D86 voided 还必须有合法 reason/time；两种历史形态仍为未提交即作废 / 提交后作废。
       await expectAccepted(batchSql('s3', { statusCode: 'voided', committedAt: null }));
       await expectAccepted(batchSql('s4', { statusCode: 'voided', committedAt: SESSION_END }));
       // positionId 可空:NULL = 场次级批次;有值 = 岗位级批次
@@ -683,10 +694,13 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
         WHERE tablename = 'ActivityAllocationBatch' AND indexdef LIKE '%UNIQUE%'
         ORDER BY indexname
       `;
-      // 本表除主键外**唯一的**唯一索引是 operationKey 单列(NOT NULL)。
+      // D86 为复合 FK 增加 id/activity 与 id/activity/session 被引用唯一键；
+      // operationKey 仍是本表的单列幂等键。
       // (PG 把主键索引也渲染成 `CREATE UNIQUE INDEX` ⇒ pkey 必然在结果集里。)
       expect(uniques.map((u) => u.indexname)).toEqual([
         'ActivityAllocationBatch_pkey',
+        'activity_allocation_batch_id_activity_session_unique',
+        'activity_allocation_batch_id_activity_unique',
         'activity_allocation_batch_operation_key_key',
       ]);
       expect(uniques.every((u) => !u.indexdef.includes('positionId'))).toBe(true);
@@ -820,6 +834,7 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
         'activity_allocation_candidate_batch_lottery_order_unique',
         'activity_allocation_candidate_batch_tie_break_key',
         'activity_allocation_candidate_batch_waitlist_rank_unique',
+        'activity_allocation_candidate_id_batch_identity_unique',
       ]);
       expect(uniques.every((u) => !u.indexdef.includes('NULLS NOT DISTINCT'))).toBe(true);
     });
@@ -1109,6 +1124,7 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
             '"ActivityAllocationCandidate"', '"ActivityReservedQuotaGroup"')
         ORDER BY conname
       `;
+      // D86 在既有 batch CHECK 集合中增加 voided 事实形状约束。
       expect(checks.map((c) => c.conname)).toEqual([
         'activity_allocation_batch_algorithm_version_code_check',
         'activity_allocation_batch_candidate_snapshot_hash_check',
@@ -1117,6 +1133,7 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
         'activity_allocation_batch_mode_code_check',
         'activity_allocation_batch_status_code_check',
         'activity_allocation_batch_status_committed_at_check',
+        'activity_allocation_batch_void_shape_check',
         'activity_allocation_candidate_explanation_object_check',
         'activity_allocation_candidate_lottery_order_one_based_check',
         'activity_allocation_candidate_qualification_score_range_check',
