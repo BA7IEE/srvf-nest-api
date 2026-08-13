@@ -68,6 +68,26 @@ const FRAGMENT_MARKER = 'authz-downgrade';
 const SUPPORTED_MANIFEST_SCHEMA = '1.0.0';
 const SUPPORTED_GRAPH_SCHEMA = '1.0.0';
 
+/**
+ * 蕴含图 ↔ seed 绑定矩阵一致性核对**是否已实现**。
+ *
+ * ── 这是一道「到期闸」,不是一个开关 ────────────────────────────────────────
+ * v4 §7 的 R14 Exit Criteria 要求「蕴含图与 seed 绑定矩阵做一致性核对,声明边与现实
+ * 矛盾即告警」。Phase 5 **没做**它 —— 理由是初始边集为空(维护者拍板),这条核对当前
+ * 真空;而实现它需要解析 `prisma/seed.ts` 的角色→码矩阵(TS AST),会破坏本文件
+ * 「零依赖 / tsx 与裸 node 双运行时」这条地基,而那条地基是 base-trusted 裁判能与本地
+ * **共用同一份判据**的前提 —— 比这条核对更根本。
+ *
+ * 但「本次未做」不能只写在报告里等人记得。沿本仓既有范式:**「此刻不存在」型判据
+ * 必须写明到期条件**。到期条件就是「有人往蕴含图里加第一条边」——
+ * 边集一旦非空,`validateGraph` 立即红,要求先补核对。
+ *
+ * ⚠️ 把本常量改成 `true` **必须同时真的实现**并导出 `crossCheckSeedBindings`,
+ * 且从 `validateGraph` 调用它。`scripts/harness-guards.selftest.ts` 有结构断言守着
+ * 这一点 —— 只翻标志位不实现,自测当场红。本文件在 selfGuard 内,翻它还要过红区人闸。
+ */
+const SEED_CROSS_CHECK_IMPLEMENTED = false;
+
 export type Mode =
   | 'PUBLIC'
   | 'LOGIN_ONLY'
@@ -256,6 +276,22 @@ export function validateGraph(
   }
   if (!Array.isArray(graph.edges)) {
     push('蕴含图缺少 edges 数组', '补 "edges": [];空集是合法且已拍板的默认立场');
+    return findings;
+  }
+  // ── 到期闸:加第一条边 ⇒ 必须先补 seed 一致性核对 ────────────────────────
+  // 「本次未做」写在报告里会被忘记,写成执行位不会。到期条件 = 边集非空。
+  if (graph.edges.length > 0 && !SEED_CROSS_CHECK_IMPLEMENTED) {
+    push(
+      '蕴含图已有 ' +
+        graph.edges.length +
+        ' 条边,但「蕴含图 ↔ seed 绑定矩阵一致性核对」尚未实现(v4 §7 R14 Exit Criteria)',
+      '加蕴含图边前须先补一致性核对:核对声明边与 seed 现实是否矛盾,矛盾即告警。' +
+        '**接法不得破坏比较器的零依赖 / 双运行时地基** —— 那是 base-trusted 裁判' +
+        '与本地共用同一份判据的前提(解析 prisma/seed.ts 需要 TS AST,不能直接塞进本文件;' +
+        '可行方向是另出一支只在 Fast checks 跑的检查器,把核对结果落成登记表字段)。' +
+        '实现后把 SEED_CROSS_CHECK_IMPLEMENTED 置 true 并导出 crossCheckSeedBindings;' +
+        '⚠️ 只翻标志位不实现会被 harness-guards.selftest 的结构断言当场抓到。',
+    );
     return findings;
   }
   const seen = new Set<string>();

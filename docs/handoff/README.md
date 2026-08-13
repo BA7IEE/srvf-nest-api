@@ -71,6 +71,44 @@ release 收口(E 档,`srvf-release-closeout` 九阶段)末尾再统一核一次:
 
 ---
 
+## 2.5 生成的 TS client(`clients/`,派生物,禁手改)
+
+> **字段真相仍以 live `/api/docs-json` 为准。** 本目录的 client 是从 `openapi.json` 快照派生的**便利产物**,
+> 与 §0 铁原则一致:机器能自校验的东西以后端生成物为准,这里只生成、不手抄、不当第二事实源。
+
+| 产物 | 内容 |
+|---|---|
+| [`clients/admin/`](clients/admin/) | Admin 管理后台(`/api/admin/**`)的 `types.ts` + `client.ts` |
+| [`clients/app/`](clients/app/) | App 小程序(`/api/app/**`)的 `types.ts` + `client.ts` |
+
+刷新:**`pnpm docs:feclient`**;新鲜度由 `pnpm docs:feclient:check` 在 CI Docs guards 同链守护
+(契约改了而 client 没刷新、或产物被手改 → 当场红)。
+
+**产物边界(刻意很窄)**:
+
+- 只有**类型与调用签名**。**不含 baseURL、不含令牌、不含任何鉴权逻辑** —— 传输层由消费方注入一个
+  `Fetcher`,登录态怎么带、令牌怎么刷新全在前端仓自己手里(三步登录接线见 [`admin-web.md §3.1`](admin-web.md))。
+- `code/message/data` envelope 与分页形状按仓内既有契约表达为 `ApiEnvelope<T>` / `PageResult<T>`。
+- 头部带确定性 `inputDigest`,**不含时间戳/git SHA**(治理登记表元规范:时间戳会让逐字比对恒假红)。
+- **只生成 admin 与 app 两个 surface**。`auth/v1`(登录/刷新)、`system/v1`、`open/v1` **不在内** ——
+  auth 是全端通用接线、已单独成节,要不要一并生成留维护者拍板,本刀不替他决定。
+
+用法示意(消费方自备 fetcher,凭证不经过本产物):
+
+```ts
+import { createAdminClient } from './clients/admin/client';
+
+const client = createAdminClient(async (req) => {
+  const res = await fetch(myBaseUrl + req.path + toQuery(req.query), {
+    method: req.method,
+    headers: { ...myAuthHeaders() },        // ← 令牌由前端仓自理,产物里没有它
+    body: req.body ? JSON.stringify(req.body) : undefined,
+  });
+  return res.json();
+});
+const { data } = await client.getMe();
+```
+
 ## 3. 双向怎么用
 
 - **后端 → 前端**:改了能力 → 照 §2 对照表更新 admin-web/miniapp 能力图 + 刷 openapi;前端据此对接。

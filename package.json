@@ -54,6 +54,8 @@
     "gate:authz:semantic": "tsx scripts/authz-semantic-diff.ts --base origin/main",
     "gate:authz:graph:check": "tsx scripts/authz-semantic-diff.ts --validate-graph",
     "gate:contract:semantic": "tsx scripts/contract-semantic-diff.ts --base origin/main",
+    "docs:feclient": "tsx scripts/generate-fe-client.ts",
+    "docs:feclient:check": "tsx scripts/generate-fe-client.ts --check",
     "docs:boundaries": "tsx scripts/check-boundaries.ts --violations",
     "docs:boundaries:check": "tsx scripts/check-boundaries.ts --metadata",
     "docs:boundaries:debt:check": "tsx scripts/check-boundaries.ts --debt-check",
