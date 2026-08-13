@@ -57,21 +57,81 @@ function gitPath(name: string): string {
   return path.isAbsolute(p) ? p : path.join(repoRoot, p);
 }
 
-// 自测必须测「基线执法强度」,与当前是否恰好持有授权令牌无关 ——
-// 否则维护者授权期间跑自测会得到「拦不住」的假失败,反过来无授权时又测不到放行路径。
-// 因此整段测试期间把令牌移开,结束后原样放回(含异常路径)。
-const grantFile = gitPath('srvf-redzone-grant.json');
-const grantBackup = `${grantFile}.selftest-bak`;
-const hadGrant = fs.existsSync(grantFile);
-if (hadGrant) fs.renameSync(grantFile, grantBackup);
-function restoreGrant(): void {
-  if (hadGrant && fs.existsSync(grantBackup)) fs.renameSync(grantBackup, grantFile);
+// 自测必须测「基线执法强度」,与当前 worktree 是否恰好持有 token / marker 无关。
+// 否则维护者授权期间会出现「拦不住」的假失败；反过来，陈旧的 preflight marker
+// 又会让放行路径被前一次会话污染。两者均在本次自测开始时隔离，退出时原样恢复。
+function isolateHookState(file: string, label: string): () => void {
+  const backup = `${file}.hooks-selftest-bak`;
+  if (fs.existsSync(backup)) {
+    throw new Error(`hook selftest ${label} 备份残留：${backup}；拒绝覆盖未知状态`);
+  }
+  const existed = fs.existsSync(file);
+  if (existed) fs.renameSync(file, backup);
+  return () => {
+    fs.rmSync(file, { force: true });
+    if (existed && fs.existsSync(backup)) fs.renameSync(backup, file);
+  };
 }
-process.on('exit', restoreGrant);
+
+// 四个 preflight-gate 对照替换的是 agent-preflight 的输出，故必须同时固定
+// preflight 自己的环境前提。fresh checkout 的 prisma/schema.prisma mtime 会天然
+// 晚于复用的 node_modules，若不隔离该条件，gate 会在调用 fake preflight 前就退出，
+// 造成「本地四红、CI 四绿」的环境耦合假象。这里只暂时提升生成物时间戳，finally
+// 恢复原值；不写 schema、不运行 generate，也不改变实际 gate 行为。
+function stabilizePreflightFixtureEnvironment(): () => void {
+  const pnpmRoot = path.join(repoRoot, 'node_modules/.pnpm');
+  const generatedSchema = fs
+    .readdirSync(pnpmRoot)
+    .sort()
+    .map((entry) => path.join(pnpmRoot, entry, 'node_modules/.prisma/client/schema.prisma'))
+    .find((candidate) => fs.existsSync(candidate));
+  if (!generatedSchema) {
+    throw new Error(
+      'hook selftest 前提不满足：缺少已生成 Prisma client；先跑 pnpm prisma:generate。',
+    );
+  }
+  const sourceStat = fs.statSync(path.join(repoRoot, 'prisma/schema.prisma'));
+  const generatedStat = fs.statSync(generatedSchema);
+  if (generatedStat.mtimeMs >= sourceStat.mtimeMs) return () => undefined;
+
+  fs.utimesSync(
+    generatedSchema,
+    new Date(generatedStat.atimeMs),
+    new Date(sourceStat.mtimeMs + 1_000),
+  );
+  return () => {
+    fs.utimesSync(
+      generatedSchema,
+      new Date(generatedStat.atimeMs),
+      new Date(generatedStat.mtimeMs),
+    );
+  };
+}
+
+const restoreHookSelftestState: Array<() => void> = [];
+try {
+  restoreHookSelftestState.push(
+    isolateHookState(gitPath('srvf-redzone-grant.json'), 'red-zone token'),
+    isolateHookState(gitPath('srvf-preflight.json'), 'preflight marker'),
+    stabilizePreflightFixtureEnvironment(),
+  );
+} catch (error) {
+  for (const restore of restoreHookSelftestState.reverse()) restore();
+  throw error;
+}
+let hookSelftestRestored = false;
+function restoreHookSelftestEnvironment(): void {
+  if (hookSelftestRestored) return;
+  hookSelftestRestored = true;
+  for (const restore of [...restoreHookSelftestState].reverse()) restore();
+}
+process.on('exit', restoreHookSelftestEnvironment);
 process.on('SIGINT', () => {
-  restoreGrant();
+  restoreHookSelftestEnvironment();
   process.exit(130);
 });
+
+console.log('ℹ hook selftest 环境：已隔离 red-zone token / preflight marker，并固定 Prisma 生成物前提。');
 
 // ---- redzone-guard:红区与裁判保护 ----
 expectExit('redzone:AGENTS.md 拒绝', 'redzone-guard.sh', edit('AGENTS.md'), 2);
@@ -315,10 +375,7 @@ expectExit('bash:重定向 /dev/null 放行', 'bash-write-guard.sh', bash('pnpm 
   const realPreflight = path.join(repoRoot, 'scripts/agent-preflight.sh');
   const backup = `${realPreflight}.selftest-bak`;
   const marker = gitPath('srvf-preflight.json');
-  const markerBackup = `${marker}.gate-selftest-bak`;
-  const hadMarker = fs.existsSync(marker);
   const hadReal = fs.existsSync(realPreflight);
-  if (hadMarker) fs.renameSync(marker, markerBackup);
   if (hadReal) fs.copyFileSync(realPreflight, backup);
 
   const runGate = (): { markerWritten: boolean; ctx: string } => {
@@ -392,7 +449,6 @@ expectExit('bash:重定向 /dev/null 放行', 'bash-write-guard.sh', bash('pnpm 
       fs.rmSync(backup, { force: true });
     }
     fs.rmSync(marker, { force: true });
-    if (hadMarker) fs.renameSync(markerBackup, marker);
   }
 }
 

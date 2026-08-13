@@ -953,6 +953,7 @@ checkEq(
       'src',
       'prisma/schema.prisma',
       'harness/domain-map.json',
+      'harness/architecture-debt.json',
       'harness/state-machines.json',
       'harness/authz-assertion-patterns.json',
       'docs/ai-harness/ROUTE_AUTHZ.md',
@@ -971,11 +972,272 @@ checkEq(
     );
     const fixtureDomainMap = path.join(fixtureRoot, 'harness/domain-map.json');
     const originalDomainMap = fs.readFileSync(fixtureDomainMap, 'utf8');
+
+    // Phase 2 R5/R6:在临时副本里放入一组最小 Prisma 形态。这里刻意不编译
+    // 该文件；扫描器应当只依赖 AST + schema/登记表，不应靠业务测试或运行时。
+    const phase2FixtureRel = 'src/modules/activities/phase2-boundary-fixture.ts';
+    const phase2FixtureFile = path.join(fixtureRoot, phase2FixtureRel);
+    fs.writeFileSync(
+      phase2FixtureFile,
+      [
+        '',
+        'class Phase2BoundaryFixture {',
+        '  kernelAllowed() {',
+        "    return this.prisma.user.findMany({ where: { id: 'u' }, select: { id: true, status: true } });",
+        '  }',
+        '  kernelPredicateViolation() {',
+        "    return this.prisma.user.findMany({ where: { username: 'u' }, select: { id: true } });",
+        '  }',
+        '  kernelOmitViolation() {',
+        "    return this.prisma.user.findMany({ omit: { username: true } });",
+        '  }',
+        '  includeViolation() {',
+        '    return this.prisma.activityRegistration.findMany({ include: { member: true } });',
+        '  }',
+        '  factAllowed() {',
+        '    return this.prisma.rbacRole.findMany({ select: { id: true, code: true } });',
+        '  }',
+        '  factRejected() {',
+        '    return this.prisma.rbacRole.findMany({ select: { id: true } });',
+        '  }',
+        '  semanticControl() {',
+        "    return this.prisma.user.findMany({ where: { status: 'ACTIVE' }, select: { id: true } });",
+        '  }',
+        '  semanticViolation() {',
+        '    return this.prisma.user.findMany({',
+        "      where: { status: 'ACTIVE', createdAt: { gte: new Date('2026-01-01') } },",
+        '      select: { id: true },',
+        '    });',
+        '  }',
+        '  dynamicViolation() {',
+        '    const select = { id: true };',
+        '    return this.prisma.user.findMany({ select });',
+        '  }',
+        '  rawSameDomainControl() {',
+        "    return this.prisma.$queryRawUnsafe('SELECT 1 FROM \\\"Activity\\\"');",
+        '  }',
+        '  rawDefaultTableViolation() {',
+        "    return this.prisma.$queryRawUnsafe('SELECT 1 FROM \\\"User\\\"');",
+        '  }',
+        '  rawMappedTableViolation() {',
+        "    return this.prisma.$queryRawUnsafe('SELECT 1 FROM roles');",
+        '  }',
+        '  sameSubdomainWriteControl() {',
+        "    return this.prisma.activity.updateMany({ data: { title: 'x' } });",
+        '  }',
+        '  observedSubdomainWriteViolation() {',
+        "    return this.prisma.activityRegistration.updateMany({ data: { statusCode: 'x' } });",
+        '  }',
+        '}',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    const phase2Map = JSON.parse(originalDomainMap) as {
+      crossDomainReadAllowlist: Array<Record<string, string>>;
+      moduleOwnership: Record<string, { subdomain?: string }>;
+    };
+    phase2Map.crossDomainReadAllowlist.push({
+      sourceDomain: 'participation',
+      sourceModule: 'activities',
+      targetDomain: 'platform-access',
+      prismaModel: 'RbacRole',
+      operation: 'findMany',
+      sourceFile: phase2FixtureRel,
+      sourceSymbol: 'Phase2BoundaryFixture.factAllowed',
+      accessPath: 'RbacRole',
+      observedBy: 'Phase 2 synthetic positive control',
+      reviewTrigger: 'selftest only',
+    });
+    const phase2WithoutObservedSubdomainWrite = JSON.parse(JSON.stringify(phase2Map)) as typeof phase2Map;
+    phase2WithoutObservedSubdomainWrite.moduleOwnership['activity-registrations'].subdomain =
+      phase2WithoutObservedSubdomainWrite.moduleOwnership.activities.subdomain;
+    fs.writeFileSync(
+      fixtureDomainMap,
+      JSON.stringify(phase2WithoutObservedSubdomainWrite, null, 2) + '\n',
+      'utf8',
+    );
+    const phase2WithoutObservedSubdomainWriteScan = runFixture('scripts/check-boundaries.ts', [
+      '--violations',
+    ]);
+    fs.writeFileSync(fixtureDomainMap, JSON.stringify(phase2Map, null, 2) + '\n', 'utf8');
+    const phase2Scan = runFixture('scripts/check-boundaries.ts', ['--violations']);
+    fs.writeFileSync(fixtureDomainMap, originalDomainMap, 'utf8');
+    fs.rmSync(phase2FixtureFile, { force: true });
+    type Phase2Finding = {
+      kind: string;
+      disposition: string;
+      prismaModel: string | null;
+      callSiteId: string;
+      location: { file: string; symbol: string };
+      details: Record<string, unknown>;
+    };
+    type Phase2EdgeUsage = {
+      from: string;
+      to: string;
+      importCount: number;
+      crossDomainAccessCount: number;
+    };
+    let phase2Findings: Phase2Finding[] = [];
+    let phase2WithoutObservedSubdomainWriteFindings: Phase2Finding[] = [];
+    let phase2DeclaredEdgeUsage: Phase2EdgeUsage[] = [];
+    let phase2UndeclaredDirectionUsage: Phase2EdgeUsage[] = [];
+    try {
+      const phase2Output = JSON.parse(phase2Scan.out) as {
+        findings: typeof phase2Findings;
+        edgeUsage: {
+          declaredEdges: typeof phase2DeclaredEdgeUsage;
+          undeclaredDirections: typeof phase2UndeclaredDirectionUsage;
+        };
+      };
+      phase2Findings = phase2Output.findings;
+      phase2DeclaredEdgeUsage = phase2Output.edgeUsage.declaredEdges;
+      phase2UndeclaredDirectionUsage = phase2Output.edgeUsage.undeclaredDirections;
+      phase2WithoutObservedSubdomainWriteFindings = (
+        JSON.parse(phase2WithoutObservedSubdomainWriteScan.out) as {
+          findings: typeof phase2WithoutObservedSubdomainWriteFindings;
+        }
+      ).findings;
+    } catch {
+      // 由下一个断言输出原始执行结果，避免 JSON 解析异常遮住真正的自测原因。
+    }
+    const phase2Detail = phase2Scan.out.slice(-8000);
+    const phase2Local = phase2Findings.filter((item) => item.location.file === phase2FixtureRel);
+    const phase2WithoutObservedSubdomainWriteLocal =
+      phase2WithoutObservedSubdomainWriteFindings.filter(
+        (item) => item.location.file === phase2FixtureRel,
+      );
+    const localKind = (kind: string, symbol: string): typeof phase2Local =>
+      phase2Local.filter((item) => item.kind === kind && item.location.symbol === symbol);
+    const platformCoreToAccessUsage = phase2DeclaredEdgeUsage.find(
+      (item) => item.from === 'platform-core' && item.to === 'platform-access',
+    );
+    check(
+      'P2 D4 已声明边使用统计:platform-core→platform-access import 数与手工计数一致',
+      platformCoreToAccessUsage?.importCount === 17 &&
+        !phase2UndeclaredDirectionUsage.some(
+          (item) => item.from === 'platform-core' && item.to === 'platform-access',
+        ),
+      phase2Detail,
+    );
+    check(
+      'P2 R5 kernel 读正例:显式 select 与 kernel 谓词进入第一档',
+      localKind('cross-domain-kernel-read', 'Phase2BoundaryFixture.kernelAllowed').length === 1,
+      phase2Detail,
+    );
+    check(
+      'P2 R5 kernel 读负例:omit 不能替代 select，必被报出',
+      localKind('cross-domain-kernel-read-violation', 'Phase2BoundaryFixture.kernelOmitViolation')
+        .length === 1,
+      phase2Detail,
+    );
+    check(
+      'P2 R5 kernel 读负例:裸 include 拉取他域整行，必被报出',
+      localKind('cross-domain-kernel-read-violation', 'Phase2BoundaryFixture.includeViolation')
+        .length === 1,
+      phase2Detail,
+    );
+    check(
+      'P2 R5 kernel 谓词负例:可返回字段不自动可作谓词',
+      localKind(
+        'cross-domain-kernel-predicate-violation',
+        'Phase2BoundaryFixture.kernelPredicateViolation',
+      ).length === 1,
+      phase2Detail,
+    );
+    check(
+      'P2 R5 二档正例:精确 allowlist 仅放行实测调用点',
+      localKind('cross-domain-fact-read', 'Phase2BoundaryFixture.factAllowed').length === 1,
+      phase2Detail,
+    );
+    check(
+      'P2 R5 二档负例:没有 allowlist 的事实读仍列候选',
+      localKind('cross-domain-fact-read-candidate', 'Phase2BoundaryFixture.factRejected').length ===
+        1,
+      phase2Detail,
+    );
+    check(
+      'P2 R5 三档正例:单独状态条件不被误认成语义时间窗查询',
+      localKind('cross-domain-semantic-read-candidate', 'Phase2BoundaryFixture.semanticControl')
+        .length === 0,
+      phase2Detail,
+    );
+    check(
+      'P2 R5 三档负例:他域状态加时间窗组合必列属主谓词候选',
+      localKind('cross-domain-semantic-read-candidate', 'Phase2BoundaryFixture.semanticViolation')
+        .length === 1,
+      phase2Detail,
+    );
+    check(
+      'P2 R5 动态形状负例:动态 select 不会被静默归入任何读档',
+      localKind('cross-domain-read-dynamic', 'Phase2BoundaryFixture.dynamicViolation').length ===
+        1,
+      phase2Detail,
+    );
+    const rawFindings = phase2Local.filter((item) => item.kind === 'raw-cross-domain-table');
+    check(
+      'P2 R6 raw SQL 正例:同域物理表不产生跨域表命中',
+      rawFindings.every(
+        (item) => item.location.symbol !== 'Phase2BoundaryFixture.rawSameDomainControl',
+      ),
+      phase2Detail,
+    );
+    check(
+      'P2 R6 raw SQL 负例:Prisma 默认物理表名 User 必被命中',
+      rawFindings.some(
+        (item) =>
+          item.location.symbol === 'Phase2BoundaryFixture.rawDefaultTableViolation' &&
+          item.prismaModel === 'User' &&
+          item.details.physicalTable === 'User' &&
+          item.details.physicalTableSource === 'prisma-model-default',
+      ),
+      phase2Detail,
+    );
+    check(
+      'P2 R6 raw SQL 负例:@@map 物理表名 roles 必被命中',
+      rawFindings.some(
+        (item) =>
+          item.location.symbol === 'Phase2BoundaryFixture.rawMappedTableViolation' &&
+          item.prismaModel === 'RbacRole' &&
+          item.details.physicalTable === 'roles' &&
+          item.details.physicalTableSource === '@@map',
+      ),
+      phase2Detail,
+    );
+    check(
+      'P2 R6 子域写正例:同一 observed subdomain 不记跨子域写',
+      localKind(
+        'observed-subdomain-cross-owner-write',
+        'Phase2BoundaryFixture.sameSubdomainWriteControl',
+      ).length === 0,
+      phase2Detail,
+    );
+    check(
+      'P2 R6 子域写负例:participation 子域间写路径单列观察',
+      localKind(
+        'observed-subdomain-cross-owner-write',
+        'Phase2BoundaryFixture.observedSubdomainWriteViolation',
+      ).length === 1,
+      phase2Detail,
+    );
+    const observedWriteSymbol = 'Phase2BoundaryFixture.observedSubdomainWriteViolation';
+    const originalDirectWrite = phase2Local.filter(
+      (item) => item.kind === 'cross-owner-write' && item.location.symbol === observedWriteSymbol,
+    );
+    const noObservationDirectWrite = phase2WithoutObservedSubdomainWriteLocal.filter(
+      (item) => item.kind === 'cross-owner-write' && item.location.symbol === observedWriteSymbol,
+    );
+    check(
+      'P2 R6 新增子域观察不改变同一真实写的既有 callSiteId',
+      originalDirectWrite.length === 1 &&
+        noObservationDirectWrite.length === 1 &&
+        originalDirectWrite[0].callSiteId === noObservationDirectWrite[0].callSiteId,
+      `${phase2Detail}\n${phase2WithoutObservedSubdomainWriteScan.out.slice(-4000)}`,
+    );
     const confirmedButPendingMap = JSON.parse(originalDomainMap) as {
-      publicSurface: { confirmed: boolean };
       decisionsPending: string[];
     };
-    confirmedButPendingMap.publicSurface.confirmed = true;
+    confirmedButPendingMap.decisionsPending.push('publicSurface');
     fs.writeFileSync(
       fixtureDomainMap,
       JSON.stringify(confirmedButPendingMap, null, 2) + '\n',
@@ -992,11 +1254,10 @@ checkEq(
       confirmedButPending.out,
     );
     const unlistedPendingMap = JSON.parse(originalDomainMap) as {
+      publicSurface: { confirmed: boolean };
       decisionsPending: string[];
     };
-    unlistedPendingMap.decisionsPending = unlistedPendingMap.decisionsPending.filter(
-      (decision) => decision !== 'publicSurface',
-    );
+    unlistedPendingMap.publicSurface.confirmed = false;
     fs.writeFileSync(fixtureDomainMap, JSON.stringify(unlistedPendingMap, null, 2) + '\n', 'utf8');
     const unlistedPending = runFixture('scripts/check-boundaries.ts', ['--metadata']);
     fs.writeFileSync(fixtureDomainMap, originalDomainMap, 'utf8');

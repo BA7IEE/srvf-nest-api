@@ -5,10 +5,12 @@
  *   --metadata validates registry completeness and freshness.
  *   --violations inventories current findings and always stays report-only.
  *
- * Known gaps: aliases/destructuring/wrappers and variable forwarding; dynamic
- * delegates and SQL; tsconfig aliases/re-export chains/runtime loading; semantic
- * read intent; and non-literal raw SQL. Each is reported as uncertain rather
- * than treated as safe.
+ * Known gaps: Prisma aliases/destructuring/wrappers and variable forwarding;
+ * dynamic delegates and computed property access; tsconfig aliases, re-export
+ * chains and runtime module loading; dynamic/non-literal SQL (including template
+ * interpolations); dynamic select/include/where shapes; and semantic-read intent
+ * beyond the explicit time-window + status-predicate heuristic. Each is reported
+ * as uncertain rather than treated as safe.
  *
  * Identity recipe:
  * callSiteId = hash(file + symbol + ordinal + normalized call)
@@ -24,6 +26,7 @@ import * as ts from 'typescript';
 const ROOT = path.resolve(__dirname, '..');
 const DOMAIN_MAP = 'harness/domain-map.json';
 const STATE_MACHINES = 'harness/state-machines.json';
+const ARCHITECTURE_DEBT = 'harness/architecture-debt.json';
 const VERSION = '1.0.0';
 
 type JsonRecord = Record<string, unknown>;
@@ -31,8 +34,13 @@ type JsonRecord = Record<string, unknown>;
 interface SchemaModel {
   name: string;
   fields: string[];
+  scalarFields: string[];
+  relationFields: Record<string, string>;
   stateFields: string[];
+  statusPredicateFields: string[];
+  dateFields: string[];
   tableName: string;
+  tableNameSource: '@@map' | 'prisma-model-default';
 }
 
 interface Owner {
@@ -54,6 +62,17 @@ interface GovernanceConfirmation {
   confirmed: boolean;
 }
 
+interface ReadAllowlistEntry extends JsonRecord {
+  sourceDomain: string;
+  sourceModule: string;
+  targetDomain: string;
+  prismaModel: string;
+  operation: string;
+  sourceFile: string;
+  sourceSymbol: string;
+  accessPath: string;
+}
+
 interface DomainMap {
   schemaVersion: string;
   generatorVersion: string;
@@ -70,7 +89,7 @@ interface DomainMap {
     kernelReadFields?: { confirmed?: boolean; fields?: Record<string, string[]> };
     kernelPredicateFields?: { confirmed?: boolean; fields?: Record<string, string[]> };
   };
-  crossDomainReadAllowlist?: JsonRecord[];
+  crossDomainReadAllowlist: ReadAllowlistEntry[];
 }
 
 interface Location {
@@ -100,6 +119,14 @@ interface ImportEdge {
   line: number;
   symbol: string;
   text: string;
+}
+
+interface EdgeUsage {
+  from: string;
+  to: string;
+  kind?: string;
+  importCount: number;
+  crossDomainAccessCount: number;
 }
 
 function read(rel: string): string {
@@ -174,29 +201,61 @@ function stateLikeString(field: string): boolean {
 }
 
 function schemaModels(): SchemaModel[] {
-  const models: SchemaModel[] = [];
   const source = read('prisma/schema.prisma');
   const re = /^model\s+([A-Za-z][A-Za-z0-9_]*)\s*\{([\s\S]*?)^\}/gm;
+  const raw: Array<{
+    name: string;
+    fields: Array<{ name: string; type: string }>;
+    mappedTable?: string;
+  }> = [];
   let match: RegExpExecArray | null;
   while ((match = re.exec(source)) !== null) {
-    const fields: string[] = [];
-    const stateFields: string[] = [];
+    const fields: Array<{ name: string; type: string }> = [];
     for (const line of match[2].split('\n')) {
       const field =
         /^\s*([A-Za-z][A-Za-z0-9_]*)\s+([A-Za-z][A-Za-z0-9_]*)(?:\?|\[\])?(?:\s|$)/.exec(line);
-      if (field === null) continue;
-      fields.push(field[1]);
-      if (field[2] === 'String' && stateLikeString(field[1])) stateFields.push(field[1]);
+      if (field !== null) fields.push({ name: field[1], type: field[2] });
     }
-    const mapped = /@@map\(\s*"([^"]+)"\s*\)/.exec(match[2]);
-    models.push({
+    raw.push({
       name: match[1],
-      fields: fields.sort(),
-      stateFields: stateFields.sort(),
-      tableName: mapped?.[1] ?? match[1],
+      fields,
+      mappedTable: /@@map\(\s*"([^"]+)"\s*\)/.exec(match[2])?.[1],
     });
   }
-  return models.sort((a, b) => a.name.localeCompare(b.name));
+
+  const modelNames = new Set(raw.map((model) => model.name));
+  return raw
+    .map((model) => {
+      const relationFields: Record<string, string> = {};
+      const scalarFields: string[] = [];
+      const stateFields: string[] = [];
+      const statusPredicateFields: string[] = [];
+      const dateFields: string[] = [];
+      const tableNameSource: SchemaModel['tableNameSource'] =
+        model.mappedTable === undefined ? 'prisma-model-default' : '@@map';
+      for (const field of model.fields) {
+        if (modelNames.has(field.type)) {
+          relationFields[field.name] = field.type;
+          continue;
+        }
+        scalarFields.push(field.name);
+        if (field.type === 'String' && stateLikeString(field.name)) stateFields.push(field.name);
+        if (stateLikeString(field.name)) statusPredicateFields.push(field.name);
+        if (field.type === 'DateTime') dateFields.push(field.name);
+      }
+      return {
+        name: model.name,
+        fields: model.fields.map((field) => field.name).sort(),
+        scalarFields: scalarFields.sort(),
+        relationFields,
+        stateFields: stateFields.sort(),
+        statusPredicateFields: statusPredicateFields.sort(),
+        dateFields: dateFields.sort(),
+        tableName: model.mappedTable ?? model.name,
+        tableNameSource,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function listStringStateColumns(): Array<{ model: string; field: string }> {
@@ -256,6 +315,26 @@ function edgeList(value: unknown): Edge[] {
       to: stringOf(record.to, 'allowedEdges[' + index + '].to'),
       kind: typeof record.kind === 'string' ? record.kind : undefined,
     };
+  });
+}
+
+function readAllowlist(value: unknown): ReadAllowlistEntry[] {
+  if (!Array.isArray(value)) fail('crossDomainReadAllowlist must be an array');
+  const required = [
+    'sourceDomain',
+    'sourceModule',
+    'targetDomain',
+    'prismaModel',
+    'operation',
+    'sourceFile',
+    'sourceSymbol',
+    'accessPath',
+  ];
+  return value.map((item, index) => {
+    const label = `crossDomainReadAllowlist[${index}]`;
+    const record = objectOf(item, label);
+    for (const field of required) stringOf(record[field], `${label}.${field}`);
+    return record as ReadAllowlistEntry;
   });
 }
 
@@ -351,11 +430,7 @@ function domainMap(): DomainMap {
         'kernel.kernelPredicateFields',
       ),
     },
-    crossDomainReadAllowlist: Array.isArray(raw.crossDomainReadAllowlist)
-      ? raw.crossDomainReadAllowlist.map((item, index) =>
-          objectOf(item, 'crossDomainReadAllowlist[' + index + ']'),
-        )
-      : [],
+    crossDomainReadAllowlist: readAllowlist(raw.crossDomainReadAllowlist),
   };
 }
 
@@ -619,32 +694,270 @@ function objectProperty(
   name: string,
 ): ts.Expression | undefined {
   for (const property of object.properties) {
-    if (!ts.isPropertyAssignment(property)) continue;
-    const key =
-      ts.isIdentifier(property.name) || ts.isStringLiteral(property.name) ? property.name.text : '';
-    if (key === name) return property.initializer;
+    if (ts.isPropertyAssignment(property)) {
+      const key =
+        ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)
+          ? property.name.text
+          : '';
+      if (key === name) return property.initializer;
+    }
+    if (ts.isShorthandPropertyAssignment(property) && property.name.text === name) {
+      return property.name;
+    }
   }
   return undefined;
 }
 
-function selectedFields(call: ts.CallExpression): string[] | null {
-  const first = call.arguments[0];
-  if (first === undefined || !ts.isObjectLiteralExpression(first)) return null;
-  const select = objectProperty(first, 'select');
-  if (select === undefined) return [];
-  if (!ts.isObjectLiteralExpression(select)) return null;
-  const result: string[] = [];
-  for (const property of select.properties) {
-    if (
-      ts.isPropertyAssignment(property) &&
-      (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))
-    ) {
-      result.push(property.name.text);
-    } else if (ts.isShorthandPropertyAssignment(property)) {
-      result.push(property.name.text);
-    }
+function propertyName(property: ts.ObjectLiteralElementLike): string | null {
+  if (!ts.isPropertyAssignment(property)) return null;
+  if (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))
+    return property.name.text;
+  return null;
+}
+
+function isFalse(expression: ts.Expression): boolean {
+  return expression.kind === ts.SyntaxKind.FalseKeyword;
+}
+
+function isTrue(expression: ts.Expression): boolean {
+  return expression.kind === ts.SyntaxKind.TrueKeyword;
+}
+
+interface PredicateAnalysis {
+  fields: string[];
+  statusFields: string[];
+  timeWindowFields: string[];
+  relationFields: string[];
+  dynamic: boolean;
+}
+
+interface ReadSelection {
+  explicitSelect: boolean;
+  scalarFields: string[] | null;
+  hasOmit: boolean;
+  relationAccesses: RelationAccess[];
+}
+
+interface RelationAccess {
+  model: SchemaModel;
+  path: string;
+  node: ts.Node;
+  selection: ReadSelection;
+  predicates: PredicateAnalysis;
+}
+
+interface ReadCandidate {
+  sourceDomain: string;
+  sourceModule: string;
+  targetDomain: string;
+  prismaModel: string;
+  operation: string;
+  sourceFile: string;
+  sourceSymbol: string;
+  accessPath: string;
+}
+
+function returnsModelRow(operation: string): boolean {
+  return ['findUnique', 'findUniqueOrThrow', 'findFirst', 'findFirstOrThrow', 'findMany'].includes(
+    operation,
+  );
+}
+
+function predicateAnalysis(): PredicateAnalysis {
+  return {
+    fields: [],
+    statusFields: [],
+    timeWindowFields: [],
+    relationFields: [],
+    dynamic: false,
+  };
+}
+
+function addUnique(values: string[], value: string): void {
+  if (!values.includes(value)) values.push(value);
+}
+
+function hasTimeWindowOperator(value: ts.Expression): boolean {
+  if (ts.isArrayLiteralExpression(value)) {
+    return value.elements.some(
+      (element) => ts.isExpression(element) && hasTimeWindowOperator(element),
+    );
   }
-  return result.sort();
+  if (!ts.isObjectLiteralExpression(value)) return false;
+  return value.properties.some((property) => {
+    const name = propertyName(property);
+    return name !== null && ['gt', 'gte', 'lt', 'lte'].includes(name);
+  });
+}
+
+function collectModelPredicate(
+  value: ts.Expression,
+  model: SchemaModel,
+  output: PredicateAnalysis,
+): void {
+  if (ts.isArrayLiteralExpression(value)) {
+    for (const element of value.elements) {
+      if (ts.isExpression(element)) collectModelPredicate(element, model, output);
+      else output.dynamic = true;
+    }
+    return;
+  }
+  if (!ts.isObjectLiteralExpression(value)) {
+    output.dynamic = true;
+    return;
+  }
+  for (const property of value.properties) {
+    if (ts.isSpreadAssignment(property)) {
+      output.dynamic = true;
+      continue;
+    }
+    const name = propertyName(property);
+    if (name === null || !ts.isPropertyAssignment(property)) {
+      output.dynamic = true;
+      continue;
+    }
+    if (['AND', 'OR', 'NOT'].includes(name)) {
+      collectModelPredicate(property.initializer, model, output);
+      continue;
+    }
+    if (model.scalarFields.includes(name)) {
+      addUnique(output.fields, name);
+      if (model.statusPredicateFields.includes(name)) addUnique(output.statusFields, name);
+      if (model.dateFields.includes(name) && hasTimeWindowOperator(property.initializer)) {
+        addUnique(output.timeWindowFields, name);
+      }
+      continue;
+    }
+    if (model.relationFields[name] !== undefined) {
+      addUnique(output.relationFields, name);
+      output.dynamic = true;
+      continue;
+    }
+    // Prisma operator objects occur below a known model field and never arrive here.
+    // At the model root an unknown key can be a computed shape or a new field, so do
+    // not quietly treat it as a safe predicate.
+    output.dynamic = true;
+  }
+}
+
+function collectDistinctFields(
+  value: ts.Expression,
+  model: SchemaModel,
+  output: PredicateAnalysis,
+): void {
+  if (ts.isStringLiteral(value)) {
+    if (model.scalarFields.includes(value.text)) addUnique(output.fields, value.text);
+    else output.dynamic = true;
+    return;
+  }
+  if (ts.isArrayLiteralExpression(value)) {
+    for (const element of value.elements) {
+      if (ts.isStringLiteral(element)) collectDistinctFields(element, model, output);
+      else output.dynamic = true;
+    }
+    return;
+  }
+  output.dynamic = true;
+}
+
+function analyzePredicates(
+  object: ts.ObjectLiteralExpression,
+  model: SchemaModel,
+): PredicateAnalysis {
+  const output = predicateAnalysis();
+  for (const name of ['where', 'orderBy', 'cursor', 'having']) {
+    const value = objectProperty(object, name);
+    if (value !== undefined) collectModelPredicate(value, model, output);
+  }
+  const distinct = objectProperty(object, 'distinct');
+  if (distinct !== undefined) collectDistinctFields(distinct, model, output);
+  const by = objectProperty(object, 'by');
+  if (by !== undefined) collectDistinctFields(by, model, output);
+  return output;
+}
+
+function relationAccess(
+  value: ts.Expression,
+  target: SchemaModel,
+  models: ReadonlyMap<string, SchemaModel>,
+  path: string,
+): RelationAccess | null {
+  if (isFalse(value)) return null;
+  if (ts.isObjectLiteralExpression(value)) {
+    return {
+      model: target,
+      path,
+      node: value,
+      selection: analyzeSelection(value, target, models, path),
+      predicates: analyzePredicates(value, target),
+    };
+  }
+  return {
+    model: target,
+    path,
+    node: value,
+    selection: {
+      explicitSelect: false,
+      scalarFields: null,
+      hasOmit: false,
+      relationAccesses: [],
+    },
+    predicates: { ...predicateAnalysis(), dynamic: !isTrue(value) },
+  };
+}
+
+function analyzeSelection(
+  object: ts.ObjectLiteralExpression,
+  model: SchemaModel,
+  models: ReadonlyMap<string, SchemaModel>,
+  pathPrefix: string,
+): ReadSelection {
+  const select = objectProperty(object, 'select');
+  const include = objectProperty(object, 'include');
+  const relationAccesses: RelationAccess[] = [];
+  let scalarFields: string[] | null = [];
+
+  const collectSelection = (value: ts.Expression, path: string): void => {
+    if (!ts.isObjectLiteralExpression(value)) {
+      scalarFields = null;
+      return;
+    }
+    for (const property of value.properties) {
+      if (ts.isSpreadAssignment(property)) {
+        scalarFields = null;
+        continue;
+      }
+      const name = propertyName(property);
+      if (name === null || !ts.isPropertyAssignment(property)) {
+        scalarFields = null;
+        continue;
+      }
+      if (model.scalarFields.includes(name)) {
+        if (isFalse(property.initializer)) continue;
+        if (!isTrue(property.initializer)) scalarFields = null;
+        else if (scalarFields !== null) addUnique(scalarFields, name);
+        continue;
+      }
+      const targetName = model.relationFields[name];
+      const target = targetName === undefined ? undefined : models.get(targetName);
+      if (target !== undefined) {
+        const access = relationAccess(property.initializer, target, models, `${path}.${name}`);
+        if (access !== null) relationAccesses.push(access);
+        continue;
+      }
+      scalarFields = null;
+    }
+  };
+
+  if (select !== undefined) collectSelection(select, `${pathPrefix}.select`);
+  if (include !== undefined) collectSelection(include, `${pathPrefix}.include`);
+
+  return {
+    explicitSelect: select !== undefined,
+    scalarFields: scalarFields === null ? null : scalarFields.sort(),
+    hasOmit: objectProperty(object, 'omit') !== undefined,
+    relationAccesses,
+  };
 }
 
 function shapeOf(node: ts.Node, source: ts.SourceFile): string {
@@ -668,17 +981,31 @@ function shapeOf(node: ts.Node, source: ts.SourceFile): string {
   );
 }
 
-function literalSql(node: ts.Expression | ts.TaggedTemplateExpression): string | null {
+interface SqlLiteral {
+  text: string;
+  hasInterpolation: boolean;
+}
+
+function literalSql(node: ts.Expression | ts.TaggedTemplateExpression): SqlLiteral | null {
   if (ts.isTaggedTemplateExpression(node)) {
-    if (ts.isNoSubstitutionTemplateLiteral(node.template)) return node.template.text;
+    if (ts.isNoSubstitutionTemplateLiteral(node.template)) {
+      return { text: node.template.text, hasInterpolation: false };
+    }
     if (ts.isTemplateExpression(node.template)) {
-      return (
-        node.template.head.text +
-        node.template.templateSpans.map((span) => span.literal.text).join('')
-      );
+      // Parameters commonly use interpolation while the table identifier remains
+      // literal. Join only literal fragments: this can still prove a physical-table
+      // hit, but it never claims to understand an interpolated identifier.
+      return {
+        text:
+          node.template.head.text +
+          node.template.templateSpans.map((span) => span.literal.text).join(''),
+        hasInterpolation: true,
+      };
     }
   }
-  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+    return { text: node.text, hasInterpolation: false };
+  }
   return null;
 }
 
@@ -690,19 +1017,17 @@ function allowedEdge(map: DomainMap, from: string, to: string): boolean {
   return map.allowedEdges.some((edge) => edge.from === from && edge.to === to);
 }
 
-function allowedRead(
-  map: DomainMap,
-  source: string,
-  target: string,
-  model: string,
-  operation: string,
-): boolean {
-  return (map.crossDomainReadAllowlist ?? []).some(
+function allowedRead(map: DomainMap, candidate: ReadCandidate): ReadAllowlistEntry | undefined {
+  return map.crossDomainReadAllowlist.find(
     (entry) =>
-      entry.sourceDomain === source &&
-      entry.targetDomain === target &&
-      entry.prismaModel === model &&
-      (entry.operation === undefined || entry.operation === operation),
+      entry.sourceDomain === candidate.sourceDomain &&
+      entry.sourceModule === candidate.sourceModule &&
+      entry.targetDomain === candidate.targetDomain &&
+      entry.prismaModel === candidate.prismaModel &&
+      entry.operation === candidate.operation &&
+      entry.sourceFile === candidate.sourceFile &&
+      entry.sourceSymbol === candidate.sourceSymbol &&
+      entry.accessPath === candidate.accessPath,
   );
 }
 
@@ -716,7 +1041,7 @@ function finding(
   file: string,
   source: ts.SourceFile,
   node: ts.Node,
-  ordinal: number,
+  ordinal: number | string,
   details: JsonRecord,
 ): Finding {
   const symbol = symbolOf(node);
@@ -739,6 +1064,7 @@ function finding(
 
 function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; inputDigest: string } {
   const models = schemaModels();
+  const modelsByName = new Map(models.map((model) => [model.name, model]));
   const delegates = new Map<string, SchemaModel>();
   for (const model of models) delegates.set(lowerFirst(model.name), model);
   const files = walk('src', (name) => name.endsWith('.ts') && !name.endsWith('.spec.ts'));
@@ -768,7 +1094,15 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
       operation: string,
       node: ts.Node,
       details: JsonRecord,
+      identity: 'legacy' | 'new-observation' = 'legacy',
     ): void => {
+      // Phase 0 的 callSiteId 以当时扫描到的语法节点序号为输入。新增的
+      // relation 观察若继续占用这个序号，会让后续一行未动的存量债改号。
+      // 新观察改用节点位置派生的隔离 discriminator，保留已有登记表的身份。
+      const ordinal =
+        identity === 'legacy'
+          ? next(file, symbolOf(node))
+          : `new:${node.getStart(source)}:${node.getEnd()}`;
       findings.push(
         finding(
           kind,
@@ -780,7 +1114,7 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
           file,
           source,
           node,
-          next(file, symbolOf(node)),
+          ordinal,
           details,
         ),
       );
@@ -813,11 +1147,248 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
           '(?:^|[^A-Za-z0-9_])' + escapeRegex(model.tableName) + '(?:$|[^A-Za-z0-9_])',
           'i',
         );
-        if (tableRe.test(sql)) {
-          emit('raw-cross-domain-table', 'report', owner.domain, model.name, 'raw', node, {
-            physicalTable: model.tableName,
-          });
+        if (tableRe.test(sql.text)) {
+          emit(
+            'raw-cross-domain-table',
+            'report',
+            owner.domain,
+            model.name,
+            'raw',
+            node,
+            {
+              physicalTable: model.tableName,
+              physicalTableSource: model.tableNameSource,
+              sqlHasInterpolation: sql.hasInterpolation,
+            },
+            'legacy',
+          );
         }
+      }
+    };
+    const emitRead = (
+      targetModel: SchemaModel,
+      selection: ReadSelection,
+      predicates: PredicateAnalysis,
+      operation: string,
+      node: ts.Node,
+      accessPath: string,
+      identity: 'legacy' | 'new-observation',
+    ): void => {
+      const targetOwner = map.modelOwnership[targetModel.name];
+      if (targetOwner === undefined || targetOwner.domain === sourceDomain) return;
+      const selectedFields = selection.scalarFields;
+      const details: JsonRecord = {
+        accessPath,
+        explicitSelect: selection.explicitSelect,
+        selectedFields,
+        predicateFields: predicates.fields,
+        statusPredicateFields: predicates.statusFields,
+        timeWindowFields: predicates.timeWindowFields,
+        relationPredicateFields: predicates.relationFields,
+        dynamicShape: selectedFields === null || predicates.dynamic,
+      };
+      const candidate: ReadCandidate = {
+        sourceDomain,
+        sourceModule: moduleName,
+        targetDomain: targetOwner.domain,
+        prismaModel: targetModel.name,
+        operation,
+        sourceFile: file,
+        sourceSymbol: symbolOf(node),
+        accessPath,
+      };
+      const semanticCandidate =
+        predicates.statusFields.length > 0 && predicates.timeWindowFields.length > 0;
+      if (semanticCandidate) {
+        emit(
+          'cross-domain-semantic-read-candidate',
+          'report',
+          targetOwner.domain,
+          targetModel.name,
+          operation,
+          node,
+          {
+            ...details,
+            requiredExit: '应消费属主导出的业务谓词；不得在调用域内联时间窗与状态组合。',
+          },
+          identity,
+        );
+        return;
+      }
+
+      const modelRow = returnsModelRow(operation);
+      if (modelRow && selection.hasOmit) {
+        emit(
+          'cross-domain-kernel-read-violation',
+          'report',
+          targetOwner.domain,
+          targetModel.name,
+          operation,
+          node,
+          {
+            ...details,
+            reason: 'omit 不构成 select 白名单出口。',
+          },
+          identity,
+        );
+        return;
+      }
+      if (modelRow && !selection.explicitSelect) {
+        emit(
+          'cross-domain-kernel-read-violation',
+          'report',
+          targetOwner.domain,
+          targetModel.name,
+          operation,
+          node,
+          {
+            ...details,
+            reason: '未显式 select；裸 include / 默认 delegate 读会取得目标 model 的整行。',
+          },
+          identity,
+        );
+        return;
+      }
+      if (selectedFields === null || predicates.dynamic) {
+        emit(
+          'cross-domain-read-dynamic',
+          'report',
+          targetOwner.domain,
+          targetModel.name,
+          operation,
+          node,
+          {
+            ...details,
+            reason: 'select/include/谓词含动态构造，无法静态证明其属于任何读档。',
+          },
+          identity,
+        );
+        return;
+      }
+
+      // count / aggregate / groupBy do not return a target-model row, so the
+      // kernel select rule does not apply. They still need an explicit factual
+      // allowlist entry (and their predicate shape remains observable).
+      if (!modelRow) {
+        const allowlistEntry = allowedRead(map, candidate);
+        if (allowlistEntry !== undefined) {
+          emit(
+            'cross-domain-fact-read',
+            'allow',
+            targetOwner.domain,
+            targetModel.name,
+            operation,
+            node,
+            {
+              ...details,
+              allowlist: allowlistEntry,
+            },
+            identity,
+          );
+        } else {
+          emit(
+            'cross-domain-fact-read-candidate',
+            'report',
+            targetOwner.domain,
+            targetModel.name,
+            operation,
+            node,
+            {
+              ...details,
+              requiredExit: '审核为按 id / schema 可见事实后，精确登记 crossDomainReadAllowlist。',
+            },
+            identity,
+          );
+        }
+        return;
+      }
+
+      const kernelFields = map.kernel.kernelReadFields?.fields?.[targetModel.name] ?? [];
+      const kernelPredicateFields =
+        map.kernel.kernelPredicateFields?.fields?.[targetModel.name] ?? [];
+      const nonKernelSelected = selectedFields.filter((field) => !kernelFields.includes(field));
+      const nonKernelPredicates = predicates.fields.filter(
+        (field) => !kernelPredicateFields.includes(field),
+      );
+      if (kernelFields.length > 0 && nonKernelSelected.length === 0) {
+        if (nonKernelPredicates.length === 0) {
+          emit(
+            'cross-domain-kernel-read',
+            'allow',
+            targetOwner.domain,
+            targetModel.name,
+            operation,
+            node,
+            {
+              ...details,
+            },
+            identity,
+          );
+        } else {
+          emit(
+            'cross-domain-kernel-predicate-violation',
+            'report',
+            targetOwner.domain,
+            targetModel.name,
+            operation,
+            node,
+            {
+              ...details,
+              nonKernelPredicateFields: nonKernelPredicates,
+              reason: '返回字段合规不等于可作谓词；该条件应改用 kernelPredicateFields 或属主谓词。',
+            },
+            identity,
+          );
+        }
+        return;
+      }
+
+      const allowlistEntry = allowedRead(map, candidate);
+      if (allowlistEntry !== undefined) {
+        emit(
+          'cross-domain-fact-read',
+          'allow',
+          targetOwner.domain,
+          targetModel.name,
+          operation,
+          node,
+          {
+            ...details,
+            allowlist: allowlistEntry,
+          },
+          identity,
+        );
+      } else {
+        emit(
+          'cross-domain-fact-read-candidate',
+          'report',
+          targetOwner.domain,
+          targetModel.name,
+          operation,
+          node,
+          {
+            ...details,
+            requiredExit: '审核为按 id / schema 可见事实后，精确登记 crossDomainReadAllowlist。',
+          },
+          identity,
+        );
+      }
+    };
+    const inspectRelationAccesses = (
+      accesses: readonly RelationAccess[],
+      operation: string,
+    ): void => {
+      for (const access of accesses) {
+        emitRead(
+          access.model,
+          access.selection,
+          access.predicates,
+          operation,
+          access.node,
+          access.path,
+          'new-observation',
+        );
+        inspectRelationAccesses(access.selection.relationAccesses, operation);
       }
     };
     const visit = (node: ts.Node): void => {
@@ -882,52 +1453,48 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
                 sourceModule: moduleName,
                 ownerModule: targetOwner.ownerModule ?? null,
               });
-            } else if (reads.has(operation) && targetOwner.domain !== sourceDomain) {
-              const selected = selectedFields(node);
-              const kernel = map.kernel.kernelReadFields?.fields?.[model.name] ?? [];
               if (
-                selected !== null &&
-                selected.length > 0 &&
-                selected.every((field) => kernel.includes(field))
+                sourceOwner.domain === targetOwner.domain &&
+                sourceOwner.subdomain !== undefined &&
+                targetOwner.subdomain !== undefined &&
+                sourceOwner.subdomain !== targetOwner.subdomain
               ) {
                 emit(
-                  'cross-domain-kernel-read',
-                  'allow',
-                  targetOwner.domain,
-                  model.name,
-                  operation,
-                  node,
-                  {
-                    selectedFields: selected,
-                  },
-                );
-              } else if (
-                allowedRead(map, sourceDomain, targetOwner.domain, model.name, operation)
-              ) {
-                emit(
-                  'cross-domain-fact-read',
-                  'allow',
-                  targetOwner.domain,
-                  model.name,
-                  operation,
-                  node,
-                  {
-                    selectedFields: selected,
-                  },
-                );
-              } else {
-                emit(
-                  selected === null
-                    ? 'cross-domain-read-dynamic'
-                    : 'cross-domain-semantic-read-candidate',
+                  'observed-subdomain-cross-owner-write',
                   'report',
                   targetOwner.domain,
                   model.name,
                   operation,
                   node,
-                  { selectedFields: selected },
+                  {
+                    sourceModule: moduleName,
+                    sourceSubdomain: sourceOwner.subdomain,
+                    ownerModule: targetOwner.ownerModule ?? null,
+                    targetSubdomain: targetOwner.subdomain,
+                    purpose: '治理大域内的观察记录；不改变当前域边界或业务行为。',
+                  },
+                  'new-observation',
                 );
               }
+            } else if (reads.has(operation)) {
+              const first = node.arguments[0];
+              const argument =
+                first !== undefined && ts.isObjectLiteralExpression(first) ? first : undefined;
+              const selection =
+                argument === undefined
+                  ? {
+                      explicitSelect: false,
+                      scalarFields: null,
+                      hasOmit: false,
+                      relationAccesses: [],
+                    }
+                  : analyzeSelection(argument, model, modelsByName, model.name);
+              const predicates =
+                argument === undefined
+                  ? { ...predicateAnalysis(), dynamic: true }
+                  : analyzePredicates(argument, model);
+              emitRead(model, selection, predicates, operation, node, model.name, 'legacy');
+              inspectRelationAccesses(selection.relationAccesses, operation);
             }
           }
         }
@@ -985,6 +1552,106 @@ function cycles(map: DomainMap, edges: ImportEdge[], findings: Finding[]): void 
   }
 }
 
+function edgeUsage(
+  map: DomainMap,
+  imports: ImportEdge[],
+  findings: Finding[],
+): { declaredEdges: EdgeUsage[]; undeclaredDirections: EdgeUsage[] } {
+  const usage = new Map<string, EdgeUsage>();
+  const keyOf = (from: string, to: string): string => `${from}\u0000${to}`;
+  const observe = (from: string, to: string): EdgeUsage => {
+    const key = keyOf(from, to);
+    const current = usage.get(key);
+    if (current !== undefined) return current;
+    const created: EdgeUsage = {
+      from,
+      to,
+      importCount: 0,
+      crossDomainAccessCount: 0,
+    };
+    usage.set(key, created);
+    return created;
+  };
+
+  // `findings` deliberately contains only undeclared import violations. Keep
+  // the raw import-edge list separate so confirmed edges have observable usage
+  // too; otherwise deleting a declaration would be the only way to measure it.
+  for (const edge of imports) observe(edge.from, edge.to).importCount += 1;
+  for (const finding of findings) {
+    if (finding.kind === 'cross-domain-import' || finding.kind === 'cross-domain-cycle') continue;
+    if (finding.sourceDomain === finding.targetDomain || finding.targetDomain === 'unknown') continue;
+    observe(finding.sourceDomain, finding.targetDomain).crossDomainAccessCount += 1;
+  }
+
+  const declaredEdges = map.allowedEdges.map((edge) => {
+    const current = usage.get(keyOf(edge.from, edge.to));
+    return {
+      from: edge.from,
+      to: edge.to,
+      ...(edge.kind === undefined ? {} : { kind: edge.kind }),
+      importCount: current?.importCount ?? 0,
+      crossDomainAccessCount: current?.crossDomainAccessCount ?? 0,
+    };
+  });
+  const undeclaredDirections = [...usage.values()]
+    .filter((entry) => !allowedEdge(map, entry.from, entry.to))
+    .sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
+  return { declaredEdges, undeclaredDirections };
+}
+
+function architectureDebtReport(): JsonRecord {
+  const requiredSemanticFields = [
+    'classification',
+    'reason',
+    'risk',
+    'desiredExit',
+    'ownerApiTarget',
+    'reviewTrigger',
+    'introducedAt',
+  ];
+  const errors: string[] = [];
+  const pendingEntries: string[] = [];
+  const byClassification: Record<string, number> = {};
+  try {
+    const raw = objectOf(JSON.parse(read(ARCHITECTURE_DEBT)) as unknown, ARCHITECTURE_DEBT);
+    if (!Array.isArray(raw.entries)) throw new Error('entries must be an array');
+    for (const [index, value] of raw.entries.entries()) {
+      const entry = objectOf(value, `${ARCHITECTURE_DEBT}.entries[${index}]`);
+      const id = typeof entry.id === 'string' ? entry.id : `entry#${index + 1}`;
+      const classification =
+        typeof entry.classification === 'string' ? entry.classification : 'unknown';
+      byClassification[classification] = (byClassification[classification] ?? 0) + 1;
+      const missing = requiredSemanticFields.filter(
+        (field) => typeof entry[field] !== 'string' || (entry[field] as string).trim().length === 0,
+      );
+      const pending = Object.entries(entry).some(
+        ([, field]) => typeof field === 'string' && field.includes('pending-phase2'),
+      );
+      if (missing.length > 0) errors.push(`${id} missing semantic fields: ${missing.join(', ')}`);
+      if (pending) pendingEntries.push(id);
+    }
+    return {
+      path: ARCHITECTURE_DEBT,
+      entries: raw.entries.length,
+      byClassification,
+      requiredSemanticFields,
+      pendingPhase2Entries: pendingEntries,
+      semanticFieldsComplete: errors.length === 0 && pendingEntries.length === 0,
+      errors,
+    };
+  } catch (error) {
+    return {
+      path: ARCHITECTURE_DEBT,
+      entries: 0,
+      byClassification,
+      requiredSemanticFields,
+      pendingPhase2Entries: pendingEntries,
+      semanticFieldsComplete: false,
+      errors: [error instanceof Error ? error.message : String(error)],
+    };
+  }
+}
+
 function runViolations(): void {
   const map = domainMap();
   const result = scan(map);
@@ -998,6 +1665,12 @@ function runViolations(): void {
   });
   const byKind: Record<string, number> = {};
   for (const item of findings) byKind[item.kind] = (byKind[item.kind] ?? 0) + 1;
+  const usage = edgeUsage(map, result.edges, findings);
+  const count = (kind: string, disposition?: 'report' | 'allow'): number =>
+    findings.filter(
+      (item) =>
+        item.kind === kind && (disposition === undefined || item.disposition === disposition),
+    ).length;
   process.stdout.write(
     JSON.stringify(
       {
@@ -1008,10 +1681,11 @@ function runViolations(): void {
         inputDigest: result.inputDigest,
         knownGaps: [
           'Prisma aliases, destructuring, wrappers and variable forwarding are not proven.',
-          'Dynamic delegates and computed SQL stay report-only unknowns.',
+          'Dynamic delegates and computed property access stay report-only unknowns.',
           'tsconfig aliases, re-exports and runtime module loading are not resolved.',
-          'Read tiers are structural candidates, not semantic proof.',
-          'Raw SQL only matches literal physical table names from Prisma @@map.',
+          'Dynamic select/include/where shapes cannot be proven into a read tier.',
+          'Semantic-read detection only recognises a static time-window plus status-predicate combination.',
+          'Raw SQL only matches literal physical table names derived from Prisma @@map or Prisma default table names.',
         ],
         summary: {
           findings: findings.length,
@@ -1019,6 +1693,36 @@ function runViolations(): void {
           allowedObservations: findings.filter((item) => item.disposition === 'allow').length,
           byKind,
         },
+        edgeUsage: {
+          // Two independent report-only views: declared edges use the raw
+          // import inventory; undeclared directions remain visible alongside
+          // their direct cross-domain read/write/raw observations.
+          declaredEdges: usage.declaredEdges,
+          undeclaredDirections: usage.undeclaredDirections,
+        },
+        readTiers: {
+          kernelFactsAllowed: count('cross-domain-kernel-read', 'allow'),
+          crossDomainFactsAllowed: count('cross-domain-fact-read', 'allow'),
+          crossDomainFactCandidates: count('cross-domain-fact-read-candidate', 'report'),
+          semanticPredicateCandidates: count('cross-domain-semantic-read-candidate', 'report'),
+          kernelSelectionViolations: count('cross-domain-kernel-read-violation', 'report'),
+          kernelPredicateViolations: count('cross-domain-kernel-predicate-violation', 'report'),
+          dynamicReadCandidates: count('cross-domain-read-dynamic', 'report'),
+        },
+        observedSubdomainWrites: {
+          total: count('observed-subdomain-cross-owner-write', 'report'),
+          identityOrg: findings.filter(
+            (item) =>
+              item.kind === 'observed-subdomain-cross-owner-write' &&
+              item.sourceDomain === 'identity-org',
+          ).length,
+          participation: findings.filter(
+            (item) =>
+              item.kind === 'observed-subdomain-cross-owner-write' &&
+              item.sourceDomain === 'participation',
+          ).length,
+        },
+        debtRegistry: architectureDebtReport(),
         findings,
       },
       null,
@@ -1027,16 +1731,37 @@ function runViolations(): void {
   );
 }
 
+function runDebtCheck(): void {
+  const debtRegistry = architectureDebtReport();
+  process.stdout.write(
+    JSON.stringify(
+      {
+        mode: 'debt-check',
+        enforcement: 'registry-integrity-only',
+        reportOnly: true,
+        debtRegistry,
+      },
+      null,
+      2,
+    ) + '\n',
+  );
+  if (debtRegistry.semanticFieldsComplete !== true) process.exitCode = 1;
+}
+
 function main(): void {
   const metadata = process.argv.includes('--metadata');
   const violations = process.argv.includes('--violations');
-  if (metadata === violations) {
-    process.stderr.write('Usage: pnpm tsx scripts/check-boundaries.ts --metadata | --violations\n');
+  const debtCheck = process.argv.includes('--debt-check');
+  if ([metadata, violations, debtCheck].filter(Boolean).length !== 1) {
+    process.stderr.write(
+      'Usage: pnpm tsx scripts/check-boundaries.ts --metadata | --violations | --debt-check\n',
+    );
     process.exit(2);
   }
   try {
     if (metadata) runMetadata();
-    else runViolations();
+    else if (violations) runViolations();
+    else runDebtCheck();
   } catch (error) {
     process.stderr.write(
       'check-boundaries failed: ' + (error instanceof Error ? error.message : String(error)) + '\n',
