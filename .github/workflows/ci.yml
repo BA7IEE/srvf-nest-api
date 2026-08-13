@@ -174,11 +174,17 @@ jobs:
 
       # Phase 0 A-class bootstrap: R1/R4/R7/R10 metadata integrity is now blocking
       # inside the existing Fast checks context. B-class findings remain visible only.
+      #
+      # Phase 5 adds the R14 implication-graph integrity check here. Only the *registry*
+      # is validated in this job; the base↔head semantic diff itself is deliberately NOT
+      # here — it must run base-trusted (the PR must not be able to edit its own judge),
+      # so it lives in the Red-zone (trusted) workflow. Locally: pnpm gate:authz:semantic.
       - name: Architecture governance A-metadata gate (B reports only)
         run: |
           pnpm docs:boundaries || true
           pnpm docs:boundaries:check
           pnpm docs:authz:check
+          pnpm gate:authz:graph:check
 
       # Harness 3.0 P2:守卫自测 + eslint 执法块阳性对照。
       # 后者对每条执法规则喂必定违规的合成片段,断言确实被抓到 ——
