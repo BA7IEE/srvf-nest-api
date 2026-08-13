@@ -1603,6 +1603,40 @@ async function main(): Promise<void> {
         closure: 'mismatch',
         diagnostic: 'probe.any.two',
       },
+      // Phase 3 前置 D3:接收者类型被改名后仍须解析到真类。
+      // Phase 0 读的是**注解文本**,`RenamedAuthz` 与登记的 receiverTypes
+      // ['AuthzService'] 对不上 ⇒ 整端点误判 T3。typed 版按类型在**声明处**的
+      // 名字判定,改名不影响。
+      {
+        name: 'aliased-receiver-type-still-resolves',
+        source: controller(
+          'class AuthzService {\n' +
+            '  async can(_user: unknown, _action: string, _ref: unknown): Promise<boolean> {\n' +
+            '    return true;\n' +
+            '  }\n' +
+            '}\n\n' +
+            'type RenamedAuthz = AuthzService;\n\n' +
+            'class HarnessAuthzR8ProbeService {\n' +
+            '  constructor(private readonly authz: RenamedAuthz) {}\n\n' +
+            '  async authorize(user: unknown): Promise<void> {\n' +
+            "    const allowed = await this.authz.can(user, 'probe.alias.read', null);\n" +
+            '    if (!allowed) {\n' +
+            "      throw new Error('denied');\n" +
+            '    }\n' +
+            '  }\n' +
+            '}',
+        ),
+        policy: {
+          admission: null,
+          mode: 'RBAC',
+          codes: [{ code: 'probe.alias.read', scope: null }],
+          require: 'all',
+          scopes: [],
+          engine: 'authz-scoped',
+        },
+        tier: 'T2',
+        closure: 'closed',
+      },
     ];
 
     let r8Ok = true;
