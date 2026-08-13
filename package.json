@@ -51,6 +51,8 @@
     "audit:production": "pnpm audit --prod --audit-level high",
     "docs:authz": "tsx scripts/generate-authz-manifest.ts --write",
     "docs:authz:check": "tsx scripts/generate-authz-manifest.ts --check",
+    "gate:authz:semantic": "tsx scripts/authz-semantic-diff.ts --base origin/main",
+    "gate:authz:graph:check": "tsx scripts/authz-semantic-diff.ts --validate-graph",
     "docs:boundaries": "tsx scripts/check-boundaries.ts --violations",
     "docs:boundaries:check": "tsx scripts/check-boundaries.ts --metadata",
     "docs:boundaries:debt:check": "tsx scripts/check-boundaries.ts --debt-check",

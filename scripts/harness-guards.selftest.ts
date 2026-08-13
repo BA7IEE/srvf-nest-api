@@ -17,6 +17,18 @@ import * as os from 'os';
 import * as path from 'path';
 import { checkFragment, mergeIntoChangelog } from './changelog-merge';
 import {
+  buildClosure,
+  comparePolicy,
+  diffManifests,
+  extractManifest as extractAuthzManifest,
+  judgeDeclarations as judgeAuthzDeclarations,
+  parseCodeUniverse as parseAuthzCodeUniverse,
+  parseDeclarations as parseAuthzDeclarations,
+  validateGraph as validateAuthzGraph,
+  type Manifest as AuthzManifest,
+  type Policy as AuthzPolicy,
+} from './authz-semantic-diff';
+import {
   SEED_FACTS_CLOSURE as DOCS_COUNTS_SEED_FACTS_CLOSURE,
   assertSeedFactsClosure,
   countAuditLogEventMembers,
@@ -1661,6 +1673,14 @@ for (const [configName, config] of JEST_CONFIGS) {
   );
   const yml = codeOnly(ymlRaw, 'hash');
   const judge = codeOnly(judgeRaw, 'slash');
+  // 架构治理 Phase 5:同一个 scan job 里多了第二个执行体(R14 授权语义裁判)。
+  // 「引入新执法体却不同步扩保护 = 把防线搬到闸门外」是本仓已记录的事故形状,
+  // 所以它在落地的同一刀里就进 F3 断言组,和红区裁判受同一套禁令约束。
+  const authzJudgeRaw = fs.readFileSync(
+    path.join(repoRoot, '.github/workflows/authz-trusted-judge.mjs'),
+    'utf-8',
+  );
+  const authzJudge = codeOnly(authzJudgeRaw, 'slash');
 
   const cases: Array<[string, boolean, string]> = [
     [
@@ -1796,6 +1816,68 @@ for (const [configName, config] of JEST_CONFIGS) {
         !/require\s*\(\s*[^)]*harness\//.test(judge) &&
         judge.includes('JSON.parse'),
       'pull_request_target 下 import PR 的文件 = 在有 secrets 的进程里执行 PR 代码(这正是 L1 把基线抽成 JSON 的原因)',
+    ],
+    // ── R14 授权语义裁判:同 job 内的第二个执行体,受同一套禁令 ────────────────
+    [
+      'F3 authz:裁判脚本取自 base checkout 的固定路径',
+      yml.includes('node .github/workflows/authz-trusted-judge.mjs'),
+      '跑 PR 提供的脚本就是 finding 2 本身 —— 第二个执行体同样适用',
+    ],
+    [
+      'F3 authz:裁判只 import node: 内置模块(不碰 node_modules)',
+      (authzJudgeRaw.match(/^import .* from '([^']+)'/gm) ?? []).every((l) =>
+        l.includes("from 'node:"),
+      ),
+      '一旦 import 第三方包就必须装依赖,禁令②随之破功',
+    ],
+    [
+      // 判据必须来自 base:比较器、蕴含图、权限码全集三者任一取自 head,
+      // PR 就能自己把「换码」洗成「收紧」(加一条蕴含边即可)。
+      'F3 authz:比较器与判据登记表全部取自 base 的固定相对路径',
+      authzJudge.includes("'scripts/authz-semantic-diff.ts'") &&
+        authzJudge.includes("'harness/authz-implication-graph.json'") &&
+        authzJudge.includes("'docs/ai-harness/RBAC_MAP.md'") &&
+        authzJudge.includes('--experimental-strip-types'),
+      'PR 若能提供蕴含图,加一条 A⇒B 边就能把自己的换码洗成收紧 —— 判据必须来自 base',
+    ],
+    [
+      'F3 authz:head 版本走 API 给的 contents_url,不自己拼',
+      authzJudge.includes('contents_url'),
+      'fork PR 的 head 仓库不同,拼错就会取到 base 内容 —— 判据静默变成「自己和自己比」,永远通过',
+    ],
+    [
+      'F3 authz:变更清单翻页且与 changed_files 对账(禁静默截断)',
+      authzJudge.includes('--paginate') && authzJudge.includes('expectedCount'),
+      'pulls/files 端点上限 3000 且**静默**截断;不对账就会在超大 PR 上漏判降级',
+    ],
+    [
+      'F3 authz:head 内容**只解码写盘 + 解析,不执行**',
+      !/import\s*\(/.test(authzJudge) &&
+        !/\brequire\s*\(/.test(authzJudge) &&
+        authzJudge.includes('JSON.parse'),
+      'pull_request_target 下 import PR 的文件 = 在有 secrets 的进程里执行 PR 代码',
+    ],
+    [
+      // 与棘轮硬闸同构:申报缺失是**查清楚了的违规**,不是「查不出来」。
+      // 退化成 failClosed 的话,维护者点一下 harness-review 就能把「降级且没申报」放行。
+      'F3 authz:申报缺失是**硬失败**,不是「要求审批」',
+      /function failHard\([\s\S]*?process\.exit\(1\)/.test(authzJudge) &&
+        /failHard\(\s*['"`]授权语义门/.test(authzJudge),
+      '若退化成 failClosed,点一下审批就能放行「降级且未申报」—— 那等于没有这道闸',
+    ],
+    [
+      'F3 authz:异常一律 fail-closed(要求审批)',
+      authzJudge.includes('failClosed') && authzJudge.includes("emit(OUTPUT_KEY, 'true')"),
+      '「查不出来」永远不等于「没降级」',
+    ],
+    [
+      // verdict 若只看 required,authzRequired=true 的 PR 会在 approval 被跳过时
+      // 落进「未触碰红区」分支直接放行 —— 第二路裁决必须真的参与聚合。
+      'F3 trusted:verdict 聚合把授权降级那一路一起判(两路都要明确 true/false)',
+      yml.includes("authz_required='${{ needs.scan.outputs.authzRequired }}'") &&
+        yml.includes('needs.scan.outputs.authzRequired == \'true\'') &&
+        /for verdict in "\$required" "\$authz_required"/.test(yml),
+      '只看 required 的话,授权降级的 PR 会因 approval 被跳过而落进「无需审批」分支放行',
     ],
   ];
   for (const [name, ok, why] of cases) check(name, ok, why);
@@ -2029,6 +2111,14 @@ for (const [configName, config] of JEST_CONFIGS) {
         glob: 'scripts/replay-*.ts',
         yes: ['scripts/replay-incidents.ts'],
         no: ['scripts/replayer.ts'],
+      },
+      {
+        // R14 / R11 两支语义门的判据本体(架构治理 Phase 5)。反样例挑 `-semantic-diff.mjs`:
+        // 比较器刻意写成「tsx 与裸 node 都能跑」的 .ts,若哪天有人图省事复制成 .mjs
+        // 旁路一份,它不在保护内 —— 这条反样例把那个形状钉出来。
+        glob: 'scripts/*-semantic-diff.ts',
+        yes: ['scripts/authz-semantic-diff.ts', 'scripts/contract-semantic-diff.ts'],
+        no: ['scripts/authz-semantic-diff.mjs', 'scripts/semantic-diff.ts'],
       },
       { glob: 'test/setup/**', yes: ['test/setup/test-db.ts'], no: ['test/setup.ts'] },
       {
@@ -2776,6 +2866,364 @@ void (async (): Promise<void> => {
       marks.length >= 15,
       `只抽到 ${marks.length} 个探针体,切分正则可能已失配`,
     );
+  }
+
+  // ────────────────────────────────────────────────────────────────────────
+  // R14 授权语义 diff(Gate L4)—— 四态比较器阳性对照
+  //
+  // 为什么每一类都要有样例:v4 勘误㉕ 记录的正是「码集增减方向判反」这一类错误 ——
+  // `any` 集增码是**降级**(多开一条进门路),与 `all` 集方向相反。把它判成升级
+  // 会让「悄悄多开一道门」这种最典型的提权改动直接静默通过。所以下面既有正样例
+  // (每类降级必须被抓),也有**负样例**(any 集增码一旦被判成 NARROWER 即红)。
+  // ────────────────────────────────────────────────────────────────────────
+  {
+    const REPO_ROOT = path.resolve(__dirname, '..');
+    const closure = buildClosure({ schemaVersion: '1.0.0', edges: [] });
+    const basePolicy = (over: Partial<AuthzPolicy> = {}): AuthzPolicy => ({
+      admission: null,
+      mode: 'RBAC',
+      codes: [{ code: 'user.read.account', scope: null }],
+      require: 'all',
+      scopes: [],
+      engine: 'rbac-global',
+      ...over,
+    });
+    const verdictOf = (base: AuthzPolicy, head: AuthzPolicy): string =>
+      comparePolicy(base, head, closure).verdict;
+
+    // ① 降级闭集:每类一例
+    checkEq(
+      'R14:降级 — 任何模式 → PUBLIC',
+      verdictOf(basePolicy(), basePolicy({ mode: 'PUBLIC', codes: [], engine: null })),
+      'BROADER',
+    );
+    // LOGIN_ONLY ↔ PUBLIC 单列两条:它们是**相邻一级**。上面那条「任何模式 → PUBLIC」
+    // 起点是 RBAC,跨了两级 —— 把 PUBLIC 与 LOGIN_ONLY 拉平的变异它照样绿(实测:
+    // 改 MODE_LEVEL.PUBLIC=1 后全套 307 条一条不红)。而「登录才能看的端点开成公开」
+    // 恰恰是最经典的一种降级。正反两条一起上,防拉平后两侧同时假绿。
+    checkEq(
+      'R14:降级 — LOGIN_ONLY → PUBLIC(相邻一级,单独钉)',
+      verdictOf(
+        basePolicy({ mode: 'LOGIN_ONLY', codes: [], engine: null }),
+        basePolicy({ mode: 'PUBLIC', codes: [], engine: null }),
+      ),
+      'BROADER',
+    );
+    checkEq(
+      'R14:收紧 — PUBLIC → LOGIN_ONLY(反向)',
+      verdictOf(
+        basePolicy({ mode: 'PUBLIC', codes: [], engine: null }),
+        basePolicy({ mode: 'LOGIN_ONLY', codes: [], engine: null }),
+      ),
+      'NARROWER',
+    );
+    checkEq(
+      'R14:降级 — RBAC → LOGIN_ONLY',
+      verdictOf(basePolicy(), basePolicy({ mode: 'LOGIN_ONLY', codes: [], engine: null })),
+      'BROADER',
+    );
+    checkEq(
+      'R14:降级 — LOGIN_SCOPED → LOGIN_ONLY',
+      verdictOf(
+        basePolicy({ mode: 'LOGIN_SCOPED', codes: [], scopes: ['self'], engine: 'authz-scoped' }),
+        basePolicy({ mode: 'LOGIN_ONLY', codes: [], scopes: [], engine: null }),
+      ),
+      'BROADER',
+    );
+    checkEq(
+      'R14:降级 — RESPONSIBILITY_SCOPED → LOGIN_ONLY',
+      verdictOf(
+        basePolicy({
+          mode: 'RESPONSIBILITY_SCOPED',
+          codes: [],
+          scopes: ['responsibility'],
+          engine: 'authz-scoped',
+        }),
+        basePolicy({ mode: 'LOGIN_ONLY', codes: [], scopes: [], engine: null }),
+      ),
+      'BROADER',
+    );
+    checkEq(
+      'R14:降级 — 去除 admission 轴',
+      verdictOf(basePolicy({ admission: 'app-member' }), basePolicy({ admission: null })),
+      'BROADER',
+    );
+    checkEq(
+      'R14:降级 — scopes 集缩减',
+      verdictOf(
+        basePolicy({ scopes: ['self', 'responsibility'], engine: 'authz-scoped' }),
+        basePolicy({ scopes: ['self'], engine: 'authz-scoped' }),
+      ),
+      'BROADER',
+    );
+
+    // ② require 语义分派:all / any 两个方向各一例(v4 勘误㉕ 的正面判据)
+    const allTwo = basePolicy({
+      require: 'all',
+      codes: [
+        { code: 'user.read.account', scope: null },
+        { code: 'member.read.record', scope: null },
+      ],
+    });
+    const allOne = basePolicy({ require: 'all', codes: [{ code: 'user.read.account', scope: null }] });
+    const anyTwo = basePolicy({
+      require: 'any',
+      codes: [
+        { code: 'user.read.account', scope: null },
+        { code: 'member.read.record', scope: null },
+      ],
+    });
+    const anyOne = basePolicy({ require: 'any', codes: [{ code: 'user.read.account', scope: null }] });
+
+    checkEq('R14:require=all — 缩码 = 降级', verdictOf(allTwo, allOne), 'BROADER');
+    checkEq('R14:require=all — 增码 = 收紧', verdictOf(allOne, allTwo), 'NARROWER');
+    checkEq('R14:require=any — 增码 = 降级(多开一条进门路)', verdictOf(anyOne, anyTwo), 'BROADER');
+    checkEq('R14:require=any — 缩码 = 收紧', verdictOf(anyTwo, anyOne), 'NARROWER');
+    checkEq('R14:all → any = 降级', verdictOf(allTwo, anyTwo), 'BROADER');
+    checkEq('R14:any → all = 收紧', verdictOf(anyTwo, allTwo), 'NARROWER');
+
+    // ②b 负样例:方向判反是本规则最致命的失败模式,单独钉死。
+    check(
+      'R14:负样例 — any 集增码**不得**被判成收紧/等价',
+      verdictOf(anyOne, anyTwo) !== 'NARROWER' && verdictOf(anyOne, anyTwo) !== 'EQUIVALENT',
+      `实际判成 ${verdictOf(anyOne, anyTwo)}`,
+    );
+    check(
+      'R14:负样例 — all 集缩码**不得**被判成收紧/等价',
+      verdictOf(allTwo, allOne) !== 'NARROWER' && verdictOf(allTwo, allOne) !== 'EQUIVALENT',
+      `实际判成 ${verdictOf(allTwo, allOne)}`,
+    );
+    // 单码时 require 是真空的(all 与 any 的持有者集合逐字相同),不得误报成语义变更
+    checkEq(
+      'R14:单码时 require 翻转 = 等价(真空,不误报)',
+      verdictOf(anyOne, allOne),
+      'EQUIVALENT',
+    );
+
+    // ③ engine 变化:两侧都有判定面时恒不可比
+    checkEq(
+      'R14:engine 变化(两侧均有判定面)= 不可比',
+      verdictOf(basePolicy(), basePolicy({ engine: 'authz-scoped' })),
+      'INCOMPARABLE',
+    );
+    // 惰性 engine 不得制造假不可比 —— 无 codes/scopes 的一侧其准入与 engine 无关
+    checkEq(
+      'R14:LOGIN_ONLY → RBAC(engine null→rbac-global)= 收紧,不因惰性 engine 变不可比',
+      verdictOf(basePolicy({ mode: 'LOGIN_ONLY', codes: [], engine: null }), basePolicy()),
+      'NARROWER',
+    );
+
+    // ④ 换码:空蕴含图 ⇒ 无路径 ⇒ 不可比(拍板的默认立场)
+    checkEq(
+      'R14:换码 A→B(蕴含图空)= 不可比',
+      verdictOf(allOne, basePolicy({ codes: [{ code: 'member.read.record', scope: null }] })),
+      'INCOMPARABLE',
+    );
+    // 有边时才允许定向 —— 证明这条边真的参与判定,而不是个摆设登记表
+    {
+      const withEdge = buildClosure({
+        schemaVersion: '1.0.0',
+        edges: [{ from: 'member.read.record', to: 'user.read.account' }],
+      });
+      checkEq(
+        'R14:换码 A→B 且蕴含图有 A⇒B 边 = 收紧',
+        comparePolicy(
+          allOne,
+          basePolicy({ codes: [{ code: 'member.read.record', scope: null }] }),
+          withEdge,
+        ).verdict,
+        'NARROWER',
+      );
+      checkEq(
+        'R14:换码 B→A 沿同一条边的反方向 = 降级',
+        comparePolicy(
+          basePolicy({ codes: [{ code: 'member.read.record', scope: null }] }),
+          allOne,
+          withEdge,
+        ).verdict,
+        'BROADER',
+      );
+    }
+
+    // ⑤ 复合变更无法唯一分解 ⇒ 保守
+    checkEq(
+      'R14:一轴收紧 + 一轴放宽 = 不可比(复合变更不自作分解)',
+      verdictOf(
+        basePolicy({ admission: 'app-member', scopes: ['self'], engine: 'authz-scoped' }),
+        basePolicy({ admission: null, scopes: ['self', 'responsibility'], engine: 'authz-scoped' }),
+      ),
+      'INCOMPARABLE',
+    );
+    // 码绑定 scope:去掉 scope 是放宽(schema 支持,现网 0 例,只能靠本例守)
+    checkEq(
+      'R14:码绑定 scope 被去除 = 降级',
+      verdictOf(
+        basePolicy({ codes: [{ code: 'user.read.account', scope: 'self' }] }),
+        basePolicy({ codes: [{ code: 'user.read.account', scope: null }] }),
+      ),
+      'BROADER',
+    );
+
+    // ⑥ 收紧恒可见:NARROWER 不阻断,但必须进迁移清单
+    {
+      const manifest = (policy: AuthzPolicy): AuthzManifest => ({
+        schemaVersion: '1.0.0',
+        generatorVersion: '2.0.0',
+        entries: [
+          { routeKey: 'GET /api/admin/v1/probe', controller: 'C', handler: 'h', policy },
+        ],
+      });
+      const tightened = diffManifests(manifest(allOne), manifest(allTwo), closure);
+      check(
+        'R14:收紧端点进全量迁移清单(升级恒可见,不允许不可见)',
+        tightened.length === 1 && tightened[0].verdict === 'NARROWER',
+        JSON.stringify(tightened.map((d) => d.verdict)),
+      );
+      check(
+        'R14:收紧端点不产生阻断项(放行)',
+        judgeAuthzDeclarations(tightened, []).length === 0,
+      );
+      const broadened = diffManifests(manifest(allTwo), manifest(allOne), closure);
+      check(
+        'R14:降级端点无申报即阻断',
+        judgeAuthzDeclarations(broadened, []).length === 1,
+      );
+      check(
+        'R14:降级端点申报齐全后不再阻断(但审批仍另计)',
+        judgeAuthzDeclarations(broadened, [
+          {
+            route: 'GET /api/admin/v1/probe',
+            reason: 'r',
+            impact: 'i',
+            migration: 'm',
+            file: 'changelog.d/x.md',
+            line: 1,
+          },
+        ]).length === 0,
+      );
+      check(
+        'R14:申报落空(route 不在降级集)同样阻断',
+        judgeAuthzDeclarations(tightened, [
+          {
+            route: 'GET /api/admin/v1/probe',
+            reason: 'r',
+            impact: 'i',
+            migration: 'm',
+            file: 'changelog.d/x.md',
+            line: 1,
+          },
+        ]).length === 1,
+      );
+    }
+
+    // ⑦ 申报块解析:字段留空 = 空洞申报,必须抓
+    {
+      const parsed = parseAuthzDeclarations([
+        {
+          path: 'changelog.d/probe.md',
+          content: [
+            '<!-- authz-downgrade',
+            'route: GET /api/admin/v1/probe',
+            'reason:',
+            'impact: i',
+            'migration: m',
+            '-->',
+          ].join('\n'),
+        },
+      ]);
+      check(
+        'R14:申报块字段留空被抓(空洞申报不算申报)',
+        parsed.declarations.length === 0 && parsed.findings.length === 1,
+        `declarations=${parsed.declarations.length} findings=${parsed.findings.length}`,
+      );
+      const unclosed = parseAuthzDeclarations([
+        { path: 'changelog.d/probe.md', content: '<!-- authz-downgrade\nroute: X\n' },
+      ]);
+      check('R14:申报块未闭合被抓', unclosed.findings.length === 1);
+    }
+
+    // ⑧ 蕴含图结构校验:打错的码会静默退化成「无路径」,所以必须硬红
+    {
+      const universe = new Set(['user.read.account', 'member.read.record']);
+      checkEq(
+        'R14:蕴含图空集合法(已拍板的默认立场)',
+        validateAuthzGraph({ schemaVersion: '1.0.0', edges: [] }, universe).length,
+        0,
+      );
+      checkEq(
+        'R14:蕴含图引用不存在的权限码 = 红',
+        validateAuthzGraph(
+          { schemaVersion: '1.0.0', edges: [{ from: 'user.read.acount', to: 'member.read.record' }] },
+          universe,
+        ).length,
+        1,
+      );
+      checkEq(
+        'R14:蕴含图自环 = 红',
+        validateAuthzGraph(
+          { schemaVersion: '1.0.0', edges: [{ from: 'user.read.account', to: 'user.read.account' }] },
+          universe,
+        ).length,
+        1,
+      );
+      check(
+        'R14:蕴含图成环 = 红(否则两个方向的换码都判成收紧,双向绕过审批)',
+        validateAuthzGraph(
+          {
+            schemaVersion: '1.0.0',
+            edges: [
+              { from: 'user.read.account', to: 'member.read.record' },
+              { from: 'member.read.record', to: 'user.read.account' },
+            ],
+          },
+          universe,
+        ).length >= 1,
+      );
+      check(
+        'R14:蕴含图 schemaVersion 不匹配 = fail-closed',
+        validateAuthzGraph({ schemaVersion: '2.0.0', edges: [] }, universe).length === 1,
+      );
+    }
+
+    // ⑨ manifest schemaVersion 不匹配恒 fail-closed(§9 第 3 条:不猜)
+    {
+      const doc = (schemaVersion: string): string =>
+        `<!-- route-authz-manifest-json\n${JSON.stringify({
+          schemaVersion,
+          generatorVersion: '2.0.0',
+          entries: [],
+        })}\n-->`;
+      let threw = false;
+      try {
+        extractAuthzManifest(doc('2.0.0'), 'probe');
+      } catch {
+        threw = true;
+      }
+      check('R14:manifest schemaVersion 不匹配 → 抛错不放行', threw);
+      check('R14:manifest schemaVersion 匹配 → 正常解析', extractAuthzManifest(doc('1.0.0'), 'probe').entries.length === 0);
+    }
+
+    // ⑩ 真实 manifest 必须能被本比较器读懂,且自比恒等价 ——
+    //    防「比较器只在合成样例上work、遇到真 498 条就解析失败/漂移」的假绿。
+    {
+      const realDoc = fs.readFileSync(path.join(REPO_ROOT, 'docs/ai-harness/ROUTE_AUTHZ.md'), 'utf8');
+      const real = extractAuthzManifest(realDoc, 'ROUTE_AUTHZ.md');
+      check('R14:真实 manifest 可解析且非空', real.entries.length >= 400, `entries=${real.entries.length}`);
+      const selfDiff = diffManifests(real, real, closure);
+      check(
+        'R14:真实 manifest 自比 = 全等价(无假迁移)',
+        selfDiff.every((diff) => diff.verdict === 'EQUIVALENT'),
+        selfDiff
+          .filter((diff) => diff.verdict !== 'EQUIVALENT')
+          .map((diff) => `${diff.routeKey}:${diff.verdict}`)
+          .join(' · '),
+      );
+      // 权限码全集解析必须与 RBAC_MAP 自报条数一致(表格形态漂了要当场红)
+      const universe = parseAuthzCodeUniverse(
+        fs.readFileSync(path.join(REPO_ROOT, 'docs/ai-harness/RBAC_MAP.md'), 'utf8'),
+      );
+      check('R14:权限码全集解析条数与 RBAC_MAP 自报一致', universe.size > 0, `size=${universe.size}`);
+    }
   }
 
   process.stdout.write(`\n${passCount} passed, ${failures.length} failed\n`);

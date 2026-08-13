@@ -21,6 +21,14 @@
 #   PR 只要让 main() 输出 touched=false,红区审批就被跳过 —— 而 judge() 不动,
 #   parity 自测照样全绿。自考自评的门不是门。`Diff guards` 保留作快速反馈,
 #   **权威判定在本文件**。
+#
+# 本 workflow 承载两路 base-trusted 裁决,共用同一次 base checkout 与同一个
+# harness-review 环境审批(架构治理 Phase 5 起):
+#   ① 红区 / 执法层触碰         → redzone-trusted-judge.mjs → outputs.required
+#   ② R14 授权语义降级 / 不可比 → authz-trusted-judge.mjs   → outputs.authzRequired
+# 任一为 true 即要求维护者点批;verdict 对两路都要求明确的 true/false,空串一律拒绝。
+# 合在这里而不新开 required context:新 context 会卡死所有 base 上没有它的在飞分支
+# (本仓第五轮 harness 评审的既有教训)。也因此禁令①「checkout 只有一处」仍然成立。
 # =============================================================================
 name: Red-zone (trusted)
 
@@ -44,6 +52,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       required: ${{ steps.judge.outputs.required }}
+      authzRequired: ${{ steps.authz.outputs.authzRequired }}
     steps:
       # 禁令①:ref 写死 base_ref。**绝不**用 github.event.pull_request.head.*,
       # 也不用默认的 merge ref —— 那两者都会把 PR 的代码放进这个有 secrets 的进程。
@@ -70,6 +79,23 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: node .github/workflows/redzone-trusted-judge.mjs
 
+      # R14 授权语义门(架构治理 Phase 5)。寄生在**同一个 job** 里,不是因为省事,
+      # 而是因为禁令①要求「checkout 只有一处」—— 另开 job 就要第二次 checkout。
+      #
+      # 同样跑 base 的代码:比较器 scripts/authz-semantic-diff.ts、蕴含图、权限码全集
+      # 全部来自上面那次 base checkout;PR 只贡献**数据**(head 的 manifest 与 fragment),
+      # 而数据只被解码写盘再 JSON/markdown 解析,不 import、不执行。
+      #
+      # 比较器是 .ts 却不需要装依赖:它写成 erasable-syntax-only,用 Node 内置的
+      # --experimental-strip-types 跑。这样本地(tsx)与裁判(裸 node)**共用同一份判据**,
+      # 不产生第二套语义 —— `parity≠correctness` 是本仓已记录的教训。
+      - name: Judge authorization semantic diff against BASE comparator
+        id: authz
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node .github/workflows/authz-trusted-judge.mjs
+
   # 触碰受保护路径时才跑:harness-review 环境上挂了 required reviewer,
   # 本 job 会一直 pending 直到维护者在 PR 页面点批准。
   #
@@ -80,7 +106,7 @@ jobs:
   approval:
     name: Red-zone trusted approval
     needs: scan
-    if: needs.scan.outputs.required == 'true'
+    if: needs.scan.outputs.required == 'true' || needs.scan.outputs.authzRequired == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: harness-review
@@ -103,30 +129,44 @@ jobs:
         run: |
           scan='${{ needs.scan.result }}'
           required='${{ needs.scan.outputs.required }}'
+          authz_required='${{ needs.scan.outputs.authzRequired }}'
           approval='${{ needs.approval.result }}'
-          echo "scan=$scan required=$required approval=$approval"
+          echo "scan=$scan required=$required authz_required=$authz_required approval=$approval"
           if [ "$scan" != "success" ]; then
-            echo "::error::trusted 裁判未成功($scan)—— 无法确认是否触碰红区,拒绝放行"
+            echo "::error::trusted 裁判未成功($scan)—— 无法确认是否触碰红区 / 是否降级授权,拒绝放行"
             exit 1
           fi
-          case "$required" in
+          # 两路裁决都必须是明确的 true/false。空串 = 那一路没跑到 / 没给结论,
+          # 那是「没查出来」,不是「没触碰」—— 与 required 单路时的判法逐字同源(INC-07)。
+          for verdict in "$required" "$authz_required"; do
+            case "$verdict" in
+              true|false) ;;
+              *)
+                echo "::error::裁判未给出明确结论(required='$required' authzRequired='$authz_required')—— 无法验证 ≠ 通过,拒绝放行"
+                exit 1
+                ;;
+            esac
+          done
+          if [ "$required" = 'true' ] || [ "$authz_required" = 'true' ]; then
+            need_approval=true
+          else
+            need_approval=false
+          fi
+          case "$need_approval" in
             false)
               if [ "$approval" != "skipped" ]; then
-                echo "::error::未触碰红区却跑了审批 job($approval)—— 与裁决不一致,拒绝放行"
+                echo "::error::未触碰红区且无授权降级,却跑了审批 job($approval)—— 与裁决不一致,拒绝放行"
                 exit 1
               fi
-              echo "✓ 未触碰红区/执法层,无需审批"
+              echo "✓ 未触碰红区/执法层,且无授权降级/不可比端点,无需审批"
               ;;
             true)
               if [ "$approval" != "success" ]; then
-                echo "::error::本次触碰红区/执法层,但 harness-review 审批未通过($approval)—— 拒绝放行"
+                echo "::error::本次触碰红区/执法层或降级了授权,但 harness-review 审批未通过($approval)—— 拒绝放行"
                 echo "::error::维护者需在本 PR 的 Red-zone trusted approval job 上点 Review deployments → Approve"
+                echo "::error::(触碰红区 required=$required · 授权降级/不可比 authzRequired=$authz_required)"
                 exit 1
               fi
-              echo "✓ 红区改动已由维护者批准(trusted 裁判)"
-              ;;
-            *)
-              echo "::error::裁判未给出明确结论(required='$required')—— 无法验证 ≠ 通过,拒绝放行"
-              exit 1
+              echo "✓ 红区改动 / 授权语义变更已由维护者批准(trusted 裁判)"
               ;;
           esac
