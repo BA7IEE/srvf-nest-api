@@ -2,50 +2,16 @@
 // 真相源:后端 live /api/docs-json;本文件派生自 docs/handoff/openapi.json 快照。
 // surface: App 小程序
 // generatorVersion: 1.0.0
-// inputDigest: sha256:ccc724dfde87d9f5a6043f9a9af5b466bf3bf2180e52b304befda8006ed49d78
+// inputDigest: sha256:d88934361521b2775cd66626de6a4a9575dde99901851316d61e366668a57acb
 
-/** 统一响应 envelope —— 全仓契约恒为 { code, message, data }。 */
-export interface ApiEnvelope<T> {
-  code: number;
-  message: string;
-  data: T;
-}
-
-/** 分页形状 —— 由 @ApiWrappedPageResponse 保证,items 元素类型逐接口指定。 */
-export interface PageResult<T> {
-  items: T[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
+// 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
+import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
+export type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto };
 
 export interface ActivityCheckInLocationDto {
   "longitude": number;
   "latitude": number;
   "accuracy"?: number;
-}
-
-export interface ActivityPublishReviewResponseDto {
-  "id": string;
-  "activityId": string;
-  "requestType": "initial" | "change";
-  "requestVersion": number;
-  "baseRevision": number;
-  "status": "pending" | "approved" | "returned" | "withdrawn" | "cancelled";
-  "snapshot": Record<string, unknown>;
-  "directPublish": boolean;
-  "submittedByUserId": string;
-  "submittedAt": string;
-  "reviewedByUserId": string | null;
-  "reviewedAt": string | null;
-  "reviewNote": string | null;
-  "createdAt": string;
-  "updatedAt": string;
-  "activityTitle": string;
-  "organizationId": string;
-  "initiatorMemberId": string | null;
-  "changeDiff"?: Record<string, unknown>;
-  "affectedMemberCount"?: number;
 }
 
 export interface ActivityTemplateResolutionResponseDto {
@@ -1343,44 +1309,6 @@ export interface ChangeReviewSessionUpdateDto {
   "sessionId": string;
 }
 
-export interface ContentAttachmentDto {
-  "id": string;
-  "kind": string;
-  "mime": string;
-  "originalName": string;
-  "size": number;
-  "url"?: string | null;
-}
-
-export interface ContentReadDetailDto {
-  "id": string;
-  "title": string;
-  "summary"?: Record<string, unknown> | null;
-  "body": string;
-  "contentTypeCode": string;
-  "visibilityCode": string;
-  "tags": string[];
-  "coverImageUrl"?: string | null;
-  "attachments": ContentAttachmentDto[];
-  "pinned": boolean;
-  "viewCount": number;
-  "publishedAt"?: Record<string, unknown> | null;
-  "createdAt": string;
-}
-
-export interface ContentReadListItemDto {
-  "id": string;
-  "title": string;
-  "summary"?: Record<string, unknown> | null;
-  "contentTypeCode": string;
-  "tags": string[];
-  "coverImageUrl"?: string | null;
-  "pinned": boolean;
-  "viewCount": number;
-  "publishedAt"?: Record<string, unknown> | null;
-  "createdAt": string;
-}
-
 export interface CreateAppManagedActivityDto {
   "title": string;
   "activityTypeCode": string;
@@ -1544,13 +1472,6 @@ export interface NotificationReadListItemDto {
 
 export interface NotificationUnreadCountDto {
   "unreadCount": number;
-}
-
-export interface PageResultDto {
-  "items": unknown[][];
-  "total": number;
-  "page": number;
-  "pageSize": number;
 }
 
 export interface PutAppManagedRegistrationFormDto {
@@ -1718,26 +1639,6 @@ export interface UpdateAppTeamJoinTargetsDto {
 export interface UpsertActivityFeedbackDto {
   "rating": number;
   "comment"?: string | null;
-}
-
-export interface UserLinkedMemberDto {
-  "memberNo": string;
-  "displayName": string;
-}
-
-export interface UserResponseDto {
-  "id": string;
-  "username": string;
-  "email"?: Record<string, unknown> | null;
-  "nickname"?: Record<string, unknown> | null;
-  "avatarKey"?: Record<string, unknown> | null;
-  "role": "SUPER_ADMIN" | "ADMIN" | "USER";
-  "status": "ACTIVE" | "DISABLED";
-  "createdAt": string;
-  "lastLoginAt"?: Record<string, unknown> | null;
-  "updatedAt": string;
-  "memberId"?: Record<string, unknown> | null;
-  "member"?: UserLinkedMemberDto;
 }
 
 export interface WechatQuotaItemDto {

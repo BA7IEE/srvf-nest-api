@@ -76,10 +76,20 @@ release 收口(E 档,`srvf-release-closeout` 九阶段)末尾再统一核一次:
 > **字段真相仍以 live `/api/docs-json` 为准。** 本目录的 client 是从 `openapi.json` 快照派生的**便利产物**,
 > 与 §0 铁原则一致:机器能自校验的东西以后端生成物为准,这里只生成、不手抄、不当第二事实源。
 
+**五个 surface 全覆盖**(维护者 2026-08-13 拍板):部分生成 = 剩下那部分回到手写,
+等于亲手制造第二份真相 —— 而消灭第二份真相正是本目录 §0 铁原则要的东西。
+
 | 产物 | 内容 |
 |---|---|
-| [`clients/admin/`](clients/admin/) | Admin 管理后台(`/api/admin/**`)的 `types.ts` + `client.ts` |
-| [`clients/app/`](clients/app/) | App 小程序(`/api/app/**`)的 `types.ts` + `client.ts` |
+| [`clients/shared/`](clients/shared/) | 跨 surface 共用类型的**唯一定义处**:`ApiEnvelope<T>` / `PageResult<T>` / `FetchRequest` / `Fetcher` + 被 ≥2 个 surface 引用的 DTO |
+| [`clients/admin/`](clients/admin/) | Admin 管理后台(`/api/admin/**`) |
+| [`clients/app/`](clients/app/) | App 小程序(`/api/app/**`) |
+| [`clients/auth/`](clients/auth/) | 登录 / 令牌(`/api/auth/**`)—— **admin 与 app 都引它**,不各自复制一份 |
+| [`clients/system/`](clients/system/) | System 系统面(`/api/system/**`) |
+| [`clients/open/`](clients/open/) | Open 无账号公开面(`/api/open/**`,招新 H5 消费) |
+
+每个 surface 出 `types.ts` + `client.ts`,共用类型从 `../shared/types` 引入并再导出 ——
+**消费方仍只需 import 一个 `./types`,但仓内每个类型只有一份定义**(零重复由 selftest 机核)。
 
 刷新:**`pnpm docs:feclient`**;新鲜度由 `pnpm docs:feclient:check` 在 CI Docs guards 同链守护
 (契约改了而 client 没刷新、或产物被手改 → 当场红)。
@@ -90,8 +100,8 @@ release 收口(E 档,`srvf-release-closeout` 九阶段)末尾再统一核一次:
   `Fetcher`,登录态怎么带、令牌怎么刷新全在前端仓自己手里(三步登录接线见 [`admin-web.md §3.1`](admin-web.md))。
 - `code/message/data` envelope 与分页形状按仓内既有契约表达为 `ApiEnvelope<T>` / `PageResult<T>`。
 - 头部带确定性 `inputDigest`,**不含时间戳/git SHA**(治理登记表元规范:时间戳会让逐字比对恒假红)。
-- **只生成 admin 与 app 两个 surface**。`auth/v1`(登录/刷新)、`system/v1`、`open/v1` **不在内** ——
-  auth 是全端通用接线、已单独成节,要不要一并生成留维护者拍板,本刀不替他决定。
+- **五个 surface 全生成**,无手写补充面。`auth` 单独成一份而不是往 admin/app 各塞一份:
+  它两边都要调,复制就是两份各自演化的定义。
 
 用法示意(消费方自备 fetcher,凭证不经过本产物):
 

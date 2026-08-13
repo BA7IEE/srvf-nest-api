@@ -141,13 +141,13 @@ verdict 对三路都要求明确的 `true`/`false`,空串一律拒绝(「没查�
 
 ## 3. selftest 阳性对照清单
 
-`pnpm harness:selftest` 的 guards 段(`scripts/harness-guards.selftest.ts`),Phase 5 新增 **78 条**:
+`pnpm harness:selftest` 的 guards 段(`scripts/harness-guards.selftest.ts`),Phase 5 新增 **81 条**:
 
 | 组 | 条数 | 覆盖 |
 |---|---:|---|
 | R14 四态比较器 | 41 | 六类降级各一例;`all`/`any` 码集方向各一例 + **两条负样例**(方向判反即红);`LOGIN_ONLY ↔ PUBLIC` 相邻级正反各一;engine 变化(两侧有判定面)不可比 + 惰性 engine 不误判;换码空图不可比 / 有边可定向 / 反向降级;复合变更不可比;码绑定 scope 去除=降级;收紧进迁移清单且不阻断;申报四态;蕴含图五类结构校验;manifest schemaVersion fail-closed;真 manifest 自比全等价 |
 | R11 判定表 | 20 | 九类 breaking 各一例;**四条反方向 additive**(方向写反即红);契约无变化零 finding;申报四态(含缺 `rollback`);判定表 9 类齐全且 id 唯一;真 openapi 自比零 finding |
-| FE client | 9 | digest 形状 / 确定性 / 输入变化必翻转;产物头部无时间戳 SHA;两 surface 四文件;产物代码部分无 baseURL/令牌 + **剥注释有效性正对照**;自校验阳性对照(坏产物必被抓)+ 真产物零诊断 |
+| FE client | 12 | digest 形状 / 确定性 / 输入变化必翻转;产物头部无时间戳 SHA;**五 surface 十一文件**;**全仓零重复定义** + 共用类型确实在 shared;产物代码部分无传输层/鉴权头/硬编码端点 + **剥注释有效性双向正对照**;自校验阳性对照(坏产物必被抓)+ 真产物零诊断 |
 | F3 裁判禁令 | 17 | 授权裁判 8 条 + 契约裁判 9 条:脚本取自 base 固定路径 / 只 import `node:` / 判据登记表取自 base / 走 API 给的 URL / 翻页对账 / 只 parse 不执行 / 申报缺失是硬失败 / 异常 fail-closed / verdict 三路聚合 |
 | 红区收编 | 1 | `scripts/*-semantic-diff.ts` 的正反样例(反样例含 `.mjs` 旁路形状) |
 
@@ -225,7 +225,7 @@ goal 给的「枚举值删除」「nullable 翻转为不可空」是请求侧形
 | 项 | 状态 | 说明 |
 |---|---|---|
 | 蕴含图 ↔ seed 绑定矩阵一致性核对 | **未做,但已装到期闸** | v4 §7 R14 的 Exit Criteria 之一。初始边集为空 ⇒ 当前真空;实现它需要 TS AST 解析 seed 的角色→码矩阵,会破坏比较器「零依赖 / 双运行时」这条地基(那是 base-trusted 裁判与本地共用同一份判据的前提,比这条核对更根本)。**到期条件已写成执行位,不靠人记得** —— 见 §4.2。已实现的是**码存在性 + 自环 + 成环**校验(对着 RBAC_MAP 的 234 码全集) |
-| `auth/v1` / `system/v1` / `open/v1` 的 TS client | **未做** | goal 只要 admin 与 app 两份。auth 是全端通用接线,要不要一并生成留维护者拍板 |
+| ~~`auth/v1` / `system/v1` / `open/v1` 的 TS client~~ | **已补齐** | 维护者 2026-08-13 拍板全覆盖:部分生成 = 剩下那部分回到手写 = 亲手造第二份真相。现为 5 surface × 2 文件 + 1 份 `shared/types.ts`;共用集**算出来**(≥2 surface 引用)而非硬编码,全仓零重复定义由 selftest 机核 |
 | 手写 handoff 的字段/端点复制面收缩 | **未做** | goal 明确留后续,避免与前端适配债耦合 |
 | R2/R3/R5/R8 转 blocking · 状态机治理 · authz 倒置 · 大 service 拆分 | **未做** | 均在 goal 硬边界之外(Phase 3 / Phase 4 / Phase 7 另立项) |
 | ~~R11 裁判在真 CI 上的首次运行取证~~ | **已完成** | PR #993 首次真跑,输出见 §2.4。FE client 新鲜度门同理,从下一个 PR 起在 Docs guards 里真跑 |

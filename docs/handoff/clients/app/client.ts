@@ -1,7 +1,7 @@
 // 由 scripts/generate-fe-client.ts 生成,请勿手改。
 // surface: App 小程序
 // generatorVersion: 1.0.0
-// inputDigest: sha256:ccc724dfde87d9f5a6043f9a9af5b466bf3bf2180e52b304befda8006ed49d78
+// inputDigest: sha256:d88934361521b2775cd66626de6a4a9575dde99901851316d61e366668a57acb
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -10,6 +10,8 @@
 import type {
   ApiEnvelope,
   PageResult,
+  FetchRequest,
+  Fetcher,
   ActivityCheckInLocationDto,
   ActivityPublishReviewResponseDto,
   ActivityTemplateResolutionResponseDto,
@@ -192,17 +194,7 @@ import type {
   WechatSubscriptionStatusResponseDto,
 } from './types';
 
-export type { ApiEnvelope, PageResult };
-
-/** 传输层由消费方注入 —— 生成器不产生任何网络与凭证代码。 */
-export interface FetchRequest {
-  method: string;
-  path: string;
-  query?: Record<string, unknown>;
-  body?: unknown;
-}
-
-export type Fetcher = <T>(request: FetchRequest) => Promise<ApiEnvelope<T>>;
+export type { ApiEnvelope, PageResult, FetchRequest, Fetcher };
 
 export function createAppClient(fetcher: Fetcher) {
   return {

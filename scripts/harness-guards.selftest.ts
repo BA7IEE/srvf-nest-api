@@ -3574,27 +3574,75 @@ void (async (): Promise<void> => {
         offenders.length === 0,
         offenders.join(' · '),
       );
-      check('FE client:两个 surface 各出 types.ts + client.ts', emitted.size === 4, `${emitted.size} 个文件`);
-      // 产物只出类型与签名:不得出现 baseURL / 令牌 / 鉴权头这类东西。
+      check(
+        'FE client:五个 surface 各出 types.ts + client.ts,外加一份 shared/types.ts',
+        emitted.size === 11 &&
+          ['admin', 'app', 'auth', 'system', 'open'].every(
+            (id) =>
+              emitted.has(`docs/handoff/clients/${id}/types.ts`) &&
+              emitted.has(`docs/handoff/clients/${id}/client.ts`),
+          ) &&
+          emitted.has('docs/handoff/clients/shared/types.ts'),
+        `${emitted.size} 个文件:${[...emitted.keys()].join(', ')}`,
+      );
+      // 维护者 2026-08-13 的口径写成执行位:「产物里不要出现两份内容相同却各自维护的定义」。
+      // 判的是**全仓产物**里同名 export 出现几次 —— 共用类型必须只在 shared 定义一次,
+      // 各 surface 只 import + re-export。五个 surface 各带一份 Fetcher 就是被这条抓出来的。
+      {
+        const declaredIn = new Map<string, string[]>();
+        for (const [rel, content] of emitted) {
+          for (const match of content.matchAll(/^export (?:interface|type) ([A-Za-z0-9_]+)/gm)) {
+            const list = declaredIn.get(match[1]) ?? [];
+            list.push(rel);
+            declaredIn.set(match[1], list);
+          }
+        }
+        const duplicated = [...declaredIn.entries()].filter(([, where]) => where.length > 1);
+        check(
+          'FE client:全仓产物零重复定义(同名类型只能有一处 export)',
+          duplicated.length === 0,
+          duplicated
+            .slice(0, 5)
+            .map(([name, where]) => `${name} @ ${where.join(' + ')}`)
+            .join(' · '),
+        );
+        check(
+          'FE client:共用类型确实落在 shared(不是靠各 surface 恰好没撞名)',
+          (declaredIn.get('ApiEnvelope') ?? [])[0] === 'docs/handoff/clients/shared/types.ts' &&
+            (declaredIn.get('Fetcher') ?? [])[0] === 'docs/handoff/clients/shared/types.ts',
+          '零重复也可能是因为共用类型压根没生成 —— 这条钉住它们真的在 shared 里',
+        );
+      }
+      // 产物只出类型与签名:**不得含传输层代码,也不得含真实凭证/端点**。
       //
-      // ⚠️ **必须剥注释后判**:产物头部那句「不含 baseURL、不含令牌」本身就含这些词,
-      //    不剥注释的话这条断言会被自己的说明文字判红(本仓已记录的
-      //    「结构断言 grep 到了自己文件头的散文」同形,施工时当场复现)。
-      const forbidden = /Authorization|Bearer\s|baseURL|localhost|api[_-]?key|secret/i;
+      // ⚠️ 判的对象要选对(施工时连栽两次):
+      //   ① 必须剥掉 `//` **和** `/** */` 两种注释 —— 产物头部那句「不含 baseURL、不含令牌」
+      //      本身含这些词,而每个方法上方的 JSDoc 会原样带上端点 summary(里面出现过
+      //      「重置腾讯云实名核验 secretId/secretKey」)。只剥 `//` 会被 JSDoc 判红。
+      //   ② 判据不能是「出现 secret/apiKey 字样」—— `"secretId": string;` 是**契约里的
+      //      字段名**,前端本来就要发它,不是泄露。真正该禁的是**传输层与凭证本身**。
+      const stripComments = (source: string): string =>
+        codeOnly(source, 'slash').replace(/\/\*[\s\S]*?\*\//g, '');
+      const transportOrCredential =
+        /\bfetch\s*\(|\baxios\b|XMLHttpRequest|Authorization\s*:|['"`]Bearer\s|baseURL|https?:\/\/|\bprocess\.env\b/;
       const leaked = [...emitted]
-        .filter(([, content]) => forbidden.test(codeOnly(content, 'slash')))
+        .filter(([, content]) => transportOrCredential.test(stripComments(content)))
         .map(([rel]) => rel);
       check(
-        'FE client:产物**代码部分**不含 baseURL / 令牌 / 鉴权头(传输层由消费方注入)',
+        'FE client:产物**代码部分**不含传输层 / 鉴权头 / 硬编码端点(传输层由消费方注入)',
         leaked.length === 0,
         leaked.join(' · '),
       );
-      // 正对照:剥注释这一步本身要有效 —— 剥之前必须确实能匹配到那句说明,
-      // 否则「剥完没匹配」可能是因为剥掉了全部内容,断言退化成恒真。
+      // 正对照:剥注释这一步要真有效 —— 剥之前必须确实能匹配到头部那句说明,
+      // 否则「剥完没匹配」可能是因为把全文都剥没了,断言退化成恒真。
       check(
         'FE client:剥注释有效性正对照(剥之前能匹配到头部说明)',
-        [...emitted].some(([, content]) => forbidden.test(content)),
+        [...emitted].some(([, content]) => /baseURL/.test(content)),
         '若这条也失败,说明产物头部的安全说明被删了,或剥注释逻辑吃掉了全文',
+      );
+      check(
+        'FE client:剥注释后仍保留代码(不是把全文剥没了)',
+        [...emitted].every(([, content]) => /export /.test(stripComments(content))),
       );
       // 生成器自校验必须真的能判 —— 喂一份坏产物,诊断必须非空
       const broken = new Map(emitted);
