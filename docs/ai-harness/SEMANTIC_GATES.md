@@ -190,7 +190,29 @@ verdict 对三路都要求明确的 `true`/`false`,空串一律拒绝(「没查�
 已登记为 selftest 已知缺口,**随每次 `harness:selftest` 打印**,并由真探针证明其仍然存在 ——
 缺口一旦被修好,探针翻面 → selftest 红 → 逼人来摘登记。
 
-### 4.2 与 v4 字面表述的偏离(已拍板)
+### 4.2 到期闸:`SEED_CROSS_CHECK_IMPLEMENTED`(维护者 2026-08-13 要求)
+
+「本次未做」不能只躺在报告里等人记得。沿本仓既有范式 —— **「此刻不存在」型判据必须写明
+到期条件** —— 把它写成执行位:
+
+- **到期条件 = 有人往蕴含图里加第一条边**。`validateGraph` 判
+  `edges.length > 0 && !SEED_CROSS_CHECK_IMPLEMENTED` ⇒ 红;
+  `pnpm gate:authz:graph:check` 在 Fast checks 里恒跑,所以这条闸每个 PR 都在岗。
+- 错误信息写明「**接法不得破坏比较器的零依赖 / 双运行时**」,并给出可行方向
+  (另出一支只在 Fast checks 跑的检查器,把核对结果落成登记表字段)——
+  否则下一个人会用破坏地基的接法去补它,而那条地基比这条核对更根本。
+- **防「只翻标志位不实现」**:selftest 结构断言要求标志位为 `true` 时必须同时导出并调用
+  `crossCheckSeedBindings`,且判的是**剥注释后的源码**(注释里写着函数名不算数)。
+
+真触发实测(2026-08-13):
+
+| 触发 | 结果 |
+|---|---|
+| 往登记表加第一条边 → `pnpm gate:authz:graph:check` | **exit 1**,事实句点名 Exit Criteria |
+| 只把标志位翻成 `true` → `pnpm harness:selftest` | **3 红**(含防翻转那条) |
+| 空集(当前状态) | 放行,不误伤 |
+
+### 4.3 与 v4 字面表述的偏离(已拍板)
 
 R14 `engine` 轴收敛为「仅当两侧都有判定面时才恒 `INCOMPARABLE`」。理由、实测依据(498/498)、
 被否决的字面版会造成的噪音,见 [`DECISIONS-2026-08-13.md`](../archive/reviews/architecture-governance-v4/DECISIONS-2026-08-13.md) 第 1 条。
@@ -202,7 +224,7 @@ goal 给的「枚举值删除」「nullable 翻转为不可空」是请求侧形
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| 蕴含图 ↔ seed 绑定矩阵一致性核对 | **未做** | v4 §7 R14 的 Exit Criteria 之一。初始边集为空 ⇒ 当前真空;且 seed 的角色→码矩阵在 `prisma/seed.ts` 里,解析它需要 TS AST,会破坏比较器「零依赖 / 双运行时」这条地基。已实现的是**码存在性 + 自环 + 成环**校验(对着 RBAC_MAP 的 234 码全集),加第一条边时即生效 |
+| 蕴含图 ↔ seed 绑定矩阵一致性核对 | **未做,但已装到期闸** | v4 §7 R14 的 Exit Criteria 之一。初始边集为空 ⇒ 当前真空;实现它需要 TS AST 解析 seed 的角色→码矩阵,会破坏比较器「零依赖 / 双运行时」这条地基(那是 base-trusted 裁判与本地共用同一份判据的前提,比这条核对更根本)。**到期条件已写成执行位,不靠人记得** —— 见 §4.2。已实现的是**码存在性 + 自环 + 成环**校验(对着 RBAC_MAP 的 234 码全集) |
 | `auth/v1` / `system/v1` / `open/v1` 的 TS client | **未做** | goal 只要 admin 与 app 两份。auth 是全端通用接线,要不要一并生成留维护者拍板 |
 | 手写 handoff 的字段/端点复制面收缩 | **未做** | goal 明确留后续,避免与前端适配债耦合 |
 | R2/R3/R5/R8 转 blocking · 状态机治理 · authz 倒置 · 大 service 拆分 | **未做** | 均在 goal 硬边界之外(Phase 3 / Phase 4 / Phase 7 另立项) |

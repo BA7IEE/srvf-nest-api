@@ -3274,6 +3274,51 @@ void (async (): Promise<void> => {
         'R14:蕴含图 schemaVersion 不匹配 = fail-closed',
         validateAuthzGraph({ schemaVersion: '2.0.0', edges: [] }, universe).length === 1,
       );
+
+      // ── 到期闸:「加第一条边」自动触发 seed 一致性核对的要求 ────────────────
+      // 「本次未做」不能只躺在报告里等人记得。到期条件写成执行位:边集一旦非空,
+      // 校验器立即红。沿本仓「『此刻不存在』型判据必须写明到期条件」的既有范式。
+      {
+        const oneEdge = validateAuthzGraph(
+          { schemaVersion: '1.0.0', edges: [{ from: 'user.read.account', to: 'member.read.record' }] },
+          universe,
+        );
+        check(
+          'R14 到期闸:蕴含图非空但 seed 一致性核对未实现 = 红',
+          oneEdge.length === 1 && oneEdge[0].fact.includes('一致性核对'),
+          oneEdge.map((f) => f.fact).join(' · '),
+        );
+        check(
+          'R14 到期闸:错误信息写明「不得破坏零依赖 / 双运行时」这条约束',
+          oneEdge.length === 1 &&
+            oneEdge[0].remedy.includes('零依赖') &&
+            oneEdge[0].remedy.includes('双运行时'),
+          '到期闸必须把「怎么补才算对」讲清楚,否则下一个人会用破坏地基的接法补它',
+        );
+        check(
+          'R14 到期闸:空集不触发(今天不误伤)',
+          validateAuthzGraph({ schemaVersion: '1.0.0', edges: [] }, universe).length === 0,
+        );
+        // 防「只翻标志位不实现」:置 true 的同时必须真的导出 crossCheckSeedBindings
+        // 并在 validateGraph 里调用它。判的是**剥注释后的源码**——注释里写着这个
+        // 函数名不算数(「描述文本≠执行位」本仓一天栽过四次)。
+        {
+          const src = codeOnly(
+            fs.readFileSync(path.join(REPO_ROOT, 'scripts/authz-semantic-diff.ts'), 'utf-8'),
+            'slash',
+          );
+          const flagOn = /SEED_CROSS_CHECK_IMPLEMENTED\s*=\s*true/.test(src);
+          const implemented =
+            /export function crossCheckSeedBindings\b/.test(src) &&
+            /crossCheckSeedBindings\s*\(/.test(src.replace(/export function crossCheckSeedBindings/g, ''));
+          check(
+            'R14 到期闸:标志位置 true 必须伴随真实现(只翻标志位即红)',
+            !flagOn || implemented,
+            'SEED_CROSS_CHECK_IMPLEMENTED=true 但没有导出并调用 crossCheckSeedBindings —— ' +
+              '这正是「翻个开关就把到期闸关掉」的形状',
+          );
+        }
+      }
     }
 
     // ⑨ manifest schemaVersion 不匹配恒 fail-closed(§9 第 3 条:不猜)
