@@ -35,6 +35,11 @@ import {
   parseDeclarations as parseContractDeclarations,
 } from './contract-semantic-diff';
 import {
+  computeInputDigest as computeFeClientDigest,
+  renderAll as renderFeClients,
+  validateEmitted as validateFeClient,
+} from './generate-fe-client';
+import {
   SEED_FACTS_CLOSURE as DOCS_COUNTS_SEED_FACTS_CLOSURE,
   assertSeedFactsClosure,
   countAuditLogEventMembers,
@@ -3482,6 +3487,78 @@ void (async (): Promise<void> => {
         selfDiff.length === 0,
         selfDiff.slice(0, 5).map((f) => f.id + ' ' + f.operation + ' ' + f.location).join(' · '),
       );
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────────────────
+  // FE client 生成器(Phase 5 刀 5-3)—— §9 登记表元规范的两条硬要求
+  //
+  // ① inputDigest 必须**确定性**且不含时间戳 / git SHA(§9 第 1 条):否则
+  //    「重新生成逐字比对」恒假红,新鲜度守护当场失效;
+  // ② 输入闭包的枚举**单源在生成器内**,触碰任一输入必须翻转 digest(§9 第 7 条)——
+  //    枚举漏项会让产物静默陈旧,而 check 还在报绿。
+  // ────────────────────────────────────────────────────────────────────────
+  {
+    const REPO_F = path.resolve(__dirname, '..');
+    const contract = fs.readFileSync(path.join(REPO_F, 'docs/handoff/openapi.json'), 'utf8');
+    const digest = computeFeClientDigest(contract);
+
+    check('FE client:inputDigest 形如 sha256:<hex>', /^sha256:[0-9a-f]{64}$/.test(digest), digest);
+    checkEq(
+      'FE client:同一输入两次计算 digest 相同(确定性)',
+      computeFeClientDigest(contract),
+      digest,
+    );
+    check(
+      'FE client:契约内容变化必须翻转 digest(输入闭包不漏项)',
+      computeFeClientDigest(contract + ' ') !== digest,
+    );
+    // 产物本体不得含时间戳 / 日期 / 40 位 git SHA —— 用真产物判,不是判生成器源码。
+    {
+      const emitted = renderFeClients(contract);
+      const offenders: string[] = [];
+      for (const [rel, content] of emitted) {
+        const head = content.split('\n').slice(0, 12).join('\n');
+        if (/\b\d{4}-\d{2}-\d{2}\b/.test(head) || /\b\d{2}:\d{2}:\d{2}\b/.test(head)) {
+          offenders.push(rel + '(头部含日期/时间)');
+        }
+        if (/\b[0-9a-f]{40}\b/.test(head)) offenders.push(rel + '(头部含 40 位 SHA)');
+      }
+      check(
+        'FE client:产物头部不含时间戳 / git SHA(§9 第 1 条,否则新鲜度恒假红)',
+        offenders.length === 0,
+        offenders.join(' · '),
+      );
+      check('FE client:两个 surface 各出 types.ts + client.ts', emitted.size === 4, `${emitted.size} 个文件`);
+      // 产物只出类型与签名:不得出现 baseURL / 令牌 / 鉴权头这类东西。
+      //
+      // ⚠️ **必须剥注释后判**:产物头部那句「不含 baseURL、不含令牌」本身就含这些词,
+      //    不剥注释的话这条断言会被自己的说明文字判红(本仓已记录的
+      //    「结构断言 grep 到了自己文件头的散文」同形,施工时当场复现)。
+      const forbidden = /Authorization|Bearer\s|baseURL|localhost|api[_-]?key|secret/i;
+      const leaked = [...emitted]
+        .filter(([, content]) => forbidden.test(codeOnly(content, 'slash')))
+        .map(([rel]) => rel);
+      check(
+        'FE client:产物**代码部分**不含 baseURL / 令牌 / 鉴权头(传输层由消费方注入)',
+        leaked.length === 0,
+        leaked.join(' · '),
+      );
+      // 正对照:剥注释这一步本身要有效 —— 剥之前必须确实能匹配到那句说明,
+      // 否则「剥完没匹配」可能是因为剥掉了全部内容,断言退化成恒真。
+      check(
+        'FE client:剥注释有效性正对照(剥之前能匹配到头部说明)',
+        [...emitted].some(([, content]) => forbidden.test(content)),
+        '若这条也失败,说明产物头部的安全说明被删了,或剥注释逻辑吃掉了全文',
+      );
+      // 生成器自校验必须真的能判 —— 喂一份坏产物,诊断必须非空
+      const broken = new Map(emitted);
+      broken.set('docs/handoff/clients/admin/types.ts', 'export interface Broken { a: ; }\n');
+      check(
+        'FE client:产物自校验阳性对照(坏产物必须被 TS 诊断抓到)',
+        validateFeClient(broken).length > 0,
+      );
+      check('FE client:真产物自校验零诊断', validateFeClient(emitted).length === 0);
     }
   }
 

@@ -169,8 +169,8 @@ jobs:
       # openapi 一项(Harness 3.0 P4d)在进程内建 Nest 应用导出契约再逐字比对,
       # **不监听端口、不连数据库**,故可留在这个无 Postgres 的 fast job 里(~10s)。
       # 它把「改契约必须同 PR 刷新交接文档」从散文铁律变成机器判据。
-      - name: Docs guards (readtax + counts + codemap + rbacmap + openapi)
-        run: pnpm docs:readtax:check && pnpm docs:counts:check && pnpm docs:codemap:check && pnpm docs:rbacmap:check && pnpm docs:openapi:check
+      - name: Docs guards (readtax + counts + codemap + rbacmap + openapi + feclient)
+        run: pnpm docs:readtax:check && pnpm docs:counts:check && pnpm docs:codemap:check && pnpm docs:rbacmap:check && pnpm docs:openapi:check && pnpm docs:feclient:check
 
       # Phase 0 A-class bootstrap: R1/R4/R7/R10 metadata integrity is now blocking
       # inside the existing Fast checks context. B-class findings remain visible only.

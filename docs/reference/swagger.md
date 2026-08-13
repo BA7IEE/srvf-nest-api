@@ -23,3 +23,20 @@
 
 - 新增 Controller 路由必须带一项结构化权限声明装饰器；在 enforce 模式下，未声明路由会由 `AuthzDeclarationGuard` 在 handler 执行前以 `AUTHZ_UNDECLARED` 拒绝。
 - 声明族、scope canonical 和示例以 [`ROUTE_AUTHZ`](../ai-harness/ROUTE_AUTHZ.md) 为准。
+
+## 8. 两道语义门（架构治理 Phase 5 起生效）
+
+> **改动端点授权声明或破坏契约 = 需维护者审批，不能自批。**
+
+- **R14 授权语义门**：`ROUTE_AUTHZ` manifest 的 base↔head 四态比对。判成 `BROADER`（保护等级降级）或
+  `INCOMPARABLE`（证明不了强弱）时，必须在 `changelog.d/` 补 `authz-downgrade` 申报块
+  （`route` / `reason` / `impact` / `migration` 四行），并由维护者在 `harness-review` 环境点批。
+  `NARROWER` / `EQUIVALENT` 放行，但恒进全量迁移清单（收紧同样改变前端可见行为）。
+- **R11 契约语义门**：`docs/handoff/openapi.json` 的 base↔head 语义分类。判成 breaking（九类判定表见
+  `scripts/contract-semantic-diff.ts` 头注）时，必须补 `contract-breaking` 申报块
+  （`operation` / `reason` / `impact` / `migration` / `rollback` 五行），同样需环境审批。
+- **两级结构，顺序不可颠倒**：申报完整性是**硬闸**——缺申报时 `Red-zone trusted scan` 直接失败，
+  审批 job 被跳过，**没有可点的按钮**；补齐申报后才轮到 Environment 人工审批。
+  **申报只是记录载体，不构成批准**；`rollback` 填的是真回滚手段（revert / feature gate / 兼容层），
+  changelog 文件本身不是回滚。
+- 本地自查：`pnpm gate:authz:semantic` / `pnpm gate:contract:semantic`（权威裁决恒在 CI 的 base-trusted 裁判）。
