@@ -140,7 +140,7 @@ export class ActivityRegistrationAuditRecorder {
     actorUserId: string;
     actorRoleSnap: Role;
     revision: number;
-    source: 'self';
+    source: 'self' | 'invitation';
     answerCount: number;
     preferenceCount: number;
     requestHash: string;
@@ -160,6 +160,32 @@ export class ActivityRegistrationAuditRecorder {
         answerCount: args.answerCount,
         preferenceCount: args.preferenceCount,
         requestHash: args.requestHash,
+      },
+      tx: args.tx,
+    });
+  }
+
+  /** Allocation command audit carries only immutable command anchors, never candidate facts. */
+  async logAllocationCommand(args: {
+    activityId: string;
+    allocationBatchId: string;
+    commandCode: 'prepare' | 'commit' | 'void';
+    actorUserId: string;
+    actorRoleSnap: Role;
+    auditMeta: AuditMeta;
+    tx: PrismaTx;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: 'registration.review',
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: 'activity',
+      resourceId: args.activityId,
+      meta: args.auditMeta,
+      extra: {
+        operation: 'allocation',
+        allocationBatchId: args.allocationBatchId,
+        commandCode: args.commandCode,
       },
       tx: args.tx,
     });
