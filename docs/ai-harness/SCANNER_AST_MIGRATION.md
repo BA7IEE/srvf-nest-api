@@ -188,8 +188,7 @@ per-(file, symbol) 计数器，同方法内**别的**发现增减就会移位；
   本刀因此**未消解那 43 条 T3**。
 - **`require:any` 的 OR 结构完整性**：现规则要求**每个**声明码都有对应断言（v4 逐码要求已满足），
   但**不验证这些分支确实是 OR 组合**。全仓仅 2 个端点声明 `require:any`，影响面已知且极小。
-- **CI 接线**：`pnpm docs:boundaries:ids:check` 已可用，但未写入 `.github/workflows/ci.yml`
-  —— 该文件不在本 goal 的授权写集内。
+（CI 接线已于收尾一刀完成，见 §10。）
 
 ## 8. Phase 3 转闸的剩余前置
 
@@ -197,8 +196,8 @@ per-(file, symbol) 计数器，同方法内**别的**发现增减就会移位；
 |---|---|
 | 1 baseline 冻结 + 棘轮 | ✅ 222 条持证；身份迁移后条目集恒等，新增 ids:check 常驻判据 |
 | 2 known gaps 成文 | ✅ 本文 §5 + `architecture-debt.json.knownGaps` 已同步 |
-| 3 typed-AST 化 | ✅ R2/R3/R5/R6；⚠️ R8 部分（§6） |
-| 4 四类绕过样例全绿 | ✅ R5/R6；⚠️ R8 仅别名一类 |
+| 3 typed-AST 化 | ✅ R2/R3/R5/R6/R8 全部（§6） |
+| 4 四类绕过样例全绿 | ✅ R5/R6（10 条）+ R8（8 条，四类各一正一负） |
 | 5 `$queryRaw` 通道 | ✅ 已纳入且按类型判定接收者 |
 | 6 report 期误报逐条处理 | ❌ **未做** —— 需要观察期数据；本刀未新增误报（读数 +1/0/0） |
 | 7 CI 连续稳定 ≥10 PR 或 ≥2 周 | ❌ **未开始计时** —— typed 版本刚落地 |
@@ -206,9 +205,9 @@ per-(file, symbol) 计数器，同方法内**别的**发现增减就会移位；
 | 9 回滚路径一行开关 | ❌ **未做** —— 规则现为恒 report，尚无 blocking↔report 开关 |
 | 10 错误信息五要素 | ⚠️ 部分 —— R8 消息含规则/位置/事实/处置，缺「引用 domain-map/manifest 的具体声明行」 |
 
-**建议的下一刀顺序**：① 补 R8 的 §6 缺口（否则 R8 不具备转闸资格）；
-② 登记 `scope self` 的断言模式（见 §9，一次性消掉 43 条 T3）；③ 回滚开关 + 错误信息第④要素；
-④ 然后才开始 EC 第 7 条的连续稳定计时。
+**建议的下一刀顺序**：① `scope self` 数据流判据（见 §9，另立项）；② 回滚开关 + 错误信息第④要素；
+③ 然后才开始 EC 第 7 条的连续稳定计时。
+（原列第一位的「补 R8 §6 缺口」已于收尾一刀完成。）
 
 ## 9. R8 的 113 条 T3 成因分布与标注工作量估算（交拍板）
 
@@ -217,14 +216,47 @@ per-(file, symbol) 计数器，同方法内**别的**发现增减就会移位；
 | 主因 | 条数 | 性质 | 处置成本 |
 |---|---:|---|---|
 | responsibility 断言不在 T1/T2 可达范围 | 58 | 断言在更深的 service 链里 | 逐条 `@AuthzChainVerified` 标注（每条须 reason/verifiedBy/reviewId/evidenceDigest + Environment 审批） |
-| **`scope self` 没有任何已登记断言模式** | **43** | **登记表缺口，不是代码缺口** | **一次性登记一个 self 模式即可批量消解**，无需逐条标注 |
+| **`scope self` 没有任何已登记断言模式** | **43** | **判据缺口** —— 见下方更正 | 需新增一类**数据流 matcher**；既非逐条标注，也非往登记表加一行 |
 | visibility scope 下推不在 T1/T2 可达范围 | 8 | 同 responsibility | 逐条标注 |
 | 码/engine 断言在更深层 | 4 | 同上 | 逐条标注 |
 
-**最省力的下一步是第二行**：`harness/authz-assertion-patterns.json` 现有五个族覆盖
-codes / engine / scopes / admission 四轴，但 `scopes` 只登记了 `visible-organization-scope`
-与 `responsibility-check` 两族，**`self` 一族缺失**。43 条 T3 因此不是"证明不了"，而是
-"检测器没有可用来证明的模式"。补登记后需重扫确认实际消解条数（本文未预判该数字）。
+**更正（收尾一刀实测，推翻本节初版的说法）**：初版写「补一个模式即可批量消解，是最省力的
+下一步」，**不准确**。实读两处 `self` 端点后确认：`self` 在本仓**根本没有断言调用**——
+
+```ts
+list(@Query() query, @CurrentUser() currentUser: CurrentUserPayload) {
+  return this.service.appList(currentUser, query);   // 没有任何 .can() / assert
+}
+```
+
+`self` 是**由构造保证**的：handler 把调用者自己的身份传下去，从不接受调用方提供的主体 id。
+现有 matcher 形状（receiverTypes / methods / outcome）在这里**匹配不到任何东西**，
+硬塞一行等于编造一个不存在的调用。诚实的 `self` 判据是**数据流判据**——主体参数源自
+`@CurrentUser()`，且没有调用方可控的 id 走到主体位置——属于**新的 matcher 类别**。
+
+两条附加约束：① 其单源 `AUTHZ_ASSERTION_PATTERNS` 在 `src/common/authz/authz-context.ts`
+（登记表 JSON 只是 `--write` 投影，直接改 JSON 会被 stale 检查拦下，也正是"不得分叉"所禁止），
+故改动落在 `src/**` 且受 R15 治理；② 它的**负样例正是 IDOR 形状**（handler 收
+`@Param('userId')` 并把它当主体）——判据写松就是给真实越权端点盖上「self 已证明」的章，
+**比不做更糟**。**维护者 2026-08-13 拍板：另立项**，须自带 red-first 设计。
 
 其余 70 条若走标注路线，按 v4 ⑯㉟ 每条都是受控事件（fragment + Environment 审批 +
 evidenceDigest 新鲜度绑定），**不是一刀能完成的量**，建议按面分批并单独立项。
+
+## 10. 债务身份一致性已接 CI（收尾一刀）
+
+`pnpm docs:boundaries:ids:check` 接进 **Fast checks** 既有的
+`Architecture governance A-metadata gate` 步骤，**不新增 required context**（沿 Phase 0 范式
+「在既有 required job 内加步骤」）。
+
+**定为 blocking，不加 `|| true`**。理由：它属 A 类（元数据完整性），判的是**台账**不是代码 ——
+断言「每条已登记的 call-site 债务条目仍能解析到一个活的调用点」。不接 CI 的话，普通的代码移动
+造成的身份失配会一直隐形，直到 R5/R6 转闸那天才炸，而那时它呈现的形状是
+「旧债全部清偿 + 等量新债出现」—— 与真回归一模一样。
+
+**真触发验证（不是结构断言）**：把 `XW-0001` 的 `callSiteId` 改成
+`cs:deadbeefdeadbeefdeadbeef` → 门 **exit 1** 且逐条列出 `unmatched: ["XW-0001"]`；
+还原后 **exit 0**。即这道闸能红，不是恒绿的摆设。
+
+当前读数 `alreadyCurrent: 201 / migrated: 0 / unmatched: [] / collisions: 0`，幂等，
+不会误伤既有 PR。
