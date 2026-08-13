@@ -16,7 +16,7 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.0.0 |
-| inputDigest | sha256:6fa68439ee247278a24e45eaddf9ccec8f0dda4266eb939f7f948d688a232d6c |
+| inputDigest | sha256:47591a83d9bbb43decf66ac2b2b468e343a54b1eaf1501a8573da2a326f33f3a |
 | endpoint count | 498 |
 | legacy [auth] count | 128 |
 | source of truth | normalized controller declarations |
@@ -100,7 +100,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.0.0",
-  "inputDigest": "sha256:6fa68439ee247278a24e45eaddf9ccec8f0dda4266eb939f7f948d688a232d6c",
+  "inputDigest": "sha256:47591a83d9bbb43decf66ac2b2b468e343a54b1eaf1501a8573da2a326f33f3a",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -3796,7 +3796,7 @@
       "legacy": "public",
       "policy": {
         "admission": null,
-        "mode": "PUBLIC",
+        "mode": "LOGIN_ONLY",
         "codes": [],
         "require": "all",
         "scopes": [],
@@ -9336,8 +9336,8 @@
 | GET | /api/app/v1/notifications/:id | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:128; src/modules/notifications/notification-app.controller.ts:144 |
 | GET | /api/app/v1/notifications/subscriptions/status | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:94; src/modules/notifications/notification-app.controller.ts:110 |
 | GET | /api/app/v1/notifications/unread-count | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:114; src/modules/notifications/notification-app.controller.ts:125 |
-| GET | /api/open/v1/contents | Public - Content | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/content/content-public.controller.ts:33; src/modules/content/content-public.controller.ts:43 |
-| GET | /api/open/v1/contents/:id | Public - Content | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/content/content-public.controller.ts:46; src/modules/content/content-public.controller.ts:56 |
+| GET | /api/open/v1/contents | Public - Content | public | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/content/content-public.controller.ts:34; src/modules/content/content-public.controller.ts:44 |
+| GET | /api/open/v1/contents/:id | Public - Content | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/content/content-public.controller.ts:47; src/modules/content/content-public.controller.ts:57 |
 | GET | /api/open/v1/recruitment/certificate-standards | Public - Recruitment | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/recruitment/recruitment-public.controller.ts:167; src/modules/recruitment/recruitment-public.controller.ts:176 |
 | GET | /api/open/v1/recruitment/publicity | Public - Recruitment | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/recruitment/recruitment-public.controller.ts:149; src/modules/recruitment/recruitment-public.controller.ts:158 |
 | GET | /api/system/v1/attachment-mime-configs | Ops - Attachment Configs | rbac | RBAC; admission=-; codes=attachment-config.read.mime; require=all; scopes=-; engine=rbac-global | code | src/modules/attachment-configs/attachment-mime-configs.controller.ts:60; src/modules/attachment-configs/attachment-mime-configs.controller.ts:72 |

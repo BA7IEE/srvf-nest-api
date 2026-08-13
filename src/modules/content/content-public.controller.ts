@@ -8,6 +8,7 @@ import {
 } from '../../common/decorators/api-response.decorator';
 import { ContentPublicThrottle } from '../../common/decorators/content-public-throttle.decorator';
 import { Public } from '../../common/decorators/public.decorator';
+import { LoginOnly } from '../../common/decorators/route-authz.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import {
   ContentAttachmentDto,
@@ -30,7 +31,7 @@ import { ContentReadService } from './content-read.service';
 export class ContentPublicController {
   constructor(private readonly service: ContentReadService) {}
 
-  @Public()
+  @LoginOnly({ require: 'all' })
   @ContentPublicThrottle()
   @Get()
   @ApiOperation({
