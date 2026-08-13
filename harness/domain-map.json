@@ -661,58 +661,77 @@
     "WecomSettings": { "domain": "comms", "ownerModule": "wecom", "confirmed": true }
   },
   "allowedEdges": [
-    { "from": "identity-org", "to": "platform-core", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "identity-org", "to": "platform-access", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "identity-org", "to": "comms", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "engagement", "to": "identity-org", "kind": "declared-business", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "engagement", "to": "credentials", "kind": "declared-business", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "engagement", "to": "participation", "kind": "declared-business", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "engagement", "to": "platform-core", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "engagement", "to": "platform-access", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "engagement", "to": "comms", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "participation", "to": "identity-org", "kind": "declared-business", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "participation", "to": "credentials", "kind": "declared-business", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "participation", "to": "insurance", "kind": "declared-business", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "participation", "to": "platform-core", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "participation", "to": "platform-access", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "participation", "to": "comms", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "insurance", "to": "identity-org", "kind": "declared-business", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "insurance", "to": "credentials", "kind": "declared-business", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "insurance", "to": "platform-core", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "insurance", "to": "platform-access", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "credentials", "to": "identity-org", "kind": "declared-business", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "credentials", "to": "platform-core", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "credentials", "to": "platform-access", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "content", "to": "platform-core", "kind": "declared-business", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "content", "to": "platform-access", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "content", "to": "comms", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "comms", "to": "identity-org", "kind": "read-only-query", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "comms", "to": "platform-core", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "comms", "to": "platform-access", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" },
-    { "from": "platform-access", "to": "platform-core", "kind": "public-surface", "confirmed": false, "decisionId": "allowedEdges" }
+    { "from": "identity-org", "to": "platform-core", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "identity-org", "to": "platform-access", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "identity-org", "to": "comms", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "engagement", "to": "identity-org", "kind": "declared-business", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "engagement", "to": "credentials", "kind": "declared-business", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "engagement", "to": "participation", "kind": "declared-business", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "engagement", "to": "platform-core", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "engagement", "to": "platform-access", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "engagement", "to": "comms", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "participation", "to": "identity-org", "kind": "declared-business", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "participation", "to": "credentials", "kind": "declared-business", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "participation", "to": "insurance", "kind": "declared-business", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "participation", "to": "platform-core", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "participation", "to": "platform-access", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "participation", "to": "comms", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "insurance", "to": "identity-org", "kind": "declared-business", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "insurance", "to": "platform-core", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "insurance", "to": "platform-access", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "credentials", "to": "identity-org", "kind": "declared-business", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "credentials", "to": "platform-core", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "credentials", "to": "platform-access", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "content", "to": "platform-core", "kind": "declared-business", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "content", "to": "platform-access", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "comms", "to": "identity-org", "kind": "read-only-query", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "comms", "to": "platform-core", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "comms", "to": "platform-access", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "platform-access", "to": "platform-core", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
+    { "from": "platform-core", "to": "platform-access", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" }
   ],
   "publicSurface": {
-    "confirmed": false,
-    "purpose": "Phase 0 declaration slots only; exact exports require maintainer confirmation before enforcement.",
+    "confirmed": true,
+    "purpose": "维护者于 2026-08-12 确认：初版 public surface 仅描述当前 Nest module exports 与现有具名 tx 原语；不描述计划，不构成直接 DB 访问出口。",
     "byDomain": {
-      "platform-core": {
-        "modules": ["storage", "attachments", "attachment-configs", "dictionaries", "audit-logs"],
-        "exports": []
+      "comms": {
+        "modules": ["notifications", "sms", "wechat", "wecom"],
+        "exports": ["NotificationOutboxService", "SmsSettingsService", "SmsProviderRouter", "SmsCodeService", "WechatService", "WechatSettingsService", "WecomService", "WecomSettingsService", "WecomAuthAttemptService"]
       },
-      "platform-access": {
-        "modules": ["permissions", "authz", "role-bindings"],
-        "exports": ["rbac.can", "authz.can", "authz.explain", "stable registration token"]
-      },
-      "identity-org": {
-        "modules": ["users", "members", "member-departments"],
-        "exports": ["kernel queries", "lifecycle primitives"]
+      "content": {
+        "modules": ["content"],
+        "exports": [],
+        "notes": "未发现 Nest @Module exports；任何跨域调用 content 私有实现均为深引私有实现，属 Phase 3 待处置。"
       },
       "credentials": {
         "modules": ["certificates"],
-        "exports": [
-          "certificate issuance primitive (proposed)",
-          "certificate qualification coverage read (D83)"
-        ]
+        "exports": ["CertificateRecognitionResolver", "CertificateEvidenceSigner", "CertificateQualificationService"]
+      },
+      "engagement": {
+        "modules": ["recruitment", "team-join"],
+        "exports": [],
+        "notes": "未发现 Nest @Module exports；任何跨域调用 engagement 私有实现均为深引私有实现，属 Phase 3 待处置。"
+      },
+      "identity-org": {
+        "modules": ["auth", "member-profiles", "members", "organizations", "position-assignments", "realname", "supervision-assignments", "users"],
+        "exports": ["IdentityStepUpService", "MemberQualificationFactsService", "MembersService", "OrganizationsService", "PositionAssignmentsService", "RealnameVerificationService", "RealnameSettingsService", "SupervisionAssignmentsService", "AppIdentityResolver"],
+        "txPrimitives": ["revokeActiveWecomIdentityInTx"]
+      },
+      "insurance": {
+        "modules": ["insurances"],
+        "exports": ["InsuranceRequirementService"]
+      },
+      "participation": {
+        "modules": ["activities", "activity-feedbacks"],
+        "exports": ["ActivitiesService", "EvidenceSealService", "SettlementDraftService", "SettlementDraftDispatchService", "SettlementSubmitService", "SettlementReviewService", "LedgerPreparationService", "ActivityBatchWorker", "LedgerPostingService", "LedgerQueryService", "ActivityClosureService", "CorrectionApplicationService", "AppMyActivitiesService", "ActivityParticipationPolicy", "ActivityPublishReviewService", "ActivityResponsibilityPolicy", "ActivityResponsibilityService", "AppManagedActivitiesService", "ActivityWorkflowQueryService", "ActivityMemberOffboardImpactService", "ActivityQualificationEvaluatorService", "ActivityFeedbacksQueryService"]
+      },
+      "platform-core": {
+        "modules": ["attachments", "audit-logs", "storage"],
+        "exports": ["AttachmentsService", "AttachmentContentValidator", "AuditLogsService", "StorageSettingsService", "StorageCryptoService", "StorageProviderRouter", "StorageObjectLedgerService", "STORAGE_PROVIDER"]
+      },
+      "platform-access": {
+        "modules": ["authz", "permissions"],
+        "exports": ["AuthzService", "RbacService", "RoleDelegationPolicy", "LastAdminProtectionPolicy"]
       }
     }
   },
@@ -1471,5 +1490,5 @@
       "reviewTrigger": "调用形态、读取字段或属主调整时复核；语义时间窗加状态组合不得以本项豁免。"
     }
   ],
-  "decisionsPending": ["allowedEdges", "publicSurface"]
+  "decisionsPending": []
 }

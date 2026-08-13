@@ -1,14 +1,15 @@
 # Boundary observations — Architecture Governance Phase 2
 
-> 状态：拍板材料，未改变任何边界声明。扫描与所有规则仍为 **report-only**；本文件不构成 allowlist、public surface 或跨域写的合法出口。
+> 状态：D4 已拍板并落册。扫描与所有规则仍为 **report-only**；确认的声明边与 public surface 不构成直接 DB 访问或跨域写的合法出口。
 
 ## 1. 本期结论
 
-- R5/R6 扫描保持 report-only，现输出 528 条观察，其中 443 条报告项、85 条已登记的事实读观察。
+- R5/R6 扫描保持 report-only，现输出 511 条观察，其中 426 条报告项、85 条已登记的事实读观察。
 - 原 125 条跨属主写台账语义字段已 100% 填充；W1 98 条均写明“按域重划自动合法、Phase 7 无需清偿”。W2/W3/W4 共 27 条均有逐条属主出口与偿还路径。
 - R5/R6 静态复扫审核并新增历史债 76 条：raw 30、predicate 46；每条都有 scanner 版本与 `git blame` 引入证据。本登记没有改任何命中的 `src/**` 行。
 - `crossDomainReadAllowlist` 从 0 条初版为 59 条精确调用点；第三档语义查询 8 条仍单列为属主谓词候选，未进入 allowlist。
-- `allowedEdges` 与 `publicSurface` 仍是未拍板状态：`confirmed:false`，`decisionsPending=["allowedEdges","publicSurface"]`。本期在此停住，等待维护者决定。
+- D4 已确认 28 条 `allowedEdges`：恢复 9 条有实测 import 的原声明，只删除 `insurance→credentials`、`content→comms` 两条真 0/0 边，并加 `platform-core→platform-access`；`publicSurface` 确认为现有 Nest module exports 加 `revokeActiveWecomIdentityInTx`，`decisionsPending=[]`。
+- 新增 `edgeUsage.declaredEdges` 与 `edgeUsage.undeclaredDirections` 并列输出，不再靠删除声明边测量其 import 使用量。
 
 ## 2. 观察计数：Phase 1 收口基线 vs 本次
 
@@ -16,7 +17,7 @@
 
 | 观察项 | Phase 1 基线 | 本次 | 说明 |
 | --- | --- | --- | --- |
-| 总 findings / report / allow | 443 / 371 / 72 | 528 / 443 / 85 | 扫描仍为 report-only |
+| 总 findings / report / allow | 443 / 371 / 72 | 511 / 426 / 85 | 扫描仍为 report-only |
 | 跨属主写 | 125 | 125 | 业务代码未改；既有 125 条仍在台账 |
 | raw SQL 物理表命中 | 30 | 30 | 30 条被审核登记为历史 raw 债 |
 | 语义查询候选 | 135 | 8 | 旧宽口径经三档重分后为 8 条静态语义候选 |
@@ -26,7 +27,8 @@
 | 动态读形状 | 4 | 117 | 117 条仍是已知缺口，不当作已证实债 |
 | 观察子域间写 | 0 | 48（identity-org 13 / participation 35） | 只积累拆域证据，不改变域边界 |
 | 二档 allowlist 精确条目 | 0 | 59 | 语义查询不入表 |
-| 债务台账 | 125；pending 125 | 201；pending 0 | 125 条完成语义；新增 76 条历史债 |
+| 已声明边使用 / 未声明方向 | 无此仪器口径 | 28 条（582 import / 184 access）/ 21 条（41 import / 121 access） | 两个口径并列，均为 report-only |
+| 债务台账 | 125；pending 125 | 222；pending 0 | 125 条完成语义；76 条 R5/R6 历史债加 D4 方向级债 21 条 |
 | R8 首扫 | T1=4（全部 mismatch）/ T2=2（全部 mismatch）/ T3=113 / N/A=9 | T1=4（全部 mismatch）/ T2=2（全部 mismatch）/ T3=113 / N/A=9 | T3=113 是 Phase 3 前置标注工作量，不在本期补齐 |
 
 ### 已知缺口
@@ -163,45 +165,55 @@
 | XW-0203 | predicate | src/modules/team-join/team-join-enrollment.service.ts:214 | engagement → identity-org / Member | git blame fe3501bdb1dc（2026-06-20；Phase 2 登记 PR 未改违规代码行） |
 | XW-0204 | raw | src/modules/users/user-wecom-binding.service.ts:264 | identity-org → comms / WecomSettings | git blame 74067bf125cb（2026-08-02；Phase 2 登记 PR 未改违规代码行） |
 
-## 6. allowedEdges 拍板表
+### D4 未声明方向债（21）
 
-计数定义：**import** = `cross-domain-import` 实测条数；**跨域访问** = 非 import/cycle 的跨域 DB 读、写与 raw 命中条数。直接 DB 访问只证明存量依赖存在，**不**证明该边应被批准，也不豁免任何债务。
+这些是 D4 拍板后按方向聚合登记的额外台账项，不自动把现状变为允许边；每项都保留代表性源码位置、`git blame` 证据和目标期。
 
-| 声明边 | kind | 实际 import | 跨域访问 | 建议 |
-| --- | --- | --- | --- | --- |
-| identity-org→platform-core | public-surface | 0 | 5 | 有实测访问：仅作拍板依据，不等于豁免直接 DB 访问 |
-| identity-org→platform-access | public-surface | 0 | 1 | 有实测访问：仅作拍板依据，不等于豁免直接 DB 访问 |
-| identity-org→comms | public-surface | 0 | 2 | 有实测访问：仅作拍板依据，不等于豁免直接 DB 访问 |
-| engagement→identity-org | declared-business | 0 | 35 | 有实测访问：仅作拍板依据，不等于豁免直接 DB 访问 |
-| engagement→credentials | declared-business | 0 | 5 | 有实测访问：仅作拍板依据，不等于豁免直接 DB 访问 |
-| engagement→participation | declared-business | 0 | 2 | 有实测访问：仅作拍板依据，不等于豁免直接 DB 访问 |
-| engagement→platform-core | public-surface | 0 | 3 | 有实测访问：仅作拍板依据，不等于豁免直接 DB 访问 |
-| engagement→platform-access | public-surface | 0 | 0 | 疑似冗余：建议删除，除非维护者给出未来设计依据 |
-| engagement→comms | public-surface | 0 | 0 | 疑似冗余：建议删除，除非维护者给出未来设计依据 |
-| participation→identity-org | declared-business | 0 | 55 | 有实测访问：仅作拍板依据，不等于豁免直接 DB 访问 |
-| participation→credentials | declared-business | 0 | 0 | 疑似冗余：建议删除，除非维护者给出未来设计依据 |
-| participation→insurance | declared-business | 0 | 0 | 疑似冗余：建议删除，除非维护者给出未来设计依据 |
-| participation→platform-core | public-surface | 0 | 10 | 有实测访问：仅作拍板依据，不等于豁免直接 DB 访问 |
-| participation→platform-access | public-surface | 0 | 3 | 有实测访问：仅作拍板依据，不等于豁免直接 DB 访问 |
-| participation→comms | public-surface | 0 | 0 | 疑似冗余：建议删除，除非维护者给出未来设计依据 |
-| insurance→identity-org | declared-business | 0 | 6 | 有实测访问：仅作拍板依据，不等于豁免直接 DB 访问 |
-| insurance→credentials | declared-business | 0 | 0 | 疑似冗余：建议删除，除非维护者给出未来设计依据 |
-| insurance→platform-core | public-surface | 0 | 0 | 疑似冗余：建议删除，除非维护者给出未来设计依据 |
-| insurance→platform-access | public-surface | 0 | 0 | 疑似冗余：建议删除，除非维护者给出未来设计依据 |
-| credentials→identity-org | declared-business | 0 | 2 | 有实测访问：仅作拍板依据，不等于豁免直接 DB 访问 |
-| credentials→platform-core | public-surface | 0 | 4 | 有实测访问：仅作拍板依据，不等于豁免直接 DB 访问 |
-| credentials→platform-access | public-surface | 0 | 0 | 疑似冗余：建议删除，除非维护者给出未来设计依据 |
-| content→platform-core | declared-business | 0 | 2 | 有实测访问：仅作拍板依据，不等于豁免直接 DB 访问 |
-| content→platform-access | public-surface | 0 | 0 | 疑似冗余：建议删除，除非维护者给出未来设计依据 |
-| content→comms | public-surface | 0 | 0 | 疑似冗余：建议删除，除非维护者给出未来设计依据 |
-| comms→identity-org | read-only-query | 0 | 39 | 有实测访问：仅作拍板依据，不等于豁免直接 DB 访问 |
-| comms→platform-core | public-surface | 0 | 2 | 有实测访问：仅作拍板依据，不等于豁免直接 DB 访问 |
-| comms→platform-access | public-surface | 0 | 4 | 有实测访问：仅作拍板依据，不等于豁免直接 DB 访问 |
-| platform-access→platform-core | public-surface | 0 | 3 | 有实测访问：仅作拍板依据，不等于豁免直接 DB 访问 |
+- `undeclared-edge/business`：XW-0205..XW-0216，共 12 条。`comms→content/credentials/insurance/participation`、`content→identity-org`、`credentials→engagement`、`engagement→insurance`、`identity-org→engagement/participation`、`insurance→engagement/participation`、`participation→engagement`；退出条件均为“Phase 3 R2 转 blocking 前逐条拍板：加边 or 消除依赖”。
+- `undeclared-edge/platform-inversion`：XW-0217..XW-0225，共 9 条。`platform-access→comms/credentials/engagement/identity-org/participation` 与 `platform-core→content/credentials/identity-org/participation`；退出条件均为“Phase 7 authz 倒置注册制 + platform 层去业务表访问”，并在 notes 标注为 v4 §1 已识别问题的完整量化版。
 
-### 已发生但尚未声明的方向
+## 6. allowedEdges 拍板结果
 
-这些方向不应由本期擅自补进 `allowedEdges`；其中的 import/访问可能是历史债、平台反向依赖或后续拆解对象，留给维护者逐项决定。
+原口径只把**未声明** import 放入 findings，因而不能用已声明边的 findings 数判断“0 import”。本期已修为 `edgeUsage` 双视图：`declaredEdges` 从全部 import AST 采集，`undeclaredDirections` 仅列没有声明的实测方向。两者的跨域访问均为非 import/cycle 的跨域 DB 读、写与 raw 命中；直接 DB 访问只证明存量依赖存在，不构成允许或豁免。
+
+维护者最终确认 28 条边：恢复 9 条有实测 import 的边，只删除 `insurance→credentials` 与 `content→comms` 两条真 0/0 边，并新增 `platform-core→platform-access`。业务→platform 与业务→comms 仍限已确认 public surface；`participation→credentials` 因活动资格读证书的 2 次 import 暂保留，Phase 3 R2 转 blocking 前复核合理性。
+
+### 已声明边使用统计（28）
+
+| 声明边 | kind | 实际 import | 跨域访问 |
+| --- | --- | --- | --- |
+| identity-org→platform-core | public-surface | 58 | 5 |
+| identity-org→platform-access | public-surface | 34 | 1 |
+| identity-org→comms | public-surface | 40 | 2 |
+| engagement→identity-org | declared-business | 18 | 35 |
+| engagement→credentials | declared-business | 4 | 5 |
+| engagement→participation | declared-business | 0 | 2 |
+| engagement→platform-core | public-surface | 48 | 3 |
+| engagement→platform-access | public-surface | 12 | 0 |
+| engagement→comms | public-surface | 13 | 0 |
+| participation→identity-org | declared-business | 36 | 55 |
+| participation→credentials | declared-business | 2 | 0 |
+| participation→insurance | declared-business | 8 | 0 |
+| participation→platform-core | public-surface | 94 | 10 |
+| participation→platform-access | public-surface | 48 | 3 |
+| participation→comms | public-surface | 17 | 0 |
+| insurance→identity-org | declared-business | 3 | 6 |
+| insurance→platform-core | public-surface | 12 | 0 |
+| insurance→platform-access | public-surface | 7 | 0 |
+| credentials→identity-org | declared-business | 4 | 2 |
+| credentials→platform-core | public-surface | 20 | 4 |
+| credentials→platform-access | public-surface | 8 | 0 |
+| content→platform-core | declared-business | 10 | 2 |
+| content→platform-access | public-surface | 3 | 0 |
+| comms→identity-org | read-only-query | 15 | 39 |
+| comms→platform-core | public-surface | 19 | 2 |
+| comms→platform-access | public-surface | 19 | 4 |
+| platform-access→platform-core | public-surface | 13 | 3 |
+| platform-core→platform-access | public-surface | 17 | 1 |
+
+### 已发生但未纳入声明的方向
+
+这 21 个方向不自动加入 `allowedEdges`，已逐条登记进债务台账；业务域间 12 条进入 `undeclared-edge/business`，platform→business 9 条进入 `undeclared-edge/platform-inversion`。`platform-core→platform-access` 已由维护者单独确认，故不在本表。
 
 | 方向 | 实际 import | 跨域访问 |
 | --- | --- | --- |
@@ -226,32 +238,33 @@
 | platform-core→credentials | 0 | 4 |
 | platform-core→identity-org | 2 | 10 |
 | platform-core→participation | 3 | 22 |
-| platform-core→platform-access | 17 | 1 |
 
-**建议拍板方式**：保留有非零实测的声明边，但明确“只允许将来经确认的 public surface / 属主谓词 / tx 原语”；11 条 0/0 声明边建议删除，除非维护者给出明确的未来设计依据。确认前不改 `domain-map.json`。
+**落册结果**：28 条确认边不为历史直接 DB 访问背书；未声明方向也没有因登记而被豁免。R2 未来若转 blocking，仍须按对应债务条目的退出条件逐项处置。
 
-## 7. publicSurface 拍板提案
+## 7. publicSurface 已确认现状
 
-下表仅列目前 Nest `@Module({ exports })` 的真实导出；它们是候选面，不自动等于跨域可用面。未发现 exports 的域/模块不因目录存在而获得公开资格。
+下表仅列当前 Nest `@Module({ exports })` 的真实导出；维护者已确认它们与 `revokeActiveWecomIdentityInTx` 构成初版 public surface。它们不自动等于跨域可用面，也不构成直接 DB 访问出口。
 
 | 域 | 现有模块 exports（实测） | 提案边界 |
 | --- | --- | --- |
 | comms | notifications/notifications.module.ts: NotificationOutboxService<br>sms/sms.module.ts: SmsSettingsService, SmsProviderRouter, SmsCodeService<br>wechat/wechat.module.ts: WechatService, WechatSettingsService<br>wecom/wecom.module.ts: WecomService, WecomSettingsService, WecomAuthAttemptService | 确认 outbox、SMS、微信、企微现有 exports；不得作为业务表写入口。 |
-| content | （未发现 @Module exports） | 当前未见 Nest exports；保持待定。 |
-| credentials | certificates/certificates.module.ts: CertificateRecognitionResolver, CertificateEvidenceSigner, CertificateQualificationService | 确认现有 recognition/evidence/qualification exports；发号原语待 Phase 7。 |
-| engagement | （未发现 @Module exports） | 当前未见 Nest exports；不因业务编排债默认开放。 |
+| content | （未发现 @Module exports） | 当前无公开 Nest 导出。 |
+| credentials | certificates/certificates.module.ts: CertificateRecognitionResolver, CertificateEvidenceSigner, CertificateQualificationService | 确认现有 recognition/evidence/qualification exports；未列发号原语。 |
+| engagement | （未发现 @Module exports） | 当前无公开 Nest 导出。 |
 | identity-org | auth/auth.module.ts: IdentityStepUpService<br>member-profiles/member-profiles.module.ts: MemberQualificationFactsService<br>members/members.module.ts: MembersService<br>organizations/organizations.module.ts: OrganizationsService<br>position-assignments/position-assignments.module.ts: PositionAssignmentsService<br>realname/realname.module.ts: RealnameVerificationService, RealnameSettingsService<br>supervision-assignments/supervision-assignments.module.ts: SupervisionAssignmentsService<br>users/users.module.ts: AppIdentityResolver | 确认现有身份/组织 services；单独列 users/wecom-identity-revoke.ts 的 InTx 原语。 |
-| insurance | insurances/insurances.module.ts: InsuranceRequirementService | 仅确认 InsuranceRequirementService；提醒认领原语待 D 档/Phase 7。 |
-| participation | activities/activities.module.ts: ActivitiesService, EvidenceSealService, SettlementDraftService, SettlementDraftDispatchService, SettlementSubmitService, SettlementReviewService, LedgerPreparationService, ActivityBatchWorker, LedgerPostingService, LedgerQueryService, ActivityClosureService, CorrectionApplicationService, AppMyActivitiesService, ActivityParticipationPolicy, ActivityPublishReviewService, ActivityResponsibilityPolicy, ActivityResponsibilityService, AppManagedActivitiesService, ActivityWorkflowQueryService, ActivityMemberOffboardImpactService, ActivityQualificationEvaluatorService<br>activities/activity-batch-worker.module.ts: ActivityBatchWorker<br>activity-feedbacks/activity-feedbacks.module.ts: ActivityFeedbacksQueryService | 确认活动/反馈现有 exports；报名/考勤原语待 Phase 7 实现后再进入 surface。 |
+| insurance | insurances/insurances.module.ts: InsuranceRequirementService | 仅确认 InsuranceRequirementService；未列认领原语。 |
+| participation | activities/activities.module.ts: ActivitiesService, EvidenceSealService, SettlementDraftService, SettlementDraftDispatchService, SettlementSubmitService, SettlementReviewService, LedgerPreparationService, ActivityBatchWorker, LedgerPostingService, LedgerQueryService, ActivityClosureService, CorrectionApplicationService, AppMyActivitiesService, ActivityParticipationPolicy, ActivityPublishReviewService, ActivityResponsibilityPolicy, ActivityResponsibilityService, AppManagedActivitiesService, ActivityWorkflowQueryService, ActivityMemberOffboardImpactService, ActivityQualificationEvaluatorService<br>activities/activity-batch-worker.module.ts: ActivityBatchWorker<br>activity-feedbacks/activity-feedbacks.module.ts: ActivityFeedbacksQueryService | 确认活动/反馈现有 exports；未列报名/考勤原语。 |
 | platform-access | authz/authz.module.ts: AuthzService<br>permissions/permissions.module.ts: RbacService, RoleDelegationPolicy, LastAdminProtectionPolicy | 确认 AuthzService / RbacService 等稳定 token；role-bindings 未见 Nest exports，不新增暗门。 |
 | platform-core | attachments/attachments.module.ts: AttachmentsService, AttachmentContentValidator<br>audit-logs/audit-logs.module.ts: AuditLogsService<br>storage/storage.module.ts: StorageSettingsService, StorageCryptoService, StorageProviderRouter, StorageObjectLedgerService, STORAGE_PROVIDER | 仅确认现有模块 exports；禁止将 raw SQL 视为 public surface。 |
+
+content 与 engagement 当前均无 Nest exports；若存在跨域调用这两个域的情况，该调用即为深引私有实现，属 Phase 3 待处置。
 
 ### tx 原语文件
 
 - 现有、具名且导出的 tx 原语：`src/modules/users/wecom-identity-revoke.ts` → `revokeActiveWecomIdentityInTx`。
-- §4 中列出的 `*.primitive.ts（拟建）` 都是偿债候选，需在对应 Phase 7 目标实际实现、带事务语义说明和验证后，才可加入 `publicSurface`；本期不创建文件、不开放出口。
+- §4 中列出的 `*.primitive.ts（拟建）` 均不属于当前 public surface；只有在对应 Phase 7 偿债 PR 实际实现、说明事务语义并完成验证后，才可单独申请扩面。
 
-**建议拍板方式**：先确认“现有 module exports + `revokeActiveWecomIdentityInTx`”为初版 public surface；所有新增 tx 原语随 Phase 7 偿债 PR 逐条扩面。确认前不把任何拟建文件写入 domain-map。
+**落册结果**：`publicSurface.confirmed=true`；所有新增 tx 原语仍须随对应 Phase 7 偿债 PR 单独拍板。
 
 ## 8. D5 hooks 环境耦合修复
 
@@ -263,7 +276,7 @@
 
 | 规则 | 当前状态 | 尚缺，不得翻 blocking |
 | --- | --- | --- |
-| R2/R3 | ☐ | `allowedEdges` 尚未拍板；依赖/环 baseline 与 ratchet、误报处理、稳定性、回滚和 AI 反馈闭环均未验收。 |
+| R2/R3 | 🟡 | `allowedEdges` 已拍板，且已声明边使用统计与未声明方向并列输出；依赖/环 baseline 与 ratchet、误报处理、稳定性、回滚和 AI 反馈闭环仍未验收。 |
 | R5 | 🟡 | 台账语义 100%、raw 通道、typed-AST 自测已具备；但 architecture-debt 尚未接入 ratchet-registry，属主原语各域验证样例、嵌套自开事务阳性对照、稳定期/Journey/一键回退均未完成。 |
 | R6 | ☐（设计决定） | v4 决定长期 report-only；若日后升级，另需谓词规则与误报率专项评审。 |
 | R8 T1/T2 | ☐ | 当前 T3=113 未完成显式标注；其余可判范围、稳定期、回滚与完整 EC 尚未逐项验收。 |
@@ -276,11 +289,12 @@
 - 未修改 `src/**`、`prisma/**`、既有测试断言、业务行为、schema/migration 或任何 blocking 开关。
 - 未补 R8 T3 的 113 条标注；未做 R11/R14、FE codegen、状态机、authz 倒置、大 service 拆分或物理目录治理。
 - 未把任何第三档语义查询塞入 allowlist；未把历史直接 DB 访问宣布为合法边。
-- 未拍板 `allowedEdges` / `publicSurface`，未改其 `confirmed` 或 `decisionsPending`。
+- 未实施任何拟建 tx 原语，也未把其提前写入 public surface。
 
-## 11. 维护者待拍事项
+## 11. D4 拍板落册结果
 
-1. `allowedEdges`：是否按 §6 的保留/删除建议确认 29 条声明边，特别是 11 条 0/0 疑似冗余声明。
-2. `publicSurface`：是否确认 §7 的“现有 module exports + `revokeActiveWecomIdentityInTx`”最小面，并规定新增 tx 原语随 Phase 7 偿债 PR 单独拍板。
+1. `allowedEdges`：恢复 9 条有实测 import 的原声明，只删除 `insurance→credentials`、`content→comms` 两条真 0/0 边，并额外确认 `platform-core→platform-access`；最终 28 条全为 `confirmed:true`。
+2. `publicSurface`：确认现有 Nest module exports 加 `revokeActiveWecomIdentityInTx`；拟建 tx 原语随 Phase 7 偿债 PR 单独确认。
+3. 未声明方向：21 条均已入账，业务域间 12 条在 Phase 3 R2 前逐条拍板，platform→business 9 条进入 Phase 7 authz 倒置注册制与平台去业务表访问。
 
-维护者确认后，才将对应对象 `confirmed` 置为 true，并清空 `decisionsPending`。
+`decisionsPending=[]`；本期新增使用统计但没有切换任何 blocking 规则。

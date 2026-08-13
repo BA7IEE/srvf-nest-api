@@ -1072,10 +1072,27 @@ checkEq(
       location: { file: string; symbol: string };
       details: Record<string, unknown>;
     };
+    type Phase2EdgeUsage = {
+      from: string;
+      to: string;
+      importCount: number;
+      crossDomainAccessCount: number;
+    };
     let phase2Findings: Phase2Finding[] = [];
     let phase2WithoutObservedSubdomainWriteFindings: Phase2Finding[] = [];
+    let phase2DeclaredEdgeUsage: Phase2EdgeUsage[] = [];
+    let phase2UndeclaredDirectionUsage: Phase2EdgeUsage[] = [];
     try {
-      phase2Findings = (JSON.parse(phase2Scan.out) as { findings: typeof phase2Findings }).findings;
+      const phase2Output = JSON.parse(phase2Scan.out) as {
+        findings: typeof phase2Findings;
+        edgeUsage: {
+          declaredEdges: typeof phase2DeclaredEdgeUsage;
+          undeclaredDirections: typeof phase2UndeclaredDirectionUsage;
+        };
+      };
+      phase2Findings = phase2Output.findings;
+      phase2DeclaredEdgeUsage = phase2Output.edgeUsage.declaredEdges;
+      phase2UndeclaredDirectionUsage = phase2Output.edgeUsage.undeclaredDirections;
       phase2WithoutObservedSubdomainWriteFindings = (
         JSON.parse(phase2WithoutObservedSubdomainWriteScan.out) as {
           findings: typeof phase2WithoutObservedSubdomainWriteFindings;
@@ -1092,6 +1109,17 @@ checkEq(
       );
     const localKind = (kind: string, symbol: string): typeof phase2Local =>
       phase2Local.filter((item) => item.kind === kind && item.location.symbol === symbol);
+    const platformCoreToAccessUsage = phase2DeclaredEdgeUsage.find(
+      (item) => item.from === 'platform-core' && item.to === 'platform-access',
+    );
+    check(
+      'P2 D4 已声明边使用统计:platform-core→platform-access import 数与手工计数一致',
+      platformCoreToAccessUsage?.importCount === 17 &&
+        !phase2UndeclaredDirectionUsage.some(
+          (item) => item.from === 'platform-core' && item.to === 'platform-access',
+        ),
+      phase2Detail,
+    );
     check(
       'P2 R5 kernel 读正例:显式 select 与 kernel 谓词进入第一档',
       localKind('cross-domain-kernel-read', 'Phase2BoundaryFixture.kernelAllowed').length === 1,
@@ -1207,10 +1235,9 @@ checkEq(
       `${phase2Detail}\n${phase2WithoutObservedSubdomainWriteScan.out.slice(-4000)}`,
     );
     const confirmedButPendingMap = JSON.parse(originalDomainMap) as {
-      publicSurface: { confirmed: boolean };
       decisionsPending: string[];
     };
-    confirmedButPendingMap.publicSurface.confirmed = true;
+    confirmedButPendingMap.decisionsPending.push('publicSurface');
     fs.writeFileSync(
       fixtureDomainMap,
       JSON.stringify(confirmedButPendingMap, null, 2) + '\n',
@@ -1227,11 +1254,10 @@ checkEq(
       confirmedButPending.out,
     );
     const unlistedPendingMap = JSON.parse(originalDomainMap) as {
+      publicSurface: { confirmed: boolean };
       decisionsPending: string[];
     };
-    unlistedPendingMap.decisionsPending = unlistedPendingMap.decisionsPending.filter(
-      (decision) => decision !== 'publicSurface',
-    );
+    unlistedPendingMap.publicSurface.confirmed = false;
     fs.writeFileSync(fixtureDomainMap, JSON.stringify(unlistedPendingMap, null, 2) + '\n', 'utf8');
     const unlistedPending = runFixture('scripts/check-boundaries.ts', ['--metadata']);
     fs.writeFileSync(fixtureDomainMap, originalDomainMap, 'utf8');

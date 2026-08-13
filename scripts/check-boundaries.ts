@@ -121,6 +121,14 @@ interface ImportEdge {
   text: string;
 }
 
+interface EdgeUsage {
+  from: string;
+  to: string;
+  kind?: string;
+  importCount: number;
+  crossDomainAccessCount: number;
+}
+
 function read(rel: string): string {
   return fs.readFileSync(path.join(ROOT, rel), 'utf8');
 }
@@ -1544,6 +1552,53 @@ function cycles(map: DomainMap, edges: ImportEdge[], findings: Finding[]): void 
   }
 }
 
+function edgeUsage(
+  map: DomainMap,
+  imports: ImportEdge[],
+  findings: Finding[],
+): { declaredEdges: EdgeUsage[]; undeclaredDirections: EdgeUsage[] } {
+  const usage = new Map<string, EdgeUsage>();
+  const keyOf = (from: string, to: string): string => `${from}\u0000${to}`;
+  const observe = (from: string, to: string): EdgeUsage => {
+    const key = keyOf(from, to);
+    const current = usage.get(key);
+    if (current !== undefined) return current;
+    const created: EdgeUsage = {
+      from,
+      to,
+      importCount: 0,
+      crossDomainAccessCount: 0,
+    };
+    usage.set(key, created);
+    return created;
+  };
+
+  // `findings` deliberately contains only undeclared import violations. Keep
+  // the raw import-edge list separate so confirmed edges have observable usage
+  // too; otherwise deleting a declaration would be the only way to measure it.
+  for (const edge of imports) observe(edge.from, edge.to).importCount += 1;
+  for (const finding of findings) {
+    if (finding.kind === 'cross-domain-import' || finding.kind === 'cross-domain-cycle') continue;
+    if (finding.sourceDomain === finding.targetDomain || finding.targetDomain === 'unknown') continue;
+    observe(finding.sourceDomain, finding.targetDomain).crossDomainAccessCount += 1;
+  }
+
+  const declaredEdges = map.allowedEdges.map((edge) => {
+    const current = usage.get(keyOf(edge.from, edge.to));
+    return {
+      from: edge.from,
+      to: edge.to,
+      ...(edge.kind === undefined ? {} : { kind: edge.kind }),
+      importCount: current?.importCount ?? 0,
+      crossDomainAccessCount: current?.crossDomainAccessCount ?? 0,
+    };
+  });
+  const undeclaredDirections = [...usage.values()]
+    .filter((entry) => !allowedEdge(map, entry.from, entry.to))
+    .sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
+  return { declaredEdges, undeclaredDirections };
+}
+
 function architectureDebtReport(): JsonRecord {
   const requiredSemanticFields = [
     'classification',
@@ -1610,6 +1665,7 @@ function runViolations(): void {
   });
   const byKind: Record<string, number> = {};
   for (const item of findings) byKind[item.kind] = (byKind[item.kind] ?? 0) + 1;
+  const usage = edgeUsage(map, result.edges, findings);
   const count = (kind: string, disposition?: 'report' | 'allow'): number =>
     findings.filter(
       (item) =>
@@ -1636,6 +1692,13 @@ function runViolations(): void {
           reportFindings: findings.filter((item) => item.disposition === 'report').length,
           allowedObservations: findings.filter((item) => item.disposition === 'allow').length,
           byKind,
+        },
+        edgeUsage: {
+          // Two independent report-only views: declared edges use the raw
+          // import inventory; undeclared directions remain visible alongside
+          // their direct cross-domain read/write/raw observations.
+          declaredEdges: usage.declaredEdges,
+          undeclaredDirections: usage.undeclaredDirections,
         },
         readTiers: {
           kernelFactsAllowed: count('cross-domain-kernel-read', 'allow'),
