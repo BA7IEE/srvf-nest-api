@@ -2,11 +2,10 @@ import { createHash } from 'node:crypto';
 
 import type { ValidatedRegistrationAnswer } from './activity-registration-answer-validator';
 
-export type RegistrationCommandHashInput = {
+type RegistrationCommandHashCommon = {
   actorUserId: string;
   memberId: string;
   activityId: string;
-  source: 'self';
   formVersion: number | null;
   answers: readonly {
     fieldCode: string;
@@ -15,6 +14,10 @@ export type RegistrationCommandHashInput = {
   }[];
   preferences: readonly { sessionId: string; positionIds: readonly string[] }[];
 };
+
+export type RegistrationCommandHashInput =
+  | (RegistrationCommandHashCommon & { source: 'self' })
+  | (RegistrationCommandHashCommon & { source: 'invitation'; invitationId: string });
 
 type CanonicalValue =
   | null
@@ -67,6 +70,7 @@ export function hashRegistrationCommand(input: RegistrationCommandHashInput): st
     memberId: input.memberId,
     activityId: input.activityId,
     source: input.source,
+    ...(input.source === 'invitation' ? { invitationId: input.invitationId } : {}),
     formVersion: input.formVersion,
     answers: [...input.answers]
       .map((answer) => ({

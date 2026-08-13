@@ -7,6 +7,7 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type { AuthzService } from '../authz/authz.service';
 import type { RbacService } from '../permissions/rbac.service';
 import type { ActivityInvitationAuditRecorder } from './activity-invitation-audit-recorder';
+import type { RegistrationCommandService } from './registration-command.service';
 import { ActivityInvitationService } from './activity-invitation.service';
 
 const USER: CurrentUserPayload = {
@@ -43,7 +44,16 @@ function makeService(args: {
   const audit = {
     logInvitationChange: jest.fn().mockResolvedValue(undefined),
   } as unknown as ActivityInvitationAuditRecorder;
-  return new ActivityInvitationService(makePrisma(args.transaction), authz, rbac, audit);
+  const registrationCommands = {
+    submitInTransactionTrusted: jest.fn(),
+  } as unknown as RegistrationCommandService;
+  return new ActivityInvitationService(
+    makePrisma(args.transaction),
+    authz,
+    rbac,
+    audit,
+    registrationCommands,
+  );
 }
 
 describe('ActivityInvitationService', () => {

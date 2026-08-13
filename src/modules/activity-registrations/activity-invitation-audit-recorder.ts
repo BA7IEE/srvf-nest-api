@@ -4,7 +4,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 
 type PrismaTx = Prisma.TransactionClient;
-type InvitationOperation = 'create' | 'decline' | 'revoke' | 'expire';
+type InvitationOperation = 'accept' | 'create' | 'decline' | 'revoke' | 'expire';
 
 type InvitationAuditRow = {
   id: string;

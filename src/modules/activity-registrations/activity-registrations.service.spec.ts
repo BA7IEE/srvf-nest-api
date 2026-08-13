@@ -11,6 +11,7 @@ import type { AuthzService } from '../authz/authz.service';
 import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
+import type { ActivityAllocationService } from './activity-allocation.service';
 import type { ActivityRegistrationLifecycleService } from './activity-registration-lifecycle.service';
 import type { ActivityQualificationEvaluatorService } from './activity-qualification-evaluator.service';
 import type { ActivityRegistrationNotificationProducer } from './activity-registration-notification-producer';
@@ -417,6 +418,13 @@ function makeService(
     new ActivityParticipationPolicy(),
     makeWaitlistQueryMock() as unknown as ActivityRegistrationWaitlistQueryService,
     makeRegistrationLifecycleMock() as unknown as ActivityRegistrationLifecycleService,
+    {
+      promoteAfterCancellationInTransactionTrusted: jest.fn().mockResolvedValue({
+        handled: false,
+        activityTitle: '活动',
+        promoted: [],
+      }),
+    } as unknown as ActivityAllocationService,
   );
 }
 

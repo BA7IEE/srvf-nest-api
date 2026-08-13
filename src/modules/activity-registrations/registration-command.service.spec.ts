@@ -9,6 +9,7 @@ import type { AttachmentsService } from '../attachments/attachments.service';
 import type { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import type { AppIdentityResolver } from '../users/app-identity.resolver';
 import type { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
+import type { ActivityAllocationService } from './activity-allocation.service';
 import type { ActivityRegistrationLifecycleService } from './activity-registration-lifecycle.service';
 import type { ActivityQualificationEvaluatorService } from './activity-qualification-evaluator.service';
 import type { AppActivityRegistrationCommandDto } from './dto/app/app-activity-registration-command.dto';
@@ -51,6 +52,8 @@ function makeTx() {
           registrationDeadline: null,
           genderRequirementCode: null,
           requiresInsurance: false,
+          allocationModeCode: 'manual',
+          title: '活动',
           startAt: new Date('2099-12-30T00:00:00.000Z'),
           endAt: new Date('2099-12-31T00:00:00.000Z'),
         },
@@ -126,6 +129,9 @@ function makeService(tx: ReturnType<typeof makeTx>, opts: { transactionError?: E
     assertNoBlock: jest.fn(),
     appendSnapshots: jest.fn().mockResolvedValue(undefined),
   };
+  const allocations = {
+    applyFirstComeAfterSubmissionInTransactionTrusted: jest.fn().mockResolvedValue(undefined),
+  };
   return {
     service: new RegistrationCommandService(
       prisma as unknown as PrismaService,
@@ -136,6 +142,7 @@ function makeService(tx: ReturnType<typeof makeTx>, opts: { transactionError?: E
       audit as unknown as ActivityRegistrationAuditRecorder,
       lifecycle as unknown as ActivityRegistrationLifecycleService,
       qualificationEvaluator as unknown as ActivityQualificationEvaluatorService,
+      allocations as unknown as ActivityAllocationService,
     ),
     prisma,
     appIdentity,
@@ -143,6 +150,7 @@ function makeService(tx: ReturnType<typeof makeTx>, opts: { transactionError?: E
     insuranceRequirement,
     audit,
     qualificationEvaluator,
+    allocations,
   };
 }
 

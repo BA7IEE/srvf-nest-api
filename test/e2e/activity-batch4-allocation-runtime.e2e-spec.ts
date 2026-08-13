@@ -1,4 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { BindingScopeType, BindingStatus, MemberStatus, PrincipalType, Role } from '@prisma/client';
 import request from 'supertest';
 
@@ -22,6 +23,7 @@ describe('activity batch4 allocation runtime', () => {
   let managerAuth: string;
   let applicantAuth: string;
   let managerMemberId: string;
+  let applicantMemberId: string;
   let managerUserId: string;
   let activityOwnerRoleId: string;
   let sequence = 0;
@@ -58,6 +60,7 @@ describe('activity batch4 allocation runtime', () => {
       }),
     ]);
     managerMemberId = managerMember.id;
+    applicantMemberId = applicantMember.id;
     managerUserId = manager.id;
     await Promise.all([
       prisma.user.update({ where: { id: manager.id }, data: { memberId: managerMember.id } }),
@@ -76,7 +79,10 @@ describe('activity batch4 allocation runtime', () => {
   const allocationBatchesPath = (activityId: string) =>
     `/api/app/v1/my/managed-activities/${activityId}/allocation-batches`;
 
-  async function createCandidateScenario(): Promise<{
+  async function createCandidateScenario(input?: {
+    allocationModeCode?: 'first_come' | 'qualification_rank' | 'lottery';
+    capacity?: number;
+  }): Promise<{
     activityId: string;
     sessionId: string;
     positionId: string;
@@ -98,8 +104,8 @@ describe('activity batch4 allocation runtime', () => {
         statusCode: 'published',
         publishedAt: new Date(),
         isPublicRegistration: true,
-        capacity: 1,
-        allocationModeCode: 'qualification_rank',
+        capacity: input?.capacity ?? 1,
+        allocationModeCode: input?.allocationModeCode ?? 'qualification_rank',
       },
       select: { id: true },
     });
@@ -111,7 +117,7 @@ describe('activity batch4 allocation runtime', () => {
         startAt: FAR.startAt,
         endAt: FAR.endAt,
         locationText: 'Allocation Field',
-        capacity: 1,
+        capacity: input?.capacity ?? 1,
         checkInOpenAt: new Date(FAR.startAt.getTime() - 30 * 60_000),
         checkInCloseAt: new Date(FAR.startAt.getTime() + 30 * 60_000),
         checkOutOpenAt: new Date(FAR.endAt.getTime() - 60 * 60_000),
@@ -129,7 +135,7 @@ describe('activity batch4 allocation runtime', () => {
         code: `allocation-position-${index}`,
         name: `Allocation Position ${index}`,
         attendanceRoleCode: 'volunteer',
-        capacity: 1,
+        capacity: input?.capacity ?? 1,
       },
       select: { id: true },
     });
@@ -139,7 +145,7 @@ describe('activity batch4 allocation runtime', () => {
           activityId: activity.id,
           scopeTypeCode: 'activity_person',
           scopeId: activity.id,
-          capacity: 1,
+          capacity: input?.capacity ?? 1,
         },
         {
           activityId: activity.id,
@@ -213,5 +219,333 @@ describe('activity batch4 allocation runtime', () => {
 
     // Before this Goal the schema exists but the managed three-stage HTTP runtime does not.
     expect(prepared.status).toBe(201);
+  });
+
+  it('red-first: first_come independently passes the first accepted session applicant and queues the next', async () => {
+    const scenario = await createCandidateScenario({ allocationModeCode: 'first_come', capacity: 1 });
+    const secondUser = await createTestUser(app, {
+      username: `batch4-first-come-second-${sequence}`,
+      role: Role.USER,
+    });
+    const secondMember = await prisma.member.create({
+      data: {
+        memberNo: `B4-FIRST-COME-SECOND-${sequence}`,
+        displayName: 'Batch4 First Come Second',
+        gradeCode: 'L1',
+        status: MemberStatus.ACTIVE,
+      },
+      select: { id: true },
+    });
+    await prisma.user.update({
+      where: { id: secondUser.id },
+      data: { memberId: secondMember.id },
+    });
+    const secondAuth = (await loginAs(app, secondUser.username)).authHeader;
+
+    const command = {
+      formVersion: null,
+      answers: [],
+      preferences: [{ sessionId: scenario.sessionId, positionIds: [scenario.positionId] }],
+    };
+    const [first, second] = await Promise.all([
+      request(httpServer(app))
+        .post(registrationPath(scenario.activityId))
+        .set('Authorization', applicantAuth)
+        .send({ ...command, operationKey: `batch4-first-come-first-${sequence}` }),
+      request(httpServer(app))
+        .post(registrationPath(scenario.activityId))
+        .set('Authorization', secondAuth)
+        .send({ ...command, operationKey: `batch4-first-come-second-${sequence}` }),
+    ]);
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+
+    const identities = await prisma.activityParticipationIdentity.findMany({
+      where: { activityId: scenario.activityId, sessionId: scenario.sessionId },
+      select: { currentStatusCode: true, currentPositionId: true, capacityReservationId: true },
+      orderBy: { id: 'asc' },
+    });
+    expect(identities).toHaveLength(2);
+    expect(identities.filter((identity) => identity.currentStatusCode === 'pass')).toHaveLength(1);
+    expect(identities.filter((identity) => identity.currentStatusCode === 'waitlisted')).toHaveLength(1);
+    expect(identities.find((identity) => identity.currentStatusCode === 'pass')?.currentPositionId).toBe(
+      scenario.positionId,
+    );
+    expect(
+      identities.find((identity) => identity.currentStatusCode === 'waitlisted')?.capacityReservationId,
+    ).toBeNull();
+  });
+
+  it('freezes qualification_rank scores, replays prepare exactly, and commits capacity in score order', async () => {
+    const scenario = await createCandidateScenario({
+      allocationModeCode: 'qualification_rank',
+      capacity: 1,
+    });
+    const secondUser = await createTestUser(app, {
+      username: `batch4-rank-second-${sequence}`,
+      role: Role.USER,
+    });
+    const secondMember = await prisma.member.create({
+      data: {
+        memberNo: `B4-RANK-SECOND-${sequence}`,
+        displayName: 'Batch4 Rank Second',
+        gradeCode: 'L2',
+        status: MemberStatus.ACTIVE,
+      },
+      select: { id: true },
+    });
+    await prisma.user.update({
+      where: { id: secondUser.id },
+      data: { memberId: secondMember.id },
+    });
+    const secondAuth = (await loginAs(app, secondUser.username)).authHeader;
+    const ruleSet = await prisma.activityQualificationRuleSet.create({
+      data: {
+        activityId: scenario.activityId,
+        version: 1,
+        statusCode: 'draft',
+        rules: {
+          create: {
+            ruleTypeCode: 'grade',
+            enforcementCode: 'warn',
+            operator: 'in',
+            valueJson: { codes: ['L2'] },
+            warnScore: 27,
+            sortOrder: 1,
+          },
+        },
+      },
+      select: { id: true },
+    });
+    await prisma.activityQualificationRuleSet.update({
+      where: { id: ruleSet.id },
+      data: { statusCode: 'active' },
+    });
+
+    const command = {
+      formVersion: null,
+      answers: [],
+      preferences: [{ sessionId: scenario.sessionId, positionIds: [scenario.positionId] }],
+    };
+    const first = await request(httpServer(app))
+      .post(registrationPath(scenario.activityId))
+      .set('Authorization', applicantAuth)
+      .send({ ...command, operationKey: `batch4-rank-first-${sequence}` });
+    const second = await request(httpServer(app))
+      .post(registrationPath(scenario.activityId))
+      .set('Authorization', secondAuth)
+      .send({ ...command, operationKey: `batch4-rank-second-${sequence}` });
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    await prisma.activity.update({
+      where: { id: scenario.activityId },
+      data: { registrationDeadline: new Date('2020-01-01T00:00:00.000Z') },
+    });
+
+    const prepareBody = {
+      operationKey: `batch4-rank-prepare-${sequence}`,
+      sessionId: scenario.sessionId,
+      positionId: scenario.positionId,
+    };
+    const prepared = await request(httpServer(app))
+      .post(allocationBatchesPath(scenario.activityId))
+      .set('Authorization', managerAuth)
+      .send(prepareBody);
+    expect(prepared.status).toBe(201);
+    expect(prepared.body.data.batch.statusCode).toBe('preparing');
+    expect(prepared.body.data.batch.randomSeedReveal).toBeNull();
+    const preparedReplay = await request(httpServer(app))
+      .post(allocationBatchesPath(scenario.activityId))
+      .set('Authorization', managerAuth)
+      .send(prepareBody);
+    expect(preparedReplay.status).toBe(201);
+    expect(preparedReplay.body.data.responseHash).toBe(prepared.body.data.responseHash);
+    expect(preparedReplay.body.data.batch).toEqual(prepared.body.data.batch);
+
+    const batchId = prepared.body.data.batch.batchId as string;
+    const committed = await request(httpServer(app))
+      .post(`${allocationBatchesPath(scenario.activityId)}/${batchId}/commit`)
+      .set('Authorization', managerAuth)
+      .send({ operationKey: `batch4-rank-commit-${sequence}` });
+    expect(committed.status).toBe(200);
+    expect(committed.body.data.batch.statusCode).toBe('committed');
+
+    const [firstIdentity, secondIdentity] = await Promise.all([
+      prisma.activityParticipationIdentity.findFirstOrThrow({
+        where: { activityId: scenario.activityId, memberId: applicantMemberId },
+        select: { id: true },
+      }),
+      prisma.activityParticipationIdentity.findFirstOrThrow({
+        where: { activityId: scenario.activityId, memberId: secondMember.id },
+        select: { id: true },
+      }),
+    ]);
+    const byIdentity = new Map(
+      committed.body.data.batch.candidates.map(
+        (candidate: { participationIdentityId: string }) => [candidate.participationIdentityId, candidate],
+      ),
+    );
+    expect(byIdentity.get(secondIdentity.id)).toEqual(
+      expect.objectContaining({ qualificationScore: '100.0000', resultCode: 'allocated' }),
+    );
+    expect(byIdentity.get(firstIdentity.id)).toEqual(
+      expect.objectContaining({ qualificationScore: '73.0000', resultCode: 'waitlisted', waitlistRank: 1 }),
+    );
+  });
+
+  it('accepts a scoped invitation through the canonical command and first_come allocation chain', async () => {
+    const scenario = await createCandidateScenario({ allocationModeCode: 'first_come', capacity: 1 });
+    await prisma.activity.update({
+      where: { id: scenario.activityId },
+      data: { isPublicRegistration: false },
+    });
+    const created = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${scenario.activityId}/invitations`)
+      .set('Authorization', managerAuth)
+      .send({
+        memberId: applicantMemberId,
+        sessionId: scenario.sessionId,
+        positionId: scenario.positionId,
+        expiresAt: '2099-12-31T23:59:59.000Z',
+      });
+    expect(created.status).toBe(201);
+    const invitationId = created.body.data.invitationId as string;
+    const acceptance = {
+      operationKey: `batch4-invitation-accept-${sequence}`,
+      formVersion: null,
+      answers: [],
+      preferences: [{ sessionId: scenario.sessionId, positionIds: [scenario.positionId] }],
+    };
+    const accepted = await request(httpServer(app))
+      .post(`/api/app/v1/my/activity-invitations/${invitationId}/accept`)
+      .set('Authorization', applicantAuth)
+      .send(acceptance);
+    expect(accepted.status).toBe(201);
+    const acceptedReplay = await request(httpServer(app))
+      .post(`/api/app/v1/my/activity-invitations/${invitationId}/accept`)
+      .set('Authorization', applicantAuth)
+      .send(acceptance);
+    expect(acceptedReplay.status).toBe(201);
+    expect(acceptedReplay.body.data).toEqual(accepted.body.data);
+
+    const [invitation, identity] = await Promise.all([
+      prisma.activityInvitation.findUniqueOrThrow({
+        where: { id: invitationId },
+        select: { statusCode: true, operationKey: true, requestHash: true, respondedAt: true },
+      }),
+      prisma.activityParticipationIdentity.findFirstOrThrow({
+        where: { activityId: scenario.activityId, memberId: applicantMemberId },
+        select: { currentStatusCode: true, currentPositionId: true, capacityReservationId: true },
+      }),
+    ]);
+    expect(invitation).toEqual(
+      expect.objectContaining({
+        statusCode: 'accepted',
+        operationKey: acceptance.operationKey,
+        requestHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        respondedAt: expect.any(Date),
+      }),
+    );
+    expect(identity).toEqual(
+      expect.objectContaining({
+        currentStatusCode: 'pass',
+        currentPositionId: scenario.positionId,
+        capacityReservationId: expect.any(String),
+      }),
+    );
+  });
+
+  it('keeps lottery seed concealed at prepare, verifies its commitment at commit, and replays commit exactly', async () => {
+    const scenario = await createCandidateScenario({ allocationModeCode: 'lottery', capacity: 1 });
+    const secondUser = await createTestUser(app, {
+      username: `batch4-lottery-second-${sequence}`,
+      role: Role.USER,
+    });
+    const secondMember = await prisma.member.create({
+      data: {
+        memberNo: `B4-LOTTERY-SECOND-${sequence}`,
+        displayName: 'Batch4 Lottery Second',
+        gradeCode: 'L1',
+        status: MemberStatus.ACTIVE,
+      },
+      select: { id: true },
+    });
+    await prisma.user.update({
+      where: { id: secondUser.id },
+      data: { memberId: secondMember.id },
+    });
+    const secondAuth = (await loginAs(app, secondUser.username)).authHeader;
+    const command = {
+      formVersion: null,
+      answers: [],
+      preferences: [{ sessionId: scenario.sessionId, positionIds: [scenario.positionId] }],
+    };
+    const [first, second] = await Promise.all([
+      request(httpServer(app))
+        .post(registrationPath(scenario.activityId))
+        .set('Authorization', applicantAuth)
+        .send({ ...command, operationKey: `batch4-lottery-first-${sequence}` }),
+      request(httpServer(app))
+        .post(registrationPath(scenario.activityId))
+        .set('Authorization', secondAuth)
+        .send({ ...command, operationKey: `batch4-lottery-second-${sequence}` }),
+    ]);
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    await prisma.activity.update({
+      where: { id: scenario.activityId },
+      data: { registrationDeadline: new Date('2020-01-01T00:00:00.000Z') },
+    });
+
+    const prepared = await request(httpServer(app))
+      .post(allocationBatchesPath(scenario.activityId))
+      .set('Authorization', managerAuth)
+      .send({
+        operationKey: `batch4-lottery-prepare-${sequence}`,
+        sessionId: scenario.sessionId,
+        positionId: scenario.positionId,
+      });
+    expect(prepared.status).toBe(201);
+    expect(prepared.body.data.batch.randomSeedReveal).toBeNull();
+    expect(
+      prepared.body.data.batch.candidates.every(
+        (candidate: { lotteryOrder: number | null }) => candidate.lotteryOrder === null,
+      ),
+    ).toBe(true);
+    const batchId = prepared.body.data.batch.batchId as string;
+    const beforeCommit = await prisma.activityAllocationBatch.findUniqueOrThrow({
+      where: { id: batchId },
+      select: { randomCommitment: true, randomSeedReveal: true },
+    });
+    expect(beforeCommit.randomCommitment).toMatch(/^[a-f0-9]{64}$/);
+    expect(beforeCommit.randomSeedReveal).toBeNull();
+
+    const commitBody = { operationKey: `batch4-lottery-commit-${sequence}` };
+    const committed = await request(httpServer(app))
+      .post(`${allocationBatchesPath(scenario.activityId)}/${batchId}/commit`)
+      .set('Authorization', managerAuth)
+      .send(commitBody);
+    expect(committed.status).toBe(200);
+    const reveal = committed.body.data.batch.randomSeedReveal as string;
+    expect(reveal).toMatch(/^[a-f0-9]{64}$/);
+    expect(createHash('sha256').update(reveal, 'utf8').digest('hex')).toBe(
+      beforeCommit.randomCommitment,
+    );
+    expect(
+      committed.body.data.batch.candidates
+        .map((candidate: { lotteryOrder: number | null }) => candidate.lotteryOrder)
+        .sort((left: number, right: number) => left - right),
+    ).toEqual([1, 2]);
+    expect(
+      committed.body.data.batch.candidates.filter(
+        (candidate: { resultCode: string | null }) => candidate.resultCode === 'allocated',
+      ),
+    ).toHaveLength(1);
+    const commitReplay = await request(httpServer(app))
+      .post(`${allocationBatchesPath(scenario.activityId)}/${batchId}/commit`)
+      .set('Authorization', managerAuth)
+      .send(commitBody);
+    expect(commitReplay.status).toBe(200);
+    expect(commitReplay.body.data).toEqual(committed.body.data);
   });
 });
