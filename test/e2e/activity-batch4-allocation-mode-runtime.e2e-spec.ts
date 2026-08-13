@@ -223,6 +223,13 @@ describe('batch4 allocation mode runtime', () => {
         ...(statusCode === 'committed'
           ? { committedAt: new Date('2099-01-01T00:00:00.000Z') }
           : {}),
+        // D86 的 voided shape 对历史模式夹具同样要求受控的作废事实。
+        ...(statusCode === 'voided'
+          ? {
+              voidReason: 'D86 allocation-mode fixture void',
+              voidedAt: new Date('2099-01-01T00:00:00.000Z'),
+            }
+          : {}),
         operationKey: `batch4-allocation-fixture-${sequence}`,
       },
     });
