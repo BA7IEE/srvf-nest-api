@@ -12,7 +12,7 @@ import { BizCode } from '../../../common/exceptions/biz-code.constant';
 import { BizException } from '../../../common/exceptions/biz.exception';
 import { AdminMeResponseDto } from '../dto/admin/admin-me-response.dto';
 import { UsersService } from '../users.service';
-import { LoginOnly } from '../../../common/decorators/route-authz.decorator';
+import { Public } from '../../../common/decorators/public.decorator';
 
 // Admin surface 本人身份只读端点(GET /api/admin/v1/me;2026-06-14)。
 // 管理后台登录后显示当前管理员昵称/头像/角色的 canonical 身份 bootstrap。
@@ -32,7 +32,7 @@ export class AdminMeController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  @LoginOnly({ require: 'all' })
+  @Public()
   @ApiOperation({
     summary:
       'Admin 视角本人身份摘要(只读 bootstrap;不内联角色/权限——权限走 rbac/me/permissions) [auth]',

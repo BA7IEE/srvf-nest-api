@@ -16,7 +16,7 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.0.0 |
-| inputDigest | sha256:6fa68439ee247278a24e45eaddf9ccec8f0dda4266eb939f7f948d688a232d6c |
+| inputDigest | sha256:210ebb2ee6845cd28bd7b298b2a6ecc2ca6e7bd1e996e19e2b9ef1f2b3962e70 |
 | endpoint count | 498 |
 | legacy [auth] count | 128 |
 | source of truth | normalized controller declarations |
@@ -57,7 +57,7 @@
 | admin individual | GET /api/admin/v1/activities/:activityId/reconciliation | RBAC; admission=-; codes=activity-registration.read.record,attendance.read.sheet; require=all; scopes=-; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-participation.controller.ts:55; src/modules/activities/controllers/admin-activity-participation.controller.ts:76 |
 | admin individual | GET /api/admin/v1/activities/:id | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/activities.controller.ts:132; src/modules/activities/activities.controller.ts:143 |
 | admin individual | GET /api/admin/v1/activities/options | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/activities.controller.ts:89; src/modules/activities/activities.controller.ts:100 |
-| admin individual | GET /api/admin/v1/me | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/users/controllers/admin-me.controller.ts:34; src/modules/users/controllers/admin-me.controller.ts:43 |
+| admin individual | GET /api/admin/v1/me | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/users/controllers/admin-me.controller.ts:34; src/modules/users/controllers/admin-me.controller.ts:43 |
 | admin individual | GET /api/admin/v1/meta/dashboard-summary | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=org-scope; engine=authz-scoped | code | src/modules/meta/meta.controller.ts:59; src/modules/meta/meta.controller.ts:68 |
 | admin individual | GET /api/admin/v1/meta/participation-overview | RBAC; admission=-; codes=activity-registration.read.record,attendance.read.sheet; require=all; scopes=-; engine=authz-scoped | code | src/modules/meta/meta.controller.ts:71; src/modules/meta/meta.controller.ts:86 |
 | admin individual | POST /api/admin/v1/contents/:id/attachments/confirm | RBAC; admission=-; codes=attachment.upload.content-file,attachment.upload.content-image; require=any; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:248; src/modules/content/content-admin.controller.ts:274 |
@@ -100,7 +100,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.0.0",
-  "inputDigest": "sha256:6fa68439ee247278a24e45eaddf9ccec8f0dda4266eb939f7f948d688a232d6c",
+  "inputDigest": "sha256:210ebb2ee6845cd28bd7b298b2a6ecc2ca6e7bd1e996e19e2b9ef1f2b3962e70",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -1585,7 +1585,7 @@
       "legacy": "auth",
       "policy": {
         "admission": null,
-        "mode": "LOGIN_ONLY",
+        "mode": "PUBLIC",
         "codes": [],
         "require": "all",
         "scopes": [],
@@ -9213,7 +9213,7 @@
 | GET | /api/admin/v1/certificates/stats | Admin - Certificates Workbench | rbac | RBAC; admission=-; codes=certificate.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificates-workbench.controller.ts:66; src/modules/certificates/certificates-workbench.controller.ts:79 |
 | GET | /api/admin/v1/contents | Admin - Content | rbac | RBAC; admission=-; codes=content.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:91; src/modules/content/content-admin.controller.ts:100 |
 | GET | /api/admin/v1/contents/:id | Admin - Content | rbac | RBAC; admission=-; codes=content.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:103; src/modules/content/content-admin.controller.ts:115 |
-| GET | /api/admin/v1/me | Admin - Me | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/users/controllers/admin-me.controller.ts:34; src/modules/users/controllers/admin-me.controller.ts:43 |
+| GET | /api/admin/v1/me | Admin - Me | auth | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/users/controllers/admin-me.controller.ts:34; src/modules/users/controllers/admin-me.controller.ts:43 |
 | GET | /api/admin/v1/members | Admin - Members | rbac | RBAC; admission=-; codes=member.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:68; src/modules/members/members.controller.ts:80 |
 | GET | /api/admin/v1/members/:id | Admin - Members | rbac | RBAC; admission=-; codes=member.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:140; src/modules/members/members.controller.ts:154 |
 | GET | /api/admin/v1/members/:id/offboard-impact | Admin - Members | rbac | RBAC; admission=-; codes=member.offboard.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:357; src/modules/members/members.controller.ts:374 |
