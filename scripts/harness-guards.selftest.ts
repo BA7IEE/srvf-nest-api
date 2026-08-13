@@ -29,6 +29,12 @@ import {
   type Policy as AuthzPolicy,
 } from './authz-semantic-diff';
 import {
+  BREAKING_TABLE,
+  diffContracts,
+  judgeDeclarations as judgeContractDeclarations,
+  parseDeclarations as parseContractDeclarations,
+} from './contract-semantic-diff';
+import {
   SEED_FACTS_CLOSURE as DOCS_COUNTS_SEED_FACTS_CLOSURE,
   assertSeedFactsClosure,
   countAuditLogEventMembers,
@@ -61,6 +67,24 @@ import unitJestConfig from '../test/jest-unit.config';
 
 let passCount = 0;
 const failures: string[] = [];
+
+/**
+ * 已知缺口登记(沿 harness-eslint.selftest 的 knownGap 范式)。
+ *
+ * 语义与 check() 相反:登记的是「现状如此」而不是「这样对」。每条都由一个**真探针**
+ * 证明缺口**仍然存在** —— 缺口一旦被修好,探针翻面 → 本自测红 → 逼人来摘登记。
+ * 缺口关闭这件事因此不会被忘记,登记也不会退化成一段没人维护的散文。
+ */
+const knownGaps: Array<{ id: string; text: string }> = [];
+
+function knownGap(id: string, stillOpen: boolean, text: string, closedHint: string): void {
+  if (stillOpen) {
+    knownGaps.push({ id, text });
+    return;
+  }
+  failures.push(`已知缺口 ${id} 似乎已关闭 —— 请摘掉登记`);
+  process.stderr.write(`✗ 已知缺口 ${id} 似乎已关闭 —— 请摘掉登记:${closedHint}\n`);
+}
 
 function check(name: string, cond: boolean, detail?: string): void {
   if (cond) {
@@ -1681,6 +1705,12 @@ for (const [configName, config] of JEST_CONFIGS) {
     'utf-8',
   );
   const authzJudge = codeOnly(authzJudgeRaw, 'slash');
+  // 刀 5-2:同 job 内的第三个执行体(R11 契约语义裁判),同样在落地的同一刀进 F3。
+  const contractJudgeRaw = fs.readFileSync(
+    path.join(repoRoot, '.github/workflows/contract-trusted-judge.mjs'),
+    'utf-8',
+  );
+  const contractJudge = codeOnly(contractJudgeRaw, 'slash');
 
   const cases: Array<[string, boolean, string]> = [
     [
@@ -1878,6 +1908,62 @@ for (const [configName, config] of JEST_CONFIGS) {
         yml.includes('needs.scan.outputs.authzRequired == \'true\'') &&
         /for verdict in "\$required" "\$authz_required"/.test(yml),
       '只看 required 的话,授权降级的 PR 会因 approval 被跳过而落进「无需审批」分支放行',
+    ],
+    // ── R11 契约语义裁判:同 job 内的第三个执行体,受同一套禁令 ────────────────
+    [
+      'F3 contract:裁判脚本取自 base checkout 的固定路径',
+      yml.includes('node .github/workflows/contract-trusted-judge.mjs'),
+      '跑 PR 提供的脚本就是 finding 2 本身 —— 第三个执行体同样适用',
+    ],
+    [
+      'F3 contract:裁判只 import node: 内置模块(不碰 node_modules)',
+      (contractJudgeRaw.match(/^import .* from '([^']+)'/gm) ?? []).every((l) =>
+        l.includes("from 'node:"),
+      ),
+      '一旦 import 第三方包就必须装依赖,禁令②随之破功',
+    ],
+    [
+      'F3 contract:比较器取自 base 的固定相对路径,用内置 strip-types 跑',
+      contractJudge.includes("'scripts/contract-semantic-diff.ts'") &&
+        contractJudge.includes('--experimental-strip-types'),
+      '判定表若来自 head,PR 就能把自己的破坏改判成 additive',
+    ],
+    [
+      // openapi.json ~3.8MB 超过 contents API 的 1MB 上限,必须走 raw_url;
+      // 但仍必须是 **API 给出的** URL,不能自己拼(fork PR 的 head 仓库不同)。
+      'F3 contract:head 版本走 API 给出的 raw_url / contents_url,不自己拼',
+      contractJudge.includes('raw_url') && contractJudge.includes('contents_url'),
+      '自己拼 URL 拼错就会取到 base 内容 —— 判据静默变成「自己和自己比」,永远通过',
+    ],
+    [
+      'F3 contract:变更清单翻页且与 changed_files 对账(禁静默截断)',
+      contractJudge.includes('--paginate') && contractJudge.includes('expectedCount'),
+      'pulls/files 端点上限 3000 且**静默**截断;不对账就会在超大 PR 上漏判破坏',
+    ],
+    [
+      'F3 contract:head 内容**只 parse 不执行**',
+      !/import\s*\(/.test(contractJudge) &&
+        !/\brequire\s*\(/.test(contractJudge) &&
+        contractJudge.includes('JSON.parse'),
+      'pull_request_target 下 import PR 的文件 = 在有 secrets 的进程里执行 PR 代码',
+    ],
+    [
+      'F3 contract:申报缺失是**硬失败**,不是「要求审批」',
+      /function failHard\([\s\S]*?process\.exit\(1\)/.test(contractJudge) &&
+        /failHard\(\s*['"`]契约语义门/.test(contractJudge),
+      '若退化成 failClosed,点一下审批就能放行「破坏且未申报」—— 那等于没有这道闸',
+    ],
+    [
+      'F3 contract:异常一律 fail-closed(要求审批)',
+      contractJudge.includes('failClosed') && contractJudge.includes("emit(OUTPUT_KEY, 'true')"),
+      '「查不出来」永远不等于「没破坏」',
+    ],
+    [
+      'F3 trusted:verdict 聚合把契约破坏那一路一起判(三路都要明确 true/false)',
+      yml.includes("contract_required='${{ needs.scan.outputs.contractRequired }}'") &&
+        yml.includes("needs.scan.outputs.contractRequired == 'true'") &&
+        /for verdict in "\$required" "\$authz_required" "\$contract_required"/.test(yml),
+      '只看前两路的话,破坏契约的 PR 会因 approval 被跳过而落进「无需审批」分支放行',
     ],
   ];
   for (const [name, ok, why] of cases) check(name, ok, why);
@@ -3226,6 +3312,256 @@ void (async (): Promise<void> => {
     }
   }
 
-  process.stdout.write(`\n${passCount} passed, ${failures.length} failed\n`);
+  // ────────────────────────────────────────────────────────────────────────
+  // R11 契约语义门(Gate L6)—— breaking 判定表逐类阳性对照
+  //
+  // 方向不对称是本规则最容易写反的地方:请求侧「枚举删值 / 撤 nullable」是破坏,
+  // 响应侧则是反方向的「枚举加值 / 变可空」才是破坏。两侧各自的**反方向**必须判成
+  // additive —— 只测一半会让另一半的破坏悄悄放行,或者把正常的加字段误报成破坏。
+  // ────────────────────────────────────────────────────────────────────────
+  {
+    // 最小合法 OpenAPI 文档:一个端点、一个请求体、一个成功响应。
+    const doc = (
+      request: Record<string, unknown>,
+      response: Record<string, unknown>,
+      opts: { requiredReq?: string[]; status?: string; drop?: boolean } = {},
+    ): Record<string, unknown> => {
+      const operation: Record<string, unknown> = {
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: { type: 'object', properties: request, required: opts.requiredReq ?? [] },
+            },
+          },
+        },
+        responses: {
+          [opts.status ?? '200']: {
+            content: {
+              'application/json': { schema: { type: 'object', properties: response, required: [] } },
+            },
+          },
+        },
+      };
+      return {
+        openapi: '3.0.0',
+        components: { schemas: {} },
+        paths: opts.drop ? {} : { '/api/probe': { post: operation } },
+      };
+    };
+    const ids = (base: Record<string, unknown>, head: Record<string, unknown>): string[] =>
+      diffContracts(base, head).map((finding) => finding.id + '/' + finding.kind);
+
+    const strReq = { name: { type: 'string' } };
+    const strRes = { title: { type: 'string' } };
+
+    checkEq(
+      'R11:B1 端点删除 = breaking',
+      ids(doc(strReq, strRes), doc(strReq, strRes, { drop: true }))[0],
+      'B1/endpoint-removed',
+    );
+    checkEq(
+      'R11:B2 响应字段删除 = breaking',
+      ids(doc(strReq, strRes), doc(strReq, {}))[0],
+      'B2/response-field-removed',
+    );
+    checkEq(
+      'R11:B3 新增必填请求字段 = breaking',
+      ids(doc(strReq, strRes), doc({ ...strReq, extra: { type: 'string' } }, strRes, { requiredReq: ['extra'] }))[0],
+      'B3/request-required-added',
+    );
+    checkEq(
+      'R11:B4 类型收窄 = breaking',
+      ids(doc(strReq, strRes), doc(strReq, { title: { type: 'integer' } }))[0],
+      'B4/type-narrowed',
+    );
+    checkEq(
+      'R11:B5 请求枚举**删值** = breaking',
+      ids(doc({ mode: { type: 'string', enum: ['a', 'b'] } }, strRes), doc({ mode: { type: 'string', enum: ['a'] } }, strRes))[0],
+      'B5/request-enum-value-removed',
+    );
+    checkEq(
+      'R11:B6 响应枚举**加值** = breaking',
+      ids(doc(strReq, { s: { type: 'string', enum: ['a'] } }), doc(strReq, { s: { type: 'string', enum: ['a', 'b'] } }))[0],
+      'B6/response-enum-value-added',
+    );
+    checkEq(
+      'R11:B7 请求撤销 nullable = breaking',
+      ids(doc({ n: { type: 'string', nullable: true } }, strRes), doc({ n: { type: 'string', nullable: false } }, strRes))[0],
+      'B7/request-nullable-revoked',
+    );
+    checkEq(
+      'R11:B8 响应变为可空 = breaking',
+      ids(doc(strReq, { t: { type: 'string' } }), doc(strReq, { t: { type: 'string', nullable: true } }))[0],
+      'B8/response-nullable-added',
+    );
+    checkEq(
+      'R11:B9 成功状态码变更 = breaking',
+      ids(doc(strReq, strRes), doc(strReq, strRes, { status: '204' }))[0],
+      'B9/success-status-changed',
+    );
+
+    // 反方向必须是 additive —— 方向写反时这四条会红,而上面九条仍可能全绿。
+    checkEq(
+      'R11:反向 — 请求枚举加值 = additive(不是破坏)',
+      ids(doc({ mode: { type: 'string', enum: ['a'] } }, strRes), doc({ mode: { type: 'string', enum: ['a', 'b'] } }, strRes))[0],
+      'ADD/request-enum-value-added',
+    );
+    checkEq(
+      'R11:反向 — 响应枚举删值 = additive',
+      ids(doc(strReq, { s: { type: 'string', enum: ['a', 'b'] } }), doc(strReq, { s: { type: 'string', enum: ['a'] } }))[0],
+      'ADD/response-enum-value-removed',
+    );
+    checkEq(
+      'R11:反向 — 新增**可选**请求字段 = additive',
+      ids(doc(strReq, strRes), doc({ ...strReq, extra: { type: 'string' } }, strRes))[0],
+      'ADD/request-optional-field-added',
+    );
+    checkEq(
+      'R11:反向 — 新增响应字段 = additive',
+      ids(doc(strReq, strRes), doc(strReq, { ...strRes, extra: { type: 'string' } }))[0],
+      'ADD/response-field-added',
+    );
+    check(
+      'R11:契约无变化 = 零 finding(不产生假破坏)',
+      diffContracts(doc(strReq, strRes), doc(strReq, strRes)).length === 0,
+    );
+
+    // 申报完整性(两级结构的第一级,与 R14 同构)
+    {
+      const breakingDiff = diffContracts(doc(strReq, strRes), doc(strReq, {}));
+      const decl = {
+        operation: 'POST /api/probe',
+        reason: 'r',
+        impact: 'i',
+        migration: 'm',
+        rollback: 'revert',
+        file: 'changelog.d/x.md',
+        line: 1,
+      };
+      check('R11:破坏无申报即阻断', judgeContractDeclarations(breakingDiff, []).length === 1);
+      check('R11:申报齐全后不再阻断(审批仍另计)', judgeContractDeclarations(breakingDiff, [decl]).length === 0);
+      check(
+        'R11:申报落空(端点无破坏)同样阻断',
+        judgeContractDeclarations(diffContracts(doc(strReq, strRes), doc(strReq, strRes)), [decl]).length === 1,
+      );
+      const parsed = parseContractDeclarations([
+        {
+          path: 'changelog.d/p.md',
+          content: [
+            '<!-- contract-breaking',
+            'operation: POST /api/probe',
+            'reason: r',
+            'impact: i',
+            'migration: m',
+            'rollback:',
+            '-->',
+          ].join('\n'),
+        },
+      ]);
+      check(
+        'R11:申报缺 rollback 字段被抓(真回滚手段必须写明)',
+        parsed.declarations.length === 0 && parsed.problems.length === 1,
+      );
+    }
+
+    // 判定表是机读的,报告与断言共用它 —— 防「表在散文里、执行位在别处」各自漂移
+    check(
+      'R11:breaking 判定表 9 类齐全且 id 唯一',
+      BREAKING_TABLE.length === 9 && new Set(BREAKING_TABLE.map((row) => row.id)).size === 9,
+      `实际 ${BREAKING_TABLE.length} 类`,
+    );
+
+    // 真契约自比 = 零 finding:防「只在合成样例上 work、遇到 498 端点就狂报假破坏」
+    {
+      const real = JSON.parse(
+        fs.readFileSync(path.resolve(__dirname, '..', 'docs/handoff/openapi.json'), 'utf8'),
+      ) as Record<string, unknown>;
+      const selfDiff = diffContracts(real, real);
+      check(
+        'R11:真实 openapi.json 自比 = 零 finding(无假破坏)',
+        selfDiff.length === 0,
+        selfDiff.slice(0, 5).map((f) => f.id + ' ' + f.operation + ' ' + f.location).join(' · '),
+      );
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────────────────
+  // 已知缺口:生成器写入不经过本地 hook
+  //
+  // 维护者 2026-08-13 定性:**已知性质,不是漏洞** —— 生成物必须能被重生成,否则改一次
+  // 路由声明就永远过不了 docs:authz:check。但它必须**每次自测都显形**,而不是躺在
+  // 归档报告里(散文会过期,输出不会)。
+  //
+  // 下面是**真探针**,不是一句话:先证明该路径确实在红区判据内,再证明写侧 hook 对
+  // 「程序内部写盘」这条向量确实放行。哪天 hook 把这条也拦上了,第二个探针翻面 →
+  // knownGap() 转红 → 逼人来摘登记。
+  // ────────────────────────────────────────────────────────────────────────
+  {
+    const REPO_G = path.resolve(__dirname, '..');
+    // 判据路径刻意选 AGENTS.md:它是红区文档里最不可能被 grant 的一条,
+    // 探针因此**不受当前令牌状态影响**(实测教训:第一版用 ROUTE_AUTHZ.md,
+    // 恰逢它被临时授权,hook 合规放行,前提断言当场自相矛盾)。
+    const STABLE_PROTECTED = 'AGENTS.md';
+    const bashGuardExit = (command: string): number => {
+      const r = spawnSync(path.join(REPO_G, '.claude/hooks/bash-write-guard.sh'), {
+        input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }),
+        encoding: 'utf-8',
+        cwd: REPO_G,
+      });
+      return r.status ?? -1;
+    };
+
+    // 前提:写侧 hook 本身在工作 —— 路径**字面出现**在命令里时它确实拦得住。
+    // 没有这一条,下面的「放行」可能只是说明这个文件压根没被保护,登记就成了废话。
+    const literalRedirect = bashGuardExit(`echo x > ${STABLE_PROTECTED}`);
+    check(
+      '已知缺口前提:路径字面出现时,写侧 hook 确实拦得住(shell 重定向)',
+      literalRedirect === 2,
+      `echo x > ${STABLE_PROTECTED} 返回 ${literalRedirect},期望 2;` +
+        `若为 0,请先确认 ${STABLE_PROTECTED} 是否被临时 grant —— 那会让本探针失去意义`,
+    );
+    const literalNodeWrite = bashGuardExit(
+      `node -e "require('fs').writeFileSync('${STABLE_PROTECTED}','x')"`,
+    );
+    check(
+      '已知缺口前提:node -e 里路径字面出现时同样拦得住(缺口不是「node 一律放行」)',
+      literalNodeWrite === 2,
+      `返回 ${literalNodeWrite},期望 2`,
+    );
+
+    // 缺口本体:路径**不字面出现**在命令文本里时,写侧 hook 看不见。
+    // 两条向量各一例 —— 拼接构造 与 路径藏在被调用的程序里(生成器就是后者)。
+    const concatExit = bashGuardExit(
+      `node -e "const p='AGENTS'+'.md'; require('fs').writeFileSync(p,'x')"`,
+    );
+    const generatorExit = bashGuardExit('pnpm docs:authz');
+    knownGap(
+      'WRITE-GUARD-LITERAL-ONLY',
+      concatExit === 0 && generatorExit === 0,
+      '写侧 hook 按**命令文本里的字面路径**匹配,不做数据流分析 —— 路径不字面出现就看不见:\n' +
+        `    · 拼接构造:node -e "const p='AGENTS'+'.md'; fs.writeFileSync(p,…)"  → 放行(实测 exit ${concatExit})\n` +
+        `    · 路径藏在被调用的程序里:pnpm docs:authz / docs:codemap 等**生成器**  → 放行(实测 exit ${generatorExit})\n` +
+        '    与 eslint 那批「变量中转 / 计算属性」缺口同形:这一层是**字面拦截**,不是数据流执法。\n' +
+        '    定性:**已知性质,非漏洞**(维护者 2026-08-13)—— 生成物必须能被重生成,\n' +
+        '    否则改一次路由声明就永远过不了 docs:authz:check。\n' +
+        '    兜底仍在:CI 侧 check-redzone 按 diff 如实标红,base-trusted 裁判要求 harness-review 环境审批\n' +
+        '    (2026-08-13 探针 PR #991 实测:改 ROUTE_AUTHZ.md 触发 architecture-governance-phase0-artifacts 审批)。\n' +
+        '    即本地那道闸在 AI 侧靠自觉,**人闸在 CI 侧仍然成立**。',
+      `拼接构造返回 ${concatExit}、生成器返回 ${generatorExit},已不再都是 0`,
+    );
+  }
+
+  if (knownGaps.length > 0) {
+    process.stdout.write(`\n── 已知缺口:${knownGaps.length} 条(不假装安全)──\n`);
+    for (const gap of knownGaps) {
+      process.stdout.write(`  ⚠ [${gap.id}] ${gap.text}\n`);
+    }
+  }
+
+  process.stdout.write(
+    `\n${passCount} passed, ${failures.length} failed` +
+      (knownGaps.length > 0 ? `, ${knownGaps.length} known gaps` : '') +
+      '\n',
+  );
   if (failures.length > 0) process.exit(1);
 })();
