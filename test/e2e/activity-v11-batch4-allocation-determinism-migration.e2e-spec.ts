@@ -20,7 +20,7 @@ const SCRATCH_WORKER_ID = 85;
 const MIGRATION_NAME = '20260812180000_activity_v11_batch4_allocation_determinism_guards';
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
 const MIGRATION_84_COUNT = 84;
-const MIGRATION_85_COUNT = 85;
+const CURRENT_MIGRATION_COUNT = 86;
 const COLD_REPLAY_TIMEOUT_MS = 300_000;
 const HASH_A = 'a'.repeat(64);
 const HASH_B = 'b'.repeat(64);
@@ -327,7 +327,12 @@ function createFixture(databaseName: string, suffix: string): Fixture {
   return fixture;
 }
 
-function batchSql(fixture: Fixture, id: string, options: BatchOptions = {}): string {
+function batchSql(
+  fixture: Fixture,
+  id: string,
+  options: BatchOptions = {},
+  includeD86VoidFacts = false,
+): string {
   const modeCode = options.modeCode ?? 'first_come';
   const statusCode = options.statusCode ?? 'preparing';
   const candidateSnapshotHash = hasOwn(options, 'candidateSnapshotHash')
@@ -351,14 +356,19 @@ function batchSql(fixture: Fixture, id: string, options: BatchOptions = {}): str
     : statusCode === 'committed'
       ? '2099-08-12 18:00:00'
       : null;
+  const currentVoidColumns = includeD86VoidFacts ? ',"voidReason","voidedAt"' : '';
+  const currentVoidValues = includeD86VoidFacts
+    ? `,${sqlNullable(statusCode === 'voided' ? 'allocation determinism test void' : null)},` +
+      `${sqlNullable(statusCode === 'voided' ? '2099-08-12 18:00:00' : null)}`
+    : '';
   return `INSERT INTO "ActivityAllocationBatch"
     ("id","updatedAt","activityId","sessionId","modeCode","candidateSnapshotHash",
-     "algorithmVersionCode","randomCommitment","randomSeedReveal","statusCode","operationKey","committedAt")
+     "algorithmVersionCode","randomCommitment","randomSeedReveal","statusCode","operationKey","committedAt"${currentVoidColumns})
    VALUES
     (${sqlValue(id)},CURRENT_TIMESTAMP,${sqlValue(fixture.activityId)},${sqlValue(fixture.sessionId)},
      ${sqlValue(modeCode)},${sqlNullable(candidateSnapshotHash)},${sqlNullable(algorithmVersionCode)},
      ${sqlNullable(randomCommitment)},${sqlNullable(randomSeedReveal)},${sqlValue(statusCode)},
-     ${sqlValue(`operation-${id}`)},${sqlNullable(committedAt)})`;
+     ${sqlValue(`operation-${id}`)},${sqlNullable(committedAt)}${currentVoidValues})`;
 }
 
 function candidateSql(fixture: Fixture, id: string, options: CandidateOptions = {}): string {
@@ -660,7 +670,7 @@ describe('Activity v1.1 batch4 allocation determinism migration', () => {
           'ActivityAllocationCandidate_participationIdentityId_fkey',
         );
         deployCurrentMigrations(databaseName);
-        expect(successfulMigrationCount(databaseName)).toBe(MIGRATION_85_COUNT);
+        expect(successfulMigrationCount(databaseName)).toBe(CURRENT_MIGRATION_COUNT);
         expect(oldCandidateForeignKey(databaseName)).toBe('');
         expect(d85Artifacts(databaseName)).toEqual([
           'column:ActivityAllocationBatch.algorithmVersionCode',
@@ -755,12 +765,12 @@ describe('Activity v1.1 batch4 allocation determinism migration', () => {
   );
 
   it(
-    'replays all 85 migrations from empty and enforces batch hashes, versions and seed lifecycle',
+    'replays all current 86 migrations from empty and enforces batch hashes, versions and seed lifecycle',
     () => {
       const databaseName = recreateEmptyScratchDatabase();
       try {
         deployCurrentMigrations(databaseName);
-        expect(successfulMigrationCount(databaseName)).toBe(MIGRATION_85_COUNT);
+        expect(successfulMigrationCount(databaseName)).toBe(CURRENT_MIGRATION_COUNT);
         const fixture = createFixture(databaseName, 'batch-shapes');
         runPsql(databaseName, batchSql(fixture, 'batch-first'));
         runPsql(
@@ -783,19 +793,29 @@ describe('Activity v1.1 batch4 allocation determinism migration', () => {
         );
         runPsql(
           databaseName,
-          batchSql(fixture, 'batch-lottery-voided-before-commit', {
-            modeCode: 'lottery',
-            statusCode: 'voided',
-          }),
+          batchSql(
+            fixture,
+            'batch-lottery-voided-before-commit',
+            {
+              modeCode: 'lottery',
+              statusCode: 'voided',
+            },
+            true,
+          ),
         );
         runPsql(
           databaseName,
-          batchSql(fixture, 'batch-lottery-voided-after-commit', {
-            modeCode: 'lottery',
-            statusCode: 'voided',
-            randomSeedReveal: HASH_C,
-            committedAt: '2099-08-12 18:00:00',
-          }),
+          batchSql(
+            fixture,
+            'batch-lottery-voided-after-commit',
+            {
+              modeCode: 'lottery',
+              statusCode: 'voided',
+              randomSeedReveal: HASH_C,
+              committedAt: '2099-08-12 18:00:00',
+            },
+            true,
+          ),
         );
 
         expectSqlFailure(

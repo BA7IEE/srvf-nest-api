@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:f86b5ce949622a295f85cf677ada3557369b9d622ddf043b199da9a7e143d2ac",
+  "inputDigest": "sha256:6b2c9d6d123892768f38b9bcf408da2e40ee2f9403d70a0d466beebfaad12a20",
   "headerNote": "登记≠已治理。全部条目均为 Phase 0 inventory，不构成状态机治理承诺。",
   "entries": [
     {
@@ -19,6 +19,12 @@
     {
       "model": "Activity",
       "field": "statusCode",
+      "governanceStatus": "inventory",
+      "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
+    },
+    {
+      "model": "ActivityAllocationApplicationProjection",
+      "field": "appliedStatusCode",
       "governanceStatus": "inventory",
       "notes": "登记≠已治理；Phase 0 仅盘点，不声明闭集、边、错误码或实现映射。"
     },

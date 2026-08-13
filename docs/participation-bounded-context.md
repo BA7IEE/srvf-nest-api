@@ -165,6 +165,8 @@ Certificate (不在 participation 图内)
 
 > **D85 + 第 4 批⑬ 可重放分配合同当前事实**：Batch 冻结算法版本、候选集合 SHA-256；lottery 先存 server seed commitment，提交后保存 reveal，非 lottery 不得携带 seed。Candidate 冻结永久 identity、报名头与精确 revision、服务器受理时间、资格快照 SHA-256、0..100 分数、稳定 tie-break、抽签/候补序号、结果与对象解释；两条复合 FK 防身份/报名头/revision 拼错，同批非空 tie-break、抽签序号和候补序号分别唯一。migration 只允许双表为空时落库，旧行不猜不回填；本刀没有 writer、endpoint、容量 caller、抽签执行或递补行为。
 
+> **D86 + 第 4 批⑭ command/replay 与 committed projection 当前事实**：Batch 增 `voidReason`/`voidedAt` 作废事实，voided 必须同时有非空且原始 wire ≤500 的 reason 和时间，preparing/committed 必须全空。专用 immutable `ActivityAllocationCommandReceipt` 闭集为 `prepare/commit/void`，以 `(allocationBatchId,activityId)` 复合 FK 同锚，`(activityId,commandCode,operationKey)` 和 `(allocationBatchId,commandCode)` 均唯一；回执 JSON 仅固定安全 v1 信封，不是真值、不得存 L3/seed。`responseHash` 的 runtime 唯一口径是 SHA-256(UTF-8 canonical payload serialization)，字段严格依序为 `activityId`,`allocationBatchId`,`batchStatusCode`,`commandCode`,`responseSchemaVersion`，且排除 `responseHash`；JSONB 不保对象键序，DB 只验 shape 与列/JSON 值一致，密码学重算留给后续 runtime。每 candidate 一条 immutable `ActivityAllocationApplicationProjection`：identity 固定 `id+activity+session+member`；activity-person reservation 固定 `id+member+activity+bucket`，所以同 member 的跨 session identity 合法共用该一行；session/position reservation 继续固定 `id+identity+bucket`。allocated 必为 pass/population=true、pointer=session reservation 并具 activity+session 成套，position 三元全有或全无；waitlisted/not_selected 必全清。Batch committed、Candidate/Revision 内容、reservation type 与 Identity 实时 pointer 是后续 Activity 根锁事务复核边界，D86 不实现 command、20147、分配或容量行为。
+
 **关键 invariant**:
 
 - `AttendanceRecord.contributionPoints` 字段层为历史兼容仍可空;业务写路不接受人工最终分,submit/edit 一律从 ContributionRule 计算,无规则落 0;仅 approved 时"语义生效"。

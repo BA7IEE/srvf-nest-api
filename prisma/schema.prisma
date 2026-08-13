@@ -159,6 +159,7 @@ model User {
 
   // 第 1 批第五刀(2026-08-04;合同 §3.11):同上,零标量字段。
   allocationBatchesCreated ActivityAllocationBatch[] @relation("AllocationBatchCreator")
+  allocationCommandReceiptsActed ActivityAllocationCommandReceipt[] @relation("AllocationCommandReceiptActor")
 
   @@index([deletedAt])
   @@index([status])
@@ -3559,6 +3560,7 @@ model ActivitySessionPosition {
   // 第 1 批第五刀(§3.11):岗位志愿与岗位级分配批次。
   positionPreferences ActivityPositionPreference[]
   allocationBatches   ActivityAllocationBatch[]    @relation("AllocationBatchPosition")
+  allocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionPosition")
 
   @@unique([activityId, sessionId, id], map: "activity_session_position_activity_session_id_key")
   @@index([activityId])
@@ -3625,11 +3627,15 @@ model ActivityParticipationIdentity {
 
   // 第 1 批第五刀反向 relation(合同 §3.11):仅关系映射,零标量字段。
   allocationCandidates ActivityAllocationCandidate[]
+  allocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionIdentity")
 
   @@unique([activityId, sessionId, memberId])
   // 第 85 migration：AllocationCandidate 以 identity + registration 复合 FK
   // 证明候选身份与永久报名头同锚；id 单列主键不能替代 PostgreSQL 的被引用复合 unique。
   @@unique([id, registrationId], map: "activity_participation_identity_id_registration_id_unique")
+  // D86 projection 冻结 identity 的 member/activity/session 四元事实；id 单列主键
+  // 不能作为 PostgreSQL 复合 FK 的被引用键。
+  @@unique([id, activityId, sessionId, memberId], map: "activity_participation_identity_id_activity_session_member_key")
   @@index([activityId])
   @@index([sessionId])
   @@index([memberId])
@@ -3683,11 +3689,13 @@ model ActivityParticipationRevision {
   identity        ActivityParticipationIdentity @relation(fields: [identityId], references: [id], onDelete: Restrict)
   position        ActivitySessionPosition?      @relation(fields: [positionId], references: [id], onDelete: Restrict)
   allocationBatch ActivityAllocationBatch?      @relation(fields: [allocationBatchId], references: [id], onDelete: Restrict)
+  allocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionAppliedRevision")
   reviewedBy      User?                         @relation("ParticipationRevisionReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
   cancelledBy     User?                         @relation("ParticipationRevisionCanceller", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
   createdBy       User?                         @relation("ParticipationRevisionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
 
   @@unique([identityId, revision])
+  @@unique([id, allocationBatchId, identityId], map: "activity_participation_revision_id_batch_identity_unique")
   @@index([identityId])
   @@index([statusCode])
   @@index([positionId])
@@ -3718,8 +3726,12 @@ model ActivityCapacityBucket {
 
   activity     Activity              @relation(fields: [activityId], references: [id], onDelete: Restrict)
   reservations CapacityReservation[]
+  activityPersonAllocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionActivityPersonBucket")
+  sessionAllocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionSessionBucket")
+  positionAllocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionPositionBucket")
 
   @@unique([scopeTypeCode, scopeId])
+  @@unique([id, activityId], map: "activity_capacity_bucket_id_activity_unique")
   @@index([activityId])
   @@index([scopeTypeCode])
 }
@@ -3749,7 +3761,14 @@ model CapacityReservation {
   bucket   ActivityCapacityBucket        @relation(fields: [bucketId], references: [id], onDelete: Restrict)
   member   Member?                       @relation(fields: [memberId], references: [id], onDelete: Restrict)
   activity Activity?                     @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  activityPersonAllocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionActivityPersonReservation")
+  sessionAllocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionSessionReservation")
+  positionAllocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionPositionReservation")
 
+  @@unique([id, identityId, bucketId], map: "capacity_reservation_id_identity_bucket_unique")
+  // D86 的 activity_person reservation 按 member/activity（而非某一 session identity）
+  // 复用；该复合键让 committed projection 能冻结其真实锚点与 bucket。
+  @@unique([id, memberId, activityId, bucketId], map: "capacity_reservation_id_member_activity_bucket_unique")
   @@index([identityId])
   @@index([bucketId])
   @@index([status])
@@ -5273,6 +5292,9 @@ model ActivityAllocationBatch {
 
   createdByUserId String?
   committedAt     DateTime?
+  // D86:作废必须留下业务事实；actor 可由同批唯一 void command receipt 精确追溯，避免双写。
+  voidReason      String?
+  voidedAt        DateTime?
 
   activity     Activity                 @relation(fields: [activityId], references: [id], onDelete: Restrict)
   // 复合 FK(activityId, sessionId)→ ActivitySession(activityId, id):沿第一刀,
@@ -5283,9 +5305,13 @@ model ActivityAllocationBatch {
   createdBy    User?                    @relation("AllocationBatchCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
 
   candidates             ActivityAllocationCandidate[]
+  commandReceipts        ActivityAllocationCommandReceipt[] @relation("AllocationBatchCommandReceipts")
+  applicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationBatchApplicationProjections")
   // §3.9 的 ActivityParticipationRevision.allocationBatchId 反向侧(本刀兑现第一刀欠账)
   participationRevisions ActivityParticipationRevision[]
 
+  @@unique([id, activityId], map: "activity_allocation_batch_id_activity_unique")
+  @@unique([id, activityId, sessionId], map: "activity_allocation_batch_id_activity_session_unique")
   @@index([activityId], map: "activity_allocation_batch_activity_idx")
   @@index([sessionId], map: "activity_allocation_batch_session_idx")
   @@index([positionId], map: "activity_allocation_batch_position_idx")
@@ -5357,15 +5383,103 @@ model ActivityAllocationCandidate {
   allocationBatch       ActivityAllocationBatch       @relation(fields: [allocationBatchId], references: [id], onDelete: Restrict)
   participationIdentity ActivityParticipationIdentity @relation(fields: [participationIdentityId, registrationId], references: [id, registrationId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_identity_registration_fkey")
   registrationRevision  ActivityRegistrationRevision  @relation(fields: [registrationId, registrationRevisionId], references: [registrationId, id], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_registration_revision_fkey")
+  // Prisma 对复合 FK + 被引用方单列 unique 无法同时表达 1:1；DB 的 projection
+  // candidate 单列 unique 才是权威一对一保证，关系仍保留完整同 batch/identity 锚。
+  applicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationCandidateApplicationProjection")
 
   // §11.4 明写「候补排名由 AllocationCandidate **可索引 rank** 读取,
   // 不在每次列表对全队列重新排序」⇒ 这条索引是合同点名的,不是盲加。
   @@unique([allocationBatchId, participationIdentityId], map: "activity_allocation_candidate_batch_identity_key")
+  @@unique([id, allocationBatchId, participationIdentityId], map: "activity_allocation_candidate_id_batch_identity_unique")
   @@unique([allocationBatchId, tieBreakKey], map: "activity_allocation_candidate_batch_tie_break_key")
   @@index([allocationBatchId, waitlistRank], map: "activity_allocation_candidate_batch_rank_idx")
   @@index([allocationBatchId], map: "activity_allocation_candidate_batch_idx")
   @@index([participationIdentityId], map: "activity_allocation_candidate_identity_idx")
   @@index([registrationId, registrationRevisionId], map: "activity_allocation_candidate_registration_revision_idx")
+}
+
+// ===== D86 ActivityAllocationCommandReceipt:三阶段 command 的不可变精确回执 =====
+//
+// 本表只保存安全传输回执，不保存 allocation/void 真值；真值仍是 Batch、Candidate、
+// ParticipationRevision 与 CapacityReservation。responseReceipt 的 v1 形状由 migration
+// 函数精确白名单，故不能携带 L3、未揭示 seed 或未来未声明字段。
+model ActivityAllocationCommandReceipt {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  activityId            String
+  allocationBatchId     String
+  commandCode           String // prepare / commit / void
+  operationKey          String
+  requestHash           String // SHA-256 hex; future command checks same key's exact hash before replay
+  responseSchemaVersion String
+  responseHash          String
+  responseReceipt       Json
+  actorUserId           String
+
+  // 同批次/活动锚由复合 FK 物理保证，不能退化成只按 batch id 的关系。
+  allocationBatch ActivityAllocationBatch @relation("AllocationBatchCommandReceipts", fields: [allocationBatchId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_command_receipt_batch_anchor_fkey")
+  actor           User                    @relation("AllocationCommandReceiptActor", fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_command_receipt_actor_fkey")
+
+  @@unique([activityId, commandCode, operationKey], map: "activity_allocation_command_receipt_activity_command_key")
+  @@unique([allocationBatchId, commandCode], map: "activity_allocation_command_receipt_batch_command_key")
+  @@index([allocationBatchId], map: "activity_allocation_command_receipt_batch_idx")
+  @@index([actorUserId, createdAt], map: "activity_allocation_command_receipt_actor_created_idx")
+}
+
+// ===== D86 ActivityAllocationApplicationProjection:committed 后不可变应用投影 =====
+//
+// 一名 candidate 至多一行。activity/session/batch/identity/revision/reservation/bucket 的
+// 实体锚点以 migration 的复合 FK 固定；Batch 当前 committed 状态、Candidate/Revision
+// 内容与 Identity 当前 pointer 的实时一致性必须留给后续 Activity 根锁命令在同一事务复核。
+model ActivityAllocationApplicationProjection {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  appliedAt DateTime
+
+  activityId                     String
+  sessionId                      String
+  allocationBatchId              String
+  allocationCandidateId          String
+  participationIdentityId        String
+  memberId                       String
+  appliedParticipationRevisionId String
+
+  appliedResultCode  String // allocated / waitlisted / not_selected
+  appliedStatusCode  String // pass / waitlisted / not_selected
+  positionId         String?
+  populationIncluded Boolean
+
+  // 对应 Identity.capacityReservationId 的期望值。allocated 时必须等于 session reservation；
+  // 该快速 pointer 本身按既有决策没有 FK，后续根锁命令必须复核 live identity。
+  expectedIdentityCapacityReservationId String?
+  activityPersonReservationId           String?
+  activityPersonBucketId                String?
+  sessionReservationId                  String?
+  sessionBucketId                       String?
+  positionReservationId                 String?
+  positionBucketId                      String?
+
+  allocationBatch ActivityAllocationBatch @relation("AllocationBatchApplicationProjections", fields: [allocationBatchId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_application_projection_batch_anchor_fkey")
+  allocationCandidate ActivityAllocationCandidate @relation("AllocationCandidateApplicationProjection", fields: [allocationCandidateId, allocationBatchId, participationIdentityId], references: [id, allocationBatchId, participationIdentityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_candidate_anchor_fkey")
+  // memberId 是 committed 时冻结的 identity 事实；四元 FK 防止同 activity/session
+  // 的 identity 与 member 被拼接。activity_person reservation 则按 member/activity
+  // 锚定，允许同一 member 的不同 session identity 正确复用那一条 reservation。
+  participationIdentity ActivityParticipationIdentity @relation("AllocationApplicationProjectionIdentity", fields: [participationIdentityId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_identity_anchor_fkey")
+  appliedParticipationRevision ActivityParticipationRevision @relation("AllocationApplicationProjectionAppliedRevision", fields: [appliedParticipationRevisionId, allocationBatchId, participationIdentityId], references: [id, allocationBatchId, identityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_revision_anchor_fkey")
+  position ActivitySessionPosition? @relation("AllocationApplicationProjectionPosition", fields: [activityId, sessionId, positionId], references: [activityId, sessionId, id], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_position_anchor_fkey")
+  activityPersonReservation CapacityReservation? @relation("AllocationApplicationProjectionActivityPersonReservation", fields: [activityPersonReservationId, memberId, activityId, activityPersonBucketId], references: [id, memberId, activityId, bucketId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_activity_reservation_fkey")
+  sessionReservation CapacityReservation? @relation("AllocationApplicationProjectionSessionReservation", fields: [sessionReservationId, participationIdentityId, sessionBucketId], references: [id, identityId, bucketId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_session_reservation_fkey")
+  positionReservation CapacityReservation? @relation("AllocationApplicationProjectionPositionReservation", fields: [positionReservationId, participationIdentityId, positionBucketId], references: [id, identityId, bucketId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_position_reservation_fkey")
+  activityPersonBucket ActivityCapacityBucket? @relation("AllocationApplicationProjectionActivityPersonBucket", fields: [activityPersonBucketId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_activity_bucket_fkey")
+  sessionBucket ActivityCapacityBucket? @relation("AllocationApplicationProjectionSessionBucket", fields: [sessionBucketId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_session_bucket_fkey")
+  positionBucket ActivityCapacityBucket? @relation("AllocationApplicationProjectionPositionBucket", fields: [positionBucketId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_position_bucket_fkey")
+
+  @@unique([allocationCandidateId], map: "activity_allocation_application_projection_candidate_key")
+  @@unique([allocationBatchId, participationIdentityId], map: "activity_allocation_application_projection_batch_identity_key")
+  @@index([allocationBatchId], map: "activity_allocation_application_projection_batch_idx")
+  @@index([participationIdentityId], map: "activity_allocation_application_projection_identity_idx")
+  @@index([appliedParticipationRevisionId], map: "activity_allocation_application_projection_revision_idx")
 }
 
 // ===== §3.11 ActivityReservedQuotaGroup:预留名额组 =====

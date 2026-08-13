@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:ea5a03e5128ed7939937c27b680ff543244f9fe57a7f661788a3412fbed0d8ce",
+  "inputDigest": "sha256:83101b1cbd6bfa2962b015be3f2709362afc2ebc54880102ec6b542c8e4914eb",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -490,6 +490,18 @@
       "confirmed": true
     },
     "ActivityAllocationCandidate": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": true
+    },
+    "ActivityAllocationCommandReceipt": {
+      "domain": "participation",
+      "ownerModule": "activity-registrations",
+      "subdomain": "registration",
+      "confirmed": true
+    },
+    "ActivityAllocationApplicationProjection": {
       "domain": "participation",
       "ownerModule": "activity-registrations",
       "subdomain": "registration",
