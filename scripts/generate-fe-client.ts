@@ -38,11 +38,23 @@ const CONTRACT = 'docs/handoff/openapi.json';
 const OUT_DIR = 'docs/handoff/clients';
 const GENERATOR_VERSION = '1.0.0';
 
-/** surface 定义 —— 与 inputDigest 闭包同源,改这里必然翻转 digest。 */
+/**
+ * surface 定义 —— 与 inputDigest 闭包同源,改这里必然翻转 digest。
+ *
+ * **五个 surface 全覆盖**(维护者 2026-08-13 拍板):部分生成 = 剩下那部分回到手写,
+ * 等于亲手制造第二份真相 —— 而消灭第二份真相正是 FE codegen 的立项理由。
+ * `auth` 单独成份而不是往 admin/app 各塞一份:它两边都要调,复制就是两份各自演化的定义。
+ */
 export const SURFACES: ReadonlyArray<{ readonly id: string; readonly prefix: string; readonly title: string }> = [
   { id: 'admin', prefix: '/api/admin/', title: 'Admin 管理后台' },
   { id: 'app', prefix: '/api/app/', title: 'App 小程序' },
+  { id: 'auth', prefix: '/api/auth/', title: 'Auth 登录/令牌(admin 与 app 共用)' },
+  { id: 'system', prefix: '/api/system/', title: 'System 系统面' },
+  { id: 'open', prefix: '/api/open/', title: 'Open 无账号公开面' },
 ];
+
+/** 跨 surface 共用类型的落点 —— 同一个定义只出现一次。 */
+const SHARED_DIR = 'shared';
 
 const METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
 
@@ -221,20 +233,45 @@ function fnName(operationId: string): string {
   return /^[0-9]/.test(camel) ? 'op' + camel : camel;
 }
 
-function renderTypes(
-  surfaceTitle: string,
-  digest: string,
-  schemaNames: readonly string[],
-  doc: AnyObject,
-): string {
-  const schemas = ((doc.components ?? {}) as AnyObject).schemas as AnyObject;
-  const lines: string[] = [
+/** 把一个 schema 渲染成 `export interface` / `export type`。 */
+function renderSchemaDecl(name: string, schemas: AnyObject): string[] {
+  const lines: string[] = [];
+  const schema = (schemas[name] ?? {}) as AnyObject;
+  const description = typeof schema.description === 'string' ? schema.description : '';
+  if (description) lines.push(`/** ${description.replace(/\r?\n/g, ' ')} */`);
+  const body = tsType({ ...schema, $ref: undefined }, new Set<string>());
+  if (body.startsWith('{')) {
+    lines.push(
+      `export interface ${name} ${body.replace(/; /g, ';\n  ').replace(/^\{ /, '{\n  ').replace(/ \}$/, ';\n}')}`,
+    );
+  } else {
+    lines.push(`export type ${name} = ${body};`);
+  }
+  lines.push('');
+  return lines;
+}
+
+function header(surfaceTitle: string, digest: string): string[] {
+  return [
     '// 由 scripts/generate-fe-client.ts 生成,请勿手改。',
     '// 真相源:后端 live /api/docs-json;本文件派生自 docs/handoff/openapi.json 快照。',
     `// surface: ${surfaceTitle}`,
     `// generatorVersion: ${GENERATOR_VERSION}`,
     `// inputDigest: ${digest}`,
     '',
+  ];
+}
+
+/**
+ * 跨 surface 共用类型的**唯一定义处**。
+ *
+ * 共用集是**算出来的**(出现在 ≥2 个 surface 的 schema),不是硬编码清单 ——
+ * 硬编码会随契约演进静默失准,而失准的形式恰好是「又出现了两份相同定义」。
+ */
+function renderShared(digest: string, sharedNames: readonly string[], doc: AnyObject): string {
+  const schemas = ((doc.components ?? {}) as AnyObject).schemas as AnyObject;
+  const lines: string[] = [
+    ...header('shared —— 被两个及以上 surface 共用的类型(唯一定义处)', digest),
     '/** 统一响应 envelope —— 全仓契约恒为 { code, message, data }。 */',
     'export interface ApiEnvelope<T> {',
     '  code: number;',
@@ -250,19 +287,48 @@ function renderTypes(
     '  pageSize: number;',
     '}',
     '',
+    '/** 传输层由消费方注入 —— 生成器不产生任何网络与凭证代码。五个 surface 共用同一份定义。 */',
+    'export interface FetchRequest {',
+    '  method: string;',
+    '  path: string;',
+    '  query?: Record<string, unknown>;',
+    '  body?: unknown;',
+    '}',
+    '',
+    'export type Fetcher = <T>(request: FetchRequest) => Promise<ApiEnvelope<T>>;',
+    '',
   ];
-  for (const name of schemaNames) {
-    const schema = (schemas[name] ?? {}) as AnyObject;
-    const description = typeof schema.description === 'string' ? schema.description : '';
-    if (description) lines.push(`/** ${description.replace(/\r?\n/g, ' ')} */`);
-    const body = tsType({ ...schema, $ref: undefined }, new Set<string>());
-    if (body.startsWith('{')) {
-      lines.push(`export interface ${name} ${body.replace(/; /g, ';\n  ').replace(/^\{ /, '{\n  ').replace(/ \}$/, ';\n}')}`);
-    } else {
-      lines.push(`export type ${name} = ${body};`);
-    }
-    lines.push('');
-  }
+  for (const name of sharedNames) lines.push(...renderSchemaDecl(name, schemas));
+  return lines.join('\n');
+}
+
+/**
+ * 单个 surface 的类型:**只出它独占的 schema**,共用的从 `../shared/types` re-export。
+ * 消费方仍然只需要 import 一个 `./types`,但仓内每个定义只有一份。
+ */
+function renderTypes(
+  surfaceTitle: string,
+  digest: string,
+  exclusiveNames: readonly string[],
+  sharedUsed: readonly string[],
+  doc: AnyObject,
+): string {
+  const schemas = ((doc.components ?? {}) as AnyObject).schemas as AnyObject;
+  const lines: string[] = [...header(surfaceTitle, digest)];
+  // 共用类型不在本文件重复定义,而是 import + re-export。
+  //
+  // ⚠️ 必须 **import 与 re-export 两句都写**:`export type { X } from '…'` 只把 X 暴露给
+  // 本模块的**导入方**,X 在本模块**自身作用域内并不可见** —— 而本文件里的独占 schema
+  // 会引用共用 schema(如 admin 的某个 DTO 引 ContentAttachmentDto)。只写 re-export 会
+  // 产出 `Cannot find name 'ContentAttachmentDto'` 的废品。这条是生成器自校验当场抓到的。
+  const sharedAll = ['ApiEnvelope', 'PageResult', 'FetchRequest', 'Fetcher', ...sharedUsed];
+  lines.push(
+    '// 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。',
+    `import type { ${sharedAll.join(', ')} } from '../${SHARED_DIR}/types';`,
+    `export type { ${sharedAll.join(', ')} };`,
+    '',
+  );
+  for (const name of exclusiveNames) lines.push(...renderSchemaDecl(name, schemas));
   return lines.join('\n');
 }
 
@@ -284,21 +350,12 @@ function renderClient(
     '//    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理',
     '//    (登录/刷新的三步接线见 docs/handoff/admin-web.md §3.1)。',
     '',
-    schemaNames.length > 0
-      ? `import type {\n  ApiEnvelope,\n  PageResult,\n${schemaNames.map((n) => `  ${n},`).join('\n')}\n} from './types';`
-      : "import type { ApiEnvelope, PageResult } from './types';",
+    // 类型全部来自 ./types(它自己再从 ../shared/types 引共用部分);
+    // FetchRequest / Fetcher 也在 shared —— 五个 surface 共用一份传输层契约,
+    // 否则每个 client 各带一份内容相同的定义,正是「两份相同却各自维护」的形状。
+    `import type {\n  ApiEnvelope,\n  PageResult,\n  FetchRequest,\n  Fetcher,\n${schemaNames.map((n) => `  ${n},`).join('\n')}${schemaNames.length > 0 ? '\n' : ''}} from './types';`,
     '',
-    'export type { ApiEnvelope, PageResult };',
-    '',
-    '/** 传输层由消费方注入 —— 生成器不产生任何网络与凭证代码。 */',
-    'export interface FetchRequest {',
-    '  method: string;',
-    '  path: string;',
-    '  query?: Record<string, unknown>;',
-    '  body?: unknown;',
-    '}',
-    '',
-    'export type Fetcher = <T>(request: FetchRequest) => Promise<ApiEnvelope<T>>;',
+    'export type { ApiEnvelope, PageResult, FetchRequest, Fetcher };',
     '',
     `export function ${clientName}(fetcher: Fetcher) {`,
     '  return {',
@@ -362,17 +419,35 @@ export function renderAll(contractText: string): Map<string, string> {
   const doc = JSON.parse(contractText) as AnyObject;
   const digest = computeInputDigest(contractText);
   const files = new Map<string, string>();
-  for (const surface of SURFACES) {
+
+  // 先把五个 surface 各自的 schema 闭包算出来,再据此**算出**共用集 ——
+  // 共用集不硬编码:硬编码会随契约演进静默失准,而失准的样子正好是「又出现两份相同定义」。
+  const perSurface = SURFACES.map((surface) => {
     const used = new Set<string>();
     const endpoints = collectEndpoints(doc, surface.prefix, used);
-    const schemaNames = closeSchemas(doc, used);
+    return { surface, endpoints, names: closeSchemas(doc, used) };
+  });
+  const occurrences = new Map<string, number>();
+  for (const entry of perSurface) {
+    for (const name of entry.names) occurrences.set(name, (occurrences.get(name) ?? 0) + 1);
+  }
+  const sharedNames = [...occurrences.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([name]) => name)
+    .sort();
+  const sharedSet = new Set(sharedNames);
+
+  files.set(path.posix.join(OUT_DIR, SHARED_DIR, 'types.ts'), renderShared(digest, sharedNames, doc));
+  for (const { surface, endpoints, names } of perSurface) {
+    const exclusive = names.filter((name) => !sharedSet.has(name));
+    const sharedUsed = names.filter((name) => sharedSet.has(name));
     files.set(
       path.posix.join(OUT_DIR, surface.id, 'types.ts'),
-      renderTypes(surface.title, digest, schemaNames, doc),
+      renderTypes(surface.title, digest, exclusive, sharedUsed, doc),
     );
     files.set(
       path.posix.join(OUT_DIR, surface.id, 'client.ts'),
-      renderClient(surface.id, surface.title, digest, endpoints, schemaNames),
+      renderClient(surface.id, surface.title, digest, endpoints, names),
     );
   }
   return files;
