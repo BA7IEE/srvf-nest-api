@@ -119,9 +119,27 @@ interface Finding {
   details: JsonRecord;
 }
 
+/** How a cross-module dependency was written. */
+type ImportForm = 'import' | 'export-from' | 'dynamic-import' | 'import-equals';
+
 interface ImportEdge {
   from: string;
   to: string;
+  /**
+   * Syntactic form. `import` is the only one with live occurrences today; the
+   * other three are parsed so that the first one to appear is caught rather
+   * than silently dropped (see the coverage assertions in
+   * harness-guards.selftest.ts, which pin the current counts at 0).
+   */
+  form: ImportForm;
+  /**
+   * `import type` / all-type named bindings — erased at compile time, so the
+   * edge does not exist at runtime. Still counted as a dependency edge
+   * (maintainer ruling 2026-08-13: 架构治理管的是域知识耦合，且 v4 §4 的
+   * platform-access 反向边「恒 0」若静默豁免 type-only 就当场变成假话),
+   * but tagged so the exemption remains a one-line configuration change.
+   */
+  typeOnly: boolean;
   file: string;
   line: number;
   symbol: string;
@@ -1555,29 +1573,97 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
         inspectRelationAccesses(access.selection.relationAccesses, operation);
       }
     };
+    // Every syntactic form that creates a module dependency funnels through
+    // here, so adding a form cannot accidentally skip the boundary verdict.
+    const moduleDependency = (
+      node: ts.Node,
+      specifier: string,
+      form: ImportForm,
+      typeOnly: boolean,
+    ): void => {
+      const targetModule = moduleForImport(file, specifier);
+      if (targetModule === null || targetModule === moduleName) return;
+      const targetOwner = map.moduleOwnership[targetModule];
+      if (targetOwner === undefined || targetOwner.domain === sourceDomain) return;
+      edges.push({
+        from: sourceDomain,
+        to: targetOwner.domain,
+        form,
+        typeOnly,
+        file,
+        line: lineOf(node, source),
+        symbol: symbolOf(node),
+        text: specifier,
+      });
+      if (!allowedEdge(map, sourceDomain, targetOwner.domain)) {
+        emit('cross-domain-import', 'report', targetOwner.domain, null, 'import', node, {
+          targetModule,
+          specifier,
+          form,
+          typeOnly,
+        });
+      }
+    };
+
+    /** `import type {X}` or `import {type X, type Y}` — both fully erased. */
+    const importIsTypeOnly = (clause: ts.ImportClause | undefined): boolean => {
+      if (clause === undefined) return false;
+      if (clause.isTypeOnly) return true;
+      const bindings = clause.namedBindings;
+      return (
+        bindings !== undefined &&
+        ts.isNamedImports(bindings) &&
+        bindings.elements.length > 0 &&
+        bindings.elements.every((element) => element.isTypeOnly)
+      );
+    };
+
     const visit = (node: ts.Node): void => {
       if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
-        const targetModule = moduleForImport(file, node.moduleSpecifier.text);
-        if (targetModule !== null && targetModule !== moduleName) {
-          const targetOwner = map.moduleOwnership[targetModule];
-          if (targetOwner !== undefined && targetOwner.domain !== sourceDomain) {
-            const edge: ImportEdge = {
-              from: sourceDomain,
-              to: targetOwner.domain,
-              file,
-              line: lineOf(node, source),
-              symbol: symbolOf(node),
-              text: node.moduleSpecifier.text,
-            };
-            edges.push(edge);
-            if (!allowedEdge(map, sourceDomain, targetOwner.domain)) {
-              emit('cross-domain-import', 'report', targetOwner.domain, null, 'import', node, {
-                targetModule,
-                specifier: node.moduleSpecifier.text,
-              });
-            }
-          }
-        }
+        moduleDependency(
+          node,
+          node.moduleSpecifier.text,
+          'import',
+          importIsTypeOnly(node.importClause),
+        );
+      }
+      // `export { X } from '...'` / `export * from '...'` — a real dependency
+      // the declaration-only walk never saw.
+      if (
+        ts.isExportDeclaration(node) &&
+        node.moduleSpecifier !== undefined &&
+        ts.isStringLiteral(node.moduleSpecifier)
+      ) {
+        const bindings = node.exportClause;
+        const typeOnly =
+          node.isTypeOnly ||
+          (bindings !== undefined &&
+            ts.isNamedExports(bindings) &&
+            bindings.elements.length > 0 &&
+            bindings.elements.every((element) => element.isTypeOnly));
+        moduleDependency(node, node.moduleSpecifier.text, 'export-from', typeOnly);
+      }
+      // `await import('...')` with a literal specifier.
+      if (
+        ts.isCallExpression(node) &&
+        node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+        node.arguments[0] !== undefined &&
+        ts.isStringLiteral(node.arguments[0])
+      ) {
+        moduleDependency(node, node.arguments[0].text, 'dynamic-import', false);
+      }
+      // `import X = require('...')`.
+      if (
+        ts.isImportEqualsDeclaration(node) &&
+        ts.isExternalModuleReference(node.moduleReference) &&
+        ts.isStringLiteral(node.moduleReference.expression)
+      ) {
+        moduleDependency(
+          node,
+          node.moduleReference.expression.text,
+          'import-equals',
+          node.isTypeOnly,
+        );
       }
       if (ts.isTaggedTemplateExpression(node)) raw(node, node.tag);
       if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {

@@ -1287,6 +1287,89 @@ checkEq(
         originalDirectWrite[0].callSiteId === noObservationDirectWrite[0].callSiteId,
       `${phase2Detail}\n${phase2WithoutObservedSubdomainWriteScan.out.slice(-4000)}`,
     );
+    // ──────────────────────────────────────────────────────────────────────
+    // R2/R3 依赖图覆盖面(Phase 3 前置 D2)
+    //
+    // 实测:本仓跨域 re-export / 动态 import() / import=require **各 0 条**,
+    // 依赖图改判定拿不到任何新发现。因此本刀不改判定,只做两件事:
+    //   ① 三种形态各一条正样例 —— 证明解析器认得,而不是「没命中所以以为没有」;
+    //   ② 把「当前为 0」钉成断言 —— **第一条真出现时本自测就红**,逼人来看一眼。
+    // ②是本仓「此刻不存在型判据必须写明到期条件」范式:到期条件 = 仓里出现第一条。
+    // 到期处置 = 确认该依赖是否该存在,然后更新此处期望值,不是直接删断言。
+    // ──────────────────────────────────────────────────────────────────────
+    const liveImportForms = new Map<string, number>();
+    for (const item of phase2Findings.filter((f) => f.kind === 'cross-domain-import')) {
+      const form = String((item.details as { form?: unknown }).form ?? 'import');
+      liveImportForms.set(form, (liveImportForms.get(form) ?? 0) + 1);
+    }
+    checkEq('D2 覆盖面:跨域 re-export 当前为 0(出现第一条即红)', liveImportForms.get('export-from') ?? 0, 0);
+    checkEq(
+      'D2 覆盖面:跨域动态 import() 当前为 0(出现第一条即红)',
+      liveImportForms.get('dynamic-import') ?? 0,
+      0,
+    );
+    checkEq(
+      'D2 覆盖面:跨域 import=require 当前为 0(出现第一条即红)',
+      liveImportForms.get('import-equals') ?? 0,
+      0,
+    );
+    check(
+      'D2 覆盖面:形态标注已接线(实存 import 形态全部带 form 字段)',
+      (liveImportForms.get('import') ?? 0) > 0,
+      phase2Detail,
+    );
+
+    // type-only 边:照算 + 打标记(维护者 2026-08-13 拍板)。
+    // 若静默豁免,v4 §4 的 platform-access 业务入边「恒 0」会当场变成假话 ——
+    // 实测那 3 条反向边恰好全是 type-only。
+    const typeOnlyImports = phase2Findings.filter(
+      (f) => f.kind === 'cross-domain-import' && (f.details as { typeOnly?: unknown }).typeOnly === true,
+    );
+    check(
+      'D2 type-only:仍计入依赖边且带 typeOnly 标记(不静默豁免)',
+      typeOnlyImports.length > 0,
+      `type-only 跨域违规边 = ${typeOnlyImports.length}`,
+    );
+
+    // 三种未见形态的正样例:写进夹具仓再扫一遍,证明「0 条」是真的没有,
+    // 不是解析器看不见。
+    // 方向必须取**未声明**的那一侧才会产生违规记录:participation→platform-access
+    // 是已声明边(business→platform 合法),反过来 platform-access→participation
+    // 才是 v4 §4 要求恒 0 的反向边。故夹具放在 permissions(platform-access)里
+    // 指向 activities(participation)。
+    const coverageRel = 'src/modules/permissions/phase3-import-form-fixture.ts';
+    const coverageFile = path.join(fixtureRoot, coverageRel);
+    fs.writeFileSync(
+      coverageFile,
+      [
+        "export { ActivitiesService } from '../activities/activities.service';",
+        'export async function dyn() {',
+        "  return import('../activities/activities.service');",
+        '}',
+        "import eq = require('../activities/activities.service');",
+        'export const held = eq;',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    const coverageScan = runFixture('scripts/check-boundaries.ts', ['--violations']);
+    fs.rmSync(coverageFile, { force: true });
+    let coverageForms = new Set<string>();
+    try {
+      const parsed = JSON.parse(coverageScan.out) as { findings: Phase2Finding[] };
+      coverageForms = new Set(
+        parsed.findings
+          .filter((f) => f.kind === 'cross-domain-import' && f.location.file === coverageRel)
+          .map((f) => String((f.details as { form?: unknown }).form)),
+      );
+    } catch {
+      coverageForms = new Set();
+    }
+    const coverageDetail = coverageScan.out.slice(-3000);
+    check('D2 正样例:跨域 re-export 被识别为依赖边', coverageForms.has('export-from'), coverageDetail);
+    check('D2 正样例:跨域动态 import() 被识别为依赖边', coverageForms.has('dynamic-import'), coverageDetail);
+    check('D2 正样例:跨域 import=require 被识别为依赖边', coverageForms.has('import-equals'), coverageDetail);
+
     const confirmedButPendingMap = JSON.parse(originalDomainMap) as {
       decisionsPending: string[];
     };
