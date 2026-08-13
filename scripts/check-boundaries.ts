@@ -107,6 +107,13 @@ interface Finding {
   operation: string;
   location: Location;
   callSiteId: string;
+  /**
+   * The Phase 0 identity for the same call site, retained only so that the
+   * one-off `--migrate-ids` pass can map registered debt entries onto their new
+   * `callSiteId` without a human re-identifying 201 rows.  It is not written to
+   * any generated artifact.
+   */
+  legacyCallSiteId: string;
   violationFingerprint: string;
   shapeDigest: string;
   details: JsonRecord;
@@ -672,16 +679,96 @@ function rootOf(expression: ts.Expression): string {
   return cursor.getText().replace(/\s+/g, '');
 }
 
-function prismaReceiver(expression: ts.Expression): boolean {
-  const root = rootOf(expression);
-  const text = expression.getText().replace(/\s+/g, '');
-  return (
-    root.includes('prisma') ||
-    root === 'tx' ||
-    root === 'transaction' ||
-    root === 'client' ||
-    root === 'db' ||
-    /(?:^|\.)(prisma|tx|transaction|client|db)(?:\.|$)/.test(text)
+// ─── typed AST layer (Phase 3 前置 · v4 EC-COMMON 第 3/4 条) ────────────────
+//
+// Phase 0 identified Prisma access by the *name* of the receiver ("is this
+// variable called prisma/tx/client/db?").  That heuristic is defeated by any
+// rename, and it cannot see a delegate reached through destructuring, an
+// aliased import, a re-export or a forwarding variable.  The blocking version
+// must decide by *type*, so both predicates below resolve through the checker
+// and never look at an identifier's spelling.
+//
+// Detection anchor = the delegate type.  Prisma generates one `<Model>Delegate`
+// interface per model, so `x.member` is a Member delegate access no matter what
+// `x` is named, how it was obtained, or whether `x`'s own type is PrismaService,
+// Prisma.TransactionClient, or a narrow hand-written port such as
+// `interface OutboxClient { outboxIntent: Prisma.OutboxIntentDelegate }`.
+// Anchoring on the delegate rather than on the receiver is what makes all four
+// registered bypass classes structurally unreachable in one move.
+
+interface TypedProgram {
+  checker: ts.TypeChecker;
+  sourceOf(rel: string): ts.SourceFile | undefined;
+}
+
+function buildTypedProgram(): TypedProgram {
+  // Scope is the repository tsconfig verbatim (include src/**/*.ts, exclude
+  // *.spec.ts) — the same closure R5/R6 are defined over by 终审【十二】.
+  // Re-deriving a second glob here would be a second source of truth.
+  const configPath = path.join(ROOT, 'tsconfig.json');
+  const config = ts.readConfigFile(configPath, ts.sys.readFile);
+  if (config.error !== undefined) fail('tsconfig.json 解析失败,无法建立 typed program。');
+  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, ROOT);
+  const program = ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options });
+  const checker = program.getTypeChecker();
+  return {
+    checker,
+    sourceOf: (rel) => program.getSourceFile(path.join(ROOT, rel)),
+  };
+}
+
+/** True when a symbol is declared by the generated Prisma client, not by src. */
+function declaredByPrismaClient(symbol: ts.Symbol): boolean {
+  return (symbol.getDeclarations() ?? []).some((declaration) => {
+    const name = declaration.getSourceFile().fileName.replace(/\\/g, '/');
+    return name.includes('/@prisma/client/') || name.includes('/.prisma/client/');
+  });
+}
+
+function typeMembers(type: ts.Type): ts.Type[] {
+  return type.isUnion() ? type.types : [type];
+}
+
+/**
+ * Resolve `expression` to the Prisma model whose delegate it is, by type.
+ *
+ * Catches `this.prisma.member`, `db.member` (forwarded variable), bare `member`
+ * (destructured from a client), `tx.member` (transaction parameter) and any
+ * aliased / re-exported client — none of which are distinguishable by name.
+ */
+function delegateModelOf(
+  typed: TypedProgram,
+  expression: ts.Expression,
+  modelsByName: Map<string, SchemaModel>,
+): SchemaModel | undefined {
+  const matched = new Map<string, SchemaModel>();
+  for (const member of typeMembers(typed.checker.getTypeAtLocation(expression))) {
+    const symbol = member.getSymbol() ?? member.aliasSymbol;
+    if (symbol === undefined) continue;
+    const match = /^(\w+)Delegate$/.exec(symbol.getName());
+    if (match === null || !declaredByPrismaClient(symbol)) continue;
+    const model = modelsByName.get(match[1]);
+    if (model !== undefined) matched.set(model.name, model);
+  }
+  // A computed access with a non-literal key (`client[name]`) types as the union
+  // of every delegate. Attributing that to whichever model happens to come first
+  // would invent a precise owner for an access we cannot resolve, so it stays
+  // unresolved — the honest outcome, and the same one Phase 0 produced. Listed
+  // as the `dynamic delegate` known gap rather than silently mis-attributed.
+  return matched.size === 1 ? [...matched.values()][0] : undefined;
+}
+
+/**
+ * True when `expression` is a Prisma client capable of raw SQL — PrismaService,
+ * Prisma.TransactionClient (`Omit<PrismaClient, ITXClientDenyList>`, which
+ * retains the raw methods) or any wrapper exposing them.  Decided by the
+ * presence of the raw members on the type, so it needs no name allowlist.
+ */
+function rawCapableClient(typed: TypedProgram, expression: ts.Expression): boolean {
+  return typeMembers(typed.checker.getTypeAtLocation(expression)).some(
+    (member) =>
+      member.getProperty('$queryRaw') !== undefined ||
+      member.getProperty('$executeRaw') !== undefined,
   );
 }
 
@@ -1031,6 +1118,62 @@ function allowedRead(map: DomainMap, candidate: ReadCandidate): ReadAllowlistEnt
   );
 }
 
+/** Name a single step of the syntactic spine, preferring a declaration's own name. */
+function pathStep(node: ts.Node, parent: ts.Node): string {
+  if (ts.isClassDeclaration(node) && node.name !== undefined) return 'Class(' + node.name.text + ')';
+  if (ts.isFunctionDeclaration(node) && node.name !== undefined)
+    return 'Function(' + node.name.text + ')';
+  if (
+    (ts.isMethodDeclaration(node) ||
+      ts.isPropertyDeclaration(node) ||
+      ts.isGetAccessorDeclaration(node) ||
+      ts.isSetAccessorDeclaration(node)) &&
+    (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name))
+  ) {
+    return 'Member(' + node.name.text + ')';
+  }
+  if (ts.isConstructorDeclaration(node)) return 'Constructor';
+  if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name))
+    return 'Var(' + node.name.text + ')';
+  if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name))
+    return 'Prop(' + node.name.text + ')';
+  // Positional fallback: index among *same-kind* siblings only, so inserting a
+  // statement of a different kind above does not renumber this one.
+  let index = 0;
+  let found = -1;
+  parent.forEachChild((child) => {
+    if (child.kind === node.kind) {
+      if (child === node) found = index;
+      index += 1;
+    }
+  });
+  return ts.SyntaxKind[node.kind] + '#' + String(found < 0 ? 0 : found);
+}
+
+/**
+ * Normalized AST path — the blocking-version call-site identity (终审【九】).
+ *
+ * Phase 0 hashed `file | symbol | ordinal | node text`. Two of those inputs
+ * churn for reasons that are not "this is a different call site": `ordinal` is a
+ * per-(file, symbol) counter that shifts whenever an unrelated finding earlier
+ * in the same method appears or disappears, and the node text changes on any
+ * edit to the call — which is `shapeDigest`'s job to notice, not identity's.
+ * Walking the syntactic spine and naming each step keeps the identity anchored
+ * to structural position, so reformatting, renaming a local, or gaining a
+ * sibling finding all leave it untouched.
+ */
+function astPath(node: ts.Node): string {
+  const steps: string[] = [];
+  let cursor: ts.Node = node;
+  while (!ts.isSourceFile(cursor)) {
+    const parent: ts.Node | undefined = cursor.parent;
+    if (parent === undefined) break;
+    steps.push(pathStep(cursor, parent));
+    cursor = parent;
+  }
+  return steps.reverse().join('/');
+}
+
 function finding(
   kind: string,
   disposition: 'report' | 'allow',
@@ -1043,8 +1186,18 @@ function finding(
   node: ts.Node,
   ordinal: number | string,
   details: JsonRecord,
+  channel: 'legacy' | 'new-observation',
 ): Finding {
   const symbol = symbolOf(node);
+  // One AST node can legitimately carry more than one debt item: a cross-owner
+  // write also raises a subdomain observation (48 live pairs), and a single raw
+  // statement can hit two physical tables (1 live pair). The structural path
+  // alone therefore under-identifies. The observation channel, the model and the
+  // relation access path are what separate co-located items — all three are
+  // properties of *which violation this is*, not of how the code is written, so
+  // they do not reintroduce text-driven churn.
+  const accessPath = typeof details.accessPath === 'string' ? details.accessPath : '';
+  const discriminator = [channel, prismaModel ?? targetDomain, accessPath].join('|');
   return {
     kind,
     disposition,
@@ -1053,7 +1206,8 @@ function finding(
     prismaModel,
     operation,
     location: { file, line: lineOf(node, source), symbol },
-    callSiteId:
+    callSiteId: 'cs:' + shortHash(file + '|' + astPath(node) + '|' + discriminator),
+    legacyCallSiteId:
       'cs:' + shortHash(file + '|' + symbol + '|' + ordinal + '|' + normalized(node, source)),
     violationFingerprint:
       'vfp:' + shortHash(symbol + '|' + (prismaModel ?? targetDomain) + '|' + operation),
@@ -1070,6 +1224,7 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
   const files = walk('src', (name) => name.endsWith('.ts') && !name.endsWith('.spec.ts'));
   const inputs = ['prisma/schema.prisma\u0000' + hash(read('prisma/schema.prisma'))];
   for (const file of files) inputs.push(file + '\u0000' + hash(read(file)));
+  const typed = buildTypedProgram();
   const findings: Finding[] = [];
   const edges: ImportEdge[] = [];
   const ordinals = new Map<string, number>();
@@ -1085,7 +1240,15 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
     const sourceOwner = map.moduleOwnership[moduleName];
     if (sourceOwner === undefined) continue;
     const sourceDomain = sourceOwner.domain;
-    const source = ts.createSourceFile(file, read(file), ts.ScriptTarget.Latest, true);
+    // Source comes from the typed program so that every node carries a resolved
+    // type; re-parsing the file standalone would silently drop the checker.
+    const source = typed.sourceOf(file);
+    if (source === undefined) {
+      fail(
+        `${file} 不在 tsconfig 的编译闭包内,typed 扫描无法覆盖它。` +
+          '扫描范围与 tsconfig include/exclude 是同一个单源 —— 请修 tsconfig,不要在扫描器里另开 glob。',
+      );
+    }
     const emit = (
       kind: string,
       disposition: 'report' | 'allow',
@@ -1116,6 +1279,7 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
           node,
           ordinal,
           details,
+          identity,
         ),
       );
     };
@@ -1132,7 +1296,7 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
       const receiver = ts.isPropertyAccessExpression(expression)
         ? expression.expression
         : expression;
-      if (!prismaReceiver(receiver)) return;
+      if (!rawCapableClient(typed, receiver)) return;
       const sql = literalSql(node);
       if (sql === null) {
         emit('raw-sql-dynamic', 'report', 'unknown', null, 'raw', node, {
@@ -1421,12 +1585,11 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
         if (operation.startsWith('$queryRaw') || operation.startsWith('$executeRaw')) {
           raw(node.arguments[0] ?? node.expression, node.expression);
         }
-        const delegate = propertyOf(node.expression.expression);
-        const receiver = ts.isPropertyAccessExpression(node.expression.expression)
-          ? node.expression.expression.expression
-          : undefined;
-        const model = delegate === null ? undefined : delegates.get(delegate);
-        if (model !== undefined && receiver !== undefined && prismaReceiver(receiver)) {
+        // Typed resolution of the delegate expression itself. No constraint on
+        // the receiver's shape or name: `this.prisma.member`, `db.member` and a
+        // bare destructured `member` all resolve to the same MemberDelegate.
+        const model = delegateModelOf(typed, node.expression.expression, modelsByName);
+        if (model !== undefined) {
           const targetOwner = map.modelOwnership[model.name];
           if (targetOwner !== undefined) {
             const writes = new Set([
@@ -1536,7 +1699,12 @@ function cycles(map: DomainMap, edges: ImportEdge[], findings: Finding[]): void 
             prismaModel: null,
             operation: 'import-cycle',
             location: { file: edge.file, line: edge.line, symbol: edge.symbol },
-            callSiteId: 'cs:' + shortHash(edge.file + '|' + edge.line + '|' + key),
+            // A cycle's identity is the cycle itself plus the file that closes
+            // it — deliberately not the line, which drifts on unrelated edits.
+            // 19 such findings exist today; none is registered in
+            // architecture-debt.json, so re-anchoring them migrates nothing.
+            callSiteId: 'cs:' + shortHash(edge.file + '|cycle|' + key),
+            legacyCallSiteId: 'cs:' + shortHash(edge.file + '|' + edge.line + '|' + key),
             violationFingerprint: 'vfp:' + shortHash(key),
             shapeDigest: 'sdg:' + shortHash(cycle.join('|')),
             details: { cycle, source: edge.text },
@@ -1748,19 +1916,120 @@ function runDebtCheck(): void {
   if (debtRegistry.semanticFieldsComplete !== true) process.exitCode = 1;
 }
 
+/**
+ * One-off migration of registered debt onto the normalized-AST identity.
+ *
+ * The danger this guards against is not a bad hash — it is a *silent* one. If
+ * the old ids simply stopped matching, the ratchet would read the result as
+ * "every historical debt was repaid, and an equal pile of brand-new debt
+ * appeared", which is both false and exactly the shape a real regression takes.
+ * So the pass refuses to write unless every registered call-site entry maps to
+ * exactly one new identity, and it records the old id under `supersedes` so the
+ * migration stays auditable after the fact (§8 身份三层分工).
+ *
+ * `--check` verifies the mapping without writing; that is the form the selftest
+ * and CI run, so a later edit that breaks the identity scheme fails loudly.
+ */
+function runMigrateIds(write: boolean): void {
+  const map = domainMap();
+  const { findings } = scan(map);
+  const byLegacy = new Map<string, Set<string>>();
+  for (const item of findings) {
+    const set = byLegacy.get(item.legacyCallSiteId) ?? new Set<string>();
+    set.add(item.callSiteId);
+    byLegacy.set(item.legacyCallSiteId, set);
+  }
+  const registry = JSON.parse(read(ARCHITECTURE_DEBT)) as {
+    entries: (JsonRecord & { id: string; callSiteId?: string; supersedes?: string })[];
+  };
+  const live = new Set(findings.map((item) => item.callSiteId));
+  const migrated: string[] = [];
+  const alreadyCurrent: string[] = [];
+  const unmatched: string[] = [];
+  const ambiguous: string[] = [];
+  const notApplicable: string[] = [];
+  for (const entry of registry.entries) {
+    if (typeof entry.callSiteId !== 'string') {
+      // Domain-level records (undeclared edges) have no call site by
+      // construction; they are not in scope for a call-site identity.
+      notApplicable.push(entry.id);
+      continue;
+    }
+    // Already on the current scheme. Checking this first is what makes the pass
+    // idempotent: after the one-off migration the registered id *is* the new
+    // id, and a legacy-only lookup would then report every row as unmatched.
+    // In `--check` form this is also the standing invariant worth enforcing —
+    // every registered call-site entry still resolves to a live call site.
+    if (live.has(entry.callSiteId)) {
+      alreadyCurrent.push(entry.id);
+      continue;
+    }
+    const candidates = byLegacy.get(entry.callSiteId);
+    if (candidates === undefined) unmatched.push(entry.id);
+    else if (candidates.size !== 1) ambiguous.push(entry.id);
+    else {
+      const next = [...candidates][0];
+      if (write) {
+        entry.supersedes = entry.callSiteId;
+        entry.callSiteId = next;
+      }
+      migrated.push(entry.id);
+    }
+  }
+  const collisions = new Map<string, number>();
+  for (const item of findings)
+    collisions.set(item.callSiteId, (collisions.get(item.callSiteId) ?? 0) + 1);
+  const collided = [...collisions.values()].filter((count) => count > 1).length;
+  process.stdout.write(
+    JSON.stringify(
+      {
+        mode: write ? 'migrate-ids' : 'migrate-ids-check',
+        totalEntries: registry.entries.length,
+        callSiteEntries: registry.entries.length - notApplicable.length,
+        alreadyCurrent: alreadyCurrent.length,
+        migrated: migrated.length,
+        unmatched,
+        ambiguous,
+        notApplicable: notApplicable.length,
+        callSiteIdCollisions: collided,
+      },
+      null,
+      2,
+    ) + '\n',
+  );
+  if (unmatched.length > 0 || ambiguous.length > 0 || collided > 0) {
+    process.stderr.write(
+      'callSiteId 迁移未达成一一对应,拒绝写入 —— 强行迁移会把台账伪装成「旧债全消失 + 新债全出现」。\n',
+    );
+    process.exit(1);
+  }
+  if (write) {
+    fs.writeFileSync(
+      path.join(ROOT, ARCHITECTURE_DEBT),
+      JSON.stringify(registry, null, 2) + '\n',
+      'utf8',
+    );
+  }
+}
+
 function main(): void {
   const metadata = process.argv.includes('--metadata');
   const violations = process.argv.includes('--violations');
   const debtCheck = process.argv.includes('--debt-check');
-  if ([metadata, violations, debtCheck].filter(Boolean).length !== 1) {
+  const migrateIds = process.argv.includes('--migrate-ids');
+  const migrateCheck = process.argv.includes('--migrate-ids-check');
+  if ([metadata, violations, debtCheck, migrateIds, migrateCheck].filter(Boolean).length !== 1) {
     process.stderr.write(
-      'Usage: pnpm tsx scripts/check-boundaries.ts --metadata | --violations | --debt-check\n',
+      'Usage: pnpm tsx scripts/check-boundaries.ts ' +
+        '--metadata | --violations | --debt-check | --migrate-ids | --migrate-ids-check\n',
     );
     process.exit(2);
   }
   try {
     if (metadata) runMetadata();
     else if (violations) runViolations();
+    else if (migrateIds) runMigrateIds(true);
+    else if (migrateCheck) runMigrateIds(false);
     else runDebtCheck();
   } catch (error) {
     process.stderr.write(
@@ -1769,5 +2038,82 @@ function main(): void {
     process.exit(2);
   }
 }
+
+/**
+ * Run the *real* delegate/raw resolution over an explicit file set.
+ *
+ * Exported so `harness-guards.selftest.ts` can drive the bypass-class matrix
+ * through the same code path production uses. A selftest that re-implemented
+ * the resolver would keep passing after the resolver regressed — the assertion
+ * has to be wired to the shipped function, not to a copy of it.
+ */
+export interface DelegateProbe {
+  file: string;
+  line: number;
+  /** Model name when the access resolved to exactly one Prisma delegate. */
+  model: string | null;
+  /** True when the receiver is a raw-SQL capable Prisma client. */
+  rawCapable: boolean;
+}
+
+export function probeDelegateResolution(
+  rootNames: string[],
+  modelNames: string[],
+  compilerOptions: ts.CompilerOptions,
+): DelegateProbe[] {
+  const program = ts.createProgram({ rootNames, options: compilerOptions });
+  const typed: TypedProgram = {
+    checker: program.getTypeChecker(),
+    sourceOf: (rel) => program.getSourceFile(rel),
+  };
+  const modelsByName = new Map<string, SchemaModel>(
+    modelNames.map((name) => [
+      name,
+      {
+        name,
+        fields: [],
+        scalarFields: [],
+        relationFields: {},
+        stateFields: [],
+        statusPredicateFields: [],
+        dateFields: [],
+        tableName: name.toLowerCase(),
+        tableNameSource: 'prisma-model-default',
+      },
+    ]),
+  );
+  const results: DelegateProbe[] = [];
+  for (const source of program.getSourceFiles()) {
+    if (source.isDeclarationFile || !rootNames.includes(source.fileName)) continue;
+    const visit = (node: ts.Node): void => {
+      // `x.member.create(...)` is a CallExpression; `x.$queryRaw\`...\`` is a
+      // TaggedTemplateExpression. The raw channel lives entirely in the latter,
+      // so a probe that only walked calls would report the raw channel as dead.
+      const accessed = ts.isCallExpression(node)
+        ? node.expression
+        : ts.isTaggedTemplateExpression(node)
+          ? node.tag
+          : undefined;
+      if (accessed !== undefined && ts.isPropertyAccessExpression(accessed)) {
+        const receiver = accessed.expression;
+        const model = delegateModelOf(typed, receiver, modelsByName);
+        const rawCapable = rawCapableClient(typed, receiver);
+        if (model !== undefined || rawCapable) {
+          results.push({
+            file: path.basename(source.fileName),
+            line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
+            model: model?.name ?? null,
+            rawCapable,
+          });
+        }
+      }
+      node.forEachChild(visit);
+    };
+    visit(source);
+  }
+  return results;
+}
+
+export { astPath };
 
 if (require.main === module) main();
