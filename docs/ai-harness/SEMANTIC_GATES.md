@@ -98,16 +98,22 @@ verdict 对三路都要求明确的 `true`/`false`,空串一律拒绝(「没查�
 ✓ 无授权降级 / 不可比端点(收紧与新增已列在上方全量迁移清单里)
 ```
 
-### 2.4 R11 —— 无契约变更(本刀 PR 首次真跑,见 §5)
+### 2.4 R11 —— 无契约变更(PR #993,裁判首次真跑)
 
-本地口径(`pnpm gate:contract:semantic`):
+真实 CI 输出(`Red-zone trusted scan` **pass**,14s):
 
 ```
+契约语义裁判:base=main · PR #993
+  契约来源:未改动(HEAD == BASE)
+  本 PR 改动的 changelog fragment:1 份
+  (比较器取自 base checkout;未装依赖、未执行 PR 内脚本)
+
 [L6/R11] 契约语义 diff —— docs/handoff/openapi.json base ↔ head
   breaking=0  additive=0
 
   契约无语义变化。
   ✓ 无阻断项。
+✓ 无破坏性契约变更(additive 变更已列在上方报告里)
 ```
 
 破坏形态的五要素输出(探针实测,`B2` 响应字段删除):
@@ -200,7 +206,7 @@ goal 给的「枚举值删除」「nullable 翻转为不可空」是请求侧形
 | `auth/v1` / `system/v1` / `open/v1` 的 TS client | **未做** | goal 只要 admin 与 app 两份。auth 是全端通用接线,要不要一并生成留维护者拍板 |
 | 手写 handoff 的字段/端点复制面收缩 | **未做** | goal 明确留后续,避免与前端适配债耦合 |
 | R2/R3/R5/R8 转 blocking · 状态机治理 · authz 倒置 · 大 service 拆分 | **未做** | 均在 goal 硬边界之外(Phase 3 / Phase 4 / Phase 7 另立项) |
-| R11 裁判在真 CI 上的首次运行取证 | 见 §2.4 | 与 R14 同一性质:`pull_request_target` 跑 base 定义,R11 判据合入(#992)后从**下一个** PR 起真跑 |
+| ~~R11 裁判在真 CI 上的首次运行取证~~ | **已完成** | PR #993 首次真跑,输出见 §2.4。FE client 新鲜度门同理,从下一个 PR 起在 Docs guards 里真跑 |
 
 ## 6. 判据文件索引
 
