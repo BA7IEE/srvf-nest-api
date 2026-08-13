@@ -188,6 +188,27 @@ describe('activity batch4 allocation runtime', () => {
     return { activityId: activity.id, sessionId: session.id, positionId: position.id };
   }
 
+  async function createActiveApplicant(label: string, gradeCode: string): Promise<{
+    auth: string;
+    memberId: string;
+  }> {
+    const user = await createTestUser(app, {
+      username: `b4-${label}-${sequence}`,
+      role: Role.USER,
+    });
+    const member = await prisma.member.create({
+      data: {
+        memberNo: `B4-${label.toUpperCase()}-${sequence}`,
+        displayName: `Batch4 ${label}`,
+        gradeCode,
+        status: MemberStatus.ACTIVE,
+      },
+      select: { id: true },
+    });
+    await prisma.user.update({ where: { id: user.id }, data: { memberId: member.id } });
+    return { auth: (await loginAs(app, user.username)).authHeader, memberId: member.id };
+  }
+
   it('red-first: freezes a real submitted candidate through the managed allocation prepare HTTP route', async () => {
     const scenario = await createCandidateScenario();
     const submitted = await request(httpServer(app))
@@ -390,6 +411,139 @@ describe('activity batch4 allocation runtime', () => {
     );
     expect(byIdentity.get(firstIdentity.id)).toEqual(
       expect.objectContaining({ qualificationScore: '73.0000', resultCode: 'waitlisted', waitlistRank: 1 }),
+    );
+  });
+
+  it('red-first: numbers session-level qualification waitlists independently for each original position', async () => {
+    const scenario = await createCandidateScenario({ allocationModeCode: 'qualification_rank' });
+    await prisma.activity.update({ where: { id: scenario.activityId }, data: { capacity: 2 } });
+    await prisma.activitySession.update({ where: { id: scenario.sessionId }, data: { capacity: 2 } });
+    await prisma.activityCapacityBucket.updateMany({
+      where: {
+        activityId: scenario.activityId,
+        OR: [
+          { scopeTypeCode: 'activity_person', scopeId: scenario.activityId },
+          { scopeTypeCode: 'session_participation', scopeId: scenario.sessionId },
+        ],
+      },
+      data: { capacity: 2 },
+    });
+    const secondPosition = await prisma.activitySessionPosition.create({
+      data: {
+        activityId: scenario.activityId,
+        sessionId: scenario.sessionId,
+        code: `allocation-position-secondary-${sequence}`,
+        name: `Allocation Secondary Position ${sequence}`,
+        attendanceRoleCode: 'volunteer',
+        capacity: 1,
+      },
+      select: { id: true },
+    });
+    await prisma.activityCapacityBucket.create({
+      data: {
+        activityId: scenario.activityId,
+        scopeTypeCode: 'position_participation',
+        scopeId: secondPosition.id,
+        capacity: 1,
+      },
+    });
+    const ruleSet = await prisma.activityQualificationRuleSet.create({
+      data: {
+        activityId: scenario.activityId,
+        version: 1,
+        statusCode: 'draft',
+        rules: {
+          create: [
+            {
+              ruleTypeCode: 'grade',
+              enforcementCode: 'warn',
+              operator: 'in',
+              valueJson: { codes: ['L4'] },
+              warnScore: 10,
+              sortOrder: 1,
+            },
+            {
+              ruleTypeCode: 'grade',
+              enforcementCode: 'warn',
+              operator: 'in',
+              valueJson: { codes: ['L3', 'L4'] },
+              warnScore: 10,
+              sortOrder: 2,
+            },
+            {
+              ruleTypeCode: 'grade',
+              enforcementCode: 'warn',
+              operator: 'in',
+              valueJson: { codes: ['L2', 'L3', 'L4'] },
+              warnScore: 10,
+              sortOrder: 3,
+            },
+          ],
+        },
+      },
+      select: { id: true },
+    });
+    await prisma.activityQualificationRuleSet.update({
+      where: { id: ruleSet.id },
+      data: { statusCode: 'active' },
+    });
+    const [firstA, secondA, firstB, secondB] = await Promise.all([
+      createActiveApplicant('queue-a-first', 'L4'),
+      createActiveApplicant('queue-a-second', 'L3'),
+      createActiveApplicant('queue-b-first', 'L2'),
+      createActiveApplicant('queue-b-second', 'L1'),
+    ]);
+    const submits = [
+      { applicant: firstA, positionId: scenario.positionId, key: 'a-first' },
+      { applicant: secondA, positionId: scenario.positionId, key: 'a-second' },
+      { applicant: firstB, positionId: secondPosition.id, key: 'b-first' },
+      { applicant: secondB, positionId: secondPosition.id, key: 'b-second' },
+    ];
+    for (const submit of submits) {
+      const response = await request(httpServer(app))
+        .post(registrationPath(scenario.activityId))
+        .set('Authorization', submit.applicant.auth)
+        .send({
+          operationKey: `batch4-position-queue-${submit.key}-${sequence}`,
+          formVersion: null,
+          answers: [],
+          preferences: [{ sessionId: scenario.sessionId, positionIds: [submit.positionId] }],
+        });
+      expect(response.status).toBe(201);
+    }
+    await prisma.activity.update({
+      where: { id: scenario.activityId },
+      data: { registrationDeadline: new Date('2020-01-01T00:00:00.000Z') },
+    });
+    const prepared = await request(httpServer(app))
+      .post(allocationBatchesPath(scenario.activityId))
+      .set('Authorization', managerAuth)
+      .send({
+        operationKey: `batch4-position-queue-prepare-${sequence}`,
+        sessionId: scenario.sessionId,
+      });
+    expect(prepared.status).toBe(201);
+    const committed = await request(httpServer(app))
+      .post(`${allocationBatchesPath(scenario.activityId)}/${prepared.body.data.batch.batchId}/commit`)
+      .set('Authorization', managerAuth)
+      .send({ operationKey: `batch4-position-queue-commit-${sequence}` });
+    expect(committed.status).toBe(200);
+
+    const identities = await prisma.activityParticipationIdentity.findMany({
+      where: { activityId: scenario.activityId },
+      select: { id: true, memberId: true },
+    });
+    const identityByMember = new Map(identities.map((identity) => [identity.memberId, identity.id]));
+    const candidateByIdentity = new Map(
+      committed.body.data.batch.candidates.map(
+        (candidate: { participationIdentityId: string }) => [candidate.participationIdentityId, candidate],
+      ),
+    );
+    expect(candidateByIdentity.get(identityByMember.get(secondA.memberId)!)).toEqual(
+      expect.objectContaining({ qualificationScore: '90.0000', resultCode: 'waitlisted', waitlistRank: 1 }),
+    );
+    expect(candidateByIdentity.get(identityByMember.get(secondB.memberId)!)).toEqual(
+      expect.objectContaining({ qualificationScore: '70.0000', resultCode: 'waitlisted', waitlistRank: 1 }),
     );
   });
 
