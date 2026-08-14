@@ -109,7 +109,7 @@ export class RegistrationCommandService {
 
     try {
       return await this.prisma.$transaction((tx) =>
-        this.submitInTransactionTrusted({
+        this.submitInTransaction({
           tx,
           activityId,
           dto,
@@ -128,7 +128,7 @@ export class RegistrationCommandService {
     }
   }
 
-  async submitInTransactionTrusted(input: {
+  async submitInTransaction(input: {
     tx: PrismaTx;
     activityId: string;
     dto: AppActivityRegistrationCommandDto;

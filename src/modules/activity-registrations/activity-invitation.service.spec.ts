@@ -45,7 +45,7 @@ function makeService(args: {
     logInvitationChange: jest.fn().mockResolvedValue(undefined),
   } as unknown as ActivityInvitationAuditRecorder;
   const registrationCommands = {
-    submitInTransactionTrusted: jest.fn(),
+    submitInTransaction: jest.fn(),
   } as unknown as RegistrationCommandService;
   return new ActivityInvitationService(
     makePrisma(args.transaction),

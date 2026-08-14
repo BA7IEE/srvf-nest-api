@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma } from '@prisma/client';
+import { MemberStatus, Prisma, UserStatus } from '@prisma/client';
 
 import type { JwtConfig } from '../../config/jwt.config';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -310,6 +310,7 @@ export class ActivityAllocationService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const activity = await this.lockActivity(tx, activityId);
+        await this.assertAppAdmissionStillLive(tx, currentUser.id, currentUser.memberId);
         await this.assertManagedResponsibility(tx, activityId, currentUser);
         const replay = await this.findReplay(
           tx,
@@ -454,6 +455,7 @@ export class ActivityAllocationService {
     await this.assertAction(currentUser, 'activity-registration.read.record', activityId);
     return this.prisma.$transaction(async (tx) => {
       await this.lockActivity(tx, activityId);
+      await this.assertAppAdmissionStillLive(tx, currentUser.id, currentUser.memberId);
       await this.assertManagedResponsibility(tx, activityId, currentUser);
       return this.loadBatchDto(tx, activityId, batchId);
     });
@@ -790,6 +792,7 @@ export class ActivityAllocationService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const activity = await this.lockActivity(tx, activityId);
+        await this.assertAppAdmissionStillLive(tx, currentUser.id, currentUser.memberId);
         await this.assertManagedResponsibility(tx, activityId, currentUser);
         const replay = await this.findReplay(
           tx,
@@ -1034,6 +1037,7 @@ export class ActivityAllocationService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const activity = await this.lockActivity(tx, activityId);
+        await this.assertAppAdmissionStillLive(tx, currentUser.id, currentUser.memberId);
         await this.assertManagedResponsibility(tx, activityId, currentUser);
         const replay = await this.findReplay(tx, activityId, 'void', dto.operationKey, requestHash);
         if (replay) return replay;
@@ -1997,6 +2001,41 @@ export class ActivityAllocationService {
       select: { id: true },
     });
     if (assignment === null) throw new BizException(BizCode.RBAC_FORBIDDEN);
+  }
+
+  private async assertAppAdmissionStillLive(
+    tx: PrismaTx,
+    userId: string,
+    memberId: string | null,
+  ): Promise<void> {
+    if (memberId === null) throw new BizException(BizCode.FORBIDDEN);
+    const members = await tx.$queryRaw<
+      Array<{ id: string; status: MemberStatus; deletedAt: Date | null }>
+    >(
+      Prisma.sql`
+        SELECT "id", "status", "deletedAt" FROM "Member"
+        WHERE "id" = ${memberId}
+        FOR SHARE
+      `,
+    );
+    const users = await tx.$queryRaw<
+      Array<{ id: string; status: UserStatus; deletedAt: Date | null }>
+    >(Prisma.sql`
+      SELECT "id", "status", "deletedAt" FROM "User"
+      WHERE "id" = ${userId}
+        AND "memberId" = ${memberId}
+      FOR SHARE
+    `);
+    if (
+      members.length !== 1 ||
+      members[0]?.deletedAt !== null ||
+      members[0]?.status !== MemberStatus.ACTIVE ||
+      users.length !== 1 ||
+      users[0]?.deletedAt !== null ||
+      users[0]?.status !== UserStatus.ACTIVE
+    ) {
+      throw new BizException(BizCode.FORBIDDEN);
+    }
   }
 
   private async assertAllHistoricalBatchModes(

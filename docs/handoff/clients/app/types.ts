@@ -2,7 +2,7 @@
 // 真相源:后端 live /api/docs-json;本文件派生自 docs/handoff/openapi.json 快照。
 // surface: App 小程序
 // generatorVersion: 1.0.0
-// inputDigest: sha256:00f5479f9d6fc06868beea01a941a609bc79b597b4946a37c13fd4e6e3829998
+// inputDigest: sha256:e76865727794be36be6b808485e3a8eb78980f671a2e18ac9e37f1071a2ce2c6
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -24,14 +24,14 @@ export interface AppActivityAllocationBatchDto {
   "batchId": string;
   "activityId": string;
   "sessionId": string;
-  "positionId"?: Record<string, unknown> | null;
+  "positionId"?: string | null;
   "modeCode": "qualification_rank" | "lottery";
   "statusCode": "preparing" | "committed" | "voided";
   "algorithmVersionCode": string;
-  "randomSeedReveal"?: Record<string, unknown> | null;
-  "committedAt"?: Record<string, unknown> | null;
-  "voidReason"?: Record<string, unknown> | null;
-  "voidedAt"?: Record<string, unknown> | null;
+  "randomSeedReveal"?: string | null;
+  "committedAt"?: string | null;
+  "voidReason"?: string | null;
+  "voidedAt"?: string | null;
   "candidates": AppActivityAllocationCandidateDto[];
 }
 
@@ -39,12 +39,12 @@ export interface AppActivityAllocationCandidateDto {
   "participationIdentityId": string;
   "registrationId": string;
   "acceptedAt": string;
-  "qualificationScore"?: Record<string, unknown> | null;
+  "qualificationScore"?: string | null;
   "qualificationResultCode": "pass" | "warn" | "fail";
-  "lotteryOrder"?: Record<string, unknown> | null;
+  "lotteryOrder"?: number | null;
   "resultCode"?: "allocated" | "waitlisted" | "not_selected" | null;
-  "waitlistRank"?: Record<string, unknown> | null;
-  "waitlistPositionId"?: Record<string, unknown> | null;
+  "waitlistRank"?: number | null;
+  "waitlistPositionId"?: string | null;
 }
 
 export interface AppActivityAllocationCommandReceiptDto {
@@ -1514,7 +1514,7 @@ export interface NotificationUnreadCountDto {
 export interface PrepareAppManagedActivityAllocationBatchDto {
   "operationKey": string;
   "sessionId": string;
-  "positionId"?: Record<string, unknown> | null;
+  "positionId"?: string | null;
 }
 
 export interface PutAppManagedRegistrationFormDto {

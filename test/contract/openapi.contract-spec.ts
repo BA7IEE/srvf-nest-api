@@ -26,6 +26,8 @@ import { createTestApp } from '../setup/test-app';
 interface OpenApiSchema {
   $ref?: string;
   type?: string;
+  format?: string;
+  minimum?: number;
   nullable?: boolean;
   example?: unknown;
   enum?: unknown[];
@@ -1887,6 +1889,49 @@ describe('OpenAPI 契约快照', () => {
       expect(documented4xxCodes(doc.paths[path]?.[method])).toEqual(expect.arrayContaining(codes));
     },
   );
+
+  it('allocation DTO keeps nullable scalar wire types precise for generated clients', () => {
+    const prepare = doc.components?.schemas
+      ?.PrepareAppManagedActivityAllocationBatchDto as OpenApiSchema;
+    const candidate = doc.components?.schemas?.AppActivityAllocationCandidateDto as OpenApiSchema;
+    const batch = doc.components?.schemas?.AppActivityAllocationBatchDto as OpenApiSchema;
+
+    expect(prepare.properties?.positionId).toMatchObject({ type: 'string', nullable: true });
+    expect(candidate.properties?.qualificationScore).toMatchObject({
+      type: 'string',
+      nullable: true,
+    });
+    expect(candidate.properties?.lotteryOrder).toMatchObject({
+      type: 'integer',
+      nullable: true,
+      minimum: 1,
+    });
+    expect(candidate.properties?.waitlistRank).toMatchObject({
+      type: 'integer',
+      nullable: true,
+      minimum: 1,
+    });
+    expect(candidate.properties?.waitlistPositionId).toMatchObject({
+      type: 'string',
+      nullable: true,
+    });
+    expect(batch.properties?.positionId).toMatchObject({ type: 'string', nullable: true });
+    expect(batch.properties?.randomSeedReveal).toMatchObject({
+      type: 'string',
+      nullable: true,
+    });
+    expect(batch.properties?.committedAt).toMatchObject({
+      type: 'string',
+      format: 'date-time',
+      nullable: true,
+    });
+    expect(batch.properties?.voidReason).toMatchObject({ type: 'string', nullable: true });
+    expect(batch.properties?.voidedAt).toMatchObject({
+      type: 'string',
+      format: 'date-time',
+      nullable: true,
+    });
+  });
 
   it('paths 段快照(锁定每个 operation 的响应结构)', () => {
     // 仅快照 paths,排除 info.version(随发布递增,不视作 schema 漂移)。

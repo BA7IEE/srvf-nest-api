@@ -313,7 +313,7 @@ export class ActivityInvitationService {
         if (invitation.requestHash !== requestHash) {
           throw new BizException(BizCode.ACTIVITY_INVITATION_OPERATION_KEY_CONFLICT);
         }
-        return this.registrationCommands.submitInTransactionTrusted({
+        return this.registrationCommands.submitInTransaction({
           tx,
           activityId: invitation.activityId,
           dto,
@@ -329,7 +329,7 @@ export class ActivityInvitationService {
         throw new BizException(BizCode.ACTIVITY_INVITATION_STATUS_INVALID);
       }
       this.assertAcceptanceScope(invitation, dto);
-      const receipt = await this.registrationCommands.submitInTransactionTrusted({
+      const receipt = await this.registrationCommands.submitInTransaction({
         tx,
         activityId: invitation.activityId,
         dto,

@@ -35,6 +35,7 @@ export class PrepareAppManagedActivityAllocationBatchDto extends AllocationOpera
 
   @ApiPropertyOptional({
     nullable: true,
+    type: String,
     minLength: 8,
     maxLength: 64,
     description: '可选岗位；null 表示场次级批次',
@@ -66,13 +67,22 @@ export class AppActivityAllocationCandidateDto {
   @ApiProperty({ description: '服务器受理该报名修订的时间' })
   acceptedAt!: Date;
 
-  @ApiPropertyOptional({ nullable: true, description: '仅 qualification_rank 产生四位小数分数' })
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: '仅 qualification_rank 产生四位小数分数',
+  })
   qualificationScore!: string | null;
 
   @ApiProperty({ enum: ['pass', 'warn', 'fail'], description: '冻结时的目标资格结论' })
   qualificationResultCode!: string;
 
-  @ApiPropertyOptional({ nullable: true, minimum: 1, description: '已提交 lottery 的抽签顺序' })
+  @ApiPropertyOptional({
+    nullable: true,
+    type: 'integer',
+    minimum: 1,
+    description: '已提交 lottery 的抽签顺序',
+  })
   lotteryOrder!: number | null;
 
   @ApiPropertyOptional({
@@ -82,10 +92,19 @@ export class AppActivityAllocationCandidateDto {
   })
   resultCode!: string | null;
 
-  @ApiPropertyOptional({ nullable: true, minimum: 1, description: '原岗位内的稳定候补序号' })
+  @ApiPropertyOptional({
+    nullable: true,
+    type: 'integer',
+    minimum: 1,
+    description: '原岗位内的稳定候补序号',
+  })
   waitlistRank!: number | null;
 
-  @ApiPropertyOptional({ nullable: true, description: '仅 waitlisted 候选人的原岗位锚点' })
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: '仅 waitlisted 候选人的原岗位锚点',
+  })
   waitlistPositionId!: string | null;
 }
 
@@ -99,7 +118,11 @@ export class AppActivityAllocationBatchDto {
   @ApiProperty({ description: '批次目标场次 ID' })
   sessionId!: string;
 
-  @ApiPropertyOptional({ nullable: true, description: '批次目标岗位；null 表示场次级批次' })
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: '批次目标岗位；null 表示场次级批次',
+  })
   positionId!: string | null;
 
   @ApiProperty({ enum: ['qualification_rank', 'lottery'], description: '冻结的分配算法模式' })
@@ -111,16 +134,30 @@ export class AppActivityAllocationBatchDto {
   @ApiProperty({ description: '冻结时使用的算法版本' })
   algorithmVersionCode!: string;
 
-  @ApiPropertyOptional({ nullable: true, description: '仅已提交 lottery 批次回显的服务端 seed' })
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: '仅已提交 lottery 批次回显的服务端 seed',
+  })
   randomSeedReveal!: string | null;
 
-  @ApiPropertyOptional({ nullable: true, description: '提交完成时间' })
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    format: 'date-time',
+    description: '提交完成时间',
+  })
   committedAt!: Date | null;
 
-  @ApiPropertyOptional({ nullable: true, description: '作废原因' })
+  @ApiPropertyOptional({ nullable: true, type: String, description: '作废原因' })
   voidReason!: string | null;
 
-  @ApiPropertyOptional({ nullable: true, description: '作废完成时间' })
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    format: 'date-time',
+    description: '作废完成时间',
+  })
   voidedAt!: Date | null;
 
   @ApiProperty({

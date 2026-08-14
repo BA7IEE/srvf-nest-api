@@ -2602,8 +2602,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       },
       "committedAt": {
         "description": "提交完成时间",
+        "format": "date-time",
         "nullable": true,
-        "type": "object",
+        "type": "string",
       },
       "modeCode": {
         "description": "冻结的分配算法模式",
@@ -2616,12 +2617,12 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "positionId": {
         "description": "批次目标岗位；null 表示场次级批次",
         "nullable": true,
-        "type": "object",
+        "type": "string",
       },
       "randomSeedReveal": {
         "description": "仅已提交 lottery 批次回显的服务端 seed",
         "nullable": true,
-        "type": "object",
+        "type": "string",
       },
       "sessionId": {
         "description": "批次目标场次 ID",
@@ -2639,12 +2640,13 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "voidReason": {
         "description": "作废原因",
         "nullable": true,
-        "type": "object",
+        "type": "string",
       },
       "voidedAt": {
         "description": "作废完成时间",
+        "format": "date-time",
         "nullable": true,
-        "type": "object",
+        "type": "string",
       },
     },
     "required": [
@@ -2669,7 +2671,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "已提交 lottery 的抽签顺序",
         "minimum": 1,
         "nullable": true,
-        "type": "object",
+        "type": "integer",
       },
       "participationIdentityId": {
         "description": "候选人的永久参与身份 ID",
@@ -2687,7 +2689,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "qualificationScore": {
         "description": "仅 qualification_rank 产生四位小数分数",
         "nullable": true,
-        "type": "object",
+        "type": "string",
       },
       "registrationId": {
         "description": "候选人所属报名记录 ID",
@@ -2706,13 +2708,13 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "waitlistPositionId": {
         "description": "仅 waitlisted 候选人的原岗位锚点",
         "nullable": true,
-        "type": "object",
+        "type": "string",
       },
       "waitlistRank": {
         "description": "原岗位内的稳定候补序号",
         "minimum": 1,
         "nullable": true,
-        "type": "object",
+        "type": "integer",
       },
     },
     "required": [
@@ -17509,7 +17511,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "maxLength": 64,
         "minLength": 8,
         "nullable": true,
-        "type": "object",
+        "type": "string",
       },
       "sessionId": {
         "description": "本次冻结的活动场次",

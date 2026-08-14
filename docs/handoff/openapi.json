@@ -122272,7 +122272,7 @@
             "description": "服务器受理该报名修订的时间"
           },
           "qualificationScore": {
-            "type": "object",
+            "type": "string",
             "nullable": true,
             "description": "仅 qualification_rank 产生四位小数分数"
           },
@@ -122286,7 +122286,7 @@
             "description": "冻结时的目标资格结论"
           },
           "lotteryOrder": {
-            "type": "object",
+            "type": "integer",
             "nullable": true,
             "minimum": 1,
             "description": "已提交 lottery 的抽签顺序"
@@ -122302,13 +122302,13 @@
             "description": "提交后的不可变分配结果"
           },
           "waitlistRank": {
-            "type": "object",
+            "type": "integer",
             "nullable": true,
             "minimum": 1,
             "description": "原岗位内的稳定候补序号"
           },
           "waitlistPositionId": {
-            "type": "object",
+            "type": "string",
             "nullable": true,
             "description": "仅 waitlisted 候选人的原岗位锚点"
           }
@@ -122336,7 +122336,7 @@
             "description": "批次目标场次 ID"
           },
           "positionId": {
-            "type": "object",
+            "type": "string",
             "nullable": true,
             "description": "批次目标岗位；null 表示场次级批次"
           },
@@ -122362,23 +122362,25 @@
             "description": "冻结时使用的算法版本"
           },
           "randomSeedReveal": {
-            "type": "object",
+            "type": "string",
             "nullable": true,
             "description": "仅已提交 lottery 批次回显的服务端 seed"
           },
           "committedAt": {
-            "type": "object",
+            "type": "string",
             "nullable": true,
+            "format": "date-time",
             "description": "提交完成时间"
           },
           "voidReason": {
-            "type": "object",
+            "type": "string",
             "nullable": true,
             "description": "作废原因"
           },
           "voidedAt": {
-            "type": "object",
+            "type": "string",
             "nullable": true,
+            "format": "date-time",
             "description": "作废完成时间"
           },
           "candidates": {
@@ -122446,7 +122448,7 @@
             "description": "本次冻结的活动场次"
           },
           "positionId": {
-            "type": "object",
+            "type": "string",
             "nullable": true,
             "minLength": 8,
             "maxLength": 64,
