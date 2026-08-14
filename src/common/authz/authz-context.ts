@@ -73,7 +73,7 @@ export interface AuthzAssertionPatternDefinition {
   callShapes: string[];
   requiredOutcomes: string[];
   axes: string[];
-  staticMatchers: AuthzAssertionStaticMatcher[];
+  staticMatchers: AuthzAssertionMatcher[];
 }
 
 // The static matcher is deliberately data, not a second parser embedded in
@@ -91,6 +91,43 @@ export interface AuthzAssertionStaticMatcher {
     | 'app-admission-branch'
     | 'throwing-assertion';
 }
+
+// The second matcher shape. Every family above proves "an authorization
+// decision happened" by naming a call and its consequence. This one proves the
+// opposite kind of statement — "impersonation is not expressible" — by
+// describing the handler's *input surface* rather than any call in it. The two
+// kinds are deliberately not merged: a call matcher answers "was judgement
+// exercised", this answers "was there anything to judge". Keeping them separate
+// interfaces makes the illegal combination (a receiver type with a structural
+// outcome, or a decorator list with a deny-branch outcome) unrepresentable.
+//
+// It stays data for the same reason the call matchers do: R8 owns the single
+// traversal, this owns the vocabulary it traverses with.
+//
+// The judgement is a *negative* one, so its correctness rests entirely on
+// exhaustiveness — one unlisted way of reaching the handler is one endpoint
+// wrongly stamped safe. Hence classification is a whitelist on both sides and
+// anything falling through is a T3 candidate, never a pass. In particular
+// `callerControlled` lists only the decorators whose carried names R8 can
+// actually enumerate (a decorator argument, or a DTO whose fields expand);
+// `@Req` / `@Headers` / `@Session` are deliberately absent from BOTH lists —
+// they hand the handler the whole request, so there is no name set to check and
+// no honest way to call them safe.
+export interface AuthzSubjectInputMatcher {
+  outcome: 'no-caller-controlled-subject';
+  // Framework-injected caller identity. Safe because the caller cannot choose it.
+  identityParameterDecorators: string[];
+  // Caller-supplied input whose carried names R8 can enumerate.
+  callerControlledParameterDecorators: string[];
+  // Names that may denote a *subject* rather than a resource. Conservative by
+  // construction: bare `id` is included because at the parameter surface there
+  // is nothing distinguishing a resource id from a subject id, and this family
+  // must never be the reason an IDOR surface is stamped closed. Extending this
+  // list requires naming the reason in the same PR.
+  subjectIdentifierNames: string[];
+}
+
+export type AuthzAssertionMatcher = AuthzAssertionStaticMatcher | AuthzSubjectInputMatcher;
 
 export const AUTHZ_ASSERTION_PATTERNS: readonly AuthzAssertionPatternDefinition[] = [
   {
@@ -165,6 +202,64 @@ export const AUTHZ_ASSERTION_PATTERNS: readonly AuthzAssertionPatternDefinition[
         methods: ['assertOwner', 'assertOwnerOrOverride', 'assertInitiatorOrOverride'],
         actionArgument: null,
         outcome: 'throwing-assertion',
+      },
+    ],
+  },
+  // `scope: self` closes by construction, not by assertion. The other families
+  // prove a judgement was made; here the intersection of resource and identity
+  // is a where-clause, not a call, so there is no call to observe — and no
+  // runtime marker to emit, which is why runtimeMarker stays null.
+  //
+  // NOTE for the ALS work: null here means "this axis emits nothing", NOT "these
+  // endpoints are unobservable". Their service chains still call
+  // AppIdentityResolver.resolve / assertCanUseAppOrThrow, so the admission axis
+  // is observed as usual. ALS must decide what to observe from an endpoint's own
+  // properties and must NOT gate observation on R8's tier — moving these routes
+  // out of T3 would otherwise silently stop observing them.
+  {
+    id: 'self-by-construction',
+    runtimeMarker: null,
+    callShapes: ['handler exposes no caller-controlled subject input'],
+    requiredOutcomes: ['no-caller-controlled-subject'],
+    axes: ['scopes'],
+    staticMatchers: [
+      {
+        outcome: 'no-caller-controlled-subject',
+        identityParameterDecorators: ['CurrentUser'],
+        callerControlledParameterDecorators: ['Param', 'Query', 'Body'],
+        subjectIdentifierNames: [
+          // Bare resource id — cannot be told apart from a subject id at the
+          // parameter surface, so it is refused rather than guessed.
+          'id',
+          'ids',
+          // Direct subject handles.
+          'userId',
+          'userIds',
+          'userNo',
+          'memberId',
+          'memberIds',
+          'memberNo',
+          'accountId',
+          'principalId',
+          'subjectId',
+          // Roles that resolve to a person on the resource.
+          'ownerId',
+          'creatorId',
+          'operatorId',
+          'actorId',
+          'applicantId',
+          'recipientMemberId',
+          'publisherId',
+          // Login / contact handles that select a person without an id.
+          'openid',
+          'openId',
+          'unionid',
+          'unionId',
+          'username',
+          'email',
+          'phone',
+          'mobile',
+        ],
       },
     ],
   },
