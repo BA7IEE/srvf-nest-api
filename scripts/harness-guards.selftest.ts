@@ -3968,6 +3968,97 @@ void (async (): Promise<void> => {
     );
   }
 
+  // ── IDOR 属主守卫:cancelMy 的两道判定必须都在 ────────────────────────────
+  //
+  // 为什么是结构断言而不是 e2e：`cancelMy` 有两道独立的属主判定（锁活动前一道、
+  // 锁后复读再一道）。它们是纵深防御 —— 删掉任意**一道**，另一道照样返 404，
+  // 可观测行为逐字不变，黑盒测试原理上区分不了「一道」和「两道」。实测印证：
+  // 单删任一道，`app-my-registrations-write` 42 条全绿；两道全删才红 2 条。
+  //
+  // 其余三条内存比对属主的端点（my/registrations/:id、notifications/:id、
+  // notifications/:id/read）各只有一道判定，删掉即有具名 e2e 用例转红，
+  // 已由行为层锁住，**不在此重复登记**。这里只补 e2e 够不到的那一处。
+  //
+  // 判据要的是**后果**不是比较本身：比较必须落在一个 then 分支会抛的 if 里，
+  // 裸比较不算守卫（与「调用无后果分支不构成断言」同一条哲学）。
+  {
+    const ownerGuardRoot = path.resolve(__dirname, '..');
+    const ownerGuardFile = 'src/modules/activity-registrations/activity-registrations.service.ts';
+    const ownerGuardSource = ts.createSourceFile(
+      ownerGuardFile,
+      fs.readFileSync(path.join(ownerGuardRoot, ownerGuardFile), 'utf8'),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const throwsWithin = (node: ts.Node): boolean => {
+      let found = false;
+      const visit = (child: ts.Node): void => {
+        if (found) return;
+        if (ts.isThrowStatement(child)) {
+          found = true;
+          return;
+        }
+        child.forEachChild(visit);
+      };
+      visit(node);
+      return found;
+    };
+    /** `X.memberId !== memberId` 且其所在 if 的 then 分支会抛 = 一道属主守卫。 */
+    const countOwnerGuards = (method: ts.MethodDeclaration): number => {
+      let guards = 0;
+      const visit = (node: ts.Node): void => {
+        if (
+          ts.isBinaryExpression(node) &&
+          node.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken
+        ) {
+          const sides = [node.left, node.right];
+          const owner = sides.find(
+            (side) => ts.isPropertyAccessExpression(side) && side.name.text === 'memberId',
+          );
+          const subject = sides.find((side) => ts.isIdentifier(side) && side.text === 'memberId');
+          if (owner !== undefined && subject !== undefined) {
+            let cursor: ts.Node = node;
+            while (cursor !== method && cursor.parent !== undefined) {
+              if (ts.isIfStatement(cursor.parent) && throwsWithin(cursor.parent.thenStatement)) {
+                guards += 1;
+                break;
+              }
+              cursor = cursor.parent;
+            }
+          }
+        }
+        node.forEachChild(visit);
+      };
+      method.forEachChild(visit);
+      return guards;
+    };
+    const ownerGuardMethods = new Map<string, ts.MethodDeclaration>();
+    const collectMethods = (node: ts.Node): void => {
+      if (ts.isMethodDeclaration(node) && node.name !== undefined) {
+        ownerGuardMethods.set(node.name.getText(ownerGuardSource), node);
+      }
+      node.forEachChild(collectMethods);
+    };
+    collectMethods(ownerGuardSource);
+    const cancelMy = ownerGuardMethods.get('cancelMy');
+    const findMy = ownerGuardMethods.get('findMy');
+    check(
+      'IDOR 守卫:activity-registrations.service.ts 仍有 cancelMy / findMy 两个方法',
+      cancelMy !== undefined && findMy !== undefined,
+      `cancelMy=${String(cancelMy !== undefined)} findMy=${String(findMy !== undefined)}`,
+    );
+    if (cancelMy !== undefined && findMy !== undefined) {
+      checkEq(
+        'IDOR 守卫:cancelMy 保有两道独立属主判定(e2e 测不出单删,故在此钉住)',
+        countOwnerGuards(cancelMy),
+        2,
+      );
+      // 正对照：单道守卫的 findMy 必须恰好数出 1 —— 若判据写坏成恒 0 / 恒大，
+      // 上面那条会跟着一起坏而不被发现，这条会先红。
+      checkEq('IDOR 守卫:findMy 单道属主判定(判据正对照)', countOwnerGuards(findMy), 1);
+    }
+  }
+
   if (knownGaps.length > 0) {
     process.stdout.write(`\n── 已知缺口:${knownGaps.length} 条(不假装安全)──\n`);
     for (const gap of knownGaps) {
