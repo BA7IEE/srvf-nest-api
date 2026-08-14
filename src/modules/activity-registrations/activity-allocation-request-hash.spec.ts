@@ -93,7 +93,10 @@ describe('activity allocation canonical hashes', () => {
       ],
     };
     const first = createCandidateSnapshotHash(input);
-    const reordered = createCandidateSnapshotHash({ ...input, candidates: [...input.candidates].reverse() });
+    const reordered = createCandidateSnapshotHash({
+      ...input,
+      candidates: [...input.candidates].reverse(),
+    });
     const changed = createCandidateSnapshotHash({
       ...input,
       candidates: [{ ...input.candidates[0], qualificationScore: '99.0000' }, input.candidates[1]],
@@ -110,7 +113,9 @@ describe('activity allocation canonical hashes', () => {
     };
     const seed = deriveLotterySeed('server-secret', input);
     expect(seed).toHaveLength(64);
-    expect(createLotteryCommitment(seed)).toBe(createLotteryCommitment(deriveLotterySeed('server-secret', input)));
+    expect(createLotteryCommitment(seed)).toBe(
+      createLotteryCommitment(deriveLotterySeed('server-secret', input)),
+    );
     expect(createLotteryCommitment(seed)).not.toBe(
       createLotteryCommitment(deriveLotterySeed('different-server-secret', input)),
     );

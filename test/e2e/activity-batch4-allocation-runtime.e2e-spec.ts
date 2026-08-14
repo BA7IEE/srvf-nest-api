@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { BindingScopeType, BindingStatus, MemberStatus, PrincipalType, Role } from '@prisma/client';
 import request from 'supertest';
 
+import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { seedActivityResponsibilitySystemRoles } from '../fixtures/activity-responsibility.fixture';
@@ -19,7 +20,9 @@ const FAR = {
 
 describe('activity batch4 allocation runtime', () => {
   let app: INestApplication;
+  let appB: INestApplication;
   let prisma: PrismaService;
+  let prismaB: PrismaService;
   let managerAuth: string;
   let applicantAuth: string;
   let managerMemberId: string;
@@ -32,7 +35,9 @@ describe('activity batch4 allocation runtime', () => {
     jest.setTimeout(90_000);
     app = await createTestApp();
     await resetDb(app);
+    appB = await createTestApp();
     prisma = app.get(PrismaService);
+    prismaB = appB.get(PrismaService);
     activityOwnerRoleId = (await seedActivityResponsibilitySystemRoles(app))['activity-owner'];
 
     const [manager, applicant] = await Promise.all([
@@ -71,7 +76,7 @@ describe('activity batch4 allocation runtime', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    await Promise.all([app.close(), appB.close()]);
   });
 
   const registrationPath = (activityId: string) =>
@@ -188,7 +193,10 @@ describe('activity batch4 allocation runtime', () => {
     return { activityId: activity.id, sessionId: session.id, positionId: position.id };
   }
 
-  async function createActiveApplicant(label: string, gradeCode: string): Promise<{
+  async function createActiveApplicant(
+    label: string,
+    gradeCode: string,
+  ): Promise<{
     auth: string;
     memberId: string;
   }> {
@@ -208,6 +216,15 @@ describe('activity batch4 allocation runtime', () => {
     await prisma.user.update({ where: { id: user.id }, data: { memberId: member.id } });
     return { auth: (await loginAs(app, user.username)).authHeader, memberId: member.id };
   }
+
+  it('proves allocation concurrency uses two independent Prisma pools', async () => {
+    expect(prisma).not.toBe(prismaB);
+    const [[left], [right]] = await Promise.all([
+      prisma.$queryRaw<Array<{ pid: number }>>`SELECT pg_backend_pid()::int AS pid`,
+      prismaB.$queryRaw<Array<{ pid: number }>>`SELECT pg_backend_pid()::int AS pid`,
+    ]);
+    expect(left?.pid).not.toBe(right?.pid);
+  });
 
   it('red-first: freezes a real submitted candidate through the managed allocation prepare HTTP route', async () => {
     const scenario = await createCandidateScenario();
@@ -243,7 +260,10 @@ describe('activity batch4 allocation runtime', () => {
   });
 
   it('red-first: first_come independently passes the first accepted session applicant and queues the next', async () => {
-    const scenario = await createCandidateScenario({ allocationModeCode: 'first_come', capacity: 1 });
+    const scenario = await createCandidateScenario({
+      allocationModeCode: 'first_come',
+      capacity: 1,
+    });
     const secondUser = await createTestUser(app, {
       username: `batch4-first-come-second-${sequence}`,
       role: Role.USER,
@@ -273,7 +293,7 @@ describe('activity batch4 allocation runtime', () => {
         .post(registrationPath(scenario.activityId))
         .set('Authorization', applicantAuth)
         .send({ ...command, operationKey: `batch4-first-come-first-${sequence}` }),
-      request(httpServer(app))
+      request(httpServer(appB))
         .post(registrationPath(scenario.activityId))
         .set('Authorization', secondAuth)
         .send({ ...command, operationKey: `batch4-first-come-second-${sequence}` }),
@@ -288,13 +308,190 @@ describe('activity batch4 allocation runtime', () => {
     });
     expect(identities).toHaveLength(2);
     expect(identities.filter((identity) => identity.currentStatusCode === 'pass')).toHaveLength(1);
-    expect(identities.filter((identity) => identity.currentStatusCode === 'waitlisted')).toHaveLength(1);
-    expect(identities.find((identity) => identity.currentStatusCode === 'pass')?.currentPositionId).toBe(
-      scenario.positionId,
+    expect(
+      identities.filter((identity) => identity.currentStatusCode === 'waitlisted'),
+    ).toHaveLength(1);
+    expect(
+      identities.find((identity) => identity.currentStatusCode === 'pass')?.currentPositionId,
+    ).toBe(scenario.positionId);
+    expect(
+      identities.find((identity) => identity.currentStatusCode === 'waitlisted')
+        ?.capacityReservationId,
+    ).toBeNull();
+  });
+
+  it('keeps first_come session capacity independent when one submitted session is already full', async () => {
+    const scenario = await createCandidateScenario({
+      allocationModeCode: 'first_come',
+      capacity: 2,
+    });
+    const secondSession = await prisma.activitySession.create({
+      data: {
+        activityId: scenario.activityId,
+        code: `allocation-first-come-second-session-${sequence}`,
+        name: `Allocation First Come Second Session ${sequence}`,
+        startAt: FAR.startAt,
+        endAt: FAR.endAt,
+        locationText: 'Allocation Field B',
+        capacity: 1,
+        checkInOpenAt: new Date(FAR.startAt.getTime() - 30 * 60_000),
+        checkInCloseAt: new Date(FAR.startAt.getTime() + 30 * 60_000),
+        checkOutOpenAt: new Date(FAR.endAt.getTime() - 60 * 60_000),
+        checkOutCloseAt: new Date(FAR.endAt.getTime() + 30 * 60_000),
+        locationRequired: false,
+        locationPolicySourceCode: 'activity',
+        statusCode: 'scheduled',
+      },
+      select: { id: true },
+    });
+    const secondPosition = await prisma.activitySessionPosition.create({
+      data: {
+        activityId: scenario.activityId,
+        sessionId: secondSession.id,
+        code: `allocation-first-come-second-position-${sequence}`,
+        name: `Allocation First Come Second Position ${sequence}`,
+        attendanceRoleCode: 'volunteer',
+        capacity: 1,
+      },
+      select: { id: true },
+    });
+    await prisma.activityCapacityBucket.createMany({
+      data: [
+        {
+          activityId: scenario.activityId,
+          scopeTypeCode: 'session_participation',
+          scopeId: secondSession.id,
+          capacity: 1,
+        },
+        {
+          activityId: scenario.activityId,
+          scopeTypeCode: 'position_participation',
+          scopeId: secondPosition.id,
+          capacity: 1,
+        },
+      ],
+    });
+    const second = await createActiveApplicant('fc-independent', 'L1');
+    const firstSubmission = await request(httpServer(app))
+      .post(registrationPath(scenario.activityId))
+      .set('Authorization', applicantAuth)
+      .send({
+        operationKey: `batch4-first-come-independent-first-${sequence}`,
+        formVersion: null,
+        answers: [],
+        preferences: [{ sessionId: scenario.sessionId, positionIds: [scenario.positionId] }],
+      });
+    expect(firstSubmission.status).toBe(201);
+    const secondSubmission = await request(httpServer(app))
+      .post(registrationPath(scenario.activityId))
+      .set('Authorization', second.auth)
+      .send({
+        operationKey: `batch4-first-come-independent-second-${sequence}`,
+        formVersion: null,
+        answers: [],
+        preferences: [
+          { sessionId: scenario.sessionId, positionIds: [scenario.positionId] },
+          { sessionId: secondSession.id, positionIds: [secondPosition.id] },
+        ],
+      });
+    expect(secondSubmission.status).toBe(201);
+    const secondIdentities = await prisma.activityParticipationIdentity.findMany({
+      where: { registrationId: secondSubmission.body.data.registrationId as string },
+      select: { sessionId: true, currentStatusCode: true, currentPositionId: true },
+    });
+    const bySession = new Map(secondIdentities.map((identity) => [identity.sessionId, identity]));
+    expect(bySession.get(scenario.sessionId)).toEqual(
+      expect.objectContaining({ currentStatusCode: 'waitlisted', currentPositionId: null }),
+    );
+    expect(bySession.get(secondSession.id)).toEqual(
+      expect.objectContaining({ currentStatusCode: 'pass', currentPositionId: secondPosition.id }),
     );
     expect(
-      identities.find((identity) => identity.currentStatusCode === 'waitlisted')?.capacityReservationId,
-    ).toBeNull();
+      await prisma.activityAllocationBatch.count({ where: { activityId: scenario.activityId } }),
+    ).toBe(0);
+  });
+
+  it('uses first_come server acceptance facts rather than review timestamps for promotion order', async () => {
+    const scenario = await createCandidateScenario({
+      allocationModeCode: 'first_come',
+      capacity: 1,
+    });
+    const second = await createActiveApplicant('fc-review-2', 'L1');
+    const third = await createActiveApplicant('fc-review-3', 'L1');
+    const submissionBody = {
+      formVersion: null,
+      answers: [],
+      preferences: [{ sessionId: scenario.sessionId, positionIds: [scenario.positionId] }],
+    };
+    const firstSubmitted = await request(httpServer(app))
+      .post(registrationPath(scenario.activityId))
+      .set('Authorization', applicantAuth)
+      .send({ ...submissionBody, operationKey: `batch4-fc-review-first-${sequence}` });
+    const secondSubmitted = await request(httpServer(app))
+      .post(registrationPath(scenario.activityId))
+      .set('Authorization', second.auth)
+      .send({ ...submissionBody, operationKey: `batch4-fc-review-second-${sequence}` });
+    const thirdSubmitted = await request(httpServer(app))
+      .post(registrationPath(scenario.activityId))
+      .set('Authorization', third.auth)
+      .send({ ...submissionBody, operationKey: `batch4-fc-review-third-${sequence}` });
+    expect(firstSubmitted.status).toBe(201);
+    expect(secondSubmitted.status).toBe(201);
+    expect(thirdSubmitted.status).toBe(201);
+    const waitlistRevisions = await prisma.activityParticipationRevision.findMany({
+      where: {
+        identity: {
+          activityId: scenario.activityId,
+          memberId: { in: [second.memberId, third.memberId] },
+        },
+      },
+      select: { id: true, identity: { select: { memberId: true } } },
+    });
+    const revisionByMember = new Map(
+      waitlistRevisions.map((revision) => [revision.identity.memberId, revision.id]),
+    );
+    // These effectiveAt values are the controlled server-acceptance facts. The reverse review
+    // timestamps model an unrelated later manager action which must not reorder the queue.
+    await Promise.all([
+      prisma.activityParticipationRevision.update({
+        where: { id: revisionByMember.get(second.memberId)! },
+        data: { effectiveAt: new Date('2025-01-01T00:00:00.000Z') },
+      }),
+      prisma.activityParticipationRevision.update({
+        where: { id: revisionByMember.get(third.memberId)! },
+        data: { effectiveAt: new Date('2025-01-02T00:00:00.000Z') },
+      }),
+      prisma.activityRegistration.update({
+        where: { id: secondSubmitted.body.data.registrationId as string },
+        data: { reviewedAt: new Date('2099-01-01T00:00:00.000Z') },
+      }),
+      prisma.activityRegistration.update({
+        where: { id: thirdSubmitted.body.data.registrationId as string },
+        data: { reviewedAt: new Date('2000-01-01T00:00:00.000Z') },
+      }),
+    ]);
+
+    const cancelled = await request(httpServer(app))
+      .patch(
+        `/api/app/v1/my/registrations/${firstSubmitted.body.data.registrationId as string}/cancel`,
+      )
+      .set('Authorization', applicantAuth)
+      .send({ cancelReason: 'free one first-come slot' });
+    expect(cancelled.status).toBe(200);
+    const after = await prisma.activityParticipationIdentity.findMany({
+      where: { activityId: scenario.activityId },
+      select: { memberId: true, currentStatusCode: true, currentPositionId: true },
+    });
+    const afterByMember = new Map(after.map((identity) => [identity.memberId, identity]));
+    expect(afterByMember.get(second.memberId)).toEqual(
+      expect.objectContaining({
+        currentStatusCode: 'pass',
+        currentPositionId: scenario.positionId,
+      }),
+    );
+    expect(afterByMember.get(third.memberId)).toEqual(
+      expect.objectContaining({ currentStatusCode: 'waitlisted', currentPositionId: null }),
+    );
   });
 
   it('freezes qualification_rank scores, replays prepare exactly, and commits capacity in score order', async () => {
@@ -326,14 +523,32 @@ describe('activity batch4 allocation runtime', () => {
         version: 1,
         statusCode: 'draft',
         rules: {
-          create: {
-            ruleTypeCode: 'grade',
-            enforcementCode: 'warn',
-            operator: 'in',
-            valueJson: { codes: ['L2'] },
-            warnScore: 27,
-            sortOrder: 1,
-          },
+          create: [
+            {
+              ruleTypeCode: 'grade',
+              enforcementCode: 'warn',
+              operator: 'in',
+              valueJson: { codes: ['L2'] },
+              warnScore: 20,
+              sortOrder: 1,
+            },
+            {
+              ruleTypeCode: 'grade',
+              enforcementCode: 'warn',
+              operator: 'in',
+              valueJson: { codes: ['L2'] },
+              warnScore: 7,
+              sortOrder: 2,
+            },
+            {
+              ruleTypeCode: 'grade',
+              enforcementCode: 'warn',
+              operator: 'in',
+              valueJson: { codes: ['L2'] },
+              warnScore: 0,
+              sortOrder: 3,
+            },
+          ],
         },
       },
       select: { id: true },
@@ -382,6 +597,16 @@ describe('activity batch4 allocation runtime', () => {
     expect(preparedReplay.status).toBe(201);
     expect(preparedReplay.body.data.responseHash).toBe(prepared.body.data.responseHash);
     expect(preparedReplay.body.data.batch).toEqual(prepared.body.data.batch);
+    const preparedConflict = await request(httpServer(app))
+      .post(allocationBatchesPath(scenario.activityId))
+      .set('Authorization', managerAuth)
+      .send({ operationKey: prepareBody.operationKey, sessionId: scenario.sessionId });
+    expect(preparedConflict.status).toBe(
+      BizCode.ACTIVITY_REGISTRATION_OPERATION_KEY_CONFLICT.httpStatus,
+    );
+    expect(preparedConflict.body.code).toBe(
+      BizCode.ACTIVITY_REGISTRATION_OPERATION_KEY_CONFLICT.code,
+    );
 
     const batchId = prepared.body.data.batch.batchId as string;
     const committed = await request(httpServer(app))
@@ -401,23 +626,522 @@ describe('activity batch4 allocation runtime', () => {
         select: { id: true },
       }),
     ]);
+    const committedCandidates = committed.body.data.batch.candidates as Array<{
+      participationIdentityId: string;
+    }>;
     const byIdentity = new Map(
-      committed.body.data.batch.candidates.map(
-        (candidate: { participationIdentityId: string }) => [candidate.participationIdentityId, candidate],
-      ),
+      committedCandidates.map((candidate) => [candidate.participationIdentityId, candidate]),
     );
     expect(byIdentity.get(secondIdentity.id)).toEqual(
       expect.objectContaining({ qualificationScore: '100.0000', resultCode: 'allocated' }),
     );
     expect(byIdentity.get(firstIdentity.id)).toEqual(
-      expect.objectContaining({ qualificationScore: '73.0000', resultCode: 'waitlisted', waitlistRank: 1 }),
+      expect.objectContaining({
+        qualificationScore: '73.0000',
+        resultCode: 'waitlisted',
+        waitlistRank: 1,
+      }),
     );
+    const frozenWarningExplanation = await prisma.activityAllocationCandidate.findFirstOrThrow({
+      where: { allocationBatchId: batchId, participationIdentityId: firstIdentity.id },
+      select: { explanation: true },
+    });
+    expect(frozenWarningExplanation.explanation).toEqual(
+      expect.objectContaining({
+        aggregateResultCode: 'warn',
+        penalty: 27,
+        qualificationScore: '73.0000',
+        ruleSets: expect.arrayContaining([
+          expect.objectContaining({
+            rules: expect.arrayContaining([
+              expect.objectContaining({ warnScore: 0, resultCode: 'warn' }),
+            ]),
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it('freezes fail candidates for audit but excludes them from rank allocation and waitlists', async () => {
+    const scenario = await createCandidateScenario({ allocationModeCode: 'qualification_rank' });
+    const passing = await createActiveApplicant('rank-fail-control', 'L2');
+    const submissionBody = {
+      formVersion: null,
+      answers: [],
+      preferences: [{ sessionId: scenario.sessionId, positionIds: [scenario.positionId] }],
+    };
+    const [failedSubmission, passingSubmission] = await Promise.all([
+      request(httpServer(app))
+        .post(registrationPath(scenario.activityId))
+        .set('Authorization', applicantAuth)
+        .send({ ...submissionBody, operationKey: `batch4-rank-fail-submission-${sequence}` }),
+      request(httpServer(app))
+        .post(registrationPath(scenario.activityId))
+        .set('Authorization', passing.auth)
+        .send({ ...submissionBody, operationKey: `batch4-rank-pass-submission-${sequence}` }),
+    ]);
+    expect(failedSubmission.status).toBe(201);
+    expect(passingSubmission.status).toBe(201);
+    const ruleSet = await prisma.activityQualificationRuleSet.create({
+      data: {
+        activityId: scenario.activityId,
+        version: 1,
+        statusCode: 'draft',
+        rules: {
+          create: {
+            ruleTypeCode: 'grade',
+            enforcementCode: 'block',
+            operator: 'in',
+            valueJson: { codes: ['L2'] },
+            warnScore: null,
+            sortOrder: 1,
+          },
+        },
+      },
+      select: { id: true },
+    });
+    await prisma.activityQualificationRuleSet.update({
+      where: { id: ruleSet.id },
+      data: { statusCode: 'active' },
+    });
+    await prisma.activity.update({
+      where: { id: scenario.activityId },
+      data: { registrationDeadline: new Date('2020-01-01T00:00:00.000Z') },
+    });
+    const prepared = await request(httpServer(app))
+      .post(allocationBatchesPath(scenario.activityId))
+      .set('Authorization', managerAuth)
+      .send({
+        operationKey: `batch4-rank-fail-prepare-${sequence}`,
+        sessionId: scenario.sessionId,
+        positionId: scenario.positionId,
+      });
+    expect(prepared.status).toBe(201);
+    const batchId = prepared.body.data.batch.batchId as string;
+    expect(
+      prepared.body.data.batch.candidates.some(
+        (candidate: { qualificationResultCode: string }) =>
+          candidate.qualificationResultCode === 'fail',
+      ),
+    ).toBe(true);
+    const committed = await request(httpServer(app))
+      .post(`${allocationBatchesPath(scenario.activityId)}/${batchId}/commit`)
+      .set('Authorization', managerAuth)
+      .send({ operationKey: `batch4-rank-fail-commit-${sequence}` });
+    expect(committed.status).toBe(200);
+    const identities = await prisma.activityParticipationIdentity.findMany({
+      where: { activityId: scenario.activityId },
+      select: { id: true, memberId: true, capacityReservationId: true, currentStatusCode: true },
+    });
+    const identityByMember = new Map(identities.map((identity) => [identity.memberId, identity]));
+    const committedCandidates = committed.body.data.batch.candidates as Array<{
+      participationIdentityId: string;
+    }>;
+    const candidateByIdentity = new Map(
+      committedCandidates.map((candidate) => [candidate.participationIdentityId, candidate]),
+    );
+    const failedIdentity = identityByMember.get(applicantMemberId)!;
+    const passingIdentity = identityByMember.get(passing.memberId)!;
+    expect(candidateByIdentity.get(failedIdentity.id)).toEqual(
+      expect.objectContaining({
+        qualificationResultCode: 'fail',
+        qualificationScore: null,
+        resultCode: 'not_selected',
+        waitlistRank: null,
+        waitlistPositionId: null,
+      }),
+    );
+    expect(failedIdentity).toEqual(
+      expect.objectContaining({ currentStatusCode: 'not_selected', capacityReservationId: null }),
+    );
+    expect(candidateByIdentity.get(passingIdentity.id)).toEqual(
+      expect.objectContaining({ qualificationResultCode: 'pass', resultCode: 'allocated' }),
+    );
+  });
+
+  it('uses acceptedAt then UTF-8 participation identity to break equal rank scores', async () => {
+    const scenario = await createCandidateScenario({ allocationModeCode: 'qualification_rank' });
+    const second = await createActiveApplicant('rank-tiebreak', 'L1');
+    const submissionBody = {
+      formVersion: null,
+      answers: [],
+      preferences: [{ sessionId: scenario.sessionId, positionIds: [scenario.positionId] }],
+    };
+    const [firstSubmission, secondSubmission] = await Promise.all([
+      request(httpServer(app))
+        .post(registrationPath(scenario.activityId))
+        .set('Authorization', applicantAuth)
+        .send({ ...submissionBody, operationKey: `batch4-rank-tiebreak-first-${sequence}` }),
+      request(httpServer(app))
+        .post(registrationPath(scenario.activityId))
+        .set('Authorization', second.auth)
+        .send({ ...submissionBody, operationKey: `batch4-rank-tiebreak-second-${sequence}` }),
+    ]);
+    expect(firstSubmission.status).toBe(201);
+    expect(secondSubmission.status).toBe(201);
+    const identities = await prisma.activityParticipationIdentity.findMany({
+      where: { activityId: scenario.activityId },
+      select: { id: true, registrationId: true },
+    });
+    expect(identities).toHaveLength(2);
+    // Equalize the two immutable acceptance facts only to reach the documented secondary sort.
+    // The winner must then be the bytewise-smallest permanent identity, never DB return order.
+    await prisma.activityRegistrationRevision.updateMany({
+      where: { registrationId: { in: identities.map((identity) => identity.registrationId) } },
+      data: { submittedAt: new Date('2025-01-02T03:04:05.000Z') },
+    });
+    await prisma.activity.update({
+      where: { id: scenario.activityId },
+      data: { registrationDeadline: new Date('2020-01-01T00:00:00.000Z') },
+    });
+    const prepared = await request(httpServer(app))
+      .post(allocationBatchesPath(scenario.activityId))
+      .set('Authorization', managerAuth)
+      .send({
+        operationKey: `batch4-rank-tiebreak-prepare-${sequence}`,
+        sessionId: scenario.sessionId,
+        positionId: scenario.positionId,
+      });
+    expect(prepared.status).toBe(201);
+    const batchId = prepared.body.data.batch.batchId as string;
+    const committed = await request(httpServer(app))
+      .post(`${allocationBatchesPath(scenario.activityId)}/${batchId}/commit`)
+      .set('Authorization', managerAuth)
+      .send({ operationKey: `batch4-rank-tiebreak-commit-${sequence}` });
+    expect(committed.status).toBe(200);
+    const expectedWinnerId = identities.map((identity) => identity.id).sort()[0];
+    const allocated = committed.body.data.batch.candidates.find(
+      (candidate: { resultCode: string | null }) => candidate.resultCode === 'allocated',
+    );
+    expect(allocated).toEqual(
+      expect.objectContaining({
+        participationIdentityId: expectedWinnerId,
+        qualificationScore: '100.0000',
+      }),
+    );
+  });
+
+  it('red-first: requires a committed target batch to void before replacement prepare', async () => {
+    const scenario = await createCandidateScenario({ allocationModeCode: 'qualification_rank' });
+    const submitted = await request(httpServer(app))
+      .post(registrationPath(scenario.activityId))
+      .set('Authorization', applicantAuth)
+      .send({
+        operationKey: `batch4-reprepare-submit-${sequence}`,
+        formVersion: null,
+        answers: [],
+        preferences: [{ sessionId: scenario.sessionId, positionIds: [scenario.positionId] }],
+      });
+    expect(submitted.status).toBe(201);
+    await prisma.activity.update({
+      where: { id: scenario.activityId },
+      data: { registrationDeadline: new Date('2020-01-01T00:00:00.000Z') },
+    });
+
+    const initialPrepareBody = {
+      operationKey: `batch4-reprepare-initial-prepare-${sequence}`,
+      sessionId: scenario.sessionId,
+      positionId: scenario.positionId,
+    };
+    const prepared = await request(httpServer(app))
+      .post(allocationBatchesPath(scenario.activityId))
+      .set('Authorization', managerAuth)
+      .send(initialPrepareBody);
+    expect(prepared.status).toBe(201);
+    const batchId = prepared.body.data.batch.batchId as string;
+    const committed = await request(httpServer(app))
+      .post(`${allocationBatchesPath(scenario.activityId)}/${batchId}/commit`)
+      .set('Authorization', managerAuth)
+      .send({ operationKey: `batch4-reprepare-commit-${sequence}` });
+    expect(committed.status).toBe(200);
+
+    const targetBatchCountBefore = await prisma.activityAllocationBatch.count({
+      where: {
+        activityId: scenario.activityId,
+        sessionId: scenario.sessionId,
+        positionId: scenario.positionId,
+      },
+    });
+    const replacementBeforeVoid = await request(httpServer(app))
+      .post(allocationBatchesPath(scenario.activityId))
+      .set('Authorization', managerAuth)
+      .send({
+        operationKey: `batch4-reprepare-before-void-${sequence}`,
+        sessionId: scenario.sessionId,
+        positionId: scenario.positionId,
+      });
+    expect(replacementBeforeVoid.status).toBe(
+      BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.httpStatus,
+    );
+    expect(replacementBeforeVoid.body.code).toBe(
+      BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.code,
+    );
+    expect(
+      await prisma.activityAllocationBatch.count({
+        where: {
+          activityId: scenario.activityId,
+          sessionId: scenario.sessionId,
+          positionId: scenario.positionId,
+        },
+      }),
+    ).toBe(targetBatchCountBefore);
+
+    const voidBody = {
+      operationKey: `batch4-reprepare-void-${sequence}`,
+      reason: 'prepare a replacement from the restored pending facts',
+    };
+    const voided = await request(httpServer(app))
+      .post(`${allocationBatchesPath(scenario.activityId)}/${batchId}/void`)
+      .set('Authorization', managerAuth)
+      .send(voidBody);
+    expect(voided.status).toBe(200);
+    const voidReplay = await request(httpServer(app))
+      .post(`${allocationBatchesPath(scenario.activityId)}/${batchId}/void`)
+      .set('Authorization', managerAuth)
+      .send(voidBody);
+    expect(voidReplay.status).toBe(200);
+    expect(voidReplay.body.data).toEqual(voided.body.data);
+
+    // A receipt is an immutable response fact, not a live batch lookup.  Once void has moved the
+    // batch on, replaying either earlier command must still return its original safe view.
+    const prepareReplayAfterVoid = await request(httpServer(app))
+      .post(allocationBatchesPath(scenario.activityId))
+      .set('Authorization', managerAuth)
+      .send(initialPrepareBody);
+    expect(prepareReplayAfterVoid.status).toBe(201);
+    expect(prepareReplayAfterVoid.body.data).toEqual(prepared.body.data);
+    const commitReplayAfterVoid = await request(httpServer(app))
+      .post(`${allocationBatchesPath(scenario.activityId)}/${batchId}/commit`)
+      .set('Authorization', managerAuth)
+      .send({ operationKey: `batch4-reprepare-commit-${sequence}` });
+    expect(commitReplayAfterVoid.status).toBe(200);
+    expect(commitReplayAfterVoid.body.data).toEqual(committed.body.data);
+
+    const voidConflict = await request(httpServer(app))
+      .post(`${allocationBatchesPath(scenario.activityId)}/${batchId}/void`)
+      .set('Authorization', managerAuth)
+      .send({ ...voidBody, reason: 'different reason must not replay' });
+    expect(voidConflict.status).toBe(
+      BizCode.ACTIVITY_REGISTRATION_OPERATION_KEY_CONFLICT.httpStatus,
+    );
+    expect(voidConflict.body.code).toBe(BizCode.ACTIVITY_REGISTRATION_OPERATION_KEY_CONFLICT.code);
+    const replacementAfterVoid = await request(httpServer(app))
+      .post(allocationBatchesPath(scenario.activityId))
+      .set('Authorization', managerAuth)
+      .send({
+        operationKey: `batch4-reprepare-after-void-${sequence}`,
+        sessionId: scenario.sessionId,
+        positionId: scenario.positionId,
+      });
+    expect(replacementAfterVoid.status).toBe(201);
+  });
+
+  it('serializes distinct prepare keys and replays prepare and commit through independent pools', async () => {
+    const scenario = await createCandidateScenario({ allocationModeCode: 'qualification_rank' });
+    const submitted = await request(httpServer(app))
+      .post(registrationPath(scenario.activityId))
+      .set('Authorization', applicantAuth)
+      .send({
+        operationKey: `batch4-concurrent-submit-${sequence}`,
+        formVersion: null,
+        answers: [],
+        preferences: [{ sessionId: scenario.sessionId, positionIds: [scenario.positionId] }],
+      });
+    expect(submitted.status).toBe(201);
+    await prisma.activity.update({
+      where: { id: scenario.activityId },
+      data: { registrationDeadline: new Date('2020-01-01T00:00:00.000Z') },
+    });
+
+    const samePrepareBody = {
+      operationKey: `batch4-concurrent-prepare-${sequence}`,
+      sessionId: scenario.sessionId,
+      positionId: scenario.positionId,
+    };
+    const samePrepares = await Promise.all([
+      request(httpServer(app))
+        .post(allocationBatchesPath(scenario.activityId))
+        .set('Authorization', managerAuth)
+        .send(samePrepareBody),
+      request(httpServer(appB))
+        .post(allocationBatchesPath(scenario.activityId))
+        .set('Authorization', managerAuth)
+        .send(samePrepareBody),
+    ]);
+    expect(samePrepares.map((response) => response.status)).toEqual([201, 201]);
+    expect(samePrepares[0].body.data).toEqual(samePrepares[1].body.data);
+    const batchId = samePrepares[0].body.data.batch.batchId as string;
+
+    const sameCommitBody = { operationKey: `batch4-concurrent-commit-${sequence}` };
+    const commits = await Promise.all([
+      request(httpServer(app))
+        .post(`${allocationBatchesPath(scenario.activityId)}/${batchId}/commit`)
+        .set('Authorization', managerAuth)
+        .send(sameCommitBody),
+      request(httpServer(appB))
+        .post(`${allocationBatchesPath(scenario.activityId)}/${batchId}/commit`)
+        .set('Authorization', managerAuth)
+        .send(sameCommitBody),
+    ]);
+    expect(commits.map((response) => response.status)).toEqual([200, 200]);
+    expect(commits[0].body.data).toEqual(commits[1].body.data);
+    expect(
+      await prisma.activityAllocationCommandReceipt.count({
+        where: { allocationBatchId: batchId, commandCode: 'commit' },
+      }),
+    ).toBe(1);
+
+    const distinctScenario = await createCandidateScenario({
+      allocationModeCode: 'qualification_rank',
+    });
+    const distinctSubmitted = await request(httpServer(app))
+      .post(registrationPath(distinctScenario.activityId))
+      .set('Authorization', applicantAuth)
+      .send({
+        operationKey: `batch4-concurrent-distinct-submit-${sequence}`,
+        formVersion: null,
+        answers: [],
+        preferences: [
+          { sessionId: distinctScenario.sessionId, positionIds: [distinctScenario.positionId] },
+        ],
+      });
+    expect(distinctSubmitted.status).toBe(201);
+    await prisma.activity.update({
+      where: { id: distinctScenario.activityId },
+      data: { registrationDeadline: new Date('2020-01-01T00:00:00.000Z') },
+    });
+    const distinctPrepareBodies = ['left', 'right'].map((suffix) => ({
+      operationKey: `batch4-concurrent-distinct-${suffix}-${sequence}`,
+      sessionId: distinctScenario.sessionId,
+      positionId: distinctScenario.positionId,
+    }));
+    const distinctPrepares = await Promise.all([
+      request(httpServer(app))
+        .post(allocationBatchesPath(distinctScenario.activityId))
+        .set('Authorization', managerAuth)
+        .send(distinctPrepareBodies[0]),
+      request(httpServer(appB))
+        .post(allocationBatchesPath(distinctScenario.activityId))
+        .set('Authorization', managerAuth)
+        .send(distinctPrepareBodies[1]),
+    ]);
+    expect(
+      distinctPrepares.map((response) => response.status).sort((left, right) => left - right),
+    ).toEqual([201, BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.httpStatus]);
+  });
+
+  it('fails closed with zero commit writes when a frozen candidate cancels and reapplies', async () => {
+    const scenario = await createCandidateScenario({ allocationModeCode: 'qualification_rank' });
+    const submissionBody = {
+      formVersion: null,
+      answers: [],
+      preferences: [{ sessionId: scenario.sessionId, positionIds: [scenario.positionId] }],
+    };
+    const submitted = await request(httpServer(app))
+      .post(registrationPath(scenario.activityId))
+      .set('Authorization', applicantAuth)
+      .send({ ...submissionBody, operationKey: `batch4-commit-drift-submit-${sequence}` });
+    expect(submitted.status).toBe(201);
+    const registrationId = submitted.body.data.registrationId as string;
+    await prisma.activity.update({
+      where: { id: scenario.activityId },
+      data: { registrationDeadline: new Date('2020-01-01T00:00:00.000Z') },
+    });
+    const prepared = await request(httpServer(app))
+      .post(allocationBatchesPath(scenario.activityId))
+      .set('Authorization', managerAuth)
+      .send({
+        operationKey: `batch4-commit-drift-prepare-${sequence}`,
+        sessionId: scenario.sessionId,
+        positionId: scenario.positionId,
+      });
+    expect(prepared.status).toBe(201);
+    const batchId = prepared.body.data.batch.batchId as string;
+
+    // The post-freeze state change deliberately travels through the two real App commands. Moving
+    // the deadline only makes this stale-batch drift reproducible; it does not create the facts.
+    await prisma.activity.update({
+      where: { id: scenario.activityId },
+      data: { registrationDeadline: FAR.deadline },
+    });
+    const cancelled = await request(httpServer(app))
+      .patch(`/api/app/v1/my/registrations/${registrationId}/cancel`)
+      .set('Authorization', applicantAuth)
+      .send({ cancelReason: 'change submitted registration after batch freeze' });
+    expect(cancelled.status).toBe(200);
+    const reapplied = await request(httpServer(app))
+      .post(registrationPath(scenario.activityId))
+      .set('Authorization', applicantAuth)
+      .send({ ...submissionBody, operationKey: `batch4-commit-drift-reapply-${sequence}` });
+    expect(reapplied.status).toBe(201);
+    expect(reapplied.body.data.registrationId).toBe(registrationId);
+    await prisma.activity.update({
+      where: { id: scenario.activityId },
+      data: { registrationDeadline: new Date('2020-01-01T00:00:00.000Z') },
+    });
+
+    const frozen = await prisma.activityAllocationCandidate.findFirstOrThrow({
+      where: { allocationBatchId: batchId },
+      select: { registrationRevisionId: true },
+    });
+    const currentRegistration = await prisma.activityRegistration.findUniqueOrThrow({
+      where: { id: registrationId },
+      select: { currentRevision: true, revisions: { select: { id: true, revision: true } } },
+    });
+    expect(
+      currentRegistration.revisions.find(
+        (revision) => revision.revision === currentRegistration.currentRevision,
+      )?.id,
+    ).not.toBe(frozen.registrationRevisionId);
+    const before = await Promise.all([
+      prisma.activityAllocationBatch.findUniqueOrThrow({
+        where: { id: batchId },
+        select: { statusCode: true, committedAt: true },
+      }),
+      prisma.activityAllocationCandidate.findMany({
+        where: { allocationBatchId: batchId },
+        select: { resultCode: true, waitlistRank: true, lotteryOrder: true },
+      }),
+      prisma.activityAllocationApplicationProjection.count({
+        where: { allocationBatchId: batchId },
+      }),
+      prisma.capacityReservation.count({
+        where: { activityId: scenario.activityId, status: 'active' },
+      }),
+    ]);
+
+    const commit = await request(httpServer(app))
+      .post(`${allocationBatchesPath(scenario.activityId)}/${batchId}/commit`)
+      .set('Authorization', managerAuth)
+      .send({ operationKey: `batch4-commit-drift-commit-${sequence}` });
+    expect(commit.status).toBe(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.httpStatus);
+    expect(commit.body.code).toBe(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.code);
+    const after = await Promise.all([
+      prisma.activityAllocationBatch.findUniqueOrThrow({
+        where: { id: batchId },
+        select: { statusCode: true, committedAt: true },
+      }),
+      prisma.activityAllocationCandidate.findMany({
+        where: { allocationBatchId: batchId },
+        select: { resultCode: true, waitlistRank: true, lotteryOrder: true },
+      }),
+      prisma.activityAllocationApplicationProjection.count({
+        where: { allocationBatchId: batchId },
+      }),
+      prisma.capacityReservation.count({
+        where: { activityId: scenario.activityId, status: 'active' },
+      }),
+    ]);
+    expect(after).toEqual(before);
   });
 
   it('red-first: numbers session-level qualification waitlists independently for each original position', async () => {
     const scenario = await createCandidateScenario({ allocationModeCode: 'qualification_rank' });
     await prisma.activity.update({ where: { id: scenario.activityId }, data: { capacity: 2 } });
-    await prisma.activitySession.update({ where: { id: scenario.sessionId }, data: { capacity: 2 } });
+    await prisma.activitySession.update({
+      where: { id: scenario.sessionId },
+      data: { capacity: 2 },
+    });
     await prisma.activityCapacityBucket.updateMany({
       where: {
         activityId: scenario.activityId,
@@ -524,31 +1248,563 @@ describe('activity batch4 allocation runtime', () => {
       });
     expect(prepared.status).toBe(201);
     const committed = await request(httpServer(app))
-      .post(`${allocationBatchesPath(scenario.activityId)}/${prepared.body.data.batch.batchId}/commit`)
+      .post(
+        `${allocationBatchesPath(scenario.activityId)}/${prepared.body.data.batch.batchId}/commit`,
+      )
       .set('Authorization', managerAuth)
       .send({ operationKey: `batch4-position-queue-commit-${sequence}` });
+    expect(committed.status).toBe(200);
+    const read = await request(httpServer(app))
+      .get(`${allocationBatchesPath(scenario.activityId)}/${prepared.body.data.batch.batchId}`)
+      .set('Authorization', managerAuth);
+    expect(read.status).toBe(200);
+
+    const identities = await prisma.activityParticipationIdentity.findMany({
+      where: { activityId: scenario.activityId },
+      select: { id: true, memberId: true },
+    });
+    const identityByMember = new Map(
+      identities.map((identity) => [identity.memberId, identity.id]),
+    );
+    const committedCandidates = committed.body.data.batch.candidates as Array<{
+      participationIdentityId: string;
+    }>;
+    const candidateByIdentity = new Map(
+      committedCandidates.map((candidate) => [candidate.participationIdentityId, candidate]),
+    );
+    expect(candidateByIdentity.get(identityByMember.get(secondA.memberId)!)).toEqual(
+      expect.objectContaining({
+        qualificationScore: '90.0000',
+        resultCode: 'waitlisted',
+        waitlistRank: 1,
+        waitlistPositionId: scenario.positionId,
+      }),
+    );
+    expect(candidateByIdentity.get(identityByMember.get(secondB.memberId)!)).toEqual(
+      expect.objectContaining({
+        qualificationScore: '70.0000',
+        resultCode: 'waitlisted',
+        waitlistRank: 1,
+        waitlistPositionId: secondPosition.id,
+      }),
+    );
+    expect(
+      read.body.data.candidates.find(
+        (candidate: { participationIdentityId: string }) =>
+          candidate.participationIdentityId === identityByMember.get(secondB.memberId),
+      ),
+    ).toEqual(expect.objectContaining({ waitlistPositionId: secondPosition.id, waitlistRank: 1 }));
+  });
+
+  it('uses only submitted preference fallthrough during initial session-level allocation', async () => {
+    const scenario = await createCandidateScenario({
+      allocationModeCode: 'qualification_rank',
+      capacity: 2,
+    });
+    await prisma.activitySession.update({
+      where: { id: scenario.sessionId },
+      data: { capacity: 2 },
+    });
+    await prisma.activityCapacityBucket.updateMany({
+      where: {
+        activityId: scenario.activityId,
+        OR: [
+          { scopeTypeCode: 'activity_person', scopeId: scenario.activityId },
+          { scopeTypeCode: 'session_participation', scopeId: scenario.sessionId },
+        ],
+      },
+      data: { capacity: 2 },
+    });
+    const fallbackPosition = await prisma.activitySessionPosition.create({
+      data: {
+        activityId: scenario.activityId,
+        sessionId: scenario.sessionId,
+        code: `allocation-fallback-position-${sequence}`,
+        name: `Allocation Fallback Position ${sequence}`,
+        attendanceRoleCode: 'volunteer',
+        capacity: 1,
+      },
+      select: { id: true },
+    });
+    await prisma.activityCapacityBucket.create({
+      data: {
+        activityId: scenario.activityId,
+        scopeTypeCode: 'position_participation',
+        scopeId: fallbackPosition.id,
+        capacity: 1,
+      },
+    });
+    const first = await createActiveApplicant('fallback-first', 'L2');
+    const ruleSet = await prisma.activityQualificationRuleSet.create({
+      data: {
+        activityId: scenario.activityId,
+        version: 1,
+        statusCode: 'draft',
+        rules: {
+          create: {
+            ruleTypeCode: 'grade',
+            enforcementCode: 'warn',
+            operator: 'in',
+            valueJson: { codes: ['L2'] },
+            warnScore: 10,
+            sortOrder: 1,
+          },
+        },
+      },
+      select: { id: true },
+    });
+    await prisma.activityQualificationRuleSet.update({
+      where: { id: ruleSet.id },
+      data: { statusCode: 'active' },
+    });
+    const firstSubmitted = await request(httpServer(app))
+      .post(registrationPath(scenario.activityId))
+      .set('Authorization', first.auth)
+      .send({
+        operationKey: `batch4-fallback-first-${sequence}`,
+        formVersion: null,
+        answers: [],
+        preferences: [{ sessionId: scenario.sessionId, positionIds: [scenario.positionId] }],
+      });
+    const secondSubmitted = await request(httpServer(app))
+      .post(registrationPath(scenario.activityId))
+      .set('Authorization', applicantAuth)
+      .send({
+        operationKey: `batch4-fallback-second-${sequence}`,
+        formVersion: null,
+        answers: [],
+        preferences: [
+          {
+            sessionId: scenario.sessionId,
+            positionIds: [scenario.positionId, fallbackPosition.id],
+          },
+        ],
+      });
+    expect(firstSubmitted.status).toBe(201);
+    expect(secondSubmitted.status).toBe(201);
+    await prisma.activity.update({
+      where: { id: scenario.activityId },
+      data: { registrationDeadline: new Date('2020-01-01T00:00:00.000Z') },
+    });
+    const prepared = await request(httpServer(app))
+      .post(allocationBatchesPath(scenario.activityId))
+      .set('Authorization', managerAuth)
+      .send({
+        operationKey: `batch4-fallback-prepare-${sequence}`,
+        sessionId: scenario.sessionId,
+      });
+    expect(prepared.status).toBe(201);
+    const committed = await request(httpServer(app))
+      .post(
+        `${allocationBatchesPath(scenario.activityId)}/${prepared.body.data.batch.batchId}/commit`,
+      )
+      .set('Authorization', managerAuth)
+      .send({ operationKey: `batch4-fallback-commit-${sequence}` });
+    expect(committed.status).toBe(200);
+    const identity = await prisma.activityParticipationIdentity.findFirstOrThrow({
+      where: { activityId: scenario.activityId, memberId: applicantMemberId },
+      select: { currentStatusCode: true, currentPositionId: true },
+    });
+    expect(identity).toEqual(
+      expect.objectContaining({
+        currentStatusCode: 'pass',
+        currentPositionId: fallbackPosition.id,
+      }),
+    );
+  });
+
+  it('promotes only the same persisted waitlist position after a committed allocation cancellation', async () => {
+    const scenario = await createCandidateScenario({ allocationModeCode: 'qualification_rank' });
+    await prisma.activity.update({ where: { id: scenario.activityId }, data: { capacity: 2 } });
+    await prisma.activitySession.update({
+      where: { id: scenario.sessionId },
+      data: { capacity: 2 },
+    });
+    await prisma.activityCapacityBucket.updateMany({
+      where: {
+        activityId: scenario.activityId,
+        OR: [
+          { scopeTypeCode: 'activity_person', scopeId: scenario.activityId },
+          { scopeTypeCode: 'session_participation', scopeId: scenario.sessionId },
+        ],
+      },
+      data: { capacity: 2 },
+    });
+    const secondPosition = await prisma.activitySessionPosition.create({
+      data: {
+        activityId: scenario.activityId,
+        sessionId: scenario.sessionId,
+        code: `allocation-promotion-secondary-${sequence}`,
+        name: `Allocation Promotion Secondary ${sequence}`,
+        attendanceRoleCode: 'volunteer',
+        capacity: 1,
+      },
+      select: { id: true },
+    });
+    await prisma.activityCapacityBucket.create({
+      data: {
+        activityId: scenario.activityId,
+        scopeTypeCode: 'position_participation',
+        scopeId: secondPosition.id,
+        capacity: 1,
+      },
+    });
+    const ruleSet = await prisma.activityQualificationRuleSet.create({
+      data: {
+        activityId: scenario.activityId,
+        version: 1,
+        statusCode: 'draft',
+        rules: {
+          create: [
+            {
+              ruleTypeCode: 'grade',
+              enforcementCode: 'warn',
+              operator: 'in',
+              valueJson: { codes: ['L4'] },
+              warnScore: 10,
+              sortOrder: 1,
+            },
+            {
+              ruleTypeCode: 'grade',
+              enforcementCode: 'warn',
+              operator: 'in',
+              valueJson: { codes: ['L3', 'L4'] },
+              warnScore: 10,
+              sortOrder: 2,
+            },
+            {
+              ruleTypeCode: 'grade',
+              enforcementCode: 'warn',
+              operator: 'in',
+              valueJson: { codes: ['L2', 'L3', 'L4'] },
+              warnScore: 10,
+              sortOrder: 3,
+            },
+          ],
+        },
+      },
+      select: { id: true },
+    });
+    await prisma.activityQualificationRuleSet.update({
+      where: { id: ruleSet.id },
+      data: { statusCode: 'active' },
+    });
+    const [firstA, secondA, firstB, secondB] = await Promise.all([
+      createActiveApplicant('promotion-a-first', 'L4'),
+      createActiveApplicant('promotion-a-second', 'L3'),
+      createActiveApplicant('promotion-b-first', 'L2'),
+      createActiveApplicant('promotion-b-second', 'L1'),
+    ]);
+    const submissions = [
+      { applicant: firstA, positionId: scenario.positionId, key: 'a-first' },
+      { applicant: secondA, positionId: scenario.positionId, key: 'a-second' },
+      { applicant: firstB, positionId: secondPosition.id, key: 'b-first' },
+      { applicant: secondB, positionId: secondPosition.id, key: 'b-second' },
+    ];
+    const registrationByMember = new Map<string, string>();
+    for (const submission of submissions) {
+      const submitted = await request(httpServer(app))
+        .post(registrationPath(scenario.activityId))
+        .set('Authorization', submission.applicant.auth)
+        .send({
+          operationKey: `batch4-promotion-${submission.key}-${sequence}`,
+          formVersion: null,
+          answers: [],
+          preferences: [{ sessionId: scenario.sessionId, positionIds: [submission.positionId] }],
+        });
+      expect(submitted.status).toBe(201);
+      registrationByMember.set(
+        submission.applicant.memberId,
+        submitted.body.data.registrationId as string,
+      );
+    }
+    await prisma.activity.update({
+      where: { id: scenario.activityId },
+      data: { registrationDeadline: new Date('2020-01-01T00:00:00.000Z') },
+    });
+    const prepared = await request(httpServer(app))
+      .post(allocationBatchesPath(scenario.activityId))
+      .set('Authorization', managerAuth)
+      .send({
+        operationKey: `batch4-promotion-prepare-${sequence}`,
+        sessionId: scenario.sessionId,
+      });
+    expect(prepared.status).toBe(201);
+    const batchId = prepared.body.data.batch.batchId as string;
+    const committed = await request(httpServer(app))
+      .post(`${allocationBatchesPath(scenario.activityId)}/${batchId}/commit`)
+      .set('Authorization', managerAuth)
+      .send({ operationKey: `batch4-promotion-commit-${sequence}` });
     expect(committed.status).toBe(200);
 
     const identities = await prisma.activityParticipationIdentity.findMany({
       where: { activityId: scenario.activityId },
       select: { id: true, memberId: true },
     });
-    const identityByMember = new Map(identities.map((identity) => [identity.memberId, identity.id]));
+    const identityByMember = new Map(
+      identities.map((identity) => [identity.memberId, identity.id]),
+    );
+    const candidates = await prisma.activityAllocationCandidate.findMany({
+      where: { allocationBatchId: batchId },
+      select: {
+        participationIdentityId: true,
+        resultCode: true,
+        waitlistRank: true,
+        waitlistPositionId: true,
+      },
+    });
     const candidateByIdentity = new Map(
-      committed.body.data.batch.candidates.map(
-        (candidate: { participationIdentityId: string }) => [candidate.participationIdentityId, candidate],
-      ),
+      candidates.map((candidate) => [candidate.participationIdentityId, candidate]),
     );
     expect(candidateByIdentity.get(identityByMember.get(secondA.memberId)!)).toEqual(
-      expect.objectContaining({ qualificationScore: '90.0000', resultCode: 'waitlisted', waitlistRank: 1 }),
+      expect.objectContaining({
+        resultCode: 'waitlisted',
+        waitlistRank: 1,
+        waitlistPositionId: scenario.positionId,
+      }),
     );
     expect(candidateByIdentity.get(identityByMember.get(secondB.memberId)!)).toEqual(
-      expect.objectContaining({ qualificationScore: '70.0000', resultCode: 'waitlisted', waitlistRank: 1 }),
+      expect.objectContaining({
+        resultCode: 'waitlisted',
+        waitlistRank: 1,
+        waitlistPositionId: secondPosition.id,
+      }),
+    );
+
+    const cancelled = await request(httpServer(app))
+      .patch(`/api/app/v1/my/registrations/${registrationByMember.get(firstA.memberId)!}/cancel`)
+      .set('Authorization', firstA.auth)
+      .send({ cancelReason: 'free A allocation slot' });
+    expect(cancelled.status).toBe(200);
+
+    const after = await prisma.activityParticipationIdentity.findMany({
+      where: { activityId: scenario.activityId },
+      select: { memberId: true, currentStatusCode: true, currentPositionId: true },
+    });
+    const afterByMember = new Map(after.map((identity) => [identity.memberId, identity]));
+    expect(afterByMember.get(firstA.memberId)).toEqual(
+      expect.objectContaining({ currentStatusCode: 'cancelled', currentPositionId: null }),
+    );
+    expect(afterByMember.get(secondA.memberId)).toEqual(
+      expect.objectContaining({
+        currentStatusCode: 'pass',
+        currentPositionId: scenario.positionId,
+      }),
+    );
+    expect(afterByMember.get(firstB.memberId)).toEqual(
+      expect.objectContaining({ currentStatusCode: 'pass', currentPositionId: secondPosition.id }),
+    );
+    expect(afterByMember.get(secondB.memberId)).toEqual(
+      expect.objectContaining({ currentStatusCode: 'waitlisted', currentPositionId: null }),
     );
   });
 
+  it('red-first: void fails closed with zero writes when a committed candidate queue position drifts', async () => {
+    const scenario = await createCandidateScenario({ allocationModeCode: 'qualification_rank' });
+    const alternatePosition = await prisma.activitySessionPosition.create({
+      data: {
+        activityId: scenario.activityId,
+        sessionId: scenario.sessionId,
+        code: `allocation-void-drift-alternate-${sequence}`,
+        name: `Allocation Void Drift Alternate ${sequence}`,
+        attendanceRoleCode: 'volunteer',
+        capacity: 1,
+      },
+      select: { id: true },
+    });
+    const second = await createActiveApplicant('void-drift-second', 'L2');
+    const ruleSet = await prisma.activityQualificationRuleSet.create({
+      data: {
+        activityId: scenario.activityId,
+        version: 1,
+        statusCode: 'draft',
+        rules: {
+          create: {
+            ruleTypeCode: 'grade',
+            enforcementCode: 'warn',
+            operator: 'in',
+            valueJson: { codes: ['L1'] },
+            warnScore: 10,
+            sortOrder: 1,
+          },
+        },
+      },
+      select: { id: true },
+    });
+    await prisma.activityQualificationRuleSet.update({
+      where: { id: ruleSet.id },
+      data: { statusCode: 'active' },
+    });
+    const command = {
+      formVersion: null,
+      answers: [],
+      preferences: [{ sessionId: scenario.sessionId, positionIds: [scenario.positionId] }],
+    };
+    const firstSubmitted = await request(httpServer(app))
+      .post(registrationPath(scenario.activityId))
+      .set('Authorization', applicantAuth)
+      .send({ ...command, operationKey: `batch4-void-drift-first-${sequence}` });
+    const secondSubmitted = await request(httpServer(app))
+      .post(registrationPath(scenario.activityId))
+      .set('Authorization', second.auth)
+      .send({ ...command, operationKey: `batch4-void-drift-second-${sequence}` });
+    expect(firstSubmitted.status).toBe(201);
+    expect(secondSubmitted.status).toBe(201);
+    await prisma.activity.update({
+      where: { id: scenario.activityId },
+      data: { registrationDeadline: new Date('2020-01-01T00:00:00.000Z') },
+    });
+    const prepared = await request(httpServer(app))
+      .post(allocationBatchesPath(scenario.activityId))
+      .set('Authorization', managerAuth)
+      .send({
+        operationKey: `batch4-void-drift-prepare-${sequence}`,
+        sessionId: scenario.sessionId,
+      });
+    expect(prepared.status).toBe(201);
+    const batchId = prepared.body.data.batch.batchId as string;
+    const committed = await request(httpServer(app))
+      .post(`${allocationBatchesPath(scenario.activityId)}/${batchId}/commit`)
+      .set('Authorization', managerAuth)
+      .send({ operationKey: `batch4-void-drift-commit-${sequence}` });
+    expect(committed.status).toBe(200);
+
+    const waitlistedIdentity = await prisma.activityParticipationIdentity.findFirstOrThrow({
+      where: { activityId: scenario.activityId, memberId: second.memberId },
+      select: { id: true, currentRevision: true, currentStatusCode: true },
+    });
+    expect(waitlistedIdentity.currentStatusCode).toBe('waitlisted');
+    const waitlistedCandidate = await prisma.activityAllocationCandidate.findFirstOrThrow({
+      where: { allocationBatchId: batchId, participationIdentityId: waitlistedIdentity.id },
+      select: { id: true, waitlistPositionId: true, waitlistRank: true },
+    });
+    expect(waitlistedCandidate).toEqual(
+      expect.objectContaining({ waitlistPositionId: scenario.positionId, waitlistRank: 1 }),
+    );
+
+    // This is an intentional downstream-drift fixture: it stays D87-FK-valid but no longer
+    // agrees with the immutable current waitlist revision. The HTTP void must refuse to rewrite.
+    await prisma.activityAllocationCandidate.update({
+      where: { id: waitlistedCandidate.id },
+      data: { waitlistPositionId: alternatePosition.id },
+    });
+    const before = await Promise.all([
+      prisma.activityAllocationBatch.findUniqueOrThrow({
+        where: { id: batchId },
+        select: { statusCode: true, voidReason: true, voidedAt: true },
+      }),
+      prisma.activityParticipationRevision.count({ where: { identityId: waitlistedIdentity.id } }),
+      prisma.capacityReservation.count({
+        where: { identityId: waitlistedIdentity.id, status: 'active' },
+      }),
+    ]);
+
+    const voided = await request(httpServer(app))
+      .post(`${allocationBatchesPath(scenario.activityId)}/${batchId}/void`)
+      .set('Authorization', managerAuth)
+      .send({
+        operationKey: `batch4-void-drift-void-${sequence}`,
+        reason: 'must not overwrite drift',
+      });
+    expect(voided.status).toBe(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.httpStatus);
+    expect(voided.body.code).toBe(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.code);
+
+    const after = await Promise.all([
+      prisma.activityAllocationBatch.findUniqueOrThrow({
+        where: { id: batchId },
+        select: { statusCode: true, voidReason: true, voidedAt: true },
+      }),
+      prisma.activityParticipationRevision.count({ where: { identityId: waitlistedIdentity.id } }),
+      prisma.capacityReservation.count({
+        where: { identityId: waitlistedIdentity.id, status: 'active' },
+      }),
+    ]);
+    expect(after).toEqual(before);
+  });
+
+  it('fails closed with zero void writes when a committed capacity bucket drifts', async () => {
+    const scenario = await createCandidateScenario({ allocationModeCode: 'qualification_rank' });
+    const submitted = await request(httpServer(app))
+      .post(registrationPath(scenario.activityId))
+      .set('Authorization', applicantAuth)
+      .send({
+        operationKey: `batch4-void-bucket-drift-submit-${sequence}`,
+        formVersion: null,
+        answers: [],
+        preferences: [{ sessionId: scenario.sessionId, positionIds: [scenario.positionId] }],
+      });
+    expect(submitted.status).toBe(201);
+    await prisma.activity.update({
+      where: { id: scenario.activityId },
+      data: { registrationDeadline: new Date('2020-01-01T00:00:00.000Z') },
+    });
+    const prepared = await request(httpServer(app))
+      .post(allocationBatchesPath(scenario.activityId))
+      .set('Authorization', managerAuth)
+      .send({
+        operationKey: `batch4-void-bucket-drift-prepare-${sequence}`,
+        sessionId: scenario.sessionId,
+        positionId: scenario.positionId,
+      });
+    expect(prepared.status).toBe(201);
+    const batchId = prepared.body.data.batch.batchId as string;
+    const committed = await request(httpServer(app))
+      .post(`${allocationBatchesPath(scenario.activityId)}/${batchId}/commit`)
+      .set('Authorization', managerAuth)
+      .send({ operationKey: `batch4-void-bucket-drift-commit-${sequence}` });
+    expect(committed.status).toBe(200);
+    const projection = await prisma.activityAllocationApplicationProjection.findFirstOrThrow({
+      where: { allocationBatchId: batchId },
+      select: { positionBucketId: true, participationIdentityId: true },
+    });
+    expect(projection.positionBucketId).toEqual(expect.any(String));
+    // This is an FK-valid downstream drift. Void must stop before releasing reservations or
+    // appending a pending revision when the committed bucket no longer reconciles to live rows.
+    await prisma.activityCapacityBucket.update({
+      where: { id: projection.positionBucketId! },
+      data: { occupied: 0 },
+    });
+    const before = await Promise.all([
+      prisma.activityAllocationBatch.findUniqueOrThrow({
+        where: { id: batchId },
+        select: { statusCode: true, voidReason: true, voidedAt: true },
+      }),
+      prisma.activityParticipationRevision.count({
+        where: { identityId: projection.participationIdentityId },
+      }),
+      prisma.capacityReservation.count({
+        where: { identityId: projection.participationIdentityId, status: 'active' },
+      }),
+    ]);
+    const voided = await request(httpServer(app))
+      .post(`${allocationBatchesPath(scenario.activityId)}/${batchId}/void`)
+      .set('Authorization', managerAuth)
+      .send({
+        operationKey: `batch4-void-bucket-drift-void-${sequence}`,
+        reason: 'bucket counter no longer matches live reservations',
+      });
+    expect(voided.status).toBe(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.httpStatus);
+    expect(voided.body.code).toBe(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.code);
+    const after = await Promise.all([
+      prisma.activityAllocationBatch.findUniqueOrThrow({
+        where: { id: batchId },
+        select: { statusCode: true, voidReason: true, voidedAt: true },
+      }),
+      prisma.activityParticipationRevision.count({
+        where: { identityId: projection.participationIdentityId },
+      }),
+      prisma.capacityReservation.count({
+        where: { identityId: projection.participationIdentityId, status: 'active' },
+      }),
+    ]);
+    expect(after).toEqual(before);
+  });
+
   it('accepts a scoped invitation through the canonical command and first_come allocation chain', async () => {
-    const scenario = await createCandidateScenario({ allocationModeCode: 'first_come', capacity: 1 });
+    const scenario = await createCandidateScenario({
+      allocationModeCode: 'first_come',
+      capacity: 1,
+    });
     await prisma.activity.update({
       where: { id: scenario.activityId },
       data: { isPublicRegistration: false },
@@ -608,6 +1864,64 @@ describe('activity batch4 allocation runtime', () => {
       }),
     );
   });
+
+  it.each(['qualification_rank', 'lottery'] as const)(
+    'keeps invitation acceptance pending until a %s allocation batch is prepared',
+    async (allocationModeCode) => {
+      const scenario = await createCandidateScenario({ allocationModeCode });
+      await prisma.activity.update({
+        where: { id: scenario.activityId },
+        data: { isPublicRegistration: false },
+      });
+      const created = await request(httpServer(app))
+        .post(`/api/app/v1/my/managed-activities/${scenario.activityId}/invitations`)
+        .set('Authorization', managerAuth)
+        .send({
+          memberId: applicantMemberId,
+          sessionId: scenario.sessionId,
+          positionId: scenario.positionId,
+          expiresAt: '2099-12-31T23:59:59.000Z',
+        });
+      expect(created.status).toBe(201);
+      const invitationId = created.body.data.invitationId as string;
+      const accepted = await request(httpServer(app))
+        .post(`/api/app/v1/my/activity-invitations/${invitationId}/accept`)
+        .set('Authorization', applicantAuth)
+        .send({
+          operationKey: `batch4-invitation-${allocationModeCode}-accept-${sequence}`,
+          formVersion: null,
+          answers: [],
+          preferences: [{ sessionId: scenario.sessionId, positionIds: [scenario.positionId] }],
+        });
+      expect(accepted.status).toBe(201);
+      const identity = await prisma.activityParticipationIdentity.findFirstOrThrow({
+        where: { activityId: scenario.activityId, memberId: applicantMemberId },
+        select: { currentStatusCode: true, currentPositionId: true, capacityReservationId: true },
+      });
+      expect(identity).toEqual({
+        currentStatusCode: 'pending',
+        currentPositionId: null,
+        capacityReservationId: null,
+      });
+      expect(
+        await prisma.activityAllocationBatch.count({ where: { activityId: scenario.activityId } }),
+      ).toBe(0);
+      await prisma.activity.update({
+        where: { id: scenario.activityId },
+        data: { registrationDeadline: new Date('2020-01-01T00:00:00.000Z') },
+      });
+      const prepared = await request(httpServer(app))
+        .post(allocationBatchesPath(scenario.activityId))
+        .set('Authorization', managerAuth)
+        .send({
+          operationKey: `batch4-invitation-${allocationModeCode}-prepare-${sequence}`,
+          sessionId: scenario.sessionId,
+          positionId: scenario.positionId,
+        });
+      expect(prepared.status).toBe(201);
+      expect(prepared.body.data.batch.modeCode).toBe(allocationModeCode);
+    },
+  );
 
   it('keeps lottery seed concealed at prepare, verifies its commitment at commit, and replays commit exactly', async () => {
     const scenario = await createCandidateScenario({ allocationModeCode: 'lottery', capacity: 1 });
@@ -701,5 +2015,91 @@ describe('activity batch4 allocation runtime', () => {
       .send(commitBody);
     expect(commitReplay.status).toBe(200);
     expect(commitReplay.body.data).toEqual(committed.body.data);
+  });
+
+  it('fails closed with zero commit writes when a lottery commitment drifts after prepare', async () => {
+    const scenario = await createCandidateScenario({ allocationModeCode: 'lottery', capacity: 1 });
+    const submitted = await request(httpServer(app))
+      .post(registrationPath(scenario.activityId))
+      .set('Authorization', applicantAuth)
+      .send({
+        operationKey: `batch4-lottery-commitment-drift-submit-${sequence}`,
+        formVersion: null,
+        answers: [],
+        preferences: [{ sessionId: scenario.sessionId, positionIds: [scenario.positionId] }],
+      });
+    expect(submitted.status).toBe(201);
+    await prisma.activity.update({
+      where: { id: scenario.activityId },
+      data: { registrationDeadline: new Date('2020-01-01T00:00:00.000Z') },
+    });
+    const prepared = await request(httpServer(app))
+      .post(allocationBatchesPath(scenario.activityId))
+      .set('Authorization', managerAuth)
+      .send({
+        operationKey: `batch4-lottery-commitment-drift-prepare-${sequence}`,
+        sessionId: scenario.sessionId,
+        positionId: scenario.positionId,
+      });
+    expect(prepared.status).toBe(201);
+    const batchId = prepared.body.data.batch.batchId as string;
+    await prisma.activityAllocationBatch.update({
+      where: { id: batchId },
+      data: {
+        randomCommitment: createHash('sha256')
+          .update(`wrong lottery commitment ${sequence}`, 'utf8')
+          .digest('hex'),
+      },
+    });
+    const before = await Promise.all([
+      prisma.activityAllocationBatch.findUniqueOrThrow({
+        where: { id: batchId },
+        select: {
+          statusCode: true,
+          randomCommitment: true,
+          randomSeedReveal: true,
+          committedAt: true,
+        },
+      }),
+      prisma.activityAllocationCandidate.findMany({
+        where: { allocationBatchId: batchId },
+        select: { resultCode: true, lotteryOrder: true, waitlistRank: true },
+      }),
+      prisma.activityAllocationApplicationProjection.count({
+        where: { allocationBatchId: batchId },
+      }),
+      prisma.capacityReservation.count({
+        where: { activityId: scenario.activityId, status: 'active' },
+      }),
+    ]);
+
+    const commit = await request(httpServer(app))
+      .post(`${allocationBatchesPath(scenario.activityId)}/${batchId}/commit`)
+      .set('Authorization', managerAuth)
+      .send({ operationKey: `batch4-lottery-commitment-drift-commit-${sequence}` });
+    expect(commit.status).toBe(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.httpStatus);
+    expect(commit.body.code).toBe(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.code);
+    const after = await Promise.all([
+      prisma.activityAllocationBatch.findUniqueOrThrow({
+        where: { id: batchId },
+        select: {
+          statusCode: true,
+          randomCommitment: true,
+          randomSeedReveal: true,
+          committedAt: true,
+        },
+      }),
+      prisma.activityAllocationCandidate.findMany({
+        where: { allocationBatchId: batchId },
+        select: { resultCode: true, lotteryOrder: true, waitlistRank: true },
+      }),
+      prisma.activityAllocationApplicationProjection.count({
+        where: { allocationBatchId: batchId },
+      }),
+      prisma.capacityReservation.count({
+        where: { activityId: scenario.activityId, status: 'active' },
+      }),
+    ]);
+    expect(after).toEqual(before);
   });
 });

@@ -69,7 +69,7 @@
 | `meta` | 1 | `meta.resolve.label` |
 | `sms-send-log` | 1 | `sms-send-log.read.list` |
 
-### controller × surface 对照(94 个 @Controller)
+### controller × surface 对照(95 个 @Controller)
 
 > 权威源:`src/**/*.controller.ts` 的 `@Controller(...)` 装饰器。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 鉴权模式(R / A / P)与业务语义属人类知识,见本文件标记之外的章节。
@@ -127,7 +127,7 @@
 | `admin/v1/team-join/cycles` | `src/modules/team-join/team-join-cycles.controller.ts` |
 | `admin/v1/users` | `src/modules/users/users.controller.ts` |
 
-#### app/v1(23 个 controller)
+#### app/v1(24 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
@@ -151,6 +151,7 @@
 | `app/v1/my/managed-activities/:activityId` | `src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts` |
 | `app/v1/my/managed-activities/:activityId` | `src/modules/activity-registrations/controllers/app-managed-activity-onsite-participations.controller.ts` |
 | `app/v1/my/managed-activities/:activityId` | `src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts` |
+| `app/v1/my/managed-activities/:activityId/allocation-batches` | `src/modules/activity-registrations/controllers/app-managed-activity-allocation-batches.controller.ts` |
 | `app/v1/my/managed-activities/:activityId/positions` | `src/modules/activities/controllers/app-managed-activity-positions.controller.ts` |
 | `app/v1/my/managed-activities/:activityId/registrations` | `src/modules/activity-registrations/controllers/app-managed-activity-registrations.controller.ts` |
 | `app/v1/notifications` | `src/modules/notifications/notification-app.controller.ts` |

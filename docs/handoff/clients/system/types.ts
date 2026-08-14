@@ -2,7 +2,7 @@
 // 真相源:后端 live /api/docs-json;本文件派生自 docs/handoff/openapi.json 快照。
 // surface: System 系统面
 // generatorVersion: 1.0.0
-// inputDigest: sha256:d88934361521b2775cd66626de6a4a9575dde99901851316d61e366668a57acb
+// inputDigest: sha256:00f5479f9d6fc06868beea01a941a609bc79b597b4946a37c13fd4e6e3829998
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, PageResultDto } from '../shared/types';

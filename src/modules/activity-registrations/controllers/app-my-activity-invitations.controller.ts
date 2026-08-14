@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
+  ApiWrappedCreatedResponse,
   ApiWrappedOkResponse,
 } from '../../../common/decorators/api-response.decorator';
 import {
@@ -19,9 +20,7 @@ import {
   AppMyActivityInvitationParamsDto,
   DeclineAppMyActivityInvitationDto,
 } from '../dto/app/app-activity-invitation.dto';
-import {
-  AppActivityRegistrationCommandDto,
-} from '../dto/app/app-activity-registration-command.dto';
+import { AppActivityRegistrationCommandDto } from '../dto/app/app-activity-registration-command.dto';
 import { AppActivityRegistrationCommandReceiptDto } from '../dto/app/create-app-activity-registration.dto';
 import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 
@@ -43,7 +42,7 @@ export class AppMyActivityInvitationsController {
   })
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'App 队员接受自己的未过期 pending 邀请并提交 canonical 报名 [auth]' })
-  @ApiWrappedOkResponse(AppActivityRegistrationCommandReceiptDto)
+  @ApiWrappedCreatedResponse(AppActivityRegistrationCommandReceiptDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,

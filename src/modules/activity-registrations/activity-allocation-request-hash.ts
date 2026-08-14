@@ -116,7 +116,9 @@ export function createCandidateSnapshotHash(input: {
     modeCode: input.modeCode,
     algorithmVersionCode: input.algorithmVersionCode,
     candidates: [...input.candidates]
-      .sort((left, right) => compareUtf8(left.participationIdentityId, right.participationIdentityId))
+      .sort((left, right) =>
+        compareUtf8(left.participationIdentityId, right.participationIdentityId),
+      )
       .map((candidate) => ({
         participationIdentityId: candidate.participationIdentityId,
         registrationId: candidate.registrationId,

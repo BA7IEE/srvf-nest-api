@@ -542,7 +542,13 @@ export class RegistrationCommandService {
       tx: input.tx,
     });
 
-    if (activity.allocationModeCode === 'first_come') {
+    if (
+      activity.allocationModeCode === 'first_come' &&
+      (await this.allocations.hasInitializedCapacityTopologyInTransactionTrusted(
+        input.tx,
+        input.activityId,
+      ))
+    ) {
       await this.allocations.applyFirstComeAfterSubmissionInTransactionTrusted(input.tx, {
         activity,
         memberId: input.memberId,

@@ -10,9 +10,7 @@ import { AuthzService } from '../authz/authz.service';
 import { RbacService } from '../permissions/rbac.service';
 import { ActivityInvitationAuditRecorder } from './activity-invitation-audit-recorder';
 import { hashActivityInvitationDecline } from './activity-invitation-request-hash';
-import {
-  hashRegistrationCommand,
-} from './registration-command-hash';
+import { hashRegistrationCommand } from './registration-command-hash';
 import {
   RegistrationCommandService,
   type RegistrationCommandReceipt,

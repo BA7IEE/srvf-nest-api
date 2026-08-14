@@ -4,6 +4,7 @@ import type { Request } from 'express';
 
 import {
   ApiBizErrorResponse,
+  ApiWrappedCreatedResponse,
   ApiWrappedOkResponse,
 } from '../../../common/decorators/api-response.decorator';
 import {
@@ -44,7 +45,7 @@ export class AppManagedActivityAllocationBatchesController {
   })
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '负责人冻结资格排序或抽签候选批次 [auth]' })
-  @ApiWrappedOkResponse(AppActivityAllocationCommandReceiptDto)
+  @ApiWrappedCreatedResponse(AppActivityAllocationCommandReceiptDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
@@ -93,7 +94,13 @@ export class AppManagedActivityAllocationBatchesController {
     @Req() req: Request,
   ): Promise<AppActivityAllocationCommandReceiptDto> {
     await this.assertAppAccess(user);
-    return this.allocations.commit(params.activityId, params.batchId, dto, user, this.auditMeta(req));
+    return this.allocations.commit(
+      params.activityId,
+      params.batchId,
+      dto,
+      user,
+      this.auditMeta(req),
+    );
   }
 
   @Post(':batchId/void')

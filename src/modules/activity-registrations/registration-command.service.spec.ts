@@ -130,6 +130,7 @@ function makeService(tx: ReturnType<typeof makeTx>, opts: { transactionError?: E
     appendSnapshots: jest.fn().mockResolvedValue(undefined),
   };
   const allocations = {
+    hasInitializedCapacityTopologyInTransactionTrusted: jest.fn().mockResolvedValue(false),
     applyFirstComeAfterSubmissionInTransactionTrusted: jest.fn().mockResolvedValue(undefined),
   };
   return {

@@ -48,6 +48,7 @@ type PrismaTx = Prisma.TransactionClient;
 type AllocationResultCode = 'allocated' | 'waitlisted' | 'not_selected';
 type AllocationCommandCode = 'prepare' | 'commit' | 'void';
 type QualificationModeCode = AllocationModeCode | 'first_come';
+type ReceiptBatchStatusCode = 'preparing' | 'committed' | 'voided';
 
 const ALLOCATION_ALGORITHM_VERSION = 'allocation-v1';
 const RESPONSE_SCHEMA_VERSION = 'allocation-command-response-v1';
@@ -95,6 +96,10 @@ type CandidateSource = {
   registrationCurrentRevision: number;
   registrationRevisionId: string;
   participationRevisionId: string;
+  participationRevisionStatusCode: string;
+  participationRevisionPositionId: string | null;
+  participationRevisionWaitlistRank: number | null;
+  participationRevisionAllocationBatchId: string | null;
   acceptedAt: Date;
   preferenceSnapshot: Prisma.JsonValue | null;
 };
@@ -115,6 +120,9 @@ type FrozenCandidate = CandidateSource &
 
 type PersistedCandidate = {
   allocationCandidateId: string;
+  activityId: string;
+  sessionId: string;
+  waitlistPositionId: string | null;
   participationIdentityId: string;
   registrationId: string;
   registrationRevisionId: string;
@@ -215,6 +223,9 @@ type PromotionWaitlistCandidate = {
 };
 
 type LockedBatchPromotionCandidate = PromotionWaitlistCandidate & {
+  candidateActivityId: string;
+  candidateSessionId: string;
+  waitlistPositionId: string | null;
   batchModeCode: string;
   batchStatusCode: string;
   batchPositionId: string | null;
@@ -300,7 +311,13 @@ export class ActivityAllocationService {
       return await this.prisma.$transaction(async (tx) => {
         const activity = await this.lockActivity(tx, activityId);
         await this.assertManagedResponsibility(tx, activityId, currentUser);
-        const replay = await this.findReplay(tx, activityId, 'prepare', dto.operationKey, requestHash);
+        const replay = await this.findReplay(
+          tx,
+          activityId,
+          'prepare',
+          dto.operationKey,
+          requestHash,
+        );
         if (replay) return replay;
 
         if (!isAllocationMode(activity.allocationModeCode)) {
@@ -313,10 +330,11 @@ export class ActivityAllocationService {
           throw new BizException(BizCode.ACTIVITY_REGISTRATION_DEADLINE_PASSED);
         }
         await this.assertAllHistoricalBatchModes(tx, activityId, activity.allocationModeCode);
-
-        // Activity -> candidate identity/header/revision is the fixed allocation lock order.
-        const sources = await this.lockCandidateSources(tx, activityId, dto.sessionId);
         await this.assertTargetShape(tx, activityId, dto.sessionId, positionId);
+        await this.assertNoUnvoidedTargetBatch(tx, activityId, dto.sessionId, positionId);
+
+        // Activity -> target session/position -> batch -> candidate identity/header/revision is fixed.
+        const sources = await this.lockCandidateSources(tx, activityId, dto.sessionId);
         const selected = sources.filter(
           (source) =>
             source.identityStatusCode === 'pending' &&
@@ -387,6 +405,8 @@ export class ActivityAllocationService {
           await tx.activityAllocationCandidate.createMany({
             data: frozen.map((candidate) => ({
               allocationBatchId: created.id,
+              activityId: candidate.activityId,
+              sessionId: candidate.sessionId,
               participationIdentityId: candidate.participationIdentityId,
               registrationId: candidate.registrationId,
               registrationRevisionId: candidate.registrationRevisionId,
@@ -440,6 +460,21 @@ export class ActivityAllocationService {
   }
 
   /**
+   * D84's database default is a compatibility bridge for activities published before the
+   * capacity-bucket projection existed.  Under the already-held Activity root lock, an entirely
+   * absent topology means that legacy first_come registration retains its pre-allocation pending
+   * behavior.  A non-empty topology is deliberately not validated here: the CapacityReservation
+   * service must see and fail-close every partial or drifted topology itself.
+   */
+  async hasInitializedCapacityTopologyInTransactionTrusted(
+    tx: PrismaTx,
+    activityId: string,
+  ): Promise<boolean> {
+    const bucketCount = await tx.activityCapacityBucket.count({ where: { activityId } });
+    return bucketCount > 0;
+  }
+
+  /**
    * Canonical/invitation registration callers invoke this only after their common Form,
    * qualification, insurance, permanent-identity and pointer chain has been written under the
    * Activity root lock.  first_come never creates an allocation batch: its durable facts are the
@@ -474,7 +509,9 @@ export class ActivityAllocationService {
       (left, right) =>
         compareUtf8(left.sessionId, right.sessionId) || compareUtf8(left.id, right.id),
     )) {
-      const rows = await this.lockCandidateSources(tx, input.activity.id, target.sessionId, [target.id]);
+      const rows = await this.lockCandidateSources(tx, input.activity.id, target.sessionId, [
+        target.id,
+      ]);
       const source = rows[0];
       if (rows.length !== 1 || !source || source.memberId !== input.memberId) {
         throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
@@ -525,7 +562,10 @@ export class ActivityAllocationService {
             tx,
             source.id,
             selection.positionId,
-            selection.reservation as Extract<CapacityReservationReserveResult, { outcome: 'reserved' }>,
+            selection.reservation as Extract<
+              CapacityReservationReserveResult,
+              { outcome: 'reserved' }
+            >,
           )
         : null;
       const nextRevision = source.identityRevision + 1;
@@ -559,7 +599,8 @@ export class ActivityAllocationService {
           version: { increment: 1 },
         },
       });
-      if (updated.count !== 1) throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+      if (updated.count !== 1)
+        throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
       populationChanged ||= allocated;
       const outcomes = outcomesByRegistration.get(source.registrationId) ?? {
         allocated: 0,
@@ -619,7 +660,11 @@ export class ActivityAllocationService {
     if (modeCode !== 'first_come' && !isAllocationMode(modeCode)) {
       return { handled: false, activityTitle: activity.title, promoted: [] };
     }
-    const slots = await this.lockCancelledAllocationSlots(tx, input.activityId, input.registrationId);
+    const slots = await this.lockCancelledAllocationSlots(
+      tx,
+      input.activityId,
+      input.registrationId,
+    );
     const allocationSlots = slots.filter(
       (slot) =>
         slot.allocationBatchId !== null ||
@@ -651,7 +696,9 @@ export class ActivityAllocationService {
       const reservation = await this.capacityReservations.reserveInTransactionTrusted(tx, {
         activityId: input.activityId,
         memberId: candidate.memberId,
-        selections: [{ identityId: candidate.participationIdentityId, positionId: candidate.positionId }],
+        selections: [
+          { identityId: candidate.participationIdentityId, positionId: candidate.positionId },
+        ],
       });
       if (reservation.outcome !== 'reserved') continue;
       const anchors = await this.readReservationAnchors(
@@ -691,7 +738,8 @@ export class ActivityAllocationService {
           version: { increment: 1 },
         },
       });
-      if (updated.count !== 1) throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+      if (updated.count !== 1)
+        throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
       populationChanged = true;
       touchedRegistrations.add(candidate.registrationId);
       promoted.push({ registrationId: candidate.registrationId, memberId: candidate.memberId });
@@ -743,7 +791,13 @@ export class ActivityAllocationService {
       return await this.prisma.$transaction(async (tx) => {
         const activity = await this.lockActivity(tx, activityId);
         await this.assertManagedResponsibility(tx, activityId, currentUser);
-        const replay = await this.findReplay(tx, activityId, 'commit', dto.operationKey, requestHash);
+        const replay = await this.findReplay(
+          tx,
+          activityId,
+          'commit',
+          dto.operationKey,
+          requestHash,
+        );
         if (replay) return replay;
         if (!isAllocationMode(activity.allocationModeCode)) {
           throw new BizException(BizCode.ACTIVITY_ALLOCATION_MODE_INCONSISTENT);
@@ -761,7 +815,12 @@ export class ActivityAllocationService {
         const candidates = await this.lockPersistedCandidates(tx, batch.id);
         this.assertPreparingCandidates(batch, candidates);
         const candidateIds = candidates.map((candidate) => candidate.participationIdentityId);
-        const sources = await this.lockCandidateSources(tx, activityId, batch.sessionId, candidateIds);
+        const sources = await this.lockCandidateSources(
+          tx,
+          activityId,
+          batch.sessionId,
+          candidateIds,
+        );
         if (sources.length !== candidates.length) {
           throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
         }
@@ -790,7 +849,8 @@ export class ActivityAllocationService {
           if (
             qualification.qualificationSnapshotHash !== candidate.qualificationSnapshotHash ||
             qualification.qualificationScore !== decimalString(candidate.qualificationScore) ||
-            qualification.aggregateResultCode !== candidateQualificationResult(candidate.explanation)
+            qualification.aggregateResultCode !==
+              candidateQualificationResult(candidate.explanation)
           ) {
             throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
           }
@@ -798,8 +858,12 @@ export class ActivityAllocationService {
         }
 
         const lotteryOrderByCandidateId = new Map<string, number>();
-        const eligible = checked.filter((candidate) => candidate.frozen.aggregateResultCode !== 'fail');
-        const notSelected = checked.filter((candidate) => candidate.frozen.aggregateResultCode === 'fail');
+        const eligible = checked.filter(
+          (candidate) => candidate.frozen.aggregateResultCode !== 'fail',
+        );
+        const notSelected = checked.filter(
+          (candidate) => candidate.frozen.aggregateResultCode === 'fail',
+        );
         let allocationOrder: CheckedCandidate[];
         let lotterySeed: string | null = null;
         if (batch.modeCode === 'qualification_rank') {
@@ -828,8 +892,14 @@ export class ActivityAllocationService {
             throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
           }
           allocationOrder = [...eligible].sort((left, right) => {
-            const leftDraw = sha256Canonical({ seed: lotterySeed!, identityId: left.participationIdentityId });
-            const rightDraw = sha256Canonical({ seed: lotterySeed!, identityId: right.participationIdentityId });
+            const leftDraw = sha256Canonical({
+              seed: lotterySeed!,
+              identityId: left.participationIdentityId,
+            });
+            const rightDraw = sha256Canonical({
+              seed: lotterySeed!,
+              identityId: right.participationIdentityId,
+            });
             const draw = compareUtf8(leftDraw, rightDraw);
             return draw !== 0
               ? draw
@@ -843,7 +913,7 @@ export class ActivityAllocationService {
         }
 
         const now = new Date();
-        let nextWaitlistRank = 1;
+        const nextWaitlistRankByPosition = new Map<string, number>();
         let populationChanged = false;
         const touchedRegistrationIds = new Set<string>();
         for (const candidate of allocationOrder) {
@@ -854,8 +924,18 @@ export class ActivityAllocationService {
             preferenceSnapshot: candidate.preferenceSnapshot,
             batchPositionId: batch.positionId,
           });
-          const resultCode: AllocationResultCode = selection.reservation ? 'allocated' : 'waitlisted';
-          const waitlistRank = resultCode === 'waitlisted' ? nextWaitlistRank++ : null;
+          const resultCode: AllocationResultCode = selection.reservation
+            ? 'allocated'
+            : 'waitlisted';
+          let waitlistRank: number | null = null;
+          if (resultCode === 'waitlisted') {
+            const waitlistPositionId = selection.waitlistPositionId;
+            if (waitlistPositionId === null) {
+              throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+            }
+            waitlistRank = nextWaitlistRankByPosition.get(waitlistPositionId) ?? 1;
+            nextWaitlistRankByPosition.set(waitlistPositionId, waitlistRank + 1);
+          }
           await this.persistCommittedCandidate(tx, {
             activity,
             batch,
@@ -904,7 +984,8 @@ export class ActivityAllocationService {
             ...(lotterySeed === null ? {} : { randomSeedReveal: lotterySeed }),
           },
         });
-        if (committed.count !== 1) throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+        if (committed.count !== 1)
+          throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
         const receipt = await this.writeReceipt(tx, {
           activityId,
           allocationBatchId: batch.id,
@@ -987,8 +1068,7 @@ export class ActivityAllocationService {
             registrationIds.add(
               candidates.find(
                 (candidate) => candidate.allocationCandidateId === projection.allocationCandidateId,
-              )!
-                .registrationId,
+              )!.registrationId,
             );
             if (projection.appliedResultCode === 'allocated') {
               const identities = allocatedByMember.get(projection.memberId) ?? [];
@@ -997,8 +1077,8 @@ export class ActivityAllocationService {
               populationChanged = true;
             }
           }
-          for (const [memberId, identityIds] of [...allocatedByMember.entries()].sort((left, right) =>
-            compareUtf8(left[0], right[0]),
+          for (const [memberId, identityIds] of [...allocatedByMember.entries()].sort(
+            (left, right) => compareUtf8(left[0], right[0]),
           )) {
             await this.capacityReservations.releaseInTransactionTrusted(tx, {
               activityId,
@@ -1039,7 +1119,8 @@ export class ActivityAllocationService {
                 version: { increment: 1 },
               },
             });
-            if (cleared.count !== 1) throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+            if (cleared.count !== 1)
+              throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
           }
         } else {
           this.assertPreparingCandidates(batch, candidates);
@@ -1053,7 +1134,8 @@ export class ActivityAllocationService {
           where: { id: batch.id, statusCode: batch.statusCode },
           data: { statusCode: 'voided', voidReason: reason, voidedAt: now },
         });
-        if (voided.count !== 1) throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+        if (voided.count !== 1)
+          throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
         const receipt = await this.writeReceipt(tx, {
           activityId,
           allocationBatchId: batch.id,
@@ -1094,11 +1176,7 @@ export class ActivityAllocationService {
     return activity;
   }
 
-  private async lockBatch(
-    tx: PrismaTx,
-    activityId: string,
-    batchId: string,
-  ): Promise<LockedBatch> {
+  private async lockBatch(tx: PrismaTx, activityId: string, batchId: string): Promise<LockedBatch> {
     const rows = await tx.$queryRaw<LockedBatch[]>(Prisma.sql`
       SELECT
         "id", "activityId", "sessionId", "positionId", "modeCode", "candidateSnapshotHash",
@@ -1121,7 +1199,8 @@ export class ActivityAllocationService {
   ): Promise<PersistedCandidate[]> {
     return tx.$queryRaw<PersistedCandidate[]>(Prisma.sql`
       SELECT
-        "id" AS "allocationCandidateId", "participationIdentityId", "registrationId", "registrationRevisionId", "acceptedAt",
+        "id" AS "allocationCandidateId", "activityId", "sessionId", "waitlistPositionId",
+        "participationIdentityId", "registrationId", "registrationRevisionId", "acceptedAt",
         "qualificationSnapshotHash", "qualificationScore", "tieBreakKey", "lotteryOrder",
         "resultCode", "waitlistRank", "explanation"
       FROM "ActivityAllocationCandidate"
@@ -1185,7 +1264,8 @@ export class ActivityAllocationService {
     const rows = await tx.$queryRaw<LockedBatchPromotionCandidate[]>(Prisma.sql`
       SELECT
         c."participationIdentityId", c."registrationId", i."memberId", i."sessionId",
-        pr."positionId", c."allocationBatchId", c."waitlistRank", c."acceptedAt",
+        c."activityId" AS "candidateActivityId", c."sessionId" AS "candidateSessionId",
+        c."waitlistPositionId", pr."positionId", c."allocationBatchId", c."waitlistRank", c."acceptedAt",
         pr."preferenceSnapshot", i."currentRevision" AS "identityRevision",
         i."version" AS "identityVersion", i."currentStatusCode", i."currentPositionId",
         i."capacityReservationId", i."populationIncluded", b."modeCode" AS "batchModeCode",
@@ -1208,6 +1288,9 @@ export class ActivityAllocationService {
       WHERE c."allocationBatchId" = ${slot.allocationBatchId}
         AND c."resultCode" = 'waitlisted'
         AND c."waitlistRank" IS NOT NULL
+        AND c."activityId" = ${activityId}
+        AND c."sessionId" = ${slot.sessionId}
+        AND c."waitlistPositionId" IS NOT DISTINCT FROM ${slot.positionId}
         AND b."activityId" = ${activityId}
         AND b."sessionId" = ${slot.sessionId}
         AND b."statusCode" = 'committed'
@@ -1226,6 +1309,9 @@ export class ActivityAllocationService {
         (row) =>
           row.batchModeCode !== expectedModeCode ||
           row.batchStatusCode !== 'committed' ||
+          row.candidateActivityId !== activityId ||
+          row.candidateSessionId !== slot.sessionId ||
+          row.waitlistPositionId !== slot.positionId ||
           (row.batchPositionId !== null && row.batchPositionId !== slot.positionId) ||
           row.waitlistRank === null ||
           row.waitlistRank < 1 ||
@@ -1352,15 +1438,38 @@ export class ActivityAllocationService {
     for (const projection of input.projections) {
       const candidate = candidateById.get(projection.allocationCandidateId);
       const source = sourceById.get(projection.participationIdentityId);
+      const candidateWaitlisted = candidate?.resultCode === 'waitlisted';
+      const candidateClosedShape = candidateWaitlisted
+        ? candidate.waitlistRank !== null &&
+          candidate.waitlistRank >= 1 &&
+          candidate.waitlistPositionId !== null
+        : candidate?.resultCode === 'allocated' || candidate?.resultCode === 'not_selected'
+          ? candidate.waitlistRank === null && candidate.waitlistPositionId === null
+          : false;
+      const expectedRevisionPosition = candidateWaitlisted
+        ? (candidate?.waitlistPositionId ?? null)
+        : projection.positionId;
+      const expectedRevisionWaitlistRank = candidateWaitlisted
+        ? (candidate?.waitlistRank ?? null)
+        : null;
       if (
         !candidate ||
         !source ||
+        !candidateClosedShape ||
         seenIdentities.has(projection.participationIdentityId) ||
+        candidate.activityId !== input.batch.activityId ||
+        candidate.sessionId !== input.batch.sessionId ||
         candidate.participationIdentityId !== projection.participationIdentityId ||
         candidate.resultCode !== projection.appliedResultCode ||
         source.id !== projection.participationIdentityId ||
+        source.activityId !== input.batch.activityId ||
+        source.sessionId !== input.batch.sessionId ||
         source.memberId !== projection.memberId ||
         source.participationRevisionId !== projection.appliedParticipationRevisionId ||
+        source.participationRevisionStatusCode !== projection.appliedStatusCode ||
+        source.participationRevisionPositionId !== expectedRevisionPosition ||
+        source.participationRevisionWaitlistRank !== expectedRevisionWaitlistRank ||
+        source.participationRevisionAllocationBatchId !== input.batch.id ||
         source.identityStatusCode !== projection.appliedStatusCode ||
         source.currentPositionId !== projection.positionId ||
         source.capacityReservationId !== projection.expectedIdentityCapacityReservationId ||
@@ -1409,7 +1518,9 @@ export class ActivityAllocationService {
     activityId: string,
     projections: readonly LockedApplicationProjection[],
   ): Promise<void> {
-    const allocated = projections.filter((projection) => projection.appliedResultCode === 'allocated');
+    const allocated = projections.filter(
+      (projection) => projection.appliedResultCode === 'allocated',
+    );
     const reservationIds = [
       ...new Set(
         allocated.flatMap((projection) => [
@@ -1473,10 +1584,16 @@ export class ActivityAllocationService {
     }
   }
 
-  private assertPreparingCandidates(batch: LockedBatch, candidates: readonly PersistedCandidate[]): void {
+  private assertPreparingCandidates(
+    batch: LockedBatch,
+    candidates: readonly PersistedCandidate[],
+  ): void {
     if (
       candidates.some(
         (candidate) =>
+          candidate.activityId !== batch.activityId ||
+          candidate.sessionId !== batch.sessionId ||
+          candidate.waitlistPositionId !== null ||
           candidate.resultCode !== null ||
           candidate.waitlistRank !== null ||
           candidate.lotteryOrder !== null ||
@@ -1525,7 +1642,10 @@ export class ActivityAllocationService {
     positionId: string | null;
     waitlistPositionId: string | null;
   }> {
-    const positions = this.initialPreferencePositions(input.preferenceSnapshot, input.batchPositionId);
+    const positions = this.initialPreferencePositions(
+      input.preferenceSnapshot,
+      input.batchPositionId,
+    );
     for (const positionId of positions) {
       const reservation = await this.capacityReservations.reserveInTransactionTrusted(tx, {
         activityId: input.activityId,
@@ -1639,6 +1759,15 @@ export class ActivityAllocationService {
     if (input.resultCode !== 'waitlisted' && input.waitlistPositionId !== null) {
       throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
     }
+    if (
+      (input.resultCode === 'waitlisted' &&
+        (input.waitlistRank === null ||
+          input.waitlistRank < 1 ||
+          input.waitlistPositionId === null)) ||
+      (input.resultCode !== 'waitlisted' && input.waitlistRank !== null)
+    ) {
+      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+    }
     const anchors = allocated
       ? await this.readReservationAnchors(
           tx,
@@ -1652,6 +1781,7 @@ export class ActivityAllocationService {
       data: {
         resultCode: input.resultCode,
         waitlistRank: input.waitlistRank,
+        waitlistPositionId: input.waitlistPositionId,
         lotteryOrder: input.lotteryOrder,
       },
     });
@@ -1665,12 +1795,11 @@ export class ActivityAllocationService {
             : input.resultCode === 'waitlisted'
               ? 'waitlisted'
               : 'not_selected',
-        positionId:
-          allocated
-            ? input.positionId
-            : input.resultCode === 'waitlisted'
-              ? input.waitlistPositionId
-              : null,
+        positionId: allocated
+          ? input.positionId
+          : input.resultCode === 'waitlisted'
+            ? input.waitlistPositionId
+            : null,
         preferenceSnapshot: input.candidate.preferenceSnapshot ?? Prisma.JsonNull,
         waitlistRank: input.waitlistRank,
         allocationBatchId: input.batch.id,
@@ -1702,7 +1831,8 @@ export class ActivityAllocationService {
         version: { increment: 1 },
       },
     });
-    if (pointer.count !== 1) throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+    if (pointer.count !== 1)
+      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
     await tx.activityAllocationApplicationProjection.create({
       data: {
         appliedAt: input.now,
@@ -1750,7 +1880,8 @@ export class ActivityAllocationService {
     const identityReservation = reservation.identities.find(
       (candidate) => candidate.identityId === identityId,
     );
-    if (!identityReservation) throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+    if (!identityReservation)
+      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
     if (
       (positionId === null && identityReservation.positionReservationId !== null) ||
       (positionId !== null && identityReservation.positionReservationId === null)
@@ -1760,7 +1891,9 @@ export class ActivityAllocationService {
     const reservationIds = [
       reservation.activityPersonReservationId,
       identityReservation.sessionReservationId,
-      ...(identityReservation.positionReservationId ? [identityReservation.positionReservationId] : []),
+      ...(identityReservation.positionReservationId
+        ? [identityReservation.positionReservationId]
+        : []),
     ];
     const rows = await tx.capacityReservation.findMany({
       where: { id: { in: reservationIds }, status: 'active' },
@@ -1808,16 +1941,18 @@ export class ActivityAllocationService {
         where: { registrationId },
         select: { currentStatusCode: true },
       });
-      if (identities.length === 0) throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+      if (identities.length === 0)
+        throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
       const statuses = identities.map((identity) => identity.currentStatusCode);
-      const statusCode =
-        statuses.some((status) => status === 'pass' || status === 'attended' || status === 'settled')
-          ? 'pass'
-          : statuses.some((status) => status === 'pending')
-            ? 'pending'
-            : statuses.some((status) => status === 'waitlisted')
-              ? 'waitlisted'
-              : 'reject';
+      const statusCode = statuses.some(
+        (status) => status === 'pass' || status === 'attended' || status === 'settled',
+      )
+        ? 'pass'
+        : statuses.some((status) => status === 'pending')
+          ? 'pending'
+          : statuses.some((status) => status === 'waitlisted')
+            ? 'waitlisted'
+            : 'reject';
       const updated = await tx.activityRegistration.updateMany({
         where: { id: registrationId, deletedAt: null },
         data: {
@@ -1825,7 +1960,8 @@ export class ActivityAllocationService {
           statusSummaryCode: statusCode === 'reject' ? 'not_selected' : 'active',
         },
       });
-      if (updated.count !== 1) throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+      if (updated.count !== 1)
+        throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
     }
   }
 
@@ -1834,7 +1970,10 @@ export class ActivityAllocationService {
     action: string,
     activityId: string,
   ): Promise<void> {
-    const decision = await this.authz.explain(currentUser, action, { type: 'activity', id: activityId });
+    const decision = await this.authz.explain(currentUser, action, {
+      type: 'activity',
+      id: activityId,
+    });
     if (decision.allow) return;
     if (decision.reason === 'resource_not_found' && (await this.rbac.can(currentUser, action))) {
       return;
@@ -1872,6 +2011,26 @@ export class ActivityAllocationService {
     if (mismatch !== null) throw new BizException(BizCode.ACTIVITY_ALLOCATION_MODE_INCONSISTENT);
   }
 
+  private async assertNoUnvoidedTargetBatch(
+    tx: PrismaTx,
+    activityId: string,
+    sessionId: string,
+    positionId: string | null,
+  ): Promise<void> {
+    const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id"
+      FROM "ActivityAllocationBatch"
+      WHERE "activityId" = ${activityId}
+        AND "sessionId" = ${sessionId}
+        AND "positionId" IS NOT DISTINCT FROM ${positionId}
+        AND "statusCode" IN ('preparing', 'committed')
+      FOR UPDATE
+    `);
+    if (rows.length !== 0) {
+      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+    }
+  }
+
   private async assertTargetShape(
     tx: PrismaTx,
     activityId: string,
@@ -1884,7 +2043,8 @@ export class ActivityAllocationService {
         AND "deletedAt" IS NULL AND "statusCode" = 'scheduled'
       FOR UPDATE
     `);
-    if (sessions.length !== 1) throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+    if (sessions.length !== 1)
+      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
     if (positionId !== null) {
       const positions = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         SELECT "id" FROM "ActivitySessionPosition"
@@ -1892,7 +2052,8 @@ export class ActivityAllocationService {
           AND "sessionId" = ${sessionId} AND "deletedAt" IS NULL
         FOR UPDATE
       `);
-      if (positions.length !== 1) throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+      if (positions.length !== 1)
+        throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
       return;
     }
   }
@@ -1915,7 +2076,10 @@ export class ActivityAllocationService {
         i."version" AS "identityVersion",
         r."currentRevision" AS "registrationCurrentRevision",
         rr."id" AS "registrationRevisionId", rr."submittedAt" AS "acceptedAt",
-        pr."id" AS "participationRevisionId", pr."preferenceSnapshot"
+        pr."id" AS "participationRevisionId", pr."statusCode" AS "participationRevisionStatusCode",
+        pr."positionId" AS "participationRevisionPositionId",
+        pr."waitlistRank" AS "participationRevisionWaitlistRank",
+        pr."allocationBatchId" AS "participationRevisionAllocationBatchId", pr."preferenceSnapshot"
       FROM "ActivityParticipationIdentity" i
       INNER JOIN "ActivityRegistration" r ON r."id" = i."registrationId" AND r."deletedAt" IS NULL
       INNER JOIN "ActivityRegistrationRevision" rr
@@ -1934,6 +2098,10 @@ export class ActivityAllocationService {
       source.identityRevision < 1 ||
       source.registrationCurrentRevision < 1 ||
       source.identityStatusCode !== 'pending' ||
+      source.participationRevisionStatusCode !== 'pending' ||
+      source.participationRevisionPositionId !== null ||
+      source.participationRevisionWaitlistRank !== null ||
+      source.participationRevisionAllocationBatchId !== null ||
       source.currentPositionId !== null ||
       source.capacityReservationId !== null ||
       source.populationIncluded
@@ -2020,7 +2188,9 @@ export class ActivityAllocationService {
     positionId: string | null,
   ): QualificationProjection {
     const projection =
-      positionId === null ? evaluation.sessions.get(sessionId) : evaluation.positions.get(positionId);
+      positionId === null
+        ? evaluation.sessions.get(sessionId)
+        : evaluation.positions.get(positionId);
     if (!projection) throw new BizException(BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID);
     return projection;
   }
@@ -2079,17 +2249,79 @@ export class ActivityAllocationService {
   ): Promise<AppActivityAllocationCommandReceiptDto | null> {
     const receipt = await tx.activityAllocationCommandReceipt.findFirst({
       where: { activityId, commandCode, operationKey },
-      select: { requestHash: true, responseHash: true, allocationBatchId: true },
+      select: {
+        requestHash: true,
+        responseSchemaVersion: true,
+        responseHash: true,
+        responseReceipt: true,
+        allocationBatchId: true,
+      },
     });
     if (receipt === null) return null;
     if (receipt.requestHash !== requestHash) {
       throw new BizException(BizCode.ACTIVITY_REGISTRATION_OPERATION_KEY_CONFLICT);
     }
+    const receiptBatchStatusCode = this.readReceiptBatchStatusCode({
+      activityId,
+      allocationBatchId: receipt.allocationBatchId,
+      commandCode,
+      responseHash: receipt.responseHash,
+      responseSchemaVersion: receipt.responseSchemaVersion,
+      responseReceipt: receipt.responseReceipt,
+    });
     return {
       commandCode,
       responseHash: receipt.responseHash,
-      batch: await this.loadBatchDto(tx, activityId, receipt.allocationBatchId),
+      batch: await this.loadBatchDto(
+        tx,
+        activityId,
+        receipt.allocationBatchId,
+        receiptBatchStatusCode,
+      ),
     };
+  }
+
+  /**
+   * D86 deliberately stores only a fixed safe receipt envelope.  The batch and candidate facts
+   * are immutable enough to reconstruct that command's original safe view, but later commands
+   * must not turn a prepare replay into a live committed/voided response.
+   */
+  private readReceiptBatchStatusCode(input: {
+    activityId: string;
+    allocationBatchId: string;
+    commandCode: AllocationCommandCode;
+    responseSchemaVersion: string;
+    responseHash: string;
+    responseReceipt: Prisma.JsonValue;
+  }): ReceiptBatchStatusCode {
+    const receipt = asObject(input.responseReceipt);
+    const expectedStatusCode: ReceiptBatchStatusCode =
+      input.commandCode === 'prepare'
+        ? 'preparing'
+        : input.commandCode === 'commit'
+          ? 'committed'
+          : 'voided';
+    const expectedResponseHash = createAllocationResponseHash({
+      activityId: input.activityId,
+      allocationBatchId: input.allocationBatchId,
+      commandCode: input.commandCode,
+      batchStatusCode: expectedStatusCode,
+    });
+    if (
+      receipt === null ||
+      input.responseSchemaVersion !== RESPONSE_SCHEMA_VERSION ||
+      input.responseHash !== expectedResponseHash ||
+      Object.keys(receipt).length !== 6 ||
+      receipt.activityId !== input.activityId ||
+      receipt.allocationBatchId !== input.allocationBatchId ||
+      receipt.commandCode !== input.commandCode ||
+      receipt.batchStatusCode !== expectedStatusCode ||
+      receipt.responseSchemaVersion !== RESPONSE_SCHEMA_VERSION ||
+      receipt.responseHash !== input.responseHash
+    ) {
+      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+    }
+    return expectedStatusCode;
   }
 
   private async resolveReplayRace(
@@ -2149,6 +2381,7 @@ export class ActivityAllocationService {
     tx: PrismaTx,
     activityId: string,
     batchId: string,
+    receiptBatchStatusCode?: ReceiptBatchStatusCode,
   ): Promise<AppActivityAllocationBatchDto> {
     const batch = await tx.activityAllocationBatch.findFirst({
       where: { id: batchId, activityId },
@@ -2174,36 +2407,42 @@ export class ActivityAllocationService {
             lotteryOrder: true,
             resultCode: true,
             waitlistRank: true,
+            waitlistPositionId: true,
           },
           orderBy: { participationIdentityId: 'asc' },
         },
       },
     });
     if (batch === null) throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+    const isPrepareReceipt = receiptBatchStatusCode === 'preparing';
+    const statusCode = receiptBatchStatusCode ?? batch.statusCode;
     return {
       batchId: batch.id,
       activityId: batch.activityId,
       sessionId: batch.sessionId,
       positionId: batch.positionId,
       modeCode: batch.modeCode,
-      statusCode: batch.statusCode,
+      statusCode,
       algorithmVersionCode: batch.algorithmVersionCode,
-      randomSeedReveal: batch.statusCode === 'committed' ? batch.randomSeedReveal : null,
-      committedAt: batch.committedAt,
-      voidReason: batch.voidReason,
-      voidedAt: batch.voidedAt,
+      randomSeedReveal: statusCode === 'committed' ? batch.randomSeedReveal : null,
+      committedAt: isPrepareReceipt ? null : batch.committedAt,
+      voidReason: statusCode === 'voided' ? batch.voidReason : null,
+      voidedAt: statusCode === 'voided' ? batch.voidedAt : null,
       candidates: [...batch.candidates]
-        .sort((left, right) => compareUtf8(left.participationIdentityId, right.participationIdentityId))
+        .sort((left, right) =>
+          compareUtf8(left.participationIdentityId, right.participationIdentityId),
+        )
         .map((candidate) => ({
-        participationIdentityId: candidate.participationIdentityId,
-        registrationId: candidate.registrationId,
-        acceptedAt: candidate.acceptedAt,
-        qualificationScore: decimalString(candidate.qualificationScore),
-        qualificationResultCode: candidateQualificationResult(candidate.explanation),
-        lotteryOrder: candidate.lotteryOrder,
-        resultCode: candidate.resultCode,
-        waitlistRank: candidate.waitlistRank,
-      })),
+          participationIdentityId: candidate.participationIdentityId,
+          registrationId: candidate.registrationId,
+          acceptedAt: candidate.acceptedAt,
+          qualificationScore: decimalString(candidate.qualificationScore),
+          qualificationResultCode: candidateQualificationResult(candidate.explanation),
+          lotteryOrder: isPrepareReceipt ? null : candidate.lotteryOrder,
+          resultCode: isPrepareReceipt ? null : candidate.resultCode,
+          waitlistRank: isPrepareReceipt ? null : candidate.waitlistRank,
+          waitlistPositionId: isPrepareReceipt ? null : candidate.waitlistPositionId,
+        })),
     };
   }
 }

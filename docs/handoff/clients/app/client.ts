@@ -1,7 +1,7 @@
 // 由 scripts/generate-fe-client.ts 生成,请勿手改。
 // surface: App 小程序
 // generatorVersion: 1.0.0
-// inputDigest: sha256:d88934361521b2775cd66626de6a4a9575dde99901851316d61e366668a57acb
+// inputDigest: sha256:00f5479f9d6fc06868beea01a941a609bc79b597b4946a37c13fd4e6e3829998
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -15,6 +15,9 @@ import type {
   ActivityCheckInLocationDto,
   ActivityPublishReviewResponseDto,
   ActivityTemplateResolutionResponseDto,
+  AppActivityAllocationBatchDto,
+  AppActivityAllocationCandidateDto,
+  AppActivityAllocationCommandReceiptDto,
   AppActivityChangePositionDto,
   AppActivityCheckInDto,
   AppActivityDetailDto,
@@ -144,6 +147,7 @@ import type {
   ChangeReviewSessionPositionCreateDto,
   ChangeReviewSessionPositionUpdateDto,
   ChangeReviewSessionUpdateDto,
+  CommitAppManagedActivityAllocationBatchDto,
   ContentAttachmentDto,
   ContentReadDetailDto,
   ContentReadListItemDto,
@@ -165,6 +169,7 @@ import type {
   NotificationReadListItemDto,
   NotificationUnreadCountDto,
   PageResultDto,
+  PrepareAppManagedActivityAllocationBatchDto,
   PutAppManagedRegistrationFormDto,
   RegistrationFormChoiceInputDto,
   RegistrationFormDefinitionInputDto,
@@ -188,6 +193,7 @@ import type {
   UpsertActivityFeedbackDto,
   UserLinkedMemberDto,
   UserResponseDto,
+  VoidAppManagedActivityAllocationBatchDto,
   WechatQuotaItemDto,
   WechatSubscriptionAckDto,
   WechatSubscriptionAckResponseDto,
@@ -334,6 +340,10 @@ export function createAppClient(fetcher: Fetcher) {
     AppActivityFeedbacksControllerUpsertMine(activityId: string, body: UpsertActivityFeedbackDto): Promise<ApiEnvelope<AppActivityFeedbackResponseDto>> {
       return fetcher<AppActivityFeedbackResponseDto>({ method: "PUT", path: `/api/app/v1/my/activities/${activityId}/feedback`, body });
     },
+    /** App 队员接受自己的未过期 pending 邀请并提交 canonical 报名 [auth] */
+    AppMyActivityInvitationsControllerAccept(invitationId: string, body: AppActivityRegistrationCommandDto): Promise<ApiEnvelope<AppActivityRegistrationCommandReceiptDto>> {
+      return fetcher<AppActivityRegistrationCommandReceiptDto>({ method: "POST", path: `/api/app/v1/my/activity-invitations/${invitationId}/accept`, body });
+    },
     /** App 队员拒绝自己的未过期 pending 邀请 [auth] */
     AppMyActivityInvitationsControllerDecline(invitationId: string, body: DeclineAppMyActivityInvitationDto): Promise<ApiEnvelope<AppActivityInvitationDto>> {
       return fetcher<AppActivityInvitationDto>({ method: "POST", path: `/api/app/v1/my/activity-invitations/${invitationId}/decline`, body });
@@ -369,6 +379,22 @@ export function createAppClient(fetcher: Fetcher) {
     /** App 发起人删除无参与数据的 draft 活动 [auth] */
     AppManagedActivitiesControllerSoftDelete(activityId: string): Promise<ApiEnvelope<AppManagedActivityProjectionDto>> {
       return fetcher<AppManagedActivityProjectionDto>({ method: "DELETE", path: `/api/app/v1/my/managed-activities/${activityId}` });
+    },
+    /** 负责人冻结资格排序或抽签候选批次 [auth] */
+    AppManagedActivityAllocationBatchesControllerPrepare(activityId: string, body: PrepareAppManagedActivityAllocationBatchDto): Promise<ApiEnvelope<AppActivityAllocationCommandReceiptDto>> {
+      return fetcher<AppActivityAllocationCommandReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/allocation-batches`, body });
+    },
+    /** 负责人读取安全的分配批次与结果 [auth] */
+    AppManagedActivityAllocationBatchesControllerGet(activityId: string, batchId: string): Promise<ApiEnvelope<AppActivityAllocationBatchDto>> {
+      return fetcher<AppActivityAllocationBatchDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/allocation-batches/${batchId}` });
+    },
+    /** 负责人提交已冻结的资格排序或抽签批次 [auth] */
+    AppManagedActivityAllocationBatchesControllerCommit(activityId: string, batchId: string, body: CommitAppManagedActivityAllocationBatchDto): Promise<ApiEnvelope<AppActivityAllocationCommandReceiptDto>> {
+      return fetcher<AppActivityAllocationCommandReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/allocation-batches/${batchId}/commit`, body });
+    },
+    /** 负责人作废已冻结或未漂移的已提交批次 [auth] */
+    AppManagedActivityAllocationBatchesControllerVoid(activityId: string, batchId: string, body: VoidAppManagedActivityAllocationBatchDto): Promise<ApiEnvelope<AppActivityAllocationCommandReceiptDto>> {
+      return fetcher<AppActivityAllocationCommandReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/allocation-batches/${batchId}/void`, body });
     },
     /** App 活动考勤责任人生成考勤提交草稿（只读不落库） [auth] */
     AppManagedActivityAttendancesControllerDraft(activityId: string): Promise<ApiEnvelope<AppManagedAttendanceSheetDraftDto>> {
