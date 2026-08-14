@@ -1254,6 +1254,165 @@ async function main(): Promise<void> {
       '    return invoke(user);\n' +
       '  }\n' +
       '}\n';
+    // ── self-by-construction:结构性否定判据的正负样例 ────────────────────
+    //
+    // 这一族与上面五族性质不同:它证的是「不存在可冒充的输入面」,而不是
+    // 「判权发生过」。负面证明的命门是穷尽性 —— 漏一种参数来源就是给一个
+    // 真有 IDOR 面的端点盖章 —— 所以负样例覆盖三条互不相同的拒绝子句
+    // (主体名字命中 / 无法归类装饰器 / 身份项缺失或未下传),
+    // 正样例则必须覆盖 DTO 展开路径,否则「一律拒绝」也能让负样例全绿。
+    const probeDecorators =
+      'function CurrentUser() {\n' +
+      '  return (_t: object, _k: string | symbol | undefined, _i: number): void => {};\n' +
+      '}\n' +
+      'function Param(_key?: string) {\n' +
+      '  return (_t: object, _k: string | symbol | undefined, _i: number): void => {};\n' +
+      '}\n' +
+      'function Body(_key?: string) {\n' +
+      '  return (_t: object, _k: string | symbol | undefined, _i: number): void => {};\n' +
+      '}\n' +
+      'function ProbeContext() {\n' +
+      '  return (_t: object, _k: string | symbol | undefined, _i: number): void => {};\n' +
+      '}\n';
+    const selfController = (params: string, body: string, extra = '') =>
+      `${probeDecorators}${extra}\n` +
+      'class HarnessAuthzR8ProbeService {\n' +
+      '  async authorize(_user: unknown): Promise<string> {\n' +
+      "    return 'ok';\n" +
+      '  }\n' +
+      '}\n\n' +
+      'export class HarnessAuthzR8ProbeController {\n' +
+      '  constructor(private readonly service: HarnessAuthzR8ProbeService) {}\n\n' +
+      `  async run(${params}): Promise<unknown> {\n` +
+      `    ${body}\n` +
+      '  }\n' +
+      '}\n';
+    // 只声明 self 一个轴:admission / codes / engine 全空,
+    // 这样探针的红绿只由 self 判据决定,不被别族的缺失掩盖。
+    const selfPolicy: ProbePolicy = {
+      admission: null,
+      mode: 'LOGIN_SCOPED',
+      codes: [],
+      require: 'all',
+      scopes: ['self'],
+      engine: null,
+    };
+    const selfByConstructionProbes: readonly R8Probe[] = [
+      // 正①:只有框架注入的身份 —— 调用方没有任何可以指定别人的输入。
+      {
+        name: 'self-by-construction-identity-only',
+        source: selfController(
+          '@CurrentUser() currentUser: unknown',
+          'return this.service.authorize(currentUser);',
+        ),
+        policy: selfPolicy,
+        tier: 'T1',
+        closure: 'closed',
+      },
+      // 正②:带 @Body DTO,但字段里没有主体标识 —— DTO 通道必须能放行,
+      // 否则「一律拒绝」会让下面所有负样例假绿。
+      {
+        name: 'self-by-construction-body-without-subject-field',
+        source: selfController(
+          '@CurrentUser() currentUser: unknown, @Body() dto: ProbeSafeDto',
+          'return this.service.authorize([currentUser, dto]);',
+          'class ProbeSafeDto {\n  note!: string;\n  remark!: string;\n}\n',
+        ),
+        policy: selfPolicy,
+        tier: 'T1',
+        closure: 'closed',
+      },
+      // 负①:调用方直接给了主体 id 并传了下去。
+      {
+        name: 'self-rejects-caller-supplied-subject-param',
+        source: selfController(
+          "@CurrentUser() currentUser: unknown, @Param('userId') userId: string",
+          'return this.service.authorize([currentUser, userId]);',
+        ),
+        policy: selfPolicy,
+        tier: 'T3',
+        closure: 'candidate',
+        diagnostic: 'caller-controlled subject input @Param userId.userId',
+      },
+      // 负②:可控 id 只与资源求交、身份项没进查询 —— 参数面就已经不可判,
+      // 判据根本不去看 where 子句(看了就成了跨函数分析)。
+      {
+        name: 'self-rejects-resource-id-without-identity-intersection',
+        source: selfController(
+          "@CurrentUser() currentUser: unknown, @Param('id') id: string",
+          'return this.service.authorize(id);',
+        ),
+        policy: selfPolicy,
+        tier: 'T3',
+        closure: 'candidate',
+        diagnostic: 'caller-controlled subject input @Param id.id',
+      },
+      // 负③:自定义装饰器 —— 证明「默认拒绝」真的接了线,而不是写在注释里。
+      //
+      // ctx 的类型刻意用**可展开且不含主体字段**的 DTO:若参数类型写成 unknown,
+      // 那么即使拆掉「未登记装饰器即拒」这条子句,它也会被「无法枚举携带的名字」
+      // 这条兜底拒掉 —— 变异就翻不红,也就证明不了这条子句在做功。
+      {
+        name: 'self-rejects-unregistered-parameter-decorator',
+        source: selfController(
+          '@CurrentUser() currentUser: unknown, @ProbeContext() ctx: ProbeTraceDto',
+          'return this.service.authorize([currentUser, ctx]);',
+          'class ProbeTraceDto {\n  traceId!: string;\n}\n',
+        ),
+        policy: selfPolicy,
+        tier: 'T3',
+        closure: 'candidate',
+        diagnostic: 'unregistered decorator @ProbeContext',
+      },
+      // 负④:主体字段藏在 @Body DTO 里(走 checker 的属性枚举通道)。
+      {
+        name: 'self-rejects-subject-field-inside-body-dto',
+        source: selfController(
+          '@CurrentUser() currentUser: unknown, @Body() dto: ProbeSubjectDto',
+          'return this.service.authorize([currentUser, dto]);',
+          'class ProbeSubjectDto {\n  memberId!: string;\n  note!: string;\n}\n',
+        ),
+        policy: selfPolicy,
+        tier: 'T3',
+        closure: 'candidate',
+        diagnostic: 'caller-controlled subject input @Body dto.memberId',
+      },
+      // 负⑤:主体字段是**继承**来的 —— 只看自身成员的实现会在这里假绿。
+      {
+        name: 'self-expands-inherited-dto-fields',
+        source: selfController(
+          '@CurrentUser() currentUser: unknown, @Body() dto: ProbeDerivedDto',
+          'return this.service.authorize([currentUser, dto]);',
+          'class ProbeBaseDto {\n  memberId!: string;\n}\n\n' +
+            'class ProbeDerivedDto extends ProbeBaseDto {\n  note!: string;\n}\n',
+        ),
+        policy: selfPolicy,
+        tier: 'T3',
+        closure: 'candidate',
+        diagnostic: 'caller-controlled subject input @Body dto.memberId',
+      },
+      // 负⑥:压根没有身份参数 —— 不能因为「没有可控输入」就算证得。
+      {
+        name: 'self-rejects-missing-identity-parameter',
+        source: selfController('', "return this.service.authorize('nobody');"),
+        policy: selfPolicy,
+        tier: 'T3',
+        closure: 'candidate',
+        diagnostic: 'no framework-injected identity parameter',
+      },
+      // 负⑦:身份参数声明了却没往下传 —— 主体实际由别处决定。
+      {
+        name: 'self-rejects-identity-never-passed-downward',
+        source: selfController(
+          '@CurrentUser() currentUser: unknown',
+          "return this.service.authorize('someone-else');",
+        ),
+        policy: selfPolicy,
+        tier: 'T3',
+        closure: 'candidate',
+        diagnostic: 'is never passed downward',
+      },
+    ];
     const probes: readonly R8Probe[] = [
       {
         name: 'alias-and-one-layer-intermediate',
@@ -1851,6 +2010,7 @@ async function main(): Promise<void> {
         closure: 'candidate',
         diagnostic: 'probe.reexport.no-branch',
       },
+      ...selfByConstructionProbes,
     ];
 
     let r8Ok = true;
@@ -1965,6 +2125,60 @@ async function main(): Promise<void> {
           `T3 candidate=${distribution['T3/candidate'] ?? 0}；` +
           `N/A=${distribution['N/A/not-applicable'] ?? 0}；总计=${full.length}`,
       );
+    }
+
+    // D1 ③:名字集为空时,判据必须落 T3 —— 而不是「没有名字命中 ⇒ 全部放行」。
+    //
+    // 守的是判据的**结构**,不是名字集的内容:漏写一个主体名字是可以补的,
+    // 但「名字集空了就静默盖章」会让漏写从一条假阴性升级成整族假阳性。
+    // 这里改真 registry 跑真扫描,而不是给规则加一个 patterns 覆盖选项 ——
+    // 后者等于给 PR 多开一个把裁判改成恒 PASS 的入口。
+    {
+      const patternsPath = path.join(repoRoot, 'harness/authz-assertion-patterns.json');
+      const pristine = fs.readFileSync(patternsPath, 'utf-8');
+      let emptyNameSetTier: string | undefined;
+      try {
+        const doctored = JSON.parse(pristine) as {
+          families: Array<{ staticMatchers: Array<Record<string, unknown>> }>;
+        };
+        let patched = 0;
+        for (const family of doctored.families) {
+          for (const matcher of family.staticMatchers) {
+            if (matcher.outcome === 'no-caller-controlled-subject') {
+              matcher.subjectIdentifierNames = [];
+              patched++;
+            }
+          }
+        }
+        if (patched !== 1) {
+          failures.push(
+            `✗ R8 空名字集用例失效 —— registry 里 no-caller-controlled-subject matcher 有 ${patched} 个,期望恰 1 个。`,
+          );
+        }
+        fs.writeFileSync(patternsPath, `${JSON.stringify(doctored, null, 2)}\n`);
+        // 用正样例:它在正常 registry 下是 closed,所以这里若仍 closed,
+        // 说明空名字集把判据退化成了放行。
+        fs.writeFileSync(probeAbs, selfByConstructionProbes[0].source);
+        emptyNameSetTier = scanRouteAuthzClosure({
+          rootDir: repoRoot,
+          entries: entryOf('empty-subject-names', selfPolicy),
+          cacheKey: 'r8-empty-subject-names',
+        })[0]?.tier;
+      } finally {
+        fs.writeFileSync(patternsPath, pristine);
+        fs.rmSync(probeAbs, { force: true });
+      }
+      if (emptyNameSetTier === 'T3') {
+        passed++;
+        console.log(
+          '✓ R8 self 判据结构自保:主体名字集为空时,连正样例也落 T3(不退化成静默放行)',
+        );
+      } else {
+        failures.push(
+          `✗ R8 self 判据在空名字集下没有落 T3(实际 ${emptyNameSetTier ?? '无记录'})——\n` +
+            '  含义:名字集写漏时判据不是「少拒一条」,而是「整族盖章」,方向正好反了。',
+        );
+      }
     }
 
     const packageJson = JSON.parse(

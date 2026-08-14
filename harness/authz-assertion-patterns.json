@@ -136,6 +136,60 @@
           "outcome": "throwing-assertion"
         }
       ]
+    },
+    {
+      "id": "self-by-construction",
+      "runtimeMarker": null,
+      "callShapes": [
+        "handler exposes no caller-controlled subject input"
+      ],
+      "requiredOutcomes": [
+        "no-caller-controlled-subject"
+      ],
+      "axes": [
+        "scopes"
+      ],
+      "staticMatchers": [
+        {
+          "outcome": "no-caller-controlled-subject",
+          "identityParameterDecorators": [
+            "CurrentUser"
+          ],
+          "callerControlledParameterDecorators": [
+            "Param",
+            "Query",
+            "Body"
+          ],
+          "subjectIdentifierNames": [
+            "id",
+            "ids",
+            "userId",
+            "userIds",
+            "userNo",
+            "memberId",
+            "memberIds",
+            "memberNo",
+            "accountId",
+            "principalId",
+            "subjectId",
+            "ownerId",
+            "creatorId",
+            "operatorId",
+            "actorId",
+            "applicantId",
+            "recipientMemberId",
+            "publisherId",
+            "openid",
+            "openId",
+            "unionid",
+            "unionId",
+            "username",
+            "email",
+            "phone",
+            "mobile"
+          ]
+        }
+      ]
     }
   ]
 }
