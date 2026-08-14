@@ -1025,7 +1025,7 @@ describe('permanent ActivityRegistration runtime', () => {
       expect(current).toMatchObject({
         activityPositionId: null,
         extras: null,
-        statusCode: 'pending',
+        statusCode: entry === 'canonical' ? 'pass' : 'pending',
         statusSummaryCode: 'active',
         sourceCode: entry === 'canonical' ? 'self' : 'onsite',
       });
