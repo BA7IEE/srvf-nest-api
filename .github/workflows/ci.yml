@@ -179,10 +179,20 @@ jobs:
       # is validated in this job; the base↔head semantic diff itself is deliberately NOT
       # here — it must run base-trusted (the PR must not be able to edit its own judge),
       # so it lives in the Red-zone (trusted) workflow. Locally: pnpm gate:authz:semantic.
+      # Phase 3 前置 adds the debt call-site identity check. It is A-class
+      # (metadata integrity), so it is blocking with no `|| true`: it asserts that
+      # every registered call-site debt entry still resolves to a live call site
+      # under the normalized-AST identity. Left un-wired, an identity mismatch
+      # caused by ordinary code movement would stay invisible until the day R5/R6
+      # flip to blocking — and would then surface as "all historical debt repaid,
+      # an equal pile of new debt appeared", which is the shape of a real
+      # regression. Blocking here is safe because the check is idempotent and
+      # currently passes 201/201; it does not judge the code, only the ledger.
       - name: Architecture governance A-metadata gate (B reports only)
         run: |
           pnpm docs:boundaries || true
           pnpm docs:boundaries:check
+          pnpm docs:boundaries:ids:check
           pnpm docs:authz:check
           pnpm gate:authz:graph:check
 

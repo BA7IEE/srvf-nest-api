@@ -108,6 +108,50 @@ function isPublicMethod(method) {
   );
 }
 
+/**
+ * Build a typed program over the repository tsconfig (Phase 3 前置 · D3).
+ *
+ * The index resolved an injected dependency by the *text* of its type
+ * annotation. That reading is defeated by anything that renames the type on the
+ * way in — `import { AuthzService as A }`, a re-export under a new name, a
+ * local `type X = AuthzService`. The checker instead reports the name at the
+ * type's own declaration site, so the registered `receiverTypes` match what the
+ * class really is rather than how this file happens to spell it.
+ *
+ * Returns null when the program cannot be built (caller outside the repo, no
+ * tsconfig). The annotation reading then stays in force, so the rule degrades
+ * to its Phase 0 accuracy rather than silently finding nothing.
+ */
+function buildTypedIndex(root) {
+  // Deliberately NOT cached by root. Callers vary `cacheKey` precisely because
+  // the files on disk changed under them (the R8 selftest rewrites one probe
+  // path per case); a program cached by root would hand back the previous
+  // probe's source and quietly make later cases assert against stale code.
+  // buildSourceIndex already caches per (root, cacheKey), so this is built once
+  // per index build, not once per lookup.
+  const configPath = path.join(root, 'tsconfig.json');
+  if (!fs.existsSync(configPath)) return null;
+  const config = ts.readConfigFile(configPath, ts.sys.readFile);
+  if (config.error !== undefined) return null;
+  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, root);
+  const program = ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options });
+  return { program, checker: program.getTypeChecker() };
+}
+
+/** Resolve a declared dependency to the class name at its own declaration site. */
+function declaredTypeName(typed, node, fallback) {
+  if (typed === null || node === undefined) return fallback;
+  const type = typed.checker.getTypeAtLocation(node);
+  for (const member of type.isUnion() ? type.types : [type]) {
+    const symbol = member.getSymbol() ?? member.aliasSymbol;
+    const name = symbol?.getName();
+    // `__type` / `__object` are the checker's placeholders for anonymous
+    // shapes; they carry no identity, so the written annotation stays better.
+    if (name !== undefined && name.length > 0 && !name.startsWith('__')) return name;
+  }
+  return fallback;
+}
+
 function buildSourceIndex(root, cacheKey = '') {
   const key = `${root}\u0000${cacheKey}`;
   const cached = sourceIndexCache.get(key);
@@ -117,15 +161,13 @@ function buildSourceIndex(root, cacheKey = '') {
   const classesByName = new Map();
   /** @type {Map<string, ClassInfo[]>} */
   const classesByFile = new Map();
+  const typed = buildTypedIndex(root);
 
   for (const absolute of sourceFiles(root)) {
     const file = rel(root, absolute);
-    const source = ts.createSourceFile(
-      absolute,
-      fs.readFileSync(absolute, 'utf8'),
-      ts.ScriptTarget.Latest,
-      true,
-    );
+    const source =
+      typed?.program.getSourceFile(absolute) ??
+      ts.createSourceFile(absolute, fs.readFileSync(absolute, 'utf8'), ts.ScriptTarget.Latest, true);
     const visit = (node) => {
       if (ts.isClassDeclaration(node) && node.name !== undefined) {
         /** @type {Map<string, import('typescript').MethodDeclaration>} */
@@ -139,14 +181,18 @@ function buildSourceIndex(root, cacheKey = '') {
             continue;
           }
           if (ts.isPropertyDeclaration(member) && ts.isIdentifier(member.name)) {
-            const dependency = typeName(member.type, source);
+            const written = typeName(member.type, source);
+            // Typed resolution first; the written annotation is the fallback so
+            // an unresolvable type never silently drops the dependency.
+            const dependency = declaredTypeName(typed, member.name, written);
             if (dependency !== null) dependencies.set(member.name.text, dependency);
             continue;
           }
           if (!ts.isConstructorDeclaration(member)) continue;
           for (const parameter of member.parameters) {
             if (!isPropertyParameter(parameter) || !ts.isIdentifier(parameter.name)) continue;
-            const dependency = typeName(parameter.type, source);
+            const written = typeName(parameter.type, source);
+            const dependency = declaredTypeName(typed, parameter.name, written);
             if (dependency !== null) dependencies.set(parameter.name.text, dependency);
           }
         }
@@ -359,13 +405,15 @@ function targetOf(expression, info, receiverAliases, targetAliases) {
 function localBindings(method, info) {
   /** @type {Array<import('typescript').VariableDeclaration>} */
   const declarations = [];
+  /** @type {Array<import('typescript').VariableDeclaration>} */
+  const destructurings = [];
   const visit = (node) => {
-    if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      node.initializer !== undefined
-    ) {
-      declarations.push(node);
+    if (ts.isVariableDeclaration(node) && node.initializer !== undefined) {
+      if (ts.isIdentifier(node.name)) declarations.push(node);
+      // `const { can } = this.authz` — the method is lifted off the service and
+      // called bare, so there is no receiver left in the call expression for the
+      // property-access reading to match. Collected separately below.
+      else if (ts.isObjectBindingPattern(node.name)) destructurings.push(node);
     }
     node.forEachChild(visit);
   };
@@ -406,6 +454,27 @@ function localBindings(method, info) {
       }
     }
     if (!changed) break;
+  }
+  // Destructured methods resolve after the alias fixed point, so that
+  // `const svc = this.authz; const { can } = svc;` also lands. Each bound name
+  // becomes the same {receiver, receiverType, method} triple a property access
+  // would have produced — the registered matcher is unchanged, only the way the
+  // call is written differs.
+  for (const declaration of destructurings) {
+    const receiver = resolvedReceiver(declaration.initializer, receiverAliases);
+    if (receiver === null) continue;
+    const receiverType = info.dependencies.get(receiver) ?? null;
+    for (const element of /** @type {import('typescript').ObjectBindingPattern} */ (
+      declaration.name
+    ).elements) {
+      if (!ts.isIdentifier(element.name)) continue;
+      // `const { can: check } = ...` — the *property* is the method name.
+      const method =
+        element.propertyName !== undefined && ts.isIdentifier(element.propertyName)
+          ? element.propertyName.text
+          : element.name.text;
+      targetAliases.set(element.name.text, { receiver, receiverType, method });
+    }
   }
   return { strings, receiverAliases, targetAliases };
 }

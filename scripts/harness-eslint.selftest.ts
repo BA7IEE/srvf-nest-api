@@ -1235,6 +1235,8 @@ async function main(): Promise<void> {
     const repoRoot = path.resolve(__dirname, '..');
     const probeRel = 'src/__harness-authz-r8-probe.controller.ts';
     const probeAbs = path.join(repoRoot, probeRel);
+    const reexportOriginRel = 'src/__harness-authz-r8-probe-origin.ts';
+    const reexportHubRel = 'src/__harness-authz-r8-probe-hub.ts';
     const entryOf = (name: string, policy: ProbePolicy) => [
       {
         routeKey: `GET /api/harness/r8/${name}`,
@@ -1603,10 +1605,273 @@ async function main(): Promise<void> {
         closure: 'mismatch',
         diagnostic: 'probe.any.two',
       },
+      // Phase 3 前置 D3:接收者类型被改名后仍须解析到真类。
+      // Phase 0 读的是**注解文本**,`RenamedAuthz` 与登记的 receiverTypes
+      // ['AuthzService'] 对不上 ⇒ 整端点误判 T3。typed 版按类型在**声明处**的
+      // 名字判定,改名不影响。
+      {
+        name: 'aliased-receiver-type-still-resolves',
+        source: controller(
+          'class AuthzService {\n' +
+            '  async can(_user: unknown, _action: string, _ref: unknown): Promise<boolean> {\n' +
+            '    return true;\n' +
+            '  }\n' +
+            '}\n\n' +
+            'type RenamedAuthz = AuthzService;\n\n' +
+            'class HarnessAuthzR8ProbeService {\n' +
+            '  constructor(private readonly authz: RenamedAuthz) {}\n\n' +
+            '  async authorize(user: unknown): Promise<void> {\n' +
+            "    const allowed = await this.authz.can(user, 'probe.alias.read', null);\n" +
+            '    if (!allowed) {\n' +
+            "      throw new Error('denied');\n" +
+            '    }\n' +
+            '  }\n' +
+            '}',
+        ),
+        policy: {
+          admission: null,
+          mode: 'RBAC',
+          codes: [{ code: 'probe.alias.read', scope: null }],
+          require: 'all',
+          scopes: [],
+          engine: 'authz-scoped',
+        },
+        tier: 'T2',
+        closure: 'closed',
+      },
+      // 中转接收者(正):`const svc = this.authz; svc.can(...)`。
+      {
+        name: 'forwarded-receiver-variable-is-still-an-assertion',
+        source: controller(
+          'class AuthzService {\n' +
+            '  async can(_user: unknown, _action: string, _ref: unknown): Promise<boolean> {\n' +
+            '    return true;\n' +
+            '  }\n' +
+            '}\n\n' +
+            'class HarnessAuthzR8ProbeService {\n' +
+            '  constructor(private readonly authz: AuthzService) {}\n\n' +
+            '  async authorize(user: unknown): Promise<void> {\n' +
+            '    const svc = this.authz;\n' +
+            "    const allowed = await svc.can(user, 'probe.forward.read', null);\n" +
+            '    if (!allowed) {\n' +
+            "      throw new Error('denied');\n" +
+            '    }\n' +
+            '  }\n' +
+            '}',
+        ),
+        policy: {
+          admission: null,
+          mode: 'RBAC',
+          codes: [{ code: 'probe.forward.read', scope: null }],
+          require: 'all',
+          scopes: [],
+          engine: 'authz-scoped',
+        },
+        tier: 'T2',
+        closure: 'closed',
+      },
+      // 中转接收者(负):同样中转,但**没有后果分支** —— 不得算断言。
+      // 这条守的是「中转支持」不会顺手把裸调用也放过去。
+      //
+      // 实测落 T3/candidate 而不是 T2/mismatch:没有任何观察命中时,规则连
+      // 「够到了一层 service」都没证成,于是诚实报不可判。两者都是「未获证明」,
+      // T3 更保守 —— 这里钉的是**实测行为**,不是我预期的行为。
+      {
+        name: 'forwarded-receiver-without-consequence-is-not-an-assertion',
+        source: controller(
+          'class AuthzService {\n' +
+            '  async can(_user: unknown, _action: string, _ref: unknown): Promise<boolean> {\n' +
+            '    return true;\n' +
+            '  }\n' +
+            '}\n\n' +
+            'class HarnessAuthzR8ProbeService {\n' +
+            '  constructor(private readonly authz: AuthzService) {}\n\n' +
+            '  async authorize(user: unknown): Promise<string> {\n' +
+            '    const svc = this.authz;\n' +
+            "    await svc.can(user, 'probe.forward.no-branch', null);\n" +
+            "    return 'side-effect-would-have-run';\n" +
+            '  }\n' +
+            '}',
+        ),
+        policy: {
+          admission: null,
+          mode: 'RBAC',
+          codes: [{ code: 'probe.forward.no-branch', scope: null }],
+          require: 'all',
+          scopes: [],
+          engine: 'authz-scoped',
+        },
+        tier: 'T3',
+        closure: 'candidate',
+        diagnostic: 'probe.forward.no-branch',
+      },
+      // 解构接收者(正):`const { can } = this.authz; can(...)`。
+      {
+        name: 'destructured-method-off-service-is-still-an-assertion',
+        source: controller(
+          'class AuthzService {\n' +
+            '  can = async (_user: unknown, _action: string, _ref: unknown): Promise<boolean> => {\n' +
+            '    return true;\n' +
+            '  };\n' +
+            '}\n\n' +
+            'class HarnessAuthzR8ProbeService {\n' +
+            '  constructor(private readonly authz: AuthzService) {}\n\n' +
+            '  async authorize(user: unknown): Promise<void> {\n' +
+            '    const { can } = this.authz;\n' +
+            "    const allowed = await can(user, 'probe.destructure.read', null);\n" +
+            '    if (!allowed) {\n' +
+            "      throw new Error('denied');\n" +
+            '    }\n' +
+            '  }\n' +
+            '}',
+        ),
+        policy: {
+          admission: null,
+          mode: 'RBAC',
+          codes: [{ code: 'probe.destructure.read', scope: null }],
+          require: 'all',
+          scopes: [],
+          engine: 'authz-scoped',
+        },
+        tier: 'T2',
+        closure: 'closed',
+      },
+      // 别名(负):类型改名不改变「裸调用不构成断言」。
+      {
+        name: 'aliased-receiver-without-consequence-is-not-an-assertion',
+        source: controller(
+          'class AuthzService {\n' +
+            '  async can(_user: unknown, _action: string, _ref: unknown): Promise<boolean> {\n' +
+            '    return true;\n' +
+            '  }\n' +
+            '}\n\n' +
+            'type RenamedAuthz = AuthzService;\n\n' +
+            'class HarnessAuthzR8ProbeService {\n' +
+            '  constructor(private readonly authz: RenamedAuthz) {}\n\n' +
+            '  async authorize(user: unknown): Promise<string> {\n' +
+            "    await this.authz.can(user, 'probe.alias.no-branch', null);\n" +
+            "    return 'side-effect-would-have-run';\n" +
+            '  }\n' +
+            '}',
+        ),
+        policy: {
+          admission: null,
+          mode: 'RBAC',
+          codes: [{ code: 'probe.alias.no-branch', scope: null }],
+          require: 'all',
+          scopes: [],
+          engine: 'authz-scoped',
+        },
+        tier: 'T3',
+        closure: 'candidate',
+        diagnostic: 'probe.alias.no-branch',
+      },
+      // 解构(负):解构出来的方法同样要有后果分支才算断言。
+      {
+        name: 'destructured-method-without-consequence-is-not-an-assertion',
+        source: controller(
+          'class AuthzService {\n' +
+            '  can = async (_user: unknown, _action: string, _ref: unknown): Promise<boolean> => {\n' +
+            '    return true;\n' +
+            '  };\n' +
+            '}\n\n' +
+            'class HarnessAuthzR8ProbeService {\n' +
+            '  constructor(private readonly authz: AuthzService) {}\n\n' +
+            '  async authorize(user: unknown): Promise<string> {\n' +
+            '    const { can } = this.authz;\n' +
+            "    await can(user, 'probe.destructure.no-branch', null);\n" +
+            "    return 'side-effect-would-have-run';\n" +
+            '  }\n' +
+            '}',
+        ),
+        policy: {
+          admission: null,
+          mode: 'RBAC',
+          codes: [{ code: 'probe.destructure.no-branch', scope: null }],
+          require: 'all',
+          scopes: [],
+          engine: 'authz-scoped',
+        },
+        tier: 'T3',
+        closure: 'candidate',
+        diagnostic: 'probe.destructure.no-branch',
+      },
+      // re-export(正):类型经中转文件再导出后,仍须解析回原声明的 AuthzService。
+      // 注解文本读法在这里也能过(名字没变),真正被证明的是 typed 解析没有因为
+      // 跨了一层 re-export 就丢掉符号 —— 与 origin/hub 两个真实文件配套。
+      {
+        name: 'reexported-receiver-type-still-resolves',
+        source:
+          "import { AuthzService } from './__harness-authz-r8-probe-hub';\n\n" +
+          controller(
+            'class HarnessAuthzR8ProbeService {\n' +
+              '  constructor(private readonly authz: AuthzService) {}\n\n' +
+              '  async authorize(user: unknown): Promise<void> {\n' +
+              "    const allowed = await this.authz.can(user, 'probe.reexport.read', null);\n" +
+              '    if (!allowed) {\n' +
+              "      throw new Error('denied');\n" +
+              '    }\n' +
+              '  }\n' +
+              '}',
+          ),
+        policy: {
+          admission: null,
+          mode: 'RBAC',
+          codes: [{ code: 'probe.reexport.read', scope: null }],
+          require: 'all',
+          scopes: [],
+          engine: 'authz-scoped',
+        },
+        tier: 'T2',
+        closure: 'closed',
+      },
+      // re-export(负):同样跨 re-export,但没有后果分支。
+      {
+        name: 'reexported-receiver-without-consequence-is-not-an-assertion',
+        source:
+          "import { AuthzService } from './__harness-authz-r8-probe-hub';\n\n" +
+          controller(
+            'class HarnessAuthzR8ProbeService {\n' +
+              '  constructor(private readonly authz: AuthzService) {}\n\n' +
+              '  async authorize(user: unknown): Promise<string> {\n' +
+              "    await this.authz.can(user, 'probe.reexport.no-branch', null);\n" +
+              "    return 'side-effect-would-have-run';\n" +
+              '  }\n' +
+              '}',
+          ),
+        policy: {
+          admission: null,
+          mode: 'RBAC',
+          codes: [{ code: 'probe.reexport.no-branch', scope: null }],
+          require: 'all',
+          scopes: [],
+          engine: 'authz-scoped',
+        },
+        tier: 'T3',
+        closure: 'candidate',
+        diagnostic: 'probe.reexport.no-branch',
+      },
     ];
 
     let r8Ok = true;
     try {
+      // re-export 样例需要真的跨文件链:origin 声明类 → hub 原样再导出 →
+      // 探针从 hub import。在探针文件里写 `type X = AuthzService` 只能证明
+      // 局部别名,证不了「符号经中转文件再导出后仍解析回原声明」。
+      fs.writeFileSync(
+        path.join(repoRoot, reexportOriginRel),
+        'export class AuthzService {\n' +
+          '  async can(_user: unknown, _action: string, _ref: unknown): Promise<boolean> {\n' +
+          '    return true;\n' +
+          '  }\n' +
+          '}\n',
+        'utf8',
+      );
+      fs.writeFileSync(
+        path.join(repoRoot, reexportHubRel),
+        `export { AuthzService } from './${path.basename(reexportOriginRel, '.ts')}';\n`,
+        'utf8',
+      );
       for (const [index, probe] of probes.entries()) {
         fs.writeFileSync(probeAbs, probe.source);
         const entries = entryOf(probe.name, probe.policy);
@@ -1664,7 +1929,10 @@ async function main(): Promise<void> {
         }
       }
     } finally {
+      // 必须清掉:留在 src/ 会让 pnpm lint 永远红(响亮地坏,好过静默地坏)
       fs.rmSync(probeAbs, { force: true });
+      fs.rmSync(path.join(repoRoot, reexportHubRel), { force: true });
+      fs.rmSync(path.join(repoRoot, reexportOriginRel), { force: true });
     }
     if (r8Ok) {
       coveredSelectors.add(AUTHZ_DECLARATION_CLOSURE);

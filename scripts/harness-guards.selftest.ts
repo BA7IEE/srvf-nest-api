@@ -66,9 +66,11 @@ import {
   deriveTestDbNameFrom,
   deriveTemplateTestDbName,
 } from '../test/setup/worktree-db';
+import * as ts from 'typescript';
 import contractJestConfig from '../test/jest-contract.config';
 import e2eJestConfig from '../test/jest-e2e.config';
 import unitJestConfig from '../test/jest-unit.config';
+import { probeDelegateResolution } from './check-boundaries';
 
 let passCount = 0;
 const failures: string[] = [];
@@ -992,6 +994,9 @@ checkEq(
   try {
     for (const rel of [
       'src',
+      // typed 扫描以仓库 tsconfig 为唯一作用域源(不另写 glob),fixture 因此必须
+      // 是一个带 tsconfig 的完整小仓 —— 少了它 typed program 建不起来。
+      'tsconfig.json',
       'prisma/schema.prisma',
       'harness/domain-map.json',
       'harness/architecture-debt.json',
@@ -1014,15 +1019,22 @@ checkEq(
     const fixtureDomainMap = path.join(fixtureRoot, 'harness/domain-map.json');
     const originalDomainMap = fs.readFileSync(fixtureDomainMap, 'utf8');
 
-    // Phase 2 R5/R6:在临时副本里放入一组最小 Prisma 形态。这里刻意不编译
-    // 该文件；扫描器应当只依赖 AST + schema/登记表，不应靠业务测试或运行时。
+    // Phase 2 R5/R6:在临时副本里放入一组最小 Prisma 形态。扫描器只依赖
+    // AST + schema/登记表,不靠业务测试或运行时。
+    //
+    // Phase 3 typed 化后这里必须显式声明 `prisma` 的类型:原版写的是裸
+    // `this.prisma`(从不声明),名字启发式靠**拼写**就能命中,类型解析则解析不出
+    // 任何 delegate。真实 `src/**` 全部通过 tsc,夹具不声明类型才是失真的那一方 ——
+    // 补上声明是让夹具贴近真源,断言集一条未改。
     const phase2FixtureRel = 'src/modules/activities/phase2-boundary-fixture.ts';
     const phase2FixtureFile = path.join(fixtureRoot, phase2FixtureRel);
     fs.writeFileSync(
       phase2FixtureFile,
       [
+        "import type { PrismaClient } from '@prisma/client';",
         '',
         'class Phase2BoundaryFixture {',
+        '  private readonly prisma!: PrismaClient;',
         '  kernelAllowed() {',
         "    return this.prisma.user.findMany({ where: { id: 'u' }, select: { id: true, status: true } });",
         '  }',
@@ -1275,6 +1287,89 @@ checkEq(
         originalDirectWrite[0].callSiteId === noObservationDirectWrite[0].callSiteId,
       `${phase2Detail}\n${phase2WithoutObservedSubdomainWriteScan.out.slice(-4000)}`,
     );
+    // ──────────────────────────────────────────────────────────────────────
+    // R2/R3 依赖图覆盖面(Phase 3 前置 D2)
+    //
+    // 实测:本仓跨域 re-export / 动态 import() / import=require **各 0 条**,
+    // 依赖图改判定拿不到任何新发现。因此本刀不改判定,只做两件事:
+    //   ① 三种形态各一条正样例 —— 证明解析器认得,而不是「没命中所以以为没有」;
+    //   ② 把「当前为 0」钉成断言 —— **第一条真出现时本自测就红**,逼人来看一眼。
+    // ②是本仓「此刻不存在型判据必须写明到期条件」范式:到期条件 = 仓里出现第一条。
+    // 到期处置 = 确认该依赖是否该存在,然后更新此处期望值,不是直接删断言。
+    // ──────────────────────────────────────────────────────────────────────
+    const liveImportForms = new Map<string, number>();
+    for (const item of phase2Findings.filter((f) => f.kind === 'cross-domain-import')) {
+      const form = String((item.details as { form?: unknown }).form ?? 'import');
+      liveImportForms.set(form, (liveImportForms.get(form) ?? 0) + 1);
+    }
+    checkEq('D2 覆盖面:跨域 re-export 当前为 0(出现第一条即红)', liveImportForms.get('export-from') ?? 0, 0);
+    checkEq(
+      'D2 覆盖面:跨域动态 import() 当前为 0(出现第一条即红)',
+      liveImportForms.get('dynamic-import') ?? 0,
+      0,
+    );
+    checkEq(
+      'D2 覆盖面:跨域 import=require 当前为 0(出现第一条即红)',
+      liveImportForms.get('import-equals') ?? 0,
+      0,
+    );
+    check(
+      'D2 覆盖面:形态标注已接线(实存 import 形态全部带 form 字段)',
+      (liveImportForms.get('import') ?? 0) > 0,
+      phase2Detail,
+    );
+
+    // type-only 边:照算 + 打标记(维护者 2026-08-13 拍板)。
+    // 若静默豁免,v4 §4 的 platform-access 业务入边「恒 0」会当场变成假话 ——
+    // 实测那 3 条反向边恰好全是 type-only。
+    const typeOnlyImports = phase2Findings.filter(
+      (f) => f.kind === 'cross-domain-import' && (f.details as { typeOnly?: unknown }).typeOnly === true,
+    );
+    check(
+      'D2 type-only:仍计入依赖边且带 typeOnly 标记(不静默豁免)',
+      typeOnlyImports.length > 0,
+      `type-only 跨域违规边 = ${typeOnlyImports.length}`,
+    );
+
+    // 三种未见形态的正样例:写进夹具仓再扫一遍,证明「0 条」是真的没有,
+    // 不是解析器看不见。
+    // 方向必须取**未声明**的那一侧才会产生违规记录:participation→platform-access
+    // 是已声明边(business→platform 合法),反过来 platform-access→participation
+    // 才是 v4 §4 要求恒 0 的反向边。故夹具放在 permissions(platform-access)里
+    // 指向 activities(participation)。
+    const coverageRel = 'src/modules/permissions/phase3-import-form-fixture.ts';
+    const coverageFile = path.join(fixtureRoot, coverageRel);
+    fs.writeFileSync(
+      coverageFile,
+      [
+        "export { ActivitiesService } from '../activities/activities.service';",
+        'export async function dyn() {',
+        "  return import('../activities/activities.service');",
+        '}',
+        "import eq = require('../activities/activities.service');",
+        'export const held = eq;',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    const coverageScan = runFixture('scripts/check-boundaries.ts', ['--violations']);
+    fs.rmSync(coverageFile, { force: true });
+    let coverageForms = new Set<string>();
+    try {
+      const parsed = JSON.parse(coverageScan.out) as { findings: Phase2Finding[] };
+      coverageForms = new Set(
+        parsed.findings
+          .filter((f) => f.kind === 'cross-domain-import' && f.location.file === coverageRel)
+          .map((f) => String((f.details as { form?: unknown }).form)),
+      );
+    } catch {
+      coverageForms = new Set();
+    }
+    const coverageDetail = coverageScan.out.slice(-3000);
+    check('D2 正样例:跨域 re-export 被识别为依赖边', coverageForms.has('export-from'), coverageDetail);
+    check('D2 正样例:跨域动态 import() 被识别为依赖边', coverageForms.has('dynamic-import'), coverageDetail);
+    check('D2 正样例:跨域 import=require 被识别为依赖边', coverageForms.has('import-equals'), coverageDetail);
+
     const confirmedButPendingMap = JSON.parse(originalDomainMap) as {
       decisionsPending: string[];
     };
@@ -3718,6 +3813,158 @@ void (async (): Promise<void> => {
         '    (2026-08-13 探针 PR #991 实测:改 ROUTE_AUTHZ.md 触发 architecture-governance-phase0-artifacts 审批)。\n' +
         '    即本地那道闸在 AI 侧靠自觉,**人闸在 CI 侧仍然成立**。',
       `拼接构造返回 ${concatExit}、生成器返回 ${generatorExit},已不再都是 0`,
+    );
+  }
+
+  // ────────────────────────────────────────────────────────────────────────
+  // R5/R6 数据访问扫描 —— typed-AST 绕过样例(v4 EC-COMMON 第 3/4 条)
+  //
+  // v4 要求 blocking 版必须 typed-AST 化,且 alias / destructuring /
+  // variable-forwarding / re-export 四类绕过样例在 selftest 全绿。
+  //
+  // 为什么必须造样例而不是数实仓命中:实测 typed 版在本仓只比 Phase 0 的名字启发式
+  // 多出 1 条(511→512)—— 不是因为启发式准,而是因为本仓恰好把每个 Prisma 句柄都
+  // 命名成 prisma/tx/client/db。**能力差距要用对抗样例证明,不能用实仓读数证明**,
+  // 否则哪天有人写 `const anythingAtAll = this.prisma` 就静默漏检。
+  //
+  // 断言走 check-boundaries.ts 导出的 probeDelegateResolution —— 即生产同一条代码
+  // 路径。若在这里重写一份解析器,解析器退化了本自测照样绿。
+  // ────────────────────────────────────────────────────────────────────────
+  {
+    const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'srvf-boundary-fx-'));
+    fs.mkdirSync(path.join(fixtureDir, 'node_modules/@prisma/client'), { recursive: true });
+    // 形状与生成的 client 一致:每 model 一个 `<Model>Delegate`,client 持有 raw 方法。
+    fs.writeFileSync(
+      path.join(fixtureDir, 'node_modules/@prisma/client/index.d.ts'),
+      'export interface MemberDelegate { create(a?: any): any; findMany(a?: any): any; }\n' +
+        'export interface ActivityDelegate { create(a?: any): any; findMany(a?: any): any; }\n' +
+        'export interface PrismaClient { member: MemberDelegate; activity: ActivityDelegate;' +
+        ' $queryRaw(...a: any[]): any; $executeRaw(...a: any[]): any; }\n' +
+        "export declare namespace Prisma { type TransactionClient = Omit<PrismaClient, '$connect'>; }\n",
+    );
+    fs.writeFileSync(
+      path.join(fixtureDir, 'hub.ts'),
+      "export type { PrismaClient } from '@prisma/client';\n",
+    );
+
+    const positives: Record<string, string> = {
+      'direct-baseline':
+        "import type { PrismaClient } from '@prisma/client';\n" +
+        'declare const prisma: PrismaClient;\n' +
+        'export function f() { return prisma.member.create({ data: {} }); }\n',
+      // 绕过类 ①variable forwarding:句柄换成任意名字
+      'variable-forwarding':
+        "import type { PrismaClient } from '@prisma/client';\n" +
+        'declare const prisma: PrismaClient;\n' +
+        'export function f() { const anythingAtAll = prisma;' +
+        ' return anythingAtAll.member.create({ data: {} }); }\n',
+      // 绕过类 ②destructuring:delegate 被解构出来,调用形态里根本没有接收者
+      destructuring:
+        "import type { PrismaClient } from '@prisma/client';\n" +
+        'declare const prisma: PrismaClient;\n' +
+        'export function f() { const { member } = prisma; return member.create({ data: {} }); }\n',
+      // 绕过类 ③import alias
+      'import-alias':
+        "import type { PrismaClient as Renamed } from '@prisma/client';\n" +
+        'declare const zzz: Renamed;\n' +
+        'export function f() { return zzz.member.create({ data: {} }); }\n',
+      // 绕过类 ④re-export:类型经中转文件再导出
+      're-export':
+        "import type { PrismaClient } from './hub';\n" +
+        'declare const q: PrismaClient;\n' +
+        'export function f() { return q.member.create({ data: {} }); }\n',
+      // tx 参数:名字刻意不叫 tx,证明判据不是名字
+      'tx-parameter':
+        "import type { Prisma } from '@prisma/client';\n" +
+        'export function f(handle: Prisma.TransactionClient) {' +
+        ' return handle.member.create({ data: {} }); }\n',
+      // 窄口:仓内实存形态(OutboxClient / SmsDispatchClient 等)
+      'narrow-port':
+        "import type { MemberDelegate } from '@prisma/client';\n" +
+        'interface AudiencePort { member: MemberDelegate }\n' +
+        'declare const somethingElse: AudiencePort;\n' +
+        'export function f() { return somethingElse.member.create({ data: {} }); }\n',
+    };
+    const negatives: Record<string, string> = {
+      // 阳性对照:长得像但不是 Prisma —— 名字启发式在这两条上都误报
+      'lookalike-interface':
+        'interface FakeRepo { member: { create(a?: any): any } }\n' +
+        'declare const prisma: FakeRepo;\n' +
+        'export function f() { return prisma.member.create({ data: {} }); }\n',
+      'lookalike-inline':
+        'declare const db: { member: { create(a?: any): any } };\n' +
+        'export function f() { return db.member.create({ data: {} }); }\n',
+    };
+
+    const roots: string[] = [path.join(fixtureDir, 'hub.ts')];
+    for (const [name, code] of Object.entries({ ...positives, ...negatives })) {
+      const file = path.join(fixtureDir, name + '.ts');
+      fs.writeFileSync(file, code);
+      roots.push(file);
+    }
+    const probes = probeDelegateResolution(roots, ['Member', 'Activity'], {
+      target: ts.ScriptTarget.ES2022,
+      moduleResolution: ts.ModuleResolutionKind.Node10,
+      strict: true,
+      baseUrl: fixtureDir,
+    });
+    const resolvedIn = (name: string): string | null =>
+      probes.find((p) => p.file === name + '.ts' && p.model !== null)?.model ?? null;
+
+    for (const name of Object.keys(positives)) {
+      check(
+        `R5/R6 typed-AST 绕过样例(正):${name} 仍被解析为 Member delegate`,
+        resolvedIn(name) === 'Member',
+        `实际解析 = ${String(resolvedIn(name))}`,
+      );
+    }
+    for (const name of Object.keys(negatives)) {
+      check(
+        `R5/R6 typed-AST 绕过样例(负):${name} 不得被当成 Prisma 访问`,
+        resolvedIn(name) === null,
+        `实际解析 = ${String(resolvedIn(name))}`,
+      );
+    }
+
+    // 名字启发式的阳性对照:证明上面那批「正」样例确实是**被 Phase 0 漏掉的**,
+    // 而不是随便挑了几个本来就能过的形态。判据 = Phase 0 那条正则的原文。
+    const phase0Heuristic = (receiverText: string): boolean =>
+      receiverText.includes('prisma') ||
+      ['tx', 'transaction', 'client', 'db'].includes(receiverText) ||
+      /(?:^|\.)(prisma|tx|transaction|client|db)(?:\.|$)/.test(receiverText);
+    checkEq(
+      'R5/R6 对照:variable-forwarding 的接收者名字骗得过 Phase 0 启发式',
+      phase0Heuristic('anythingAtAll'),
+      false,
+    );
+    checkEq('R5/R6 对照:tx-parameter 改名 handle 后骗得过 Phase 0 启发式', phase0Heuristic('handle'), false);
+    checkEq(
+      'R5/R6 对照:lookalike 在 Phase 0 启发式下是误报(名字叫 db 就算数)',
+      phase0Heuristic('db'),
+      true,
+    );
+
+    // raw 通道同样按类型判定,不按名字。
+    fs.writeFileSync(
+      path.join(fixtureDir, 'raw-channel.ts'),
+      "import type { Prisma } from '@prisma/client';\n" +
+        'export function f(handle: Prisma.TransactionClient) {' +
+        " return handle.$queryRaw`SELECT 1 FROM members`; }\n",
+    );
+    const rawProbes = probeDelegateResolution(
+      [path.join(fixtureDir, 'raw-channel.ts')],
+      ['Member'],
+      {
+        target: ts.ScriptTarget.ES2022,
+        moduleResolution: ts.ModuleResolutionKind.Node10,
+        strict: true,
+        baseUrl: fixtureDir,
+      },
+    );
+    check(
+      'R5/R6 raw 通道:$queryRaw 接收者按类型识别(参数名不叫 tx 也认得)',
+      rawProbes.some((p) => p.rawCapable),
+      `probes=${JSON.stringify(rawProbes)}`,
     );
   }
 

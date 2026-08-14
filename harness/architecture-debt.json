@@ -4,11 +4,11 @@
   "inputDigest": "sha256:27c69e389ad0e7df220c9ccd096d4172ff1fdc4f1e6901cd394bc620053046a3",
   "enforcement": "report-only",
   "observedCount": 222,
-  "scanMethod": "direct Prisma delegate writes plus static R5/R6 candidates (kernel predicate, semantic query, literal raw SQL physical table), and Phase 2 D4 maintainer-confirmed undeclared-edge direction debt; source input closure in inputDigest",
+  "scanMethod": "typed-AST Prisma delegate resolution (ts.Program + TypeChecker over the repository tsconfig closure; a member access counts when its type resolves to exactly one generated `<Model>Delegate`, independent of receiver spelling) plus static R5/R6 candidates (kernel predicate, semantic query, literal raw SQL physical table), and Phase 2 D4 maintainer-confirmed undeclared-edge direction debt; source input closure in inputDigest. callSiteId is a normalized AST-path hash (Phase 3 前置); each migrated entry carries its Phase 0 id under `supersedes`.",
   "knownGaps": [
-    "Prisma aliases, destructuring, wrappers and variable forwarding are not proven.",
-    "Dynamic delegates and computed property access stay report-only unknowns.",
-    "tsconfig aliases, re-exports and runtime module loading are not resolved.",
+    "Prisma access reached through a value typed `any` (or through an un-annotated boundary) resolves to no delegate and is invisible; type-annotated aliases, re-exports, destructuring, variable forwarding and narrow hand-written ports are proven by the bypass matrix in harness-guards.selftest.ts.",
+    "Dynamic delegate access with a non-literal key (`client[name]`) types as the union of every delegate and is deliberately left unresolved rather than attributed to an arbitrary model; computed access with a literal key does resolve.",
+    "Runtime module loading (a computed `import()` specifier, `require` resolved at runtime) is not resolved.",
     "Dynamic select/include/where shapes cannot be proven into a read tier.",
     "Semantic-read detection only recognises a static time-window plus status-predicate combination.",
     "Raw SQL only matches literal physical table names derived from Prisma @@map or Prisma default table names."
@@ -21,7 +21,7 @@
       "violationFingerprint": "vfp:881cf3cf630d278aa87b589d",
       "shapeDigest": "sdg:dd211ee8743c0038f390ccf9",
       "dynamicShape": false,
-      "callSiteId": "cs:36ac69bd84bf461fc6e19272",
+      "callSiteId": "cs:94ceb049dcbed4f11eae6a49",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -42,7 +42,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:36ac69bd84bf461fc6e19272"
     },
     {
       "id": "XW-0002",
@@ -51,7 +52,7 @@
       "violationFingerprint": "vfp:85ef9dc1ee58191cd75fb16a",
       "shapeDigest": "sdg:12cb8341f8c573118b72902e",
       "dynamicShape": false,
-      "callSiteId": "cs:81e674b9750d4eb25693d553",
+      "callSiteId": "cs:71b84f5a4cdd2f6b213440ca",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -72,7 +73,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:81e674b9750d4eb25693d553"
     },
     {
       "id": "XW-0003",
@@ -81,7 +83,7 @@
       "violationFingerprint": "vfp:e51d2f22c3dd8a91546cc30b",
       "shapeDigest": "sdg:341728afde552d78fbbee6ca",
       "dynamicShape": false,
-      "callSiteId": "cs:8acd257e90cf9c417334c103",
+      "callSiteId": "cs:ba5578fdfcba72aa48b76acc",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -102,7 +104,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:8acd257e90cf9c417334c103"
     },
     {
       "id": "XW-0004",
@@ -111,7 +114,7 @@
       "violationFingerprint": "vfp:290481f6fe9e29a6a080c80b",
       "shapeDigest": "sdg:29ec5e82671a3e0fdcb8f027",
       "dynamicShape": false,
-      "callSiteId": "cs:0667bb00468d686e7fcef8bf",
+      "callSiteId": "cs:18ba029278f3f47926a97637",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -132,7 +135,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "RoleBinding 属主规则、调用事务边界或 role-bindings public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:0667bb00468d686e7fcef8bf"
     },
     {
       "id": "XW-0005",
@@ -141,7 +145,7 @@
       "violationFingerprint": "vfp:f9d0b41527a8df4f96658664",
       "shapeDigest": "sdg:bcc932653dbcb5da5a371261",
       "dynamicShape": false,
-      "callSiteId": "cs:864ea9386bd969c5335af0b0",
+      "callSiteId": "cs:beefadc67f1829cfb2368231",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -162,7 +166,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "RoleBinding 属主规则、调用事务边界或 role-bindings public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:864ea9386bd969c5335af0b0"
     },
     {
       "id": "XW-0006",
@@ -171,7 +176,7 @@
       "violationFingerprint": "vfp:eed55f1ad9e45d1bd2e091b3",
       "shapeDigest": "sdg:8db3310cde3fb40f45c5ef70",
       "dynamicShape": false,
-      "callSiteId": "cs:95a00e17fbc0a48b10a4c443",
+      "callSiteId": "cs:abb988c396e22f281ed2bfe8",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -192,7 +197,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:95a00e17fbc0a48b10a4c443"
     },
     {
       "id": "XW-0007",
@@ -201,7 +207,7 @@
       "violationFingerprint": "vfp:d65530eb35f9cd6733b56366",
       "shapeDigest": "sdg:93f9523ef25ed63beb8b3cfc",
       "dynamicShape": false,
-      "callSiteId": "cs:9c0c72536f29c3a85c08446f",
+      "callSiteId": "cs:b20710784dd2e30fcb4cc0a4",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -222,7 +228,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:9c0c72536f29c3a85c08446f"
     },
     {
       "id": "XW-0008",
@@ -231,7 +238,7 @@
       "violationFingerprint": "vfp:b69dc06848dac1eecaa54c32",
       "shapeDigest": "sdg:e094d33b54048278d44f2544",
       "dynamicShape": false,
-      "callSiteId": "cs:eec3706e4221fbaa6e745a0c",
+      "callSiteId": "cs:359f2ce6e75dec5ead7bdcaa",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -252,7 +259,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:eec3706e4221fbaa6e745a0c"
     },
     {
       "id": "XW-0010",
@@ -261,7 +269,7 @@
       "violationFingerprint": "vfp:45db8eec3fe72bd2802601d0",
       "shapeDigest": "sdg:31ef846b89d058424b5aac25",
       "dynamicShape": false,
-      "callSiteId": "cs:8c400dbbe7d9d199a3de0a65",
+      "callSiteId": "cs:1be12ad778545aee7076bb37",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -282,7 +290,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:8c400dbbe7d9d199a3de0a65"
     },
     {
       "id": "XW-0010",
@@ -291,7 +300,7 @@
       "violationFingerprint": "vfp:45db8eec3fe72bd2802601d0",
       "shapeDigest": "sdg:469d0f6522d7868a0629ce46",
       "dynamicShape": false,
-      "callSiteId": "cs:fbad90dbc389feffec0283c3",
+      "callSiteId": "cs:3b466d37d53303246ce706e1",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -312,7 +321,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:fbad90dbc389feffec0283c3"
     },
     {
       "id": "XW-0011",
@@ -321,7 +331,7 @@
       "violationFingerprint": "vfp:389a4034062aede39a101c8d",
       "shapeDigest": "sdg:ecf01ecce005656bc6bda941",
       "dynamicShape": false,
-      "callSiteId": "cs:85bbe469a29a8e37e9e633b8",
+      "callSiteId": "cs:70d264e75ccb3a0a6f112043",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -342,7 +352,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:85bbe469a29a8e37e9e633b8"
     },
     {
       "id": "XW-0012",
@@ -351,7 +362,7 @@
       "violationFingerprint": "vfp:a08b34430d5afa6173eee99f",
       "shapeDigest": "sdg:1970d9269eee598da81f7cef",
       "dynamicShape": false,
-      "callSiteId": "cs:ee71e0aeb4b0512a60131dee",
+      "callSiteId": "cs:f06011344cde08b1d272d82c",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -372,7 +383,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:ee71e0aeb4b0512a60131dee"
     },
     {
       "id": "XW-0013",
@@ -381,7 +393,7 @@
       "violationFingerprint": "vfp:a8edc1dd10673c15c7de0879",
       "shapeDigest": "sdg:c990920c421592f26f21cd21",
       "dynamicShape": false,
-      "callSiteId": "cs:0ea1ef39b1d34ca26774e7f3",
+      "callSiteId": "cs:0be25f97bc03c6796fe441f8",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -402,7 +414,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:0ea1ef39b1d34ca26774e7f3"
     },
     {
       "id": "XW-0014",
@@ -411,7 +424,7 @@
       "violationFingerprint": "vfp:1253405324b8c2a5793c7eb2",
       "shapeDigest": "sdg:2a7e7697d6d47d125402c5ce",
       "dynamicShape": false,
-      "callSiteId": "cs:6b935df20ef410a8b2890987",
+      "callSiteId": "cs:497d79da86fdb95733618389",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -432,7 +445,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:6b935df20ef410a8b2890987"
     },
     {
       "id": "XW-0016",
@@ -441,7 +455,7 @@
       "violationFingerprint": "vfp:1d6dd20fbb6429c335585d8d",
       "shapeDigest": "sdg:1de89c56ef7b11d00c0116c1",
       "dynamicShape": false,
-      "callSiteId": "cs:2dcf39e1df7cc7edaa1417ba",
+      "callSiteId": "cs:1142d2ae433352102d7ada5d",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -462,7 +476,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:2dcf39e1df7cc7edaa1417ba"
     },
     {
       "id": "XW-0016",
@@ -471,7 +486,7 @@
       "violationFingerprint": "vfp:1d6dd20fbb6429c335585d8d",
       "shapeDigest": "sdg:1d8c72a996d9d41ea81d141d",
       "dynamicShape": false,
-      "callSiteId": "cs:6992518776a0b0b14d642a2d",
+      "callSiteId": "cs:2d45eb1c75a4f61e05164cbb",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -492,7 +507,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:6992518776a0b0b14d642a2d"
     },
     {
       "id": "XW-0017",
@@ -501,7 +517,7 @@
       "violationFingerprint": "vfp:18b5d31a37556060e27a1e11",
       "shapeDigest": "sdg:f4dc34568d17b874e1d72bd5",
       "dynamicShape": false,
-      "callSiteId": "cs:4b8c5d7b15935b49a65f5c91",
+      "callSiteId": "cs:362630a42b31e5711a64b656",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -522,7 +538,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:4b8c5d7b15935b49a65f5c91"
     },
     {
       "id": "XW-0018",
@@ -531,7 +548,7 @@
       "violationFingerprint": "vfp:ad7feae043e6a196ba04df20",
       "shapeDigest": "sdg:1e63e0e59e443b226d49a686",
       "dynamicShape": false,
-      "callSiteId": "cs:04099f8e25aea5a6e3a631f0",
+      "callSiteId": "cs:52e544009fc085f705446ff3",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -552,7 +569,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:04099f8e25aea5a6e3a631f0"
     },
     {
       "id": "XW-0019",
@@ -561,7 +579,7 @@
       "violationFingerprint": "vfp:fd5f7c4fbdfa049bf33d0bfa",
       "shapeDigest": "sdg:a66da94296814ac1860bc214",
       "dynamicShape": false,
-      "callSiteId": "cs:736d1a8af54c8b3aaad490e2",
+      "callSiteId": "cs:22b2c8ab08f53071f659daf8",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -582,7 +600,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:736d1a8af54c8b3aaad490e2"
     },
     {
       "id": "XW-0020",
@@ -591,7 +610,7 @@
       "violationFingerprint": "vfp:fdddd29850e2541135c09e19",
       "shapeDigest": "sdg:156ba640ad395e952497d807",
       "dynamicShape": false,
-      "callSiteId": "cs:68bbc5770f32ea6e23eb026b",
+      "callSiteId": "cs:6ae29bf296b3d64f8544122e",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -612,7 +631,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:68bbc5770f32ea6e23eb026b"
     },
     {
       "id": "XW-0120",
@@ -621,7 +641,7 @@
       "violationFingerprint": "vfp:343d81ad949303c63847d722",
       "shapeDigest": "sdg:28a9652de33ea41bcc5c7f1e",
       "dynamicShape": false,
-      "callSiteId": "cs:f8a1914649c22a963b13884e",
+      "callSiteId": "cs:a298e6b856819e4f3e425a82",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -642,7 +662,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:f8a1914649c22a963b13884e"
     },
     {
       "id": "XW-0121",
@@ -651,7 +672,7 @@
       "violationFingerprint": "vfp:a47a1fa8fa94d56ec0a1210d",
       "shapeDigest": "sdg:893ceba3c5de7dda1de65a04",
       "dynamicShape": false,
-      "callSiteId": "cs:904a2d1fc8a6339d4005cede",
+      "callSiteId": "cs:b1bcbf2d69f8363aec249d53",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -672,7 +693,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:904a2d1fc8a6339d4005cede"
     },
     {
       "id": "XW-0122",
@@ -681,7 +703,7 @@
       "violationFingerprint": "vfp:3a200ed5cced3fbb0e740091",
       "shapeDigest": "sdg:6562a9d7a71bcadcab76d91a",
       "dynamicShape": false,
-      "callSiteId": "cs:8411dde1976b5c6bdd53cb35",
+      "callSiteId": "cs:bfaa7190fed4d3b59edcb916",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -702,7 +724,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:8411dde1976b5c6bdd53cb35"
     },
     {
       "id": "XW-0123",
@@ -711,7 +734,7 @@
       "violationFingerprint": "vfp:b95b3a52bd452287de0b54b1",
       "shapeDigest": "sdg:8019ac8cf7347280dc664860",
       "dynamicShape": false,
-      "callSiteId": "cs:c5fb2936262b6816dafd68c6",
+      "callSiteId": "cs:334a7c41bacd8d89a12acba9",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -732,7 +755,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:c5fb2936262b6816dafd68c6"
     },
     {
       "id": "XW-0124",
@@ -741,7 +765,7 @@
       "violationFingerprint": "vfp:099e817edc3c5e4a3bdfee86",
       "shapeDigest": "sdg:7beb02c6b3b187f95a427042",
       "dynamicShape": false,
-      "callSiteId": "cs:7df167a20fa9f3a03f6bbb01",
+      "callSiteId": "cs:cf2b49d0929eef66d6a91209",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -762,7 +786,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:7df167a20fa9f3a03f6bbb01"
     },
     {
       "id": "XW-0125",
@@ -771,7 +796,7 @@
       "violationFingerprint": "vfp:4bb2d828310124cd5c5a7da5",
       "shapeDigest": "sdg:46d9e45ca8ff58e13304420f",
       "dynamicShape": false,
-      "callSiteId": "cs:b0c583b1c2cc554bdcef880b",
+      "callSiteId": "cs:e7518ad3e48a0c2d8ba3cff5",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -792,7 +817,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:b0c583b1c2cc554bdcef880b"
     },
     {
       "id": "XW-0126",
@@ -801,7 +827,7 @@
       "violationFingerprint": "vfp:51d311fb5211fb9f54318139",
       "shapeDigest": "sdg:1114dd9c9a82d7818f896e03",
       "dynamicShape": false,
-      "callSiteId": "cs:8d9ab37c736a4fc98a5e6693",
+      "callSiteId": "cs:5082d9b5d8370d4ddc3829a7",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -822,7 +848,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:8d9ab37c736a4fc98a5e6693"
     },
     {
       "id": "XW-0127",
@@ -831,7 +858,7 @@
       "violationFingerprint": "vfp:056c340983d5293f1067efb2",
       "shapeDigest": "sdg:d9b828c1248d34278587e2fd",
       "dynamicShape": false,
-      "callSiteId": "cs:41603209b1a6c2c132fe42d8",
+      "callSiteId": "cs:e1517040077bf6f55ce85e58",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -852,7 +879,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:41603209b1a6c2c132fe42d8"
     },
     {
       "id": "XW-0021",
@@ -861,7 +889,7 @@
       "violationFingerprint": "vfp:2f429e531e94209ccd5e65a0",
       "shapeDigest": "sdg:84648fab2fd656e31e3c5316",
       "dynamicShape": false,
-      "callSiteId": "cs:9e622cb79adc364240c9cb5a",
+      "callSiteId": "cs:73205b2fb6ba854fc0e90755",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -882,7 +910,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:9e622cb79adc364240c9cb5a"
     },
     {
       "id": "XW-0022",
@@ -891,7 +920,7 @@
       "violationFingerprint": "vfp:a7a8f138fbe01f7549b46e12",
       "shapeDigest": "sdg:60f4b211adbdedffedf5d89a",
       "dynamicShape": false,
-      "callSiteId": "cs:9df251388562be1b2b4d7887",
+      "callSiteId": "cs:15d0165c36089e7a89c45053",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -912,7 +941,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:9df251388562be1b2b4d7887"
     },
     {
       "id": "XW-0023",
@@ -921,7 +951,7 @@
       "violationFingerprint": "vfp:cf24360af77fb99c89804292",
       "shapeDigest": "sdg:0602b980a315decdffa0e24d",
       "dynamicShape": false,
-      "callSiteId": "cs:820a2cb06dc607a2df23d174",
+      "callSiteId": "cs:7aa2aa0ad649b11ccbea1111",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -942,7 +972,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:820a2cb06dc607a2df23d174"
     },
     {
       "id": "XW-0128",
@@ -951,7 +982,7 @@
       "violationFingerprint": "vfp:327c44f93fba1ad95ee741b8",
       "shapeDigest": "sdg:1608a667f7b304b5f72c78c5",
       "dynamicShape": false,
-      "callSiteId": "cs:f433429bd4eed085eb3fb2af",
+      "callSiteId": "cs:598add4a84b8fd946791d1ee",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -972,7 +1003,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:f433429bd4eed085eb3fb2af"
     },
     {
       "id": "XW-0029",
@@ -981,7 +1013,7 @@
       "violationFingerprint": "vfp:b561cef1a9a1756510af17a2",
       "shapeDigest": "sdg:b8d99ce89d773971f1b2412c",
       "dynamicShape": false,
-      "callSiteId": "cs:51fe2a0f455c4463b310d917",
+      "callSiteId": "cs:216c479a4e9c69d19373f050",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -1002,7 +1034,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:51fe2a0f455c4463b310d917"
     },
     {
       "id": "XW-0028",
@@ -1011,7 +1044,7 @@
       "violationFingerprint": "vfp:3c0910806ccec668292d6ab7",
       "shapeDigest": "sdg:27f147c277dd3ec2f1b749f5",
       "dynamicShape": false,
-      "callSiteId": "cs:b4ced5e3bec81f220a8247a3",
+      "callSiteId": "cs:ecd43027449f86893771d75d",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -1032,7 +1065,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:b4ced5e3bec81f220a8247a3"
     },
     {
       "id": "XW-0029",
@@ -1041,7 +1075,7 @@
       "violationFingerprint": "vfp:b561cef1a9a1756510af17a2",
       "shapeDigest": "sdg:578fdf5c98425d2afbed38db",
       "dynamicShape": false,
-      "callSiteId": "cs:265145e163ecb31452539ae1",
+      "callSiteId": "cs:d8185f0292a30909194f475d",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -1062,7 +1096,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:265145e163ecb31452539ae1"
     },
     {
       "id": "XW-0030",
@@ -1071,7 +1106,7 @@
       "violationFingerprint": "vfp:685b6012ee49ad693cc92b44",
       "shapeDigest": "sdg:2a602f20a949cff8fff2c884",
       "dynamicShape": false,
-      "callSiteId": "cs:f6d682bd2fb9c1c29a1b0f83",
+      "callSiteId": "cs:c4e53ed2774d76d163d32756",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1092,7 +1127,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:f6d682bd2fb9c1c29a1b0f83"
     },
     {
       "id": "XW-0031",
@@ -1101,7 +1137,7 @@
       "violationFingerprint": "vfp:ff1773b952dd54e3896e462f",
       "shapeDigest": "sdg:a30ff131d22282cde1acf7c9",
       "dynamicShape": false,
-      "callSiteId": "cs:91874fcda9ba1adc25d76000",
+      "callSiteId": "cs:9e55e6fc1244ccf77c9f5768",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1122,7 +1158,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:91874fcda9ba1adc25d76000"
     },
     {
       "id": "XW-0032",
@@ -1131,7 +1168,7 @@
       "violationFingerprint": "vfp:6ec4a67ef133602922c3e760",
       "shapeDigest": "sdg:83c556dc3f4e0ece97d2ad6e",
       "dynamicShape": false,
-      "callSiteId": "cs:f010bb84fb29ba8625d1a1b5",
+      "callSiteId": "cs:a79b841d2dc70efc1476360e",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1152,7 +1189,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:f010bb84fb29ba8625d1a1b5"
     },
     {
       "id": "XW-0033",
@@ -1161,7 +1199,7 @@
       "violationFingerprint": "vfp:54295c6247e96653feda47c1",
       "shapeDigest": "sdg:e30938511f3e6f1666dfd101",
       "dynamicShape": false,
-      "callSiteId": "cs:03147f6ecc33eba1e7f0c281",
+      "callSiteId": "cs:9301c11b0ed77fc14dfb5e89",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1182,7 +1220,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:03147f6ecc33eba1e7f0c281"
     },
     {
       "id": "XW-0034",
@@ -1191,7 +1230,7 @@
       "violationFingerprint": "vfp:af6cd1e37d622b5f450df128",
       "shapeDigest": "sdg:62fdc22e4f3ea64f2b201677",
       "dynamicShape": false,
-      "callSiteId": "cs:7da4242efae4200a2d24fffb",
+      "callSiteId": "cs:2230183f607e80a3350e97cb",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1212,7 +1251,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:7da4242efae4200a2d24fffb"
     },
     {
       "id": "XW-0035",
@@ -1221,7 +1261,7 @@
       "violationFingerprint": "vfp:889b2a4f657e5b79d3990660",
       "shapeDigest": "sdg:99e6eb6e11f7df8421bb0e71",
       "dynamicShape": false,
-      "callSiteId": "cs:4ec9dddd0f6e6810dd2a8010",
+      "callSiteId": "cs:8b1e177ade56c03a42db8c8a",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1242,7 +1282,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:4ec9dddd0f6e6810dd2a8010"
     },
     {
       "id": "XW-0036",
@@ -1251,7 +1292,7 @@
       "violationFingerprint": "vfp:03d7634f17d37622eb6387db",
       "shapeDigest": "sdg:e72b0a1bb787e7b947357669",
       "dynamicShape": false,
-      "callSiteId": "cs:48994098e22a5465f502372d",
+      "callSiteId": "cs:e51e7dde858a4a4111d9fafa",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1272,7 +1313,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:48994098e22a5465f502372d"
     },
     {
       "id": "XW-0037",
@@ -1281,7 +1323,7 @@
       "violationFingerprint": "vfp:9b0b156af232d1ea815db6bd",
       "shapeDigest": "sdg:3b7147a739ba0178c1b77fef",
       "dynamicShape": false,
-      "callSiteId": "cs:2a59726ad09b52230ba5c7ea",
+      "callSiteId": "cs:f84e9b25352ab4767399d981",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1302,7 +1344,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:2a59726ad09b52230ba5c7ea"
     },
     {
       "id": "XW-0038",
@@ -1311,7 +1354,7 @@
       "violationFingerprint": "vfp:4e7c7228d0beb3d226cb3d71",
       "shapeDigest": "sdg:6cf158a166fbd2eb2f0af40b",
       "dynamicShape": false,
-      "callSiteId": "cs:e2a72c0e7708077bcfab15e2",
+      "callSiteId": "cs:b640647139ec088e127120bf",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1332,7 +1375,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:e2a72c0e7708077bcfab15e2"
     },
     {
       "id": "XW-0039",
@@ -1341,7 +1385,7 @@
       "violationFingerprint": "vfp:7ac093c8c6fca554d15082c9",
       "shapeDigest": "sdg:5579ab410e6d6b869402ec76",
       "dynamicShape": false,
-      "callSiteId": "cs:9fc9da4128a23b451d4bea9d",
+      "callSiteId": "cs:477ba87e128128fb21c8849a",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1362,7 +1406,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:9fc9da4128a23b451d4bea9d"
     },
     {
       "id": "XW-0040",
@@ -1371,7 +1416,7 @@
       "violationFingerprint": "vfp:037faff36c3f8f598d438467",
       "shapeDigest": "sdg:f29edf6520980e6f36cc7a68",
       "dynamicShape": false,
-      "callSiteId": "cs:4f4f7e4615b64b9e9f15b50a",
+      "callSiteId": "cs:b3056c0da399363883154951",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1392,7 +1437,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:4f4f7e4615b64b9e9f15b50a"
     },
     {
       "id": "XW-0041",
@@ -1401,7 +1447,7 @@
       "violationFingerprint": "vfp:279eb7932bd87f641216c684",
       "shapeDigest": "sdg:fe067eb1c7e61ca2d8bc01b8",
       "dynamicShape": false,
-      "callSiteId": "cs:5f8e7438b4a99bfc4eb154a4",
+      "callSiteId": "cs:32305f421e00d3b892c35e0a",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1422,7 +1468,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:5f8e7438b4a99bfc4eb154a4"
     },
     {
       "id": "XW-0042",
@@ -1431,7 +1478,7 @@
       "violationFingerprint": "vfp:5ef5b3119505f68b4ca6ec77",
       "shapeDigest": "sdg:88d57aafdd39deee063d5431",
       "dynamicShape": false,
-      "callSiteId": "cs:e18e1d62cc6430f4ed83e193",
+      "callSiteId": "cs:375e17bb3e77249e168ff5f3",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1452,7 +1499,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:e18e1d62cc6430f4ed83e193"
     },
     {
       "id": "XW-0043",
@@ -1461,7 +1509,7 @@
       "violationFingerprint": "vfp:6d2fb499554a9a523f801ed4",
       "shapeDigest": "sdg:e412b7b495ff483e6b25275f",
       "dynamicShape": false,
-      "callSiteId": "cs:42767d588bd818f0ccbbe460",
+      "callSiteId": "cs:838fd72b6a90dedb342331a7",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1482,7 +1530,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:42767d588bd818f0ccbbe460"
     },
     {
       "id": "XW-0044",
@@ -1491,7 +1540,7 @@
       "violationFingerprint": "vfp:04301af2d8ae92ef4bbc0bd2",
       "shapeDigest": "sdg:3429a855bd90de599d55472a",
       "dynamicShape": false,
-      "callSiteId": "cs:36c4c4e0d4cd99306dabb21e",
+      "callSiteId": "cs:75aeaebe2f8d9fbb43b5f4b2",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1512,7 +1561,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:36c4c4e0d4cd99306dabb21e"
     },
     {
       "id": "XW-0046",
@@ -1521,7 +1571,7 @@
       "violationFingerprint": "vfp:75c9893d8894ef2156c00930",
       "shapeDigest": "sdg:8a30a8b627bb56311e6ad087",
       "dynamicShape": false,
-      "callSiteId": "cs:3fab7a1aaaa18098b3623ea6",
+      "callSiteId": "cs:0df1ed837b7e31b9a040b4bf",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1542,7 +1592,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:3fab7a1aaaa18098b3623ea6"
     },
     {
       "id": "XW-0046",
@@ -1551,7 +1602,7 @@
       "violationFingerprint": "vfp:75c9893d8894ef2156c00930",
       "shapeDigest": "sdg:360380e124f64622aea0714f",
       "dynamicShape": false,
-      "callSiteId": "cs:d2f5b44c0c9268e6ba8a4f2a",
+      "callSiteId": "cs:939c86106fb232aa57ce3415",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1572,7 +1623,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:d2f5b44c0c9268e6ba8a4f2a"
     },
     {
       "id": "XW-0047",
@@ -1581,7 +1633,7 @@
       "violationFingerprint": "vfp:255378fb4dfe33d44792429c",
       "shapeDigest": "sdg:00e6c12c84d3d053c0e7d502",
       "dynamicShape": false,
-      "callSiteId": "cs:1dc11aab8756e6cee2d49410",
+      "callSiteId": "cs:58aedcaeec78738ded6a112c",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1602,7 +1654,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:1dc11aab8756e6cee2d49410"
     },
     {
       "id": "XW-0048",
@@ -1611,7 +1664,7 @@
       "violationFingerprint": "vfp:682400a0b6c7b360b6f3f5d7",
       "shapeDigest": "sdg:816999242da913486f35a428",
       "dynamicShape": false,
-      "callSiteId": "cs:828ce60f8aa5fdf44c639e6d",
+      "callSiteId": "cs:4d51f96a4830439196b10e95",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1632,7 +1685,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:828ce60f8aa5fdf44c639e6d"
     },
     {
       "id": "XW-0049",
@@ -1641,7 +1695,7 @@
       "violationFingerprint": "vfp:c1d6b295d100792855c17a23",
       "shapeDigest": "sdg:609dd5565f057f3a31b9ba56",
       "dynamicShape": false,
-      "callSiteId": "cs:83327237db03e44d6476d3b6",
+      "callSiteId": "cs:917113a570eb2ed628cdc74b",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1662,7 +1716,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:83327237db03e44d6476d3b6"
     },
     {
       "id": "XW-0050",
@@ -1671,7 +1726,7 @@
       "violationFingerprint": "vfp:38e6de793299c4fe10e6fe92",
       "shapeDigest": "sdg:59851001c4b0e547d451140f",
       "dynamicShape": false,
-      "callSiteId": "cs:9bd924019b6dab8f7df21941",
+      "callSiteId": "cs:da46dd8bd45bd026d9e5d87c",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1692,7 +1747,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:9bd924019b6dab8f7df21941"
     },
     {
       "id": "XW-0051",
@@ -1701,7 +1757,7 @@
       "violationFingerprint": "vfp:b6d3055e8c9be7e491c1fe7b",
       "shapeDigest": "sdg:0a1b3f3aa5485e729dc8cdbf",
       "dynamicShape": false,
-      "callSiteId": "cs:0dc2a118284511019c254cb0",
+      "callSiteId": "cs:c7cd1d42d2bf69104e4e5609",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1722,7 +1778,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:0dc2a118284511019c254cb0"
     },
     {
       "id": "XW-0052",
@@ -1731,7 +1788,7 @@
       "violationFingerprint": "vfp:a4e0c28a7a40f3c5cbc8dc9f",
       "shapeDigest": "sdg:d73f1f9d821560d514102763",
       "dynamicShape": false,
-      "callSiteId": "cs:2cc8d564a94ebf17b5cdd901",
+      "callSiteId": "cs:c301717a1b573f30baa7cc54",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1752,7 +1809,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:2cc8d564a94ebf17b5cdd901"
     },
     {
       "id": "XW-0053",
@@ -1761,7 +1819,7 @@
       "violationFingerprint": "vfp:7b3f32744f245ebb8831257e",
       "shapeDigest": "sdg:816999242da913486f35a428",
       "dynamicShape": false,
-      "callSiteId": "cs:2677ad92cf41b6da5610629f",
+      "callSiteId": "cs:837abfb876929764a779dbf5",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1782,7 +1840,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:2677ad92cf41b6da5610629f"
     },
     {
       "id": "XW-0054",
@@ -1791,7 +1850,7 @@
       "violationFingerprint": "vfp:700324153f627072698e829f",
       "shapeDigest": "sdg:ae9201ab3bd8c3234e9c093f",
       "dynamicShape": false,
-      "callSiteId": "cs:9c4e36c564c6ae7e8fef53b9",
+      "callSiteId": "cs:26c582372643b4af78aeffbc",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1812,7 +1871,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:9c4e36c564c6ae7e8fef53b9"
     },
     {
       "id": "XW-0055",
@@ -1821,7 +1881,7 @@
       "violationFingerprint": "vfp:bfdaaa0ff9a81c76165090ab",
       "shapeDigest": "sdg:b00927c6ec7db82fa5f4549c",
       "dynamicShape": false,
-      "callSiteId": "cs:20d1ff7b1576d466ea7f3dfc",
+      "callSiteId": "cs:dd5423893a8f1866f3525557",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1842,7 +1902,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:20d1ff7b1576d466ea7f3dfc"
     },
     {
       "id": "XW-0056",
@@ -1851,7 +1912,7 @@
       "violationFingerprint": "vfp:60bdf109b94aeb71a43926d7",
       "shapeDigest": "sdg:236c1291192d16981ff87d68",
       "dynamicShape": false,
-      "callSiteId": "cs:76c47ecea4381fdec30ad99d",
+      "callSiteId": "cs:358c43f24ec4ab0051304b05",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1872,7 +1933,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:76c47ecea4381fdec30ad99d"
     },
     {
       "id": "XW-0057",
@@ -1881,7 +1943,7 @@
       "violationFingerprint": "vfp:e26ab11741a7bf7b43014492",
       "shapeDigest": "sdg:fe264d89357aa2e1e0666c4f",
       "dynamicShape": false,
-      "callSiteId": "cs:f21a03e75cdf1493be66d76c",
+      "callSiteId": "cs:30eae8600ef516fbeba8aef1",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1902,7 +1964,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:f21a03e75cdf1493be66d76c"
     },
     {
       "id": "XW-0058",
@@ -1911,7 +1974,7 @@
       "violationFingerprint": "vfp:50f6692e437d2b61f8f944e7",
       "shapeDigest": "sdg:bfff14398627ec3c650ebd06",
       "dynamicShape": false,
-      "callSiteId": "cs:230ab806c58aa212c6ed3475",
+      "callSiteId": "cs:92b017f3283d87231dd95dd1",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-core",
@@ -1932,7 +1995,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "RegistrationUploadSession 属主规则、调用事务边界或 activity-registrations public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:230ab806c58aa212c6ed3475"
     },
     {
       "id": "XW-0059",
@@ -1941,7 +2005,7 @@
       "violationFingerprint": "vfp:1c88d88712c47a7d16ded1f4",
       "shapeDigest": "sdg:ce41c1df94a27ec3cf124766",
       "dynamicShape": false,
-      "callSiteId": "cs:44306ff8814e200dbab0241a",
+      "callSiteId": "cs:1d1b218bc764e65a33abc522",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -1962,7 +2026,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:44306ff8814e200dbab0241a"
     },
     {
       "id": "XW-0060",
@@ -1971,7 +2036,7 @@
       "violationFingerprint": "vfp:ddd471551f1dd648911bad90",
       "shapeDigest": "sdg:8697c05ea28c9d9a98858193",
       "dynamicShape": false,
-      "callSiteId": "cs:efd9cbb9cd19e07810cbab91",
+      "callSiteId": "cs:791eaa0b9ecf1b0061262d04",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "participation",
@@ -1992,7 +2057,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:efd9cbb9cd19e07810cbab91"
     },
     {
       "id": "XW-0061",
@@ -2001,7 +2067,7 @@
       "violationFingerprint": "vfp:0bbd14173e75eca2ce434dad",
       "shapeDigest": "sdg:e7cbd7c4718f73a3400b6031",
       "dynamicShape": false,
-      "callSiteId": "cs:0d1f9d5ef0476c797b9b1a92",
+      "callSiteId": "cs:779e5280cb4e6c52264f3c49",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2022,7 +2088,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:0d1f9d5ef0476c797b9b1a92"
     },
     {
       "id": "XW-0062",
@@ -2031,7 +2098,7 @@
       "violationFingerprint": "vfp:8197c23b4b3353134a504e46",
       "shapeDigest": "sdg:1bbc5eecabfea4f3fe528dee",
       "dynamicShape": false,
-      "callSiteId": "cs:243834ee1be58d5cbbfe35b0",
+      "callSiteId": "cs:d36fd5d5a8adbeea54e8760d",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2052,7 +2119,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:243834ee1be58d5cbbfe35b0"
     },
     {
       "id": "XW-0063",
@@ -2061,7 +2129,7 @@
       "violationFingerprint": "vfp:01f913ac4eedc3153bb7f56b",
       "shapeDigest": "sdg:684191a368ce368738990de1",
       "dynamicShape": false,
-      "callSiteId": "cs:24a0675e8ef6fc9e87255087",
+      "callSiteId": "cs:b59f4e1dbe0eade048c28260",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2082,7 +2150,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:24a0675e8ef6fc9e87255087"
     },
     {
       "id": "XW-0064",
@@ -2091,7 +2160,7 @@
       "violationFingerprint": "vfp:049b021f9e4999cc679f2489",
       "shapeDigest": "sdg:3dc0d7199f5c456e8ca50310",
       "dynamicShape": false,
-      "callSiteId": "cs:c73c2604ed3652bd2678d188",
+      "callSiteId": "cs:6619b8d80f2b9eb0f1fc1075",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2112,7 +2181,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:c73c2604ed3652bd2678d188"
     },
     {
       "id": "XW-0065",
@@ -2121,7 +2191,7 @@
       "violationFingerprint": "vfp:41ae842b479522cb3f063f6c",
       "shapeDigest": "sdg:27e101c6e049ddc72c04685b",
       "dynamicShape": false,
-      "callSiteId": "cs:8db628684a31e6322dae741f",
+      "callSiteId": "cs:ce7628ede5d014b809c57163",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2142,7 +2212,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:8db628684a31e6322dae741f"
     },
     {
       "id": "XW-0066",
@@ -2151,7 +2222,7 @@
       "violationFingerprint": "vfp:ef4f476358352354b64e8c6b",
       "shapeDigest": "sdg:e06353e9f67a2dd95a593fd7",
       "dynamicShape": false,
-      "callSiteId": "cs:c396c3dd94ac35a0c7025627",
+      "callSiteId": "cs:bd0dad84e7acf121f520514b",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2172,7 +2243,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:c396c3dd94ac35a0c7025627"
     },
     {
       "id": "XW-0067",
@@ -2181,7 +2253,7 @@
       "violationFingerprint": "vfp:2dd9eef6cfcb7dbd2a866078",
       "shapeDigest": "sdg:77bb9f4c8f4fbafd834f89dd",
       "dynamicShape": false,
-      "callSiteId": "cs:9c31eda77d21fe2ced6969c8",
+      "callSiteId": "cs:4ab9e685f6defda20af42d18",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2202,7 +2274,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:9c31eda77d21fe2ced6969c8"
     },
     {
       "id": "XW-0068",
@@ -2211,7 +2284,7 @@
       "violationFingerprint": "vfp:d77e1f786179b8edf75484bb",
       "shapeDigest": "sdg:e115c2971bff803c82502f2a",
       "dynamicShape": false,
-      "callSiteId": "cs:773f3e9cb0fa7a4465610e2d",
+      "callSiteId": "cs:3d4a53cd2cf33a818ae7866e",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2232,7 +2305,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:773f3e9cb0fa7a4465610e2d"
     },
     {
       "id": "XW-0069",
@@ -2241,7 +2315,7 @@
       "violationFingerprint": "vfp:51d7de94ae32ffef01ffa3f2",
       "shapeDigest": "sdg:4794526f7b18329def392d81",
       "dynamicShape": false,
-      "callSiteId": "cs:c8f723bfa02a7fddb8259512",
+      "callSiteId": "cs:146df18cc5867a5bd03a471b",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2262,7 +2336,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:c8f723bfa02a7fddb8259512"
     },
     {
       "id": "XW-0070",
@@ -2271,7 +2346,7 @@
       "violationFingerprint": "vfp:94d085e1650c0b57145aafd8",
       "shapeDigest": "sdg:ed5840cbe137a037a6feef2a",
       "dynamicShape": false,
-      "callSiteId": "cs:b7adce866ce262349ac1edbf",
+      "callSiteId": "cs:ea48f686e58f8a0105c10602",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2292,7 +2367,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:b7adce866ce262349ac1edbf"
     },
     {
       "id": "XW-0071",
@@ -2301,7 +2377,7 @@
       "violationFingerprint": "vfp:ba3afdf3d4721e2b59d66c22",
       "shapeDigest": "sdg:7bac0504b31bb2adf424aa67",
       "dynamicShape": false,
-      "callSiteId": "cs:4896c65662f2541dd2ecf37d",
+      "callSiteId": "cs:d694b6298fad3c582eb4cfee",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2322,7 +2398,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:4896c65662f2541dd2ecf37d"
     },
     {
       "id": "XW-0072",
@@ -2331,7 +2408,7 @@
       "violationFingerprint": "vfp:e8a67905d106a85c5607e6f7",
       "shapeDigest": "sdg:815cad537ee954f3666e242d",
       "dynamicShape": false,
-      "callSiteId": "cs:ab562fd76876f9acf97815af",
+      "callSiteId": "cs:74f0984bcf2cf62121c25fb6",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2352,7 +2429,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:ab562fd76876f9acf97815af"
     },
     {
       "id": "XW-0073",
@@ -2361,7 +2439,7 @@
       "violationFingerprint": "vfp:a9f7ff263a23d149a060e2b3",
       "shapeDigest": "sdg:d428e320c4219e4a2d0d5e69",
       "dynamicShape": false,
-      "callSiteId": "cs:69d12091932546b73e3760cc",
+      "callSiteId": "cs:a08f69caec7653b5e9373e1e",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2382,7 +2460,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:69d12091932546b73e3760cc"
     },
     {
       "id": "XW-0074",
@@ -2391,7 +2470,7 @@
       "violationFingerprint": "vfp:e9051877e282fed55286ca06",
       "shapeDigest": "sdg:1314c716d082863c9a63d4cd",
       "dynamicShape": false,
-      "callSiteId": "cs:a39d7ec78711f7dea7eed97f",
+      "callSiteId": "cs:f717867e96ee0d002d501610",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2412,7 +2491,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:a39d7ec78711f7dea7eed97f"
     },
     {
       "id": "XW-0075",
@@ -2421,7 +2501,7 @@
       "violationFingerprint": "vfp:0b99daba2685f808b66ea330",
       "shapeDigest": "sdg:fcaec8ea8988078ba0ac270f",
       "dynamicShape": false,
-      "callSiteId": "cs:9db373ad77a26d8d48e49d67",
+      "callSiteId": "cs:9a7f2ab2b106ed6fd2e18dc2",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2442,7 +2522,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:9db373ad77a26d8d48e49d67"
     },
     {
       "id": "XW-0076",
@@ -2451,7 +2532,7 @@
       "violationFingerprint": "vfp:fefe5c11e66025b17e49716f",
       "shapeDigest": "sdg:2ba5eb887183b1a0abe223c3",
       "dynamicShape": false,
-      "callSiteId": "cs:d55f8c4e812a28ceed4b596b",
+      "callSiteId": "cs:70ef83a08a668df30303ce35",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2472,7 +2553,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:d55f8c4e812a28ceed4b596b"
     },
     {
       "id": "XW-0077",
@@ -2481,7 +2563,7 @@
       "violationFingerprint": "vfp:340f4117e5ae21cb6bceff31",
       "shapeDigest": "sdg:c909abe797253624f4e440d9",
       "dynamicShape": false,
-      "callSiteId": "cs:d757db675cd36bee4b0361df",
+      "callSiteId": "cs:7e546f35c445834abd49c90e",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2502,7 +2584,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:d757db675cd36bee4b0361df"
     },
     {
       "id": "XW-0078",
@@ -2511,7 +2594,7 @@
       "violationFingerprint": "vfp:98270511ebc525d859bc8198",
       "shapeDigest": "sdg:b87cb3b37c0bdce1215734f4",
       "dynamicShape": false,
-      "callSiteId": "cs:7d80d6066f06bbb2cbf60ef0",
+      "callSiteId": "cs:8f8dc120ad174aec7f309e33",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2532,7 +2615,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:7d80d6066f06bbb2cbf60ef0"
     },
     {
       "id": "XW-0079",
@@ -2541,7 +2625,7 @@
       "violationFingerprint": "vfp:be7a54976f8bd6eee4399320",
       "shapeDigest": "sdg:81243c85c45e8fb97018a727",
       "dynamicShape": false,
-      "callSiteId": "cs:b27a0db0d34ca13ab9832bf8",
+      "callSiteId": "cs:7876a6d5b340368552d79baa",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2562,7 +2646,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:b27a0db0d34ca13ab9832bf8"
     },
     {
       "id": "XW-0080",
@@ -2571,7 +2656,7 @@
       "violationFingerprint": "vfp:c0119e58ae804f221966fc00",
       "shapeDigest": "sdg:6737065115370d7e19464b65",
       "dynamicShape": false,
-      "callSiteId": "cs:712917c0c2fddbfa0fe8c1c0",
+      "callSiteId": "cs:a893963db8862fb4038b27ef",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2592,7 +2677,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "ActivityResponsibilityAssignment 属主规则、调用事务边界或 activities public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:712917c0c2fddbfa0fe8c1c0"
     },
     {
       "id": "XW-0081",
@@ -2601,7 +2687,7 @@
       "violationFingerprint": "vfp:fb7685476b9c4fa23540b007",
       "shapeDigest": "sdg:950eecc4b0b3c699e2b00d6b",
       "dynamicShape": false,
-      "callSiteId": "cs:9c22c2d1db5e517feef09933",
+      "callSiteId": "cs:cae35f9d897eaa7e08eee8f7",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -2622,7 +2708,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "RoleBinding 属主规则、调用事务边界或 role-bindings public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:9c22c2d1db5e517feef09933"
     },
     {
       "id": "XW-0082",
@@ -2631,7 +2718,7 @@
       "violationFingerprint": "vfp:ff48a3d69c04e0af85dd0b3b",
       "shapeDigest": "sdg:a4859a76797e75bdfc0f0da9",
       "dynamicShape": false,
-      "callSiteId": "cs:c6ce8a7e4dfee7e6443fe678",
+      "callSiteId": "cs:9dd5ae2d7aea544ea37e88f7",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "comms",
@@ -2652,7 +2739,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "Activity 属主规则、调用事务边界或 activities public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:c6ce8a7e4dfee7e6443fe678"
     },
     {
       "id": "XW-0083",
@@ -2661,7 +2749,7 @@
       "violationFingerprint": "vfp:3369c2f34aa6377db5e8231a",
       "shapeDigest": "sdg:7fe13d2f7339dbe49d5839a4",
       "dynamicShape": false,
-      "callSiteId": "cs:f2591400df0d3a078c248ce6",
+      "callSiteId": "cs:97cfce6aef4f9ac1fb71321f",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "comms",
@@ -2682,7 +2770,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "Certificate 属主规则、调用事务边界或 certificates public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:f2591400df0d3a078c248ce6"
     },
     {
       "id": "XW-0084",
@@ -2691,7 +2780,7 @@
       "violationFingerprint": "vfp:970a98f7719ca9a75f3c0f55",
       "shapeDigest": "sdg:41dde3fcefb088b542971cbd",
       "dynamicShape": false,
-      "callSiteId": "cs:261eb235bce82daed9631346",
+      "callSiteId": "cs:d0681973b2ab33fa9bd11f01",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "comms",
@@ -2712,7 +2801,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "Certificate 属主规则、调用事务边界或 certificates public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:261eb235bce82daed9631346"
     },
     {
       "id": "XW-0085",
@@ -2721,7 +2811,7 @@
       "violationFingerprint": "vfp:a896881b7eed8907f44b491f",
       "shapeDigest": "sdg:c18093a58a29a1d8acb9c858",
       "dynamicShape": false,
-      "callSiteId": "cs:cff99857f28a6210b0e124a2",
+      "callSiteId": "cs:9bbbacd41c7d5c082514e189",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "comms",
@@ -2742,7 +2832,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "MemberInsurance 属主规则、调用事务边界或 insurances public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:cff99857f28a6210b0e124a2"
     },
     {
       "id": "XW-0086",
@@ -2751,7 +2842,7 @@
       "violationFingerprint": "vfp:71a1cf656f6250310a5e0d47",
       "shapeDigest": "sdg:85d5cd0d7a503847bd67137b",
       "dynamicShape": false,
-      "callSiteId": "cs:5b53e4b73ca766dd6986ccc6",
+      "callSiteId": "cs:e050269ab2b383ed2cc9efa0",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "comms",
@@ -2772,7 +2863,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "TeamInsurancePolicy 属主规则、调用事务边界或 insurances public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:5b53e4b73ca766dd6986ccc6"
     },
     {
       "id": "XW-0088",
@@ -2781,7 +2873,7 @@
       "violationFingerprint": "vfp:a15f994302a34764c76210cd",
       "shapeDigest": "sdg:e27b3f07b3536aa17d6bd6f3",
       "dynamicShape": false,
-      "callSiteId": "cs:099e0eb8c7c463b4b7f41612",
+      "callSiteId": "cs:3a14eef2b4553804bff8c22b",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "comms",
@@ -2802,7 +2894,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:099e0eb8c7c463b4b7f41612"
     },
     {
       "id": "XW-0088",
@@ -2811,7 +2904,7 @@
       "violationFingerprint": "vfp:a15f994302a34764c76210cd",
       "shapeDigest": "sdg:2aeed582d6106acdbe454e80",
       "dynamicShape": false,
-      "callSiteId": "cs:974316f8c7d0d0779363e118",
+      "callSiteId": "cs:be3aa8bf09aaa3d31f58784d",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "comms",
@@ -2832,7 +2925,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:974316f8c7d0d0779363e118"
     },
     {
       "id": "XW-0090",
@@ -2841,7 +2935,7 @@
       "violationFingerprint": "vfp:624ff2fb2b02a96c2a928b7a",
       "shapeDigest": "sdg:5f72cf5db49cb5ab3f235918",
       "dynamicShape": false,
-      "callSiteId": "cs:bf08916efd52bed7b0e93a7b",
+      "callSiteId": "cs:cd88343ec8b0bb844ce62d06",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "comms",
@@ -2862,7 +2956,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:bf08916efd52bed7b0e93a7b"
     },
     {
       "id": "XW-0090",
@@ -2871,7 +2966,7 @@
       "violationFingerprint": "vfp:624ff2fb2b02a96c2a928b7a",
       "shapeDigest": "sdg:58861cd97bad062033818d9a",
       "dynamicShape": false,
-      "callSiteId": "cs:0606411d0d5c6b5267ec2a76",
+      "callSiteId": "cs:d26e9701a380774ff6ae2a5d",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "comms",
@@ -2892,7 +2987,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:0606411d0d5c6b5267ec2a76"
     },
     {
       "id": "XW-0091",
@@ -2901,7 +2997,7 @@
       "violationFingerprint": "vfp:6878a6c91d2370ce9caa5d5c",
       "shapeDigest": "sdg:8fcebc1dc80d6caf30f2a3cb",
       "dynamicShape": false,
-      "callSiteId": "cs:a69fce3d790ab3935c215133",
+      "callSiteId": "cs:25216f86098ad4ef548731d8",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-access",
@@ -2922,7 +3018,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "AuditLog 属主规则、调用事务边界或 audit-logs public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:a69fce3d790ab3935c215133"
     },
     {
       "id": "XW-0092",
@@ -2931,7 +3028,7 @@
       "violationFingerprint": "vfp:d0a5f6bdc90e0c844f8d82b3",
       "shapeDigest": "sdg:95da93568796a367a34a8015",
       "dynamicShape": false,
-      "callSiteId": "cs:a276de67ced45e93e2030e79",
+      "callSiteId": "cs:c0f1e6a9b1c967f372e2d409",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-access",
@@ -2952,7 +3049,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "AuditLog 属主规则、调用事务边界或 audit-logs public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:a276de67ced45e93e2030e79"
     },
     {
       "id": "XW-0093",
@@ -2961,7 +3059,7 @@
       "violationFingerprint": "vfp:9a121c00871af18793c28890",
       "shapeDigest": "sdg:fbbf4715070b0480ec20b643",
       "dynamicShape": false,
-      "callSiteId": "cs:71f47cfd171785c77490159a",
+      "callSiteId": "cs:00e9fb482d59f2e35a3891d9",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-access",
@@ -2982,7 +3080,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:71f47cfd171785c77490159a"
     },
     {
       "id": "XW-0094",
@@ -2991,7 +3090,7 @@
       "violationFingerprint": "vfp:f1250db30f19ed07556059a2",
       "shapeDigest": "sdg:12caf7f163a3dd4fd44cd264",
       "dynamicShape": false,
-      "callSiteId": "cs:0fe730e6782bff0528213c39",
+      "callSiteId": "cs:e5ed9a4a4dae5f5e811a818a",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "platform-access",
@@ -3012,7 +3111,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:0fe730e6782bff0528213c39"
     },
     {
       "id": "XW-0095",
@@ -3021,7 +3121,7 @@
       "violationFingerprint": "vfp:9cb82ab088e7acc3ce4547d6",
       "shapeDigest": "sdg:2c5be923c317bf5b53edc59b",
       "dynamicShape": false,
-      "callSiteId": "cs:3874014acf186174c1e6fbd1",
+      "callSiteId": "cs:78b594f516f345fd630e00f1",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "engagement",
@@ -3042,7 +3142,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "Member 属主规则、调用事务边界或 members public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:3874014acf186174c1e6fbd1"
     },
     {
       "id": "XW-0096",
@@ -3051,7 +3152,7 @@
       "violationFingerprint": "vfp:7ca88709aed4885bafd76403",
       "shapeDigest": "sdg:7e2a4f6d49ae21a913482fe3",
       "dynamicShape": false,
-      "callSiteId": "cs:8da97b66fcdfc3b9df99eb75",
+      "callSiteId": "cs:d7806f8fcbd88311029a4954",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "engagement",
@@ -3072,7 +3173,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "MemberOrganizationMembership 属主规则、调用事务边界或 member-departments public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:8da97b66fcdfc3b9df99eb75"
     },
     {
       "id": "XW-0097",
@@ -3081,7 +3183,7 @@
       "violationFingerprint": "vfp:446925b1bf13ead5e5bde5e5",
       "shapeDigest": "sdg:0e63d9d72305705099e3a8f9",
       "dynamicShape": false,
-      "callSiteId": "cs:e02a93daad9fb7a0b1ae60ba",
+      "callSiteId": "cs:86048208062c0837cefa692c",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "engagement",
@@ -3102,7 +3204,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "User 属主规则、调用事务边界或 users public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:e02a93daad9fb7a0b1ae60ba"
     },
     {
       "id": "XW-0098",
@@ -3111,7 +3214,7 @@
       "violationFingerprint": "vfp:4f04d424a39287306ae43492",
       "shapeDigest": "sdg:ecbf8da5d94b50e4cb331992",
       "dynamicShape": false,
-      "callSiteId": "cs:248259d093f28297683712a3",
+      "callSiteId": "cs:2be46c65b314d2276b4ccf70",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "engagement",
@@ -3132,7 +3235,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "MemberProfile 属主规则、调用事务边界或 member-profiles public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:248259d093f28297683712a3"
     },
     {
       "id": "XW-0099",
@@ -3141,7 +3245,7 @@
       "violationFingerprint": "vfp:8e3175aa9de33090e5d1157d",
       "shapeDigest": "sdg:2345734f94c771cd1f3d9cc0",
       "dynamicShape": false,
-      "callSiteId": "cs:d57045e22472271e13cfb6d1",
+      "callSiteId": "cs:3586ea8abbfae325e6ebb274",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "engagement",
@@ -3162,7 +3266,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "EmergencyContact 属主规则、调用事务边界或 emergency-contacts public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:d57045e22472271e13cfb6d1"
     },
     {
       "id": "XW-0100",
@@ -3171,7 +3276,7 @@
       "violationFingerprint": "vfp:75fbfe7d4e735201586612bd",
       "shapeDigest": "sdg:c75c521630661514b402e9e6",
       "dynamicShape": false,
-      "callSiteId": "cs:389f7d44ddfe24bd4b0bdabe",
+      "callSiteId": "cs:c88d7aef1c4d64f5d36f8797",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "engagement",
@@ -3192,7 +3297,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "Certificate 属主规则、调用事务边界或 certificates public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:389f7d44ddfe24bd4b0bdabe"
     },
     {
       "id": "XW-0101",
@@ -3201,7 +3307,7 @@
       "violationFingerprint": "vfp:d61dc7e9727544a0e031642a",
       "shapeDigest": "sdg:209401db5b940a1685173358",
       "dynamicShape": false,
-      "callSiteId": "cs:02767fa8cc9aef024e5b47bd",
+      "callSiteId": "cs:0ccfa8bce60f626706bc8417",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "engagement",
@@ -3222,7 +3328,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "MemberOrganizationMembership 属主规则、调用事务边界或 member-departments public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:02767fa8cc9aef024e5b47bd"
     },
     {
       "id": "XW-0102",
@@ -3231,7 +3338,7 @@
       "violationFingerprint": "vfp:38da9f035d183b03cde666c9",
       "shapeDigest": "sdg:73b128a37511a23310ecce9a",
       "dynamicShape": false,
-      "callSiteId": "cs:76a31213077bc2d650b4d7ee",
+      "callSiteId": "cs:94b9ce915937167d495dfebd",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "engagement",
@@ -3252,7 +3359,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "MemberOrganizationMembership 属主规则、调用事务边界或 member-departments public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:76a31213077bc2d650b4d7ee"
     },
     {
       "id": "XW-0103",
@@ -3261,7 +3369,7 @@
       "violationFingerprint": "vfp:674e3d5fc4c676cb000037d0",
       "shapeDigest": "sdg:a96de2d606771a2a6139258a",
       "dynamicShape": false,
-      "callSiteId": "cs:eb21a6e7c916a757192975f5",
+      "callSiteId": "cs:1ee0f2e46a9b23759b688484",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "engagement",
@@ -3282,7 +3390,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "Member 属主规则、调用事务边界或 members public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:eb21a6e7c916a757192975f5"
     },
     {
       "id": "XW-0104",
@@ -3291,7 +3400,7 @@
       "violationFingerprint": "vfp:ab703087378edf7560a58694",
       "shapeDigest": "sdg:5e61064318dc299d6ff8efa4",
       "dynamicShape": false,
-      "callSiteId": "cs:ad93b2092964cc7d9cc6073b",
+      "callSiteId": "cs:50030fc398ba3c2dcda26544",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -3312,7 +3421,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:ad93b2092964cc7d9cc6073b"
     },
     {
       "id": "XW-0105",
@@ -3321,7 +3431,7 @@
       "violationFingerprint": "vfp:61e845e94985839623f650b1",
       "shapeDigest": "sdg:02f351b2f1dfaf67c8fe3c97",
       "dynamicShape": false,
-      "callSiteId": "cs:967f6bb40f1691c8fb376017",
+      "callSiteId": "cs:7d1168fcff6488de3e2a7916",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -3342,7 +3452,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:967f6bb40f1691c8fb376017"
     },
     {
       "id": "XW-0106",
@@ -3351,7 +3462,7 @@
       "violationFingerprint": "vfp:e112490e214975d824f24fce",
       "shapeDigest": "sdg:900938b0120be2dbb9b8bf64",
       "dynamicShape": false,
-      "callSiteId": "cs:4f1aba59a863a4bcb2982a37",
+      "callSiteId": "cs:c00855da3bc63108edaca67c",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -3372,7 +3483,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:4f1aba59a863a4bcb2982a37"
     },
     {
       "id": "XW-0107",
@@ -3381,7 +3493,7 @@
       "violationFingerprint": "vfp:a1e381bc8bef41a5e8237259",
       "shapeDigest": "sdg:c4601ff85b0f6aefdbeaff09",
       "dynamicShape": false,
-      "callSiteId": "cs:e8aab9ed9c18ba08e944ab75",
+      "callSiteId": "cs:ff9c5e51fcc2c3e20fb16fc8",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -3402,7 +3514,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:e8aab9ed9c18ba08e944ab75"
     },
     {
       "id": "XW-0108",
@@ -3411,7 +3524,7 @@
       "violationFingerprint": "vfp:b9cb18cea5378d4c23b78a8a",
       "shapeDigest": "sdg:9bc584cc484a8abca9b01265",
       "dynamicShape": false,
-      "callSiteId": "cs:68a910a1bd6c8d397355087f",
+      "callSiteId": "cs:59b7ccbac896b2bacb97051f",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -3432,7 +3545,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:68a910a1bd6c8d397355087f"
     },
     {
       "id": "XW-0109",
@@ -3441,7 +3555,7 @@
       "violationFingerprint": "vfp:c8918a256dbcba886bfe26ff",
       "shapeDigest": "sdg:e560df4c8329ab467897a2bb",
       "dynamicShape": false,
-      "callSiteId": "cs:6fa610c2c8850e39b485e388",
+      "callSiteId": "cs:a8e0856317923ff6a0571259",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -3462,7 +3576,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:6fa610c2c8850e39b485e388"
     },
     {
       "id": "XW-0110",
@@ -3471,7 +3586,7 @@
       "violationFingerprint": "vfp:7dbd1d53e8efe5b32db9a6da",
       "shapeDigest": "sdg:4297e6c8a5017fde5abc0582",
       "dynamicShape": false,
-      "callSiteId": "cs:344ac942235cfb203f760b20",
+      "callSiteId": "cs:7d0593bd48942102fb949cb5",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -3492,7 +3607,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:344ac942235cfb203f760b20"
     },
     {
       "id": "XW-0111",
@@ -3501,7 +3617,7 @@
       "violationFingerprint": "vfp:893a89974fffbd4c40b989de",
       "shapeDigest": "sdg:4622049cad096b018f8cee60",
       "dynamicShape": false,
-      "callSiteId": "cs:01f504f835002e711f7f454c",
+      "callSiteId": "cs:64dec378916d8aca0130df99",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -3522,7 +3638,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:01f504f835002e711f7f454c"
     },
     {
       "id": "XW-0112",
@@ -3531,7 +3648,7 @@
       "violationFingerprint": "vfp:5684695cb970d077ea4d9c4b",
       "shapeDigest": "sdg:39d58bb96647d2002f0e5336",
       "dynamicShape": false,
-      "callSiteId": "cs:91a6c7b9ffa971400669e30e",
+      "callSiteId": "cs:300741191aac7a9f16312487",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -3552,7 +3669,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:91a6c7b9ffa971400669e30e"
     },
     {
       "id": "XW-0113",
@@ -3561,7 +3679,7 @@
       "violationFingerprint": "vfp:83b3903696be8b8ca710bf7f",
       "shapeDigest": "sdg:0073b2d806b97662da6d68a7",
       "dynamicShape": false,
-      "callSiteId": "cs:09edaaff5e47c86083afc0fb",
+      "callSiteId": "cs:c9e305574f1213987ac9b4df",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "identity-org",
@@ -3582,7 +3700,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "治理大域拆分、目标 model 属主或该调用事务边界变化时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。"
+      "notes": "登记在案历史债。按域重划自动合法，Phase 7 无需清偿；不得仿写为未来独立域间直写。",
+      "supersedes": "cs:09edaaff5e47c86083afc0fb"
     },
     {
       "id": "XW-0114",
@@ -3591,7 +3710,7 @@
       "violationFingerprint": "vfp:e8116999dd606154b531d298",
       "shapeDigest": "sdg:66d580e0d1150dca89898644",
       "dynamicShape": false,
-      "callSiteId": "cs:41b9f1c806fd5930fbe5b116",
+      "callSiteId": "cs:9b35694c236069d3e45b7992",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "comms",
@@ -3612,7 +3731,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "WecomAuthAttempt 属主规则、调用事务边界或 auth public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:41b9f1c806fd5930fbe5b116"
     },
     {
       "id": "XW-0115",
@@ -3621,7 +3741,7 @@
       "violationFingerprint": "vfp:aa501d9abf7dd1a137f55564",
       "shapeDigest": "sdg:b36a1c596f67909d3bb94914",
       "dynamicShape": false,
-      "callSiteId": "cs:7074b8e5f94983509fb6ef4d",
+      "callSiteId": "cs:1f1d07d54ab33d9fd02dd2d6",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "comms",
@@ -3642,7 +3762,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "WecomAuthAttempt 属主规则、调用事务边界或 auth public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:7074b8e5f94983509fb6ef4d"
     },
     {
       "id": "XW-0116",
@@ -3651,7 +3772,7 @@
       "violationFingerprint": "vfp:3faec6fb28fa4dcd18718534",
       "shapeDigest": "sdg:70c7f22a7ec755d5d417a9d8",
       "dynamicShape": false,
-      "callSiteId": "cs:a1ddb0cf62de47be057cc9ae",
+      "callSiteId": "cs:fbe75baa94f780ed17d84ee7",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "comms",
@@ -3672,7 +3793,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "WecomAuthAttempt 属主规则、调用事务边界或 auth public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:a1ddb0cf62de47be057cc9ae"
     },
     {
       "id": "XW-0117",
@@ -3681,7 +3803,7 @@
       "violationFingerprint": "vfp:e330cdf7421625b38ecad4ad",
       "shapeDigest": "sdg:3662edc9873713e9bd7ed3ac",
       "dynamicShape": false,
-      "callSiteId": "cs:9bc8a2439e419a076977254b",
+      "callSiteId": "cs:2e8fc007a9ed7d23d8da9cf1",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "comms",
@@ -3702,7 +3824,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "WecomAuthAttempt 属主规则、调用事务边界或 auth public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:9bc8a2439e419a076977254b"
     },
     {
       "id": "XW-0118",
@@ -3711,7 +3834,7 @@
       "violationFingerprint": "vfp:550498c4b834c7e1aad832e1",
       "shapeDigest": "sdg:777627cf6ad889100a247466",
       "dynamicShape": false,
-      "callSiteId": "cs:b88593cf00ccdafef72b676a",
+      "callSiteId": "cs:f549b758040725771cb8395c",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "comms",
@@ -3732,7 +3855,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "WecomAuthAttempt 属主规则、调用事务边界或 auth public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:b88593cf00ccdafef72b676a"
     },
     {
       "id": "XW-0119",
@@ -3741,7 +3865,7 @@
       "violationFingerprint": "vfp:d39d05bc6d6c45f5583bd549",
       "shapeDigest": "sdg:df1bf1612ec09e53b020be1e",
       "dynamicShape": false,
-      "callSiteId": "cs:9a67359d22e2e97b3222704b",
+      "callSiteId": "cs:b0f6d4f3dc7f9efb856a8183",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@65475504",
       "sourceDomain": "comms",
@@ -3762,7 +3886,8 @@
       "allowUntil": "Phase 7 rolling repayment",
       "reviewTrigger": "WecomAuthAttempt 属主规则、调用事务边界或 auth public surface 变更时复核。",
       "debtOwner": "maintainer",
-      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。"
+      "notes": "登记在案历史债，禁止仿写。Phase 2 仅补台账语义与报告，不改变违规代码或业务行为。",
+      "supersedes": "cs:9a67359d22e2e97b3222704b"
     },
     {
       "id": "XW-0129",
@@ -3776,7 +3901,7 @@
       "violationFingerprint": "vfp:c0eff2114b7e587182ef0ed7",
       "shapeDigest": "sdg:bb548f7769e0751e5ec4a703",
       "dynamicShape": true,
-      "callSiteId": "cs:f7e5d6d181eee66fcb99e8e5",
+      "callSiteId": "cs:f3e3552d175d0c77f31503da",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -3792,7 +3917,8 @@
       "introducedAt": "git blame 44e66db300a3（2026-08-05；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:f7e5d6d181eee66fcb99e8e5"
     },
     {
       "id": "XW-0130",
@@ -3806,7 +3932,7 @@
       "violationFingerprint": "vfp:9ef61aaac6c51c64a0ccd337",
       "shapeDigest": "sdg:465c698d99c380019b7f9380",
       "dynamicShape": false,
-      "callSiteId": "cs:f26a61c6a01dda63bfc0f61d",
+      "callSiteId": "cs:5087df543f0e475531e11423",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -3822,7 +3948,8 @@
       "introducedAt": "git blame bf9188a28b78（2026-08-06；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:f26a61c6a01dda63bfc0f61d"
     },
     {
       "id": "XW-0131",
@@ -3836,7 +3963,7 @@
       "violationFingerprint": "vfp:c699b7cd8c7f2ac02823edba",
       "shapeDigest": "sdg:b6a37124b621d72bed74f383",
       "dynamicShape": false,
-      "callSiteId": "cs:f31749a6359e2c13b737e86f",
+      "callSiteId": "cs:92209753f498d85772293a74",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -3852,7 +3979,8 @@
       "introducedAt": "git blame 2e0256ff7914（2026-07-24；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:f31749a6359e2c13b737e86f"
     },
     {
       "id": "XW-0132",
@@ -3866,7 +3994,7 @@
       "violationFingerprint": "vfp:7c5fdbdd3ecac76592ee2b91",
       "shapeDigest": "sdg:b57f8c5025d5685cadd87c3a",
       "dynamicShape": false,
-      "callSiteId": "cs:8fafa85267f45377ad4b1ace",
+      "callSiteId": "cs:8f5b5aeebbc431f5b9e7ee00",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -3882,7 +4010,8 @@
       "introducedAt": "git blame 2e0256ff7914（2026-07-24；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:8fafa85267f45377ad4b1ace"
     },
     {
       "id": "XW-0133",
@@ -3896,7 +4025,7 @@
       "violationFingerprint": "vfp:70c988e5ad75753a2a7e1737",
       "shapeDigest": "sdg:39d455b34b4e0c64b848e261",
       "dynamicShape": false,
-      "callSiteId": "cs:3621165c6ce2d71f7b940d32",
+      "callSiteId": "cs:18e3effacde914990ce96d34",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -3912,7 +4041,8 @@
       "introducedAt": "git blame 2e0256ff7914（2026-07-24；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:3621165c6ce2d71f7b940d32"
     },
     {
       "id": "XW-0134",
@@ -3926,7 +4056,7 @@
       "violationFingerprint": "vfp:750cde3559dbeecc7edcfed3",
       "shapeDigest": "sdg:e8e0db56a84b1c2ebbfa8d34",
       "dynamicShape": true,
-      "callSiteId": "cs:164f0f2b13574ec445e1173a",
+      "callSiteId": "cs:f7667852739fb176a3431345",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -3942,7 +4072,8 @@
       "introducedAt": "git blame fa12f57dbf5c（2026-07-23；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:164f0f2b13574ec445e1173a"
     },
     {
       "id": "XW-0135",
@@ -3956,7 +4087,7 @@
       "violationFingerprint": "vfp:e1d0a05fbab05b7736b4ddc7",
       "shapeDigest": "sdg:ef5f6a425c8f153098371666",
       "dynamicShape": false,
-      "callSiteId": "cs:a0b57bf84dc11f3caeb8baf2",
+      "callSiteId": "cs:485564032cf75c5668a9d135",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -3972,7 +4103,8 @@
       "introducedAt": "git blame 3ceff3081f92（2026-07-23；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:a0b57bf84dc11f3caeb8baf2"
     },
     {
       "id": "XW-0136",
@@ -3986,7 +4118,7 @@
       "violationFingerprint": "vfp:2ba1d11e223ab206854c36d3",
       "shapeDigest": "sdg:682297ff1aa91e63e8b1a64c",
       "dynamicShape": true,
-      "callSiteId": "cs:44907f176b35a9a41e199b0d",
+      "callSiteId": "cs:1bebab34cd588b6b743a226f",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -4002,7 +4134,8 @@
       "introducedAt": "git blame 51807777586f（2026-07-23；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:44907f176b35a9a41e199b0d"
     },
     {
       "id": "XW-0137",
@@ -4016,7 +4149,7 @@
       "violationFingerprint": "vfp:d241d113b09ef4ddf5f27f6c",
       "shapeDigest": "sdg:0a532d5adb65aee8820ae84c",
       "dynamicShape": false,
-      "callSiteId": "cs:d7f699ab2c15575a921e8d1a",
+      "callSiteId": "cs:b6142c0dd7b85849268e64ec",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -4032,7 +4165,8 @@
       "introducedAt": "git blame 51807777586f（2026-07-23；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:d7f699ab2c15575a921e8d1a"
     },
     {
       "id": "XW-0138",
@@ -4046,7 +4180,7 @@
       "violationFingerprint": "vfp:affa348f26bda862e5f8364a",
       "shapeDigest": "sdg:287dec49189bd4e2981b866b",
       "dynamicShape": false,
-      "callSiteId": "cs:2aaefd99c20e6cea46234f24",
+      "callSiteId": "cs:84c459eb123516f984951561",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -4062,7 +4196,8 @@
       "introducedAt": "git blame 51807777586f（2026-07-23；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:2aaefd99c20e6cea46234f24"
     },
     {
       "id": "XW-0139",
@@ -4076,7 +4211,7 @@
       "violationFingerprint": "vfp:049a881b45ba89a9ae96090b",
       "shapeDigest": "sdg:7159a43c81439274f80bfcb4",
       "dynamicShape": true,
-      "callSiteId": "cs:ceb32853f6a5bfd37ea85302",
+      "callSiteId": "cs:34e655f7570ae2924aebc2a5",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -4092,7 +4227,8 @@
       "introducedAt": "git blame 51807777586f（2026-07-23；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:ceb32853f6a5bfd37ea85302"
     },
     {
       "id": "XW-0140",
@@ -4106,7 +4242,7 @@
       "violationFingerprint": "vfp:30e4552b8356839b93907a83",
       "shapeDigest": "sdg:8571b74ab5815234b60d5d8a",
       "dynamicShape": true,
-      "callSiteId": "cs:c3213e93d99da50993ab5949",
+      "callSiteId": "cs:3cc0ca811d5b346cb581a7d7",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -4122,7 +4258,8 @@
       "introducedAt": "git blame 3ceff3081f92（2026-07-23；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:c3213e93d99da50993ab5949"
     },
     {
       "id": "XW-0141",
@@ -4136,7 +4273,7 @@
       "violationFingerprint": "vfp:647ff6fd192d515c99a92f88",
       "shapeDigest": "sdg:f007f3378c6456a770acefce",
       "dynamicShape": false,
-      "callSiteId": "cs:a21a5bcddd8e0b9f9206b93e",
+      "callSiteId": "cs:5d5c4da7de7995bc370a85e2",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -4152,7 +4289,8 @@
       "introducedAt": "git blame 3ceff3081f92（2026-07-23；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:a21a5bcddd8e0b9f9206b93e"
     },
     {
       "id": "XW-0142",
@@ -4166,7 +4304,7 @@
       "violationFingerprint": "vfp:ead3f4ec863bd6791d54378e",
       "shapeDigest": "sdg:ac1bf0b3aba38ff7397e3e7d",
       "dynamicShape": false,
-      "callSiteId": "cs:aa37f137b44d2a9f0a412f0a",
+      "callSiteId": "cs:01cfa9de5c98176eaf70648e",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -4182,7 +4320,8 @@
       "introducedAt": "git blame 8a4ecff8da9b（2026-08-06；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:aa37f137b44d2a9f0a412f0a"
     },
     {
       "id": "XW-0143",
@@ -4196,7 +4335,7 @@
       "violationFingerprint": "vfp:0046075d0d930ad42715d264",
       "shapeDigest": "sdg:c9a5da68fc5e06cb740bdb24",
       "dynamicShape": false,
-      "callSiteId": "cs:b8e5ad9ee4c51c71c2f9c73d",
+      "callSiteId": "cs:0b81c5a809b8629243c89fd8",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -4212,7 +4351,8 @@
       "introducedAt": "git blame 5a3098830272（2026-08-08；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:b8e5ad9ee4c51c71c2f9c73d"
     },
     {
       "id": "XW-0144",
@@ -4226,7 +4366,7 @@
       "violationFingerprint": "vfp:21088b385952d7b06cf95ad4",
       "shapeDigest": "sdg:c313907e1165b79dfbc17a4b",
       "dynamicShape": false,
-      "callSiteId": "cs:4be000171dd2074ff5944946",
+      "callSiteId": "cs:2604ab8db2c36a8a44ad6a14",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -4242,7 +4382,8 @@
       "introducedAt": "git blame 5a3098830272（2026-08-08；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:4be000171dd2074ff5944946"
     },
     {
       "id": "XW-0145",
@@ -4256,7 +4397,7 @@
       "violationFingerprint": "vfp:7aea1625f7a033340ed9255e",
       "shapeDigest": "sdg:cbc926a3abc7ca1933b8d393",
       "dynamicShape": true,
-      "callSiteId": "cs:adf5335090ee173e972fa693",
+      "callSiteId": "cs:8621d278e74568a8885f7a14",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -4272,7 +4413,8 @@
       "introducedAt": "git blame 807d09aa2e79（2026-08-09；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:adf5335090ee173e972fa693"
     },
     {
       "id": "XW-0146",
@@ -4286,7 +4428,7 @@
       "violationFingerprint": "vfp:1f85ff8141a930d32c86d096",
       "shapeDigest": "sdg:4e1f58d3de074f59c8486dcb",
       "dynamicShape": true,
-      "callSiteId": "cs:e3df9ce9f6c39d41318c1eed",
+      "callSiteId": "cs:aa39d6640d48cad410195618",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -4302,7 +4444,8 @@
       "introducedAt": "git blame 807d09aa2e79（2026-08-09；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:e3df9ce9f6c39d41318c1eed"
     },
     {
       "id": "XW-0147",
@@ -4316,7 +4459,7 @@
       "violationFingerprint": "vfp:f7568d77fb600d7319664107",
       "shapeDigest": "sdg:c9a5da68fc5e06cb740bdb24",
       "dynamicShape": false,
-      "callSiteId": "cs:80671ce58cfd77afd9fc9418",
+      "callSiteId": "cs:73d3646977add27965119f8a",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -4332,7 +4475,8 @@
       "introducedAt": "git blame 807d09aa2e79（2026-08-09；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:80671ce58cfd77afd9fc9418"
     },
     {
       "id": "XW-0148",
@@ -4346,7 +4490,7 @@
       "violationFingerprint": "vfp:8d93511774bac93bc55bad2f",
       "shapeDigest": "sdg:cbc926a3abc7ca1933b8d393",
       "dynamicShape": true,
-      "callSiteId": "cs:7e20d6bc39eebef504ee5876",
+      "callSiteId": "cs:109c8663b6822b0291ba88b2",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -4362,7 +4506,8 @@
       "introducedAt": "git blame 7b12f1ef949d（2026-08-08；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:7e20d6bc39eebef504ee5876"
     },
     {
       "id": "XW-0149",
@@ -4376,7 +4521,7 @@
       "violationFingerprint": "vfp:2bf9f3e310a5a05ca25e1694",
       "shapeDigest": "sdg:4e1f58d3de074f59c8486dcb",
       "dynamicShape": true,
-      "callSiteId": "cs:d96dc27895c0aa15ffac79c1",
+      "callSiteId": "cs:5e8bddec0da0aa9cca554c8d",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -4392,7 +4537,8 @@
       "introducedAt": "git blame 7b12f1ef949d（2026-08-08；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:d96dc27895c0aa15ffac79c1"
     },
     {
       "id": "XW-0150",
@@ -4406,7 +4552,7 @@
       "violationFingerprint": "vfp:c0d46497d111d183f3e86a62",
       "shapeDigest": "sdg:1c8a48bfd2c41200d8cb8e7f",
       "dynamicShape": true,
-      "callSiteId": "cs:038be29811a858a73a24bc15",
+      "callSiteId": "cs:41dd83203d46a85e8783891c",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-core",
@@ -4422,7 +4568,8 @@
       "introducedAt": "git blame faabbdcc0cfe（2026-07-26；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:038be29811a858a73a24bc15"
     },
     {
       "id": "XW-0151",
@@ -4436,7 +4583,7 @@
       "violationFingerprint": "vfp:ce94ac57d282e52124eccb1f",
       "shapeDigest": "sdg:d8e78732f9dce82122b3cabf",
       "dynamicShape": true,
-      "callSiteId": "cs:74a2d0d339f1213549bf458f",
+      "callSiteId": "cs:22d10746c04234c2a04bbb8b",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-core",
@@ -4452,7 +4599,8 @@
       "introducedAt": "git blame f04729d75adf（2026-07-19；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:74a2d0d339f1213549bf458f"
     },
     {
       "id": "XW-0152",
@@ -4466,7 +4614,7 @@
       "violationFingerprint": "vfp:c5871aae86a122549195cae4",
       "shapeDigest": "sdg:22dbead8b56b4e46c08d3423",
       "dynamicShape": true,
-      "callSiteId": "cs:6c463bca3b1b27dcfdf73aec",
+      "callSiteId": "cs:88d021dbc33f6cb9e4863b2d",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-core",
@@ -4482,7 +4630,8 @@
       "introducedAt": "git blame 960d206aea6b（2026-08-07；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:6c463bca3b1b27dcfdf73aec"
     },
     {
       "id": "XW-0153",
@@ -4496,7 +4645,7 @@
       "violationFingerprint": "vfp:110cd0c451043bd6da524d5c",
       "shapeDigest": "sdg:ade78bdd07d85304572a5c9d",
       "dynamicShape": true,
-      "callSiteId": "cs:6e73c255270ad08b17727e3e",
+      "callSiteId": "cs:66ce1cb794eab8ce935c44bc",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-core",
@@ -4512,7 +4661,8 @@
       "introducedAt": "git blame b2ba9cfa79a4（2026-07-18；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:6e73c255270ad08b17727e3e"
     },
     {
       "id": "XW-0154",
@@ -4526,7 +4676,7 @@
       "violationFingerprint": "vfp:c3e741f1db8198120de8f7d0",
       "shapeDigest": "sdg:8b2d97d76cd807338cdc1492",
       "dynamicShape": true,
-      "callSiteId": "cs:9f2a05e5223a46081983868d",
+      "callSiteId": "cs:6813a971ca73ecc135eb1c46",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-core",
@@ -4542,7 +4692,8 @@
       "introducedAt": "git blame b2ba9cfa79a4（2026-07-18；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:9f2a05e5223a46081983868d"
     },
     {
       "id": "XW-0155",
@@ -4556,7 +4707,7 @@
       "violationFingerprint": "vfp:d5ec4d300d95678d88fb822a",
       "shapeDigest": "sdg:4604e5e74f15cc38dbbc8cf0",
       "dynamicShape": true,
-      "callSiteId": "cs:1442e951052a901f6dbe9244",
+      "callSiteId": "cs:b2fdd2d40187bbc673b0e198",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-core",
@@ -4572,7 +4723,8 @@
       "introducedAt": "git blame b2ba9cfa79a4（2026-07-18；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:1442e951052a901f6dbe9244"
     },
     {
       "id": "XW-0156",
@@ -4586,7 +4738,7 @@
       "violationFingerprint": "vfp:73bc1befb42aa6740111406d",
       "shapeDigest": "sdg:ae21b721eb7585059a91ab9b",
       "dynamicShape": true,
-      "callSiteId": "cs:60448e34833974297bae4311",
+      "callSiteId": "cs:69e16ebe643c9e7132510d6d",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-core",
@@ -4602,7 +4754,8 @@
       "introducedAt": "git blame 7b12f1ef949d（2026-08-08；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:60448e34833974297bae4311"
     },
     {
       "id": "XW-0157",
@@ -4616,7 +4769,7 @@
       "violationFingerprint": "vfp:0a36362b33ff6f163aacb7c1",
       "shapeDigest": "sdg:c08bad4b070a2e1ba4c7746c",
       "dynamicShape": false,
-      "callSiteId": "cs:6f6079c5c5312f2afab93498",
+      "callSiteId": "cs:40fd33c6fc5a78744b91330a",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-core",
@@ -4632,7 +4785,8 @@
       "introducedAt": "git blame 7b12f1ef949d（2026-08-08；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:6f6079c5c5312f2afab93498"
     },
     {
       "id": "XW-0158",
@@ -4646,7 +4800,7 @@
       "violationFingerprint": "vfp:bcf404a61cbcb01745c4ec6b",
       "shapeDigest": "sdg:88733ab7656cd9014babb0bb",
       "dynamicShape": true,
-      "callSiteId": "cs:c346508789b05ebf3a5c31db",
+      "callSiteId": "cs:ef1125f510f64a014a9cc171",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-core",
@@ -4662,7 +4816,8 @@
       "introducedAt": "git blame f04729d75adf（2026-07-19；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:c346508789b05ebf3a5c31db"
     },
     {
       "id": "XW-0159",
@@ -4676,7 +4831,7 @@
       "violationFingerprint": "vfp:53453d3b25b580af9f606b4c",
       "shapeDigest": "sdg:48a4bf6159a5cca77e15f734",
       "dynamicShape": true,
-      "callSiteId": "cs:15394a1213bb6018d415e233",
+      "callSiteId": "cs:9bc42d5bf12b5f0cfc8ea365",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-core",
@@ -4692,7 +4847,8 @@
       "introducedAt": "git blame faabbdcc0cfe（2026-07-26；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:15394a1213bb6018d415e233"
     },
     {
       "id": "XW-0160",
@@ -4706,7 +4862,7 @@
       "violationFingerprint": "vfp:f972ad8a894935873a3f2c25",
       "shapeDigest": "sdg:ac1bf0b3aba38ff7397e3e7d",
       "dynamicShape": false,
-      "callSiteId": "cs:e9505a2dad14ee9e955c60e8",
+      "callSiteId": "cs:e5195e1e041ab1293a7a16f4",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "participation",
@@ -4722,7 +4878,8 @@
       "introducedAt": "git blame 90fc41d0cf5b（2026-07-15；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:e9505a2dad14ee9e955c60e8"
     },
     {
       "id": "XW-0161",
@@ -4736,7 +4893,7 @@
       "violationFingerprint": "vfp:e61ddd90cfca5bd6ba76ed1e",
       "shapeDigest": "sdg:5f04c03c4d5c771c6586993c",
       "dynamicShape": false,
-      "callSiteId": "cs:06c2981b57f9c0327924f183",
+      "callSiteId": "cs:76bd0e5c1584923c1b698ee5",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "identity-org",
@@ -4752,7 +4909,8 @@
       "introducedAt": "git blame 74067bf125cb（2026-08-02；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:06c2981b57f9c0327924f183"
     },
     {
       "id": "XW-0162",
@@ -4766,7 +4924,7 @@
       "violationFingerprint": "vfp:b7a0fd0cee986283961143a6",
       "shapeDigest": "sdg:2ddaa2138cc7c9eee51105d9",
       "dynamicShape": false,
-      "callSiteId": "cs:274a17db9d7da79276bf7de3",
+      "callSiteId": "cs:a282c2f312ce2c60c98ea179",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-access",
@@ -4782,7 +4940,8 @@
       "introducedAt": "git blame 812cf53ba6e9（2026-07-07；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:274a17db9d7da79276bf7de3"
     },
     {
       "id": "XW-0163",
@@ -4796,7 +4955,7 @@
       "violationFingerprint": "vfp:e45a7f1b58a082fd44a2e66e",
       "shapeDigest": "sdg:0120eb2db5212e2d2051d6c1",
       "dynamicShape": true,
-      "callSiteId": "cs:654e56a91dbc545df408d646",
+      "callSiteId": "cs:3987ef25467a0b90e4acc818",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "insurance",
@@ -4812,7 +4971,8 @@
       "introducedAt": "git blame 6c0d55d8e1af（2026-07-19；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:654e56a91dbc545df408d646"
     },
     {
       "id": "XW-0164",
@@ -4826,7 +4986,7 @@
       "violationFingerprint": "vfp:5747092d20bb2dafaea9a3b7",
       "shapeDigest": "sdg:742a48a33c0a42801928180d",
       "dynamicShape": true,
-      "callSiteId": "cs:0ef17a527151a390c791d878",
+      "callSiteId": "cs:1586759c7e2c72f7465bec87",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "insurance",
@@ -4842,7 +5002,8 @@
       "introducedAt": "git blame 6c0d55d8e1af（2026-07-19；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:0ef17a527151a390c791d878"
     },
     {
       "id": "XW-0165",
@@ -4856,7 +5017,7 @@
       "violationFingerprint": "vfp:91a293569bf90c9350ef67dd",
       "shapeDigest": "sdg:d9babe170f7a598fe2566033",
       "dynamicShape": true,
-      "callSiteId": "cs:3520279612cabef054a84858",
+      "callSiteId": "cs:706930f453e12b473ae1c25e",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "insurance",
@@ -4872,7 +5033,8 @@
       "introducedAt": "git blame a538d2dda837（2026-07-19；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:3520279612cabef054a84858"
     },
     {
       "id": "XW-0166",
@@ -4886,7 +5048,7 @@
       "violationFingerprint": "vfp:1078d4364beeca3351d87eae",
       "shapeDigest": "sdg:2512235a518c570dc8bc8834",
       "dynamicShape": true,
-      "callSiteId": "cs:fb2ebc0aa8ff2bfc30093ded",
+      "callSiteId": "cs:3ab212dbedc8a2a7ad859783",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "insurance",
@@ -4902,7 +5064,8 @@
       "introducedAt": "git blame 6c0d55d8e1af（2026-07-19；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:fb2ebc0aa8ff2bfc30093ded"
     },
     {
       "id": "XW-0167",
@@ -4916,7 +5079,7 @@
       "violationFingerprint": "vfp:1078d4364beeca3351d87eae",
       "shapeDigest": "sdg:c22595e281003295a8c52a74",
       "dynamicShape": true,
-      "callSiteId": "cs:1cc65f4cc0f09318fe76f6d9",
+      "callSiteId": "cs:7bae73faa1a8d19fc1ee8fbe",
       "occurrenceIndex": 2,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "insurance",
@@ -4932,7 +5095,8 @@
       "introducedAt": "git blame 6c0d55d8e1af（2026-07-19；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:1cc65f4cc0f09318fe76f6d9"
     },
     {
       "id": "XW-0168",
@@ -4946,7 +5110,7 @@
       "violationFingerprint": "vfp:776e32261a2e6cf6a62b570b",
       "shapeDigest": "sdg:243fef1748ef64b4ac2458be",
       "dynamicShape": true,
-      "callSiteId": "cs:32a2e8153f5908c699eadc4e",
+      "callSiteId": "cs:f94d3a5bd978e2dc1a4a75c5",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "insurance",
@@ -4962,7 +5126,8 @@
       "introducedAt": "git blame 6c0d55d8e1af（2026-07-19；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:32a2e8153f5908c699eadc4e"
     },
     {
       "id": "XW-0169",
@@ -4976,7 +5141,7 @@
       "violationFingerprint": "vfp:1517d48facab931e8b3495c4",
       "shapeDigest": "sdg:014ba732ae3ab2bdd4a8ec94",
       "dynamicShape": false,
-      "callSiteId": "cs:be4b56638fc26af78c8cdad7",
+      "callSiteId": "cs:d6c0d62e14510c987c94841f",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-core",
@@ -4992,7 +5157,8 @@
       "introducedAt": "git blame f6525cd8ebd7（2026-07-04；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:be4b56638fc26af78c8cdad7"
     },
     {
       "id": "XW-0170",
@@ -5006,7 +5172,7 @@
       "violationFingerprint": "vfp:9f06ddda658f8d88cceace73",
       "shapeDigest": "sdg:0516866cbc3e868cb7e14d80",
       "dynamicShape": false,
-      "callSiteId": "cs:2368ee46e435670b2bbf2734",
+      "callSiteId": "cs:a335954947432c547e718bea",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-core",
@@ -5022,7 +5188,8 @@
       "introducedAt": "git blame f6525cd8ebd7（2026-07-04；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:2368ee46e435670b2bbf2734"
     },
     {
       "id": "XW-0171",
@@ -5036,7 +5203,7 @@
       "violationFingerprint": "vfp:547752445a80b9c3dcfdfbe4",
       "shapeDigest": "sdg:970c2341c1079700e67db89e",
       "dynamicShape": false,
-      "callSiteId": "cs:83e76b1b9a28fa30543fdff3",
+      "callSiteId": "cs:eb8493819e5c3afa693e2d39",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-core",
@@ -5052,7 +5219,8 @@
       "introducedAt": "git blame f6525cd8ebd7（2026-07-04；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:83e76b1b9a28fa30543fdff3"
     },
     {
       "id": "XW-0172",
@@ -5066,7 +5234,7 @@
       "violationFingerprint": "vfp:ddcf23a47d16945d42da12dd",
       "shapeDigest": "sdg:47f42ca90d2d2ec011c3c1fe",
       "dynamicShape": false,
-      "callSiteId": "cs:f46ec1833603daa19444479c",
+      "callSiteId": "cs:543a52d0d06bfcccff50f6ff",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "comms",
@@ -5082,7 +5250,8 @@
       "introducedAt": "git blame f73ac8e96454（2026-07-15；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:f46ec1833603daa19444479c"
     },
     {
       "id": "XW-0173",
@@ -5096,7 +5265,7 @@
       "violationFingerprint": "vfp:0c53a88624697182b451c660",
       "shapeDigest": "sdg:500849315e39cde8f9924675",
       "dynamicShape": false,
-      "callSiteId": "cs:c1caae6adf5a4f6c8f3583ae",
+      "callSiteId": "cs:51936a8f612d8dc96553f920",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "comms",
@@ -5112,7 +5281,8 @@
       "introducedAt": "git blame d5693fa96a46（2026-07-14；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:c1caae6adf5a4f6c8f3583ae"
     },
     {
       "id": "XW-0174",
@@ -5126,7 +5296,7 @@
       "violationFingerprint": "vfp:f595b01beaff98db8d990496",
       "shapeDigest": "sdg:fb3db1e24822fc9191c9eae2",
       "dynamicShape": false,
-      "callSiteId": "cs:acf27a517962dc24b508880e",
+      "callSiteId": "cs:846b1ee0ad04789659c2e4d1",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "comms",
@@ -5142,7 +5312,8 @@
       "introducedAt": "git blame d5693fa96a46（2026-07-14；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:acf27a517962dc24b508880e"
     },
     {
       "id": "XW-0175",
@@ -5156,7 +5327,7 @@
       "violationFingerprint": "vfp:a385cf330460aaac652df4d0",
       "shapeDigest": "sdg:f8deb63c719afab0beab2d9d",
       "dynamicShape": false,
-      "callSiteId": "cs:8952cac6a2280ad2fca0b2ec",
+      "callSiteId": "cs:5948a82fa43cb09f21b07b91",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "comms",
@@ -5172,7 +5343,8 @@
       "introducedAt": "git blame d5693fa96a46（2026-07-14；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:8952cac6a2280ad2fca0b2ec"
     },
     {
       "id": "XW-0176",
@@ -5186,7 +5358,7 @@
       "violationFingerprint": "vfp:5be302d2b946a91e00c3dbd8",
       "shapeDigest": "sdg:75973d5b487939064e13683a",
       "dynamicShape": true,
-      "callSiteId": "cs:d47246c4aa24773a4fbbd272",
+      "callSiteId": "cs:11e2129237a4fa95cb740a79",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "comms",
@@ -5202,7 +5374,8 @@
       "introducedAt": "git blame 804572fb2d4c（2026-08-02；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:d47246c4aa24773a4fbbd272"
     },
     {
       "id": "XW-0177",
@@ -5216,7 +5389,7 @@
       "violationFingerprint": "vfp:6b204de628206a1c362a35d2",
       "shapeDigest": "sdg:25a60788fc4735b0fc3c19f4",
       "dynamicShape": true,
-      "callSiteId": "cs:b833bf0ea7a3c1910faf8725",
+      "callSiteId": "cs:15c3cb3707f75f9d38c8c5d7",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "comms",
@@ -5232,7 +5405,8 @@
       "introducedAt": "git blame 804572fb2d4c（2026-08-02；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:b833bf0ea7a3c1910faf8725"
     },
     {
       "id": "XW-0178",
@@ -5246,7 +5420,7 @@
       "violationFingerprint": "vfp:cc4848ae02d408cefb8be2ab",
       "shapeDigest": "sdg:25a60788fc4735b0fc3c19f4",
       "dynamicShape": true,
-      "callSiteId": "cs:60f91d24b7c957d34d52469c",
+      "callSiteId": "cs:be95dbb229af65454367c2ea",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "comms",
@@ -5262,7 +5436,8 @@
       "introducedAt": "git blame 804572fb2d4c（2026-08-02；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:60f91d24b7c957d34d52469c"
     },
     {
       "id": "XW-0179",
@@ -5276,7 +5451,7 @@
       "violationFingerprint": "vfp:1893c677170bddc14dcc93d9",
       "shapeDigest": "sdg:f2f766eae14a8a5e0b8f9120",
       "dynamicShape": true,
-      "callSiteId": "cs:5d5743f3d61afe0d403b64e6",
+      "callSiteId": "cs:a8140102615d18dacef00940",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "comms",
@@ -5292,7 +5467,8 @@
       "introducedAt": "git blame 804572fb2d4c（2026-08-02；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:5d5743f3d61afe0d403b64e6"
     },
     {
       "id": "XW-0180",
@@ -5306,7 +5482,7 @@
       "violationFingerprint": "vfp:ef8f2d59e6b38080b053d09c",
       "shapeDigest": "sdg:ed0d8cf178a0184c65804214",
       "dynamicShape": true,
-      "callSiteId": "cs:1adee93921247d96893d48aa",
+      "callSiteId": "cs:c6b5c2c3a151d884f34a81db",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "comms",
@@ -5322,7 +5498,8 @@
       "introducedAt": "git blame 804572fb2d4c（2026-08-02；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:1adee93921247d96893d48aa"
     },
     {
       "id": "XW-0181",
@@ -5336,7 +5513,7 @@
       "violationFingerprint": "vfp:0130a2654e3459dfa710261a",
       "shapeDigest": "sdg:8bdc490b6d857d9039f69e96",
       "dynamicShape": true,
-      "callSiteId": "cs:b3e04f196e97e2359be9a3ee",
+      "callSiteId": "cs:1710edca3d2e99d338789b02",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "comms",
@@ -5352,7 +5529,8 @@
       "introducedAt": "git blame 804572fb2d4c（2026-08-02；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:b3e04f196e97e2359be9a3ee"
     },
     {
       "id": "XW-0182",
@@ -5366,7 +5544,7 @@
       "violationFingerprint": "vfp:3e9f7211acedd878cd0e4054",
       "shapeDigest": "sdg:24e1962003b267983404aa50",
       "dynamicShape": true,
-      "callSiteId": "cs:b800cb4e05c8475e39747842",
+      "callSiteId": "cs:53d2a716b404fdd56012f471",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "comms",
@@ -5382,7 +5560,8 @@
       "introducedAt": "git blame b44f4ea0e3e0（2026-08-02；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:b800cb4e05c8475e39747842"
     },
     {
       "id": "XW-0183",
@@ -5396,7 +5575,7 @@
       "violationFingerprint": "vfp:23a5a34c5f0b54629925a60a",
       "shapeDigest": "sdg:cc8b55bee81c974a6dbb0398",
       "dynamicShape": false,
-      "callSiteId": "cs:c8cad7742a2b5628caac2108",
+      "callSiteId": "cs:4f24cc0fa155006f85146474",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-access",
@@ -5412,7 +5591,8 @@
       "introducedAt": "git blame d9d71cf82de4（2026-07-13；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:c8cad7742a2b5628caac2108"
     },
     {
       "id": "XW-0184",
@@ -5426,7 +5606,7 @@
       "violationFingerprint": "vfp:5a98cd93b4b45f1741ae2975",
       "shapeDigest": "sdg:36e6d3bb74de9e9cc057be24",
       "dynamicShape": false,
-      "callSiteId": "cs:6b47b3839a317b7614163617",
+      "callSiteId": "cs:60307096fb665b2a89f7efa0",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-access",
@@ -5442,7 +5622,8 @@
       "introducedAt": "git blame 7208f43ad3cb（2026-07-25；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:6b47b3839a317b7614163617"
     },
     {
       "id": "XW-0185",
@@ -5456,7 +5637,7 @@
       "violationFingerprint": "vfp:b097340f2480fc1979d47791",
       "shapeDigest": "sdg:4f9a5a0497c2dc9e2a45a4bf",
       "dynamicShape": false,
-      "callSiteId": "cs:2d1717faa83114d2eae2d40b",
+      "callSiteId": "cs:f680870118c606def5501fa7",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-access",
@@ -5472,7 +5653,8 @@
       "introducedAt": "git blame 7208f43ad3cb（2026-07-25；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:2d1717faa83114d2eae2d40b"
     },
     {
       "id": "XW-0186",
@@ -5486,7 +5668,7 @@
       "violationFingerprint": "vfp:cbd3d588e2e77fcf3d37cd52",
       "shapeDigest": "sdg:5306f936795d38c494c022de",
       "dynamicShape": false,
-      "callSiteId": "cs:ac9c2ff57e8591cc92cfa94d",
+      "callSiteId": "cs:3a3eb5470a15eb5db565d42e",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-access",
@@ -5502,7 +5684,8 @@
       "introducedAt": "git blame 36532e5b573e（2026-07-18；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:ac9c2ff57e8591cc92cfa94d"
     },
     {
       "id": "XW-0187",
@@ -5516,7 +5699,7 @@
       "violationFingerprint": "vfp:cbd3d588e2e77fcf3d37cd52",
       "shapeDigest": "sdg:5306f936795d38c494c022de",
       "dynamicShape": false,
-      "callSiteId": "cs:0793025feae009477ce0f5e3",
+      "callSiteId": "cs:a164041614c9dbff39dd2324",
       "occurrenceIndex": 2,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-access",
@@ -5532,7 +5715,8 @@
       "introducedAt": "git blame 36532e5b573e（2026-07-18；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:0793025feae009477ce0f5e3"
     },
     {
       "id": "XW-0188",
@@ -5546,7 +5730,7 @@
       "violationFingerprint": "vfp:68dda585cf3e7efb14a550be",
       "shapeDigest": "sdg:9244b1af2062b5c8011b1eaa",
       "dynamicShape": false,
-      "callSiteId": "cs:2df1e52d5b99677263751e17",
+      "callSiteId": "cs:7a343145be66186a8e40e09f",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-access",
@@ -5562,7 +5746,8 @@
       "introducedAt": "git blame 36532e5b573e（2026-07-18；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:2df1e52d5b99677263751e17"
     },
     {
       "id": "XW-0189",
@@ -5576,7 +5761,7 @@
       "violationFingerprint": "vfp:6b8d507e7688d805e164df61",
       "shapeDigest": "sdg:51b7172135a76ecd0c358474",
       "dynamicShape": false,
-      "callSiteId": "cs:ae6bcd1712151a304fe2190e",
+      "callSiteId": "cs:04df8b23488bc2d558e1bffa",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "engagement",
@@ -5592,7 +5777,8 @@
       "introducedAt": "git blame adcacb1fbe64（2026-07-11；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:ae6bcd1712151a304fe2190e"
     },
     {
       "id": "XW-0190",
@@ -5606,7 +5792,7 @@
       "violationFingerprint": "vfp:c4c698d2e3a3930f6861bf54",
       "shapeDigest": "sdg:d762793bdba2c4de85b3925e",
       "dynamicShape": false,
-      "callSiteId": "cs:c684588ea056bdd82a1fb1fc",
+      "callSiteId": "cs:b163e5936be1fc9eee5011cb",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "engagement",
@@ -5622,7 +5808,8 @@
       "introducedAt": "git blame adcacb1fbe64（2026-07-11；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:c684588ea056bdd82a1fb1fc"
     },
     {
       "id": "XW-0191",
@@ -5636,7 +5823,7 @@
       "violationFingerprint": "vfp:06808c448f9550c504521fa6",
       "shapeDigest": "sdg:a66404fbbff8010af2f80f3f",
       "dynamicShape": false,
-      "callSiteId": "cs:b9744a05a8a29815184d4d12",
+      "callSiteId": "cs:e593ea5ff66dbd4fd1cc332e",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "engagement",
@@ -5652,7 +5839,8 @@
       "introducedAt": "git blame 9b11babc025c（2026-07-11；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:b9744a05a8a29815184d4d12"
     },
     {
       "id": "XW-0192",
@@ -5666,7 +5854,7 @@
       "violationFingerprint": "vfp:06808c448f9550c504521fa6",
       "shapeDigest": "sdg:40cbae295fad417bff56b66f",
       "dynamicShape": false,
-      "callSiteId": "cs:a4855d1469290a02971da89b",
+      "callSiteId": "cs:8deeb360951b4c180b2c8180",
       "occurrenceIndex": 2,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "engagement",
@@ -5682,7 +5870,8 @@
       "introducedAt": "git blame 9b11babc025c（2026-07-11；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:a4855d1469290a02971da89b"
     },
     {
       "id": "XW-0193",
@@ -5696,7 +5885,7 @@
       "violationFingerprint": "vfp:d5ba03d12a797c07e84198a0",
       "shapeDigest": "sdg:322af1686ebc9e3e88e353e2",
       "dynamicShape": false,
-      "callSiteId": "cs:29592666201b0afb88aa8b25",
+      "callSiteId": "cs:18aff2bb870a1d2839f7bb99",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "engagement",
@@ -5712,7 +5901,8 @@
       "introducedAt": "git blame 4a9e7ff319be（2026-06-24；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:29592666201b0afb88aa8b25"
     },
     {
       "id": "XW-0194",
@@ -5726,7 +5916,7 @@
       "violationFingerprint": "vfp:af28175f5867f5f522e8b3e9",
       "shapeDigest": "sdg:a063fd875ce4ba606abbcd4b",
       "dynamicShape": false,
-      "callSiteId": "cs:e8b6da514e456c12278933f9",
+      "callSiteId": "cs:e9124c85ec17d1efe8ad2541",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-access",
@@ -5742,7 +5932,8 @@
       "introducedAt": "git blame 36532e5b573e（2026-07-18；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:e8b6da514e456c12278933f9"
     },
     {
       "id": "XW-0195",
@@ -5756,7 +5947,7 @@
       "violationFingerprint": "vfp:af28175f5867f5f522e8b3e9",
       "shapeDigest": "sdg:20001fd916ca1096f842764c",
       "dynamicShape": false,
-      "callSiteId": "cs:8cd980d33383ec61552c2ece",
+      "callSiteId": "cs:c7d44a9dd70dafa639706187",
       "occurrenceIndex": 2,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-access",
@@ -5772,7 +5963,8 @@
       "introducedAt": "git blame 00ca96489397（2026-07-01；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:8cd980d33383ec61552c2ece"
     },
     {
       "id": "XW-0196",
@@ -5786,7 +5978,7 @@
       "violationFingerprint": "vfp:30c48448e290d36cd725baef",
       "shapeDigest": "sdg:37dfb29cef5bf1855af17ebd",
       "dynamicShape": false,
-      "callSiteId": "cs:1472822c08b064901f8699e3",
+      "callSiteId": "cs:7ccf907234c0746c226d3577",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-access",
@@ -5802,7 +5994,8 @@
       "introducedAt": "git blame 36532e5b573e（2026-07-18；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:1472822c08b064901f8699e3"
     },
     {
       "id": "XW-0197",
@@ -5816,7 +6009,7 @@
       "violationFingerprint": "vfp:30c48448e290d36cd725baef",
       "shapeDigest": "sdg:9c4ca9a9b5055addb27941b5",
       "dynamicShape": false,
-      "callSiteId": "cs:26af724d90dc3395d825ae3f",
+      "callSiteId": "cs:433eb6f189815708d9c4f7f9",
       "occurrenceIndex": 2,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-access",
@@ -5832,7 +6025,8 @@
       "introducedAt": "git blame 36532e5b573e（2026-07-18；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:26af724d90dc3395d825ae3f"
     },
     {
       "id": "XW-0198",
@@ -5846,7 +6040,7 @@
       "violationFingerprint": "vfp:20e13953b4430c2f50d27a9a",
       "shapeDigest": "sdg:1fd59c969449a7e171a439f8",
       "dynamicShape": false,
-      "callSiteId": "cs:3ec4cc84055adda50aea1342",
+      "callSiteId": "cs:d925182927babae86d061584",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-access",
@@ -5862,7 +6056,8 @@
       "introducedAt": "git blame 444ee4a80782（2026-07-04；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:3ec4cc84055adda50aea1342"
     },
     {
       "id": "XW-0199",
@@ -5876,7 +6071,7 @@
       "violationFingerprint": "vfp:7c6a96c9bb918575ca8bc433",
       "shapeDigest": "sdg:6629faa2f8dedebe97178a1c",
       "dynamicShape": false,
-      "callSiteId": "cs:97de78ea32e6cc26787ed68f",
+      "callSiteId": "cs:65b2c8aab791ca020e2dc9ca",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "engagement",
@@ -5892,7 +6087,8 @@
       "introducedAt": "git blame 65c142156a99（2026-07-12；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:97de78ea32e6cc26787ed68f"
     },
     {
       "id": "XW-0200",
@@ -5906,7 +6102,7 @@
       "violationFingerprint": "vfp:cbf6f0bbf253235457f8d66f",
       "shapeDigest": "sdg:5a0928f251507556efa7aca9",
       "dynamicShape": false,
-      "callSiteId": "cs:d4446bd6964429025e3d5967",
+      "callSiteId": "cs:de61f18537234a47dbb46a1a",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "engagement",
@@ -5922,7 +6118,8 @@
       "introducedAt": "git blame 65c142156a99（2026-07-12；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:d4446bd6964429025e3d5967"
     },
     {
       "id": "XW-0201",
@@ -5936,7 +6133,7 @@
       "violationFingerprint": "vfp:81be3dd01bfceebc631cedc2",
       "shapeDigest": "sdg:d48845473541ab788ed92b88",
       "dynamicShape": false,
-      "callSiteId": "cs:0bc7292a5e55a8be8e0e7cef",
+      "callSiteId": "cs:67953f92a3fffa15631f067d",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "engagement",
@@ -5952,7 +6149,8 @@
       "introducedAt": "git blame 46f927d8d48c（2026-08-01；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:0bc7292a5e55a8be8e0e7cef"
     },
     {
       "id": "XW-0202",
@@ -5966,7 +6164,7 @@
       "violationFingerprint": "vfp:b561d704a49428341d73127b",
       "shapeDigest": "sdg:cfa17434bae460ce39cce158",
       "dynamicShape": false,
-      "callSiteId": "cs:158eb6d26b7a80cb30470bc6",
+      "callSiteId": "cs:2de9db76c8f4929ae897a42d",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "engagement",
@@ -5982,7 +6180,8 @@
       "introducedAt": "git blame fe3501bdb1dc（2026-06-20；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:158eb6d26b7a80cb30470bc6"
     },
     {
       "id": "XW-0203",
@@ -5996,7 +6195,7 @@
       "violationFingerprint": "vfp:10d321f72c58d7ea9cfb7417",
       "shapeDigest": "sdg:984a512784b959867fd0d8fc",
       "dynamicShape": false,
-      "callSiteId": "cs:4acf025ad77be47138adb35b",
+      "callSiteId": "cs:f35dbe28a3d731af77a5c82f",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "engagement",
@@ -6012,7 +6211,8 @@
       "introducedAt": "git blame fe3501bdb1dc（2026-06-20；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:4acf025ad77be47138adb35b"
     },
     {
       "id": "XW-0204",
@@ -6026,7 +6226,7 @@
       "violationFingerprint": "vfp:623c97ea89f0c20b468df795",
       "shapeDigest": "sdg:5f04c03c4d5c771c6586993c",
       "dynamicShape": false,
-      "callSiteId": "cs:83acc79491822da60d693179",
+      "callSiteId": "cs:21f0ecfb9b269d225d46bca1",
       "occurrenceIndex": 1,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "identity-org",
@@ -6042,7 +6242,8 @@
       "introducedAt": "git blame 74067bf125cb（2026-08-02；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
+      "supersedes": "cs:83acc79491822da60d693179"
     },
     {
       "id": "XW-0205",
