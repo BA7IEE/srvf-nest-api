@@ -1412,6 +1412,34 @@ async function main(): Promise<void> {
         closure: 'candidate',
         diagnostic: 'is never passed downward',
       },
+      // ── engine 词汇第一段:新取值 `none` 与不可读取值的 fail-closed ──────────
+      //
+      // 正:`engine: 'none'` 是**已声明的缺席** —— 判定由 scopes / admission 轴承载,
+      // 没有 engine 断言可欠。它必须闭环,否则新取值等于没加。
+      {
+        name: 'engine-none-owes-no-authz-assertion',
+        source: selfController(
+          '@CurrentUser() currentUser: unknown',
+          'return this.service.authorize(currentUser);',
+        ),
+        policy: { ...selfPolicy, engine: 'none' },
+        tier: 'T1',
+        closure: 'closed',
+      },
+      // 负:不可读的 engine 取值(如拼错的 `authz-scopedd`)**不是**缺席。
+      // 加固前它会落到 `return null` 兜底 = 「不欠任何断言」,与「没什么要证的」
+      // 无法区分 —— 该轴静默通过。现在必须落 T3。
+      {
+        name: 'engine-unregistered-value-falls-to-t3',
+        source: selfController(
+          '@CurrentUser() currentUser: unknown',
+          'return this.service.authorize(currentUser);',
+        ),
+        policy: { ...selfPolicy, engine: 'authz-scopedd' },
+        tier: 'T3',
+        closure: 'candidate',
+        diagnostic: 'engine authz-scopedd is not a registered engine',
+      },
     ];
     const probes: readonly R8Probe[] = [
       {

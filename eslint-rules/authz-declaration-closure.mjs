@@ -897,10 +897,36 @@ function requiredScopeChecks(policy) {
   ];
 }
 
+// Registered engines and the assertion family each one owes.
+//
+// `none` maps to no family on purpose: it is a declared absence — the decision
+// is carried by the scopes / admission axes, so there is no engine assertion to
+// find. That is different from an *unreadable* engine value, which is handled
+// below by refusing to judge rather than by owing nothing.
+const ENGINE_ASSERTIONS = new Map([
+  ['rbac-global', 'rbac-can'],
+  ['authz-scoped', 'authz-can-explain'],
+  ['none', null],
+]);
+
+/**
+ * @returns the owed assertion family, or null when the engine owes none.
+ * Callers must check {@link isRegisteredEngine} first: this returns null for an
+ * unregistered value too, and those two nulls mean opposite things.
+ */
 function patternForEngine(engine) {
-  if (engine === 'rbac-global') return 'rbac-can';
-  if (engine === 'authz-scoped') return 'authz-can-explain';
-  return null;
+  return ENGINE_ASSERTIONS.get(engine) ?? null;
+}
+
+/**
+ * A null engine is legitimate (PUBLIC / LOGIN_ONLY declare no engine). Any other
+ * unregistered value is not an absence — it is a declaration this rule cannot
+ * read, e.g. a typo like `authz-scopedd`. Before this check such a value fell
+ * through to "owes no assertion", making a misspelling indistinguishable from
+ * "nothing to prove" — the axis silently passed. It must fall to T3 instead.
+ */
+function isRegisteredEngine(engine) {
+  return engine === null || ENGINE_ASSERTIONS.has(engine);
 }
 
 function findObservation(observations, pattern, code = null) {
@@ -978,6 +1004,10 @@ function classifyEntry(index, patterns, entry) {
     missing.push('admission app-member has no AppIdentityResolver.resolve deny branch');
   }
 
+  if (!isRegisteredEngine(policy.engine)) {
+    missing.push(`engine ${policy.engine} is not a registered engine`);
+    unsupportedAxis = true;
+  }
   const codePattern = patternForEngine(policy.engine);
   if (policy.codes.length > 0 && codePattern === null) {
     missing.push('permission codes have no declared engine');

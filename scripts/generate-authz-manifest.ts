@@ -17,8 +17,10 @@ import * as ts from 'typescript';
 import {
   AUTHZ_ASSERTION_PATTERNS,
   AUTHZ_VISIBILITY_PREDICATES,
+  isRouteAuthzEngine,
   normalizeRouteAuthzDeclaration,
   type RouteAuthzDeclarationFragment,
+  type RouteAuthzEngine,
 } from '../src/common/authz/authz-context';
 
 const ROOT = path.resolve(__dirname, '..');
@@ -68,7 +70,7 @@ interface Policy {
   codes: Array<{ code: string; scope: string | null }>;
   require: 'all' | 'any';
   scopes: string[];
-  engine: 'rbac-global' | 'authz-scoped' | null;
+  engine: RouteAuthzEngine | null;
 }
 
 type Surface = 'admin' | 'app' | 'system' | 'auth' | 'open' | 'other';
@@ -230,8 +232,10 @@ function routeAuthzOptions(
     }
     if (key === 'engine') {
       const engine = literalString(property.initializer, label + '.engine');
-      if (engine !== 'rbac-global' && engine !== 'authz-scoped')
-        throw new Error(label + '.engine is invalid');
+      // Checked against the single source rather than a second literal list:
+      // a copy here would let the two vocabularies drift, and this parser is
+      // what decides whether a declaration is even readable.
+      if (!isRouteAuthzEngine(engine)) throw new Error(label + '.engine is invalid');
       output.engine = engine;
       continue;
     }
