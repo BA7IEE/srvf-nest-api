@@ -7,7 +7,31 @@ export type RouteAuthzMode =
   | 'RESPONSIBILITY_SCOPED'
   | 'RBAC';
 
-export type RouteAuthzEngine = 'rbac-global' | 'authz-scoped';
+// Which engine decides access.
+//
+// `none` is a *declared absence*, not a missing declaration: the endpoint's
+// access decision is carried by the scopes / admission axes (self-by-construction,
+// a responsibility policy, app admission) rather than by an engine, so no engine
+// assertion is owed. It exists because the vocabulary previously could not say
+// this — `@LoginScoped` fills in `authz-scoped` for anything that does not name an
+// engine, which made every LOGIN_SCOPED route claim the scoped-authz engine
+// whether or not it uses it.
+//
+// Distinct from `null` on the canonical declaration: `null` means the mode
+// implies no engine at all (PUBLIC / LOGIN_ONLY), while `none` is a positive
+// statement by the author about a route that does have a judging surface.
+export const ROUTE_AUTHZ_ENGINES = ['rbac-global', 'authz-scoped', 'none'] as const;
+export type RouteAuthzEngine = (typeof ROUTE_AUTHZ_ENGINES)[number];
+
+/**
+ * The vocabulary as a runtime check, so parsers validate against this list
+ * instead of restating it. A second copy would be free to drift, and the
+ * declaration parser is exactly where drift decides whether a declaration is
+ * readable at all.
+ */
+export function isRouteAuthzEngine(value: string): value is RouteAuthzEngine {
+  return (ROUTE_AUTHZ_ENGINES as readonly string[]).includes(value);
+}
 export type RouteAuthzAdmission = 'app-member';
 export type RouteAuthzRequire = 'all' | 'any';
 
