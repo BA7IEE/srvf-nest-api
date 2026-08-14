@@ -2127,6 +2127,60 @@ async function main(): Promise<void> {
       );
     }
 
+    // D1 ③:名字集为空时,判据必须落 T3 —— 而不是「没有名字命中 ⇒ 全部放行」。
+    //
+    // 守的是判据的**结构**,不是名字集的内容:漏写一个主体名字是可以补的,
+    // 但「名字集空了就静默盖章」会让漏写从一条假阴性升级成整族假阳性。
+    // 这里改真 registry 跑真扫描,而不是给规则加一个 patterns 覆盖选项 ——
+    // 后者等于给 PR 多开一个把裁判改成恒 PASS 的入口。
+    {
+      const patternsPath = path.join(repoRoot, 'harness/authz-assertion-patterns.json');
+      const pristine = fs.readFileSync(patternsPath, 'utf-8');
+      let emptyNameSetTier: string | undefined;
+      try {
+        const doctored = JSON.parse(pristine) as {
+          families: Array<{ staticMatchers: Array<Record<string, unknown>> }>;
+        };
+        let patched = 0;
+        for (const family of doctored.families) {
+          for (const matcher of family.staticMatchers) {
+            if (matcher.outcome === 'no-caller-controlled-subject') {
+              matcher.subjectIdentifierNames = [];
+              patched++;
+            }
+          }
+        }
+        if (patched !== 1) {
+          failures.push(
+            `✗ R8 空名字集用例失效 —— registry 里 no-caller-controlled-subject matcher 有 ${patched} 个,期望恰 1 个。`,
+          );
+        }
+        fs.writeFileSync(patternsPath, `${JSON.stringify(doctored, null, 2)}\n`);
+        // 用正样例:它在正常 registry 下是 closed,所以这里若仍 closed,
+        // 说明空名字集把判据退化成了放行。
+        fs.writeFileSync(probeAbs, selfByConstructionProbes[0].source);
+        emptyNameSetTier = scanRouteAuthzClosure({
+          rootDir: repoRoot,
+          entries: entryOf('empty-subject-names', selfPolicy),
+          cacheKey: 'r8-empty-subject-names',
+        })[0]?.tier;
+      } finally {
+        fs.writeFileSync(patternsPath, pristine);
+        fs.rmSync(probeAbs, { force: true });
+      }
+      if (emptyNameSetTier === 'T3') {
+        passed++;
+        console.log(
+          '✓ R8 self 判据结构自保:主体名字集为空时,连正样例也落 T3(不退化成静默放行)',
+        );
+      } else {
+        failures.push(
+          `✗ R8 self 判据在空名字集下没有落 T3(实际 ${emptyNameSetTier ?? '无记录'})——\n` +
+            '  含义:名字集写漏时判据不是「少拒一条」,而是「整族盖章」,方向正好反了。',
+        );
+      }
+    }
+
     const packageJson = JSON.parse(
       fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf-8'),
     ) as { scripts?: Record<string, unknown> };
