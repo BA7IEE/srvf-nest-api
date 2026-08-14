@@ -209,11 +209,15 @@ per-(file, symbol) 计数器，同方法内**别的**发现增减就会移位；
    「删一行无人知」是从「静态上看不见」错误外推的；两者不是一回事。
    **这条的教训值得留着**：判据缺口（R8 报 T3）与真实风险敞口（越权可达）是两套账，
    前者为空不代表后者为空，**反过来也一样** —— 本次正是后者早已补齐、只有前者是空的。
-2. **`engine` 轴那 22 条先做归因、不做修复**（见 §11.2）。读那 22 条的实现，判定属于
-   ① 判据过度要求（`engine` 非空 + `codes` 为空时不该强求 `authz.can`），还是
-   ② **声明失真**（声明了 `engine: 'authz-scoped'` 但实际没走 authz 引擎）。
-   **归因结论交拍板再定改哪边。** 若属 ②，修正会触发 R14 授权语义差异审批——
-   **那是预期行为，不是障碍。**
+2. ~~**`engine` 轴先做归因、不做修复**~~ —— **归因已完成，见 §11.2.1**。结论：①②**都不是**，
+   根因是**声明词汇缺表达力**（`LoginScoped` 硬塞 `engine ?? 'authz-scoped'`，而该类型无 null
+   取值 ⇒ 作者无法表达「不走 authz 引擎」）。范围是 **118 条**不是 22 条；该轴**全仓 0/119
+   从未被满足过**。
+   **已拍板修法 = 扩声明词汇**（不收窄判据——收窄会让 A 组那 25 条的假声明永远无法被发现）。
+   **实施另立项**：落在 `authz-context.ts` + `route-authz.decorator.ts` + 115 个控制器声明，
+   写集远超单刀；建议**分两段**（先结构变更，再分批订正声明）。
+   逐条订正会触发大批 R14 审批（v4 终审【十一】：`engine` 变化恒 `INCOMPARABLE`）——
+   **预期行为，不是障碍。**
 3. 回滚开关 + 错误信息第④要素。
 4. 然后才开始 EC 第 7 条的连续稳定计时。
 
@@ -354,12 +358,78 @@ handler body 内被引用（向下传递）。DTO 携带的字段名由 TypeScri
   在 handler 里确实调了 `appIdentity.resolve`，但把 `canUseApp` **放进响应体**而不是据此拒绝
   （该端点在 `canUseApp=false` 时仍需可读，用于告知原因）。声明写 `admission: 'app-member'`，
   实现并不据此拒——R8 报出来正是它的本职。处置属**声明口径**问题，不属判据问题。
-- **`engine` 那条疑似既有 R8 的过度要求。** 这些端点是 `engine: 'authz-scoped'` + `codes: []`；
-  现规则在 engine 非空时无条件要求一个 `authz-can-explain` 观察，而**没有码可查的纯 self 端点
-  本就不该有那个调用**。此项**未经拍板，本刀不改**，登记在此交下一刀。
+- **`engine` 那条 —— 归因已完成（2026-08-14），见下方 §11.2.1。初判「疑似 R8 过度要求」
+  被实测推翻**：判据与权威源一字不差，根因在**声明词汇缺表达力**。
 
 **零外溢旁证**：非 self 端点分布 `T1=4 / T2=2 / T3=70 / N/A=9` 与 Phase 3 **逐项相同**，
 即新判据只作用于声明了 `scope self` 的端点，未波及其余 85 条。
+
+## 11.2.1 `engine` 轴归因（2026-08-14 只读调研，结论已拍板）
+
+> 立项时给的两个候选是「① 判据过度要求 / ② 声明失真」。**实测结论：两个都不是，
+> 根因是第三种 —— 声明词汇缺表达力。**
+
+**先纠正范围**：被 `engine` 轴挡住的是 **118 条**，不是 22 条。22 只是
+「`self` 轴已闭环 ∩ 被 `engine` 挡住」的交集。
+
+### ① 判据过度要求 —— 排除
+
+v4 README §检测对象**明写**：「engine 匹配（**声明 authz-scoped 须见 `authz.can/explain`**，
+纯 GLOBAL `rbac.can` 不算数）」。规则实现的就是权威源规定的，未超出授权。
+
+### ② 声明失真 —— 实体成立，但不应归咎声明者
+
+`src/common/decorators/route-authz.decorator.ts` 的 `LoginScoped` **自己硬塞默认值**：
+
+```ts
+engine: options.engine ?? 'authz-scoped',
+```
+
+而 `RouteAuthzOptions.engine?: RouteAuthzEngine`，`RouteAuthzEngine = 'rbac-global' | 'authz-scoped'`
+——**没有 null 取值**。即：**用 `@LoginScoped` 就必然声称走 authz 引擎，作者在语法上无法
+表达「我不走」。** 118 条按 mode 分：**`LOGIN_SCOPED` 115 条（装饰器强制）/ `RBAC` 3 条
+（作者显式写的）**——97% 不是失真，是没得选。
+
+已排除「判权在 guard 里、R8 够不到」这种可能：同文件注释确认装饰器只声明形状，
+`access checks remain exclusively in RbacService/AuthzService and AppIdentityResolver`。
+
+### ③ 根因：该轴**从未被满足过一次**
+
+| 声明 | 端点数 | 该轴被满足 |
+|---|---:|---:|
+| `engine = authz-scoped` | 118 | **0** |
+| `engine = rbac-global` | 1 | **0** |
+
+**全仓 0 / 119。** 一个从未被满足的轴，叠加一个无法关掉的默认值，等于给整个
+`LoginScoped` 家族恒定挂上一条**不可能闭合**的轴。
+
+实体佐证（声明确与实现不符，但成因是上面那条）：
+
+| | 条数 | 分布 |
+|---|---:|---|
+| A 组：所在模块**整体零** `authz.can/explain` 调用 | **25** | users 12 / notifications 6 / team-join 3 / meta 2 / content 2 |
+| B 组：模块内有 authz 调用，需逐条追才能定性 | 93 | activities 51 / activity-registrations 22 / attendances 13 / … |
+
+抽样：`AppMeController`（self 组）整个 users 模块 App 侧零 authz 调用；
+`AppManagedActivities` 链（responsibility 组）走的是 `ActivityResponsibilityPolicy`（5 处）
+——判权确实发生了，只是**不经 authz 引擎**，属另一个已登记族。
+
+### 对修法的硬约束
+
+**「显式声明」与「装饰器默认」在 manifest 里不可区分**——manifest 是规范化之后的产物，
+两者 normalize 成同一个值。因此「规则侧豁免默认值」这条路**不可实现**，除非先改声明词汇。
+
+### 已拍板修法：扩声明词汇（维护者 2026-08-14）
+
+让 `engine` 可表达实际机制（可为 null，或新增取值），再订正 115 条声明。
+
+- **不选「收窄 v4 判据为仅当 `codes>0` 才要求」**：那会让「声明了 authz-scoped 却没用」
+  **永远无法被发现**，而 A 组那 25 条的声明确实是假的——收窄等于把真问题一起盖掉。
+- **代价已知**：v4 终审【十一】规定 **`engine` 变化恒 `INCOMPARABLE`** ⇒ 逐条订正会触发
+  一大批 R14 审批。**建议分两段**：先做一次结构变更（词汇 + 默认值），再分批订正声明。
+- **本刀不实施**：该改动落在 `src/common/authz/authz-context.ts`、
+  `src/common/decorators/route-authz.decorator.ts` 与 115 个控制器声明，
+  **写集远超本刀授权**，须另立项并带自己的写集与 R14 审批预算。
 
 ## 11.3 18 条不可判的成因
 
