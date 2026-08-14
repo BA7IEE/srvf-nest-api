@@ -30,20 +30,29 @@ export const AUTHZ_DECLARATION_CLOSURE_MESSAGE =
 
 const ROUTE_AUTHZ_PATH = 'docs/ai-harness/ROUTE_AUTHZ.md';
 const PATTERNS_PATH = 'harness/authz-assertion-patterns.json';
+// Discriminates the structural matcher shape from the call-shape matchers.
+const SUBJECT_INPUT_OUTCOME = 'no-caller-controlled-subject';
 const ROUTE_AUTHZ_MANIFEST_START = '<!-- route-authz-manifest-json\n';
 const ROUTE_AUTHZ_MANIFEST_END = '\n-->';
 
 /** @type {Map<string, SourceIndex>} */
 const sourceIndexCache = new Map();
+// Each entry pins a whole ts.Program (its checker is needed to enumerate what a
+// DTO parameter carries). Callers vary cacheKey because the files changed under
+// them, so older entries are stale by construction — an unbounded map would just
+// hold every superseded Program alive at once. The R8 selftest walks ~30 keys in
+// one process, which is exactly where that shows up as heap exhaustion.
+const SOURCE_INDEX_CACHE_LIMIT = 2;
 
 /**
  * @typedef {{ code: string, scope: string | null }} PolicyCode
  * @typedef {{ admission: string | null, mode: string, codes: PolicyCode[], require: 'all' | 'any', scopes: string[], engine: string | null }} Policy
  * @typedef {{ routeKey?: string, controller: string, handler: string, legacy?: string, policy: Policy }} PolicyEntry
  * @typedef {{ receiverTypes: string[], methods: string[], actionArgument: number | null, outcome: string }} StaticMatcher
- * @typedef {{ id: string, axes: string[], staticMatchers: StaticMatcher[] }} AssertionPattern
+ * @typedef {{ outcome: 'no-caller-controlled-subject', identityParameterDecorators: string[], callerControlledParameterDecorators: string[], subjectIdentifierNames: string[] }} SubjectInputMatcher
+ * @typedef {{ id: string, axes: string[], staticMatchers: Array<StaticMatcher | SubjectInputMatcher> }} AssertionPattern
  * @typedef {{ name: string, file: string, moduleKey: string, source: import('typescript').SourceFile, declaration: import('typescript').ClassDeclaration, methods: Map<string, import('typescript').MethodDeclaration>, dependencies: Map<string, string> }} ClassInfo
- * @typedef {{ classesByName: Map<string, ClassInfo[]>, classesByFile: Map<string, ClassInfo[]> }} SourceIndex
+ * @typedef {{ classesByName: Map<string, ClassInfo[]>, classesByFile: Map<string, ClassInfo[]>, typed: { program: import('typescript').Program, checker: import('typescript').TypeChecker } | null }} SourceIndex
  * @typedef {{ pattern: string, code: string | null, layer: 1 | 2, file: string, line: number }} Observation
  * @typedef {{ target: { receiver: string, receiverType: string | null, method: string }, file: string, line: number }} ServiceCall
  * @typedef {{ observations: Observation[], serviceCalls: ServiceCall[] }} MethodAnalysis
@@ -217,7 +226,17 @@ function buildSourceIndex(root, cacheKey = '') {
     };
     visit(source);
   }
-  const result = { classesByName, classesByFile };
+  // `typed` rides along on the index because the self-by-construction family
+  // needs the checker to enumerate what a DTO parameter carries. It is null when
+  // no program could be built; every consumer must treat that as "cannot judge".
+  const result = { classesByName, classesByFile, typed };
+  // Insertion-ordered eviction: the oldest key is the one least likely to be
+  // asked for again, since a new key means the caller rewrote the sources.
+  while (sourceIndexCache.size >= SOURCE_INDEX_CACHE_LIMIT) {
+    const oldest = sourceIndexCache.keys().next();
+    if (oldest.done === true) break;
+    sourceIndexCache.delete(oldest.value);
+  }
   sourceIndexCache.set(key, result);
   return result;
 }
@@ -289,6 +308,27 @@ function normalizeEntry(input) {
   return entry;
 }
 
+/** The registry carries two matcher shapes; each is validated against its own
+ * required fields so a malformed entry cannot pass by satisfying the other's.
+ * @param {unknown} matcher */
+function isValidMatcher(matcher) {
+  if (matcher === null || typeof matcher !== 'object') return false;
+  const candidate = /** @type {Record<string, unknown>} */ (matcher);
+  if (candidate.outcome === SUBJECT_INPUT_OUTCOME) {
+    return (
+      isStringArray(candidate.identityParameterDecorators) &&
+      isStringArray(candidate.callerControlledParameterDecorators) &&
+      isStringArray(candidate.subjectIdentifierNames)
+    );
+  }
+  return (
+    isStringArray(candidate.receiverTypes) &&
+    isStringArray(candidate.methods) &&
+    (typeof candidate.actionArgument === 'number' || candidate.actionArgument === null) &&
+    typeof candidate.outcome === 'string'
+  );
+}
+
 function assertionPatterns(root) {
   const document = readJson(root, PATTERNS_PATH);
   if (!Array.isArray(document.families)) {
@@ -303,15 +343,7 @@ function assertionPatterns(root) {
       typeof pattern.id !== 'string' ||
       !isStringArray(pattern.axes) ||
       !Array.isArray(pattern.staticMatchers) ||
-      !pattern.staticMatchers.every(
-        (matcher) =>
-          matcher !== null &&
-          typeof matcher === 'object' &&
-          isStringArray(matcher.receiverTypes) &&
-          isStringArray(matcher.methods) &&
-          (typeof matcher.actionArgument === 'number' || matcher.actionArgument === null) &&
-          typeof matcher.outcome === 'string',
-      )
+      !pattern.staticMatchers.every((matcher) => isValidMatcher(matcher))
     ) {
       throw new Error(
         `R8 assertion pattern ${String(pattern.id)} lacks static matcher metadata; run pnpm docs:authz`,
@@ -325,6 +357,7 @@ function assertionPatterns(root) {
     'visible-organization-scope',
     'app-identity-resolve',
     'responsibility-check',
+    'self-by-construction',
   ]) {
     if (!byId.has(required)) throw new Error(`R8 assertion pattern registry misses ${required}`);
   }
@@ -648,6 +681,9 @@ function matcherFor(target, patterns) {
   if (target.receiverType === null) return output;
   for (const pattern of patterns.values()) {
     for (const matcher of pattern.staticMatchers) {
+      // Structural matchers describe a parameter surface, not a call. They carry
+      // no receiver type, so they are never a candidate for call matching.
+      if (matcher.outcome === SUBJECT_INPUT_OUTCOME) continue;
       if (
         matcher.receiverTypes.includes(target.receiverType) &&
         matcher.methods.includes(target.method)
@@ -710,6 +746,146 @@ function analyzeMethod(info, method, layer, patterns) {
   };
   method.forEachChild(visit);
   return { observations, serviceCalls };
+}
+
+/** The registered structural matcher, or null when the family is absent. */
+function subjectInputMatcher(patterns) {
+  for (const pattern of patterns.values()) {
+    for (const matcher of pattern.staticMatchers) {
+      if (matcher.outcome === SUBJECT_INPUT_OUTCOME) return matcher;
+    }
+  }
+  return null;
+}
+
+function decoratorName(decorator) {
+  const expression = decorator.expression;
+  const callee = ts.isCallExpression(expression) ? expression.expression : expression;
+  return ts.isIdentifier(callee)
+    ? callee.text
+    : ts.isPropertyAccessExpression(callee)
+      ? callee.name.text
+      : null;
+}
+
+/** `@Param('id')` names exactly one field; anything else has no literal key. */
+function decoratorLiteralKey(decorator) {
+  const expression = decorator.expression;
+  if (!ts.isCallExpression(expression) || expression.arguments.length === 0) return null;
+  const first = unwrap(expression.arguments[0]);
+  return ts.isStringLiteral(first) || ts.isNoSubstitutionTemplateLiteral(first) ? first.text : null;
+}
+
+/**
+ * Every name a caller-controlled parameter can carry, or null when that set
+ * cannot be established. Resolution goes through the checker so class
+ * inheritance and `PickType` / `OmitType` derivations are expanded by the
+ * compiler rather than re-implemented here. null means "cannot judge" and the
+ * caller must fall to T3 — never "carries nothing".
+ */
+function carriedParameterNames(typed, parameter, decorator) {
+  const literal = decoratorLiteralKey(decorator);
+  if (literal !== null) return [literal];
+  if (typed === null) return null;
+  const type = typed.checker.getTypeAtLocation(parameter);
+  /** @type {string[]} */
+  const names = [];
+  for (const member of type.isUnion() ? type.types : [type]) {
+    // `dto?: X` widens to `X | undefined`; the absent arm carries no field.
+    if ((member.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) !== 0) continue;
+    if ((member.flags & ts.TypeFlags.Object) === 0) return null;
+    const symbol = member.getSymbol();
+    if (symbol === undefined) return null;
+    const declarations = symbol.getDeclarations() ?? [];
+    // Anonymous shapes and mapped-type placeholders carry no reviewable
+    // declaration, so their field list is not evidence of anything.
+    if (
+      !declarations.some(
+        (declaration) =>
+          ts.isClassDeclaration(declaration) || ts.isInterfaceDeclaration(declaration),
+      )
+    ) {
+      return null;
+    }
+    for (const property of typed.checker.getPropertiesOfType(member)) {
+      names.push(property.getName());
+    }
+  }
+  return names;
+}
+
+/**
+ * Prove that `scope: self` closes by construction: the handler receives the
+ * caller's identity from the framework and exposes no input the caller could
+ * use to name a different subject.
+ *
+ * This is a negative proof, so it is written to fail closed. Each parameter must
+ * be positively classified as identity or as caller-controlled-and-enumerable;
+ * anything else — an unknown decorator, no decorator, an unexpandable type, a
+ * missing checker — returns a reason instead of a pass. There is deliberately no
+ * "nothing matched, so it must be safe" path.
+ *
+ * @returns {string | null} null when proven, otherwise why it could not be.
+ */
+function selfByConstructionGap(index, controller, handler, matcher) {
+  if (matcher === null) return 'scope self has no registered static assertion pattern';
+  // A vocabulary this family cannot judge with must not degrade into blanket
+  // approval: an empty name set would make every caller-controlled input look
+  // harmless. Guarding the structure, not the contents, of the name set.
+  if (matcher.subjectIdentifierNames.length === 0) {
+    return 'scope self matcher declares no subject identifier names';
+  }
+  if (matcher.identityParameterDecorators.length === 0) {
+    return 'scope self matcher declares no identity parameter decorators';
+  }
+  const identityDecorators = new Set(matcher.identityParameterDecorators);
+  const controlledDecorators = new Set(matcher.callerControlledParameterDecorators);
+  const subjectNames = new Set(matcher.subjectIdentifierNames.map((name) => name.toLowerCase()));
+
+  /** @type {import('typescript').ParameterDeclaration | null} */
+  let identity = null;
+  for (const parameter of handler.parameters) {
+    const written = parameter.name.getText(controller.source);
+    const decorators = ts.getDecorators(parameter) ?? [];
+    if (decorators.length === 0) {
+      return `scope self cannot classify parameter ${written} (no parameter decorator)`;
+    }
+    for (const decorator of decorators) {
+      const name = decoratorName(decorator);
+      if (name === null) {
+        return `scope self cannot classify parameter ${written} (unreadable decorator)`;
+      }
+      if (identityDecorators.has(name)) {
+        identity = parameter;
+        continue;
+      }
+      if (!controlledDecorators.has(name)) {
+        // The whole proof rests on this branch. @Req / @Headers / @Session hand
+        // over the entire request, and a custom decorator can inject anything;
+        // neither can be shown to exclude a subject, so neither may pass.
+        return `scope self cannot classify parameter ${written} (unregistered decorator @${name})`;
+      }
+      const carried = carriedParameterNames(index.typed, parameter, decorator);
+      if (carried === null) {
+        return `scope self cannot enumerate what @${name} ${written} carries`;
+      }
+      const hit = carried.find((field) => subjectNames.has(field.toLowerCase()));
+      if (hit !== undefined) {
+        return `scope self has caller-controlled subject input @${name} ${written}.${hit}`;
+      }
+    }
+  }
+  if (identity === null) return 'scope self has no framework-injected identity parameter';
+  // A declared-but-unused identity would leave the subject to be chosen
+  // somewhere the handler never looks at.
+  const bound = identity.name
+    .getText(controller.source)
+    .replace(/^\{|\}$/g, '')
+    .trim();
+  if (handler.body === undefined || !containsIdentifier(handler.body, bound)) {
+    return `scope self identity parameter ${bound} is never passed downward`;
+  }
+  return null;
 }
 
 function requiredScopeChecks(policy) {
@@ -794,6 +970,7 @@ function classifyEntry(index, patterns, entry) {
   /** @type {string[]} */
   const missing = [];
   let unsupportedAxis = false;
+  const subjectInput = subjectInputMatcher(patterns);
   if (
     policy.admission !== null &&
     findObservation(observations, 'app-identity-resolve') === undefined
@@ -819,8 +996,17 @@ function classifyEntry(index, patterns, entry) {
 
   for (const requirement of requiredScopeChecks(policy)) {
     if (requirement.scope === 'self') {
-      unsupportedAxis = true;
-      missing.push('scope self has no registered static assertion pattern');
+      // The only axis proved by structure rather than by an observed call: the
+      // intersection of resource and identity is a where-clause, so there is no
+      // assertion to see. What is provable instead is that the handler exposes
+      // nothing a caller could use to name someone else.
+      const gap = selfByConstructionGap(index, controller, handler, subjectInput);
+      if (gap !== null) {
+        unsupportedAxis = true;
+        missing.push(gap);
+      }
+      // Proven needs no bookkeeping: this axis contributes no observation, so an
+      // empty `missing` is already the closed condition below.
       continue;
     }
     if (requirement.scope === 'responsibility') {
