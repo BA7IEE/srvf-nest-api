@@ -46,7 +46,8 @@
 - **没有 Provider signed upload URL**：任何响应都不返回 key、accessUrl/signed URL、owner、tokenHash 或存储 locator。
 
 - **资格错误与 legacy**：canonical 报名的资格 block 返 `21040`，配置漂移返 `21041`，warn 不拦截；legacy 只在没有 live session、active Form 和 active 场次/岗位资格规则时可用，否则继续 `21038`。managed approve 面对旧 legacy pending 无 identity/preference、但后续已出现 active 场次/岗位 RuleSet 时同样返回 `21038`；不要把活动详情的安全投影当作可自行重算的事实来源。
-- **分配方式与发布审核**：draft PATCH、初发/变更提交或审核遇到任一历史 allocation batch mode 不一致时均返 `409/20152`，前端不要静默重试或尝试改历史 batch；v4 review 待审期间若 mode 被旁路修改，approve 返 `409/20144`，应刷新活动后重新提交。此字段只表达将来的分配策略，本刀不提供排队、资格排序、抽签、candidate 或候补 UI。
+- **分配方式与发布审核**：draft PATCH、初发/变更提交或审核遇到任一历史 allocation batch mode 不一致时均返 `409/20152`，前端不要静默重试或尝试改历史 batch；v4 review 待审期间若 mode 被旁路修改，approve 返 `409/20144`，应刷新活动后重新提交。分配 command 与安全读面见下一条；本 handoff 不交付新的排队、资格排序、抽签、candidate 或候补 UI。
+- **邀请接受与分配 command（第 4 批）**：本人接受邀请用 `POST /api/app/v1/my/activity-invitations/:invitationId/accept`，body 与 canonical 报名相同，仍必须传 `operationKey`、Form 版本、答案和志愿；同 key+同请求重放原回执，异请求按稳定冲突码处理。`first_come` 不创建 allocation batch，每个场次独立即时得到 `pass` 或 `waitlisted`；一个场次满员不能拖累其他已提交志愿。负责人仅对 `qualification_rank`/`lottery` 使用 `POST /api/app/v1/my/managed-activities/:activityId/allocation-batches` prepare、`POST .../:batchId/commit`、`POST .../:batchId/void` 与 `GET .../:batchId`。prepare 必须在报名截止后；lottery 的 seed 只在 committed 批次回显。客户端只展示服务端返回的结果和四位资格分数，不要自行复算资格或排序；候补递补只会发生在原场次、原岗位，跨岗位须本人重新确认。
 
 ### 活动责任闭环的五类视图与按钮
 

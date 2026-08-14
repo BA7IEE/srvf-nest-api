@@ -24,6 +24,7 @@ import { RbacService } from '../permissions/rbac.service';
 import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
+import { ActivityAllocationService } from './activity-allocation.service';
 import { ActivityRegistrationLifecycleService } from './activity-registration-lifecycle.service';
 import {
   ActivityQualificationEvaluatorService,
@@ -243,6 +244,7 @@ export class ActivityRegistrationsService {
     private readonly activityParticipationPolicy: ActivityParticipationPolicy,
     private readonly waitlistQuery: ActivityRegistrationWaitlistQueryService,
     private readonly registrationLifecycle: ActivityRegistrationLifecycleService,
+    private readonly allocations: ActivityAllocationService,
   ) {}
 
   // ============ helpers ============
@@ -1664,8 +1666,19 @@ export class ActivityRegistrationsService {
         tx,
       });
 
-      const promotion =
+      const allocationPromotion =
         lockedReg.statusCode === REGISTRATION_STATUS_PASS
+          ? await this.allocations.promoteAfterCancellationInTransactionTrusted(tx, {
+              activityId,
+              registrationId: lockedReg.id,
+              actorUser: currentUser,
+              promotedAt: cancelledAt,
+              auditMeta,
+            })
+          : { handled: false, activityTitle: '活动', promoted: [] };
+      const promotion = allocationPromotion.handled
+        ? allocationPromotion
+        : lockedReg.statusCode === REGISTRATION_STATUS_PASS
           ? await promoteActivityWaitlistWithinCapacity({
               activityId,
               activityPositionId: lockedReg.activityPositionId,
@@ -1678,10 +1691,12 @@ export class ActivityRegistrationsService {
             })
           : { activityTitle: '活动', promoted: [] };
 
-      await this.notificationProducer.enqueueWaitlistPromotions(tx, {
-        activityTitle: promotion.activityTitle,
-        promoted: promotion.promoted,
-      });
+      if (!allocationPromotion.handled) {
+        await this.notificationProducer.enqueueWaitlistPromotions(tx, {
+          activityTitle: promotion.activityTitle,
+          promoted: promotion.promoted,
+        });
+      }
       return this.toResponseDto(updated);
     });
 
@@ -1898,8 +1913,19 @@ export class ActivityRegistrationsService {
         tx,
       });
 
-      const promotion =
+      const allocationPromotion =
         lockedReg.statusCode === REGISTRATION_STATUS_PASS
+          ? await this.allocations.promoteAfterCancellationInTransactionTrusted(tx, {
+              activityId: lockedReg.activityId,
+              registrationId: lockedReg.id,
+              actorUser: currentUser,
+              promotedAt: cancelledAt,
+              auditMeta,
+            })
+          : { handled: false, activityTitle: activity?.title ?? '活动', promoted: [] };
+      const promotion = allocationPromotion.handled
+        ? allocationPromotion
+        : lockedReg.statusCode === REGISTRATION_STATUS_PASS
           ? await promoteActivityWaitlistWithinCapacity({
               activityId: lockedReg.activityId,
               activityPositionId: lockedReg.activityPositionId,
@@ -1928,10 +1954,12 @@ export class ActivityRegistrationsService {
               cancelReason: dto.cancelReason ?? null,
             })
           : null;
-      await this.notificationProducer.enqueueWaitlistPromotions(tx, {
-        activityTitle: promotion.activityTitle,
-        promoted: promotion.promoted,
-      });
+      if (!allocationPromotion.handled) {
+        await this.notificationProducer.enqueueWaitlistPromotions(tx, {
+          activityTitle: promotion.activityTitle,
+          promoted: promotion.promoted,
+        });
+      }
       return {
         dto: this.toResponseDto(updated),
         activityId: lockedReg.activityId,

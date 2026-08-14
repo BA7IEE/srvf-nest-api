@@ -26,6 +26,8 @@ import { createTestApp } from '../setup/test-app';
 interface OpenApiSchema {
   $ref?: string;
   type?: string;
+  format?: string;
+  minimum?: number;
   nullable?: boolean;
   example?: unknown;
   enum?: unknown[];
@@ -219,6 +221,12 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/my/managed-activities/{activityId}/invitations'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/invitations'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/invitations/{invitationId}/revoke'],
+  // 第 4 批分配核心：本人接受邀请仍走 canonical 报名；负责人仅对 rank/lottery 冻结、提交或作废批次。
+  ['post', '/api/app/v1/my/activity-invitations/{invitationId}/accept'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/allocation-batches'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/allocation-batches/{batchId}/commit'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/allocation-batches/{batchId}/void'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/allocation-batches/{batchId}'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/visitors'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/visitors'],
   // 第 4 批⑧：负责人现场临时参加，受 D-5、scoped permission 与责任事实共同约束。
@@ -1611,9 +1619,10 @@ describe('OpenAPI 契约快照', () => {
   //   +5 →482；第 3 批第二刀 proposal / withdraw / resolution +4 →486；第 4 批
   //   Form GET/PUT + 一次性上传会话 POST/POST +4 →490；第 4 批④ canonical 报名命令
   //   POST +1 →491；第 4 批⑦邀请/访客五路 managed + 本人 decline 一路 →497；
-  //   第 4 批⑧ managed onsite 临时参加 POST +1 → **498**。
-  it('路由足迹精确为 498', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(498);
+  //   第 4 批⑧ managed onsite 临时参加 POST +1 →498；第 4 批分配核心：本人 accept
+  //   邀请 + rank/lottery 批次 prepare/commit/void/get +5 → **503**。
+  it('路由足迹精确为 503', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(503);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {
@@ -1815,6 +1824,20 @@ describe('OpenAPI 契约快照', () => {
     [
       'POST',
       'post',
+      '/api/app/v1/my/activity-invitations/{invitationId}/accept',
+      [
+        BizCode.ACTIVITY_INVITATION_NOT_FOUND.code,
+        BizCode.ACTIVITY_INVITATION_STATUS_INVALID.code,
+        BizCode.ACTIVITY_INVITATION_OPERATION_KEY_CONFLICT.code,
+        BizCode.ACTIVITY_REGISTRATION_OPERATION_KEY_CONFLICT.code,
+        BizCode.ACTIVITY_QUALIFICATION_NOT_MET.code,
+        BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID.code,
+        BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.code,
+      ],
+    ],
+    [
+      'POST',
+      'post',
       '/api/app/v1/my/activity-invitations/{invitationId}/decline',
       [
         BizCode.ACTIVITY_INVITATION_NOT_FOUND.code,
@@ -1828,6 +1851,87 @@ describe('OpenAPI 契约快照', () => {
       expect(documented4xxCodes(doc.paths[path]?.[method])).toEqual(expect.arrayContaining(codes));
     },
   );
+
+  it.each([
+    [
+      'POST prepare',
+      'post',
+      '/api/app/v1/my/managed-activities/{activityId}/allocation-batches',
+      [
+        BizCode.ACTIVITY_REGISTRATION_DEADLINE_PASSED.code,
+        BizCode.ACTIVITY_ALLOCATION_MODE_INCONSISTENT.code,
+        BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.code,
+        BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID.code,
+      ],
+    ],
+    [
+      'POST commit',
+      'post',
+      '/api/app/v1/my/managed-activities/{activityId}/allocation-batches/{batchId}/commit',
+      [
+        BizCode.ACTIVITY_ALLOCATION_MODE_INCONSISTENT.code,
+        BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.code,
+        BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID.code,
+      ],
+    ],
+    [
+      'POST void',
+      'post',
+      '/api/app/v1/my/managed-activities/{activityId}/allocation-batches/{batchId}/void',
+      [
+        BizCode.ACTIVITY_ALLOCATION_MODE_INCONSISTENT.code,
+        BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.code,
+      ],
+    ],
+  ] as const)(
+    '%s allocation endpoint declares its stable business errors',
+    (_label, method, path, codes) => {
+      expect(documented4xxCodes(doc.paths[path]?.[method])).toEqual(expect.arrayContaining(codes));
+    },
+  );
+
+  it('allocation DTO keeps nullable scalar wire types precise for generated clients', () => {
+    const prepare = doc.components?.schemas
+      ?.PrepareAppManagedActivityAllocationBatchDto as OpenApiSchema;
+    const candidate = doc.components?.schemas?.AppActivityAllocationCandidateDto as OpenApiSchema;
+    const batch = doc.components?.schemas?.AppActivityAllocationBatchDto as OpenApiSchema;
+
+    expect(prepare.properties?.positionId).toMatchObject({ type: 'string', nullable: true });
+    expect(candidate.properties?.qualificationScore).toMatchObject({
+      type: 'string',
+      nullable: true,
+    });
+    expect(candidate.properties?.lotteryOrder).toMatchObject({
+      type: 'integer',
+      nullable: true,
+      minimum: 1,
+    });
+    expect(candidate.properties?.waitlistRank).toMatchObject({
+      type: 'integer',
+      nullable: true,
+      minimum: 1,
+    });
+    expect(candidate.properties?.waitlistPositionId).toMatchObject({
+      type: 'string',
+      nullable: true,
+    });
+    expect(batch.properties?.positionId).toMatchObject({ type: 'string', nullable: true });
+    expect(batch.properties?.randomSeedReveal).toMatchObject({
+      type: 'string',
+      nullable: true,
+    });
+    expect(batch.properties?.committedAt).toMatchObject({
+      type: 'string',
+      format: 'date-time',
+      nullable: true,
+    });
+    expect(batch.properties?.voidReason).toMatchObject({ type: 'string', nullable: true });
+    expect(batch.properties?.voidedAt).toMatchObject({
+      type: 'string',
+      format: 'date-time',
+      nullable: true,
+    });
+  });
 
   it('paths 段快照(锁定每个 operation 的响应结构)', () => {
     // 仅快照 paths,排除 info.version(随发布递增,不视作 schema 漂移)。

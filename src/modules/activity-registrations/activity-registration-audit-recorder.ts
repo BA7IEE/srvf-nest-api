@@ -140,7 +140,7 @@ export class ActivityRegistrationAuditRecorder {
     actorUserId: string;
     actorRoleSnap: Role;
     revision: number;
-    source: 'self';
+    source: 'self' | 'invitation';
     answerCount: number;
     preferenceCount: number;
     requestHash: string;
@@ -160,6 +160,88 @@ export class ActivityRegistrationAuditRecorder {
         answerCount: args.answerCount,
         preferenceCount: args.preferenceCount,
         requestHash: args.requestHash,
+      },
+      tx: args.tx,
+    });
+  }
+
+  /** Allocation command audit carries only immutable command anchors, never candidate facts. */
+  async logAllocationCommand(args: {
+    activityId: string;
+    allocationBatchId: string;
+    commandCode: 'prepare' | 'commit' | 'void';
+    actorUserId: string;
+    actorRoleSnap: Role;
+    auditMeta: AuditMeta;
+    tx: PrismaTx;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: 'registration.review',
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: 'activity',
+      resourceId: args.activityId,
+      meta: args.auditMeta,
+      extra: {
+        operation: 'allocation',
+        allocationBatchId: args.allocationBatchId,
+        commandCode: args.commandCode,
+      },
+      tx: args.tx,
+    });
+  }
+
+  /** First-come has no allocation batch; keep its decision auditable without creating a new event. */
+  async logFirstComeAllocation(args: {
+    registrationId: string;
+    activityId: string;
+    actorUserId: string;
+    actorRoleSnap: Role;
+    outcomeCounts: { allocated: number; waitlisted: number };
+    auditMeta: AuditMeta;
+    tx: PrismaTx;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: 'registration.review',
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: args.registrationId,
+      meta: args.auditMeta,
+      extra: {
+        operation: 'allocation',
+        modeCode: 'first_come',
+        allocatedCount: args.outcomeCounts.allocated,
+        waitlistedCount: args.outcomeCounts.waitlisted,
+        activityId: args.activityId,
+      },
+      tx: args.tx,
+    });
+  }
+
+  /** Promotion keeps the original candidate/batch fact immutable and records only the new live move. */
+  async logAllocationPromotion(args: {
+    registrationId: string;
+    activityId: string;
+    allocationBatchId: string | null;
+    modeCode: 'first_come' | 'qualification_rank' | 'lottery';
+    actorUserId: string;
+    actorRoleSnap: Role;
+    auditMeta: AuditMeta;
+    tx: PrismaTx;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: 'registration.review',
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: args.registrationId,
+      meta: args.auditMeta,
+      extra: {
+        operation: 'allocation_promotion',
+        activityId: args.activityId,
+        allocationBatchId: args.allocationBatchId,
+        modeCode: args.modeCode,
       },
       tx: args.tx,
     });

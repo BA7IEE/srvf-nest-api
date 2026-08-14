@@ -2579,6 +2579,183 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppActivityAllocationBatchDto": {
+    "properties": {
+      "activityId": {
+        "description": "活动 ID",
+        "type": "string",
+      },
+      "algorithmVersionCode": {
+        "description": "冻结时使用的算法版本",
+        "type": "string",
+      },
+      "batchId": {
+        "description": "分配批次 ID",
+        "type": "string",
+      },
+      "candidates": {
+        "description": "安全可读的冻结候选人与结果",
+        "items": {
+          "$ref": "#/components/schemas/AppActivityAllocationCandidateDto",
+        },
+        "type": "array",
+      },
+      "committedAt": {
+        "description": "提交完成时间",
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "modeCode": {
+        "description": "冻结的分配算法模式",
+        "enum": [
+          "qualification_rank",
+          "lottery",
+        ],
+        "type": "string",
+      },
+      "positionId": {
+        "description": "批次目标岗位；null 表示场次级批次",
+        "nullable": true,
+        "type": "string",
+      },
+      "randomSeedReveal": {
+        "description": "仅已提交 lottery 批次回显的服务端 seed",
+        "nullable": true,
+        "type": "string",
+      },
+      "sessionId": {
+        "description": "批次目标场次 ID",
+        "type": "string",
+      },
+      "statusCode": {
+        "description": "批次当前生命周期状态",
+        "enum": [
+          "preparing",
+          "committed",
+          "voided",
+        ],
+        "type": "string",
+      },
+      "voidReason": {
+        "description": "作废原因",
+        "nullable": true,
+        "type": "string",
+      },
+      "voidedAt": {
+        "description": "作废完成时间",
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+    },
+    "required": [
+      "batchId",
+      "activityId",
+      "sessionId",
+      "modeCode",
+      "statusCode",
+      "algorithmVersionCode",
+      "candidates",
+    ],
+    "type": "object",
+  },
+  "AppActivityAllocationCandidateDto": {
+    "properties": {
+      "acceptedAt": {
+        "description": "服务器受理该报名修订的时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "lotteryOrder": {
+        "description": "已提交 lottery 的抽签顺序",
+        "minimum": 1,
+        "nullable": true,
+        "type": "integer",
+      },
+      "participationIdentityId": {
+        "description": "候选人的永久参与身份 ID",
+        "type": "string",
+      },
+      "qualificationResultCode": {
+        "description": "冻结时的目标资格结论",
+        "enum": [
+          "pass",
+          "warn",
+          "fail",
+        ],
+        "type": "string",
+      },
+      "qualificationScore": {
+        "description": "仅 qualification_rank 产生四位小数分数",
+        "nullable": true,
+        "type": "string",
+      },
+      "registrationId": {
+        "description": "候选人所属报名记录 ID",
+        "type": "string",
+      },
+      "resultCode": {
+        "description": "提交后的不可变分配结果",
+        "enum": [
+          "allocated",
+          "waitlisted",
+          "not_selected",
+        ],
+        "nullable": true,
+        "type": "string",
+      },
+      "waitlistPositionId": {
+        "description": "仅 waitlisted 候选人的原岗位锚点",
+        "nullable": true,
+        "type": "string",
+      },
+      "waitlistRank": {
+        "description": "原岗位内的稳定候补序号",
+        "minimum": 1,
+        "nullable": true,
+        "type": "integer",
+      },
+    },
+    "required": [
+      "participationIdentityId",
+      "registrationId",
+      "acceptedAt",
+      "qualificationResultCode",
+    ],
+    "type": "object",
+  },
+  "AppActivityAllocationCommandReceiptDto": {
+    "properties": {
+      "batch": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppActivityAllocationBatchDto",
+          },
+        ],
+        "description": "命令对应的安全批次视图",
+      },
+      "commandCode": {
+        "description": "已执行或重放的命令类型",
+        "enum": [
+          "prepare",
+          "commit",
+          "void",
+        ],
+        "type": "string",
+      },
+      "responseHash": {
+        "description": "命令回执的稳定 SHA-256 哈希",
+        "type": "string",
+      },
+    },
+    "required": [
+      "commandCode",
+      "responseHash",
+      "batch",
+    ],
+    "type": "object",
+  },
   "AppActivityChangePositionDto": {
     "properties": {
       "activityPositionId": {
@@ -10666,6 +10843,20 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "CommitAppManagedActivityAllocationBatchDto": {
+    "properties": {
+      "operationKey": {
+        "description": "调用方生成的幂等操作键",
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+    ],
+    "type": "object",
+  },
   "ConfirmUploadDto": {
     "properties": {
       "checksum": {
@@ -17307,6 +17498,34 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "PrepareAppManagedActivityAllocationBatchDto": {
+    "properties": {
+      "operationKey": {
+        "description": "调用方生成的幂等操作键",
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string",
+      },
+      "positionId": {
+        "description": "可选岗位；null 表示场次级批次",
+        "maxLength": 64,
+        "minLength": 8,
+        "nullable": true,
+        "type": "string",
+      },
+      "sessionId": {
+        "description": "本次冻结的活动场次",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "sessionId",
+    ],
+    "type": "object",
+  },
   "PreviewPositionAssignmentDto": {
     "properties": {
       "appointmentSource": {
@@ -23715,6 +23934,27 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
     },
+    "type": "object",
+  },
+  "VoidAppManagedActivityAllocationBatchDto": {
+    "properties": {
+      "operationKey": {
+        "description": "调用方生成的幂等操作键",
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string",
+      },
+      "reason": {
+        "description": "作废原因",
+        "maxLength": 500,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "reason",
+    ],
     "type": "object",
   },
   "WechatBindDto": {
@@ -88109,6 +88349,249 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/app/v1/my/activity-invitations/{invitationId}/accept": {
+    "post": {
+      "operationId": "AppMyActivityInvitationsController_accept",
+      "parameters": [
+        {
+          "description": "邀请 id",
+          "in": "path",
+          "name": "invitationId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppActivityRegistrationCommandDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityRegistrationCommandReceiptDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20148: 活动邀请不存在",
+                    "enum": [
+                      20148,
+                    ],
+                    "example": 20148,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动邀请不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动邀请不存在(code=20148)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20149: 活动邀请当前状态不允许此操作; 20151: 相同操作标识已用于不同的邀请拒绝内容,请更换操作标识; 21003: 报名操作键与首次请求不一致; 21040: 报名者未满足活动资格条件; 21041: 资格规则配置无法安全判定; 20147: 活动容量与当前占用不一致",
+                    "enum": [
+                      20149,
+                      20151,
+                      21003,
+                      21040,
+                      21041,
+                      20147,
+                    ],
+                    "example": 20149,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动邀请当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动邀请当前状态不允许此操作(code=20149) / 相同操作标识已用于不同的邀请拒绝内容,请更换操作标识(code=20151) / 报名操作键与首次请求不一致(code=21003) / 报名者未满足活动资格条件(code=21040) / 资格规则配置无法安全判定(code=21041) / 活动容量与当前占用不一致(code=20147)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "App 队员接受自己的未过期 pending 邀请并提交 canonical 报名 [auth]",
+      "tags": [
+        "Mobile - My Activity Invitations",
+      ],
+    },
+  },
   "/api/app/v1/my/activity-invitations/{invitationId}/decline": {
     "post": {
       "operationId": "AppMyActivityInvitationsController_decline",
@@ -90022,6 +90505,957 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "App 发起人修改 draft 活动 [auth]",
       "tags": [
         "Mobile - Managed Activities",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/allocation-batches": {
+    "post": {
+      "operationId": "AppManagedActivityAllocationBatchesController_prepare",
+      "parameters": [
+        {
+          "description": "负责人管理的活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PrepareAppManagedActivityAllocationBatchDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityAllocationCommandReceiptDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20123: 活动报名已截止; 20152: 活动分配方式与既有分配批次不一致; 20147: 活动容量与当前占用不一致; 21041: 资格规则配置无法安全判定",
+                    "enum": [
+                      20123,
+                      20152,
+                      20147,
+                      21041,
+                    ],
+                    "example": 20123,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动报名已截止",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动报名已截止(code=20123) / 活动分配方式与既有分配批次不一致(code=20152) / 活动容量与当前占用不一致(code=20147) / 资格规则配置无法安全判定(code=21041)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "负责人冻结资格排序或抽签候选批次 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Allocation Batches",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/allocation-batches/{batchId}": {
+    "get": {
+      "operationId": "AppManagedActivityAllocationBatchesController_get",
+      "parameters": [
+        {
+          "description": "负责人管理的活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "已冻结的分配批次 ID",
+          "in": "path",
+          "name": "batchId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityAllocationBatchDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "负责人读取安全的分配批次与结果 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Allocation Batches",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/allocation-batches/{batchId}/commit": {
+    "post": {
+      "operationId": "AppManagedActivityAllocationBatchesController_commit",
+      "parameters": [
+        {
+          "description": "负责人管理的活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "已冻结的分配批次 ID",
+          "in": "path",
+          "name": "batchId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CommitAppManagedActivityAllocationBatchDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityAllocationCommandReceiptDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20152: 活动分配方式与既有分配批次不一致; 20147: 活动容量与当前占用不一致; 21041: 资格规则配置无法安全判定",
+                    "enum": [
+                      20152,
+                      20147,
+                      21041,
+                    ],
+                    "example": 20152,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动分配方式与既有分配批次不一致",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动分配方式与既有分配批次不一致(code=20152) / 活动容量与当前占用不一致(code=20147) / 资格规则配置无法安全判定(code=21041)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "负责人提交已冻结的资格排序或抽签批次 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Allocation Batches",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/allocation-batches/{batchId}/void": {
+    "post": {
+      "operationId": "AppManagedActivityAllocationBatchesController_void",
+      "parameters": [
+        {
+          "description": "负责人管理的活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "已冻结的分配批次 ID",
+          "in": "path",
+          "name": "batchId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/VoidAppManagedActivityAllocationBatchDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityAllocationCommandReceiptDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20152: 活动分配方式与既有分配批次不一致; 20147: 活动容量与当前占用不一致",
+                    "enum": [
+                      20152,
+                      20147,
+                    ],
+                    "example": 20152,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动分配方式与既有分配批次不一致",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动分配方式与既有分配批次不一致(code=20152) / 活动容量与当前占用不一致(code=20147)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "负责人作废已冻结或未漂移的已提交批次 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Allocation Batches",
       ],
     },
   },

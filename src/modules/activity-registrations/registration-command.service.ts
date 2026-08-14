@@ -19,6 +19,7 @@ import {
   type ValidatedRegistrationAnswer,
 } from './activity-registration-answer-validator';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
+import { ActivityAllocationService } from './activity-allocation.service';
 import { ActivityRegistrationLifecycleService } from './activity-registration-lifecycle.service';
 import {
   AppActivityRegistrationCommandDto,
@@ -32,12 +33,14 @@ import { hashRegistrationAnswers, hashRegistrationCommand } from './registration
 
 type PrismaTx = Prisma.TransactionClient;
 
-type Receipt = {
+export type RegistrationCommandReceipt = {
   registrationId: string;
   registrationRevisionId: string;
   revision: number;
   submittedAt: Date;
 };
+
+type RegistrationCommandSource = 'self' | 'invitation';
 
 type LockedRegistration = {
   id: string;
@@ -82,6 +85,7 @@ export class RegistrationCommandService {
     private readonly registrationAuditRecorder: ActivityRegistrationAuditRecorder,
     private readonly registrationLifecycle: ActivityRegistrationLifecycleService,
     private readonly qualificationEvaluator: ActivityQualificationEvaluatorService,
+    private readonly allocations: ActivityAllocationService,
   ) {}
 
   async submit(
@@ -89,7 +93,7 @@ export class RegistrationCommandService {
     dto: AppActivityRegistrationCommandDto,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
-  ): Promise<Receipt> {
+  ): Promise<RegistrationCommandReceipt> {
     const access = await this.appIdentity.resolve(currentUser);
     if (!access.canUseApp || !access.member) throw new BizException(BizCode.FORBIDDEN);
 
@@ -113,6 +117,7 @@ export class RegistrationCommandService {
           memberId: access.member!.id,
           requestHash,
           auditMeta,
+          source: 'self',
         }),
       );
     } catch (error) {
@@ -123,7 +128,7 @@ export class RegistrationCommandService {
     }
   }
 
-  private async submitInTransaction(input: {
+  async submitInTransaction(input: {
     tx: PrismaTx;
     activityId: string;
     dto: AppActivityRegistrationCommandDto;
@@ -131,9 +136,8 @@ export class RegistrationCommandService {
     memberId: string;
     requestHash: string;
     auditMeta: AuditMeta;
-  }): Promise<Receipt> {
-    const now = new Date();
-
+    source: RegistrationCommandSource;
+  }): Promise<RegistrationCommandReceipt> {
     // 1. Activity root lock.  Every later runtime fact is reread under this aggregate lock.
     const activityRows = await input.tx.$queryRaw<
       Array<{
@@ -143,6 +147,8 @@ export class RegistrationCommandService {
         registrationDeadline: Date | null;
         genderRequirementCode: string | null;
         requiresInsurance: boolean;
+        allocationModeCode: string;
+        title: string;
         startAt: Date;
         endAt: Date;
       }>
@@ -154,6 +160,8 @@ export class RegistrationCommandService {
         "registrationDeadline",
         "genderRequirementCode",
         "requiresInsurance",
+        "allocationModeCode",
+        "title",
         "startAt",
         "endAt"
       FROM "Activity"
@@ -162,6 +170,9 @@ export class RegistrationCommandService {
     `);
     const activity = activityRows[0];
     if (activityRows.length !== 1 || !activity) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+    // `acceptedAt` for first_come is fixed only after the aggregate root has admitted this command.
+    // That makes capacity consumption and the persisted server acceptance order the same serialization.
+    const now = new Date();
 
     // 2. Lock the permanent header including cancelled/rejected/soft-deleted history. Exact replay
     // below wins first; a new request may reuse only a live resumable head.
@@ -281,7 +292,13 @@ export class RegistrationCommandService {
       }
     }
 
-    const participationDecision = this.participationPolicy.canRegisterSelf(activity, now);
+    // An invitation still uses the published/time policy, but is the existing explicit exception
+    // to public-registration visibility. Form, qualification, insurance, identity, capacity and
+    // allocation all continue through this one canonical command.
+    const participationDecision =
+      input.source === 'invitation'
+        ? this.participationPolicy.canRegisterByAdmin(activity, now)
+        : this.participationPolicy.canRegisterSelf(activity, now);
     if (!participationDecision.allowed) throw new BizException(participationDecision.biz);
 
     // The canonical v1.1 chain retains the legacy activity-level gender hard gate.  A missing
@@ -393,7 +410,7 @@ export class RegistrationCommandService {
           currentRevision: 0,
           currentFormVersionId: null,
           statusSummaryCode: 'active',
-          sourceCode: 'self',
+          sourceCode: input.source,
         },
         select: { id: true, currentRevision: true },
       }));
@@ -404,7 +421,7 @@ export class RegistrationCommandService {
         revision: revisionNumber,
         formVersionId: activeForm?.id ?? null,
         answersHash: hashRegistrationAnswers(answers),
-        sourceCode: 'self',
+        sourceCode: input.source,
         submittedByUserId: input.currentUser.id,
         submittedAt: now,
         requestKey: input.dto.operationKey,
@@ -441,6 +458,7 @@ export class RegistrationCommandService {
       now,
       requestKey: input.dto.operationKey,
       requestHash: input.requestHash,
+      sourceCode: input.source,
     });
 
     // 8. Final attachment transfer and session consumption remain inside the aggregate tx.
@@ -497,7 +515,7 @@ export class RegistrationCommandService {
         currentRevision: revisionNumber,
         currentFormVersionId: activeForm?.id ?? null,
         statusSummaryCode: 'active',
-        sourceCode: 'self',
+        sourceCode: input.source,
         reviewedBy: null,
         reviewedAt: null,
         reviewNote: null,
@@ -524,6 +542,28 @@ export class RegistrationCommandService {
       tx: input.tx,
     });
 
+    if (
+      activity.allocationModeCode === 'first_come' &&
+      (await this.allocations.hasInitializedCapacityTopologyInTransactionTrusted(
+        input.tx,
+        input.activityId,
+      ))
+    ) {
+      await this.allocations.applyFirstComeAfterSubmissionInTransactionTrusted(input.tx, {
+        activity,
+        memberId: input.memberId,
+        identities: identityPointerUpdates
+          .filter((update) => update.statusCode === 'pending')
+          .map((update) => ({ id: update.id, sessionId: update.sessionId })),
+        currentUser: input.currentUser,
+        sourceCode: input.source,
+        requestKey: input.dto.operationKey,
+        requestHash: input.requestHash,
+        occurredAt: now,
+        auditMeta: input.auditMeta,
+      });
+    }
+
     // 10. Safe audit last, in the same transaction.  The recorder accepts no raw answer/file
     // material, storage locator, attachment ID, token, key or URL.
     await this.registrationAuditRecorder.logCommandCreate({
@@ -531,7 +571,7 @@ export class RegistrationCommandService {
       actorUserId: input.currentUser.id,
       actorRoleSnap: input.currentUser.role,
       revision: revisionNumber,
-      source: 'self',
+      source: input.source,
       answerCount: answers.length,
       preferenceCount: [...preferences.values()].reduce(
         (count, positions) => count + positions.length,
@@ -550,7 +590,10 @@ export class RegistrationCommandService {
     };
   }
 
-  private async resolveUniqueRace(operationKey: string, requestHash: string): Promise<Receipt> {
+  private async resolveUniqueRace(
+    operationKey: string,
+    requestHash: string,
+  ): Promise<RegistrationCommandReceipt> {
     const winner = await this.prisma.activityRegistrationRevision.findFirst({
       where: { requestKey: operationKey },
       select: {
@@ -822,6 +865,7 @@ export class RegistrationCommandService {
     now: Date;
     requestKey: string;
     requestHash: string;
+    sourceCode: RegistrationCommandSource;
   }): Promise<
     Array<{
       id: string;
@@ -856,7 +900,7 @@ export class RegistrationCommandService {
             : Prisma.JsonNull,
           effectiveAt: input.now,
           createdByUserId: input.currentUserId,
-          sourceCode: 'self',
+          sourceCode: input.sourceCode,
           requestKey: input.requestKey,
           requestHash: input.requestHash,
           ...(statusCode === 'cancelled'
@@ -902,7 +946,7 @@ export class RegistrationCommandService {
           preferenceSnapshot: { positionIds: input.preferences.get(sessionId) ?? [] },
           effectiveAt: input.now,
           createdByUserId: input.currentUserId,
-          sourceCode: 'self',
+          sourceCode: input.sourceCode,
           requestKey: input.requestKey,
           requestHash: input.requestHash,
         },

@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
+  ApiWrappedCreatedResponse,
   ApiWrappedOkResponse,
 } from '../../../common/decorators/api-response.decorator';
 import {
@@ -19,6 +20,8 @@ import {
   AppMyActivityInvitationParamsDto,
   DeclineAppMyActivityInvitationDto,
 } from '../dto/app/app-activity-invitation.dto';
+import { AppActivityRegistrationCommandDto } from '../dto/app/app-activity-registration-command.dto';
+import { AppActivityRegistrationCommandReceiptDto } from '../dto/app/create-app-activity-registration.dto';
 import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 
 @ApiTags('Mobile - My Activity Invitations')
@@ -29,6 +32,41 @@ export class AppMyActivityInvitationsController {
     private readonly identity: AppIdentityResolver,
     private readonly invitations: ActivityInvitationService,
   ) {}
+
+  @Post(':invitationId/accept')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'App 队员接受自己的未过期 pending 邀请并提交 canonical 报名 [auth]' })
+  @ApiWrappedCreatedResponse(AppActivityRegistrationCommandReceiptDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_INVITATION_NOT_FOUND,
+    BizCode.ACTIVITY_INVITATION_STATUS_INVALID,
+    BizCode.ACTIVITY_INVITATION_OPERATION_KEY_CONFLICT,
+    BizCode.ACTIVITY_REGISTRATION_OPERATION_KEY_CONFLICT,
+    BizCode.ACTIVITY_QUALIFICATION_NOT_MET,
+    BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID,
+    BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED,
+  )
+  async accept(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppMyActivityInvitationParamsDto,
+    @Body() dto: AppActivityRegistrationCommandDto,
+    @Req() req: Request,
+  ): Promise<AppActivityRegistrationCommandReceiptDto> {
+    const access = await this.identity.resolve(user);
+    if (!access.canUseApp || access.member === null) {
+      throw new BizException(BizCode.FORBIDDEN);
+    }
+    return this.invitations.accept(params.invitationId, dto, user, this.auditMeta(req));
+  }
 
   @Post(':invitationId/decline')
   @LoginScoped({

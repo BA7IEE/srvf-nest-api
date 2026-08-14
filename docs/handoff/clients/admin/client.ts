@@ -1,7 +1,7 @@
 // 由 scripts/generate-fe-client.ts 生成,请勿手改。
 // surface: Admin 管理后台
 // generatorVersion: 1.0.0
-// inputDigest: sha256:d88934361521b2775cd66626de6a4a9575dde99901851316d61e366668a57acb
+// inputDigest: sha256:e76865727794be36be6b808485e3a8eb78980f671a2e18ac9e37f1071a2ce2c6
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理

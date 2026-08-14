@@ -37,6 +37,8 @@ import { AppMyActivityInvitationsController } from './controllers/app-my-activit
 import { AppManagedActivityOnsiteParticipationsController } from './controllers/app-managed-activity-onsite-participations.controller';
 import { OnsiteParticipationCommandService } from './onsite-participation-command.service';
 import { ActivityRegistrationLifecycleService } from './activity-registration-lifecycle.service';
+import { ActivityAllocationService } from './activity-allocation.service';
+import { AppManagedActivityAllocationBatchesController } from './controllers/app-managed-activity-allocation-batches.controller';
 
 // V2 批次 6 PR #5(D6 v1.1 §8 / 第二波第三步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activity-registrations 6 处写操作(create / createMy / approve / reject / cancelAdmin / cancelMy)
@@ -85,6 +87,7 @@ import { ActivityRegistrationLifecycleService } from './activity-registration-li
     AppManagedActivityGuestsController,
     AppMyActivityInvitationsController,
     AppManagedActivityOnsiteParticipationsController,
+    AppManagedActivityAllocationBatchesController,
   ],
   providers: [
     ActivityRegistrationsService,
@@ -103,6 +106,7 @@ import { ActivityRegistrationLifecycleService } from './activity-registration-li
     ActivityVisitorService,
     OnsiteParticipationCommandService,
     ActivityRegistrationLifecycleService,
+    ActivityAllocationService,
   ],
 })
 export class ActivityRegistrationsModule {}

@@ -14,6 +14,7 @@ import { NotificationOutboxService } from '../notifications/notification-outbox.
 
 type PrismaTx = Prisma.TransactionClient;
 type ReviewOutcome = 'approved' | 'rejected';
+type AllocationOutcome = 'allocated' | 'waitlisted' | 'not_selected';
 
 export type SelfCancellationRecipientResolution =
   | 'active-owner'
@@ -113,6 +114,68 @@ export class ActivityRegistrationNotificationProducer {
         body: `您报名的「${input.activityTitle}」已从候补递补，现已进入待审核。`,
       });
     }
+  }
+
+  /**
+   * Allocation results are durable intents written by the same root transaction that commits the
+   * candidate, participation projection and capacity reservation.  The payload deliberately
+   * contains no qualification explanation, score, draw seed or reservation identifier.
+   */
+  async enqueueAllocationOutcome(
+    tx: PrismaTx,
+    input: {
+      allocationKey: string;
+      participationIdentityId: string;
+      registrationId: string;
+      memberId: string;
+      activityTitle: string;
+      resultCode: AllocationOutcome;
+    },
+  ): Promise<void> {
+    const result =
+      input.resultCode === 'allocated'
+        ? {
+            title: '报名分配结果：已通过',
+            body: `您报名的「${input.activityTitle}」已完成分配并通过。`,
+          }
+        : input.resultCode === 'waitlisted'
+          ? {
+              title: '报名分配结果：候补',
+              body: `您报名的「${input.activityTitle}」暂未获得名额，已进入候补。`,
+            }
+          : {
+              title: '报名分配结果：未入选',
+              body: `您报名的「${input.activityTitle}」未通过本次分配。`,
+            };
+    await this.enqueueTargeted(tx, {
+      eventKey: `allocation-outcome:${input.allocationKey}:${input.participationIdentityId}`,
+      aggregateId: input.registrationId,
+      memberId: input.memberId,
+      notificationTypeCode: NOTIFICATION_TYPE_REGISTRATION_RESULT,
+      title: result.title,
+      body: result.body,
+    });
+  }
+
+  /** A later promotion is distinct from the immutable batch's original waitlist outcome. */
+  async enqueueAllocationPromotion(
+    tx: PrismaTx,
+    input: {
+      promotionKey: string;
+      participationIdentityId: string;
+      registrationId: string;
+      memberId: string;
+      activityTitle: string;
+    },
+  ): Promise<void> {
+    await this.enqueueTargeted(tx, {
+      eventKey: `allocation-promotion:${input.promotionKey}:${input.participationIdentityId}`,
+      aggregateId: input.registrationId,
+      memberId: input.memberId,
+      notificationTypeCode: NOTIFICATION_TYPE_REGISTRATION_RESULT,
+      title: '候补已递补',
+      body: `您报名的「${input.activityTitle}」已从候补递补并通过。`,
+    });
   }
 
   async enqueueSelfCancellation(

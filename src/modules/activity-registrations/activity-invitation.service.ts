@@ -10,6 +10,11 @@ import { AuthzService } from '../authz/authz.service';
 import { RbacService } from '../permissions/rbac.service';
 import { ActivityInvitationAuditRecorder } from './activity-invitation-audit-recorder';
 import { hashActivityInvitationDecline } from './activity-invitation-request-hash';
+import { hashRegistrationCommand } from './registration-command-hash';
+import {
+  RegistrationCommandService,
+  type RegistrationCommandReceipt,
+} from './registration-command.service';
 import type {
   ActivityInvitationScope,
   AppActivityInvitationDto,
@@ -18,6 +23,7 @@ import type {
   DeclineAppMyActivityInvitationDto,
   RevokeAppManagedActivityInvitationDto,
 } from './dto/app/app-activity-invitation.dto';
+import type { AppActivityRegistrationCommandDto } from './dto/app/app-activity-registration-command.dto';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -47,6 +53,7 @@ export class ActivityInvitationService {
     private readonly authz: AuthzService,
     private readonly rbac: RbacService,
     private readonly audit: ActivityInvitationAuditRecorder,
+    private readonly registrationCommands: RegistrationCommandService,
   ) {}
 
   async list(
@@ -265,6 +272,96 @@ export class ActivityInvitationService {
     });
   }
 
+  /**
+   * Invitation acceptance owns only the invitation state transition and its immutable audit fact.
+   * The registration itself deliberately goes through the canonical command, so it cannot bypass
+   * Form, qualification, insurance, permanent identity, capacity or allocation mode behavior.
+   */
+  async accept(
+    invitationId: string,
+    dto: AppActivityRegistrationCommandDto,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<RegistrationCommandReceipt> {
+    if (currentUser.memberId === null) throw new BizException(BizCode.FORBIDDEN);
+    const invitationRoot = await this.prisma.activityInvitation.findFirst({
+      where: { id: invitationId },
+      select: { activityId: true },
+    });
+    if (invitationRoot === null) throw new BizException(BizCode.ACTIVITY_INVITATION_NOT_FOUND);
+    const requestHash = hashRegistrationCommand({
+      actorUserId: currentUser.id,
+      memberId: currentUser.memberId,
+      activityId: invitationRoot.activityId,
+      source: 'invitation',
+      invitationId,
+      formVersion: dto.formVersion,
+      answers: dto.answers,
+      preferences: dto.preferences,
+    });
+
+    return this.prisma.$transaction(async (tx) => {
+      // Fixed order remains Activity -> Invitation -> canonical registration facts.
+      await this.lockActivity(tx, invitationRoot.activityId);
+      const invitation = await this.lockInvitationForDecline(
+        tx,
+        invitationRoot.activityId,
+        invitationId,
+        currentUser.memberId!,
+      );
+      if (invitation.operationKey === dto.operationKey) {
+        if (invitation.requestHash !== requestHash) {
+          throw new BizException(BizCode.ACTIVITY_INVITATION_OPERATION_KEY_CONFLICT);
+        }
+        return this.registrationCommands.submitInTransaction({
+          tx,
+          activityId: invitation.activityId,
+          dto,
+          currentUser,
+          memberId: currentUser.memberId!,
+          requestHash,
+          auditMeta,
+          source: 'invitation',
+        });
+      }
+      const now = new Date();
+      if (invitation.statusCode !== 'pending' || invitation.expiresAt.getTime() <= now.getTime()) {
+        throw new BizException(BizCode.ACTIVITY_INVITATION_STATUS_INVALID);
+      }
+      this.assertAcceptanceScope(invitation, dto);
+      const receipt = await this.registrationCommands.submitInTransaction({
+        tx,
+        activityId: invitation.activityId,
+        dto,
+        currentUser,
+        memberId: currentUser.memberId!,
+        requestHash,
+        auditMeta,
+        source: 'invitation',
+      });
+      const updated = await tx.activityInvitation.update({
+        where: { id: invitation.id },
+        data: {
+          statusCode: 'accepted',
+          respondedAt: receipt.submittedAt,
+          operationKey: dto.operationKey,
+          requestHash,
+        },
+        select: invitationSelect,
+      });
+      await this.audit.logInvitationChange({
+        invitation: updated,
+        before: invitation,
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        operation: 'accept',
+        auditMeta,
+        tx,
+      });
+      return receipt;
+    });
+  }
+
   private async assertAction(
     currentUser: CurrentUserPayload,
     action: string,
@@ -279,6 +376,25 @@ export class ActivityInvitationService {
       return;
     }
     throw new BizException(BizCode.RBAC_FORBIDDEN);
+  }
+
+  private assertAcceptanceScope(
+    invitation: Pick<InvitationRow, 'sessionId' | 'positionId'>,
+    dto: AppActivityRegistrationCommandDto,
+  ): void {
+    if (invitation.sessionId === null) return;
+    if (dto.preferences.length !== 1 || dto.preferences[0]?.sessionId !== invitation.sessionId) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    if (invitation.positionId === null) return;
+    const positionIds = dto.preferences[0]?.positionIds;
+    if (
+      !Array.isArray(positionIds) ||
+      positionIds.length !== 1 ||
+      positionIds[0] !== invitation.positionId
+    ) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
   }
 
   private async lockActivity(tx: PrismaTx, activityId: string): Promise<void> {

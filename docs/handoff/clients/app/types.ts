@@ -2,7 +2,7 @@
 // 真相源:后端 live /api/docs-json;本文件派生自 docs/handoff/openapi.json 快照。
 // surface: App 小程序
 // generatorVersion: 1.0.0
-// inputDigest: sha256:d88934361521b2775cd66626de6a4a9575dde99901851316d61e366668a57acb
+// inputDigest: sha256:e76865727794be36be6b808485e3a8eb78980f671a2e18ac9e37f1071a2ce2c6
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -18,6 +18,39 @@ export interface ActivityTemplateResolutionResponseDto {
   "templateVersionId": string | null;
   "activity": Record<string, unknown>;
   "sessions": Record<string, unknown>[];
+}
+
+export interface AppActivityAllocationBatchDto {
+  "batchId": string;
+  "activityId": string;
+  "sessionId": string;
+  "positionId"?: string | null;
+  "modeCode": "qualification_rank" | "lottery";
+  "statusCode": "preparing" | "committed" | "voided";
+  "algorithmVersionCode": string;
+  "randomSeedReveal"?: string | null;
+  "committedAt"?: string | null;
+  "voidReason"?: string | null;
+  "voidedAt"?: string | null;
+  "candidates": AppActivityAllocationCandidateDto[];
+}
+
+export interface AppActivityAllocationCandidateDto {
+  "participationIdentityId": string;
+  "registrationId": string;
+  "acceptedAt": string;
+  "qualificationScore"?: string | null;
+  "qualificationResultCode": "pass" | "warn" | "fail";
+  "lotteryOrder"?: number | null;
+  "resultCode"?: "allocated" | "waitlisted" | "not_selected" | null;
+  "waitlistRank"?: number | null;
+  "waitlistPositionId"?: string | null;
+}
+
+export interface AppActivityAllocationCommandReceiptDto {
+  "commandCode": "prepare" | "commit" | "void";
+  "responseHash": string;
+  "batch": AppActivityAllocationBatchDto;
 }
 
 export interface AppActivityChangePositionDto {
@@ -1309,6 +1342,10 @@ export interface ChangeReviewSessionUpdateDto {
   "sessionId": string;
 }
 
+export interface CommitAppManagedActivityAllocationBatchDto {
+  "operationKey": string;
+}
+
 export interface CreateAppManagedActivityDto {
   "title": string;
   "activityTypeCode": string;
@@ -1472,6 +1509,12 @@ export interface NotificationReadListItemDto {
 
 export interface NotificationUnreadCountDto {
   "unreadCount": number;
+}
+
+export interface PrepareAppManagedActivityAllocationBatchDto {
+  "operationKey": string;
+  "sessionId": string;
+  "positionId"?: string | null;
 }
 
 export interface PutAppManagedRegistrationFormDto {
@@ -1639,6 +1682,11 @@ export interface UpdateAppTeamJoinTargetsDto {
 export interface UpsertActivityFeedbackDto {
   "rating": number;
   "comment"?: string | null;
+}
+
+export interface VoidAppManagedActivityAllocationBatchDto {
+  "operationKey": string;
+  "reason": string;
 }
 
 export interface WechatQuotaItemDto {
