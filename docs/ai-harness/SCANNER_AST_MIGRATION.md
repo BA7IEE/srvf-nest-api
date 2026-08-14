@@ -427,9 +427,15 @@ engine: options.engine ?? 'authz-scoped',
   **永远无法被发现**，而 A 组那 25 条的声明确实是假的——收窄等于把真问题一起盖掉。
 - **代价已知**：v4 终审【十一】规定 **`engine` 变化恒 `INCOMPARABLE`** ⇒ 逐条订正会触发
   一大批 R14 审批。**建议分两段**：先做一次结构变更（词汇 + 默认值），再分批订正声明。
-- **本刀不实施**：该改动落在 `src/common/authz/authz-context.ts`、
-  `src/common/decorators/route-authz.decorator.ts` 与 115 个控制器声明，
-  **写集远超本刀授权**，须另立项并带自己的写集与 R14 审批预算。
+- **第一段已于 2026-08-14 落地**（扩词汇 + fail-closed）：`RouteAuthzEngine` 增加 `none`
+  取值表示**已声明的缺席**；R8 的 engine 轴改为 fail-closed（此前任何未知取值都静默
+  「不欠断言」，拼写错误与「没什么要证的」不可区分）；`generate-authz-manifest.ts`
+  的第二份 engine 词汇改为引用单源。**`@LoginScoped` 默认值一字未动**，
+  `route-authz.decorator.ts` 零改动。实测零影响：`entries` 逐字节不变、
+  `authz-assertion-patterns.json` 逐字节不变、全仓分布逐项相同，整文件差异只有
+  `inputDigest` 两行（该摘要摄入整个 `src/**`）。
+- **第二段（115 条声明订正）仍未实施**：按 surface 分批、逐批过 R14、不在观察期内启动。
+  默认值的调整留到第二段末尾——那时多数端点已显式声明，变化面才可控。
 
 ## 11.3 18 条不可判的成因
 
