@@ -168,7 +168,17 @@ Phase 0 primitives」)。顺手把该判据从**比个数**改成**比集合**�
 - **未搬任何文件**:零 `src/**` 改动、零 prisma、零业务行为、零测试断言变更。
 - **6 条债务尚未登记进 `harness/architecture-debt.json`** —— 该路径在 goal 写集之外,
   且当前 worktree **无该文件的红区授权**(实测 `check-redzone --hook` 返回 `HIT`)。
-  在登记落地前,这 6 条以**活跃 report** 形态存在(不是白名单、不是空绿),
-  但**尚无"只减不增"的棘轮执行位**。这是本刀最大的一条留口。
+
+  精确说明**现在有什么、缺什么**(别把两者混为一谈):
+  - **有**:`harness-guards.selftest.ts` 的「R15 ① 存量基线」断言把
+    `commonGovernance.businessTableAccess` 钉在 6(+ 夹具 2)。这是**真执行位** ——
+    新增任何一处 common 业务表访问,selftest 当场红。
+  - **缺**:①它是**计数钉**不是棘轮 —— 数字变小也红,还债时要显式 true-up
+    (可接受,但要知道);②它**没有 per-call-site 身份** —— 删掉一条、又新增另一条时
+    计数仍是 6,**换掉**不会被发现。`architecture-debt.json` 的 `callSiteId` 正是
+    为堵这个而存在,`scanCommon` 已按同一 `finding()` 身份证 schema 产出
+    `callSiteId` / `violationFingerprint` / `shapeDigest`,登记时可直接取用。
+
+  这是本刀最大的一条留口:**增能抓住,换抓不住。**
 - 未处理 §3 两处灰色定性(`decorators` 业务命名、`exceptions` 业务码登记表)—— 需维护者拍板。
 - `common-raw-sql-dynamic` 的那 1 条未做进一步取证。
