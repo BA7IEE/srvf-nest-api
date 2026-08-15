@@ -2,12 +2,12 @@
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
   "inputDigest": "sha256:a2d7188abc51436954804b969a86501ffc5b23ce71b3906afedd8e58cc32028e",
-  "headerNote": "登记≠已治理。全部条目 governanceStatus 恒为 inventory,不构成状态机治理承诺(v4 勘误⑫:宪法 C6 只约束 governed)。Phase 4-1a 起每条附 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。升 governed 需一致性检查(Phase 4-1b)。",
+  "headerNote": "登记≠已治理。Phase 4-1a 为每条补 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。Phase 4-1b 起 governanceStatus 可取 inventory | governed,并由 scripts/check-boundaries.ts --metadata 的**声明闸**把关:声明 governed 必须另附 governedEvidence,L1 走「闭集 = 在册 DB CHECK」、L2/L3 走「具名实现模块 + 逐条边 + 专属 BizCode」,任一条拿不出证据即拒(fail-closed)。当前 governed 8 条(全为 L1 配置列),其余 48 条仍为 inventory;本刀不升任何 L3(它们缺的正是边与实现映射)。声明闸只判「敢不敢自称已治理」,不声称被治理的代码是对的。",
   "entries": [
     {
       "model": "Activity",
       "field": "allocationModeCode",
-      "governanceStatus": "inventory",
+      "governanceStatus": "governed",
       "layer": "L1",
       "stateSet": {
         "values": [
@@ -22,13 +22,17 @@
       "wrongStateBizCode": "none",
       "implementation": "src/modules/activities/activity-allocation-mode.ts(配置值,draft 可改 / published 经审核)",
       "governedBlockers": [],
-      "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。",
+      "governedEvidence": {
+        "edgeModel": "unconstrained",
+        "wrongStateBizCodes": []
+      },
+      "notes": "Phase 4-1b 升 governed:L1 配置列的门槛 = 闭集能从 stateSet.sourceRef 指名的 migration 的 DB CHECK 原样重算出来,且那条 CHECK 是全仓最后一次声明、之后未被 DROP(判据在 scripts/check-boundaries.ts l1GovernedErrors)。配置列按定义无流程边,故不声明 edges 与 wrongStateBizCode。",
       "transitionsRationale": "L1 配置/标注列:取值由配置或 CRUD 决定,无流程语义,故不声明迁移边。"
     },
     {
       "model": "Activity",
       "field": "registrationModeCode",
-      "governanceStatus": "inventory",
+      "governanceStatus": "governed",
       "layer": "L1",
       "stateSet": {
         "values": [
@@ -44,7 +48,11 @@
       "wrongStateBizCode": "none",
       "implementation": "活动配置字段",
       "governedBlockers": [],
-      "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。",
+      "governedEvidence": {
+        "edgeModel": "unconstrained",
+        "wrongStateBizCodes": []
+      },
+      "notes": "Phase 4-1b 升 governed:L1 配置列的门槛 = 闭集能从 stateSet.sourceRef 指名的 migration 的 DB CHECK 原样重算出来,且那条 CHECK 是全仓最后一次声明、之后未被 DROP(判据在 scripts/check-boundaries.ts l1GovernedErrors)。配置列按定义无流程边,故不声明 edges 与 wrongStateBizCode。",
       "transitionsRationale": "L1 配置/标注列:取值由配置或 CRUD 决定,无流程语义,故不声明迁移边。"
     },
     {
@@ -104,7 +112,7 @@
     {
       "model": "ActivityAllocationBatch",
       "field": "modeCode",
-      "governanceStatus": "inventory",
+      "governanceStatus": "governed",
       "layer": "L1",
       "stateSet": {
         "values": [
@@ -119,7 +127,11 @@
       "wrongStateBizCode": "none",
       "implementation": "建批时从 Activity.allocationModeCode 复制",
       "governedBlockers": [],
-      "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。",
+      "governedEvidence": {
+        "edgeModel": "unconstrained",
+        "wrongStateBizCodes": []
+      },
+      "notes": "Phase 4-1b 升 governed:L1 配置列的门槛 = 闭集能从 stateSet.sourceRef 指名的 migration 的 DB CHECK 原样重算出来,且那条 CHECK 是全仓最后一次声明、之后未被 DROP(判据在 scripts/check-boundaries.ts l1GovernedErrors)。配置列按定义无流程边,故不声明 edges 与 wrongStateBizCode。",
       "transitionsRationale": "L1 配置/标注列:取值由配置或 CRUD 决定,无流程语义,故不声明迁移边。"
     },
     {
@@ -398,7 +410,7 @@
     {
       "model": "ActivityReservedQuotaGroup",
       "field": "fallbackMode",
-      "governanceStatus": "inventory",
+      "governanceStatus": "governed",
       "layer": "L1",
       "stateSet": {
         "values": [
@@ -412,7 +424,11 @@
       "wrongStateBizCode": "none",
       "implementation": "预留名额组配置",
       "governedBlockers": [],
-      "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。",
+      "governedEvidence": {
+        "edgeModel": "unconstrained",
+        "wrongStateBizCodes": []
+      },
+      "notes": "Phase 4-1b 升 governed:L1 配置列的门槛 = 闭集能从 stateSet.sourceRef 指名的 migration 的 DB CHECK 原样重算出来,且那条 CHECK 是全仓最后一次声明、之后未被 DROP(判据在 scripts/check-boundaries.ts l1GovernedErrors)。配置列按定义无流程边,故不声明 edges 与 wrongStateBizCode。",
       "transitionsRationale": "L1 配置/标注列:取值由配置或 CRUD 决定,无流程语义,故不声明迁移边。"
     },
     {
@@ -634,7 +650,7 @@
     {
       "model": "AttendanceSettlementVersion",
       "field": "returnFromStage",
-      "governanceStatus": "inventory",
+      "governanceStatus": "governed",
       "layer": "L1",
       "stateSet": {
         "values": [
@@ -648,7 +664,11 @@
       "wrongStateBizCode": "none",
       "implementation": "退回时记录「从哪一级退回」的标注列",
       "governedBlockers": [],
-      "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。",
+      "governedEvidence": {
+        "edgeModel": "unconstrained",
+        "wrongStateBizCodes": []
+      },
+      "notes": "Phase 4-1b 升 governed:L1 配置列的门槛 = 闭集能从 stateSet.sourceRef 指名的 migration 的 DB CHECK 原样重算出来,且那条 CHECK 是全仓最后一次声明、之后未被 DROP(判据在 scripts/check-boundaries.ts l1GovernedErrors)。配置列按定义无流程边,故不声明 edges 与 wrongStateBizCode。",
       "transitionsRationale": "L1 配置/标注列:取值由配置或 CRUD 决定,无流程语义,故不声明迁移边。"
     },
     {
@@ -679,7 +699,7 @@
     {
       "model": "AttendanceSheet",
       "field": "returnedFromStageCode",
-      "governanceStatus": "inventory",
+      "governanceStatus": "governed",
       "layer": "L1",
       "stateSet": {
         "values": [
@@ -693,7 +713,11 @@
       "wrongStateBizCode": "none",
       "implementation": "退回时记录「从哪一级退回」的标注列",
       "governedBlockers": [],
-      "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。",
+      "governedEvidence": {
+        "edgeModel": "unconstrained",
+        "wrongStateBizCodes": []
+      },
+      "notes": "Phase 4-1b 升 governed:L1 配置列的门槛 = 闭集能从 stateSet.sourceRef 指名的 migration 的 DB CHECK 原样重算出来,且那条 CHECK 是全仓最后一次声明、之后未被 DROP(判据在 scripts/check-boundaries.ts l1GovernedErrors)。配置列按定义无流程边,故不声明 edges 与 wrongStateBizCode。",
       "transitionsRationale": "L1 配置/标注列:取值由配置或 CRUD 决定,无流程语义,故不声明迁移边。"
     },
     {
@@ -1041,7 +1065,7 @@
     {
       "model": "QualificationEvaluationSnapshot",
       "field": "evaluationPhaseCode",
-      "governanceStatus": "inventory",
+      "governanceStatus": "governed",
       "layer": "L1",
       "stateSet": {
         "values": [
@@ -1056,7 +1080,11 @@
       "wrongStateBizCode": "none",
       "implementation": "快照产生阶段的分类列(display/submit/review)",
       "governedBlockers": [],
-      "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。",
+      "governedEvidence": {
+        "edgeModel": "unconstrained",
+        "wrongStateBizCodes": []
+      },
+      "notes": "Phase 4-1b 升 governed:L1 配置列的门槛 = 闭集能从 stateSet.sourceRef 指名的 migration 的 DB CHECK 原样重算出来,且那条 CHECK 是全仓最后一次声明、之后未被 DROP(判据在 scripts/check-boundaries.ts l1GovernedErrors)。配置列按定义无流程边,故不声明 edges 与 wrongStateBizCode。",
       "transitionsRationale": "L1 配置/标注列:取值由配置或 CRUD 决定,无流程语义,故不声明迁移边。"
     },
     {
@@ -1190,7 +1218,7 @@
     {
       "model": "SettlementReviewAction",
       "field": "stageCode",
-      "governanceStatus": "inventory",
+      "governanceStatus": "governed",
       "layer": "L1",
       "stateSet": {
         "values": [
@@ -1204,7 +1232,11 @@
       "wrongStateBizCode": "none",
       "implementation": "审核动作所属层级的分类列",
       "governedBlockers": [],
-      "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。",
+      "governedEvidence": {
+        "edgeModel": "unconstrained",
+        "wrongStateBizCodes": []
+      },
+      "notes": "Phase 4-1b 升 governed:L1 配置列的门槛 = 闭集能从 stateSet.sourceRef 指名的 migration 的 DB CHECK 原样重算出来,且那条 CHECK 是全仓最后一次声明、之后未被 DROP(判据在 scripts/check-boundaries.ts l1GovernedErrors)。配置列按定义无流程边,故不声明 edges 与 wrongStateBizCode。",
       "transitionsRationale": "L1 配置/标注列:取值由配置或 CRUD 决定,无流程语义,故不声明迁移边。"
     },
     {
