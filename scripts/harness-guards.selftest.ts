@@ -17,6 +17,14 @@ import * as os from 'os';
 import * as path from 'path';
 import { checkFragment, mergeIntoChangelog } from './changelog-merge';
 import {
+  checkServiceSize,
+  isSizedUnit,
+  measureNcloc,
+  serviceSizeInputDigest,
+  type ServiceEntry as SizedUnit,
+  type ServiceSizeBaseline,
+} from './check-codemap';
+import {
   buildClosure,
   comparePolicy,
   diffManifests,
@@ -4056,6 +4064,220 @@ void (async (): Promise<void> => {
       // 正对照：单道守卫的 findMy 必须恰好数出 1 —— 若判据写坏成恒 0 / 恒大，
       // 上面那条会跟着一起坏而不被发现，这条会先红。
       checkEq('IDOR 守卫:findMy 单道属主判定(判据正对照)', countOwnerGuards(findMy), 1);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Phase 6-A — 大 service 尺寸棘轮:口径与判据的阳性对照
+  // -------------------------------------------------------------------------
+  //
+  // 为什么这几条必须存在:棘轮的判据值是**一个数**,而数最容易被悄悄改坏 ——
+  // 把 `>` 写成 `>=`、把 NCLOC 退回物理行、把发现面缩回旧的 `src/modules/*/*.service.ts`,
+  // 三种改法都不会让任何既有测试变红,棘轮却已经失效。逐条钉住。
+  {
+    const sizedUnit = (relPath: string, loc: number, domain: string): SizedUnit => ({
+      relPath,
+      module: domain,
+      basename: relPath.split('/').pop() ?? relPath,
+      loc,
+      physicalLoc: loc,
+    });
+    const sizedBaseline = (
+      entries: Array<{ file: string; loc: number; domain: string }>,
+    ): ServiceSizeBaseline => ({
+      schemaVersion: 1,
+      generatorVersion: 1,
+      metric: 'non-comment-non-blank-lines',
+      threshold: 700,
+      inputDigest: serviceSizeInputDigest(),
+      entries,
+    });
+    const sevOf = (
+      results: ReturnType<typeof checkServiceSize>,
+      id: string,
+    ): string | undefined => results.find((r) => r.id === id)?.severity;
+
+    const oneBaseline = [{ file: 'src/modules/demo/demo.service.ts', loc: 900, domain: 'demo' }];
+
+    // ① 基线内文件变大 ⇒ 必报
+    checkEq(
+      '尺寸棘轮:基线文件 +1 行即报',
+      sevOf(
+        checkServiceSize(
+          [sizedUnit('src/modules/demo/demo.service.ts', 901, 'demo')],
+          sizedBaseline(oneBaseline),
+        ),
+        'service-size-ratchet',
+      ),
+      'WARN',
+    );
+
+    // ② 变小 / 持平 ⇒ 不报(否则棘轮会把「正在还债」的 PR 也拦下,没人会再去拆)
+    checkEq(
+      '尺寸棘轮:基线文件变小不报',
+      sevOf(
+        checkServiceSize(
+          [sizedUnit('src/modules/demo/demo.service.ts', 899, 'demo')],
+          sizedBaseline(oneBaseline),
+        ),
+        'service-size-ratchet',
+      ),
+      'PASS',
+    );
+    checkEq(
+      '尺寸棘轮:基线文件持平不报(边界:只增才报)',
+      sevOf(
+        checkServiceSize(
+          [sizedUnit('src/modules/demo/demo.service.ts', 900, 'demo')],
+          sizedBaseline(oneBaseline),
+        ),
+        'service-size-ratchet',
+      ),
+      'PASS',
+    );
+
+    // ③ 基线外新文件达到阈值 ⇒ 必报(防「拆成两个次巨无霸」静默入册)
+    checkEq(
+      '尺寸棘轮:基线外新文件达到阈值即报',
+      sevOf(
+        checkServiceSize(
+          [sizedUnit('src/modules/demo/fresh.service.ts', 700, 'demo')],
+          sizedBaseline([]),
+        ),
+        'service-size-new-above-threshold',
+      ),
+      'WARN',
+    );
+    // 阈值下方一行的正对照 —— 若判据写坏成「恒报」,上面那条照样绿,这条会先红。
+    checkEq(
+      '尺寸棘轮:阈值下一行不报(判据正对照)',
+      sevOf(
+        checkServiceSize(
+          [sizedUnit('src/modules/demo/fresh.service.ts', 699, 'demo')],
+          sizedBaseline([]),
+        ),
+        'service-size-new-above-threshold',
+      ),
+      undefined,
+    );
+
+    // ④ **纯注释膨胀不得触发** —— 这条钉的是 D1 口径本身。
+    //    退回物理行计数,它会立刻变红;这正是它存在的理由。
+    const realCode = ['export class Demo {', '  run(): number {', '    return 1;', '  }', '}'].join(
+      '\n',
+    );
+    const commentBloat = `${Array.from({ length: 400 }, (_, i) => `// 铁律第 ${i} 条:此处写模块级约束`).join('\n')}\n${realCode}`;
+    checkEq('尺寸口径:纯注释膨胀不改变度量值', measureNcloc(commentBloat), measureNcloc(realCode));
+    check(
+      '尺寸口径:注释膨胀确实撑大了物理行(证明上一条不是因为样例没变)',
+      commentBloat.split('\n').length > realCode.split('\n').length + 350,
+      `物理行 ${commentBloat.split('\n').length} vs ${realCode.split('\n').length}`,
+    );
+    checkEq(
+      '尺寸棘轮:注释膨胀 400 行不触发棘轮',
+      sevOf(
+        checkServiceSize(
+          [
+            sizedUnit(
+              'src/modules/demo/demo.service.ts',
+              measureNcloc(commentBloat),
+              'demo',
+            ),
+          ],
+          sizedBaseline([
+            {
+              file: 'src/modules/demo/demo.service.ts',
+              loc: measureNcloc(realCode),
+              domain: 'demo',
+            },
+          ]),
+        ),
+        'service-size-ratchet',
+      ),
+      'PASS',
+    );
+    // 剥注释必须靠 TS scanner 而不是正则:字符串里的 `//` 不是注释。
+    checkEq('尺寸口径:字符串里的 // 不算注释', measureNcloc(`const s = '// not a comment';`), 1);
+    checkEq('尺寸口径:整行注释不计入', measureNcloc('// only a comment'), 0);
+
+    // ⑤ 发现面:orchestrator / handlers 必须算数 —— 旧口径看不见全仓最大的代码文件。
+    check(
+      '尺寸发现面:*-orchestrator.ts 计入',
+      isSizedUnit('src/modules/attachments/attachment-storage-orchestrator.ts'),
+    );
+    check(
+      '尺寸发现面:*.handlers.ts 计入',
+      isSizedUnit('src/modules/notifications/notification-outbox.handlers.ts'),
+    );
+    check(
+      '尺寸发现面:嵌套目录下的 service 也计入(旧口径不递归)',
+      isSizedUnit('src/modules/demo/nested/deep.service.ts'),
+    );
+    check('尺寸发现面:*.spec.ts 排除', !isSizedUnit('src/modules/demo/demo.service.spec.ts'));
+    check('尺寸发现面:src 之外排除', !isSizedUnit('test/e2e/demo.service.ts'));
+
+    // ⑥ 拆分识别:同域「基线文件变小」+「新超阈值文件」并列显示(只提示,不裁决)
+    checkEq(
+      '尺寸棘轮:同域拆分并列显示',
+      sevOf(
+        checkServiceSize(
+          [
+            sizedUnit('src/modules/demo/demo.service.ts', 800, 'demo'),
+            sizedUnit('src/modules/demo/demo-extracted.service.ts', 750, 'demo'),
+          ],
+          sizedBaseline([
+            { file: 'src/modules/demo/demo.service.ts', loc: 1500, domain: 'demo' },
+          ]),
+        ),
+        'service-size-possible-split',
+      ),
+      'INFO',
+    );
+
+    // ⑦ 口径指纹:基线与当前口径不符必须报(阈值/度量被改而基线没重生成)
+    checkEq(
+      '尺寸棘轮:inputDigest 不符即报(口径已变,基线须重生成)',
+      sevOf(
+        checkServiceSize([], { ...sizedBaseline([]), inputDigest: 'sha256:stale' }),
+        'service-size-digest',
+      ),
+      'WARN',
+    );
+
+    // ⑧ CI 接线:必须在既有 fast job 内、且**此刻处于 report 模式**。
+    //    goal §5 承诺「本刀恒 report,不得阻断任何业务 PR」—— 这两条是那句话的执行位。
+    //    ⚠️ 转 blocking 时:删 ci.yml 里那个 `|| true`,并把下面第二条断言一起翻面。
+    //       两处一起改是刻意的摩擦(翻闸是拍板动作,不该顺手完成)。
+    {
+      const ciRaw = fs.readFileSync(
+        path.resolve(__dirname, '..', '.github/workflows/ci.yml'),
+        'utf-8',
+      );
+      const ci = codeOnly(ciRaw);
+      check(
+        '尺寸棘轮 CI:接进既有 job(不新增 required context)',
+        ci.includes('pnpm harness:servicesize'),
+        '步骤缺失 = 棘轮从没在 CI 跑过',
+      );
+      check(
+        '尺寸棘轮 CI:此刻是 report 模式(带 || true)',
+        /pnpm harness:servicesize \|\| true/.test(ci),
+        '没有 || true ⇒ 已是 blocking:那是拍板动作,须同时更新本断言与 SERVICE_SIZE_RATCHET.md',
+      );
+    }
+
+    // ⑨ 落盘基线必须与当前口径一致 —— 防「改了阈值却忘了重生成基线」悄悄躺着。
+    {
+      const onDisk = JSON.parse(
+        fs.readFileSync(path.resolve(__dirname, '..', 'harness/service-size-baseline.json'), 'utf-8'),
+      ) as ServiceSizeBaseline;
+      checkEq('尺寸基线:落盘 inputDigest 与当前口径一致', onDisk.inputDigest, serviceSizeInputDigest());
+      checkEq('尺寸基线:落盘 metric 与当前口径一致', onDisk.metric, 'non-comment-non-blank-lines');
+      check(
+        '尺寸基线:entries 非空(空基线 = 棘轮没有判据)',
+        Array.isArray(onDisk.entries) && onDisk.entries.length > 0,
+        `entries=${onDisk.entries?.length}`,
+      );
     }
   }
 
