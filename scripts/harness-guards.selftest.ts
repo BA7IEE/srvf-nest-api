@@ -1382,6 +1382,128 @@ checkEq(
     check('D2 正样例:跨域动态 import() 被识别为依赖边', coverageForms.has('dynamic-import'), coverageDetail);
     check('D2 正样例:跨域 import=require 被识别为依赖边', coverageForms.has('import-equals'), coverageDetail);
 
+    // ── R15 src/common 治理(架构治理 v4 终审【七】)──────────────────────
+    // 三条判据各一正一负。**负样例必须是「形似但合法」** —— 与正样例只差
+    // 一处语义(读的字段在不在 kernel 白名单内 / 有没有时间窗 / import 落在
+    // common 内还是 modules 里),否则「负例通过」证明不了判据认的是那件事,
+    // 只证明它认得出两段完全不同的代码。
+    const r15Rel = 'src/common/r15-boundary-fixture.ts';
+    const r15File = path.join(fixtureRoot, r15Rel);
+    fs.writeFileSync(
+      r15File,
+      [
+        "import type { PrismaClient } from '@prisma/client';",
+        '',
+        '// ③ 正样例:common → src/modules 入边(恒 0 的那条结构判据)。',
+        "export { ActivitiesService } from '../modules/activities/activities.service';",
+        '// ③ 负样例:common 内部互引 —— 形似(同样是相对 import)但不是入边。',
+        "import { notDeletedWhere } from './prisma/soft-delete.util';",
+        '',
+        'export class R15BoundaryFixture {',
+        '  private readonly prisma!: PrismaClient;',
+        '  // ① 负样例:kernelReadFields 白名单内的事实读,显式 select、字段全在白名单里。',
+        '  kernelFactReadControl() {',
+        "    return this.prisma.user.findMany({ where: { id: 'u' }, select: { id: true, status: true } });",
+        '  }',
+        '  // ① 正样例(delegate 形态):业务 model 且无 kernel 白名单出口。',
+        '  delegateViolation() {',
+        "    return this.prisma.activity.findMany({ where: { id: 'a' }, select: { id: true } });",
+        '  }',
+        '  // ① 正样例(raw 形态):raw SQL 打业务物理表 —— 实测 6 条存量全是这个形态。',
+        '  rawViolation() {',
+        '    return this.prisma.$queryRawUnsafe(\'SELECT 1 FROM "Activity"\');',
+        '  }',
+        '  // ② 正样例:内联「状态 + 时间窗」谓词组合。',
+        '  predicateViolation() {',
+        '    return this.prisma.user.findMany({',
+        "      where: { status: 'ACTIVE', createdAt: { gte: new Date('2026-01-01') } },",
+        '      select: { id: true },',
+        '    });',
+        '  }',
+        '  // ② 负样例:只有状态谓词、没有时间窗 —— 与正样例只差 createdAt 一项。',
+        '  predicateControl() {',
+        "    return this.prisma.user.findMany({ where: { status: 'ACTIVE' }, select: { id: true, status: true } });",
+        '  }',
+        "  keepAlive() { return notDeletedWhere({ id: 'x' }); }",
+        '}',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    const r15Scan = runFixture('scripts/check-boundaries.ts', ['--violations']);
+    fs.rmSync(r15File, { force: true });
+    let r15Findings: Phase2Finding[] = [];
+    let r15Summary: Record<string, number> = {};
+    try {
+      const parsed = JSON.parse(r15Scan.out) as {
+        commonGovernance: { findings: Phase2Finding[] } & Record<string, number>;
+      };
+      r15Findings = parsed.commonGovernance.findings.filter(
+        (item) => item.location.file === r15Rel,
+      );
+      r15Summary = parsed.commonGovernance as unknown as Record<string, number>;
+    } catch {
+      // 下面的断言会把原始输出打出来,不让 JSON 解析异常遮住真因。
+    }
+    const r15Detail = r15Scan.out.slice(-8000);
+    const r15Kind = (kind: string, symbol: string): Phase2Finding[] =>
+      r15Findings.filter((item) => item.kind === kind && item.location.symbol === symbol);
+    check(
+      'R15 ① 正样例(delegate):business model 无 kernel 出口必报',
+      r15Kind('common-business-table-access', 'R15BoundaryFixture.delegateViolation').length === 1,
+      r15Detail,
+    );
+    check(
+      'R15 ① 正样例(raw):raw SQL 打业务物理表必报',
+      r15Kind('common-business-table-access', 'R15BoundaryFixture.rawViolation').length === 1,
+      r15Detail,
+    );
+    check(
+      'R15 ① 负样例:kernelReadFields 白名单内的事实读不得报违规',
+      r15Kind('common-business-table-access', 'R15BoundaryFixture.kernelFactReadControl').length ===
+        0 &&
+        r15Kind('common-kernel-fact-read', 'R15BoundaryFixture.kernelFactReadControl').length === 1,
+      r15Detail,
+    );
+    check(
+      'R15 ② 正样例:内联状态 + 时间窗谓词组合必报',
+      r15Kind('common-business-predicate', 'R15BoundaryFixture.predicateViolation').length === 1,
+      r15Detail,
+    );
+    check(
+      'R15 ② 负样例:只有状态谓词、无时间窗不得报',
+      r15Kind('common-business-predicate', 'R15BoundaryFixture.predicateControl').length === 0,
+      r15Detail,
+    );
+    check(
+      'R15 ③ 正样例:common → src/modules 入边必报',
+      r15Findings.filter((item) => item.kind === 'common-to-module-import').length === 1,
+      r15Detail,
+    );
+    check(
+      'R15 ③ 负样例:common 内部互引不算入边',
+      r15Findings.every(
+        (item) =>
+          item.kind !== 'common-to-module-import' ||
+          String((item.details as { specifier?: unknown }).specifier).includes('modules/'),
+      ),
+      r15Detail,
+    );
+    // 判据①的存量:6 条全在 claim-at-status.util.ts(raw 形态,跨三个域)。
+    // 它们**不是白名单**,是登记在案的历史债 —— 白名单意味着「这样做是对的」,
+    // 而正确终态是表名参数化、common 不留业务表知识(维护者 2026-08-15 拍板)。
+    // 钉住这个数,新增业务表访问即红。
+    check(
+      'R15 ① 存量基线:src/common 的业务表访问恰为 6 条(claim-at-status 的 raw 形态)',
+      r15Summary.businessTableAccess === 6 + 2,
+      `businessTableAccess=${String(r15Summary.businessTableAccess)}(夹具贡献 2 条)\n${r15Detail}`,
+    );
+    check(
+      'R15 ③ 存量基线:src/common → src/modules 入边恒 0(夹具外)',
+      r15Summary.moduleImportEdges === 1,
+      `moduleImportEdges=${String(r15Summary.moduleImportEdges)}(夹具贡献 1 条)\n${r15Detail}`,
+    );
+
     const confirmedButPendingMap = JSON.parse(originalDomainMap) as {
       decisionsPending: string[];
     };

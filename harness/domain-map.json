@@ -773,6 +773,14 @@
         "path": "src/modules/users/wecom-identity-revoke.ts",
         "ownerDomain": "identity-org",
         "confirmed": true
+      },
+      {
+        "name": "member-advisory-lock",
+        "path": "src/common/prisma/member-advisory-lock.util.ts",
+        "ownerDomain": "identity-org",
+        "confirmed": true,
+        "registeredBy": "R15 src/common 治理(架构治理 v4 终审【七】)",
+        "why": "共享业务内核,不因为放在 src/common 就免除归属。它编码的是「同一队员」维度的跨行不变量(考勤时间不重叠、贡献值跨 Sheet 汇总、同时只能有一条入队通路)、全仓取锁次序约定,以及 40901/40902 两个业务码 —— 都是 identity-org 的领域知识,不是技术横切件。"
       }
     ],
     "kernelReadFields": {
