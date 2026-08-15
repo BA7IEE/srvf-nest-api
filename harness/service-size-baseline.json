@@ -1,34 +1,34 @@
 {
-  "_comment": "大 service 尺寸棘轮的具名基线(Phase 6-A,v4 §11 Phase 6)。**生成物,勿手改** ——\n改基线值请跑 pnpm harness:servicesize:write(本文件在红区 selfGuard,须维护者授权)。\n\nloc = non-comment-non-blank-lines(非注释非空行,TS scanner 剥注释后统计),不是物理行:\n物理行棘轮会奖励「删掉文件头的模块级铁律注释」,而那是本仓约束 AI 的主要载体。\n阈值 700 复用既有 god-service 阈值(不另立第二套尺寸标准)。\n\n判据:① 基线内文件只减不增;② 基线外文件达到阈值须走授权入册(防「拆成两个次巨无霸」静默入册);\n③ 同域「基线文件变小 + 新超阈值文件」并列显示,人判是否真拆分。\n**本刀恒 report,不阻断任何 PR**;转 blocking 的 Exit Criteria 见 docs/ai-harness/SERVICE_SIZE_RATCHET.md。\n\ninputDigest 只摄入口径本身(度量/阈值/发现面/生成器版本),**刻意不摄入 src/** 内容** ——\n摄入源码会让基线在每个业务 PR 都「过期」,噪声淹没信号;而「基线值 vs 磁盘」本就由判据本身回答。\n无时间戳、无 git SHA(v4 §9 勘误①)。",
+  "_comment": "大 service 尺寸棘轮的具名基线(Phase 6-A,v4 §11 Phase 6)。**生成物,勿手改** ——\n改基线值请跑 pnpm harness:servicesize:write(本文件在红区 selfGuard,须维护者授权)。\n\nloc = non-comment-non-blank-lines(非注释非空行,按 TS parser 的真实 token 覆盖判定),不是物理行:\n物理行棘轮会奖励「删掉文件头的模块级铁律注释」,而那是本仓约束 AI 的主要载体。\n阈值 700 复用既有 god-service 阈值(不另立第二套尺寸标准)。\n\n判据:① 基线内文件只减不增;② 基线外文件达到阈值须走授权入册(防「拆成两个次巨无霸」静默入册);\n③ 同域「基线文件变小 + 新超阈值文件」并列显示,人判是否真拆分。\n**本刀恒 report,不阻断任何 PR**;转 blocking 的 Exit Criteria 见 docs/ai-harness/SERVICE_SIZE_RATCHET.md。\n\ninputDigest 只摄入口径本身(度量/阈值/发现面/生成器版本),**刻意不摄入 src/** 内容** ——\n摄入源码会让基线在每个业务 PR 都「过期」,噪声淹没信号;而「基线值 vs 磁盘」本就由判据本身回答。\n无时间戳、无 git SHA(v4 §9 勘误①)。",
   "schemaVersion": 1,
-  "generatorVersion": 1,
+  "generatorVersion": 2,
   "metric": "non-comment-non-blank-lines",
   "threshold": 700,
-  "inputDigest": "sha256:61d5b92feb88b72f5bd603276e029f873b6e8461660237fd5c5646a4ed565683",
+  "inputDigest": "sha256:d27d73a1cc12f515487e680ca268a78983fb37ceb7dc0b691ad70083d97bbc90",
   "entries": [
     {
       "file": "src/modules/activities/activities.service.ts",
-      "loc": 1311,
+      "loc": 1268,
       "domain": "activities"
     },
     {
       "file": "src/modules/activities/activity-closure.service.ts",
-      "loc": 940,
+      "loc": 829,
       "domain": "activities"
     },
     {
       "file": "src/modules/activities/activity-draft.service.ts",
-      "loc": 956,
+      "loc": 954,
       "domain": "activities"
     },
     {
       "file": "src/modules/activities/activity-publish-proposal-v2.service.ts",
-      "loc": 1456,
+      "loc": 1835,
       "domain": "activities"
     },
     {
       "file": "src/modules/activities/activity-publish-review.service.ts",
-      "loc": 1342,
+      "loc": 1338,
       "domain": "activities"
     },
     {
@@ -38,42 +38,32 @@
     },
     {
       "file": "src/modules/activities/activity-settlement-http.service.ts",
-      "loc": 1144,
+      "loc": 1146,
       "domain": "activities"
     },
     {
       "file": "src/modules/activities/correction-application.service.ts",
-      "loc": 1938,
-      "domain": "activities"
-    },
-    {
-      "file": "src/modules/activities/ledger-posting.service.ts",
-      "loc": 751,
+      "loc": 1832,
       "domain": "activities"
     },
     {
       "file": "src/modules/activities/ledger-preparation.service.ts",
-      "loc": 827,
+      "loc": 751,
       "domain": "activities"
     },
     {
       "file": "src/modules/activities/settlement-draft.service.ts",
-      "loc": 978,
-      "domain": "activities"
-    },
-    {
-      "file": "src/modules/activities/settlement-submit.service.ts",
-      "loc": 789,
+      "loc": 808,
       "domain": "activities"
     },
     {
       "file": "src/modules/activity-registrations/activity-allocation.service.ts",
-      "loc": 2397,
+      "loc": 2411,
       "domain": "activity-registrations"
     },
     {
       "file": "src/modules/activity-registrations/activity-registrations.service.ts",
-      "loc": 1838,
+      "loc": 1761,
       "domain": "activity-registrations"
     },
     {
@@ -83,77 +73,67 @@
     },
     {
       "file": "src/modules/activity-registrations/onsite-participation-command.service.ts",
-      "loc": 729,
+      "loc": 730,
       "domain": "activity-registrations"
     },
     {
       "file": "src/modules/activity-registrations/registration-command.service.ts",
-      "loc": 916,
+      "loc": 880,
       "domain": "activity-registrations"
     },
     {
       "file": "src/modules/attachments/attachment-storage-orchestrator.ts",
-      "loc": 2518,
+      "loc": 2484,
       "domain": "attachments"
     },
     {
       "file": "src/modules/attachments/attachments.service.ts",
-      "loc": 1657,
+      "loc": 1565,
       "domain": "attachments"
     },
     {
       "file": "src/modules/attendances/attendances.service.ts",
-      "loc": 1881,
+      "loc": 1699,
       "domain": "attendances"
     },
     {
       "file": "src/modules/certificates/certificates.service.ts",
-      "loc": 739,
+      "loc": 764,
       "domain": "certificates"
     },
     {
       "file": "src/modules/members/members.service.ts",
-      "loc": 984,
+      "loc": 817,
       "domain": "members"
     },
     {
       "file": "src/modules/notifications/notification-outbox.handlers.ts",
-      "loc": 1331,
+      "loc": 1260,
       "domain": "notifications"
     },
     {
       "file": "src/modules/notifications/notification-outbox.service.ts",
-      "loc": 1003,
-      "domain": "notifications"
-    },
-    {
-      "file": "src/modules/notifications/notification.service.ts",
-      "loc": 706,
+      "loc": 970,
       "domain": "notifications"
     },
     {
       "file": "src/modules/recruitment/recruitment-applications.service.ts",
-      "loc": 834,
+      "loc": 763,
       "domain": "recruitment"
     },
     {
       "file": "src/modules/recruitment/recruitment-certificate-claims.service.ts",
-      "loc": 786,
-      "domain": "recruitment"
-    },
-    {
-      "file": "src/modules/recruitment/recruitment-promotion.service.ts",
-      "loc": 817,
+      "loc": 808,
       "domain": "recruitment"
     },
     {
       "file": "src/modules/role-bindings/role-bindings.service.ts",
-      "loc": 897,
+      "loc": 827,
       "domain": "role-bindings"
     },
     {
       "file": "src/modules/storage/storage-object-ledger.service.ts",
-      "loc": 1412,
+      "loc": 1398,
       "domain": "storage"
     },
     {

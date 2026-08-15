@@ -4208,9 +4208,38 @@ void (async (): Promise<void> => {
       ),
       'PASS',
     );
-    // 剥注释必须靠 TS scanner 而不是正则:字符串里的 `//` 不是注释。
+    // 剥注释必须靠 TS parser 而不是正则:字符串里的 `//` 不是注释。
     checkEq('尺寸口径:字符串里的 // 不算注释', measureNcloc(`const s = '// not a comment';`), 1);
     checkEq('尺寸口径:整行注释不计入', measureNcloc('// only a comment'), 0);
+
+    // ④b **重扫脱锁类**:模板串之后的注释仍须被剥离。
+    //
+    // 这四条钉的是 2026-08-15 修掉的一个真缺陷 —— 原实现用裸 `ts.createScanner` + `scan()`
+    // 循环,遇 `` `…${…}` `` 不调 `reScanTemplateToken()` ⇒ 扫描器脱锁,收尾反引号开启了
+    // 一个新模板串,把其后的整行 `//` 注释吞成字符串内容 ⇒ **注释被算成代码**。
+    // 实测发现面 149 个文件里 90 个(60.4%)读数虚高,4 个基线文件纯靠虚高才越过阈值 700。
+    //
+    // ⚠️ 它藏了十一次没被抓到,正是因为上面 22 条尺寸段对照**没有一条**喂过模板串 ——
+    // 「纯注释膨胀」「字符串里的 //」都不触发重扫。加对照前先问「缺口长什么样」,
+    // 这四条就是那个缺口的形状。
+    const tplThenComments = ['const a = `${1}`;', '// c1', '// c2', 'const b = 2;'].join('\n');
+    checkEq('尺寸口径:带替换模板串之后的整行注释仍不计入', measureNcloc(tplThenComments), 2);
+    const nestedTplThenComments = ['const a = `${`${1}`}`;', '// c1', '// c2', 'const b = 2;'].join(
+      '\n',
+    );
+    checkEq('尺寸口径:嵌套模板串之后的整行注释仍不计入', measureNcloc(nestedTplThenComments), 2);
+    // 反向:多行模板串**内部**的 `//` 是字符串内容,不是注释,**不得**被剥掉。
+    // 少了这条,「把模板串整段当注释剥掉」也能让上面两条变绿 —— 那是另一种错。
+    const multilineTpl = ['const a = `line1', '// 这是字符串内容不是注释', 'line3`;', 'const b = 2;'].join(
+      '\n',
+    );
+    checkEq('尺寸口径:多行模板串内的 // 是内容,不得剥离', measureNcloc(multilineTpl), 4);
+    // 同类:正则字面量里的 `/*` 不得被当成块注释起点(裸 scanner 需 reScanSlashToken)。
+    checkEq(
+      '尺寸口径:正则字面量里的 /* 不是注释起点',
+      measureNcloc(['const re = /\\/\\*/;', '// c1', 'const b = 2;'].join('\n')),
+      2,
+    );
 
     // ⑤ 发现面:orchestrator / handlers 必须算数 —— 旧口径看不见全仓最大的代码文件。
     check(
