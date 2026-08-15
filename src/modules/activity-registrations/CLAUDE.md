@@ -31,7 +31,7 @@
 - Audit events(2 个):`registration.create` / `registration.review`(approve / reject / cancel / reopen / **promote** / export 共用；promote 固定 `extra.action='promote'`;export 固定 `extra.operation='export'`,在返回 generator 前 fail-closed 落库)
 - 状态机错误码:wrong state 统一抛 `BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID`
 - **受保护状态写(2026-07-21)**:`approve`/`reject`/`cancelAdmin`/`reopen`/`cancelMy` 在真实写前统一调用 [`/src/common/prisma/claim-at-status.util.ts`](../../common/prisma/claim-at-status.util.ts)；helper 以静态物理表/列执行条件 `SELECT ... FOR NO KEY UPDATE`，不再写 no-op tuple。获锁后必须重读安全行，并让 current-row guard、子表写、真实更新与 audit before 只使用锁后行；并发败者复用 `ACTIVITY_REGISTRATION_STATUS_INVALID`，合法矩阵仍只在 `activity-registration-state-machine.ts`。
-- **候补并发锁序与旁路债务**:`promoteActivityWaitlist` 仍由调用方透传 tx，固定 Activity→Member→Registration；它尚未接永久 identity/capacity/pointer lifecycle，禁止借当前刀改成 allocation。`ActivitiesService.cancel` 整单 writer 同样尚未接个人取消 lifecycle；两者需要独立 Goal，不能复制 `CapacityReservation` DML。
+- **候补并发锁序与整单取消**:`promoteActivityWaitlist` 仍由调用方透传 tx，固定 Activity→Member→Registration；它只处理无永久 identity 的 legacy header，禁止借此改成 allocation。`ActivitiesService.cancel` 在既有 Activity 根事务中调用纯 lifecycle helper：canonical pending/waitlisted 追加 admin Registration/Participation revision 并 CAS 投影；无 identity 的 legacy pending/waitlisted 也沿已有或新建 RegistrationRevision 链关闭，pass/active reservation 保留；任何 current revision/status/pointer/population/active reservation 漂移为 20147 整笔零写。两者都不能复制 `CapacityReservation` DML。
 - **durable intent 的 payload 必须取锁后行(并发审计 K4,2026-07-31)**:`cancelMy` 的活动标题 / 发布人在 claim + 证据守卫**之后**才读。放在锁前时,并发改名先提交,本事务仍会用旧标题落 intent —— intent 一旦落库 worker 无法自行恢复正确快照,同一次取消甚至会同时产出「旧标题的取消通知」与「新标题的候补递补通知」(递补 helper 本就是锁后复读的)。执行位:`test/e2e/registration-cancel-my-locked-snapshot-concurrency.e2e-spec.ts`
 - **报名通知 durable outbox**:approve/reject 审批结果、取消后的候补递补、自助取消告知均在业务 update + `registration.review` audit 的同一事务内 enqueue `notification.targeted@1`;**自助取消告知只在取消 `pass` 报名时发(B-D3,维护者 2026-08-01 拍板)** —— pending/waitlisted 的取消对负责人没有要做的事,名额本就没被占住,全发是噪音;取消 pass 的 intent 形状(eventKey/aggregate/收件人解析)逐字不变,只是不再为另两个状态多发;enqueue 失败整体回滚，worker 仅在 commit 后执行 Effect。review eventKey 绑定 registration + reviewedAt + review audit 序号，递补/取消绑定对应状态写时间。自助取消正文只使用同事务快照 `displayName（memberNo）`，任一标签不可用即用固定匿名提示，绝不暴露 `Member.id`。责任制 gate=true 仍只通知当前 ACTIVE owner，缺 owner fail-closed，绝不回退 `publishedBy`；gate=false 才显式沿用 publisher；eventKey / aggregate / destination 语义不变。
 - **managed 报名判权与锁序(PR-7)**:单条写先走既有 `authz.explain`，再在同一事务的 Activity 根锁后重读 active responsibility 的 `canManageRegistrations=true`；因此 owner/报名协办可管理，global 旧角色、考勤协办不可旁路，协办 end/owner transfer 与在途写串行。默认 `authorization='authz'` 保持 Admin 调用逐字行为，managed 路径显式传 `'managed'`
@@ -65,7 +65,7 @@
 - ❌ App self 视角 where 子句**永远**用 `currentUser.memberId` 锁本人；managed 视角只认当前活动 active responsibility capability；两者都**禁止** role 短路 / `scope=all`
 - ❌ **不**主动拆 `activity-registrations.service.ts`(沿 [`/docs/current-state.md §4 P2`](../../../docs/current-state.md))
 - ❌ **不**在 CSV 导出路径引入 `csv-stringify` 等新依赖(沿 Q-A6 + [`/AGENTS.md §3`](../../../AGENTS.md))
-- ❌ **不**把 legacy 递补改成 `waitlisted → pass`；腾出 legacy 名额只自动进 pending，仍必须走 approve。allocation 的 `waitlisted → pass` 只允许取消链读本 batch 的原 session+position 队列，不能复制给旧 writer 或变成跨岗位自动换岗。
+- ❌ **不**把 legacy 递补改成 `waitlisted → pass`，也不得让旧 writer 命中有永久 identity；腾出 legacy 名额只自动进 pending，仍必须走 approve。allocation 的 `waitlisted → pass` 只允许取消链读本 batch 的原 session+position 队列，不能复制给旧 writer 或变成跨岗位自动换岗。
 - ❌ **不**把报名通知改回 commit 后 best-effort 直调 dispatcher；不得在业务事务内调用 provider，且 gate=true 不得用 `publishedBy` 冒充当前 owner
 - ❌ **不**把 upload session 当作报名答案、RegistrationRevision 或永久报名身份；不得在 Form/session/AVAILABLE 全部复核和不可变答案行创建之前提前 consumed/转绑。最终转为 `registration-form-answer` owner 与 consumed 只能由 canonical command 通过 trusted facade 在同一事务完成；不得把 Provider/签名/文件内容校验放进数据库事务。
 - ❌ 现场临时参加不得复活 soft-deleted 头、不得新建第二 identity、不得把 `pass` 当新请求重放；不得接 Form 答案/上传、邀请 accept、allocation 或 waitlist。Form 未接通时保留 21039；合法 RuleSet 不得以“现场”理由跳过 evaluator 或一律 21039。
@@ -87,4 +87,5 @@
 - 改 DTO 字段 / endpoint path / Swagger schema / 错误码 → 必须再跑 `pnpm test:contract`
 - 改现场临时参加或资格 runtime → `pnpm test:e2e -- activity-batch4-onsite-participation.e2e-spec.ts` 与 `activity-batch4-qualification-runtime.e2e-spec.ts`（含 Form=21039、RuleSet evaluator、block 零写与 snapshot 锚点）
 - 改邀请 accept、allocation、容量 caller 或候补递补 → `pnpm exec jest --config test/jest-e2e.config.ts --runInBand test/e2e/activity-batch4-allocation-runtime.e2e-spec.ts`；不在本机跑全量 E2E。
+- 改整单活动取消或 legacy waitlist writer → `pnpm test:e2e -- activity-batch4-cancel-waitlist-lifecycle.e2e-spec.ts`，并回归 `activity-registration-waitlist.e2e-spec.ts`；不在本机跑全量 E2E。
 - 改 reconciliation / activity-start expiry → `pnpm test:e2e -- activity-batch4-expiry.e2e-spec.ts`，并回归 `activity-batch2-8a-auto-commit.e2e-spec.ts`；不在本机跑全量 E2E。

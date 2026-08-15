@@ -31,6 +31,12 @@ jest.mock('./activity-waitlist-promotion', () => ({
   promoteActivityWaitlist: jest.fn().mockResolvedValue({ activityTitle: '测试活动', promoted: [] }),
 }));
 
+jest.mock('../activity-registrations/activity-cancellation-lifecycle', () => ({
+  cancelActivityRegistrationLifecycle: jest
+    .fn()
+    .mockResolvedValue({ cancelledRegistrationCount: 0 }),
+}));
+
 // activities service-level characterization spec(B 档 test-only,沿 srvf-god-service-refactor）。
 // 锁定 `activities.service.ts`(607L,L 体量)内部「编排契约」现状行为,作为后续
 // Presenter / QueryService 抽离前的快速重构护栏。

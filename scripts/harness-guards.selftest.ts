@@ -1010,6 +1010,10 @@ checkEq(
       // 是一个带 tsconfig 的完整小仓 —— 少了它 typed program 建不起来。
       'tsconfig.json',
       'prisma/schema.prisma',
+      // R10 4-1b:L1 配置列的 governed 门槛要从 migration 的 DB CHECK 重算闭集,
+      // 夹具没有 migrations 就会对每条 governed L1 报「找不到 CHECK」—— 那是夹具失真,
+      // 不是判据发现。628K,相对已复制的 src(10M)可以忽略。
+      'prisma/migrations',
       'harness/domain-map.json',
       'harness/architecture-debt.json',
       'harness/state-machines.json',
@@ -1557,6 +1561,320 @@ checkEq(
       staleStateMachines.code !== 0 &&
         staleStateMachines.out.includes('state-machines.json.inputDigest stale'),
       staleStateMachines.out,
+    );
+
+    // -----------------------------------------------------------------------
+    // R10 Phase 4-1b —— 状态机 governed 声明闸
+    //
+    // 4-1a 实测:闭集已有 34/56 被 DB CHECK 兜住,而**边有 20 条零机器声明、
+    // 18 条无具名状态机模块**。只比闭集的一致性检查会对那 20 条恒真通过 = 空绿。
+    // 因此下面每条判据都必须有**一正一负**,且负样例「形似但非法」——
+    // 尤其 `空绿负例` 那条:它给的闭集完全合法,只是拿不出边与实现映射。
+    // -----------------------------------------------------------------------
+    interface FixtureStateEntry {
+      model: string;
+      field: string;
+      governanceStatus: string;
+      layer: string;
+      stateSet: { values: string[] | null; source: string; sourceRef: string };
+      transitions: string | string[];
+      governedBlockers: string[];
+      governedEvidence?: {
+        edgeModel: string;
+        implementationFile?: string;
+        implementationSymbol?: string;
+        edges?: Array<{ from: string; to: string; action?: string }>;
+        wrongStateBizCodes: string[];
+      };
+    }
+    const fixtureStateMachines = path.join(fixtureRoot, 'harness/state-machines.json');
+    const originalStateMachines = fs.readFileSync(fixtureStateMachines, 'utf8');
+    const liveStateRegistry = JSON.parse(originalStateMachines) as { entries: FixtureStateEntry[] };
+    const pick = (entries: FixtureStateEntry[], model: string, field: string): FixtureStateEntry => {
+      const found = entries.find((item) => item.model === model && item.field === field);
+      if (found === undefined) throw new Error(`state entry missing: ${model}.${field}`);
+      return found;
+    };
+    /**
+     * 逐条断言比对的是**解析后的 errors 数组**,不是原始 stdout ——
+     * stdout 是 JSON,消息里的引号被转义成 `\"`,拿裸 `includes('"archived"')` 去比
+     * 会**永远不匹配**:判据明明红了,断言却报「没红」。这类失真会把真判据误判成空转。
+     */
+    const runStateRegistry = (
+      mutate: (entries: FixtureStateEntry[]) => void,
+    ): { code: number; out: string; errors: string[] } => {
+      const parsed = JSON.parse(originalStateMachines) as { entries: FixtureStateEntry[] };
+      mutate(parsed.entries);
+      fs.writeFileSync(fixtureStateMachines, JSON.stringify(parsed, null, 2) + '\n', 'utf8');
+      let result: { code: number; out: string };
+      try {
+        result = runFixture('scripts/check-boundaries.ts', ['--metadata']);
+      } finally {
+        fs.writeFileSync(fixtureStateMachines, originalStateMachines, 'utf8');
+      }
+      let errors: string[] = [];
+      try {
+        errors = (JSON.parse(result.out) as { errors: string[] }).errors;
+      } catch {
+        // 解析不了就留空数组 —— 断言随即失败并打出原始输出,不静默放行。
+      }
+      return { ...result, errors };
+    };
+    const saidThat = (result: { errors: string[] }, needle: string): boolean =>
+      result.errors.some((message) => message.includes(needle));
+    /** L3 `Activity.statusCode` 的完整合法证据 —— enumerated 路径的正例底座。 */
+    const activityEvidence = (): FixtureStateEntry['governedEvidence'] => ({
+      edgeModel: 'enumerated',
+      implementationFile: 'src/modules/activities/activity-state-machine.ts',
+      implementationSymbol: 'ActivityStateMachine',
+      edges: [
+        { from: 'draft', to: 'published', action: 'publish' },
+        { from: 'draft', to: 'cancelled', action: 'cancel' },
+        { from: 'published', to: 'cancelled', action: 'cancel' },
+        { from: 'published', to: 'terminated', action: 'terminate' },
+        { from: 'published', to: 'completed', action: 'complete' },
+      ],
+      wrongStateBizCodes: ['ACTIVITY_STATUS_INVALID'],
+    });
+    const asGovernedActivity = (
+      entries: FixtureStateEntry[],
+      tweak: (entry: FixtureStateEntry) => void = () => {},
+    ): void => {
+      const entry = pick(entries, 'Activity', 'statusCode');
+      entry.governanceStatus = 'governed';
+      entry.governedBlockers = [];
+      entry.governedEvidence = activityEvidence();
+      tweak(entry);
+    };
+
+    const governedEntries = liveStateRegistry.entries.filter(
+      (entry) => entry.governanceStatus === 'governed',
+    );
+    check(
+      'R10 4-1b 存量基线:恰 8 条已升 governed,且全部是 L1 配置列(本刀不升任何 L3)',
+      governedEntries.length === 8 &&
+        governedEntries.every(
+          (entry) =>
+            entry.layer === 'L1' &&
+            entry.transitions === 'unconstrained' &&
+            entry.governedEvidence?.edgeModel === 'unconstrained' &&
+            entry.governedEvidence.wrongStateBizCodes.length === 0,
+        ),
+      `governed=${governedEntries.map((entry) => `${entry.model}.${entry.field}[${entry.layer}]`).join(', ')}`,
+    );
+    checkEq(
+      'R10 4-1b 正例:当前登记表(含 8 条 governed)通过声明闸',
+      runFixture('scripts/check-boundaries.ts', ['--metadata']).code,
+      0,
+    );
+
+    // ★ 本刀的核心自证:这条负样例的闭集完全合法(5 值、DB 有声明),
+    //   **只比闭集的判据会放它过去** —— 而它恰恰一条边、一个实现模块都拿不出来。
+    //   4-1a §3.1 点名的 20 条「edges-not-derived」全是这个形状。
+    const vacuousGreen = runStateRegistry((entries) => {
+      const entry = pick(entries, 'ActivityInvitation', 'statusCode');
+      entry.governanceStatus = 'governed';
+      entry.governedBlockers = [];
+      entry.governedEvidence = { edgeModel: 'enumerated', wrongStateBizCodes: [] };
+    });
+    const vacuousSource = pick(liveStateRegistry.entries, 'ActivityInvitation', 'statusCode');
+    check(
+      'R10 4-1b 空绿负例:闭集合法但零边零实现的 L3 必被拒(只比闭集会放它过去)',
+      vacuousGreen.code !== 0 &&
+        saidThat(
+          vacuousGreen,
+          'ActivityInvitation.statusCode: governedEvidence.implementationFile must be an existing src/**.ts file',
+        ) &&
+        // 前提对照:它的闭集确实是「合法且已声明」的,否则这条负例证明不了空绿。
+        Array.isArray(vacuousSource.stateSet.values) &&
+        vacuousSource.stateSet.values.length > 0,
+      vacuousGreen.out,
+    );
+
+    checkEq(
+      'R10 4-1b enumerated 正例:真文件 + 真符号 + 5 条真边 + 真码的 L3 通过(证明这条路不是死代码)',
+      runStateRegistry((entries) => asGovernedActivity(entries)).code,
+      0,
+    );
+    const edgeNotInModule = runStateRegistry((entries) =>
+      asGovernedActivity(entries, (entry) => {
+        // 形似但非法:换成**另一个真状态机**(符号也跟着换成真的),
+        // 于是 file / symbol 两关都过,唯独边在那个模块里根本不存在。
+        entry.governedEvidence = {
+          ...activityEvidence(),
+          implementationFile: 'src/modules/attendances/attendance-sheet-state-machine.ts',
+          implementationSymbol: 'AttendanceSheetStateMachine',
+        } as FixtureStateEntry['governedEvidence'];
+      }),
+    );
+    check(
+      'R10 4-1b 边负例:登记表写了、具名模块里没有 —— 必被拒',
+      edgeNotInModule.code !== 0 &&
+        saidThat(edgeNotInModule, 'registry declares an edge the named module does not mention'),
+      edgeNotInModule.out,
+    );
+    const missingEdge = runStateRegistry((entries) =>
+      asGovernedActivity(entries, (entry) => {
+        entry.governedEvidence = {
+          ...activityEvidence(),
+          edges: activityEvidence()?.edges?.filter((edge) => edge.to !== 'completed'),
+        } as FixtureStateEntry['governedEvidence'];
+      }),
+    );
+    check(
+      'R10 4-1b 反向边负例:模块里出现的状态没有边覆盖 —— 边表不完整必被拒',
+      missingEdge.code !== 0 &&
+        saidThat(
+          missingEdge,
+          'state "completed" appears in src/modules/activities/activity-state-machine.ts but no declared edge touches it',
+        ),
+      missingEdge.out,
+    );
+    const fabricatedEdge = runStateRegistry((entries) =>
+      asGovernedActivity(entries, (entry) => {
+        entry.governedEvidence?.edges?.push({ from: 'published', to: 'archived', action: 'archive' });
+      }),
+    );
+    check(
+      'R10 4-1b 造边负例:端点不在闭集内必被拒',
+      fabricatedEdge.code !== 0 &&
+        saidThat(fabricatedEdge, 'edge endpoint "archived" is not in stateSet.values'),
+      fabricatedEdge.out,
+    );
+    const wrongSymbol = runStateRegistry((entries) =>
+      asGovernedActivity(entries, (entry) => {
+        if (entry.governedEvidence !== undefined)
+          entry.governedEvidence.implementationSymbol = 'ActivityStateMachineService';
+      }),
+    );
+    check(
+      'R10 4-1b 实现映射负例:符号在该文件里没有声明必被拒',
+      wrongSymbol.code !== 0 &&
+        saidThat(
+          wrongSymbol,
+          'governedEvidence.implementationSymbol "ActivityStateMachineService" is not declared',
+        ),
+      wrongSymbol.out,
+    );
+    const unknownBizCode = runStateRegistry((entries) =>
+      asGovernedActivity(entries, (entry) => {
+        if (entry.governedEvidence !== undefined)
+          entry.governedEvidence.wrongStateBizCodes = ['ACTIVITY_STATE_INVALID'];
+      }),
+    );
+    check(
+      'R10 4-1b 错误码负例:wrong-state 码不在 BizCode 里必被拒(形似:STATE vs STATUS)',
+      unknownBizCode.code !== 0 &&
+        saidThat(
+          unknownBizCode,
+          'wrongStateBizCodes contains unknown BizCode "ACTIVITY_STATE_INVALID"',
+        ),
+      unknownBizCode.out,
+    );
+
+    // L1 侧:闭集必须与**在册**的 DB CHECK 逐值相等,且 sourceRef 必须指向那条 migration。
+    const l1ClosedSetDrift = runStateRegistry((entries) => {
+      pick(entries, 'Activity', 'allocationModeCode').stateSet.values = [
+        'first_come',
+        'qualification_rank',
+      ];
+    });
+    check(
+      'R10 4-1b L1 负例:闭集与在册 DB CHECK 不符必被拒',
+      l1ClosedSetDrift.code !== 0 &&
+        saidThat(l1ClosedSetDrift, 'closed-set CHECK in force') &&
+        saidThat(l1ClosedSetDrift, 'but registry declares'),
+      l1ClosedSetDrift.out,
+    );
+    const l1WrongSourceRef = runStateRegistry((entries) => {
+      // 形似但非法:指向另一条**真实存在**的 migration(不是瞎编的路径)。
+      pick(entries, 'Activity', 'allocationModeCode').stateSet.sourceRef =
+        'prisma/migrations/20260804020000_activity_v11_slice1_sessions_participation_capacity';
+    });
+    check(
+      'R10 4-1b L1 负例:sourceRef 指向别的真 migration 必被拒',
+      l1WrongSourceRef.code !== 0 &&
+        saidThat(
+          l1WrongSourceRef,
+          'stateSet.sourceRef must name the migration holding the CHECK in force',
+        ),
+      l1WrongSourceRef.out,
+    );
+    const l1FakeEdges = runStateRegistry((entries) => {
+      const entry = pick(entries, 'SettlementReviewAction', 'stageCode');
+      if (entry.governedEvidence !== undefined) entry.governedEvidence.edgeModel = 'enumerated';
+    });
+    check(
+      'R10 4-1b L1 负例:配置列谎称 enumerated 边模型必被拒',
+      l1FakeEdges.code !== 0 &&
+        saidThat(l1FakeEdges, 'L1 governed requires governedEvidence.edgeModel "unconstrained"'),
+      l1FakeEdges.out,
+    );
+
+    // 声明一致性:两个方向都堵死 —— 缺证据不许 governed,inventory 也不许留陈旧证据。
+    const governedWithoutEvidence = runStateRegistry((entries) => {
+      delete pick(entries, 'ActivityAllocationBatch', 'modeCode').governedEvidence;
+    });
+    check(
+      'R10 4-1b 负例:governed 但不带 governedEvidence 必被拒',
+      governedWithoutEvidence.code !== 0 &&
+        saidThat(governedWithoutEvidence, 'governed requires governedEvidence'),
+      governedWithoutEvidence.out,
+    );
+    const staleEvidence = runStateRegistry((entries) => {
+      pick(entries, 'Activity', 'statusCode').governedEvidence = {
+        edgeModel: 'unconstrained',
+        wrongStateBizCodes: [],
+      };
+    });
+    check(
+      'R10 4-1b 负例:inventory 条目携带陈旧 governedEvidence 必被拒',
+      staleEvidence.code !== 0 &&
+        saidThat(staleEvidence, 'inventory entries must not carry governedEvidence'),
+      staleEvidence.out,
+    );
+    const governedWithBlockers = runStateRegistry((entries) => {
+      pick(entries, 'ActivityInvitation', 'statusCode').governanceStatus = 'governed';
+    });
+    check(
+      'R10 4-1b 负例:仍带 governedBlockers 不许标 governed',
+      governedWithBlockers.code !== 0 &&
+        saidThat(governedWithBlockers, 'governed requires empty governedBlockers'),
+      governedWithBlockers.out,
+    );
+    const badStatus = runStateRegistry((entries) => {
+      pick(entries, 'Activity', 'statusCode').governanceStatus = 'partially-governed';
+    });
+    check(
+      'R10 4-1b 负例:governanceStatus 只认 inventory | governed',
+      badStatus.code !== 0 &&
+        saidThat(badStatus, 'governanceStatus must be "inventory" or "governed"'),
+      badStatus.out,
+    );
+
+    // B 类恒 report:复用上面那次 `--violations`(不另起一次 typed 扫描)。
+    // 这里钉两件事:①它明确自述 report-only ②「只比闭集的空绿面」这个读数真的被算出来了。
+    let stateGovernance: {
+      enforcement?: string;
+      byStatus?: Record<string, number>;
+      edgeCoverage?: Record<string, number>;
+    } = {};
+    try {
+      stateGovernance = (
+        JSON.parse(r15Scan.out) as { stateGovernance: typeof stateGovernance }
+      ).stateGovernance;
+    } catch {
+      // 断言失败时下面会打出原始输出。
+    }
+    check(
+      'R10 4-1b B 类:--violations 报出状态机治理面且恒 report-only',
+      stateGovernance.enforcement === 'report-only' &&
+        stateGovernance.byStatus?.governed === 8 &&
+        typeof stateGovernance.edgeCoverage?.vacuousGreenIfClosedSetOnly === 'number' &&
+        // 空绿面必须 > 0,否则这份报告在自述「只比闭集也够用」——
+        // 而 4-1a 的实测正相反。归零那天该由人来摘这条断言,不是静默通过。
+        stateGovernance.edgeCoverage.vacuousGreenIfClosedSetOnly > 0,
+      `stateGovernance=${JSON.stringify(stateGovernance)}`,
     );
 
     checkEq(
