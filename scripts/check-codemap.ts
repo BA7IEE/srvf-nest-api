@@ -183,6 +183,14 @@ export function measureNcloc(content: string): number {
   );
   const covered = new Uint8Array(content.length);
   const mark = (node: ts.Node): void => {
+    // ⚠️ **JSDoc 必须显式跳过**:`setParentNodes: true` 时 `getChildren()` 会把
+    // `/** … */` 作为 JSDoc **节点**挂在声明下(普通 `/* */` 与 `//` 则是 trivia、
+    // 本来就不在任何 token 区间内)。不跳 ⇒ JSDoc 正文被当成叶子 token 覆盖 ⇒
+    // **注释又被算成代码**,与本次要修的缺陷同类,且本仓 JSDoc 密度极高、影响更大。
+    // 实测:`/**\n * a\n * b\n */\nfunction f() {}` 不跳时数 5 行,正确是 1 行。
+    if (node.kind >= ts.SyntaxKind.FirstJSDocNode && node.kind <= ts.SyntaxKind.LastJSDocNode) {
+      return;
+    }
     const children = node.getChildren(sf);
     if (children.length === 0) {
       // 叶子 token:`getStart()` 跳过前导 trivia ⇒ 区间内不含注释。

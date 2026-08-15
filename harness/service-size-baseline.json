@@ -8,12 +8,12 @@
   "entries": [
     {
       "file": "src/modules/activities/activities.service.ts",
-      "loc": 1268,
+      "loc": 1254,
       "domain": "activities"
     },
     {
       "file": "src/modules/activities/activity-closure.service.ts",
-      "loc": 829,
+      "loc": 784,
       "domain": "activities"
     },
     {
@@ -23,12 +23,12 @@
     },
     {
       "file": "src/modules/activities/activity-publish-proposal-v2.service.ts",
-      "loc": 1835,
+      "loc": 1817,
       "domain": "activities"
     },
     {
       "file": "src/modules/activities/activity-publish-review.service.ts",
-      "loc": 1338,
+      "loc": 1335,
       "domain": "activities"
     },
     {
@@ -38,17 +38,12 @@
     },
     {
       "file": "src/modules/activities/activity-settlement-http.service.ts",
-      "loc": 1146,
+      "loc": 1133,
       "domain": "activities"
     },
     {
       "file": "src/modules/activities/correction-application.service.ts",
-      "loc": 1832,
-      "domain": "activities"
-    },
-    {
-      "file": "src/modules/activities/ledger-preparation.service.ts",
-      "loc": 751,
+      "loc": 1704,
       "domain": "activities"
     },
     {
@@ -58,7 +53,7 @@
     },
     {
       "file": "src/modules/activity-registrations/activity-allocation.service.ts",
-      "loc": 2411,
+      "loc": 2379,
       "domain": "activity-registrations"
     },
     {
@@ -68,12 +63,12 @@
     },
     {
       "file": "src/modules/activity-registrations/capacity-reservation.service.ts",
-      "loc": 936,
+      "loc": 921,
       "domain": "activity-registrations"
     },
     {
       "file": "src/modules/activity-registrations/onsite-participation-command.service.ts",
-      "loc": 730,
+      "loc": 726,
       "domain": "activity-registrations"
     },
     {
@@ -83,12 +78,12 @@
     },
     {
       "file": "src/modules/attachments/attachment-storage-orchestrator.ts",
-      "loc": 2484,
+      "loc": 2472,
       "domain": "attachments"
     },
     {
       "file": "src/modules/attachments/attachments.service.ts",
-      "loc": 1565,
+      "loc": 1519,
       "domain": "attachments"
     },
     {
@@ -98,7 +93,7 @@
     },
     {
       "file": "src/modules/certificates/certificates.service.ts",
-      "loc": 764,
+      "loc": 739,
       "domain": "certificates"
     },
     {
@@ -108,12 +103,12 @@
     },
     {
       "file": "src/modules/notifications/notification-outbox.handlers.ts",
-      "loc": 1260,
+      "loc": 1171,
       "domain": "notifications"
     },
     {
       "file": "src/modules/notifications/notification-outbox.service.ts",
-      "loc": 970,
+      "loc": 876,
       "domain": "notifications"
     },
     {
@@ -123,7 +118,7 @@
     },
     {
       "file": "src/modules/recruitment/recruitment-certificate-claims.service.ts",
-      "loc": 808,
+      "loc": 750,
       "domain": "recruitment"
     },
     {

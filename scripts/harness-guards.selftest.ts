@@ -4241,6 +4241,24 @@ void (async (): Promise<void> => {
       2,
     );
 
+    // ④c **JSDoc 必须不计入** —— 这三条钉的是修复本缺陷时**新引入又当场抓到**的同类缺陷:
+    //    `ts.createSourceFile(..., setParentNodes: true)` 之下,`getChildren()` 会把
+    //    `/** … */` 作为 **JSDoc 节点**挂在声明下(普通 `/* */` 与 `//` 是 trivia,不在任何
+    //    token 区间内),于是按「叶子 token 覆盖」判定时 JSDoc 正文被算成代码。
+    //    本仓 JSDoc 密度极高 ⇒ 不守这条,度量会系统性虚高,与要修的缺陷同类。
+    checkEq('尺寸口径:单行 JSDoc 不计入', measureNcloc('/** doc */\nfunction f() {}'), 1);
+    checkEq(
+      '尺寸口径:多行 JSDoc 不计入(只数真代码行)',
+      measureNcloc('/**\n * line A\n * line B\n */\nfunction f() {}'),
+      1,
+    );
+    // 反向:JSDoc 里出现 `${}` / `//` 也不得把后面的真代码带走。
+    checkEq(
+      '尺寸口径:JSDoc 内的 ${} 与 // 不影响其后代码计数',
+      measureNcloc('/**\n * `${x}` 与 // 都在 JSDoc 里\n */\nconst a = 1;'),
+      1,
+    );
+
     // ⑤ 发现面:orchestrator / handlers 必须算数 —— 旧口径看不见全仓最大的代码文件。
     check(
       '尺寸发现面:*-orchestrator.ts 计入',
