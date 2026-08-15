@@ -23,7 +23,7 @@
 | **架构背景与设计蓝图** | [`ARCHITECTURE.md`](./ARCHITECTURE.md)(先读顶部「§0 当前阶段说明」;除非用户明确要求,AI 不修改此文件) |
 | **API surface 长期边界** | [`docs/api-surface-policy.md`](./docs/api-surface-policy.md) |
 
-**恒读三件套**(每会话开工必读):[`AGENTS.md`](./AGENTS.md) → [`docs/current-state.md`](./docs/current-state.md) → [`docs/process.md §2/§3`](./docs/process.md)(Claude Code 另读 `CLAUDE.md`)。
+**恒读**(每会话开工必读):[`AGENTS.md`](./AGENTS.md) → [`docs/current-state.md`](./docs/current-state.md)(Claude Code 另读 `CLAUDE.md`)。[`docs/process.md`](./docs/process.md)(开工 / 分级 / 降速 / 收口)等其余文档**触碰才读** —— 权威定义恒以 AGENTS §0 为准。
 
 **冲突处理**:当前事实 > 长期铁律 > 流程 > 设计背景 > 历史证据。历史 handoff / 评审稿 / 批次已归档至 [`docs/archive/**`](./docs/archive/),**不再作为当前执行约束**。
 

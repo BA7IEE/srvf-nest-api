@@ -1,7 +1,7 @@
 # docs/ai-harness/ — AI Harness 操作页
 
 > **性质**:derived 操作层,**非规则源**;规则入口 / 铁律速查 / 决策锁 / 触发即停全部在根 [`AGENTS.md`](../../AGENTS.md)(冲突时本页让步并回头修本页)。
-> 恒读三件套 = 根 [`AGENTS.md`](../../AGENTS.md) → [`current-state.md`](../current-state.md) → [`process.md §2/§3`](../process.md)(唯一权威表述在 AGENTS §0)。v1 版本冻结于 [`../archive/harness-v1/ai-harness-README.md`](../archive/harness-v1/ai-harness-README.md)。
+> 恒读 = 根 [`AGENTS.md`](../../AGENTS.md) → [`current-state.md`](../current-state.md)(唯一权威表述在 AGENTS §0;[`process.md`](../process.md) 触碰才读)。v1 版本冻结于 [`../archive/harness-v1/ai-harness-README.md`](../archive/harness-v1/ai-harness-README.md)。
 
 ## 1. 开工命令
 
