@@ -5,6 +5,12 @@
  * 用途:扫描 CODEMAP.md 与当前源码结构的**结构性**漂移,输出 PASS / WARN / FAIL / INFO。
  * 只读检查,不修改任何文件。已接入 CI(`pnpm docs:codemap:check` 的第二段)。
  *
+ * 名字比职责窄(2026-08-15):除 CODEMAP.md 外,本脚本还承载 docs/ai-harness/README §4
+ * 的目录清单守护(检查项 H)。没有另起新脚本,是因为那要连带改 package.json 与
+ * .github/workflows/ —— 两者都在 redzone 的 ci-control-plane 内,红区面从 1 个文件
+ * 涨到 3 个;而本脚本已在 Fast checks 里跑、且**不随 docs-only 短路**,恰好覆盖
+ * 「加一份报告文档」这类 PR。判据性质相同(磁盘真源 ↔ 人手散文),故并入而非另立。
+ *
  * 与 generate-codemap.ts 的分工(Harness 3.0 P4b):
  *   生成器负责「机器能算出来的数字」(体量列 / migration 计数 / e2e spec 数),
  *   新鲜度由 `--check` 逐字 diff 保证;本脚本只查**生成器管不到的结构关系** ——
@@ -28,6 +34,8 @@
  *   F. migration-count-matches    — prisma/migrations/ 实际数 vs prisma/CLAUDE.md 声明 (FAIL on drift)
  *                                   (CODEMAP 侧已是生成物,不在此列)
  *   G. service-size-*             — 尺寸棘轮(Phase 6-A),`--service-size` 子命令,**恒 report**
+ *   H. ai-harness-index-complete  — docs/ai-harness/*.md 是否都在该目录 README §4 登记,
+ *                                   反向亦判(登记了却不存在) (FAIL on drift)
  *
  * 尺寸棘轮子命令(Phase 6-A):
  *   `tsx scripts/check-codemap.ts --service-size`          基线对照报告(有发现则退出 1;
@@ -757,6 +765,117 @@ function checkMigrationCount(actual: number, sources: MigrationDocDecl[]): Check
   };
 }
 
+// ── H. ai-harness-index-complete ───────────────────────────────────────────
+
+const aiHarnessDirRel = 'docs/ai-harness';
+
+// §4「目录说明」的节标题。**找不到就 FAIL**(见 checkAiHarnessIndex 的 fail-closed 分支):
+// 改标题 / 删小节都会让本检查失去登记处,而「判不了」不等于「没漂移」。
+const AI_HARNESS_INDEX_HEADING_RE = /^##\s*4[.、]?\s*目录说明/m;
+
+function listAiHarnessDocs(): string[] {
+  const abs = path.join(repoRoot, aiHarnessDirRel);
+  if (!fs.existsSync(abs)) return [];
+  return fs
+    .readdirSync(abs, { withFileTypes: true })
+    .filter((d) => d.isFile() && d.name.endsWith('.md'))
+    .map((d) => d.name)
+    .sort();
+}
+
+/** 取 heading 命中行之后、下一个 `## ` 之前的正文;找不到 heading 返回 null。 */
+export function extractSectionAfter(md: string, headingRe: RegExp): string | null {
+  const lines = md.split('\n');
+  const start = lines.findIndex((l) => headingRe.test(l));
+  if (start < 0) return null;
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((l) => /^##\s/.test(l));
+  return (end < 0 ? rest : rest.slice(0, end)).join('\n');
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * 文件名是否在节内被**登记**。
+ *
+ * 前后都要边界,不能用朴素 `includes`:`RBAC_MAP.md` 一出现就会顺带满足 `MAP.md`,
+ * 于是一个真没登记的文件被另一个文件的名字盖章放行 —— 判据绑错的典型形状,
+ * 且方向是**假绿**。前置排除 `/`:`../archive/ai-harness/x.md` 这类跨目录路径
+ * 不算本目录的登记。阳性对照见 harness-guards.selftest 的「子串不算登记」一条。
+ */
+export function mentionsDocName(section: string, basename: string): boolean {
+  return new RegExp(`(?<![\\w./-])${escapeRegExp(basename)}(?![\\w-])`).test(section);
+}
+
+/** 节内指向**本目录**的 markdown 链接目标(`](X.md)`);跨目录的一律含 `/`,自动排除。 */
+export function siblingLinkTargets(section: string): string[] {
+  const out = new Set<string>();
+  const re = /\]\(([^)\s]+)\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(section)) !== null) {
+    let t = m[1].split('#')[0];
+    if (t.startsWith('./')) t = t.slice(2);
+    if (t === '' || t.includes('/') || !t.endsWith('.md')) continue;
+    out.add(t);
+  }
+  return [...out].sort();
+}
+
+/**
+ * docs/ai-harness/ 的实际文件集 ↔ 该目录 README §4 登记清单,**双向**比对。
+ *
+ * 为什么需要(2026-08-15):§4 原文写死「本目录恰 4 文件」,而架构治理 Phase 0-6
+ * 陆续往该目录放了 7 份报告,漂到 11 个文件,期间**没有任何守护发现** ——
+ * 本刀开工当天 PR #1003 又加了一份 SERVICE_SIZE_RATCHET.md、同样没动 §4。
+ *
+ * `referenced-paths-exist` 抓不到这一类:它只读 CODEMAP.md,且只判「链接解析得开」;
+ * 而**少登记一条**的失败形状恰恰不产生任何坏链接 —— 那正是它十一次都没响的原因。
+ *
+ * 反方向(§4 登记了已被归档/改名的文件)一并判,否则清单只会单调变长。
+ *
+ * 读的是磁盘真源 ↔ 人手写的散文,不是拿生成器输出跟生成器输入比,
+ * 故不属本文件头注禁止的那类「恒 PASS 的自证」检查。
+ */
+export function checkAiHarnessIndex(realDocs: string[], readme: string): CheckResult {
+  const id = 'ai-harness-index-complete';
+  const section = extractSectionAfter(readme, AI_HARNESS_INDEX_HEADING_RE);
+  if (section === null) {
+    return {
+      id,
+      severity: 'FAIL',
+      summary: `${aiHarnessDirRel}/README.md 未找到 §4「目录说明」小节`,
+      details: [
+        '本检查以该小节为登记处;标题被改名 / 删除即无法验证 —— 无法验证 ≠ 通过,故 FAIL。',
+        '若确要改标题,同步改 check-codemap.ts 的 AI_HARNESS_INDEX_HEADING_RE。',
+      ],
+    };
+  }
+  const missing = realDocs.filter((f) => !mentionsDocName(section, f));
+  const stale = siblingLinkTargets(section).filter((t) => !realDocs.includes(t));
+  if (missing.length === 0 && stale.length === 0) {
+    return {
+      id,
+      severity: 'PASS',
+      summary: `${realDocs.length}/${realDocs.length} 已在 README §4 登记`,
+    };
+  }
+  return {
+    id,
+    severity: 'FAIL',
+    summary: `${missing.length} 个文件未登记、${stale.length} 条登记已失效`,
+    details: [
+      ...missing.map(
+        (f) => `${aiHarnessDirRel}/${f}:存在于磁盘,未在 README §4 登记 → 加进 §4 三张表之一`,
+      ),
+      ...stale.map(
+        (t) => `README §4 登记了 ${t},但 ${aiHarnessDirRel}/${t} 不存在 → 删除该行或改档`,
+      ),
+    ],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Output
 // ---------------------------------------------------------------------------
@@ -819,6 +938,7 @@ function main(): void {
     ...checkServiceLoc(services),
     checkReferencedPathsExist(codemap),
     checkMigrationCount(actualMigrations, migrationSources),
+    checkAiHarnessIndex(listAiHarnessDocs(), readRepoFile(`${aiHarnessDirRel}/README.md`)),
   ];
 
   for (const r of results) printResult(r);
