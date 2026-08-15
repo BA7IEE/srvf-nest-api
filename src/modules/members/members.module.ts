@@ -5,6 +5,7 @@ import { ActivitiesModule } from '../activities/activities.module';
 import { AuthzModule } from '../authz/authz.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { PermissionsModule } from '../permissions/permissions.module';
+import { MemberAuditRecorder } from './member-audit-recorder';
 import { MembersController } from './members.controller';
 import { MembersQueryService } from './members-query.service';
 import { MembersService } from './members.service';
@@ -30,7 +31,9 @@ import { MembersService } from './members.service';
   // Phase 6-B 第一刀(2026-08-15):MembersQueryService = 读侧查询构造边界(§3.2)。
   // 只在本模块内被 MembersService 注入,不 exports —— 跨模块复用仍走 MembersService.options()
   // 那一个入口(F4/D 组既有约定),避免第二条绕过判权腿的读路径。
-  providers: [MembersService, MembersQueryService],
+  // Phase 6-B 第二刀:MemberAuditRecorder = 6 个 audit 事件的 payload 组装边界(§3.5)。
+  // 只注入 AuditLogsService,tx 由调用方透传,事务边界仍归 MembersService。
+  providers: [MembersService, MembersQueryService, MemberAuditRecorder],
   exports: [MembersService],
 })
 export class MembersModule {}
