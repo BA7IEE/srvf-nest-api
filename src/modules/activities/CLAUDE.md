@@ -10,6 +10,7 @@
 - **活动岗位子资源**:`ActivityPosition` 归本模块；Admin CRUD 走 `AdminActivityPositionsController` + `ActivityPositionsService`，不新建 NestJS module
 - **状态机 4 态**:`draft → published → completed`，另有 `draft|published → cancelled`;`completed` 的**唯一推进通路**是管理端 `POST admin/v1/activities/:id/complete` 经本状态机执行。考勤提交只建 pending Sheet，禁止再直写 Activity 状态。
 - **App 视角**:`AppActivitiesService` 的可参加池仅含 published + 公开报名 + 未结束活动；detail 刻意仍以 published 可见；显式 invitation 仅本人 accepted 或 `expiresAt > now` 的 pending 可见，detail 纯加法仅返本人的 `myInvitations[]`。`GET :activityId/positions` 只认 published + 公开报名活动，返回 live 岗位余量 / `canRegister`。`AppMyActivitiesService` 暴露本人参与过的活动列表(按 `memberId` 锁定)
+- **后台批任务**:`ActivityBatchWorker` 只复用两个既有 worker 进程与 PostgreSQL `ActivityBatchJob` lease/fence；活动开始 reconciliation 不新增 cron、queue 或进程，参与状态的实际 writer 归 `activity-registrations/`
 - **不负责**:报名状态(`activity-registrations/`)、考勤(`attendances/`)、贡献值结算(`contribution-rules/` + `attendances/contribution-calculator.ts`)
 
 ## Local facts
@@ -52,6 +53,7 @@
 - **D85 可重放分配地基（第 4 批⑬）**：Batch 必存 `algorithmVersionCode` 与 64 位小写十六进制 `candidateSnapshotHash`；lottery preparing 只存 server seed commitment，committed 才存 64 位 reveal，非 lottery 两列恒空。Candidate 必存永久头/revision、`acceptedAt`、资格快照 hash 和对象解释；同批 tie-break、非空 lotteryOrder、非空 waitlistRank 各自唯一，score 仅 0..100，identity/header 与 header/revision 由 DB 复合 FK 同锚。当前模块仍无 batch/candidate 生产 writer；不得把 D85 说成已执行 first_come、rank、抽签、容量或候补递补。
 - **D86 command replay / committed projection 地基（第 4 批⑭）**：`ActivityAllocationCommandReceipt` 是唯一的 immutable `prepare/commit/void` 安全回执表，`(activityId,commandCode,operationKey)` 与 `(allocationBatchId,commandCode)` 唯一，receipt/batch 用复合 FK 同活动锚；同 key 的 exact hash replay 与异 hash 稳定拒绝由后续 command runtime 实现。`responseReceipt` 只准固定 v1 安全信封，非 allocation/void 真值，不含 L3/未揭示 seed；DB 仅验 shape 及 `responseHash` 和列值一致，**不重算 hash**。runtime 必须对 UTF-8 canonical payload（依序 `activityId`,`allocationBatchId`,`batchStatusCode`,`commandCode`,`responseSchemaVersion`，排除 `responseHash`）算 SHA-256，不能拿 JSONB 对象序列化或其键顺序猜口径。Batch 的 `voidReason`/`voidedAt` 是作废事实，原始 wire 长度受限且拒绝空白。每 candidate 一条 `ActivityAllocationApplicationProjection`：identity 用 `id+activity+session+member` 冻结，activity-person reservation 用 `id+member+activity+bucket` 锚，故同 member 的不同 session identity 可复用同一 activity-person 行；session/position reservation 继续用 `id+identity+bucket`。allocated 的 population/pointer/三层 reservation-bucket 及可选 position 成套，waitlisted/not_selected 全清空；projection 不可 UPDATE/DELETE。Batch committed、Candidate/Revision 内容、reservationType 与 Identity live pointer 属跨表 runtime 边界，未来必须在 Activity 根锁事务重读复核；当前仍零 writer、零 endpoint、零 20147/replay 行为。
 - **D87 Candidate 候补岗位锚（第 4 批⑮）**：Candidate 必填 `activityId/sessionId`，以 `(allocationBatchId,activityId,sessionId)` 复合 FK 锚定 Batch；可空 `waitlistPositionId` 与 activity/session 组成岗位复合 FK。result/rank/position 两值闭合，只有 waitlisted 同时要求 position+rank；候补 rank unique 与查询索引均按 `allocationBatchId+waitlistPositionId+waitlistRank`，同一 session-level batch 的不同岗位可各自 rank=1，同岗位重复 rank 拒绝。lotteryOrder/tieBreakKey 仍是全 batch 不变量。migration 仅接受 Candidate 空表，count-only fail-fast、零回填；当前仍零 writer/runtime/endpoint/20147/容量或候补 caller。
+- **活动开始 expiry（第 4 批⑱）**：`ActivityBatchWorker` 先保留既有 ledger claim，再补建 `reconciliation` job，ledger 优先领取；只有到点的 published Activity 仍有 canonical `pending|waitlisted` 或 pending invitation 才建 job。实际执行固定 `Activity FOR UPDATE → job fence → headers/identities/revisions → invitations`，以最早 live session start（无 live session 才回退 Activity.startAt）为准；同一外层事务追加 system revision、清 pointer/population、投影 header、写既有审计并过期 invitation。pass/active reservation 不动，任何 pointer/revision/reservation drift 为 20147，业务/audit 零写；不引入新的容量占用算法。
 
 ## Risk points (不要做)
 
@@ -85,3 +87,4 @@
 - 改 audit event / extra → 必须跑 `activities-audit-characterization.e2e-spec.ts`
 - 改状态机 → 必须跑 `activities-state-transition.e2e-spec.ts`
 - 改 DTO 字段 / endpoint path / Swagger schema → 必须再跑 `pnpm test:contract`
+- 改 `ActivityBatchWorker` reconciliation / 活动开始 expiry → `pnpm test:e2e -- activity-batch4-expiry.e2e-spec.ts` 与 `activity-batch2-8a-auto-commit.e2e-spec.ts`

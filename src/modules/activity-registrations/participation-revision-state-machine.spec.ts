@@ -2,7 +2,9 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import {
   assertRegistrationCommandHeaderStatus,
+  decideActivityStartExpiry,
   decideParticipationRevision,
+  deriveRegistrationStatusSummary,
 } from './participation-revision-state-machine';
 
 describe('participation revision state machine', () => {
@@ -61,4 +63,38 @@ describe('participation revision state machine', () => {
       }
     },
   );
+
+  it.each([
+    ['pending', { kind: 'append', statusCode: 'review_expired' }],
+    ['waitlisted', { kind: 'append', statusCode: 'waitlist_expired' }],
+    ['pass', { kind: 'noop' }],
+    ['review_expired', { kind: 'noop' }],
+    ['waitlist_expired', { kind: 'noop' }],
+  ])('decides activity-start expiry for %s', (statusCode, expected) => {
+    expect(decideActivityStartExpiry(statusCode)).toEqual(expected);
+  });
+
+  it('fails closed for an unknown activity-start identity status', () => {
+    expect(() => decideActivityStartExpiry('unexpected')).toThrow(BizException);
+    try {
+      decideActivityStartExpiry('unexpected');
+    } catch (error) {
+      expect(error).toEqual(new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED));
+    }
+  });
+
+  it.each([
+    [['pass', 'review_expired'], { statusCode: 'pass', statusSummaryCode: 'active' }],
+    [['pending', 'waitlist_expired'], { statusCode: 'pending', statusSummaryCode: 'active' }],
+    [['waitlisted', 'review_expired'], { statusCode: 'waitlisted', statusSummaryCode: 'active' }],
+    [['settled', 'waitlist_expired'], { statusCode: 'pass', statusSummaryCode: 'completed' }],
+    [['cancelled', 'review_expired'], { statusCode: 'cancelled', statusSummaryCode: 'cancelled' }],
+    [['rejected', 'review_expired'], { statusCode: 'reject', statusSummaryCode: 'not_selected' }],
+    [
+      ['review_expired', 'waitlist_expired'],
+      { statusCode: 'reject', statusSummaryCode: 'expired' },
+    ],
+  ])('projects registration statuses %j', (statuses, expected) => {
+    expect(deriveRegistrationStatusSummary(statuses)).toEqual(expected);
+  });
 });

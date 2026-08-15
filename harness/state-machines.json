@@ -253,16 +253,18 @@
         "sourceRef": "prisma/migrations/20260804020000_activity_v11_slice1_sessions_participation_capacity"
       },
       "transitions": [
-        "{pending,waitlisted,rejected,cancelled,not_selected,invitation_pending,invitation_declined,invitation_expired,review_expired,waitlist_expired} -> pass (onsite 转换,仅此一条边有机器判定)"
+        "{pending,waitlisted,rejected,cancelled,not_selected,invitation_pending,invitation_declined,invitation_expired,review_expired,waitlist_expired} -> pass (onsite 转换)",
+        "pending -> review_expired (activity-start expiry)",
+        "waitlisted -> waitlist_expired (activity-start expiry)"
       ],
-      "wrongStateBizCode": "ACTIVITY_REGISTRATION_STATUS_INVALID (经 participation-revision 机)",
-      "implementation": "src/modules/activity-registrations/onsite-participation-state-machine.ts(只覆盖 onsite→pass 一条边);其余边散落于 activity-allocation.service.ts / 各 command service",
+      "wrongStateBizCode": "ACTIVITY_REGISTRATION_STATUS_INVALID (onsite); ACTIVITY_CAPACITY_RECONCILIATION_FAILED (activity-start expiry fail-closed)",
+      "implementation": "src/modules/activity-registrations/onsite-participation-state-machine.ts(onsite→pass);src/modules/activity-registrations/participation-revision-state-machine.ts(decideActivityStartExpiry);其余边散落于 activity-allocation.service.ts / 各 command service",
       "governedBlockers": [
         "edges-partially-derived",
         "impl-scattered",
         "vocabulary-divergence"
       ],
-      "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。 14 值闭集有 DB CHECK;但仅 onsite→pass 一条边有具名判定,其余迁移由各 command service 裸判。"
+      "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。14 值闭集有 DB CHECK;onsite→pass 与 activity-start expiry 两条边有具名判定,其余迁移由各 command service 裸判。"
     },
     {
       "model": "ActivityParticipationRevision",
@@ -291,10 +293,12 @@
       },
       "transitions": [
         "{pending,waitlisted} -> pending|cancelled (append)",
-        "{cancelled,rejected} -> pending (append,selected) | noop"
+        "{cancelled,rejected} -> pending (append,selected) | noop",
+        "pending -> review_expired (append,activity-start expiry)",
+        "waitlisted -> waitlist_expired (append,activity-start expiry)"
       ],
-      "wrongStateBizCode": "ACTIVITY_REGISTRATION_STATUS_INVALID",
-      "implementation": "src/modules/activity-registrations/participation-revision-state-machine.ts(自由函数 + 直接 throw,不返回 decision)",
+      "wrongStateBizCode": "ACTIVITY_REGISTRATION_STATUS_INVALID (existing revision commands); ACTIVITY_CAPACITY_RECONCILIATION_FAILED (activity-start expiry fail-closed)",
+      "implementation": "src/modules/activity-registrations/participation-revision-state-machine.ts(自由函数：command 校验直接 throw；reopen/cancel 与 activity-start expiry 返回 append/noop decision)",
       "governedBlockers": [
         "throws-instead-of-decide",
         "edges-partially-derived"

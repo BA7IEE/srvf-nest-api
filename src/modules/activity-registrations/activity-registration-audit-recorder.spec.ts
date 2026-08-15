@@ -97,4 +97,40 @@ describe('ActivityRegistrationAuditRecorder canonical command audit', () => {
       /reason|insurance|answer|attachment|reservation|capacityReservationId|token|url/i,
     );
   });
+
+  it('records activity-start expiry as a system action without Form, capacity or member payloads', async () => {
+    const auditLogs = {
+      log: jest.fn<Promise<void>, [Record<string, unknown>]>().mockResolvedValue(undefined),
+    };
+    const recorder = new ActivityRegistrationAuditRecorder(auditLogs as never);
+
+    await recorder.logActivityStartExpiry({
+      registrationId: 'registration-1',
+      activityId: 'activity-1',
+      participationIdentityId: 'identity-1',
+      priorStatusCode: 'waitlisted',
+      nextStatusCode: 'waitlist_expired',
+      auditMeta: { requestId: 'activity-batch-worker:job-1', ip: null, ua: null },
+      tx: {} as never,
+    });
+
+    const payload = auditLogs.log.mock.calls[0]?.[0];
+    expect(payload).toMatchObject({
+      event: 'registration.review',
+      actorUserId: null,
+      actorRoleSnap: null,
+      resourceType: 'activity_registration',
+      resourceId: 'registration-1',
+      extra: {
+        operation: 'activity_start_expiry',
+        activityId: 'activity-1',
+        participationIdentityId: 'identity-1',
+        priorStatusCode: 'waitlisted',
+        nextStatusCode: 'waitlist_expired',
+      },
+    });
+    expect(JSON.stringify(payload)).not.toMatch(
+      /answer|form|capacity|reservation|memberId|token|url/i,
+    );
+  });
 });

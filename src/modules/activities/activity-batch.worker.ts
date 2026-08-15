@@ -3,12 +3,19 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   type OnApplicationShutdown,
   type OnModuleDestroy,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
+import {
+  ACTIVITY_RECONCILIATION_JOB_TYPE,
+  ActivityReconciliationLeaseLostError,
+  RegistrationReconciliationService,
+  type ActivityReconciliationLeaseFence,
+} from '../activity-registrations/registration-reconciliation.service';
 import {
   LEDGER_PREPARE_JOB_TYPE,
   LedgerPrepareLeaseLostError,
@@ -45,11 +52,10 @@ export const ACTIVITY_BATCH_AUTO_COMMIT_ENABLED = Symbol('ACTIVITY_BATCH_AUTO_CO
 // `SettlementReviewAction(final/approve)` 取 actor,再调用第五刀唯一的 `commitBatch`。
 // commit 失败只把同一 prepare job 退回 pending,批次保持 ready,不重算 baseline。
 //
-// ## 本 worker 只认 `settlement_prepare` 一种任务
+// ## 本 worker 现认 `settlement_prepare` 与 `reconciliation` 两种任务
 //
-// §3.27 的 `jobTypeCode` 是七值闭集,其余六种(bulk_proxy / import_* / export /
-// notification_expand / reconciliation)分属后续批次。本刀**不为它们预留分发骨架** ——
-// 空壳分支既不会被测到,又会让人以为已经支持。
+// `reconciliation` 只用于活动开始后的 canonical pending/waitlisted/invitation expiry。
+// 其余五种(bulk_proxy / import_* / export / notification_expand)仍无空壳分支。
 
 /** 一次取活的租约时长。取活后每个 item 的事务都会重新校验围栏。 */
 export const ACTIVITY_BATCH_LEASE_MS = 5 * 60_000;
@@ -64,7 +70,7 @@ export const ACTIVITY_BATCH_RETRY_BACKOFF_MS = 30_000;
 const ENQUEUE_SCAN_LIMIT = 20;
 
 export interface ActivityBatchDrainResult {
-  /** 本轮新建的准备任务数。 */
+  /** 本轮新建的后台任务数。 */
   jobsEnqueued: number;
   /** 本轮是否领到了任务(false = 队列空,调用方可以停)。 */
   jobClaimed: boolean;
@@ -94,6 +100,9 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
     private readonly committer: LedgerReadyBatchCommitter,
     @Inject(ACTIVITY_BATCH_AUTO_COMMIT_ENABLED)
     private readonly autoCommitEnabled: boolean,
+    // HTTP application context 保留 worker probe，但不 import registration 的 worker-only
+    // reconciliation handler；真实两个 worker context 由 ActivityBatchWorkerModule 提供它。
+    @Optional() private readonly reconciliation?: RegistrationReconciliationService,
   ) {}
 
   onApplicationShutdown(): Promise<void> {
@@ -128,9 +137,17 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
    */
   async drainOnce(options: { now?: Date } = {}): Promise<ActivityBatchDrainResult> {
     const now = options.now ?? new Date();
-    const jobsEnqueued = await this.enqueuePreparingBatches(now);
-
+    // Preserve the existing settlement worker's two-round protocol: a just-created ledger job
+    // may have an `availableAt` a few milliseconds after this round's `now`, so it is claimed on
+    // the next immediate round.  Create reconciliation jobs only after this round's claim, rather
+    // than letting a newly created expiry job steal that deterministic first turn.
+    const ledgerJobsEnqueued = await this.enqueuePreparingBatches(now);
     const claimed = await this.claimJob(now);
+    const reconciliationJobsEnqueued =
+      this.reconciliation === undefined
+        ? 0
+        : await this.reconciliation.enqueueDueActivityStartExpiryJobs(now);
+    const jobsEnqueued = ledgerJobsEnqueued + reconciliationJobsEnqueued;
     if (claimed === null) {
       return {
         jobsEnqueued,
@@ -149,6 +166,9 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
       leaseOwner: claimed.leaseOwner,
       leaseGeneration: claimed.leaseGeneration,
     };
+    if (claimed.jobTypeCode === ACTIVITY_RECONCILIATION_JOB_TYPE) {
+      return await this.processReconciliationJob(claimed, fence, now, jobsEnqueued);
+    }
     const items = await this.prisma.activityBatchJobItem.findMany({
       where: { jobId: claimed.id, statusCode: { not: 'succeeded' } },
       select: { id: true },
@@ -329,9 +349,13 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
    *   - 跑了一半但**租约已过期**(`processing` + `leaseExpiresAt <= now`)—— 持有者已经死了。
    * `attempts` 用尽的任务不再取(由 `sweepDead` 收成 `dead`)。
    */
-  private async claimJob(
-    now: Date,
-  ): Promise<{ id: string; leaseOwner: string; leaseGeneration: number } | null> {
+  private async claimJob(now: Date): Promise<{
+    id: string;
+    activityId: string;
+    jobTypeCode: string;
+    leaseOwner: string;
+    leaseGeneration: number;
+  } | null> {
     const leaseOwner = `activity-batch-worker:${randomUUID()}`;
     const leaseExpiresAt = new Date(now.getTime() + ACTIVITY_BATCH_LEASE_MS);
 
@@ -341,7 +365,7 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
       const candidates = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         SELECT id
         FROM "ActivityBatchJob"
-        WHERE "jobTypeCode" = ${LEDGER_PREPARE_JOB_TYPE}
+        WHERE "jobTypeCode" IN (${LEDGER_PREPARE_JOB_TYPE}, ${ACTIVITY_RECONCILIATION_JOB_TYPE})
           AND "attempts" < ${ACTIVITY_BATCH_MAX_ATTEMPTS}
           AND (
             ("statusCode" = 'pending' AND "availableAt" <= ${now})
@@ -349,7 +373,13 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
                 AND "leaseExpiresAt" IS NOT NULL
                 AND "leaseExpiresAt" <= ${now})
           )
-        ORDER BY "availableAt" ASC, "createdAt" ASC
+        -- Settlement keeps its established priority when both durable job families are due.  A
+        -- reconciliation job created in the preceding round must not change ledger's observable
+        -- prepare/commit turn order.
+        ORDER BY
+          CASE WHEN "jobTypeCode" = ${LEDGER_PREPARE_JOB_TYPE} THEN 0 ELSE 1 END ASC,
+          "availableAt" ASC,
+          "createdAt" ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1
       `);
@@ -367,9 +397,15 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
           startedAt: now,
           lastErrorCode: null,
         },
-        select: { id: true, leaseGeneration: true },
+        select: { id: true, activityId: true, jobTypeCode: true, leaseGeneration: true },
       });
-      return { id: updated.id, leaseOwner, leaseGeneration: updated.leaseGeneration };
+      return {
+        id: updated.id,
+        activityId: updated.activityId,
+        jobTypeCode: updated.jobTypeCode,
+        leaseOwner,
+        leaseGeneration: updated.leaseGeneration,
+      };
     });
   }
 
@@ -380,21 +416,109 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
    * `processing` + 过期租约上,既不被取走也不被判死,运维看不出它已经放弃了。
    */
   private async sweepDead(tx: Prisma.TransactionClient, now: Date): Promise<void> {
-    await tx.activityBatchJob.updateMany({
-      where: {
-        jobTypeCode: LEDGER_PREPARE_JOB_TYPE,
-        statusCode: 'processing',
-        attempts: { gte: ACTIVITY_BATCH_MAX_ATTEMPTS },
-        leaseExpiresAt: { not: null, lte: now },
-      },
-      data: {
-        statusCode: 'dead',
-        completedAt: now,
-        leaseOwner: null,
-        leaseExpiresAt: null,
-        lastErrorCode: 'LEDGER_PREPARE_MAX_ATTEMPTS_EXHAUSTED',
-      },
-    });
+    for (const [jobTypeCode, lastErrorCode] of [
+      [LEDGER_PREPARE_JOB_TYPE, 'LEDGER_PREPARE_MAX_ATTEMPTS_EXHAUSTED'],
+      [ACTIVITY_RECONCILIATION_JOB_TYPE, 'ACTIVITY_RECONCILIATION_MAX_ATTEMPTS_EXHAUSTED'],
+    ] as const) {
+      await tx.activityBatchJob.updateMany({
+        where: {
+          jobTypeCode,
+          statusCode: 'processing',
+          attempts: { gte: ACTIVITY_BATCH_MAX_ATTEMPTS },
+          leaseExpiresAt: { not: null, lte: now },
+        },
+        data: {
+          statusCode: 'dead',
+          completedAt: now,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          lastErrorCode,
+        },
+      });
+    }
+  }
+
+  private async processReconciliationJob(
+    claimed: {
+      id: string;
+      activityId: string;
+      leaseOwner: string;
+      leaseGeneration: number;
+    },
+    fence: ActivityReconciliationLeaseFence,
+    now: Date,
+    jobsEnqueued: number,
+  ): Promise<ActivityBatchDrainResult> {
+    if (this.reconciliation === undefined) {
+      await this.releaseReconciliationForRetry(
+        claimed.id,
+        fence,
+        now,
+        new Error('ActivityReconciliationHandlerUnavailable'),
+      );
+      return {
+        jobsEnqueued,
+        jobClaimed: true,
+        jobId: claimed.id,
+        itemsProcessed: 0,
+        itemsSkipped: 0,
+        itemsFailed: 1,
+        batchStatus: null,
+        commitAttempted: false,
+        commitErrorCode: 'ActivityReconciliationHandlerUnavailable',
+      };
+    }
+    try {
+      const result = await this.reconciliation.expireAtActivityStart({
+        jobId: claimed.id,
+        activityId: claimed.activityId,
+        fence,
+      });
+      return {
+        jobsEnqueued,
+        jobClaimed: true,
+        jobId: claimed.id,
+        itemsProcessed:
+          result.kind === 'succeeded'
+            ? result.expiredIdentityCount + result.expiredInvitationCount
+            : 0,
+        itemsSkipped: result.kind === 'succeeded' ? 0 : 1,
+        itemsFailed: 0,
+        batchStatus: null,
+        commitAttempted: false,
+        commitErrorCode: null,
+      };
+    } catch (error) {
+      if (error instanceof ActivityReconciliationLeaseLostError) {
+        this.logger.warn(`activity reconciliation job ${claimed.id} lease lost, aborting round`);
+        return {
+          jobsEnqueued,
+          jobClaimed: true,
+          jobId: claimed.id,
+          itemsProcessed: 0,
+          itemsSkipped: 0,
+          itemsFailed: 0,
+          batchStatus: null,
+          commitAttempted: false,
+          commitErrorCode: null,
+        };
+      }
+      await this.releaseReconciliationForRetry(claimed.id, fence, now, error);
+      this.logger.warn(
+        `activity reconciliation deferred job=${claimed.id} error=${errorName(error)}`,
+      );
+      return {
+        jobsEnqueued,
+        jobClaimed: true,
+        jobId: claimed.id,
+        itemsProcessed: 0,
+        itemsSkipped: 0,
+        itemsFailed: 1,
+        batchStatus: null,
+        commitAttempted: false,
+        commitErrorCode: errorName(error),
+      };
+    }
   }
 
   /**
@@ -413,6 +537,32 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
         availableAt: new Date(now.getTime() + ACTIVITY_BATCH_RETRY_BACKOFF_MS),
         completedAt: null,
         ...(error === undefined ? {} : { lastErrorCode: errorName(error) }),
+      },
+    });
+  }
+
+  /** Reconciliation must never release a newer holder's lease after its own transaction failed. */
+  private async releaseReconciliationForRetry(
+    jobId: string,
+    fence: ActivityReconciliationLeaseFence,
+    now: Date,
+    error: unknown,
+  ): Promise<void> {
+    await this.prisma.activityBatchJob.updateMany({
+      where: {
+        id: jobId,
+        jobTypeCode: ACTIVITY_RECONCILIATION_JOB_TYPE,
+        statusCode: 'processing',
+        leaseOwner: fence.leaseOwner,
+        leaseGeneration: fence.leaseGeneration,
+      },
+      data: {
+        statusCode: 'pending',
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        availableAt: new Date(now.getTime() + ACTIVITY_BATCH_RETRY_BACKOFF_MS),
+        completedAt: null,
+        lastErrorCode: errorName(error),
       },
     });
   }

@@ -22,8 +22,8 @@ export class ActivityInvitationAuditRecorder {
   async logInvitationChange(args: {
     invitation: InvitationAuditRow;
     before?: InvitationAuditRow;
-    actorUserId: string;
-    actorRoleSnap: Role;
+    actorUserId: string | null;
+    actorRoleSnap: Role | null;
     operation: InvitationOperation;
     auditMeta: AuditMeta;
     tx: PrismaTx;

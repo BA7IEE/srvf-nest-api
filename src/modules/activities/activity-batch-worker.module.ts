@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { ActivityInvitationAuditRecorder } from '../activity-registrations/activity-invitation-audit-recorder';
+import { ActivityRegistrationAuditRecorder } from '../activity-registrations/activity-registration-audit-recorder';
+import { RegistrationReconciliationService } from '../activity-registrations/registration-reconciliation.service';
 import { NotificationOutboxService } from '../notifications/notification-outbox.service';
 import { ACTIVITY_BATCH_AUTO_COMMIT_ENABLED, ActivityBatchWorker } from './activity-batch.worker';
 import { LedgerPostingAuditRecorder } from './ledger-posting-audit-recorder';
@@ -21,6 +24,11 @@ import { SettlementNotificationProducer } from './settlement-notification-produc
     LedgerPostingService,
     LedgerPreparationService,
     LedgerReadyBatchCommitter,
+    // Reconciliation is worker-only.  Importing ActivityRegistrationsModule would also construct
+    // its HTTP/notification graph in the two independent worker application contexts.
+    ActivityRegistrationAuditRecorder,
+    ActivityInvitationAuditRecorder,
+    RegistrationReconciliationService,
     { provide: ACTIVITY_BATCH_AUTO_COMMIT_ENABLED, useValue: true },
     ActivityBatchWorker,
   ],
