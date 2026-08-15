@@ -2316,9 +2316,16 @@ function runDebtCheck(): void {
  */
 function runMigrateIds(write: boolean): void {
   const map = domainMap();
-  const { findings } = scan(map);
+  // 身份对账必须覆盖**全部**已登记债务,含 R15 的 src/common findings。
+  // `--violations` 把 commonFindings 单独成块,是为了不污染 edgeUsage / readTiers
+  // 的读数(common 不是 domains 里的域);而这里问的是另一个问题 ——
+  // 「每条登记在案的 call site 是否还活着」—— 那就该看所有 findings。
+  // 少了这一并,登记 R15 的 6 条债会全部落进 unmatched 并把本闸打红(实测退出码 1),
+  // 结果是「想登记就登记不了」,债务台账反而被判据的报告结构挡在门外。
+  const { findings, commonFindings } = scan(map);
+  const allFindings = [...findings, ...commonFindings];
   const byLegacy = new Map<string, Set<string>>();
-  for (const item of findings) {
+  for (const item of allFindings) {
     const set = byLegacy.get(item.legacyCallSiteId) ?? new Set<string>();
     set.add(item.callSiteId);
     byLegacy.set(item.legacyCallSiteId, set);
@@ -2326,7 +2333,7 @@ function runMigrateIds(write: boolean): void {
   const registry = JSON.parse(read(ARCHITECTURE_DEBT)) as {
     entries: (JsonRecord & { id: string; callSiteId?: string; supersedes?: string })[];
   };
-  const live = new Set(findings.map((item) => item.callSiteId));
+  const live = new Set(allFindings.map((item) => item.callSiteId));
   const migrated: string[] = [];
   const alreadyCurrent: string[] = [];
   const unmatched: string[] = [];
@@ -2361,7 +2368,7 @@ function runMigrateIds(write: boolean): void {
     }
   }
   const collisions = new Map<string, number>();
-  for (const item of findings)
+  for (const item of allFindings)
     collisions.set(item.callSiteId, (collisions.get(item.callSiteId) ?? 0) + 1);
   const collided = [...collisions.values()].filter((count) => count > 1).length;
   process.stdout.write(
