@@ -250,10 +250,50 @@ describe('ActivityRegistrationPresenter (characterization)', () => {
       );
     });
 
-    it('列顺序逐字锁定,Date 走 ISO,null 出空串', () => {
+    it('null 出空串,不出字面 null / undefined', () => {
       expect(presenter.formatCsvRow(csvRow())).toBe(
         'reg-1,mem-1,M001,张三,pass,2099-01-01T00:00:00.000Z,,,,',
       );
+    });
+
+    // ⚠️ 上面那条**认不出列顺序**:默认 fixture 里 reviewed_at / review_note /
+    // cancelled_at / cancel_reason 四列全是 null,互换任意两列输出逐字不变。
+    // 实测把 reviewedAt 与 reviewNote 对调,全仓单测**零红** —— 断言看着在锁顺序,
+    // 量的其实是别的东西。故本条给**每一列一个互不相同的值**,顺序才真正被绑住。
+    it('列顺序逐字锁定(每列取值互不相同,换任意两列即红)', () => {
+      const line = presenter.formatCsvRow(
+        csvRow({
+          id: 'c-id',
+          memberId: 'c-member',
+          member: { memberNo: 'c-no', displayName: 'c-name' },
+          statusCode: 'c-status',
+          registeredAt: D('2099-03-03T03:03:03.000Z'),
+          reviewedAt: D('2099-04-04T04:04:04.000Z'),
+          reviewNote: 'c-review-note',
+          cancelledAt: D('2099-05-05T05:05:05.000Z'),
+          cancelReason: 'c-cancel-reason',
+        }),
+      );
+      expect(line).toBe(
+        'c-id,c-member,c-no,c-name,c-status,' +
+          '2099-03-03T03:03:03.000Z,2099-04-04T04:04:04.000Z,c-review-note,' +
+          '2099-05-05T05:05:05.000Z,c-cancel-reason',
+      );
+      // 与表头逐列配对,任一列错位都能被定位到具体列名。
+      const headers = presenter.csvHeaderChunks()[1].split(',');
+      const cells = line.split(',');
+      expect(Object.fromEntries(headers.map((h, i) => [h, cells[i]]))).toEqual({
+        registration_id: 'c-id',
+        member_id: 'c-member',
+        member_no: 'c-no',
+        display_name: 'c-name',
+        status_code: 'c-status',
+        registered_at: '2099-03-03T03:03:03.000Z',
+        reviewed_at: '2099-04-04T04:04:04.000Z',
+        review_note: 'c-review-note',
+        cancelled_at: '2099-05-05T05:05:05.000Z',
+        cancel_reason: 'c-cancel-reason',
+      });
     });
 
     it('member 缺失时 member_no / display_name 出空串,不出 undefined', () => {
