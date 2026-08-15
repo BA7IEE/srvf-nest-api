@@ -1184,6 +1184,135 @@ describe('AttendancesService (characterization, scoped)', () => {
       );
     });
 
+    // Phase 6-B 第二刀接线锁:时间窗容差原本由 `assertRecordWithinActivityWindow` 直接读
+    // `this.config`,抽成纯函数后改由 service **当入参传给 policy** —— 这引入了一个原本不存在的
+    // 失效形态:「传错值」。本用例把容差的实际取值钉在 service→policy 的接线上:
+    // 活动窗 07:00-18:00,记录 18:00-19:00 落在 +2h 容差带内 ⇒ 必须放行;
+    // 若接线退化成传 0(或漏传),这条立刻红成 22078。
+    it('submit:记录落在活动窗外但在容差带内 → 放行(钉住 service 传给 policy 的容差取值)', async () => {
+      const prisma = makePrismaMock();
+      prisma.activity.findFirst.mockResolvedValue({
+        id: 'act-1',
+        statusCode: 'published',
+        activityTypeCode: 'training',
+        startAt: new Date('2026-01-01T07:00:00.000Z'),
+        endAt: new Date('2026-01-01T18:00:00.000Z'),
+      });
+      prisma.dictItem.findMany.mockResolvedValue([
+        { code: 'volunteer', type: { code: 'attendance_role' } },
+        { code: 'present', type: { code: 'attendance_status' } },
+      ]);
+      prisma.member.findMany.mockResolvedValue([{ id: 'mem-1' }]);
+      prisma.activityRegistration.findMany.mockResolvedValue([]);
+      prisma.attendanceSheet.create.mockResolvedValue(makeSheetRow());
+      prisma.attendanceRecord.findMany.mockResolvedValue([makeRecordRow()]);
+      const service = makeService(prisma);
+
+      const result = await service.submit(
+        'act-1',
+        makeSubmitDto([
+          {
+            memberId: 'mem-1',
+            roleCode: 'volunteer',
+            checkInAt: '2026-01-01T18:00:00.000Z',
+            checkOutAt: '2026-01-01T19:00:00.000Z',
+            attendanceStatusCode: 'present',
+          },
+        ]),
+        makeCurrentUser(),
+        META,
+      );
+
+      expect(result.id).toBe('sheet-1');
+    });
+
+    // 同上,但走**带 registrationId** 的路径 —— 容差在 service 里有**两个**传入点:
+    // ① 批量校验 `validateAndNormalizeRecordsBatch`;② claim 锁后复判 `claimAndRecheckRegistrations`。
+    // 上一条只钉住 ①;本条让记录带上 pass 报名,从而必须同时穿过 ②,把第二个传入点也钉住。
+    it('submit(带报名):容差带内记录也要穿过 claim 锁后复判 → 放行(钉住第二个容差传入点)', async () => {
+      const prisma = makePrismaMock();
+      prisma.activity.findFirst.mockResolvedValue({
+        id: 'act-1',
+        statusCode: 'published',
+        activityTypeCode: 'training',
+        startAt: new Date('2026-01-01T07:00:00.000Z'),
+        endAt: new Date('2026-01-01T18:00:00.000Z'),
+      });
+      prisma.dictItem.findMany.mockResolvedValue([
+        { code: 'volunteer', type: { code: 'attendance_role' } },
+        { code: 'present', type: { code: 'attendance_status' } },
+      ]);
+      prisma.member.findMany.mockResolvedValue([{ id: 'mem-1' }]);
+      // 批量预取与 claim 锁后复读复用同一个 mock,两次都返回这行 pass 报名。
+      prisma.activityRegistration.findMany.mockResolvedValue([
+        {
+          id: 'reg-1',
+          activityId: 'act-1',
+          memberId: 'mem-1',
+          statusCode: 'pass',
+          activityPosition: null,
+        },
+      ]);
+      prisma.attendanceSheet.create.mockResolvedValue(makeSheetRow());
+      prisma.attendanceRecord.findMany.mockResolvedValue([makeRecordRow()]);
+      const service = makeService(prisma);
+
+      const result = await service.submit(
+        'act-1',
+        makeSubmitDto([
+          {
+            memberId: 'mem-1',
+            roleCode: 'volunteer',
+            checkInAt: '2026-01-01T18:00:00.000Z',
+            checkOutAt: '2026-01-01T19:00:00.000Z',
+            attendanceStatusCode: 'present',
+            registrationId: 'reg-1',
+          },
+        ]),
+        makeCurrentUser(),
+        META,
+      );
+
+      expect(result.id).toBe('sheet-1');
+      // 锁后确实复读了一次(批量预取 1 次 + 复读 1 次)
+      expect(prisma.activityRegistration.findMany).toHaveBeenCalledTimes(2);
+    });
+
+    it('submit:记录超出容差带 → ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW(容差不是无限大)', async () => {
+      const prisma = makePrismaMock();
+      prisma.activity.findFirst.mockResolvedValue({
+        id: 'act-1',
+        statusCode: 'published',
+        activityTypeCode: 'training',
+        startAt: new Date('2026-01-01T07:00:00.000Z'),
+        endAt: new Date('2026-01-01T18:00:00.000Z'),
+      });
+      prisma.dictItem.findMany.mockResolvedValue([
+        { code: 'volunteer', type: { code: 'attendance_role' } },
+        { code: 'present', type: { code: 'attendance_status' } },
+      ]);
+      prisma.member.findMany.mockResolvedValue([{ id: 'mem-1' }]);
+      prisma.activityRegistration.findMany.mockResolvedValue([]);
+      const service = makeService(prisma);
+
+      await expect(
+        service.submit(
+          'act-1',
+          makeSubmitDto([
+            {
+              memberId: 'mem-1',
+              roleCode: 'volunteer',
+              checkInAt: '2026-01-01T19:00:00.000Z',
+              checkOutAt: '2026-01-01T20:00:00.001Z',
+              attendanceStatusCode: 'present',
+            },
+          ]),
+          makeCurrentUser(),
+          META,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW));
+    });
+
     it('submit:activity 不存在 → ACTIVITY_NOT_FOUND(浅层 guard,不进 record 循环)', async () => {
       const prisma = makePrismaMock();
       prisma.activity.findFirst.mockResolvedValue(null);

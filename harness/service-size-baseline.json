@@ -88,7 +88,7 @@
     },
     {
       "file": "src/modules/attendances/attendances.service.ts",
-      "loc": 1571,
+      "loc": 1481,
       "domain": "attendances"
     },
     {

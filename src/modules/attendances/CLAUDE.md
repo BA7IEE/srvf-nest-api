@@ -4,7 +4,7 @@
 
 ## 本地事实
 
-- `attendances.service.ts` 仍是 **god-service(Phase 6-B 第一刀后 2037 物理行 / 1571 NCLOC)**;`attendance-sheet-state-machine.ts` / `attendance-audit-recorder.ts` / `time-overlap-policy.ts` / `contribution-calculator.ts` / `attendance-presenter.ts`(P1-4 第一刀,2026-06-10)/ `attendance-sheet-query.service.ts`(Phase 6-B 第一刀,2026-08-15)已抽离。
+- `attendances.service.ts` 仍是 **god-service(Phase 6-B 两刀后 1481 NCLOC)**;`attendance-sheet-state-machine.ts` / `attendance-audit-recorder.ts` / `time-overlap-policy.ts` / `contribution-calculator.ts` / `attendance-presenter.ts`(P1-4 第一刀,2026-06-10)/ `attendance-sheet-query.service.ts` + `attendance-record.policy.ts`(Phase 6-B 第一/二刀,2026-08-15)已抽离。
 - 响应序列化必须走 `attendance-presenter.ts`(Sheet 详情 / 列表项 / Record 含 member 摘要 / Decimal→string),**不**在 service 内重新手写字段映射;**读侧** select 与 where 构造已随 Phase 6-B 第一刀迁入 `attendance-sheet-query.service.ts`(见下方「已抽出的职责边界」),**写侧** `sheetSafeSelect` / `sheetFullSelect` 仍留 service。
 - `attendance_sheets` **6 态**(含 `returned` 退回整改与终审);`attendance_records` 子表。
 - 状态变更必须经过 `attendance-sheet-state-machine.ts`,**不**在 service 内裸写态迁移。
@@ -50,6 +50,20 @@
   aggregate root」);② `findOne` / `reviewDetail` 那种**回调式** `$transaction` 内的读(同 §4);
   ③ `expand` 投影与 `activityTitle` 拼装、`MEMBER_NOT_FOUND` 抛出(响应组装与 BizCode 映射是
   业务判定,不是查询构造)。
+- **`attendance-record.policy.ts`(第二刀,§3.3 Policy)**:record 的域校验与 normalize ——
+  `normalizeRecord` / `spanHours` / `assertRecordWithinActivityWindow` / `resolveScheduleWindow` /
+  `assertRegistrationConsistent` / `validateAndNormalizeRecord` / `assertRecordAgainstLockedRegistration`,
+  以及 `DICT_TYPE_ATTENDANCE_*` 两个常量(service 侧预取 where 与本文件 key 比对共用同一份)。
+  文件名用**点号**,命中 `eslint.harness.mjs:596` 规则 (j) 的 files glob ⇒ **结构上不可能 import
+  `prisma.service`**(既有 `time-overlap-policy.ts` 用横线,不在该规则内)。比规则更严的是:
+  连**传入的 client** 也不收 —— **3 次 IN 预取与 claim 锁后复读留在 service**,查询**结果**当入参传进去。
+  ⚠️ **`validateAndNormalizeRecord` 的判定顺序即错误码契约**(角色码 → 状态码 → 队员存在 →
+  保险缺报名 → 报名归属活动 → 报名归属队员/pass → normalize → 时间窗 → 未来签退),
+  由 `attendance-record.policy.spec.ts` 用「同时踩两个雷、断言先报的那个」逐对钉住;**重排 = 改契约**。
+  submit/edit 的普通批校验与 claim 锁后复判现在**共用同一份** `assertRegistrationConsistent`
+  (原本是逐字重复的两段,漂移一处就是安全缺口)。
+- **第二刀刻意没搬**:`assertLockedReviewSeparation` / `assertManagedSheetActivity` —— 两者虽是纯判定,
+  但属**审核分离 / managed 面归属**,与 record 字段校验不是同一职责,并进去就成了 §7 明禁的 grab-bag。
 
 ## 不要做(踩雷区)
 
@@ -57,6 +71,9 @@
   但每一刀都要单独立项,沿 [`/docs/current-state.md §3`](../../../docs/current-state.md))。
 - ❌ **不**把判权腿下放进 `attendance-sheet-query.service.ts`,也**不**把它加进 module 的 `exports` ——
   两者任一都会造出一条绕过 `AttendancesService` 判权的读路径。
+- ❌ **不**重排 `validateAndNormalizeRecord` 的判定顺序(那是错误码契约,不是实现细节);
+  **不**把 `attendance-record.policy.ts` 改成横线命名或让它 import `prisma.service`
+  (两者任一都会把它移出 eslint 规则 (j) 的管辖,纯函数保证随之作废)。
 - **Controller 现状**:`attendances.controller.ts` 仅 2 个 Admin class(`AttendanceSheetsCollectionController` + `AttendanceSheetsResourceController`,前缀 `admin/v1/*`);队员自助考勤记录(原 `/v2/users/me/attendance-records`)现位于 [`controllers/app-my-attendance-records.controller.ts`](controllers/app-my-attendance-records.controller.ts)(`@Controller('app/v1/my')`,`GET /attendance-records`)。历史 legacy controller(`attendances-me-records-legacy.controller.ts`)已于 Route B Phase 4d2 删除。
 - ❌ **不**借此继续移动 Admin controller(`AttendanceSheetsCollectionController` / `AttendanceSheetsResourceController` 留在 `attendances.controller.ts`),除非另有设计决议。
 - ❌ **不**改 App endpoint `GET /api/app/v1/my/attendance-records` 的 path / method / tag / roles / DTO / service call(contract-locked;改任一项升档并须显式更新 snapshot)。

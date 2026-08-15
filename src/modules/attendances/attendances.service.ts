@@ -27,6 +27,14 @@ import { RbacService } from '../permissions/rbac.service';
 import { computeCappedContribution } from '../team-join/team-join-progress';
 import { AttendanceAuditRecorder } from './attendance-audit-recorder';
 import { AttendanceNotificationProducer } from './attendance-notification-producer';
+import {
+  assertRecordAgainstLockedRegistration,
+  canonicalizeRecordInputs,
+  DICT_TYPE_ATTENDANCE_ROLE,
+  DICT_TYPE_ATTENDANCE_STATUS,
+  type NormalizedAttendanceRecord,
+  validateAndNormalizeRecord,
+} from './attendance-record.policy';
 import { AttendancePresenter } from './attendance-presenter';
 import {
   AttendanceSheetQueryService,
@@ -132,9 +140,6 @@ const ATTENDANCE_EXPAND_WHITELIST = ['activity'] as const;
 
 // Sheet 状态机闭集别名(单一来源:ATTENDANCE_SHEET_STATUS,定义在 attendances.dto.ts)。
 const SHEET_STATUS_PENDING = ATTENDANCE_SHEET_STATUS.PENDING;
-
-const DICT_TYPE_ATTENDANCE_ROLE = 'attendance_role';
-const DICT_TYPE_ATTENDANCE_STATUS = 'attendance_status';
 
 // Sheet 简化 select(不含 records 数组 + 不含 previousSnapshot)。
 // 批次 4-B 新增 finalReviewer* 3 字段(D-S5;UserResponseDto 同步,沿 baseline §11.3 可选字段)。
@@ -416,74 +421,12 @@ export class AttendancesService {
   }
 
   // ============ helpers:Record 字段计算 / 校验 ============
-
-  // 计算服务时长(小时,Decimal(5,2) 精度);D14 / D45 / D46 / D51。
-  private spanHours(checkInAt: Date, checkOutAt: Date): number {
-    const ms = checkOutAt.getTime() - checkInAt.getTime();
-    return Math.round((ms / 3_600_000) * 100) / 100; // 保留 2 位小数
-  }
-
-  // 规范化一条 record:校验时间 + 自动计算 / 校验 serviceHours。
-  // 返回 normalize 后的入库形态(serviceHours 显式 number,后续在创建时转 Decimal)。
   //
-  private normalizeRecord(input: AttendanceRecordInputDto): {
-    memberId: string;
-    roleCode: string;
-    checkInAt: Date;
-    checkOutAt: Date;
-    serviceHours: number;
-    attendanceStatusCode: string;
-    note: string | null;
-    registrationId: string | null;
-  } {
-    const checkInAt = new Date(input.checkInAt);
-    const checkOutAt = new Date(input.checkOutAt);
-    if (!(checkOutAt.getTime() > checkInAt.getTime())) {
-      throw new BizException(BizCode.CHECK_OUT_BEFORE_CHECK_IN);
-    }
-    const spanHours = this.spanHours(checkInAt, checkOutAt);
-
-    let serviceHours: number;
-    if (input.serviceHours === undefined) {
-      serviceHours = spanHours;
-      if (serviceHours <= 0) {
-        // 极端罕见:跨度极短,四舍五入到 0;视作 invalid
-        throw new BizException(BizCode.ATTENDANCE_SERVICE_HOURS_INVALID);
-      }
-    } else {
-      serviceHours = input.serviceHours;
-      if (serviceHours <= 0) {
-        throw new BizException(BizCode.ATTENDANCE_SERVICE_HOURS_INVALID);
-      }
-      if (serviceHours > spanHours) {
-        throw new BizException(BizCode.ATTENDANCE_SERVICE_HOURS_EXCEEDS_SPAN);
-      }
-    }
-
-    return {
-      memberId: input.memberId,
-      roleCode: input.roleCode,
-      checkInAt,
-      checkOutAt,
-      serviceHours,
-      attendanceStatusCode: input.attendanceStatusCode,
-      note: input.note ?? null,
-      registrationId: input.registrationId ?? null,
-    };
-  }
-
-  private assertRecordWithinActivityWindow(
-    record: ReturnType<AttendancesService['normalizeRecord']>,
-    activity: { startAt: Date; endAt: Date },
-  ): void {
-    const toleranceMs = this.config.attendance.windowToleranceHours * 3_600_000;
-    if (
-      record.checkInAt.getTime() < activity.startAt.getTime() - toleranceMs ||
-      record.checkOutAt.getTime() > activity.endAt.getTime() + toleranceMs
-    ) {
-      throw new BizException(BizCode.ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW);
-    }
-  }
+  // 域校验与 normalize 已抽至 `attendance-record.policy.ts`(Phase 6-B 第二域第二刀,§3.3):
+  // `normalizeRecord` / `spanHours` / `assertRecordWithinActivityWindow` / `resolveScheduleWindow` /
+  // `assertRegistrationConsistent` / `validateAndNormalizeRecord` / `assertRecordAgainstLockedRegistration`。
+  // **3 次 IN 预取与锁后复读留在本 service**(它们是查询,不是判定),查询**结果**当入参传进去 ——
+  // policy 用点号命名,命中 eslint 规则 (j),结构上不可能 import prisma。
 
   // F1/F3/F4:一个 records 请求固定用 3 次 IN 预取字典项、队员与报名行；随后按原输入顺序
   // 复现错误优先级并完成 normalize。查询次数不随 records 数增长，且 registrationId 同时校验
@@ -493,14 +436,8 @@ export class AttendancesService {
     activity: { id: string; startAt: Date; endAt: Date; requiresInsurance: boolean },
     now: Date,
     tx: PrismaTx,
-  ): Promise<Array<ReturnType<AttendancesService['normalizeRecord']>>> {
-    // `@IsOptional()` 会放行运行时 null；contract 仍保持 string optional，但 service
-    // 在共享批校验入口将 null 规范化为“未传”，避免 null 进入 Prisma `in` 查询，
-    // 并确保 submit/edit 对保险活动使用同一缺失报名语义。
-    const canonicalInputs = inputs.map((input) => ({
-      ...input,
-      registrationId: input.registrationId ?? undefined,
-    }));
+  ): Promise<NormalizedAttendanceRecord[]> {
+    const canonicalInputs = canonicalizeRecordInputs(inputs);
     const roleCodes = [...new Set(canonicalInputs.map((input) => input.roleCode))];
     const attendanceStatusCodes = [...new Set(inputs.map((input) => input.attendanceStatusCode))];
     const memberIds = [...new Set(inputs.map((input) => input.memberId))];
@@ -565,45 +502,16 @@ export class AttendancesService {
       registrations.map((registration) => [registration.id, registration]),
     );
 
-    return canonicalInputs.map((input) => {
-      if (!dictKeys.has(`${DICT_TYPE_ATTENDANCE_ROLE}:${input.roleCode}`)) {
-        throw new BizException(BizCode.ATTENDANCE_ROLE_CODE_INVALID);
-      }
-      if (!dictKeys.has(`${DICT_TYPE_ATTENDANCE_STATUS}:${input.attendanceStatusCode}`)) {
-        throw new BizException(BizCode.ATTENDANCE_STATUS_CODE_INVALID);
-      }
-      if (!existingMemberIds.has(input.memberId)) {
-        throw new BizException(BizCode.MEMBER_NOT_FOUND);
-      }
-      const registration =
-        input.registrationId === undefined ? undefined : registrationById.get(input.registrationId);
-      if (activity.requiresInsurance && input.registrationId === undefined) {
-        throw new BizException(BizCode.ATTENDANCE_REGISTRATION_INVALID);
-      }
-      if (input.registrationId !== undefined) {
-        if (!registration || registration.activityId !== activity.id) {
-          throw new BizException(BizCode.ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH);
-        }
-        if (registration.memberId !== input.memberId || registration.statusCode !== 'pass') {
-          throw new BizException(BizCode.ATTENDANCE_REGISTRATION_INVALID);
-        }
-      }
-
-      const normalized = this.normalizeRecord(input);
-      const activityPosition = registration?.activityPosition;
-      const schedule =
-        activityPosition !== undefined &&
-        activityPosition !== null &&
-        activityPosition.startAt !== null &&
-        activityPosition.endAt !== null
-          ? { startAt: activityPosition.startAt, endAt: activityPosition.endAt }
-          : activity;
-      this.assertRecordWithinActivityWindow(normalized, schedule);
-      if (normalized.checkOutAt.getTime() > now.getTime()) {
-        throw new BizException(BizCode.ATTENDANCE_CHECK_OUT_IN_FUTURE);
-      }
-      return normalized;
-    });
+    return canonicalInputs.map((input) =>
+      validateAndNormalizeRecord(input, {
+        activity,
+        dictKeys,
+        existingMemberIds,
+        registrationById,
+        now,
+        windowToleranceHours: this.config.attendance.windowToleranceHours,
+      }),
+    );
   }
 
   // submit / edit 在普通批量校验后，以公共 CAS 原语锁住全部 pass registration，
@@ -616,7 +524,7 @@ export class AttendancesService {
   // 写方都得先拿 Activity 根锁,而调用方已持有它;但这份安全寄生在别处,不写在这里。
   // 锁后按同一批 id 复读一次并重跑校验,这条路径就自洽了。
   private async claimAndRecheckRegistrations(
-    normalized: ReadonlyArray<ReturnType<AttendancesService['normalizeRecord']>>,
+    normalized: ReadonlyArray<NormalizedAttendanceRecord>,
     activity: { id: string; startAt: Date; endAt: Date },
     tx: PrismaTx,
   ): Promise<void> {
@@ -654,19 +562,12 @@ export class AttendancesService {
 
     for (const record of normalized) {
       if (record.registrationId === null) continue;
-      const registration = lockedById.get(record.registrationId);
-      if (!registration || registration.activityId !== activity.id) {
-        throw new BizException(BizCode.ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH);
-      }
-      if (registration.memberId !== record.memberId || registration.statusCode !== 'pass') {
-        throw new BizException(BizCode.ATTENDANCE_REGISTRATION_INVALID);
-      }
-      const position = registration.activityPosition;
-      const schedule =
-        position !== null && position.startAt !== null && position.endAt !== null
-          ? { startAt: position.startAt, endAt: position.endAt }
-          : activity;
-      this.assertRecordWithinActivityWindow(record, schedule);
+      assertRecordAgainstLockedRegistration(
+        record,
+        lockedById.get(record.registrationId),
+        activity,
+        this.config.attendance.windowToleranceHours,
+      );
     }
   }
 
