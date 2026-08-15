@@ -1844,8 +1844,8 @@ export class ActivityRegistrationsService {
     yield '\uFEFF';
     yield REGISTRATION_CSV_HEADERS.join(',');
 
-    // \u53D6\u6570(500 \u884C\u6E38\u6807\u5206\u9875)\u5DF2\u8FC1\u5165 ActivityRegistrationQueryService;BOM / \u8868\u5934 / \u884C\u683C\u5F0F\u5316
-    // \u5C5E\u5448\u73B0,\u7559\u5728\u672C\u7C7B\u3002\u60F0\u6027\u4E0D\u53D8:\u5185\u5C42 generator \u7684\u9996\u6B21\u67E5\u8BE2\u53D1\u751F\u5728\u4E0A\u9762\u4E24\u4E2A yield \u88AB\u6D88\u8D39\u4E4B\u540E\u3002
+    // 取数(500 行游标分页)已迁入 ActivityRegistrationQueryService;BOM / 表头 / 行格式化
+    // 属呈现,留在本类。惰性不变:内层 generator 的首次查询发生在上面两个 yield 被消费之后。
     for await (const row of this.registrationQuery.streamCsvRows(where)) {
       yield `\n${this.formatCsvRow(row)}`;
     }
