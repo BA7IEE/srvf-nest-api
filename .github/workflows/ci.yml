@@ -196,6 +196,18 @@ jobs:
           pnpm docs:authz:check
           pnpm gate:authz:graph:check
 
+      # Phase 6-A 尺寸棘轮(report)。接在**既有 required job 内**,不新增 required
+      # context —— 「required context 必须先合后加」是本仓第五轮 harness 评审的既有教训,
+      # 新 context 会卡死所有 base 上没有它的在飞分支。
+      #
+      # `|| true` 是 report 期**唯一**的不阻断开关:脚本本身有发现就退出 1,
+      # 所以转 blocking = 删掉这一个 `|| true`,一行,且不可能只翻一半。
+      # (scripts/harness-guards.selftest.ts 钉住了「此刻它必须在」——
+      #  真要转闸时那条断言要一起改,那正是翻闸该有的摩擦。)
+      # Exit Criteria 见 docs/ai-harness/SERVICE_SIZE_RATCHET.md。
+      - name: Service size ratchet (report only)
+        run: pnpm harness:servicesize || true
+
       # Harness 3.0 P2:守卫自测 + eslint 执法块阳性对照。
       # 后者对每条执法规则喂必定违规的合成片段,断言确实被抓到 ——
       # 防「lint 全绿是因为 selector 写错/被 flat config 后块静默覆盖」这一最坏失败模式。

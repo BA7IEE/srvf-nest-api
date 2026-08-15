@@ -1,0 +1,199 @@
+# 大 service 尺寸棘轮(Phase 6-A · report)
+
+> 权威源:`docs/archive/reviews/architecture-governance-v4/README.md` §11 Phase 6 + 终审【九】。
+> 本文只覆盖 **6-A 立闸**。**6-B「按触碰拆分」与转 blocking 都不在本刀内**,见文末「本次未做」。
+>
+> 判据实现:`scripts/check-codemap.ts --service-size`;基线:`harness/service-size-baseline.json`;
+> 阳性对照:`scripts/harness-guards.selftest.ts`(尺寸段 22 条)。
+
+## 1. 度量口径
+
+| 项 | 取值 |
+|---|---|
+| 度量 | **非注释非空行**(NCLOC),用 TypeScript scanner 剥注释后统计 |
+| 阈值 | **700**(复用既有 god-service 阈值) |
+| 发现面 | `src/**` 下的 `*.service.ts` / `*-orchestrator.ts` / `*.handlers.ts`,递归,排除 `*.spec.ts` |
+| 基线条目身份 | **文件路径**(数值是属性,不是身份 —— 终审【九】「count 永不作为最终棘轮身份」) |
+
+### 1.1 为什么不用物理行
+
+两条理由,**第二条才是决定性的**:
+
+1. 物理行会把「注释详尽」读成「文件臃肿」。实测全仓中位数 净/物理 ≈ 91%,不算高;但离群显著 ——
+   `certificates.service.ts` 66%(物理 1122 → 净 739)、`users.service.ts` 75%、
+   `recruitment-certificate-claims.service.ts` 78%。仅此一条,只影响少数文件的排序。
+2. **反向激励**:物理行棘轮下,**删掉文件头的模块级铁律注释就能「达标」**。
+   本仓恰恰把模块铁律写在文件头注释里,那是约束 AI 的主要载体 ——
+   一条会奖励「删注释」的棘轮是在拆自己的地基。这条与第 1 条无关,且无法通过调阈值绕开。
+
+剥注释用 TS scanner 而非正则:字符串里的 `//`、正则字面量里的 `/*`、模板串里的换行,
+正则一律会数错,而这三种在本仓都真实存在。selftest 有 `const s = '// not a comment';` 计 1 行的对照。
+
+### 1.2 与旧口径的差异(D1 要求逐条写明)
+
+旧 `service-loc-godservice` 检查:物理行 > 700,发现面 `src/modules/<模块>/*.service.ts`(**不递归、只认 `.service.ts`**)。
+本刀把两者统一到一套,`service-loc-*` 与尺寸棘轮从此**共用同一份计算**(§0「不得另立第二套标准」)。差异实测:
+
+**新口径多抓 2 个 —— 旧发现面在结构上就看不见它们:**
+
+| 文件 | 净行 | 说明 |
+|---|---|---|
+| `attachments/attachment-storage-orchestrator.ts` | 2518 | **全仓最大的代码文件,此前不在任何检查视野内** |
+| `notifications/notification-outbox.handlers.ts` | 1331 | 同上 |
+
+**新口径剔掉 5 个 —— 它们只是被注释撑过线:**
+
+| 文件 | 净 / 物理 | 比值 |
+|---|---|---|
+| `organizations/organizations.service.ts` | 548 / 710 | 77% |
+| `recruitment/recruitment-identity.service.ts` | 622 / 773 | 80% |
+| `member-departments/memberships.service.ts` | 594 / 729 | 81% |
+| `activity-registrations/activity-qualification-evaluator.service.ts` | 674 / 722 | 93% |
+| `activities/settlement-review.service.ts` | 679 / 746 | 91% |
+
+阈值语义随之从 `> 700` 改为 `>= 700`(边界在 selftest 有 699/700 两侧对照)。
+
+### 1.3 阈值依据
+
+**复用既有 god-service 阈值 700**,而不是另取一个数。理由:仓库里若同时存在
+「WARN 用 700 / 棘轮用 X」两个尺寸数字,那本身就是 §0 要避免的第二套标准。
+(v4 §11 Phase 6 的行文是「11 个千行 service」—— 那是**当时**的规模速写,不是阈值拍板;
+按 1000 取阈值会得到 13 个文件、106 个历史 PR 摩擦,结论与 700 完全一致,见 §3。)
+
+### 1.4 inputDigest 覆盖面
+
+`inputDigest` **只摄入口径本身**(度量名 / 阈值 / 发现面后缀 / 根目录 / 生成器版本),
+**刻意不摄入 `src/**` 的内容**。摄入源码会让基线在每个业务 PR 都「过期」一次,噪声淹没信号;
+而「基线值 vs 磁盘」本来就由棘轮判据本身回答,再用 digest 查一遍是重复且更弱的判据。
+它回答的是另一个问题:**这份基线是不是用当前这套口径算出来的**。
+无时间戳、无 git SHA(v4 §9 勘误①)。
+
+## 2. 当前分布(基线,31 个文件 / 共 36685 净行)
+
+| 文件(`src/modules/` 起) | 域 | 净行 |
+|---|---|---|
+| `attachments/attachment-storage-orchestrator.ts` | attachments | 2518 |
+| `activity-registrations/activity-allocation.service.ts` | activity-registrations | 2397 |
+| `activities/correction-application.service.ts` | activities | 1938 |
+| `attendances/attendances.service.ts` | attendances | 1881 |
+| `activity-registrations/activity-registrations.service.ts` | activity-registrations | 1838 |
+| `attachments/attachments.service.ts` | attachments | 1657 |
+| `activities/activity-publish-proposal-v2.service.ts` | activities | 1456 |
+| `storage/storage-object-ledger.service.ts` | storage | 1412 |
+| `activities/activity-publish-review.service.ts` | activities | 1342 |
+| `notifications/notification-outbox.handlers.ts` | notifications | 1331 |
+| `activities/activities.service.ts` | activities | 1311 |
+| `members/members.service.ts` | members | 1178 |
+| `activities/activity-settlement-http.service.ts` | activities | 1144 |
+| `notifications/notification-outbox.service.ts` | notifications | 1003 |
+| `activities/settlement-draft.service.ts` | activities | 978 |
+| `activities/activity-draft.service.ts` | activities | 956 |
+| `activities/activity-closure.service.ts` | activities | 940 |
+| `activity-registrations/capacity-reservation.service.ts` | activity-registrations | 936 |
+| `activity-registrations/registration-command.service.ts` | activity-registrations | 916 |
+| `role-bindings/role-bindings.service.ts` | role-bindings | 897 |
+| `users/users.service.ts` | users | 891 |
+| `recruitment/recruitment-applications.service.ts` | recruitment | 834 |
+| `activities/ledger-preparation.service.ts` | activities | 827 |
+| `recruitment/recruitment-promotion.service.ts` | recruitment | 817 |
+| `activities/settlement-submit.service.ts` | activities | 789 |
+| `activities/activity-responsibility.service.ts` | activities | 787 |
+| `recruitment/recruitment-certificate-claims.service.ts` | recruitment | 786 |
+| `activities/ledger-posting.service.ts` | activities | 751 |
+| `certificates/certificates.service.ts` | certificates | 739 |
+| `activity-registrations/onsite-participation-command.service.ts` | activity-registrations | 729 |
+| `notifications/notification.service.ts` | notifications | 706 |
+
+按域(文件数 / 净行合计):`activities` 12 / 13219 · `activity-registrations` 5 / 6816 ·
+`attachments` 2 / 4175 · `notifications` 3 / 3040 · `recruitment` 3 / 2437 ·
+`attendances` 1 / 1881 · `storage` 1 / 1412 · `members` 1 / 1178 · `role-bindings` 1 / 897 ·
+`users` 1 / 891 · `certificates` 1 / 739。
+
+## 3. 转闸摩擦评估(D4)
+
+方法:把棘轮回放到 `main` 的全部 **1016** 个 first-parent 提交(本仓 squash merge,一提交 ≈ 一 PR)。
+基线取**今天**的 31 个文件与今天的值 —— 即棘轮即将冻结的那一份。
+⚠️ 本仓总历史只有 **101 天**(2026-05-05 起),比 goal 说的 180 天窗口还短,故窗口 = 全部历史。
+
+| 口径 | 会被拦下的 PR | 占比 |
+|---|---|---|
+| 宽:任何增长了基线文件的 PR | **182** / 1016 | 17.9% |
+| 严:增长时该文件**已经**超阈值 | **106** / 1016 | 10.4% |
+
+两者的差 = 「文件初建或尚小时的增长」,那类增长今天不会再发生一次,故**严口径更贴近未来实况**。
+
+**严口径按月**:5月 4 · 6月 13 · **7月 69** · 8月 20(8 月仅过半)。
+7、8 月都稳定在 ~17.5% 的月度 PR 量级 —— **摩擦不是历史遗留,是当前速率**。
+
+**热点文件**(被增长次数,宽口径):
+`activity-registrations.service.ts` 33 · `attendances.service.ts` 28 ·
+`recruitment-applications.service.ts` 26 · `activities.service.ts` 25 ·
+`members.service.ts` 20 · `recruitment-promotion.service.ts` 19 ·
+`certificates.service.ts` 16 · `attachments.service.ts` 16。
+
+**按 goal 自己定的判据**(<10 个 PR ⇒ 可较快转闸;>30 ⇒ 必须先做 6-B 拆分):
+106(严)与 182(宽)**都远超 30** ⇒ **必须先做 6-B 拆分才谈转 blocking**。
+换阈值不改变结论:阈值 1000 时严口径仍是 ~106 量级。
+
+## 4. 转 blocking 的 Exit Criteria
+
+沿 EC-COMMON(v4 §7)相关条。**未逐条打勾前不得转闸**;转闸动作 = 删掉 `ci.yml` 里
+`pnpm harness:servicesize || true` 的那个 `|| true`,一行。
+
+| # | 条件 | 现状 |
+|---|---|---|
+| EC-1 | 历史 baseline 已冻结并**接入 ratchet-registry、base-trusted 裁决** | ❌ **未达成 —— 见 §5,这是转闸的头号硬门** |
+| EC-2 | 扫描器覆盖范围与已知缺口成文 | ✅ 本文 §1;已知缺口:发现面按**文件名后缀**认定,叫别的名字的大文件(如 `*.util.ts`)不计入 |
+| EC-3 | blocking 版已 typed-AST 化(正则版仅限 report) | ✅ 度量走 TS scanner,非正则 |
+| EC-4 | 绕过样例在 selftest 全绿(阳性对照) | ✅ 22 条;5 组变异对拍红集互不重叠(见 §6) |
+| EC-6 | report 期误报逐条处理完毕,残余误报率维护者书面接受 | ⏳ 需 report 期真实流量 |
+| EC-7 | CI 检查连续稳定(≥10 个 PR 或 ≥2 周无 infra 抖动) | ⏳ 需 report 期观察 |
+| EC-9 | 回滚路径成文且为一行开关 | ✅ 加回 `\|\| true` |
+| EC-10 | 错误信息达到 §10 AI 反馈五要素 | ✅ 输出含「当前值 vs 基线值 vs 增量 + 所属域 + 下一步命令」 |
+| **专属** | **6-B 拆分已把摩擦压到可接受区间**(重跑本文 §3 复测) | ❌ 当前 106/182,判据线是 30 |
+
+EC-5(`$queryRaw` 通道)、EC-8(Journey + zero-new-red)不适用:本规则不涉数据访问、不涉业务行为。
+
+## 5. 为什么此刻**没有**接进 `harness/ratchet-registry.json`
+
+goal 的 D5 要求登记入册。实测**登记不进去**,且硬试会出事 —— 三条结构原因(2026-08-15 实测):
+
+1. 注册表的 `rule` 字段必须是**真实 ESLint 规则名**:`eslint.harness.mjs` 末尾按注册表遍历,
+   为基线里**每个文件**生成 `rules: { [rule]: ['error', { exempt }] }`。
+   「文件多大」没有对应的 ESLint 规则;随便指一条现有 `srvf/` 规则,
+   副作用是**真的把这 31 个源文件从那条规则里豁免掉**。
+2. `entries[].symbol` 必须匹配 `BASELINE_SYMBOL_SHAPES` 三种形状之一
+   (`类名.字段名` / `类名.方法名.参数名` / `YYYY-MM-DD`)。文件路径一种都不匹配 ⇒
+   `parseRatchetBaseline` **加载期直接抛**,`pnpm lint` 本身起不来。
+3. 修 ①② 必须改 `eslint.harness.mjs` 与 `.github/workflows/redzone-trusted-judge.mjs`
+   两个红区执法文件,而它们正是本刀禁区(「Phase 0-5 的任何执法实现」)。
+
+另:裁判侧 `judgeBaselineMonotonicity` 只比 `(file, symbol)` 集合、**不认数值** ——
+数值若编进 `symbol`,合法的「变小」也会造出新 key 而硬失败,**语义正好反了**。
+正确形状是**身份=文件、数值=属性**(本基线即如此),与终审【九】同向。
+
+⇒ 结论:`ratchet-registry.json` 的 `_comment` 自称「全仓所有单调基线的唯一登记处」是**过度承诺**,
+它实际只装得下 ESLint 规则型基线。**让它容纳非 ESLint 型棘轮(加 `kind` 判别的两态)
+是转 blocking 的前置工作**,已列为 EC-1。维护者 2026-08-15 拍板:本刀不登记,写明原因。
+
+## 6. 判据可信度证据(变异对拍)
+
+5 组变异,每组的红集**互不重叠**(证明每条断言绑的是自己那个条件,不是一块笼统的绿):
+
+| 变异 | 红条数 | 该变异**独有**的红 |
+|---|---|---|
+| 度量退回物理行(注释不剥离) | 3 | 纯注释膨胀不改变度量值 · 整行注释不计入 |
+| 阈值语义 `>=` 退回 `>` | 1 | 基线外新文件达到阈值即报 |
+| 发现面缩回只认 `.service.ts` | 3 | orchestrator/handlers 计入 · 落盘 inputDigest 一致 |
+| 棘轮方向:持平也算增长 | 2 | 基线文件持平不报 |
+| CI 偷偷删 `\|\| true` | 1 | CI 此刻是 report 模式 |
+
+## 7. 本次未做(明确不在本刀内)
+
+- **6-B 按触碰拆分**:随业务触碰渐进进行,按 D-7 六类(QueryService / Presenter / Policy /
+  StateMachine / AuditRecorder / Calculator)拆。**另议,未立项。**
+- **转 blocking**:§4 的 EC 未逐条达成,尤其 EC-1(注册表)与摩擦线。本刀恒 report。
+- **注册表扩成两态**:需改两个红区执法文件,超出本刀写集与禁区。
+- **非 service 类大文件**:`biz-code.constant.ts`(净 2718)、`local-activity-frontend-fixture.ts`
+  (净 2192)、`recruitment.dto.ts`(净 1103)等不在发现面内 —— 它们不适用 D-7 拆法,
+  且尺寸对 AI 理解面的影响与 service 不同类。**未纳入,未立项。**
