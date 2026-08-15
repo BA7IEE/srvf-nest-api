@@ -1992,7 +1992,12 @@ function runDebtCheck(): void {
       {
         mode: 'debt-check',
         enforcement: 'registry-integrity-only',
-        reportOnly: true,
+        // 2026-08-15 由 true 改正为 false。原值与紧接其后的 `process.exitCode = 1`
+        // **自相矛盾** —— 它从来就不是 report-only,只是此前没接 CI,于是那句谎话
+        // 一直没人撞上(两头不靠:既不阻断也不被跑)。现已接进 Fast checks 的
+        // A-metadata gate 且无 `|| true`,故如实标 false。
+        // 注意 runViolations 里那处 `reportOnly: true` 是**对的**,不要一起改。
+        reportOnly: false,
         debtRegistry,
       },
       null,

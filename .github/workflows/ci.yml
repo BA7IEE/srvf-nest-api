@@ -202,11 +202,26 @@ jobs:
       # an equal pile of new debt appeared", which is the shape of a real
       # regression. Blocking here is safe because the check is idempotent and
       # currently passes 201/201; it does not judge the code, only the ledger.
+      #
+      # 2026-08-15 补 `docs:boundaries:debt:check`。它此前**存在于 package.json 却未接
+      # 任何 CI**,而它是 `semanticFieldsComplete` 的**唯一**执法者:
+      #   · `docs:boundaries`(--violations)输出里带 debtRegistry,但被 `|| true` 兜住,永不阻断;
+      #   · `docs:boundaries:check`(--metadata)的 errors 只装 domain-map 元数据,**完全不碰**它;
+      #   · `docs:boundaries:ids:check` 管 call-site 身份,是另一件事。
+      # 也就是说「每条债务都必须填满 7 个语义字段(classification / reason / risk /
+      # desiredExit / ownerApiTarget / reviewTrigger / introducedAt)且不留 pending-phase2 占位」
+      # 这条不变量,在此之前**零执法** —— 纯散文。
+      #
+      # 与上面两条同属 A 类(registry integrity:判台账不判代码),故同样**无 `|| true`**。
+      # 接闸时机选在此刻是因为台账 222/222 全绿,零存量摩擦。
+      # ⚠️ harness/architecture-debt.json 在 selfGuard 内,但授权闸管的是「能不能改」,
+      #    管不了「改得完不完整」—— 两个问题,故人闸不替代本条。
       - name: Architecture governance A-metadata gate (B reports only)
         run: |
           pnpm docs:boundaries || true
           pnpm docs:boundaries:check
           pnpm docs:boundaries:ids:check
+          pnpm docs:boundaries:debt:check
           pnpm docs:authz:check
           pnpm gate:authz:graph:check
 
