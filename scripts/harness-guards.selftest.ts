@@ -4264,6 +4264,21 @@ void (async (): Promise<void> => {
         /pnpm harness:servicesize \|\| true/.test(ci),
         '没有 || true ⇒ 已是 blocking:那是拍板动作,须同时更新本断言与 SERVICE_SIZE_RATCHET.md',
       );
+
+      // 债务台账语义完整性(2026-08-15 接闸)。它是 `semanticFieldsComplete` 的
+      // **唯一**执法者:--violations 被 `|| true` 兜住、--metadata 根本不碰它。
+      // 断言用的是 codeOnly(ci) —— 上方那段 YAML 注释里逐字写了这条命令名,
+      // 不剥注释的话「命令还在不在」会被注释本身满足(本仓已栽过两次的形状)。
+      check(
+        '债务台账 CI:接进既有 A-metadata gate(不新增 required context)',
+        ci.includes('pnpm docs:boundaries:debt:check'),
+        '步骤缺失 = semanticFieldsComplete 回到零执法',
+      );
+      check(
+        '债务台账 CI:是阻断模式(不带 || true)',
+        !/pnpm docs:boundaries:debt:check\s*\|\|\s*true/.test(ci),
+        '加了 || true ⇒ 闸被静默关掉:台账填不全也照绿,与接闸的理由直接相反',
+      );
     }
 
     // ⑨ 落盘基线必须与当前口径一致 —— 防「改了阈值却忘了重生成基线」悄悄躺着。
