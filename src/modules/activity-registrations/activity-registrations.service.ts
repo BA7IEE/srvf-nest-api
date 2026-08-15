@@ -32,6 +32,12 @@ import {
   type ActivityQualificationTarget,
 } from './activity-qualification-evaluator.service';
 import { ActivityRegistrationNotificationProducer } from './activity-registration-notification-producer';
+import {
+  ActivityRegistrationQueryService,
+  type RegistrationAdminListRow,
+  type RegistrationCsvRow,
+  type RegistrationListRow,
+} from './activity-registration-query.service';
 import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
 import { ActivityRegistrationWaitlistQueryService } from './activity-registration-waitlist-query.service';
 import {
@@ -110,48 +116,6 @@ const registrationSafeSelect = {
   currentRevision: true,
 } as const satisfies Prisma.ActivityRegistrationSelect;
 
-// 列表精简 select:仅必要字段 + Member 摘要(memberNo / displayName)。
-const registrationListSelect = {
-  id: true,
-  activityId: true,
-  activityPositionId: true,
-  memberId: true,
-  statusCode: true,
-  registeredAt: true,
-  reviewedAt: true,
-  cancelledAt: true,
-  createdAt: true,
-  member: {
-    select: {
-      memberNo: true,
-      displayName: true,
-    },
-  },
-  activityPosition: {
-    select: {
-      id: true,
-      name: true,
-    },
-  },
-} as const satisfies Prisma.ActivityRegistrationSelect;
-
-const registrationCsvSelect = {
-  id: true,
-  memberId: true,
-  statusCode: true,
-  registeredAt: true,
-  reviewedAt: true,
-  reviewNote: true,
-  cancelledAt: true,
-  cancelReason: true,
-  member: { select: { memberNo: true, displayName: true } },
-} as const satisfies Prisma.ActivityRegistrationSelect;
-
-type RegistrationCsvRow = Prisma.ActivityRegistrationGetPayload<{
-  select: typeof registrationCsvSelect;
-}>;
-
-const CSV_EXPORT_BATCH_SIZE = 500;
 const REGISTRATION_CSV_HEADERS = [
   'registration_id',
   'member_id',
@@ -165,41 +129,8 @@ const REGISTRATION_CSV_HEADERS = [
   'cancel_reason',
 ] as const;
 
-// 跨轴只读列表 select(2026-06-23):列表精简 select + activity{id,title} 上下文。
-// 跨活动 / 跨队员横扫时 item 脱离 :activityId 路径段,经 Prisma 嵌套关系一次取活动标题(无 N+1);
-// activity.deletedAt 不过滤:FK onDelete=Restrict 保证 activity 行存在,软删态字段仍可读,不暴露 deletedAt。
-// F2/B1(D6 拍板,2026-07-04):member/activity 子 select 扩至 expand 展开所需的最小字段集
-// (member +id+gradeCode;activity +startAt+organizationId)——member/activity 均是既有 Prisma
-// 嵌套关系,一次 JOIN 单查询取回(非二次查询,天然满足 D6"禁 N+1");是否投影进响应完全由
-// toAdminListItemDto 的 expand 参数决定(默认不展开,select 多取的字段不出现在响应里)。
-const registrationAdminListSelect = {
-  ...registrationListSelect,
-  member: {
-    select: {
-      id: true,
-      memberNo: true,
-      displayName: true,
-      gradeCode: true,
-    },
-  },
-  activity: {
-    select: {
-      id: true,
-      title: true,
-      startAt: true,
-      organizationId: true,
-    },
-  },
-} as const satisfies Prisma.ActivityRegistrationSelect;
-
 type RegistrationFullRow = Prisma.ActivityRegistrationGetPayload<{
   select: typeof registrationSafeSelect;
-}>;
-type RegistrationListRow = Prisma.ActivityRegistrationGetPayload<{
-  select: typeof registrationListSelect;
-}>;
-type RegistrationAdminListRow = Prisma.ActivityRegistrationGetPayload<{
-  select: typeof registrationAdminListSelect;
 }>;
 type PrismaTx = Prisma.TransactionClient;
 export type RegistrationAuthorization = 'authz' | 'managed';
@@ -245,6 +176,9 @@ export class ActivityRegistrationsService {
     private readonly waitlistQuery: ActivityRegistrationWaitlistQueryService,
     private readonly registrationLifecycle: ActivityRegistrationLifecycleService,
     private readonly allocations: ActivityAllocationService,
+    // Phase 6-B 第三域第一刀(架构边界 §3.2):四条列表 surface 与 CSV 导出的读侧查询构造。
+    // 判权腿不下放 —— 本类只收算好的 visibleOrganizationIds。
+    private readonly registrationQuery: ActivityRegistrationQueryService,
   ) {}
 
   // ============ helpers ============
@@ -1023,21 +957,8 @@ export class ActivityRegistrationsService {
     // activity 存在性校验(管理员看不存在的活动 → 404)。
     await this.findActivityOrThrow(activityId);
 
-    const { page, pageSize, statusCode } = query;
-    const filters: Prisma.ActivityRegistrationWhereInput = { activityId };
-    if (statusCode !== undefined) filters.statusCode = statusCode;
-    const where = notDeletedWhere(filters);
-
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.activityRegistration.findMany({
-        where,
-        select: registrationListSelect,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.activityRegistration.count({ where }),
-    ]);
+    const { page, pageSize } = query;
+    const { items: rows, total } = await this.registrationQuery.listByActivity(activityId, query);
     const waitlistPositions = await this.waitlistQuery.getPositions(rows);
 
     return {
@@ -1060,21 +981,7 @@ export class ActivityRegistrationsService {
     query: ListRegistrationsQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<AdminRegistrationListItemDto>> {
-    const {
-      page,
-      pageSize,
-      statusCode,
-      q,
-      memberQ,
-      activityQ,
-      memberId,
-      activityId,
-      organizationId,
-      includeDescendants,
-      dateFrom,
-      dateTo,
-      expand,
-    } = query;
+    const { page, pageSize, organizationId, includeDescendants, expand } = query;
     const visibleOrganizationIds = await this.resolveVisibleOrganizationIds(
       currentUser,
       organizationId,
@@ -1082,58 +989,10 @@ export class ActivityRegistrationsService {
     );
     const expandSet = parseExpandQuery(expand, REGISTRATION_EXPAND_WHITELIST);
 
-    const filters: Prisma.ActivityRegistrationWhereInput = {};
-    if (statusCode !== undefined) filters.statusCode = statusCode;
-    if (memberId !== undefined) filters.memberId = memberId;
-    if (activityId !== undefined) filters.activityId = activityId;
-    if (dateFrom !== undefined || dateTo !== undefined) {
-      filters.registeredAt = {
-        ...(dateFrom !== undefined ? { gte: new Date(dateFrom) } : {}),
-        ...(dateTo !== undefined ? { lte: new Date(dateTo) } : {}),
-      };
-    }
-
-    // activity 关联过滤累加(activityQ + organizationId/includeDescendants 可共存)。
-    const activityWhere: Prisma.ActivityWhereInput = {};
-    if (activityQ !== undefined) {
-      activityWhere.title = { contains: activityQ, mode: 'insensitive' };
-    }
-    if (visibleOrganizationIds !== undefined) {
-      activityWhere.organizationId = { in: visibleOrganizationIds };
-    }
-    if (Object.keys(activityWhere).length > 0) filters.activity = activityWhere;
-
-    // member 关联过滤(memberQ)。
-    if (memberQ !== undefined) {
-      filters.member = {
-        OR: [
-          { memberNo: { contains: memberQ, mode: 'insensitive' } },
-          { displayName: { contains: memberQ, mode: 'insensitive' } },
-        ],
-      };
-    }
-
-    // q:跨 member(memberNo+displayName)+ activity(title)全局模糊命中。
-    if (q !== undefined) {
-      filters.OR = [
-        { member: { memberNo: { contains: q, mode: 'insensitive' } } },
-        { member: { displayName: { contains: q, mode: 'insensitive' } } },
-        { activity: { title: { contains: q, mode: 'insensitive' } } },
-      ];
-    }
-
-    const where = notDeletedWhere(filters);
-
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.activityRegistration.findMany({
-        where,
-        select: registrationAdminListSelect,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.activityRegistration.count({ where }),
-    ]);
+    const { items: rows, total } = await this.registrationQuery.listAllForAdmin(
+      query,
+      visibleOrganizationIds,
+    );
     const waitlistPositions = await this.waitlistQuery.getPositions(rows);
 
     return {
@@ -1165,27 +1024,12 @@ export class ActivityRegistrationsService {
       id: memberId,
     });
     // 队员存在性守卫(不存在 / 软删 → 15001,镜像 admin-member-insurances inline 检查)。
-    const member = await this.prisma.member.findFirst({
-      where: notDeletedWhere({ id: memberId }),
-      select: { id: true },
-    });
-    if (!member) throw new BizException(BizCode.MEMBER_NOT_FOUND);
+    if (!(await this.registrationQuery.memberExists(memberId))) {
+      throw new BizException(BizCode.MEMBER_NOT_FOUND);
+    }
 
-    const { page, pageSize, statusCode } = query;
-    const filters: Prisma.ActivityRegistrationWhereInput = { memberId };
-    if (statusCode !== undefined) filters.statusCode = statusCode;
-    const where = notDeletedWhere(filters);
-
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.activityRegistration.findMany({
-        where,
-        select: registrationAdminListSelect,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.activityRegistration.count({ where }),
-    ]);
+    const { page, pageSize } = query;
+    const { items: rows, total } = await this.registrationQuery.listForMember(memberId, query);
     const waitlistPositions = await this.waitlistQuery.getPositions(rows);
 
     return {
@@ -1786,21 +1630,8 @@ export class ActivityRegistrationsService {
   ): Promise<PageResultDto<ActivityRegistrationListItemDto>> {
     const memberId = await this.resolveUserMemberIdOrThrow(currentUser.id);
 
-    const { page, pageSize, statusCode } = query;
-    const filters: Prisma.ActivityRegistrationWhereInput = { memberId };
-    if (statusCode !== undefined) filters.statusCode = statusCode;
-    const where = notDeletedWhere(filters);
-
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.activityRegistration.findMany({
-        where,
-        select: registrationListSelect,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.activityRegistration.count({ where }),
-    ]);
+    const { page, pageSize } = query;
+    const { items: rows, total } = await this.registrationQuery.listMine(memberId, query);
     const waitlistPositions = await this.waitlistQuery.getPositions(rows);
 
     return {
@@ -1991,12 +1822,7 @@ export class ActivityRegistrationsService {
     });
     await this.findActivityOrThrow(activityId);
 
-    const scope = query.scope ?? 'pass';
-    const filters: Prisma.ActivityRegistrationWhereInput = { activityId };
-    if (scope === 'pass') {
-      filters.statusCode = REGISTRATION_STATUS_PASS;
-    }
-    const where = notDeletedWhere(filters);
+    const where = this.registrationQuery.buildCsvWhere(query.scope, activityId);
 
     const filterFields: string[] = [];
     if (query.format !== undefined) filterFields.push('format');
@@ -2018,20 +1844,10 @@ export class ActivityRegistrationsService {
     yield '\uFEFF';
     yield REGISTRATION_CSV_HEADERS.join(',');
 
-    let cursor: string | undefined;
-    while (true) {
-      const rows: RegistrationCsvRow[] = await this.prisma.activityRegistration.findMany({
-        where,
-        select: registrationCsvSelect,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: CSV_EXPORT_BATCH_SIZE,
-        ...(cursor !== undefined ? { cursor: { id: cursor }, skip: 1 } : {}),
-      });
-      for (const row of rows) {
-        yield `\n${this.formatCsvRow(row)}`;
-      }
-      if (rows.length < CSV_EXPORT_BATCH_SIZE) break;
-      cursor = rows.at(-1)!.id;
+    // 取数(500 行游标分页)已迁入 ActivityRegistrationQueryService;BOM / 表头 / 行格式化
+    // 属呈现,留在本类。惰性不变:内层 generator 的首次查询发生在上面两个 yield 被消费之后。
+    for await (const row of this.registrationQuery.streamCsvRows(where)) {
+      yield `\n${this.formatCsvRow(row)}`;
     }
   }
 

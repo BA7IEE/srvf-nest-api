@@ -12,6 +12,9 @@
 ## Local facts
 
 - `activity-registrations.service.ts` 仍是 god-service（实时行数看 CODEMAP）；状态机/audit/app query 已抽离，永久头个人取消另由 `activity-registration-lifecycle.service.ts` 协调；候补仍以 promotion engine + QueryService 隔离
+- **读侧查询构造归 `activity-registration-query.service.ts`**(Phase 6-B 第三域第一刀,架构边界 §3.2):四条列表 surface 的 where / 分页 / orderBy / 读侧 select(`registrationListSelect` / `registrationAdminListSelect` / `registrationCsvSelect`)+ `memberExists` + CSV 的 `buildCsvWhere` / `streamCsvRows` 都在那里,**新增读侧查询请加到该类,别加回 service**。
+  - **判权腿不下放**:`assertCanOrThrow` / `assertManagedRegistrationAccess` / `resolveVisibleOrganizationIds`(含 `getVisibleOrganizationScope` 与 30100 抛出)仍在 service;`ActivityRegistrationQueryService` **不注入 rbac / authz**,module 里也**不 exports** —— 否则就多出一条绕过判权腿的读路径。它只收算好的 `visibleOrganizationIds`(§3.2 "read-scope filters explicitly passed in" 那条豁免)。
+  - **刻意留在 service 的**:`registrationSafeSelect` 与 `RegistrationFullRow`(五条写路径回读 + §4 装载聚合根)、回调式事务内的读、BizCode 映射(`MEMBER_NOT_FOUND` / `ACTIVITY_REGISTRATION_NOT_FOUND` 的抛出)、`expand` 投影与候补位次拼装。
 - **判权(终态 scoped-authz PR12 + v0.49 部门范围)**:管理端点动作走 `assertCanOrThrow` → `authz.explain`;`list`/`exportCsv`(嵌套 `:activityId`)带 `{type:'activity', id: activityId}` 父 ref;`approve`/`reject`/`cancelAdmin` 带 `{type:'activity_registration', id}`;`listForMemberAdmin` 带 `{type:'member', id: memberId}`;`listAllForAdmin` 通过 `getVisibleOrganizationScope` 按 `activity.organizationId` 下推并与用户组织筛选取交集；仅 `create`(代报名)保持无 ref(GLOBAL-only)。`resource_not_found` 回退 `rbac.can` 全局码判定,持码者交回既有 NOT_FOUND,无码者 30100。App 自助端点不受影响,self-scope 不变。e2e 见 `test/e2e/participation-scoped-authz.e2e-spec.ts`。
 - **CSV 导出(v0.44.0 finding #13)**:`exportCsv` 必须保持 500 行游标分页 async generator + BOM 首 chunk,controller 用 `Readable.from`;禁止恢复全量 `findMany` / `string[]` / 整串 Buffer。
 - Admin Controller:`activity-registrations.controller.ts` `@Controller('admin/v1/activities/:activityId/registrations')` `@ApiTags('Admin - Registrations')`
