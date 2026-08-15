@@ -11,6 +11,7 @@ import { UsersModule } from '../users/users.module';
 import { AttachmentsModule } from '../attachments/attachments.module';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import { ActivityRegistrationNotificationProducer } from './activity-registration-notification-producer';
+import { ActivityRegistrationQueryService } from './activity-registration-query.service';
 import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
 import { ActivityRegistrationsAdminController } from './activity-registrations.controller';
 import { ActivityRegistrationsService } from './activity-registrations.service';
@@ -97,6 +98,10 @@ import { AppManagedActivityAllocationBatchesController } from './controllers/app
     ActivityRegistrationAuditRecorder,
     ActivityRegistrationNotificationProducer,
     ActivityRegistrationWaitlistQueryService,
+    // Phase 6-B 第三域第一刀:读侧查询构造。**刻意不进 exports** —— 跨模块读仍走
+    // ActivityRegistrationsService 那一个入口,避免出现绕过判权腿的第二条读路径
+    // (沿 members #1008 / attendances #1021 先例)。
+    ActivityRegistrationQueryService,
     AppManagedActivityRegistrationsService,
     RegistrationUploadSessionService,
     RegistrationCommandService,
