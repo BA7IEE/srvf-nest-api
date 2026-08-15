@@ -1,11 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { MemberStatus, Prisma } from '@prisma/client';
-import { escapeCsvField } from '../../common/csv/csv.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
-import { parseExpandQuery } from '../../common/dto/expand-query.util';
 import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
@@ -32,12 +30,8 @@ import {
   type ActivityQualificationTarget,
 } from './activity-qualification-evaluator.service';
 import { ActivityRegistrationNotificationProducer } from './activity-registration-notification-producer';
-import {
-  ActivityRegistrationQueryService,
-  type RegistrationAdminListRow,
-  type RegistrationCsvRow,
-  type RegistrationListRow,
-} from './activity-registration-query.service';
+import { ActivityRegistrationPresenter } from './activity-registration-presenter';
+import { ActivityRegistrationQueryService } from './activity-registration-query.service';
 import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
 import { ActivityRegistrationWaitlistQueryService } from './activity-registration-waitlist-query.service';
 import {
@@ -53,11 +47,6 @@ import {
   ListRegistrationsQueryDto,
   RejectRegistrationDto,
 } from './activity-registrations.dto';
-
-// F2/B1(admin-api-fe-integration-roadmap.md §4 B1;D6 拍板):expand 白名单,仅
-// listAllForAdmin(admin/v1/registrations 全局横扫)消费。
-const REGISTRATION_EXPAND_WHITELIST = ['member', 'activity'] as const;
-type RegistrationExpandKey = (typeof REGISTRATION_EXPAND_WHITELIST)[number];
 
 // V2 第一阶段批次 3A activity-registrations service。
 // 详见 docs:
@@ -116,19 +105,6 @@ const registrationSafeSelect = {
   currentRevision: true,
 } as const satisfies Prisma.ActivityRegistrationSelect;
 
-const REGISTRATION_CSV_HEADERS = [
-  'registration_id',
-  'member_id',
-  'member_no',
-  'display_name',
-  'status_code',
-  'registered_at',
-  'reviewed_at',
-  'review_note',
-  'cancelled_at',
-  'cancel_reason',
-] as const;
-
 type RegistrationFullRow = Prisma.ActivityRegistrationGetPayload<{
   select: typeof registrationSafeSelect;
 }>;
@@ -179,6 +155,9 @@ export class ActivityRegistrationsService {
     // Phase 6-B 第三域第一刀(架构边界 §3.2):四条列表 surface 与 CSV 导出的读侧查询构造。
     // 判权腿不下放 —— 本类只收算好的 visibleOrganizationIds。
     private readonly registrationQuery: ActivityRegistrationQueryService,
+    // Phase 6-B 第三域第二刀(架构边界 §3.1):Prisma 行 → 响应 DTO 的纯映射、expand
+    // 投影与 CSV 表头 / 行格式化。纯函数类,不碰 DB(eslint 规则 (j) 结构性守护)。
+    private readonly presenter: ActivityRegistrationPresenter,
   ) {}
 
   // ============ helpers ============
@@ -261,107 +240,6 @@ export class ActivityRegistrationsService {
 
     const visibleOrgIds = new Set(authScope.organizationIds);
     return requestedOrgIds.filter((id) => visibleOrgIds.has(id));
-  }
-
-  private jsonAsObject(v: Prisma.JsonValue | null): Record<string, unknown> | null {
-    if (v === null || typeof v !== 'object' || Array.isArray(v)) return null;
-    return v;
-  }
-
-  private toResponseDto(row: RegistrationFullRow): ActivityRegistrationResponseDto {
-    return {
-      id: row.id,
-      activityId: row.activityId,
-      memberId: row.memberId,
-      statusCode: row.statusCode,
-      registeredAt: row.registeredAt,
-      reviewedBy: row.reviewedBy,
-      reviewedAt: row.reviewedAt,
-      reviewNote: row.reviewNote,
-      extras: this.jsonAsObject(row.extras),
-      cancelledByUserId: row.cancelledByUserId,
-      cancelledAt: row.cancelledAt,
-      cancelReason: row.cancelReason,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
-  }
-
-  private toListItemDto(
-    row: RegistrationListRow,
-    waitlistPosition: number | null,
-  ): ActivityRegistrationListItemDto {
-    return {
-      id: row.id,
-      activityId: row.activityId,
-      activityPosition:
-        row.activityPosition == null
-          ? null
-          : {
-              activityPositionId: row.activityPosition.id,
-              name: row.activityPosition.name,
-            },
-      memberId: row.memberId,
-      memberNo: row.member?.memberNo ?? null,
-      memberDisplayName: row.member?.displayName ?? null,
-      statusCode: row.statusCode,
-      waitlistPosition,
-      registeredAt: row.registeredAt,
-      reviewedAt: row.reviewedAt,
-      cancelledAt: row.cancelledAt,
-      createdAt: row.createdAt,
-    };
-  }
-
-  // 跨轴只读列表项映射(2026-06-23):复用 toListItemDto 同字段集 + activityTitle 上下文。
-  // F2/B1(D6 拍板):expand 参数由调用方显式传入(listAllForAdmin 传解析后的集合;
-  // listForMemberAdmin 恒传空集 —— 本 goal 范围仅 B1/admin/v1/registrations 支持 expand)。
-  private toAdminListItemDto(
-    row: RegistrationAdminListRow,
-    expand: ReadonlySet<RegistrationExpandKey>,
-    waitlistPosition: number | null,
-  ): AdminRegistrationListItemDto {
-    return {
-      id: row.id,
-      activityId: row.activityId,
-      activityPosition:
-        row.activityPosition == null
-          ? null
-          : {
-              activityPositionId: row.activityPosition.id,
-              name: row.activityPosition.name,
-            },
-      activityTitle: row.activity?.title ?? null,
-      memberId: row.memberId,
-      memberNo: row.member?.memberNo ?? null,
-      memberDisplayName: row.member?.displayName ?? null,
-      statusCode: row.statusCode,
-      waitlistPosition,
-      registeredAt: row.registeredAt,
-      reviewedAt: row.reviewedAt,
-      cancelledAt: row.cancelledAt,
-      createdAt: row.createdAt,
-      ...(expand.has('member') && row.member
-        ? {
-            member: {
-              id: row.member.id,
-              memberNo: row.member.memberNo,
-              displayName: row.member.displayName,
-              gradeCode: row.member.gradeCode,
-            },
-          }
-        : {}),
-      ...(expand.has('activity') && row.activity
-        ? {
-            activity: {
-              id: row.activity.id,
-              title: row.activity.title,
-              startAt: row.activity.startAt,
-              organizationId: row.activity.organizationId,
-            },
-          }
-        : {}),
-    };
   }
 
   // 找 activity 并校验存在(创建报名 / 列表 / 导出 / capacity 复核共用)。
@@ -962,7 +840,7 @@ export class ActivityRegistrationsService {
     const waitlistPositions = await this.waitlistQuery.getPositions(rows);
 
     return {
-      items: rows.map((r) => this.toListItemDto(r, waitlistPositions.get(r.id) ?? null)),
+      items: rows.map((r) => this.presenter.toListItemDto(r, waitlistPositions.get(r.id) ?? null)),
       total,
       page,
       pageSize,
@@ -987,7 +865,7 @@ export class ActivityRegistrationsService {
       organizationId,
       includeDescendants,
     );
-    const expandSet = parseExpandQuery(expand, REGISTRATION_EXPAND_WHITELIST);
+    const expandSet = this.presenter.parseExpand(expand);
 
     const { items: rows, total } = await this.registrationQuery.listAllForAdmin(
       query,
@@ -997,7 +875,7 @@ export class ActivityRegistrationsService {
 
     return {
       items: rows.map((r) =>
-        this.toAdminListItemDto(r, expandSet, waitlistPositions.get(r.id) ?? null),
+        this.presenter.toAdminListItemDto(r, expandSet, waitlistPositions.get(r.id) ?? null),
       ),
       total,
       page,
@@ -1034,7 +912,7 @@ export class ActivityRegistrationsService {
 
     return {
       items: rows.map((r) =>
-        this.toAdminListItemDto(r, new Set(), waitlistPositions.get(r.id) ?? null),
+        this.presenter.toAdminListItemDto(r, new Set(), waitlistPositions.get(r.id) ?? null),
       ),
       total,
       page,
@@ -1124,7 +1002,7 @@ export class ActivityRegistrationsService {
         tx,
       });
 
-      return this.toResponseDto(created);
+      return this.presenter.toResponseDto(created);
     });
   }
 
@@ -1205,7 +1083,7 @@ export class ActivityRegistrationsService {
         tx,
       });
 
-      return this.toResponseDto(created);
+      return this.presenter.toResponseDto(created);
     });
   }
 
@@ -1357,7 +1235,7 @@ export class ActivityRegistrationsService {
         outcome: 'approved',
         reviewNote: dto.reviewNote ?? null,
       });
-      return this.toResponseDto(updated);
+      return this.presenter.toResponseDto(updated);
     });
 
     return result;
@@ -1440,7 +1318,7 @@ export class ActivityRegistrationsService {
         outcome: 'rejected',
         reviewNote: dto.reviewNote,
       });
-      return this.toResponseDto(updated);
+      return this.presenter.toResponseDto(updated);
     });
 
     return result;
@@ -1541,7 +1419,7 @@ export class ActivityRegistrationsService {
           promoted: promotion.promoted,
         });
       }
-      return this.toResponseDto(updated);
+      return this.presenter.toResponseDto(updated);
     });
 
     return result;
@@ -1618,7 +1496,7 @@ export class ActivityRegistrationsService {
         tx,
       });
 
-      return this.toResponseDto(updated);
+      return this.presenter.toResponseDto(updated);
     });
   }
 
@@ -1635,7 +1513,7 @@ export class ActivityRegistrationsService {
     const waitlistPositions = await this.waitlistQuery.getPositions(rows);
 
     return {
-      items: rows.map((r) => this.toListItemDto(r, waitlistPositions.get(r.id) ?? null)),
+      items: rows.map((r) => this.presenter.toListItemDto(r, waitlistPositions.get(r.id) ?? null)),
       total,
       page,
       pageSize,
@@ -1658,7 +1536,7 @@ export class ActivityRegistrationsService {
       // USER 越权统一抛 ACTIVITY_REGISTRATION_NOT_FOUND → 404(避免存在性泄漏)
       throw new BizException(BizCode.ACTIVITY_REGISTRATION_NOT_FOUND);
     }
-    return this.toResponseDto(reg);
+    return this.presenter.toResponseDto(reg);
   }
 
   // ============ 队员端:cancelMy ============
@@ -1792,7 +1670,7 @@ export class ActivityRegistrationsService {
         });
       }
       return {
-        dto: this.toResponseDto(updated),
+        dto: this.presenter.toResponseDto(updated),
         activityId: lockedReg.activityId,
         ownerRecipientResolution,
       };
@@ -1841,28 +1719,14 @@ export class ActivityRegistrationsService {
   private async *streamRowsAsCsv(
     where: Prisma.ActivityRegistrationWhereInput,
   ): AsyncGenerator<string, void, undefined> {
-    yield '\uFEFF';
-    yield REGISTRATION_CSV_HEADERS.join(',');
-
-    // 取数(500 行游标分页)已迁入 ActivityRegistrationQueryService;BOM / 表头 / 行格式化
-    // 属呈现,留在本类。惰性不变:内层 generator 的首次查询发生在上面两个 yield 被消费之后。
-    for await (const row of this.registrationQuery.streamCsvRows(where)) {
-      yield `\n${this.formatCsvRow(row)}`;
+    // BOM 与表头行(呈现)已迁入 Presenter,取数(500 行游标分页)已迁入 QueryService;
+    // 本方法只剩「按什么顺序把两者拼起来」这一条编排。yield 的**个数与顺序**逐字不变,
+    // 惰性也不变:内层 generator 的首次查询发生在下面两个 header chunk 被消费之后。
+    for (const chunk of this.presenter.csvHeaderChunks()) {
+      yield chunk;
     }
-  }
-
-  private formatCsvRow(row: RegistrationCsvRow): string {
-    return [
-      escapeCsvField(row.id),
-      escapeCsvField(row.memberId),
-      escapeCsvField(row.member?.memberNo ?? null),
-      escapeCsvField(row.member?.displayName ?? null),
-      escapeCsvField(row.statusCode),
-      escapeCsvField(row.registeredAt),
-      escapeCsvField(row.reviewedAt),
-      escapeCsvField(row.reviewNote),
-      escapeCsvField(row.cancelledAt),
-      escapeCsvField(row.cancelReason),
-    ].join(',');
+    for await (const row of this.registrationQuery.streamCsvRows(where)) {
+      yield `\n${this.presenter.formatCsvRow(row)}`;
+    }
   }
 }
