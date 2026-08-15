@@ -182,6 +182,64 @@ interface EdgeUsage {
   crossDomainAccessCount: number;
 }
 
+/**
+ * R10 Phase 4-1b —— 状态机治理的**执行位**(登记表 `harness/state-machines.json`)。
+ *
+ * 4-1a 的实测统计决定了本刀守什么(报告 §3.1,`docs/ai-harness/STATE_MACHINE_INVENTORY.md`):
+ * 闭集已有 34/56 被 DB CHECK 兜住,而**边有 20 条根本没有任何机器可读的声明、18 条连具名
+ * 状态机模块都没有**。一致性检查若只比「闭集 vs CHECK」,会对那 20 条**恒真通过 —— 那是空绿**。
+ * 所以门槛的核心不是闭集,是**边与实现映射**。
+ *
+ * 判据形态是**声明闸**,不是正确性证明:它只回答「这条登记敢不敢自称已治理」,
+ * 不声称被治理的代码是对的。结构上 fail-closed —— 拿不出证据就不许标 `governed`,
+ * 宁可判不了(goal D1 原话)。
+ *
+ * `governedEvidence` 是**新增的可选字段**,只有 `governanceStatus === 'governed'` 才要求它,
+ * 且 `inventory` 条目**禁止**携带(否则会留下半截声明 / 陈旧证据)。因为它对既有 56 条
+ * 全是可选的、既有条目一字不改仍然合法,所以**本刀不 bump `VERSION`** ——
+ * `VERSION` 同时校验 domain-map 的 generatorVersion(见 runMetadata),bump 它会强迫
+ * 另一条 lane 一起重算 domain-map。
+ */
+type StateLayer = 'L1' | 'L2' | 'L3';
+
+interface StateEdge {
+  from: string;
+  to: string;
+  action?: string;
+}
+
+interface GovernedEvidence {
+  /**
+   * `unconstrained` = L1 配置/标注列:没有流程语义,因此没有边可守,
+   * 它的不变量只有「闭集」,而闭集必须由 DB CHECK 兜底(见 l1GovernedErrors)。
+   * `enumerated` = L2/L3 流程列:必须逐条列出边,并与具名实现模块对得上。
+   */
+  edgeModel: 'unconstrained' | 'enumerated';
+  implementationFile?: string;
+  implementationSymbol?: string;
+  edges?: StateEdge[];
+  wrongStateBizCodes: string[];
+}
+
+interface StateEntry {
+  model: string;
+  field: string;
+  governanceStatus: 'inventory' | 'governed';
+  layer: StateLayer;
+  stateSet: { values: string[] | null; source: string; sourceRef: string };
+  transitions: string | string[];
+  wrongStateBizCode: string;
+  implementation: string;
+  governedBlockers: string[];
+  governedEvidence?: GovernedEvidence;
+}
+
+interface MigrationCheck {
+  migration: string;
+  values: string[];
+  constraint: string | null;
+}
+
 function read(rel: string): string {
   return fs.readFileSync(path.join(ROOT, rel), 'utf8');
 }
@@ -527,9 +585,526 @@ function decisionPendingErrors(map: DomainMap): string[] {
   return errors;
 }
 
+// --- R10 4-1b:登记表逐条判据 -------------------------------------------------
+
+/**
+ * 迁移语句缓存。**逐语句切分**是刻意的:4-1a 的第一版 CHECK 提取脚本用
+ * `ALTER TABLE "X" … [\s\S]*? CHECK (…)` 的惰性通配跨过了 `;`,把后面另一张表的
+ * CHECK 认到 `X` 头上(报告 §1.1 缺陷 1)。按 `;` 切开再逐条判目标表,这一整类
+ * 跨语句串味在结构上就不可能发生。
+ */
+let migrationStatementCache: Array<{ migration: string; table: string | null; sql: string }> | null =
+  null;
+
+function migrationStatements(): Array<{ migration: string; table: string | null; sql: string }> {
+  if (migrationStatementCache !== null) return migrationStatementCache;
+  const out: Array<{ migration: string; table: string | null; sql: string }> = [];
+  const root = 'prisma/migrations';
+  if (!exists(root)) {
+    migrationStatementCache = out;
+    return out;
+  }
+  const dirs = fs
+    .readdirSync(path.join(ROOT, root), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  for (const dir of dirs) {
+    const rel = root + '/' + dir + '/migration.sql';
+    if (!exists(rel)) continue;
+    const sql = read(rel)
+      .replace(/--[^\n]*/g, ' ')
+      .replace(/\/\*[\s\S]*?\*\//g, ' ');
+    for (const statement of sql.split(';')) {
+      const table =
+        /\b(?:ALTER|CREATE)\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:ONLY\s+)?(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))/i.exec(
+          statement,
+        );
+      out.push({ migration: dir, table: table?.[1] ?? table?.[2] ?? null, sql: statement });
+    }
+  }
+  migrationStatementCache = out;
+  return out;
+}
+
+/** `CHECK ( … )` 的括号配平提取 —— 正则数不清嵌套括号。 */
+function checkBodies(statement: string): string[] {
+  const out: string[] = [];
+  const re = /\bCHECK\s*\(/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(statement)) !== null) {
+    let depth = 1;
+    let cursor = match.index + match[0].length;
+    const start = cursor;
+    while (cursor < statement.length && depth > 0) {
+      if (statement[cursor] === '(') depth += 1;
+      else if (statement[cursor] === ')') depth -= 1;
+      cursor += 1;
+    }
+    if (depth === 0) out.push(statement.slice(start, cursor - 1));
+  }
+  return out;
+}
+
+/**
+ * 只认**整体**形如 `"col" IN (…)` 或 `"col" IS NULL OR "col" IN (…)` 的 CHECK。
+ *
+ * 复合 shape 约束里出现的 `IN (…)` 分支**不算闭集**:4-1a 报告 §1.1 缺陷 2 实测过
+ * ——`ActivityAllocationBatch` 的 `void_shape_check` 里有一句
+ * `"statusCode" IN ('preparing','committed')`,那是「非 voided 分支」的条件,
+ * 不是闭集声明;按它读会把 3 值闭集读成 2 值,而且**读数看着完全合理**。
+ * 锚 `^…$` 正是把那一整类分支条件挡在门外。
+ */
+function closedSetFromCheckBody(body: string, column: string): string[] | null {
+  const normalized = body.replace(/\s+/g, ' ').trim();
+  const inList = "\\(\\s*((?:'[^']*'\\s*,\\s*)*'[^']*')\\s*\\)";
+  const col = '"' + column.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '"';
+  const direct = new RegExp('^' + col + '\\s+IN\\s*' + inList + '$', 'i');
+  const nullable = new RegExp(
+    '^' + col + '\\s+IS\\s+NULL\\s+OR\\s+' + col + '\\s+IN\\s*' + inList + '$',
+    'i',
+  );
+  const hit = direct.exec(normalized) ?? nullable.exec(normalized);
+  if (hit === null) return null;
+  return hit[1].split(',').map((value) => value.trim().replace(/^'|'$/g, ''));
+}
+
+/**
+ * 该表该列的闭集 CHECK 历史。按表名关联而非只按列名 —— `statusCode` / `modeCode`
+ * 在几十张表上重名,只按列名找会把别的表的约束认过来。
+ */
+function closedSetCheckHistory(
+  table: string,
+  column: string,
+): { declarations: MigrationCheck[]; drops: Array<{ migration: string; name: string }> } {
+  const declarations: MigrationCheck[] = [];
+  const drops: Array<{ migration: string; name: string }> = [];
+  for (const statement of migrationStatements()) {
+    if (statement.table !== table) continue;
+    for (const body of checkBodies(statement.sql)) {
+      const values = closedSetFromCheckBody(body, column);
+      if (values === null) continue;
+      const named = /ADD\s+CONSTRAINT\s+"([^"]+)"/i.exec(statement.sql);
+      declarations.push({ migration: statement.migration, values, constraint: named?.[1] ?? null });
+    }
+    const dropRe = /DROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?"([^"]+)"/gi;
+    let drop: RegExpExecArray | null;
+    while ((drop = dropRe.exec(statement.sql)) !== null)
+      drops.push({ migration: statement.migration, name: drop[1] });
+  }
+  return { declarations, drops };
+}
+
+let bizCodeCache: Set<string> | null = null;
+
+/** `BizCode` 的成员名全集。走 AST 而不是 grep —— 注释里的码名不是执行位。 */
+function bizCodeMembers(): Set<string> {
+  if (bizCodeCache !== null) return bizCodeCache;
+  const rel = 'src/common/exceptions/biz-code.constant.ts';
+  const out = new Set<string>();
+  if (!exists(rel)) {
+    bizCodeCache = out;
+    return out;
+  }
+  const source = ts.createSourceFile(rel, read(rel), ts.ScriptTarget.Latest, true);
+  for (const statement of source.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(declaration.name) || declaration.name.text !== 'BizCode') continue;
+      let initializer: ts.Expression | undefined = declaration.initializer;
+      while (initializer !== undefined && ts.isAsExpression(initializer))
+        initializer = initializer.expression;
+      if (initializer === undefined || !ts.isObjectLiteralExpression(initializer)) continue;
+      for (const property of initializer.properties) {
+        const name = property.name;
+        if (name === undefined) continue;
+        if (ts.isIdentifier(name) || ts.isStringLiteral(name)) out.add(name.text);
+      }
+    }
+  }
+  bizCodeCache = out;
+  return out;
+}
+
+/** 顶层声明的符号名。用于证明 `implementationSymbol` 在那个文件里真的存在。 */
+function declaredSymbols(rel: string): Set<string> {
+  const out = new Set<string>();
+  const source = ts.createSourceFile(rel, read(rel), ts.ScriptTarget.Latest, true);
+  const addBinding = (name: ts.BindingName): void => {
+    if (ts.isIdentifier(name)) {
+      out.add(name.text);
+      return;
+    }
+    for (const element of name.elements)
+      if (ts.isBindingElement(element)) addBinding(element.name);
+  };
+  for (const statement of source.statements) {
+    if (
+      ts.isClassDeclaration(statement) ||
+      ts.isFunctionDeclaration(statement) ||
+      ts.isEnumDeclaration(statement) ||
+      ts.isInterfaceDeclaration(statement) ||
+      ts.isTypeAliasDeclaration(statement)
+    ) {
+      if (statement.name !== undefined) out.add(statement.name.text);
+      continue;
+    }
+    if (ts.isVariableStatement(statement))
+      for (const declaration of statement.declarationList.declarations) addBinding(declaration.name);
+  }
+  return out;
+}
+
+/**
+ * 文件内的字符串字面量全集。走 AST 是判据的要害:**注释不是执行位** ——
+ * 本仓栽过「结构断言 grep 到了自己文件头的散文」的跟头,AST 从源头上排除了它。
+ */
+function stringLiteralsIn(rel: string): Set<string> {
+  const out = new Set<string>();
+  const source = ts.createSourceFile(rel, read(rel), ts.ScriptTarget.Latest, true);
+  const visit = (node: ts.Node): void => {
+    if (ts.isStringLiteralLike(node)) out.add(node.text);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return out;
+}
+
+/**
+ * L1 配置/标注列的 `governed` 门槛。
+ *
+ * L1 按定义没有流程、没有边,所以 goal D1 ① 的「实现模块路径可解析」对它**套错了对象**
+ * (13 条 L1 里绝大多数的 `implementation` 是散文,因为它的实现就是 CRUD)。
+ * 维护者 2026-08-15 拍板改判为:**闭集必须能从 `sourceRef` 指名的那条 migration 的
+ * DB CHECK 原样重算出来,且那条 CHECK 是全仓最后一次声明、之后没被 DROP** ——
+ * 验证的是「登记声明 = 数据库约束」,正是配置列该守的东西,而且是活体判据:
+ * 改 `stateSet.values` 而不改 migration 立刻红。
+ */
+function l1GovernedErrors(entry: StateEntry, table: string | null, label: string): string[] {
+  const errors: string[] = [];
+  const evidence = entry.governedEvidence as GovernedEvidence;
+  if (entry.transitions !== 'unconstrained')
+    errors.push(label + ': L1 governed requires transitions "unconstrained"');
+  if (evidence.edgeModel !== 'unconstrained')
+    errors.push(label + ': L1 governed requires governedEvidence.edgeModel "unconstrained"');
+  if (evidence.edges !== undefined)
+    errors.push(label + ': L1 governed must not declare governedEvidence.edges');
+  if (evidence.implementationFile !== undefined || evidence.implementationSymbol !== undefined) {
+    errors.push(
+      label + ': L1 governed must not declare an implementation module (config columns have none)',
+    );
+  }
+  if (entry.wrongStateBizCode !== 'none' || evidence.wrongStateBizCodes.length > 0) {
+    errors.push(
+      label + ': L1 governed requires wrongStateBizCode "none" and empty wrongStateBizCodes',
+    );
+  }
+  if (entry.stateSet.source !== 'db-check')
+    errors.push(label + ': L1 governed requires stateSet.source "db-check"');
+  const declared = entry.stateSet.values;
+  if (declared === null) return errors;
+  if (table === null) {
+    errors.push(label + ': model is not present in prisma/schema.prisma, cannot resolve its table');
+    return errors;
+  }
+  const history = closedSetCheckHistory(table, entry.field);
+  const inForce = history.declarations[history.declarations.length - 1];
+  if (inForce === undefined) {
+    errors.push(
+      label + ': no closed-set CHECK found for table "' + table + '" column "' + entry.field + '"',
+    );
+    return errors;
+  }
+  const want = [...declared].sort().join(',');
+  const got = [...inForce.values].sort().join(',');
+  if (want !== got) {
+    errors.push(
+      label +
+        ': closed-set CHECK in force (' +
+        inForce.migration +
+        ') declares [' +
+        got +
+        '] but registry declares [' +
+        want +
+        ']',
+    );
+  }
+  if (path.posix.basename(entry.stateSet.sourceRef) !== inForce.migration) {
+    errors.push(
+      label +
+        ': stateSet.sourceRef must name the migration holding the CHECK in force (' +
+        inForce.migration +
+        ')',
+    );
+  }
+  const droppedLater = history.drops.filter(
+    (drop) => drop.name === inForce.constraint && drop.migration > inForce.migration,
+  );
+  for (const drop of droppedLater) {
+    errors.push(
+      label +
+        ': closed-set CHECK "' +
+        String(inForce.constraint) +
+        '" was dropped by a later migration (' +
+        drop.migration +
+        ')',
+    );
+  }
+  return errors;
+}
+
+/**
+ * L2 / L3 流程列的 `governed` 门槛 —— **本刀的主判据**。
+ *
+ * 三条缺一不可(goal D1):①具名实现模块存在且符号真在里面 ②合法迁移边逐条机器可读
+ * ③非法迁移有专属 BizCode。②的「防登记表写了、代码里没有」是双向的:
+ *   正向 —— 每个边端点 / 动作都必须在那个实现文件里作为**字符串字面量**出现;
+ *   反向 —— 该实现文件里出现的、属于本列闭集的字面量,必须被某条边覆盖。
+ * 只做正向会漏掉「登记表只列了一半的边」,只做反向会漏掉「登记表凭空造边」。
+ */
+function flowGovernedErrors(entry: StateEntry, label: string): string[] {
+  const errors: string[] = [];
+  const evidence = entry.governedEvidence as GovernedEvidence;
+  if (evidence.edgeModel !== 'enumerated') {
+    errors.push(label + ': ' + entry.layer + ' governed requires governedEvidence.edgeModel "enumerated"');
+    return errors;
+  }
+  const file = evidence.implementationFile;
+  if (
+    file === undefined ||
+    !file.startsWith('src/') ||
+    !file.endsWith('.ts') ||
+    !exists(file) ||
+    !fs.statSync(path.join(ROOT, file)).isFile()
+  ) {
+    errors.push(
+      label +
+        ': governedEvidence.implementationFile must be an existing src/**.ts file (got ' +
+        String(file) +
+        ')',
+    );
+    return errors;
+  }
+  const symbol = evidence.implementationSymbol;
+  if (symbol === undefined || !declaredSymbols(file).has(symbol)) {
+    errors.push(
+      label +
+        ': governedEvidence.implementationSymbol ' +
+        JSON.stringify(symbol ?? null) +
+        ' is not declared in ' +
+        file,
+    );
+  }
+  const edges = evidence.edges;
+  if (edges === undefined || edges.length === 0) {
+    errors.push(label + ': governedEvidence.edges must be a non-empty array for ' + entry.layer);
+    return errors;
+  }
+  const values = new Set(entry.stateSet.values ?? []);
+  const literals = stringLiteralsIn(file);
+  const touched = new Set<string>();
+  for (const edge of edges) {
+    for (const endpoint of [edge.from, edge.to]) {
+      touched.add(endpoint);
+      if (!values.has(endpoint))
+        errors.push(label + ': edge endpoint "' + endpoint + '" is not in stateSet.values');
+      else if (!literals.has(endpoint)) {
+        errors.push(
+          label +
+            ': edge endpoint "' +
+            endpoint +
+            '" never appears as a string literal in ' +
+            file +
+            ' (registry declares an edge the named module does not mention)',
+        );
+      }
+    }
+    if (edge.action !== undefined && !literals.has(edge.action)) {
+      errors.push(
+        label + ': edge action "' + edge.action + '" never appears as a string literal in ' + file,
+      );
+    }
+  }
+  for (const value of [...values].sort()) {
+    if (literals.has(value) && !touched.has(value)) {
+      errors.push(
+        label +
+          ': state "' +
+          value +
+          '" appears in ' +
+          file +
+          ' but no declared edge touches it (edge list is incomplete)',
+      );
+    }
+  }
+  if (evidence.wrongStateBizCodes.length === 0) {
+    errors.push(label + ': ' + entry.layer + ' governed requires a non-empty wrongStateBizCodes');
+  }
+  const known = bizCodeMembers();
+  for (const code of evidence.wrongStateBizCodes) {
+    if (!known.has(code)) errors.push(label + ': wrongStateBizCodes contains unknown BizCode "' + code + '"');
+  }
+  return errors;
+}
+
+/**
+ * 逐条形状校验 —— A 类(登记完整性)。返回 null 表示形状本身就不成立,
+ * 后续的 `governed` 判据无从谈起(fail-closed:形状坏了不等于通过)。
+ */
+function parseStateEntry(raw: JsonRecord, label: string, errors: string[]): StateEntry | null {
+  const before = errors.length;
+  const model = typeof raw.model === 'string' ? raw.model : '';
+  const field = typeof raw.field === 'string' ? raw.field : '';
+  if (model === '' || field === '') {
+    errors.push(label + ': model and field must be non-empty strings');
+    return null;
+  }
+  const status = raw.governanceStatus;
+  if (status !== 'inventory' && status !== 'governed')
+    errors.push(label + ': governanceStatus must be "inventory" or "governed"');
+  const layer = raw.layer;
+  if (layer !== 'L1' && layer !== 'L2' && layer !== 'L3')
+    errors.push(label + ': layer must be one of L1 / L2 / L3');
+  const stateSet = raw.stateSet;
+  let values: string[] | null = null;
+  if (stateSet === null || typeof stateSet !== 'object' || Array.isArray(stateSet)) {
+    errors.push(label + ': stateSet must be an object');
+  } else {
+    const record = stateSet as JsonRecord;
+    // `values: null` 是 4-1a 刻意的「没有已声明闭集」标记(5 条 closed-set-undeclared),
+    // 不是缺字段 —— 但它结构上永远升不了 governed。
+    if (record.values === null) values = null;
+    else if (Array.isArray(record.values) && record.values.every((item) => typeof item === 'string'))
+      values = record.values as string[];
+    else errors.push(label + ': stateSet.values must be a string array or null');
+    if (typeof record.source !== 'string' || record.source.length === 0)
+      errors.push(label + ': stateSet.source must be a non-empty string');
+    if (typeof record.sourceRef !== 'string' || record.sourceRef.length === 0)
+      errors.push(label + ': stateSet.sourceRef must be a non-empty string');
+  }
+  const transitions = raw.transitions;
+  const transitionsOk =
+    transitions === 'unconstrained' ||
+    transitions === 'not-derived' ||
+    (Array.isArray(transitions) &&
+      transitions.length > 0 &&
+      transitions.every((item) => typeof item === 'string' && item.length > 0));
+  if (!transitionsOk)
+    errors.push(
+      label + ': transitions must be "unconstrained", "not-derived", or a non-empty string array',
+    );
+  if (typeof raw.wrongStateBizCode !== 'string' || raw.wrongStateBizCode.length === 0)
+    errors.push(label + ': wrongStateBizCode must be a non-empty string');
+  if (typeof raw.implementation !== 'string' || raw.implementation.length === 0)
+    errors.push(label + ': implementation must be a non-empty string');
+  if (typeof raw.notes !== 'string' || raw.notes.length === 0)
+    errors.push(label + ': notes must be a non-empty string');
+  const blockers = raw.governedBlockers;
+  if (!Array.isArray(blockers) || blockers.some((item) => typeof item !== 'string'))
+    errors.push(label + ': governedBlockers must be a string array');
+  let evidence: GovernedEvidence | undefined;
+  if (raw.governedEvidence !== undefined) {
+    const record = raw.governedEvidence;
+    if (record === null || typeof record !== 'object' || Array.isArray(record)) {
+      errors.push(label + ': governedEvidence must be an object');
+    } else {
+      const item = record as JsonRecord;
+      const edgeModel = item.edgeModel;
+      if (edgeModel !== 'unconstrained' && edgeModel !== 'enumerated')
+        errors.push(label + ': governedEvidence.edgeModel must be "unconstrained" or "enumerated"');
+      let edges: StateEdge[] | undefined;
+      if (item.edges !== undefined) {
+        if (
+          !Array.isArray(item.edges) ||
+          item.edges.some(
+            (edge) =>
+              edge === null ||
+              typeof edge !== 'object' ||
+              Array.isArray(edge) ||
+              typeof (edge as JsonRecord).from !== 'string' ||
+              typeof (edge as JsonRecord).to !== 'string' ||
+              ((edge as JsonRecord).action !== undefined &&
+                typeof (edge as JsonRecord).action !== 'string'),
+          )
+        ) {
+          errors.push(label + ': governedEvidence.edges must be an array of {from,to,action?}');
+        } else edges = item.edges as unknown as StateEdge[];
+      }
+      const codes = item.wrongStateBizCodes;
+      if (!Array.isArray(codes) || codes.some((code) => typeof code !== 'string'))
+        errors.push(label + ': governedEvidence.wrongStateBizCodes must be a string array');
+      if (errors.length === before) {
+        evidence = {
+          edgeModel: edgeModel as GovernedEvidence['edgeModel'],
+          implementationFile:
+            typeof item.implementationFile === 'string' ? item.implementationFile : undefined,
+          implementationSymbol:
+            typeof item.implementationSymbol === 'string' ? item.implementationSymbol : undefined,
+          edges,
+          wrongStateBizCodes: codes as string[],
+        };
+      }
+    }
+  }
+  if (errors.length !== before) return null;
+  return {
+    model,
+    field,
+    governanceStatus: status as StateEntry['governanceStatus'],
+    layer: layer as StateLayer,
+    stateSet: {
+      values,
+      source: String((stateSet as JsonRecord).source),
+      sourceRef: String((stateSet as JsonRecord).sourceRef),
+    },
+    transitions: transitions as string | string[],
+    wrongStateBizCode: String(raw.wrongStateBizCode),
+    implementation: String(raw.implementation),
+    governedBlockers: blockers as string[],
+    governedEvidence: evidence,
+  };
+}
+
+/** 已登记条目的 `governed` 声明闸。`inventory` 条目在这里恒零成本。 */
+function governedGateErrors(entry: StateEntry, table: string | null): string[] {
+  const label = 'state entry ' + entry.model + '.' + entry.field;
+  if (entry.governanceStatus === 'inventory') {
+    // 陈旧证据比没有证据更危险:它会让下一个人以为门槛已经过了。
+    return entry.governedEvidence === undefined
+      ? []
+      : [label + ': inventory entries must not carry governedEvidence'];
+  }
+  const errors: string[] = [];
+  if (entry.governedBlockers.length > 0) {
+    errors.push(
+      label + ': governed requires empty governedBlockers (got ' + entry.governedBlockers.join(', ') + ')',
+    );
+  }
+  if (entry.stateSet.values === null)
+    errors.push(label + ': governed requires a declared closed set (stateSet.values is null)');
+  if (entry.governedEvidence === undefined) {
+    errors.push(label + ': governed requires governedEvidence');
+    return errors;
+  }
+  errors.push(
+    ...(entry.layer === 'L1'
+      ? l1GovernedErrors(entry, table, label)
+      : flowGovernedErrors(entry, label)),
+  );
+  return errors;
+}
+
 function stateRegistryErrors(errors: string[]): void {
   if (!exists(STATE_MACHINES)) return;
-  const raw = objectOf(JSON.parse(read(STATE_MACHINES)) as unknown, STATE_MACHINES);
+  let raw: JsonRecord;
+  try {
+    raw = objectOf(JSON.parse(read(STATE_MACHINES)) as unknown, STATE_MACHINES);
+  } catch (error) {
+    // 解析不了 = 判不了 ⇒ fail-closed。转成 error 而不是让它抛穿 runMetadata,
+    // 这样退出码仍是 1,但消息是可读、可断言的一行。
+    errors.push(STATE_MACHINES + ' is unreadable: ' + (error instanceof Error ? error.message : String(error)));
+    return;
+  }
   if (raw.schemaVersion !== VERSION)
     errors.push(STATE_MACHINES + '.schemaVersion must equal ' + VERSION);
   if (raw.generatorVersion !== VERSION)
@@ -543,14 +1118,18 @@ function stateRegistryErrors(errors: string[]): void {
     errors.push(STATE_MACHINES + '.entries must be an array');
     return;
   }
+  const tables = new Map(schemaModels().map((model) => [model.name, model.tableName]));
   const actual: string[] = [];
   for (const [index, item] of raw.entries.entries()) {
-    const entry = objectOf(item, STATE_MACHINES + '.entries[' + index + ']');
-    const model = stringOf(entry.model, 'state model');
-    const field = stringOf(entry.field, 'state field');
-    if (entry.governanceStatus !== 'inventory')
-      errors.push('state entry ' + model + '.' + field + ' must be inventory');
-    actual.push(model + '.' + field);
+    const label = STATE_MACHINES + '.entries[' + index + ']';
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+      errors.push(label + ' must be an object');
+      continue;
+    }
+    const entry = parseStateEntry(item as JsonRecord, label, errors);
+    if (entry === null) continue;
+    actual.push(entry.model + '.' + entry.field);
+    errors.push(...governedGateErrors(entry, tables.get(entry.model) ?? null));
   }
   const expected = listStringStateColumns()
     .map((item) => item.model + '.' + item.field)
@@ -561,6 +1140,68 @@ function stateRegistryErrors(errors: string[]): void {
       STATE_MACHINES + ' coverage mismatch: expected ' + expected.length + ', got ' + actual.length,
     );
   }
+}
+
+/**
+ * B 类(存量一致性 / 升格候选)—— **恒 report**,挂在 `--violations` 的 `|| true` 出口上。
+ *
+ * `closedSetOnlyWouldPass` vs `edgesMachineReadable` 这一对读数是本刀的核心自证:
+ * 若判据只比「闭集 vs CHECK」,前者那一堆条目会全部恒真通过,而后者才是真实的边覆盖面。
+ * 两个数的差就是 4-1a §3.1 说的**空绿面**。
+ */
+function stateGovernanceReport(): JsonRecord {
+  if (!exists(STATE_MACHINES)) return { present: false };
+  const raw = JSON.parse(read(STATE_MACHINES)) as { entries?: JsonRecord[] };
+  const entries = raw.entries ?? [];
+  const byStatus: Record<string, number> = {};
+  const byLayer: Record<string, number> = {};
+  const blockerHistogram: Record<string, number> = {};
+  let closedSetDeclared = 0;
+  let edgesMachineReadable = 0;
+  let edgesNotDerived = 0;
+  let edgesUnconstrained = 0;
+  const governed: string[] = [];
+  const upgradeCandidates: string[] = [];
+  for (const entry of entries) {
+    const id = String(entry.model) + '.' + String(entry.field);
+    const status = String(entry.governanceStatus);
+    byStatus[status] = (byStatus[status] ?? 0) + 1;
+    byLayer[String(entry.layer)] = (byLayer[String(entry.layer)] ?? 0) + 1;
+    const blockers = Array.isArray(entry.governedBlockers) ? (entry.governedBlockers as string[]) : [];
+    for (const blocker of blockers)
+      blockerHistogram[blocker] = (blockerHistogram[blocker] ?? 0) + 1;
+    const stateSet = entry.stateSet as JsonRecord | undefined;
+    if (Array.isArray(stateSet?.values)) closedSetDeclared += 1;
+    if (Array.isArray(entry.transitions)) edgesMachineReadable += 1;
+    else if (entry.transitions === 'not-derived') edgesNotDerived += 1;
+    else if (entry.transitions === 'unconstrained') edgesUnconstrained += 1;
+    if (status === 'governed') governed.push(id);
+    else if (blockers.length === 0) upgradeCandidates.push(id);
+  }
+  return {
+    present: true,
+    enforcement: 'report-only',
+    total: entries.length,
+    byStatus,
+    byLayer,
+    governed,
+    // 零 blocker 但仍是 inventory 的条目:它们**够得着**门槛,但升格仍要补
+    // governedEvidence(声明闸不会替人声明)。
+    upgradeCandidates,
+    edgeCoverage: {
+      closedSetOnlyWouldPass: closedSetDeclared,
+      edgesMachineReadable,
+      edgesNotDerived,
+      edgesUnconstrained,
+      // 「只比闭集」的空绿面 = 有闭集可比、但边根本没有机器可读声明的条目数。
+      vacuousGreenIfClosedSetOnly: entries.filter(
+        (entry) =>
+          Array.isArray((entry.stateSet as JsonRecord | undefined)?.values) &&
+          entry.transitions === 'not-derived',
+      ).length,
+    },
+    blockerHistogram,
+  };
 }
 
 function runMetadata(): void {
@@ -2269,6 +2910,9 @@ function runViolations(): void {
           ).length,
           findings: commonFindings,
         },
+        // R10 4-1b —— 状态机治理面(恒 report)。A 类的声明闸在 `--metadata` 里阻断,
+        // 这里只给存量分布与升格候选,不参与退出码。
+        stateGovernance: stateGovernanceReport(),
         debtRegistry: architectureDebtReport(),
         findings,
       },
