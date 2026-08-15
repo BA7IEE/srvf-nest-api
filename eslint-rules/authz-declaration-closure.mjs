@@ -37,6 +37,19 @@ const ROUTE_AUTHZ_MANIFEST_END = '\n-->';
 
 /** @type {Map<string, SourceIndex>} */
 const sourceIndexCache = new Map();
+
+// Building a ts.Program over the whole repository costs ~2s, and nothing about
+// that is visible from the outside: a caller that varies `cacheKey` per item
+// pays it once per item and still goes green. That is exactly how the R8
+// selftest came to rebuild the same Program 30 times without anyone noticing.
+// Exposing the count makes the regression assertable instead of merely
+// commented about.
+let typedProgramBuilds = 0;
+
+/** ts.Program builds this process has paid for. Monotonic; never reset. */
+export function authzTypedProgramBuilds() {
+  return typedProgramBuilds;
+}
 // Each entry pins a whole ts.Program (its checker is needed to enumerate what a
 // DTO parameter carries). Callers vary cacheKey because the files changed under
 // them, so older entries are stale by construction — an unbounded map would just
@@ -143,6 +156,7 @@ function buildTypedIndex(root) {
   const config = ts.readConfigFile(configPath, ts.sys.readFile);
   if (config.error !== undefined) return null;
   const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, root);
+  typedProgramBuilds += 1;
   const program = ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options });
   return { program, checker: program.getTypeChecker() };
 }
