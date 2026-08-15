@@ -16,11 +16,17 @@ describe('ActivityPublishProposalV2Service', () => {
     activeResolvedConfig: jest.fn(),
     applyPublishedTarget: jest.fn(),
   };
+  const qualificationRules = {
+    currentTarget: jest.fn().mockResolvedValue({ ruleSets: [] }),
+    activeResolvedConfig: jest.fn().mockResolvedValue([]),
+    applyPublishedTarget: jest.fn().mockResolvedValue([]),
+  };
 
   it('recognizes a historical schemaVersion 3 form-bearing proposal for approval compatibility', () => {
     const service = new ActivityPublishProposalV2Service(
       { get: jest.fn() } as never,
       registrationForms as never,
+      qualificationRules as never,
       { apply: jest.fn() } as never,
     );
 
@@ -36,6 +42,7 @@ describe('ActivityPublishProposalV2Service', () => {
     const service = new ActivityPublishProposalV2Service(
       { get: jest.fn() } as never,
       registrationForms as never,
+      qualificationRules as never,
       { apply: jest.fn() } as never,
     );
     const internals = service as unknown as ProposalV2Internals;
@@ -96,17 +103,20 @@ describe('ActivityPublishProposalV2Service', () => {
       expect.anything(),
       'activity-1',
       false,
+      false,
     );
     expect(internals.currentState).toHaveBeenNthCalledWith(
       2,
       expect.anything(),
       'activity-1',
       true,
+      false,
     );
     expect(internals.currentState).toHaveBeenNthCalledWith(
       3,
       expect.anything(),
       'activity-1',
+      false,
       false,
     );
     expect(internals.currentState).toHaveBeenNthCalledWith(
@@ -114,6 +124,7 @@ describe('ActivityPublishProposalV2Service', () => {
       expect.anything(),
       'activity-1',
       true,
+      false,
     );
   });
 
@@ -121,6 +132,7 @@ describe('ActivityPublishProposalV2Service', () => {
     const service = new ActivityPublishProposalV2Service(
       { get: jest.fn() } as never,
       registrationForms as never,
+      qualificationRules as never,
       { apply: jest.fn() } as never,
     );
     const internals = service as unknown as { currentState: jest.Mock };
@@ -154,10 +166,76 @@ describe('ActivityPublishProposalV2Service', () => {
     expect(after[2].snapshotHash).not.toBe(before[2].snapshotHash);
   });
 
+  it('keeps v2-v4 qualification-free while V5 freezes the canonical RuleSet target', async () => {
+    const service = new ActivityPublishProposalV2Service(
+      { get: jest.fn() } as never,
+      registrationForms as never,
+      qualificationRules as never,
+      { apply: jest.fn() } as never,
+    );
+    const internals = service as unknown as { currentState: jest.Mock };
+    const state = {
+      workflowRevision: 11,
+      activity: { title: 'qualification stale probe', allocationModeCode: 'qualification_rank' },
+      sessions: [],
+      templateVersionId: null,
+      resolvedConfig: { templateVersionId: null },
+      registrationForm: null,
+      qualificationRuleSets: {
+        ruleSets: [
+          {
+            scope: { sessionId: null, positionId: null },
+            rules: [],
+            definitionHash: 'a'.repeat(64),
+          },
+        ],
+      },
+    };
+    internals.currentState = jest.fn().mockResolvedValue(state);
+
+    const before = await Promise.all([
+      service.rebuildCurrent({} as never, 'activity-1', 2),
+      service.rebuildCurrent({} as never, 'activity-1', 3),
+      service.rebuildCurrent({} as never, 'activity-1', 4),
+      service.rebuildCurrent({} as never, 'activity-1', 5),
+    ]);
+    internals.currentState.mockResolvedValue({
+      ...state,
+      qualificationRuleSets: {
+        ruleSets: [
+          {
+            ...state.qualificationRuleSets.ruleSets[0],
+            definitionHash: 'b'.repeat(64),
+          },
+        ],
+      },
+    });
+    const after = await Promise.all([
+      service.rebuildCurrent({} as never, 'activity-1', 2),
+      service.rebuildCurrent({} as never, 'activity-1', 3),
+      service.rebuildCurrent({} as never, 'activity-1', 4),
+      service.rebuildCurrent({} as never, 'activity-1', 5),
+    ]);
+
+    expect(after.slice(0, 3).map((entry) => entry.snapshotHash)).toEqual(
+      before.slice(0, 3).map((entry) => entry.snapshotHash),
+    );
+    // Mutation target: removing qualificationRuleSets from hashTargetV5 makes a pending
+    // configuration approval blind to a base-target drift.
+    expect(after[3].snapshotHash).not.toBe(before[3].snapshotHash);
+    expect(internals.currentState).toHaveBeenCalledWith(
+      expect.anything(),
+      'activity-1',
+      true,
+      true,
+    );
+  });
+
   it('never forwards allocation mode into v2/v3 applyActivity, but does forward the v4 target', async () => {
     const service = new ActivityPublishProposalV2Service(
       { get: jest.fn() } as never,
       registrationForms as never,
+      qualificationRules as never,
       { apply: jest.fn() } as never,
     );
     const internals = service as unknown as Record<string, jest.Mock>;
@@ -227,6 +305,7 @@ describe('ActivityPublishProposalV2Service', () => {
     const service = new ActivityPublishProposalV2Service(
       { get: jest.fn() } as never,
       registrationForms as never,
+      qualificationRules as never,
       { apply: jest.fn() } as never,
     );
     const internals = service as unknown as Record<string, jest.Mock>;
@@ -237,7 +316,12 @@ describe('ActivityPublishProposalV2Service', () => {
     await expect(service.getTemplateResolution({} as never, 'activity-1')).resolves.toEqual({
       templateVersionId: null,
     });
-    expect(internals.currentState).toHaveBeenCalledWith(expect.anything(), 'activity-1', false);
+    expect(internals.currentState).toHaveBeenCalledWith(
+      expect.anything(),
+      'activity-1',
+      false,
+      false,
+    );
   });
 
   it('runs the proposal application sequence through the capacity projector', async () => {
@@ -245,6 +329,7 @@ describe('ActivityPublishProposalV2Service', () => {
     const service = new ActivityPublishProposalV2Service(
       { get: jest.fn() } as never,
       registrationForms as never,
+      qualificationRules as never,
       capacityBuckets as never,
     );
     const calls: string[] = [];
@@ -318,6 +403,7 @@ describe('ActivityPublishProposalV2Service', () => {
     const service = new ActivityPublishProposalV2Service(
       { get: jest.fn() } as never,
       forms as never,
+      qualificationRules as never,
       capacityBuckets as never,
     );
     const calls: string[] = [];

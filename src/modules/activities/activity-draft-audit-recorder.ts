@@ -10,7 +10,7 @@ export class ActivityDraftAuditRecorder {
 
   async log(args: {
     activityId: string;
-    operation:
+    operation?:
       | 'draft-session-create'
       | 'draft-session-update'
       | 'draft-session-delete'
@@ -35,7 +35,7 @@ export class ActivityDraftAuditRecorder {
       resourceId: args.activityId,
       meta: args.auditMeta,
       extra: {
-        operation: args.operation,
+        ...(args.operation ? { operation: args.operation } : {}),
         ...(args.sessionId ? { sessionId: args.sessionId } : {}),
         ...(args.positionId ? { positionId: args.positionId } : {}),
         ...(args.formVersionId ? { formVersionId: args.formVersionId } : {}),

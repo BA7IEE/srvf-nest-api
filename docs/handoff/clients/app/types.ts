@@ -2,7 +2,7 @@
 // 真相源:后端 live /api/docs-json;本文件派生自 docs/handoff/openapi.json 快照。
 // surface: App 小程序
 // generatorVersion: 1.0.0
-// inputDigest: sha256:e76865727794be36be6b808485e3a8eb78980f671a2e18ac9e37f1071a2ce2c6
+// inputDigest: sha256:82a68b718e07c8fa7a571a9d2889c5b044c8ce54c8de4fbd1ca8ce71483b4d09
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -212,6 +212,54 @@ export interface AppActivityPositionDto {
 export interface AppActivityQualificationDto {
   "resultCode": "pass" | "warn" | "fail";
   "unmetRules": AppActivityQualificationUnmetRuleDto[];
+}
+
+export interface AppActivityQualificationRuleDto {
+  "ruleTypeCode": "grade" | "gender" | "organization" | "certificate" | "training" | "age" | "insurance";
+  "enforcementCode": "block" | "warn";
+  "operator": "in" | "in_subtree" | "has_any" | "between" | "covers_activity";
+  "codes"?: string[];
+  "organizationIds"?: string[];
+  "standardIds"?: string[];
+  "minYears"?: number | null;
+  "maxYears"?: number | null;
+  "warnScore": number | null;
+  "message": string | null;
+  "sortOrder": number;
+}
+
+export interface AppActivityQualificationRuleInputDto {
+  "ruleTypeCode": "grade" | "gender" | "organization" | "certificate" | "training" | "age" | "insurance";
+  "enforcementCode": "block" | "warn";
+  "operator": "in" | "in_subtree" | "has_any" | "between" | "covers_activity";
+  "codes"?: string[];
+  "organizationIds"?: string[];
+  "standardIds"?: string[];
+  "minYears"?: number | null;
+  "maxYears"?: number | null;
+  "warnScore"?: number;
+  "message"?: string | null;
+  "sortOrder": number;
+}
+
+export interface AppActivityQualificationRuleScopeDto {
+  "sessionId": string | null;
+  "positionId": string | null;
+}
+
+export interface AppActivityQualificationRuleSetDto {
+  "scope": AppActivityQualificationRuleScopeDto;
+  "version": number;
+  "rules": AppActivityQualificationRuleDto[];
+}
+
+export interface AppActivityQualificationRuleSetInputDto {
+  "scope": AppActivityQualificationRuleScopeDto;
+  "rules": AppActivityQualificationRuleInputDto[];
+}
+
+export interface AppActivityQualificationRulesDto {
+  "ruleSets": AppActivityQualificationRuleSetDto[];
 }
 
 export interface AppActivityQualificationUnmetRuleDto {
@@ -1236,6 +1284,27 @@ export interface ChangeReviewDto {
   "sessions": ChangeReviewSessionCollectionsDto;
   "positions": ChangeReviewSessionPositionCollectionsDto;
   "registrationForm"?: RegistrationFormDefinitionInputDto;
+  "qualificationRuleSets"?: ChangeReviewQualificationRuleSetCollectionsDto;
+}
+
+export interface ChangeReviewQualificationRuleScopeDto {
+  "sessionId": string | null;
+  "positionId": string | null;
+}
+
+export interface ChangeReviewQualificationRuleSetCancelDto {
+  "scope": ChangeReviewQualificationRuleScopeDto;
+}
+
+export interface ChangeReviewQualificationRuleSetCollectionsDto {
+  "create": ChangeReviewQualificationRuleSetUpsertDto[];
+  "update": ChangeReviewQualificationRuleSetUpsertDto[];
+  "cancel": ChangeReviewQualificationRuleSetCancelDto[];
+}
+
+export interface ChangeReviewQualificationRuleSetUpsertDto {
+  "scope": ChangeReviewQualificationRuleScopeDto;
+  "rules": AppActivityQualificationRuleInputDto[];
 }
 
 export interface ChangeReviewSessionCancelDto {
@@ -1299,6 +1368,7 @@ export interface ChangeReviewSessionPositionCreateDto {
   "equipmentNotes"?: string | null;
   "sortOrder"?: number;
   "sessionId": string;
+  "clientRef"?: string;
 }
 
 export interface ChangeReviewSessionPositionUpdateDto {
@@ -1515,6 +1585,10 @@ export interface PrepareAppManagedActivityAllocationBatchDto {
   "operationKey": string;
   "sessionId": string;
   "positionId"?: string | null;
+}
+
+export interface PutAppManagedActivityQualificationRulesDto {
+  "ruleSets": AppActivityQualificationRuleSetInputDto[];
 }
 
 export interface PutAppManagedRegistrationFormDto {

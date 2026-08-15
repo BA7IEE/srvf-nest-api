@@ -44,6 +44,11 @@ interface OpenApiOperation {
   operationId?: string;
   summary?: string;
   responses?: Record<string, OpenApiResponse>;
+  requestBody?: {
+    content?: {
+      'application/json'?: { schema?: OpenApiSchema };
+    };
+  };
   deprecated?: boolean;
 }
 
@@ -217,6 +222,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 第 4 批：草稿发起人直改 Form；published 仍由 change review 接管。
   ['get', '/api/app/v1/my/managed-activities/{activityId}/registration-form'],
   ['put', '/api/app/v1/my/managed-activities/{activityId}/registration-form'],
+  // 第 4 批资格配置/发布激活：草稿全量替换读取/写入；已发布变更仍经 change review。
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/qualification-rules'],
+  ['put', '/api/app/v1/my/managed-activities/{activityId}/qualification-rules'],
   // 第 4 批⑦：负责人/报名协办管理邀请与独立访客名单；本人拒绝固定在 self surface。
   ['get', '/api/app/v1/my/managed-activities/{activityId}/invitations'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/invitations'],
@@ -1620,9 +1628,10 @@ describe('OpenAPI 契约快照', () => {
   //   Form GET/PUT + 一次性上传会话 POST/POST +4 →490；第 4 批④ canonical 报名命令
   //   POST +1 →491；第 4 批⑦邀请/访客五路 managed + 本人 decline 一路 →497；
   //   第 4 批⑧ managed onsite 临时参加 POST +1 →498；第 4 批分配核心：本人 accept
-  //   邀请 + rank/lottery 批次 prepare/commit/void/get +5 → **503**。
-  it('路由足迹精确为 503', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(503);
+  //   邀请 + rank/lottery 批次 prepare/commit/void/get +5 →503；资格配置草稿 GET/PUT +2
+  //   → **505**。
+  it('路由足迹精确为 505', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(505);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {
@@ -1931,6 +1940,50 @@ describe('OpenAPI 契约快照', () => {
       format: 'date-time',
       nullable: true,
     });
+  });
+
+  it('qualification configuration wire is typed, review-scoped, and exposes no opaque valueJson', () => {
+    const path = '/api/app/v1/my/managed-activities/{activityId}/qualification-rules';
+    const get = doc.paths[path]?.get;
+    const put = doc.paths[path]?.put;
+    const schemas = doc.components?.schemas ?? {};
+    const input = schemas.AppActivityQualificationRuleInputDto as OpenApiSchema;
+    const scope = schemas.AppActivityQualificationRuleScopeDto as OpenApiSchema;
+    const review = schemas.ChangeReviewDto as OpenApiSchema;
+    const positionCreate = schemas.ChangeReviewSessionPositionCreateDto as OpenApiSchema;
+
+    expect(get?.responses?.['200']?.content?.['application/json']?.schema?.properties?.data).toEqual({
+      $ref: '#/components/schemas/AppActivityQualificationRulesDto',
+    });
+    expect(put?.requestBody?.content?.['application/json']?.schema).toEqual({
+      $ref: '#/components/schemas/PutAppManagedActivityQualificationRulesDto',
+    });
+    expect(put?.responses?.['200']?.content?.['application/json']?.schema?.properties?.data).toEqual({
+      $ref: '#/components/schemas/AppActivityQualificationRulesDto',
+    });
+    expect(input.properties?.ruleTypeCode?.enum).toEqual([
+      'grade',
+      'gender',
+      'organization',
+      'certificate',
+      'training',
+      'age',
+      'insurance',
+    ]);
+    expect(input.properties?.operator?.enum).toEqual([
+      'in',
+      'in_subtree',
+      'has_any',
+      'between',
+      'covers_activity',
+    ]);
+    expect(scope.properties?.sessionId).toMatchObject({ type: 'string', nullable: true });
+    expect(scope.properties?.positionId).toMatchObject({ type: 'string', nullable: true });
+    expect(review.properties?.qualificationRuleSets).toEqual({
+      $ref: '#/components/schemas/ChangeReviewQualificationRuleSetCollectionsDto',
+    });
+    expect(positionCreate.properties?.clientRef).toMatchObject({ type: 'string', minLength: 1 });
+    expect(JSON.stringify({ input, scope, review, positionCreate })).not.toContain('valueJson');
   });
 
   it('paths 段快照(锁定每个 operation 的响应结构)', () => {

@@ -16,6 +16,7 @@ import { ActivityStateMachine } from './activity-state-machine';
 import { ActivitiesService, type ActivityFullRow } from './activities.service';
 import { EvidenceSealService, type EvidenceSealResult } from './evidence-seal.service';
 import { RegistrationFormVersionService } from './registration-form-version.service';
+import { QualificationRuleSetVersionService } from './qualification-rule-set-version.service';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -89,6 +90,7 @@ const cloneSourceSelect = {
         where: { deletedAt: null },
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
         select: {
+          id: true,
           code: true,
           name: true,
           attendanceRoleCode: true,
@@ -163,6 +165,7 @@ export class ActivityLifecycleService {
     private readonly auditRecorder: ActivityAuditRecorder,
     private readonly evidenceSeal: EvidenceSealService,
     private readonly registrationForms: RegistrationFormVersionService,
+    private readonly qualificationRules: QualificationRuleSetVersionService,
   ) {}
 
   async cancel(
@@ -371,6 +374,8 @@ export class ActivityLifecycleService {
         select: cloneCreatedAuditSelect,
       });
 
+      const sessionIds = new Map<string, string>();
+      const positionIds = new Map<string, string>();
       for (const sourceSession of source.sessions) {
         const createdSession = await tx.activitySession.create({
           data: {
@@ -404,9 +409,10 @@ export class ActivityLifecycleService {
           },
           select: { id: true },
         });
-        if (sourceSession.positions.length > 0) {
-          await tx.activitySessionPosition.createMany({
-            data: sourceSession.positions.map((position) => ({
+        sessionIds.set(sourceSession.id, createdSession.id);
+        for (const position of sourceSession.positions) {
+          const createdPosition = await tx.activitySessionPosition.create({
+            data: {
               activityId: created.id,
               sessionId: createdSession.id,
               code: position.code,
@@ -423,12 +429,21 @@ export class ActivityLifecycleService {
               description: position.description,
               equipmentNotes: position.equipmentNotes,
               sortOrder: position.sortOrder,
-            })),
+            },
+            select: { id: true },
           });
+          positionIds.set(position.id, createdPosition.id);
         }
       }
 
       await this.registrationForms.cloneFromSource(tx, source.id, current.statusCode, created.id);
+      await this.qualificationRules.cloneFromSource(tx, {
+        sourceActivityId: source.id,
+        sourceStatus: current.statusCode,
+        targetActivityId: created.id,
+        sessionIds,
+        positionIds,
+      });
 
       await this.auditRecorder.logClone({
         sourceActivityId: source.id,

@@ -34,6 +34,7 @@ import {
   ActivityPublishProposalV2Service,
   type ActivityTemplateResolution,
   type ActivityTemplateResolutionWithRegistrationForm,
+  type ActivityTemplateResolutionWithQualificationRules,
 } from './activity-publish-proposal-v2.service';
 import {
   parseActivityProposalSnapshot,
@@ -897,7 +898,7 @@ export class ActivityPublishReviewService {
     await this.allocationModes.assertLockedActivityConsistent(tx, {
       id: review.activityId,
       allocationModeCode:
-        snapshot.schemaVersion === 4
+        snapshot.schemaVersion === 4 || snapshot.schemaVersion === 5
           ? snapshot.activity.allocationModeCode
           : activity.allocationModeCode,
     });
@@ -1293,8 +1294,11 @@ export class ActivityPublishReviewService {
     reviewId: string,
     options: {
       expectedWorkflowRevision?: number;
-      resolvedConfig?: ActivityTemplateResolution | ActivityTemplateResolutionWithRegistrationForm;
-      schemaVersion?: 2 | 3 | 4;
+      resolvedConfig?:
+        | ActivityTemplateResolution
+        | ActivityTemplateResolutionWithRegistrationForm
+        | ActivityTemplateResolutionWithQualificationRules;
+      schemaVersion?: 2 | 3 | 4 | 5;
     } = {},
   ): Promise<void> {
     const activity = await tx.activity.findUniqueOrThrow({
