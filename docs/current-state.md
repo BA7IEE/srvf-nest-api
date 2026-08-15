@@ -80,4 +80,4 @@
 
 ## 6. 读取协议
 
-恒读:根 `AGENTS.md` → **本文件** → `process.md §2/§3`(权威见 AGENTS §0;Claude Code 加读 `CLAUDE.md`);其余 baseline / V2 红线 / ARCHITECTURE / 边界 / SOP / RBAC_MAP / archive 按触碰读取。
+恒读:根 `AGENTS.md` → **本文件**(权威见 AGENTS §0;Claude Code 加读 `CLAUDE.md`);`process` / baseline / V2 红线 / ARCHITECTURE / 边界 / SOP / RBAC_MAP / archive 一律按触碰读取。
