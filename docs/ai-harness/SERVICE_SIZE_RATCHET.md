@@ -26,8 +26,10 @@
    本仓恰恰把模块铁律写在文件头注释里,那是约束 AI 的主要载体 ——
    一条会奖励「删注释」的棘轮是在拆自己的地基。这条与第 1 条无关,且无法通过调阈值绕开。
 
-剥注释用 TS scanner 而非正则:字符串里的 `//`、正则字面量里的 `/*`、模板串里的换行,
-正则一律会数错,而这三种在本仓都真实存在。selftest 有 `const s = '// not a comment';` 计 1 行的对照。
+剥注释用 TypeScript **parser**(取真实 token 的字符区间,注释按定义落在区间外)而非正则、
+也不再用裸 scanner:字符串里的 `//`、正则字面量里的 `/*`、模板串里的换行,正则一律会数错;
+裸 scanner 则会在带替换的模板串处脱锁 —— 那是 2026-08-15 修掉的一个真缺陷,见 §8。
+selftest 尺寸段有 `const s = '// not a comment';` 计 1 行等 **13** 条口径对照。
 
 ### 1.2 与旧口径的差异(D1 要求逐条写明)
 
@@ -68,57 +70,64 @@
 它回答的是另一个问题:**这份基线是不是用当前这套口径算出来的**。
 无时间戳、无 git SHA(v4 §9 勘误①)。
 
-## 2. 当前分布(基线,31 个文件 / 共 36685 净行)
+## 2. 当前分布(基线,26 个文件 / 共 31165 净行)
+
+> 2026-08-15 按修正后的度量重算(§8)。此前记为「31 个文件 / 36685 净行」,其中
+> **5 个是度量缺陷造成的假阳性**(纯靠注释被误计才越过阈值),已移出;0 个新入册。
 
 | 文件(`src/modules/` 起) | 域 | 净行 |
 |---|---|---|
-| `attachments/attachment-storage-orchestrator.ts` | attachments | 2518 |
-| `activity-registrations/activity-allocation.service.ts` | activity-registrations | 2397 |
-| `activities/correction-application.service.ts` | activities | 1938 |
-| `attendances/attendances.service.ts` | attendances | 1881 |
-| `activity-registrations/activity-registrations.service.ts` | activity-registrations | 1838 |
-| `attachments/attachments.service.ts` | attachments | 1657 |
-| `activities/activity-publish-proposal-v2.service.ts` | activities | 1456 |
-| `storage/storage-object-ledger.service.ts` | storage | 1412 |
-| `activities/activity-publish-review.service.ts` | activities | 1342 |
-| `notifications/notification-outbox.handlers.ts` | notifications | 1331 |
-| `activities/activities.service.ts` | activities | 1311 |
-| `members/members.service.ts` | members | 1178 |
-| `activities/activity-settlement-http.service.ts` | activities | 1144 |
-| `notifications/notification-outbox.service.ts` | notifications | 1003 |
-| `activities/settlement-draft.service.ts` | activities | 978 |
-| `activities/activity-draft.service.ts` | activities | 956 |
-| `activities/activity-closure.service.ts` | activities | 940 |
-| `activity-registrations/capacity-reservation.service.ts` | activity-registrations | 936 |
-| `activity-registrations/registration-command.service.ts` | activity-registrations | 916 |
-| `role-bindings/role-bindings.service.ts` | role-bindings | 897 |
+| `attachments/attachment-storage-orchestrator.ts` | attachments | 2472 |
+| `activity-registrations/activity-allocation.service.ts` | activity-registrations | 2379 |
+| `activities/activity-publish-proposal-v2.service.ts` | activities | 1817 |
+| `activity-registrations/activity-registrations.service.ts` | activity-registrations | 1761 |
+| `activities/correction-application.service.ts` | activities | 1704 |
+| `attendances/attendances.service.ts` | attendances | 1699 |
+| `attachments/attachments.service.ts` | attachments | 1519 |
+| `storage/storage-object-ledger.service.ts` | storage | 1398 |
+| `activities/activity-publish-review.service.ts` | activities | 1335 |
+| `activities/activities.service.ts` | activities | 1254 |
+| `notifications/notification-outbox.handlers.ts` | notifications | 1171 |
+| `activities/activity-settlement-http.service.ts` | activities | 1133 |
+| `activities/activity-draft.service.ts` | activities | 954 |
+| `activity-registrations/capacity-reservation.service.ts` | activity-registrations | 921 |
 | `users/users.service.ts` | users | 891 |
-| `recruitment/recruitment-applications.service.ts` | recruitment | 834 |
-| `activities/ledger-preparation.service.ts` | activities | 827 |
-| `recruitment/recruitment-promotion.service.ts` | recruitment | 817 |
-| `activities/settlement-submit.service.ts` | activities | 789 |
+| `activity-registrations/registration-command.service.ts` | activity-registrations | 880 |
+| `notifications/notification-outbox.service.ts` | notifications | 876 |
+| `role-bindings/role-bindings.service.ts` | role-bindings | 827 |
+| `members/members.service.ts` | members | 817 |
+| `activities/settlement-draft.service.ts` | activities | 808 |
 | `activities/activity-responsibility.service.ts` | activities | 787 |
-| `recruitment/recruitment-certificate-claims.service.ts` | recruitment | 786 |
-| `activities/ledger-posting.service.ts` | activities | 751 |
+| `activities/activity-closure.service.ts` | activities | 784 |
+| `recruitment/recruitment-applications.service.ts` | recruitment | 763 |
+| `recruitment/recruitment-certificate-claims.service.ts` | recruitment | 750 |
 | `certificates/certificates.service.ts` | certificates | 739 |
-| `activity-registrations/onsite-participation-command.service.ts` | activity-registrations | 729 |
-| `notifications/notification.service.ts` | notifications | 706 |
+| `activity-registrations/onsite-participation-command.service.ts` | activity-registrations | 726 |
 
-按域(文件数 / 净行合计):`activities` 12 / 13219 · `activity-registrations` 5 / 6816 ·
-`attachments` 2 / 4175 · `notifications` 3 / 3040 · `recruitment` 3 / 2437 ·
-`attendances` 1 / 1881 · `storage` 1 / 1412 · `members` 1 / 1178 · `role-bindings` 1 / 897 ·
-`users` 1 / 891 · `certificates` 1 / 739。
+按域(文件数 / 净行合计):`activities` 9 / 10576 · `activity-registrations` 5 / 6667 ·
+`attachments` 2 / 3991 · `notifications` 2 / 2047 · `attendances` 1 / 1699 ·
+`recruitment` 2 / 1513 · `storage` 1 / 1398 · `users` 1 / 891 · `role-bindings` 1 / 827 ·
+`members` 1 / 817 · `certificates` 1 / 739。
+
+**移出的 5 个**(旧值 → 修正值):`activities/ledger-posting.service.ts` 751 → 593 ·
+`activities/ledger-preparation.service.ts` 827 → 681 · `activities/settlement-submit.service.ts` 789 → 616 ·
+`notifications/notification.service.ts` 706 → 644 · `recruitment/recruitment-promotion.service.ts` 817 → 666。
+它们**本就不该在基线里**;将来若真长过阈值,会按「基线外文件达到阈值」被当新违规拦下 —— 这是正确行为。
 
 ## 3. 转闸摩擦评估(D4)
 
-方法:把棘轮回放到 `main` 的全部 **1016** 个 first-parent 提交(本仓 squash merge,一提交 ≈ 一 PR)。
-基线取**今天**的 31 个文件与今天的值 —— 即棘轮即将冻结的那一份。
+方法:把棘轮回放到 `main` 的全部 first-parent 提交(本仓 squash merge,一提交 ≈ 一 PR)。
+基线取**今天**的文件集与今天的值 —— 即棘轮即将冻结的那一份。
+
+> 2026-08-15 按修正后的度量 + 重算后的 26 文件基线复测(§8)。立闸当时(1016 个提交 / 31 文件 /
+> 有缺陷的度量)记为 **宽 182(17.9%)· 严 106(10.4%)**;两个口径变量同时变了,故新旧不可逐位相比,
+> **但结论方向完全一致**。
 ⚠️ 本仓总历史只有 **101 天**(2026-05-05 起),比 goal 说的 180 天窗口还短,故窗口 = 全部历史。
 
 | 口径 | 会被拦下的 PR | 占比 |
 |---|---|---|
-| 宽:任何增长了基线文件的 PR | **182** / 1016 | 17.9% |
-| 严:增长时该文件**已经**超阈值 | **106** / 1016 | 10.4% |
+| 宽:任何增长了基线文件的 PR | **161** / 1029 | 15.6% |
+| 严:增长时该文件**已经**超阈值 | **92** / 1029 | 8.9% |
 
 两者的差 = 「文件初建或尚小时的增长」,那类增长今天不会再发生一次,故**严口径更贴近未来实况**。
 
@@ -132,8 +141,8 @@
 `certificates.service.ts` 16 · `attachments.service.ts` 16。
 
 **按 goal 自己定的判据**(<10 个 PR ⇒ 可较快转闸;>30 ⇒ 必须先做 6-B 拆分):
-106(严)与 182(宽)**都远超 30** ⇒ **必须先做 6-B 拆分才谈转 blocking**。
-换阈值不改变结论:阈值 1000 时严口径仍是 ~106 量级。
+92(严)与 161(宽)**都远超 30** ⇒ **必须先做 6-B 拆分才谈转 blocking**。
+换阈值不改变结论;修正度量口径同样不改变结论(106 → 92,仍是判据线的 3 倍)。
 
 ## 4. 转 blocking 的 Exit Criteria
 
@@ -144,13 +153,13 @@
 |---|---|---|
 | EC-1 | 历史 baseline 已冻结并**接入 ratchet-registry、base-trusted 裁决** | ❌ **未达成 —— 见 §5,这是转闸的头号硬门** |
 | EC-2 | 扫描器覆盖范围与已知缺口成文 | ✅ 本文 §1;已知缺口:发现面按**文件名后缀**认定,叫别的名字的大文件(如 `*.util.ts`)不计入 |
-| EC-3 | blocking 版已 typed-AST 化(正则版仅限 report) | ✅ 度量走 TS scanner,非正则 |
-| EC-4 | 绕过样例在 selftest 全绿(阳性对照) | ✅ 22 条;5 组变异对拍红集互不重叠(见 §6) |
+| EC-3 | blocking 版已 typed-AST 化(正则版仅限 report) | ✅ 度量走 TS parser,非正则、非裸 scanner(§8) |
+| EC-4 | 绕过样例在 selftest 全绿(阳性对照) | ✅ **29 条**(§8 新增 7 条口径对照);5 组变异对拍红集互不重叠(见 §6) |
 | EC-6 | report 期误报逐条处理完毕,残余误报率维护者书面接受 | ⏳ 需 report 期真实流量 |
 | EC-7 | CI 检查连续稳定(≥10 个 PR 或 ≥2 周无 infra 抖动) | ⏳ 需 report 期观察 |
 | EC-9 | 回滚路径成文且为一行开关 | ✅ 加回 `\|\| true` |
 | EC-10 | 错误信息达到 §10 AI 反馈五要素 | ✅ 输出含「当前值 vs 基线值 vs 增量 + 所属域 + 下一步命令」 |
-| **专属** | **6-B 拆分已把摩擦压到可接受区间**(重跑本文 §3 复测) | ❌ 当前 106/182,判据线是 30 |
+| **专属** | **6-B 拆分已把摩擦压到可接受区间**(重跑本文 §3 复测) | ❌ 当前 92/161,判据线是 30。6-B 归因诊断结论见 [`SERVICE_SIZE_GROWTH_ATTRIBUTION.md`](SERVICE_SIZE_GROWTH_ATTRIBUTION.md) |
 
 EC-5(`$queryRaw` 通道)、EC-8(Journey + zero-new-red)不适用:本规则不涉数据访问、不涉业务行为。
 
@@ -197,3 +206,76 @@ goal 的 D5 要求登记入册。实测**登记不进去**,且硬试会出事 �
 - **非 service 类大文件**:`biz-code.constant.ts`(净 2718)、`local-activity-frontend-fixture.ts`
   (净 2192)、`recruitment.dto.ts`(净 1103)等不在发现面内 —— 它们不适用 D-7 拆法,
   且尺寸对 AI 理解面的影响与 service 不同类。**未纳入,未立项。**
+
+## 8. 度量缺陷与修复(2026-08-15)
+
+立闸后由 6-B 归因诊断([`SERVICE_SIZE_GROWTH_ATTRIBUTION.md`](SERVICE_SIZE_GROWTH_ATTRIBUTION.md) §7)
+发现:**度量函数把注释算成了代码**。本节记录取证与处置。
+
+### 8.1 现象与根因
+
+`measureNcloc()` 原用裸 `ts.createScanner` + `scan()` 循环剥注释。scanner 是**有状态**的,
+若干 token 必须由调用方按上下文主动重扫,原实现从不重扫,于是遇 `` `…${…}` `` 即**脱锁**:
+
+`TemplateHead` 之后停在 `${`,本应在配对的 `}` 处调 `reScanTemplateToken()` 续出
+`TemplateMiddle`/`TemplateTail`;不调 ⇒ 那个 `}` 被当成普通 `CloseBraceToken`,
+**收尾反引号于是开启了一个新的模板串**,把其后正文(含整行 `//` 注释)一路吞成字符串内容。
+
+最小复现(`` const a = `${1}`; `` + 两行 `//` 注释 + 一行代码):修复前 **4**,正确 **2**。
+
+### 8.2 影响面(实测)
+
+| 项 | 读数 |
+|---|---|
+| 发现面文件总数 | 150 |
+| 读数被抬高的文件 | **71 = 47.3%** |
+| 原 31 个基线文件合计虚高 | **2503 行 = 6.9%** |
+| **修正后跌破阈值 700 的基线文件** | **5 个**(见 §2) |
+| 现口径未入基线、修正后 ≥700 的文件 | **0 个** ⇒ 缺陷是**单向虚高**,不会漏收 |
+
+**对既有结论的影响**:严口径摩擦 106 → 92,**仍是判据线 30 的 3 倍**,
+§3/§4 的判断与「必须先做 6-B」不变;变的只是基线的**成员集合**(31 → 26)。
+6-B 归因诊断的可搬/不可搬占比与本缺陷**正交**(已用修正口径重跑复核,热点域读数逐位一致)。
+
+### 8.3 为什么 22 条对照一条都没抓到
+
+尺寸段原有 22 条对照里**没有一条喂过模板串** —— 「纯注释膨胀」「字符串里的 `//`」
+都不触发重扫,于是缺陷在结构上**不可能被现有对照看见**。
+这是「加守护前先问『缺口长什么样』」的又一个实例:守护存在 ≠ 守护覆盖。
+
+### 8.4 修复与新增对照
+
+改用 **parser**:取真实 token(叶子节点)的字符区间,注释按定义落在区间外。
+这不是补一个 `reScanTemplateToken()` 调用,而是**把整个「重扫脱锁」缺陷类一次关掉**
+(模板串 / 正则 `reScanSlashToken` / `>>` `reScanGreaterToken` / JSX;本仓无 `.tsx`,末项不适用)——
+补调用需要自己维护花括号深度栈处理嵌套模板,那正是产生本缺陷的同一类手写状态机。
+
+⚠️ **修复过程中当场引入并抓到一个同类缺陷**:`setParentNodes: true` 之下 `getChildren()`
+会把 `/** … */` 作为 **JSDoc 节点**挂在声明下(普通 `/* */` 与 `//` 是 trivia,不在任何 token 区间内),
+不显式跳过就会**又一次把注释算成代码**;本仓 JSDoc 密度极高,影响比原缺陷更大
+(基线因此再从 27 收到 26,原 31 个基线文件的虚高从 1746 行修正为 2503 行)。
+它是被「`ts.createScanner` 应只出现在散文里」的结构自检抓到的 —— **剥注释后再判执行位**,
+而不是靠读代码相信。
+
+selftest 尺寸段由 22 条增至 **29 条**,新增 7 条:
+
+| 新增对照 | 守什么 |
+|---|---|
+| 带替换模板串之后的整行注释仍不计入 | **本缺陷本体** |
+| 嵌套模板串之后的整行注释仍不计入 | 前向回归护栏 |
+| 多行模板串内的 `//` 是内容,不得剥离 | **反向** —— 防「把模板串整段当注释剥掉」也能让上两条变绿 |
+| 正则字面量里的 `/*` 不是注释起点 | 同类(`reScanSlashToken`)前向护栏 |
+| 单行 / 多行 JSDoc 不计入(2 条) | §8.4 的 JSDoc 缺陷 |
+| JSDoc 内的 `${}` 与 `//` 不影响其后代码计数 | JSDoc 与模板串缺陷的交叉 |
+
+**变异对拍**(红分布本身是判据,不假装安全):把实现退回裸 scanner,红集**恰 1 条** ——
+「带替换模板串之后的整行注释仍不计入」。其余 6 条在该变异下**不红**:实测裸 scanner 对
+嵌套模板串 / 多行模板串 / 正则 `/*` 恰好给出正确读数,它们是**前向回归护栏而非缺陷复现**,
+本文如实标注,不把 7 条都说成「各抓到一个缺陷」。
+
+### 8.5 口径版本
+
+`SERVICE_SIZE_GENERATOR_VERSION` 1 → **2**。实现换代必须 bump ——
+`inputDigest` 摄入该值,不 bump 则用旧口径算出的基线会被当成「口径一致」放行。
+selftest 的「落盘 inputDigest 与当前口径一致」这条在重算前**确实转红**,重算后回绿:
+这正是该断言存在的理由(它是本次唯一一条自动发现「基线该重算了」的判据)。
