@@ -73,18 +73,36 @@ self-by-construction、#1002），是**正当的能力增长** —— 所以处�
 
 **处置（2026-08-15）**：两步拆成 `Harness selftests` / `Incident replay` 两个并行 job，折进 `gate` 的
 `needs`。**不新增 required context**（上节四条快照不变）—— 新 context 会卡死所有 base 上没有它的在飞分支。
-关键路径本就是 `Contract + E2E (1)`（892s），三者与它并行 ⇒ 全程墙钟不变、超时风险归零。
+关键路径本就是 `Contract + E2E`（892s），三者与它并行 ⇒ harness 线离开关键路径、超时风险归零。
+（不写「全程墙钟不变」：E2E 自身单次方差就有 ±5%（909s / 1187s / 892s 三次读数），
+拆分对总墙钟的影响被它淹没,量不出来 —— 能证的是**harness 线不再是瓶颈**,不是「总时长恒等」。）
 
-| Job                | 拆分前 | 拆分后（预期） |
-| ------------------ | -----: | -------------: |
-| Fast checks        |   876s |          ~328s |
-| Harness selftests  |      — |          ~331s |
-| Incident replay    |      — |          ~243s |
-| Contract + E2E (1) |   892s |    892s（不变） |
+拆分实测(#1007 合入后 `main` 冷跑 [run 31867976145][r3],非 docs-only):
 
-> **到期条件**：上表「拆分后」一列是**预期值**，由拆分前的步骤读数 + 各 job 约 13s 的
-> checkout/install/generate 固定开销推算，**尚未实测**。本 PR 合入后的第一次 `main` 冷跑必须回填实测值并
-> 删掉本行；若实测与预期偏离超过 20%，说明推算模型本身错了，要当作新发现而不是四舍五入。
+| Job                | 拆分前 | 预期  | **拆分后实测** | 偏差 |
+| ------------------ | -----: | ----: | -------------: | ---: |
+| Fast checks        |   876s | ~328s |       **344s** |  +5% |
+| Harness selftests  |      — | ~331s |       **363s** | +10% |
+| Incident replay    |      — | ~243s |       **253s** |  +4% |
+| Contract + E2E (1) |   892s |  不变 |           909s |  +2% |
+
+[r3]: https://github.com/BA7IEE/srvf-nest-api/actions/runs/31867976145
+
+**到期条件已闭合**:三项均落在 ±10% 内,推算模型(拆分前步骤读数 + 各 job ~13s 固定开销)成立。
+`Fast checks` 876s → 344s(**−61%**),对 15 分钟上限有 2.6x 余量;三个 job 的最大值 363s
+远低于关键路径 `Contract + E2E`(本次两片 909s / 1187s)⇒ harness 线已彻底离开关键路径。
+
+> ⚠️ 单次读数,runner 方差不可忽略:同一 commit 的 PR 冷跑里 `Incident replay` 只有 184s(−24%),
+> 而 `main` 两次分别是 253s / 263s。**别把任何单次读数当基线**;上表取的是 `main` 冷跑口径,
+> 与 08-09 / 08-14 两列同源(均为 `main` push),这才是可比的。
+
+**docs-only 行为已正面验证**([run 31868312301][r4],纯文档合并):
+`Fast checks` 54s(lint/typecheck/build/unit 合法跳过)、`Contract + E2E` 与 `Golden journeys` 跳过,
+而 **`Harness selftests` 283s 与 `Incident replay` 263s 照常跑满** —— 与拆分前它们在 `fast` 里
+不带 `if: docs_only` 的行为逐字一致。这条是**拆分没有偷偷放松触发条件**的正面证据,
+不是从「gate 绿了」反推的。
+
+[r4]: https://github.com/BA7IEE/srvf-nest-api/actions/runs/31868312301
 
 **两个已知热点（本次刻意未动，另立一刀）**：
 
