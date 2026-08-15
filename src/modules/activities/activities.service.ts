@@ -37,6 +37,7 @@ import { ActivityInitiationPolicy } from './activity-initiation-policy';
 import { ActivityNotificationProducer } from './activity-notification-producer';
 import { ActivityPublishReviewService } from './activity-publish-review.service';
 import { ActivityAllocationModeService } from './activity-allocation-mode.service';
+import { cancelActivityRegistrationLifecycle } from '../activity-registrations/activity-cancellation-lifecycle';
 
 // V2 第一阶段批次 3A activities service。
 // 详见 docs:
@@ -185,7 +186,6 @@ type PrismaTx = Prisma.TransactionClient;
 // reject / cancelled 已出局不打扰。状态字面量镜像 activity-registration-state-machine 的
 // ACTIVITY_REGISTRATION_STATUS(此处刻意用字面量,避免 activities → activity-registrations 跨模块耦合)。
 const ACTIVE_REGISTRATION_STATUS_CODES = ['pending', 'pass', 'waitlisted'] as const;
-const ACTIVITY_CANCELLED_REGISTRATION_STATUS_CODES = ['pending', 'waitlisted'] as const;
 
 @Injectable()
 export class ActivitiesService {
@@ -1364,17 +1364,12 @@ export class ActivitiesService {
       select: activitySafeSelect,
     });
 
-    const cancelledPending = await tx.activityRegistration.updateMany({
-      where: notDeletedWhere({
-        activityId: current.id,
-        statusCode: { in: [...ACTIVITY_CANCELLED_REGISTRATION_STATUS_CODES] },
-      }),
-      data: {
-        statusCode: 'cancelled',
-        cancelledByUserId: currentUser.id,
-        cancelledAt,
-        cancelReason: '活动已取消',
-      },
+    const cancelledPending = await cancelActivityRegistrationLifecycle({
+      activityId: current.id,
+      actorUserId: currentUser.id,
+      cancelledAt,
+      cancelReason: '活动已取消',
+      tx,
     });
 
     await this.activityAuditRecorder.logCancel({
@@ -1386,7 +1381,7 @@ export class ActivitiesService {
       priorStatusCode: current.statusCode,
       nextStatusCode,
       cancelReason: dto.cancelReason ?? null,
-      pendingRegistrationsCancelled: cancelledPending.count,
+      pendingRegistrationsCancelled: cancelledPending.cancelledRegistrationCount,
       auditMeta,
       tx,
     });
