@@ -9,6 +9,7 @@ import type { OrganizationsService } from '../organizations/organizations.servic
 import type { AttendanceAuditRecorder } from './attendance-audit-recorder';
 import type { AttendanceNotificationProducer } from './attendance-notification-producer';
 import { AttendancePresenter } from './attendance-presenter';
+import { AttendanceSheetQueryService } from './attendance-sheet-query.service';
 import type {
   AttendanceSheetStateMachine,
   AttendanceSheetTransitionDecision,
@@ -356,6 +357,11 @@ function makeService(
     // Presenter 传真实实例而非 mock(零依赖纯映射类):mapper characterization
     // 断言经真实序列化路径,直接锁 P1-4 第一刀"搬家零漂移"。
     new AttendancePresenter(),
+    // Phase 6-B 第二域第一刀:同 presenter,传**真实实例**并喂同一个 prisma mock ——
+    // 读路径的既有 characterization 断言(where / select / orderBy / skip / take)因此
+    // 继续经新类落到同一个 mock 上,断言一字未改即证「搬家零漂移」。传 mock 反而会
+    // 把被测行为挖空。
+    new AttendanceSheetQueryService(prisma as unknown as PrismaService),
     // Slow-4 T3(评审稿 D-S4-6):rbac mock `can` 默认恒 true,锁业务行为而非判权;断言零修改。
     {
       can: jest.fn<Promise<boolean>, [unknown, string]>().mockResolvedValue(opts.rbacCan ?? true),

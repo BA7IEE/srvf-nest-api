@@ -19,6 +19,7 @@ import { AppActivityCheckInsService } from './app-activity-check-ins.service';
 import { AttendanceAuditRecorder } from './attendance-audit-recorder';
 import { AttendanceNotificationProducer } from './attendance-notification-producer';
 import { AttendancePresenter } from './attendance-presenter';
+import { AttendanceSheetQueryService } from './attendance-sheet-query.service';
 import {
   AttendanceSheetsCollectionController,
   AttendanceSheetsResourceController,
@@ -93,6 +94,9 @@ import { ParticipationSummaryQueryService } from './participation-summary-query.
     AttendanceAuditRecorder,
     AttendanceNotificationProducer,
     AttendancePresenter,
+    // Phase 6-B 第二域第一刀:读侧查询构造。**刻意不进 exports** —— 跨模块读仍走
+    // AttendancesService 那一个入口,避免出现绕过判权腿的第二条读路径(沿 members #1008 先例)。
+    AttendanceSheetQueryService,
     ParticipationSummaryQueryService,
   ],
 })
