@@ -39,6 +39,7 @@ import { OnsiteParticipationCommandService } from './onsite-participation-comman
 import { ActivityRegistrationLifecycleService } from './activity-registration-lifecycle.service';
 import { ActivityAllocationService } from './activity-allocation.service';
 import { AppManagedActivityAllocationBatchesController } from './controllers/app-managed-activity-allocation-batches.controller';
+import { RegistrationReconciliationService } from './registration-reconciliation.service';
 
 // V2 批次 6 PR #5(D6 v1.1 §8 / 第二波第三步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activity-registrations 6 处写操作(create / createMy / approve / reject / cancelAdmin / cancelMy)
@@ -107,6 +108,8 @@ import { AppManagedActivityAllocationBatchesController } from './controllers/app
     OnsiteParticipationCommandService,
     ActivityRegistrationLifecycleService,
     ActivityAllocationService,
+    RegistrationReconciliationService,
   ],
+  exports: [RegistrationReconciliationService],
 })
 export class ActivityRegistrationsModule {}

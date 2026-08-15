@@ -88,4 +88,36 @@ describe('ActivityInvitationAuditRecorder', () => {
     expect(serialized).not.toContain('访客备注');
     expect(serialized).not.toContain('member-1');
   });
+
+  it('allows the activity-start worker to expire an invitation with a null system actor', async () => {
+    const auditLogs = makeAuditLogsMock();
+    const recorder = new ActivityInvitationAuditRecorder(auditLogs as unknown as AuditLogsService);
+    const pending = {
+      id: 'invitation-1',
+      activityId: 'activity-1',
+      sessionId: 'session-1',
+      positionId: null,
+      statusCode: 'pending',
+      expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+    };
+
+    await recorder.logInvitationChange({
+      invitation: { ...pending, statusCode: 'expired' },
+      before: pending,
+      actorUserId: null,
+      actorRoleSnap: null,
+      operation: 'expire',
+      auditMeta: { requestId: 'activity-batch-worker:job-1', ip: null, ua: null },
+      tx: {} as never,
+    });
+
+    expect(auditLogs.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'invitation.change',
+        actorUserId: null,
+        actorRoleSnap: null,
+        extra: { operation: 'expire', activityId: 'activity-1', scope: 'session' },
+      }),
+    );
+  });
 });

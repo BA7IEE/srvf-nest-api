@@ -248,6 +248,38 @@ export class ActivityRegistrationAuditRecorder {
   }
 
   /**
+   * The ActivityBatchWorker has no human principal.  Keep the immutable identity transition
+   * auditable through the existing `registration.review` umbrella without copying Form,
+   * qualification, capacity or member facts into audit JSON.
+   */
+  async logActivityStartExpiry(args: {
+    registrationId: string;
+    activityId: string;
+    participationIdentityId: string;
+    priorStatusCode: 'pending' | 'waitlisted';
+    nextStatusCode: 'review_expired' | 'waitlist_expired';
+    auditMeta: AuditMeta;
+    tx: PrismaTx;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: 'registration.review',
+      actorUserId: null,
+      actorRoleSnap: null,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: args.registrationId,
+      meta: args.auditMeta,
+      extra: {
+        operation: 'activity_start_expiry',
+        activityId: args.activityId,
+        participationIdentityId: args.participationIdentityId,
+        priorStatusCode: args.priorStatusCode,
+        nextStatusCode: args.nextStatusCode,
+      },
+      tx: args.tx,
+    });
+  }
+
+  /**
    * Managed onsite conversion audit.  The approval reason, insurance decision, Form details and
    * capacity reservation ids stay in their bounded facts and deliberately never enter audit JSON.
    */

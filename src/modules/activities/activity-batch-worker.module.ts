@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { ActivityRegistrationsModule } from '../activity-registrations/activity-registrations.module';
 import { NotificationOutboxService } from '../notifications/notification-outbox.service';
 import { ACTIVITY_BATCH_AUTO_COMMIT_ENABLED, ActivityBatchWorker } from './activity-batch.worker';
 import { LedgerPostingAuditRecorder } from './ledger-posting-audit-recorder';
@@ -13,7 +14,7 @@ import { SettlementNotificationProducer } from './settlement-notification-produc
 // 两个独立 worker 进程共用的最小活动任务依赖图。不 import ActivitiesModule，因而不装配
 // HTTP controller、Authz 或 ScheduleModule；也不注册任何 cron / 外部 queue。
 @Module({
-  imports: [DatabaseModule, AuditLogsModule],
+  imports: [DatabaseModule, AuditLogsModule, ActivityRegistrationsModule],
   providers: [
     NotificationOutboxService,
     SettlementNotificationProducer,
