@@ -4,6 +4,8 @@
 > **权威源**:`docs/archive/reviews/architecture-governance-v4/README.md` v4 §6 R10 + 勘误⑫;[`../architecture-boundary.md`](../architecture-boundary.md) §3.4。
 > **机读登记表** = [`harness/state-machines.json`](../../harness/state-machines.json)(本页是它的人话视图,数值以它为准)。
 > **本刀零执行位**:不建共享执行器、不加检查、不改 `action-state-checks.ts`、不回填 DB CHECK、不升任何条目为 `governed`。
+> ⚠️ **§0–§9 是 Phase 4-1a 的留痕,写就即固定,4-1b 一字未改**。Phase 4-1b 的执行位、8 条升格与读数 true-up 见 **[§10](#10-phase-4-1b--governed-声明闸已落地)**;
+> 两节读数若不一致,以 §10 为准(它是机器现算的,§9 的口径注意事项同样适用)。
 
 ## 0. 一句话结论
 
@@ -253,3 +255,110 @@
   —— 31 条,5 种命名法(`*_STATUS_INVALID` / `*_STATE_INVALID` / `*_WRONG_STATE` / `*_INVALID_STATUS_TRANSITION` / `*_NOT_EDITABLE`)。
   按同样 5 种命名法 grep 会得到 33 条,须剔除 `MEMBER_PROFILE_POLITICAL_STATUS_CODE_INVALID` 与
   `ATTENDANCE_STATUS_CODE_INVALID` —— 这两条 message 均为"字典 code 不存在或已停用",是**字典值校验码,不是迁移码**。
+
+---
+
+## 10. Phase 4-1b —— `governed` 声明闸(已落地)
+
+> **性质**:执行位说明 + 本轮读数 true-up。判据源码 = [`scripts/check-boundaries.ts`](../../scripts/check-boundaries.ts)
+> (`parseStateEntry` / `governedGateErrors` / `l1GovernedErrors` / `flowGovernedErrors` / `stateGovernanceReport`);
+> 阳性对照与负样例 = [`scripts/harness-guards.selftest.ts`](../../scripts/harness-guards.selftest.ts) 的 `R10 4-1b …` 共 17 条。
+
+### 10.1 判据是什么(以及**不是**什么)
+
+它是**声明闸**:只回答「这条登记敢不敢自称已治理」,**不声称被治理的代码是对的**。
+结构上 fail-closed —— 拿不出证据就不许标 `governed`,宁可判不了。
+
+判据的优先级由 §3.1 的实测决定,不是拍脑袋:**先守闭集是错的**(闭集已有 34/56 被 DB 兜住,
+而边有 20 条零机器声明),所以门槛的核心是**边与实现映射**。
+
+| 类 | 管什么 | 阻断? | 载体 |
+|---|---|---|---|
+| **A**(登记完整性 + `governed` 声明闸) | 逐条字段完备性;`governanceStatus` 只认 `inventory` \| `governed`;声明 `governed` 必须拿得出 `governedEvidence` | **是** | `pnpm docs:boundaries:check`(`--metadata`),CI `Architecture governance A-metadata gate` 内,**无 `|| true`** |
+| **B**(存量分布 / 升格候选) | `stateGovernance` 报告块:分层分布、blocker 直方图、空绿面读数 | 否(恒 report) | `pnpm docs:boundaries`(`--violations`),CI 内被 `|| true` 兜住 |
+
+**`governedEvidence` 是新增的可选字段**,只有 `governed` 才要求;`inventory` 条目**禁止携带**
+(半截声明 / 陈旧证据会让下一个人误以为门槛已经过了)。因为它对既有 56 条全是可选的、
+既有条目一字不改仍然合法,**本刀不 bump `VERSION`** —— 那个常量同时校验 `harness/domain-map.json`
+的 `generatorVersion`,bump 它会强迫并行 lane 一起重算 domain-map。
+
+### 10.2 门槛按层分叉(L1 不是免检,是另一条同样机器可判的路)
+
+goal 原写的 ①「实现模块路径可解析」**对 L1 套错了对象**:13 条 L1 里绝大多数的 `implementation`
+是散文(`"活动配置字段"` / `"预留名额组配置"`),因为配置列的实现就是 CRUD,它没有"状态机模块"。
+维护者 2026-08-15 拍板改判:
+
+- **L1 配置/标注列**(`edgeModel: "unconstrained"`):`transitions` 必须是 `unconstrained`、
+  `wrongStateBizCode` 必须是 `none`、不许声明 edges / 实现模块;
+  **闭集必须能从 `stateSet.sourceRef` 指名的那条 migration 的 DB CHECK 原样重算出来**,
+  且那条 CHECK 是全仓**最后一次**对该表该列的声明、之后未被 `DROP CONSTRAINT`。
+  验证的是「登记声明 = 数据库约束」—— 改 `stateSet.values` 而不改 migration 立刻红。
+- **L2 / L3 流程列**(`edgeModel: "enumerated"`):
+  ① `implementationFile` 是存在的 `src/**.ts`,`implementationSymbol` 在该文件里**真有顶层声明**;
+  ② `edges` 逐条 `{from,to,action?}`,端点 ⊆ 闭集,并**双向对账**:
+     正向 —— 每个端点 / 动作必须是该模块里的**字符串字面量**(堵「登记表写了、代码里没有」);
+     反向 —— 该模块里出现的、属于本列闭集的字面量必须被某条边覆盖(堵「只登了一半的边」);
+  ③ `wrongStateBizCodes` 非空,且每条都是 `BizCode` 里**真实存在**的成员。
+
+三处实现细节直接**承接 §1.1 记录的量具缺陷**,不是重新发明:
+CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表名关联**(堵列名重名跨表认错)、
+**只认整体形如 `"col" IN (…)` / `"col" IS NULL OR "col" IN (…)`**(堵缺陷 2 把 shape 约束的
+分支条件当闭集)。取字面量与符号一律走 **AST 而非 grep** —— 注释不是执行位。
+
+### 10.3 本轮升格:8 条,全部 L1
+
+`Activity.allocationModeCode` · `Activity.registrationModeCode` · `ActivityAllocationBatch.modeCode` ·
+`ActivityReservedQuotaGroup.fallbackMode` · `AttendanceSettlementVersion.returnFromStage` ·
+`AttendanceSheet.returnedFromStageCode` · `QualificationEvaluationSnapshot.evaluationPhaseCode` ·
+`SettlementReviewAction.stageCode`
+
+8/8 实测:闭集与在册 CHECK **逐值相等**、该表该列的 CHECK 命中数**恰 1**、无后续 `DROP`。
+**L3 一条都不升** —— 它们缺的正是 §10.2 ② 要求的边与实现映射。
+
+### 10.4 读数 true-up(机器现算,`--violations` 的 `stateGovernance` 块)
+
+| 项 | 值 |
+|---|---:|
+| 总条目 | 56 |
+| `governed` / `inventory` | **8 / 48** |
+| 48 条 inventory 的分层 | L1 **5** · L2 **19** · L3 **24** |
+| 已有机器可读边(`transitions` 是数组) | 19 |
+| `transitions: "not-derived"` | 24 |
+| `transitions: "unconstrained"` | 13 |
+| **`vacuousGreenIfClosedSetOnly`** | **22** |
+| 零 blocker 但仍 inventory 的升格候选 | **1**(`ParticipantSettlementResultRevision.statusCode`) |
+
+blocker 直方图与 §3 逐条一致(本刀未改任何 blocker):`no-wrong-state-bizcode` 25 ·
+`no-db-check` 22 · `edges-not-derived` 20 · `no-state-machine` 18 · `closed-set-undeclared` 5 ·
+`edges-partially-derived` 2 · `vocabulary-divergence` 2 · `dictionary-driven` 2 ·
+`retired-value-in-set` 2 · `impl-scattered` 1 · `throws-instead-of-decide` 1 ·
+`decision-shape-divergence` 1 · `duplicate-constant-definition` 1。
+
+**`vacuousGreenIfClosedSetOnly` = 22 是本刀存在的理由的量化**:这 22 条既有已声明的闭集、
+`transitions` 又是 `not-derived` —— 一个「只比闭集 vs CHECK」的判据会**全部放它们过去**。
+selftest 里那条 `空绿负例` 就钉死了这个形状(`ActivityInvitation.statusCode`:闭集 5 值合法、
+零 blocker,但零边零实现 ⇒ 必须被拒)。
+
+### 10.5 本轮发现的两处口径瑕疵(如实记录,均未回改)
+
+1. **登记表内部不一致:24 vs 20**。`transitions: "not-derived"` 的有 **24** 条,
+   但只有 **20** 条带 `edges-not-derived` blocker。差的 4 条全是 L2:
+   `ActivityAllocationApplicationProjection.appliedStatusCode` · `NotificationDelivery.status` ·
+   `RecruitmentCycle.statusCode` · `TeamJoinCycle.statusCode`。
+   ⇒ **§3 的 blocker 聚合把边的缺口少算了 4 条**。blocker 是人工判断的产物,本刀只登记不改。
+2. **§6 表名笔误**:该表把 `AttendanceSheet.statusCode` 的"表"写作 `attendance_sheets`,
+   但 `prisma/schema.prisma` 里 `model AttendanceSheet` **没有 `@@map`**,真表名就是 `AttendanceSheet`
+   (migration 里也写 `ALTER TABLE "AttendanceSheet"`)。冻结稿不回改;
+   **判据按 schema 真值取表名**,不受此影响。
+
+### 10.6 本次未做
+
+- ❌ **不升任何 L3 / L2**:48 条仍 `inventory`(含唯一的零 blocker 候选 `ParticipantSettlementResultRevision.statusCode`
+  —— 它的 `implementation` 是散文"settlement / ledger service 族",结构上给不出 `implementationFile`)。
+- ❌ **不回填 DB CHECK**:22 条 `no-db-check` 一条没补(D 档,须单独立项)。
+- ❌ **不重写任何状态机**:§4 的 5 种形状、§5.1 `reject`/`rejected`、§5.2 重复定义,原样保留。
+- ❌ **不补 wrong-state BizCode**:25 条 `no-wrong-state-bizcode` 一条没加码。
+- ❌ **不改检测口径**:`stateLikeString()` 一字未动,§7 的两类缺席(24 个 enum 状态列 /
+  `*resultCode`·`*SummaryCode` 家族)仍在册外;"56 条 ≠ 全仓状态列总数"这条口径仍然成立。
+- ❌ **不改 blocker**:§10.5 ① 的 4 条缺口只记录,没往 `governedBlockers` 里加。
+- ❌ **不建共享状态机执行器**,不动 `action-state-checks.ts`,零 `src/**` / `prisma/**` 改动。

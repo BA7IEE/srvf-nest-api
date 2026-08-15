@@ -125,6 +125,10 @@ export async function promoteActivityWaitlist(args: {
         activityId: args.activityId,
         activityPositionId: args.activityPositionId ?? null,
         statusCode: ACTIVITY_REGISTRATION_STATUS.WAITLISTED,
+        // Canonical participation is promoted only by ActivityAllocationService. This legacy
+        // header writer is bounded by the absence of a permanent identity, not by header
+        // revision: current legacy submissions append ActivityRegistrationRevision too.
+        participationIdentities: { none: {} },
         ...(skippedRegistrationIds.size > 0 ? { id: { notIn: [...skippedRegistrationIds] } } : {}),
       }),
       select: waitlistAuditSelect,
