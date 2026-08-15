@@ -1259,4 +1259,127 @@ describe('ActivityRegistrationsService (characterization)', () => {
       expect(csv).toContain('reg-tail');
     });
   });
+
+  // Phase 6-B 第三域第一刀新增的**跨类入参锁**(纯新增用例,不改任何既有断言)。
+  //
+  // 立项理由:抽出前 `resolveVisibleOrganizationIds()` 与「把结果写进 activity where」
+  // 在同一个方法体内,是**编译期就绑死**的一条直线;抽出后它变成跨类边界的一个入参
+  // (`listAllForAdmin(query, visibleOrganizationIds)`)—— 传错、传 undefined、或干脆
+  // 不传,TypeScript 都拦不住,而后果是**越权读**(受限管理员看到全部组织的报名)。
+  // 实测变异「把入参改成 undefined」时全仓单测**零红** ⇒ 这是本刀引入的新失效面,
+  // 必须在提交前补上锁。断言打在传给 Prisma 的 where 上,而不是打在返回值上。
+  describe('listAllForAdmin 组织范围下推(跨类入参锁)', () => {
+    const scopedAuthz = (organizationIds: string[]) => {
+      const authz = makeAuthzMock();
+      authz.getVisibleOrganizationScope.mockResolvedValue({
+        hasPermission: true,
+        global: false,
+        organizationIds,
+      });
+      return authz;
+    };
+
+    it('非 GLOBAL 时,算好的可见组织范围必须下推到 activity.organizationId(丢了 = 越权读)', async () => {
+      const prisma = makePrismaMock();
+      prisma.activityRegistration.findMany.mockResolvedValue([]);
+      prisma.activityRegistration.count.mockResolvedValue(0);
+      const service = makeService(
+        prisma,
+        makeAuditRecorderMock(),
+        makeStateMachineMock(DENY_DECISION),
+        makeNotificationProducerMock(),
+        scopedAuthz(['org-1', 'org-2']),
+      );
+
+      await service.listAllForAdmin({ page: 1, pageSize: 20 }, makeCurrentUser());
+
+      const arg = prisma.activityRegistration.findMany.mock.calls[0][0] as {
+        where: Record<string, unknown>;
+      };
+      expect(arg.where.activity).toEqual({ organizationId: { in: ['org-1', 'org-2'] } });
+    });
+
+    it('可见组织范围为空集时仍必须下推(空集 = 什么都看不到,不能退化成不加过滤)', async () => {
+      const prisma = makePrismaMock();
+      prisma.activityRegistration.findMany.mockResolvedValue([]);
+      prisma.activityRegistration.count.mockResolvedValue(0);
+      const service = makeService(
+        prisma,
+        makeAuditRecorderMock(),
+        makeStateMachineMock(DENY_DECISION),
+        makeNotificationProducerMock(),
+        scopedAuthz([]),
+      );
+
+      await service.listAllForAdmin({ page: 1, pageSize: 20 }, makeCurrentUser());
+
+      const arg = prisma.activityRegistration.findMany.mock.calls[0][0] as {
+        where: Record<string, unknown>;
+      };
+      expect(arg.where.activity).toEqual({ organizationId: { in: [] } });
+    });
+
+    it('GLOBAL 且无显式筛选时不加组织 where(v0.49 既有语义,别被上面两条改宽)', async () => {
+      const prisma = makePrismaMock();
+      prisma.activityRegistration.findMany.mockResolvedValue([]);
+      prisma.activityRegistration.count.mockResolvedValue(0);
+      const service = makeService(
+        prisma,
+        makeAuditRecorderMock(),
+        makeStateMachineMock(DENY_DECISION),
+      );
+
+      await service.listAllForAdmin({ page: 1, pageSize: 20 }, makeCurrentUser());
+
+      const arg = prisma.activityRegistration.findMany.mock.calls[0][0] as {
+        where: Record<string, unknown>;
+      };
+      expect(arg.where).not.toHaveProperty('activity');
+    });
+  });
+
+  // 同一新失效面的第二条腿:`listByActivity(activityId, query)` 与
+  // `listForMember(memberId, query)` **签名同形**(string, ListRegistrationsQueryDto),
+  // 调用点交叉接线在 TypeScript 下完全合法。锁 where 的键名即可结构性区分。
+  describe('列表方法接线(同形签名的交叉接线锁)', () => {
+    it('listForMemberAdmin 必须按 memberId 过滤,不能误接成 activityId', async () => {
+      const prisma = makePrismaMock();
+      prisma.member.findFirst.mockResolvedValue(makeMemberRow());
+      prisma.activityRegistration.findMany.mockResolvedValue([]);
+      prisma.activityRegistration.count.mockResolvedValue(0);
+      const service = makeService(
+        prisma,
+        makeAuditRecorderMock(),
+        makeStateMachineMock(DENY_DECISION),
+      );
+
+      await service.listForMemberAdmin('mem-1', { page: 1, pageSize: 20 }, makeCurrentUser());
+
+      const arg = prisma.activityRegistration.findMany.mock.calls[0][0] as {
+        where: Record<string, unknown>;
+      };
+      expect(arg.where).toMatchObject({ memberId: 'mem-1' });
+      expect(arg.where).not.toHaveProperty('activityId');
+    });
+
+    it('list 必须按 activityId 过滤,不能误接成 memberId', async () => {
+      const prisma = makePrismaMock();
+      prisma.activity.findFirst.mockResolvedValue(makeActivityRow());
+      prisma.activityRegistration.findMany.mockResolvedValue([]);
+      prisma.activityRegistration.count.mockResolvedValue(0);
+      const service = makeService(
+        prisma,
+        makeAuditRecorderMock(),
+        makeStateMachineMock(DENY_DECISION),
+      );
+
+      await service.list('act-1', { page: 1, pageSize: 20 }, makeCurrentUser());
+
+      const arg = prisma.activityRegistration.findMany.mock.calls[0][0] as {
+        where: Record<string, unknown>;
+      };
+      expect(arg.where).toMatchObject({ activityId: 'act-1' });
+      expect(arg.where).not.toHaveProperty('memberId');
+    });
+  });
 });
