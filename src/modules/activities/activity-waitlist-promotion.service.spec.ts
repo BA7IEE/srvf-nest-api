@@ -103,6 +103,50 @@ describe('promoteActivityWaitlist', () => {
     });
   });
 
+  it('只查询无永久 identity 的 legacy 候补头，不按 header revision 排除当前兼容提交', async () => {
+    type LegacyCandidateQuery = {
+      where: {
+        activityId: string;
+        activityPositionId: string | null;
+        statusCode: string;
+        deletedAt: null;
+        participationIdentities: { none: Record<string, never> };
+      };
+      select: unknown;
+      orderBy: unknown;
+    };
+    const findFirst = jest.fn<Promise<null>, [LegacyCandidateQuery]>().mockResolvedValue(null);
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'activity-1' }]),
+      activity: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ title: '演练', statusCode: 'published', capacity: 1 }),
+      },
+      activityRegistration: { findFirst, update: jest.fn() },
+    };
+    const auditLogs = {
+      log: jest.fn<Promise<void>, [AuditLogInput]>().mockResolvedValue(undefined),
+    };
+
+    await expect(
+      promoteActivityWaitlist({
+        activityId: 'activity-1',
+        maxPromotions: 1,
+        actorUserId: 'user-1',
+        actorRoleSnap: Role.ADMIN,
+        auditMeta: { requestId: 'req-1', ip: '127.0.0.1', ua: 'jest' },
+        tx: tx as never,
+        auditLogs,
+      }),
+    ).resolves.toEqual({ activityTitle: '演练', promoted: [] });
+
+    const candidateQuery = findFirst.mock.calls[0]?.[0];
+    expect(candidateQuery).toBeDefined();
+    expect(candidateQuery?.where).not.toHaveProperty('currentRevision');
+    expect(candidateQuery?.where.participationIdentities).toEqual({ none: {} });
+  });
+
   it('活动已取消时不递补', async () => {
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([{ id: 'activity-1' }]),

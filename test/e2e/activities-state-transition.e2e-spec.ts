@@ -153,6 +153,7 @@ describe('ActivitiesService state transitions (characterization)', () => {
   async function isolateFixtures(): Promise<void> {
     await ctx.prisma.attendanceRecord.deleteMany({});
     await ctx.prisma.attendanceSheet.deleteMany({});
+    await ctx.prisma.activityRegistrationRevision.deleteMany({});
     await ctx.prisma.activityRegistration.deleteMany({});
     await ctx.prisma.activity.deleteMany({});
     await ctx.prisma.auditLog.deleteMany({});
