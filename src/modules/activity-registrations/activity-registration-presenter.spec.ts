@@ -302,15 +302,34 @@ describe('ActivityRegistrationPresenter (characterization)', () => {
       expect(cells[3]).toBe('');
     });
 
-    it('CSV 注入防护:公式前缀字段被转义(escapeCsvField 语义随迁未变)', () => {
-      const cells = presenter.formatCsvRow(csvRow({ cancelReason: '=1+1' })).split(',');
-      expect(cells[9]).not.toBe('=1+1');
-      expect(cells[9]).toContain('1+1');
+    // WARN 这几条比对的是**结构化输出**(CSV 的转义结果),原写法用的是 toContain('1+1') ——
+    // 那种断言在「转义方式换了但仍含子串」时照样通过,等于只证明了「不是原样输出」。
+    // 比对结构化输出必须**逐字锁全值**,否则断言的名字与它真正量的东西对不上。
+    it.each([
+      ['=1+1', "'=1+1"],
+      ['+1', "'+1"],
+      ['-1', "'-1"],
+      ['@x', "'@x"],
+    ])('CSV 注入防护:公式前缀 %s 被中和成 %s(逐字锁全值)', (raw, expected) => {
+      const cells = presenter.formatCsvRow(csvRow({ cancelReason: raw })).split(',');
+      expect(cells[9]).toBe(expected);
     });
 
-    it('含逗号的字段被引号包裹,不会把一列拆成两列', () => {
-      const line = presenter.formatCsvRow(csvRow({ reviewNote: 'a,b' }));
-      expect(line).toContain('"a,b"');
+    it('普通值不被加前缀(反向对照 —— 否则「恒加前缀」也能骗过上面那组)', () => {
+      const cells = presenter.formatCsvRow(csvRow({ cancelReason: '临时取消' })).split(',');
+      expect(cells[9]).toBe('临时取消');
+    });
+
+    it('含逗号 / 引号 / 换行的字段被 RFC4180 包裹,整行逐字锁定', () => {
+      expect(presenter.formatCsvRow(csvRow({ reviewNote: 'a,b' }))).toBe(
+        'reg-1,mem-1,M001,张三,pass,2099-01-01T00:00:00.000Z,,"a,b",,',
+      );
+      expect(presenter.formatCsvRow(csvRow({ reviewNote: 'say "hi"' }))).toBe(
+        'reg-1,mem-1,M001,张三,pass,2099-01-01T00:00:00.000Z,,"say ""hi""",,',
+      );
+      expect(presenter.formatCsvRow(csvRow({ reviewNote: 'a\nb' }))).toBe(
+        'reg-1,mem-1,M001,张三,pass,2099-01-01T00:00:00.000Z,,"a\nb",,',
+      );
     });
   });
 });
