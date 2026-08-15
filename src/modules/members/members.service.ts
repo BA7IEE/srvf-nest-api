@@ -6,7 +6,6 @@ import {
   DictTypeStatus,
   MemberStatus,
   MembershipStatus,
-  MembershipType,
   PrincipalType,
   Prisma,
   Role,
@@ -28,8 +27,8 @@ import { ActivityMemberOffboardImpactService } from '../activities/activity-memb
 import { lockAuthSessionUser } from '../auth/auth-session-lock';
 import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
 import { AuthzService } from '../authz/authz.service';
+import type { VisibleOrganizationScope } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
-import { OrganizationsService } from '../organizations/organizations.service';
 import { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
 import { RbacService } from '../permissions/rbac.service';
 import { maskPhone } from '../sms/sms.constants';
@@ -49,7 +48,6 @@ import {
   ListMembersQueryDto,
   MemberOffboardResponseDto,
   MemberOffboardImpactResponseDto,
-  MemberOptionItemDto,
   MemberOptionsQueryDto,
   MemberOptionsResponseDto,
   MemberResponseDto,
@@ -62,6 +60,8 @@ import {
   lockMemberLifecycle,
   lockLiveUserLifecycle,
 } from './member-lifecycle-lock';
+import { MembersQueryService, memberSafeSelect } from './members-query.service';
+import type { SafeMember } from './members-query.service';
 
 // 队员账号闭环 v1(MVP,2026-07-07):BCRYPT_SALT_ROUNDS 与 users.service / recruitment-promotion.service
 // 同值(各模块级声明,沿既有惯例)。
@@ -71,18 +71,8 @@ const BCRYPT_SALT_ROUNDS = 10;
 // 模块内常量化:Step 4 organizations 自有 'node_type';如未来需跨模块复用再抽 common。
 const MEMBER_GRADE_DICT_CODE = 'member_grade';
 
-// 集中定义对外 select。永不包含 deletedAt(软删除内部状态)。
-const memberSafeSelect = {
-  id: true,
-  memberNo: true,
-  displayName: true,
-  gradeCode: true,
-  status: true,
-  createdAt: true,
-  updatedAt: true,
-} as const satisfies Prisma.MemberSelect;
-
-type SafeMember = Prisma.MemberGetPayload<{ select: typeof memberSafeSelect }>;
+// 对外 select 与其行类型已随第一刀移入 `members-query.service.ts`(§3.2 select strategy),
+// 写路径回读 import 复用同一份,不另起第二份投影。
 type PrismaTx = Prisma.TransactionClient;
 
 @Injectable()
@@ -92,9 +82,9 @@ export class MembersService {
     private readonly rbac: RbacService,
     private readonly authz: AuthzService,
     private readonly lastAdminProtection: LastAdminProtectionPolicy,
-    private readonly organizations: OrganizationsService,
     private readonly auditLogs: AuditLogsService,
     private readonly activityOffboardImpact: ActivityMemberOffboardImpactService,
+    private readonly query: MembersQueryService,
   ) {}
 
   // ============ helpers ============
@@ -230,19 +220,6 @@ export class MembersService {
   // 同时存在 1 条软删历史行 + 1 条 live 行,查询显式收窄 `deletedAt: null`——hasAccount
   // 语义随之从"槽位是否被任何行占用过"收窄为"当前是否有 live 绑定",与 grantAccount()
   // 的 MEMBER_HAS_LINKED_USER 判定(同样只查 live)口径一致。
-  private async loadLinkedUsersByMemberIds(
-    memberIds: string[],
-    tx?: PrismaTx,
-  ): Promise<Map<string, { id: string; status: UserStatus }>> {
-    if (memberIds.length === 0) return new Map();
-    const client = tx ?? this.prisma;
-    const users = await client.user.findMany({
-      where: { memberId: { in: memberIds }, deletedAt: null },
-      select: { id: true, memberId: true, status: true },
-    });
-    return new Map(users.map((u) => [u.memberId as string, { id: u.id, status: u.status }]));
-  }
-
   private attachAccountInfo(
     member: SafeMember,
     linked: { id: string; status: UserStatus } | undefined,
@@ -255,29 +232,15 @@ export class MembersService {
     };
   }
 
-  // 单条查询版(findOne / update / updateStatus / softDelete 共用;list 走批量版避免 N+1)。
-  // 队员账号闭环 v2(评审稿 §1.2 E-6):同 loadLinkedUsersByMemberIds,显式收窄 live。
-  private async findLinkedUser(
-    memberId: string,
-    tx?: PrismaTx,
-  ): Promise<{ id: string; status: UserStatus } | undefined> {
-    const client = tx ?? this.prisma;
-    const user = await client.user.findFirst({
-      where: { memberId, deletedAt: null },
-      select: { id: true, status: true },
-    });
-    return user ?? undefined;
-  }
-
   // ============ list ============
 
-  // v0.49:成员列表的 organizationId 用户过滤与授权组织集合取交集。成员归属严格只认
-  // active PRIMARY，SECONDARY/TEMPORARY/SUPPORT 均不得扩大可见范围。
-  private async buildOrganizationScopeFilter(
+  // v0.49 部门数据范围的**判权腿**:解析该 action 的可见组织集合,无有效码即 30100。
+  // 第一刀边界:这一步(以及它抛的 RBAC_FORBIDDEN)留在 application service —— QueryService
+  // 只接收算好的 scope 作入参,不得自己调 rbac / authz(docs/architecture-boundary.md §3.2)。
+  // 有效持码但组织集合为空 ⇒ hasPermission=true,交由 filter 腿产出空列表(既有行为)。
+  private async resolveMemberReadScope(
     currentUser: CurrentUserPayload,
-    organizationId: string | undefined,
-    includeDescendants: boolean | undefined,
-  ): Promise<Prisma.MemberWhereInput | undefined> {
+  ): Promise<VisibleOrganizationScope> {
     const authScope = await this.authz.getVisibleOrganizationScope(
       currentUser,
       'member.read.record',
@@ -285,91 +248,21 @@ export class MembersService {
     if (!authScope.hasPermission) {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
     }
-
-    const requestedOrgIds =
-      organizationId === undefined
-        ? undefined
-        : includeDescendants
-          ? await this.organizations.queryDescendantOrgIds(organizationId)
-          : [organizationId];
-
-    if (authScope.global && requestedOrgIds === undefined) return undefined;
-    const orgIds = authScope.global
-      ? (requestedOrgIds ?? [])
-      : requestedOrgIds === undefined
-        ? authScope.organizationIds
-        : requestedOrgIds.filter((id) => authScope.organizationIds.includes(id));
-
-    return {
-      memberOrganizationMemberships: {
-        some: {
-          ...MembershipTermStateMachine.effectiveWhere(new Date()),
-          organizationId: { in: orgIds },
-          membershipType: MembershipType.PRIMARY,
-        },
-      },
-    };
+    return authScope;
   }
 
   async list(
     query: ListMembersQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<MemberResponseDto>> {
-    const {
-      page,
-      pageSize,
-      memberNo,
-      gradeCode,
-      status,
-      q,
-      organizationId,
-      includeDescendants,
-      hasAccount,
-    } = query;
-
-    const filters: Prisma.MemberWhereInput = {};
-    if (memberNo !== undefined) filters.memberNo = memberNo; // 精确匹配(完整字符串相等)
-    if (gradeCode !== undefined) filters.gradeCode = gradeCode;
-    if (status !== undefined) filters.status = status;
-    if (q !== undefined) {
-      filters.OR = [
-        { displayName: { contains: q, mode: 'insensitive' } },
-        { memberNo: { contains: q, mode: 'insensitive' } },
-      ];
-    }
-    const orgScope = await this.buildOrganizationScopeFilter(
-      currentUser,
-      organizationId,
-      includeDescendants,
-    );
-    if (orgScope !== undefined) Object.assign(filters, orgScope);
-    // 队员账号闭环 v1:hasAccount 经 users 反向关联过滤。
-    // 队员账号闭环 v2(评审稿 §1.2 E-1/E-2/E-6):User.memberId 改一对多(partial unique),
-    // 关系过滤语法从一对一 `is`/`isNot` 改一对多 `some`/`none`;reopen 落地后同一 memberId
-    // 可能有多条软删历史行,显式收窄 `deletedAt: null`——hasAccount 语义与 findLinkedUser /
-    // loadLinkedUsersByMemberIds(同一收窄)、grantAccount 的 existingLink(D-2 仅 live)保持一致。
-    if (hasAccount === true) filters.users = { some: { deletedAt: null } };
-    if (hasAccount === false) filters.users = { none: { deletedAt: null } };
-
-    const where = notDeletedWhere(filters);
-
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.member.findMany({
-        where,
-        select: memberSafeSelect,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.member.count({ where }),
-    ]);
-
-    const linkedByMemberId = await this.loadLinkedUsersByMemberIds(items.map((m) => m.id));
+    const authScope = await this.resolveMemberReadScope(currentUser);
+    const { items, total } = await this.query.list(query, authScope);
+    const linkedByMemberId = await this.query.loadLinkedUsersByMemberIds(items.map((m) => m.id));
     return {
       items: items.map((m) => this.attachAccountInfo(m, linkedByMemberId.get(m.id))),
       total,
-      page,
-      pageSize,
+      page: query.page,
+      pageSize: query.pageSize,
     };
   }
 
@@ -380,36 +273,8 @@ export class MembersService {
     query: MemberOptionsQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<MemberOptionsResponseDto> {
-    const { q, organizationId, includeDescendants, limit } = query;
-
-    const filters: Prisma.MemberWhereInput = {};
-    if (q !== undefined) {
-      filters.OR = [
-        { displayName: { contains: q, mode: 'insensitive' } },
-        { memberNo: { contains: q, mode: 'insensitive' } },
-      ];
-    }
-    const orgScope = await this.buildOrganizationScopeFilter(
-      currentUser,
-      organizationId,
-      includeDescendants,
-    );
-    if (orgScope !== undefined) Object.assign(filters, orgScope);
-
-    const rows = await this.prisma.member.findMany({
-      where: notDeletedWhere(filters),
-      select: memberSafeSelect,
-      orderBy: { createdAt: 'desc' },
-      take: limit ?? 20,
-    });
-
-    const items: MemberOptionItemDto[] = rows.map((r) => ({
-      id: r.id,
-      label: r.displayName,
-      memberNo: r.memberNo,
-      gradeCode: r.gradeCode,
-    }));
-    return { items };
+    const authScope = await this.resolveMemberReadScope(currentUser);
+    return this.query.options(query, authScope);
   }
 
   // ============ create ============
@@ -447,7 +312,7 @@ export class MembersService {
   async findOne(id: string, currentUser: CurrentUserPayload): Promise<MemberResponseDto> {
     await this.assertCanOrThrow(currentUser, 'member.read.record', { type: 'member', id });
     const member = await this.findMemberOrThrow(id);
-    const linked = await this.findLinkedUser(id);
+    const linked = await this.query.findLinkedUser(id);
     return this.attachAccountInfo(member, linked);
   }
 
@@ -484,7 +349,7 @@ export class MembersService {
         data,
         select: memberSafeSelect,
       });
-      const linked = await this.findLinkedUser(id, tx);
+      const linked = await this.query.findLinkedUser(id, tx);
       return this.attachAccountInfo(updated, linked);
     });
   }
@@ -511,7 +376,7 @@ export class MembersService {
         data: { status: MemberStatus.ACTIVE },
         select: memberSafeSelect,
       });
-      const linked = await this.findLinkedUser(id, tx);
+      const linked = await this.query.findLinkedUser(id, tx);
       return this.attachAccountInfo(updated, linked);
     });
   }
@@ -552,7 +417,7 @@ export class MembersService {
         data: { deletedAt: new Date(), status: MemberStatus.INACTIVE },
         select: memberSafeSelect,
       });
-      const linked = await this.findLinkedUser(id, tx);
+      const linked = await this.query.findLinkedUser(id, tx);
       return this.attachAccountInfo(updated, linked);
     });
   }

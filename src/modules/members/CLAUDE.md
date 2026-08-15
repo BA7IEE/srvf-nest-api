@@ -36,6 +36,15 @@
 - **事务开法(M3)**:上述两条路径改走 `runMemberLinearizedTransaction`(显式 `ReadCommitted` + 有界锁等待),
   与 team-join / attendances 同一口径。
 
+## 已抽出的职责边界(Phase 6-B,2026-08-15)
+
+- **`members-query.service.ts`(第一刀,§3.2 QueryService)**:`list` / `options` 的 where 构造、
+  组织范围交集与 closure 展开、分页、`memberSafeSelect` 投影、关联 live User 的批量/单条读。
+  **判权腿不在其中** —— `AuthzService.getVisibleOrganizationScope()` 与 `RBAC_FORBIDDEN` 抛出留在
+  `MembersService.resolveMemberReadScope()`,算好的 `VisibleOrganizationScope` 作为**入参**传入
+  (§3.2 只豁免「显式传入的 read-scope filter」)。该类**禁止**注入 rbac / authz,也不 exports —— 跨模块
+  复用仍走 `MembersService.options()` 那一个入口,避免出现绕过判权腿的第二条读路径。
+
 ## Risk points
 
 - ❌ 不复用 `UsersService`、不引入模块环，也不把 policy 调用移到事务外。

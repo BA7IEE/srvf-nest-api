@@ -15,9 +15,9 @@ import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { ActivityMemberOffboardImpactService } from '../activities/activity-member-offboard-impact.service';
 import type { AuthzService } from '../authz/authz.service';
 import type { PrismaService } from '../../database/prisma.service';
-import type { OrganizationsService } from '../organizations/organizations.service';
 import type { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
 import type { RbacService } from '../permissions/rbac.service';
+import type { MembersQueryService } from './members-query.service';
 import { MembersService } from './members.service';
 
 // 队员账号闭环 v1 收尾补丁(2026-07-07,元核验 P3):runWithUniqueConstraintGuard 的
@@ -86,7 +86,9 @@ const activityOffboardImpactNoop = {
     blockingReasons: [],
   }),
 } as unknown as ActivityMemberOffboardImpactService;
-const organizationsStub = {} as unknown as OrganizationsService; // grantAccount 不触达
+// Phase 6-B 第一刀:读侧边界抽出后,`OrganizationsService` 由 MembersQueryService 持有,
+// MembersService 不再注入它。grantAccount 同样不触达查询边界,故沿用空 stub。
+const membersQueryStub = {} as unknown as MembersQueryService;
 
 function p2002(target: string[]): Prisma.PrismaClientKnownRequestError {
   return new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
@@ -105,9 +107,9 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
       rbacAllow,
       authzAllow,
       lastAdminProtectionNoop,
-      organizationsStub,
       auditNoop,
       activityOffboardImpactNoop,
+      membersQueryStub,
     );
 
     await expect(service.grantAccount('m1', { phone: '13800000001' }, USER, META)).rejects.toEqual(
@@ -123,9 +125,9 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
       rbacAllow,
       authzAllow,
       lastAdminProtectionNoop,
-      organizationsStub,
       auditNoop,
       activityOffboardImpactNoop,
+      membersQueryStub,
     );
 
     await expect(service.grantAccount('m1', { phone: '13800000006' }, USER, META)).rejects.toEqual(
@@ -141,9 +143,9 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
       rbacAllow,
       authzAllow,
       lastAdminProtectionNoop,
-      organizationsStub,
       auditNoop,
       activityOffboardImpactNoop,
+      membersQueryStub,
     );
 
     await expect(service.grantAccount('m1', { phone: '13800000002' }, USER, META)).rejects.toEqual(
@@ -160,9 +162,9 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
       rbacAllow,
       authzAllow,
       lastAdminProtectionNoop,
-      organizationsStub,
       auditNoop,
       activityOffboardImpactNoop,
+      membersQueryStub,
     );
 
     await expect(service.grantAccount('m1', { phone: '13800000003' }, USER, META)).rejects.toBe(
@@ -179,9 +181,9 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
       rbacAllow,
       authzAllow,
       lastAdminProtectionNoop,
-      organizationsStub,
       auditNoop,
       activityOffboardImpactNoop,
+      membersQueryStub,
     );
 
     await expect(service.grantAccount('m1', { phone: '13800000004' }, USER, META)).rejects.toBe(
@@ -272,9 +274,9 @@ describe('MembersService member lifecycle authorization closure', () => {
       rbacAllow,
       authzAllow,
       lastAdminProtection,
-      organizationsStub,
       audit as unknown as AuditLogsService,
       activityOffboardImpactNoop,
+      membersQueryStub,
     );
 
     const result = await service.offboard('m1', USER, META);
@@ -316,9 +318,9 @@ describe('MembersService member lifecycle authorization closure', () => {
       rbacAllow,
       authzAllow,
       lastAdminProtectionNoop,
-      organizationsStub,
       auditNoop,
       activityOffboardImpactNoop,
+      membersQueryStub,
     );
 
     await expect(
