@@ -231,6 +231,52 @@ describe('ActivityPublishProposalV2Service', () => {
     );
   });
 
+  it('keeps qualification-free initial proposals in V4 and freezes configured targets in V5', async () => {
+    const service = new ActivityPublishProposalV2Service(
+      { get: jest.fn() } as never,
+      registrationForms as never,
+      qualificationRules as never,
+      { apply: jest.fn() } as never,
+    );
+    const internals = service as unknown as Record<string, jest.Mock>;
+    const state = {
+      workflowRevision: 11,
+      activity: { title: 'initial qualification probe', allocationModeCode: 'qualification_rank' },
+      sessions: [],
+      templateVersionId: null,
+      resolvedConfig: { templateVersionId: null },
+      registrationForm: null,
+      qualificationRuleSets: { ruleSets: [] },
+    };
+    internals.currentState = jest.fn().mockResolvedValue(state);
+    internals.assertProposalValid = jest.fn();
+    internals.toSnapshotV4 = jest.fn().mockReturnValue({ schemaVersion: 4 });
+    internals.toSnapshotV5 = jest.fn().mockReturnValue({ schemaVersion: 5 });
+
+    await expect(service.buildInitial({} as never, 'activity-1')).resolves.toMatchObject({
+      schemaVersion: 4,
+    });
+    expect(internals.toSnapshotV4).toHaveBeenCalledTimes(1);
+    expect(internals.toSnapshotV5).not.toHaveBeenCalled();
+
+    internals.currentState.mockResolvedValue({
+      ...state,
+      qualificationRuleSets: {
+        ruleSets: [
+          {
+            scope: { sessionId: null, positionId: null },
+            rules: [],
+            definitionHash: 'a'.repeat(64),
+          },
+        ],
+      },
+    });
+    await expect(service.buildInitial({} as never, 'activity-1')).resolves.toMatchObject({
+      schemaVersion: 5,
+    });
+    expect(internals.toSnapshotV5).toHaveBeenCalledTimes(1);
+  });
+
   it('never forwards allocation mode into v2/v3 applyActivity, but does forward the v4 target', async () => {
     const service = new ActivityPublishProposalV2Service(
       { get: jest.fn() } as never,

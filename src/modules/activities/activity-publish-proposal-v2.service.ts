@@ -442,9 +442,25 @@ export class ActivityPublishProposalV2Service {
     private readonly capacityBuckets: ActivityCapacityBucketProjector,
   ) {}
 
-  async buildInitial(tx: PrismaTx, activityId: string): Promise<ActivityPublishProposalSnapshotV5> {
+  async buildInitial(
+    tx: PrismaTx,
+    activityId: string,
+  ): Promise<ActivityPublishProposalSnapshotV4 | ActivityPublishProposalSnapshotV5> {
     const current = await this.currentState(tx, activityId);
     this.assertProposalValid(current.activity, current.sessions);
+    // An initial proposal only needs the V5 envelope when there is an actual
+    // qualification target to freeze. Keeping an empty target in V4 would
+    // silently rewrite established, qualification-free initial reviews.
+    if (current.qualificationRuleSets.ruleSets.length === 0) {
+      return this.toSnapshotV4(
+        current,
+        current.activity,
+        current.sessions,
+        current.templateVersionId,
+        current.resolvedConfig,
+        current.registrationForm,
+      );
+    }
     return this.toSnapshotV5(
       current,
       current.activity,
