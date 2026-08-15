@@ -21,6 +21,7 @@ type LockedIdentity = {
   registrationId: string;
   activityId: string;
   memberId: string;
+  sessionId: string;
   currentRevision: number;
   currentStatusCode: string;
   currentPositionId: string | null;
@@ -31,17 +32,40 @@ type LockedIdentity = {
   revisionPositionId: string | null;
 };
 
+type LockedCapacityBucket = {
+  id: string;
+  activityId: string;
+  scopeTypeCode: string;
+  scopeId: string;
+  occupied: number;
+};
+
+type LockedActiveReservation = {
+  id: string;
+  identityId: string;
+  bucketId: string;
+  reservationType: string;
+  memberId: string | null;
+  activityId: string | null;
+  bucketActivityId: string;
+  bucketScopeTypeCode: string;
+  bucketScopeId: string;
+  identityActivityId: string;
+  identityMemberId: string;
+  identitySessionId: string;
+  positionActivityId: string | null;
+  positionSessionId: string | null;
+};
+
 const CANCELLABLE_IDENTITY_STATUSES = new Set(['pending', 'waitlisted']);
-const PRESERVED_IDENTITY_STATUSES = new Set([
-  'pass',
-  'attended',
-  'settled',
+const PRESERVED_EMPTY_IDENTITY_STATUSES = new Set([
   'cancelled',
   'rejected',
   'not_selected',
   'review_expired',
   'waitlist_expired',
 ]);
+const PRESERVED_PARTICIPATING_IDENTITY_STATUSES = new Set(['attended', 'settled']);
 
 /**
  * Closes the unresolved canonical projection for a whole-activity cancellation.
@@ -94,7 +118,6 @@ export async function cancelActivityRegistrationLifecycle(args: {
     revisionedRegistrations,
   );
 
-  const candidates: LockedIdentity[] = [];
   for (const registration of registrations) {
     const registrationIdentities = identitiesByRegistrationId.get(registration.id) ?? [];
     if (registrationIdentities.length === 0) {
@@ -118,16 +141,24 @@ export async function cancelActivityRegistrationLifecycle(args: {
     for (const identity of registrationIdentities) {
       if (CANCELLABLE_IDENTITY_STATUSES.has(identity.currentStatusCode)) {
         assertUnresolvedIdentity(identity);
-        candidates.push(identity);
         continue;
       }
-      if (!PRESERVED_IDENTITY_STATUSES.has(identity.currentStatusCode)) failClosed();
+      if (identity.currentStatusCode === 'pass') {
+        assertPreservedPassIdentity(identity);
+        continue;
+      }
+      if (PRESERVED_PARTICIPATING_IDENTITY_STATUSES.has(identity.currentStatusCode)) {
+        assertPreservedParticipatingIdentity(identity);
+        continue;
+      }
+      if (PRESERVED_EMPTY_IDENTITY_STATUSES.has(identity.currentStatusCode)) {
+        assertUnresolvedIdentity(identity);
+        continue;
+      }
+      failClosed();
     }
   }
-  await assertNoActiveReservations(
-    args.tx,
-    candidates.map((candidate) => candidate.id),
-  );
+  await assertCapacityReservationsReconciled(args.tx, args.activityId, identities);
 
   let cancelledRegistrationCount = 0;
   for (const registration of registrations) {
@@ -286,6 +317,7 @@ async function lockIdentities(
       i."registrationId",
       i."activityId",
       i."memberId",
+      i."sessionId",
       i."currentRevision",
       i."currentStatusCode",
       i."currentPositionId",
@@ -355,19 +387,171 @@ function assertUnresolvedIdentity(identity: LockedIdentity): void {
   }
 }
 
-async function assertNoActiveReservations(
+function assertPreservedPassIdentity(identity: LockedIdentity): void {
+  if (
+    !identity.populationIncluded ||
+    identity.capacityReservationId === null ||
+    identity.revisionPositionId !== identity.currentPositionId
+  ) {
+    failClosed();
+  }
+}
+
+function assertPreservedParticipatingIdentity(identity: LockedIdentity): void {
+  if (!identity.populationIncluded || identity.revisionPositionId !== identity.currentPositionId) {
+    failClosed();
+  }
+}
+
+/**
+ * This is a read-only reconciliation of the existing capacity kernel's current facts. It does
+ * not calculate availability or perform CapacityReservation / bucket DML; the capacity service
+ * remains the only writer. Whole cancellation must still reject a drifted active reservation
+ * before it preserves pass history or closes another identity in the same outer transaction.
+ */
+async function assertCapacityReservationsReconciled(
   tx: PrismaTx,
-  identityIds: readonly string[],
+  activityId: string,
+  identities: readonly LockedIdentity[],
 ): Promise<void> {
-  if (identityIds.length === 0) return;
-  const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-    SELECT "id"
-    FROM "CapacityReservation"
-    WHERE "identityId" IN (${Prisma.join(identityIds)}) AND "status" = 'active'
-    ORDER BY "id" ASC
+  const buckets = await tx.$queryRaw<LockedCapacityBucket[]>(Prisma.sql`
+    SELECT "id", "activityId", "scopeTypeCode", "scopeId", "occupied"
+    FROM "ActivityCapacityBucket"
+    WHERE "activityId" = ${activityId}
+    ORDER BY "scopeTypeCode" ASC, "scopeId" ASC, "id" ASC
     FOR UPDATE
   `);
-  if (rows.length > 0) failClosed();
+  const reservations = await tx.$queryRaw<LockedActiveReservation[]>(Prisma.sql`
+    SELECT
+      r."id",
+      r."identityId",
+      r."bucketId",
+      r."reservationType",
+      r."memberId",
+      r."activityId",
+      b."activityId" AS "bucketActivityId",
+      b."scopeTypeCode" AS "bucketScopeTypeCode",
+      b."scopeId" AS "bucketScopeId",
+      i."activityId" AS "identityActivityId",
+      i."memberId" AS "identityMemberId",
+      i."sessionId" AS "identitySessionId",
+      p."activityId" AS "positionActivityId",
+      p."sessionId" AS "positionSessionId"
+    FROM "CapacityReservation" r
+    INNER JOIN "ActivityCapacityBucket" b ON b."id" = r."bucketId"
+    INNER JOIN "ActivityParticipationIdentity" i ON i."id" = r."identityId"
+    LEFT JOIN "ActivitySessionPosition" p
+      ON r."reservationType" = 'position_participation' AND p."id" = b."scopeId"
+    WHERE r."status" = 'active'
+      AND (b."activityId" = ${activityId} OR i."activityId" = ${activityId})
+    ORDER BY r."id" ASC
+    FOR UPDATE OF r
+  `);
+
+  const identityById = new Map(identities.map((identity) => [identity.id, identity]));
+  const bucketById = new Map(buckets.map((bucket) => [bucket.id, bucket]));
+  if (identityById.size !== identities.length || bucketById.size !== buckets.length) failClosed();
+  if (buckets.some((bucket) => bucket.activityId !== activityId)) failClosed();
+
+  const activeCountByBucketId = new Map<string, number>();
+  const activityPersonByMemberId = new Map<string, LockedActiveReservation>();
+  const sessionByIdentityId = new Map<string, LockedActiveReservation>();
+  const positionByIdentityId = new Map<string, LockedActiveReservation>();
+  for (const reservation of reservations) {
+    const identity = identityById.get(reservation.identityId);
+    const bucket = bucketById.get(reservation.bucketId);
+    if (
+      !identity ||
+      !bucket ||
+      reservation.identityActivityId !== identity.activityId ||
+      reservation.identityMemberId !== identity.memberId ||
+      reservation.identitySessionId !== identity.sessionId ||
+      reservation.bucketActivityId !== bucket.activityId ||
+      reservation.bucketScopeTypeCode !== bucket.scopeTypeCode ||
+      reservation.bucketScopeId !== bucket.scopeId ||
+      reservation.reservationType !== bucket.scopeTypeCode
+    ) {
+      failClosed();
+    }
+    activeCountByBucketId.set(
+      reservation.bucketId,
+      (activeCountByBucketId.get(reservation.bucketId) ?? 0) + 1,
+    );
+
+    if (reservation.reservationType === 'activity_person') {
+      if (
+        reservation.memberId !== identity.memberId ||
+        reservation.activityId !== identity.activityId ||
+        reservation.bucketScopeId !== identity.activityId ||
+        activityPersonByMemberId.has(identity.memberId)
+      ) {
+        failClosed();
+      }
+      activityPersonByMemberId.set(identity.memberId, reservation);
+      continue;
+    }
+    if (
+      reservation.memberId !== null ||
+      reservation.activityId !== null ||
+      reservation.bucketActivityId !== identity.activityId
+    ) {
+      failClosed();
+    }
+    if (reservation.reservationType === 'session_participation') {
+      if (
+        reservation.bucketScopeId !== identity.sessionId ||
+        sessionByIdentityId.has(identity.id)
+      ) {
+        failClosed();
+      }
+      sessionByIdentityId.set(identity.id, reservation);
+      continue;
+    }
+    if (reservation.reservationType === 'position_participation') {
+      if (
+        reservation.positionActivityId !== identity.activityId ||
+        reservation.positionSessionId !== identity.sessionId ||
+        positionByIdentityId.has(identity.id)
+      ) {
+        failClosed();
+      }
+      positionByIdentityId.set(identity.id, reservation);
+      continue;
+    }
+    failClosed();
+  }
+
+  for (const bucket of buckets) {
+    if ((activeCountByBucketId.get(bucket.id) ?? 0) !== bucket.occupied) failClosed();
+  }
+
+  for (const identity of identities) {
+    const sessionReservation = sessionByIdentityId.get(identity.id) ?? null;
+    const positionReservation = positionByIdentityId.get(identity.id) ?? null;
+    if (
+      (sessionReservation?.id ?? null) !== identity.capacityReservationId ||
+      (positionReservation?.bucketScopeId ?? null) !== identity.currentPositionId
+    ) {
+      failClosed();
+    }
+    if (
+      CANCELLABLE_IDENTITY_STATUSES.has(identity.currentStatusCode) ||
+      PRESERVED_EMPTY_IDENTITY_STATUSES.has(identity.currentStatusCode)
+    ) {
+      if (sessionReservation !== null || positionReservation !== null) failClosed();
+    }
+  }
+
+  const hasSessionByMemberId = new Set(
+    identities
+      .filter((identity) => sessionByIdentityId.has(identity.id))
+      .map((identity) => identity.memberId),
+  );
+  for (const memberId of new Set(identities.map((identity) => identity.memberId))) {
+    if (activityPersonByMemberId.has(memberId) !== hasSessionByMemberId.has(memberId)) {
+      failClosed();
+    }
+  }
 }
 
 function failClosed(): never {

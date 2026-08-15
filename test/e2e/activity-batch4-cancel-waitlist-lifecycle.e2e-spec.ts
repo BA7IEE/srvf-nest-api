@@ -623,6 +623,347 @@ describe('activity batch4 whole-cancel canonical lifecycle', () => {
     expect(headerAfter).toEqual(headerBefore);
   });
 
+  it('fails closed with zero lifecycle writes when a preserved pass projection has drifted', async () => {
+    const scenario = await createScenario();
+    const accepted = await createActor('preserved-pass-drift-accepted');
+    const waitlisted = await createActor('preserved-pass-drift-waitlisted');
+    const acceptedSubmission = await submit(
+      scenario,
+      accepted,
+      `cancel-preserved-pass-drift-accepted-${sequence}`,
+    );
+    const waitlistedSubmission = await submit(
+      scenario,
+      waitlisted,
+      `cancel-preserved-pass-drift-waitlisted-${sequence}`,
+    );
+    expect(acceptedSubmission.status).toBe(201);
+    expect(waitlistedSubmission.status).toBe(201);
+    const acceptedRegistrationId = acceptedSubmission.body.data.registrationId as string;
+    const waitlistedRegistrationId = waitlistedSubmission.body.data.registrationId as string;
+    const acceptedIdentity = await prisma.activityParticipationIdentity.findFirstOrThrow({
+      where: { registrationId: acceptedRegistrationId },
+      select: { id: true },
+    });
+    // 对抗性 PostgreSQL mutation：保留 pass 的 population projection 若已漂移，整单取消
+    // 不能只关闭另一头的候补而把已损坏的 active capacity fact 留在 cancelled activity。
+    await prisma.activityParticipationIdentity.update({
+      where: { id: acceptedIdentity.id },
+      data: { populationIncluded: false },
+    });
+    const [activityBefore, acceptedHeaderBefore, waitlistedHeaderBefore, identityCountsBefore] =
+      await Promise.all([
+        prisma.activity.findUniqueOrThrow({
+          where: { id: scenario.activityId },
+          select: { statusCode: true },
+        }),
+        prisma.activityRegistration.findUniqueOrThrow({
+          where: { id: acceptedRegistrationId },
+          select: { statusCode: true, currentRevision: true },
+        }),
+        prisma.activityRegistration.findUniqueOrThrow({
+          where: { id: waitlistedRegistrationId },
+          select: { statusCode: true, currentRevision: true },
+        }),
+        Promise.all([
+          prisma.activityParticipationRevision.count({
+            where: { identityId: acceptedIdentity.id },
+          }),
+          prisma.activityRegistrationRevision.count({
+            where: { registrationId: acceptedRegistrationId },
+          }),
+          prisma.activityRegistrationRevision.count({
+            where: { registrationId: waitlistedRegistrationId },
+          }),
+        ]),
+      ]);
+
+    const failed = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${scenario.activityId}/cancel`)
+      .set('Authorization', manager.authHeader)
+      .send(cancelBody(`cancel-preserved-pass-drift-whole-${sequence}`));
+    expect(failed.status).toBe(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.httpStatus);
+    expect(failed.body.code).toBe(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.code);
+
+    const [
+      activityAfter,
+      acceptedHeaderAfter,
+      waitlistedHeaderAfter,
+      acceptedIdentityAfter,
+      identityCountsAfter,
+    ] = await Promise.all([
+      prisma.activity.findUniqueOrThrow({
+        where: { id: scenario.activityId },
+        select: { statusCode: true },
+      }),
+      prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: acceptedRegistrationId },
+        select: { statusCode: true, currentRevision: true },
+      }),
+      prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: waitlistedRegistrationId },
+        select: { statusCode: true, currentRevision: true },
+      }),
+      prisma.activityParticipationIdentity.findUniqueOrThrow({
+        where: { id: acceptedIdentity.id },
+        select: { currentStatusCode: true, populationIncluded: true },
+      }),
+      Promise.all([
+        prisma.activityParticipationRevision.count({ where: { identityId: acceptedIdentity.id } }),
+        prisma.activityRegistrationRevision.count({
+          where: { registrationId: acceptedRegistrationId },
+        }),
+        prisma.activityRegistrationRevision.count({
+          where: { registrationId: waitlistedRegistrationId },
+        }),
+      ]),
+    ]);
+    expect(activityAfter).toEqual(activityBefore);
+    expect(acceptedHeaderAfter).toEqual(acceptedHeaderBefore);
+    expect(waitlistedHeaderAfter).toEqual(waitlistedHeaderBefore);
+    expect(acceptedIdentityAfter).toEqual({ currentStatusCode: 'pass', populationIncluded: false });
+    expect(identityCountsAfter).toEqual(identityCountsBefore);
+  });
+
+  it('fails closed with zero lifecycle writes when a preserved pass position pointer has drifted', async () => {
+    const scenario = await createScenario();
+    const accepted = await createActor('pass-position-drift-accepted');
+    const waitlisted = await createActor('pass-position-drift-waitlisted');
+    const acceptedSubmission = await submit(
+      scenario,
+      accepted,
+      `cancel-pass-position-drift-accepted-${sequence}`,
+    );
+    const waitlistedSubmission = await submit(
+      scenario,
+      waitlisted,
+      `cancel-pass-position-drift-waitlisted-${sequence}`,
+    );
+    expect(acceptedSubmission.status).toBe(201);
+    expect(waitlistedSubmission.status).toBe(201);
+    const acceptedRegistrationId = acceptedSubmission.body.data.registrationId as string;
+    const waitlistedRegistrationId = waitlistedSubmission.body.data.registrationId as string;
+    const acceptedIdentity = await prisma.activityParticipationIdentity.findFirstOrThrow({
+      where: { registrationId: acceptedRegistrationId },
+      select: { id: true, currentRevision: true },
+    });
+
+    // 对抗性 PostgreSQL mutation：保留 session pointer 及 immutable status，仅摘掉 pass 的
+    // current/revision position pointer；若仍有 active position reservation，整单取消必须零写。
+    await prisma.$transaction([
+      prisma.activityParticipationRevision.updateMany({
+        where: { identityId: acceptedIdentity.id, revision: acceptedIdentity.currentRevision },
+        data: { positionId: null },
+      }),
+      prisma.activityParticipationIdentity.update({
+        where: { id: acceptedIdentity.id },
+        data: { currentPositionId: null },
+      }),
+    ]);
+    const [activityBefore, acceptedHeaderBefore, waitlistedHeaderBefore, revisionCountsBefore] =
+      await Promise.all([
+        prisma.activity.findUniqueOrThrow({
+          where: { id: scenario.activityId },
+          select: { statusCode: true },
+        }),
+        prisma.activityRegistration.findUniqueOrThrow({
+          where: { id: acceptedRegistrationId },
+          select: { statusCode: true, currentRevision: true },
+        }),
+        prisma.activityRegistration.findUniqueOrThrow({
+          where: { id: waitlistedRegistrationId },
+          select: { statusCode: true, currentRevision: true },
+        }),
+        Promise.all([
+          prisma.activityParticipationRevision.count({
+            where: { identityId: acceptedIdentity.id },
+          }),
+          prisma.activityRegistrationRevision.count({
+            where: { registrationId: acceptedRegistrationId },
+          }),
+          prisma.activityRegistrationRevision.count({
+            where: { registrationId: waitlistedRegistrationId },
+          }),
+        ]),
+      ]);
+
+    const failed = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${scenario.activityId}/cancel`)
+      .set('Authorization', manager.authHeader)
+      .send(cancelBody(`cancel-pass-position-drift-whole-${sequence}`));
+    expect(failed.status).toBe(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.httpStatus);
+    expect(failed.body.code).toBe(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.code);
+
+    const [
+      activityAfter,
+      acceptedHeaderAfter,
+      waitlistedHeaderAfter,
+      acceptedIdentityAfter,
+      revisionCountsAfter,
+    ] = await Promise.all([
+      prisma.activity.findUniqueOrThrow({
+        where: { id: scenario.activityId },
+        select: { statusCode: true },
+      }),
+      prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: acceptedRegistrationId },
+        select: { statusCode: true, currentRevision: true },
+      }),
+      prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: waitlistedRegistrationId },
+        select: { statusCode: true, currentRevision: true },
+      }),
+      prisma.activityParticipationIdentity.findUniqueOrThrow({
+        where: { id: acceptedIdentity.id },
+        select: {
+          currentStatusCode: true,
+          currentPositionId: true,
+          capacityReservationId: true,
+          populationIncluded: true,
+        },
+      }),
+      Promise.all([
+        prisma.activityParticipationRevision.count({ where: { identityId: acceptedIdentity.id } }),
+        prisma.activityRegistrationRevision.count({
+          where: { registrationId: acceptedRegistrationId },
+        }),
+        prisma.activityRegistrationRevision.count({
+          where: { registrationId: waitlistedRegistrationId },
+        }),
+      ]),
+    ]);
+    expect(activityAfter).toEqual(activityBefore);
+    expect(acceptedHeaderAfter).toEqual(acceptedHeaderBefore);
+    expect(waitlistedHeaderAfter).toEqual(waitlistedHeaderBefore);
+    expect(acceptedIdentityAfter).toEqual({
+      currentStatusCode: 'pass',
+      currentPositionId: null,
+      capacityReservationId: expect.any(String),
+      populationIncluded: true,
+    });
+    expect(revisionCountsAfter).toEqual(revisionCountsBefore);
+  });
+
+  it('fails closed with zero lifecycle writes when a preserved terminal projection has drifted', async () => {
+    const scenario = await createScenario();
+    const accepted = await createActor('terminal-drift-accepted');
+    const terminal = await createActor('terminal-drift-terminal');
+    const candidate = await createActor('terminal-drift-candidate');
+    expect(
+      await submit(scenario, accepted, `cancel-terminal-drift-accepted-${sequence}`),
+    ).toMatchObject({ status: 201 });
+    const terminalSubmission = await submit(
+      scenario,
+      terminal,
+      `cancel-terminal-drift-terminal-${sequence}`,
+    );
+    const candidateSubmission = await submit(
+      scenario,
+      candidate,
+      `cancel-terminal-drift-candidate-${sequence}`,
+    );
+    expect(terminalSubmission.status).toBe(201);
+    expect(candidateSubmission.status).toBe(201);
+    const terminalRegistrationId = terminalSubmission.body.data.registrationId as string;
+    const candidateRegistrationId = candidateSubmission.body.data.registrationId as string;
+    const terminalIdentity = await prisma.activityParticipationIdentity.findFirstOrThrow({
+      where: { registrationId: terminalRegistrationId },
+      select: { id: true, currentRevision: true },
+    });
+
+    // 对抗性 PostgreSQL mutation：保持 immutable revision/header status 一致，仅让一个已经
+    // reject 的 identity 留下 population，从而验证整单取消不应忽略任何保留终态的 projection 漂移。
+    await prisma.$transaction([
+      prisma.activityParticipationRevision.updateMany({
+        where: { identityId: terminalIdentity.id, revision: terminalIdentity.currentRevision },
+        data: { statusCode: 'rejected' },
+      }),
+      prisma.activityParticipationIdentity.update({
+        where: { id: terminalIdentity.id },
+        data: { currentStatusCode: 'rejected', populationIncluded: true },
+      }),
+      prisma.activityRegistration.update({
+        where: { id: terminalRegistrationId },
+        data: { statusCode: 'reject', statusSummaryCode: 'not_selected' },
+      }),
+    ]);
+    const [activityBefore, terminalHeaderBefore, candidateHeaderBefore, revisionCountsBefore] =
+      await Promise.all([
+        prisma.activity.findUniqueOrThrow({
+          where: { id: scenario.activityId },
+          select: { statusCode: true },
+        }),
+        prisma.activityRegistration.findUniqueOrThrow({
+          where: { id: terminalRegistrationId },
+          select: { statusCode: true, statusSummaryCode: true, currentRevision: true },
+        }),
+        prisma.activityRegistration.findUniqueOrThrow({
+          where: { id: candidateRegistrationId },
+          select: { statusCode: true, statusSummaryCode: true, currentRevision: true },
+        }),
+        Promise.all([
+          prisma.activityParticipationRevision.count({
+            where: { identityId: terminalIdentity.id },
+          }),
+          prisma.activityRegistrationRevision.count({
+            where: { registrationId: terminalRegistrationId },
+          }),
+          prisma.activityRegistrationRevision.count({
+            where: { registrationId: candidateRegistrationId },
+          }),
+        ]),
+      ]);
+
+    const failed = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${scenario.activityId}/cancel`)
+      .set('Authorization', manager.authHeader)
+      .send(cancelBody(`cancel-terminal-drift-whole-${sequence}`));
+    expect(failed.status).toBe(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.httpStatus);
+    expect(failed.body.code).toBe(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.code);
+
+    const [
+      activityAfter,
+      terminalHeaderAfter,
+      candidateHeaderAfter,
+      terminalIdentityAfter,
+      revisionCountsAfter,
+    ] = await Promise.all([
+      prisma.activity.findUniqueOrThrow({
+        where: { id: scenario.activityId },
+        select: { statusCode: true },
+      }),
+      prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: terminalRegistrationId },
+        select: { statusCode: true, statusSummaryCode: true, currentRevision: true },
+      }),
+      prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: candidateRegistrationId },
+        select: { statusCode: true, statusSummaryCode: true, currentRevision: true },
+      }),
+      prisma.activityParticipationIdentity.findUniqueOrThrow({
+        where: { id: terminalIdentity.id },
+        select: { currentStatusCode: true, populationIncluded: true },
+      }),
+      Promise.all([
+        prisma.activityParticipationRevision.count({ where: { identityId: terminalIdentity.id } }),
+        prisma.activityRegistrationRevision.count({
+          where: { registrationId: terminalRegistrationId },
+        }),
+        prisma.activityRegistrationRevision.count({
+          where: { registrationId: candidateRegistrationId },
+        }),
+      ]),
+    ]);
+    expect(activityAfter).toEqual(activityBefore);
+    expect(terminalHeaderAfter).toEqual(terminalHeaderBefore);
+    expect(candidateHeaderAfter).toEqual(candidateHeaderBefore);
+    expect(terminalIdentityAfter).toEqual({
+      currentStatusCode: 'rejected',
+      populationIncluded: true,
+    });
+    expect(revisionCountsAfter).toEqual(revisionCountsBefore);
+  });
+
   it('fails closed when an identity points at a missing current revision', async () => {
     const scenario = await createScenario();
     const accepted = await createActor('missing-revision-accepted');
