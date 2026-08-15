@@ -128,6 +128,7 @@ CHANGELOG fragment 归并:`pnpm changelog:merge`(bump 前,总控执行;是流程
 | [`SCANNER_AST_MIGRATION.md`](SCANNER_AST_MIGRATION.md) | Phase 3 前置:三扫描器 typed-AST 化的能力对比与 R8 重扫 |
 | [`SEMANTIC_GATES.md`](SEMANTIC_GATES.md) | Phase 5:R14 / R11 / FE client 三道语义门收口 |
 | [`SERVICE_SIZE_RATCHET.md`](SERVICE_SIZE_RATCHET.md) | Phase 6-A:大 service 尺寸棘轮立闸(NCLOC 口径 / 基线 / Exit Criteria) |
+| [`SERVICE_SIZE_GROWTH_ATTRIBUTION.md`](SERVICE_SIZE_GROWTH_ATTRIBUTION.md) | Phase 6-B 诊断:增长按 D-7 六类 / 事务编排层归因(逐域表 / members 对照组 / 拆分收益结论) |
 
 🔒 = 该文件在 [`redzone.json`](../../harness/redzone.json) 的 `selfGuard` 内,改动需维护者 `pnpm harness:grant` + `harness-review` 环境审批。
 
