@@ -162,6 +162,31 @@ Phase 0 primitives」)。顺手把该判据从**比个数**改成**比集合**�
 - 判据③只查 `src/modules` 方向的入边;`src/common` → `src/database` 不算违规
   (当前唯一一条:`member-advisory-lock.util.ts:5` 的 type-only import)。
 
+### 6.1 施工中踩到的一次假绿:「闸绿是因为它没在看」
+
+本刀改的是 `scripts/**`,而验证时先跑的是:
+
+```
+npx tsc --noEmit -p tsconfig.json   # 退出 0
+```
+
+**这个 0 是假的** —— 根 `tsconfig.json` 的 `include` 只有 `["src/**/*.ts"]`,
+它**根本没有编译 `scripts/`**。换成本仓 `pnpm typecheck` 真正用的三段之一:
+
+```
+npx tsc --noEmit -p scripts/tsconfig.json
+```
+
+立刻报出真错:`scan()` 的返回类型声明没跟着新增的 `commonFindings` 同步
+(对象字面量多余属性)。之所以第一次能"跑通",是因为 `tsx` 只做类型擦除、不做类型检查 ——
+**运行得出正确读数** 与 **类型正确** 是两件事,前者掩护了后者。
+
+留在这里的教训与本文件 §1.1 的根因是**同一个形状**:
+`src/common` 十几轮没被治理看见,是因为扫描器的循环第一行把它 `continue` 掉了;
+这次假绿,是因为 typecheck 的 `include` 把 `scripts/` 排除在外。
+两者都不是"判据判错了",而是**判据的作用域压根没覆盖到目标** ——
+⇒ **看到闸绿,先问它的作用域包不包含你刚改的东西**,再问它判得对不对。
+
 ## 7. 本次未做
 
 - **未转 blocking**:三条判据恒 report。翻闸是独立一刀,前置 = §2.2 的 6 条债务登记落地。
@@ -180,5 +205,6 @@ Phase 0 primitives」)。顺手把该判据从**比个数**改成**比集合**�
     `callSiteId` / `violationFingerprint` / `shapeDigest`,登记时可直接取用。
 
   这是本刀最大的一条留口:**增能抓住,换抓不住。**
-- 未处理 §3 两处灰色定性(`decorators` 业务命名、`exceptions` 业务码登记表)—— 需维护者拍板。
+- §3 两处灰色定性(`decorators` 业务命名、`exceptions` 业务码登记表)**维护者 2026-08-15
+  明确暂不拍板,维持标灰** —— 它们不影响三条判据的执法,等将来真有人要往里塞业务逻辑时再拍。
 - `common-raw-sql-dynamic` 的那 1 条未做进一步取证。
