@@ -1718,7 +1718,15 @@ for (const [configName, config] of JEST_CONFIGS) {
   const cases: Array<[string, boolean, string]> = [
     [
       'P2c ci:gate 依赖 redzone-scan 与 redzone-approval',
-      /needs:\s*\[changeset, fast, slow, journeys, redzone-scan, redzone-approval\]/.test(ci),
+      // ⚠️ 逐字钉住**整份** needs 列表,不只钉 redzone 两项 —— 这是有意的:
+      // 从 gate.needs 摘掉 fast / slow / journeys / harness-* 中任何一个,gate 都会在
+      // 那项根本没跑的情况下放行,那正是最该拦的 fail-open。代价是往 gate 加 job 必须
+      // 同步改本行;那不是麻烦,是加 job 该有的摩擦。
+      // harness-selftest / harness-replay 于 2026-08-15 从 fast 拆出(见 ci.yml 两个
+      // job 的头注):它们恒跑、docs-only 也不跳,故 gate 对它们只接受 success。
+      /needs:\s*\[changeset, fast, harness-selftest, harness-replay, slow, journeys, redzone-scan, redzone-approval\]/.test(
+        ci,
+      ),
       'gate 不依赖这两个 job = 审批不影响放行,门形同虚设',
     ],
     [
