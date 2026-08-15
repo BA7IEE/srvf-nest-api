@@ -4,8 +4,8 @@
 
 ## 本地事实
 
-- `attendances.service.ts` 是 **god-service(2069 行,PR-L4 后)**;`attendance-sheet-state-machine.ts` / `attendance-audit-recorder.ts` / `time-overlap-policy.ts` / `contribution-calculator.ts` / `attendance-presenter.ts`(P1-4 第一刀,2026-06-10)已抽离。
-- 响应序列化必须走 `attendance-presenter.ts`(Sheet 详情 / 列表项 / Record 含 member 摘要 / Decimal→string),**不**在 service 内重新手写字段映射;select 查询策略仍留 service(归未来 QueryService 议题,第二刀另行立项)。
+- `attendances.service.ts` 仍是 **god-service(Phase 6-B 第一刀后 2037 物理行 / 1571 NCLOC)**;`attendance-sheet-state-machine.ts` / `attendance-audit-recorder.ts` / `time-overlap-policy.ts` / `contribution-calculator.ts` / `attendance-presenter.ts`(P1-4 第一刀,2026-06-10)/ `attendance-sheet-query.service.ts`(Phase 6-B 第一刀,2026-08-15)已抽离。
+- 响应序列化必须走 `attendance-presenter.ts`(Sheet 详情 / 列表项 / Record 含 member 摘要 / Decimal→string),**不**在 service 内重新手写字段映射;**读侧** select 与 where 构造已随 Phase 6-B 第一刀迁入 `attendance-sheet-query.service.ts`(见下方「已抽出的职责边界」),**写侧** `sheetSafeSelect` / `sheetFullSelect` 仍留 service。
 - `attendance_sheets` **6 态**(含 `returned` 退回整改与终审);`attendance_records` 子表。
 - 状态变更必须经过 `attendance-sheet-state-machine.ts`,**不**在 service 内裸写态迁移。
 - `submit` 只创建 pending Sheet；**不得**跨 aggregate 直写 `Activity.statusCode='completed'`。活动完结唯一通路是 activities 模块的管理端 `complete` action。
@@ -35,9 +35,28 @@
 - **活动岗位时段接线(2026-07-16 F4)**:App 签到/签退在既有 Activity→Registration 锁序和锁后重读内，从 `registration.activityPosition` 选择岗位 `startAt/endAt`；无岗位或岗位未配置独立时段才回退活动窗，`ActivityCheckInPolicy` 纯函数签名不变。考勤 submit/edit 的批量 registration IN 预取同样按每条记录选择岗位窗；`registrationId=null` 仅在 `requiresInsurance=false` 时继续走活动窗。`attendance-sheet-draft` 从报名岗位带出 `attendanceRoleCode`，无岗位为 `member`；忘签退时岗位报名回退岗位 `endAt`，从而提交后继续由既有 `activityTypeCode × roleCode` 规则计算贡献值。不得改成逐条查询或重新堆一套贡献计算。
 - **GPS 位置 fail-closed(2026-07-18 D-GPS)**:`ActivityCheckInLocationPolicy` 是唯一 geofence 判定源；首次 App 签到/签退只有活动坐标与通过 DTO 的请求坐标均完整合法、且未舍入 Haversine 距离 `<= attendance.checkInRadiusMeters` 才写。活动定位异常/策略层非法坐标/超范围统一 22080，请求 DTO 缺失或非法沿 40000，均零 `ActivityCheckIn`/Sheet/Record/Audit 派生写。`accuracy` 只落证据，不扩缩半径。已有合法 winner 仍在位置判定前幂等返回 200，非法重试不得覆盖快照；新签到行固定 `geoVerified=true/outOfRange=false`，历史异常字段/行与 Admin 只读草稿、手工考勤路径均保留不改。
 
+## 已抽出的职责边界(Phase 6-B 第二域,2026-08-15)
+
+- **`attendance-sheet-query.service.ts`(第一刀,§3.2 QueryService)**:四条列表 surface 的 where 构造、
+  分页、orderBy、读侧 select 投影(`sheetListSelect` / `recordWithMemberSelect` /
+  `adminSheetListSelect` / `adminMemberRecordSelect`),以及 `memberExists` 存在性查询。
+  **判权腿不在其中**(沿 members 第一刀 #1008 先例)—— `assertCanOrThrow` /
+  `resolveVisibleOrganizationIds`(内含 `getVisibleOrganizationScope` 与 30100 抛出)仍归
+  `AttendancesService`,算好的 `visibleOrganizationIds` 作为**入参**传入(§3.2 只豁免
+  「显式传入的 read-scope filter」)。该类**不注入** rbac / authz,module 里也**不 exports** ——
+  跨模块读仍走 `AttendancesService` 那一个入口,避免出现绕过判权腿的第二条读路径。
+  `recordWithMemberSelect` 由 service `import` 回来供 12 处**写路径回读**复用(单一真相源)。
+- **刻意没搬的三类**:① `sheetSafeSelect` / `sheetFullSelect`(写路径回读 + §4「loading the
+  aggregate root」);② `findOne` / `reviewDetail` 那种**回调式** `$transaction` 内的读(同 §4);
+  ③ `expand` 投影与 `activityTitle` 拼装、`MEMBER_NOT_FOUND` 抛出(响应组装与 BizCode 映射是
+  业务判定,不是查询构造)。
+
 ## 不要做(踩雷区)
 
-- ❌ **不**主动拆 `attendances.service.ts`(characterization tests 已落地,但拆分本身需单独立项,沿 [`/docs/current-state.md §3`](../../../docs/current-state.md))。
+- ❌ **不**在没有单独立项的情况下继续拆 `attendances.service.ts`(characterization tests 已落地,
+  但每一刀都要单独立项,沿 [`/docs/current-state.md §3`](../../../docs/current-state.md))。
+- ❌ **不**把判权腿下放进 `attendance-sheet-query.service.ts`,也**不**把它加进 module 的 `exports` ——
+  两者任一都会造出一条绕过 `AttendancesService` 判权的读路径。
 - **Controller 现状**:`attendances.controller.ts` 仅 2 个 Admin class(`AttendanceSheetsCollectionController` + `AttendanceSheetsResourceController`,前缀 `admin/v1/*`);队员自助考勤记录(原 `/v2/users/me/attendance-records`)现位于 [`controllers/app-my-attendance-records.controller.ts`](controllers/app-my-attendance-records.controller.ts)(`@Controller('app/v1/my')`,`GET /attendance-records`)。历史 legacy controller(`attendances-me-records-legacy.controller.ts`)已于 Route B Phase 4d2 删除。
 - ❌ **不**借此继续移动 Admin controller(`AttendanceSheetsCollectionController` / `AttendanceSheetsResourceController` 留在 `attendances.controller.ts`),除非另有设计决议。
 - ❌ **不**改 App endpoint `GET /api/app/v1/my/attendance-records` 的 path / method / tag / roles / DTO / service call(contract-locked;改任一项升档并须显式更新 snapshot)。

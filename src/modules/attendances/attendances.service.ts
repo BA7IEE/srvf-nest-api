@@ -28,6 +28,10 @@ import { computeCappedContribution } from '../team-join/team-join-progress';
 import { AttendanceAuditRecorder } from './attendance-audit-recorder';
 import { AttendanceNotificationProducer } from './attendance-notification-producer';
 import { AttendancePresenter } from './attendance-presenter';
+import {
+  AttendanceSheetQueryService,
+  recordWithMemberSelect,
+} from './attendance-sheet-query.service';
 import { AttendanceSheetStateMachine } from './attendance-sheet-state-machine';
 import { ContributionCalculator } from './contribution-calculator';
 import { TimeOverlapPolicy } from './time-overlap-policy';
@@ -128,7 +132,6 @@ const ATTENDANCE_EXPAND_WHITELIST = ['activity'] as const;
 
 // Sheet 状态机闭集别名(单一来源:ATTENDANCE_SHEET_STATUS,定义在 attendances.dto.ts)。
 const SHEET_STATUS_PENDING = ATTENDANCE_SHEET_STATUS.PENDING;
-const SHEET_STATUS_APPROVED = ATTENDANCE_SHEET_STATUS.APPROVED;
 
 const DICT_TYPE_ATTENDANCE_ROLE = 'attendance_role';
 const DICT_TYPE_ATTENDANCE_STATUS = 'attendance_status';
@@ -158,42 +161,6 @@ const sheetSafeSelect = {
   updatedAt: true,
 } as const satisfies Prisma.AttendanceSheetSelect;
 
-// Sheet 列表精简 select。
-const sheetListSelect = {
-  id: true,
-  activityId: true,
-  submitterUserId: true,
-  submittedAt: true,
-  statusCode: true,
-  reviewedAt: true,
-  version: true,
-  createdAt: true,
-} as const satisfies Prisma.AttendanceSheetSelect;
-
-// Record + Member 嵌套 select(review-detail / /me 列表共用)。
-const recordWithMemberSelect = {
-  id: true,
-  sheetId: true,
-  memberId: true,
-  roleCode: true,
-  checkInAt: true,
-  checkOutAt: true,
-  serviceHours: true,
-  attendanceStatusCode: true,
-  note: true,
-  registrationId: true,
-  contributionPoints: true,
-  createdAt: true,
-  updatedAt: true,
-  member: {
-    select: {
-      id: true,
-      memberNo: true,
-      displayName: true,
-    },
-  },
-} as const satisfies Prisma.AttendanceRecordSelect;
-
 // Sheet 完整 select(含 previousSnapshot,用于 edit 事务内读取上一版本快照)。
 const sheetFullSelect = {
   ...sheetSafeSelect,
@@ -201,43 +168,16 @@ const sheetFullSelect = {
   activityId: true,
 } as const satisfies Prisma.AttendanceSheetSelect;
 
-// 跨轴只读 select(2026-06-23):
-// - adminSheetListSelect:Sheet 列表精简 select + activity{id,title}(跨活动横扫上下文,审批工作台)。
-// - adminMemberRecordSelect:Record + Member 嵌套 + sheet{activityId, activity{title}}(队员 360 考勤记录上下文)。
-// 活动标题经 Prisma 嵌套关系一次取(无 N+1);activity.deletedAt 不过滤(FK onDelete=Restrict 保证行存在,
-// 软删态字段仍可读,不暴露 deletedAt)。
-// F2/B2(D6 拍板,2026-07-04):activity 子 select 扩至 expand 展开所需的最小字段集
-// (+startAt+organizationId)——activity 是既有 Prisma 嵌套关系,一次 JOIN 单查询取回(非二次查询,
-// 天然满足 D6"禁 N+1");是否投影进响应完全由 listAllSheetsForAdmin 的 expand 参数决定。
-const adminSheetListSelect = {
-  ...sheetListSelect,
-  activity: {
-    select: {
-      id: true,
-      title: true,
-      startAt: true,
-      organizationId: true,
-    },
-  },
-} as const satisfies Prisma.AttendanceSheetSelect;
-
-const adminMemberRecordSelect = {
-  ...recordWithMemberSelect,
-  sheet: {
-    select: {
-      activityId: true,
-      activity: {
-        select: {
-          title: true,
-        },
-      },
-    },
-  },
-} as const satisfies Prisma.AttendanceRecordSelect;
-
 // 行类型(SheetSafeRow / SheetListRow / RecordWithMemberRow)已随序列化方法迁往
 // `attendance-presenter.ts`(P1-4 第一刀);presenter 侧用最小结构性入参类型,
-// 本文件的 GetPayload 行按结构子类型直接传入,select 常量(查询策略)留在本文件。
+// 本文件的 GetPayload 行按结构子类型直接传入。
+//
+// **读侧** select 常量(`sheetListSelect` / `recordWithMemberSelect` / `adminSheetListSelect` /
+// `adminMemberRecordSelect`)已随四条列表 surface 的查询构造迁往
+// `attendance-sheet-query.service.ts`(Phase 6-B 第二域第一刀,§3.2)。
+// `recordWithMemberSelect` 由本文件 import 回来供 12 处**写路径回读**复用 —— 单一真相源,不另起第二份。
+// **写侧** `sheetSafeSelect` / `sheetFullSelect` 刻意留在本文件:它们服务写路径回读与
+// §4「loading the aggregate root」,不是读侧查询构造。
 type PrismaTx = Prisma.TransactionClient;
 export type AttendanceAuthorization = 'authz' | 'managed';
 
@@ -250,6 +190,9 @@ export class AttendancesService {
     private readonly timeOverlapPolicy: TimeOverlapPolicy,
     private readonly sheetStateMachine: AttendanceSheetStateMachine,
     private readonly attendancePresenter: AttendancePresenter,
+    // Phase 6-B 第二域第一刀(§3.2):四条列表 surface 的读侧查询构造。**不下放判权腿** ——
+    // 组织可见范围仍由本 service 的 resolveVisibleOrganizationIds() 算好后作为入参传入。
+    private readonly attendanceSheetQuery: AttendanceSheetQueryService,
     private readonly rbac: RbacService,
     // 终态 scoped-authz PR9(2026-07-02)起统一判权大脑;终审两方法见 assertFinalReviewAuthzOrThrow。
     // PR12(2026-07-02;冻结稿 §11 逐面迁移第一批)起其余 6 管理端动作(create/read×多/update/delete/
@@ -935,20 +878,10 @@ export class AttendancesService {
     });
 
     const { page, pageSize, statusCode } = query;
-    const filters: Prisma.AttendanceSheetWhereInput = { activityId };
-    if (statusCode !== undefined) filters.statusCode = statusCode;
-    const where = notDeletedWhere(filters);
-
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.attendanceSheet.findMany({
-        where,
-        select: sheetListSelect,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.attendanceSheet.count({ where }),
-    ]);
+    const { items: rows, total } = await this.attendanceSheetQuery.listSheetsByActivity(
+      activityId,
+      query,
+    );
 
     await this.attendanceAuditRecorder.logRead({
       actorUserId: currentUser.id,
@@ -982,18 +915,7 @@ export class AttendancesService {
     query: ListAttendanceSheetsQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<AdminAttendanceSheetListItemDto>> {
-    const {
-      page,
-      pageSize,
-      statusCode,
-      q,
-      activityQ,
-      organizationId,
-      includeDescendants,
-      dateFrom,
-      dateTo,
-      expand,
-    } = query;
+    const { page, pageSize, organizationId, includeDescendants, expand } = query;
     const visibleOrganizationIds = await this.resolveVisibleOrganizationIds(
       currentUser,
       organizationId,
@@ -1001,46 +923,10 @@ export class AttendancesService {
     );
     const expandSet = parseExpandQuery(expand, ATTENDANCE_EXPAND_WHITELIST);
 
-    const filters: Prisma.AttendanceSheetWhereInput = {};
-    if (statusCode !== undefined) filters.statusCode = statusCode;
-    if (dateFrom !== undefined || dateTo !== undefined) {
-      filters.submittedAt = {
-        ...(dateFrom !== undefined ? { gte: new Date(dateFrom) } : {}),
-        ...(dateTo !== undefined ? { lte: new Date(dateTo) } : {}),
-      };
-    }
-
-    // activity 关联过滤累加(activityQ + organizationId/includeDescendants 可共存)。
-    const activityWhere: Prisma.ActivityWhereInput = {};
-    if (activityQ !== undefined) {
-      activityWhere.title = { contains: activityQ, mode: 'insensitive' };
-    }
-    if (visibleOrganizationIds !== undefined) {
-      activityWhere.organizationId = { in: visibleOrganizationIds };
-    }
-    if (Object.keys(activityWhere).length > 0) filters.activity = activityWhere;
-
-    // q:跨 activity(title)+ submitter(username+nickname)全局模糊命中。
-    if (q !== undefined) {
-      filters.OR = [
-        { activity: { title: { contains: q, mode: 'insensitive' } } },
-        { submitter: { username: { contains: q, mode: 'insensitive' } } },
-        { submitter: { nickname: { contains: q, mode: 'insensitive' } } },
-      ];
-    }
-
-    const where = notDeletedWhere(filters);
-
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.attendanceSheet.findMany({
-        where,
-        select: adminSheetListSelect,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.attendanceSheet.count({ where }),
-    ]);
+    const { items: rows, total } = await this.attendanceSheetQuery.listSheetsForAdmin(
+      query,
+      visibleOrganizationIds,
+    );
 
     return {
       items: rows.map((r) => ({
@@ -1079,28 +965,15 @@ export class AttendancesService {
       id: memberId,
     });
     // 队员存在性守卫(不存在 / 软删 → 15001,镜像 admin-member-insurances inline 检查)。
-    const member = await this.prisma.member.findFirst({
-      where: notDeletedWhere({ id: memberId }),
-      select: { id: true },
-    });
-    if (!member) throw new BizException(BizCode.MEMBER_NOT_FOUND);
+    if (!(await this.attendanceSheetQuery.memberExists(memberId))) {
+      throw new BizException(BizCode.MEMBER_NOT_FOUND);
+    }
 
     const { page, pageSize } = query;
-    const where = notDeletedWhere({
+    const { items: rows, total } = await this.attendanceSheetQuery.listApprovedRecordsForMember(
       memberId,
-      sheet: { statusCode: ATTENDANCE_SHEET_STATUS.APPROVED, deletedAt: null },
-    });
-
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.attendanceRecord.findMany({
-        where,
-        select: adminMemberRecordSelect,
-        orderBy: { checkInAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.attendanceRecord.count({ where }),
-    ]);
+      query,
+    );
 
     return {
       items: rows.map((r) => ({
@@ -1128,11 +1001,9 @@ export class AttendancesService {
       type: 'member',
       id: memberId,
     });
-    const member = await this.prisma.member.findFirst({
-      where: notDeletedWhere({ id: memberId }),
-      select: { id: true },
-    });
-    if (!member) throw new BizException(BizCode.MEMBER_NOT_FOUND);
+    if (!(await this.attendanceSheetQuery.memberExists(memberId))) {
+      throw new BizException(BizCode.MEMBER_NOT_FOUND);
+    }
 
     const points = await computeCappedContribution(this.prisma, memberId, null);
     return { memberId, contributionPoints: points.toString() };
@@ -2150,25 +2021,11 @@ export class AttendancesService {
       this.resolveUserMemberIdOrThrow(currentUser.id, tx),
     );
 
-    const { page, pageSize, activityId } = query;
-    const sheetWhere: Prisma.AttendanceSheetWhereInput = {
-      statusCode: SHEET_STATUS_APPROVED,
-      deletedAt: null,
-    };
-    if (activityId !== undefined) sheetWhere.activityId = activityId;
-
-    const where = notDeletedWhere({ memberId, sheet: sheetWhere });
-
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.attendanceRecord.findMany({
-        where,
-        select: recordWithMemberSelect,
-        orderBy: { checkInAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.attendanceRecord.count({ where }),
-    ]);
+    const { page, pageSize } = query;
+    const { items: rows, total } = await this.attendanceSheetQuery.listApprovedRecordsForSelf(
+      memberId,
+      query,
+    );
 
     return {
       items: rows.map((r) => this.attendancePresenter.toRecordResponseDto(r)),
