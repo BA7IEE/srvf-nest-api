@@ -125,7 +125,15 @@ jobs:
   fast:
     name: Fast checks
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 15 → 20(2026-08-15,维护者拍板):本 job 已在 15 分钟上限上贴着跑 ——
+    # main 实测非 docs-only 的完整跑约 14m35s,余量 ~25 秒,一天内自行 cancel 两次
+    # (run 31830677807 15m01s / 31813727597 15m15s;成功的 31812869850 14m36s、
+    #  31802084822 14m50s 同样压线)。cancelled 不是真红,但它会随机卡住任意业务 PR。
+    # 预算构成(main 稳定读数):harness selftests 5m18s + replay 3m50s = 9m08s,
+    # 占 61% —— Phase 0-5 逐步往 fast 里加检查累积而成。
+    # ⚠️ 提高上限只是止血,**没有解决根因**;真修法是把 selftest / replay 拆到并行 job
+    # 或优化它们本身(拆 job 须注意 required context「先合后加」的既有教训)。
+    timeout-minutes: 20
     needs: changeset
     steps:
       - name: Checkout
