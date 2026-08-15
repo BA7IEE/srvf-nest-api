@@ -11,6 +11,7 @@ import { UsersModule } from '../users/users.module';
 import { AttachmentsModule } from '../attachments/attachments.module';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import { ActivityRegistrationNotificationProducer } from './activity-registration-notification-producer';
+import { ActivityRegistrationPresenter } from './activity-registration-presenter';
 import { ActivityRegistrationQueryService } from './activity-registration-query.service';
 import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
 import { ActivityRegistrationsAdminController } from './activity-registrations.controller';
@@ -102,6 +103,8 @@ import { AppManagedActivityAllocationBatchesController } from './controllers/app
     // ActivityRegistrationsService 那一个入口,避免出现绕过判权腿的第二条读路径
     // (沿 members #1008 / attendances #1021 先例)。
     ActivityRegistrationQueryService,
+    // Phase 6-B 第三域第二刀:响应序列化。纯函数类、零依赖,同样不进 exports。
+    ActivityRegistrationPresenter,
     AppManagedActivityRegistrationsService,
     RegistrationUploadSessionService,
     RegistrationCommandService,

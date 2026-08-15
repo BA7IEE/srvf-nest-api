@@ -197,7 +197,8 @@ export class ActivityRegistrationPresenter {
     };
   }
 
-  // expand 查询串 → 白名单内的键集合。白名单越界项由 parseExpandQuery 丢弃(既有语义)。
+  // expand 查询串 → 白名单内的键集合。白名单**外**的键由 parseExpandQuery 抛 BAD_REQUEST
+  // (不是静默丢弃)—— 这条语义随迁未变,spec 有正对照。
   parseExpand(raw: string | undefined): ReadonlySet<RegistrationExpandKey> {
     return parseExpandQuery(raw, REGISTRATION_EXPAND_WHITELIST);
   }
