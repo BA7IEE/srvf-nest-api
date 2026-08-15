@@ -104,15 +104,35 @@ self-by-construction、#1002），是**正当的能力增长** —— 所以处�
 
 [r4]: https://github.com/BA7IEE/srvf-nest-api/actions/runs/31868312301
 
-**两个已知热点（本次刻意未动，另立一刀）**：
+**两个已知热点**（拆分刀当时刻意未动，各自另立一刀）：
 
-1. `harness:replay` 的 `eslint-rules-live` 探针会整份重跑 `scripts/harness-eslint.selftest.ts`
-   （本机实测 replay 155.5s 中 127.6s 是这次重跑 = 82%）。拆成两个 job 后这份重复变成并行，
-   墙钟代价归零，但总算力仍付两遍。
-2. R8 探针循环每个探针重建一次完整 `ts.Program`（30 个探针；本机实测冷建 ~2.1s、命中缓存 ~0ms）。
-   **这不是「缓存没写好」**：`eslint-rules/authz-declaration-closure.mjs` 的
+1. **仍未处置。** `harness:replay` 的 `eslint-rules-live` 探针会整份重跑
+   `scripts/harness-eslint.selftest.ts`（本机实测 replay 155.5s 中 127.6s 是这次重跑 = 82%）。
+   拆成两个 job 后这份重复变成并行，墙钟代价归零，但总算力仍付两遍。
+2. ~~R8 探针循环每个探针重建一次完整 `ts.Program`~~ → **已修（2026-08-15）**。
+   原状：30 个探针逐个重写同一个探针文件、每轮换一个 `cacheKey`，于是每轮**必须**重建全仓
+   `ts.Program`。**这不是「缓存没写好」**：`eslint-rules/authz-declaration-closure.mjs` 的
    `SOURCE_INDEX_CACHE_LIMIT = 2` 是刻意的，其注释写明 ~30 个 key 同时驻留正是堆耗尽的成因。
-   真修法是把 30 个探针文件一次性写出、只建一次 Program，属于重构 R8 自测本体，需变异 A/B 另行立项。
+   处置：30 个探针一次性写出、共用一个 `cacheKey`，一次 `scanRouteAuthzClosure` + 一次
+   `lintFiles` 收结果；全仓首扫移到探针之前（此时 `src/` 还干净），两者各占一个 `cacheKey`。
+   `SOURCE_INDEX_CACHE_LIMIT` **未动**。
+
+   | 读数（本机交叉 A/B，两轮交替跑，同一 commit 同一会话） | 修复前 | 修复后 |
+   | ------------------------------------------------------ | -----: | -----: |
+   | 一次自测的 `ts.Program` 构建次数                       | **32** |  **2** |
+   | `scripts/harness-eslint.selftest.ts` 墙钟（两轮）      | 181.0s / 133.0s | **60.8s / 59.0s** |
+   | 峰值常驻内存 maximum RSS（两轮）                       | 3.22GB / 3.28GB | **2.97GB / 3.07GB** |
+   | 自测计数                                               | 129 passed / 0 failed | 131 passed / 0 failed |
+
+   构建次数是**机器读数**不是耗时推算：规则导出 `authzTypedProgramBuilds()`，自测断言整段 R8
+   的构建次数 ∈ [1, 2]（下界防「计数器被摘掉后恒 0 也算通过」）。把其中一个 `cacheKey` 改回
+   修复前的写法即变红（实测 3 次、且是**唯一**一条红）—— 这条闸自己也做过阳性对照。
+   逐探针变异 A/B 见 [PR #1019][r5]：30 条各自变异一次，红集恒为它自己那一条，无交叉。
+
+[r5]: https://github.com/BA7IEE/srvf-nest-api/pull/1019
+
+   ⚠️ 连带影响：第 1 条里那个 127.6s 的分量随之缩到 ~60s，**但该条本身仍未处置**
+   （总算力仍付两遍），此处只更新事实、不改它的状态。
 
 ## 已知 flaky 观察清单
 

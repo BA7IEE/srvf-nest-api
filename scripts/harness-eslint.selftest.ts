@@ -1084,7 +1084,7 @@ async function main(): Promise<void> {
     ) => Map<string, string[]>;
     parseRatchetRegistry: (text: string) => unknown[];
   };
-  const { scanRouteAuthzClosure } =
+  const { scanRouteAuthzClosure, authzTypedProgramBuilds } =
     (await import('../eslint-rules/authz-declaration-closure.mjs')) as {
       scanRouteAuthzClosure: (options?: {
         rootDir?: string;
@@ -1095,6 +1095,7 @@ async function main(): Promise<void> {
         closure: string;
         missing: string[];
       }>;
+      authzTypedProgramBuilds: () => number;
     };
   const eslint = new ESLint({
     cwd: process.cwd(),
@@ -1216,6 +1217,11 @@ async function main(): Promise<void> {
   // 否则「rule 绿」和「首扫报告绿」可以各自用不同语义，正好重演 R8 要消灭的
   // 两把尺子问题。
   {
+    // 防再退化的判据(见本段末尾):整段 R8 允许建几次 ts.Program。
+    // 上限 2 = 全仓首扫一次 + 探针批一次。任何「每个探针一个 cacheKey」的写法
+    // 都会当场把这个数顶穿 —— 而这件事从耗时上看不出来,只能数。
+    const programBuildsBefore = authzTypedProgramBuilds();
+    const R8_PROGRAM_BUDGET = 2;
     type ProbePolicy = {
       admission: string | null;
       mode: string;
@@ -1233,19 +1239,36 @@ async function main(): Promise<void> {
       diagnostic?: string;
     };
     const repoRoot = path.resolve(__dirname, '..');
-    const probeRel = 'src/__harness-authz-r8-probe.controller.ts';
-    const probeAbs = path.join(repoRoot, probeRel);
-    const reexportOriginRel = 'src/__harness-authz-r8-probe-origin.ts';
-    const reexportHubRel = 'src/__harness-authz-r8-probe-hub.ts';
-    const entryOf = (name: string, policy: ProbePolicy) => [
-      {
-        routeKey: `GET /api/harness/r8/${name}`,
-        controller: 'HarnessAuthzR8ProbeController',
-        handler: 'run',
-        legacy: 'auth',
-        policy,
-      },
-    ];
+    // 30 个探针**一次性全部写出**、整段只建一次 ts.Program。
+    //
+    // 前一版每轮重写同一个文件并换 cacheKey,于是每轮**必须**重建全仓 Program
+    // (本机 ~2s × 30)。这不是「缓存没写好」:文件在脚下变了,旧索引按定义是陈旧的。
+    //
+    // ⚠️ 批量化的前提是**每个探针的类名与 routeKey 各自唯一**。若 30 个探针沿用同一个
+    //    类名,index.classesByName 里会有 30 个同名类,onlyClass() 只在候选恰一个时返回,
+    //    于是每条 entry 都落到「controller … is absent or ambiguous」——
+    //    **测试仍会通过(全落 T3),但证明的东西没了**。唯一性下面当场数,不靠这段注释。
+    const probeDirRel = 'src/__harness-authz-r8-probes';
+    const probeDirAbs = path.join(repoRoot, probeDirRel);
+    const reexportOriginRel = `${probeDirRel}/__harness-authz-r8-probe-origin.ts`;
+    const reexportHubRel = `${probeDirRel}/__harness-authz-r8-probe-hub.ts`;
+    const probeSlot = (index: number) => String(index).padStart(2, '0');
+    const controllerNameOf = (index: number) => `HarnessAuthzR8Probe${probeSlot(index)}Controller`;
+    const probeFileRelOf = (probe: R8Probe, index: number) =>
+      `${probeDirRel}/${probeSlot(index)}-${probe.name}.controller.ts`;
+    // 语料里写的是固定占位名,编号在这里一次性套上 —— 若改成 30 处字面量各自带编号,
+    // 改漏一处就是「两个探针共用一个类」,而那正是上面那条静默失效。
+    const uniquify = (source: string, index: number) =>
+      source
+        .replaceAll('HarnessAuthzR8ProbeController', controllerNameOf(index))
+        .replaceAll('HarnessAuthzR8ProbeService', `HarnessAuthzR8Probe${probeSlot(index)}Service`);
+    const entryOf = (name: string, policy: ProbePolicy, index: number) => ({
+      routeKey: `GET /api/harness/r8/${name}`,
+      controller: controllerNameOf(index),
+      handler: 'run',
+      legacy: 'auth',
+      policy,
+    });
     const controller = (body: string) =>
       `${body}\n\nexport class HarnessAuthzR8ProbeController {\n` +
       '  constructor(private readonly service: HarnessAuthzR8ProbeService) {}\n\n' +
@@ -2041,96 +2064,11 @@ async function main(): Promise<void> {
       ...selfByConstructionProbes,
     ];
 
-    let r8Ok = true;
-    try {
-      // re-export 样例需要真的跨文件链:origin 声明类 → hub 原样再导出 →
-      // 探针从 hub import。在探针文件里写 `type X = AuthzService` 只能证明
-      // 局部别名,证不了「符号经中转文件再导出后仍解析回原声明」。
-      fs.writeFileSync(
-        path.join(repoRoot, reexportOriginRel),
-        'export class AuthzService {\n' +
-          '  async can(_user: unknown, _action: string, _ref: unknown): Promise<boolean> {\n' +
-          '    return true;\n' +
-          '  }\n' +
-          '}\n',
-        'utf8',
-      );
-      fs.writeFileSync(
-        path.join(repoRoot, reexportHubRel),
-        `export { AuthzService } from './${path.basename(reexportOriginRel, '.ts')}';\n`,
-        'utf8',
-      );
-      for (const [index, probe] of probes.entries()) {
-        fs.writeFileSync(probeAbs, probe.source);
-        const entries = entryOf(probe.name, probe.policy);
-        const cacheKey = `r8-selftest-${index}`;
-        const scanner = new ESLint({
-          cwd: repoRoot,
-          overrideConfigFile: true,
-          allowInlineConfig: false,
-          overrideConfig: [
-            {
-              languageOptions: {
-                parser: tsParser as never,
-                ecmaVersion: 'latest',
-                sourceType: 'module',
-              },
-            },
-            {
-              files: [probeRel],
-              plugins: { srvf: srvfEslintPlugin as never },
-              rules: {
-                [AUTHZ_DECLARATION_CLOSURE_RULE]: ['warn', { entries, cacheKey }],
-              },
-            },
-          ] as never,
-        });
-        const linted = await scanner.lintFiles([probeRel]);
-        const messages = linted.flatMap((result) => result.messages);
-        const diagnostics = messages.filter(
-          (message) => message.ruleId === AUTHZ_DECLARATION_CLOSURE_RULE,
-        );
-        const records = scanRouteAuthzClosure({
-          rootDir: repoRoot,
-          entries,
-          cacheKey,
-        });
-        const record = records[0];
-        const expectedDiagnostic = probe.diagnostic;
-        const diagnosticOk =
-          expectedDiagnostic === undefined
-            ? diagnostics.length === 0
-            : diagnostics.length === 1 && diagnostics[0].message.includes(expectedDiagnostic);
-        if (
-          record === undefined ||
-          record.tier !== probe.tier ||
-          record.closure !== probe.closure ||
-          !diagnosticOk
-        ) {
-          r8Ok = false;
-          failures.push(
-            `✗ R8 ${probe.name} —— 期望 ${probe.tier}/${probe.closure}` +
-              `${expectedDiagnostic === undefined ? ' 且零 warning' : ` 且 warning 含 ${expectedDiagnostic}`}，` +
-              `实际 ${record?.tier ?? '无记录'}/${record?.closure ?? '无记录'}，` +
-              `warning=${diagnostics.map((item) => item.message).join(' | ') || '0'}`,
-          );
-        }
-      }
-    } finally {
-      // 必须清掉:留在 src/ 会让 pnpm lint 永远红(响亮地坏,好过静默地坏)
-      fs.rmSync(probeAbs, { force: true });
-      fs.rmSync(path.join(repoRoot, reexportHubRel), { force: true });
-      fs.rmSync(path.join(repoRoot, reexportOriginRel), { force: true });
-    }
-    if (r8Ok) {
-      coveredSelectors.add(AUTHZ_DECLARATION_CLOSURE);
-      passed++;
-      console.log(
-        '✓ R8 真触发:别名 + 一层 service 中转、五类已登记断言模式的逐轴闭环、' +
-          '无后果调用与 require:any 漏 OR 分支均按预期出数',
-      );
-    }
-
+    // ── 全仓首扫刻意排在探针之前 ────────────────────────────────────────────
+    // 探针文件会往 src/ 里塞 ~19 份同名 AuthzService / RbacService(它们**必须**叫这个
+    // 名字,断言模式的 receiverTypes 是按名字匹配的)。与真实类重名会让 onlyClass() 对
+    // 真实路由也返回 ambiguous,首扫读数因此失真。放在前面,src/ 还是干净的;
+    // 它与探针批各占一个 cacheKey ⇒ 整段 R8 恰两次 Program 构建。
     const full = scanRouteAuthzClosure({
       rootDir: repoRoot,
       cacheKey: 'r8-full-repository-scan',
@@ -2155,58 +2093,243 @@ async function main(): Promise<void> {
       );
     }
 
-    // D1 ③:名字集为空时,判据必须落 T3 —— 而不是「没有名字命中 ⇒ 全部放行」。
-    //
-    // 守的是判据的**结构**,不是名字集的内容:漏写一个主体名字是可以补的,
-    // 但「名字集空了就静默盖章」会让漏写从一条假阴性升级成整族假阳性。
-    // 这里改真 registry 跑真扫描,而不是给规则加一个 patterns 覆盖选项 ——
-    // 后者等于给 PR 多开一个把裁判改成恒 PASS 的入口。
-    {
-      const patternsPath = path.join(repoRoot, 'harness/authz-assertion-patterns.json');
-      const pristine = fs.readFileSync(patternsPath, 'utf-8');
-      let emptyNameSetTier: string | undefined;
-      try {
-        const doctored = JSON.parse(pristine) as {
-          families: Array<{ staticMatchers: Array<Record<string, unknown>> }>;
-        };
-        let patched = 0;
-        for (const family of doctored.families) {
-          for (const matcher of family.staticMatchers) {
-            if (matcher.outcome === 'no-caller-controlled-subject') {
-              matcher.subjectIdentifierNames = [];
-              patched++;
-            }
-          }
-        }
-        if (patched !== 1) {
+    // ── 30 个探针:一次写出 → 一次扫描 → 一次 lint ──────────────────────────
+    const probeCacheKey = 'r8-selftest-batch';
+    let r8Ok = true;
+    // 残留面:批量化后是一整个目录而不是单个文件,留在 src/ 会让 pnpm lint 与
+    // docs:authz:check 当场红。finally 只覆盖正常抛出 —— Ctrl-C / SIGTERM 会直接带着
+    // 整个目录走人,所以另挂进程级清理。单一目录 ⇒ 一次 rmSync 收干净。
+    // (SIGKILL 拦不住,任何进程内方案都拦不住 —— 不假装拦得住。)
+    const cleanupProbeDir = () => fs.rmSync(probeDirAbs, { recursive: true, force: true });
+    const cleanupOnSignal = (signal: NodeJS.Signals) => {
+      cleanupProbeDir();
+      // 摘掉监听后重发同一个信号:退出码仍按信号语义,不把中断伪装成正常退出。
+      process.kill(process.pid, signal);
+    };
+    process.on('exit', cleanupProbeDir);
+    process.once('SIGINT', cleanupOnSignal);
+    process.once('SIGTERM', cleanupOnSignal);
+    try {
+      fs.mkdirSync(probeDirAbs, { recursive: true });
+      // re-export 样例需要真的跨文件链:origin 声明类 → hub 原样再导出 →
+      // 探针从 hub import。在探针文件里写 `type X = AuthzService` 只能证明
+      // 局部别名,证不了「符号经中转文件再导出后仍解析回原声明」。
+      fs.writeFileSync(
+        path.join(repoRoot, reexportOriginRel),
+        'export class AuthzService {\n' +
+          '  async can(_user: unknown, _action: string, _ref: unknown): Promise<boolean> {\n' +
+          '    return true;\n' +
+          '  }\n' +
+          '}\n',
+        'utf8',
+      );
+      fs.writeFileSync(
+        path.join(repoRoot, reexportHubRel),
+        `export { AuthzService } from './${path.basename(reexportOriginRel, '.ts')}';\n`,
+        'utf8',
+      );
+      const probeFiles = probes.map((probe, index) => probeFileRelOf(probe, index));
+      const entries = probes.map((probe, index) => entryOf(probe.name, probe.policy, index));
+      for (const [index, probe] of probes.entries()) {
+        fs.writeFileSync(path.join(repoRoot, probeFiles[index]), uniquify(probe.source, index));
+      }
+
+      // 唯一性当场数一遍 ——「已经改成唯一的了」是句陈述,不是判据。
+      const controllerNames = new Set(entries.map((entry) => entry.controller));
+      const routeKeys = new Set(entries.map((entry) => entry.routeKey));
+      if (controllerNames.size !== probes.length || routeKeys.size !== probes.length) {
+        r8Ok = false;
+        failures.push(
+          `✗ R8 探针命名不唯一 —— controller ${controllerNames.size} 个 / routeKey ${routeKeys.size} 个,` +
+            `期望各 ${probes.length} 个。\n` +
+            '  含义:多个探针共用一个类 ⇒ onlyClass() 返回 ambiguous,每条 entry 都不再指向自己那份源码。',
+        );
+      }
+
+      const records = scanRouteAuthzClosure({
+        rootDir: repoRoot,
+        entries,
+        cacheKey: probeCacheKey,
+      });
+      const probeGlob = `${probeDirRel}/*.controller.ts`;
+      const scanner = new ESLint({
+        cwd: repoRoot,
+        overrideConfigFile: true,
+        allowInlineConfig: false,
+        overrideConfig: [
+          {
+            languageOptions: {
+              parser: tsParser as never,
+              ecmaVersion: 'latest',
+              sourceType: 'module',
+            },
+          },
+          {
+            files: [probeGlob],
+            plugins: { srvf: srvfEslintPlugin as never },
+            rules: {
+              [AUTHZ_DECLARATION_CLOSURE_RULE]: ['warn', { entries, cacheKey: probeCacheKey }],
+            },
+          },
+        ] as never,
+      });
+      const linted = await scanner.lintFiles([probeGlob]);
+      // 漏扫的探针拿到的是「零 warning」,与「规则放行」一模一样 ⇒ 正样例会假绿。
+      // 所以先数覆盖面,再看结论。
+      if (linted.length !== probes.length) {
+        r8Ok = false;
+        failures.push(
+          `✗ R8 探针 lint 覆盖不全 —— 实跑 ${linted.length} 个文件,期望 ${probes.length} 个。\n` +
+            '  含义:glob 漏掉的探针会以「零 warning」通过,正样例因此假绿。',
+        );
+      }
+      const diagnosticsByFile = new Map(
+        linted.map((result) => [
+          path.relative(repoRoot, result.filePath).replaceAll(path.sep, '/'),
+          result.messages.filter((message) => message.ruleId === AUTHZ_DECLARATION_CLOSURE_RULE),
+        ]),
+      );
+      for (const [index, probe] of probes.entries()) {
+        const record = records[index];
+        // 按**文件**取 warning:规则只在 controller 所在的那个文件上报。若某条 entry
+        // 解析到了别人的类,它的红会落在别人的文件里,这一格当场对不上 ——
+        // 归属靠文件名,不靠「第 index 条一定是它」的顺序假设。
+        const diagnostics = diagnosticsByFile.get(probeFiles[index]) ?? [];
+        const expectedDiagnostic = probe.diagnostic;
+        const diagnosticOk =
+          expectedDiagnostic === undefined
+            ? diagnostics.length === 0
+            : diagnostics.length === 1 && diagnostics[0].message.includes(expectedDiagnostic);
+        if (
+          record === undefined ||
+          record.tier !== probe.tier ||
+          record.closure !== probe.closure ||
+          !diagnosticOk
+        ) {
+          r8Ok = false;
           failures.push(
-            `✗ R8 空名字集用例失效 —— registry 里 no-caller-controlled-subject matcher 有 ${patched} 个,期望恰 1 个。`,
+            `✗ R8 ${probe.name} —— 期望 ${probe.tier}/${probe.closure}` +
+              `${expectedDiagnostic === undefined ? ' 且零 warning' : ` 且 warning 含 ${expectedDiagnostic}`}，` +
+              `实际 ${record?.tier ?? '无记录'}/${record?.closure ?? '无记录'}，` +
+              `warning=${diagnostics.map((item) => item.message).join(' | ') || '0'}`,
           );
         }
-        fs.writeFileSync(patternsPath, `${JSON.stringify(doctored, null, 2)}\n`);
-        // 用正样例:它在正常 registry 下是 closed,所以这里若仍 closed,
-        // 说明空名字集把判据退化成了放行。
-        fs.writeFileSync(probeAbs, selfByConstructionProbes[0].source);
-        emptyNameSetTier = scanRouteAuthzClosure({
-          rootDir: repoRoot,
-          entries: entryOf('empty-subject-names', selfPolicy),
-          cacheKey: 'r8-empty-subject-names',
-        })[0]?.tier;
-      } finally {
-        fs.writeFileSync(patternsPath, pristine);
-        fs.rmSync(probeAbs, { force: true });
       }
-      if (emptyNameSetTier === 'T3') {
-        passed++;
-        console.log(
-          '✓ R8 self 判据结构自保:主体名字集为空时,连正样例也落 T3(不退化成静默放行)',
+
+      const positiveIndex = probes.findIndex(
+        (probe) => probe.name === 'self-by-construction-identity-only',
+      );
+      const negativeIndex = probes.findIndex(
+        (probe) => probe.name === 'self-rejects-caller-supplied-subject-param',
+      );
+      if (positiveIndex < 0 || negativeIndex < 0) {
+        r8Ok = false;
+        failures.push(
+          '✗ R8 交叉绑定 / 空名字集用例失效 —— 找不到所需的正 / 负样例(探针被改名或删掉了)。',
         );
       } else {
-        failures.push(
-          `✗ R8 self 判据在空名字集下没有落 T3(实际 ${emptyNameSetTier ?? '无记录'})——\n` +
-            '  含义:名字集写漏时判据不是「少拒一条」,而是「整族盖章」,方向正好反了。',
-        );
+        // ── 反向证据:entry 指向**别的探针的类**时必须被发现 ──────────────────
+        //
+        // 真造一次交叉:拿正样例(单独跑是 T1/closed)的 entry,把 controller 换成
+        // 负样例的类。判决若跟着**类**走 ⇒ 落 T3/candidate 且带上负样例的诊断;
+        // 若跟着 routeKey / 数组下标走,它会仍报 T1/closed —— 那正是批量化最容易
+        // 静默做错的一步(30 个探针互相冒名,断言全绿而证明为零)。
+        const crossed = scanRouteAuthzClosure({
+          rootDir: repoRoot,
+          entries: [
+            {
+              ...entryOf(probes[positiveIndex].name, probes[positiveIndex].policy, positiveIndex),
+              controller: controllerNameOf(negativeIndex),
+            },
+          ],
+          cacheKey: probeCacheKey,
+        })[0];
+        if (
+          crossed?.tier === 'T3' &&
+          crossed.closure === 'candidate' &&
+          crossed.missing.some((item) => item.includes('caller-controlled subject input'))
+        ) {
+          passed++;
+          console.log(
+            '✓ R8 探针类名绑定:把正样例的 entry 指向负样例的类,判决跟着**类**走' +
+              '(T1/closed → T3/candidate)—— 30 个探针不会互相冒名',
+          );
+        } else {
+          r8Ok = false;
+          failures.push(
+            '✗ R8 交叉绑定没有被发现 —— 正样例的 entry 指向负样例的类,实际 ' +
+              `${crossed?.tier ?? '无记录'}/${crossed?.closure ?? '无记录'},` +
+              `missing=${JSON.stringify(crossed?.missing ?? [])}。\n` +
+              '  含义:判决没有跟着 controller 类名走 ⇒ 探针之间可以互相冒名,逐探针断言失去意义。',
+          );
+        }
+
+        // D1 ③:名字集为空时,判据必须落 T3 —— 而不是「没有名字命中 ⇒ 全部放行」。
+        //
+        // 守的是判据的**结构**,不是名字集的内容:漏写一个主体名字是可以补的,
+        // 但「名字集空了就静默盖章」会让漏写从一条假阴性升级成整族假阳性。
+        // 这里改真 registry 跑真扫描,而不是给规则加一个 patterns 覆盖选项 ——
+        // 后者等于给 PR 多开一个把裁判改成恒 PASS 的入口。
+        //
+        // 复用同一批探针文件与同一个 cacheKey:registry 每次扫描都重读(未缓存),
+        // 所以改 registry **不需要**、也不应该再建一次 Program。
+        const patternsPath = path.join(repoRoot, 'harness/authz-assertion-patterns.json');
+        const pristine = fs.readFileSync(patternsPath, 'utf-8');
+        let emptyNameSetTier: string | undefined;
+        try {
+          const doctored = JSON.parse(pristine) as {
+            families: Array<{ staticMatchers: Array<Record<string, unknown>> }>;
+          };
+          let patched = 0;
+          for (const family of doctored.families) {
+            for (const matcher of family.staticMatchers) {
+              if (matcher.outcome === 'no-caller-controlled-subject') {
+                matcher.subjectIdentifierNames = [];
+                patched++;
+              }
+            }
+          }
+          if (patched !== 1) {
+            failures.push(
+              `✗ R8 空名字集用例失效 —— registry 里 no-caller-controlled-subject matcher 有 ${patched} 个,期望恰 1 个。`,
+            );
+          }
+          fs.writeFileSync(patternsPath, `${JSON.stringify(doctored, null, 2)}\n`);
+          // 用正样例:它在正常 registry 下是 closed,所以这里若仍 closed,
+          // 说明空名字集把判据退化成了放行。
+          emptyNameSetTier = scanRouteAuthzClosure({
+            rootDir: repoRoot,
+            entries: [entryOf('empty-subject-names', selfPolicy, positiveIndex)],
+            cacheKey: probeCacheKey,
+          })[0]?.tier;
+        } finally {
+          fs.writeFileSync(patternsPath, pristine);
+        }
+        if (emptyNameSetTier === 'T3') {
+          passed++;
+          console.log(
+            '✓ R8 self 判据结构自保:主体名字集为空时,连正样例也落 T3(不退化成静默放行)',
+          );
+        } else {
+          failures.push(
+            `✗ R8 self 判据在空名字集下没有落 T3(实际 ${emptyNameSetTier ?? '无记录'})——\n` +
+              '  含义:名字集写漏时判据不是「少拒一条」,而是「整族盖章」,方向正好反了。',
+          );
+        }
       }
+    } finally {
+      cleanupProbeDir();
+      process.off('exit', cleanupProbeDir);
+      process.off('SIGINT', cleanupOnSignal);
+      process.off('SIGTERM', cleanupOnSignal);
+    }
+    if (r8Ok) {
+      coveredSelectors.add(AUTHZ_DECLARATION_CLOSURE);
+      passed++;
+      console.log(
+        `✓ R8 真触发(${probes.length} 探针一次成批):别名 + 一层 service 中转、` +
+          '五类已登记断言模式的逐轴闭环、无后果调用与 require:any 漏 OR 分支均按预期出数',
+      );
     }
 
     const packageJson = JSON.parse(
@@ -2224,6 +2347,30 @@ async function main(): Promise<void> {
       failures.push(
         '✗ R8 report 接线缺失 —— package.json 必须提供 lint:authz:report，' +
           '以 SRVF_AUTHZ_R8_REPORT=1 运行 eslint；普通 lint 的 --max-warnings=0 不能承载 report-only 候选。',
+      );
+    }
+
+    // ── 防再退化:整段 R8 只许建 R8_PROGRAM_BUDGET 次 ts.Program ──────────────
+    //
+    // 「探针循环回到每轮重建」这件事在任何现有判据上都是**绿的** —— 分类结果一模一样,
+    // 只是慢了一分钟,而耗时没有任何断言在看。所以这里直接数次数。
+    //
+    // 下界 1 不是凑数:计数器若哪天被摘掉或恒返回 0,delta 会是 0,而「0 次构建」与
+    // 「省得漂亮」在读数上不可区分 —— 那正是仪器自己失效的形状。
+    const programBuilds = authzTypedProgramBuilds() - programBuildsBefore;
+    if (programBuilds >= 1 && programBuilds <= R8_PROGRAM_BUDGET) {
+      passed++;
+      console.log(
+        `✓ R8 Program 预算:整段自测建了 ${programBuilds} 次 ts.Program(上限 ${R8_PROGRAM_BUDGET};` +
+          `全仓首扫 1 + ${probes.length} 探针成批 1),进入本段前累计 ${programBuildsBefore} 次`,
+      );
+    } else {
+      failures.push(
+        `✗ R8 Program 预算超支 —— 本段建了 ${programBuilds} 次 ts.Program,` +
+          `允许区间 [1, ${R8_PROGRAM_BUDGET}]。\n` +
+          '  含义:多半是探针又变回「一个探针一个 cacheKey」——每轮重建全仓 Program(本机 ~2s/次)。\n' +
+          '  这条不会让任何分类结果变错,所以除了这个计数没有别的判据看得见它。\n' +
+          '  若确实需要第三个 cacheKey,请连同 SOURCE_INDEX_CACHE_LIMIT 一起评估后再调上限。',
       );
     }
   }
