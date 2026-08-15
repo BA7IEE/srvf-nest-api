@@ -1,12 +1,6 @@
 import type { INestApplication, INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import {
-  BindingScopeType,
-  BindingStatus,
-  MemberStatus,
-  PrincipalType,
-  Role,
-} from '@prisma/client';
+import { BindingScopeType, BindingStatus, MemberStatus, PrincipalType, Role } from '@prisma/client';
 import request from 'supertest';
 
 import { PrismaService } from '../../src/database/prisma.service';
@@ -90,7 +84,11 @@ describe('activity batch4 expiry', () => {
       select: { id: true },
     });
     await prisma.user.update({ where: { id: user.id }, data: { memberId: member.id } });
-    return { id: user.id, memberId: member.id, authHeader: (await loginAs(app, user.username)).authHeader };
+    return {
+      id: user.id,
+      memberId: member.id,
+      authHeader: (await loginAs(app, user.username)).authHeader,
+    };
   }
 
   async function createScenario(
@@ -356,7 +354,11 @@ describe('activity batch4 expiry', () => {
       await Promise.all([
         prisma.activityParticipationIdentity.findFirstOrThrow({
           where: { registrationId: acceptedRegistrationId },
-          select: { currentStatusCode: true, capacityReservationId: true, populationIncluded: true },
+          select: {
+            currentStatusCode: true,
+            capacityReservationId: true,
+            populationIncluded: true,
+          },
         }),
         prisma.activityParticipationIdentity.findFirstOrThrow({
           where: { registrationId: waitlistedRegistrationId },

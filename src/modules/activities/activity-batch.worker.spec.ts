@@ -62,23 +62,29 @@ describe('ActivityBatchWorker automatic ledger commit', () => {
   it('claims the existing queue before it creates a new reconciliation job', async () => {
     const order: string[] = [];
     const reconciliation = {
-      enqueueDueActivityStartExpiryJobs: jest.fn(async () => {
+      enqueueDueActivityStartExpiryJobs: jest.fn(() => {
         order.push('reconciliation-enqueue');
-        return 1;
+        return Promise.resolve(1);
       }),
     };
-    const worker = new ActivityBatchWorker({} as never, {} as never, {} as never, true, reconciliation as never) as unknown as {
+    const worker = new ActivityBatchWorker(
+      {} as never,
+      {} as never,
+      {} as never,
+      true,
+      reconciliation as never,
+    ) as unknown as {
       drainOnce(): Promise<{ jobsEnqueued: number; jobClaimed: boolean }>;
       enqueuePreparingBatches(): Promise<number>;
       claimJob(): Promise<null>;
     };
-    worker.enqueuePreparingBatches = jest.fn(async () => {
+    worker.enqueuePreparingBatches = jest.fn(() => {
       order.push('ledger-enqueue');
-      return 0;
+      return Promise.resolve(0);
     });
-    worker.claimJob = jest.fn(async () => {
+    worker.claimJob = jest.fn(() => {
       order.push('claim');
-      return null;
+      return Promise.resolve(null);
     });
 
     await expect(worker.drainOnce()).resolves.toMatchObject({ jobsEnqueued: 1, jobClaimed: false });
@@ -94,7 +100,13 @@ describe('ActivityBatchWorker automatic ledger commit', () => {
         expiredInvitationCount: 1,
       }),
     };
-    const worker = new ActivityBatchWorker({} as never, {} as never, {} as never, true, reconciliation as never) as unknown as {
+    const worker = new ActivityBatchWorker(
+      {} as never,
+      {} as never,
+      {} as never,
+      true,
+      reconciliation as never,
+    ) as unknown as {
       drainOnce(): Promise<{
         jobClaimed: boolean;
         itemsProcessed: number;

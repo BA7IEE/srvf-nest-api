@@ -7,7 +7,7 @@ describe('RegistrationReconciliationService activity-start job scan', () => {
 
   function createSubject(input: {
     activities: Array<{ id: string }>;
-    createResults: Array<unknown | Error>;
+    createResults: Array<{ id: string } | Error>;
   }) {
     const create = jest.fn();
     for (const result of input.createResults) {
@@ -18,7 +18,11 @@ describe('RegistrationReconciliationService activity-start job scan', () => {
       activity: { findMany: jest.fn().mockResolvedValue(input.activities) },
       activityBatchJob: { create },
     };
-    const service = new RegistrationReconciliationService(prisma as never, {} as never, {} as never);
+    const service = new RegistrationReconciliationService(
+      prisma as never,
+      {} as never,
+      {} as never,
+    );
     return { service, prisma };
   }
 
@@ -29,28 +33,43 @@ describe('RegistrationReconciliationService activity-start job scan', () => {
     });
 
     await expect(service.enqueueDueActivityStartExpiryJobs(now)).resolves.toBe(2);
-    expect(prisma.activity.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          statusCode: 'published',
-          batchJobs: { none: { jobTypeCode: 'reconciliation' } },
-          AND: [
-            {
-              OR: [
-                {
-                  participationIdentities: {
-                    some: { currentStatusCode: { in: ['pending', 'waitlisted'] } },
-                  },
+    expect(prisma.activity.findMany).toHaveBeenCalledWith({
+      where: {
+        deletedAt: null,
+        statusCode: 'published',
+        batchJobs: { none: { jobTypeCode: 'reconciliation' } },
+        AND: [
+          {
+            OR: [
+              {
+                participationIdentities: {
+                  some: { currentStatusCode: { in: ['pending', 'waitlisted'] } },
                 },
-                { invitations: { some: { statusCode: 'pending' } } },
-              ],
+              },
+              { invitations: { some: { statusCode: 'pending' } } },
+            ],
+          },
+        ],
+        OR: [
+          {
+            sessions: {
+              some: {
+                deletedAt: null,
+                statusCode: { not: 'cancelled' },
+                startAt: { lte: now },
+              },
             },
-          ],
-        }),
-        orderBy: [{ startAt: 'asc' }, { id: 'asc' }],
-        take: 20,
-      }),
-    );
+          },
+          {
+            startAt: { lte: now },
+            sessions: { none: { deletedAt: null, statusCode: { not: 'cancelled' } } },
+          },
+        ],
+      },
+      select: { id: true },
+      orderBy: [{ startAt: 'asc' }, { id: 'asc' }],
+      take: 20,
+    });
     expect(prisma.activityBatchJob.create).toHaveBeenNthCalledWith(1, {
       data: {
         jobTypeCode: 'reconciliation',
@@ -58,7 +77,10 @@ describe('RegistrationReconciliationService activity-start job scan', () => {
         statusCode: 'pending',
         operationKey: 'reconciliation:activity-start-expiry:activity-a',
         requestHash: createHash('sha256')
-          .update(JSON.stringify({ kind: 'activity_start_expiry', activityId: 'activity-a' }), 'utf8')
+          .update(
+            JSON.stringify({ kind: 'activity_start_expiry', activityId: 'activity-a' }),
+            'utf8',
+          )
           .digest('hex'),
         payloadVersion: 1,
         payload: { kind: 'activity_start_expiry', activityId: 'activity-a' },
@@ -82,6 +104,8 @@ describe('RegistrationReconciliationService activity-start job scan', () => {
       activities: [{ id: 'activity-c' }],
       createResults: [databaseFailure],
     });
-    await expect(broken.service.enqueueDueActivityStartExpiryJobs(now)).rejects.toBe(databaseFailure);
+    await expect(broken.service.enqueueDueActivityStartExpiryJobs(now)).rejects.toBe(
+      databaseFailure,
+    );
   });
 });

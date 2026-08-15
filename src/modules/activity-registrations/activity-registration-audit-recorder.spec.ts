@@ -129,6 +129,8 @@ describe('ActivityRegistrationAuditRecorder canonical command audit', () => {
         nextStatusCode: 'waitlist_expired',
       },
     });
-    expect(JSON.stringify(payload)).not.toMatch(/answer|form|capacity|reservation|memberId|token|url/i);
+    expect(JSON.stringify(payload)).not.toMatch(
+      /answer|form|capacity|reservation|memberId|token|url/i,
+    );
   });
 });

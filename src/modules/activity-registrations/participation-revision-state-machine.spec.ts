@@ -90,7 +90,10 @@ describe('participation revision state machine', () => {
     [['settled', 'waitlist_expired'], { statusCode: 'pass', statusSummaryCode: 'completed' }],
     [['cancelled', 'review_expired'], { statusCode: 'cancelled', statusSummaryCode: 'cancelled' }],
     [['rejected', 'review_expired'], { statusCode: 'reject', statusSummaryCode: 'not_selected' }],
-    [['review_expired', 'waitlist_expired'], { statusCode: 'reject', statusSummaryCode: 'expired' }],
+    [
+      ['review_expired', 'waitlist_expired'],
+      { statusCode: 'reject', statusSummaryCode: 'expired' },
+    ],
   ])('projects registration statuses %j', (statuses, expected) => {
     expect(deriveRegistrationStatusSummary(statuses)).toEqual(expected);
   });

@@ -172,9 +172,11 @@ export class RegistrationReconciliationService {
     return enqueued;
   }
 
-  async expireAtActivityStart(
-    input: { jobId: string; activityId: string; fence: ActivityReconciliationLeaseFence },
-  ): Promise<ActivityStartExpiryResult> {
+  async expireAtActivityStart(input: {
+    jobId: string;
+    activityId: string;
+    fence: ActivityReconciliationLeaseFence;
+  }): Promise<ActivityStartExpiryResult> {
     return await this.prisma.$transaction(async (tx) => {
       // Canonical lock order begins at the Activity aggregate root; the job fence follows it.
       const activity = await this.lockActivity(tx, input.activityId);
@@ -216,13 +218,11 @@ export class RegistrationReconciliationService {
       }
       await this.assertNoActiveReservations(tx, [...candidateIds]);
 
-      const nextStatusByIdentityId = new Map<
-        string,
-        'review_expired' | 'waitlist_expired'
-      >();
+      const nextStatusByIdentityId = new Map<string, 'review_expired' | 'waitlist_expired'>();
       for (const identity of identities) {
         const decision = decideActivityStartExpiry(identity.currentStatusCode);
-        if (decision.kind === 'append') nextStatusByIdentityId.set(identity.id, decision.statusCode);
+        if (decision.kind === 'append')
+          nextStatusByIdentityId.set(identity.id, decision.statusCode);
       }
       if (nextStatusByIdentityId.size !== candidateIds.size) this.failClosed();
 
@@ -269,7 +269,9 @@ export class RegistrationReconciliationService {
         statuses.push(nextStatusByIdentityId.get(identity.id) ?? identity.currentStatusCode);
         nextStatusesByRegistration.set(identity.registrationId, statuses);
       }
-      const registrationById = new Map(registrations.map((registration) => [registration.id, registration]));
+      const registrationById = new Map(
+        registrations.map((registration) => [registration.id, registration]),
+      );
       for (const [registrationId, statuses] of nextStatusesByRegistration) {
         const registration = registrationById.get(registrationId);
         if (!registration) this.failClosed();
@@ -288,7 +290,10 @@ export class RegistrationReconciliationService {
       for (const identity of identities) {
         const nextStatusCode = nextStatusByIdentityId.get(identity.id);
         if (!nextStatusCode) continue;
-        if (identity.currentStatusCode !== 'pending' && identity.currentStatusCode !== 'waitlisted') {
+        if (
+          identity.currentStatusCode !== 'pending' &&
+          identity.currentStatusCode !== 'waitlisted'
+        ) {
           this.failClosed();
         }
         await this.registrationAudit.logActivityStartExpiry({
@@ -398,7 +403,9 @@ export class RegistrationReconciliationService {
     `);
     if (
       rows.length !== registrationIds.length ||
-      rows.some((registration) => registration.activityId !== activityId || registration.deletedAt !== null)
+      rows.some(
+        (registration) => registration.activityId !== activityId || registration.deletedAt !== null,
+      )
     ) {
       this.failClosed();
     }
@@ -448,7 +455,10 @@ export class RegistrationReconciliationService {
     }
   }
 
-  private async assertNoActiveReservations(tx: PrismaTx, identityIds: readonly string[]): Promise<void> {
+  private async assertNoActiveReservations(
+    tx: PrismaTx,
+    identityIds: readonly string[],
+  ): Promise<void> {
     if (identityIds.length === 0) return;
     const rows = await tx.$queryRaw<Array<{ identityId: string }>>(Prisma.sql`
       SELECT "identityId"

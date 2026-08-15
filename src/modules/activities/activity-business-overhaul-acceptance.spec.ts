@@ -484,15 +484,18 @@ const BATCH4_ACTIVITY_START_EXPIRY_ACCEPTANCE_DESTINATIONS: Readonly<
   'AC-028': [
     {
       file: 'test/e2e/activity-batch4-expiry.e2e-spec.ts',
-      needle: 'red-first: activity start expires a canonical pending identity and a pending invitation',
+      needle:
+        'red-first: activity start expires a canonical pending identity and a pending invitation',
     },
     {
       file: 'test/e2e/activity-batch4-expiry.e2e-spec.ts',
-      needle: 'red-first: activity start expires only the first_come waitlist and preserves an occupied pass',
+      needle:
+        'red-first: activity start expires only the first_come waitlist and preserves an occupied pass',
     },
     {
       file: 'test/e2e/activity-batch4-expiry.e2e-spec.ts',
-      needle: 'fails closed on a canonical pointer drift: business facts and audits remain unchanged',
+      needle:
+        'fails closed on a canonical pointer drift: business facts and audits remain unchanged',
     },
   ],
 };
@@ -621,7 +624,8 @@ const batch4ActivityStartExpiryResolvedIds = new Set([
   ...Object.keys(BATCH4_ACTIVITY_START_EXPIRY_ACCEPTANCE_DESTINATIONS),
 ]);
 if (
-  batch4ActivityStartExpiryResolvedIds.size !== BATCH4_ACTIVITY_START_EXPIRY_ACCEPTANCE_IDS.length ||
+  batch4ActivityStartExpiryResolvedIds.size !==
+    BATCH4_ACTIVITY_START_EXPIRY_ACCEPTANCE_IDS.length ||
   BATCH4_ACTIVITY_START_EXPIRY_ACCEPTANCE_IDS.some(
     (id) => !batch4ActivityStartExpiryResolvedIds.has(id),
   )

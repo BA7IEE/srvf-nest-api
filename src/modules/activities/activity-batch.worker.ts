@@ -349,9 +349,7 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
    *   - 跑了一半但**租约已过期**(`processing` + `leaseExpiresAt <= now`)—— 持有者已经死了。
    * `attempts` 用尽的任务不再取(由 `sweepDead` 收成 `dead`)。
    */
-  private async claimJob(
-    now: Date,
-  ): Promise<{
+  private async claimJob(now: Date): Promise<{
     id: string;
     activityId: string;
     jobTypeCode: string;
@@ -506,7 +504,9 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
         };
       }
       await this.releaseReconciliationForRetry(claimed.id, fence, now, error);
-      this.logger.warn(`activity reconciliation deferred job=${claimed.id} error=${errorName(error)}`);
+      this.logger.warn(
+        `activity reconciliation deferred job=${claimed.id} error=${errorName(error)}`,
+      );
       return {
         jobsEnqueued,
         jobClaimed: true,
