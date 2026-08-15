@@ -29,6 +29,34 @@ const STATE_MACHINES = 'harness/state-machines.json';
 const ARCHITECTURE_DEBT = 'harness/architecture-debt.json';
 const VERSION = '1.0.0';
 
+/**
+ * R15 —— `src/common` 治理(架构治理 v4 终审【七】)。
+ *
+ * 为什么单开一条扫描通道:`scan()` 的主循环第一步就是 `moduleOf(file)`,而
+ * `moduleOf` 只认 `^src/modules/([^/]+)/` —— `src/common/**` 的每个文件在循环
+ * 第一行就被 `continue` 掉。于是违规检测、`raw-cross-domain-table`、import 边收集
+ * **全都够不到它**。这不是「规则写了但漏判」,是结构性零执法:把业务 helper 搬进
+ * `src/common/foo.ts`,R2(依赖边界)与 R5(跨域写)两边就都能合法 import,
+ * 边界规则整体被绕开。R15 堵的正是这条所有边界规则的共同逃生通道。
+ *
+ * 三条判据(恒 report;存量入基线,新增才是将来 blocking 的对象):
+ *   ① `common-business-table-access` —— common 出现业务 Prisma 访问。
+ *      **delegate ∪ raw 物理表**两种形态都算(维护者 2026-08-15 拍板):
+ *      实测 `src/common` 的 delegate 访问 = 0,6 条真实命中**全是 `$queryRaw`
+ *      打物理表**,只查 delegate 会造出一个恒绿的空闸。
+ *      例外 = `kernel.kernelReadFields` 白名单内的事实读(显式 select 且字段全在
+ *      白名单内)→ 记 `common-kernel-fact-read`(allow),不算违规。
+ *   ② `common-business-predicate` —— common 内联业务状态 + 时间窗谓词组合,
+ *      复用 R6 三档读的语义读识别口径(statusFields ∧ timeWindowFields)。
+ *   ③ `common-to-module-import` —— `common → src/modules/**` 入边,结构判据,恒 0。
+ *
+ * 刻意不并进 `scan()` 的 `findings`:那个数组喂着 `edgeUsage` / `readTiers` /
+ * `byKind`,而 `common` 不是 `domains` 里的域 —— 混进去会凭空多出一条
+ * undeclared direction,把既有读数搅浑。两个数组、两个报告块,互不干扰。
+ */
+const COMMON_PREFIX = 'src/common/';
+const COMMON_DOMAIN = 'common';
+
 type JsonRecord = Record<string, unknown>;
 
 interface SchemaModel {
@@ -581,18 +609,30 @@ function runMetadata(): void {
       if (!models.some((model) => model.name === modelName))
         errors.push('stale model owner: ' + modelName);
     }
+    // 集合相等,不比个数 —— 散文里写死「恰 N 个」会随登记表增长而变成假话,
+    // 而且失败时说不出**是哪一条**多了或少了。R15 加入 member-advisory-lock 时
+    // 这里从 4 条变 5 条:共享业务内核必须显式登记 owner,不能靠搬进 src/common
+    // 免除归属(架构治理 v4 终审【七】)。
     const expectedPrimitives = [
       'app-identity.resolver',
+      'member-advisory-lock',
       'member-lifecycle-lock',
       'membership-term-state-machine',
       'wecom-identity-revoke',
     ];
     const primitiveNames = map.kernel.primitives?.map((item) => String(item.name ?? '')) ?? [];
-    if (
-      primitiveNames.length !== expectedPrimitives.length ||
-      expectedPrimitives.some((name) => !primitiveNames.includes(name))
-    ) {
-      errors.push('kernel.primitives must declare exactly the four Phase 0 primitives');
+    const missingPrimitives = expectedPrimitives.filter((name) => !primitiveNames.includes(name));
+    const unexpectedPrimitives = primitiveNames.filter(
+      (name) => !expectedPrimitives.includes(name),
+    );
+    if (missingPrimitives.length > 0 || unexpectedPrimitives.length > 0) {
+      errors.push(
+        'kernel.primitives set mismatch' +
+          (missingPrimitives.length > 0 ? '; missing: ' + missingPrimitives.join(', ') : '') +
+          (unexpectedPrimitives.length > 0
+            ? '; unexpected: ' + unexpectedPrimitives.join(', ')
+            : ''),
+      );
     }
     errors.push(...decisionPendingErrors(map));
     if (map.kernel.kernelReadFields === undefined)
@@ -1234,7 +1274,12 @@ function finding(
   };
 }
 
-function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; inputDigest: string } {
+function scan(map: DomainMap): {
+  findings: Finding[];
+  edges: ImportEdge[];
+  commonFindings: Finding[];
+  inputDigest: string;
+} {
   const models = schemaModels();
   const modelsByName = new Map(models.map((model) => [model.name, model]));
   const delegates = new Map<string, SchemaModel>();
@@ -1752,7 +1797,231 @@ function scan(map: DomainMap): { findings: Finding[]; edges: ImportEdge[]; input
     };
     visit(source);
   }
-  return { findings, edges, inputDigest: 'sha256:' + hash(inputs.sort().join('\n')) };
+  return {
+    findings,
+    edges,
+    commonFindings: scanCommon(map, models, modelsByName, typed, files),
+    inputDigest: 'sha256:' + hash(inputs.sort().join('\n')),
+  };
+}
+
+/**
+ * R15 的三条判据(见文件头 COMMON_PREFIX 处的说明)。
+ *
+ * 复用 `scan()` 已经建好的 `typed` program —— 不另建第二个:#1019 刚把
+ * ts.Program 的构建次数从 32 压到 2,再建一个会把那笔收益原样吐回去。
+ */
+function scanCommon(
+  map: DomainMap,
+  models: readonly SchemaModel[],
+  modelsByName: Map<string, SchemaModel>,
+  typed: TypedProgram,
+  files: readonly string[],
+): Finding[] {
+  const out: Finding[] = [];
+  const ordinals = new Map<string, number>();
+  for (const file of files) {
+    if (!file.startsWith(COMMON_PREFIX)) continue;
+    const source = typed.sourceOf(file);
+    if (source === undefined) {
+      fail(
+        `${file} 不在 tsconfig 的编译闭包内,R15 扫描无法覆盖它。` +
+          '扫描范围与 tsconfig include/exclude 是同一个单源 —— 请修 tsconfig,不要在扫描器里另开 glob。',
+      );
+    }
+    const emit = (
+      kind: string,
+      disposition: 'report' | 'allow',
+      targetDomain: string,
+      model: string | null,
+      operation: string,
+      node: ts.Node,
+      details: JsonRecord,
+    ): void => {
+      const symbol = symbolOf(node);
+      const key = file + '|' + symbol;
+      const ordinal = (ordinals.get(key) ?? 0) + 1;
+      ordinals.set(key, ordinal);
+      out.push(
+        finding(
+          kind,
+          disposition,
+          COMMON_DOMAIN,
+          targetDomain,
+          model,
+          operation,
+          file,
+          source,
+          node,
+          ordinal,
+          details,
+          'new-observation',
+        ),
+      );
+    };
+
+    // ── 判据③:common → src/modules/** 入边(结构判据,恒 0)──
+    const moduleDependency = (node: ts.Node, specifier: string, form: ImportForm): void => {
+      const targetModule = moduleForImport(file, specifier);
+      if (targetModule === null) return;
+      const targetOwner = map.moduleOwnership[targetModule];
+      emit(
+        'common-to-module-import',
+        'report',
+        targetOwner?.domain ?? 'unknown',
+        null,
+        'import',
+        node,
+        {
+          targetModule,
+          specifier,
+          form,
+          requiredExit:
+            'src/common 只放技术无关横切件;需要业务能力就由属主模块导出,不得反向 import。',
+        },
+      );
+    };
+
+    // ── 判据①(raw 形态):common 内的 raw SQL 打到业务物理表 ──
+    const raw = (node: ts.Expression | ts.TaggedTemplateExpression, expression: ts.Expression): void => {
+      const operation = propertyOf(expression);
+      if (
+        operation === null ||
+        (!operation.startsWith('$queryRaw') && !operation.startsWith('$executeRaw'))
+      )
+        return;
+      const receiver = ts.isPropertyAccessExpression(expression) ? expression.expression : expression;
+      if (!rawCapableClient(typed, receiver)) return;
+      const sql = literalSql(node);
+      if (sql === null) {
+        emit('common-raw-sql-dynamic', 'report', 'unknown', null, 'raw', node, {
+          reason: 'non-literal SQL — 无法证明它没有碰业务表。',
+        });
+        return;
+      }
+      for (const model of models) {
+        const owner = map.modelOwnership[model.name];
+        if (owner === undefined) continue;
+        const tableRe = new RegExp(
+          '(?:^|[^A-Za-z0-9_])' + escapeRegex(model.tableName) + '(?:$|[^A-Za-z0-9_])',
+          'i',
+        );
+        if (!tableRe.test(sql.text)) continue;
+        emit('common-business-table-access', 'report', owner.domain, model.name, 'raw', node, {
+          form: 'raw',
+          accessPath: model.name,
+          physicalTable: model.tableName,
+          physicalTableSource: model.tableNameSource,
+          sqlHasInterpolation: sql.hasInterpolation,
+          ownerModule: owner.ownerModule ?? null,
+          requiredExit: '表名参数化,common 不留业务表知识。',
+        });
+      }
+    };
+
+    const visit = (node: ts.Node): void => {
+      if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+        moduleDependency(node, node.moduleSpecifier.text, 'import');
+      }
+      if (
+        ts.isExportDeclaration(node) &&
+        node.moduleSpecifier !== undefined &&
+        ts.isStringLiteral(node.moduleSpecifier)
+      ) {
+        moduleDependency(node, node.moduleSpecifier.text, 'export-from');
+      }
+      if (
+        ts.isCallExpression(node) &&
+        node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+        node.arguments.length > 0 &&
+        ts.isStringLiteral(node.arguments[0])
+      ) {
+        moduleDependency(node, node.arguments[0].text, 'dynamic-import');
+      }
+      if (
+        ts.isImportEqualsDeclaration(node) &&
+        ts.isExternalModuleReference(node.moduleReference) &&
+        ts.isStringLiteral(node.moduleReference.expression)
+      ) {
+        moduleDependency(node, node.moduleReference.expression.text, 'import-equals');
+      }
+      if (ts.isTaggedTemplateExpression(node)) raw(node, node.tag);
+      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+        const operation = node.expression.name.text;
+        if (operation.startsWith('$queryRaw') || operation.startsWith('$executeRaw')) {
+          raw(node.arguments[0] ?? node.expression, node.expression);
+        }
+        const model = delegateModelOf(typed, node.expression.expression, modelsByName);
+        const owner = model === undefined ? undefined : map.modelOwnership[model.name];
+        if (model !== undefined && owner !== undefined) {
+          const reads = new Set([
+            'findUnique',
+            'findUniqueOrThrow',
+            'findFirst',
+            'findFirstOrThrow',
+            'findMany',
+            'count',
+            'aggregate',
+            'groupBy',
+          ]);
+          const first = node.arguments[0];
+          const argument = first !== undefined && ts.isObjectLiteralExpression(first) ? first : undefined;
+          const base: JsonRecord = {
+            form: 'delegate',
+            accessPath: model.name,
+            ownerModule: owner.ownerModule ?? null,
+          };
+          if (reads.has(operation)) {
+            const predicates =
+              argument === undefined ? { ...predicateAnalysis(), dynamic: true } : analyzePredicates(argument, model);
+            // ── 判据②:内联业务状态 + 时间窗谓词组合(复用 R6 三档读口径)──
+            if (predicates.statusFields.length > 0 && predicates.timeWindowFields.length > 0) {
+              emit('common-business-predicate', 'report', owner.domain, model.name, operation, node, {
+                ...base,
+                statusPredicateFields: predicates.statusFields,
+                timeWindowFields: predicates.timeWindowFields,
+                requiredExit:
+                  '应消费属主导出的业务谓词;common 内不得内联时间窗与状态组合。',
+              });
+              node.forEachChild(visit);
+              return;
+            }
+            const selection =
+              argument === undefined
+                ? { explicitSelect: false, scalarFields: null, hasOmit: false, relationAccesses: [] }
+                : analyzeSelection(argument, model, modelsByName, model.name);
+            const kernelFields = map.kernel.kernelReadFields?.fields?.[model.name] ?? [];
+            const selected = selection.scalarFields;
+            // 例外:kernel 白名单内的事实读。必须是**显式 select**、非 omit、
+            // 且每个字段都在白名单内 —— 少任何一条都不算「形似而合法」。
+            const kernelFactRead =
+              selection.explicitSelect &&
+              !selection.hasOmit &&
+              selected !== null &&
+              selected.length > 0 &&
+              kernelFields.length > 0 &&
+              selected.every((field) => kernelFields.includes(field));
+            if (kernelFactRead) {
+              emit('common-kernel-fact-read', 'allow', owner.domain, model.name, operation, node, {
+                ...base,
+                selectedFields: selected,
+                kernelReadFields: kernelFields,
+              });
+              node.forEachChild(visit);
+              return;
+            }
+          }
+          emit('common-business-table-access', 'report', owner.domain, model.name, operation, node, {
+            ...base,
+            requiredExit: '表名参数化,common 不留业务表知识。',
+          });
+        }
+      }
+      node.forEachChild(visit);
+    };
+    visit(source);
+  }
+  return out;
 }
 
 function cycles(map: DomainMap, edges: ImportEdge[], findings: Finding[]): void {
@@ -1925,6 +2194,15 @@ function runViolations(): void {
       (item) =>
         item.kind === kind && (disposition === undefined || item.disposition === disposition),
     ).length;
+  const commonFindings = result.commonFindings.sort((a, b) => {
+    const file = a.location.file.localeCompare(b.location.file);
+    if (file !== 0) return file;
+    const line = a.location.line - b.location.line;
+    if (line !== 0) return line;
+    return a.kind.localeCompare(b.kind);
+  });
+  const commonCount = (kind: string): number =>
+    commonFindings.filter((item) => item.kind === kind && item.disposition === 'report').length;
   process.stdout.write(
     JSON.stringify(
       {
@@ -1975,6 +2253,21 @@ function runViolations(): void {
               item.kind === 'observed-subdomain-cross-owner-write' &&
               item.sourceDomain === 'participation',
           ).length,
+        },
+        // R15 —— src/common 治理(架构治理 v4 终审【七】)。恒 report。
+        // 与上面的 findings 分开报:common 不是 domains 里的域,混进去会凭空
+        // 多出一条 undeclared direction,把既有读数搅浑。
+        commonGovernance: {
+          scope: COMMON_PREFIX,
+          enforcement: 'report-only',
+          businessTableAccess: commonCount('common-business-table-access'),
+          businessPredicate: commonCount('common-business-predicate'),
+          moduleImportEdges: commonCount('common-to-module-import'),
+          rawSqlDynamic: commonCount('common-raw-sql-dynamic'),
+          kernelFactReadsAllowed: result.commonFindings.filter(
+            (item) => item.kind === 'common-kernel-fact-read',
+          ).length,
+          findings: commonFindings,
         },
         debtRegistry: architectureDebtReport(),
         findings,
