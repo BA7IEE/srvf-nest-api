@@ -94,7 +94,12 @@ import {
   AppRegistrationFormDto,
   PutAppManagedRegistrationFormDto,
 } from '../dto/app/app-registration-form.dto';
+import {
+  AppActivityQualificationRulesDto,
+  PutAppManagedActivityQualificationRulesDto,
+} from '../dto/app/app-activity-qualification-rules.dto';
 import { RegistrationFormVersionService } from '../registration-form-version.service';
+import { QualificationRuleSetVersionService } from '../qualification-rule-set-version.service';
 import { LoginScoped, RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 
 @ApiTags('Mobile - Managed Activities')
@@ -107,6 +112,7 @@ export class AppManagedActivitiesController {
     private readonly lifecycle: ActivityLifecycleService,
     private readonly settlements: ActivitySettlementHttpService,
     private readonly registrationForms: RegistrationFormVersionService,
+    private readonly qualificationRules: QualificationRuleSetVersionService,
   ) {}
 
   @Get('organization-options')
@@ -317,6 +323,64 @@ export class AppManagedActivitiesController {
   ): Promise<AppRegistrationFormDto | null> {
     await this.resolveMemberId(user);
     return this.registrationForms.putManaged(params.activityId, dto, user, this.auditMeta(req));
+  }
+
+  @Get(':activityId/qualification-rules')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @ApiOperation({ summary: 'App 获取本人 managed 活动当前资格规则定义 [auth]' })
+  @ApiWrappedOkResponse(AppActivityQualificationRulesDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID,
+  )
+  async getQualificationRules(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+  ): Promise<AppActivityQualificationRulesDto> {
+    await this.resolveMemberId(user);
+    return this.qualificationRules.getManaged(params.activityId, user);
+  }
+
+  @Put(':activityId/qualification-rules')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @ApiOperation({ summary: 'App 全量替换本人 draft 活动资格规则；已发布活动须走变更审核 [auth]' })
+  @ApiWrappedOkResponse(AppActivityQualificationRulesDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID,
+  )
+  async putQualificationRules(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Body() dto: PutAppManagedActivityQualificationRulesDto,
+    @Req() req: Request,
+  ): Promise<AppActivityQualificationRulesDto> {
+    await this.resolveMemberId(user);
+    return await this.qualificationRules.putManaged(
+      params.activityId,
+      dto,
+      user,
+      this.auditMeta(req),
+    );
   }
 
   @Post(':activityId/evidence-seals')

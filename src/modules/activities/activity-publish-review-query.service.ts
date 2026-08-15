@@ -128,10 +128,13 @@ export class ActivityPublishReviewQueryService {
       return { kind: 'unparseable' };
     }
     const record = snapshot as Record<string, unknown>;
-    // v3 adds Form and v4 adds allocation mode. All three proposal generations share the same
-    // Activity/Session diff envelope, so a v4 allocation change appears in activityFields.
+    // v3 adds Form, v4 adds allocation mode, and v5 adds typed qualification RuleSets. All
+    // proposal generations retain the same Activity/Session diff envelope.
     if (
-      (record.schemaVersion !== 2 && record.schemaVersion !== 3 && record.schemaVersion !== 4) ||
+      (record.schemaVersion !== 2 &&
+        record.schemaVersion !== 3 &&
+        record.schemaVersion !== 4 &&
+        record.schemaVersion !== 5) ||
       !this.isRecord(record.base)
     ) {
       return { kind: 'legacy', requestSchemaVersion: record.schemaVersion ?? null };
@@ -140,7 +143,7 @@ export class ActivityPublishReviewQueryService {
     const activity = this.isRecord(record.activity) ? record.activity : {};
     const baseActivity = this.isRecord(base.activity) ? base.activity : {};
     return {
-      kind: 'proposal-v2',
+      kind: record.schemaVersion === 5 ? 'proposal-v5' : 'proposal-v2',
       activityFields: Object.keys(activity)
         .filter((key) => JSON.stringify(activity[key]) !== JSON.stringify(baseActivity[key]))
         .sort(),
@@ -149,6 +152,61 @@ export class ActivityPublishReviewQueryService {
         Array.isArray(record.sessions) ? record.sessions : [],
         'sessionId',
       ),
+      ...(record.schemaVersion === 5
+        ? {
+            qualificationRuleSets: this.qualificationRuleSetDiff(
+              base.qualificationRuleSets,
+              record.qualificationRuleSets,
+            ),
+          }
+        : {}),
+    };
+  }
+
+  /** Safe administrative summary: scopes and change kind, never evaluator input facts. */
+  private qualificationRuleSetDiff(before: unknown, after: unknown): Record<string, unknown> {
+    const rows = (value: unknown): Record<string, unknown>[] => {
+      if (!this.isRecord(value) || !Array.isArray(value.ruleSets)) return [];
+      return value.ruleSets.filter(this.isRecord);
+    };
+    const scope = (row: Record<string, unknown>): Record<string, unknown> | null =>
+      this.isRecord(row.scope)
+        ? {
+            sessionId: row.scope.sessionId ?? null,
+            positionId: row.scope.positionId ?? null,
+          }
+        : null;
+    const key = (row: Record<string, unknown>): string | null => {
+      const value = scope(row);
+      return value === null ? null : JSON.stringify([value.sessionId, value.positionId]);
+    };
+    const beforeByScope = new Map(
+      rows(before).flatMap((row) => {
+        const identity = key(row);
+        return identity === null ? [] : [[identity, row] as const];
+      }),
+    );
+    const afterByScope = new Map(
+      rows(after).flatMap((row) => {
+        const identity = key(row);
+        return identity === null ? [] : [[identity, row] as const];
+      }),
+    );
+    return {
+      create: [...afterByScope.entries()]
+        .filter(([identity]) => !beforeByScope.has(identity))
+        .map(([, row]) => scope(row)),
+      update: [...afterByScope.entries()]
+        .filter(([identity, row]) => {
+          const previous = beforeByScope.get(identity);
+          return (
+            previous !== undefined && JSON.stringify(previous.rules) !== JSON.stringify(row.rules)
+          );
+        })
+        .map(([, row]) => scope(row)),
+      cancel: [...beforeByScope.entries()]
+        .filter(([identity]) => !afterByScope.has(identity))
+        .map(([, row]) => scope(row)),
     };
   }
 

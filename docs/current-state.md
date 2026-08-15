@@ -20,7 +20,7 @@
 |---|---|
 | 模块 | 37 |
 | Controller | 95 |
-| Endpoint | 503 |
+| Endpoint | 505 |
 | Migration | 87 |
 | BizCode | 428 |
 | 权限码 | 234 |
@@ -46,7 +46,7 @@
 - **安全**:审计SA全量/持码非SA仅self|USER；敏感读闭锁/extra禁PII；Decision 15.1=B/15.2=B(业务负责人最终确认:2026-07-27):C/N管理=SA|GLOBAL读码(ADMIN不直通)，部门=PRIMARY/SECONDARY/TEMPORARY/SUPPORT有效任职+组织ACTIVE；RBAC任期单轨，ops-admin现任常驻/同锁重读
 - **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 - **证书标准库(PR-1→PR-6 + 评审 findings F1–F6)**:类别/等级唯一权威=`CertificateStandard`(实例侧零副本);认定规则由录入时锁定的 `recognitionPolicyId` 记住、换版**不追溯**;招新申报一证一行,发号只搬 APPROVED 且不重判。**需求 = 冻结稿 + [`t0-amendments`](archive/reviews/certificate-standard-library-t0-amendments.md) 两份合起来**(冲突以后者为准);三份 runbook 见 `ops/certificate-*`
-- **活动（activity-business-overhaul-v1.1）**：87；永久头/保险 revision/参与投影、D83 资格 runtime 已落。D84 mode 以 v4 根锁/20152 闭合；D85–87 的冻结、资格 hash、lottery 承诺、回执和候选/岗位 guard 均零回填。第 4 批 runtime：邀请 accept 复用 canonical Form/资格/保险/身份/容量链；first_come 按场次即时 `pass|waitlisted`、不建 batch；rank/lottery 走 prepare/commit/void/get、D86 replay 和 20147 零写，同一根事务写容量/pointer/population/audit/outbox；递补仅原场次岗位。default 仅兼容旧 server/存量；资格配置/发布激活、到点 expiry、整单取消/legacy waitlist lifecycle 仍待（NEXT_TASKS P1-28）。
+- **活动（activity-business-overhaul-v1.1）**：87；永久头/保险 revision/参与投影、D83 资格 runtime 已落。D84 mode 以 v4 根锁/20152 闭合；D85–87 的冻结、资格 hash、lottery 承诺、回执和候选/岗位 guard 均零回填。第 4 批 runtime：邀请 accept 复用 canonical Form/资格/保险/身份/容量链；first_come 按场次即时 `pass|waitlisted`、不建 batch；rank/lottery 走 prepare/commit/void/get、D86 replay 和 20147 零写，同一根事务写容量/pointer/population/audit/outbox；递补仅原场次岗位。default 仅兼容旧 server/存量；资格配置/发布激活已落（draft typed RuleSet、V5 冻结激活）；仍待活动到点 expiry、整单取消/legacy waitlist lifecycle（NEXT_TASKS P1-28）。
 
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)
 

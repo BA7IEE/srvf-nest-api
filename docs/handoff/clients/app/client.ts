@@ -1,7 +1,7 @@
 // 由 scripts/generate-fe-client.ts 生成,请勿手改。
 // surface: App 小程序
 // generatorVersion: 1.0.0
-// inputDigest: sha256:e76865727794be36be6b808485e3a8eb78980f671a2e18ac9e37f1071a2ce2c6
+// inputDigest: sha256:82a68b718e07c8fa7a571a9d2889c5b044c8ce54c8de4fbd1ca8ce71483b4d09
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -32,6 +32,12 @@ import type {
   AppActivityLifecycleResultDto,
   AppActivityPositionDto,
   AppActivityQualificationDto,
+  AppActivityQualificationRuleDto,
+  AppActivityQualificationRuleInputDto,
+  AppActivityQualificationRuleScopeDto,
+  AppActivityQualificationRuleSetDto,
+  AppActivityQualificationRuleSetInputDto,
+  AppActivityQualificationRulesDto,
   AppActivityQualificationUnmetRuleDto,
   AppActivityRegistrationAnswerCommandDto,
   AppActivityRegistrationCommandDto,
@@ -139,6 +145,10 @@ import type {
   CancelAppMyRegistrationDto,
   ChangeMyPasswordDto,
   ChangeReviewDto,
+  ChangeReviewQualificationRuleScopeDto,
+  ChangeReviewQualificationRuleSetCancelDto,
+  ChangeReviewQualificationRuleSetCollectionsDto,
+  ChangeReviewQualificationRuleSetUpsertDto,
   ChangeReviewSessionCancelDto,
   ChangeReviewSessionCollectionsDto,
   ChangeReviewSessionCreateDto,
@@ -170,6 +180,7 @@ import type {
   NotificationUnreadCountDto,
   PageResultDto,
   PrepareAppManagedActivityAllocationBatchDto,
+  PutAppManagedActivityQualificationRulesDto,
   PutAppManagedRegistrationFormDto,
   RegistrationFormChoiceInputDto,
   RegistrationFormDefinitionInputDto,
@@ -499,6 +510,14 @@ export function createAppClient(fetcher: Fetcher) {
     /** App 发起人提交初次发布审核；服务端冻结 canonical 快照 [auth] */
     AppManagedActivitiesControllerCreatePublishReview(activityId: string, body: SubmitActivityPublishReviewDto): Promise<ApiEnvelope<ActivityPublishReviewResponseDto>> {
       return fetcher<ActivityPublishReviewResponseDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/publish-reviews`, body });
+    },
+    /** App 获取本人 managed 活动当前资格规则定义 [auth] */
+    AppManagedActivitiesControllerGetQualificationRules(activityId: string): Promise<ApiEnvelope<AppActivityQualificationRulesDto>> {
+      return fetcher<AppActivityQualificationRulesDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/qualification-rules` });
+    },
+    /** App 全量替换本人 draft 活动资格规则；已发布活动须走变更审核 [auth] */
+    AppManagedActivitiesControllerPutQualificationRules(activityId: string, body: PutAppManagedActivityQualificationRulesDto): Promise<ApiEnvelope<AppActivityQualificationRulesDto>> {
+      return fetcher<AppActivityQualificationRulesDto>({ method: "PUT", path: `/api/app/v1/my/managed-activities/${activityId}/qualification-rules`, body });
     },
     /** App 获取本人 managed 活动当前报名表定义 [auth] */
     AppManagedActivitiesControllerGetRegistrationForm(activityId: string): Promise<ApiEnvelope<AppRegistrationFormDto>> {

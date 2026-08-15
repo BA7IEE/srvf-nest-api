@@ -19,6 +19,7 @@ import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { OmittableOnly } from '../../common/decorators/omittable-only.decorator';
 import { UpdateAppManagedActivityDto } from './dto/app/app-managed-activity.dto';
 import { RegistrationFormDefinitionInputDto } from './dto/app/app-registration-form.dto';
+import { AppActivityQualificationRuleInputDto } from './dto/app/app-activity-qualification-rules.dto';
 import {
   CreateAppManagedActivitySessionDto,
   CreateAppManagedActivitySessionPositionDto,
@@ -232,6 +233,21 @@ export class ChangeReviewSessionPositionCreateDto extends CreateAppManagedActivi
   @MinLength(8)
   @MaxLength(64)
   sessionId!: string;
+
+  /**
+   * Optional for an otherwise unchanged historical position-create command. It becomes required
+   * when this same proposal attaches a qualification RuleSet to the newly created position.
+   */
+  @ApiPropertyOptional({
+    description: '本次 proposal 内新岗位的稳定引用；qualificationRuleSets 可用该值作为 positionId',
+    minLength: 1,
+    maxLength: 64,
+  })
+  @OmittableOnly()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  clientRef?: string;
 }
 
 export class ChangeReviewSessionPositionUpdateDto extends UpdateAppManagedActivitySessionPositionDto {
@@ -283,6 +299,70 @@ export class ChangeReviewSessionPositionCollectionsDto {
 }
 
 /**
+ * A scope accepts either an existing database id or a proposal-local clientRef. It is resolved
+ * against the frozen session/position collections before being canonicalized into the V5 target.
+ */
+export class ChangeReviewQualificationRuleScopeDto {
+  @ApiProperty({ nullable: true, minLength: 1, maxLength: 64, type: String })
+  @ValidateIf((_object, value: unknown) => value !== null && value !== undefined)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  sessionId!: string | null;
+
+  @ApiProperty({ nullable: true, minLength: 1, maxLength: 64, type: String })
+  @ValidateIf((_object, value: unknown) => value !== null && value !== undefined)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  positionId!: string | null;
+}
+
+export class ChangeReviewQualificationRuleSetUpsertDto {
+  @ApiProperty({ type: () => ChangeReviewQualificationRuleScopeDto })
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ChangeReviewQualificationRuleScopeDto)
+  scope!: ChangeReviewQualificationRuleScopeDto;
+
+  @ApiProperty({ type: () => [AppActivityQualificationRuleInputDto], minItems: 1 })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AppActivityQualificationRuleInputDto)
+  rules!: AppActivityQualificationRuleInputDto[];
+}
+
+export class ChangeReviewQualificationRuleSetCancelDto {
+  @ApiProperty({ type: () => ChangeReviewQualificationRuleScopeDto })
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ChangeReviewQualificationRuleScopeDto)
+  scope!: ChangeReviewQualificationRuleScopeDto;
+}
+
+export class ChangeReviewQualificationRuleSetCollectionsDto {
+  @ApiProperty({ type: [ChangeReviewQualificationRuleSetUpsertDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ChangeReviewQualificationRuleSetUpsertDto)
+  create!: ChangeReviewQualificationRuleSetUpsertDto[];
+
+  @ApiProperty({ type: [ChangeReviewQualificationRuleSetUpsertDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ChangeReviewQualificationRuleSetUpsertDto)
+  update!: ChangeReviewQualificationRuleSetUpsertDto[];
+
+  @ApiProperty({ type: [ChangeReviewQualificationRuleSetCancelDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ChangeReviewQualificationRuleSetCancelDto)
+  cancel!: ChangeReviewQualificationRuleSetCancelDto[];
+}
+
+/**
  * 已发布活动的唯一变更申请。children 三组都是完整集合，故单一场次的改动只是
  * `sessions.update` 只有一项的特例，不另设旁路 endpoint。
  */
@@ -317,6 +397,13 @@ export class ChangeReviewDto extends SubmitActivityPublishReviewDto {
   @ValidateNested()
   @Type(() => RegistrationFormDefinitionInputDto)
   registrationForm?: RegistrationFormDefinitionInputDto | null;
+
+  /** Omitted retains active RuleSets; explicit collection commands are frozen in V5. */
+  @ApiPropertyOptional({ type: () => ChangeReviewQualificationRuleSetCollectionsDto })
+  @OmittableOnly()
+  @ValidateNested()
+  @Type(() => ChangeReviewQualificationRuleSetCollectionsDto)
+  qualificationRuleSets?: ChangeReviewQualificationRuleSetCollectionsDto;
 }
 
 export class ActivityTemplateResolutionResponseDto {

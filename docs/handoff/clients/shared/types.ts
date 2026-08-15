@@ -2,7 +2,7 @@
 // 真相源:后端 live /api/docs-json;本文件派生自 docs/handoff/openapi.json 快照。
 // surface: shared —— 被两个及以上 surface 共用的类型(唯一定义处)
 // generatorVersion: 1.0.0
-// inputDigest: sha256:e76865727794be36be6b808485e3a8eb78980f671a2e18ac9e37f1071a2ce2c6
+// inputDigest: sha256:82a68b718e07c8fa7a571a9d2889c5b044c8ce54c8de4fbd1ca8ce71483b4d09
 
 /** 统一响应 envelope —— 全仓契约恒为 { code, message, data }。 */
 export interface ApiEnvelope<T> {

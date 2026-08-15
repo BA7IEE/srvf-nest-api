@@ -77,6 +77,7 @@ import { CorrectionAuditRecorder } from './correction-audit-recorder';
 import { ActivitySettlementHttpService } from './activity-settlement-http.service';
 import { ActivityLifecycleService } from './activity-lifecycle.service';
 import { RegistrationFormVersionService } from './registration-form-version.service';
+import { QualificationRuleSetVersionService } from './qualification-rule-set-version.service';
 import { ActivityCapacityBucketProjector } from './activity-capacity-bucket-projector';
 import { ActivityQualificationEvaluatorService } from '../activity-registrations/activity-qualification-evaluator.service';
 import { ActivityAllocationModeService } from './activity-allocation-mode.service';
@@ -155,6 +156,7 @@ import { ActivityAllocationModeService } from './activity-allocation-mode.servic
     ActivityCapacityBucketProjector,
     ActivityQualificationEvaluatorService,
     RegistrationFormVersionService,
+    QualificationRuleSetVersionService,
     ActivityProposalValidator,
     ActivityProposalApplier,
     ActivityClosurePolicy,

@@ -57,6 +57,8 @@
 >
 > **第 4 批⑫ 分配方式**：活动头、managed 投影和主资源 audit snapshot 都增加 `allocationModeCode`；新活动缺失或三值外均为 400，不能用默认值兜底。提交后 review detail 的 `changeDiff.activityFields` 会展示该字段；新快照为 schemaVersion=4，若待审期间经旁路改了 mode，approve 返回 `409/20144`，前端刷新后重提。任一历史 allocation batch 与当前/目标 mode 不一致时，draft PATCH、提交或审核返回 `409/20152`，前端应停止重试并交给运营核对历史数据；后端不会自动改写 batch。本刀不提供实际分配、抽签、候补或容量操作按钮。
 >
+> **第 4 批⑰资格规则配置/发布激活**：配置入口在 App managed surface，而不是新建 Admin legacy 配置端点：`GET/PUT /api/app/v1/my/managed-activities/:activityId/qualification-rules` 只对 draft 活动全量维护 #22 typed RuleSet，published direct PUT 固定 `20037`。Admin 审核详情对 V5 proposal 的 `changeDiff.qualificationRuleSets` 只用于展示 scope 级 create/update/cancel；不得在浏览器拼接 storage `valueJson`、资格敏感事实或另造配置写入口。初发与显式资格集合变更的审核都冻结 V5 target/hash，审批才激活/退役版本并同步岗位指针；有 active 规则的场次/岗位被取消时必须同时显式取消对应 scope，未显式携带则 `409/20022`。
+>
 > **v0.62.0 · PR-12 发起权限边界（production 未部署）**：create 与 draft 真实改 `organizationId` 共用同一发起资格策略；目标组织必须存在、ACTIVE、未软删且非根，持久化 initiator 必须是 ACTIVE 正式队员并关联至少一个 ACTIVE、未软删 User。后台代建沿既有 contract：membership 属于目标 initiator，`activity.create.cross-org` scoped grant 属于实际操作者；draft 改组织不得用操作者 memberId 回退。已发布活动的普通 change proposal 不允许改组织，submit 与 approve（含旧/篡改 snapshot）均以 `20022` 拒绝；显式传当前相同 `organizationId` 正常通过。
 >
 > **未来正式上线参考**：legacy gap、显式认领、三个 reviewer RoleBinding 与整 fleet 切换顺序保留在 [`activity-responsibility-workflow-rollout.md`](../ops/activity-responsibility-workflow-rollout.md)。当前不执行；真正上线时必须使用届时批准的正式 release tag 和不可变 image digest 重新复核。前端不得用 `publishedBy` 猜 owner，也不得把本地 smoke=true 当作环境状态。

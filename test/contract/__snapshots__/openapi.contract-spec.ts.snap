@@ -3527,6 +3527,251 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppActivityQualificationRuleDto": {
+    "properties": {
+      "codes": {
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "enforcementCode": {
+        "enum": [
+          "block",
+          "warn",
+        ],
+        "type": "string",
+      },
+      "maxYears": {
+        "nullable": true,
+        "type": "number",
+      },
+      "message": {
+        "nullable": true,
+        "type": "string",
+      },
+      "minYears": {
+        "nullable": true,
+        "type": "number",
+      },
+      "operator": {
+        "enum": [
+          "in",
+          "in_subtree",
+          "has_any",
+          "between",
+          "covers_activity",
+        ],
+        "type": "string",
+      },
+      "organizationIds": {
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "ruleTypeCode": {
+        "enum": [
+          "grade",
+          "gender",
+          "organization",
+          "certificate",
+          "training",
+          "age",
+          "insurance",
+        ],
+        "type": "string",
+      },
+      "sortOrder": {
+        "type": "number",
+      },
+      "standardIds": {
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "warnScore": {
+        "nullable": true,
+        "type": "number",
+      },
+    },
+    "required": [
+      "ruleTypeCode",
+      "enforcementCode",
+      "operator",
+      "warnScore",
+      "message",
+      "sortOrder",
+    ],
+    "type": "object",
+  },
+  "AppActivityQualificationRuleInputDto": {
+    "properties": {
+      "codes": {
+        "items": {
+          "type": "string",
+        },
+        "maxItems": 100,
+        "minItems": 1,
+        "type": "array",
+      },
+      "enforcementCode": {
+        "enum": [
+          "block",
+          "warn",
+        ],
+        "type": "string",
+      },
+      "maxYears": {
+        "minimum": 0,
+        "nullable": true,
+        "type": "number",
+      },
+      "message": {
+        "maxLength": 500,
+        "minLength": 1,
+        "nullable": true,
+        "type": "string",
+      },
+      "minYears": {
+        "minimum": 0,
+        "nullable": true,
+        "type": "number",
+      },
+      "operator": {
+        "enum": [
+          "in",
+          "in_subtree",
+          "has_any",
+          "between",
+          "covers_activity",
+        ],
+        "type": "string",
+      },
+      "organizationIds": {
+        "items": {
+          "type": "string",
+        },
+        "maxItems": 100,
+        "minItems": 1,
+        "type": "array",
+      },
+      "ruleTypeCode": {
+        "enum": [
+          "grade",
+          "gender",
+          "organization",
+          "certificate",
+          "training",
+          "age",
+          "insurance",
+        ],
+        "type": "string",
+      },
+      "sortOrder": {
+        "minimum": 0,
+        "type": "number",
+      },
+      "standardIds": {
+        "items": {
+          "type": "string",
+        },
+        "maxItems": 100,
+        "minItems": 1,
+        "type": "array",
+      },
+      "warnScore": {
+        "maximum": 100,
+        "minimum": 0,
+        "type": "number",
+      },
+    },
+    "required": [
+      "ruleTypeCode",
+      "enforcementCode",
+      "operator",
+      "sortOrder",
+    ],
+    "type": "object",
+  },
+  "AppActivityQualificationRuleScopeDto": {
+    "properties": {
+      "positionId": {
+        "maxLength": 64,
+        "minLength": 8,
+        "nullable": true,
+        "type": "string",
+      },
+      "sessionId": {
+        "maxLength": 64,
+        "minLength": 8,
+        "nullable": true,
+        "type": "string",
+      },
+    },
+    "required": [
+      "sessionId",
+      "positionId",
+    ],
+    "type": "object",
+  },
+  "AppActivityQualificationRuleSetDto": {
+    "properties": {
+      "rules": {
+        "items": {
+          "$ref": "#/components/schemas/AppActivityQualificationRuleDto",
+        },
+        "type": "array",
+      },
+      "scope": {
+        "$ref": "#/components/schemas/AppActivityQualificationRuleScopeDto",
+      },
+      "version": {
+        "minimum": 1,
+        "type": "number",
+      },
+    },
+    "required": [
+      "scope",
+      "version",
+      "rules",
+    ],
+    "type": "object",
+  },
+  "AppActivityQualificationRuleSetInputDto": {
+    "properties": {
+      "rules": {
+        "items": {
+          "$ref": "#/components/schemas/AppActivityQualificationRuleInputDto",
+        },
+        "minItems": 1,
+        "type": "array",
+      },
+      "scope": {
+        "$ref": "#/components/schemas/AppActivityQualificationRuleScopeDto",
+      },
+    },
+    "required": [
+      "scope",
+      "rules",
+    ],
+    "type": "object",
+  },
+  "AppActivityQualificationRulesDto": {
+    "properties": {
+      "ruleSets": {
+        "items": {
+          "$ref": "#/components/schemas/AppActivityQualificationRuleSetDto",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "ruleSets",
+    ],
+    "type": "object",
+  },
   "AppActivityQualificationUnmetRuleDto": {
     "properties": {
       "enforcementCode": {
@@ -10322,6 +10567,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "positions": {
         "$ref": "#/components/schemas/ChangeReviewSessionPositionCollectionsDto",
       },
+      "qualificationRuleSets": {
+        "$ref": "#/components/schemas/ChangeReviewQualificationRuleSetCollectionsDto",
+      },
       "registrationForm": {
         "allOf": [
           {
@@ -10341,6 +10589,85 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "activityPatch",
       "sessions",
       "positions",
+    ],
+    "type": "object",
+  },
+  "ChangeReviewQualificationRuleScopeDto": {
+    "properties": {
+      "positionId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "nullable": true,
+        "type": "string",
+      },
+      "sessionId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "nullable": true,
+        "type": "string",
+      },
+    },
+    "required": [
+      "sessionId",
+      "positionId",
+    ],
+    "type": "object",
+  },
+  "ChangeReviewQualificationRuleSetCancelDto": {
+    "properties": {
+      "scope": {
+        "$ref": "#/components/schemas/ChangeReviewQualificationRuleScopeDto",
+      },
+    },
+    "required": [
+      "scope",
+    ],
+    "type": "object",
+  },
+  "ChangeReviewQualificationRuleSetCollectionsDto": {
+    "properties": {
+      "cancel": {
+        "items": {
+          "$ref": "#/components/schemas/ChangeReviewQualificationRuleSetCancelDto",
+        },
+        "type": "array",
+      },
+      "create": {
+        "items": {
+          "$ref": "#/components/schemas/ChangeReviewQualificationRuleSetUpsertDto",
+        },
+        "type": "array",
+      },
+      "update": {
+        "items": {
+          "$ref": "#/components/schemas/ChangeReviewQualificationRuleSetUpsertDto",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "create",
+      "update",
+      "cancel",
+    ],
+    "type": "object",
+  },
+  "ChangeReviewQualificationRuleSetUpsertDto": {
+    "properties": {
+      "rules": {
+        "items": {
+          "$ref": "#/components/schemas/AppActivityQualificationRuleInputDto",
+        },
+        "minItems": 1,
+        "type": "array",
+      },
+      "scope": {
+        "$ref": "#/components/schemas/ChangeReviewQualificationRuleScopeDto",
+      },
+    },
+    "required": [
+      "scope",
+      "rules",
     ],
     "type": "object",
   },
@@ -10555,6 +10882,12 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "capacity": {
         "nullable": true,
         "type": "number",
+      },
+      "clientRef": {
+        "description": "本次 proposal 内新岗位的稳定引用；qualificationRuleSets 可用该值作为 positionId",
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
       },
       "code": {
         "maxLength": 64,
@@ -18086,6 +18419,20 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     },
     "required": [
       "requiresInsuranceConfirmed",
+    ],
+    "type": "object",
+  },
+  "PutAppManagedActivityQualificationRulesDto": {
+    "properties": {
+      "ruleSets": {
+        "items": {
+          "$ref": "#/components/schemas/AppActivityQualificationRuleSetInputDto",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "ruleSets",
     ],
     "type": "object",
   },
@@ -97447,6 +97794,473 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
         },
       ],
       "summary": "App 发起人提交初次发布审核；服务端冻结 canonical 快照 [auth]",
+      "tags": [
+        "Mobile - Managed Activities",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/qualification-rules": {
+    "get": {
+      "operationId": "AppManagedActivitiesController_getQualificationRules",
+      "parameters": [
+        {
+          "description": "Activity.id",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityQualificationRulesDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作; 21041: 资格规则配置无法安全判定",
+                    "enum": [
+                      20030,
+                      21041,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030) / 资格规则配置无法安全判定(code=21041)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "App 获取本人 managed 活动当前资格规则定义 [auth]",
+      "tags": [
+        "Mobile - Managed Activities",
+      ],
+    },
+    "put": {
+      "operationId": "AppManagedActivitiesController_putQualificationRules",
+      "parameters": [
+        {
+          "description": "Activity.id",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PutAppManagedActivityQualificationRulesDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityQualificationRulesDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20037: 已发布活动修改需先提交审核; 20030: 活动当前状态不允许此操作; 21041: 资格规则配置无法安全判定",
+                    "enum": [
+                      20037,
+                      20030,
+                      21041,
+                    ],
+                    "example": 20037,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "已发布活动修改需先提交审核",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "已发布活动修改需先提交审核(code=20037) / 活动当前状态不允许此操作(code=20030) / 资格规则配置无法安全判定(code=21041)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "App 全量替换本人 draft 活动资格规则；已发布活动须走变更审核 [auth]",
       "tags": [
         "Mobile - Managed Activities",
       ],
