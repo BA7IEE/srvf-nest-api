@@ -17,10 +17,14 @@ import * as os from 'os';
 import * as path from 'path';
 import { checkFragment, mergeIntoChangelog } from './changelog-merge';
 import {
+  checkAiHarnessIndex,
   checkServiceSize,
+  extractSectionAfter,
   isSizedUnit,
   measureNcloc,
+  mentionsDocName,
   serviceSizeInputDigest,
+  siblingLinkTargets,
   type ServiceEntry as SizedUnit,
   type ServiceSizeBaseline,
 } from './check-codemap';
@@ -1718,7 +1722,15 @@ for (const [configName, config] of JEST_CONFIGS) {
   const cases: Array<[string, boolean, string]> = [
     [
       'P2c ci:gate 依赖 redzone-scan 与 redzone-approval',
-      /needs:\s*\[changeset, fast, slow, journeys, redzone-scan, redzone-approval\]/.test(ci),
+      // ⚠️ 逐字钉住**整份** needs 列表,不只钉 redzone 两项 —— 这是有意的:
+      // 从 gate.needs 摘掉 fast / slow / journeys / harness-* 中任何一个,gate 都会在
+      // 那项根本没跑的情况下放行,那正是最该拦的 fail-open。代价是往 gate 加 job 必须
+      // 同步改本行;那不是麻烦,是加 job 该有的摩擦。
+      // harness-selftest / harness-replay 于 2026-08-15 从 fast 拆出(见 ci.yml 两个
+      // job 的头注):它们恒跑、docs-only 也不跳,故 gate 对它们只接受 success。
+      /needs:\s*\[changeset, fast, harness-selftest, harness-replay, slow, journeys, redzone-scan, redzone-approval\]/.test(
+        ci,
+      ),
       'gate 不依赖这两个 job = 审批不影响放行,门形同虚设',
     ],
     [
@@ -4294,6 +4306,68 @@ void (async (): Promise<void> => {
         `entries=${onDisk.entries?.length}`,
       );
     }
+  }
+
+  // ── docs/ai-harness 目录登记(check-codemap 的 ai-harness-index-complete)──
+  //
+  // 守的是「§4 的目录清单 ↔ 磁盘实际文件」。2026-08-15 之前这句话是纯散文,
+  // 于是它从「恰 4 文件」一路漂到 11 个都没人发现(Phase 0-6 共 7 份报告)。
+  //
+  // 下面每条都是**判据绑对**的对照,不是覆盖率装饰:
+  // 尤其「子串不算登记」—— 朴素 includes 会让 RBAC_MAP.md 顺带满足 MAP.md,
+  // 方向是假绿(真没登记的文件被放行),只有正对照抓得到。
+  {
+    const STUB = [
+      '# x',
+      '## 3. 定位路径',
+      '见 [`process`](../process.md) 与 [`GHOST.md`](GHOST.md)。',
+      '## 4. 目录说明',
+      '| [`README.md`](README.md) | 本页 |',
+      '| [`RBAC_MAP.md`](RBAC_MAP.md) | 权限地图 |',
+      '## 5. 其他',
+    ].join('\n');
+    const sev = (docs: string[], md: string): string => checkAiHarnessIndex(docs, md).severity;
+
+    checkEq('目录登记:全部登记 ⇒ PASS', sev(['README.md', 'RBAC_MAP.md'], STUB), 'PASS');
+    checkEq(
+      '目录登记:新增文件未登记 ⇒ FAIL(本检查存在的理由)',
+      sev(['README.md', 'RBAC_MAP.md', 'NEW_REPORT.md'], STUB),
+      'FAIL',
+    );
+    checkEq('目录登记:登记了不存在的文件 ⇒ FAIL(反方向)', sev(['README.md'], STUB), 'FAIL');
+    checkEq(
+      '目录登记:§4 标题缺失 ⇒ FAIL(无法验证 ≠ 通过)',
+      sev(['README.md'], '# x\n## 9. 别的\n'),
+      'FAIL',
+    );
+    checkEq('目录登记:README 读不到 ⇒ FAIL(fail-closed)', sev(['README.md'], ''), 'FAIL');
+    checkEq(
+      '目录登记:子串不算登记(MAP.md 不被 RBAC_MAP.md 盖章)',
+      sev(['README.md', 'RBAC_MAP.md', 'MAP.md'], STUB),
+      'FAIL',
+    );
+    check(
+      '目录登记:只认 §4,节外链接不算登记',
+      !mentionsDocName(extractSectionAfter(STUB, /^##\s*4[.、]?\s*目录说明/m) ?? '', 'GHOST.md'),
+      '§3 里的 GHOST.md 被当成了 §4 的登记',
+    );
+    checkEq(
+      '目录登记:跨目录链接不当成本目录条目',
+      siblingLinkTargets('见 [`p`](../process.md)').length,
+      0,
+    );
+    // 真仓库读数:守护此刻真的绿(否则上面全是对 stub 的自娱自乐)
+    checkEq(
+      '目录登记:真实 docs/ai-harness 当前 PASS',
+      checkAiHarnessIndex(
+        fs
+          .readdirSync(path.resolve(__dirname, '..', 'docs/ai-harness'))
+          .filter((f) => f.endsWith('.md'))
+          .sort(),
+        fs.readFileSync(path.resolve(__dirname, '..', 'docs/ai-harness/README.md'), 'utf-8'),
+      ).severity,
+      'PASS',
+    );
   }
 
   if (knownGaps.length > 0) {

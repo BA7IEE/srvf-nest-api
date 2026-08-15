@@ -57,15 +57,42 @@ AI 不得自行发放授权 —— 自己给自己开通行证,这道闸就没�
 | 文档 | 生成命令 | 新鲜度守护 | 人类保留部分 |
 |---|---|---|---|
 | [`RBAC_MAP.md`](RBAC_MAP.md) 派生段 | `pnpm docs:rbacmap` | `pnpm docs:rbacmap:check`(重新生成并比对) | 双轨架构叙事 / 保护不变式 / 缺口与冻结存量 / AI 硬规则 |
+| [`ROUTE_AUTHZ.md`](ROUTE_AUTHZ.md) **整份** | `pnpm docs:authz` | `pnpm docs:authz:check`(重新生成并比对) | 无 —— 头注即写 "Do not hand-edit" |
 
-生成段夹在 `<!-- rbac:begin -->` / `<!-- rbac:end -->` 之间,**禁手改**(改了新鲜度校验当场红,并提示跑生成命令)。
-权威源:权限码 → `prisma/seed.ts`;controller 前缀 → `@Controller` 装饰器。
+RBAC_MAP 的生成段夹在 `<!-- rbac:begin -->` / `<!-- rbac:end -->` 之间,**禁手改**(改了新鲜度校验当场红,并提示跑生成命令);ROUTE_AUTHZ 没有人类保留段,任何手改都会被 `docs:authz:check` 判红。
+权威源:权限码 → `prisma/seed.ts`;controller 前缀 → `@Controller` 装饰器;路由授权声明 → controller 内的规范化声明(`normalizeRouteAuthzDeclaration`)。
 
 RBAC_MAP 的 75 行逐 PR 历史「戳」已归档至 [`archive/ai-harness/rbac-map-stamps.md`](../archive/ai-harness/rbac-map-stamps.md) —— 那是与 CHANGELOG 重复的历史叙事,读者要得出「现在权限长什么样」却必须在脑内折叠全部戳;现状已可直接生成,故戳不再占据理解路径。
 
-## 2. 守护命令(全部挂 CI)
+## 2. 守护命令
 
-`pnpm docs:readtax:check`(恒读层体积预算)· `pnpm docs:counts:check`(current-state §1 事实计数)· `pnpm docs:codemap:check` · `pnpm docs:rbacmap:check`;CHANGELOG fragment 归并:`pnpm changelog:merge`(bump 前,总控执行)。
+以下十二条同挂 CI 的 **Fast checks** job,且**不随 docs-only 短路**(lint / typecheck / build / unit 会因 docs-only 跳过,守护步骤不会 —— 否则 docs PR 恰好绕开了守 docs 的那些检查):
+
+| 命令 | 守什么 | 阻断 |
+|---|---|---|
+| `pnpm docs:readtax:check` | 恒读层体积预算 | ✅ |
+| `pnpm docs:counts:check` | current-state §1 事实计数 | ✅ |
+| `pnpm docs:codemap:check` | CODEMAP 新鲜度(逐字 diff)+ 结构漂移 | ✅ |
+| `pnpm docs:rbacmap:check` | RBAC_MAP 生成段新鲜度 + 结构 | ✅ |
+| `pnpm docs:openapi:check` | `docs/handoff/openapi.json` 契约新鲜度 | ✅ |
+| `pnpm docs:feclient:check` | `docs/handoff/clients/**` FE client 新鲜度 | ✅ |
+| `pnpm docs:boundaries:check` | A 类 metadata 完整性(R1/R4/R7/R10) | ✅ |
+| `pnpm docs:boundaries:ids:check` | 已登记债务的 call-site 身份仍解析得开 | ✅ |
+| `pnpm docs:authz:check` | ROUTE_AUTHZ manifest 新鲜度 | ✅ |
+| `pnpm gate:authz:graph:check` | R14 蕴含图注册表完整性 | ✅ |
+| `pnpm docs:boundaries` | R5/R6 边界违规观察(B 类) | ❌ report |
+| `pnpm harness:servicesize` | 大 service 尺寸棘轮(Phase 6-A) | ❌ report |
+
+末两条是 report 期项目,各由**一个** `|| true` 兜住(全 workflow 恰这两处);脚本本身有发现即退出 1,所以转 blocking = 删掉那一行,一行,且不可能只翻一半。
+
+守卫的守卫(`pnpm harness:selftest` / `pnpm harness:replay`)同在该 job,见 §1.5。
+
+**不在 Fast checks 的两类**(把它们并进上表就是假读数):
+
+- **base-trusted 语义门**:`pnpm gate:authz:semantic`(R14 授权)/ `pnpm gate:contract:semantic`(R11 契约)。本地形态只是**自查**;权威裁决恒在 `.github/workflows/redzone-trusted.yml`,用 **base 分支**的判据跑 —— PR 改不动自己的裁判,代价是新门合入后的下一个 PR 才真跑。详见 [`SEMANTIC_GATES.md`](SEMANTIC_GATES.md)。
+- **本地专用,未接 CI**:`pnpm docs:boundaries:debt:check`(债务台账语义字段完整性)。
+
+CHANGELOG fragment 归并:`pnpm changelog:merge`(bump 前,总控执行;是流程步骤,不是守护)。
 
 ## 3. 定位路径
 
@@ -73,6 +100,39 @@ RBAC_MAP 的 75 行逐 PR 历史「戳」已归档至 [`archive/ai-harness/rbac-
 
 ## 4. 目录说明
 
-本目录恰 4 文件:**README.md**(本页)/ **codex-review-sop.md**(跨模型评审 SOP,沿 process §8.3)/ **RBAC_MAP.md**(权限地图;派生段由 `pnpm docs:rbacmap` **生成**,新鲜度由 `docs:rbacmap:check` 守护)/ **NEXT_TASKS.md**(后续任务清单;逐项单独立项,AI 不自动启动)。
+本目录按**维护方式**分三组 —— 三组的写入权、更新时机、能不能手改各不相同,动手前先认组。
+(不写"恰 N 文件":那个数字本身会漂,而且漂了没人知道 —— 2026-08-15 本节从"恰 4 文件"true-up 时,实际已是 11 个。)
+
+### 4.1 操作页(人手维护,读者入口)
+
+| 文件 | 内容 |
+|---|---|
+| [`README.md`](README.md) | 本页:开工命令 / 执法层 / 派生文档 / 守护命令 / 定位路径 / 目录说明 |
+| [`codex-review-sop.md`](codex-review-sop.md) | 跨模型评审 SOP(何时评审 / 投放模板 / findings 处置);协议条文在 [`process §8.3`](../process.md) |
+| [`NEXT_TASKS.md`](NEXT_TASKS.md) | 后续任务清单(P0/P1/P2);逐项单独立项,**AI 不自动启动**(process §7) |
+
+### 4.2 派生地图(生成物,手改即红)
+
+| 文件 | 生成 / 守护 |
+|---|---|
+| [`RBAC_MAP.md`](RBAC_MAP.md) | 派生段 `pnpm docs:rbacmap` 生成 · `docs:rbacmap:check` 守护;人类保留段见 §1.6 |
+| [`ROUTE_AUTHZ.md`](ROUTE_AUTHZ.md) 🔒 | **整份**由 `pnpm docs:authz` 生成 · `docs:authz:check` 守护;同时是 R14 授权语义门的比对对象 |
+
+### 4.3 治理报告(架构治理 v4 各 Phase 的取证留痕;写就即固定,不再生)
+
+| 文件 | 阶段 / 内容 |
+|---|---|
+| [`BASELINE_HEALTH.md`](BASELINE_HEALTH.md) 🔒 | Phase 0:main 一次冷跑的健康基线,后续 "zero-new-red" 的对照起点 |
+| [`EXTERNAL_IO_INVENTORY.md`](EXTERNAL_IO_INVENTORY.md) 🔒 | Phase 0:外部 I/O 盘点(宪法 C7 观察表) |
+| [`BOUNDARY_OBSERVATIONS.md`](BOUNDARY_OBSERVATIONS.md) | Phase 2:R5/R6 边界观察 + 跨属主写债务台账(report-only) |
+| [`SCANNER_AST_MIGRATION.md`](SCANNER_AST_MIGRATION.md) | Phase 3 前置:三扫描器 typed-AST 化的能力对比与 R8 重扫 |
+| [`SEMANTIC_GATES.md`](SEMANTIC_GATES.md) | Phase 5:R14 / R11 / FE client 三道语义门收口 |
+| [`SERVICE_SIZE_RATCHET.md`](SERVICE_SIZE_RATCHET.md) | Phase 6-A:大 service 尺寸棘轮立闸(NCLOC 口径 / 基线 / Exit Criteria) |
+
+🔒 = 该文件在 [`redzone.json`](../../harness/redzone.json) 的 `selfGuard` 内,改动需维护者 `pnpm harness:grant` + `harness-review` 环境审批。
+
+**往本目录放新文件的义务**:同一个 PR 里把它加进上面三张表之一 —— 这条**有执行位**,不是文字要求:`pnpm docs:codemap:check` 的 `ai-harness-index-complete` 双向比对本节清单与目录实际文件,任一方向不符即 **FAIL**(它跑在 CI Fast checks 里,且不随 docs-only 短路)。§4 标题被改名或删除同样 FAIL —— 无法验证 ≠ 通过。
+
+治理报告是本目录增长最快的一类(Phase 0→6 六份),本节此前正是这样漂成"恰 4 文件"的:少登记一条**不产生任何坏链接**,所以既有的 `referenced-paths-exist` 十一次都没响。
 
 本目录更新一律走 A 档 PR(权限**事实**变更本身是 D 档,本目录只能事后 true-up);沿 process §6"无守护不留",不再新增无守护的派生地图。2026-06-10 Review 冻结档在 [`../archive/ai-harness/`](../archive/ai-harness/)。
