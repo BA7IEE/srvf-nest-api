@@ -12,6 +12,7 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { MemberAuditRecorder } from './member-audit-recorder';
 import type { ActivityMemberOffboardImpactService } from '../activities/activity-member-offboard-impact.service';
 import type { AuthzService } from '../authz/authz.service';
 import type { PrismaService } from '../../database/prisma.service';
@@ -74,7 +75,11 @@ const lastAdminProtectionNoop = {
   acquireOpsAdminInvariantLock: jest.fn().mockResolvedValue(undefined),
   assertCanDeactivateOpsAdminUser: jest.fn().mockResolvedValue(undefined),
 } as unknown as LastAdminProtectionPolicy;
-const auditNoop = { log: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogsService;
+// Phase 6-B 第二刀:audit payload 组装移入 MemberAuditRecorder,service 只透传 tx + 上下文。
+// grantAccount 的 P2002 兜底在 audit 之前触发,故这里只需 accountGranted 一个 noop。
+const auditNoop = {
+  accountGranted: jest.fn().mockResolvedValue(undefined),
+} as unknown as MemberAuditRecorder;
 const activityOffboardImpactNoop = {
   getImpact: jest.fn().mockResolvedValue({
     draftInitiatedActivities: [],
@@ -274,7 +279,9 @@ describe('MembersService member lifecycle authorization closure', () => {
       rbacAllow,
       authzAllow,
       lastAdminProtection,
-      audit as unknown as AuditLogsService,
+      // 第二刀:接**真** recorder(而不是把它 stub 掉)——下面对 event / extra / tx 的
+      // 断言因此逐字不变,且额外证明了 recorder 组装出的 payload 与抽出前一致。
+      new MemberAuditRecorder(audit as unknown as AuditLogsService),
       activityOffboardImpactNoop,
       membersQueryStub,
     );

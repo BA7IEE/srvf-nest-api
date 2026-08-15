@@ -21,7 +21,6 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { runMemberLinearizedTransaction } from '../../common/prisma/member-advisory-lock.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ActivityMemberOffboardImpactService } from '../activities/activity-member-offboard-impact.service';
 import { lockAuthSessionUser } from '../auth/auth-session-lock';
@@ -31,7 +30,6 @@ import type { VisibleOrganizationScope } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
 import { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
 import { RbacService } from '../permissions/rbac.service';
-import { maskPhone } from '../sms/sms.constants';
 import { assertEnrollmentIdentityChangeAllowed } from '../team-join/team-join-enrollment-invariant';
 // T4(D-WC-10):撤销原语归 users(见该文件头注「为什么落在 users 而不是 wecom」)。
 // 纯 tx 函数,与既有 `auth/auth-session-lock` 同型 —— 不注入 UsersService、不产生模块环。
@@ -60,6 +58,8 @@ import {
   lockMemberLifecycle,
   lockLiveUserLifecycle,
 } from './member-lifecycle-lock';
+import { MemberAuditRecorder } from './member-audit-recorder';
+import type { MemberAuditContext } from './member-audit-recorder';
 import { MembersQueryService, memberSafeSelect } from './members-query.service';
 import type { SafeMember } from './members-query.service';
 
@@ -75,6 +75,16 @@ const MEMBER_GRADE_DICT_CODE = 'member_grade';
 // 写路径回读 import 复用同一份,不另起第二份投影。
 type PrismaTx = Prisma.TransactionClient;
 
+// 第二刀:六个 audit 事件共用的调用者上下文(actor 快照 + 资源定位 + 请求 meta)。
+// payload 组装归 `member-audit-recorder.ts`,事务与调用顺序仍归本 service。
+function auditCtx(
+  memberId: string,
+  currentUser: CurrentUserPayload,
+  auditMeta: AuditMeta,
+): MemberAuditContext {
+  return { memberId, currentUser, auditMeta };
+}
+
 @Injectable()
 export class MembersService {
   constructor(
@@ -82,7 +92,7 @@ export class MembersService {
     private readonly rbac: RbacService,
     private readonly authz: AuthzService,
     private readonly lastAdminProtection: LastAdminProtectionPolicy,
-    private readonly auditLogs: AuditLogsService,
+    private readonly auditRecorder: MemberAuditRecorder,
     private readonly activityOffboardImpact: ActivityMemberOffboardImpactService,
     private readonly query: MembersQueryService,
   ) {}
@@ -512,15 +522,9 @@ export class MembersService {
         }),
       );
 
-      await this.auditLogs.log({
-        event: 'member.account-granted',
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        resourceType: 'member',
-        resourceId: id,
-        meta: auditMeta,
-        extra: { memberId: id, userId: created.id, phone: maskPhone(phone) },
-        tx,
+      await this.auditRecorder.accountGranted(tx, auditCtx(id, currentUser, auditMeta), {
+        userId: created.id,
+        phone,
       });
 
       return {
@@ -601,15 +605,8 @@ export class MembersService {
         }),
       );
 
-      await this.auditLogs.log({
-        event: 'member.account-bound',
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        resourceType: 'member',
-        resourceId: id,
-        meta: auditMeta,
-        extra: { memberId: id, userId: updated.id },
-        tx,
+      await this.auditRecorder.accountBound(tx, auditCtx(id, currentUser, auditMeta), {
+        userId: updated.id,
       });
 
       return this.attachAccountInfo(member, { id: updated.id, status: updated.status });
@@ -643,15 +640,8 @@ export class MembersService {
         data: { memberId: null },
       });
 
-      await this.auditLogs.log({
-        event: 'member.account-unbound',
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        resourceType: 'member',
-        resourceId: id,
-        meta: auditMeta,
-        extra: { memberId: id, userId: linked.id },
-        tx,
+      await this.auditRecorder.accountUnbound(tx, auditCtx(id, currentUser, auditMeta), {
+        userId: linked.id,
       });
 
       return this.attachAccountInfo(member, undefined);
@@ -779,23 +769,12 @@ export class MembersService {
         }),
       );
 
-      await this.auditLogs.log({
-        event: 'member.account-reopened',
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        resourceType: 'member',
-        resourceId: id,
-        meta: auditMeta,
-        extra: {
-          memberId: id,
-          oldUserId: lockedOldLink.id,
-          newUserId: created.id,
-          phone: maskPhone(dto.phone),
-          // T4 / 冻结稿 §11.3 末条:复用既有 umbrella 事件,extra 只加一个计数,
-          // 不为撤销这条腿另造事件。恒写数值(含 0),与 refreshTokensRevoked 同型。
-          wecomIdentitiesRevoked: wecomRevocation.count,
-        },
-        tx,
+      await this.auditRecorder.accountReopened(tx, auditCtx(id, currentUser, auditMeta), {
+        oldUserId: lockedOldLink.id,
+        newUserId: created.id,
+        phone: dto.phone,
+        // T4 / 冻结稿 §11.3 末条:恒写数值(含 0),与 refreshTokensRevoked 同型。
+        wecomIdentitiesRevoked: wecomRevocation.count,
       });
 
       return {
@@ -888,17 +867,11 @@ export class MembersService {
         refreshTokensRevoked = revoked.count;
       }
 
-      await this.auditLogs.log({
-        event: 'member.account.status-change',
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        resourceType: 'member',
-        resourceId: id,
-        meta: auditMeta,
-        before: { status: lockedLinked.status },
-        after: { status: updated.status },
-        extra: { linkedUserId: updated.id, refreshTokensRevoked },
-        tx,
+      await this.auditRecorder.accountStatusChanged(tx, auditCtx(id, currentUser, auditMeta), {
+        beforeStatus: lockedLinked.status,
+        afterStatus: updated.status,
+        linkedUserId: updated.id,
+        refreshTokensRevoked,
       });
 
       return this.attachAccountInfo(member, { id: updated.id, status: updated.status });
@@ -1168,27 +1141,18 @@ export class MembersService {
       ]);
 
       // ④ 伞 audit(一条 member.offboard,extra 记各腿实际发生计数)。
-      await this.auditLogs.log({
-        event: 'member.offboard',
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        resourceType: 'member',
-        resourceId: id,
-        meta: auditMeta,
-        extra: {
-          memberDeactivated,
-          membershipsEnded: endedMemberships.count,
-          accountDisabled,
-          refreshTokensRevoked,
-          linkedUserId: linked?.id ?? null,
-          positionAssignmentsRevoked: revokedPositionAssignments.count,
-          supervisionsRevoked: revokedSupervisions.count,
-          activityResponsibilitiesEnded: endedActivityResponsibilities.count,
-          roleBindingsEnded: endedRoleBindings.count,
-          residualActivePositionAssignments,
-          residualActiveSupervisions,
-        },
-        tx,
+      await this.auditRecorder.offboard(tx, auditCtx(id, currentUser, auditMeta), {
+        memberDeactivated,
+        membershipsEnded: endedMemberships.count,
+        accountDisabled,
+        refreshTokensRevoked,
+        linkedUserId: linked?.id ?? null,
+        positionAssignmentsRevoked: revokedPositionAssignments.count,
+        supervisionsRevoked: revokedSupervisions.count,
+        activityResponsibilitiesEnded: endedActivityResponsibilities.count,
+        roleBindingsEnded: endedRoleBindings.count,
+        residualActivePositionAssignments,
+        residualActiveSupervisions,
       });
 
       // 回读 member(INACTIVE 后)+ 账号信息,组装响应。
