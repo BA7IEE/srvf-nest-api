@@ -2,8 +2,6 @@ import { Injectable } from '@nestjs/common';
 import {
   AssignmentStatus,
   BindingStatus,
-  DictItemStatus,
-  DictTypeStatus,
   MemberStatus,
   MembershipStatus,
   PrincipalType,
@@ -62,14 +60,12 @@ import { MemberAuditRecorder } from './member-audit-recorder';
 import type { MemberAuditContext } from './member-audit-recorder';
 import { MembersQueryService, memberSafeSelect } from './members-query.service';
 import type { SafeMember } from './members-query.service';
+import { attachAccountInfo } from './members.presenter';
+import { assertGradeCodeValid, normalizeMemberNo } from './members.policy';
 
 // 队员账号闭环 v1(MVP,2026-07-07):BCRYPT_SALT_ROUNDS 与 users.service / recruitment-promotion.service
 // 同值(各模块级声明,沿既有惯例)。
 const BCRYPT_SALT_ROUNDS = 10;
-
-// 队员等级 dict_type code(seed 内置真实值 member_grade,R13 收窄后队内分类可内置;详见 prisma/seed.ts V2_DICT_SEED)。
-// 模块内常量化:Step 4 organizations 自有 'node_type';如未来需跨模块复用再抽 common。
-const MEMBER_GRADE_DICT_CODE = 'member_grade';
 
 // 对外 select 与其行类型已随第一刀移入 `members-query.service.ts`(§3.2 select strategy),
 // 写路径回读 import 复用同一份,不另起第二份投影。
@@ -114,11 +110,6 @@ export class MembersService {
     throw new BizException(BizCode.RBAC_FORBIDDEN);
   }
 
-  // memberNo 入库前 trim(保留原大小写,与 v1 username 的 toLowerCase 不同 — 编号即身份)
-  private normalizeMemberNo(raw: string): string {
-    return raw.trim();
-  }
-
   private async findMemberOrThrow(id: string, tx?: PrismaTx): Promise<SafeMember> {
     const client = tx ?? this.prisma;
     const found = await client.member.findFirst({
@@ -127,31 +118,6 @@ export class MembersService {
     });
     if (!found) throw new BizException(BizCode.MEMBER_NOT_FOUND);
     return found;
-  }
-
-  // gradeCode 6 项 AND 校验(对应 docs/v2-api-contract.md §4.3,与 organizations 同模式):
-  //   dict_type.code = MEMBER_GRADE_DICT_CODE
-  //   dict_type.status = ACTIVE
-  //   dict_type.deletedAt = null
-  //   dict_item.code = gradeCode
-  //   dict_item.status = ACTIVE
-  //   dict_item.deletedAt = null
-  private async assertGradeCodeValid(gradeCode: string, tx?: PrismaTx): Promise<void> {
-    const client = tx ?? this.prisma;
-    const item = await client.dictItem.findFirst({
-      where: {
-        code: gradeCode,
-        status: DictItemStatus.ACTIVE,
-        deletedAt: null,
-        type: {
-          code: MEMBER_GRADE_DICT_CODE,
-          status: DictTypeStatus.ACTIVE,
-          deletedAt: null,
-        },
-      },
-      select: { id: true },
-    });
-    if (!item) throw new BizException(BizCode.MEMBER_GRADE_CODE_INVALID);
   }
 
   // 唯一性预检查:必须 findUnique 包含软删记录(memberNo 全局唯一不复用,memberNo
@@ -230,18 +196,6 @@ export class MembersService {
   // 同时存在 1 条软删历史行 + 1 条 live 行,查询显式收窄 `deletedAt: null`——hasAccount
   // 语义随之从"槽位是否被任何行占用过"收窄为"当前是否有 live 绑定",与 grantAccount()
   // 的 MEMBER_HAS_LINKED_USER 判定(同样只查 live)口径一致。
-  private attachAccountInfo(
-    member: SafeMember,
-    linked: { id: string; status: UserStatus } | undefined,
-  ): MemberResponseDto {
-    return {
-      ...member,
-      hasAccount: linked !== undefined,
-      accountStatus: linked?.status ?? null,
-      userId: linked?.id ?? null,
-    };
-  }
-
   // ============ list ============
 
   // v0.49 部门数据范围的**判权腿**:解析该 action 的可见组织集合,无有效码即 30100。
@@ -269,7 +223,7 @@ export class MembersService {
     const { items, total } = await this.query.list(query, authScope);
     const linkedByMemberId = await this.query.loadLinkedUsersByMemberIds(items.map((m) => m.id));
     return {
-      items: items.map((m) => this.attachAccountInfo(m, linkedByMemberId.get(m.id))),
+      items: items.map((m) => attachAccountInfo(m, linkedByMemberId.get(m.id))),
       total,
       page: query.page,
       pageSize: query.pageSize,
@@ -291,12 +245,12 @@ export class MembersService {
 
   async create(dto: CreateMemberDto, currentUser: CurrentUserPayload): Promise<MemberResponseDto> {
     await this.assertCanOrThrow(currentUser, 'member.create.record');
-    const memberNo = this.normalizeMemberNo(dto.memberNo);
+    const memberNo = normalizeMemberNo(dto.memberNo);
 
     return this.prisma.$transaction(async (tx) => {
       // 1. gradeCode 校验(若提供)— 在唯一性预检查之前,业务校验先于资源约束
       if (dto.gradeCode !== undefined) {
-        await this.assertGradeCodeValid(dto.gradeCode, tx);
+        await assertGradeCodeValid(tx, dto.gradeCode);
       }
 
       // 2. memberNo 唯一性预检查(包含软删)
@@ -313,7 +267,7 @@ export class MembersService {
         }),
       );
       // 新建 member.id 刚生成,不可能已有关联 User(队员账号闭环 v1;免一次多余查询)。
-      return this.attachAccountInfo(created, undefined);
+      return attachAccountInfo(created, undefined);
     });
   }
 
@@ -323,7 +277,7 @@ export class MembersService {
     await this.assertCanOrThrow(currentUser, 'member.read.record', { type: 'member', id });
     const member = await this.findMemberOrThrow(id);
     const linked = await this.query.findLinkedUser(id);
-    return this.attachAccountInfo(member, linked);
+    return attachAccountInfo(member, linked);
   }
 
   // ============ update ============
@@ -347,7 +301,7 @@ export class MembersService {
       await this.findMemberOrThrow(id, tx);
 
       if (dto.gradeCode !== undefined) {
-        await this.assertGradeCodeValid(dto.gradeCode, tx);
+        await assertGradeCodeValid(tx, dto.gradeCode);
       }
 
       const data: Prisma.MemberUpdateInput = {};
@@ -360,7 +314,7 @@ export class MembersService {
         select: memberSafeSelect,
       });
       const linked = await this.query.findLinkedUser(id, tx);
-      return this.attachAccountInfo(updated, linked);
+      return attachAccountInfo(updated, linked);
     });
   }
 
@@ -387,7 +341,7 @@ export class MembersService {
         select: memberSafeSelect,
       });
       const linked = await this.query.findLinkedUser(id, tx);
-      return this.attachAccountInfo(updated, linked);
+      return attachAccountInfo(updated, linked);
     });
   }
 
@@ -428,7 +382,7 @@ export class MembersService {
         select: memberSafeSelect,
       });
       const linked = await this.query.findLinkedUser(id, tx);
-      return this.attachAccountInfo(updated, linked);
+      return attachAccountInfo(updated, linked);
     });
   }
 
@@ -609,7 +563,7 @@ export class MembersService {
         userId: updated.id,
       });
 
-      return this.attachAccountInfo(member, { id: updated.id, status: updated.status });
+      return attachAccountInfo(member, { id: updated.id, status: updated.status });
     });
   }
 
@@ -644,7 +598,7 @@ export class MembersService {
         userId: linked.id,
       });
 
-      return this.attachAccountInfo(member, undefined);
+      return attachAccountInfo(member, undefined);
     });
   }
 
@@ -874,7 +828,7 @@ export class MembersService {
         refreshTokensRevoked,
       });
 
-      return this.attachAccountInfo(member, { id: updated.id, status: updated.status });
+      return attachAccountInfo(member, { id: updated.id, status: updated.status });
     });
   }
 
@@ -1158,7 +1112,7 @@ export class MembersService {
       // 回读 member(INACTIVE 后)+ 账号信息,组装响应。
       const after = await this.findMemberOrThrow(id, tx);
       return {
-        member: this.attachAccountInfo(
+        member: attachAccountInfo(
           after,
           linked ? { id: linked.id, status: UserStatus.DISABLED } : undefined,
         ),

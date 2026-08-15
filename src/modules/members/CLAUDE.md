@@ -53,6 +53,13 @@
   status、extra 只含 linkedUserId/refreshTokensRevoked)由 `member-audit-recorder.spec.ts` 用**完整字段集
   相等**(非 objectContaining)钉住 —— 多写一个字段同样红。
 
+- **`members.presenter.ts` / `members.policy.ts`(第三刀,§3.1 / §3.3)**:`attachAccountInfo`(对外 DTO
+  的 hasAccount / accountStatus / userId 三字段)与 `normalizeMemberNo`、`assertGradeCodeValid`。
+  两者都是**自由函数、入参即全部依赖**:不 import `prisma.service`、不注入 service、不开事务、不判权;
+  `assertGradeCodeValid` 的 client 由调用方(事务内即 `tx`)传入。
+  **刻意留在 service 未搬**:`assertCanOrThrow`(判权)、`runWithUniqueConstraintGuard`(P2002 错误映射,
+  包着调用方回调属编排)、`assertMemberNoUnique`(与 `assertGradeCodeValid` 同型,goal 只点名搬后者)。
+
 ## Risk points
 
 - ❌ 不复用 `UsersService`、不引入模块环，也不把 policy 调用移到事务外。
