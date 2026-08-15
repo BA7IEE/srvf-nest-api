@@ -1952,13 +1952,17 @@ describe('OpenAPI 契约快照', () => {
     const review = schemas.ChangeReviewDto as OpenApiSchema;
     const positionCreate = schemas.ChangeReviewSessionPositionCreateDto as OpenApiSchema;
 
-    expect(get?.responses?.['200']?.content?.['application/json']?.schema?.properties?.data).toEqual({
+    expect(
+      get?.responses?.['200']?.content?.['application/json']?.schema?.properties?.data,
+    ).toEqual({
       $ref: '#/components/schemas/AppActivityQualificationRulesDto',
     });
     expect(put?.requestBody?.content?.['application/json']?.schema).toEqual({
       $ref: '#/components/schemas/PutAppManagedActivityQualificationRulesDto',
     });
-    expect(put?.responses?.['200']?.content?.['application/json']?.schema?.properties?.data).toEqual({
+    expect(
+      put?.responses?.['200']?.content?.['application/json']?.schema?.properties?.data,
+    ).toEqual({
       $ref: '#/components/schemas/AppActivityQualificationRulesDto',
     });
     expect(input.properties?.ruleTypeCode?.enum).toEqual([

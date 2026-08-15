@@ -107,7 +107,10 @@ function utf8Compare(left: string, right: string): number {
   return Buffer.compare(Buffer.from(left, 'utf8'), Buffer.from(right, 'utf8'));
 }
 
-export function compareQualificationScope(left: QualificationRuleScope, right: QualificationRuleScope): number {
+export function compareQualificationScope(
+  left: QualificationRuleScope,
+  right: QualificationRuleScope,
+): number {
   const level = (scope: QualificationRuleScope): number =>
     scope.positionId !== null ? 2 : scope.sessionId !== null ? 1 : 0;
   const levelComparison = level(left) - level(right);
@@ -163,12 +166,16 @@ function canonicalAge(value: unknown, code: keyof typeof BizCode): number | null
   return value;
 }
 
-function canonicalRule(input: QualificationRuleInput, code: keyof typeof BizCode): CanonicalQualificationRule {
+function canonicalRule(
+  input: QualificationRuleInput,
+  code: keyof typeof BizCode,
+): CanonicalQualificationRule {
   if (!input || typeof input !== 'object') fail(code);
   if (!(QUALIFICATION_RULE_TYPES as readonly string[]).includes(input.ruleTypeCode)) fail(code);
   if (input.enforcementCode !== 'block' && input.enforcementCode !== 'warn') fail(code);
   if (!Number.isSafeInteger(input.sortOrder) || input.sortOrder < 0) fail(code);
-  if (input.message !== undefined && input.message !== null && !nonEmptyString(input.message)) fail(code);
+  if (input.message !== undefined && input.message !== null && !nonEmptyString(input.message))
+    fail(code);
   const message = input.message ?? null;
   let warnScore: number | null;
   if (input.enforcementCode === 'warn') {
@@ -199,7 +206,8 @@ function canonicalRule(input: QualificationRuleInput, code: keyof typeof BizCode
     return { ...common, operator: 'in', codes: canonicalStringArray(input.codes, code) };
   }
   if (input.ruleTypeCode === 'organization') {
-    if (input.operator !== 'in_subtree' || hasUnexpectedValue(input, ['organizationIds'])) fail(code);
+    if (input.operator !== 'in_subtree' || hasUnexpectedValue(input, ['organizationIds']))
+      fail(code);
     return {
       ...common,
       operator: 'in_subtree',
@@ -289,7 +297,10 @@ function storedArray(value: Prisma.JsonValue | null, key: string): string[] | un
   return Array.isArray(result) ? (result as string[]) : undefined;
 }
 
-function storedRuleToInput(rule: PersistedRule, code: keyof typeof BizCode): QualificationRuleInput {
+function storedRuleToInput(
+  rule: PersistedRule,
+  code: keyof typeof BizCode,
+): QualificationRuleInput {
   if (rule.enforcementCode === 'block' && rule.warnScore !== null) fail(code);
   const common = {
     ruleTypeCode: rule.ruleTypeCode as QualificationRuleType,
@@ -311,10 +322,7 @@ function storedRuleToInput(rule: PersistedRule, code: keyof typeof BizCode): Qua
   if (rule.ruleTypeCode === 'age') {
     if (!isRecord(rule.valueJson)) fail(code);
     const keys = Object.keys(rule.valueJson).sort();
-    if (
-      keys.length === 0 ||
-      keys.some((key) => key !== 'minYears' && key !== 'maxYears')
-    ) {
+    if (keys.length === 0 || keys.some((key) => key !== 'minYears' && key !== 'maxYears')) {
       fail(code);
     }
     return {
@@ -347,16 +355,16 @@ export function qualificationRuleSetsFromStored(
 export function qualificationRuleStoredValue(
   rule: CanonicalQualificationRule,
 ): Prisma.InputJsonValue | typeof Prisma.DbNull {
-  if ('codes' in rule) return { codes: rule.codes } as Prisma.InputJsonValue;
+  if ('codes' in rule) return { codes: rule.codes };
   if ('organizationIds' in rule) {
-    return { organizationIds: rule.organizationIds } as Prisma.InputJsonValue;
+    return { organizationIds: rule.organizationIds };
   }
-  if ('standardIds' in rule) return { standardIds: rule.standardIds } as Prisma.InputJsonValue;
+  if ('standardIds' in rule) return { standardIds: rule.standardIds };
   if (rule.ruleTypeCode === 'age') {
     return {
       ...(rule.minYears === null ? {} : { minYears: rule.minYears }),
       ...(rule.maxYears === null ? {} : { maxYears: rule.maxYears }),
-    } as Prisma.InputJsonValue;
+    };
   }
   return Prisma.DbNull;
 }

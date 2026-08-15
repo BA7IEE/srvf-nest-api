@@ -2,8 +2,11 @@ import { Role, UserStatus } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import type { ActivityDraftAuditRecorder } from './activity-draft-audit-recorder';
 import { canonicalizeQualificationRuleSets } from './qualification-rule-set-definition';
 import { QualificationRuleSetVersionService } from './qualification-rule-set-version.service';
+
+type DraftAuditInput = Parameters<ActivityDraftAuditRecorder['log']>[0];
 
 const USER: CurrentUserPayload = {
   id: 'qualification-owner-user',
@@ -60,7 +63,9 @@ function input(codes: string[] = ['L1']) {
   };
 }
 
-function harness(options: { draft?: Record<string, unknown>[]; active?: Record<string, unknown>[] } = {}) {
+function harness(
+  options: { draft?: Record<string, unknown>[]; active?: Record<string, unknown>[] } = {},
+) {
   const draft = options.draft ?? [row()];
   const active = options.active ?? [];
   let activeRead = 0;
@@ -78,9 +83,13 @@ function harness(options: { draft?: Record<string, unknown>[]; active?: Record<s
         activeRead += 1;
         return Promise.resolve(activeRead === 1 ? active : refreshedActive);
       }),
-      update: jest.fn().mockResolvedValue({}),
-      aggregate: jest.fn().mockResolvedValue({ _max: { version: 1 } }),
-      create: jest.fn().mockResolvedValue({ id: 'qualification-version-2' }),
+      update: jest.fn<Promise<unknown>, [unknown]>().mockResolvedValue({}),
+      aggregate: jest
+        .fn<Promise<{ _max: { version: number } }>, [unknown]>()
+        .mockResolvedValue({ _max: { version: 1 } }),
+      create: jest
+        .fn<Promise<{ id: string }>, [unknown]>()
+        .mockResolvedValue({ id: 'qualification-version-2' }),
     },
   };
   const prisma = {
@@ -88,12 +97,25 @@ function harness(options: { draft?: Record<string, unknown>[]; active?: Record<s
     activityQualificationRuleSet: tx.activityQualificationRuleSet,
     activitySessionPosition: tx.activitySessionPosition,
   };
-  const audit = { log: jest.fn().mockResolvedValue(undefined) };
+  const audit = {
+    log: jest.fn<Promise<void>, [DraftAuditInput]>().mockResolvedValue(undefined),
+  };
   return {
     service: new QualificationRuleSetVersionService(prisma as never, audit as never),
     tx,
     audit,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function createdRuleSetData(call: unknown): Record<string, unknown> {
+  if (!isRecord(call) || !isRecord(call.data)) {
+    throw new Error('expected RuleSet create call with an object data payload');
+  }
+  return call.data;
 }
 
 describe('QualificationRuleSetVersionService', () => {
@@ -104,7 +126,9 @@ describe('QualificationRuleSetVersionService', () => {
       service.putManaged('qualification-activity-1', input(['L1']), USER, META),
     ).resolves.toEqual(
       expect.objectContaining({
-        ruleSets: [expect.objectContaining({ version: 1, scope: { sessionId: null, positionId: null } })],
+        ruleSets: [
+          expect.objectContaining({ version: 1, scope: { sessionId: null, positionId: null } }),
+        ],
       }),
     );
     expect(tx.activityQualificationRuleSet.update).not.toHaveBeenCalled();
@@ -123,11 +147,9 @@ describe('QualificationRuleSetVersionService', () => {
         data: { statusCode: 'retired' },
       }),
     );
-    expect(tx.activityQualificationRuleSet.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ statusCode: 'draft', version: 2 }),
-      }),
-    );
+    const created = createdRuleSetData(tx.activityQualificationRuleSet.create.mock.calls[0]?.[0]);
+    expect(created.statusCode).toBe('draft');
+    expect(created.version).toBe(2);
     expect(audit.log).toHaveBeenCalledWith(
       expect.objectContaining({
         changedFields: ['qualificationRuleSets'],
@@ -156,9 +178,8 @@ describe('QualificationRuleSetVersionService', () => {
 
     // Mutation target: creating the nested child rules directly below an active parent is
     // rejected by D83's parent-freeze trigger. The create must remain draft, then activate.
-    expect(tx.activityQualificationRuleSet.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ statusCode: 'draft' }) }),
-    );
+    const created = createdRuleSetData(tx.activityQualificationRuleSet.create.mock.calls[0]?.[0]);
+    expect(created.statusCode).toBe('draft');
     expect(tx.activityQualificationRuleSet.update).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({

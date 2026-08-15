@@ -181,8 +181,7 @@ export interface ActivityTemplateResolutionWithRegistrationForm extends Activity
 }
 
 /** RuleSnapshot holds only active RuleSet pointers/hashes, never full rule definitions. */
-export interface ActivityTemplateResolutionWithQualificationRules
-  extends ActivityTemplateResolutionWithRegistrationForm {
+export interface ActivityTemplateResolutionWithQualificationRules extends ActivityTemplateResolutionWithRegistrationForm {
   qualificationRuleSets: QualificationRuleSetResolvedConfig[];
 }
 
@@ -741,7 +740,7 @@ export class ActivityPublishProposalV2Service {
         ? { ...snapshot.resolvedConfig, registrationForm, qualificationRuleSets }
         : snapshot.schemaVersion === 3 || snapshot.schemaVersion === 4
           ? { ...snapshot.resolvedConfig, registrationForm }
-        : await this.getTemplateResolution(tx, activityId);
+          : await this.getTemplateResolution(tx, activityId);
     return { workflowRevision: activity.workflowRevision, resolvedConfig };
   }
 
@@ -1280,7 +1279,8 @@ export class ActivityPublishProposalV2Service {
       throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
     }
     const session = sessions.find(
-      (candidate) => candidate.sessionId === input.sessionId || candidate.clientRef === input.sessionId,
+      (candidate) =>
+        candidate.sessionId === input.sessionId || candidate.clientRef === input.sessionId,
     );
     const sessionId = session?.sessionId ?? session?.clientRef;
     if (!session || typeof sessionId !== 'string') {

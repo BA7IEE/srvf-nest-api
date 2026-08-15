@@ -74,7 +74,7 @@ describe('canonicalizeQualificationRuleSets', () => {
             },
           ],
         },
-        input().ruleSets[0]!,
+        input().ruleSets[0],
       ],
     });
 
@@ -91,9 +91,9 @@ describe('canonicalizeQualificationRuleSets', () => {
       expect.objectContaining({ standardIds: ['标准-a', '标准-z'], warnScore: 0 }),
     );
     expect(result.targetHash).toMatch(/^[a-f0-9]{64}$/);
-    expect(result.definition.ruleSets.every((ruleSet) => /^[a-f0-9]{64}$/.test(ruleSet.definitionHash))).toBe(
-      true,
-    );
+    expect(
+      result.definition.ruleSets.every((ruleSet) => /^[a-f0-9]{64}$/.test(ruleSet.definitionHash)),
+    ).toBe(true);
   });
 
   it('hashes only canonical semantics while rule sortOrder remains a deliberate semantic choice', () => {
@@ -101,16 +101,16 @@ describe('canonicalizeQualificationRuleSets', () => {
     const reordered = canonicalizeQualificationRuleSets({
       ruleSets: [
         {
-          ...input().ruleSets[0]!,
-          rules: [...input().ruleSets[0]!.rules].reverse(),
+          ...input().ruleSets[0],
+          rules: [...input().ruleSets[0].rules].reverse(),
         },
       ],
     });
     const changedOrder = canonicalizeQualificationRuleSets({
       ruleSets: [
         {
-          ...input().ruleSets[0]!,
-          rules: input().ruleSets[0]!.rules.map((rule) =>
+          ...input().ruleSets[0],
+          rules: input().ruleSets[0].rules.map((rule) =>
             rule.ruleTypeCode === 'grade' ? { ...rule, sortOrder: 11 } : rule,
           ),
         },
@@ -122,15 +122,17 @@ describe('canonicalizeQualificationRuleSets', () => {
   });
 
   it('permits an explicit empty replacement yet rejects ambiguous scopes, duplicate sort order, valueJson-shaped drift, and invalid warning scores', () => {
-    expect(canonicalizeQualificationRuleSets({ ruleSets: [] }).definition).toEqual({ ruleSets: [] });
+    expect(canonicalizeQualificationRuleSets({ ruleSets: [] }).definition).toEqual({
+      ruleSets: [],
+    });
     expectBad({
-      ruleSets: [input().ruleSets[0]!, input().ruleSets[0]!],
+      ruleSets: [input().ruleSets[0], input().ruleSets[0]],
     });
     expectBad({
       ruleSets: [
         {
-          ...input().ruleSets[0]!,
-          rules: input().ruleSets[0]!.rules.map((rule) => ({ ...rule, sortOrder: 1 })),
+          ...input().ruleSets[0],
+          rules: input().ruleSets[0].rules.map((rule) => ({ ...rule, sortOrder: 1 })),
         },
       ],
     });
@@ -187,7 +189,7 @@ describe('canonicalizeQualificationRuleSets', () => {
   });
 
   it('round-trips the storage shape without null age keys and fails closed for a malformed frozen row', () => {
-    const canonical = canonicalizeQualificationRuleSets(input()).definition.ruleSets[0]!;
+    const canonical = canonicalizeQualificationRuleSets(input()).definition.ruleSets[0];
     const age = canonical.rules.find((rule) => rule.ruleTypeCode === 'age');
     if (!age) throw new Error('fixture age rule missing');
     expect(qualificationRuleStoredValue(age)).toEqual({ minYears: 18 });

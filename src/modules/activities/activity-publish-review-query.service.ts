@@ -199,7 +199,9 @@ export class ActivityPublishReviewQueryService {
       update: [...afterByScope.entries()]
         .filter(([identity, row]) => {
           const previous = beforeByScope.get(identity);
-          return previous !== undefined && JSON.stringify(previous.rules) !== JSON.stringify(row.rules);
+          return (
+            previous !== undefined && JSON.stringify(previous.rules) !== JSON.stringify(row.rules)
+          );
         })
         .map(([, row]) => scope(row)),
       cancel: [...beforeByScope.entries()]

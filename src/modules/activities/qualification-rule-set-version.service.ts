@@ -112,12 +112,14 @@ export class QualificationRuleSetVersionService {
       if (existingTarget.targetHash === target.targetHash) return this.toDto(existing);
 
       const existingByScope = new Map(
-        existing.map((row) => [scopeKey({ sessionId: row.sessionId, positionId: row.positionId }), row]),
+        existing.map((row) => [
+          scopeKey({ sessionId: row.sessionId, positionId: row.positionId }),
+          row,
+        ]),
       );
       const targetByScope = new Map(
         target.definition.ruleSets.map((ruleSet) => [scopeKey(ruleSet.scope), ruleSet]),
       );
-      const now = new Date();
       for (const [key, row] of existingByScope) {
         const desired = targetByScope.get(key);
         const current = existingTarget.definition.ruleSets.find(
@@ -141,7 +143,7 @@ export class QualificationRuleSetVersionService {
       await this.audit.log({
         activityId,
         actorUserId: user.id,
-        actorRoleSnap: user.role as Role,
+        actorRoleSnap: user.role,
         auditMeta,
         tx,
         changedFields: ['qualificationRuleSets'],
@@ -175,7 +177,10 @@ export class QualificationRuleSetVersionService {
     const target = this.targetFromRows(active).definition;
     await this.assertActivePositionPointers(tx, activityId, active);
     const byScope = new Map(
-      active.map((row) => [scopeKey({ sessionId: row.sessionId, positionId: row.positionId }), row]),
+      active.map((row) => [
+        scopeKey({ sessionId: row.sessionId, positionId: row.positionId }),
+        row,
+      ]),
     );
     return target.ruleSets.map((ruleSet) => {
       const row = byScope.get(scopeKey(ruleSet.scope));
@@ -229,7 +234,8 @@ export class QualificationRuleSetVersionService {
     await this.assertPublishedScopeTargets(tx, input.activityId, normalized.definition);
     const active = await this.currentVersions(tx, input.activityId, 'active');
     if (input.requestType === 'initial') {
-      if (active.length !== 0) throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      if (active.length !== 0)
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
       const draft = await this.currentVersions(tx, input.activityId, 'draft');
       if (this.targetFromRows(draft).targetHash !== normalized.targetHash) {
         throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_EXPECTED_SNAPSHOT_MISMATCH);
@@ -250,7 +256,10 @@ export class QualificationRuleSetVersionService {
     // a just-cancelled position must be able to retire its formerly valid active version.
     const activeTarget = this.targetFromRows(active).definition;
     const activeByScope = new Map(
-      active.map((row) => [scopeKey({ sessionId: row.sessionId, positionId: row.positionId }), row]),
+      active.map((row) => [
+        scopeKey({ sessionId: row.sessionId, positionId: row.positionId }),
+        row,
+      ]),
     );
     const currentByScope = new Map(
       activeTarget.ruleSets.map((ruleSet) => [scopeKey(ruleSet.scope), ruleSet]),
@@ -437,7 +446,10 @@ export class QualificationRuleSetVersionService {
   ): Promise<QualificationRuleSetResolvedConfig[]> {
     const target = this.targetFromRows(active).definition;
     const byScope = new Map(
-      active.map((row) => [scopeKey({ sessionId: row.sessionId, positionId: row.positionId }), row]),
+      active.map((row) => [
+        scopeKey({ sessionId: row.sessionId, positionId: row.positionId }),
+        row,
+      ]),
     );
     await this.assertActivePositionPointers(tx, activityId, active);
     return target.ruleSets.map((ruleSet) => {
@@ -465,8 +477,11 @@ export class QualificationRuleSetVersionService {
       ),
     ];
     const positionScopes = definition.ruleSets.filter(
-      (ruleSet): ruleSet is CanonicalQualificationRuleSet & { scope: { sessionId: string; positionId: string } } =>
-        ruleSet.scope.sessionId !== null && ruleSet.scope.positionId !== null,
+      (
+        ruleSet,
+      ): ruleSet is CanonicalQualificationRuleSet & {
+        scope: { sessionId: string; positionId: string };
+      } => ruleSet.scope.sessionId !== null && ruleSet.scope.positionId !== null,
     );
     const sessions: Array<{ id: string; statusCode: string }> =
       sessionIds.length === 0
@@ -595,8 +610,11 @@ export class QualificationRuleSetVersionService {
       ),
     ];
     const positionScopes = definition.ruleSets.filter(
-      (ruleSet): ruleSet is CanonicalQualificationRuleSet & { scope: { sessionId: string; positionId: string } } =>
-        ruleSet.scope.positionId !== null && ruleSet.scope.sessionId !== null,
+      (
+        ruleSet,
+      ): ruleSet is CanonicalQualificationRuleSet & {
+        scope: { sessionId: string; positionId: string };
+      } => ruleSet.scope.positionId !== null && ruleSet.scope.sessionId !== null,
     );
     const [sessions, positions, pointedDraftPositions] = await Promise.all([
       sessionIds.length === 0
@@ -664,7 +682,10 @@ export class QualificationRuleSetVersionService {
   private toDto(rows: RuleSetRow[]): AppActivityQualificationRulesDto {
     const definition = this.targetFromRows(rows).definition;
     const versions = new Map(
-      rows.map((row) => [scopeKey({ sessionId: row.sessionId, positionId: row.positionId }), row.version]),
+      rows.map((row) => [
+        scopeKey({ sessionId: row.sessionId, positionId: row.positionId }),
+        row.version,
+      ]),
     );
     return {
       ruleSets: definition.ruleSets.map((ruleSet) => ({

@@ -17,6 +17,8 @@ import {
   ValidateNested,
 } from 'class-validator';
 
+import { OmittableOnly } from '../../../../common/decorators/omittable-only.decorator';
+
 export const APP_ACTIVITY_QUALIFICATION_RULE_TYPES = [
   'grade',
   'gender',
@@ -68,7 +70,7 @@ export class AppActivityQualificationRuleInputDto {
   operator!: (typeof APP_ACTIVITY_QUALIFICATION_OPERATORS)[number];
 
   @ApiPropertyOptional({ type: () => [String], minItems: 1, maxItems: 100 })
-  @IsOptional()
+  @OmittableOnly()
   @IsArray()
   @ArrayMinSize(1)
   @IsString({ each: true })
@@ -77,7 +79,7 @@ export class AppActivityQualificationRuleInputDto {
   codes?: string[];
 
   @ApiPropertyOptional({ type: () => [String], minItems: 1, maxItems: 100 })
-  @IsOptional()
+  @OmittableOnly()
   @IsArray()
   @ArrayMinSize(1)
   @IsString({ each: true })
@@ -86,7 +88,7 @@ export class AppActivityQualificationRuleInputDto {
   organizationIds?: string[];
 
   @ApiPropertyOptional({ type: () => [String], minItems: 1, maxItems: 100 })
-  @IsOptional()
+  @OmittableOnly()
   @IsArray()
   @ArrayMinSize(1)
   @IsString({ each: true })
@@ -109,7 +111,7 @@ export class AppActivityQualificationRuleInputDto {
   maxYears?: number | null;
 
   @ApiPropertyOptional({ minimum: 0, maximum: 100, type: Number })
-  @IsOptional()
+  @OmittableOnly()
   @IsInt()
   @Min(0)
   @Max(100)

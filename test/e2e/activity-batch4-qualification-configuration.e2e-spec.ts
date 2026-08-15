@@ -181,7 +181,9 @@ describe('activity batch4 qualification configuration', () => {
       if (observed >= expected) return;
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    throw new Error(`expected ${expected} qualification Activity lock waiter(s), observed ${observed}`);
+    throw new Error(
+      `expected ${expected} qualification Activity lock waiter(s), observed ${observed}`,
+    );
   }
 
   function holdActivityRootLock(activityId: string) {
@@ -437,7 +439,9 @@ describe('activity batch4 qualification configuration', () => {
         }),
       ]),
     );
-    expect(resolvedConfig.qualificationRuleSets?.every((ruleSet) => !('rules' in ruleSet))).toBe(true);
+    expect(resolvedConfig.qualificationRuleSets?.every((ruleSet) => !('rules' in ruleSet))).toBe(
+      true,
+    );
   });
 
   it('requires explicit RuleSet cancellation and resolves a new-position clientRef only inside the approved V5 proposal', async () => {

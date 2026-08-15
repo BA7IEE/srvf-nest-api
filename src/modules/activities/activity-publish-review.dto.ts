@@ -400,7 +400,7 @@ export class ChangeReviewDto extends SubmitActivityPublishReviewDto {
 
   /** Omitted retains active RuleSets; explicit collection commands are frozen in V5. */
   @ApiPropertyOptional({ type: () => ChangeReviewQualificationRuleSetCollectionsDto })
-  @IsOptional()
+  @OmittableOnly()
   @ValidateNested()
   @Type(() => ChangeReviewQualificationRuleSetCollectionsDto)
   qualificationRuleSets?: ChangeReviewQualificationRuleSetCollectionsDto;
