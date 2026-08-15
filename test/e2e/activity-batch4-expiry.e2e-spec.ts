@@ -397,6 +397,35 @@ describe('activity batch4 expiry', () => {
     expect(header).toEqual({ statusCode: 'reject', statusSummaryCode: 'expired' });
   });
 
+  it('does not expire before the earliest live session even when the activity fallback start has passed', async () => {
+    const scenario = await createScenario('qualification_rank');
+    const applicant = await createActor('expiry-session-clock-applicant', Role.USER);
+    const submitted = await submit(scenario, applicant, `expiry-session-clock-submit-${sequence}`);
+    expect(submitted.status).toBe(201);
+    const registrationId = submitted.body.data.registrationId as string;
+
+    // A live session is the authoritative start.  Moving only the activity fallback clock must
+    // not create a reconciliation job or close the still-open canonical application.
+    await prisma.activity.update({
+      where: { id: scenario.activityId },
+      data: { startAt: PAST_START, endAt: PAST_END },
+    });
+    await expect(notificationWorker.drainUntilIdle(2)).resolves.toEqual([
+      expect.objectContaining({ jobsEnqueued: 0, jobClaimed: false }),
+    ]);
+    await expect(
+      prisma.activityParticipationIdentity.findFirstOrThrow({
+        where: { registrationId, sessionId: scenario.sessionId },
+        select: { currentRevision: true, currentStatusCode: true },
+      }),
+    ).resolves.toEqual({ currentRevision: 1, currentStatusCode: 'pending' });
+    await expect(
+      prisma.activityBatchJob.count({
+        where: { activityId: scenario.activityId, jobTypeCode: 'reconciliation' },
+      }),
+    ).resolves.toBe(0);
+  });
+
   it('red-first: two worker pools serialize the same due reconciliation job and do not append twice', async () => {
     const scenario = await createScenario('qualification_rank');
     const applicant = await createActor('expiry-concurrent-applicant', Role.USER);
@@ -405,6 +434,13 @@ describe('activity batch4 expiry', () => {
     const registrationId = submitted.body.data.registrationId as string;
     await moveActivityStartToPast(scenario);
 
+    // A fresh reconciliation job is deliberately created after the current round's claim, so it
+    // cannot preempt a just-created settlement job.  The next concurrent round is the real lease
+    // race that this case proves.
+    await expect(notificationWorker.drainOnce()).resolves.toMatchObject({
+      jobsEnqueued: 1,
+      jobClaimed: false,
+    });
     const rounds = await Promise.all([notificationWorker.drainOnce(), storageWorker.drainOnce()]);
     expect(rounds.filter((round) => round.jobClaimed).length).toBe(1);
     await storageWorker.drainUntilIdle(3);
@@ -418,5 +454,96 @@ describe('activity batch4 expiry', () => {
         select: { statusCode: true },
       }),
     ).resolves.toEqual([{ statusCode: 'succeeded' }]);
+  });
+
+  it('fails closed on a canonical pointer drift: business facts and audits remain unchanged', async () => {
+    const scenario = await createScenario('qualification_rank');
+    const applicant = await createActor('expiry-drift-applicant', Role.USER);
+    const invitee = await createActor('expiry-drift-invitee', Role.USER);
+    const submitted = await submit(scenario, applicant, `expiry-drift-submit-${sequence}`);
+    expect(submitted.status).toBe(201);
+    const registrationId = submitted.body.data.registrationId as string;
+    const createdInvitation = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${scenario.activityId}/invitations`)
+      .set('Authorization', manager.authHeader)
+      .send({
+        memberId: invitee.memberId,
+        sessionId: scenario.sessionId,
+        positionId: scenario.positionId,
+        expiresAt: '2099-12-31T23:59:59.000Z',
+      });
+    expect(createdInvitation.status).toBe(201);
+    const invitationId = createdInvitation.body.data.invitationId as string;
+    const identity = await prisma.activityParticipationIdentity.findFirstOrThrow({
+      where: { registrationId, sessionId: scenario.sessionId },
+      select: { id: true },
+    });
+
+    // This is an intentional database-level drift fixture, not a shortcut for the production
+    // command: it verifies that the worker fails closed before its first canonical/audit write.
+    await prisma.activityParticipationIdentity.update({
+      where: { id: identity.id },
+      data: { currentPositionId: scenario.positionId },
+    });
+    const before = await Promise.all([
+      prisma.activityParticipationIdentity.findUniqueOrThrow({
+        where: { id: identity.id },
+        select: {
+          currentRevision: true,
+          currentStatusCode: true,
+          currentPositionId: true,
+          capacityReservationId: true,
+          populationIncluded: true,
+        },
+      }),
+      prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: registrationId },
+        select: { statusCode: true, statusSummaryCode: true },
+      }),
+      prisma.activityInvitation.findUniqueOrThrow({
+        where: { id: invitationId },
+        select: { statusCode: true },
+      }),
+      prisma.activityParticipationRevision.count({ where: { identityId: identity.id } }),
+      prisma.auditLog.count({ where: { resourceId: registrationId } }),
+    ]);
+    await moveActivityStartToPast(scenario);
+    const rounds = await notificationWorker.drainUntilIdle(4);
+    expect(rounds.some((round) => round.itemsFailed === 1)).toBe(true);
+
+    await expect(
+      Promise.all([
+        prisma.activityParticipationIdentity.findUniqueOrThrow({
+          where: { id: identity.id },
+          select: {
+            currentRevision: true,
+            currentStatusCode: true,
+            currentPositionId: true,
+            capacityReservationId: true,
+            populationIncluded: true,
+          },
+        }),
+        prisma.activityRegistration.findUniqueOrThrow({
+          where: { id: registrationId },
+          select: { statusCode: true, statusSummaryCode: true },
+        }),
+        prisma.activityInvitation.findUniqueOrThrow({
+          where: { id: invitationId },
+          select: { statusCode: true },
+        }),
+        prisma.activityParticipationRevision.count({ where: { identityId: identity.id } }),
+        prisma.auditLog.count({ where: { resourceId: registrationId } }),
+      ]),
+    ).resolves.toEqual(before);
+    await expect(
+      prisma.activityBatchJob.findFirstOrThrow({
+        where: { activityId: scenario.activityId, jobTypeCode: 'reconciliation' },
+        select: { statusCode: true, attempts: true, lastErrorCode: true },
+      }),
+    ).resolves.toEqual({
+      statusCode: 'pending',
+      attempts: 1,
+      lastErrorCode: 'BizException:20147',
+    });
   });
 });

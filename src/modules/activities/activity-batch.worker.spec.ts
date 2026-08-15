@@ -58,4 +58,77 @@ describe('ActivityBatchWorker automatic ledger commit', () => {
       expect.objectContaining({ name: 'BizException' }),
     );
   });
+
+  it('claims the existing queue before it creates a new reconciliation job', async () => {
+    const order: string[] = [];
+    const reconciliation = {
+      enqueueDueActivityStartExpiryJobs: jest.fn(async () => {
+        order.push('reconciliation-enqueue');
+        return 1;
+      }),
+    };
+    const worker = new ActivityBatchWorker({} as never, {} as never, {} as never, true, reconciliation as never) as unknown as {
+      drainOnce(): Promise<{ jobsEnqueued: number; jobClaimed: boolean }>;
+      enqueuePreparingBatches(): Promise<number>;
+      claimJob(): Promise<null>;
+    };
+    worker.enqueuePreparingBatches = jest.fn(async () => {
+      order.push('ledger-enqueue');
+      return 0;
+    });
+    worker.claimJob = jest.fn(async () => {
+      order.push('claim');
+      return null;
+    });
+
+    await expect(worker.drainOnce()).resolves.toMatchObject({ jobsEnqueued: 1, jobClaimed: false });
+    expect(order).toEqual(['ledger-enqueue', 'claim', 'reconciliation-enqueue']);
+  });
+
+  it('maps a claimed reconciliation result into the same drain receipt without ledger finalization', async () => {
+    const reconciliation = {
+      enqueueDueActivityStartExpiryJobs: jest.fn().mockResolvedValue(0),
+      expireAtActivityStart: jest.fn().mockResolvedValue({
+        kind: 'succeeded',
+        expiredIdentityCount: 2,
+        expiredInvitationCount: 1,
+      }),
+    };
+    const worker = new ActivityBatchWorker({} as never, {} as never, {} as never, true, reconciliation as never) as unknown as {
+      drainOnce(): Promise<{
+        jobClaimed: boolean;
+        itemsProcessed: number;
+        itemsFailed: number;
+        batchStatus: string | null;
+      }>;
+      enqueuePreparingBatches(): Promise<number>;
+      claimJob(): Promise<{
+        id: string;
+        activityId: string;
+        jobTypeCode: string;
+        leaseOwner: string;
+        leaseGeneration: number;
+      }>;
+    };
+    worker.enqueuePreparingBatches = jest.fn().mockResolvedValue(0);
+    worker.claimJob = jest.fn().mockResolvedValue({
+      id: 'reconciliation-job-1',
+      activityId: 'activity-1',
+      jobTypeCode: 'reconciliation',
+      leaseOwner: 'worker-1',
+      leaseGeneration: 3,
+    });
+
+    await expect(worker.drainOnce()).resolves.toMatchObject({
+      jobClaimed: true,
+      itemsProcessed: 3,
+      itemsFailed: 0,
+      batchStatus: null,
+    });
+    expect(reconciliation.expireAtActivityStart).toHaveBeenCalledWith({
+      jobId: 'reconciliation-job-1',
+      activityId: 'activity-1',
+      fence: { leaseOwner: 'worker-1', leaseGeneration: 3 },
+    });
+  });
 });

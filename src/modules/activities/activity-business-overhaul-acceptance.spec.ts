@@ -450,7 +450,7 @@ const BATCH4_ONSITE_PARTICIPATION_ACCEPTANCE_DESTINATIONS: Readonly<
 
 /**
  * 第 4 批⑦只翻访客名单的完整零串入证据。邀请 accept 仍依赖未裁定的资格/容量 caller，
- * 因而 AC-019 必须保留 todo；活动开始时的批量 expiry 也不借本刀提前结案。
+ * 因而 AC-019 必须保留 todo；活动开始批量 expiry 由独立的 AC-028 destination 结案。
  */
 const BATCH4_INVITATION_VISITOR_ACCEPTANCE_IDS = ['AC-019', 'AC-027'] as const;
 
@@ -472,7 +472,29 @@ const BATCH4_INVITATION_VISITOR_ACCEPTANCE_DESTINATIONS: Readonly<
 
 const BATCH4_INVITATION_VISITOR_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
   'AC-019':
-    'create/list/revoke/decline 与过期可见性已接；accept 仍卡 #22 资格 runtime、保险/容量 caller，活动开始批量 expiry 仍归 AC-028。',
+    'create/list/revoke/decline 与过期可见性已接；accept 仍缺其自身的资格/保险/容量 caller，活动开始批量 expiry 已由 AC-028 覆盖。',
+};
+
+/** 第 4 批⑱只结案活动开始时 unresolved canonical participation 与 pending invitation 的事务性 expiry。 */
+const BATCH4_ACTIVITY_START_EXPIRY_ACCEPTANCE_IDS = ['AC-028'] as const;
+
+const BATCH4_ACTIVITY_START_EXPIRY_ACCEPTANCE_DESTINATIONS: Readonly<
+  Record<string, readonly AcceptanceDestination[]>
+> = {
+  'AC-028': [
+    {
+      file: 'test/e2e/activity-batch4-expiry.e2e-spec.ts',
+      needle: 'red-first: activity start expires a canonical pending identity and a pending invitation',
+    },
+    {
+      file: 'test/e2e/activity-batch4-expiry.e2e-spec.ts',
+      needle: 'red-first: activity start expires only the first_come waitlist and preserves an occupied pass',
+    },
+    {
+      file: 'test/e2e/activity-batch4-expiry.e2e-spec.ts',
+      needle: 'fails closed on a canonical pointer drift: business facts and audits remain unchanged',
+    },
+  ],
 };
 
 /** 第 4 批永久头 runtime 只翻真实十轮取消/重报闭环；资格、分配与整单取消旁路不借此结案。 */
@@ -595,6 +617,18 @@ if (
   throw new Error('第 4 批⑦两条验收编号必须逐条有真实去向或明确 blocker');
 }
 
+const batch4ActivityStartExpiryResolvedIds = new Set([
+  ...Object.keys(BATCH4_ACTIVITY_START_EXPIRY_ACCEPTANCE_DESTINATIONS),
+]);
+if (
+  batch4ActivityStartExpiryResolvedIds.size !== BATCH4_ACTIVITY_START_EXPIRY_ACCEPTANCE_IDS.length ||
+  BATCH4_ACTIVITY_START_EXPIRY_ACCEPTANCE_IDS.some(
+    (id) => !batch4ActivityStartExpiryResolvedIds.has(id),
+  )
+) {
+  throw new Error('第 4 批⑱ AC-028 必须绑定真实活动开始 expiry E2E destination');
+}
+
 const batch4PermanentRegistrationResolvedIds = new Set([
   ...Object.keys(BATCH4_PERMANENT_REGISTRATION_ACCEPTANCE_DESTINATIONS),
 ]);
@@ -617,6 +651,7 @@ function registerAcceptanceCases(cases: readonly { id: string; title: string }[]
       BATCH4_QUALIFICATION_RUNTIME_ACCEPTANCE_DESTINATIONS[id] ??
       BATCH4_ONSITE_PARTICIPATION_ACCEPTANCE_DESTINATIONS[id] ??
       BATCH4_INVITATION_VISITOR_ACCEPTANCE_DESTINATIONS[id] ??
+      BATCH4_ACTIVITY_START_EXPIRY_ACCEPTANCE_DESTINATIONS[id] ??
       BATCH4_PERMANENT_REGISTRATION_ACCEPTANCE_DESTINATIONS[id];
     if (destinations !== undefined) {
       it(`${id} ${title}（已标注去向）`, () => {

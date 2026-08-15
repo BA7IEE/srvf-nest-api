@@ -137,13 +137,17 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
    */
   async drainOnce(options: { now?: Date } = {}): Promise<ActivityBatchDrainResult> {
     const now = options.now ?? new Date();
-    const jobsEnqueued =
-      (await this.enqueuePreparingBatches(now)) +
-      (this.reconciliation === undefined
-        ? 0
-        : await this.reconciliation.enqueueDueActivityStartExpiryJobs(now));
-
+    // Preserve the existing settlement worker's two-round protocol: a just-created ledger job
+    // may have an `availableAt` a few milliseconds after this round's `now`, so it is claimed on
+    // the next immediate round.  Create reconciliation jobs only after this round's claim, rather
+    // than letting a newly created expiry job steal that deterministic first turn.
+    const ledgerJobsEnqueued = await this.enqueuePreparingBatches(now);
     const claimed = await this.claimJob(now);
+    const reconciliationJobsEnqueued =
+      this.reconciliation === undefined
+        ? 0
+        : await this.reconciliation.enqueueDueActivityStartExpiryJobs(now);
+    const jobsEnqueued = ledgerJobsEnqueued + reconciliationJobsEnqueued;
     if (claimed === null) {
       return {
         jobsEnqueued,
@@ -371,7 +375,13 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
                 AND "leaseExpiresAt" IS NOT NULL
                 AND "leaseExpiresAt" <= ${now})
           )
-        ORDER BY "availableAt" ASC, "createdAt" ASC
+        -- Settlement keeps its established priority when both durable job families are due.  A
+        -- reconciliation job created in the preceding round must not change ledger's observable
+        -- prepare/commit turn order.
+        ORDER BY
+          CASE WHEN "jobTypeCode" = ${LEDGER_PREPARE_JOB_TYPE} THEN 0 ELSE 1 END ASC,
+          "availableAt" ASC,
+          "createdAt" ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1
       `);

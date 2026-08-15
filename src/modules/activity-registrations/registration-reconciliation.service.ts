@@ -108,6 +108,22 @@ export class RegistrationReconciliationService {
         deletedAt: null,
         statusCode: 'published',
         batchJobs: { none: { jobTypeCode: ACTIVITY_RECONCILIATION_JOB_TYPE } },
+        // Do not create a durable no-op merely because a historical activity has started.  The
+        // expiry contract owns exactly unresolved canonical participation and unanswered
+        // invitations; a pass-only activity has neither and must not acquire a pending job that
+        // blocks its already-established settlement/closure workflow.
+        AND: [
+          {
+            OR: [
+              {
+                participationIdentities: {
+                  some: { currentStatusCode: { in: ['pending', 'waitlisted'] } },
+                },
+              },
+              { invitations: { some: { statusCode: 'pending' } } },
+            ],
+          },
+        ],
         OR: [
           {
             sessions: {
