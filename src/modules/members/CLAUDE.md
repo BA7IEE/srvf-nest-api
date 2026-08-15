@@ -45,6 +45,14 @@
   (§3.2 只豁免「显式传入的 read-scope filter」)。该类**禁止**注入 rbac / authz,也不 exports —— 跨模块
   复用仍走 `MembersService.options()` 那一个入口,避免出现绕过判权腿的第二条读路径。
 
+- **`member-audit-recorder.ts`(第二刀,§3.5 AuditRecorder)**:6 个事件(`member.account-granted` /
+  `-bound` / `-unbound` / `-reopened` / `member.account.status-change` / `member.offboard`)的
+  `before`/`after`/`extra` payload 组装与手机号掩码。只注入 `AuditLogsService`,**不持有 `PrismaService`**;
+  `tx` 由调用方在事务内透传,**事务边界与调用顺序仍归 `MembersService`**,recorder 不自开事务。
+  上面第 4、6 两条 audit 语义(`wecomIdentitiesRevoked` 恒写含 0;status-change 的 before/after 只含
+  status、extra 只含 linkedUserId/refreshTokensRevoked)由 `member-audit-recorder.spec.ts` 用**完整字段集
+  相等**(非 objectContaining)钉住 —— 多写一个字段同样红。
+
 ## Risk points
 
 - ❌ 不复用 `UsersService`、不引入模块环，也不把 policy 调用移到事务外。
