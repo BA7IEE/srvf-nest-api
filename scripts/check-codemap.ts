@@ -136,34 +136,82 @@ const SERVICE_SIZE_SUFFIXES = ['.service.ts', '-orchestrator.ts', '.handlers.ts'
 const SERVICE_SIZE_ROOT = 'src';
 
 /**
- * 非注释非空行。用 TS scanner 把注释区间抹成空格(保留换行)后数含非空白字符的行。
+ * 非注释非空行。取 parser 解析出的**真实 token**(叶子节点)的字符区间,
+ * 一行只要有任一非空白字符落在某个 token 区间内就计 1 行。
+ * 注释永远落在 token 区间**之外**(`node.getStart()` 按定义跳过前导 trivia),故自动被排除。
  *
  * 导出是为了让 scripts/harness-guards.selftest.ts 直接喂合成样例做阳性对照 ——
  * 「纯注释膨胀不得触发」这条口径必须有证据,而不是靠读代码相信。
+ *
+ * ⚠️ **为什么不再用裸 `ts.createScanner` + `scan()` 循环**(2026-08-15 修,原实现有真缺陷):
+ *
+ * 裸 scanner 的 `scan()` 是**有状态**的,若干 token 必须由调用方按上下文主动「重扫」,
+ * 否则扫描器就此**脱锁**,其后的一切归类全错。原实现只认注释 trivia、从不重扫,于是:
+ *
+ *   遇 `` `…${…}` `` ⇒ 返回 `TemplateHead` 后停在 `${`;调用方本应在配对的 `}` 处调
+ *   `reScanTemplateToken()` 续出 `TemplateMiddle`/`TemplateTail`。不调 ⇒ 那个 `}` 被当成
+ *   普通 `CloseBraceToken`,**收尾的反引号于是开启了一个新的模板串**,把其后的大段正文
+ *   (含整行 `//` 注释)一路吞成字符串内容 ⇒ **注释被算成代码**。
+ *
+ * 实测:`recruitment-promotion.service.ts` 191 个整行 `//` 里有 133 行被算成代码;
+ * 全发现面 149 个文件中 **90 个(60.4%)读数虚高**,31 个基线文件合计虚高 1746 行(5.0%),
+ * 其中 4 个纯靠虚高才越过阈值 700。取证与影响面全表见
+ * `docs/ai-harness/SERVICE_SIZE_GROWTH_ATTRIBUTION.md` §7。
+ *
+ * **同类脱锁不止模板串一处**(逐项处置,goal D1 要求):
+ *
+ * - 模板串 `TemplateHead` → 本应 `reScanTemplateToken()`:**本缺陷本体**;
+ * - 正则字面量 `/re/` → 本应 `reScanSlashToken()`:默认按除号切,`/*` 开头的正则会被当注释起点;
+ * - `>>` / `>>>` → 本应 `reScanGreaterToken()`:泛型闭合被并成移位符(不改行数,但同属该类);
+ * - JSX → 本应 `reScanJsxToken()`:本仓无 `.tsx`,**不适用**。
+ *
+ * 之所以不是「补一个 `reScanTemplateToken()` 调用」而是换成 parser:补调用需要自己维护
+ * 花括号深度栈来处理嵌套模板(`` `${`${x}`}` ``),那正是产生本缺陷的同一类手写状态机;
+ * 而 parser 本就把这套状态机实现对了一遍。**换实现是把整个「重扫脱锁」缺陷类一次关掉**,
+ * 不是修掉其中一个实例(沿 process「修类不修实例」)。
+ *
+ * 度量语义**逐字不变**(仍是非注释非空行),故与 `service-loc-*` 继续共用同一份计算;
+ * 变的只是「怎么认出注释」。口径版本由 `SERVICE_SIZE_GENERATOR_VERSION` 承载 ——
+ * 实现换代必须让 `inputDigest` 变化,否则用旧口径算出的基线会被当成「口径一致」放行。
  */
 export function measureNcloc(content: string): number {
-  const scanner = ts.createScanner(
-    ts.ScriptTarget.Latest,
-    /* skipTrivia */ false,
-    ts.LanguageVariant.Standard,
+  const sf = ts.createSourceFile(
+    'ncloc.ts',
     content,
+    ts.ScriptTarget.Latest,
+    /* setParentNodes */ true,
   );
-  const chars = [...content];
-  let token = scanner.scan();
-  while (token !== ts.SyntaxKind.EndOfFileToken) {
-    if (
-      token === ts.SyntaxKind.SingleLineCommentTrivia ||
-      token === ts.SyntaxKind.MultiLineCommentTrivia
-    ) {
-      for (let i = scanner.getTokenStart(); i < scanner.getTokenEnd(); i++) {
-        if (chars[i] !== '\n' && chars[i] !== '\r') chars[i] = ' ';
+  const covered = new Uint8Array(content.length);
+  const mark = (node: ts.Node): void => {
+    // ⚠️ **JSDoc 必须显式跳过**:`setParentNodes: true` 时 `getChildren()` 会把
+    // `/** … */` 作为 JSDoc **节点**挂在声明下(普通 `/* */` 与 `//` 则是 trivia、
+    // 本来就不在任何 token 区间内)。不跳 ⇒ JSDoc 正文被当成叶子 token 覆盖 ⇒
+    // **注释又被算成代码**,与本次要修的缺陷同类,且本仓 JSDoc 密度极高、影响更大。
+    // 实测:`/**\n * a\n * b\n */\nfunction f() {}` 不跳时数 5 行,正确是 1 行。
+    if (node.kind >= ts.SyntaxKind.FirstJSDocNode && node.kind <= ts.SyntaxKind.LastJSDocNode) {
+      return;
+    }
+    const children = node.getChildren(sf);
+    if (children.length === 0) {
+      // 叶子 token:`getStart()` 跳过前导 trivia ⇒ 区间内不含注释。
+      for (let i = node.getStart(sf); i < node.getEnd(); i++) covered[i] = 1;
+      return;
+    }
+    for (const child of children) mark(child);
+  };
+  mark(sf);
+
+  let count = 0;
+  let pos = 0;
+  for (const line of content.split('\n')) {
+    for (let i = 0; i < line.length; i++) {
+      const c = content[pos + i];
+      if (covered[pos + i] === 1 && c !== ' ' && c !== '\t' && c !== '\r') {
+        count++;
+        break;
       }
     }
-    token = scanner.scan();
-  }
-  let count = 0;
-  for (const line of chars.join('').split('\n')) {
-    if (line.trim().length > 0) count++;
+    pos += line.length + 1;
   }
   return count;
 }
@@ -425,7 +473,9 @@ function checkServiceLoc(services: ServiceEntry[]): CheckResult[] {
 //   ⇒ 本刀不登记;如何让注册表容纳非 ESLint 型棘轮,列进转 blocking 的 Exit Criteria。
 
 const SERVICE_SIZE_SCHEMA_VERSION = 1;
-const SERVICE_SIZE_GENERATOR_VERSION = 1;
+// 2 = 剥注释实现由裸 scanner 换成 parser 叶子 token 覆盖(2026-08-15 修模板串脱锁缺陷)。
+// 换代必须 bump:inputDigest 摄入本值,不 bump 则用旧口径算出的基线会被当成「口径一致」放行。
+const SERVICE_SIZE_GENERATOR_VERSION = 2;
 const serviceSizeBaselineRelPath = 'harness/service-size-baseline.json';
 
 interface ServiceSizeBaselineEntry {
@@ -449,7 +499,7 @@ const SERVICE_SIZE_BASELINE_COMMENT = [
   '大 service 尺寸棘轮的具名基线(Phase 6-A,v4 §11 Phase 6)。**生成物,勿手改** ——',
   '改基线值请跑 pnpm harness:servicesize:write(本文件在红区 selfGuard,须维护者授权)。',
   '',
-  `loc = ${SERVICE_SIZE_METRIC}(非注释非空行,TS scanner 剥注释后统计),不是物理行:`,
+  `loc = ${SERVICE_SIZE_METRIC}(非注释非空行,按 TS parser 的真实 token 覆盖判定),不是物理行:`,
   '物理行棘轮会奖励「删掉文件头的模块级铁律注释」,而那是本仓约束 AI 的主要载体。',
   `阈值 ${SERVICE_SIZE_THRESHOLD} 复用既有 god-service 阈值(不另立第二套尺寸标准)。`,
   '',
