@@ -1946,6 +1946,73 @@ export const BizCode = {
     message: '只有退回修改的考勤单可以重新提交',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 活动 v1.1 第 5 批：二维码与追加式现场打卡。22084–22096 由维护者补充合同 v1
+  // 明确授权；每个码对应一个可恢复的客户端动作，不把签名、坐标或凭证内部细节写进 message。
+  ATTENDANCE_QR_NOT_FOUND: {
+    code: 22084,
+    message: '二维码凭证不存在或无效',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ATTENDANCE_QR_REVOKED: {
+    code: 22085,
+    message: '二维码凭证已作废',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ATTENDANCE_QR_ACTION_MISMATCH: {
+    code: 22086,
+    message: '二维码动作与当前打卡动作不匹配',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ATTENDANCE_QR_VERSION_CONFLICT: {
+    code: 22087,
+    message: '二维码版本或操作键与当前请求冲突',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT: {
+    code: 22088,
+    message: '打卡防重键已用于不同请求',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ATTENDANCE_PUNCH_OUTSIDE_WINDOW: {
+    code: 22089,
+    message: '当前不在该场次对应的打卡时间窗内',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ATTENDANCE_PUNCH_LOCATION_REQUIRED: {
+    code: 22090,
+    message: '该场次要求提供有效定位',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ATTENDANCE_PUNCH_LOCATION_OUT_OF_RANGE: {
+    code: 22091,
+    message: '当前位置未通过场次范围校验',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ATTENDANCE_PUNCH_OPEN_SEGMENT_EXISTS: {
+    code: 22092,
+    message: '当前已有未闭合服务段，不能重复签到',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ATTENDANCE_PUNCH_CHECK_OUT_REQUIRES_OPEN_SEGMENT: {
+    code: 22093,
+    message: '请先完成签到再签退或特殊闭合',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ATTENDANCE_PUNCH_MIN_DURATION_NOT_REACHED: {
+    code: 22094,
+    message: '普通签退距签到不足30分钟',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ATTENDANCE_EARLY_DEPARTURE_REASON_REQUIRED: {
+    code: 22095,
+    message: '特殊提前离场必须填写原因',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ATTENDANCE_PUNCH_EVENT_ALREADY_VOIDED: {
+    code: 22096,
+    message: '该现场事件已被作废或替代',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // contribution_rules 模块业务级(230xx + 231xx)。批次 5-A 引入(2026-05-12)。
   // 详见 docs:批次5-A_贡献值规则CRUD_API前评审.md v1.1 §5(BizCode 锁定 紧凑版)+ §2.2 E3。

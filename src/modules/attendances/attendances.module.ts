@@ -35,6 +35,16 @@ import { AppMyAttendanceRecordsController } from './controllers/app-my-attendanc
 import { AppMyParticipationSummaryController } from './controllers/app-my-participation-summary.controller';
 import { AppManagedActivityAttendancesController } from './controllers/app-managed-activity-attendances.controller';
 import { ParticipationSummaryQueryService } from './participation-summary-query.service';
+import { AttendancePunchAuditRecorder } from './attendance-punch-audit-recorder';
+import { AttendancePunchCommandService } from './attendance-punch-command.service';
+import { AttendancePunchLocationPolicy } from './attendance-punch-location-policy';
+import { AttendancePunchPresenter } from './attendance-punch-presenter';
+import { AttendancePunchSegmentRevisionService } from './attendance-punch-segment-revision.service';
+import { AttendanceQrCredentialService } from './attendance-qr-credential.service';
+import { AttendanceQrPresenter } from './attendance-qr-presenter';
+import { AppActivityPunchesController } from './controllers/app-activity-punches.controller';
+import { AppManagedActivityAttendanceQrController } from './controllers/app-managed-activity-attendance-qr.controller';
+import { AppManagedActivityOnsitePunchesController } from './controllers/app-managed-activity-onsite-punches.controller';
 
 // V2 批次 6 PR #6(D6 v1.1 §8 / 第二波最后一批):导入 AuditLogsModule 以注入 AuditLogsService,
 // attendances 12 处写操作(submit / edit × 2 / softDelete / approve / return / reject /
@@ -76,6 +86,9 @@ import { ParticipationSummaryQueryService } from './participation-summary-query.
     AppMyAttendanceRecordsController,
     AppMyParticipationSummaryController,
     AppManagedActivityAttendancesController,
+    AppActivityPunchesController,
+    AppManagedActivityAttendanceQrController,
+    AppManagedActivityOnsitePunchesController,
   ],
   providers: [
     AttendancesService,
@@ -98,6 +111,13 @@ import { ParticipationSummaryQueryService } from './participation-summary-query.
     // AttendancesService 那一个入口,避免出现绕过判权腿的第二条读路径(沿 members #1008 先例)。
     AttendanceSheetQueryService,
     ParticipationSummaryQueryService,
+    AttendanceQrCredentialService,
+    AttendanceQrPresenter,
+    AttendancePunchCommandService,
+    AttendancePunchLocationPolicy,
+    AttendancePunchPresenter,
+    AttendancePunchSegmentRevisionService,
+    AttendancePunchAuditRecorder,
   ],
 })
 export class AttendancesModule {}
