@@ -39,7 +39,6 @@ describe('activity batch6 staff/import/offline runtime', () => {
   let sequence = 0;
 
   beforeAll(async () => {
-    jest.setTimeout(90_000);
     process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     peerApp = await createTestApp();
@@ -128,7 +127,7 @@ describe('activity batch6 staff/import/offline runtime', () => {
         loginAs(app, operator.username).then(({ authHeader }) => authHeader),
         loginAs(app, admin.username).then(({ authHeader }) => authHeader),
       ]);
-  });
+  }, 90_000);
 
   afterAll(async () => {
     await Promise.all([app.close(), peerApp.close()]);
