@@ -387,6 +387,8 @@
 
 > **第 4 批⑭（D86 command 精确回执、作废事实与 committed applied projection）**：D85→86、空库重放、nonempty count-only fail-fast、late rollback、11 组独立变异锁定 receipt key/activity-batch FK、void shape、projection 一对一/candidate anchor/allocated pointer-reservation/inactive residual/identity-member anchor/activity-person member-activity anchor/session identity anchor/immutable。真实 DB 正例已证明同一 member 的两个 session identity 共用一条 activity-person reservation、各自保留 session reservation；错 member/错 activity 均精确 `23503`。physical constraint 名均实测 ≤ PG 63 bytes。DB 边界明确：receipt JSON 仅安全固定 envelope；第 4 批⑯在 Activity 根锁事务中完成 canonical SHA-256 重算、same key/hash 回放、异 hash 拒绝及 Identity live pointer/Batch committed/Candidate/Revision/reservationType 复核，并开放 5 条 canonical endpoint；AC-022/023/025 的最终判定仍留 cold CI。
 
+> **第 5 批（本分支，自助二维码和现场主链）**：复用已存在的 `AttendanceQrCredential`、`AttendancePunchEvent`、`ActivityEvidenceState`、`EvidenceSeal` 与服务段 revision 地基；负责人可签发、作废、受保护渲染场次 QR，本人可扫码签到/签退并读取安全服务段状态，责任人可早退闭合、void、replace。QR token 仅为请求输入，render 只返不可缓存 SVG；所有写命令走 Activity 根事务、canonical request hash 与 append-only PunchEvent/segment projector。第 5 批只覆盖 AC-031–042、AC-046、ADV-001/002/004/005/006/007/020，不带入工作人员代扫、代理、批量、导入或离线（第 6 批）。
+
 - **合同**:[`archive/reviews/activity-business-overhaul-v1.1/`](../archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效
   (业务方案 / 详细开发文档 / 355 项追踪矩阵 / 修订说明),SHA256 入仓时原位校验全过。
   维护者 2026-08-03 下发,基线为 `0.66.0` 快照(`47c4987514fef3772efb95a78adcd73dbd81c89c`)。

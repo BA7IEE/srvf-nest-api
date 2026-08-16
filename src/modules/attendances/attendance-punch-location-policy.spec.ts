@@ -19,9 +19,7 @@ describe('attendance punch location policy', () => {
         radiusMeters: null,
         request: { longitude: null, latitude: null, accuracy: null },
       }),
-    ).toEqual(
-      expect.objectContaining({ allowed: true, geoVerified: false, distanceMeters: null }),
-    );
+    ).toEqual(expect.objectContaining({ allowed: true, geoVerified: false, distanceMeters: null }));
     expect(
       policy.evaluate({
         ...required,
@@ -39,7 +37,14 @@ describe('attendance punch location policy', () => {
         ...required,
         request: { longitude: 116.397128, latitude: 39.916527, accuracy: 101 },
       }),
-    ).toEqual(expect.objectContaining({ allowed: true, geoVerified: true, outOfRange: false, lowAccuracy: true }));
+    ).toEqual(
+      expect.objectContaining({
+        allowed: true,
+        geoVerified: true,
+        outOfRange: false,
+        lowAccuracy: true,
+      }),
+    );
   });
 
   it('mutation: rejects an out-of-range point rather than accepting a rounded or low-accuracy coordinate', () => {

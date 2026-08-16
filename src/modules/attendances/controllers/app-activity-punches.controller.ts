@@ -7,7 +7,10 @@ import {
   ApiWrappedCreatedResponse,
   ApiWrappedOkResponse,
 } from '../../../common/decorators/api-response.decorator';
-import { CurrentUser, type CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
+import {
+  CurrentUser,
+  type CurrentUserPayload,
+} from '../../../common/decorators/current-user.decorator';
 import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 import { BizCode } from '../../../common/exceptions/biz-code.constant';
 import { BizException } from '../../../common/exceptions/biz.exception';
@@ -31,7 +34,12 @@ export class AppActivityPunchesController {
   ) {}
 
   @Post('punches/check-in')
-  @LoginScoped({ admission: 'app-member', require: 'all', scopes: ['self'], engine: 'authz-scoped' })
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: '本人扫描场次签到二维码并追加正式签到事实 [auth]' })
   @ApiWrappedCreatedResponse(AppActivityPunchReceiptDto)
   @ApiBizErrorResponse(
@@ -69,7 +77,12 @@ export class AppActivityPunchesController {
   }
 
   @Post('punches/check-out')
-  @LoginScoped({ admission: 'app-member', require: 'all', scopes: ['self'], engine: 'authz-scoped' })
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @ApiOperation({ summary: '本人扫描场次签退二维码并追加正式签退事实 [auth]' })
   @ApiWrappedCreatedResponse(AppActivityPunchReceiptDto)
   @ApiBizErrorResponse(
@@ -107,7 +120,12 @@ export class AppActivityPunchesController {
   }
 
   @Get('my-punch-state')
-  @LoginScoped({ admission: 'app-member', require: 'all', scopes: ['self'], engine: 'authz-scoped' })
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '读取本人当前服务段的安全打卡状态 [auth]' })
   @ApiWrappedOkResponse(AppActivityPunchStateDto)
@@ -122,7 +140,11 @@ export class AppActivityPunchesController {
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<AppActivityPunchStateDto> {
     const memberId = await this.resolveMemberId(user);
-    return this.command.myState({ activityId: params.activityId, sessionId: params.sessionId, memberId });
+    return this.command.myState({
+      activityId: params.activityId,
+      sessionId: params.sessionId,
+      memberId,
+    });
   }
 
   private async resolveMemberId(user: CurrentUserPayload): Promise<string> {
@@ -136,6 +158,10 @@ export class AppActivityPunchesController {
   }
 
   private auditMeta(req: Request): AuditMeta {
-    return { requestId: req.id as string, ip: req.ip ?? null, ua: req.headers['user-agent'] ?? null };
+    return {
+      requestId: req.id as string,
+      ip: req.ip ?? null,
+      ua: req.headers['user-agent'] ?? null,
+    };
   }
 }

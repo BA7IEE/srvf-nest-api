@@ -13,7 +13,6 @@ import { AttendancePunchPresenter } from './attendance-punch-presenter';
 import {
   createAttendancePunchRequestHash,
   normalizeAttendancePunchReason,
-  type AttendancePunchRequestHashInput,
 } from './attendance-punch-request-hash';
 import { AttendancePunchSegmentRevisionService } from './attendance-punch-segment-revision.service';
 import { AttendanceQrCredentialService } from './attendance-qr-credential.service';
@@ -152,7 +151,13 @@ export class AttendancePunchCommandService {
         );
         const existing = await this.findEventByKey(tx, input.dto.eventKey);
         if (existing) {
-          return this.replaySelfEvent({ existing, input, identity, session, qrVersion: payload.credentialVersion });
+          return this.replaySelfEvent({
+            existing,
+            input,
+            identity,
+            session,
+            qrVersion: payload.credentialVersion,
+          });
         }
 
         const now = new Date();
@@ -162,8 +167,10 @@ export class AttendancePunchCommandService {
           input.activityId,
           input.sessionId,
         );
-        if (credential.statusCode === 'revoked') throw new BizException(BizCode.ATTENDANCE_QR_REVOKED);
-        if (credential.statusCode !== 'active') throw new BizException(BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW);
+        if (credential.statusCode === 'revoked')
+          throw new BizException(BizCode.ATTENDANCE_QR_REVOKED);
+        if (credential.statusCode !== 'active')
+          throw new BizException(BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW);
         if (credential.credentialVersion !== payload.credentialVersion) {
           throw new BizException(BizCode.ATTENDANCE_QR_VERSION_CONFLICT);
         }
@@ -187,18 +194,26 @@ export class AttendancePunchCommandService {
           }
           if (open) throw new BizException(BizCode.ATTENDANCE_PUNCH_OPEN_SEGMENT_EXISTS);
         } else {
-          if (!open) throw new BizException(BizCode.ATTENDANCE_PUNCH_CHECK_OUT_REQUIRES_OPEN_SEGMENT);
+          if (!open)
+            throw new BizException(BizCode.ATTENDANCE_PUNCH_CHECK_OUT_REQUIRES_OPEN_SEGMENT);
           if (now.getTime() - open.checkInAt.getTime() < THIRTY_MINUTES_MS) {
             throw new BizException(BizCode.ATTENDANCE_PUNCH_MIN_DURATION_NOT_REACHED);
           }
         }
 
         const checkInEvent = open
-          ? priorEvents.find((event) => event.id === open.sourceCheckInEventId) ?? null
+          ? (priorEvents.find((event) => event.id === open.sourceCheckInEventId) ?? null)
           : null;
         const positionId =
-          input.actionCode === 'check_in' ? identity.currentPositionId : checkInEvent?.positionId ?? null;
-        const locationRule = await this.lockLocationRule(tx, input.activityId, input.sessionId, positionId);
+          input.actionCode === 'check_in'
+            ? identity.currentPositionId
+            : (checkInEvent?.positionId ?? null);
+        const locationRule = await this.lockLocationRule(
+          tx,
+          input.activityId,
+          input.sessionId,
+          positionId,
+        );
         const location = this.locationPolicy.evaluate({
           required: locationRule.required,
           radiusMeters: locationRule.radiusMeters,
@@ -284,15 +299,17 @@ export class AttendancePunchCommandService {
           auditMeta: input.auditMeta,
           tx,
         });
-        return this.presentEvent(created, now, input.actionCode === 'check_in' ? 'open' : 'closed_valid');
+        return this.presentEvent(
+          created,
+          now,
+          input.actionCode === 'check_in' ? 'open' : 'closed_valid',
+        );
       },
       { maxWait: 60_000, timeout: 60_000 },
     );
   }
 
-  async earlyDepartureClose(
-    input: ManagedEarlyCloseInput,
-  ): Promise<AppActivityPunchReceiptDto> {
+  async earlyDepartureClose(input: ManagedEarlyCloseInput): Promise<AppActivityPunchReceiptDto> {
     const reason = normalizeAttendancePunchReason(input.reason);
     if (reason === null) throw new BizException(BizCode.ATTENDANCE_EARLY_DEPARTURE_REASON_REQUIRED);
     return this.writeManagedEvent({
@@ -368,7 +385,12 @@ export class AttendancePunchCommandService {
         await this.lockActivity(tx, args.activityId);
         await this.assertManagedAttendance(tx, args.activityId, args.currentUser);
         const session = await this.lockSession(tx, args.activityId, args.sessionId);
-        const identity = await this.lockIdentityById(tx, args.activityId, args.sessionId, args.identityId);
+        const identity = await this.lockIdentityById(
+          tx,
+          args.activityId,
+          args.sessionId,
+          args.identityId,
+        );
         const existing = await this.findEventByKey(tx, args.eventKey);
         if (existing) {
           return this.replayManagedEvent({ existing, args, identity, session, qrVersion: null });
@@ -379,7 +401,8 @@ export class AttendancePunchCommandService {
         const projection = this.project(priorEvents, session);
         const open = projection.segments.find((segment) => segment.checkOutAt === null) ?? null;
         if (!open) throw new BizException(BizCode.ATTENDANCE_PUNCH_CHECK_OUT_REQUIRES_OPEN_SEGMENT);
-        const checkInEvent = priorEvents.find((event) => event.id === open.sourceCheckInEventId) ?? null;
+        const checkInEvent =
+          priorEvents.find((event) => event.id === open.sourceCheckInEventId) ?? null;
         const positionId = checkInEvent?.positionId ?? null;
         const requestHash = createAttendancePunchRequestHash({
           operatorUserId: args.currentUser.id,
@@ -556,7 +579,8 @@ export class AttendancePunchCommandService {
           operationEventType: input.actionCode,
         });
         await this.audit.logPunch({
-          operation: input.actionCode === 'void' ? 'attendance-punch.void' : 'attendance-punch.replace',
+          operation:
+            input.actionCode === 'void' ? 'attendance-punch.void' : 'attendance-punch.replace',
           activityId: input.activityId,
           sessionId: target.sessionId,
           participationIdentityId: identity.id,
@@ -578,13 +602,13 @@ export class AttendancePunchCommandService {
     );
   }
 
-  private async replaySelfEvent(args: {
+  private replaySelfEvent(args: {
     existing: PunchEventRow;
     input: SelfPunchInput;
     identity: LockedIdentity;
     session: LockedSession;
     qrVersion: number;
-  }): Promise<AppActivityPunchReceiptDto> {
+  }): AppActivityPunchReceiptDto {
     const expected = this.hashForExisting({
       existing: args.existing,
       operatorUserId: args.input.currentUser.id,
@@ -611,7 +635,7 @@ export class AttendancePunchCommandService {
     );
   }
 
-  private async replayManagedEvent(args: {
+  private replayManagedEvent(args: {
     existing: PunchEventRow;
     args: {
       activityId: string;
@@ -624,7 +648,7 @@ export class AttendancePunchCommandService {
     identity: LockedIdentity;
     session: LockedSession;
     qrVersion: null;
-  }): Promise<AppActivityPunchReceiptDto> {
+  }): AppActivityPunchReceiptDto {
     const expected = this.hashForExisting({
       existing: args.existing,
       operatorUserId: args.existing.operatorUserId,
@@ -647,14 +671,14 @@ export class AttendancePunchCommandService {
     return this.presentEvent(args.existing, args.existing.occurredAt, 'closed_zero');
   }
 
-  private async replayCorrectionEvent(args: {
+  private replayCorrectionEvent(args: {
     existing: PunchEventRow;
     input: ManagedCorrectionInput;
     target: PunchEventRow;
     identity: LockedIdentity;
     session: LockedSession;
     reason: string;
-  }): Promise<AppActivityPunchReceiptDto> {
+  }): AppActivityPunchReceiptDto {
     const expected = this.hashForExisting({
       existing: args.existing,
       operatorUserId: args.input.currentUser.id,
@@ -748,7 +772,8 @@ export class AttendancePunchCommandService {
       FOR UPDATE
     `);
     if (rows.length !== 1) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-    if (rows[0]?.statusCode !== 'published') throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+    if (rows[0]?.statusCode !== 'published')
+      throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
   }
 
   private async lockSession(
@@ -804,7 +829,7 @@ export class AttendancePunchCommandService {
     `);
     if (locked.length !== 1) throw new BizException(BizCode.ATTENDANCE_REGISTRATION_INVALID);
     const identity = await tx.activityParticipationIdentity.findFirst({
-      where: { id: locked[0]!.id, activityId, sessionId, memberId },
+      where: { id: locked[0].id, activityId, sessionId, memberId },
       select: {
         id: true,
         memberId: true,
@@ -883,7 +908,11 @@ export class AttendancePunchCommandService {
     return credential;
   }
 
-  private async lockEvent(tx: PrismaTx, activityId: string, eventId: string): Promise<PunchEventRow> {
+  private async lockEvent(
+    tx: PrismaTx,
+    activityId: string,
+    eventId: string,
+  ): Promise<PunchEventRow> {
     const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       SELECT "id" FROM "AttendancePunchEvent"
       WHERE "id" = ${eventId} AND "activityId" = ${activityId}
@@ -989,20 +1018,16 @@ export class AttendancePunchCommandService {
     if (now < from || now > until) throw new BizException(BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW);
   }
 
-  private async bumpEvidenceRevision(
-    tx: PrismaTx,
-    activityId: string,
-    now: Date,
-  ): Promise<number> {
+  private async bumpEvidenceRevision(tx: PrismaTx, activityId: string, now: Date): Promise<number> {
     const rows = await tx.$queryRaw<Array<{ id: string; evidenceRevision: number }>>(Prisma.sql`
       SELECT "id", "evidenceRevision" FROM "ActivityEvidenceState"
       WHERE "activityId" = ${activityId}
       FOR UPDATE
     `);
     if (rows.length !== 1) throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
-    const next = rows[0]!.evidenceRevision + 1;
+    const next = rows[0].evidenceRevision + 1;
     await tx.activityEvidenceState.update({
-      where: { id: rows[0]!.id },
+      where: { id: rows[0].id },
       data: { evidenceRevision: next, lastEvidenceAt: now, version: { increment: 1 } },
     });
     return next;

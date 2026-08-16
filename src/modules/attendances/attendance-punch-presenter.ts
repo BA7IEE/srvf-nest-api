@@ -18,10 +18,7 @@ export interface AttendancePunchPresentation {
 
 @Injectable()
 export class AttendancePunchPresenter {
-  presentReceipt(
-    row: AttendancePunchPresentation,
-    serverTime: Date,
-  ): AppActivityPunchReceiptDto {
+  presentReceipt(row: AttendancePunchPresentation, serverTime: Date): AppActivityPunchReceiptDto {
     return {
       eventId: row.eventId,
       eventTypeCode: row.eventTypeCode,

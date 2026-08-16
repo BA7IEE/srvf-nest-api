@@ -57,9 +57,11 @@ export class AttendancePunchLocationPolicy {
     const { longitude, latitude, accuracy } = input.request;
     const hasLongitude = longitude !== null && longitude !== undefined;
     const hasLatitude = latitude !== null && latitude !== undefined;
-    if (hasLongitude !== hasLatitude) return { allowed: false, bizCode: BizCode.ATTENDANCE_PUNCH_LOCATION_REQUIRED };
+    if (hasLongitude !== hasLatitude)
+      return { allowed: false, bizCode: BizCode.ATTENDANCE_PUNCH_LOCATION_REQUIRED };
     if (!hasLongitude && !hasLatitude) {
-      if (input.required) return { allowed: false, bizCode: BizCode.ATTENDANCE_PUNCH_LOCATION_REQUIRED };
+      if (input.required)
+        return { allowed: false, bizCode: BizCode.ATTENDANCE_PUNCH_LOCATION_REQUIRED };
       return {
         allowed: true,
         longitude: null,

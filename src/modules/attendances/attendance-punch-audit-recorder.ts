@@ -5,7 +5,10 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 
 type QrAuditOperation = 'attendance-qr.issue' | 'attendance-qr.revoke' | 'attendance-qr.render';
-type PunchAuditOperation = 'attendance-punch.create' | 'attendance-punch.void' | 'attendance-punch.replace';
+type PunchAuditOperation =
+  | 'attendance-punch.create'
+  | 'attendance-punch.void'
+  | 'attendance-punch.replace';
 
 @Injectable()
 export class AttendancePunchAuditRecorder {

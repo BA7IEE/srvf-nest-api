@@ -26,12 +26,14 @@ describe('activity batch5 punch multi-instance concurrency', () => {
   let managerUsername: string;
   let managerMemberId: string;
   let managerUserId: string;
+  let adminUsername: string;
   let applicantUsername: string;
   let applicantMemberId: string;
   let applicantAuthA: string;
   let applicantAuthB: string;
   let otherApplicantUsername: string;
   let otherApplicantAuthA: string;
+  let adminAuthB: string;
   let managerAuthA: string;
   let managerAuthB: string;
   let activityOwnerRoleId: string;
@@ -46,12 +48,13 @@ describe('activity batch5 punch multi-instance concurrency', () => {
     prismaB = appB.get(PrismaService);
     activityOwnerRoleId = (await seedActivityResponsibilitySystemRoles(appA))['activity-owner'];
 
-    const [manager, applicant, otherApplicant] = await Promise.all([
+    const [manager, applicant, otherApplicant, admin] = await Promise.all([
       createTestUser(appA, { username: 'b5-punch-conc-manager', role: Role.USER }),
       createTestUser(appA, { username: 'b5-punch-conc-applicant', role: Role.USER }),
       createTestUser(appA, { username: 'b5-punch-conc-other', role: Role.USER }),
+      createTestUser(appA, { username: 'b5-punch-conc-admin', role: Role.SUPER_ADMIN }),
     ]);
-    const [managerMember, applicantMember, otherApplicantMember] = await Promise.all([
+    const [managerMember, applicantMember, otherApplicantMember, adminMember] = await Promise.all([
       prismaA.member.create({
         data: {
           memberNo: 'B5-PUNCH-CONC-MANAGER',
@@ -79,10 +82,20 @@ describe('activity batch5 punch multi-instance concurrency', () => {
         },
         select: { id: true },
       }),
+      prismaA.member.create({
+        data: {
+          memberNo: 'B5-PUNCH-CONC-ADMIN',
+          displayName: 'Batch5 Punch Concurrency Admin',
+          gradeCode: 'L1',
+          status: MemberStatus.ACTIVE,
+        },
+        select: { id: true },
+      }),
     ]);
     managerUsername = manager.username;
     managerMemberId = managerMember.id;
     managerUserId = manager.id;
+    adminUsername = admin.username;
     applicantUsername = applicant.username;
     applicantMemberId = applicantMember.id;
     otherApplicantUsername = otherApplicant.username;
@@ -93,14 +106,17 @@ describe('activity batch5 punch multi-instance concurrency', () => {
         where: { id: otherApplicant.id },
         data: { memberId: otherApplicantMember.id },
       }),
+      prismaA.user.update({ where: { id: admin.id }, data: { memberId: adminMember.id } }),
     ]);
-    [managerAuthA, applicantAuthA, managerAuthB, applicantAuthB, otherApplicantAuthA] = await Promise.all([
-      loginAs(appA, managerUsername).then(({ authHeader }) => authHeader),
-      loginAs(appA, applicantUsername).then(({ authHeader }) => authHeader),
-      loginAs(appB, managerUsername).then(({ authHeader }) => authHeader),
-      loginAs(appB, applicantUsername).then(({ authHeader }) => authHeader),
-      loginAs(appA, otherApplicantUsername).then(({ authHeader }) => authHeader),
-    ]);
+    [managerAuthA, applicantAuthA, managerAuthB, applicantAuthB, otherApplicantAuthA, adminAuthB] =
+      await Promise.all([
+        loginAs(appA, managerUsername).then(({ authHeader }) => authHeader),
+        loginAs(appA, applicantUsername).then(({ authHeader }) => authHeader),
+        loginAs(appB, managerUsername).then(({ authHeader }) => authHeader),
+        loginAs(appB, applicantUsername).then(({ authHeader }) => authHeader),
+        loginAs(appA, otherApplicantUsername).then(({ authHeader }) => authHeader),
+        loginAs(appB, adminUsername).then(({ authHeader }) => authHeader),
+      ]);
   });
   afterAll(async () => {
     await Promise.all([appA.close(), appB.close()]);
@@ -123,7 +139,10 @@ describe('activity batch5 punch multi-instance concurrency', () => {
     const startAt = new Date(now.getTime() + (input?.startOffsetMinutes ?? -10) * 60_000);
     const endAt = new Date(startAt.getTime() + 2 * 60 * 60_000);
     const organization = await prismaA.organization.create({
-      data: { name: `Batch5 Punch Concurrency Team ${index}`, nodeTypeCode: 'batch5-punch-conc-team' },
+      data: {
+        name: `Batch5 Punch Concurrency Team ${index}`,
+        nodeTypeCode: 'batch5-punch-conc-team',
+      },
       select: { id: true },
     });
     const activity = await prismaA.activity.create({
@@ -175,8 +194,18 @@ describe('activity batch5 punch multi-instance concurrency', () => {
     });
     await prismaA.activityCapacityBucket.createMany({
       data: [
-        { activityId: activity.id, scopeTypeCode: 'activity_person', scopeId: activity.id, capacity: 1 },
-        { activityId: activity.id, scopeTypeCode: 'session_participation', scopeId: session.id, capacity: 1 },
+        {
+          activityId: activity.id,
+          scopeTypeCode: 'activity_person',
+          scopeId: activity.id,
+          capacity: 1,
+        },
+        {
+          activityId: activity.id,
+          scopeTypeCode: 'session_participation',
+          scopeId: session.id,
+          capacity: 1,
+        },
         {
           activityId: activity.id,
           scopeTypeCode: 'position_participation',
@@ -221,18 +250,22 @@ describe('activity batch5 punch multi-instance concurrency', () => {
         formVersion: null,
         answers: [],
         preferences: [{ sessionId: scenario.sessionId, positionIds: [scenario.positionId] }],
-    });
+      });
     expect(registered.status).toBe(201);
   }
 
-  async function issueToken(scenario: Scenario, action: 'check-in' | 'check-out'): Promise<string> {
+  async function issueToken(
+    scenario: Scenario,
+    action: 'check-in' | 'check-out',
+    auth = managerAuthA,
+  ): Promise<string> {
     const issued = await request(httpServer(appA))
       .post(
         action === 'check-in'
           ? issuePath(scenario)
           : issuePath(scenario).replace('/check-in/issue', '/check-out/issue'),
       )
-      .set('Authorization', managerAuthA)
+      .set('Authorization', auth)
       .send({ operationKey: `batch5-concurrency-issue-${++sequence}` });
     expect(issued.status).toBe(201);
     const credential = await prismaA.attendanceQrCredential.findUniqueOrThrow({
@@ -289,6 +322,24 @@ describe('activity batch5 punch multi-instance concurrency', () => {
     throw new Error('expected a PostgreSQL lock waiter before releasing the punch transaction');
   }
 
+  function freezeSystemTime(now: Date): void {
+    jest.useFakeTimers({
+      doNotFake: [
+        'hrtime',
+        'nextTick',
+        'performance',
+        'queueMicrotask',
+        'setImmediate',
+        'clearImmediate',
+        'setInterval',
+        'clearInterval',
+        'setTimeout',
+        'clearTimeout',
+      ],
+    });
+    jest.setSystemTime(now);
+  }
+
   it('proves two Nest apps hold independent PostgreSQL connections', async () => {
     expect(appA.getHttpServer()).not.toBe(appB.getHttpServer());
     expect(prismaA).not.toBe(prismaB);
@@ -306,8 +357,14 @@ describe('activity batch5 punch multi-instance concurrency', () => {
     const token = await registerAndIssue(scenario);
     const payload = { qrToken: token, eventKey: `batch5-concurrency-replay-${++sequence}` };
     const [left, right] = await Promise.all([
-      request(httpServer(appA)).post(punchPath(scenario)).set('Authorization', applicantAuthA).send(payload),
-      request(httpServer(appB)).post(punchPath(scenario)).set('Authorization', applicantAuthB).send(payload),
+      request(httpServer(appA))
+        .post(punchPath(scenario))
+        .set('Authorization', applicantAuthA)
+        .send(payload),
+      request(httpServer(appB))
+        .post(punchPath(scenario))
+        .set('Authorization', applicantAuthB)
+        .send(payload),
     ]);
     expect(left.status).toBe(201);
     expect(right.status).toBe(201);
@@ -352,11 +409,17 @@ describe('activity batch5 punch multi-instance concurrency', () => {
       request(httpServer(appA))
         .post(punchPath(distinctScenario))
         .set('Authorization', applicantAuthA)
-        .send({ qrToken: distinctToken, eventKey: `batch5-concurrency-distinct-left-${++sequence}` }),
+        .send({
+          qrToken: distinctToken,
+          eventKey: `batch5-concurrency-distinct-left-${++sequence}`,
+        }),
       request(httpServer(appB))
         .post(punchPath(distinctScenario))
         .set('Authorization', applicantAuthB)
-        .send({ qrToken: distinctToken, eventKey: `batch5-concurrency-distinct-right-${++sequence}` }),
+        .send({
+          qrToken: distinctToken,
+          eventKey: `batch5-concurrency-distinct-right-${++sequence}`,
+        }),
     ]);
     expect([left.status, right.status].sort()).toEqual([
       201,
@@ -371,25 +434,38 @@ describe('activity batch5 punch multi-instance concurrency', () => {
     const raceScenario = await createScenario();
     const raceToken = await registerAndIssue(raceScenario);
     const credential = await prismaA.attendanceQrCredential.findFirstOrThrow({
-      where: { activityId: raceScenario.activityId, sessionId: raceScenario.sessionId, actionCode: 'check_in' },
+      where: {
+        activityId: raceScenario.activityId,
+        sessionId: raceScenario.sessionId,
+        actionCode: 'check_in',
+      },
       select: { id: true },
     });
     const [punch, revoked] = await Promise.all([
       request(httpServer(appA))
         .post(punchPath(raceScenario))
         .set('Authorization', applicantAuthA)
-        .send({ qrToken: raceToken, eventKey: `batch5-concurrency-revoke-race-punch-${++sequence}` }),
+        .send({
+          qrToken: raceToken,
+          eventKey: `batch5-concurrency-revoke-race-punch-${++sequence}`,
+        }),
       request(httpServer(appB))
         .post(
           `/api/app/v1/my/managed-activities/${raceScenario.activityId}` +
             `/qr-credentials/${credential.id}/revoke`,
         )
         .set('Authorization', managerAuthB)
-        .send({ operationKey: `batch5-concurrency-revoke-race-${++sequence}`, reason: '并发作废验证' }),
+        .send({
+          operationKey: `batch5-concurrency-revoke-race-${++sequence}`,
+          reason: '并发作废验证',
+        }),
     ]);
     expect(revoked.status).toBe(200);
     if (punch.status === 201) {
-      expect(punch.body.data).toMatchObject({ eventTypeCode: 'check_in', segmentStatusCode: 'open' });
+      expect(punch.body.data).toMatchObject({
+        eventTypeCode: 'check_in',
+        segmentStatusCode: 'open',
+      });
     } else {
       expectBizError(punch, BizCode.ATTENDANCE_QR_REVOKED);
     }
@@ -455,9 +531,7 @@ describe('activity batch5 punch multi-instance concurrency', () => {
       .send({ qrToken: otherToken, eventKey });
     expectBizError(changedActivity, BizCode.ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT);
 
-    await expect(
-      prismaB.attendancePunchEvent.count({ where: { eventKey } }),
-    ).resolves.toBe(1);
+    await expect(prismaB.attendancePunchEvent.count({ where: { eventKey } })).resolves.toBe(1);
   });
 
   it('red-first: activity cancellation waits behind the first punch and must not cancel once the punch commits', async () => {
@@ -509,6 +583,198 @@ describe('activity batch5 punch multi-instance concurrency', () => {
     } finally {
       logSpy.mockRestore();
       releasePunch();
+    }
+  });
+
+  it('rejects the Admin cancellation path when a real effective punch exists', async () => {
+    const scenario = await createScenario({ startOffsetMinutes: 10 });
+    const token = await registerAndIssue(scenario);
+    const punched = await request(httpServer(appA))
+      .post(punchPath(scenario))
+      .set('Authorization', applicantAuthA)
+      .send({ qrToken: token, eventKey: `batch5-admin-cancel-after-punch-${++sequence}` });
+    expect(punched.status).toBe(201);
+
+    const cancelled = await request(httpServer(appB))
+      .patch(`/api/admin/v1/activities/${scenario.activityId}/cancel`)
+      .set('Authorization', adminAuthB)
+      .send({ cancelReason: '现场事实不可覆盖' });
+    expectBizError(cancelled, BizCode.ACTIVITY_STATUS_INVALID);
+    await expect(
+      prismaA.activity.findUniqueOrThrow({
+        where: { id: scenario.activityId },
+        select: { statusCode: true },
+      }),
+    ).resolves.toEqual({ statusCode: 'published' });
+  });
+
+  it('serializes settlement submission behind the final legal QR checkout', async () => {
+    freezeSystemTime(new Date('2099-12-16T08:00:00.000Z'));
+    try {
+      const [freshApplicantAuth, freshManagerAuth, freshSubmitterAuth] = await Promise.all([
+        loginAs(appA, applicantUsername).then(({ authHeader }) => authHeader),
+        loginAs(appA, managerUsername).then(({ authHeader }) => authHeader),
+        loginAs(appB, adminUsername).then(({ authHeader }) => authHeader),
+      ]);
+      const scenario = await createScenario();
+      await register(scenario, freshApplicantAuth);
+      const [checkInToken, checkOutToken] = await Promise.all([
+        issueToken(scenario, 'check-in', freshManagerAuth),
+        issueToken(scenario, 'check-out', freshManagerAuth),
+      ]);
+      const checkIn = await request(httpServer(appA))
+        .post(punchPath(scenario))
+        .set('Authorization', freshApplicantAuth)
+        .send({ qrToken: checkInToken, eventKey: `batch5-submit-race-in-${++sequence}` });
+      expect(checkIn.status).toBe(201);
+
+      // 这份草稿代表签退提交前读到的旧封场快照；真正的对抗面是下面两条 HTTP
+      // 命令争夺同一 Activity 锁后，签退能否让提交重新发现 evidence revision 已前进。
+      const [activity, evidenceState, identity] = await Promise.all([
+        prismaA.activity.findUniqueOrThrow({
+          where: { id: scenario.activityId },
+          select: { workflowRevision: true },
+        }),
+        prismaA.activityEvidenceState.findUniqueOrThrow({
+          where: { activityId: scenario.activityId },
+          select: { evidenceRevision: true, populationRevision: true },
+        }),
+        prismaA.activityParticipationIdentity.findFirstOrThrow({
+          where: {
+            activityId: scenario.activityId,
+            sessionId: scenario.sessionId,
+            memberId: applicantMemberId,
+          },
+          select: { id: true },
+        }),
+      ]);
+      const seal = await prismaA.evidenceSeal.create({
+        data: {
+          activityId: scenario.activityId,
+          sealRevision: 1,
+          evidenceRevision: evidenceState.evidenceRevision,
+          populationRevision: evidenceState.populationRevision,
+          workflowRevision: activity.workflowRevision,
+          allWindowsClosedAt: new Date('2099-12-16T08:00:00.000Z'),
+          openSegmentCount: 0,
+          manualReviewPendingCount: 0,
+          populationCountDistinct: 1,
+          populationCountBySession: { [scenario.sessionId]: 1 },
+          contentHash: `batch5-submit-race-seal-${sequence}`,
+          statusCode: 'active',
+          sealedByUserId: managerUserId,
+          sealedAt: new Date('2099-12-16T08:00:00.000Z'),
+        },
+        select: { id: true },
+      });
+      const run = await prismaA.attendanceSettlementRun.create({
+        data: {
+          activityId: scenario.activityId,
+          statusCode: 'drafting',
+          currentDraftVersion: 1,
+        },
+        select: { id: true },
+      });
+      const draft = await prismaA.attendanceSettlementVersion.create({
+        data: {
+          settlementRunId: run.id,
+          version: 1,
+          evidenceSealId: seal.id,
+          evidenceRevision: evidenceState.evidenceRevision,
+          populationRevision: evidenceState.populationRevision,
+          workflowRevision: activity.workflowRevision,
+          contentHash: `batch5-submit-race-draft-${sequence}`,
+          personCount: 1,
+          sessionParticipationCount: 1,
+          serviceSegmentCount: 1,
+          createdByUserId: managerUserId,
+          statusCode: 'draft',
+        },
+        select: { id: true },
+      });
+      await prismaA.participantSettlementResultRevision.create({
+        data: {
+          settlementVersionId: draft.id,
+          participationIdentityId: identity.id,
+          revision: 0,
+          resultCode: 'present',
+          lateFlag: false,
+          earlyLeaveFlag: false,
+          recognizedServiceHours: 0.5,
+          recognizedContributionPoints: 0,
+          calculatedServiceHours: 0.5,
+          calculatedContributionPoints: 0,
+          statusCode: 'draft',
+        },
+      });
+
+      freezeSystemTime(new Date('2099-12-16T08:30:00.000Z'));
+      const audit = appA.get(AttendancePunchAuditRecorder);
+      const originalLogPunch = audit.logPunch.bind(audit);
+      let releaseCheckout!: () => void;
+      let checkoutReached!: () => void;
+      const releaseCheckoutPromise = new Promise<void>((resolve) => {
+        releaseCheckout = resolve;
+      });
+      const checkoutReachedPromise = new Promise<void>((resolve) => {
+        checkoutReached = resolve;
+      });
+      const logSpy = jest.spyOn(audit, 'logPunch').mockImplementation(async (args) => {
+        checkoutReached();
+        await releaseCheckoutPromise;
+        return originalLogPunch(args);
+      });
+
+      try {
+        const checkout = request(httpServer(appA))
+          .post(
+            `/api/app/v1/activities/${scenario.activityId}/sessions/${scenario.sessionId}/punches/check-out`,
+          )
+          .set('Authorization', freshApplicantAuth)
+          .send({ qrToken: checkOutToken, eventKey: `batch5-submit-race-out-${++sequence}` })
+          .then((response) => response);
+        await checkoutReachedPromise;
+        const submit = request(httpServer(appB))
+          .post(`/api/app/v1/my/managed-activities/${scenario.activityId}/settlement/submit`)
+          .set('Authorization', freshSubmitterAuth)
+          .send({
+            operationKey: `batch5-submit-race-submit-${++sequence}`,
+            expectedDraftVersion: 1,
+            evidenceSealId: seal.id,
+            confirmation: true,
+          })
+          .then((response) => response);
+        await waitForLockWaiter();
+        releaseCheckout();
+        const [checkoutResponse, submitResponse] = await Promise.all([checkout, submit]);
+        expect(checkoutResponse.status).toBe(201);
+        expectBizError(submitResponse, BizCode.SETTLEMENT_SUBMIT_EVIDENCE_SEAL_STALE);
+        await expect(
+          Promise.all([
+            prismaA.attendancePunchEvent.findMany({
+              where: { activityId: scenario.activityId },
+              select: { eventTypeCode: true },
+              orderBy: { createdAt: 'asc' },
+            }),
+            prismaA.attendanceSettlementRun.findUniqueOrThrow({
+              where: { id: run.id },
+              select: { statusCode: true, currentSubmittedVersion: true },
+            }),
+            prismaA.attendanceSettlementVersion.count({
+              where: { settlementRunId: run.id, statusCode: 'submitted' },
+            }),
+          ]),
+        ).resolves.toEqual([
+          [{ eventTypeCode: 'check_in' }, { eventTypeCode: 'check_out' }],
+          { statusCode: 'drafting', currentSubmittedVersion: null },
+          0,
+        ]);
+      } finally {
+        logSpy.mockRestore();
+        releaseCheckout();
+      }
+    } finally {
+      jest.useRealTimers();
     }
   });
 });

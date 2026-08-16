@@ -16,8 +16,14 @@ describe('attendance punch presenter', () => {
       new Date('2099-12-15T08:00:00.000Z'),
     );
     expect(dto).toEqual(
-      expect.objectContaining({ eventId: 'event-1', distanceMeters: '12.35', nextAllowedAction: 'check_out' }),
+      expect.objectContaining({
+        eventId: 'event-1',
+        distanceMeters: '12.35',
+        nextAllowedAction: 'check_out',
+      }),
     );
-    expect(Object.keys(dto)).not.toEqual(expect.arrayContaining(['longitude', 'latitude', 'qrToken']));
+    expect(Object.keys(dto)).not.toEqual(
+      expect.arrayContaining(['longitude', 'latitude', 'qrToken']),
+    );
   });
 });

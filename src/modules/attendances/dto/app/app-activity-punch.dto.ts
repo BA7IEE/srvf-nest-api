@@ -1,5 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumber, IsOptional, IsString, Length, Max, Min } from 'class-validator';
+import { IsNumber, IsString, Length, Max, Min } from 'class-validator';
+
+import { OmittableOnly } from '../../../../common/decorators/omittable-only.decorator';
 
 export class AppActivityPunchParamsDto {
   @ApiProperty({ minLength: 8, maxLength: 64, description: '活动 ID' })
@@ -25,21 +27,21 @@ export class AppActivityPunchDto {
   eventKey!: string;
 
   @ApiPropertyOptional({ minimum: -180, maximum: 180, description: 'WGS84 经度，按策略可选' })
-  @IsOptional()
+  @OmittableOnly()
   @IsNumber({ maxDecimalPlaces: 7, allowNaN: false, allowInfinity: false })
   @Min(-180)
   @Max(180)
   longitude?: number;
 
   @ApiPropertyOptional({ minimum: -90, maximum: 90, description: 'WGS84 纬度，按策略可选' })
-  @IsOptional()
+  @OmittableOnly()
   @IsNumber({ maxDecimalPlaces: 7, allowNaN: false, allowInfinity: false })
   @Min(-90)
   @Max(90)
   latitude?: number;
 
   @ApiPropertyOptional({ minimum: 0, maximum: 99_999_999.99, description: '定位精度(米)' })
-  @IsOptional()
+  @OmittableOnly()
   @IsNumber({ maxDecimalPlaces: 2, allowNaN: false, allowInfinity: false })
   @Min(0)
   @Max(99_999_999.99)
@@ -62,7 +64,11 @@ export class AppActivityPunchReceiptDto {
   @ApiProperty({ type: Date, format: 'date-time', description: '本次响应的服务端时间' })
   serverTime!: Date;
 
-  @ApiPropertyOptional({ nullable: true, type: String, description: '安全距离(米，Decimal 字符串)' })
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: '安全距离(米，Decimal 字符串)',
+  })
   distanceMeters!: string | null;
 
   @ApiProperty({ description: '本次是否完成位置核验' })
@@ -85,7 +91,11 @@ export class AppActivityPunchStateDto {
   @ApiPropertyOptional({ nullable: true, type: Date, format: 'date-time' })
   checkOutAllowedAt!: Date | null;
 
-  @ApiPropertyOptional({ nullable: true, type: String, description: '安全距离(米，Decimal 字符串)' })
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: '安全距离(米，Decimal 字符串)',
+  })
   distanceMeters!: string | null;
 
   @ApiProperty()

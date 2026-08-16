@@ -44,13 +44,13 @@ describe('activity batch5 punch runtime', () => {
     ]);
     const [member, applicantMember] = await Promise.all([
       prisma.member.create({
-      data: {
-        memberNo: 'B5-PUNCH-MANAGER',
-        displayName: 'Batch5 Punch Manager',
-        gradeCode: 'L1',
-        status: MemberStatus.ACTIVE,
-      },
-      select: { id: true },
+        data: {
+          memberNo: 'B5-PUNCH-MANAGER',
+          displayName: 'Batch5 Punch Manager',
+          gradeCode: 'L1',
+          status: MemberStatus.ACTIVE,
+        },
+        select: { id: true },
       }),
       prisma.member.create({
         data: {
@@ -166,9 +166,24 @@ describe('activity batch5 punch runtime', () => {
     });
     await prisma.activityCapacityBucket.createMany({
       data: [
-        { activityId: activity.id, scopeTypeCode: 'activity_person', scopeId: activity.id, capacity: 1 },
-        { activityId: activity.id, scopeTypeCode: 'session_participation', scopeId: session.id, capacity: 1 },
-        { activityId: activity.id, scopeTypeCode: 'position_participation', scopeId: position.id, capacity: 1 },
+        {
+          activityId: activity.id,
+          scopeTypeCode: 'activity_person',
+          scopeId: activity.id,
+          capacity: 1,
+        },
+        {
+          activityId: activity.id,
+          scopeTypeCode: 'session_participation',
+          scopeId: session.id,
+          capacity: 1,
+        },
+        {
+          activityId: activity.id,
+          scopeTypeCode: 'position_participation',
+          scopeId: position.id,
+          capacity: 1,
+        },
       ],
     });
     await prisma.activityEvidenceState.create({ data: { activityId: activity.id } });
@@ -198,19 +213,27 @@ describe('activity batch5 punch runtime', () => {
     return { activityId: activity.id, sessionId: session.id, positionId: position.id };
   }
 
-  const qrIssuePath = (scenario: { activityId: string; sessionId: string }, action: 'check-in' | 'check-out') =>
+  const qrIssuePath = (
+    scenario: { activityId: string; sessionId: string },
+    action: 'check-in' | 'check-out',
+  ) =>
     `/api/app/v1/my/managed-activities/${scenario.activityId}/sessions/${scenario.sessionId}` +
     `/qr-credentials/${action}/issue`;
 
   const selfPunchPath = (
     scenario: { activityId: string; sessionId: string },
     action: 'check-in' | 'check-out',
-  ) => `/api/app/v1/activities/${scenario.activityId}/sessions/${scenario.sessionId}/punches/${action}`;
+  ) =>
+    `/api/app/v1/activities/${scenario.activityId}/sessions/${scenario.sessionId}/punches/${action}`;
 
   const onsitePath = (scenario: { activityId: string }) =>
     `/api/app/v1/my/managed-activities/${scenario.activityId}/onsite`;
 
-  async function submitApplicant(scenario: { activityId: string; sessionId: string; positionId: string }) {
+  async function submitApplicant(scenario: {
+    activityId: string;
+    sessionId: string;
+    positionId: string;
+  }) {
     const submitted = await request(httpServer(app))
       .post(`/api/app/v1/activities/${scenario.activityId}/registrations`)
       .set('Authorization', applicantAuth)
@@ -252,7 +275,10 @@ describe('activity batch5 punch runtime', () => {
       },
     });
     const config = app.get(ConfigService).get<JwtConfig>('jwt');
-    if (!config || (credential.actionCode !== 'check_in' && credential.actionCode !== 'check_out')) {
+    if (
+      !config ||
+      (credential.actionCode !== 'check_in' && credential.actionCode !== 'check_out')
+    ) {
       throw new Error('B5 test credential cannot be signed');
     }
     return signAttendanceQrToken(
@@ -307,7 +333,11 @@ describe('activity batch5 punch runtime', () => {
     const scenario = await createScenario();
     const otherScenario = await createScenario();
     await submitApplicant(scenario);
-    const issued = await issueCredential(scenario, 'check-in', `batch5-mismatch-issue-${++sequence}`);
+    const issued = await issueCredential(
+      scenario,
+      'check-in',
+      `batch5-mismatch-issue-${++sequence}`,
+    );
     const token = await tokenForCredential(issued.body.data.credentialId as string);
 
     freezeSystemTime(new Date('2099-12-15T08:00:00.000Z'));
@@ -380,7 +410,9 @@ describe('activity batch5 punch runtime', () => {
     expect(JSON.stringify(checkIn.body.data)).not.toContain('latitude');
 
     const state = await request(httpServer(app))
-      .get(`/api/app/v1/activities/${scenario.activityId}/sessions/${scenario.sessionId}/my-punch-state`)
+      .get(
+        `/api/app/v1/activities/${scenario.activityId}/sessions/${scenario.sessionId}/my-punch-state`,
+      )
       .set('Authorization', (await loginAs(app, applicantUsername)).authHeader);
     expect(state.status).toBe(200);
     expect(state.body.data).toMatchObject({ isPresent: true, nextAllowedAction: 'check_out' });
@@ -408,7 +440,9 @@ describe('activity batch5 punch runtime', () => {
     });
     const [stateAfter, segments, evidence] = await Promise.all([
       request(httpServer(app))
-        .get(`/api/app/v1/activities/${scenario.activityId}/sessions/${scenario.sessionId}/my-punch-state`)
+        .get(
+          `/api/app/v1/activities/${scenario.activityId}/sessions/${scenario.sessionId}/my-punch-state`,
+        )
         .set('Authorization', (await loginAs(app, applicantUsername)).authHeader),
       prisma.participantServiceSegmentRevision.findMany({
         where: { identity: { activityId: scenario.activityId, memberId: applicantMemberId } },
@@ -423,9 +457,13 @@ describe('activity batch5 punch runtime', () => {
     expect(stateAfter.body.data).toMatchObject({ isPresent: false, nextAllowedAction: 'check_in' });
     expect(segments).toEqual([
       expect.objectContaining({ statusCode: 'superseded', resultCode: 'valid', checkOutAt: null }),
-      expect.objectContaining({ statusCode: 'draft', resultCode: 'valid', serviceHours: expect.anything() }),
+      expect.objectContaining({
+        statusCode: 'draft',
+        resultCode: 'valid',
+        serviceHours: expect.anything(),
+      }),
     ]);
-    expect(String(segments[1]!.serviceHours)).toBe('0.5');
+    expect(String(segments[1].serviceHours)).toBe('0.5');
     expect(evidence.evidenceRevision).toBe(2);
   });
 
@@ -437,12 +475,18 @@ describe('activity batch5 punch runtime', () => {
       radiusMeters: 100,
     });
     await submitApplicant(scenario);
-    const issued = await issueCredential(scenario, 'check-in', `batch5-location-issue-${++sequence}`);
+    const issued = await issueCredential(
+      scenario,
+      'check-in',
+      `batch5-location-issue-${++sequence}`,
+    );
     const credentialId = issued.body.data.credentialId as string;
     const token = await tokenForCredential(credentialId);
 
     const rendered = await request(httpServer(app))
-      .post(`/api/app/v1/my/managed-activities/${scenario.activityId}/qr-credentials/${credentialId}/render`)
+      .post(
+        `/api/app/v1/my/managed-activities/${scenario.activityId}/qr-credentials/${credentialId}/render`,
+      )
       .set('Authorization', managerAuth);
     expect(rendered.status).toBe(201);
     expect(rendered.headers['cache-control']).toBe('no-store');
@@ -558,7 +602,13 @@ describe('activity batch5 punch runtime', () => {
 
     const segments = await prisma.participantServiceSegmentRevision.findMany({
       where: { participationIdentityId: identityId, statusCode: { not: 'superseded' } },
-      select: { segmentKey: true, resultCode: true, serviceHours: true, checkInAt: true, checkOutAt: true },
+      select: {
+        segmentKey: true,
+        resultCode: true,
+        serviceHours: true,
+        checkInAt: true,
+        checkOutAt: true,
+      },
       orderBy: { segmentKey: 'asc' },
     });
     expect(segments).toEqual([
@@ -566,14 +616,22 @@ describe('activity batch5 punch runtime', () => {
       expect.objectContaining({ segmentKey: '0002', resultCode: 'valid' }),
     ]);
     expect(String(segments[0]?.serviceHours)).toBe('0');
-    expect(segments[0]?.checkOutAt?.getTime()).toBeGreaterThan(segments[0]?.checkInAt.getTime() ?? 0);
-    expect(segments[1]?.checkInAt.getTime()).toBeGreaterThanOrEqual(segments[0]?.checkOutAt?.getTime() ?? 0);
+    expect(segments[0]?.checkOutAt?.getTime()).toBeGreaterThan(
+      segments[0]?.checkInAt.getTime() ?? 0,
+    );
+    expect(segments[1]?.checkInAt.getTime()).toBeGreaterThanOrEqual(
+      segments[0]?.checkOutAt?.getTime() ?? 0,
+    );
   });
 
   it('does not invent a checkout or service duration after the frozen checkout window has closed', async () => {
     const scenario = await createScenario();
     await submitApplicant(scenario);
-    const issued = await issueCredential(scenario, 'check-in', `batch5-open-segment-issue-${++sequence}`);
+    const issued = await issueCredential(
+      scenario,
+      'check-in',
+      `batch5-open-segment-issue-${++sequence}`,
+    );
     const token = await tokenForCredential(issued.body.data.credentialId as string);
     const identityId = await participationIdentityIdFor(scenario);
 
@@ -586,7 +644,9 @@ describe('activity batch5 punch runtime', () => {
 
     freezeSystemTime(new Date('2099-12-15T12:30:01.000Z'));
     const state = await request(httpServer(app))
-      .get(`/api/app/v1/activities/${scenario.activityId}/sessions/${scenario.sessionId}/my-punch-state`)
+      .get(
+        `/api/app/v1/activities/${scenario.activityId}/sessions/${scenario.sessionId}/my-punch-state`,
+      )
       .set('Authorization', (await loginAs(app, applicantUsername)).authHeader);
     expect(state.status).toBe(200);
     expect(state.body.data).toMatchObject({ isPresent: true, nextAllowedAction: 'check_out' });
@@ -600,7 +660,11 @@ describe('activity batch5 punch runtime', () => {
   it('keeps the wrong check-in immutable after void and lets the corrected check-in become the active segment', async () => {
     const scenario = await createScenario();
     await submitApplicant(scenario);
-    const issued = await issueCredential(scenario, 'check-in', `batch5-void-in-issue-${++sequence}`);
+    const issued = await issueCredential(
+      scenario,
+      'check-in',
+      `batch5-void-in-issue-${++sequence}`,
+    );
     const token = await tokenForCredential(issued.body.data.credentialId as string);
     const identityId = await participationIdentityIdFor(scenario);
 
@@ -721,15 +785,24 @@ describe('activity batch5 punch runtime', () => {
       .set('Authorization', (await loginAs(app, applicantUsername)).authHeader)
       .send({ qrToken: checkOutToken, eventKey: `batch5-correction-check-out-${++sequence}` });
     expect(checkOut.status).toBe(201);
-    expect(checkOut.body.data).toMatchObject({ eventTypeCode: 'check_out', segmentStatusCode: 'closed_valid' });
+    expect(checkOut.body.data).toMatchObject({
+      eventTypeCode: 'check_out',
+      segmentStatusCode: 'closed_valid',
+    });
 
     freezeSystemTime(new Date('2099-12-15T08:35:00.000Z'));
     const replaced = await request(httpServer(app))
       .post(`${onsitePath(scenario)}/punch-events/${checkOut.body.data.eventId as string}/replace`)
       .set('Authorization', (await loginAs(app, managerUsername)).authHeader)
-      .send({ operationKey: `batch5-correction-replace-${++sequence}`, reason: '以现场更正替代签退' });
+      .send({
+        operationKey: `batch5-correction-replace-${++sequence}`,
+        reason: '以现场更正替代签退',
+      });
     expect(replaced.status).toBe(201);
-    expect(replaced.body.data).toMatchObject({ eventTypeCode: 'replace', segmentStatusCode: 'closed_valid' });
+    expect(replaced.body.data).toMatchObject({
+      eventTypeCode: 'replace',
+      segmentStatusCode: 'closed_valid',
+    });
 
     const [events, currentSegment, evidence] = await Promise.all([
       prisma.attendancePunchEvent.findMany({

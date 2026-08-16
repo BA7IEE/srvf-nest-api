@@ -2,7 +2,7 @@
 // 真相源:后端 live /api/docs-json;本文件派生自 docs/handoff/openapi.json 快照。
 // surface: App 小程序
 // generatorVersion: 1.0.0
-// inputDigest: sha256:82a68b718e07c8fa7a571a9d2889c5b044c8ce54c8de4fbd1ca8ce71483b4d09
+// inputDigest: sha256:2a0bd76ec87549aebb41083b5c32238da748fe15c3f98d9597ba0de64fb598fc
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -207,6 +207,37 @@ export interface AppActivityPositionDto {
   "description"?: string | null;
   "sortOrder": number;
   "canRegister": boolean;
+}
+
+export interface AppActivityPunchDto {
+  "qrToken": string;
+  "eventKey": string;
+  "longitude"?: number;
+  "latitude"?: number;
+  "accuracy"?: number;
+}
+
+export interface AppActivityPunchReceiptDto {
+  "eventId": string;
+  "eventTypeCode": "check_in" | "check_out" | "early_departure_close" | "void" | "replace";
+  "occurredAt": string;
+  "segmentStatusCode": "open" | "closed_valid" | "closed_zero";
+  "serverTime": string;
+  "distanceMeters"?: string | null;
+  "geoVerified": boolean;
+  "lowAccuracy": boolean;
+  "nextAllowedAction": "check_in" | "check_out";
+}
+
+export interface AppActivityPunchStateDto {
+  "isPresent": boolean;
+  "checkInAt"?: string | null;
+  "checkOutAllowedAt"?: string | null;
+  "distanceMeters"?: string | null;
+  "geoVerified": boolean;
+  "lowAccuracy": boolean;
+  "serverTime": string;
+  "nextAllowedAction": "check_in" | "check_out";
 }
 
 export interface AppActivityQualificationDto {
@@ -604,6 +635,19 @@ export interface AppManagedAttendanceMemberDto {
   "id": string;
   "memberNo": string;
   "displayName": string;
+}
+
+export interface AppManagedAttendanceQrCredentialDto {
+  "credentialId": string;
+  "activityId": string;
+  "sessionId": string;
+  "actionCode": "check_in" | "check_out";
+  "credentialVersion": number;
+  "statusCode": "active" | "revoked" | "expired";
+  "validFrom": string;
+  "validUntil": string;
+  "issuedAt": string;
+  "revokedAt"?: string | null;
 }
 
 export interface AppManagedAttendanceRecordDto {
@@ -1416,6 +1460,11 @@ export interface CommitAppManagedActivityAllocationBatchDto {
   "operationKey": string;
 }
 
+export interface CorrectAppManagedOnsitePunchDto {
+  "operationKey": string;
+  "reason": string;
+}
+
 export interface CreateAppManagedActivityDto {
   "title": string;
   "activityTypeCode": string;
@@ -1551,6 +1600,16 @@ export interface DeclineAppMyActivityInvitationDto {
   "reason"?: Record<string, unknown> | null;
 }
 
+export interface EarlyDepartureCloseAppManagedOnsitePunchDto {
+  "participationIdentityId": string;
+  "reason": string;
+  "eventKey": string;
+}
+
+export interface IssueAppManagedAttendanceQrDto {
+  "operationKey": string;
+}
+
 export interface MarkNotificationReadResponseDto {
   "read": boolean;
 }
@@ -1628,6 +1687,11 @@ export interface RejectAppManagedRegistrationDto {
 export type ResubmitAppManagedAttendanceSheetDto = Record<string, unknown>;
 
 export interface RevokeAppManagedActivityInvitationDto {
+  "reason": string;
+}
+
+export interface RevokeAppManagedAttendanceQrDto {
+  "operationKey": string;
   "reason": string;
 }
 

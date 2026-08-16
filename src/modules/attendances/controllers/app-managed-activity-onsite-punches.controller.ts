@@ -2,8 +2,14 @@ import { Body, Controller, Param, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 
-import { ApiBizErrorResponse, ApiWrappedCreatedResponse } from '../../../common/decorators/api-response.decorator';
-import { CurrentUser, type CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
+import {
+  ApiBizErrorResponse,
+  ApiWrappedCreatedResponse,
+} from '../../../common/decorators/api-response.decorator';
+import {
+  CurrentUser,
+  type CurrentUserPayload,
+} from '../../../common/decorators/current-user.decorator';
 import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 import { BizCode } from '../../../common/exceptions/biz-code.constant';
 import { BizException } from '../../../common/exceptions/biz.exception';
@@ -145,6 +151,10 @@ export class AppManagedActivityOnsitePunchesController {
   }
 
   private auditMeta(req: Request): AuditMeta {
-    return { requestId: req.id as string, ip: req.ip ?? null, ua: req.headers['user-agent'] ?? null };
+    return {
+      requestId: req.id as string,
+      ip: req.ip ?? null,
+      ua: req.headers['user-agent'] ?? null,
+    };
   }
 }

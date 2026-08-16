@@ -1,7 +1,7 @@
 // 由 scripts/generate-fe-client.ts 生成,请勿手改。
 // surface: App 小程序
 // generatorVersion: 1.0.0
-// inputDigest: sha256:82a68b718e07c8fa7a571a9d2889c5b044c8ce54c8de4fbd1ca8ce71483b4d09
+// inputDigest: sha256:2a0bd76ec87549aebb41083b5c32238da748fe15c3f98d9597ba0de64fb598fc
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -31,6 +31,9 @@ import type {
   AppActivityInvitationDto,
   AppActivityLifecycleResultDto,
   AppActivityPositionDto,
+  AppActivityPunchDto,
+  AppActivityPunchReceiptDto,
+  AppActivityPunchStateDto,
   AppActivityQualificationDto,
   AppActivityQualificationRuleDto,
   AppActivityQualificationRuleInputDto,
@@ -74,6 +77,7 @@ import type {
   AppManagedAttendanceDraftFlagDto,
   AppManagedAttendanceDraftRecordDto,
   AppManagedAttendanceMemberDto,
+  AppManagedAttendanceQrCredentialDto,
   AppManagedAttendanceRecordDto,
   AppManagedAttendanceRecordInputDto,
   AppManagedAttendanceSheetDetailDto,
@@ -161,6 +165,7 @@ import type {
   ContentAttachmentDto,
   ContentReadDetailDto,
   ContentReadListItemDto,
+  CorrectAppManagedOnsitePunchDto,
   CreateAppManagedActivityDto,
   CreateAppManagedActivityInvitationDto,
   CreateAppManagedActivityOnsiteParticipationDto,
@@ -174,6 +179,8 @@ import type {
   CreateAppMyRegistrationDto,
   CreateAppTeamJoinApplicationDto,
   DeclineAppMyActivityInvitationDto,
+  EarlyDepartureCloseAppManagedOnsitePunchDto,
+  IssueAppManagedAttendanceQrDto,
   MarkNotificationReadResponseDto,
   NotificationReadDetailDto,
   NotificationReadListItemDto,
@@ -188,6 +195,7 @@ import type {
   RejectAppManagedRegistrationDto,
   ResubmitAppManagedAttendanceSheetDto,
   RevokeAppManagedActivityInvitationDto,
+  RevokeAppManagedAttendanceQrDto,
   SendMyPhoneCodeDto,
   SendMyPhoneCodeResponseDto,
   SubmitActivityPublishReviewDto,
@@ -238,6 +246,18 @@ export function createAppClient(fetcher: Fetcher) {
     /** 本人提交或审批前重提报名主链；请求含 operationKey、冻结表单答案与有序场次岗位志愿 [auth] */
     AppActivityRegistrationsControllerSubmit(activityId: string, body: AppActivityRegistrationCommandDto): Promise<ApiEnvelope<AppActivityRegistrationCommandReceiptDto>> {
       return fetcher<AppActivityRegistrationCommandReceiptDto>({ method: "POST", path: `/api/app/v1/activities/${activityId}/registrations`, body });
+    },
+    /** 读取本人当前服务段的安全打卡状态 [auth] */
+    AppActivityPunchesControllerState(activityId: string, sessionId: string): Promise<ApiEnvelope<AppActivityPunchStateDto>> {
+      return fetcher<AppActivityPunchStateDto>({ method: "GET", path: `/api/app/v1/activities/${activityId}/sessions/${sessionId}/my-punch-state` });
+    },
+    /** 本人扫描场次签到二维码并追加正式签到事实 [auth] */
+    AppActivityPunchesControllerCheckIn(activityId: string, sessionId: string, body: AppActivityPunchDto): Promise<ApiEnvelope<AppActivityPunchReceiptDto>> {
+      return fetcher<AppActivityPunchReceiptDto>({ method: "POST", path: `/api/app/v1/activities/${activityId}/sessions/${sessionId}/punches/check-in`, body });
+    },
+    /** 本人扫描场次签退二维码并追加正式签退事实 [auth] */
+    AppActivityPunchesControllerCheckOut(activityId: string, sessionId: string, body: AppActivityPunchDto): Promise<ApiEnvelope<AppActivityPunchReceiptDto>> {
+      return fetcher<AppActivityPunchReceiptDto>({ method: "POST", path: `/api/app/v1/activities/${activityId}/sessions/${sessionId}/punches/check-out`, body });
     },
     /** App 视角活动详情(仅 published；invitation 仅本人受邀；draft / cancelled / terminated / completed / 软删 / 不存在统一 → 404) [auth] */
     AppActivitiesControllerFindOne(id: string): Promise<ApiEnvelope<AppActivityDetailDto>> {
@@ -491,6 +511,18 @@ export function createAppClient(fetcher: Fetcher) {
     AppManagedActivityOnsiteParticipationsControllerCreate(activityId: string, body: CreateAppManagedActivityOnsiteParticipationDto): Promise<ApiEnvelope<AppManagedActivityOnsiteParticipationReceiptDto>> {
       return fetcher<AppManagedActivityOnsiteParticipationReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite-participations`, body });
     },
+    /** 考勤责任人追加替代事实，不覆盖原现场事件 [auth] */
+    AppManagedActivityOnsitePunchesControllerReplaceEvent(activityId: string, eventId: string, body: CorrectAppManagedOnsitePunchDto): Promise<ApiEnvelope<AppActivityPunchReceiptDto>> {
+      return fetcher<AppActivityPunchReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/punch-events/${eventId}/replace`, body });
+    },
+    /** 考勤责任人追加作废事实，不覆盖原现场事件 [auth] */
+    AppManagedActivityOnsitePunchesControllerVoidEvent(activityId: string, eventId: string, body: CorrectAppManagedOnsitePunchDto): Promise<ApiEnvelope<AppActivityPunchReceiptDto>> {
+      return fetcher<AppActivityPunchReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/punch-events/${eventId}/void`, body });
+    },
+    /** 考勤责任人特殊提前离场闭合；固定零时长零分 [auth] */
+    AppManagedActivityOnsitePunchesControllerEarlyClose(activityId: string, sessionId: string, body: EarlyDepartureCloseAppManagedOnsitePunchDto): Promise<ApiEnvelope<AppActivityPunchReceiptDto>> {
+      return fetcher<AppActivityPunchReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/sessions/${sessionId}/early-departure-close`, body });
+    },
     /** App 查看我管理活动的岗位 [auth] */
     AppManagedActivityPositionsControllerList(activityId: string): Promise<ApiEnvelope<AppManagedActivityPositionDto[]>> {
       return fetcher<AppManagedActivityPositionDto[]>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/positions` });
@@ -510,6 +542,14 @@ export function createAppClient(fetcher: Fetcher) {
     /** App 发起人提交初次发布审核；服务端冻结 canonical 快照 [auth] */
     AppManagedActivitiesControllerCreatePublishReview(activityId: string, body: SubmitActivityPublishReviewDto): Promise<ApiEnvelope<ActivityPublishReviewResponseDto>> {
       return fetcher<ActivityPublishReviewResponseDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/publish-reviews`, body });
+    },
+    /** 生成受保护且不可缓存的 SVG 二维码二进制内容 [auth] */
+    AppManagedActivityAttendanceQrControllerRender(activityId: string, credentialId: string): Promise<ApiEnvelope<void>> {
+      return fetcher<void>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/qr-credentials/${credentialId}/render` });
+    },
+    /** 作废场次二维码；精确 operationKey 重放原安全回执 [auth] */
+    AppManagedActivityAttendanceQrControllerRevoke(activityId: string, credentialId: string, body: RevokeAppManagedAttendanceQrDto): Promise<ApiEnvelope<AppManagedAttendanceQrCredentialDto>> {
+      return fetcher<AppManagedAttendanceQrCredentialDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/qr-credentials/${credentialId}/revoke`, body });
     },
     /** App 获取本人 managed 活动当前资格规则定义 [auth] */
     AppManagedActivitiesControllerGetQualificationRules(activityId: string): Promise<ApiEnvelope<AppActivityQualificationRulesDto>> {
@@ -594,6 +634,14 @@ export function createAppClient(fetcher: Fetcher) {
     /** App 软删本人 draft 场次岗位 [auth] */
     AppManagedActivitiesControllerDeleteSessionPosition(activityId: string, sessionId: string, positionId: string): Promise<ApiEnvelope<AppManagedActivitySessionPositionDto>> {
       return fetcher<AppManagedActivitySessionPositionDto>({ method: "DELETE", path: `/api/app/v1/my/managed-activities/${activityId}/sessions/${sessionId}/positions/${positionId}` });
+    },
+    /** App 考勤责任人读取场次二维码版本与状态（不返回可用 token） [auth] */
+    AppManagedActivityAttendanceQrControllerList(activityId: string, sessionId: string): Promise<ApiEnvelope<AppManagedAttendanceQrCredentialDto[]>> {
+      return fetcher<AppManagedAttendanceQrCredentialDto[]>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/sessions/${sessionId}/qr-credentials` });
+    },
+    /** 签发或重签场次签到/签退二维码；窗口只取冻结场次配置 [auth] */
+    AppManagedActivityAttendanceQrControllerIssue(activityId: string, sessionId: string, action: "check-in" | "check-out", body: IssueAppManagedAttendanceQrDto): Promise<ApiEnvelope<AppManagedAttendanceQrCredentialDto>> {
+      return fetcher<AppManagedAttendanceQrCredentialDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/sessions/${sessionId}/qr-credentials/${action}/issue`, body });
     },
     /** App 查看负责人结算工作台摘要 [rbac: activity.settlement-generate.record] */
     AppManagedActivitiesControllerSettlementWorkbench(activityId: string): Promise<ApiEnvelope<AppSettlementWorkbenchResponseDto>> {

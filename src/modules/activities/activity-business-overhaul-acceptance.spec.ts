@@ -531,6 +531,210 @@ const BATCH4_PERMANENT_REGISTRATION_ACCEPTANCE_DESTINATIONS: Readonly<
   ],
 };
 
+/**
+ * 第 5 批只交付 App 自助二维码与现场事实主链。每个编号都指向真实 HTTP/PostgreSQL
+ * 断言或既有 append-only/关账硬门；不把第 6 批的 staff_scan、代签、导入或离线项目
+ * 提前记到本批。ADV-006 的前三段由本批 QR 主链钉住，最终关账仍复用既有机器关账
+ * 实证，下面明确列出两处而不伪称它们是同一夹具。
+ */
+const BATCH5_SELF_PUNCH_ACCEPTANCE_IDS = [
+  'AC-031',
+  'AC-032',
+  'AC-033',
+  'AC-034',
+  'AC-035',
+  'AC-036',
+  'AC-037',
+  'AC-038',
+  'AC-039',
+  'AC-040',
+  'AC-041',
+  'AC-042',
+  'AC-046',
+  'ADV-001',
+  'ADV-002',
+  'ADV-004',
+  'ADV-005',
+  'ADV-006',
+  'ADV-007',
+  'ADV-020',
+] as const;
+
+const BATCH5_SELF_PUNCH_ACCEPTANCE_DESTINATIONS: Readonly<
+  Record<string, readonly AcceptanceDestination[]>
+> = {
+  'AC-031': [
+    {
+      file: 'test/e2e/activity-batch5-punch-runtime.e2e-spec.ts',
+      needle:
+        'rejects QR action, activity, session and time-window mismatches with zero punch writes',
+    },
+  ],
+  'AC-032': [
+    {
+      file: 'test/e2e/activity-batch5-punch-runtime.e2e-spec.ts',
+      needle:
+        'keeps the wrong check-in immutable after void and lets the corrected check-in become the active segment',
+    },
+  ],
+  'AC-033': [
+    {
+      file: 'test/e2e/activity-batch5-punch-runtime.e2e-spec.ts',
+      needle:
+        'renders protected SVG and applies the frozen required-location policy without leaking coordinates',
+    },
+    {
+      file: 'src/modules/attendances/attendance-punch-location-policy.spec.ts',
+      needle:
+        'mutation: rejects an out-of-range point rather than accepting a rounded or low-accuracy coordinate',
+    },
+  ],
+  'AC-034': [
+    {
+      file: 'src/modules/attendances/attendance-punch-location-policy.spec.ts',
+      needle: 'allows absent coordinates only when the frozen session policy is optional',
+    },
+  ],
+  'AC-035': [
+    {
+      file: 'src/modules/attendances/attendance-punch-location-policy.spec.ts',
+      needle: 'accepts exact center and reports low accuracy without widening the radius',
+    },
+  ],
+  'AC-036': [
+    {
+      file: 'test/e2e/activity-batch5-punch-runtime.e2e-spec.ts',
+      needle:
+        'uses real registration, QR signing, the 29:59/30:00 boundary, and segment projection end to end',
+    },
+  ],
+  'AC-037': [
+    {
+      file: 'test/e2e/activity-batch5-punch-runtime.e2e-spec.ts',
+      needle:
+        'permits a 10-minute special close, then creates a second non-overlapping service segment',
+    },
+  ],
+  'AC-038': [
+    {
+      file: 'test/e2e/activity-batch5-punch-runtime.e2e-spec.ts',
+      needle:
+        'permits a 10-minute special close, then creates a second non-overlapping service segment',
+    },
+  ],
+  'AC-039': [
+    {
+      file: 'test/e2e/activity-batch5-punch-runtime.e2e-spec.ts',
+      needle:
+        'does not invent a checkout or service duration after the frozen checkout window has closed',
+    },
+  ],
+  'AC-040': [
+    {
+      file: 'test/e2e/activity-batch5-punch-concurrency.e2e-spec.ts',
+      needle:
+        'serializes exact same-key replay and rejects a changed request under the global event key',
+    },
+    {
+      file: 'test/e2e/activity-batch5-punch-concurrency.e2e-spec.ts',
+      needle: 'Array.from({ length: 98 }',
+    },
+  ],
+  'AC-041': [
+    {
+      file: 'test/e2e/activity-batch5-punch-concurrency.e2e-spec.ts',
+      needle:
+        'rejects same event key when a valid request changes person, activity, action or source',
+    },
+    {
+      file: 'src/modules/attendances/attendance-punch-request-hash.spec.ts',
+      needle: 'mutation: changing %s changes the canonical request hash',
+    },
+  ],
+  'AC-042': [
+    {
+      file: 'test/e2e/activity-batch5-punch-concurrency.e2e-spec.ts',
+      needle:
+        'serializes distinct keys to one open segment and makes QR revoke race resolve to zero or one append',
+    },
+  ],
+  'AC-046': [
+    {
+      file: 'test/e2e/activity-batch5-punch-runtime.e2e-spec.ts',
+      needle:
+        'records managed early-close, void and replace as append-only corrections while allowing checkout after identity drift',
+    },
+  ],
+  'ADV-001': [
+    {
+      file: 'test/e2e/activity-batch5-punch-concurrency.e2e-spec.ts',
+      needle: 'serializes settlement submission behind the final legal QR checkout',
+    },
+    {
+      file: 'test/e2e/activity-batch5-punch-concurrency.e2e-spec.ts',
+      needle: 'BizCode.SETTLEMENT_SUBMIT_EVIDENCE_SEAL_STALE',
+    },
+  ],
+  'ADV-002': [
+    {
+      file: 'test/e2e/activity-batch5-punch-concurrency.e2e-spec.ts',
+      needle:
+        'serializes distinct keys to one open segment and makes QR revoke race resolve to zero or one append',
+    },
+  ],
+  'ADV-004': [
+    {
+      file: 'test/e2e/activity-batch5-punch-concurrency.e2e-spec.ts',
+      needle:
+        'red-first: activity cancellation waits behind the first punch and must not cancel once the punch commits',
+    },
+    {
+      file: 'test/e2e/activity-batch5-punch-concurrency.e2e-spec.ts',
+      needle: 'rejects the Admin cancellation path when a real effective punch exists',
+    },
+  ],
+  'ADV-005': [
+    {
+      file: 'test/e2e/activity-registration-permanent-head-runtime.e2e-spec.ts',
+      needle:
+        'expect(await prisma.activityParticipationIdentity.count({ where: { id: identityId } })).toBe(1);',
+    },
+  ],
+  'ADV-006': [
+    {
+      file: 'test/e2e/activity-batch5-punch-runtime.e2e-spec.ts',
+      needle:
+        'uses real registration, QR signing, the 29:59/30:00 boundary, and segment projection end to end',
+    },
+    {
+      file: 'test/e2e/activity-batch5-punch-runtime.e2e-spec.ts',
+      needle:
+        'permits a 10-minute special close, then creates a second non-overlapping service segment',
+    },
+    {
+      file: 'test/e2e/activity-settlement-closure.e2e-spec.ts',
+      needle: '写不可变 closure + 两个指针 + archive waiting + audit + 评价开放 intent',
+    },
+  ],
+  'ADV-007': [
+    {
+      file: 'test/e2e/activity-batch5-punch-concurrency.e2e-spec.ts',
+      needle:
+        'rejects same event key when a valid request changes person, activity, action or source',
+    },
+    {
+      file: 'src/modules/attendances/attendance-punch-request-hash.spec.ts',
+      needle: 'mutation: changing %s changes the canonical request hash',
+    },
+  ],
+  'ADV-020': [
+    {
+      file: 'test/e2e/activity-v11-slice4-schema-constraints.e2e-spec.ts',
+      needle: 'AttendancePunchEvent:本刀加列 importJobItemId 之后 trigger 四条判据重跑',
+    },
+  ],
+};
+
 if (
   Object.keys(BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS).some(
     (id) => BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_BLOCKERS[id],
@@ -646,9 +850,20 @@ if (
   throw new Error('第 4 批永久头 runtime 的 AC-021/ADV-005 必须绑定十轮真实 E2E');
 }
 
+const batch5SelfPunchResolvedIds = new Set([
+  ...Object.keys(BATCH5_SELF_PUNCH_ACCEPTANCE_DESTINATIONS),
+]);
+if (
+  batch5SelfPunchResolvedIds.size !== BATCH5_SELF_PUNCH_ACCEPTANCE_IDS.length ||
+  BATCH5_SELF_PUNCH_ACCEPTANCE_IDS.some((id) => !batch5SelfPunchResolvedIds.has(id))
+) {
+  throw new Error('第 5 批自助二维码与现场主链的 20 条验收编号必须逐条绑定真实证据');
+}
+
 function registerAcceptanceCases(cases: readonly { id: string; title: string }[]): void {
   for (const { id, title } of cases) {
     const destinations =
+      BATCH5_SELF_PUNCH_ACCEPTANCE_DESTINATIONS[id] ??
       BATCH2_ACCEPTANCE_DESTINATIONS[id] ??
       BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS[id] ??
       BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS[id] ??

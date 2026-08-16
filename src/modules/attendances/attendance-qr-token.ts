@@ -51,7 +51,9 @@ function toIso(value: Date): string {
   return value.toISOString();
 }
 
-export function toAttendanceQrTokenPayload(input: AttendanceQrTokenInput): AttendanceQrTokenPayload {
+export function toAttendanceQrTokenPayload(
+  input: AttendanceQrTokenInput,
+): AttendanceQrTokenPayload {
   if (
     input.credentialId.length === 0 ||
     input.activityId.length === 0 ||
@@ -107,7 +109,9 @@ export function canonicalizeAttendanceQrPayload(payload: AttendanceQrTokenPayloa
 export function signAttendanceQrToken(input: AttendanceQrTokenInput, jwtSecret: string): string {
   const payload = canonicalizeAttendanceQrPayload(toAttendanceQrTokenPayload(input));
   const payloadPart = Buffer.from(payload, 'utf8').toString('base64url');
-  const signature = createHmac('sha256', deriveSigningKey(jwtSecret)).update(payload, 'utf8').digest();
+  const signature = createHmac('sha256', deriveSigningKey(jwtSecret))
+    .update(payload, 'utf8')
+    .digest();
   return `${payloadPart}.${signature.toString('base64url')}`;
 }
 
@@ -127,7 +131,10 @@ function isPayload(value: unknown): value is AttendanceQrTokenPayload {
   );
 }
 
-export function verifyAttendanceQrToken(token: string, jwtSecret: string): AttendanceQrTokenPayload {
+export function verifyAttendanceQrToken(
+  token: string,
+  jwtSecret: string,
+): AttendanceQrTokenPayload {
   const parts = token.split('.');
   if (parts.length !== 2 || parts[0].length === 0 || parts[1].length === 0) {
     throw new AttendanceQrTokenInvalidError();

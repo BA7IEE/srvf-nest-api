@@ -2,7 +2,7 @@ import { randomUUID, createHash } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, type Role } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -45,7 +45,10 @@ type CredentialRow = {
 };
 
 type QrCodeEncoder = {
-  toString(value: string, options: { type: 'svg'; errorCorrectionLevel: 'M'; margin: number }): Promise<string>;
+  toString(
+    value: string,
+    options: { type: 'svg'; errorCorrectionLevel: 'M'; margin: number },
+  ): Promise<string>;
 };
 
 // qrcode does not publish TypeScript declarations. Keep the runtime dependency narrow at the only
@@ -87,16 +90,14 @@ export class AttendanceQrCredentialService {
     return rows.map((row) => this.presenter.present(row));
   }
 
-  async issue(
-    args: {
-      activityId: string;
-      sessionId: string;
-      actionCode: string;
-      operationKey: string;
-      currentUser: CurrentUserPayload;
-      auditMeta: AuditMeta;
-    },
-  ): Promise<AppManagedAttendanceQrCredentialDto> {
+  async issue(args: {
+    activityId: string;
+    sessionId: string;
+    actionCode: string;
+    operationKey: string;
+    currentUser: CurrentUserPayload;
+    auditMeta: AuditMeta;
+  }): Promise<AppManagedAttendanceQrCredentialDto> {
     if (!isAttendanceQrAction(args.actionCode)) throw new BizException(BizCode.BAD_REQUEST);
     const requestHash = this.commandHash({
       command: 'issue',
@@ -113,7 +114,11 @@ export class AttendanceQrCredentialService {
         if (replay) return this.presenter.present(replay);
 
         const latest = await tx.attendanceQrCredential.findFirst({
-          where: { activityId: args.activityId, sessionId: args.sessionId, actionCode: args.actionCode },
+          where: {
+            activityId: args.activityId,
+            sessionId: args.sessionId,
+            actionCode: args.actionCode,
+          },
           select: { credentialVersion: true },
           orderBy: [{ credentialVersion: 'desc' }, { id: 'desc' }],
         });
@@ -140,9 +145,13 @@ export class AttendanceQrCredentialService {
           });
         }
         const actionCode = args.actionCode as AttendanceQrActionCode;
-        const validFrom = actionCode === 'check_in' ? session.checkInOpenAt : session.checkOutOpenAt;
-        const validUntil = actionCode === 'check_in' ? session.checkInCloseAt : session.checkOutCloseAt;
-        const credentialVersion = nextAttendanceQrCredentialVersion(latest?.credentialVersion ?? null);
+        const validFrom =
+          actionCode === 'check_in' ? session.checkInOpenAt : session.checkOutOpenAt;
+        const validUntil =
+          actionCode === 'check_in' ? session.checkInCloseAt : session.checkOutCloseAt;
+        const credentialVersion = nextAttendanceQrCredentialVersion(
+          latest?.credentialVersion ?? null,
+        );
         const id = randomUUID();
         const token = signAttendanceQrToken(
           {
@@ -194,16 +203,14 @@ export class AttendanceQrCredentialService {
     );
   }
 
-  async revoke(
-    args: {
-      activityId: string;
-      credentialId: string;
-      reason: string;
-      operationKey: string;
-      currentUser: CurrentUserPayload;
-      auditMeta: AuditMeta;
-    },
-  ): Promise<AppManagedAttendanceQrCredentialDto> {
+  async revoke(args: {
+    activityId: string;
+    credentialId: string;
+    reason: string;
+    operationKey: string;
+    currentUser: CurrentUserPayload;
+    auditMeta: AuditMeta;
+  }): Promise<AppManagedAttendanceQrCredentialDto> {
     const reason = this.normalizeReason(args.reason);
     if (reason === null) throw new BizException(BizCode.BAD_REQUEST);
     const requestHash = this.commandHash({
@@ -219,7 +226,8 @@ export class AttendanceQrCredentialService {
         const credential = await this.lockCredential(tx, args.activityId, args.credentialId);
         const replay = await this.findOperationReplay(tx, args.operationKey, requestHash);
         if (replay) return this.presenter.present(replay);
-        if (credential.statusCode !== 'active') throw new BizException(BizCode.ATTENDANCE_QR_REVOKED);
+        if (credential.statusCode !== 'active')
+          throw new BizException(BizCode.ATTENDANCE_QR_REVOKED);
         const revoked = await tx.attendanceQrCredential.update({
           where: { id: credential.id },
           data: {
@@ -262,7 +270,8 @@ export class AttendanceQrCredentialService {
         await this.lockActivity(tx, args.activityId);
         await this.assertManagedAttendance(tx, args.activityId, args.currentUser);
         const credential = await this.lockCredential(tx, args.activityId, args.credentialId);
-        if (credential.statusCode !== 'active') throw new BizException(BizCode.ATTENDANCE_QR_REVOKED);
+        if (credential.statusCode !== 'active')
+          throw new BizException(BizCode.ATTENDANCE_QR_REVOKED);
         const token = this.signCredential(credential);
         await this.audit.logQr({
           operation: 'attendance-qr.render',
@@ -337,7 +346,8 @@ export class AttendanceQrCredentialService {
       FOR UPDATE
     `);
     if (rows.length !== 1) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-    if (rows[0]?.statusCode !== 'published') throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+    if (rows[0]?.statusCode !== 'published')
+      throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
   }
 
   private async lockSession(

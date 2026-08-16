@@ -1,4 +1,16 @@
-import { Body, Controller, Get, Header, HttpCode, HttpStatus, Param, Post, Req, Res, StreamableFile } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Req,
+  Res,
+  StreamableFile,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiProduces, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { Readable } from 'node:stream';
@@ -9,7 +21,10 @@ import {
   ApiWrappedCreatedResponse,
   ApiWrappedOkResponse,
 } from '../../../common/decorators/api-response.decorator';
-import { CurrentUser, type CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
+import {
+  CurrentUser,
+  type CurrentUserPayload,
+} from '../../../common/decorators/current-user.decorator';
 import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 import { BizCode } from '../../../common/exceptions/biz-code.constant';
 import { BizException } from '../../../common/exceptions/biz.exception';
@@ -176,6 +191,10 @@ export class AppManagedActivityAttendanceQrController {
   }
 
   private auditMeta(req: Request): AuditMeta {
-    return { requestId: req.id as string, ip: req.ip ?? null, ua: req.headers['user-agent'] ?? null };
+    return {
+      requestId: req.id as string,
+      ip: req.ip ?? null,
+      ua: req.headers['user-agent'] ?? null,
+    };
   }
 }
