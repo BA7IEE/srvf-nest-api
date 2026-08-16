@@ -16,6 +16,7 @@ import type {
   StorageObjectLocator,
 } from '../storage/storage.types';
 import type { AttachmentAuditRecorder } from './attachment-audit-recorder';
+import type { AttachmentManualAttestService } from './attachment-manual-attest.service';
 import type { AttachmentManualIntakeService } from './attachment-manual-intake.service';
 import type { AttachmentManualRelocateService } from './attachment-manual-relocate.service';
 import type { AttachmentContentValidator } from './attachment-content-validator';
@@ -190,6 +191,7 @@ function harness(options: { strict?: boolean; head?: HeadObjectResult; headError
     {} as AttachmentAuditRecorder,
     {} as AttachmentManualRelocateService,
     {} as AttachmentManualIntakeService,
+    {} as AttachmentManualAttestService,
     provider,
   );
   const promote = jest
@@ -313,6 +315,7 @@ describe('AttachmentStorageOrchestrator multipart boundary', () => {
       {} as AttachmentAuditRecorder,
       {} as AttachmentManualRelocateService,
       {} as AttachmentManualIntakeService,
+      {} as AttachmentManualAttestService,
       {
         getCurrentLocator: jest.fn(),
         putObjectAt,
@@ -498,6 +501,7 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
       auditRecorder,
       {} as AttachmentManualRelocateService,
       {} as AttachmentManualIntakeService,
+      {} as AttachmentManualAttestService,
       {} as PinnedStorageProvider,
     );
     return { orchestrator, tx, logUploadConfirmed };
@@ -519,6 +523,7 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
       {} as AttachmentAuditRecorder,
       {} as AttachmentManualRelocateService,
       {} as AttachmentManualIntakeService,
+      {} as AttachmentManualAttestService,
       provider,
     );
 
@@ -563,6 +568,7 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
         {} as AttachmentAuditRecorder,
         {} as AttachmentManualRelocateService,
         {} as AttachmentManualIntakeService,
+        {} as AttachmentManualAttestService,
         {} as PinnedStorageProvider,
       );
       const tx = {} as Prisma.TransactionClient;
@@ -627,6 +633,7 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
       {} as AttachmentAuditRecorder,
       {} as AttachmentManualRelocateService,
       {} as AttachmentManualIntakeService,
+      {} as AttachmentManualAttestService,
       {} as PinnedStorageProvider,
     );
 
@@ -836,6 +843,7 @@ describe('AttachmentStorageOrchestrator Content publish storage boundary', () =>
       auditRecorder,
       {} as AttachmentManualRelocateService,
       {} as AttachmentManualIntakeService,
+      {} as AttachmentManualAttestService,
       provider,
     );
     return {
