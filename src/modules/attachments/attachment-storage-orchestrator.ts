@@ -6,7 +6,6 @@ import { Prisma, type StorageObject, type StorageObjectOperation } from '@prisma
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
-import { extractAttachmentPlaceholderIds } from '../content/content.constants';
 import { STORAGE_PROVIDER } from '../storage/storage.constants';
 import {
   isPinnedStorageProvider,
@@ -50,6 +49,7 @@ import type {
   UploadUrlResult,
 } from '../storage/storage.types';
 import { AttachmentAuditRecorder } from './attachment-audit-recorder';
+import { lockContentDeleteFinalizationBoundary } from './attachment-content-delete-boundary';
 import { AttachmentContentValidator } from './attachment-content-validator';
 import { AttachmentManualRelocateService } from './attachment-manual-relocate.service';
 import {
@@ -1457,7 +1457,7 @@ export class AttachmentStorageOrchestrator {
     const now = new Date();
     await this.prisma.$transaction(async (tx) => {
       // 全局删除锁序：content owner 先 Content root，再 Attachment → StorageObject → Operations。
-      await this.lockContentDeleteFinalizationBoundary(tx, payload.response, candidateAttachmentId);
+      await lockContentDeleteFinalizationBoundary(tx, payload.response, candidateAttachmentId);
       await tx.$queryRaw(Prisma.sql`
         SELECT "id" FROM "attachments"
         WHERE "id" = ${candidateAttachmentId}
@@ -1677,7 +1677,7 @@ export class AttachmentStorageOrchestrator {
     }
     const now = new Date();
     await this.prisma.$transaction(async (tx) => {
-      await this.lockContentDeleteFinalizationBoundary(tx, payload.response, candidateAttachmentId);
+      await lockContentDeleteFinalizationBoundary(tx, payload.response, candidateAttachmentId);
       await tx.$queryRaw(Prisma.sql`
         SELECT "id" FROM "attachments"
         WHERE "id" = ${candidateAttachmentId}
@@ -1778,67 +1778,6 @@ export class AttachmentStorageOrchestrator {
         throw new StorageConsistencyLeaseLostError(currentManual.id, currentManual.leaseGeneration);
       }
     });
-  }
-
-  private async lockContentDeleteFinalizationBoundary(
-    tx: Prisma.TransactionClient,
-    response: AttachmentDeleteReplayResponse | null,
-    attachmentId: string,
-  ): Promise<void> {
-    let owner =
-      response && (response.ownerType === 'content-image' || response.ownerType === 'content-file')
-        ? { ownerId: response.ownerId, key: response.key }
-        : null;
-    if (!response) {
-      // The replay response is purged after its bounded retry window, while a dead delete may still
-      // require manual attestation later. Resolve the immutable owner link without taking an
-      // Attachment row lock, then preserve the global Content -> Attachment lock order below.
-      const attachment = await tx.attachment.findUnique({
-        where: { id: attachmentId },
-        select: { ownerType: true, ownerId: true, key: true },
-      });
-      if (
-        attachment &&
-        (attachment.ownerType === 'content-image' || attachment.ownerType === 'content-file')
-      ) {
-        owner = { ownerId: attachment.ownerId, key: attachment.key };
-      }
-    }
-    if (!owner) {
-      return;
-    }
-    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT "id" FROM "contents" WHERE "id" = ${owner.ownerId} FOR UPDATE
-    `);
-    if (locked.length !== 1) {
-      throw new StorageConsistencyInvariantError('content delete root disappeared');
-    }
-    const content = await tx.content.findUnique({
-      where: { id: owner.ownerId },
-      select: {
-        statusCode: true,
-        body: true,
-        coverAttachmentId: true,
-        coverImageKey: true,
-        deletedAt: true,
-      },
-    });
-    if (!content) {
-      throw new StorageConsistencyInvariantError('content delete root reread failed');
-    }
-    if (content.deletedAt !== null) return;
-    if (content.statusCode !== 'draft') {
-      throw new StorageConsistencyInvariantError('content changed state during attachment delete');
-    }
-    if (
-      content.coverAttachmentId === attachmentId ||
-      content.coverImageKey === owner.key ||
-      extractAttachmentPlaceholderIds(content.body).includes(attachmentId)
-    ) {
-      throw new StorageConsistencyInvariantError(
-        'content attachment became referenced during delete',
-      );
-    }
   }
 
   private async transitionUploadVerifyToOrphan(
