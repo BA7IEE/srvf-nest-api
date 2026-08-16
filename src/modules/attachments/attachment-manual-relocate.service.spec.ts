@@ -1,12 +1,10 @@
 import { type StorageObject } from '@prisma/client';
 
-import { StorageConsistencyInvariantError } from '../storage/storage-consistency.types';
 import type { StorageObjectLedgerService } from '../storage/storage-object-ledger.service';
 import type { StorageProvider } from '../storage/storage.interface';
 import type { HeadObjectResult, StorageObjectSha256Result } from '../storage/storage.types';
 import { PrismaService } from '../../database/prisma.service';
 import { AttachmentManualRelocateService } from './attachment-manual-relocate.service';
-import { StorageObjectIntegrityMismatchError } from './attachment-storage-invariants';
 
 /*
  * 迁出编排器前,这三个方法(execute / collectEvidence / assertEvidence)在
@@ -32,11 +30,11 @@ function makeObject(over: Partial<StorageObject> = {}): StorageObject {
 }
 
 function makeHead(over: Partial<HeadObjectResult> = {}): HeadObjectResult {
-  return { exists: true, size: 100, ...over } as HeadObjectResult;
+  return { exists: true, size: 100, ...over };
 }
 
 function makeHash(over: Partial<StorageObjectSha256Result> = {}): StorageObjectSha256Result {
-  return { checksum: SHA_A, size: 100, ...over } as StorageObjectSha256Result;
+  return { checksum: SHA_A, size: 100, ...over };
 }
 
 /** assertEvidence 是 private:按本仓既有做法用结构化断言取到它,避免为测试放宽可见性。 */
@@ -61,7 +59,7 @@ describe('AttachmentManualRelocateService.assertEvidence', () => {
     it('证据 key 与对象 key 漂移即拒绝', () => {
       expect(() =>
         subject().assertEvidence(makeObject(), { key: 'other', head: makeHead(), hash: null }),
-      ).toThrow(StorageConsistencyInvariantError);
+      ).toThrow('manual relocate evidence identity drifted');
     });
 
     it('目标不存在即拒绝', () => {
@@ -71,7 +69,7 @@ describe('AttachmentManualRelocateService.assertEvidence', () => {
           head: makeHead({ exists: false }),
           hash: null,
         }),
-      ).toThrow(StorageConsistencyInvariantError);
+      ).toThrow('manual relocate evidence identity drifted');
     });
 
     it('HEAD 尺寸与 expectedSize 不符即拒绝', () => {
@@ -81,7 +79,7 @@ describe('AttachmentManualRelocateService.assertEvidence', () => {
           head: makeHead({ size: 101 }),
           hash: null,
         }),
-      ).toThrow(StorageObjectIntegrityMismatchError);
+      ).toThrow('provider HEAD size mismatch');
     });
   });
 
@@ -91,7 +89,7 @@ describe('AttachmentManualRelocateService.assertEvidence', () => {
     it('缺流式摘要即拒绝(不允许降级成只比 HEAD)', () => {
       expect(() =>
         subject().assertEvidence(object, { key: 'k/1', head: makeHead(), hash: null }),
-      ).toThrow(StorageConsistencyInvariantError);
+      ).toThrow('manual relocate lacks streamed checksum');
     });
 
     it('流式尺寸与 expectedSize 不符即拒绝', () => {
@@ -101,7 +99,7 @@ describe('AttachmentManualRelocateService.assertEvidence', () => {
           head: makeHead(),
           hash: makeHash({ size: 99 }),
         }),
-      ).toThrow(StorageObjectIntegrityMismatchError);
+      ).toThrow('streamed object size mismatch');
     });
 
     it('流式 checksum 与存量不符即拒绝', () => {
@@ -111,7 +109,7 @@ describe('AttachmentManualRelocateService.assertEvidence', () => {
           head: makeHead(),
           hash: makeHash({ checksum: SHA_B }),
         }),
-      ).toThrow(StorageObjectIntegrityMismatchError);
+      ).toThrow('streamed object checksum mismatch');
     });
 
     it('流式期间 etag 变化即拒绝(同读竞态)', () => {
@@ -121,7 +119,7 @@ describe('AttachmentManualRelocateService.assertEvidence', () => {
           head: makeHead({ etag: 'after' }),
           hash: makeHash({ etag: 'before' }),
         }),
-      ).toThrow(StorageObjectIntegrityMismatchError);
+      ).toThrow('object changed during streamed verification');
     });
 
     it('checksum 相符时放行,且**不因 etag 与存量不同而拒绝**(定位副本可合法换 etag)', () => {
@@ -139,7 +137,7 @@ describe('AttachmentManualRelocateService.assertEvidence', () => {
     it('既无 checksum 也无存量 etag 即拒绝(不允许零凭据重定位)', () => {
       expect(() =>
         subject().assertEvidence(makeObject(), { key: 'k/1', head: makeHead(), hash: null }),
-      ).toThrow(StorageConsistencyInvariantError);
+      ).toThrow('manual relocate requires a trusted checksum or stored etag');
     });
 
     it('目标未给出 etag 即拒绝', () => {
@@ -149,7 +147,7 @@ describe('AttachmentManualRelocateService.assertEvidence', () => {
           head: makeHead({ etag: undefined }),
           hash: null,
         }),
-      ).toThrow(StorageConsistencyInvariantError);
+      ).toThrow('manual relocate target lacks etag evidence');
     });
 
     it('etag 不符即拒绝', () => {
@@ -159,7 +157,7 @@ describe('AttachmentManualRelocateService.assertEvidence', () => {
           head: makeHead({ etag: 'e2' }),
           hash: null,
         }),
-      ).toThrow(StorageObjectIntegrityMismatchError);
+      ).toThrow('manual relocate target etag mismatch');
     });
 
     it('etag 相符时放行', () => {
