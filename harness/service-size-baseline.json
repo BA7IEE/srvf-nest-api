@@ -8,7 +8,7 @@
   "entries": [
     {
       "file": "src/modules/activities/activities.service.ts",
-      "loc": 1249,
+      "loc": 1263,
       "domain": "activities"
     },
     {
@@ -78,13 +78,18 @@
     },
     {
       "file": "src/modules/attachments/attachment-storage-orchestrator.ts",
-      "loc": 2472,
+      "loc": 2402,
       "domain": "attachments"
     },
     {
       "file": "src/modules/attachments/attachments.service.ts",
       "loc": 1519,
       "domain": "attachments"
+    },
+    {
+      "file": "src/modules/attendances/attendance-punch-command.service.ts",
+      "loc": 1018,
+      "domain": "attendances"
     },
     {
       "file": "src/modules/attendances/attendances.service.ts",
