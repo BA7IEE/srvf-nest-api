@@ -39,8 +39,9 @@ jobs:
   e2e-leaks:
     name: E2E serial + detectOpenHandles
     runs-on: ubuntu-latest
-    # 本机串行基线 27.4 分钟;CI 更慢 + 前置安装/迁移,给 60 分钟(内层 timeout 45m 先兜底)。
-    timeout-minutes: 60
+    # 串行基线随 spec 数增长,须与内层 timeout 一起复核(见下方 Run E2E 步骤的注释)。
+    # 恒保持 job timeout > 内层 timeout,否则内层的「超时/泄漏」判别拿不到执行机会。
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -80,27 +81,49 @@ jobs:
         run: pnpm db:test:init
 
       # 串行全量 e2e + 句柄泄漏检测(**权威泄漏判据**)。
-      # 本机实测基线(2026-07-28):1641s ≈ 27.4 分钟,195/195 绿、零句柄报告。
-      # detectOpenHandles 在有泄漏时**挂住不退出**,因此必须 timeout 兜底:
-      # 取 45m(本机 27.4m + CI 更慢 + 余量),超时按「疑似泄漏」处理。
+      #
+      # 时长基线(随 spec 数增长,**改 timeout 前先看实测**):
+      #   2026-07-28  195 spec  本机 1641s ≈ 27.4 分钟,195/195 绿、零句柄报告
+      #   2026-08-08  264 spec  CI 首次撞 45m 上限
+      #   2026-08-16  279 spec  内层放宽到 75m(job 90m)
+      #
+      # ⚠️ 2026-08-16 事故:08-08→08-15 连红 6 天,被读成「句柄泄漏」,实为**套件长胖跑不完**
+      # (spec 195→264,压线抖动导致 08-09 还回绿过一次)。根因不在测试代码,在**判据把两种
+      # 失败合并成了一条消息**。故本步骤下面把两者拆开判、拆开报:
+      #   - jest 打了汇总行(`Test Suites:`)却仍被 timeout 杀 ⇒ **跑完了但进程不退出 = 真泄漏**
+      #   - 没有汇总行就被杀             ⇒ **没跑完 = 时长不够**,该调 timeout 或分片,不是找泄漏
+      # 两条路径的处置完全相反,合并报会把人带向错误方向(实测已浪费一轮排查)。
       - name: Run E2E (serial + detectOpenHandles; open handle = failure)
         run: |
           set +e
           mkdir -p tmp
-          timeout --signal=TERM --kill-after=60s 45m pnpm test:e2e:leaks > tmp/leaks.log 2>&1
+          started=$(date +%s)
+          timeout --signal=TERM --kill-after=60s 75m pnpm test:e2e:leaks > tmp/leaks.log 2>&1
           rc=$?
           set -e
+          elapsed=$(( $(date +%s) - started ))
           tail -200 tmp/leaks.log
+          # 时长恒可见:趋势是「该调 timeout / 该分片」的唯一先行指标,别等撞线才发现。
+          echo "串行 e2e 用时 ${elapsed}s ≈ $(( elapsed / 60 ))分$(( elapsed % 60 ))秒(内层上限 75m = 4500s)"
+
+          # ① 真泄漏:jest 打出了逐句柄堆栈。与是否超时无关,恒优先判。
           if grep -q 'Jest has detected the following' tmp/leaks.log; then
             echo "::error::检测到未关闭句柄(某 spec 的 afterAll 缺 app.close()?句柄堆栈见上方 jest 输出)"
             exit 1
           fi
+
           if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
-            echo "::error::串行 e2e 在 30 分钟内未退出 —— detectOpenHandles 下挂死通常意味着句柄泄漏"
+            # 超时的两种死法靠「jest 有没有打汇总行」判别 —— 处置相反,不可合并成一条消息。
+            if grep -qE '^(Test Suites|Tests):' tmp/leaks.log; then
+              echo "::error::套件已跑完(有汇总行)但进程 75m 内未退出 ⇒ 句柄泄漏且 jest 未能打出堆栈。查最后完成的 spec 的 afterAll。"
+            else
+              echo "::error::套件在 75m 内未跑完(无汇总行)⇒ 这是**时长不足**不是泄漏。处置:调高本步骤 timeout 与 job timeout-minutes,或把串行线分片。勿按泄漏排查。"
+            fi
             exit 1
           fi
+
           if [ "$rc" -ne 0 ]; then
             echo "::error::串行 e2e 失败(exit $rc),详见上方输出"
             exit "$rc"
           fi
-          echo "✓ 无句柄泄漏"
+          echo "✓ 无句柄泄漏(用时 ${elapsed}s)"
