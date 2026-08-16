@@ -5,6 +5,7 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AttachmentAuditRecorder } from './attachment-audit-recorder';
 import { AttachmentContentValidator } from './attachment-content-validator';
+import { AttachmentManualAttestService } from './attachment-manual-attest.service';
 import { AttachmentManualIntakeService } from './attachment-manual-intake.service';
 import { AttachmentManualRelocateService } from './attachment-manual-relocate.service';
 import { AttachmentStorageOrchestrator } from './attachment-storage-orchestrator';
@@ -32,6 +33,7 @@ import { AttachmentsService } from './attachments.service';
     AttachmentAuditRecorder,
     AttachmentContentValidator,
     AttachmentManualRelocateService,
+    AttachmentManualAttestService,
     AttachmentManualIntakeService,
     AttachmentStorageOrchestrator,
   ],

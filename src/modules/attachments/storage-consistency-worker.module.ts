@@ -9,6 +9,7 @@ import { ActivityBatchWorkerModule } from '../activities/activity-batch-worker.m
 import { StorageModule } from '../storage/storage.module';
 import { AttachmentAuditRecorder } from './attachment-audit-recorder';
 import { AttachmentContentValidator } from './attachment-content-validator';
+import { AttachmentManualAttestService } from './attachment-manual-attest.service';
 import { AttachmentManualIntakeService } from './attachment-manual-intake.service';
 import { AttachmentManualRelocateService } from './attachment-manual-relocate.service';
 import { AttachmentStorageOrchestrator } from './attachment-storage-orchestrator';
@@ -31,6 +32,7 @@ import { StorageConsistencyWorker } from './storage-consistency.worker';
     // orchestrator,给它加构造参数必须两处同步注册。漏一处的表现不是编译错,而是
     // Nest 解析失败 → DEFAULT_TEARDOWN → process.exit(1) → 用到该 context 的 e2e 整片崩。
     AttachmentManualRelocateService,
+    AttachmentManualAttestService,
     AttachmentManualIntakeService,
     AttachmentStorageOrchestrator,
     StorageConsistencyWorker,
