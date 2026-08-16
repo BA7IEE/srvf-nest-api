@@ -13,6 +13,7 @@ import {
   ACTIVITY_BATCH_RETRY_BACKOFF_MS,
   ActivityBatchWorker,
 } from '../../src/modules/activities/activity-batch.worker';
+import { ActivityBatchWorkerModule } from '../../src/modules/activities/activity-batch-worker.module';
 import { LedgerReadyBatchCommitter } from '../../src/modules/activities/ledger-ready-batch-committer.service';
 import { LedgerQueryService } from '../../src/modules/activities/ledger-query.service';
 import { SettlementDraftDispatchService } from '../../src/modules/activities/settlement-draft-dispatch.service';
@@ -93,9 +94,15 @@ describe('第 2 批第 ⑧a 刀 —— generate dispatch → worker auto commit 
     storageContext = await NestFactory.createApplicationContext(StorageConsistencyWorkerModule, {
       logger: false,
     });
-    notificationActivityWorker = notificationContext.get(ActivityBatchWorker);
-    storageActivityWorker = storageContext.get(ActivityBatchWorker);
-    notificationCommitter = notificationContext.get(LedgerReadyBatchCommitter);
+    notificationActivityWorker = notificationContext
+      .select(ActivityBatchWorkerModule)
+      .get(ActivityBatchWorker, { strict: true });
+    storageActivityWorker = storageContext
+      .select(ActivityBatchWorkerModule)
+      .get(ActivityBatchWorker, { strict: true });
+    notificationCommitter = notificationContext
+      .select(ActivityBatchWorkerModule)
+      .get(LedgerReadyBatchCommitter, { strict: true });
     const databaseNames = await Promise.all(
       [prisma, notificationContext.get(PrismaService), storageContext.get(PrismaService)].map(
         async (client) =>
