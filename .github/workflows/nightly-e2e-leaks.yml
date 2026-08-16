@@ -23,6 +23,14 @@ on:
     - cron: '0 18 * * *' # 18:00 UTC = 北京 02:00
   workflow_dispatch: {}
 
+# issues: write 是**失败可见性**所需的最小权限(见 job 末尾两个通知步骤)。
+# 2026-08-16 事故:本线连红 6 天无人知晓 —— 夜间线不进 required checks(设计如此,
+# 它慢且不该阻塞 PR),于是「红了」这个事实没有任何投递渠道。默认的 workflow 失败
+# 邮件发给「最后改过本文件的人」,既不稳定也会淹在邮件里。故改用 Issue 投递。
+permissions:
+  contents: read
+  issues: write
+
 env:
   APP_ENV: test
   APP_PORT: '3001'
@@ -104,10 +112,19 @@ jobs:
           elapsed=$(( $(date +%s) - started ))
           tail -200 tmp/leaks.log
           # 时长恒可见:趋势是「该调 timeout / 该分片」的唯一先行指标,别等撞线才发现。
-          echo "串行 e2e 用时 ${elapsed}s ≈ $(( elapsed / 60 ))分$(( elapsed % 60 ))秒(内层上限 75m = 4500s)"
+          human="$(( elapsed / 60 ))分$(( elapsed % 60 ))秒"
+          echo "串行 e2e 用时 ${elapsed}s ≈ ${human}(内层上限 75m = 4500s)"
+          # 判定结论投递给下方通知步骤 —— 通知**复用同一判据**,不自己再判一次
+          # (两份判断迟早分叉:workflow 说超时、Issue 说泄漏,读的人无从取信)。
+          # $GITHUB_ENV 在本步骤 exit 非零后,对后续 if:failure() 步骤依然可见。
+          {
+            echo "LEAK_ELAPSED=${elapsed}"
+            echo "LEAK_ELAPSED_HUMAN=${human}"
+          } >> "$GITHUB_ENV"
 
           # ① 真泄漏:jest 打出了逐句柄堆栈。与是否超时无关,恒优先判。
           if grep -q 'Jest has detected the following' tmp/leaks.log; then
+            echo 'LEAK_VERDICT=leak-with-stack' >> "$GITHUB_ENV"
             echo "::error::检测到未关闭句柄(某 spec 的 afterAll 缺 app.close()?句柄堆栈见上方 jest 输出)"
             exit 1
           fi
@@ -115,15 +132,101 @@ jobs:
           if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
             # 超时的两种死法靠「jest 有没有打汇总行」判别 —— 处置相反,不可合并成一条消息。
             if grep -qE '^(Test Suites|Tests):' tmp/leaks.log; then
+              echo 'LEAK_VERDICT=leak-no-stack' >> "$GITHUB_ENV"
               echo "::error::套件已跑完(有汇总行)但进程 75m 内未退出 ⇒ 句柄泄漏且 jest 未能打出堆栈。查最后完成的 spec 的 afterAll。"
             else
+              echo 'LEAK_VERDICT=too-slow' >> "$GITHUB_ENV"
               echo "::error::套件在 75m 内未跑完(无汇总行)⇒ 这是**时长不足**不是泄漏。处置:调高本步骤 timeout 与 job timeout-minutes,或把串行线分片。勿按泄漏排查。"
             fi
             exit 1
           fi
 
           if [ "$rc" -ne 0 ]; then
+            echo 'LEAK_VERDICT=suite-failed' >> "$GITHUB_ENV"
             echo "::error::串行 e2e 失败(exit $rc),详见上方输出"
             exit "$rc"
           fi
           echo "✓ 无句柄泄漏(用时 ${elapsed}s)"
+
+      # ──────────────────────────────────────────────────────────────────────
+      # 失败可见性(2026-08-16 新增)。本线不进 required checks,「红了」这件事
+      # 此前**没有任何投递渠道** —— 实测连红 6 天无人知晓。
+      #
+      # 三条设计约束,缺一条这机制就会自己失效:
+      #   ① 同一轮故障只开**一个** Issue,后续追评论 —— 否则连红 N 天刷 N 个同样的
+      #      Issue,收件人会开始整体无视它(告警疲劳 = 通知等于没有)。
+      #   ② 绿了**自动关闭** —— 否则 Issue 长期挂着,下次真红时分不清新旧。
+      #   ③ 结论**复用上一步的判据**($LEAK_VERDICT),不在这里重新判一次 ——
+      #      两份判断迟早分叉,那时 workflow 与 Issue 各说各话,读的人无从取信。
+      # 另:e2e 步骤之前就失败(装依赖/迁移/DB 起不来)时 $LEAK_VERDICT 为空,
+      # 走 infra-failed 分支照样投递 —— 静默是这套机制唯一不可接受的失败模式。
+      - name: 失败可见性 —— 开或追 Issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -uo pipefail
+          verdict="${LEAK_VERDICT:-infra-failed}"
+          elapsed="${LEAK_ELAPSED_HUMAN:-未测得(未跑到计时点)}"
+          case "$verdict" in
+            leak-with-stack)
+              headline='句柄泄漏 —— jest 已给出逐句柄堆栈'
+              action='看 run 日志里的句柄堆栈,定位对应 spec 的 `afterAll`(通常是缺 `app.close()`)。' ;;
+            leak-no-stack)
+              headline='句柄泄漏 —— 套件跑完了但进程不退出'
+              action='查**最后完成**的那个 spec 的 `afterAll`;本次 jest 未能打出堆栈。' ;;
+            too-slow)
+              headline='套件没跑完 —— 时长不足,**不是**泄漏'
+              action='调高内层 `timeout` 与 job `timeout-minutes`,或把串行线分片。**勿按泄漏排查** —— 2026-08-08 那轮正是把这种失败读成了泄漏,白查一轮。' ;;
+            suite-failed)
+              headline='串行 e2e 有测试失败'
+              action='按普通测试失败处理,与句柄泄漏无关。' ;;
+            *)
+              headline='e2e 开跑之前就失败了(依赖/Prisma/数据库/环境)'
+              action='看 run 日志中 `Run E2E` 之前的步骤。' ;;
+          esac
+
+          gh label create nightly-e2e-leaks --color d73a4a \
+            --description '夜间句柄泄漏线的失败追踪(自动开关)' >/dev/null 2>&1 || true
+
+          body=$(printf '%s\n' \
+            "**结论:${headline}**" \
+            "" \
+            "| | |" \
+            "|---|---|" \
+            "| 判定 | \`${verdict}\` |" \
+            "| 串行用时 | ${elapsed} |" \
+            "| 提交 | \`${SHA}\` |" \
+            "| run | ${RUN_URL} |" \
+            "" \
+            "**该怎么处置**:${action}" \
+            "" \
+            "---" \
+            "本 Issue 由夜间线自动维护:同一轮故障只开一个,后续失败在此追加评论;**恢复绿后自动关闭**。")
+
+          existing=$(gh issue list --label nightly-e2e-leaks --state open --limit 1 --json number --jq '.[0].number // empty' 2>/dev/null || true)
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+            echo "已在既有 Issue #${existing} 追加(不重复开,避免告警疲劳)"
+          else
+            gh issue create --title '🌙 Nightly E2E leaks 失败' --label nightly-e2e-leaks --body "$body"
+          fi
+
+      - name: 恢复绿后关闭 Issue
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          existing=$(gh issue list --label nightly-e2e-leaks --state open --limit 1 --json number --jq '.[0].number // empty' 2>/dev/null || true)
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" \
+              --body "✅ 夜间线已恢复:零句柄泄漏,串行用时 ${LEAK_ELAPSED_HUMAN:-未测得}。run:${RUN_URL}"
+            gh issue close "$existing"
+            echo "已关闭 Issue #${existing}"
+          else
+            echo "无未关闭的夜间线 Issue,无需处理"
+          fi

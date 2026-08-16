@@ -682,6 +682,34 @@ checkEq(
     /timeout .*--kill-after/.test(nightly) && nightly.includes('124'),
     'nightly 缺 timeout/超时判定',
   );
+  // ①b 失败可见性(2026-08-16 新增)。本线**不进 required checks**(设计如此:它慢、
+  // 不该阻塞 PR),所以「红了」这件事没有任何天然投递渠道 —— 实测连红 6 天无人知晓。
+  // 判据装了而输出没人消费 = 等于没装,故投递本身也必须是执行位、并被守护。
+  check(
+    'P1 leak:nightly 失败时投递 Issue(红了必须有人看见)',
+    /if:\s*failure\(\)/.test(nightly) && /gh issue (create|comment)/.test(nightly),
+    'nightly 缺失败投递 —— 本线不进 required checks,没有投递就没有任何人会知道它红了',
+  );
+  // 不去重就会连红 N 天刷 N 个同样的 Issue,收件人随即整体无视 = 告警疲劳,
+  // 与「没有通知」等价。故「先查既有 open Issue」这一步本身是判据的一部分。
+  check(
+    'P1 leak:nightly 投递前先查既有 Issue(防重复轰炸导致告警疲劳)',
+    /gh issue list[\s\S]{0,200}--state open/.test(nightly),
+    'nightly 失败投递未去重,连红会刷屏并使通知失效',
+  );
+  // 不自动关闭则 Issue 长期挂着,下次真红时无从分辨新旧 —— 同样使通知失去鉴别力。
+  check(
+    'P1 leak:nightly 恢复绿后关闭 Issue',
+    /if:\s*success\(\)/.test(nightly) && nightly.includes('gh issue close'),
+    'nightly 绿后未关闭 Issue,陈旧 Issue 会让下次告警失去鉴别力',
+  );
+  // 结论必须由检测步骤单点产出($LEAK_VERDICT),投递步骤只做渲染。
+  // 若投递自行重判,两份判断迟早分叉:workflow 说超时、Issue 说泄漏,读者无从取信。
+  check(
+    'P1 leak:nightly 投递复用检测步骤的判定(单一判据来源)',
+    nightly.includes('LEAK_VERDICT'),
+    'nightly 的 Issue 投递未复用 $LEAK_VERDICT,存在两份判断分叉的风险',
+  );
 
   // ② CI gate 必须正面证明 slow 的 skipped 合法(docs-only),不得从 skipped 反推。
   // 曾经 fail-open:changeset 失败 → slow skipped → required check 变绿而 e2e 从未跑。
