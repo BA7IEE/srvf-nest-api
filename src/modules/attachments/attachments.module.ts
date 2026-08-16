@@ -5,6 +5,7 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AttachmentAuditRecorder } from './attachment-audit-recorder';
 import { AttachmentContentValidator } from './attachment-content-validator';
+import { AttachmentManualRelocateService } from './attachment-manual-relocate.service';
 import { AttachmentStorageOrchestrator } from './attachment-storage-orchestrator';
 import { AttachmentsController } from './attachments.controller';
 import { AttachmentsService } from './attachments.service';
@@ -29,6 +30,7 @@ import { AttachmentsService } from './attachments.service';
     AttachmentsService,
     AttachmentAuditRecorder,
     AttachmentContentValidator,
+    AttachmentManualRelocateService,
     AttachmentStorageOrchestrator,
   ],
   // CMS 内容模块(2026-06-21,评审稿 §5.2):导出 AttachmentsService 供 content 模块复用
