@@ -9,6 +9,26 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
+import {
+  asObject,
+  assertPendingSource,
+  assertPreparingCandidates,
+  assertVoidLiveFacts,
+  initialPreferencePositions,
+  decimalString,
+  readReceiptBatchStatusCode,
+  targetProjection,
+} from './activity-allocation-policy';
+import { RESPONSE_SCHEMA_VERSION } from './activity-allocation.types';
+import type {
+  AllocationCommandCode,
+  AllocationResultCode,
+  CandidateSource,
+  LockedApplicationProjection,
+  LockedBatch,
+  PersistedCandidate,
+  ReceiptBatchStatusCode,
+} from './activity-allocation.types';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AuthzService } from '../authz/authz.service';
 import { RbacService } from '../permissions/rbac.service';
@@ -18,7 +38,6 @@ import { ActivityRegistrationNotificationProducer } from './activity-registratio
 import {
   ActivityQualificationEvaluatorService,
   type ActivityQualificationEvaluation,
-  type QualificationProjection,
 } from './activity-qualification-evaluator.service';
 import {
   CapacityReservationService,
@@ -45,13 +64,9 @@ import type {
 } from './dto/app/app-activity-allocation-batch.dto';
 
 type PrismaTx = Prisma.TransactionClient;
-type AllocationResultCode = 'allocated' | 'waitlisted' | 'not_selected';
-type AllocationCommandCode = 'prepare' | 'commit' | 'void';
 type QualificationModeCode = AllocationModeCode | 'first_come';
-type ReceiptBatchStatusCode = 'preparing' | 'committed' | 'voided';
 
 const ALLOCATION_ALGORITHM_VERSION = 'allocation-v1';
-const RESPONSE_SCHEMA_VERSION = 'allocation-command-response-v1';
 
 type LockedActivity = {
   id: string;
@@ -61,47 +76,6 @@ type LockedActivity = {
   allocationModeCode: string;
   startAt: Date;
   endAt: Date;
-};
-
-type LockedBatch = {
-  id: string;
-  activityId: string;
-  sessionId: string;
-  positionId: string | null;
-  modeCode: string;
-  candidateSnapshotHash: string;
-  algorithmVersionCode: string;
-  randomCommitment: string | null;
-  randomSeedReveal: string | null;
-  statusCode: string;
-  operationKey: string;
-  requestHash: string | null;
-  committedAt: Date | null;
-  voidReason: string | null;
-  voidedAt: Date | null;
-};
-
-type CandidateSource = {
-  id: string;
-  activityId: string;
-  memberId: string;
-  sessionId: string;
-  registrationId: string;
-  identityRevision: number;
-  identityStatusCode: string;
-  currentPositionId: string | null;
-  capacityReservationId: string | null;
-  populationIncluded: boolean;
-  identityVersion: number;
-  registrationCurrentRevision: number;
-  registrationRevisionId: string;
-  participationRevisionId: string;
-  participationRevisionStatusCode: string;
-  participationRevisionPositionId: string | null;
-  participationRevisionWaitlistRank: number | null;
-  participationRevisionAllocationBatchId: string | null;
-  acceptedAt: Date;
-  preferenceSnapshot: Prisma.JsonValue | null;
 };
 
 type FrozenQualification = {
@@ -118,24 +92,6 @@ type FrozenCandidate = CandidateSource &
     tieBreakKey: string;
   };
 
-type PersistedCandidate = {
-  allocationCandidateId: string;
-  activityId: string;
-  sessionId: string;
-  waitlistPositionId: string | null;
-  participationIdentityId: string;
-  registrationId: string;
-  registrationRevisionId: string;
-  acceptedAt: Date;
-  qualificationSnapshotHash: string;
-  qualificationScore: Prisma.Decimal | null;
-  tieBreakKey: string;
-  lotteryOrder: number | null;
-  resultCode: string | null;
-  waitlistRank: number | null;
-  explanation: Prisma.JsonValue;
-};
-
 type CheckedCandidate = PersistedCandidate &
   CandidateSource & {
     frozen: FrozenQualification;
@@ -146,25 +102,6 @@ type ReservationAnchors = {
   activityPersonBucketId: string;
   sessionReservationId: string;
   sessionBucketId: string;
-  positionReservationId: string | null;
-  positionBucketId: string | null;
-};
-
-type LockedApplicationProjection = {
-  id: string;
-  allocationCandidateId: string;
-  participationIdentityId: string;
-  memberId: string;
-  appliedParticipationRevisionId: string;
-  appliedResultCode: AllocationResultCode;
-  appliedStatusCode: 'pass' | 'waitlisted' | 'not_selected';
-  positionId: string | null;
-  populationIncluded: boolean;
-  expectedIdentityCapacityReservationId: string | null;
-  activityPersonReservationId: string | null;
-  activityPersonBucketId: string | null;
-  sessionReservationId: string | null;
-  sessionBucketId: string | null;
   positionReservationId: string | null;
   positionBucketId: string | null;
 };
@@ -250,16 +187,6 @@ function isAllocationMode(value: string): value is AllocationModeCode {
   return value === 'qualification_rank' || value === 'lottery';
 }
 
-function decimalString(value: Prisma.Decimal | null): string | null {
-  return value === null ? null : value.toFixed(4);
-}
-
-function asObject(value: Prisma.JsonValue): Record<string, Prisma.JsonValue> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, Prisma.JsonValue>)
-    : null;
-}
-
 function candidateQualificationResult(value: Prisma.JsonValue): 'pass' | 'warn' | 'fail' {
   const explanation = asObject(value);
   const result = explanation?.aggregateResultCode;
@@ -343,7 +270,7 @@ export class ActivityAllocationService {
         );
         const frozen: FrozenCandidate[] = [];
         for (const source of selected) {
-          this.assertPendingSource(source);
+          assertPendingSource(source);
           const qualification = await this.freezeQualification({
             tx,
             activity,
@@ -518,7 +445,7 @@ export class ActivityAllocationService {
       if (rows.length !== 1 || !source || source.memberId !== input.memberId) {
         throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
       }
-      this.assertPendingSource(source);
+      assertPendingSource(source);
       sources.push(source);
     }
 
@@ -816,7 +743,7 @@ export class ActivityAllocationService {
         }
         await this.assertTargetShape(tx, activityId, batch.sessionId, batch.positionId);
         const candidates = await this.lockPersistedCandidates(tx, batch.id);
-        this.assertPreparingCandidates(batch, candidates);
+        assertPreparingCandidates(batch, candidates);
         const candidateIds = candidates.map((candidate) => candidate.participationIdentityId);
         const sources = await this.lockCandidateSources(
           tx,
@@ -832,7 +759,7 @@ export class ActivityAllocationService {
         for (const candidate of candidates) {
           const source = sourceByIdentity.get(candidate.participationIdentityId);
           if (!source) throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
-          this.assertPendingSource(source);
+          assertPendingSource(source);
           if (
             source.registrationId !== candidate.registrationId ||
             source.registrationRevisionId !== candidate.registrationRevisionId ||
@@ -1065,7 +992,7 @@ export class ActivityAllocationService {
             batch.sessionId,
             candidates.map((candidate) => candidate.participationIdentityId),
           );
-          this.assertVoidLiveFacts({ batch, candidates, projections, sources });
+          assertVoidLiveFacts({ batch, candidates, projections, sources });
           await this.assertProjectedReservationsExact(tx, activityId, projections);
           const allocatedByMember = new Map<string, string[]>();
           for (const projection of projections) {
@@ -1127,7 +1054,7 @@ export class ActivityAllocationService {
               throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
           }
         } else {
-          this.assertPreparingCandidates(batch, candidates);
+          assertPreparingCandidates(batch, candidates);
           candidates.forEach((candidate) => registrationIds.add(candidate.registrationId));
         }
         if (populationChanged) {
@@ -1422,101 +1349,6 @@ export class ActivityAllocationService {
     `);
   }
 
-  private assertVoidLiveFacts(input: {
-    batch: LockedBatch;
-    candidates: readonly PersistedCandidate[];
-    projections: readonly LockedApplicationProjection[];
-    sources: readonly CandidateSource[];
-  }): void {
-    if (
-      input.candidates.length !== input.projections.length ||
-      input.candidates.length !== input.sources.length
-    ) {
-      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
-    }
-    const candidateById = new Map(
-      input.candidates.map((candidate) => [candidate.allocationCandidateId, candidate]),
-    );
-    const sourceById = new Map(input.sources.map((source) => [source.id, source]));
-    const seenIdentities = new Set<string>();
-    for (const projection of input.projections) {
-      const candidate = candidateById.get(projection.allocationCandidateId);
-      const source = sourceById.get(projection.participationIdentityId);
-      const candidateWaitlisted = candidate?.resultCode === 'waitlisted';
-      const candidateClosedShape = candidateWaitlisted
-        ? candidate.waitlistRank !== null &&
-          candidate.waitlistRank >= 1 &&
-          candidate.waitlistPositionId !== null
-        : candidate?.resultCode === 'allocated' || candidate?.resultCode === 'not_selected'
-          ? candidate.waitlistRank === null && candidate.waitlistPositionId === null
-          : false;
-      const expectedRevisionPosition = candidateWaitlisted
-        ? (candidate?.waitlistPositionId ?? null)
-        : projection.positionId;
-      const expectedRevisionWaitlistRank = candidateWaitlisted
-        ? (candidate?.waitlistRank ?? null)
-        : null;
-      if (
-        !candidate ||
-        !source ||
-        !candidateClosedShape ||
-        seenIdentities.has(projection.participationIdentityId) ||
-        candidate.activityId !== input.batch.activityId ||
-        candidate.sessionId !== input.batch.sessionId ||
-        candidate.participationIdentityId !== projection.participationIdentityId ||
-        candidate.resultCode !== projection.appliedResultCode ||
-        source.id !== projection.participationIdentityId ||
-        source.activityId !== input.batch.activityId ||
-        source.sessionId !== input.batch.sessionId ||
-        source.memberId !== projection.memberId ||
-        source.participationRevisionId !== projection.appliedParticipationRevisionId ||
-        source.participationRevisionStatusCode !== projection.appliedStatusCode ||
-        source.participationRevisionPositionId !== expectedRevisionPosition ||
-        source.participationRevisionWaitlistRank !== expectedRevisionWaitlistRank ||
-        source.participationRevisionAllocationBatchId !== input.batch.id ||
-        source.identityStatusCode !== projection.appliedStatusCode ||
-        source.currentPositionId !== projection.positionId ||
-        source.capacityReservationId !== projection.expectedIdentityCapacityReservationId ||
-        source.populationIncluded !== projection.populationIncluded
-      ) {
-        throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
-      }
-      seenIdentities.add(projection.participationIdentityId);
-      if (projection.appliedResultCode === 'allocated') {
-        if (
-          projection.appliedStatusCode !== 'pass' ||
-          !projection.populationIncluded ||
-          (input.batch.positionId !== null && projection.positionId !== input.batch.positionId) ||
-          projection.expectedIdentityCapacityReservationId === null ||
-          projection.activityPersonReservationId === null ||
-          projection.activityPersonBucketId === null ||
-          projection.sessionReservationId === null ||
-          projection.sessionBucketId === null ||
-          projection.expectedIdentityCapacityReservationId !== projection.sessionReservationId ||
-          (projection.positionId === null
-            ? projection.positionReservationId !== null || projection.positionBucketId !== null
-            : projection.positionReservationId === null || projection.positionBucketId === null)
-        ) {
-          throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
-        }
-        continue;
-      }
-      if (
-        projection.positionId !== null ||
-        projection.populationIncluded ||
-        projection.expectedIdentityCapacityReservationId !== null ||
-        projection.activityPersonReservationId !== null ||
-        projection.activityPersonBucketId !== null ||
-        projection.sessionReservationId !== null ||
-        projection.sessionBucketId !== null ||
-        projection.positionReservationId !== null ||
-        projection.positionBucketId !== null
-      ) {
-        throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
-      }
-    }
-  }
-
   private async assertProjectedReservationsExact(
     tx: PrismaTx,
     activityId: string,
@@ -1588,45 +1420,6 @@ export class ActivityAllocationService {
     }
   }
 
-  private assertPreparingCandidates(
-    batch: LockedBatch,
-    candidates: readonly PersistedCandidate[],
-  ): void {
-    if (
-      candidates.some(
-        (candidate) =>
-          candidate.activityId !== batch.activityId ||
-          candidate.sessionId !== batch.sessionId ||
-          candidate.waitlistPositionId !== null ||
-          candidate.resultCode !== null ||
-          candidate.waitlistRank !== null ||
-          candidate.lotteryOrder !== null ||
-          candidate.tieBreakKey !== candidate.participationIdentityId,
-      )
-    ) {
-      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
-    }
-    const snapshotHash = createCandidateSnapshotHash({
-      activityId: batch.activityId,
-      sessionId: batch.sessionId,
-      positionId: batch.positionId,
-      modeCode: batch.modeCode as AllocationModeCode,
-      algorithmVersionCode: batch.algorithmVersionCode,
-      candidates: candidates.map((candidate) => ({
-        participationIdentityId: candidate.participationIdentityId,
-        registrationId: candidate.registrationId,
-        registrationRevisionId: candidate.registrationRevisionId,
-        acceptedAt: candidate.acceptedAt,
-        qualificationSnapshotHash: candidate.qualificationSnapshotHash,
-        qualificationScore: decimalString(candidate.qualificationScore),
-        tieBreakKey: candidate.tieBreakKey,
-      })),
-    });
-    if (snapshotHash !== batch.candidateSnapshotHash) {
-      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
-    }
-  }
-
   /**
    * A session-level batch consumes only the applicant's immutable submitted preference order.
    * It may fall through during this initial allocation; after a waitlist result no later caller
@@ -1646,10 +1439,7 @@ export class ActivityAllocationService {
     positionId: string | null;
     waitlistPositionId: string | null;
   }> {
-    const positions = this.initialPreferencePositions(
-      input.preferenceSnapshot,
-      input.batchPositionId,
-    );
+    const positions = initialPreferencePositions(input.preferenceSnapshot, input.batchPositionId);
     for (const positionId of positions) {
       const reservation = await this.capacityReservations.reserveInTransactionTrusted(tx, {
         activityId: input.activityId,
@@ -1713,26 +1503,6 @@ export class ActivityAllocationService {
     // facts. Actual promotion always re-sorts by acceptedAt + UTF-8 identity below; this ordinal
     // is only a durable entry sequence and therefore deliberately permits gaps after departures.
     return Math.max(0, ...ranks) + 1;
-  }
-
-  private initialPreferencePositions(
-    preferenceSnapshot: Prisma.JsonValue | null,
-    batchPositionId: string | null,
-  ): Array<string | null> {
-    if (batchPositionId !== null) return [batchPositionId];
-    const snapshot = preferenceSnapshot === null ? null : asObject(preferenceSnapshot);
-    const positions = snapshot?.positionIds;
-    if (!Array.isArray(positions)) {
-      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
-    }
-    if (positions.length === 0) return [null];
-    if (
-      positions.some((position) => typeof position !== 'string' || position.length === 0) ||
-      new Set(positions).size !== positions.length
-    ) {
-      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
-    }
-    return positions as string[];
   }
 
   private async persistCommittedCandidate(
@@ -2132,23 +1902,6 @@ export class ActivityAllocationService {
     `);
   }
 
-  private assertPendingSource(source: CandidateSource): void {
-    if (
-      source.identityRevision < 1 ||
-      source.registrationCurrentRevision < 1 ||
-      source.identityStatusCode !== 'pending' ||
-      source.participationRevisionStatusCode !== 'pending' ||
-      source.participationRevisionPositionId !== null ||
-      source.participationRevisionWaitlistRank !== null ||
-      source.participationRevisionAllocationBatchId !== null ||
-      source.currentPositionId !== null ||
-      source.capacityReservationId !== null ||
-      source.populationIncluded
-    ) {
-      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
-    }
-  }
-
   private async freezeQualification(input: {
     tx: PrismaTx;
     activity: LockedActivity;
@@ -2163,7 +1916,7 @@ export class ActivityAllocationService {
       targets: [{ sessionId: input.sessionId, positionId: input.positionId }],
       tx: input.tx,
     });
-    const projection = this.targetProjection(evaluation, input.sessionId, input.positionId);
+    const projection = targetProjection(evaluation, input.sessionId, input.positionId);
     const ruleSets = await this.freezeRuleSets(input.tx, evaluation);
     const seenRuleIds = new Set<string>();
     const warnings: number[] = [];
@@ -2219,19 +1972,6 @@ export class ActivityAllocationService {
         ruleSets,
       },
     };
-  }
-
-  private targetProjection(
-    evaluation: ActivityQualificationEvaluation,
-    sessionId: string,
-    positionId: string | null,
-  ): QualificationProjection {
-    const projection =
-      positionId === null
-        ? evaluation.sessions.get(sessionId)
-        : evaluation.positions.get(positionId);
-    if (!projection) throw new BizException(BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID);
-    return projection;
   }
 
   private async freezeRuleSets(
@@ -2300,7 +2040,7 @@ export class ActivityAllocationService {
     if (receipt.requestHash !== requestHash) {
       throw new BizException(BizCode.ACTIVITY_REGISTRATION_OPERATION_KEY_CONFLICT);
     }
-    const receiptBatchStatusCode = this.readReceiptBatchStatusCode({
+    const receiptBatchStatusCode = readReceiptBatchStatusCode({
       activityId,
       allocationBatchId: receipt.allocationBatchId,
       commandCode,
@@ -2318,49 +2058,6 @@ export class ActivityAllocationService {
         receiptBatchStatusCode,
       ),
     };
-  }
-
-  /**
-   * D86 deliberately stores only a fixed safe receipt envelope.  The batch and candidate facts
-   * are immutable enough to reconstruct that command's original safe view, but later commands
-   * must not turn a prepare replay into a live committed/voided response.
-   */
-  private readReceiptBatchStatusCode(input: {
-    activityId: string;
-    allocationBatchId: string;
-    commandCode: AllocationCommandCode;
-    responseSchemaVersion: string;
-    responseHash: string;
-    responseReceipt: Prisma.JsonValue;
-  }): ReceiptBatchStatusCode {
-    const receipt = asObject(input.responseReceipt);
-    const expectedStatusCode: ReceiptBatchStatusCode =
-      input.commandCode === 'prepare'
-        ? 'preparing'
-        : input.commandCode === 'commit'
-          ? 'committed'
-          : 'voided';
-    const expectedResponseHash = createAllocationResponseHash({
-      activityId: input.activityId,
-      allocationBatchId: input.allocationBatchId,
-      commandCode: input.commandCode,
-      batchStatusCode: expectedStatusCode,
-    });
-    if (
-      receipt === null ||
-      input.responseSchemaVersion !== RESPONSE_SCHEMA_VERSION ||
-      input.responseHash !== expectedResponseHash ||
-      Object.keys(receipt).length !== 6 ||
-      receipt.activityId !== input.activityId ||
-      receipt.allocationBatchId !== input.allocationBatchId ||
-      receipt.commandCode !== input.commandCode ||
-      receipt.batchStatusCode !== expectedStatusCode ||
-      receipt.responseSchemaVersion !== RESPONSE_SCHEMA_VERSION ||
-      receipt.responseHash !== input.responseHash
-    ) {
-      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
-    }
-    return expectedStatusCode;
   }
 
   private async resolveReplayRace(
