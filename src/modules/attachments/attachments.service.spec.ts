@@ -2265,12 +2265,8 @@ describe('AttachmentsService (characterization)', () => {
       const uploadedArgs = prisma.attachment.findMany.mock.calls[1][0] as {
         where: { ownerType: { notIn: string[] } };
       };
-      const listWhere = listArgs.where as {
-        ownerType: { notIn: string[] };
-      };
-      const uploadedWhere = uploadedArgs.where as {
-        ownerType: { notIn: string[] };
-      };
+      const listWhere = listArgs.where;
+      const uploadedWhere = uploadedArgs.where;
       expect(listWhere.ownerType.notIn).toContain('attendance-import-preview');
       expect(uploadedWhere.ownerType.notIn).toContain('attendance-import-preview');
     });

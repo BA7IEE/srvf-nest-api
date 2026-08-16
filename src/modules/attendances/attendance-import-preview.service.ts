@@ -349,7 +349,8 @@ export class AttendanceImportPreviewService {
           payload: true,
         },
       });
-      if (job === null || !isPreviewPayload(job.payload)) throw new BizException(BizCode.BAD_REQUEST);
+      if (job === null || !isPreviewPayload(job.payload))
+        throw new BizException(BizCode.BAD_REQUEST);
       const payload = job.payload;
       const [total, rows] = await Promise.all([
         tx.activityBatchJobItem.count({ where: { jobId: job.id } }),
@@ -429,7 +430,10 @@ export class AttendanceImportPreviewService {
         actorMemberId: source.payload.actorMemberId,
       });
     } catch (error) {
-      if (error instanceof BizException && error.biz.code === BizCode.ATTENDANCE_IMPORT_PREVIEW_MISMATCH.code) {
+      if (
+        error instanceof BizException &&
+        error.biz.code === BizCode.ATTENDANCE_IMPORT_PREVIEW_MISMATCH.code
+      ) {
         return this.failImportExecuteForPreviewMismatch(input);
       }
       throw error;
@@ -445,7 +449,11 @@ export class AttendanceImportPreviewService {
     let itemsSkipped = 0;
     let itemsFailed = 0;
     for (const candidate of candidates) {
-      const result = await this.processImportExecuteItem({ ...input, itemId: candidate.id, rowsByLine });
+      const result = await this.processImportExecuteItem({
+        ...input,
+        itemId: candidate.id,
+        rowsByLine,
+      });
       if (result.kind === 'succeeded') {
         itemsProcessed += 1;
         continue;
@@ -478,7 +486,9 @@ export class AttendanceImportPreviewService {
   private async prepareExecute(
     input: ExecuteAttendanceImportPreviewInput,
     currentUser: CurrentUserPayload,
-  ): Promise<{ kind: 'replay'; receipt: OnsiteBatchJobReceipt } | { kind: 'new'; facts: ExecutePreviewFacts }> {
+  ): Promise<
+    { kind: 'replay'; receipt: OnsiteBatchJobReceipt } | { kind: 'new'; facts: ExecutePreviewFacts }
+  > {
     const operationKey = `b6:import-execute:${input.activityId}:${input.operationKey}`;
     const requestHash = createExecuteRequestHash({
       activityId: input.activityId,
@@ -727,7 +737,13 @@ export class AttendanceImportPreviewService {
   ): Promise<void> {
     const rows = await tx.activityBatchJobItem.findMany({
       where: { jobId: previewId },
-      select: { itemKey: true, statusCode: true, resourceType: true, resourceId: true, payloadHash: true },
+      select: {
+        itemKey: true,
+        statusCode: true,
+        resourceType: true,
+        resourceId: true,
+        payloadHash: true,
+      },
       orderBy: [{ itemKey: 'asc' }, { id: 'asc' }],
     });
     if (rows.length !== parsed.length) {
@@ -812,16 +828,25 @@ export class AttendanceImportPreviewService {
       let savepointOpen = true;
       try {
         if (activity.deletedAt !== null) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-        if (activity.statusCode !== 'published') throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+        if (activity.statusCode !== 'published')
+          throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
         const payload = requireExecutePayload(job.payload);
         const line = parseExecuteItemLine(item.itemKey, payload.previewId);
         const row = input.rowsByLine.get(line);
-        if (row === undefined || !row.valid || row.participationIdentityId === null || row.actionCode === null) {
+        if (
+          row === undefined ||
+          !row.valid ||
+          row.participationIdentityId === null ||
+          row.actionCode === null
+        ) {
           this.failClosed();
         }
         this.assertImportExecuteItemInvariant(job, item, payload, row);
         const actor = await this.lockActiveActor(tx, payload.actorUserId, payload.actorMemberId);
-        if (actor === null || !(await this.hasManagedAttendance(tx, job.activityId, actor.memberId!))) {
+        if (
+          actor === null ||
+          !(await this.hasManagedAttendance(tx, job.activityId, actor.memberId!))
+        ) {
           await tx.$executeRaw(Prisma.sql`ROLLBACK TO SAVEPOINT attendance_import_execute_item`);
           await tx.$executeRaw(Prisma.sql`RELEASE SAVEPOINT attendance_import_execute_item`);
           savepointOpen = false;
@@ -846,7 +871,11 @@ export class AttendanceImportPreviewService {
           occurredAt: new Date(row.occurredAt),
           batchJobItemId: item.id,
           currentUser: actor,
-          auditMeta: { requestId: `activity-batch-worker:${job.id}:${item.id}`, ip: null, ua: null },
+          auditMeta: {
+            requestId: `activity-batch-worker:${job.id}:${item.id}`,
+            ip: null,
+            ua: null,
+          },
         });
         await tx.$executeRaw(Prisma.sql`RELEASE SAVEPOINT attendance_import_execute_item`);
         savepointOpen = false;
@@ -1035,7 +1064,9 @@ export class AttendanceImportPreviewService {
     tx: PrismaTx,
     activityId: string,
   ): Promise<{ deletedAt: Date | null; statusCode: string }> {
-    const rows = await tx.$queryRaw<Array<{ id: string; deletedAt: Date | null; statusCode: string }>>(
+    const rows = await tx.$queryRaw<
+      Array<{ id: string; deletedAt: Date | null; statusCode: string }>
+    >(
       Prisma.sql`
         SELECT "id", "deletedAt", "statusCode"
         FROM "Activity"
@@ -1373,7 +1404,9 @@ export class AttendanceImportPreviewService {
     sessionId: string,
   ): Promise<ParsedImportRow[]> {
     const ids = rows
-      .flatMap((row) => (row.valid && row.participationIdentityId !== null ? [row.participationIdentityId] : []))
+      .flatMap((row) =>
+        row.valid && row.participationIdentityId !== null ? [row.participationIdentityId] : [],
+      )
       .sort(compareUtf8);
     const known = new Set(
       (
@@ -1385,7 +1418,8 @@ export class AttendanceImportPreviewService {
     );
     return rows.map((row) => ({
       ...row,
-      valid: row.valid && row.participationIdentityId !== null && known.has(row.participationIdentityId),
+      valid:
+        row.valid && row.participationIdentityId !== null && known.has(row.participationIdentityId),
     }));
   }
 
@@ -1420,7 +1454,8 @@ export class AttendanceImportPreviewService {
     if (rows.length !== 1 || activity === undefined || activity.deletedAt !== null) {
       throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
     }
-    if (activity.statusCode !== 'published') throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+    if (activity.statusCode !== 'published')
+      throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
     return { workflowRevision: activity.workflowRevision };
   }
 
@@ -1498,7 +1533,7 @@ function parseImportRow(line: number, cells: readonly string[]): ParsedImportRow
     line,
     participationIdentityId: valid ? identity : null,
     actionCode: valid ? action : null,
-    occurredAt: valid ? parsedTime!.toISOString() : null,
+    occurredAt: valid ? parsedTime.toISOString() : null,
     location:
       location === null
         ? null
@@ -1511,8 +1546,8 @@ function parseImportRow(line: number, cells: readonly string[]): ParsedImportRow
   return {
     line,
     participationIdentityId: valid ? identity : null,
-    actionCode: valid ? (action as 'check_in' | 'check_out') : null,
-    occurredAt: valid ? parsedTime!.toISOString() : null,
+    actionCode: valid ? action : null,
+    occurredAt: valid ? parsedTime.toISOString() : null,
     longitude: location?.longitude ?? null,
     latitude: location?.latitude ?? null,
     accuracy: location?.accuracy ?? null,
@@ -1582,7 +1617,7 @@ function parseCsvRecords(source: string): string[][] | null {
   let cell = '';
   let quoted = false;
   for (let index = 0; index < source.length; index += 1) {
-    const character = source[index]!;
+    const character = source[index];
     if (quoted) {
       if (character === '"') {
         if (source[index + 1] === '"') {
@@ -1714,7 +1749,7 @@ function createExecuteRequestHash(input: {
 
 function isPreviewPayload(value: Prisma.JsonValue): value is Prisma.JsonObject & PreviewPayload {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-  const payload = value as Prisma.JsonObject;
+  const payload = value;
   return (
     payload['action'] === ATTENDANCE_IMPORT_PREVIEW_ACTION &&
     payload['parserVersion'] === ATTENDANCE_IMPORT_CSV_PARSER_VERSION &&
@@ -1727,9 +1762,11 @@ function isPreviewPayload(value: Prisma.JsonValue): value is Prisma.JsonObject &
   );
 }
 
-function isExecutePayload(value: Prisma.JsonValue): value is Prisma.JsonObject & ImportExecutePayload {
+function isExecutePayload(
+  value: Prisma.JsonValue,
+): value is Prisma.JsonObject & ImportExecutePayload {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-  const payload = value as Prisma.JsonObject;
+  const payload = value;
   return (
     payload['action'] === ATTENDANCE_IMPORT_EXECUTE_ACTION &&
     typeof payload['previewId'] === 'string' &&

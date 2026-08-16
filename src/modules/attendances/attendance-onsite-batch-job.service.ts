@@ -373,7 +373,10 @@ export class AttendanceOnsiteBatchJobService {
         const payload = requireOnsiteBulkPayload(job.payload);
         this.assertBulkItemInvariant(job, item);
         const actor = await this.lockActiveActor(tx, payload.actorUserId, payload.actorMemberId);
-        if (actor === null || !(await this.hasManagedAttendance(tx, job.activityId, actor.memberId!))) {
+        if (
+          actor === null ||
+          !(await this.hasManagedAttendance(tx, job.activityId, actor.memberId!))
+        ) {
           await tx.$executeRaw(Prisma.sql`ROLLBACK TO SAVEPOINT onsite_bulk_punch_item`);
           await tx.$executeRaw(Prisma.sql`RELEASE SAVEPOINT onsite_bulk_punch_item`);
           savepointOpen = false;
@@ -397,7 +400,11 @@ export class AttendanceOnsiteBatchJobService {
           accuracy: location.accuracy,
           batchJobItemId: item.id,
           currentUser: actor,
-          auditMeta: { requestId: `activity-batch-worker:${job.id}:${item.id}`, ip: null, ua: null },
+          auditMeta: {
+            requestId: `activity-batch-worker:${job.id}:${item.id}`,
+            ip: null,
+            ua: null,
+          },
         });
         await tx.$executeRaw(Prisma.sql`RELEASE SAVEPOINT onsite_bulk_punch_item`);
         savepointOpen = false;
@@ -465,11 +472,7 @@ export class AttendanceOnsiteBatchJobService {
         this.failClosed();
       }
       const statusCode: OnsiteBulkPunchRunResult['statusCode'] =
-        succeeded === job.total
-          ? 'succeeded'
-          : succeeded === 0
-            ? 'failed'
-            : 'partial_failed';
+        succeeded === job.total ? 'succeeded' : succeeded === 0 ? 'failed' : 'partial_failed';
       const updated = await tx.activityBatchJob.updateMany({
         where: {
           id: job.id,
@@ -494,7 +497,9 @@ export class AttendanceOnsiteBatchJobService {
     tx: PrismaTx,
     activityId: string,
   ): Promise<{ id: string; statusCode: string; deletedAt: Date | null }> {
-    const rows = await tx.$queryRaw<Array<{ id: string; statusCode: string; deletedAt: Date | null }>>(
+    const rows = await tx.$queryRaw<
+      Array<{ id: string; statusCode: string; deletedAt: Date | null }>
+    >(
       Prisma.sql`
         SELECT "id", "statusCode", "deletedAt"
         FROM "Activity"
@@ -782,12 +787,14 @@ function createOnsiteBulkPunchRequestHash(args: {
   return createHash('sha256').update(payload, 'utf8').digest('hex');
 }
 
-function isOnsiteBulkPayload(value: Prisma.JsonValue): value is Prisma.JsonObject & OnsiteBulkPayload {
+function isOnsiteBulkPayload(
+  value: Prisma.JsonValue,
+): value is Prisma.JsonObject & OnsiteBulkPayload {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-  const payload = value as Prisma.JsonObject;
+  const payload = value;
   const location = payload['location'];
   if (typeof location !== 'object' || location === null || Array.isArray(location)) return false;
-  const canonicalLocation = location as Prisma.JsonObject;
+  const canonicalLocation = location;
   return (
     payload['action'] === ONSITE_BULK_PUNCH_JOB_ACTION &&
     (payload['actionCode'] === 'check_in' || payload['actionCode'] === 'check_out') &&
@@ -807,9 +814,11 @@ function requireOnsiteBulkPayload(value: Prisma.JsonValue): OnsiteBulkPayload {
   return value;
 }
 
-function parseOnsiteBulkLocation(
-  location: OnsiteBulkPayload['location'],
-): { longitude: number | null; latitude: number | null; accuracy: number | null } {
+function parseOnsiteBulkLocation(location: OnsiteBulkPayload['location']): {
+  longitude: number | null;
+  latitude: number | null;
+  accuracy: number | null;
+} {
   return {
     longitude: parseCanonicalLocationValue(location.longitude),
     latitude: parseCanonicalLocationValue(location.latitude),
@@ -819,11 +828,7 @@ function parseOnsiteBulkLocation(
 
 function isCanonicalLocationValue(value: Prisma.JsonValue | undefined): value is string | null {
   if (value === null) return true;
-  return (
-    typeof value === 'string' &&
-    /^-?\d+\.\d+$/u.test(value) &&
-    Number.isFinite(Number(value))
-  );
+  return typeof value === 'string' && /^-?\d+\.\d+$/u.test(value) && Number.isFinite(Number(value));
 }
 
 function parseCanonicalLocationValue(value: string | null): number | null {

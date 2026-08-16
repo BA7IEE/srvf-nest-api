@@ -1,7 +1,6 @@
 import { createHmac, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
 
-export const ATTENDANCE_MEMBER_CREDENTIAL_TOKEN_CONTEXT =
-  'srvf:attendance-member-credential:v1';
+export const ATTENDANCE_MEMBER_CREDENTIAL_TOKEN_CONTEXT = 'srvf:attendance-member-credential:v1';
 export const ATTENDANCE_MEMBER_CREDENTIAL_TOKEN_VERSION = 1;
 export const ATTENDANCE_MEMBER_CREDENTIAL_TTL_MS = 60_000;
 
@@ -118,7 +117,9 @@ export function signAttendanceMemberCredential(
     toAttendanceMemberCredentialPayload(input),
   );
   const payloadPart = Buffer.from(payload, 'utf8').toString('base64url');
-  const signature = createHmac('sha256', deriveSigningKey(jwtSecret)).update(payload, 'utf8').digest();
+  const signature = createHmac('sha256', deriveSigningKey(jwtSecret))
+    .update(payload, 'utf8')
+    .digest();
   return `${payloadPart}.${signature.toString('base64url')}`;
 }
 

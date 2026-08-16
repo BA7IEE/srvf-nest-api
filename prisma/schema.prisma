@@ -4235,11 +4235,12 @@ model ActivityVisitor {
 // 沿前两刀的四条工程判断:① 只做加法 ② 跨切片外键列不提前占位
 // ③ 既有表原样保留 ④ 合同没给的一律不发明。
 //
-// 本刀按 ② 明确**不建**三个列(不是漏了):
+// 本刀按 ② 明确**不建**三个列(不是漏了；其中离线锚已由第 6 批补齐):
 //   - AttendancePunchEvent.importJobItemId   → ActivityBatchJobItem(§3.27,第四刀)
-//   - AttendancePunchEvent.offlinePackageId  → OfflinePackage(合同第三处内部矛盾:
+//   - AttendancePunchEvent.offlinePackageId  → OfflinePackage(当时的合同第三处内部矛盾:
 //     被 §5 列为核心新对象、被 §3.16 当外键列引用、被 §5.7 描述协议字段,
-//     但 §3 数据模型从头到尾**没有定义它**。按 ④ 不从散文推导表结构,归第 6 批)
+//     但 §3 数据模型从头到尾**没有定义它**。当时按 ④ 不从散文推导表结构；
+//     第 6 批补充合同 v1 已给出完整字段表，见下方第 6 批模型与 migration 88)
 //   - ParticipantServiceSegmentRevision.effectiveBatchId → 结算批次(§3.19/§3.22,第四刀)
 //
 // ⚠️ 时间重叠**刻意不进 DB**:§3.18 明写「时间重叠校验在现有 member lock 内完成」
@@ -4561,8 +4562,8 @@ model ParticipantServiceSegmentRevision {
 //   - ParticipantServiceSegmentRevision.effectiveBatchId → LedgerPostingBatch(§3.22)
 //   - AttendancePunchEvent.importJobItemId               → ActivityBatchJobItem(§3.27)
 //
-// 本刀按 ② 仍**不建**:AttendancePunchEvent.offlinePackageId(OfflinePackage 是合同第三处
-// 内部矛盾,§3 从未定义该表,归第 6 批);§3.11 分配相关四表与
+// 本刀按 ② 仍**不建**:AttendancePunchEvent.offlinePackageId(OfflinePackage 当时是合同第三处
+// 内部矛盾,§3 从未定义该表；第 6 批补充合同 v1 已另行补齐);§3.11 分配相关四表与
 // ActivityParticipationRevision.allocationBatchId(**合同第四处内部矛盾**:§14 任何一刀
 // 都没列入,而第 4 批行为实现要用 —— 维护者 2026-08-04 拍板另走第五刀)。
 //

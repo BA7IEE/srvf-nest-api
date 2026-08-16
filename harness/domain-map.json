@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:c808deac6c6f8f01f7866d3f79a51888003c987fa920673fdb28f64b5d545d50",
+  "inputDigest": "sha256:66c349c996da0dfb1001b6892660290136a693cdf9fc34decf024b39ac1682f9",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -538,6 +538,24 @@
       "confirmed": true
     },
     "AttendancePunchEvent": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": true
+    },
+    "OfflinePackage": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": true
+    },
+    "OfflinePackageParticipant": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": true
+    },
+    "OfflinePunchReviewItem": {
       "domain": "participation",
       "ownerModule": "attendances",
       "subdomain": "attendance",

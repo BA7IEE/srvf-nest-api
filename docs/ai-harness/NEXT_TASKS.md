@@ -239,7 +239,7 @@
 > - **D onsite**：不得绕过硬资格、保险、性别或名额；warn 留痕。普通题可代录，文件与本人同意不得代办；
 >   必记批准人、原因、时间。
 > - **E 职责与 scope**：沿七职责，分别覆盖活动、场次、岗位三层 scope。
-> - **F 离线**：加密离线包延至 v1.2；v1.1 保留在线扫码、代签、导入。
+> - **F 离线**：维护者第 6 批补充合同 v1 已把离线包与人工复核纳入 v1.1；migration 88 已冻结字段和 DB 约束。package issue/revoke/upload/review 的 HTTP wire 仍须逐字拍板，不能把旧「延至 v1.2」散文当作当前范围依据。
 > - **G visitor**：attendanceCode 永远为 null，且无写入口。
 > - **H 更正**：追认现有严格版本化更正 JSON。
 > - **I reservation pointer**：capacityReservationId 固定指向 session reservation；释放时清空，不一致为 20147。
@@ -250,7 +250,7 @@
 > **第 4 批⑯（分配与邀请 C runtime，本 PR）**：`POST /my/activity-invitations/:invitationId/accept` 复用 canonical Form、资格、保险、身份、容量与分配链。first_come 以服务器受理时间和 identity 稳定处理每个场次，满员只使该场次候补且不建 batch；qualification_rank/lottery 在截止后 `prepare → commit`，冻结 candidate/revision/qualification snapshot/hash，lottery 直到 commit 才揭示 seed，commit 一次性写结果、三层容量、pointer/population、audit/outbox。作废只在所有 D86 live facts 精确一致时释放并重置，任一漂移 20147 零写；后续递补只在原 session+position。
 > **第 4 批⑱（活动到点 expiry）**：复用两个既有 worker context 和 `ActivityBatchJob` 的 PostgreSQL `SKIP LOCKED + lease/fence`，无新 cron/queue/进程。仅已到最早 live session start（无 live session 才回退 Activity.startAt）、且仍有 canonical `pending|waitlisted` 或 pending invitation 的 published 活动补建 reconciliation job；执行固定 Activity 根锁 → job fence → headers/identities/current revisions → invitations，一笔事务追加 `review_expired`/`waitlist_expired` system revision、清 pointer/population、投影 header、复用 `registration.review`/`invitation.change` audit。pass 与 active capacity 不动；任何 current revision/status/pointer/population/active reservation 漂移为 20147，canonical/audit 零写，job 仅按既有 lease 协议退避。
 > **第 4 批⑲（整单取消/legacy waitlist lifecycle）**：`ActivitiesService.cancel` 在既有 Activity 根事务内调用 canonical lifecycle helper。它按 header→永久 identity→current revision 锁定后，仅把 canonical `pending|waitlisted` 关闭为 cancelled，追加 admin Registration/Participation revision 并 CAS 头投影；无 identity 的 legacy pending/waitlisted 也按已有或新建 RegistrationRevision 链关闭。混合头的 pass 与 active reservation 保留。旧 `promoteActivityWaitlist` 只匹配无 identity 的 legacy header，canonical 候补仍只由 allocation caller 递补。current revision/status/pointer/population/active reservation 漂移统一 20147 整笔零写，且不复制 capacity DML、不新增路由或 audit action。
-> **仍待下一刀**：ADV-014 按激进安全版归第 6 批导入刀。
+> **第 6 批已接 ADV-014**：CSV preview 固定 attachment owner、file digest、parserVersion、rowHash 与 previewHash；execute 必须重读同一 pinned object 并重新解析，任一不符为 `ATTENDANCE_IMPORT_PREVIEW_MISMATCH` 且零 PunchEvent。
 > **当前行为**：live cancelled/reject 头按入口同头追加 immutable revision；soft-deleted 头的新请求仍按入口
 > 21002/21003/21030 fail-closed，旧 operationKey+hash 精确回执保持优先重放。legacy 若已存在永久 identity
 > 则 21038，不制造头/身份投影裂缝。AC-021、ADV-005 已由十轮真实 HTTP 链转 destination。
@@ -260,8 +260,8 @@
 > `memberId`/`activityId` + partial unique,走 DB 保证不降级为服务层)· **⑤已由维护者 2026-08-07「按推荐」拍板**:
 > `resultCode` 闭集=`allocated/waitlisted/not_selected`;同一 `(allocationBatchId, participationIdentityId)` 唯一;
 > `scopeTypeCode` 沿 §3.10 容量桶口径,`fallbackMode` 仅「到期释放公共池/到期作废」且默认释放;
-> `preferenceOrder` 从 1 起算· **③是第 6 批开工硬门**
-> (`OfflinePackage`、`OfflinePunchReviewItem` 被引用却从未定义,**禁止从 §5.7 散文推导**,已用 e2e 判据钉死)。
+> `preferenceOrder` 从 1 起算· **③曾是第 6 批开工硬门**
+> (`OfflinePackage`、`OfflinePunchReviewItem` 当时被引用却从未定义；维护者随后以第 6 批补充合同 v1 给出完整字段表，migration 88 已落。仍禁止从旧 §5.7 散文臆造尚未逐字定义的 HTTP wire)。
 > **第 4 批缺口⑤已兑现（第 80 migration `20260808133500_activity_v11_batch4_allocation_contract_guards`）**：
 > `preferenceOrder >= 1` CHECK；candidate 的 nullable `resultCode` 三值闭集和同批次 identity 普通 unique；
 > quota 的四值 `scopeTypeCode` CHECK、二值 `fallbackMode` CHECK 与 DB 默认。工程编码固定为
@@ -388,6 +388,8 @@
 > **第 4 批⑭（D86 command 精确回执、作废事实与 committed applied projection）**：D85→86、空库重放、nonempty count-only fail-fast、late rollback、11 组独立变异锁定 receipt key/activity-batch FK、void shape、projection 一对一/candidate anchor/allocated pointer-reservation/inactive residual/identity-member anchor/activity-person member-activity anchor/session identity anchor/immutable。真实 DB 正例已证明同一 member 的两个 session identity 共用一条 activity-person reservation、各自保留 session reservation；错 member/错 activity 均精确 `23503`。physical constraint 名均实测 ≤ PG 63 bytes。DB 边界明确：receipt JSON 仅安全固定 envelope；第 4 批⑯在 Activity 根锁事务中完成 canonical SHA-256 重算、same key/hash 回放、异 hash 拒绝及 Identity live pointer/Batch committed/Candidate/Revision/reservationType 复核，并开放 5 条 canonical endpoint；AC-022/023/025 的最终判定仍留 cold CI。
 
 > **第 5 批（本分支，自助二维码和现场主链）**：复用已存在的 `AttendanceQrCredential`、`AttendancePunchEvent`、`ActivityEvidenceState`、`EvidenceSeal` 与服务段 revision 地基；负责人可签发、作废、受保护渲染场次 QR，本人可扫码签到/签退并读取安全服务段状态，责任人可早退闭合、void、replace。QR token 仅为请求输入，render 只返不可缓存 SVG；所有写命令走 Activity 根事务、canonical request hash 与 append-only PunchEvent/segment projector。第 5 批只覆盖 AC-031–042、AC-046、ADV-001/002/004/005/006/007/020，不带入工作人员代扫、代理、批量、导入或离线（第 6 批）。
+>
+> **第 6 批（本分支，工作人员/导入已接，离线 writer 待精确 wire）**：App 成员凭证 SVG、工作人员 `staff-scan`、单人 `proxy-punch`、可重放 bulk job 与 CSV import preview/execute 已接真实 PunchCommand/Activity 根锁/责任重验/worker lease-fence；每个任务 item 都重验 current responsibility、identity、窗口、segment、seal。import 以冻结 owner/object digest/parserVersion/rowHash/previewHash 防 ADV-014 的文件替换。migration 88 已建立 OfflinePackage/Participant/ReviewItem、PunchEvent 四个离线锚与 DB 状态/链约束；未定义 package issue/revoke/upload/review 的 exact HTTP request/response 前，不得自造 controller、DTO 或离线 PunchEvent writer。
 
 - **合同**:[`archive/reviews/activity-business-overhaul-v1.1/`](../archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效
   (业务方案 / 详细开发文档 / 355 项追踪矩阵 / 修订说明),SHA256 入仓时原位校验全过。

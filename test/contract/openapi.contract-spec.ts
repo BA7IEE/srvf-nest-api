@@ -192,10 +192,11 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/app/v1/activities/{activityId}/registration-upload-sessions'],
   ['post', '/api/app/v1/activities/{activityId}/registration-upload-sessions/{sessionId}/files'],
   // 第 5 批：App 自助扫描二维码的正式现场事实链；token 仅作为请求体输入，状态读面不返
-  // 凭证或坐标。staff_scan / 批量 / 导入 / 离线明确留第 6 批。
+  // 凭证或坐标。第 6 批补入 staff_scan / proxy / 批量 / 导入；离线公共 wire 仍待后续精确合同。
   ['post', '/api/app/v1/activities/{activityId}/sessions/{sessionId}/punches/check-in'],
   ['post', '/api/app/v1/activities/{activityId}/sessions/{sessionId}/punches/check-out'],
   ['get', '/api/app/v1/activities/{activityId}/sessions/{sessionId}/my-punch-state'],
+  ['post', '/api/app/v1/my/attendance-member-credential/render'],
 
   // Phase 2 P2-5a(2026-05-20):App /api/app/v1/my/* 3 只读 endpoint
   // 沿 docs/app-api-p2-5-registrations-review.md §13.7 + D-P2-5-5;5 endpoint 全部
@@ -257,6 +258,28 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/onsite/punch-events/{eventId}/void'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/onsite/punch-events/{eventId}/replace'],
+  // 第 6 批：工作人员扫码（可信成员凭证或受控人工确认）、责任人代签、可重放的批任务，及
+  // 文件摘要/解析器版本/预览摘要三重冻结的 CSV 导入。所有 managed 写入仍在 Activity 根事务
+  // 内重验 canManageAttendance；offline 公共 wire 因尚无精确请求/响应合同而未加入。
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/staff-scan'],
+  [
+    'post',
+    '/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/proxy-punch',
+  ],
+  [
+    'post',
+    '/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/bulk-punch-jobs',
+  ],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/onsite/bulk-punch-jobs/{jobId}'],
+  [
+    'post',
+    '/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/import-previews',
+  ],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/onsite/import-previews/{previewId}'],
+  [
+    'post',
+    '/api/app/v1/my/managed-activities/{activityId}/onsite/import-previews/{previewId}/execute',
+  ],
   ['post', '/api/app/v1/my/activity-invitations/{invitationId}/decline'],
   // 活动业务改造 v1.1 第 3 批第一刀：草稿场次/新表岗位嵌套 CRUD。
   // 只允许发起人（SUPER_ADMIN 兜底）操作 draft；published 直写返回 change-review-required。
@@ -1657,9 +1680,10 @@ describe('OpenAPI 契约快照', () => {
   //   POST +1 →491；第 4 批⑦邀请/访客五路 managed + 本人 decline 一路 →497；
   //   第 4 批⑧ managed onsite 临时参加 POST +1 →498；第 4 批分配核心：本人 accept
   //   邀请 + rank/lottery 批次 prepare/commit/void/get +5 →503；资格配置草稿 GET/PUT +2
-  //   →505；第 5 批 QR 自助/managed attendance 十路 → **515**。
-  it('路由足迹精确为 515', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(515);
+  //   →505；第 5 批 QR 自助/managed attendance 十路 →515；第 6 批 staff/proxy/bulk/import
+  //   八路 → **523**。离线公共 wire 仍待精确请求/响应合同，不能凭 schema 推导。
+  it('路由足迹精确为 523', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(523);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

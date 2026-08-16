@@ -1,7 +1,7 @@
 // 由 scripts/generate-fe-client.ts 生成,请勿手改。
 // surface: App 小程序
 // generatorVersion: 1.0.0
-// inputDigest: sha256:2a0bd76ec87549aebb41083b5c32238da748fe15c3f98d9597ba0de64fb598fc
+// inputDigest: sha256:602e2d3ae68a471b78e65412107e2af6e6d22228a8ea3620da8fe9faaa99e3b5
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -84,8 +84,16 @@ import type {
   AppManagedAttendanceSheetDraftDto,
   AppManagedAttendanceSheetDto,
   AppManagedAttendanceSheetListItemDto,
+  AppManagedBulkPunchJobDto,
+  AppManagedImportExecuteDto,
+  AppManagedImportPreviewDto,
+  AppManagedImportPreviewItemDto,
+  AppManagedImportPreviewItemPageDto,
   AppManagedMemberSummaryDto,
   AppManagedMyResponsibilityDto,
+  AppManagedOnsiteBatchJobReceiptDto,
+  AppManagedOnsiteLocationDto,
+  AppManagedProxyPunchDto,
   AppManagedPublishReviewSummaryDto,
   AppManagedRegistrationBulkFailureDto,
   AppManagedRegistrationBulkResponseDto,
@@ -95,6 +103,8 @@ import type {
   AppManagedRegistrationPositionDto,
   AppManagedResponsibilitiesDto,
   AppManagedResponsibilityAssignmentDto,
+  AppManagedStaffScanDto,
+  AppManagedStaffScanManualConfirmationDto,
   AppMeAccountDto,
   AppMePhoneDto,
   AppMeResponseDto,
@@ -379,6 +389,10 @@ export function createAppClient(fetcher: Fetcher) {
     AppMyActivityInvitationsControllerDecline(invitationId: string, body: DeclineAppMyActivityInvitationDto): Promise<ApiEnvelope<AppActivityInvitationDto>> {
       return fetcher<AppActivityInvitationDto>({ method: "POST", path: `/api/app/v1/my/activity-invitations/${invitationId}/decline`, body });
     },
+    /** 生成本人短时可信成员凭证 SVG；不返回 JSON token [auth] */
+    AppMyAttendanceMemberCredentialControllerRender(): Promise<ApiEnvelope<void>> {
+      return fetcher<void>({ method: "POST", path: "/api/app/v1/my/attendance-member-credential/render" });
+    },
     /** 我的考勤记录列表(仅 approved Sheet 内 records;分页 + 可选 activityId 过滤;含 activity 派生字段) [auth] */
     AppMyAttendanceRecordsControllerListMyAttendanceRecords(query?: { "page"?: number; "pageSize"?: number; "activityId"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": AppMyAttendanceRecordDto[] }>> {
       return fetcher<PageResultDto & { "items": AppMyAttendanceRecordDto[] }>({ method: "GET", path: "/api/app/v1/my/attendance-records", query });
@@ -511,6 +525,18 @@ export function createAppClient(fetcher: Fetcher) {
     AppManagedActivityOnsiteParticipationsControllerCreate(activityId: string, body: CreateAppManagedActivityOnsiteParticipationDto): Promise<ApiEnvelope<AppManagedActivityOnsiteParticipationReceiptDto>> {
       return fetcher<AppManagedActivityOnsiteParticipationReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite-participations`, body });
     },
+    /** 读取负责人可见的现场批量代签任务安全进度 [auth] */
+    AppManagedActivityOnsiteOperationsControllerGetBulkPunchJob(activityId: string, jobId: string): Promise<ApiEnvelope<AppManagedOnsiteBatchJobReceiptDto>> {
+      return fetcher<AppManagedOnsiteBatchJobReceiptDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/bulk-punch-jobs/${jobId}` });
+    },
+    /** 读取负责人可见的 CSV 导入预览安全摘要与分页行状态 [auth] */
+    AppManagedActivityOnsiteOperationsControllerGetImportPreview(activityId: string, previewId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<AppManagedImportPreviewDto>> {
+      return fetcher<AppManagedImportPreviewDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/import-previews/${previewId}`, query });
+    },
+    /** 考勤责任人按已冻结摘要排队执行 CSV 现场导入 [auth] */
+    AppManagedActivityOnsiteOperationsControllerExecuteImportPreview(activityId: string, previewId: string, body: AppManagedImportExecuteDto): Promise<ApiEnvelope<AppManagedOnsiteBatchJobReceiptDto>> {
+      return fetcher<AppManagedOnsiteBatchJobReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/import-previews/${previewId}/execute`, body });
+    },
     /** 考勤责任人追加替代事实，不覆盖原现场事件 [auth] */
     AppManagedActivityOnsitePunchesControllerReplaceEvent(activityId: string, eventId: string, body: CorrectAppManagedOnsitePunchDto): Promise<ApiEnvelope<AppActivityPunchReceiptDto>> {
       return fetcher<AppActivityPunchReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/punch-events/${eventId}/replace`, body });
@@ -519,9 +545,25 @@ export function createAppClient(fetcher: Fetcher) {
     AppManagedActivityOnsitePunchesControllerVoidEvent(activityId: string, eventId: string, body: CorrectAppManagedOnsitePunchDto): Promise<ApiEnvelope<AppActivityPunchReceiptDto>> {
       return fetcher<AppActivityPunchReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/punch-events/${eventId}/void`, body });
     },
+    /** 考勤责任人创建可重放的现场批量代签任务 [auth] */
+    AppManagedActivityOnsiteOperationsControllerCreateBulkPunchJob(activityId: string, sessionId: string, body: AppManagedBulkPunchJobDto): Promise<ApiEnvelope<AppManagedOnsiteBatchJobReceiptDto>> {
+      return fetcher<AppManagedOnsiteBatchJobReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/sessions/${sessionId}/bulk-punch-jobs`, body });
+    },
     /** 考勤责任人特殊提前离场闭合；固定零时长零分 [auth] */
     AppManagedActivityOnsitePunchesControllerEarlyClose(activityId: string, sessionId: string, body: EarlyDepartureCloseAppManagedOnsitePunchDto): Promise<ApiEnvelope<AppActivityPunchReceiptDto>> {
       return fetcher<AppActivityPunchReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/sessions/${sessionId}/early-departure-close`, body });
+    },
+    /** 考勤责任人上传并冻结 CSV 现场导入预览 [auth] */
+    AppManagedActivityOnsiteOperationsControllerCreateImportPreview(activityId: string, sessionId: string): Promise<ApiEnvelope<AppManagedOnsiteBatchJobReceiptDto>> {
+      return fetcher<AppManagedOnsiteBatchJobReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/sessions/${sessionId}/import-previews` });
+    },
+    /** 考勤责任人以明确原因代为追加单人现场签到/签退事实 [auth] */
+    AppManagedActivityOnsiteOperationsControllerProxyPunch(activityId: string, sessionId: string, body: AppManagedProxyPunchDto): Promise<ApiEnvelope<AppActivityPunchReceiptDto>> {
+      return fetcher<AppActivityPunchReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/sessions/${sessionId}/proxy-punch`, body });
+    },
+    /** 考勤责任人以受控人工确认追加工作人员现场签到/签退事实 [auth] */
+    AppManagedActivityOnsiteOperationsControllerStaffScan(activityId: string, sessionId: string, body: AppManagedStaffScanDto): Promise<ApiEnvelope<AppActivityPunchReceiptDto>> {
+      return fetcher<AppActivityPunchReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/sessions/${sessionId}/staff-scan`, body });
     },
     /** App 查看我管理活动的岗位 [auth] */
     AppManagedActivityPositionsControllerList(activityId: string): Promise<ApiEnvelope<AppManagedActivityPositionDto[]>> {

@@ -5814,6 +5814,202 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppManagedBulkPunchJobDto": {
+    "properties": {
+      "actionCode": {
+        "description": "批量执行的现场动作",
+        "enum": [
+          "check_in",
+          "check_out",
+        ],
+        "type": "string",
+      },
+      "location": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppManagedOnsiteLocationDto",
+          },
+        ],
+        "description": "按场次策略可选的 WGS84 定位快照",
+      },
+      "operationKey": {
+        "description": "客户端生成的批量操作防重键，仅允许 ASCII 字母、数字、下划线和连字符",
+        "maxLength": 96,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9_-]+$",
+        "type": "string",
+      },
+      "participationIdentityIds": {
+        "description": "已从受控现场名单选择的永久参与身份 ID；服务端去重并按 UTF-8 字节序冻结",
+        "items": {
+          "type": "string",
+        },
+        "maxItems": 500,
+        "minItems": 1,
+        "type": "array",
+      },
+      "reason": {
+        "description": "批量代签或代退的明确原因",
+        "maxLength": 500,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "actionCode",
+      "reason",
+      "participationIdentityIds",
+    ],
+    "type": "object",
+  },
+  "AppManagedImportExecuteDto": {
+    "properties": {
+      "fileDigest": {
+        "description": "预览冻结的 CSV SHA-256 摘要",
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "operationKey": {
+        "description": "客户端生成的导入执行防重键，仅允许 ASCII 字母、数字、下划线和连字符",
+        "maxLength": 96,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9_-]+$",
+        "type": "string",
+      },
+      "parserVersion": {
+        "description": "预览冻结的解析器版本",
+        "enum": [
+          "attendance-import-csv/v1",
+        ],
+        "type": "string",
+      },
+      "previewHash": {
+        "description": "预览冻结的行摘要 SHA-256",
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "fileDigest",
+      "parserVersion",
+      "previewHash",
+    ],
+    "type": "object",
+  },
+  "AppManagedImportPreviewDto": {
+    "properties": {
+      "failed": {
+        "minimum": 0,
+        "type": "number",
+      },
+      "fileDigest": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "items": {
+        "$ref": "#/components/schemas/AppManagedImportPreviewItemPageDto",
+      },
+      "jobId": {
+        "type": "string",
+      },
+      "parserVersion": {
+        "example": "attendance-import-csv/v1",
+        "type": "string",
+      },
+      "previewHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "skipped": {
+        "minimum": 0,
+        "type": "number",
+      },
+      "statusCode": {
+        "type": "string",
+      },
+      "succeeded": {
+        "minimum": 0,
+        "type": "number",
+      },
+      "total": {
+        "minimum": 0,
+        "type": "number",
+      },
+    },
+    "required": [
+      "jobId",
+      "statusCode",
+      "total",
+      "succeeded",
+      "failed",
+      "skipped",
+      "fileDigest",
+      "parserVersion",
+      "previewHash",
+      "items",
+    ],
+    "type": "object",
+  },
+  "AppManagedImportPreviewItemDto": {
+    "properties": {
+      "lastErrorCode": {
+        "description": "安全错误码，不含原始单元格内容",
+        "nullable": true,
+        "type": "object",
+      },
+      "line": {
+        "description": "CSV 物理行号（header 为第 1 行）",
+        "minimum": 1,
+        "type": "number",
+      },
+      "safeMessage": {
+        "description": "安全提示，不含原始单元格内容",
+        "nullable": true,
+        "type": "object",
+      },
+      "statusCode": {
+        "description": "该行静态预览状态",
+        "type": "string",
+      },
+    },
+    "required": [
+      "line",
+      "statusCode",
+    ],
+    "type": "object",
+  },
+  "AppManagedImportPreviewItemPageDto": {
+    "properties": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/AppManagedImportPreviewItemDto",
+        },
+        "type": "array",
+      },
+      "page": {
+        "minimum": 1,
+        "type": "number",
+      },
+      "pageSize": {
+        "maximum": 100,
+        "minimum": 1,
+        "type": "number",
+      },
+      "total": {
+        "minimum": 0,
+        "type": "number",
+      },
+    },
+    "required": [
+      "items",
+      "total",
+      "page",
+      "pageSize",
+    ],
+    "type": "object",
+  },
   "AppManagedMemberSummaryDto": {
     "properties": {
       "displayName": {
@@ -5857,6 +6053,122 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "responsibilityType",
       "canManageRegistrations",
       "canManageAttendance",
+    ],
+    "type": "object",
+  },
+  "AppManagedOnsiteBatchJobReceiptDto": {
+    "properties": {
+      "failed": {
+        "minimum": 0,
+        "type": "number",
+      },
+      "jobId": {
+        "description": "后台批任务 ID",
+        "type": "string",
+      },
+      "replayed": {
+        "description": "本次是否命中相同 operationKey 与请求摘要的既有回执",
+        "type": "boolean",
+      },
+      "skipped": {
+        "minimum": 0,
+        "type": "number",
+      },
+      "statusCode": {
+        "enum": [
+          "pending",
+          "processing",
+          "succeeded",
+          "partial_failed",
+          "failed",
+        ],
+        "type": "string",
+      },
+      "succeeded": {
+        "minimum": 0,
+        "type": "number",
+      },
+      "total": {
+        "minimum": 0,
+        "type": "number",
+      },
+    },
+    "required": [
+      "jobId",
+      "statusCode",
+      "total",
+      "succeeded",
+      "failed",
+      "skipped",
+      "replayed",
+    ],
+    "type": "object",
+  },
+  "AppManagedOnsiteLocationDto": {
+    "properties": {
+      "accuracy": {
+        "description": "定位精度(米)",
+        "maximum": 99999999.99,
+        "minimum": 0,
+        "type": "number",
+      },
+      "latitude": {
+        "description": "WGS84 纬度，按场次策略可选",
+        "maximum": 90,
+        "minimum": -90,
+        "type": "number",
+      },
+      "longitude": {
+        "description": "WGS84 经度，按场次策略可选",
+        "maximum": 180,
+        "minimum": -180,
+        "type": "number",
+      },
+    },
+    "type": "object",
+  },
+  "AppManagedProxyPunchDto": {
+    "properties": {
+      "actionCode": {
+        "description": "负责人代为执行的现场动作",
+        "enum": [
+          "check_in",
+          "check_out",
+        ],
+        "type": "string",
+      },
+      "eventKey": {
+        "description": "客户端生成的全局现场事件防重键",
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string",
+      },
+      "location": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppManagedOnsiteLocationDto",
+          },
+        ],
+        "description": "按场次策略可选的 WGS84 定位快照",
+      },
+      "participationIdentityId": {
+        "description": "经现场工作台已核验的永久参与身份 ID",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "reason": {
+        "description": "单人代签或代退的明确原因",
+        "maxLength": 500,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "actionCode",
+      "eventKey",
+      "participationIdentityId",
+      "reason",
     ],
     "type": "object",
   },
@@ -6247,6 +6559,72 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "assignedByUserId",
       "source",
       "member",
+    ],
+    "type": "object",
+  },
+  "AppManagedStaffScanDto": {
+    "properties": {
+      "actionCode": {
+        "description": "工作人员执行的现场动作",
+        "enum": [
+          "check_in",
+          "check_out",
+        ],
+        "type": "string",
+      },
+      "eventKey": {
+        "description": "客户端生成的全局现场事件防重键",
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string",
+      },
+      "location": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppManagedOnsiteLocationDto",
+          },
+        ],
+        "description": "按场次策略可选的 WGS84 定位快照",
+      },
+      "manualConfirmation": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppManagedStaffScanManualConfirmationDto",
+          },
+        ],
+        "description": "可信成员码不可用时，由工作人员明确确认的目标身份；与 memberCredential 二选一",
+      },
+      "memberCredential": {
+        "description": "从成员本人受保护二维码读取的短时签名凭证；与 manualConfirmation 二选一",
+        "maxLength": 4096,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "actionCode",
+      "eventKey",
+    ],
+    "type": "object",
+  },
+  "AppManagedStaffScanManualConfirmationDto": {
+    "properties": {
+      "participationIdentityId": {
+        "description": "已核验的永久参与身份 ID",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "reason": {
+        "description": "未能扫码时的人工确认原因",
+        "maxLength": 500,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "participationIdentityId",
+      "reason",
     ],
     "type": "object",
   },
@@ -90171,6 +90549,34 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/app/v1/my/attendance-member-credential/render": {
+    "post": {
+      "operationId": "AppMyAttendanceMemberCredentialController_render",
+      "parameters": [],
+      "responses": {
+        "201": {
+          "content": {
+            "image/svg+xml": {
+              "schema": {
+                "format": "binary",
+                "type": "string",
+              },
+            },
+          },
+          "description": "不可缓存的 SVG 二维码二进制内容，不使用 JSON envelope",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "生成本人短时可信成员凭证 SVG；不返回 JSON token [auth]",
+      "tags": [
+        "Mobile - My Attendance Member Credential",
+      ],
+    },
+  },
   "/api/app/v1/my/attendance-records": {
     "get": {
       "operationId": "AppMyAttendanceRecordsController_listMyAttendanceRecords",
@@ -97633,6 +98039,797 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/app/v1/my/managed-activities/{activityId}/onsite/bulk-punch-jobs/{jobId}": {
+    "get": {
+      "operationId": "AppManagedActivityOnsiteOperationsController_getBulkPunchJob",
+      "parameters": [
+        {
+          "description": "负责人管理的活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "现场批任务 ID",
+          "in": "path",
+          "name": "jobId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppManagedOnsiteBatchJobReceiptDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作",
+                    "enum": [
+                      20030,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "读取负责人可见的现场批量代签任务安全进度 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Onsite Operations",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/onsite/import-previews/{previewId}": {
+    "get": {
+      "operationId": "AppManagedActivityOnsiteOperationsController_getImportPreview",
+      "parameters": [
+        {
+          "description": "负责人管理的活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "已冻结的 CSV 导入预览任务 ID",
+          "in": "path",
+          "name": "previewId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppManagedImportPreviewDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作",
+                    "enum": [
+                      20030,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "读取负责人可见的 CSV 导入预览安全摘要与分页行状态 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Onsite Operations",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/onsite/import-previews/{previewId}/execute": {
+    "post": {
+      "operationId": "AppManagedActivityOnsiteOperationsController_executeImportPreview",
+      "parameters": [
+        {
+          "description": "负责人管理的活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "已冻结的 CSV 导入预览任务 ID",
+          "in": "path",
+          "name": "previewId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppManagedImportExecuteDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppManagedOnsiteBatchJobReceiptDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作; 22088: 打卡防重键已用于不同请求; 22100: 导入文件与已冻结预览不一致",
+                    "enum": [
+                      20030,
+                      22088,
+                      22100,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030) / 打卡防重键已用于不同请求(code=22088) / 导入文件与已冻结预览不一致(code=22100)",
+        },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "13034: 附件存储操作处理中,请稍后重试",
+                    "enum": [
+                      13034,
+                    ],
+                    "example": 13034,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "附件存储操作处理中,请稍后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "附件存储操作处理中,请稍后重试(code=13034)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "考勤责任人按已冻结摘要排队执行 CSV 现场导入 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Onsite Operations",
+      ],
+    },
+  },
   "/api/app/v1/my/managed-activities/{activityId}/onsite/punch-events/{eventId}/replace": {
     "post": {
       "operationId": "AppManagedActivityOnsitePunchesController_replaceEvent",
@@ -98137,6 +99334,258 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/bulk-punch-jobs": {
+    "post": {
+      "operationId": "AppManagedActivityOnsiteOperationsController_createBulkPunchJob",
+      "parameters": [
+        {
+          "description": "负责人管理的活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "场次 ID",
+          "in": "path",
+          "name": "sessionId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppManagedBulkPunchJobDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppManagedOnsiteBatchJobReceiptDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 22076: 关联报名必须属于该活动与该队员且已审核通过",
+                    "enum": [
+                      40000,
+                      22076,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 关联报名必须属于该活动与该队员且已审核通过(code=22076)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作; 22088: 打卡防重键已用于不同请求",
+                    "enum": [
+                      20030,
+                      22088,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030) / 打卡防重键已用于不同请求(code=22088)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "考勤责任人创建可重放的现场批量代签任务 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Onsite Operations",
+      ],
+    },
+  },
   "/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/early-departure-close": {
     "post": {
       "operationId": "AppManagedActivityOnsitePunchesController_earlyClose",
@@ -98387,6 +99836,835 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "考勤责任人特殊提前离场闭合；固定零时长零分 [auth]",
       "tags": [
         "Mobile - Managed Activity Onsite Punches",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/import-previews": {
+    "post": {
+      "operationId": "AppManagedActivityOnsiteOperationsController_createImportPreview",
+      "parameters": [
+        {
+          "description": "负责人管理的活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "场次 ID",
+          "in": "path",
+          "name": "sessionId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "multipart/form-data": {
+            "schema": {
+              "properties": {
+                "file": {
+                  "description": "UTF-8 CSV，最大 10 MiB",
+                  "format": "binary",
+                  "type": "string",
+                },
+                "operationKey": {
+                  "maxLength": 96,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9_-]+$",
+                  "type": "string",
+                },
+                "reason": {
+                  "maxLength": 500,
+                  "minLength": 1,
+                  "type": "string",
+                },
+              },
+              "required": [
+                "operationKey",
+                "reason",
+                "file",
+              ],
+              "type": "object",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppManagedOnsiteBatchJobReceiptDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 22076: 关联报名必须属于该活动与该队员且已审核通过; 13012: 附件 MIME 类型不在白名单; 13013: 附件大小超过上限; 13015: 附件元数据包含个人敏感信息(身份证号),已拒绝",
+                    "enum": [
+                      40000,
+                      22076,
+                      13012,
+                      13013,
+                      13015,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 关联报名必须属于该活动与该队员且已审核通过(code=22076) / 附件 MIME 类型不在白名单(code=13012) / 附件大小超过上限(code=13013) / 附件元数据包含个人敏感信息(身份证号),已拒绝(code=13015)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作; 22088: 打卡防重键已用于不同请求",
+                    "enum": [
+                      20030,
+                      22088,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030) / 打卡防重键已用于不同请求(code=22088)",
+        },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "13034: 附件存储操作处理中,请稍后重试",
+                    "enum": [
+                      13034,
+                    ],
+                    "example": 13034,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "附件存储操作处理中,请稍后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "附件存储操作处理中,请稍后重试(code=13034)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "考勤责任人上传并冻结 CSV 现场导入预览 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Onsite Operations",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/proxy-punch": {
+    "post": {
+      "operationId": "AppManagedActivityOnsiteOperationsController_proxyPunch",
+      "parameters": [
+        {
+          "description": "负责人管理的活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "场次 ID",
+          "in": "path",
+          "name": "sessionId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppManagedProxyPunchDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityPunchReceiptDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 22076: 关联报名必须属于该活动与该队员且已审核通过; 22090: 该场次要求提供有效定位; 22091: 当前位置未通过场次范围校验",
+                    "enum": [
+                      40000,
+                      22076,
+                      22090,
+                      22091,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 关联报名必须属于该活动与该队员且已审核通过(code=22076) / 该场次要求提供有效定位(code=22090) / 当前位置未通过场次范围校验(code=22091)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作; 22088: 打卡防重键已用于不同请求; 22089: 当前不在该场次对应的打卡时间窗内; 22092: 当前已有未闭合服务段，不能重复签到; 22093: 请先完成签到再签退或特殊闭合; 22094: 普通签退距签到不足30分钟",
+                    "enum": [
+                      20030,
+                      22088,
+                      22089,
+                      22092,
+                      22093,
+                      22094,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030) / 打卡防重键已用于不同请求(code=22088) / 当前不在该场次对应的打卡时间窗内(code=22089) / 当前已有未闭合服务段，不能重复签到(code=22092) / 请先完成签到再签退或特殊闭合(code=22093) / 普通签退距签到不足30分钟(code=22094)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "考勤责任人以明确原因代为追加单人现场签到/签退事实 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Onsite Operations",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/staff-scan": {
+    "post": {
+      "operationId": "AppManagedActivityOnsiteOperationsController_staffScan",
+      "parameters": [
+        {
+          "description": "负责人管理的活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "场次 ID",
+          "in": "path",
+          "name": "sessionId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppManagedStaffScanDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityPunchReceiptDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 22076: 关联报名必须属于该活动与该队员且已审核通过; 22090: 该场次要求提供有效定位; 22091: 当前位置未通过场次范围校验",
+                    "enum": [
+                      40000,
+                      22076,
+                      22090,
+                      22091,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 关联报名必须属于该活动与该队员且已审核通过(code=22076) / 该场次要求提供有效定位(code=22090) / 当前位置未通过场次范围校验(code=22091)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在; 22084: 二维码凭证不存在或无效",
+                    "enum": [
+                      20001,
+                      22084,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001) / 二维码凭证不存在或无效(code=22084)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作; 22088: 打卡防重键已用于不同请求; 22089: 当前不在该场次对应的打卡时间窗内; 22092: 当前已有未闭合服务段，不能重复签到; 22093: 请先完成签到再签退或特殊闭合; 22094: 普通签退距签到不足30分钟",
+                    "enum": [
+                      20030,
+                      22088,
+                      22089,
+                      22092,
+                      22093,
+                      22094,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030) / 打卡防重键已用于不同请求(code=22088) / 当前不在该场次对应的打卡时间窗内(code=22089) / 当前已有未闭合服务段，不能重复签到(code=22092) / 请先完成签到再签退或特殊闭合(code=22093) / 普通签退距签到不足30分钟(code=22094)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "考勤责任人以受控人工确认追加工作人员现场签到/签退事实 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Onsite Operations",
       ],
     },
   },

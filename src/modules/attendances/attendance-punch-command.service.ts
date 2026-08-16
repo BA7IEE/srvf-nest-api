@@ -140,10 +140,7 @@ export interface ManagedOnlinePunchInput {
   auditMeta: AuditMeta;
 }
 
-type NormalizedManagedOnlinePunchInput = Omit<
-  ManagedOnlinePunchInput,
-  'reason' | 'occurredAt'
-> & {
+type NormalizedManagedOnlinePunchInput = Omit<ManagedOnlinePunchInput, 'reason' | 'occurredAt'> & {
   reason: string | null;
   occurredAt: Date | null;
 };
@@ -377,10 +374,10 @@ export class AttendancePunchCommandService {
    * Activity → Session → ParticipationIdentity → Event 锁序、幂等、位置和服务段投影链。
    */
   async managedPunch(input: ManagedOnlinePunchInput): Promise<AppActivityPunchReceiptDto> {
-    return this.prisma.$transaction(
-      (tx) => this.managedPunchWithinTransaction(tx, input),
-      { maxWait: 60_000, timeout: 60_000 },
-    );
+    return this.prisma.$transaction((tx) => this.managedPunchWithinTransaction(tx, input), {
+      maxWait: 60_000,
+      timeout: 60_000,
+    });
   }
 
   /**

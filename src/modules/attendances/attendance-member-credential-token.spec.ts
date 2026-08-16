@@ -34,7 +34,10 @@ describe('attendance member credential token', () => {
   it('red-first: rejects a credential whose lifetime is not exactly the frozen 60-second TTL', () => {
     expect(() =>
       signAttendanceMemberCredential(
-        { ...input, expiresAt: new Date(issuedAt.getTime() + ATTENDANCE_MEMBER_CREDENTIAL_TTL_MS + 1) },
+        {
+          ...input,
+          expiresAt: new Date(issuedAt.getTime() + ATTENDANCE_MEMBER_CREDENTIAL_TTL_MS + 1),
+        },
         SECRET,
       ),
     ).toThrow(AttendanceMemberCredentialInvalidError);

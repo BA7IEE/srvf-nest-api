@@ -649,7 +649,9 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
         };
       }
       await this.releaseImportExecuteForRetry(claimed.id, fence, now, error);
-      this.logger.warn(`attendance import execute deferred job=${claimed.id} error=${errorName(error)}`);
+      this.logger.warn(
+        `attendance import execute deferred job=${claimed.id} error=${errorName(error)}`,
+      );
       return {
         jobsEnqueued,
         jobClaimed: true,

@@ -1116,13 +1116,11 @@ describe('activity batch6 staff/import/offline runtime', () => {
       });
       // 这是 ADV-014 的唯一对手面：真实已绑定对象在 provider 层被同长度内容替换；
       // 不改 Attachment/Job/事件表，随后仍只经 HTTP + worker 验证零业务写。
-      await app
-        .get(LocalStorageProvider)
-        .putObject({
-          key: attachment.key,
-          body: Buffer.from(replacedCsv, 'utf8'),
-          contentType: 'text/csv',
-        });
+      await app.get(LocalStorageProvider).putObject({
+        key: attachment.key,
+        body: Buffer.from(replacedCsv, 'utf8'),
+        contentType: 'text/csv',
+      });
     }
 
     const beforeExecute = await createPinnedPreview(`batch6-adv014-before-${++sequence}`);

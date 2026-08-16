@@ -3,7 +3,10 @@ import { ApiBearerAuth, ApiOperation, ApiProduces, ApiResponse, ApiTags } from '
 import type { Response } from 'express';
 import { Readable } from 'node:stream';
 
-import { CurrentUser, type CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
+import {
+  CurrentUser,
+  type CurrentUserPayload,
+} from '../../../common/decorators/current-user.decorator';
 import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 import { BizCode } from '../../../common/exceptions/biz-code.constant';
 import { BizException } from '../../../common/exceptions/biz.exception';

@@ -19,10 +19,10 @@
 | 计数项 | 值 |
 |---|---|
 | 模块 | 37 |
-| Controller | 98 |
-| Endpoint | 515 |
-| Migration | 87 |
-| BizCode | 441 |
+| Controller | 100 |
+| Endpoint | 523 |
+| Migration | 88 |
+| BizCode | 445 |
 | 权限码 | 234 |
 | AuditLogEvent | 138 |
 | 内建角色 | 15 |
@@ -47,7 +47,8 @@
 - **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 - **证书标准库(PR-1→PR-6 + 评审 findings F1–F6)**:类别/等级唯一权威=`CertificateStandard`(实例侧零副本);认定规则由录入时锁定的 `recognitionPolicyId` 记住、换版**不追溯**;招新申报一证一行,发号只搬 APPROVED 且不重判。**需求 = 冻结稿 + [`t0-amendments`](archive/reviews/certificate-standard-library-t0-amendments.md) 两份合起来**(冲突以后者为准);三份 runbook 见 `ops/certificate-*`
 - **活动（activity-business-overhaul-v1.1）**：87；永久头/保险 revision/参与投影、D83 资格 runtime 已落。D84 mode 以 v4 根锁/20152 闭合；D85–87 的冻结、资格 hash、lottery 承诺、回执和候选/岗位 guard 均零回填。第 4 批 runtime：邀请 accept 复用 canonical Form/资格/保险/身份/容量链；first_come 按场次即时 `pass|waitlisted`、不建 batch；rank/lottery 走 prepare/commit/void/get、D86 replay 和 20147 零写，同一根事务写容量/pointer/population/audit/outbox；递补仅原场次岗位。default 仅兼容旧 server/存量；资格配置/发布激活已落（draft typed RuleSet、V5 冻结激活）；活动到点 expiry 已落：复用既有两条 worker 与 `ActivityBatchJob` reconciliation、无新 cron，按最早 live session start 在 Activity 根事务内关闭 canonical pending/waitlisted 与 pending invitation，pass/容量不动，drift 20147 业务零写；整单取消/legacy writer lifecycle 也已收口：Activity 根事务关闭 canonical pending/waitlisted、追加 revision 并 CAS 投影，pass 的 active reservation 保留；legacy writer 只匹配无永久 identity 的兼容 header，漂移 20147 业务零写。
-- **第 5 批（本分支，未部署）**：复用既有 QR credential、PunchEvent、EvidenceState/Seal 和服务段 revision 地基，接入负责人签发/作废/受保护 SVG 渲染、本人 QR 签到/签退/安全状态、责任人早退闭合/void/replace。所有 PunchEvent 写与整单取消按同一 Activity 根锁序串行；扫码 token 只作为请求输入、不进入读面。本批不含第 6 批工作人员代扫、代理、批量、导入或离线流程。
+- **第 5 批（已合 main #1032，未部署）**：复用既有 QR credential、PunchEvent、EvidenceState/Seal 和服务段 revision 地基，接入负责人签发/作废/受保护 SVG 渲染、本人 QR 签到/签退/安全状态、责任人早退闭合/void/replace。所有 PunchEvent 写与整单取消按同一 Activity 根锁序串行；扫码 token 只作为请求输入、不进入读面。本批不含第 6 批工作人员代扫、代理、批量、导入或离线流程。
+- **第 6 批（本分支，未部署，尚未整体交付）**：工作人员短时成员凭证、staff scan、proxy、可重放 bulk job、CSV import preview/execute 已接统一 PunchCommand、Activity 根锁、责任复验与 worker lease/fence；import execute 会重读固定附件并重算 digest/parserVersion/rowHash/previewHash，覆盖 ADV-014 的替换文件零 PunchEvent 闸。migration 88 已为 `OfflinePackage`、`OfflinePackageParticipant`、`OfflinePunchReviewItem` 与 PunchEvent 离线锚落字段/约束；但补充合同尚未定义 package issue/revoke/upload/review 的精确 HTTP wire，离线模型本身不构成可用写入链。
 
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)
 

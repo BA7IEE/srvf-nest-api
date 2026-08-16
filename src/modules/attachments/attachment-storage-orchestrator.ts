@@ -354,7 +354,11 @@ export class AttachmentStorageOrchestrator {
       select: { id: true, key: true, size: true },
     });
     if (!attachment) throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
-    if (!Number.isSafeInteger(input.maxBytes) || input.maxBytes < 0 || attachment.size > input.maxBytes) {
+    if (
+      !Number.isSafeInteger(input.maxBytes) ||
+      input.maxBytes < 0 ||
+      attachment.size > input.maxBytes
+    ) {
       return { body: null, actualSize: attachment.size };
     }
     const object = await this.prisma.storageObject.findUnique({ where: { key: attachment.key } });
