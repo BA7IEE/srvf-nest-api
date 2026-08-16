@@ -15,6 +15,7 @@ import type { ActivityAllocationService } from './activity-allocation.service';
 import type { ActivityRegistrationLifecycleService } from './activity-registration-lifecycle.service';
 import type { ActivityQualificationEvaluatorService } from './activity-qualification-evaluator.service';
 import type { ActivityRegistrationNotificationProducer } from './activity-registration-notification-producer';
+import { ActivityRegistrationPresenter } from './activity-registration-presenter';
 import { ActivityRegistrationQueryService } from './activity-registration-query.service';
 import type { ActivityRegistrationTransitionDecision } from './activity-registration-state-machine';
 import type { ActivityRegistrationWaitlistQueryService } from './activity-registration-waitlist-query.service';
@@ -430,6 +431,9 @@ function makeService(
     // characterization 断言(where / select / orderBy / skip / take)因此继续经新类落到
     // 同一个 mock 上,断言一字未改即证「搬家零漂移」。传 mock 反而会把被测行为挖空。
     new ActivityRegistrationQueryService(prisma as unknown as PrismaService),
+    // Phase 6-B 第三域第二刀:Presenter 传**真实实例**而非 mock(零依赖纯映射类)——
+    // DTO mapping 的既有 characterization 断言因此经真实序列化路径,直接锁「搬家零漂移」。
+    new ActivityRegistrationPresenter(),
   );
 }
 
