@@ -660,6 +660,25 @@ checkEq(
   // 剥注释后再判 —— 否则注释里写一句同样的话,断言就绿了(见 codeOnly 的说明)
   const ci = codeOnly(read('.github/workflows/ci.yml'));
   const nightly = codeOnly(read('.github/workflows/nightly-e2e-leaks.yml'));
+
+  // ①a e2e 分片配置的两处必须同步:`matrix: shard: [...]` 与 `--shard=N/<分母>`。
+  // 错配的两种后果不对称,危险的是第二种:
+  //   - 矩阵片数 > 分母:多出来的片跑 `--shard=4/3`,jest 行为未定义(至少会炸,看得见)
+  //   - **矩阵片数 < 分母:只跑 分母分之片数 的 spec,而每片都成功 ⇒ CI 全绿**
+  //     ——「闸在跑但覆盖不全」,没有任何信号,与漏跑等价。
+  // 这条守的正是第二种:它是本仓最怕的静默失效形状,且改配置时极易只改一处。
+  {
+    const shardList = /matrix:\s*\n\s*shard:\s*\[([^\]]+)\]/.exec(ci);
+    const denominator = /--shard=\$\{\{ matrix\.shard \}\}\/(\d+)/.exec(ci);
+    const count = shardList ? shardList[1].split(',').filter((s) => s.trim()).length : 0;
+    const denom = denominator ? Number(denominator[1]) : 0;
+    check(
+      'P1 e2e shard:矩阵片数 == --shard 分母(错配会静默漏跑且 CI 全绿)',
+      count > 0 && denom > 0 && count === denom,
+      `ci.yml e2e 分片错配:matrix ${count} 片 vs --shard 分母 ${denom}`,
+    );
+  }
+
   check(
     'P1 leak:ci.yml 并行 e2e 步骤 grep worker 强杀文案(告警级)',
     ci.includes("grep -q 'failed to exit gracefully'") && ci.includes('::warning::'),
