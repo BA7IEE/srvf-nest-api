@@ -55,6 +55,19 @@ import type {
 import { AttachmentAuditRecorder } from './attachment-audit-recorder';
 import { AttachmentContentValidator } from './attachment-content-validator';
 import {
+  StorageAwaitingConfirmError,
+  StorageCandidateNotFoundError,
+  StorageObjectIntegrityMismatchError,
+  StorageProviderDeleteStillPresentError,
+  assertExpectedSizeMatchesHead,
+  requireHeadSize,
+  requireSafeSize,
+  requireSha256Hex,
+  requireString,
+  safeNumber,
+  terminalSucceededData,
+} from './attachment-storage-invariants';
+import {
   deleteAuditEnvelope,
   type AttachmentDeleteReplay,
   type AttachmentUploadStorageIdentity,
@@ -2539,101 +2552,6 @@ function deleteReplayResponse(row: SafeAttachment): AttachmentDeleteReplayRespon
   };
 }
 
-function terminalSucceededData(
-  now: Date,
-  effectState: 'provider_present' | 'provider_absent' | 'effect_succeeded',
-): Prisma.StorageObjectOperationUpdateInput {
-  return {
-    status: 'succeeded',
-    effectState,
-    effectCompletedAt: effectState === 'effect_succeeded' ? now : undefined,
-    completedAt: now,
-    deadAt: null,
-    leaseOwner: null,
-    leaseAcquiredAt: null,
-    leaseRenewedAt: null,
-    leaseExpiresAt: null,
-    lastErrorCode: null,
-    lastErrorClass: null,
-  };
-}
-
-function requireString(value: string | null, field: string): string {
-  if (!value) throw new StorageConsistencyInvariantError(`${field} is missing`);
-  return value;
-}
-
-function requireSafeSize(value: bigint | null): number {
-  const size = safeNumber(value);
-  if (size === undefined) throw new StorageConsistencyInvariantError('expectedSize is missing');
-  return size;
-}
-
-function requireHeadSize(head: HeadObjectResult): number {
-  if (head.size === undefined) {
-    throw new StorageConsistencyInvariantError('provider HEAD lacks expected size evidence');
-  }
-  return head.size;
-}
-
-function assertExpectedSizeMatchesHead(
-  object: Pick<StorageObject, 'expectedSize'>,
-  head: HeadObjectResult,
-): void {
-  if (object.expectedSize === null) {
-    throw new StorageConsistencyInvariantError('storage object lacks expected size evidence');
-  }
-  if (object.expectedSize !== bigintSize(requireHeadSize(head))) {
-    throw new StorageObjectIntegrityMismatchError('provider HEAD size mismatch');
-  }
-}
-
-function requireSha256Hex(value: string, field: string): string {
-  if (!/^[0-9a-f]{64}$/i.test(value)) {
-    throw new StorageConsistencyInvariantError(`${field} is not SHA-256 hex`);
-  }
-  return value.toLowerCase();
-}
-
-function safeNumber(value: bigint | null): number | undefined {
-  if (value === null) return undefined;
-  const result = Number(value);
-  if (!Number.isSafeInteger(result) || result < 0) {
-    throw new StorageConsistencyInvariantError(`unsafe bigint size=${value.toString()}`);
-  }
-  return result;
-}
-
-class StorageAwaitingConfirmError extends Error {
-  constructor() {
-    super('STORAGE_AWAITING_ATTACHMENT_CONFIRM');
-    this.name = 'StorageAwaitingConfirmError';
-  }
-}
-
-class StorageCandidateNotFoundError extends Error {
-  constructor() {
-    super('STORAGE_CANDIDATE_NOT_FOUND');
-    this.name = 'StorageCandidateNotFoundError';
-  }
-}
-
-class StorageObjectIntegrityMismatchError extends Error {
-  readonly code = 'STORAGE_OBJECT_INTEGRITY_MISMATCH';
-
-  constructor(reason: string) {
-    super(reason);
-    this.name = 'StorageObjectIntegrityMismatchError';
-  }
-}
-
 function isAttachmentNotFound(error: unknown): boolean {
   return error instanceof BizException && error.biz === BizCode.ATTACHMENT_NOT_FOUND;
-}
-
-class StorageProviderDeleteStillPresentError extends Error {
-  constructor() {
-    super('STORAGE_PROVIDER_DELETE_STILL_PRESENT');
-    this.name = 'StorageProviderDeleteStillPresentError';
-  }
 }
