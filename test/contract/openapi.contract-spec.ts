@@ -35,9 +35,7 @@ interface OpenApiSchema {
 }
 
 interface OpenApiResponse {
-  content?: {
-    'application/json'?: { schema?: OpenApiSchema };
-  };
+  content?: Record<string, { schema?: OpenApiSchema }>;
 }
 
 interface OpenApiOperation {
@@ -193,6 +191,11 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/app/v1/activities/{activityId}/registrations'],
   ['post', '/api/app/v1/activities/{activityId}/registration-upload-sessions'],
   ['post', '/api/app/v1/activities/{activityId}/registration-upload-sessions/{sessionId}/files'],
+  // 第 5 批：App 自助扫描二维码的正式现场事实链；token 仅作为请求体输入，状态读面不返
+  // 凭证或坐标。staff_scan / 批量 / 导入 / 离线明确留第 6 批。
+  ['post', '/api/app/v1/activities/{activityId}/sessions/{sessionId}/punches/check-in'],
+  ['post', '/api/app/v1/activities/{activityId}/sessions/{sessionId}/punches/check-out'],
+  ['get', '/api/app/v1/activities/{activityId}/sessions/{sessionId}/my-punch-state'],
 
   // Phase 2 P2-5a(2026-05-20):App /api/app/v1/my/* 3 只读 endpoint
   // 沿 docs/app-api-p2-5-registrations-review.md §13.7 + D-P2-5-5;5 endpoint 全部
@@ -239,6 +242,21 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/app/v1/my/managed-activities/{activityId}/visitors'],
   // 第 4 批⑧：负责人现场临时参加，受 D-5、scoped permission 与责任事实共同约束。
   ['post', '/api/app/v1/my/managed-activities/{activityId}/onsite-participations'],
+  // 第 5 批：考勤责任人签发/作废/渲染 QR，以及 append-only 早退、作废、替代更正。
+  // 所有 managed 路由保持 LoginScoped(responsibility)，service 事务内复查责任事实。
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}/qr-credentials'],
+  [
+    'post',
+    '/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}/qr-credentials/{action}/issue',
+  ],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/qr-credentials/{credentialId}/revoke'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/qr-credentials/{credentialId}/render'],
+  [
+    'post',
+    '/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/early-departure-close',
+  ],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/onsite/punch-events/{eventId}/void'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/onsite/punch-events/{eventId}/replace'],
   ['post', '/api/app/v1/my/activity-invitations/{invitationId}/decline'],
   // 活动业务改造 v1.1 第 3 批第一刀：草稿场次/新表岗位嵌套 CRUD。
   // 只允许发起人（SUPER_ADMIN 兜底）操作 draft；published 直写返回 change-review-required。
@@ -1320,6 +1338,16 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'ActivityCheckInLocationDto',
   'AppActivityCheckInDto',
 
+  // 第 5 批：自助 QR/现场事实 DTO；path params 被 Swagger 内联，故不列。
+  'AppActivityPunchDto',
+  'AppActivityPunchReceiptDto',
+  'AppActivityPunchStateDto',
+  'AppManagedAttendanceQrCredentialDto',
+  'IssueAppManagedAttendanceQrDto',
+  'RevokeAppManagedAttendanceQrDto',
+  'EarlyDepartureCloseAppManagedOnsitePunchDto',
+  'CorrectAppManagedOnsitePunchDto',
+
   // 活动自助 GPS 签到 F3：Admin 证据列表与只读考勤草稿 6 个显式 schema。
   // ListActivityCheckInsQueryDto 继承 PaginationQueryDto，仅内联为 query parameters。
   'AdminActivityCheckInMemberDto',
@@ -1629,9 +1657,9 @@ describe('OpenAPI 契约快照', () => {
   //   POST +1 →491；第 4 批⑦邀请/访客五路 managed + 本人 decline 一路 →497；
   //   第 4 批⑧ managed onsite 临时参加 POST +1 →498；第 4 批分配核心：本人 accept
   //   邀请 + rank/lottery 批次 prepare/commit/void/get +5 →503；资格配置草稿 GET/PUT +2
-  //   → **505**。
-  it('路由足迹精确为 505', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(505);
+  //   →505；第 5 批 QR 自助/managed attendance 十路 → **515**。
+  it('路由足迹精确为 515', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(515);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {
@@ -1940,6 +1968,91 @@ describe('OpenAPI 契约快照', () => {
       format: 'date-time',
       nullable: true,
     });
+  });
+
+  it.each([
+    [
+      'POST self check-in',
+      'post',
+      '/api/app/v1/activities/{activityId}/sessions/{sessionId}/punches/check-in',
+      [
+        BizCode.ATTENDANCE_QR_NOT_FOUND.code,
+        BizCode.ATTENDANCE_QR_REVOKED.code,
+        BizCode.ATTENDANCE_QR_ACTION_MISMATCH.code,
+        BizCode.ATTENDANCE_QR_VERSION_CONFLICT.code,
+        BizCode.ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT.code,
+        BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW.code,
+        BizCode.ATTENDANCE_PUNCH_LOCATION_REQUIRED.code,
+        BizCode.ATTENDANCE_PUNCH_LOCATION_OUT_OF_RANGE.code,
+        BizCode.ATTENDANCE_PUNCH_OPEN_SEGMENT_EXISTS.code,
+      ],
+    ],
+    [
+      'POST self check-out',
+      'post',
+      '/api/app/v1/activities/{activityId}/sessions/{sessionId}/punches/check-out',
+      [
+        BizCode.ATTENDANCE_QR_NOT_FOUND.code,
+        BizCode.ATTENDANCE_QR_REVOKED.code,
+        BizCode.ATTENDANCE_QR_ACTION_MISMATCH.code,
+        BizCode.ATTENDANCE_QR_VERSION_CONFLICT.code,
+        BizCode.ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT.code,
+        BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW.code,
+        BizCode.ATTENDANCE_PUNCH_LOCATION_REQUIRED.code,
+        BizCode.ATTENDANCE_PUNCH_LOCATION_OUT_OF_RANGE.code,
+        BizCode.ATTENDANCE_PUNCH_CHECK_OUT_REQUIRES_OPEN_SEGMENT.code,
+        BizCode.ATTENDANCE_PUNCH_MIN_DURATION_NOT_REACHED.code,
+      ],
+    ],
+    [
+      'POST managed early close',
+      'post',
+      '/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/early-departure-close',
+      [
+        BizCode.ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT.code,
+        BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW.code,
+        BizCode.ATTENDANCE_PUNCH_CHECK_OUT_REQUIRES_OPEN_SEGMENT.code,
+        BizCode.ATTENDANCE_EARLY_DEPARTURE_REASON_REQUIRED.code,
+      ],
+    ],
+    [
+      'POST managed void',
+      'post',
+      '/api/app/v1/my/managed-activities/{activityId}/onsite/punch-events/{eventId}/void',
+      [
+        BizCode.ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT.code,
+        BizCode.ATTENDANCE_PUNCH_EVENT_ALREADY_VOIDED.code,
+      ],
+    ],
+  ] as const)('%s declares the frozen B5 business errors', (_label, method, path, codes) => {
+    expect(documented4xxCodes(doc.paths[path]?.[method])).toEqual(expect.arrayContaining(codes));
+  });
+
+  it('B5 QR wire keeps the raw token request-only and render binary protected', () => {
+    const schemas = doc.components?.schemas ?? {};
+    const requestBody = schemas.AppActivityPunchDto as OpenApiSchema;
+    const receipt = schemas.AppActivityPunchReceiptDto as OpenApiSchema;
+    const state = schemas.AppActivityPunchStateDto as OpenApiSchema;
+    const credential = schemas.AppManagedAttendanceQrCredentialDto as OpenApiSchema;
+    const render =
+      doc.paths[
+        '/api/app/v1/my/managed-activities/{activityId}/qr-credentials/{credentialId}/render'
+      ]?.post;
+
+    expect(requestBody.properties?.qrToken).toMatchObject({
+      type: 'string',
+      minLength: 1,
+      maxLength: 4096,
+    });
+    expect(render?.responses?.['201']?.content?.['image/svg+xml']?.schema).toEqual({
+      type: 'string',
+      format: 'binary',
+    });
+    for (const schema of [receipt, state, credential]) {
+      expect(Object.keys(schema.properties ?? {})).not.toEqual(
+        expect.arrayContaining(['qrToken', 'tokenDigest', 'requestHash']),
+      );
+    }
   });
 
   it('qualification configuration wire is typed, review-scoped, and exposes no opaque valueJson', () => {

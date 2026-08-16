@@ -81,6 +81,7 @@ import { QualificationRuleSetVersionService } from './qualification-rule-set-ver
 import { ActivityCapacityBucketProjector } from './activity-capacity-bucket-projector';
 import { ActivityQualificationEvaluatorService } from '../activity-registrations/activity-qualification-evaluator.service';
 import { ActivityAllocationModeService } from './activity-allocation-mode.service';
+import { AttendanceSegmentProjectorService } from './attendance-segment-projector.service';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activities 写操作(create / update / softDelete / publish / cancel 共 5 处共用 activity.publish)
@@ -153,6 +154,8 @@ import { ActivityAllocationModeService } from './activity-allocation-mode.servic
     ActivityPublishReviewAuditRecorder,
     ActivityPublishProposalV2Service,
     ActivityAllocationModeService,
+    // 第 5 批只能经此公开 façade 复用已冻结的服务段投影；Attendances 不得深引 projector。
+    AttendanceSegmentProjectorService,
     ActivityCapacityBucketProjector,
     ActivityQualificationEvaluatorService,
     RegistrationFormVersionService,
@@ -253,6 +256,7 @@ import { ActivityAllocationModeService } from './activity-allocation-mode.servic
     ActivityWorkflowQueryService,
     ActivityMemberOffboardImpactService,
     ActivityQualificationEvaluatorService,
+    AttendanceSegmentProjectorService,
   ],
 })
 export class ActivitiesModule {}

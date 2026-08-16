@@ -38,6 +38,7 @@ import { ActivityNotificationProducer } from './activity-notification-producer';
 import { ActivityPublishReviewService } from './activity-publish-review.service';
 import { ActivityAllocationModeService } from './activity-allocation-mode.service';
 import { cancelActivityRegistrationLifecycle } from '../activity-registrations/activity-cancellation-lifecycle';
+import { resolveEffectiveFacts } from './settlement-segment-projector';
 
 // V2 第一阶段批次 3A activities service。
 // 详见 docs:
@@ -1322,6 +1323,23 @@ export class ActivitiesService {
       throw new BizException(transition.biz);
     }
     const { nextStatusCode } = transition;
+
+    // Admin 与 App lifecycle 调用方都已先持有同一 Activity 根锁。现场打卡也先锁
+    // Activity，故在这里读取完整事件链可以把「第一条事实提交」与取消线性化：
+    // 已被有效 void/replace 顶掉的事实不阻断，仍有效的任一事实则整笔取消零写拒绝。
+    const punchEvents = await tx.attendancePunchEvent.findMany({
+      where: { activityId: current.id },
+      select: {
+        id: true,
+        eventTypeCode: true,
+        occurredAt: true,
+        supersedesEventId: true,
+      },
+      orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+    });
+    if (resolveEffectiveFacts(punchEvents).length > 0) {
+      throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+    }
 
     const cancelledAt = new Date();
 

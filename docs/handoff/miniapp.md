@@ -52,6 +52,14 @@
 - **分配方式与发布审核**：draft PATCH、初发/变更提交或审核遇到任一历史 allocation batch mode 不一致时均返 `409/20152`，前端不要静默重试或尝试改历史 batch；v4 review 待审期间若 mode 被旁路修改，approve 返 `409/20144`，应刷新活动后重新提交。分配 command 与安全读面见下一条；本 handoff 不交付新的排队、资格排序、抽签、candidate 或候补 UI。
 - **邀请接受与分配 command（第 4 批）**：本人接受邀请用 `POST /api/app/v1/my/activity-invitations/:invitationId/accept`，body 与 canonical 报名相同，仍必须传 `operationKey`、Form 版本、答案和志愿；同 key+同请求重放原回执，异请求按稳定冲突码处理。`first_come` 不创建 allocation batch，每个场次独立即时得到 `pass` 或 `waitlisted`；一个场次满员不能拖累其他已提交志愿。负责人仅对 `qualification_rank`/`lottery` 使用 `POST /api/app/v1/my/managed-activities/:activityId/allocation-batches` prepare、`POST .../:batchId/commit`、`POST .../:batchId/void` 与 `GET .../:batchId`。prepare 必须在报名截止后；lottery 的 seed 只在 committed 批次回显。客户端只展示服务端返回的结果和四位资格分数，不要自行复算资格或排序；候补递补只会发生在原场次、原岗位，跨岗位须本人重新确认。
 
+### 1.1.2 自助二维码与现场服务段（第 5 批）
+
+- **负责人二维码**：考勤责任人先读 `GET /api/app/v1/my/managed-activities/:activityId/sessions/:sessionId/qr-credentials`，再以 `{operationKey}` 调 `POST .../qr-credentials/:action/issue` 签发或重签（`action` 仅 `check-in` / `check-out`）。服务端只从对应场次的签到或签退窗口取有效期；同 key+同 canonical 请求重放首次安全回执，异请求保持稳定冲突。`POST .../qr-credentials/:credentialId/revoke` 需要 `{operationKey,reason}`；负责人、活动和场次均由服务端在 Activity 根事务内重验，不能把页面可见性当作授权。
+- **二维码展示**：`POST /api/app/v1/my/managed-activities/:activityId/qr-credentials/:credentialId/render` 只向考勤责任人返回 `Cache-Control: no-store` 的受保护 SVG 二进制内容；不使用 JSON envelope，列表、签发、作废和任何服务段读面都不回显扫码 token、token digest 或 request hash。小程序仅把扫码得到的完整 token 原样作为下一步请求输入，不能持久化、拼接或自行签名。
+- **本人签到/签退**：`POST /api/app/v1/activities/:activityId/sessions/:sessionId/punches/check-in` 与 `.../check-out` 均传 `{qrToken,eventKey,longitude?,latitude?,accuracy?}`；`eventKey` 是全局防重键，坐标三元组只按活动配置的定位策略校验，显式 `null` 不可替代缺省。`GET .../my-punch-state` 只返回本人安全状态、服务端时间和可执行的下一动作，不返回身份、原始坐标或扫码机密。
+- **现场纠正**：考勤责任人可用 `POST /api/app/v1/my/managed-activities/:activityId/onsite/sessions/:sessionId/early-departure-close` 为指定 `participationIdentityId` 以 `{eventKey,reason}` 特殊闭合；`POST .../onsite/punch-events/:eventId/void`、`.../replace` 以 `{operationKey,reason}` 追加纠正事实。三者不会覆盖历史 PunchEvent；早退固定产生零时长零分段。所有 PunchEvent 写命令在同一 Activity 根事务内投影服务段，首笔签到后的报名状态变化不阻断该身份已打开服务段的正常签退。
+- **范围边界**：本批只交付本人 QR 自助和责任人现场纠正；不含工作人员代扫、代理、批量、导入或离线流程（均属于第 6 批）。
+
 ### 活动责任闭环的五类视图与按钮
 
 1. **我参与的活动**：App `/api/app/v1/my/activities`，只表示本人报名/参与历史。
