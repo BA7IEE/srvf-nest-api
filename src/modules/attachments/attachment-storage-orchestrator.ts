@@ -51,6 +51,7 @@ import type {
 import { AttachmentAuditRecorder } from './attachment-audit-recorder';
 import { lockContentDeleteFinalizationBoundary } from './attachment-content-delete-boundary';
 import { AttachmentContentValidator } from './attachment-content-validator';
+import { AttachmentManualIntakeService } from './attachment-manual-intake.service';
 import { AttachmentManualRelocateService } from './attachment-manual-relocate.service';
 import {
   StorageAwaitingConfirmError,
@@ -115,6 +116,7 @@ export class AttachmentStorageOrchestrator {
     private readonly contentValidator: AttachmentContentValidator,
     private readonly auditRecorder: AttachmentAuditRecorder,
     private readonly manualRelocate: AttachmentManualRelocateService,
+    private readonly manualIntake: AttachmentManualIntakeService,
     @Inject(STORAGE_PROVIDER) private readonly provider: StorageProvider,
   ) {}
 
@@ -1203,33 +1205,14 @@ export class AttachmentStorageOrchestrator {
     return null;
   }
 
+  // 受理侧薄委托:实现在 AttachmentManualIntakeService。编排器保留同名 public 方法,
+  // 因为它是本模块对外的入口与 kind 分发器 —— 调用面(storage-consistency-worker 与 e2e)因此不变。
   async prepareManualRelocate(input: PrepareManualStorageRelocateInput): Promise<string> {
-    const payload: ManualStorageOperationPayload = {
-      operatorUserId: input.operatorUserId,
-      reviewerUserId: input.reviewerUserId,
-      reasonCode: input.reasonCode,
-      evidenceRef: input.evidenceRef,
-      verifiedAt: input.verifiedAt.toISOString(),
-      targetLocator: input.targetLocator,
-    };
-    parseStorageOperationPayload('manual_relocate', STORAGE_OPERATION_PAYLOAD_VERSION, payload);
-    return this.prepareManualOperation('manual_relocate', input.replayOperationId, payload);
+    return this.manualIntake.prepareRelocate(input);
   }
 
   async prepareManualAttestAbsent(input: PrepareManualStorageAttestAbsentInput): Promise<string> {
-    const payload: ManualStorageOperationPayload = {
-      operatorUserId: input.operatorUserId,
-      reviewerUserId: input.reviewerUserId,
-      reasonCode: input.reasonCode,
-      evidenceRef: input.evidenceRef,
-      verifiedAt: input.verifiedAt.toISOString(),
-    };
-    parseStorageOperationPayload(
-      'manual_attest_absent',
-      STORAGE_OPERATION_PAYLOAD_VERSION,
-      payload,
-    );
-    return this.prepareManualOperation('manual_attest_absent', input.replayOperationId, payload);
+    return this.manualIntake.prepareAttestAbsent(input);
   }
 
   async executeEventKey(eventKey: string): Promise<void> {
@@ -1311,111 +1294,6 @@ export class AttachmentStorageOrchestrator {
     if (rows.length === 0) return 0;
     for (const row of rows) await this.ledger.ensureRuntimeBackfill(row);
     return rows.length;
-  }
-
-  private async prepareManualOperation(
-    kind: 'manual_relocate' | 'manual_attest_absent',
-    replayOperationId: string,
-    payload: ManualStorageOperationPayload,
-  ): Promise<string> {
-    const original = await this.prisma.storageObjectOperation.findUnique({
-      where: { id: replayOperationId },
-      include: { storageObject: true },
-    });
-    if (!original) throw new StorageConsistencyInvariantError('manual replay target not found');
-    const requestHash = storageRequestHash({
-      kind,
-      payloadVersion: STORAGE_OPERATION_PAYLOAD_VERSION,
-      storageObjectId: original.storageObjectId,
-      replayOperationId,
-      payload,
-    });
-    const eventKey = `storage.${kind.replaceAll('_', '-')}:${requestHash}`;
-
-    return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw(Prisma.sql`
-        SELECT "id" FROM "storage_objects"
-        WHERE "id" = ${original.storageObjectId}
-        FOR UPDATE
-      `);
-      await tx.$queryRaw(Prisma.sql`
-        SELECT "id" FROM "storage_object_operations"
-        WHERE "storageObjectId" = ${original.storageObjectId}
-          AND (
-            "id" = ${replayOperationId}
-            OR "eventKey" = ${eventKey}
-            OR "status" IN ('pending', 'processing')
-          )
-        ORDER BY "id"
-        FOR UPDATE
-      `);
-      const existing = await tx.storageObjectOperation.findUnique({ where: { eventKey } });
-      if (existing) {
-        if (
-          existing.kind !== kind ||
-          existing.storageObjectId !== original.storageObjectId ||
-          existing.requestHash !== requestHash
-        ) {
-          throw new StorageConsistencyInvariantError('manual eventKey identity mismatch');
-        }
-        return existing.eventKey;
-      }
-      const currentOriginal = await tx.storageObjectOperation.findUnique({
-        where: { id: replayOperationId },
-      });
-      const object = await tx.storageObject.findUnique({
-        where: { id: original.storageObjectId },
-      });
-      if (!currentOriginal || !object || currentOriginal.storageObjectId !== object.id) {
-        throw new StorageConsistencyInvariantError('manual replay target disappeared');
-      }
-      const activeOperations = await tx.storageObjectOperation.findMany({
-        where: { storageObjectId: object.id, status: { in: ['pending', 'processing'] } },
-        orderBy: { id: 'asc' },
-      });
-      if (activeOperations.length > 1) {
-        throw new StorageConsistencyInvariantError('multiple active manual operations');
-      }
-      const active = activeOperations[0];
-      if (active) throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
-
-      if (kind === 'manual_relocate') {
-        if (
-          !['legacy_unverified', 'provider_unknown', 'missing', 'integrity_mismatch'].includes(
-            object.state,
-          ) ||
-          object.deleteRequestedAt !== null ||
-          !['backfill_verify', 'attachment_upload_verify', 'manual_relocate'].includes(
-            currentOriginal.kind,
-          ) ||
-          !['succeeded', 'dead'].includes(currentOriginal.status)
-        ) {
-          throw new StorageConsistencyInvariantError('manual relocate target rejected');
-        }
-      } else if (
-        currentOriginal.kind !== 'attachment_delete' ||
-        currentOriginal.status !== 'dead' ||
-        !['delete_pending', 'delete_failed'].includes(object.state)
-      ) {
-        throw new StorageConsistencyInvariantError('manual attest target rejected');
-      }
-
-      await tx.storageObjectOperation.create({
-        data: {
-          eventKey,
-          storageObjectId: object.id,
-          replayOfId: currentOriginal.id,
-          kind,
-          status: 'pending',
-          effectState: 'not_started',
-          payloadVersion: STORAGE_OPERATION_PAYLOAD_VERSION,
-          payload: toStorageJson(payload),
-          requestHash,
-          availableAt: new Date(),
-        },
-      });
-      return eventKey;
-    });
   }
 
   private async executeAttachmentDelete(

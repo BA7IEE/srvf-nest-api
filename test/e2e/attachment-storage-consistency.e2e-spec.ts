@@ -11,6 +11,7 @@ import { PrismaService } from '../../src/database/prisma.service';
 import { AttachmentAuditRecorder } from '../../src/modules/attachments/attachment-audit-recorder';
 import { AttachmentContentValidator } from '../../src/modules/attachments/attachment-content-validator';
 import { AttachmentManualRelocateService } from '../../src/modules/attachments/attachment-manual-relocate.service';
+import { AttachmentManualIntakeService } from '../../src/modules/attachments/attachment-manual-intake.service';
 import { AttachmentStorageOrchestrator } from '../../src/modules/attachments/attachment-storage-orchestrator';
 import type { AttachmentUploadStorageIdentity } from '../../src/modules/attachments/attachment-storage.types';
 import { AttachmentsService } from '../../src/modules/attachments/attachments.service';
@@ -270,6 +271,7 @@ describe('Attachment durable storage consistency (real PostgreSQL barriers)', ()
       new AttachmentContentValidator(provider),
       auditRecorder,
       new AttachmentManualRelocateService(prisma, ledger, provider),
+      new AttachmentManualIntakeService(prisma),
       provider,
     );
   });
@@ -343,6 +345,7 @@ describe('Attachment durable storage consistency (real PostgreSQL barriers)', ()
       new AttachmentContentValidator(provider),
       auditRecorder,
       new AttachmentManualRelocateService(prisma, strictLedger, provider),
+      new AttachmentManualIntakeService(prisma),
       provider,
     );
   }
