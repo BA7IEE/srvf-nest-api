@@ -11,6 +11,88 @@ import type { Prisma } from '@prisma/client';
  * 纯类型文件:无运行时导出,不进 DI 图。
  */
 
+export type PrismaTx = Prisma.TransactionClient;
+
+export type FreedAllocationSlot = {
+  participationIdentityId: string;
+  sessionId: string;
+  positionId: string | null;
+  allocationBatchId: string | null;
+  priorSourceCode: string;
+  priorRequestKey: string | null;
+  currentStatusCode: string;
+  currentRevisionStatusCode: string;
+  currentPositionId: string | null;
+  capacityReservationId: string | null;
+  populationIncluded: boolean;
+};
+
+export type PromotionWaitlistCandidate = {
+  participationIdentityId: string;
+  registrationId: string;
+  memberId: string;
+  sessionId: string;
+  positionId: string | null;
+  allocationBatchId: string | null;
+  waitlistRank: number;
+  acceptedAt: Date;
+  preferenceSnapshot: Prisma.JsonValue | null;
+  identityRevision: number;
+  identityVersion: number;
+  currentStatusCode: string;
+  currentPositionId: string | null;
+  capacityReservationId: string | null;
+  populationIncluded: boolean;
+};
+
+export type LockedBatchPromotionCandidate = PromotionWaitlistCandidate & {
+  candidateActivityId: string;
+  candidateSessionId: string;
+  waitlistPositionId: string | null;
+  batchModeCode: string;
+  batchStatusCode: string;
+  batchPositionId: string | null;
+  applicationProjectionId: string | null;
+  appliedResultCode: string | null;
+  appliedStatusCode: string | null;
+  appliedPositionId: string | null;
+  appliedPopulationIncluded: boolean | null;
+  appliedExpectedReservationId: string | null;
+  appliedActivityReservationId: string | null;
+  appliedSessionReservationId: string | null;
+  appliedPositionReservationId: string | null;
+};
+
+export type ProjectedReservationRow = {
+  id: string;
+  identityId: string;
+  reservationType: string;
+  memberId: string | null;
+  activityId: string | null;
+  bucketId: string;
+  status: string;
+  bucketOccupied: number;
+  bucketActiveCount: number;
+};
+
+export type FirstComeWaitlistRow = {
+  participationIdentityId: string;
+  acceptedAt: Date;
+  waitlistRank: number | null;
+  currentPositionId: string | null;
+  capacityReservationId: string | null;
+  populationIncluded: boolean;
+};
+
+export type ReservationAnchors = {
+  activityPersonReservationId: string;
+  activityPersonBucketId: string;
+  sessionReservationId: string;
+  sessionBucketId: string;
+  positionReservationId: string | null;
+  positionBucketId: string | null;
+};
+
 export const RESPONSE_SCHEMA_VERSION = 'allocation-command-response-v1';
 
 export type AllocationCommandCode = 'prepare' | 'commit' | 'void';
