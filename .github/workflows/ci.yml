@@ -355,12 +355,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     # 旧单 job 有两次超时误杀前科(147 suites/15m → 误杀;177 suites/25m → 再误杀 → 提到 35m)。
     # 并行化实测(2026-07-28,PR #801 首跑,run 30361346317,195 suites / 4 vCPU / 2 worker):
     #   本 job 12m17s,其中 e2e 步骤 11m23s(改前单 job 25m59s、e2e 步骤 22m14s)。
-    # 取 25m ≈ 实测 2 倍余量(旧两次误杀分别只有 1.03x / 1.16x 余量);二分片后每片
-    # 预期 ~10m,25m 余量只多不少,刻意不动。
+    # 取 25m ≈ 实测 2 倍余量(旧两次误杀分别只有 1.03x / 1.16x 余量)。
+    #
+    # 2026-08-16 二分片 → 三分片(**第三次超时误杀**,run 31945697039 分片1 25m16s 被杀):
+    #   spec 数 195 → 279(+43%)把那 2 倍余量吃到了 ~1.4 倍。历史读数:
+    #   分片1 16m30s/16m40s/16m59s/17m33s/18m09s(常态) vs 分片2 13m52s/14m05s/14m17s。
+    #   **不均衡是设计使然**:分片 1 额外扛 prisma:deploy 与 test:contract(下方 if 条件),
+    #   那 ~3 分钟差正是它们 —— 与 jest --shard 的切法无关,故加片而非改切法。
+    #   三分片后 e2e 部分 ~9m,分片 1 合计 ~12m,恢复到 2 倍余量。
+    #   未把 contract 挪成独立 job:每 job 重装依赖 + 起 PostgreSQL 约 4m 启动开销,
+    #   为省 3m 多开一个 job 不划算。
+    #
+    # ⚠️ 改 timeout 之前先看**实际耗时趋势**:本 job 每次都打印各步骤时长,
+    # 撞线前通常已有连续多次逼近的读数。抬 timeout 是治标,套件继续长就会有第四次。
     timeout-minutes: 25
     needs: changeset
     if: needs.changeset.outputs.docs_only != 'true'
@@ -440,7 +451,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p tmp
-          pnpm test:e2e --shard=${{ matrix.shard }}/2 2>&1 | tee tmp/e2e.log
+          pnpm test:e2e --shard=${{ matrix.shard }}/3 2>&1 | tee tmp/e2e.log
           if grep -q 'failed to exit gracefully' tmp/e2e.log; then
             echo "::warning::并行 e2e 出现 worker 强制退出(本仓已知基线,非硬失败)。若近期新增/改动了 spec,请核对 afterAll 是否 app.close();权威检测见 nightly-e2e-leaks.yml,本地复现:pnpm test:e2e:leaks"
           fi
