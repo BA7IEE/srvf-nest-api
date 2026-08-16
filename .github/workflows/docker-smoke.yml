@@ -314,6 +314,9 @@ jobs:
             -e APP_TRUSTED_PROXY_CIDRS=none \
             -e ENABLE_SWAGGER=false \
             -e LOG_LEVEL=info \
+            -e JWT_SECRET="$JWT_SECRET" \
+            -e JWT_EXPIRES_IN=15m \
+            -e JWT_REFRESH_EXPIRES_IN=90d \
             -e STORAGE_ENCRYPTION_KEY="$STORAGE_ENCRYPTION_KEY" \
             -e STORAGE_CONSISTENCY_MODE=JIT \
             -e INSURANCE_ENFORCEMENT_ENABLED=false \
