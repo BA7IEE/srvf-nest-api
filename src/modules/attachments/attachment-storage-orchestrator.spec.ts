@@ -186,7 +186,8 @@ function harness(options: { strict?: boolean; head?: HeadObjectResult; headError
     prisma,
     ledger,
     {} as AttachmentContentValidator,
-    {} as AttachmentAuditRecorder, {} as AttachmentManualRelocateService,
+    {} as AttachmentAuditRecorder,
+    {} as AttachmentManualRelocateService,
     provider,
   );
   const promote = jest
@@ -307,7 +308,8 @@ describe('AttachmentStorageOrchestrator multipart boundary', () => {
       { $transaction: jest.fn() } as unknown as PrismaService,
       {} as StorageObjectLedgerService,
       { validateFromBuffer } as unknown as AttachmentContentValidator,
-      {} as AttachmentAuditRecorder, {} as AttachmentManualRelocateService,
+      {} as AttachmentAuditRecorder,
+      {} as AttachmentManualRelocateService,
       {
         getCurrentLocator: jest.fn(),
         putObjectAt,
@@ -490,7 +492,8 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
       prisma,
       ledger,
       {} as AttachmentContentValidator,
-      auditRecorder, {} as AttachmentManualRelocateService,
+      auditRecorder,
+      {} as AttachmentManualRelocateService,
       {} as PinnedStorageProvider,
     );
     return { orchestrator, tx, logUploadConfirmed };
@@ -509,7 +512,8 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
       {} as PrismaService,
       ledger,
       {} as AttachmentContentValidator,
-      {} as AttachmentAuditRecorder, {} as AttachmentManualRelocateService,
+      {} as AttachmentAuditRecorder,
+      {} as AttachmentManualRelocateService,
       provider,
     );
 
@@ -551,7 +555,8 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
         prisma,
         ledger,
         {} as AttachmentContentValidator,
-        {} as AttachmentAuditRecorder, {} as AttachmentManualRelocateService,
+        {} as AttachmentAuditRecorder,
+        {} as AttachmentManualRelocateService,
         {} as PinnedStorageProvider,
       );
       const tx = {} as Prisma.TransactionClient;
@@ -613,7 +618,8 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
       {} as PrismaService,
       ledger,
       { validateFromObjectAt } as unknown as AttachmentContentValidator,
-      {} as AttachmentAuditRecorder, {} as AttachmentManualRelocateService,
+      {} as AttachmentAuditRecorder,
+      {} as AttachmentManualRelocateService,
       {} as PinnedStorageProvider,
     );
 
@@ -820,7 +826,8 @@ describe('AttachmentStorageOrchestrator Content publish storage boundary', () =>
       prisma,
       {} as StorageObjectLedgerService,
       contentValidator,
-      auditRecorder, {} as AttachmentManualRelocateService,
+      auditRecorder,
+      {} as AttachmentManualRelocateService,
       provider,
     );
     return {
