@@ -692,10 +692,17 @@ checkEq(
   );
   // 不去重就会连红 N 天刷 N 个同样的 Issue,收件人随即整体无视 = 告警疲劳,
   // 与「没有通知」等价。故「先查既有 open Issue」这一步本身是判据的一部分。
+  //
+  // ⚠️ 本条最初写成 /gh issue list[\s\S]{0,200}--state open/,**是错的**:文件里有两处
+  // `gh issue list`(失败投递、绿后关闭),该正则任一处命中即通过 ⇒ 拆掉失败投递那处的
+  // `--state open` 时断言照样绿(实测变异未变红)。断言名字在说「投递前去重」,量的却是
+  // 「文件里某处有 open 查询」。改成**逐处配对计数**:每一处 list 都必须自带 --state open。
+  const issueListCount = (nightly.match(/gh issue list/g) ?? []).length;
+  const issueListOpenCount = (nightly.match(/gh issue list[^\n]*--state open/g) ?? []).length;
   check(
-    'P1 leak:nightly 投递前先查既有 Issue(防重复轰炸导致告警疲劳)',
-    /gh issue list[\s\S]{0,200}--state open/.test(nightly),
-    'nightly 失败投递未去重,连红会刷屏并使通知失效',
+    'P1 leak:nightly 每处 Issue 查询都限定 open(防重复轰炸导致告警疲劳)',
+    issueListCount >= 2 && issueListCount === issueListOpenCount,
+    `nightly 的 gh issue list 有 ${issueListCount} 处,其中仅 ${issueListOpenCount} 处限定 --state open`,
   );
   // 不自动关闭则 Issue 长期挂着,下次真红时无从分辨新旧 —— 同样使通知失去鉴别力。
   check(
@@ -705,10 +712,14 @@ checkEq(
   );
   // 结论必须由检测步骤单点产出($LEAK_VERDICT),投递步骤只做渲染。
   // 若投递自行重判,两份判断迟早分叉:workflow 说超时、Issue 说泄漏,读者无从取信。
+  //
+  // ⚠️ 与上一条同形的坑:写成 nightly.includes('LEAK_VERDICT') 是不够的 —— 检测步骤
+  // 本就写了 4 次该变量,投递步骤改读别的变量时断言照样绿。必须锚**读取点本身**
+  // (投递步骤里那句 verdict="${LEAK_VERDICT:-...}"),并同时要求产出侧确有写入。
   check(
     'P1 leak:nightly 投递复用检测步骤的判定(单一判据来源)',
-    nightly.includes('LEAK_VERDICT'),
-    'nightly 的 Issue 投递未复用 $LEAK_VERDICT,存在两份判断分叉的风险',
+    /verdict="\$\{LEAK_VERDICT:-/.test(nightly) && /LEAK_VERDICT=\S+' >> "\$GITHUB_ENV"/.test(nightly),
+    'nightly 的 Issue 投递未复用 $LEAK_VERDICT(或检测步骤未产出),存在两份判断分叉的风险',
   );
 
   // ② CI gate 必须正面证明 slow 的 skipped 合法(docs-only),不得从 skipped 反推。

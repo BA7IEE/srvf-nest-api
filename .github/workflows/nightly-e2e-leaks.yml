@@ -106,7 +106,13 @@ jobs:
           set +e
           mkdir -p tmp
           started=$(date +%s)
-          timeout --signal=TERM --kill-after=60s 75m pnpm test:e2e:leaks > tmp/leaks.log 2>&1
+          # --runInBand 把 279 个 spec 全跑在**一个** node 进程里,堆占用只增不减地累积。
+          # 2026-08-16 实测:3.9GB 撞上 node 默认 ~4GB 上限,FATAL ERROR: JavaScript heap
+          # out of memory(exit 134)。runner 有 16GB,故给 8GB —— 这是**缓解不是根治**:
+          # 真正的问题是「spec 之间内存没释放干净」,与本线要抓的句柄泄漏是同源症状。
+          # 若哪天 8GB 又撞满,不要continue加码,去查累积源(见下方 oom 分支的处置文案)。
+          NODE_OPTIONS='--max-old-space-size=8192' \
+            timeout --signal=TERM --kill-after=60s 75m pnpm test:e2e:leaks > tmp/leaks.log 2>&1
           rc=$?
           set -e
           elapsed=$(( $(date +%s) - started ))
@@ -138,6 +144,14 @@ jobs:
               echo 'LEAK_VERDICT=too-slow' >> "$GITHUB_ENV"
               echo "::error::套件在 75m 内未跑完(无汇总行)⇒ 这是**时长不足**不是泄漏。处置:调高本步骤 timeout 与 job timeout-minutes,或把串行线分片。勿按泄漏排查。"
             fi
+            exit 1
+          fi
+
+          # ③ 内存耗尽:与句柄泄漏同源(都是「没释放干净」)但处置完全不同 —— 查的是
+          # spec 之间的内存累积,不是 afterAll 关没关。exit 134 = SIGABRT,V8 OOM 走这条。
+          if grep -q 'JavaScript heap out of memory' tmp/leaks.log || [ "$rc" -eq 134 ]; then
+            echo 'LEAK_VERDICT=oom' >> "$GITHUB_ENV"
+            echo "::error::node 堆内存耗尽(exit $rc)⇒ 单进程串行跑全量 spec 时内存只增不减。这**不是**句柄泄漏也**不是**超时:查 spec 之间的内存累积(全局缓存/模块级单例/未销毁的 Nest 应用),别只加大 --max-old-space-size。"
             exit 1
           fi
 
@@ -180,6 +194,9 @@ jobs:
             too-slow)
               headline='套件没跑完 —— 时长不足,**不是**泄漏'
               action='调高内层 `timeout` 与 job `timeout-minutes`,或把串行线分片。**勿按泄漏排查** —— 2026-08-08 那轮正是把这种失败读成了泄漏,白查一轮。' ;;
+            oom)
+              headline='node 堆内存耗尽 —— **不是**句柄泄漏,也**不是**超时'
+              action='单进程串行跑全量 spec 时内存只增不减。查 spec 之间的内存累积:模块级单例/全局缓存/未销毁的 Nest 应用实例。**别只顾加大 `--max-old-space-size`** —— 那是缓解,累积源不除迟早再撞。' ;;
             suite-failed)
               headline='串行 e2e 有测试失败'
               action='按普通测试失败处理,与句柄泄漏无关。' ;;
