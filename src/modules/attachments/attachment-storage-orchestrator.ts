@@ -334,6 +334,62 @@ export class AttachmentStorageOrchestrator {
     return this.verifyUploadEvidence(identity, source);
   }
 
+  /**
+   * B6-only parser read. The caller cannot choose a key or a provider locator: both are derived
+   * from the immutable internal attachment owner. `null` means the physical object no longer
+   * matches its pinned metadata and must be mapped by the import contract to its mismatch code.
+   */
+  async readAttendanceImportPreviewBytesOutsideTransaction(input: {
+    previewJobId: string;
+    attachmentId: string;
+    maxBytes: number;
+  }): Promise<{ body: Buffer | null; actualSize: number | null }> {
+    const attachment = await this.prisma.attachment.findFirst({
+      where: {
+        id: input.attachmentId,
+        ownerType: 'attendance-import-preview',
+        ownerId: input.previewJobId,
+        mime: 'text/csv',
+      },
+      select: { id: true, key: true, size: true },
+    });
+    if (!attachment) throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    if (!Number.isSafeInteger(input.maxBytes) || input.maxBytes < 0 || attachment.size > input.maxBytes) {
+      return { body: null, actualSize: attachment.size };
+    }
+    const object = await this.prisma.storageObject.findUnique({ where: { key: attachment.key } });
+    if (
+      !object ||
+      object.state !== 'available' ||
+      object.resourceType !== 'attachment' ||
+      object.resourceId !== attachment.id ||
+      object.deleteRequestedAt !== null
+    ) {
+      throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
+    }
+    const objectSize = object.actualSize ?? object.expectedSize;
+    const normalizedObjectSize = objectSize == null ? null : (safeNumber(objectSize) ?? null);
+    if (normalizedObjectSize === null || normalizedObjectSize !== attachment.size) {
+      return { body: null, actualSize: normalizedObjectSize };
+    }
+    const locator = await this.locatorForObject(object);
+    try {
+      const head = await this.pinnedProvider().headObjectAt(locator, attachment.key);
+      if (!head.exists || head.size === undefined || head.size !== attachment.size) {
+        return { body: null, actualSize: head.size ?? null };
+      }
+      const body = await this.pinnedProvider().readObjectPrefixAt(
+        locator,
+        attachment.key,
+        attachment.size,
+      );
+      if (body.length !== attachment.size) return { body: null, actualSize: body.length };
+      return { body, actualSize: body.length };
+    } catch {
+      throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
+    }
+  }
+
   async finalizeUpload(
     input: FinalizeAttachmentStorageUploadInput,
     head: HeadObjectResult,
@@ -1877,6 +1933,27 @@ export class AttachmentStorageOrchestrator {
         FOR UPDATE
       `);
       if (sessionRows.length !== 1 || sessionRows[0]?.statusCode !== 'active') {
+        throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+      }
+      return;
+    }
+    if (ownerType === 'attendance-import-preview' && ownerTable === 'activity_batch_jobs') {
+      const jobRows = await tx.$queryRaw<
+        Array<{ id: string; jobTypeCode: string; statusCode: string; action: string | null }>
+      >(Prisma.sql`
+        SELECT "id", "jobTypeCode", "statusCode", "payload"->>'action' AS "action"
+        FROM "ActivityBatchJob"
+        WHERE "id" = ${ownerId}
+        FOR UPDATE
+      `);
+      const job = jobRows[0];
+      if (
+        jobRows.length !== 1 ||
+        job === undefined ||
+        job.jobTypeCode !== 'import_preview' ||
+        job.statusCode !== 'pending' ||
+        job.action !== 'onsite_import_preview'
+      ) {
         throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
       }
       return;

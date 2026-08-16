@@ -91,4 +91,23 @@ describe('BizCode', () => {
       httpStatus: HttpStatus.CONFLICT,
     });
   });
+
+  it('第 6 批 offline / import BizCode 固定映射', () => {
+    expect(BizCode.ATTENDANCE_OFFLINE_PACKAGE_INVALID).toMatchObject({
+      code: 22097,
+      httpStatus: HttpStatus.CONFLICT,
+    });
+    expect(BizCode.ATTENDANCE_OFFLINE_PACKAGE_EXPIRED).toMatchObject({
+      code: 22098,
+      httpStatus: HttpStatus.CONFLICT,
+    });
+    expect(BizCode.ATTENDANCE_OFFLINE_REVIEW_REQUIRED).toMatchObject({
+      code: 22099,
+      httpStatus: HttpStatus.CONFLICT,
+    });
+    expect(BizCode.ATTENDANCE_IMPORT_PREVIEW_MISMATCH).toMatchObject({
+      code: 22100,
+      httpStatus: HttpStatus.CONFLICT,
+    });
+  });
 });

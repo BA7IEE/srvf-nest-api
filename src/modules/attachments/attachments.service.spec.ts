@@ -2251,6 +2251,30 @@ describe('AttachmentsService (characterization)', () => {
       expect(prisma.attachmentTypeConfig.findFirst).not.toHaveBeenCalled();
     });
 
+    it('default list and listMyUploaded exclude attendance-import-preview before any metadata is read', async () => {
+      const prisma = makePrismaMock();
+      prisma.attachment.findMany.mockResolvedValue([]);
+      const service = makeService(prisma);
+
+      await service.list({ page: 1, pageSize: 20 }, makeCurrentUser());
+      await service.listMyUploaded({ page: 1, pageSize: 20 }, makeCurrentUser());
+
+      const listArgs = prisma.attachment.findMany.mock.calls[0][0] as {
+        where: { ownerType: { notIn: string[] } };
+      };
+      const uploadedArgs = prisma.attachment.findMany.mock.calls[1][0] as {
+        where: { ownerType: { notIn: string[] } };
+      };
+      const listWhere = listArgs.where as {
+        ownerType: { notIn: string[] };
+      };
+      const uploadedWhere = uploadedArgs.where as {
+        ownerType: { notIn: string[] };
+      };
+      expect(listWhere.ownerType.notIn).toContain('attendance-import-preview');
+      expect(uploadedWhere.ownerType.notIn).toContain('attendance-import-preview');
+    });
+
     it('detail, update, delete, and token confirm all collapse the internal owner to 13001 with no URL/ledger work', async () => {
       const prisma = makePrismaMock();
       const provider = makeProviderMock();

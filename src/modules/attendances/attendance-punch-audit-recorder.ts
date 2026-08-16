@@ -9,6 +9,10 @@ type PunchAuditOperation =
   | 'attendance-punch.create'
   | 'attendance-punch.void'
   | 'attendance-punch.replace';
+type OnsiteBatchAuditOperation =
+  | 'attendance-bulk.create'
+  | 'attendance-import.preview'
+  | 'attendance-import.execute';
 
 @Injectable()
 export class AttendancePunchAuditRecorder {
@@ -77,6 +81,34 @@ export class AttendancePunchAuditRecorder {
         sourceCode: args.sourceCode,
         evidenceRevision: args.evidenceRevision,
         supersedesEventId: args.supersedesEventId,
+      },
+      tx: args.tx,
+    });
+  }
+
+  async logOnsiteBatchJob(args: {
+    operation: OnsiteBatchAuditOperation;
+    activityId: string;
+    sessionId: string;
+    jobId: string;
+    total: number;
+    actorUserId: string;
+    actorRoleSnap: Role;
+    auditMeta: AuditMeta;
+    tx: Prisma.TransactionClient;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: 'activity.publish',
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: 'activity',
+      resourceId: args.activityId,
+      meta: args.auditMeta,
+      extra: {
+        operation: args.operation,
+        sessionId: args.sessionId,
+        jobId: args.jobId,
+        total: args.total,
       },
       tx: args.tx,
     });

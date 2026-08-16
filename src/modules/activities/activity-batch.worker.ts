@@ -11,6 +11,20 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 import {
+  ONSITE_BULK_PUNCH_JOB_ACTION,
+  ONSITE_BULK_PUNCH_JOB_TYPE,
+  AttendanceOnsiteBatchJobService,
+  OnsiteBulkPunchLeaseLostError,
+  type OnsiteBulkPunchLeaseFence,
+} from '../attendances/attendance-onsite-batch-job.service';
+import {
+  ATTENDANCE_IMPORT_EXECUTE_ACTION,
+  ATTENDANCE_IMPORT_EXECUTE_JOB_TYPE,
+  AttendanceImportExecuteLeaseLostError,
+  AttendanceImportPreviewService,
+  type AttendanceImportExecuteLeaseFence,
+} from '../attendances/attendance-import-preview.service';
+import {
   ACTIVITY_RECONCILIATION_JOB_TYPE,
   ActivityReconciliationLeaseLostError,
   RegistrationReconciliationService,
@@ -52,10 +66,12 @@ export const ACTIVITY_BATCH_AUTO_COMMIT_ENABLED = Symbol('ACTIVITY_BATCH_AUTO_CO
 // `SettlementReviewAction(final/approve)` 取 actor,再调用第五刀唯一的 `commitBatch`。
 // commit 失败只把同一 prepare job 退回 pending,批次保持 ready,不重算 baseline。
 //
-// ## 本 worker 现认 `settlement_prepare` 与 `reconciliation` 两种任务
+// ## 本 worker 现认 `settlement_prepare`、`reconciliation` 与 B6 的受控 `bulk_proxy` / `import_execute` 任务
 //
 // `reconciliation` 只用于活动开始后的 canonical pending/waitlisted/invitation expiry。
-// 其余五种(bulk_proxy / import_* / export / notification_expand)仍无空壳分支。
+// B6 的 bulk 以 `payload.action='onsite_bulk_punch'` 与既有结算草稿的 legacy `bulk_proxy`
+// 严格区分；`import_execute` 只认 `payload.action='onsite_import_execute'`，preview 本身绝不被
+// worker 领取。其余 export / notification_expand 仍无空壳分支。
 
 /** 一次取活的租约时长。取活后每个 item 的事务都会重新校验围栏。 */
 export const ACTIVITY_BATCH_LEASE_MS = 5 * 60_000;
@@ -103,6 +119,10 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
     // HTTP application context 保留 worker probe，但不 import registration 的 worker-only
     // reconciliation handler；真实两个 worker context 由 ActivityBatchWorkerModule 提供它。
     @Optional() private readonly reconciliation?: RegistrationReconciliationService,
+    // B6 只注入统一 PunchCommand 的 bulk handler；它不接管既有 settlement 的 `bulk_proxy`。
+    @Optional() private readonly onsiteBulkPunches?: AttendanceOnsiteBatchJobService,
+    // B6 import execute 复用同一个 ActivityBatchJob lease/fence，不允许直接从 controller 写 event。
+    @Optional() private readonly importPreviews?: AttendanceImportPreviewService,
   ) {}
 
   onApplicationShutdown(): Promise<void> {
@@ -168,6 +188,12 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
     };
     if (claimed.jobTypeCode === ACTIVITY_RECONCILIATION_JOB_TYPE) {
       return await this.processReconciliationJob(claimed, fence, now, jobsEnqueued);
+    }
+    if (claimed.jobTypeCode === ONSITE_BULK_PUNCH_JOB_TYPE) {
+      return await this.processOnsiteBulkPunchJob(claimed, fence, now, jobsEnqueued);
+    }
+    if (claimed.jobTypeCode === ATTENDANCE_IMPORT_EXECUTE_JOB_TYPE) {
+      return await this.processImportExecuteJob(claimed, fence, now, jobsEnqueued);
     }
     const items = await this.prisma.activityBatchJobItem.findMany({
       where: { jobId: claimed.id, statusCode: { not: 'succeeded' } },
@@ -365,7 +391,17 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
       const candidates = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         SELECT id
         FROM "ActivityBatchJob"
-        WHERE "jobTypeCode" IN (${LEDGER_PREPARE_JOB_TYPE}, ${ACTIVITY_RECONCILIATION_JOB_TYPE})
+        WHERE (
+          "jobTypeCode" IN (${LEDGER_PREPARE_JOB_TYPE}, ${ACTIVITY_RECONCILIATION_JOB_TYPE})
+          OR (
+            "jobTypeCode" = ${ONSITE_BULK_PUNCH_JOB_TYPE}
+            AND "payload"->>'action' = ${ONSITE_BULK_PUNCH_JOB_ACTION}
+          )
+          OR (
+            "jobTypeCode" = ${ATTENDANCE_IMPORT_EXECUTE_JOB_TYPE}
+            AND "payload"->>'action' = ${ATTENDANCE_IMPORT_EXECUTE_ACTION}
+          )
+        )
           AND "attempts" < ${ACTIVITY_BATCH_MAX_ATTEMPTS}
           AND (
             ("statusCode" = 'pending' AND "availableAt" <= ${now})
@@ -377,7 +413,11 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
         -- reconciliation job created in the preceding round must not change ledger's observable
         -- prepare/commit turn order.
         ORDER BY
-          CASE WHEN "jobTypeCode" = ${LEDGER_PREPARE_JOB_TYPE} THEN 0 ELSE 1 END ASC,
+          CASE
+            WHEN "jobTypeCode" = ${LEDGER_PREPARE_JOB_TYPE} THEN 0
+            WHEN "jobTypeCode" = ${ACTIVITY_RECONCILIATION_JOB_TYPE} THEN 1
+            ELSE 2
+          END ASC,
           "availableAt" ASC,
           "createdAt" ASC
         FOR UPDATE SKIP LOCKED
@@ -435,6 +475,192 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
           lastErrorCode,
         },
       });
+    }
+    await tx.$executeRaw(Prisma.sql`
+      UPDATE "ActivityBatchJob"
+      SET
+        "statusCode" = 'dead',
+        "completedAt" = ${now},
+        "leaseOwner" = NULL,
+        "leaseExpiresAt" = NULL,
+        "lastErrorCode" = 'ONSITE_BULK_PUNCH_MAX_ATTEMPTS_EXHAUSTED'
+      WHERE "jobTypeCode" = ${ONSITE_BULK_PUNCH_JOB_TYPE}
+        AND "payload"->>'action' = ${ONSITE_BULK_PUNCH_JOB_ACTION}
+        AND "statusCode" = 'processing'
+        AND "attempts" >= ${ACTIVITY_BATCH_MAX_ATTEMPTS}
+        AND "leaseExpiresAt" IS NOT NULL
+        AND "leaseExpiresAt" <= ${now}
+    `);
+    await tx.$executeRaw(Prisma.sql`
+      UPDATE "ActivityBatchJob"
+      SET
+        "statusCode" = 'dead',
+        "completedAt" = ${now},
+        "leaseOwner" = NULL,
+        "leaseExpiresAt" = NULL,
+        "lastErrorCode" = 'ATTENDANCE_IMPORT_EXECUTE_MAX_ATTEMPTS_EXHAUSTED'
+      WHERE "jobTypeCode" = ${ATTENDANCE_IMPORT_EXECUTE_JOB_TYPE}
+        AND "payload"->>'action' = ${ATTENDANCE_IMPORT_EXECUTE_ACTION}
+        AND "statusCode" = 'processing'
+        AND "attempts" >= ${ACTIVITY_BATCH_MAX_ATTEMPTS}
+        AND "leaseExpiresAt" IS NOT NULL
+        AND "leaseExpiresAt" <= ${now}
+    `);
+  }
+
+  private async processOnsiteBulkPunchJob(
+    claimed: {
+      id: string;
+      activityId: string;
+      leaseOwner: string;
+      leaseGeneration: number;
+    },
+    fence: OnsiteBulkPunchLeaseFence,
+    now: Date,
+    jobsEnqueued: number,
+  ): Promise<ActivityBatchDrainResult> {
+    if (this.onsiteBulkPunches === undefined) {
+      await this.releaseOnsiteBulkForRetry(
+        claimed.id,
+        fence,
+        now,
+        new Error('AttendanceOnsiteBatchJobHandlerUnavailable'),
+      );
+      return {
+        jobsEnqueued,
+        jobClaimed: true,
+        jobId: claimed.id,
+        itemsProcessed: 0,
+        itemsSkipped: 0,
+        itemsFailed: 1,
+        batchStatus: null,
+        commitAttempted: false,
+        commitErrorCode: 'AttendanceOnsiteBatchJobHandlerUnavailable',
+      };
+    }
+    try {
+      const result = await this.onsiteBulkPunches.processBulkPunchJob({
+        jobId: claimed.id,
+        activityId: claimed.activityId,
+        fence,
+      });
+      return {
+        jobsEnqueued,
+        jobClaimed: true,
+        jobId: claimed.id,
+        itemsProcessed: result.itemsProcessed,
+        itemsSkipped: result.itemsSkipped,
+        itemsFailed: result.itemsFailed,
+        batchStatus: null,
+        commitAttempted: false,
+        commitErrorCode: null,
+      };
+    } catch (error) {
+      if (error instanceof OnsiteBulkPunchLeaseLostError) {
+        this.logger.warn(`onsite bulk punch job ${claimed.id} lease lost, aborting round`);
+        return {
+          jobsEnqueued,
+          jobClaimed: true,
+          jobId: claimed.id,
+          itemsProcessed: 0,
+          itemsSkipped: 0,
+          itemsFailed: 0,
+          batchStatus: null,
+          commitAttempted: false,
+          commitErrorCode: null,
+        };
+      }
+      await this.releaseOnsiteBulkForRetry(claimed.id, fence, now, error);
+      this.logger.warn(`onsite bulk punch deferred job=${claimed.id} error=${errorName(error)}`);
+      return {
+        jobsEnqueued,
+        jobClaimed: true,
+        jobId: claimed.id,
+        itemsProcessed: 0,
+        itemsSkipped: 0,
+        itemsFailed: 1,
+        batchStatus: null,
+        commitAttempted: false,
+        commitErrorCode: errorName(error),
+      };
+    }
+  }
+
+  private async processImportExecuteJob(
+    claimed: {
+      id: string;
+      activityId: string;
+      leaseOwner: string;
+      leaseGeneration: number;
+    },
+    fence: AttendanceImportExecuteLeaseFence,
+    now: Date,
+    jobsEnqueued: number,
+  ): Promise<ActivityBatchDrainResult> {
+    if (this.importPreviews === undefined) {
+      await this.releaseImportExecuteForRetry(
+        claimed.id,
+        fence,
+        now,
+        new Error('AttendanceImportExecuteHandlerUnavailable'),
+      );
+      return {
+        jobsEnqueued,
+        jobClaimed: true,
+        jobId: claimed.id,
+        itemsProcessed: 0,
+        itemsSkipped: 0,
+        itemsFailed: 1,
+        batchStatus: null,
+        commitAttempted: false,
+        commitErrorCode: 'AttendanceImportExecuteHandlerUnavailable',
+      };
+    }
+    try {
+      const result = await this.importPreviews.processImportExecuteJob({
+        jobId: claimed.id,
+        activityId: claimed.activityId,
+        fence,
+      });
+      return {
+        jobsEnqueued,
+        jobClaimed: true,
+        jobId: claimed.id,
+        itemsProcessed: result.itemsProcessed,
+        itemsSkipped: result.itemsSkipped,
+        itemsFailed: result.itemsFailed,
+        batchStatus: null,
+        commitAttempted: false,
+        commitErrorCode: null,
+      };
+    } catch (error) {
+      if (error instanceof AttendanceImportExecuteLeaseLostError) {
+        this.logger.warn(`attendance import execute job ${claimed.id} lease lost, aborting round`);
+        return {
+          jobsEnqueued,
+          jobClaimed: true,
+          jobId: claimed.id,
+          itemsProcessed: 0,
+          itemsSkipped: 0,
+          itemsFailed: 0,
+          batchStatus: null,
+          commitAttempted: false,
+          commitErrorCode: null,
+        };
+      }
+      await this.releaseImportExecuteForRetry(claimed.id, fence, now, error);
+      this.logger.warn(`attendance import execute deferred job=${claimed.id} error=${errorName(error)}`);
+      return {
+        jobsEnqueued,
+        jobClaimed: true,
+        jobId: claimed.id,
+        itemsProcessed: 0,
+        itemsSkipped: 0,
+        itemsFailed: 1,
+        batchStatus: null,
+        commitAttempted: false,
+        commitErrorCode: errorName(error),
+      };
     }
   }
 
@@ -564,6 +790,60 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
         completedAt: null,
         lastErrorCode: errorName(error),
       },
+    });
+  }
+
+  /** B6 bulk must never release a newer holder or touch legacy settlement `bulk_proxy` jobs. */
+  private async releaseOnsiteBulkForRetry(
+    jobId: string,
+    fence: OnsiteBulkPunchLeaseFence,
+    now: Date,
+    error: unknown,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE "ActivityBatchJob"
+        SET
+          "statusCode" = 'pending',
+          "leaseOwner" = NULL,
+          "leaseExpiresAt" = NULL,
+          "availableAt" = ${new Date(now.getTime() + ACTIVITY_BATCH_RETRY_BACKOFF_MS)},
+          "completedAt" = NULL,
+          "lastErrorCode" = ${errorName(error)}
+        WHERE "id" = ${jobId}
+          AND "jobTypeCode" = ${ONSITE_BULK_PUNCH_JOB_TYPE}
+          AND "payload"->>'action' = ${ONSITE_BULK_PUNCH_JOB_ACTION}
+          AND "statusCode" = 'processing'
+          AND "leaseOwner" = ${fence.leaseOwner}
+          AND "leaseGeneration" = ${fence.leaseGeneration}
+      `);
+    });
+  }
+
+  /** B6 import execute must never release a newer holder or touch future import job families. */
+  private async releaseImportExecuteForRetry(
+    jobId: string,
+    fence: AttendanceImportExecuteLeaseFence,
+    now: Date,
+    error: unknown,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE "ActivityBatchJob"
+        SET
+          "statusCode" = 'pending',
+          "leaseOwner" = NULL,
+          "leaseExpiresAt" = NULL,
+          "availableAt" = ${new Date(now.getTime() + ACTIVITY_BATCH_RETRY_BACKOFF_MS)},
+          "completedAt" = NULL,
+          "lastErrorCode" = ${errorName(error)}
+        WHERE "id" = ${jobId}
+          AND "jobTypeCode" = ${ATTENDANCE_IMPORT_EXECUTE_JOB_TYPE}
+          AND "payload"->>'action' = ${ATTENDANCE_IMPORT_EXECUTE_ACTION}
+          AND "statusCode" = 'processing'
+          AND "leaseOwner" = ${fence.leaseOwner}
+          AND "leaseGeneration" = ${fence.leaseGeneration}
+      `);
     });
   }
 

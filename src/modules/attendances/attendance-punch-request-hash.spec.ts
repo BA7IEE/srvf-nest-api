@@ -1,5 +1,6 @@
 import {
   createAttendancePunchRequestHash,
+  createManagedOnlineAttendancePunchRequestHash,
   normalizeAttendancePunchReason,
   type AttendancePunchRequestHashInput,
 } from './attendance-punch-request-hash';
@@ -44,5 +45,55 @@ describe('attendance punch request hash', () => {
     expect(createAttendancePunchRequestHash({ ...base, ...mutation })).not.toBe(
       createAttendancePunchRequestHash(base),
     );
+  });
+});
+
+describe('managed online attendance punch request hash', () => {
+  const managed = {
+    activityId: 'activity-1',
+    sessionId: 'session-1',
+    actorUserId: 'operator-1',
+    participationIdentityId: 'identity-1',
+    actionCode: 'check_in' as const,
+    sourceCode: 'staff_scan' as const,
+    eventKey: 'event-1',
+    longitude: 116.1234567,
+    latitude: 39.1234567,
+    accuracy: 10,
+    reason: '  现场\n确认  ',
+  };
+
+  it('uses the B6 canonical payload, including the event key and normalized reason', () => {
+    expect(createManagedOnlineAttendancePunchRequestHash(managed)).toBe(
+      createManagedOnlineAttendancePunchRequestHash({ ...managed, reason: '现场 确认' }),
+    );
+  });
+
+  it.each([
+    ['event key', { eventKey: 'event-2' }],
+    ['actor', { actorUserId: 'operator-2' }],
+    ['identity', { participationIdentityId: 'identity-2' }],
+    ['location', { longitude: 116.1234566 }],
+  ])('mutation: changing %s changes the B6 managed request hash', (_name, mutation) => {
+    expect(createManagedOnlineAttendancePunchRequestHash({ ...managed, ...mutation })).not.toBe(
+      createManagedOnlineAttendancePunchRequestHash(managed),
+    );
+  });
+
+  it('binds a frozen historical time for import, without changing real-time staff hashes', () => {
+    const imported = {
+      ...managed,
+      sourceCode: 'import' as const,
+      occurredAt: new Date('2099-12-15T08:00:00.000Z'),
+    };
+    expect(
+      createManagedOnlineAttendancePunchRequestHash({
+        ...imported,
+        occurredAt: new Date('2099-12-15T08:00:01.000Z'),
+      }),
+    ).not.toBe(createManagedOnlineAttendancePunchRequestHash(imported));
+    expect(() =>
+      createManagedOnlineAttendancePunchRequestHash({ ...imported, occurredAt: null }),
+    ).toThrow('attendance import occurredAt is invalid');
   });
 });
