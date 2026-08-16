@@ -16,6 +16,7 @@ import type {
   StorageObjectLocator,
 } from '../storage/storage.types';
 import type { AttachmentAuditRecorder } from './attachment-audit-recorder';
+import type { AttachmentManualRelocateService } from './attachment-manual-relocate.service';
 import type { AttachmentContentValidator } from './attachment-content-validator';
 import type {
   AttachmentUploadStorageIdentity,
@@ -186,6 +187,7 @@ function harness(options: { strict?: boolean; head?: HeadObjectResult; headError
     ledger,
     {} as AttachmentContentValidator,
     {} as AttachmentAuditRecorder,
+    {} as AttachmentManualRelocateService,
     provider,
   );
   const promote = jest
@@ -307,6 +309,7 @@ describe('AttachmentStorageOrchestrator multipart boundary', () => {
       {} as StorageObjectLedgerService,
       { validateFromBuffer } as unknown as AttachmentContentValidator,
       {} as AttachmentAuditRecorder,
+      {} as AttachmentManualRelocateService,
       {
         getCurrentLocator: jest.fn(),
         putObjectAt,
@@ -490,6 +493,7 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
       ledger,
       {} as AttachmentContentValidator,
       auditRecorder,
+      {} as AttachmentManualRelocateService,
       {} as PinnedStorageProvider,
     );
     return { orchestrator, tx, logUploadConfirmed };
@@ -509,6 +513,7 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
       ledger,
       {} as AttachmentContentValidator,
       {} as AttachmentAuditRecorder,
+      {} as AttachmentManualRelocateService,
       provider,
     );
 
@@ -551,6 +556,7 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
         ledger,
         {} as AttachmentContentValidator,
         {} as AttachmentAuditRecorder,
+        {} as AttachmentManualRelocateService,
         {} as PinnedStorageProvider,
       );
       const tx = {} as Prisma.TransactionClient;
@@ -613,6 +619,7 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
       ledger,
       { validateFromObjectAt } as unknown as AttachmentContentValidator,
       {} as AttachmentAuditRecorder,
+      {} as AttachmentManualRelocateService,
       {} as PinnedStorageProvider,
     );
 
@@ -820,6 +827,7 @@ describe('AttachmentStorageOrchestrator Content publish storage boundary', () =>
       {} as StorageObjectLedgerService,
       contentValidator,
       auditRecorder,
+      {} as AttachmentManualRelocateService,
       provider,
     );
     return {
