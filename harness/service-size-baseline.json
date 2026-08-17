@@ -77,11 +77,6 @@
       "domain": "activity-registrations"
     },
     {
-      "file": "src/modules/attachments/attachment-storage-orchestrator.ts",
-      "loc": 1107,
-      "domain": "attachments"
-    },
-    {
       "file": "src/modules/attachments/attachments.service.ts",
       "loc": 1781,
       "domain": "attachments"
