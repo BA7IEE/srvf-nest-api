@@ -3515,14 +3515,19 @@ async function runTrustedJudgeAssertions(): Promise<void> {
               'head',
             );
         };
-        const throws = (fn: () => unknown): boolean => {
+        // ⚠️ 只断言「抛了」是不够的:变异对拍实测,把 kind 校验整条删掉之后,
+        // 未知 kind 会走到 `RATCHET_KINDS[kind]` = undefined,`for...of undefined`
+        // 抛 TypeError —— 于是「抛了」照样成立,用例全绿而闸已经没了。
+        // 故断言必须认**这条闸自己的错误**,而不是"某处炸了"。
+        const throwsWith = (fn: () => unknown, needle: string): boolean => {
           try {
             fn();
             return false;
-          } catch {
-            return true;
+          } catch (err) {
+            return String(err).includes(needle);
           }
         };
+        const throws = (fn: () => unknown): boolean => throwsWith(fn, '');
 
         check(
           'F3 kind:省略 kind → 按 eslint-exempt 解析(既有三条一个字节都不用改)',
@@ -3552,9 +3557,10 @@ async function runTrustedJudgeAssertions(): Promise<void> {
           '同上:数值型没有 symbol,带上它只会让人以为它参与集合判定',
         );
         check(
-          'F3 kind:未知 kind → 抛(不许静默落进默认形态)',
-          throws(regKind({ kind: 'whatever', metric: 'loc' })),
-          '静默落默认 = 一个拼错的 kind 让数值型被当成 eslint 型判,而它的基线里没有 symbol',
+          'F3 kind:未知 kind → 抛**且报的是 kind 未知**(不许静默落进默认形态)',
+          throwsWith(regKind({ kind: 'whatever', metric: 'loc' }), 'kind 未知'),
+          '静默落默认 = 一个拼错的 kind 让数值型被当成 eslint 型判,而它的基线里没有 symbol;' +
+            '⚠️ 断言必须认这条闸自己的错误 —— 删掉它之后 for...of undefined 同样会抛,只断言「抛了」会全绿',
         );
         check(
           'F3 kind:⚠️ **翻 kind** → 判 mutated(换掉判它的那套判据)',
