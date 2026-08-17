@@ -72,18 +72,13 @@
       "domain": "attendances"
     },
     {
-      "file": "src/modules/attendances/attendance-offline-package.service.ts",
-      "loc": 1373,
-      "domain": "attendances"
-    },
-    {
       "file": "src/modules/attendances/attendance-onsite-batch-job.service.ts",
       "loc": 807,
       "domain": "attendances"
     },
     {
       "file": "src/modules/attendances/attendance-punch-command.service.ts",
-      "loc": 1504,
+      "loc": 1294,
       "domain": "attendances"
     },
     {
