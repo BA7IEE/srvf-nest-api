@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { MemberStatus, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -10,27 +10,30 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
-import { hasActivityCapacity } from '../activities/activity-capacity';
 import { promoteActivityWaitlistWithinCapacity } from '../activities/activity-waitlist-promotion';
-import {
-  InsuranceRequirementService,
-  type InsuranceEligibilityDecision,
-} from '../insurances/insurance-requirement.service';
-import { assertActiveMemberLifecycle } from '../members/member-lifecycle-lock';
+import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { RbacService } from '../permissions/rbac.service';
 import { AuthzService } from '../authz/authz.service';
-import type { ResourceRef } from '../authz/authz.types';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import { ActivityAllocationService } from './activity-allocation.service';
 import { ActivityRegistrationLifecycleService } from './activity-registration-lifecycle.service';
-import {
-  ActivityQualificationEvaluatorService,
-  type ActivityQualificationEvaluation,
-  type ActivityQualificationTarget,
-} from './activity-qualification-evaluator.service';
+import { ActivityQualificationEvaluatorService } from './activity-qualification-evaluator.service';
 import { ActivityRegistrationNotificationProducer } from './activity-registration-notification-producer';
+import {
+  ActivityRegistrationAccessService,
+  REGISTRATION_STATUS_PASS,
+  RegistrationAuthorization,
+  registrationSafeSelect,
+} from './activity-registration-access.service';
+
+// 类型面逐字不变:RegistrationAuthorization 随共享层迁走,但既有消费者
+// (bulk / lifecycle / controller 等)仍从本 service import —— 在此 re-export,
+// 让「实现搬家」不外溢成「消费者改 import」。
+export type { RegistrationAuthorization } from './activity-registration-access.service';
+import { ActivityRegistrationCreateService } from './activity-registration-create.service';
 import { ActivityRegistrationPresenter } from './activity-registration-presenter';
+import { ActivityRegistrationReviewService } from './activity-registration-review.service';
 import { ActivityRegistrationQueryService } from './activity-registration-query.service';
 import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
 import { ActivityRegistrationWaitlistQueryService } from './activity-registration-waitlist-query.service';
@@ -38,14 +41,10 @@ import {
   ActivityRegistrationListItemDto,
   ActivityRegistrationResponseDto,
   AdminRegistrationListItemDto,
-  ApproveRegistrationDto,
   CancelRegistrationDto,
-  CreateMyRegistrationDto,
-  CreateRegistrationDto,
   ExportRegistrationsQueryDto,
   ListMyRegistrationsQueryDto,
   ListRegistrationsQueryDto,
-  RejectRegistrationDto,
 } from './activity-registrations.dto';
 
 // V2 第一阶段批次 3A activity-registrations service。
@@ -81,57 +80,17 @@ import {
 // `exportCsv` 复用 registration.review,并在返回 generator 前 fail-closed 落库;generator 内不再
 // 尾置审计,确保审计失败时 controller 尚未获得 stream、首字节尚未发送。
 
-const REGISTRATION_STATUS_PENDING = 'pending';
-const REGISTRATION_STATUS_PASS = 'pass';
-const REGISTRATION_STATUS_CANCELLED = 'cancelled';
-const REGISTRATION_STATUS_WAITLISTED = 'waitlisted';
-
-const registrationSafeSelect = {
-  id: true,
-  activityId: true,
-  activityPositionId: true,
-  memberId: true,
-  statusCode: true,
-  registeredAt: true,
-  reviewedBy: true,
-  reviewedAt: true,
-  reviewNote: true,
-  extras: true,
-  cancelledByUserId: true,
-  cancelledAt: true,
-  cancelReason: true,
-  createdAt: true,
-  updatedAt: true,
-  currentRevision: true,
-} as const satisfies Prisma.ActivityRegistrationSelect;
-
-type RegistrationFullRow = Prisma.ActivityRegistrationGetPayload<{
-  select: typeof registrationSafeSelect;
-}>;
-type PrismaTx = Prisma.TransactionClient;
-export type RegistrationAuthorization = 'authz' | 'managed';
-
-type LockedLegacyRegistrationHead = {
-  id: string;
-  statusCode: string;
-  currentRevision: number;
-  deletedAt: Date | null;
-};
-
-type ReviewQualificationContext = {
-  registrationRevisionId: string | null;
-  targets: ActivityQualificationTarget[];
-  identityIdBySession: Map<string, string>;
-  identityCount: number;
-  preferenceCount: number;
-};
-
 @Injectable()
 export class ActivityRegistrationsService {
   private readonly logger = new Logger(ActivityRegistrationsService.name);
 
   constructor(
     private readonly prisma: PrismaService,
+    // 第三域第二刀:多段共用的前置(判权 / managed 校验 / 聚合根锁 / 回读)。
+    private readonly access: ActivityRegistrationAccessService,
+    // 建单与审批的实现持有者;本 service 仅保留同名薄委托作为唯一对外入口。
+    private readonly creates: ActivityRegistrationCreateService,
+    private readonly reviews: ActivityRegistrationReviewService,
     private readonly registrationAuditRecorder: ActivityRegistrationAuditRecorder,
     private readonly registrationStateMachine: ActivityRegistrationStateMachine,
     private readonly auditLogs: AuditLogsService,
@@ -162,57 +121,6 @@ export class ActivityRegistrationsService {
 
   // ============ helpers ============
 
-  // Slow-4 T3(2026-06-11,评审稿 §3.6 / D-S4-8)起点;终态 scoped-authz PR12(2026-07-02;
-  // 冻结稿 §11 + 决断①②)升级:判权走 authz.explain,ref 矩阵——
-  //   - list / exportCsv(嵌套 :activityId)传 {type:'activity', id: activityId} 父 ref
-  //   - approve / reject / cancelAdmin 传 {type:'activity_registration', id}(点动作)
-  //   - create(代报名)无 ref(GLOBAL-only)
-  //   - listAllForAdmin 通过 getVisibleOrganizationScope 下推活动所属组织范围
-  //   - listForMemberAdmin 传 {type:'member', id: memberId}(成员主归属点授权)
-  // NOT_FOUND 回退沿 PR9 范式:resource_not_found 时退回 rbac.can 全局码判定——持码者 return
-  // (交回调用方后续 findActivityOrThrow / findRegistrationOrThrow 抛既有 NOT_FOUND,「先判权后查
-  // 资源」行为锁不变),无码者 30100 防枚举。管理端 8 端点第一条语句调用;list / exportCsv 共用 read
-  // (D4=A 判例)。App 自助端点(createMy/listMy/findMy/cancelMy)不走本 helper,self-scope 不变。
-  private async assertCanOrThrow(
-    user: CurrentUserPayload,
-    action: string,
-    ref?: ResourceRef,
-  ): Promise<void> {
-    const decision = await this.authz.explain(user, action, ref);
-    if (decision.allow) return;
-    if (ref && decision.reason === 'resource_not_found' && (await this.rbac.can(user, action))) {
-      return;
-    }
-    throw new BizException(BizCode.RBAC_FORBIDDEN);
-  }
-
-  private async assertManagedRegistrationAccess(
-    activityId: string,
-    currentUser: CurrentUserPayload,
-    tx?: PrismaTx,
-  ): Promise<void> {
-    if (!currentUser.memberId) {
-      throw new BizException(BizCode.RBAC_FORBIDDEN);
-    }
-    const activity = await (tx ?? this.prisma).activity.findFirst({
-      where: {
-        id: activityId,
-        deletedAt: null,
-        responsibilityAssignments: {
-          some: {
-            memberId: currentUser.memberId,
-            status: 'active',
-            canManageRegistrations: true,
-          },
-        },
-      },
-      select: { id: true },
-    });
-    if (!activity) {
-      throw new BizException(BizCode.RBAC_FORBIDDEN);
-    }
-  }
-
   // v0.49:扁平报名工作台按 activity.organizationId 下推授权范围；用户显式组织筛选
   // 与授权组织集合取交集。GLOBAL 且无筛选时保持旧查询，不额外加 where。
   private async resolveVisibleOrganizationIds(
@@ -242,582 +150,40 @@ export class ActivityRegistrationsService {
     return requestedOrgIds.filter((id) => visibleOrgIds.has(id));
   }
 
-  // 找 activity 并校验存在(创建报名 / 列表 / 导出 / capacity 复核共用)。
-  // 保险 T3:select 扩展 requiresInsurance / startAt / endAt 三字段供报名门槛断言复用
-  // (不另发查询;评审稿 insurance-module-review.md §4 第 3 条),既有调用方语义不变(返回超集)。
-  private async findActivityOrThrow(
-    activityId: string,
-    tx?: PrismaTx,
-  ): Promise<{
-    id: string;
-    statusCode: string;
-    isPublicRegistration: boolean;
-    capacity: number | null;
-    requiresInsurance: boolean;
-    startAt: Date;
-    endAt: Date;
-    registrationDeadline: Date | null;
-    genderRequirementCode: string | null;
-  }> {
-    const client = tx ?? this.prisma;
-    const act = await client.activity.findFirst({
-      where: notDeletedWhere({ id: activityId }),
-      select: {
-        id: true,
-        statusCode: true,
-        isPublicRegistration: true,
-        capacity: true,
-        requiresInsurance: true,
-        startAt: true,
-        endAt: true,
-        // 活动闭环硬化(2026-06-21):报名截止闸取数(assertActivityRegistrable 读;
-        // approve 不读,既有调用方零回归,返回超集)。
-        registrationDeadline: true,
-        genderRequirementCode: true,
-      },
-    });
-    if (!act) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-    return act;
-  }
-
-  // 找 registration 并校验存在(管理端 approve / reject / cancel 共用)。
-  private async findRegistrationOrThrow(
-    activityId: string,
-    id: string,
-    tx?: PrismaTx,
-  ): Promise<RegistrationFullRow> {
-    const client = tx ?? this.prisma;
-    const reg = await client.activityRegistration.findFirst({
-      where: notDeletedWhere({ id }),
-      select: registrationSafeSelect,
-    });
-    if (!reg || reg.activityId !== activityId) {
-      // 跨 activity 访问统一抛 ACTIVITY_REGISTRATION_NOT_FOUND → 404
-      // (避免存在性泄漏)
-      throw new BizException(BizCode.ACTIVITY_REGISTRATION_NOT_FOUND);
-    }
-    return reg;
-  }
-
-  // 找队员端 USER 的 memberId(必须绑定,否则视作"无队员身份")。
-  private async resolveUserMemberIdOrThrow(userId: string, tx?: PrismaTx): Promise<string> {
-    const client = tx ?? this.prisma;
-    const u = await client.user.findFirst({
-      where: notDeletedWhere({ id: userId }),
-      select: { memberId: true },
-    });
-    if (!u || u.memberId === null) {
-      // 用户未关联队员:沿 v2 通用语义,返 MEMBER_NOT_FOUND(15001)。
-      throw new BizException(BizCode.MEMBER_NOT_FOUND);
-    }
-    return u.memberId;
-  }
-
-  // 无锁预读只负责稳定错误优先级；真正防 offboard 竞态的排他锁必须在写入前再次取得。
-  // create 的最终锁刻意放在 insurance source 锁之后：team source 的全仓既有顺序是
-  // Policy → Coverage → Member，若这里先锁 Member 会与 team coverage writer 形成反向边。
-  private async assertMemberActiveSnapshot(memberId: string, tx: PrismaTx): Promise<void> {
-    const member = await tx.member.findUnique({
-      where: { id: memberId },
-      select: { status: true, deletedAt: true },
-    });
-    if (!member || member.deletedAt !== null) {
-      throw new BizException(BizCode.MEMBER_NOT_FOUND);
-    }
-    if (member.status !== MemberStatus.ACTIVE) {
-      throw new BizException(BizCode.MEMBER_INACTIVE);
-    }
-  }
-
-  // 报名前的 Activity 状态 / 公开性 / 名额校验。
-  private async assertActivityRegistrable(
-    activityId: string,
-    path: 'admin' | 'self',
-    tx: PrismaTx,
-  ): Promise<{
-    id: string;
-    capacity: number | null;
-    requiresInsurance: boolean;
-    startAt: Date;
-    endAt: Date;
-    genderRequirementCode: string | null;
-  }> {
-    const act = await this.findActivityOrThrow(activityId, tx);
-    const decision =
-      path === 'self'
-        ? this.activityParticipationPolicy.canRegisterSelf(act)
-        : this.activityParticipationPolicy.canRegisterByAdmin(act);
-    if (!decision.allowed) throw new BizException(decision.biz);
-    // 保险 T3:透传门槛三字段给 create()/createMy() 的 assertMemberInsuredForActivity(E-10)
-    return {
-      id: act.id,
-      capacity: act.capacity,
-      requiresInsurance: act.requiresInsurance,
-      startAt: act.startAt,
-      endAt: act.endAt,
-      genderRequirementCode: act.genderRequirementCode,
-    };
-  }
-
-  // registration create 与 approve / pass cancel / 岗位写侧统一使用 Activity 聚合锁。
-  // 锁必须先于 Activity / ActivityPosition / passCount 基线读取，避免 create 使用陈旧容量
-  // 落入 waitlisted，或在岗位软删提交后继续插入指向已删岗位的 active registration。
-  private async lockActivityForRegistrationCreate(activityId: string, tx: PrismaTx): Promise<void> {
-    const locked = await tx.$queryRaw<Array<{ id: string }>>`
-      SELECT id FROM "Activity"
-      WHERE id = ${activityId} AND "deletedAt" IS NULL
-      FOR UPDATE
-    `;
-    if (locked.length === 0) {
-      throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-    }
-  }
-
-  // v1.1 canonical command owns Form answers, permanent participation identities and final file
-  // binding.  Legacy App/Admin creation remains byte-for-byte available for old activities, but it
-  // must not create a bypass once either v1.1 runtime prerequisite is live.
-  private async assertLegacyRegistrationFlowAllowed(
-    activityId: string,
-    tx: PrismaTx,
-  ): Promise<void> {
-    const [liveSession, activeForm, activeScopedRuleSet] = await Promise.all([
-      tx.activitySession.findFirst({
-        where: { activityId, deletedAt: null, statusCode: 'scheduled' },
-        select: { id: true },
-      }),
-      tx.registrationFormVersion.findFirst({
-        where: { activityId, statusCode: 'active' },
-        select: { id: true },
-      }),
-      tx.activityQualificationRuleSet.findFirst({
-        where: {
-          activityId,
-          statusCode: 'active',
-          OR: [{ sessionId: { not: null } }, { positionId: { not: null } }],
-        },
-        select: { id: true },
-      }),
-    ]);
-    if (liveSession || activeForm || activeScopedRuleSet) {
-      throw new BizException(BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED);
-    }
-  }
-
-  private async assertGenderRequirement(
-    memberId: string,
-    genderRequirementCode: string | null,
-    tx: PrismaTx,
-  ): Promise<void> {
-    if (genderRequirementCode === null || genderRequirementCode === 'any') return;
-    const profile = await tx.memberProfile.findFirst({
-      where: notDeletedWhere({ memberId }),
-      select: { genderCode: true },
-    });
-    if (!profile || profile.genderCode !== genderRequirementCode) {
-      throw new BizException(BizCode.ACTIVITY_REGISTRATION_GENDER_MISMATCH);
-    }
-  }
-
-  private async resolveActivityPositionForCreate(
-    activityId: string,
-    activityPositionId: string | undefined,
-    tx: PrismaTx,
-  ): Promise<{
-    id: string;
-    capacity: number | null;
-    genderRequirementCode: string | null;
-  } | null> {
-    const activityPositions = await tx.activityPosition.findMany({
-      where: { activityId, deletedAt: null },
-      select: { id: true, capacity: true, genderRequirementCode: true },
-    });
-    if (activityPositions.length === 0) {
-      if (activityPositionId !== undefined) {
-        throw new BizException(BizCode.ACTIVITY_POSITION_NOT_FOUND);
-      }
-      return null;
-    }
-    if (activityPositionId === undefined) {
-      throw new BizException(BizCode.ACTIVITY_POSITION_REQUIRED);
-    }
-    const activityPosition = activityPositions.find(
-      (candidateActivityPosition) => candidateActivityPosition.id === activityPositionId,
-    );
-    if (activityPosition === undefined) {
-      throw new BizException(BizCode.ACTIVITY_POSITION_NOT_FOUND);
-    }
-    return activityPosition;
-  }
-
-  private async resolveApproveCapacity(
-    activityId: string,
-    activityPositionId: string | null,
-    activityCapacity: number | null,
-    tx: PrismaTx,
-  ): Promise<number | null> {
-    if (activityPositionId !== null) {
-      const activityPosition = await tx.activityPosition.findFirst({
-        where: { id: activityPositionId, activityId, deletedAt: null },
-        select: { capacity: true },
-      });
-      if (activityPosition === null) {
-        throw new BizException(BizCode.ACTIVITY_POSITION_NOT_FOUND);
-      }
-      return activityPosition.capacity;
-    }
-
-    const liveActivityPosition = await tx.activityPosition.findFirst({
-      where: { activityId, deletedAt: null },
-      select: { id: true },
-    });
-    // P4：活动已存在岗位时，历史 null 岗位报名也不能再回退使用 Activity.capacity 判闸。
-    return liveActivityPosition === null ? activityCapacity : null;
-  }
-
-  // capacity 复核(create / approve 共用)。pass 占名额(决议表 Q-D17)。
-  private async assertCapacityNotExceeded(
-    activityId: string,
-    activityPositionId: string | null,
-    activityCapacity: number | null,
-    activityPositionCapacity: number | null,
-    tx: PrismaTx,
-  ): Promise<void> {
-    if (activityCapacity === null && activityPositionCapacity === null) return;
-    const [activityPassCount, activityPositionPassCount] = await Promise.all([
-      tx.activityRegistration.count({
-        where: notDeletedWhere({ activityId, statusCode: REGISTRATION_STATUS_PASS }),
-      }),
-      tx.activityRegistration.count({
-        where: notDeletedWhere({
-          activityId,
-          activityPositionId,
-          statusCode: REGISTRATION_STATUS_PASS,
-        }),
-      }),
-    ]);
-    if (
-      !hasActivityCapacity({
-        activityCapacity,
-        activityPassCount,
-        activityPositionCapacity,
-        activityPositionPassCount,
-      })
-    ) {
-      throw new BizException(BizCode.ACTIVITY_CAPACITY_EXCEEDED);
-    }
-  }
-
-  // create 专用状态分流：全部既有报名闸通过后，按 passCount 与 capacity 决定 pending/waitlisted。
-  // 刻意不复用 assertCapacityNotExceeded，确保 approve 的容量闸与 FOR UPDATE 调用逐字不动。
-  private async resolveCreateStatusCode(
-    activityId: string,
-    activityPositionId: string | null,
-    activityCapacity: number | null,
-    activityPositionCapacity: number | null,
-    tx: PrismaTx,
-  ): Promise<typeof REGISTRATION_STATUS_PENDING | typeof REGISTRATION_STATUS_WAITLISTED> {
-    if (activityCapacity === null && activityPositionCapacity === null) {
-      return REGISTRATION_STATUS_PENDING;
-    }
-    const [activityPassCount, activityPositionPassCount] = await Promise.all([
-      tx.activityRegistration.count({
-        where: notDeletedWhere({ activityId, statusCode: REGISTRATION_STATUS_PASS }),
-      }),
-      tx.activityRegistration.count({
-        where: notDeletedWhere({
-          activityId,
-          activityPositionId,
-          statusCode: REGISTRATION_STATUS_PASS,
-        }),
-      }),
-    ]);
-    return hasActivityCapacity({
-      activityCapacity,
-      activityPassCount,
-      activityPositionCapacity,
-      activityPositionPassCount,
-    })
-      ? REGISTRATION_STATUS_PENDING
-      : REGISTRATION_STATUS_WAITLISTED;
-  }
-
-  private async lockLegacyRegistrationHeadForCreate(
-    activityId: string,
-    memberId: string,
-    tx: PrismaTx,
-  ): Promise<LockedLegacyRegistrationHead | null> {
-    const rows = await tx.$queryRaw<LockedLegacyRegistrationHead[]>(Prisma.sql`
-      SELECT "id", "statusCode", "currentRevision", "deletedAt"
-      FROM "ActivityRegistration"
-      WHERE "activityId" = ${activityId} AND "memberId" = ${memberId}
-      ORDER BY "createdAt" ASC, "id" ASC
-      FOR UPDATE
-    `);
-    if (rows.length > 1) {
-      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
-    }
-    const existing = rows[0] ?? null;
-    const identities = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT "id"
-      FROM "ActivityParticipationIdentity"
-      WHERE "activityId" = ${activityId} AND "memberId" = ${memberId}
-      ORDER BY "id" ASC
-      FOR UPDATE
-    `);
-    if (existing === null) {
-      if (identities.length > 0) {
-        throw new BizException(BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED);
-      }
-      return null;
-    }
-    if (
-      existing.deletedAt !== null ||
-      (existing.statusCode !== REGISTRATION_STATUS_CANCELLED && existing.statusCode !== 'reject')
-    ) {
-      throw new BizException(BizCode.ACTIVITY_REGISTRATION_ALREADY_EXISTS);
-    }
-    if (identities.length > 0) {
-      throw new BizException(BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED);
-    }
-    return existing;
-  }
-
-  private async persistLegacyRegistrationSubmission(input: {
-    tx: PrismaTx;
-    activityId: string;
-    memberId: string;
-    activityPositionId: string | null;
-    statusCode: typeof REGISTRATION_STATUS_PENDING | typeof REGISTRATION_STATUS_WAITLISTED;
-    extras: Record<string, unknown> | undefined;
-    sourceCode: 'admin' | 'self';
-    submittedByUserId: string;
-    insuranceEligibility: InsuranceEligibilityDecision | null;
-    reusableHead: LockedLegacyRegistrationHead | null;
-  }): Promise<RegistrationFullRow> {
-    const submittedAt = new Date();
-    const header =
-      input.reusableHead ??
-      (await this.runWithUniqueConstraintGuard(() =>
-        input.tx.activityRegistration.create({
-          data: {
-            activityId: input.activityId,
-            activityPositionId: input.activityPositionId,
-            memberId: input.memberId,
-            statusCode: input.statusCode,
-            currentRevision: 0,
-            currentFormVersionId: null,
-            statusSummaryCode: 'active',
-            sourceCode: input.sourceCode,
-            ...(input.extras !== undefined
-              ? { extras: input.extras as Prisma.InputJsonValue }
-              : {}),
-          },
-          select: { id: true, currentRevision: true },
-        }),
-      ));
-
-    const previousRevision =
-      header.currentRevision > 0
-        ? await input.tx.activityRegistrationRevision.findFirst({
-            where: { registrationId: header.id, revision: header.currentRevision },
-            select: { id: true },
-          })
-        : null;
-    if (header.currentRevision > 0 && previousRevision === null) {
-      throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
-    }
-
-    const revisionNumber = header.currentRevision + 1;
-    const revision = await input.tx.activityRegistrationRevision.create({
-      data: {
-        registrationId: header.id,
-        revision: revisionNumber,
-        formVersionId: null,
-        answersHash: null,
-        sourceCode: input.sourceCode,
-        submittedByUserId: input.submittedByUserId,
-        submittedAt,
-        priorRevisionId: previousRevision?.id ?? null,
-      },
-      select: { id: true },
-    });
-    await this.insuranceRequirement.createActivityRegistrationEvidence(
-      header.id,
-      revision.id,
-      input.memberId,
-      input.insuranceEligibility,
-      input.tx,
-    );
-    const updated = await input.tx.activityRegistration.updateMany({
-      where: { id: header.id, currentRevision: header.currentRevision },
-      data: {
-        activityPositionId: input.activityPositionId,
-        statusCode: input.statusCode,
-        registeredAt: submittedAt,
-        extras:
-          input.extras === undefined ? Prisma.JsonNull : (input.extras as Prisma.InputJsonValue),
-        reviewedBy: null,
-        reviewedAt: null,
-        reviewNote: null,
-        cancelledByUserId: null,
-        cancelledAt: null,
-        cancelReason: null,
-        currentRevision: revisionNumber,
-        currentFormVersionId: null,
-        statusSummaryCode: 'active',
-        sourceCode: input.sourceCode,
-      },
-    });
-    if (updated.count !== 1) {
-      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
-    }
-    return this.findRegistrationOrThrow(input.activityId, header.id, input.tx);
-  }
-
-  private async appendLegacyQualificationSnapshots(input: {
-    tx: PrismaTx;
-    registrationId: string;
-    revision: number;
-    evaluation: ActivityQualificationEvaluation;
-  }): Promise<void> {
-    if (input.evaluation.snapshotCandidates.length === 0) return;
-    const registrationRevision = await input.tx.activityRegistrationRevision.findFirst({
-      where: { registrationId: input.registrationId, revision: input.revision },
-      select: { id: true },
-    });
-    if (registrationRevision === null) {
-      throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
-    }
-    await this.qualificationEvaluator.appendSnapshots({
-      evaluation: input.evaluation,
-      phase: 'submit',
-      registrationRevisionId: registrationRevision.id,
-      tx: input.tx,
-    });
-  }
-
-  private async evaluateQualificationForApproval(
-    tx: PrismaTx,
-    activity: { id: string; startAt: Date; endAt: Date },
-    registration: Pick<RegistrationFullRow, 'id' | 'memberId' | 'currentRevision'>,
-    hasActiveScopedRuleSet: boolean,
-  ): Promise<{ context: ReviewQualificationContext; evaluation: ActivityQualificationEvaluation }> {
-    const context = await this.buildReviewQualificationContext(tx, activity.id, registration);
-    // A pre-v1.1 legacy head has neither a permanent session identity nor a recorded preference.
-    // Once a scoped RuleSet exists, inferring either target would silently weaken that RuleSet.
-    // Activity-only rules remain evaluable for those historical heads.
-    if (hasActiveScopedRuleSet && context.identityCount === 0 && context.preferenceCount === 0) {
-      throw new BizException(BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED);
-    }
-    const evaluation = await this.qualificationEvaluator.evaluate({
-      activity,
-      memberId: registration.memberId,
-      targets: context.targets,
-      tx,
-    });
-    this.qualificationEvaluator.assertNoBlock(evaluation);
-    return { context, evaluation };
-  }
-
-  private async buildReviewQualificationContext(
-    tx: PrismaTx,
-    activityId: string,
-    registration: Pick<RegistrationFullRow, 'id' | 'currentRevision'>,
-  ): Promise<ReviewQualificationContext> {
-    let registrationRevisionId: string | null = null;
-    if (registration.currentRevision > 0) {
-      const revisions = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-        SELECT "id"
-        FROM "ActivityRegistrationRevision"
-        WHERE "registrationId" = ${registration.id}
-          AND "revision" = ${registration.currentRevision}
-        FOR SHARE
-      `);
-      if (revisions.length !== 1 || !revisions[0]) {
-        throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
-      }
-      registrationRevisionId = revisions[0].id;
-    }
-    const identities = await tx.$queryRaw<
-      Array<{ id: string; sessionId: string; currentStatusCode: string }>
-    >(Prisma.sql`
-      SELECT "id", "sessionId", "currentStatusCode"
-      FROM "ActivityParticipationIdentity"
-      WHERE "activityId" = ${activityId}
-        AND "registrationId" = ${registration.id}
-      ORDER BY "id" ASC
-      FOR UPDATE
-    `);
-    const identityIdBySession = new Map<string, string>();
-    for (const identity of identities) {
-      if (identityIdBySession.has(identity.sessionId)) {
-        throw new BizException(BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID);
-      }
-      if (identity.currentStatusCode !== 'cancelled' && identity.currentStatusCode !== 'rejected') {
-        identityIdBySession.set(identity.sessionId, identity.id);
-      }
-    }
-    const preferenceRows =
-      registrationRevisionId === null
-        ? []
-        : await tx.$queryRaw<Array<{ sessionId: string; positionId: string }>>(Prisma.sql`
-            SELECT "sessionId", "positionId"
-            FROM "ActivityPositionPreference"
-            WHERE "registrationRevisionId" = ${registrationRevisionId}
-            ORDER BY "sessionId" ASC, "preferenceOrder" ASC, "positionId" ASC
-            FOR SHARE
-          `);
-    const targets: ActivityQualificationTarget[] = [...identityIdBySession.keys()]
-      .sort()
-      .map((sessionId) => ({ sessionId, positionId: null }));
-    for (const preference of preferenceRows) {
-      if (!identityIdBySession.has(preference.sessionId)) {
-        throw new BizException(BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID);
-      }
-      targets.push({ sessionId: preference.sessionId, positionId: preference.positionId });
-    }
-    return {
-      registrationRevisionId,
-      targets,
-      identityIdBySession,
-      identityCount: identities.length,
-      preferenceCount: preferenceRows.length,
-    };
-  }
-
-  // 参与域生命周期收口⑦(v0.40.0):已有参与证据的报名禁取消守卫。cancelAdmin + cancelMy 两路共用。
-  // 直连 prisma 查 AttendanceRecord / ActivityCheckIn 的 registrationId 反向引用(未软删)
-  // ——**不引 attendances service**(防跨模块环:attendances → activity-registration 是既有单向依赖,
-  // 反向会成环)。任一存在即拒;
-  // 不做贡献值回滚(贡献值属考勤域;撤销参与先走考勤面处理记录,报名取消自然解锁)。
-  private async assertNoParticipationEvidence(registrationId: string, tx: PrismaTx): Promise<void> {
-    const attendanceCount = await tx.attendanceRecord.count({
-      where: { registrationId, deletedAt: null },
-    });
-    if (attendanceCount > 0) {
-      throw new BizException(BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE);
-    }
-    const checkInCount = await tx.activityCheckIn.count({
-      where: { registrationId, deletedAt: null },
-    });
-    if (checkInCount > 0) {
-      throw new BizException(BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE);
-    }
-  }
-
   // P2002 兜底：并发首建仍稳定映射 21002；cancelled/reject 历史头在上方锁内直接复用。
-  private async runWithUniqueConstraintGuard<T>(fn: () => Promise<T>): Promise<T> {
-    try {
-      return await fn();
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        throw new BizException(BizCode.ACTIVITY_REGISTRATION_ALREADY_EXISTS);
-      }
-      throw err;
-    }
-  }
 
   // ============ 管理端:list ============
+
+  // ============ 建单 / 审批:薄委托(Phase 6-B 第三域第二刀)============
+  //
+  // 实现已迁至 activity-registration-create.service.ts / -review.service.ts
+  // (仅"搬家":判权 / 锁序 / 容量裁决 / 状态机 / 审计 / 通知 intent 逐字不变)。
+  // 本 service 仍是本模块**唯一**对外入口 —— controller 与其它消费者的调用面逐字不变。
+  // ⚠️ 委托必须原样透传全部实参:少传一个 currentUser / auditMeta 就是少一条判权或少一条审计。
+
+  async create(...args: Parameters<ActivityRegistrationCreateService['create']>) {
+    return this.creates.create(...args);
+  }
+
+  async createMy(...args: Parameters<ActivityRegistrationCreateService['createMy']>) {
+    return this.creates.createMy(...args);
+  }
+
+  async approve(...args: Parameters<ActivityRegistrationReviewService['approve']>) {
+    return this.reviews.approve(...args);
+  }
+
+  async reject(...args: Parameters<ActivityRegistrationReviewService['reject']>) {
+    return this.reviews.reject(...args);
+  }
+
+  async cancelAdmin(...args: Parameters<ActivityRegistrationReviewService['cancelAdmin']>) {
+    return this.reviews.cancelAdmin(...args);
+  }
+
+  async reopen(...args: Parameters<ActivityRegistrationReviewService['reopen']>) {
+    return this.reviews.reopen(...args);
+  }
 
   async list(
     activityId: string,
@@ -825,15 +191,15 @@ export class ActivityRegistrationsService {
     currentUser: CurrentUserPayload,
     authorization: RegistrationAuthorization = 'authz',
   ): Promise<PageResultDto<ActivityRegistrationListItemDto>> {
-    await this.assertCanOrThrow(currentUser, 'activity-registration.read.record', {
+    await this.access.assertCanOrThrow(currentUser, 'activity-registration.read.record', {
       type: 'activity',
       id: activityId,
     });
     if (authorization === 'managed') {
-      await this.assertManagedRegistrationAccess(activityId, currentUser);
+      await this.access.assertManagedRegistrationAccess(activityId, currentUser);
     }
     // activity 存在性校验(管理员看不存在的活动 → 404)。
-    await this.findActivityOrThrow(activityId);
+    await this.access.findActivityOrThrow(activityId);
 
     const { page, pageSize } = query;
     const { items: rows, total } = await this.registrationQuery.listByActivity(activityId, query);
@@ -897,7 +263,7 @@ export class ActivityRegistrationsService {
     query: ListRegistrationsQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<AdminRegistrationListItemDto>> {
-    await this.assertCanOrThrow(currentUser, 'activity-registration.read.record', {
+    await this.access.assertCanOrThrow(currentUser, 'activity-registration.read.record', {
       type: 'member',
       id: memberId,
     });
@@ -922,583 +288,15 @@ export class ActivityRegistrationsService {
 
   // ============ 管理端:create(ADMIN 代报名)============
 
-  async create(
-    activityId: string,
-    dto: CreateRegistrationDto,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-  ): Promise<ActivityRegistrationResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'activity-registration.create.record');
-    return this.prisma.$transaction(async (tx) => {
-      await this.lockActivityForRegistrationCreate(activityId, tx);
-      await this.assertLegacyRegistrationFlowAllowed(activityId, tx);
-      const act = await this.assertActivityRegistrable(activityId, 'admin', tx);
-      await this.assertMemberActiveSnapshot(dto.memberId, tx);
-      await this.assertGenderRequirement(dto.memberId, act.genderRequirementCode, tx);
-      const activityPosition = await this.resolveActivityPositionForCreate(
-        activityId,
-        dto.activityPositionId,
-        tx,
-      );
-      await this.assertGenderRequirement(
-        dto.memberId,
-        activityPosition?.genderRequirementCode ?? null,
-        tx,
-      );
-      const reusableHead = await this.lockLegacyRegistrationHeadForCreate(
-        activityId,
-        dto.memberId,
-        tx,
-      );
-      const qualification = await this.qualificationEvaluator.evaluate({
-        activity: act,
-        memberId: dto.memberId,
-        tx,
-      });
-      this.qualificationEvaluator.assertNoBlock(qualification);
-      // 保险 T3 报名门槛(admin 代报名同样拦截,C015 无旁路;requiresInsurance=false 零查询,
-      // 既有断言零回归;评审稿 §4 / E-10:位于 assertNoActiveRegistration 之后、create 之前)
-      const insuranceEligibility = await this.insuranceRequirement.requireForActivityRegistration(
-        dto.memberId,
-        act,
-        tx,
-      );
-      await assertActiveMemberLifecycle(tx, dto.memberId);
-      const initialStatusCode = await this.resolveCreateStatusCode(
-        activityId,
-        activityPosition?.id ?? null,
-        act.capacity,
-        activityPosition?.capacity ?? null,
-        tx,
-      );
-
-      const created = await this.persistLegacyRegistrationSubmission({
-        tx,
-        activityId,
-        memberId: dto.memberId,
-        activityPositionId: activityPosition?.id ?? null,
-        statusCode: initialStatusCode,
-        extras: dto.extras,
-        sourceCode: 'admin',
-        submittedByUserId: currentUser.id,
-        insuranceEligibility,
-        reusableHead,
-      });
-      await this.appendLegacyQualificationSnapshots({
-        tx,
-        registrationId: created.id,
-        revision: created.currentRevision,
-        evaluation: qualification,
-      });
-
-      await this.registrationAuditRecorder.logCreate({
-        created,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        viaPath: 'admin',
-        activityId,
-        targetMemberId: dto.memberId,
-        auditMeta,
-        tx,
-      });
-
-      return this.presenter.toResponseDto(created);
-    });
-  }
-
   // ============ 队员端:createMy(USER 自助)============
-
-  async createMy(
-    activityId: string,
-    dto: CreateMyRegistrationDto,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-  ): Promise<ActivityRegistrationResponseDto> {
-    return this.prisma.$transaction(async (tx) => {
-      const memberId = await this.resolveUserMemberIdOrThrow(currentUser.id, tx);
-      await this.lockActivityForRegistrationCreate(activityId, tx);
-      await this.assertLegacyRegistrationFlowAllowed(activityId, tx);
-      const act = await this.assertActivityRegistrable(activityId, 'self', tx);
-      await this.assertMemberActiveSnapshot(memberId, tx);
-      await this.assertGenderRequirement(memberId, act.genderRequirementCode, tx);
-      const activityPosition = await this.resolveActivityPositionForCreate(
-        activityId,
-        dto.activityPositionId,
-        tx,
-      );
-      await this.assertGenderRequirement(
-        memberId,
-        activityPosition?.genderRequirementCode ?? null,
-        tx,
-      );
-      const reusableHead = await this.lockLegacyRegistrationHeadForCreate(activityId, memberId, tx);
-      const qualification = await this.qualificationEvaluator.evaluate({
-        activity: act,
-        memberId,
-        tx,
-      });
-      this.qualificationEvaluator.assertNoBlock(qualification);
-      // 保险 T3 报名门槛(自助路径;App createMyForApp 薄壳经此同样拦截;评审稿 §4 / E-10)
-      const insuranceEligibility = await this.insuranceRequirement.requireForActivityRegistration(
-        memberId,
-        act,
-        tx,
-      );
-      await assertActiveMemberLifecycle(tx, memberId);
-      const initialStatusCode = await this.resolveCreateStatusCode(
-        activityId,
-        activityPosition?.id ?? null,
-        act.capacity,
-        activityPosition?.capacity ?? null,
-        tx,
-      );
-
-      const created = await this.persistLegacyRegistrationSubmission({
-        tx,
-        activityId,
-        memberId,
-        activityPositionId: activityPosition?.id ?? null,
-        statusCode: initialStatusCode,
-        extras: dto.extras,
-        sourceCode: 'self',
-        submittedByUserId: currentUser.id,
-        insuranceEligibility,
-        reusableHead,
-      });
-      await this.appendLegacyQualificationSnapshots({
-        tx,
-        registrationId: created.id,
-        revision: created.currentRevision,
-        evaluation: qualification,
-      });
-
-      await this.registrationAuditRecorder.logCreate({
-        created,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        viaPath: 'self',
-        activityId,
-        targetMemberId: memberId,
-        auditMeta,
-        tx,
-      });
-
-      return this.presenter.toResponseDto(created);
-    });
-  }
 
   // ============ 管理端:approve ============
 
-  async approve(
-    activityId: string,
-    id: string,
-    dto: ApproveRegistrationDto,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-    authorization: RegistrationAuthorization = 'authz',
-  ): Promise<ActivityRegistrationResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'activity-registration.approve.record', {
-      type: 'activity_registration',
-      id,
-    });
-    const result = await this.prisma.$transaction(async (tx) => {
-      await this.lockActivityForRegistrationCreate(activityId, tx);
-      if (authorization === 'managed') {
-        await this.assertManagedRegistrationAccess(activityId, currentUser, tx);
-      }
-      const reg = await this.findRegistrationOrThrow(activityId, id, tx);
-      const observedTransition = this.registrationStateMachine.decide('approve', reg.statusCode);
-      if (!observedTransition.allowed) {
-        throw new BizException(observedTransition.biz);
-      }
-
-      // capacity 复核(approve 转 pass 占名额)。F11(#399):READ COMMITTED 下普通 COUNT 复核无行锁,
-      // 两并发 approve 互不可见对方未提交写 → 双双过闸 → pass 超 capacity(原注释「事务内重新计数避免
-      // race」不成立)。对 activity 行加 FOR UPDATE 排他锁,令同一 activity 的并发 approve 串行化:后到者
-      // 阻塞至前者提交,再 COUNT 即见已提交 pass → 正确拒。仅限名额活动需锁(capacity=null 不限名额免锁)。
-      if (authorization === 'authz') {
-        await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${activityId} FOR UPDATE`;
-      }
-      const act = await this.findActivityOrThrow(activityId, tx);
-      await claimAtStatus(tx, {
-        target: 'activityRegistration',
-        id: reg.id,
-        expectedStatus: reg.statusCode,
-        invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
-      });
-      const lockedReg = await this.findRegistrationOrThrow(activityId, reg.id, tx);
-      const transition = this.registrationStateMachine.decide('approve', lockedReg.statusCode);
-      if (!transition.allowed) {
-        throw new BizException(transition.biz);
-      }
-      const participationDecision = this.activityParticipationPolicy.canApprove(act);
-      if (!participationDecision.allowed) {
-        throw new BizException(participationDecision.biz);
-      }
-      // The Registration claim/currentRevision snapshot is fixed before insurance revalidation.
-      // The following pre-read preserves MEMBER_NOT_FOUND / MEMBER_INACTIVE precedence; the
-      // insurance service then locks/rereads the Member and exact source/evidence before capacity
-      // or any registration/audit/outbox write.
-      await this.assertMemberActiveSnapshot(lockedReg.memberId, tx);
-      const [activeQualificationRuleSet, activeScopedQualificationRuleSet] = await Promise.all([
-        tx.activityQualificationRuleSet.findFirst({
-          where: { activityId, statusCode: 'active' },
-          select: { id: true },
-        }),
-        tx.activityQualificationRuleSet.findFirst({
-          where: {
-            activityId,
-            statusCode: 'active',
-            OR: [{ sessionId: { not: null } }, { positionId: { not: null } }],
-          },
-          select: { id: true },
-        }),
-      ]);
-      const reviewQualification =
-        activeQualificationRuleSet === null
-          ? null
-          : await this.evaluateQualificationForApproval(
-              tx,
-              act,
-              lockedReg,
-              activeScopedQualificationRuleSet !== null,
-            );
-      await this.insuranceRequirement.revalidateActivityRegistrationApproval(
-        {
-          id: lockedReg.id,
-          memberId: lockedReg.memberId,
-          currentRevision: lockedReg.currentRevision,
-        },
-        act,
-        tx,
-      );
-      const effectiveCapacity = await this.resolveApproveCapacity(
-        activityId,
-        lockedReg.activityPositionId,
-        act.capacity,
-        tx,
-      );
-      await this.assertCapacityNotExceeded(
-        activityId,
-        lockedReg.activityPositionId,
-        act.capacity,
-        effectiveCapacity,
-        tx,
-      );
-      const reviewedAt = new Date();
-      const updated = await tx.activityRegistration.update({
-        where: { id: lockedReg.id },
-        data: {
-          statusCode: transition.nextStatusCode,
-          reviewedBy: currentUser.id,
-          reviewedAt,
-          reviewNote: dto.reviewNote ?? null,
-        },
-        select: registrationSafeSelect,
-      });
-      if (
-        reviewQualification !== null &&
-        reviewQualification.evaluation.snapshotCandidates.length > 0
-      ) {
-        if (reviewQualification.context.registrationRevisionId === null) {
-          throw new BizException(BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID);
-        }
-        await this.qualificationEvaluator.appendSnapshots({
-          evaluation: reviewQualification.evaluation,
-          phase: 'review',
-          registrationRevisionId: reviewQualification.context.registrationRevisionId,
-          identityIdBySession: reviewQualification.context.identityIdBySession,
-          tx,
-        });
-      }
-
-      await this.registrationAuditRecorder.logReview({
-        registrationId: lockedReg.id,
-        before: lockedReg,
-        after: updated,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        action: 'approve',
-        priorStatusCode: lockedReg.statusCode,
-        nextStatusCode: transition.nextStatusCode,
-        activityId,
-        targetMemberId: lockedReg.memberId,
-        auditMeta,
-        tx,
-      });
-
-      await this.notificationProducer.enqueueReview(tx, {
-        registrationId: updated.id,
-        activityId,
-        memberId: updated.memberId,
-        reviewedAt,
-        outcome: 'approved',
-        reviewNote: dto.reviewNote ?? null,
-      });
-      return this.presenter.toResponseDto(updated);
-    });
-
-    return result;
-  }
-
   // ============ 管理端:reject ============
-
-  async reject(
-    activityId: string,
-    id: string,
-    dto: RejectRegistrationDto,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-    authorization: RegistrationAuthorization = 'authz',
-  ): Promise<ActivityRegistrationResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'activity-registration.reject.record', {
-      type: 'activity_registration',
-      id,
-    });
-    const result = await this.prisma.$transaction(async (tx) => {
-      await this.lockActivityForRegistrationCreate(activityId, tx);
-      if (authorization === 'managed') {
-        await this.assertManagedRegistrationAccess(activityId, currentUser, tx);
-      }
-      const reg = await this.findRegistrationOrThrow(activityId, id, tx);
-
-      const transition = this.registrationStateMachine.decide('reject', reg.statusCode);
-      if (!transition.allowed) {
-        throw new BizException(transition.biz);
-      }
-
-      await claimAtStatus(tx, {
-        target: 'activityRegistration',
-        id: reg.id,
-        expectedStatus: reg.statusCode,
-        invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
-      });
-      const lockedReg = await this.findRegistrationOrThrow(activityId, reg.id, tx);
-      const reviewedAt = new Date();
-      await this.registrationLifecycle.rejectInTransactionTrusted(tx, {
-        activityId,
-        registrationId: lockedReg.id,
-        memberId: lockedReg.memberId,
-        actorUserId: currentUser.id,
-        reviewNote: dto.reviewNote,
-        reviewedAt,
-      });
-      const updated = await tx.activityRegistration.update({
-        where: { id: lockedReg.id },
-        data: {
-          statusCode: transition.nextStatusCode,
-          statusSummaryCode: 'not_selected',
-          reviewedBy: currentUser.id,
-          reviewedAt,
-          reviewNote: dto.reviewNote,
-        },
-        select: registrationSafeSelect,
-      });
-
-      await this.registrationAuditRecorder.logReview({
-        registrationId: lockedReg.id,
-        before: lockedReg,
-        after: updated,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        action: 'reject',
-        priorStatusCode: lockedReg.statusCode,
-        nextStatusCode: transition.nextStatusCode,
-        activityId,
-        targetMemberId: lockedReg.memberId,
-        auditMeta,
-        tx,
-      });
-
-      await this.notificationProducer.enqueueReview(tx, {
-        registrationId: updated.id,
-        activityId,
-        memberId: updated.memberId,
-        reviewedAt,
-        outcome: 'rejected',
-        reviewNote: dto.reviewNote,
-      });
-      return this.presenter.toResponseDto(updated);
-    });
-
-    return result;
-  }
 
   // ============ 管理端:cancel(代取消)============
 
-  async cancelAdmin(
-    activityId: string,
-    id: string,
-    dto: CancelRegistrationDto,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-    authorization: RegistrationAuthorization = 'authz',
-  ): Promise<ActivityRegistrationResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'activity-registration.cancel.record', {
-      type: 'activity_registration',
-      id,
-    });
-    const result = await this.prisma.$transaction(async (tx) => {
-      await this.lockActivityForRegistrationCreate(activityId, tx);
-      if (authorization === 'managed') {
-        await this.assertManagedRegistrationAccess(activityId, currentUser, tx);
-      }
-      const reg = await this.findRegistrationOrThrow(activityId, id, tx);
-
-      const transition = this.registrationStateMachine.decide('cancel', reg.statusCode);
-      if (!transition.allowed) {
-        throw new BizException(transition.biz);
-      }
-
-      await claimAtStatus(tx, {
-        target: 'activityRegistration',
-        id: reg.id,
-        expectedStatus: reg.statusCode,
-        invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
-      });
-      const lockedReg = await this.findRegistrationOrThrow(activityId, reg.id, tx);
-      // 参与域生命周期收口⑦:已有 live 考勤记录或签到证据的报名禁取消。
-      await this.assertNoParticipationEvidence(lockedReg.id, tx);
-
-      const cancelledAt = new Date();
-      await this.registrationLifecycle.cancelInTransactionTrusted(tx, {
-        activityId,
-        registrationId: lockedReg.id,
-        memberId: lockedReg.memberId,
-        actorUserId: currentUser.id,
-        sourceCode: 'admin',
-        cancelReason: dto.cancelReason ?? null,
-        cancelledAt,
-      });
-      const updated = await this.findRegistrationOrThrow(activityId, lockedReg.id, tx);
-
-      await this.registrationAuditRecorder.logCancel({
-        registrationId: lockedReg.id,
-        before: lockedReg,
-        after: updated,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        priorStatusCode: lockedReg.statusCode,
-        nextStatusCode: transition.nextStatusCode,
-        cancelledByPath: 'admin',
-        cancelReason: dto.cancelReason ?? null,
-        activityId,
-        targetMemberId: lockedReg.memberId,
-        auditMeta,
-        tx,
-      });
-
-      const allocationPromotion =
-        lockedReg.statusCode === REGISTRATION_STATUS_PASS
-          ? await this.allocations.promoteAfterCancellationInTransactionTrusted(tx, {
-              activityId,
-              registrationId: lockedReg.id,
-              actorUser: currentUser,
-              promotedAt: cancelledAt,
-              auditMeta,
-            })
-          : { handled: false, activityTitle: '活动', promoted: [] };
-      const promotion = allocationPromotion.handled
-        ? allocationPromotion
-        : lockedReg.statusCode === REGISTRATION_STATUS_PASS
-          ? await promoteActivityWaitlistWithinCapacity({
-              activityId,
-              activityPositionId: lockedReg.activityPositionId,
-              maxPromotions: 1,
-              actorUserId: currentUser.id,
-              actorRoleSnap: currentUser.role,
-              auditMeta,
-              tx,
-              auditLogs: this.auditLogs,
-            })
-          : { activityTitle: '活动', promoted: [] };
-
-      if (!allocationPromotion.handled) {
-        await this.notificationProducer.enqueueWaitlistPromotions(tx, {
-          activityTitle: promotion.activityTitle,
-          promoted: promotion.promoted,
-        });
-      }
-      return this.presenter.toResponseDto(updated);
-    });
-
-    return result;
-  }
-
   // ============ 管理端:reopen(审批后悔药:reject → pending)============
-
-  // 参与域生命周期收口②(v0.40.0):撤销驳回、回待审。状态机新边 reject → pending;其余态
-  // ACTIVITY_REGISTRATION_STATUS_INVALID。置 pending 同时清空 reviewedBy / reviewedAt / reviewNote
-  // (回到"从未审过"形态);**刻意不开 reject → pass 直通**(改判必须重走审批)。audit 复用
-  // registration.review 事件、extra.action='reopen'(不发通知——后续 approve/reject 才发结果);
-  // reopen 不占 capacity(pending 不计数)。判权沿 approve 范式带 ref {type:'activity_registration', id}。
-  async reopen(
-    activityId: string,
-    id: string,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-    authorization: RegistrationAuthorization = 'authz',
-  ): Promise<ActivityRegistrationResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'activity-registration.reopen.record', {
-      type: 'activity_registration',
-      id,
-    });
-    return this.prisma.$transaction(async (tx) => {
-      await this.lockActivityForRegistrationCreate(activityId, tx);
-      if (authorization === 'managed') {
-        await this.assertManagedRegistrationAccess(activityId, currentUser, tx);
-      }
-      const reg = await this.findRegistrationOrThrow(activityId, id, tx);
-
-      const transition = this.registrationStateMachine.decide('reopen', reg.statusCode);
-      if (!transition.allowed) {
-        throw new BizException(transition.biz);
-      }
-
-      await claimAtStatus(tx, {
-        target: 'activityRegistration',
-        id: reg.id,
-        expectedStatus: reg.statusCode,
-        invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
-      });
-      const lockedReg = await this.findRegistrationOrThrow(activityId, reg.id, tx);
-      await this.registrationLifecycle.reopenInTransactionTrusted(tx, {
-        activityId,
-        registrationId: lockedReg.id,
-        memberId: lockedReg.memberId,
-        actorUserId: currentUser.id,
-        reopenedAt: new Date(),
-      });
-      const updated = await tx.activityRegistration.update({
-        where: { id: lockedReg.id },
-        data: {
-          statusCode: transition.nextStatusCode,
-          statusSummaryCode: 'active',
-          reviewedBy: null,
-          reviewedAt: null,
-          reviewNote: null,
-        },
-        select: registrationSafeSelect,
-      });
-
-      await this.registrationAuditRecorder.logReview({
-        registrationId: lockedReg.id,
-        before: lockedReg,
-        after: updated,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        action: 'reopen',
-        priorStatusCode: lockedReg.statusCode,
-        nextStatusCode: transition.nextStatusCode,
-        activityId,
-        targetMemberId: lockedReg.memberId,
-        auditMeta,
-        tx,
-      });
-
-      return this.presenter.toResponseDto(updated);
-    });
-  }
 
   // ============ 队员端:listMy ============
 
@@ -1506,7 +304,7 @@ export class ActivityRegistrationsService {
     query: ListMyRegistrationsQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<ActivityRegistrationListItemDto>> {
-    const memberId = await this.resolveUserMemberIdOrThrow(currentUser.id);
+    const memberId = await this.access.resolveUserMemberIdOrThrow(currentUser.id);
 
     const { page, pageSize } = query;
     const { items: rows, total } = await this.registrationQuery.listMine(memberId, query);
@@ -1526,7 +324,7 @@ export class ActivityRegistrationsService {
     id: string,
     currentUser: CurrentUserPayload,
   ): Promise<ActivityRegistrationResponseDto> {
-    const memberId = await this.resolveUserMemberIdOrThrow(currentUser.id);
+    const memberId = await this.access.resolveUserMemberIdOrThrow(currentUser.id);
 
     const reg = await this.prisma.activityRegistration.findFirst({
       where: notDeletedWhere({ id }),
@@ -1548,7 +346,7 @@ export class ActivityRegistrationsService {
     auditMeta: AuditMeta,
   ): Promise<ActivityRegistrationResponseDto> {
     const result = await this.prisma.$transaction(async (tx) => {
-      const memberId = await this.resolveUserMemberIdOrThrow(currentUser.id, tx);
+      const memberId = await this.access.resolveUserMemberIdOrThrow(currentUser.id, tx);
 
       const registrationRef = await tx.activityRegistration.findFirst({
         where: notDeletedWhere({ id }),
@@ -1557,8 +355,8 @@ export class ActivityRegistrationsService {
       if (!registrationRef || registrationRef.memberId !== memberId) {
         throw new BizException(BizCode.ACTIVITY_REGISTRATION_NOT_FOUND);
       }
-      await this.lockActivityForRegistrationCreate(registrationRef.activityId, tx);
-      const reg = await this.findRegistrationOrThrow(registrationRef.activityId, id, tx);
+      await this.access.lockActivityForRegistrationCreate(registrationRef.activityId, tx);
+      const reg = await this.access.findRegistrationOrThrow(registrationRef.activityId, id, tx);
       if (reg.memberId !== memberId) {
         throw new BizException(BizCode.ACTIVITY_REGISTRATION_NOT_FOUND);
       }
@@ -1574,9 +372,9 @@ export class ActivityRegistrationsService {
         expectedStatus: reg.statusCode,
         invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
       });
-      const lockedReg = await this.findRegistrationOrThrow(reg.activityId, reg.id, tx);
+      const lockedReg = await this.access.findRegistrationOrThrow(reg.activityId, reg.id, tx);
       // 参与域生命周期收口⑦:队员自助路径共用 live 考勤记录 / 签到证据守卫。
-      await this.assertNoParticipationEvidence(lockedReg.id, tx);
+      await this.access.assertNoParticipationEvidence(lockedReg.id, tx);
       // K4(B-F3):活动标题 / 发布人必须在**锁后**读。放在锁前时,并发改名先提交,
       // 本事务仍会用旧标题落 durable intent —— intent 一旦落库,worker 无法自行恢复正确快照,
       // 同一次取消甚至会同时产出「旧标题的取消通知」与「新标题的候补递补通知」(递补 helper
@@ -1604,7 +402,11 @@ export class ActivityRegistrationsService {
         cancelReason: dto.cancelReason ?? null,
         cancelledAt,
       });
-      const updated = await this.findRegistrationOrThrow(lockedReg.activityId, lockedReg.id, tx);
+      const updated = await this.access.findRegistrationOrThrow(
+        lockedReg.activityId,
+        lockedReg.id,
+        tx,
+      );
 
       await this.registrationAuditRecorder.logCancel({
         registrationId: lockedReg.id,
@@ -1694,11 +496,11 @@ export class ActivityRegistrationsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AsyncGenerator<string, void, undefined>> {
-    await this.assertCanOrThrow(currentUser, 'activity-registration.read.record', {
+    await this.access.assertCanOrThrow(currentUser, 'activity-registration.read.record', {
       type: 'activity',
       id: activityId,
     });
-    await this.findActivityOrThrow(activityId);
+    await this.access.findActivityOrThrow(activityId);
 
     const where = this.registrationQuery.buildCsvWhere(query.scope, activityId);
 

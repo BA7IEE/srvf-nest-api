@@ -10,6 +10,7 @@ import appConfig from '../../src/config/app.config';
 import { PrismaService } from '../../src/database/prisma.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { ActivitiesService } from '../../src/modules/activities/activities.service';
+import { ActivityRegistrationCreateService } from '../../src/modules/activity-registrations/activity-registration-create.service';
 import { ActivityRegistrationsService } from '../../src/modules/activity-registrations/activity-registrations.service';
 import { AttendanceAuditRecorder } from '../../src/modules/attendances/attendance-audit-recorder';
 import { AttendancesService } from '../../src/modules/attendances/attendances.service';
@@ -108,6 +109,11 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
   let config: ConfigType<typeof appConfig>;
   let activities: ActivitiesService;
   let registrations: ActivityRegistrationsService;
+  // ⚠️ Phase 6-B 第三域第二刀:下方「真并发」用例靠 monkey-patch **私有方法** resolveCreateStatusCode
+  // 注入并发窗口,而该方法已随建单族迁至 ActivityRegistrationCreateService。
+  // 屏障必须打在**真正执行那段代码的实例**上 —— 打在 ActivityRegistrationsService
+  // (现在只是薄委托)上,spy 不会被调用、窗口根本没撑开(#1034 同形)。
+  let registrationCreates: ActivityRegistrationCreateService;
   let attendances: AttendancesService;
 
   let adminPayload: CurrentUserPayload;
@@ -368,6 +374,7 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
     config = app.get(appConfig.KEY);
     activities = app.get(ActivitiesService);
     registrations = app.get(ActivityRegistrationsService);
+    registrationCreates = app.get(ActivityRegistrationCreateService);
     attendances = app.get(AttendancesService);
     await resetDb(app);
 
@@ -1161,8 +1168,8 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
 
     it('真并发:取消等待并发新报名提交后,联动取消的新报名者也收到取消通知', async () => {
       const activityId = await seedActivity('并发海岸巡查');
-      const hooks = registrations as unknown as RegistrationCreateTestHooks;
-      const originalResolve = hooks.resolveCreateStatusCode.bind(registrations);
+      const hooks = registrationCreates as unknown as RegistrationCreateTestHooks;
+      const originalResolve = hooks.resolveCreateStatusCode.bind(registrationCreates);
       const createPaused = deferred<number>();
       const releaseCreate = deferred<void>();
       const resolveSpy = jest
