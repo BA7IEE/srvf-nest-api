@@ -29,6 +29,17 @@ import {
  *      把调用挪到链路更晚处会静默破坏锁序且不会有任何测试失败。那条约束靠编排器锁序台账 + 并发 e2e。
  *   ② **FOR UPDATE 的实际阻塞**。这里的"并发写者插进来"是用两次读返回不同结果模拟的,
  *      真实的序列化由 PG 保证。本层锁的是「读到不一致时代码怎么反应」。
+ *
+ * ⚠️ 判据密集带来一个特有陷阱:**一条判据被下游判据遮蔽时,针对它的用例照样绿**。
+ * 本 spec 初版有 6 条用例是这样"为错的理由绿"的(闸②被③遮、③被⑧遮、④被⑤遮、
+ * ⑦被⑫遮、⑮被⑰遮、⑰-source 被⑲遮),全部由变异对拍抓出。
+ * 修法是让每条用例把**下游闸的前提都补足**,只留自己那一条不满足。
+ * 后续给本文件加用例的人:写完请对着你要守的那一行做一次变异,别只看绿。
+ *
+ * 变异对拍还查实两条结构性事实,已就地注在对应用例上:
+ *   · 闸⑰的 source 白名单被闸⑲**完全包含** —— 删掉行为不变,是纵深防御而非独立闸。
+ *   · 闸⑰的 `!object.unboundExpiresAt` **结构上删不掉** —— 删了下游
+ *     `object.unboundExpiresAt.getTime()` 就窄化不了,TS18047 编译失败。类型系统在替它站岗。
  */
 
 const CONTENT_ID = 'cnt-000000001';
@@ -227,17 +238,39 @@ describe('闸①-⑤ —— 进入逐附件判定之前的整体一致性', () =
   });
 
   it('⚠️ 锁到的附件集与随后读到的不一致:拒 —— 加锁与读之间有人插进来了', async () => {
-    const world = makeWorld({ lockedAttachmentIds: [ATT_ID, 'att-000000002'] });
+    // ⚠️ 与闸③隔离:让**首读**与锁集不符,而复读与锁集相符 —— 否则闸③会替闸②接住,
+    // 闸②被删掉用例也不红。变异对拍抓到过这个假绿。
+    const world = makeWorld({
+      lockedAttachmentIds: [ATT_ID],
+      attachments: [],
+      attachmentsAfterLock: [attachment()],
+    });
     await expect(publish(world)).rejects.toThrow(PENDING);
   });
 
   it('⚠️ 锁后复读附件集又变了:拒 —— 第二次复核专为抓这种漂移而存在', async () => {
-    const world = makeWorld({ attachmentsAfterLock: [] });
-    await expect(publish(world)).rejects.toThrow(PENDING);
+    // ⚠️ 与闸⑧⑮隔离:正文不引用任何附件、无封面、候选对象为空,
+    // 于是「引用的附件查不到」和「未绑定对象仍带资源」都不会先触发,只有闸③能拦。
+    const world = makeWorld({
+      attachments: [attachment()],
+      attachmentsAfterLock: [],
+      objects: [],
+      operations: [],
+    });
+    await expect(
+      publish(world, { referencedAttachmentIds: [], coverAttachmentId: null, coverImageKey: null }),
+    ).rejects.toThrow(PENDING);
   });
 
   it('⚠️ 复读发现新意图指向未被锁定的对象:拒 —— 绝不越序去补一把迟到的对象锁', async () => {
+    // ⚠️ 这条必须与闸⑤(意图不在操作锁集)隔离开:把迟到操作**放进** operations,
+    // 于是它在操作锁集里、闸⑤不会触发,只有闸④(对象不在锁集)能拦下它。
+    // 变异对拍抓到过:早先的写法漏了这一步,闸④被删掉后用例仍绿 —— 它一直是被闸⑤接住的。
     const world = makeWorld({
+      operations: [
+        uploadOp(),
+        uploadOp({ id: 'op-late-00001', storageObjectId: 'obj-LATE-00001' }),
+      ],
       ownerIntents: [
         { id: UPLOAD_OP_ID, storageObjectId: OBJ_ID },
         { id: 'op-late-00001', storageObjectId: 'obj-LATE-00001' },
@@ -269,8 +302,26 @@ describe('闸⑥⑦ —— 每个已绑定附件都必须真的就绪', () => {
     await expect(publish(world)).rejects.toThrow(PENDING);
   });
 
+  it('⚠️ 拒绝:对象上有在途的**非上传**操作(如正在执行的删除)—— 发布后它会把附件删掉', async () => {
+    // ⚠️ 这条是闸⑦的隔离用例。用 attachment_delete 而不是在途的上传:
+    // 在途上传会先被闸⑫(已绑定的上传必须 succeeded + provider_present)接住,
+    // 那样闸⑦被删掉用例也不会红。变异对拍抓到过这个假绿。
+    const world = makeWorld({
+      operations: [
+        uploadOp(),
+        uploadOp({
+          id: 'op-delete-0001',
+          kind: 'attachment_delete',
+          status: 'processing',
+          eventKey: 'storage.attachment-delete:obj-000000001',
+        }),
+      ],
+    });
+    await expect(publish(world)).rejects.toThrow(PENDING);
+  });
+
   it.each([['pending'], ['processing']])(
-    '⚠️ 拒绝:该对象上还有 %s 的在途操作 —— 发布后它可能把附件改掉',
+    '拒绝:已绑定附件的上传操作还停在 %s(由闸⑫接住:未进终态就没有「已就绪」的证据)',
     async (status) => {
       const world = makeWorld({ operations: [uploadOp({ status })] });
       await expect(publish(world)).rejects.toThrow(PENDING);
@@ -428,10 +479,19 @@ describe('闸⑬⑭⑮ —— 未绑定对象的三种合法归宿', () => {
   });
 
   it('⚠️ 非 absent 的对象仍绑着资源、却不在本文附件集里:拒', async () => {
+    // ⚠️ 与闸⑰隔离:把 unboundExpiresAt / source 都给足,让闸⑰不会先触发,
+    // 于是只有闸⑮(未绑定路径上的对象却带着 resourceType/resourceId)能拦。
+    // 变异对拍抓到过:早先的写法漏给 unboundExpiresAt,闸⑮被删掉后是闸⑰接住的。
     const world = makeWorld({
       attachments: [],
-      objects: [object({ state: 'present_unbound' })],
-      operations: [uploadOp()],
+      objects: [
+        object({
+          state: 'present_unbound',
+          unboundExpiresAt: new Date('2099-06-01T00:00:00.000Z'),
+          source: 'attachment_signed_upload',
+        }),
+      ],
+      operations: [uploadOp({ status: 'processing' })],
     });
     await expect(
       publish(world, { referencedAttachmentIds: [], coverAttachmentId: null, coverImageKey: null }),
@@ -589,10 +649,21 @@ describe('闸⑰-㉒ —— 在途上传对象的收编(改写 + 建孤儿)', ()
   it.each([
     ['对象已请求删除', { deleteRequestedAt: new Date() }],
     ['对象没有 unboundExpiresAt', { unboundExpiresAt: null }],
-    ['对象 source 不在允许集内', { source: 'backfill' }],
     ['对象状态不在三态内', { state: 'legacy_unverified' }],
   ])('拒绝:%s', async (_label, over) => {
     await expect(publish(pendingWorld(over), emptyInput)).rejects.toThrow(PENDING);
+  });
+
+  it('拒绝:对象 source 不在允许集内(⚠️ 这一条是纵深防御,不是独立闸)', async () => {
+    // 变异对拍查实:闸⑰里 `source ∉ {signed, legacy}` 这半条**被闸⑲完全包含**。
+    // 因为 payload 的 source 经 exactKeys 校验后必为这两个值之一,而闸⑲要求
+    // `uploadPayload.source === object.source` —— 所以任何白名单外的 object.source
+    // 必然也过不了闸⑲。把它单独删掉,行为一个字都不变。
+    // 保留本用例是为了钉住**行为**(这种对象一定被拒),同时把「它不可独立观测」写在这里,
+    // 免得后来者看到变异不红就以为是测试漏了、去构造一个根本不存在的场景。
+    await expect(publish(pendingWorld({ source: 'backfill' }), emptyInput)).rejects.toThrow(
+      PENDING,
+    );
   });
 
   it('⚠️ 拒绝:在途操作不止一条', async () => {
