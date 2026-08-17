@@ -2754,7 +2754,10 @@ async function main(): Promise<void> {
     };
     rejectsRegistry('EC-1·注册表 未知 kind 被拒(不许静默落进默认形态)', {
       ...okRegistry,
-      ratchets: [{ ...numericEntry, kind: 'whatever' }],
+      // ⚠️ 这条 entry 除了 kind 之外**完全合法**(带齐 rule/symbolShape)——
+      // 只有 kind 判别能拒它。变异对拍抓到过:早先用的是 numeric 形态的 entry,
+      // 删掉 kind 闸后它落进 eslint 分支、因**缺 rule** 被拒 —— 用例照样绿,而闸已经没了。
+      ratchets: [{ ...okRegistry.ratchets[0], kind: 'whatever' }],
     });
     rejectsRegistry('EC-1·注册表 numeric 型缺 metric 被拒', {
       ...okRegistry,
