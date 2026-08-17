@@ -147,9 +147,15 @@ selftest 尺寸段有 `const s = '// not a comment';` 计 1 行等 **13** 条口
 | 第四刀 | `recruitment-applications.service.ts` | 763 → 507 | 42 |
 | 第五刀 | `members.service.ts` | 817 → 417 | 36 |
 | 第六刀 | `role-bindings.service.ts` | 827 → 574 | 31 |
-| 第七刀 | `attachments.service.ts` | 1781 → 434 | **27** |
+| 第七刀 | `attachments.service.ts` | 1781 → 387 | **27** |
 
-基线条目 **27 → 21**(六个文件退出;`attachment-storage-orchestrator` 已于 #1049 退出)。
+基线条目 **27 → 22**:六个文件退出(`attachment-storage-orchestrator` 已于 #1049 更早退出),
+但同期**新进来一条** —— `attendances/attendance-offline-package.service.ts`(1373,由 #1052 引入)。
+
+⚠️ 这条新入册**正是 report 期的代价的实证**:#1052 合入时闸两条都报了
+(`service-size-new-above-threshold` + 基线文件 `attendance-punch-command` +210),
+退出码 1,被 `|| true` 吞掉。同一天里 6-B 七刀从这些文件砍掉约 5300 NCLOC,
+而单个业务 PR 净加回约 1580 —— **闸不接执法位时,拆分速度与增长速度是两条独立的曲线**。
 
 ⚠️ **归因先于体量**:前八刀(attachments 存储层)把当时全仓最大的文件从 2472 降到 677,
 而摩擦 **92 → 93 纹丝未动** —— 因为那个文件在历史上几乎没被增长过。

@@ -7,11 +7,6 @@
   "inputDigest": "sha256:d27d73a1cc12f515487e680ca268a78983fb37ceb7dc0b691ad70083d97bbc90",
   "entries": [
     {
-      "file": "src/modules/activities/activities.service.ts",
-      "loc": 1263,
-      "domain": "activities"
-    },
-    {
       "file": "src/modules/activities/activity-closure.service.ts",
       "loc": 784,
       "domain": "activities"
@@ -57,11 +52,6 @@
       "domain": "activity-registrations"
     },
     {
-      "file": "src/modules/activity-registrations/activity-registrations.service.ts",
-      "loc": 1470,
-      "domain": "activity-registrations"
-    },
-    {
       "file": "src/modules/activity-registrations/capacity-reservation.service.ts",
       "loc": 921,
       "domain": "activity-registrations"
@@ -77,13 +67,13 @@
       "domain": "activity-registrations"
     },
     {
-      "file": "src/modules/attachments/attachments.service.ts",
-      "loc": 1781,
-      "domain": "attachments"
-    },
-    {
       "file": "src/modules/attendances/attendance-import-preview.service.ts",
       "loc": 1804,
+      "domain": "attendances"
+    },
+    {
+      "file": "src/modules/attendances/attendance-offline-package.service.ts",
+      "loc": 1373,
       "domain": "attendances"
     },
     {
@@ -93,18 +83,13 @@
     },
     {
       "file": "src/modules/attendances/attendance-punch-command.service.ts",
-      "loc": 1294,
+      "loc": 1504,
       "domain": "attendances"
     },
     {
       "file": "src/modules/certificates/certificates.service.ts",
       "loc": 739,
       "domain": "certificates"
-    },
-    {
-      "file": "src/modules/members/members.service.ts",
-      "loc": 817,
-      "domain": "members"
     },
     {
       "file": "src/modules/notifications/notification-outbox.handlers.ts",
@@ -117,19 +102,9 @@
       "domain": "notifications"
     },
     {
-      "file": "src/modules/recruitment/recruitment-applications.service.ts",
-      "loc": 763,
-      "domain": "recruitment"
-    },
-    {
       "file": "src/modules/recruitment/recruitment-certificate-claims.service.ts",
       "loc": 750,
       "domain": "recruitment"
-    },
-    {
-      "file": "src/modules/role-bindings/role-bindings.service.ts",
-      "loc": 827,
-      "domain": "role-bindings"
     },
     {
       "file": "src/modules/storage/storage-object-ledger.service.ts",
