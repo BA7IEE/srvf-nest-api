@@ -22,6 +22,7 @@ import {
   ApiBizErrorResponse,
   ApiWrappedCreatedResponse,
   ApiWrappedOkResponse,
+  ApiWrappedPageResponse,
 } from '../../../common/decorators/api-response.decorator';
 import {
   CurrentUser,
@@ -35,6 +36,7 @@ import { AppIdentityResolver } from '../../users/app-identity.resolver';
 import { AttendancePunchCommandService } from '../attendance-punch-command.service';
 import { AttendanceOnsiteBatchJobService } from '../attendance-onsite-batch-job.service';
 import { AttendanceImportPreviewService } from '../attendance-import-preview.service';
+import { AttendanceOfflinePackageService } from '../attendance-offline-package.service';
 import { AppActivityPunchReceiptDto } from '../dto/app/app-activity-punch.dto';
 import { AppManagedOnsiteSessionParamsDto } from '../dto/app/app-managed-onsite-punch.dto';
 import {
@@ -48,6 +50,16 @@ import {
   AppManagedOnsiteBatchJobParamsDto,
   AppManagedOnsiteBatchJobReceiptDto,
   AppManagedStaffScanDto,
+  AppManagedOfflineOperationDto,
+  AppManagedOfflineActivityParamsDto,
+  AppManagedOfflinePackageDto,
+  AppManagedOfflinePackageIssueDto,
+  AppManagedOfflinePackageIssueReceiptDto,
+  AppManagedOfflinePackageParamsDto,
+  AppManagedOfflineReviewItemDto,
+  AppManagedOfflineReviewItemParamsDto,
+  AppManagedOfflineReviewQueryDto,
+  AppManagedOfflineUploadDto,
 } from '../dto/app/app-managed-onsite-operations.dto';
 
 type MultipartImportFile = {
@@ -80,7 +92,262 @@ export class AppManagedActivityOnsiteOperationsController {
     private readonly command: AttendancePunchCommandService,
     private readonly batchJobs: AttendanceOnsiteBatchJobService,
     private readonly importPreviews: AttendanceImportPreviewService,
+    private readonly offlinePackages: AttendanceOfflinePackageService,
   ) {}
+
+  @Post('sessions/:sessionId/offline-packages')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @ApiOperation({ summary: '签发冻结名单与规则的现场离线考勤包 [auth]' })
+  @ApiWrappedCreatedResponse(AppManagedOfflinePackageIssueReceiptDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED,
+    BizCode.ATTENDANCE_OFFLINE_PACKAGE_INVALID,
+    BizCode.ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT,
+  )
+  async issueOfflinePackage(
+    @Param() params: AppManagedOnsiteSessionParamsDto,
+    @Body() dto: AppManagedOfflinePackageIssueDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<AppManagedOfflinePackageIssueReceiptDto> {
+    await this.assertAppAccess(user);
+    return this.offlinePackages.issue(
+      {
+        activityId: params.activityId,
+        sessionId: params.sessionId,
+        operationKey: dto.operationKey,
+        deviceId: dto.deviceId,
+      },
+      user,
+      this.auditMeta(req),
+    );
+  }
+
+  @Post('offline-packages/:packageId/revoke')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @ApiOperation({ summary: '以防重键撤销仍可使用或待复核的离线考勤包 [auth]' })
+  @ApiWrappedCreatedResponse(AppManagedOfflinePackageDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ATTENDANCE_OFFLINE_PACKAGE_INVALID,
+    BizCode.ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT,
+  )
+  async revokeOfflinePackage(
+    @Param() params: AppManagedOfflinePackageParamsDto,
+    @Body() dto: AppManagedOfflineOperationDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<AppManagedOfflinePackageDto> {
+    await this.assertAppAccess(user);
+    return this.offlinePackages.revoke(
+      {
+        activityId: params.activityId,
+        packageId: params.packageId,
+        operationKey: dto.operationKey,
+        reason: dto.reason,
+      },
+      user,
+      this.auditMeta(req),
+    );
+  }
+
+  @Post('offline-packages/:packageId/upload')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @ApiOperation({ summary: '验证并追加单条离线现场事件，异常只进入安全复核链 [auth]' })
+  @ApiWrappedCreatedResponse(AppActivityPunchReceiptDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ATTENDANCE_REGISTRATION_INVALID,
+    BizCode.ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT,
+    BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW,
+    BizCode.ATTENDANCE_PUNCH_LOCATION_REQUIRED,
+    BizCode.ATTENDANCE_PUNCH_LOCATION_OUT_OF_RANGE,
+    BizCode.ATTENDANCE_PUNCH_OPEN_SEGMENT_EXISTS,
+    BizCode.ATTENDANCE_PUNCH_CHECK_OUT_REQUIRES_OPEN_SEGMENT,
+    BizCode.ATTENDANCE_PUNCH_MIN_DURATION_NOT_REACHED,
+    BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED,
+    BizCode.ATTENDANCE_OFFLINE_PACKAGE_INVALID,
+    BizCode.ATTENDANCE_OFFLINE_PACKAGE_EXPIRED,
+    BizCode.ATTENDANCE_OFFLINE_REVIEW_REQUIRED,
+  )
+  async uploadOfflineEvent(
+    @Param() params: AppManagedOfflinePackageParamsDto,
+    @Body() dto: AppManagedOfflineUploadDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<AppActivityPunchReceiptDto> {
+    await this.assertAppAccess(user);
+    return this.offlinePackages.upload(
+      {
+        activityId: params.activityId,
+        packageId: params.packageId,
+        packageToken: dto.packageToken,
+        sequence: dto.sequence,
+        priorHash: dto.priorHash,
+        eventKey: dto.eventKey,
+        actionCode: dto.actionCode,
+        deviceTime: new Date(dto.deviceTime),
+        memberCredential: dto.memberCredential,
+        longitude: dto.location?.longitude ?? null,
+        latitude: dto.location?.latitude ?? null,
+        accuracy: dto.location?.accuracy ?? null,
+        signature: dto.signature,
+      },
+      user,
+      this.auditMeta(req),
+    );
+  }
+
+  @Get('offline-review-items')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @ApiOperation({ summary: '分页读取不含凭证、签名、hash 与坐标的离线复核摘要 [auth]' })
+  @ApiWrappedPageResponse(AppManagedOfflineReviewItemDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_STATUS_INVALID,
+  )
+  async listOfflineReviewItems(
+    @Param() params: AppManagedOfflineActivityParamsDto,
+    @Query() query: AppManagedOfflineReviewQueryDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{
+    items: AppManagedOfflineReviewItemDto[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
+    await this.assertAppAccess(user);
+    return this.offlinePackages.listReviews({
+      activityId: params.activityId,
+      sessionId: query.sessionId,
+      statusCode: query.statusCode,
+      page: query.page,
+      pageSize: query.pageSize,
+      currentUser: user,
+    });
+  }
+
+  @Post('offline-review-items/:reviewItemId/approve')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @ApiOperation({ summary: '原子批准可批准的离线异常并复用唯一 Punch writer [auth]' })
+  @ApiWrappedCreatedResponse(AppManagedOfflineReviewItemDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ATTENDANCE_REGISTRATION_INVALID,
+    BizCode.ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT,
+    BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW,
+    BizCode.ATTENDANCE_PUNCH_LOCATION_REQUIRED,
+    BizCode.ATTENDANCE_PUNCH_LOCATION_OUT_OF_RANGE,
+    BizCode.ATTENDANCE_PUNCH_OPEN_SEGMENT_EXISTS,
+    BizCode.ATTENDANCE_PUNCH_CHECK_OUT_REQUIRES_OPEN_SEGMENT,
+    BizCode.ATTENDANCE_PUNCH_MIN_DURATION_NOT_REACHED,
+    BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED,
+  )
+  async approveOfflineReviewItem(
+    @Param() params: AppManagedOfflineReviewItemParamsDto,
+    @Body() dto: AppManagedOfflineOperationDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<AppManagedOfflineReviewItemDto> {
+    await this.assertAppAccess(user);
+    return this.offlinePackages.approveReview(
+      {
+        activityId: params.activityId,
+        reviewItemId: params.reviewItemId,
+        operationKey: dto.operationKey,
+        reason: dto.reason,
+      },
+      user,
+      this.auditMeta(req),
+    );
+  }
+
+  @Post('offline-review-items/:reviewItemId/reject')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @ApiOperation({ summary: '拒绝离线异常且不创建 PunchEvent，并收束包状态 [auth]' })
+  @ApiWrappedCreatedResponse(AppManagedOfflineReviewItemDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT,
+  )
+  async rejectOfflineReviewItem(
+    @Param() params: AppManagedOfflineReviewItemParamsDto,
+    @Body() dto: AppManagedOfflineOperationDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<AppManagedOfflineReviewItemDto> {
+    await this.assertAppAccess(user);
+    return this.offlinePackages.rejectReview(
+      {
+        activityId: params.activityId,
+        reviewItemId: params.reviewItemId,
+        operationKey: dto.operationKey,
+        reason: dto.reason,
+      },
+      user,
+      this.auditMeta(req),
+    );
+  }
 
   @Post('sessions/:sessionId/staff-scan')
   @LoginScoped({

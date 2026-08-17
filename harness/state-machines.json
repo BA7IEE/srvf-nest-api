@@ -1017,13 +1017,13 @@
         "review_required -> revoked",
         "review_required -> expired"
       ],
-      "wrongStateBizCode": "none",
-      "implementation": "第6批离线包 public writer 尚待精确 HTTP wire；当前 DB 仅守状态闭集、撤销形状与 live-device 唯一",
+      "wrongStateBizCode": "BAD_REQUEST / ATTENDANCE_OFFLINE_PACKAGE_INVALID / ATTENDANCE_OFFLINE_PACKAGE_EXPIRED / ATTENDANCE_OFFLINE_REVIEW_REQUIRED",
+      "implementation": "src/modules/attendances/attendance-offline-package.service.ts（Activity 根事务内 issue/revoke/upload/review；正式事件委托 AttendancePunchCommandService）",
       "governedBlockers": [
         "no-state-machine",
         "no-wrong-state-bizcode"
       ],
-      "notes": "维护者批准的第6批补充合同已冻结状态闭集与迁移边；未有精确公共请求/响应合同前，不把未来 writer 伪称为已实现或已治理。"
+      "notes": "B6-2 补充合同 v2 已兑现六条 HTTP wire；DB CHECK 继续守闭集/撤销形状/live-device，service 在 Activity→Package 锁序内守迁移边。仍无独立 StateMachine 类，故保持 inventory。"
     },
     {
       "model": "OfflinePunchReviewItem",
@@ -1043,13 +1043,13 @@
         "pending -> approved (approve)",
         "pending -> rejected (reject)"
       ],
-      "wrongStateBizCode": "none",
-      "implementation": "第6批离线复核 public writer 尚待精确 HTTP wire；当前 DB 仅守决议形状与正式事件一对一锚点",
+      "wrongStateBizCode": "BAD_REQUEST / ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT",
+      "implementation": "src/modules/attendances/attendance-offline-package.service.ts（pending approve/reject 原子决议；approve 复用 AttendancePunchCommandService）",
       "governedBlockers": [
         "no-state-machine",
         "no-wrong-state-bizcode"
       ],
-      "notes": "维护者批准的第6批补充合同已冻结 approve/reject 的原子关系；未有精确公共请求/响应合同前，不把未来 writer 伪称为已实现或已治理。"
+      "notes": "B6-2 补充合同 v2 已兑现安全列表与 approve/reject；DB CHECK 守决议形状和正式事件一对一锚，service 保证正式事件/segment/evidence/audit 同事务。仍无独立 StateMachine 类，故保持 inventory。"
     },
     {
       "model": "Organization",

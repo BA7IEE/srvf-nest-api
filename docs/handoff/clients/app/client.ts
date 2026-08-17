@@ -1,7 +1,7 @@
 // 由 scripts/generate-fe-client.ts 生成,请勿手改。
 // surface: App 小程序
 // generatorVersion: 1.0.0
-// inputDigest: sha256:602e2d3ae68a471b78e65412107e2af6e6d22228a8ea3620da8fe9faaa99e3b5
+// inputDigest: sha256:079d8cb103a8f76e5afc6ba43c043cc85c010d21da98fabd1ce62c5b6385eb15
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -91,6 +91,12 @@ import type {
   AppManagedImportPreviewItemPageDto,
   AppManagedMemberSummaryDto,
   AppManagedMyResponsibilityDto,
+  AppManagedOfflineOperationDto,
+  AppManagedOfflinePackageDto,
+  AppManagedOfflinePackageIssueDto,
+  AppManagedOfflinePackageIssueReceiptDto,
+  AppManagedOfflineReviewItemDto,
+  AppManagedOfflineUploadDto,
   AppManagedOnsiteBatchJobReceiptDto,
   AppManagedOnsiteLocationDto,
   AppManagedProxyPunchDto,
@@ -537,6 +543,26 @@ export function createAppClient(fetcher: Fetcher) {
     AppManagedActivityOnsiteOperationsControllerExecuteImportPreview(activityId: string, previewId: string, body: AppManagedImportExecuteDto): Promise<ApiEnvelope<AppManagedOnsiteBatchJobReceiptDto>> {
       return fetcher<AppManagedOnsiteBatchJobReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/import-previews/${previewId}/execute`, body });
     },
+    /** 以防重键撤销仍可使用或待复核的离线考勤包 [auth] */
+    AppManagedActivityOnsiteOperationsControllerRevokeOfflinePackage(activityId: string, packageId: string, body: AppManagedOfflineOperationDto): Promise<ApiEnvelope<AppManagedOfflinePackageDto>> {
+      return fetcher<AppManagedOfflinePackageDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/offline-packages/${packageId}/revoke`, body });
+    },
+    /** 验证并追加单条离线现场事件，异常只进入安全复核链 [auth] */
+    AppManagedActivityOnsiteOperationsControllerUploadOfflineEvent(activityId: string, packageId: string, body: AppManagedOfflineUploadDto): Promise<ApiEnvelope<AppActivityPunchReceiptDto>> {
+      return fetcher<AppActivityPunchReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/offline-packages/${packageId}/upload`, body });
+    },
+    /** 分页读取不含凭证、签名、hash 与坐标的离线复核摘要 [auth] */
+    AppManagedActivityOnsiteOperationsControllerListOfflineReviewItems(activityId: string, query?: { "page"?: number; "pageSize"?: number; "sessionId"?: string; "statusCode"?: "pending" | "approved" | "rejected" }): Promise<ApiEnvelope<PageResultDto & { "items": AppManagedOfflineReviewItemDto[] }>> {
+      return fetcher<PageResultDto & { "items": AppManagedOfflineReviewItemDto[] }>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/offline-review-items`, query });
+    },
+    /** 原子批准可批准的离线异常并复用唯一 Punch writer [auth] */
+    AppManagedActivityOnsiteOperationsControllerApproveOfflineReviewItem(activityId: string, reviewItemId: string, body: AppManagedOfflineOperationDto): Promise<ApiEnvelope<AppManagedOfflineReviewItemDto>> {
+      return fetcher<AppManagedOfflineReviewItemDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/offline-review-items/${reviewItemId}/approve`, body });
+    },
+    /** 拒绝离线异常且不创建 PunchEvent，并收束包状态 [auth] */
+    AppManagedActivityOnsiteOperationsControllerRejectOfflineReviewItem(activityId: string, reviewItemId: string, body: AppManagedOfflineOperationDto): Promise<ApiEnvelope<AppManagedOfflineReviewItemDto>> {
+      return fetcher<AppManagedOfflineReviewItemDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/offline-review-items/${reviewItemId}/reject`, body });
+    },
     /** 考勤责任人追加替代事实，不覆盖原现场事件 [auth] */
     AppManagedActivityOnsitePunchesControllerReplaceEvent(activityId: string, eventId: string, body: CorrectAppManagedOnsitePunchDto): Promise<ApiEnvelope<AppActivityPunchReceiptDto>> {
       return fetcher<AppActivityPunchReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/punch-events/${eventId}/replace`, body });
@@ -556,6 +582,10 @@ export function createAppClient(fetcher: Fetcher) {
     /** 考勤责任人上传并冻结 CSV 现场导入预览 [auth] */
     AppManagedActivityOnsiteOperationsControllerCreateImportPreview(activityId: string, sessionId: string): Promise<ApiEnvelope<AppManagedOnsiteBatchJobReceiptDto>> {
       return fetcher<AppManagedOnsiteBatchJobReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/sessions/${sessionId}/import-previews` });
+    },
+    /** 签发冻结名单与规则的现场离线考勤包 [auth] */
+    AppManagedActivityOnsiteOperationsControllerIssueOfflinePackage(activityId: string, sessionId: string, body: AppManagedOfflinePackageIssueDto): Promise<ApiEnvelope<AppManagedOfflinePackageIssueReceiptDto>> {
+      return fetcher<AppManagedOfflinePackageIssueReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/sessions/${sessionId}/offline-packages`, body });
     },
     /** 考勤责任人以明确原因代为追加单人现场签到/签退事实 [auth] */
     AppManagedActivityOnsiteOperationsControllerProxyPunch(activityId: string, sessionId: string, body: AppManagedProxyPunchDto): Promise<ApiEnvelope<AppActivityPunchReceiptDto>> {

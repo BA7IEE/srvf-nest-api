@@ -27,10 +27,14 @@ interface OpenApiSchema {
   $ref?: string;
   type?: string;
   format?: string;
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
   minimum?: number;
   nullable?: boolean;
   example?: unknown;
   enum?: unknown[];
+  required?: string[];
   properties?: Record<string, OpenApiSchema>;
 }
 
@@ -260,7 +264,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/app/v1/my/managed-activities/{activityId}/onsite/punch-events/{eventId}/replace'],
   // 第 6 批：工作人员扫码（可信成员凭证或受控人工确认）、责任人代签、可重放的批任务，及
   // 文件摘要/解析器版本/预览摘要三重冻结的 CSV 导入。所有 managed 写入仍在 Activity 根事务
-  // 内重验 canManageAttendance；offline 公共 wire 因尚无精确请求/响应合同而未加入。
+  // 内重验 canManageAttendance；B6-2 追加确定性离线包、单事件上传与安全复核 wire。
   ['post', '/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/staff-scan'],
   [
     'post',
@@ -279,6 +283,27 @@ const EXPECTED_ROUTES: ReadonlyArray<
   [
     'post',
     '/api/app/v1/my/managed-activities/{activityId}/onsite/import-previews/{previewId}/execute',
+  ],
+  [
+    'post',
+    '/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/offline-packages',
+  ],
+  [
+    'post',
+    '/api/app/v1/my/managed-activities/{activityId}/onsite/offline-packages/{packageId}/revoke',
+  ],
+  [
+    'post',
+    '/api/app/v1/my/managed-activities/{activityId}/onsite/offline-packages/{packageId}/upload',
+  ],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/onsite/offline-review-items'],
+  [
+    'post',
+    '/api/app/v1/my/managed-activities/{activityId}/onsite/offline-review-items/{reviewItemId}/approve',
+  ],
+  [
+    'post',
+    '/api/app/v1/my/managed-activities/{activityId}/onsite/offline-review-items/{reviewItemId}/reject',
   ],
   ['post', '/api/app/v1/my/activity-invitations/{invitationId}/decline'],
   // 活动业务改造 v1.1 第 3 批第一刀：草稿场次/新表岗位嵌套 CRUD。
@@ -1681,9 +1706,9 @@ describe('OpenAPI 契约快照', () => {
   //   第 4 批⑧ managed onsite 临时参加 POST +1 →498；第 4 批分配核心：本人 accept
   //   邀请 + rank/lottery 批次 prepare/commit/void/get +5 →503；资格配置草稿 GET/PUT +2
   //   →505；第 5 批 QR 自助/managed attendance 十路 →515；第 6 批 staff/proxy/bulk/import
-  //   八路 → **523**。离线公共 wire 仍待精确请求/响应合同，不能凭 schema 推导。
-  it('路由足迹精确为 523', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(523);
+  //   八路 →523；B6-2 offline package/review 六路 → **529**。
+  it('路由足迹精确为 529', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(529);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {
@@ -2077,6 +2102,205 @@ describe('OpenAPI 契约快照', () => {
         expect.arrayContaining(['qrToken', 'tokenDigest', 'requestHash']),
       );
     }
+  });
+
+  it('B6-2 offline wire is single-event, token-minimal, and review reads expose no raw evidence', () => {
+    const schemas = doc.components?.schemas ?? {};
+    const issue = schemas.AppManagedOfflinePackageIssueDto as OpenApiSchema;
+    const issueReceipt = schemas.AppManagedOfflinePackageIssueReceiptDto as OpenApiSchema;
+    const packageView = schemas.AppManagedOfflinePackageDto as OpenApiSchema;
+    const upload = schemas.AppManagedOfflineUploadDto as OpenApiSchema;
+    const review = schemas.AppManagedOfflineReviewItemDto as OpenApiSchema;
+    const resolution = schemas.AppManagedOfflineOperationDto as OpenApiSchema;
+    const issuePath =
+      '/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/offline-packages';
+    const revokePath =
+      '/api/app/v1/my/managed-activities/{activityId}/onsite/offline-packages/{packageId}/revoke';
+    const uploadPath =
+      '/api/app/v1/my/managed-activities/{activityId}/onsite/offline-packages/{packageId}/upload';
+    const listPath = '/api/app/v1/my/managed-activities/{activityId}/onsite/offline-review-items';
+    const approvePath = `${listPath}/{reviewItemId}/approve`;
+    const rejectPath = `${listPath}/{reviewItemId}/reject`;
+
+    expect(doc.paths[issuePath]?.post?.requestBody?.content?.['application/json']?.schema).toEqual({
+      $ref: '#/components/schemas/AppManagedOfflinePackageIssueDto',
+    });
+    expect(issue.required).toEqual(['operationKey', 'deviceId']);
+    expect(Object.keys(issue.properties ?? {})).toEqual(['operationKey', 'deviceId']);
+    expect(issue.properties?.operationKey).toMatchObject({
+      type: 'string',
+      minLength: 1,
+      maxLength: 96,
+      pattern: '^[A-Za-z0-9_-]+$',
+    });
+    expect(issue.properties?.deviceId).toMatchObject({
+      type: 'string',
+      minLength: 1,
+      maxLength: 128,
+      pattern: '^[A-Za-z0-9._:-]+$',
+    });
+    expect(issueReceipt.required).toEqual(['package', 'packageToken']);
+    expect(Object.keys(issueReceipt.properties ?? {})).toEqual(['package', 'packageToken']);
+    expect(issueReceipt.properties?.packageToken).toMatchObject({ type: 'string', minLength: 1 });
+    expect(Object.keys(packageView.properties ?? {})).toEqual([
+      'id',
+      'activityId',
+      'sessionId',
+      'deviceId',
+      'packageVersion',
+      'packageKeyVersion',
+      'statusCode',
+      'validFrom',
+      'validUntil',
+      'uploadUntil',
+      'sequenceStart',
+      'nextExpectedSequence',
+      'ruleSnapshotHash',
+      'workflowRevision',
+      'participantSnapshotHash',
+    ]);
+    expect(
+      doc.paths[revokePath]?.post?.responses?.['201']?.content?.['application/json']?.schema
+        ?.properties?.data,
+    ).toEqual({ $ref: '#/components/schemas/AppManagedOfflinePackageDto' });
+
+    expect(doc.paths[uploadPath]?.post?.requestBody?.content?.['application/json']?.schema).toEqual(
+      {
+        $ref: '#/components/schemas/AppManagedOfflineUploadDto',
+      },
+    );
+    expect(upload.required).toEqual([
+      'packageToken',
+      'sequence',
+      'priorHash',
+      'eventKey',
+      'actionCode',
+      'deviceTime',
+      'memberCredential',
+      'signature',
+    ]);
+    expect(Object.keys(upload.properties ?? {})).toEqual([
+      'packageToken',
+      'sequence',
+      'priorHash',
+      'eventKey',
+      'actionCode',
+      'deviceTime',
+      'memberCredential',
+      'location',
+      'signature',
+    ]);
+    expect(upload.properties?.actionCode?.enum).toEqual(['check_in', 'check_out']);
+    expect(upload.properties?.priorHash?.pattern).toBe('^[0-9a-f]{64}$');
+    expect(
+      doc.paths[uploadPath]?.post?.responses?.['201']?.content?.['application/json']?.schema
+        ?.properties?.data,
+    ).toEqual({ $ref: '#/components/schemas/AppActivityPunchReceiptDto' });
+    expect(documented4xxCodes(doc.paths[uploadPath]?.post)).toEqual(
+      expect.arrayContaining([
+        BizCode.ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT.code,
+        BizCode.ATTENDANCE_OFFLINE_PACKAGE_INVALID.code,
+        BizCode.ATTENDANCE_OFFLINE_PACKAGE_EXPIRED.code,
+        BizCode.ATTENDANCE_OFFLINE_REVIEW_REQUIRED.code,
+      ]),
+    );
+
+    expect(
+      doc.paths[listPath]?.get?.responses?.['200']?.content?.['application/json']?.schema
+        ?.properties?.data,
+    ).toBeDefined();
+    expect(Object.keys(review.properties ?? {}).sort()).toEqual(
+      [
+        'id',
+        'packageId',
+        'sessionId',
+        'sequence',
+        'eventKey',
+        'statusCode',
+        'anomalyCode',
+        'approvalPolicyCode',
+        'participationIdentityId',
+        'actionCode',
+        'deviceTime',
+        'stagedAt',
+        'reviewedAt',
+        'reviewReason',
+        'formalPunchEventId',
+      ].sort(),
+    );
+    expect(review.required).toEqual([
+      'id',
+      'packageId',
+      'sessionId',
+      'sequence',
+      'eventKey',
+      'statusCode',
+      'anomalyCode',
+      'approvalPolicyCode',
+      'participationIdentityId',
+      'actionCode',
+      'deviceTime',
+      'stagedAt',
+      'reviewedAt',
+      'reviewReason',
+      'formalPunchEventId',
+    ]);
+    expect(review.properties?.anomalyCode?.enum).toEqual([
+      'operator_authorization_revoked',
+      'package_revoked',
+      'package_expired',
+      'device_mismatch',
+      'sequence_gap',
+      'sequence_duplicate',
+      'future_time',
+      'time_out_of_window',
+      'hash_chain_invalid',
+      'signature_invalid',
+      'participant_snapshot_mismatch',
+    ]);
+    expect(Object.keys(review.properties ?? {})).not.toEqual(
+      expect.arrayContaining([
+        'packageToken',
+        'signature',
+        'signatureDigest',
+        'memberCredential',
+        'providedPriorHash',
+        'eventPayloadHash',
+        'longitude',
+        'latitude',
+        'accuracy',
+      ]),
+    );
+    expect(resolution.required).toEqual(['operationKey', 'reason']);
+    expect(Object.keys(resolution.properties ?? {})).toEqual(['operationKey', 'reason']);
+    expect(
+      doc.paths[approvePath]?.post?.requestBody?.content?.['application/json']?.schema,
+    ).toEqual({
+      $ref: '#/components/schemas/AppManagedOfflineOperationDto',
+    });
+    expect(doc.paths[rejectPath]?.post?.requestBody?.content?.['application/json']?.schema).toEqual(
+      {
+        $ref: '#/components/schemas/AppManagedOfflineOperationDto',
+      },
+    );
+    for (const path of [approvePath, rejectPath]) {
+      expect(
+        doc.paths[path]?.post?.responses?.['201']?.content?.['application/json']?.schema?.properties
+          ?.data,
+      ).toEqual({ $ref: '#/components/schemas/AppManagedOfflineReviewItemDto' });
+    }
+    expect(documented4xxCodes(doc.paths[approvePath]?.post)).toEqual(
+      expect.arrayContaining([
+        BizCode.ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT.code,
+        BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW.code,
+        BizCode.ATTENDANCE_PUNCH_LOCATION_REQUIRED.code,
+        BizCode.ATTENDANCE_PUNCH_LOCATION_OUT_OF_RANGE.code,
+        BizCode.ATTENDANCE_PUNCH_OPEN_SEGMENT_EXISTS.code,
+        BizCode.ATTENDANCE_PUNCH_CHECK_OUT_REQUIRES_OPEN_SEGMENT.code,
+        BizCode.ATTENDANCE_PUNCH_MIN_DURATION_NOT_REACHED.code,
+        BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED.code,
+      ]),
+    );
   });
 
   it('qualification configuration wire is typed, review-scoped, and exposes no opaque valueJson', () => {

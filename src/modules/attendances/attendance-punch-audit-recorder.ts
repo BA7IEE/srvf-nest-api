@@ -13,6 +13,13 @@ type OnsiteBatchAuditOperation =
   | 'attendance-bulk.create'
   | 'attendance-import.preview'
   | 'attendance-import.execute';
+type OfflineAuditOperation =
+  | 'attendance-offline-package.issue'
+  | 'attendance-offline-package.revoke'
+  | 'attendance-offline-package.upload'
+  | 'attendance-offline-package.upload-review'
+  | 'attendance-offline-review.approve'
+  | 'attendance-offline-review.reject';
 
 @Injectable()
 export class AttendancePunchAuditRecorder {
@@ -109,6 +116,40 @@ export class AttendancePunchAuditRecorder {
         sessionId: args.sessionId,
         jobId: args.jobId,
         total: args.total,
+      },
+      tx: args.tx,
+    });
+  }
+
+  async logOffline(args: {
+    operation: OfflineAuditOperation;
+    activityId: string;
+    sessionId: string;
+    packageId: string;
+    reviewItemId?: string | null;
+    eventId?: string | null;
+    statusCode: string;
+    anomalyCode?: string | null;
+    actorUserId: string;
+    actorRoleSnap: Role;
+    auditMeta: AuditMeta;
+    tx: Prisma.TransactionClient;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: 'activity.publish',
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: 'activity',
+      resourceId: args.activityId,
+      meta: args.auditMeta,
+      extra: {
+        operation: args.operation,
+        sessionId: args.sessionId,
+        packageId: args.packageId,
+        reviewItemId: args.reviewItemId ?? null,
+        eventId: args.eventId ?? null,
+        statusCode: args.statusCode,
+        anomalyCode: args.anomalyCode ?? null,
       },
       tx: args.tx,
     });

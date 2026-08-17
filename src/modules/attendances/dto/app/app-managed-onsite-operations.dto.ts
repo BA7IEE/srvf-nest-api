@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
+  IsDateString,
   IsIn,
   IsArray,
   IsNumber,
@@ -330,4 +331,253 @@ export class AppManagedOnsiteBatchJobReceiptDto {
 
   @ApiProperty({ description: '本次是否命中相同 operationKey 与请求摘要的既有回执' })
   replayed!: boolean;
+}
+
+export class AppManagedOfflinePackageIssueDto {
+  @ApiProperty({
+    minLength: 1,
+    maxLength: 96,
+    pattern: '^[A-Za-z0-9_-]+$',
+    description: '离线包签发防重键',
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(96)
+  @Matches(/^[A-Za-z0-9_-]+$/u)
+  operationKey!: string;
+
+  @ApiProperty({
+    minLength: 1,
+    maxLength: 128,
+    pattern: '^[A-Za-z0-9._:-]+$',
+    description: '受控现场设备稳定标识',
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(128)
+  @Matches(/^[A-Za-z0-9._:-]+$/u)
+  deviceId!: string;
+}
+
+export class AppManagedOfflinePackageDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  activityId!: string;
+
+  @ApiProperty()
+  sessionId!: string;
+
+  @ApiProperty()
+  deviceId!: string;
+
+  @ApiProperty({ minimum: 1 })
+  packageVersion!: number;
+
+  @ApiProperty({ enum: [0] })
+  packageKeyVersion!: 0;
+
+  @ApiProperty({ enum: ['active', 'review_required', 'revoked', 'expired'] })
+  statusCode!: string;
+
+  @ApiProperty({ format: 'date-time' })
+  validFrom!: Date;
+
+  @ApiProperty({ format: 'date-time' })
+  validUntil!: Date;
+
+  @ApiProperty({ format: 'date-time' })
+  uploadUntil!: Date;
+
+  @ApiProperty({ minimum: 1 })
+  sequenceStart!: number;
+
+  @ApiProperty({ minimum: 1 })
+  nextExpectedSequence!: number;
+
+  @ApiProperty({ pattern: '^[0-9a-f]{64}$' })
+  ruleSnapshotHash!: string;
+
+  @ApiProperty({ minimum: 0 })
+  workflowRevision!: number;
+
+  @ApiProperty({ pattern: '^[0-9a-f]{64}$' })
+  participantSnapshotHash!: string;
+}
+
+export class AppManagedOfflinePackageIssueReceiptDto {
+  @ApiProperty({ type: () => AppManagedOfflinePackageDto })
+  package!: AppManagedOfflinePackageDto;
+
+  @ApiProperty({ minLength: 1, description: '仅首次签发及精确重放返回的签名离线包 token' })
+  packageToken!: string;
+}
+
+export class AppManagedOfflinePackageParamsDto {
+  @ApiProperty({ minLength: 8, maxLength: 64, description: '负责人管理的活动 ID' })
+  @IsString()
+  @Length(8, 64)
+  activityId!: string;
+
+  @ApiProperty({ minLength: 8, maxLength: 64, description: '离线考勤包 ID' })
+  @IsString()
+  @Length(8, 64)
+  packageId!: string;
+}
+
+export class AppManagedOfflineActivityParamsDto {
+  @ApiProperty({ minLength: 8, maxLength: 64, description: '负责人管理的活动 ID' })
+  @IsString()
+  @Length(8, 64)
+  activityId!: string;
+}
+
+export class AppManagedOfflineReviewItemParamsDto {
+  @ApiProperty({ minLength: 8, maxLength: 64, description: '负责人管理的活动 ID' })
+  @IsString()
+  @Length(8, 64)
+  activityId!: string;
+
+  @ApiProperty({ minLength: 8, maxLength: 64, description: '离线复核项 ID' })
+  @IsString()
+  @Length(8, 64)
+  reviewItemId!: string;
+}
+
+export class AppManagedOfflineOperationDto {
+  @ApiProperty({ minLength: 1, maxLength: 96, pattern: '^[A-Za-z0-9_-]+$' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(96)
+  @Matches(/^[A-Za-z0-9_-]+$/u)
+  operationKey!: string;
+
+  @ApiProperty({ minLength: 1, maxLength: 500 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(500)
+  reason!: string;
+}
+
+export class AppManagedOfflineUploadDto {
+  @ApiProperty({ minLength: 1, maxLength: 8192 })
+  @IsString()
+  @Length(1, 8192)
+  packageToken!: string;
+
+  @ApiProperty({ minimum: 1 })
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 0, allowNaN: false, allowInfinity: false })
+  @Min(1)
+  sequence!: number;
+
+  @ApiProperty({ pattern: '^[0-9a-f]{64}$' })
+  @IsString()
+  @Matches(/^[0-9a-f]{64}$/u)
+  priorHash!: string;
+
+  @ApiProperty({ minLength: 1, maxLength: 128 })
+  @IsString()
+  @Length(1, 128)
+  eventKey!: string;
+
+  @ApiProperty({ enum: ['check_in', 'check_out'] })
+  @IsIn(['check_in', 'check_out'])
+  actionCode!: 'check_in' | 'check_out';
+
+  @ApiProperty({ format: 'date-time' })
+  @IsDateString({ strict: true })
+  deviceTime!: string;
+
+  @ApiProperty({ minLength: 1, maxLength: 4096 })
+  @IsString()
+  @Length(1, 4096)
+  memberCredential!: string;
+
+  @ApiPropertyOptional({ type: () => AppManagedOnsiteLocationDto })
+  @OmittableOnly()
+  @ValidateNested()
+  @Type(() => AppManagedOnsiteLocationDto)
+  location?: AppManagedOnsiteLocationDto;
+
+  @ApiProperty({ minLength: 1, maxLength: 256, pattern: '^[A-Za-z0-9_-]+$' })
+  @IsString()
+  @Length(1, 256)
+  @Matches(/^[A-Za-z0-9_-]+$/u)
+  signature!: string;
+}
+
+export class AppManagedOfflineReviewQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({ minLength: 8, maxLength: 64 })
+  @OmittableOnly()
+  @IsString()
+  @Length(8, 64)
+  sessionId?: string;
+
+  @ApiPropertyOptional({ enum: ['pending', 'approved', 'rejected'] })
+  @OmittableOnly()
+  @IsIn(['pending', 'approved', 'rejected'])
+  statusCode?: 'pending' | 'approved' | 'rejected';
+}
+
+export class AppManagedOfflineReviewItemDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  packageId!: string;
+
+  @ApiProperty()
+  sessionId!: string;
+
+  @ApiProperty({ minimum: 1 })
+  sequence!: number;
+
+  @ApiProperty()
+  eventKey!: string;
+
+  @ApiProperty({ enum: ['pending', 'approved', 'rejected'] })
+  statusCode!: string;
+
+  @ApiProperty({
+    enum: [
+      'operator_authorization_revoked',
+      'package_revoked',
+      'package_expired',
+      'device_mismatch',
+      'sequence_gap',
+      'sequence_duplicate',
+      'future_time',
+      'time_out_of_window',
+      'hash_chain_invalid',
+      'signature_invalid',
+      'participant_snapshot_mismatch',
+    ],
+  })
+  anomalyCode!: string;
+
+  @ApiProperty({ enum: ['approvable', 'reject_only'] })
+  approvalPolicyCode!: string;
+
+  @ApiProperty({ nullable: true, type: String })
+  participationIdentityId!: string | null;
+
+  @ApiProperty({ enum: ['check_in', 'check_out'], nullable: true })
+  actionCode!: string | null;
+
+  @ApiProperty({ format: 'date-time', nullable: true, type: Date })
+  deviceTime!: Date | null;
+
+  @ApiProperty({ format: 'date-time' })
+  stagedAt!: Date;
+
+  @ApiProperty({ format: 'date-time', nullable: true, type: Date })
+  reviewedAt!: Date | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  reviewReason!: string | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  formalPunchEventId!: string | null;
 }
