@@ -8,6 +8,8 @@ import { PermissionsModule } from '../permissions/permissions.module';
 import { MemberAuditRecorder } from './member-audit-recorder';
 import { MembersController } from './members.controller';
 import { MembersQueryService } from './members-query.service';
+import { MemberAccessService } from './member-access.service';
+import { MemberAccountService } from './member-account.service';
 import { MembersService } from './members.service';
 
 // Slow-4 T2(2026-06-11):imports PermissionsModule 供 MembersService 注入 RbacService
@@ -33,7 +35,13 @@ import { MembersService } from './members.service';
   // 那一个入口(F4/D 组既有约定),避免第二条绕过判权腿的读路径。
   // Phase 6-B 第二刀:MemberAuditRecorder = 6 个 audit 事件的 payload 组装边界(§3.5)。
   // 只注入 AuditLogsService,tx 由调用方透传,事务边界仍归 MembersService。
-  providers: [MembersService, MembersQueryService, MemberAuditRecorder],
+  providers: [
+    MemberAccessService,
+    MemberAccountService,
+    MembersService,
+    MembersQueryService,
+    MemberAuditRecorder,
+  ],
   exports: [MembersService],
 })
 export class MembersModule {}
