@@ -12,6 +12,11 @@ import { AttachmentReconciliationService } from './attachment-reconciliation.ser
 import { AttachmentUploadService } from './attachment-upload.service';
 import { AttachmentStorageOrchestrator } from './attachment-storage-orchestrator';
 import { AttachmentsController } from './attachments.controller';
+import { AttachmentAccessService } from './attachment-access.service';
+import { AttachmentContentUploadConfirmService } from './attachment-content-upload-confirm.service';
+import { AttachmentImportPreviewUploadService } from './attachment-import-preview-upload.service';
+import { AttachmentRegistrationUploadService } from './attachment-registration-upload.service';
+import { AttachmentWriteService } from './attachment-write.service';
 import { AttachmentsService } from './attachments.service';
 
 // V2.x C-7 attachments 实施 PR #6b / #6c + PR #90:attachments 主模块声明。
@@ -31,6 +36,11 @@ import { AttachmentsService } from './attachments.service';
   imports: [DatabaseModule, PermissionsModule, AuditLogsModule, StorageModule],
   controllers: [AttachmentsController],
   providers: [
+    AttachmentAccessService,
+    AttachmentContentUploadConfirmService,
+    AttachmentImportPreviewUploadService,
+    AttachmentRegistrationUploadService,
+    AttachmentWriteService,
     AttachmentsService,
     AttachmentAuditRecorder,
     AttachmentContentValidator,

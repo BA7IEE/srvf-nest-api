@@ -17,6 +17,11 @@ import { AttachmentManualAttestService } from '../../src/modules/attachments/att
 import { AttachmentManualIntakeService } from '../../src/modules/attachments/attachment-manual-intake.service';
 import { AttachmentStorageOrchestrator } from '../../src/modules/attachments/attachment-storage-orchestrator';
 import type { AttachmentUploadStorageIdentity } from '../../src/modules/attachments/attachment-storage.types';
+import { AttachmentAccessService } from '../../src/modules/attachments/attachment-access.service';
+import { AttachmentContentUploadConfirmService } from '../../src/modules/attachments/attachment-content-upload-confirm.service';
+import { AttachmentImportPreviewUploadService } from '../../src/modules/attachments/attachment-import-preview-upload.service';
+import { AttachmentRegistrationUploadService } from '../../src/modules/attachments/attachment-registration-upload.service';
+import { AttachmentWriteService } from '../../src/modules/attachments/attachment-write.service';
 import { AttachmentsService } from '../../src/modules/attachments/attachments.service';
 import {
   type StorageConsistencyDrainResult,
@@ -394,15 +399,35 @@ describe('Attachment durable storage consistency (real PostgreSQL barriers)', ()
   }
 
   function createPatchService(): AttachmentsService {
-    return new AttachmentsService(
+    // 第七刀:五个新类传真实实例(判权 / 白名单 / 阶段令牌的行为锁必须走真实实现)。
+    const r = { can: jest.fn().mockResolvedValue(true) } as unknown as RbacService;
+    const ss = {
+      getActiveSettings: jest.fn().mockResolvedValue(null),
+    } as unknown as StorageSettingsService;
+    const cfg = {
+      env: 'test',
+      storage: { encryptionKey: 'attachment-storage-e2e-encryption-key' },
+    } as unknown as ConfigType<typeof appConfig>;
+    const access = new AttachmentAccessService(prisma, r, orchestrator, ss, cfg);
+    const confirms = new AttachmentContentUploadConfirmService(
       prisma,
-      { can: jest.fn().mockResolvedValue(true) } as unknown as RbacService,
+      access,
       orchestrator,
-      { getActiveSettings: jest.fn().mockResolvedValue(null) } as unknown as StorageSettingsService,
-      {
-        env: 'test',
-        storage: { encryptionKey: 'attachment-storage-e2e-encryption-key' },
-      } as unknown as ConfigType<typeof appConfig>,
+      ss,
+      cfg,
+      r,
+    );
+    return new AttachmentsService(
+      access,
+      new AttachmentRegistrationUploadService(prisma, access, orchestrator, ss, cfg),
+      new AttachmentImportPreviewUploadService(prisma, access, orchestrator, ss, cfg),
+      confirms,
+      new AttachmentWriteService(prisma, access, orchestrator, ss, cfg, confirms),
+      prisma,
+      r,
+      orchestrator,
+      ss,
+      cfg,
     );
   }
 
