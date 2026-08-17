@@ -6056,6 +6056,312 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppManagedOfflineOperationDto": {
+    "properties": {
+      "operationKey": {
+        "maxLength": 96,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9_-]+$",
+        "type": "string",
+      },
+      "reason": {
+        "maxLength": 500,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "reason",
+    ],
+    "type": "object",
+  },
+  "AppManagedOfflinePackageDto": {
+    "properties": {
+      "activityId": {
+        "type": "string",
+      },
+      "deviceId": {
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+      "nextExpectedSequence": {
+        "minimum": 1,
+        "type": "number",
+      },
+      "packageKeyVersion": {
+        "enum": [
+          0,
+        ],
+        "type": "number",
+      },
+      "packageVersion": {
+        "minimum": 1,
+        "type": "number",
+      },
+      "participantSnapshotHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "ruleSnapshotHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "sequenceStart": {
+        "minimum": 1,
+        "type": "number",
+      },
+      "sessionId": {
+        "type": "string",
+      },
+      "statusCode": {
+        "enum": [
+          "active",
+          "review_required",
+          "revoked",
+          "expired",
+        ],
+        "type": "string",
+      },
+      "uploadUntil": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "validFrom": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "validUntil": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "workflowRevision": {
+        "minimum": 0,
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "activityId",
+      "sessionId",
+      "deviceId",
+      "packageVersion",
+      "packageKeyVersion",
+      "statusCode",
+      "validFrom",
+      "validUntil",
+      "uploadUntil",
+      "sequenceStart",
+      "nextExpectedSequence",
+      "ruleSnapshotHash",
+      "workflowRevision",
+      "participantSnapshotHash",
+    ],
+    "type": "object",
+  },
+  "AppManagedOfflinePackageIssueDto": {
+    "properties": {
+      "deviceId": {
+        "description": "受控现场设备稳定标识",
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9._:-]+$",
+        "type": "string",
+      },
+      "operationKey": {
+        "description": "离线包签发防重键",
+        "maxLength": 96,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9_-]+$",
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "deviceId",
+    ],
+    "type": "object",
+  },
+  "AppManagedOfflinePackageIssueReceiptDto": {
+    "properties": {
+      "package": {
+        "$ref": "#/components/schemas/AppManagedOfflinePackageDto",
+      },
+      "packageToken": {
+        "description": "仅首次签发及精确重放返回的签名离线包 token",
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "package",
+      "packageToken",
+    ],
+    "type": "object",
+  },
+  "AppManagedOfflineReviewItemDto": {
+    "properties": {
+      "actionCode": {
+        "enum": [
+          "check_in",
+          "check_out",
+        ],
+        "nullable": true,
+        "type": "string",
+      },
+      "anomalyCode": {
+        "enum": [
+          "operator_authorization_revoked",
+          "package_revoked",
+          "package_expired",
+          "device_mismatch",
+          "sequence_gap",
+          "sequence_duplicate",
+          "future_time",
+          "time_out_of_window",
+          "hash_chain_invalid",
+          "signature_invalid",
+          "participant_snapshot_mismatch",
+        ],
+        "type": "string",
+      },
+      "approvalPolicyCode": {
+        "enum": [
+          "approvable",
+          "reject_only",
+        ],
+        "type": "string",
+      },
+      "deviceTime": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "eventKey": {
+        "type": "string",
+      },
+      "formalPunchEventId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+      "packageId": {
+        "type": "string",
+      },
+      "participationIdentityId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "reviewReason": {
+        "nullable": true,
+        "type": "string",
+      },
+      "reviewedAt": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "sequence": {
+        "minimum": 1,
+        "type": "number",
+      },
+      "sessionId": {
+        "type": "string",
+      },
+      "stagedAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "statusCode": {
+        "enum": [
+          "pending",
+          "approved",
+          "rejected",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "packageId",
+      "sessionId",
+      "sequence",
+      "eventKey",
+      "statusCode",
+      "anomalyCode",
+      "approvalPolicyCode",
+      "participationIdentityId",
+      "actionCode",
+      "deviceTime",
+      "stagedAt",
+      "reviewedAt",
+      "reviewReason",
+      "formalPunchEventId",
+    ],
+    "type": "object",
+  },
+  "AppManagedOfflineUploadDto": {
+    "properties": {
+      "actionCode": {
+        "enum": [
+          "check_in",
+          "check_out",
+        ],
+        "type": "string",
+      },
+      "deviceTime": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "eventKey": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string",
+      },
+      "location": {
+        "$ref": "#/components/schemas/AppManagedOnsiteLocationDto",
+      },
+      "memberCredential": {
+        "maxLength": 4096,
+        "minLength": 1,
+        "type": "string",
+      },
+      "packageToken": {
+        "maxLength": 8192,
+        "minLength": 1,
+        "type": "string",
+      },
+      "priorHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "sequence": {
+        "minimum": 1,
+        "type": "number",
+      },
+      "signature": {
+        "maxLength": 256,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9_-]+$",
+        "type": "string",
+      },
+    },
+    "required": [
+      "packageToken",
+      "sequence",
+      "priorHash",
+      "eventKey",
+      "actionCode",
+      "deviceTime",
+      "memberCredential",
+      "signature",
+    ],
+    "type": "object",
+  },
   "AppManagedOnsiteBatchJobReceiptDto": {
     "properties": {
       "failed": {
@@ -98830,6 +99136,1328 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/app/v1/my/managed-activities/{activityId}/onsite/offline-packages/{packageId}/revoke": {
+    "post": {
+      "operationId": "AppManagedActivityOnsiteOperationsController_revokeOfflinePackage",
+      "parameters": [
+        {
+          "description": "负责人管理的活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "离线考勤包 ID",
+          "in": "path",
+          "name": "packageId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppManagedOfflineOperationDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppManagedOfflinePackageDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作; 22097: 离线考勤包不存在或无效; 22088: 打卡防重键已用于不同请求",
+                    "enum": [
+                      20030,
+                      22097,
+                      22088,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030) / 离线考勤包不存在或无效(code=22097) / 打卡防重键已用于不同请求(code=22088)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "以防重键撤销仍可使用或待复核的离线考勤包 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Onsite Operations",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/onsite/offline-packages/{packageId}/upload": {
+    "post": {
+      "operationId": "AppManagedActivityOnsiteOperationsController_uploadOfflineEvent",
+      "parameters": [
+        {
+          "description": "负责人管理的活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "离线考勤包 ID",
+          "in": "path",
+          "name": "packageId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppManagedOfflineUploadDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityPunchReceiptDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 22076: 关联报名必须属于该活动与该队员且已审核通过; 22090: 该场次要求提供有效定位; 22091: 当前位置未通过场次范围校验",
+                    "enum": [
+                      40000,
+                      22076,
+                      22090,
+                      22091,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 关联报名必须属于该活动与该队员且已审核通过(code=22076) / 该场次要求提供有效定位(code=22090) / 当前位置未通过场次范围校验(code=22091)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作; 22088: 打卡防重键已用于不同请求; 22089: 当前不在该场次对应的打卡时间窗内; 22092: 当前已有未闭合服务段，不能重复签到; 22093: 请先完成签到再签退或特殊闭合; 22094: 普通签退距签到不足30分钟; 20147: 活动容量与当前占用不一致; 22097: 离线考勤包不存在或无效; 22098: 离线考勤包已过期; 22099: 该离线考勤记录需要人工复核",
+                    "enum": [
+                      20030,
+                      22088,
+                      22089,
+                      22092,
+                      22093,
+                      22094,
+                      20147,
+                      22097,
+                      22098,
+                      22099,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030) / 打卡防重键已用于不同请求(code=22088) / 当前不在该场次对应的打卡时间窗内(code=22089) / 当前已有未闭合服务段，不能重复签到(code=22092) / 请先完成签到再签退或特殊闭合(code=22093) / 普通签退距签到不足30分钟(code=22094) / 活动容量与当前占用不一致(code=20147) / 离线考勤包不存在或无效(code=22097) / 离线考勤包已过期(code=22098) / 该离线考勤记录需要人工复核(code=22099)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "验证并追加单条离线现场事件，异常只进入安全复核链 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Onsite Operations",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/onsite/offline-review-items": {
+    "get": {
+      "operationId": "AppManagedActivityOnsiteOperationsController_listOfflineReviewItems",
+      "parameters": [
+        {
+          "description": "负责人管理的活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "in": "query",
+          "name": "sessionId",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "in": "query",
+          "name": "statusCode",
+          "required": false,
+          "schema": {
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+            ],
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/AppManagedOfflineReviewItemDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作",
+                    "enum": [
+                      20030,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "分页读取不含凭证、签名、hash 与坐标的离线复核摘要 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Onsite Operations",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/onsite/offline-review-items/{reviewItemId}/approve": {
+    "post": {
+      "operationId": "AppManagedActivityOnsiteOperationsController_approveOfflineReviewItem",
+      "parameters": [
+        {
+          "description": "负责人管理的活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "离线复核项 ID",
+          "in": "path",
+          "name": "reviewItemId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppManagedOfflineOperationDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppManagedOfflineReviewItemDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 22076: 关联报名必须属于该活动与该队员且已审核通过; 22090: 该场次要求提供有效定位; 22091: 当前位置未通过场次范围校验",
+                    "enum": [
+                      40000,
+                      22076,
+                      22090,
+                      22091,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 关联报名必须属于该活动与该队员且已审核通过(code=22076) / 该场次要求提供有效定位(code=22090) / 当前位置未通过场次范围校验(code=22091)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作; 22088: 打卡防重键已用于不同请求; 22089: 当前不在该场次对应的打卡时间窗内; 22092: 当前已有未闭合服务段，不能重复签到; 22093: 请先完成签到再签退或特殊闭合; 22094: 普通签退距签到不足30分钟; 20147: 活动容量与当前占用不一致",
+                    "enum": [
+                      20030,
+                      22088,
+                      22089,
+                      22092,
+                      22093,
+                      22094,
+                      20147,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030) / 打卡防重键已用于不同请求(code=22088) / 当前不在该场次对应的打卡时间窗内(code=22089) / 当前已有未闭合服务段，不能重复签到(code=22092) / 请先完成签到再签退或特殊闭合(code=22093) / 普通签退距签到不足30分钟(code=22094) / 活动容量与当前占用不一致(code=20147)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "原子批准可批准的离线异常并复用唯一 Punch writer [auth]",
+      "tags": [
+        "Mobile - Managed Activity Onsite Operations",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/onsite/offline-review-items/{reviewItemId}/reject": {
+    "post": {
+      "operationId": "AppManagedActivityOnsiteOperationsController_rejectOfflineReviewItem",
+      "parameters": [
+        {
+          "description": "负责人管理的活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "离线复核项 ID",
+          "in": "path",
+          "name": "reviewItemId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppManagedOfflineOperationDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppManagedOfflineReviewItemDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作; 22088: 打卡防重键已用于不同请求",
+                    "enum": [
+                      20030,
+                      22088,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030) / 打卡防重键已用于不同请求(code=22088)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "拒绝离线异常且不创建 PunchEvent，并收束包状态 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Onsite Operations",
+      ],
+    },
+  },
   "/api/app/v1/my/managed-activities/{activityId}/onsite/punch-events/{eventId}/replace": {
     "post": {
       "operationId": "AppManagedActivityOnsitePunchesController_replaceEvent",
@@ -100146,6 +101774,259 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
         },
       ],
       "summary": "考勤责任人上传并冻结 CSV 现场导入预览 [auth]",
+      "tags": [
+        "Mobile - Managed Activity Onsite Operations",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/offline-packages": {
+    "post": {
+      "operationId": "AppManagedActivityOnsiteOperationsController_issueOfflinePackage",
+      "parameters": [
+        {
+          "description": "负责人管理的活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "场次 ID",
+          "in": "path",
+          "name": "sessionId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppManagedOfflinePackageIssueDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppManagedOfflinePackageIssueReceiptDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作; 20147: 活动容量与当前占用不一致; 22097: 离线考勤包不存在或无效; 22088: 打卡防重键已用于不同请求",
+                    "enum": [
+                      20030,
+                      20147,
+                      22097,
+                      22088,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030) / 活动容量与当前占用不一致(code=20147) / 离线考勤包不存在或无效(code=22097) / 打卡防重键已用于不同请求(code=22088)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "签发冻结名单与规则的现场离线考勤包 [auth]",
       "tags": [
         "Mobile - Managed Activity Onsite Operations",
       ],

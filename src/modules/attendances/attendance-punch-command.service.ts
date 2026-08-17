@@ -13,6 +13,7 @@ import { AttendancePunchPresenter } from './attendance-punch-presenter';
 import {
   createAttendancePunchRequestHash,
   createManagedOnlineAttendancePunchRequestHash,
+  createOfflineAttendancePunchRequestHash,
   normalizeAttendancePunchReason,
 } from './attendance-punch-request-hash';
 import { AttendancePunchSegmentRevisionService } from './attendance-punch-segment-revision.service';
@@ -71,6 +72,10 @@ type PunchEventRow = {
   reason: string | null;
   qrCredentialId: string | null;
   importJobItemId: string | null;
+  offlinePackageId: string | null;
+  offlineSequence: number | null;
+  offlinePriorHash: string | null;
+  offlineEventPayloadHash: string | null;
   deviceId: string | null;
   longitude: Prisma.Decimal | null;
   latitude: Prisma.Decimal | null;
@@ -144,6 +149,38 @@ type NormalizedManagedOnlinePunchInput = Omit<ManagedOnlinePunchInput, 'reason' 
   reason: string | null;
   occurredAt: Date | null;
 };
+
+export interface OfflinePunchWithinTransactionInput {
+  activityId: string;
+  sessionId: string;
+  participationIdentityId: string;
+  memberId: string;
+  actionCode: SelfAction;
+  eventKey: string;
+  deviceTime: Date;
+  receivedAt: Date;
+  deviceId: string;
+  longitude: number | null;
+  latitude: number | null;
+  accuracy: number | null;
+  packageId: string;
+  sequence: number;
+  priorHash: string;
+  eventPayloadHash: string;
+  signatureDigest: string;
+  operatorUserId: string;
+  operatorMemberId: string;
+  auditActor: CurrentUserPayload;
+  auditMeta: AuditMeta;
+}
+
+export interface OfflinePunchWithinTransactionResult {
+  receipt: AppActivityPunchReceiptDto;
+  eventId: string;
+  requestHash: string;
+  evidenceRevision: number;
+  replayed: boolean;
+}
 
 const THIRTY_MINUTES_MS = 30 * 60_000;
 
@@ -389,6 +426,184 @@ export class AttendancePunchCommandService {
     input: ManagedOnlinePunchInput,
   ): Promise<AppActivityPunchReceiptDto> {
     return this.writeManagedOnlinePunch(tx, this.normalizeManagedOnlineInput(input));
+  }
+
+  /**
+   * 离线包 service 已持有 Activity 与 OfflinePackage 根锁后调用的唯一正式 writer。
+   * 这里继续锁 session/identity/event，复用在线写入的窗口、服务段、定位、evidence 和审计链。
+   */
+  async offlinePunchWithinTransaction(
+    tx: PrismaTx,
+    input: OfflinePunchWithinTransactionInput,
+  ): Promise<OfflinePunchWithinTransactionResult> {
+    const session = await this.lockSession(tx, input.activityId, input.sessionId);
+    const identity = await this.lockIdentityById(
+      tx,
+      input.activityId,
+      input.sessionId,
+      input.participationIdentityId,
+    );
+    if (identity.memberId !== input.memberId) {
+      throw new BizException(BizCode.ATTENDANCE_REGISTRATION_INVALID);
+    }
+    const requestHash = createOfflineAttendancePunchRequestHash({
+      activityId: input.activityId,
+      sessionId: input.sessionId,
+      participationIdentityId: identity.id,
+      memberId: identity.memberId,
+      operatorUserId: input.operatorUserId,
+      packageId: input.packageId,
+      sequence: input.sequence,
+      priorHash: input.priorHash,
+      eventPayloadHash: input.eventPayloadHash,
+      signatureDigest: input.signatureDigest,
+      eventKey: input.eventKey,
+      actionCode: input.actionCode,
+      deviceTime: input.deviceTime,
+      longitude: input.longitude,
+      latitude: input.latitude,
+      accuracy: input.accuracy,
+    });
+    const existing = await this.findEventByKey(tx, input.eventKey);
+    if (existing) {
+      if (
+        existing.requestHash !== requestHash ||
+        existing.sourceCode !== 'offline' ||
+        existing.offlinePackageId !== input.packageId ||
+        existing.offlineSequence !== input.sequence ||
+        existing.offlinePriorHash !== input.priorHash ||
+        existing.offlineEventPayloadHash !== input.eventPayloadHash
+      ) {
+        throw new BizException(BizCode.ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT);
+      }
+      return {
+        receipt: this.presentEvent(
+          existing,
+          existing.receivedAt,
+          input.actionCode === 'check_in' ? 'open' : 'closed_valid',
+        ),
+        eventId: existing.id,
+        requestHash,
+        evidenceRevision: existing.evidenceRevision,
+        replayed: true,
+      };
+    }
+
+    this.assertSessionWindow(session, input.actionCode, input.deviceTime);
+    const priorEvents = await this.eventsForIdentity(tx, identity.id);
+    const projection = this.project(priorEvents, session);
+    const open = projection.segments.find((segment) => segment.checkOutAt === null) ?? null;
+    if (input.actionCode === 'check_in') {
+      if (!identity.populationIncluded || identity.currentStatusCode !== 'pass') {
+        throw new BizException(BizCode.ATTENDANCE_REGISTRATION_INVALID);
+      }
+      if (open) throw new BizException(BizCode.ATTENDANCE_PUNCH_OPEN_SEGMENT_EXISTS);
+    } else {
+      if (!open) throw new BizException(BizCode.ATTENDANCE_PUNCH_CHECK_OUT_REQUIRES_OPEN_SEGMENT);
+      if (input.deviceTime.getTime() - open.checkInAt.getTime() < THIRTY_MINUTES_MS) {
+        throw new BizException(BizCode.ATTENDANCE_PUNCH_MIN_DURATION_NOT_REACHED);
+      }
+    }
+    const checkInEvent = open
+      ? (priorEvents.find((event) => event.id === open.sourceCheckInEventId) ?? null)
+      : null;
+    const positionId =
+      input.actionCode === 'check_in'
+        ? identity.currentPositionId
+        : (checkInEvent?.positionId ?? null);
+    const locationRule = await this.lockLocationRule(
+      tx,
+      input.activityId,
+      input.sessionId,
+      positionId,
+    );
+    const location = this.locationPolicy.evaluate({
+      required: locationRule.required,
+      radiusMeters: locationRule.radiusMeters,
+      activityLongitude: this.numberOrNull(session.longitude),
+      activityLatitude: this.numberOrNull(session.latitude),
+      accuracyWarningMeters: session.accuracyWarningMeters,
+      request: {
+        longitude: input.longitude,
+        latitude: input.latitude,
+        accuracy: input.accuracy,
+      },
+    });
+    if (!location.allowed) throw new BizException(location.bizCode);
+
+    const evidenceRevision = await this.bumpEvidenceRevision(
+      tx,
+      input.activityId,
+      input.receivedAt,
+    );
+    const created = await tx.attendancePunchEvent.create({
+      data: {
+        activityId: input.activityId,
+        sessionId: input.sessionId,
+        positionId,
+        participationIdentityId: identity.id,
+        memberId: identity.memberId,
+        eventTypeCode: input.actionCode,
+        sourceCode: 'offline',
+        occurredAt: input.deviceTime,
+        receivedAt: input.receivedAt,
+        operatorUserId: input.operatorUserId,
+        operatorMemberId: input.operatorMemberId,
+        reason: null,
+        qrCredentialId: null,
+        importJobItemId: null,
+        offlinePackageId: input.packageId,
+        offlineSequence: input.sequence,
+        offlinePriorHash: input.priorHash,
+        offlineEventPayloadHash: input.eventPayloadHash,
+        deviceId: input.deviceId,
+        longitude: location.longitude,
+        latitude: location.latitude,
+        accuracy: location.accuracy,
+        distance: location.distanceMeters,
+        geoVerified: location.geoVerified,
+        outOfRange: location.outOfRange,
+        lowAccuracy: location.lowAccuracy,
+        eventKey: input.eventKey,
+        requestHash,
+        supersedesEventId: null,
+        evidenceRevision,
+      },
+      select: this.eventSelect,
+    });
+    await this.segments.rebuild({
+      tx,
+      identityId: identity.id,
+      events: [...priorEvents, created],
+      session,
+      operationEventType: input.actionCode,
+    });
+    await this.audit.logPunch({
+      operation: 'attendance-punch.create',
+      activityId: input.activityId,
+      sessionId: input.sessionId,
+      participationIdentityId: identity.id,
+      eventId: created.id,
+      eventTypeCode: created.eventTypeCode,
+      sourceCode: created.sourceCode,
+      evidenceRevision,
+      supersedesEventId: null,
+      actorUserId: input.auditActor.id,
+      actorRoleSnap: input.auditActor.role,
+      auditMeta: input.auditMeta,
+      tx,
+    });
+    return {
+      receipt: this.presentEvent(
+        created,
+        input.receivedAt,
+        input.actionCode === 'check_in' ? 'open' : 'closed_valid',
+      ),
+      eventId: created.id,
+      requestHash,
+      evidenceRevision,
+      replayed: false,
+    };
   }
 
   async myState(args: {
@@ -1015,6 +1230,10 @@ export class AttendancePunchCommandService {
     reason: true,
     qrCredentialId: true,
     importJobItemId: true,
+    offlinePackageId: true,
+    offlineSequence: true,
+    offlinePriorHash: true,
+    offlineEventPayloadHash: true,
     deviceId: true,
     longitude: true,
     latitude: true,

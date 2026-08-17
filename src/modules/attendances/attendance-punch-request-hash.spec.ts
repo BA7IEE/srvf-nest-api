@@ -1,5 +1,8 @@
 import {
   createAttendancePunchRequestHash,
+  createOfflineAttendancePunchRequestHash,
+  createOfflinePackageIssueRequestHash,
+  createOfflineReviewResolutionRequestHash,
   createManagedOnlineAttendancePunchRequestHash,
   normalizeAttendancePunchReason,
   type AttendancePunchRequestHashInput,
@@ -44,6 +47,66 @@ describe('attendance punch request hash', () => {
   ])('mutation: changing %s changes the canonical request hash', (_name, mutation) => {
     expect(createAttendancePunchRequestHash({ ...base, ...mutation })).not.toBe(
       createAttendancePunchRequestHash(base),
+    );
+  });
+});
+
+describe('offline attendance request hashes', () => {
+  it('binds issue replay to activity, operator, operation key and device', () => {
+    const issue = {
+      activityId: 'activity-1',
+      sessionId: 'session-1',
+      actorUserId: 'user-1',
+      actorMemberId: 'member-1',
+      operationKey: 'issue-1',
+      deviceId: 'device-1',
+    };
+    expect(createOfflinePackageIssueRequestHash(issue)).not.toBe(
+      createOfflinePackageIssueRequestHash({ ...issue, deviceId: 'device-2' }),
+    );
+  });
+
+  it('normalizes review reasons while binding the decision', () => {
+    const review = {
+      action: 'approve' as const,
+      activityId: 'activity-1',
+      reviewItemId: 'review-1',
+      actorUserId: 'user-1',
+      operationKey: 'review-op-1',
+      reason: '  复核\n通过  ',
+    };
+    expect(createOfflineReviewResolutionRequestHash(review)).toBe(
+      createOfflineReviewResolutionRequestHash({ ...review, reason: '复核 通过' }),
+    );
+    expect(createOfflineReviewResolutionRequestHash(review)).not.toBe(
+      createOfflineReviewResolutionRequestHash({ ...review, action: 'reject' }),
+    );
+  });
+
+  it('binds formal event replay to package chain, payload hash, and signature digest', () => {
+    const event = {
+      activityId: 'activity-1',
+      sessionId: 'session-1',
+      participationIdentityId: 'identity-1',
+      memberId: 'member-1',
+      operatorUserId: 'operator-1',
+      packageId: 'package-1',
+      sequence: 1,
+      priorHash: '1'.repeat(64),
+      eventPayloadHash: '2'.repeat(64),
+      signatureDigest: '3'.repeat(64),
+      eventKey: 'event-1',
+      actionCode: 'check_in' as const,
+      deviceTime: new Date('2099-12-15T08:00:00.000Z'),
+      longitude: 116.1234567,
+      latitude: 39.1234567,
+      accuracy: 10,
+    };
+    expect(createOfflineAttendancePunchRequestHash(event)).not.toBe(
+      createOfflineAttendancePunchRequestHash({ ...event, eventPayloadHash: '4'.repeat(64) }),
+    );
+    expect(createOfflineAttendancePunchRequestHash(event)).not.toBe(
+      createOfflineAttendancePunchRequestHash({ ...event, signatureDigest: '5'.repeat(64) }),
     );
   });
 });

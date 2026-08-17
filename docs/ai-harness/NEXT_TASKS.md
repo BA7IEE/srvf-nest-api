@@ -239,7 +239,7 @@
 > - **D onsite**：不得绕过硬资格、保险、性别或名额；warn 留痕。普通题可代录，文件与本人同意不得代办；
 >   必记批准人、原因、时间。
 > - **E 职责与 scope**：沿七职责，分别覆盖活动、场次、岗位三层 scope。
-> - **F 离线**：维护者第 6 批补充合同 v1 已把离线包与人工复核纳入 v1.1；migration 88 已冻结字段和 DB 约束。package issue/revoke/upload/review 的 HTTP wire 仍须逐字拍板，不能把旧「延至 v1.2」散文当作当前范围依据。
+> - **F 离线**：维护者第 6 批补充合同 v2 已逐字批准六条 package issue/revoke/upload/review wire；B6-2 子刀已实现并保留 22097 零写、22098/22099 staging、唯一 PunchCommand 与安全读面证据。交付判定必须另绑 Draft PR exact-SHA 普通 CI 与独立核验，不能把本子刀局部完成写成完整第 6 批完成。
 > - **G visitor**：attendanceCode 永远为 null，且无写入口。
 > - **H 更正**：追认现有严格版本化更正 JSON。
 > - **I reservation pointer**：capacityReservationId 固定指向 session reservation；释放时清空，不一致为 20147。
@@ -261,7 +261,7 @@
 > `resultCode` 闭集=`allocated/waitlisted/not_selected`;同一 `(allocationBatchId, participationIdentityId)` 唯一;
 > `scopeTypeCode` 沿 §3.10 容量桶口径,`fallbackMode` 仅「到期释放公共池/到期作废」且默认释放;
 > `preferenceOrder` 从 1 起算· **③曾是第 6 批开工硬门**
-> (`OfflinePackage`、`OfflinePunchReviewItem` 当时被引用却从未定义；维护者随后以第 6 批补充合同 v1 给出完整字段表，migration 88 已落。仍禁止从旧 §5.7 散文臆造尚未逐字定义的 HTTP wire)。
+> (`OfflinePackage`、`OfflinePunchReviewItem` 当时被引用却从未定义；维护者随后以第 6 批补充合同 v1 给出字段表、migration 88 已落，并以补充合同 v2 锁定六条 HTTP wire。新增或改写 wire 仍须另行审批，禁止从旧 §5.7 散文扩面)。
 > **第 4 批缺口⑤已兑现（第 80 migration `20260808133500_activity_v11_batch4_allocation_contract_guards`）**：
 > `preferenceOrder >= 1` CHECK；candidate 的 nullable `resultCode` 三值闭集和同批次 identity 普通 unique；
 > quota 的四值 `scopeTypeCode` CHECK、二值 `fallbackMode` CHECK 与 DB 默认。工程编码固定为
@@ -389,7 +389,7 @@
 
 > **第 5 批（本分支，自助二维码和现场主链）**：复用已存在的 `AttendanceQrCredential`、`AttendancePunchEvent`、`ActivityEvidenceState`、`EvidenceSeal` 与服务段 revision 地基；负责人可签发、作废、受保护渲染场次 QR，本人可扫码签到/签退并读取安全服务段状态，责任人可早退闭合、void、replace。QR token 仅为请求输入，render 只返不可缓存 SVG；所有写命令走 Activity 根事务、canonical request hash 与 append-only PunchEvent/segment projector。第 5 批只覆盖 AC-031–042、AC-046、ADV-001/002/004/005/006/007/020，不带入工作人员代扫、代理、批量、导入或离线（第 6 批）。
 >
-> **第 6 批（本分支，工作人员/导入已接，离线 writer 待精确 wire）**：App 成员凭证 SVG、工作人员 `staff-scan`、单人 `proxy-punch`、可重放 bulk job 与 CSV import preview/execute 已接真实 PunchCommand/Activity 根锁/责任重验/worker lease-fence；每个任务 item 都重验 current responsibility、identity、窗口、segment、seal。import 以冻结 owner/object digest/parserVersion/rowHash/previewHash 防 ADV-014 的文件替换。migration 88 已建立 OfflinePackage/Participant/ReviewItem、PunchEvent 四个离线锚与 DB 状态/链约束；未定义 package issue/revoke/upload/review 的 exact HTTP request/response 前，不得自造 controller、DTO 或离线 PunchEvent writer。
+> **第 6 批（B6-2 子刀，尚未整体交付）**：B6-1 的成员凭证、`staff-scan`、`proxy-punch`、bulk 与 CSV import 已接真实 PunchCommand/Activity 根锁/责任重验/worker lease-fence；B6-2 按补充合同 v2 接入 package issue/revoke/单事件 upload、安全 review list/approve/reject。packageToken 仅首次签发与精确重放返回，正式离线事件继续复用唯一 PunchCommand；22097 零写，22098/22099 只 staging。PR/CI/独立核验/合并状态必须按对应 exact SHA 另行核对；不得写成完整第 6 批或部署完成。
 
 - **合同**:[`archive/reviews/activity-business-overhaul-v1.1/`](../archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效
   (业务方案 / 详细开发文档 / 355 项追踪矩阵 / 修订说明),SHA256 入仓时原位校验全过。

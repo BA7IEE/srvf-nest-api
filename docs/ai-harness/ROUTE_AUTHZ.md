@@ -16,9 +16,9 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.0.0 |
-| inputDigest | sha256:34ce8fe5b4cfb5f4b0ddc932fab8879e18da489f6cae7f0bd0d2c918d8058200 |
-| endpoint count | 523 |
-| legacy [auth] count | 153 |
+| inputDigest | sha256:c5c733872bd9e910cbc7daa88ce8c3f5e0b752c4852f1a1c5f579604b4e0b4f8 |
+| endpoint count | 529 |
+| legacy [auth] count | 159 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
 | per-route truth source | code |
@@ -30,7 +30,7 @@
 | surface | routes | declared in code | undeclared |
 |---|---:|---:|---:|
 | admin | 270 | 270 | 0 |
-| app | 142 | 142 | 0 |
+| app | 148 | 148 | 0 |
 | system | 75 | 75 | 0 |
 | auth | 20 | 20 | 0 |
 | open | 16 | 16 | 0 |
@@ -41,7 +41,7 @@
 |---|---:|
 | public | 33 |
 | rbac | 337 |
-| auth | 153 |
+| auth | 159 |
 | unclassified | 0 |
 
 ## Phase 0 decision record
@@ -70,7 +70,7 @@
 | app tag family | Mobile - Managed Activity Attendance QR (4) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendance-qr.controller.ts:52 |
 | app tag family | Mobile - Managed Activity Attendances (8) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:213 |
 | app tag family | Mobile - Managed Activity Guests (5) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:57 |
-| app tag family | Mobile - Managed Activity Onsite Operations (7) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:378 |
+| app tag family | Mobile - Managed Activity Onsite Operations (13) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:645 |
 | app tag family | Mobile - Managed Activity Onsite Participations (1) | LOGIN_SCOPED; admission=app-member; codes=activity-registration.create.record; require=all; scopes=-; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-onsite-participations.controller.ts:34 |
 | app tag family | Mobile - Managed Activity Onsite Punches (3) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-punches.controller.ts:111 |
 | app tag family | Mobile - Managed Activity Positions (4) | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-positions.controller.ts:139 |
@@ -106,7 +106,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.0.0",
-  "inputDigest": "sha256:34ce8fe5b4cfb5f4b0ddc932fab8879e18da489f6cae7f0bd0d2c918d8058200",
+  "inputDigest": "sha256:c5c733872bd9e910cbc7daa88ce8c3f5e0b752c4852f1a1c5f579604b4e0b4f8",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -3518,6 +3518,22 @@
       "routeKey": "GET /api/app/v1/my/managed-activities/:activityId/onsite/import-previews/:previewId",
       "controller": "AppManagedActivityOnsiteOperationsController",
       "handler": "getImportPreview",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "GET /api/app/v1/my/managed-activities/:activityId/onsite/offline-review-items",
+      "controller": "AppManagedActivityOnsiteOperationsController",
+      "handler": "listOfflineReviewItems",
       "legacy": "auth",
       "policy": {
         "admission": "app-member",
@@ -8059,6 +8075,70 @@
       }
     },
     {
+      "routeKey": "POST /api/app/v1/my/managed-activities/:activityId/onsite/offline-packages/:packageId/revoke",
+      "controller": "AppManagedActivityOnsiteOperationsController",
+      "handler": "revokeOfflinePackage",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "POST /api/app/v1/my/managed-activities/:activityId/onsite/offline-packages/:packageId/upload",
+      "controller": "AppManagedActivityOnsiteOperationsController",
+      "handler": "uploadOfflineEvent",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "POST /api/app/v1/my/managed-activities/:activityId/onsite/offline-review-items/:reviewItemId/approve",
+      "controller": "AppManagedActivityOnsiteOperationsController",
+      "handler": "approveOfflineReviewItem",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "POST /api/app/v1/my/managed-activities/:activityId/onsite/offline-review-items/:reviewItemId/reject",
+      "controller": "AppManagedActivityOnsiteOperationsController",
+      "handler": "rejectOfflineReviewItem",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
       "routeKey": "POST /api/app/v1/my/managed-activities/:activityId/onsite/punch-events/:eventId/replace",
       "controller": "AppManagedActivityOnsitePunchesController",
       "handler": "replaceEvent",
@@ -8126,6 +8206,22 @@
       "routeKey": "POST /api/app/v1/my/managed-activities/:activityId/onsite/sessions/:sessionId/import-previews",
       "controller": "AppManagedActivityOnsiteOperationsController",
       "handler": "createImportPreview",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "POST /api/app/v1/my/managed-activities/:activityId/onsite/sessions/:sessionId/offline-packages",
+      "controller": "AppManagedActivityOnsiteOperationsController",
+      "handler": "issueOfflinePackage",
       "legacy": "auth",
       "policy": {
         "admission": "app-member",
@@ -9724,8 +9820,9 @@
 | GET | /api/app/v1/my/managed-activities/:activityId/check-ins | Mobile - Managed Activity Attendances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:57; src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:79 |
 | GET | /api/app/v1/my/managed-activities/:activityId/collaborator-options | Mobile - Managed Activity Responsibilities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts:71; src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts:90 |
 | GET | /api/app/v1/my/managed-activities/:activityId/invitations | Mobile - Managed Activity Guests | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:57; src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:79 |
-| GET | /api/app/v1/my/managed-activities/:activityId/onsite/bulk-punch-jobs/:jobId | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:378; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:400 |
-| GET | /api/app/v1/my/managed-activities/:activityId/onsite/import-previews/:previewId | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:346; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:369 |
+| GET | /api/app/v1/my/managed-activities/:activityId/onsite/bulk-punch-jobs/:jobId | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:645; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:667 |
+| GET | /api/app/v1/my/managed-activities/:activityId/onsite/import-previews/:previewId | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:613; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:636 |
+| GET | /api/app/v1/my/managed-activities/:activityId/onsite/offline-review-items | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:232; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:260 |
 | GET | /api/app/v1/my/managed-activities/:activityId/positions | Mobile - Managed Activity Positions | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-positions.controller.ts:52; src/modules/activities/controllers/app-managed-activity-positions.controller.ts:71 |
 | GET | /api/app/v1/my/managed-activities/:activityId/qualification-rules | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:328; src/modules/activities/controllers/app-managed-activities.controller.ts:350 |
 | GET | /api/app/v1/my/managed-activities/:activityId/registration-form | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:277; src/modules/activities/controllers/app-managed-activities.controller.ts:298 |
@@ -9973,14 +10070,19 @@
 | POST | /api/app/v1/my/managed-activities/:activityId/invitations | Mobile - Managed Activity Guests | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:82; src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:109 |
 | POST | /api/app/v1/my/managed-activities/:activityId/invitations/:invitationId/revoke | Mobile - Managed Activity Guests | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:112; src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:138 |
 | POST | /api/app/v1/my/managed-activities/:activityId/onsite-participations | Mobile - Managed Activity Onsite Participations | auth | LOGIN_SCOPED; admission=app-member; codes=activity-registration.create.record; require=all; scopes=-; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-onsite-participations.controller.ts:34; src/modules/activity-registrations/controllers/app-managed-activity-onsite-participations.controller.ts:66 |
-| POST | /api/app/v1/my/managed-activities/:activityId/onsite/import-previews/:previewId/execute | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:305; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:332 |
+| POST | /api/app/v1/my/managed-activities/:activityId/onsite/import-previews/:previewId/execute | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:572; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:599 |
+| POST | /api/app/v1/my/managed-activities/:activityId/onsite/offline-packages/:packageId/revoke | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:137; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:163 |
+| POST | /api/app/v1/my/managed-activities/:activityId/onsite/offline-packages/:packageId/upload | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:175; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:211 |
+| POST | /api/app/v1/my/managed-activities/:activityId/onsite/offline-review-items/:reviewItemId/approve | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:270; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:303 |
+| POST | /api/app/v1/my/managed-activities/:activityId/onsite/offline-review-items/:reviewItemId/reject | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:315; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:340 |
 | POST | /api/app/v1/my/managed-activities/:activityId/onsite/punch-events/:eventId/replace | Mobile - Managed Activity Onsite Punches | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-punches.controller.ts:111; src/modules/attendances/controllers/app-managed-activity-onsite-punches.controller.ts:137 |
 | POST | /api/app/v1/my/managed-activities/:activityId/onsite/punch-events/:eventId/void | Mobile - Managed Activity Onsite Punches | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-punches.controller.ts:74; src/modules/attendances/controllers/app-managed-activity-onsite-punches.controller.ts:100 |
-| POST | /api/app/v1/my/managed-activities/:activityId/onsite/sessions/:sessionId/bulk-punch-jobs | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:189; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:215 |
+| POST | /api/app/v1/my/managed-activities/:activityId/onsite/sessions/:sessionId/bulk-punch-jobs | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:456; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:482 |
 | POST | /api/app/v1/my/managed-activities/:activityId/onsite/sessions/:sessionId/early-departure-close | Mobile - Managed Activity Onsite Punches | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-punches.controller.ts:36; src/modules/attendances/controllers/app-managed-activity-onsite-punches.controller.ts:63 |
-| POST | /api/app/v1/my/managed-activities/:activityId/onsite/sessions/:sessionId/import-previews | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:232; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:287 |
-| POST | /api/app/v1/my/managed-activities/:activityId/onsite/sessions/:sessionId/proxy-punch | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:139; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:171 |
-| POST | /api/app/v1/my/managed-activities/:activityId/onsite/sessions/:sessionId/staff-scan | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:85; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:121 |
+| POST | /api/app/v1/my/managed-activities/:activityId/onsite/sessions/:sessionId/import-previews | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:499; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:554 |
+| POST | /api/app/v1/my/managed-activities/:activityId/onsite/sessions/:sessionId/offline-packages | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:98; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:125 |
+| POST | /api/app/v1/my/managed-activities/:activityId/onsite/sessions/:sessionId/proxy-punch | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:406; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:438 |
+| POST | /api/app/v1/my/managed-activities/:activityId/onsite/sessions/:sessionId/staff-scan | Mobile - Managed Activity Onsite Operations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:352; src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:388 |
 | POST | /api/app/v1/my/managed-activities/:activityId/positions | Mobile - Managed Activity Positions | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-positions.controller.ts:74; src/modules/activities/controllers/app-managed-activity-positions.controller.ts:98 |
 | POST | /api/app/v1/my/managed-activities/:activityId/publish-reviews | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1079; src/modules/activities/controllers/app-managed-activities.controller.ts:1105 |
 | POST | /api/app/v1/my/managed-activities/:activityId/qr-credentials/:credentialId/render | Mobile - Managed Activity Attendance QR | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendance-qr.controller.ts:148; src/modules/attendances/controllers/app-managed-activity-attendance-qr.controller.ts:178 |

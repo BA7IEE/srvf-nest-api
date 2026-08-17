@@ -54,6 +54,25 @@ export interface ManagedOnlineAttendancePunchRequestHashInput {
   occurredAt?: Date | null;
 }
 
+export interface OfflineAttendancePunchRequestHashInput {
+  activityId: string;
+  sessionId: string;
+  participationIdentityId: string;
+  memberId: string;
+  operatorUserId: string;
+  packageId: string;
+  sequence: number;
+  priorHash: string;
+  eventPayloadHash: string;
+  signatureDigest: string;
+  eventKey: string;
+  actionCode: 'check_in' | 'check_out';
+  deviceTime: Date;
+  longitude: number | null;
+  latitude: number | null;
+  accuracy: number | null;
+}
+
 export function normalizeAttendancePunchReason(value: string | null): string | null {
   if (value === null) return null;
   const normalized = value.trim().replace(/\s+/gu, ' ');
@@ -123,9 +142,82 @@ export function createManagedOnlineAttendancePunchRequestHash(
   return createHash('sha256').update(payload, 'utf8').digest('hex');
 }
 
+export function createOfflinePackageIssueRequestHash(input: {
+  activityId: string;
+  sessionId: string;
+  actorUserId: string;
+  actorMemberId: string;
+  operationKey: string;
+  deviceId: string;
+}): string {
+  return hash({ v: 'attendance-offline-package-issue/v1', ...input });
+}
+
+export function createOfflinePackageRevokeRequestHash(input: {
+  activityId: string;
+  packageId: string;
+  actorUserId: string;
+  operationKey: string;
+  reason: string;
+}): string {
+  return hash({
+    v: 'attendance-offline-package-revoke/v1',
+    ...input,
+    reason: normalizeAttendancePunchReason(input.reason),
+  });
+}
+
+export function createOfflineReviewResolutionRequestHash(input: {
+  action: 'approve' | 'reject';
+  activityId: string;
+  reviewItemId: string;
+  actorUserId: string;
+  operationKey: string;
+  reason: string;
+}): string {
+  return hash({
+    v: 'attendance-offline-review-resolution/v1',
+    ...input,
+    reason: normalizeAttendancePunchReason(input.reason),
+  });
+}
+
+export function createOfflineAttendancePunchRequestHash(
+  input: OfflineAttendancePunchRequestHashInput,
+): string {
+  if (!Number.isFinite(input.deviceTime.getTime())) {
+    throw new Error('attendance offline deviceTime is invalid');
+  }
+  return hash({
+    v: 'attendance-offline-punch-request/v1',
+    activityId: input.activityId,
+    sessionId: input.sessionId,
+    participationIdentityId: input.participationIdentityId,
+    memberId: input.memberId,
+    operatorUserId: input.operatorUserId,
+    packageId: input.packageId,
+    sequence: input.sequence,
+    priorHash: input.priorHash,
+    eventPayloadHash: input.eventPayloadHash,
+    signatureDigest: input.signatureDigest,
+    eventKey: input.eventKey,
+    actionCode: input.actionCode,
+    deviceTime: input.deviceTime.toISOString(),
+    location: {
+      longitude: decimal(input.longitude, 7),
+      latitude: decimal(input.latitude, 7),
+      accuracy: decimal(input.accuracy, 2),
+    },
+  });
+}
+
 function canonicalImportOccurredAt(value: Date | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value.getTime())) {
     throw new Error('attendance import occurredAt is invalid');
   }
   return value.toISOString();
+}
+
+function hash(value: unknown): string {
+  return createHash('sha256').update(JSON.stringify(value), 'utf8').digest('hex');
 }

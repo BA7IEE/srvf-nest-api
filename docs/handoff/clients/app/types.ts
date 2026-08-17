@@ -2,7 +2,7 @@
 // 真相源:后端 live /api/docs-json;本文件派生自 docs/handoff/openapi.json 快照。
 // surface: App 小程序
 // generatorVersion: 1.0.0
-// inputDigest: sha256:602e2d3ae68a471b78e65412107e2af6e6d22228a8ea3620da8fe9faaa99e3b5
+// inputDigest: sha256:079d8cb103a8f76e5afc6ba43c043cc85c010d21da98fabd1ce62c5b6385eb15
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -777,6 +777,69 @@ export interface AppManagedMyResponsibilityDto {
   "responsibilityType": "owner" | "collaborator";
   "canManageRegistrations": boolean;
   "canManageAttendance": boolean;
+}
+
+export interface AppManagedOfflineOperationDto {
+  "operationKey": string;
+  "reason": string;
+}
+
+export interface AppManagedOfflinePackageDto {
+  "id": string;
+  "activityId": string;
+  "sessionId": string;
+  "deviceId": string;
+  "packageVersion": number;
+  "packageKeyVersion": 0;
+  "statusCode": "active" | "review_required" | "revoked" | "expired";
+  "validFrom": string;
+  "validUntil": string;
+  "uploadUntil": string;
+  "sequenceStart": number;
+  "nextExpectedSequence": number;
+  "ruleSnapshotHash": string;
+  "workflowRevision": number;
+  "participantSnapshotHash": string;
+}
+
+export interface AppManagedOfflinePackageIssueDto {
+  "operationKey": string;
+  "deviceId": string;
+}
+
+export interface AppManagedOfflinePackageIssueReceiptDto {
+  "package": AppManagedOfflinePackageDto;
+  "packageToken": string;
+}
+
+export interface AppManagedOfflineReviewItemDto {
+  "id": string;
+  "packageId": string;
+  "sessionId": string;
+  "sequence": number;
+  "eventKey": string;
+  "statusCode": "pending" | "approved" | "rejected";
+  "anomalyCode": "operator_authorization_revoked" | "package_revoked" | "package_expired" | "device_mismatch" | "sequence_gap" | "sequence_duplicate" | "future_time" | "time_out_of_window" | "hash_chain_invalid" | "signature_invalid" | "participant_snapshot_mismatch";
+  "approvalPolicyCode": "approvable" | "reject_only";
+  "participationIdentityId": string | null;
+  "actionCode": "check_in" | "check_out" | null;
+  "deviceTime": string | null;
+  "stagedAt": string;
+  "reviewedAt": string | null;
+  "reviewReason": string | null;
+  "formalPunchEventId": string | null;
+}
+
+export interface AppManagedOfflineUploadDto {
+  "packageToken": string;
+  "sequence": number;
+  "priorHash": string;
+  "eventKey": string;
+  "actionCode": "check_in" | "check_out";
+  "deviceTime": string;
+  "memberCredential": string;
+  "location"?: AppManagedOnsiteLocationDto;
+  "signature": string;
 }
 
 export interface AppManagedOnsiteBatchJobReceiptDto {
