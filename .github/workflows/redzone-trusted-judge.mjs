@@ -176,11 +176,61 @@ const RATCHET_REGISTRY_REL_PATH = 'harness/ratchet-registry.json';
 const RATCHET_IDENTITY_FIELDS = ['baseline', 'rule', 'symbolShape'];
 
 /**
+ * 棘轮的**两种形态**(EC-1,2026-08-17)。
+ *
+ * 到 2026-08-15 为止,注册表只装得下一种:ESLint 豁免型 —— 身份是 `(file, symbol)`,
+ * 判据是「集合只减不增」,数值不参与。尺寸棘轮(harness/service-size-baseline.json)
+ * 装不进来,三条结构原因见 docs/ai-harness/SERVICE_SIZE_RATCHET.md §5,其中第三条
+ * 是**裁判语义正好反了**:数值若编进 symbol,合法的「变小」会造出新 key 而硬失败。
+ *
+ * 于是加 `kind` 判别,把注册表从「只装 ESLint 型」扩成真正的「唯一登记处」:
+ *
+ *   kind='eslint-exempt'(默认;既有三条省略不写,因此**一个字节都不用改**)
+ *       身份 = (file, symbol);判据 = 集合只减不增;载体三元组 baseline/rule/symbolShape
+ *   kind='numeric-monotonic'
+ *       身份 = file;判据 = **每个 file 的数值只减不增,且不得新增 file**;
+ *       载体二元组 baseline/metric —— 它**不带** rule/symbolShape
+ *
+ * ⚠️ 为什么默认值必须是 eslint-exempt、而不能要求既有条目补写 kind:
+ * 补写会改动它们的条目内容,而 judgeRegistryMonotonicity 对既有 id 的载体字段
+ * 逐字冻结 —— 那会被判成 mutated 且**审批盖不掉**(scan 失败 ⇒ 审批 job 被 skip)。
+ * 「要求补字段」与「冻结字段」在这里是死锁,默认值是唯一出路。
+ *
+ * ⚠️ `kind` 本身是身份字段(见 ratchetIdentityFields)。不冻结它,
+ * 一个 PR 只要把某条的 kind 从 eslint-exempt 翻成 numeric-monotonic,
+ * 就换掉了判它的那套判据 —— 而 baseline/rule/symbolShape 逐字未变,旧的冻结检查全绿。
+ * 这是「id 没变、执行它的东西全换了」的同一形状,只是换在**判据选择**上。
+ *
+ * ⚠️ numeric 型**禁止**携带 rule / symbolShape,不是"可选"。
+ * 允许它带一个真实规则名 = 允许它顺手把基线里的文件从那条 ESLint 规则里豁免掉,
+ * 而本裁判的 ⑤(rule 豁免并集只减不增)对它无从判起(它的基线里没有 symbol)。
+ */
+const RATCHET_KINDS = {
+  // 复用上方那个常量,不另抄一份 —— 两份「eslint 型的载体字段是哪几个」迟早会漂移,
+  // 而漂移的后果是「冻结检查漏掉一个字段」,静默且刚好是本裁判要防的东西。
+  'eslint-exempt': RATCHET_IDENTITY_FIELDS,
+  'numeric-monotonic': ['baseline', 'metric'],
+};
+const DEFAULT_RATCHET_KIND = 'eslint-exempt';
+/** numeric 型绝不能带的字段 —— 带了就能借道 ESLint 豁免,见上方 ⚠️。 */
+const NUMERIC_FORBIDDEN_FIELDS = ['rule', 'symbolShape'];
+
+/**
+ * 一条棘轮的身份字段集 = `kind` + 该 kind 的载体字段。
+ *
+ * @param {string} kind
+ * @returns {string[]}
+ */
+export function ratchetIdentityFields(kind) {
+  return ['kind', ...(RATCHET_KINDS[kind] ?? RATCHET_KINDS[DEFAULT_RATCHET_KIND])];
+}
+
+/**
  * 解析注册表(**只 parse,永不执行** —— 正是当初把基线从 .mjs 抽成 JSON 的同一条理由)。
  *
  * @param {string} text
  * @param {string} which
- * @returns {Array<{ id: string, baseline: string, rule: string, symbolShape: string }>}
+ * @returns {Array<{ id: string, kind: string, baseline: string, rule?: string, symbolShape?: string, metric?: string }>}
  */
 export function parseRatchetRegistryDoc(text, which) {
   let doc;
@@ -198,12 +248,32 @@ export function parseRatchetRegistryDoc(text, which) {
     if (r === null || typeof r !== 'object' || typeof r.id !== 'string' || r.id === '') {
       throw new Error(`${which} 的 ${RATCHET_REGISTRY_REL_PATH} 有条目缺 id`);
     }
-    for (const field of RATCHET_IDENTITY_FIELDS) {
+    // kind 省略 = eslint-exempt。既有三条因此一个字节都不用改(见 RATCHET_KINDS 的死锁说明)。
+    const kind = r.kind === undefined ? DEFAULT_RATCHET_KIND : r.kind;
+    if (typeof kind !== 'string' || !Object.prototype.hasOwnProperty.call(RATCHET_KINDS, kind)) {
+      throw new Error(
+        `${which} 的 ${RATCHET_REGISTRY_REL_PATH} 条目 ${r.id} 的 kind 未知:${JSON.stringify(r.kind)}` +
+          `(只认 ${Object.keys(RATCHET_KINDS).join(' / ')};省略 = ${DEFAULT_RATCHET_KIND})`,
+      );
+    }
+    for (const field of RATCHET_KINDS[kind]) {
       if (typeof r[field] !== 'string' || r[field] === '') {
         throw new Error(
-          `${which} 的 ${RATCHET_REGISTRY_REL_PATH} 条目 ${r.id} 缺 ${field}` +
-            '(四元组 id/baseline/rule/symbolShape 缺一不可 —— 缺了就没法判「载体有没有被换掉」)',
+          `${which} 的 ${RATCHET_REGISTRY_REL_PATH} 条目 ${r.id}(kind=${kind})缺 ${field}` +
+            `(载体字段 ${['id', ...RATCHET_KINDS[kind]].join('/')} 缺一不可 —— ` +
+            '缺了就没法判「载体有没有被换掉」)',
         );
+      }
+    }
+    if (kind === 'numeric-monotonic') {
+      for (const field of NUMERIC_FORBIDDEN_FIELDS) {
+        if (r[field] !== undefined) {
+          throw new Error(
+            `${which} 的 ${RATCHET_REGISTRY_REL_PATH} 条目 ${r.id}(kind=numeric-monotonic)` +
+              `不得携带 ${field}:数值型棘轮没有 ESLint 规则,带上它等于借道把基线里的文件` +
+              '从那条规则里豁免掉,而 ⑤(rule 豁免并集只减不增)对它无从判起。',
+          );
+        }
       }
     }
     // 重复 id 会让「按 id 取那一条」变成「取到哪条看运气」,身份映射当场失去意义。
@@ -211,7 +281,14 @@ export function parseRatchetRegistryDoc(text, which) {
       throw new Error(`${which} 的 ${RATCHET_REGISTRY_REL_PATH} 有重复 id:${r.id}`);
     }
     seen.add(r.id);
-    out.push({ id: r.id, baseline: r.baseline, rule: r.rule, symbolShape: r.symbolShape });
+    out.push({
+      id: r.id,
+      kind,
+      baseline: r.baseline,
+      rule: r.rule,
+      symbolShape: r.symbolShape,
+      metric: r.metric,
+    });
   }
   return out;
 }
@@ -244,9 +321,12 @@ export function judgeRegistryMonotonicity(baseText, headText) {
       removed.push(b.id);
       continue;
     }
-    for (const field of RATCHET_IDENTITY_FIELDS) {
+    // ⚠️ 用 **base 侧的 kind** 选身份字段集,不用 head 的:否则「把 kind 翻掉」这一手
+    // 会让比较落到新 kind 的字段集上,旧 kind 的载体字段没人再看 —— 绕过就成立了。
+    // `kind` 自己也在字段集里(ratchetIdentityFields 的第一项),所以翻 kind 一定被抓。
+    for (const field of ratchetIdentityFields(b.kind)) {
       if (h[field] !== b[field]) {
-        mutated.push({ id: b.id, field, base: b[field], head: h[field] });
+        mutated.push({ id: b.id, field, base: String(b[field]), head: String(h[field]) });
       }
     }
   }
@@ -359,6 +439,82 @@ export function judgeBaselineMonotonicity(baseText, headText, relPath = '<baseli
     .map((k) => k.replace('\u0000', '  '))
     .sort();
   return { ok: added.length === 0, added, removedFile: false };
+}
+
+/**
+ * 数值型棘轮的单调性裁决(纯函数,自测直接喂两份合成文档)。
+ *
+ * 与 `judgeBaselineMonotonicity` 的关键差别:**这一个认数值**。
+ * ESLint 型的身份是 `(file, symbol)`,数值不参与;数值型的身份只有 `file`,
+ * 判据是「同一 file 的 metric 只减不增」+「不得新增 file」。
+ *
+ * 为什么「新增 file」也判失败:基线里多一个 file = 多认领一个超阈值单元。
+ * 那正是 report 期 `service-size-new-above-threshold` 在报的东西 ——
+ * 它必须由维护者授权入册并在 PR 里写明理由,不能靠一个 PR 顺手加一行。
+ *
+ * 为什么「file 消失」放行:那是棘轮**做功**的方向(拆到阈值以下就该退出基线)。
+ * 与 ESLint 型「只删不增」同向 —— 还债必须畅通,否则下一个人会绕开棘轮而不是还债。
+ *
+ * ⚠️ metric 缺失 / 不是有限数 ⇒ **抛**,不是当 0。当 0 会让「删掉数值」等价于
+ * 「缩到 0」,于是抹掉一个数字就能让任意增长看起来像收缩。
+ *
+ * @param {string} baseText base 分支上的基线全文
+ * @param {string|null} headText PR head 上的基线全文;null = 被删 / 改名
+ * @param {string} metric 数值字段名(注册表里那条的 `metric`)
+ * @param {string} [relPath] 出错时报给人看的路径
+ * @returns {{ ok: boolean, added: string[], grown: string[], removedFile: boolean }}
+ */
+export function judgeNumericMonotonicity(baseText, headText, metric, relPath = '<baseline>') {
+  const read = (text, which) => {
+    let doc;
+    try {
+      doc = JSON.parse(text);
+    } catch (err) {
+      throw new Error(`${which} 的 ${relPath}不是合法 JSON:${String(err)}`);
+    }
+    if (doc === null || typeof doc !== 'object' || !Array.isArray(doc.entries)) {
+      throw new Error(`${which} 的 ${relPath}结构不对(缺 entries 数组)`);
+    }
+    const map = new Map();
+    for (const e of doc.entries) {
+      if (e === null || typeof e !== 'object' || typeof e.file !== 'string' || e.file === '') {
+        throw new Error(`${which} 的 ${relPath}有条目缺 file`);
+      }
+      const value = e[metric];
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new Error(
+          `${which} 的 ${relPath}条目 ${e.file} 的 ${metric} 不是有限数:${JSON.stringify(value)}`,
+        );
+      }
+      if (map.has(e.file)) {
+        throw new Error(`${which} 的 ${relPath}有重复 file:${e.file}`);
+      }
+      map.set(e.file, value);
+    }
+    return map;
+  };
+
+  const base = read(baseText, 'base');
+  if (headText === null) {
+    return { ok: false, added: [], grown: [], removedFile: true };
+  }
+  const head = read(headText, 'head');
+  const added = [];
+  const grown = [];
+  for (const [file, value] of head) {
+    if (!base.has(file)) {
+      added.push(`${file}(head ${metric}=${value})`);
+      continue;
+    }
+    const before = base.get(file);
+    if (value > before) grown.push(`${file}: ${before} → ${value}(+${value - before})`);
+  }
+  return {
+    ok: added.length === 0 && grown.length === 0,
+    added: added.sort(),
+    grown: grown.sort(),
+    removedFile: false,
+  };
 }
 
 function main() {
@@ -548,9 +704,12 @@ function main() {
       }
       const head = headTextOf(ratchet.baseline, baseText);
 
+      const isNumeric = ratchet.kind === 'numeric-monotonic';
       let verdict;
       try {
-        verdict = judgeBaselineMonotonicity(baseText, head.text, ratchet.baseline);
+        verdict = isNumeric
+          ? judgeNumericMonotonicity(baseText, head.text, ratchet.metric, ratchet.baseline)
+          : judgeBaselineMonotonicity(baseText, head.text, ratchet.baseline);
       } catch (err) {
         failClosed(`棘轮 ${ratchet.id} 单调性无法判定:${String(err)}`);
       }
@@ -569,6 +728,31 @@ function main() {
           '⚠️ 本失败**不能由 harness-review 审批覆盖**(scan 失败 ⇒ 审批 job 直接被跳过)。',
         ]);
       }
+      if (!verdict.ok && isNumeric) {
+        failHard(`棘轮 ${ratchet.id} 被破坏:数值只减不增,本 PR 却让它变大 / 新增了条目`, [
+          `判据:${ratchet.baseline}(按 file 比 ${ratchet.metric},**认数值**)`,
+          ...(verdict.added.length > 0
+            ? [
+                `新增 ${verdict.added.length} 个条目(= 新认领一个超阈值单元,须维护者授权入册并写明理由):`,
+                ...verdict.added.slice(0, 20).map((a) => `    + ${a}`),
+                ...(verdict.added.length > 20 ? [`    …另有 ${verdict.added.length - 20} 条`] : []),
+              ]
+            : []),
+          ...(verdict.grown.length > 0
+            ? [
+                `${verdict.grown.length} 个条目变大:`,
+                ...verdict.grown.slice(0, 20).map((g) => `    ↑ ${g}`),
+                ...(verdict.grown.length > 20 ? [`    …另有 ${verdict.grown.length - 20} 条`] : []),
+              ]
+            : []),
+          '',
+          '这道闸拦的是「顺手把基线调大」——在 PR 自己的树上,把数字改大与把代码改小',
+          '产生的结果一模一样(闸都绿),只有拿 base 的基线来比才分得出。',
+          '',
+          '⚠️ 本失败**不能由 harness-review 审批覆盖**(scan 失败 ⇒ 审批 job 直接被跳过)。',
+          '正确做法:把单元拆到基线值以下。确需上调基线 —— 那需要维护者临时授权改本裁判自身(双重人闸,刻意昂贵)。',
+        ]);
+      }
       if (!verdict.ok) {
         failHard(`棘轮 ${ratchet.id} 被破坏:基线只减不增,本 PR 却新增了条目`, [
           `判据:${ratchet.baseline}(base 与 head 按 (file, symbol) 集合比,不看总数)`,
@@ -585,6 +769,17 @@ function main() {
           '正确做法:把新违规真的改掉,不要加基线行。',
           '若确属合法 revert 需要加回旧基线行 —— 那需要维护者临时授权改本裁判自身(双重人闸,刻意昂贵)。',
         ]);
+      }
+      if (isNumeric) {
+        // ⑤(rule 豁免并集只减不增)对数值型**无从判起**:它没有 rule,基线里也没有 symbol。
+        // 不能 unite 一个 undefined 的 rule —— 那会造出一个名为 "undefined" 的桶,
+        // 把不同棘轮的键混进同一个并集里,判据从此似是而非。
+        // 数值型不参与 ⑤ 是安全的:它借不出任何 ESLint 豁免
+        // (parseRatchetRegistryDoc 已禁止它携带 rule / symbolShape)。
+        console.log(
+          `✓ 棘轮 ${ratchet.id} 单调性:HEAD ≤ BASE(${head.source};按 ${ratchet.metric} 逐 file 比)`,
+        );
+        continue;
       }
       const baseKeys = baselineKeySet(baseText, 'base', ratchet.baseline);
       unite(baseUnions, ratchet.rule, baseKeys);
