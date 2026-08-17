@@ -1,12 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
-import {
-  DictItemStatus,
-  Prisma,
-  type RecruitmentApplication,
-  type RecruitmentCycle,
-} from '@prisma/client';
+import { Prisma, type RecruitmentApplication } from '@prisma/client';
 
 import appConfig from '../../config/app.config';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -20,12 +15,7 @@ import { AttachmentContentValidator } from '../attachments/attachment-content-va
 import { assertEmergencyRelationCodeValid } from '../emergency-contacts/emergency-relation.validation';
 import { RbacService } from '../permissions/rbac.service';
 import { RealnameVerificationService } from '../realname/realname.service';
-import {
-  isMainlandBoundPermitCategory,
-  isOcrDocument,
-  maskIdCard,
-  maskName,
-} from '../realname/realname.constants';
+import { maskIdCard, maskName } from '../realname/realname.constants';
 import type { RealnameOcrResult } from '../realname/realname.types';
 import { STORAGE_PROVIDER } from '../storage/storage.constants';
 import type { StorageProvider } from '../storage/storage.interface';
@@ -35,19 +25,16 @@ import {
   APP_STATUS_MANUAL,
   APP_STATUS_REJECTED,
   APP_STATUS_VERIFIED,
-  CYCLE_STATUS_OPEN,
   ELIM_STAGE_MANUAL,
   ID_CARD_CROP_IMAGE_KEY_PREFIX,
   ID_CARD_IMAGE_ALLOWED_MIME,
   ID_CARD_IMAGE_KEY_PREFIX,
   ID_CARD_IMAGE_MAX_BYTES,
   ID_CARD_PORTRAIT_IMAGE_KEY_PREFIX,
-  OCR_COUNTER_UNKNOWN_IP,
   SIGNATURE_IMAGE_KEY_PREFIX,
   RECRUITMENT_MAX_AGE,
   RECRUITMENT_MIN_AGE,
   ageGroupOf,
-  beijingDateKey,
   computeAge,
   extractBirthDate,
   extractGenderCode,
@@ -56,22 +43,18 @@ import {
   isMainlandId,
   isProfileExtraWithinLimit,
   isValidChineseId,
-  recruitmentStorageCleanupFailureLog,
 } from './recruitment.constants';
 import { withdrawClaimsOnApplicationTerminal } from './recruitment-application-terminal';
 import { recomputeCertificateThresholds } from './recruitment-certificate-threshold-derive';
+import { RecruitmentApplicationProgressService } from './recruitment-application-progress.service';
+import { RecruitmentCycleAccessService } from './recruitment-cycle-access.service';
+import { RecruitmentOcrService } from './recruitment-ocr.service';
 import {
   RecruitmentIdentityService,
   type ConsumedPhoneIdentity,
 } from './recruitment-identity.service';
-import { type OcrOutcome, classifyOcrResult, routeOcrOutcome } from './recruitment-ocr-routing';
-import { loadProgressClaims } from './recruitment-certificate-claim-progress';
+import { type OcrOutcome, routeOcrOutcome } from './recruitment-ocr-routing';
 import {
-  RECRUITMENT_STAGE_DICT_TYPE,
-  assembleRecruitmentProgress,
-} from './recruitment-progress-presenter';
-import {
-  buildOcrRecognizeDetail,
   buildRecruitmentDeferResult,
   maskOpenid,
   maskPhone,
@@ -81,8 +64,6 @@ import {
 import { recruitmentDuplicateExceptionForP2002 } from './recruitment-prisma-errors';
 import type {
   RecruitmentApplicationAdminDto,
-  RecruitmentApplicationProgressDto,
-  RecruitmentOcrRecognizeResponseDto,
   RecruitmentSubmitPayloadDto,
   RecruitmentSubmitResultDto,
   ResolveRecruitmentApplicationDto,
@@ -112,6 +93,10 @@ export class RecruitmentApplicationsService {
   private readonly logger = new Logger(RecruitmentApplicationsService.name);
 
   constructor(
+    // 第三域第四刀:周期查找 / OCR 识别 / 进度查询三族抽出,本 service 保留同名薄委托作为唯一入口。
+    private readonly cycles: RecruitmentCycleAccessService,
+    private readonly ocr: RecruitmentOcrService,
+    private readonly progress: RecruitmentApplicationProgressService,
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
     private readonly auditLogs: AuditLogsService,
@@ -123,88 +108,25 @@ export class RecruitmentApplicationsService {
     @Inject(appConfig.KEY) private readonly config: ConfigType<typeof appConfig>,
   ) {}
 
-  // ============ 公开 OCR 识别预填(open/v1;无账号;OCR 改造端点 4b;评审稿 §4)============
-  // 无状态:OCR 后即弃图,不落库不发 token(分叉①A)。免费前置(open 轮 + mime/大小 + 是否 OCR 类型),
-  // 再付费 OCR;通道未配 27030 / 上游失败 27031 **在此浮现**(前端 UX);不清晰返 clarityOk:false(非错误)。
-  // 付费调用留 pino 运维 trace(掩码;无 DB resource——尚无申请记录;cost-DoS 已登记接受)。
-  async recognize(
-    documentTypeCode: string,
-    image: UploadedImageFile | undefined,
-    meta: AuditMeta,
-  ): Promise<RecruitmentOcrRecognizeResponseDto> {
-    // 公开识别不写 DB 审计(无 resource);meta 仅取 ip 供 F1 OCR 日封顶计数。
-    await this.findOpenCycleOrThrow(); // 无 open 轮 → 28030(省 OCR);识别不卡容量
-    if (!image) {
-      throw new BizException(BizCode.RECRUITMENT_ID_CARD_IMAGE_REQUIRED);
-    }
-    if (
-      image.size > ID_CARD_IMAGE_MAX_BYTES ||
-      !ID_CARD_IMAGE_ALLOWED_MIME.includes(image.mimetype)
-    ) {
-      throw new BizException(BizCode.BAD_REQUEST);
-    }
-    // 非 OCR 类型(台胞证/外国人永居/其余)→ ocrSupported:false(前端转手填,不调付费 OCR)
-    if (!isOcrDocument(documentTypeCode)) {
-      return {
-        ocrSupported: false,
-        clarityOk: false,
-        recognized: null,
-        antiForgeryWarnings: [],
-        documentCategory: null,
-        hint: '该证件类型需人工核验,请手动填写姓名与证件号',
-        ocrDetail: null,
-      };
-    }
-    // F1 成本线(评审稿 §2.5/E-U-1):付费 OCR 前按 IP 北京自然日封顶(免费分支不计;超限 28060)。
-    await this.assertOcrDailyQuotaAndCount(meta.ip, new Date());
-    this.logger.debug({
-      event: 'recruitment.ocr-recognize.received',
-      operation: 'recognize',
-      requestId: meta.requestId,
-    });
-    // 付费 OCR(27030/27031 在此抛出,供前端提示;不吞)。映射失败(IDCardInfo 缺)亦走 27031 不当不清晰。
-    const ocr = await this.realname.recognize({
-      documentTypeCode,
-      image: image.buffer,
-      mimeType: image.mimetype,
-    });
-    // 回乡证类别(分叉②:识别端建议性校验 + 人工最终;不在提交端权威重判)
-    const categoryOk =
-      documentTypeCode !== 'hk_macau_permit' || isMainlandBoundPermitCategory(ocr.documentCategory);
-    this.logger.log({
-      event: 'recruitment.ocr-recognize.completed',
-      operation: 'recognize',
-      requestId: meta.requestId,
-    });
-    // 鉴伪版充分利用:顾问式扩展回显(字段级/卡片级告警 + 证件类型;不改判定)。不清晰时一并回显——
-    // 此时字段级 reflect/incomplete 最能帮申请人定位「哪栏拍糊/反光」。**裁剪图 base64 绝不进响应**(纯函数不取)。
-    const ocrDetail = buildOcrRecognizeDetail(ocr);
-    if (!ocr.recognized) {
-      return {
-        ocrSupported: true,
-        clarityOk: false,
-        recognized: null,
-        antiForgeryWarnings: ocr.warnings,
-        documentCategory: ocr.documentCategory ?? null,
-        hint: '证件照不清晰,请重拍清晰证件照',
-        ocrDetail,
-      };
-    }
-    return {
-      ocrSupported: true,
-      clarityOk: true,
-      recognized: { realName: ocr.name, idCardNumber: ocr.idCardNumber },
-      antiForgeryWarnings: ocr.warnings,
-      documentCategory: ocr.documentCategory ?? null,
-      hint: categoryOk ? null : '证件类别非来往内地通行证,提交后将转人工复核',
-      ocrDetail,
-    };
-  }
-
   // ============ 公开提交(open/v1;无账号 pre-auth;OCR 改造 §4 校验顺序冻结)============
   // OCR 前置 + 单事务建终态(分叉④):免费校验 → code2session → 去重 → (大陆)付费 OCR 权威判定 →
   // 落图 → **单事务建终态记录(verified 原子发号 / manual_review)+ audit**。OCR 在唯一事务之前,
   // 事务内只剩本地写,失败整体回滚无残留 —— **无 pending_verification 在途态、无 FM-A 卡死类**。
+
+  // ============ OCR 识别 / 进度查询:薄委托(Phase 6-B 第三域第四刀)============
+  //
+  // 实现已迁至 recruitment-ocr.service.ts / recruitment-application-progress.service.ts
+  // (仅"搬家":配额闸 / 分类 / 裁剪图存取 / 三条锚点查找次序逐字不变)。
+  // 本 service 仍是本模块**唯一**对外入口 —— controller 调用面逐字不变。
+
+  async recognize(...args: Parameters<RecruitmentOcrService['recognize']>) {
+    return this.ocr.recognize(...args);
+  }
+
+  async query(...args: Parameters<RecruitmentApplicationProgressService['query']>) {
+    return this.progress.query(...args);
+  }
+
   async submit(
     payload: RecruitmentSubmitPayloadDto,
     image: UploadedImageFile | undefined,
@@ -218,7 +140,7 @@ export class RecruitmentApplicationsService {
     }
 
     // 1. 当前唯一 open 轮(无 → 28030;容量满 → 28031 快速失败,省付费 OCR)
-    const cycle = await this.resolveOpenCycleOrThrow();
+    const cycle = await this.cycles.resolveOpenCycleOrThrow();
 
     const foreign = isForeignDocument(payload.documentTypeCode);
     const mainland = isMainlandId(payload.documentTypeCode);
@@ -353,8 +275,8 @@ export class RecruitmentApplicationsService {
     let mainlandOcr: RealnameOcrResult | null = null;
     if (mainland) {
       // F1 成本线(评审稿 §2.5/E-U-1):付费 OCR 前按 IP 北京自然日封顶(与 recognize 共享计数;超限 28060)。
-      await this.assertOcrDailyQuotaAndCount(meta.ip, now);
-      const cls = await this.classifyMainlandOcr(payload, image);
+      await this.ocr.assertOcrDailyQuotaAndCount(meta.ip, now);
+      const cls = await this.ocr.classifyMainlandOcr(payload, image);
       outcome = cls.outcome;
       recognized = cls.recognized;
       mainlandOcr = cls.ocr;
@@ -393,7 +315,7 @@ export class RecruitmentApplicationsService {
       const stageTextByCode =
         decision.disposition === 'retry'
           ? new Map<string, string>()
-          : await this.loadStageTextMap();
+          : await this.progress.loadStageTextMap();
       return buildRecruitmentDeferResult(decision.disposition, recognized, cycle, stageTextByCode);
     }
     const record = decision.record as NonNullable<typeof decision.record>; // disposition='submitted' → record 必有
@@ -417,13 +339,13 @@ export class RecruitmentApplicationsService {
       });
       // 10b. 鉴伪版充分利用:主体框 / 头像裁剪图(腾讯返 base64 JPEG)解码入库(仅 mainland 鉴伪版返回时);
       //      缺省/接口未返 → key 留 null 不阻断提交(E3/E7)。裁剪图入库后即弃 base64(不入日志)。
-      const idCardCropImageKey = await this.storeCropImage(
+      const idCardCropImageKey = await this.ocr.storeCropImage(
         mainlandOcr?.cardImageBase64,
         ID_CARD_CROP_IMAGE_KEY_PREFIX,
         cycle.id,
         storedKeys,
       );
-      const idCardPortraitImageKey = await this.storeCropImage(
+      const idCardPortraitImageKey = await this.ocr.storeCropImage(
         mainlandOcr?.portraitImageBase64,
         ID_CARD_PORTRAIT_IMAGE_KEY_PREFIX,
         cycle.id,
@@ -560,7 +482,7 @@ export class RecruitmentApplicationsService {
       // 删除本就未写入的 key 是空操作,不影响原错误照抛),失败仅告警、不掩盖原错
       // (FM-B;系统性审查 review #484 G3)。
       for (const k of storedKeys) {
-        await this.safeDeleteOrphanImage(k);
+        await this.ocr.safeDeleteOrphanImage(k);
       }
       const duplicate = recruitmentDuplicateExceptionForP2002(err);
       if (duplicate) throw duplicate;
@@ -574,149 +496,6 @@ export class RecruitmentApplicationsService {
       requestId: meta.requestId,
     });
     return toRecruitmentSubmitResult(finalApp, cycle);
-  }
-
-  // 大陆身份证 OCR 六分流分类(评审稿 §2.1/§3.6 矩阵;复用纯函数 classifyOcrResult)。
-  // 返回 outcome(matched/mismatch/forgery_warning/ocr_unclear/ocr_error)+ OCR 识别值(供 mismatch 三选一回填);
-  // OCR 通道未配/上游失败不外抛 → outcome='ocr_error'(提交端永不因 OCR 硬报错,分叉③)。
-  private async classifyMainlandOcr(
-    payload: RecruitmentSubmitPayloadDto,
-    image: UploadedImageFile,
-  ): Promise<{
-    outcome: OcrOutcome;
-    recognized: { realName: string | null; idCardNumber: string | null } | null;
-    // 鉴伪版充分利用:回带完整 OCR 结果(扩展字段 + 裁剪图 base64),供 submit 落 4 列 + 2 裁剪图;
-    // ocr_error(上游失败/通道未配)→ null(列/裁剪图全留 null,E7)。
-    ocr: RealnameOcrResult | null;
-  }> {
-    let ocr: RealnameOcrResult;
-    try {
-      ocr = await this.realname.recognize({
-        documentTypeCode: payload.documentTypeCode,
-        image: image.buffer,
-        mimeType: image.mimetype,
-      });
-    } catch (err) {
-      if (
-        err instanceof BizException &&
-        (err.biz === BizCode.REALNAME_CHANNEL_NOT_CONFIGURED ||
-          err.biz === BizCode.REALNAME_API_FAILED)
-      ) {
-        this.logger.warn({
-          event: 'recruitment.ocr.failed',
-          operation: 'recognize',
-          safeErrorCategory: 'ocr-provider-failed',
-          retryable: true,
-          manualCleanupRequired: false,
-        });
-        return { outcome: 'ocr_error', recognized: null, ocr: null };
-      }
-      throw err;
-    }
-    const outcome = classifyOcrResult(
-      {
-        recognized: ocr.recognized,
-        name: ocr.name,
-        idCardNumber: ocr.idCardNumber,
-        warnings: ocr.warnings,
-      },
-      { realName: payload.realName, idCardNumber: payload.idCardNumber },
-    );
-    return {
-      outcome,
-      recognized: ocr.recognized ? { realName: ocr.name, idCardNumber: ocr.idCardNumber } : null,
-      ocr,
-    };
-  }
-
-  // ============ 公开查询(凭新 wx.login code → openid → 本人最近报名)============
-  // 招新闭环优化 S1(评审稿 §4/§6):出参 enrich 为新人进度模型(业务态 stage + 字典文案 +
-  // 门槛 todoList 真投影);statusCode 流转逻辑 / 状态机零改动,纯展示派生。
-  // 招新可用性收口 F4-3b(评审稿 §2.3/E-U-5):promote 即清 openid 使旧查询「查无 28002」体验像
-  // 报名消失 —— 现 miss 后 fall-through 经 live User.openid 反查 ACTIVE 队员,用其 promotedMemberId
-  // 定位**真实报名行**(promoted 态;PII 已清但 statusCode/thresholdMarks/promotedMemberId 俱在)组装
-  // 引导态(stage=volunteer「已转志愿者 / 待入队」,nextAction=apply-teamjoin,memberNo 恒 null)——
-  // **零新增 PII 留存,零合成 DTO**;wx.login code 即微信身份自证,无枚举面。member 非 ACTIVE 或
-  // 无报名行(非招新出身队员)→ 维持 28002。
-  async query(wechatCode: string): Promise<RecruitmentApplicationProgressDto> {
-    const { openid } = await this.wechat.code2session(wechatCode);
-    let app =
-      (await this.findLatestActiveAppByOpenidForProgress(openid)) ??
-      (await this.findLatestTerminalAppByOpenidForProgress(openid));
-    if (!app) {
-      app = await this.findPromotedAppByOpenidAnchor(openid);
-    }
-    if (!app) {
-      throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
-    }
-    const cycle = await this.prisma.recruitmentCycle.findFirstOrThrow({
-      where: { id: app.cycleId },
-    });
-    const stageTextByCode = await this.loadStageTextMap();
-    // PR-4a-2:证书段改由 Claim 行组装(一证一行);presenter 仍零 Prisma。
-    const certificateClaims = await loadProgressClaims(this.prisma, app.id);
-    return assembleRecruitmentProgress({ ...app, certificateClaims }, cycle, stageTextByCode);
-  }
-
-  private async findLatestActiveAppByOpenidForProgress(
-    openid: string,
-  ): Promise<RecruitmentApplication | null> {
-    return this.prisma.recruitmentApplication.findFirst({
-      where: {
-        openid,
-        deletedAt: null,
-        statusCode: { notIn: [...APP_INACTIVE_STATUS_CODES] },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  private async findLatestTerminalAppByOpenidForProgress(
-    openid: string,
-  ): Promise<RecruitmentApplication | null> {
-    return this.prisma.recruitmentApplication.findFirst({
-      where: {
-        openid,
-        deletedAt: null,
-        statusCode: { in: [...APP_INACTIVE_STATUS_CODES] },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  // F4-3b:openid 锚 → 已发号队员的 promoted 报名行(fall-through;E-U-5;镜像 identity service
-  // 的手机锚版本,各模块级实现不抽共享 util)。live User.openid → Member ACTIVE 守卫 → promotedMemberId。
-  private async findPromotedAppByOpenidAnchor(
-    openid: string,
-  ): Promise<RecruitmentApplication | null> {
-    const user = await this.prisma.user.findFirst({
-      where: { openid, deletedAt: null, memberId: { not: null } },
-      select: { memberId: true },
-    });
-    if (!user?.memberId) return null;
-    const member = await this.prisma.member.findFirst({
-      where: { id: user.memberId, deletedAt: null, status: 'ACTIVE' },
-      select: { id: true },
-    });
-    if (!member) return null;
-    return this.prisma.recruitmentApplication.findFirst({
-      where: { promotedMemberId: user.memberId, deletedAt: null },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  // recruitment_stage 字典 → { stage code → stageText } map(§4.1「展示文案在字典」)。
-  // 仅取 ACTIVE 项;字典缺项时 presenter 回退 stage 机器码(prod 由 seed 兜底齐全)。
-  private async loadStageTextMap(): Promise<ReadonlyMap<string, string>> {
-    const items = await this.prisma.dictItem.findMany({
-      where: {
-        type: { code: RECRUITMENT_STAGE_DICT_TYPE, deletedAt: null },
-        status: DictItemStatus.ACTIVE,
-        deletedAt: null,
-      },
-      select: { code: true, label: true },
-    });
-    return new Map(items.map((i) => [i.code, i.label]));
   }
 
   // ============ admin 人工 resolve(manual_review → verified 发号 / rejected)============
@@ -826,55 +605,6 @@ export class RecruitmentApplicationsService {
     }
   }
 
-  // F1 成本线(评审稿 §2.5/E-U-1):付费 OCR 按 IP × 北京自然日封顶(recognize + submit 共享)。
-  // 原子 upsert increment 后判限(Prisma 简单 upsert 走原生 ON CONFLICT,并发安全):
-  // 先加后判 → 拒者恒拒;超限尝试也计数(保守防滥用,沿 sms 日限「含失败行」口径 E-11)。
-  // 持久化计数表独立于 @RecruitmentThrottle 内存限流器,进程重启不清零;ip 缺省归一 'unknown' 桶不可绕计。
-  private async assertOcrDailyQuotaAndCount(ip: string | null, now: Date): Promise<void> {
-    const ipKey = ip && ip.length > 0 ? ip : OCR_COUNTER_UNKNOWN_IP;
-    const dateKey = beijingDateKey(now);
-    const row = await this.prisma.recruitmentOcrDailyCounter.upsert({
-      where: { ip_dateKey: { ip: ipKey, dateKey } },
-      create: { ip: ipKey, dateKey, count: 1 },
-      update: { count: { increment: 1 } },
-      select: { count: true },
-    });
-    if (row.count > this.config.recruitmentOcr.dailyIpLimit) {
-      this.logger.warn({
-        event: 'recruitment.ocr.daily-limit',
-        operation: 'recognize',
-        safeErrorCategory: 'rate-limit',
-        retryable: true,
-        manualCleanupRequired: false,
-      });
-      throw new BizException(BizCode.RECRUITMENT_OCR_DAILY_LIMIT);
-    }
-  }
-
-  // 当前唯一 open 轮(无 → 28030);**不卡容量**(识别端点用;OCR 改造 §4)
-  private async findOpenCycleOrThrow(): Promise<RecruitmentCycle> {
-    const cycle = await this.prisma.recruitmentCycle.findFirst({
-      where: { statusCode: CYCLE_STATUS_OPEN, deletedAt: null },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (!cycle) {
-      throw new BizException(BizCode.RECRUITMENT_CYCLE_NOT_OPEN);
-    }
-    return cycle;
-  }
-
-  // open 轮 + 容量预检(提交端用;满 → 28031 快速失败省付费 OCR;原子兜底在 issueTempNo,FM-C)。
-  // 十项收口刀A:预检口径由「verified 现员数」对齐权威闸的 tempNoSeq 累计口径——verified 现员数
-  // 随推进/淘汰下降而 tempNo 永不回收,旧口径系统性偏松,恰在满员场景放行 → 烧付费 OCR 后被
-  // 权威闸 28031 整单回滚。同口径后预检 = 权威闸的无锁快照(轻微陈旧无害),并省一次 count 查询。
-  private async resolveOpenCycleOrThrow(): Promise<RecruitmentCycle> {
-    const cycle = await this.findOpenCycleOrThrow();
-    if (cycle.capacity !== null && cycle.tempNoSeq >= cycle.capacity) {
-      throw new BizException(BizCode.RECRUITMENT_CYCLE_CAPACITY_FULL);
-    }
-    return cycle;
-  }
-
   // 临时编号 T{year}{seq:04d}:行级原子自增取号(并发由 Postgres 行锁串行;partial unique 兜底)。
   // 容量校验在同一行锁内做:自增后 tempNoSeq 超 capacity → 抛 28031,事务回滚撤销自增,
   // 杜绝并发 TOCTOU 超发 + 人工 resolve 旁路超发(FM-C;系统性审查 §2)。
@@ -889,37 +619,5 @@ export class RecruitmentApplicationsService {
       throw new BizException(BizCode.RECRUITMENT_CYCLE_CAPACITY_FULL);
     }
     return formatTempNo(cycle.year, cycle.tempNoSeq);
-  }
-
-  // 鉴伪版充分利用:裁剪图 base64 解码入库(主体框 / 头像;仅 mainland 鉴伪版返回时)。
-  // base64 缺省/空 → 不落、返 null(列留空不阻断提交,E3/E7);落成功 → key 推入 storedKeys 供事务失败补偿删。
-  // 裁剪图为腾讯返 JPEG base64,ext 恒 jpg;base64 入库后即弃(不入日志,L3)。
-  private async storeCropImage(
-    base64: string | null | undefined,
-    prefix: string,
-    cycleId: string,
-    storedKeys: string[],
-  ): Promise<string | null> {
-    if (!base64) return null;
-    const key = `${prefix}/${cycleId}/${randomUUID()}.jpg`;
-    const body = Buffer.from(base64, 'base64');
-    this.contentValidator.validateFromBuffer({ mime: 'image/jpeg', buffer: body });
-    await this.storage.putObject({
-      key,
-      body,
-      contentType: 'image/jpeg',
-    });
-    storedKeys.push(key);
-    return key;
-  }
-
-  // tx1 失败时补偿删除刚落的证件照孤儿 blob(best-effort;失败仅告警,不掩盖原错)。
-  // 留存 SOP 按库行 key 删 blob,无库行的孤儿清不到;此处在建库失败路径即时清理(FM-B;系统性审查 §3)。
-  private async safeDeleteOrphanImage(key: string): Promise<void> {
-    try {
-      await this.storage.deleteObject(key);
-    } catch {
-      this.logger.warn(recruitmentStorageCleanupFailureLog('delete-orphan-id-card-image'));
-    }
   }
 }
