@@ -3640,16 +3640,30 @@ async function runTrustedJudgeAssertions(): Promise<void> {
     }
 
     check(
-      'F3 注册表:真实注册表登记了三条棘轮(裁判确实会遍历到 param-id 与 near-future-date 那两条)',
-      judge
-        .parseRatchetRegistryDoc(
+      'F3 注册表:真实注册表登记了四条棘轮,且 service-size 是 numeric-monotonic(EC-1)',
+      (() => {
+        // ⚠️ 刻意用**精确集合**而不是「至少包含」:精确形式同时抓两个方向 ——
+        // 少一条 = 那条棘轮的单调性没人裁;多一条 = 有人塞了条没经过评审的棘轮。
+        // 代价是每次合法新增都要改这一行,那正是想要的(改这一行会出现在 diff 里)。
+        const rs = judge.parseRatchetRegistryDoc(
           fs.readFileSync(path.resolve(__dirname, '../harness/ratchet-registry.json'), 'utf-8'),
           'base',
-        )
-        .map((r) => r.id)
-        .sort()
-        .join(',') === 'is-optional-null,legacy-param-id,near-future-date',
-      '注册表少一条 = 那条棘轮的单调性没人裁,而 lint 与 selftest 都看不出来',
+        );
+        const ids = rs
+          .map((r) => r.id)
+          .sort()
+          .join(',');
+        const ss = rs.find((r) => r.id === 'service-size');
+        // kind 与 metric 一起钉:只钉 id 的话,把 service-size 悄悄改回 eslint-exempt
+        // 会让裁判用集合语义去判一份没有 symbol 的基线 —— 那会 fail-closed,但报的原因离真因很远。
+        return (
+          ids === 'is-optional-null,legacy-param-id,near-future-date,service-size' &&
+          ss?.kind === 'numeric-monotonic' &&
+          ss.metric === 'loc'
+        );
+      })(),
+      '注册表少一条 = 那条棘轮的单调性没人裁,而 lint 与 selftest 都看不出来;' +
+        'service-size 的 kind 被改回 eslint-exempt 则等于尺寸棘轮退回「装不进来」的状态',
     );
   }
 }

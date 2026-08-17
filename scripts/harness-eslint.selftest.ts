@@ -1073,9 +1073,12 @@ async function main(): Promise<void> {
     RATCHET_BASELINES: Map<string, Map<string, readonly string[]>>;
     RATCHET_REGISTRY: ReadonlyArray<{
       id: string;
+      // EC-1:kind 省略时由 parseRatchetRegistry 填 'eslint-exempt';numeric 型不带 rule/symbolShape。
+      kind: string;
       baseline: string;
-      rule: string;
-      symbolShape: string;
+      rule?: string;
+      symbolShape?: string;
+      metric?: string;
       why: string;
     }>;
     parseRatchetBaseline: (
@@ -2447,7 +2450,16 @@ async function main(): Promise<void> {
 
     // ⚠️ **按注册表遍历**,不写死任何一条棘轮:加一条棘轮 = 注册表加一行,
     //    本段自动开始对账。上一版只对第 18 条对账,于是第二条棘轮落地时默认无人核对。
-    for (const ratchet of RATCHET_REGISTRY) {
+    //
+    // ⚠️ EC-1:**只对账 eslint-exempt 型**。本段用 `rules: { [ratchet.rule]: … }` 起 ESLint,
+    //    数值型棘轮没有 rule ⇒ 键名成了字符串 "undefined" ⇒ ESLint 在配置校验期直接抛
+    //    `Could not find "undefined" in plugin "@"`,整个自测崩掉(实测)。
+    //    数值型的对账不在 ESLint 里做:判据由 `pnpm harness:servicesize` 出、
+    //    单调性由 base-trusted 裁判守(见本文件 EC-1 那组断言与 harness-guards.selftest 的 F3 组)。
+    //    ⚠️ 这是 EC-1 里**第三个** RATCHET_REGISTRY 消费者 —— 前两个在 eslint.harness.mjs
+    //    (RATCHET_BASELINES 加载、ratchetBaselineBlocks 生成)。改注册表形态时必须三处一起看:
+    //    漏掉任何一个,症状都是「加载期崩溃」而不是「某条判据变松」,离真因很远。
+    for (const ratchet of RATCHET_REGISTRY.filter((r) => r.kind !== 'numeric-monotonic')) {
       const scanner = new ESLint({
         cwd: process.cwd(),
         overrideConfigFile: true,
@@ -2727,6 +2739,85 @@ async function main(): Promise<void> {
       ...okRegistry,
       ratchets: [okRegistry.ratchets[0], okRegistry.ratchets[0]],
     });
+
+    // ── EC-1(2026-08-17):注册表两态 —— eslint 侧的判别与禁令 ──────────────────
+    //
+    // ⚠️ 这几条必须与 base-trusted 裁判**逐字同义**:两侧读同一份 JSON,
+    // 一侧认、另一侧不认 = 又一对「两把刻错的尺子」。裁判侧的对应断言在
+    // harness-guards.selftest.ts 的「F3 kind:…」组。
+    const numericEntry = {
+      id: 'n',
+      kind: 'numeric-monotonic',
+      baseline: 'harness/n.json',
+      metric: 'loc',
+      why: 'w',
+    };
+    rejectsRegistry('EC-1·注册表 未知 kind 被拒(不许静默落进默认形态)', {
+      ...okRegistry,
+      ratchets: [{ ...numericEntry, kind: 'whatever' }],
+    });
+    rejectsRegistry('EC-1·注册表 numeric 型缺 metric 被拒', {
+      ...okRegistry,
+      ratchets: [{ id: 'n', kind: 'numeric-monotonic', baseline: 'harness/n.json', why: 'w' }],
+    });
+    rejectsRegistry(
+      'EC-1·注册表 numeric 型**携带 rule** 被拒(带了就能借道豁免 ESLint 规则)',
+      { ...okRegistry, ratchets: [{ ...numericEntry, rule: 'srvf/no-nullable-is-optional' }] },
+    );
+    rejectsRegistry('EC-1·注册表 numeric 型携带 symbolShape 被拒', {
+      ...okRegistry,
+      ratchets: [{ ...numericEntry, symbolShape: 'class-field' }],
+    });
+    {
+      // 正例:numeric 型合法条目通过,且 kind 被显式填回(省略时填 eslint-exempt)。
+      const parsed = parseRatchetRegistry(
+        JSON.stringify({ ...okRegistry, ratchets: [okRegistry.ratchets[0], numericEntry] }),
+      ) as ReadonlyArray<{ id: string; kind: string }>;
+      const ok =
+        parsed.length === 2 &&
+        parsed[0].kind === 'eslint-exempt' &&
+        parsed[1].kind === 'numeric-monotonic';
+      if (ok) {
+        passed++;
+        console.log('✓ EC-1·注册表 两态并存:省略 kind 填 eslint-exempt、numeric 型原样保留');
+      } else {
+        failures.push(
+          '✗ EC-1·注册表 两态并存 —— 解析结果不对:' + JSON.stringify(parsed),
+        );
+      }
+    }
+    {
+      // ⚠️ 本仓真实注册表的**接线断言**:service-size 必须在册,且是 numeric 型。
+      // 只验合成文档不够 —— 那只证明"解析器认得这种形态",不证明"它真的被登记了"。
+      // 少登记一条不产生任何坏链接,既有守护看不见它(README 清单曾这样漂了十一次)。
+      const live = RATCHET_REGISTRY as ReadonlyArray<{
+        id: string;
+        kind?: string;
+        metric?: string;
+      }>;
+      const ss = live.find((r) => r.id === 'service-size');
+      if (ss && ss.kind === 'numeric-monotonic' && ss.metric === 'loc') {
+        passed++;
+        console.log('✓ EC-1·接线:service-size 已登记在册且为 numeric-monotonic(metric=loc)');
+      } else {
+        failures.push(
+          '✗ EC-1·接线:harness/ratchet-registry.json 里没有 numeric-monotonic 的 service-size 条目。\n' +
+            '  含义:尺寸棘轮又退回「无人看管」—— base-trusted 裁判按注册表遍历,不在册 = 它压根不判。',
+        );
+      }
+    }
+    {
+      // 数值型**不得**进 RATCHET_BASELINES(那是 ESLint 豁免块的来源)。
+      // 进了会在加载期抛(它的 entries 没有 symbol),更要紧的是它不该豁免任何规则。
+      if (!RATCHET_BASELINES.has('service-size')) {
+        passed++;
+        console.log('✓ EC-1·隔离:数值型棘轮未进 RATCHET_BASELINES(不生成任何 ESLint 豁免)');
+      } else {
+        failures.push(
+          '✗ EC-1·隔离:service-size 进了 RATCHET_BASELINES —— 数值型棘轮不该产出 ESLint 豁免。',
+        );
+      }
+    }
     rejectsRegistry('M4·注册表 baseline 逃出 harness/ 被拒', {
       ...okRegistry,
       ratchets: [{ ...okRegistry.ratchets[0], baseline: '../elsewhere.json' }],
@@ -2734,19 +2825,29 @@ async function main(): Promise<void> {
     rejectsRegistry('M4·注册表 未知顶层键被拒', { ...okRegistry, allowAnything: true });
 
     // 真实注册表必须至少登记这两条 —— 少一条就等于某条棘轮悄悄退出了保护。
+    //
+    // ⚠️ EC-1:「条数相等」只对 **eslint-exempt 型**成立。RATCHET_BASELINES 是 ESLint
+    // 豁免块的来源,数值型棘轮刻意不进它(它的 entries 没有 symbol,也不豁免任何规则)。
+    // 拿总条数比会在登记第一条数值型时立刻红,而那正是登记成功的表现 —— 判据口径必须跟着分形态。
     const registeredIds = RATCHET_REGISTRY.map((r) => r.id).sort();
+    const eslintKindIds = RATCHET_REGISTRY.filter((r) => r.kind === 'eslint-exempt').map(
+      (r) => r.id,
+    );
     if (
       registeredIds.includes('is-optional-null') &&
       registeredIds.includes('legacy-param-id') &&
-      RATCHET_BASELINES.size === RATCHET_REGISTRY.length
+      RATCHET_BASELINES.size === eslintKindIds.length &&
+      eslintKindIds.every((id) => RATCHET_BASELINES.has(id))
     ) {
       passed++;
       console.log(
-        `✓ M4 注册表:${RATCHET_REGISTRY.length} 条棘轮全部登记且基线可加载(${registeredIds.join(', ')})`,
+        `✓ M4 注册表:${RATCHET_REGISTRY.length} 条棘轮全部登记` +
+          `(其中 ${eslintKindIds.length} 条 eslint-exempt 型基线可加载;${registeredIds.join(', ')})`,
       );
     } else {
       failures.push(
-        `✗ M4 注册表 —— 登记不全:ratchets=[${registeredIds.join(', ')}], baselines=${RATCHET_BASELINES.size}`,
+        `✗ M4 注册表 —— 登记不全:ratchets=[${registeredIds.join(', ')}], ` +
+          `eslint 型 ${eslintKindIds.length} 条, baselines=${RATCHET_BASELINES.size}`,
       );
     }
   }

@@ -373,28 +373,57 @@ function parseRatchetRegistry(text) {
     const r = doc.ratchets[i];
     const at = `ratchets[${i}]`;
     if (r === null || typeof r !== 'object' || Array.isArray(r)) fail(`${at} 必须是对象`);
-    for (const field of ['id', 'baseline', 'rule', 'symbolShape', 'why']) {
+    // EC-1(2026-08-17):注册表两态。kind 省略 = eslint-exempt(既有三条因此一字未改)。
+    // 判别与字段约束必须与 base-trusted 裁判**逐字同义** —— 两侧读同一份 JSON,
+    // 一侧认、另一侧不认 = 又一对「两把刻错的尺子」。裁判侧见
+    // .github/workflows/redzone-trusted-judge.mjs 的 RATCHET_KINDS。
+    const kind = r.kind === undefined ? 'eslint-exempt' : r.kind;
+    if (kind !== 'eslint-exempt' && kind !== 'numeric-monotonic') {
+      fail(`${at}.kind 未知:${JSON.stringify(r.kind)}(只认 eslint-exempt / numeric-monotonic)`);
+    }
+    const required =
+      kind === 'numeric-monotonic'
+        ? ['id', 'baseline', 'metric', 'why']
+        : ['id', 'baseline', 'rule', 'symbolShape', 'why'];
+    for (const field of required) {
       if (typeof r[field] !== 'string' || r[field] === '') fail(`${at}.${field} 必须是非空字符串`);
     }
     if (ids.has(r.id)) fail(`${at}.id 重复:${r.id}`);
     ids.add(r.id);
-    if (!Object.prototype.hasOwnProperty.call(BASELINE_SYMBOL_SHAPES, r.symbolShape)) {
+    if (kind === 'numeric-monotonic') {
+      // 数值型**禁带** rule / symbolShape:带了就能借道把基线里的文件从那条 ESLint 规则
+      // 里豁免掉(下面的 RATCHET_BASELINES / 豁免块生成都按 rule 走),而它的基线里没有 symbol,
+      // 裁判侧的「rule 豁免并集只减不增」对它无从判起。与裁判侧同一条禁令。
+      for (const field of ['rule', 'symbolShape']) {
+        if (r[field] !== undefined) {
+          fail(`${at}(kind=numeric-monotonic)不得携带 ${field} —— 数值型棘轮没有 ESLint 规则`);
+        }
+      }
+    } else if (!Object.prototype.hasOwnProperty.call(BASELINE_SYMBOL_SHAPES, r.symbolShape)) {
       fail(`${at}.symbolShape 未知:${JSON.stringify(r.symbolShape)}`);
     }
     if (!r.baseline.startsWith('harness/') || !r.baseline.endsWith('.json')) {
       fail(`${at}.baseline 必须是 harness/ 下的 .json:${JSON.stringify(r.baseline)}`);
     }
   }
-  return doc.ratchets;
+  return doc.ratchets.map((r) => ({ ...r, kind: r.kind === undefined ? 'eslint-exempt' : r.kind }));
 }
 
 const RATCHET_REGISTRY = parseRatchetRegistry(
   readFileSync(new URL(`./${RATCHET_REGISTRY_PATH}`, import.meta.url), 'utf-8'),
 );
 
-/** `Map<ratchetId, Map<file, symbol[]>>` —— 按注册表遍历加载,不写死任何一条路径。 */
+/**
+ * `Map<ratchetId, Map<file, symbol[]>>` —— 按注册表遍历加载,不写死任何一条路径。
+ *
+ * ⚠️ EC-1:**只加载 eslint-exempt 型**。数值型棘轮(如尺寸基线)的 entries 是
+ * `{file, loc, domain}` —— 没有 `symbol`,喂给 parseRatchetBaseline 会在**加载期直接抛**,
+ * 于是 `pnpm lint` 本身起不来。更要紧的是它**不该**进这里:本 Map 的唯一用途是
+ * 生成 ESLint 豁免块,而数值型棘轮不豁免任何规则。
+ * 它的执行位在别处 —— 判据由 `pnpm harness:servicesize` 出、单调性由 base-trusted 裁判守。
+ */
 const RATCHET_BASELINES = new Map(
-  RATCHET_REGISTRY.map((r) => [
+  RATCHET_REGISTRY.filter((r) => r.kind === 'eslint-exempt').map((r) => [
     r.id,
     parseRatchetBaseline(readFileSync(new URL(`./${r.baseline}`, import.meta.url), 'utf-8'), {
       path: r.baseline,
