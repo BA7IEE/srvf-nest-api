@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:c1e64b585e275d8aad30d4ebb643ae08cd9aa5682f3ed19c3e5474ecd4664831",
+  "inputDigest": "sha256:de3a42cd569b028facdfe0d12e8ee7b595daa2d41306c246cb90b25b3efe5888",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
