@@ -78,17 +78,27 @@
     },
     {
       "file": "src/modules/attachments/attachment-storage-orchestrator.ts",
-      "loc": 1474,
+      "loc": 1549,
       "domain": "attachments"
     },
     {
       "file": "src/modules/attachments/attachments.service.ts",
-      "loc": 1519,
+      "loc": 1781,
       "domain": "attachments"
     },
     {
+      "file": "src/modules/attendances/attendance-import-preview.service.ts",
+      "loc": 1804,
+      "domain": "attendances"
+    },
+    {
+      "file": "src/modules/attendances/attendance-onsite-batch-job.service.ts",
+      "loc": 807,
+      "domain": "attendances"
+    },
+    {
       "file": "src/modules/attendances/attendance-punch-command.service.ts",
-      "loc": 1018,
+      "loc": 1294,
       "domain": "attendances"
     },
     {

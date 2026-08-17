@@ -375,13 +375,13 @@ export class AttachmentStorageOrchestrator {
     if (normalizedObjectSize === null || normalizedObjectSize !== attachment.size) {
       return { body: null, actualSize: normalizedObjectSize };
     }
-    const locator = await this.locatorForObject(object);
+    const locator = await locatorForObject(this.ledger, this.provider, object);
     try {
-      const head = await this.pinnedProvider().headObjectAt(locator, attachment.key);
+      const head = await pinnedProviderOf(this.provider).headObjectAt(locator, attachment.key);
       if (!head.exists || head.size === undefined || head.size !== attachment.size) {
         return { body: null, actualSize: head.size ?? null };
       }
-      const body = await this.pinnedProvider().readObjectPrefixAt(
+      const body = await pinnedProviderOf(this.provider).readObjectPrefixAt(
         locator,
         attachment.key,
         attachment.size,
