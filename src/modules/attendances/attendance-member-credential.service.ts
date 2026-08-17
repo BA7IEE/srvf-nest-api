@@ -52,4 +52,8 @@ export class AttendanceMemberCredentialService {
   verify(token: string): AttendanceMemberCredentialPayload {
     return verifyAttendanceMemberCredential(token, this.jwtSecret);
   }
+
+  verifyAt(token: string, authoritativeDeviceTime: Date): AttendanceMemberCredentialPayload {
+    return verifyAttendanceMemberCredential(token, this.jwtSecret, authoritativeDeviceTime);
+  }
 }
