@@ -3,6 +3,8 @@ import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { RoleBindingsController } from './role-bindings.controller';
+import { RoleBindingAccessService } from './role-binding-access.service';
+import { RoleBindingQueryService } from './role-binding-query.service';
 import { RoleBindingsService } from './role-bindings.service';
 
 // 终态 scoped-authz PR6「RoleBinding」(2026-07-01;冻结稿 §3.6 / §7.5):带 scope 的角色绑定管理面模块(第 32 模块)。
@@ -14,6 +16,6 @@ import { RoleBindingsService } from './role-bindings.service';
 @Module({
   imports: [DatabaseModule, PermissionsModule, AuditLogsModule],
   controllers: [RoleBindingsController],
-  providers: [RoleBindingsService],
+  providers: [RoleBindingAccessService, RoleBindingQueryService, RoleBindingsService],
 })
 export class RoleBindingsModule {}
