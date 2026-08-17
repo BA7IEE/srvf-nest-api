@@ -2,7 +2,7 @@
 // 真相源:后端 live /api/docs-json;本文件派生自 docs/handoff/openapi.json 快照。
 // surface: App 小程序
 // generatorVersion: 1.0.0
-// inputDigest: sha256:2a0bd76ec87549aebb41083b5c32238da748fe15c3f98d9597ba0de64fb598fc
+// inputDigest: sha256:602e2d3ae68a471b78e65412107e2af6e6d22228a8ea3620da8fe9faaa99e3b5
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -724,6 +724,48 @@ export interface AppManagedAttendanceSheetListItemDto {
   "createdAt": string;
 }
 
+export interface AppManagedBulkPunchJobDto {
+  "operationKey": string;
+  "actionCode": "check_in" | "check_out";
+  "reason": string;
+  "participationIdentityIds": string[];
+  "location"?: AppManagedOnsiteLocationDto;
+}
+
+export interface AppManagedImportExecuteDto {
+  "operationKey": string;
+  "fileDigest": string;
+  "parserVersion": "attendance-import-csv/v1";
+  "previewHash": string;
+}
+
+export interface AppManagedImportPreviewDto {
+  "jobId": string;
+  "statusCode": string;
+  "total": number;
+  "succeeded": number;
+  "failed": number;
+  "skipped": number;
+  "fileDigest": string;
+  "parserVersion": string;
+  "previewHash": string;
+  "items": AppManagedImportPreviewItemPageDto;
+}
+
+export interface AppManagedImportPreviewItemDto {
+  "line": number;
+  "statusCode": string;
+  "lastErrorCode"?: Record<string, unknown> | null;
+  "safeMessage"?: Record<string, unknown> | null;
+}
+
+export interface AppManagedImportPreviewItemPageDto {
+  "items": AppManagedImportPreviewItemDto[];
+  "total": number;
+  "page": number;
+  "pageSize": number;
+}
+
 export interface AppManagedMemberSummaryDto {
   "id": string;
   "memberNo": string;
@@ -735,6 +777,30 @@ export interface AppManagedMyResponsibilityDto {
   "responsibilityType": "owner" | "collaborator";
   "canManageRegistrations": boolean;
   "canManageAttendance": boolean;
+}
+
+export interface AppManagedOnsiteBatchJobReceiptDto {
+  "jobId": string;
+  "statusCode": "pending" | "processing" | "succeeded" | "partial_failed" | "failed";
+  "total": number;
+  "succeeded": number;
+  "failed": number;
+  "skipped": number;
+  "replayed": boolean;
+}
+
+export interface AppManagedOnsiteLocationDto {
+  "longitude"?: number;
+  "latitude"?: number;
+  "accuracy"?: number;
+}
+
+export interface AppManagedProxyPunchDto {
+  "actionCode": "check_in" | "check_out";
+  "eventKey": string;
+  "participationIdentityId": string;
+  "reason": string;
+  "location"?: AppManagedOnsiteLocationDto;
 }
 
 export interface AppManagedPublishReviewSummaryDto {
@@ -818,6 +884,19 @@ export interface AppManagedResponsibilityAssignmentDto {
   "source": string;
   "reason"?: string | null;
   "member": AppManagedMemberSummaryDto;
+}
+
+export interface AppManagedStaffScanDto {
+  "actionCode": "check_in" | "check_out";
+  "eventKey": string;
+  "manualConfirmation"?: AppManagedStaffScanManualConfirmationDto;
+  "memberCredential"?: string;
+  "location"?: AppManagedOnsiteLocationDto;
+}
+
+export interface AppManagedStaffScanManualConfirmationDto {
+  "participationIdentityId": string;
+  "reason": string;
 }
 
 export interface AppMeAccountDto {

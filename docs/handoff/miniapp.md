@@ -60,6 +60,13 @@
 - **现场纠正**：考勤责任人可用 `POST /api/app/v1/my/managed-activities/:activityId/onsite/sessions/:sessionId/early-departure-close` 为指定 `participationIdentityId` 以 `{eventKey,reason}` 特殊闭合；`POST .../onsite/punch-events/:eventId/void`、`.../replace` 以 `{operationKey,reason}` 追加纠正事实。三者不会覆盖历史 PunchEvent；早退固定产生零时长零分段。所有 PunchEvent 写命令在同一 Activity 根事务内投影服务段，首笔签到后的报名状态变化不阻断该身份已打开服务段的正常签退。
 - **范围边界**：本批只交付本人 QR 自助和责任人现场纠正；不含工作人员代扫、代理、批量、导入或离线流程（均属于第 6 批）。
 
+### 1.1.3 工作人员现场与 CSV 导入（第 6 批）
+
+- **成员凭证与 staff scan**：本人用 `POST /api/app/v1/my/attendance-member-credential/render` 取得仅 SVG 二进制的短时成员凭证；它不返回 JSON token，客户端不得持久化或尝试解析。考勤责任人调用 `POST /api/app/v1/my/managed-activities/:activityId/onsite/sessions/:sessionId/staff-scan` 时，必须二选一提交 `memberCredential` 或 `{manualConfirmation:{participationIdentityId,reason}}`，并带 `actionCode`、`eventKey` 与可选完整坐标三元组。服务端时间是唯一 `occurredAt`。
+- **单人代理与批量任务**：`POST .../proxy-punch` 要求 `participationIdentityId`、`actionCode`、`eventKey`、`reason`；`POST .../bulk-punch-jobs` 要求 `operationKey`、`actionCode`、`reason`、去重的 `participationIdentityIds` 和可选完整坐标三元组。bulk 的同 key 同请求重放原任务，异请求稳定冲突；用 `GET .../onsite/bulk-punch-jobs/:jobId` 读取安全进度，不能把已创建任务视为所有 item 都已成功。
+- **CSV 预览与执行**：`POST .../import-previews` 用 multipart 上传 `operationKey`、`reason` 与单个 UTF-8 CSV（唯一列顺序为 `participationIdentityId,actionCode,occurredAt,longitude,latitude,accuracy`）；再以 `GET .../import-previews/:previewId` 读取安全摘要/分页行状态，最后用 `POST .../import-previews/:previewId/execute` 提交 `{operationKey,fileDigest,parserVersion,previewHash}`。客户端不得保存或要求返回原 CSV、对象 key、签名 URL、原始单元格或导入附件 locator；execute 会重读同一冻结对象并重新校验摘要，文件替换或解析漂移不会产生 PunchEvent。
+- **离线边界**：离线包与人工复核的数据模型/数据库约束已存在，但目前没有 package issue/revoke/upload/review 的 App HTTP 契约；客户端不得猜测路由、提交离线 token 或把该模型当作可用离线打卡能力。
+
 ### 活动责任闭环的五类视图与按钮
 
 1. **我参与的活动**：App `/api/app/v1/my/activities`，只表示本人报名/参与历史。

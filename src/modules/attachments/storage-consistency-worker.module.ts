@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 
 import appConfig from '../../config/app.config';
 import databaseConfig from '../../config/database.config';
+import jwtConfig from '../../config/jwt.config';
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { ActivityBatchWorkerModule } from '../activities/activity-batch-worker.module';
@@ -20,7 +21,7 @@ import { StorageConsistencyWorker } from './storage-consistency.worker';
 // Guard 或第三个 cron；只复用 PostgreSQL ledger、pinned Provider 与 attachment audit 终态。
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true, load: [appConfig, databaseConfig] }),
+    ConfigModule.forRoot({ isGlobal: true, load: [appConfig, databaseConfig, jwtConfig] }),
     DatabaseModule,
     AuditLogsModule,
     StorageModule,

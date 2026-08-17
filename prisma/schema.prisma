@@ -158,8 +158,15 @@ model User {
   activityBatchJobsCreated      ActivityBatchJob[]                  @relation("ActivityBatchJobCreator")
 
   // 第 1 批第五刀(2026-08-04;合同 §3.11):同上,零标量字段。
-  allocationBatchesCreated ActivityAllocationBatch[] @relation("AllocationBatchCreator")
+  allocationBatchesCreated       ActivityAllocationBatch[]          @relation("AllocationBatchCreator")
   allocationCommandReceiptsActed ActivityAllocationCommandReceipt[] @relation("AllocationCommandReceiptActor")
+
+  // 第 6 批(2026-08-16):离线包签发/作废与异常复核保留独立 actor 边，不能借用
+  // AttendancePunchEvent 的 operator 边（后者指正式事件操作者）。
+  offlinePackagesOperated    OfflinePackage[]         @relation("OfflinePackageOperator")
+  offlinePackagesRevoked     OfflinePackage[]         @relation("OfflinePackageRevoker")
+  offlineReviewItemsStaged   OfflinePunchReviewItem[] @relation("OfflinePunchReviewItemStager")
+  offlineReviewItemsReviewed OfflinePunchReviewItem[] @relation("OfflinePunchReviewItemReviewer")
 
   @@index([deletedAt])
   @@index([status])
@@ -563,6 +570,12 @@ model Member {
   // 是两条独立的边,不能合并 —— 本人自助时两者相同,代打卡时不同。
   attendancePunchEvents         AttendancePunchEvent[] @relation("AttendancePunchEventMember")
   attendancePunchEventsOperated AttendancePunchEvent[] @relation("AttendancePunchEventOperatorMember")
+
+  // 第 6 批:离线包的签发人和人工复核人都是责任成员快照，不和被打卡成员混同。
+  offlinePackagesOperated    OfflinePackage[]            @relation("OfflinePackageOperatorMember")
+  offlinePackageParticipants OfflinePackageParticipant[]
+  offlineReviewItemsStaged   OfflinePunchReviewItem[]    @relation("OfflinePunchReviewItemStagerMember")
+  offlineReviewItemsReviewed OfflinePunchReviewItem[]    @relation("OfflinePunchReviewItemReviewerMember")
 
   // 第 1 批第四刀反向 relation(合同 §3.21 / §3.23 / §3.24):仅关系映射,零标量字段。
   settlementDays        ParticipantSettlementDay[]   @relation("ParticipantSettlementDayMember")
@@ -1245,6 +1258,11 @@ model Activity {
   evidenceState ActivityEvidenceState?
   evidenceSeals EvidenceSeal[]
 
+  // 第 6 批:离线包与异常复核均双锚到 Activity/Session，保留 Activity 反向查询入口。
+  offlinePackages            OfflinePackage[]
+  offlinePackageParticipants OfflinePackageParticipant[]
+  offlinePunchReviewItems    OfflinePunchReviewItem[]
+
   // 活动改造 v1.1 第 1 批第四刀反向 relation(合同 §3.19 / §3.23 / §3.25 / §3.26 / §3.27):
   // 仅关系映射,零标量字段。settlementRun 是 `?` 单值 —— §3.19「一活动一行」由
   // AttendanceSettlementRun.activityId 的 unique 在 DB 侧保证。
@@ -1379,6 +1397,7 @@ model ActivityRuleSnapshot {
   templateVersion   ActivityTemplate?         @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
   createdByReview   ActivityPublishReview     @relation(fields: [createdByReviewId], references: [id], onDelete: Restrict)
   allocationBatches ActivityAllocationBatch[]
+  offlinePackages   OfflinePackage[]
 
   // 一个活动的一个 workflow revision 只能对应一份最终规则快照。createdByReviewId
   // 只保存审核来源，不假定合同未声明的“一审核请求至多一快照”。
@@ -3475,8 +3494,11 @@ model ActivitySession {
   visitors              ActivityVisitor[]
 
   // 第 1 批第三刀(§3.15 / §3.16):场次级二维码凭证与打卡事件。
-  qrCredentials AttendanceQrCredential[]
-  punchEvents   AttendancePunchEvent[]
+  qrCredentials              AttendanceQrCredential[]
+  punchEvents                AttendancePunchEvent[]
+  offlinePackages            OfflinePackage[]
+  offlinePackageParticipants OfflinePackageParticipant[]
+  offlinePunchReviewItems    OfflinePunchReviewItem[]
 
   // 第 1 批第四刀反向 relation(合同 §3.23 / §3.27):仅关系映射,零标量字段。
   ledgerEntries ParticipationLedgerEntry[]
@@ -3558,10 +3580,11 @@ model ActivitySessionPosition {
   punchEvents AttendancePunchEvent[] @relation("PunchEventPosition")
 
   // 第 1 批第五刀(§3.11):岗位志愿与岗位级分配批次。
-  positionPreferences ActivityPositionPreference[]
-  allocationBatches   ActivityAllocationBatch[]    @relation("AllocationBatchPosition")
-  allocationWaitlistCandidates ActivityAllocationCandidate[] @relation("AllocationCandidateWaitlistPosition")
+  positionPreferences              ActivityPositionPreference[]
+  allocationBatches                ActivityAllocationBatch[]                 @relation("AllocationBatchPosition")
+  allocationWaitlistCandidates     ActivityAllocationCandidate[]             @relation("AllocationCandidateWaitlistPosition")
   allocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionPosition")
+  offlinePackageParticipants       OfflinePackageParticipant[]
 
   @@unique([activityId, sessionId, id], map: "activity_session_position_activity_session_id_key")
   @@index([activityId])
@@ -3618,8 +3641,10 @@ model ActivityParticipationIdentity {
   qualificationSnapshots QualificationEvaluationSnapshot[]
 
   // 第 1 批第三刀(§3.16 / §3.18):打卡事件与服务段修订的反向 relation。
-  punchEvents             AttendancePunchEvent[]
-  serviceSegmentRevisions ParticipantServiceSegmentRevision[]
+  punchEvents                AttendancePunchEvent[]
+  serviceSegmentRevisions    ParticipantServiceSegmentRevision[]
+  offlinePackageParticipants OfflinePackageParticipant[]
+  offlinePunchReviewItems    OfflinePunchReviewItem[]
 
   // 第 1 批第四刀反向 relation(合同 §3.20 / §3.23 / §3.25):仅关系映射,零标量字段。
   settlementResultRevisions ParticipantSettlementResultRevision[]
@@ -3627,7 +3652,7 @@ model ActivityParticipationIdentity {
   correctionRequests        AttendanceCorrectionRequest[]
 
   // 第 1 批第五刀反向 relation(合同 §3.11):仅关系映射,零标量字段。
-  allocationCandidates ActivityAllocationCandidate[]
+  allocationCandidates             ActivityAllocationCandidate[]
   allocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionIdentity")
 
   @@unique([activityId, sessionId, memberId])
@@ -3687,13 +3712,15 @@ model ActivityParticipationRevision {
   requestKey      String?
   requestHash     String?
 
-  identity        ActivityParticipationIdentity @relation(fields: [identityId], references: [id], onDelete: Restrict)
-  position        ActivitySessionPosition?      @relation(fields: [positionId], references: [id], onDelete: Restrict)
-  allocationBatch ActivityAllocationBatch?      @relation(fields: [allocationBatchId], references: [id], onDelete: Restrict)
+  identity                         ActivityParticipationIdentity             @relation(fields: [identityId], references: [id], onDelete: Restrict)
+  position                         ActivitySessionPosition?                  @relation(fields: [positionId], references: [id], onDelete: Restrict)
+  allocationBatch                  ActivityAllocationBatch?                  @relation(fields: [allocationBatchId], references: [id], onDelete: Restrict)
   allocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionAppliedRevision")
-  reviewedBy      User?                         @relation("ParticipationRevisionReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
-  cancelledBy     User?                         @relation("ParticipationRevisionCanceller", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
-  createdBy       User?                         @relation("ParticipationRevisionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  offlinePackageParticipants       OfflinePackageParticipant[]
+  offlinePunchReviewItems          OfflinePunchReviewItem[]
+  reviewedBy                       User?                                     @relation("ParticipationRevisionReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  cancelledBy                      User?                                     @relation("ParticipationRevisionCanceller", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
+  createdBy                        User?                                     @relation("ParticipationRevisionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
 
   @@unique([identityId, revision])
   @@unique([id, allocationBatchId, identityId], map: "activity_participation_revision_id_batch_identity_unique")
@@ -3725,11 +3752,11 @@ model ActivityCapacityBucket {
   occupied Int  @default(0) // >= 0 且不大于 capacity
   version  Int  @default(0) // CAS
 
-  activity     Activity              @relation(fields: [activityId], references: [id], onDelete: Restrict)
-  reservations CapacityReservation[]
+  activity                                       Activity                                  @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  reservations                                   CapacityReservation[]
   activityPersonAllocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionActivityPersonBucket")
-  sessionAllocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionSessionBucket")
-  positionAllocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionPositionBucket")
+  sessionAllocationApplicationProjections        ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionSessionBucket")
+  positionAllocationApplicationProjections       ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionPositionBucket")
 
   @@unique([scopeTypeCode, scopeId])
   @@unique([id, activityId], map: "activity_capacity_bucket_id_activity_unique")
@@ -3758,13 +3785,13 @@ model CapacityReservation {
   releasedAt    DateTime?
   releaseReason String?
 
-  identity ActivityParticipationIdentity @relation(fields: [identityId], references: [id], onDelete: Restrict)
-  bucket   ActivityCapacityBucket        @relation(fields: [bucketId], references: [id], onDelete: Restrict)
-  member   Member?                       @relation(fields: [memberId], references: [id], onDelete: Restrict)
-  activity Activity?                     @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  identity                                       ActivityParticipationIdentity             @relation(fields: [identityId], references: [id], onDelete: Restrict)
+  bucket                                         ActivityCapacityBucket                    @relation(fields: [bucketId], references: [id], onDelete: Restrict)
+  member                                         Member?                                   @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  activity                                       Activity?                                 @relation(fields: [activityId], references: [id], onDelete: Restrict)
   activityPersonAllocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionActivityPersonReservation")
-  sessionAllocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionSessionReservation")
-  positionAllocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionPositionReservation")
+  sessionAllocationApplicationProjections        ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionSessionReservation")
+  positionAllocationApplicationProjections       ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionPositionReservation")
 
   @@unique([id, identityId, bucketId], map: "capacity_reservation_id_identity_bucket_unique")
   // D86 的 activity_person reservation 按 member/activity（而非某一 session identity）
@@ -4208,11 +4235,12 @@ model ActivityVisitor {
 // 沿前两刀的四条工程判断:① 只做加法 ② 跨切片外键列不提前占位
 // ③ 既有表原样保留 ④ 合同没给的一律不发明。
 //
-// 本刀按 ② 明确**不建**三个列(不是漏了):
+// 本刀按 ② 明确**不建**三个列(不是漏了；其中离线锚已由第 6 批补齐):
 //   - AttendancePunchEvent.importJobItemId   → ActivityBatchJobItem(§3.27,第四刀)
-//   - AttendancePunchEvent.offlinePackageId  → OfflinePackage(合同第三处内部矛盾:
+//   - AttendancePunchEvent.offlinePackageId  → OfflinePackage(当时的合同第三处内部矛盾:
 //     被 §5 列为核心新对象、被 §3.16 当外键列引用、被 §5.7 描述协议字段,
-//     但 §3 数据模型从头到尾**没有定义它**。按 ④ 不从散文推导表结构,归第 6 批)
+//     但 §3 数据模型从头到尾**没有定义它**。当时按 ④ 不从散文推导表结构；
+//     第 6 批补充合同 v1 已给出完整字段表，见下方第 6 批模型与 migration 88)
 //   - ParticipantServiceSegmentRevision.effectiveBatchId → 结算批次(§3.19/§3.22,第四刀)
 //
 // ⚠️ 时间重叠**刻意不进 DB**:§3.18 明写「时间重叠校验在现有 member lock 内完成」
@@ -4291,7 +4319,7 @@ model AttendanceQrCredential {
 // 不可变模型 ⇒ 按合同 §3 前言 **不带 updatedAt / deletedAt**
 // (§3.16 字段表亦明写「createdAt 入库时间;无 updatedAt/deletedAt」)。
 //
-// ⚠️ offlinePackageId / importJobItemId **本刀不建**,见文件头说明。
+// 第 6 批补齐 offlinePackageId 与四个离线链锚点；importJobItemId 已由第 4 批补齐。
 model AttendancePunchEvent {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -4324,6 +4352,13 @@ model AttendancePunchEvent {
   //       行级 trigger 不参与 DDL;加列后已重跑该 trigger 的四条判据(见 migration 说明)。
   importJobItemId String?
 
+  // 第 6 批离线上传/人工复核的不可变链锚点。只有 sourceCode='offline' 才能同空同有，
+  // 由 migration 的计数式 CHECK 兜底；绝不存 raw package token、签名或原始 payload。
+  offlinePackageId        String?
+  offlineSequence         Int?
+  offlinePriorHash        String?
+  offlineEventPayloadHash String?
+
   // §3.16「普通业务字段,可空」;修订说明 §7 拍板坐标按普通业务字段保存。
   // 精度沿既有 activity_check_ins:经纬度 Decimal(10,7)、精度/距离 Decimal(10,2)。
   longitude Decimal? @db.Decimal(10, 7)
@@ -4351,6 +4386,8 @@ model AttendancePunchEvent {
   operatorMember        Member?                       @relation("AttendancePunchEventOperatorMember", fields: [operatorMemberId], references: [id], onDelete: Restrict)
   qrCredential          AttendanceQrCredential?       @relation(fields: [qrCredentialId], references: [id], onDelete: Restrict)
   importJobItem         ActivityBatchJobItem?         @relation("PunchEventImportJobItem", fields: [importJobItemId], references: [id], onDelete: Restrict)
+  offlinePackage        OfflinePackage?               @relation("OfflinePackagePunchEvents", fields: [offlinePackageId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict)
+  offlineReviewItem     OfflinePunchReviewItem?       @relation("OfflineReviewFormalPunchEvent")
 
   supersedesEvent AttendancePunchEvent?  @relation("PunchEventSupersede", fields: [supersedesEventId], references: [id], onDelete: Restrict)
   supersededBy    AttendancePunchEvent[] @relation("PunchEventSupersede")
@@ -4359,6 +4396,7 @@ model AttendancePunchEvent {
   serviceSegmentCloses   ParticipantServiceSegmentRevision[] @relation("SegmentSourceCloseEvent")
 
   @@unique([eventKey])
+  @@unique([offlinePackageId, offlineSequence], map: "attendance_punch_event_offline_package_sequence_key")
   // §11.3 点名的三条:
   @@index([activityId, sessionId, occurredAt])
   @@index([participationIdentityId, occurredAt], map: "attendance_punch_event_identity_occurred_idx")
@@ -4371,6 +4409,7 @@ model AttendancePunchEvent {
   @@index([qrCredentialId])
   @@index([supersedesEventId])
   @@index([importJobItemId])
+  @@index([offlinePackageId])
 }
 
 // ===== §3.17 ActivityEvidenceState:一活动一行的证据/人口版本指针 =====
@@ -4523,8 +4562,8 @@ model ParticipantServiceSegmentRevision {
 //   - ParticipantServiceSegmentRevision.effectiveBatchId → LedgerPostingBatch(§3.22)
 //   - AttendancePunchEvent.importJobItemId               → ActivityBatchJobItem(§3.27)
 //
-// 本刀按 ② 仍**不建**:AttendancePunchEvent.offlinePackageId(OfflinePackage 是合同第三处
-// 内部矛盾,§3 从未定义该表,归第 6 批);§3.11 分配相关四表与
+// 本刀按 ② 仍**不建**:AttendancePunchEvent.offlinePackageId(OfflinePackage 当时是合同第三处
+// 内部矛盾,§3 从未定义该表；第 6 批补充合同 v1 已另行补齐);§3.11 分配相关四表与
 // ActivityParticipationRevision.allocationBatchId(**合同第四处内部矛盾**:§14 任何一刀
 // 都没列入,而第 4 批行为实现要用 —— 维护者 2026-08-04 拍板另走第五刀)。
 //
@@ -5182,6 +5221,152 @@ model ActivityBatchJobItem {
 }
 
 // ============================================================================
+// 活动改造 v1.1 —— 第 6 批:工作人员 / 导入 / 离线主链(2026-08-16)
+//
+// 维护者批准的补充合同 v1 已补齐 OfflinePackage / OfflinePunchReviewItem 的完整字段表。
+// `OfflinePackageParticipant` 是最小必要支持表：只存 roster hash 无法由 DB 证明某永久
+// identity 属于被签名的冻结名单。所有状态闭集、hash、窗口、序号和复核形状由 migration
+// 的 CHECK / partial unique 守护；运行时仍必须在 Activity 根事务内复验。
+// ============================================================================
+
+model OfflinePackage {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activityId       String
+  sessionId        String
+  operatorUserId   String
+  operatorMemberId String
+  deviceId         String
+
+  packageVersion    Int
+  packageKeyVersion Int    @default(0)
+  statusCode        String
+
+  tokenDigest             String
+  ruleSnapshotId          String
+  ruleSnapshotHash        String
+  workflowRevision        Int
+  participantSnapshotHash String
+  validFrom               DateTime
+  validUntil              DateTime
+  uploadUntil             DateTime
+  sequenceStart           Int
+  nextExpectedSequence    Int
+  chainAnchorHash         String
+  lastAcceptedHash        String
+  lastAcceptedAt          DateTime?
+  issuedAt                DateTime
+  issueOperationKey       String    @unique(map: "offline_package_issue_operation_key_key")
+  issueRequestHash        String
+
+  revokedByUserId    String?
+  revokedAt          DateTime?
+  revokeReason       String?
+  revokeOperationKey String?   @unique(map: "offline_package_revoke_operation_key_key")
+  revokeRequestHash  String?
+
+  activity       Activity             @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  session        ActivitySession      @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
+  operatorUser   User                 @relation("OfflinePackageOperator", fields: [operatorUserId], references: [id], onDelete: Restrict)
+  operatorMember Member               @relation("OfflinePackageOperatorMember", fields: [operatorMemberId], references: [id], onDelete: Restrict)
+  ruleSnapshot   ActivityRuleSnapshot @relation(fields: [ruleSnapshotId], references: [id], onDelete: Restrict)
+  revokedByUser  User?                @relation("OfflinePackageRevoker", fields: [revokedByUserId], references: [id], onDelete: Restrict)
+
+  participants OfflinePackageParticipant[]
+  reviewItems  OfflinePunchReviewItem[]
+  punchEvents  AttendancePunchEvent[]      @relation("OfflinePackagePunchEvents")
+
+  // `id` 单列主键不能作为 PunchEvent/participant 的 activity+session 双锚被引用键。
+  @@unique([id, activityId, sessionId], map: "offline_package_id_activity_session_key")
+  @@unique([activityId, sessionId, deviceId, packageVersion], map: "offline_package_activity_session_device_version_key")
+  @@index([activityId, sessionId, statusCode], map: "offline_package_activity_session_status_idx")
+  @@index([operatorUserId, statusCode], map: "offline_package_operator_status_idx")
+  @@index([uploadUntil], map: "offline_package_upload_until_idx")
+}
+
+model OfflinePackageParticipant {
+  offlinePackageId        String
+  activityId              String
+  sessionId               String
+  participationIdentityId String
+  memberId                String
+  participationRevisionId String
+  positionId              String?
+  createdAt               DateTime @default(now())
+
+  offlinePackage        OfflinePackage                @relation(fields: [offlinePackageId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict)
+  activity              Activity                      @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  session               ActivitySession               @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
+  participationIdentity ActivityParticipationIdentity @relation(fields: [participationIdentityId], references: [id], onDelete: Restrict)
+  member                Member                        @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  participationRevision ActivityParticipationRevision @relation(fields: [participationRevisionId], references: [id], onDelete: Restrict)
+  position              ActivitySessionPosition?      @relation(fields: [positionId], references: [id], onDelete: Restrict)
+
+  @@id([offlinePackageId, participationIdentityId], map: "offline_package_participant_pkey")
+  @@index([participationIdentityId], map: "offline_package_participant_identity_idx")
+  @@index([participationRevisionId], map: "offline_package_participant_revision_idx")
+  @@index([positionId], map: "offline_package_participant_position_idx")
+}
+
+model OfflinePunchReviewItem {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  offlinePackageId   String
+  activityId         String
+  sessionId          String
+  sequence           Int
+  eventKey           String
+  statusCode         String
+  anomalyCode        String
+  approvalPolicyCode String
+
+  participationIdentityId String?
+  participationRevisionId String?
+  actionCode              String?
+  deviceTime              DateTime?
+  longitude               Decimal?  @db.Decimal(10, 7)
+  latitude                Decimal?  @db.Decimal(9, 7)
+  accuracy                Decimal?  @db.Decimal(8, 2)
+  providedPriorHash       String?
+  eventPayloadHash        String?
+  signatureDigest         String?
+
+  stagedByUserId   String
+  stagedByMemberId String?
+  stagedAt         DateTime
+
+  reviewedByUserId   String?
+  reviewedByMemberId String?
+  reviewedAt         DateTime?
+  reviewReason       String?
+
+  resolutionOperationKey String? @unique(map: "offline_review_item_resolution_operation_key_key")
+  resolutionRequestHash  String?
+  formalPunchEventId     String? @unique(map: "offline_review_item_formal_punch_event_key")
+
+  offlinePackage        OfflinePackage                 @relation(fields: [offlinePackageId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict)
+  activity              Activity                       @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  session               ActivitySession                @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
+  participationIdentity ActivityParticipationIdentity? @relation(fields: [participationIdentityId], references: [id], onDelete: Restrict)
+  participationRevision ActivityParticipationRevision? @relation(fields: [participationRevisionId], references: [id], onDelete: Restrict)
+  stagedByUser          User                           @relation("OfflinePunchReviewItemStager", fields: [stagedByUserId], references: [id], onDelete: Restrict)
+  stagedByMember        Member?                        @relation("OfflinePunchReviewItemStagerMember", fields: [stagedByMemberId], references: [id], onDelete: Restrict)
+  reviewedByUser        User?                          @relation("OfflinePunchReviewItemReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  reviewedByMember      Member?                        @relation("OfflinePunchReviewItemReviewerMember", fields: [reviewedByMemberId], references: [id], onDelete: Restrict)
+  formalPunchEvent      AttendancePunchEvent?          @relation("OfflineReviewFormalPunchEvent", fields: [formalPunchEventId], references: [id], onDelete: Restrict)
+
+  @@unique([offlinePackageId, sequence], map: "offline_review_item_package_sequence_key")
+  @@index([activityId, sessionId, statusCode, createdAt], map: "offline_review_item_activity_session_status_created_idx")
+  @@index([offlinePackageId, statusCode], map: "offline_review_item_package_status_idx")
+  @@index([participationIdentityId], map: "offline_review_item_identity_idx")
+  @@index([participationRevisionId], map: "offline_review_item_revision_idx")
+}
+
+// ============================================================================
 // 活动改造 v1.1 —— 第 1 批第五刀:分配 / 志愿 / 候补 / 预留名额
 // (2026-08-04;合同 docs/archive/reviews/activity-business-overhaul-v1.1/
 //  SRVF_活动业务全流程改造_详细开发文档_v1.1.md §3.11)
@@ -5306,7 +5491,7 @@ model ActivityAllocationBatch {
   createdBy    User?                    @relation("AllocationBatchCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
 
   candidates             ActivityAllocationCandidate[]
-  commandReceipts        ActivityAllocationCommandReceipt[] @relation("AllocationBatchCommandReceipts")
+  commandReceipts        ActivityAllocationCommandReceipt[]        @relation("AllocationBatchCommandReceipts")
   applicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationBatchApplicationProjections")
   // §3.9 的 ActivityParticipationRevision.allocationBatchId 反向侧(本刀兑现第一刀欠账)
   participationRevisions ActivityParticipationRevision[]
@@ -5467,20 +5652,20 @@ model ActivityAllocationApplicationProjection {
   positionReservationId                 String?
   positionBucketId                      String?
 
-  allocationBatch ActivityAllocationBatch @relation("AllocationBatchApplicationProjections", fields: [allocationBatchId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_application_projection_batch_anchor_fkey")
-  allocationCandidate ActivityAllocationCandidate @relation("AllocationCandidateApplicationProjection", fields: [allocationCandidateId, allocationBatchId, participationIdentityId], references: [id, allocationBatchId, participationIdentityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_candidate_anchor_fkey")
+  allocationBatch              ActivityAllocationBatch       @relation("AllocationBatchApplicationProjections", fields: [allocationBatchId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_application_projection_batch_anchor_fkey")
+  allocationCandidate          ActivityAllocationCandidate   @relation("AllocationCandidateApplicationProjection", fields: [allocationCandidateId, allocationBatchId, participationIdentityId], references: [id, allocationBatchId, participationIdentityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_candidate_anchor_fkey")
   // memberId 是 committed 时冻结的 identity 事实；四元 FK 防止同 activity/session
   // 的 identity 与 member 被拼接。activity_person reservation 则按 member/activity
   // 锚定，允许同一 member 的不同 session identity 正确复用那一条 reservation。
-  participationIdentity ActivityParticipationIdentity @relation("AllocationApplicationProjectionIdentity", fields: [participationIdentityId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_identity_anchor_fkey")
+  participationIdentity        ActivityParticipationIdentity @relation("AllocationApplicationProjectionIdentity", fields: [participationIdentityId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_identity_anchor_fkey")
   appliedParticipationRevision ActivityParticipationRevision @relation("AllocationApplicationProjectionAppliedRevision", fields: [appliedParticipationRevisionId, allocationBatchId, participationIdentityId], references: [id, allocationBatchId, identityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_revision_anchor_fkey")
-  position ActivitySessionPosition? @relation("AllocationApplicationProjectionPosition", fields: [activityId, sessionId, positionId], references: [activityId, sessionId, id], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_position_anchor_fkey")
-  activityPersonReservation CapacityReservation? @relation("AllocationApplicationProjectionActivityPersonReservation", fields: [activityPersonReservationId, memberId, activityId, activityPersonBucketId], references: [id, memberId, activityId, bucketId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_activity_reservation_fkey")
-  sessionReservation CapacityReservation? @relation("AllocationApplicationProjectionSessionReservation", fields: [sessionReservationId, participationIdentityId, sessionBucketId], references: [id, identityId, bucketId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_session_reservation_fkey")
-  positionReservation CapacityReservation? @relation("AllocationApplicationProjectionPositionReservation", fields: [positionReservationId, participationIdentityId, positionBucketId], references: [id, identityId, bucketId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_position_reservation_fkey")
-  activityPersonBucket ActivityCapacityBucket? @relation("AllocationApplicationProjectionActivityPersonBucket", fields: [activityPersonBucketId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_activity_bucket_fkey")
-  sessionBucket ActivityCapacityBucket? @relation("AllocationApplicationProjectionSessionBucket", fields: [sessionBucketId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_session_bucket_fkey")
-  positionBucket ActivityCapacityBucket? @relation("AllocationApplicationProjectionPositionBucket", fields: [positionBucketId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_position_bucket_fkey")
+  position                     ActivitySessionPosition?      @relation("AllocationApplicationProjectionPosition", fields: [activityId, sessionId, positionId], references: [activityId, sessionId, id], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_position_anchor_fkey")
+  activityPersonReservation    CapacityReservation?          @relation("AllocationApplicationProjectionActivityPersonReservation", fields: [activityPersonReservationId, memberId, activityId, activityPersonBucketId], references: [id, memberId, activityId, bucketId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_activity_reservation_fkey")
+  sessionReservation           CapacityReservation?          @relation("AllocationApplicationProjectionSessionReservation", fields: [sessionReservationId, participationIdentityId, sessionBucketId], references: [id, identityId, bucketId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_session_reservation_fkey")
+  positionReservation          CapacityReservation?          @relation("AllocationApplicationProjectionPositionReservation", fields: [positionReservationId, participationIdentityId, positionBucketId], references: [id, identityId, bucketId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_position_reservation_fkey")
+  activityPersonBucket         ActivityCapacityBucket?       @relation("AllocationApplicationProjectionActivityPersonBucket", fields: [activityPersonBucketId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_activity_bucket_fkey")
+  sessionBucket                ActivityCapacityBucket?       @relation("AllocationApplicationProjectionSessionBucket", fields: [sessionBucketId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_session_bucket_fkey")
+  positionBucket               ActivityCapacityBucket?       @relation("AllocationApplicationProjectionPositionBucket", fields: [positionBucketId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_position_bucket_fkey")
 
   @@unique([allocationCandidateId], map: "activity_allocation_application_projection_candidate_key")
   @@unique([allocationBatchId, participationIdentityId], map: "activity_allocation_application_projection_batch_identity_key")

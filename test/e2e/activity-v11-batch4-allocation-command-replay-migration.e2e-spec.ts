@@ -22,7 +22,7 @@ const MIGRATION_NAME = '20260813100000_activity_v11_batch4_allocation_command_re
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
 const MIGRATION_85_COUNT = 85;
 const MIGRATION_86_COUNT = 86;
-const CURRENT_MIGRATION_COUNT = 87;
+const CURRENT_MIGRATION_COUNT = 88;
 const COLD_REPLAY_TIMEOUT_MS = 300_000;
 const RESPONSE_SCHEMA_VERSION = 'allocation-command-response-v1';
 const HASH_A = 'a'.repeat(64);
@@ -31,9 +31,10 @@ const HASH_C = 'c'.repeat(64);
 const HASH_D = 'd'.repeat(64);
 const ACCEPTED_AT = '2099-08-13 08:30:00';
 
-// `migrate diff` 的两条来源都必须只留下这份已存在的 Prisma 映射差异。
-// D86 不能新增、删除或重命名任何 schema / migration 物理对象。
-const EXPECTED_PRISMA_LEGACY_DIFF = `-- DropForeignKey
+// `migrate diff` 的两条来源都必须只留下这份已知 Prisma 映射差异；B6 的 offline
+// 复合 relation map 也在这里逐项钉死，不能以“当前 diff”名义放宽为任意输出。
+// D86 本身不能新增、删除或重命名任何 schema / migration 物理对象。
+const EXPECTED_PRISMA_CURRENT_DIFF = `-- DropForeignKey
 ALTER TABLE "ActivityQualificationRuleSet" DROP CONSTRAINT "ActivityQualificationRuleSet_positionId_fkey";
 
 -- DropForeignKey
@@ -47,6 +48,54 @@ ALTER TABLE "ActivityQualificationRuleSet" RENAME CONSTRAINT "activity_qualifica
 
 -- RenameForeignKey
 ALTER TABLE "ActivitySessionPosition" RENAME CONSTRAINT "activity_session_position_qualification_rule_set_scope_fkey" TO "ActivitySessionPosition_activityId_sessionId_id_qualificat_fkey";
+
+-- RenameForeignKey
+ALTER TABLE "AttendancePunchEvent" RENAME CONSTRAINT "AttendancePunchEvent_offline_package_anchor_fkey" TO "AttendancePunchEvent_offlinePackageId_activityId_sessionId_fkey";
+
+-- RenameForeignKey
+ALTER TABLE "OfflinePackageParticipant" RENAME CONSTRAINT "OfflinePackageParticipant_activity_session_fkey" TO "OfflinePackageParticipant_activityId_sessionId_fkey";
+
+-- RenameForeignKey
+ALTER TABLE "OfflinePackageParticipant" RENAME CONSTRAINT "OfflinePackageParticipant_identity_fkey" TO "OfflinePackageParticipant_participationIdentityId_fkey";
+
+-- RenameForeignKey
+ALTER TABLE "OfflinePackageParticipant" RENAME CONSTRAINT "OfflinePackageParticipant_member_fkey" TO "OfflinePackageParticipant_memberId_fkey";
+
+-- RenameForeignKey
+ALTER TABLE "OfflinePackageParticipant" RENAME CONSTRAINT "OfflinePackageParticipant_package_anchor_fkey" TO "OfflinePackageParticipant_offlinePackageId_activityId_sess_fkey";
+
+-- RenameForeignKey
+ALTER TABLE "OfflinePackageParticipant" RENAME CONSTRAINT "OfflinePackageParticipant_position_fkey" TO "OfflinePackageParticipant_positionId_fkey";
+
+-- RenameForeignKey
+ALTER TABLE "OfflinePackageParticipant" RENAME CONSTRAINT "OfflinePackageParticipant_revision_fkey" TO "OfflinePackageParticipant_participationRevisionId_fkey";
+
+-- RenameForeignKey
+ALTER TABLE "OfflinePunchReviewItem" RENAME CONSTRAINT "OfflinePunchReviewItem_activity_session_fkey" TO "OfflinePunchReviewItem_activityId_sessionId_fkey";
+
+-- RenameForeignKey
+ALTER TABLE "OfflinePunchReviewItem" RENAME CONSTRAINT "OfflinePunchReviewItem_formal_event_fkey" TO "OfflinePunchReviewItem_formalPunchEventId_fkey";
+
+-- RenameForeignKey
+ALTER TABLE "OfflinePunchReviewItem" RENAME CONSTRAINT "OfflinePunchReviewItem_identity_fkey" TO "OfflinePunchReviewItem_participationIdentityId_fkey";
+
+-- RenameForeignKey
+ALTER TABLE "OfflinePunchReviewItem" RENAME CONSTRAINT "OfflinePunchReviewItem_package_anchor_fkey" TO "OfflinePunchReviewItem_offlinePackageId_activityId_session_fkey";
+
+-- RenameForeignKey
+ALTER TABLE "OfflinePunchReviewItem" RENAME CONSTRAINT "OfflinePunchReviewItem_reviewer_member_fkey" TO "OfflinePunchReviewItem_reviewedByMemberId_fkey";
+
+-- RenameForeignKey
+ALTER TABLE "OfflinePunchReviewItem" RENAME CONSTRAINT "OfflinePunchReviewItem_reviewer_user_fkey" TO "OfflinePunchReviewItem_reviewedByUserId_fkey";
+
+-- RenameForeignKey
+ALTER TABLE "OfflinePunchReviewItem" RENAME CONSTRAINT "OfflinePunchReviewItem_revision_fkey" TO "OfflinePunchReviewItem_participationRevisionId_fkey";
+
+-- RenameForeignKey
+ALTER TABLE "OfflinePunchReviewItem" RENAME CONSTRAINT "OfflinePunchReviewItem_staged_member_fkey" TO "OfflinePunchReviewItem_stagedByMemberId_fkey";
+
+-- RenameForeignKey
+ALTER TABLE "OfflinePunchReviewItem" RENAME CONSTRAINT "OfflinePunchReviewItem_staged_user_fkey" TO "OfflinePunchReviewItem_stagedByUserId_fkey";
 
 -- RenameIndex
 ALTER INDEX "notification_outbox_intents_status_availableAt_leaseExpiresAt_i" RENAME TO "notification_outbox_intents_status_availableAt_leaseExpires_idx";
@@ -1369,8 +1418,8 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
         expect(successfulMigrationCount(databaseName)).toBe(CURRENT_MIGRATION_COUNT);
         const sourceDiff = migrationDiffFromMigrations();
         const after = migrationDiffFromDatabase(databaseName);
-        expect(sourceDiff).toBe(EXPECTED_PRISMA_LEGACY_DIFF);
-        expect(after).toBe(EXPECTED_PRISMA_LEGACY_DIFF);
+        expect(sourceDiff).toBe(EXPECTED_PRISMA_CURRENT_DIFF);
+        expect(after).toBe(EXPECTED_PRISMA_CURRENT_DIFF);
         const pulled = introspectedSchema(databaseName);
         expect(pulled).toContain('model ActivityAllocationCommandReceipt');
         expect(pulled).toContain('model ActivityAllocationApplicationProjection');
@@ -1389,7 +1438,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
   );
 
   it(
-    'replays all 87 migrations from empty and accepts prepare, commit, void receipts plus every legal projection shape',
+    'replays all 88 migrations from empty and accepts prepare, commit, void receipts plus every legal projection shape',
     () => {
       const databaseName = recreateEmptyScratchDatabase();
       try {

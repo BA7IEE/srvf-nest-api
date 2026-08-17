@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { AuthzModule } from '../authz/authz.module';
 import { ActivitiesModule } from '../activities/activities.module';
@@ -6,6 +6,7 @@ import { OrganizationsModule } from '../organizations/organizations.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AttachmentsModule } from '../attachments/attachments.module';
 import { UsersModule } from '../users/users.module';
 import { AdminActivityCheckInsService } from './admin-activity-check-ins.service';
 import { ActivityCheckInQueryService } from './activity-check-in-query.service';
@@ -42,9 +43,15 @@ import { AttendancePunchPresenter } from './attendance-punch-presenter';
 import { AttendancePunchSegmentRevisionService } from './attendance-punch-segment-revision.service';
 import { AttendanceQrCredentialService } from './attendance-qr-credential.service';
 import { AttendanceQrPresenter } from './attendance-qr-presenter';
+import { AttendanceMemberCredentialService } from './attendance-member-credential.service';
+import { AttendanceOnsiteBatchJobService } from './attendance-onsite-batch-job.service';
+import { AttendanceImportAttachmentService } from './attendance-import-attachment.service';
+import { AttendanceImportPreviewService } from './attendance-import-preview.service';
 import { AppActivityPunchesController } from './controllers/app-activity-punches.controller';
 import { AppManagedActivityAttendanceQrController } from './controllers/app-managed-activity-attendance-qr.controller';
 import { AppManagedActivityOnsitePunchesController } from './controllers/app-managed-activity-onsite-punches.controller';
+import { AppManagedActivityOnsiteOperationsController } from './controllers/app-managed-activity-onsite-operations.controller';
+import { AppMyAttendanceMemberCredentialController } from './controllers/app-my-attendance-member-credential.controller';
 
 // V2 批次 6 PR #6(D6 v1.1 §8 / 第二波最后一批):导入 AuditLogsModule 以注入 AuditLogsService,
 // attendances 12 处写操作(submit / edit × 2 / softDelete / approve / return / reject /
@@ -70,9 +77,10 @@ import { AppManagedActivityOnsitePunchesController } from './controllers/app-man
     AuditLogsModule,
     PermissionsModule,
     AuthzModule,
-    ActivitiesModule,
+    forwardRef(() => ActivitiesModule),
     UsersModule,
     NotificationsModule,
+    AttachmentsModule,
     // F2/B2(admin-api-fe-integration-roadmap.md §4 B2;D7 拍板):供 listAllSheetsForAdmin 注入
     // OrganizationsService.queryDescendantOrgIds()(closure 只读展开,非判权)。
     OrganizationsModule,
@@ -89,6 +97,8 @@ import { AppManagedActivityOnsitePunchesController } from './controllers/app-man
     AppActivityPunchesController,
     AppManagedActivityAttendanceQrController,
     AppManagedActivityOnsitePunchesController,
+    AppManagedActivityOnsiteOperationsController,
+    AppMyAttendanceMemberCredentialController,
   ],
   providers: [
     AttendancesService,
@@ -113,11 +123,16 @@ import { AppManagedActivityOnsitePunchesController } from './controllers/app-man
     ParticipationSummaryQueryService,
     AttendanceQrCredentialService,
     AttendanceQrPresenter,
+    AttendanceMemberCredentialService,
+    AttendanceOnsiteBatchJobService,
+    AttendanceImportAttachmentService,
+    AttendanceImportPreviewService,
     AttendancePunchCommandService,
     AttendancePunchLocationPolicy,
     AttendancePunchPresenter,
     AttendancePunchSegmentRevisionService,
     AttendancePunchAuditRecorder,
   ],
+  exports: [AttendanceOnsiteBatchJobService, AttendanceImportPreviewService],
 })
 export class AttendancesModule {}

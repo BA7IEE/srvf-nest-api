@@ -12,9 +12,11 @@ import { AttendancePunchLocationPolicy } from './attendance-punch-location-polic
 import { AttendancePunchPresenter } from './attendance-punch-presenter';
 import {
   createAttendancePunchRequestHash,
+  createManagedOnlineAttendancePunchRequestHash,
   normalizeAttendancePunchReason,
 } from './attendance-punch-request-hash';
 import { AttendancePunchSegmentRevisionService } from './attendance-punch-segment-revision.service';
+import { AttendanceMemberCredentialService } from './attendance-member-credential.service';
 import { AttendanceQrCredentialService } from './attendance-qr-credential.service';
 import type {
   AppActivityPunchDto,
@@ -26,6 +28,7 @@ type PrismaTx = Prisma.TransactionClient;
 type SelfAction = 'check_in' | 'check_out';
 type ManagedAction = 'early_departure_close' | 'void' | 'replace';
 type CommandAction = SelfAction | ManagedAction;
+type ManagedOnlineSource = 'staff_scan' | 'proxy' | 'bulk' | 'import';
 
 type LockedSession = {
   id: string;
@@ -67,6 +70,8 @@ type PunchEventRow = {
   operatorUserId: string;
   reason: string | null;
   qrCredentialId: string | null;
+  importJobItemId: string | null;
+  deviceId: string | null;
   longitude: Prisma.Decimal | null;
   latitude: Prisma.Decimal | null;
   accuracy: Prisma.Decimal | null;
@@ -110,6 +115,36 @@ interface ManagedCorrectionInput {
   auditMeta: AuditMeta;
 }
 
+export interface ManagedOnlinePunchInput {
+  activityId: string;
+  sessionId: string;
+  participationIdentityId: string | null;
+  memberCredential: string | null;
+  actionCode: SelfAction;
+  sourceCode: ManagedOnlineSource;
+  eventKey: string;
+  reason: string | null;
+  deviceId: string | null;
+  longitude: number | null;
+  latitude: number | null;
+  accuracy: number | null;
+  /** B6 import only: the timestamp must have been re-parsed from the pinned CSV object. */
+  occurredAt?: Date | null;
+  /**
+   * 批量 / 导入 worker 的不可变 item 锚点。在线人工扫码与单人代签没有该锚点。
+   * 事件表沿既有字段名 `importJobItemId` 同时承接 import 与 bulk 来源，不能由
+   * worker 在命令事务外补写（PunchEvent 是 append-only）。
+   */
+  batchJobItemId?: string | null;
+  currentUser: CurrentUserPayload;
+  auditMeta: AuditMeta;
+}
+
+type NormalizedManagedOnlinePunchInput = Omit<ManagedOnlinePunchInput, 'reason' | 'occurredAt'> & {
+  reason: string | null;
+  occurredAt: Date | null;
+};
+
 const THIRTY_MINUTES_MS = 30 * 60_000;
 
 @Injectable()
@@ -117,6 +152,7 @@ export class AttendancePunchCommandService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly qrCredentials: AttendanceQrCredentialService,
+    private readonly memberCredentials: AttendanceMemberCredentialService,
     private readonly locationPolicy: AttendancePunchLocationPolicy,
     private readonly projector: AttendanceSegmentProjectorService,
     private readonly segments: AttendancePunchSegmentRevisionService,
@@ -333,6 +369,28 @@ export class AttendancePunchCommandService {
     return this.correctEvent(input);
   }
 
+  /**
+   * 第 6 批在线工作人员入口的唯一落点。staff/proxy/bulk/import 都复用与本人扫码相同的
+   * Activity → Session → ParticipationIdentity → Event 锁序、幂等、位置和服务段投影链。
+   */
+  async managedPunch(input: ManagedOnlinePunchInput): Promise<AppActivityPunchReceiptDto> {
+    return this.prisma.$transaction((tx) => this.managedPunchWithinTransaction(tx, input), {
+      maxWait: 60_000,
+      timeout: 60_000,
+    });
+  }
+
+  /**
+   * ActivityBatchWorker 的单 item 事务复用同一写核。调用方必须已经持有自己的 job/item
+   * 围栏；本方法仍自行执行 Activity 根锁、责任人、场次、身份、segment、evidence 与审计。
+   */
+  async managedPunchWithinTransaction(
+    tx: PrismaTx,
+    input: ManagedOnlinePunchInput,
+  ): Promise<AppActivityPunchReceiptDto> {
+    return this.writeManagedOnlinePunch(tx, this.normalizeManagedOnlineInput(input));
+  }
+
   async myState(args: {
     activityId: string;
     sessionId: string;
@@ -367,6 +425,175 @@ export class AttendancePunchCommandService {
       lowAccuracy: open?.sourceCheckInEvent.lowAccuracy ?? false,
       serverTime: now,
     });
+  }
+
+  private async writeManagedOnlinePunch(
+    tx: PrismaTx,
+    input: NormalizedManagedOnlinePunchInput,
+  ): Promise<AppActivityPunchReceiptDto> {
+    await this.lockActivity(tx, input.activityId);
+    await this.assertManagedAttendance(tx, input.activityId, input.currentUser);
+    const session = await this.lockSession(tx, input.activityId, input.sessionId);
+    const identity =
+      input.memberCredential === null
+        ? await this.lockIdentityById(
+            tx,
+            input.activityId,
+            input.sessionId,
+            input.participationIdentityId!,
+          )
+        : await this.lockIdentityForMemberCredential(
+            tx,
+            input.activityId,
+            input.sessionId,
+            input.memberCredential,
+          );
+    const existing = await this.findEventByKey(tx, input.eventKey);
+    if (existing) {
+      return this.replayManagedOnlineEvent({ existing, input, identity });
+    }
+
+    const receivedAt = new Date();
+    const occurredAt = input.sourceCode === 'import' ? input.occurredAt : receivedAt;
+    if (occurredAt === null || !Number.isFinite(occurredAt.getTime())) {
+      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+    }
+    this.assertSessionWindow(session, input.actionCode, occurredAt);
+    const priorEvents = await this.eventsForIdentity(tx, identity.id);
+    const projection = this.project(priorEvents, session);
+    const open = projection.segments.find((segment) => segment.checkOutAt === null) ?? null;
+    if (input.actionCode === 'check_in') {
+      if (!identity.populationIncluded || identity.currentStatusCode !== 'pass') {
+        throw new BizException(BizCode.ATTENDANCE_REGISTRATION_INVALID);
+      }
+      if (open) throw new BizException(BizCode.ATTENDANCE_PUNCH_OPEN_SEGMENT_EXISTS);
+    } else {
+      if (!open) throw new BizException(BizCode.ATTENDANCE_PUNCH_CHECK_OUT_REQUIRES_OPEN_SEGMENT);
+      if (occurredAt.getTime() - open.checkInAt.getTime() < THIRTY_MINUTES_MS) {
+        throw new BizException(BizCode.ATTENDANCE_PUNCH_MIN_DURATION_NOT_REACHED);
+      }
+    }
+    const checkInEvent = open
+      ? (priorEvents.find((event) => event.id === open.sourceCheckInEventId) ?? null)
+      : null;
+    const positionId =
+      input.actionCode === 'check_in'
+        ? identity.currentPositionId
+        : (checkInEvent?.positionId ?? null);
+    const locationRule = await this.lockLocationRule(
+      tx,
+      input.activityId,
+      input.sessionId,
+      positionId,
+    );
+    const location = this.locationPolicy.evaluate({
+      required: locationRule.required,
+      radiusMeters: locationRule.radiusMeters,
+      activityLongitude: this.numberOrNull(session.longitude),
+      activityLatitude: this.numberOrNull(session.latitude),
+      accuracyWarningMeters: session.accuracyWarningMeters,
+      request: {
+        longitude: input.longitude,
+        latitude: input.latitude,
+        accuracy: input.accuracy,
+      },
+    });
+    if (!location.allowed) throw new BizException(location.bizCode);
+
+    const requestHash = createManagedOnlineAttendancePunchRequestHash({
+      participationIdentityId: identity.id,
+      activityId: input.activityId,
+      sessionId: input.sessionId,
+      actorUserId: input.currentUser.id,
+      actionCode: input.actionCode,
+      sourceCode: input.sourceCode,
+      longitude: location.longitude,
+      latitude: location.latitude,
+      accuracy: location.accuracy,
+      eventKey: input.eventKey,
+      reason: input.reason,
+      occurredAt: input.sourceCode === 'import' ? occurredAt : null,
+    });
+    const evidenceRevision = await this.bumpEvidenceRevision(tx, input.activityId, receivedAt);
+    const created = await tx.attendancePunchEvent.create({
+      data: {
+        activityId: input.activityId,
+        sessionId: input.sessionId,
+        positionId,
+        participationIdentityId: identity.id,
+        memberId: identity.memberId,
+        eventTypeCode: input.actionCode,
+        sourceCode: input.sourceCode,
+        occurredAt,
+        receivedAt,
+        operatorUserId: input.currentUser.id,
+        operatorMemberId: input.currentUser.memberId,
+        reason: input.reason,
+        qrCredentialId: null,
+        importJobItemId: input.batchJobItemId ?? null,
+        deviceId: input.deviceId,
+        longitude: location.longitude,
+        latitude: location.latitude,
+        accuracy: location.accuracy,
+        distance: location.distanceMeters,
+        geoVerified: location.geoVerified,
+        outOfRange: location.outOfRange,
+        lowAccuracy: location.lowAccuracy,
+        eventKey: input.eventKey,
+        requestHash,
+        supersedesEventId: null,
+        evidenceRevision,
+      },
+      select: this.eventSelect,
+    });
+    await this.segments.rebuild({
+      tx,
+      identityId: identity.id,
+      events: [...priorEvents, created],
+      session,
+      operationEventType: input.actionCode,
+    });
+    await this.audit.logPunch({
+      operation: 'attendance-punch.create',
+      activityId: input.activityId,
+      sessionId: input.sessionId,
+      participationIdentityId: identity.id,
+      eventId: created.id,
+      eventTypeCode: created.eventTypeCode,
+      sourceCode: created.sourceCode,
+      evidenceRevision,
+      supersedesEventId: null,
+      actorUserId: input.currentUser.id,
+      actorRoleSnap: input.currentUser.role,
+      auditMeta: input.auditMeta,
+      tx,
+    });
+    return this.presentEvent(
+      created,
+      receivedAt,
+      input.actionCode === 'check_in' ? 'open' : 'closed_valid',
+    );
+  }
+
+  private normalizeManagedOnlineInput(
+    input: ManagedOnlinePunchInput,
+  ): NormalizedManagedOnlinePunchInput {
+    const reason = normalizeAttendancePunchReason(input.reason);
+    if (input.sourceCode === 'proxy' && reason === null) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    if ((input.participationIdentityId === null) === (input.memberCredential === null)) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    const occurredAt = input.occurredAt ?? null;
+    if (
+      (input.sourceCode === 'import' &&
+        (occurredAt === null || !Number.isFinite(occurredAt.getTime()))) ||
+      (input.sourceCode !== 'import' && occurredAt !== null)
+    ) {
+      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+    }
+    return { ...input, reason, occurredAt };
   }
 
   private async writeManagedEvent(args: {
@@ -618,6 +845,7 @@ export class AttendancePunchCommandService {
       sessionId: args.input.sessionId,
       eventTypeCode: args.input.actionCode,
       sourceCode: 'self_qr',
+      deviceId: null,
       longitude: args.input.dto.longitude ?? null,
       latitude: args.input.dto.latitude ?? null,
       accuracy: args.input.dto.accuracy ?? null,
@@ -658,6 +886,7 @@ export class AttendancePunchCommandService {
       sessionId: args.args.sessionId,
       eventTypeCode: 'early_departure_close',
       sourceCode: 'correction',
+      deviceId: null,
       longitude: null,
       latitude: null,
       accuracy: null,
@@ -669,6 +898,38 @@ export class AttendancePunchCommandService {
       throw new BizException(BizCode.ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT);
     }
     return this.presentEvent(args.existing, args.existing.occurredAt, 'closed_zero');
+  }
+
+  private replayManagedOnlineEvent(args: {
+    existing: PunchEventRow;
+    input: NormalizedManagedOnlinePunchInput;
+    identity: LockedIdentity;
+  }): AppActivityPunchReceiptDto {
+    const expected = createManagedOnlineAttendancePunchRequestHash({
+      activityId: args.input.activityId,
+      sessionId: args.input.sessionId,
+      actorUserId: args.input.currentUser.id,
+      participationIdentityId: args.identity.id,
+      actionCode: args.input.actionCode,
+      sourceCode: args.input.sourceCode,
+      longitude: args.input.longitude,
+      latitude: args.input.latitude,
+      accuracy: args.input.accuracy,
+      eventKey: args.input.eventKey,
+      reason: args.input.reason,
+      occurredAt: args.input.sourceCode === 'import' ? args.input.occurredAt : null,
+    });
+    if (args.existing.requestHash !== expected) {
+      throw new BizException(BizCode.ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT);
+    }
+    if ((args.existing.importJobItemId ?? null) !== (args.input.batchJobItemId ?? null)) {
+      throw new BizException(BizCode.ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT);
+    }
+    return this.presentEvent(
+      args.existing,
+      args.existing.occurredAt,
+      args.input.actionCode === 'check_in' ? 'open' : 'closed_valid',
+    );
   }
 
   private replayCorrectionEvent(args: {
@@ -688,6 +949,7 @@ export class AttendancePunchCommandService {
       sessionId: args.target.sessionId,
       eventTypeCode: args.input.actionCode,
       sourceCode: 'correction',
+      deviceId: null,
       longitude: null,
       latitude: null,
       accuracy: null,
@@ -709,7 +971,8 @@ export class AttendancePunchCommandService {
     activityId: string;
     sessionId: string;
     eventTypeCode: CommandAction;
-    sourceCode: 'self_qr' | 'correction';
+    sourceCode: 'self_qr' | ManagedOnlineSource | 'correction';
+    deviceId: string | null;
     longitude: number | null;
     latitude: number | null;
     accuracy: number | null;
@@ -726,7 +989,7 @@ export class AttendancePunchCommandService {
       positionId: args.existing.positionId,
       eventTypeCode: args.eventTypeCode,
       sourceCode: args.sourceCode,
-      deviceId: null,
+      deviceId: args.deviceId,
       occurredAt: args.existing.occurredAt,
       longitude: args.longitude,
       latitude: args.latitude,
@@ -751,6 +1014,8 @@ export class AttendancePunchCommandService {
     operatorUserId: true,
     reason: true,
     qrCredentialId: true,
+    importJobItemId: true,
+    deviceId: true,
     longitude: true,
     latitude: true,
     accuracy: true,
@@ -868,6 +1133,46 @@ export class AttendancePunchCommandService {
     });
     if (!identity) throw new BizException(BizCode.BAD_REQUEST);
     return identity;
+  }
+
+  /**
+   * 扫描凭证只在本事务内解出主体：既验证签名/时效，也把 User→Member 当前有效性和
+   * ActivityParticipationIdentity 绑定在 Activity 根锁之后重验，不能由控制器用裸 ID 旁路。
+   */
+  private async lockIdentityForMemberCredential(
+    tx: PrismaTx,
+    activityId: string,
+    sessionId: string,
+    token: string,
+  ): Promise<LockedIdentity> {
+    let credential: { userId: string; memberId: string };
+    try {
+      credential = this.memberCredentials.verify(token);
+    } catch {
+      throw new BizException(BizCode.ATTENDANCE_QR_NOT_FOUND);
+    }
+    await this.assertActiveMemberCredentialSubject(tx, credential.userId, credential.memberId);
+    return this.lockIdentityByMember(tx, activityId, sessionId, credential.memberId);
+  }
+
+  private async assertActiveMemberCredentialSubject(
+    tx: PrismaTx,
+    userId: string,
+    memberId: string,
+  ): Promise<void> {
+    const rows = await tx.$queryRaw<Array<{ userId: string }>>(Prisma.sql`
+      SELECT u."id" AS "userId"
+      FROM "User" u
+      INNER JOIN "Member" m ON m."id" = u."memberId"
+      WHERE u."id" = ${userId}
+        AND u."memberId" = ${memberId}
+        AND u."status" = 'ACTIVE'
+        AND u."deletedAt" IS NULL
+        AND m."status" = 'ACTIVE'
+        AND m."deletedAt" IS NULL
+      FOR SHARE OF u, m
+    `);
+    if (rows.length !== 1) throw new BizException(BizCode.ATTENDANCE_QR_NOT_FOUND);
   }
 
   private async lockQrCredential(

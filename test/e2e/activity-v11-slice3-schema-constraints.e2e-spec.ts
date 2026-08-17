@@ -36,9 +36,13 @@ const CHECKIN_OPEN = '2099-06-01T08:00:00.000Z';
 const CHECKIN_CLOSE = '2099-06-01T10:00:00.000Z';
 const CHECKOUT_OPEN = '2099-06-01T16:00:00.000Z';
 const CHECKOUT_CLOSE = '2099-06-01T18:00:00.000Z';
+const OFFLINE_UPLOAD_UNTIL = '2099-06-01T19:00:00.000Z';
 const VALID_FROM = '2099-06-01T08:00:00.000Z';
 const VALID_UNTIL = '2099-06-01T18:00:00.000Z';
 const OCCURRED_AT = '2099-06-01T09:30:00.000Z';
+const HASH_A = 'a'.repeat(64);
+const HASH_B = 'b'.repeat(64);
+const HASH_C = 'c'.repeat(64);
 
 interface RawDbError {
   sqlState: string;
@@ -56,7 +60,9 @@ describe('活动改造 v1.1 第 1 批第三刀 schema 约束(第 73 migration)',
   let userId: string;
   let registrationId: string;
   let sessionId: string;
+  let sessionId2: string;
   let identityId: string;
+  let offlinePackageId: string;
 
   let seq = 0;
   const uniq = (label: string) => `v11s3-${label}-${(seq += 1)}`;
@@ -165,6 +171,11 @@ describe('活动改造 v1.1 第 1 批第三刀 schema 约束(第 73 migration)',
       accuracy: number | null;
       evidenceRevision: number;
       eventKey: string;
+      sessionId: string;
+      offlinePackageId: string | null;
+      offlineSequence: number | null;
+      offlinePriorHash: string | null;
+      offlineEventPayloadHash: string | null;
     }> = {},
   ): string {
     const o = {
@@ -177,20 +188,40 @@ describe('活动改造 v1.1 第 1 批第三刀 schema 约束(第 73 migration)',
       accuracy: null as number | null,
       evidenceRevision: 0,
       eventKey: `key-${id}`,
+      sessionId,
       ...over,
     };
+    const valueOr = <T>(value: T | undefined, fallback: T): T =>
+      value === undefined ? fallback : value;
+    const offlinePackage = valueOr(
+      over.offlinePackageId,
+      o.sourceCode === 'offline' ? offlinePackageId : null,
+    );
+    const offlineSequence = valueOr(over.offlineSequence, o.sourceCode === 'offline' ? 1 : null);
+    const offlinePriorHash = valueOr(
+      over.offlinePriorHash,
+      o.sourceCode === 'offline' ? HASH_A : null,
+    );
+    const offlineEventPayloadHash = valueOr(
+      over.offlineEventPayloadHash,
+      o.sourceCode === 'offline' ? HASH_B : null,
+    );
+    const s = (value: string | null) => (value === null ? 'NULL' : `'${value}'`);
+    const n = (value: number | null) => (value === null ? 'NULL' : String(value));
     return `INSERT INTO "AttendancePunchEvent"
       ("id","activityId","sessionId","participationIdentityId","memberId","eventTypeCode",
        "sourceCode","occurredAt","receivedAt","operatorUserId","reason","supersedesEventId",
-       "longitude","latitude","accuracy","eventKey","requestHash","evidenceRevision")
-      VALUES ('${id}', '${activityId}', '${sessionId}', '${identityId}', '${memberId}',
+       "longitude","latitude","accuracy","eventKey","requestHash","evidenceRevision",
+       "offlinePackageId","offlineSequence","offlinePriorHash","offlineEventPayloadHash")
+      VALUES ('${id}', '${activityId}', '${o.sessionId}', '${identityId}', '${memberId}',
        '${o.eventTypeCode}', '${o.sourceCode}', ${T(OCCURRED_AT)}, ${T(OCCURRED_AT)}, '${userId}',
        ${o.reason === null ? 'NULL' : `'${o.reason}'`},
        ${o.supersedesEventId === null ? 'NULL' : `'${o.supersedesEventId}'`},
        ${o.longitude === null ? 'NULL' : o.longitude},
        ${o.latitude === null ? 'NULL' : o.latitude},
        ${o.accuracy === null ? 'NULL' : o.accuracy},
-       '${o.eventKey}', 'req-hash', ${o.evidenceRevision})`;
+       '${o.eventKey}', 'req-hash', ${o.evidenceRevision},
+       ${s(offlinePackage)}, ${n(offlineSequence)}, ${s(offlinePriorHash)}, ${s(offlineEventPayloadHash)})`;
   }
 
   function sealSql(
@@ -276,6 +307,36 @@ describe('活动改造 v1.1 第 1 批第三刀 schema 约束(第 73 migration)',
       })
     ).id;
 
+    const publishReviewId = (
+      await prisma.activityPublishReview.create({
+        data: {
+          activityId,
+          requestType: 'initial',
+          requestVersion: 1,
+          baseRevision: 0,
+          status: 'approved',
+          snapshot: {},
+          directPublish: true,
+          submittedByUserId: userId,
+          reviewedByUserId: userId,
+          reviewedAt: new Date(SESSION_START),
+        },
+        select: { id: true },
+      })
+    ).id;
+    const ruleSnapshotId = (
+      await prisma.activityRuleSnapshot.create({
+        data: {
+          activityId,
+          workflowRevision: 0,
+          resolvedConfig: {},
+          snapshotHash: HASH_A,
+          createdByReviewId: publishReviewId,
+        },
+        select: { id: true },
+      })
+    ).id;
+
     registrationId = (
       await prisma.activityRegistration.create({
         data: { activityId, memberId, statusCode: 'pending' },
@@ -304,9 +365,61 @@ describe('活动改造 v1.1 第 1 批第三刀 schema 约束(第 73 migration)',
       })
     ).id;
 
+    sessionId2 = (
+      await prisma.activitySession.create({
+        data: {
+          activityId,
+          code: uniq('session-other'),
+          name: uniq('session-other'),
+          startAt: new Date(SESSION_START),
+          endAt: new Date(SESSION_END),
+          locationText: 'constraint fixture other session',
+          checkInOpenAt: new Date(CHECKIN_OPEN),
+          checkInCloseAt: new Date(CHECKIN_CLOSE),
+          checkOutOpenAt: new Date(CHECKOUT_OPEN),
+          checkOutCloseAt: new Date(CHECKOUT_CLOSE),
+          locationRequired: false,
+          locationPolicySourceCode: 'system',
+          statusCode: 'scheduled',
+        },
+        select: { id: true },
+      })
+    ).id;
+
     identityId = (
       await prisma.activityParticipationIdentity.create({
         data: { activityId, sessionId, registrationId, memberId, currentStatusCode: 'pass' },
+        select: { id: true },
+      })
+    ).id;
+
+    offlinePackageId = (
+      await prisma.offlinePackage.create({
+        data: {
+          activityId,
+          sessionId,
+          operatorUserId: userId,
+          operatorMemberId: memberId,
+          deviceId: uniq('offline-device'),
+          packageVersion: 1,
+          packageKeyVersion: 0,
+          statusCode: 'active',
+          tokenDigest: HASH_A,
+          ruleSnapshotId,
+          ruleSnapshotHash: HASH_A,
+          workflowRevision: 0,
+          participantSnapshotHash: HASH_B,
+          validFrom: new Date(VALID_FROM),
+          validUntil: new Date(VALID_UNTIL),
+          uploadUntil: new Date(OFFLINE_UPLOAD_UNTIL),
+          sequenceStart: 1,
+          nextExpectedSequence: 1,
+          chainAnchorHash: HASH_C,
+          lastAcceptedHash: HASH_C,
+          issuedAt: new Date(VALID_FROM),
+          issueOperationKey: uniq('offline-issue'),
+          issueRequestHash: HASH_A,
+        },
         select: { id: true },
       })
     ).id;
@@ -791,23 +904,77 @@ describe('活动改造 v1.1 第 1 批第三刀 schema 约束(第 73 migration)',
   });
 
   // ==========================================================================
-  // 「本刀刻意不做」的可执行判据 —— 把 goal 的三条口径钉成会变红的东西
+  // 第 6 批已兑现的离线锚点，以及本刀继续不做的两项
   // ==========================================================================
-  describe('刻意不做的三条(把"不是漏了"钉成判据)', () => {
-    // ⚠️ 本条在**第四刀(第 74 migration)按计划到期** —— 原断言是
-    //    `expect(cols).toEqual([])`,钉的是"三个跨切片外键列此刻一律不建"。
-    //    第四刀建了 `ActivityBatchJobItem`(§3.27)与 `LedgerPostingBatch`(§3.22),
-    //    于是**连列带外键**兑现了其中两个(这正是本条注释原文预告的
-    //    「分别在第 6 批与第四刀」),第三个 `offlinePackageId` 仍未到期。
-    //    ⇒ 判据不是删掉,而是**收窄到仍然为真的那一个**:`OfflinePackage` 是合同第三处
-    //    内部矛盾(§3 从未定义该表),归第 6 批;在它被定义之前谁都不许提前占位。
-    it('offlinePackageId 仍然不建(第 6 批之前不得提前占位)', async () => {
-      const cols = await prisma.$queryRaw<Array<{ table_name: string; column_name: string }>>`
-        SELECT table_name, column_name FROM information_schema.columns
-        WHERE column_name = 'offlinePackageId'
+  describe('第 6 批离线锚点与保留的非目标项', () => {
+    it('offline 链锚存在、复合 FK 锚定场次，并双向拒绝错误形状', async () => {
+      const cols = await prisma.$queryRaw<Array<{ column_name: string }>>`
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'AttendancePunchEvent'
+          AND column_name IN (
+            'offlinePackageId', 'offlineSequence', 'offlinePriorHash', 'offlineEventPayloadHash'
+          )
+        ORDER BY ordinal_position
       `;
-      // 提前占位 = 建一列指向不存在的表,既无法加外键也无人写入。
-      expect(cols).toEqual([]);
+      expect(cols).toEqual([
+        { column_name: 'offlinePackageId' },
+        { column_name: 'offlineSequence' },
+        { column_name: 'offlinePriorHash' },
+        { column_name: 'offlineEventPayloadHash' },
+      ]);
+
+      const fks = await prisma.$queryRaw<
+        Array<{ conname: string; target: string; definition: string }>
+      >`
+        SELECT conname, confrelid::regclass::text AS target, pg_get_constraintdef(oid) AS definition
+        FROM pg_constraint
+        WHERE conname = 'AttendancePunchEvent_offline_package_anchor_fkey'
+      `;
+      expect(fks).toHaveLength(1);
+      expect(fks[0]).toMatchObject({
+        conname: 'AttendancePunchEvent_offline_package_anchor_fkey',
+        target: '"OfflinePackage"',
+      });
+      expect(fks[0]?.definition).toContain(
+        'FOREIGN KEY ("offlinePackageId", "activityId", "sessionId")',
+      );
+
+      // 正对照:四个离线锚都齐且 package/activity/session 同源时必须放行。
+      await expectAccepted(
+        punchSql('p-offline-ok', {
+          sourceCode: 'offline',
+          eventKey: 'key-p-offline-ok',
+          offlineSequence: 1,
+        }),
+      );
+      await expectRejected(
+        punchSql('p-offline-missing-anchor', {
+          sourceCode: 'offline',
+          eventKey: 'key-p-offline-missing-anchor',
+          offlineSequence: null,
+        }),
+        { sqlState: '23514', constraint: 'attendance_punch_event_offline_shape_check' },
+      );
+      await expectRejected(
+        punchSql('p-nonoffline-carries-anchor', {
+          sourceCode: 'staff_scan',
+          eventKey: 'key-p-nonoffline-carries-anchor',
+          offlinePackageId,
+          offlineSequence: 2,
+          offlinePriorHash: HASH_A,
+          offlineEventPayloadHash: HASH_B,
+        }),
+        { sqlState: '23514', constraint: 'attendance_punch_event_offline_shape_check' },
+      );
+      await expectRejected(
+        punchSql('p-offline-session-drift', {
+          sourceCode: 'offline',
+          eventKey: 'key-p-offline-session-drift',
+          sessionId: sessionId2,
+          offlineSequence: 3,
+        }),
+        { sqlState: '23503', constraint: 'AttendancePunchEvent_offline_package_anchor_fkey' },
+      );
     });
 
     // 到期的那两列改由「必须存在**且**带真外键」正向钉住 —— 只删旧断言会留下真空:
