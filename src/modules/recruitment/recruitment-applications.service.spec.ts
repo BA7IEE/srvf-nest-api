@@ -3,6 +3,9 @@ import { Prisma } from '@prisma/client';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { RecruitmentApplicationProgressService } from './recruitment-application-progress.service';
+import { RecruitmentCycleAccessService } from './recruitment-cycle-access.service';
+import { RecruitmentOcrService } from './recruitment-ocr.service';
 import { RecruitmentApplicationsService } from './recruitment-applications.service';
 import type { RecruitmentSubmitPayloadDto } from './recruitment.dto';
 import type { UploadedImageFile } from './recruitment-applications.service';
@@ -102,7 +105,22 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
       readOcrAttemptState: jest.fn().mockResolvedValue(null),
       writeOcrAttempt: jest.fn().mockResolvedValue(undefined),
     };
+    // Phase 6-B 第三域第四刀:三个新类全部传**真实实例**并喂同一组 mock ——
+    // OCR 配额闸、裁剪图存取与补偿删除、周期容量预检的行为锁必须走真实实现。
+    // mock 掉它们等于把本 spec 的「补偿删孤儿 blob」「OCR 只调一次」等断言变成自说自话。
+    const cycles = new RecruitmentCycleAccessService(prisma as never);
+    const ocr = new RecruitmentOcrService(
+      prisma as never,
+      cycles,
+      realname as never,
+      { validateFromBuffer: jest.fn() } as never,
+      storage,
+      { recruitmentOcr: { dailyIpLimit: 30 } } as never,
+    );
     const service = new RecruitmentApplicationsService(
+      cycles,
+      ocr,
+      new RecruitmentApplicationProgressService(prisma as never, wechat as never),
       prisma as never,
       rbac as never,
       auditLogs as never,
@@ -113,7 +131,9 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
       storage,
       { recruitmentOcr: { dailyIpLimit: 30 } } as never, // F1:OCR 日封顶 config
     );
-    return { service, storage, prisma, realname };
+    // ⚠️ 第三域第四刀:ocr 一并返回 —— safeDeleteOrphanImage / 配额闸的**观测点**随族迁走了,
+    // spy 必须打在真正执行那段代码的实例上(打在主 service 上 spy 不会被触发,而断言会红得莫名其妙)。
+    return { service, storage, prisma, realname, ocr };
   }
 
   it('单事务普通错误失败 → 补偿删孤儿 blob + 原错上抛;OCR 已在事务前调一次', async () => {
@@ -152,12 +172,12 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
   });
 
   it('补偿删失败仅写固定安全分类且不掩盖原错', async () => {
-    const { service, storage } = buildService(new Error('tx1 boom'));
+    const { service, ocr, storage } = buildService(new Error('tx1 boom'));
     const rawProviderMessage =
       'COS bucket=private-bucket secret=credential-value url=https://cos.example/raw-key';
     storage.deleteObject.mockRejectedValueOnce(new Error(rawProviderMessage));
     const warnSpy = jest
-      .spyOn((service as unknown as { logger: { warn(message: unknown): void } }).logger, 'warn')
+      .spyOn((ocr as unknown as { logger: { warn(message: unknown): void } }).logger, 'warn')
       .mockImplementation(() => undefined);
 
     // deleteObject 抛错被 safeDeleteOrphanImage 吞掉 → 仍以原 tx1 错误结束
@@ -297,7 +317,22 @@ describe('RecruitmentApplicationsService · 落图失败孤儿补偿(review #484
       readOcrAttemptState: jest.fn().mockResolvedValue(null),
       writeOcrAttempt: jest.fn().mockResolvedValue(undefined),
     };
+    // Phase 6-B 第三域第四刀:三个新类全部传**真实实例**并喂同一组 mock ——
+    // OCR 配额闸、裁剪图存取与补偿删除、周期容量预检的行为锁必须走真实实现。
+    // mock 掉它们等于把本 spec 的「补偿删孤儿 blob」「OCR 只调一次」等断言变成自说自话。
+    const cycles = new RecruitmentCycleAccessService(prisma as never);
+    const ocr = new RecruitmentOcrService(
+      prisma as never,
+      cycles,
+      realname as never,
+      { validateFromBuffer: jest.fn() } as never,
+      storage,
+      { recruitmentOcr: { dailyIpLimit: 30 } } as never,
+    );
     const service = new RecruitmentApplicationsService(
+      cycles,
+      ocr,
+      new RecruitmentApplicationProgressService(prisma as never, wechat as never),
       prisma as never,
       rbac as never,
       auditLogs as never,
@@ -438,7 +473,13 @@ describe('RecruitmentApplicationsService.resolveManual · S3 敏感字段分级(
       can: jest.fn((_u: unknown, code: string) => Promise.resolve(canMap[code] ?? false)),
     };
     const auditLogs = { log: jest.fn() };
+    // Phase 6-B 第三域第四刀:本组只测 resolveManual,不触 OCR / 进度查询 ——
+    // 故那两族传空替身即可;周期层仍传真实实例(容量预检在人工 resolve 路径上也生效)。
+    const cycles = new RecruitmentCycleAccessService(prisma as never);
     const service = new RecruitmentApplicationsService(
+      cycles,
+      {} as never,
+      {} as never,
       prisma as never,
       rbac as never,
       auditLogs as never,
@@ -543,7 +584,22 @@ describe('RecruitmentApplicationsService.submit · F1 防重前移 + OCR 日封�
       readOcrAttemptState: jest.fn().mockResolvedValue(null),
       writeOcrAttempt: jest.fn().mockResolvedValue(undefined),
     };
+    // Phase 6-B 第三域第四刀:三个新类全部传**真实实例**并喂同一组 mock ——
+    // OCR 配额闸、裁剪图存取与补偿删除、周期容量预检的行为锁必须走真实实现。
+    // mock 掉它们等于把本 spec 的「补偿删孤儿 blob」「OCR 只调一次」等断言变成自说自话。
+    const cycles = new RecruitmentCycleAccessService(prisma as never);
+    const ocr = new RecruitmentOcrService(
+      prisma as never,
+      cycles,
+      realname as never,
+      { validateFromBuffer: jest.fn() } as never,
+      storage,
+      { recruitmentOcr: { dailyIpLimit: 30 } } as never,
+    );
     const service = new RecruitmentApplicationsService(
+      cycles,
+      ocr,
+      new RecruitmentApplicationProgressService(prisma as never, wechat as never),
       prisma as never,
       { can: jest.fn() } as never,
       { log: jest.fn() } as never,
@@ -554,8 +610,9 @@ describe('RecruitmentApplicationsService.submit · F1 防重前移 + OCR 日封�
       storage,
       { recruitmentOcr: { dailyIpLimit: 30 } } as never,
     );
+    // ⚠️ 配额闸的日志观测点随 OCR 族迁走 —— spy 打在 ocr 实例上,不是主 service。
     const loggerWarn = jest
-      .spyOn((service as unknown as { logger: { warn(message: unknown): void } }).logger, 'warn')
+      .spyOn((ocr as unknown as { logger: { warn(message: unknown): void } }).logger, 'warn')
       .mockImplementation();
     return { service, storage, prisma, realname, loggerWarn };
   }

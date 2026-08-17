@@ -13,7 +13,10 @@ import { WechatModule } from '../wechat/wechat.module';
 import { RecruitmentApplicationReviewService } from './recruitment-application-review.service';
 import { RecruitmentApplicationsAdminController } from './recruitment-applications.admin.controller';
 import { RecruitmentApplicationsQueryService } from './recruitment-applications-query.service';
+import { RecruitmentApplicationProgressService } from './recruitment-application-progress.service';
 import { RecruitmentApplicationsService } from './recruitment-applications.service';
+import { RecruitmentCycleAccessService } from './recruitment-cycle-access.service';
+import { RecruitmentOcrService } from './recruitment-ocr.service';
 import { RecruitmentCertificateClaimsAdminController } from './recruitment-certificate-claims.admin.controller';
 import { RecruitmentCertificateClaimsService } from './recruitment-certificate-claims.service';
 import { RecruitmentCyclesController } from './recruitment-cycles.controller';
@@ -51,7 +54,10 @@ import { RecruitmentStatsService } from './recruitment-stats.service';
   ],
   providers: [
     RecruitmentCyclesService,
+    RecruitmentApplicationProgressService,
     RecruitmentApplicationsService,
+    RecruitmentCycleAccessService,
+    RecruitmentOcrService,
     RecruitmentApplicationsQueryService, // god-service 拆分(2026-06-28):admin 读面
     RecruitmentApplicationReviewService, // god-service 拆分(2026-06-28):核验后评审写动作
     RecruitmentIdentityService,
