@@ -19,6 +19,8 @@ import type { PrismaService } from '../../database/prisma.service';
 import type { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
 import type { RbacService } from '../permissions/rbac.service';
 import type { MembersQueryService } from './members-query.service';
+import { MemberAccessService } from './member-access.service';
+import { MemberAccountService } from './member-account.service';
 import { MembersService } from './members.service';
 
 // 队员账号闭环 v1 收尾补丁(2026-07-07,元核验 P3):runWithUniqueConstraintGuard 的
@@ -107,8 +109,15 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
   it('target 含 memberId → MEMBER_HAS_LINKED_USER(并发双开号,输家 INSERT 撞 memberId 唯一约束)', async () => {
     const tx = makeTx();
     tx.user.create.mockRejectedValue(p2002(['memberId']));
+    // Phase 6-B 第三域第五刀:共享准入层与账号族传**真实实例**并喂同一组 mock ——
+    // 本 describe 测的正是 runWithUniqueConstraintGuard 的 P2002 翻译与账号族的判权/末位保护,
+    // mock 掉它们等于把被测行为整个挖空。
+    const prismaMock = makePrisma(tx);
+    const access = new MemberAccessService(prismaMock, rbacAllow, authzAllow);
     const service = new MembersService(
-      makePrisma(tx),
+      access,
+      new MemberAccountService(prismaMock, access, auditNoop, authzAllow, lastAdminProtectionNoop),
+      prismaMock,
       rbacAllow,
       authzAllow,
       lastAdminProtectionNoop,
@@ -125,8 +134,15 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
   it('target 含手写 partial index 字面量名 User_memberId_active_key → 仍 MEMBER_HAS_LINKED_USER(队员账号闭环 v2,评审稿 §1.2 E-4)', async () => {
     const tx = makeTx();
     tx.user.create.mockRejectedValue(p2002(['User_memberId_active_key']));
+    // Phase 6-B 第三域第五刀:共享准入层与账号族传**真实实例**并喂同一组 mock ——
+    // 本 describe 测的正是 runWithUniqueConstraintGuard 的 P2002 翻译与账号族的判权/末位保护,
+    // mock 掉它们等于把被测行为整个挖空。
+    const prismaMock = makePrisma(tx);
+    const access = new MemberAccessService(prismaMock, rbacAllow, authzAllow);
     const service = new MembersService(
-      makePrisma(tx),
+      access,
+      new MemberAccountService(prismaMock, access, auditNoop, authzAllow, lastAdminProtectionNoop),
+      prismaMock,
       rbacAllow,
       authzAllow,
       lastAdminProtectionNoop,
@@ -143,8 +159,15 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
   it('target 含 username → 仍 USERNAME_ALREADY_EXISTS(既有分支回归哨兵,逐字不动)', async () => {
     const tx = makeTx();
     tx.user.create.mockRejectedValue(p2002(['username']));
+    // Phase 6-B 第三域第五刀:共享准入层与账号族传**真实实例**并喂同一组 mock ——
+    // 本 describe 测的正是 runWithUniqueConstraintGuard 的 P2002 翻译与账号族的判权/末位保护,
+    // mock 掉它们等于把被测行为整个挖空。
+    const prismaMock = makePrisma(tx);
+    const access = new MemberAccessService(prismaMock, rbacAllow, authzAllow);
     const service = new MembersService(
-      makePrisma(tx),
+      access,
+      new MemberAccountService(prismaMock, access, auditNoop, authzAllow, lastAdminProtectionNoop),
+      prismaMock,
       rbacAllow,
       authzAllow,
       lastAdminProtectionNoop,
@@ -162,8 +185,15 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
     const tx = makeTx();
     const unmapped = p2002(['someOtherColumn']);
     tx.user.create.mockRejectedValue(unmapped);
+    // Phase 6-B 第三域第五刀:共享准入层与账号族传**真实实例**并喂同一组 mock ——
+    // 本 describe 测的正是 runWithUniqueConstraintGuard 的 P2002 翻译与账号族的判权/末位保护,
+    // mock 掉它们等于把被测行为整个挖空。
+    const prismaMock = makePrisma(tx);
+    const access = new MemberAccessService(prismaMock, rbacAllow, authzAllow);
     const service = new MembersService(
-      makePrisma(tx),
+      access,
+      new MemberAccountService(prismaMock, access, auditNoop, authzAllow, lastAdminProtectionNoop),
+      prismaMock,
       rbacAllow,
       authzAllow,
       lastAdminProtectionNoop,
@@ -181,8 +211,15 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
     const tx = makeTx();
     const other = new Error('boom');
     tx.user.create.mockRejectedValue(other);
+    // Phase 6-B 第三域第五刀:共享准入层与账号族传**真实实例**并喂同一组 mock ——
+    // 本 describe 测的正是 runWithUniqueConstraintGuard 的 P2002 翻译与账号族的判权/末位保护,
+    // mock 掉它们等于把被测行为整个挖空。
+    const prismaMock = makePrisma(tx);
+    const access = new MemberAccessService(prismaMock, rbacAllow, authzAllow);
     const service = new MembersService(
-      makePrisma(tx),
+      access,
+      new MemberAccountService(prismaMock, access, auditNoop, authzAllow, lastAdminProtectionNoop),
+      prismaMock,
       rbacAllow,
       authzAllow,
       lastAdminProtectionNoop,
@@ -274,14 +311,20 @@ describe('MembersService member lifecycle authorization closure', () => {
         return Promise.resolve();
       }),
     };
+    // 第五刀:共享层与账号族同传真实实例(本组测 offboard,账号族不触发,但注入必须成立)。
+    const prismaMock = makePrisma(tx as unknown as ReturnType<typeof makeTx>);
+    const access = new MemberAccessService(prismaMock, rbacAllow, authzAllow);
+    // 第二刀:接**真** recorder(而不是把它 stub 掉)——下面对 event / extra / tx 的
+    // 断言因此逐字不变,且额外证明了 recorder 组装出的 payload 与抽出前一致。
+    const recorder = new MemberAuditRecorder(audit as unknown as AuditLogsService);
     const service = new MembersService(
-      makePrisma(tx as unknown as ReturnType<typeof makeTx>),
+      access,
+      new MemberAccountService(prismaMock, access, recorder, authzAllow, lastAdminProtection),
+      prismaMock,
       rbacAllow,
       authzAllow,
       lastAdminProtection,
-      // 第二刀:接**真** recorder(而不是把它 stub 掉)——下面对 event / extra / tx 的
-      // 断言因此逐字不变,且额外证明了 recorder 组装出的 payload 与抽出前一致。
-      new MemberAuditRecorder(audit as unknown as AuditLogsService),
+      recorder,
       activityOffboardImpactNoop,
       membersQueryStub,
     );
@@ -320,8 +363,13 @@ describe('MembersService member lifecycle authorization closure', () => {
       ...ACTIVE_MEMBER,
       status: MemberStatus.INACTIVE,
     });
+    // 第五刀:updateAccountStatus 已迁至账号族 —— 必须传真实实例,否则薄委托打到空对象上。
+    const prismaMock = makePrisma(tx as unknown as ReturnType<typeof makeTx>);
+    const access = new MemberAccessService(prismaMock, rbacAllow, authzAllow);
     const service = new MembersService(
-      makePrisma(tx as unknown as ReturnType<typeof makeTx>),
+      access,
+      new MemberAccountService(prismaMock, access, auditNoop, authzAllow, lastAdminProtectionNoop),
+      prismaMock,
       rbacAllow,
       authzAllow,
       lastAdminProtectionNoop,
