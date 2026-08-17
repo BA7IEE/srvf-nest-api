@@ -1,35 +1,23 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { DictItemStatus, DictTypeStatus, Prisma, Role } from '@prisma/client';
+import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
-import { PageResultDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
-import { parseExpandQuery } from '../../common/dto/expand-query.util';
-import { eventPlaceholder } from '../../common/event/event-placeholder';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
-import {
-  lockMembersForWrite,
-  runMemberLinearizedTransaction,
-} from '../../common/prisma/member-advisory-lock.util';
+import { runMemberLinearizedTransaction } from '../../common/prisma/member-advisory-lock.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
 import { AuthzService } from '../authz/authz.service';
-import type { ResourceRef } from '../authz/authz.types';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { RbacService } from '../permissions/rbac.service';
 // 跨轴只读(2026-06-23):复用 team-join 贡献值封顶核(单一真相源;生涯累计 cutoff=null)。
 // 纯函数调用,非 DI provider → 无 AttendancesModule → TeamJoinModule 依赖;team-join 不反向
 // import attendances(team-join.constants 自洽),无循环。
-import { computeCappedContribution } from '../team-join/team-join-progress';
-import {
-  AttendanceAccessService,
-  sheetFullSelect,
-  sheetSafeSelect,
-} from './attendance-access.service';
+import { AttendanceAccessService, sheetSafeSelect } from './attendance-access.service';
 import { AttendanceAuditRecorder } from './attendance-audit-recorder';
 import { AttendanceNotificationProducer } from './attendance-notification-producer';
 import {
@@ -41,6 +29,7 @@ import {
   validateAndNormalizeRecord,
 } from './attendance-record.policy';
 import { AttendancePresenter } from './attendance-presenter';
+import { AttendanceReadService } from './attendance-read.service';
 import { AttendanceReviewService } from './attendance-review.service';
 import {
   AttendanceSheetQueryService,
@@ -50,33 +39,16 @@ import { AttendanceSheetStateMachine } from './attendance-sheet-state-machine';
 import { ContributionCalculator } from './contribution-calculator';
 import { TimeOverlapPolicy } from './time-overlap-policy';
 import {
-  AdminAttendanceSheetListItemDto,
-  AdminMemberAttendanceRecordDto,
-  ApproveAttendanceSheetDto,
   ATTENDANCE_SHEET_STATUS,
   AttendanceRecordInputDto,
-  AttendanceRecordResponseDto,
-  AttendanceSheetActivitySummaryDto,
-  AttendanceSheetListItemDto,
   AttendanceSheetResponseDto,
-  AttendanceSheetReviewDetailDto,
   CreateAttendanceSheetDto,
-  FinalApproveAttendanceSheetDto,
-  FinalRejectAttendanceSheetDto,
-  ListAttendanceSheetsQueryDto,
-  MemberContributionSummaryDto,
-  MyAttendanceRecordsQueryDto,
-  ReopenAttendanceSheetDto,
-  ResubmitAttendanceSheetDto,
-  RejectAttendanceSheetDto,
-  ReturnAttendanceSheetDto,
   UpdateAttendanceSheetDto,
 } from './attendances.dto';
 
 // F2/B2(admin-api-fe-integration-roadmap.md §4 B2;D6 拍板):expand 白名单,仅
 // listAllSheetsForAdmin(admin/v1/attendance-sheets 全局横扫)消费。类型由 parseExpandQuery
-// 的泛型从此白名单字面量推导,无需单独导出 key 类型(镜像本文件其余「不为已推导类型再起别名」惯例)。
-const ATTENDANCE_EXPAND_WHITELIST = ['activity'] as const;
+// ATTENDANCE_EXPAND_WHITELIST 随 listAllSheetsForAdmin 迁往 attendance-read.service.ts(stage3)。
 
 // V2 第一阶段批次 3B attendances service(批次 4-B 升级:终审 / D14 预填；D11 推动已由 D2-a 撤销)。
 // 详见 docs:
@@ -162,6 +134,8 @@ export class AttendancesService {
     private readonly access: AttendanceAccessService,
     // stage2:审批八式的实现持有者;本 service 仅保留同名薄委托作为唯一对外入口。
     private readonly review: AttendanceReviewService,
+    // stage3:七条读 surface 的实现持有者;本 service 仅保留同名薄委托作为唯一对外入口。
+    private readonly read: AttendanceReadService,
     private readonly attendanceAuditRecorder: AttendanceAuditRecorder,
     private readonly contributionCalculator: ContributionCalculator,
     private readonly timeOverlapPolicy: TimeOverlapPolicy,
@@ -199,68 +173,6 @@ export class AttendancesService {
   // 调用;list / findOne / reviewDetail / listAllSheetsForAdmin / listRecordsForMemberAdmin /
   // getMemberContributionSummary 共用 read(D4=A 判例)。终审两码独立走 assertFinalReviewAuthzOrThrow
   // (`attendance.final-approve.sheet` / `attendance.final-reject.sheet`,PR9 起,自审/同人约束)。
-
-  // v0.49:扁平考勤工作台按 activity.organizationId 下推授权范围；用户显式组织筛选
-  // 与授权组织集合取交集。GLOBAL 且无筛选时保持旧查询，不额外加 where。
-  private async resolveVisibleOrganizationIds(
-    currentUser: CurrentUserPayload,
-    organizationId: string | undefined,
-    includeDescendants: boolean | undefined,
-  ): Promise<string[] | undefined> {
-    const authScope = await this.authz.getVisibleOrganizationScope(
-      currentUser,
-      'attendance.read.sheet',
-    );
-    if (!authScope.hasPermission) {
-      throw new BizException(BizCode.RBAC_FORBIDDEN);
-    }
-
-    const requestedOrgIds =
-      organizationId === undefined
-        ? undefined
-        : includeDescendants
-          ? await this.organizations.queryDescendantOrgIds(organizationId)
-          : [organizationId];
-
-    if (authScope.global) return requestedOrgIds;
-    if (requestedOrgIds === undefined) return authScope.organizationIds;
-
-    const visibleOrgIds = new Set(authScope.organizationIds);
-    return requestedOrgIds.filter((id) => visibleOrgIds.has(id));
-  }
-
-  // ============ helpers:序列化 ============
-  // 已抽至 `attendance-presenter.ts` 的 `AttendancePresenter`(P1-4 第一刀,2026-06-10
-  // 方案 A 拍板;仅"搬家",字段映射 / Decimal 序列化语义零变化)。
-  // 各路径通过 `this.attendancePresenter.toSheetResponseDto(...)` /
-  // `.toSheetListItemDto(...)` / `.toRecordResponseDto(...)` / `.decimalToString(...)` 委托;
-  // 事务边界与查询 select 策略不随迁,仍由本 service 持有。
-
-  // ============ helpers:Activity / Sheet / Member 查找 ============
-
-  // 批次 4-B 重构:findActivityForSubmission 旧版返回 {id, statusCode} 已被 findActivityForSubmissionFull
-  // (返回 activityType/status/time-window)替代，用于 D14 预填与参与状态/时间窗校验；旧函数删除。
-
-  private async assertActivityExists(activityId: string, tx: PrismaTx): Promise<void> {
-    const act = await tx.activity.findFirst({
-      where: notDeletedWhere({ id: activityId }),
-      select: { id: true },
-    });
-    if (!act) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-  }
-
-
-  // 队员端 currentUser → memberId(沿批次 3A `resolveUserMemberIdOrThrow` 范式)。
-  private async resolveUserMemberIdOrThrow(userId: string, tx: PrismaTx): Promise<string> {
-    const u = await tx.user.findFirst({
-      where: notDeletedWhere({ id: userId }),
-      select: { memberId: true },
-    });
-    if (!u || u.memberId === null) {
-      throw new BizException(BizCode.MEMBER_NOT_FOUND);
-    }
-    return u.memberId;
-  }
 
   // ============ helpers:Record 字段计算 / 校验 ============
   //
@@ -600,246 +512,42 @@ export class AttendancesService {
   // submit(...) 内通过 `this.contributionCalculator.applyContributionRulePrefill(...)` 委托,
   // 事务边界保持在 `this.prisma.$transaction(...)` 内(tx 透传)。
 
-  // ============ list(GET 列表)============
+  // ============ 读 surface:七条薄委托(Phase 6-B 第三域第一刀 stage3)============
+  //
+  // 实现已迁至 `attendance-read.service.ts` 的 `AttendanceReadService`(仅"搬家",
+  // 判权 / 组织可见范围 / logRead 审计 / presenter 序列化逐字不变)。本 service 仍是
+  // 本模块**唯一**对外入口 —— 三个 controller 与薄壳 service 的调用面逐字不变。
 
-  async list(
-    activityId: string,
-    query: ListAttendanceSheetsQueryDto,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-    authorization: AttendanceAuthorization = 'authz',
-  ): Promise<PageResultDto<AttendanceSheetListItemDto>> {
-    await this.access.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
-      type: 'activity',
-      id: activityId,
-    });
-    if (authorization === 'managed') {
-      await this.access.assertManagedAttendanceAccess(activityId, currentUser);
-    }
-    await this.prisma.$transaction(async (tx) => {
-      await this.assertActivityExists(activityId, tx);
-    });
-
-    const { page, pageSize, statusCode } = query;
-    const { items: rows, total } = await this.attendanceSheetQuery.listSheetsByActivity(
-      activityId,
-      query,
-    );
-
-    await this.attendanceAuditRecorder.logRead({
-      actorUserId: currentUser.id,
-      actorRoleSnap: currentUser.role,
-      resourceType: 'activity',
-      resourceId: activityId,
-      operation: 'list',
-      count: rows.length,
-      filterFields: statusCode === undefined ? [] : ['statusCode'],
-      auditMeta,
-    });
-
-    return {
-      items: rows.map((r) => this.attendancePresenter.toSheetListItemDto(r)),
-      total,
-      page,
-      pageSize,
-    };
+  async list(...args: Parameters<AttendanceReadService['list']>) {
+    return this.read.list(...args);
   }
 
-  // ============ 跨轴只读:跨活动考勤单据横扫(Tier2 审批工作台)============
-
-  // 2026-06-23 跨轴只读(GET admin/v1/attendance-sheets):脱离 :activityId 路径段,按 statusCode
-  // 跨所有活动横扫考勤单据(审批工作台)。判权复用 read 码;item 自带 activity 上下文。
-  // 序列化复用 presenter.toSheetListItemDto + activityTitle;既有 list(activityId,...) 行为零变更。
-  // F2/B2(admin-api-fe-integration-roadmap.md §4 B2;D1/D6/D7 拍板,2026-07-04):+可选
-  // q/activityQ/organizationId/includeDescendants/dateFrom/dateTo/expand。全部省略时行为逐字
-  // 不变(additive)。q/submitter 搜索命中提交人 User.username/nickname(AttendanceSheet 本身无
-  // 提交人姓名冗余字段,经既有 submitter 关联 join 过滤,零新 select 字段、零 N+1)。
-  async listAllSheetsForAdmin(
-    query: ListAttendanceSheetsQueryDto,
-    currentUser: CurrentUserPayload,
-  ): Promise<PageResultDto<AdminAttendanceSheetListItemDto>> {
-    const { page, pageSize, organizationId, includeDescendants, expand } = query;
-    const visibleOrganizationIds = await this.resolveVisibleOrganizationIds(
-      currentUser,
-      organizationId,
-      includeDescendants,
-    );
-    const expandSet = parseExpandQuery(expand, ATTENDANCE_EXPAND_WHITELIST);
-
-    const { items: rows, total } = await this.attendanceSheetQuery.listSheetsForAdmin(
-      query,
-      visibleOrganizationIds,
-    );
-
-    return {
-      items: rows.map((r) => ({
-        ...this.attendancePresenter.toSheetListItemDto(r),
-        activityTitle: r.activity?.title ?? null,
-        ...(expandSet.has('activity') && r.activity
-          ? {
-              activity: {
-                id: r.activity.id,
-                title: r.activity.title,
-                startAt: r.activity.startAt,
-                organizationId: r.activity.organizationId,
-              },
-            }
-          : {}),
-      })),
-      total,
-      page,
-      pageSize,
-    };
+  async listAllSheetsForAdmin(...args: Parameters<AttendanceReadService['listAllSheetsForAdmin']>) {
+    return this.read.listAllSheetsForAdmin(...args);
   }
 
-  // ============ 跨轴只读:某队员考勤记录(Tier3 队员 360)============
-
-  // 2026-06-23 跨轴只读(GET admin/v1/members/:memberId/attendance-records):某队员跨 sheet
-  // 考勤记录(队员 360「考勤记录」tab)。仅返 approved Sheet 内 records(镜像 app /me Q-A14:
-  // 已生效记录,不暴露 pending / rejected);MEMBER_NOT_FOUND 守卫;判权复用 read 码;
-  // 序列化复用 presenter.toRecordResponseDto + activityId/activityTitle 跨轴上下文。
   async listRecordsForMemberAdmin(
-    memberId: string,
-    query: PaginationQueryDto,
-    currentUser: CurrentUserPayload,
-  ): Promise<PageResultDto<AdminMemberAttendanceRecordDto>> {
-    await this.access.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
-      type: 'member',
-      id: memberId,
-    });
-    // 队员存在性守卫(不存在 / 软删 → 15001,镜像 admin-member-insurances inline 检查)。
-    if (!(await this.attendanceSheetQuery.memberExists(memberId))) {
-      throw new BizException(BizCode.MEMBER_NOT_FOUND);
-    }
-
-    const { page, pageSize } = query;
-    const { items: rows, total } = await this.attendanceSheetQuery.listApprovedRecordsForMember(
-      memberId,
-      query,
-    );
-
-    return {
-      items: rows.map((r) => ({
-        ...this.attendancePresenter.toRecordResponseDto(r),
-        activityId: r.sheet.activityId,
-        activityTitle: r.sheet.activity?.title ?? null,
-      })),
-      total,
-      page,
-      pageSize,
-    };
+    ...args: Parameters<AttendanceReadService['listRecordsForMemberAdmin']>
+  ) {
+    return this.read.listRecordsForMemberAdmin(...args);
   }
 
-  // ============ 跨轴只读:某队员贡献值生涯累计(Tier3 队员 360)============
-
-  // 2026-06-23 跨轴只读(GET admin/v1/members/:memberId/contribution-summary):某队员贡献值
-  // 生涯累计 capped 总分(队员 360「贡献值」tab)。实时算不落库,复用 team-join 封顶核
-  // computeCappedContribution(approved sheet + 全局每日封顶 3,生涯无 cutoff);**禁裸 SUM**
-  // ——绕过封顶会算多。MEMBER_NOT_FOUND 守卫;判权复用 attendance.read.sheet。
   async getMemberContributionSummary(
-    memberId: string,
-    currentUser: CurrentUserPayload,
-  ): Promise<MemberContributionSummaryDto> {
-    await this.access.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
-      type: 'member',
-      id: memberId,
-    });
-    if (!(await this.attendanceSheetQuery.memberExists(memberId))) {
-      throw new BizException(BizCode.MEMBER_NOT_FOUND);
-    }
-
-    const points = await computeCappedContribution(this.prisma, memberId, null);
-    return { memberId, contributionPoints: points.toString() };
+    ...args: Parameters<AttendanceReadService['getMemberContributionSummary']>
+  ) {
+    return this.read.getMemberContributionSummary(...args);
   }
 
-  // ============ findOne(GET Sheet 简化详情)============
-
-  async findOne(
-    id: string,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-    managedActivityId?: string,
-  ): Promise<AttendanceSheetResponseDto> {
-    await this.access.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
-      type: 'attendance_sheet',
-      id,
-    });
-    if (managedActivityId !== undefined) {
-      await this.access.assertManagedAttendanceAccess(managedActivityId, currentUser);
-    }
-    const sheet = await this.prisma.$transaction(async (tx) => this.access.findSheetOrThrow(id, tx));
-    this.access.assertManagedSheetActivity(sheet.activityId, managedActivityId);
-
-    await this.attendanceAuditRecorder.logRead({
-      actorUserId: currentUser.id,
-      actorRoleSnap: currentUser.role,
-      resourceType: 'attendance_sheet',
-      resourceId: id,
-      operation: 'detail',
-      auditMeta,
-    });
-
-    return this.attendancePresenter.toSheetResponseDto(sheet);
+  async findOne(...args: Parameters<AttendanceReadService['findOne']>) {
+    return this.read.findOne(...args);
   }
 
-  // ============ reviewDetail(GET 完整审核视图;R25)============
+  async reviewDetail(...args: Parameters<AttendanceReadService['reviewDetail']>) {
+    return this.read.reviewDetail(...args);
+  }
 
-  async reviewDetail(
-    id: string,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-    managedActivityId?: string,
-  ): Promise<AttendanceSheetReviewDetailDto> {
-    await this.access.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
-      type: 'attendance_sheet',
-      id,
-    });
-    if (managedActivityId !== undefined) {
-      await this.access.assertManagedAttendanceAccess(managedActivityId, currentUser);
-    }
-    const result = await this.prisma.$transaction(async (tx) => {
-      const sheet = await this.access.findSheetOrThrow(id, tx);
-      this.access.assertManagedSheetActivity(sheet.activityId, managedActivityId);
-
-      const activity = await tx.activity.findFirst({
-        where: notDeletedWhere({ id: sheet.activityId }),
-        select: {
-          id: true,
-          title: true,
-          activityTypeCode: true,
-          organizationId: true,
-          startAt: true,
-          endAt: true,
-          location: true,
-          statusCode: true,
-        },
-      });
-      if (!activity) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-
-      const records = await tx.attendanceRecord.findMany({
-        where: notDeletedWhere({ sheetId: id }),
-        select: recordWithMemberSelect,
-        orderBy: { checkInAt: 'asc' },
-      });
-
-      return { sheet, activity, records };
-    });
-
-    await this.attendanceAuditRecorder.logRead({
-      actorUserId: currentUser.id,
-      actorRoleSnap: currentUser.role,
-      resourceType: 'attendance_sheet',
-      resourceId: id,
-      operation: 'review-detail',
-      count: result.records.length,
-      auditMeta,
-    });
-
-    return {
-      activity: result.activity satisfies AttendanceSheetActivitySummaryDto,
-      sheet: this.attendancePresenter.toSheetResponseDto(result.sheet),
-      records: result.records.map((r) => this.attendancePresenter.toRecordResponseDto(r)),
-    };
+  async listMyRecords(...args: Parameters<AttendanceReadService['listMyRecords']>) {
+    return this.read.listMyRecords(...args);
   }
 
   // ============ edit(PATCH 编辑 pending/returned Sheet)============
@@ -1144,31 +852,5 @@ export class AttendancesService {
 
   async reopen(...args: Parameters<AttendanceReviewService['reopen']>) {
     return this.review.reopen(...args);
-  }
-
-
-  // ============ 队员端:listMyRecords(GET /me/attendance-records)============
-
-  // Q-A14 / R29 / R33:仅返 approved Sheet 内 records。
-  async listMyRecords(
-    query: MyAttendanceRecordsQueryDto,
-    currentUser: CurrentUserPayload,
-  ): Promise<PageResultDto<AttendanceRecordResponseDto>> {
-    const memberId = await this.prisma.$transaction(async (tx) =>
-      this.resolveUserMemberIdOrThrow(currentUser.id, tx),
-    );
-
-    const { page, pageSize } = query;
-    const { items: rows, total } = await this.attendanceSheetQuery.listApprovedRecordsForSelf(
-      memberId,
-      query,
-    );
-
-    return {
-      items: rows.map((r) => this.attendancePresenter.toRecordResponseDto(r)),
-      total,
-      page,
-      pageSize,
-    };
   }
 }

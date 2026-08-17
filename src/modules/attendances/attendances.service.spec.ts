@@ -30,6 +30,7 @@ import type {
   UpdateAttendanceSheetDto,
 } from './attendances.dto';
 import { AttendanceAccessService } from './attendance-access.service';
+import { AttendanceReadService } from './attendance-read.service';
 import { AttendanceReviewService } from './attendance-review.service';
 import { AttendancesService } from './attendances.service';
 
@@ -375,6 +376,15 @@ function makeService(
       new AttendancePresenter(),
       recorder as unknown as AttendanceAuditRecorder,
       notificationProducer as unknown as AttendanceNotificationProducer,
+    ),
+    new AttendanceReadService(
+      prisma as unknown as PrismaService,
+      access,
+      authz as unknown as AuthzService,
+      organizations as unknown as OrganizationsService,
+      new AttendanceSheetQueryService(prisma as unknown as PrismaService),
+      new AttendancePresenter(),
+      recorder as unknown as AttendanceAuditRecorder,
     ),
     recorder as unknown as AttendanceAuditRecorder,
     contributionCalculator as unknown as ContributionCalculator,

@@ -27,6 +27,7 @@ import {
 } from './attendances.controller';
 import { AttendanceSheetStateMachine } from './attendance-sheet-state-machine';
 import { AttendanceAccessService } from './attendance-access.service';
+import { AttendanceReadService } from './attendance-read.service';
 import { AttendanceReviewService } from './attendance-review.service';
 import { AttendancesService } from './attendances.service';
 import { ContributionCalculator } from './contribution-calculator';
@@ -104,6 +105,7 @@ import { AppMyAttendanceMemberCredentialController } from './controllers/app-my-
   ],
   providers: [
     AttendanceAccessService,
+    AttendanceReadService,
     AttendanceReviewService,
     AttendancesService,
     AdminActivityCheckInsService,

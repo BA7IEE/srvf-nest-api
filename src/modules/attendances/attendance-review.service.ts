@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, Role } from '@prisma/client';
+import { Role } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { eventPlaceholder } from '../../common/event/event-placeholder';
@@ -31,7 +31,6 @@ import type {
   ResubmitAttendanceSheetDto,
   ReturnAttendanceSheetDto,
 } from './attendances.dto';
-import type { AttendanceAuthorization } from './attendances.service';
 
 /*
  * 考勤单据的**审批流转族**(Phase 6-B 第三域第一刀 stage2,§3.2)。
@@ -66,7 +65,6 @@ export class AttendanceReviewService {
     private readonly attendanceAuditRecorder: AttendanceAuditRecorder,
     private readonly attendanceNotificationProducer: AttendanceNotificationProducer,
   ) {}
-
 
   // 终态 scoped-authz PR9(2026-07-02;冻结稿 §5.2/§5.3 + BD-2):终审与 v0.47.0 reopen
   // 判权共用此 AuthzService 入口。带 ref 判权 = attendance-final-reviewer scoped 三源
@@ -125,8 +123,6 @@ export class AttendanceReviewService {
       throw new BizException(BizCode.ATTENDANCE_SAME_REVIEWER_FORBIDDEN);
     }
   }
-
-
 
   // - audit:沿 attendance-sheet.review,action='approve';nextStatusCode 升级为 pending_final_review
   async approve(

@@ -136,10 +136,7 @@ export class AttendanceAccessService {
     if (!assignment) throw new BizException(BizCode.RBAC_FORBIDDEN);
   }
 
-  assertManagedSheetActivity(
-    sheetActivityId: string,
-    managedActivityId: string | undefined,
-  ): void {
+  assertManagedSheetActivity(sheetActivityId: string, managedActivityId: string | undefined): void {
     if (managedActivityId !== undefined && sheetActivityId !== managedActivityId) {
       throw new BizException(BizCode.ATTENDANCE_SHEET_NOT_FOUND);
     }
