@@ -14,6 +14,10 @@ import {
 } from './activities.dto';
 import { CreateAppManagedActivityDto } from './dto/app/app-managed-activity.dto';
 import { ActivitiesService } from './activities.service';
+import { ActivityAccessService } from './activity-access.service';
+import type { ActivityAllocationModeService } from './activity-allocation-mode.service';
+import { ActivityStatusCommandService } from './activity-status-command.service';
+import { ActivityWriteService } from './activity-write.service';
 import type { ActivityAuditRecorder } from './activity-audit-recorder';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
@@ -376,29 +380,68 @@ function makeService(
   const organizations = opts.organizations ?? makeOrganizationsMock();
   const insuranceRequirement = opts.insuranceRequirement ?? makeInsuranceRequirementMock();
   const initiationPolicy = opts.initiationPolicy ?? makeInitiationPolicyMock();
+  // Phase 6-B 第三域第三刀:三个新类全部传**真实实例**并喂同一组 mock ——
+  // 判权、域校验、建单改单与状态流转的行为锁必须走真实实现。mock 掉它们等于把本 spec 里
+  // 全部 RBAC_FORBIDDEN / 字典校验 / 时间窗 / 状态机断言变成自说自话。
+  // (presenter 已是模块级纯函数,不再需要注入 —— DTO mapping 断言直接走真实映射。)
+  const rbacMock = makeRbacMock() as unknown as RbacService;
+  const auditLogsMock = {
+    log: jest.fn().mockResolvedValue(undefined),
+  } as unknown as AuditLogsService;
+  const publishReviewMock = {
+    compatibilityPublish: jest.fn(),
+    cancelPendingForActivity: jest.fn(),
+    assertNoPendingChangeReview: jest.fn(),
+  } as unknown as ActivityPublishReviewService;
+  const allocationModesMock = {
+    assertValidMode: jest.fn(),
+    assertLockedActivityConsistent: jest.fn().mockResolvedValue(undefined),
+  } as unknown as ActivityAllocationModeService;
+  const configMock = {
+    activityResponsibilityWorkflow: { enabled: opts.workflowEnabled ?? false },
+  } as ConfigType<typeof appConfig>;
+  const access = new ActivityAccessService(
+    prisma as unknown as PrismaService,
+    rbacMock,
+    authz as unknown as AuthzService,
+  );
   return new ActivitiesService(
+    access,
+    new ActivityWriteService(
+      prisma as unknown as PrismaService,
+      access,
+      recorder as unknown as ActivityAuditRecorder,
+      stateMachine,
+      allocationModesMock,
+      auditLogsMock,
+      initiationPolicy as unknown as ActivityInitiationPolicy,
+      insuranceRequirement as unknown as InsuranceRequirementService,
+      notificationProducer as unknown as ActivityNotificationProducer,
+      configMock,
+    ),
+    new ActivityStatusCommandService(
+      prisma as unknown as PrismaService,
+      access,
+      recorder as unknown as ActivityAuditRecorder,
+      stateMachine,
+      allocationModesMock,
+      notificationProducer as unknown as ActivityNotificationProducer,
+      publishReviewMock,
+      configMock,
+    ),
     prisma as unknown as PrismaService,
     stateMachine,
     recorder as unknown as ActivityAuditRecorder,
-    { log: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogsService,
-    makeRbacMock() as unknown as RbacService,
+    auditLogsMock,
+    rbacMock,
     authz as unknown as AuthzService,
     notificationProducer as unknown as ActivityNotificationProducer,
     organizations as unknown as OrganizationsService,
     insuranceRequirement as unknown as InsuranceRequirementService,
     initiationPolicy as unknown as ActivityInitiationPolicy,
-    {
-      compatibilityPublish: jest.fn(),
-      cancelPendingForActivity: jest.fn(),
-      assertNoPendingChangeReview: jest.fn(),
-    } as unknown as ActivityPublishReviewService,
-    {
-      assertValidMode: jest.fn(),
-      assertLockedActivityConsistent: jest.fn().mockResolvedValue(undefined),
-    },
-    {
-      activityResponsibilityWorkflow: { enabled: opts.workflowEnabled ?? false },
-    } as ConfigType<typeof appConfig>,
+    publishReviewMock,
+    allocationModesMock,
+    configMock,
   );
 }
 
