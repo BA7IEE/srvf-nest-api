@@ -3067,6 +3067,12 @@ async function runTrustedJudgeAssertions(): Promise<void> {
       headText: string | null,
       relPath?: string,
     ) => { ok: boolean; added: string[]; removedFile: boolean };
+    judgeNumericMonotonicity: (
+      baseText: string,
+      headText: string | null,
+      metric: string,
+      relPath?: string,
+    ) => { ok: boolean; added: string[]; grown: string[]; removedFile: boolean };
     judgeRegistryMonotonicity: (
       baseText: string,
       headText: string | null,
@@ -3088,7 +3094,15 @@ async function runTrustedJudgeAssertions(): Promise<void> {
     parseRatchetRegistryDoc: (
       text: string,
       which: string,
-    ) => Array<{ id: string; baseline: string; rule: string; symbolShape: string }>;
+    ) => Array<{
+      id: string;
+      // EC-1:kind 省略时由解析器填 'eslint-exempt';numeric 型不带 rule/symbolShape。
+      kind: string;
+      baseline: string;
+      rule?: string;
+      symbolShape?: string;
+      metric?: string;
+    }>;
   };
   const reg = JSON.parse(
     fs.readFileSync(path.resolve(__dirname, '../harness/redzone.json'), 'utf-8'),
