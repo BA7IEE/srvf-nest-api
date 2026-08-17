@@ -30,6 +30,7 @@ import type {
   UpdateAttendanceSheetDto,
 } from './attendances.dto';
 import { AttendanceAccessService } from './attendance-access.service';
+import { AttendanceReviewService } from './attendance-review.service';
 import { AttendancesService } from './attendances.service';
 
 // attendances service-level characterization spec(B 档 test-only,scoped;沿 srvf-god-service-refactor）。
@@ -349,15 +350,31 @@ function makeService(
     opts.notificationProducer ?? makeAttendanceNotificationProducerMock();
   const authz = opts.authz ?? makeAuthzMock();
   const organizations = opts.organizations ?? makeOrganizationsMock();
+  // Slow-4 T3(评审稿 D-S4-6):rbac mock `can` 默认恒 true,锁业务行为而非判权;断言零修改。
+  const rbac = {
+    can: jest.fn<Promise<boolean>, [unknown, string]>().mockResolvedValue(opts.rbacCan ?? true),
+  } as unknown as RbacService;
+  // Phase 6-B 第三域第一刀:传**真实** AttendanceAccessService / AttendanceReviewService,
+  // 并喂同一组 prisma / authz / rbac mock —— 判权、聚合根锁、审批八式的行为锁必须走真实实现。
+  // mock 掉它们等于把本 spec 里全部 RBAC_FORBIDDEN / SHEET_NOT_FOUND / 自审同人限制断言
+  // 变成自说自话(同 presenter / queryService 的既有处理)。
+  const access = new AttendanceAccessService(
+    prisma as unknown as PrismaService,
+    authz as unknown as AuthzService,
+    rbac,
+  );
   return new AttendancesService(
     prisma as unknown as PrismaService,
-    // Phase 6-B 第三域第一刀:传**真实** AttendanceAccessService 并喂同一个 prisma / authz /
-    // rbac mock —— 判权与聚合根锁的行为锁必须走真实实现,mock 掉它等于把本 spec 里
-    // 全部 RBAC_FORBIDDEN / SHEET_NOT_FOUND 断言变成自说自话(同 presenter / queryService 的处理)。
-    new AttendanceAccessService(
+    access,
+    new AttendanceReviewService(
       prisma as unknown as PrismaService,
+      access,
       authz as unknown as AuthzService,
-      { can: () => Promise.resolve(opts.rbacCan ?? true) } as unknown as RbacService,
+      rbac,
+      stateMachine as unknown as AttendanceSheetStateMachine,
+      new AttendancePresenter(),
+      recorder as unknown as AttendanceAuditRecorder,
+      notificationProducer as unknown as AttendanceNotificationProducer,
     ),
     recorder as unknown as AttendanceAuditRecorder,
     contributionCalculator as unknown as ContributionCalculator,
@@ -371,10 +388,7 @@ function makeService(
     // 继续经新类落到同一个 mock 上,断言一字未改即证「搬家零漂移」。传 mock 反而会
     // 把被测行为挖空。
     new AttendanceSheetQueryService(prisma as unknown as PrismaService),
-    // Slow-4 T3(评审稿 D-S4-6):rbac mock `can` 默认恒 true,锁业务行为而非判权;断言零修改。
-    {
-      can: jest.fn<Promise<boolean>, [unknown, string]>().mockResolvedValue(opts.rbacCan ?? true),
-    } as unknown as RbacService,
+    rbac,
     // PR9:终审两方法判权走 authz.explain(默认 allow;deny 映射见专属 describe)
     authz as unknown as AuthzService,
     notificationProducer as unknown as AttendanceNotificationProducer,

@@ -27,6 +27,7 @@ import {
 } from './attendances.controller';
 import { AttendanceSheetStateMachine } from './attendance-sheet-state-machine';
 import { AttendanceAccessService } from './attendance-access.service';
+import { AttendanceReviewService } from './attendance-review.service';
 import { AttendancesService } from './attendances.service';
 import { ContributionCalculator } from './contribution-calculator';
 import { TimeOverlapPolicy } from './time-overlap-policy';
@@ -103,6 +104,7 @@ import { AppMyAttendanceMemberCredentialController } from './controllers/app-my-
   ],
   providers: [
     AttendanceAccessService,
+    AttendanceReviewService,
     AttendancesService,
     AdminActivityCheckInsService,
     ActivityCheckInQueryService,
