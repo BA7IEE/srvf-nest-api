@@ -14,6 +14,7 @@ import { AttachmentManualAttestService } from './attachment-manual-attest.servic
 import { AttachmentManualIntakeService } from './attachment-manual-intake.service';
 import { AttachmentManualRelocateService } from './attachment-manual-relocate.service';
 import { AttachmentReconciliationService } from './attachment-reconciliation.service';
+import { AttachmentUploadService } from './attachment-upload.service';
 import { AttachmentStorageOrchestrator } from './attachment-storage-orchestrator';
 import { StorageConsistencyWorker } from './storage-consistency.worker';
 
@@ -37,6 +38,7 @@ import { StorageConsistencyWorker } from './storage-consistency.worker';
     AttachmentManualAttestService,
     AttachmentManualIntakeService,
     AttachmentReconciliationService,
+    AttachmentUploadService,
     AttachmentStorageOrchestrator,
     StorageConsistencyWorker,
   ],

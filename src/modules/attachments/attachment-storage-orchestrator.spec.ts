@@ -20,6 +20,7 @@ import type { AttachmentManualAttestService } from './attachment-manual-attest.s
 import type { AttachmentManualIntakeService } from './attachment-manual-intake.service';
 import type { AttachmentManualRelocateService } from './attachment-manual-relocate.service';
 import type { AttachmentReconciliationService } from './attachment-reconciliation.service';
+import { AttachmentUploadService } from './attachment-upload.service';
 import type { AttachmentContentValidator } from './attachment-content-validator';
 import type {
   AttachmentUploadStorageIdentity,
@@ -193,6 +194,7 @@ function harness(options: { strict?: boolean; head?: HeadObjectResult; headError
     {} as AttachmentManualIntakeService,
     {} as AttachmentManualAttestService,
     reconciliation,
+    {} as AttachmentUploadService,
     provider,
   );
   return {
@@ -302,18 +304,15 @@ describe('AttachmentStorageOrchestrator JIT locator candidates', () => {
   });
 });
 
-describe('AttachmentStorageOrchestrator multipart boundary', () => {
+describe('AttachmentUploadService multipart boundary', () => {
   it('runs content magic validation synchronously and Provider put/HEAD proof outside any caller transaction', async () => {
     const validateFromBuffer = jest.fn();
     const putObjectAt = jest.fn().mockResolvedValue({ key: 'attachments/upload.png' });
-    const orchestrator = new AttachmentStorageOrchestrator(
+    const orchestrator = new AttachmentUploadService(
       { $transaction: jest.fn() } as unknown as PrismaService,
       {} as StorageObjectLedgerService,
       { validateFromBuffer } as unknown as AttachmentContentValidator,
       {} as AttachmentAuditRecorder,
-      {} as AttachmentManualRelocateService,
-      {} as AttachmentManualIntakeService,
-      {} as AttachmentManualAttestService,
       {} as AttachmentReconciliationService,
       {
         getCurrentLocator: jest.fn(),
@@ -367,7 +366,7 @@ describe('AttachmentStorageOrchestrator multipart boundary', () => {
   });
 });
 
-describe('AttachmentStorageOrchestrator upload identity boundary', () => {
+describe('AttachmentUploadService upload identity boundary', () => {
   const identity: AttachmentUploadStorageIdentity = {
     key: 'attachments/unit/exact-upload.txt',
     ownerType: 'member',
@@ -493,14 +492,11 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
       logUpload: jest.fn(),
       logUploadConfirmed,
     } as unknown as AttachmentAuditRecorder;
-    const orchestrator = new AttachmentStorageOrchestrator(
+    const orchestrator = new AttachmentUploadService(
       prisma,
       ledger,
       {} as AttachmentContentValidator,
       auditRecorder,
-      {} as AttachmentManualRelocateService,
-      {} as AttachmentManualIntakeService,
-      {} as AttachmentManualAttestService,
       {} as AttachmentReconciliationService,
       {} as PinnedStorageProvider,
     );
@@ -516,14 +512,11 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
     } as unknown as StorageObjectLedgerService;
     const getCurrentLocator = jest.fn();
     const provider = { getCurrentLocator } as unknown as PinnedStorageProvider;
-    const orchestrator = new AttachmentStorageOrchestrator(
+    const orchestrator = new AttachmentUploadService(
       {} as PrismaService,
       ledger,
       {} as AttachmentContentValidator,
       {} as AttachmentAuditRecorder,
-      {} as AttachmentManualRelocateService,
-      {} as AttachmentManualIntakeService,
-      {} as AttachmentManualAttestService,
       {} as AttachmentReconciliationService,
       provider,
     );
@@ -562,14 +555,11 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
       } as unknown as StorageObjectLedgerService;
       const prismaTransaction = jest.fn();
       const prisma = { $transaction: prismaTransaction } as unknown as PrismaService;
-      const orchestrator = new AttachmentStorageOrchestrator(
+      const orchestrator = new AttachmentUploadService(
         prisma,
         ledger,
         {} as AttachmentContentValidator,
         {} as AttachmentAuditRecorder,
-        {} as AttachmentManualRelocateService,
-        {} as AttachmentManualIntakeService,
-        {} as AttachmentManualAttestService,
         {} as AttachmentReconciliationService,
         {} as PinnedStorageProvider,
       );
@@ -628,14 +618,11 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
       noteProviderUnknown,
     } as unknown as StorageObjectLedgerService;
     const validateFromObjectAt = jest.fn().mockRejectedValue(providerError);
-    const orchestrator = new AttachmentStorageOrchestrator(
+    const orchestrator = new AttachmentUploadService(
       {} as PrismaService,
       ledger,
       { validateFromObjectAt } as unknown as AttachmentContentValidator,
       {} as AttachmentAuditRecorder,
-      {} as AttachmentManualRelocateService,
-      {} as AttachmentManualIntakeService,
-      {} as AttachmentManualAttestService,
       {} as AttachmentReconciliationService,
       {} as PinnedStorageProvider,
     );
@@ -848,6 +835,7 @@ describe('AttachmentStorageOrchestrator Content publish storage boundary', () =>
       {} as AttachmentManualIntakeService,
       {} as AttachmentManualAttestService,
       {} as AttachmentReconciliationService,
+      {} as AttachmentUploadService,
       provider,
     );
     return {

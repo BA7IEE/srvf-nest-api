@@ -28,3 +28,6 @@ export const attachmentSelect = {
   originalUploaderName: true,
   expireAt: true,
 } as const satisfies Prisma.AttachmentSelect;
+
+/** 附件对外可见字段的载荷类型 —— 与 attachmentSelect 同源,避免两处各写一份。 */
+export type SafeAttachment = Prisma.AttachmentGetPayload<{ select: typeof attachmentSelect }>;
