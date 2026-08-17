@@ -29,19 +29,6 @@ const KEY = 'attachments/a.bin';
 
 type Row = Record<string, unknown>;
 
-/** *At 系列方法在 PinnedStorageProvider 上而非基接口 StorageProvider —— 用例要断言它们的调用。 */
-type MockedPinnedProvider = Record<
-  | 'getCurrentLocator'
-  | 'putObjectAt'
-  | 'deleteObjectAt'
-  | 'generateUploadUrlAt'
-  | 'generateDownloadUrlAt'
-  | 'headObjectAt'
-  | 'readObjectPrefixAt'
-  | 'hashObjectSha256At',
-  jest.Mock
->;
-
 const COS = {
   providerType: 'COS' as const,
   bucket: 'bkt-1',
@@ -102,7 +89,7 @@ function makeService(
   const operationUpdateMany = jest
     .fn<Promise<{ count: number }>, [{ data: Row }]>()
     .mockResolvedValue({ count: options.operationCount ?? 1 });
-  const operationCreate = jest.fn().mockResolvedValue({});
+  const operationCreate = jest.fn<Promise<Row>, [{ data: Row }]>().mockResolvedValue({});
 
   // promoteBackfillAvailable 走 updateMany 两次(promote + complete),用调用序区分。
   const promoteUpdateMany = jest
@@ -129,27 +116,33 @@ function makeService(
     },
   };
 
+  // ⚠️ 每个 mock 都提成具名 const 再返回:直接 expect(ledger.foo) 会被 unbound-method 判红,
+  // 且那样断言的是「从对象上摘下来的方法」,与被测代码实际调用的不一定是同一个引用。
+  const prismaQueryRaw = jest.fn().mockResolvedValue(options.rawRows ?? []);
+  const attachmentFindUnique = jest.fn().mockResolvedValue({ id: ATTACHMENT_ID, key: KEY });
   const prisma = {
     $transaction: jest.fn().mockImplementation((fn: (t: unknown) => unknown) => fn(tx)),
-    $queryRaw: jest.fn().mockResolvedValue(options.rawRows ?? []),
-    attachment: {
-      findUnique: jest.fn().mockResolvedValue({ id: ATTACHMENT_ID, key: KEY }),
-    },
+    $queryRaw: prismaQueryRaw,
+    attachment: { findUnique: attachmentFindUnique },
   } as unknown as PrismaService;
 
+  const renewLease = jest.fn().mockImplementation((op: Row) => Promise.resolve(op));
+  const markEffectState = jest.fn().mockResolvedValue(undefined);
+  const ensureRuntimeBackfill = jest.fn().mockResolvedValue(undefined);
+  const noteBackfillCandidateAbsentClaimed = jest.fn().mockResolvedValue(undefined);
+  const noteBackfillReadFailureClaimed = jest.fn().mockResolvedValue(undefined);
   const ledger = {
     isStrictMode: jest.fn().mockReturnValue(options.strict ?? false),
     lockClaimedForUpdate: jest.fn().mockResolvedValue(options.locked ?? claimed()),
-    renewLease: jest.fn().mockImplementation((op: Row) => Promise.resolve(op)),
-    markEffectState: jest.fn().mockResolvedValue(undefined),
-    ensureRuntimeBackfill: jest.fn().mockResolvedValue(undefined),
-    noteBackfillCandidateAbsentClaimed: jest.fn().mockResolvedValue(undefined),
-    noteBackfillReadFailureClaimed: jest.fn().mockResolvedValue(undefined),
+    renewLease,
+    markEffectState,
+    ensureRuntimeBackfill,
+    noteBackfillCandidateAbsentClaimed,
+    noteBackfillReadFailureClaimed,
   } as unknown as StorageObjectLedgerService;
 
-  const contentValidator = {
-    validateFromObjectAt: jest.fn().mockResolvedValue(head()),
-  } as unknown as AttachmentContentValidator;
+  const validateFromObjectAt = jest.fn().mockResolvedValue(head());
+  const contentValidator = { validateFromObjectAt } as unknown as AttachmentContentValidator;
 
   const provider = {
     getCurrentLocator: jest.fn().mockResolvedValue(COS),
@@ -160,7 +153,7 @@ function makeService(
     headObjectAt: jest.fn().mockResolvedValue(head({ exists: options.headExists ?? false })),
     readObjectPrefixAt: jest.fn(),
     hashObjectSha256At: jest.fn(),
-  } as unknown as MockedPinnedProvider;
+  };
 
   return {
     service: new AttachmentReconciliationService(
@@ -178,30 +171,55 @@ function makeService(
     operationUpdateMany,
     operationCreate,
     promoteUpdateMany,
+    prismaQueryRaw,
+    attachmentFindUnique,
+    renewLease,
+    markEffectState,
+    ensureRuntimeBackfill,
+    noteBackfillCandidateAbsentClaimed,
+    noteBackfillReadFailureClaimed,
+    validateFromObjectAt,
+    operationUpdateManyTx: tx.storageObjectOperation.updateMany,
   };
 }
 
 describe('reconcileRolloutAttachments —— 灰度期补账', () => {
   it('⚠️ 严格模式直接返回 0,一行都不查 —— 严格模式下不存在「还没建账的附件」', async () => {
-    const { service, prisma } = makeService({ strict: true });
+    const { service, prismaQueryRaw } = makeService({ strict: true });
     await expect(service.reconcileRolloutAttachments()).resolves.toBe(0);
-    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prismaQueryRaw).not.toHaveBeenCalled();
   });
 
   it('没有缺账行:返回 0,不调 ensureRuntimeBackfill', async () => {
-    const { service, ledger } = makeService({ rawRows: [] });
+    const { service, ensureRuntimeBackfill } = makeService({ rawRows: [] });
     await expect(service.reconcileRolloutAttachments()).resolves.toBe(0);
-    expect(ledger.ensureRuntimeBackfill).not.toHaveBeenCalled();
+    expect(ensureRuntimeBackfill).not.toHaveBeenCalled();
   });
 
   it('每一行都建账,返回行数', async () => {
     const rows = [
-      { id: 'a1', key: 'k1', size: 1, mime: 'image/png', etag: null, checksum: null, createdAt: new Date() },
-      { id: 'a2', key: 'k2', size: 2, mime: 'image/png', etag: null, checksum: null, createdAt: new Date() },
+      {
+        id: 'a1',
+        key: 'k1',
+        size: 1,
+        mime: 'image/png',
+        etag: null,
+        checksum: null,
+        createdAt: new Date(),
+      },
+      {
+        id: 'a2',
+        key: 'k2',
+        size: 2,
+        mime: 'image/png',
+        etag: null,
+        checksum: null,
+        createdAt: new Date(),
+      },
     ];
-    const { service, ledger } = makeService({ rawRows: rows });
+    const { service, ensureRuntimeBackfill } = makeService({ rawRows: rows });
     await expect(service.reconcileRolloutAttachments()).resolves.toBe(2);
-    expect(ledger.ensureRuntimeBackfill).toHaveBeenCalledTimes(2);
+    expect(ensureRuntimeBackfill).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -234,8 +252,8 @@ describe('executeBackfillVerify —— 回填探测', () => {
   });
 
   it('⚠️ 拒绝:Attachment 的 key 与对象的 key 不一致 —— 关联已过期,探到的实体不是这条账', async () => {
-    const { service, prisma } = makeService();
-    (prisma.attachment.findUnique as jest.Mock).mockResolvedValue({
+    const { service, attachmentFindUnique } = makeService();
+    attachmentFindUnique.mockResolvedValue({
       id: ATTACHMENT_ID,
       key: 'attachments/OTHER.bin',
     });
@@ -245,43 +263,51 @@ describe('executeBackfillVerify —— 回填探测', () => {
   });
 
   it('拒绝:Attachment 行已不存在', async () => {
-    const { service, prisma } = makeService();
-    (prisma.attachment.findUnique as jest.Mock).mockResolvedValue(null);
+    const { service, attachmentFindUnique } = makeService();
+    attachmentFindUnique.mockResolvedValue(null);
     await expect(service.executeBackfillVerify(backfillClaim() as never)).rejects.toThrow(
       'backfill Attachment link is stale',
     );
   });
 
   it('⚠️ 校验抛 ATTACHMENT_NOT_FOUND:记「候选缺失」,不记「读失败」——两者的后续处置不同', async () => {
-    const { service, contentValidator, ledger } = makeService({
-      locked: backfillClaim(),
-    });
+    const {
+      service,
+      validateFromObjectAt,
+      noteBackfillCandidateAbsentClaimed,
+      noteBackfillReadFailureClaimed,
+    } = makeService({ locked: backfillClaim() });
     // ⚠️ 必须是**真的** BizException:分流判据是 `instanceof BizException && error.biz === BizCode.X`,
     // 而 `.biz` 比的是 BizCode 条目对象的**引用**,不是字符串。手搓一个带同名字符串的假异常会静默走进
     // 「读失败」分支,用例照样绿 —— 那就等于没测。
     const notFound = new BizException(BizCode.ATTACHMENT_NOT_FOUND);
-    (contentValidator.validateFromObjectAt as jest.Mock).mockRejectedValue(notFound);
+    validateFromObjectAt.mockRejectedValue(notFound);
     await expect(service.executeBackfillVerify(backfillClaim() as never)).rejects.toBe(notFound);
-    expect(ledger.noteBackfillCandidateAbsentClaimed).toHaveBeenCalledTimes(1);
-    expect(ledger.noteBackfillReadFailureClaimed).not.toHaveBeenCalled();
+    expect(noteBackfillCandidateAbsentClaimed).toHaveBeenCalledTimes(1);
+    expect(noteBackfillReadFailureClaimed).not.toHaveBeenCalled();
   });
 
   it('⚠️ 校验抛其它错误:记「读失败」,不记「候选缺失」——网络抖动不能被当成对象不存在', async () => {
-    const { service, contentValidator, ledger } = makeService({ locked: backfillClaim() });
-    (contentValidator.validateFromObjectAt as jest.Mock).mockRejectedValue(new Error('ETIMEDOUT'));
+    const {
+      service,
+      validateFromObjectAt,
+      noteBackfillCandidateAbsentClaimed,
+      noteBackfillReadFailureClaimed,
+    } = makeService({ locked: backfillClaim() });
+    validateFromObjectAt.mockRejectedValue(new Error('ETIMEDOUT'));
     await expect(service.executeBackfillVerify(backfillClaim() as never)).rejects.toThrow(
       'ETIMEDOUT',
     );
-    expect(ledger.noteBackfillReadFailureClaimed).toHaveBeenCalledTimes(1);
-    expect(ledger.noteBackfillCandidateAbsentClaimed).not.toHaveBeenCalled();
+    expect(noteBackfillReadFailureClaimed).toHaveBeenCalledTimes(1);
+    expect(noteBackfillCandidateAbsentClaimed).not.toHaveBeenCalled();
   });
 
   it('探到实体:续租后走 finalizeBackfillAvailable,对象置 available', async () => {
-    const { service, storageObjectUpdateMany, ledger } = makeService({
+    const { service, storageObjectUpdateMany, renewLease } = makeService({
       locked: backfillClaim({ state: 'provider_unknown' }),
     });
     await expect(service.executeBackfillVerify(backfillClaim() as never)).resolves.toBeUndefined();
-    expect(ledger.renewLease).toHaveBeenCalled();
+    expect(renewLease).toHaveBeenCalled();
     expect(storageObjectUpdateMany.mock.calls[0]?.[0].data).toMatchObject({ state: 'available' });
   });
 });
@@ -477,12 +503,12 @@ describe('executeOrphanDelete —— 悬挂对象的物理删除', () => {
 
   it('删除前标记 effect_started —— 崩溃后能看出「已经发出过删除」', async () => {
     const locked = orphanClaim();
-    const { service, provider, ledger } = makeService({ locked });
+    const { service, provider, markEffectState } = makeService({ locked });
     provider.headObjectAt
       .mockResolvedValueOnce(head({ exists: true }))
       .mockResolvedValueOnce(head({ exists: false }));
     await service.executeOrphanDelete(locked as never);
-    expect(ledger.markEffectState).toHaveBeenCalledWith(expect.anything(), 'effect_started');
+    expect(markEffectState).toHaveBeenCalledWith(expect.anything(), 'effect_started');
   });
 });
 
@@ -616,12 +642,15 @@ describe('finalizeOrphanAbsent —— 孤儿删除完成', () => {
     ['state 不是 delete_pending', {}, { state: 'absent' }],
     ['尚未到期', {}, { unboundExpiresAt: new Date(Date.now() + 3_600_000) }],
   ])('锁内复核拒绝:%s', async (_label, opOver, objOver) => {
-    const locked = claimed({ kind: 'orphan_delete', ...opOver }, {
-      state: 'delete_pending',
-      resourceId: null,
-      unboundExpiresAt: new Date(Date.now() - 1000),
-      ...objOver,
-    });
+    const locked = claimed(
+      { kind: 'orphan_delete', ...opOver },
+      {
+        state: 'delete_pending',
+        resourceId: null,
+        unboundExpiresAt: new Date(Date.now() - 1000),
+        ...objOver,
+      },
+    );
     const { service } = makeService({ locked });
     await expect(service.finalizeOrphanAbsent(locked as never)).rejects.toThrow(
       'orphan absent locked state rejected',
@@ -670,7 +699,11 @@ describe('promoteBackfillAvailable —— 顺带提升(返回 false 而非抛)',
   it('入参对象没有 attachment 关联:抛(这是调用方的编程错误,不是竞态)', async () => {
     const { service } = makeService({ currentObject: current() });
     await expect(
-      service.promoteBackfillAvailable(object({ resourceType: null }) as never, COS, head() as never),
+      service.promoteBackfillAvailable(
+        object({ resourceType: null }) as never,
+        COS,
+        head() as never,
+      ),
     ).rejects.toThrow('candidate object has no Attachment resource');
   });
 
@@ -713,7 +746,7 @@ describe('promoteBackfillAvailable —— 顺带提升(返回 false 而非抛)',
   });
 
   it('无活跃操作:提升对象,不去改任何操作行', async () => {
-    const { service, promoteUpdateMany, tx } = makeService({
+    const { service, promoteUpdateMany, operationUpdateManyTx } = makeService({
       currentObject: current(),
       activeOperations: [],
     });
@@ -721,11 +754,11 @@ describe('promoteBackfillAvailable —— 顺带提升(返回 false 而非抛)',
       service.promoteBackfillAvailable(candidate() as never, COS, head() as never),
     ).resolves.toBe(true);
     expect(promoteUpdateMany).toHaveBeenCalledTimes(1);
-    expect(tx.storageObjectOperation.updateMany).not.toHaveBeenCalled();
+    expect(operationUpdateManyTx).not.toHaveBeenCalled();
   });
 
   it('⚠️ 对象已是 available:跳过提升但仍要收尾那条 backfill_verify —— 否则操作永远悬着', async () => {
-    const { service, promoteUpdateMany, tx } = makeService({
+    const { service, promoteUpdateMany, operationUpdateManyTx } = makeService({
       currentObject: current({ state: 'available' }),
       activeOperations: [{ id: 'op-1', kind: 'backfill_verify' }],
     });
@@ -733,7 +766,7 @@ describe('promoteBackfillAvailable —— 顺带提升(返回 false 而非抛)',
       service.promoteBackfillAvailable(candidate() as never, COS, head() as never),
     ).resolves.toBe(true);
     expect(promoteUpdateMany).not.toHaveBeenCalled();
-    expect(tx.storageObjectOperation.updateMany).toHaveBeenCalledTimes(1);
+    expect(operationUpdateManyTx).toHaveBeenCalledTimes(1);
   });
 
   it('提升 CAS 丢:返回 false(有人抢先了,不是错误)', async () => {

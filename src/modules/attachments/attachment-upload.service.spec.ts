@@ -46,19 +46,6 @@ const KEY = 'attachments/a.png';
 
 type Row = Record<string, unknown>;
 
-/** *At 系列在 PinnedStorageProvider 上而非基接口 —— 用例要断言这些调用。 */
-type MockedPinnedProvider = Record<
-  | 'getCurrentLocator'
-  | 'putObjectAt'
-  | 'deleteObjectAt'
-  | 'generateUploadUrlAt'
-  | 'generateDownloadUrlAt'
-  | 'headObjectAt'
-  | 'readObjectPrefixAt'
-  | 'hashObjectSha256At',
-  jest.Mock
->;
-
 const COS = {
   providerType: 'COS' as const,
   bucket: 'bkt-1',
@@ -197,12 +184,16 @@ function makeService(
     strict?: boolean;
   } = {},
 ) {
-  const attachmentCreate = jest.fn().mockResolvedValue(attachmentRow());
-  const storageObjectUpdate = jest.fn().mockResolvedValue({});
-  const operationUpdate = jest.fn().mockResolvedValue({});
+  const attachmentCreate = jest
+    .fn<Promise<Row>, [{ data: Row }]>()
+    .mockResolvedValue(attachmentRow());
+  const storageObjectUpdate = jest.fn<Promise<Row>, [{ data: Row }]>().mockResolvedValue({});
+  const operationUpdate = jest.fn<Promise<Row>, [{ data: Row }]>().mockResolvedValue({});
 
   const tx = {
-    $queryRaw: jest.fn().mockResolvedValue(options.ownerRows ?? [{ id: 'mem-000000001', deletedAt: null }]),
+    $queryRaw: jest
+      .fn()
+      .mockResolvedValue(options.ownerRows ?? [{ id: 'mem-000000001', deletedAt: null }]),
     storageObject: {
       findUnique: jest
         .fn()
@@ -232,55 +223,65 @@ function makeService(
     $transaction: jest.fn().mockImplementation((fn: (t: unknown) => unknown) => fn(tx)),
   } as unknown as PrismaService;
 
-  const prepareUploadInTransaction = jest.fn().mockResolvedValue({
-    object: object(),
-    operation: operation(),
-  });
+  const prepareUploadInTransaction = jest
+    .fn<Promise<Row>, [unknown, { locator: unknown }]>()
+    .mockResolvedValue({ object: object(), operation: operation() });
+  // ⚠️ 每个 mock 都提成具名 const 再返回:直接 expect(ledger.foo) 会被 unbound-method 判红,
+  // 且那样断言的是「从对象上摘下来的方法」,与被测代码实际调用的不一定是同一个引用。
+  const findObjectByKey = options.findObjectThrows
+    ? jest.fn().mockRejectedValue(new Error('db down'))
+    : jest.fn().mockResolvedValue(options.findObjectByKey ?? null);
+  const findUploadContext = options.findUploadContextThrows
+    ? jest.fn().mockRejectedValue(new Error('missing'))
+    : jest
+        .fn()
+        .mockResolvedValue(options.uploadContext ?? { object: object(), operation: operation() });
+  const noteProviderUnknown = jest.fn().mockResolvedValue(undefined);
+  const ack = jest.fn().mockResolvedValue(undefined);
+  const nack = jest.fn().mockResolvedValue(undefined);
+  const recordPresentUnboundClaimed = jest.fn().mockResolvedValue(undefined);
   const ledger = {
     isStrictMode: jest.fn().mockReturnValue(options.strict ?? false),
     prepareUploadInTransaction,
-    findObjectByKey: options.findObjectThrows
-      ? jest.fn().mockRejectedValue(new Error('db down'))
-      : jest.fn().mockResolvedValue(options.findObjectByKey ?? null),
-    findUploadContext: options.findUploadContextThrows
-      ? jest.fn().mockRejectedValue(new Error('missing'))
-      : jest
-          .fn()
-          .mockResolvedValue(
-            options.uploadContext ?? { object: object(), operation: operation() },
-          ),
-    noteProviderUnknown: jest.fn().mockResolvedValue(undefined),
-    ack: jest.fn().mockResolvedValue(undefined),
-    nack: jest.fn().mockResolvedValue(undefined),
+    findObjectByKey,
+    findUploadContext,
+    noteProviderUnknown,
+    ack,
+    nack,
     renewLease: jest.fn().mockImplementation((op: Row) => Promise.resolve(op)),
-    recordPresentUnboundClaimed: jest.fn().mockResolvedValue(undefined),
+    recordPresentUnboundClaimed,
   } as unknown as StorageObjectLedgerService;
 
+  const validateFromBuffer = jest.fn();
+  const validateFromObjectAt = jest.fn().mockResolvedValue(head());
   const contentValidator = {
-    validateFromBuffer: jest.fn(),
-    validateFromObjectAt: jest.fn().mockResolvedValue(head()),
+    validateFromBuffer,
+    validateFromObjectAt,
   } as unknown as AttachmentContentValidator;
 
-  const auditRecorder = {
-    logUpload: jest.fn().mockResolvedValue(undefined),
-    logUploadConfirmed: jest.fn().mockResolvedValue(undefined),
-  } as unknown as AttachmentAuditRecorder;
+  const logUpload = jest.fn().mockResolvedValue(undefined);
+  const logUploadConfirmed = jest.fn().mockResolvedValue(undefined);
+  const auditRecorder = { logUpload, logUploadConfirmed } as unknown as AttachmentAuditRecorder;
 
+  const transitionUploadVerifyToOrphan = jest.fn().mockResolvedValue(undefined);
+  const finalizeUnboundAbsent = jest.fn().mockResolvedValue(undefined);
   const reconciliation = {
-    transitionUploadVerifyToOrphan: jest.fn().mockResolvedValue(undefined),
-    finalizeUnboundAbsent: jest.fn().mockResolvedValue(undefined),
+    transitionUploadVerifyToOrphan,
+    finalizeUnboundAbsent,
   } as unknown as AttachmentReconciliationService;
 
   const provider = {
     getCurrentLocator: jest.fn().mockResolvedValue(COS),
     putObjectAt: jest.fn().mockResolvedValue(undefined),
     deleteObjectAt: jest.fn(),
-    generateUploadUrlAt: jest.fn().mockResolvedValue({ url: 'https://x/y', headers: {} }),
+    generateUploadUrlAt: jest
+      .fn<Promise<Row>, [unknown, unknown]>()
+      .mockResolvedValue({ url: 'https://x/y', headers: {} }),
     generateDownloadUrlAt: jest.fn(),
     headObjectAt: jest.fn().mockResolvedValue(head()),
     readObjectPrefixAt: jest.fn(),
     hashObjectSha256At: jest.fn(),
-  } as unknown as MockedPinnedProvider;
+  };
 
   return {
     service: new AttachmentUploadService(
@@ -302,6 +303,18 @@ function makeService(
     storageObjectUpdate,
     operationUpdate,
     prepareUploadInTransaction,
+    findObjectByKey,
+    findUploadContext,
+    noteProviderUnknown,
+    ack,
+    nack,
+    recordPresentUnboundClaimed,
+    validateFromBuffer,
+    validateFromObjectAt,
+    logUpload,
+    logUploadConfirmed,
+    transitionUploadVerifyToOrphan,
+    finalizeUnboundAbsent,
   };
 }
 
@@ -357,7 +370,7 @@ describe('prepareUploadInTransaction —— 根事务内绝不碰供应商', () 
     });
     await service.prepareUploadInTransaction(
       tx as never,
-      identity() as never,
+      identity(),
       'attachment_signed_upload',
       new Date(),
     );
@@ -377,24 +390,22 @@ describe('prepareUploadInTransaction —— 根事务内绝不碰供应商', () 
   });
 
   it('已给 locator:直接用,连查都不查', async () => {
-    const { service, tx, ledger } = makeService();
+    const { service, tx, findObjectByKey } = makeService();
     await service.prepareUploadInTransaction(
       tx as never,
-      identity() as never,
+      identity(),
       'attachment_signed_upload',
       new Date(),
       COS,
     );
-    expect(ledger.findObjectByKey).not.toHaveBeenCalled();
+    expect(findObjectByKey).not.toHaveBeenCalled();
   });
 });
 
 describe('prepareUploadWithLocatorInTransaction —— 身份冲突的映射', () => {
   it('⚠️ 账本抛身份冲突:映射成 NOT_FOUND —— 同 key 不同身份等于这条凭证不属于你', async () => {
     const { service, tx, prepareUploadInTransaction } = makeService();
-    prepareUploadInTransaction.mockRejectedValue(
-      new StorageUploadIdentityConflictError(),
-    );
+    prepareUploadInTransaction.mockRejectedValue(new StorageUploadIdentityConflictError());
     await expect(
       service.prepareUploadWithLocatorInTransaction(
         tx as never,
@@ -424,16 +435,19 @@ describe('prepareUploadWithLocatorInTransaction —— 身份冲突的映射', (
     const { service, tx } = makeService();
     const prepared = await service.prepareUploadWithLocatorInTransaction(
       tx as never,
-      identity() as never,
+      identity(),
       'attachment_signed_upload',
       new Date(),
       COS,
     );
+    // requestHash 单独断言:内嵌 expect.stringMatching 会让整个字面量退化成 any,
+    // 那样 toEqual 的其余四个键实际上不再受类型检查保护。
+    expect(prepared.requestHash).toMatch(/^[0-9a-f]{64}$/);
     expect(prepared).toEqual({
       objectId: OBJECT_ID,
       operationId: OPERATION_ID,
       eventKey: storageOwnerUploadEventKey('member', 'mem-000000001', HASH),
-      requestHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      requestHash: prepared.requestHash,
       locator: COS,
     });
   });
@@ -443,14 +457,14 @@ describe('prepareUploadUrl —— 签名 URL', () => {
   it('⚠️ 生成 URL 抛错:PENDING —— 账已经建好了,失败的只是发 URL 这一步', async () => {
     const { service, provider } = makeService({ findObjectByKey: object() });
     provider.generateUploadUrlAt.mockRejectedValue(new Error('SignatureDoesNotMatch'));
-    await expect(
-      service.prepareUploadUrl(identity() as never, new Date(), 900),
-    ).rejects.toThrow(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING.message);
+    await expect(service.prepareUploadUrl(identity() as never, new Date(), 900)).rejects.toThrow(
+      BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING.message,
+    );
   });
 
   it('成功:用受理阶段定下的 locator 发 URL,不是重新问供应商', async () => {
     const { service, provider } = makeService({ findObjectByKey: object() });
-    await service.prepareUploadUrl(identity() as never, new Date(), 900);
+    await service.prepareUploadUrl(identity(), new Date(), 900);
     expect(provider.generateUploadUrlAt.mock.calls[0]?.[0]).toEqual(COS);
   });
 });
@@ -476,7 +490,9 @@ describe('verifyUploadEvidence —— 取证阶段的归属校验', () => {
     const { service } = makeService({
       uploadContext: {
         object: object(),
-        operation: operation({ eventKey: eventKeyFor('attachment_signed_upload', { ownerId: 'OTHER-owner' }) }),
+        operation: operation({
+          eventKey: eventKeyFor('attachment_signed_upload', { ownerId: 'OTHER-owner' }),
+        }),
       },
     });
     await expect(
@@ -497,7 +513,7 @@ describe('verifyUploadEvidence —— 取证阶段的归属校验', () => {
   });
 
   it('⚠️ 对象已 available 且已绑定:直接用账上的数据回执,不再打供应商', async () => {
-    const { service, contentValidator } = makeService({
+    const { service, validateFromObjectAt } = makeService({
       uploadContext: {
         object: object({
           state: 'available',
@@ -517,7 +533,7 @@ describe('verifyUploadEvidence —— 取证阶段的归属校验', () => {
       etag: 'W/"stored"',
       contentType: 'image/jpeg',
     });
-    expect(contentValidator.validateFromObjectAt).not.toHaveBeenCalled();
+    expect(validateFromObjectAt).not.toHaveBeenCalled();
   });
 
   it.each([['available'], ['absent'], ['delete_failed'], ['integrity_mismatch']])(
@@ -560,23 +576,21 @@ describe('verifyUploadEvidence —— 取证阶段的归属校验', () => {
   });
 
   it('⚠️ 校验抛非 Biz 错误:记 providerUnknown 并转 PENDING —— 网络不确定是可留痕的证据', async () => {
-    const { service, contentValidator, ledger } = makeService();
-    (contentValidator.validateFromObjectAt as jest.Mock).mockRejectedValue(new Error('ETIMEDOUT'));
+    const { service, validateFromObjectAt, noteProviderUnknown } = makeService();
+    validateFromObjectAt.mockRejectedValue(new Error('ETIMEDOUT'));
     await expect(
       service.verifyUploadEvidence(identity() as never, 'attachment_signed_upload'),
     ).rejects.toThrow(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING.message);
-    expect(ledger.noteProviderUnknown).toHaveBeenCalledTimes(1);
+    expect(noteProviderUnknown).toHaveBeenCalledTimes(1);
   });
 
   it('⚠️ 校验抛 Biz 错误:原样上抛,**不**记 providerUnknown —— 业务判定不是供应商不确定', async () => {
-    const { service, contentValidator, ledger } = makeService();
-    (contentValidator.validateFromObjectAt as jest.Mock).mockRejectedValue(
-      new BizException(BizCode.ATTACHMENT_MIME_NOT_ALLOWED),
-    );
+    const { service, validateFromObjectAt, noteProviderUnknown } = makeService();
+    validateFromObjectAt.mockRejectedValue(new BizException(BizCode.ATTACHMENT_MIME_NOT_ALLOWED));
     await expect(
       service.verifyUploadEvidence(identity() as never, 'attachment_signed_upload'),
     ).rejects.toThrow(BizCode.ATTACHMENT_MIME_NOT_ALLOWED.message);
-    expect(ledger.noteProviderUnknown).not.toHaveBeenCalled();
+    expect(noteProviderUnknown).not.toHaveBeenCalled();
   });
 });
 
@@ -595,7 +609,7 @@ describe('putUploadObjectAtAndVerifyOutsideTransaction —— legacy 直传', ()
   });
 
   it('put 成功后立刻取证(同一条链,不额外往返)', async () => {
-    const { service, contentValidator } = makeService({
+    const { service, validateFromObjectAt } = makeService({
       uploadContext: {
         object: object({ source: 'attachment_legacy' }),
         operation: operation({
@@ -606,12 +620,12 @@ describe('putUploadObjectAtAndVerifyOutsideTransaction —— legacy 直传', ()
       },
     });
     await service.putUploadObjectAtAndVerifyOutsideTransaction(
-      identity() as never,
+      identity(),
       'attachment_legacy',
       COS,
       Buffer.from('x'),
     );
-    expect(contentValidator.validateFromObjectAt).toHaveBeenCalledTimes(1);
+    expect(validateFromObjectAt).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -620,7 +634,7 @@ describe('finalizeUploadInTransaction —— 唯一会建 Attachment 行的地�
     return svc.service.finalizeUploadInTransaction(
       svc.tx as never,
       finalizeInput(over) as never,
-      h as never,
+      h,
     );
   }
 
@@ -638,7 +652,7 @@ describe('finalizeUploadInTransaction —— 唯一会建 Attachment 行的地�
     const svc = makeService({
       currentOperation: operation({
         eventKey: storageOwnerUploadEventKey('member', 'OTHER-owner', HASH),
-      }),  // finalize 用的是传入的 input.requestHash,故此处仍以 HASH 拼,只换 owner
+      }), // finalize 用的是传入的 input.requestHash,故此处仍以 HASH 拼,只换 owner
     });
     await expect(finalize(svc)).rejects.toThrow(BizCode.ATTACHMENT_NOT_FOUND.message);
   });
@@ -744,13 +758,13 @@ describe('finalizeUploadInTransaction —— 唯一会建 Attachment 行的地�
   it('auditKind=confirmed 走 logUploadConfirmed;legacy 走 logUpload', async () => {
     const a = makeService();
     await finalize(a, { auditKind: 'confirmed' });
-    expect(a.auditRecorder.logUploadConfirmed).toHaveBeenCalledTimes(1);
-    expect(a.auditRecorder.logUpload).not.toHaveBeenCalled();
+    expect(a.logUploadConfirmed).toHaveBeenCalledTimes(1);
+    expect(a.logUpload).not.toHaveBeenCalled();
 
     const b = makeService();
     await finalize(b, { auditKind: 'legacy' });
-    expect(b.auditRecorder.logUpload).toHaveBeenCalledTimes(1);
-    expect(b.auditRecorder.logUploadConfirmed).not.toHaveBeenCalled();
+    expect(b.logUpload).toHaveBeenCalledTimes(1);
+    expect(b.logUploadConfirmed).not.toHaveBeenCalled();
   });
 
   describe('重入路径:对象已 available 且已绑定', () => {
@@ -804,66 +818,63 @@ describe('executeUploadVerify —— worker 侧驱动', () => {
   }
 
   it('对象已绑定:直接 ack,不再取证', async () => {
-    const { service, ledger, contentValidator } = makeService();
+    const { service, ack, validateFromObjectAt } = makeService();
     await service.executeUploadVerify(claim({ resourceId: ATTACHMENT_ID }) as never);
-    expect(ledger.ack).toHaveBeenCalledWith(expect.anything(), 'provider_present');
-    expect(contentValidator.validateFromObjectAt).not.toHaveBeenCalled();
+    expect(ack).toHaveBeenCalledWith(expect.anything(), 'provider_present');
+    expect(validateFromObjectAt).not.toHaveBeenCalled();
   });
 
   it('对象已 available:直接 ack', async () => {
-    const { service, ledger } = makeService();
+    const { service, ack } = makeService();
     await service.executeUploadVerify(claim({ state: 'available' }) as never);
-    expect(ledger.ack).toHaveBeenCalledTimes(1);
+    expect(ack).toHaveBeenCalledTimes(1);
   });
 
   it('⚠️ 取证成功但未到期:nack 成 AwaitingConfirm —— 等客户端确认,不是失败', async () => {
-    const { service, ledger, reconciliation } = makeService();
+    const { service, recordPresentUnboundClaimed, nack, transitionUploadVerifyToOrphan } =
+      makeService();
     await service.executeUploadVerify(claim() as never);
-    expect(ledger.recordPresentUnboundClaimed).toHaveBeenCalledTimes(1);
-    expect(ledger.nack).toHaveBeenCalledTimes(1);
-    expect(reconciliation.transitionUploadVerifyToOrphan).not.toHaveBeenCalled();
+    expect(recordPresentUnboundClaimed).toHaveBeenCalledTimes(1);
+    expect(nack).toHaveBeenCalledTimes(1);
+    expect(transitionUploadVerifyToOrphan).not.toHaveBeenCalled();
   });
 
   it('⚠️ 取证成功但已过期:转孤儿(客户端再没来确认过)', async () => {
-    const { service, reconciliation, ledger } = makeService();
+    const { service, transitionUploadVerifyToOrphan, nack } = makeService();
     await service.executeUploadVerify(
       claim({ unboundExpiresAt: new Date(Date.now() - 1000) }) as never,
     );
-    expect(reconciliation.transitionUploadVerifyToOrphan).toHaveBeenCalledTimes(1);
-    expect(ledger.nack).not.toHaveBeenCalled();
+    expect(transitionUploadVerifyToOrphan).toHaveBeenCalledTimes(1);
+    expect(nack).not.toHaveBeenCalled();
   });
 
   it('⚠️ 取证发现不存在且已过期:收敛成 absent', async () => {
-    const { service, contentValidator, reconciliation } = makeService();
-    (contentValidator.validateFromObjectAt as jest.Mock).mockRejectedValue(
-      new BizException(BizCode.ATTACHMENT_NOT_FOUND),
-    );
+    const { service, validateFromObjectAt, finalizeUnboundAbsent } = makeService();
+    validateFromObjectAt.mockRejectedValue(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
     await service.executeUploadVerify(
       claim({ unboundExpiresAt: new Date(Date.now() - 1000) }) as never,
     );
-    expect(reconciliation.finalizeUnboundAbsent).toHaveBeenCalledTimes(1);
+    expect(finalizeUnboundAbsent).toHaveBeenCalledTimes(1);
   });
 
   it('⚠️ 取证发现不存在但**未**过期:上抛让 worker 重试 —— 字节可能还在路上', async () => {
-    const { service, contentValidator, reconciliation } = makeService();
-    (contentValidator.validateFromObjectAt as jest.Mock).mockRejectedValue(
-      new BizException(BizCode.ATTACHMENT_NOT_FOUND),
-    );
+    const { service, validateFromObjectAt, finalizeUnboundAbsent } = makeService();
+    validateFromObjectAt.mockRejectedValue(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
     await expect(service.executeUploadVerify(claim() as never)).rejects.toThrow(
       BizCode.ATTACHMENT_NOT_FOUND.message,
     );
-    expect(reconciliation.finalizeUnboundAbsent).not.toHaveBeenCalled();
+    expect(finalizeUnboundAbsent).not.toHaveBeenCalled();
   });
 
   it('⚠️ 取证抛非 NOT_FOUND 错误且已过期:仍然上抛,不当作「确实不存在」收敛', async () => {
-    const { service, contentValidator, reconciliation } = makeService();
-    (contentValidator.validateFromObjectAt as jest.Mock).mockRejectedValue(new Error('ETIMEDOUT'));
+    const { service, validateFromObjectAt, finalizeUnboundAbsent } = makeService();
+    validateFromObjectAt.mockRejectedValue(new Error('ETIMEDOUT'));
     await expect(
       service.executeUploadVerify(
         claim({ unboundExpiresAt: new Date(Date.now() - 1000) }) as never,
       ),
     ).rejects.toThrow('ETIMEDOUT');
-    expect(reconciliation.finalizeUnboundAbsent).not.toHaveBeenCalled();
+    expect(finalizeUnboundAbsent).not.toHaveBeenCalled();
   });
 });
 
@@ -892,9 +903,7 @@ describe('lockActiveUploadOwner —— 多态属主的锁与状态闸', () => {
 
   it('⚠️ 状态仍是 draft 但 publishedAt 有值:同样拒绝 —— 两个字段都要干净', async () => {
     const svc = makeService({
-      ownerRows: [
-        { id: 'owner-1', deletedAt: null, statusCode: 'draft', publishedAt: new Date() },
-      ],
+      ownerRows: [{ id: 'owner-1', deletedAt: null, statusCode: 'draft', publishedAt: new Date() }],
     });
     await expect(lock(svc, 'content-image', 'contents')).rejects.toThrow(
       BizCode.CONTENT_INVALID_STATUS_TRANSITION.message,
@@ -903,9 +912,7 @@ describe('lockActiveUploadOwner —— 多态属主的锁与状态闸', () => {
 
   it('内容已软删:抛属主不存在', async () => {
     const svc = makeService({
-      ownerRows: [
-        { id: 'owner-1', deletedAt: new Date(), statusCode: 'draft', publishedAt: null },
-      ],
+      ownerRows: [{ id: 'owner-1', deletedAt: new Date(), statusCode: 'draft', publishedAt: null }],
     });
     await expect(lock(svc, 'content-image', 'contents')).rejects.toThrow(
       BizCode.ATTACHMENT_OWNER_NOT_FOUND.message,
@@ -935,7 +942,9 @@ describe('lockActiveUploadOwner —— 多态属主的锁与状态闸', () => {
         },
       ],
     });
-    await expect(lock(ok, 'attendance-import-preview', 'activity_batch_jobs')).resolves.toBeUndefined();
+    await expect(
+      lock(ok, 'attendance-import-preview', 'activity_batch_jobs'),
+    ).resolves.toBeUndefined();
   });
 
   it.each([
@@ -1001,15 +1010,15 @@ describe('lockActiveUploadOwner —— 多态属主的锁与状态闸', () => {
 describe('薄封装', () => {
   it('uploadRequestHash 是 64 位 sha256 hex,且随 source 变化', () => {
     const { service } = makeService();
-    const signed = service.uploadRequestHash(identity() as never, 'attachment_signed_upload');
-    const legacy = service.uploadRequestHash(identity() as never, 'attachment_legacy');
+    const signed = service.uploadRequestHash(identity(), 'attachment_signed_upload');
+    const legacy = service.uploadRequestHash(identity(), 'attachment_legacy');
     expect(signed).toMatch(/^[0-9a-f]{64}$/);
     expect(signed).not.toBe(legacy);
   });
 
   it('⚠️ uploadRequestHash 随身份任一字段变化 —— 否则两次不同上传会共用一条操作', () => {
     const { service } = makeService();
-    const base = service.uploadRequestHash(identity() as never, 'attachment_signed_upload');
+    const base = service.uploadRequestHash(identity(), 'attachment_signed_upload');
     for (const over of [
       { key: 'attachments/other.png' },
       { ownerId: 'other' },
@@ -1017,16 +1026,16 @@ describe('薄封装', () => {
       { mime: 'image/jpeg' },
       { uploadedByUserId: 'usr-OTHER' },
     ]) {
-      expect(service.uploadRequestHash(identity(over) as never, 'attachment_signed_upload')).not.toBe(
-        base,
-      );
+      expect(
+        service.uploadRequestHash(identity(over) as never, 'attachment_signed_upload'),
+      ).not.toBe(base);
     }
   });
 
   it('validateUploadBufferOutsideTransaction 转交内容校验器', () => {
-    const { service, contentValidator } = makeService();
+    const { service, validateFromBuffer } = makeService();
     const buffer = Buffer.from('x');
     service.validateUploadBufferOutsideTransaction('image/png', buffer);
-    expect(contentValidator.validateFromBuffer).toHaveBeenCalledWith({ mime: 'image/png', buffer });
+    expect(validateFromBuffer).toHaveBeenCalledWith({ mime: 'image/png', buffer });
   });
 });

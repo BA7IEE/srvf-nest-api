@@ -150,9 +150,9 @@ describe('canUseCurrentLocatorAsBackfillCandidate —— 候选形状之上再�
   });
 
   it('形状不合格时直接拒绝,不再看 locator', () => {
-    expect(canUseCurrentLocatorAsBackfillCandidate(unpinnedCandidate({ state: 'available' }), COS)).toBe(
-      false,
-    );
+    expect(
+      canUseCurrentLocatorAsBackfillCandidate(unpinnedCandidate({ state: 'available' }), COS),
+    ).toBe(false);
   });
 });
 
@@ -178,10 +178,7 @@ describe('locatorMatchesOrCompletesBackfill —— 已固定则比对,未固定�
 
   it('未固定但形状不合格(source 不是 backfill):false 而非抛', () => {
     expect(
-      locatorMatchesOrCompletesBackfill(
-        unpinnedCandidate({ source: 'attachment_legacy' }),
-        COS,
-      ),
+      locatorMatchesOrCompletesBackfill(unpinnedCandidate({ source: 'attachment_legacy' }), COS),
     ).toBe(false);
   });
 });
@@ -218,9 +215,9 @@ describe('locatorForObject —— fallback 的四道闸', () => {
 
   it('闸①严格模式:即使形状合格也不走 fallback,原样抛', async () => {
     const provider = pinnedProvider();
-    await expect(
-      locatorForObject(makeLedger(true), provider, unpinnedCandidate()),
-    ).rejects.toThrow('storage object has no pinned providerType');
+    await expect(locatorForObject(makeLedger(true), provider, unpinnedCandidate())).rejects.toThrow(
+      'storage object has no pinned providerType',
+    );
     expect(provider.getCurrentLocator).not.toHaveBeenCalled();
   });
 
@@ -241,7 +238,7 @@ describe('locatorForObject —— fallback 的四道闸', () => {
       bucket: null,
       region: 'ap-guangzhou',
       localNamespace: null,
-    } as StorageObjectLocator);
+    });
     await expect(
       locatorForObject(makeLedger(false), provider, unpinnedCandidate()),
     ).rejects.toThrow('incomplete COS locator');
@@ -262,9 +259,9 @@ describe('locatorForObject —— fallback 的四道闸', () => {
 
   it('四道闸全过:返回供应商当前 locator', async () => {
     const provider = pinnedProvider(COS);
-    await expect(locatorForObject(makeLedger(false), provider, unpinnedCandidate())).resolves.toEqual(
-      COS,
-    );
+    await expect(
+      locatorForObject(makeLedger(false), provider, unpinnedCandidate()),
+    ).resolves.toEqual(COS);
     expect(provider.getCurrentLocator).toHaveBeenCalledTimes(1);
   });
 
