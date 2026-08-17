@@ -8,6 +8,7 @@ import { AttachmentContentValidator } from './attachment-content-validator';
 import { AttachmentManualAttestService } from './attachment-manual-attest.service';
 import { AttachmentManualIntakeService } from './attachment-manual-intake.service';
 import { AttachmentManualRelocateService } from './attachment-manual-relocate.service';
+import { AttachmentReconciliationService } from './attachment-reconciliation.service';
 import { AttachmentStorageOrchestrator } from './attachment-storage-orchestrator';
 import { AttachmentsController } from './attachments.controller';
 import { AttachmentsService } from './attachments.service';
@@ -35,6 +36,7 @@ import { AttachmentsService } from './attachments.service';
     AttachmentManualRelocateService,
     AttachmentManualAttestService,
     AttachmentManualIntakeService,
+    AttachmentReconciliationService,
     AttachmentStorageOrchestrator,
   ],
   // CMS 内容模块(2026-06-21,评审稿 §5.2):导出 AttachmentsService 供 content 模块复用

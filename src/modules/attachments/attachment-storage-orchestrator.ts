@@ -7,12 +7,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { STORAGE_PROVIDER } from '../storage/storage.constants';
-import {
-  isPinnedStorageProvider,
-  StoragePinnedLocatorError,
-  type PinnedStorageProvider,
-  type StorageProvider,
-} from '../storage/storage.interface';
+import { type StorageProvider } from '../storage/storage.interface';
 import {
   StorageObjectLedgerService,
   storageFenceWhere,
@@ -35,7 +30,6 @@ import {
   StorageConsistencyLeaseLostError,
   StorageUploadIdentityConflictError,
   bigintSize,
-  sameStorageLocator,
   storageLocatorFromObject,
   storageOwnerlessUploadEventKey,
   storageOwnerUploadEventKey,
@@ -50,12 +44,16 @@ import type {
 } from '../storage/storage.types';
 import { AttachmentAuditRecorder } from './attachment-audit-recorder';
 import { lockContentDeleteFinalizationBoundary } from './attachment-content-delete-boundary';
+import { AttachmentReconciliationService } from './attachment-reconciliation.service';
+import { locatorForObject, pinnedProviderOf } from './attachment-storage-locator';
 import { AttachmentContentValidator } from './attachment-content-validator';
 import { AttachmentManualAttestService } from './attachment-manual-attest.service';
 import { AttachmentManualIntakeService } from './attachment-manual-intake.service';
 import { AttachmentManualRelocateService } from './attachment-manual-relocate.service';
 import {
   StorageAwaitingConfirmError,
+  activeOperations,
+  assertHeadMatchesObject,
   StorageCandidateNotFoundError,
   StorageObjectIntegrityMismatchError,
   StorageProviderDeleteStillPresentError,
@@ -119,6 +117,7 @@ export class AttachmentStorageOrchestrator {
     private readonly manualRelocate: AttachmentManualRelocateService,
     private readonly manualIntake: AttachmentManualIntakeService,
     private readonly manualAttest: AttachmentManualAttestService,
+    private readonly reconciliation: AttachmentReconciliationService,
     @Inject(STORAGE_PROVIDER) private readonly provider: StorageProvider,
   ) {}
 
@@ -212,7 +211,7 @@ export class AttachmentStorageOrchestrator {
       const existing = await this.ledger.findObjectByKey(key);
       return existing
         ? storageLocatorFromObject(existing)
-        : await this.pinnedProvider().getCurrentLocator();
+        : await pinnedProviderOf(this.provider).getCurrentLocator();
     } catch {
       throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
     }
@@ -234,7 +233,7 @@ export class AttachmentStorageOrchestrator {
       unboundExpiresAt,
     );
     try {
-      return await this.pinnedProvider().generateUploadUrlAt(prepared.locator, {
+      return await pinnedProviderOf(this.provider).generateUploadUrlAt(prepared.locator, {
         key: identity.key,
         contentType: identity.mime,
         sizeBytes: identity.size,
@@ -293,7 +292,7 @@ export class AttachmentStorageOrchestrator {
     ) {
       throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
     }
-    const locator = await this.locatorForObject(object);
+    const locator = await locatorForObject(this.ledger, this.provider, object);
     try {
       return await this.contentValidator.validateFromObjectAt(locator, {
         key: identity.key,
@@ -323,7 +322,7 @@ export class AttachmentStorageOrchestrator {
     body: Buffer,
   ): Promise<HeadObjectResult> {
     try {
-      await this.pinnedProvider().putObjectAt(locator, {
+      await pinnedProviderOf(this.provider).putObjectAt(locator, {
         key: identity.key,
         body,
         contentType: identity.mime,
@@ -376,13 +375,13 @@ export class AttachmentStorageOrchestrator {
     if (normalizedObjectSize === null || normalizedObjectSize !== attachment.size) {
       return { body: null, actualSize: normalizedObjectSize };
     }
-    const locator = await this.locatorForObject(object);
+    const locator = await locatorForObject(this.ledger, this.provider, object);
     try {
-      const head = await this.pinnedProvider().headObjectAt(locator, attachment.key);
+      const head = await pinnedProviderOf(this.provider).headObjectAt(locator, attachment.key);
       if (!head.exists || head.size === undefined || head.size !== attachment.size) {
         return { body: null, actualSize: head.size ?? null };
       }
-      const body = await this.pinnedProvider().readObjectPrefixAt(
+      const body = await pinnedProviderOf(this.provider).readObjectPrefixAt(
         locator,
         attachment.key,
         attachment.size,
@@ -1073,8 +1072,8 @@ export class AttachmentStorageOrchestrator {
 
     let locator: StorageObjectLocator;
     try {
-      locator = await this.locatorForObject(object);
-      const head = await this.pinnedProvider().headObjectAt(locator, key);
+      locator = await locatorForObject(this.ledger, this.provider, object);
+      const head = await pinnedProviderOf(this.provider).headObjectAt(locator, key);
       if (!head.exists) {
         if (object.state === 'available') await this.ledger.markMissing(object.id);
         else {
@@ -1086,13 +1085,16 @@ export class AttachmentStorageOrchestrator {
         }
         return null;
       }
-      this.assertHeadMatchesObject(object, head);
+      assertHeadMatchesObject(object, head);
       if (object.state === 'available') {
         await this.ledger.noteAvailableHead(object.id, head);
-      } else if (!(await this.promoteBackfillAvailable(object, locator, head))) {
+      } else if (!(await this.reconciliation.promoteBackfillAvailable(object, locator, head))) {
         return null;
       }
-      const result = await this.pinnedProvider().generateDownloadUrlAt(locator, { key, expiresIn });
+      const result = await pinnedProviderOf(this.provider).generateDownloadUrlAt(locator, {
+        key,
+        expiresIn,
+      });
       const linearized = await this.prisma.storageObject.updateMany({
         where: { id: object.id, state: 'available' },
         data: { lastProviderCheckedAt: new Date() },
@@ -1267,6 +1269,12 @@ export class AttachmentStorageOrchestrator {
     return null;
   }
 
+  // 对账侧薄委托:实现在 AttachmentReconciliationService。保留同名 public 方法,
+  // 使 storage-consistency.worker 的调用面逐字不变(与 manual 族同一处理)。
+  async reconcileRolloutAttachments(limit: number): Promise<number> {
+    return this.reconciliation.reconcileRolloutAttachments(limit);
+  }
+
   // 受理侧薄委托:实现在 AttachmentManualIntakeService。编排器保留同名 public 方法,
   // 因为它是本模块对外的入口与 kind 分发器 —— 调用面(storage-consistency-worker 与 e2e)因此不变。
   async prepareManualRelocate(input: PrepareManualStorageRelocateInput): Promise<string> {
@@ -1310,10 +1318,10 @@ export class AttachmentStorageOrchestrator {
           await this.executeUploadVerify(current);
           return;
         case 'backfill_verify':
-          await this.executeBackfillVerify(current);
+          await this.reconciliation.executeBackfillVerify(current);
           return;
         case 'orphan_delete':
-          await this.executeOrphanDelete(current);
+          await this.reconciliation.executeOrphanDelete(current);
           return;
         case 'manual_relocate':
           await this.manualRelocate.execute(current, payload as ManualStorageOperationPayload);
@@ -1333,38 +1341,16 @@ export class AttachmentStorageOrchestrator {
     }
   }
 
-  async reconcileRolloutAttachments(limit = 100): Promise<number> {
-    if (this.ledger.isStrictMode()) return 0;
-    const rows = await this.prisma.$queryRaw<
-      Array<{
-        id: string;
-        key: string;
-        size: number;
-        mime: string;
-        etag: string | null;
-        checksum: string | null;
-        createdAt: Date;
-      }>
-    >(Prisma.sql`
-      SELECT a."id", a."key", a."size", a."mime", a."etag", a."checksum", a."createdAt"
-      FROM "attachments" a
-      LEFT JOIN "storage_objects" o ON o."key" = a."key"
-      WHERE o."id" IS NULL
-      ORDER BY a."createdAt" ASC
-      LIMIT ${Math.min(Math.max(limit, 1), 500)}
-    `);
-    if (rows.length === 0) return 0;
-    for (const row of rows) await this.ledger.ensureRuntimeBackfill(row);
-    return rows.length;
-  }
-
   private async executeAttachmentDelete(
     operation: ClaimedStorageOperationWithObject,
     payload: AttachmentDeleteOperationPayload,
   ): Promise<void> {
-    const locator = await this.locatorForObject(operation.storageObject);
+    const locator = await locatorForObject(this.ledger, this.provider, operation.storageObject);
     let current = await this.ledger.renewLease(operation);
-    let head = await this.pinnedProvider().headObjectAt(locator, operation.storageObject.key);
+    let head = await pinnedProviderOf(this.provider).headObjectAt(
+      locator,
+      operation.storageObject.key,
+    );
     if (!head.exists) {
       await this.finalizeAttachmentDelete(current, payload);
       return;
@@ -1373,12 +1359,12 @@ export class AttachmentStorageOrchestrator {
     await this.ledger.markEffectState(current, 'effect_started');
     let deleteError: unknown = null;
     try {
-      await this.pinnedProvider().deleteObjectAt(locator, operation.storageObject.key);
+      await pinnedProviderOf(this.provider).deleteObjectAt(locator, operation.storageObject.key);
     } catch (error) {
       deleteError = error;
     }
     current = await this.ledger.renewLease(current);
-    head = await this.pinnedProvider().headObjectAt(locator, operation.storageObject.key);
+    head = await pinnedProviderOf(this.provider).headObjectAt(locator, operation.storageObject.key);
     if (!head.exists) {
       await this.finalizeAttachmentDelete(current, payload);
       return;
@@ -1484,7 +1470,7 @@ export class AttachmentStorageOrchestrator {
       await this.ledger.ack(operation, 'provider_present');
       return;
     }
-    const locator = await this.locatorForObject(object);
+    const locator = await locatorForObject(this.ledger, this.provider, object);
     const current = await this.ledger.renewLease(operation);
     try {
       const head = await this.contentValidator.validateFromObjectAt(locator, {
@@ -1494,7 +1480,7 @@ export class AttachmentStorageOrchestrator {
       });
       await this.ledger.recordPresentUnboundClaimed(current, head);
       if (object.unboundExpiresAt && object.unboundExpiresAt.getTime() <= Date.now()) {
-        await this.transitionUploadVerifyToOrphan(current);
+        await this.reconciliation.transitionUploadVerifyToOrphan(current);
       } else {
         await this.ledger.nack(
           current,
@@ -1510,363 +1496,11 @@ export class AttachmentStorageOrchestrator {
         object.unboundExpiresAt &&
         object.unboundExpiresAt.getTime() <= Date.now()
       ) {
-        await this.finalizeUnboundAbsent(current);
+        await this.reconciliation.finalizeUnboundAbsent(current);
         return;
       }
       throw error;
     }
-  }
-
-  private async executeBackfillVerify(operation: ClaimedStorageOperationWithObject): Promise<void> {
-    const object = operation.storageObject;
-    if (object.resourceType !== 'attachment' || !object.resourceId) {
-      throw new StorageConsistencyInvariantError('backfill object has no Attachment link');
-    }
-    const attachment = await this.prisma.attachment.findUnique({
-      where: { id: object.resourceId },
-      select: { id: true, key: true },
-    });
-    if (!attachment || attachment.key !== object.key) {
-      throw new StorageConsistencyInvariantError('backfill Attachment link is stale');
-    }
-    const locator = await this.locatorForObject(object);
-    const current = await this.ledger.renewLease(operation);
-    let head: HeadObjectResult;
-    try {
-      head = await this.contentValidator.validateFromObjectAt(locator, {
-        key: object.key,
-        mime: requireString(object.expectedMime, 'expectedMime'),
-        size: requireSafeSize(object.expectedSize),
-      });
-    } catch (error) {
-      if (isAttachmentNotFound(error)) {
-        await this.ledger.noteBackfillCandidateAbsentClaimed(current, error);
-      } else {
-        await this.ledger.noteBackfillReadFailureClaimed(current, error);
-      }
-      throw error;
-    }
-    await this.finalizeBackfillAvailable(current, locator, head);
-  }
-
-  private async executeOrphanDelete(operation: ClaimedStorageOperationWithObject): Promise<void> {
-    const object = operation.storageObject;
-    if (
-      (object.source !== 'attachment_signed_upload' && object.source !== 'attachment_legacy') ||
-      object.resourceId !== null ||
-      object.state !== 'delete_pending' ||
-      !object.unboundExpiresAt ||
-      object.unboundExpiresAt.getTime() > Date.now()
-    ) {
-      throw new StorageConsistencyInvariantError('orphan delete safety gate rejected');
-    }
-    const locator = await this.locatorForObject(object);
-    let current = await this.ledger.renewLease(operation);
-    let head = await this.pinnedProvider().headObjectAt(locator, object.key);
-    if (!head.exists) {
-      await this.finalizeOrphanAbsent(current);
-      return;
-    }
-    await this.ledger.markEffectState(current, 'effect_started');
-    let deleteError: unknown = null;
-    try {
-      await this.pinnedProvider().deleteObjectAt(locator, object.key);
-    } catch (error) {
-      deleteError = error;
-    }
-    current = await this.ledger.renewLease(current);
-    head = await this.pinnedProvider().headObjectAt(locator, object.key);
-    if (!head.exists) {
-      await this.finalizeOrphanAbsent(current);
-      return;
-    }
-    throw deleteError instanceof Error ? deleteError : new StorageProviderDeleteStillPresentError();
-  }
-
-  private async transitionUploadVerifyToOrphan(
-    operation: ClaimedStorageOperationWithObject,
-  ): Promise<void> {
-    const now = new Date();
-    const requestHash = storageRequestHash({
-      kind: 'orphan_delete',
-      objectId: operation.storageObjectId,
-    });
-    await this.prisma.$transaction(async (tx) => {
-      const current = await this.ledger.lockClaimedForUpdate(tx, operation, { now });
-      if (
-        current.kind !== 'attachment_upload_verify' ||
-        current.storageObject.resourceId !== null ||
-        current.storageObject.state !== 'present_unbound' ||
-        !current.storageObject.unboundExpiresAt ||
-        current.storageObject.unboundExpiresAt.getTime() > now.getTime()
-      ) {
-        throw new StorageConsistencyInvariantError('orphan transition locked state rejected');
-      }
-      const objectUpdated = await tx.storageObject.updateMany({
-        where: {
-          id: current.storageObjectId,
-          state: 'present_unbound',
-          resourceId: null,
-        },
-        data: {
-          state: 'delete_pending',
-          deleteRequestedAt: now,
-          version: { increment: 1 },
-        },
-      });
-      if (objectUpdated.count !== 1) {
-        throw new StorageConsistencyInvariantError('orphan object transition lost');
-      }
-      const updated = await tx.storageObjectOperation.updateMany({
-        where: {
-          ...storageFenceWhere(current),
-          leaseExpiresAt: { not: null, gt: now },
-        },
-        data: terminalSucceededData(now, 'provider_present'),
-      });
-      if (updated.count !== 1) {
-        throw new StorageConsistencyLeaseLostError(current.id, current.leaseGeneration);
-      }
-      await tx.storageObjectOperation.create({
-        data: {
-          eventKey: `storage.orphan-delete:${current.storageObjectId}`,
-          storageObjectId: current.storageObjectId,
-          replayOfId: current.id,
-          kind: 'orphan_delete',
-          status: 'pending',
-          effectState: 'not_started',
-          payloadVersion: STORAGE_OPERATION_PAYLOAD_VERSION,
-          payload: toStorageJson({}),
-          requestHash,
-          availableAt: now,
-        },
-      });
-    });
-  }
-
-  private async finalizeUnboundAbsent(operation: ClaimedStorageOperationWithObject): Promise<void> {
-    const now = new Date();
-    await this.prisma.$transaction(async (tx) => {
-      const current = await this.ledger.lockClaimedForUpdate(tx, operation, { now });
-      if (
-        current.kind !== 'attachment_upload_verify' ||
-        current.storageObject.resourceId !== null ||
-        !['pending_upload', 'present_unbound', 'provider_unknown'].includes(
-          current.storageObject.state,
-        ) ||
-        !current.storageObject.unboundExpiresAt ||
-        current.storageObject.unboundExpiresAt.getTime() > now.getTime()
-      ) {
-        throw new StorageConsistencyInvariantError('unbound absent locked state rejected');
-      }
-      const objectUpdated = await tx.storageObject.updateMany({
-        where: {
-          id: current.storageObjectId,
-          state: current.storageObject.state,
-          resourceId: null,
-        },
-        data: {
-          state: 'absent',
-          absentAt: now,
-          lastProviderCheckedAt: now,
-          version: { increment: 1 },
-        },
-      });
-      if (objectUpdated.count !== 1) {
-        throw new StorageConsistencyInvariantError('unbound absent object CAS lost');
-      }
-      const operationUpdated = await tx.storageObjectOperation.updateMany({
-        where: {
-          ...storageFenceWhere(current),
-          leaseExpiresAt: { not: null, gt: now },
-        },
-        data: terminalSucceededData(now, 'provider_absent'),
-      });
-      if (operationUpdated.count !== 1) {
-        throw new StorageConsistencyLeaseLostError(current.id, current.leaseGeneration);
-      }
-    });
-  }
-
-  private async finalizeBackfillAvailable(
-    operation: ClaimedStorageOperationWithObject,
-    locator: StorageObjectLocator,
-    head: HeadObjectResult,
-  ): Promise<void> {
-    const now = new Date();
-    await this.prisma.$transaction(async (tx) => {
-      const current = await this.ledger.lockClaimedForUpdate(tx, operation, { now });
-      if (
-        current.kind !== 'backfill_verify' ||
-        current.storageObject.source !== 'backfill' ||
-        current.storageObject.resourceType !== 'attachment' ||
-        current.storageObject.resourceId === null ||
-        !['legacy_unverified', 'provider_unknown'].includes(current.storageObject.state) ||
-        current.storageObject.deleteRequestedAt !== null ||
-        !locatorMatchesOrCompletesBackfill(current.storageObject, locator)
-      ) {
-        throw new StorageConsistencyInvariantError('backfill available locked state rejected');
-      }
-      this.assertHeadMatchesObject(current.storageObject, head);
-      const objectUpdated = await tx.storageObject.updateMany({
-        where: {
-          id: current.storageObjectId,
-          state: current.storageObject.state,
-          source: 'backfill',
-          deleteRequestedAt: null,
-        },
-        data: {
-          state: 'available',
-          ...storageLocatorData(locator),
-          actualSize: head.size === undefined ? undefined : bigintSize(head.size),
-          actualMime: head.contentType,
-          etag: head.etag,
-          verifiedAt: now,
-          presentAt: now,
-          lastProviderCheckedAt: now,
-          lastErrorCode: null,
-          lastErrorClass: null,
-          version: { increment: 1 },
-        },
-      });
-      if (objectUpdated.count !== 1) {
-        throw new StorageConsistencyInvariantError('backfill available object CAS lost');
-      }
-      const operationUpdated = await tx.storageObjectOperation.updateMany({
-        where: {
-          ...storageFenceWhere(current),
-          leaseExpiresAt: { not: null, gt: now },
-        },
-        data: terminalSucceededData(now, 'provider_present'),
-      });
-      if (operationUpdated.count !== 1) {
-        throw new StorageConsistencyLeaseLostError(current.id, current.leaseGeneration);
-      }
-    });
-  }
-
-  private async finalizeOrphanAbsent(operation: ClaimedStorageOperationWithObject): Promise<void> {
-    const now = new Date();
-    await this.prisma.$transaction(async (tx) => {
-      const current = await this.ledger.lockClaimedForUpdate(tx, operation, { now });
-      if (
-        current.kind !== 'orphan_delete' ||
-        current.storageObject.resourceId !== null ||
-        current.storageObject.state !== 'delete_pending' ||
-        !current.storageObject.unboundExpiresAt ||
-        current.storageObject.unboundExpiresAt.getTime() > now.getTime()
-      ) {
-        throw new StorageConsistencyInvariantError('orphan absent locked state rejected');
-      }
-      const objectUpdated = await tx.storageObject.updateMany({
-        where: {
-          id: current.storageObjectId,
-          state: 'delete_pending',
-          resourceId: null,
-        },
-        data: {
-          state: 'absent',
-          absentAt: now,
-          lastProviderCheckedAt: now,
-          lastErrorCode: null,
-          lastErrorClass: null,
-          version: { increment: 1 },
-        },
-      });
-      if (objectUpdated.count !== 1) {
-        throw new StorageConsistencyInvariantError('orphan absent object CAS lost');
-      }
-      const operationUpdated = await tx.storageObjectOperation.updateMany({
-        where: {
-          ...storageFenceWhere(current),
-          leaseExpiresAt: { not: null, gt: now },
-        },
-        data: terminalSucceededData(now, 'effect_succeeded'),
-      });
-      if (operationUpdated.count !== 1) {
-        throw new StorageConsistencyLeaseLostError(current.id, current.leaseGeneration);
-      }
-    });
-  }
-
-  private async promoteBackfillAvailable(
-    object: StorageObject,
-    locator: StorageObjectLocator,
-    head: HeadObjectResult,
-  ): Promise<boolean> {
-    if (object.resourceType !== 'attachment' || object.resourceId === null) {
-      throw new StorageConsistencyInvariantError('candidate object has no Attachment resource');
-    }
-    const now = new Date();
-    return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw(Prisma.sql`
-        SELECT "id" FROM "storage_objects"
-        WHERE "id" = ${object.id}
-        FOR UPDATE
-      `);
-      const current = await tx.storageObject.findUnique({ where: { id: object.id } });
-      if (
-        !current ||
-        current.resourceType !== 'attachment' ||
-        current.resourceId !== object.resourceId ||
-        current.deleteRequestedAt !== null ||
-        !['legacy_unverified', 'provider_unknown', 'available'].includes(current.state) ||
-        !locatorMatchesOrCompletesBackfill(current, locator)
-      ) {
-        return false;
-      }
-      const activeOperations = await tx.$queryRaw<Array<{ id: string; kind: string }>>(Prisma.sql`
-        SELECT "id", "kind" FROM "storage_object_operations"
-        WHERE "storageObjectId" = ${current.id}
-          AND "status" IN ('pending', 'processing')
-        ORDER BY "id"
-        FOR UPDATE
-      `);
-      if (activeOperations.length > 1) {
-        throw new StorageConsistencyInvariantError('multiple active storage operations');
-      }
-      if (activeOperations[0] && activeOperations[0].kind !== 'backfill_verify') {
-        return false;
-      }
-      this.assertHeadMatchesObject(current, head);
-      if (current.state !== 'available') {
-        const promoted = await tx.storageObject.updateMany({
-          where: {
-            id: current.id,
-            state: { in: ['legacy_unverified', 'provider_unknown'] },
-            deleteRequestedAt: null,
-          },
-          data: {
-            state: 'available',
-            ...storageLocatorData(locator),
-            actualSize: head.size === undefined ? undefined : bigintSize(head.size),
-            actualMime: head.contentType,
-            etag: head.etag,
-            verifiedAt: now,
-            presentAt: now,
-            lastProviderCheckedAt: now,
-            lastErrorCode: null,
-            lastErrorClass: null,
-            version: { increment: 1 },
-          },
-        });
-        if (promoted.count !== 1) return false;
-      }
-      if (activeOperations[0]) {
-        const completed = await tx.storageObjectOperation.updateMany({
-          where: {
-            id: activeOperations[0].id,
-            kind: 'backfill_verify',
-            status: { in: ['pending', 'processing'] },
-          },
-          data: terminalSucceededData(now, 'provider_present'),
-        });
-        if (completed.count !== 1) {
-          throw new StorageConsistencyInvariantError('active backfill completion lost');
-        }
-      }
-      return true;
-    });
   }
 
   private async ensureLedgerForAttachment(attachmentId: string): Promise<StorageObject> {
@@ -1986,90 +1620,6 @@ export class AttachmentStorageOrchestrator {
       throw new BizException(BizCode.ATTACHMENT_OWNER_NOT_FOUND);
     }
   }
-
-  private async locatorForObject(object: StorageObject): Promise<StorageObjectLocator> {
-    try {
-      return storageLocatorFromObject(object);
-    } catch (error) {
-      if (this.ledger.isStrictMode() || !hasUnpinnedBackfillCandidateShape(object)) throw error;
-      const current = await this.pinnedProvider().getCurrentLocator();
-      storageLocatorFromObject(current);
-      if (!canUseCurrentLocatorAsBackfillCandidate(object, current)) throw error;
-      // A rollout candidate is evidence for this HEAD only. The locator remains unpinned until
-      // finalizeBackfillAvailable/promoteBackfillAvailable locks and promotes the same object.
-      return current;
-    }
-  }
-
-  private assertHeadMatchesObject(object: StorageObject, head: HeadObjectResult): void {
-    assertExpectedSizeMatchesHead(object, head);
-    if (object.etag !== null && head.etag === undefined) {
-      throw new StorageConsistencyInvariantError('provider HEAD lacks expected etag evidence');
-    }
-    if (object.etag !== null && head.etag !== object.etag) {
-      throw new StorageObjectIntegrityMismatchError('provider HEAD etag mismatch');
-    }
-  }
-
-  private pinnedProvider(): PinnedStorageProvider {
-    if (!isPinnedStorageProvider(this.provider)) {
-      throw new StoragePinnedLocatorError('STORAGE_PROVIDER 未实现 pinned locator methods');
-    }
-    return this.provider;
-  }
-}
-
-function storageLocatorData(locator: StorageObjectLocator): {
-  providerType: 'LOCAL' | 'COS';
-  bucket: string | null;
-  region: string | null;
-  localNamespace: string | null;
-} {
-  return {
-    providerType: locator.providerType,
-    bucket: locator.bucket,
-    region: locator.region,
-    localNamespace: locator.localNamespace,
-  };
-}
-
-function locatorMatchesOrCompletesBackfill(
-  object: StorageObject,
-  locator: StorageObjectLocator,
-): boolean {
-  try {
-    return sameStorageLocator(storageLocatorFromObject(object), locator);
-  } catch {
-    return canUseCurrentLocatorAsBackfillCandidate(object, locator);
-  }
-}
-
-export function canUseCurrentLocatorAsBackfillCandidate(
-  object: Pick<
-    StorageObject,
-    'source' | 'state' | 'providerType' | 'bucket' | 'region' | 'localNamespace'
-  >,
-  locator: StorageObjectLocator,
-): boolean {
-  if (!hasUnpinnedBackfillCandidateShape(object)) return false;
-  if (object.providerType === null) return true;
-  return object.providerType === 'LOCAL' && locator.providerType === 'LOCAL';
-}
-
-function hasUnpinnedBackfillCandidateShape(
-  object: Pick<
-    StorageObject,
-    'source' | 'state' | 'providerType' | 'bucket' | 'region' | 'localNamespace'
-  >,
-): boolean {
-  return (
-    object.source === 'backfill' &&
-    object.state === 'provider_unknown' &&
-    object.bucket === null &&
-    object.region === null &&
-    object.localNamespace === null &&
-    (object.providerType === null || object.providerType === 'LOCAL')
-  );
 }
 
 function sameUploadIdentity(
@@ -2089,12 +1639,6 @@ function sameUploadIdentity(
 
 function isContentAttachmentOwnerType(ownerType: string): boolean {
   return ownerType === 'content-image' || ownerType === 'content-file';
-}
-
-function activeOperations(operations: readonly StorageObjectOperation[]): StorageObjectOperation[] {
-  return operations.filter(
-    (operation) => operation.status === 'pending' || operation.status === 'processing',
-  );
 }
 
 function sameSortedStrings(left: readonly string[], right: readonly string[]): boolean {
@@ -2128,8 +1672,4 @@ function deleteReplayResponse(row: SafeAttachment): AttachmentDeleteReplayRespon
     expireAt: null,
     accessUrl: null,
   };
-}
-
-function isAttachmentNotFound(error: unknown): boolean {
-  return error instanceof BizException && error.biz === BizCode.ATTACHMENT_NOT_FOUND;
 }
