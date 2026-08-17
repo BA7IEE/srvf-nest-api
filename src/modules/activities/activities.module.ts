@@ -12,6 +12,9 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { ActivitiesController } from './activities.controller';
 import { ActivitiesService } from './activities.service';
+import { ActivityAccessService } from './activity-access.service';
+import { ActivityStatusCommandService } from './activity-status-command.service';
+import { ActivityWriteService } from './activity-write.service';
 import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { ActivityDraftAuditRecorder } from './activity-draft-audit-recorder';
 import { ActivityDraftService } from './activity-draft.service';
@@ -140,6 +143,9 @@ import { AttendancesModule } from '../attendances/attendances.module';
   ],
   providers: [
     ActivitiesService,
+    ActivityAccessService,
+    ActivityStatusCommandService,
+    ActivityWriteService,
     ActivityAuditRecorder,
     ActivityDraftAuditRecorder,
     ActivityDraftService,
