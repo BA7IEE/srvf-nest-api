@@ -1,30 +1,23 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { DictItemStatus, DictTypeStatus, Prisma, Role } from '@prisma/client';
+import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
-import { PageResultDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
-import { parseExpandQuery } from '../../common/dto/expand-query.util';
-import { eventPlaceholder } from '../../common/event/event-placeholder';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
-import {
-  lockMembersForWrite,
-  runMemberLinearizedTransaction,
-} from '../../common/prisma/member-advisory-lock.util';
+import { runMemberLinearizedTransaction } from '../../common/prisma/member-advisory-lock.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
 import { AuthzService } from '../authz/authz.service';
-import type { ResourceRef } from '../authz/authz.types';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { RbacService } from '../permissions/rbac.service';
 // 跨轴只读(2026-06-23):复用 team-join 贡献值封顶核(单一真相源;生涯累计 cutoff=null)。
 // 纯函数调用,非 DI provider → 无 AttendancesModule → TeamJoinModule 依赖;team-join 不反向
 // import attendances(team-join.constants 自洽),无循环。
-import { computeCappedContribution } from '../team-join/team-join-progress';
+import { AttendanceAccessService, sheetSafeSelect } from './attendance-access.service';
 import { AttendanceAuditRecorder } from './attendance-audit-recorder';
 import { AttendanceNotificationProducer } from './attendance-notification-producer';
 import {
@@ -36,6 +29,8 @@ import {
   validateAndNormalizeRecord,
 } from './attendance-record.policy';
 import { AttendancePresenter } from './attendance-presenter';
+import { AttendanceReadService } from './attendance-read.service';
+import { AttendanceReviewService } from './attendance-review.service';
 import {
   AttendanceSheetQueryService,
   recordWithMemberSelect,
@@ -44,33 +39,16 @@ import { AttendanceSheetStateMachine } from './attendance-sheet-state-machine';
 import { ContributionCalculator } from './contribution-calculator';
 import { TimeOverlapPolicy } from './time-overlap-policy';
 import {
-  AdminAttendanceSheetListItemDto,
-  AdminMemberAttendanceRecordDto,
-  ApproveAttendanceSheetDto,
   ATTENDANCE_SHEET_STATUS,
   AttendanceRecordInputDto,
-  AttendanceRecordResponseDto,
-  AttendanceSheetActivitySummaryDto,
-  AttendanceSheetListItemDto,
   AttendanceSheetResponseDto,
-  AttendanceSheetReviewDetailDto,
   CreateAttendanceSheetDto,
-  FinalApproveAttendanceSheetDto,
-  FinalRejectAttendanceSheetDto,
-  ListAttendanceSheetsQueryDto,
-  MemberContributionSummaryDto,
-  MyAttendanceRecordsQueryDto,
-  ReopenAttendanceSheetDto,
-  ResubmitAttendanceSheetDto,
-  RejectAttendanceSheetDto,
-  ReturnAttendanceSheetDto,
   UpdateAttendanceSheetDto,
 } from './attendances.dto';
 
 // F2/B2(admin-api-fe-integration-roadmap.md §4 B2;D6 拍板):expand 白名单,仅
 // listAllSheetsForAdmin(admin/v1/attendance-sheets 全局横扫)消费。类型由 parseExpandQuery
-// 的泛型从此白名单字面量推导,无需单独导出 key 类型(镜像本文件其余「不为已推导类型再起别名」惯例)。
-const ATTENDANCE_EXPAND_WHITELIST = ['activity'] as const;
+// ATTENDANCE_EXPAND_WHITELIST 随 listAllSheetsForAdmin 迁往 attendance-read.service.ts(stage3)。
 
 // V2 第一阶段批次 3B attendances service(批次 4-B 升级:终审 / D14 预填；D11 推动已由 D2-a 撤销)。
 // 详见 docs:
@@ -141,46 +119,6 @@ const ATTENDANCE_EXPAND_WHITELIST = ['activity'] as const;
 // Sheet 状态机闭集别名(单一来源:ATTENDANCE_SHEET_STATUS,定义在 attendances.dto.ts)。
 const SHEET_STATUS_PENDING = ATTENDANCE_SHEET_STATUS.PENDING;
 
-// Sheet 简化 select(不含 records 数组 + 不含 previousSnapshot)。
-// 批次 4-B 新增 finalReviewer* 3 字段(D-S5;UserResponseDto 同步,沿 baseline §11.3 可选字段)。
-const sheetSafeSelect = {
-  id: true,
-  activityId: true,
-  submitterUserId: true,
-  submittedAt: true,
-  statusCode: true,
-  reviewerUserId: true,
-  reviewedAt: true,
-  reviewNote: true,
-  finalReviewerUserId: true,
-  finalReviewedAt: true,
-  finalReviewNote: true,
-  lastSubmittedByUserId: true,
-  lastSubmittedAt: true,
-  returnedByUserId: true,
-  returnedAt: true,
-  returnNote: true,
-  returnedFromStageCode: true,
-  version: true,
-  createdAt: true,
-  updatedAt: true,
-} as const satisfies Prisma.AttendanceSheetSelect;
-
-// Sheet 完整 select(含 previousSnapshot,用于 edit 事务内读取上一版本快照)。
-const sheetFullSelect = {
-  ...sheetSafeSelect,
-  previousSnapshot: true,
-  activityId: true,
-} as const satisfies Prisma.AttendanceSheetSelect;
-
-// 行类型(SheetSafeRow / SheetListRow / RecordWithMemberRow)已随序列化方法迁往
-// `attendance-presenter.ts`(P1-4 第一刀);presenter 侧用最小结构性入参类型,
-// 本文件的 GetPayload 行按结构子类型直接传入。
-//
-// **读侧** select 常量(`sheetListSelect` / `recordWithMemberSelect` / `adminSheetListSelect` /
-// `adminMemberRecordSelect`)已随四条列表 surface 的查询构造迁往
-// `attendance-sheet-query.service.ts`(Phase 6-B 第二域第一刀,§3.2)。
-// `recordWithMemberSelect` 由本文件 import 回来供 12 处**写路径回读**复用 —— 单一真相源,不另起第二份。
 // **写侧** `sheetSafeSelect` / `sheetFullSelect` 刻意留在本文件:它们服务写路径回读与
 // §4「loading the aggregate root」,不是读侧查询构造。
 type PrismaTx = Prisma.TransactionClient;
@@ -190,6 +128,14 @@ export type AttendanceAuthorization = 'authz' | 'managed';
 export class AttendancesService {
   constructor(
     private readonly prisma: PrismaService,
+    // Phase 6-B 第三域第一刀:submit / edit / softDelete / 审批八式 / 读侧**三段共用**的前置
+    // (判权、managed 校验、Activity 聚合根锁、Sheet 回读)。判权调用仍在各自方法体内 ——
+    // 不把判权**结果**当跨类入参传,那会开出「漏传即漏判权」的新失败面。
+    private readonly access: AttendanceAccessService,
+    // stage2:审批八式的实现持有者;本 service 仅保留同名薄委托作为唯一对外入口。
+    private readonly review: AttendanceReviewService,
+    // stage3:七条读 surface 的实现持有者;本 service 仅保留同名薄委托作为唯一对外入口。
+    private readonly read: AttendanceReadService,
     private readonly attendanceAuditRecorder: AttendanceAuditRecorder,
     private readonly contributionCalculator: ContributionCalculator,
     private readonly timeOverlapPolicy: TimeOverlapPolicy,
@@ -227,198 +173,6 @@ export class AttendancesService {
   // 调用;list / findOne / reviewDetail / listAllSheetsForAdmin / listRecordsForMemberAdmin /
   // getMemberContributionSummary 共用 read(D4=A 判例)。终审两码独立走 assertFinalReviewAuthzOrThrow
   // (`attendance.final-approve.sheet` / `attendance.final-reject.sheet`,PR9 起,自审/同人约束)。
-  private async assertCanOrThrow(
-    user: CurrentUserPayload,
-    action: string,
-    ref?: ResourceRef,
-  ): Promise<void> {
-    const decision = await this.authz.explain(user, action, ref);
-    if (decision.allow) return;
-    if (
-      decision.reason === 'self_approval_forbidden' &&
-      (action === 'attendance.approve.sheet' ||
-        action === 'attendance.reject.sheet' ||
-        action === 'attendance.return.sheet')
-    ) {
-      throw new BizException(BizCode.ATTENDANCE_SELF_FIRST_REVIEW_FORBIDDEN);
-    }
-    if (ref && decision.reason === 'resource_not_found' && (await this.rbac.can(user, action))) {
-      return;
-    }
-    throw new BizException(BizCode.RBAC_FORBIDDEN);
-  }
-
-  // v0.49:扁平考勤工作台按 activity.organizationId 下推授权范围；用户显式组织筛选
-  // 与授权组织集合取交集。GLOBAL 且无筛选时保持旧查询，不额外加 where。
-  private async resolveVisibleOrganizationIds(
-    currentUser: CurrentUserPayload,
-    organizationId: string | undefined,
-    includeDescendants: boolean | undefined,
-  ): Promise<string[] | undefined> {
-    const authScope = await this.authz.getVisibleOrganizationScope(
-      currentUser,
-      'attendance.read.sheet',
-    );
-    if (!authScope.hasPermission) {
-      throw new BizException(BizCode.RBAC_FORBIDDEN);
-    }
-
-    const requestedOrgIds =
-      organizationId === undefined
-        ? undefined
-        : includeDescendants
-          ? await this.organizations.queryDescendantOrgIds(organizationId)
-          : [organizationId];
-
-    if (authScope.global) return requestedOrgIds;
-    if (requestedOrgIds === undefined) return authScope.organizationIds;
-
-    const visibleOrgIds = new Set(authScope.organizationIds);
-    return requestedOrgIds.filter((id) => visibleOrgIds.has(id));
-  }
-
-  // 终态 scoped-authz PR9(2026-07-02;冻结稿 §5.2/§5.3 + BD-2):终审与 v0.47.0 reopen
-  // 判权共用此 AuthzService 入口。带 ref 判权 = attendance-final-reviewer scoped 三源
-  // (如 POSITION_ASSIGNMENT 主体 RoleBinding —— 终审中枢经 role-bindings 配置行决定,
-  // 绝不 hardcode 部门)+ SUPER_ADMIN 兜底;biz-admin 不持终审/reopen 三码。
-  // ActionConstraint 对 finalApprove / finalReject / finalReturn 咬合自审与同人限制。
-  //
-  // deny 映射(goal 决断①):
-  // - self_approval_forbidden → 22074 / same_reviewer_forbidden → 22075(域不变量否决,非权限不足)
-  // - resource_not_found → 行为锁:旧序是「先判码后查单」——持全局码者放行,进事务由
-  //   findSheetOrThrow 抛 ATTENDANCE_SHEET_NOT_FOUND(22001)如旧;无码者仍 30100(防枚举)
-  // - 其余一切 deny(no_permission / out_of_scope / expired_grant 等)→ 30100 不变(权限拒绝面契约零变)
-  private async assertFinalReviewAuthzOrThrow(
-    user: CurrentUserPayload,
-    action: string,
-    sheetId: string,
-  ): Promise<void> {
-    const decision = await this.authz.explain(user, action, {
-      type: 'attendance_sheet',
-      id: sheetId,
-    });
-    if (decision.allow) return;
-    switch (decision.reason) {
-      case 'self_approval_forbidden':
-        throw new BizException(BizCode.ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN);
-      case 'same_reviewer_forbidden':
-        throw new BizException(BizCode.ATTENDANCE_SAME_REVIEWER_FORBIDDEN);
-      case 'resource_not_found':
-        if (await this.rbac.can(user, action)) return;
-        throw new BizException(BizCode.RBAC_FORBIDDEN);
-      default:
-        throw new BizException(BizCode.RBAC_FORBIDDEN);
-    }
-  }
-
-  private assertLockedReviewSeparation(
-    stage: 'first' | 'final',
-    sheet: {
-      submitterUserId: string;
-      lastSubmittedByUserId: string | null;
-      reviewerUserId: string | null;
-    },
-    currentUser: CurrentUserPayload,
-  ): void {
-    if (
-      sheet.submitterUserId === currentUser.id ||
-      sheet.lastSubmittedByUserId === currentUser.id
-    ) {
-      throw new BizException(
-        stage === 'first'
-          ? BizCode.ATTENDANCE_SELF_FIRST_REVIEW_FORBIDDEN
-          : BizCode.ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN,
-      );
-    }
-    if (stage === 'final' && sheet.reviewerUserId === currentUser.id) {
-      throw new BizException(BizCode.ATTENDANCE_SAME_REVIEWER_FORBIDDEN);
-    }
-  }
-
-  // 考勤写路径的 Activity 聚合锁。**任何 surface 都必须取**(并发审计 K1 / 第七种形状 S7):
-  // 把它挂在 `authorization === 'managed'` / `managedActivityId !== undefined` 这类判权分支上,
-  // 会让另一条 surface 对 Activity 与 Registration 完全裸奔,单读该方法看不出来。
-  // 名字里刻意不再带 "Managed" —— 它不是 managed 面的专属物。
-  private async lockActivityForAttendanceWrite(activityId: string, tx: PrismaTx): Promise<void> {
-    const rows = await tx.$queryRaw<Array<{ id: string }>>`
-      SELECT id FROM "Activity"
-      WHERE id = ${activityId} AND "deletedAt" IS NULL
-      FOR UPDATE
-    `;
-    if (rows.length === 0) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-  }
-
-  private async assertManagedAttendanceAccess(
-    activityId: string,
-    currentUser: CurrentUserPayload,
-    tx?: PrismaTx,
-  ): Promise<void> {
-    if (!currentUser.memberId) throw new BizException(BizCode.RBAC_FORBIDDEN);
-    const assignment = await (tx ?? this.prisma).activityResponsibilityAssignment.findFirst({
-      where: {
-        activityId,
-        memberId: currentUser.memberId,
-        status: 'active',
-        canManageAttendance: true,
-      },
-      select: { id: true },
-    });
-    if (!assignment) throw new BizException(BizCode.RBAC_FORBIDDEN);
-  }
-
-  private assertManagedSheetActivity(
-    sheetActivityId: string,
-    managedActivityId: string | undefined,
-  ): void {
-    if (managedActivityId !== undefined && sheetActivityId !== managedActivityId) {
-      throw new BizException(BizCode.ATTENDANCE_SHEET_NOT_FOUND);
-    }
-  }
-
-  // ============ helpers:序列化 ============
-  // 已抽至 `attendance-presenter.ts` 的 `AttendancePresenter`(P1-4 第一刀,2026-06-10
-  // 方案 A 拍板;仅"搬家",字段映射 / Decimal 序列化语义零变化)。
-  // 各路径通过 `this.attendancePresenter.toSheetResponseDto(...)` /
-  // `.toSheetListItemDto(...)` / `.toRecordResponseDto(...)` / `.decimalToString(...)` 委托;
-  // 事务边界与查询 select 策略不随迁,仍由本 service 持有。
-
-  // ============ helpers:Activity / Sheet / Member 查找 ============
-
-  // 批次 4-B 重构:findActivityForSubmission 旧版返回 {id, statusCode} 已被 findActivityForSubmissionFull
-  // (返回 activityType/status/time-window)替代，用于 D14 预填与参与状态/时间窗校验；旧函数删除。
-
-  private async assertActivityExists(activityId: string, tx: PrismaTx): Promise<void> {
-    const act = await tx.activity.findFirst({
-      where: notDeletedWhere({ id: activityId }),
-      select: { id: true },
-    });
-    if (!act) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-  }
-
-  // 找 Sheet 完整数据(含 previousSnapshot,用于 edit 路径)。
-  private async findSheetOrThrow(
-    id: string,
-    tx: PrismaTx,
-  ): Promise<Prisma.AttendanceSheetGetPayload<{ select: typeof sheetFullSelect }>> {
-    const sheet = await tx.attendanceSheet.findFirst({
-      where: notDeletedWhere({ id }),
-      select: sheetFullSelect,
-    });
-    if (!sheet) throw new BizException(BizCode.ATTENDANCE_SHEET_NOT_FOUND);
-    return sheet;
-  }
-
-  // 队员端 currentUser → memberId(沿批次 3A `resolveUserMemberIdOrThrow` 范式)。
-  private async resolveUserMemberIdOrThrow(userId: string, tx: PrismaTx): Promise<string> {
-    const u = await tx.user.findFirst({
-      where: notDeletedWhere({ id: userId }),
-      select: { memberId: true },
-    });
-    if (!u || u.memberId === null) {
-      throw new BizException(BizCode.MEMBER_NOT_FOUND);
-    }
-    return u.memberId;
-  }
 
   // ============ helpers:Record 字段计算 / 校验 ============
   //
@@ -592,7 +346,7 @@ export class AttendancesService {
     auditMeta: AuditMeta,
     authorization: AttendanceAuthorization = 'authz',
   ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.create.sheet', {
+    await this.access.assertCanOrThrow(currentUser, 'attendance.create.sheet', {
       type: 'activity',
       id: activityId,
     });
@@ -601,8 +355,8 @@ export class AttendancesService {
       // 1. 与 pass cancel / GPS check-in 统一 Activity → Registration 锁序。
       // managed 以 FOR UPDATE 与责任撤销/移交串行并锁后重读 capability；Admin 默认仍用 FOR SHARE。
       if (authorization === 'managed') {
-        await this.lockActivityForAttendanceWrite(activityId, tx);
-        await this.assertManagedAttendanceAccess(activityId, currentUser, tx);
+        await this.access.lockActivityForAttendanceWrite(activityId, tx);
+        await this.access.assertManagedAttendanceAccess(activityId, currentUser, tx);
       } else {
         const lockedActivity = await tx.$queryRaw<Array<{ id: string }>>`
           SELECT id FROM "Activity"
@@ -758,246 +512,42 @@ export class AttendancesService {
   // submit(...) 内通过 `this.contributionCalculator.applyContributionRulePrefill(...)` 委托,
   // 事务边界保持在 `this.prisma.$transaction(...)` 内(tx 透传)。
 
-  // ============ list(GET 列表)============
+  // ============ 读 surface:七条薄委托(Phase 6-B 第三域第一刀 stage3)============
+  //
+  // 实现已迁至 `attendance-read.service.ts` 的 `AttendanceReadService`(仅"搬家",
+  // 判权 / 组织可见范围 / logRead 审计 / presenter 序列化逐字不变)。本 service 仍是
+  // 本模块**唯一**对外入口 —— 三个 controller 与薄壳 service 的调用面逐字不变。
 
-  async list(
-    activityId: string,
-    query: ListAttendanceSheetsQueryDto,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-    authorization: AttendanceAuthorization = 'authz',
-  ): Promise<PageResultDto<AttendanceSheetListItemDto>> {
-    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
-      type: 'activity',
-      id: activityId,
-    });
-    if (authorization === 'managed') {
-      await this.assertManagedAttendanceAccess(activityId, currentUser);
-    }
-    await this.prisma.$transaction(async (tx) => {
-      await this.assertActivityExists(activityId, tx);
-    });
-
-    const { page, pageSize, statusCode } = query;
-    const { items: rows, total } = await this.attendanceSheetQuery.listSheetsByActivity(
-      activityId,
-      query,
-    );
-
-    await this.attendanceAuditRecorder.logRead({
-      actorUserId: currentUser.id,
-      actorRoleSnap: currentUser.role,
-      resourceType: 'activity',
-      resourceId: activityId,
-      operation: 'list',
-      count: rows.length,
-      filterFields: statusCode === undefined ? [] : ['statusCode'],
-      auditMeta,
-    });
-
-    return {
-      items: rows.map((r) => this.attendancePresenter.toSheetListItemDto(r)),
-      total,
-      page,
-      pageSize,
-    };
+  async list(...args: Parameters<AttendanceReadService['list']>) {
+    return this.read.list(...args);
   }
 
-  // ============ 跨轴只读:跨活动考勤单据横扫(Tier2 审批工作台)============
-
-  // 2026-06-23 跨轴只读(GET admin/v1/attendance-sheets):脱离 :activityId 路径段,按 statusCode
-  // 跨所有活动横扫考勤单据(审批工作台)。判权复用 read 码;item 自带 activity 上下文。
-  // 序列化复用 presenter.toSheetListItemDto + activityTitle;既有 list(activityId,...) 行为零变更。
-  // F2/B2(admin-api-fe-integration-roadmap.md §4 B2;D1/D6/D7 拍板,2026-07-04):+可选
-  // q/activityQ/organizationId/includeDescendants/dateFrom/dateTo/expand。全部省略时行为逐字
-  // 不变(additive)。q/submitter 搜索命中提交人 User.username/nickname(AttendanceSheet 本身无
-  // 提交人姓名冗余字段,经既有 submitter 关联 join 过滤,零新 select 字段、零 N+1)。
-  async listAllSheetsForAdmin(
-    query: ListAttendanceSheetsQueryDto,
-    currentUser: CurrentUserPayload,
-  ): Promise<PageResultDto<AdminAttendanceSheetListItemDto>> {
-    const { page, pageSize, organizationId, includeDescendants, expand } = query;
-    const visibleOrganizationIds = await this.resolveVisibleOrganizationIds(
-      currentUser,
-      organizationId,
-      includeDescendants,
-    );
-    const expandSet = parseExpandQuery(expand, ATTENDANCE_EXPAND_WHITELIST);
-
-    const { items: rows, total } = await this.attendanceSheetQuery.listSheetsForAdmin(
-      query,
-      visibleOrganizationIds,
-    );
-
-    return {
-      items: rows.map((r) => ({
-        ...this.attendancePresenter.toSheetListItemDto(r),
-        activityTitle: r.activity?.title ?? null,
-        ...(expandSet.has('activity') && r.activity
-          ? {
-              activity: {
-                id: r.activity.id,
-                title: r.activity.title,
-                startAt: r.activity.startAt,
-                organizationId: r.activity.organizationId,
-              },
-            }
-          : {}),
-      })),
-      total,
-      page,
-      pageSize,
-    };
+  async listAllSheetsForAdmin(...args: Parameters<AttendanceReadService['listAllSheetsForAdmin']>) {
+    return this.read.listAllSheetsForAdmin(...args);
   }
 
-  // ============ 跨轴只读:某队员考勤记录(Tier3 队员 360)============
-
-  // 2026-06-23 跨轴只读(GET admin/v1/members/:memberId/attendance-records):某队员跨 sheet
-  // 考勤记录(队员 360「考勤记录」tab)。仅返 approved Sheet 内 records(镜像 app /me Q-A14:
-  // 已生效记录,不暴露 pending / rejected);MEMBER_NOT_FOUND 守卫;判权复用 read 码;
-  // 序列化复用 presenter.toRecordResponseDto + activityId/activityTitle 跨轴上下文。
   async listRecordsForMemberAdmin(
-    memberId: string,
-    query: PaginationQueryDto,
-    currentUser: CurrentUserPayload,
-  ): Promise<PageResultDto<AdminMemberAttendanceRecordDto>> {
-    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
-      type: 'member',
-      id: memberId,
-    });
-    // 队员存在性守卫(不存在 / 软删 → 15001,镜像 admin-member-insurances inline 检查)。
-    if (!(await this.attendanceSheetQuery.memberExists(memberId))) {
-      throw new BizException(BizCode.MEMBER_NOT_FOUND);
-    }
-
-    const { page, pageSize } = query;
-    const { items: rows, total } = await this.attendanceSheetQuery.listApprovedRecordsForMember(
-      memberId,
-      query,
-    );
-
-    return {
-      items: rows.map((r) => ({
-        ...this.attendancePresenter.toRecordResponseDto(r),
-        activityId: r.sheet.activityId,
-        activityTitle: r.sheet.activity?.title ?? null,
-      })),
-      total,
-      page,
-      pageSize,
-    };
+    ...args: Parameters<AttendanceReadService['listRecordsForMemberAdmin']>
+  ) {
+    return this.read.listRecordsForMemberAdmin(...args);
   }
 
-  // ============ 跨轴只读:某队员贡献值生涯累计(Tier3 队员 360)============
-
-  // 2026-06-23 跨轴只读(GET admin/v1/members/:memberId/contribution-summary):某队员贡献值
-  // 生涯累计 capped 总分(队员 360「贡献值」tab)。实时算不落库,复用 team-join 封顶核
-  // computeCappedContribution(approved sheet + 全局每日封顶 3,生涯无 cutoff);**禁裸 SUM**
-  // ——绕过封顶会算多。MEMBER_NOT_FOUND 守卫;判权复用 attendance.read.sheet。
   async getMemberContributionSummary(
-    memberId: string,
-    currentUser: CurrentUserPayload,
-  ): Promise<MemberContributionSummaryDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
-      type: 'member',
-      id: memberId,
-    });
-    if (!(await this.attendanceSheetQuery.memberExists(memberId))) {
-      throw new BizException(BizCode.MEMBER_NOT_FOUND);
-    }
-
-    const points = await computeCappedContribution(this.prisma, memberId, null);
-    return { memberId, contributionPoints: points.toString() };
+    ...args: Parameters<AttendanceReadService['getMemberContributionSummary']>
+  ) {
+    return this.read.getMemberContributionSummary(...args);
   }
 
-  // ============ findOne(GET Sheet 简化详情)============
-
-  async findOne(
-    id: string,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-    managedActivityId?: string,
-  ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
-      type: 'attendance_sheet',
-      id,
-    });
-    if (managedActivityId !== undefined) {
-      await this.assertManagedAttendanceAccess(managedActivityId, currentUser);
-    }
-    const sheet = await this.prisma.$transaction(async (tx) => this.findSheetOrThrow(id, tx));
-    this.assertManagedSheetActivity(sheet.activityId, managedActivityId);
-
-    await this.attendanceAuditRecorder.logRead({
-      actorUserId: currentUser.id,
-      actorRoleSnap: currentUser.role,
-      resourceType: 'attendance_sheet',
-      resourceId: id,
-      operation: 'detail',
-      auditMeta,
-    });
-
-    return this.attendancePresenter.toSheetResponseDto(sheet);
+  async findOne(...args: Parameters<AttendanceReadService['findOne']>) {
+    return this.read.findOne(...args);
   }
 
-  // ============ reviewDetail(GET 完整审核视图;R25)============
+  async reviewDetail(...args: Parameters<AttendanceReadService['reviewDetail']>) {
+    return this.read.reviewDetail(...args);
+  }
 
-  async reviewDetail(
-    id: string,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-    managedActivityId?: string,
-  ): Promise<AttendanceSheetReviewDetailDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
-      type: 'attendance_sheet',
-      id,
-    });
-    if (managedActivityId !== undefined) {
-      await this.assertManagedAttendanceAccess(managedActivityId, currentUser);
-    }
-    const result = await this.prisma.$transaction(async (tx) => {
-      const sheet = await this.findSheetOrThrow(id, tx);
-      this.assertManagedSheetActivity(sheet.activityId, managedActivityId);
-
-      const activity = await tx.activity.findFirst({
-        where: notDeletedWhere({ id: sheet.activityId }),
-        select: {
-          id: true,
-          title: true,
-          activityTypeCode: true,
-          organizationId: true,
-          startAt: true,
-          endAt: true,
-          location: true,
-          statusCode: true,
-        },
-      });
-      if (!activity) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-
-      const records = await tx.attendanceRecord.findMany({
-        where: notDeletedWhere({ sheetId: id }),
-        select: recordWithMemberSelect,
-        orderBy: { checkInAt: 'asc' },
-      });
-
-      return { sheet, activity, records };
-    });
-
-    await this.attendanceAuditRecorder.logRead({
-      actorUserId: currentUser.id,
-      actorRoleSnap: currentUser.role,
-      resourceType: 'attendance_sheet',
-      resourceId: id,
-      operation: 'review-detail',
-      count: result.records.length,
-      auditMeta,
-    });
-
-    return {
-      activity: result.activity satisfies AttendanceSheetActivitySummaryDto,
-      sheet: this.attendancePresenter.toSheetResponseDto(result.sheet),
-      records: result.records.map((r) => this.attendancePresenter.toRecordResponseDto(r)),
-    };
+  async listMyRecords(...args: Parameters<AttendanceReadService['listMyRecords']>) {
+    return this.read.listMyRecords(...args);
   }
 
   // ============ edit(PATCH 编辑 pending/returned Sheet)============
@@ -1015,7 +565,7 @@ export class AttendancesService {
     auditMeta: AuditMeta,
     managedActivityId?: string,
   ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.update.sheet', {
+    await this.access.assertCanOrThrow(currentUser, 'attendance.update.sheet', {
       type: 'attendance_sheet',
       id,
     });
@@ -1027,13 +577,13 @@ export class AttendancesService {
       // `assertManagedSheetActivity` 保证 managed 时两个 id 相等 —— 锁的是同一行。
       const lockedByManagedBranch = managedActivityId !== undefined;
       if (managedActivityId !== undefined) {
-        await this.lockActivityForAttendanceWrite(managedActivityId, tx);
-        await this.assertManagedAttendanceAccess(managedActivityId, currentUser, tx);
+        await this.access.lockActivityForAttendanceWrite(managedActivityId, tx);
+        await this.access.assertManagedAttendanceAccess(managedActivityId, currentUser, tx);
       }
-      const sheet = await this.findSheetOrThrow(id, tx);
-      this.assertManagedSheetActivity(sheet.activityId, managedActivityId);
+      const sheet = await this.access.findSheetOrThrow(id, tx);
+      this.access.assertManagedSheetActivity(sheet.activityId, managedActivityId);
       if (!lockedByManagedBranch) {
-        await this.lockActivityForAttendanceWrite(sheet.activityId, tx);
+        await this.access.lockActivityForAttendanceWrite(sheet.activityId, tx);
       }
 
       const editTransition = this.sheetStateMachine.decide('edit', sheet.statusCode);
@@ -1047,7 +597,7 @@ export class AttendancesService {
         expectedStatus: sheet.statusCode,
         invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
       });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
+      const lockedSheet = await this.access.findSheetOrThrow(id, tx);
       // 没有 records 字段 → 等同于 no-op(不动 records,仍生成 snapshot + version+1)
       if (dto.records === undefined) {
         // 仅 version+1 + snapshot 保存当前状态
@@ -1191,7 +741,7 @@ export class AttendancesService {
     auditMeta: AuditMeta,
     managedActivityId?: string,
   ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.delete.sheet', {
+    await this.access.assertCanOrThrow(currentUser, 'attendance.delete.sheet', {
       type: 'attendance_sheet',
       id,
     });
@@ -1201,13 +751,13 @@ export class AttendancesService {
       // edit / softDelete / resubmit 收敛成同一种写法,比记住"这条为什么可以不锁"更省。
       const lockedByManagedBranch = managedActivityId !== undefined;
       if (managedActivityId !== undefined) {
-        await this.lockActivityForAttendanceWrite(managedActivityId, tx);
-        await this.assertManagedAttendanceAccess(managedActivityId, currentUser, tx);
+        await this.access.lockActivityForAttendanceWrite(managedActivityId, tx);
+        await this.access.assertManagedAttendanceAccess(managedActivityId, currentUser, tx);
       }
-      const sheet = await this.findSheetOrThrow(id, tx);
-      this.assertManagedSheetActivity(sheet.activityId, managedActivityId);
+      const sheet = await this.access.findSheetOrThrow(id, tx);
+      this.access.assertManagedSheetActivity(sheet.activityId, managedActivityId);
       if (!lockedByManagedBranch) {
-        await this.lockActivityForAttendanceWrite(sheet.activityId, tx);
+        await this.access.lockActivityForAttendanceWrite(sheet.activityId, tx);
       }
 
       const deleteTransition = this.sheetStateMachine.decide('softDelete', sheet.statusCode);
@@ -1221,7 +771,7 @@ export class AttendancesService {
         expectedStatus: sheet.statusCode,
         invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
       });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
+      const lockedSheet = await this.access.findSheetOrThrow(id, tx);
       // PR #6 audit:before 需要 records 完整快照(软删之前抓取)
       const currentRecords = await tx.attendanceRecord.findMany({
         where: { sheetId: id, deletedAt: null },
@@ -1263,676 +813,44 @@ export class AttendancesService {
   // - R31 仍在此校验:所有 records.contributionPoints !== null;否则 22072(沿 D-S8)
   // - 写 reviewerUserId / reviewedAt / reviewNote(APD 一级审核责任人)
   // - **不再触发** eventPlaceholder('attendance.recorded')(沿 D-S7;触发位置移到 finalApprove)
-  // - audit:沿 attendance-sheet.review,action='approve';nextStatusCode 升级为 pending_final_review
-  async approve(
-    id: string,
-    dto: ApproveAttendanceSheetDto,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-  ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.approve.sheet', {
-      type: 'attendance_sheet',
-      id,
-    });
-    return this.prisma.$transaction(async (tx) => {
-      const sheet = await this.findSheetOrThrow(id, tx);
 
-      const approveTransition = this.sheetStateMachine.decide('approve', sheet.statusCode);
-      if (!approveTransition.allowed) {
-        throw new BizException(approveTransition.biz);
-      }
+  // ============ 审批流转:八式薄委托(Phase 6-B 第三域第一刀 stage2)============
+  //
+  // 实现已迁至 `attendance-review.service.ts` 的 `AttendanceReviewService`(仅"搬家",
+  // 判权 / 锁序 / 状态机裁决 / 审计 / 通知 intent 逐字不变)。本 service 仍是本模块**唯一**
+  // 对外入口 —— 三个 controller 与薄壳 service 的调用面因此逐字不变。
+  // ⚠️ 委托必须原样透传全部实参:少传一个 currentUser / auditMeta 就是少一条判权或少一条审计,
+  // 而那种缺失在类型上可能仍然合法(可选参数)。
 
-      await claimAtStatus(tx, {
-        target: 'attendanceSheet',
-        id: sheet.id,
-        expectedStatus: sheet.statusCode,
-        invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
-      });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
-      this.assertLockedReviewSeparation('first', lockedSheet, currentUser);
-
-      // R31:所有 records contributionPoints 必填(沿 D-S8;APD 一级 approve 时校验)
-      const recordsForCheck = await tx.attendanceRecord.findMany({
-        where: notDeletedWhere({ sheetId: id }),
-        select: { id: true, contributionPoints: true },
-      });
-      if (recordsForCheck.some((r) => r.contributionPoints === null)) {
-        throw new BizException(BizCode.ATTENDANCE_RECORD_CONTRIBUTION_POINTS_REQUIRED);
-      }
-      const reviewedAt = new Date();
-      const updated = await tx.attendanceSheet.update({
-        where: { id: lockedSheet.id },
-        data: {
-          statusCode: approveTransition.nextStatusCode,
-          reviewerUserId: currentUser.id,
-          reviewedAt,
-          reviewNote: dto.reviewNote ?? null,
-        },
-        select: sheetSafeSelect,
-      });
-
-      await this.attendanceAuditRecorder.logReview({
-        sheetId: id,
-        beforeSheet: lockedSheet,
-        afterSheet: updated,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        action: 'approve',
-        priorStatusCode: lockedSheet.statusCode,
-        nextStatusCode: approveTransition.nextStatusCode,
-        recordsCount: recordsForCheck.length,
-        auditMeta,
-        tx,
-      });
-
-      return this.attendancePresenter.toSheetResponseDto(updated);
-    });
+  async approve(...args: Parameters<AttendanceReviewService['approve']>) {
+    return this.review.approve(...args);
   }
 
-  // ============ return(POST;独立一审退回修改)============
-
-  async firstReturn(
-    id: string,
-    dto: ReturnAttendanceSheetDto,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-  ): Promise<AttendanceSheetResponseDto> {
-    const returnNote = dto.returnNote.trim();
-    if (!returnNote) throw new BizException(BizCode.ATTENDANCE_RETURN_NOTE_REQUIRED);
-    await this.assertCanOrThrow(currentUser, 'attendance.return.sheet', {
-      type: 'attendance_sheet',
-      id,
-    });
-    return this.prisma.$transaction(async (tx) => {
-      const sheet = await this.findSheetOrThrow(id, tx);
-      const transition = this.sheetStateMachine.decide('firstReturn', sheet.statusCode);
-      if (!transition.allowed) throw new BizException(transition.biz);
-
-      await claimAtStatus(tx, {
-        target: 'attendanceSheet',
-        id: sheet.id,
-        expectedStatus: sheet.statusCode,
-        invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
-      });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
-      this.assertLockedReviewSeparation('first', lockedSheet, currentUser);
-      const recordsCount = await tx.attendanceRecord.count({
-        where: notDeletedWhere({ sheetId: id }),
-      });
-      const returnedAt = new Date();
-      const updated = await tx.attendanceSheet.update({
-        where: { id: lockedSheet.id },
-        data: {
-          statusCode: transition.nextStatusCode,
-          reviewerUserId: currentUser.id,
-          reviewedAt: returnedAt,
-          returnedByUserId: currentUser.id,
-          returnedAt,
-          returnNote,
-          returnedFromStageCode: 'first',
-        },
-        select: sheetSafeSelect,
-      });
-
-      await this.attendanceAuditRecorder.logReview({
-        sheetId: id,
-        beforeSheet: lockedSheet,
-        afterSheet: updated,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        action: 'return',
-        priorStatusCode: lockedSheet.statusCode,
-        nextStatusCode: transition.nextStatusCode,
-        recordsCount,
-        auditMeta,
-        tx,
-      });
-
-      await this.attendanceNotificationProducer.enqueueReturned(tx, {
-        sheetId: id,
-        activityId: updated.activityId,
-        returnedAt,
-        returnNote,
-        submitterUserIds: [
-          updated.submitterUserId,
-          ...(updated.lastSubmittedByUserId ? [updated.lastSubmittedByUserId] : []),
-        ],
-      });
-
-      return this.attendancePresenter.toSheetResponseDto(updated);
-    });
+  async firstReturn(...args: Parameters<AttendanceReviewService['firstReturn']>) {
+    return this.review.firstReturn(...args);
   }
 
-  // ============ reject(PATCH;APD 一级)============
-
-  async reject(
-    id: string,
-    dto: RejectAttendanceSheetDto,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-  ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.reject.sheet', {
-      type: 'attendance_sheet',
-      id,
-    });
-    return this.prisma.$transaction(async (tx) => {
-      const sheet = await this.findSheetOrThrow(id, tx);
-
-      const rejectTransition = this.sheetStateMachine.decide('reject', sheet.statusCode);
-      if (!rejectTransition.allowed) {
-        throw new BizException(rejectTransition.biz);
-      }
-
-      // F4(#399):一级 reject 的 records **跟随软删**(对称 final_rejected;沿 softDelete / finalReject
-      // 范式)。原先 rejected 的 records 仍 deletedAt IS NULL → 永久占用 time-overlap 窗口
-      // (overlap 只过 deletedAt),致该队员同窗无法重交(死锁)。软删后窗口释放,可重新提交。
-      await claimAtStatus(tx, {
-        target: 'attendanceSheet',
-        id: sheet.id,
-        expectedStatus: sheet.statusCode,
-        invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
-      });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
-      this.assertLockedReviewSeparation('first', lockedSheet, currentUser);
-
-      // 软删前抓 records 全字段快照入 audit(对称 finalReject;沿 §audit records 必含组)。
-      const currentRecords = await tx.attendanceRecord.findMany({
-        where: { sheetId: id, deletedAt: null },
-        select: recordWithMemberSelect,
-        orderBy: { checkInAt: 'asc' },
-      });
-
-      const reviewedAt = new Date();
-      await tx.attendanceRecord.updateMany({
-        where: { sheetId: id, deletedAt: null },
-        data: { deletedAt: reviewedAt },
-      });
-
-      const updated = await tx.attendanceSheet.update({
-        where: { id: lockedSheet.id },
-        data: {
-          statusCode: rejectTransition.nextStatusCode,
-          reviewerUserId: currentUser.id,
-          reviewedAt,
-          reviewNote: dto.reviewNote,
-        },
-        select: sheetSafeSelect,
-      });
-
-      await this.attendanceAuditRecorder.logReview({
-        sheetId: id,
-        beforeSheet: lockedSheet,
-        beforeRecords: currentRecords,
-        afterSheet: updated,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        action: 'reject',
-        priorStatusCode: lockedSheet.statusCode,
-        nextStatusCode: rejectTransition.nextStatusCode,
-        recordsCount: currentRecords.length,
-        auditMeta,
-        tx,
-      });
-
-      return this.attendancePresenter.toSheetResponseDto(updated);
-    });
+  async reject(...args: Parameters<AttendanceReviewService['reject']>) {
+    return this.review.reject(...args);
   }
 
-  // ============ final-approve(PATCH;批次 4-B 新增 — 终审通过)============
-
-  // 沿 D-S5 / D-S7 / D-A2:
-  // - 状态机:pending_final_review → approved(贡献值正式生效)
-  // - 状态非 pending_final_review 抛 **22045** ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID
-  //   (终态 approved / rejected / final_rejected 再次调用一律走此码)
-  // - 写 finalReviewerUserId / finalReviewedAt / finalReviewNote
-  // - **触发** eventPlaceholder('attendance.recorded')(approved-only;同事务内;沿 D-S7)
-  // - audit:attendance-sheet.final-review(action='final-approve');沿 D-S11 / 业务规则文档 §8.4
-  // - **不重校验**逐条 records.contributionPoints(沿 D-S8;R31 在 APD 一级已校验)
-  // - 权限(终态 scoped-authz PR9 起):走 authz.explain('attendance.final-approve.sheet', ref)
-  //   —— biz-admin 全局终审保留(B 方案;摘码 = PR12 显式项)+ scoped RoleBinding 通路
-  //   + 自审禁止(22074,SUPER_ADMIN 亦拒)/ 同人默认禁止(22075,env 可配);
-  //   判权不足仍走 RBAC_FORBIDDEN(30100),22044 模块码维持不开。
-  async finalApprove(
-    id: string,
-    dto: FinalApproveAttendanceSheetDto,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-  ): Promise<AttendanceSheetResponseDto> {
-    await this.assertFinalReviewAuthzOrThrow(currentUser, 'attendance.final-approve.sheet', id);
-    // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
-    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
-      const sheet = await this.findSheetOrThrow(id, tx);
-
-      const finalApproveTransition = this.sheetStateMachine.decide(
-        'finalApprove',
-        sheet.statusCode,
-      );
-      if (!finalApproveTransition.allowed) {
-        throw new BizException(finalApproveTransition.biz);
-      }
-
-      await claimAtStatus(tx, {
-        target: 'attendanceSheet',
-        id: sheet.id,
-        expectedStatus: sheet.statusCode,
-        invalidStatusBiz: BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID,
-      });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
-      this.assertLockedReviewSeparation('final', lockedSheet, currentUser);
-
-      const recordsForEvent = await tx.attendanceRecord.findMany({
-        where: notDeletedWhere({ sheetId: id }),
-        select: recordWithMemberSelect,
-        orderBy: { checkInAt: 'asc' },
-      });
-      // K3(B-F2 write skew):入队贡献值里程碑的判定依据是**跨 Sheet** 的 member 聚合,
-      // 而本事务只锁住了自己这一张 Sheet。缺共同键时两张 Sheet 同时终审会各读 before=3、
-      // 各算 after=4,谁都不跨 5 分、谁都不尝试 enqueue —— outbox 唯一键兜不住「两边都没插」,
-      // 通知就此永久丢失(同 application + 门槛只有一次首跨机会)。
-      // 取键位置固定在 **Sheet claim 之后**,与 submit/edit 的「聚合行锁在前、member 键在后」
-      // 同向;取在 claim 之前会与 edit 反向,凑出 40P01。
-      await lockMembersForWrite(
-        tx,
-        recordsForEvent.map((record) => record.memberId),
-      );
-      const contributionThresholdSnapshots =
-        await this.attendanceNotificationProducer.prepareContributionThresholdSnapshots(
-          tx,
-          recordsForEvent,
-        );
-
-      const finalReviewedAt = new Date();
-      const updated = await tx.attendanceSheet.update({
-        where: { id: lockedSheet.id },
-        data: {
-          statusCode: finalApproveTransition.nextStatusCode,
-          finalReviewerUserId: currentUser.id,
-          finalReviewedAt,
-          finalReviewNote: dto.finalReviewNote ?? null,
-        },
-        select: sheetSafeSelect,
-      });
-
-      // 触发 attendance.recorded(批次 4-B 移到终审通过时;沿 D-S7;Q-S13 context schema 沿用)
-      eventPlaceholder('attendance.recorded', {
-        activityId: updated.activityId,
-        sheetId: updated.id,
-        // context 沿 v0.4.0 Q-S13 schema;新增 finalReviewerUserId / finalReviewedAt 兼容字段
-        reviewerUserId: updated.reviewerUserId,
-        reviewedAt: updated.reviewedAt?.toISOString() ?? null,
-        finalReviewerUserId: currentUser.id,
-        finalReviewedAt: finalReviewedAt.toISOString(),
-        records: recordsForEvent.map((r) => ({
-          recordId: r.id,
-          memberId: r.memberId,
-          roleCode: r.roleCode,
-          attendanceStatusCode: r.attendanceStatusCode,
-          checkInAt: r.checkInAt.toISOString(),
-          checkOutAt: r.checkOutAt.toISOString(),
-          serviceHours: r.serviceHours.toString(),
-          contributionPoints: this.attendancePresenter.decimalToString(r.contributionPoints),
-          registrationId: r.registrationId,
-        })),
-      });
-
-      await this.attendanceAuditRecorder.logFinalReview({
-        sheetId: id,
-        beforeSheet: lockedSheet,
-        afterSheet: updated,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        action: 'final-approve',
-        priorStatusCode: lockedSheet.statusCode,
-        nextStatusCode: finalApproveTransition.nextStatusCode,
-        recordsCount: recordsForEvent.length,
-        eventTriggered: true,
-        auditMeta,
-        tx,
-      });
-
-      await this.attendanceNotificationProducer.enqueueFinalApproved(tx, {
-        sheetId: id,
-        activityId: updated.activityId,
-        finalReviewedAt,
-        records: recordsForEvent.map((r) => ({
-          id: r.id,
-          memberId: r.memberId,
-          contributionPoints: this.attendancePresenter.decimalToString(r.contributionPoints),
-        })),
-        contributionThresholdSnapshots,
-      });
-
-      return this.attendancePresenter.toSheetResponseDto(updated);
-    });
+  async finalApprove(...args: Parameters<AttendanceReviewService['finalApprove']>) {
+    return this.review.finalApprove(...args);
   }
 
-  // ============ final-return(POST;独立终审退回修改)============
-
-  async finalReturn(
-    id: string,
-    dto: ReturnAttendanceSheetDto,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-  ): Promise<AttendanceSheetResponseDto> {
-    const returnNote = dto.returnNote.trim();
-    if (!returnNote) throw new BizException(BizCode.ATTENDANCE_RETURN_NOTE_REQUIRED);
-    await this.assertFinalReviewAuthzOrThrow(currentUser, 'attendance.final-return.sheet', id);
-    return this.prisma.$transaction(async (tx) => {
-      const sheet = await this.findSheetOrThrow(id, tx);
-      const transition = this.sheetStateMachine.decide('finalReturn', sheet.statusCode);
-      if (!transition.allowed) throw new BizException(transition.biz);
-
-      await claimAtStatus(tx, {
-        target: 'attendanceSheet',
-        id: sheet.id,
-        expectedStatus: sheet.statusCode,
-        invalidStatusBiz: BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID,
-      });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
-      this.assertLockedReviewSeparation('final', lockedSheet, currentUser);
-      const recordsCount = await tx.attendanceRecord.count({
-        where: notDeletedWhere({ sheetId: id }),
-      });
-      const returnedAt = new Date();
-      const updated = await tx.attendanceSheet.update({
-        where: { id: lockedSheet.id },
-        data: {
-          statusCode: transition.nextStatusCode,
-          finalReviewerUserId: currentUser.id,
-          finalReviewedAt: returnedAt,
-          returnedByUserId: currentUser.id,
-          returnedAt,
-          returnNote,
-          returnedFromStageCode: 'final',
-        },
-        select: sheetSafeSelect,
-      });
-
-      await this.attendanceAuditRecorder.logFinalReview({
-        sheetId: id,
-        beforeSheet: lockedSheet,
-        afterSheet: updated,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        action: 'final-return',
-        priorStatusCode: lockedSheet.statusCode,
-        nextStatusCode: transition.nextStatusCode,
-        recordsCount,
-        auditMeta,
-        tx,
-      });
-
-      await this.attendanceNotificationProducer.enqueueReturned(tx, {
-        sheetId: id,
-        activityId: updated.activityId,
-        returnedAt,
-        returnNote,
-        submitterUserIds: [
-          updated.submitterUserId,
-          ...(updated.lastSubmittedByUserId ? [updated.lastSubmittedByUserId] : []),
-        ],
-      });
-
-      return this.attendancePresenter.toSheetResponseDto(updated);
-    });
+  async finalReturn(...args: Parameters<AttendanceReviewService['finalReturn']>) {
+    return this.review.finalReturn(...args);
   }
 
-  // ============ final-reject(PATCH;批次 4-B 新增 — 终审驳回)============
-
-  // 沿 D-S5 / D-S7 / D-A2:
-  // - 状态机:pending_final_review → final_rejected
-  // - 状态非 pending_final_review 抛 **22045**
-  // - finalReviewNote 必填(沿 RejectDto 模式;DTO 层 class-validator 已校验;此处仅作冗余日志兜底,
-  //   仍由 service 拒空字符串通过 22046)
-  // - 写 finalReviewerUserId / finalReviewedAt / finalReviewNote
-  // - records **跟随软删**(沿 D8 主路径)
-  // - **不触发** attendance.recorded(沿 D-S7;子项候选 C)
-  // - audit:attendance-sheet.final-review(action='final-reject')
-  // - 权限同 finalApprove(PR9 起走 authz；scoped 通路 + SUPER_ADMIN 兜底)；
-  //   活动责任闭环起 final-reject 同样严格执行自审 / 同人约束。
-  async finalReject(
-    id: string,
-    dto: FinalRejectAttendanceSheetDto,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-  ): Promise<AttendanceSheetResponseDto> {
-    await this.assertFinalReviewAuthzOrThrow(currentUser, 'attendance.final-reject.sheet', id);
-    return this.prisma.$transaction(async (tx) => {
-      const sheet = await this.findSheetOrThrow(id, tx);
-
-      const finalRejectTransition = this.sheetStateMachine.decide('finalReject', sheet.statusCode);
-      if (!finalRejectTransition.allowed) {
-        throw new BizException(finalRejectTransition.biz);
-      }
-
-      // DTO 层 @MinLength(1) 已确保非空;此处冗余校验防绕过(沿 RejectDto reviewNote 风格)
-      if (dto.finalReviewNote.trim().length === 0) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_NOTE_REQUIRED);
-      }
-
-      await claimAtStatus(tx, {
-        target: 'attendanceSheet',
-        id: sheet.id,
-        expectedStatus: sheet.statusCode,
-        invalidStatusBiz: BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID,
-      });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
-      this.assertLockedReviewSeparation('final', lockedSheet, currentUser);
-
-      // PR #6 audit:before 需要 records 完整快照(records 跟随软删之前抓取)
-      const currentRecords = await tx.attendanceRecord.findMany({
-        where: { sheetId: id, deletedAt: null },
-        select: recordWithMemberSelect,
-        orderBy: { checkInAt: 'asc' },
-      });
-
-      const finalReviewedAt = new Date();
-      // records 跟随软删(沿 D8 主路径)
-      await tx.attendanceRecord.updateMany({
-        where: { sheetId: id, deletedAt: null },
-        data: { deletedAt: finalReviewedAt },
-      });
-
-      const updated = await tx.attendanceSheet.update({
-        where: { id: lockedSheet.id },
-        data: {
-          statusCode: finalRejectTransition.nextStatusCode,
-          finalReviewerUserId: currentUser.id,
-          finalReviewedAt,
-          finalReviewNote: dto.finalReviewNote,
-        },
-        select: sheetSafeSelect,
-      });
-
-      await this.attendanceAuditRecorder.logFinalReview({
-        sheetId: id,
-        beforeSheet: lockedSheet,
-        beforeRecords: currentRecords,
-        afterSheet: updated,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        action: 'final-reject',
-        priorStatusCode: lockedSheet.statusCode,
-        nextStatusCode: finalRejectTransition.nextStatusCode,
-        recordsCount: currentRecords.length,
-        finalReviewNote: dto.finalReviewNote,
-        auditMeta,
-        tx,
-      });
-
-      return this.attendancePresenter.toSheetResponseDto(updated);
-    });
+  async finalReject(...args: Parameters<AttendanceReviewService['finalReject']>) {
+    return this.review.finalReject(...args);
   }
 
-  // ============ resubmit(POST;returned → pending)============
-
-  async resubmit(
-    id: string,
-    _dto: ResubmitAttendanceSheetDto,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-    managedActivityId?: string,
-  ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.update.sheet', {
-      type: 'attendance_sheet',
-      id,
-    });
-    return this.prisma.$transaction(async (tx) => {
-      const initialSheet = await this.findSheetOrThrow(id, tx);
-      this.assertManagedSheetActivity(initialSheet.activityId, managedActivityId);
-
-      await this.lockActivityForAttendanceWrite(initialSheet.activityId, tx);
-      if (currentUser.role !== Role.SUPER_ADMIN) {
-        await this.assertManagedAttendanceAccess(initialSheet.activityId, currentUser, tx);
-      }
-
-      const transition = this.sheetStateMachine.decide('resubmit', initialSheet.statusCode);
-      if (!transition.allowed) throw new BizException(transition.biz);
-      await claimAtStatus(tx, {
-        target: 'attendanceSheet',
-        id,
-        expectedStatus: initialSheet.statusCode,
-        invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
-      });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
-      const records = await tx.attendanceRecord.findMany({
-        where: notDeletedWhere({ sheetId: id }),
-        select: recordWithMemberSelect,
-        orderBy: { checkInAt: 'asc' },
-      });
-      const submittedAt = new Date();
-      const updated = await tx.attendanceSheet.update({
-        where: { id },
-        data: {
-          statusCode: transition.nextStatusCode,
-          reviewerUserId: null,
-          reviewedAt: null,
-          reviewNote: null,
-          finalReviewerUserId: null,
-          finalReviewedAt: null,
-          finalReviewNote: null,
-          returnedByUserId: null,
-          returnedAt: null,
-          returnNote: null,
-          returnedFromStageCode: null,
-          lastSubmittedByUserId: currentUser.id,
-          lastSubmittedAt: submittedAt,
-          version: lockedSheet.version + 1,
-        },
-        select: sheetSafeSelect,
-      });
-      await this.attendanceAuditRecorder.logResubmit({
-        sheetId: id,
-        beforeSheet: lockedSheet,
-        afterSheet: updated,
-        records,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        auditMeta,
-        tx,
-      });
-      return this.attendancePresenter.toSheetResponseDto(updated);
-    });
+  async resubmit(...args: Parameters<AttendanceReviewService['resubmit']>) {
+    return this.review.resubmit(...args);
   }
 
-  // ============ reopen(POST;撤回终审通过)============
-
-  // v0.47.0 F2:
-  // - 状态机仅允许 approved → pending,不增加新状态;
-  // - 保留所有 records / previousSnapshot / version,只清空一审+终审责任字段;
-  // - 终审已生效的贡献值依赖 approved 读模型,回 pending 后自然不再计入;
-  // - 同事务写 attendance-sheet.reopen before/after 全快照;
-  // - 本动作不发通知;后续再次 finalApprove 依既有路径正常发通知。
-  async reopen(
-    id: string,
-    dto: ReopenAttendanceSheetDto,
-    currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
-  ): Promise<AttendanceSheetResponseDto> {
-    await this.assertFinalReviewAuthzOrThrow(currentUser, 'attendance.reopen.sheet', id);
-    const reason = dto.reason.trim();
-    if (reason.length === 0) throw new BizException(BizCode.BAD_REQUEST);
-
-    // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
-    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
-      const sheet = await this.findSheetOrThrow(id, tx);
-      const reopenTransition = this.sheetStateMachine.decide('reopen', sheet.statusCode);
-      if (!reopenTransition.allowed) throw new BizException(reopenTransition.biz);
-
-      await claimAtStatus(tx, {
-        target: 'attendanceSheet',
-        id: sheet.id,
-        expectedStatus: sheet.statusCode,
-        invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
-      });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
-
-      const records = await tx.attendanceRecord.findMany({
-        where: { sheetId: id, deletedAt: null },
-        select: recordWithMemberSelect,
-        orderBy: { checkInAt: 'asc' },
-      });
-      // K3:reopen 把 approved 撤回 pending,等于**下调**这些队员的生效贡献值 ——
-      // 它和 finalApprove 是同一个跨 Sheet 聚合的两个写方,必须共享同一把 member 键,
-      // 否则并发的终审会基于一份正在被撤回的 before 判里程碑。取键位置与 finalApprove 一致。
-      await lockMembersForWrite(
-        tx,
-        records.map((record) => record.memberId),
-      );
-      const updated = await tx.attendanceSheet.update({
-        where: { id: lockedSheet.id },
-        data: {
-          statusCode: reopenTransition.nextStatusCode,
-          reviewerUserId: null,
-          reviewedAt: null,
-          reviewNote: null,
-          finalReviewerUserId: null,
-          finalReviewedAt: null,
-          finalReviewNote: null,
-        },
-        select: sheetSafeSelect,
-      });
-
-      await this.attendanceAuditRecorder.logReopen({
-        sheetId: id,
-        beforeSheet: lockedSheet,
-        afterSheet: updated,
-        records,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        reason,
-        priorStatusCode: lockedSheet.statusCode,
-        nextStatusCode: reopenTransition.nextStatusCode,
-        auditMeta,
-        tx,
-      });
-
-      return this.attendancePresenter.toSheetResponseDto(updated);
-    });
-  }
-
-  // ============ 队员端:listMyRecords(GET /me/attendance-records)============
-
-  // Q-A14 / R29 / R33:仅返 approved Sheet 内 records。
-  async listMyRecords(
-    query: MyAttendanceRecordsQueryDto,
-    currentUser: CurrentUserPayload,
-  ): Promise<PageResultDto<AttendanceRecordResponseDto>> {
-    const memberId = await this.prisma.$transaction(async (tx) =>
-      this.resolveUserMemberIdOrThrow(currentUser.id, tx),
-    );
-
-    const { page, pageSize } = query;
-    const { items: rows, total } = await this.attendanceSheetQuery.listApprovedRecordsForSelf(
-      memberId,
-      query,
-    );
-
-    return {
-      items: rows.map((r) => this.attendancePresenter.toRecordResponseDto(r)),
-      total,
-      page,
-      pageSize,
-    };
+  async reopen(...args: Parameters<AttendanceReviewService['reopen']>) {
+    return this.review.reopen(...args);
   }
 }
