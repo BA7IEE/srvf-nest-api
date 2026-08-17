@@ -97,11 +97,6 @@
       "domain": "attendances"
     },
     {
-      "file": "src/modules/attendances/attendances.service.ts",
-      "loc": 1481,
-      "domain": "attendances"
-    },
-    {
       "file": "src/modules/certificates/certificates.service.ts",
       "loc": 739,
       "domain": "certificates"
