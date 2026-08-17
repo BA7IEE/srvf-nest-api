@@ -2013,6 +2013,28 @@ export const BizCode = {
     message: '该现场事件已被作废或替代',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 活动 v1.1 第 6 批：维护者批准的 offline / import 专用四码。22097–22099 只在
+  // 离线包与人工复核链使用；22100 是 ADV-014 的强制零写门，绝不回退成泛化 BAD_REQUEST。
+  ATTENDANCE_OFFLINE_PACKAGE_INVALID: {
+    code: 22097,
+    message: '离线考勤包不存在或无效',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ATTENDANCE_OFFLINE_PACKAGE_EXPIRED: {
+    code: 22098,
+    message: '离线考勤包已过期',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ATTENDANCE_OFFLINE_REVIEW_REQUIRED: {
+    code: 22099,
+    message: '该离线考勤记录需要人工复核',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ATTENDANCE_IMPORT_PREVIEW_MISMATCH: {
+    code: 22100,
+    message: '导入文件与已冻结预览不一致',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // contribution_rules 模块业务级(230xx + 231xx)。批次 5-A 引入(2026-05-12)。
   // 详见 docs:批次5-A_贡献值规则CRUD_API前评审.md v1.1 §5(BizCode 锁定 紧凑版)+ §2.2 E3。

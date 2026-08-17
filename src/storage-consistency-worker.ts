@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 
+import { ActivityBatchWorkerModule } from './modules/activities/activity-batch-worker.module';
 import { ActivityBatchWorker } from './modules/activities/activity-batch.worker';
 import { AttachmentStorageOrchestrator } from './modules/attachments/attachment-storage-orchestrator';
 import { StorageConsistencyWorkerModule } from './modules/attachments/storage-consistency-worker.module';
@@ -40,9 +41,17 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
   try {
     const ledger = app.get(StorageObjectLedgerService);
-    const worker = app.get(StorageConsistencyWorker);
-    const activityWorker = app.get(ActivityBatchWorker);
-    const orchestrator = app.get(AttachmentStorageOrchestrator);
+    // B6 经 Attendances → Activities → Attachments 带回同 token 的 HTTP provider；
+    // CLI 必须只取本入口 module 组装的 storage / batch 实例。
+    const worker = app
+      .select(StorageConsistencyWorkerModule)
+      .get(StorageConsistencyWorker, { strict: true });
+    const activityWorker = app
+      .select(ActivityBatchWorkerModule)
+      .get(ActivityBatchWorker, { strict: true });
+    const orchestrator = app
+      .select(StorageConsistencyWorkerModule)
+      .get(AttachmentStorageOrchestrator, { strict: true });
 
     if (args.strictGate) {
       await ledger.assertStrictStartGate();

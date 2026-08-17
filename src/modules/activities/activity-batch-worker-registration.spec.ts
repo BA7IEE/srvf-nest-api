@@ -16,7 +16,11 @@ describe('ActivityBatchWorker process registration', () => {
     '%s starts the activity loop alongside the existing loop',
     (relativePath) => {
       const source = read(relativePath);
-      expect(source).toMatch(/app\.get\(ActivityBatchWorker\)/);
+      // B6 的 worker-only graph 会嵌入一份 ActivitiesModule；全局 app.get() 会错误取到
+      // autoCommit=false 的 HTTP provider，入口必须精确选择 ActivityBatchWorkerModule 实例。
+      expect(source).toMatch(
+        /select\(ActivityBatchWorkerModule\)[\s\S]*get\(ActivityBatchWorker, \{ strict: true \}\)/,
+      );
       // 性质一:两个循环都被启动。
       expect(source).toMatch(/allSettled\(\[[\s\S]*\.run\(\)[\s\S]*\.run\(\)/);
       // 性质二 🔴:**两个循环的失败模式不得耦合**。

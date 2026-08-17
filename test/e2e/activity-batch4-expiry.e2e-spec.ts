@@ -5,6 +5,7 @@ import request from 'supertest';
 
 import { PrismaService } from '../../src/database/prisma.service';
 import { ActivityBatchWorker } from '../../src/modules/activities/activity-batch.worker';
+import { ActivityBatchWorkerModule } from '../../src/modules/activities/activity-batch-worker.module';
 import { StorageConsistencyWorkerModule } from '../../src/modules/attachments/storage-consistency-worker.module';
 import { NotificationOutboxWorkerModule } from '../../src/modules/notifications/notification-outbox-worker.module';
 import { loginAs } from '../fixtures/auth.fixture';
@@ -60,8 +61,12 @@ describe('activity batch4 expiry', () => {
     storageContext = await NestFactory.createApplicationContext(StorageConsistencyWorkerModule, {
       logger: false,
     });
-    notificationWorker = notificationContext.get(ActivityBatchWorker);
-    storageWorker = storageContext.get(ActivityBatchWorker);
+    notificationWorker = notificationContext
+      .select(ActivityBatchWorkerModule)
+      .get(ActivityBatchWorker, { strict: true });
+    storageWorker = storageContext
+      .select(ActivityBatchWorkerModule)
+      .get(ActivityBatchWorker, { strict: true });
     notificationPrisma = notificationContext.get(PrismaService);
     storagePrisma = storageContext.get(PrismaService);
   });

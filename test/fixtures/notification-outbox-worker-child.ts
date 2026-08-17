@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 
+import { ActivityBatchWorkerModule } from '../../src/modules/activities/activity-batch-worker.module';
 import { ActivityBatchWorker } from '../../src/modules/activities/activity-batch.worker';
 import { NotificationOutboxHandlers } from '../../src/modules/notifications/notification-outbox.handlers';
 import { NotificationOutboxWorkerModule } from '../../src/modules/notifications/notification-outbox-worker.module';
@@ -18,9 +19,18 @@ async function main(): Promise<void> {
   });
   app.enableShutdownHooks();
   try {
+    const workerModule = app.select(NotificationOutboxWorkerModule);
+    // B6 经 Attendances → Activities → Notifications 带回一组 HTTP provider；真实 worker
+    // child 的 crash barrier 必须绑定入口 module 的同一组 outbox/handler/worker 实例。
+    const outbox = workerModule.get(NotificationOutboxService, { strict: true });
+    const worker = workerModule.get(NotificationOutboxWorker, { strict: true });
+    const handlers = workerModule.get(NotificationOutboxHandlers, { strict: true });
+    const activityWorker = app
+      .select(ActivityBatchWorkerModule)
+      .get(ActivityBatchWorker, { strict: true });
     if (command === 'boot') {
-      app.get(NotificationOutboxWorker);
-      app.get(ActivityBatchWorker);
+      void worker;
+      void activityWorker;
       write({
         booted: true,
         notificationOutboxWorker: true,
@@ -29,15 +39,7 @@ async function main(): Promise<void> {
       });
       return;
     }
-    // ActivityBatchWorkerModule 也为独立 storage worker 提供一份 outbox service。
-    // crash barrier 必须 patch 本 module 中 NotificationOutboxWorker/Handlers 实际注入的
-    // 那份实例；全局 app.get() 在同 token 有两份 provider 时会取到另一份。
-    const outbox = app
-      .select(NotificationOutboxWorkerModule)
-      .get(NotificationOutboxService, { strict: true });
     if (command === 'run-slow-sigterm') {
-      const worker = app.get(NotificationOutboxWorker);
-      const handlers = app.get(NotificationOutboxHandlers);
       const execute = handlers.execute.bind(handlers);
       const delayMs = leaseMsText ? Number(leaseMsText) : 750;
       let first = true;
@@ -108,7 +110,7 @@ async function main(): Promise<void> {
         write({ phase: 'not-claimed', owner, ids: [] });
         return;
       }
-      await app.get(NotificationOutboxWorker).executeReserved(intent);
+      await worker.executeReserved(intent);
       return;
     }
     if (command === 'execute-no-ack') {
@@ -122,7 +124,7 @@ async function main(): Promise<void> {
         new Date(),
         leaseMsText ? Number(leaseMsText) : undefined,
       );
-      const result = await app.get(NotificationOutboxHandlers).execute(refreshed, {
+      const result = await handlers.execute(refreshed, {
         beforeEffect: () =>
           outbox
             .renewLease(refreshed, new Date(), leaseMsText ? Number(leaseMsText) : undefined)
@@ -142,7 +144,7 @@ async function main(): Promise<void> {
         new Date(),
         leaseMsText ? Number(leaseMsText) : undefined,
       );
-      const result = await app.get(NotificationOutboxHandlers).execute(refreshed, {
+      const result = await handlers.execute(refreshed, {
         beforeEffect: () =>
           outbox
             .renewLease(refreshed, new Date(), leaseMsText ? Number(leaseMsText) : undefined)
@@ -171,7 +173,7 @@ async function main(): Promise<void> {
         await waitForever();
         return result;
       };
-      await app.get(NotificationOutboxWorker).executeReserved(intent);
+      await worker.executeReserved(intent);
       return;
     }
     if (command === 'execute-and-ack') {
@@ -186,7 +188,7 @@ async function main(): Promise<void> {
         write({ owner, ids: [] });
         return;
       }
-      const value = await app.get(NotificationOutboxWorker).executeReserved(intent);
+      const value = await worker.executeReserved(intent);
       write({ owner, ids: [intent.id], value });
       return;
     }

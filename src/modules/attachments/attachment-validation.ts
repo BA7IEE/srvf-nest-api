@@ -27,6 +27,9 @@ export const ATTACHMENT_OWNER_TYPES = [
   'registration-upload-session',
   // Final immutable registration-answer owner. It has no generic read/write surface either.
   'registration-form-answer',
+  // B6 CSV preview source. It is anchored to ActivityBatchJob and can only be read by the
+  // attendance import parser facade; generic attachment surfaces reject it.
+  'attendance-import-preview',
 ] as const;
 export type AttachmentOwnerType = (typeof ATTACHMENT_OWNER_TYPES)[number];
 

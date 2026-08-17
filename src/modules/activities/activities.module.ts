@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { ActivityFeedbacksModule } from '../activity-feedbacks/activity-feedbacks.module';
 import { AuthzModule } from '../authz/authz.module';
@@ -82,6 +82,7 @@ import { ActivityCapacityBucketProjector } from './activity-capacity-bucket-proj
 import { ActivityQualificationEvaluatorService } from '../activity-registrations/activity-qualification-evaluator.service';
 import { ActivityAllocationModeService } from './activity-allocation-mode.service';
 import { AttendanceSegmentProjectorService } from './attendance-segment-projector.service';
+import { AttendancesModule } from '../attendances/attendances.module';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activities 写操作(create / update / softDelete / publish / cancel 共 5 处共用 activity.publish)
@@ -119,6 +120,9 @@ import { AttendanceSegmentProjectorService } from './attendance-segment-projecto
     NotificationsModule,
     OrganizationsModule,
     ActivityFeedbacksModule,
+    // B6 的 durable bulk worker 只能复用 Attendances 的统一 PunchCommand；双向模块关系
+    // 由 forwardRef 显式声明，避免在 Activities 侧复制考勤写链。
+    forwardRef(() => AttendancesModule),
   ],
   controllers: [
     ActivitiesController,

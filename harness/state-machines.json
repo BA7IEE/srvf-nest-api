@@ -1,8 +1,8 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:a2d7188abc51436954804b969a86501ffc5b23ce71b3906afedd8e58cc32028e",
-  "headerNote": "登记≠已治理。Phase 4-1a 为每条补 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。Phase 4-1b 起 governanceStatus 可取 inventory | governed,并由 scripts/check-boundaries.ts --metadata 的**声明闸**把关:声明 governed 必须另附 governedEvidence,L1 走「闭集 = 在册 DB CHECK」、L2/L3 走「具名实现模块 + 逐条边 + 专属 BizCode」,任一条拿不出证据即拒(fail-closed)。当前 governed 8 条(全为 L1 配置列),其余 48 条仍为 inventory;本刀不升任何 L3(它们缺的正是边与实现映射)。声明闸只判「敢不敢自称已治理」,不声称被治理的代码是对的。",
+  "inputDigest": "sha256:396b8935d49d3548e25a43a5788e26169d37167659f98d25f3186c5dcf27da70",
+  "headerNote": "登记≠已治理。Phase 4-1a 为每条补 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。Phase 4-1b 起 governanceStatus 可取 inventory | governed,并由 scripts/check-boundaries.ts --metadata 的**声明闸**把关:声明 governed 必须另附 governedEvidence,L1 走「闭集 = 在册 DB CHECK」、L2/L3 走「具名实现模块 + 逐条边 + 专属 BizCode」,任一条拿不出证据即拒(fail-closed)。当前 governed 8 条(全为 L1 配置列),其余 50 条仍为 inventory;本刀不升任何 L3(它们缺的正是边与实现映射)。声明闸只判「敢不敢自称已治理」,不声称被治理的代码是对的。",
   "entries": [
     {
       "model": "Activity",
@@ -993,6 +993,63 @@
         "no-wrong-state-bizcode"
       ],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
+    },
+    {
+      "model": "OfflinePackage",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "layer": "L3",
+      "stateSet": {
+        "values": [
+          "active",
+          "review_required",
+          "revoked",
+          "expired"
+        ],
+        "source": "db-check",
+        "sourceRef": "prisma/migrations/20260816183000_activity_v11_batch6_staff_import_offline"
+      },
+      "transitions": [
+        "active -> review_required",
+        "active -> revoked",
+        "active -> expired",
+        "review_required -> active",
+        "review_required -> revoked",
+        "review_required -> expired"
+      ],
+      "wrongStateBizCode": "none",
+      "implementation": "第6批离线包 public writer 尚待精确 HTTP wire；当前 DB 仅守状态闭集、撤销形状与 live-device 唯一",
+      "governedBlockers": [
+        "no-state-machine",
+        "no-wrong-state-bizcode"
+      ],
+      "notes": "维护者批准的第6批补充合同已冻结状态闭集与迁移边；未有精确公共请求/响应合同前，不把未来 writer 伪称为已实现或已治理。"
+    },
+    {
+      "model": "OfflinePunchReviewItem",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "layer": "L3",
+      "stateSet": {
+        "values": [
+          "pending",
+          "approved",
+          "rejected"
+        ],
+        "source": "db-check",
+        "sourceRef": "prisma/migrations/20260816183000_activity_v11_batch6_staff_import_offline"
+      },
+      "transitions": [
+        "pending -> approved (approve)",
+        "pending -> rejected (reject)"
+      ],
+      "wrongStateBizCode": "none",
+      "implementation": "第6批离线复核 public writer 尚待精确 HTTP wire；当前 DB 仅守决议形状与正式事件一对一锚点",
+      "governedBlockers": [
+        "no-state-machine",
+        "no-wrong-state-bizcode"
+      ],
+      "notes": "维护者批准的第6批补充合同已冻结 approve/reject 的原子关系；未有精确公共请求/响应合同前，不把未来 writer 伪称为已实现或已治理。"
     },
     {
       "model": "Organization",

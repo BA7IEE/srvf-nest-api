@@ -9,6 +9,10 @@ describe('attachment system MIME blocklist', () => {
     expect(isKnownAttachmentOwnerType('registration-form-answer')).toBe(true);
   });
 
+  it('recognizes attendance-import-preview as the B6 parser-only internal owner type', () => {
+    expect(isKnownAttachmentOwnerType('attendance-import-preview')).toBe(true);
+  });
+
   it.each(['image/svg+xml', 'text/html', 'application/xhtml+xml'])(
     'v0.44.0 finding #24 永久拒绝 %s',
     (mime) => {
