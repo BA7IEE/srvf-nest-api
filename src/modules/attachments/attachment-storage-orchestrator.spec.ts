@@ -19,15 +19,14 @@ import type { AttachmentAuditRecorder } from './attachment-audit-recorder';
 import type { AttachmentManualAttestService } from './attachment-manual-attest.service';
 import type { AttachmentManualIntakeService } from './attachment-manual-intake.service';
 import type { AttachmentManualRelocateService } from './attachment-manual-relocate.service';
+import type { AttachmentReconciliationService } from './attachment-reconciliation.service';
 import type { AttachmentContentValidator } from './attachment-content-validator';
 import type {
   AttachmentUploadStorageIdentity,
   FinalizeAttachmentStorageUploadInput,
 } from './attachment-storage.types';
-import {
-  AttachmentStorageOrchestrator,
-  canUseCurrentLocatorAsBackfillCandidate,
-} from './attachment-storage-orchestrator';
+import { AttachmentStorageOrchestrator } from './attachment-storage-orchestrator';
+import { canUseCurrentLocatorAsBackfillCandidate } from './attachment-storage-locator';
 
 const CURRENT_COS: StorageObjectLocator = {
   providerType: 'COS',
@@ -41,14 +40,6 @@ const CURRENT_LOCAL: StorageObjectLocator = {
   bucket: null,
   region: null,
   localNamespace: '/var/lib/srvf/storage',
-};
-
-type PrivatePromotion = {
-  promoteBackfillAvailable(
-    object: StorageObject,
-    locator: StorageObjectLocator,
-    head: HeadObjectResult,
-  ): Promise<boolean>;
 };
 
 type AvailableCheckUpdate = {
@@ -184,6 +175,15 @@ function harness(options: { strict?: boolean; head?: HeadObjectResult; headError
     hashObjectSha256At: jest.fn(),
     generateDownloadUrlAt: jest.fn().mockResolvedValue(signed),
   } as unknown as PinnedStorageProvider;
+  // promoteBackfillAvailable 已随 backfill/reconcile 族迁入 AttachmentReconciliationService,
+  // 故 spy 目标从「orchestrator 的私有方法」改为「注入的 reconciliation 依赖」——
+  // 断言语义不变(下载路径是否触发了 JIT 提升),但不再依赖被测类的内部实现细节。
+  const promote = jest
+    .fn<Promise<boolean>, [StorageObject, StorageObjectLocator, HeadObjectResult]>()
+    .mockResolvedValue(true);
+  const reconciliation = {
+    promoteBackfillAvailable: promote,
+  } as unknown as AttachmentReconciliationService;
   const orchestrator = new AttachmentStorageOrchestrator(
     prisma,
     ledger,
@@ -192,11 +192,9 @@ function harness(options: { strict?: boolean; head?: HeadObjectResult; headError
     {} as AttachmentManualRelocateService,
     {} as AttachmentManualIntakeService,
     {} as AttachmentManualAttestService,
+    reconciliation,
     provider,
   );
-  const promote = jest
-    .spyOn(orchestrator as unknown as PrivatePromotion, 'promoteBackfillAvailable')
-    .mockResolvedValue(true);
   return {
     orchestrator,
     object,
@@ -316,6 +314,7 @@ describe('AttachmentStorageOrchestrator multipart boundary', () => {
       {} as AttachmentManualRelocateService,
       {} as AttachmentManualIntakeService,
       {} as AttachmentManualAttestService,
+      {} as AttachmentReconciliationService,
       {
         getCurrentLocator: jest.fn(),
         putObjectAt,
@@ -502,6 +501,7 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
       {} as AttachmentManualRelocateService,
       {} as AttachmentManualIntakeService,
       {} as AttachmentManualAttestService,
+      {} as AttachmentReconciliationService,
       {} as PinnedStorageProvider,
     );
     return { orchestrator, tx, logUploadConfirmed };
@@ -524,6 +524,7 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
       {} as AttachmentManualRelocateService,
       {} as AttachmentManualIntakeService,
       {} as AttachmentManualAttestService,
+      {} as AttachmentReconciliationService,
       provider,
     );
 
@@ -569,6 +570,7 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
         {} as AttachmentManualRelocateService,
         {} as AttachmentManualIntakeService,
         {} as AttachmentManualAttestService,
+        {} as AttachmentReconciliationService,
         {} as PinnedStorageProvider,
       );
       const tx = {} as Prisma.TransactionClient;
@@ -634,6 +636,7 @@ describe('AttachmentStorageOrchestrator upload identity boundary', () => {
       {} as AttachmentManualRelocateService,
       {} as AttachmentManualIntakeService,
       {} as AttachmentManualAttestService,
+      {} as AttachmentReconciliationService,
       {} as PinnedStorageProvider,
     );
 
@@ -844,6 +847,7 @@ describe('AttachmentStorageOrchestrator Content publish storage boundary', () =>
       {} as AttachmentManualRelocateService,
       {} as AttachmentManualIntakeService,
       {} as AttachmentManualAttestService,
+      {} as AttachmentReconciliationService,
       provider,
     );
     return {

@@ -1,6 +1,7 @@
 import { Prisma, type StorageObject } from '@prisma/client';
 
 import { StorageConsistencyInvariantError, bigintSize } from '../storage/storage-consistency.types';
+import type { StorageObjectOperation } from '@prisma/client';
 import type { HeadObjectResult } from '../storage/storage.types';
 
 /*
@@ -109,5 +110,23 @@ export class StorageProviderDeleteStillPresentError extends Error {
   constructor() {
     super('STORAGE_PROVIDER_DELETE_STILL_PRESENT');
     this.name = 'StorageProviderDeleteStillPresentError';
+  }
+}
+
+export function activeOperations(
+  operations: readonly StorageObjectOperation[],
+): StorageObjectOperation[] {
+  return operations.filter(
+    (operation) => operation.status === 'pending' || operation.status === 'processing',
+  );
+}
+
+export function assertHeadMatchesObject(object: StorageObject, head: HeadObjectResult): void {
+  assertExpectedSizeMatchesHead(object, head);
+  if (object.etag !== null && head.etag === undefined) {
+    throw new StorageConsistencyInvariantError('provider HEAD lacks expected etag evidence');
+  }
+  if (object.etag !== null && head.etag !== object.etag) {
+    throw new StorageObjectIntegrityMismatchError('provider HEAD etag mismatch');
   }
 }
