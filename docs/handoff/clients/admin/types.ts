@@ -2,7 +2,7 @@
 // 真相源:后端 live /api/docs-json;本文件派生自 docs/handoff/openapi.json 快照。
 // surface: Admin 管理后台
 // generatorVersion: 1.0.0
-// inputDigest: sha256:079d8cb103a8f76e5afc6ba43c043cc85c010d21da98fabd1ce62c5b6385eb15
+// inputDigest: sha256:c33e12dbb4e8413882905072ececcf95a4d786b185f2624d0d72685acb875d68
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -1526,6 +1526,18 @@ export interface MedicalNoteItemDto {
   "note"?: string;
 }
 
+export interface MemberAudienceTagDto {
+  "code": string;
+  "label": string;
+  "status": "ACTIVE" | "INACTIVE";
+  "sortOrder": number;
+}
+
+export interface MemberAudienceTagsResponseDto {
+  "memberId": string;
+  "tags": MemberAudienceTagDto[];
+}
+
 export interface MemberContributionSummaryDto {
   "memberId": string;
   "contributionPoints": string;
@@ -2070,6 +2082,11 @@ export interface PublishActivityDto {
   "requiresInsuranceConfirmed": boolean;
 }
 
+export interface PublishActivityWithAudienceTagsDto {
+  "requiresInsuranceConfirmed": boolean;
+  "audienceTagCodes": string[];
+}
+
 export interface QualificationFlagResponseDto {
   "memberId": string;
   "criterionType": "category" | "standard";
@@ -2225,6 +2242,10 @@ export interface RejectRegistrationDto {
 
 export interface ReopenAttendanceSheetDto {
   "reason": string;
+}
+
+export interface ReplaceMemberAudienceTagsDto {
+  "tagCodes": string[];
 }
 
 export interface ReplayNotificationWecomDto {

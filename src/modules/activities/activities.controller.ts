@@ -34,6 +34,7 @@ import {
   ActivityResponseDto,
   CancelActivityDto,
   PublishActivityDto,
+  PublishActivityWithAudienceTagsDto,
   CreateActivityDto,
   ListActivitiesQueryDto,
   UpdateActivityDto,
@@ -222,6 +223,37 @@ export class ActivitiesController {
     @Req() req: Request,
   ): Promise<ActivityResponseDto> {
     return this.service.publish(params.id, dto, currentUser, this.buildAuditMeta(req));
+  }
+
+  @Patch(':id/publish-with-audience-tags')
+  @RequiresPermission('activity.publish.record', { require: 'all', engine: 'rbac-global' })
+  @ApiOperation({
+    summary:
+      '按会员受众标签发布活动(空数组面向全部有效会员；开关关闭时 503) [rbac: activity.publish.record]',
+  })
+  @ApiWrappedOkResponse(ActivityResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ACTIVITY_REGISTRATION_DEADLINE_PASSED,
+    BizCode.ACTIVITY_ALLOCATION_MODE_INCONSISTENT,
+    BizCode.SERVICE_UNAVAILABLE,
+  )
+  publishWithAudienceTags(
+    @Param() params: IdParamDto,
+    @Body() dto: PublishActivityWithAudienceTagsDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<ActivityResponseDto> {
+    return this.service.publishWithAudienceTags(
+      params.id,
+      dto,
+      currentUser,
+      this.buildAuditMeta(req),
+    );
   }
 
   @Patch(':id/cancel')

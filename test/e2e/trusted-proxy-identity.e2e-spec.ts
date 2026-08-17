@@ -68,6 +68,7 @@ function appConfigForProbe(trustedProxyCidrs: string[]): AppConfig {
     },
     insurance: { enforcementEnabled: false },
     activityResponsibilityWorkflow: { enabled: false },
+    activityAudienceTags: { httpEnabled: false },
     // localRoot 跟随 setup-files 的 per-worker 派生值(并行下不得硬编码共享目录)
     storage: {
       encryptionKey: '',

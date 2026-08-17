@@ -561,6 +561,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/admin/v1/members/{id}/account/unbind'],
   ['post', '/api/admin/v1/members/{id}/account/reopen'],
   ['patch', '/api/admin/v1/members/{id}/account/status'],
+  // B7: 会员受众标签查询与全量替换，+2 路由，529→531。
+  ['get', '/api/admin/v1/members/{id}/audience-tags'],
+  ['put', '/api/admin/v1/members/{id}/audience-tags'],
   // 参与域生命周期收口⑤(v0.40.0):一键离队,+1 路由,328→329。
   ['get', '/api/admin/v1/members/{id}/offboard-impact'],
   ['post', '/api/admin/v1/members/{id}/offboard'],
@@ -641,6 +644,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/admin/v1/activities/{id}'],
   ['delete', '/api/admin/v1/activities/{id}'],
   ['patch', '/api/admin/v1/activities/{id}/publish'],
+  // B7: 以会员受众标签发布，+1 路由，531→532。
+  ['patch', '/api/admin/v1/activities/{id}/publish-with-audience-tags'],
   ['patch', '/api/admin/v1/activities/{id}/cancel'],
   ['post', '/api/admin/v1/activities/{id}/complete'],
   // 活动责任闭环 PR-4:独立发布审核工作台 4 端点。
@@ -1706,9 +1711,9 @@ describe('OpenAPI 契约快照', () => {
   //   第 4 批⑧ managed onsite 临时参加 POST +1 →498；第 4 批分配核心：本人 accept
   //   邀请 + rank/lottery 批次 prepare/commit/void/get +5 →503；资格配置草稿 GET/PUT +2
   //   →505；第 5 批 QR 自助/managed attendance 十路 →515；第 6 批 staff/proxy/bulk/import
-  //   八路 →523；B6-2 offline package/review 六路 → **529**。
-  it('路由足迹精确为 529', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(529);
+  //   八路 →523；B6-2 offline package/review 六路 →529；B7 audience tags 三路 → **532**。
+  it('路由足迹精确为 532', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(532);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

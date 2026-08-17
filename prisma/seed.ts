@@ -457,6 +457,12 @@ const V2_DICT_SEED = [
       { code: 'female', label: '仅女', sortOrder: 2 },
     ],
   },
+  {
+    // 活动 B7:运营维护会员受众标签，首次 seed 只建类型、不预置任何成员受众项。
+    // 类型与 items 都禁止软删，停用是唯一退休语义，见 dictionaries.service.ts 的两组保护集。
+    type: { code: 'member_audience_tag', label: '会员受众标签', sortOrder: 0 },
+    items: [],
+  },
 ] as const;
 
 async function seedV2Dictionaries(prisma: PrismaClient): Promise<void> {

@@ -47,6 +47,12 @@ export class ActivityPublishReviewResponseDto {
   snapshot!: Record<string, unknown>;
   @ApiProperty()
   directPublish!: boolean;
+  @ApiPropertyOptional({
+    description: 'B7 定向发布的会员受众标签 code；NULL 表示历史广播审核',
+    type: [String],
+    nullable: true,
+  })
+  audienceTagCodes!: string[] | null;
   @ApiProperty()
   submittedByUserId!: string;
   @ApiProperty()

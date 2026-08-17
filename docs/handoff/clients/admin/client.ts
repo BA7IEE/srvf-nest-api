@@ -1,7 +1,7 @@
 // 由 scripts/generate-fe-client.ts 生成,请勿手改。
 // surface: Admin 管理后台
 // generatorVersion: 1.0.0
-// inputDigest: sha256:079d8cb103a8f76e5afc6ba43c043cc85c010d21da98fabd1ce62c5b6385eb15
+// inputDigest: sha256:c33e12dbb4e8413882905072ececcf95a4d786b185f2624d0d72685acb875d68
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -180,6 +180,8 @@ import type {
   MarkThresholdDto,
   MatchedGrantDto,
   MedicalNoteItemDto,
+  MemberAudienceTagDto,
+  MemberAudienceTagsResponseDto,
   MemberContributionSummaryDto,
   MemberDepartmentResponseDto,
   MemberInsuranceAdminResponseDto,
@@ -238,6 +240,7 @@ import type {
   PublicityListItemDto,
   PublicityListResponseDto,
   PublishActivityDto,
+  PublishActivityWithAudienceTagsDto,
   QualificationFlagResponseDto,
   RecruitmentApplicationAdminDto,
   RecruitmentCertificateClaimAdminDto,
@@ -255,6 +258,7 @@ import type {
   RejectCertificateDto,
   RejectRegistrationDto,
   ReopenAttendanceSheetDto,
+  ReplaceMemberAudienceTagsDto,
   ReplayNotificationWecomDto,
   ResetUserPasswordDto,
   ResolveLabelRefDto,
@@ -488,6 +492,10 @@ export function createAdminClient(fetcher: Fetcher) {
     /** 发布活动(draft → published;请求体须显式确认保险，且活动/报名截止时间有效) [rbac: activity.publish.record] */
     ActivitiesControllerPublish(id: string, body: PublishActivityDto): Promise<ApiEnvelope<ActivityResponseDto>> {
       return fetcher<ActivityResponseDto>({ method: "PATCH", path: `/api/admin/v1/activities/${id}/publish`, body });
+    },
+    /** 按会员受众标签发布活动(空数组面向全部有效会员；开关关闭时 503) [rbac: activity.publish.record] */
+    ActivitiesControllerPublishWithAudienceTags(id: string, body: PublishActivityWithAudienceTagsDto): Promise<ApiEnvelope<ActivityResponseDto>> {
+      return fetcher<ActivityResponseDto>({ method: "PATCH", path: `/api/admin/v1/activities/${id}/publish-with-audience-tags`, body });
     },
     /** 发布审核工作台(按显式 reviewer RoleBinding 的组织范围过滤) [rbac: activity-review.read.request] */
     AdminActivityPublishReviewsControllerList(query?: { "page"?: number; "pageSize"?: number; "status"?: "pending" | "approved" | "returned" | "withdrawn" | "cancelled"; "requestType"?: "initial" | "change"; "organizationId"?: string; "includeDescendants"?: boolean; "initiatorQ"?: string; "activityQ"?: string; "submittedFrom"?: string; "submittedTo"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": ActivityPublishReviewResponseDto[] }>> {
@@ -796,6 +804,14 @@ export function createAdminClient(fetcher: Fetcher) {
     /** 解绑队员账号(只断链,不停用/软删账号) [rbac: member.bind.account] */
     MembersControllerUnbindAccount(id: string): Promise<ApiEnvelope<MemberResponseDto>> {
       return fetcher<MemberResponseDto>({ method: "POST", path: `/api/admin/v1/members/${id}/account/unbind` });
+    },
+    /** 查询会员受众标签 [rbac: member.read.record] */
+    MembersControllerAudienceTags(id: string): Promise<ApiEnvelope<MemberAudienceTagsResponseDto>> {
+      return fetcher<MemberAudienceTagsResponseDto>({ method: "GET", path: `/api/admin/v1/members/${id}/audience-tags` });
+    },
+    /** 全量替换会员受众标签(空数组撤销全部) [rbac: member.update.record] */
+    MembersControllerReplaceAudienceTags(id: string, body: ReplaceMemberAudienceTagsDto): Promise<ApiEnvelope<MemberAudienceTagsResponseDto>> {
+      return fetcher<MemberAudienceTagsResponseDto>({ method: "PUT", path: `/api/admin/v1/members/${id}/audience-tags`, body });
     },
     /** 一键离队并结束全部当前授权来源(归属/账号/任职/分管/直接绑定) [rbac: member.offboard.record] */
     MembersControllerOffboard(id: string): Promise<ApiEnvelope<MemberOffboardResponseDto>> {

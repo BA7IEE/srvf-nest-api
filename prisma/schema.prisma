@@ -220,9 +220,10 @@ model DictItem {
   updatedAt DateTime       @updatedAt
   deletedAt DateTime?
 
-  type     DictType   @relation(fields: [typeId], references: [id], onDelete: Restrict)
-  parent   DictItem?  @relation("DictItemTree", fields: [parentId], references: [id], onDelete: Restrict)
-  children DictItem[] @relation("DictItemTree")
+  type                   DictType                     @relation(fields: [typeId], references: [id], onDelete: Restrict)
+  parent                 DictItem?                    @relation("DictItemTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children               DictItem[]                   @relation("DictItemTree")
+  audienceTagAssignments MemberAudienceTagAssignment[] @relation("DictItemAudienceTagAssignments")
 
   @@unique([typeId, code])
   @@index([typeId])
@@ -235,6 +236,23 @@ model DictItem {
 enum DictItemStatus {
   ACTIVE
   INACTIVE
+}
+
+// 活动 B7:会员受众标签的历史赋标。撤标只写 revokedAt，保留历史；同一会员和标签仅允许一条 live 记录，
+// partial unique 由 migration 手写。
+model MemberAudienceTagAssignment {
+  id         String    @id @default(cuid())
+  memberId   String
+  dictItemId String
+  assignedAt DateTime  @default(now())
+  revokedAt  DateTime?
+
+  member   Member   @relation("MemberAudienceTagAssignments", fields: [memberId], references: [id], onDelete: Restrict)
+  dictItem DictItem @relation("DictItemAudienceTagAssignments", fields: [dictItemId], references: [id], onDelete: Restrict)
+
+  @@index([memberId, revokedAt], map: "member_audience_tag_assignments_member_live_idx")
+  @@index([dictItemId, revokedAt], map: "member_audience_tag_assignments_item_live_idx")
+  @@map("member_audience_tag_assignments")
 }
 
 // ===== V2 第一阶段:organizations =====
@@ -576,6 +594,7 @@ model Member {
   offlinePackageParticipants OfflinePackageParticipant[]
   offlineReviewItemsStaged   OfflinePunchReviewItem[]    @relation("OfflinePunchReviewItemStagerMember")
   offlineReviewItemsReviewed OfflinePunchReviewItem[]    @relation("OfflinePunchReviewItemReviewerMember")
+  audienceTagAssignments     MemberAudienceTagAssignment[] @relation("MemberAudienceTagAssignments")
 
   // 第 1 批第四刀反向 relation(合同 §3.21 / §3.23 / §3.24):仅关系映射,零标量字段。
   settlementDays        ParticipantSettlementDay[]   @relation("ParticipantSettlementDayMember")
@@ -1303,6 +1322,7 @@ model ActivityPublishReview {
   status         String
   snapshot       Json
   directPublish  Boolean @default(false)
+  audienceTagCodes Json?
 
   submittedByUserId String
   submittedAt       DateTime  @default(now())

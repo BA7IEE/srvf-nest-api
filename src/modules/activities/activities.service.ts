@@ -166,6 +166,12 @@ export class ActivitiesService {
     return this.statuses.publish(...args);
   }
 
+  async publishWithAudienceTags(
+    ...args: Parameters<ActivityStatusCommandService['publishWithAudienceTags']>
+  ) {
+    return this.statuses.publishWithAudienceTags(...args);
+  }
+
   async cancel(...args: Parameters<ActivityStatusCommandService['cancel']>) {
     return this.statuses.cancel(...args);
   }

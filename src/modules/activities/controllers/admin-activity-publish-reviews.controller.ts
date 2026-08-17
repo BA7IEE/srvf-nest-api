@@ -105,6 +105,7 @@ export class AdminActivityPublishReviewsController {
     BizCode.ACTIVITY_PUBLISH_REVIEW_SELF_REVIEW_FORBIDDEN,
     BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED,
     BizCode.ACTIVITY_ALLOCATION_MODE_INCONSISTENT,
+    BizCode.SERVICE_UNAVAILABLE,
   )
   approve(
     @Param() params: IdParamDto,

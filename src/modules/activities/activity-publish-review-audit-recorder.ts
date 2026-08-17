@@ -40,4 +40,36 @@ export class ActivityPublishReviewAuditRecorder {
       tx: args.tx,
     });
   }
+
+  // B7 审批单列审计形状；历史审核仍经 log() 保持原 extra 完全不变。
+  async logAudienceTagsApproved(args: {
+    activityId: string;
+    reviewId: string;
+    requestVersion: number;
+    actorUserId: string;
+    actorRoleSnap: Role;
+    audienceTagCodes: string[];
+    recipientCount: number;
+    auditMeta: AuditMeta;
+    tx: Prisma.TransactionClient;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: 'activity.publish',
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: 'activity',
+      resourceId: args.activityId,
+      meta: args.auditMeta,
+      extra: {
+        operation: 'publish-review-approve-with-audience-tags',
+        reviewId: args.reviewId,
+        requestVersion: args.requestVersion,
+        requestType: 'initial',
+        directPublish: false,
+        audienceTagCodes: args.audienceTagCodes,
+        recipientCount: args.recipientCount,
+      },
+      tx: args.tx,
+    });
+  }
 }

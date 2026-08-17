@@ -21,7 +21,7 @@
            └─ /reconciliation · /participation-summary  跨报名×考勤核对/汇总
 队员轴   admin/v1/members/:id
            ├─ /certificates  /memberships  /profile   (/department 旧单部门面 deprecated → memberships)
-           └─ /emergency-contacts  /insurances
+           └─ /emergency-contacts  /insurances  /audience-tags
 ```
 
 **前端要按"任务"设计页面,不是按"资源"。** 两种合法任务视图:
@@ -43,7 +43,7 @@
 ### 2.1 活动作战室(沿活动轴下钻)— ✅ 后端全就绪,纯前端重组 IA
 | 区块 | 端点 |
 |---|---|
-| 活动头部 + 发布/取消/完结 | `GET /api/admin/v1/activities/:id`(含派生 `phase` / `allocationModeCode`) · `POST /api/admin/v1/activities` 必填 `allocationModeCode∈{first_come,qualification_rank,lottery}` · draft `PATCH .../:id` 可改该字段，published 改动固定走 change review · `PATCH .../:id/publish`(body 必填 `{requiresInsuranceConfirmed:true}`) · `PATCH .../:id/cancel`(仅 draft|published) · `POST .../:id/complete`(**唯一**完结通路 published→completed) |
+| 活动头部 + 发布/取消/完结 | `GET /api/admin/v1/activities/:id`(含派生 `phase` / `allocationModeCode`) · `POST /api/admin/v1/activities` 必填 `allocationModeCode∈{first_come,qualification_rank,lottery}` · draft `PATCH .../:id` 可改该字段，published 改动固定走 change review · `PATCH .../:id/publish`(body 必填 `{requiresInsuranceConfirmed:true}`) · `PATCH .../:id/publish-with-audience-tags`(B7 定向发布，body `{requiresInsuranceConfirmed:true,audienceTagCodes:string[]}`) · `PATCH .../:id/cancel`(仅 draft|published) · `POST .../:id/complete`(**唯一**完结通路 published→completed) |
 | 负责人 / 协办 tab（v0.62.0；production 未部署） | `GET /api/admin/v1/activities/:activityId/responsibilities` · `POST/DELETE .../collaborators[/:assignmentId]` · `POST .../transfer`；legacy 仅管理员用 `POST .../claim` / `POST .../assign-initiator` |
 | 岗位 tab | `POST/GET /api/admin/v1/activities/:activityId/positions` · `GET/PATCH/DELETE .../positions/:activityPositionId`；读仅登录，写复用 `activity.update.record` + activity scope |
 | 报名 tab | `GET /api/admin/v1/activities/:id/registrations?statusCode=` · `POST` 代报名（仅 legacy 活动；v1.1 live session、active Form 或 active 场次/岗位资格规则统一返 `21038`，本刀没有后台代报名/导入替代入口） · `PATCH .../:rid/{approve,reject,cancel}`（旧 legacy pending 无 identity/preference、随后出现 active 场次/岗位 RuleSet 时 approve 也返 `21038`） · `POST .../:rid/reopen`(v0.40.0 审批后悔药 reject→pending)· `PATCH .../{bulk-approve,bulk-reject}`(1–100 条逐项结果) · `GET .../export`(CSV) |
@@ -54,6 +54,8 @@
 | 参与核对 / 汇总 | `GET /api/admin/v1/activities/:id/reconciliation`(**仅 completed**) · `GET .../:id/participation-summary`；两者均需 `attendance.read.sheet` + `activity-registration.read.record` |
 
 > **整单取消（第 4 批第三刀）**：既有 `PATCH /api/admin/v1/activities/:id/cancel` wire 不变。成功后刷新活动和报名 tab：canonical pending/waitlisted 会关闭为 cancelled，已 pass 的历史审批与其 active capacity 仍保留，混合头仍展示 pass。后端遇到 revision/status/pointer/population/reservation 漂移返回既有 `20147` 且无部分可见结果；前端不要用另一个 legacy 候补动作补偿或静默换 key 重试。
+
+> **B7 会员受众标签（默认 HTTP 关闭）**：先在系统数据字典维护 `member_audience_tag` 的 ACTIVE 标签；队员 360 用 `GET/PUT /api/admin/v1/members/:id/audience-tags` 读取/全量替换，PUT `{tagCodes:string[]}` 的空数组表示撤销全部标签。开启 `ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED=true` 后，公开报名活动可用上表的 B7 发布路由：`[]` 面向全部 ACTIVE 且未软删会员，非空数组按标签 OR 并集、同一会员只收一份；标签在发布审核真正 approve 时才匹配，写入 outbox 后收件人固定。新路由、成员标签 GET/PUT，以及带 B7 标签的审核批准在 gate 关闭时均为 503；先完成登录和权限判断，通用字典与 legacy 发布审核不受影响。不要把它用于取消通知，也不要在前端自行扩张收件人。
 
 > **v0.62.0 · 活动责任闭环本地联调（production 未部署；历史来源 PR-4–PR-11）**：活动出参 additive 增加 `initiatorMemberId` / `workflowRevision`，Admin create 可选 `initiatorMemberId`；不传时当前账号必须绑定正式队员，代建仅限 SUPER_ADMIN 或 `activity-responsibility.override.record`。发布审核工作台为 `GET /api/admin/v1/activity-publish-reviews`、`GET /:id`、`POST /:id/approve`、`POST /:id/return`，列表按显式 reviewer RoleBinding 组织范围过滤。发布成功会原子创建发起人为唯一 owner 并投影 `activity-owner` scoped binding；reviewer 永不因审批成为 owner。责任读模型返回 `{activityId,initiator,owner,collaborators,legacyUnassigned}`；协办 body 为 `{memberId,canManageRegistrations,canManageAttendance,reason?}`（至少一个 capability=true），移交 body 为 `{newOwnerMemberId,retainPreviousOwnerAsCollaborator,reason}`。legacy `claim` 只允许已发布且零 active responsibility，`assign-initiator` 只允许 draft 且 initiator 为空，两者 reason 必填。gate=true 后 pending review 期间 Activity 与岗位不可直改，published 直改返回 `20037`；App submit/withdraw/change proposal 与 Admin approve change 均已交付。普通 `biz-admin`/`org-admin` 不再天然拥有活动写、报名写、考勤写/一审，`group-manager` 也不天然拥有一审；通用角色只保留规格中的 create/delete/read。代码、契约、全量测试和临时 Docker Smoke 已验证并随 v0.62.0 release，但当前只供本地联调，不配置真实 reviewer/owner。
 >
@@ -113,6 +115,7 @@
 | 证书 / 档案 / 紧急联系人 / 保险 | `GET /api/admin/v1/members/:id/{certificates,profile,emergency-contacts}`；保险主数据源改用 `GET /api/admin/v1/members/:id/insurances/overview`，审核与 PR3 gate 见下方 | ✅ |
 | **组织归属(memberships)** — 主/兼/临时/支援多归属 + 任期 | `GET/POST .../members/:id/memberships` · `PATCH/DELETE .../members/:id/memberships/:id`(**终态 scoped-authz PR2**,已发 main)| ✅(旧 `/department` 单部门面 deprecated,见下备注)|
 | **任职(position-assignments)** — 该队员在组织体系内担任的职务,含撤销历史 | `GET .../members/:id/position-assignments`(**终态 scoped-authz PR4**,已发 main;含 ACTIVE/REVOKED 全量,任命/撤销动作在组织架构侧发起,见 §2.6)| ✅ |
+| **受众标签(B7)** — 标签历史归队员，标签字典归系统 | `GET/PUT .../members/:id/audience-tags`；PUT body=`{tagCodes:string[]}`，空数组撤销全部；字典用 `system/v1/dict-types` / `dict-items` 维护 `member_audience_tag` | 受 `ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED` gate 控制 |
 | 活动履历 / 考勤记录 / 参与汇总 / 贡献值 | `GET .../members/:id/registrations?statusCode=` · `GET .../members/:id/attendance-records` · `GET .../members/:id/participation-summary` · `GET .../members/:id/contribution-summary` | ✅ |
 
 > 🔴 **证书面待适配(证书标准库 PR-1,2026-07-30;契约破坏 + 行为变更)**。字段真相仍以 live `/api/docs-json` 为准,以下是本刀必须改的四处:

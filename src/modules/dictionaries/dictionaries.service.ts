@@ -104,6 +104,8 @@ const SYSTEM_PROTECTED_DICT_TYPES: ReadonlySet<string> = new Set<string>([
   // 统一通知模块 S1(2026-06-25 PR #449):通知类型闭集,`assertNotificationTypeValid` 硬校验
   //(review #484 G2 补登记;items 亦受 ② 保护)。
   'notification_type',
+  // 活动 B7:会员受众标签类型和其运营创建的 items 均保留历史，停用是唯一退休语义。
+  'member_audience_tag',
 ]);
 
 // ② 闭集 + 国标参照 + 队内内置类型 → 其下【项】禁软删(SYSTEM_PROTECTED_DICT_TYPES 的子集;
@@ -135,6 +137,8 @@ const ITEM_PROTECTED_DICT_TYPES: ReadonlySet<string> = new Set<string>([
   'org_establishment_status',
   // 统一通知模块 S1(2026-06-25 PR #449):通知类型闭集(review #484 G2 补登记)。
   'notification_type',
+  // 活动 B7:受众标签的历史赋标引用具体 DictItem，禁止软删以保留可解释性。
+  'member_audience_tag',
 ]);
 
 @Injectable()

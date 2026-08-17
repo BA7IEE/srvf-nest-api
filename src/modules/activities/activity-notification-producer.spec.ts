@@ -18,6 +18,9 @@ function makeFixture() {
     enqueue: jest
       .fn<Promise<{ id: string }>, [Record<string, unknown>, unknown]>()
       .mockResolvedValue({ id: 'intent-1' }),
+    enqueueMany: jest
+      .fn<Promise<Array<{ id: string }>>, [Array<Record<string, unknown>>, unknown]>()
+      .mockResolvedValue([{ id: 'intent-1' }]),
   };
   const producer = new ActivityNotificationProducer(outbox as unknown as NotificationOutboxService);
   return { tx, outbox, producer };
@@ -80,6 +83,58 @@ describe('ActivityNotificationProducer', () => {
       'activity-cancel:act-1:2026-07-27T00:00:02.000Z:member-1',
       'activity-cancel:act-1:2026-07-27T00:00:02.000Z:member-2',
     ]);
+  });
+
+  it('B7 定向发布:一次 enqueueMany 写入去重后的逐会员 intent，绝不回退广播', async () => {
+    const { tx, outbox, producer } = makeFixture();
+    await producer.enqueuePublishedWithAudienceTags(tx as unknown as Prisma.TransactionClient, {
+      activityId: 'act-1',
+      activityTitle: '受众标签演练',
+      publishedAt: new Date('2026-07-27T00:00:02.000Z'),
+      startAt: new Date('2026-08-01T08:00:00.000Z'),
+      location: '梧桐山',
+      requiresInsurance: false,
+      memberIds: ['member-1', 'member-2'],
+    });
+
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+    expect(outbox.enqueueMany).toHaveBeenCalledWith(
+      [
+        {
+          eventKey: 'activity-publish-audience:act-1:2026-07-27T00:00:02.000Z:member-1',
+          eventType: 'notification.targeted',
+          payloadVersion: 1,
+          payload: {
+            recipientMemberId: 'member-1',
+            notificationTypeCode: 'activity-published',
+            title: '新活动已发布',
+            body: '「受众标签演练」已发布，开始时间 2026-08-01T08:00:00.000Z，地点 梧桐山。',
+            channels: ['in-app'],
+          },
+          aggregateType: 'activity',
+          aggregateId: 'act-1',
+          destinationType: 'member',
+          destinationRef: 'member-1',
+        },
+        {
+          eventKey: 'activity-publish-audience:act-1:2026-07-27T00:00:02.000Z:member-2',
+          eventType: 'notification.targeted',
+          payloadVersion: 1,
+          payload: {
+            recipientMemberId: 'member-2',
+            notificationTypeCode: 'activity-published',
+            title: '新活动已发布',
+            body: '「受众标签演练」已发布，开始时间 2026-08-01T08:00:00.000Z，地点 梧桐山。',
+            channels: ['in-app'],
+          },
+          aggregateType: 'activity',
+          aggregateId: 'act-1',
+          destinationType: 'member',
+          destinationRef: 'member-2',
+        },
+      ],
+      tx,
+    );
   });
 
   it('直接改期:payload 保留新旧安排与保险提示', async () => {
