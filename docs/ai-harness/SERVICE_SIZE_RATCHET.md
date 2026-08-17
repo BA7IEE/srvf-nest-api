@@ -134,6 +134,30 @@ selftest 尺寸段有 `const s = '// not a comment';` 计 1 行等 **13** 条口
 **严口径按月**:5月 4 · 6月 13 · **7月 69** · 8月 20(8 月仅过半)。
 7、8 月都稳定在 ~17.5% 的月度 PR 量级 —— **摩擦不是历史遗留,是当前速率**。
 
+### 3.1 复测(2026-08-17,6-B 第三域七刀后)
+
+七刀按**摩擦归因**(不是"当时最大的文件")依次拆分,每刀让一个热点跌破 700 并退出基线:
+
+| 刀 | 文件 | NCLOC | 复测后严口径 |
+|---|---|---|---|
+| — | (起点) | — | **93** |
+| 第一刀 | `attendances.service.ts` | 1481 → 619 | 77 |
+| 第二刀 | `activity-registrations.service.ts` | 1470 → 374 | 63 |
+| 第三刀 | `activities.service.ts` | 1263 → 200 | 52 |
+| 第四刀 | `recruitment-applications.service.ts` | 763 → 507 | 42 |
+| 第五刀 | `members.service.ts` | 817 → 417 | 36 |
+| 第六刀 | `role-bindings.service.ts` | 827 → 574 | 31 |
+| 第七刀 | `attachments.service.ts` | 1781 → 434 | **27** |
+
+基线条目 **27 → 21**(六个文件退出;`attachment-storage-orchestrator` 已于 #1049 退出)。
+
+⚠️ **归因先于体量**:前八刀(attachments 存储层)把当时全仓最大的文件从 2472 降到 677,
+而摩擦 **92 → 93 纹丝未动** —— 因为那个文件在历史上几乎没被增长过。
+换成按「参与被挡次数」归因后,七刀把 93 压到 27。**降的必须是最挡路的,不是最大的。**
+
+⚠️ 本节数字**依赖基线已重算**:文件跌破 700 但基线仍记旧值时,它仍被当作基线成员参与统计。
+七刀期间基线一直未重算,故中途各刀的"预计值"是贪心预测;上表是逐刀实测。
+
 **热点文件**(被增长次数,宽口径):
 `activity-registrations.service.ts` 33 · `attendances.service.ts` 28 ·
 `recruitment-applications.service.ts` 26 · `activities.service.ts` 25 ·
@@ -144,6 +168,9 @@ selftest 尺寸段有 `const s = '// not a comment';` 计 1 行等 **13** 条口
 92(严)与 161(宽)**都远超 30** ⇒ **必须先做 6-B 拆分才谈转 blocking**。
 换阈值不改变结论;修正度量口径同样不改变结论(106 → 92,仍是判据线的 3 倍)。
 
+> **2026-08-17 更新**:6-B 第三域七刀后严口径降至 **27**(见 §3.1),已低于判据线 30。
+> 本段保留立闸当时的判断作历史 —— 它当时是对的,且正是它把 6-B 拆分列为转闸前置。
+
 ## 4. 转 blocking 的 Exit Criteria
 
 沿 EC-COMMON(v4 §7)相关条。**未逐条打勾前不得转闸**;转闸动作 = 删掉 `ci.yml` 里
@@ -151,7 +178,7 @@ selftest 尺寸段有 `const s = '// not a comment';` 计 1 行等 **13** 条口
 
 | # | 条件 | 现状 |
 |---|---|---|
-| EC-1 | 历史 baseline 已冻结并**接入 ratchet-registry、base-trusted 裁决** | ❌ **未达成 —— 见 §5,这是转闸的头号硬门** |
+| EC-1 | 历史 baseline 已冻结并**接入 ratchet-registry、base-trusted 裁决** | ✅ **已达成(2026-08-17,PR#1054 + #1056)** —— 裁判加 `kind` 两态与 `judgeNumericMonotonicity`,尺寸基线以 `numeric-monotonic` 登记入册。§5 记录的三条结构原因均已解除,该节保留作历史。 |
 | EC-2 | 扫描器覆盖范围与已知缺口成文 | ✅ 本文 §1;已知缺口:发现面按**文件名后缀**认定,叫别的名字的大文件(如 `*.util.ts`)不计入 |
 | EC-3 | blocking 版已 typed-AST 化(正则版仅限 report) | ✅ 度量走 TS parser,非正则、非裸 scanner(§8) |
 | EC-4 | 绕过样例在 selftest 全绿(阳性对照) | ✅ **29 条**(§8 新增 7 条口径对照);5 组变异对拍红集互不重叠(见 §6) |
@@ -159,7 +186,7 @@ selftest 尺寸段有 `const s = '// not a comment';` 计 1 行等 **13** 条口
 | EC-7 | CI 检查连续稳定(≥10 个 PR 或 ≥2 周无 infra 抖动) | ⏳ 需 report 期观察 |
 | EC-9 | 回滚路径成文且为一行开关 | ✅ 加回 `\|\| true` |
 | EC-10 | 错误信息达到 §10 AI 反馈五要素 | ✅ 输出含「当前值 vs 基线值 vs 增量 + 所属域 + 下一步命令」 |
-| **专属** | **6-B 拆分已把摩擦压到可接受区间**(重跑本文 §3 复测) | ❌ 当前 92/161,判据线是 30。6-B 归因诊断结论见 [`SERVICE_SIZE_GROWTH_ATTRIBUTION.md`](SERVICE_SIZE_GROWTH_ATTRIBUTION.md) |
+| **专属** | **6-B 拆分已把摩擦压到可接受区间**(重跑本文 §3 复测) | ✅ **已达成(2026-08-17)** —— 严口径 **93 → 27**,判据线 30。逐刀实测见 §3.1。 |
 
 EC-5(`$queryRaw` 通道)、EC-8(Journey + zero-new-red)不适用:本规则不涉数据访问、不涉业务行为。
 

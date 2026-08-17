@@ -23,6 +23,11 @@ import type {
   GenerateUploadUrlDto,
   UpdateAttachmentDto,
 } from './attachments.dto';
+import { AttachmentAccessService } from './attachment-access.service';
+import { AttachmentContentUploadConfirmService } from './attachment-content-upload-confirm.service';
+import { AttachmentImportPreviewUploadService } from './attachment-import-preview-upload.service';
+import { AttachmentRegistrationUploadService } from './attachment-registration-upload.service';
+import { AttachmentWriteService } from './attachment-write.service';
 import { AttachmentsService } from './attachments.service';
 
 // attachments service-level characterization spec(B 档 test-only,沿 srvf-god-service-refactor）。
@@ -446,11 +451,25 @@ function makeService(
     env: opts.env ?? 'test',
     storage: { encryptionKey: TEST_ENCRYPTION_KEY },
   } as unknown as ConfigType<typeof appConfig>;
+  // Phase 6-B 第三域第七刀:五个新类全部传**真实实例**并喂同一组 mock ——
+  // 判权 / MIME 与体积白名单 / 阶段令牌 / 状态闸的行为锁必须走真实实现,
+  // mock 掉它们等于把本 spec 的 accessUrl 降级、L3 掩码、上传四段断言整个挖空。
+  const p = prisma as unknown as PrismaService;
+  const r = rbac as unknown as RbacService;
+  const sc = storageConsistency as unknown as AttachmentStorageOrchestrator;
+  const ss = settings as unknown as StorageSettingsService;
+  const access = new AttachmentAccessService(p, r, sc, ss, cfg);
+  const confirms = new AttachmentContentUploadConfirmService(p, access, sc, ss, cfg, r);
   return new AttachmentsService(
-    prisma as unknown as PrismaService,
-    rbac as unknown as RbacService,
-    storageConsistency as unknown as AttachmentStorageOrchestrator,
-    settings as unknown as StorageSettingsService,
+    access,
+    new AttachmentRegistrationUploadService(p, access, sc, ss, cfg),
+    new AttachmentImportPreviewUploadService(p, access, sc, ss, cfg),
+    confirms,
+    new AttachmentWriteService(p, access, sc, ss, cfg, confirms),
+    p,
+    r,
+    sc,
+    ss,
     cfg,
   );
 }

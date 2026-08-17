@@ -1241,7 +1241,14 @@ checkEq(
     );
     check(
       'P2 D4 已声明边使用统计:platform-core→platform-access import 数与手工计数一致',
-      platformCoreToAccessUsage?.importCount === 17 &&
+      // ⚠️ 这个数字**刻意硬编码**:它守的是「已声明边上的用量不会悄悄膨胀」——
+      // 边本身合法,所以边界检查不会红,只有这条手工计数会。改动它必须在 PR 里写明原因。
+      //
+      // 17 → 19(2026-08-17,Phase 6-B 第三域第七刀):attachments.service 由 1 个文件拆成 6 个,
+      // 同一组依赖(prisma.service / rbac.service)从"1 个文件持有 2 条"变成"6 个文件共持有 9 条",
+      // 全仓净增 2。**不是新增依赖**,是同一依赖被更多文件各自 import 的机械后果 ——
+      // 拆分把一次 import 摊成多次,这是抽类的固有代价,不是边界退化。
+      platformCoreToAccessUsage?.importCount === 19 &&
         !phase2UndeclaredDirectionUsage.some(
           (item) => item.from === 'platform-core' && item.to === 'platform-access',
         ),
