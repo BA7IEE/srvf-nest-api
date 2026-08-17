@@ -592,19 +592,21 @@ describe('AttendancesService state transitions (characterization)', () => {
     it('同一 pending softDelete 并发且两边均已读旧态 → 恰一方成功,败者 STATUS_INVALID 且仅赢家软删 records', async () => {
       const sheetId = await seedSheet({ statusCode: 'pending', recordsContributionPoints: [1] });
       const serviceInternals = ctx.service as unknown as {
-        findSheetOrThrow: (
-          targetId: string,
-          tx: Prisma.TransactionClient,
-        ) => Promise<{ id: string; statusCode: string }>;
+        access: {
+          findSheetOrThrow: (
+            targetId: string,
+            tx: Prisma.TransactionClient,
+          ) => Promise<{ id: string; statusCode: string }>;
+        };
       };
-      const originalFind = serviceInternals.findSheetOrThrow.bind(ctx.service);
+      const originalFind = serviceInternals.access.findSheetOrThrow.bind(serviceInternals.access);
       let readCount = 0;
       let releaseBothReads: () => void = () => undefined;
       const bothReads = new Promise<void>((resolve) => {
         releaseBothReads = resolve;
       });
       const findSpy = jest
-        .spyOn(serviceInternals, 'findSheetOrThrow')
+        .spyOn(serviceInternals.access, 'findSheetOrThrow')
         .mockImplementation(async (targetId, tx) => {
           const row = await originalFind(targetId, tx);
           readCount += 1;
