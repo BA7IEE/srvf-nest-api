@@ -29,6 +29,7 @@ import type {
   RejectAttendanceSheetDto,
   UpdateAttendanceSheetDto,
 } from './attendances.dto';
+import { AttendanceAccessService } from './attendance-access.service';
 import { AttendancesService } from './attendances.service';
 
 // attendances service-level characterization spec(B 档 test-only,scoped;沿 srvf-god-service-refactor）。
@@ -350,6 +351,14 @@ function makeService(
   const organizations = opts.organizations ?? makeOrganizationsMock();
   return new AttendancesService(
     prisma as unknown as PrismaService,
+    // Phase 6-B 第三域第一刀:传**真实** AttendanceAccessService 并喂同一个 prisma / authz /
+    // rbac mock —— 判权与聚合根锁的行为锁必须走真实实现,mock 掉它等于把本 spec 里
+    // 全部 RBAC_FORBIDDEN / SHEET_NOT_FOUND 断言变成自说自话(同 presenter / queryService 的处理)。
+    new AttendanceAccessService(
+      prisma as unknown as PrismaService,
+      authz as unknown as AuthzService,
+      { can: () => Promise.resolve(opts.rbacCan ?? true) } as unknown as RbacService,
+    ),
     recorder as unknown as AttendanceAuditRecorder,
     contributionCalculator as unknown as ContributionCalculator,
     timeOverlapPolicy,

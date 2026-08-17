@@ -25,6 +25,11 @@ import { RbacService } from '../permissions/rbac.service';
 // 纯函数调用,非 DI provider → 无 AttendancesModule → TeamJoinModule 依赖;team-join 不反向
 // import attendances(team-join.constants 自洽),无循环。
 import { computeCappedContribution } from '../team-join/team-join-progress';
+import {
+  AttendanceAccessService,
+  sheetFullSelect,
+  sheetSafeSelect,
+} from './attendance-access.service';
 import { AttendanceAuditRecorder } from './attendance-audit-recorder';
 import { AttendanceNotificationProducer } from './attendance-notification-producer';
 import {
@@ -141,46 +146,6 @@ const ATTENDANCE_EXPAND_WHITELIST = ['activity'] as const;
 // Sheet 状态机闭集别名(单一来源:ATTENDANCE_SHEET_STATUS,定义在 attendances.dto.ts)。
 const SHEET_STATUS_PENDING = ATTENDANCE_SHEET_STATUS.PENDING;
 
-// Sheet 简化 select(不含 records 数组 + 不含 previousSnapshot)。
-// 批次 4-B 新增 finalReviewer* 3 字段(D-S5;UserResponseDto 同步,沿 baseline §11.3 可选字段)。
-const sheetSafeSelect = {
-  id: true,
-  activityId: true,
-  submitterUserId: true,
-  submittedAt: true,
-  statusCode: true,
-  reviewerUserId: true,
-  reviewedAt: true,
-  reviewNote: true,
-  finalReviewerUserId: true,
-  finalReviewedAt: true,
-  finalReviewNote: true,
-  lastSubmittedByUserId: true,
-  lastSubmittedAt: true,
-  returnedByUserId: true,
-  returnedAt: true,
-  returnNote: true,
-  returnedFromStageCode: true,
-  version: true,
-  createdAt: true,
-  updatedAt: true,
-} as const satisfies Prisma.AttendanceSheetSelect;
-
-// Sheet 完整 select(含 previousSnapshot,用于 edit 事务内读取上一版本快照)。
-const sheetFullSelect = {
-  ...sheetSafeSelect,
-  previousSnapshot: true,
-  activityId: true,
-} as const satisfies Prisma.AttendanceSheetSelect;
-
-// 行类型(SheetSafeRow / SheetListRow / RecordWithMemberRow)已随序列化方法迁往
-// `attendance-presenter.ts`(P1-4 第一刀);presenter 侧用最小结构性入参类型,
-// 本文件的 GetPayload 行按结构子类型直接传入。
-//
-// **读侧** select 常量(`sheetListSelect` / `recordWithMemberSelect` / `adminSheetListSelect` /
-// `adminMemberRecordSelect`)已随四条列表 surface 的查询构造迁往
-// `attendance-sheet-query.service.ts`(Phase 6-B 第二域第一刀,§3.2)。
-// `recordWithMemberSelect` 由本文件 import 回来供 12 处**写路径回读**复用 —— 单一真相源,不另起第二份。
 // **写侧** `sheetSafeSelect` / `sheetFullSelect` 刻意留在本文件:它们服务写路径回读与
 // §4「loading the aggregate root」,不是读侧查询构造。
 type PrismaTx = Prisma.TransactionClient;
@@ -190,6 +155,10 @@ export type AttendanceAuthorization = 'authz' | 'managed';
 export class AttendancesService {
   constructor(
     private readonly prisma: PrismaService,
+    // Phase 6-B 第三域第一刀:submit / edit / softDelete / 审批八式 / 读侧**三段共用**的前置
+    // (判权、managed 校验、Activity 聚合根锁、Sheet 回读)。判权调用仍在各自方法体内 ——
+    // 不把判权**结果**当跨类入参传,那会开出「漏传即漏判权」的新失败面。
+    private readonly access: AttendanceAccessService,
     private readonly attendanceAuditRecorder: AttendanceAuditRecorder,
     private readonly contributionCalculator: ContributionCalculator,
     private readonly timeOverlapPolicy: TimeOverlapPolicy,
@@ -227,26 +196,6 @@ export class AttendancesService {
   // 调用;list / findOne / reviewDetail / listAllSheetsForAdmin / listRecordsForMemberAdmin /
   // getMemberContributionSummary 共用 read(D4=A 判例)。终审两码独立走 assertFinalReviewAuthzOrThrow
   // (`attendance.final-approve.sheet` / `attendance.final-reject.sheet`,PR9 起,自审/同人约束)。
-  private async assertCanOrThrow(
-    user: CurrentUserPayload,
-    action: string,
-    ref?: ResourceRef,
-  ): Promise<void> {
-    const decision = await this.authz.explain(user, action, ref);
-    if (decision.allow) return;
-    if (
-      decision.reason === 'self_approval_forbidden' &&
-      (action === 'attendance.approve.sheet' ||
-        action === 'attendance.reject.sheet' ||
-        action === 'attendance.return.sheet')
-    ) {
-      throw new BizException(BizCode.ATTENDANCE_SELF_FIRST_REVIEW_FORBIDDEN);
-    }
-    if (ref && decision.reason === 'resource_not_found' && (await this.rbac.can(user, action))) {
-      return;
-    }
-    throw new BizException(BizCode.RBAC_FORBIDDEN);
-  }
 
   // v0.49:扁平考勤工作台按 activity.organizationId 下推授权范围；用户显式组织筛选
   // 与授权组织集合取交集。GLOBAL 且无筛选时保持旧查询，不额外加 where。
@@ -335,45 +284,7 @@ export class AttendancesService {
     }
   }
 
-  // 考勤写路径的 Activity 聚合锁。**任何 surface 都必须取**(并发审计 K1 / 第七种形状 S7):
-  // 把它挂在 `authorization === 'managed'` / `managedActivityId !== undefined` 这类判权分支上,
-  // 会让另一条 surface 对 Activity 与 Registration 完全裸奔,单读该方法看不出来。
-  // 名字里刻意不再带 "Managed" —— 它不是 managed 面的专属物。
-  private async lockActivityForAttendanceWrite(activityId: string, tx: PrismaTx): Promise<void> {
-    const rows = await tx.$queryRaw<Array<{ id: string }>>`
-      SELECT id FROM "Activity"
-      WHERE id = ${activityId} AND "deletedAt" IS NULL
-      FOR UPDATE
-    `;
-    if (rows.length === 0) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-  }
 
-  private async assertManagedAttendanceAccess(
-    activityId: string,
-    currentUser: CurrentUserPayload,
-    tx?: PrismaTx,
-  ): Promise<void> {
-    if (!currentUser.memberId) throw new BizException(BizCode.RBAC_FORBIDDEN);
-    const assignment = await (tx ?? this.prisma).activityResponsibilityAssignment.findFirst({
-      where: {
-        activityId,
-        memberId: currentUser.memberId,
-        status: 'active',
-        canManageAttendance: true,
-      },
-      select: { id: true },
-    });
-    if (!assignment) throw new BizException(BizCode.RBAC_FORBIDDEN);
-  }
-
-  private assertManagedSheetActivity(
-    sheetActivityId: string,
-    managedActivityId: string | undefined,
-  ): void {
-    if (managedActivityId !== undefined && sheetActivityId !== managedActivityId) {
-      throw new BizException(BizCode.ATTENDANCE_SHEET_NOT_FOUND);
-    }
-  }
 
   // ============ helpers:序列化 ============
   // 已抽至 `attendance-presenter.ts` 的 `AttendancePresenter`(P1-4 第一刀,2026-06-10
@@ -395,18 +306,6 @@ export class AttendancesService {
     if (!act) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
   }
 
-  // 找 Sheet 完整数据(含 previousSnapshot,用于 edit 路径)。
-  private async findSheetOrThrow(
-    id: string,
-    tx: PrismaTx,
-  ): Promise<Prisma.AttendanceSheetGetPayload<{ select: typeof sheetFullSelect }>> {
-    const sheet = await tx.attendanceSheet.findFirst({
-      where: notDeletedWhere({ id }),
-      select: sheetFullSelect,
-    });
-    if (!sheet) throw new BizException(BizCode.ATTENDANCE_SHEET_NOT_FOUND);
-    return sheet;
-  }
 
   // 队员端 currentUser → memberId(沿批次 3A `resolveUserMemberIdOrThrow` 范式)。
   private async resolveUserMemberIdOrThrow(userId: string, tx: PrismaTx): Promise<string> {
@@ -592,7 +491,7 @@ export class AttendancesService {
     auditMeta: AuditMeta,
     authorization: AttendanceAuthorization = 'authz',
   ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.create.sheet', {
+    await this.access.assertCanOrThrow(currentUser, 'attendance.create.sheet', {
       type: 'activity',
       id: activityId,
     });
@@ -601,8 +500,8 @@ export class AttendancesService {
       // 1. 与 pass cancel / GPS check-in 统一 Activity → Registration 锁序。
       // managed 以 FOR UPDATE 与责任撤销/移交串行并锁后重读 capability；Admin 默认仍用 FOR SHARE。
       if (authorization === 'managed') {
-        await this.lockActivityForAttendanceWrite(activityId, tx);
-        await this.assertManagedAttendanceAccess(activityId, currentUser, tx);
+        await this.access.lockActivityForAttendanceWrite(activityId, tx);
+        await this.access.assertManagedAttendanceAccess(activityId, currentUser, tx);
       } else {
         const lockedActivity = await tx.$queryRaw<Array<{ id: string }>>`
           SELECT id FROM "Activity"
@@ -767,12 +666,12 @@ export class AttendancesService {
     auditMeta: AuditMeta,
     authorization: AttendanceAuthorization = 'authz',
   ): Promise<PageResultDto<AttendanceSheetListItemDto>> {
-    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
+    await this.access.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
       type: 'activity',
       id: activityId,
     });
     if (authorization === 'managed') {
-      await this.assertManagedAttendanceAccess(activityId, currentUser);
+      await this.access.assertManagedAttendanceAccess(activityId, currentUser);
     }
     await this.prisma.$transaction(async (tx) => {
       await this.assertActivityExists(activityId, tx);
@@ -861,7 +760,7 @@ export class AttendancesService {
     query: PaginationQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<AdminMemberAttendanceRecordDto>> {
-    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
+    await this.access.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
       type: 'member',
       id: memberId,
     });
@@ -898,7 +797,7 @@ export class AttendancesService {
     memberId: string,
     currentUser: CurrentUserPayload,
   ): Promise<MemberContributionSummaryDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
+    await this.access.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
       type: 'member',
       id: memberId,
     });
@@ -918,15 +817,15 @@ export class AttendancesService {
     auditMeta: AuditMeta,
     managedActivityId?: string,
   ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
+    await this.access.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
       type: 'attendance_sheet',
       id,
     });
     if (managedActivityId !== undefined) {
-      await this.assertManagedAttendanceAccess(managedActivityId, currentUser);
+      await this.access.assertManagedAttendanceAccess(managedActivityId, currentUser);
     }
-    const sheet = await this.prisma.$transaction(async (tx) => this.findSheetOrThrow(id, tx));
-    this.assertManagedSheetActivity(sheet.activityId, managedActivityId);
+    const sheet = await this.prisma.$transaction(async (tx) => this.access.findSheetOrThrow(id, tx));
+    this.access.assertManagedSheetActivity(sheet.activityId, managedActivityId);
 
     await this.attendanceAuditRecorder.logRead({
       actorUserId: currentUser.id,
@@ -948,16 +847,16 @@ export class AttendancesService {
     auditMeta: AuditMeta,
     managedActivityId?: string,
   ): Promise<AttendanceSheetReviewDetailDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
+    await this.access.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
       type: 'attendance_sheet',
       id,
     });
     if (managedActivityId !== undefined) {
-      await this.assertManagedAttendanceAccess(managedActivityId, currentUser);
+      await this.access.assertManagedAttendanceAccess(managedActivityId, currentUser);
     }
     const result = await this.prisma.$transaction(async (tx) => {
-      const sheet = await this.findSheetOrThrow(id, tx);
-      this.assertManagedSheetActivity(sheet.activityId, managedActivityId);
+      const sheet = await this.access.findSheetOrThrow(id, tx);
+      this.access.assertManagedSheetActivity(sheet.activityId, managedActivityId);
 
       const activity = await tx.activity.findFirst({
         where: notDeletedWhere({ id: sheet.activityId }),
@@ -1015,7 +914,7 @@ export class AttendancesService {
     auditMeta: AuditMeta,
     managedActivityId?: string,
   ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.update.sheet', {
+    await this.access.assertCanOrThrow(currentUser, 'attendance.update.sheet', {
       type: 'attendance_sheet',
       id,
     });
@@ -1027,13 +926,13 @@ export class AttendancesService {
       // `assertManagedSheetActivity` 保证 managed 时两个 id 相等 —— 锁的是同一行。
       const lockedByManagedBranch = managedActivityId !== undefined;
       if (managedActivityId !== undefined) {
-        await this.lockActivityForAttendanceWrite(managedActivityId, tx);
-        await this.assertManagedAttendanceAccess(managedActivityId, currentUser, tx);
+        await this.access.lockActivityForAttendanceWrite(managedActivityId, tx);
+        await this.access.assertManagedAttendanceAccess(managedActivityId, currentUser, tx);
       }
-      const sheet = await this.findSheetOrThrow(id, tx);
-      this.assertManagedSheetActivity(sheet.activityId, managedActivityId);
+      const sheet = await this.access.findSheetOrThrow(id, tx);
+      this.access.assertManagedSheetActivity(sheet.activityId, managedActivityId);
       if (!lockedByManagedBranch) {
-        await this.lockActivityForAttendanceWrite(sheet.activityId, tx);
+        await this.access.lockActivityForAttendanceWrite(sheet.activityId, tx);
       }
 
       const editTransition = this.sheetStateMachine.decide('edit', sheet.statusCode);
@@ -1047,7 +946,7 @@ export class AttendancesService {
         expectedStatus: sheet.statusCode,
         invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
       });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
+      const lockedSheet = await this.access.findSheetOrThrow(id, tx);
       // 没有 records 字段 → 等同于 no-op(不动 records,仍生成 snapshot + version+1)
       if (dto.records === undefined) {
         // 仅 version+1 + snapshot 保存当前状态
@@ -1191,7 +1090,7 @@ export class AttendancesService {
     auditMeta: AuditMeta,
     managedActivityId?: string,
   ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.delete.sheet', {
+    await this.access.assertCanOrThrow(currentUser, 'attendance.delete.sheet', {
       type: 'attendance_sheet',
       id,
     });
@@ -1201,13 +1100,13 @@ export class AttendancesService {
       // edit / softDelete / resubmit 收敛成同一种写法,比记住"这条为什么可以不锁"更省。
       const lockedByManagedBranch = managedActivityId !== undefined;
       if (managedActivityId !== undefined) {
-        await this.lockActivityForAttendanceWrite(managedActivityId, tx);
-        await this.assertManagedAttendanceAccess(managedActivityId, currentUser, tx);
+        await this.access.lockActivityForAttendanceWrite(managedActivityId, tx);
+        await this.access.assertManagedAttendanceAccess(managedActivityId, currentUser, tx);
       }
-      const sheet = await this.findSheetOrThrow(id, tx);
-      this.assertManagedSheetActivity(sheet.activityId, managedActivityId);
+      const sheet = await this.access.findSheetOrThrow(id, tx);
+      this.access.assertManagedSheetActivity(sheet.activityId, managedActivityId);
       if (!lockedByManagedBranch) {
-        await this.lockActivityForAttendanceWrite(sheet.activityId, tx);
+        await this.access.lockActivityForAttendanceWrite(sheet.activityId, tx);
       }
 
       const deleteTransition = this.sheetStateMachine.decide('softDelete', sheet.statusCode);
@@ -1221,7 +1120,7 @@ export class AttendancesService {
         expectedStatus: sheet.statusCode,
         invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
       });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
+      const lockedSheet = await this.access.findSheetOrThrow(id, tx);
       // PR #6 audit:before 需要 records 完整快照(软删之前抓取)
       const currentRecords = await tx.attendanceRecord.findMany({
         where: { sheetId: id, deletedAt: null },
@@ -1270,12 +1169,12 @@ export class AttendancesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.approve.sheet', {
+    await this.access.assertCanOrThrow(currentUser, 'attendance.approve.sheet', {
       type: 'attendance_sheet',
       id,
     });
     return this.prisma.$transaction(async (tx) => {
-      const sheet = await this.findSheetOrThrow(id, tx);
+      const sheet = await this.access.findSheetOrThrow(id, tx);
 
       const approveTransition = this.sheetStateMachine.decide('approve', sheet.statusCode);
       if (!approveTransition.allowed) {
@@ -1288,7 +1187,7 @@ export class AttendancesService {
         expectedStatus: sheet.statusCode,
         invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
       });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
+      const lockedSheet = await this.access.findSheetOrThrow(id, tx);
       this.assertLockedReviewSeparation('first', lockedSheet, currentUser);
 
       // R31:所有 records contributionPoints 必填(沿 D-S8;APD 一级 approve 时校验)
@@ -1339,12 +1238,12 @@ export class AttendancesService {
   ): Promise<AttendanceSheetResponseDto> {
     const returnNote = dto.returnNote.trim();
     if (!returnNote) throw new BizException(BizCode.ATTENDANCE_RETURN_NOTE_REQUIRED);
-    await this.assertCanOrThrow(currentUser, 'attendance.return.sheet', {
+    await this.access.assertCanOrThrow(currentUser, 'attendance.return.sheet', {
       type: 'attendance_sheet',
       id,
     });
     return this.prisma.$transaction(async (tx) => {
-      const sheet = await this.findSheetOrThrow(id, tx);
+      const sheet = await this.access.findSheetOrThrow(id, tx);
       const transition = this.sheetStateMachine.decide('firstReturn', sheet.statusCode);
       if (!transition.allowed) throw new BizException(transition.biz);
 
@@ -1354,7 +1253,7 @@ export class AttendancesService {
         expectedStatus: sheet.statusCode,
         invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
       });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
+      const lockedSheet = await this.access.findSheetOrThrow(id, tx);
       this.assertLockedReviewSeparation('first', lockedSheet, currentUser);
       const recordsCount = await tx.attendanceRecord.count({
         where: notDeletedWhere({ sheetId: id }),
@@ -1411,12 +1310,12 @@ export class AttendancesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.reject.sheet', {
+    await this.access.assertCanOrThrow(currentUser, 'attendance.reject.sheet', {
       type: 'attendance_sheet',
       id,
     });
     return this.prisma.$transaction(async (tx) => {
-      const sheet = await this.findSheetOrThrow(id, tx);
+      const sheet = await this.access.findSheetOrThrow(id, tx);
 
       const rejectTransition = this.sheetStateMachine.decide('reject', sheet.statusCode);
       if (!rejectTransition.allowed) {
@@ -1432,7 +1331,7 @@ export class AttendancesService {
         expectedStatus: sheet.statusCode,
         invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
       });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
+      const lockedSheet = await this.access.findSheetOrThrow(id, tx);
       this.assertLockedReviewSeparation('first', lockedSheet, currentUser);
 
       // 软删前抓 records 全字段快照入 audit(对称 finalReject;沿 §audit records 必含组)。
@@ -1501,7 +1400,7 @@ export class AttendancesService {
     await this.assertFinalReviewAuthzOrThrow(currentUser, 'attendance.final-approve.sheet', id);
     // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
     return runMemberLinearizedTransaction(this.prisma, async (tx) => {
-      const sheet = await this.findSheetOrThrow(id, tx);
+      const sheet = await this.access.findSheetOrThrow(id, tx);
 
       const finalApproveTransition = this.sheetStateMachine.decide(
         'finalApprove',
@@ -1517,7 +1416,7 @@ export class AttendancesService {
         expectedStatus: sheet.statusCode,
         invalidStatusBiz: BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID,
       });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
+      const lockedSheet = await this.access.findSheetOrThrow(id, tx);
       this.assertLockedReviewSeparation('final', lockedSheet, currentUser);
 
       const recordsForEvent = await tx.attendanceRecord.findMany({
@@ -1618,7 +1517,7 @@ export class AttendancesService {
     if (!returnNote) throw new BizException(BizCode.ATTENDANCE_RETURN_NOTE_REQUIRED);
     await this.assertFinalReviewAuthzOrThrow(currentUser, 'attendance.final-return.sheet', id);
     return this.prisma.$transaction(async (tx) => {
-      const sheet = await this.findSheetOrThrow(id, tx);
+      const sheet = await this.access.findSheetOrThrow(id, tx);
       const transition = this.sheetStateMachine.decide('finalReturn', sheet.statusCode);
       if (!transition.allowed) throw new BizException(transition.biz);
 
@@ -1628,7 +1527,7 @@ export class AttendancesService {
         expectedStatus: sheet.statusCode,
         invalidStatusBiz: BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID,
       });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
+      const lockedSheet = await this.access.findSheetOrThrow(id, tx);
       this.assertLockedReviewSeparation('final', lockedSheet, currentUser);
       const recordsCount = await tx.attendanceRecord.count({
         where: notDeletedWhere({ sheetId: id }),
@@ -1698,7 +1597,7 @@ export class AttendancesService {
   ): Promise<AttendanceSheetResponseDto> {
     await this.assertFinalReviewAuthzOrThrow(currentUser, 'attendance.final-reject.sheet', id);
     return this.prisma.$transaction(async (tx) => {
-      const sheet = await this.findSheetOrThrow(id, tx);
+      const sheet = await this.access.findSheetOrThrow(id, tx);
 
       const finalRejectTransition = this.sheetStateMachine.decide('finalReject', sheet.statusCode);
       if (!finalRejectTransition.allowed) {
@@ -1716,7 +1615,7 @@ export class AttendancesService {
         expectedStatus: sheet.statusCode,
         invalidStatusBiz: BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID,
       });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
+      const lockedSheet = await this.access.findSheetOrThrow(id, tx);
       this.assertLockedReviewSeparation('final', lockedSheet, currentUser);
 
       // PR #6 audit:before 需要 records 完整快照(records 跟随软删之前抓取)
@@ -1773,17 +1672,17 @@ export class AttendancesService {
     auditMeta: AuditMeta,
     managedActivityId?: string,
   ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.update.sheet', {
+    await this.access.assertCanOrThrow(currentUser, 'attendance.update.sheet', {
       type: 'attendance_sheet',
       id,
     });
     return this.prisma.$transaction(async (tx) => {
-      const initialSheet = await this.findSheetOrThrow(id, tx);
-      this.assertManagedSheetActivity(initialSheet.activityId, managedActivityId);
+      const initialSheet = await this.access.findSheetOrThrow(id, tx);
+      this.access.assertManagedSheetActivity(initialSheet.activityId, managedActivityId);
 
-      await this.lockActivityForAttendanceWrite(initialSheet.activityId, tx);
+      await this.access.lockActivityForAttendanceWrite(initialSheet.activityId, tx);
       if (currentUser.role !== Role.SUPER_ADMIN) {
-        await this.assertManagedAttendanceAccess(initialSheet.activityId, currentUser, tx);
+        await this.access.assertManagedAttendanceAccess(initialSheet.activityId, currentUser, tx);
       }
 
       const transition = this.sheetStateMachine.decide('resubmit', initialSheet.statusCode);
@@ -1794,7 +1693,7 @@ export class AttendancesService {
         expectedStatus: initialSheet.statusCode,
         invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
       });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
+      const lockedSheet = await this.access.findSheetOrThrow(id, tx);
       const records = await tx.attendanceRecord.findMany({
         where: notDeletedWhere({ sheetId: id }),
         select: recordWithMemberSelect,
@@ -1855,7 +1754,7 @@ export class AttendancesService {
 
     // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
     return runMemberLinearizedTransaction(this.prisma, async (tx) => {
-      const sheet = await this.findSheetOrThrow(id, tx);
+      const sheet = await this.access.findSheetOrThrow(id, tx);
       const reopenTransition = this.sheetStateMachine.decide('reopen', sheet.statusCode);
       if (!reopenTransition.allowed) throw new BizException(reopenTransition.biz);
 
@@ -1865,7 +1764,7 @@ export class AttendancesService {
         expectedStatus: sheet.statusCode,
         invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
       });
-      const lockedSheet = await this.findSheetOrThrow(id, tx);
+      const lockedSheet = await this.access.findSheetOrThrow(id, tx);
 
       const records = await tx.attendanceRecord.findMany({
         where: { sheetId: id, deletedAt: null },
