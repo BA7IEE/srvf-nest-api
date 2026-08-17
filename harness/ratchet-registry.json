@@ -22,6 +22,13 @@
       "rule": "srvf/no-near-future-date",
       "symbolShape": "date-literal",
       "why": "INC-18 墙钟炸弹:测试硬编码近未来日期,到点 main 全线红且与 diff 无关(2026-08-01 实爆,同类第三次)。存量按「文件 × 日期」冻结,四种非炸弹形态(时钟注入/年窗坐标/派生断言)经人工核验入册。"
+    },
+    {
+      "id": "service-size",
+      "kind": "numeric-monotonic",
+      "baseline": "harness/service-size-baseline.json",
+      "metric": "loc",
+      "why": "Phase 6-A 大 service 尺寸棘轮(NCLOC ≥700)。EC-1:此前登记不进本表 —— 它没有 ESLint 规则、entries 没有 symbol、而裁判只比 (file, symbol) 集合不认数值(数值编进 symbol 会让合法的「变小」造出新 key 而硬失败,语义正好反了)。PR#1054 给裁判加了 numeric-monotonic 形态后方可登记:身份=file,判据=每个 file 的 loc 只减不增且不得新增 file。"
     }
   ]
 }

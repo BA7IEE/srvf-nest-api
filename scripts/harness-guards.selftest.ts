@@ -3067,6 +3067,12 @@ async function runTrustedJudgeAssertions(): Promise<void> {
       headText: string | null,
       relPath?: string,
     ) => { ok: boolean; added: string[]; removedFile: boolean };
+    judgeNumericMonotonicity: (
+      baseText: string,
+      headText: string | null,
+      metric: string,
+      relPath?: string,
+    ) => { ok: boolean; added: string[]; grown: string[]; removedFile: boolean };
     judgeRegistryMonotonicity: (
       baseText: string,
       headText: string | null,
@@ -3088,7 +3094,15 @@ async function runTrustedJudgeAssertions(): Promise<void> {
     parseRatchetRegistryDoc: (
       text: string,
       which: string,
-    ) => Array<{ id: string; baseline: string; rule: string; symbolShape: string }>;
+    ) => Array<{
+      id: string;
+      // EC-1:kind 省略时由解析器填 'eslint-exempt';numeric 型不带 rule/symbolShape。
+      kind: string;
+      baseline: string;
+      rule?: string;
+      symbolShape?: string;
+      metric?: string;
+    }>;
   };
   const reg = JSON.parse(
     fs.readFileSync(path.resolve(__dirname, '../harness/redzone.json'), 'utf-8'),
@@ -3410,6 +3424,187 @@ async function runTrustedJudgeAssertions(): Promise<void> {
         );
       }
 
+      // ── EC-1(2026-08-17):注册表两态 —— 数值型棘轮 ─────────────────────────
+      //
+      // 到此为止注册表只装得下 ESLint 豁免型(身份 = (file, symbol),不认数值)。
+      // 尺寸棘轮装不进来的三条结构原因见 SERVICE_SIZE_RATCHET.md §5,其中第三条是
+      // **裁判语义正好反了**:数值若编进 symbol,合法的「变小」会造出新 key 而硬失败。
+      // 下面这组钉的就是新增的 numeric-monotonic 形态,以及它与旧形态的隔离。
+      {
+        const numDoc = (entries: ReadonlyArray<{ file: string; loc: number }>): string =>
+          JSON.stringify({ version: 1, entries });
+        const BASE_N = numDoc([
+          { file: 'a.service.ts', loc: 1000 },
+          { file: 'b.service.ts', loc: 800 },
+        ]);
+        const nv = (head: string | null) => judge.judgeNumericMonotonicity(BASE_N, head, 'loc');
+
+        check(
+          'F3 数值型:HEAD == BASE → 放行',
+          nv(BASE_N).ok,
+          '不动基线的 PR 不该被这道闸打扰',
+        );
+        check(
+          'F3 数值型:数值**变小** → 放行(棘轮做功的方向)',
+          nv(numDoc([{ file: 'a.service.ts', loc: 900 }, { file: 'b.service.ts', loc: 800 }])).ok,
+          '⚠️ 这一条正是旧裁判做不到的:按 (file,symbol) 集合比时,数值编进 symbol 会让「变小」造出新 key 而硬失败',
+        );
+        check(
+          'F3 数值型:条目**消失** → 放行(拆到阈值以下就该退出基线)',
+          nv(numDoc([{ file: 'b.service.ts', loc: 800 }])).ok,
+          '还债必须畅通,否则下一个人会绕开棘轮而不是还债',
+        );
+        check(
+          'F3 数值型:数值**变大** → 拒(这是本形态存在的唯一理由)',
+          (() => {
+            const v = nv(
+              numDoc([{ file: 'a.service.ts', loc: 1001 }, { file: 'b.service.ts', loc: 800 }]),
+            );
+            return !v.ok && v.grown.length === 1 && v.grown[0].includes('1000 → 1001');
+          })(),
+          '在 PR 自己的树上「把数字改大」与「把代码改小」结果一样(闸都绿),只有拿 base 比才分得出',
+        );
+        check(
+          'F3 数值型:**新增**条目 → 拒(新认领一个超阈值单元须维护者授权)',
+          (() => {
+            const v = nv(
+              numDoc([
+                { file: 'a.service.ts', loc: 1000 },
+                { file: 'b.service.ts', loc: 800 },
+                { file: 'c.service.ts', loc: 1500 },
+              ]),
+            );
+            return !v.ok && v.added.length === 1 && v.added[0].startsWith('c.service.ts');
+          })(),
+          'report 期的 service-size-new-above-threshold 报的就是这个,转 blocking 后必须由裁判兜住',
+        );
+        check(
+          'F3 数值型:基线文件被删 → removedFile(与 ESLint 型同判)',
+          nv(null).removedFile && !nv(null).ok,
+          '「删掉判据」与「判据通过」在任何看得懂的门禁里都不该是同一件事',
+        );
+        check(
+          'F3 数值型 fail-closed:metric 缺失 → 抛,**不当 0**',
+          (() => {
+            try {
+              judge.judgeNumericMonotonicity(
+                BASE_N,
+                JSON.stringify({ version: 1, entries: [{ file: 'a.service.ts' }] }),
+                'loc',
+              );
+              return false;
+            } catch {
+              return true;
+            }
+          })(),
+          '当 0 会让「抹掉一个数字」等价于「缩到 0」—— 于是删掉数值就能让任意增长看起来像收缩',
+        );
+        check(
+          'F3 数值型 fail-closed:同一 file 重复出现 → 抛',
+          (() => {
+            try {
+              judge.judgeNumericMonotonicity(
+                BASE_N,
+                numDoc([{ file: 'a.service.ts', loc: 900 }, { file: 'a.service.ts', loc: 2000 }]),
+                'loc',
+              );
+              return false;
+            } catch {
+              return true;
+            }
+          })(),
+          '重复 file 会让「取哪一条」看运气,身份映射当场失去意义(同注册表重复 id)',
+        );
+
+        // 形态隔离:注册表解析层
+        const regKind = (
+          over: Record<string, unknown>,
+        ): (() => ReturnType<typeof judge.parseRatchetRegistryDoc>) => {
+          return () =>
+            judge.parseRatchetRegistryDoc(
+              JSON.stringify({
+                version: 1,
+                ratchets: [{ id: 'n', baseline: 'harness/n.json', why: 'w', ...over }],
+              }),
+              'head',
+            );
+        };
+        // ⚠️ 只断言「抛了」是不够的:变异对拍实测,把 kind 校验整条删掉之后,
+        // 未知 kind 会走到 `RATCHET_KINDS[kind]` = undefined,`for...of undefined`
+        // 抛 TypeError —— 于是「抛了」照样成立,用例全绿而闸已经没了。
+        // 故断言必须认**这条闸自己的错误**,而不是"某处炸了"。
+        const throwsWith = (fn: () => unknown, needle: string): boolean => {
+          try {
+            fn();
+            return false;
+          } catch (err) {
+            return String(err).includes(needle);
+          }
+        };
+        const throws = (fn: () => unknown): boolean => throwsWith(fn, '');
+
+        check(
+          'F3 kind:省略 kind → 按 eslint-exempt 解析(既有三条一个字节都不用改)',
+          regKind({ rule: 'srvf/x', symbolShape: 'class-field' })()[0].kind === 'eslint-exempt',
+          '要求既有条目补字段就等于改它们的载体三元组,那会被冻结检查判成 mutated —— 死锁',
+        );
+        check(
+          'F3 kind:numeric-monotonic 带 metric → 通过',
+          regKind({ kind: 'numeric-monotonic', metric: 'loc' })()[0].metric === 'loc',
+          '',
+        );
+        check(
+          'F3 kind:numeric-monotonic **缺 metric** → 抛',
+          throws(regKind({ kind: 'numeric-monotonic' })),
+          '缺了就没法判「载体有没有被换掉」,与 eslint 型缺 rule 同理',
+        );
+        check(
+          'F3 kind:⚠️ numeric-monotonic **携带 rule** → 抛(不是可选,是禁止)',
+          throws(regKind({ kind: 'numeric-monotonic', metric: 'loc', rule: 'srvf/x' })),
+          '允许它带真实规则名 = 允许它借道把基线里的文件从那条 ESLint 规则里豁免掉,而 ④-c 对它无从判起',
+        );
+        check(
+          'F3 kind:numeric-monotonic 携带 symbolShape → 抛',
+          throws(
+            regKind({ kind: 'numeric-monotonic', metric: 'loc', symbolShape: 'class-field' }),
+          ),
+          '同上:数值型没有 symbol,带上它只会让人以为它参与集合判定',
+        );
+        check(
+          'F3 kind:未知 kind → 抛**且报的是 kind 未知**(不许静默落进默认形态)',
+          throwsWith(regKind({ kind: 'whatever', metric: 'loc' }), 'kind 未知'),
+          '静默落默认 = 一个拼错的 kind 让数值型被当成 eslint 型判,而它的基线里没有 symbol;' +
+            '⚠️ 断言必须认这条闸自己的错误 —— 删掉它之后 for...of undefined 同样会抛,只断言「抛了」会全绿',
+        );
+        check(
+          'F3 kind:⚠️ **翻 kind** → 判 mutated(换掉判它的那套判据)',
+          (() => {
+            const base = JSON.stringify({
+              version: 1,
+              ratchets: [
+                { id: 'n', kind: 'numeric-monotonic', baseline: 'harness/n.json', metric: 'loc', why: 'w' },
+              ],
+            });
+            const head = JSON.stringify({
+              version: 1,
+              ratchets: [
+                {
+                  id: 'n',
+                  kind: 'eslint-exempt',
+                  baseline: 'harness/n.json',
+                  rule: 'srvf/x',
+                  symbolShape: 'class-field',
+                  why: 'w',
+                },
+              ],
+            });
+            const v = judge.judgeRegistryMonotonicity(base, head);
+            return !v.ok && v.mutated.some((m) => m.field === 'kind');
+          })(),
+          '不冻结 kind,一个 PR 只要翻它就换掉了判据选择,而 baseline 逐字未变、旧冻结检查全绿 —— 与「同 id 换载体」同形',
+        );
+      }
+
       // ── 并集单调性:借「新增全新 id」这条合法通道给既有 rule 加豁免 ──────────
       const RULE = 'srvf/no-nullable-is-optional';
       const unions = (m: Record<string, string[]>): Map<string, Set<string>> =>
@@ -3445,16 +3640,30 @@ async function runTrustedJudgeAssertions(): Promise<void> {
     }
 
     check(
-      'F3 注册表:真实注册表登记了三条棘轮(裁判确实会遍历到 param-id 与 near-future-date 那两条)',
-      judge
-        .parseRatchetRegistryDoc(
+      'F3 注册表:真实注册表登记了四条棘轮,且 service-size 是 numeric-monotonic(EC-1)',
+      (() => {
+        // ⚠️ 刻意用**精确集合**而不是「至少包含」:精确形式同时抓两个方向 ——
+        // 少一条 = 那条棘轮的单调性没人裁;多一条 = 有人塞了条没经过评审的棘轮。
+        // 代价是每次合法新增都要改这一行,那正是想要的(改这一行会出现在 diff 里)。
+        const rs = judge.parseRatchetRegistryDoc(
           fs.readFileSync(path.resolve(__dirname, '../harness/ratchet-registry.json'), 'utf-8'),
           'base',
-        )
-        .map((r) => r.id)
-        .sort()
-        .join(',') === 'is-optional-null,legacy-param-id,near-future-date',
-      '注册表少一条 = 那条棘轮的单调性没人裁,而 lint 与 selftest 都看不出来',
+        );
+        const ids = rs
+          .map((r) => r.id)
+          .sort()
+          .join(',');
+        const ss = rs.find((r) => r.id === 'service-size');
+        // kind 与 metric 一起钉:只钉 id 的话,把 service-size 悄悄改回 eslint-exempt
+        // 会让裁判用集合语义去判一份没有 symbol 的基线 —— 那会 fail-closed,但报的原因离真因很远。
+        return (
+          ids === 'is-optional-null,legacy-param-id,near-future-date,service-size' &&
+          ss?.kind === 'numeric-monotonic' &&
+          ss.metric === 'loc'
+        );
+      })(),
+      '注册表少一条 = 那条棘轮的单调性没人裁,而 lint 与 selftest 都看不出来;' +
+        'service-size 的 kind 被改回 eslint-exempt 则等于尺寸棘轮退回「装不进来」的状态',
     );
   }
 }
