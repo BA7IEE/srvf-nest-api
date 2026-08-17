@@ -3,6 +3,7 @@ import { Prisma, Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { ActivityRegistrationCreateService } from '../../src/modules/activity-registrations/activity-registration-create.service';
 import { ActivityRegistrationsService } from '../../src/modules/activity-registrations/activity-registrations.service';
 import { AppMyRegistrationsService } from '../../src/modules/activity-registrations/app-my-registrations.service';
 import { ActivitiesService } from '../../src/modules/activities/activities.service';
@@ -180,6 +181,13 @@ describe('activity registration waitlist', () => {
   let prisma: PrismaService;
   let prismaB: PrismaService;
   let registrations: ActivityRegistrationsService;
+  // ⚠️ Phase 6-B 第三域第二刀:两条 F1 真并发用例靠 monkey-patch **私有方法**注入屏障,
+  // 而 resolveCreateStatusCode / resolveActivityPositionForCreate 已随建单族迁至
+  // ActivityRegistrationCreateService。屏障必须打在**真正执行那段代码的实例**上 ——
+  // 打在 ActivityRegistrationsService(现在只是薄委托)上,spy 不被调用、并发窗口根本没撑开。
+  // (#1034 同形:屏障打在没人用的对象上,每一步都"成功"所以最难查。)
+  // 实测反向变异:把 hooks 指回 registrations,这两条当场红 —— 屏障确实在做功。
+  let registrationCreates: ActivityRegistrationCreateService;
   let registrationsB: ActivityRegistrationsService;
   let appRegistrations: AppMyRegistrationsService;
   let activities: ActivitiesService;
@@ -199,6 +207,7 @@ describe('activity registration waitlist', () => {
     prisma = app.get(PrismaService);
     prismaB = appB.get(PrismaService);
     registrations = app.get(ActivityRegistrationsService);
+    registrationCreates = app.get(ActivityRegistrationCreateService);
     registrationsB = appB.get(ActivityRegistrationsService);
     appRegistrations = app.get(AppMyRegistrationsService);
     activities = app.get(ActivitiesService);
@@ -1417,8 +1426,8 @@ describe('activity registration waitlist', () => {
     const activityId = await createActivity(1, 'create-capacity-race');
     await seedRegistration(activityId, await createMember('create-capacity-pass'), 'pass');
     const memberId = await createMember('create-capacity-new');
-    const hooks = registrations as unknown as RegistrationCreateTestHooks;
-    const originalResolve = hooks.resolveCreateStatusCode.bind(registrations);
+    const hooks = registrationCreates as unknown as RegistrationCreateTestHooks;
+    const originalResolve = hooks.resolveCreateStatusCode.bind(registrationCreates);
     const statusResolved = deferred();
     const releaseCreate = deferred();
     const resolveSpy = jest
@@ -1460,8 +1469,8 @@ describe('activity registration waitlist', () => {
     const activityId = await createActivity(5, 'create-position-delete-race');
     const activityPositionId = await createActivityPosition(activityId, 5, '并发删岗');
     const self = await createMemberUser('position-delete-self');
-    const hooks = registrations as unknown as RegistrationCreateTestHooks;
-    const originalResolve = hooks.resolveActivityPositionForCreate.bind(registrations);
+    const hooks = registrationCreates as unknown as RegistrationCreateTestHooks;
+    const originalResolve = hooks.resolveActivityPositionForCreate.bind(registrationCreates);
     const positionResolved = deferred();
     const releaseCreate = deferred();
     const resolveSpy = jest

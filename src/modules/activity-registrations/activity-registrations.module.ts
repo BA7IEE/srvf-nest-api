@@ -15,6 +15,9 @@ import { ActivityRegistrationPresenter } from './activity-registration-presenter
 import { ActivityRegistrationQueryService } from './activity-registration-query.service';
 import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
 import { ActivityRegistrationsAdminController } from './activity-registrations.controller';
+import { ActivityRegistrationAccessService } from './activity-registration-access.service';
+import { ActivityRegistrationCreateService } from './activity-registration-create.service';
+import { ActivityRegistrationReviewService } from './activity-registration-review.service';
 import { ActivityRegistrationsService } from './activity-registrations.service';
 import { AppMyRegistrationsService } from './app-my-registrations.service';
 import {
@@ -92,6 +95,9 @@ import { AppManagedActivityAllocationBatchesController } from './controllers/app
     AppManagedActivityAllocationBatchesController,
   ],
   providers: [
+    ActivityRegistrationAccessService,
+    ActivityRegistrationCreateService,
+    ActivityRegistrationReviewService,
     ActivityRegistrationsService,
     ActivityRegistrationBulkService,
     AppMyRegistrationsService,

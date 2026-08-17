@@ -19,6 +19,9 @@ import { ActivityRegistrationPresenter } from './activity-registration-presenter
 import { ActivityRegistrationQueryService } from './activity-registration-query.service';
 import type { ActivityRegistrationTransitionDecision } from './activity-registration-state-machine';
 import type { ActivityRegistrationWaitlistQueryService } from './activity-registration-waitlist-query.service';
+import { ActivityRegistrationAccessService } from './activity-registration-access.service';
+import { ActivityRegistrationCreateService } from './activity-registration-create.service';
+import { ActivityRegistrationReviewService } from './activity-registration-review.service';
 import { ActivityRegistrationsService } from './activity-registrations.service';
 
 jest.mock('../activities/activity-waitlist-promotion', () => ({
@@ -406,34 +409,75 @@ function makeService(
   qualificationEvaluator: QualificationEvaluatorMock = makeQualificationEvaluatorMock(),
 ): ActivityRegistrationsService {
   // stateMachine mock 仅含 decide,结构上可直接赋给 ActivityRegistrationStateMachine,无需断言。
+  // Phase 6-B 第三域第二刀:三个新类全部传**真实实例**并喂同一组 mock ——
+  // 判权、聚合根锁、建单与审批四式的行为锁必须走真实实现。mock 掉它们等于把本 spec 里
+  // 全部 RBAC_FORBIDDEN / 容量 / 状态机 / 审计断言变成自说自话(同 presenter / queryService 的既有处理)。
+  const rbacMock = makeRbacMock() as unknown as RbacService;
+  const auditLogsMock = {
+    log: jest.fn().mockResolvedValue(undefined),
+  } as unknown as AuditLogsService;
+  const participationPolicy = new ActivityParticipationPolicy();
+  const presenterReal = new ActivityRegistrationPresenter();
+  const lifecycleMock =
+    makeRegistrationLifecycleMock() as unknown as ActivityRegistrationLifecycleService;
+  const allocationsMock = {
+    promoteAfterCancellationInTransactionTrusted: jest.fn().mockResolvedValue({
+      handled: false,
+      activityTitle: '活动',
+      promoted: [],
+    }),
+  } as unknown as ActivityAllocationService;
+  const access = new ActivityRegistrationAccessService(
+    prisma as unknown as PrismaService,
+    rbacMock,
+    authz as unknown as AuthzService,
+  );
   return new ActivityRegistrationsService(
     prisma as unknown as PrismaService,
+    access,
+    new ActivityRegistrationCreateService(
+      prisma as unknown as PrismaService,
+      access,
+      recorder as unknown as ActivityRegistrationAuditRecorder,
+      insuranceRequirement as unknown as InsuranceRequirementService,
+      qualificationEvaluator as unknown as ActivityQualificationEvaluatorService,
+      participationPolicy,
+      presenterReal,
+    ),
+    new ActivityRegistrationReviewService(
+      prisma as unknown as PrismaService,
+      access,
+      recorder as unknown as ActivityRegistrationAuditRecorder,
+      stateMachine,
+      auditLogsMock,
+      insuranceRequirement as unknown as InsuranceRequirementService,
+      qualificationEvaluator as unknown as ActivityQualificationEvaluatorService,
+      notificationProducer as unknown as ActivityRegistrationNotificationProducer,
+      participationPolicy,
+      lifecycleMock,
+      allocationsMock,
+      presenterReal,
+    ),
     recorder as unknown as ActivityRegistrationAuditRecorder,
     stateMachine,
-    { log: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogsService,
-    makeRbacMock() as unknown as RbacService,
+    auditLogsMock,
+    rbacMock,
     authz as unknown as AuthzService,
     insuranceRequirement as unknown as InsuranceRequirementService,
     qualificationEvaluator as unknown as ActivityQualificationEvaluatorService,
     notificationProducer as unknown as ActivityRegistrationNotificationProducer,
     organizations as unknown as OrganizationsService,
-    new ActivityParticipationPolicy(),
+    participationPolicy,
     makeWaitlistQueryMock() as unknown as ActivityRegistrationWaitlistQueryService,
-    makeRegistrationLifecycleMock() as unknown as ActivityRegistrationLifecycleService,
-    {
-      promoteAfterCancellationInTransactionTrusted: jest.fn().mockResolvedValue({
-        handled: false,
-        activityTitle: '活动',
-        promoted: [],
-      }),
-    } as unknown as ActivityAllocationService,
+    lifecycleMock,
+    allocationsMock,
     // Phase 6-B 第三域第一刀:传**真实实例**并喂同一个 prisma mock —— 读路径的既有
     // characterization 断言(where / select / orderBy / skip / take)因此继续经新类落到
     // 同一个 mock 上,断言一字未改即证「搬家零漂移」。传 mock 反而会把被测行为挖空。
     new ActivityRegistrationQueryService(prisma as unknown as PrismaService),
     // Phase 6-B 第三域第二刀:Presenter 传**真实实例**而非 mock(零依赖纯映射类)——
     // DTO mapping 的既有 characterization 断言因此经真实序列化路径,直接锁「搬家零漂移」。
-    new ActivityRegistrationPresenter(),
+    presenterReal,
   );
 }
 
