@@ -188,6 +188,12 @@
       "subdomain": "people",
       "confirmed": true
     },
+    "MemberAudienceTagAssignment": {
+      "domain": "identity-org",
+      "ownerModule": "members",
+      "subdomain": "people",
+      "confirmed": true
+    },
     "MemberOrganizationMembership": {
       "domain": "identity-org",
       "ownerModule": "member-departments",
