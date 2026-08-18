@@ -1207,6 +1207,53 @@ describe('活动业务改造 v1.1 合同完整性', () => {
     expect(BATCH6_CLOSEOUT_ACCEPTANCE_IDS.length).toBe(4);
   });
 
+  /**
+   * 上面那条只守**第 6 批**这一个实例 —— 第 7 批第一刀实测:把本批 destinations 从
+   * `ACCEPTANCE_DESTINATION_TABLES` 里摘掉,编号静默退回 todo(42→43),而整套仍然全绿。
+   * 也就是说「接通」这件事在**新批次**上没有执行位。
+   *
+   * 所以这条守的是**类**而不是实例:凡是登记了去向的批次,都必须能从查表链里被解析到。
+   * 以后新增一批只要把它登进下面的 `SECTIONS`,漏接那一行当场红。
+   */
+  it('每一个登记了去向的批次都真的接进了查表链(守类,不守某一批)', () => {
+    const SECTIONS: ReadonlyArray<{
+      name: string;
+      table: Readonly<Record<string, readonly AcceptanceDestination[]>>;
+    }> = [
+      { name: 'BATCH2', table: BATCH2_ACCEPTANCE_DESTINATIONS },
+      { name: 'BATCH3_SLICE1', table: BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS },
+      { name: 'BATCH4_REGISTRATION_COMMAND', table: BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS },
+      { name: 'BATCH4_QUALIFICATION_RUNTIME', table: BATCH4_QUALIFICATION_RUNTIME_ACCEPTANCE_DESTINATIONS },
+      { name: 'BATCH4_ONSITE_PARTICIPATION', table: BATCH4_ONSITE_PARTICIPATION_ACCEPTANCE_DESTINATIONS },
+      { name: 'BATCH4_INVITATION_VISITOR', table: BATCH4_INVITATION_VISITOR_ACCEPTANCE_DESTINATIONS },
+      { name: 'BATCH4_ACTIVITY_START_EXPIRY', table: BATCH4_ACTIVITY_START_EXPIRY_ACCEPTANCE_DESTINATIONS },
+      { name: 'BATCH4_PERMANENT_REGISTRATION', table: BATCH4_PERMANENT_REGISTRATION_ACCEPTANCE_DESTINATIONS },
+      { name: 'BATCH5_SELF_PUNCH', table: BATCH5_SELF_PUNCH_ACCEPTANCE_DESTINATIONS },
+      { name: 'BATCH6_CLOSEOUT', table: BATCH6_CLOSEOUT_ACCEPTANCE_DESTINATIONS },
+      { name: 'BATCH7_RECIPIENT_FREEZE', table: BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_DESTINATIONS },
+    ];
+
+    // ① 每张登记表都必须**按对象标识**出现在查表链里 —— 摘掉那一行当场红。
+    const missingTables = SECTIONS.filter(
+      (section) => !ACCEPTANCE_DESTINATION_TABLES.includes(section.table),
+    ).map((section) => section.name);
+    expect({ 没接进查表链的登记表: missingTables }).toEqual({ 没接进查表链的登记表: [] });
+
+    // ② 每个登记了去向的编号都必须能被解析到(防止被别的表同名键遮蔽)。
+    const unresolved = SECTIONS.flatMap((section) =>
+      Object.keys(section.table)
+        .filter((id) => resolveAcceptanceDestinations(id) === undefined)
+        .map((id) => `${section.name}:${id}`),
+    );
+    expect({ 登记了去向却解析不到的编号: unresolved }).toEqual({
+      登记了去向却解析不到的编号: [],
+    });
+
+    // ③ 反向:清单与查表链**条数相等** —— 少登记一张表不产生坏链接,只靠 ① 看不见它。
+    expect(SECTIONS.length).toBe(ACCEPTANCE_DESTINATION_TABLES.length);
+    expect(SECTIONS.length).toBeGreaterThan(0);
+  });
+
   it('活文档仍指向本合同目录(指针被删则红)', () => {
     const currentState = readFileSync(resolve(process.cwd(), 'docs/current-state.md'), 'utf8');
     const nextTasks = readFileSync(resolve(process.cwd(), 'docs/ai-harness/NEXT_TASKS.md'), 'utf8');
