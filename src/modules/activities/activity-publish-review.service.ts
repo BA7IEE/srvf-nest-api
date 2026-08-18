@@ -1,8 +1,6 @@
-import { createHash, randomUUID } from 'node:crypto';
-
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { DictItemStatus, DictTypeStatus, MemberStatus, Prisma } from '@prisma/client';
+import { MemberStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -13,22 +11,17 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   ApproveActivityPublishReviewDto,
   ActivityPublishReviewResponseDto,
-  ChangeReviewDto,
   ReturnActivityPublishReviewDto,
-  SubmitActivityPublishReviewDto,
 } from './activity-publish-review.dto';
 import { ActivityPublishReviewAuditRecorder } from './activity-publish-review-audit-recorder';
 import {
   ActivityPublishReviewPresenter,
   readActivityPublishReviewAudienceTagCodes,
-  type ActivityPublishReviewViewRow,
   activityPublishReviewViewSelect,
 } from './activity-publish-review-presenter';
 import { ActivityPublishReviewStateMachine } from './activity-publish-review-state-machine';
 import { ActivityResponsibilityService } from './activity-responsibility.service';
 import { ActivityResponsibilityPolicy } from './activity-responsibility-policy';
-import type { UpdateActivityDto } from './activities.dto';
-import type { AppActivityChangePositionDto } from './dto/app/app-managed-activity.dto';
 import { ActivityProposalValidator } from './activity-proposal-validator';
 import { ActivityProposalApplier } from './activity-proposal-applier';
 import { ActivityNotificationProducer } from './activity-notification-producer';
@@ -40,19 +33,22 @@ import {
   type ActivityTemplateResolutionWithQualificationRules,
 } from './activity-publish-proposal-v2.service';
 import {
+  buildProposalSnapshot,
+  ensureInitialPublishable,
+  lockActivity,
+  resolveActiveAudienceTagIds,
+  type PrismaTx,
+} from './activity-publish-review-access';
+import {
+  activityPublishReviewIdempotencySelect,
+  canonicalJson,
+  hashCanonical,
+} from './activity-publish-review-idempotency';
+import { ActivityPublishReviewSubmitService } from './activity-publish-review-submit.service';
+import {
   parseActivityProposalSnapshot,
   type ActivityProposalSnapshot,
 } from './activity-proposal.types';
-
-type PrismaTx = Prisma.TransactionClient;
-
-const activityPublishReviewIdempotencySelect = {
-  ...activityPublishReviewViewSelect,
-  requestHash: true,
-  reviewRequestHash: true,
-} as const satisfies Prisma.ActivityPublishReviewSelect;
-
-const DICT_TYPE_MEMBER_AUDIENCE_TAG = 'member_audience_tag';
 
 interface PublishedActivityEffect {
   activityId: string;
@@ -63,24 +59,6 @@ interface PublishedActivityEffect {
   requiresInsurance: boolean;
   isPublicRegistration: boolean;
   initiatorMemberId: string | null;
-}
-
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => canonicalJson(item)).join(',')}]`;
-  }
-  if (value !== null && typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(value);
-}
-
-function hashCanonical(value: unknown): string {
-  return createHash('sha256').update(canonicalJson(value), 'utf8').digest('hex');
 }
 
 @Injectable()
@@ -102,15 +80,49 @@ export class ActivityPublishReviewService {
     private readonly allocationModes: ActivityAllocationModeService,
     @Inject(appConfig.KEY)
     private readonly config: ConfigType<typeof appConfig>,
+    private readonly submit: ActivityPublishReviewSubmitService,
   ) {}
 
-  private async lockActivity(activityId: string, tx: PrismaTx): Promise<void> {
-    const rows = await tx.$queryRaw<Array<{ id: string }>>`
-      SELECT id FROM "Activity"
-      WHERE id = ${activityId} AND "deletedAt" IS NULL
-      FOR UPDATE
-    `;
-    if (rows.length === 0) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+  async submitInitial(
+    ...args: Parameters<ActivityPublishReviewSubmitService['submitInitial']>
+  ): ReturnType<ActivityPublishReviewSubmitService['submitInitial']> {
+    return this.submit.submitInitial(...args);
+  }
+
+  async submitChange(
+    ...args: Parameters<ActivityPublishReviewSubmitService['submitChange']>
+  ): ReturnType<ActivityPublishReviewSubmitService['submitChange']> {
+    return this.submit.submitChange(...args);
+  }
+
+  async submitInitialProposal(
+    ...args: Parameters<ActivityPublishReviewSubmitService['submitInitialProposal']>
+  ): ReturnType<ActivityPublishReviewSubmitService['submitInitialProposal']> {
+    return this.submit.submitInitialProposal(...args);
+  }
+
+  async submitChangeProposal(
+    ...args: Parameters<ActivityPublishReviewSubmitService['submitChangeProposal']>
+  ): ReturnType<ActivityPublishReviewSubmitService['submitChangeProposal']> {
+    return this.submit.submitChangeProposal(...args);
+  }
+
+  async templateResolution(
+    ...args: Parameters<ActivityPublishReviewSubmitService['templateResolution']>
+  ): ReturnType<ActivityPublishReviewSubmitService['templateResolution']> {
+    return this.submit.templateResolution(...args);
+  }
+
+  async compatibilityPublish(
+    ...args: Parameters<ActivityPublishReviewSubmitService['compatibilityPublish']>
+  ): ReturnType<ActivityPublishReviewSubmitService['compatibilityPublish']> {
+    return this.submit.compatibilityPublish(...args);
+  }
+
+  async compatibilityPublishWithAudienceTags(
+    ...args: Parameters<ActivityPublishReviewSubmitService['compatibilityPublishWithAudienceTags']>
+  ): ReturnType<ActivityPublishReviewSubmitService['compatibilityPublishWithAudienceTags']> {
+    return this.submit.compatibilityPublishWithAudienceTags(...args);
   }
 
   private async lockReview(reviewId: string, tx: PrismaTx): Promise<void> {
@@ -120,96 +132,6 @@ export class ActivityPublishReviewService {
     if (rows.length === 0) {
       throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_NOT_FOUND);
     }
-  }
-
-  private async snapshot(activityId: string, tx: PrismaTx): Promise<Prisma.InputJsonValue> {
-    const row = await tx.activity.findUniqueOrThrow({
-      where: { id: activityId },
-      select: {
-        title: true,
-        activityTypeCode: true,
-        organizationId: true,
-        startAt: true,
-        endAt: true,
-        location: true,
-        description: true,
-        capacity: true,
-        genderRequirementCode: true,
-        registrationDeadline: true,
-        registrationNotes: true,
-        isPublicRegistration: true,
-        requiresInsurance: true,
-        registrationSchema: true,
-        coverImageUrl: true,
-        galleryImageUrls: true,
-        content: true,
-        locationLongitude: true,
-        locationLatitude: true,
-        activityPositions: {
-          where: { deletedAt: null },
-          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
-          select: {
-            id: true,
-            name: true,
-            attendanceRoleCode: true,
-            capacity: true,
-            startAt: true,
-            endAt: true,
-            genderRequirementCode: true,
-            description: true,
-            sortOrder: true,
-          },
-        },
-      },
-    });
-    this.ensureProposalInvariants(row);
-    const { activityPositions, ...activity } = row;
-    return JSON.parse(
-      JSON.stringify({
-        schemaVersion: 1,
-        activity,
-        positions: activityPositions.map(({ id, ...position }) => ({
-          activityPositionId: id,
-          clientRef: null,
-          ...position,
-        })),
-      }),
-    ) as Prisma.InputJsonValue;
-  }
-
-  private async nextRequestVersion(activityId: string, tx: PrismaTx): Promise<number> {
-    const latest = await tx.activityPublishReview.aggregate({
-      where: { activityId },
-      _max: { requestVersion: true },
-    });
-    return (latest._max.requestVersion ?? 0) + 1;
-  }
-
-  private async resolveActiveAudienceTagIds(
-    tx: PrismaTx,
-    audienceTagCodes: string[],
-  ): Promise<string[]> {
-    if (audienceTagCodes.length === 0) return [];
-    const type = await tx.dictType.findFirst({
-      where: {
-        code: DICT_TYPE_MEMBER_AUDIENCE_TAG,
-        status: DictTypeStatus.ACTIVE,
-        deletedAt: null,
-      },
-      select: { id: true },
-    });
-    if (!type) throw new BizException(BizCode.BAD_REQUEST);
-    const tags = await tx.dictItem.findMany({
-      where: {
-        typeId: type.id,
-        code: { in: audienceTagCodes },
-        status: DictItemStatus.ACTIVE,
-        deletedAt: null,
-      },
-      select: { id: true },
-    });
-    if (tags.length !== audienceTagCodes.length) throw new BizException(BizCode.BAD_REQUEST);
-    return tags.map((tag) => tag.id);
   }
 
   private assertAudienceTagsHttpEnabled(): void {
@@ -229,7 +151,7 @@ export class ActivityPublishReviewService {
       });
       return members.map((member) => member.id).sort();
     }
-    const tagIds = await this.resolveActiveAudienceTagIds(tx, audienceTagCodes);
+    const tagIds = await resolveActiveAudienceTagIds(tx, audienceTagCodes);
     const assignments = await tx.memberAudienceTagAssignment.findMany({
       where: {
         dictItemId: { in: tagIds },
@@ -239,493 +161,6 @@ export class ActivityPublishReviewService {
       select: { memberId: true },
     });
     return [...new Set(assignments.map((assignment) => assignment.memberId))].sort();
-  }
-
-  private ensureInitialPublishable(activity: {
-    statusCode: string;
-    startAt: Date;
-    endAt: Date;
-    registrationDeadline: Date | null;
-  }): void {
-    if (activity.statusCode !== 'draft') {
-      throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
-    }
-    if (activity.startAt.getTime() >= activity.endAt.getTime()) {
-      throw new BizException(BizCode.ACTIVITY_START_END_INVALID);
-    }
-    if (
-      activity.registrationDeadline &&
-      activity.registrationDeadline.getTime() > activity.endAt.getTime()
-    ) {
-      throw new BizException(BizCode.ACTIVITY_REGISTRATION_DEADLINE_INVALID);
-    }
-    const now = Date.now();
-    if (activity.endAt.getTime() <= now) {
-      throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
-    }
-    if (activity.registrationDeadline && activity.registrationDeadline.getTime() < now) {
-      throw new BizException(BizCode.ACTIVITY_REGISTRATION_DEADLINE_PASSED);
-    }
-  }
-
-  private ensureProposalInvariants(activity: {
-    startAt: Date;
-    endAt: Date;
-    capacity: number | null;
-    registrationDeadline: Date | null;
-    activityPositions: Array<{
-      startAt: Date | null;
-      endAt: Date | null;
-      capacity: number | null;
-    }>;
-  }): void {
-    if (activity.startAt.getTime() >= activity.endAt.getTime()) {
-      throw new BizException(BizCode.ACTIVITY_START_END_INVALID);
-    }
-    if (
-      activity.registrationDeadline &&
-      activity.registrationDeadline.getTime() > activity.endAt.getTime()
-    ) {
-      throw new BizException(BizCode.ACTIVITY_REGISTRATION_DEADLINE_INVALID);
-    }
-    for (const position of activity.activityPositions) {
-      if ((position.startAt === null) !== (position.endAt === null)) {
-        throw new BizException(BizCode.ACTIVITY_POSITION_TIME_RANGE_INVALID);
-      }
-      if (
-        position.startAt &&
-        position.endAt &&
-        (position.startAt.getTime() >= position.endAt.getTime() ||
-          position.startAt.getTime() < activity.startAt.getTime() ||
-          position.endAt.getTime() > activity.endAt.getTime())
-      ) {
-        throw new BizException(BizCode.ACTIVITY_POSITION_TIME_RANGE_INVALID);
-      }
-    }
-    if (activity.capacity !== null && activity.activityPositions.length > 0) {
-      if (activity.activityPositions.some((position) => position.capacity === null)) {
-        throw new BizException(BizCode.ACTIVITY_POSITION_CAPACITY_INVALID);
-      }
-      const total = activity.activityPositions.reduce(
-        (sum, position) => sum + (position.capacity ?? 0),
-        0,
-      );
-      if (total > activity.capacity) {
-        throw new BizException(BizCode.ACTIVITY_POSITION_CAPACITY_INVALID);
-      }
-    }
-  }
-
-  async submitInitial(
-    activityId: string,
-    user: CurrentUserPayload,
-    auditMeta: AuditMeta,
-  ): Promise<ActivityPublishReviewResponseDto> {
-    try {
-      const row = await this.prisma.$transaction(async (tx) => {
-        await this.lockActivity(activityId, tx);
-        const activity = await tx.activity.findUniqueOrThrow({
-          where: { id: activityId },
-          select: {
-            statusCode: true,
-            workflowRevision: true,
-            allocationModeCode: true,
-            initiatorMemberId: true,
-            startAt: true,
-            endAt: true,
-            registrationDeadline: true,
-          },
-        });
-        if (!user.memberId || activity.initiatorMemberId !== user.memberId) {
-          throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-        }
-        await this.allocationModes.assertLockedActivityConsistent(tx, {
-          id: activityId,
-          allocationModeCode: activity.allocationModeCode,
-        });
-        this.ensureInitialPublishable(activity);
-        const decision = this.stateMachine.decide('submit');
-        if (!decision.allowed) throw new BizException(decision.biz);
-        const review = await tx.activityPublishReview.create({
-          data: {
-            activityId,
-            requestType: 'initial',
-            requestVersion: await this.nextRequestVersion(activityId, tx),
-            baseRevision: activity.workflowRevision,
-            status: decision.nextStatus,
-            snapshot: await this.snapshot(activityId, tx),
-            submittedByUserId: user.id,
-          },
-          select: activityPublishReviewViewSelect,
-        });
-        await this.audit.log({
-          activityId,
-          reviewId: review.id,
-          operation: 'publish-review-submit',
-          requestVersion: review.requestVersion,
-          requestType: review.requestType,
-          directPublish: false,
-          actorUserId: user.id,
-          actorRoleSnap: user.role,
-          auditMeta,
-          tx,
-        });
-        return review;
-      });
-      return this.presenter.toDto(row);
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
-      }
-      throw error;
-    }
-  }
-
-  async submitChange(
-    activityId: string,
-    activityPatch: UpdateActivityDto,
-    positions: AppActivityChangePositionDto[] | undefined,
-    user: CurrentUserPayload,
-    auditMeta: AuditMeta,
-  ): Promise<ActivityPublishReviewResponseDto> {
-    try {
-      const row = await this.prisma.$transaction(async (tx) => {
-        await this.lockActivity(activityId, tx);
-        const activity = await tx.activity.findUniqueOrThrow({
-          where: { id: activityId },
-          select: { statusCode: true, workflowRevision: true, allocationModeCode: true },
-        });
-        if (activity.statusCode !== 'published') {
-          throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
-        }
-        await this.allocationModes.assertLockedActivityConsistent(tx, {
-          id: activityId,
-          allocationModeCode: activity.allocationModeCode,
-        });
-        await this.responsibilityPolicy.assertOwner(tx, activityId, user);
-        const pendingCount = await tx.activityPublishReview.count({
-          where: { activityId, status: 'pending' },
-        });
-        if (pendingCount > 0) {
-          throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
-        }
-        const decision = this.stateMachine.decide('submit');
-        if (!decision.allowed) throw new BizException(decision.biz);
-        const snapshot = await this.proposalValidator.buildChangeSnapshot(
-          tx,
-          activityId,
-          activityPatch,
-          positions,
-        );
-        await this.allocationModes.assertLockedActivityConsistent(tx, {
-          id: activityId,
-          allocationModeCode: snapshot.activity.allocationModeCode ?? activity.allocationModeCode,
-        });
-        const review = await tx.activityPublishReview.create({
-          data: {
-            activityId,
-            requestType: 'change',
-            requestVersion: await this.nextRequestVersion(activityId, tx),
-            baseRevision: activity.workflowRevision,
-            status: decision.nextStatus,
-            snapshot: JSON.parse(JSON.stringify(snapshot)) as Prisma.InputJsonValue,
-            submittedByUserId: user.id,
-          },
-          select: activityPublishReviewViewSelect,
-        });
-        await this.audit.log({
-          activityId,
-          reviewId: review.id,
-          operation: 'publish-review-submit',
-          requestVersion: review.requestVersion,
-          requestType: review.requestType,
-          directPublish: false,
-          actorUserId: user.id,
-          actorRoleSnap: user.role,
-          auditMeta,
-          tx,
-        });
-        return review;
-      });
-      return this.presenter.toDto(row);
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
-      }
-      throw error;
-    }
-  }
-
-  /** V2 App endpoint: the initial proposal is a server-side snapshot under the Activity row lock. */
-  async submitInitialProposal(
-    activityId: string,
-    dto: SubmitActivityPublishReviewDto,
-    user: CurrentUserPayload,
-    auditMeta: AuditMeta,
-  ): Promise<ActivityPublishReviewResponseDto> {
-    return this.submitInitialProposalInternal(activityId, dto, user, auditMeta, null);
-  }
-
-  private async submitInitialProposalInternal(
-    activityId: string,
-    dto: SubmitActivityPublishReviewDto,
-    user: CurrentUserPayload,
-    auditMeta: AuditMeta,
-    audienceTagCodes: string[] | null,
-  ): Promise<ActivityPublishReviewResponseDto> {
-    const requestHash =
-      audienceTagCodes === null
-        ? this.submitRequestHash('initial', activityId, dto)
-        : hashCanonical({ requestType: 'initial', activityId, dto, audienceTagCodes });
-    try {
-      const row = await this.prisma.$transaction(async (tx) => {
-        await this.lockActivity(activityId, tx);
-        const activity = await tx.activity.findUniqueOrThrow({
-          where: { id: activityId },
-          select: {
-            statusCode: true,
-            workflowRevision: true,
-            allocationModeCode: true,
-            initiatorMemberId: true,
-            startAt: true,
-            endAt: true,
-            registrationDeadline: true,
-            isPublicRegistration: true,
-          },
-        });
-        if (!user.memberId || activity.initiatorMemberId !== user.memberId) {
-          throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-        }
-        await this.allocationModes.assertLockedActivityConsistent(tx, {
-          id: activityId,
-          allocationModeCode: activity.allocationModeCode,
-        });
-        const replay = await this.findSubmitReplay(tx, dto.operationKey, requestHash);
-        if (replay) return replay;
-        this.ensureInitialPublishable(activity);
-        if (audienceTagCodes !== null) {
-          if (!activity.isPublicRegistration) throw new BizException(BizCode.BAD_REQUEST);
-          await this.resolveActiveAudienceTagIds(tx, audienceTagCodes);
-        }
-        const pending = await tx.activityPublishReview.count({
-          where: { activityId, status: 'pending' },
-        });
-        if (pending > 0) throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
-        const decision = this.stateMachine.decide('submit');
-        if (!decision.allowed) throw new BizException(decision.biz);
-        const snapshot = await this.proposalV2.buildInitial(tx, activityId);
-        const review = await tx.activityPublishReview.create({
-          data: {
-            activityId,
-            requestType: 'initial',
-            requestVersion: await this.nextRequestVersion(activityId, tx),
-            baseRevision: activity.workflowRevision,
-            status: decision.nextStatus,
-            snapshot: JSON.parse(JSON.stringify(snapshot)) as Prisma.InputJsonValue,
-            submittedByUserId: user.id,
-            operationKey: dto.operationKey,
-            requestHash,
-            ...(audienceTagCodes === null
-              ? {}
-              : {
-                  audienceTagCodes: JSON.parse(
-                    JSON.stringify(audienceTagCodes),
-                  ) as Prisma.InputJsonValue,
-                }),
-          },
-          select: activityPublishReviewViewSelect,
-        });
-        await this.audit.log({
-          activityId,
-          reviewId: review.id,
-          operation: 'publish-review-submit',
-          requestVersion: review.requestVersion,
-          requestType: review.requestType,
-          directPublish: false,
-          actorUserId: user.id,
-          actorRoleSnap: user.role,
-          auditMeta,
-          tx,
-        });
-        return review;
-      });
-      return this.presenter.toDto(row);
-    } catch (error) {
-      return this.rethrowSubmitOperationKeyConflict(error, dto.operationKey, requestHash);
-    }
-  }
-
-  /** V2 App endpoint: a single collection command covers session/position create, update and cancel. */
-  async submitChangeProposal(
-    activityId: string,
-    dto: ChangeReviewDto,
-    user: CurrentUserPayload,
-    auditMeta: AuditMeta,
-  ): Promise<ActivityPublishReviewResponseDto> {
-    const requestHash = this.submitRequestHash('change', activityId, dto);
-    try {
-      const row = await this.prisma.$transaction(async (tx) => {
-        await this.lockActivity(activityId, tx);
-        const activity = await tx.activity.findUniqueOrThrow({
-          where: { id: activityId },
-          select: {
-            statusCode: true,
-            workflowRevision: true,
-            organizationId: true,
-            allocationModeCode: true,
-          },
-        });
-        // Ownership precedes lifecycle disclosure on the App surface: callers outside the
-        // responsibility graph must not distinguish a draft from a published activity.
-        await this.assertOwnerHidden(tx, activityId, user);
-        await this.allocationModes.assertLockedActivityConsistent(tx, {
-          id: activityId,
-          allocationModeCode: activity.allocationModeCode,
-        });
-        if (activity.statusCode !== 'published') {
-          throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
-        }
-        const replay = await this.findSubmitReplay(tx, dto.operationKey, requestHash);
-        if (replay) return replay;
-        const pending = await tx.activityPublishReview.count({
-          where: { activityId, status: 'pending' },
-        });
-        if (pending > 0) throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
-        const decision = this.stateMachine.decide('submit');
-        if (!decision.allowed) throw new BizException(decision.biz);
-        const snapshot = await this.proposalV2.buildChange(tx, activityId, dto);
-        await this.allocationModes.assertLockedActivityConsistent(tx, {
-          id: activityId,
-          allocationModeCode: snapshot.activity.allocationModeCode,
-        });
-        this.proposalValidator.assertOrganizationUnchanged(
-          activity.organizationId,
-          snapshot.activity.organizationId,
-        );
-        const review = await tx.activityPublishReview.create({
-          data: {
-            activityId,
-            requestType: 'change',
-            requestVersion: await this.nextRequestVersion(activityId, tx),
-            baseRevision: activity.workflowRevision,
-            status: decision.nextStatus,
-            snapshot: JSON.parse(JSON.stringify(snapshot)) as Prisma.InputJsonValue,
-            submittedByUserId: user.id,
-            operationKey: dto.operationKey,
-            requestHash,
-          },
-          select: activityPublishReviewViewSelect,
-        });
-        await this.audit.log({
-          activityId,
-          reviewId: review.id,
-          operation: 'publish-review-submit',
-          requestVersion: review.requestVersion,
-          requestType: review.requestType,
-          directPublish: false,
-          actorUserId: user.id,
-          actorRoleSnap: user.role,
-          auditMeta,
-          tx,
-        });
-        return review;
-      });
-      return this.presenter.toDto(row);
-    } catch (error) {
-      return this.rethrowSubmitOperationKeyConflict(error, dto.operationKey, requestHash);
-    }
-  }
-
-  async templateResolution(
-    activityId: string,
-    user: CurrentUserPayload,
-  ): Promise<ActivityTemplateResolution> {
-    return this.prisma.$transaction(async (tx) => {
-      await this.lockActivity(activityId, tx);
-      const activity = await tx.activity.findUniqueOrThrow({
-        where: { id: activityId },
-        select: { initiatorMemberId: true },
-      });
-      if (!user.memberId || activity.initiatorMemberId !== user.memberId) {
-        const owner = await tx.activityResponsibilityAssignment.findFirst({
-          where: {
-            activityId,
-            memberId: user.memberId ?? '__missing__',
-            responsibilityType: 'owner',
-            status: 'active',
-          },
-          select: { id: true },
-        });
-        if (!owner) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-      }
-      return this.proposalV2.getTemplateResolution(tx, activityId);
-    });
-  }
-
-  async compatibilityPublish(
-    activityId: string,
-    dto: { requiresInsuranceConfirmed: boolean },
-    user: CurrentUserPayload,
-    auditMeta: AuditMeta,
-  ): Promise<ActivityPublishReviewResponseDto> {
-    if (dto.requiresInsuranceConfirmed !== true) throw new BizException(BizCode.BAD_REQUEST);
-    const pending = await this.prisma.activityPublishReview.findFirst({
-      where: { activityId, requestType: 'initial', status: 'pending' },
-      select: activityPublishReviewViewSelect,
-    });
-    if (pending) {
-      // Compatibility routes may only guide the caller into the review workflow. They never approve.
-      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
-    }
-    const activity = await this.prisma.activity.findFirst({
-      where: { id: activityId, deletedAt: null },
-      select: { initiatorMemberId: true, statusCode: true },
-    });
-    if (!activity) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-    if (!user.memberId || activity.initiatorMemberId !== user.memberId) {
-      throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-    }
-    if (activity.statusCode !== 'draft') throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
-    // Old direct-publish routes lack a client key, therefore this bridge makes a fresh submit attempt.
-    // The locked submit path still rejects concurrent attempts once one pending review exists.
-    return this.submitInitialProposal(
-      activityId,
-      { operationKey: `compat-publish:${randomUUID()}`, confirmation: true },
-      user,
-      auditMeta,
-    );
-  }
-
-  async compatibilityPublishWithAudienceTags(
-    activityId: string,
-    dto: { requiresInsuranceConfirmed: boolean; audienceTagCodes: string[] },
-    user: CurrentUserPayload,
-    auditMeta: AuditMeta,
-  ): Promise<ActivityPublishReviewResponseDto> {
-    if (dto.requiresInsuranceConfirmed !== true) throw new BizException(BizCode.BAD_REQUEST);
-    const pending = await this.prisma.activityPublishReview.findFirst({
-      where: { activityId, requestType: 'initial', status: 'pending' },
-      select: activityPublishReviewViewSelect,
-    });
-    if (pending) {
-      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
-    }
-    const activity = await this.prisma.activity.findFirst({
-      where: { id: activityId, deletedAt: null },
-      select: { initiatorMemberId: true, statusCode: true },
-    });
-    if (!activity) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-    if (!user.memberId || activity.initiatorMemberId !== user.memberId) {
-      throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-    }
-    if (activity.statusCode !== 'draft') throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
-    return this.submitInitialProposalInternal(
-      activityId,
-      { operationKey: `compat-publish-audience:${randomUUID()}`, confirmation: true },
-      user,
-      auditMeta,
-      dto.audienceTagCodes,
-    );
   }
 
   async approve(
@@ -757,7 +192,7 @@ export class ActivityPublishReviewService {
     let result: { dto: ActivityPublishReviewResponseDto; missingChangeOwner: boolean };
     try {
       result = await this.prisma.$transaction(async (tx) => {
-        await this.lockActivity(seed.activityId, tx);
+        await lockActivity(seed.activityId, tx);
         await this.lockReview(reviewId, tx);
         const review = await tx.activityPublishReview.findUniqueOrThrow({
           where: { id: reviewId },
@@ -813,11 +248,11 @@ export class ActivityPublishReviewService {
         }
         let changeSnapshot: ActivityProposalSnapshot | null = null;
         if (review.requestType === 'initial') {
-          const currentSnapshot = await this.snapshot(review.activityId, tx);
+          const currentSnapshot = await buildProposalSnapshot(review.activityId, tx);
           if (canonicalJson(currentSnapshot) !== canonicalJson(review.snapshot)) {
             throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
           }
-          this.ensureInitialPublishable(activity);
+          ensureInitialPublishable(activity);
         } else {
           if (activity.statusCode !== 'published') {
             throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
@@ -1057,7 +492,7 @@ export class ActivityPublishReviewService {
           : activity.allocationModeCode,
     });
     if (review.requestType === 'initial') {
-      this.ensureInitialPublishable(activity);
+      ensureInitialPublishable(activity);
     } else if (activity.statusCode !== 'published') {
       throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_EXPECTED_SNAPSHOT_MISMATCH);
     }
@@ -1214,7 +649,7 @@ export class ActivityPublishReviewService {
     let result: { dto: ActivityPublishReviewResponseDto; missingChangeOwner: boolean };
     try {
       result = await this.prisma.$transaction(async (tx) => {
-        await this.lockActivity(seed.activityId, tx);
+        await lockActivity(seed.activityId, tx);
         await this.lockReview(reviewId, tx);
         const review = await tx.activityPublishReview.findUniqueOrThrow({
           where: { id: reviewId },
@@ -1311,7 +746,7 @@ export class ActivityPublishReviewService {
     });
     if (!seed) throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_NOT_FOUND);
     const row = await this.prisma.$transaction(async (tx) => {
-      await this.lockActivity(seed.activityId, tx);
+      await lockActivity(seed.activityId, tx);
       await this.lockReview(reviewId, tx);
       const review = await tx.activityPublishReview.findUniqueOrThrow({ where: { id: reviewId } });
       if (review.submittedByUserId !== user.id) throw new BizException(BizCode.RBAC_FORBIDDEN);
@@ -1361,18 +796,6 @@ export class ActivityPublishReviewService {
     if (count > 0) throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
   }
 
-  private submitRequestHash(
-    action: 'initial' | 'change',
-    activityId: string,
-    dto: SubmitActivityPublishReviewDto | ChangeReviewDto,
-  ): string {
-    return hashCanonical({
-      action: `publish-review-submit:${action}`,
-      activityId,
-      payload: dto,
-    });
-  }
-
   private reviewRequestHash(
     action: 'approve' | 'return',
     reviewId: string,
@@ -1383,41 +806,6 @@ export class ActivityPublishReviewService {
       reviewId,
       payload: dto,
     });
-  }
-
-  /** App-owned proposal routes follow the draft surface's NOT_FOUND masking contract. */
-  private async assertOwnerHidden(
-    tx: PrismaTx,
-    activityId: string,
-    user: CurrentUserPayload,
-  ): Promise<void> {
-    if (!user.memberId) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-    const owner = await tx.activityResponsibilityAssignment.findFirst({
-      where: {
-        activityId,
-        memberId: user.memberId,
-        responsibilityType: 'owner',
-        status: 'active',
-      },
-      select: { id: true },
-    });
-    if (!owner) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-  }
-
-  private async findSubmitReplay(
-    tx: PrismaTx,
-    operationKey: string,
-    requestHash: string,
-  ): Promise<ActivityPublishReviewViewRow | null> {
-    const existing = await tx.activityPublishReview.findUnique({
-      where: { operationKey },
-      select: activityPublishReviewIdempotencySelect,
-    });
-    if (!existing) return null;
-    if (existing.requestHash !== requestHash) {
-      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_OPERATION_KEY_CONFLICT);
-    }
-    return existing;
   }
 
   private async findReviewReplay(
@@ -1434,24 +822,6 @@ export class ActivityPublishReviewService {
       throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_OPERATION_KEY_CONFLICT);
     }
     return this.presenter.toDto(existing);
-  }
-
-  private async rethrowSubmitOperationKeyConflict(
-    error: unknown,
-    operationKey: string,
-    requestHash: string,
-  ): Promise<ActivityPublishReviewResponseDto> {
-    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
-      throw error;
-    }
-    const existing = await this.prisma.activityPublishReview.findUnique({
-      where: { operationKey },
-      select: activityPublishReviewIdempotencySelect,
-    });
-    if (existing && existing.requestHash === requestHash) {
-      return this.presenter.toDto(existing);
-    }
-    throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_OPERATION_KEY_CONFLICT);
   }
 
   private async rethrowReviewOperationKeyConflict(

@@ -33,6 +33,7 @@ import { ActivityPublishReviewStateMachine } from './activity-publish-review-sta
 import { ActivityPublishReviewPresenter } from './activity-publish-review-presenter';
 import { ActivityPublishReviewAuditRecorder } from './activity-publish-review-audit-recorder';
 import { ActivityPublishReviewService } from './activity-publish-review.service';
+import { ActivityPublishReviewSubmitService } from './activity-publish-review-submit.service';
 import { ActivityPublishProposalV2Service } from './activity-publish-proposal-v2.service';
 import { ActivityPublishReviewQueryService } from './activity-publish-review-query.service';
 import { AdminActivityPublishReviewsController } from './controllers/admin-activity-publish-reviews.controller';
@@ -176,6 +177,7 @@ import { AttendancesModule } from '../attendances/attendances.module';
     ActivityMemberOffboardImpactService,
     ActivityWorkflowQueryService,
     ActivityPublishReviewService,
+    ActivityPublishReviewSubmitService,
     ActivityPublishReviewQueryService,
     ActivityResponsibilityPolicy,
     ActivityResponsibilityGrantProjector,
