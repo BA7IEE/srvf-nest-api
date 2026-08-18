@@ -37,3 +37,8 @@ tmp
 
 # Claude Code worktrees (per-session; auto-created, not part of repo)
 .claude/worktrees/
+
+# Qoder Repo Wiki 与本地 PDF 导出产物(IDE 生成 + venv/缓存,体积大且可随时重新生成)
+# 重新导出:./export-wiki-pdf.sh
+.qoder/
+Repo-Wiki-Complete.pdf

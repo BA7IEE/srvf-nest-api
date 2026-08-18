@@ -649,6 +649,10 @@ const BATCH5_SELF_PUNCH_ACCEPTANCE_DESTINATIONS: Readonly<
       file: 'src/modules/attendances/attendance-punch-location-policy.spec.ts',
       needle: 'accepts exact center and reports low accuracy without widening the radius',
     },
+    {
+      file: 'src/modules/attendances/attendance-punch-location-policy.spec.ts',
+      needle: 'keeps an out-of-range point rejected even when accuracy is low',
+    },
   ],
   'AC-036': [
     {
