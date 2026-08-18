@@ -454,6 +454,15 @@
 - **已知行为契约冲突**(实施期逐条走 §4.1 简报,禁止在实施 PR 内顺手改断言):
   删 `directPublish` 成功路径 · 普通签退 36 秒 → 30 分钟 · 终审从写 `approved` 改为提交
   `LedgerPostingBatch` · 统计读面从实时 approved 改为 committed batch。
+  **⇒ 维护者 2026-08-19 拍板:「改口径 + 加在途显示」**(第 7 批第二刀)。
+  影响面(主会话实测):7 个端点 —— `app/v1/my/participation-summary` ·
+  `admin/v1/members/:id/{participation-summary,contribution-summary,attendance-records}` ·
+  `admin/v1/activities/:id/{participation-summary,reconciliation,participation-ledger}`;
+  四个数字(总服务时长 / 参与活动数 / 记录条数 / 贡献值)取数从
+  `attendanceRecord + sheet.statusCode='approved'` 改为 committed 账本分录。
+  ⚠️ 落差不是几秒:审核通过 → 结算生成/提交 → 一审 → 终审 → 批次 preparing/ready → committed,
+  每步都可能停在人手里数天 ⇒ **队员会看到「考勤批了但时长不涨」**,故须同时给出
+  「已生效 / 在途」两个口径,**数字不合并、但让人看得见**。
 - **排班约束**:schema-touching lane ≤1(合同 §14.1 与仓库 lane 协议一致);
   第 1、2 批未完成前禁止把二维码 / 批量代签 / 离线入口开放到真实环境(修订说明 §10)。
 
