@@ -11,7 +11,7 @@ import * as ts from 'typescript';
 // 在库钟持续快于应用钟时永不成立 ⇒ 任务永不可领;任期 `startedAt <= now` 同理 ⇒ 刚发的
 // 角色在判权侧「尚未生效」。没有报错、没有异常,只是「什么都不发生」—— 最难查的一类。
 //
-// 本 spec 不修实例,它让这个类**长不回来**。三道断言:
+// 本 spec 不修实例,它让这个类**长不回来**。四道断言:
 //
 //   ① 完整性硬闸:`prisma/schema.prisma` 里每一个非审计的 `@default(now())` 列,必须**要么**
 //      登记在 CLOCK_CRITICAL_COLUMNS(参与判定),**要么**登记在 NOT_CLOCK_CRITICAL(不参与,
@@ -21,13 +21,25 @@ import * as ts from 'typescript';
 //   ② 判定点仍在:每条登记项声明自己的判定点(文件 + 判定表达式原文 + 时钟来源)。判定点
 //      被删/被改写 ⇒ 红。防的是「把判定悄悄换成库时钟、登记表还写着应用时钟」。
 //
-//   ③ 写侧显式:登记列所在的每一个 `create / createMany / upsert` 写点,其**每一个行对象**
-//      都必须显式写出该列,且值表达式与登记表逐字一致。
-//      - 漏写 ⇒ 吃 DB 的 `@default(now())`(库时钟)⇒ 红,失败信息给出 file:line。
-//      - 改写成别的表达式 ⇒ 登记表对不上 ⇒ 红,逼人把新的时钟来源写进登记表。
+//   ③ 写侧显式:登记列所在的每一个 `create / createMany / update / updateMany / upsert`
+//      写点,其**每一个行对象**都必须显式写出该列,且值表达式与登记表逐字一致。
+//      - INSERT 漏写 ⇒ 吃 DB 的 `@default(now())`(库时钟)⇒ 红,失败信息给出 file:line。
+//        UPDATE 漏写**不算**缺陷(该列原样不动,`@default(now())` 只在 INSERT 生效)。
+//      - 任一腿改写成别的表达式 ⇒ 登记表对不上 ⇒ 红,逼人把新的时钟来源写进登记表。
 //      - 新增写点 ⇒ 不在登记表 ⇒ 红。
 //      判据走 TypeScript AST,不是文本匹配 ⇒ 注释里写 `availableAt: now` 骗不过它
 //      (「剥注释」在 AST 下是天然的,而不是一个可能写错的正则)。
+//      ⚠️ 初版只扫 create 家族,`updateMany` 是盲区 —— `ActivityRegistration.registeredAt`
+//      当时正有一个实例躺在里面。补扫 update 家族由「正对照 E/F/G」执法。
+//
+//   ④ 反向闸:**故意**取库时钟的那几处(封场 / 关账 / 生命周期)不许被「统一时间权威」
+//      顺手改成应用时钟 —— 那是更强的事务级单一「现在」,改掉是降级。
+//
+// 曾有第五类「单一权威列」(判定只与同列兄弟行比,故要求全列**都不**显式写)。
+// `ActivityRegistration.registeredAt` 一度被归在那里,后经补扫发现它的 update 腿本来
+// 就显式写应用时钟 ⇒ 该分类对它是错的,已把 create 腿一并写成应用时钟并归入 ③。
+// 目前无任何列属于该类,故**不留空表加空闸**(空 `it.each` 不执法,等于摆设);
+// 将来真出现这类列,再把这段注释变回代码。
 //
 // ⚠️ 不覆盖 127 个 `@default(now())` 中的 113 个 `createdAt`:它们是审计列,无人拿来判定,
 //    纳入只会扩大爆炸半径。这条豁免本身由 ① 的 AUDIT_COLUMNS 具名声明,不是隐式跳过。
@@ -114,6 +126,27 @@ const CLOCK_CRITICAL_COLUMNS: readonly ClockCriticalColumn[] = [
         valueExpr: 'new Date()',
         clockSource: '应用时钟(入队即可领)',
       },
+      // ↓ UPDATE 腿(退避重排 / 复活重领):同样是时钟来源,同样必须与 claimJob 同源。
+      {
+        file: 'src/modules/activities/activity-batch.worker.ts',
+        valueExpr: 'now',
+        clockSource: 'enqueuePreparingBatches 把 succeeded 退回 pending 时重排,用本轮应用时钟',
+      },
+      {
+        file: 'src/modules/activities/activity-batch.worker.ts',
+        valueExpr: 'new Date(now.getTime() + ACTIVITY_BATCH_RETRY_BACKOFF_MS)',
+        clockSource: '本轮应用时钟 + 固定退避',
+      },
+      {
+        file: 'src/modules/activities/activity-batch.worker.ts',
+        valueExpr: 'new Date(now.getTime() + ACTIVITY_BATCH_RETRY_BACKOFF_MS)',
+        clockSource: '本轮应用时钟 + 固定退避',
+      },
+      {
+        file: 'src/modules/activity-registrations/registration-reconciliation.service.ts',
+        valueExpr: 'availableAt',
+        clockSource: '入参 availableAt,由 worker 的本轮应用时钟算出',
+      },
     ],
   },
   {
@@ -156,6 +189,17 @@ const CLOCK_CRITICAL_COLUMNS: readonly ClockCriticalColumn[] = [
         valueExpr: 'new Date()',
         clockSource: '应用时钟',
       },
+      // ↓ UPDATE 腿
+      {
+        file: 'src/modules/attachments/attachment-content-boundary.ts',
+        valueExpr: 'availableAt',
+        clockSource: '同文件 const availableAt(应用时钟与 unboundExpiresAt 取较晚者)',
+      },
+      {
+        file: 'src/modules/storage/storage-object-ledger.service.ts',
+        valueExpr: 'new Date(now.getTime() + storageRetryDelayMs(operation.attempts))',
+        clockSource: '应用时钟 + 按尝试次数退避',
+      },
     ],
   },
   {
@@ -187,6 +231,12 @@ const CLOCK_CRITICAL_COLUMNS: readonly ClockCriticalColumn[] = [
         file: 'src/modules/notifications/notification-outbox.service.ts',
         valueExpr: 'new Date()',
         clockSource: '应用时钟(admin SMS 槽位)',
+      },
+      // ↓ UPDATE 腿
+      {
+        file: 'src/modules/notifications/notification-outbox.service.ts',
+        valueExpr: 'availableAt',
+        clockSource: '同方法内由应用时钟 now 与退避上下界算出',
       },
     ],
   },
@@ -286,18 +336,6 @@ const CLOCK_CRITICAL_COLUMNS: readonly ClockCriticalColumn[] = [
       },
     ],
   },
-];
-
-// ---------------------------------------------------------------------------
-// 登记表 ②:判定只拿它和**自己同列的兄弟行**比,不与任何墙钟比 —— 单一权威即可,
-// 于是正确性条件不是「显式写」而是「**所有写点用同一个来源**」。
-//
-// 本仓当前这类只有一条:候补排位 `registeredAt ASC, id ASC`。三个写点齐齐吃 DB 默认值 ⇒
-// 全队列同一个库时钟,排序自洽。⚠️ 一旦**任一**写点改成显式写应用时钟,同一条队列里就出现
-// 两个权威,先来的可能排到后面 —— 所以这里的执行位是反过来的:**不许任何写点显式写**。
-// 真要改成应用时钟,得三处一起改,并把本条移进 CLOCK_CRITICAL_COLUMNS。
-// ---------------------------------------------------------------------------
-const UNIFORM_DB_DEFAULT_COLUMNS: readonly Omit<ClockCriticalColumn, 'writeSites'>[] = [
   {
     model: 'ActivityRegistration',
     delegate: 'activityRegistration',
@@ -307,6 +345,45 @@ const UNIFORM_DB_DEFAULT_COLUMNS: readonly Omit<ClockCriticalColumn, 'writeSites
       marker: '{ registeredAt: { lt: row.registeredAt } },',
       clock: 'application',
     },
+    // 候补排位是**与同列兄弟行**比(不与墙钟比)⇒ 正确性条件是「全列同源」。
+    // 三条写路径都是「建头(create)+ 同事务紧随的改头(updateMany)」成对出现,
+    // update 腿一直显式写应用时钟;create 腿此前吃 `@default(now())`(库时钟)——
+    // 提交后的行虽然总被 update 腿覆盖成应用时钟,但那是**跨语句**才成立的性质,
+    // 早期只扫 create 家族的判据既看不见 update 腿、也证不了这个配对。
+    // 本刀把 create 腿也写成同一个应用时钟表达式:值不变(update 随后写同一个值),
+    // 但不变量从此是**逐点局部**的 —— 每个写点自己就是应用时钟,不依赖配对推理。
+    writeSites: [
+      {
+        file: 'src/modules/activity-registrations/activity-registration-create.service.ts',
+        valueExpr: 'submittedAt',
+        clockSource: '同方法内 const submittedAt = new Date()(应用时钟)',
+      },
+      {
+        file: 'src/modules/activity-registrations/activity-registration-create.service.ts',
+        valueExpr: 'submittedAt',
+        clockSource: '同上,update 腿',
+      },
+      {
+        file: 'src/modules/activity-registrations/onsite-participation-command.service.ts',
+        valueExpr: 'now',
+        clockSource: '同方法内 const now = new Date()(应用时钟)',
+      },
+      {
+        file: 'src/modules/activity-registrations/onsite-participation-command.service.ts',
+        valueExpr: 'now',
+        clockSource: '同上,update 腿',
+      },
+      {
+        file: 'src/modules/activity-registrations/registration-command.service.ts',
+        valueExpr: 'now',
+        clockSource: '同方法内 const now = new Date()(应用时钟)',
+      },
+      {
+        file: 'src/modules/activity-registrations/registration-command.service.ts',
+        valueExpr: 'now',
+        clockSource: '同上,update 腿',
+      },
+    ],
   },
 ];
 
@@ -372,12 +449,21 @@ export function parseDefaultNowColumns(
 // ---------------------------------------------------------------------------
 // 写点扫描(TypeScript AST)
 // ---------------------------------------------------------------------------
-const WRITE_METHODS: ReadonlySet<string> = new Set(['create', 'createMany', 'upsert']);
+// INSERT 与 UPDATE 的正确性条件**不同**,故分开标记:
+//   - INSERT 漏写该列 ⇒ 落到 `@default(now())`(库时钟)⇒ 缺陷类本体;
+//   - UPDATE 漏写该列 ⇒ 该列**原样不动**(`@default(now())` 只在 INSERT 生效)⇒ 不是缺陷。
+// 但 UPDATE **写了**该列时,它同样是一个时钟来源,必须和判定侧同源 —— 早期版本的
+// WRITE_METHODS 只有 create 家族,于是 `updateMany` 里的显式写入是闸的**盲区**,
+// 真有一个实例躺在里面(见 ActivityRegistration.registeredAt 的登记注释)。
+const CREATE_METHODS: ReadonlySet<string> = new Set(['create', 'createMany']);
+const UPDATE_METHODS: ReadonlySet<string> = new Set(['update', 'updateMany']);
 
 export interface DiscoveredWrite {
   readonly file: string;
   readonly line: number;
   readonly delegate: string;
+  /** INSERT 语义 or UPDATE 语义 —— 决定「漏写」算不算缺陷 */
+  readonly kind: 'create' | 'update';
   /** 该行对象里该列的值表达式;缺失时为 null */
   readonly valueExpr: string | null;
   /** 行对象里存在无法静态展开的 spread */
@@ -442,34 +528,46 @@ export function scanWrites(
         : ts.isIdentifier(target)
           ? target.text
           : null;
-      if (WRITE_METHODS.has(method) && targetName === delegate) {
+      const isCreate = CREATE_METHODS.has(method);
+      const isUpdate = UPDATE_METHODS.has(method);
+      const isUpsert = method === 'upsert';
+      if ((isCreate || isUpdate || isUpsert) && targetName === delegate) {
         const argument = node.arguments[0];
         if (argument !== undefined && ts.isObjectLiteralExpression(argument)) {
-          const dataKey = method === 'upsert' ? 'create' : 'data';
-          for (const property of argument.properties) {
-            if (
-              !ts.isPropertyAssignment(property) ||
-              !ts.isIdentifier(property.name) ||
-              property.name.text !== dataKey
-            ) {
-              continue;
-            }
-            for (const row of collectRowObjects(property.initializer)) {
-              const hit = propertyValue(row, column);
-              out.push({
-                file: fileLabel,
-                line: sourceFile.getLineAndCharacterOfPosition(row.getStart(sourceFile)).line + 1,
-                delegate,
-                valueExpr: !hit.found
-                  ? null
-                  : hit.expr === null
-                    ? column
-                    : printer
-                        .printNode(ts.EmitHint.Unspecified, hit.expr, sourceFile)
-                        .replace(/\s+/g, ' ')
-                        .trim(),
-                hasSpread: row.properties.some((p) => ts.isSpreadAssignment(p)),
-              });
+          // upsert 两个分支都要看:`create` 走 INSERT 语义,`update` 走 UPDATE 语义。
+          const branches: ReadonlyArray<{ key: string; kind: 'create' | 'update' }> = isUpsert
+            ? [
+                { key: 'create', kind: 'create' },
+                { key: 'update', kind: 'update' },
+              ]
+            : [{ key: 'data', kind: isCreate ? 'create' : 'update' }];
+          for (const branch of branches) {
+            for (const property of argument.properties) {
+              if (
+                !ts.isPropertyAssignment(property) ||
+                !ts.isIdentifier(property.name) ||
+                property.name.text !== branch.key
+              ) {
+                continue;
+              }
+              for (const row of collectRowObjects(property.initializer)) {
+                const hit = propertyValue(row, column);
+                out.push({
+                  file: fileLabel,
+                  line: sourceFile.getLineAndCharacterOfPosition(row.getStart(sourceFile)).line + 1,
+                  delegate,
+                  kind: branch.kind,
+                  valueExpr: !hit.found
+                    ? null
+                    : hit.expr === null
+                      ? column
+                      : printer
+                          .printNode(ts.EmitHint.Unspecified, hit.expr, sourceFile)
+                          .replace(/\s+/g, ' ')
+                          .trim(),
+                  hasSpread: row.properties.some((p) => ts.isSpreadAssignment(p)),
+                });
+              }
             }
           }
         }
@@ -517,7 +615,6 @@ describe('统一时间权威 —— 「写用库时钟、判用应用时钟」�
     const key = (model: string, column: string): string => `${model}.${column}`;
     const registered = new Set([
       ...CLOCK_CRITICAL_COLUMNS.map((e) => key(e.model, e.column)),
-      ...UNIFORM_DB_DEFAULT_COLUMNS.map((e) => key(e.model, e.column)),
       ...NOT_CLOCK_CRITICAL.map((e) => key(e.model, e.column)),
     ]);
 
@@ -531,10 +628,9 @@ describe('统一时间权威 —— 「写用库时钟、判用应用时钟」�
     const stale = [...registered].filter((k) => !declaredKeys.has(k));
     expect({ 'schema 中已不存在的登记项': stale }).toEqual({ 'schema 中已不存在的登记项': [] });
 
-    // 三张登记表两两互斥:同一列只能有一种处置
+    // 两张登记表互斥:同一列只能有一种处置
     const all = [
       ...CLOCK_CRITICAL_COLUMNS.map((e) => key(e.model, e.column)),
-      ...UNIFORM_DB_DEFAULT_COLUMNS.map((e) => key(e.model, e.column)),
       ...NOT_CLOCK_CRITICAL.map((e) => key(e.model, e.column)),
     ];
     const duplicated = all.filter((k, i) => all.indexOf(k) !== i);
@@ -542,8 +638,7 @@ describe('统一时间权威 —— 「写用库时钟、判用应用时钟」�
   });
 
   // ===== ② 判定点仍在 =====
-  const JUDGED = [...CLOCK_CRITICAL_COLUMNS, ...UNIFORM_DB_DEFAULT_COLUMNS];
-  it.each(JUDGED.map((e) => [`${e.model}.${e.column}`, e] as const))(
+  it.each(CLOCK_CRITICAL_COLUMNS.map((e) => [`${e.model}.${e.column}`, e] as const))(
     '②%s 的判定点仍在登记的位置上,且仍读应用时钟',
     (_label, entry) => {
       const full = path.join(REPO_ROOT, entry.judge.file);
@@ -564,8 +659,9 @@ describe('统一时间权威 —— 「写用库时钟、判用应用时钟」�
       const discovered = discoverAll(entry);
 
       // 3a. 漏写 ⇒ 吃 `@default(now())`(库时钟)。这是缺陷类本体。
+      // UPDATE 漏写 ≠ 缺陷(该列原样不动),只有 INSERT 漏写才会落到库时钟默认值。
       const missing = discovered
-        .filter((w) => w.valueExpr === null)
+        .filter((w) => w.kind === 'create' && w.valueExpr === null)
         .map(
           (w) => `${w.file}:${w.line} 未显式写 ${entry.column} ⇒ 落到 DB @default(now())(库时钟)`,
         );
@@ -573,13 +669,18 @@ describe('统一时间权威 —— 「写用库时钟、判用应用时钟」�
 
       // 3b. spread 无法静态核验来源 ⇒ 要求显式(有 3a 兜底时才允许)
       const spread = discovered
-        .filter((w) => w.hasSpread && w.valueExpr === null)
+        .filter((w) => w.kind === 'create' && w.hasSpread && w.valueExpr === null)
         .map((w) => `${w.file}:${w.line}`);
       expect({ '只靠 spread 传入无法核验': spread }).toEqual({ '只靠 spread 传入无法核验': [] });
 
       // 3c. 写点集合 + 值表达式必须与登记表逐字对齐 ——
       //     新增写点 / 改写值表达式,都逼人回到登记表写下新的时钟来源。
-      const actual = discovered.map((w) => `${w.file} → ${w.valueExpr ?? '(缺失)'}`).sort();
+      // 只登记「真的写了这一列」的落点:UPDATE 不碰该列时无需登记(否则登记表会被
+      // 一大堆与时钟无关的 update 淹没,反而看不出哪些是时钟来源)。
+      const actual = discovered
+        .filter((w) => w.kind === 'create' || w.valueExpr !== null)
+        .map((w) => `${w.file} → ${w.valueExpr ?? '(缺失)'}`)
+        .sort();
       const expected = entry.writeSites.map((s) => `${s.file} → ${s.valueExpr}`).sort();
       expect(actual).toEqual(expected);
 
@@ -593,25 +694,7 @@ describe('统一时间权威 —— 「写用库时钟、判用应用时钟」�
     },
   );
 
-  // ===== ④ 单一权威列:反过来 —— **不许**任何写点显式写 =====
-  it.each(UNIFORM_DB_DEFAULT_COLUMNS.map((e) => [`${e.model}.${e.column}`, e] as const))(
-    '④%s 的所有写点齐齐吃同一个 DB 默认值(任一处显式写入即出现第二个权威)',
-    (_label, entry) => {
-      const discovered = discoverAll(entry);
-      // 判定只与同列兄弟行比较 ⇒ 只要来源统一就自洽。破坏统一性的是「有的显式、有的不显式」。
-      expect(discovered.length).toBeGreaterThan(0);
-      const explicit = discovered
-        .filter((w) => w.valueExpr !== null)
-        .map(
-          (w) =>
-            `${w.file}:${w.line} 显式写了 ${entry.column}(=${w.valueExpr ?? ''})—— 同一队列出现两个时钟权威;` +
-            '要改成应用时钟须三处一起改,并把本列移进 CLOCK_CRITICAL_COLUMNS',
-        );
-      expect({ 打破单一权威的写点: explicit }).toEqual({ 打破单一权威的写点: [] });
-    },
-  );
-
-  // ===== ⑤ 反方向:**故意**用库时钟的那几处,不许被「统一成应用时钟」顺手改掉 =====
+  // ===== ④ 反方向:**故意**用库时钟的那几处,不许被「统一成应用时钟」顺手改掉 =====
   //
   // 断点②-a(封场)不属于本缺陷类:封场比的是 `checkOutCloseAt` / `terminationCheckOutDeadline`,
   // 那是**用户排的日程**,不是任何时钟写的 —— 不存在「写用一个钟、判用另一个钟」。真实形态是
@@ -645,7 +728,7 @@ describe('统一时间权威 —— 「写用库时钟、判用应用时钟」�
   ];
 
   it.each(SQL_CLOCK_BY_DESIGN.map((e) => [e.file, e] as const))(
-    '⑤%s 仍显式取库时钟(这是刻意的,不是本缺陷类的实例)',
+    '④%s 仍显式取库时钟(这是刻意的,不是本缺陷类的实例)',
     (_label, entry) => {
       const code = stripComments(fs.readFileSync(path.join(REPO_ROOT, entry.file), 'utf8'));
       expect({ file: entry.file, 保留库时钟: code.includes(entry.marker) }).toEqual({
@@ -705,20 +788,54 @@ describe('统一时间权威 —— 「写用库时钟、判用应用时钟」�
       expect(found[0].valueExpr).toBeNull();
     });
 
-    it('正对照 E:单一权威列被某个写点显式写入 ⇒ 分析器看得见那一处', () => {
+    // ⚠️ 本条是**补扫 update 家族**这件事本身的执行位。
+    // 初版 WRITE_METHODS 只有 create 家族,`updateMany` 里的显式写入是盲区,
+    // 而 `ActivityRegistration.registeredAt` 恰好有一个实例躺在里面(跨会话评审发现)。
+    // 没有这条正对照,「我把扫描面补宽了」就只是一句自述。
+    it('正对照 E:update / updateMany 里的写入必须被看见,且标成 update 语义', () => {
       const mutated = `
-        await tx.activityRegistration.create({
-          data: { activityId: 'a', memberId: 'm', registeredAt: now },
+        await tx.activityRegistration.updateMany({
+          where: { id },
+          data: { statusCode: 'pending', registeredAt: now },
         });
-        await tx.activityRegistration.create({
-          data: { activityId: 'b', memberId: 'n' },
+        await tx.activityRegistration.update({
+          where: { id },
+          data: { statusCode: 'cancelled' },
         });
       `;
       const found = scanWrites('fixture.ts', mutated, 'activityRegistration', 'registeredAt');
-      expect(found.map((w) => w.valueExpr)).toEqual(['now', null]);
+      expect(found.map((w) => [w.kind, w.valueExpr])).toEqual([
+        ['update', 'now'],
+        ['update', null],
+      ]);
     });
 
-    it('正对照 F:schema 新增一个 @default(now()) 判定列 ⇒ 完整性闸看得见它', () => {
+    it('正对照 F:upsert 的 create / update 两个分支都被看见,且语义分别标对', () => {
+      const mutated = `
+        await tx.activityBatchJob.upsert({
+          where: { operationKey },
+          create: { jobTypeCode: 'x' },
+          update: { availableAt: retryAt },
+        });
+      `;
+      const found = scanWrites('fixture.ts', mutated, 'activityBatchJob', 'availableAt');
+      expect(found.map((w) => [w.kind, w.valueExpr])).toEqual([
+        ['create', null],
+        ['update', 'retryAt'],
+      ]);
+    });
+
+    it('正对照 G:UPDATE 漏写不算缺陷,但 INSERT 漏写算 —— 两者必须可区分', () => {
+      const mutated = `
+        await tx.activityBatchJob.create({ data: { jobTypeCode: 'x' } });
+        await tx.activityBatchJob.updateMany({ where: { id }, data: { statusCode: 'dead' } });
+      `;
+      const found = scanWrites('fixture.ts', mutated, 'activityBatchJob', 'availableAt');
+      expect(found.filter((w) => w.kind === 'create' && w.valueExpr === null)).toHaveLength(1);
+      expect(found.filter((w) => w.kind === 'update' && w.valueExpr === null)).toHaveLength(1);
+    });
+
+    it('正对照 H:schema 新增一个 @default(now()) 判定列 ⇒ 完整性闸看得见它', () => {
       const fixture = `
 model Widget {
   id        String   @id
