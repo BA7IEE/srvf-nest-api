@@ -1,0 +1,324 @@
+import type { INestApplication } from '@nestjs/common';
+import { Role } from '@prisma/client';
+import request from 'supertest';
+
+import { PrismaService } from '../../src/database/prisma.service';
+import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
+import { readRecipientFreezeStamp } from '../../src/modules/activities/activity-recipient-freeze';
+import { loginAs } from '../fixtures/auth.fixture';
+import { createTestUser } from '../fixtures/users.fixture';
+import { httpServer } from '../helpers/http-server';
+import { resetDb } from '../setup/reset-db';
+import { createTestApp } from '../setup/test-app';
+
+/**
+ * 第 7 批第一刀 —— 收件人快照冻结的**真数据**判据(goal D2 ②)。
+ *
+ * 单测已经把冻结函数的分支钉满了。这里要证的是另一件事:**穿过真的 HTTP + 真的库 +
+ * 真的 outbox worker**之后,「改变现实再重试,收件人一个不多一个不少」仍然成立。
+ *
+ * 纪律(全部有本仓事故背书):
+ *   · **比集合不比计数** —— 计数相等的两个不同集合会静默变绿;
+ *   · **先钉两边非空** —— 空集 == 空集是本仓刚栽过的假绿形状;
+ *   · 改变现实要**真改数据**,不是把断言写松。
+ */
+describe('第 7 批第一刀:收件人快照冻结(真 HTTP + 真 outbox)', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let auth: string;
+  let organizationId: string;
+  let activityTypeCode: string;
+  let audienceTagTypeId: string;
+  let tagCode: string;
+  /** 发布时持有标签的三个人 —— 这就是应当被冻结下来的那一批。 */
+  let frozenMembers: string[];
+  /** 发布**之后**才拿到标签的人 —— 任何时刻都不该收到这条通知。 */
+  let latecomerMemberId: string;
+
+  const previousHttpEnabled = process.env.ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED;
+
+  async function createMemberWithTag(memberNo: string, withTag: boolean): Promise<string> {
+    const member = await prisma.member.create({
+      data: { memberNo, displayName: memberNo },
+      select: { id: true },
+    });
+    if (withTag) await assignTag(member.id, [tagCode]);
+    return member.id;
+  }
+
+  async function assignTag(memberId: string, tagCodes: string[]): Promise<void> {
+    const response = await request(httpServer(app))
+      .put(`/api/admin/v1/members/${memberId}/audience-tags`)
+      .set('Authorization', auth)
+      .send({ tagCodes });
+    expect(response.status).toBe(200);
+  }
+
+  async function createDraftActivity(title: string): Promise<string> {
+    const response = await request(httpServer(app))
+      .post('/api/admin/v1/activities')
+      .set('Authorization', auth)
+      .send({
+        title,
+        activityTypeCode,
+        organizationId,
+        startAt: '2099-08-01T08:00:00.000Z',
+        endAt: '2099-08-01T12:00:00.000Z',
+        location: '梧桐山',
+        allocationModeCode: 'first_come',
+        isPublicRegistration: true,
+      });
+    expect(response.status).toBe(201);
+    return response.body.data.id as string;
+  }
+
+  async function publishWithTags(activityId: string, tagCodes: string[]): Promise<string> {
+    const response = await request(httpServer(app))
+      .patch(`/api/admin/v1/activities/${activityId}/publish-with-audience-tags`)
+      .set('Authorization', auth)
+      .send({ requiresInsuranceConfirmed: true, audienceTagCodes: tagCodes });
+    expect(response.status).toBe(200);
+    return response.body.data.publishedAt as string;
+  }
+
+  async function intentsFor(activityId: string) {
+    return prisma.notificationOutboxIntent.findMany({
+      where: { aggregateType: 'activity', aggregateId: activityId, destinationType: 'member' },
+      select: { eventKey: true, destinationRef: true, payload: true, status: true },
+      orderBy: { destinationRef: 'asc' },
+    });
+  }
+
+  /** 把 outbox 抽干:不是抽一轮 —— `drainOnce` 一轮只领 20 条,轮数不够就是没抽完。 */
+  async function drainOutbox(): Promise<void> {
+    const worker = app.get(NotificationOutboxWorker);
+    for (let round = 0; round < 20; round += 1) {
+      const result = await worker.drainOnce();
+      if (result.claimed === 0) return;
+    }
+    throw new Error('outbox 未在 20 轮内抽干,判据前提不成立');
+  }
+
+  beforeAll(async () => {
+    process.env.ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED = 'true';
+    app = await createTestApp();
+    prisma = app.get(PrismaService);
+    await resetDb(app);
+
+    const superAdmin = await createTestUser(app, {
+      username: 'b7-freeze-sa',
+      role: Role.SUPER_ADMIN,
+    });
+    auth = (await loginAs(app, superAdmin.username)).authHeader;
+
+    const root = await prisma.organization.create({
+      data: { name: '冻结根组织', nodeTypeCode: 'freeze-root' },
+      select: { id: true },
+    });
+    const org = await prisma.organization.create({
+      data: { name: '冻结执行组织', nodeTypeCode: 'freeze-team', parentId: root.id },
+      select: { id: true },
+    });
+    organizationId = org.id;
+    await prisma.organizationClosure.createMany({
+      data: [
+        { ancestorId: root.id, descendantId: root.id, depth: 0 },
+        { ancestorId: root.id, descendantId: org.id, depth: 1 },
+        { ancestorId: org.id, descendantId: org.id, depth: 0 },
+      ],
+    });
+
+    // 字典类型的 code 是**规范值**(`activity_type` / `member_audience_tag`),
+    // 不是随手起的名字 —— 运行时按这两个 code 找类型。
+    const activityType = await request(httpServer(app))
+      .post('/api/system/v1/dict-types')
+      .set('Authorization', auth)
+      .send({ code: 'activity_type', label: '活动类型', sortOrder: 0 });
+    expect(activityType.status).toBe(201);
+    activityTypeCode = 'freeze-drill';
+    const activityTypeItem = await request(httpServer(app))
+      .post('/api/system/v1/dict-items')
+      .set('Authorization', auth)
+      .send({
+        typeId: activityType.body.data.id,
+        code: activityTypeCode,
+        label: '冻结演练',
+        sortOrder: 0,
+      });
+    expect(activityTypeItem.status).toBe(201);
+
+    const tagType = await request(httpServer(app))
+      .post('/api/system/v1/dict-types')
+      .set('Authorization', auth)
+      .send({ code: 'member_audience_tag', label: '会员受众标签', sortOrder: 0 });
+    expect(tagType.status).toBe(201);
+    audienceTagTypeId = tagType.body.data.id as string;
+    tagCode = 'freeze-cohort';
+    const tag = await request(httpServer(app))
+      .post('/api/system/v1/dict-items')
+      .set('Authorization', auth)
+      .send({ typeId: audienceTagTypeId, code: tagCode, label: '冻结队列', sortOrder: 0 });
+    expect(tag.status).toBe(201);
+
+    frozenMembers = [
+      await createMemberWithTag('freeze-member-a', true),
+      await createMemberWithTag('freeze-member-b', true),
+      await createMemberWithTag('freeze-member-c', true),
+    ].sort();
+    latecomerMemberId = await createMemberWithTag('freeze-member-latecomer', false);
+  });
+
+  afterAll(async () => {
+    if (previousHttpEnabled === undefined) {
+      delete process.env.ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED;
+    } else {
+      process.env.ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED = previousHttpEnabled;
+    }
+    await app?.close();
+  });
+
+  it('发布即冻结:每条 intent 都带齐依据/时刻/算法版本/基数,且基数与实际行数相等', async () => {
+    const activityId = await createDraftActivity('冻结:盖章完整性');
+    const publishedAt = await publishWithTags(activityId, [tagCode]);
+
+    const intents = await intentsFor(activityId);
+    // 先钉非空 —— 后面所有集合比较都建立在这一步上。
+    expect(intents.length).toBeGreaterThan(0);
+    expect(intents.map((intent) => intent.destinationRef)).toEqual(frozenMembers);
+
+    const stamps = intents.map((intent) => readRecipientFreezeStamp(intent.payload));
+    for (const stamp of stamps) {
+      expect(stamp).not.toBeNull();
+      expect(stamp!.basisKind).toBe('audience-tags');
+      expect(stamp!.basisRef).toEqual([tagCode]);
+      expect(stamp!.algorithmVersion).toBe(1);
+      expect(stamp!.computedAt).toBe(publishedAt);
+      // 基数必须与真实落库行数相等 —— 少写一半时这条是唯一能看出来的判据。
+      expect(stamp!.cohortSize).toBe(intents.length);
+    }
+    // 同一批次共用同一个 cohortKey:它就是「这一次发布」的身份。
+    expect(new Set(stamps.map((stamp) => stamp!.cohortKey)).size).toBe(1);
+    expect(stamps[0]!.cohortKey).toBe(
+      `activity-publish-audience:${activityId}:${publishedAt}`,
+    );
+  });
+
+  it('改变现实后抽干 outbox:实际收到通知的人与快照**逐字相同**', async () => {
+    const activityId = await createDraftActivity('冻结:改变现实后重试');
+    await publishWithTags(activityId, [tagCode]);
+
+    const frozen = (await intentsFor(activityId)).map((intent) => intent.destinationRef);
+    expect(frozen.length).toBeGreaterThan(0);
+    expect(frozen).toEqual(frozenMembers);
+
+    // ── 真改数据,三个方向一起改 ──
+    // ① 撤掉一个原收件人的标签;② 给一个新人赋标;③ 软删一个原收件人。
+    const [revoked, , softDeleted] = frozen;
+    await assignTag(revoked!, []);
+    await assignTag(latecomerMemberId, [tagCode]);
+    await prisma.member.update({
+      where: { id: softDeleted! },
+      data: { deletedAt: new Date(), status: 'INACTIVE' },
+    });
+
+    // 现实确实变了 —— 先证明这一点,否则下面的"没变"什么都没证明。
+    const liveTagged = await prisma.memberAudienceTagAssignment.findMany({
+      where: { revokedAt: null, member: { status: 'ACTIVE', deletedAt: null } },
+      select: { memberId: true },
+    });
+    const liveNow = [...new Set(liveTagged.map((row) => row.memberId))].sort();
+    expect(liveNow.length).toBeGreaterThan(0);
+    expect(liveNow).not.toEqual(frozen);
+    expect(liveNow).toContain(latecomerMemberId);
+
+    // ── 抽干 outbox(这就是"重试/投递"那一步)──
+    await drainOutbox();
+
+    const delivered = await prisma.notification.findMany({
+      where: {
+        notificationTypeCode: 'activity-published',
+        recipientMemberId: { in: [...frozen, latecomerMemberId] },
+      },
+      select: { recipientMemberId: true },
+    });
+    const deliveredMembers = [
+      ...new Set(delivered.map((row) => row.recipientMemberId!)),
+    ].sort();
+
+    // 比集合,不比计数。
+    expect(deliveredMembers.length).toBeGreaterThan(0);
+    expect(deliveredMembers).toEqual(frozen);
+    // 被撤标 / 被软删的人**仍然**收到:通知是当初那件事的记录,不是此刻名单的投影。
+    expect(deliveredMembers).toContain(revoked);
+    expect(deliveredMembers).toContain(softDeleted);
+    // 后来才赋标的人一个都不许进来。
+    expect(deliveredMembers).not.toContain(latecomerMemberId);
+
+    // ⚠️ 把现实改回去。不还原的话,下一条用例发布时 latecomer **本来就**持有标签,
+    //    于是他合法地进入那一批 —— 判据会红,但红的是夹具串味,不是实现。
+    //    (本刀实测踩过这一脚。)
+    await assignTag(latecomerMemberId, []);
+    await assignTag(revoked!, [tagCode]);
+    await prisma.member.update({
+      where: { id: softDeleted! },
+      data: { deletedAt: null, status: 'ACTIVE' },
+    });
+  });
+
+  it('冻结之后再发布同一活动:不产生并集污染,快照集合原样不动', async () => {
+    const activityId = await createDraftActivity('冻结:并集污染');
+    const publishedAt = await publishWithTags(activityId, [tagCode]);
+    const before = (await intentsFor(activityId)).map((intent) => intent.destinationRef);
+    expect(before.length).toBeGreaterThan(0);
+
+    // 给一个新人赋标 —— 如果冻结失效,重放会为他新插一条 intent(新 eventKey,
+    // `skipDuplicates` 拦不住),于是实际收件人变成两次计算的并集。
+    // 用本用例自己新建的人,不蹭上一条用例的 latecomer(夹具串味会把红点指错地方)。
+    const newcomerId = await createMemberWithTag('freeze-member-newcomer', true);
+    expect(before).not.toContain(newcomerId);
+
+    // 同一活动重复发布必须被状态机拒(published 不可再 publish)——
+    // 这本身也是冻结的第一道保护:没有第二次计算,就没有并集。
+    const republish = await request(httpServer(app))
+      .patch(`/api/admin/v1/activities/${activityId}/publish-with-audience-tags`)
+      .set('Authorization', auth)
+      .send({ requiresInsuranceConfirmed: true, audienceTagCodes: [tagCode] });
+    expect(republish.status).toBeGreaterThanOrEqual(400);
+
+    const after = await intentsFor(activityId);
+    expect(after.map((intent) => intent.destinationRef)).toEqual(before);
+    expect(after.map((intent) => intent.destinationRef)).not.toContain(newcomerId);
+    // 盖章的基数也不许被后来的一批改写。
+    for (const intent of after) {
+      const stamp = readRecipientFreezeStamp(intent.payload);
+      expect(stamp!.cohortSize).toBe(before.length);
+      expect(stamp!.computedAt).toBe(publishedAt);
+    }
+
+    await assignTag(newcomerId, []);
+  });
+
+  it('legacy 广播(不带标签)拿到显式的 broadcast-visibility 盖章,而不是悄悄没有快照', async () => {
+    const activityId = await createDraftActivity('冻结:legacy 广播');
+    const published = await request(httpServer(app))
+      .patch(`/api/admin/v1/activities/${activityId}/publish`)
+      .set('Authorization', auth)
+      .send({ requiresInsuranceConfirmed: true });
+    expect(published.status).toBe(200);
+
+    const broadcast = await prisma.notificationOutboxIntent.findFirstOrThrow({
+      where: {
+        aggregateType: 'activity',
+        aggregateId: activityId,
+        destinationType: 'visibility',
+      },
+      select: { payload: true },
+    });
+    const stamp = readRecipientFreezeStamp(broadcast.payload);
+    expect(stamp).not.toBeNull();
+    // 「这一条刻意不冻结」是冻结入口做出的决定,在数据里留了痕 ——
+    // 与「某个 producer 漏了冻结」在库里长得完全不同。
+    expect(stamp!.basisKind).toBe('broadcast-visibility');
+    expect(stamp!.cohortSize).toBe(0);
+  });
+});
