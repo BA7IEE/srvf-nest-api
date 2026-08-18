@@ -460,6 +460,16 @@
   `admin/v1/activities/:id/{participation-summary,reconciliation,participation-ledger}`;
   四个数字(总服务时长 / 参与活动数 / 记录条数 / 贡献值)取数从
   `attendanceRecord + sheet.statusCode='approved'` 改为 committed 账本分录。
+  **⇒ 2026-08-19 二次拍板(主会话查出连坐后追加):切成两半。**
+  **②-a 先只加「在途」显示,不动任何取数**(零风险,用户先看得见);
+  **②-b 真正切换取数口径 —— 另需拍板,因为它会连坐「入队资格」**:
+  `computeCappedContribution`(`team-join/team-join-progress.ts:77`)被 team-join 用来判
+  `satisfied: points.gte(CONTRIBUTION_THRESHOLD)` ⇒ 改口径后贡献值变小,
+  **原本够门槛的申请人会突然不够,是资格判定翻面而非显示问题**。
+  **拍板:入队门槛恒按「已审批考勤」算**(2026-08-19)——
+  入队审核关心「这个人真的参与了多少」,结算入账走多久是队内财务流程,不该拖累申请人。
+  ⇒ **同一个「贡献值」两个场景两套口径是刻意的**:展示用账本(严谨),资格用考勤(不误伤)。
+  ⚠️ 后人若见此不一致,**先读本条再动手** —— 那不是 bug。
   ⚠️ 落差不是几秒:审核通过 → 结算生成/提交 → 一审 → 终审 → 批次 preparing/ready → committed,
   每步都可能停在人手里数天 ⇒ **队员会看到「考勤批了但时长不涨」**,故须同时给出
   「已生效 / 在途」两个口径,**数字不合并、但让人看得见**。
