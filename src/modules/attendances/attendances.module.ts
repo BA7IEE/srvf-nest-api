@@ -51,6 +51,7 @@ import { AttendanceMemberCredentialService } from './attendance-member-credentia
 import { AttendanceOfflinePackageTokenService } from './attendance-offline-package-token';
 import { AttendanceOfflinePackageService } from './attendance-offline-package.service';
 import { AttendanceOfflinePackageAccessService } from './attendance-offline-package-access.service';
+import { AttendanceOfflineReviewService } from './attendance-offline-review.service';
 import { AttendanceOnsiteBatchJobService } from './attendance-onsite-batch-job.service';
 import { AttendanceImportAttachmentService } from './attendance-import-attachment.service';
 import { AttendanceImportPreviewService } from './attendance-import-preview.service';
@@ -137,6 +138,7 @@ import { AppMyAttendanceMemberCredentialController } from './controllers/app-my-
     AttendanceOfflinePackageTokenService,
     AttendanceOfflinePackageService,
     AttendanceOfflinePackageAccessService,
+    AttendanceOfflineReviewService,
     AttendanceOnsiteBatchJobService,
     AttendanceImportAttachmentService,
     AttendanceImportPreviewService,
