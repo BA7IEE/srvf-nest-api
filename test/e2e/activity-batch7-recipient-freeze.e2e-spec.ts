@@ -198,9 +198,7 @@ describe('第 7 批第一刀:收件人快照冻结(真 HTTP + 真 outbox)', () =
     }
     // 同一批次共用同一个 cohortKey:它就是「这一次发布」的身份。
     expect(new Set(stamps.map((stamp) => stamp!.cohortKey)).size).toBe(1);
-    expect(stamps[0]!.cohortKey).toBe(
-      `activity-publish-audience:${activityId}:${publishedAt}`,
-    );
+    expect(stamps[0]!.cohortKey).toBe(`activity-publish-audience:${activityId}:${publishedAt}`);
   });
 
   it('改变现实后抽干 outbox:实际收到通知的人与快照**逐字相同**', async () => {
@@ -214,10 +212,10 @@ describe('第 7 批第一刀:收件人快照冻结(真 HTTP + 真 outbox)', () =
     // ── 真改数据,三个方向一起改 ──
     // ① 撤掉一个原收件人的标签;② 给一个新人赋标;③ 软删一个原收件人。
     const [revoked, , softDeleted] = frozen;
-    await assignTag(revoked!, []);
+    await assignTag(revoked, []);
     await assignTag(latecomerMemberId, [tagCode]);
     await prisma.member.update({
-      where: { id: softDeleted! },
+      where: { id: softDeleted },
       data: { deletedAt: new Date(), status: 'INACTIVE' },
     });
 
@@ -241,9 +239,7 @@ describe('第 7 批第一刀:收件人快照冻结(真 HTTP + 真 outbox)', () =
       },
       select: { recipientMemberId: true },
     });
-    const deliveredMembers = [
-      ...new Set(delivered.map((row) => row.recipientMemberId!)),
-    ].sort();
+    const deliveredMembers = [...new Set(delivered.map((row) => row.recipientMemberId!))].sort();
 
     // 比集合,不比计数。
     expect(deliveredMembers.length).toBeGreaterThan(0);
@@ -258,9 +254,9 @@ describe('第 7 批第一刀:收件人快照冻结(真 HTTP + 真 outbox)', () =
     //    于是他合法地进入那一批 —— 判据会红,但红的是夹具串味,不是实现。
     //    (本刀实测踩过这一脚。)
     await assignTag(latecomerMemberId, []);
-    await assignTag(revoked!, [tagCode]);
+    await assignTag(revoked, [tagCode]);
     await prisma.member.update({
-      where: { id: softDeleted! },
+      where: { id: softDeleted },
       data: { deletedAt: null, status: 'ACTIVE' },
     });
   });
@@ -316,9 +312,9 @@ describe('第 7 批第一刀:收件人快照冻结(真 HTTP + 真 outbox)', () =
     );
     await prisma.activityRegistration.createMany({
       data: [
-        { activityId, memberId: registrants[0]!.id, statusCode: 'pending' },
-        { activityId, memberId: registrants[1]!.id, statusCode: 'pass' },
-        { activityId, memberId: registrants[2]!.id, statusCode: 'waitlisted' },
+        { activityId, memberId: registrants[0].id, statusCode: 'pending' },
+        { activityId, memberId: registrants[1].id, statusCode: 'pass' },
+        { activityId, memberId: registrants[2].id, statusCode: 'waitlisted' },
       ],
     });
 
@@ -329,7 +325,11 @@ describe('第 7 批第一刀:收件人快照冻结(真 HTTP + 真 outbox)', () =
     expect(cancelled.status).toBe(200);
 
     const cancelIntents = await prisma.notificationOutboxIntent.findMany({
-      where: { aggregateType: 'activity', aggregateId: activityId, eventType: 'notification.targeted' },
+      where: {
+        aggregateType: 'activity',
+        aggregateId: activityId,
+        eventType: 'notification.targeted',
+      },
       select: { eventKey: true, destinationRef: true, payload: true },
     });
     const cancelCohort = cancelIntents
@@ -344,7 +344,7 @@ describe('第 7 批第一刀:收件人快照冻结(真 HTTP + 真 outbox)', () =
     // ── intent 已经形成。现在**改报名名单** ──
     // ① 一个报名者退出(软删报名);② 新来一个报名者。
     await prisma.activityRegistration.updateMany({
-      where: { activityId, memberId: registrants[0]!.id },
+      where: { activityId, memberId: registrants[0].id },
       data: { deletedAt: new Date(), statusCode: 'cancelled' },
     });
     const lateRegistrant = await prisma.member.create({
@@ -381,7 +381,7 @@ describe('第 7 批第一刀:收件人快照冻结(真 HTTP + 真 outbox)', () =
     expect(deliveredMembers.length).toBeGreaterThan(0);
     expect(deliveredMembers).toEqual(expectedRegistrants);
     // 退出的人**仍然**收到取消通知(他当时确实报名了);后来才报名的人一个不许收到。
-    expect(deliveredMembers).toContain(registrants[0]!.id);
+    expect(deliveredMembers).toContain(registrants[0].id);
     expect(deliveredMembers).not.toContain(lateRegistrant.id);
 
     // 取消批与发布批是两个 cohortKey,互不吞并。

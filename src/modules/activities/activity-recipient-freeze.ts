@@ -197,9 +197,7 @@ export async function freezeAudienceTags(
     aggregateType: 'activity',
     aggregateIds: [input.activityId],
     basisKind:
-      audienceTagCodes.length === 0
-        ? FREEZE_BASIS_ALL_ACTIVE_MEMBERS
-        : FREEZE_BASIS_AUDIENCE_TAGS,
+      audienceTagCodes.length === 0 ? FREEZE_BASIS_ALL_ACTIVE_MEMBERS : FREEZE_BASIS_AUDIENCE_TAGS,
     basisRef: [...audienceTagCodes].sort(),
     at: input.at,
     candidateMemberIds: () => resolveAudienceMemberIds(tx, audienceTagCodes),

@@ -102,7 +102,9 @@ describe('收件人冻结 —— D2 五条不变量', () => {
       expect(code).not.toContain('PrismaService');
       expect(code).not.toContain('$transaction');
 
-      const exported = [...code.matchAll(/export (?:async )?function (freeze[A-Za-z]+)\(\s*(\w+)/g)];
+      const exported = [
+        ...code.matchAll(/export (?:async )?function (freeze[A-Za-z]+)\(\s*(\w+)/g),
+      ];
       expect(exported.length).toBeGreaterThanOrEqual(3);
       for (const [, name, firstParam] of exported) {
         expect(`${name}:${firstParam}`).toBe(`${name}:tx`);
@@ -164,7 +166,7 @@ describe('收件人冻结 —— D2 五条不变量', () => {
         aggregateIds: ['act-1'],
         basisRef: ['whatever'],
         memberIds: ['m-9'],
-        at: new Date('2026-09-09T09:09:09.000Z'),
+        at: new Date('2098-09-09T09:09:09.000Z'),
       });
 
       expect(cohort.reused).toBe(true);
@@ -231,12 +233,12 @@ describe('收件人冻结 —— D2 五条不变量', () => {
         '2026-08-18T00:00:00.000Z',
       );
       const cancel = await freezeRegistrationRoster(tx, {
-        cohortKey: 'activity-cancel:act-1:2026-08-20T00:00:00.000Z',
+        cohortKey: 'activity-cancel:act-1:2098-08-20T00:00:00.000Z',
         aggregateType: 'activity',
         aggregateIds: ['act-1'],
         basisRef: [],
         memberIds: ['m-9'],
-        at: new Date('2026-08-20T00:00:00.000Z'),
+        at: new Date('2098-08-20T00:00:00.000Z'),
       });
 
       expect(cancel.reused).toBe(false);
