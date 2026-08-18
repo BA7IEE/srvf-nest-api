@@ -63,7 +63,7 @@ describe('activity batch4 Form runtime', () => {
         data: {
           memberNo: 'B4FORM-OWNER',
           displayName: 'Form Owner',
-          gradeCode: 'L1',
+          gradeCode: 'level-1',
           status: MemberStatus.ACTIVE,
         },
         select: { id: true },
@@ -72,7 +72,7 @@ describe('activity batch4 Form runtime', () => {
         data: {
           memberNo: 'B4FORM-OTHER',
           displayName: 'Form Other',
-          gradeCode: 'L1',
+          gradeCode: 'level-1',
           status: MemberStatus.ACTIVE,
         },
         select: { id: true },

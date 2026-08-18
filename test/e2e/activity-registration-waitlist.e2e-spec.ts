@@ -267,6 +267,7 @@ describe('activity registration waitlist', () => {
         data: {
           memberNo: `waitlist-${label}-${sequence}`,
           displayName: `Waitlist ${label} ${sequence}`,
+          gradeCode: 'level-1',
         },
         select: { id: true },
       })

@@ -131,7 +131,7 @@ describe('App GET /api/app/v1/activities/:id (P2-4b)', () => {
     displayName = '队员',
   ): Promise<{ id: string }> {
     return prisma.member.create({
-      data: { memberNo, displayName, gradeCode: 'L1', status: MemberStatus.ACTIVE },
+      data: { memberNo, displayName, gradeCode: 'level-1', status: MemberStatus.ACTIVE },
       select: { id: true },
     });
   }

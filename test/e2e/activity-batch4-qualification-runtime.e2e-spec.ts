@@ -163,7 +163,7 @@ describe('activity batch4 qualification runtime', () => {
     });
     reviewerUserId = reviewer.id;
     reviewerAuth = (await loginAs(app, reviewer.username)).authHeader;
-    const managerUser = await createLinkedMember('qualification-manager', 'L1');
+    const managerUser = await createLinkedMember('qualification-manager', 'level-1');
     manager = { ...managerUser, userId: managerUser.userId };
   });
 
@@ -216,7 +216,7 @@ describe('activity batch4 qualification runtime', () => {
   }
 
   async function createQualifiedActivity(): Promise<QualifiedFixture> {
-    const applicant = await createLinkedMember('qualification-applicant', 'L1');
+    const applicant = await createLinkedMember('qualification-applicant', 'level-1');
     const [standardA, standardB] = await Promise.all([
       seedCertificateStandard(prisma, { code: next('qualification-standard-a') }),
       seedCertificateStandard(prisma, { code: next('qualification-standard-b') }),
@@ -316,7 +316,7 @@ describe('activity batch4 qualification runtime', () => {
                 ruleTypeCode: 'grade',
                 enforcementCode: 'block',
                 operator: 'in',
-                valueJson: { codes: ['L1', 'L3'] },
+                valueJson: { codes: ['level-1', 'level-3'] },
                 sortOrder: 1,
               },
               {
@@ -529,7 +529,10 @@ describe('activity batch4 qualification runtime', () => {
         where: { aggregateId: submit.body.data.registrationId },
       }),
     ]);
-    await prisma.member.update({ where: { id: fixture.memberId }, data: { gradeCode: 'L2' } });
+    await prisma.member.update({
+      where: { id: fixture.memberId },
+      data: { gradeCode: 'level-2' },
+    });
     const blockedReview = await request(httpServer(app))
       .patch(
         `/api/admin/v1/activities/${fixture.activityId}/registrations/${submit.body.data.registrationId}/approve`,
@@ -640,7 +643,7 @@ describe('activity batch4 qualification runtime', () => {
             ruleTypeCode: 'grade',
             enforcementCode: 'warn',
             operator: 'in',
-            valueJson: { codes: ['L2'] },
+            valueJson: { codes: ['level-2'] },
             warnScore: 9,
             sortOrder: 1,
           },
@@ -656,7 +659,7 @@ describe('activity batch4 qualification runtime', () => {
       data: {
         memberNo: next('qualification-onsite-target'),
         displayName: 'Qualification Onsite Target',
-        gradeCode: 'L1',
+        gradeCode: 'level-1',
         status: MemberStatus.ACTIVE,
       },
       select: { id: true },

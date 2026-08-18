@@ -46,7 +46,11 @@ describe('activity positions HTTP surface', () => {
     adminAuth = (await loginAs(app, 'pos-http-super-admin')).authHeader;
 
     const member = await prisma.member.create({
-      data: { memberNo: 'pos-http-user', displayName: '岗位HTTP队员' },
+      data: {
+        memberNo: 'pos-http-user',
+        displayName: '岗位HTTP队员',
+        gradeCode: 'level-1',
+      },
       select: { id: true },
     });
     userMemberId = member.id;
