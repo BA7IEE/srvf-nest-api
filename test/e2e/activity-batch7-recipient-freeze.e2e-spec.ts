@@ -298,6 +298,104 @@ describe('第 7 批第一刀:收件人快照冻结(真 HTTP + 真 outbox)', () =
     await assignTag(newcomerId, []);
   });
 
+  it('ADV-016 取消通知:intent 形成后**报名名单**再变,原事件收件人仍逐字冻结', async () => {
+    const activityId = await createDraftActivity('冻结:取消名册');
+    await publishWithTags(activityId, [tagCode]);
+    // 发布那批 intent 与取消那批共用 aggregateId,靠 cohortKey 分离 —— 先记下发布批,
+    // 后面要证明取消批没把它算进去、也没被它污染。
+    const publishCohort = (await intentsFor(activityId)).map((intent) => intent.destinationRef);
+    expect(publishCohort.length).toBeGreaterThan(0);
+
+    const registrants = await Promise.all(
+      ['cancel-reg-a', 'cancel-reg-b', 'cancel-reg-c'].map((memberNo) =>
+        prisma.member.create({
+          data: { memberNo, displayName: memberNo },
+          select: { id: true },
+        }),
+      ),
+    );
+    await prisma.activityRegistration.createMany({
+      data: [
+        { activityId, memberId: registrants[0]!.id, statusCode: 'pending' },
+        { activityId, memberId: registrants[1]!.id, statusCode: 'pass' },
+        { activityId, memberId: registrants[2]!.id, statusCode: 'waitlisted' },
+      ],
+    });
+
+    const cancelled = await request(httpServer(app))
+      .patch(`/api/admin/v1/activities/${activityId}/cancel`)
+      .set('Authorization', auth)
+      .send({ cancelReason: '暴雨' });
+    expect(cancelled.status).toBe(200);
+
+    const cancelIntents = await prisma.notificationOutboxIntent.findMany({
+      where: { aggregateType: 'activity', aggregateId: activityId, eventType: 'notification.targeted' },
+      select: { eventKey: true, destinationRef: true, payload: true },
+    });
+    const cancelCohort = cancelIntents
+      .filter((intent) => intent.eventKey.startsWith('activity-cancel:'))
+      .map((intent) => intent.destinationRef)
+      .sort();
+    const expectedRegistrants = registrants.map((member) => member.id).sort();
+    // 先钉两边非空,再比集合。
+    expect(cancelCohort.length).toBeGreaterThan(0);
+    expect(cancelCohort).toEqual(expectedRegistrants);
+
+    // ── intent 已经形成。现在**改报名名单** ──
+    // ① 一个报名者退出(软删报名);② 新来一个报名者。
+    await prisma.activityRegistration.updateMany({
+      where: { activityId, memberId: registrants[0]!.id },
+      data: { deletedAt: new Date(), statusCode: 'cancelled' },
+    });
+    const lateRegistrant = await prisma.member.create({
+      data: { memberNo: 'cancel-reg-late', displayName: 'cancel-reg-late' },
+      select: { id: true },
+    });
+    await prisma.activityRegistration.create({
+      data: { activityId, memberId: lateRegistrant.id, statusCode: 'pending' },
+    });
+
+    // 名单确实变了 —— 先证明这一点。
+    const liveRoster = await prisma.activityRegistration.findMany({
+      where: {
+        activityId,
+        deletedAt: null,
+        statusCode: { in: ['pending', 'pass', 'waitlisted'] },
+      },
+      select: { memberId: true },
+    });
+    const liveNow = [...new Set(liveRoster.map((row) => row.memberId))].sort();
+    expect(liveNow.length).toBeGreaterThan(0);
+    expect(liveNow).not.toEqual(cancelCohort);
+
+    await drainOutbox();
+
+    const delivered = await prisma.notification.findMany({
+      where: {
+        notificationTypeCode: 'activity-changed',
+        recipientMemberId: { in: [...expectedRegistrants, lateRegistrant.id] },
+      },
+      select: { recipientMemberId: true },
+    });
+    const deliveredMembers = [...new Set(delivered.map((row) => row.recipientMemberId!))].sort();
+    expect(deliveredMembers.length).toBeGreaterThan(0);
+    expect(deliveredMembers).toEqual(expectedRegistrants);
+    // 退出的人**仍然**收到取消通知(他当时确实报名了);后来才报名的人一个不许收到。
+    expect(deliveredMembers).toContain(registrants[0]!.id);
+    expect(deliveredMembers).not.toContain(lateRegistrant.id);
+
+    // 取消批与发布批是两个 cohortKey,互不吞并。
+    const cancelStamps = cancelIntents
+      .filter((intent) => intent.eventKey.startsWith('activity-cancel:'))
+      .map((intent) => readRecipientFreezeStamp(intent.payload));
+    for (const stamp of cancelStamps) {
+      expect(stamp!.basisKind).toBe('registration-roster');
+      expect(stamp!.cohortSize).toBe(expectedRegistrants.length);
+    }
+    expect(new Set(cancelStamps.map((stamp) => stamp!.cohortKey)).size).toBe(1);
+    expect(cancelStamps[0]!.cohortKey).not.toContain('activity-publish-audience');
+  });
+
   it('legacy 广播(不带标签)拿到显式的 broadcast-visibility 盖章,而不是悄悄没有快照', async () => {
     const activityId = await createDraftActivity('冻结:legacy 广播');
     const published = await request(httpServer(app))
