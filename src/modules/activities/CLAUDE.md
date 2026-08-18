@@ -64,6 +64,7 @@
 - ❌ **不**在发布审核事务中反转锁序或信任提交时快照；必须 Activity → review，approve 时服务端重建快照
 - ❌ **不**把 Form target 从 schemaVersion=3/4 stale hash 移走，也不让历史 v2 approval 读取或改写 Form；v2/v3 hash 永不加入 `allocationModeCode`，只有 v4 可冻结并 apply 它；published Form 或 allocation mode 不得暗中直接写或代为提交 change review。
 - ❌ **不**把活动发布/改期/取消/审核结果/扩容递补通知移回 commit 后直调，也不以 `publishedBy` 代替当前 ACTIVE owner；稳定 eventKey 与业务写必须同事务
+- ❌ **不**给四个活动侧 producer 传裸 `memberIds` / `ownerMemberId`：收件人一律经 [`activity-recipient-freeze.ts`](activity-recipient-freeze.ts) 冻结为品牌类型 `FrozenRecipientCohort` 后再入 producer（纯 tx 函数，不进 module providers）。冻结按 `cohortKey` **先回捞后重算**，回捞命中时一次收件人查询都不发；依据/时刻/算法版本/基数盖在 intent `payload.recipientFreeze` 可选键上（不 bump `payloadVersion`）。legacy 广播也必须取一次显式 `broadcast-visibility` 盖章 —— 「这条不冻结」是冻结入口的决定，不是 producer 漏了。❌ producer 不得自查 member / 受众标签 / 责任表(结构判据在 `activity-recipient-freeze.spec.ts`)
 - ❌ **不**把责任委托/结束/owner 移交通知移回 commit 后 best-effort，也不把 assignment、RoleBinding、audit 与两个移交 intent 拆成不同事务
 - ❌ **不**把责任 assignment 与 system-managed RoleBinding 分成两个事务，也不绕过 projector 直接写 responsibility binding
 - ❌ **不**把 `'activity.publish'` 拆成 `activity.create` / `activity.update` 等细分 event(沿现状)
