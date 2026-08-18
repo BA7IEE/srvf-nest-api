@@ -18,8 +18,10 @@ export function applySwagger(app: INestApplication, appCfg: AppConfig): void {
   // DocumentBuilder.addTag(...) 仅决定 OpenAPI doc 顶层 tags[] 的顺序与描述,
   // **不**影响任何 operation 的 path / response / Guard;沿 docs/api-client-boundary-phase-1-review.md §2.2。
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('U Nest API Starter')
-    .setDescription('AI-friendly TypeScript API base — NestJS + Prisma + PostgreSQL')
+    .setTitle('深圳公益救援队数字化平台 API(SRVF-DP)')
+    .setDescription(
+      'Shenzhen Rescue Volunteers Federation Digital Platform — 组织数字化业务底座后端 API(NestJS + Prisma + PostgreSQL)',
+    )
     .setVersion('0.66.0')
     .addBearerAuth()
     // ===== Auth / Public(全部客户端共用)=====

@@ -1668,7 +1668,7 @@ describe('OpenAPI 契约快照', () => {
 
   it('OpenAPI 文档可生成,顶层字段齐全', () => {
     expect(doc.openapi).toMatch(/^3\./);
-    expect(doc.info.title).toBe('U Nest API Starter');
+    expect(doc.info.title).toBe('深圳公益救援队数字化平台 API(SRVF-DP)');
     expect(typeof doc.info.version).toBe('string');
     expect(doc.paths).toBeDefined();
     expect(doc.components?.schemas).toBeDefined();
