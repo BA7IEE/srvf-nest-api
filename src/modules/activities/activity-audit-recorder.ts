@@ -256,6 +256,40 @@ export class ActivityAuditRecorder {
     });
   }
 
+  // B7 定向发布单列审计形状；既有 publish 的 extra 保持逐字不变。
+  async logPublishWithAudienceTags(args: {
+    activityId: string;
+    before: AuditActivitySnapshotInput;
+    after: AuditActivitySnapshotInput;
+    actorUserId: string;
+    actorRoleSnap: Role;
+    priorStatusCode: string;
+    nextStatusCode: string;
+    audienceTagCodes: string[];
+    recipientCount: number;
+    auditMeta: AuditMeta;
+    tx: PrismaTx;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: ACTIVITY_AUDIT_EVENT,
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: args.activityId,
+      meta: args.auditMeta,
+      before: this.toAuditSnapshot(args.before),
+      after: this.toAuditSnapshot(args.after),
+      extra: {
+        operation: 'publish-with-audience-tags',
+        priorStatusCode: args.priorStatusCode,
+        nextStatusCode: args.nextStatusCode,
+        audienceTagCodes: args.audienceTagCodes,
+        recipientCount: args.recipientCount,
+      },
+      tx: args.tx,
+    });
+  }
+
   // ============ logCancel(沿 PR #199 audit-characterization E1 / E2) ============
   // event: 'activity.publish';
   // before + after = toAuditSnapshot(...);

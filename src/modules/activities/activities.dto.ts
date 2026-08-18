@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayUnique,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -685,6 +687,28 @@ export class PublishActivityDto {
   @IsBoolean()
   @Equals(true)
   requiresInsuranceConfirmed!: boolean;
+}
+
+// B7 定向发布沿既有发布确认字段，额外接收不可重复、最多 50 个会员受众标签 code；空数组表示全体有效会员。
+export class PublishActivityWithAudienceTagsDto {
+  @ApiProperty({ description: '确认已核对本活动保险要求；只能为 true', example: true })
+  @IsBoolean()
+  @Equals(true)
+  requiresInsuranceConfirmed!: boolean;
+
+  @ApiProperty({
+    description: '会员受众标签 code 集合；空数组表示全部有效会员',
+    type: [String],
+    maxItems: 50,
+    uniqueItems: true,
+  })
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MinLength(1, { each: true })
+  @MaxLength(64, { each: true })
+  audienceTagCodes!: string[];
 }
 
 // ============ 列表 query ============

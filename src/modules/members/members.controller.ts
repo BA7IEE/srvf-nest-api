@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
 } from '@nestjs/common';
@@ -37,12 +38,14 @@ import {
   ListMembersQueryDto,
   MemberOffboardImpactResponseDto,
   MemberOffboardResponseDto,
+  MemberAudienceTagsResponseDto,
   MemberOptionsQueryDto,
   MemberOptionsResponseDto,
   MemberResponseDto,
   UpdateMemberAccountStatusDto,
   UpdateMemberDto,
   UpdateMemberStatusDto,
+  ReplaceMemberAudienceTagsDto,
 } from './members.dto';
 import { MembersService } from './members.service';
 import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
@@ -135,6 +138,44 @@ export class MembersController {
     @CurrentUser() currentUser: CurrentUserPayload,
   ): Promise<MemberResponseDto> {
     return this.service.create(dto, currentUser);
+  }
+
+  @Get(':id/audience-tags')
+  @RequiresPermission('member.read.record', { require: 'all', engine: 'rbac-global' })
+  @ApiOperation({ summary: '查询会员受众标签 [rbac: member.read.record]' })
+  @ApiWrappedOkResponse(MemberAudienceTagsResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.MEMBER_NOT_FOUND,
+    BizCode.SERVICE_UNAVAILABLE,
+  )
+  audienceTags(
+    @Param() params: IdParamDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+  ): Promise<MemberAudienceTagsResponseDto> {
+    return this.service.getAudienceTags(params.id, currentUser);
+  }
+
+  @Put(':id/audience-tags')
+  @RequiresPermission('member.update.record', { require: 'all', engine: 'rbac-global' })
+  @ApiOperation({ summary: '全量替换会员受众标签(空数组撤销全部) [rbac: member.update.record]' })
+  @ApiWrappedOkResponse(MemberAudienceTagsResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.MEMBER_NOT_FOUND,
+    BizCode.SERVICE_UNAVAILABLE,
+  )
+  replaceAudienceTags(
+    @Param() params: IdParamDto,
+    @Body() dto: ReplaceMemberAudienceTagsDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<MemberAudienceTagsResponseDto> {
+    return this.service.replaceAudienceTags(params.id, dto, currentUser, this.buildAuditMeta(req));
   }
 
   @Get(':id')

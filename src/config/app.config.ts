@@ -457,6 +457,10 @@ export interface ActivityResponsibilityWorkflowConfig {
   enabled: boolean;
 }
 
+export interface ActivityAudienceTagsConfig {
+  httpEnabled: boolean;
+}
+
 export function parseActivityResponsibilityWorkflowEnabled(
   raw: string | undefined,
   env: AppEnv,
@@ -471,6 +475,24 @@ export function parseActivityResponsibilityWorkflowEnabled(
   }
   if (raw !== 'true' && raw !== 'false') {
     throw new Error('ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED 必须严格为 true 或 false');
+  }
+  return raw === 'true';
+}
+
+export function parseActivityAudienceTagsHttpEnabled(
+  raw: string | undefined,
+  env: AppEnv,
+): boolean {
+  if (raw === undefined || raw.trim() === '') {
+    if (isProductionLike(env)) {
+      throw new Error(
+        'ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED 不能为空(production / smoke 必须显式设置 true 或 false)',
+      );
+    }
+    return false;
+  }
+  if (raw !== 'true' && raw !== 'false') {
+    throw new Error('ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED 必须严格为 true 或 false');
   }
   return raw === 'true';
 }
@@ -626,6 +648,7 @@ export interface AppConfig {
   recruitmentOcr: RecruitmentOcrConfig;
   contentPublicThrottle: ContentPublicThrottleConfig;
   activityResponsibilityWorkflow: ActivityResponsibilityWorkflowConfig;
+  activityAudienceTags: ActivityAudienceTagsConfig;
 }
 
 export default registerAs('app', (): AppConfig => {
@@ -896,6 +919,13 @@ export default registerAs('app', (): AppConfig => {
     ),
   };
 
+  const activityAudienceTags: ActivityAudienceTagsConfig = {
+    httpEnabled: parseActivityAudienceTagsHttpEnabled(
+      process.env.ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED,
+      env,
+    ),
+  };
+
   return {
     env,
     port,
@@ -923,5 +953,6 @@ export default registerAs('app', (): AppConfig => {
     recruitmentOcr,
     contentPublicThrottle,
     activityResponsibilityWorkflow,
+    activityAudienceTags,
   };
 });

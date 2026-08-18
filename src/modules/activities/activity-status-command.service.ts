@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
+import { DictItemStatus, DictTypeStatus, MemberStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -8,7 +9,12 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import appConfig from '../../config/app.config';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
-import { ActivityResponseDto, CancelActivityDto, PublishActivityDto } from './activities.dto';
+import {
+  ActivityResponseDto,
+  CancelActivityDto,
+  PublishActivityDto,
+  PublishActivityWithAudienceTagsDto,
+} from './activities.dto';
 import { toResponseDto } from './activity-presenter';
 import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { ACTIVITY_PHASE_ENDED, deriveActivityPhase } from './activity-phase';
@@ -26,6 +32,8 @@ import {
   PrismaTx,
   activitySafeSelect,
 } from './activity-access.service';
+
+const DICT_TYPE_MEMBER_AUDIENCE_TAG = 'member_audience_tag';
 
 /*
  * 活动的**状态流转命令族**(Phase 6-B 第三域第三刀,§3.2)。
@@ -52,6 +60,56 @@ export class ActivityStatusCommandService {
     private readonly publishReviewService: ActivityPublishReviewService,
     @Inject(appConfig.KEY) private readonly config: ConfigType<typeof appConfig>,
   ) {}
+
+  private assertAudienceTagsHttpEnabled(): void {
+    if (!this.config.activityAudienceTags.httpEnabled) {
+      throw new BizException(BizCode.SERVICE_UNAVAILABLE);
+    }
+  }
+
+  private async resolveAudienceRecipientMemberIds(
+    tx: PrismaTx,
+    audienceTagCodes: string[],
+  ): Promise<string[]> {
+    if (audienceTagCodes.length === 0) {
+      const members = await tx.member.findMany({
+        where: { status: MemberStatus.ACTIVE, deletedAt: null },
+        select: { id: true },
+      });
+      return members.map((member) => member.id).sort();
+    }
+
+    const type = await tx.dictType.findFirst({
+      where: {
+        code: DICT_TYPE_MEMBER_AUDIENCE_TAG,
+        status: DictTypeStatus.ACTIVE,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (!type) throw new BizException(BizCode.BAD_REQUEST);
+
+    const tags = await tx.dictItem.findMany({
+      where: {
+        typeId: type.id,
+        code: { in: audienceTagCodes },
+        status: DictItemStatus.ACTIVE,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (tags.length !== audienceTagCodes.length) throw new BizException(BizCode.BAD_REQUEST);
+
+    const assignments = await tx.memberAudienceTagAssignment.findMany({
+      where: {
+        dictItemId: { in: tags.map((tag) => tag.id) },
+        revokedAt: null,
+        member: { status: MemberStatus.ACTIVE, deletedAt: null },
+      },
+      select: { memberId: true },
+    });
+    return [...new Set(assignments.map((assignment) => assignment.memberId))].sort();
+  }
 
   async softDelete(
     id: string,
@@ -231,6 +289,98 @@ export class ActivityStatusCommandService {
         location: updated.location,
         requiresInsurance: updated.requiresInsurance,
         isPublicRegistration: updated.isPublicRegistration,
+      });
+      return toResponseDto(updated);
+    });
+  }
+
+  async publishWithAudienceTags(
+    id: string,
+    dto: PublishActivityWithAudienceTagsDto,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<ActivityResponseDto> {
+    await this.access.assertCanOrThrow(currentUser, 'activity.publish.record', {
+      type: 'activity',
+      id,
+    });
+    this.assertAudienceTagsHttpEnabled();
+    if (dto.requiresInsuranceConfirmed !== true) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    const audienceTagCodes = [...dto.audienceTagCodes].sort();
+    if (this.config.activityResponsibilityWorkflow.enabled) {
+      await this.publishReviewService.compatibilityPublishWithAudienceTags(
+        id,
+        { requiresInsuranceConfirmed: true, audienceTagCodes },
+        currentUser,
+        auditMeta,
+      );
+      return this.access.findOne(id, currentUser);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const current = await this.access.lockAndFindActivityOrThrow(id, tx);
+      if (!current.isPublicRegistration) {
+        throw new BizException(BizCode.BAD_REQUEST);
+      }
+      await this.allocationModes.assertLockedActivityConsistent(tx, current);
+
+      const transition = this.activityStateMachine.decide('publish', current.statusCode);
+      if (!transition.allowed) {
+        throw new BizException(transition.biz);
+      }
+      const { nextStatusCode } = transition;
+
+      const now = new Date();
+      if (current.endAt.getTime() <= now.getTime()) {
+        throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+      }
+      if (
+        current.registrationDeadline !== null &&
+        current.registrationDeadline.getTime() < now.getTime()
+      ) {
+        throw new BizException(BizCode.ACTIVITY_REGISTRATION_DEADLINE_PASSED);
+      }
+
+      await claimAtStatus(tx, {
+        target: 'activity',
+        id: current.id,
+        expectedStatus: current.statusCode,
+        invalidStatusBiz: BizCode.ACTIVITY_STATUS_INVALID,
+      });
+      const updated = await tx.activity.update({
+        where: { id: current.id },
+        data: {
+          statusCode: nextStatusCode,
+          publishedBy: currentUser.id,
+          publishedAt: now,
+        },
+        select: activitySafeSelect,
+      });
+
+      const recipientMemberIds = await this.resolveAudienceRecipientMemberIds(tx, audienceTagCodes);
+      await this.activityAuditRecorder.logPublishWithAudienceTags({
+        activityId: current.id,
+        before: current,
+        after: updated,
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        priorStatusCode: current.statusCode,
+        nextStatusCode,
+        audienceTagCodes,
+        recipientCount: recipientMemberIds.length,
+        auditMeta,
+        tx,
+      });
+      await this.notificationProducer.enqueuePublishedWithAudienceTags(tx, {
+        activityId: updated.id,
+        activityTitle: updated.title,
+        publishedAt: now,
+        startAt: updated.startAt,
+        location: updated.location,
+        requiresInsurance: updated.requiresInsurance,
+        memberIds: recipientMemberIds,
       });
       return toResponseDto(updated);
     });

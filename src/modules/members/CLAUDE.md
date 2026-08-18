@@ -12,6 +12,7 @@
 - **正式等级唯一真值**:`isFormalMemberGradeCode()` 只对精确 `level-1`…`level-7` 返回 true；函数归本模块 `member-grade.ts`，其他模块不得复制正则/Set，也不得用组织归属推导正式等级。
 
 - **部门数据范围(v0.49)**:`list/options` 先取 `AuthzService.getVisibleOrganizationScope('member.read.record')`，再与用户 `organizationId/includeDescendants` 过滤取交集；成员归属只认 active PRIMARY，SECONDARY/TEMPORARY/SUPPORT 不扩大可见范围。有效持码但组织集合为空返回空列表，无码才返 30100。
+- **B7 会员受众标签**:`MemberAudienceTagAssignment` 用 `revokedAt` 保留赋标/撤标历史，live `(memberId,dictItemId)` 由 partial unique 约束；`PUT :id/audience-tags` 在 Member lifecycle 锁事务内全量替换，只接受 ACTIVE、未软删的 `member_audience_tag` 字典项，空数组只写撤标不硬删，并同事务记录 `member.audience-tags.update` audit。GET/PUT 都先走既有 member resource authz，再检查 `ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED`；已授权调用且 gate 关闭才返回 503。
 - **point auth**:除 `create` 保持 no-ref/GLOBAL-only 外，成员详情及全部单项写操作都用 `{type:'member', id}`；bulk grant 每项独立 point auth。证书点动作按 certificate ref，档案/联系人/保险按 member ref；`resource_not_found` 仅对旧 GLOBAL 持码者回退既有业务 NOT_FOUND，scoped 调用者统一 30100。
 - **敏感二次授权**:`member-profile.read.sensitive` 与 `emergency-contact.read.sensitive` 也必须带 member ref；基础 read 通过但 sensitive 未通过时继续掩码。副职只读投影明确不含任何 `*.read.sensitive`。
 - **最后 ops-admin 保护(v0.61.0 PR-C)**:`MembersService` 注入 permissions 模块导出的 `LastAdminProtectionPolicy`。会让关联账号退出当前有效 holder 集合的入口，均在原事务内、实际停用/软删前调用 `assertCanDeactivateOpsAdminUser(tx, userId)`：`updateAccountStatus` 仅 `status=DISABLED`；`updateStatus(INACTIVE)` 与显式 `offboard` 共用 `offboardCore`；`reopenAccount` 软删 `oldLink` 前。若当前有效或当前 `endedAt=null` 常驻 holder 任一归零，统一返 `30101`；当前临时 backup 不可替代常驻兜底。

@@ -129,6 +129,23 @@ describe('MemberAuditRecorder — 事件 payload 逐字不变', () => {
     });
   });
 
+  it('member.audience-tags.update:排序 code 快照与增删数组均不含会员 PII', async () => {
+    const { recorder, log } = makeRecorder();
+    await recorder.audienceTagsUpdated(TX, CTX, {
+      beforeTagCodes: ['alpha', 'rescue'],
+      afterTagCodes: ['medical', 'rescue'],
+      addedTagCodes: ['medical'],
+      removedTagCodes: ['alpha'],
+    });
+    expect(payloadOf(log)).toEqual({
+      event: 'member.audience-tags.update',
+      ...ENVELOPE,
+      before: { tagCodes: ['alpha', 'rescue'] },
+      after: { tagCodes: ['medical', 'rescue'] },
+      extra: { addedTagCodes: ['medical'], removedTagCodes: ['alpha'] },
+    });
+  });
+
   it('member.offboard:伞事件 extra 恰好 11 个计数腿', async () => {
     const { recorder, log } = makeRecorder();
     await recorder.offboard(TX, CTX, {

@@ -22,6 +22,7 @@ const ENV_KEYS = [
   'WECHAT_ENCRYPTION_KEY',
   'REALNAME_ENCRYPTION_KEY',
   'INSURANCE_ENFORCEMENT_ENABLED',
+  'ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED',
 ] as const;
 
 describe('INSURANCE_ENFORCEMENT_ENABLED production config assembly', () => {
@@ -46,6 +47,7 @@ describe('INSURANCE_ENFORCEMENT_ENABLED production config assembly', () => {
     process.env.WECHAT_ENCRYPTION_KEY = 'w'.repeat(32);
     process.env.REALNAME_ENCRYPTION_KEY = 'r'.repeat(32);
     process.env.INSURANCE_ENFORCEMENT_ENABLED = 'false';
+    process.env.ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED = 'false';
   });
 
   afterAll(() => {

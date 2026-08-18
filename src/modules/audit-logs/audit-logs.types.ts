@@ -230,6 +230,7 @@ export type AuditLogEvent =
   // 第七刀·members 轴审计残留(2026-07-14;goal 显式预授权 +1,110→111)。before/after
   // 仅含账号 status;extra 仅含 linkedUserId / refreshTokensRevoked,不含 phone/openid/secret。
   | 'member.account.status-change' // admin 从队员面启停关联 USER 账号(members.service:updateAccountStatus;与 user status 写 / refresh 撤销同事务)
+  | 'member.audience-tags.update' // 活动 B7:管理员全量替换会员受众标签(before/after 为排序 code;extra 为 added/removed code,不含 PII)
   // 参与域生命周期收口⑤(v0.40.0;goal「参与域生命周期收口…」T4 显式预授权的唯一 +1 AuditLogEvent)。
   // resourceType='member' / resourceId=memberId;一键离队关闭全部当前授权来源的伞事件。
   | 'member.offboard' // admin 一键离队(members.service: offboard/offboardCore;extra 含 member/归属/账号/refresh/任职/分管/绑定实际计数与锁后残留探针)

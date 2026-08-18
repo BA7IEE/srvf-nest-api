@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { Injectable, Logger } from '@nestjs/common';
-import { MemberStatus, Prisma } from '@prisma/client';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { ConfigType } from '@nestjs/config';
+import { DictItemStatus, DictTypeStatus, MemberStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
+import appConfig from '../../config/app.config';
 import { AuthzService } from '../authz/authz.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
@@ -18,6 +20,7 @@ import {
 import { ActivityPublishReviewAuditRecorder } from './activity-publish-review-audit-recorder';
 import {
   ActivityPublishReviewPresenter,
+  readActivityPublishReviewAudienceTagCodes,
   type ActivityPublishReviewViewRow,
   activityPublishReviewViewSelect,
 } from './activity-publish-review-presenter';
@@ -48,6 +51,8 @@ const activityPublishReviewIdempotencySelect = {
   requestHash: true,
   reviewRequestHash: true,
 } as const satisfies Prisma.ActivityPublishReviewSelect;
+
+const DICT_TYPE_MEMBER_AUDIENCE_TAG = 'member_audience_tag';
 
 interface PublishedActivityEffect {
   activityId: string;
@@ -95,6 +100,8 @@ export class ActivityPublishReviewService {
     private readonly proposalApplier: ActivityProposalApplier,
     private readonly proposalV2: ActivityPublishProposalV2Service,
     private readonly allocationModes: ActivityAllocationModeService,
+    @Inject(appConfig.KEY)
+    private readonly config: ConfigType<typeof appConfig>,
   ) {}
 
   private async lockActivity(activityId: string, tx: PrismaTx): Promise<void> {
@@ -176,6 +183,62 @@ export class ActivityPublishReviewService {
       _max: { requestVersion: true },
     });
     return (latest._max.requestVersion ?? 0) + 1;
+  }
+
+  private async resolveActiveAudienceTagIds(
+    tx: PrismaTx,
+    audienceTagCodes: string[],
+  ): Promise<string[]> {
+    if (audienceTagCodes.length === 0) return [];
+    const type = await tx.dictType.findFirst({
+      where: {
+        code: DICT_TYPE_MEMBER_AUDIENCE_TAG,
+        status: DictTypeStatus.ACTIVE,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (!type) throw new BizException(BizCode.BAD_REQUEST);
+    const tags = await tx.dictItem.findMany({
+      where: {
+        typeId: type.id,
+        code: { in: audienceTagCodes },
+        status: DictItemStatus.ACTIVE,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (tags.length !== audienceTagCodes.length) throw new BizException(BizCode.BAD_REQUEST);
+    return tags.map((tag) => tag.id);
+  }
+
+  private assertAudienceTagsHttpEnabled(): void {
+    if (!this.config.activityAudienceTags.httpEnabled) {
+      throw new BizException(BizCode.SERVICE_UNAVAILABLE);
+    }
+  }
+
+  private async resolveAudienceRecipientMemberIds(
+    tx: PrismaTx,
+    audienceTagCodes: string[],
+  ): Promise<string[]> {
+    if (audienceTagCodes.length === 0) {
+      const members = await tx.member.findMany({
+        where: { status: MemberStatus.ACTIVE, deletedAt: null },
+        select: { id: true },
+      });
+      return members.map((member) => member.id).sort();
+    }
+    const tagIds = await this.resolveActiveAudienceTagIds(tx, audienceTagCodes);
+    const assignments = await tx.memberAudienceTagAssignment.findMany({
+      where: {
+        dictItemId: { in: tagIds },
+        revokedAt: null,
+        member: { status: MemberStatus.ACTIVE, deletedAt: null },
+      },
+      select: { memberId: true },
+    });
+    return [...new Set(assignments.map((assignment) => assignment.memberId))].sort();
   }
 
   private ensureInitialPublishable(activity: {
@@ -400,7 +463,20 @@ export class ActivityPublishReviewService {
     user: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityPublishReviewResponseDto> {
-    const requestHash = this.submitRequestHash('initial', activityId, dto);
+    return this.submitInitialProposalInternal(activityId, dto, user, auditMeta, null);
+  }
+
+  private async submitInitialProposalInternal(
+    activityId: string,
+    dto: SubmitActivityPublishReviewDto,
+    user: CurrentUserPayload,
+    auditMeta: AuditMeta,
+    audienceTagCodes: string[] | null,
+  ): Promise<ActivityPublishReviewResponseDto> {
+    const requestHash =
+      audienceTagCodes === null
+        ? this.submitRequestHash('initial', activityId, dto)
+        : hashCanonical({ requestType: 'initial', activityId, dto, audienceTagCodes });
     try {
       const row = await this.prisma.$transaction(async (tx) => {
         await this.lockActivity(activityId, tx);
@@ -414,6 +490,7 @@ export class ActivityPublishReviewService {
             startAt: true,
             endAt: true,
             registrationDeadline: true,
+            isPublicRegistration: true,
           },
         });
         if (!user.memberId || activity.initiatorMemberId !== user.memberId) {
@@ -426,6 +503,10 @@ export class ActivityPublishReviewService {
         const replay = await this.findSubmitReplay(tx, dto.operationKey, requestHash);
         if (replay) return replay;
         this.ensureInitialPublishable(activity);
+        if (audienceTagCodes !== null) {
+          if (!activity.isPublicRegistration) throw new BizException(BizCode.BAD_REQUEST);
+          await this.resolveActiveAudienceTagIds(tx, audienceTagCodes);
+        }
         const pending = await tx.activityPublishReview.count({
           where: { activityId, status: 'pending' },
         });
@@ -444,6 +525,13 @@ export class ActivityPublishReviewService {
             submittedByUserId: user.id,
             operationKey: dto.operationKey,
             requestHash,
+            ...(audienceTagCodes === null
+              ? {}
+              : {
+                  audienceTagCodes: JSON.parse(
+                    JSON.stringify(audienceTagCodes),
+                  ) as Prisma.InputJsonValue,
+                }),
           },
           select: activityPublishReviewViewSelect,
         });
@@ -608,6 +696,38 @@ export class ActivityPublishReviewService {
     );
   }
 
+  async compatibilityPublishWithAudienceTags(
+    activityId: string,
+    dto: { requiresInsuranceConfirmed: boolean; audienceTagCodes: string[] },
+    user: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<ActivityPublishReviewResponseDto> {
+    if (dto.requiresInsuranceConfirmed !== true) throw new BizException(BizCode.BAD_REQUEST);
+    const pending = await this.prisma.activityPublishReview.findFirst({
+      where: { activityId, requestType: 'initial', status: 'pending' },
+      select: activityPublishReviewViewSelect,
+    });
+    if (pending) {
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
+    }
+    const activity = await this.prisma.activity.findFirst({
+      where: { id: activityId, deletedAt: null },
+      select: { initiatorMemberId: true, statusCode: true },
+    });
+    if (!activity) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+    if (!user.memberId || activity.initiatorMemberId !== user.memberId) {
+      throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+    }
+    if (activity.statusCode !== 'draft') throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+    return this.submitInitialProposalInternal(
+      activityId,
+      { operationKey: `compat-publish-audience:${randomUUID()}`, confirmation: true },
+      user,
+      auditMeta,
+      dto.audienceTagCodes,
+    );
+  }
+
   async approve(
     reviewId: string,
     dto: ApproveActivityPublishReviewDto,
@@ -642,6 +762,8 @@ export class ActivityPublishReviewService {
         const review = await tx.activityPublishReview.findUniqueOrThrow({
           where: { id: reviewId },
         });
+        const audienceTagCodes = readActivityPublishReviewAudienceTagCodes(review.audienceTagCodes);
+        if (audienceTagCodes !== null) this.assertAudienceTagsHttpEnabled();
         if (this.proposalV2.isSnapshot(review.snapshot) && dto.operationKey === undefined) {
           throw new BizException(BizCode.BAD_REQUEST);
         }
@@ -678,6 +800,7 @@ export class ActivityPublishReviewService {
             reviewRequestHash,
             user,
             auditMeta,
+            audienceTagCodes,
           );
         }
         const decision = this.stateMachine.decide('approve', review.status);
@@ -770,22 +893,45 @@ export class ActivityPublishReviewService {
                 auditMeta,
               );
         await this.writeRuleSnapshot(tx, review.activityId, review.id);
-        await this.audit.log({
-          activityId: review.activityId,
-          reviewId: review.id,
-          operation: 'publish-review-approve',
-          requestVersion: review.requestVersion,
-          requestType: review.requestType,
-          directPublish: false,
-          actorUserId: user.id,
-          actorRoleSnap: user.role,
-          auditMeta,
-          tx,
-        });
         const publishedEffect =
           review.requestType === 'initial'
             ? await this.loadPublishedEffect(review.activityId, tx)
             : null;
+        let audienceRecipientMemberIds: string[] | null = null;
+        if (audienceTagCodes !== null) {
+          if (review.requestType !== 'initial') {
+            throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+          }
+          if (!publishedEffect?.isPublicRegistration) throw new BizException(BizCode.BAD_REQUEST);
+          audienceRecipientMemberIds = await this.resolveAudienceRecipientMemberIds(
+            tx,
+            audienceTagCodes,
+          );
+          await this.audit.logAudienceTagsApproved({
+            activityId: review.activityId,
+            reviewId: review.id,
+            requestVersion: review.requestVersion,
+            actorUserId: user.id,
+            actorRoleSnap: user.role,
+            audienceTagCodes,
+            recipientCount: audienceRecipientMemberIds.length,
+            auditMeta,
+            tx,
+          });
+        } else {
+          await this.audit.log({
+            activityId: review.activityId,
+            reviewId: review.id,
+            operation: 'publish-review-approve',
+            requestVersion: review.requestVersion,
+            requestType: review.requestType,
+            directPublish: false,
+            actorUserId: user.id,
+            actorRoleSnap: user.role,
+            auditMeta,
+            tx,
+          });
+        }
         const recipientMemberId = await this.resolveReviewOutcomeRecipient(tx, {
           activityId: review.activityId,
           requestType: review.requestType,
@@ -805,7 +951,14 @@ export class ActivityPublishReviewService {
           approved: true,
         });
         if (publishedEffect) {
-          await this.notificationProducer.enqueuePublished(tx, publishedEffect);
+          if (audienceRecipientMemberIds === null) {
+            await this.notificationProducer.enqueuePublished(tx, publishedEffect);
+          } else {
+            await this.notificationProducer.enqueuePublishedWithAudienceTags(tx, {
+              ...publishedEffect,
+              memberIds: audienceRecipientMemberIds,
+            });
+          }
         }
         if (changeEffect) {
           await this.notificationProducer.enqueueScheduleChange(tx, {
@@ -872,6 +1025,7 @@ export class ActivityPublishReviewService {
     reviewRequestHash: string | null,
     user: CurrentUserPayload,
     auditMeta: AuditMeta,
+    audienceTagCodes: string[] | null,
   ): Promise<{ dto: ActivityPublishReviewResponseDto; missingChangeOwner: boolean }> {
     const decision = this.stateMachine.decide('approve', review.status);
     if (!decision.allowed) throw new BizException(decision.biz);
@@ -950,19 +1104,42 @@ export class ActivityPublishReviewService {
       },
       select: activityPublishReviewViewSelect,
     });
-    await this.audit.log({
-      activityId: review.activityId,
-      reviewId: review.id,
-      operation: 'publish-review-approve',
-      requestVersion: review.requestVersion,
-      requestType: review.requestType,
-      directPublish: false,
-      actorUserId: user.id,
-      actorRoleSnap: user.role,
-      auditMeta,
-      tx,
-    });
     const effect = await this.loadPublishedEffect(review.activityId, tx);
+    let audienceRecipientMemberIds: string[] | null = null;
+    if (audienceTagCodes !== null) {
+      if (review.requestType !== 'initial') {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      if (!effect.isPublicRegistration) throw new BizException(BizCode.BAD_REQUEST);
+      audienceRecipientMemberIds = await this.resolveAudienceRecipientMemberIds(
+        tx,
+        audienceTagCodes,
+      );
+      await this.audit.logAudienceTagsApproved({
+        activityId: review.activityId,
+        reviewId: review.id,
+        requestVersion: review.requestVersion,
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        audienceTagCodes,
+        recipientCount: audienceRecipientMemberIds.length,
+        auditMeta,
+        tx,
+      });
+    } else {
+      await this.audit.log({
+        activityId: review.activityId,
+        reviewId: review.id,
+        operation: 'publish-review-approve',
+        requestVersion: review.requestVersion,
+        requestType: review.requestType,
+        directPublish: false,
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        auditMeta,
+        tx,
+      });
+    }
     const recipientMemberId = await this.resolveReviewOutcomeRecipient(tx, {
       activityId: review.activityId,
       requestType: review.requestType,
@@ -978,7 +1155,14 @@ export class ActivityPublishReviewService {
       approved: true,
     });
     if (review.requestType === 'initial') {
-      await this.notificationProducer.enqueuePublished(tx, effect);
+      if (audienceRecipientMemberIds === null) {
+        await this.notificationProducer.enqueuePublished(tx, effect);
+      } else {
+        await this.notificationProducer.enqueuePublishedWithAudienceTags(tx, {
+          ...effect,
+          memberIds: audienceRecipientMemberIds,
+        });
+      }
     } else {
       const identities = await tx.activityParticipationIdentity.findMany({
         where: { activityId: review.activityId, populationIncluded: true },

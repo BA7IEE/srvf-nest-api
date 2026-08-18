@@ -497,7 +497,7 @@ describe('第 82 migration registration revision bridge', () => {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
-      expect(successfulMigrationCount(databaseName)).toBe(88);
+      expect(successfulMigrationCount(databaseName)).toBe(89);
       expect(
         runPsql(
           databaseName,

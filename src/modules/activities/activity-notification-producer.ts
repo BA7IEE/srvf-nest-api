@@ -69,6 +69,43 @@ export class ActivityNotificationProducer {
     );
   }
 
+  // B7 定向发布：活动发布时把已锁定事务内的受众快照写成逐会员 durable intent，绝不回退为广播。
+  async enqueuePublishedWithAudienceTags(
+    tx: PrismaTx,
+    input: {
+      activityId: string;
+      activityTitle: string;
+      publishedAt: Date;
+      startAt: Date;
+      location: string;
+      requiresInsurance: boolean;
+      memberIds: string[];
+    },
+  ): Promise<void> {
+    if (input.memberIds.length === 0) return;
+    const insurance = input.requiresInsurance ? ' 本活动要求有效保险，请在报名前确认覆盖期。' : '';
+    const body = `「${input.activityTitle}」已发布，开始时间 ${input.startAt.toISOString()}，地点 ${input.location}。${insurance}`;
+    await this.outbox.enqueueMany(
+      input.memberIds.map((memberId) => ({
+        eventKey: `activity-publish-audience:${input.activityId}:${input.publishedAt.toISOString()}:${memberId}`,
+        eventType: OUTBOX_EVENT_TARGETED_NOTIFICATION,
+        payloadVersion: OUTBOX_PAYLOAD_VERSION,
+        payload: {
+          recipientMemberId: memberId,
+          notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_PUBLISHED,
+          title: '新活动已发布',
+          body,
+          channels: [NOTIFICATION_CHANNEL_IN_APP],
+        },
+        aggregateType: 'activity',
+        aggregateId: input.activityId,
+        destinationType: 'member',
+        destinationRef: memberId,
+      })),
+      tx,
+    );
+  }
+
   async enqueueCancellation(
     tx: PrismaTx,
     input: {

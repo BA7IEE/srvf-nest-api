@@ -28,6 +28,13 @@ export interface OffboardAuditExtra {
   residualActiveSupervisions: number;
 }
 
+export interface AudienceTagsAuditInput {
+  beforeTagCodes: string[];
+  afterTagCodes: string[];
+  addedTagCodes: string[];
+  removedTagCodes: string[];
+}
+
 /** 六个事件逐字相同的信封字段(event / before / after / extra / tx 由各方法自带)。 */
 function envelope(ctx: MemberAuditContext) {
   return {
@@ -142,6 +149,24 @@ export class MemberAuditRecorder {
       before: { status: input.beforeStatus },
       after: { status: input.afterStatus },
       extra: { linkedUserId: input.linkedUserId, refreshTokensRevoked: input.refreshTokensRevoked },
+      tx,
+    });
+  }
+
+  async audienceTagsUpdated(
+    tx: PrismaTx,
+    ctx: MemberAuditContext,
+    input: AudienceTagsAuditInput,
+  ): Promise<void> {
+    await this.auditLogs.log({
+      event: 'member.audience-tags.update',
+      ...envelope(ctx),
+      before: { tagCodes: input.beforeTagCodes },
+      after: { tagCodes: input.afterTagCodes },
+      extra: {
+        addedTagCodes: input.addedTagCodes,
+        removedTagCodes: input.removedTagCodes,
+      },
       tx,
     });
   }

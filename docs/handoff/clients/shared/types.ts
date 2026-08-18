@@ -2,7 +2,7 @@
 // 真相源:后端 live /api/docs-json;本文件派生自 docs/handoff/openapi.json 快照。
 // surface: shared —— 被两个及以上 surface 共用的类型(唯一定义处)
 // generatorVersion: 1.0.0
-// inputDigest: sha256:079d8cb103a8f76e5afc6ba43c043cc85c010d21da98fabd1ce62c5b6385eb15
+// inputDigest: sha256:c33e12dbb4e8413882905072ececcf95a4d786b185f2624d0d72685acb875d68
 
 /** 统一响应 envelope —— 全仓契约恒为 { code, message, data }。 */
 export interface ApiEnvelope<T> {
@@ -38,6 +38,7 @@ export interface ActivityPublishReviewResponseDto {
   "status": "pending" | "approved" | "returned" | "withdrawn" | "cancelled";
   "snapshot": Record<string, unknown>;
   "directPublish": boolean;
+  "audienceTagCodes"?: string[] | null;
   "submittedByUserId": string;
   "submittedAt": string;
   "reviewedByUserId": string | null;

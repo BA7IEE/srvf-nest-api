@@ -63,6 +63,11 @@ export const BizCode = {
   UNAUTHORIZED: { code: 40100, message: '未登录或登录已失效', httpStatus: HttpStatus.UNAUTHORIZED },
   FORBIDDEN: { code: 40300, message: '无权限访问', httpStatus: HttpStatus.FORBIDDEN },
   NOT_FOUND: { code: 40400, message: '资源不存在', httpStatus: HttpStatus.NOT_FOUND },
+  SERVICE_UNAVAILABLE: {
+    code: 50300,
+    message: '服务暂不可用，请稍后再试',
+    httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
+  },
   // docs/reference/response-pagination-errors.md §5:登录接口限流命中。
   // 落 4xxxx 通用 HTTP 段(429),
   // 不占用业务模块 100xx / 110xx 段。message 故意不暴露阈值数字、剩余配额、

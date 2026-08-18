@@ -19,7 +19,7 @@ const SCRATCH_WORKER_ID = 88;
 const MIGRATION_NAME = '20260813150000_activity_v11_batch4_allocation_candidate_position_anchor';
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
 const MIGRATION_86_COUNT = 86;
-const CURRENT_MIGRATION_COUNT = 88;
+const CURRENT_MIGRATION_COUNT = 89;
 const COLD_REPLAY_TIMEOUT_MS = 300_000;
 const HASH_A = 'a'.repeat(64);
 const HASH_B = 'b'.repeat(64);
@@ -735,7 +735,7 @@ describe('Activity v1.1 batch4 allocation candidate position anchor migration', 
   );
 
   it(
-    'replays all 88 migrations from empty and permits rank one independently in two positions',
+    'replays all 89 migrations from empty and permits rank one independently in two positions',
     () => {
       const databaseName = recreateEmptyScratchDatabase();
       try {

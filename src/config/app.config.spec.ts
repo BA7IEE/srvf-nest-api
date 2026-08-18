@@ -1,4 +1,5 @@
 import {
+  parseActivityAudienceTagsHttpEnabled,
   parseActivityResponsibilityWorkflowEnabled,
   parseInsuranceEnforcementEnabled,
   parseTrustedProxyCidrs,
@@ -139,6 +140,39 @@ describe('ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED', () => {
       '必须严格为 true 或 false',
     );
   });
+});
+
+describe('ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED', () => {
+  it.each(['development', 'test'] as const)('%s missing/empty/blank defaults false', (env) => {
+    expect(parseActivityAudienceTagsHttpEnabled(undefined, env)).toBe(false);
+    expect(parseActivityAudienceTagsHttpEnabled('', env)).toBe(false);
+    expect(parseActivityAudienceTagsHttpEnabled('   ', env)).toBe(false);
+  });
+
+  it.each(['production', 'smoke'] as const)('%s requires an explicit value', (env) => {
+    expect(() => parseActivityAudienceTagsHttpEnabled(undefined, env)).toThrow(
+      'ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED 不能为空',
+    );
+    expect(() => parseActivityAudienceTagsHttpEnabled(' ', env)).toThrow(
+      'ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED 不能为空',
+    );
+  });
+
+  it.each([
+    ['true', true],
+    ['false', false],
+  ] as const)('accepts strict literal %s', (raw, expected) => {
+    expect(parseActivityAudienceTagsHttpEnabled(raw, 'production')).toBe(expected);
+  });
+
+  it.each(['TRUE', 'False', '1', 'yes', ' true ', 'false '])(
+    'rejects invalid literal %j',
+    (raw) => {
+      expect(() => parseActivityAudienceTagsHttpEnabled(raw, 'test')).toThrow(
+        '必须严格为 true 或 false',
+      );
+    },
+  );
 });
 
 describe('INSURANCE_ENFORCEMENT_ENABLED', () => {

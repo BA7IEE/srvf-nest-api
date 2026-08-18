@@ -22,7 +22,7 @@ const MIGRATION_NAME = '20260813100000_activity_v11_batch4_allocation_command_re
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
 const MIGRATION_85_COUNT = 85;
 const MIGRATION_86_COUNT = 86;
-const CURRENT_MIGRATION_COUNT = 88;
+const CURRENT_MIGRATION_COUNT = 89;
 const COLD_REPLAY_TIMEOUT_MS = 300_000;
 const RESPONSE_SCHEMA_VERSION = 'allocation-command-response-v1';
 const HASH_A = 'a'.repeat(64);
@@ -1438,7 +1438,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
   );
 
   it(
-    'replays all 88 migrations from empty and accepts prepare, commit, void receipts plus every legal projection shape',
+    'replays all 89 migrations from empty and accepts prepare, commit, void receipts plus every legal projection shape',
     () => {
       const databaseName = recreateEmptyScratchDatabase();
       try {

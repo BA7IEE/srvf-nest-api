@@ -96,6 +96,8 @@ const activityOffboardImpactNoop = {
 // Phase 6-B 第一刀:读侧边界抽出后,`OrganizationsService` 由 MembersQueryService 持有,
 // MembersService 不再注入它。grantAccount 同样不触达查询边界,故沿用空 stub。
 const membersQueryStub = {} as unknown as MembersQueryService;
+// B7 构造器新增维护闸配置；既有用例只覆盖旧路径，显式置 true 以免该桩改变原断言语义。
+const audienceTagsConfig = { activityAudienceTags: { httpEnabled: true } } as never;
 
 function p2002(target: string[]): Prisma.PrismaClientKnownRequestError {
   return new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
@@ -124,6 +126,7 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
       auditNoop,
       activityOffboardImpactNoop,
       membersQueryStub,
+      audienceTagsConfig,
     );
 
     await expect(service.grantAccount('m1', { phone: '13800000001' }, USER, META)).rejects.toEqual(
@@ -149,6 +152,7 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
       auditNoop,
       activityOffboardImpactNoop,
       membersQueryStub,
+      audienceTagsConfig,
     );
 
     await expect(service.grantAccount('m1', { phone: '13800000006' }, USER, META)).rejects.toEqual(
@@ -174,6 +178,7 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
       auditNoop,
       activityOffboardImpactNoop,
       membersQueryStub,
+      audienceTagsConfig,
     );
 
     await expect(service.grantAccount('m1', { phone: '13800000002' }, USER, META)).rejects.toEqual(
@@ -200,6 +205,7 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
       auditNoop,
       activityOffboardImpactNoop,
       membersQueryStub,
+      audienceTagsConfig,
     );
 
     await expect(service.grantAccount('m1', { phone: '13800000003' }, USER, META)).rejects.toBe(
@@ -226,6 +232,7 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
       auditNoop,
       activityOffboardImpactNoop,
       membersQueryStub,
+      audienceTagsConfig,
     );
 
     await expect(service.grantAccount('m1', { phone: '13800000004' }, USER, META)).rejects.toBe(
@@ -327,6 +334,7 @@ describe('MembersService member lifecycle authorization closure', () => {
       recorder,
       activityOffboardImpactNoop,
       membersQueryStub,
+      audienceTagsConfig,
     );
 
     const result = await service.offboard('m1', USER, META);
@@ -376,6 +384,7 @@ describe('MembersService member lifecycle authorization closure', () => {
       auditNoop,
       activityOffboardImpactNoop,
       membersQueryStub,
+      audienceTagsConfig,
     );
 
     await expect(

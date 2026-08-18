@@ -1,9 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { MemberStatus, Role, UserStatus } from '@prisma/client';
+import { DictItemStatus, MemberStatus, Role, UserStatus } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
+  ArrayUnique,
   IsArray,
   IsBoolean,
   IsEnum,
@@ -86,6 +87,44 @@ export class MemberResponseDto {
 
   @ApiProperty({ description: '更新时间' })
   updatedAt!: Date;
+}
+
+export class MemberAudienceTagDto {
+  @ApiProperty({ description: '受众标签字典 code' })
+  code!: string;
+
+  @ApiProperty({ description: '受众标签显示名' })
+  label!: string;
+
+  @ApiProperty({ description: '标签当前状态', enum: DictItemStatus })
+  status!: DictItemStatus;
+
+  @ApiProperty({ description: '标签排序值' })
+  sortOrder!: number;
+}
+
+export class MemberAudienceTagsResponseDto {
+  @ApiProperty({ description: '会员 id' })
+  memberId!: string;
+
+  @ApiProperty({ type: () => [MemberAudienceTagDto] })
+  tags!: MemberAudienceTagDto[];
+}
+
+// 全量替换 live 受众标签；空数组表示撤销全部 live 标签，历史记录保留。
+export class ReplaceMemberAudienceTagsDto {
+  @ApiProperty({
+    description: '受众标签 code 全量集合；空数组表示撤销全部标签',
+    type: [String],
+    maxItems: 50,
+    uniqueItems: true,
+  })
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @Length(1, 64, { each: true })
+  tagCodes!: string[];
 }
 
 // 一键离队响应保持既有字段兼容；残留计数现作为锁后不变式探针，正常终态恒为 0。

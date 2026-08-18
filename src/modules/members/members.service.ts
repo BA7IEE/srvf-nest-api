@@ -1,7 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import type { ConfigType } from '@nestjs/config';
 import {
   AssignmentStatus,
   BindingStatus,
+  DictItemStatus,
+  DictTypeStatus,
   MemberStatus,
   MembershipStatus,
   PrincipalType,
@@ -15,6 +18,7 @@ import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { runMemberLinearizedTransaction } from '../../common/prisma/member-advisory-lock.util';
+import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ActivityMemberOffboardImpactService } from '../activities/activity-member-offboard-impact.service';
@@ -30,11 +34,14 @@ import { assertEnrollmentIdentityChangeAllowed } from '../team-join/team-join-en
 import {
   CreateMemberDto,
   ListMembersQueryDto,
+  MemberAudienceTagDto,
+  MemberAudienceTagsResponseDto,
   MemberOffboardResponseDto,
   MemberOffboardImpactResponseDto,
   MemberOptionsQueryDto,
   MemberOptionsResponseDto,
   MemberResponseDto,
+  ReplaceMemberAudienceTagsDto,
   UpdateMemberDto,
   UpdateMemberStatusDto,
 } from './members.dto';
@@ -52,6 +59,8 @@ import { assertGradeCodeValid, normalizeMemberNo } from './members.policy';
 // 对外 select 与其行类型已随第一刀移入 `members-query.service.ts`(§3.2 select strategy),
 // 写路径回读 import 复用同一份,不另起第二份投影。
 
+type AudienceTag = MemberAudienceTagDto & { id: string };
+
 // 第二刀:六个 audit 事件共用的调用者上下文(actor 快照 + 资源定位 + 请求 meta)。
 // payload 组装归 `member-audit-recorder.ts`,事务与调用顺序仍归本 service。
 
@@ -68,9 +77,134 @@ export class MembersService {
     private readonly auditRecorder: MemberAuditRecorder,
     private readonly activityOffboardImpact: ActivityMemberOffboardImpactService,
     private readonly query: MembersQueryService,
+    @Inject(appConfig.KEY)
+    private readonly config: ConfigType<typeof appConfig>,
   ) {}
 
   // ============ helpers ============
+
+  private assertAudienceTagsHttpEnabled(): void {
+    if (!this.config.activityAudienceTags.httpEnabled) {
+      throw new BizException(BizCode.SERVICE_UNAVAILABLE);
+    }
+  }
+
+  private sortAudienceTags(tags: AudienceTag[]): AudienceTag[] {
+    return [...tags].sort(
+      (left, right) => left.sortOrder - right.sortOrder || left.code.localeCompare(right.code),
+    );
+  }
+
+  private toAudienceTagDto(tag: AudienceTag): MemberAudienceTagDto {
+    return {
+      code: tag.code,
+      label: tag.label,
+      status: tag.status,
+      sortOrder: tag.sortOrder,
+    };
+  }
+
+  private async resolveActiveAudienceTags(
+    tx: PrismaTx,
+    tagCodes: string[],
+  ): Promise<AudienceTag[]> {
+    if (tagCodes.length === 0) return [];
+    const type = await tx.dictType.findFirst({
+      where: {
+        code: 'member_audience_tag',
+        status: DictTypeStatus.ACTIVE,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (!type) throw new BizException(BizCode.BAD_REQUEST);
+    const items = await tx.dictItem.findMany({
+      where: {
+        typeId: type.id,
+        code: { in: tagCodes },
+        status: DictItemStatus.ACTIVE,
+        deletedAt: null,
+      },
+      select: { id: true, code: true, label: true, status: true, sortOrder: true },
+    });
+    if (items.length !== tagCodes.length) throw new BizException(BizCode.BAD_REQUEST);
+    return this.sortAudienceTags(items);
+  }
+
+  async getAudienceTags(
+    id: string,
+    currentUser: CurrentUserPayload,
+  ): Promise<MemberAudienceTagsResponseDto> {
+    await this.access.assertCanOrThrow(currentUser, 'member.read.record', { type: 'member', id });
+    this.assertAudienceTagsHttpEnabled();
+    await this.access.findMemberOrThrow(id);
+    const assignments = await this.prisma.memberAudienceTagAssignment.findMany({
+      where: { memberId: id, revokedAt: null },
+      select: {
+        dictItem: { select: { id: true, code: true, label: true, status: true, sortOrder: true } },
+      },
+    });
+    const tags = this.sortAudienceTags(assignments.map((assignment) => assignment.dictItem));
+    return { memberId: id, tags: tags.map((tag) => this.toAudienceTagDto(tag)) };
+  }
+
+  async replaceAudienceTags(
+    id: string,
+    dto: ReplaceMemberAudienceTagsDto,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<MemberAudienceTagsResponseDto> {
+    await this.access.assertCanOrThrow(currentUser, 'member.update.record', {
+      type: 'member',
+      id,
+    });
+    this.assertAudienceTagsHttpEnabled();
+    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
+      await lockMemberLifecycle(tx, id);
+      await this.access.findMemberOrThrow(id, tx);
+      const existing = await tx.memberAudienceTagAssignment.findMany({
+        where: { memberId: id, revokedAt: null },
+        select: {
+          id: true,
+          dictItem: {
+            select: { id: true, code: true, label: true, status: true, sortOrder: true },
+          },
+        },
+      });
+      const beforeTags = this.sortAudienceTags(existing.map((assignment) => assignment.dictItem));
+      const desiredTags = await this.resolveActiveAudienceTags(tx, dto.tagCodes);
+      const desiredCodes = new Set(desiredTags.map((tag) => tag.code));
+      const existingCodes = new Set(beforeTags.map((tag) => tag.code));
+      const revokeIds = existing
+        .filter((assignment) => !desiredCodes.has(assignment.dictItem.code))
+        .map((assignment) => assignment.id);
+      const additions = desiredTags.filter((tag) => !existingCodes.has(tag.code));
+      const now = new Date();
+      if (revokeIds.length > 0) {
+        await tx.memberAudienceTagAssignment.updateMany({
+          where: { id: { in: revokeIds } },
+          data: { revokedAt: now },
+        });
+      }
+      if (additions.length > 0) {
+        await tx.memberAudienceTagAssignment.createMany({
+          data: additions.map((tag) => ({ memberId: id, dictItemId: tag.id })),
+        });
+      }
+      const beforeTagCodes = beforeTags.map((tag) => tag.code).sort();
+      const afterTagCodes = desiredTags.map((tag) => tag.code).sort();
+      await this.auditRecorder.audienceTagsUpdated(tx, auditCtx(id, currentUser, auditMeta), {
+        beforeTagCodes,
+        afterTagCodes,
+        addedTagCodes: afterTagCodes.filter((code) => !existingCodes.has(code)),
+        removedTagCodes: beforeTagCodes.filter((code) => !desiredCodes.has(code)),
+      });
+      return {
+        memberId: id,
+        tags: desiredTags.map((tag) => this.toAudienceTagDto(tag)),
+      };
+    });
+  }
 
   // 唯一性预检查:必须 findUnique 包含软删记录(memberNo 全局唯一不复用,memberNo
   // 决议 Q2 = B-1)— 防止"软删后旧 memberNo 复活创建" 撞约束 + 防止前端拿到 P2002
