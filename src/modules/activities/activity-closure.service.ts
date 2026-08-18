@@ -20,6 +20,7 @@ import {
   type ActivityClosureTotals,
 } from './activity-closure-checks';
 import { ActivityClosureNotificationProducer } from './activity-closure-notification-producer';
+import { freezeResponsibility } from './activity-recipient-freeze';
 
 // ===== 活动改造 v1.1 第 2 批第六刀:机器关账(合同 §5.15 + §3.26)=====
 //
@@ -400,7 +401,14 @@ export class ActivityClosureService {
           serviceHours: totals.serviceHours,
           contributionPoints: totals.contributionPoints,
           archiveWaitingUntil,
-          ownerMemberId: await this.readOwnerMemberId(tx, activityId),
+          cohort: await freezeResponsibility(tx, {
+            cohortKey: `settlement-closure:${activityId}:${revision}`,
+            aggregateType: 'activity',
+            aggregateIds: [activityId],
+            basisRef: [`closureRevision:${revision}`],
+            memberIds: [await this.readOwnerMemberId(tx, activityId)],
+            at: closedAt,
+          }),
         });
 
         // audit 刻意放**最后一步**:它是 goal DoD 9「intent 与 closure 一起回滚」

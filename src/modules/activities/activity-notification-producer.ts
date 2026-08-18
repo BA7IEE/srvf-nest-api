@@ -12,6 +12,11 @@ import {
   OUTBOX_PAYLOAD_VERSION,
 } from '../notifications/notification.constants';
 import { NotificationOutboxService } from '../notifications/notification-outbox.service';
+import type {
+  FrozenBroadcastAudience,
+  FrozenRecipientCohort,
+  RecipientFreezeStamp,
+} from './activity-recipient-freeze';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -29,12 +34,19 @@ interface TargetedNotificationInput {
   notificationTypeCode: string;
   title: string;
   body: string;
+  /** 冻结快照头。**必填** —— 少盖一次章就等于少冻结一个事件,不能是可选项。 */
+  freeze: RecipientFreezeStamp;
 }
 
 @Injectable()
 export class ActivityNotificationProducer {
   constructor(private readonly outbox: NotificationOutboxService) {}
 
+  /**
+   * legacy 广播发布。收件人是「此刻能看见它的人」,没有集合可冻 —— 但**必须**带上
+   * `ActivityRecipientFreezeService` 发的 `broadcast-visibility` 盖章:
+   * 「这条不冻结」得是冻结入口做出的决定,不能是这里悄悄漏了。
+   */
   async enqueuePublished(
     tx: PrismaTx,
     input: {
@@ -45,6 +57,7 @@ export class ActivityNotificationProducer {
       location: string;
       requiresInsurance: boolean;
       isPublicRegistration: boolean;
+      audience: FrozenBroadcastAudience;
     },
   ): Promise<void> {
     if (!input.isPublicRegistration) return;
@@ -59,6 +72,7 @@ export class ActivityNotificationProducer {
           title: '新活动已发布',
           body: `「${input.activityTitle}」已发布，开始时间 ${input.startAt.toISOString()}，地点 ${input.location}。${insurance}`,
           visibilityCode: NOTIFICATION_DIRECTED_VISIBILITY,
+          recipientFreeze: { ...input.audience.stamp },
         },
         aggregateType: 'activity',
         aggregateId: input.activityId,
@@ -79,14 +93,14 @@ export class ActivityNotificationProducer {
       startAt: Date;
       location: string;
       requiresInsurance: boolean;
-      memberIds: string[];
+      cohort: FrozenRecipientCohort;
     },
   ): Promise<void> {
-    if (input.memberIds.length === 0) return;
+    if (input.cohort.memberIds.length === 0) return;
     const insurance = input.requiresInsurance ? ' 本活动要求有效保险，请在报名前确认覆盖期。' : '';
     const body = `「${input.activityTitle}」已发布，开始时间 ${input.startAt.toISOString()}，地点 ${input.location}。${insurance}`;
     await this.outbox.enqueueMany(
-      input.memberIds.map((memberId) => ({
+      input.cohort.memberIds.map((memberId) => ({
         eventKey: `activity-publish-audience:${input.activityId}:${input.publishedAt.toISOString()}:${memberId}`,
         eventType: OUTBOX_EVENT_TARGETED_NOTIFICATION,
         payloadVersion: OUTBOX_PAYLOAD_VERSION,
@@ -96,6 +110,7 @@ export class ActivityNotificationProducer {
           title: '新活动已发布',
           body,
           channels: [NOTIFICATION_CHANNEL_IN_APP],
+          recipientFreeze: { ...input.cohort.stamp },
         },
         aggregateType: 'activity',
         aggregateId: input.activityId,
@@ -113,11 +128,11 @@ export class ActivityNotificationProducer {
       activityTitle: string;
       cancelledAt: Date;
       cancelReason: string | null;
-      memberIds: string[];
+      cohort: FrozenRecipientCohort;
     },
   ): Promise<void> {
     const reasonSuffix = input.cancelReason ? ` 取消原因:${input.cancelReason}` : '';
-    for (const memberId of input.memberIds) {
+    for (const memberId of input.cohort.memberIds) {
       await this.enqueueTargeted(tx, {
         eventKey: `activity-cancel:${input.activityId}:${input.cancelledAt.toISOString()}:${memberId}`,
         aggregateType: 'activity',
@@ -126,6 +141,7 @@ export class ActivityNotificationProducer {
         notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_CHANGED,
         title: '活动已取消',
         body: `您报名的「${input.activityTitle}」已取消。${reasonSuffix}`,
+        freeze: input.cohort.stamp,
       });
     }
   }
@@ -139,7 +155,7 @@ export class ActivityNotificationProducer {
       before: ActivityScheduleSnapshot | null;
       after: ActivityScheduleSnapshot | null;
       requiresInsurance: boolean;
-      memberIds: string[];
+      cohort: FrozenRecipientCohort;
     },
   ): Promise<void> {
     const before = input.before;
@@ -153,7 +169,7 @@ export class ActivityNotificationProducer {
             after,
             requiresInsurance: input.requiresInsurance,
           });
-    for (const memberId of input.memberIds) {
+    for (const memberId of input.cohort.memberIds) {
       await this.enqueueTargeted(tx, {
         eventKey: `activity-change:${input.activityId}:${input.versionKey}:${memberId}`,
         aggregateType: 'activity',
@@ -162,6 +178,7 @@ export class ActivityNotificationProducer {
         notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_CHANGED,
         title: '活动安排已变更',
         body,
+        freeze: input.cohort.stamp,
       });
     }
   }
@@ -171,6 +188,7 @@ export class ActivityNotificationProducer {
     input: {
       activityTitle: string;
       promoted: Array<{ registrationId: string; memberId: string }>;
+      cohort: FrozenRecipientCohort;
     },
   ): Promise<void> {
     if (input.promoted.length === 0) return;
@@ -179,7 +197,10 @@ export class ActivityNotificationProducer {
       select: { id: true, updatedAt: true },
     });
     const updatedAtById = new Map(rows.map((row) => [row.id, row.updatedAt] as const));
-    for (const item of input.promoted) {
+    // 冻结集合是权威:递补名单在冻结之后又变长了,多出来的人**不发** ——
+    // 否则这一批的实际收件人就成了两次计算的并集。
+    const frozen = new Set(input.cohort.memberIds);
+    for (const item of input.promoted.filter((candidate) => frozen.has(candidate.memberId))) {
       const promotedAt = updatedAtById.get(item.registrationId);
       if (!promotedAt) {
         throw new Error(`promoted registration disappeared: ${item.registrationId}`);
@@ -192,6 +213,7 @@ export class ActivityNotificationProducer {
         notificationTypeCode: NOTIFICATION_TYPE_REGISTRATION_RESULT,
         title: '候补已递补',
         body: `您报名的「${input.activityTitle}」已从候补递补，现已进入待审核。`,
+        freeze: input.cohort.stamp,
       });
     }
   }
@@ -203,17 +225,19 @@ export class ActivityNotificationProducer {
       activityId: string;
       activityTitle: string;
       reviewedAt: Date;
-      recipientMemberId: string | null;
+      cohort: FrozenRecipientCohort;
       approved: boolean;
       reviewNote?: string;
     },
   ): Promise<void> {
-    if (input.recipientMemberId === null) return;
+    const recipientMemberId = input.cohort.memberIds[0];
+    if (recipientMemberId === undefined) return;
     await this.enqueueTargeted(tx, {
       eventKey: `activity-review-outcome:${input.reviewId}:${input.reviewedAt.toISOString()}`,
       aggregateType: 'activity_publish_review',
       aggregateId: input.reviewId,
-      memberId: input.recipientMemberId,
+      memberId: recipientMemberId,
+      freeze: input.cohort.stamp,
       notificationTypeCode: 'general',
       title: input.approved ? '活动发布审核已通过' : '活动发布审核已退回',
       body: input.approved
@@ -260,6 +284,7 @@ export class ActivityNotificationProducer {
           title: input.title,
           body: input.body,
           channels: [NOTIFICATION_CHANNEL_IN_APP],
+          recipientFreeze: { ...input.freeze },
         },
         aggregateType: input.aggregateType,
         aggregateId: input.aggregateId,

@@ -8,6 +8,7 @@ import {
   OUTBOX_PAYLOAD_VERSION,
 } from '../notifications/notification.constants';
 import { NotificationOutboxService } from '../notifications/notification-outbox.service';
+import type { FrozenRecipientCohort } from './activity-recipient-freeze';
 
 // 结算提交通知 intent(合同 §5.10 ⑨)+ 一审 / 终审结果通知 intent(合同 §5.11)。
 //
@@ -50,26 +51,28 @@ export class SettlementNotificationProducer {
       settlementVersionId: string;
       settlementVersion: number;
       personCount: number;
-      ownerMemberId: string | null;
+      cohort: FrozenRecipientCohort;
     },
   ): Promise<void> {
-    if (input.ownerMemberId === null) return;
+    const ownerMemberId = input.cohort.memberIds[0];
+    if (ownerMemberId === undefined) return;
     await this.outbox.enqueue(
       {
         eventKey: `settlement-submit:${input.settlementVersionId}`,
         eventType: OUTBOX_EVENT_TARGETED_NOTIFICATION,
         payloadVersion: OUTBOX_PAYLOAD_VERSION,
         payload: {
-          recipientMemberId: input.ownerMemberId,
+          recipientMemberId: ownerMemberId,
           notificationTypeCode: NOTIFICATION_TYPE_ATTENDANCE_RESULT,
           title: '结算版本已提交送审',
           body: `「${input.activityTitle}」第 ${input.settlementVersion} 版结算已提交,共 ${input.personCount} 人,等待一审。提交后草稿不再是审核依据,如需修改请等待退回。`,
           channels: [NOTIFICATION_CHANNEL_IN_APP],
+          recipientFreeze: { ...input.cohort.stamp },
         },
         aggregateType: 'activity',
         aggregateId: input.activityId,
         destinationType: 'member',
-        destinationRef: input.ownerMemberId,
+        destinationRef: ownerMemberId,
       },
       tx,
     );
@@ -92,10 +95,11 @@ export class SettlementNotificationProducer {
       stageCode: 'first' | 'final';
       actionCode: 'approve' | 'return';
       returnReason: string | null;
-      ownerMemberId: string | null;
+      cohort: FrozenRecipientCohort;
     },
   ): Promise<void> {
-    if (input.ownerMemberId === null) return;
+    const ownerMemberId = input.cohort.memberIds[0];
+    if (ownerMemberId === undefined) return;
     const stageLabel = input.stageCode === 'first' ? '一审' : '终审';
     const title =
       input.actionCode === 'approve' ? `结算${stageLabel}已通过` : `结算${stageLabel}已退回`;
@@ -112,16 +116,17 @@ export class SettlementNotificationProducer {
         eventType: OUTBOX_EVENT_TARGETED_NOTIFICATION,
         payloadVersion: OUTBOX_PAYLOAD_VERSION,
         payload: {
-          recipientMemberId: input.ownerMemberId,
+          recipientMemberId: ownerMemberId,
           notificationTypeCode: NOTIFICATION_TYPE_ATTENDANCE_RESULT,
           title,
           body,
           channels: [NOTIFICATION_CHANNEL_IN_APP],
+          recipientFreeze: { ...input.cohort.stamp },
         },
         aggregateType: 'activity',
         aggregateId: input.activityId,
         destinationType: 'member',
-        destinationRef: input.ownerMemberId,
+        destinationRef: ownerMemberId,
       },
       tx,
     );
@@ -147,26 +152,28 @@ export class SettlementNotificationProducer {
       settlementVersion: number;
       postingBatchId: string;
       memberCount: number;
-      ownerMemberId: string | null;
+      cohort: FrozenRecipientCohort;
     },
   ): Promise<void> {
-    if (input.ownerMemberId === null) return;
+    const ownerMemberId = input.cohort.memberIds[0];
+    if (ownerMemberId === undefined) return;
     await this.outbox.enqueue(
       {
         eventKey: `settlement-ledger-commit:${input.postingBatchId}`,
         eventType: OUTBOX_EVENT_TARGETED_NOTIFICATION,
         payloadVersion: OUTBOX_PAYLOAD_VERSION,
         payload: {
-          recipientMemberId: input.ownerMemberId,
+          recipientMemberId: ownerMemberId,
           notificationTypeCode: NOTIFICATION_TYPE_ATTENDANCE_RESULT,
           title: '结算已入账',
           body: `「${input.activityTitle}」第 ${input.settlementVersion} 版结算已正式入账,共 ${input.memberCount} 名队员的服务时长与贡献值已生效。如需调整请走更正流程。`,
           channels: [NOTIFICATION_CHANNEL_IN_APP],
+          recipientFreeze: { ...input.cohort.stamp },
         },
         aggregateType: 'activity',
         aggregateId: input.activityId,
         destinationType: 'member',
-        destinationRef: input.ownerMemberId,
+        destinationRef: ownerMemberId,
       },
       tx,
     );

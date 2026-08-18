@@ -18,6 +18,7 @@ import { ActivityStateMachine } from './activity-state-machine';
 import { promoteActivityWaitlist } from './activity-waitlist-promotion';
 import { ActivityInitiationPolicy } from './activity-initiation-policy';
 import { ActivityNotificationProducer } from './activity-notification-producer';
+import { freezeRegistrationRoster } from './activity-recipient-freeze';
 import { ActivityAllocationModeService } from './activity-allocation-mode.service';
 import {
   ActivityAccessService,
@@ -518,11 +519,26 @@ export class ActivityWriteService {
           location: updated.location,
         },
         requiresInsurance: updated.requiresInsurance,
-        memberIds: notificationMemberIds,
+        cohort: await freezeRegistrationRoster(tx, {
+          cohortKey: `activity-change:${current.id}:${updated.updatedAt.toISOString()}`,
+          aggregateType: 'activity',
+          aggregateIds: [current.id],
+          basisRef: [`schedule:${updated.updatedAt.toISOString()}`],
+          memberIds: notificationMemberIds,
+          at: updated.updatedAt,
+        }),
       });
       await this.notificationProducer.enqueueWaitlistPromotions(tx, {
         activityTitle: promotion.activityTitle,
         promoted: promotion.promoted,
+        cohort: await freezeRegistrationRoster(tx, {
+          cohortKey: `waitlist-promote:activity:${current.id}:${updated.updatedAt.toISOString()}`,
+          aggregateType: 'activity_registration',
+          aggregateIds: promotion.promoted.map((item) => item.registrationId),
+          basisRef: [`activity:${current.id}`],
+          memberIds: promotion.promoted.map((item) => item.memberId),
+          at: updated.updatedAt,
+        }),
       });
       return toResponseDto(updated);
     });

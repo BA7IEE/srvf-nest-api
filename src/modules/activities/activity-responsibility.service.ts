@@ -21,6 +21,7 @@ import {
 import { ActivityInitiationPolicy } from './activity-initiation-policy';
 import { ActivityResponsibilityGrantProjector } from './activity-responsibility-grant-projector';
 import { ActivityResponsibilityNotificationProducer } from './activity-responsibility-notification-producer';
+import { freezeResponsibility } from './activity-recipient-freeze';
 import { ActivityResponsibilityPolicy } from './activity-responsibility-policy';
 
 type PrismaTx = Prisma.TransactionClient;
@@ -444,8 +445,15 @@ export class ActivityResponsibilityService {
         });
         await this.notificationProducer.enqueueCollaboratorAssigned(tx, {
           assignmentId: assignment.id,
-          memberId: dto.memberId,
           activityTitle: activity.title,
+          cohort: await freezeResponsibility(tx, {
+            cohortKey: `responsibility-delegate:${assignment.id}`,
+            aggregateType: 'activity_responsibility_assignment',
+            aggregateIds: [assignment.id],
+            basisRef: [`assignment:${assignment.id}`],
+            memberIds: [dto.memberId],
+            at: assignment.startedAt,
+          }),
         });
         return this.toAssignmentDto(assignment);
       });
@@ -507,9 +515,16 @@ export class ActivityResponsibilityService {
       });
       await this.notificationProducer.enqueueCollaboratorEnded(tx, {
         assignmentId,
-        memberId: assignment.memberId,
         activityTitle: activity.title,
         endedAt: now,
+        cohort: await freezeResponsibility(tx, {
+          cohortKey: `responsibility-delegate-end:${assignmentId}:${now.toISOString()}`,
+          aggregateType: 'activity_responsibility_assignment',
+          aggregateIds: [assignmentId],
+          basisRef: [`assignment:${assignmentId}`],
+          memberIds: [assignment.memberId],
+          at: now,
+        }),
       });
       return this.toAssignmentDto({
         ...assignment,
@@ -612,6 +627,14 @@ export class ActivityResponsibilityService {
         oldOwnerMemberId: currentOwner.memberId,
         newOwnerMemberId: dto.newOwnerMemberId,
         activityTitle: activity.title,
+        cohort: await freezeResponsibility(tx, {
+          cohortKey: `responsibility-transfer:${newOwner.id}`,
+          aggregateType: 'activity_responsibility_assignment',
+          aggregateIds: [newOwner.id],
+          basisRef: [`assignment:${newOwner.id}`],
+          memberIds: [currentOwner.memberId, dto.newOwnerMemberId],
+          at: newOwner.startedAt,
+        }),
       });
       return {
         activityId,
