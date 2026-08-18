@@ -47,6 +47,8 @@ import { AppManagedActivitiesController } from './controllers/app-managed-activi
 import { AdminAttendanceSettlementsController } from './controllers/admin-attendance-settlements.controller';
 import { AppManagedActivityPositionsController } from './controllers/app-managed-activity-positions.controller';
 import { AppManagedActivityResponsibilitiesController } from './controllers/app-managed-activity-responsibilities.controller';
+import { AppMyActivityBatchJobsController } from './controllers/app-my-activity-batch-jobs.controller';
+import { AppMyActivityBatchJobsService } from './app-my-activity-batch-jobs.service';
 import { AppMyParticipationLedgerController } from './controllers/app-my-participation-ledger.controller';
 import { AdminMemberParticipationLedgerController } from './controllers/admin-member-participation-ledger.controller';
 import { ActivityProposalValidator } from './activity-proposal-validator';
@@ -139,11 +141,13 @@ import { AttendancesModule } from '../attendances/attendances.module';
     AdminAttendanceSettlementsController,
     AppManagedActivityPositionsController,
     AppManagedActivityResponsibilitiesController,
+    AppMyActivityBatchJobsController,
     AppMyParticipationLedgerController,
     AdminMemberParticipationLedgerController,
   ],
   providers: [
     ActivitiesService,
+    AppMyActivityBatchJobsService,
     ActivityAccessService,
     ActivityStatusCommandService,
     ActivityWriteService,

@@ -16,9 +16,9 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.0.0 |
-| inputDigest | sha256:2c0a4345c4e06a6c767148f7293673d33a097b51c20ab5f84d00eb2384e06a0a |
-| endpoint count | 532 |
-| legacy [auth] count | 159 |
+| inputDigest | sha256:4fa1c2e08971c8468bb72faab1e973b2ddaf852f981c6f280a6dcc7583bad77a |
+| endpoint count | 537 |
+| legacy [auth] count | 164 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
 | per-route truth source | code |
@@ -30,7 +30,7 @@
 | surface | routes | declared in code | undeclared |
 |---|---:|---:|---:|
 | admin | 273 | 273 | 0 |
-| app | 148 | 148 | 0 |
+| app | 153 | 153 | 0 |
 | system | 75 | 75 | 0 |
 | auth | 20 | 20 | 0 |
 | open | 16 | 16 | 0 |
@@ -41,7 +41,7 @@
 |---|---:|
 | public | 33 |
 | rbac | 340 |
-| auth | 159 |
+| auth | 164 |
 | unclassified | 0 |
 
 ## Phase 0 decision record
@@ -77,6 +77,7 @@
 | app tag family | Mobile - Managed Activity Registrations (7) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-registrations.controller.ts:53 |
 | app tag family | Mobile - Managed Activity Responsibilities (6) | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts:131 |
 | app tag family | Mobile - Me (12) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:90 |
+| app tag family | Mobile - My Activity Batch Jobs (5) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:47 |
 | app tag family | Mobile - My Activity Check-ins (3) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-activity-check-ins.controller.ts:90 |
 | app tag family | Mobile - My Activity Feedback (2) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-feedbacks/controllers/app-activity-feedbacks.controller.ts:55 |
 | app tag family | Mobile - My Activity Invitations (2) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-my-activity-invitations.controller.ts:36 |
@@ -106,7 +107,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.0.0",
-  "inputDigest": "sha256:2c0a4345c4e06a6c767148f7293673d33a097b51c20ab5f84d00eb2384e06a0a",
+  "inputDigest": "sha256:4fa1c2e08971c8468bb72faab1e973b2ddaf852f981c6f280a6dcc7583bad77a",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -3337,6 +3338,54 @@
         "require": "all",
         "scopes": [
           "self"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "GET /api/app/v1/my/activity-batch-jobs",
+      "controller": "AppMyActivityBatchJobsController",
+      "handler": "list",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "GET /api/app/v1/my/activity-batch-jobs/:jobId",
+      "controller": "AppMyActivityBatchJobsController",
+      "handler": "detail",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "GET /api/app/v1/my/activity-batch-jobs/:jobId/items",
+      "controller": "AppMyActivityBatchJobsController",
+      "handler": "listItems",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "responsibility"
         ],
         "engine": "authz-scoped"
       }
@@ -7757,6 +7806,38 @@
       }
     },
     {
+      "routeKey": "POST /api/app/v1/my/activity-batch-jobs/:jobId/cancel",
+      "controller": "AppMyActivityBatchJobsController",
+      "handler": "cancel",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "POST /api/app/v1/my/activity-batch-jobs/:jobId/retry-failed",
+      "controller": "AppMyActivityBatchJobsController",
+      "handler": "retryFailed",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
       "routeKey": "POST /api/app/v1/my/activity-invitations/:invitationId/accept",
       "controller": "AppMyActivityInvitationsController",
       "handler": "accept",
@@ -9867,6 +9948,9 @@
 | GET | /api/app/v1/my/activities | Mobile - My Registrations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:110; src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:128 |
 | GET | /api/app/v1/my/activities/:activityId/check-in | Mobile - My Activity Check-ins | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-activity-check-ins.controller.ts:90; src/modules/attendances/controllers/app-activity-check-ins.controller.ts:110 |
 | GET | /api/app/v1/my/activities/:activityId/feedback | Mobile - My Activity Feedback | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-feedbacks/controllers/app-activity-feedbacks.controller.ts:55; src/modules/activity-feedbacks/controllers/app-activity-feedbacks.controller.ts:74 |
+| GET | /api/app/v1/my/activity-batch-jobs | Mobile - My Activity Batch Jobs | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:47; src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:61 |
+| GET | /api/app/v1/my/activity-batch-jobs/:jobId | Mobile - My Activity Batch Jobs | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:64; src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:83 |
+| GET | /api/app/v1/my/activity-batch-jobs/:jobId/items | Mobile - My Activity Batch Jobs | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:86; src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:106 |
 | GET | /api/app/v1/my/attendance-records | Mobile - My Attendance | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-my-attendance-records.controller.ts:48; src/modules/attendances/controllers/app-my-attendance-records.controller.ts:65 |
 | GET | /api/app/v1/my/certificates | Mobile - My Certificates | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/certificates/controllers/app-my-certificates.controller.ts:44; src/modules/certificates/controllers/app-my-certificates.controller.ts:66 |
 | GET | /api/app/v1/my/managed-activities | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:139; src/modules/activities/controllers/app-managed-activities.controller.ts:153 |
@@ -10110,6 +10194,8 @@
 | POST | /api/app/v1/me/team-join/applications | Mobile - My Team Join | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/team-join/team-join-applications.app.controller.ts:44; src/modules/team-join/team-join-applications.app.controller.ts:72 |
 | POST | /api/app/v1/my/activities/:activityId/check-in | Mobile - My Activity Check-ins | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-activity-check-ins.controller.ts:28; src/modules/attendances/controllers/app-activity-check-ins.controller.ts:55 |
 | POST | /api/app/v1/my/activities/:activityId/check-out | Mobile - My Activity Check-ins | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-activity-check-ins.controller.ts:58; src/modules/attendances/controllers/app-activity-check-ins.controller.ts:87 |
+| POST | /api/app/v1/my/activity-batch-jobs/:jobId/cancel | Mobile - My Activity Batch Jobs | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:132; src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:152 |
+| POST | /api/app/v1/my/activity-batch-jobs/:jobId/retry-failed | Mobile - My Activity Batch Jobs | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:109; src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:129 |
 | POST | /api/app/v1/my/activity-invitations/:invitationId/accept | Mobile - My Activity Invitations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-my-activity-invitations.controller.ts:36; src/modules/activity-registrations/controllers/app-my-activity-invitations.controller.ts:64 |
 | POST | /api/app/v1/my/activity-invitations/:invitationId/decline | Mobile - My Activity Invitations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-my-activity-invitations.controller.ts:71; src/modules/activity-registrations/controllers/app-my-activity-invitations.controller.ts:95 |
 | POST | /api/app/v1/my/attendance-member-credential/render | Mobile - My Attendance Member Credential | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-my-attendance-member-credential.controller.ts:25; src/modules/attendances/controllers/app-my-attendance-member-credential.controller.ts:44 |

@@ -19,8 +19,8 @@
 | 计数项 | 值 |
 |---|---|
 | 模块 | 37 |
-| Controller | 100 |
-| Endpoint | 532 |
+| Controller | 101 |
+| Endpoint | 537 |
 | Migration | 89 |
 | BizCode | 447 |
 | 权限码 | 234 |

@@ -1,7 +1,7 @@
 // 由 scripts/generate-fe-client.ts 生成,请勿手改。
 // surface: App 小程序
 // generatorVersion: 1.0.0
-// inputDigest: sha256:6464d02ecd6f482b8ecc2652d808f8dec03b574d834e70216bff5559329ac15c
+// inputDigest: sha256:7e70204316de73d6194d822e12cff5eb9c5bafbc7a91715055bfb0bf11d7b583
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -116,6 +116,11 @@ import type {
   AppMeResponseDto,
   AppMeWechatDto,
   AppMeWecomDto,
+  AppMyActivityBatchJobActivityDto,
+  AppMyActivityBatchJobCreatorDto,
+  AppMyActivityBatchJobDetailDto,
+  AppMyActivityBatchJobItemDto,
+  AppMyActivityBatchJobListItemDto,
   AppMyActivityListItemDto,
   AppMyAttendanceRecordDto,
   AppMyCertificateDto,
@@ -386,6 +391,26 @@ export function createAppClient(fetcher: Fetcher) {
     /** 窗口内创建或更新本人活动评价 [auth] */
     AppActivityFeedbacksControllerUpsertMine(activityId: string, body: UpsertActivityFeedbackDto): Promise<ApiEnvelope<AppActivityFeedbackResponseDto>> {
       return fetcher<AppActivityFeedbackResponseDto>({ method: "PUT", path: `/api/app/v1/my/activities/${activityId}/feedback`, body });
+    },
+    /** App 分页查看当前责任范围内的后台批任务 [auth] */
+    AppMyActivityBatchJobsControllerList(query?: { "page"?: number; "pageSize"?: number; "activityId"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": AppMyActivityBatchJobListItemDto[] }>> {
+      return fetcher<PageResultDto & { "items": AppMyActivityBatchJobListItemDto[] }>({ method: "GET", path: "/api/app/v1/my/activity-batch-jobs", query });
+    },
+    /** App 查看单个后台批任务详情 [auth] */
+    AppMyActivityBatchJobsControllerDetail(jobId: string): Promise<ApiEnvelope<AppMyActivityBatchJobDetailDto>> {
+      return fetcher<AppMyActivityBatchJobDetailDto>({ method: "GET", path: `/api/app/v1/my/activity-batch-jobs/${jobId}` });
+    },
+    /** App 取消后台批任务(重新判权;已完成不可取消) [auth] */
+    AppMyActivityBatchJobsControllerCancel(jobId: string): Promise<ApiEnvelope<AppMyActivityBatchJobDetailDto>> {
+      return fetcher<AppMyActivityBatchJobDetailDto>({ method: "POST", path: `/api/app/v1/my/activity-batch-jobs/${jobId}/cancel` });
+    },
+    /** App 分页查看后台批任务逐项(失败项即 status=failed) [auth] */
+    AppMyActivityBatchJobsControllerListItems(jobId: string, query?: { "page"?: number; "pageSize"?: number; "status"?: "pending" | "succeeded" | "failed" | "skipped" }): Promise<ApiEnvelope<PageResultDto & { "items": AppMyActivityBatchJobItemDto[] }>> {
+      return fetcher<PageResultDto & { "items": AppMyActivityBatchJobItemDto[] }>({ method: "GET", path: `/api/app/v1/my/activity-batch-jobs/${jobId}/items`, query });
+    },
+    /** App 重试后台批任务的失败项(重新判权) [auth] */
+    AppMyActivityBatchJobsControllerRetryFailed(jobId: string): Promise<ApiEnvelope<AppMyActivityBatchJobDetailDto>> {
+      return fetcher<AppMyActivityBatchJobDetailDto>({ method: "POST", path: `/api/app/v1/my/activity-batch-jobs/${jobId}/retry-failed` });
     },
     /** App 队员接受自己的未过期 pending 邀请并提交 canonical 报名 [auth] */
     AppMyActivityInvitationsControllerAccept(invitationId: string, body: AppActivityRegistrationCommandDto): Promise<ApiEnvelope<AppActivityRegistrationCommandReceiptDto>> {

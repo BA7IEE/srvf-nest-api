@@ -389,6 +389,15 @@
 
 > **第 5 批（本分支，自助二维码和现场主链）**：复用已存在的 `AttendanceQrCredential`、`AttendancePunchEvent`、`ActivityEvidenceState`、`EvidenceSeal` 与服务段 revision 地基；负责人可签发、作废、受保护渲染场次 QR，本人可扫码签到/签退并读取安全服务段状态，责任人可早退闭合、void、replace。QR token 仅为请求输入，render 只返不可缓存 SVG；所有写命令走 Activity 根事务、canonical request hash 与 append-only PunchEvent/segment projector。第 5 批只覆盖 AC-031–042、AC-046、ADV-001/002/004/005/006/007/020，不带入工作人员代扫、代理、批量、导入或离线（第 6 批）。
 >
+> **第 6 批收口刀（读面 + 验收接通）**：补齐合同 §6.13 后台任务统一读面 5 端点(Endpoint 532→537),
+> 判权按 `job.activityId` + 当前责任范围、越权与不存在同码 40400、重试与取消在事务内取责任行
+> `FOR SHARE` 重新判权;`retry-failed` 只动 failed 项并同额扣减 job 计数,`cancel` 拒绝
+> succeeded/cancelled/dead。五条不变量各有独占变异红集(M1×不变量1、M2×不变量2 对角线成立)。
+> 验收接通:ADV-003 / ADV-023 转真用例(既有同名/近似用例经复核**不满足合同口径**,详见
+> `activity-business-overhaul-acceptance.spec.ts` 的第 6 批注释),ADV-013(六子形态)/ADV-014
+> 标注去向,ADV-009 复核确认第 2 批已接通且口径正确、保持原样。另补一条接线守护:
+> 登记表没接进查表链会让编号**静默退回 todo**、整套仍全绿,现已成为可失败判据。
+>
 > **第 6 批（B6-2 子刀，尚未整体交付）**：B6-1 的成员凭证、`staff-scan`、`proxy-punch`、bulk 与 CSV import 已接真实 PunchCommand/Activity 根锁/责任重验/worker lease-fence；B6-2 按补充合同 v2 接入 package issue/revoke/单事件 upload、安全 review list/approve/reject。packageToken 仅首次签发与精确重放返回，正式离线事件继续复用唯一 PunchCommand；22097 零写，22098/22099 只 staging。PR/CI/独立核验/合并状态必须按对应 exact SHA 另行核对；不得写成完整第 6 批或部署完成。
 
 - **合同**:[`archive/reviews/activity-business-overhaul-v1.1/`](../archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效

@@ -275,6 +275,13 @@ const EXPECTED_ROUTES: ReadonlyArray<
     '/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/bulk-punch-jobs',
   ],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/onsite/bulk-punch-jobs/{jobId}'],
+  // 合同 §6.13 后台任务统一读面(第 6 批收口刀):跨活动跨类型,与上面那条
+  // 单活动单类型的 bulk-punch-jobs 回执并存,路径逐字照合同。
+  ['get', '/api/app/v1/my/activity-batch-jobs'],
+  ['get', '/api/app/v1/my/activity-batch-jobs/{jobId}'],
+  ['get', '/api/app/v1/my/activity-batch-jobs/{jobId}/items'],
+  ['post', '/api/app/v1/my/activity-batch-jobs/{jobId}/retry-failed'],
+  ['post', '/api/app/v1/my/activity-batch-jobs/{jobId}/cancel'],
   [
     'post',
     '/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/import-previews',
@@ -1713,7 +1720,7 @@ describe('OpenAPI 契约快照', () => {
   //   →505；第 5 批 QR 自助/managed attendance 十路 →515；第 6 批 staff/proxy/bulk/import
   //   八路 →523；B6-2 offline package/review 六路 →529；B7 audience tags 三路 → **532**。
   it('路由足迹精确为 532', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(532);
+    expect(EXPECTED_ROUTES).toHaveLength(537);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

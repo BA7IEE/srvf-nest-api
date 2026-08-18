@@ -913,18 +913,147 @@ if (
   throw new Error('第 5 批自助二维码与现场主链的 20 条验收编号必须逐条绑定真实证据');
 }
 
+/**
+ * 第 6 批收口刀(§14「Staff scan、proxy、bulk job、import preview／execute、offline package 和
+ * review。撤权与 task item 重新判权必须同批完成」)的四条对抗编号。
+ *
+ * ADV-009 不在此表:它在第 2 批就已绑到 activity-ledger-posting 的崩溃可重入用例上,
+ * 且该用例确实模拟「业务写成功但 item 状态没落地」后重跑不翻倍 —— 逐字符合 ADV-009 合同,
+ * 本刀复核后**保持原样**,不重复登记(同一编号登记两处会让「去向」失去唯一性)。
+ *
+ * ⚠️ 逐条都真读过目标用例:标题像不算数。
+ *  - ADV-003 合同是「现场权限**撤销**与**代签**并发」。既有
+ *    `activity-batch6-offline-writer` 里那条自称 ADV-003 的用例撤的是**离线包**、
+ *    并发的是**上传**,是另一件事(它本身仍是有效判据,只是不该顶 ADV-003)。
+ *    本刀新写真用例:撤责任分配 × proxy-punch,两连接池。
+ *  - ADV-023 合同是「任务**运行一半**时撤销操作者权限」。既有
+ *    `rechecks a revoked collaborator...` 是**开跑前**撤权(itemsProcessed: 0),
+ *    不满足「运行一半」。本刀新写真用例:先有 item 真提交了 PunchEvent,再撤权,
+ *    剩余项 skipped 且已提交项原样保留。
+ *  - ADV-013 的六个子形态逐个落到六个不同的 anomaly 判据上,缺一不可。
+ */
+const BATCH6_CLOSEOUT_ACCEPTANCE_IDS = ['ADV-003', 'ADV-013', 'ADV-014', 'ADV-023'] as const;
+
+const BATCH6_CLOSEOUT_ACCEPTANCE_DESTINATIONS: Readonly<
+  Record<string, readonly AcceptanceDestination[]>
+> = {
+  // ADV-003 → 本刀新用例:撤销现场责任 × 代签,跨两个 Nest/PostgreSQL pool 线性化。
+  'ADV-003': [
+    {
+      file: 'test/e2e/activity-batch6-batch-job-read-surface.e2e-spec.ts',
+      needle: 'ADV-003 现场权限撤销与代签并发:两个连接池上线性化,越权那一侧零 PunchEvent',
+    },
+    {
+      file: 'test/e2e/activity-batch6-batch-job-read-surface.e2e-spec.ts',
+      needle: 'expect(afterRevoke.body.code).toBe(BizCode.RBAC_FORBIDDEN.code);',
+    },
+  ],
+  // ADV-013 → 合同点名六个子形态,逐个绑到各自的 anomaly 断言上。
+  'ADV-013': [
+    {
+      // 撤权后上传
+      file: 'test/e2e/activity-batch6-offline-writer.e2e-spec.ts',
+      needle: "expect(review.anomalyCode).toBe('operator_authorization_revoked');",
+    },
+    {
+      // 过期
+      file: 'test/e2e/activity-batch6-offline-writer.e2e-spec.ts',
+      needle: "anomalyCode: 'package_expired', approvalPolicyCode: 'approvable' }]);",
+    },
+    {
+      // 篡改时间(设备时间在未来)
+      file: 'test/e2e/activity-batch6-offline-writer.e2e-spec.ts',
+      needle: "expected: 'future_time',",
+    },
+    {
+      // 篡改时间(落在包窗口之外)
+      file: 'test/e2e/activity-batch6-offline-writer.e2e-spec.ts',
+      needle: "expected: 'time_out_of_window',",
+    },
+    {
+      // 跳号
+      file: 'test/e2e/activity-batch6-offline-writer.e2e-spec.ts',
+      needle: "expected: 'sequence_gap',",
+    },
+    {
+      // 重复号
+      file: 'test/e2e/activity-batch6-offline-writer.e2e-spec.ts',
+      needle: "anomalyCode: 'sequence_duplicate', approvalPolicyCode: 'reject_only' }]);",
+    },
+    {
+      // 换设备
+      file: 'test/e2e/activity-batch6-offline-writer.e2e-spec.ts',
+      needle: "anomalyCode: 'device_mismatch', approvalPolicyCode: 'reject_only' }]);",
+    },
+  ],
+  // ADV-014 → 预览后在 provider 层等长替换文件,同步 execute 与 worker 两条边界都 22100 零写。
+  'ADV-014': [
+    {
+      file: 'test/e2e/activity-batch6-staff-import-offline.e2e-spec.ts',
+      needle:
+        'mutation: replacing the pinned CSV fails both execute boundaries with 22100 and zero PunchEvent',
+    },
+    {
+      file: 'test/e2e/activity-batch6-staff-import-offline.e2e-spec.ts',
+      needle: 'expect(rejected.body.code).toBe(22100);',
+    },
+  ],
+  // ADV-023 → 本刀新用例:批量代签**跑到一半**(已有 item 提交 PunchEvent)再撤权。
+  'ADV-023': [
+    {
+      file: 'test/e2e/activity-batch6-batch-job-read-surface.e2e-spec.ts',
+      needle: 'ADV-023 批量代签跑到一半再撤权:已提交项保留,剩余项 skipped 且零 PunchEvent',
+    },
+    {
+      file: 'test/e2e/activity-batch6-batch-job-read-surface.e2e-spec.ts',
+      needle: 'lastErrorCode: `BizException:${BizCode.RBAC_FORBIDDEN.code}`,',
+    },
+  ],
+};
+
+const batch6ClosecoutResolvedIds = new Set(Object.keys(BATCH6_CLOSEOUT_ACCEPTANCE_DESTINATIONS));
+if (
+  batch6ClosecoutResolvedIds.size !== BATCH6_CLOSEOUT_ACCEPTANCE_IDS.length ||
+  BATCH6_CLOSEOUT_ACCEPTANCE_IDS.some((id) => !batch6ClosecoutResolvedIds.has(id))
+) {
+  throw new Error('第 6 批收口的 4 条对抗编号必须逐条绑定真实断言片段');
+}
+
+/**
+ * 「哪些登记表参与查表」只写一处 —— `registerAcceptanceCases` 与下面的接线守护读的是
+ * **同一个数组**,所以两者不可能各说各话。
+ *
+ * 🔴 立项证据(本刀实测):把某一批的 destinations 从原来的 `??` 链里摘掉,
+ *    该批编号会**静默退回 `it.todo`** —— 43 todo 变 47 todo,一条都不红,整套仍是绿的。
+ *    也就是说「已接通」在此之前只靠人记得加那一行,没有任何执行位守着。
+ *    这与本仓 README 清单那次是同一个形状:**少接一条不产生坏链接,既有守护看不见它。**
+ */
+const ACCEPTANCE_DESTINATION_TABLES: ReadonlyArray<
+  Readonly<Record<string, readonly AcceptanceDestination[]>>
+> = [
+  BATCH6_CLOSEOUT_ACCEPTANCE_DESTINATIONS,
+  BATCH5_SELF_PUNCH_ACCEPTANCE_DESTINATIONS,
+  BATCH2_ACCEPTANCE_DESTINATIONS,
+  BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS,
+  BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS,
+  BATCH4_QUALIFICATION_RUNTIME_ACCEPTANCE_DESTINATIONS,
+  BATCH4_ONSITE_PARTICIPATION_ACCEPTANCE_DESTINATIONS,
+  BATCH4_INVITATION_VISITOR_ACCEPTANCE_DESTINATIONS,
+  BATCH4_ACTIVITY_START_EXPIRY_ACCEPTANCE_DESTINATIONS,
+  BATCH4_PERMANENT_REGISTRATION_ACCEPTANCE_DESTINATIONS,
+];
+
+function resolveAcceptanceDestinations(id: string): readonly AcceptanceDestination[] | undefined {
+  for (const table of ACCEPTANCE_DESTINATION_TABLES) {
+    const found = table[id];
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
 function registerAcceptanceCases(cases: readonly { id: string; title: string }[]): void {
   for (const { id, title } of cases) {
-    const destinations =
-      BATCH5_SELF_PUNCH_ACCEPTANCE_DESTINATIONS[id] ??
-      BATCH2_ACCEPTANCE_DESTINATIONS[id] ??
-      BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS[id] ??
-      BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS[id] ??
-      BATCH4_QUALIFICATION_RUNTIME_ACCEPTANCE_DESTINATIONS[id] ??
-      BATCH4_ONSITE_PARTICIPATION_ACCEPTANCE_DESTINATIONS[id] ??
-      BATCH4_INVITATION_VISITOR_ACCEPTANCE_DESTINATIONS[id] ??
-      BATCH4_ACTIVITY_START_EXPIRY_ACCEPTANCE_DESTINATIONS[id] ??
-      BATCH4_PERMANENT_REGISTRATION_ACCEPTANCE_DESTINATIONS[id];
+    const destinations = resolveAcceptanceDestinations(id);
     if (destinations !== undefined) {
       it(`${id} ${title}（已标注去向）`, () => {
         for (const destination of destinations) {
@@ -1008,6 +1137,19 @@ describe('活动业务改造 v1.1 合同完整性', () => {
     // 矩阵必须真的引用了验收编号 —— 空集合会让下面的断言恒真。
     expect(referenced.size).toBeGreaterThan(0);
     expect([...referenced].filter((id) => !knownIds.has(id))).toEqual([]);
+  });
+
+  // 接线守护:登记了去向、却忘了把该批登记表接进查表链 ⇒ 编号**静默退回 todo**,
+  // 整套照样全绿。本条把「接通」变成一个可失败的判据,而不是靠人记得加那一行。
+  it('第 6 批收口的 4 条对抗编号确实产出真实用例,没有静默退回 todo', () => {
+    const notWired = BATCH6_CLOSEOUT_ACCEPTANCE_IDS.filter(
+      (id) => resolveAcceptanceDestinations(id) === undefined,
+    );
+    expect({ 登记了去向却没接进查表链的编号: notWired }).toEqual({
+      登记了去向却没接进查表链的编号: [],
+    });
+    // 反向:判据自身不得因为清单为空而恒真。
+    expect(BATCH6_CLOSEOUT_ACCEPTANCE_IDS.length).toBe(4);
   });
 
   it('活文档仍指向本合同目录(指针被删则红)', () => {
