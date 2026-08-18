@@ -50839,6 +50839,1117 @@
         ]
       }
     },
+    "/api/app/v1/my/activity-batch-jobs": {
+      "get": {
+        "operationId": "AppMyActivityBatchJobsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页数量",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "activityId",
+            "required": false,
+            "in": "query",
+            "description": "按活动过滤;超出当前责任范围的活动恒返回空页,不泄露该活动是否存在",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/PageResultDto"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "items",
+                            "total",
+                            "page",
+                            "pageSize"
+                          ],
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/AppMyActivityBatchJobListItemDto"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 分页查看当前责任范围内的后台批任务 [auth]",
+        "tags": [
+          "Mobile - My Activity Batch Jobs"
+        ]
+      }
+    },
+    "/api/app/v1/my/activity-batch-jobs/{jobId}": {
+      "get": {
+        "operationId": "AppMyActivityBatchJobsController_detail",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "description": "后台批任务 ID",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppMyActivityBatchJobDetailDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在(code=40400)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40400
+                      ],
+                      "description": "40400: 资源不存在",
+                      "example": 40400
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "资源不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 查看单个后台批任务详情 [auth]",
+        "tags": [
+          "Mobile - My Activity Batch Jobs"
+        ]
+      }
+    },
+    "/api/app/v1/my/activity-batch-jobs/{jobId}/items": {
+      "get": {
+        "operationId": "AppMyActivityBatchJobsController_listItems",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "description": "后台批任务 ID",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页数量",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "按逐项状态过滤;失败项分页即 status=failed",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "succeeded",
+                "failed",
+                "skipped"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/PageResultDto"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "items",
+                            "total",
+                            "page",
+                            "pageSize"
+                          ],
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/AppMyActivityBatchJobItemDto"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在(code=40400)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40400
+                      ],
+                      "description": "40400: 资源不存在",
+                      "example": 40400
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "资源不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 分页查看后台批任务逐项(失败项即 status=failed) [auth]",
+        "tags": [
+          "Mobile - My Activity Batch Jobs"
+        ]
+      }
+    },
+    "/api/app/v1/my/activity-batch-jobs/{jobId}/retry-failed": {
+      "post": {
+        "operationId": "AppMyActivityBatchJobsController_retryFailed",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "description": "后台批任务 ID",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppMyActivityBatchJobDetailDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在(code=40400)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40400
+                      ],
+                      "description": "40400: 资源不存在",
+                      "example": 40400
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "资源不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "活动当前状态不允许此操作(code=20030)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20030
+                      ],
+                      "description": "20030: 活动当前状态不允许此操作",
+                      "example": 20030
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动当前状态不允许此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 重试后台批任务的失败项(重新判权) [auth]",
+        "tags": [
+          "Mobile - My Activity Batch Jobs"
+        ]
+      }
+    },
+    "/api/app/v1/my/activity-batch-jobs/{jobId}/cancel": {
+      "post": {
+        "operationId": "AppMyActivityBatchJobsController_cancel",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "description": "后台批任务 ID",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppMyActivityBatchJobDetailDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在(code=40400)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40400
+                      ],
+                      "description": "40400: 资源不存在",
+                      "example": 40400
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "资源不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "活动当前状态不允许此操作(code=20030)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20030
+                      ],
+                      "description": "20030: 活动当前状态不允许此操作",
+                      "example": 20030
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动当前状态不允许此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 取消后台批任务(重新判权;已完成不可取消) [auth]",
+        "tags": [
+          "Mobile - My Activity Batch Jobs"
+        ]
+      }
+    },
     "/api/app/v1/my/participation-ledger": {
       "get": {
         "operationId": "AppMyParticipationLedgerController_list",
@@ -123941,6 +125052,318 @@
           "newOwnerMemberId",
           "reason",
           "retainPreviousOwnerAsCollaborator"
+        ]
+      },
+      "AppMyActivityBatchJobActivityDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "活动 ID"
+          },
+          "title": {
+            "type": "string",
+            "description": "活动标题"
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "活动状态"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "statusCode"
+        ]
+      },
+      "AppMyActivityBatchJobCreatorDto": {
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "description": "创建人队员 ID"
+          },
+          "memberNo": {
+            "type": "string",
+            "description": "创建人编号"
+          },
+          "displayName": {
+            "type": "string",
+            "description": "创建人显示名"
+          }
+        },
+        "required": [
+          "memberId",
+          "memberNo",
+          "displayName"
+        ]
+      },
+      "AppMyActivityBatchJobListItemDto": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "description": "后台批任务 ID"
+          },
+          "jobTypeCode": {
+            "type": "string",
+            "enum": [
+              "settlement_prepare",
+              "bulk_proxy",
+              "import_preview",
+              "import_execute",
+              "export",
+              "notification_expand",
+              "reconciliation"
+            ],
+            "description": "任务类型(§3.27 七值闭集)"
+          },
+          "activity": {
+            "$ref": "#/components/schemas/AppMyActivityBatchJobActivityDto"
+          },
+          "createdBy": {
+            "nullable": true,
+            "description": "创建人;历史任务或系统入队的任务为 null",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AppMyActivityBatchJobCreatorDto"
+              }
+            ]
+          },
+          "statusCode": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "succeeded",
+              "partial_failed",
+              "failed",
+              "cancelled",
+              "dead"
+            ],
+            "description": "任务状态(§3.27 七值闭集)"
+          },
+          "total": {
+            "type": "number",
+            "minimum": 0,
+            "description": "总数"
+          },
+          "succeeded": {
+            "type": "number",
+            "minimum": 0,
+            "description": "成功"
+          },
+          "failed": {
+            "type": "number",
+            "minimum": 0,
+            "description": "失败"
+          },
+          "skipped": {
+            "type": "number",
+            "minimum": 0,
+            "description": "跳过"
+          },
+          "leaseStateText": {
+            "type": "string",
+            "description": "§9.9 lease 人话状态;只描述占用与否,不透出 worker 实例标识与调度时刻"
+          },
+          "retryStateText": {
+            "type": "string",
+            "description": "§9.9 重试人话状态;不透出内部退避时刻"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "任务创建时间",
+            "format": "date-time"
+          },
+          "startedAt": {
+            "type": "object",
+            "nullable": true,
+            "description": "开始执行时间",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": "object",
+            "nullable": true,
+            "description": "结束时间",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "jobId",
+          "jobTypeCode",
+          "activity",
+          "createdBy",
+          "statusCode",
+          "total",
+          "succeeded",
+          "failed",
+          "skipped",
+          "leaseStateText",
+          "retryStateText",
+          "createdAt",
+          "startedAt",
+          "completedAt"
+        ]
+      },
+      "AppMyActivityBatchJobDetailDto": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "description": "后台批任务 ID"
+          },
+          "jobTypeCode": {
+            "type": "string",
+            "enum": [
+              "settlement_prepare",
+              "bulk_proxy",
+              "import_preview",
+              "import_execute",
+              "export",
+              "notification_expand",
+              "reconciliation"
+            ],
+            "description": "任务类型(§3.27 七值闭集)"
+          },
+          "activity": {
+            "$ref": "#/components/schemas/AppMyActivityBatchJobActivityDto"
+          },
+          "createdBy": {
+            "nullable": true,
+            "description": "创建人;历史任务或系统入队的任务为 null",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AppMyActivityBatchJobCreatorDto"
+              }
+            ]
+          },
+          "statusCode": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "succeeded",
+              "partial_failed",
+              "failed",
+              "cancelled",
+              "dead"
+            ],
+            "description": "任务状态(§3.27 七值闭集)"
+          },
+          "total": {
+            "type": "number",
+            "minimum": 0,
+            "description": "总数"
+          },
+          "succeeded": {
+            "type": "number",
+            "minimum": 0,
+            "description": "成功"
+          },
+          "failed": {
+            "type": "number",
+            "minimum": 0,
+            "description": "失败"
+          },
+          "skipped": {
+            "type": "number",
+            "minimum": 0,
+            "description": "跳过"
+          },
+          "leaseStateText": {
+            "type": "string",
+            "description": "§9.9 lease 人话状态;只描述占用与否,不透出 worker 实例标识与调度时刻"
+          },
+          "retryStateText": {
+            "type": "string",
+            "description": "§9.9 重试人话状态;不透出内部退避时刻"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "任务创建时间",
+            "format": "date-time"
+          },
+          "startedAt": {
+            "type": "object",
+            "nullable": true,
+            "description": "开始执行时间",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": "object",
+            "nullable": true,
+            "description": "结束时间",
+            "format": "date-time"
+          },
+          "retryFailedAllowed": {
+            "type": "boolean",
+            "description": "当前是否允许重试失败项(需仍在责任范围内且存在失败项)"
+          },
+          "cancelAllowed": {
+            "type": "boolean",
+            "description": "当前是否允许取消(已完成 / 已提交 / 已取消的任务不可取消)"
+          }
+        },
+        "required": [
+          "jobId",
+          "jobTypeCode",
+          "activity",
+          "createdBy",
+          "statusCode",
+          "total",
+          "succeeded",
+          "failed",
+          "skipped",
+          "leaseStateText",
+          "retryStateText",
+          "createdAt",
+          "startedAt",
+          "completedAt",
+          "retryFailedAllowed",
+          "cancelAllowed"
+        ]
+      },
+      "AppMyActivityBatchJobItemDto": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "description": "逐项 ID"
+          },
+          "itemKey": {
+            "type": "string",
+            "description": "逐项防重键"
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "逐项状态"
+          },
+          "attempts": {
+            "type": "number",
+            "minimum": 0,
+            "description": "已尝试次数"
+          },
+          "lastErrorCode": {
+            "type": "object",
+            "nullable": true,
+            "description": "错误编码;不含堆栈与 SQL(§3.27)"
+          },
+          "safeMessage": {
+            "type": "object",
+            "nullable": true,
+            "description": "已脱敏的可展示文案(§3.27)"
+          }
+        },
+        "required": [
+          "itemId",
+          "itemKey",
+          "statusCode",
+          "attempts",
+          "lastErrorCode",
+          "safeMessage"
         ]
       },
       "AppParticipationLedgerEntryDto": {
