@@ -3,6 +3,7 @@ import { Role, UserStatus } from '@prisma/client';
 import type { PrismaService } from '../../database/prisma.service';
 import type { AttendanceMemberCredentialService } from './attendance-member-credential.service';
 import type { AttendanceOfflinePackageTokenService } from './attendance-offline-package-token';
+import { AttendanceOfflinePackageAccessService } from './attendance-offline-package-access.service';
 import { AttendanceOfflinePackageService } from './attendance-offline-package.service';
 import type { AttendancePunchAuditRecorder } from './attendance-punch-audit-recorder';
 import type { AttendancePunchCommandService } from './attendance-punch-command.service';
@@ -126,6 +127,9 @@ describe('AttendanceOfflinePackageService fail-closed token boundary', () => {
       memberCredentials,
       { offlinePunchWithinTransaction: mutation } as unknown as AttendancePunchCommandService,
       { logOffline: mutation } as unknown as AttendancePunchAuditRecorder,
+      // 传**真实**的准入层实例,不是 mock —— 行锁 SQL 已搬到该类,
+      // 传 mock 会让本 spec 悄悄不再覆盖锁路径(queryRaw 断言会变成空转)。
+      new AttendanceOfflinePackageAccessService(),
     );
     return { service, transaction, queryRaw, findPackage, mutation, verifyMember };
   }

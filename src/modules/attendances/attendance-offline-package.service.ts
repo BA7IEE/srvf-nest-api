@@ -14,13 +14,20 @@ import {
   verifyAttendanceOfflineEvent,
   type AttendanceOfflinePackageTokenPayload,
 } from './attendance-offline-package-token';
+import {
+  AttendanceOfflinePackageAccessService,
+  OFFLINE_PACKAGE_SELECT,
+  OFFLINE_REVIEW_SELECT,
+  type FrozenParticipant,
+  type PackageRow,
+  type ReviewRow,
+} from './attendance-offline-package-access.service';
 import { AttendancePunchAuditRecorder } from './attendance-punch-audit-recorder';
 import { AttendancePunchCommandService } from './attendance-punch-command.service';
 import {
   createOfflinePackageIssueRequestHash,
   createOfflinePackageRevokeRequestHash,
   createOfflineReviewResolutionRequestHash,
-  normalizeAttendancePunchReason,
 } from './attendance-punch-request-hash';
 import type { AppActivityPunchReceiptDto } from './dto/app/app-activity-punch.dto';
 import type {
@@ -43,74 +50,6 @@ type ReviewAnomaly =
   | 'signature_invalid'
   | 'participant_snapshot_mismatch';
 
-type PackageRow = {
-  id: string;
-  activityId: string;
-  sessionId: string;
-  operatorUserId: string;
-  operatorMemberId: string;
-  deviceId: string;
-  packageVersion: number;
-  packageKeyVersion: number;
-  statusCode: string;
-  tokenDigest: string;
-  ruleSnapshotId: string;
-  ruleSnapshotHash: string;
-  workflowRevision: number;
-  participantSnapshotHash: string;
-  validFrom: Date;
-  validUntil: Date;
-  uploadUntil: Date;
-  sequenceStart: number;
-  nextExpectedSequence: number;
-  chainAnchorHash: string;
-  lastAcceptedHash: string;
-  lastAcceptedAt: Date | null;
-  issuedAt: Date;
-  issueOperationKey: string;
-  issueRequestHash: string;
-  revokedByUserId: string | null;
-  revokedAt: Date | null;
-  revokeReason: string | null;
-  revokeOperationKey: string | null;
-  revokeRequestHash: string | null;
-};
-
-type FrozenParticipant = {
-  participationIdentityId: string;
-  memberId: string;
-  participationRevisionId: string;
-  positionId: string | null;
-};
-
-type ReviewRow = {
-  id: string;
-  offlinePackageId: string;
-  activityId: string;
-  sessionId: string;
-  sequence: number;
-  eventKey: string;
-  statusCode: string;
-  anomalyCode: string;
-  approvalPolicyCode: string;
-  participationIdentityId: string | null;
-  participationRevisionId: string | null;
-  actionCode: string | null;
-  deviceTime: Date | null;
-  longitude: Prisma.Decimal | null;
-  latitude: Prisma.Decimal | null;
-  accuracy: Prisma.Decimal | null;
-  providedPriorHash: string | null;
-  eventPayloadHash: string | null;
-  signatureDigest: string | null;
-  stagedAt: Date;
-  reviewedAt: Date | null;
-  reviewReason: string | null;
-  resolutionOperationKey: string | null;
-  resolutionRequestHash: string | null;
-  formalPunchEventId: string | null;
-};
-
 const DAY_MS = 24 * 60 * 60_000;
 const FUTURE_TOLERANCE_MS = 5 * 60_000;
 const REJECT_ONLY_ANOMALIES = new Set<ReviewAnomaly>([
@@ -130,6 +69,7 @@ export class AttendanceOfflinePackageService {
     private readonly memberCredentials: AttendanceMemberCredentialService,
     private readonly punch: AttendancePunchCommandService,
     private readonly audit: AttendancePunchAuditRecorder,
+    private readonly access: AttendanceOfflinePackageAccessService,
   ) {}
 
   async issue(
@@ -151,14 +91,14 @@ export class AttendanceOfflinePackageService {
       operationKey: input.operationKey,
       deviceId: input.deviceId,
     });
-    return this.withUniqueReplay(() =>
+    return this.access.withUniqueReplay(() =>
       this.prisma.$transaction(
         async (tx) => {
-          await this.lockActivity(tx, input.activityId);
-          await this.requireManagedAttendance(tx, input.activityId, currentUser.memberId!);
+          await this.access.lockActivity(tx, input.activityId);
+          await this.access.requireManagedAttendance(tx, input.activityId, currentUser.memberId!);
           const replay = await tx.offlinePackage.findUnique({
             where: { issueOperationKey: input.operationKey },
-            select: this.packageSelect,
+            select: OFFLINE_PACKAGE_SELECT,
           });
           if (replay) {
             if (replay.issueRequestHash !== requestHash) {
@@ -171,7 +111,11 @@ export class AttendanceOfflinePackageService {
             return { package: this.presentPackage(replay), packageToken };
           }
 
-          const session = await this.lockIssuableSession(tx, input.activityId, input.sessionId);
+          const session = await this.access.lockIssuableSession(
+            tx,
+            input.activityId,
+            input.sessionId,
+          );
           const now = new Date();
           if (now >= session.checkOutCloseAt) throw new BizException(BizCode.BAD_REQUEST);
           const liveDevicePackage = await tx.offlinePackage.findFirst({
@@ -196,7 +140,7 @@ export class AttendanceOfflinePackageService {
           });
           if (!ruleSnapshot)
             throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
-          const participants = await this.lockIssuableParticipants(
+          const participants = await this.access.lockIssuableParticipants(
             tx,
             input.activityId,
             input.sessionId,
@@ -265,7 +209,7 @@ export class AttendanceOfflinePackageService {
               issueOperationKey: input.operationKey,
               issueRequestHash: requestHash,
             },
-            select: this.packageSelect,
+            select: OFFLINE_PACKAGE_SELECT,
           });
           await tx.offlinePackageParticipant.createMany({
             data: participants.map((participant) => ({
@@ -307,7 +251,7 @@ export class AttendanceOfflinePackageService {
     auditMeta: AuditMeta,
   ): Promise<AppManagedOfflinePackageDto> {
     if (currentUser.memberId === null) throw new BizException(BizCode.RBAC_FORBIDDEN);
-    const reason = this.requiredReason(input.reason);
+    const reason = this.access.requiredReason(input.reason);
     const requestHash = createOfflinePackageRevokeRequestHash({
       activityId: input.activityId,
       packageId: input.packageId,
@@ -315,15 +259,15 @@ export class AttendanceOfflinePackageService {
       operationKey: input.operationKey,
       reason,
     });
-    return this.withUniqueReplay(() =>
+    return this.access.withUniqueReplay(() =>
       this.prisma.$transaction(
         async (tx) => {
-          await this.lockActivity(tx, input.activityId);
-          const row = await this.lockPackage(tx, input.activityId, input.packageId);
-          await this.requireManagedAttendance(tx, input.activityId, currentUser.memberId!);
+          await this.access.lockActivity(tx, input.activityId);
+          const row = await this.access.lockPackage(tx, input.activityId, input.packageId);
+          await this.access.requireManagedAttendance(tx, input.activityId, currentUser.memberId!);
           const keyed = await tx.offlinePackage.findUnique({
             where: { revokeOperationKey: input.operationKey },
-            select: this.packageSelect,
+            select: OFFLINE_PACKAGE_SELECT,
           });
           if (keyed) {
             if (keyed.id !== row.id || keyed.revokeRequestHash !== requestHash) {
@@ -345,7 +289,7 @@ export class AttendanceOfflinePackageService {
               revokeOperationKey: input.operationKey,
               revokeRequestHash: requestHash,
             },
-            select: this.packageSelect,
+            select: OFFLINE_PACKAGE_SELECT,
           });
           await this.audit.logOffline({
             operation: 'attendance-offline-package.revoke',
@@ -387,12 +331,16 @@ export class AttendanceOfflinePackageService {
     if (currentUser.memberId === null) throw new BizException(BizCode.RBAC_FORBIDDEN);
     const uploaderMemberId = currentUser.memberId;
     const receivedAt = new Date();
-    const outcome = await this.withUniqueReplay(() =>
+    const outcome = await this.access.withUniqueReplay(() =>
       this.prisma.$transaction(
         async (tx) => {
-          await this.lockActivity(tx, input.activityId);
-          await this.requireManagedAttendance(tx, input.activityId, uploaderMemberId);
-          const offlinePackage = await this.lockPackage(tx, input.activityId, input.packageId);
+          await this.access.lockActivity(tx, input.activityId);
+          await this.access.requireManagedAttendance(tx, input.activityId, uploaderMemberId);
+          const offlinePackage = await this.access.lockPackage(
+            tx,
+            input.activityId,
+            input.packageId,
+          );
           let packagePayload: AttendanceOfflinePackageTokenPayload;
           try {
             packagePayload = this.tokens.verify(input.packageToken);
@@ -436,7 +384,7 @@ export class AttendanceOfflinePackageService {
           const operatorAuthorized =
             offlinePackage.operatorMemberId === uploaderMemberId
               ? true
-              : await this.hasManagedAttendance(
+              : await this.access.hasManagedAttendance(
                   tx,
                   offlinePackage.activityId,
                   offlinePackage.operatorMemberId,
@@ -512,7 +460,7 @@ export class AttendanceOfflinePackageService {
           }
 
           const participantCurrent = frozenParticipant
-            ? await this.frozenParticipantIsCurrent(
+            ? await this.access.frozenParticipantIsCurrent(
                 tx,
                 offlinePackage,
                 frozenParticipant,
@@ -522,7 +470,7 @@ export class AttendanceOfflinePackageService {
 
           const pending = await tx.offlinePunchReviewItem.findFirst({
             where: { offlinePackageId: offlinePackage.id, statusCode: 'pending' },
-            select: this.reviewSelect,
+            select: OFFLINE_REVIEW_SELECT,
             orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
           });
           if (pending) {
@@ -572,7 +520,7 @@ export class AttendanceOfflinePackageService {
           } else if (
             input.deviceTime < offlinePackage.validFrom ||
             input.deviceTime > offlinePackage.validUntil ||
-            !(await this.inSessionWindow(
+            !(await this.access.inSessionWindow(
               tx,
               offlinePackage.activityId,
               offlinePackage.sessionId,
@@ -683,8 +631,12 @@ export class AttendanceOfflinePackageService {
     if (input.currentUser.memberId === null) throw new BizException(BizCode.RBAC_FORBIDDEN);
     return this.prisma.$transaction(
       async (tx) => {
-        await this.lockActivity(tx, input.activityId);
-        await this.requireManagedAttendance(tx, input.activityId, input.currentUser.memberId!);
+        await this.access.lockActivity(tx, input.activityId);
+        await this.access.requireManagedAttendance(
+          tx,
+          input.activityId,
+          input.currentUser.memberId!,
+        );
         const where: Prisma.OfflinePunchReviewItemWhereInput = {
           activityId: input.activityId,
           ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
@@ -693,7 +645,7 @@ export class AttendanceOfflinePackageService {
         const [rows, total] = await Promise.all([
           tx.offlinePunchReviewItem.findMany({
             where,
-            select: this.reviewSelect,
+            select: OFFLINE_REVIEW_SELECT,
             orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
             skip: (input.page - 1) * input.pageSize,
             take: input.pageSize,
@@ -749,7 +701,7 @@ export class AttendanceOfflinePackageService {
     auditMeta: AuditMeta,
   ): Promise<AppManagedOfflineReviewItemDto> {
     if (currentUser.memberId === null) throw new BizException(BizCode.RBAC_FORBIDDEN);
-    const reason = this.requiredReason(input.reason);
+    const reason = this.access.requiredReason(input.reason);
     const requestHash = createOfflineReviewResolutionRequestHash({
       action,
       activityId: input.activityId,
@@ -758,25 +710,25 @@ export class AttendanceOfflinePackageService {
       operationKey: input.operationKey,
       reason,
     });
-    return this.withUniqueReplay(() =>
+    return this.access.withUniqueReplay(() =>
       this.prisma.$transaction(
         async (tx) => {
-          await this.lockActivity(tx, input.activityId);
+          await this.access.lockActivity(tx, input.activityId);
           const reference = await tx.offlinePunchReviewItem.findFirst({
             where: { id: input.reviewItemId, activityId: input.activityId },
             select: { offlinePackageId: true },
           });
           if (!reference) throw new BizException(BizCode.BAD_REQUEST);
-          const offlinePackage = await this.lockPackage(
+          const offlinePackage = await this.access.lockPackage(
             tx,
             input.activityId,
             reference.offlinePackageId,
           );
-          await this.requireManagedAttendance(tx, input.activityId, currentUser.memberId!);
-          const review = await this.lockReview(tx, input.activityId, input.reviewItemId);
+          await this.access.requireManagedAttendance(tx, input.activityId, currentUser.memberId!);
+          const review = await this.access.lockReview(tx, input.activityId, input.reviewItemId);
           const keyed = await tx.offlinePunchReviewItem.findUnique({
             where: { resolutionOperationKey: input.operationKey },
-            select: this.reviewSelect,
+            select: OFFLINE_REVIEW_SELECT,
           });
           if (keyed) {
             const keyedAction = keyed.statusCode === 'approved' ? 'approve' : 'reject';
@@ -831,7 +783,12 @@ export class AttendanceOfflinePackageService {
             if (
               !frozenParticipant ||
               frozenParticipant.participationRevisionId !== review.participationRevisionId ||
-              !(await this.frozenParticipantIsCurrent(tx, offlinePackage, frozenParticipant, null))
+              !(await this.access.frozenParticipantIsCurrent(
+                tx,
+                offlinePackage,
+                frozenParticipant,
+                null,
+              ))
             ) {
               throw new BizException(BizCode.ATTENDANCE_REGISTRATION_INVALID);
             }
@@ -879,7 +836,7 @@ export class AttendanceOfflinePackageService {
               resolutionRequestHash: requestHash,
               formalPunchEventId: formalEventId,
             },
-            select: this.reviewSelect,
+            select: OFFLINE_REVIEW_SELECT,
           });
           if (action === 'approve' && chainHash !== null) {
             await tx.offlinePackage.update({
@@ -969,7 +926,7 @@ export class AttendanceOfflinePackageService {
           sequence: args.input.sequence,
         },
       },
-      select: this.reviewSelect,
+      select: OFFLINE_REVIEW_SELECT,
     });
     if (existing) {
       if (
@@ -1006,7 +963,7 @@ export class AttendanceOfflinePackageService {
         stagedByMemberId: args.currentUser.memberId,
         stagedAt: args.receivedAt,
       },
-      select: this.reviewSelect,
+      select: OFFLINE_REVIEW_SELECT,
     });
     if (args.anomaly === 'package_expired') {
       if (['active', 'review_required'].includes(args.offlinePackage.statusCode)) {
@@ -1022,193 +979,6 @@ export class AttendanceOfflinePackageService {
       });
     }
     return { review: created, created: true };
-  }
-
-  private async lockActivity(tx: PrismaTx, activityId: string): Promise<void> {
-    const rows = await tx.$queryRaw<Array<{ id: string; statusCode: string }>>(Prisma.sql`
-      SELECT "id", "statusCode" FROM "Activity"
-      WHERE "id" = ${activityId} AND "deletedAt" IS NULL
-      FOR UPDATE
-    `);
-    if (rows.length !== 1) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-    if (rows[0].statusCode !== 'published') {
-      throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
-    }
-  }
-
-  private async lockIssuableSession(
-    tx: PrismaTx,
-    activityId: string,
-    sessionId: string,
-  ): Promise<{ checkOutCloseAt: Date; workflowRevision: number }> {
-    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT "id" FROM "ActivitySession"
-      WHERE "id" = ${sessionId}
-        AND "activityId" = ${activityId}
-        AND "deletedAt" IS NULL
-        AND "statusCode" = 'scheduled'
-      FOR UPDATE
-    `);
-    if (locked.length !== 1) throw new BizException(BizCode.BAD_REQUEST);
-    const session = await tx.activitySession.findFirst({
-      where: { id: sessionId, activityId, deletedAt: null, statusCode: 'scheduled' },
-      select: { checkOutCloseAt: true, workflowRevision: true },
-    });
-    if (!session) throw new BizException(BizCode.BAD_REQUEST);
-    return session;
-  }
-
-  private async lockPackage(
-    tx: PrismaTx,
-    activityId: string,
-    packageId: string,
-  ): Promise<PackageRow> {
-    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT "id" FROM "OfflinePackage"
-      WHERE "id" = ${packageId} AND "activityId" = ${activityId}
-      FOR UPDATE
-    `);
-    if (locked.length !== 1) throw new BizException(BizCode.ATTENDANCE_OFFLINE_PACKAGE_INVALID);
-    const row = await tx.offlinePackage.findFirst({
-      where: { id: packageId, activityId },
-      select: this.packageSelect,
-    });
-    if (!row) throw new BizException(BizCode.ATTENDANCE_OFFLINE_PACKAGE_INVALID);
-    return row;
-  }
-
-  private async lockReview(
-    tx: PrismaTx,
-    activityId: string,
-    reviewItemId: string,
-  ): Promise<ReviewRow> {
-    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT "id" FROM "OfflinePunchReviewItem"
-      WHERE "id" = ${reviewItemId} AND "activityId" = ${activityId}
-      FOR UPDATE
-    `);
-    if (locked.length !== 1) throw new BizException(BizCode.BAD_REQUEST);
-    const row = await tx.offlinePunchReviewItem.findFirst({
-      where: { id: reviewItemId, activityId },
-      select: this.reviewSelect,
-    });
-    if (!row) throw new BizException(BizCode.BAD_REQUEST);
-    return row;
-  }
-
-  private async lockIssuableParticipants(
-    tx: PrismaTx,
-    activityId: string,
-    sessionId: string,
-  ): Promise<FrozenParticipant[]> {
-    return tx.$queryRaw<FrozenParticipant[]>(Prisma.sql`
-      SELECT
-        i."id" AS "participationIdentityId",
-        i."memberId",
-        r."id" AS "participationRevisionId",
-        i."currentPositionId" AS "positionId"
-      FROM "ActivityParticipationIdentity" i
-      INNER JOIN "ActivityParticipationRevision" r
-        ON r."identityId" = i."id" AND r."revision" = i."currentRevision"
-      WHERE i."activityId" = ${activityId}
-        AND i."sessionId" = ${sessionId}
-        AND i."currentStatusCode" = 'pass'
-        AND i."populationIncluded" = true
-        AND r."statusCode" = 'pass'
-      ORDER BY i."id" COLLATE "C" ASC
-      FOR SHARE OF i, r
-    `);
-  }
-
-  private async frozenParticipantIsCurrent(
-    tx: PrismaTx,
-    offlinePackage: PackageRow,
-    participant: FrozenParticipant,
-    credential: { userId: string; memberId: string } | null,
-  ): Promise<boolean> {
-    const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT i."id"
-      FROM "ActivityParticipationIdentity" i
-      INNER JOIN "ActivityParticipationRevision" r
-        ON r."id" = ${participant.participationRevisionId}
-        AND r."identityId" = i."id"
-        AND r."revision" = i."currentRevision"
-      INNER JOIN "Member" m ON m."id" = i."memberId"
-      ${
-        credential === null
-          ? Prisma.empty
-          : Prisma.sql`INNER JOIN "User" u ON u."id" = ${credential.userId} AND u."memberId" = i."memberId"`
-      }
-      WHERE i."id" = ${participant.participationIdentityId}
-        AND i."activityId" = ${offlinePackage.activityId}
-        AND i."sessionId" = ${offlinePackage.sessionId}
-        AND i."memberId" = ${participant.memberId}
-        AND i."currentStatusCode" = 'pass'
-        AND i."populationIncluded" = true
-        AND i."currentPositionId" IS NOT DISTINCT FROM ${participant.positionId}
-        AND r."statusCode" = 'pass'
-        AND m."status" = 'ACTIVE'
-        AND m."deletedAt" IS NULL
-        ${
-          credential === null
-            ? Prisma.empty
-            : Prisma.sql`AND u."status" = 'ACTIVE' AND u."deletedAt" IS NULL`
-        }
-      FOR SHARE OF i, r, m${credential === null ? Prisma.empty : Prisma.sql`, u`}
-    `);
-    return (
-      rows.length === 1 && (credential === null || credential.memberId === participant.memberId)
-    );
-  }
-
-  private async hasManagedAttendance(
-    tx: PrismaTx,
-    activityId: string,
-    memberId: string | null,
-  ): Promise<boolean> {
-    if (memberId === null) return false;
-    const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT "id" FROM "activity_responsibility_assignments"
-      WHERE "activityId" = ${activityId}
-        AND "memberId" = ${memberId}
-        AND "status" = 'active'
-        AND "canManageAttendance" = true
-      ORDER BY "id" ASC
-      FOR SHARE
-    `);
-    return rows.length > 0;
-  }
-
-  private async requireManagedAttendance(
-    tx: PrismaTx,
-    activityId: string,
-    memberId: string,
-  ): Promise<void> {
-    if (!(await this.hasManagedAttendance(tx, activityId, memberId))) {
-      throw new BizException(BizCode.RBAC_FORBIDDEN);
-    }
-  }
-
-  private async inSessionWindow(
-    tx: PrismaTx,
-    activityId: string,
-    sessionId: string,
-    action: 'check_in' | 'check_out',
-    at: Date,
-  ): Promise<boolean> {
-    const session = await tx.activitySession.findFirst({
-      where: { id: sessionId, activityId, deletedAt: null, statusCode: 'scheduled' },
-      select: {
-        checkInOpenAt: true,
-        checkInCloseAt: true,
-        checkOutOpenAt: true,
-        checkOutCloseAt: true,
-      },
-    });
-    if (!session) return false;
-    const from = action === 'check_in' ? session.checkInOpenAt : session.checkOutOpenAt;
-    const until = action === 'check_in' ? session.checkInCloseAt : session.checkOutCloseAt;
-    return at >= from && at <= until;
   }
 
   private assertPackageTokenAnchors(
@@ -1317,99 +1087,7 @@ export class AttendanceOfflinePackageService {
     };
   }
 
-  private requiredReason(value: string): string {
-    const reason = normalizeAttendancePunchReason(value);
-    if (reason === null) throw new BizException(BizCode.BAD_REQUEST);
-    return reason;
-  }
-
-  private async withUniqueReplay<T>(operation: () => Promise<T>): Promise<T> {
-    try {
-      return await operation();
-    } catch (error) {
-      if (!isUniqueConflict(error)) throw error;
-      try {
-        return await operation();
-      } catch (retryError) {
-        if (isUniqueConflict(retryError)) {
-          throw new BizException(BizCode.ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT);
-        }
-        throw retryError;
-      }
-    }
-  }
-
   private numberOrNull(value: Prisma.Decimal | null): number | null {
     return value === null ? null : Number(value);
   }
-
-  private readonly packageSelect = {
-    id: true,
-    activityId: true,
-    sessionId: true,
-    operatorUserId: true,
-    operatorMemberId: true,
-    deviceId: true,
-    packageVersion: true,
-    packageKeyVersion: true,
-    statusCode: true,
-    tokenDigest: true,
-    ruleSnapshotId: true,
-    ruleSnapshotHash: true,
-    workflowRevision: true,
-    participantSnapshotHash: true,
-    validFrom: true,
-    validUntil: true,
-    uploadUntil: true,
-    sequenceStart: true,
-    nextExpectedSequence: true,
-    chainAnchorHash: true,
-    lastAcceptedHash: true,
-    lastAcceptedAt: true,
-    issuedAt: true,
-    issueOperationKey: true,
-    issueRequestHash: true,
-    revokedByUserId: true,
-    revokedAt: true,
-    revokeReason: true,
-    revokeOperationKey: true,
-    revokeRequestHash: true,
-  } satisfies Prisma.OfflinePackageSelect;
-
-  private readonly reviewSelect = {
-    id: true,
-    offlinePackageId: true,
-    activityId: true,
-    sessionId: true,
-    sequence: true,
-    eventKey: true,
-    statusCode: true,
-    anomalyCode: true,
-    approvalPolicyCode: true,
-    participationIdentityId: true,
-    participationRevisionId: true,
-    actionCode: true,
-    deviceTime: true,
-    longitude: true,
-    latitude: true,
-    accuracy: true,
-    providedPriorHash: true,
-    eventPayloadHash: true,
-    signatureDigest: true,
-    stagedAt: true,
-    reviewedAt: true,
-    reviewReason: true,
-    resolutionOperationKey: true,
-    resolutionRequestHash: true,
-    formalPunchEventId: true,
-  } satisfies Prisma.OfflinePunchReviewItemSelect;
-}
-
-function isUniqueConflict(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === 'P2002'
-  );
 }
