@@ -32,6 +32,10 @@ import {
   activitySafeSelect,
 } from './activity-access.service';
 
+function nullableDate(value: string | null): Date | null {
+  return value === null ? null : new Date(value);
+}
+
 /*
  * 活动的**建单与改单族**(Phase 6-B 第三域第三刀,§3.2)。
  *
@@ -76,7 +80,7 @@ export class ActivityWriteService {
     this.allocationModes.assertValidMode(dto.allocationModeCode);
     this.access.assertStartEndValid(startAt, endAt);
     this.access.assertRegistrationDeadlineValid(
-      dto.registrationDeadline !== undefined ? new Date(dto.registrationDeadline) : null,
+      dto.registrationDeadline !== undefined ? nullableDate(dto.registrationDeadline) : null,
       endAt,
     );
     this.access.assertV11DraftConfiguration(dto);
@@ -123,7 +127,7 @@ export class ActivityWriteService {
         data.genderRequirementCode = dto.genderRequirementCode;
       }
       if (dto.registrationDeadline !== undefined) {
-        data.registrationDeadline = new Date(dto.registrationDeadline);
+        data.registrationDeadline = nullableDate(dto.registrationDeadline);
       }
       if (dto.registrationNotes !== undefined) data.registrationNotes = dto.registrationNotes;
       if (dto.isPublicRegistration !== undefined) {
@@ -307,7 +311,7 @@ export class ActivityWriteService {
       ) {
         const nextDeadline =
           dto.registrationDeadline !== undefined
-            ? new Date(dto.registrationDeadline)
+            ? nullableDate(dto.registrationDeadline)
             : current.registrationDeadline;
         this.access.assertStartEndValid(nextStart, nextEnd);
         this.access.assertRegistrationDeadlineValid(nextDeadline, nextEnd);
@@ -406,7 +410,7 @@ export class ActivityWriteService {
         data.genderRequirementCode = dto.genderRequirementCode;
       }
       if (dto.registrationDeadline !== undefined) {
-        data.registrationDeadline = new Date(dto.registrationDeadline);
+        data.registrationDeadline = nullableDate(dto.registrationDeadline);
       }
       if (dto.registrationNotes !== undefined) data.registrationNotes = dto.registrationNotes;
       if (dto.isPublicRegistration !== undefined) {

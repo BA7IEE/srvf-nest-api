@@ -3253,6 +3253,10 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "format": "date-time",
         "type": "string",
       },
+      "eligibilityCorrected": {
+        "description": "最新结算纠错是否已撤销本人的当前评价资格；历史评价仍保留",
+        "type": "boolean",
+      },
       "rating": {
         "description": "1-5 星总分",
         "maximum": 5,
@@ -3270,13 +3274,14 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "comment",
       "createdAt",
       "updatedAt",
+      "eligibilityCorrected",
     ],
     "type": "object",
   },
   "AppActivityFeedbackResponseDto": {
     "properties": {
       "canSubmit": {
-        "description": "当前是否满足 completed、窗口与 approved 到场资格",
+        "description": "当前是否满足 completed、最新关账窗口与有效结算资格",
         "type": "boolean",
       },
       "feedback": {
@@ -3290,7 +3295,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "object",
       },
       "windowClosesAt": {
-        "description": "评价窗口关闭时刻(Activity.endAt + 配置天数，ISO 8601 UTC)",
+        "description": "评价窗口关闭时刻(最新 active closure.closedAt + 配置天数，ISO 8601 UTC)",
         "format": "date-time",
         "type": "string",
       },
@@ -12725,6 +12730,8 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       },
       "registrationDeadline": {
         "description": "报名截止时间(ISO 8601)",
+        "format": "date-time",
+        "nullable": true,
         "type": "string",
       },
       "registrationModeCode": {
@@ -12911,6 +12918,8 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "registrationDeadline": {
+        "format": "date-time",
+        "nullable": true,
         "type": "string",
       },
       "registrationModeCode": {
@@ -23163,6 +23172,8 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       },
       "registrationDeadline": {
         "description": "报名截止时间",
+        "format": "date-time",
+        "nullable": true,
         "type": "string",
       },
       "registrationModeCode": {
@@ -23336,6 +23347,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       },
       "registrationDeadline": {
         "format": "date-time",
+        "nullable": true,
         "type": "string",
       },
       "registrationModeCode": {

@@ -235,6 +235,37 @@ export class ActivityLifecycleService {
           expectedStatus: current.statusCode,
           invalidStatusBiz: BizCode.ACTIVITY_STATUS_INVALID,
         });
+        const terminationCheckOutDeadline = new Date(terminatedAt.getTime() + 30 * 60_000);
+        const unfinishedSessions = await tx.activitySession.findMany({
+          where: {
+            activityId: current.id,
+            deletedAt: null,
+            statusCode: { not: 'cancelled' },
+            endAt: { gt: terminatedAt },
+          },
+          select: { id: true },
+        });
+        const unfinishedSessionIds = unfinishedSessions.map((session) => session.id);
+        if (unfinishedSessionIds.length > 0) {
+          await tx.activitySession.updateMany({
+            where: { id: { in: unfinishedSessionIds } },
+            data: { terminationCheckOutDeadline },
+          });
+          await tx.attendanceQrCredential.updateMany({
+            where: {
+              activityId: current.id,
+              sessionId: { in: unfinishedSessionIds },
+              actionCode: 'check_in',
+              statusCode: 'active',
+            },
+            data: {
+              statusCode: 'revoked',
+              revokedByUserId: user.id,
+              revokedAt: terminatedAt,
+              revokeReason: '活动提前终止',
+            },
+          });
+        }
         const updated = await tx.activity.update({
           where: { id: current.id },
           data: {

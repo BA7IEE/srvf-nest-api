@@ -29,11 +29,8 @@ import { EvidenceSealAuditRecorder } from './evidence-seal-audit-recorder';
 //    version,**没有 workflowRevision**;workflowRevision 的真源是 §3.1 的 `Activity`
 //    (§4.2「approved 时 ProposalApplier 在 Activity 锁内 …… 递增 workflowRevision」)。
 //    故本实现从**已加锁的 Activity 行**读它。这是合同内部不一致,不是本实现的选择。
-// 2. §5.8 ④ 的「待人工复核数量」真源是 `OfflinePunchReviewItem`,而该表**至今没有定义**
-//    (AMENDMENTS-v1.1.1 §3:合同第三处内部矛盾,补齐字段表是第 6 批开工硬门)。
-//    ⇒ `countPendingManualReviewItems()` 今天在结构上恒为 0,并**显式**标注了这一点;
-//    闸本身已经接上并有判据钉住(见配套 e2e),第 6 批建表时只需把计数查询填进去。
-//    ❌ 不从 §5.7 的散文推导表结构,❌ 不假装这一项已经守住。
+// 2. §5.8 ④ 的「待人工复核数量」以 `OfflinePunchReviewItem.pending`
+//    为唯一真源；封场与关账均在 Activity 聚合锁内重读实时计数。
 // 3. §5.8 没有给「已存在吻合版本的 active seal」这一形态的处置。本实现拒绝它
 //    (`EVIDENCE_SEAL_ALREADY_ACTIVE`),依据是 §3.17 的逆命题:「新证据或人口变化会递增
 //    state revision,使旧 seal 失配」⇒ 版本没变时旧 seal 仍然有效,没有可封的新事实。
@@ -157,15 +154,10 @@ export class EvidenceSealService {
 
   // ===== §5.8 ④ 之二:待人工复核数量 =====
   //
-  // 🔴 **诚实标注**:真源表 `OfflinePunchReviewItem`(§5.7)在 §3 数据模型里**从未定义**,
-  //    AMENDMENTS-v1.1.1 §3 已把「补齐两表字段表」裁定为**第 6 批开工硬门**,并明禁
-  //    「从 §5.7 散文推导表结构」。⇒ 本方法今天在结构上恒返回 0。
-  //
-  //    这不是"已经守住了",是"闸接好了、待接线"。闸本身(count > 0 ⇒ 拒)有 e2e 判据;
-  //    第 6 批建表时**只需**把下面的 return 换成真实计数查询(那时才需要 tx / activityId
-  //    两个入参 —— 现在带着它们只会是一对永远用不到的形参),调用方一行不用改。
-  private countPendingManualReviewItems(): Promise<number> {
-    return Promise.resolve(0);
+  private countPendingManualReviewItems(tx: PrismaTx, activityId: string): Promise<number> {
+    return tx.offlinePunchReviewItem.count({
+      where: { activityId, statusCode: 'pending' },
+    });
   }
 
   // ===== §5.8 ④ 之三:未处理的 event effect =====
@@ -322,7 +314,7 @@ export class EvidenceSealService {
         throw new BizException(BizCode.EVIDENCE_SEAL_OPEN_SEGMENT_EXISTS);
       }
 
-      const manualReviewPendingCount = await this.countPendingManualReviewItems();
+      const manualReviewPendingCount = await this.countPendingManualReviewItems(tx, activityId);
       if (manualReviewPendingCount > 0) {
         throw new BizException(BizCode.EVIDENCE_SEAL_MANUAL_REVIEW_PENDING);
       }

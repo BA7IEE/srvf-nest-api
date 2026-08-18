@@ -124,6 +124,8 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
   async function createPostingFixture(
     options: {
       memberCount?: number;
+      /** 复用既有队员，专用于跨活动 member-lock / overlap 判据。 */
+      memberIds?: readonly string[];
       /** 每人在同一天参加几场(用于造"同一人同一日多条服务")。 */
       sessionsPerMember?: number;
       /** 每条 result revision 的认定贡献值。 */
@@ -131,7 +133,7 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
       recognizedHours?: number;
     } = {},
   ): Promise<PostingFixture> {
-    const memberCount = options.memberCount ?? 2;
+    const memberCount = options.memberIds?.length ?? options.memberCount ?? 2;
     const sessionCount = options.sessionsPerMember ?? 1;
     const recognizedPoints = options.recognizedPoints ?? 1.2;
     const recognizedHours = options.recognizedHours ?? 4;
@@ -177,15 +179,19 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
       sessionIds.push(session.id);
     }
 
-    const memberIds = Array.from({ length: memberCount }, () => randomUUID());
-    await prisma.member.createMany({
-      data: memberIds.map((id, index) => ({
-        id,
-        memberNo: `${tag}-m${index}`,
-        displayName: `${tag} 队员 ${index}`,
-        gradeCode: 'level-2',
-      })),
-    });
+    const memberIds = options.memberIds
+      ? [...options.memberIds]
+      : Array.from({ length: memberCount }, () => randomUUID());
+    if (options.memberIds === undefined) {
+      await prisma.member.createMany({
+        data: memberIds.map((id, index) => ({
+          id,
+          memberNo: `${tag}-m${index}`,
+          displayName: `${tag} 队员 ${index}`,
+          gradeCode: 'level-2',
+        })),
+      });
+    }
     const registrationIds = memberIds.map(() => randomUUID());
     await prisma.activityRegistration.createMany({
       data: registrationIds.map((id, index) => ({
@@ -838,6 +844,23 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
         expect(state.version).toBe(1);
         expect(Number(state.committedCreditedPoints)).toBe(1.2);
       }
+    });
+
+    it('AC-058 rejects a cross-activity service-time overlap inside the member commit lock', async () => {
+      const first = await createPostingFixture({ memberCount: 1 });
+      await prepareBatch(first);
+      await posting.commitBatch(commitInput(first), actor, auditMeta);
+
+      const overlapping = await createPostingFixture({
+        memberIds: first.memberIds,
+        recognizedPoints: 1,
+      });
+      await prepareBatch(overlapping);
+      await expectBiz(
+        posting.commitBatch(commitInput(overlapping), actor, auditMeta),
+        BizCode.ATTENDANCE_TIME_OVERLAP,
+      );
+      await expectNothingTookEffect(overlapping);
     });
   });
 

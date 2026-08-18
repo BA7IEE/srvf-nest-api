@@ -15,6 +15,18 @@ type MemberUser = {
   authHeader: string;
 };
 
+type FeedbackSettlementContext = {
+  activityId: string;
+  tag: string;
+  sessionId: string;
+  runId: string;
+  sealId: string;
+  identities: Array<{ memberId: string; identityId: string }>;
+  latestVersionId: string;
+  latestBatchId: string;
+  latestClosureId: string;
+};
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // 审计刀 6 F4：App 资格/窗口/本人 scope、Admin 身份/统计、并发唯一与 no-audit 闭环。
@@ -122,6 +134,34 @@ describe('activity feedbacks F2-F4', () => {
       await createAttendanceSheet(mainActivityId, statusCode, [user.memberId]);
     }
     await createAttendanceSheet(concurrentActivityId, 'approved', [concurrentMember.memberId]);
+
+    await createFeedbackSettlement({
+      activityId: mainActivityId,
+      tag: 'feedback-main',
+      members: [
+        { memberId: approvedA.memberId, resultCode: 'present' },
+        { memberId: approvedB.memberId, resultCode: 'present' },
+      ],
+      closedAt: new Date(now - DAY_MS),
+    });
+    await createFeedbackSettlement({
+      activityId: boundaryActivityId,
+      tag: 'feedback-boundary',
+      members: [{ memberId: approvedA.memberId, resultCode: 'present' }],
+      closedAt: new Date(now - 30 * DAY_MS + 60_000),
+    });
+    await createFeedbackSettlement({
+      activityId: closedActivityId,
+      tag: 'feedback-closed',
+      members: [],
+      closedAt: new Date(now - 31 * DAY_MS),
+    });
+    await createFeedbackSettlement({
+      activityId: concurrentActivityId,
+      tag: 'feedback-concurrent',
+      members: [{ memberId: concurrentMember.memberId, resultCode: 'present' }],
+      closedAt: new Date(now - DAY_MS),
+    });
   });
 
   afterAll(async () => {
@@ -151,7 +191,7 @@ describe('activity feedbacks F2-F4', () => {
     }
   });
 
-  it('非 completed 活动优先拒绝，窗口关闭边界内可写，endAt+30+1 天拒绝', async () => {
+  it('非 completed 活动优先拒绝，窗口关闭边界内可写，closure.closedAt+30+1 天拒绝', async () => {
     const nonCompleted = await request(httpServer(app))
       .put(feedbackPath(notCompletedActivityId))
       .set('Authorization', approvedA.authHeader)
@@ -173,6 +213,81 @@ describe('activity feedbacks F2-F4', () => {
       .set('Authorization', approvedA.authHeader)
       .send({ rating: 5 });
     expectBizError(closed, BizCode.ACTIVITY_FEEDBACK_WINDOW_CLOSED);
+  });
+
+  it('AC-065 以最新 active closure 为窗口和资格真相，纠错后新增资格且撤销资格保留历史评价', async () => {
+    const originallyEligible = await createMemberUser(
+      'feedback-correction-original',
+      '纠错前有资格队员',
+    );
+    const newlyEligible = await createMemberUser('feedback-correction-new', '纠错后新增资格队员');
+    const activityId = await createActivity(
+      '评价结算纠错活动',
+      'completed',
+      Date.now() - 45 * DAY_MS,
+    );
+    const firstClosure = await createFeedbackSettlement({
+      activityId,
+      tag: 'feedback-correction',
+      members: [
+        { memberId: originallyEligible.memberId, resultCode: 'present' },
+        { memberId: newlyEligible.memberId, resultCode: 'absent' },
+      ],
+      closedAt: new Date(Date.now() - DAY_MS),
+    });
+
+    const originalSubmit = await request(httpServer(app))
+      .put(feedbackPath(activityId))
+      .set('Authorization', originallyEligible.authHeader)
+      .send({ rating: 5, comment: '纠错前评价' });
+    expect(originalSubmit.status).toBe(200);
+    expect(originalSubmit.body.data).toMatchObject({
+      feedback: { rating: 5, comment: '纠错前评价', eligibilityCorrected: false },
+      canSubmit: true,
+    });
+
+    const beforeCorrection = await request(httpServer(app))
+      .put(feedbackPath(activityId))
+      .set('Authorization', newlyEligible.authHeader)
+      .send({ rating: 4 });
+    expectBizError(beforeCorrection, BizCode.ACTIVITY_FEEDBACK_ATTENDANCE_REQUIRED);
+
+    const secondClosure = await createFeedbackSettlement({
+      activityId,
+      tag: 'feedback-correction',
+      revision: 2,
+      context: firstClosure,
+      members: [
+        { memberId: originallyEligible.memberId, resultCode: 'absent' },
+        { memberId: newlyEligible.memberId, resultCode: 'present' },
+      ],
+      closedAt: new Date(),
+    });
+
+    const historical = await request(httpServer(app))
+      .get(feedbackPath(activityId))
+      .set('Authorization', originallyEligible.authHeader);
+    expect(historical.status).toBe(200);
+    expect(historical.body.data).toMatchObject({
+      feedback: { rating: 5, comment: '纠错前评价', eligibilityCorrected: true },
+      canSubmit: false,
+    });
+
+    const correctedSubmit = await request(httpServer(app))
+      .put(feedbackPath(activityId))
+      .set('Authorization', newlyEligible.authHeader)
+      .send({ rating: 4, comment: '纠错后新增资格' });
+    expect(correctedSubmit.status).toBe(200);
+    expect(correctedSubmit.body.data).toMatchObject({
+      feedback: { rating: 4, comment: '纠错后新增资格', eligibilityCorrected: false },
+      canSubmit: true,
+    });
+    expect(secondClosure.latestClosureId).not.toBe(firstClosure.latestClosureId);
+    await expect(
+      prisma.activityFeedback.count({
+        where: { activityId, memberId: originallyEligible.memberId, deletedAt: null },
+      }),
+    ).resolves.toBe(1);
   });
 
   it('rating 0/6 与 comment 501 被 DTO 拒绝，1/5 边界可写且 PUT 二次只更新一行', async () => {
@@ -377,6 +492,239 @@ describe('activity feedbacks F2-F4', () => {
       }),
     ).toBe(1);
   });
+
+  async function createFeedbackSettlement(options: {
+    activityId: string;
+    tag: string;
+    members: Array<{ memberId: string; resultCode: 'present' | 'absent' }>;
+    closedAt: Date;
+    revision?: number;
+    context?: FeedbackSettlementContext;
+  }): Promise<FeedbackSettlementContext> {
+    const revision = options.revision ?? 1;
+    const activity = await prisma.activity.findUniqueOrThrow({
+      where: { id: options.activityId },
+      select: { startAt: true, endAt: true, location: true },
+    });
+    let context = options.context;
+
+    if (context === undefined) {
+      const session = await prisma.activitySession.create({
+        data: {
+          activityId: options.activityId,
+          code: `${options.tag}-session`,
+          name: `${options.tag}-session`,
+          startAt: activity.startAt,
+          endAt: activity.endAt,
+          locationText: activity.location,
+          checkInOpenAt: new Date(activity.startAt.getTime() - 60 * 60 * 1000),
+          checkInCloseAt: new Date(activity.startAt.getTime() + 60 * 60 * 1000),
+          checkOutOpenAt: new Date(activity.endAt.getTime() - 60 * 60 * 1000),
+          checkOutCloseAt: new Date(activity.endAt.getTime() + 60 * 60 * 1000),
+          locationRequired: false,
+          locationPolicySourceCode: 'activity',
+          statusCode: 'scheduled',
+        },
+        select: { id: true },
+      });
+      const identities: FeedbackSettlementContext['identities'] = [];
+      for (const member of options.members) {
+        let registration = await prisma.activityRegistration.findFirst({
+          where: { activityId: options.activityId, memberId: member.memberId },
+          select: { id: true },
+        });
+        registration ??= await prisma.activityRegistration.create({
+          data: {
+            activityId: options.activityId,
+            memberId: member.memberId,
+            statusCode: 'pass',
+          },
+          select: { id: true },
+        });
+        const identity = await prisma.activityParticipationIdentity.create({
+          data: {
+            activityId: options.activityId,
+            sessionId: session.id,
+            registrationId: registration.id,
+            memberId: member.memberId,
+            currentStatusCode: 'pass',
+            populationIncluded: true,
+          },
+          select: { id: true },
+        });
+        identities.push({ memberId: member.memberId, identityId: identity.id });
+      }
+      const seal = await prisma.evidenceSeal.create({
+        data: {
+          activityId: options.activityId,
+          sealRevision: 1,
+          evidenceRevision: 0,
+          populationRevision: 0,
+          workflowRevision: 0,
+          allWindowsClosedAt: activity.endAt,
+          openSegmentCount: 0,
+          manualReviewPendingCount: 0,
+          populationCountDistinct: identities.length,
+          populationCountBySession: { [session.id]: identities.length },
+          contentHash: `${options.tag}-seal`,
+          statusCode: 'active',
+          sealedByUserId: submitterUserId,
+          sealedAt: activity.endAt,
+        },
+        select: { id: true },
+      });
+      const run = await prisma.attendanceSettlementRun.create({
+        data: { activityId: options.activityId, statusCode: 'closed' },
+        select: { id: true },
+      });
+      context = {
+        activityId: options.activityId,
+        tag: options.tag,
+        sessionId: session.id,
+        runId: run.id,
+        sealId: seal.id,
+        identities,
+        latestVersionId: '',
+        latestBatchId: '',
+        latestClosureId: '',
+      };
+    } else {
+      await prisma.activitySettlementClosureRevision.update({
+        where: { id: context.latestClosureId },
+        data: { statusCode: 'superseded', supersededAt: options.closedAt },
+      });
+    }
+
+    const version = await prisma.attendanceSettlementVersion.create({
+      data: {
+        settlementRunId: context.runId,
+        version: revision,
+        evidenceSealId: context.sealId,
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        contentHash: `${options.tag}-version-${revision}`,
+        personCount: context.identities.length,
+        sessionParticipationCount: context.identities.length,
+        serviceSegmentCount: options.members.filter((member) => member.resultCode === 'present')
+          .length,
+        createdByUserId: submitterUserId,
+        submittedAt: options.closedAt,
+        statusCode: 'approved',
+        priorVersionId: context.latestVersionId || null,
+        operationKey: `${options.tag}-version-${revision}`,
+        requestHash: `${options.tag}-version-${revision}-hash`,
+      },
+      select: { id: true },
+    });
+    const batch = await prisma.ledgerPostingBatch.create({
+      data: {
+        settlementRunId: context.runId,
+        settlementVersionId: version.id,
+        batchRevision: revision,
+        statusCode: 'committed',
+        requestKey: `${options.tag}-batch-${revision}`,
+        requestHash: `${options.tag}-batch-${revision}-hash`,
+        preparedCount: options.members.length,
+        totalCount: options.members.length,
+        preparedAt: options.closedAt,
+        committedAt: options.closedAt,
+        preparedByUserId: submitterUserId,
+        committedByUserId: submitterUserId,
+      },
+      select: { id: true },
+    });
+    const resultCounts: Record<string, number> = {};
+    for (const member of options.members) {
+      const identity = context.identities.find((row) => row.memberId === member.memberId);
+      if (identity === undefined) throw new Error(`缺少结算身份:${member.memberId}`);
+      resultCounts[member.resultCode] = (resultCounts[member.resultCode] ?? 0) + 1;
+      const result = await prisma.participantSettlementResultRevision.create({
+        data: {
+          settlementVersionId: version.id,
+          participationIdentityId: identity.identityId,
+          revision,
+          resultCode: member.resultCode,
+          recognizedServiceHours: member.resultCode === 'present' ? 1 : 0,
+          recognizedContributionPoints: 0,
+          calculatedServiceHours: member.resultCode === 'present' ? 1 : 0,
+          calculatedContributionPoints: 0,
+          statusCode: 'committed',
+        },
+        select: { id: true },
+      });
+      if (member.resultCode === 'present') {
+        await prisma.participationLedgerEntry.create({
+          data: {
+            postingBatchId: batch.id,
+            entryKey: `${options.tag}:v${revision}:${member.memberId}:service`,
+            operationKey: `${options.tag}:v${revision}:${member.memberId}:service:operation`,
+            memberId: member.memberId,
+            activityId: options.activityId,
+            sessionId: context.sessionId,
+            participationIdentityId: identity.identityId,
+            resultRevisionId: result.id,
+            ledgerDate: new Date(
+              Date.UTC(
+                activity.endAt.getUTCFullYear(),
+                activity.endAt.getUTCMonth(),
+                activity.endAt.getUTCDate(),
+              ),
+            ),
+            entryTypeCode: 'service_credit',
+            serviceHoursDelta: 1,
+            recognizedPointsDelta: 0,
+            creditedPointsDelta: 0,
+            cappedOutPointsDelta: 0,
+          },
+        });
+      }
+    }
+    const closure = await prisma.activitySettlementClosureRevision.create({
+      data: {
+        activityId: options.activityId,
+        revision,
+        settlementVersionId: version.id,
+        postingBatchId: batch.id,
+        evidenceSealId: context.sealId,
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        personCount: context.identities.length,
+        sessionParticipationCount: context.identities.length,
+        resultCountsJson: resultCounts,
+        serviceHours: options.members.filter((member) => member.resultCode === 'present').length,
+        contributionPoints: 0,
+        checksHash: `${options.tag}-closure-${revision}`,
+        checksJson: { schemaVersion: 1, checks: [] },
+        statusCode: 'active',
+        closedByUserId: submitterUserId,
+        closedAt: options.closedAt,
+      },
+      select: { id: true },
+    });
+    await Promise.all([
+      prisma.activity.update({
+        where: { id: options.activityId },
+        data: { currentClosureRevision: revision },
+      }),
+      prisma.attendanceSettlementRun.update({
+        where: { id: context.runId },
+        data: {
+          statusCode: 'closed',
+          currentSubmittedVersion: revision,
+          currentPostedVersion: revision,
+          currentClosureRevision: revision,
+        },
+      }),
+    ]);
+    return {
+      ...context,
+      latestVersionId: version.id,
+      latestBatchId: batch.id,
+      latestClosureId: closure.id,
+    };
+  }
 
   async function createMemberUser(username: string, displayName: string): Promise<MemberUser> {
     const member = await prisma.member.create({

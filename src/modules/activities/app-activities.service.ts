@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { MemberStatus, Prisma } from '@prisma/client';
 import { PageResultDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -21,6 +21,7 @@ import {
   type QualificationProjection,
 } from '../activity-registrations/activity-qualification-evaluator.service';
 import { registrationFormDefinitionFromStoredFields } from './registration-form-definition';
+import { isFormalMemberGradeCode } from '../members/member-grade';
 
 // Phase 2 P2-4a/P2-4b App /api/app/v1/activities/* service。
 // 沿 docs/app-api-p2-4-activities-review.md §8.2 决议 D-P2-4-4 = 方案 B:
@@ -187,10 +188,13 @@ export class AppActivitiesService {
   // 活动池对全员相同。保留 memberId 入参为后续 P2-5+ 若引入"已报名活动从列表排除"留扩展槽,
   // 同时保留调用链显式语义(列表是 App self perspective)。
   async listAvailableForMember(
-    _memberId: string,
+    memberId: string,
     query: PaginationQueryDto,
   ): Promise<PageResultDto<AppAvailableActivityListItemDto>> {
     const { page, pageSize } = query;
+    if (!(await this.isFormalMember(memberId))) {
+      return { items: [], total: 0, page, pageSize };
+    }
     // 参与域生命周期收口③(v0.40.0):可报名池过滤已结束活动 —— 追加 endAt >= now,已结束
     // (endAt < now)的 published 活动退出 App 可报名列表。detail(findVisibleByIdForMember)
     // 口径**刻意不动**:published 即可见,已报名者回看已结束活动无碍。
@@ -227,8 +231,11 @@ export class AppActivitiesService {
     memberId: string,
     query: AppActivityDirectoryQueryDto,
   ): Promise<PageResultDto<AppActivityDirectoryListItemDto>> {
+    const formalMember = await this.isFormalMember(memberId);
     const now = new Date();
-    const filters: Prisma.ActivityWhereInput[] = [this.memberVisibilityWhere(memberId, now)];
+    const filters: Prisma.ActivityWhereInput[] = [
+      this.memberVisibilityWhere(memberId, now, formalMember),
+    ];
     if (query.q !== undefined) {
       filters.push({ title: { contains: query.q, mode: 'insensitive' } });
     }
@@ -267,6 +274,7 @@ export class AppActivitiesService {
   //   查询 → null → throw,SQL plan 一致)
   // - findFirst 命中 null 统一抛 ACTIVITY_NOT_FOUND(D-P2-4-3 v0.1 锁定 404,不返 403)
   async findVisibleByIdForMember(id: string, memberId: string): Promise<AppActivityDetailDto> {
+    const formalMember = await this.isFormalMember(memberId);
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
       const [row, passCount, invitations] = await Promise.all([
@@ -274,7 +282,7 @@ export class AppActivitiesService {
           where: notDeletedWhere({
             id,
             statusCode: 'published',
-            ...this.memberVisibilityWhere(memberId, now),
+            ...this.memberVisibilityWhere(memberId, now, formalMember),
           }),
           select: appActivityDetailSelect,
         }),
@@ -325,6 +333,9 @@ export class AppActivitiesService {
     activityId: string,
     memberId: string,
   ): Promise<AppActivityPositionDto[]> {
+    if (!(await this.isFormalMember(memberId))) {
+      throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+    }
     const [activity, memberProfile, activeRegistration] = await this.prisma.$transaction([
       this.prisma.activity.findFirst({
         where: notDeletedWhere({
@@ -406,23 +417,38 @@ export class AppActivitiesService {
     }));
   }
 
-  private memberVisibilityWhere(memberId: string, now: Date): Prisma.ActivityWhereInput {
+  private memberVisibilityWhere(
+    memberId: string,
+    now: Date,
+    formalMember = true,
+  ): Prisma.ActivityWhereInput {
     // `visibilityCode=null` 是 expand 期间尚未解析的旧行，沿本刀“内部读面优先复用”
     // 收敛为 internal；只有显式 invitation 才要求本人有有效邀请记录。
+    const invitationVisibility: Prisma.ActivityWhereInput = {
+      visibilityCode: 'invitation',
+      invitations: {
+        some: {
+          memberId,
+          OR: [{ statusCode: 'accepted' }, { statusCode: 'pending', expiresAt: { gt: now } }],
+        },
+      },
+    };
+    if (!formalMember) return invitationVisibility;
     return {
       OR: [
         { visibilityCode: null },
         { visibilityCode: { not: 'invitation' } },
-        {
-          invitations: {
-            some: {
-              memberId,
-              OR: [{ statusCode: 'accepted' }, { statusCode: 'pending', expiresAt: { gt: now } }],
-            },
-          },
-        },
+        invitationVisibility,
       ],
     };
+  }
+
+  private async isFormalMember(memberId: string): Promise<boolean> {
+    const member = await this.prisma.member.findFirst({
+      where: { id: memberId, status: MemberStatus.ACTIVE, deletedAt: null },
+      select: { gradeCode: true },
+    });
+    return isFormalMemberGradeCode(member?.gradeCode);
   }
 
   // 私有 mapper(沿评审稿 §8.3.3;第一版不抽独立 Presenter class)。

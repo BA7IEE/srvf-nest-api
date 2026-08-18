@@ -9,6 +9,11 @@ import type {} from './dto/app/app-activity-punch.dto';
 
 type PrismaTx = Prisma.TransactionClient;
 
+export type LockedActivity = {
+  id: string;
+  statusCode: string;
+};
+
 export type LockedSession = {
   id: string;
   activityId: string;
@@ -20,6 +25,7 @@ export type LockedSession = {
   checkInCloseAt: Date;
   checkOutOpenAt: Date;
   checkOutCloseAt: Date;
+  terminationCheckOutDeadline: Date | null;
   locationRequired: boolean;
   radiusMeters: number | null;
   accuracyWarningMeters: number;
@@ -83,15 +89,22 @@ export type PunchEventRow = {
 export class AttendancePunchAccessService {
   constructor(private readonly memberCredentials: AttendanceMemberCredentialService) {}
 
-  async lockActivity(tx: PrismaTx, activityId: string): Promise<void> {
+  async lockActivity(
+    tx: PrismaTx,
+    activityId: string,
+    allowedStatuses: readonly string[] = ['published'],
+  ): Promise<LockedActivity> {
     const rows = await tx.$queryRaw<Array<{ id: string; statusCode: string }>>(Prisma.sql`
       SELECT "id", "statusCode" FROM "Activity"
       WHERE "id" = ${activityId} AND "deletedAt" IS NULL
       FOR UPDATE
     `);
     if (rows.length !== 1) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-    if (rows[0]?.statusCode !== 'published')
+    const activity = rows[0];
+    if (!activity || !allowedStatuses.includes(activity.statusCode)) {
       throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+    }
+    return activity;
   }
 
   async lockSession(tx: PrismaTx, activityId: string, sessionId: string): Promise<LockedSession> {
@@ -117,6 +130,7 @@ export class AttendancePunchAccessService {
         checkInCloseAt: true,
         checkOutOpenAt: true,
         checkOutCloseAt: true,
+        terminationCheckOutDeadline: true,
         locationRequired: true,
         radiusMeters: true,
         accuracyWarningMeters: true,

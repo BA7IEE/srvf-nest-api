@@ -9,10 +9,11 @@
 
 - 模块统一使用 `feedback` / `rating` 命名；禁止引入 `evaluation` 近义模块名。
 - App 始终以 `AppIdentityResolver` 返回的 `member.id` 锁本人，绝不按后台角色扩大 scope。
-- 评价资格只认 approved Sheet 内未软删 `AttendanceRecord`；报名状态本身不构成资格。
-- 评价窗口基线是 `Activity.endAt + ATTENDANCE_FEEDBACK_WINDOW_DAYS`，且 Activity 必须 completed；
-  不新增或模拟 `completedAt`。
-- 本模块可直接只读 Activity / AttendanceSheet / AttendanceRecord；禁止 import
+- 评价资格只认最新 active `ActivitySettlementClosureRevision` 对应版本内的 committed `present`
+  结果，以及该 closure 发布批次内正向 `service_credit` 服务账；报名或旧考勤状态本身不构成资格。
+- 评价窗口基线是最新 active closure 的 `closedAt + ATTENDANCE_FEEDBACK_WINDOW_DAYS`，且
+  Activity 必须 completed；无 active closure 的 GET/PUT 均复用 35030。
+- 本模块可直接只读 Activity / ClosureRevision / SettlementResult / ParticipationLedgerEntry；禁止 import
   `ActivitiesService` / `AttendancesService` / `ActivityRegistrationsService`，避免兄弟 service 环。
 - 评价不写 AuditLog、不改贡献值 / 报名 / 候补 / 打卡 / 考勤 / 结算，不新增权限码、cron 或通知。
 - App DTO 与 Admin DTO 物理分离，不用 extends / Pick / Omit / mapped type 派生。
@@ -22,13 +23,15 @@
 ## 当前事实
 
 - Prisma model `ActivityFeedback` 映射物理表 `activity_feedbacks`；两条 FK 均 Restrict。
-- F2 已注册 App PUT/GET 2 endpoint；两路只走 JwtAuthGuard + AppIdentityResolver，业务查询固定
-  Activity + approved attendance exists + 本人 live feedback 三次，PUT 再写自有表一次。
+- F2 已注册 App PUT/GET 2 endpoint；两路只走 JwtAuthGuard + AppIdentityResolver。PUT 在自有事务内
+  读取 Activity、最新 active closure、当前结算结果/服务账与本人 live feedback 后 create/update；
+  GET 保留历史评价，最新关账纠错撤销当前资格时返回 `eligibilityCorrected=true`，新获资格可提交。
 - F3 已注册 Admin feedbacks / feedback-summary 2 endpoint；复用 `attendance.read.sheet` + activity ref，
   列表/汇总固定 3/4 次业务读，member relation select 与固定五桶均无 N+1。
 - `ActivityFeedbacksQueryService.aggregateForActivity()` 作为唯一单查询聚合出口，被 activity
   participation-summary 复用；Admin `feedbackRate` 分母实时取「当前 approved distinct member ∪
   已提交 live feedback member」去重并集，reopen 后历史评价仍同时留在分子/分母，恒不超过 1；
   该端点总业务查询固定 4 次，不落库。
-- F4 真实 DB E2E 锁定无到场/非 approved Sheet 无资格、窗口与 DTO 边界、覆盖更新、本人 scope、
-  Admin 实名与统计、跨汇总自洽、并发只留一条 live row，以及评价写入不产生 AuditLog。
+- F4 真实 DB E2E 锁定无当前结算资格者不可写、最新 closure 窗口、纠错增减资格与历史保留、
+  DTO 边界、覆盖更新、本人 scope、Admin 实名与统计、跨汇总自洽、并发只留一条 live row，
+  以及评价写入不产生 AuditLog。

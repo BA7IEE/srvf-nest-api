@@ -387,10 +387,15 @@ export class CreateActivityDto {
   @MaxLength(64)
   genderRequirementCode?: string;
 
-  @ApiPropertyOptional({ description: '报名截止时间(ISO 8601)' })
+  @ApiPropertyOptional({
+    description: '报名截止时间(ISO 8601)',
+    nullable: true,
+    type: String,
+    format: 'date-time',
+  })
   @IsOptional()
   @IsDateString()
-  registrationDeadline?: string;
+  registrationDeadline?: string | null;
 
   @ApiPropertyOptional({ description: '报名补充说明', maxLength: 500 })
   @IsOptional()
@@ -572,10 +577,15 @@ export class UpdateActivityDto {
   @MaxLength(64)
   genderRequirementCode?: string;
 
-  @ApiPropertyOptional({ description: '报名截止时间' })
+  @ApiPropertyOptional({
+    description: '报名截止时间',
+    nullable: true,
+    type: String,
+    format: 'date-time',
+  })
   @IsOptional()
   @IsDateString()
-  registrationDeadline?: string;
+  registrationDeadline?: string | null;
 
   @ApiPropertyOptional({ description: '报名补充说明', maxLength: 500 })
   @IsOptional()

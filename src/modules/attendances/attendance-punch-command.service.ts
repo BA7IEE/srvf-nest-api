@@ -22,6 +22,7 @@ import { AttendanceQrCredentialService } from './attendance-qr-credential.servic
 import {
   AttendancePunchAccessService,
   PUNCH_EVENT_SELECT,
+  type LockedActivity,
   type LockedIdentity,
   type LockedSession,
   type PunchEventRow,
@@ -162,7 +163,10 @@ export class AttendancePunchCommandService {
 
     return this.prisma.$transaction(
       async (tx) => {
-        await this.access.lockActivity(tx, input.activityId);
+        const activity = await this.access.lockActivity(tx, input.activityId, [
+          'published',
+          'terminated',
+        ]);
         const session = await this.access.lockSession(tx, input.activityId, input.sessionId);
         const identity = await this.access.lockIdentityByMember(
           tx,
@@ -180,6 +184,8 @@ export class AttendancePunchCommandService {
             qrVersion: payload.credentialVersion,
           });
         }
+
+        this.assertActivityAllowsPunch(activity, input.actionCode);
 
         const now = new Date();
         const credential = await this.access.lockQrCredential(
@@ -594,7 +600,10 @@ export class AttendancePunchCommandService {
     tx: PrismaTx,
     input: NormalizedManagedOnlinePunchInput,
   ): Promise<AppActivityPunchReceiptDto> {
-    await this.access.lockActivity(tx, input.activityId);
+    const activity = await this.access.lockActivity(tx, input.activityId, [
+      'published',
+      'terminated',
+    ]);
     await this.access.assertManagedAttendance(tx, input.activityId, input.currentUser);
     const session = await this.access.lockSession(tx, input.activityId, input.sessionId);
     const identity =
@@ -615,6 +624,8 @@ export class AttendancePunchCommandService {
     if (existing) {
       return this.replayManagedOnlineEvent({ existing, input, identity });
     }
+
+    this.assertActivityAllowsPunch(activity, input.actionCode);
 
     const receivedAt = new Date();
     const occurredAt = input.sourceCode === 'import' ? input.occurredAt : receivedAt;
@@ -772,7 +783,10 @@ export class AttendancePunchCommandService {
   }): Promise<AppActivityPunchReceiptDto> {
     return this.prisma.$transaction(
       async (tx) => {
-        await this.access.lockActivity(tx, args.activityId);
+        const activity = await this.access.lockActivity(tx, args.activityId, [
+          'published',
+          'terminated',
+        ]);
         await this.access.assertManagedAttendance(tx, args.activityId, args.currentUser);
         const session = await this.access.lockSession(tx, args.activityId, args.sessionId);
         const identity = await this.access.lockIdentityById(
@@ -786,7 +800,9 @@ export class AttendancePunchCommandService {
           return this.replayManagedEvent({ existing, args, identity, session, qrVersion: null });
         }
         const now = new Date();
-        this.assertSessionWindow(session, 'check_out', now);
+        this.assertSessionWindow(session, 'check_out', now, {
+          ignoreUpperBound: activity.statusCode === 'terminated',
+        });
         const priorEvents = await this.eventsForIdentity(tx, identity.id);
         const projection = this.project(priorEvents, session);
         const open = projection.segments.find((segment) => segment.checkOutAt === null) ?? null;
@@ -1234,10 +1250,26 @@ export class AttendancePunchCommandService {
     };
   }
 
-  private assertSessionWindow(session: LockedSession, action: SelfAction, now: Date): void {
+  private assertSessionWindow(
+    session: LockedSession,
+    action: SelfAction,
+    now: Date,
+    options: { ignoreUpperBound?: boolean } = {},
+  ): void {
     const from = action === 'check_in' ? session.checkInOpenAt : session.checkOutOpenAt;
-    const until = action === 'check_in' ? session.checkInCloseAt : session.checkOutCloseAt;
-    if (now < from || now > until) throw new BizException(BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW);
+    const until =
+      action === 'check_in'
+        ? session.checkInCloseAt
+        : (session.terminationCheckOutDeadline ?? session.checkOutCloseAt);
+    if (now < from || (!options.ignoreUpperBound && now > until)) {
+      throw new BizException(BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW);
+    }
+  }
+
+  private assertActivityAllowsPunch(activity: LockedActivity, action: SelfAction): void {
+    if (activity.statusCode === 'terminated' && action !== 'check_out') {
+      throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+    }
   }
 
   private async bumpEvidenceRevision(tx: PrismaTx, activityId: string, now: Date): Promise<number> {

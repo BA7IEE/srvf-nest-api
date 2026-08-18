@@ -349,6 +349,28 @@ describe('App managed activities core', () => {
     expect(withdrawn.body.data.status).toBe('withdrawn');
   });
 
+  it('AC-005 clears registrationDeadline to database NULL without a 1970 projection', async () => {
+    const manager = await createMember('deadline-clear');
+    const activityId = await createManagedDraft(manager, 'Registration deadline can be cleared');
+
+    const cleared = await request(httpServer(app))
+      .patch(`/api/app/v1/my/managed-activities/${activityId}`)
+      .set('Authorization', manager.auth)
+      .send({ registrationDeadline: null });
+
+    expect(cleared.status).toBe(200);
+    const detail = await request(httpServer(app))
+      .get(`/api/app/v1/my/managed-activities/${activityId}`)
+      .set('Authorization', manager.auth);
+    expect(detail.status).toBe(200);
+    await expect(
+      prisma.activity.findUniqueOrThrow({
+        where: { id: activityId },
+        select: { registrationDeadline: true },
+      }),
+    ).resolves.toEqual({ registrationDeadline: null });
+  });
+
   it('rejects an A-member moving a draft to B without cross-org grant', async () => {
     const owner = await createMember('cross-org-denied');
     const activityId = await createManagedDraft(owner, 'Cross-org denied draft');

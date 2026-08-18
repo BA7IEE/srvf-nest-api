@@ -624,6 +624,118 @@ describe('activity batch5 punch runtime', () => {
     );
   });
 
+  it('AC-015 keeps normal checkout for 30 minutes after termination, then requires staff early-close', async () => {
+    const withinWindow = await createScenario();
+    await submitApplicant(withinWindow);
+    const [withinCheckIn, withinCheckOut] = await Promise.all([
+      issueCredential(withinWindow, 'check-in', `batch5-terminate-in-${++sequence}`),
+      issueCredential(withinWindow, 'check-out', `batch5-terminate-out-${++sequence}`),
+    ]);
+    const [withinCheckInToken, withinCheckOutToken] = await Promise.all([
+      tokenForCredential(withinCheckIn.body.data.credentialId as string),
+      tokenForCredential(withinCheckOut.body.data.credentialId as string),
+    ]);
+    freezeSystemTime(new Date('2099-12-15T08:00:00.000Z'));
+    await request(httpServer(app))
+      .post(selfPunchPath(withinWindow, 'check-in'))
+      .set('Authorization', (await loginAs(app, applicantUsername)).authHeader)
+      .send({
+        qrToken: withinCheckInToken,
+        eventKey: `batch5-terminate-window-check-in-${++sequence}`,
+      })
+      .expect(201);
+    const terminatedAt = new Date('2099-12-15T08:05:00.000Z');
+    await prisma.activity.update({
+      where: { id: withinWindow.activityId },
+      data: {
+        statusCode: 'terminated',
+        terminatedAt,
+        terminatedByUserId: managerUserId,
+        terminationReason: '现场提前终止',
+      },
+    });
+    await prisma.activitySession.update({
+      where: { id: withinWindow.sessionId },
+      data: { terminationCheckOutDeadline: new Date('2099-12-15T08:35:00.000Z') },
+    });
+    freezeSystemTime(new Date('2099-12-15T08:30:00.000Z'));
+    const checkedOut = await request(httpServer(app))
+      .post(selfPunchPath(withinWindow, 'check-out'))
+      .set('Authorization', (await loginAs(app, applicantUsername)).authHeader)
+      .send({
+        qrToken: withinCheckOutToken,
+        eventKey: `batch5-terminate-window-check-out-${++sequence}`,
+      });
+    expect(checkedOut.status).toBe(201);
+    expect(checkedOut.body.data).toMatchObject({
+      eventTypeCode: 'check_out',
+      segmentStatusCode: 'closed_valid',
+    });
+
+    // 第一段把墙钟推进到 2099；先恢复真实时间再登录/报名第二个夹具，避免把测试 JWT
+    // 自己判成过期。第二段业务时间仍在下方重新冻结，不改变任何验收断言。
+    jest.useRealTimers();
+    const expiredWindow = await createScenario();
+    await submitApplicant(expiredWindow);
+    const [expiredCheckIn, expiredCheckOut] = await Promise.all([
+      issueCredential(expiredWindow, 'check-in', `batch5-terminate-expired-in-${++sequence}`),
+      issueCredential(expiredWindow, 'check-out', `batch5-terminate-expired-out-${++sequence}`),
+    ]);
+    const [expiredCheckInToken, expiredCheckOutToken] = await Promise.all([
+      tokenForCredential(expiredCheckIn.body.data.credentialId as string),
+      tokenForCredential(expiredCheckOut.body.data.credentialId as string),
+    ]);
+    freezeSystemTime(new Date('2099-12-15T08:00:00.000Z'));
+    await request(httpServer(app))
+      .post(selfPunchPath(expiredWindow, 'check-in'))
+      .set('Authorization', (await loginAs(app, applicantUsername)).authHeader)
+      .send({
+        qrToken: expiredCheckInToken,
+        eventKey: `batch5-terminate-expired-check-in-${++sequence}`,
+      })
+      .expect(201);
+    const expiredIdentityId = await participationIdentityIdFor(expiredWindow);
+    await prisma.activity.update({
+      where: { id: expiredWindow.activityId },
+      data: {
+        statusCode: 'terminated',
+        terminatedAt,
+        terminatedByUserId: managerUserId,
+        terminationReason: '现场提前终止',
+      },
+    });
+    await prisma.activitySession.update({
+      where: { id: expiredWindow.sessionId },
+      data: { terminationCheckOutDeadline: new Date('2099-12-15T08:20:00.000Z') },
+    });
+    freezeSystemTime(new Date('2099-12-15T08:21:00.000Z'));
+    expectBizError(
+      await request(httpServer(app))
+        .post(selfPunchPath(expiredWindow, 'check-out'))
+        .set('Authorization', (await loginAs(app, applicantUsername)).authHeader)
+        .send({
+          qrToken: expiredCheckOutToken,
+          eventKey: `batch5-terminate-expired-self-out-${++sequence}`,
+        }),
+      BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW,
+    );
+    const staffClose = await request(httpServer(app))
+      .post(
+        `${onsitePath(expiredWindow)}/sessions/${expiredWindow.sessionId}/early-departure-close`,
+      )
+      .set('Authorization', (await loginAs(app, managerUsername)).authHeader)
+      .send({
+        participationIdentityId: expiredIdentityId,
+        reason: '终止窗口结束后逐人清场',
+        eventKey: `batch5-terminate-expired-staff-close-${++sequence}`,
+      });
+    expect(staffClose.status).toBe(201);
+    expect(staffClose.body.data).toMatchObject({
+      eventTypeCode: 'early_departure_close',
+      segmentStatusCode: 'closed_zero',
+    });
+  });
+
   it('does not invent a checkout or service duration after the frozen checkout window has closed', async () => {
     const scenario = await createScenario();
     await submitApplicant(scenario);

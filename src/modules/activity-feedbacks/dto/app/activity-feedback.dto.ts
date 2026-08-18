@@ -46,6 +46,11 @@ export class AppActivityFeedbackDto {
 
   @ApiProperty({ description: '最近修改时间(ISO 8601 UTC)', type: Date })
   updatedAt!: Date;
+
+  @ApiProperty({
+    description: '最新结算纠错是否已撤销本人的当前评价资格；历史评价仍保留',
+  })
+  eligibilityCorrected!: boolean;
 }
 
 export class AppActivityFeedbackResponseDto {
@@ -56,11 +61,11 @@ export class AppActivityFeedbackResponseDto {
   })
   feedback!: AppActivityFeedbackDto | null;
 
-  @ApiProperty({ description: '当前是否满足 completed、窗口与 approved 到场资格' })
+  @ApiProperty({ description: '当前是否满足 completed、最新关账窗口与有效结算资格' })
   canSubmit!: boolean;
 
   @ApiProperty({
-    description: '评价窗口关闭时刻(Activity.endAt + 配置天数，ISO 8601 UTC)',
+    description: '评价窗口关闭时刻(最新 active closure.closedAt + 配置天数，ISO 8601 UTC)',
     format: 'date-time',
   })
   windowClosesAt!: string;
