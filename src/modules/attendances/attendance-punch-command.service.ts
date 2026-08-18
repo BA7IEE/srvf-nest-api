@@ -19,6 +19,13 @@ import {
 import { AttendancePunchSegmentRevisionService } from './attendance-punch-segment-revision.service';
 import { AttendanceMemberCredentialService } from './attendance-member-credential.service';
 import { AttendanceQrCredentialService } from './attendance-qr-credential.service';
+import {
+  AttendancePunchAccessService,
+  PUNCH_EVENT_SELECT,
+  type LockedIdentity,
+  type LockedSession,
+  type PunchEventRow,
+} from './attendance-punch-access.service';
 import type {
   AppActivityPunchDto,
   AppActivityPunchReceiptDto,
@@ -30,66 +37,6 @@ type SelfAction = 'check_in' | 'check_out';
 type ManagedAction = 'early_departure_close' | 'void' | 'replace';
 type CommandAction = SelfAction | ManagedAction;
 type ManagedOnlineSource = 'staff_scan' | 'proxy' | 'bulk' | 'import';
-
-type LockedSession = {
-  id: string;
-  activityId: string;
-  startAt: Date;
-  endAt: Date;
-  longitude: Prisma.Decimal | null;
-  latitude: Prisma.Decimal | null;
-  checkInOpenAt: Date;
-  checkInCloseAt: Date;
-  checkOutOpenAt: Date;
-  checkOutCloseAt: Date;
-  locationRequired: boolean;
-  radiusMeters: number | null;
-  accuracyWarningMeters: number;
-  lateGraceMinutes: number;
-  earlyLeaveThresholdMinutes: number;
-};
-
-type LockedIdentity = {
-  id: string;
-  memberId: string;
-  currentStatusCode: string;
-  currentPositionId: string | null;
-  populationIncluded: boolean;
-};
-
-type PunchEventRow = {
-  id: string;
-  activityId: string;
-  sessionId: string;
-  positionId: string | null;
-  participationIdentityId: string;
-  memberId: string;
-  eventTypeCode: string;
-  sourceCode: string;
-  occurredAt: Date;
-  receivedAt: Date;
-  operatorUserId: string;
-  reason: string | null;
-  qrCredentialId: string | null;
-  importJobItemId: string | null;
-  offlinePackageId: string | null;
-  offlineSequence: number | null;
-  offlinePriorHash: string | null;
-  offlineEventPayloadHash: string | null;
-  deviceId: string | null;
-  longitude: Prisma.Decimal | null;
-  latitude: Prisma.Decimal | null;
-  accuracy: Prisma.Decimal | null;
-  distance: Prisma.Decimal | null;
-  geoVerified: boolean;
-  outOfRange: boolean;
-  lowAccuracy: boolean;
-  eventKey: string;
-  requestHash: string;
-  supersedesEventId: string | null;
-  evidenceRevision: number;
-  qrCredential: { credentialVersion: number } | null;
-};
 
 interface SelfPunchInput {
   activityId: string;
@@ -195,6 +142,7 @@ export class AttendancePunchCommandService {
     private readonly segments: AttendancePunchSegmentRevisionService,
     private readonly presenter: AttendancePunchPresenter,
     private readonly audit: AttendancePunchAuditRecorder,
+    private readonly access: AttendancePunchAccessService,
   ) {}
 
   async selfPunch(input: SelfPunchInput): Promise<AppActivityPunchReceiptDto> {
@@ -214,9 +162,9 @@ export class AttendancePunchCommandService {
 
     return this.prisma.$transaction(
       async (tx) => {
-        await this.lockActivity(tx, input.activityId);
-        const session = await this.lockSession(tx, input.activityId, input.sessionId);
-        const identity = await this.lockIdentityByMember(
+        await this.access.lockActivity(tx, input.activityId);
+        const session = await this.access.lockSession(tx, input.activityId, input.sessionId);
+        const identity = await this.access.lockIdentityByMember(
           tx,
           input.activityId,
           input.sessionId,
@@ -234,7 +182,7 @@ export class AttendancePunchCommandService {
         }
 
         const now = new Date();
-        const credential = await this.lockQrCredential(
+        const credential = await this.access.lockQrCredential(
           tx,
           payload.credentialId,
           input.activityId,
@@ -347,7 +295,7 @@ export class AttendancePunchCommandService {
             supersedesEventId: null,
             evidenceRevision,
           },
-          select: this.eventSelect,
+          select: PUNCH_EVENT_SELECT,
         });
         const afterEvents = [...priorEvents, created];
         await this.segments.rebuild({
@@ -436,8 +384,8 @@ export class AttendancePunchCommandService {
     tx: PrismaTx,
     input: OfflinePunchWithinTransactionInput,
   ): Promise<OfflinePunchWithinTransactionResult> {
-    const session = await this.lockSession(tx, input.activityId, input.sessionId);
-    const identity = await this.lockIdentityById(
+    const session = await this.access.lockSession(tx, input.activityId, input.sessionId);
+    const identity = await this.access.lockIdentityById(
       tx,
       input.activityId,
       input.sessionId,
@@ -569,7 +517,7 @@ export class AttendancePunchCommandService {
         supersedesEventId: null,
         evidenceRevision,
       },
-      select: this.eventSelect,
+      select: PUNCH_EVENT_SELECT,
     });
     await this.segments.rebuild({
       tx,
@@ -646,18 +594,18 @@ export class AttendancePunchCommandService {
     tx: PrismaTx,
     input: NormalizedManagedOnlinePunchInput,
   ): Promise<AppActivityPunchReceiptDto> {
-    await this.lockActivity(tx, input.activityId);
-    await this.assertManagedAttendance(tx, input.activityId, input.currentUser);
-    const session = await this.lockSession(tx, input.activityId, input.sessionId);
+    await this.access.lockActivity(tx, input.activityId);
+    await this.access.assertManagedAttendance(tx, input.activityId, input.currentUser);
+    const session = await this.access.lockSession(tx, input.activityId, input.sessionId);
     const identity =
       input.memberCredential === null
-        ? await this.lockIdentityById(
+        ? await this.access.lockIdentityById(
             tx,
             input.activityId,
             input.sessionId,
             input.participationIdentityId!,
           )
-        : await this.lockIdentityForMemberCredential(
+        : await this.access.lockIdentityForMemberCredential(
             tx,
             input.activityId,
             input.sessionId,
@@ -759,7 +707,7 @@ export class AttendancePunchCommandService {
         supersedesEventId: null,
         evidenceRevision,
       },
-      select: this.eventSelect,
+      select: PUNCH_EVENT_SELECT,
     });
     await this.segments.rebuild({
       tx,
@@ -824,10 +772,10 @@ export class AttendancePunchCommandService {
   }): Promise<AppActivityPunchReceiptDto> {
     return this.prisma.$transaction(
       async (tx) => {
-        await this.lockActivity(tx, args.activityId);
-        await this.assertManagedAttendance(tx, args.activityId, args.currentUser);
-        const session = await this.lockSession(tx, args.activityId, args.sessionId);
-        const identity = await this.lockIdentityById(
+        await this.access.lockActivity(tx, args.activityId);
+        await this.access.assertManagedAttendance(tx, args.activityId, args.currentUser);
+        const session = await this.access.lockSession(tx, args.activityId, args.sessionId);
+        const identity = await this.access.lockIdentityById(
           tx,
           args.activityId,
           args.sessionId,
@@ -892,7 +840,7 @@ export class AttendancePunchCommandService {
             supersedesEventId: null,
             evidenceRevision,
           },
-          select: this.eventSelect,
+          select: PUNCH_EVENT_SELECT,
         });
         await this.segments.rebuild({
           tx,
@@ -927,22 +875,26 @@ export class AttendancePunchCommandService {
     if (reason === null) throw new BizException(BizCode.BAD_REQUEST);
     return this.prisma.$transaction(
       async (tx) => {
-        await this.lockActivity(tx, input.activityId);
-        await this.assertManagedAttendance(tx, input.activityId, input.currentUser);
+        await this.access.lockActivity(tx, input.activityId);
+        await this.access.assertManagedAttendance(tx, input.activityId, input.currentUser);
         const targetReference = await tx.attendancePunchEvent.findFirst({
           where: { id: input.eventId, activityId: input.activityId },
           select: { sessionId: true, participationIdentityId: true },
         });
         if (!targetReference) throw new BizException(BizCode.BAD_REQUEST);
-        const session = await this.lockSession(tx, input.activityId, targetReference.sessionId);
-        const identity = await this.lockIdentityById(
+        const session = await this.access.lockSession(
+          tx,
+          input.activityId,
+          targetReference.sessionId,
+        );
+        const identity = await this.access.lockIdentityById(
           tx,
           input.activityId,
           targetReference.sessionId,
           targetReference.participationIdentityId,
         );
         // Target row lock comes after the immutable aggregate/session/identity lock chain.
-        const target = await this.lockEvent(tx, input.activityId, input.eventId);
+        const target = await this.access.lockEvent(tx, input.activityId, input.eventId);
         const existing = await this.findEventByKey(tx, input.operationKey);
         if (existing) {
           return this.replayCorrectionEvent({ existing, input, target, identity, session, reason });
@@ -1010,7 +962,7 @@ export class AttendancePunchCommandService {
             supersedesEventId: target.id,
             evidenceRevision,
           },
-          select: this.eventSelect,
+          select: PUNCH_EVENT_SELECT,
         });
         const afterEvents = [...priorEvents, created];
         await this.segments.rebuild({
@@ -1215,264 +1167,10 @@ export class AttendancePunchCommandService {
     });
   }
 
-  private readonly eventSelect = {
-    id: true,
-    activityId: true,
-    sessionId: true,
-    positionId: true,
-    participationIdentityId: true,
-    memberId: true,
-    eventTypeCode: true,
-    sourceCode: true,
-    occurredAt: true,
-    receivedAt: true,
-    operatorUserId: true,
-    reason: true,
-    qrCredentialId: true,
-    importJobItemId: true,
-    offlinePackageId: true,
-    offlineSequence: true,
-    offlinePriorHash: true,
-    offlineEventPayloadHash: true,
-    deviceId: true,
-    longitude: true,
-    latitude: true,
-    accuracy: true,
-    distance: true,
-    geoVerified: true,
-    outOfRange: true,
-    lowAccuracy: true,
-    eventKey: true,
-    requestHash: true,
-    supersedesEventId: true,
-    evidenceRevision: true,
-    qrCredential: { select: { credentialVersion: true } },
-  } satisfies Prisma.AttendancePunchEventSelect;
-
-  private async lockActivity(tx: PrismaTx, activityId: string): Promise<void> {
-    const rows = await tx.$queryRaw<Array<{ id: string; statusCode: string }>>(Prisma.sql`
-      SELECT "id", "statusCode" FROM "Activity"
-      WHERE "id" = ${activityId} AND "deletedAt" IS NULL
-      FOR UPDATE
-    `);
-    if (rows.length !== 1) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-    if (rows[0]?.statusCode !== 'published')
-      throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
-  }
-
-  private async lockSession(
-    tx: PrismaTx,
-    activityId: string,
-    sessionId: string,
-  ): Promise<LockedSession> {
-    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT "id" FROM "ActivitySession"
-      WHERE "id" = ${sessionId}
-        AND "activityId" = ${activityId}
-        AND "deletedAt" IS NULL
-        AND "statusCode" = 'scheduled'
-      FOR UPDATE
-    `);
-    if (locked.length !== 1) throw new BizException(BizCode.BAD_REQUEST);
-    const session = await tx.activitySession.findFirst({
-      where: { id: sessionId, activityId, deletedAt: null, statusCode: 'scheduled' },
-      select: {
-        id: true,
-        activityId: true,
-        startAt: true,
-        endAt: true,
-        longitude: true,
-        latitude: true,
-        checkInOpenAt: true,
-        checkInCloseAt: true,
-        checkOutOpenAt: true,
-        checkOutCloseAt: true,
-        locationRequired: true,
-        radiusMeters: true,
-        accuracyWarningMeters: true,
-        lateGraceMinutes: true,
-        earlyLeaveThresholdMinutes: true,
-      },
-    });
-    if (!session) throw new BizException(BizCode.BAD_REQUEST);
-    return session;
-  }
-
-  private async lockIdentityByMember(
-    tx: PrismaTx,
-    activityId: string,
-    sessionId: string,
-    memberId: string,
-  ): Promise<LockedIdentity> {
-    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT "id" FROM "ActivityParticipationIdentity"
-      WHERE "activityId" = ${activityId}
-        AND "sessionId" = ${sessionId}
-        AND "memberId" = ${memberId}
-      FOR UPDATE
-    `);
-    if (locked.length !== 1) throw new BizException(BizCode.ATTENDANCE_REGISTRATION_INVALID);
-    const identity = await tx.activityParticipationIdentity.findFirst({
-      where: { id: locked[0].id, activityId, sessionId, memberId },
-      select: {
-        id: true,
-        memberId: true,
-        currentStatusCode: true,
-        currentPositionId: true,
-        populationIncluded: true,
-      },
-    });
-    if (!identity) throw new BizException(BizCode.ATTENDANCE_REGISTRATION_INVALID);
-    return identity;
-  }
-
-  private async lockIdentityById(
-    tx: PrismaTx,
-    activityId: string,
-    sessionId: string,
-    identityId: string,
-  ): Promise<LockedIdentity> {
-    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT "id" FROM "ActivityParticipationIdentity"
-      WHERE "id" = ${identityId}
-        AND "activityId" = ${activityId}
-        AND "sessionId" = ${sessionId}
-      FOR UPDATE
-    `);
-    if (locked.length !== 1) throw new BizException(BizCode.BAD_REQUEST);
-    const identity = await tx.activityParticipationIdentity.findFirst({
-      where: { id: identityId, activityId, sessionId },
-      select: {
-        id: true,
-        memberId: true,
-        currentStatusCode: true,
-        currentPositionId: true,
-        populationIncluded: true,
-      },
-    });
-    if (!identity) throw new BizException(BizCode.BAD_REQUEST);
-    return identity;
-  }
-
-  /**
-   * 扫描凭证只在本事务内解出主体：既验证签名/时效，也把 User→Member 当前有效性和
-   * ActivityParticipationIdentity 绑定在 Activity 根锁之后重验，不能由控制器用裸 ID 旁路。
-   */
-  private async lockIdentityForMemberCredential(
-    tx: PrismaTx,
-    activityId: string,
-    sessionId: string,
-    token: string,
-  ): Promise<LockedIdentity> {
-    let credential: { userId: string; memberId: string };
-    try {
-      credential = this.memberCredentials.verify(token);
-    } catch {
-      throw new BizException(BizCode.ATTENDANCE_QR_NOT_FOUND);
-    }
-    await this.assertActiveMemberCredentialSubject(tx, credential.userId, credential.memberId);
-    return this.lockIdentityByMember(tx, activityId, sessionId, credential.memberId);
-  }
-
-  private async assertActiveMemberCredentialSubject(
-    tx: PrismaTx,
-    userId: string,
-    memberId: string,
-  ): Promise<void> {
-    const rows = await tx.$queryRaw<Array<{ userId: string }>>(Prisma.sql`
-      SELECT u."id" AS "userId"
-      FROM "User" u
-      INNER JOIN "Member" m ON m."id" = u."memberId"
-      WHERE u."id" = ${userId}
-        AND u."memberId" = ${memberId}
-        AND u."status" = 'ACTIVE'
-        AND u."deletedAt" IS NULL
-        AND m."status" = 'ACTIVE'
-        AND m."deletedAt" IS NULL
-      FOR SHARE OF u, m
-    `);
-    if (rows.length !== 1) throw new BizException(BizCode.ATTENDANCE_QR_NOT_FOUND);
-  }
-
-  private async lockQrCredential(
-    tx: PrismaTx,
-    credentialId: string,
-    activityId: string,
-    sessionId: string,
-  ): Promise<{
-    id: string;
-    actionCode: string;
-    credentialVersion: number;
-    statusCode: string;
-    tokenDigest: string;
-    validFrom: Date;
-    validUntil: Date;
-  }> {
-    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT "id" FROM "AttendanceQrCredential"
-      WHERE "id" = ${credentialId}
-        AND "activityId" = ${activityId}
-        AND "sessionId" = ${sessionId}
-      FOR UPDATE
-    `);
-    if (locked.length !== 1) throw new BizException(BizCode.ATTENDANCE_QR_NOT_FOUND);
-    const credential = await tx.attendanceQrCredential.findFirst({
-      where: { id: credentialId, activityId, sessionId },
-      select: {
-        id: true,
-        actionCode: true,
-        credentialVersion: true,
-        statusCode: true,
-        tokenDigest: true,
-        validFrom: true,
-        validUntil: true,
-      },
-    });
-    if (!credential) throw new BizException(BizCode.ATTENDANCE_QR_NOT_FOUND);
-    return credential;
-  }
-
-  private async lockEvent(
-    tx: PrismaTx,
-    activityId: string,
-    eventId: string,
-  ): Promise<PunchEventRow> {
-    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT "id" FROM "AttendancePunchEvent"
-      WHERE "id" = ${eventId} AND "activityId" = ${activityId}
-      FOR UPDATE
-    `);
-    if (locked.length !== 1) throw new BizException(BizCode.BAD_REQUEST);
-    const row = await tx.attendancePunchEvent.findFirst({
-      where: { id: eventId, activityId },
-      select: this.eventSelect,
-    });
-    if (!row) throw new BizException(BizCode.BAD_REQUEST);
-    return row;
-  }
-
-  private async assertManagedAttendance(
-    tx: PrismaTx,
-    activityId: string,
-    currentUser: CurrentUserPayload,
-  ): Promise<void> {
-    if (currentUser.memberId === null) throw new BizException(BizCode.RBAC_FORBIDDEN);
-    const assignments = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT "id" FROM "activity_responsibility_assignments"
-      WHERE "activityId" = ${activityId}
-        AND "memberId" = ${currentUser.memberId}
-        AND "status" = 'active'
-        AND "canManageAttendance" = true
-      ORDER BY "id" ASC
-      FOR SHARE
-    `);
-    if (assignments.length === 0) throw new BizException(BizCode.RBAC_FORBIDDEN);
-  }
-
   private async eventsForIdentity(tx: PrismaTx, identityId: string): Promise<PunchEventRow[]> {
     return tx.attendancePunchEvent.findMany({
       where: { participationIdentityId: identityId },
-      select: this.eventSelect,
+      select: PUNCH_EVENT_SELECT,
       orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
     });
   }
@@ -1558,7 +1256,7 @@ export class AttendancePunchCommandService {
   }
 
   private async findEventByKey(tx: PrismaTx, eventKey: string): Promise<PunchEventRow | null> {
-    return tx.attendancePunchEvent.findUnique({ where: { eventKey }, select: this.eventSelect });
+    return tx.attendancePunchEvent.findUnique({ where: { eventKey }, select: PUNCH_EVENT_SELECT });
   }
 
   private presentEvent(
