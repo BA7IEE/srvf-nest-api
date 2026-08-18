@@ -25,6 +25,14 @@ import { ActivityResponsibilityPolicy } from './activity-responsibility-policy';
 import { ActivityProposalValidator } from './activity-proposal-validator';
 import { ActivityProposalApplier } from './activity-proposal-applier';
 import { ActivityNotificationProducer } from './activity-notification-producer';
+import {
+  freezeAudienceTags,
+  freezeRegistrationRoster,
+  freezeResponsibility,
+  isFrozenCohort,
+  type FrozenBroadcastAudience,
+  type FrozenRecipientCohort,
+} from './activity-recipient-freeze';
 import { ActivityAllocationModeService } from './activity-allocation-mode.service';
 import {
   ActivityPublishProposalV2Service,
@@ -36,7 +44,6 @@ import {
   buildProposalSnapshot,
   ensureInitialPublishable,
   lockActivity,
-  resolveActiveAudienceTagIds,
   type PrismaTx,
 } from './activity-publish-review-access';
 import {
@@ -140,27 +147,38 @@ export class ActivityPublishReviewService {
     }
   }
 
-  private async resolveAudienceRecipientMemberIds(
+  /**
+   * 审核结果通知的收件人(0 或 1 人)也要走冻结入口 —— 单人不是「不用冻结」的理由:
+   * 重放时 owner 已经换人,不冻结就会发给新 owner,而当初通知的是老 owner。
+   */
+  private async freezeReviewOutcomeRecipient(
     tx: PrismaTx,
-    audienceTagCodes: string[],
-  ): Promise<string[]> {
-    if (audienceTagCodes.length === 0) {
-      const members = await tx.member.findMany({
-        where: { status: MemberStatus.ACTIVE, deletedAt: null },
-        select: { id: true },
-      });
-      return members.map((member) => member.id).sort();
-    }
-    const tagIds = await resolveActiveAudienceTagIds(tx, audienceTagCodes);
-    const assignments = await tx.memberAudienceTagAssignment.findMany({
-      where: {
-        dictItemId: { in: tagIds },
-        revokedAt: null,
-        member: { status: MemberStatus.ACTIVE, deletedAt: null },
-      },
-      select: { memberId: true },
+    reviewId: string,
+    recipientMemberId: string | null,
+    at: Date,
+  ): Promise<FrozenRecipientCohort> {
+    return freezeResponsibility(tx, {
+      cohortKey: `activity-review-outcome:${reviewId}:${at.toISOString()}`,
+      aggregateType: 'activity_publish_review',
+      aggregateIds: [reviewId],
+      basisRef: [`review:${reviewId}`],
+      memberIds: [recipientMemberId],
+      at,
     });
-    return [...new Set(assignments.map((assignment) => assignment.memberId))].sort();
+  }
+
+  private async freezeBroadcastAudience(
+    tx: PrismaTx,
+    activityId: string,
+    publishedAt: Date,
+  ): Promise<FrozenBroadcastAudience> {
+    const audience = await freezeAudienceTags(tx, {
+      activityId,
+      audienceTagCodes: null,
+      at: publishedAt,
+    });
+    if (isFrozenCohort(audience)) throw new BizException(BizCode.BAD_REQUEST);
+    return audience;
   }
 
   async approve(
@@ -333,15 +351,20 @@ export class ActivityPublishReviewService {
             ? await this.loadPublishedEffect(review.activityId, tx)
             : null;
         let audienceRecipientMemberIds: string[] | null = null;
+        let audienceCohort: FrozenRecipientCohort | null = null;
         if (audienceTagCodes !== null) {
           if (review.requestType !== 'initial') {
             throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
           }
           if (!publishedEffect?.isPublicRegistration) throw new BizException(BizCode.BAD_REQUEST);
-          audienceRecipientMemberIds = await this.resolveAudienceRecipientMemberIds(
-            tx,
+          const cohort = await freezeAudienceTags(tx, {
+            activityId: review.activityId,
             audienceTagCodes,
-          );
+            at: publishedEffect.publishedAt,
+          });
+          if (!isFrozenCohort(cohort)) throw new BizException(BizCode.BAD_REQUEST);
+          audienceCohort = cohort;
+          audienceRecipientMemberIds = [...cohort.memberIds];
           await this.audit.logAudienceTagsApproved({
             activityId: review.activityId,
             reviewId: review.id,
@@ -382,20 +405,35 @@ export class ActivityPublishReviewService {
           activityId: review.activityId,
           activityTitle,
           reviewedAt: now,
-          recipientMemberId,
+          cohort: await this.freezeReviewOutcomeRecipient(tx, review.id, recipientMemberId, now),
           approved: true,
         });
         if (publishedEffect) {
-          if (audienceRecipientMemberIds === null) {
-            await this.notificationProducer.enqueuePublished(tx, publishedEffect);
+          if (audienceCohort === null) {
+            await this.notificationProducer.enqueuePublished(tx, {
+              ...publishedEffect,
+              audience: await this.freezeBroadcastAudience(
+                tx,
+                review.activityId,
+                publishedEffect.publishedAt,
+              ),
+            });
           } else {
             await this.notificationProducer.enqueuePublishedWithAudienceTags(tx, {
               ...publishedEffect,
-              memberIds: audienceRecipientMemberIds,
+              cohort: audienceCohort,
             });
           }
         }
         if (changeEffect) {
+          const changeCohort = await freezeRegistrationRoster(tx, {
+            cohortKey: `activity-change:${changeEffect.activityId}:review:${review.id}`,
+            aggregateType: 'activity',
+            aggregateIds: [changeEffect.activityId],
+            basisRef: [`review:${review.id}`],
+            memberIds: changeEffect.notificationMemberIds,
+            at: now,
+          });
           await this.notificationProducer.enqueueScheduleChange(tx, {
             activityId: changeEffect.activityId,
             activityTitle: changeEffect.activityTitle,
@@ -403,11 +441,19 @@ export class ActivityPublishReviewService {
             before: null,
             after: null,
             requiresInsurance: false,
-            memberIds: changeEffect.notificationMemberIds,
+            cohort: changeCohort,
           });
           await this.notificationProducer.enqueueWaitlistPromotions(tx, {
             activityTitle: changeEffect.activityTitle,
             promoted: changeEffect.promoted,
+            cohort: await freezeRegistrationRoster(tx, {
+              cohortKey: `waitlist-promote:review:${review.id}`,
+              aggregateType: 'activity_registration',
+              aggregateIds: changeEffect.promoted.map((item) => item.registrationId),
+              basisRef: [`review:${review.id}`],
+              memberIds: changeEffect.promoted.map((item) => item.memberId),
+              at: now,
+            }),
           });
         }
         return {
@@ -541,15 +587,20 @@ export class ActivityPublishReviewService {
     });
     const effect = await this.loadPublishedEffect(review.activityId, tx);
     let audienceRecipientMemberIds: string[] | null = null;
+    let audienceCohort: FrozenRecipientCohort | null = null;
     if (audienceTagCodes !== null) {
       if (review.requestType !== 'initial') {
         throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
       }
       if (!effect.isPublicRegistration) throw new BizException(BizCode.BAD_REQUEST);
-      audienceRecipientMemberIds = await this.resolveAudienceRecipientMemberIds(
-        tx,
+      const cohort = await freezeAudienceTags(tx, {
+        activityId: review.activityId,
         audienceTagCodes,
-      );
+        at: effect.publishedAt,
+      });
+      if (!isFrozenCohort(cohort)) throw new BizException(BizCode.BAD_REQUEST);
+      audienceCohort = cohort;
+      audienceRecipientMemberIds = [...cohort.memberIds];
       await this.audit.logAudienceTagsApproved({
         activityId: review.activityId,
         reviewId: review.id,
@@ -586,16 +637,19 @@ export class ActivityPublishReviewService {
       activityId: review.activityId,
       activityTitle: effect.activityTitle,
       reviewedAt: now,
-      recipientMemberId,
+      cohort: await this.freezeReviewOutcomeRecipient(tx, review.id, recipientMemberId, now),
       approved: true,
     });
     if (review.requestType === 'initial') {
-      if (audienceRecipientMemberIds === null) {
-        await this.notificationProducer.enqueuePublished(tx, effect);
+      if (audienceCohort === null) {
+        await this.notificationProducer.enqueuePublished(tx, {
+          ...effect,
+          audience: await this.freezeBroadcastAudience(tx, review.activityId, effect.publishedAt),
+        });
       } else {
         await this.notificationProducer.enqueuePublishedWithAudienceTags(tx, {
           ...effect,
-          memberIds: audienceRecipientMemberIds,
+          cohort: audienceCohort,
         });
       }
     } else {
@@ -610,7 +664,14 @@ export class ActivityPublishReviewService {
         before: null,
         after: null,
         requiresInsurance: effect.requiresInsurance,
-        memberIds: [...new Set(identities.map((identity) => identity.memberId))],
+        cohort: await freezeRegistrationRoster(tx, {
+          cohortKey: `activity-change:${review.activityId}:review:${review.id}`,
+          aggregateType: 'activity',
+          aggregateIds: [review.activityId],
+          basisRef: [`review:${review.id}`],
+          memberIds: [...new Set(identities.map((identity) => identity.memberId))],
+          at: now,
+        }),
       });
     }
     return {
@@ -707,7 +768,12 @@ export class ActivityPublishReviewService {
           activityId: review.activityId,
           activityTitle: activity.title,
           reviewedAt,
-          recipientMemberId,
+          cohort: await this.freezeReviewOutcomeRecipient(
+            tx,
+            review.id,
+            recipientMemberId,
+            reviewedAt,
+          ),
           approved: false,
           reviewNote: dto.reviewNote.trim(),
         });

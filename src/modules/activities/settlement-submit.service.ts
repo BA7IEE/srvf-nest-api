@@ -6,6 +6,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { SettlementNotificationProducer } from './settlement-notification-producer';
+import { freezeResponsibility } from './activity-recipient-freeze';
 import { SettlementSubmitAuditRecorder } from './settlement-submit-audit-recorder';
 import {
   computeSettlementContentHash,
@@ -733,7 +734,17 @@ export class SettlementSubmitService {
           settlementVersionId: created.id,
           settlementVersion,
           personCount: draft.personCount,
-          ownerMemberId: await this.readOwnerMemberId(tx, activityId),
+          cohort: await freezeResponsibility(tx, {
+            cohortKey: `settlement-submit:${created.id}`,
+            aggregateType: 'activity',
+            aggregateIds: [activityId],
+            basisRef: [`settlementVersion:${created.id}`],
+            memberIds: [await this.readOwnerMemberId(tx, activityId)],
+            // 列可空,但本路径上一步刚显式写过它;`?? new Date()` 只是类型收敛的兜底,
+            // 实际取不到 null。冻结是否成立取决于 `cohortKey`(纯 versionId,确定性),
+            // 不取决于这个时刻 —— 重放时快照是回读的,这里根本不会被用到。
+            at: created.submittedAt ?? new Date(),
+          }),
         });
 
         await this.audit.log({
@@ -801,7 +812,9 @@ export class SettlementSubmitService {
       operationKey: string;
       requestHash: string;
     },
-  ): Promise<{ id: string }> {
+    // `submittedAt` 一并回读:收件人冻结的「计算时刻」要与这一行**同源**,
+    // 不能在 enqueue 处另取一次墙钟(#1075 时间权威统一)。纯加法 select,不改写入。
+  ): Promise<{ id: string; submittedAt: Date | null }> {
     try {
       return await tx.attendanceSettlementVersion.create({
         data: {
@@ -822,7 +835,7 @@ export class SettlementSubmitService {
           operationKey: input.operationKey,
           requestHash: input.requestHash,
         },
-        select: { id: true },
+        select: { id: true, submittedAt: true },
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {

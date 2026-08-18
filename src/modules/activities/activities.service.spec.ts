@@ -248,6 +248,13 @@ function makePrismaMock() {
   const activityPublishReview = {
     count: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0),
   };
+  // 收件人冻结在 enqueue 前回捞既有 intent(冻结批次存在就读回、不重算)。
+  // 默认空表 = 本次是首次冻结,与这些 characterization 原本的前提一致。
+  const notificationOutboxIntent = {
+    findMany: jest
+      .fn<Promise<Array<{ destinationRef: string; payload: unknown }>>, [unknown]>()
+      .mockResolvedValue([]),
+  };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
   const $queryRaw = jest.fn().mockResolvedValue([{ id: 'act-1' }]);
   const prisma = {
@@ -258,6 +265,7 @@ function makePrismaMock() {
     attendanceSheet,
     attendancePunchEvent,
     activityPublishReview,
+    notificationOutboxIntent,
     $queryRaw,
     $transaction,
   };
@@ -310,6 +318,16 @@ function makeAuthzMock(
   };
 }
 type AuthzMock = ReturnType<typeof makeAuthzMock>;
+
+/** 从 producer mock 的第一次调用里取出冻结批次的收件人集合(比集合,不比计数)。 */
+function frozenMemberIds(
+  producerMethod: jest.Mock<Promise<void>, [unknown, Record<string, unknown>]>,
+): readonly string[] {
+  const input = producerMethod.mock.calls[0]?.[1];
+  const cohort = input?.cohort as { memberIds?: readonly string[] } | undefined;
+  if (cohort?.memberIds === undefined) throw new Error('producer 未收到冻结批次');
+  return cohort.memberIds;
+}
 
 // PR-L2:durable producer mock；business + audit + intent 必须共用调用方 transaction。
 function makeNotificationProducerMock() {
@@ -1054,9 +1072,10 @@ describe('ActivitiesService (characterization)', () => {
           activityId: 'act-1',
           activityTitle: '周末巡山',
           cancelReason: '暴雨',
-          memberIds: ['m1', 'm2'],
         }),
       );
+      // 收件集从裸 `memberIds` 换成冻结批次:**同一批人**,多了「按什么算、什么时候算的」。
+      expect(frozenMemberIds(notificationProducer.enqueueCancellation)).toEqual(['m1', 'm2']);
       const updateOrder = prisma.activity.update.mock.invocationCallOrder[0];
       const enqueueOrder = notificationProducer.enqueueCancellation.mock.invocationCallOrder[0];
       expect(enqueueOrder).toBeGreaterThan(updateOrder);
@@ -1075,8 +1094,9 @@ describe('ActivitiesService (characterization)', () => {
       expect(res.statusCode).toBe('cancelled');
       expect(notificationProducer.enqueueCancellation).toHaveBeenCalledWith(
         prisma,
-        expect.objectContaining({ memberIds: [] }),
+        expect.objectContaining({ activityId: 'act-1' }),
       );
+      expect(frozenMemberIds(notificationProducer.enqueueCancellation)).toEqual([]);
     });
 
     it('PR-L2:intent enqueue 失败 → 外抛给事务，禁止返回已提交取消', async () => {

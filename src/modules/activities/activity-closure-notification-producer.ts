@@ -8,6 +8,7 @@ import {
   OUTBOX_PAYLOAD_VERSION,
 } from '../notifications/notification.constants';
 import { NotificationOutboxService } from '../notifications/notification-outbox.service';
+import type { FrozenRecipientCohort } from './activity-recipient-freeze';
 
 // 机器关账后的「评价开放」intent(合同 §5.15 ⑪)。
 //
@@ -59,10 +60,11 @@ export class ActivityClosureNotificationProducer {
       serviceHours: string;
       contributionPoints: string;
       archiveWaitingUntil: Date;
-      ownerMemberId: string | null;
+      cohort: FrozenRecipientCohort;
     },
   ): Promise<void> {
-    if (input.ownerMemberId === null) return;
+    const ownerMemberId = input.cohort.memberIds[0];
+    if (ownerMemberId === undefined) return;
     const waitingUntil = input.archiveWaitingUntil.toISOString().slice(0, 10);
     await this.outbox.enqueue(
       {
@@ -70,7 +72,7 @@ export class ActivityClosureNotificationProducer {
         eventType: OUTBOX_EVENT_TARGETED_NOTIFICATION,
         payloadVersion: OUTBOX_PAYLOAD_VERSION,
         payload: {
-          recipientMemberId: input.ownerMemberId,
+          recipientMemberId: ownerMemberId,
           notificationTypeCode: NOTIFICATION_TYPE_ATTENDANCE_RESULT,
           title: '活动结算已关闭,评价已开放',
           body:
@@ -80,11 +82,12 @@ export class ActivityClosureNotificationProducer {
             `参与队员的评价入口已开放;资料归档等待期至 ${waitingUntil},` +
             `此后如仍需订正,请走更正申请流程。`,
           channels: [NOTIFICATION_CHANNEL_IN_APP],
+          recipientFreeze: { ...input.cohort.stamp },
         },
         aggregateType: 'activity',
         aggregateId: input.activityId,
         destinationType: 'member',
-        destinationRef: input.ownerMemberId,
+        destinationRef: ownerMemberId,
       },
       tx,
     );

@@ -6,6 +6,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { SettlementNotificationProducer } from './settlement-notification-producer';
+import { freezeResponsibility } from './activity-recipient-freeze';
 import { SettlementReviewAuditRecorder } from './settlement-review-audit-recorder';
 import {
   compareSettlementReviewSnapshot,
@@ -707,7 +708,14 @@ export class SettlementReviewService {
           stageCode,
           actionCode,
           returnReason: actionCode === 'return' ? returnReason : null,
-          ownerMemberId: await this.readOwnerMemberId(tx, activityId),
+          cohort: await freezeResponsibility(tx, {
+            cohortKey: `settlement-review:${version.id}:${stageCode}`,
+            aggregateType: 'activity',
+            aggregateIds: [activityId],
+            basisRef: [`settlementVersion:${version.id}`, `stage:${stageCode}`],
+            memberIds: [await this.readOwnerMemberId(tx, activityId)],
+            at: actedAt,
+          }),
         });
 
         const result: SettlementReviewResult = {

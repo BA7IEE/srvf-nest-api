@@ -1020,6 +1020,57 @@ if (
 }
 
 /**
+ * 第 7 批第一刀(收件人快照冻结)。
+ *
+ * ⚠️ **只翻真的被穿过的那一条**:ADV-016 的合同原文是「通知意图形成后**报名名单**变化,
+ * 原事件收件人仍保持冻结」—— e2e 里那一条正是按这句话布点的(形成 intent → 软删一个
+ * 报名 + 新增一个报名 → 抽干 outbox → 比集合),并已做变异对拍(把投递改成按当时名册
+ * 重算 ⇒ 该用例红)。
+ *
+ * AC-066 / AC-067 **照实留 todo**:
+ *   · AC-066 三个可选项里「目标**组织**」本刀根本没有实现(只有标签与广播两条路),
+ *     覆盖了三分之二不能拿来结案 —— 这正是本文件开头那条纪律。
+ *   · AC-067 讲的是未签退提醒与收口待办,与冻结不在同一条链上。
+ */
+const BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_IDS = ['AC-066', 'AC-067', 'ADV-016'] as const;
+
+const BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_DESTINATIONS: Readonly<
+  Record<string, readonly AcceptanceDestination[]>
+> = {
+  'ADV-016': [
+    {
+      file: 'test/e2e/activity-batch7-recipient-freeze.e2e-spec.ts',
+      needle: 'ADV-016 取消通知:intent 形成后**报名名单**再变,原事件收件人仍逐字冻结',
+    },
+    {
+      // 「退出的人仍收到、后来报名的人收不到」是这条对抗的两个方向,各绑一句真断言。
+      file: 'test/e2e/activity-batch7-recipient-freeze.e2e-spec.ts',
+      needle: 'expect(deliveredMembers).not.toContain(lateRegistrant.id);',
+    },
+  ],
+};
+
+const BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
+  'AC-066':
+    '标签定向与「明确不广播」已冻结并异步展开,但三个可选项里的「目标**组织**」本刀零实现 —— 整项不能按三分之二结案。',
+  'AC-067': '未签退提醒与收口待办不在冻结这条链上;卡第 7 批后续刀。',
+};
+
+const batch7RecipientFreezeResolvedIds = new Set([
+  ...Object.keys(BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_DESTINATIONS),
+  ...Object.keys(BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_BLOCKERS),
+]);
+if (
+  batch7RecipientFreezeResolvedIds.size !== BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_IDS.length ||
+  BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_IDS.some((id) => !batch7RecipientFreezeResolvedIds.has(id)) ||
+  Object.keys(BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_DESTINATIONS).some(
+    (id) => BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_BLOCKERS[id],
+  )
+) {
+  throw new Error('第 7 批第一刀的 3 条验收编号必须逐条有已标注去向或明确阻塞说明');
+}
+
+/**
  * 「哪些登记表参与查表」只写一处 —— `registerAcceptanceCases` 与下面的接线守护读的是
  * **同一个数组**,所以两者不可能各说各话。
  *
@@ -1031,6 +1082,7 @@ if (
 const ACCEPTANCE_DESTINATION_TABLES: ReadonlyArray<
   Readonly<Record<string, readonly AcceptanceDestination[]>>
 > = [
+  BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_DESTINATIONS,
   BATCH6_CLOSEOUT_ACCEPTANCE_DESTINATIONS,
   BATCH5_SELF_PUNCH_ACCEPTANCE_DESTINATIONS,
   BATCH2_ACCEPTANCE_DESTINATIONS,
@@ -1065,7 +1117,10 @@ function registerAcceptanceCases(cases: readonly { id: string; title: string }[]
       continue;
     }
 
-    const blocker = BATCH2_ACCEPTANCE_BLOCKERS[id] ?? BATCH3_SLICE1_ACCEPTANCE_BLOCKERS[id];
+    const blocker =
+      BATCH2_ACCEPTANCE_BLOCKERS[id] ??
+      BATCH3_SLICE1_ACCEPTANCE_BLOCKERS[id] ??
+      BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_BLOCKERS[id];
     const batch4Blocker = BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_BLOCKERS[id];
     const batch4ReservationKernelBlocker = BATCH4_RESERVATION_KERNEL_ACCEPTANCE_BLOCKERS[id];
     const batch4InvitationVisitorBlocker = BATCH4_INVITATION_VISITOR_ACCEPTANCE_BLOCKERS[id];
@@ -1150,6 +1205,71 @@ describe('活动业务改造 v1.1 合同完整性', () => {
     });
     // 反向:判据自身不得因为清单为空而恒真。
     expect(BATCH6_CLOSEOUT_ACCEPTANCE_IDS.length).toBe(4);
+  });
+
+  /**
+   * 上面那条只守**第 6 批**这一个实例 —— 第 7 批第一刀实测:把本批 destinations 从
+   * `ACCEPTANCE_DESTINATION_TABLES` 里摘掉,编号静默退回 todo(42→43),而整套仍然全绿。
+   * 也就是说「接通」这件事在**新批次**上没有执行位。
+   *
+   * 所以这条守的是**类**而不是实例:凡是登记了去向的批次,都必须能从查表链里被解析到。
+   * 以后新增一批只要把它登进下面的 `SECTIONS`,漏接那一行当场红。
+   */
+  it('每一个登记了去向的批次都真的接进了查表链(守类,不守某一批)', () => {
+    const SECTIONS: ReadonlyArray<{
+      name: string;
+      table: Readonly<Record<string, readonly AcceptanceDestination[]>>;
+    }> = [
+      { name: 'BATCH2', table: BATCH2_ACCEPTANCE_DESTINATIONS },
+      { name: 'BATCH3_SLICE1', table: BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS },
+      {
+        name: 'BATCH4_REGISTRATION_COMMAND',
+        table: BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS,
+      },
+      {
+        name: 'BATCH4_QUALIFICATION_RUNTIME',
+        table: BATCH4_QUALIFICATION_RUNTIME_ACCEPTANCE_DESTINATIONS,
+      },
+      {
+        name: 'BATCH4_ONSITE_PARTICIPATION',
+        table: BATCH4_ONSITE_PARTICIPATION_ACCEPTANCE_DESTINATIONS,
+      },
+      {
+        name: 'BATCH4_INVITATION_VISITOR',
+        table: BATCH4_INVITATION_VISITOR_ACCEPTANCE_DESTINATIONS,
+      },
+      {
+        name: 'BATCH4_ACTIVITY_START_EXPIRY',
+        table: BATCH4_ACTIVITY_START_EXPIRY_ACCEPTANCE_DESTINATIONS,
+      },
+      {
+        name: 'BATCH4_PERMANENT_REGISTRATION',
+        table: BATCH4_PERMANENT_REGISTRATION_ACCEPTANCE_DESTINATIONS,
+      },
+      { name: 'BATCH5_SELF_PUNCH', table: BATCH5_SELF_PUNCH_ACCEPTANCE_DESTINATIONS },
+      { name: 'BATCH6_CLOSEOUT', table: BATCH6_CLOSEOUT_ACCEPTANCE_DESTINATIONS },
+      { name: 'BATCH7_RECIPIENT_FREEZE', table: BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_DESTINATIONS },
+    ];
+
+    // ① 每张登记表都必须**按对象标识**出现在查表链里 —— 摘掉那一行当场红。
+    const missingTables = SECTIONS.filter(
+      (section) => !ACCEPTANCE_DESTINATION_TABLES.includes(section.table),
+    ).map((section) => section.name);
+    expect({ 没接进查表链的登记表: missingTables }).toEqual({ 没接进查表链的登记表: [] });
+
+    // ② 每个登记了去向的编号都必须能被解析到(防止被别的表同名键遮蔽)。
+    const unresolved = SECTIONS.flatMap((section) =>
+      Object.keys(section.table)
+        .filter((id) => resolveAcceptanceDestinations(id) === undefined)
+        .map((id) => `${section.name}:${id}`),
+    );
+    expect({ 登记了去向却解析不到的编号: unresolved }).toEqual({
+      登记了去向却解析不到的编号: [],
+    });
+
+    // ③ 反向:清单与查表链**条数相等** —— 少登记一张表不产生坏链接,只靠 ① 看不见它。
+    expect(SECTIONS.length).toBe(ACCEPTANCE_DESTINATION_TABLES.length);
+    expect(SECTIONS.length).toBeGreaterThan(0);
   });
 
   it('活文档仍指向本合同目录(指针被删则红)', () => {

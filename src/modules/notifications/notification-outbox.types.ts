@@ -32,12 +32,35 @@ type NotificationOutboxSafetyInput = Omit<NotificationOutboxEnqueueInput, 'paylo
   payload: unknown;
 };
 
+/**
+ * 收件人冻结快照头(第 7 批第一刀,合同 §14)。
+ *
+ * **可选键,刻意不 bump `payloadVersion`**:in-flight 的老行没有这个键,bump 版本号会
+ * 让它们当场变成「不支持的 payload」而卡死在队列里 —— 冻结是**加法**,不该把既有
+ * pending 行拖下水。可选字段免 bump 是本仓既有范式(状态机登记表 4-1b 同一处置)。
+ *
+ * 收件人本体不在这里:它就是这行 intent 的 `destinationRef`。这里只放**为什么是他**
+ * (`basisKind` / `basisRef`)、**什么时候定的**(`computedAt`)、**按哪一版口径算的**
+ * (`algorithmVersion`),以及这批一共几个人(`cohortSize`)—— 少了 `cohortSize`,
+ * 「回捞到 3 行」与「本该 5 行只写进去 3 行」就分不开。
+ * 全文见 `src/modules/activities/activity-recipient-freeze.ts`。
+ */
+export interface RecipientFreezeOutboxStamp {
+  cohortKey: string;
+  algorithmVersion: number;
+  basisKind: string;
+  basisRef: string[];
+  computedAt: string;
+  cohortSize: number;
+}
+
 export interface TargetedNotificationOutboxPayload {
   recipientMemberId: string;
   notificationTypeCode: string;
   title: string;
   body: string;
   channels: string[];
+  recipientFreeze?: RecipientFreezeOutboxStamp;
 }
 
 export interface SystemBroadcastOutboxPayload {
@@ -45,6 +68,7 @@ export interface SystemBroadcastOutboxPayload {
   title: string;
   body: string;
   visibilityCode: string;
+  recipientFreeze?: RecipientFreezeOutboxStamp;
 }
 
 export interface WechatBroadcastOutboxPayload {
@@ -129,22 +153,32 @@ export function parseKnownNotificationOutboxPayload(
   switch (eventType) {
     case OUTBOX_EVENT_TARGETED_NOTIFICATION:
       requireVersion(payloadVersion, OUTBOX_PAYLOAD_VERSION, eventType);
-      exactKeys(value, ['recipientMemberId', 'notificationTypeCode', 'title', 'body', 'channels']);
+      exactKeys(
+        value,
+        ['recipientMemberId', 'notificationTypeCode', 'title', 'body', 'channels'],
+        ['recipientFreeze'],
+      );
       return {
         recipientMemberId: cuid(value.recipientMemberId),
         notificationTypeCode: shortString(value.notificationTypeCode, 64),
         title: shortString(value.title, 200),
         body: shortString(value.body, 5000),
         channels: channelList(value.channels),
+        ...recipientFreeze(value.recipientFreeze),
       };
     case OUTBOX_EVENT_SYSTEM_BROADCAST:
       requireVersion(payloadVersion, OUTBOX_PAYLOAD_VERSION, eventType);
-      exactKeys(value, ['notificationTypeCode', 'title', 'body', 'visibilityCode']);
+      exactKeys(
+        value,
+        ['notificationTypeCode', 'title', 'body', 'visibilityCode'],
+        ['recipientFreeze'],
+      );
       return {
         notificationTypeCode: shortString(value.notificationTypeCode, 64),
         title: shortString(value.title, 200),
         body: shortString(value.body, 5000),
         visibilityCode: enumString(value.visibilityCode, NOTIFICATION_VISIBILITIES),
+        ...recipientFreeze(value.recipientFreeze),
       };
     case OUTBOX_EVENT_WECHAT_BROADCAST:
       if (payloadVersion === OUTBOX_PAYLOAD_VERSION) {
@@ -251,12 +285,64 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function exactKeys(value: Record<string, unknown>, expected: string[]): void {
-  const actual = Object.keys(value).sort();
-  const wanted = [...expected].sort();
-  if (actual.length !== wanted.length || actual.some((key, index) => key !== wanted[index])) {
+/**
+ * 必填键必须**逐字齐全**;`optional` 里的键可有可无,其余一律拒。
+ *
+ * ⚠️ 白名单**不是**「随便多几个键都行」:未列进 `expected` / `optional` 的键照样红。
+ * 这道闸挡的是「有人往 payload 里塞了一个没人解析的字段,于是它成了第二份真相」。
+ */
+function exactKeys(
+  value: Record<string, unknown>,
+  expected: string[],
+  optional: string[] = [],
+): void {
+  const allowed = new Set([...expected, ...optional]);
+  const actual = Object.keys(value);
+  if (actual.some((key) => !allowed.has(key))) {
     throw new NotificationOutboxPayloadError('invalid-shape', OUTBOX_PAYLOAD_VERSION);
   }
+  if (expected.some((key) => !(key in value))) {
+    throw new NotificationOutboxPayloadError('invalid-shape', OUTBOX_PAYLOAD_VERSION);
+  }
+}
+
+/**
+ * 冻结快照头的解析。缺键 = 冻结前落库的老行,返回 `{}` 放行;**在场但形状不对 = 红** ——
+ * 一个残缺的快照被静默当成「没有快照」,等于让审计问题永久失去答案。
+ */
+function recipientFreeze(value: unknown): { recipientFreeze?: RecipientFreezeOutboxStamp } {
+  if (value === undefined) return {};
+  if (!isRecord(value)) {
+    throw new NotificationOutboxPayloadError('invalid-recipient-freeze', OUTBOX_PAYLOAD_VERSION);
+  }
+  exactKeys(value, [
+    'cohortKey',
+    'algorithmVersion',
+    'basisKind',
+    'basisRef',
+    'computedAt',
+    'cohortSize',
+  ]);
+  if (
+    !Array.isArray(value.basisRef) ||
+    value.basisRef.some((item) => typeof item !== 'string') ||
+    !Number.isSafeInteger(value.algorithmVersion) ||
+    (value.algorithmVersion as number) < 1 ||
+    !Number.isSafeInteger(value.cohortSize) ||
+    (value.cohortSize as number) < 0
+  ) {
+    throw new NotificationOutboxPayloadError('invalid-recipient-freeze', OUTBOX_PAYLOAD_VERSION);
+  }
+  return {
+    recipientFreeze: {
+      cohortKey: shortString(value.cohortKey, 300),
+      algorithmVersion: value.algorithmVersion as number,
+      basisKind: shortString(value.basisKind, 64),
+      basisRef: (value.basisRef as string[]).map((item) => shortString(item, 128)),
+      computedAt: shortString(value.computedAt, 40),
+      cohortSize: value.cohortSize as number,
+    },
+  };
 }
 
 function cuid(value: unknown): string {

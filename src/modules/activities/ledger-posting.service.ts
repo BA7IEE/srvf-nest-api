@@ -30,6 +30,7 @@ import {
   type LedgerDayStateBaseline,
 } from './ledger-preparation.service';
 import { SettlementNotificationProducer } from './settlement-notification-producer';
+import { freezeResponsibility } from './activity-recipient-freeze';
 
 // ===== 活动改造 v1.1 第 2 批第五刀:§5.13 万人短事务统一生效 =====
 //
@@ -331,7 +332,14 @@ export class LedgerPostingService {
         settlementVersion: version.version,
         postingBatchId: batch.id,
         memberCount: memberIds.length,
-        ownerMemberId: await this.readOwnerMemberId(tx, activityId),
+        cohort: await freezeResponsibility(tx, {
+          cohortKey: `settlement-ledger-commit:${batch.id}`,
+          aggregateType: 'activity',
+          aggregateIds: [activityId],
+          basisRef: [`postingBatch:${batch.id}`],
+          memberIds: [await this.readOwnerMemberId(tx, activityId)],
+          at: now,
+        }),
       });
 
       // ⑫ audit —— 刻意放**最后一步**:它是 DoD「原子切换」那条判据的落点

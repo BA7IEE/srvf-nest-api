@@ -12,6 +12,7 @@ import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
 import { RbacService } from '../permissions/rbac.service';
 import { ActivityNotificationProducer } from './activity-notification-producer';
+import { freezeRegistrationRoster } from './activity-recipient-freeze';
 import { ActivityPositionAuditRecorder } from './activity-position-audit-recorder';
 import { getActivityCapacityHeadroom } from './activity-capacity';
 import {
@@ -303,6 +304,14 @@ export class ActivityPositionsService {
         await this.notificationProducer.enqueueWaitlistPromotions(tx, {
           activityTitle: promotion.activityTitle,
           promoted: promotion.promoted,
+          cohort: await freezeRegistrationRoster(tx, {
+            cohortKey: `waitlist-promote:position:${activityPositionId}:${updated.updatedAt.toISOString()}`,
+            aggregateType: 'activity_registration',
+            aggregateIds: promotion.promoted.map((item) => item.registrationId),
+            basisRef: [`activityPosition:${activityPositionId}`],
+            memberIds: promotion.promoted.map((item) => item.memberId),
+            at: updated.updatedAt,
+          }),
         });
         return this.toResponseDto(updated);
       });

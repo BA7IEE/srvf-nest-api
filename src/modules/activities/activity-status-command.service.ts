@@ -1,6 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { DictItemStatus, DictTypeStatus, MemberStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -20,6 +19,11 @@ import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { ACTIVITY_PHASE_ENDED, deriveActivityPhase } from './activity-phase';
 import { ActivityStateMachine } from './activity-state-machine';
 import { ActivityNotificationProducer } from './activity-notification-producer';
+import {
+  freezeAudienceTags,
+  freezeRegistrationRoster,
+  isFrozenCohort,
+} from './activity-recipient-freeze';
 import { ActivityPublishReviewService } from './activity-publish-review.service';
 import { ActivityAllocationModeService } from './activity-allocation-mode.service';
 import { cancelActivityRegistrationLifecycle } from '../activity-registrations/activity-cancellation-lifecycle';
@@ -32,8 +36,6 @@ import {
   PrismaTx,
   activitySafeSelect,
 } from './activity-access.service';
-
-const DICT_TYPE_MEMBER_AUDIENCE_TAG = 'member_audience_tag';
 
 /*
  * 活动的**状态流转命令族**(Phase 6-B 第三域第三刀,§3.2)。
@@ -65,50 +67,6 @@ export class ActivityStatusCommandService {
     if (!this.config.activityAudienceTags.httpEnabled) {
       throw new BizException(BizCode.SERVICE_UNAVAILABLE);
     }
-  }
-
-  private async resolveAudienceRecipientMemberIds(
-    tx: PrismaTx,
-    audienceTagCodes: string[],
-  ): Promise<string[]> {
-    if (audienceTagCodes.length === 0) {
-      const members = await tx.member.findMany({
-        where: { status: MemberStatus.ACTIVE, deletedAt: null },
-        select: { id: true },
-      });
-      return members.map((member) => member.id).sort();
-    }
-
-    const type = await tx.dictType.findFirst({
-      where: {
-        code: DICT_TYPE_MEMBER_AUDIENCE_TAG,
-        status: DictTypeStatus.ACTIVE,
-        deletedAt: null,
-      },
-      select: { id: true },
-    });
-    if (!type) throw new BizException(BizCode.BAD_REQUEST);
-
-    const tags = await tx.dictItem.findMany({
-      where: {
-        typeId: type.id,
-        code: { in: audienceTagCodes },
-        status: DictItemStatus.ACTIVE,
-        deletedAt: null,
-      },
-      select: { id: true },
-    });
-    if (tags.length !== audienceTagCodes.length) throw new BizException(BizCode.BAD_REQUEST);
-
-    const assignments = await tx.memberAudienceTagAssignment.findMany({
-      where: {
-        dictItemId: { in: tags.map((tag) => tag.id) },
-        revokedAt: null,
-        member: { status: MemberStatus.ACTIVE, deletedAt: null },
-      },
-      select: { memberId: true },
-    });
-    return [...new Set(assignments.map((assignment) => assignment.memberId))].sort();
   }
 
   async softDelete(
@@ -281,7 +239,14 @@ export class ActivityStatusCommandService {
         tx,
       });
 
+      const broadcastAudience = await freezeAudienceTags(tx, {
+        activityId: updated.id,
+        audienceTagCodes: null,
+        at: now,
+      });
+      if (isFrozenCohort(broadcastAudience)) throw new BizException(BizCode.BAD_REQUEST);
       await this.notificationProducer.enqueuePublished(tx, {
+        audience: broadcastAudience,
         activityId: updated.id,
         activityTitle: updated.title,
         publishedAt: now,
@@ -359,7 +324,13 @@ export class ActivityStatusCommandService {
         select: activitySafeSelect,
       });
 
-      const recipientMemberIds = await this.resolveAudienceRecipientMemberIds(tx, audienceTagCodes);
+      const audienceCohort = await freezeAudienceTags(tx, {
+        activityId: updated.id,
+        audienceTagCodes,
+        at: now,
+      });
+      if (!isFrozenCohort(audienceCohort)) throw new BizException(BizCode.BAD_REQUEST);
+      const recipientMemberIds = audienceCohort.memberIds;
       await this.activityAuditRecorder.logPublishWithAudienceTags({
         activityId: current.id,
         before: current,
@@ -380,7 +351,7 @@ export class ActivityStatusCommandService {
         startAt: updated.startAt,
         location: updated.location,
         requiresInsurance: updated.requiresInsurance,
-        memberIds: recipientMemberIds,
+        cohort: audienceCohort,
       });
       return toResponseDto(updated);
     });
@@ -510,7 +481,14 @@ export class ActivityStatusCommandService {
       activityTitle: updated.title,
       cancelledAt,
       cancelReason: dto.cancelReason ?? null,
-      memberIds: notificationMemberIds,
+      cohort: await freezeRegistrationRoster(tx, {
+        cohortKey: `activity-cancel:${current.id}:${cancelledAt.toISOString()}`,
+        aggregateType: 'activity',
+        aggregateIds: [current.id],
+        basisRef: [`cancel:${current.id}`],
+        memberIds: notificationMemberIds,
+        at: cancelledAt,
+      }),
     });
     return toResponseDto(updated);
   }
