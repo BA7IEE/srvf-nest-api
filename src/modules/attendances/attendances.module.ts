@@ -41,6 +41,7 @@ import { AppManagedActivityAttendancesController } from './controllers/app-manag
 import { ParticipationSummaryQueryService } from './participation-summary-query.service';
 import { AttendancePunchAuditRecorder } from './attendance-punch-audit-recorder';
 import { AttendancePunchCommandService } from './attendance-punch-command.service';
+import { AttendancePunchAccessService } from './attendance-punch-access.service';
 import { AttendancePunchLocationPolicy } from './attendance-punch-location-policy';
 import { AttendancePunchPresenter } from './attendance-punch-presenter';
 import { AttendancePunchSegmentRevisionService } from './attendance-punch-segment-revision.service';
@@ -140,6 +141,7 @@ import { AppMyAttendanceMemberCredentialController } from './controllers/app-my-
     AttendanceImportAttachmentService,
     AttendanceImportPreviewService,
     AttendancePunchCommandService,
+    AttendancePunchAccessService,
     AttendancePunchLocationPolicy,
     AttendancePunchPresenter,
     AttendancePunchSegmentRevisionService,
