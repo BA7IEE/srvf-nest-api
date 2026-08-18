@@ -38581,6 +38581,40 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "活动责任制工作流未启用(code=20036)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20036
+                      ],
+                      "description": "20036: 活动责任制工作流未启用",
+                      "example": 20036
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动责任制工作流未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "security": [

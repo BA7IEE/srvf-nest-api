@@ -607,6 +607,50 @@ describe('统一时间权威 —— 「写用库时钟、判用应用时钟」�
     },
   );
 
+  // ===== ⑤ 反方向:**故意**用库时钟的那几处,不许被「统一成应用时钟」顺手改掉 =====
+  //
+  // 断点②-a(封场)不属于本缺陷类:封场比的是 `checkOutCloseAt` / `terminationCheckOutDeadline`,
+  // 那是**用户排的日程**,不是任何时钟写的 —— 不存在「写用一个钟、判用另一个钟」。真实形态是
+  // 「同一批日程列,第 1–10 站用应用钟判、第 11 站用库钟判」。
+  //
+  // 这里**不动**封场,理由是它的库时钟更强而不是更弱:`now()` 取事务开始时刻,全事务恒定,
+  // 八步之间不会自己往前走,也不受进程钟漂影响(该理由写在 evidence-seal 的注释里)。
+  // 改成应用时钟 = 主动降级;把 `authoritativeNow` 反向灌给上游十站 = 全仓时钟注入框架,
+  // 本仓恒禁。于是这里只留一道**反向闸**:锁住这个选择,别让后来者拿「统一时间权威」当理由
+  // 把它一并改掉 —— 那会把一个正确的决定当成缺陷来「修」。
+  const SQL_CLOCK_BY_DESIGN: ReadonlyArray<{
+    readonly file: string;
+    readonly marker: string;
+    readonly why: string;
+  }> = [
+    {
+      file: 'src/modules/activities/evidence-seal.service.ts',
+      marker: 'SELECT "workflowRevision", now() AS "authoritativeNow"',
+      why: '封场八步共用一个「现在」= 事务开始时刻;抗进程钟漂,且八步之间不自走',
+    },
+    {
+      file: 'src/modules/activities/activity-closure.service.ts',
+      marker: 'now() AS "authoritativeNow"',
+      why: '关账判定与封场同源,同一事务单一「现在」',
+    },
+    {
+      file: 'src/modules/activities/activity-lifecycle.service.ts',
+      marker: 'SELECT now() AS "authoritativeNow"',
+      why: '生命周期推进与封场同源',
+    },
+  ];
+
+  it.each(SQL_CLOCK_BY_DESIGN.map((e) => [e.file, e] as const))(
+    '⑤%s 仍显式取库时钟(这是刻意的,不是本缺陷类的实例)',
+    (_label, entry) => {
+      const code = stripComments(fs.readFileSync(path.join(REPO_ROOT, entry.file), 'utf8'));
+      expect({ file: entry.file, '保留库时钟': code.includes(entry.marker) }).toEqual({
+        file: entry.file,
+        '保留库时钟': true,
+      });
+    },
+  );
+
   // ===== 阳性对照:判据自己必须能红 =====
   // 不做正对照的结构断言等于没有 —— 下面三条各自把一种规避手法喂给同一套分析器。
   describe('阳性对照(判据自身的真阳性)', () => {
