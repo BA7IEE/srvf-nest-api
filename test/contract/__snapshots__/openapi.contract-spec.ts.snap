@@ -92652,6 +92652,40 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
           "description": "组织节点状态非活跃,不能挂队员(code=17031)",
         },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20036: 活动责任制工作流未启用",
+                    "enum": [
+                      20036,
+                    ],
+                    "example": 20036,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动责任制工作流未启用",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动责任制工作流未启用(code=20036)",
+        },
       },
       "security": [
         {

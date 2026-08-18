@@ -145,6 +145,9 @@ export class SettlementDraftDispatchService {
           },
           total: 1,
           attempts: asyncMode ? 0 : 1,
+          // 写与判同源:领取判据是 `"availableAt" <= ${now}`(应用时钟),故此处显式写应用时钟,
+          // 不吃列上的 `@default(now())`(数据库时钟)。
+          availableAt: now,
           startedAt: asyncMode ? null : now,
           createdByUserId: currentUser.id,
         },

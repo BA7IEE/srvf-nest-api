@@ -1071,6 +1071,8 @@ async function ensureFixtureMemberships(
           organizationId,
           membershipType: MembershipType.PRIMARY,
           status: MembershipStatus.ACTIVE,
+          // 写与判同源:在册判定用应用时钟,故显式写应用时钟(见 clock-authority.spec.ts)。
+          startedAt: new Date(),
           reason: FIXTURE_NOTE,
         },
         select: { id: true },
@@ -1202,6 +1204,8 @@ async function ensureFixtureRoleBindings(
         scopeType: expected.scopeType,
         scopeOrgId,
         status: BindingStatus.ACTIVE,
+        // 写与判同源:判权用应用时钟比任期,故显式写应用时钟(见 clock-authority.spec.ts)。
+        startedAt: new Date(),
         note: FIXTURE_NOTE,
       },
       select: { id: true },

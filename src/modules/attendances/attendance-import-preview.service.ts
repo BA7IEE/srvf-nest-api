@@ -694,6 +694,9 @@ export class AttendanceImportPreviewService {
           payloadVersion: ATTENDANCE_IMPORT_EXECUTE_PAYLOAD_VERSION,
           payload,
           total: parsed.rows.length,
+          // 写与判同源:`ActivityBatchWorker.claimJob` 用应用时钟比 `availableAt`,
+          // 故入队显式写应用时钟,不吃列上的 `@default(now())`(数据库时钟)。
+          availableAt: new Date(),
           createdByUserId: currentUser.id,
         },
         select: {
@@ -1341,6 +1344,9 @@ export class AttendanceImportPreviewService {
           payloadVersion: 1,
           payload,
           total: 0,
+          // import_preview 当前由服务内联推进、不经 `claimJob`,但 `availableAt` 是**列级**判定位:
+          // 同一列在同一张表上被应用时钟判定,写侧一律显式,免得将来接进 worker 时静默失配。
+          availableAt: new Date(),
           createdByUserId: currentUser.id,
         },
         select: { id: true },

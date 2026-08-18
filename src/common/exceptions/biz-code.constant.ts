@@ -786,6 +786,14 @@ export const BizCode = {
     message: '活动当前状态不允许此操作',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 「开关没开」不是「状态不对」也不是「声明考勤非法」——它是本部署没上这个能力。
+  // 形状沿既有 `*_NOT_CONFIGURED` 一族(SMS 24030 / WECHAT 25030 / REALNAME 27030):
+  // 「未配置或未启用」= 503,客户端据此隐藏入口而不是提示用户改数据。
+  ACTIVITY_RESPONSIBILITY_WORKFLOW_NOT_ENABLED: {
+    code: 20036,
+    message: '活动责任制工作流未启用',
+    httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
+  },
   ACTIVITY_POSITION_HAS_ACTIVE_REGISTRATIONS: {
     code: 20031,
     message: '活动岗位仍有活跃报名,不可删除',

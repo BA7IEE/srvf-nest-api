@@ -291,6 +291,9 @@ export class StorageObjectLedgerService implements OnApplicationBootstrap {
           payloadVersion: STORAGE_OPERATION_PAYLOAD_VERSION,
           payload,
           requestHash: input.requestHash,
+          // 写与判同源:领取判据 `op."availableAt" <= ${now}` 用应用时钟,
+          // 故显式写应用时钟,不吃列上的 `@default(now())`(数据库时钟)。
+          availableAt: new Date(),
         },
       ],
       skipDuplicates: true,
@@ -376,6 +379,8 @@ export class StorageObjectLedgerService implements OnApplicationBootstrap {
               payloadVersion: STORAGE_OPERATION_PAYLOAD_VERSION,
               payload,
               requestHash,
+              // 写与判同源:同上,领取判据用应用时钟。
+              availableAt: new Date(),
             },
           ],
           skipDuplicates: true,

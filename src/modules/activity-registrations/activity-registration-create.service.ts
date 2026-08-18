@@ -266,6 +266,9 @@ export class ActivityRegistrationCreateService {
             currentFormVersionId: null,
             statusSummaryCode: 'active',
             sourceCode: input.sourceCode,
+            // 与同事务紧随其后的 updateMany 写同一个值:该列是候补排序键,必须全列同源。
+            // 不靠 `@default(now())`(库时钟)—— 那会让「建头」与「改头」两条腿取不同的钟。
+            registeredAt: submittedAt,
             ...(input.extras !== undefined
               ? { extras: input.extras as Prisma.InputJsonValue }
               : {}),

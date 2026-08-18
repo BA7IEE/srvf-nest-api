@@ -411,6 +411,8 @@ export class RegistrationCommandService {
           currentFormVersionId: null,
           statusSummaryCode: 'active',
           sourceCode: input.source,
+          // 同 activity-registration-create:与紧随的 updateMany 同源,不吃库时钟默认值。
+          registeredAt: now,
         },
         select: { id: true, currentRevision: true },
       }));
