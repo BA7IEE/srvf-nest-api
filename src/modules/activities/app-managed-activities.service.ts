@@ -159,7 +159,9 @@ export class AppManagedActivitiesService {
     auditMeta: AuditMeta,
   ): Promise<AppManagedActivityDetailDto> {
     if (!this.config.activityResponsibilityWorkflow.enabled) {
-      throw new BizException(BizCode.ACTIVITY_ATTENDANCE_DECLARATION_INVALID);
+      // 开关关闭 = 本部署没上责任制工作流,与「考勤声明非法」(20039)毫无关系 ——
+      // 那是历史误用的码,其真身在下面的 declareAttendanceComplete。
+      throw new BizException(BizCode.ACTIVITY_RESPONSIBILITY_WORKFLOW_NOT_ENABLED);
     }
     if (!user.memberId) throw new BizException(BizCode.FORBIDDEN);
     // 仅兼容既有的 App 管理草稿默认字段；allocationModeCode 不在这里兜底，所有新建

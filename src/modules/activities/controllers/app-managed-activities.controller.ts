@@ -172,6 +172,7 @@ export class AppManagedActivitiesController {
     BizCode.ACTIVITY_ORGANIZATION_ROOT_FORBIDDEN,
     BizCode.ACTIVITY_INITIATOR_NOT_FORMAL,
     BizCode.ACTIVITY_INITIATION_ORG_FORBIDDEN,
+    BizCode.ACTIVITY_RESPONSIBILITY_WORKFLOW_NOT_ENABLED,
   )
   async create(
     @CurrentUser() user: CurrentUserPayload,
