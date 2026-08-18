@@ -524,7 +524,7 @@ describe('统一时间权威 —— 「写用库时钟、判用应用时钟」�
     const unregistered = declared
       .map(({ model, column }) => key(model, column))
       .filter((k) => !registered.has(k));
-    expect({ '未登记的时间列': unregistered }).toEqual({ '未登记的时间列': [] });
+    expect({ 未登记的时间列: unregistered }).toEqual({ 未登记的时间列: [] });
 
     // 反向:登记表里不许有 schema 已不存在的列(改名/删列后留下的死条目)
     const declaredKeys = new Set(declared.map(({ model, column }) => key(model, column)));
@@ -538,7 +538,7 @@ describe('统一时间权威 —— 「写用库时钟、判用应用时钟」�
       ...NOT_CLOCK_CRITICAL.map((e) => key(e.model, e.column)),
     ];
     const duplicated = all.filter((k, i) => all.indexOf(k) !== i);
-    expect({ '被多张登记表同时收录': duplicated }).toEqual({ '被多张登记表同时收录': [] });
+    expect({ 被多张登记表同时收录: duplicated }).toEqual({ 被多张登记表同时收录: [] });
   });
 
   // ===== ② 判定点仍在 =====
@@ -566,8 +566,10 @@ describe('统一时间权威 —— 「写用库时钟、判用应用时钟」�
       // 3a. 漏写 ⇒ 吃 `@default(now())`(库时钟)。这是缺陷类本体。
       const missing = discovered
         .filter((w) => w.valueExpr === null)
-        .map((w) => `${w.file}:${w.line} 未显式写 ${entry.column} ⇒ 落到 DB @default(now())(库时钟)`);
-      expect({ '吃了库时钟默认值的写点': missing }).toEqual({ '吃了库时钟默认值的写点': [] });
+        .map(
+          (w) => `${w.file}:${w.line} 未显式写 ${entry.column} ⇒ 落到 DB @default(now())(库时钟)`,
+        );
+      expect({ 吃了库时钟默认值的写点: missing }).toEqual({ 吃了库时钟默认值的写点: [] });
 
       // 3b. spread 无法静态核验来源 ⇒ 要求显式(有 3a 兜底时才允许)
       const spread = discovered
@@ -583,9 +585,11 @@ describe('统一时间权威 —— 「写用库时钟、判用应用时钟」�
 
       // 3d. 值表达式不得取库时钟
       const dbClock = discovered
-        .filter((w) => w.valueExpr !== null && /now\(\)|authoritativeNow|\$queryRaw/.test(w.valueExpr))
+        .filter(
+          (w) => w.valueExpr !== null && /now\(\)|authoritativeNow|\$queryRaw/.test(w.valueExpr),
+        )
         .map((w) => `${w.file}:${w.line} → ${w.valueExpr ?? ''}`);
-      expect({ '值表达式取了库时钟': dbClock }).toEqual({ '值表达式取了库时钟': [] });
+      expect({ 值表达式取了库时钟: dbClock }).toEqual({ 值表达式取了库时钟: [] });
     },
   );
 
@@ -603,7 +607,7 @@ describe('统一时间权威 —— 「写用库时钟、判用应用时钟」�
             `${w.file}:${w.line} 显式写了 ${entry.column}(=${w.valueExpr ?? ''})—— 同一队列出现两个时钟权威;` +
             '要改成应用时钟须三处一起改,并把本列移进 CLOCK_CRITICAL_COLUMNS',
         );
-      expect({ '打破单一权威的写点': explicit }).toEqual({ '打破单一权威的写点': [] });
+      expect({ 打破单一权威的写点: explicit }).toEqual({ 打破单一权威的写点: [] });
     },
   );
 
@@ -644,9 +648,9 @@ describe('统一时间权威 —— 「写用库时钟、判用应用时钟」�
     '⑤%s 仍显式取库时钟(这是刻意的,不是本缺陷类的实例)',
     (_label, entry) => {
       const code = stripComments(fs.readFileSync(path.join(REPO_ROOT, entry.file), 'utf8'));
-      expect({ file: entry.file, '保留库时钟': code.includes(entry.marker) }).toEqual({
+      expect({ file: entry.file, 保留库时钟: code.includes(entry.marker) }).toEqual({
         file: entry.file,
-        '保留库时钟': true,
+        保留库时钟: true,
       });
     },
   );

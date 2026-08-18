@@ -39,7 +39,9 @@ describe('App 管理面建草稿 —— 责任制工作流开关关闭时的错�
 
     expect(error).toBeInstanceOf(BizException);
     // 整包比对:码、文案、httpStatus 一起钉住 —— 换成任何别的码都红。
-    expect((error as BizException).biz).toEqual(BizCode.ACTIVITY_RESPONSIBILITY_WORKFLOW_NOT_ENABLED);
+    expect((error as BizException).biz).toEqual(
+      BizCode.ACTIVITY_RESPONSIBILITY_WORKFLOW_NOT_ENABLED,
+    );
     expect((error as BizException).biz.code).toBe(20036);
   });
 
