@@ -49,6 +49,7 @@ import { AttendanceQrPresenter } from './attendance-qr-presenter';
 import { AttendanceMemberCredentialService } from './attendance-member-credential.service';
 import { AttendanceOfflinePackageTokenService } from './attendance-offline-package-token';
 import { AttendanceOfflinePackageService } from './attendance-offline-package.service';
+import { AttendanceOfflinePackageAccessService } from './attendance-offline-package-access.service';
 import { AttendanceOnsiteBatchJobService } from './attendance-onsite-batch-job.service';
 import { AttendanceImportAttachmentService } from './attendance-import-attachment.service';
 import { AttendanceImportPreviewService } from './attendance-import-preview.service';
@@ -134,6 +135,7 @@ import { AppMyAttendanceMemberCredentialController } from './controllers/app-my-
     AttendanceMemberCredentialService,
     AttendanceOfflinePackageTokenService,
     AttendanceOfflinePackageService,
+    AttendanceOfflinePackageAccessService,
     AttendanceOnsiteBatchJobService,
     AttendanceImportAttachmentService,
     AttendanceImportPreviewService,
