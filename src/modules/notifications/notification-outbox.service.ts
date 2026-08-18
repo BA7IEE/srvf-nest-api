@@ -132,6 +132,9 @@ export class NotificationOutboxService {
           destinationType: normalized.destinationType,
           destinationRef: normalized.destinationRef,
           status: OUTBOX_STATUS_PENDING,
+          // 写与判同源:领取判据 `"availableAt" <= ${now}` 用应用时钟,故显式写应用时钟,
+          // 不吃列上的 `@default(now())`(数据库时钟 —— 写与判两个权威)。
+          availableAt: new Date(),
         },
       ],
       skipDuplicates: true,
@@ -201,6 +204,8 @@ export class NotificationOutboxService {
         destinationType: normalized.destinationType,
         destinationRef: normalized.destinationRef,
         status: OUTBOX_STATUS_PENDING,
+        // 写与判同源:同 `enqueue()`,领取判据用应用时钟。
+        availableAt: new Date(),
       })),
       skipDuplicates: true,
     });
@@ -433,6 +438,8 @@ export class NotificationOutboxService {
             destinationType: normalized.destinationType,
             destinationRef: normalized.destinationRef,
             status: OUTBOX_STATUS_PENDING,
+            // 写与判同源:同 `enqueue()`,领取判据用应用时钟。
+            availableAt: new Date(),
           },
         ],
         skipDuplicates: true,
@@ -495,6 +502,8 @@ export class NotificationOutboxService {
           leaseOwner: null,
           lockedAt: null,
           leaseExpiresAt: null,
+          // 写与判同源:同 `enqueue()`,领取判据用应用时钟。
+          availableAt: new Date(),
         },
       ],
       skipDuplicates: true,

@@ -264,6 +264,9 @@ export class AttendanceOnsiteBatchJobService {
           payloadVersion: ONSITE_BULK_PUNCH_PAYLOAD_VERSION,
           payload,
           total: input.participationIdentityIds.length,
+          // 写与判同源:`ActivityBatchWorker.claimJob` 用应用时钟比 `availableAt`,
+          // 故入队显式写应用时钟,不吃列上的 `@default(now())`(数据库时钟)。
+          availableAt: new Date(),
           createdByUserId: currentUser.id,
         },
         select: {

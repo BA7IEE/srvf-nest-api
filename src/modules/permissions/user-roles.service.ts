@@ -273,6 +273,10 @@ export class UserRolesService {
           roleId: role.id,
           scopeType: BindingScopeType.GLOBAL,
           status: BindingStatus.ACTIVE,
+          // 写与判同源:判权用 `isWithinTerm(startedAt, endedAt, now)`(应用时钟),
+          // 故建绑定时显式写应用时钟。此前吃列上的 `@default(now())`(数据库时钟)——
+          // 库钟快于应用钟时,刚发的角色在判权侧「尚未生效」,静默无权限。
+          startedAt: new Date(),
           createdByUserId: actor.id,
         },
         select: { id: true, roleId: true, createdAt: true, createdByUserId: true },

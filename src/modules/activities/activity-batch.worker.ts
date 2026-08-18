@@ -157,10 +157,12 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
    */
   async drainOnce(options: { now?: Date } = {}): Promise<ActivityBatchDrainResult> {
     const now = options.now ?? new Date();
-    // Preserve the existing settlement worker's two-round protocol: a just-created ledger job
-    // may have an `availableAt` a few milliseconds after this round's `now`, so it is claimed on
-    // the next immediate round.  Create reconciliation jobs only after this round's claim, rather
-    // than letting a newly created expiry job steal that deterministic first turn.
+    // Preserve the existing settlement worker's two-round protocol: `ensurePrepareJob` stamps
+    // `availableAt = now + 1ms` off **this** round's clock, so a job created here is claimed on
+    // the next immediate round rather than this one.  (It used to rely on the database clock
+    // landing after the application clock — an accident, not a protocol.)  Create reconciliation
+    // jobs only after this round's claim, rather than letting a newly created expiry job steal
+    // that deterministic first turn.
     const ledgerJobsEnqueued = await this.enqueuePreparingBatches(now);
     const claimed = await this.claimJob(now);
     const reconciliationJobsEnqueued =
@@ -354,7 +356,7 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
     let enqueued = 0;
     for (const batch of batches) {
       try {
-        await this.preparation.ensurePrepareJob(batch.id);
+        await this.preparation.ensurePrepareJob(batch.id, { now });
         enqueued += 1;
       } catch (error) {
         // 批次刚被别的路径改走(退回作废 / 已被另一实例建过任务)是正常竞态,

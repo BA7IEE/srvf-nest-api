@@ -580,7 +580,9 @@ export class RecruitmentPromotionService {
     // VOL 归口部门 —— 终态 scoped-authz PR2:重指向 member_organization_memberships 的 PRIMARY 行
     //(默认 membershipType=PRIMARY/status=ACTIVE = 旧单部门语义;primary_active_unique 兜底:此刻仅此一条 active PRIMARY)。
     await tx.memberOrganizationMembership.create({
-      data: { memberId: member.id, organizationId: volOrgId },
+      // 写与判同源:在册判定(ActivityInitiationPolicy 等)用 `startedAt: { lte: now }`
+      // (应用时钟),故显式写应用时钟,不吃 `@default(now())`(数据库时钟)。
+      data: { memberId: member.id, organizationId: volOrgId, startedAt: new Date() },
     });
     // User:随机口令(密码登录天然关闭)、username=memberNo;passwordHash 取事务前预算结果
     // (bcrypt 不在事务回调内执行 = 超时硬化)。**登录通道分流(v0.40.0 H5 手机通道)**:

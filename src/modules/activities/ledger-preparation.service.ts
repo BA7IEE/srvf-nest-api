@@ -184,7 +184,19 @@ export class LedgerPreparationService {
   // =========================================================================
   // ① 建任务(§5.12 的入口)。幂等:`operationKey` 单列 unique 兜底。
   // =========================================================================
-  async ensurePrepareJob(postingBatchId: string): Promise<{ jobId: string; itemCount: number }> {
+  async ensurePrepareJob(
+    postingBatchId: string,
+    options: { now?: Date } = {},
+  ): Promise<{ jobId: string; itemCount: number }> {
+    // §时间权威:`availableAt` 必须由**判定侧那个时钟**写入。判定在 `ActivityBatchWorker.claimJob`
+    // (`"availableAt" <= ${now}`,应用时钟),故建 job 时把该轮的 `now` 一路传进来;缺省退回
+    // 本进程时钟,而**不是**列上的 `@default(now())`(那是数据库时钟 —— 写与判两个权威)。
+    //
+    // `+1ms` 不是余量而是**两轮协议的显式表达**:本轮建的 job 本轮不可领,下一轮才领
+    // (`activity-batch2-8a-auto-commit` 逐字断言 `rounds === 2`)。此前这条协议靠
+    // 「库钟 `now()` 落在应用钟 `now` 之后」这个偶然维持 —— 库钟一旦慢于应用钟,协议
+    // 自己就翻面;写成 `now + 1` 后它与两个时钟的相对快慢无关。
+    const availableAt = new Date((options.now ?? new Date()).getTime() + 1);
     return await this.prisma.$transaction(async (tx) => {
       const batch = await this.lockBatch(tx, postingBatchId);
       if (batch.statusCode !== 'preparing') {
@@ -223,6 +235,7 @@ export class LedgerPreparationService {
             [LEDGER_BASELINE_PAYLOAD_KEY]: {},
           },
           total: chunkCount,
+          availableAt,
         },
         select: { id: true },
       });

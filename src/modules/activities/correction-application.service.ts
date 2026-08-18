@@ -2004,6 +2004,9 @@ export class CorrectionApplicationService {
         total: 1,
         succeeded: 1,
         createdByUserId: args.actorUserId,
+        // 建时即 `succeeded`,但 `enqueuePreparingBatches` 可能把它退回 pending 重领 ⇒
+        // `availableAt` 仍是判定列,一律显式写应用时钟(与 `claimJob` 同源)。
+        availableAt: now,
         startedAt: now,
         completedAt: now,
       },
