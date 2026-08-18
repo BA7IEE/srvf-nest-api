@@ -309,8 +309,11 @@ describe('收件人冻结 —— D2 五条不变量', () => {
       for (const file of ACTIVITY_PRODUCERS) {
         const code = stripComments(readSource(`${MODULE_DIR}/${file}`));
         // 裸名单入参是本刀之前的形状;留一个就等于留一条绕过冻结的门。
-        expect(code).not.toMatch(/\bmemberIds:\s*(readonly\s+)?string\[\]/);
-        expect(code).not.toMatch(/\bownerMemberId:\s*string\s*\|\s*null/);
+        //
+        // ⚠️ `\??:` 不是顺手写的:变异对拍实测,只写 `memberIds:` 时把参数改成**可选**的
+        //    `memberIds?: string[]` 就能从判据底下溜过去 —— 而可选参数照样是一条门。
+        expect(code).not.toMatch(/\bmemberIds\??:\s*(readonly\s+)?string\[\]/);
+        expect(code).not.toMatch(/\bownerMemberId\??:\s*string\s*\|\s*null/);
       }
     });
 
