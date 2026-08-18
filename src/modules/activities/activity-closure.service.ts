@@ -873,6 +873,10 @@ export class ActivityClosureService {
       capacityReconciliationMismatch: ledgerRows?.capacityReconciliationMismatch ?? 0,
     };
 
+    const manualReviewPending = await tx.offlinePunchReviewItem.count({
+      where: { activityId, statusCode: 'pending' },
+    });
+
     // ⑧ active closure(§5.15 ⑨)。
     const activeClosure = await tx.activitySettlementClosureRevision.count({
       where: { activityId, statusCode: 'active' },
@@ -884,12 +888,7 @@ export class ActivityClosureService {
       pendingWork: {
         pendingChangeReview: pending?.pendingChangeReview ?? 0,
         pendingCorrection: pending?.pendingCorrection ?? 0,
-        // 🔴 **诚实标注**:真源表 `OfflinePunchReviewItem`(§5.7)在 §3 数据模型里从未定义,
-        //    AMENDMENTS-v1.1.1 §3 已把「补齐两表字段表」裁定为第 6 批开工硬门,并明禁
-        //    从散文推导表结构。⇒ 这一项今天在结构上恒为 0:闸接好了、待接线,
-        //    **不是**"已经守住了"(与第一刀封场逐字同一处置)。第 6 批建表时只需把
-        //    真实计数填进来,本类的缺口码与判据一个字都不用改。
-        manualReviewPending: 0,
+        manualReviewPending,
         openSegment: pending?.openSegment ?? 0,
         unfinishedJob: pending?.unfinishedJob ?? 0,
       },

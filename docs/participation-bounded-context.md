@@ -28,7 +28,7 @@
 | [`src/modules/activity-registrations/`](../src/modules/activity-registrations/) | `ActivityRegistration` | 报名 5 态(`pending/pass/reject/cancelled/waitlisted`);活动 ↔ 队员 关联 |
 | [`src/modules/attendances/`](../src/modules/attendances/) | `AttendanceSheet` / `AttendanceRecord` / `ActivityCheckIn` | 考勤、终审、贡献值落地；`ActivityCheckIn` 是 append-only 打卡证据，F2 提供 canonical App self 写/读且首次位置校验 fail-closed，F3 提供 canonical Admin 证据列表与只读考勤草稿，活动岗位 F4 把岗位时段/角色接入打卡、record 与草稿 |
 | [`src/modules/contribution-rules/`](../src/modules/contribution-rules/) | `ContributionRule` | 字典码键 lookup;配置实体而非流程实体 |
-| [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) | `ActivityFeedback` | 已完结活动评价；App 以 approved Sheet 下 live Record 判资格并锁本人；Admin 实名 list/summary；单次 aggregate 接入 activity participation-summary |
+| [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) | `ActivityFeedback` | 已完结活动评价；App 以最新 active closure 下 committed present 结果与生效服务账判资格并锁本人；Admin 实名 list/summary；单次 aggregate 接入 activity participation-summary |
 
 ### 2.2 Adjacent contexts(相邻上下文，不并入 participation module)
 
@@ -148,7 +148,7 @@ Certificate (不在 participation 图内)
 | 11. 撤回终审通过 | attendances | `reopen` → `approved → pending` | 保留 records / previousSnapshot / version,清空一审与终审责任字段;所有 approved-only 贡献读模型立即不再计入,重新 edit → approve → finalApprove 后恢复。撤回本身不发通知、不回滚历史报名准入 / 招新入队晋级结果;再次 finalApprove 复用既有通知。 |
 | 12. 主负责人声明考勤提交完成 | activities | 活动结束后当前 owner 写 `attendanceDeclaredCompleteAt/ByUserId` | 仅声明“Sheet 已全部提交”，不替代审核、不推进 Activity 主状态；与实时 Sheet 状态共同驱动 managed closure 读模型 |
 | 13. 责任闭环 | activities + attendances | `Activity.completed` + 已声明 + 所有未作废有效 Sheet=`approved` | 实时派生 `closed`；pending/returned/pending_final_review 均阻挡，rejected/final_rejected/软删 Sheet 不阻挡；不撤销 owner/scoped 权限 |
-| 14. 活动评价（F2 App） | activity-feedbacks | 本人 `PUT/GET feedback`；completed + `endAt + N 天` + approved AttendanceRecord 资格 | PUT 在模块自有事务内 create/update `ActivityFeedback`；GET 无评价恒 200/null；不改变 Attendance / Contribution / settlement 语义 |
+| 14. 活动评价（F2 App） | activity-feedbacks | 本人 `PUT/GET feedback`；completed + 最新 active closure 的 `closedAt + N 天` + 当前 `present` 结算结果和生效服务账资格 | PUT 在模块自有事务内 create/update `ActivityFeedback`；GET 无评价恒 200/null，纠错撤销资格时保留历史并标注 `eligibilityCorrected`；不改变 Attendance / Contribution / settlement 语义 |
 | —. ContributionRule 维护 | contribution-rules | ops 后台 CRUD;`status: ACTIVE / INACTIVE` | **不是流程状态实体**;仅作为预填配置,在 Step 7 被读取;`active_unique (activityTypeCode, attendanceRoleCode) WHERE deletedAt IS NULL AND status = 'ACTIVE'` 由 migration SQL 加 partial unique |
 
 > **D-INSURANCE v3 + D82 当前事实**：旧 header-only evidence 永久保留且不回填；新报名/重报在创建 RegistrationRevision 后写同头 revision-bound evidence。approval 对 currentRevision>0 只认该 revision 恰一份 evidence，不回落旧头证据；currentRevision=0 仅兼容恰一份 revisionId=NULL legacy evidence。结构/FK/member/immutable 约束仍分别以 23514/23503/55000 fail-closed；gate=false 仍 0 evidence。上线须 drain→独立 deploy D81/D82→保持 drain 切整批 runtime，禁新旧混跑或旧版回滚。
@@ -207,7 +207,7 @@ Certificate (不在 participation 图内)
 | `activity-registrations` → `member-profiles` / `certificates` / `insurances` 的资格事实读取 | ✅ 限定例外 | 统一 evaluator 只能调用三个所属模块的窄 read service：grade/profile/ACTIVE membership 与组织 closure、证书/培训标准完整覆盖、既有保险 single gate；不得在报名模块复制查询或另造保险算法，三个上游模块不得反向依赖 participation |
 | `activity-registrations` → `attachments` 的 registration-upload-session trusted facade | ✅ 限定例外 | 只供一次性报名附件会话：调用方在 Activity/Form/Session 根锁内做两次复校和 durable intent，facade 在事务外完成内容校验、Provider put/HEAD；禁止反向 `attachments → activity-registrations` 依赖，通用 Admin attachment 面也必须对该内部 owner fail-closed |
 | `contribution-rules` 在事务内读 / 写其它 participation 表 | ❌ 不允许 | ContributionRule 是配置实体,只被读,不读人 |
-| `activity-feedbacks` 读取 `Activity` / `AttendanceSheet` / `AttendanceRecord` | ✅ 限定例外 | 只为 completed/window、approved-only 到场资格与 Admin 评价率分母；直接读 Prisma，不 import 三个兄弟 god-service |
+| `activity-feedbacks` 读取 `Activity` / `AttendanceSheet` / `AttendanceRecord` / `ActivitySettlementClosureRevision` / `ParticipantSettlementResultRevision` / `ParticipationLedgerEntry` | ✅ 限定例外 | App 只为 completed、最新关账窗口与当前结算资格；Admin 仍为评价率分母读取 approved 考勤；直接读 Prisma，不 import 三个兄弟 god-service |
 | `activity-feedbacks` 写其它 participation 表 | ❌ 不允许 | 评价写只落 `ActivityFeedback`；不得改 Attendance / Contribution / settlement |
 | `activities` 的 `ActivityParticipationQueryService` 调 `ActivityFeedbacksQueryService.aggregateForActivity` | ✅ 限定例外 | F0 冻结的单向只读聚合出口；`ActivitiesModule → ActivityFeedbacksModule`，恰好 1 次 aggregate、无写入、不成环 |
 | 除上行外任一模块通过 `import { *Service } from '../<sibling>/...'` 调用兄弟 service | ❌ 不允许 | 不得借评价聚合例外扩散新的 participation service-to-service 调用；三个 god-service 仍保持零互调 |
@@ -233,9 +233,10 @@ Certificate (不在 participation 图内)
   Sheet submit/edit 的 registration 批量 IN 预取同步带岗位窗，按 record 逐条选择；草稿同一 relation
   带出岗位 `attendanceRoleCode/endAt`。无岗位或无独立岗位时段回落活动窗 / `member`，不新增 N+1、
   不改 ContributionRule 或任何度量口径。
-- **ActivityFeedback F2**:App PUT 在模块自有事务内固定读 Activity → approved attendance exists →
-  live feedback，再 create/update `ActivityFeedback`；GET 同样固定三读、零写。不得把评价逻辑混入
-  activities / attendances / activity-registrations god-service。
+- **ActivityFeedback F2**:App PUT 在模块自有事务内读 Activity → 最新 active closure → 该版本
+  committed present 结果与 closure 批次正向 service ledger → live feedback，再 create/update
+  `ActivityFeedback`；GET 零写并保留纠错前历史评价，资格撤销时标注 `eligibilityCorrected`。
+  不得把评价逻辑混入 activities / attendances / activity-registrations god-service。
 - **ActivityFeedback F3**:Admin list 固定 3 读（Activity + items + count），summary 固定 4 读
   （Activity + aggregate + rating groupBy + approved distinct members）；activity participation-summary
   复用单次 aggregate，总业务查询固定 4 次。全部只读、无 N+1、无 audit。

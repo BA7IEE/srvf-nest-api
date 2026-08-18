@@ -117737,7 +117737,9 @@
           },
           "registrationDeadline": {
             "type": "string",
-            "description": "报名截止时间(ISO 8601)"
+            "description": "报名截止时间(ISO 8601)",
+            "nullable": true,
+            "format": "date-time"
           },
           "registrationNotes": {
             "type": "string",
@@ -117883,7 +117885,9 @@
           },
           "registrationDeadline": {
             "type": "string",
-            "description": "报名截止时间"
+            "description": "报名截止时间",
+            "nullable": true,
+            "format": "date-time"
           },
           "registrationNotes": {
             "type": "string",
@@ -120059,7 +120063,9 @@
             "maxLength": 64
           },
           "registrationDeadline": {
-            "type": "string"
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
           },
           "registrationNotes": {
             "type": "string",
@@ -122350,6 +122356,7 @@
           },
           "registrationDeadline": {
             "type": "string",
+            "nullable": true,
             "format": "date-time"
           },
           "registrationNotes": {
@@ -127624,13 +127631,18 @@
             "format": "date-time",
             "type": "string",
             "description": "最近修改时间(ISO 8601 UTC)"
+          },
+          "eligibilityCorrected": {
+            "type": "boolean",
+            "description": "最新结算纠错是否已撤销本人的当前评价资格；历史评价仍保留"
           }
         },
         "required": [
           "rating",
           "comment",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "eligibilityCorrected"
         ]
       },
       "AppActivityFeedbackResponseDto": {
@@ -127648,11 +127660,11 @@
           },
           "canSubmit": {
             "type": "boolean",
-            "description": "当前是否满足 completed、窗口与 approved 到场资格"
+            "description": "当前是否满足 completed、最新关账窗口与有效结算资格"
           },
           "windowClosesAt": {
             "type": "string",
-            "description": "评价窗口关闭时刻(Activity.endAt + 配置天数，ISO 8601 UTC)",
+            "description": "评价窗口关闭时刻(最新 active closure.closedAt + 配置天数，ISO 8601 UTC)",
             "format": "date-time"
           }
         },

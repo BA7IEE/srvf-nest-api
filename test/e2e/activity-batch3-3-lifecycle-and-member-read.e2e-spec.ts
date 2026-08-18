@@ -512,6 +512,117 @@ describe('Activity batch3 slice3 lifecycle and member read surfaces', () => {
     expectBizError(terminateConflict, BizCode.ACTIVITY_LIFECYCLE_OPERATION_KEY_CONFLICT);
   });
 
+  it('AC-015 persists a 30-minute termination checkout deadline and revokes only unfinished check-in QR credentials', async () => {
+    const owner = await createMember('termination-window-owner');
+    const now = await databaseNow();
+    const activity = await createActivity({
+      title: '提前终止后的三十分钟签退窗口',
+      statusCode: 'published',
+      initiatorMemberId: owner.memberId,
+      startAt: new Date(now.getTime() - 2 * 60 * 60_000),
+      endAt: new Date(now.getTime() + 4 * 60 * 60_000),
+    });
+    await assignOwner(activity.id, owner);
+    const live = await createSession(activity.id, {
+      startAt: new Date(now.getTime() - 60 * 60_000),
+      endAt: new Date(now.getTime() + 2 * 60 * 60_000),
+    });
+    const future = await createSession(activity.id, {
+      startAt: new Date(now.getTime() + 60 * 60_000),
+      endAt: new Date(now.getTime() + 3 * 60 * 60_000),
+    });
+    const finished = await createSession(activity.id, {
+      startAt: new Date(now.getTime() - 4 * 60 * 60_000),
+      endAt: new Date(now.getTime() - 3 * 60 * 60_000),
+    });
+    const sessions = await prisma.activitySession.findMany({
+      where: { id: { in: [live.id, future.id, finished.id] } },
+      select: {
+        id: true,
+        checkInOpenAt: true,
+        checkInCloseAt: true,
+        checkOutOpenAt: true,
+        checkOutCloseAt: true,
+      },
+    });
+    await prisma.attendanceQrCredential.createMany({
+      data: sessions.flatMap((session) =>
+        (['check_in', 'check_out'] as const).map((actionCode) => ({
+          activityId: activity.id,
+          sessionId: session.id,
+          actionCode,
+          credentialVersion: 1,
+          statusCode: 'active',
+          tokenDigest: 'a'.repeat(64),
+          signingKeyVersion: 0,
+          validFrom: actionCode === 'check_in' ? session.checkInOpenAt : session.checkOutOpenAt,
+          validUntil: actionCode === 'check_in' ? session.checkInCloseAt : session.checkOutCloseAt,
+          issuedByUserId: owner.userId,
+          issuedAt: now,
+        })),
+      ),
+    });
+
+    const response = await terminate(activity.id, owner.auth, {
+      reason: '雷暴提前收场',
+      operationKey: `b3-s3-termination-window-${++sequence}`,
+    });
+    expect(response.status).toBe(200);
+    const terminatedAt = new Date(response.body.data.occurredAt as string);
+    const expectedDeadline = new Date(terminatedAt.getTime() + 30 * 60_000);
+    const sessionRows = await prisma.activitySession.findMany({
+      where: { id: { in: [live.id, future.id, finished.id] } },
+      select: { id: true, terminationCheckOutDeadline: true },
+      orderBy: { id: 'asc' },
+    });
+    expect(
+      sessionRows.find((session) => session.id === live.id)?.terminationCheckOutDeadline,
+    ).toEqual(expectedDeadline);
+    expect(
+      sessionRows.find((session) => session.id === future.id)?.terminationCheckOutDeadline,
+    ).toEqual(expectedDeadline);
+    expect(
+      sessionRows.find((session) => session.id === finished.id)?.terminationCheckOutDeadline,
+    ).toBeNull();
+
+    const credentialRows = await prisma.attendanceQrCredential.findMany({
+      where: { activityId: activity.id },
+      select: {
+        sessionId: true,
+        actionCode: true,
+        statusCode: true,
+        revokedAt: true,
+        revokedByUserId: true,
+      },
+    });
+    for (const sessionId of [live.id, future.id]) {
+      expect(credentialRows).toContainEqual(
+        expect.objectContaining({
+          sessionId,
+          actionCode: 'check_in',
+          statusCode: 'revoked',
+          revokedAt: terminatedAt,
+          revokedByUserId: owner.userId,
+        }),
+      );
+      expect(credentialRows).toContainEqual(
+        expect.objectContaining({
+          sessionId,
+          actionCode: 'check_out',
+          statusCode: 'active',
+          revokedAt: null,
+        }),
+      );
+    }
+    expect(credentialRows).toContainEqual(
+      expect.objectContaining({
+        sessionId: finished.id,
+        actionCode: 'check_in',
+        statusCode: 'active',
+      }),
+    );
+  });
+
   // ===== 2. clone：只能复制配置，事实表实际 delegate 写次数必须为零 =====
 
   const WRITE_METHODS = new Set([
@@ -876,6 +987,121 @@ describe('Activity batch3 slice3 lifecycle and member read surfaces', () => {
         BizCode.ACTIVITY_NOT_FOUND,
       );
     }
+  });
+
+  it('AC-011 exposes ordinary activities only to formal members while preserving qualification reasons', async () => {
+    const formal = await createMember('formal-visibility');
+    const nonFormal = await createMember('non-formal-visibility');
+    await prisma.member.update({
+      where: { id: nonFormal.memberId },
+      data: { gradeCode: 'volunteer' },
+    });
+    const activity = await createActivity({
+      title: 'AC-011 正式会员可见活动',
+      statusCode: 'published',
+      visibilityCode: 'internal',
+      startAt: FUTURE_START,
+      endAt: FUTURE_END,
+    });
+    await prisma.activity.update({
+      where: { id: activity.id },
+      data: { isPublicRegistration: true },
+    });
+    const ruleSet = await prisma.activityQualificationRuleSet.create({
+      data: {
+        activityId: activity.id,
+        version: 1,
+        statusCode: 'draft',
+        rules: {
+          create: {
+            ruleTypeCode: 'grade',
+            enforcementCode: 'block',
+            operator: 'in',
+            valueJson: { codes: ['level-7'] },
+            message: '需要 level-7 正式级别',
+            sortOrder: 1,
+          },
+        },
+      },
+      select: { id: true },
+    });
+    await prisma.activityQualificationRuleSet.update({
+      where: { id: ruleSet.id },
+      data: { statusCode: 'active' },
+    });
+
+    const formalDirectory = await request(httpServer(app))
+      .get(`/api/app/v1/activities?page=1&pageSize=10&q=${encodeURIComponent('AC-011')}`)
+      .set('Authorization', formal.auth);
+    expect(formalDirectory.status).toBe(200);
+    expect(formalDirectory.body.data.items).toEqual([expect.objectContaining({ id: activity.id })]);
+    const formalDetail = await request(httpServer(app))
+      .get(`/api/app/v1/activities/${activity.id}`)
+      .set('Authorization', formal.auth);
+    expect(formalDetail.status).toBe(200);
+    expect(formalDetail.body.data.qualification).toEqual({
+      resultCode: 'fail',
+      unmetRules: [
+        expect.objectContaining({
+          enforcementCode: 'block',
+          resultCode: 'fail',
+          message: '需要 level-7 正式级别',
+        }),
+      ],
+    });
+
+    const hiddenDirectory = await request(httpServer(app))
+      .get(`/api/app/v1/activities?page=1&pageSize=10&q=${encodeURIComponent('AC-011')}`)
+      .set('Authorization', nonFormal.auth);
+    expect(hiddenDirectory.status).toBe(200);
+    expect(hiddenDirectory.body.data.items).toEqual([]);
+    const hiddenAvailable = await request(httpServer(app))
+      .get('/api/app/v1/activities/available?page=1&pageSize=100')
+      .set('Authorization', nonFormal.auth);
+    expect(hiddenAvailable.status).toBe(200);
+    expect(
+      (hiddenAvailable.body.data.items as Array<{ id: string }>).map((item) => item.id),
+    ).not.toContain(activity.id);
+    expectBizError(
+      await request(httpServer(app))
+        .get(`/api/app/v1/activities/${activity.id}`)
+        .set('Authorization', nonFormal.auth),
+      BizCode.ACTIVITY_NOT_FOUND,
+    );
+    expectBizError(
+      await request(httpServer(app))
+        .get(`/api/app/v1/activities/${activity.id}/positions`)
+        .set('Authorization', nonFormal.auth),
+      BizCode.ACTIVITY_NOT_FOUND,
+    );
+
+    const invitedActivity = await createActivity({
+      title: 'AC-011 非正式会员受邀可见',
+      statusCode: 'published',
+      registrationModeCode: 'invitation_only',
+      visibilityCode: 'invitation',
+      startAt: FUTURE_START,
+      endAt: FUTURE_END,
+    });
+    await prisma.activityInvitation.create({
+      data: {
+        activityId: invitedActivity.id,
+        memberId: nonFormal.memberId,
+        statusCode: 'pending',
+        expiresAt: new Date('2099-12-31T00:00:00.000Z'),
+      },
+    });
+    const invitedDirectory = await request(httpServer(app))
+      .get(`/api/app/v1/activities?page=1&pageSize=10&q=${encodeURIComponent('AC-011 非正式')}`)
+      .set('Authorization', nonFormal.auth);
+    expect(invitedDirectory.status).toBe(200);
+    expect(invitedDirectory.body.data.items).toEqual([
+      expect.objectContaining({ id: invitedActivity.id }),
+    ]);
+    await request(httpServer(app))
+      .get(`/api/app/v1/activities/${invitedActivity.id}`)
+      .set('Authorization', nonFormal.auth)
+      .expect(200);
   });
 
   it('treats only unexpired pending invitations as visibility grants and exposes only the caller own invitation summaries', async () => {

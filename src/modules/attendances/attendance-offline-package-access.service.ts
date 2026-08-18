@@ -96,16 +96,22 @@ export function isUniqueConflict(error: unknown): boolean {
  */
 @Injectable()
 export class AttendanceOfflinePackageAccessService {
-  async lockActivity(tx: PrismaTx, activityId: string): Promise<void> {
+  async lockActivity(
+    tx: PrismaTx,
+    activityId: string,
+    allowedStatuses: readonly string[] = ['published'],
+  ): Promise<{ statusCode: string }> {
     const rows = await tx.$queryRaw<Array<{ id: string; statusCode: string }>>(Prisma.sql`
       SELECT "id", "statusCode" FROM "Activity"
       WHERE "id" = ${activityId} AND "deletedAt" IS NULL
       FOR UPDATE
     `);
     if (rows.length !== 1) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-    if (rows[0].statusCode !== 'published') {
+    const activity = rows[0];
+    if (!activity || !allowedStatuses.includes(activity.statusCode)) {
       throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
     }
+    return { statusCode: activity.statusCode };
   }
 
   async lockIssuableSession(
@@ -267,11 +273,15 @@ export class AttendanceOfflinePackageAccessService {
         checkInCloseAt: true,
         checkOutOpenAt: true,
         checkOutCloseAt: true,
+        terminationCheckOutDeadline: true,
       },
     });
     if (!session) return false;
     const from = action === 'check_in' ? session.checkInOpenAt : session.checkOutOpenAt;
-    const until = action === 'check_in' ? session.checkInCloseAt : session.checkOutCloseAt;
+    const until =
+      action === 'check_in'
+        ? session.checkInCloseAt
+        : (session.terminationCheckOutDeadline ?? session.checkOutCloseAt);
     return at >= from && at <= until;
   }
 

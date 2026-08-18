@@ -691,6 +691,84 @@ describe('机器关账 —— 十二步 / 八类硬检查 (合同 §5.15 + §3.2
       expect(details.openSegment).toBe(0);
     });
 
+    it('AC-061 待复核离线打卡 ⇒ 只有 pending_work_exists', async () => {
+      const fixture = await createClosureFixture();
+      const publishReview = await prisma.activityPublishReview.create({
+        data: {
+          activityId: fixture.activityId,
+          requestType: 'initial',
+          requestVersion: 1,
+          baseRevision: 0,
+          status: 'approved',
+          snapshot: {},
+          directPublish: true,
+          submittedByUserId: actor.id,
+          reviewedByUserId: actor.id,
+          reviewedAt: SEAL_AT,
+        },
+        select: { id: true },
+      });
+      const ruleSnapshot = await prisma.activityRuleSnapshot.create({
+        data: {
+          activityId: fixture.activityId,
+          workflowRevision: 0,
+          resolvedConfig: {},
+          snapshotHash: 'a'.repeat(64),
+          createdByReviewId: publishReview.id,
+        },
+        select: { id: true },
+      });
+      const offlinePackage = await prisma.offlinePackage.create({
+        data: {
+          activityId: fixture.activityId,
+          sessionId: fixture.sessionId,
+          operatorUserId: actor.id,
+          operatorMemberId: fixture.ownerMemberId,
+          deviceId: `${fixture.tag}-device`,
+          packageVersion: 1,
+          packageKeyVersion: 0,
+          statusCode: 'review_required',
+          tokenDigest: 'b'.repeat(64),
+          ruleSnapshotId: ruleSnapshot.id,
+          ruleSnapshotHash: 'a'.repeat(64),
+          workflowRevision: 0,
+          participantSnapshotHash: 'c'.repeat(64),
+          validFrom: SESSION_START,
+          validUntil: SESSION_END,
+          uploadUntil: new Date(SESSION_END.getTime() + 24 * 3600_000),
+          sequenceStart: 1,
+          nextExpectedSequence: 1,
+          chainAnchorHash: 'd'.repeat(64),
+          lastAcceptedHash: 'd'.repeat(64),
+          issuedAt: SESSION_START,
+          issueOperationKey: `${fixture.tag}-issue`,
+          issueRequestHash: 'e'.repeat(64),
+        },
+        select: { id: true },
+      });
+      await prisma.offlinePunchReviewItem.create({
+        data: {
+          offlinePackageId: offlinePackage.id,
+          activityId: fixture.activityId,
+          sessionId: fixture.sessionId,
+          sequence: 1,
+          eventKey: `${fixture.tag}-offline-review`,
+          statusCode: 'pending',
+          anomalyCode: 'package_revoked',
+          approvalPolicyCode: 'approvable',
+          stagedByUserId: actor.id,
+          stagedByMemberId: fixture.ownerMemberId,
+          stagedAt: SEAL_AT,
+        },
+      });
+
+      const details = expectOnlyGap(await runClose(fixture), 'pending_work_exists');
+      expect(details.manualReviewPending).toBe(1);
+      expect(details.openSegment).toBe(0);
+      expect(details.pendingCorrection).toBe(0);
+      await expectNothingWritten(fixture);
+    });
+
     it('④ 还有候补身份 ⇒ 只有 participation_unresolved(§5.15 ⑤ / §9.2 ⑥)', async () => {
       const fixture = await createClosureFixture();
       await prisma.activityParticipationIdentity.update({
@@ -826,6 +904,151 @@ describe('机器关账 —— 十二步 / 八类硬检查 (合同 §5.15 + §3.2
       await insertActiveClosure(fixture);
       const details = expectOnlyGap(await runClose(fixture), 'closure_already_active');
       expect(details).toEqual({ activeClosure: 1 });
+    });
+
+    it('AC-061 五种未完成事实一次返回完整结构化缺口且整事务零写', async () => {
+      const fixture = await createClosureFixture();
+
+      const checkIn = await prisma.attendancePunchEvent.create({
+        data: {
+          activityId: fixture.activityId,
+          sessionId: fixture.sessionId,
+          participationIdentityId: fixture.identityIds[0],
+          memberId: fixture.memberIds[0],
+          eventTypeCode: 'check_in',
+          sourceCode: 'self_qr',
+          occurredAt: SESSION_START,
+          receivedAt: SESSION_START,
+          operatorUserId: actor.id,
+          eventKey: `${fixture.tag}-five-gaps-in`,
+          requestHash: `${fixture.tag}-five-gaps-in-hash`,
+          evidenceRevision: 0,
+        },
+        select: { id: true },
+      });
+      await prisma.participantServiceSegmentRevision.create({
+        data: {
+          participationIdentityId: fixture.identityIds[0],
+          segmentKey: 'five-gaps-open',
+          revision: 0,
+          sourceCheckInEventId: checkIn.id,
+          resultCode: 'valid',
+          statusCode: 'draft',
+          checkInAt: SESSION_START,
+        },
+      });
+
+      await prisma.attendanceCorrectionRequest.create({
+        data: {
+          activityId: fixture.activityId,
+          settlementRunId: fixture.runId,
+          participationIdentityId: fixture.identityIds[0],
+          baseSettlementVersionId: fixture.versionId,
+          baseResultRevisionId: fixture.resultRevisionIds[0],
+          baseClosureRevision: 0,
+          requestTypeCode: 'service',
+          requestedChangeJson: { reason: 'five-gap-red-set' },
+          reason: '验收清算红集',
+          statusCode: 'pending',
+          submittedByUserId: actor.id,
+          submittedAt: SEAL_AT,
+        },
+      });
+
+      const missingMemberId = randomUUID();
+      await prisma.member.create({
+        data: {
+          id: missingMemberId,
+          memberNo: `${fixture.tag}-missing-result`,
+          displayName: `${fixture.tag} 待结算成员`,
+          gradeCode: 'level-2',
+        },
+      });
+      const missingRegistration = await prisma.activityRegistration.create({
+        data: {
+          activityId: fixture.activityId,
+          memberId: missingMemberId,
+          statusCode: 'pass',
+        },
+        select: { id: true },
+      });
+      await prisma.activityParticipationIdentity.create({
+        data: {
+          activityId: fixture.activityId,
+          sessionId: fixture.sessionId,
+          registrationId: missingRegistration.id,
+          memberId: missingMemberId,
+          currentStatusCode: 'pass',
+          populationIncluded: true,
+        },
+      });
+
+      const pendingBatch = await prisma.ledgerPostingBatch.create({
+        data: {
+          settlementRunId: fixture.runId,
+          settlementVersionId: fixture.versionId,
+          batchRevision: 2,
+          statusCode: 'ready',
+          requestKey: `${fixture.tag}-five-gaps-batch`,
+          requestHash: `${fixture.tag}-five-gaps-batch-hash`,
+          preparedCount: 1,
+          totalCount: 1,
+          preparedAt: SEAL_AT,
+          preparedByUserId: actor.id,
+        },
+        select: { id: true },
+      });
+      const committedEntry = await prisma.participationLedgerEntry.findFirstOrThrow({
+        where: { postingBatchId: fixture.batchId },
+        select: {
+          memberId: true,
+          activityId: true,
+          sessionId: true,
+          participationIdentityId: true,
+          resultRevisionId: true,
+          ledgerDate: true,
+          entryTypeCode: true,
+          serviceHoursDelta: true,
+          recognizedPointsDelta: true,
+          creditedPointsDelta: true,
+          cappedOutPointsDelta: true,
+          reversesEntryId: true,
+        },
+      });
+      await prisma.participationLedgerEntry.create({
+        data: {
+          ...committedEntry,
+          postingBatchId: pendingBatch.id,
+          entryKey: `${fixture.tag}-five-gaps-entry`,
+          operationKey: `${fixture.tag}-five-gaps-entry-operation`,
+          requestHash: `${fixture.tag}-five-gaps-entry-hash`,
+        },
+      });
+
+      await prisma.activityCapacityBucket.create({
+        data: {
+          activityId: fixture.activityId,
+          scopeTypeCode: 'session_participation',
+          scopeId: `${fixture.sessionId}:${fixture.tag}:five-gaps`,
+          capacity: 10,
+          occupied: 1,
+        },
+      });
+
+      const outcome = await runClose(fixture);
+      if (outcome.outcome !== 'blocked') throw new Error('五种缺口应阻止关账');
+      expect(outcome.gaps.map((gap) => gap.gapCode)).toEqual([
+        'pending_work_exists',
+        'settlement_incomplete',
+        'ledger_incomplete',
+      ]);
+      expect(outcome.gaps[0].details).toMatchObject({ pendingCorrection: 1, openSegment: 1 });
+      expect(outcome.gaps[1].details).toMatchObject({ populationWithoutResult: 1 });
+      expect(outcome.gaps[2].details).toMatchObject({
+        entriesInUncommittedBatch: 1,
+        capacityReconciliationMismatch: 1,
+      });
+      await expectNothingWritten(fixture);
     });
   });
 

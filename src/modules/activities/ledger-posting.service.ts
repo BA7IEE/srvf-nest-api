@@ -245,12 +245,18 @@ export class LedgerPostingService {
       await this.assertPreparedSetConsistent(tx, batch, version.id, deltas);
 
       const memberIds = [...new Set(deltas.map((row) => row.memberId))].sort();
+      // AC-058:不能只锁有账本分录的人。零积分/零时长成员仍可能有一条即将正式生效的
+      // 服务段;若漏锁,两个活动可同时通过 read-before-write。先把本活动全部待生效段的
+      // memberId 纳入同一把既有 member lock,再在锁内重读其他活动的 committed 段。
+      const segmentMemberIds = await this.readDraftSegmentMemberIds(tx, activityId);
+      const lockedMemberIds = [...new Set([...memberIds, ...segmentMemberIds])].sort();
 
       // ===== ⑤ ⭐ 恒串行闸(维护者 2026-08-04 拍板)—— 必须在 member 锁之前 =====
-      await this.acquireCommitBudget(tx, memberIds.length);
+      await this.acquireCommitBudget(tx, lockedMemberIds.length);
 
       // ===== ⑥ member advisory lock(既有 util,本刀不改)=====
-      await lockMembersForWrite(tx, memberIds);
+      await lockMembersForWrite(tx, lockedMemberIds);
+      await this.assertNoCrossActivitySegmentOverlap(tx, activityId);
 
       // ===== ⑦ day-state:缺行补齐 + 按 (memberId, ledgerDate) 排序 FOR UPDATE =====
       await this.createMissingDayStates(tx, deltas);
@@ -418,6 +424,53 @@ export class LedgerPostingService {
   }
 
   // ===== 分录集合 =========================================================
+
+  /** 本次 commit 会从 draft 切到 committed 的所有闭合服务段成员,包含零分录成员。 */
+  private async readDraftSegmentMemberIds(tx: PrismaTx, activityId: string): Promise<string[]> {
+    const rows = await tx.$queryRaw<Array<{ memberId: string }>>`
+      SELECT DISTINCT i."memberId"
+      FROM "ParticipantServiceSegmentRevision" s
+      JOIN "ActivityParticipationIdentity" i ON i.id = s."participationIdentityId"
+      WHERE i."activityId" = ${activityId}
+        AND s."statusCode" = 'draft'
+        AND s."resultCode" NOT IN ('voided', 'replaced')
+        AND s."checkOutAt" IS NOT NULL
+      ORDER BY i."memberId" ASC
+    `;
+    return rows.map((row) => row.memberId);
+  }
+
+  /**
+   * AC-058:成员锁内比较“本活动待生效段”与“其他活动已生效段”。区间统一按
+   * [checkInAt, checkOutAt) 左闭右开;同活动修订由既有 correction 流程处理,不在此误杀。
+   */
+  private async assertNoCrossActivitySegmentOverlap(
+    tx: PrismaTx,
+    activityId: string,
+  ): Promise<void> {
+    const rows = await tx.$queryRaw<Array<{ conflict: number }>>`
+      SELECT 1 AS conflict
+      FROM "ParticipantServiceSegmentRevision" candidate
+      JOIN "ActivityParticipationIdentity" candidate_identity
+        ON candidate_identity.id = candidate."participationIdentityId"
+      JOIN "ActivityParticipationIdentity" existing_identity
+        ON existing_identity."memberId" = candidate_identity."memberId"
+       AND existing_identity."activityId" <> candidate_identity."activityId"
+      JOIN "ParticipantServiceSegmentRevision" existing
+        ON existing."participationIdentityId" = existing_identity.id
+      WHERE candidate_identity."activityId" = ${activityId}
+        AND candidate."statusCode" = 'draft'
+        AND candidate."resultCode" NOT IN ('voided', 'replaced')
+        AND candidate."checkOutAt" IS NOT NULL
+        AND existing."statusCode" = 'committed'
+        AND existing."resultCode" NOT IN ('voided', 'replaced')
+        AND existing."checkOutAt" IS NOT NULL
+        AND candidate."checkInAt" < existing."checkOutAt"
+        AND existing."checkInAt" < candidate."checkOutAt"
+      LIMIT 1
+    `;
+    if (rows.length > 0) throw new BizException(BizCode.ATTENDANCE_TIME_OVERLAP);
+  }
 
   /**
    * 本批次分录按 (memberId, ledgerDate) 的聚合。

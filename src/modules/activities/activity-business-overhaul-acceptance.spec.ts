@@ -164,6 +164,32 @@ const BATCH2_ACCEPTANCE_DESTINATIONS: Readonly<Record<string, readonly Acceptanc
       needle: 'AttendancePunchEvent:本刀加列 importJobItemId 之后 trigger 四条判据重跑',
     },
   ],
+  // AC-058:账本批次在既有 member lock 内比较本活动待生效段与其他活动 committed 段。
+  'AC-058': [
+    {
+      file: 'test/e2e/activity-ledger-posting.e2e-spec.ts',
+      needle: 'AC-058 rejects a cross-activity service-time overlap inside the member commit lock',
+    },
+  ],
+  // AC-061:离线待复核既挡 EvidenceSeal，也进入关账 pending-work；五种缺口一次返回且零写。
+  'AC-061': [
+    {
+      file: 'test/e2e/activity-batch6-offline-writer.e2e-spec.ts',
+      needle:
+        'AC-061 blocks evidence seal on a pending offline review and releases it after rejection',
+    },
+    {
+      file: 'test/e2e/activity-settlement-closure.e2e-spec.ts',
+      needle: 'AC-061 五种未完成事实一次返回完整结构化缺口且整事务零写',
+    },
+  ],
+  // AC-065:评价窗口与资格都绑定最新 active closure；更正可新增资格，并标注被撤销资格的历史评价。
+  'AC-065': [
+    {
+      file: 'test/e2e/activity-feedbacks.e2e-spec.ts',
+      needle: 'AC-065 以最新 active closure 为窗口和资格真相，纠错后新增资格且撤销资格保留历史评价',
+    },
+  ],
   // AC-062 → test/e2e/activity-settlement-closure.e2e-spec.ts ›「30 人通过、0 结果」。
   'AC-062': [
     {
@@ -211,18 +237,12 @@ const BATCH2_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
   'AC-056': '缺同一北京日多活动的稳定分配顺序与 capped-out 展示断言。',
   // AC-057:跨北京零点的服务段来自第 5 批 Punch 链，当前第 2 批夹具未生产该形态。
   'AC-057': '卡第 5 批跨北京零点 Punch/服务段链。',
-  // AC-058:合同明确把 overlap 检查放在第 5 批的 member lock 内。
-  'AC-058': '卡第 5 批 member lock 内的跨活动时间重叠拒绝。',
-  // AC-060:#9 requestedChangeJson 结构尚未定义，且 absent/present 与评价资格联动未形成可验收形态。
-  'AC-060': '卡已知合同缺口 #9 requestedChangeJson 结构，以及 absent/present×评价资格联动。',
-  // AC-061:关闭 suite 已覆盖多个单点，但缺 pending correction 与未生效账同时纳入完整五项红集。
-  'AC-061': '缺 pending correction、未生效账与其余关账缺口的完整五项红集。',
+  // AC-060:#9 requestedChangeJson 结构尚未定义；评价资格联动已由 AC-065 独立收口。
+  'AC-060': '卡已知合同缺口 #9 requestedChangeJson 结构。',
   // AC-063:已有 close×close；未有 close 与最后终审/更正的真实并发屏障。
   'AC-063': '缺关账×最后终审、关账×最后更正的 Activity-lock 并发用例。',
   // AC-064:archive action 读写入口尚未在本刀开放，现有仅证明等待期不是永久截止。
   'AC-064': '卡后续 archive action；现有仅覆盖归档等待期不是更正永久截止。',
-  // AC-065:当前 feedback 从活动 endAt 起算，未有最新 ClosureRevision 及更正资格联动。
-  'AC-065': '卡最新 ClosureRevision 为评价窗口锚点及更正后资格联动。',
   // ADV-001:同 AC-047，需第 5 批真实最后签退的并发入口。
   'ADV-001': '卡第 5 批结算提交×最后一次合法签退的真并发入口。',
   // ADV-008:合同点名六个 10000 条 kill/recover 检查点，现有 8192 规模 test 不等价。
@@ -231,8 +251,8 @@ const BATCH2_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
   'ADV-010': '卡多活动记分×入队进度刷新的并发集成链。',
   // ADV-011:现有 partial unique 是串行覆盖，未有同 target 两个更正申请的真并发屏障。
   'ADV-011': '缺同一结算项两份更正申请的双实例真并发用例。',
-  // ADV-012:与 AC-060 相同的未定请求结构及评价资格联动。
-  'ADV-012': '卡已知合同缺口 #9 requestedChangeJson 结构与缺席转出勤后的评价联动。',
+  // ADV-012:缺席转出勤后的评价联动已由 AC-065 覆盖，仍卡未定请求结构。
+  'ADV-012': '卡已知合同缺口 #9 requestedChangeJson 结构。',
   // ADV-022:archive 未开放，且尚缺更正×关闭的双实例并发屏障。
   'ADV-022': '卡 archive action 与更正提交/生效×关账的真并发链。',
 };
@@ -265,6 +285,13 @@ const BATCH3_SLICE1_ACCEPTANCE_IDS = [
 const BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS: Readonly<
   Record<string, readonly AcceptanceDestination[]>
 > = {
+  // AC-005:null 走真实 App PATCH，数据库保持 NULL，不再投影成 1970。
+  'AC-005': [
+    {
+      file: 'test/e2e/app-managed-activities.e2e-spec.ts',
+      needle: 'AC-005 clears registrationDeadline to database NULL without a 1970 projection',
+    },
+  ],
   // AC-001:真实发起人资格由 policy 兜底；本刀补上管理员代建时 actor 与 initiator
   // 分离、且草稿责任表零写的端到端锚点。
   'AC-001': [
@@ -324,6 +351,31 @@ const BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS: Readonly<
       needle: 'rejects stale change proposals and leaves critical published fields behind review',
     },
   ],
+  // AC-011:正式会员可见普通活动；志愿者/非正式会员不可枚举，正式会员仍拿到资格原因。
+  'AC-011': [
+    {
+      file: 'test/e2e/activity-batch3-3-lifecycle-and-member-read.e2e-spec.ts',
+      needle:
+        'AC-011 exposes ordinary activities only to formal members while preserving qualification reasons',
+    },
+  ],
+  // AC-015:终止事务落 30 分钟 deadline、只撤签到码；在线/离线签退与员工清场均有 HTTP/PG 证据。
+  'AC-015': [
+    {
+      file: 'test/e2e/activity-batch3-3-lifecycle-and-member-read.e2e-spec.ts',
+      needle:
+        'AC-015 persists a 30-minute termination checkout deadline and revokes only unfinished check-in QR credentials',
+    },
+    {
+      file: 'test/e2e/activity-batch5-punch-runtime.e2e-spec.ts',
+      needle:
+        'AC-015 keeps normal checkout for 30 minutes after termination, then requires staff early-close',
+    },
+    {
+      file: 'test/e2e/activity-batch6-offline-writer.e2e-spec.ts',
+      needle: 'AC-015 accepts an already-issued offline checkout within the termination deadline',
+    },
+  ],
   // ADV-017:发布审核已在同一事务内投影真实 capacity bucket；活动和场次降容各有
   // “occupied=capacity 放行 → 降一拒 20147” 的 HTTP 针对性证据。
   'ADV-017': [
@@ -343,16 +395,13 @@ const BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS: Readonly<
 const BATCH3_SLICE1_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
   'AC-003': '卡第 3 刀 clone 生命周期端点；本刀不建 clone。',
   'AC-004': '卡第 3 刀 archive 生命周期读写；本刀不新增归档动作或定时任务。',
-  'AC-005': '缺“报名截止清空后页面与数据库均不出现 1970 年”的 App 端到端读写断言。',
   'AC-009':
     '发布链已覆盖根活动展示白名单与 Session/Position proposal；表单、资格、可见性、签到和计分规则仍卡第 4/5 批，整项不能提前结案。',
   'AC-010':
     '本刀已覆盖单场次 create/update/cancel 的变更审核；容量桶、二维码、人员影响、通知与结算人口仍是第 4/5/7 批接缝，整项不能提前结案。',
-  'AC-011': '卡第 3 刀普通活动可见性/可报名原因读面。',
   'AC-012': '卡第 3 刀邀请可见性读面。',
   'AC-013': '卡 S6：draft_editor 七值责任模型另立 D 档刀；本刀不给协作人草稿编辑能力。',
   'AC-014': '卡第 3 刀 cancel 与现场事实并发语义。',
-  'AC-015': '卡第 3 刀 terminate 后 30 分钟签退窗口。',
   'ADV-004': '卡第 3 刀普通取消×第一条现场签到真实并发。',
   'ADV-018': '卡第 2/3 刀单场次取消的人员和通知影响链。',
   'ADV-019': '卡第 3 刀正式/停用/非正式/未受邀可见性组合读面。',

@@ -6,7 +6,6 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
-import { ATTENDANCE_SHEET_STATUS } from '../attendances/attendances.dto';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
 import {
   AppActivityFeedbackResponseDto,
@@ -19,8 +18,14 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const ACTIVITY_GATE_SELECT = {
   id: true,
   statusCode: true,
-  endAt: true,
 } as const satisfies Prisma.ActivitySelect;
+
+const ACTIVE_CLOSURE_SELECT = {
+  revision: true,
+  closedAt: true,
+  settlementVersionId: true,
+  postingBatchId: true,
+} as const satisfies Prisma.ActivitySettlementClosureRevisionSelect;
 
 const APP_FEEDBACK_SELECT = {
   rating: true,
@@ -30,8 +35,17 @@ const APP_FEEDBACK_SELECT = {
 } as const satisfies Prisma.ActivityFeedbackSelect;
 
 type ActivityGateRow = Prisma.ActivityGetPayload<{ select: typeof ACTIVITY_GATE_SELECT }>;
+type ActiveClosureRow = Prisma.ActivitySettlementClosureRevisionGetPayload<{
+  select: typeof ACTIVE_CLOSURE_SELECT;
+}>;
 type AppFeedbackRow = Prisma.ActivityFeedbackGetPayload<{ select: typeof APP_FEEDBACK_SELECT }>;
-type FeedbackReadClient = Pick<PrismaService, 'activity' | 'attendanceRecord' | 'activityFeedback'>;
+type FeedbackReadClient = Pick<
+  PrismaService,
+  | 'activity'
+  | 'activitySettlementClosureRevision'
+  | 'participantSettlementResultRevision'
+  | 'activityFeedback'
+>;
 
 @Injectable()
 export class ActivityFeedbacksService {
@@ -51,14 +65,20 @@ export class ActivityFeedbacksService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        // 正常路径固定 3 次业务读：Activity → approved 资格 exists → live feedback。
         const activity = await this.findActivity(tx, activityId);
+        this.assertActivityCompleted(activity);
+        const closure = await this.findActiveClosureOrThrow(tx, activityId);
         const now = new Date();
-        const windowClosesAt = this.getWindowClosesAt(activity);
-        this.assertWriteWindow(activity, now, windowClosesAt);
+        const windowClosesAt = this.getWindowClosesAt(closure);
+        this.assertWriteWindow(now, windowClosesAt);
 
-        const hasApprovedAttendance = await this.hasApprovedAttendance(tx, activityId, memberId);
-        if (!hasApprovedAttendance) {
+        const hasCurrentEligibility = await this.hasSettlementEligibility(
+          tx,
+          activityId,
+          memberId,
+          closure,
+        );
+        if (!hasCurrentEligibility) {
           throw new BizException(BizCode.ACTIVITY_FEEDBACK_ATTENDANCE_REQUIRED);
         }
 
@@ -79,7 +99,7 @@ export class ActivityFeedbacksService {
                 select: APP_FEEDBACK_SELECT,
               });
 
-        return this.toResponse(feedback, true, windowClosesAt);
+        return this.toResponse(feedback, true, windowClosesAt, false);
       });
     } catch (error) {
       // 手写 partial unique 的 meta.target 在 Prisma / PostgreSQL 组合下不稳定；本写路径只有
@@ -98,24 +118,24 @@ export class ActivityFeedbacksService {
     const memberId = await this.resolveMemberIdOrThrow(currentUser);
     const now = new Date();
 
-    // 固定 3 次业务读；即使无评价，也要准确返回资格按钮态与本人 feedback:null。
     const activity = await this.findActivity(this.prisma, activityId);
-    const hasApprovedAttendance = await this.hasApprovedAttendance(
-      this.prisma,
-      activityId,
-      memberId,
-    );
-    const feedback = await this.prisma.activityFeedback.findFirst({
-      where: { activityId, memberId, deletedAt: null },
-      select: APP_FEEDBACK_SELECT,
-    });
-    const windowClosesAt = this.getWindowClosesAt(activity);
-    const canSubmit =
-      activity.statusCode === ACTIVITY_COMPLETED &&
-      now.getTime() <= windowClosesAt.getTime() &&
-      hasApprovedAttendance;
+    this.assertActivityCompleted(activity);
+    const closure = await this.findActiveClosureOrThrow(this.prisma, activityId);
+    const [hasCurrentEligibility, feedback] = await Promise.all([
+      this.hasSettlementEligibility(this.prisma, activityId, memberId, closure),
+      this.prisma.activityFeedback.findFirst({
+        where: { activityId, memberId, deletedAt: null },
+        select: APP_FEEDBACK_SELECT,
+      }),
+    ]);
+    const windowClosesAt = this.getWindowClosesAt(closure);
+    const canSubmit = now.getTime() <= windowClosesAt.getTime() && hasCurrentEligibility;
+    const eligibilityCorrected =
+      feedback !== null &&
+      !hasCurrentEligibility &&
+      (await this.wasEligibleBeforeLatestClosure(this.prisma, activityId, memberId, closure));
 
-    return this.toResponse(feedback, canSubmit, windowClosesAt);
+    return this.toResponse(feedback, canSubmit, windowClosesAt, eligibilityCorrected);
   }
 
   private async resolveMemberIdOrThrow(currentUser: CurrentUserPayload): Promise<string> {
@@ -138,34 +158,97 @@ export class ActivityFeedbacksService {
     return activity;
   }
 
-  private async hasApprovedAttendance(
+  private async findActiveClosureOrThrow(
+    client: FeedbackReadClient,
+    activityId: string,
+  ): Promise<ActiveClosureRow> {
+    const closure = await client.activitySettlementClosureRevision.findFirst({
+      where: { activityId, statusCode: 'active' },
+      select: ACTIVE_CLOSURE_SELECT,
+      orderBy: { revision: 'desc' },
+    });
+    if (closure === null) {
+      throw new BizException(BizCode.ACTIVITY_FEEDBACK_ACTIVITY_NOT_COMPLETED);
+    }
+    return closure;
+  }
+
+  private async hasSettlementEligibility(
     client: FeedbackReadClient,
     activityId: string,
     memberId: string,
+    closure: ActiveClosureRow,
   ): Promise<boolean> {
-    const attendance = await client.attendanceRecord.findFirst({
+    const result = await client.participantSettlementResultRevision.findFirst({
       where: {
-        memberId,
-        deletedAt: null,
-        sheet: {
-          activityId,
-          deletedAt: null,
-          statusCode: ATTENDANCE_SHEET_STATUS.APPROVED,
+        settlementVersionId: closure.settlementVersionId,
+        statusCode: 'committed',
+        resultCode: 'present',
+        identity: { activityId, memberId },
+        ledgerEntries: {
+          some: {
+            postingBatchId: closure.postingBatchId,
+            entryTypeCode: 'service_credit',
+            serviceHoursDelta: { gt: 0 },
+          },
         },
       },
       select: { id: true },
     });
-    return attendance !== null;
+    return result !== null;
   }
 
-  private getWindowClosesAt(activity: ActivityGateRow): Date {
-    return new Date(activity.endAt.getTime() + this.config.attendance.feedbackWindowDays * DAY_MS);
+  private async wasEligibleBeforeLatestClosure(
+    client: FeedbackReadClient,
+    activityId: string,
+    memberId: string,
+    latestClosure: ActiveClosureRow,
+  ): Promise<boolean> {
+    if (latestClosure.revision <= 1) return false;
+    const priorClosures = await client.activitySettlementClosureRevision.findMany({
+      where: {
+        activityId,
+        statusCode: 'superseded',
+        revision: { lt: latestClosure.revision },
+      },
+      select: { settlementVersionId: true, postingBatchId: true },
+      orderBy: { revision: 'desc' },
+    });
+    if (priorClosures.length === 0) return false;
+    const priorResult = await client.participantSettlementResultRevision.findFirst({
+      where: {
+        statusCode: 'committed',
+        resultCode: 'present',
+        identity: { activityId, memberId },
+        OR: priorClosures.map((closure) => ({
+          settlementVersionId: closure.settlementVersionId,
+          ledgerEntries: {
+            some: {
+              postingBatchId: closure.postingBatchId,
+              entryTypeCode: 'service_credit',
+              serviceHoursDelta: { gt: 0 },
+            },
+          },
+        })),
+      },
+      select: { id: true },
+    });
+    return priorResult !== null;
   }
 
-  private assertWriteWindow(activity: ActivityGateRow, now: Date, windowClosesAt: Date): void {
+  private getWindowClosesAt(closure: ActiveClosureRow): Date {
+    return new Date(
+      closure.closedAt.getTime() + this.config.attendance.feedbackWindowDays * DAY_MS,
+    );
+  }
+
+  private assertActivityCompleted(activity: ActivityGateRow): void {
     if (activity.statusCode !== ACTIVITY_COMPLETED) {
       throw new BizException(BizCode.ACTIVITY_FEEDBACK_ACTIVITY_NOT_COMPLETED);
     }
+  }
+
+  private assertWriteWindow(now: Date, windowClosesAt: Date): void {
     if (now.getTime() > windowClosesAt.getTime()) {
       throw new BizException(BizCode.ACTIVITY_FEEDBACK_WINDOW_CLOSED);
     }
@@ -175,6 +258,7 @@ export class ActivityFeedbacksService {
     feedback: AppFeedbackRow | null,
     canSubmit: boolean,
     windowClosesAt: Date,
+    eligibilityCorrected: boolean,
   ): AppActivityFeedbackResponseDto {
     return {
       feedback:
@@ -185,6 +269,7 @@ export class ActivityFeedbacksService {
               comment: feedback.comment,
               createdAt: feedback.createdAt,
               updatedAt: feedback.updatedAt,
+              eligibilityCorrected,
             },
       canSubmit,
       windowClosesAt: windowClosesAt.toISOString(),

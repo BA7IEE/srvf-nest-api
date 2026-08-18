@@ -170,10 +170,10 @@ export class CreateAppManagedActivityDto {
   @MaxLength(64)
   genderRequirementCode?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ nullable: true, type: String, format: 'date-time' })
   @IsOptional()
   @IsDateString()
-  registrationDeadline?: string;
+  registrationDeadline?: string | null;
 
   @ApiPropertyOptional({ maxLength: 500 })
   @IsOptional()
@@ -318,10 +318,10 @@ export class UpdateAppManagedActivityDto {
   @MaxLength(64)
   genderRequirementCode?: string;
 
-  @ApiPropertyOptional({ type: String, format: 'date-time' })
+  @ApiPropertyOptional({ nullable: true, type: String, format: 'date-time' })
   @IsOptional()
   @IsDateString()
-  registrationDeadline?: string;
+  registrationDeadline?: string | null;
 
   @ApiPropertyOptional({ maxLength: 500 })
   @IsOptional()

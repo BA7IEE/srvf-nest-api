@@ -262,7 +262,7 @@ export class AttendanceOfflinePackageService {
     return this.access.withUniqueReplay(() =>
       this.prisma.$transaction(
         async (tx) => {
-          await this.access.lockActivity(tx, input.activityId);
+          await this.access.lockActivity(tx, input.activityId, ['published', 'terminated']);
           const row = await this.access.lockPackage(tx, input.activityId, input.packageId);
           await this.access.requireManagedAttendance(tx, input.activityId, currentUser.memberId!);
           const keyed = await tx.offlinePackage.findUnique({
@@ -334,7 +334,10 @@ export class AttendanceOfflinePackageService {
     const outcome = await this.access.withUniqueReplay(() =>
       this.prisma.$transaction(
         async (tx) => {
-          await this.access.lockActivity(tx, input.activityId);
+          const activity = await this.access.lockActivity(tx, input.activityId, [
+            'published',
+            'terminated',
+          ]);
           await this.access.requireManagedAttendance(tx, input.activityId, uploaderMemberId);
           const offlinePackage = await this.access.lockPackage(
             tx,
@@ -457,6 +460,10 @@ export class AttendanceOfflinePackageService {
               auditMeta,
             });
             return { kind: 'success' as const, receipt: replay.receipt };
+          }
+
+          if (activity.statusCode === 'terminated' && input.actionCode !== 'check_out') {
+            throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
           }
 
           const participantCurrent = frozenParticipant
@@ -631,7 +638,7 @@ export class AttendanceOfflinePackageService {
     if (input.currentUser.memberId === null) throw new BizException(BizCode.RBAC_FORBIDDEN);
     return this.prisma.$transaction(
       async (tx) => {
-        await this.access.lockActivity(tx, input.activityId);
+        await this.access.lockActivity(tx, input.activityId, ['published', 'terminated']);
         await this.access.requireManagedAttendance(
           tx,
           input.activityId,
@@ -713,7 +720,10 @@ export class AttendanceOfflinePackageService {
     return this.access.withUniqueReplay(() =>
       this.prisma.$transaction(
         async (tx) => {
-          await this.access.lockActivity(tx, input.activityId);
+          const activity = await this.access.lockActivity(tx, input.activityId, [
+            'published',
+            'terminated',
+          ]);
           const reference = await tx.offlinePunchReviewItem.findFirst({
             where: { id: input.reviewItemId, activityId: input.activityId },
             select: { offlinePackageId: true },
@@ -742,6 +752,13 @@ export class AttendanceOfflinePackageService {
             return this.presentReview(keyed);
           }
           if (review.statusCode !== 'pending') throw new BizException(BizCode.BAD_REQUEST);
+          if (
+            action === 'approve' &&
+            activity.statusCode === 'terminated' &&
+            review.actionCode !== 'check_out'
+          ) {
+            throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+          }
           if (action === 'approve' && review.approvalPolicyCode !== 'approvable') {
             throw new BizException(BizCode.BAD_REQUEST);
           }

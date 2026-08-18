@@ -23,16 +23,28 @@ const FEEDBACK = {
   updatedAt: new Date('2026-02-02T00:00:00.000Z'),
 };
 
+const ACTIVE_CLOSURE = {
+  revision: 1,
+  closedAt: new Date('2026-01-15T00:00:00.000Z'),
+  settlementVersionId: 'settlement-version-1',
+  postingBatchId: 'posting-batch-1',
+};
+
 function makeTx() {
   return {
     activity: {
       findFirst: jest.fn().mockResolvedValue({
         id: 'activity-1',
         statusCode: 'completed',
-        endAt: new Date('2026-01-15T00:00:00.000Z'),
       }),
     },
-    attendanceRecord: { findFirst: jest.fn().mockResolvedValue({ id: 'record-1' }) },
+    activitySettlementClosureRevision: {
+      findFirst: jest.fn().mockResolvedValue(ACTIVE_CLOSURE),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    participantSettlementResultRevision: {
+      findFirst: jest.fn().mockResolvedValue({ id: 'result-1' }),
+    },
     activityFeedback: {
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue(FEEDBACK),
@@ -78,22 +90,31 @@ describe('ActivityFeedbacksService App self flow', () => {
     jest.useRealTimers();
   });
 
-  it('首次 PUT：3 次业务读 + 1 create，scope 锁本人且缺省 comment 入库 null', async () => {
+  it('首次 PUT：active closure + 当前结算资格 + 1 create，scope 锁本人且缺省 comment 入库 null', async () => {
     const { service, tx, transaction } = makeService();
 
     const result = await service.upsertMine('activity-1', { rating: 5 }, USER);
 
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(tx.activity.findFirst).toHaveBeenCalledTimes(1);
-    expect(tx.attendanceRecord.findFirst).toHaveBeenCalledTimes(1);
+    expect(tx.activitySettlementClosureRevision.findFirst).toHaveBeenCalledTimes(1);
+    expect(tx.participantSettlementResultRevision.findFirst).toHaveBeenCalledTimes(1);
     expect(tx.activityFeedback.findFirst).toHaveBeenCalledTimes(1);
     expect(tx.activityFeedback.create).toHaveBeenCalledTimes(1);
     expect(tx.activityFeedback.update).not.toHaveBeenCalled();
-    expect(tx.attendanceRecord.findFirst).toHaveBeenCalledWith({
+    expect(tx.participantSettlementResultRevision.findFirst).toHaveBeenCalledWith({
       where: {
-        memberId: 'member-1',
-        deletedAt: null,
-        sheet: { activityId: 'activity-1', deletedAt: null, statusCode: 'approved' },
+        settlementVersionId: 'settlement-version-1',
+        statusCode: 'committed',
+        resultCode: 'present',
+        identity: { activityId: 'activity-1', memberId: 'member-1' },
+        ledgerEntries: {
+          some: {
+            postingBatchId: 'posting-batch-1',
+            entryTypeCode: 'service_credit',
+            serviceHoursDelta: { gt: 0 },
+          },
+        },
       },
       select: { id: true },
     });
@@ -102,7 +123,7 @@ describe('ActivityFeedbacksService App self flow', () => {
       select: { rating: true, comment: true, createdAt: true, updatedAt: true },
     });
     expect(result).toEqual({
-      feedback: FEEDBACK,
+      feedback: { ...FEEDBACK, eligibilityCorrected: false },
       canSubmit: true,
       windowClosesAt: '2026-02-14T00:00:00.000Z',
     });
@@ -128,18 +149,33 @@ describe('ActivityFeedbacksService App self flow', () => {
     tx.activity.findFirst.mockResolvedValue({
       id: 'activity-1',
       statusCode: 'published',
-      endAt: new Date('2026-01-15T00:00:00.000Z'),
     });
     const { service } = makeService({ tx });
 
     await expect(service.upsertMine('activity-1', { rating: 5 }, USER)).rejects.toEqual(
       new BizException(BizCode.ACTIVITY_FEEDBACK_ACTIVITY_NOT_COMPLETED),
     );
-    expect(tx.attendanceRecord.findFirst).not.toHaveBeenCalled();
+    expect(tx.activitySettlementClosureRevision.findFirst).not.toHaveBeenCalled();
+    expect(tx.participantSettlementResultRevision.findFirst).not.toHaveBeenCalled();
     expect(tx.activityFeedback.findFirst).not.toHaveBeenCalled();
   });
 
-  it('窗口边界：now === endAt+N 天允许；晚 1ms 返 35031', async () => {
+  it('无 active closure 的 GET/PUT 均复用 35030，且不查资格/feedback', async () => {
+    const tx = makeTx();
+    tx.activitySettlementClosureRevision.findFirst.mockResolvedValue(null);
+    const { service } = makeService({ tx });
+
+    await expect(service.upsertMine('activity-1', { rating: 5 }, USER)).rejects.toEqual(
+      new BizException(BizCode.ACTIVITY_FEEDBACK_ACTIVITY_NOT_COMPLETED),
+    );
+    await expect(service.getMine('activity-1', USER)).rejects.toEqual(
+      new BizException(BizCode.ACTIVITY_FEEDBACK_ACTIVITY_NOT_COMPLETED),
+    );
+    expect(tx.participantSettlementResultRevision.findFirst).not.toHaveBeenCalled();
+    expect(tx.activityFeedback.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('窗口边界：now === closure.closedAt+N 天允许；晚 1ms 返 35031', async () => {
     const atBoundary = makeService();
     jest.setSystemTime(new Date('2026-02-14T00:00:00.000Z'));
     await expect(
@@ -151,12 +187,12 @@ describe('ActivityFeedbacksService App self flow', () => {
     await expect(
       afterBoundary.service.upsertMine('activity-1', { rating: 1 }, USER),
     ).rejects.toEqual(new BizException(BizCode.ACTIVITY_FEEDBACK_WINDOW_CLOSED));
-    expect(afterBoundary.tx.attendanceRecord.findFirst).not.toHaveBeenCalled();
+    expect(afterBoundary.tx.participantSettlementResultRevision.findFirst).not.toHaveBeenCalled();
   });
 
-  it('无 approved live AttendanceRecord → 35032，且不查/写 feedback', async () => {
+  it('最新结算无 present + service_credit → 35032，且不查/写 feedback', async () => {
     const tx = makeTx();
-    tx.attendanceRecord.findFirst.mockResolvedValue(null);
+    tx.participantSettlementResultRevision.findFirst.mockResolvedValue(null);
     const { service } = makeService({ tx });
 
     await expect(service.upsertMine('activity-1', { rating: 5 }, USER)).rejects.toEqual(
@@ -181,7 +217,7 @@ describe('ActivityFeedbacksService App self flow', () => {
     );
   });
 
-  it('GET 无评价恒 200 形态：固定 3 读，feedback=null 且准确返回 canSubmit/window', async () => {
+  it('GET 无评价恒 200 形态：feedback=null 且准确返回 canSubmit/window', async () => {
     const { service, tx } = makeService();
 
     await expect(service.getMine('activity-1', USER)).resolves.toEqual({
@@ -190,7 +226,8 @@ describe('ActivityFeedbacksService App self flow', () => {
       windowClosesAt: '2026-02-14T00:00:00.000Z',
     });
     expect(tx.activity.findFirst).toHaveBeenCalledTimes(1);
-    expect(tx.attendanceRecord.findFirst).toHaveBeenCalledTimes(1);
+    expect(tx.activitySettlementClosureRevision.findFirst).toHaveBeenCalledTimes(1);
+    expect(tx.participantSettlementResultRevision.findFirst).toHaveBeenCalledTimes(1);
     expect(tx.activityFeedback.findFirst).toHaveBeenCalledTimes(1);
     expect(tx.activityFeedback.findFirst).toHaveBeenCalledWith({
       where: { activityId: 'activity-1', memberId: 'member-1', deletedAt: null },
@@ -205,9 +242,36 @@ describe('ActivityFeedbacksService App self flow', () => {
     jest.setSystemTime(new Date('2026-02-15T00:00:00.000Z'));
 
     await expect(service.getMine('activity-1', USER)).resolves.toEqual({
-      feedback: FEEDBACK,
+      feedback: { ...FEEDBACK, eligibilityCorrected: false },
       canSubmit: false,
       windowClosesAt: '2026-02-14T00:00:00.000Z',
+    });
+  });
+
+  it('最新纠错撤销资格时保留历史评价并标 eligibilityCorrected=true', async () => {
+    const tx = makeTx();
+    tx.activitySettlementClosureRevision.findFirst.mockResolvedValue({
+      ...ACTIVE_CLOSURE,
+      revision: 2,
+    });
+    tx.activitySettlementClosureRevision.findMany.mockResolvedValue([
+      { settlementVersionId: 'settlement-version-1', postingBatchId: 'posting-batch-1' },
+    ]);
+    tx.participantSettlementResultRevision.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'prior-result-1' });
+    tx.activityFeedback.findFirst.mockResolvedValue(FEEDBACK);
+    const { service } = makeService({ tx });
+
+    await expect(service.getMine('activity-1', USER)).resolves.toEqual({
+      feedback: { ...FEEDBACK, eligibilityCorrected: true },
+      canSubmit: false,
+      windowClosesAt: '2026-02-14T00:00:00.000Z',
+    });
+    expect(tx.activitySettlementClosureRevision.findMany).toHaveBeenCalledWith({
+      where: { activityId: 'activity-1', statusCode: 'superseded', revision: { lt: 2 } },
+      select: { settlementVersionId: true, postingBatchId: true },
+      orderBy: { revision: 'desc' },
     });
   });
 
@@ -218,7 +282,8 @@ describe('ActivityFeedbacksService App self flow', () => {
       new BizException(BizCode.FORBIDDEN),
     );
     expect(tx.activity.findFirst).not.toHaveBeenCalled();
-    expect(tx.attendanceRecord.findFirst).not.toHaveBeenCalled();
+    expect(tx.activitySettlementClosureRevision.findFirst).not.toHaveBeenCalled();
+    expect(tx.participantSettlementResultRevision.findFirst).not.toHaveBeenCalled();
     expect(tx.activityFeedback.findFirst).not.toHaveBeenCalled();
   });
 });

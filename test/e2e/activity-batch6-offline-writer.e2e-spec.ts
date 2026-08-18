@@ -550,6 +550,74 @@ describe('activity batch6 offline package exact HTTP wire and writer', () => {
     expect(auditJson).not.toContain('latitude');
   }, 90_000);
 
+  it('AC-015 accepts an already-issued offline checkout within the termination deadline', async () => {
+    const scenario = await createScenario();
+    const participationIdentityId = await submitApplicant(scenario);
+    const { data: issued } = await issuePackage(app, managerAuth, scenario);
+    const now = new Date();
+    const checkInAt = new Date(now.getTime() - 31 * 60_000);
+    const checkIn = await prisma.attendancePunchEvent.create({
+      data: {
+        activityId: scenario.activityId,
+        sessionId: scenario.sessionId,
+        positionId: scenario.positionId,
+        participationIdentityId,
+        memberId: applicantMemberId,
+        eventTypeCode: 'check_in',
+        sourceCode: 'staff_scan',
+        occurredAt: checkInAt,
+        receivedAt: checkInAt,
+        operatorUserId: managerUserId,
+        operatorMemberId: managerMemberId,
+        eventKey: `batch6-offline-termination-seed-${++sequence}`,
+        requestHash: `batch6-offline-termination-seed-hash-${sequence}`,
+        evidenceRevision: 0,
+      },
+      select: { id: true },
+    });
+    await prisma.participantServiceSegmentRevision.create({
+      data: {
+        participationIdentityId,
+        segmentKey: '0001',
+        revision: 0,
+        sourceCheckInEventId: checkIn.id,
+        resultCode: 'valid',
+        statusCode: 'draft',
+        checkInAt,
+      },
+    });
+    await prisma.activity.update({
+      where: { id: scenario.activityId },
+      data: {
+        statusCode: 'terminated',
+        terminatedAt: now,
+        terminatedByUserId: managerUserId,
+        terminationReason: '离线设备仍需完成签退',
+      },
+    });
+    await prisma.activitySession.update({
+      where: { id: scenario.sessionId },
+      data: { terminationCheckOutDeadline: new Date(now.getTime() + 30 * 60_000) },
+    });
+    const checkout = signedUpload(issued, {
+      actionCode: 'check_out',
+      deviceTime: new Date(),
+    });
+
+    const accepted = await upload(app, managerAuth, scenario, issued, checkout);
+    expect(accepted.status).toBe(201);
+    expect(accepted.body.data).toMatchObject({
+      eventTypeCode: 'check_out',
+      segmentStatusCode: 'closed_valid',
+    });
+    await expect(
+      prisma.participantServiceSegmentRevision.findFirstOrThrow({
+        where: { participationIdentityId, statusCode: { not: 'superseded' } },
+        select: { checkOutAt: true },
+      }),
+    ).resolves.toEqual({ checkOutAt: new Date(checkout.deviceTime) });
+  });
+
   it('22097 rejects an unverifiable package with zero review and zero PunchEvent', async () => {
     const scenario = await createScenario();
     await submitApplicant(scenario);
@@ -785,6 +853,54 @@ describe('activity batch6 offline package exact HTTP wire and writer', () => {
         select: { statusCode: true },
       }),
     ).resolves.toEqual({ statusCode: 'revoked' });
+  }, 60_000);
+
+  it('AC-061 blocks evidence seal on a pending offline review and releases it after rejection', async () => {
+    const scenario = await createScenario();
+    await submitApplicant(scenario);
+    const { data: issued } = await issuePackage(app, managerAuth, scenario);
+    await request(httpServer(app))
+      .post(
+        `/api/app/v1/my/managed-activities/${scenario.activityId}/onsite/offline-packages/` +
+          `${issued.package.id}/revoke`,
+      )
+      .set('Authorization', managerAuth)
+      .send({ operationKey: `seal-review-revoke-${++sequence}`, reason: '制造待复核事实' })
+      .expect(201);
+    const staged = await upload(app, managerAuth, scenario, issued, signedUpload(issued));
+    expect(staged.body.code).toBe(BizCode.ATTENDANCE_OFFLINE_REVIEW_REQUIRED.code);
+    const review = await prisma.offlinePunchReviewItem.findFirstOrThrow({
+      where: { offlinePackageId: issued.package.id },
+      select: { id: true, statusCode: true },
+    });
+    expect(review.statusCode).toBe('pending');
+    await prisma.activitySession.update({
+      where: { id: scenario.sessionId },
+      data: { terminationCheckOutDeadline: new Date(Date.now() - 1_000) },
+    });
+
+    const blocked = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${scenario.activityId}/evidence-seals`)
+      .set('Authorization', managerAuth)
+      .send({});
+    expect(blocked.body.code).toBe(BizCode.EVIDENCE_SEAL_MANUAL_REVIEW_PENDING.code);
+    await request(httpServer(app))
+      .post(
+        `/api/app/v1/my/managed-activities/${scenario.activityId}/onsite/offline-review-items/` +
+          `${review.id}/reject`,
+      )
+      .set('Authorization', managerAuth)
+      .send({ operationKey: `seal-review-reject-${++sequence}`, reason: '核对后拒绝异常事实' })
+      .expect(201);
+    const sealed = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${scenario.activityId}/evidence-seals`)
+      .set('Authorization', managerAuth)
+      .send({});
+    expect(sealed.status).toBe(200);
+    expect(sealed.body.data).toMatchObject({
+      activityId: scenario.activityId,
+      manualReviewPendingCount: 0,
+    });
   }, 60_000);
 
   it('failed approval rolls back review resolution, PunchEvent, evidence, segment, and audit together', async () => {
