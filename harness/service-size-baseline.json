@@ -7,11 +7,6 @@
   "inputDigest": "sha256:d27d73a1cc12f515487e680ca268a78983fb37ceb7dc0b691ad70083d97bbc90",
   "entries": [
     {
-      "file": "src/modules/activities/activities.service.ts",
-      "loc": 1263,
-      "domain": "activities"
-    },
-    {
       "file": "src/modules/activities/activity-closure.service.ts",
       "loc": 784,
       "domain": "activities"
@@ -57,11 +52,6 @@
       "domain": "activity-registrations"
     },
     {
-      "file": "src/modules/activity-registrations/activity-registrations.service.ts",
-      "loc": 1470,
-      "domain": "activity-registrations"
-    },
-    {
       "file": "src/modules/activity-registrations/capacity-reservation.service.ts",
       "loc": 921,
       "domain": "activity-registrations"
@@ -75,11 +65,6 @@
       "file": "src/modules/activity-registrations/registration-command.service.ts",
       "loc": 880,
       "domain": "activity-registrations"
-    },
-    {
-      "file": "src/modules/attachments/attachments.service.ts",
-      "loc": 1781,
-      "domain": "attachments"
     },
     {
       "file": "src/modules/attendances/attendance-import-preview.service.ts",
@@ -102,11 +87,6 @@
       "domain": "certificates"
     },
     {
-      "file": "src/modules/members/members.service.ts",
-      "loc": 817,
-      "domain": "members"
-    },
-    {
       "file": "src/modules/notifications/notification-outbox.handlers.ts",
       "loc": 1171,
       "domain": "notifications"
@@ -117,19 +97,9 @@
       "domain": "notifications"
     },
     {
-      "file": "src/modules/recruitment/recruitment-applications.service.ts",
-      "loc": 763,
-      "domain": "recruitment"
-    },
-    {
       "file": "src/modules/recruitment/recruitment-certificate-claims.service.ts",
       "loc": 750,
       "domain": "recruitment"
-    },
-    {
-      "file": "src/modules/role-bindings/role-bindings.service.ts",
-      "loc": 827,
-      "domain": "role-bindings"
     },
     {
       "file": "src/modules/storage/storage-object-ledger.service.ts",

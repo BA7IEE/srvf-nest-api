@@ -147,9 +147,33 @@ selftest 尺寸段有 `const s = '// not a comment';` 计 1 行等 **13** 条口
 | 第四刀 | `recruitment-applications.service.ts` | 763 → 507 | 42 |
 | 第五刀 | `members.service.ts` | 817 → 417 | 36 |
 | 第六刀 | `role-bindings.service.ts` | 827 → 574 | 31 |
-| 第七刀 | `attachments.service.ts` | 1781 → 434 | **27** |
+| 第七刀 | `attachments.service.ts` | 1781 → 387 | **27** |
 
-基线条目 **27 → 21**(六个文件退出;`attachment-storage-orchestrator` 已于 #1049 退出)。
+基线条目 **27 → 21**,六个文件退出(`attachment-storage-orchestrator` 已于 #1049 更早退出),
+**未新增、未上调任何条目**。
+
+### 3.2 ⚠️ `harness:servicesize:write` 不是棘轮安全的(2026-08-17 实测)
+
+重算基线时先用了 `pnpm harness:servicesize:write`,结果被 base-trusted 裁判**当场拦下两次**:
+
+1. **新增条目**:它把 `attendances/attendance-offline-package.service.ts`(1373,#1052 引入)写进基线;
+2. **上调条目**:它把 `attendance-punch-command.service.ts` 从 1294 改成 1504(#1052 让它 +210)。
+
+两者都是 `judgeNumericMonotonicity` 明令拒绝的("只减不增 + 不得新增 file"),
+且这类失败**审批盖不掉**(scan 失败 ⇒ 审批 job 被跳过)。
+
+**根因**:该命令按**当前磁盘状态整体重算**,而棘轮语义要求**单调向下**。
+两者在"文件都变小了"的场景下结果相同,所以此前一直没暴露 ——
+直到有一个 PR 同时带来「新超阈值文件」与「基线文件增长」,它才把这两笔
+**未授权的增长静默写进基线**(= 把「接纳新巨无霸」伪装成例行重算)。
+
+**正确做法**(本刀采用):对 base 基线的每条取 `min(基线值, 当前值)`、
+丢弃已跌破阈值的、**绝不新增也绝不上调**。于是 #1052 的两笔增长仍被 report 闸如实报着,
+没有被基线"吸收"掉 —— 那正是它们应该待的地方,直到有人明确决定接纳或还债。
+
+⚠️ 这一条同时说明 report 期的代价:同一天 6-B 七刀从热点文件砍掉约 5300 NCLOC,
+单个业务 PR 净加回约 1580,闸两条都报了、退出码 1、被 `|| true` 吞掉 ——
+**闸不接执法位时,拆分速度与增长速度是两条独立的曲线**。
 
 ⚠️ **归因先于体量**:前八刀(attachments 存储层)把当时全仓最大的文件从 2472 降到 677,
 而摩擦 **92 → 93 纹丝未动** —— 因为那个文件在历史上几乎没被增长过。
