@@ -7796,6 +7796,37 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppMyParticipationLedgerTotalsDto": {
+    "properties": {
+      "committedContributionPoints": {
+        "description": "已生效(committed 批次)贡献值小计(credited 口径,封顶后);无数据恒为 "0"",
+        "example": "3",
+        "type": "string",
+      },
+      "committedServiceHours": {
+        "description": "已生效(committed 批次)服务时长小计;无数据恒为 "0"",
+        "example": "6",
+        "type": "string",
+      },
+      "inFlightContributionPoints": {
+        "description": "在途(批次停在 preparing / ready,已终审待入账)贡献值小计;无数据恒为 "0"",
+        "example": "1",
+        "type": "string",
+      },
+      "inFlightServiceHours": {
+        "description": "在途(批次停在 preparing / ready,已终审待入账)服务时长小计;无数据恒为 "0",不是 null",
+        "example": "2",
+        "type": "string",
+      },
+    },
+    "required": [
+      "committedServiceHours",
+      "committedContributionPoints",
+      "inFlightServiceHours",
+      "inFlightContributionPoints",
+    ],
+    "type": "object",
+  },
   "AppMyParticipationSummaryDto": {
     "properties": {
       "activityCount": {
@@ -7805,6 +7836,14 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "contributionPoints": {
         "description": "本人生涯累计贡献值 capped 总分（computeCappedContribution cutoff=null）",
         "type": "string",
+      },
+      "ledgerTotals": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppMyParticipationLedgerTotalsDto",
+          },
+        ],
+        "description": "账本口径两轴小计(已生效 / 在途);恒存在,无数据时四个值均为 "0"",
       },
       "recordCount": {
         "description": "approved Sheet 内本人未软删考勤记录数",
@@ -7820,6 +7859,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "activityCount",
       "recordCount",
       "contributionPoints",
+      "ledgerTotals",
     ],
     "type": "object",
   },
@@ -16828,6 +16868,14 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "生涯累计贡献值 capped 总分(Decimal;序列化为 string;approved sheet + 北京日封顶 3)",
         "type": "string",
       },
+      "ledgerTotals": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MemberParticipationLedgerTotalsDto",
+          },
+        ],
+        "description": "账本口径两轴小计(已生效 / 在途);恒存在,无数据时四个值均为 "0"",
+      },
       "memberId": {
         "description": "队员 Member.id",
         "type": "string",
@@ -16836,6 +16884,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "required": [
       "memberId",
       "contributionPoints",
+      "ledgerTotals",
     ],
     "type": "object",
   },
@@ -17367,6 +17416,37 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "MemberParticipationLedgerTotalsDto": {
+    "properties": {
+      "committedContributionPoints": {
+        "description": "已生效(committed 批次)贡献值小计(credited 口径,封顶后);无数据恒为 "0"",
+        "example": "3",
+        "type": "string",
+      },
+      "committedServiceHours": {
+        "description": "已生效(committed 批次)服务时长小计;无数据恒为 "0"",
+        "example": "6",
+        "type": "string",
+      },
+      "inFlightContributionPoints": {
+        "description": "在途(批次停在 preparing / ready,已终审待入账)贡献值小计;无数据恒为 "0"",
+        "example": "1",
+        "type": "string",
+      },
+      "inFlightServiceHours": {
+        "description": "在途(批次停在 preparing / ready,已终审待入账)服务时长小计;无数据恒为 "0",不是 null",
+        "example": "2",
+        "type": "string",
+      },
+    },
+    "required": [
+      "committedServiceHours",
+      "committedContributionPoints",
+      "inFlightServiceHours",
+      "inFlightContributionPoints",
+    ],
+    "type": "object",
+  },
   "MemberParticipationSummaryDto": {
     "properties": {
       "activityCount": {
@@ -17376,6 +17456,14 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "contributionPoints": {
         "description": "生涯累计贡献值 capped 总分（computeCappedContribution cutoff=null）",
         "type": "string",
+      },
+      "ledgerTotals": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MemberParticipationLedgerTotalsDto",
+          },
+        ],
+        "description": "账本口径两轴小计(已生效 / 在途);恒存在,无数据时四个值均为 "0"",
       },
       "memberId": {
         "description": "队员 Member.id",
@@ -17396,6 +17484,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "activityCount",
       "recordCount",
       "contributionPoints",
+      "ledgerTotals",
     ],
     "type": "object",
   },

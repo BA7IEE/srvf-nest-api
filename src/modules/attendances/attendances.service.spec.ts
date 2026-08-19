@@ -30,6 +30,8 @@ import type {
   UpdateAttendanceSheetDto,
 } from './attendances.dto';
 import { AttendanceAccessService } from './attendance-access.service';
+import { LedgerQueryService } from '../activities/ledger-query.service';
+import { AppIdentityResolver } from '../users/app-identity.resolver';
 import { AttendanceReadService } from './attendance-read.service';
 import { AttendanceReviewService } from './attendance-review.service';
 import { AttendancesService } from './attendances.service';
@@ -359,6 +361,8 @@ function makeService(
   // 并喂同一组 prisma / authz / rbac mock —— 判权、聚合根锁、审批八式的行为锁必须走真实实现。
   // mock 掉它们等于把本 spec 里全部 RBAC_FORBIDDEN / SHEET_NOT_FOUND / 自审同人限制断言
   // 变成自说自话(同 presenter / queryService 的既有处理)。
+  // 账本轴在本 spec 中不被驱动(见下方 LedgerQueryService 处注释);占位以满足构造签名。
+  const appIdentity = { resolve: jest.fn() };
   const access = new AttendanceAccessService(
     prisma as unknown as PrismaService,
     authz as unknown as AuthzService,
@@ -385,6 +389,16 @@ function makeService(
       new AttendanceSheetQueryService(prisma as unknown as PrismaService),
       new AttendancePresenter(),
       recorder as unknown as AttendanceAuditRecorder,
+      // 第 7 批第 ②-a 刀:同 presenter / queryService,传**真实** LedgerQueryService 并喂同一组
+      // prisma / authz / rbac mock。本 spec 不覆盖 getMemberContributionSummary(账本轴的
+      // 唯一调用点),故它在这里一次也不会被驱动 —— 传真实实例是为了「以后有人在本 spec 里
+      // 加那条用例时,打到的是真实实现而不是一个恒返空的替身」(沿本文件既有理由)。
+      new LedgerQueryService(
+        prisma as unknown as PrismaService,
+        authz as unknown as AuthzService,
+        rbac,
+        appIdentity as unknown as AppIdentityResolver,
+      ),
     ),
     recorder as unknown as AttendanceAuditRecorder,
     contributionCalculator as unknown as ContributionCalculator,

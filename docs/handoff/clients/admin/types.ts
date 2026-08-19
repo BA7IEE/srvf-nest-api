@@ -2,7 +2,7 @@
 // 真相源:后端 live /api/docs-json;本文件派生自 docs/handoff/openapi.json 快照。
 // surface: Admin 管理后台
 // generatorVersion: 1.0.0
-// inputDigest: sha256:7e70204316de73d6194d822e12cff5eb9c5bafbc7a91715055bfb0bf11d7b583
+// inputDigest: sha256:eb4e977a81de736398524753f2989e55ab07700c4ba9d8c0b0efcac29ca34845
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -1541,6 +1541,7 @@ export interface MemberAudienceTagsResponseDto {
 export interface MemberContributionSummaryDto {
   "memberId": string;
   "contributionPoints": string;
+  "ledgerTotals": MemberParticipationLedgerTotalsDto;
 }
 
 export interface MemberDepartmentResponseDto {
@@ -1659,12 +1660,20 @@ export interface MemberOptionsResponseDto {
   "items": MemberOptionItemDto[];
 }
 
+export interface MemberParticipationLedgerTotalsDto {
+  "committedServiceHours": string;
+  "committedContributionPoints": string;
+  "inFlightServiceHours": string;
+  "inFlightContributionPoints": string;
+}
+
 export interface MemberParticipationSummaryDto {
   "memberId": string;
   "totalServiceHours": string;
   "activityCount": number;
   "recordCount": number;
   "contributionPoints": string;
+  "ledgerTotals": MemberParticipationLedgerTotalsDto;
 }
 
 export interface MemberProfileResponseDto {

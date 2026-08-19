@@ -16,6 +16,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { MemberParticipationLedgerTotalsDto } from './participation-ledger-totals.dto';
 
 // query boolean 从 GET query string 解析:原始值是字符串 'true'/'false',@Type(() => Boolean)
 // 会用 `Boolean(value)` 转换 —— 任何非空字符串(含 'false')都会变 true,是已知陷阱,
@@ -712,4 +713,15 @@ export class MemberContributionSummaryDto {
     type: 'string',
   })
   contributionPoints!: string;
+
+  /**
+   * 账本口径的「已生效 / 在途」两轴小计(第 7 批第 ②-a 刀,**纯加法**)。
+   * 上面四个数字的取数、口径、字段名一律未动;本字段是并排摆出的另一条轴。
+   * 恒存在、恒非 null(无数据时四个值都是 "0")。
+   */
+  @ApiProperty({
+    description: '账本口径两轴小计(已生效 / 在途);恒存在,无数据时四个值均为 "0"',
+    type: () => MemberParticipationLedgerTotalsDto,
+  })
+  ledgerTotals!: MemberParticipationLedgerTotalsDto;
 }

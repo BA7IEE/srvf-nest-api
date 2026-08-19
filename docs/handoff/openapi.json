@@ -130163,6 +130163,37 @@
           "updatedAt"
         ]
       },
+      "MemberParticipationLedgerTotalsDto": {
+        "type": "object",
+        "properties": {
+          "committedServiceHours": {
+            "type": "string",
+            "description": "已生效(committed 批次)服务时长小计;无数据恒为 \"0\"",
+            "example": "6"
+          },
+          "committedContributionPoints": {
+            "type": "string",
+            "description": "已生效(committed 批次)贡献值小计(credited 口径,封顶后);无数据恒为 \"0\"",
+            "example": "3"
+          },
+          "inFlightServiceHours": {
+            "type": "string",
+            "description": "在途(批次停在 preparing / ready,已终审待入账)服务时长小计;无数据恒为 \"0\",不是 null",
+            "example": "2"
+          },
+          "inFlightContributionPoints": {
+            "type": "string",
+            "description": "在途(批次停在 preparing / ready,已终审待入账)贡献值小计;无数据恒为 \"0\"",
+            "example": "1"
+          }
+        },
+        "required": [
+          "committedServiceHours",
+          "committedContributionPoints",
+          "inFlightServiceHours",
+          "inFlightContributionPoints"
+        ]
+      },
       "MemberContributionSummaryDto": {
         "type": "object",
         "properties": {
@@ -130173,11 +130204,20 @@
           "contributionPoints": {
             "type": "string",
             "description": "生涯累计贡献值 capped 总分(Decimal;序列化为 string;approved sheet + 北京日封顶 3)"
+          },
+          "ledgerTotals": {
+            "description": "账本口径两轴小计(已生效 / 在途);恒存在,无数据时四个值均为 \"0\"",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MemberParticipationLedgerTotalsDto"
+              }
+            ]
           }
         },
         "required": [
           "memberId",
-          "contributionPoints"
+          "contributionPoints",
+          "ledgerTotals"
         ]
       },
       "MemberParticipationSummaryDto": {
@@ -130202,6 +130242,14 @@
           "contributionPoints": {
             "type": "string",
             "description": "生涯累计贡献值 capped 总分（computeCappedContribution cutoff=null）"
+          },
+          "ledgerTotals": {
+            "description": "账本口径两轴小计(已生效 / 在途);恒存在,无数据时四个值均为 \"0\"",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MemberParticipationLedgerTotalsDto"
+              }
+            ]
           }
         },
         "required": [
@@ -130209,7 +130257,8 @@
           "totalServiceHours",
           "activityCount",
           "recordCount",
-          "contributionPoints"
+          "contributionPoints",
+          "ledgerTotals"
         ]
       },
       "AppActivityCheckInDto": {
@@ -130396,6 +130445,37 @@
           "createdAt"
         ]
       },
+      "AppMyParticipationLedgerTotalsDto": {
+        "type": "object",
+        "properties": {
+          "committedServiceHours": {
+            "type": "string",
+            "description": "已生效(committed 批次)服务时长小计;无数据恒为 \"0\"",
+            "example": "6"
+          },
+          "committedContributionPoints": {
+            "type": "string",
+            "description": "已生效(committed 批次)贡献值小计(credited 口径,封顶后);无数据恒为 \"0\"",
+            "example": "3"
+          },
+          "inFlightServiceHours": {
+            "type": "string",
+            "description": "在途(批次停在 preparing / ready,已终审待入账)服务时长小计;无数据恒为 \"0\",不是 null",
+            "example": "2"
+          },
+          "inFlightContributionPoints": {
+            "type": "string",
+            "description": "在途(批次停在 preparing / ready,已终审待入账)贡献值小计;无数据恒为 \"0\"",
+            "example": "1"
+          }
+        },
+        "required": [
+          "committedServiceHours",
+          "committedContributionPoints",
+          "inFlightServiceHours",
+          "inFlightContributionPoints"
+        ]
+      },
       "AppMyParticipationSummaryDto": {
         "type": "object",
         "properties": {
@@ -130414,13 +130494,22 @@
           "contributionPoints": {
             "type": "string",
             "description": "本人生涯累计贡献值 capped 总分（computeCappedContribution cutoff=null）"
+          },
+          "ledgerTotals": {
+            "description": "账本口径两轴小计(已生效 / 在途);恒存在,无数据时四个值均为 \"0\"",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AppMyParticipationLedgerTotalsDto"
+              }
+            ]
           }
         },
         "required": [
           "totalServiceHours",
           "activityCount",
           "recordCount",
-          "contributionPoints"
+          "contributionPoints",
+          "ledgerTotals"
         ]
       },
       "AppManagedAttendanceMemberDto": {

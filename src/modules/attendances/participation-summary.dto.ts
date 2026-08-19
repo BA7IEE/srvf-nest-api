@@ -1,5 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+import { MemberParticipationLedgerTotalsDto } from './participation-ledger-totals.dto';
+
 // Admin member-axis DTO。App DTO 物理独立，不通过继承/Pick/Omit 复用。
 export class MemberParticipationSummaryDto {
   @ApiProperty({ description: '队员 Member.id' })
@@ -19,4 +21,15 @@ export class MemberParticipationSummaryDto {
     type: String,
   })
   contributionPoints!: string;
+
+  /**
+   * 账本口径的「已生效 / 在途」两轴小计(第 7 批第 ②-a 刀,**纯加法**)。
+   * 上面四个数字的取数、口径、字段名一律未动;本字段是并排摆出的另一条轴。
+   * 恒存在、恒非 null(无数据时四个值都是 "0")。
+   */
+  @ApiProperty({
+    description: '账本口径两轴小计(已生效 / 在途);恒存在,无数据时四个值均为 "0"',
+    type: () => MemberParticipationLedgerTotalsDto,
+  })
+  ledgerTotals!: MemberParticipationLedgerTotalsDto;
 }
