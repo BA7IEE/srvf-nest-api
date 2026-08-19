@@ -5,6 +5,7 @@
 > **上游权威设计基线**:维护者提供的《SRVF Integration Foundation v1:系统集成能力终态架构与分阶段落地实施规格》(下称「规格书」)。
 > **本稿与规格书的关系**:规格书是**方向权威**;本稿是**对最新 `main` 的漂移复核 + 仓内事实锚定 + 写集与授权预算**。
 > 两者冲突时:方向以规格书为准,**当前代码事实与写集以本稿为准**(本稿逐条给了 `路径:行号` 证据)。
+> **冻结状态**:§2.1 决策表 `D-IF-1 … D-IF-12` **已于 2026-08-19 由维护者回复「按推荐」整体冻结**(全 =A,无逐项调整;[#1086](https://github.com/BA7IEE/srvf-nest-api/pull/1086))。
 > **冻结后不回改**:实施若需偏离,暂停并另出 superseding / amendments 文件,不改本稿正文。
 
 ---
@@ -72,11 +73,24 @@
 
 ---
 
-## 2. 维护者拍板清单
+## 2. 维护者拍板清单 — ✅ 已于 2026-08-19 整体冻结
 
-### 2.1 决策表(`D-IF-*`)
+**拍板结果:维护者回复「按推荐」,`D-IF-1 … D-IF-12` 全部按下表推荐值(全 =A)终态冻结,无逐项调整。**
 
-| # | 决策项 | 选项 | **推荐** | 理由(一句话) |
+由此**同时生效**的两条排期约束(已拍板的事实,不再是本稿的建议):
+
+> **① PR1 排在首次生产上线之后(`D-IF-2`=A)。合并 T0 不解锁 PR1。**
+> 理由见 §3.3:PR1 是第 90 条 migration,上线前合入即随首发进生产,而 `INTEGRATION_API_ENABLED=false`
+> 时它一行运行时代码都不会碰 ⇒ 收益 0、风险非 0。
+> **放行信号只能由维护者在首次生产上线完成后显式给出 —— 任何会话不得因为「T0 已合并 / 已拍板」就开 PR1。**
+>
+> **② PR1–PR8 一次只能有一条在飞。** PR1 触碰 Prisma schema,受
+> [`process.md §8`](../../process.md)「同一时刻至多一条 schema-touching lane」约束,**与 P1-28 活动线不并行**;
+> 叠加 §2.2 F-2(PR2–PR7 每个都改写红区生成物 `ROUTE_AUTHZ.md`)⇒ 严格串行。
+
+### 2.1 决策表(`D-IF-*`)— 全部已冻结
+
+| # | 决策项 | 选项 | **✅ 已冻结** | 理由(一句话) |
 |---|---|---|---|---|
 | **D-IF-1** | 是否整体采纳规格书终态方向 | A 采纳 / B 另议 | **A** | 四轮复核 + 本轮仓内实测均未发现结构性阻碍;方向与 OAuth2 Client Credentials / RFC 8693 `act` / GitHub Apps / Entra SP 一致 |
 | **D-IF-2** | **PR1 开工时机** | A 首次生产上线**之后**开工 / B 上线前即可合入(Gate 关闭) | **A** | PR1 会成为**第 90 条 migration**,首次上线会执行截至那时的全部 migration;Gate 反正是关的 ⇒ 上线前合入**收益为零、风险非零**。详见 §3.3 |
@@ -91,7 +105,26 @@
 | **D-IF-11** | **`allowedPrincipalKinds` 的落法** | A 作为 `CanonicalRouteAuthzDeclaration` 第 7 轴、**默认值省略序列化** / B 全 537 条显式写出 | **A** | B 会让 `authz-semantic-diff` 把 PR4 判成**全仓 537 条语义变更**,评审等于失效。详见 F-3 |
 | **D-IF-12** | 本稿定位 | A 冻结稿(不回改,偏离另出 amendments) / B 活文档 | **A** | 沿 `docs/README.md` §「已冻结但尚未实施的 T0 评审稿是施工依据」既有制度 |
 
-> 维护者回**「按推荐」**即视为 `D-IF-1 … D-IF-12` 全部按上表冻结。
+> **本表已于 2026-08-19 冻结,正文不回改。** 实施若需偏离任一条,必须暂停并另出 amendments 文件
+> (沿 [`certificate-standard-library-t0-amendments.md`](./certificate-standard-library-t0-amendments.md) 先例:
+> 冻结稿正文一字不动,**两份合起来才是当前需求**,冲突以后者为准)。
+
+**冻结值速查**(供各 PR 开工时直接引用,不必回读上表;权威仍是上表):
+
+```text
+D-IF-1  =A  采纳终态方向(ServicePrincipal + Delegation + 独立 Token 信任域)
+D-IF-2  =A  PR1 排在首次生产上线之后开工          ← 合并 T0 不解锁 PR1
+D-IF-3  =A  BizCode 段位 37xxx,并同 PR 补登漏登的 36xxx
+D-IF-4  =A  新增第六 canonical surface /api/integration/v1/*
+D-IF-5  =A  不动 isControlPlanePermissionCode(),另立单向 seed 自检   ← 严禁扩宽既有谓词
+D-IF-6  =A  Permission 两个 eligibility 字段不开放 HTTP 修改(仅 seed / code review)
+D-IF-7  =A  v1 委托仅 ServicePrincipal → 固定 User
+D-IF-8  =A  审批 / 终审永久 Direct User Only
+D-IF-9  =A  禁止部分成功批量导入(整单原子)
+D-IF-10 =A  PrincipalType 新增值命名 SERVICE_PRINCIPAL
+D-IF-11 =A  allowedPrincipalKinds 作第 7 轴,默认值省略序列化
+D-IF-12 =A  本稿为冻结稿,不回改,偏离另出 amendments
+```
 
 ### 2.2 本轮新发现(规格书未覆盖;实施前必须吃掉)
 
