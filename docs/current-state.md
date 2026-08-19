@@ -11,6 +11,7 @@
 |---|---|
 | **发布边界** | 🟡 **代码可继续推进,生产开关仍 NO-GO**。修复批次(#897/#898)已过第二轮外部评审:**GO WITH CONDITIONS**,直接安全 BLOCKER **0**。⇒ 二进制可在**两个开关保持关闭**下继续收口;**开 `loginEnabled` / `messageEnabled` 前必须先关掉 §4 P0 剩余账**。v0.66.0 的 tag 与 Release **永久不代表可部署**(已标 pre-release);修完另发新版本。上一版 v0.65.0 仍持 🟢 GO(外部评审对 `56ea8480..b6a2f9d8` 判 0 P0/P1);**生产部署仍是独立硬门**,migration 67/68/**69** 生产执行、首批标准初始化、前端适配、企微联调按各 runbook 单独审批;活动责任、保险、Storage、外部通道、基础设施硬门仍开放(§4 / runbook) |
 | **部署拓扑** | **前端与 API 同源**(2026-08-03 维护者拍板)。企业微信登录的浏览器 nonce Cookie(`__Host-` + HttpOnly + `SameSite=Lax`)据此成立,**无需** credentialed CORS,`enableCors` 保持不开 `credentials`。⚠️ **改成跨 origin 部署前禁开 `loginEnabled`** —— 同 site 跨 origin 需红区改 CORS + 前端四处 `credentials:'include'`;跨 site 则 Lax 直接挡掉 Cookie,B1 设计不适用,须重新评审 |
+| **真机部署** | 🟢 **第一阶段 PASS(2026-08-20 实测)**:PG 16.15 / 89 migration 全过 / 正式镜像起来 / `health/ready` 报 `db:up`。⚠️ **`APP_ENV=smoke` 非生产态**;归档 `first-release-bootstrap-sop.md` **已漂移勿用** —— 见 [`ops/server-deployment-runbook.md`](ops/server-deployment-runbook.md) |
 | 版本 / 卫生 | 现场查:`pnpm agent:preflight` |
 | 本版 footprint | 即下方计数块(生成物) |
 
