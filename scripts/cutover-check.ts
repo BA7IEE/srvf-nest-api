@@ -39,12 +39,21 @@
  *   · 计数不是装饰:采集器采到 0 条时判据必须红(空集恒等于空集会静默变绿)。
  *
  * ──────────────────────────────────────────────────────────────────────────
- * 跑法(**不改 package.json** —— 它在红区 ci-control-plane 内,加 npm script 需令牌;
- *       与 `scripts/probe-member-lock-scale.ts` 同一处置)
+ * 跑法
  *
- *   pnpm exec tsx scripts/cutover-check.ts            # 自证 + 十行结论(约 30s)
- *   pnpm exec tsx scripts/cutover-check.ts --selftest # 只跑正对照(秒级,不采数)
- *   pnpm exec tsx scripts/cutover-check.ts --json     # 机读输出
+ *   pnpm cutover:check                              # 自证 + 十行结论(约 23s)
+ *   pnpm cutover:check:selftest                     # 只跑正对照(秒级,不采数)
+ *   pnpm exec tsx scripts/cutover-check.ts --json   # 机读输出
+ *
+ * 两条别名由维护者 2026-08-19 就 PR #1085 单独发令牌加入(package.json 在红区
+ * ci-control-plane 内)。为什么是两条别名而不是让 `--selftest` 走 pnpm 参数透传:
+ * 本仓有过「`pnpm test:contract -- -u` 传不进去」的教训,别名比透传可靠。
+ *
+ * ⚠️ 加了别名**不等于**本脚本进了执法层保护 —— 它不被任何 CI 检查链引用(见下「不接 CI」),
+ *    故按 redzone 的收窄口径(「是不是裁判」)仍在自由区。**哪天把它接进 CI,同一个 PR 里
+ *    必须同步把它写进 harness/redzone.json 的 selfGuard**;否则就成了「CI 依赖一个
+ *    PR 可以随手改成恒 PASS 的裁判」—— 那正是该清单收窄当天被 ci-guard-coverage
+ *    当场纠正过的那种判断错误。
  *
  * 退出码:0 = A 类判据全过(**不等于可以开闸** —— B/C 仍待维护者确认);
  *         1 = 有 A 类判据未过,或仪器自证失败。
