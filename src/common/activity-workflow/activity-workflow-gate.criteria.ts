@@ -82,7 +82,14 @@ export const DECLARED_TEST_CONFIGS: Record<string, string> = {
 
 export const REVERSE_GATE_MARKERS = ['team-join', 'contribution-calculator'];
 
-export type Finding = { criterion: 'C1' | 'C2' | 'C3' | 'C4' | 'C5' | 'C6'; detail: string };
+/** production-like 下空值即 fail-fast 的启动点(仓库内可见的两处)。 */
+export const SMOKE_WORKFLOW_FILE = ['.github', 'workflows', 'docker-smoke.yml'].join('/');
+export const ENV_EXAMPLE_FILE = '.env.example';
+
+export type Finding = {
+  criterion: 'C1' | 'C2' | 'C3' | 'C4' | 'C5' | 'C6' | 'C7';
+  detail: string;
+};
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -202,6 +209,8 @@ export type Counts = {
   gateDependentModules: number;
   /** C6:已登记的 jest 测试根数量。 */
   declaredTestRoots: number;
+  /** C7:production-like 下空值即 fail-fast 的配置项数量。 */
+  productionRequiredEnv: number;
 };
 
 /**
@@ -255,6 +264,7 @@ export function runCriteria(
     readFiles: 0,
     gateDependentModules: 0,
     declaredTestRoots: 0,
+    productionRequiredEnv: 0,
   };
   for (const file of files) {
     const r = rel(file);
@@ -419,6 +429,106 @@ export function runCriteria(
         criterion: 'C6',
         detail: `test/${declared} 已登记但不存在 —— 清单与真源脱节,请更新 DECLARED_TEST_CONFIGS。`,
       });
+    }
+  }
+
+  // ── C7:production-like 启动点必须显式设置每一个 fail-fast 配置项 ──
+  //
+  // 🔴 又一次**判据定义域之外**的缺口(与 C6 同源,两次都是 CI 撞出来的):
+  //    本刀的配置项照 P3 范式在 production / smoke 下**空值抛错拒启**(这是对的),
+  //    但 smoke workflow 一处也没设它 ⇒ 容器起不来,报的还是「App not ready after 60s」
+  //    —— **完全不提是哪个 env 缺了**。(本仓教训:闸的失败消息说错方向比不说更费人。)
+  //
+  // 必填清单**从 app.config.ts 反推**,不手写:凡是被 `isProductionLike(env)` 或
+  // `env === 'production'` 守着的 `throw`,其消息里点名的 env 变量即为必填;
+  // 再与 `process.env.X` 实读取交集,滤掉消息里的枚举值之类的假 token(如 JIT / STRICT)。
+  //
+  // ⚠️ 覆盖边界要说准,别夸大:本条只能守**仓库内**的 production-like 启动点 ——
+  //    smoke workflow 的 `docker run`,以及字段权威源 `.env.example`
+  //    (deployment.md 明确:生产用一份**不入仓、逐项审核**的 env-file)。
+  //    **真实生产启动在维护者自己的环境里,判据结构上看不见。**
+  const configText = readSource(join(SRC, 'config', 'app.config.ts'));
+  const configAst = ts.createSourceFile(CONFIG_DEF_FILE, configText, ts.ScriptTarget.Latest, true);
+  const thrownTokens = new Set<string>();
+  const collectRequired = (node: ts.Node): void => {
+    if (ts.isIfStatement(node)) {
+      const cond = node.expression.getText(configAst);
+      if (cond.includes('isProductionLike(') || cond.includes("env === 'production'")) {
+        const scan = (n: ts.Node): void => {
+          if (ts.isThrowStatement(n))
+            for (const m of n.getText(configAst).matchAll(/[A-Z][A-Z0-9_]{4,}/g))
+              thrownTokens.add(m[0]);
+          ts.forEachChild(n, scan);
+        };
+        scan(node.thenStatement);
+      }
+    }
+    ts.forEachChild(node, collectRequired);
+  };
+  ts.forEachChild(configAst, collectRequired);
+  const requiredEnv = [...thrownTokens]
+    .filter((t) => configText.includes(`process.env.${t}`))
+    .sort();
+  counts.productionRequiredEnv = requiredEnv.length;
+
+  const smokeText =
+    overrides[SMOKE_WORKFLOW_FILE] ?? readFileSync(join(REPO_ROOT, SMOKE_WORKFLOW_FILE), 'utf8');
+  const envExampleText =
+    overrides[ENV_EXAMPLE_FILE] ?? readFileSync(join(REPO_ROOT, ENV_EXAMPLE_FILE), 'utf8');
+  // production-like 启动块数 = `APP_ENV=production` 注入次数;每个必填项都要在每块里设。
+  const startupBlocks = (smokeText.match(/-e APP_ENV=production/g) ?? []).length;
+
+  for (const name of requiredEnv) {
+    const inSmoke = (smokeText.match(new RegExp(`-e ${name}=`, 'g')) ?? []).length;
+    if (startupBlocks > 0 && inSmoke < startupBlocks) {
+      findings.push({
+        criterion: 'C7',
+        detail: `${name} 在 production-like 下空值即拒启,但 ${SMOKE_WORKFLOW_FILE} 的 ${startupBlocks} 个启动块里只设了 ${inSmoke} 处 —— 容器会起不来,且报错只说「App not ready」不点名是谁缺了。`,
+      });
+    }
+    if (!new RegExp(`^${name}=`, 'm').test(envExampleText)) {
+      findings.push({
+        criterion: 'C7',
+        detail: `${name} 在 production-like 下空值即拒启,却不在 ${ENV_EXAMPLE_FILE} 里 —— 而 deployment.md 明确以它为字段权威源,维护者照它做生产 env-file 会漏掉这一项、容器起不来。`,
+      });
+    }
+  }
+
+  // ── C7-b:测试里**自己组装 production-like 配置**的地方,同样要设满必填项 ──
+  //
+  // 第三次现形(前两次:测试根、运行时 env)。`insurance-config-fail-fast` 为了验
+  // 「production 下空值拒启」会自建一份 production 环境;新增一个必填项后,
+  // 它**先撞上新项**才走到自己要断言的那一项 —— 断言指向的错都变了。
+  //
+  // 组装点**靠发现而不是硬编码**:凡 `test/**` 里把 APP_ENV 赋成 production / smoke 的文件
+  // 都算。将来再冒出第 2 个这样的 spec,本条自动把它纳入看守,不需要有人记得来改清单。
+  // 判定按「本文件设了」∪「.env.test 提供了」—— 后者是测试进程的既有底座。
+  const envTestText = overrides['.env.test'] ?? readFileSync(join(REPO_ROOT, '.env.test'), 'utf8');
+  const assemblers: string[] = [];
+  const scanTestDir = (dir: string): void => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) scanTestDir(full);
+      else if (full.endsWith('.ts')) {
+        const rel_ = rel(full);
+        const text = overrides[rel_] ?? readFileSync(full, 'utf8');
+        if (/process\.env\.APP_ENV\s*=\s*'(production|smoke)'/.test(text)) assemblers.push(rel_);
+      }
+    }
+  };
+  scanTestDir(join(REPO_ROOT, 'test'));
+
+  for (const assembler of assemblers) {
+    const text = overrides[assembler] ?? readFileSync(join(REPO_ROOT, assembler), 'utf8');
+    for (const name of requiredEnv) {
+      const setHere = new RegExp(`process\\.env\\.${name}\\s*=`).test(text);
+      const fromEnvTest = new RegExp(`^${name}=`, 'm').test(envTestText);
+      if (!setHere && !fromEnvTest) {
+        findings.push({
+          criterion: 'C7',
+          detail: `${assembler} 自建 production-like 配置,但既没设 ${name}、.env.test 也没提供 —— 装配会**先**因这一项抛错,该 spec 原本要断言的那个错根本走不到(断言指向的错被顶替)。`,
+        });
+      }
     }
   }
 

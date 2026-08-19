@@ -3,7 +3,9 @@ import { join } from 'node:path';
 
 import {
   DECLARED_TEST_CONFIGS,
+  ENV_EXAMPLE_FILE,
   GATE_FILE,
+  SMOKE_WORKFLOW_FILE,
   LEGACY_ASSERT,
   READ_SOURCE,
   REPO_ROOT,
@@ -27,6 +29,7 @@ const PUNCH = 'src/modules/attendances/attendance-punch-command.service.ts';
 const REVIEW = 'src/modules/attendances/attendance-review.service.ts';
 const SUMMARY = 'src/modules/attendances/participation-summary-query.service.ts';
 const JOURNEYS_KEY = 'jest-journeys.config.ts';
+const INSURANCE_ASSEMBLER = 'test/e2e/insurance-config-fail-fast.e2e-spec.ts';
 const WORKER_MODULE = 'src/modules/activities/activity-batch-worker.module.ts';
 const TEAM_JOIN_PROBE = 'src/modules/team-join/team-join-enrollment.service.ts';
 
@@ -51,6 +54,7 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       expect(counts.readFiles).toBeGreaterThan(0);
       expect(counts.gateDependentModules).toBeGreaterThan(0);
       expect(counts.declaredTestRoots).toBeGreaterThan(0);
+      expect(counts.productionRequiredEnv).toBeGreaterThan(0);
     });
   });
 
@@ -187,6 +191,77 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       );
       const c6 = findings.filter((f) => f.criterion === 'C6');
       expect(c6.some((f) => f.detail.includes('jest-does-not-exist.config.ts'))).toBe(true);
+    });
+  });
+
+  describe('C7 正对照:production-like 启动点漏设 fail-fast 配置项 ⇒ 必红', () => {
+    it('从 smoke 启动块里删掉本刀的闸位 env ⇒ C7 红并点名它', () => {
+      // 这条复现的是**本刀真实撞上的 CI 红**:闸位配置在 production / smoke 下空值拒启,
+      // 而 smoke workflow 一处也没设它 ⇒ 容器起不来,CI 只报「App not ready after 60s」,
+      // **完全不点名是哪个 env 缺了**(本仓教训:失败消息说错方向比不说更费人)。
+      // C7 的价值不只是「能发现」,更是**发现时直接说出是谁** ——
+      // 下面断言里要求 detail 必须含变量名,就是在钉这一点。
+      const original = readFileSync(join(REPO_ROOT, SMOKE_WORKFLOW_FILE), 'utf8');
+      const mutated = original.split('-e ACTIVITY_V11_WORKFLOW_ENABLED=false \\\n').join('');
+      expect(mutated).not.toBe(original);
+
+      const { findings } = runCriteria({ [SMOKE_WORKFLOW_FILE]: mutated });
+      const c7 = findings.filter((f) => f.criterion === 'C7');
+      expect(c7.length).toBeGreaterThan(0);
+      expect(c7.some((f) => f.detail.includes('ACTIVITY_V11_WORKFLOW_ENABLED'))).toBe(true);
+    });
+
+    it('从 .env.example 里删掉一个必填项 ⇒ C7 红(字段权威源侧)', () => {
+      // deployment.md 明确以 .env.example 为字段权威源:维护者照它做生产 env-file。
+      // 漏一项 ⇒ 生产容器起不来。这一侧与 smoke 侧共用同一份「必填清单」,
+      // 任一侧红都证明清单是从 app.config.ts 真反推出来的,不是手写死的。
+      const original = readFileSync(join(REPO_ROOT, ENV_EXAMPLE_FILE), 'utf8');
+      const mutated = original.replace(/^WECOM_ENCRYPTION_KEY=/m, '#WECOM_ENCRYPTION_KEY=');
+      expect(mutated).not.toBe(original);
+
+      const { findings } = runCriteria({ [ENV_EXAMPLE_FILE]: mutated });
+      const c7 = findings.filter((f) => f.criterion === 'C7');
+      expect(c7.some((f) => f.detail.includes('WECOM_ENCRYPTION_KEY'))).toBe(true);
+    });
+  });
+
+  describe('C7-b 正对照:自建 production-like 配置的地方漏设必填项 ⇒ 必红', () => {
+    const SYNTHETIC_ASSEMBLER = 'test/helpers/http-server.ts';
+
+    it('把一个普通 helper 变成 production 组装点(什么都不设)⇒ C7 发现它并报缺项', () => {
+      // 这条同时证明两件事:
+      //   ① **发现是靠规则不是靠硬编码** —— 一个此前完全不是组装点的文件,
+      //      只要把 APP_ENV 赋成 production 就会被纳入看守;
+      //   ② 纳入后确实逐项比对必填清单。
+      // 现实意义:将来再冒出第 2 个 `insurance-config-fail-fast` 那样的 spec,
+      // 不需要有人记得来改清单,判据自己会把它圈进来。
+      const original = readFileSync(join(REPO_ROOT, SYNTHETIC_ASSEMBLER), 'utf8');
+      const mutated = `${original}\n// synthetic assembler\nprocess.env.APP_ENV = 'production';\n`;
+      expect(mutated).not.toBe(original);
+
+      const { findings } = runCriteria({ [SYNTHETIC_ASSEMBLER]: mutated });
+      const c7 = findings.filter((f) => f.criterion === 'C7');
+      expect(c7.some((f) => f.detail.includes(SYNTHETIC_ASSEMBLER))).toBe(true);
+    });
+
+    it('真实组装点删掉闸位 env ⇒ C7 红并点名它', () => {
+      // insurance-config-fail-fast 自建 production 环境验「空值拒启」。新增必填项后,
+      // 装配会**先**因新项抛错 ⇒ 它原本要断言的那个错根本走不到(CI 现场就是这样红的)。
+      const original = readFileSync(join(REPO_ROOT, INSURANCE_ASSEMBLER), 'utf8');
+      const mutated = original
+        .split("process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'false';")
+        .join('');
+      expect(mutated).not.toBe(original);
+
+      const { findings } = runCriteria({ [INSURANCE_ASSEMBLER]: mutated });
+      const c7 = findings.filter((f) => f.criterion === 'C7');
+      expect(
+        c7.some(
+          (f) =>
+            f.detail.includes(INSURANCE_ASSEMBLER) &&
+            f.detail.includes('ACTIVITY_V11_WORKFLOW_ENABLED'),
+        ),
+      ).toBe(true);
     });
   });
 

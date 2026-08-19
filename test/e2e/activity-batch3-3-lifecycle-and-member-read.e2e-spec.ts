@@ -31,6 +31,11 @@ describe('Activity batch3 slice3 lifecycle and member read surfaces', () => {
 
   beforeAll(async () => {
     process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = 'true';
+    // 第 7 批第 ③ 刀 —— 活动 v1.1 单一 cutover gate(合同 §16.2)。本 spec 走生命周期
+    // (cancel / terminate)链,而 ActivityLifecycleService 会调 EvidenceSealService.seal()
+    // ——**封场属结算真相链、受闸**,故闸关时这条链回 503。跨文件调用,不是本 spec 直接打
+    // 受闸端点,所以只看 spec 正文的路由字面量看不出来(CI 撞红后才发现)。断言一字未改。
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
@@ -78,6 +83,7 @@ describe('Activity batch3 slice3 lifecycle and member read surfaces', () => {
   afterAll(async () => {
     await app.close();
     delete process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
+    delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
   });
 
   async function createMember(label: string, role: Role = Role.USER) {
