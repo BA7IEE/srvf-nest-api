@@ -216,7 +216,7 @@
 
 ## P1(长期维护)
 
-### P1-30 通用系统集成地基 Integration Foundation v1 — **T0 已于 2026-08-19 拍板冻结(「按推荐」);PR1–PR8 一行未实施,且 `D-IF-2` 已定:等首次生产上线之后才开工**
+### P1-30 通用系统集成地基 Integration Foundation v1 — **T0 已于 2026-08-19 拍板冻结(「按推荐」);PR1–PR8 一行未实施,⏸ 开工等 P1-28 活动线 schema 收尾**
 
 - **拍板**:2026-08-19 维护者回复**「按推荐」**,冻结稿 §2.1 决策表 `D-IF-1 … D-IF-12` **全部按推荐值(全 =A)整体冻结,无逐项调整**([#1086](https://github.com/BA7IEE/srvf-nest-api/pull/1086))。
 - **依据**:[`integration-foundation-v1-t0-terminal-review.md`](../archive/reviews/integration-foundation-v1-t0-terminal-review.md)
@@ -232,19 +232,36 @@
      待生产做出并稳定选择后另立 PR7'。任何 PR 禁止新增绕过 `assertLegacyWriteAllowed()` / `assertV11WriteAllowed()` 的通路。
   2. **Integration principal 绝不能挂 `request.user`**(§5.3 F-1)—— 生产代码里只有 2 处读它,一挂上就等于让 503 个 `@CurrentUser()` 与 `RolesGuard` 把机器当人。
   3. **PR2–PR7 每个都会改写红区生成物 `ROUTE_AUTHZ.md`**(F-2,其 `inputDigest` 覆盖全部 `src/**/*.ts`)⇒ 一次只能有一条在飞;合并用 merge 不用 rebase。
-- **⛔ 开工时机(`D-IF-2`=A —— 已拍板,不再是推荐)**:**PR1 排在首次生产上线之后。T0 合并不解锁 PR1。**
-  理由:PR1 是第 90 条 migration,上线前合入即随首发进生产,而 `INTEGRATION_API_ENABLED=false` 时它一行运行时代码都不会碰 ⇒ 收益 0、风险非 0。
-  **放行信号只能由维护者在首次生产上线完成后显式给出** —— 任何会话不得因为「T0 已合并 / 已拍板」就开 PR1。
-- **⛔ 排班(与上一条同时生效)**:PR1 触碰 Prisma schema,受 [`process.md §8`](../process.md)「同一时刻至多一条 schema-touching lane」约束,
-  **与 P1-28 活动线不并行**;叠加上面第 3 条硬约束 ⇒ **PR1–PR8 一次只能有一条在飞**。
+- **⛔ 开工触发条件(2026-08-19 维护者:「等活动线跑完先吧」)**:**T0 已合并、板已拍完,都不构成开 PR1 的授权。**
+  三条齐了才可以开工,缺一即停:
+
+  | # | 条件 | 硬度 | 现状(2026-08-19) |
+  |---|---|---|---|
+  | ① | **P1-28 活动线无在飞/排队的 schema 刀**(migration token 让出来) | **硬**([`process.md §8`](../process.md) schema-touching lane ≤1) | ❌ 未满足 —— 第 7 批在跑、第 8 批未开、「终审改提交 `LedgerPostingBatch`」桥尚未实施 |
+  | ② | 不在 release 收口窗口 | **硬**(E 档要 global preflight 全过 = 0 open PR) | 上线前至少还要再切一个 tag(`current-state §1`:v0.66.0 永久不可部署,修完另发新版本) |
+  | ③ | 首次上线用的 release tag **已切并钉死**,或生产已部署完成 | 建议(满足其一即可) | ❌ go-live tag 尚未切出 |
+
+  **① 是当前唯一真正卡住 PR1 的**,与上线无关;维护者已据此定为「先等活动线跑完」。
+  叠加下面第 3 条硬约束 ⇒ **PR1–PR8 之间也一次只能有一条在飞**。
+
+  > ⚠️ **纠正一处此前的错误理由(2026-08-19 实测)**:冻结稿 §3.3 与本条原文都写过
+  > 「PR1 合入 main 就会随首发进生产」—— **本仓不是这么部署的**。
+  > [`deployment.md`](../deployment.md) §「生产 migration」明确:上线 SOP 先核对**当前批准的 release tag**、
+  > 绑定不可变 SHA / image digest,migration 通过条件是**该 tag 的已审查 migration 均已部署**,
+  > 并专门禁止「用会随版本增长的累计数量作门槛」。
+  > ⇒ 合进 main ≠ 进生产;真实风险只在「go-live tag 恰好在 PR1 之后切」这一种情形,
+  > 故上表把它降为条件 ③(可用「先把 tag 钉死」消解)。
+  > **`D-IF-2`=A 的结论不变**(PR1 仍不现在开),变的只是理由:从 migration 论证换成 ①②③。
+  > 冻结稿正文按 `D-IF-12` **不回改**,该修正待出 `integration-foundation-v1-t0-amendments.md` 时正式落文;
+  > 在此之前**以本条为准**。
 - **拍板冻结值速查**(`D-IF-1..12` 全 =A;权威原表见冻结稿 §2.1,冲突以冻结稿为准):
-  ① 采纳终态方向 · ② **PR1 待上线后** · ③ BizCode 37xxx 并补登漏登的 36xxx · ④ 新增第六 surface ·
+  ① 采纳终态方向 · ② **PR1 不现在开**(触发条件见上表,理由已换) · ③ BizCode 37xxx 并补登漏登的 36xxx · ④ 新增第六 surface ·
   ⑤ **不动 `isControlPlanePermissionCode()`,只加单向 seed 自检** · ⑥ eligibility 两字段不开放 HTTP 修改 ·
   ⑦ 仅 `ServicePrincipal → 固定 User` · ⑧ 审批/终审永久 Direct User Only · ⑨ 禁部分成功批量导入 ·
   ⑩ 枚举值命名 `SERVICE_PRINCIPAL` · ⑪ `allowedPrincipalKinds` 默认值省略序列化 · ⑫ 本稿为冻结稿。
 - **不阻塞首次上线**的三条可核验判据见冻结稿 §3.2(B-1 / B-2 / B-3)。
 - **本项目当前状态**:仅冻结稿一份 docs;`src/` 与 Prisma 侧 **零改动**。`current-state.md §3`「暂不启动清单」中的
-  「新 schema / migration / Permission seed / Role 扩展」由本 T0 解锁**立项**,**不等于解锁开工** —— 开工另需 `D-IF-2` 的上线后放行信号。
+  「新 schema / migration / Permission seed / Role 扩展」由本 T0 解锁**立项**,**不等于解锁开工** —— 开工另需上面三条触发条件全齐。
 
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
