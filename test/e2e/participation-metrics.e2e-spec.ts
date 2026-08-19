@@ -299,6 +299,14 @@ describe('participation metrics F1-F4', () => {
       activityCount: 1,
       recordCount: 2,
       contributionPoints: '3',
+      // 第 7 批第 ②-a 刀纯加法新增;本夹具不造账本分录,故四个值恒 "0"
+      // (顺带是一条「无账本时不返 null」的正对照)。上面四个数字一字未改。
+      ledgerTotals: {
+        committedServiceHours: '0',
+        committedContributionPoints: '0',
+        inFlightServiceHours: '0',
+        inFlightContributionPoints: '0',
+      },
     });
     expect(contribution.status).toBe(200);
     expect(participation.body.data.contributionPoints).toBe(
@@ -306,7 +314,7 @@ describe('participation metrics F1-F4', () => {
     );
   });
 
-  it('F4: App participation-summary 恒本人且 DTO 只含正向四字段', async () => {
+  it('F4: App participation-summary 恒本人且 DTO 只含正向四字段 + 账本两轴', async () => {
     const res = await request(httpServer(app))
       .get('/api/app/v1/my/participation-summary')
       .set('Authorization', memberUserAuth);
@@ -317,6 +325,12 @@ describe('participation metrics F1-F4', () => {
       activityCount: 1,
       recordCount: 2,
       contributionPoints: '3',
+      ledgerTotals: {
+        committedServiceHours: '0',
+        committedContributionPoints: '0',
+        inFlightServiceHours: '0',
+        inFlightContributionPoints: '0',
+      },
     });
     expect(res.body.data).not.toHaveProperty('memberId');
     expect(res.body.data).not.toHaveProperty('noShowCount');

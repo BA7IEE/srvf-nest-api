@@ -5,6 +5,8 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { AuthzService } from '../authz/authz.service';
+import type { MemberLedgerTotalsBreakdown } from '../activities/ledger-query.service';
+import { LedgerQueryService } from '../activities/ledger-query.service';
 import { RbacService } from '../permissions/rbac.service';
 import { computeCappedContribution } from '../team-join/team-join-progress';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
@@ -17,6 +19,8 @@ interface PositiveParticipationSummary {
   activityCount: number;
   recordCount: number;
   contributionPoints: string;
+  /** 第 7 批第 ②-a 刀新增的账本轴;上面四个数字未动。 */
+  ledgerTotals: MemberLedgerTotalsBreakdown;
 }
 
 @Injectable()
@@ -26,6 +30,7 @@ export class ParticipationSummaryQueryService {
     private readonly authz: AuthzService,
     private readonly rbac: RbacService,
     private readonly appIdentity: AppIdentityResolver,
+    private readonly ledgerQuery: LedgerQueryService,
   ) {}
 
   private async assertCanReadMember(
@@ -46,7 +51,10 @@ export class ParticipationSummaryQueryService {
 
   private async loadPositiveSummary(memberId: string): Promise<PositiveParticipationSummary> {
     // approved-only 记录取数 + 封顶核并行；贡献值绝不从 records 裸 SUM。
-    const [records, contribution] = await Promise.all([
+    //
+    // 🔴 第 7 批第 ②-a 刀:下面这两条**一个字没动**(取数、口径、字段名全部原样),
+    //    只是并排多取了一次账本轴。真正切换取数是 ②-b,需另行拍板。
+    const [records, contribution, ledgerTotals] = await Promise.all([
       this.prisma.attendanceRecord.findMany({
         where: {
           memberId,
@@ -59,6 +67,7 @@ export class ParticipationSummaryQueryService {
         },
       }),
       computeCappedContribution(this.prisma, memberId, null),
+      this.ledgerQuery.loadMemberLedgerTotals(memberId),
     ]);
     const totalServiceHours = records.reduce(
       (sum, record) => sum.add(record.serviceHours),
@@ -70,6 +79,7 @@ export class ParticipationSummaryQueryService {
       activityCount: new Set(records.map((record) => record.sheet.activityId)).size,
       recordCount: records.length,
       contributionPoints: contribution.toString(),
+      ledgerTotals,
     };
   }
 

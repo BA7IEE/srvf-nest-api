@@ -707,6 +707,13 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
       expect(summary.body.data).toEqual({
         memberId: attTargetMemberId,
         contributionPoints: '2',
+        // 第 7 批第 ②-a 刀纯加法新增;本夹具无账本分录,四个值恒 "0"。
+        ledgerTotals: {
+          committedServiceHours: '0',
+          committedContributionPoints: '0',
+          inFlightServiceHours: '0',
+          inFlightContributionPoints: '0',
+        },
       });
 
       const groupSummary = await request(httpServer(app))

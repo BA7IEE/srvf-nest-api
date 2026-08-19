@@ -17,6 +17,7 @@ import {
   AttendanceSheetQueryService,
   recordWithMemberSelect,
 } from './attendance-sheet-query.service';
+import { LedgerQueryService } from '../activities/ledger-query.service';
 import { computeCappedContribution } from '../team-join/team-join-progress';
 import {
   type AdminAttendanceSheetListItemDto,
@@ -61,6 +62,7 @@ export class AttendanceReadService {
     private readonly attendanceSheetQuery: AttendanceSheetQueryService,
     private readonly attendancePresenter: AttendancePresenter,
     private readonly attendanceAuditRecorder: AttendanceAuditRecorder,
+    private readonly ledgerQuery: LedgerQueryService,
   ) {}
 
   // v0.49:扁平考勤工作台按 activity.organizationId 下推授权范围；用户显式组织筛选
@@ -272,8 +274,14 @@ export class AttendanceReadService {
       throw new BizException(BizCode.MEMBER_NOT_FOUND);
     }
 
-    const points = await computeCappedContribution(this.prisma, memberId, null);
-    return { memberId, contributionPoints: points.toString() };
+    // 🔴 第 7 批第 ②-a 刀:`contributionPoints` 的取数一个字没动(仍是 approved 考勤封顶核),
+    //    只是并排多给一条账本轴。四个数走 `loadMemberLedgerTotals` 这个全仓唯一入口,
+    //    与 participation-summary 两个端点必然同值。
+    const [points, ledgerTotals] = await Promise.all([
+      computeCappedContribution(this.prisma, memberId, null),
+      this.ledgerQuery.loadMemberLedgerTotals(memberId),
+    ]);
+    return { memberId, contributionPoints: points.toString(), ledgerTotals };
   }
 
   // ============ findOne(GET Sheet 简化详情)============

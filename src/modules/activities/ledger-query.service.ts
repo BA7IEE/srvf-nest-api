@@ -15,7 +15,7 @@ import type {
   AppParticipationLedgerEntryDto,
   ListAppMyParticipationLedgerQueryDto,
 } from './dto/app/app-participation-ledger.dto';
-import { decimalToHundredths, fromHundredths } from './ledger-day-allocation';
+import { decimalToHundredths, fromHundredths, hundredthsToDecimal } from './ledger-day-allocation';
 
 // ===== 活动改造 v1.1 第 2 批第五刀:账本读面(合同 §3.22)=====
 //
@@ -62,6 +62,35 @@ export interface MemberDayContributionView {
   ledgerDate: string;
   serviceHours: number;
   creditedPoints: number;
+}
+
+/**
+ * 队员账本口径的两轴小计(第 7 批第 ②-a 刀)。
+ *
+ * 值是 `Prisma.Decimal` 字符串,与 participation-summary 既有的 `totalServiceHours` /
+ * `contributionPoints` **同一种渲染**(`Decimal.toString()`),以免同一张卡片上两个数
+ * 一个写 `6`、一个写 `6.00`。
+ *
+ * 🔴 空集恒为 `'0'`,**不是** `null`、不是缺字段(§6.1 通用合同禁 undefined/null/'' 混义)。
+ */
+export interface MemberLedgerTotalsView {
+  /** 服务时长小计。 */
+  serviceHours: string;
+  /** 贡献值小计(credited 口径,即封顶**后**的分)。 */
+  creditedPoints: string;
+}
+
+/**
+ * 一个队员的「已生效 / 在途」四个数 —— 各读面直接照抄进各自 DTO 的形状。
+ *
+ * 故意做成**扁平**而不是 `{committed:{...}, inFlight:{...}}`:读面 DTO 有 Admin / App 两份
+ * 物理独立的类(D-6),扁平四个 string 字段两边可以逐字相同,嵌套则要再各造两个类。
+ */
+export interface MemberLedgerTotalsBreakdown {
+  committedServiceHours: string;
+  committedContributionPoints: string;
+  inFlightServiceHours: string;
+  inFlightContributionPoints: string;
 }
 
 type PrismaLike = Pick<Prisma.TransactionClient, '$queryRaw'>;
@@ -325,6 +354,110 @@ export class LedgerQueryService {
     }));
   }
 
+  // ===== 第 7 批第 ②-a 刀:「已生效 / 在途」两轴小计(只加显示,不动任何既有取数)=====
+  //
+  // ## 为什么这里读 preparing / ready **不与 §3.22 冲突**(合同缺口 #28)
+  //
+  // 🔴 先把结论说清楚:**这不是「用新决定压过冻结合同」,而是根本不构成冲突。**
+  //    覆盖冻结合同的正式机制只有一个 —— **修订件**(`AMENDMENTS-v1.1.1.md` 就是这么产生的)。
+  //    「活文档里记了一笔」**不能**压过冻结稿;那个口子一旦开,任何人都能用「我在台账写了」
+  //    绕开合同。本刀没有走那条路,也不主张走。
+  //
+  // §3.22 的措辞逐字管的是**分录**:「准备中和 ready **分录**必须对所有正常读面不可见。
+  // 只允许通过 `batch.statusCode='committed'` join 后读取。」
+  //
+  // 而 `sumInFlightTotalsForMember` **不返回任何分录** —— SQL 里只有两个
+  // `COALESCE(SUM(...))::text`:零 entryKey、零 ledgerDate、零逐条金额,调用方拿不到
+  // 任何可枚举的行,只有一个标量小计。**分录级不可见性一寸未让**:上面三条 list* 方法
+  // 仍是全仓唯一的分录出口,仍钉死 committed(执行位见不变量 3 / 3b 两条判据)。
+  //
+  // ⇒ 「不可见」与「有一个在途总数」在本刀里没有交叉:前者约束**分录**,后者是**聚合**。
+  //    合同没有对「账本聚合口径能不能读未 committed 批次」表态 —— 这是一处**留白**,
+  //    不是一条被违反的规定。留白已按本仓惯例登记为**合同缺口 #28**
+  //    (`docs/ai-harness/NEXT_TASKS.md` P1-28 台账),待折进下一版修订件由合同方定稿。
+  //
+  // ⚠️ 与 AC-054(「页面和统计只能看见 0% 或 100% 的正式结果,看不到半批生效」)的关系:
+  //    AC-054 约束的是**正式结果**的原子性。已生效那一轴仍然只有 0%/100%(commit 是一个事务),
+  //    本刀一个字没碰。在途那一轴按定义**不是**正式结果,故不在 AC-054 的措辞内。
+  //    诚实说明:批次停在 `preparing` 时分录是逐条 INSERT 的,故在途小计在准备期间会**逐步长大**
+  //    —— 那是「在途正在准备」的真实进度,不是「半批生效」。
+
+  /**
+   * 某队员**已生效**(committed)的两轴小计。
+   *
+   * 🔴 本方法**没有第四条 committed SQL**:它把既有的 `sumCommittedByDayForMember` 折一次。
+   *    理由是本刀红线 ——「已生效」必须复用既有 committed-only 取数,而不是另开一份「我也记得
+   *    过滤 committed」的查询。后者一旦有人改错,两份口径会各说各话,而本文件那条
+   *    「committed 字面量恰三处」的结构判据也会跟着失去含义。
+   */
+  /**
+   * 「已生效 / 在途」四个数一次取齐 —— **全部读面共用这一个入口**。
+   *
+   * 🔴 「7 个端点口径一致」因此是**结构性**的,不是三个 controller 各自记得调同一对方法:
+   *    算这四个数的地方全仓只有这一处,想让某个端点用另一套算法必须先新写一个方法。
+   *    正对照钉在 `test/e2e/activity-batch7-in-flight-display.e2e-spec.ts`
+   *    ——同一个队员同时打 App 面与两条 Admin 面,四个值整包相等。
+   */
+  async loadMemberLedgerTotals(
+    memberId: string,
+    client?: PrismaLike,
+  ): Promise<MemberLedgerTotalsBreakdown> {
+    const [committed, inFlight] = await Promise.all([
+      this.sumCommittedTotalsForMember(memberId, client),
+      this.sumInFlightTotalsForMember(memberId, client),
+    ]);
+    return {
+      committedServiceHours: committed.serviceHours,
+      committedContributionPoints: committed.creditedPoints,
+      inFlightServiceHours: inFlight.serviceHours,
+      inFlightContributionPoints: inFlight.creditedPoints,
+    };
+  }
+
+  async sumCommittedTotalsForMember(
+    memberId: string,
+    client?: PrismaLike,
+  ): Promise<MemberLedgerTotalsView> {
+    return foldDayTotals(await this.sumCommittedByDayForMember(memberId, client));
+  }
+
+  /**
+   * 某队员**在途**的两轴小计 —— 已终审、批次停在 `preparing`/`ready`、尚未入账的部分。
+   *
+   * 🔴 与 committed 那一轴**互不相交是结构性的**,不靠约定:一条分录只有一个 `postingBatchId`,
+   *    一个批次只有一个 `statusCode`,而 `'committed'` 与 `('preparing','ready')` 不相交
+   *    ⇒ 同一条分录不可能同时落进两个小计。
+   *
+   * ⚠️ 「在途」**不等于**「已审批考勤里还没入账的全部」:批次要到终审才存在,所以
+   *    「考勤已审批、但结算还没走到终审」的那一段**两个小计都不计**。它仍然落在既有四个数字
+   *    (approved 考勤口径)里 —— 这正是本刀不合并数字的原因,推导见 PR 说明。
+   *
+   * 状态字面量直接写死在 SQL 里、**不收状态入参** —— 收了就等于给调用方一个
+   * `includeUncommitted` 开关,那正是 #949 明确堵死的形状。
+   */
+  async sumInFlightTotalsForMember(
+    memberId: string,
+    client?: PrismaLike,
+  ): Promise<MemberLedgerTotalsView> {
+    const rows = await (client ?? this.prisma).$queryRaw<
+      Array<{ serviceHours: string; creditedPoints: string }>
+    >`
+      SELECT COALESCE(SUM(e."serviceHoursDelta"), 0)::text AS "serviceHours",
+             COALESCE(SUM(e."creditedPointsDelta"), 0)::text AS "creditedPoints"
+      FROM "ParticipationLedgerEntry" e
+      JOIN "LedgerPostingBatch" b ON b.id = e."postingBatchId"
+      WHERE e."memberId" = ${memberId}
+        AND b."statusCode" IN ('preparing', 'ready')
+    `;
+    const row = rows[0];
+    // 聚合查询恒返一行;驱动层万一给了空数组,也必须是 0 而不是 undefined。
+    if (row === undefined) return { ...EMPTY_LEDGER_TOTALS };
+    return {
+      serviceHours: toTotalsString(row.serviceHours),
+      creditedPoints: toTotalsString(row.creditedPoints),
+    };
+  }
+
   private async assertCanReadActivity(
     currentUser: CurrentUserPayload,
     activityId: string,
@@ -413,4 +546,29 @@ function toEntryView(row: RawEntryRow): CommittedLedgerEntryView {
 
 function toLedgerDate(value: string): Date {
   return new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
+}
+
+/** 空集的两轴小计 —— 恒返 `'0'`,不返 null、不缺字段。 */
+const EMPTY_LEDGER_TOTALS: MemberLedgerTotalsView = { serviceHours: '0', creditedPoints: '0' };
+
+/** 与既有四个数字同一种渲染:`Decimal.toString()`(PG 的 `6.00` 渲染成 `6`)。 */
+function toTotalsString(raw: string): string {
+  return new Prisma.Decimal(raw).toString();
+}
+
+/**
+ * 按日行 → 两轴小计。**整数分累加**,不用浮点 —— `sumCommittedByDayForMember` 返回的是
+ * `number`(已除以 100),几百天直接 `+=` 会在末位漂出 `5.000000000000001` 这种字符串。
+ */
+function foldDayTotals(days: readonly MemberDayContributionView[]): MemberLedgerTotalsView {
+  let serviceHundredths = 0;
+  let creditedHundredths = 0;
+  for (const day of days) {
+    serviceHundredths += decimalToHundredths(day.serviceHours);
+    creditedHundredths += decimalToHundredths(day.creditedPoints);
+  }
+  return {
+    serviceHours: hundredthsToDecimal(serviceHundredths).toString(),
+    creditedPoints: hundredthsToDecimal(creditedHundredths).toString(),
+  };
 }
