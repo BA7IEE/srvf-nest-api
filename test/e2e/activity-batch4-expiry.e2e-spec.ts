@@ -46,6 +46,11 @@ describe('activity batch4 expiry', () => {
   let sequence = 0;
 
   beforeAll(async () => {
+    // 第 7 批第 ③ 刀 —— 活动 v1.1 单一 cutover gate(合同 §16.2)。本 spec 驱动的是
+    // **结算真相链**(打卡 / 封场 / 结算 / 账本 / 关账 / 更正),那条链按定义只在闸开时存在;
+    // 闸关(默认 = 今天的行为)时这些写入口一律回 20153。故此处显式置真,
+    // **断言一字未改** —— 改的只是这个 spec 声明自己跑在哪一侧闸。
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     jest.setTimeout(90_000);
     app = await createTestApp();
     await resetDb(app);
@@ -72,6 +77,7 @@ describe('activity batch4 expiry', () => {
   });
 
   afterAll(async () => {
+    delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
     await Promise.all([storageContext.close(), notificationContext.close(), app.close()]);
   });
 

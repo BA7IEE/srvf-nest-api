@@ -461,6 +461,18 @@ export interface ActivityAudienceTagsConfig {
   httpEnabled: boolean;
 }
 
+// 活动 v1.1 上线切换闸(合同 §16.2)。**单一 cutover gate**,统一控制三项:
+//   1. 新 Session / Participation / Punch / Settlement / Ledger 写路径是否放行;
+//   2. 旧 ActivityCheckIn / AttendanceSheet 写路径是否拒绝;
+//   3. 统计读面是否从 committed 账本 / closure 取数。
+// 合同原文:「不能拆成多个可独立开启的开关让同一实例进入『新打卡＋旧结算』混合状态。
+// 子能力可以有 UI 灰度,但业务真相切换必须单轨。」⇒ **本配置项是这三项的唯一真源**,
+// 任何一项另读别的开关都会让实例落进合同点名禁止的混合态。执行位见
+// ActivityWorkflowGate(唯一读取处)与 activity-workflow-gate-single-source 结构判据。
+export interface ActivityV11WorkflowConfig {
+  enabled: boolean;
+}
+
 export function parseActivityResponsibilityWorkflowEnabled(
   raw: string | undefined,
   env: AppEnv,
@@ -493,6 +505,24 @@ export function parseActivityAudienceTagsHttpEnabled(
   }
   if (raw !== 'true' && raw !== 'false') {
     throw new Error('ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED 必须严格为 true 或 false');
+  }
+  return raw === 'true';
+}
+
+// 逐字照 parseActivityAudienceTagsHttpEnabled 的形状(goal P3:照抄这个形状,别发明):
+// 空值时 production / smoke 抛错拒启(合同 §16.2「production 必须显式配置」),其余环境默认
+// false(未切换 = 今天的行为);非严格 true / false 一律抛错,不做 '1' / 'yes' 之类的宽松解析。
+export function parseActivityV11WorkflowEnabled(raw: string | undefined, env: AppEnv): boolean {
+  if (raw === undefined || raw.trim() === '') {
+    if (isProductionLike(env)) {
+      throw new Error(
+        'ACTIVITY_V11_WORKFLOW_ENABLED 不能为空(production / smoke 必须显式设置 true 或 false)',
+      );
+    }
+    return false;
+  }
+  if (raw !== 'true' && raw !== 'false') {
+    throw new Error('ACTIVITY_V11_WORKFLOW_ENABLED 必须严格为 true 或 false');
   }
   return raw === 'true';
 }
@@ -649,6 +679,7 @@ export interface AppConfig {
   contentPublicThrottle: ContentPublicThrottleConfig;
   activityResponsibilityWorkflow: ActivityResponsibilityWorkflowConfig;
   activityAudienceTags: ActivityAudienceTagsConfig;
+  activityV11Workflow: ActivityV11WorkflowConfig;
 }
 
 export default registerAs('app', (): AppConfig => {
@@ -926,6 +957,10 @@ export default registerAs('app', (): AppConfig => {
     ),
   };
 
+  const activityV11Workflow: ActivityV11WorkflowConfig = {
+    enabled: parseActivityV11WorkflowEnabled(process.env.ACTIVITY_V11_WORKFLOW_ENABLED, env),
+  };
+
   return {
     env,
     port,
@@ -954,5 +989,6 @@ export default registerAs('app', (): AppConfig => {
     contentPublicThrottle,
     activityResponsibilityWorkflow,
     activityAudienceTags,
+    activityV11Workflow,
   };
 });

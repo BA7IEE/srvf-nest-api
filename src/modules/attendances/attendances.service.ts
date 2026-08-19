@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
@@ -158,6 +159,8 @@ export class AttendancesService {
     @Inject(appConfig.KEY)
     private readonly config: ConfigType<typeof appConfig>,
     private readonly activityParticipationPolicy: ActivityParticipationPolicy,
+    // 活动 v1.1 cutover gate —— 旧写路径的判闸依据(合同 §16.2 单轨)。
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
 
   // Slow-4 T3(2026-06-11,评审稿 §3.7 / D-S4-8)起点;终态 scoped-authz PR12(2026-07-02;
@@ -346,6 +349,9 @@ export class AttendancesService {
     auditMeta: AuditMeta,
     authorization: AttendanceAuthorization = 'authz',
   ): Promise<AttendanceSheetResponseDto> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸**开**后本实例已切到 v1.1,
+    // 旧考勤写入口永久关闭 —— 拒绝在此判,避免与新链并写形成合同禁止的混合态。
+    this.activityWorkflowGate.assertLegacyWriteAllowed();
     await this.access.assertCanOrThrow(currentUser, 'attendance.create.sheet', {
       type: 'activity',
       id: activityId,
@@ -565,6 +571,9 @@ export class AttendancesService {
     auditMeta: AuditMeta,
     managedActivityId?: string,
   ): Promise<AttendanceSheetResponseDto> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸**开**后本实例已切到 v1.1,
+    // 旧考勤写入口永久关闭 —— 拒绝在此判,避免与新链并写形成合同禁止的混合态。
+    this.activityWorkflowGate.assertLegacyWriteAllowed();
     await this.access.assertCanOrThrow(currentUser, 'attendance.update.sheet', {
       type: 'attendance_sheet',
       id,
@@ -741,6 +750,9 @@ export class AttendancesService {
     auditMeta: AuditMeta,
     managedActivityId?: string,
   ): Promise<AttendanceSheetResponseDto> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸**开**后本实例已切到 v1.1,
+    // 旧考勤写入口永久关闭 —— 拒绝在此判,避免与新链并写形成合同禁止的混合态。
+    this.activityWorkflowGate.assertLegacyWriteAllowed();
     await this.access.assertCanOrThrow(currentUser, 'attendance.delete.sheet', {
       type: 'attendance_sheet',
       id,

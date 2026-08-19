@@ -22,7 +22,7 @@
 | Controller | 101 |
 | Endpoint | 537 |
 | Migration | 89 |
-| BizCode | 447 |
+| BizCode | 449 |
 | 权限码 | 234 |
 | AuditLogEvent | 139 |
 | 内建角色 | 15 |
@@ -62,6 +62,14 @@
 - god-service 重开拆分(P1-4 已收口,需 architecture-boundary §6 新触发 + 立项);repository 抽象层;未立项的 controller path / snapshot 变更
 - 数据清理自动化(SMS / 招新脱敏 = 手动 SOP,不上 cron);历史 handoff / 冻结评审稿不回改、不当当前事实
 - 招新身份证号 v1 明文入库(2026-06-18 拍板留审计痕迹;加密 / 哈希归 C-8 议题)
+- **开启 `ACTIVITY_V11_WORKFLOW_ENABLED`**(活动 v1.1 单一 cutover gate,合同 §16.2;闸位代码
+  2026-08-19 已交付,**默认关闭**)。开闸=**一次不可分割的业务真相切换**:新结算真相链
+  (打卡 / 服务段 / 封场 / 结算 / 账本 / 关账 / 更正)开始受理,旧 `ActivityCheckIn` /
+  `AttendanceSheet` 写入口**同时永久关闭**(410),统计读面同时改从已 committed 账本取数。
+  ⚠️ **AI 不得自行开启**;开闸前按合同 §16.1 十项检查清单(尚未实施,是下一刀)+ §16.3
+  的顺序:先停旧写 → 部署 migration 与全套同版本应用 → 再开闸 → 跑一遍全链路 smoke。
+  ⚠️ 「终审改为提交 `LedgerPostingBatch`」那座桥**仍未实施** —— 未搭之前开闸,
+  历史 approved 考勤不会出现在账本读面里(见 `NEXT_TASKS` 第 7 批②)。
 
 ## 4. 当前风险 / 债务(仅 open 项;全文与建议见 `ai-harness/NEXT_TASKS.md` + 各评审稿)
 

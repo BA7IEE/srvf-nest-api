@@ -1,6 +1,7 @@
 import {
   parseActivityAudienceTagsHttpEnabled,
   parseActivityResponsibilityWorkflowEnabled,
+  parseActivityV11WorkflowEnabled,
   parseInsuranceEnforcementEnabled,
   parseTrustedProxyCidrs,
 } from './app.config';
@@ -169,6 +170,41 @@ describe('ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED', () => {
     'rejects invalid literal %j',
     (raw) => {
       expect(() => parseActivityAudienceTagsHttpEnabled(raw, 'test')).toThrow(
+        '必须严格为 true 或 false',
+      );
+    },
+  );
+});
+
+// 活动 v1.1 单一 cutover gate(合同 §16.2)。用例形状逐字对齐 ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED
+// —— 它是本仓既有的「production / smoke 必须显式配置」范式;此处刻意不发明新形状。
+describe('ACTIVITY_V11_WORKFLOW_ENABLED', () => {
+  it.each(['development', 'test'] as const)('%s missing/empty/blank defaults false', (env) => {
+    expect(parseActivityV11WorkflowEnabled(undefined, env)).toBe(false);
+    expect(parseActivityV11WorkflowEnabled('', env)).toBe(false);
+    expect(parseActivityV11WorkflowEnabled('   ', env)).toBe(false);
+  });
+
+  it.each(['production', 'smoke'] as const)('%s requires an explicit value', (env) => {
+    expect(() => parseActivityV11WorkflowEnabled(undefined, env)).toThrow(
+      'ACTIVITY_V11_WORKFLOW_ENABLED 不能为空',
+    );
+    expect(() => parseActivityV11WorkflowEnabled(' ', env)).toThrow(
+      'ACTIVITY_V11_WORKFLOW_ENABLED 不能为空',
+    );
+  });
+
+  it.each([
+    ['true', true],
+    ['false', false],
+  ] as const)('accepts strict literal %s', (raw, expected) => {
+    expect(parseActivityV11WorkflowEnabled(raw, 'production')).toBe(expected);
+  });
+
+  it.each(['TRUE', 'False', '1', 'yes', ' true ', 'false '])(
+    'rejects invalid literal %j',
+    (raw) => {
+      expect(() => parseActivityV11WorkflowEnabled(raw, 'test')).toThrow(
         '必须严格为 true 或 false',
       );
     },

@@ -682,10 +682,17 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
       ),
     );
 
-    // 🔴 实测基线是 **7 处**(goal 前提表 P3 写的「三处」与代码不符,已在 PR 说明订正):
+    // 🔴 实测基线原为 **7 处**(goal 前提表 P3 写的「三处」与代码不符,已在 PR 说明订正):
     //    list×2 + 两条分页读面的 rows/count ×4 + sumCommittedByDayForMember ×1。
+    //
+    // 第 7 批第 ③ 刀(v1.1 单一 cutover gate)+1 → **8 处**:新增
+    // `countCommittedParticipationForMember`(闸开后统计读面的活动数 / 分录数取数)。
+    // ⚠️ 这次上调**不是放宽**:本不变量守的是「committed 过滤一处不少、且没有 bypass 开关」,
+    //    而新增的这一处**自己就带 committed 过滤**,方向与本不变量一致。真正要防的是
+    //    「有人加了一条不过滤 committed 的账本读」—— 那种改动会让这个数字**不涨**
+    //    (新查询没有该过滤串),于是等式照样红。故计数继续有效,只是基线随真源前移。
     const committedFilters = source.match(/AND b\."statusCode" = 'committed'/g) ?? [];
-    expect({ committed过滤处数: committedFilters.length }).toEqual({ committed过滤处数: 7 });
+    expect({ committed过滤处数: committedFilters.length }).toEqual({ committed过滤处数: 8 });
 
     // 在途那条**新**方法只有一处,状态是写死的字面量而不是入参。
     const inFlightFilters = source.match(/AND b\."statusCode" IN \('preparing', 'ready'\)/g) ?? [];

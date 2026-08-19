@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -199,6 +200,8 @@ export class SettlementSubmitService {
     private readonly prisma: PrismaService,
     private readonly audit: SettlementSubmitAuditRecorder,
     private readonly notifications: SettlementNotificationProducer,
+    // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
 
   // ===== ① Activity FOR UPDATE(§5.10 ①;锁序第一层)=====
@@ -546,6 +549,9 @@ export class SettlementSubmitService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<SettlementSubmitResult> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     const { activityId, operationKey, requestHash } = input;
     return await this.prisma.$transaction(
       async (tx) => {

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Role } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { eventPlaceholder } from '../../common/event/event-placeholder';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -64,6 +65,8 @@ export class AttendanceReviewService {
     private readonly attendancePresenter: AttendancePresenter,
     private readonly attendanceAuditRecorder: AttendanceAuditRecorder,
     private readonly attendanceNotificationProducer: AttendanceNotificationProducer,
+    // 活动 v1.1 cutover gate —— 旧写路径的判闸依据(合同 §16.2 单轨)。
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
 
   // 终态 scoped-authz PR9(2026-07-02;冻结稿 §5.2/§5.3 + BD-2):终审与 v0.47.0 reopen
@@ -131,6 +134,9 @@ export class AttendanceReviewService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸**开**后本实例已切到 v1.1,
+    // 旧考勤写入口永久关闭 —— 拒绝在此判,避免与新链并写形成合同禁止的混合态。
+    this.activityWorkflowGate.assertLegacyWriteAllowed();
     await this.access.assertCanOrThrow(currentUser, 'attendance.approve.sheet', {
       type: 'attendance_sheet',
       id,
@@ -198,6 +204,9 @@ export class AttendanceReviewService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸**开**后本实例已切到 v1.1,
+    // 旧考勤写入口永久关闭 —— 拒绝在此判,避免与新链并写形成合同禁止的混合态。
+    this.activityWorkflowGate.assertLegacyWriteAllowed();
     const returnNote = dto.returnNote.trim();
     if (!returnNote) throw new BizException(BizCode.ATTENDANCE_RETURN_NOTE_REQUIRED);
     await this.access.assertCanOrThrow(currentUser, 'attendance.return.sheet', {
@@ -272,6 +281,9 @@ export class AttendanceReviewService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸**开**后本实例已切到 v1.1,
+    // 旧考勤写入口永久关闭 —— 拒绝在此判,避免与新链并写形成合同禁止的混合态。
+    this.activityWorkflowGate.assertLegacyWriteAllowed();
     await this.access.assertCanOrThrow(currentUser, 'attendance.reject.sheet', {
       type: 'attendance_sheet',
       id,
@@ -359,6 +371,9 @@ export class AttendanceReviewService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸**开**后本实例已切到 v1.1,
+    // 旧考勤写入口永久关闭 —— 拒绝在此判,避免与新链并写形成合同禁止的混合态。
+    this.activityWorkflowGate.assertLegacyWriteAllowed();
     await this.assertFinalReviewAuthzOrThrow(currentUser, 'attendance.final-approve.sheet', id);
     // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
     return runMemberLinearizedTransaction(this.prisma, async (tx) => {
@@ -475,6 +490,9 @@ export class AttendanceReviewService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸**开**后本实例已切到 v1.1,
+    // 旧考勤写入口永久关闭 —— 拒绝在此判,避免与新链并写形成合同禁止的混合态。
+    this.activityWorkflowGate.assertLegacyWriteAllowed();
     const returnNote = dto.returnNote.trim();
     if (!returnNote) throw new BizException(BizCode.ATTENDANCE_RETURN_NOTE_REQUIRED);
     await this.assertFinalReviewAuthzOrThrow(currentUser, 'attendance.final-return.sheet', id);
@@ -557,6 +575,9 @@ export class AttendanceReviewService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸**开**后本实例已切到 v1.1,
+    // 旧考勤写入口永久关闭 —— 拒绝在此判,避免与新链并写形成合同禁止的混合态。
+    this.activityWorkflowGate.assertLegacyWriteAllowed();
     await this.assertFinalReviewAuthzOrThrow(currentUser, 'attendance.final-reject.sheet', id);
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.access.findSheetOrThrow(id, tx);
@@ -634,6 +655,9 @@ export class AttendanceReviewService {
     auditMeta: AuditMeta,
     managedActivityId?: string,
   ): Promise<AttendanceSheetResponseDto> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸**开**后本实例已切到 v1.1,
+    // 旧考勤写入口永久关闭 —— 拒绝在此判,避免与新链并写形成合同禁止的混合态。
+    this.activityWorkflowGate.assertLegacyWriteAllowed();
     await this.access.assertCanOrThrow(currentUser, 'attendance.update.sheet', {
       type: 'attendance_sheet',
       id,
@@ -710,6 +734,9 @@ export class AttendanceReviewService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸**开**后本实例已切到 v1.1,
+    // 旧考勤写入口永久关闭 —— 拒绝在此判,避免与新链并写形成合同禁止的混合态。
+    this.activityWorkflowGate.assertLegacyWriteAllowed();
     await this.assertFinalReviewAuthzOrThrow(currentUser, 'attendance.reopen.sheet', id);
     const reason = dto.reason.trim();
     if (reason.length === 0) throw new BizException(BizCode.BAD_REQUEST);

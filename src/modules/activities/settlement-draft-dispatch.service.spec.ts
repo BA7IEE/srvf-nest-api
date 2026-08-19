@@ -1,8 +1,17 @@
 import { Role, UserStatus } from '@prisma/client';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { SettlementDraftDispatchService } from './settlement-draft-dispatch.service';
+
+/**
+ * 活动 v1.1 cutover gate 的测试替身。**显式传 true** = 本 spec 断言的是
+ * 「闸开」下的行为;闸关时新结算真相链改为拒绝,由专属用例覆盖。
+ */
+function gateStub(enabled: boolean): ActivityWorkflowGate {
+  return new ActivityWorkflowGate({ activityV11Workflow: { enabled } } as never);
+}
 
 describe('SettlementDraftDispatchService', () => {
   const actor = {
@@ -83,7 +92,7 @@ describe('SettlementDraftDispatchService', () => {
       }),
     };
     return {
-      service: new SettlementDraftDispatchService(prisma as never, drafts as never),
+      service: new SettlementDraftDispatchService(prisma as never, drafts as never, gateStub(true)),
       prisma,
       tx,
       drafts,

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -381,6 +382,8 @@ export class CorrectionApplicationService {
     private readonly ledgerPosting: LedgerPostingService,
     private readonly closure: ActivityClosureService,
     private readonly audit: CorrectionAuditRecorder,
+    // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
 
   // =========================================================================
@@ -391,6 +394,9 @@ export class CorrectionApplicationService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CorrectionSubmitResult> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     if (!CORRECTION_REQUEST_TYPE_CODES.includes(input.requestTypeCode)) {
       throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
     }
@@ -474,6 +480,9 @@ export class CorrectionApplicationService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CorrectionReviewOutcome> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     const anchor = await this.readRequestAnchor(input.correctionRequestId);
 
     return await this.prisma.$transaction(async (tx) => {
@@ -576,6 +585,9 @@ export class CorrectionApplicationService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CorrectionPrepareResult> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     const anchor = await this.readRequestAnchor(input.correctionRequestId);
 
     return await this.prisma
@@ -756,6 +768,9 @@ export class CorrectionApplicationService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CorrectionCommitResult> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     const anchor = await this.readRequestAnchor(input.correctionRequestId);
 
     return await runMemberLinearizedTransaction(this.prisma, async (tx) => {
@@ -872,6 +887,9 @@ export class CorrectionApplicationService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CorrectionApplyResult> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     const prepared = await this.prepare(input, currentUser, auditMeta);
     const committed = await this.commit(input, currentUser, auditMeta);
     const reclose = await this.closure.close(
