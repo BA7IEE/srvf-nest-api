@@ -46,6 +46,8 @@
     "harness:needs": "tsx scripts/harness-needs.ts",
     "harness:replay": "tsx scripts/replay-incidents.ts",
     "harness:selftest": "tsx scripts/harness-guards.selftest.ts && tsx scripts/harness-eslint.selftest.ts && tsx scripts/harness-hooks.selftest.ts",
+    "cutover:check": "tsx scripts/cutover-check.ts",
+    "cutover:check:selftest": "tsx scripts/cutover-check.ts --selftest",
     "agent:check:api": "pnpm lint && pnpm typecheck && pnpm harness:selftest && pnpm test && pnpm test:contract && pnpm docs:openapi:check",
     "agent:check:full": "pnpm lint && pnpm typecheck && pnpm harness:selftest && pnpm build && pnpm test && pnpm test:contract && pnpm test:e2e && pnpm docs:openapi:check",
     "audit:production": "pnpm audit --prod --audit-level high",
