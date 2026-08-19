@@ -23,6 +23,7 @@ const ENV_KEYS = [
   'REALNAME_ENCRYPTION_KEY',
   'INSURANCE_ENFORCEMENT_ENABLED',
   'ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED',
+  'ACTIVITY_V11_WORKFLOW_ENABLED',
 ] as const;
 
 describe('INSURANCE_ENFORCEMENT_ENABLED production config assembly', () => {
@@ -48,6 +49,11 @@ describe('INSURANCE_ENFORCEMENT_ENABLED production config assembly', () => {
     process.env.REALNAME_ENCRYPTION_KEY = 'r'.repeat(32);
     process.env.INSURANCE_ENFORCEMENT_ENABLED = 'false';
     process.env.ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED = 'false';
+    // 第 7 批第 ③ 刀:活动 v1.1 单一 cutover gate 同样在 production 下空值拒启。
+    // 本 spec 自建 production 环境验「INSURANCE 空值拒启」,若不设这一项,装配会**先**
+    // 因它抛错 —— 断言指向的错就被顶替了(CI 实测:抛的是 ACTIVITY_V11_WORKFLOW_ENABLED)。
+    // 判据 C7 已把「自建 production-like 配置的地方必须设满必填项」做成静态可判。
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'false';
   });
 
   afterAll(() => {

@@ -93,6 +93,17 @@ export interface MemberLedgerTotalsBreakdown {
   inFlightContributionPoints: string;
 }
 
+/**
+ * 已入账口径下的「参与面」计数 —— 第 7 批 v1.1 cutover gate 的统计读面用。
+ *
+ * 与 approved 考勤口径的 `activityCount` / `recordCount` 一一对位:闸开后这两个数字
+ * 改由**已 committed 的账本分录**推出,而不再由 approved 的 AttendanceRecord 推出。
+ */
+export interface MemberCommittedParticipationCounts {
+  activityCount: number;
+  entryCount: number;
+}
+
 type PrismaLike = Pick<Prisma.TransactionClient, '$queryRaw'>;
 
 /**
@@ -352,6 +363,37 @@ export class LedgerQueryService {
       serviceHours: fromHundredths(decimalToHundredths(row.serviceHours)),
       creditedPoints: fromHundredths(decimalToHundredths(row.creditedPoints)),
     }));
+  }
+
+  /**
+   * 已入账口径的参与面计数(活动数 / 分录数)。
+   *
+   * 过滤条件与 `sumCommittedByDayForMember` **逐字同源** —— 同一个
+   * `b."statusCode" = 'committed'` join,所以两者永远描述同一批分录,
+   * 不会出现「小时数按已入账算、活动数按别的口径算」这种半切换。
+   *
+   * 只返回两个标量计数,不返回任何分录字段 —— 合同 §3.22 的分录级不可见性一寸未让。
+   */
+  async countCommittedParticipationForMember(
+    memberId: string,
+    client?: PrismaLike,
+  ): Promise<MemberCommittedParticipationCounts> {
+    const rows = await (client ?? this.prisma).$queryRaw<
+      Array<{ activityCount: bigint; entryCount: bigint }>
+    >`
+      SELECT COUNT(DISTINCT e."activityId") AS "activityCount",
+             COUNT(*) AS "entryCount"
+      FROM "ParticipationLedgerEntry" e
+      JOIN "LedgerPostingBatch" b ON b.id = e."postingBatchId"
+      WHERE e."memberId" = ${memberId}
+        AND b."statusCode" = 'committed'
+    `;
+    const row = rows[0];
+    // 空账本时 Postgres 仍返回一行(COUNT 恒有值);防御性兜底避免 undefined 解构。
+    return {
+      activityCount: Number(row?.activityCount ?? 0),
+      entryCount: Number(row?.entryCount ?? 0),
+    };
   }
 
   // ===== 第 7 批第 ②-a 刀:「已生效 / 在途」两轴小计(只加显示,不动任何既有取数)=====

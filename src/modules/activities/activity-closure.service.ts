@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -236,6 +237,8 @@ export class ActivityClosureService {
     private readonly prisma: PrismaService,
     private readonly audit: ActivityClosureAuditRecorder,
     private readonly notifications: ActivityClosureNotificationProducer,
+    // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
 
   /**
@@ -251,6 +254,9 @@ export class ActivityClosureService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityClosureOutcome> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     return await this.prisma.$transaction(
       async (tx) => {
         // ===== ① Activity FOR UPDATE(§5.15 ①;全流程第一把,且 now() 与它同语句取)=====

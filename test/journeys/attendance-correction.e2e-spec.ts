@@ -6,10 +6,16 @@ describe('旅程金五条③ 考勤修正全链', () => {
   let runtime: JourneyRuntime;
 
   beforeAll(async () => {
+    // 第 7 批第 ③ 刀 —— 活动 v1.1 单一 cutover gate(合同 §16.2)。本旅程走的是
+    // **结算真相链**(已结算考勤 → 冲回补记 → 重新关账,经账本 prepare / commit),
+    // 那条链按定义只在闸开时存在;闸关(默认 = 今天的行为)时账本准备回 20153。
+    // 故此处显式置真,**断言一字未改** —— 改的只是这条旅程声明自己跑在哪一侧闸。
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     runtime = await createJourneyRuntime();
   });
 
   afterAll(async () => {
+    delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
     await runtime.close();
   });
 

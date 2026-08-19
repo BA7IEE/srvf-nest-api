@@ -1705,6 +1705,25 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // 活动 v1.1 单一 cutover gate(合同 §16.2)的两个方向。二者由同一个开关派生 ——
+  // ACTIVITY_V11_WORKFLOW_ENABLED 关则新链拒绝、开则旧链拒绝,**不可能同时放行**,
+  // 这就是合同「业务真相切换必须单轨」的执行位。判闸位见 ActivityWorkflowGate。
+  //
+  // 闸关时新结算真相链被拒:沿 ACTIVITY_RESPONSIBILITY_WORKFLOW_NOT_ENABLED(20036)的
+  // 「本部署没上这个能力」= 503 形状,客户端据此隐藏入口,而不是提示用户改数据。
+  ACTIVITY_V11_WORKFLOW_NOT_ENABLED: {
+    code: 20153,
+    message: '活动 v1.1 工作流未启用',
+    httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
+  },
+  // 闸开时旧考勤写路径被拒:**不是** 503 —— 本实例已完成切换,旧入口是永久关闭而非
+  // 「稍后重试」。用 GONE 让客户端明确「这个写入口没了,请改用 v1.1 打卡链」。
+  ACTIVITY_LEGACY_ATTENDANCE_WRITE_CLOSED: {
+    code: 20154,
+    message: '本实例已切换至活动 v1.1,旧考勤写入口已关闭',
+    httpStatus: HttpStatus.GONE,
+  },
+
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。
   // 子段(对齐 baseline §1.3):

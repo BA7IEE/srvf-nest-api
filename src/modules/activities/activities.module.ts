@@ -1,4 +1,5 @@
 import { forwardRef, Module } from '@nestjs/common';
+import { ActivityWorkflowModule } from '../../common/activity-workflow/activity-workflow.module';
 import { DatabaseModule } from '../../database/database.module';
 import { ActivityFeedbacksModule } from '../activity-feedbacks/activity-feedbacks.module';
 import { AuthzModule } from '../authz/authz.module';
@@ -115,6 +116,8 @@ import { AttendancesModule } from '../attendances/attendances.module';
   // 统一通知 S4/L2-L3:活动发布/变更/取消/审核结果及责任委托/移交都在主业务
   // transaction 内 enqueue durable intent；独立 worker 仅在 commit 后执行 Effect。
   imports: [
+    // 活动 v1.1 cutover gate(合同 §16.2 单轨):两个模块 import 同一个模块 ⇒ 同一个闸实例。
+    ActivityWorkflowModule,
     DatabaseModule,
     AuditLogsModule,
     PermissionsModule,

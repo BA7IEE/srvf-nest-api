@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -83,6 +84,8 @@ export class EvidenceSealService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: EvidenceSealAuditRecorder,
+    // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
 
   // ===== §5.8 ① Activity FOR UPDATE(全流程唯一的锁,且在最前)=====
@@ -282,6 +285,9 @@ export class EvidenceSealService {
     auditMeta: AuditMeta,
     authorize?: EvidenceSealAuthorizer,
   ): Promise<EvidenceSealResult> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     return await this.prisma.$transaction(async (tx) => {
       // ① Activity FOR UPDATE + authoritative now。
       const { workflowRevision, authoritativeNow } = await this.lockActivityAndReadNow(

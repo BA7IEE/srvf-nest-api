@@ -1,4 +1,5 @@
 import { forwardRef, Module } from '@nestjs/common';
+import { ActivityWorkflowModule } from '../../common/activity-workflow/activity-workflow.module';
 import { DatabaseModule } from '../../database/database.module';
 import { AuthzModule } from '../authz/authz.module';
 import { ActivitiesModule } from '../activities/activities.module';
@@ -81,6 +82,8 @@ import { AppMyAttendanceMemberCredentialController } from './controllers/app-my-
   // 终态 scoped-authz PR9 + v0.47.0 F2:导入 AuthzModule 注入 AuthzService —— 终审与 reopen
   // 共用带 ref 的 authz.explain;authz 是叶子模块,无反向依赖,不成环。
   imports: [
+    // 活动 v1.1 cutover gate(合同 §16.2 单轨):两个模块 import 同一个模块 ⇒ 同一个闸实例。
+    ActivityWorkflowModule,
     DatabaseModule,
     AuditLogsModule,
     PermissionsModule,

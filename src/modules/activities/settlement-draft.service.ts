@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -234,6 +235,8 @@ export class SettlementDraftService {
     //    `ContributionCalculator` 无构造依赖、无状态,同类第二个实例与第一个行为逐字相同。
     private readonly contributionCalculator: ContributionCalculator,
     private readonly audit: SettlementDraftAuditRecorder,
+    // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
 
   // ===== ① Activity FOR UPDATE(§10.1 锁序第一层)=====
@@ -363,6 +366,9 @@ export class SettlementDraftService {
   async updateItem(
     input: SettlementDraftItemUpdateInput,
   ): Promise<SettlementDraftItemUpdateResult> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     const reason = input.reason.trim();
     if (
       reason.length === 0 ||
@@ -841,6 +847,9 @@ export class SettlementDraftService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<SettlementDraftResult> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     return await this.prisma.$transaction(async (tx) => {
       const activity = await this.lockActivity(tx, activityId);
       const seal = await this.requireActiveSeal(tx, activityId, activity.workflowRevision);

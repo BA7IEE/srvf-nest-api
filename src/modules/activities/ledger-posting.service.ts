@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -167,6 +168,8 @@ export class LedgerPostingService {
     private readonly prisma: PrismaService,
     private readonly audit: LedgerPostingAuditRecorder,
     private readonly notifications: SettlementNotificationProducer,
+    // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
 
   async commitBatch(
@@ -174,6 +177,9 @@ export class LedgerPostingService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<LedgerCommitResult> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     // 锁序要求先锁 Activity,而 activityId 只能从批次读出来。这一次读**不加锁、不判定**,
     // 全部结论都在下面的事务里持锁重读之后才做。
     const anchor = await this.prisma.ledgerPostingBatch.findUnique({
@@ -212,6 +218,9 @@ export class LedgerPostingService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<LedgerCommitResult> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     {
       // ===== ①②③④ 固定锁序 =====
       const activity = await this.lockActivity(tx, activityId);

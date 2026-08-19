@@ -1,4 +1,5 @@
 import { Prisma, Role, UserStatus } from '@prisma/client';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -380,6 +381,7 @@ function makeService(
       new AttendancePresenter(),
       recorder as unknown as AttendanceAuditRecorder,
       notificationProducer as unknown as AttendanceNotificationProducer,
+      gateStub(false),
     ),
     new AttendanceReadService(
       prisma as unknown as PrismaService,
@@ -419,7 +421,16 @@ function makeService(
     organizations as unknown as OrganizationsService,
     { attendance: { allowSameReviewer: false, windowToleranceHours: 2 } } as never,
     new ActivityParticipationPolicy(),
+    gateStub(false),
   );
+}
+
+/**
+ * 活动 v1.1 cutover gate 的测试替身。**显式传 false** = 本 spec 断言的是
+ * 「闸关(默认 / 今天的行为)」下的行为;闸开时旧写路径改为拒绝,由专属用例覆盖。
+ */
+function gateStub(enabled: boolean): ActivityWorkflowGate {
+  return new ActivityWorkflowGate({ activityV11Workflow: { enabled } } as never);
 }
 
 describe('AttendancesService (characterization, scoped)', () => {

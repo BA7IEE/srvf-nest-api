@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -175,6 +176,8 @@ export class SettlementReviewService {
     private readonly prisma: PrismaService,
     private readonly audit: SettlementReviewAuditRecorder,
     private readonly notifications: SettlementNotificationProducer,
+    // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
 
   /** §5.11 一审。approve ⇒ 推进 `pending_final_review`;return ⇒ 版本转 `returned`。 */
@@ -183,6 +186,9 @@ export class SettlementReviewService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<SettlementReviewResult> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     return await this.review('first', input, currentUser, auditMeta);
   }
 
@@ -197,6 +203,9 @@ export class SettlementReviewService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<SettlementReviewResult> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     return await this.review('final', input, currentUser, auditMeta);
   }
 

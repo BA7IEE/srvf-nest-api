@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -179,7 +180,11 @@ interface PreparedDayRow {
 
 @Injectable()
 export class LedgerPreparationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
+  ) {}
 
   // =========================================================================
   // ① 建任务(§5.12 的入口)。幂等:`operationKey` 单列 unique 兜底。
@@ -262,6 +267,9 @@ export class LedgerPreparationService {
     itemId: string,
     fence?: LedgerPrepareLeaseFence,
   ): Promise<LedgerPrepareChunkResult> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     return await this.prisma.$transaction(
       async (tx) => {
         // job 行锁:同一 job 的 item 串行处理,基线合并(读-改-写 payload)才安全。
@@ -390,6 +398,9 @@ export class LedgerPreparationService {
   // ③ 收口(§5.12 ⑧):全部 item 成功**且数量一致** ⇒ batch 进 `ready`。
   // =========================================================================
   async finalize(jobId: string): Promise<LedgerPrepareFinalizeResult> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     return await this.prisma.$transaction(async (tx) => {
       const job = await this.lockJob(tx, jobId);
       const batch = await this.lockBatch(tx, requireBatchId(job.postingBatchId));

@@ -126,6 +126,11 @@ describe('活动全链路贯通(14 站 · 8 条接缝)', () => {
     // ACTIVITY_ATTENDANCE_DECLARATION_INVALID(20039「当前活动不能声明考勤已全部提交」)
     // —— 与建草稿毫无关系的错误码。本 spec 与 batch3 同款置真,不改 src。
     process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = 'true';
+    // 第 7 批 v1.1 单一 cutover gate(合同 §16.2):本 spec 走的正是 §16.3 点名的那条
+    // 切换后 smoke —— 建活动、另一人发布、报名、扫码、封场、结算、一审、终审、关账、查账本。
+    // 那条链**按定义**只在闸开时存在;闸关(默认)时第 9 站签到会拿到 20153「v1.1 工作流未启用」。
+    // 故此处置真,与上面那枚开关同款(同一 beforeAll、同一 afterAll 还原),断言一字未改。
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
@@ -218,6 +223,7 @@ describe('活动全链路贯通(14 站 · 8 条接缝)', () => {
   afterAll(async () => {
     await app.close();
     delete process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
+    delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
   });
 
   async function createAccount(

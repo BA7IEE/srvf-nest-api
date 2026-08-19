@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import appConfig from '../../config/app.config';
@@ -75,6 +76,8 @@ export class AppActivityCheckInsService {
     private readonly presenter: ActivityCheckInPresenter,
     @Inject(appConfig.KEY)
     private readonly config: ConfigType<typeof appConfig>,
+    // 活动 v1.1 cutover gate —— 旧写路径的判闸依据(合同 §16.2 单轨)。
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
 
   async checkIn(
@@ -82,6 +85,9 @@ export class AppActivityCheckInsService {
     dto: ActivityCheckInLocationDto,
     currentUser: CurrentUserPayload,
   ): Promise<AppActivityCheckInDto> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸**开**后本实例已切到 v1.1,
+    // 旧考勤写入口永久关闭 —— 拒绝在此判,避免与新链并写形成合同禁止的混合态。
+    this.activityWorkflowGate.assertLegacyWriteAllowed();
     const memberId = await this.resolveMemberIdOrThrow(currentUser);
     await this.preflightWrite(activityId, memberId, 'check-in');
 
@@ -136,6 +142,9 @@ export class AppActivityCheckInsService {
     dto: ActivityCheckInLocationDto,
     currentUser: CurrentUserPayload,
   ): Promise<AppActivityCheckInDto> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸**开**后本实例已切到 v1.1,
+    // 旧考勤写入口永久关闭 —— 拒绝在此判,避免与新链并写形成合同禁止的混合态。
+    this.activityWorkflowGate.assertLegacyWriteAllowed();
     const memberId = await this.resolveMemberIdOrThrow(currentUser);
     await this.preflightWrite(activityId, memberId, 'check-out');
 

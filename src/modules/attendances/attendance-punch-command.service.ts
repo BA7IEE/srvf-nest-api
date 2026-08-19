@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -144,9 +145,14 @@ export class AttendancePunchCommandService {
     private readonly presenter: AttendancePunchPresenter,
     private readonly audit: AttendancePunchAuditRecorder,
     private readonly access: AttendancePunchAccessService,
+    // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
 
   async selfPunch(input: SelfPunchInput): Promise<AppActivityPunchReceiptDto> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     if (input.currentUser.memberId === null) throw new BizException(BizCode.FORBIDDEN);
     let payload;
     try {
@@ -337,6 +343,9 @@ export class AttendancePunchCommandService {
   }
 
   async earlyDepartureClose(input: ManagedEarlyCloseInput): Promise<AppActivityPunchReceiptDto> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     const reason = normalizeAttendancePunchReason(input.reason);
     if (reason === null) throw new BizException(BizCode.ATTENDANCE_EARLY_DEPARTURE_REASON_REQUIRED);
     return this.writeManagedEvent({
@@ -353,10 +362,16 @@ export class AttendancePunchCommandService {
   }
 
   async voidEvent(input: ManagedCorrectionInput): Promise<AppActivityPunchReceiptDto> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     return this.correctEvent(input);
   }
 
   async replaceEvent(input: ManagedCorrectionInput): Promise<AppActivityPunchReceiptDto> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     return this.correctEvent(input);
   }
 
@@ -365,6 +380,9 @@ export class AttendancePunchCommandService {
    * Activity → Session → ParticipationIdentity → Event 锁序、幂等、位置和服务段投影链。
    */
   async managedPunch(input: ManagedOnlinePunchInput): Promise<AppActivityPunchReceiptDto> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     return this.prisma.$transaction((tx) => this.managedPunchWithinTransaction(tx, input), {
       maxWait: 60_000,
       timeout: 60_000,
@@ -379,6 +397,9 @@ export class AttendancePunchCommandService {
     tx: PrismaTx,
     input: ManagedOnlinePunchInput,
   ): Promise<AppActivityPunchReceiptDto> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     return this.writeManagedOnlinePunch(tx, this.normalizeManagedOnlineInput(input));
   }
 
@@ -390,6 +411,9 @@ export class AttendancePunchCommandService {
     tx: PrismaTx,
     input: OfflinePunchWithinTransactionInput,
   ): Promise<OfflinePunchWithinTransactionResult> {
+    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
+    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
+    this.activityWorkflowGate.assertV11WriteAllowed();
     const session = await this.access.lockSession(tx, input.activityId, input.sessionId);
     const identity = await this.access.lockIdentityById(
       tx,
