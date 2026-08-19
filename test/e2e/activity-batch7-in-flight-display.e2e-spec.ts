@@ -88,6 +88,9 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
   let focusAuthHeader: string;
   /** 对照:什么账本都没有,用来钉「空集返 0 而不是 null」。 */
   let emptyMemberId: string;
+  /** 守恒探针专用:只有一批 preparing,用例里把它转正,看数额是否恰好搬家。 */
+  let probeMemberId: string;
+  let probeBatchId: string;
 
   let sequence = 0;
 
@@ -139,6 +142,17 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
       select: { id: true },
     });
     emptyMemberId = emptyMember.id;
+
+    const probeMember = await prisma.member.create({
+      data: {
+        memberNo: 'batch7-slice2a-probe-no',
+        displayName: '第 7 批②-a 守恒探针队员',
+        gradeCode: 'level-2',
+        status: MemberStatus.ACTIVE,
+      },
+      select: { id: true },
+    });
+    probeMemberId = probeMember.id;
 
     // ---- ① approved 考勤:四个数字的唯一来源,本刀一个字没动 ----
     const attendanceActivity = await prisma.activity.create({
@@ -218,6 +232,16 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
       ledgerDate: '2026-07-12',
       entries: creditPair({ serviceHours: '0.5', points: '0.25' }),
     });
+
+    // ---- ④ 守恒探针:独占队员,只有一批 preparing ----
+    probeBatchId = (
+      await createLedgerFixture({
+        batchStatus: 'preparing',
+        ledgerDate: '2026-07-13',
+        entries: creditPair({ serviceHours: '1.25', points: '0.75' }),
+        memberId: probeMemberId,
+      })
+    ).batchId;
   });
 
   afterAll(async () => {
@@ -253,9 +277,12 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
     batchStatus: 'preparing' | 'ready' | 'committed';
     ledgerDate: string;
     entries: LedgerEntrySpec[];
+    /** 缺省落在主角身上;守恒探针要一个不受其它用例干扰的独占队员。 */
+    memberId?: string;
   }): Promise<LedgerFixture> {
     sequence += 1;
     const tag = `batch7-slice2a-${sequence}`;
+    const ledgerMemberId = options.memberId ?? focusMemberId;
     const sessionStart = new Date(`${options.ledgerDate}T01:00:00.000Z`);
     const sessionEnd = new Date(`${options.ledgerDate}T05:00:00.000Z`);
 
@@ -345,7 +372,7 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
       select: { id: true },
     });
     const registration = await prisma.activityRegistration.create({
-      data: { activityId: activity.id, memberId: focusMemberId, statusCode: 'approved' },
+      data: { activityId: activity.id, memberId: ledgerMemberId, statusCode: 'approved' },
       select: { id: true },
     });
     const [identity, secondaryIdentity] = await Promise.all(
@@ -355,7 +382,7 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
             activityId: activity.id,
             sessionId: target.id,
             registrationId: registration.id,
-            memberId: focusMemberId,
+            memberId: ledgerMemberId,
             currentStatusCode: 'pass',
             populationIncluded: true,
           },
@@ -412,7 +439,7 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
           postingBatchId: batch.id,
           entryKey,
           operationKey: `${entryKey}:operation`,
-          memberId: focusMemberId,
+          memberId: ledgerMemberId,
           activityId: activity.id,
           // session / identity / revision 三者必须取同一槽位,否则分录会指向别人的场次。
           sessionId: spec.revisionSlot === 'secondary' ? secondarySession.id : session.id,
@@ -488,6 +515,40 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
     expect([...committedKeys, ...inFlightKeys].sort()).toEqual(allKeys);
   });
 
+  // 上面那条只证明**数据**可以被分成两堆;下面这条才证明**读面**真的按那条界线取数。
+  // 判据是守恒:把一批 preparing 转成 committed,数额必须**恰好搬家** ——
+  // 既不能两边都算(重复计数),也不能两边都不算(凭空蒸发)。
+  it('不变量 1a(守恒):批次转正时,数额恰好从在途搬进已生效,不重复计数也不蒸发', async () => {
+    const before = (await getAdminSummary(probeMemberId)).body.data.ledgerTotals;
+    // 正对照:搬家前在途非零、已生效为零,否则下面的相等断言是 0 == 0 的空绿。
+    expect(before).toEqual({
+      committedServiceHours: '0',
+      committedContributionPoints: '0',
+      inFlightServiceHours: '1.25',
+      inFlightContributionPoints: '0.75',
+    });
+
+    await prisma.ledgerPostingBatch.update({
+      where: { id: probeBatchId },
+      data: { statusCode: 'committed', committedAt: BATCH_TIME, committedByUserId: adminUserId },
+    });
+
+    const after = (await getAdminSummary(probeMemberId)).body.data.ledgerTotals;
+    expect(after).toEqual({
+      committedServiceHours: before.inFlightServiceHours,
+      committedContributionPoints: before.inFlightContributionPoints,
+      // 🔴 搬走之后在途必须归零 —— 若在途口径把 committed 也算进去,这里会留着原值。
+      inFlightServiceHours: '0',
+      inFlightContributionPoints: '0',
+    });
+
+    // 复原,避免污染同 suite 其它用例(本 spec 其余用例都不看探针队员,但别留脏数据)。
+    await prisma.ledgerPostingBatch.update({
+      where: { id: probeBatchId },
+      data: { statusCode: 'preparing', committedAt: null, committedByUserId: null },
+    });
+  });
+
   // ===== 不变量 1b:带冲正分录时,三个口径的关系是什么(实测写进断言)=====
   it('不变量 1b:有冲正分录时「已生效 + 在途 = 总数」不成立 —— 实测三个口径逐字钉住', async () => {
     const response = await getAdminSummary(focusMemberId);
@@ -514,8 +575,8 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
       inFlightServiceHours: '3.5',
       inFlightContributionPoints: '1.25',
     });
-    expect(data.totalServiceHours).toBe(APPROVED_SERVICE_HOURS);
-    expect(data.contributionPoints).toBe(APPROVED_CONTRIBUTION_POINTS);
+    // ⚠️ 这里**刻意不**断言四个数字的具体值 —— 那是不变量 2 的职责。
+    //    两处都写就会让「改取数」这个变异同时红两条,红集重叠、诊断力下降。
 
     // 🔴 实测结论:等式**两条轴都不成立**,所以本刀不合并数字。
     //    服务时长:1.5 + 3.5 = 5   ≠ 4
@@ -691,12 +752,10 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
 
     const appTotals = appResponse.body.data.ledgerTotals;
     // 🔴 正对照:先钉这四个数**不是全零**,否则三处 `{0,0,0,0}` 相等是空绿。
-    expect(appTotals).toEqual({
-      committedServiceHours: '1.5',
-      committedContributionPoints: '0.5',
-      inFlightServiceHours: '3.5',
-      inFlightContributionPoints: '1.25',
-    });
+    //    这里**刻意只查非零、不查具体值** —— 具体值归不变量 1b。本条只守「三面一致」,
+    //    这样「改了在途口径」只红 1b,「某一面用了另一套算法」只红本条,红集不重叠。
+    expect(Object.values(appTotals).every((value) => typeof value === 'string')).toBe(true);
+    expect(Object.values(appTotals).some((value) => value !== '0')).toBe(true);
 
     // 三条读面整包相等 —— 任一端改用另一套算法当场红。
     expect(adminSummary.body.data.ledgerTotals).toEqual(appTotals);
