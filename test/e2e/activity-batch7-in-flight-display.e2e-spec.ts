@@ -57,7 +57,11 @@ function stripComments(source: string): string {
 }
 
 interface LedgerEntrySpec {
-  entryTypeCode: 'service_credit' | 'contribution_credit' | 'service_reversal' | 'contribution_reversal';
+  entryTypeCode:
+    | 'service_credit'
+    | 'contribution_credit'
+    | 'service_reversal'
+    | 'contribution_reversal';
   serviceHoursDelta: string;
   recognizedPointsDelta: string;
   creditedPointsDelta: string;
@@ -192,9 +196,7 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
     const committedOriginal = await createLedgerFixture({
       batchStatus: 'committed',
       ledgerDate: '2026-07-10',
-      entries: [
-        creditPair({ serviceHours: '2', points: '1' }),
-      ].flat(),
+      entries: [creditPair({ serviceHours: '2', points: '1' })].flat(),
     });
     await createLedgerFixture({
       batchStatus: 'committed',
@@ -490,7 +492,55 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
       .set('Authorization', focusAuthHeader);
   }
 
-  // ===== 不变量 1a:两个集合互不相交(结构性),且两边都非空 =====
+  // `response.body` 是 `any`;统一在这几个取值器里收窄一次,别把 any 散进断言
+  // (`--max-warnings 0` 下 no-unsafe-argument 是硬红)。
+  function ledgerTotalsOf(response: request.Response): Record<string, unknown> {
+    const totals: unknown = response.body.data.ledgerTotals;
+    if (typeof totals !== 'object' || totals === null) {
+      throw new Error('响应缺少 ledgerTotals 对象');
+    }
+    return { ...(totals as Record<string, unknown>) };
+  }
+
+  function bodyOf(response: request.Response): Record<string, unknown> {
+    const data: unknown = response.body.data;
+    if (typeof data !== 'object' || data === null) throw new Error('响应缺少 data 对象');
+    return data as Record<string, unknown>;
+  }
+
+  function summaryNumbersOf(response: request.Response): Record<string, unknown> {
+    const body = bodyOf(response);
+    return {
+      totalServiceHours: body.totalServiceHours,
+      activityCount: body.activityCount,
+      recordCount: body.recordCount,
+      contributionPoints: body.contributionPoints,
+    };
+  }
+
+  function itemEntryKeys(response: request.Response): string[] {
+    const items: unknown = response.body.data.items;
+    if (!Array.isArray(items)) throw new Error('账本读面响应缺少 items 数组');
+    return items.map((item) => {
+      if (typeof item !== 'object' || item === null || !('entryKey' in item)) {
+        throw new Error('账本分录缺少 entryKey');
+      }
+      const { entryKey } = item as { entryKey: unknown };
+      if (typeof entryKey !== 'string') throw new Error('entryKey 不是字符串');
+      return entryKey;
+    });
+  }
+
+  /** 两个 Decimal 字符串相加,走整数分,避免 0.1+0.2 那类浮点噪声。 */
+  function decimalSum(left: unknown, right: unknown): string {
+    const toHundredths = (value: unknown): number => {
+      if (typeof value !== 'string') throw new Error(`期望 Decimal 字符串,实际 ${typeof value}`);
+      return Math.round(Number(value) * 100);
+    };
+    return String((toHundredths(left) + toHundredths(right)) / 100);
+  }
+
+  // ===== 不变量 1a:两个集合互不相交 =====
   it('不变量 1a:committed 与 in-flight 是两个互不相交的分录集合,且两边都非空', async () => {
     const committedKeys = await entryKeysByBatchStatus(['committed']);
     const inFlightKeys = await entryKeysByBatchStatus(['preparing', 'ready']);
@@ -515,11 +565,11 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
     expect([...committedKeys, ...inFlightKeys].sort()).toEqual(allKeys);
   });
 
-  // 上面那条只证明**数据**可以被分成两堆;下面这条才证明**读面**真的按那条界线取数。
+  // 上面那条只证明**数据**可以分成两堆;下面这条才证明**读面**真的按那条界线取数。
   // 判据是守恒:把一批 preparing 转成 committed,数额必须**恰好搬家** ——
   // 既不能两边都算(重复计数),也不能两边都不算(凭空蒸发)。
-  it('不变量 1a(守恒):批次转正时,数额恰好从在途搬进已生效,不重复计数也不蒸发', async () => {
-    const before = (await getAdminSummary(probeMemberId)).body.data.ledgerTotals;
+  it('不变量 1a(守恒):批次转正时数额恰好从在途搬进已生效,不重复计数也不蒸发', async () => {
+    const before = ledgerTotalsOf(await getAdminSummary(probeMemberId));
     // 正对照:搬家前在途非零、已生效为零,否则下面的相等断言是 0 == 0 的空绿。
     expect(before).toEqual({
       committedServiceHours: '0',
@@ -533,27 +583,30 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
       data: { statusCode: 'committed', committedAt: BATCH_TIME, committedByUserId: adminUserId },
     });
 
-    const after = (await getAdminSummary(probeMemberId)).body.data.ledgerTotals;
-    expect(after).toEqual({
-      committedServiceHours: before.inFlightServiceHours,
-      committedContributionPoints: before.inFlightContributionPoints,
-      // 🔴 搬走之后在途必须归零 —— 若在途口径把 committed 也算进去,这里会留着原值。
-      inFlightServiceHours: '0',
-      inFlightContributionPoints: '0',
-    });
-
-    // 复原,避免污染同 suite 其它用例(本 spec 其余用例都不看探针队员,但别留脏数据)。
-    await prisma.ledgerPostingBatch.update({
-      where: { id: probeBatchId },
-      data: { statusCode: 'preparing', committedAt: null, committedByUserId: null },
-    });
+    try {
+      const after = ledgerTotalsOf(await getAdminSummary(probeMemberId));
+      expect(after).toEqual({
+        committedServiceHours: before.inFlightServiceHours,
+        committedContributionPoints: before.inFlightContributionPoints,
+        // 🔴 搬走之后在途必须归零 —— 在途口径若把 committed 也算进去,这里会留着原值。
+        inFlightServiceHours: '0',
+        inFlightContributionPoints: '0',
+      });
+    } finally {
+      // 复原,别给同 suite 其它用例留脏数据(断言失败时也要复原,故用 finally)。
+      await prisma.ledgerPostingBatch.update({
+        where: { id: probeBatchId },
+        data: { statusCode: 'preparing', committedAt: null, committedByUserId: null },
+      });
+    }
   });
 
-  // ===== 不变量 1b:带冲正分录时,三个口径的关系是什么(实测写进断言)=====
-  it('不变量 1b:有冲正分录时「已生效 + 在途 = 总数」不成立 —— 实测三个口径逐字钉住', async () => {
+  // ===== 不变量 1b:三个口径的关系(实测写进断言)=====
+  it('不变量 1b:有冲正分录时「已生效 + 在途 = 总数」不成立 —— 实测关系逐字钉住', async () => {
     const response = await getAdminSummary(focusMemberId);
     expect(response.status).toBe(200);
-    const data = response.body.data;
+    const body = bodyOf(response);
+    const totals = ledgerTotalsOf(response);
 
     // 冲正确实存在(否则本条只是又一次普通用例)。
     await expect(
@@ -567,44 +620,34 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
     ).resolves.toBe(2);
 
     // 已生效 = 原始 (2 / 1) + 冲正 (-2 / -1) + 重记 (1.5 / 0.5) = 1.5 / 0.5
-    // 在途   = preparing (3 / 1) + ready (0.5 / 0.25)                = 3.5 / 1.25
-    // 四个数字(approved 考勤口径,本刀未动)                          = 4   / 2
-    expect(data.ledgerTotals).toEqual({
+    // 在途   = preparing (3 / 1) + ready (0.5 / 0.25)           = 3.5 / 1.25
+    expect(totals).toEqual({
       committedServiceHours: '1.5',
       committedContributionPoints: '0.5',
       inFlightServiceHours: '3.5',
       inFlightContributionPoints: '1.25',
     });
+
     // ⚠️ 这里**刻意不**断言四个数字的具体值 —— 那是不变量 2 的职责。
-    //    两处都写就会让「改取数」这个变异同时红两条,红集重叠、诊断力下降。
+    //    两处都写会让「改取数」这个变异同时红两条,红集重叠、诊断力下降。
 
     // 🔴 实测结论:等式**两条轴都不成立**,所以本刀不合并数字。
-    //    服务时长:1.5 + 3.5 = 5   ≠ 4
+    //    服务时长:1.5 + 3.5  = 5    ≠ 4
     //    贡献值  :0.5 + 1.25 = 1.75 ≠ 2
-    const sum = (left: string, right: string): string =>
-      (Math.round(Number(left) * 100) + Math.round(Number(right) * 100)) / 100 + '';
-    expect(sum(data.ledgerTotals.committedServiceHours, data.ledgerTotals.inFlightServiceHours)).toBe(
-      '5',
+    expect(decimalSum(totals.committedServiceHours, totals.inFlightServiceHours)).toBe('5');
+    expect(decimalSum(totals.committedServiceHours, totals.inFlightServiceHours)).not.toBe(
+      body.totalServiceHours,
     );
-    expect(sum(data.ledgerTotals.committedServiceHours, data.ledgerTotals.inFlightServiceHours)).not.toBe(
-      data.totalServiceHours,
+    expect(decimalSum(totals.committedContributionPoints, totals.inFlightContributionPoints)).toBe(
+      '1.75',
     );
     expect(
-      sum(
-        data.ledgerTotals.committedContributionPoints,
-        data.ledgerTotals.inFlightContributionPoints,
-      ),
-    ).toBe('1.75');
-    expect(
-      sum(
-        data.ledgerTotals.committedContributionPoints,
-        data.ledgerTotals.inFlightContributionPoints,
-      ),
-    ).not.toBe(data.contributionPoints);
+      decimalSum(totals.committedContributionPoints, totals.inFlightContributionPoints),
+    ).not.toBe(body.contributionPoints);
   });
 
   // ===== 不变量 2:既有四个数字逐字不变 =====
-  it('不变量 2:既有四个数字整包不变,且不随账本状态漂移(改成 committed 取数当场红)', async () => {
+  it('不变量 2:既有四个数字整包不变,不随账本状态漂移(改成 committed 取数当场红)', async () => {
     const [adminResponse, appResponse] = await Promise.all([
       getAdminSummary(focusMemberId),
       getAppSummary(),
@@ -612,37 +655,22 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
     expect(adminResponse.status).toBe(200);
     expect(appResponse.status).toBe(200);
 
-    // 整包快照:四个字段的**名字与值**一并钉住。
-    // 这些值只能由 approved 考勤推出(4 / 1 活动 / 1 条 / 2 分);账本三条轴
-    // (已生效 1.5 / 0.5、在途 3.5 / 1.25)与它们**逐个都不相等**
-    // ⇒ 谁把取数换成 committed 或 committed+inFlight,本条必红。
-    expect({
-      totalServiceHours: adminResponse.body.data.totalServiceHours,
-      activityCount: adminResponse.body.data.activityCount,
-      recordCount: adminResponse.body.data.recordCount,
-      contributionPoints: adminResponse.body.data.contributionPoints,
-    }).toEqual({
-      totalServiceHours: '4',
+    // 整包快照:四个字段的**名字与值**一并钉住。这些值只能由 approved 考勤推出
+    // (4 / 1 活动 / 1 条 / 2 分);账本两条轴(已生效 1.5 / 0.5、在途 3.5 / 1.25)
+    // 与它们**逐个都不相等** ⇒ 谁把取数换成 committed 或 committed+inFlight,本条必红。
+    const expected = {
+      totalServiceHours: APPROVED_SERVICE_HOURS,
       activityCount: 1,
       recordCount: 1,
-      contributionPoints: '2',
-    });
-    expect({
-      totalServiceHours: appResponse.body.data.totalServiceHours,
-      activityCount: appResponse.body.data.activityCount,
-      recordCount: appResponse.body.data.recordCount,
-      contributionPoints: appResponse.body.data.contributionPoints,
-    }).toEqual({
-      totalServiceHours: '4',
-      activityCount: 1,
-      recordCount: 1,
-      contributionPoints: '2',
-    });
+      contributionPoints: APPROVED_CONTRIBUTION_POINTS,
+    };
+    expect(summaryNumbersOf(adminResponse)).toEqual(expected);
+    expect(summaryNumbersOf(appResponse)).toEqual(expected);
 
     // contribution-summary 的那一个数字同样未动。
     const contribution = await getAdminContribution(focusMemberId);
     expect(contribution.status).toBe(200);
-    expect(contribution.body.data.contributionPoints).toBe('2');
+    expect(bodyOf(contribution).contributionPoints).toBe(APPROVED_CONTRIBUTION_POINTS);
   });
 
   // ===== 不变量 3:既有 committed 过滤一处不少,且没有 bypass 开关 =====
@@ -654,13 +682,12 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
       ),
     );
 
-    // 🔴 实测基线是 **7 处**(goal 前提表写的「三处」与代码不符,已在 PR 说明订正):
+    // 🔴 实测基线是 **7 处**(goal 前提表 P3 写的「三处」与代码不符,已在 PR 说明订正):
     //    list×2 + 两条分页读面的 rows/count ×4 + sumCommittedByDayForMember ×1。
-    //    放宽任意一处(改成 IN (...) 或删掉)本条当场红。
     const committedFilters = source.match(/AND b\."statusCode" = 'committed'/g) ?? [];
     expect({ committed过滤处数: committedFilters.length }).toEqual({ committed过滤处数: 7 });
 
-    // 在途那条**新**方法只有一处,且状态是写死的字面量,不是入参。
+    // 在途那条**新**方法只有一处,状态是写死的字面量而不是入参。
     const inFlightFilters = source.match(/AND b\."statusCode" IN \('preparing', 'ready'\)/g) ?? [];
     expect({ 在途过滤处数: inFlightFilters.length }).toEqual({ 在途过滤处数: 1 });
 
@@ -695,9 +722,7 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
 
     for (const response of [appLedger, adminMemberLedger]) {
       expect(response.status).toBe(200);
-      const visibleKeys: string[] = response.body.data.items.map(
-        (item: { entryKey: string }) => item.entryKey,
-      );
+      const visibleKeys = itemEntryKeys(response);
       // 正对照:committed 的确看得见(否则「看不见在途」可能只是整个读面挂了)。
       expect(visibleKeys.length).toBeGreaterThan(0);
       expect(visibleKeys.filter((key) => inFlightKeys.includes(key))).toEqual([]);
@@ -714,20 +739,14 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
       prisma.participationLedgerEntry.count({ where: { memberId: emptyMemberId } }),
     ).resolves.toBe(0);
 
-    const totals = response.body.data.ledgerTotals;
-    // 字段必须**存在**(缺字段时 toEqual 对 undefined 会通过 —— 所以先查键清单)。
+    const totals = ledgerTotalsOf(response);
+    // 字段必须**存在** —— 缺字段时 toEqual 对 undefined 会放行,所以先查键清单。
     expect(Object.keys(totals).sort()).toEqual([
       'committedContributionPoints',
       'committedServiceHours',
       'inFlightContributionPoints',
       'inFlightServiceHours',
     ]);
-    expect(totals).toEqual({
-      committedServiceHours: '0',
-      committedContributionPoints: '0',
-      inFlightServiceHours: '0',
-      inFlightContributionPoints: '0',
-    });
     // 逐个钉「是字符串 '0'」而不是 0 / null / ''。
     for (const value of Object.values(totals)) {
       expect(typeof value).toBe('string');
@@ -736,7 +755,7 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
 
     const contribution = await getAdminContribution(emptyMemberId);
     expect(contribution.status).toBe(200);
-    expect(contribution.body.data.ledgerTotals).toEqual(totals);
+    expect(ledgerTotalsOf(contribution)).toEqual(totals);
   });
 
   // ===== 不变量 5:三条读面口径一致(正对照)=====
@@ -750,18 +769,18 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
       expect(response.status).toBe(200);
     }
 
-    const appTotals = appResponse.body.data.ledgerTotals;
+    const appTotals = ledgerTotalsOf(appResponse);
     // 🔴 正对照:先钉这四个数**不是全零**,否则三处 `{0,0,0,0}` 相等是空绿。
     //    这里**刻意只查非零、不查具体值** —— 具体值归不变量 1b。本条只守「三面一致」,
-    //    这样「改了在途口径」只红 1b,「某一面用了另一套算法」只红本条,红集不重叠。
+    //    于是「改了在途口径」只红 1b,「某一面用了另一套算法」只红本条,红集不重叠。
     expect(Object.values(appTotals).every((value) => typeof value === 'string')).toBe(true);
     expect(Object.values(appTotals).some((value) => value !== '0')).toBe(true);
 
     // 三条读面整包相等 —— 任一端改用另一套算法当场红。
-    expect(adminSummary.body.data.ledgerTotals).toEqual(appTotals);
-    expect(adminContribution.body.data.ledgerTotals).toEqual(appTotals);
+    expect(ledgerTotalsOf(adminSummary)).toEqual(appTotals);
+    expect(ledgerTotalsOf(adminContribution)).toEqual(appTotals);
 
     // App DTO 仍不泄露 memberId(D-5 / D-6 的 self-scope 口径未被本刀撬动)。
-    expect(appResponse.body.data).not.toHaveProperty('memberId');
+    expect(bodyOf(appResponse)).not.toHaveProperty('memberId');
   });
 });
