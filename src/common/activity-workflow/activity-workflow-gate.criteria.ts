@@ -64,9 +64,25 @@ export const LEGACY_ASSERT = 'assertLegacyWriteAllowed';
 export const READ_SOURCE = 'participationReadSource';
 
 /** C4 反向闸的看守范围:这些文件承载「恒按 approved 算」的口径,不得随闸切换。 */
+/**
+ * 已登记的 jest 测试根。**每加一个 jest 配置就是加一个测试根**,必须在这里登记并写清
+ * 该根的闸位姿态 —— C6 用它比对真实目录,漏登即红。
+ */
+export const DECLARED_TEST_CONFIGS: Record<string, string> = {
+  // 单元:不起 Nest、不连库 ⇒ 不经判闸位,无需姿态声明。
+  'jest-unit.config.ts': 'unit —— 不起 Nest,无闸位姿态',
+  // 契约快照:只比 OpenAPI 形状,不驱动写路径。
+  'jest-contract.config.ts': 'contract —— 只比契约形状,不驱动写路径',
+  // e2e:22 个走结算真相链的 spec 已逐个声明闸开;其余跑默认(闸关)。
+  'jest-e2e.config.ts': 'e2e —— 22 个 spec 声明闸开,其余默认闸关',
+  // 旅程金五条:独立 project,被 e2e 配置的 testPathIgnorePatterns **显式排除**
+  // ⇒ 必须单独跑、单独复核。其中「考勤修正全链」走结算真相链,已声明闸开;另 4 条默认闸关。
+  'jest-journeys.config.ts': 'journeys —— 考勤修正全链声明闸开,另 4 条默认闸关',
+};
+
 export const REVERSE_GATE_MARKERS = ['team-join', 'contribution-calculator'];
 
-export type Finding = { criterion: 'C1' | 'C2' | 'C3' | 'C4' | 'C5'; detail: string };
+export type Finding = { criterion: 'C1' | 'C2' | 'C3' | 'C4' | 'C5' | 'C6'; detail: string };
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -184,14 +200,20 @@ export type Counts = {
   readFiles: number;
   /** C5:providers 里含受闸 service、因而必须 import 闸模块的模块数。 */
   gateDependentModules: number;
+  /** C6:已登记的 jest 测试根数量。 */
+  declaredTestRoots: number;
 };
 
 /**
  * 跑全部四条判据。
  *
  * @param overrides 把 repo 相对路径映射成替换后的源码 —— 正对照专用。
+ * @param declaredTestConfigs 覆盖 C6 的测试根清单 —— 正对照专用(真实目录不可变,只能从清单侧证伪)。
  */
-export function runCriteria(overrides: Record<string, string> = {}): {
+export function runCriteria(
+  overrides: Record<string, string> = {},
+  declaredTestConfigs?: Record<string, string>,
+): {
   findings: Finding[];
   counts: Counts;
 } {
@@ -232,6 +254,7 @@ export function runCriteria(overrides: Record<string, string> = {}): {
     legacyFiles: 0,
     readFiles: 0,
     gateDependentModules: 0,
+    declaredTestRoots: 0,
   };
   for (const file of files) {
     const r = rel(file);
@@ -360,6 +383,42 @@ export function runCriteria(overrides: Record<string, string> = {}): {
           detail: `${r} 引用了闸(${token})—— 维护者已拍板入队门槛与 computeCappedContribution 恒按 approved 算,不随 v1.1 闸切换;这条不一致是刻意的。`,
         });
       }
+    }
+  }
+
+  // ── C6:测试根清单 —— 防「整个目录从没被扫到」 ──
+  //
+  // 🔴 这条是**事故倒逼**加的,而且事故是 CI 撞出来的、判据没抓到:
+  //    闸位落地后我按「跑一遍看谁红」来定哪些 spec 需要声明闸开侧,
+  //    但扫描面只覆盖了 `test/e2e/` —— 而 `jest-e2e.config.ts` 的 testPathIgnorePatterns
+  //    **显式排除** `test/journeys/`,它是独立 jest project(`pnpm test:journeys`)。
+  //    于是金五条③那条走结算真相链的旅程整个没被考虑,直到 CI 红。
+  //
+  // C1–C5 全在 `src/**` 上判,**结构上看不见测试目录** —— 那是它们的盲区,不是疏忽。
+  // 本条把「有没有哪个测试根没被纳入闸位姿态复核」变成静态可判:
+  // 新增任何 jest 配置(= 新增一个测试根)都会红,逼加的人回答「这个根要不要声明闸位姿态」。
+  //
+  // 注意它守的是**清单完整性**,不是「每个 spec 姿态正确」—— 后者只有真跑才知道
+  // (翻转对照:把声明设成相反值重跑,看是不是真因 20153 而红)。
+  const actualConfigs = readdirSync(join(REPO_ROOT, 'test')).filter(
+    (f) => f.startsWith('jest-') && f.endsWith('.config.ts'),
+  );
+  const declaredConfigs = declaredTestConfigs ?? DECLARED_TEST_CONFIGS;
+  counts.declaredTestRoots = Object.keys(declaredConfigs).length;
+  for (const cfg of actualConfigs) {
+    if (!(cfg in declaredConfigs)) {
+      findings.push({
+        criterion: 'C6',
+        detail: `test/${cfg} 是一个未登记的测试根 —— 闸位姿态复核从没覆盖过它。请跑一遍该 project 确认哪些 spec 需要声明闸开侧,再登记进 DECLARED_TEST_CONFIGS。(本仓栽过:test/journeys/ 被 e2e 配置显式排除,整条走结算真相链的旅程直到 CI 才红。)`,
+      });
+    }
+  }
+  for (const declared of Object.keys(declaredConfigs)) {
+    if (!actualConfigs.includes(declared)) {
+      findings.push({
+        criterion: 'C6',
+        detail: `test/${declared} 已登记但不存在 —— 清单与真源脱节,请更新 DECLARED_TEST_CONFIGS。`,
+      });
     }
   }
 

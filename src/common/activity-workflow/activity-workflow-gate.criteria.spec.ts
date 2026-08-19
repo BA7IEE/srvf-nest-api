@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
+  DECLARED_TEST_CONFIGS,
   GATE_FILE,
   LEGACY_ASSERT,
   READ_SOURCE,
@@ -25,6 +26,7 @@ import {
 const PUNCH = 'src/modules/attendances/attendance-punch-command.service.ts';
 const REVIEW = 'src/modules/attendances/attendance-review.service.ts';
 const SUMMARY = 'src/modules/attendances/participation-summary-query.service.ts';
+const JOURNEYS_KEY = 'jest-journeys.config.ts';
 const WORKER_MODULE = 'src/modules/activities/activity-batch-worker.module.ts';
 const TEAM_JOIN_PROBE = 'src/modules/team-join/team-join-enrollment.service.ts';
 
@@ -48,6 +50,7 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       expect(counts.legacyFiles).toBeGreaterThan(0);
       expect(counts.readFiles).toBeGreaterThan(0);
       expect(counts.gateDependentModules).toBeGreaterThan(0);
+      expect(counts.declaredTestRoots).toBeGreaterThan(0);
     });
   });
 
@@ -151,6 +154,39 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       const c5 = findings.filter((f) => f.criterion === 'C5');
       expect(c5.length).toBeGreaterThan(0);
       expect(c5.some((f) => f.detail.includes(WORKER_MODULE))).toBe(true);
+    });
+  });
+
+  describe('C6 正对照:测试根漏登记 ⇒ 必红', () => {
+    it('把 jest-journeys 从清单里拿掉 ⇒ C6 红并点名它', () => {
+      // 这条复现的是**本刀真实踩到、且 C1–C5 一条都没抓到**的缺口:
+      // test/journeys/ 被 jest-e2e.config.ts 的 testPathIgnorePatterns **显式排除**,
+      // 是独立 jest project;我按「跑 e2e 看谁红」定闸位姿态,整个 journeys 根从没被跑过,
+      // 直到 CI 把「金五条③考勤修正全链」撞红。
+      // C1–C5 全在 src/** 上判,**结构上看不见测试目录** —— 那是它们的盲区。
+      //
+      // 真实目录不可变(readdirSync 读真源),故从**清单侧**证伪:漏登一个真实存在的根 ⇒ 必红。
+      const withoutJourneys = Object.fromEntries(
+        Object.entries(DECLARED_TEST_CONFIGS).filter(([key]) => key !== JOURNEYS_KEY),
+      );
+      expect(Object.keys(withoutJourneys)).not.toContain(JOURNEYS_KEY);
+
+      const { findings } = runCriteria({}, withoutJourneys);
+      const c6 = findings.filter((f) => f.criterion === 'C6');
+      expect(c6.length).toBeGreaterThan(0);
+      expect(c6.some((f) => f.detail.includes(JOURNEYS_KEY))).toBe(true);
+    });
+
+    it('清单登记了不存在的配置 ⇒ C6 红(另一侧:清单与真源脱节)', () => {
+      const { findings } = runCriteria(
+        {},
+        {
+          ...DECLARED_TEST_CONFIGS,
+          'jest-does-not-exist.config.ts': '不存在的根',
+        },
+      );
+      const c6 = findings.filter((f) => f.criterion === 'C6');
+      expect(c6.some((f) => f.detail.includes('jest-does-not-exist.config.ts'))).toBe(true);
     });
   });
 
