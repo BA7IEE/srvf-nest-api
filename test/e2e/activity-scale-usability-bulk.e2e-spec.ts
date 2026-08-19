@@ -244,6 +244,52 @@ describe('activity scale usability: onsite bulk punch without manual splitting',
     return { activityId: activity.id, sessionId: session.id, positionId: position.id };
   }
 
+  /**
+   * 同一活动下的**第二个场次**。
+   *
+   * 🔴 为什么非要有它:变异 A/B 实测发现,只把 `sessionId` 条件从 INSERT ... SELECT 里拿掉时,
+   *    「只认本场次」那条行为判据**仍然是绿的** —— 因为夹具里每个活动只有一个场次,
+   *    活动边界顺手把场次边界也挡住了,场次那一维根本没有反面样本可翻。
+   *    有了兄弟场次,场次边界才真的被单独钉住。
+   */
+  async function createSiblingSession(
+    scenario: Scenario,
+  ): Promise<{ sessionId: string; positionId: string }> {
+    const index = ++sequence;
+    const now = new Date();
+    const session = await prisma.activitySession.create({
+      data: {
+        activityId: scenario.activityId,
+        code: `scale-bulk-sibling-session-${index}`,
+        name: `Scale Bulk Sibling Session ${index}`,
+        startAt: new Date(now.getTime() - 10 * 60_000),
+        endAt: new Date(now.getTime() + 2 * 60 * 60_000),
+        locationText: 'Scale Bulk Field',
+        capacity: 10_000,
+        checkInOpenAt: new Date(now.getTime() - 30 * 60_000),
+        checkInCloseAt: new Date(now.getTime() + 30 * 60_000),
+        checkOutOpenAt: new Date(now.getTime() - 30 * 60_000),
+        checkOutCloseAt: new Date(now.getTime() + 3 * 60 * 60_000),
+        locationRequired: false,
+        locationPolicySourceCode: 'session',
+        statusCode: 'scheduled',
+      },
+      select: { id: true },
+    });
+    const position = await prisma.activitySessionPosition.create({
+      data: {
+        activityId: scenario.activityId,
+        sessionId: session.id,
+        code: `scale-bulk-sibling-position-${index}`,
+        name: `Scale Bulk Sibling Position ${index}`,
+        attendanceRoleCode: 'volunteer',
+        capacity: 10_000,
+      },
+      select: { id: true },
+    });
+    return { sessionId: session.id, positionId: position.id };
+  }
+
   /** 真实报名链路(HTTP)—— 用来证明「条件展开」认的就是真链路造出来的那批身份。 */
   async function submitMember(
     scenario: Scenario,
@@ -274,7 +320,11 @@ describe('activity scale usability: onsite bulk punch without manual splitting',
    * 规模夹具:只为「不变量 5 的资源读数」服务,**不**用来证明链路连通(那由上面的
    * HTTP 报名用例负责)。用 generate_series 直插,免得夹具本身先撞 bind 上限。
    */
-  async function seedIdentitiesInBulk(scenario: Scenario, count: number): Promise<void> {
+  async function seedIdentitiesInBulk(
+    scenario: Scenario,
+    count: number,
+    into: { sessionId: string; positionId: string } = scenario,
+  ): Promise<string[]> {
     const tag = `bulkscale${++sequence}`;
     await prisma.$executeRaw`
       INSERT INTO "Member" ("id", "createdAt", "updatedAt", "memberNo", "displayName", "status")
@@ -296,12 +346,21 @@ describe('activity scale usability: onsite bulk punch without manual splitting',
         "id", "createdAt", "updatedAt", "activityId", "sessionId", "registrationId",
         "memberId", "currentStatusCode", "currentPositionId"
       )
-      SELECT gen_random_uuid()::text, NOW(), NOW(), ${scenario.activityId}, ${scenario.sessionId},
-             r."id", r."memberId", 'pass', ${scenario.positionId}
+      SELECT gen_random_uuid()::text, NOW(), NOW(), ${scenario.activityId}, ${into.sessionId},
+             r."id", r."memberId", 'pass', ${into.positionId}
       FROM "ActivityRegistration" r
       JOIN "Member" m ON m."id" = r."memberId"
       WHERE m."memberNo" LIKE ${`${tag}-%`}
     `;
+    const seeded = await prisma.activityParticipationIdentity.findMany({
+      where: {
+        activityId: scenario.activityId,
+        sessionId: into.sessionId,
+        member: { memberNo: { startsWith: `${tag}-` } },
+      },
+      select: { id: true },
+    });
+    return seeded.map((row) => row.id);
   }
 
   function bulkUrl(scenario: Scenario): string {
@@ -379,18 +438,22 @@ describe('activity scale usability: onsite bulk punch without manual splitting',
     );
   }, 180_000);
 
-  it('selection 只认路径上那一场次:别的场次/别的活动的参与身份一个都不进来', async () => {
+  it('selection 只认路径上那一场次:同活动的兄弟场次与别的活动都一个都不进来', async () => {
     const target = await createScenario();
     const other = await createScenario();
     const targetIdentity = await submitMember(target, {
       auth: applicantAuth,
       memberId: applicantMemberId,
     });
-    const otherIdentity = await submitMember(other, {
+    const otherActivityIdentity = await submitMember(other, {
       auth: applicantAuth,
       memberId: applicantMemberId,
     });
-    expect(targetIdentity).not.toBe(otherIdentity);
+    // 同一活动下的兄弟场次 —— 活动边界挡不住它,只有场次边界能。
+    const sibling = await createSiblingSession(target);
+    const siblingIdentities = await seedIdentitiesInBulk(target, 2, sibling);
+    expect(targetIdentity).not.toBe(otherActivityIdentity);
+    expect(siblingIdentities).toHaveLength(2);
 
     const created = await postBulk(target, {
       operationKey: `scale-bulk-scope-${++sequence}`,
@@ -403,9 +466,13 @@ describe('activity scale usability: onsite bulk punch without manual splitting',
       where: { jobId: created.body.data.jobId as string },
       select: { resourceId: true },
     });
+    // 先钉两边非空,再比集合。
     expect(items.length).toBeGreaterThan(0);
-    expect(items.map((item) => item.resourceId)).toEqual([targetIdentity]);
-    expect(items.map((item) => item.resourceId)).not.toContain(otherIdentity);
+    expect(new Set(items.map((item) => item.resourceId))).toEqual(new Set([targetIdentity]));
+    for (const leaked of [otherActivityIdentity, ...siblingIdentities]) {
+      expect(items.map((item) => item.resourceId)).not.toContain(leaked);
+    }
+    expect(created.body.data.total).toBe(1);
   }, 180_000);
 
   it('selection 的可选条件按 statusCodes / positionId 收窄,且收窄只会变少不会变多', async () => {
