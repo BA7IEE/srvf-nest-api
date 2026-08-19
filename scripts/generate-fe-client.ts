@@ -251,11 +251,26 @@ function renderSchemaDecl(name: string, schemas: AnyObject): string[] {
   return lines;
 }
 
-function header(surfaceTitle: string, digest: string): string[] {
+/**
+ * ── contractVersion:让「拿到文件就能判断新旧」成立 ──────────────────────
+ *
+ * 合同 §16.1 ⑤ 要求五端用同一 contract version。可四个前端在**别的仓库、别的部署**,
+ * 后端看不见它们编译时用的是哪一版 —— 而在这一行之前,它们**自己也看不见**:
+ * 产物头部只有 `generatorVersion`(生成器自身的版本,与契约无关)和一串 `inputDigest`
+ * (能判"变没变",判不了"是哪一版")。
+ *
+ * 这一行**派生自** `docs/handoff/openapi.json` 的 `info.version`,不是新写一处版本声明
+ * (真源恒为三处:package.json / apply-swagger / openapi.json,见 `cutover:check` 5a)。
+ * 派生而非声明,也让"戳与真源脱节"在结构上不可能:`info.version` 就在 `computeInputDigest`
+ * 的输入闭包里(整份 contractText 参与哈希),改了版本而不重新生成 ⇒
+ * `pnpm docs:feclient:check` 当场逐字对不上。
+ */
+function header(surfaceTitle: string, digest: string, contractVersion: string): string[] {
   return [
     '// 由 scripts/generate-fe-client.ts 生成,请勿手改。',
     '// 真相源:后端 live /api/docs-json;本文件派生自 docs/handoff/openapi.json 快照。',
     `// surface: ${surfaceTitle}`,
+    `// contractVersion: ${contractVersion}`,
     `// generatorVersion: ${GENERATOR_VERSION}`,
     `// inputDigest: ${digest}`,
     '',
@@ -268,10 +283,15 @@ function header(surfaceTitle: string, digest: string): string[] {
  * 共用集是**算出来的**(出现在 ≥2 个 surface 的 schema),不是硬编码清单 ——
  * 硬编码会随契约演进静默失准,而失准的形式恰好是「又出现了两份相同定义」。
  */
-function renderShared(digest: string, sharedNames: readonly string[], doc: AnyObject): string {
+function renderShared(
+  digest: string,
+  contractVersion: string,
+  sharedNames: readonly string[],
+  doc: AnyObject,
+): string {
   const schemas = ((doc.components ?? {}) as AnyObject).schemas as AnyObject;
   const lines: string[] = [
-    ...header('shared —— 被两个及以上 surface 共用的类型(唯一定义处)', digest),
+    ...header('shared —— 被两个及以上 surface 共用的类型(唯一定义处)', digest, contractVersion),
     '/** 统一响应 envelope —— 全仓契约恒为 { code, message, data }。 */',
     'export interface ApiEnvelope<T> {',
     '  code: number;',
@@ -309,12 +329,13 @@ function renderShared(digest: string, sharedNames: readonly string[], doc: AnyOb
 function renderTypes(
   surfaceTitle: string,
   digest: string,
+  contractVersion: string,
   exclusiveNames: readonly string[],
   sharedUsed: readonly string[],
   doc: AnyObject,
 ): string {
   const schemas = ((doc.components ?? {}) as AnyObject).schemas as AnyObject;
-  const lines: string[] = [...header(surfaceTitle, digest)];
+  const lines: string[] = [...header(surfaceTitle, digest, contractVersion)];
   // 共用类型不在本文件重复定义,而是 import + re-export。
   //
   // ⚠️ 必须 **import 与 re-export 两句都写**:`export type { X } from '…'` 只把 X 暴露给
@@ -336,6 +357,7 @@ function renderClient(
   surfaceId: string,
   surfaceTitle: string,
   digest: string,
+  contractVersion: string,
   endpoints: readonly Endpoint[],
   schemaNames: readonly string[],
 ): string {
@@ -343,6 +365,7 @@ function renderClient(
   const lines: string[] = [
     '// 由 scripts/generate-fe-client.ts 生成,请勿手改。',
     `// surface: ${surfaceTitle}`,
+    `// contractVersion: ${contractVersion}`,
     `// generatorVersion: ${GENERATOR_VERSION}`,
     `// inputDigest: ${digest}`,
     '//',
@@ -418,6 +441,18 @@ export function computeInputDigest(contractText: string): string {
 export function renderAll(contractText: string): Map<string, string> {
   const doc = JSON.parse(contractText) as AnyObject;
   const digest = computeInputDigest(contractText);
+
+  // 契约版本从快照里**取**,不在这里声明。取不到就当场炸 —— 否则头部会印出
+  // `// contractVersion: undefined`,那比没有戳更糟:对方拿到一份看着有戳的文件,
+  // 戳却是废值,而 `docs:feclient:check` 只比"生成结果与仓内是否一致",两边同样废、照样绿。
+  const contractVersion = ((doc.info ?? {}) as AnyObject).version;
+  if (typeof contractVersion !== 'string' || contractVersion.length === 0) {
+    throw new Error(
+      `${CONTRACT} 的 info.version 缺失或不是非空字符串(读到:${JSON.stringify(contractVersion)})—— ` +
+        '契约版本戳没有真源可派生,拒绝生成。先跑 `pnpm docs:openapi` 刷新快照。',
+    );
+  }
+
   const files = new Map<string, string>();
 
   // 先把五个 surface 各自的 schema 闭包算出来,再据此**算出**共用集 ——
@@ -437,17 +472,20 @@ export function renderAll(contractText: string): Map<string, string> {
     .sort();
   const sharedSet = new Set(sharedNames);
 
-  files.set(path.posix.join(OUT_DIR, SHARED_DIR, 'types.ts'), renderShared(digest, sharedNames, doc));
+  files.set(
+    path.posix.join(OUT_DIR, SHARED_DIR, 'types.ts'),
+    renderShared(digest, contractVersion, sharedNames, doc),
+  );
   for (const { surface, endpoints, names } of perSurface) {
     const exclusive = names.filter((name) => !sharedSet.has(name));
     const sharedUsed = names.filter((name) => sharedSet.has(name));
     files.set(
       path.posix.join(OUT_DIR, surface.id, 'types.ts'),
-      renderTypes(surface.title, digest, exclusive, sharedUsed, doc),
+      renderTypes(surface.title, digest, contractVersion, exclusive, sharedUsed, doc),
     );
     files.set(
       path.posix.join(OUT_DIR, surface.id, 'client.ts'),
-      renderClient(surface.id, surface.title, digest, endpoints, names),
+      renderClient(surface.id, surface.title, digest, contractVersion, endpoints, names),
     );
   }
   return files;

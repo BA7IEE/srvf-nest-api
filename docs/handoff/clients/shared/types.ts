@@ -1,6 +1,7 @@
 // 由 scripts/generate-fe-client.ts 生成,请勿手改。
 // 真相源:后端 live /api/docs-json;本文件派生自 docs/handoff/openapi.json 快照。
 // surface: shared —— 被两个及以上 surface 共用的类型(唯一定义处)
+// contractVersion: 0.66.0
 // generatorVersion: 1.0.0
 // inputDigest: sha256:12fc1b8c910f694ff94d5a56e414c42c391de31cc4a969460c41b220079d724a
 
