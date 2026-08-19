@@ -22,6 +22,10 @@
   合同 §3.22 的分录级不可见性**一寸未让**:新方法只返回标量小计,不返回任何分录行
   (无 entryKey / 无日期 / 无逐条金额),既有三条分录读面仍是全仓唯一出口且仍钉死
   `committed`;`ledger-query.service.ts` 的 7 处 committed 过滤一处未改,也没有引入
-  `includeUncommitted` 之类的开关。四个数由**全仓唯一入口** `loadMemberLedgerTotals`
-  计算,三条读面口径一致是结构性的而非靠各自记得调同一个方法。
+  `includeUncommitted` 之类的开关。§3.22 管**分录**、本刀给**聚合**,两者不相交 ——
+  合同对「聚合口径能否统计未 committed 批次」是**留白**而非禁止,已登记为
+  **合同缺口 #28**(`docs/ai-harness/NEXT_TASKS.md` P1-28 台账),待折进下一版修订件。
+  ⚠️ 本刀**不**主张「活文档拍板可压过冻结合同」——覆盖冻结稿的正式机制只有修订件。
+
+  四个数由**全仓唯一入口** `loadMemberLedgerTotals` 计算,三条读面口径一致是结构性的而非靠各自记得调同一个方法。
   零新增权限码、零 schema、零 migration、零新增端点。

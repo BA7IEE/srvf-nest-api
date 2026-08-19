@@ -218,7 +218,7 @@
 
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
-### P1-28 活动业务全流程改造(批次 0–8) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件，[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960))、③ Form runtime / 一次性附件会话([#961](https://github.com/BA7IEE/srvf-nest-api/pull/961))、④ canonical 报名命令主链([#962](https://github.com/BA7IEE/srvf-nest-api/pull/962))、⑤分配/预留名额 DB guards([#963](https://github.com/BA7IEE/srvf-nest-api/pull/963))、发布审核容量桶投影([#964](https://github.com/BA7IEE/srvf-nest-api/pull/964))、三层 CapacityReservation 内核([#965](https://github.com/BA7IEE/srvf-nest-api/pull/965) 已合 main)、⑨永久报名头 DB 地基与 onsite 历史头 fail-closed([#968](https://github.com/BA7IEE/srvf-nest-api/pull/968))、⑩永久头 runtime/个人取消闭环、⑯分配与邀请 C runtime、⑰资格配置/发布激活（managed RuleSet/Rule typed configuration、V5 审核冻结/activation）、⑱活动到点 expiry（既有 worker + PG reconciliation、无新 cron）；合同已修订至 v1.1.1,缺口台账累计 #27**
+### P1-28 活动业务全流程改造(批次 0–8) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件，[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960))、③ Form runtime / 一次性附件会话([#961](https://github.com/BA7IEE/srvf-nest-api/pull/961))、④ canonical 报名命令主链([#962](https://github.com/BA7IEE/srvf-nest-api/pull/962))、⑤分配/预留名额 DB guards([#963](https://github.com/BA7IEE/srvf-nest-api/pull/963))、发布审核容量桶投影([#964](https://github.com/BA7IEE/srvf-nest-api/pull/964))、三层 CapacityReservation 内核([#965](https://github.com/BA7IEE/srvf-nest-api/pull/965) 已合 main)、⑨永久报名头 DB 地基与 onsite 历史头 fail-closed([#968](https://github.com/BA7IEE/srvf-nest-api/pull/968))、⑩永久头 runtime/个人取消闭环、⑯分配与邀请 C runtime、⑰资格配置/发布激活（managed RuleSet/Rule typed configuration、V5 审核冻结/activation）、⑱活动到点 expiry（既有 worker + PG reconciliation、无新 cron）；合同已修订至 v1.1.1,缺口台账累计 #28**
 
 > **需求口径变更(2026-08-04)**:**= v1.1 四份 + [`AMENDMENTS-v1.1.1`](../archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md),冲突以后者为准。**
 > 第 1 批建表过程中实测撞到**五处合同内部不一致**,维护者当日**全部接受**并发布修订件。原件与 SHA256 一字未动(校验仍过)。
@@ -269,7 +269,7 @@
 > `release_to_public_pool` / `void_on_expiry`，默认 `release_to_public_pool`。canonical 报名命令已有
 > 从 1 开始写入 `preferenceOrder` 的生产 writer；本刀不改该 writer。
 > **五条均不阻塞第 2 批。**
-> **待折进下一版修订件的已知合同缺口(#6–#27；#7、#14、#16–#18、#23–#25、#27 已裁定，#19–#21 为本刀保守工程裁定，#22 未裁定)**:#6 `workflowRevision` 来源未定义；**本刀局部执行口径**：draft FormVersion 取创建时 Activity 当前值，initial/change 审批激活取该次审批产生的新值；这不代表 #6 已整体解决 ·
+> **待折进下一版修订件的已知合同缺口(#6–#28；#7、#14、#16–#18、#23–#25、#27 已裁定，#19–#21 为本刀保守工程裁定，#22、#28 未裁定)**:#6 `workflowRevision` 来源未定义；**本刀局部执行口径**：draft FormVersion 取创建时 Activity 当前值，initial/change 审批激活取该次审批产生的新值；这不代表 #6 已整体解决 ·
 > #7 `resultCode` 无「未定」取值（2026-08-07 已裁定：preparing=`null`，非空为三值闭集，待折进修订件）· #8 关账幂等列缺失 · #9 `requestedChangeJson` 结构未定义 ·
 > #10 无人触发 `commitBatch` · **#11** §6.1/§6.2 要求草稿动作携带 `operationKey`，但 §10.3 必须覆盖闭集不含它、§3 也没有持久化落点；本刀按 §10.3 不接收该字段 ·
 > **#12** §3.1 的 `cancelOperationKey` 提到“全历史操作记录另表保存”，但该表全合同未定义，禁止从散文自造 ·
@@ -286,6 +286,20 @@
 > **#24（维护者 2026-08-09 已裁定，实施待后续 caller）**：`capacityReservationId` 固定指向 session reservation；释放清空，不一致为 20147。
 > **#25（维护者 2026-08-09 已裁定）**：visitor `attendanceCode` 恒为 null，且无写入口。
 > **#27（维护者 2026-08-09 已裁定；第 82 migration + 第 4 批⑩已兑现）**：每次报名/重报的保险 evidence 绑定当次 `ActivityRegistrationRevision`；旧 header-only evidence 不改不回填。第 82 以 nullable composite FK + legacy/revision 两类 partial unique 落兼容地基；runtime producer 已写当次 revision，approval 对 currentRevision>0 只认对应 evidence，currentRevision=0 才兼容唯一 legacy NULL evidence。上线须 drain→独立 deploy D81/D82+探针→保持 drain 切整批 runtime exact SHA，禁新旧混跑或旧版回滚。
+> **#28（第 7 批第 ②-a 刀登记，未裁定 —— 留白，不是违反）**：§3.22 只规定了**分录级**可见性
+> (「准备中和 ready **分录**必须对所有正常读面不可见。只允许通过 `batch.statusCode='committed'`
+> join 后读取。」),**对「账本聚合口径能不能统计未 committed 批次」全合同没有表态**。
+> **为何不构成冲突**:②-a 新增的 `LedgerQueryService.sumInFlightTotalsForMember` 返回的是
+> **标量小计**——SQL 里只有两个 `COALESCE(SUM(...))::text`,零 entryKey、零 ledgerDate、
+> 零逐条金额,调用方拿不到任何可枚举的行;三条分录读面仍是全仓唯一出口且仍钉死 committed
+> (代码 7 处 committed 过滤一处未改,执行位在 `activity-batch7-in-flight-display.e2e-spec.ts`
+> 不变量 3 / 3b)。⇒ §3.22 管的是分录、本刀给的是聚合,两者不相交。
+> ⚠️ **本条不主张「活文档拍板可以压过冻结合同」** —— 覆盖冻结稿的正式机制只有修订件
+> (`AMENDMENTS-v1.1.1.md` 即此范式);本条是登记**留白**待合同方定稿,不是自行裁定。
+> 关联:AC-054(「页面和统计只能看见 0%/100% 的正式结果」)约束的是**正式结果**原子性,
+> 已生效那一轴仍只有 0%/100%,在途轴按定义不是正式结果;但 `preparing` 期间分录逐条 INSERT,
+> 故在途小计在准备期会逐步长大,做 10000 人规模用例时须按轴分别断言(已写进 AC-054 blocker)。
+
 > **账本读面权限口径（维护者 2026-08-06 拍板）**：复用 `attendance.read.sheet`；合同 §6.11
 > 未规定，若日后要收紧需另立权限码 + 三处 seed spec 连坐。
 >
