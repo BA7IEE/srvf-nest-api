@@ -17,6 +17,26 @@
 **本阶段结束时应达到**:公网 HTTPS 域名可访问 `/health/ready`,
 以 SUPER_ADMIN 登录成功,`APP_ENV=production` 稳定运行。
 
+### ⚠️ 先决定:这一轮是「内部验证轮」还是「最终部署」
+
+两者步骤完全相同,但**取值不同**,而且决定了 §1.4 那条「首次 seed 定终身」有多要命:
+
+| | 内部验证轮 | 最终部署 |
+|---|---|---|
+| 目的 | 踩坑、验链路,**不对队员开放** | 真人开始用 |
+| 字典取值 | 现状即可(含占位值) | **必须已定稿** |
+| `envPrefix` | `staging` | `prod` |
+| 之后清库 | ✅ 会清,所以数据不值钱 | ❌ 不能清 |
+
+**推荐先跑一轮内部验证轮** —— 在数据不值钱的时候把 tools 镜像、bootstrap、反代这些坑踩完。
+`envPrefix` 分开填,测试期上传的对象与正式期在桶里天然隔离,清库时不必去 COS 里辨认哪些是测试残留。
+(`envPrefix` 是附件 key 的命名空间**兼安全边界**,防止对命名空间外对象签 signed URL;
+见 `biz-code.constant.ts:3228`。它**可以后改**——在 PATCH 白名单内,`storage-settings.service.ts:392`,
+与 §1.3 锁死的 bucket/region 不同。)
+
+🔴 **清库的窗口只在「真人开始用之前」**。一旦队员开始报名、打卡、传证书,数据就清不得了 ——
+最终部署之前必须先完成字典定稿(§1.4)。
+
 ---
 
 ## 1. 🔴 动手前必须知道的六件事
@@ -180,7 +200,7 @@ cat > /root/cos-bootstrap.json <<'EOF'
   "databaseUrl": "<生产库连接串>",
   "bucket": "srvf-attachments-1433783892",
   "region": "ap-guangzhou",
-  "envPrefix": "prod",
+  "envPrefix": "prod",          <-- 内部验证轮填 "staging",见 §0
   "secretId": "<COS SecretId>",
   "secretKey": "<COS SecretKey>"
 }
