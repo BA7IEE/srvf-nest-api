@@ -17,13 +17,41 @@ name: Nightly E2E leaks
 #
 # 不加入 branch protection required checks:夜间跑,不阻塞 PR;失败通过 workflow
 # 失败通知维护者,修复走常规 B/C 档 PR。
+#
+# ──────────────────────────────────────────────────────────────────────────
+# 2026-08-19:按域 2 分片(issue #1080)
+#
+# 为什么分片:套件长到 290 个 spec,单进程跑满 75m 内层上限仍未跑完(判定 too-slow)。
+# 08-17 那晚是**贴着线过的**(4345s / 4500s,余量 3.1%),所以撞线不是意外。
+# 历次「放宽 timeout」都只是还利息:45m → 75m 撑了 8 天。本次改还本金。
+#
+# 为什么**不用** `jest --shard N/M`(白天 CI 用的那种):
+#   `--shard` 按文件哈希均分,同域 spec 会被打散。夜间线的价值不是跑得快,是
+#   detectOpenHandles 在**单进程连续跑**时能看见 spec 之间累积出来的句柄泄漏 ——
+#   哈希均分会把「同族共享的单例 / 缓存」这类泄漏的两端拆到不同片里,片内看不见。
+#   故按**域**切(scripts/e2e-shard-plan.mjs),同域 spec 仍连续跑在同一个 node 进程里。
+#
+# 为什么是 2 片(不是 3、4):片数是与检出能力的**直接权衡** —— 片越多,每个进程
+#   能观察到的累积状态越少。实测:activity 族单族就约 29 分钟,是不可再分的地板,
+#   **切到 4 片一秒都省不下来**,3 片相对 2 片也只买到约 10 分钟墙钟。故取「够用
+#   就好」的最小值 2:每个进程仍连续跑 ~145 个 spec。
+#
+# 本次切法**保住了什么**:
+#   - 单 spec 泄漏:100% 保留 —— 每个 spec 都在某一片的进程里,它漏的句柄会在那一片
+#     结束时被 detectOpenHandles 抓到。分片不改变这一点。
+#   - 同域跨 spec 泄漏:保留 —— 同域 spec 仍在同一进程连续跑(这正是按域切的理由)。
+# 本次切法**放弃了什么**(有意为之,记下来以免下次误判):
+#   - 跨域跨 spec 交互泄漏:片 1 的 spec 埋下、片 2 的 spec 才暴露的那类,看不见了。
+#   - 整套内存累积 → OOM 的灵敏度:每片只累积约一半,OOM 分支更难触发。
+#     ⇒ 若哪天怀疑内存累积,手动跑一次不带 --testPathPatterns 的全量串行才是权威判据。
+# ──────────────────────────────────────────────────────────────────────────
 
 on:
   schedule:
     - cron: '0 18 * * *' # 18:00 UTC = 北京 02:00
   workflow_dispatch: {}
 
-# issues: write 是**失败可见性**所需的最小权限(见 job 末尾两个通知步骤)。
+# issues: write 是**失败可见性**所需的最小权限(见 notify-failure / notify-success 两个 job)。
 # 2026-08-16 事故:本线连红 6 天无人知晓 —— 夜间线不进 required checks(设计如此,
 # 它慢且不该阻塞 PR),于是「红了」这个事实没有任何投递渠道。默认的 workflow 失败
 # 邮件发给「最后改过本文件的人」,既不稳定也会淹在邮件里。故改用 Issue 投递。
@@ -45,11 +73,19 @@ env:
 
 jobs:
   e2e-leaks:
-    name: E2E serial + detectOpenHandles
+    name: E2E serial + detectOpenHandles (片 ${{ matrix.shard }})
     runs-on: ubuntu-latest
+    strategy:
+      # 一片红**不许**掐掉另一片:两片的判定各自独立,掐掉就丢了另一半的读数,
+      # 而「另一半是什么颜色」恰恰是分片后判断「这是局部问题还是全局问题」的依据。
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     # 串行基线随 spec 数增长,须与内层 timeout 一起复核(见下方 Run E2E 步骤的注释)。
     # 恒保持 job timeout > 内层 timeout,否则内层的「超时/泄漏」判别拿不到执行机会。
-    timeout-minutes: 90
+    # 差值 15m 覆盖装依赖 / 起 PostgreSQL / 迁移 / 上传结论(实测约 4–5 分钟)。
+    # 该不等式由 scripts/harness-guards.selftest.ts 机核,不只是这行注释。
+    timeout-minutes: 85
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -88,50 +124,71 @@ jobs:
       - name: Initialize test database
         run: pnpm db:test:init
 
-      # 串行全量 e2e + 句柄泄漏检测(**权威泄漏判据**)。
+      # 分片清单完整性 —— **在跑之前先证明没有 spec 会落空**。
+      # 新增 spec 落不进任何一片时,两片都会正常绿,覆盖面却悄悄缩水:这是本仓最怕的
+      # 静默失效形状(与漏跑等价,且没有任何信号)。故它必须是**跑之前**的硬闸。
+      # 注:本步骤只核「清单自洽」;「jest 实收 == 清单预算」由下面的 shard-plan-drift 分支核。
+      - name: 核验分片清单完整性(每个 spec 恰好落进一片)
+        run: node scripts/e2e-shard-plan.mjs --verify
+
+      # 串行分片 e2e + 句柄泄漏检测(**权威泄漏判据**)。
       #
       # 时长基线(随 spec 数增长,**改 timeout 前先看实测**):
       #   2026-07-28  195 spec  本机 1641s ≈ 27.4 分钟,195/195 绿、零句柄报告
       #   2026-08-08  264 spec  CI 首次撞 45m 上限
       #   2026-08-16  279 spec  内层放宽到 75m(job 90m)
+      #   2026-08-17  284 spec  4345s ≈ 72分25秒 绿 —— **余量仅 3.1%**,已贴线
+      #   2026-08-18  290 spec  撞 75m 内层上限,判定 too-slow(issue #1080)
+      #   2026-08-19  290 spec  **改为按域 2 分片**(片1 144 / 片2 146),内层 70m、job 85m
+      #                         首跑实测见 issue #1080 收口评论
       #
       # ⚠️ 2026-08-16 事故:08-08→08-15 连红 6 天,被读成「句柄泄漏」,实为**套件长胖跑不完**
       # (spec 195→264,压线抖动导致 08-09 还回绿过一次)。根因不在测试代码,在**判据把两种
       # 失败合并成了一条消息**。故本步骤下面把两者拆开判、拆开报:
       #   - jest 打了汇总行(`Test Suites:`)却仍被 timeout 杀 ⇒ **跑完了但进程不退出 = 真泄漏**
-      #   - 没有汇总行就被杀             ⇒ **没跑完 = 时长不够**,该调 timeout 或分片,不是找泄漏
+      #   - 没有汇总行就被杀             ⇒ **没跑完 = 时长不够**,该调 timeout 或再分片,不是找泄漏
       # 两条路径的处置完全相反,合并报会把人带向错误方向(实测已浪费一轮排查)。
+      # 分片后这两条**逐片各判各报**,判别路径与单进程时代逐字一致。
       - name: Run E2E (serial + detectOpenHandles; open handle = failure)
+        env:
+          SHARD: ${{ matrix.shard }}
         run: |
           set +e
           mkdir -p tmp
+          # 分片清单是唯一真相源:pattern 与预算数都由它给,workflow 不自己列文件名
+          # (两处各列一份迟早分叉,那时「跑了什么」和「以为跑了什么」不是一回事)。
+          pattern="$(node scripts/e2e-shard-plan.mjs --shard "$SHARD" --pattern)"
+          planned="$(node scripts/e2e-shard-plan.mjs --shard "$SHARD" --count)"
+          echo "片 ${SHARD}:预算 ${planned} 个 spec"
+          echo "pattern = ${pattern}"
           started=$(date +%s)
-          # --runInBand 把 279 个 spec 全跑在**一个** node 进程里,堆占用只增不减地累积。
-          # 2026-08-16 实测:3.9GB 撞上 node 默认 ~4GB 上限,FATAL ERROR: JavaScript heap
-          # out of memory(exit 134)。runner 有 16GB,故给 8GB —— 这是**缓解不是根治**:
-          # 真正的问题是「spec 之间内存没释放干净」,与本线要抓的句柄泄漏是同源症状。
-          # 若哪天 8GB 又撞满,不要continue加码,去查累积源(见下方 oom 分支的处置文案)。
+          # --runInBand 把本片全部 spec 跑在**一个** node 进程里,堆占用只增不减地累积。
+          # 2026-08-16 实测(当时单进程 279 spec):3.9GB 撞上 node 默认 ~4GB 上限,
+          # FATAL ERROR: JavaScript heap out of memory(exit 134)。runner 有 16GB,故给 8GB。
+          # 分片后每片只累积约一半,更不易撞 —— 但这**不等于问题解决了**:
+          # 若哪天又撞满,不要继续加码,去查累积源(见下方 oom 分支的处置文案)。
           NODE_OPTIONS='--max-old-space-size=8192' \
-            timeout --signal=TERM --kill-after=60s 75m pnpm test:e2e:leaks > tmp/leaks.log 2>&1
+            timeout --signal=TERM --kill-after=60s 70m pnpm test:e2e:leaks --testPathPatterns "$pattern" > tmp/leaks.log 2>&1
           rc=$?
           set -e
           elapsed=$(( $(date +%s) - started ))
           tail -200 tmp/leaks.log
-          # 时长恒可见:趋势是「该调 timeout / 该分片」的唯一先行指标,别等撞线才发现。
+          # 时长恒可见:趋势是「该调 timeout / 该再分片」的唯一先行指标,别等撞线才发现。
           human="$(( elapsed / 60 ))分$(( elapsed % 60 ))秒"
-          echo "串行 e2e 用时 ${elapsed}s ≈ ${human}(内层上限 75m = 4500s)"
-          # 判定结论投递给下方通知步骤 —— 通知**复用同一判据**,不自己再判一次
+          echo "片 ${SHARD} 串行 e2e 用时 ${elapsed}s ≈ ${human}(内层上限 70m = 4200s,余量 $(( 100 - elapsed * 100 / 4200 ))%)"
+          # 判定结论投递给下方渲染步骤 —— 通知**复用同一判据**,不自己再判一次
           # (两份判断迟早分叉:workflow 说超时、Issue 说泄漏,读的人无从取信)。
-          # $GITHUB_ENV 在本步骤 exit 非零后,对后续 if:failure() 步骤依然可见。
+          # $GITHUB_ENV 在本步骤 exit 非零后,对后续 if:always() 步骤依然可见。
           {
             echo "LEAK_ELAPSED=${elapsed}"
             echo "LEAK_ELAPSED_HUMAN=${human}"
+            echo "LEAK_PLANNED=${planned}"
           } >> "$GITHUB_ENV"
 
           # ① 真泄漏:jest 打出了逐句柄堆栈。与是否超时无关,恒优先判。
           if grep -q 'Jest has detected the following' tmp/leaks.log; then
             echo 'LEAK_VERDICT=leak-with-stack' >> "$GITHUB_ENV"
-            echo "::error::检测到未关闭句柄(某 spec 的 afterAll 缺 app.close()?句柄堆栈见上方 jest 输出)"
+            echo "::error::片 ${SHARD} 检测到未关闭句柄(某 spec 的 afterAll 缺 app.close()?句柄堆栈见上方 jest 输出)"
             exit 1
           fi
 
@@ -139,10 +196,10 @@ jobs:
             # 超时的两种死法靠「jest 有没有打汇总行」判别 —— 处置相反,不可合并成一条消息。
             if grep -qE '^(Test Suites|Tests):' tmp/leaks.log; then
               echo 'LEAK_VERDICT=leak-no-stack' >> "$GITHUB_ENV"
-              echo "::error::套件已跑完(有汇总行)但进程 75m 内未退出 ⇒ 句柄泄漏且 jest 未能打出堆栈。查最后完成的 spec 的 afterAll。"
+              echo "::error::片 ${SHARD} 套件已跑完(有汇总行)但进程 70m 内未退出 ⇒ 句柄泄漏且 jest 未能打出堆栈。查本片最后完成的 spec 的 afterAll。"
             else
               echo 'LEAK_VERDICT=too-slow' >> "$GITHUB_ENV"
-              echo "::error::套件在 75m 内未跑完(无汇总行)⇒ 这是**时长不足**不是泄漏。处置:调高本步骤 timeout 与 job timeout-minutes,或把串行线分片。勿按泄漏排查。"
+              echo "::error::片 ${SHARD} 在 70m 内未跑完(无汇总行)⇒ 这是**时长不足**不是泄漏。处置:调高本步骤 timeout 与 job timeout-minutes,或在 scripts/e2e-shard-plan.mjs 里再切一片。勿按泄漏排查。"
             fi
             exit 1
           fi
@@ -151,77 +208,154 @@ jobs:
           # spec 之间的内存累积,不是 afterAll 关没关。exit 134 = SIGABRT,V8 OOM 走这条。
           if grep -q 'JavaScript heap out of memory' tmp/leaks.log || [ "$rc" -eq 134 ]; then
             echo 'LEAK_VERDICT=oom' >> "$GITHUB_ENV"
-            echo "::error::node 堆内存耗尽(exit $rc)⇒ 单进程串行跑全量 spec 时内存只增不减。这**不是**句柄泄漏也**不是**超时:查 spec 之间的内存累积(全局缓存/模块级单例/未销毁的 Nest 应用),别只加大 --max-old-space-size。"
+            echo "::error::片 ${SHARD} node 堆内存耗尽(exit $rc)⇒ 单进程串行跑本片 spec 时内存只增不减。这**不是**句柄泄漏也**不是**超时:查 spec 之间的内存累积(全局缓存/模块级单例/未销毁的 Nest 应用),别只加大 --max-old-space-size。"
+            exit 1
+          fi
+
+          # ④ 分片漂移:jest 实收的 suite 数与清单预算数对不上。
+          # 这是分片引入的**新失败面**,也是最危险的一种:新增 spec 落不进任何一片时,
+          # 每片都正常绿、覆盖面却缩水,没有任何信号。故必须在「绿」之前把它拦下。
+          # 汇总行形如 `Test Suites: 144 passed, 144 total`(有失败时前面还会多几段),
+          # 取最后一个 `<N> total`。
+          suites="$(sed -nE 's/^Test Suites:.*[^0-9]([0-9]+) total.*/\1/p' tmp/leaks.log | tail -1)"
+          if [ -z "$suites" ] || [ "$suites" -ne "$planned" ]; then
+            echo 'LEAK_VERDICT=shard-plan-drift' >> "$GITHUB_ENV"
+            echo "::error::片 ${SHARD} 实收 ${suites:-0} 个 suite,清单预算 ${planned} 个 —— 分片清单与 jest 实收不一致,覆盖面不可信。处置:本地跑 node scripts/e2e-shard-plan.mjs --verify,核对 test/e2e/ 新增文件落进了哪一片。"
             exit 1
           fi
 
           if [ "$rc" -ne 0 ]; then
             echo 'LEAK_VERDICT=suite-failed' >> "$GITHUB_ENV"
-            echo "::error::串行 e2e 失败(exit $rc),详见上方输出"
+            echo "::error::片 ${SHARD} 串行 e2e 失败(exit $rc),详见上方输出"
             exit "$rc"
           fi
-          echo "✓ 无句柄泄漏(用时 ${elapsed}s)"
+          echo 'LEAK_VERDICT=green' >> "$GITHUB_ENV"
+          echo "✓ 片 ${SHARD} 无句柄泄漏(${suites}/${planned} suite,用时 ${elapsed}s)"
 
-      # ──────────────────────────────────────────────────────────────────────
-      # 失败可见性(2026-08-16 新增)。本线不进 required checks,「红了」这件事
-      # 此前**没有任何投递渠道** —— 实测连红 6 天无人知晓。
-      #
-      # 三条设计约束,缺一条这机制就会自己失效:
-      #   ① 同一轮故障只开**一个** Issue,后续追评论 —— 否则连红 N 天刷 N 个同样的
-      #      Issue,收件人会开始整体无视它(告警疲劳 = 通知等于没有)。
-      #   ② 绿了**自动关闭** —— 否则 Issue 长期挂着,下次真红时分不清新旧。
-      #   ③ 结论**复用上一步的判据**($LEAK_VERDICT),不在这里重新判一次 ——
-      #      两份判断迟早分叉,那时 workflow 与 Issue 各说各话,读的人无从取信。
-      # 另:e2e 步骤之前就失败(装依赖/迁移/DB 起不来)时 $LEAK_VERDICT 为空,
-      # 走 infra-failed 分支照样投递 —— 静默是这套机制唯一不可接受的失败模式。
-      - name: 失败可见性 —— 开或追 Issue
-        if: failure()
+      # 本片结论落盘成 artifact,交给下方聚合 job 渲染。
+      # 为什么要跨 job 传:通知**必须**聚合两片后再发 —— 否则片 1 绿会去关掉片 2 刚开的
+      # Issue(矩阵 job 各自独立跑,谁先跑完不确定)。而聚合 job 拿不到别的 job 的
+      # $GITHUB_ENV,故经 artifact 落盘。判定本身仍只在上一步产生一次。
+      - name: 渲染本片结论
+        if: always()
         env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          SHA: ${{ github.sha }}
+          SHARD: ${{ matrix.shard }}
         run: |
           set -uo pipefail
           verdict="${LEAK_VERDICT:-infra-failed}"
           elapsed="${LEAK_ELAPSED_HUMAN:-未测得(未跑到计时点)}"
+          planned="${LEAK_PLANNED:-未知}"
           case "$verdict" in
+            green)
+              headline='✅ 绿' ;;
             leak-with-stack)
-              headline='句柄泄漏 —— jest 已给出逐句柄堆栈'
-              action='看 run 日志里的句柄堆栈,定位对应 spec 的 `afterAll`(通常是缺 `app.close()`)。' ;;
+              headline='句柄泄漏 —— jest 已给出逐句柄堆栈' ;;
             leak-no-stack)
-              headline='句柄泄漏 —— 套件跑完了但进程不退出'
-              action='查**最后完成**的那个 spec 的 `afterAll`;本次 jest 未能打出堆栈。' ;;
+              headline='句柄泄漏 —— 套件跑完了但进程不退出' ;;
             too-slow)
-              headline='套件没跑完 —— 时长不足,**不是**泄漏'
-              action='调高内层 `timeout` 与 job `timeout-minutes`,或把串行线分片。**勿按泄漏排查** —— 2026-08-08 那轮正是把这种失败读成了泄漏,白查一轮。' ;;
+              headline='本片没跑完 —— 时长不足,**不是**泄漏' ;;
             oom)
-              headline='node 堆内存耗尽 —— **不是**句柄泄漏,也**不是**超时'
-              action='单进程串行跑全量 spec 时内存只增不减。查 spec 之间的内存累积:模块级单例/全局缓存/未销毁的 Nest 应用实例。**别只顾加大 `--max-old-space-size`** —— 那是缓解,累积源不除迟早再撞。' ;;
+              headline='node 堆内存耗尽 —— **不是**句柄泄漏,也**不是**超时' ;;
+            shard-plan-drift)
+              headline='分片清单漂移 —— 覆盖面不可信(可能有 spec 没被任何一片跑到)' ;;
             suite-failed)
-              headline='串行 e2e 有测试失败'
-              action='按普通测试失败处理,与句柄泄漏无关。' ;;
+              headline='串行 e2e 有测试失败' ;;
             *)
-              headline='e2e 开跑之前就失败了(依赖/Prisma/数据库/环境)'
-              action='看 run 日志中 `Run E2E` 之前的步骤。' ;;
+              headline='e2e 开跑之前就失败了(依赖/Prisma/数据库/环境)' ;;
           esac
+          mkdir -p tmp/verdict
+          printf '| 片 %s | `%s` | %s | %s | %s 个 spec |\n' \
+            "$SHARD" "$verdict" "$headline" "$elapsed" "$planned" > "tmp/verdict/shard-${SHARD}.md"
+          cat "tmp/verdict/shard-${SHARD}.md"
+
+      - name: 上传本片结论
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: leak-verdict-${{ matrix.shard }}
+          path: tmp/verdict/
+          retention-days: 7
+
+  # ──────────────────────────────────────────────────────────────────────
+  # 失败可见性(2026-08-16 新增;2026-08-19 分片后改为聚合 job)。本线不进 required
+  # checks,「红了」这件事此前**没有任何投递渠道** —— 实测连红 6 天无人知晓。
+  #
+  # 三条设计约束,缺一条这机制就会自己失效:
+  #   ① 同一轮故障只开**一个** Issue,后续追评论 —— 否则连红 N 天刷 N 个同样的
+  #      Issue,收件人会开始整体无视它(告警疲劳 = 通知等于没有)。
+  #   ② 绿了**自动关闭** —— 否则 Issue 长期挂着,下次真红时分不清新旧。
+  #   ③ 结论**复用检测步骤的判定**($LEAK_VERDICT,经 artifact 传递),不在这里重新判
+  #      一次 —— 两份判断迟早分叉,那时 workflow 与 Issue 各说各话,读的人无从取信。
+  #
+  # ⚠️ 分片后为什么必须是**聚合** job 而不是每片各发一份:
+  #   `needs: e2e-leaks` + `if: failure()` 的语义是「任一片红」,
+  #   `needs: e2e-leaks` + `if: success()` 的语义是「两片全绿」。
+  #   若把关闭逻辑留在片内,片 1 绿就会去关掉片 2 刚开的 Issue —— 红着的线看起来是绿的。
+  # 另:e2e 步骤之前就失败(装依赖/迁移/DB 起不来)时 $LEAK_VERDICT 为空,
+  # 走 infra-failed 分支照样投递 —— 静默是这套机制唯一不可接受的失败模式。
+  notify-failure:
+    name: 失败可见性 —— 开或追 Issue
+    runs-on: ubuntu-latest
+    needs: e2e-leaks
+    if: failure()
+    steps:
+      - name: 取回各片结论
+        uses: actions/download-artifact@v4
+        with:
+          pattern: leak-verdict-*
+          merge-multiple: true
+          path: verdict
+        continue-on-error: true
+
+      - name: 开或追 Issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # 本 job **没有 checkout**(它不需要仓库内容),gh 便无从推断目标仓库 ——
+          # 缺了这行,gh issue list/create 会以 "failed to determine base repo" 失败,
+          # 通知发不出去,退回「红了没人知道」。GH_REPO 是 gh 官方认的兜底入口。
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -uo pipefail
+          # 各片结论逐行拼进表格;artifact 取不到时给出兜底行,**绝不静默**。
+          rows="$(cat verdict/shard-*.md 2>/dev/null | sort || true)"
+          if [ -z "$rows" ]; then
+            rows='| ? | `artifact-missing` | 取不到分片结论(看 run 日志) | — | — |'
+          fi
+          # 处置文案按「本轮出现过的判定」给 —— 分片后一轮可能同时有两种判定,
+          # 全给出来,别只挑第一条(挑一条就是又把两种失败合并成一条消息)。
+          # 处置文案按「本轮出现过的判定」给 —— 分片后一轮可能同时有两种判定,全给出来,
+          # 别只挑第一条(挑一条就是又把两种失败合并成一条消息,正是 2026-08-16 那轮的病根)。
+          : > tmp-actions.md
+          case "$rows" in *'`leak-with-stack`'*) echo '- **leak-with-stack**:看 run 日志里的句柄堆栈,定位对应 spec 的 `afterAll`(通常是缺 `app.close()`)。' >> tmp-actions.md ;; esac
+          case "$rows" in *'`leak-no-stack`'*) echo '- **leak-no-stack**:查该片**最后完成**的那个 spec 的 `afterAll`;本次 jest 未能打出堆栈。' >> tmp-actions.md ;; esac
+          case "$rows" in *'`too-slow`'*) echo '- **too-slow**:调高该 job 的内层 `timeout` 与 `timeout-minutes`,或在 `scripts/e2e-shard-plan.mjs` 里再切一片。**勿按泄漏排查** —— 2026-08-08 那轮正是把这种失败读成了泄漏,白查一轮。' >> tmp-actions.md ;; esac
+          case "$rows" in *'`oom`'*) echo '- **oom**:单进程串行跑本片 spec 时内存只增不减。查 spec 之间的内存累积:模块级单例/全局缓存/未销毁的 Nest 应用实例。**别只顾加大 `--max-old-space-size`** —— 那是缓解,累积源不除迟早再撞。' >> tmp-actions.md ;; esac
+          case "$rows" in *'`shard-plan-drift`'*) echo '- **shard-plan-drift**:jest 实收 suite 数与分片清单预算对不上 ⇒ **可能有 spec 没被任何一片跑到,而两片都绿**。本地跑 `node scripts/e2e-shard-plan.mjs --verify`,核对 `test/e2e/` 新增文件落进了哪一片。' >> tmp-actions.md ;; esac
+          case "$rows" in *'`suite-failed`'*) echo '- **suite-failed**:按普通测试失败处理,与句柄泄漏无关。' >> tmp-actions.md ;; esac
+          case "$rows" in *'`infra-failed`'*|*'`artifact-missing`'*) echo '- **infra-failed**:e2e 开跑之前就失败了,看 run 日志中 `Run E2E` 之前的步骤。' >> tmp-actions.md ;; esac
+          actions="$(cat tmp-actions.md)"
 
           gh label create nightly-e2e-leaks --color d73a4a \
             --description '夜间句柄泄漏线的失败追踪(自动开关)' >/dev/null 2>&1 || true
 
           body=$(printf '%s\n' \
-            "**结论:${headline}**" \
+            "**夜间串行线失败** —— 逐片结论:" \
             "" \
+            "| 分片 | 判定 | 结论 | 用时 | 预算 |" \
+            "|---|---|---|---|---|" \
+            "${rows}" \
+            "" \
+            "**该怎么处置**" \
+            "${actions}" \
             "| | |" \
             "|---|---|" \
-            "| 判定 | \`${verdict}\` |" \
-            "| 串行用时 | ${elapsed} |" \
             "| 提交 | \`${SHA}\` |" \
             "| run | ${RUN_URL} |" \
             "" \
-            "**该怎么处置**:${action}" \
-            "" \
             "---" \
-            "本 Issue 由夜间线自动维护:同一轮故障只开一个,后续失败在此追加评论;**恢复绿后自动关闭**。")
+            "本 Issue 由夜间线自动维护:同一轮故障只开一个,后续失败在此追加评论;**两片全绿后自动关闭**。")
 
           existing=$(gh issue list --label nightly-e2e-leaks --state open --limit 1 --json number --jq '.[0].number // empty' 2>/dev/null || true)
           if [ -n "$existing" ]; then
@@ -231,17 +365,41 @@ jobs:
             gh issue create --title '🌙 Nightly E2E leaks 失败' --label nightly-e2e-leaks --body "$body"
           fi
 
-      - name: 恢复绿后关闭 Issue
-        if: success()
+  notify-success:
+    name: 恢复绿后关闭 Issue
+    runs-on: ubuntu-latest
+    needs: e2e-leaks
+    # `needs` + `success()` = **两片都绿**才成立。这正是关闭 Issue 的正确前提:
+    # 单片绿不足以说明这条线是好的。
+    if: success()
+    steps:
+      - name: 取回各片结论
+        uses: actions/download-artifact@v4
+        with:
+          pattern: leak-verdict-*
+          merge-multiple: true
+          path: verdict
+        continue-on-error: true
+
+      - name: 关闭 Issue
         env:
           GH_TOKEN: ${{ github.token }}
+          # 同 notify-failure:本 job 无 checkout,gh 需要 GH_REPO 才知道操作哪个仓库。
+          GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -uo pipefail
+          rows="$(cat verdict/shard-*.md 2>/dev/null | sort || true)"
           existing=$(gh issue list --label nightly-e2e-leaks --state open --limit 1 --json number --jq '.[0].number // empty' 2>/dev/null || true)
           if [ -n "$existing" ]; then
-            gh issue comment "$existing" \
-              --body "✅ 夜间线已恢复:零句柄泄漏,串行用时 ${LEAK_ELAPSED_HUMAN:-未测得}。run:${RUN_URL}"
+            gh issue comment "$existing" --body "$(printf '%s\n' \
+              "✅ 夜间线已恢复:两片均零句柄泄漏。" \
+              "" \
+              "| 分片 | 判定 | 结论 | 用时 | 预算 |" \
+              "|---|---|---|---|---|" \
+              "${rows}" \
+              "" \
+              "run:${RUN_URL}")"
             gh issue close "$existing"
             echo "已关闭 Issue #${existing}"
           else
