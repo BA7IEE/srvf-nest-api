@@ -131899,7 +131899,8 @@
             "enum": [
               "session-all"
             ],
-            "description": "选择条件模式；session-all = 路径上这一场次的全部参与身份（可再用下面两个条件收窄）"
+            "default": "session-all",
+            "description": "选择条件模式；session-all = 路径上这一场次的全部参与身份（可再用下面两个条件收窄）。可省略，当前闭集只有这一个值，省略即取它"
           },
           "statusCodes": {
             "minItems": 1,
@@ -131916,10 +131917,7 @@
             "maxLength": 64,
             "description": "可选收窄：只选该岗位下的参与身份；不传表示不按岗位收窄"
           }
-        },
-        "required": [
-          "mode"
-        ]
+        }
       },
       "AppManagedBulkPunchJobDto": {
         "type": "object",

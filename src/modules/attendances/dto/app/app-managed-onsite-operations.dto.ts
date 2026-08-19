@@ -140,13 +140,24 @@ export class AppManagedProxyPunchDto {
 // 人数无关，一个 identity id 都不进应用内存（开发文档 §11.4）。既有 500 条 id 列表入口
 // 原样保留，行为一字不改。
 export class AppManagedBulkPunchSelectionDto {
-  @ApiProperty({
+  // ⚠️ 刻意**可省略**而不是必填。契约语义门(L6/R11,规则 B3 `request-required-added`)
+  // 把「可选父对象下的必填叶子」也算作破坏性变更 —— 它不建模「只有传了 selection 才要求
+  // mode」这层条件性。而这里客观上**没有任何老调用方会受影响**:selection 整个是新增的
+  // 可选字段,老调用方一律走 participationIdentityIds。
+  //
+  // 两条出路里选了闸自己给的第 ① 条「用兼容写法让它变成 additive」,而不是第 ② 条申报破坏:
+  // 申报一条并不存在的破坏,会往审计记录里写假事实,还要维护者为此点一次环境审批。
+  // 当前闭集只有一个值,省略即取它;将来加第二种模式时,新值仍然要显式写。
+  @ApiPropertyOptional({
     enum: ['session-all'],
+    default: 'session-all',
     description:
-      '选择条件模式；session-all = 路径上这一场次的全部参与身份（可再用下面两个条件收窄）',
+      '选择条件模式；session-all = 路径上这一场次的全部参与身份（可再用下面两个条件收窄）。' +
+      '可省略，当前闭集只有这一个值，省略即取它',
   })
+  @OmittableOnly()
   @IsIn(['session-all'])
-  mode!: 'session-all';
+  mode = 'session-all' as const;
 
   @ApiPropertyOptional({
     type: [String],

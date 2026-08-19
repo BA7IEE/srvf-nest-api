@@ -438,6 +438,52 @@ describe('activity scale usability: onsite bulk punch without manual splitting',
     );
   }, 180_000);
 
+  it('selection.mode 可省略:省略与显式写 session-all 等价(含 requestHash 同值 ⇒ 判为重放)', async () => {
+    const scenario = await createScenario();
+    const identity = await submitMember(scenario, {
+      auth: applicantAuth,
+      memberId: applicantMemberId,
+    });
+    const operationKey = `scale-bulk-defaultmode-${++sequence}`;
+
+    const omitted = await postBulk(scenario, {
+      operationKey,
+      actionCode: 'check_in',
+      reason: '省略 mode',
+      selection: {},
+    });
+    expect(omitted.status).toBe(201);
+    expect(omitted.body.data).toMatchObject({ total: 1, replayed: false });
+    const items = await prisma.activityBatchJobItem.findMany({
+      where: { jobId: omitted.body.data.jobId as string },
+      select: { resourceId: true },
+    });
+    expect(items.map((item) => item.resourceId)).toEqual([identity]);
+
+    // 省略 mode 与显式写 session-all 必须规范化成同一个 requestHash —— 否则同一个
+    // operationKey 会被判成 IDEMPOTENCY_CONFLICT,默认值就成了一个隐藏的语义分叉。
+    const explicit = await postBulk(scenario, {
+      operationKey,
+      actionCode: 'check_in',
+      reason: '省略 mode',
+      selection: { mode: 'session-all' },
+    });
+    expect(explicit.status).toBe(201);
+    expect(explicit.body.data).toMatchObject({
+      jobId: omitted.body.data.jobId,
+      replayed: true,
+    });
+
+    // 闭集仍然是闭集:mode 可省略不等于可以乱填。
+    const bogus = await postBulk(scenario, {
+      operationKey: `scale-bulk-badmode-${++sequence}`,
+      actionCode: 'check_in',
+      reason: '乱填 mode',
+      selection: { mode: 'everything-everywhere' },
+    });
+    expectBizError(bogus, BizCode.BAD_REQUEST, { strictMessage: false });
+  }, 180_000);
+
   it('selection 只认路径上那一场次:同活动的兄弟场次与别的活动都一个都不进来', async () => {
     const target = await createScenario();
     const other = await createScenario();
