@@ -16,10 +16,12 @@
 | RBAC 权限码(总数见 [`current-state.md §1`](../current-state.md)) | [`docs/ai-harness/RBAC_MAP.md`](../ai-harness/RBAC_MAP.md) · 各端点 `[rbac: x]` summary | 不复制;能力图里写"用哪个码门" |
 | 当前版本 / surface 状态 / 债务 | [`docs/current-state.md`](../current-state.md) | 不复制 |
 
-**本目录只放契约表达不了的三样**(需要人/AI curate、且不会被 contract 测出来的):
+**本目录只放契约表达不了的这几样**(需要人/AI curate、且不会被 contract 测出来的):
 1. **任务→端点图**(capability-map):某个页面/任务该调哪几个接口、按哪条轴下钻;
 2. **踩坑表**(gotchas):登录几步走、令牌双计时器、贡献值别裸 SUM、字段以 docs-json 为准等对接陷阱;
 3. **缺口台账**(gap-ledger):前端缺什么、是否已出 goal、是否已发——双向请求簿。
+4. **契约版本回执**([`contract-version-registry.md`](contract-version-registry.md)):各端**编译时**用的是哪一版契约。
+   这项后端**自己查不到**(四个前端在别的仓库、别的部署),只能由各端回执 —— 正是「契约表达不了」的典型。
 
 > 字段级真相永远是 live `/api/docs-json`。本目录若与之冲突,**以 live 为准**,并回来修本目录。
 
@@ -32,6 +34,7 @@
 | [`admin-web.md`](admin-web.md) | `srvf-admin-web`(PC 管理后台,Vue3 + pure-admin,私有仓) | 轴模型 + 任务→端点图 + 踩坑(§3;**登录/令牌接线 §3.1 为全端通用节**)+ 缺口台账 + IA 建议 |
 | [`miniapp.md`](miniapp.md) | 小程序前端(仓未建,占位)+ **招新 H5(`srvf-h5`,消费其中 `open/v1` 招新链)** | App surface(`/api/app/v1/*`)模型 + 能力图 + H5 无账号链 + 缺口台账 |
 | `openapi.json` | 离线/版本审查用 | 从 live 导出的**便利快照**(非真相;真相是 live `/api/docs-json`) |
+| [`contract-version-registry.md`](contract-version-registry.md) | 维护者 + 各前端仓 | 合同 §16.1 ⑤「五端同一 contract version」的**回执落点**:各端填自己编译所用版本,`cutover:check` 5b 据此点名谁没回执 / 谁对不上 |
 
 刷新 openapi 快照:**`pnpm docs:openapi`**(离线生成 —— 在进程内建 Nest 应用直接导出文档,
 **不监听端口、不连数据库**,约 8 秒)。新鲜度由 `pnpm docs:openapi:check` 在 CI 守护:
@@ -90,6 +93,14 @@ release 收口(E 档,`srvf-release-closeout` 九阶段)末尾再统一核一次:
 
 每个 surface 出 `types.ts` + `client.ts`,共用类型从 `../shared/types` 引入并再导出 ——
 **消费方仍只需 import 一个 `./types`,但仓内每个类型只有一份定义**(零重复由 selftest 机核)。
+
+**每份产物头部带 `// contractVersion: x.y.z`** —— 引入 client 的仓库在自己那边
+`grep -r contractVersion` 就能答出「我编译在哪一版契约上」,不需要后端配合、不需要后端已部署。
+该值**派生自** `openapi.json` 的 `info.version`(不是新的版本声明:真源恒为三处,见
+`pnpm cutover:check` 的 5a),且 `info.version` 就在 `inputDigest` 的输入闭包里 ⇒
+**戳与真源脱节在结构上不可能**:改了版本没重新生成,`docs:feclient:check` 当场逐字对不上。
+各端把这个值填进 [`contract-version-registry.md`](contract-version-registry.md),
+即为合同 §16.1 ⑤ 的回执。
 
 刷新:**`pnpm docs:feclient`**;新鲜度由 `pnpm docs:feclient:check` 在 CI Docs guards 同链守护
 (契约改了而 client 没刷新、或产物被手改 → 当场红)。

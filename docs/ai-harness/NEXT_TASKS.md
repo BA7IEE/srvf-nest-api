@@ -565,6 +565,22 @@
 - **排班约束**:schema-touching lane ≤1(合同 §14.1 与仓库 lane 协议一致);
   第 1、2 批未完成前禁止把二维码 / 批量代签 / 离线入口开放到真实环境(修订说明 §10)。
 
+- **§16.1 第 ⑤ 条(五端同一 contract version)的两笔遗留** —— 2026-08-20 交付「客户端打戳 +
+  回执登记表 + 5b 计算式取证指引」后剩下的部分。**5b 仍是 ⏸ 且本仓无法使其变绿**:
+  它的证据必须来自别的仓库。
+  - **(a) 运行时版本端点** —— 让生产上的后端自报正在提供哪一版契约,补上**部署期轴**
+    (四端可以全编译在同一版,而生产还跑着上一版,纸面五方一致、实际照炸)。
+    本刀未做的理由:要动 `src/` ⇒ 翻 `docs/ai-harness/ROUTE_AUTHZ.md` 的 inputDigest
+    (`sourceFiles()` 递归全部 `src`)⇒ 红区令牌 + CI 环境审批;且 `src/` 目前**无处读
+    `package.json`**,而 `start:prod = node dist/main` 使路径解析依赖部署形态;
+    另注意 `apply-swagger.ts` 的 `.setVersion('…')` 被 `release-prepare.ts` 与
+    `cutover-check.ts` 5a **两处正则**匹配,**不可**改写成共享常量。
+    其价值要等 (c) 落地(有人轮询)才兑现 ⇒ 排在 (c) 之后更划算。
+  - **(c) 各端 CI 自查** —— 各前端仓比对「自己引入的 client 戳」与后端 live 版本,不一致即红。
+    **要改别的仓库,不在本仓职权内**,由维护者线下推动;推动前 (b) 登记表就是人工版替代。
+  - 现状读数随时可查:`pnpm cutover:check` 的 5b(登记表在
+    [`docs/handoff/contract-version-registry.md`](../handoff/contract-version-registry.md))。
+
 ### P1-29 架构治理 Phase 0 — 拍照·登记·健康基线（执行中；纯取证，零业务代码）
 
 - **依据**：[v4 冻结方案](../archive/reviews/architecture-governance-v4/README.md)；[本 goal 的 Phase 0 交付物](../archive/reviews/architecture-governance-v4/README.md#12-phase-0-真实交付物清单)。
