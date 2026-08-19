@@ -1200,4 +1200,216 @@ describe('activity batch6 staff/import/offline runtime', () => {
       prisma.attendancePunchEvent.count({ where: { activityId: scenario.activityId } }),
     ).resolves.toBe(beforeCount);
   });
+
+  // ===================================================================================
+  // AC-044:「导入执行必须匹配**预览任务号、文件摘要和解析版本**;预览后替换文件时执行拒绝」
+  //
+  // 立项证据(本刀实测):替换文件那半边已由上面的 ADV-014 用例守住,但**三项匹配**里
+  // 只有 fileDigest 被真的试错过 —— 既有用例每一处都原样回传 `summary.body.data.parserVersion`,
+  // 全仓没有任何一条用例送过**不匹配的解析版本或不匹配的预览任务号**。
+  // 三项各自绑一条,红集互不覆盖。
+  // ===================================================================================
+
+  /** 建一个已冻结的预览,返回执行时必须逐项匹配的三元组。 */
+  async function createPinnedPreviewFor(
+    scenario: Scenario,
+    csv: string,
+    label: string,
+  ): Promise<{
+    previewId: string;
+    fileDigest: string;
+    parserVersion: string;
+    previewHash: string;
+  }> {
+    const preview = await request(httpServer(app))
+      .post(
+        `/api/app/v1/my/managed-activities/${scenario.activityId}/onsite/sessions/${scenario.sessionId}` +
+          '/import-previews',
+      )
+      .set('Authorization', managerAuth)
+      .field('operationKey', `batch7-ac044-${label}-${++sequence}`)
+      .field('reason', 'AC-044 三项匹配判据')
+      .attach('file', Buffer.from(csv, 'utf8'), {
+        filename: `batch7-ac044-${label}.csv`,
+        contentType: 'text/csv',
+      });
+    expect(preview.status).toBe(201);
+    const previewId = preview.body.data.jobId as string;
+    const summary = await request(httpServer(app))
+      .get(
+        `/api/app/v1/my/managed-activities/${scenario.activityId}/onsite/import-previews/${previewId}` +
+          '?page=1&pageSize=20',
+      )
+      .set('Authorization', managerAuth);
+    expect(summary.status).toBe(200);
+    return {
+      previewId,
+      fileDigest: summary.body.data.fileDigest as string,
+      parserVersion: summary.body.data.parserVersion as string,
+      previewHash: summary.body.data.previewHash as string,
+    };
+  }
+
+  function executePreview(
+    scenario: Scenario,
+    previewId: string,
+    body: Record<string, string>,
+  ): request.Test {
+    return request(httpServer(app))
+      .post(
+        `/api/app/v1/my/managed-activities/${scenario.activityId}/onsite/import-previews/` +
+          `${previewId}/execute`,
+      )
+      .set('Authorization', managerAuth)
+      .send(body);
+  }
+
+  /** 「零业务写」的统一判据:既没有 PunchEvent,也没有排出 import_execute 任务。 */
+  async function expectNoImportSideEffects(scenario: Scenario, punchBefore: number): Promise<void> {
+    await expect(
+      prisma.attendancePunchEvent.count({ where: { activityId: scenario.activityId } }),
+    ).resolves.toBe(punchBefore);
+    await expect(
+      prisma.activityBatchJob.count({
+        where: { activityId: scenario.activityId, jobTypeCode: 'import_execute' },
+      }),
+    ).resolves.toBe(0);
+  }
+
+  it('AC-044 ①预览任务号:拿 A 预览的摘要去执行 B 预览 → 22100 且零业务写', async () => {
+    const scenario = await createScenario();
+    const participationIdentityId = await submitApplicant(scenario);
+    const header = 'participationIdentityId,actionCode,occurredAt,longitude,latitude,accuracy';
+    // 两个预览**内容不同** ⇒ 摘要必然不同;否则「拿错任务号」在数据上无从分辨。
+    const previewA = await createPinnedPreviewFor(
+      scenario,
+      [header, `${participationIdentityId},check_in,${new Date().toISOString()},,,`].join('\n'),
+      'task-a',
+    );
+    const previewB = await createPinnedPreviewFor(
+      scenario,
+      [
+        header,
+        `${participationIdentityId},check_in,${new Date(Date.now() - 60_000).toISOString()},,,`,
+      ].join('\n'),
+      'task-b',
+    );
+    // 先钉两边非空且确实不同 —— 否则下面的 22100 可能只是因为两个预览恰好一样。
+    expect(previewA.previewId).not.toBe(previewB.previewId);
+    expect(previewA.fileDigest).not.toBe(previewB.fileDigest);
+
+    const punchBefore = await prisma.attendancePunchEvent.count({
+      where: { activityId: scenario.activityId },
+    });
+    const crossed = await executePreview(scenario, previewB.previewId, {
+      operationKey: `batch7-ac044-cross-${++sequence}`,
+      fileDigest: previewA.fileDigest,
+      parserVersion: previewA.parserVersion,
+      previewHash: previewA.previewHash,
+    });
+    expect(crossed.status).toBe(409);
+    expect(crossed.body.code).toBe(22100);
+    await expectNoImportSideEffects(scenario, punchBefore);
+
+    // 另一边非空:同一个 B 预览配**自己的**三元组照常放行 ——
+    // 证明拒绝的是「任务号与摘要不对应」,不是「这个预览坏了」。
+    const matched = await executePreview(scenario, previewB.previewId, {
+      operationKey: `batch7-ac044-cross-ok-${++sequence}`,
+      fileDigest: previewB.fileDigest,
+      parserVersion: previewB.parserVersion,
+      previewHash: previewB.previewHash,
+    });
+    expect(matched.status).toBe(201);
+  });
+
+  it('AC-044 ②文件摘要:摘要对不上 → 22100 且零业务写', async () => {
+    const scenario = await createScenario();
+    const participationIdentityId = await submitApplicant(scenario);
+    const preview = await createPinnedPreviewFor(
+      scenario,
+      [
+        'participationIdentityId,actionCode,occurredAt,longitude,latitude,accuracy',
+        `${participationIdentityId},check_in,${new Date().toISOString()},,,`,
+      ].join('\n'),
+      'digest',
+    );
+    const punchBefore = await prisma.attendancePunchEvent.count({
+      where: { activityId: scenario.activityId },
+    });
+    // 合法 sha256 形状但不是这份文件的摘要 —— 绕开入参形状校验,直取匹配那一层。
+    const foreignDigest = 'a'.repeat(64);
+    expect(foreignDigest).not.toBe(preview.fileDigest);
+    const rejected = await executePreview(scenario, preview.previewId, {
+      operationKey: `batch7-ac044-digest-${++sequence}`,
+      fileDigest: foreignDigest,
+      parserVersion: preview.parserVersion,
+      previewHash: preview.previewHash,
+    });
+    expect(rejected.status).toBe(409);
+    expect(rejected.body.code).toBe(22100);
+    await expectNoImportSideEffects(scenario, punchBefore);
+  });
+
+  it('AC-044 ③解析版本:客户端谎报与预览由旧解析器冻结,两条边界都 400 fail-closed 且零业务写', async () => {
+    const scenario = await createScenario();
+    const participationIdentityId = await submitApplicant(scenario);
+    const preview = await createPinnedPreviewFor(
+      scenario,
+      [
+        'participationIdentityId,actionCode,occurredAt,longitude,latitude,accuracy',
+        `${participationIdentityId},check_in,${new Date().toISOString()},,,`,
+      ].join('\n'),
+      'parser',
+    );
+    const punchBefore = await prisma.attendancePunchEvent.count({
+      where: { activityId: scenario.activityId },
+    });
+    const staleParserVersion = 'attendance-import-csv/v0';
+    expect(preview.parserVersion).not.toBe(staleParserVersion);
+
+    // 第一层:客户端送一个非当前解析版本 —— 入参闸直接 400,连匹配那层都到不了。
+    const liedVersion = await executePreview(scenario, preview.previewId, {
+      operationKey: `batch7-ac044-parser-lie-${++sequence}`,
+      fileDigest: preview.fileDigest,
+      parserVersion: staleParserVersion,
+      previewHash: preview.previewHash,
+    });
+    expect(liedVersion.status).toBe(400);
+    await expectNoImportSideEffects(scenario, punchBefore);
+
+    // 第二层:**预览本身**是旧解析器冻结的(模拟解析器升级后旧预览还留在库里),
+    // 客户端如实送当前版本 ⇒ 仍然一条都写不进去。这一层是第一层永远够不到的那一格:
+    // 第一层只看客户端说了什么,看不见**已冻结预览**里存的是什么版本。
+    //
+    // ⚠️ 实测口径(本刀实跑,勿按「应该是 22100」想当然改断言):
+    //    这里落 **400** 而不是 22100 —— `isPreviewPayload` 把
+    //    `parserVersion === ATTENDANCE_IMPORT_CSV_PARSER_VERSION` 写进了 payload 形状守卫,
+    //    旧版本预览直接不再被认作合法预览,先于
+    //    `payload.parserVersion !== input.parserVersion → 22100` 那一支被拦下。
+    //    也就是说该 22100 分支**当前按构造不可达**(两侧都已各自恒等于同一个常量)。
+    //    合同 AC-044 只要求「执行必须匹配解析版本」,未指定错误码;两层都 fail-closed
+    //    即满足。若将来把版本闸放宽成「多版本共存」,那条 22100 才会活过来,
+    //    届时本用例会因为 400≠409 当场红 —— 这正是要的:放宽必须被看见。
+    const previewJob = await prisma.activityBatchJob.findUniqueOrThrow({
+      where: { id: preview.previewId },
+      select: { payload: true },
+    });
+    await prisma.activityBatchJob.update({
+      where: { id: preview.previewId },
+      data: {
+        payload: {
+          ...(previewJob.payload as Record<string, unknown>),
+          parserVersion: staleParserVersion,
+        },
+      },
+    });
+    const staleFrozen = await executePreview(scenario, preview.previewId, {
+      operationKey: `batch7-ac044-parser-stale-${++sequence}`,
+      fileDigest: preview.fileDigest,
+      parserVersion: preview.parserVersion,
+      previewHash: preview.previewHash,
+    });
+    expect(staleFrozen.status).toBe(400);
+    await expectNoImportSideEffects(scenario, punchBefore);
+  });
 });

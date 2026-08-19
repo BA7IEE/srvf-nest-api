@@ -255,6 +255,12 @@ const BATCH2_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
   // AC-064:archive action 读写入口尚未在本刀开放，现有仅证明等待期不是永久截止。
   'AC-064': '卡后续 archive action；现有仅覆盖归档等待期不是更正永久截止。',
   // ADV-001:同 AC-047，需第 5 批真实最后签退的并发入口。
+  //
+  // ⚠️ 这条**看起来**该删(第 5 批已在 BATCH5_SELF_PUNCH_ACCEPTANCE_DESTINATIONS 里给了
+  //    真去向,渲染上早已是「已接通」)。第 7 批第 ④ 刀实测过删它 ⇒ 本批模块级守护
+  //    「第 2 批 28 条必须逐条有去向或卡点」当场抛错、整套 `Tests: 0 total`。
+  //    因为这句记的是**第 2 批自己**没交付,不是「全仓至今没交付」——
+  //    跨批次交付时,前批留卡点、后批给去向是本登记表的**既定形状**,不是矛盾。
   'ADV-001': '卡第 5 批结算提交×最后一次合法签退的真并发入口。',
   // ADV-008:合同点名六个 10000 条 kill/recover 检查点，现有 8192 规模 test 不等价。
   'ADV-008': '缺 10000 条在 1/199/200/201/9999/10000 检查点 kill/recover 演练。',
@@ -413,6 +419,8 @@ const BATCH3_SLICE1_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
   'AC-012': '卡第 3 刀邀请可见性读面。',
   'AC-013': '卡 S6：draft_editor 七值责任模型另立 D 档刀；本刀不给协作人草稿编辑能力。',
   'AC-014': '卡第 3 刀 cancel 与现场事实并发语义。',
+  // ADV-004 同 ADV-001:第 5 批已给真去向,但这句是**第 3 刀自己**的欠账记录,删不得
+  //(删掉会让本批的模块级完整性守护抛错)。详见 BATCH2_ACCEPTANCE_BLOCKERS 里 ADV-001 那段。
   'ADV-004': '卡第 3 刀普通取消×第一条现场签到真实并发。',
   'ADV-018': '卡第 2/3 刀单场次取消的人员和通知影响链。',
   'ADV-019': '卡第 3 刀正式/停用/非正式/未受邀可见性组合读面。',
@@ -1082,6 +1090,318 @@ if (
 }
 
 /**
+ * 第 7 批第 ④ 刀 —— 13 条「无卡点」验收编号逐条判定。
+ *
+ * 这 13 条此前**既没接通、也没写卡点**:在登记表里退化成裸 `it.todo`,
+ * 既不能算已交付,也没告诉维护者卡在哪。本刀逐条判定,只有三种合法结局:
+ *   **A 接通**(既有测试确实断言了该条要求)· **B 补测再接**(能力有、判据缺)·
+ *   **C 如实留卡点**(确实没做)。
+ *
+ * ⚠️ 逐条都**真读过目标用例**才绑,标题像不算数;C 类一律写明缺的是**哪一格**,
+ *    不拿「覆盖了三分之二」结案(沿本文件开头那条纪律与第 7 批① AC-066 的先例)。
+ *
+ * 本刀实测发现、值得记下的三处(详见各条注释):
+ *  - **AC-030 不是接线活,是真缺口**:`collaboratorOptions` 硬编码 `take: 200`
+ *    且**无搜索、无分页**,`members/options` 的 `limit` 上限 100 —— 超出即不可达,
+ *    正是 AC-030「超过200人仍可完整查找」要防的那件事。故判 C 而非 A/B。
+ *  - **AC-045 的第七个子形态**(摘要链异常 `hash_chain_invalid`)不在 ADV-013 绑的
+ *    六个之内,是本刀单独核到并绑上的。
+ *  - **AC-044 的解析版本**此前零判据:既有用例每一处都原样回传正确的 parserVersion。
+ */
+const BATCH7_CLOSEOUT_ACCEPTANCE_IDS = [
+  'AC-020',
+  'AC-024',
+  'AC-025',
+  'AC-030',
+  'AC-043',
+  'AC-044',
+  'AC-045',
+  'AC-068',
+  'AC-069',
+  'AC-070',
+  'AC-071',
+  'AC-072',
+  'ADV-015',
+] as const;
+
+const BATCH7_CLOSEOUT_ACCEPTANCE_DESTINATIONS: Readonly<
+  Record<string, readonly AcceptanceDestination[]>
+> = {
+  // ── A 接通(既有测试确实断言了合同要求的那件事) ──────────────────────────────
+  //
+  // AC-024 四项冻结物逐个绑:候选名单(资格快照哈希漂移即零写)、规则/算法版本
+  // (进 candidateSnapshotHash)、评分与随机种子承诺(commit 时用 sha256 真验承诺)、
+  // 结果与候补序列;外加「可复查重放」的逐字节重放断言。
+  'AC-024': [
+    {
+      file: 'test/e2e/activity-batch4-allocation-runtime.e2e-spec.ts',
+      needle:
+        'freezes qualification_rank scores, replays prepare exactly, and commits capacity in score order',
+    },
+    {
+      file: 'test/e2e/activity-batch4-allocation-runtime.e2e-spec.ts',
+      needle:
+        'keeps lottery seed concealed at prepare, verifies its commitment at commit, and replays commit exactly',
+    },
+    {
+      // 承诺不是「存了个字段」——commit 揭示的 seed 必须真的哈希回 prepare 的 commitment。
+      file: 'test/e2e/activity-batch4-allocation-runtime.e2e-spec.ts',
+      needle: "expect(createHash('sha256').update(reveal, 'utf8').digest('hex')).toBe(",
+    },
+    {
+      file: 'test/e2e/activity-batch4-allocation-runtime.e2e-spec.ts',
+      needle: 'fails closed with zero commit writes when a frozen qualification hash drifts',
+    },
+    {
+      // 规则/算法版本确实是冻结哈希的一部分,不是旁边挂着的说明字段。
+      file: 'test/e2e/activity-batch4-allocation-runtime.e2e-spec.ts',
+      needle: 'algorithmVersionCode: batch.algorithmVersionCode,',
+    },
+    {
+      file: 'test/e2e/activity-batch4-allocation-runtime.e2e-spec.ts',
+      needle:
+        'red-first: numbers session-level qualification waitlists independently for each original position',
+    },
+    {
+      file: 'test/e2e/activity-batch4-allocation-runtime.e2e-spec.ts',
+      needle: 'expect(commitReplay.body.data).toEqual(committed.body.data);',
+    },
+  ],
+  // AC-043 与 ADV-023 是同一条链的两种说法:合同 AC-043 要的是「撤权后**尚未执行**的
+  // 任务项停止写入」,ADV-023 那条用例正是按这句话布点的(已提交项原样保留、
+  // 剩余项 skipped、撤权后 PunchEvent 集合逐条不变)。「并发」那一半另绑 ADV-003 的
+  // 两连接池线性化用例 —— 两条合起来才覆盖 AC-043 的完整口径。
+  'AC-043': [
+    {
+      file: 'test/e2e/activity-batch6-batch-job-read-surface.e2e-spec.ts',
+      needle: 'ADV-023 批量代签跑到一半再撤权:已提交项保留,剩余项 skipped 且零 PunchEvent',
+    },
+    {
+      file: 'test/e2e/activity-batch6-batch-job-read-surface.e2e-spec.ts',
+      needle: 'ADV-003 现场权限撤销与代签并发:两个连接池上线性化,越权那一侧零 PunchEvent',
+    },
+    {
+      // 「停止写入」的真值:已跑的一项留着,剩下的一项 skipped —— 不是整批回滚。
+      file: 'test/e2e/activity-batch6-batch-job-read-surface.e2e-spec.ts',
+      needle: "statusCode: 'partial_failed', succeeded: 1, failed: 0, skipped: 1",
+    },
+  ],
+  // AC-045 合同点名**七个**子形态,逐个绑到各自的 anomaly 断言(每条都同时断言零 PunchEvent,
+  // 即「进入人工复核、不自动生效」)。⚠️ 第七个「摘要链异常」不在 ADV-013 绑的六个之内。
+  'AC-045': [
+    // 过期
+    {
+      file: 'test/e2e/activity-batch6-offline-writer.e2e-spec.ts',
+      needle: "anomalyCode: 'package_expired', approvalPolicyCode: 'approvable' }]);",
+    },
+    // 撤权
+    {
+      file: 'test/e2e/activity-batch6-offline-writer.e2e-spec.ts',
+      needle: "expect(review.anomalyCode).toBe('operator_authorization_revoked');",
+    },
+    // 换设备
+    {
+      file: 'test/e2e/activity-batch6-offline-writer.e2e-spec.ts',
+      needle: "anomalyCode: 'device_mismatch', approvalPolicyCode: 'reject_only' }]);",
+    },
+    // 跳号
+    {
+      file: 'test/e2e/activity-batch6-offline-writer.e2e-spec.ts',
+      needle: "expected: 'sequence_gap',",
+    },
+    // 重复号
+    {
+      file: 'test/e2e/activity-batch6-offline-writer.e2e-spec.ts',
+      needle: "anomalyCode: 'sequence_duplicate', approvalPolicyCode: 'reject_only' }]);",
+    },
+    // 未来时间
+    {
+      file: 'test/e2e/activity-batch6-offline-writer.e2e-spec.ts',
+      needle: "expected: 'future_time',",
+    },
+    // 摘要链异常 —— 本刀单独核到并绑上的第七格。
+    {
+      file: 'test/e2e/activity-batch6-offline-writer.e2e-spec.ts',
+      needle: "expected: 'hash_chain_invalid',",
+    },
+  ],
+  // AC-069「业务写成功但任务项尚未标成功时崩溃,恢复后依靠**业务防重**安全续跑」:
+  // 用例把 item 打回 pending 模拟崩溃,重跑后 entriesInserted=0、分录与 day rows 都不翻倍 ——
+  // 兜住的正是 entryKey/operationKey 单列 unique + ON CONFLICT DO NOTHING 这层业务防重。
+  'AC-069': [
+    {
+      file: 'test/e2e/activity-ledger-posting.e2e-spec.ts',
+      needle: '⭐ ④ 崩溃可重入(§5.12 ⑦)',
+    },
+    {
+      file: 'test/e2e/activity-ledger-posting.e2e-spec.ts',
+      needle: '把 item 打回 pending 再跑一次 ⇒ 分录、day rows 都不翻倍',
+    },
+    {
+      // 「安全续跑」的真值:重跑真的又算又写了一遍,但一条都没多出来。
+      file: 'test/e2e/activity-ledger-posting.e2e-spec.ts',
+      needle: 'expect(replayReRun.entriesInserted).toBe(0);',
+    },
+  ],
+  // AC-071 三段各绑各的:「统一经过现有授权服务」= 真实 bootstrap 下 Guard 处于 enforce
+  // 且未声明路由数与 manifest 同步(全 5 个 surface 均为 0);「活动范围」= 树外活动全 DENY;
+  // 「知道编号不能越权读取或写入」= 新子资源读面与写面各一条(两条走不同实现位)。
+  'AC-071': [
+    {
+      file: 'test/journeys/activity-registration-checkin.e2e-spec.ts',
+      needle: "event: 'authz_declaration_inventory',",
+    },
+    {
+      file: 'test/journeys/activity-registration-checkin.e2e-spec.ts',
+      needle: "mode: 'enforce',",
+    },
+    {
+      file: 'test/e2e/participation-scoped-authz.e2e-spec.ts',
+      needle: '他队(SWRT)活动:update / publish / cancel 全 DENY 30100(树外,活动状态零变化)',
+    },
+    {
+      file: 'test/e2e/activity-batch6-batch-job-read-surface.e2e-spec.ts',
+      needle: '不变量1:越权读一律 404,且与「jobId 根本不存在」逐字节同码同文案(不泄露存在性)',
+    },
+    {
+      file: 'test/e2e/activity-batch6-batch-job-read-surface.e2e-spec.ts',
+      needle: '不变量2:创建人被撤权后 retry/cancel 立即失效,而仍在范围内的负责人不受影响',
+    },
+  ],
+
+  // ── B 补测再接(能力有、判据缺;补的用例已做变异对拍,红集见 PR 说明) ──────────
+  //
+  // AC-044 三项匹配逐个绑。本刀实测:此前只有「文件摘要」被真的试错过,
+  // 既有用例每一处都原样回传正确的 parserVersion、也没有任何一条送过别的预览任务号。
+  'AC-044': [
+    {
+      file: 'test/e2e/activity-batch6-staff-import-offline.e2e-spec.ts',
+      needle: 'AC-044 ①预览任务号:拿 A 预览的摘要去执行 B 预览 → 22100 且零业务写',
+    },
+    {
+      file: 'test/e2e/activity-batch6-staff-import-offline.e2e-spec.ts',
+      needle: 'AC-044 ②文件摘要:摘要对不上 → 22100 且零业务写',
+    },
+    {
+      file: 'test/e2e/activity-batch6-staff-import-offline.e2e-spec.ts',
+      needle:
+        'AC-044 ③解析版本:客户端谎报与预览由旧解析器冻结,两条边界都 400 fail-closed 且零业务写',
+    },
+  ],
+  // AC-070 此前**只是 pagination.dto.ts 顶部的一行注释**,零执行位。本刀把它做成读
+  // 已生成公开合同的判据:禁用参数、page/pageSize 成对、分页信封必声明分页参数、
+  // limit 白名单穷举、全文零 cursor、手机管理根路径不变。
+  'AC-070': [
+    {
+      file: 'src/modules/activities/activity-v11-outward-list-pagination.spec.ts',
+      needle: '① 合同里没有任何 operation 声明 cursor / offset / skip / take 参数',
+    },
+    {
+      file: 'src/modules/activities/activity-v11-outward-list-pagination.spec.ts',
+      needle: '③ 每个返回分页信封的端点都声明了 page 与 pageSize',
+    },
+    {
+      file: 'src/modules/activities/activity-v11-outward-list-pagination.spec.ts',
+      needle: '⑤ 公开合同全文零 cursor(合同 §14 逐字要求)',
+    },
+    {
+      file: 'src/modules/activities/activity-v11-outward-list-pagination.spec.ts',
+      needle: '⑥ 手机管理根路径保持 /api/app/v1/my/managed-activities',
+    },
+  ],
+  // AC-072 是**否定式**验收(「本轮未新增……」),六样东西逐个绑一条「不存在」判据。
+  // 判据自身带正反对照自证 —— 零命中型判据若抽取器坏了会把六条全报成绿,
+  // 那个失效形状和「真的没新增」长得一模一样。
+  'AC-072': [
+    {
+      file: 'src/modules/activities/activity-v11-coordinate-negative.spec.ts',
+      needle: '① 未新增坐标专用加密仓:加密域清单仍是既有五个,且无坐标仓模型',
+    },
+    {
+      file: 'src/modules/activities/activity-v11-coordinate-negative.spec.ts',
+      needle: '② 未新增隔离库:schema 只有一个 datasource 块,且只有一个库连接串 env',
+    },
+    {
+      file: 'src/modules/activities/activity-v11-coordinate-negative.spec.ts',
+      needle: '③ 未新增临时授权角色:Role 闭集仍是三态,且无坐标相关枚举',
+    },
+    {
+      file: 'src/modules/activities/activity-v11-coordinate-negative.spec.ts',
+      needle: '④ 未新增坐标专门期限:整份 env 清单里一个坐标词元都没有',
+    },
+    {
+      file: 'src/modules/activities/activity-v11-coordinate-negative.spec.ts',
+      needle: '⑤ 未新增坐标删除流程:公开合同里没有任何坐标专用路由',
+    },
+    {
+      file: 'src/modules/activities/activity-v11-coordinate-negative.spec.ts',
+      needle: '⑥ 未新增坐标专用告知上线门:同意字段与 *_ENABLED 闸里都没有坐标域',
+    },
+  ],
+  // ADV-015 四条轴(场次 / 任务 / 报名 / 结算)各绑一条。此前只有「任务」这一轴有判据。
+  // 对手取「另一个活动的合法负责人」——路径里放自己的 activityId,只换子资源编号,
+  // 于是活动级判权必然放行,翻面的只剩「编号有没有被锚回该活动」。
+  'ADV-015': [
+    {
+      file: 'test/e2e/activity-batch7-cross-activity-authz.e2e-spec.ts',
+      needle:
+        'ADV-015 场次:拿别的活动的 sessionId 改场次 —— 与「场次不存在」同码同文案,且受害场次零变化',
+    },
+    {
+      file: 'test/e2e/activity-batch7-cross-activity-authz.e2e-spec.ts',
+      needle: 'ADV-015 任务:拿别的活动的 jobId 读批量任务 —— 与「任务不存在」同码同文案',
+    },
+    {
+      file: 'test/e2e/activity-batch7-cross-activity-authz.e2e-spec.ts',
+      needle: 'ADV-015 报名:拿别的活动的 registrationId 审批 —— 同码同文案,且该报名状态零变化',
+    },
+    {
+      file: 'test/e2e/activity-batch7-cross-activity-authz.e2e-spec.ts',
+      needle: 'ADV-015 结算:拿别的活动的 versionId 读结算版本 —— 同码同文案(攻击者持全局结算码)',
+    },
+  ],
+};
+
+/**
+ * C 类:如实留 todo,并写明**缺的是哪一格**。
+ *
+ * 这四条都不是「测试没写」,是**能力本身没做到合同要求**;本刀按合同 §6「零 src 业务改动」
+ * 的授权边界,不替维护者实现,只把缺口写准以便立项。
+ */
+const BATCH7_CLOSEOUT_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
+  'AC-020':
+    '取消**截止时间**与取消**申请**审批链本轮零实现:schema 只有 registrationDeadline,无报名取消截止列;' +
+    '报名只能直接取消(cancelledByUserId/cancelledAt/cancelReason),没有「截止后转申请 → 主负责人/协作人审批 → ' +
+    '批准与释放名额、候补递补同事务」这条链。全仓「取消申请」零命中(既有 cancelRequestHash 是**活动**取消的幂等哈希,不是这件事)。',
+  'AC-025':
+    '三段里第三段零实现:「候补顺序按所选分配方式产生」与「只在同场次同岗位递补」都已交付并有判据' +
+    '(first_come/qualification_rank/lottery 队列 + 同岗位递补隔离),但「**换岗需要本人确认**」全仓零实现 —— ' +
+    '没有换岗流程、也没有本人确认闸。按本文件纪律不拿三分之二结案。',
+  'AC-030':
+    '**能力缺口,不是判据缺口**:协作人候选 `collaboratorOptions` 硬编码 `take: 200` 且**无搜索参数、无分页**,' +
+    '第 201 人起不可达;队员候选 `GET /admin/v1/members/options` 有 `q` 搜索但用 `limit`(上限 100)且无 page/pageSize,' +
+    '同样翻不过第一页。正是 AC-030「超过200人仍可完整查找」要防的那件事,须先立项改接口。',
+  'AC-068':
+    '两处硬上限挡在前面:考勤 sheet `records` 与批量代签入参分别 `@ArrayMaxSize(200)` / `@ArrayMaxSize(500)`,' +
+    '且无「整场次/全选」式服务端分块入口 —— 2000 人操作仍需业务人员自行拆成多次请求,正是本条禁止的。' +
+    '另:500/2000/10000 三档读数需规模测试环境,本地不产出可信数字。',
+};
+
+const batch7CloseoutResolvedIds = new Set([
+  ...Object.keys(BATCH7_CLOSEOUT_ACCEPTANCE_DESTINATIONS),
+  ...Object.keys(BATCH7_CLOSEOUT_ACCEPTANCE_BLOCKERS),
+]);
+if (
+  batch7CloseoutResolvedIds.size !== BATCH7_CLOSEOUT_ACCEPTANCE_IDS.length ||
+  BATCH7_CLOSEOUT_ACCEPTANCE_IDS.some((id) => !batch7CloseoutResolvedIds.has(id)) ||
+  Object.keys(BATCH7_CLOSEOUT_ACCEPTANCE_DESTINATIONS).some(
+    (id) => BATCH7_CLOSEOUT_ACCEPTANCE_BLOCKERS[id],
+  )
+) {
+  throw new Error('第 7 批第 ④ 刀的 13 条验收编号必须逐条有已标注去向或明确阻塞说明,且二者互斥');
+}
+
+/**
  * 「哪些登记表参与查表」只写一处 —— `registerAcceptanceCases` 与下面的接线守护读的是
  * **同一个数组**,所以两者不可能各说各话。
  *
@@ -1093,6 +1413,7 @@ if (
 const ACCEPTANCE_DESTINATION_TABLES: ReadonlyArray<
   Readonly<Record<string, readonly AcceptanceDestination[]>>
 > = [
+  BATCH7_CLOSEOUT_ACCEPTANCE_DESTINATIONS,
   BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_DESTINATIONS,
   BATCH6_CLOSEOUT_ACCEPTANCE_DESTINATIONS,
   BATCH5_SELF_PUNCH_ACCEPTANCE_DESTINATIONS,
@@ -1114,6 +1435,35 @@ function resolveAcceptanceDestinations(id: string): readonly AcceptanceDestinati
   return undefined;
 }
 
+/**
+ * 卡点表同样只写一处 —— 与去向表**同构**。
+ *
+ * 🔴 立项理由(第 7 批第 ④ 刀):卡点此前走的是一条手写的 `??` 链外加三个并列 `if`,
+ *    与去向表在第 6 批修掉的**是同一个失效形状**:新加一张卡点表却忘了接进去,
+ *    该批编号会静默退化成**没有卡点说明**的裸 `it.todo` —— 整套照样全绿,
+ *    而维护者从读数上完全看不出「这条的卡点丢了」。
+ *    去向那边已经有守类判据,卡点这边此前一个执行位都没有。
+ *
+ * 数组顺序**逐字保持**原 `??` 链与 `if` 分支的求值先后,不改任何既有渲染结果。
+ */
+const ACCEPTANCE_BLOCKER_TABLES: ReadonlyArray<Readonly<Record<string, string>>> = [
+  BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_BLOCKERS,
+  BATCH4_RESERVATION_KERNEL_ACCEPTANCE_BLOCKERS,
+  BATCH4_INVITATION_VISITOR_ACCEPTANCE_BLOCKERS,
+  BATCH2_ACCEPTANCE_BLOCKERS,
+  BATCH3_SLICE1_ACCEPTANCE_BLOCKERS,
+  BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_BLOCKERS,
+  BATCH7_CLOSEOUT_ACCEPTANCE_BLOCKERS,
+];
+
+function resolveAcceptanceBlocker(id: string): string | undefined {
+  for (const table of ACCEPTANCE_BLOCKER_TABLES) {
+    const found = table[id];
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
 function registerAcceptanceCases(cases: readonly { id: string; title: string }[]): void {
   for (const { id, title } of cases) {
     const destinations = resolveAcceptanceDestinations(id);
@@ -1128,25 +1478,7 @@ function registerAcceptanceCases(cases: readonly { id: string; title: string }[]
       continue;
     }
 
-    const blocker =
-      BATCH2_ACCEPTANCE_BLOCKERS[id] ??
-      BATCH3_SLICE1_ACCEPTANCE_BLOCKERS[id] ??
-      BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_BLOCKERS[id];
-    const batch4Blocker = BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_BLOCKERS[id];
-    const batch4ReservationKernelBlocker = BATCH4_RESERVATION_KERNEL_ACCEPTANCE_BLOCKERS[id];
-    const batch4InvitationVisitorBlocker = BATCH4_INVITATION_VISITOR_ACCEPTANCE_BLOCKERS[id];
-    if (batch4Blocker !== undefined) {
-      it.todo(`${id} ${title}（阻塞：${batch4Blocker}）`);
-      continue;
-    }
-    if (batch4ReservationKernelBlocker !== undefined) {
-      it.todo(`${id} ${title}（阻塞：${batch4ReservationKernelBlocker}）`);
-      continue;
-    }
-    if (batch4InvitationVisitorBlocker !== undefined) {
-      it.todo(`${id} ${title}（阻塞：${batch4InvitationVisitorBlocker}）`);
-      continue;
-    }
+    const blocker = resolveAcceptanceBlocker(id);
     if (blocker !== undefined) {
       it.todo(`${id} ${title}（阻塞：${blocker}）`);
       continue;
@@ -1260,6 +1592,7 @@ describe('活动业务改造 v1.1 合同完整性', () => {
       { name: 'BATCH5_SELF_PUNCH', table: BATCH5_SELF_PUNCH_ACCEPTANCE_DESTINATIONS },
       { name: 'BATCH6_CLOSEOUT', table: BATCH6_CLOSEOUT_ACCEPTANCE_DESTINATIONS },
       { name: 'BATCH7_RECIPIENT_FREEZE', table: BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_DESTINATIONS },
+      { name: 'BATCH7_CLOSEOUT', table: BATCH7_CLOSEOUT_ACCEPTANCE_DESTINATIONS },
     ];
 
     // ① 每张登记表都必须**按对象标识**出现在查表链里 —— 摘掉那一行当场红。
@@ -1281,6 +1614,56 @@ describe('活动业务改造 v1.1 合同完整性', () => {
     // ③ 反向:清单与查表链**条数相等** —— 少登记一张表不产生坏链接,只靠 ① 看不见它。
     expect(SECTIONS.length).toBe(ACCEPTANCE_DESTINATION_TABLES.length);
     expect(SECTIONS.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * 上面那条守的是**去向**表。卡点表此前**一个执行位都没有** —— 手写 `??` 链外加三个
+   * 并列 `if`,漏接一张卡点表,该批编号会静默退化成**没有卡点说明**的裸 `it.todo`:
+   * todo 计数一点不变、整套全绿,而维护者恰恰是靠那句卡点说明知道「卡在哪、谁该立项」。
+   *
+   * 第 7 批第 ④ 刀把卡点也收敛成 `ACCEPTANCE_BLOCKER_TABLES` 单一注册处,并在此守类。
+   */
+  it('每一张卡点表都真的接进了卡点查表链(守类,不守某一批)', () => {
+    const BLOCKER_SECTIONS: ReadonlyArray<{
+      name: string;
+      table: Readonly<Record<string, string>>;
+    }> = [
+      { name: 'BATCH2', table: BATCH2_ACCEPTANCE_BLOCKERS },
+      { name: 'BATCH3_SLICE1', table: BATCH3_SLICE1_ACCEPTANCE_BLOCKERS },
+      {
+        name: 'BATCH4_REGISTRATION_COMMAND',
+        table: BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_BLOCKERS,
+      },
+      { name: 'BATCH4_RESERVATION_KERNEL', table: BATCH4_RESERVATION_KERNEL_ACCEPTANCE_BLOCKERS },
+      { name: 'BATCH4_INVITATION_VISITOR', table: BATCH4_INVITATION_VISITOR_ACCEPTANCE_BLOCKERS },
+      { name: 'BATCH7_RECIPIENT_FREEZE', table: BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_BLOCKERS },
+      { name: 'BATCH7_CLOSEOUT', table: BATCH7_CLOSEOUT_ACCEPTANCE_BLOCKERS },
+    ];
+
+    // ① 每张卡点表都必须**按对象标识**出现在卡点查表链里。
+    const missingTables = BLOCKER_SECTIONS.filter(
+      (section) => !ACCEPTANCE_BLOCKER_TABLES.includes(section.table),
+    ).map((section) => section.name);
+    expect({ 没接进卡点查表链的登记表: missingTables }).toEqual({ 没接进卡点查表链的登记表: [] });
+
+    // ② 每个登记了卡点的编号都必须能被解析到(防止被别的表同名键遮蔽)。
+    const unresolved = BLOCKER_SECTIONS.flatMap((section) =>
+      Object.keys(section.table)
+        .filter((id) => resolveAcceptanceBlocker(id) === undefined)
+        .map((id) => `${section.name}:${id}`),
+    );
+    expect({ 登记了卡点却解析不到的编号: unresolved }).toEqual({ 登记了卡点却解析不到的编号: [] });
+
+    // ③ 反向:清单与查表链条数相等,且非空。
+    expect(BLOCKER_SECTIONS.length).toBe(ACCEPTANCE_BLOCKER_TABLES.length);
+    expect(BLOCKER_SECTIONS.length).toBeGreaterThan(0);
+
+    // ⚠️ 这里**刻意不加**「一个编号不得同时有去向和卡点」那条判据(第 7 批第 ④ 刀试过并撤回):
+    //    跨批次交付时,前批在自己的卡点表里记「我这批没做」、后批在自己的去向表里给真去向,
+    //    是本登记表的**既定形状**(ADV-001 / ADV-004 即是),不是矛盾;
+    //    而且每批的模块级守护本来就要求「本批编号逐条有去向**或**卡点」,
+    //    强行去重会让那些守护抛错、整套 `Tests: 0 total`。
+    //    「同一编号只能有一个去向」这件事由各批模块级守护 + ② 的遮蔽检查负责。
   });
 
   it('活文档仍指向本合同目录(指针被删则红)', () => {
