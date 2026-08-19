@@ -216,6 +216,36 @@
 
 ## P1(长期维护)
 
+### P1-30 通用系统集成地基 Integration Foundation v1 — **T0 已于 2026-08-19 拍板冻结(「按推荐」);PR1–PR8 一行未实施,且 `D-IF-2` 已定:等首次生产上线之后才开工**
+
+- **拍板**:2026-08-19 维护者回复**「按推荐」**,冻结稿 §2.1 决策表 `D-IF-1 … D-IF-12` **全部按推荐值(全 =A)整体冻结,无逐项调整**([#1086](https://github.com/BA7IEE/srvf-nest-api/pull/1086))。
+- **依据**:[`integration-foundation-v1-t0-terminal-review.md`](../archive/reviews/integration-foundation-v1-t0-terminal-review.md)
+  (冻结稿,不回改;偏离须另出 superseding / amendments)。上游权威设计基线 = 维护者提供的《SRVF Integration Foundation v1 终态架构与分阶段落地实施规格》。
+- **要解决什么**:外部系统(ICC / 车辆 / 物资 / 无人机 / 值班 / 大屏 / AI Agent / 其他部门自研)如何安全接入 —— 既不开放 PostgreSQL,也不给它们真人账号密码。
+  终态 = **ServicePrincipal**(机器身份)+ **ServicePrincipalCredential**(可轮换凭证)+ **DelegationGrant**(受控代人)+ 第六 canonical surface `/api/integration/v1/*`。
+  **通用基础设施,不得以任何部门命名核心表 / 模块 / 权限 / 路由 / 通用 DTO。**
+- **序列**:`T0 ✅ → PR1 schema → PR2 控制面+RoleBinding → PR3 机器认证/Token/Gate/第 12 throttler → PR4 Principal-neutral Authz
+  → PR5 Delegation + 双主体 Audit → PR6 第六 surface + /me + 幂等 → PR7 首个真实业务接入 → PR8 runbook/release`。
+  **全部 D 档、单独 CI、单独人审、严格串行**(冻结稿 §18 已论证为什么不能并行)。
+- **⛔ 三条硬约束(实施前先读冻结稿对应节)**:
+  1. **PR7 不做考勤写接口**(§6 C-ATT-1)—— `ACTIVITY_V11_WORKFLOW_ENABLED` 已合入但真相链仍在切换中;
+     待生产做出并稳定选择后另立 PR7'。任何 PR 禁止新增绕过 `assertLegacyWriteAllowed()` / `assertV11WriteAllowed()` 的通路。
+  2. **Integration principal 绝不能挂 `request.user`**(§5.3 F-1)—— 生产代码里只有 2 处读它,一挂上就等于让 503 个 `@CurrentUser()` 与 `RolesGuard` 把机器当人。
+  3. **PR2–PR7 每个都会改写红区生成物 `ROUTE_AUTHZ.md`**(F-2,其 `inputDigest` 覆盖全部 `src/**/*.ts`)⇒ 一次只能有一条在飞;合并用 merge 不用 rebase。
+- **⛔ 开工时机(`D-IF-2`=A —— 已拍板,不再是推荐)**:**PR1 排在首次生产上线之后。T0 合并不解锁 PR1。**
+  理由:PR1 是第 90 条 migration,上线前合入即随首发进生产,而 `INTEGRATION_API_ENABLED=false` 时它一行运行时代码都不会碰 ⇒ 收益 0、风险非 0。
+  **放行信号只能由维护者在首次生产上线完成后显式给出** —— 任何会话不得因为「T0 已合并 / 已拍板」就开 PR1。
+- **⛔ 排班(与上一条同时生效)**:PR1 触碰 Prisma schema,受 [`process.md §8`](../process.md)「同一时刻至多一条 schema-touching lane」约束,
+  **与 P1-28 活动线不并行**;叠加上面第 3 条硬约束 ⇒ **PR1–PR8 一次只能有一条在飞**。
+- **拍板冻结值速查**(`D-IF-1..12` 全 =A;权威原表见冻结稿 §2.1,冲突以冻结稿为准):
+  ① 采纳终态方向 · ② **PR1 待上线后** · ③ BizCode 37xxx 并补登漏登的 36xxx · ④ 新增第六 surface ·
+  ⑤ **不动 `isControlPlanePermissionCode()`,只加单向 seed 自检** · ⑥ eligibility 两字段不开放 HTTP 修改 ·
+  ⑦ 仅 `ServicePrincipal → 固定 User` · ⑧ 审批/终审永久 Direct User Only · ⑨ 禁部分成功批量导入 ·
+  ⑩ 枚举值命名 `SERVICE_PRINCIPAL` · ⑪ `allowedPrincipalKinds` 默认值省略序列化 · ⑫ 本稿为冻结稿。
+- **不阻塞首次上线**的三条可核验判据见冻结稿 §3.2(B-1 / B-2 / B-3)。
+- **本项目当前状态**:仅冻结稿一份 docs;`src/` 与 Prisma 侧 **零改动**。`current-state.md §3`「暂不启动清单」中的
+  「新 schema / migration / Permission seed / Role 扩展」由本 T0 解锁**立项**,**不等于解锁开工** —— 开工另需 `D-IF-2` 的上线后放行信号。
+
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
 ### P1-28 活动业务全流程改造(批次 0–8) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件，[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960))、③ Form runtime / 一次性附件会话([#961](https://github.com/BA7IEE/srvf-nest-api/pull/961))、④ canonical 报名命令主链([#962](https://github.com/BA7IEE/srvf-nest-api/pull/962))、⑤分配/预留名额 DB guards([#963](https://github.com/BA7IEE/srvf-nest-api/pull/963))、发布审核容量桶投影([#964](https://github.com/BA7IEE/srvf-nest-api/pull/964))、三层 CapacityReservation 内核([#965](https://github.com/BA7IEE/srvf-nest-api/pull/965) 已合 main)、⑨永久报名头 DB 地基与 onsite 历史头 fail-closed([#968](https://github.com/BA7IEE/srvf-nest-api/pull/968))、⑩永久头 runtime/个人取消闭环、⑯分配与邀请 C runtime、⑰资格配置/发布激活（managed RuleSet/Rule typed configuration、V5 审核冻结/activation）、⑱活动到点 expiry（既有 worker + PG reconciliation、无新 cron）；合同已修订至 v1.1.1,缺口台账累计 #28**
