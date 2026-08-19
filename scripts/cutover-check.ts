@@ -64,7 +64,7 @@
 import { execFileSync } from 'node:child_process';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -91,6 +91,36 @@ const SCHEMA = 'prisma/schema.prisma';
 const CONFIG_SRC = 'src/config/app.config.ts';
 const SWAGGER_SRC = 'src/bootstrap/apply-swagger.ts';
 const OPENAPI_JSON = 'docs/handoff/openapi.json';
+
+/**
+ * ⑤-b 四端回执的落点 —— **登记制**,同 ⑦ 的 runbook:路径写死 = 判据与文档之间有一份合同,
+ * 改名 / 删文件当场红,不会静默失去这道检查。
+ */
+const VERSION_REGISTRY = 'docs/handoff/contract-version-registry.md';
+
+/**
+ * 合同 §16.1 ⑤ **逐字点名**的五端。判据按这五个名字查行 —— 少一行必须看得见,
+ * 否则「把填不出的那行删掉」就能把缺口洗成「零不一致」(空绿)。
+ */
+const CONTRACT_ENDS: readonly string[] = ['App', 'Admin', 'worker', '管理后台', '手机端'];
+
+/** 登记表的两个哨兵值。用哨兵而不写版本号,免得登记表自己变成**第四处版本声明**。 */
+const REGISTRY_SAME_AS_BACKEND = '同后端';
+const REGISTRY_NOT_REPORTED = '未回执';
+
+/**
+ * ⑤-a 全仓扫描的白名单 —— 允许出现当前 contract version 字面量的**唯一**代码位置。
+ *
+ * 三处真源里只有这一处在 `.ts` 里(另两处不是 .ts,不在扫描面)。名单写死而不是
+ * 「凡看着像真源的都放过」:放宽一次,第四处声明就能借同一个借口混进来。
+ */
+const VERSION_LITERAL_ALLOWLIST: readonly string[] = [SWAGGER_SRC];
+
+/**
+ * ⑤-a 扫描面:**只扫代码**。docs / CHANGELOG / 契约快照里出现版本号是正常的 ——
+ * 那是「记述」不是「声明」,扫进来只会制造噪声,把判据淹成摆设。
+ */
+const VERSION_SCAN_DIRS: readonly string[] = ['src', 'scripts'];
 
 /**
  * ⑦ 的运维 SOP 落点 —— **登记制**,不是「docs/ops 下随便哪份文件提到 worker 就算数」。
@@ -285,10 +315,18 @@ export function judgeBackendVersionSingleValued(
   pkgVersion: string,
   swaggerSrc: string,
   openapiVersion: string,
+  scan: { readonly fileCount: number; readonly strays: readonly string[] },
 ): Judgement {
   const m = /\.setVersion\(\s*'([^']+)'\s*\)/.exec(swaggerSrc);
   if (m === null) {
     return { ok: false, evidence: [`${SWAGGER_SRC} 里找不到 .setVersion('…') ⇒ 判据失效`] };
+  }
+  // 防空绿:扫描面为空时「零命中」与「真的干净」长得一模一样。先钉住采集非空。
+  if (scan.fileCount === 0) {
+    return {
+      ok: false,
+      evidence: [`全仓扫描采集到 **0 个 .ts 文件**(${VERSION_SCAN_DIRS.join(' / ')})⇒ 扫描面塌了,「零第四处声明」是空绿,读数作废`],
+    };
   }
   const trio = [
     { where: 'package.json#version', v: pkgVersion },
@@ -296,9 +334,131 @@ export function judgeBackendVersionSingleValued(
     { where: `${OPENAPI_JSON}#info.version`, v: openapiVersion },
   ];
   const distinct = new Set(trio.map((t) => t.v));
-  return distinct.size === 1
-    ? { ok: true, evidence: [`后端三处版本声明一致:${[...distinct][0]}(${trio.map((t) => t.where).join(' / ')})`] }
-    : { ok: false, evidence: trio.map((t) => `${t.where} = ${t.v}`) };
+  if (distinct.size !== 1) return { ok: false, evidence: trio.map((t) => `${t.where} = ${t.v}`) };
+
+  // 三处一致还不够:**第四处**硬编码同一个版本号才是真源唯一性真正的破口 —— 它不在
+  // `release:prepare` 的同步清单里,发版后会静默过期,而在此之前没有任何闸会响。
+  const version = [...distinct][0];
+  if (scan.strays.length > 0) {
+    return {
+      ok: false,
+      evidence: [
+        `三处真源一致(${version}),但 ${VERSION_SCAN_DIRS.join(' / ')} 下另有 ${scan.strays.length} 处硬编码同一版本号 ⇒ 第四处声明:`,
+        ...scan.strays.map((d) => `  ${d}`),
+        '这些位置不会被 `pnpm release:prepare` 同步 ⇒ 下次发版即静默过期。',
+        '若那确实是**别的版本命名空间**(generator / schema 版本恰好同号),把该文件登记进 VERSION_LITERAL_ALLOWLIST —— 不要放宽判据。',
+      ],
+    };
+  }
+  return {
+    ok: true,
+    evidence: [
+      `后端三处版本声明一致:${version}(${trio.map((t) => t.where).join(' / ')})`,
+      `全仓扫描 ${VERSION_SCAN_DIRS.join(' / ')} 下 ${scan.fileCount} 个 .ts:白名单(${VERSION_LITERAL_ALLOWLIST.join('、')})之外无第四处硬编码`,
+    ],
+  };
+}
+
+/**
+ * ⑤-a 全仓扫描:除三处真源外,还有没有别处**硬编码**了当前 contract version。
+ *
+ * 为什么按「值等于当前版本」扫、而不是按「长得像 semver」扫:仓内本就有一批**别的**版本
+ * 命名空间(`GENERATOR_VERSION = '1.0.0'`、`SCHEMA_VERSION = '1.0.0'`、`openapi: '3.0.0'` …)。
+ * 按 semver 形状扫会把它们全网进来 ⇒ 噪声淹没信号 ⇒ 判据沦为摆设(本仓栽过:宽正则 = 摆设)。
+ * 按**值**扫则精确:第四处声明写的必然就是当前那个版本号。
+ *
+ * 代价明写:当 contract version 有朝一日恰好与某个别的命名空间同号(例如双方都到 `1.0.0`),
+ * 那一处会被报出来。彼时正确处置是**人看一眼再登记进白名单**,不是放宽判据。
+ */
+export function findStrayVersionLiterals(
+  files: readonly { readonly path: string; readonly text: string }[],
+  version: string,
+  allowlist: readonly string[],
+): string[] {
+  const literal = new RegExp(`['"\`]${version.replace(/\./g, '\\.')}['"\`]`);
+  const hits: string[] = [];
+  for (const file of files) {
+    if (allowlist.includes(file.path)) continue;
+    file.text.split('\n').forEach((line, i) => {
+      if (literal.test(line)) hits.push(`${file.path}:${i + 1}  ${line.trim()}`);
+    });
+  }
+  return hits;
+}
+
+interface RegistryRow {
+  readonly end: string;
+  readonly declared: string;
+  readonly when: string;
+  readonly who: string;
+}
+
+/**
+ * ⑤-b 登记表解析。只认**合同点名的五端**那几行 —— 文件里别的表格(哨兵值说明表等)
+ * 天然被滤掉;而某一行被改名 / 删掉也蒙混不过去:缺行由调用方逐条点出来。
+ */
+export function parseRegistryRows(text: string): RegistryRow[] {
+  const rows: RegistryRow[] = [];
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    if (!t.startsWith('|') || !t.endsWith('|')) continue;
+    const cells = t.slice(1, -1).split('|').map((c) => c.trim());
+    if (cells.length !== 5) continue;
+    if (!CONTRACT_ENDS.includes(cells[0])) continue;
+    rows.push({ end: cells[0], declared: cells[1], when: cells[3], who: cells[4] });
+  }
+  return rows;
+}
+
+/**
+ * ⑤-b 四端回执登记表的读数。
+ *
+ * **这是 B 类。** 它算得出「谁没回执 / 谁版本对不上」,但**验不了表里的话是不是真的** ——
+ * 那是别的仓库的人写下的证词,不是本仓可复算的事实。所以它恒走 `eviSub` ⇒ 5b 永远是 ⏸。
+ * 返回 `Judgement` 只为**让正对照能证明它真会分辨**(`ok` 既不参与退出码也不参与渲染)。
+ */
+export function judgeContractVersionRegistry(
+  registryText: string | null,
+  backendVersion: string,
+): Judgement {
+  if (registryText === null) {
+    return { ok: false, evidence: [`登记表 ${VERSION_REGISTRY} **不存在** ⇒ 四端回执无处可填,这条彻底无从取证。`] };
+  }
+  const rows = parseRegistryRows(registryText);
+  if (rows.length === 0) {
+    return {
+      ok: false,
+      evidence: [`登记表 ${VERSION_REGISTRY} 解析到 **0 行** ⇒ 表被清空或表头被改坏。空表恒「零不一致」,那是空绿。`],
+    };
+  }
+  const missing = CONTRACT_ENDS.filter((e) => !rows.some((r) => r.end === e));
+  const structural: string[] = [];
+  const notReported: string[] = [];
+  const aligned: string[] = [];
+  const mismatched: string[] = [];
+  for (const r of rows) {
+    if (r.declared === REGISTRY_SAME_AS_BACKEND) structural.push(r.end);
+    else if (r.declared === REGISTRY_NOT_REPORTED) notReported.push(r.end);
+    else if (r.declared === backendVersion) aligned.push(`${r.end}(${r.when} / ${r.who})`);
+    else mismatched.push(`${r.end} 报 ${r.declared} ≠ 后端 ${backendVersion}(${r.when} / ${r.who})`);
+  }
+  const evidence = [
+    `后端(含 worker,同仓同构建)当前 contract version:${backendVersion}`,
+    `登记表 ${VERSION_REGISTRY}:合同点名 ${CONTRACT_ENDS.length} 端,解析到 ${rows.length} 行`,
+  ];
+  if (missing.length > 0) evidence.push(`⚠️ 缺行(合同点名却查无此端):${missing.join('、')} ⇒ 表被削,缺口可能已被洗掉`);
+  if (structural.length > 0) evidence.push(`结构性对齐(同仓同构建,无需回执):${structural.join('、')}`);
+  if (aligned.length > 0) evidence.push(`已回执且与后端一致:${aligned.join('、')}`);
+  if (mismatched.length > 0) evidence.push(`❗版本不一致:${mismatched.join(';')}`);
+  if (notReported.length > 0) evidence.push(`从未回执(无从核对):${notReported.join('、')}`);
+  const ok = missing.length === 0 && mismatched.length === 0 && notReported.length === 0;
+  evidence.push(
+    ok
+      ? '五端均已取证且一致 —— 但这仍是**证词**,不是本仓可复算的事实 ⇒ 结论由维护者拍板,判据不代劳。'
+      : `需要的证据:上列各端在**自己仓里**对引入的 client 目录跑 \`grep -r contractVersion\`,` +
+        `取到其编译所用契约版本,填进 ${VERSION_REGISTRY} §4 对应行(填法见该文件 §2 / §3)。`,
+  );
+  return { ok, evidence };
 }
 
 /**
@@ -473,6 +633,25 @@ function git(args: string[]): string {
   return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 }
 
+/**
+ * ⑤-a 扫描面的采集:递归 `VERSION_SCAN_DIRS` 下的 `.ts`。
+ *
+ * **不排除 `.spec.ts`**:测试里硬编码当前版本号同样会随发版过期,同样该被看见。
+ * 采集为空(0 个文件)时由 5a 的非空断言兜底 —— 见 `judgeBackendVersionSingleValued` 的调用处。
+ */
+function collectScannedSources(): { path: string; text: string }[] {
+  const out: { path: string; text: string }[] = [];
+  const visit = (dir: string): void => {
+    for (const entry of readdirSync(rel(dir), { withFileTypes: true })) {
+      const child = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) visit(child);
+      else if (entry.name.endsWith('.ts')) out.push({ path: child, text: read(child) });
+    }
+  };
+  for (const dir of VERSION_SCAN_DIRS) visit(dir);
+  return out;
+}
+
 /** `git ls-tree -r <rev> -- prisma/migrations` → path → blob sha。 */
 function migrationBlobs(rev: string): Map<string, string> {
   const out = new Map<string, string>();
@@ -579,6 +758,26 @@ interface Control {
 }
 
 const GOOD_RUNBOOK = RUNBOOK_TOPICS.map((t) => `## ${t.label}\n正文\n`).join('\n');
+
+/** 5a 系列夹具:一个「扫描面正常、无第四处声明」的干净读数。 */
+const CLEAN_SCAN = { fileCount: 1, strays: [] as readonly string[] };
+
+/**
+ * 5b 系列夹具:一张**结构合法**的登记表,四个外部端统一报 `declared`。
+ * 由 `CONTRACT_ENDS` 生成而非手抄五行 —— 合同点名的端将来若增删,夹具自动跟上,
+ * 不会出现「判据认六端、夹具只有五端」这种自己骗自己的对照。
+ */
+function registryFixture(declared: string): string {
+  return ['| 端 | 所用契约版本 | 取证方式 | 填报日期 | 填报人 |', '|---|---|---|---|---|']
+    .concat(
+      CONTRACT_ENDS.map((end) =>
+        end === 'worker'
+          ? `| ${end} | ${REGISTRY_SAME_AS_BACKEND} | 同仓同构建 | — | — |`
+          : `| ${end} | ${declared} | client 戳 | 2026-08-20 | 维护者 |`,
+      ),
+    )
+    .join('\n');
+}
 
 export function positiveControls(): Control[] {
   const realSchema = read(SCHEMA);
@@ -692,17 +891,91 @@ export function positiveControls(): Control[] {
       must: 'red',
       run: () => judgeReconcile(RECONCILE_COMMANDS.slice(1).map((c) => ({ ...c, code: 0, tail: '' }))),
     },
+    // 5a 系列的夹具**刻意不使用仓内当前版本号** —— 否则夹具自己就是「第四处硬编码」,
+    // 会被 5a 新增的全仓扫描扫出来(判据把自己判红)。7.7.x 与仓内任何版本命名空间都不撞。
     {
       id: '5a',
       desc: 'swagger 里的版本字面量与 package.json 漂移 ⇒ 必红',
       must: 'red',
-      run: () => judgeBackendVersionSingleValued('0.66.0', realSwagger.replace(/setVersion\('[^']+'\)/, "setVersion('0.65.0')"), '0.66.0'),
+      run: () => judgeBackendVersionSingleValued('7.7.7', "  .setVersion('7.7.6')\n", '7.7.7', CLEAN_SCAN),
     },
     {
       id: '5a′',
-      desc: '三处一致 ⇒ 必绿(证明它不是恒红)',
+      desc: '三处一致且全仓无第四处 ⇒ 必绿(证明它不是恒红)',
       must: 'green',
-      run: () => judgeBackendVersionSingleValued('9.9.9', "  .setVersion('9.9.9')\n", '9.9.9'),
+      run: () => judgeBackendVersionSingleValued('7.7.7', "  .setVersion('7.7.7')\n", '7.7.7', CLEAN_SCAN),
+    },
+    {
+      id: '5a″',
+      desc: '三处一致、但仓内另有一处硬编码同一版本号 ⇒ 必红(第四处声明)',
+      must: 'red',
+      run: () =>
+        judgeBackendVersionSingleValued('7.7.7', "  .setVersion('7.7.7')\n", '7.7.7', {
+          fileCount: 1,
+          strays: ["src/somewhere.ts:12  const V = '7.7.7';"],
+        }),
+    },
+    {
+      id: '5a‴',
+      desc: '扫描面塌成 0 个文件 ⇒ 必红(零命中与真干净长得一样,不许当绿)',
+      must: 'red',
+      run: () => judgeBackendVersionSingleValued('7.7.7', "  .setVersion('7.7.7')\n", '7.7.7', { fileCount: 0, strays: [] }),
+    },
+    {
+      id: '5a⁗',
+      desc: '扫描器三合一:命中白名单外的、跳过白名单内的、不误伤别的版本命名空间',
+      must: 'red',
+      run: () => {
+        const hits = findStrayVersionLiterals(
+          [
+            { path: 'src/stray.ts', text: "const V = '7.7.7';" },
+            { path: 'src/allowed.ts', text: "const V = '7.7.7';" },
+            { path: 'src/other-namespace.ts', text: "const GENERATOR_VERSION = '1.0.0';" },
+          ],
+          '7.7.7',
+          ['src/allowed.ts'],
+        );
+        // 只有「恰好扫出 stray 那一处」才算判据健全 ⇒ 此时 ok=false ⇒ 必红。
+        const exact = hits.length === 1 && hits[0].startsWith('src/stray.ts:1');
+        return { ok: !exact, evidence: [`扫描命中 ${hits.length} 处:${hits.join(' | ') || '(无)'}`] };
+      },
+    },
+    {
+      id: '5b',
+      desc: '登记表**不存在** ⇒ 必红(要说出「无处可填」,不许静默)',
+      must: 'red',
+      run: () => judgeContractVersionRegistry(null, '7.7.7'),
+    },
+    {
+      id: '5b′',
+      desc: '登记表在、但一行都解析不出 ⇒ 必红(空表恒「零不一致」是空绿)',
+      must: 'red',
+      run: () => judgeContractVersionRegistry('# 标题\n\n正文里没有登记表。\n', '7.7.7'),
+    },
+    {
+      id: '5b″',
+      desc: '五端齐全且版本全部对得上 ⇒ 必绿(证明它不是恒红)',
+      must: 'green',
+      run: () => judgeContractVersionRegistry(registryFixture('7.7.7'), '7.7.7'),
+    },
+    {
+      id: '5b‴',
+      desc: '某端报的版本与后端不一致 ⇒ 必红(「点名」这个能力真的在)',
+      must: 'red',
+      run: () => judgeContractVersionRegistry(registryFixture('7.7.6'), '7.7.7'),
+    },
+    {
+      id: '5b⁗',
+      desc: '删掉合同点名的某一端那行 ⇒ 必红(不许靠删行把缺口洗成零不一致)',
+      must: 'red',
+      run: () =>
+        judgeContractVersionRegistry(
+          registryFixture('7.7.7')
+            .split('\n')
+            .filter((l) => !l.startsWith('| 手机端 '))
+            .join('\n'),
+          '7.7.7',
+        ),
     },
     {
       id: '6a',
@@ -966,14 +1239,19 @@ function buildItems(): ItemResult[] {
         sub(
           '5a',
           'A',
-          '后端自己声明的 contract version 单值(package.json / setVersion / openapi.json 三处)',
-          judgeBackendVersionSingleValued(pkg.version, read(SWAGGER_SRC), openapiVersion),
+          '后端 contract version 单值:三处真源一致,且全仓无第四处硬编码',
+          ((files) =>
+            judgeBackendVersionSingleValued(pkg.version, read(SWAGGER_SRC), openapiVersion, {
+              fileCount: files.length,
+              strays: findStrayVersionLiterals(files, pkg.version, VERSION_LITERAL_ALLOWLIST),
+            }))(collectScannedSources()),
         ),
-        eviSub('5b', 'B', '五端支持同一 contract version', [
-          `后端(含 worker,同仓同构建)自称:${pkg.version}`,
-          'App / Admin / 管理后台 / 手机端是**别的仓库与别的部署**,它们编译时用的是哪一版 openapi.json,本仓看不见。',
-          '需要的证据:各端上报其所用契约版本(或其 client 生成物的版本),与上面这个数比对。',
-        ]),
+        eviSub(
+          '5b',
+          'B',
+          '五端支持同一 contract version(登记表读数)',
+          judgeContractVersionRegistry(readOrNull(VERSION_REGISTRY), pkg.version).evidence.slice(),
+        ),
       ],
     },
     // ⑥ 旧ActivityCheckIn／AttendanceSheet正式写入口已关闭；旧读者清单全部切新账本
