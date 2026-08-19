@@ -49730,6 +49730,41 @@
               "maxLength": 64,
               "type": "string"
             }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "模糊搜索(跨字段命中 displayName + memberNo;trim + contains + case-insensitive)",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页数量(默认 200 = 改造前的硬截条数,保证不传参时行为不变)",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 200,
+              "example": 200,
+              "type": "number"
+            }
           }
         ],
         "responses": {
@@ -49904,7 +49939,7 @@
             "bearer": []
           }
         ],
-        "summary": "App 获取本活动可选协办人（到场者或活动组织有效成员） [auth]",
+        "summary": "App 获取本活动可选协办人（到场者或活动组织有效成员；q 模糊 + page/pageSize 分页） [auth]",
         "tags": [
           "Mobile - Managed Activity Responsibilities"
         ]
@@ -80208,7 +80243,7 @@
             "bearer": []
           }
         ],
-        "summary": "考勤责任人创建可重放的现场批量代签任务 [auth]",
+        "summary": "考勤责任人创建可重放的现场批量代签任务（id 列表或 selection 选择条件，二选一） [auth]",
         "tags": [
           "Mobile - Managed Activity Onsite Operations"
         ]
@@ -124987,10 +125022,28 @@
             "items": {
               "$ref": "#/components/schemas/AppCollaboratorOptionDto"
             }
+          },
+          "total": {
+            "type": "number",
+            "description": "当前 q 过滤下的候选总数(不受 page / pageSize 影响)",
+            "example": 0
+          },
+          "page": {
+            "type": "number",
+            "description": "当前页码",
+            "example": 1
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "每页数量",
+            "example": 200
           }
         },
         "required": [
-          "items"
+          "items",
+          "total",
+          "page",
+          "pageSize"
         ]
       },
       "CreateAppManagedCollaboratorDto": {
@@ -131838,6 +131891,36 @@
           "replayed"
         ]
       },
+      "AppManagedBulkPunchSelectionDto": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "session-all"
+            ],
+            "description": "选择条件模式；session-all = 路径上这一场次的全部参与身份（可再用下面两个条件收窄）"
+          },
+          "statusCodes": {
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "可选收窄：只选当前状态码命中的参与身份；不传表示不按状态收窄",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "positionId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 64,
+            "description": "可选收窄：只选该岗位下的参与身份；不传表示不按岗位收窄"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
       "AppManagedBulkPunchJobDto": {
         "type": "object",
         "properties": {
@@ -131865,11 +131948,19 @@
           "participationIdentityIds": {
             "minItems": 1,
             "maxItems": 500,
-            "description": "已从受控现场名单选择的永久参与身份 ID；服务端去重并按 UTF-8 字节序冻结",
+            "description": "已从受控现场名单选择的永久参与身份 ID；服务端去重并按 UTF-8 字节序冻结。与 selection 二选一（必须恰好给一个）；本字段的 500 条上限刻意保留（见 selection 说明）",
             "type": "array",
             "items": {
               "type": "string"
             }
+          },
+          "selection": {
+            "description": "AC-068：改为提交“选择条件”而不是 id 列表，服务端自行把整场次展开成任务项。与 participationIdentityIds 二选一（必须恰好给一个）",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AppManagedBulkPunchSelectionDto"
+              }
+            ]
           },
           "location": {
             "description": "按场次策略可选的 WGS84 定位快照",
@@ -131883,8 +131974,7 @@
         "required": [
           "operationKey",
           "actionCode",
-          "reason",
-          "participationIdentityIds"
+          "reason"
         ]
       },
       "AppManagedImportExecuteDto": {

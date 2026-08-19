@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { MemberStatus, MembershipStatus, OrganizationStatus } from '@prisma/client';
+import { MemberStatus, MembershipStatus, OrganizationStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -33,6 +33,7 @@ import { ActivitiesService } from './activities.service';
 import type {
   AppActivityChangePositionDto,
   AppActivityInitiationOrganizationOptionDto,
+  AppCollaboratorOptionsQueryDto,
   AppCollaboratorOptionsResponseDto,
   AppManagedActivitiesQueryDto,
   AppManagedActivityDetailDto,
@@ -452,54 +453,97 @@ export class AppManagedActivitiesService {
     return this.positions.softDelete(activityId, activityPositionId, user, auditMeta, 'managed');
   }
 
+  /**
+   * AC-030 —— 协办候选选择器。合同追踪矩阵 E07:「协作候选人搜索＋page/pageSize分页,
+   * 取消200人截断」。改造前 `take: 200` 且无任何入参 ⇒ 第 201 个候选人不可达。
+   *
+   * 🔴 可见集合红线:下面这段 `where` 与改造前**逐字一致**;`q` 只能挂在 `AND` 上做
+   *    收窄,绝不允许挂 `OR`(会放宽)也绝不允许改任何一个既有子句。本方法只让候选人
+   *    「翻得到」,不改「看得到谁」—— 配套 spec 用「扩面前后可见 id 集合逐个相同」钉住。
+   *
+   * 🔴 合同 §11.4:过滤与排序全部在 SQL 里做;`eligibilitySource` 改用**当前页批量 IN**
+   *    取,不再把整场 pass 报名的 memberId 拉进应用内存(改造前那一版对 10000 人活动会
+   *    一次性取回 10000 行,正是 §11.4「不加载整场 identity ids 到应用内存」点名禁止的)。
+   *    查询次数因此恒为 3 次(count + 当前页 + 当前页 IN),与总人数和页大小都无关。
+   */
   async collaboratorOptions(
     activityId: string,
     memberId: string,
+    query: AppCollaboratorOptionsQueryDto,
   ): Promise<AppCollaboratorOptionsResponseDto> {
     const activity = await this.workflowQuery.loadOwned(activityId, memberId);
     const now = new Date();
+    const { page, pageSize } = query;
+    // trim 在 DTO 层做;trim 完是空串等同于「没搜」,免得空串 contains 变成全表扫描的噪音。
+    const keyword = query.q === undefined || query.q === '' ? undefined : query.q;
+
+    const where: Prisma.MemberWhereInput = {
+      status: MemberStatus.ACTIVE,
+      deletedAt: null,
+      users: { some: { status: 'ACTIVE', deletedAt: null } },
+      activityResponsibilities: {
+        none: { activityId, status: 'active' },
+      },
+      OR: [
+        {
+          activityRegistrations: {
+            some: { activityId, statusCode: 'pass', deletedAt: null },
+          },
+        },
+        {
+          memberOrganizationMemberships: {
+            some: {
+              organizationId: activity.organizationId,
+              status: MembershipStatus.ACTIVE,
+              deletedAt: null,
+              startedAt: { lte: now },
+              OR: [{ endedAt: null }, { endedAt: { gt: now } }],
+            },
+          },
+        },
+      ],
+      ...(keyword === undefined
+        ? {}
+        : {
+            AND: [
+              {
+                OR: [
+                  { displayName: { contains: keyword, mode: 'insensitive' as const } },
+                  { memberNo: { contains: keyword, mode: 'insensitive' as const } },
+                ],
+              },
+            ],
+          }),
+    };
+
+    const [total, members] = await Promise.all([
+      this.prisma.member.count({ where }),
+      this.prisma.member.findMany({
+        where,
+        select: {
+          id: true,
+          memberNo: true,
+          displayName: true,
+          gradeCode: true,
+        },
+        orderBy: [{ memberNo: 'asc' }, { id: 'asc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
+
+    // 空页也照发这一次查询:查询次数必须与结果多少无关(不变量 3),不能省成条件分支。
     const participantRows = await this.prisma.activityRegistration.findMany({
-      where: { activityId, statusCode: 'pass', deletedAt: null },
+      where: {
+        activityId,
+        statusCode: 'pass',
+        deletedAt: null,
+        memberId: { in: members.map((member) => member.id) },
+      },
       select: { memberId: true },
       distinct: ['memberId'],
     });
     const participantMemberIds = new Set(participantRows.map((row) => row.memberId));
-    const members = await this.prisma.member.findMany({
-      where: {
-        status: MemberStatus.ACTIVE,
-        deletedAt: null,
-        users: { some: { status: 'ACTIVE', deletedAt: null } },
-        activityResponsibilities: {
-          none: { activityId, status: 'active' },
-        },
-        OR: [
-          {
-            activityRegistrations: {
-              some: { activityId, statusCode: 'pass', deletedAt: null },
-            },
-          },
-          {
-            memberOrganizationMemberships: {
-              some: {
-                organizationId: activity.organizationId,
-                status: MembershipStatus.ACTIVE,
-                deletedAt: null,
-                startedAt: { lte: now },
-                OR: [{ endedAt: null }, { endedAt: { gt: now } }],
-              },
-            },
-          },
-        ],
-      },
-      select: {
-        id: true,
-        memberNo: true,
-        displayName: true,
-        gradeCode: true,
-      },
-      orderBy: [{ memberNo: 'asc' }, { id: 'asc' }],
-      take: 200,
-    });
     return {
       items: members.map((member) => ({
         id: member.id,
@@ -510,6 +554,9 @@ export class AppManagedActivitiesService {
           ? 'participant'
           : 'organization-member',
       })),
+      total,
+      page,
+      pageSize,
     };
   }
 

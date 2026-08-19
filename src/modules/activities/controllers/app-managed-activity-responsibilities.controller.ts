@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
   Req,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -26,6 +27,7 @@ import type { AuditMeta } from '../../audit-logs/audit-logs.types';
 import { AppIdentityResolver } from '../../users/app-identity.resolver';
 import { AppManagedActivitiesService } from '../app-managed-activities.service';
 import {
+  AppCollaboratorOptionsQueryDto,
   AppCollaboratorOptionsResponseDto,
   AppManagedActivityAssignmentParamsDto,
   AppManagedActivityParamsDto,
@@ -75,7 +77,10 @@ export class AppManagedActivityResponsibilitiesController {
     scopes: ['responsibility'],
     engine: 'authz-scoped',
   })
-  @ApiOperation({ summary: 'App 获取本活动可选协办人（到场者或活动组织有效成员） [auth]' })
+  @ApiOperation({
+    summary:
+      'App 获取本活动可选协办人（到场者或活动组织有效成员；q 模糊 + page/pageSize 分页） [auth]',
+  })
   @ApiWrappedOkResponse(AppCollaboratorOptionsResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -86,8 +91,13 @@ export class AppManagedActivityResponsibilitiesController {
   async collaboratorOptions(
     @CurrentUser() user: CurrentUserPayload,
     @Param() params: AppManagedActivityParamsDto,
+    @Query() query: AppCollaboratorOptionsQueryDto,
   ): Promise<AppCollaboratorOptionsResponseDto> {
-    return this.service.collaboratorOptions(params.activityId, await this.resolveMemberId(user));
+    return this.service.collaboratorOptions(
+      params.activityId,
+      await this.resolveMemberId(user),
+      query,
+    );
   }
 
   @Post('collaborators')
