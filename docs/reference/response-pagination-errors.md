@@ -13,6 +13,14 @@
 
 出参固定 `PageResultDto<T>`(`items` / `total` / `page` / `pageSize`),禁止 `{ list, count }` / `{ rows, total }` 等变体。默认排序 `orderBy: { createdAt: 'desc' }`。
 
+#### 已登记例外:`pageSize` 默认值 / 上限(恰 1 处)
+
+| 端点 | 默认 | 上限 | 立项出处与理由 |
+|---|---|---|---|
+| `GET /api/app/v1/my/managed-activities/:activityId/collaborator-options` | 200 | 200 | 活动 v1.1 AC-030(合同追踪矩阵 E07)。该端点改造前恒返回**前 200 条**(`take: 200` 硬截);若改吃本节默认值 20,所有不传参的既有调用方会从 200 条掉到 20 条 —— 那是破坏性变更而不是扩面。**只偏离这两个数值**:字段名、禁用 `limit`/`offset`/`cursor`、出参四件套全部照守,且偏离方向只会「不缩小既有页」。判据见 `test/e2e/activity-scale-usability.e2e-spec.ts` 的不变量 4。 |
+
+新增例外必须进上表并写明立项出处 —— 空着的例外等于没有规则。本表之外的分页入参一律吃 `PaginationQueryDto`(默认 20 / 上限 100)。
+
 ### `ResponseInterceptor` 跳过路径
 
 用 `startsWith` 匹配以下前缀,匹配则不动响应体:`/api/docs`(自动覆盖 `/api/docs-json` / `/api/docs-yaml`)/ `/favicon.ico` / `/metrics` / 文件下载流响应。
