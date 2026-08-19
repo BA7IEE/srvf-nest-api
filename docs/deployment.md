@@ -172,7 +172,7 @@ docker run --rm -p 3000:3000 \
 | `Lint / Typecheck / E2E` | `ci.yml` 的 `gate` job(聚合 `fast` + `slow`;name 逐字锁定,勿改) | **required** | 覆盖 lint / typecheck / docs guards / build / unit(fast)+ `prisma:deploy` / contract / 并行 e2e(slow),是模板核心契约护栏 |
 | `Docker image build` | `ci.yml` 的 `docker-build` job | **required** | 验证多阶段 Dockerfile 在 CI 环境可成功构建出生产镜像 |
 | `Container boot + API smoke + graceful shutdown` | `docker-smoke.yml` 的 `docker-smoke` job | **non-required**(当前阶段建议) | 容器启动级 smoke,受 runner / docker / network 时序影响更高,失败更可能是基础设施抖动而非代码缺陷 |
-| `E2E serial + detectOpenHandles (片 1)` / `(片 2)` | `nightly-e2e-leaks.yml` 的 `e2e-leaks` 矩阵 job(每日 02:00 北京时间 / 可手动触发) | **non-required**(定时) | 串行全量 e2e + 句柄泄漏堆栈定位,2026-08-19 起**按域 2 分片**(切法见 `scripts/e2e-shard-plan.mjs`)。每 PR 的泄漏检测已由 `ci.yml` 的 slow job grep worker 强杀文案承担;本线提供逐句柄堆栈,单片约 40 分钟不适合阻塞 PR。任一片红即整条线红,失败经 Issue 投递(label `nightly-e2e-leaks`) |
+| `E2E serial + detectOpenHandles (片 1)` / `(片 2)` | `nightly-e2e-leaks.yml` 的 `e2e-leaks` 矩阵 job(每日 02:00 北京时间 / 可手动触发) | **non-required**(定时) | 串行全量 e2e + 句柄泄漏堆栈定位,2026-08-19 起**按域 2 分片**(切法见 `scripts/e2e-shard-plan.mjs`)。每 PR 的泄漏检测已由 `ci.yml` 的 slow job grep worker 强杀文案承担;本线提供逐句柄堆栈,单片 25–33 分钟(2026-08-19 实测)不适合阻塞 PR。任一片红即整条线红,失败经 Issue 投递(label `nightly-e2e-leaks`) |
 
 ### 为什么 Docker Smoke 当前建议 non-required
 
