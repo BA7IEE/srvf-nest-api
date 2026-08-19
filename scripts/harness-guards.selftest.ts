@@ -741,6 +741,79 @@ checkEq(
     'nightly 的 Issue 投递未复用 $LEAK_VERDICT(或检测步骤未产出),存在两份判断分叉的风险',
   );
 
+  // ─────────────────────────────────────────────────────────────────────
+  // ①c 夜间线**分片**(2026-08-19,issue #1080)。
+  // 分片把「一个进程跑完全部 spec」换成「每片一个进程」,随之引入本仓最怕的静默
+  // 失效形状:**新增 spec 落不进任何一片时,每片都正常绿,覆盖面却悄悄缩水**。
+  // ci.yml 的 `P1 e2e shard` 守的是同一个形状,但两边机制不同(那边是 `--shard N/M`
+  // 的分母,这边是 scripts/e2e-shard-plan.mjs 的域清单),故必须各守各的。
+  const shardPlan = path.join(repoRoot, 'scripts/e2e-shard-plan.mjs');
+  {
+    const shardList = /matrix:\s*\n\s*shard:\s*\[([^\]]+)\]/.exec(nightly);
+    const matrixCount = shardList ? shardList[1].split(',').filter((s) => s.trim()).length : 0;
+    const declared = Number(
+      execFileSync('node', [shardPlan, '--shards'], { encoding: 'utf-8' }).trim(),
+    );
+    check(
+      'P1 leak:nightly 矩阵片数 == 分片清单声明的片数(错配会整片静默不跑)',
+      matrixCount > 0 && declared > 0 && matrixCount === declared,
+      `nightly 矩阵 ${matrixCount} 片 vs e2e-shard-plan.mjs 声明 ${declared} 片`,
+    );
+  }
+  // 清单自洽本身也要每个 PR 都核:新增 spec 落空是**加 spec 的那个 PR** 引入的,
+  // 等到夜里才发现意味着中间所有 PR 都跑在缩水的覆盖面上。
+  {
+    const r = spawnSync('node', [shardPlan, '--verify'], { encoding: 'utf-8' });
+    check(
+      'P1 leak:e2e 分片清单自洽(每个 spec 恰好落进一片)',
+      r.status === 0,
+      `e2e-shard-plan.mjs --verify 退出码 ${String(r.status)}:${(r.stderr || '').trim()}`,
+    );
+  }
+  check(
+    'P1 leak:nightly 开跑前先核分片清单完整性',
+    // ⚠️ 不能只 grep `e2e-shard-plan.mjs --verify`:该串在本文件的 ::error:: 文案与
+    // 处置建议里也出现(那些是 code 不是注释,codeOnly 剥不掉),删掉真步骤断言照样绿
+    // (实测变异 M3 未变红)。故锚**步骤形态**本身,散文无法满足。
+    /^\s*run: node scripts\/e2e-shard-plan\.mjs --verify\s*$/m.test(nightly),
+    'nightly 少了 `--verify` 步骤 —— spec 落空时两片都会绿',
+  );
+  // 「清单自洽」证明不了「jest 真的收到了这么多」:pattern 写错、testPathIgnorePatterns
+  // 变化都会让实收少于预算,而少跑的那部分不会以任何形式变红。故必须逐片对数。
+  check(
+    'P1 leak:nightly 逐片核对 jest 实收 suite 数 == 清单预算数',
+    /LEAK_VERDICT=shard-plan-drift/.test(nightly) && /"\$suites" -ne "\$planned"/.test(nightly),
+    'nightly 缺 shard-plan-drift 判别 —— 实收少于预算时不会变红',
+  );
+  // 恒保持 job timeout > 内层 timeout,否则内层的「超时/泄漏」判别拿不到执行机会
+  // (job 先被杀,`too-slow` / `leak-no-stack` 两条消息都发不出来,退回 2026-08-16
+  // 之前「只知道红了、不知道为什么红」的状态)。此前这条只写在注释里,现在机核。
+  {
+    const jobSection = nightly.slice(nightly.indexOf('e2e-leaks:'), nightly.indexOf('notify-failure:'));
+    const jobMin = Number(/timeout-minutes:\s*(\d+)/.exec(jobSection)?.[1] ?? 0);
+    const innerMin = Number(/timeout\s+--signal=TERM\s+--kill-after=\d+s\s+(\d+)m/.exec(jobSection)?.[1] ?? 0);
+    check(
+      'P1 leak:nightly job timeout > 内层 timeout(否则超时/泄漏判别拿不到执行机会)',
+      jobMin > 0 && innerMin > 0 && jobMin > innerMin,
+      `job timeout-minutes=${jobMin} vs 内层 timeout=${innerMin}m`,
+    );
+  }
+  // 通知必须是**聚合** job:片 1 绿不代表这条线绿。若关闭逻辑留在片内,
+  // 片 1 会去关掉片 2 刚开的 Issue —— 红着的线看起来是绿的,比不通知更坏。
+  {
+    const jobSection = nightly.slice(nightly.indexOf('e2e-leaks:'), nightly.indexOf('notify-failure:'));
+    check(
+      'P1 leak:分片 job 内不得直接开关 Issue(须由聚合 job 判两片全绿)',
+      !/gh issue/.test(jobSection),
+      '分片 job 里出现了 gh issue —— 单片结论会误开/误关 Issue',
+    );
+    check(
+      'P1 leak:Issue 开关两个 job 都以全部分片为前提',
+      (nightly.match(/needs:\s*e2e-leaks/g) ?? []).length >= 2,
+      '通知 job 未 needs 分片 job —— 会与分片并发跑,拿不到结论',
+    );
+  }
+
   // ② CI gate 必须正面证明 slow 的 skipped 合法(docs-only),不得从 skipped 反推。
   // 曾经 fail-open:changeset 失败 → slow skipped → required check 变绿而 e2e 从未跑。
   check(
