@@ -4478,9 +4478,27 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         },
         "type": "array",
       },
+      "page": {
+        "description": "当前页码",
+        "example": 1,
+        "type": "number",
+      },
+      "pageSize": {
+        "description": "每页数量",
+        "example": 200,
+        "type": "number",
+      },
+      "total": {
+        "description": "当前 q 过滤下的候选总数(不受 page / pageSize 影响)",
+        "example": 0,
+        "type": "number",
+      },
     },
     "required": [
       "items",
+      "total",
+      "page",
+      "pageSize",
     ],
     "type": "object",
   },
@@ -5853,7 +5871,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "participationIdentityIds": {
-        "description": "已从受控现场名单选择的永久参与身份 ID；服务端去重并按 UTF-8 字节序冻结",
+        "description": "已从受控现场名单选择的永久参与身份 ID；服务端去重并按 UTF-8 字节序冻结。与 selection 二选一（必须恰好给一个）；本字段的 500 条上限刻意保留（见 selection 说明）",
         "items": {
           "type": "string",
         },
@@ -5867,13 +5885,48 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "minLength": 1,
         "type": "string",
       },
+      "selection": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppManagedBulkPunchSelectionDto",
+          },
+        ],
+        "description": "AC-068：改为提交“选择条件”而不是 id 列表，服务端自行把整场次展开成任务项。与 participationIdentityIds 二选一（必须恰好给一个）",
+      },
     },
     "required": [
       "operationKey",
       "actionCode",
       "reason",
-      "participationIdentityIds",
     ],
+    "type": "object",
+  },
+  "AppManagedBulkPunchSelectionDto": {
+    "properties": {
+      "mode": {
+        "default": "session-all",
+        "description": "选择条件模式；session-all = 路径上这一场次的全部参与身份（可再用下面两个条件收窄）。可省略，当前闭集只有这一个值，省略即取它",
+        "enum": [
+          "session-all",
+        ],
+        "type": "string",
+      },
+      "positionId": {
+        "description": "可选收窄：只选该岗位下的参与身份；不传表示不按岗位收窄",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "statusCodes": {
+        "description": "可选收窄：只选当前状态码命中的参与身份；不传表示不按状态收窄",
+        "items": {
+          "type": "string",
+        },
+        "maxItems": 20,
+        "minItems": 1,
+        "type": "array",
+      },
+    },
     "type": "object",
   },
   "AppManagedImportExecuteDto": {
@@ -98511,6 +98564,41 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
             "type": "string",
           },
         },
+        {
+          "description": "模糊搜索(跨字段命中 displayName + memberNo;trim + contains + case-insensitive)",
+          "in": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "maxLength": 100,
+            "type": "string",
+          },
+        },
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量(默认 200 = 改造前的硬截条数,保证不传参时行为不变)",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 200,
+            "example": 200,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
       ],
       "responses": {
         "200": {
@@ -98684,7 +98772,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "App 获取本活动可选协办人（到场者或活动组织有效成员） [auth]",
+      "summary": "App 获取本活动可选协办人（到场者或活动组织有效成员；q 模糊 + page/pageSize 分页） [auth]",
       "tags": [
         "Mobile - Managed Activity Responsibilities",
       ],
@@ -103639,7 +103727,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "考勤责任人创建可重放的现场批量代签任务 [auth]",
+      "summary": "考勤责任人创建可重放的现场批量代签任务（id 列表或 selection 选择条件，二选一） [auth]",
       "tags": [
         "Mobile - Managed Activity Onsite Operations",
       ],

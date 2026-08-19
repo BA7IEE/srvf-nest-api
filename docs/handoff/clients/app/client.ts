@@ -1,7 +1,7 @@
 // 由 scripts/generate-fe-client.ts 生成,请勿手改。
 // surface: App 小程序
 // generatorVersion: 1.0.0
-// inputDigest: sha256:eb4e977a81de736398524753f2989e55ab07700c4ba9d8c0b0efcac29ca34845
+// inputDigest: sha256:12fc1b8c910f694ff94d5a56e414c42c391de31cc4a969460c41b220079d724a
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -85,6 +85,7 @@ import type {
   AppManagedAttendanceSheetDto,
   AppManagedAttendanceSheetListItemDto,
   AppManagedBulkPunchJobDto,
+  AppManagedBulkPunchSelectionDto,
   AppManagedImportExecuteDto,
   AppManagedImportPreviewDto,
   AppManagedImportPreviewItemDto,
@@ -517,9 +518,9 @@ export function createAppClient(fetcher: Fetcher) {
     AppManagedActivitiesControllerClone(activityId: string, body: AppManagedActivityCloneCommandDto): Promise<ApiEnvelope<AppManagedActivityCloneResultDto>> {
       return fetcher<AppManagedActivityCloneResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/clone`, body });
     },
-    /** App 获取本活动可选协办人（到场者或活动组织有效成员） [auth] */
-    AppManagedActivityResponsibilitiesControllerCollaboratorOptions(activityId: string): Promise<ApiEnvelope<AppCollaboratorOptionsResponseDto>> {
-      return fetcher<AppCollaboratorOptionsResponseDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/collaborator-options` });
+    /** App 获取本活动可选协办人（到场者或活动组织有效成员；q 模糊 + page/pageSize 分页） [auth] */
+    AppManagedActivityResponsibilitiesControllerCollaboratorOptions(activityId: string, query?: { "q"?: string; "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<AppCollaboratorOptionsResponseDto>> {
+      return fetcher<AppCollaboratorOptionsResponseDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/collaborator-options`, query });
     },
     /** App 活动负责人新增协办人 [auth] */
     AppManagedActivityResponsibilitiesControllerAddCollaborator(activityId: string, body: CreateAppManagedCollaboratorDto): Promise<ApiEnvelope<AppManagedResponsibilityAssignmentDto>> {
@@ -597,7 +598,7 @@ export function createAppClient(fetcher: Fetcher) {
     AppManagedActivityOnsitePunchesControllerVoidEvent(activityId: string, eventId: string, body: CorrectAppManagedOnsitePunchDto): Promise<ApiEnvelope<AppActivityPunchReceiptDto>> {
       return fetcher<AppActivityPunchReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/punch-events/${eventId}/void`, body });
     },
-    /** 考勤责任人创建可重放的现场批量代签任务 [auth] */
+    /** 考勤责任人创建可重放的现场批量代签任务（id 列表或 selection 选择条件，二选一） [auth] */
     AppManagedActivityOnsiteOperationsControllerCreateBulkPunchJob(activityId: string, sessionId: string, body: AppManagedBulkPunchJobDto): Promise<ApiEnvelope<AppManagedOnsiteBatchJobReceiptDto>> {
       return fetcher<AppManagedOnsiteBatchJobReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/sessions/${sessionId}/bulk-punch-jobs`, body });
     },

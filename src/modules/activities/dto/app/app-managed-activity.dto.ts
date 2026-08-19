@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
@@ -10,6 +10,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
   Min,
   MinLength,
@@ -588,9 +589,59 @@ export class AppCollaboratorOptionDto extends AppManagedMemberSummaryDto {
   eligibilitySource!: 'participant' | 'organization-member';
 }
 
+// AC-030(合同追踪矩阵 E07「本期实现:协作候选人搜索＋page/pageSize分页,取消200人截断」):
+// 改造前本端点无搜索、无分页、`take: 200` 硬截 ⇒ 第 201 个候选人在任何入参下都不可达。
+//
+// ⚠️ `pageSize` 默认 200 / 上限 200 是**刻意偏离** docs/reference/response-pagination-errors.md §4
+// 「默认 20 / 上限 100」这两个数值,且只偏离这两个数值:字段名(`page` / `pageSize`)、禁用
+// `limit` / `offset` / `cursor`、出参四件套(`items` / `total` / `page` / `pageSize`)全部照守。
+// 理由是纯加法约束 —— 改造前不传参恒返回**前 200 条**,若改吃铁律默认值 20,所有不传参的
+// 既有调用方会从 200 条掉到 20 条,那是破坏性变更而不是扩面。偏离方向只会「不缩小既有页」。
+export class AppCollaboratorOptionsQueryDto {
+  @ApiPropertyOptional({
+    description: '模糊搜索(跨字段命中 displayName + memberNo;trim + contains + case-insensitive)',
+    maxLength: 100,
+  })
+  @OmittableOnly()
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @ApiPropertyOptional({ description: '页码', default: 1, minimum: 1, example: 1 })
+  @OmittableOnly()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page: number = 1;
+
+  @ApiPropertyOptional({
+    description: '每页数量(默认 200 = 改造前的硬截条数,保证不传参时行为不变)',
+    default: 200,
+    minimum: 1,
+    maximum: 200,
+    example: 200,
+  })
+  @OmittableOnly()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  pageSize: number = 200;
+}
+
 export class AppCollaboratorOptionsResponseDto {
   @ApiProperty({ type: [AppCollaboratorOptionDto] })
   items!: AppCollaboratorOptionDto[];
+
+  @ApiProperty({ description: '当前 q 过滤下的候选总数(不受 page / pageSize 影响)', example: 0 })
+  total!: number;
+
+  @ApiProperty({ description: '当前页码', example: 1 })
+  page!: number;
+
+  @ApiProperty({ description: '每页数量', example: 200 })
+  pageSize!: number;
 }
 
 export class CreateAppManagedActivityPositionDto {

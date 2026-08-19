@@ -13,6 +13,7 @@ import {
   Matches,
   Min,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -128,6 +129,61 @@ export class AppManagedProxyPunchDto {
   location?: AppManagedOnsiteLocationDto;
 }
 
+// AC-068「500/2000/10000 人不要求业务人员手工拆 200 人数组」。
+//
+// 这里**没有**把 500 改大 —— 合同追踪矩阵 I55 明写现有 200/500 人批量「当前合理，保留现有
+// 正确方向」，开发文档 §11.5 也把「item 批次 100 至 500 条」定位成吞吐参数并明写它
+// 「**不形成业务上限**」。数组上限该守的是单请求体积；不该由它逼业务人员手工分页。
+//
+// 于是走「传条件、不传 id 列表」：客户端提交本场次的选择条件，服务端在 SQL 里把它展开成
+// 任务项（见 attendance-onsite-batch-job.service.ts 的 INSERT ... SELECT），绑定参数个数与
+// 人数无关，一个 identity id 都不进应用内存（开发文档 §11.4）。既有 500 条 id 列表入口
+// 原样保留，行为一字不改。
+export class AppManagedBulkPunchSelectionDto {
+  // ⚠️ 刻意**可省略**而不是必填。契约语义门(L6/R11,规则 B3 `request-required-added`)
+  // 把「可选父对象下的必填叶子」也算作破坏性变更 —— 它不建模「只有传了 selection 才要求
+  // mode」这层条件性。而这里客观上**没有任何老调用方会受影响**:selection 整个是新增的
+  // 可选字段,老调用方一律走 participationIdentityIds。
+  //
+  // 两条出路里选了闸自己给的第 ① 条「用兼容写法让它变成 additive」,而不是第 ② 条申报破坏:
+  // 申报一条并不存在的破坏,会往审计记录里写假事实,还要维护者为此点一次环境审批。
+  // 当前闭集只有一个值,省略即取它;将来加第二种模式时,新值仍然要显式写。
+  @ApiPropertyOptional({
+    enum: ['session-all'],
+    default: 'session-all',
+    description:
+      '选择条件模式；session-all = 路径上这一场次的全部参与身份（可再用下面两个条件收窄）。' +
+      '可省略，当前闭集只有这一个值，省略即取它',
+  })
+  @OmittableOnly()
+  @IsIn(['session-all'])
+  mode = 'session-all' as const;
+
+  @ApiPropertyOptional({
+    type: [String],
+    minItems: 1,
+    maxItems: 20,
+    description: '可选收窄：只选当前状态码命中的参与身份；不传表示不按状态收窄',
+  })
+  @OmittableOnly()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @Length(1, 64, { each: true })
+  statusCodes?: string[];
+
+  @ApiPropertyOptional({
+    minLength: 8,
+    maxLength: 64,
+    description: '可选收窄：只选该岗位下的参与身份；不传表示不按岗位收窄',
+  })
+  @OmittableOnly()
+  @IsString()
+  @Length(8, 64)
+  positionId?: string;
+}
+
 export class AppManagedBulkPunchJobDto {
   @ApiProperty({
     minLength: 1,
@@ -151,18 +207,32 @@ export class AppManagedBulkPunchJobDto {
   @MaxLength(500)
   reason!: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     type: [String],
     minItems: 1,
     maxItems: 500,
-    description: '已从受控现场名单选择的永久参与身份 ID；服务端去重并按 UTF-8 字节序冻结',
+    description:
+      '已从受控现场名单选择的永久参与身份 ID；服务端去重并按 UTF-8 字节序冻结。' +
+      '与 selection 二选一（必须恰好给一个）；本字段的 500 条上限刻意保留（见 selection 说明）',
   })
+  @ValidateIf((dto: AppManagedBulkPunchJobDto) => dto.selection === undefined)
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(500)
   @IsString({ each: true })
   @Length(8, 64, { each: true })
-  participationIdentityIds!: string[];
+  participationIdentityIds?: string[];
+
+  @ApiPropertyOptional({
+    type: () => AppManagedBulkPunchSelectionDto,
+    description:
+      'AC-068：改为提交“选择条件”而不是 id 列表，服务端自行把整场次展开成任务项。' +
+      '与 participationIdentityIds 二选一（必须恰好给一个）',
+  })
+  @ValidateIf((dto: AppManagedBulkPunchJobDto) => dto.participationIdentityIds === undefined)
+  @ValidateNested()
+  @Type(() => AppManagedBulkPunchSelectionDto)
+  selection?: AppManagedBulkPunchSelectionDto;
 
   @ApiPropertyOptional({
     type: () => AppManagedOnsiteLocationDto,

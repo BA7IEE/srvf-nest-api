@@ -460,7 +460,10 @@ export class AppManagedActivityOnsiteOperationsController {
     scopes: ['responsibility'],
     engine: 'authz-scoped',
   })
-  @ApiOperation({ summary: '考勤责任人创建可重放的现场批量代签任务 [auth]' })
+  @ApiOperation({
+    summary:
+      '考勤责任人创建可重放的现场批量代签任务（id 列表或 selection 选择条件，二选一） [auth]',
+  })
   @ApiWrappedCreatedResponse(AppManagedOnsiteBatchJobReceiptDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -486,7 +489,10 @@ export class AppManagedActivityOnsiteOperationsController {
         operationKey: dto.operationKey,
         actionCode: dto.actionCode,
         reason: dto.reason,
-        participationIdentityIds: dto.participationIdentityIds,
+        ...(dto.participationIdentityIds === undefined
+          ? {}
+          : { participationIdentityIds: dto.participationIdentityIds }),
+        ...(dto.selection === undefined ? {} : { selection: dto.selection }),
         longitude: dto.location?.longitude ?? null,
         latitude: dto.location?.latitude ?? null,
         accuracy: dto.location?.accuracy ?? null,

@@ -1288,6 +1288,24 @@ const BATCH7_CLOSEOUT_ACCEPTANCE_DESTINATIONS: Readonly<
         'AC-044 ③解析版本:客户端谎报与预览由旧解析器冻结,两条边界都 400 fail-closed 且零业务写',
     },
   ],
+  // AC-030「超过 200 人仍可完整查找」。此前是**能力缺口**:`collaboratorOptions` 无搜索、
+  // 无分页、`take: 200` 硬截,第 201 人在任何入参下都不可达(合同追踪矩阵 E07 明写本期实现
+  // 「协作候选人搜索＋page/pageSize 分页,取消 200 人截断」)。现已交付,三条判据各守一面:
+  // 够得到(翻页 + 搜索)、够得全(可见集合逐个 id 相同)、够得快(过滤排序在 SQL 里)。
+  'AC-030': [
+    {
+      file: 'test/e2e/activity-scale-usability.e2e-spec.ts',
+      needle: '不变量 1 —— 超过 200 人时第 201 个候选人可以翻页找到,也可以搜索找到',
+    },
+    {
+      file: 'test/e2e/activity-scale-usability.e2e-spec.ts',
+      needle: '🔴 红线 —— 翻遍所有页得到的可见集合,与改造前不截断时的可见集合逐个 id 相同',
+    },
+    {
+      file: 'test/e2e/activity-scale-usability.e2e-spec.ts',
+      needle: '不变量 2 —— collaboratorOptions 的查询路径上没有「取全量再内存 filter/sort」',
+    },
+  ],
   // AC-070 此前**只是 pagination.dto.ts 顶部的一行注释**,零执行位。本刀把它做成读
   // 已生成公开合同的判据:禁用参数、page/pageSize 成对、分页信封必声明分页参数、
   // limit 白名单穷举、全文零 cursor、手机管理根路径不变。
@@ -1377,14 +1395,12 @@ const BATCH7_CLOSEOUT_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
     '三段里第三段零实现:「候补顺序按所选分配方式产生」与「只在同场次同岗位递补」都已交付并有判据' +
     '(first_come/qualification_rank/lottery 队列 + 同岗位递补隔离),但「**换岗需要本人确认**」全仓零实现 —— ' +
     '没有换岗流程、也没有本人确认闸。按本文件纪律不拿三分之二结案。',
-  'AC-030':
-    '**能力缺口,不是判据缺口**:协作人候选 `collaboratorOptions` 硬编码 `take: 200` 且**无搜索参数、无分页**,' +
-    '第 201 人起不可达;队员候选 `GET /admin/v1/members/options` 有 `q` 搜索但用 `limit`(上限 100)且无 page/pageSize,' +
-    '同样翻不过第一页。正是 AC-030「超过200人仍可完整查找」要防的那件事,须先立项改接口。',
   'AC-068':
-    '两处硬上限挡在前面:考勤 sheet `records` 与批量代签入参分别 `@ArrayMaxSize(200)` / `@ArrayMaxSize(500)`,' +
-    '且无「整场次/全选」式服务端分块入口 —— 2000 人操作仍需业务人员自行拆成多次请求,正是本条禁止的。' +
-    '另:500/2000/10000 三档读数需规模测试环境,本地不产出可信数字。',
+    '**结构性障碍已消除,读数仍缺一档**:现场批量代签已新增「提交选择条件、服务端在 SQL 里展开」的入口' +
+    '(`selection: { mode: session-all }`),2000 人一次入队实测 43.7ms / 事务预算 5000ms,业务人员不必再手工拆;' +
+    '既有 500 条 id 列表入口与 `@ArrayMaxSize(500)` 按合同追踪矩阵 I55「当前合理,保留」原样不动。' +
+    '仍未结案的是**10000 档读数**:那需要规模测试环境,本地不产出可信数字(考勤 sheet `records` 的 200 条' +
+    '是逐人数据而非 id 列表,条件无法替代,不在本条口径内)。',
 };
 
 const batch7CloseoutResolvedIds = new Set([

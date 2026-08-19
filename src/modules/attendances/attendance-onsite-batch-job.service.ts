@@ -19,13 +19,28 @@ export const ONSITE_BULK_PUNCH_JOB_ACTION = 'onsite_bulk_punch';
 const ONSITE_BULK_PUNCH_PAYLOAD_VERSION = 1;
 const ONSITE_BULK_OPERATION_KEY_PATTERN = /^[A-Za-z0-9_-]{1,96}$/u;
 
+/**
+ * AC-068 的选择条件。合同追踪矩阵 I55 判定现有 200/500 人批量上限「当前合理，保留现有正确
+ * 方向」，开发文档 §11.5 又明写 item 批次「不形成业务上限」—— 两句话合起来的意思是:
+ * 上限该守单请求体积，不该逼业务人员手工把一万人拆成二十次请求。所以这里加的是**第二种
+ * 入口**（提交条件，服务端展开），不是把 500 改大。
+ */
+export interface OnsiteBulkPunchSelection {
+  mode: 'session-all';
+  statusCodes?: string[];
+  positionId?: string;
+}
+
 export interface CreateOnsiteBulkPunchJobInput {
   activityId: string;
   sessionId: string;
   operationKey: string;
   actionCode: 'check_in' | 'check_out';
   reason: string;
-  participationIdentityIds: string[];
+  /** 与 selection 恰好二选一。 */
+  participationIdentityIds?: string[];
+  /** 与 participationIdentityIds 恰好二选一。 */
+  selection?: OnsiteBulkPunchSelection;
   longitude: number | null;
   latitude: number | null;
   accuracy: number | null;
@@ -121,10 +136,21 @@ export class AttendanceOnsiteBatchJobService {
     }
     const reason = normalizeAttendancePunchReason(input.reason);
     if (reason === null) throw new BizException(BizCode.BAD_REQUEST);
-    const participationIdentityIds = canonicalIdentityIds(input.participationIdentityIds);
-    if (participationIdentityIds.length === 0 || participationIdentityIds.length > 500) {
+    // 恰好二选一:两个都给说不清以谁为准,都不给则没有操作对象。DTO 的 @ValidateIf 只能
+    // 表达「另一个缺席时我必填」,表达不了「不许都给」⇒ 这一条必须在这里兜。
+    const hasIdentityIds = input.participationIdentityIds !== undefined;
+    const hasSelection = input.selection !== undefined;
+    if (hasIdentityIds === hasSelection) throw new BizException(BizCode.BAD_REQUEST);
+
+    const participationIdentityIds = canonicalIdentityIds(input.participationIdentityIds ?? []);
+    if (
+      hasIdentityIds &&
+      (participationIdentityIds.length === 0 || participationIdentityIds.length > 500)
+    ) {
       throw new BizException(BizCode.BAD_REQUEST);
     }
+    const selection =
+      input.selection === undefined ? undefined : canonicalSelection(input.selection);
     const requestHash = createOnsiteBulkPunchRequestHash({
       activityId: input.activityId,
       sessionId: input.sessionId,
@@ -132,6 +158,7 @@ export class AttendanceOnsiteBatchJobService {
       actionCode: input.actionCode,
       reason,
       participationIdentityIds,
+      selection,
       longitude: input.longitude,
       latitude: input.latitude,
       accuracy: input.accuracy,
@@ -144,6 +171,7 @@ export class AttendanceOnsiteBatchJobService {
         reason,
         operationKey,
         participationIdentityIds,
+        selection,
         requestHash,
       },
       currentUser,
@@ -233,16 +261,19 @@ export class AttendanceOnsiteBatchJobService {
         return receiptFromJob(existing, true);
       }
 
-      const identities = await tx.activityParticipationIdentity.findMany({
-        where: {
-          activityId: input.activityId,
-          sessionId: input.sessionId,
-          id: { in: input.participationIdentityIds },
-        },
-        select: { id: true },
-      });
-      if (identities.length !== input.participationIdentityIds.length) {
-        throw new BizException(BizCode.ATTENDANCE_REGISTRATION_INVALID);
+      const explicitIdentityIds = input.participationIdentityIds ?? [];
+      if (input.selection === undefined) {
+        const identities = await tx.activityParticipationIdentity.findMany({
+          where: {
+            activityId: input.activityId,
+            sessionId: input.sessionId,
+            id: { in: explicitIdentityIds },
+          },
+          select: { id: true },
+        });
+        if (identities.length !== explicitIdentityIds.length) {
+          throw new BizException(BizCode.ATTENDANCE_REGISTRATION_INVALID);
+        }
       }
 
       const payload: Prisma.InputJsonObject = {
@@ -263,7 +294,9 @@ export class AttendanceOnsiteBatchJobService {
           requestHash: input.requestHash,
           payloadVersion: ONSITE_BULK_PUNCH_PAYLOAD_VERSION,
           payload,
-          total: input.participationIdentityIds.length,
+          // 条件式入队此刻还不知道命中多少人(要等 INSERT ... SELECT 回报行数)⇒ 先落 0,
+          // 展开完再写真值;两步在同一事务里,外部永远看不到 total=0 的中间态。
+          total: input.selection === undefined ? explicitIdentityIds.length : 0,
           // 写与判同源:`ActivityBatchWorker.claimJob` 用应用时钟比 `availableAt`,
           // 故入队显式写应用时钟,不吃列上的 `@default(now())`(数据库时钟)。
           availableAt: new Date(),
@@ -278,29 +311,97 @@ export class AttendanceOnsiteBatchJobService {
           skipped: true,
         },
       });
-      await tx.activityBatchJobItem.createMany({
-        data: input.participationIdentityIds.map((participationIdentityId) => ({
-          jobId: job.id,
-          itemKey: `identity:${participationIdentityId}`,
-          statusCode: 'pending',
-          resourceType: 'activity_participation_identity',
-          resourceId: participationIdentityId,
-          payloadHash: input.requestHash,
-        })),
-      });
+
+      const total =
+        input.selection === undefined
+          ? await this.createItemsFromIdentityIds(tx, job.id, input)
+          : await this.createItemsFromSelection(tx, job.id, input, input.selection);
+      const reserved = total === job.total ? job : { ...job, total };
+      if (total !== job.total) {
+        await tx.activityBatchJob.update({ where: { id: job.id }, data: { total } });
+      }
+
       await this.audit.logOnsiteBatchJob({
         operation: 'attendance-bulk.create',
         activityId: input.activityId,
         sessionId: input.sessionId,
         jobId: job.id,
-        total: job.total,
+        total: reserved.total,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
         auditMeta,
         tx,
       });
-      return receiptFromJob(job, false);
+      return receiptFromJob(reserved, false);
     });
+  }
+
+  /** 显式 id 列表入队:形状与改造前逐字一致(≤500 条,bind 数随条数走,可接受)。 */
+  private async createItemsFromIdentityIds(
+    tx: PrismaTx,
+    jobId: string,
+    input: CreateOnsiteBulkPunchJobInput & { requestHash: string },
+  ): Promise<number> {
+    const ids = input.participationIdentityIds ?? [];
+    await tx.activityBatchJobItem.createMany({
+      data: ids.map((participationIdentityId) => ({
+        jobId,
+        itemKey: `identity:${participationIdentityId}`,
+        statusCode: 'pending',
+        resourceType: 'activity_participation_identity',
+        resourceId: participationIdentityId,
+        payloadHash: input.requestHash,
+      })),
+    });
+    return ids.length;
+  }
+
+  /**
+   * AC-068 条件式入队 —— 把「全选本场次」在 **SQL 里**展开成任务项。
+   *
+   * 🔴 为什么必须是 `INSERT ... SELECT` 而不是「先查 id 再 createMany」:
+   *   1. **bind 参数恒为常量**(3 至 5 个,与人数无关)。本仓已实测 Prisma bind 上限 32767,
+   *      逐行 `VALUES` 每项 6 参数在 ~5461 项处确定性失败 —— 10000 人必炸。
+   *      同一条理由已经写在 `ledger-preparation.service.ts` 的 `writeSettlementDays` 上。
+   *   2. **一个 identity id 都不进应用内存**,满足开发文档 §11.4「10000 人逐人页每页只查当前页,
+   *      不加载整场 identity ids 到应用内存」。
+   *   3. **往返次数恒为 1**,持有 Activity 咨询锁的时长只随一次批量插入走,不随往返次数放大。
+   *
+   * `gen_random_uuid()::text` 生成主键:本仓既有 raw INSERT(`ParticipantSettlementDay` /
+   * `ParticipationLedgerEntry`)已是同一写法,不是本刀新开的口径。
+   *
+   * WHERE 里的 activityId + sessionId 同时钉死 ⇒ 与显式 id 入口那次「必须全部属于本场次」
+   * 的校验等价,而且是 by construction 的:选择条件根本无法指向别的场次。
+   */
+  private async createItemsFromSelection(
+    tx: PrismaTx,
+    jobId: string,
+    input: CreateOnsiteBulkPunchJobInput & { requestHash: string },
+    selection: OnsiteBulkPunchSelection,
+  ): Promise<number> {
+    const conditions: Prisma.Sql[] = [
+      Prisma.sql`i."activityId" = ${input.activityId}`,
+      Prisma.sql`i."sessionId" = ${input.sessionId}`,
+    ];
+    if (selection.statusCodes !== undefined) {
+      conditions.push(Prisma.sql`i."currentStatusCode" = ANY(${selection.statusCodes}::text[])`);
+    }
+    if (selection.positionId !== undefined) {
+      conditions.push(Prisma.sql`i."currentPositionId" = ${selection.positionId}`);
+    }
+    const inserted = await tx.$executeRaw`
+      INSERT INTO "ActivityBatchJobItem" (
+        "id", "createdAt", "updatedAt", "jobId", "itemKey", "statusCode",
+        "resourceType", "resourceId", "payloadHash"
+      )
+      SELECT gen_random_uuid()::text, NOW(), NOW(), ${jobId}, 'identity:' || i."id", 'pending',
+             'activity_participation_identity', i."id", ${input.requestHash}
+      FROM "ActivityParticipationIdentity" i
+      WHERE ${Prisma.join(conditions, ' AND ')}
+    `;
+    // 命中 0 人 = 没有操作对象,与显式入口的 @ArrayMinSize(1) 同义;抛在事务里,job 一并回滚。
+    if (inserted === 0) throw new BizException(BizCode.BAD_REQUEST);
+    return inserted;
   }
 
   /**
@@ -766,6 +867,17 @@ function canonicalLocation(
   };
 }
 
+/** 条件的规范化:同一组条件不论客户端怎么排列/重复,都必须算出同一个 requestHash。 */
+function canonicalSelection(selection: OnsiteBulkPunchSelection): OnsiteBulkPunchSelection {
+  return {
+    mode: selection.mode,
+    ...(selection.statusCodes === undefined
+      ? {}
+      : { statusCodes: [...new Set(selection.statusCodes)].sort() }),
+    ...(selection.positionId === undefined ? {} : { positionId: selection.positionId }),
+  };
+}
+
 function createOnsiteBulkPunchRequestHash(args: {
   activityId: string;
   sessionId: string;
@@ -773,6 +885,7 @@ function createOnsiteBulkPunchRequestHash(args: {
   actionCode: 'check_in' | 'check_out';
   reason: string;
   participationIdentityIds: string[];
+  selection?: OnsiteBulkPunchSelection;
   longitude: number | null;
   latitude: number | null;
   accuracy: number | null;
@@ -786,6 +899,9 @@ function createOnsiteBulkPunchRequestHash(args: {
     reason: args.reason,
     participationIdentityIds: args.participationIdentityIds,
     location: canonicalLocation(args.longitude, args.latitude, args.accuracy),
+    // ⚠️ 只有走条件入口时才多这一个键 —— 显式 id 入口算出的哈希必须与改造前**逐字节相同**,
+    // 否则改造前入队、改造后重放同一个 operationKey 会被判成 IDEMPOTENCY_CONFLICT。
+    ...(args.selection === undefined ? {} : { selection: args.selection }),
   });
   return createHash('sha256').update(payload, 'utf8').digest('hex');
 }
