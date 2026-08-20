@@ -9,6 +9,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 describe('ActivityPosition attendance wiring (F4)', () => {
   let app: INestApplication;
@@ -41,7 +42,7 @@ describe('ActivityPosition attendance wiring (F4)', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: 'ACTIVITY-POSITION-F4',
-        displayName: '岗位考勤队员',
+        ...memberIdentityData('岗位考勤队员'),
         status: MemberStatus.ACTIVE,
       },
       select: { id: true },

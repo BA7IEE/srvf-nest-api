@@ -17,6 +17,7 @@ import { WechatService } from '../../src/modules/wechat/wechat.service';
 import { createTestUser, TEST_PASSWORD } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // D-PR1：两套 Nest app / 两个 Prisma pool / 真实 PostgreSQL User 行锁屏障。
 // 每个竞态先由独立事务持有 User FOR UPDATE，再逐个把两个生产路径放入同一锁队列；
@@ -346,7 +347,7 @@ describe('Auth session lifecycle PostgreSQL linearization', () => {
     const member = await prismaA.member.create({
       data: {
         memberNo: `ASL-${sequence}`,
-        displayName: `Session linearization ${sequence}`,
+        ...memberIdentityData(`Session linearization ${sequence}`),
         status: MemberStatus.ACTIVE,
       },
     });

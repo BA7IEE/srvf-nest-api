@@ -14,6 +14,7 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { assertConnectedTestDatabase } from '../setup/test-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // activity-registrations state transitions characterization tests
 // (god-service 拆分前置锁;沿 attendances state-transition / audit-characterization 范式)。
@@ -293,16 +294,16 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
     const adminAuth = (await loginAs(app, 'reg-state-admin')).authHeader;
 
     const memberA = await prisma.member.create({
-      data: { memberNo: 'reg-state-m-a', displayName: 'State Member A' },
+      data: { memberNo: 'reg-state-m-a', ...memberIdentityData('State Member A') },
       select: { id: true },
     });
     const memberB = await prisma.member.create({
-      data: { memberNo: 'reg-state-m-b', displayName: 'State Member B' },
+      data: { memberNo: 'reg-state-m-b', ...memberIdentityData('State Member B') },
       select: { id: true },
     });
     // memberC:作为 admin 代报名的目标 member(无 user 绑定)
     const memberC = await prisma.member.create({
-      data: { memberNo: 'reg-state-m-c', displayName: 'State Member C' },
+      data: { memberNo: 'reg-state-m-c', ...memberIdentityData('State Member C') },
       select: { id: true },
     });
 
@@ -915,7 +916,7 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       const member = await ctx.prisma.member.create({
         data: {
           memberNo: `reg-state-inactive-${Date.now()}`,
-          displayName: 'Inactive Approve Target',
+          ...memberIdentityData('Inactive Approve Target'),
           status: MemberStatus.INACTIVE,
         },
         select: { id: true },
@@ -976,7 +977,7 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       const member = await ctx.prisma.member.create({
         data: {
           memberNo: `reg-state-qualification-grade-${Date.now()}`,
-          displayName: 'Qualification review target',
+          ...memberIdentityData('Qualification review target'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },
@@ -1053,7 +1054,7 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       const member = await ctx.prisma.member.create({
         data: {
           memberNo: `reg-state-deleted-${Date.now()}`,
-          displayName: 'Deleted Approve Target',
+          ...memberIdentityData('Deleted Approve Target'),
         },
         select: { id: true },
       });
@@ -1990,7 +1991,7 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       const member = await ctx.prisma.member.create({
         data: {
           memberNo: `reg-state-reopen-inactive-${Date.now()}`,
-          displayName: 'Inactive Reopen Target',
+          ...memberIdentityData('Inactive Reopen Target'),
           status: MemberStatus.INACTIVE,
         },
         select: { id: true },
@@ -2471,7 +2472,7 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       const member = await ctx.prisma.member.create({
         data: {
           memberNo: `legacy-activity-only-${Date.now()}`,
-          displayName: 'Legacy activity-only qualification target',
+          ...memberIdentityData('Legacy activity-only qualification target'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },

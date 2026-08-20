@@ -10,6 +10,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const START_AT = new Date('2099-12-15T08:00:00.000Z');
 const END_AT = new Date('2099-12-15T12:00:00.000Z');
@@ -56,7 +57,7 @@ describe('activity batch4 whole-cancel canonical lifecycle', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `B4-CANCEL-${suffix.toUpperCase()}`,
-        displayName: `Batch4 cancel ${label}`,
+        ...memberIdentityData(`Batch4 cancel ${label}`),
         gradeCode: 'L1',
         status: MemberStatus.ACTIVE,
       },

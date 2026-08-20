@@ -18,6 +18,7 @@ import { AuthzService } from '../../src/modules/authz/authz.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 终态 scoped-authz PR8:三源推导正确性 service 级测试(goal DoD 3;冻结稿 §5.2 三源 + §6 场景推演)。
 // 角色 / 职务 / policy / 组织树用**真 seed**(子进程,沿 seed-position-role-policies 范式)—— org-admin 56 码
@@ -110,7 +111,7 @@ describe('authz 三源推导(§5.2 3a/3b/3c + §6 场景 + R5 + 失效族 + SELF
 
   async function mkPerson(tag: string, role: Role = Role.USER): Promise<Person> {
     const member = await prisma.member.create({
-      data: { memberNo: `pr8-3s-${tag}`, displayName: `3src ${tag}` },
+      data: { memberNo: `pr8-3s-${tag}`, ...memberIdentityData(`3src ${tag}`) },
       select: { id: true },
     });
     const user = await prisma.user.create({
@@ -137,7 +138,7 @@ describe('authz 三源推导(§5.2 3a/3b/3c + §6 场景 + R5 + 失效族 + SELF
 
   async function mkTargetMember(tag: string, organizationId: string): Promise<string> {
     const member = await prisma.member.create({
-      data: { memberNo: `pr8-3t-${tag}`, displayName: `3src 目标 ${tag}` },
+      data: { memberNo: `pr8-3t-${tag}`, ...memberIdentityData(`3src 目标 ${tag}`) },
       select: { id: true },
     });
     await prisma.memberOrganizationMembership.create({

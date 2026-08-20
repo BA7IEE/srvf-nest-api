@@ -11,6 +11,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 describe('batch4 activity capacity bucket projection', () => {
   let app: INestApplication;
@@ -40,7 +41,7 @@ describe('batch4 activity capacity bucket projection', () => {
     const creatorMember = await prisma.member.create({
       data: {
         memberNo: 'batch4-capacity-creator-member',
-        displayName: '容量投影发起人',
+        ...memberIdentityData('容量投影发起人'),
         gradeCode: 'level-3',
       },
       select: { id: true },
@@ -48,7 +49,7 @@ describe('batch4 activity capacity bucket projection', () => {
     const reviewerMember = await prisma.member.create({
       data: {
         memberNo: 'batch4-capacity-reviewer-member',
-        displayName: '容量投影审核人',
+        ...memberIdentityData('容量投影审核人'),
         gradeCode: 'level-3',
       },
       select: { id: true },
@@ -352,7 +353,7 @@ describe('batch4 activity capacity bucket projection', () => {
       const member = await prisma.member.create({
         data: {
           memberNo: `batch4-capacity-member-${suffix}`,
-          displayName: `容量占用队员 ${suffix}`,
+          ...memberIdentityData(`容量占用队员 ${suffix}`),
           gradeCode: 'level-3',
         },
         select: { id: true },

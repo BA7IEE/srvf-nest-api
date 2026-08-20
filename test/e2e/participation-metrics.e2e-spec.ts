@@ -9,6 +9,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 审计刀 5 F1–F4：三条核心口径锁 + admin/App scope 边界。
 describe('participation metrics F1-F4', () => {
@@ -48,9 +49,9 @@ describe('participation metrics F1-F4', () => {
         ['pmx-f', 'Rejected Registration'],
         ['pmx-g', 'Cancelled Registration'],
         ['pmx-h', 'Waitlisted Registration'],
-      ].map(([memberNo, displayName]) =>
+      ].map(([memberNo, realName]) =>
         prisma.member.create({
-          data: { memberNo, displayName },
+          data: { memberNo, ...memberIdentityData(realName) },
           select: { id: true, memberNo: true },
         }),
       ),

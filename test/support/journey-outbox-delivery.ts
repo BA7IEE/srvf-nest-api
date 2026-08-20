@@ -11,6 +11,7 @@ import { NotificationOutboxWorker } from '../../src/modules/notifications/notifi
 import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { journeyPrisma, type JourneyRuntime } from './journey-runtime';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const ADMIN_NOTIFICATIONS = '/api/admin/v1/notifications';
 const TEMPLATE_ID = 'journey-outbox-general-template';
@@ -38,7 +39,7 @@ async function createRecipient(
   const member = await prisma.member.create({
     data: {
       memberNo: `journey-outbox-${suffix}-${randomUUID()}`,
-      displayName: `出箱旅程${suffix}收件人`,
+      ...memberIdentityData(`出箱旅程${suffix}收件人`),
       status: 'ACTIVE',
     },
     select: { id: true },

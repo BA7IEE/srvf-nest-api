@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 跨轴只读 e2e:报名(2026-06-23 队员/审批跨轴只读查询 goal · GAP-001 Tier2 / GAP-002 Tier3)。
 // 覆盖每端点:存在 + statusCode 过滤 + member-scope 命中 + 空集 + MEMBER_NOT_FOUND + RBAC_FORBIDDEN。
@@ -49,11 +50,11 @@ describe('跨轴只读:报名(Tier2 跨活动 + Tier3 队员履历)', () => {
     await grantBizAdminToUser(app, adm.id, seed.bizAdminRoleId);
 
     const ma = await prisma.member.create({
-      data: { memberNo: 'xreg-a', displayName: 'XReg Member A' },
+      data: { memberNo: 'xreg-a', ...memberIdentityData('XReg Member A') },
       select: { id: true },
     });
     const mb = await prisma.member.create({
-      data: { memberNo: 'xreg-b', displayName: 'XReg Member B' },
+      data: { memberNo: 'xreg-b', ...memberIdentityData('XReg Member B') },
       select: { id: true },
     });
     memberAId = ma.id;
@@ -230,7 +231,7 @@ describe('跨轴只读:报名(Tier2 跨活动 + Tier3 队员履历)', () => {
 
     beforeAll(async () => {
       const mc = await prisma.member.create({
-        data: { memberNo: 'xreg-c', displayName: 'XReg Member C' },
+        data: { memberNo: 'xreg-c', ...memberIdentityData('XReg Member C') },
         select: { id: true },
       });
       memberCId = mc.id;
@@ -276,7 +277,7 @@ describe('跨轴只读:报名(Tier2 跨活动 + Tier3 队员履历)', () => {
       });
     });
 
-    it('q 跨字段命中 memberNo+memberDisplayName+activityTitle(命中 memberA 两条,不看 activity)', async () => {
+    it('q 跨字段命中 memberNo+memberRealName+activityTitle(命中 memberA 两条,不看 activity)', async () => {
       const res = await request(httpServer(app))
         .get('/api/admin/v1/registrations')
         .query({ q: 'xreg-a' })
@@ -390,7 +391,9 @@ describe('跨轴只读:报名(Tier2 跨活动 + Tier3 队员履历)', () => {
       expect(item.member).toEqual({
         id: memberAId,
         memberNo: 'xreg-a',
-        displayName: 'XReg Member A',
+        realName: 'XReg Member A',
+        nickname: null,
+        label: 'xreg-a · XReg Member A',
         gradeCode: null,
       });
       expect(item.activity).toEqual({

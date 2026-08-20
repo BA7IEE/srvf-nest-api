@@ -11,6 +11,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ===== 第 7 批第 ②-a 刀:统计读面加「在途」显示(不动任何取数)=====
 //
@@ -123,7 +124,7 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
     const focusMember = await prisma.member.create({
       data: {
         memberNo: 'batch7-slice2a-focus-no',
-        displayName: '第 7 批②-a 主角队员',
+        ...memberIdentityData('第 7 批②-a 主角队员'),
         gradeCode: 'level-2',
         status: MemberStatus.ACTIVE,
       },
@@ -139,7 +140,7 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
     const emptyMember = await prisma.member.create({
       data: {
         memberNo: 'batch7-slice2a-empty-no',
-        displayName: '第 7 批②-a 零账本队员',
+        ...memberIdentityData('第 7 批②-a 零账本队员'),
         gradeCode: 'level-2',
         status: MemberStatus.ACTIVE,
       },
@@ -150,7 +151,7 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
     const probeMember = await prisma.member.create({
       data: {
         memberNo: 'batch7-slice2a-probe-no',
-        displayName: '第 7 批②-a 守恒探针队员',
+        ...memberIdentityData('第 7 批②-a 守恒探针队员'),
         gradeCode: 'level-2',
         status: MemberStatus.ACTIVE,
       },

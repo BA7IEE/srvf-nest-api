@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // F5「E 组」任职/分管总表 + preview e2e(2026-07-04;冻结路线图 admin-api-fe-integration-roadmap.md §4 E1/E2)。
 // 覆盖 6 端点:E1 任职全局分页总表(过滤矩阵 + expand=member,position,organization + D6 缺省不展开)/
@@ -102,8 +103,11 @@ describe('F5/E 组 任职/分管增强面(总表 / detail / preview / coverage-p
       skipDuplicates: true,
     });
 
-    const mkMember = (memberNo: string, displayName: string) =>
-      prisma.member.create({ data: { memberNo, displayName }, select: { id: true } });
+    const mkMember = (memberNo: string, realName: string) =>
+      prisma.member.create({
+        data: { memberNo, ...memberIdentityData(realName) },
+        select: { id: true },
+      });
     mLeaderId = (await mkMember('f5a-l', 'F5 部长甲')).id;
     mExLeaderId = (await mkMember('f5a-x', 'F5 前任乙')).id;
     mSupervisorId = (await mkMember('f5a-s', 'F5 分管丙')).id;
@@ -286,7 +290,9 @@ describe('F5/E 组 任职/分管增强面(总表 / detail / preview / coverage-p
       expect(item.member).toEqual({
         id: mLeaderId,
         memberNo: 'f5a-l',
-        displayName: 'F5 部长甲',
+        realName: 'F5 部长甲',
+        nickname: null,
+        label: 'f5a-l · F5 部长甲',
         gradeCode: null,
       });
       expect(item.position).toMatchObject({
@@ -366,7 +372,7 @@ describe('F5/E 组 任职/分管增强面(总表 / detail / preview / coverage-p
     it('违规逐项收集(区别 create first-failure):任期 + 归属缺失 + 独占同批返回', async () => {
       // 组合:甲之外的新队员(无归属)+ dept(已有甲在任,独占)+ 倒置任期 → 3 项违规一次返齐
       const stranger = await prisma.member.create({
-        data: { memberNo: 'f5a-n', displayName: 'F5 新丁' },
+        data: { memberNo: 'f5a-n', ...memberIdentityData('F5 新丁') },
         select: { id: true },
       });
       const res = await postPreview({
@@ -460,7 +466,9 @@ describe('F5/E 组 任职/分管增强面(总表 / detail / preview / coverage-p
       expect(item.supervisor).toEqual({
         id: mSupervisorId,
         memberNo: 'f5a-s',
-        displayName: 'F5 分管丙',
+        realName: 'F5 分管丙',
+        nickname: null,
+        label: 'f5a-s · F5 分管丙',
         gradeCode: null,
       });
       expect(item.organization).toMatchObject({ id: deptId, name: 'F5 部门' });

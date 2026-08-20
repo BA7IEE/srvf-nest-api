@@ -11,6 +11,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // V2 第一阶段批次 3A activities 模块 e2e。
 // 覆盖 7 接口主成功 + 关键失败:权限 / 字典 / 根节点 / 起止时间 / 状态机 /
@@ -552,7 +553,7 @@ describe('activities 模块', () => {
 
       // 给 activityInParent 加一条报名 + 一张考勤单,供 includeStats 聚合断言。
       const member = await prisma.member.create({
-        data: { memberNo: 'f1stats-mem-1', displayName: 'F1统计队员' },
+        data: { memberNo: 'f1stats-mem-1', ...memberIdentityData('F1统计队员') },
       });
       await prisma.activityRegistration.create({
         data: { activityId: activityInParent, memberId: member.id, statusCode: 'pending' },
@@ -758,7 +759,7 @@ describe('activities 模块', () => {
       const member = await prisma.member.create({
         data: {
           memberNo: `insurance-lifecycle-off-${Date.now()}`,
-          displayName: '保险生命周期兼容态',
+          ...memberIdentityData('保险生命周期兼容态'),
         },
         select: { id: true },
       });
@@ -841,10 +842,10 @@ describe('activities 模块', () => {
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ title: 'CAPACITY-SHRINK', capacity: 3 }));
       const member1 = await prisma.member.create({
-        data: { memberNo: `cap-shrink-${Date.now()}-1`, displayName: 'cap1' },
+        data: { memberNo: `cap-shrink-${Date.now()}-1`, ...memberIdentityData('cap1') },
       });
       const member2 = await prisma.member.create({
-        data: { memberNo: `cap-shrink-${Date.now()}-2`, displayName: 'cap2' },
+        data: { memberNo: `cap-shrink-${Date.now()}-2`, ...memberIdentityData('cap2') },
       });
       await prisma.activityRegistration.createMany({
         data: [member1, member2].map((member) => ({

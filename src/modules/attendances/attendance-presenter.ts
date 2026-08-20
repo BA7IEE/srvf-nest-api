@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { toMemberLabelFields } from '../../common/identity/member-label.util';
 import type {
   AttendanceMemberSummaryDto,
   AttendanceRecordResponseDto,
@@ -63,7 +64,7 @@ export type AttendanceRecordRowLike = {
   id: string;
   sheetId: string;
   memberId: string;
-  member: { id: string; memberNo: string; displayName: string } | null;
+  member: { id: string; memberNo: string; realName: string; nickname: string | null } | null;
   roleCode: string;
   checkInAt: Date;
   checkOutAt: Date;
@@ -133,8 +134,7 @@ export class AttendancePresenter {
       member: row.member
         ? ({
             id: row.member.id,
-            memberNo: row.member.memberNo,
-            displayName: row.member.displayName,
+            ...toMemberLabelFields(row.member),
           } satisfies AttendanceMemberSummaryDto)
         : null,
       roleCode: row.roleCode,

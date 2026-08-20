@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 队员账号闭环 v2(完整生命周期,2026-07-07;goal「队员账号闭环 v2(完整生命周期)」;
 // 冻结评审稿 docs/archive/reviews/member-account-loop-v2-review.md)e2e。
@@ -70,7 +71,7 @@ describe('队员账号闭环 v2:完整生命周期(bind/unbind/reopen/status)', 
     memberSeq += 1;
     const memberNo = `mal-e2e-${memberSeq}`;
     return prisma.member.create({
-      data: { memberNo, displayName: `MAL-${memberSeq}`, status },
+      data: { memberNo, ...memberIdentityData(`MAL-${memberSeq}`), status },
       select: { id: true, memberNo: true },
     });
   }

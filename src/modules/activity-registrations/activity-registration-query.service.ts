@@ -16,7 +16,7 @@ import type {
 // 它服务的是写路径与 §4「loading the aggregate root」,不是读侧查询构造,
 // 搬过来会把事务边界的持有关系搞模糊。
 
-// 列表精简 select:仅必要字段 + Member 摘要(memberNo / displayName)。
+// 列表精简 select:仅必要字段 + Member 摘要(memberNo / realName)。
 export const registrationListSelect = {
   id: true,
   activityId: true,
@@ -30,7 +30,8 @@ export const registrationListSelect = {
   member: {
     select: {
       memberNo: true,
-      displayName: true,
+      realName: true,
+      nickname: true,
     },
   },
   activityPosition: {
@@ -50,7 +51,7 @@ export const registrationCsvSelect = {
   reviewNote: true,
   cancelledAt: true,
   cancelReason: true,
-  member: { select: { memberNo: true, displayName: true } },
+  member: { select: { memberNo: true, realName: true, nickname: true } },
 } as const satisfies Prisma.ActivityRegistrationSelect;
 
 // 跨轴只读列表 select(2026-06-23):列表精简 select + activity{id,title} 上下文。
@@ -66,7 +67,8 @@ export const registrationAdminListSelect = {
     select: {
       id: true,
       memberNo: true,
-      displayName: true,
+      realName: true,
+      nickname: true,
       gradeCode: true,
     },
   },
@@ -189,16 +191,16 @@ export class ActivityRegistrationQueryService {
       filters.member = {
         OR: [
           { memberNo: { contains: memberQ, mode: 'insensitive' } },
-          { displayName: { contains: memberQ, mode: 'insensitive' } },
+          { realName: { contains: memberQ, mode: 'insensitive' } },
         ],
       };
     }
 
-    // q:跨 member(memberNo+displayName)+ activity(title)全局模糊命中。
+    // q:跨 member(memberNo+realName)+ activity(title)全局模糊命中。
     if (q !== undefined) {
       filters.OR = [
         { member: { memberNo: { contains: q, mode: 'insensitive' } } },
-        { member: { displayName: { contains: q, mode: 'insensitive' } } },
+        { member: { realName: { contains: q, mode: 'insensitive' } } },
         { activity: { title: { contains: q, mode: 'insensitive' } } },
       ];
     }

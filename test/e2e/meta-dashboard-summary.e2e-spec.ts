@@ -10,6 +10,7 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // GAP-003(handoff/admin-web.md §4;goal「GAP-003 收口」):
 // GET admin/v1/meta/dashboard-summary 工作台/首页待办汇总 e2e。
@@ -248,7 +249,7 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     ): Promise<string> => {
       const caller = await createTestUser(app, { username, role: Role.USER });
       const member = await prisma.member.create({
-        data: { memberNo, displayName: `dashboard ${positionCode}` },
+        data: { memberNo, ...memberIdentityData(`dashboard ${positionCode}`) },
         select: { id: true },
       });
       await prisma.user.update({ where: { id: caller.id }, data: { memberId: member.id } });
@@ -340,7 +341,7 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     // activities 块不按 scope 裁剪：published = 3；仅 actPublished1 已过 endAt。
 
     const mkMember = (memberNo: string) =>
-      prisma.member.create({ data: { memberNo, displayName: `dashsum队员${memberNo}` } });
+      prisma.member.create({ data: { memberNo, ...memberIdentityData(`dashsum队员${memberNo}`) } });
 
     const regMembers = await Promise.all(
       [

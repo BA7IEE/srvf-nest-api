@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 保险模块 T2 admin/v1/team-insurance-policies + members/:memberId/insurances e2e(2026-06-13)。
 // 沿冻结评审稿 docs/archive/reviews/insurance-module-review.md §8 测试计划:
@@ -73,7 +74,7 @@ describe('Admin team-insurance-policies + member insurances(保险 T2)', () => {
     return prisma.member.create({
       data: {
         memberNo: `TIP-${nextSeq()}`,
-        displayName: 'Coverage Tester',
+        ...memberIdentityData('Coverage Tester'),
         status: opts?.status ?? MemberStatus.ACTIVE,
         deletedAt: opts?.deleted === true ? new Date() : null,
       },
@@ -234,7 +235,8 @@ describe('Admin team-insurance-policies + member insurances(保险 T2)', () => {
     const cov = (res.body as ResBody).data;
     expect(cov.memberId).toBe(member.id);
     expect(cov.memberNo).toBe(member.memberNo);
-    expect(cov.memberDisplayName).toBe('Coverage Tester');
+    expect(cov.memberRealName).toBe('Coverage Tester');
+    expect(cov.memberLabel).toBe(`${member.memberNo} · Coverage Tester`);
 
     const audit = await prisma.auditLog.findFirst({
       where: { event: 'team-insurance-coverage.add', resourceId: policyId },

@@ -9,6 +9,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 /**
  * ADV-015「未授权人员用**其他活动**的场次、任务、报名和结算编号访问」。
@@ -79,9 +80,14 @@ describe('ADV-015 跨活动编号越权(场次 / 任务 / 报名 / 结算四轴)
         ['ADV015-ATTACKER', 'ADV015 Attacker Owner'],
         ['ADV015-OUTSIDER', 'ADV015 Outsider'],
         ['ADV015-APPLICANT', 'ADV015 Applicant'],
-      ].map(([memberNo, displayName]) =>
+      ].map(([memberNo, realName]) =>
         prisma.member.create({
-          data: { memberNo, displayName, gradeCode: 'L1', status: MemberStatus.ACTIVE },
+          data: {
+            memberNo,
+            ...memberIdentityData(realName),
+            gradeCode: 'L1',
+            status: MemberStatus.ACTIVE,
+          },
           select: { id: true },
         }),
       ),

@@ -11,6 +11,7 @@ import type {
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // attendances D14 contribution prefill characterization tests(批次 4-B 抽 ContributionCalculator 前置)。
 //
@@ -84,7 +85,7 @@ describe('AttendancesService contribution prefill (characterization)', () => {
     await grantBizAdminToUser(app, submitter.id, bizSeed.bizAdminRoleId);
 
     const member = await prisma.member.create({
-      data: { memberNo: 'att-pf-m-001', displayName: 'PF Member' },
+      data: { memberNo: 'att-pf-m-001', ...memberIdentityData('PF Member') },
       select: { id: true },
     });
 

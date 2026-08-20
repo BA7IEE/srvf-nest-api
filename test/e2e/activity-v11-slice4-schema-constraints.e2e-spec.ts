@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../src/database/prisma.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 活动改造 v1.1 —— 第 1 批第四刀(2026-08-04;第 74 migration
 // `20260804080000_activity_v11_slice4_settlement_ledger_correction_closure_job`)。
@@ -430,14 +431,14 @@ describe('活动改造 v1.1 第 1 批第四刀 schema 约束(第 74 migration)',
 
     memberId = (
       await prisma.member.create({
-        data: { memberNo: uniq('member'), displayName: 'V11 Slice4 Member' },
+        data: { memberNo: uniq('member'), ...memberIdentityData('V11 Slice4 Member') },
         select: { id: true },
       })
     ).id;
 
     memberId2 = (
       await prisma.member.create({
-        data: { memberNo: uniq('member'), displayName: 'V11 Slice4 Member 2' },
+        data: { memberNo: uniq('member'), ...memberIdentityData('V11 Slice4 Member 2') },
         select: { id: true },
       })
     ).id;

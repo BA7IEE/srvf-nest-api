@@ -11,13 +11,14 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 终态 scoped-authz PR11(2026-07-02;冻结稿 §8.4 / §11 PR11;goal DoD §2/§3)公告导入 preview/execute e2e。
 //
 // 覆盖:
 //   RBAC 权限边界(preview/execute 各自判权,无码 30100)
-//   preview 标记族(goal DoD 2):memberNo 命中 ok / displayName 唯一命中回显建议 needs-manual /
-//     displayName 多义 needs-manual / member 不存在 blocked / orgCode 不存在 blocked /
+//   preview 标记族(goal DoD 2):memberNo 命中 ok / realName 唯一命中回显建议 needs-manual /
+//     realName 多义 needs-manual / member 不存在 blocked / orgCode 不存在 blocked /
 //     职务不适配该类别 blocked / 缺归属 blocked / 已任职 already-exists / 组织行 provisional ok
 //   preview 零写入断言(表 count 前后不变)+ 同请求新组织被后续任命/分管真实引用且与 execute 同结果
 //   execute(goal DoD 3):混合三类行一次落库(组节点含 provisional + 任职含字段/任期/isConcurrent/
@@ -72,14 +73,14 @@ describe('announcement-import 公告导入 preview/execute', () => {
   let memberSeq = 0;
   async function newMember(
     tag: string,
-    opts: { displayName?: string; status?: 'ACTIVE' | 'INACTIVE' } = {},
+    opts: { realName?: string; status?: 'ACTIVE' | 'INACTIVE' } = {},
   ): Promise<{ id: string; memberNo: string }> {
     memberSeq += 1;
     const memberNo = `AIE2E-${tag}-${memberSeq}`;
     const m = await prisma.member.create({
       data: {
         memberNo,
-        displayName: opts.displayName ?? `测试-${tag}-${memberSeq}`,
+        ...memberIdentityData(opts.realName ?? `测试-${tag}-${memberSeq}`),
         status: opts.status ?? 'ACTIVE',
       },
       select: { id: true },
@@ -223,25 +224,25 @@ describe('announcement-import 公告导入 preview/execute', () => {
 
   describe('preview 标记族(单请求覆盖全部标记 + 零写入断言)', () => {
     it(
-      'memberNo ok / displayName 唯一 needs-manual+建议 / displayName 多义 needs-manual / ' +
+      'memberNo ok / realName 唯一 needs-manual+建议 / realName 多义 needs-manual / ' +
         'member 不存在 blocked / orgCode 不存在 blocked / 职务不适配 blocked / 缺归属 blocked / ' +
         '已任职 already-exists / 组织行 provisional ok —— 全程零写入',
       async () => {
         const memberHappy = await newMember('happy');
         await addMembership(memberHappy.id, orgTeamId); // 祖先归属,满足 requireMembership
 
-        const memberUnique = await newMember('uniq', { displayName: '测试唯一命中甲' });
+        const memberUnique = await newMember('uniq', { realName: '测试唯一命中甲' });
         await prisma.member.create({
           data: {
             memberNo: `AIE2E-DUP-${++memberSeq}`,
-            displayName: '测试重名乙',
+            ...memberIdentityData('测试重名乙'),
             status: 'ACTIVE',
           },
         });
         await prisma.member.create({
           data: {
             memberNo: `AIE2E-DUP-${++memberSeq}`,
-            displayName: '测试重名乙',
+            ...memberIdentityData('测试重名乙'),
             status: 'ACTIVE',
           },
         });
@@ -285,13 +286,13 @@ describe('announcement-import 公告导入 preview/execute', () => {
               startedAt,
             },
             {
-              displayName: '测试唯一命中甲',
+              realName: '测试唯一命中甲',
               orgCode: 'AIE2E-GRP',
               positionCode: 'ai-e2e-group-leader',
               startedAt,
             },
             {
-              displayName: '测试重名乙',
+              realName: '测试重名乙',
               orgCode: 'AIE2E-GRP',
               positionCode: 'ai-e2e-group-leader',
               startedAt,
@@ -655,12 +656,12 @@ describe('announcement-import 公告导入 preview/execute', () => {
       expect(afterAuditCount - beforeAuditCount).toBe(okRows.length);
     });
 
-    it('无 memberNo 行拒(即便 displayName 给了)——不落库,不猜', async () => {
+    it('无 memberNo 行拒(即便 realName 给了)——不落库,不猜', async () => {
       const before = await prisma.organizationPositionAssignment.count();
       const res = await execute(adminAuth, {
         positions: [
           {
-            displayName: '随便什么名字',
+            realName: '随便什么名字',
             orgCode: 'AIE2E-GRP',
             positionCode: 'ai-e2e-group-leader',
             startedAt,

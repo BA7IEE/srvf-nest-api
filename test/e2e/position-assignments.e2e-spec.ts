@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 终态 scoped-authz PR4「任职」e2e(2026-07-01;冻结稿 §3.4 / §7.3 / §4.3 / R2 + goal DoD §7)。
 // 覆盖:RBAC 边界 / 双轴 CRUD / 任命成功 + isConcurrent 回填 / 四类校验各自拒 + 任期 + 防重 + 存在性 /
@@ -69,7 +70,10 @@ describe('position-assignments 任职双轴管理', () => {
   async function newMember(tag: string): Promise<string> {
     memberSeq += 1;
     const m = await prisma.member.create({
-      data: { memberNo: `pa-e2e-${tag}-${memberSeq}`, displayName: `PA-${tag}-${memberSeq}` },
+      data: {
+        memberNo: `pa-e2e-${tag}-${memberSeq}`,
+        ...memberIdentityData(`PA-${tag}-${memberSeq}`),
+      },
       select: { id: true },
     });
     return m.id;
@@ -291,7 +295,7 @@ describe('position-assignments 任职双轴管理', () => {
       const member = await prisma.member.create({
         data: {
           memberNo: `pa-e2e-preview-inactive-${memberSeq}`,
-          displayName: `PA-preview-inactive-${memberSeq}`,
+          ...memberIdentityData(`PA-preview-inactive-${memberSeq}`),
           status: MemberStatus.INACTIVE,
         },
         select: { id: true },

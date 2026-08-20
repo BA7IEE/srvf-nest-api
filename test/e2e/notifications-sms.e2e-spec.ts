@@ -13,6 +13,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 统一通知模块 S5 短信兜底渠道 e2e(冻结评审稿 unified-notification-dispatcher-review.md §4 / §8.3 / D-N4)。
 //
@@ -123,7 +124,7 @@ describe('统一通知模块 S5 短信兜底渠道 e2e', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `SMS${String(seq).padStart(5, '0')}`,
-        displayName: `短信测试${seq}`,
+        ...memberIdentityData(`短信测试${seq}`),
         status: 'ACTIVE',
       },
       select: { id: true },

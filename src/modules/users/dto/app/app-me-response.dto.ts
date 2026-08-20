@@ -47,8 +47,19 @@ export class AppMeResponseDto {
   })
   memberNo!: string | null;
 
-  @ApiProperty({ description: '队员展示名(未绑定时为 null)', example: '王小明', nullable: true })
-  displayName!: string | null;
+  // ⚠️ issue #1048 T1 的命名冲突处置:本 DTO 是**扁平**结构,`nickname` 已被
+  // 登录账号昵称(`User.nickname`)占用,队内外号(`Member.nickname`)不能同名平铺。
+  // 故此处只出 `realName` + 统一标签 `memberLabel`(标签里已经含外号),
+  // 不再单独平铺队员外号 —— 两个 nickname 挤在一层是必然被人读错的形状。
+  @ApiProperty({ description: '队员真实姓名(未绑定时为 null)', example: '王小明', nullable: true })
+  realName!: string | null;
+
+  @ApiProperty({
+    description: '统一展示标签 `编号 · 姓名(外号)`(未绑定时为 null)',
+    example: 'V0001 · 王小明(小明)',
+    nullable: true,
+  })
+  memberLabel!: string | null;
 
   @ApiProperty({
     description: '队员等级字典 code(未绑定时为 null)',

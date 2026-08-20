@@ -18,6 +18,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 interface ResponseBody<T> {
   code: number;
@@ -91,7 +92,7 @@ describe('GET /api/admin/v1/members/:memberId/insurances/overview', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: next('OVERVIEW-M'),
-        displayName: '保险概览测试队员',
+        ...memberIdentityData('保险概览测试队员'),
         deletedAt,
       },
       select: { id: true },

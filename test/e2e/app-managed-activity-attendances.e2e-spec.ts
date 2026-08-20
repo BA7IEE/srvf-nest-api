@@ -11,6 +11,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 describe('App managed activity attendances', () => {
   let app: INestApplication;
@@ -88,7 +89,7 @@ describe('App managed activity attendances', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `managed-att-${label}-${n}`,
-        displayName: `Managed Attendance ${label} ${n}`,
+        ...memberIdentityData(`Managed Attendance ${label} ${n}`),
         gradeCode: 'level-3',
         status: MemberStatus.ACTIVE,
       },

@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // V2 第一阶段批次 1 emergency_contacts 模块 e2e。
 // 覆盖 4 接口主成功 + 关键失败:权限 / 字典 / 跨 member / 软删 / 排序。
@@ -69,12 +70,12 @@ describe('emergency-contacts 模块', () => {
 
     // 2 个 member
     const a = await prisma.member.create({
-      data: { memberNo: 'ec-m-a', displayName: 'Member A' },
+      data: { memberNo: 'ec-m-a', ...memberIdentityData('Member A') },
       select: { id: true },
     });
     memberA = a.id;
     const b = await prisma.member.create({
-      data: { memberNo: 'ec-m-b', displayName: 'Member B' },
+      data: { memberNo: 'ec-m-b', ...memberIdentityData('Member B') },
       select: { id: true },
     });
     memberB = b.id;

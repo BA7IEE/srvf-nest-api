@@ -8,6 +8,7 @@ import { EvidenceSealService } from '../../src/modules/activities/evidence-seal.
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ===== 活动改造 v1.1 第 2 批第一刀:证据封场(合同 §5.8)=====
 //
@@ -123,7 +124,11 @@ describe('evidence seal (合同 §5.8)', () => {
     });
 
     const member = await prisma.member.create({
-      data: { memberNo: `${tag}-m1`, displayName: `封场队员 ${sequence}`, gradeCode: 'level-2' },
+      data: {
+        memberNo: `${tag}-m1`,
+        ...memberIdentityData(`封场队员 ${sequence}`),
+        gradeCode: 'level-2',
+      },
       select: { id: true },
     });
     const registration = await prisma.activityRegistration.create({
@@ -316,7 +321,7 @@ describe('evidence seal (合同 §5.8)', () => {
     const excludedMember = await prisma.member.create({
       data: {
         memberNo: `seal-${sequence}-excluded`,
-        displayName: '未入人口',
+        ...memberIdentityData('未入人口'),
         gradeCode: 'level-2',
       },
       select: { id: true },

@@ -25,6 +25,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const SESSION_START = new Date('2020-03-01T01:00:00.000Z');
 const SESSION_END = new Date('2020-03-01T05:00:00.000Z');
@@ -137,7 +138,7 @@ describe('第 2 批第 ⑧a 刀 —— generate dispatch → worker auto commit 
     const member = await prisma.member.create({
       data: {
         memberNo: `${username}-member`,
-        displayName: `${username} 队员`,
+        ...memberIdentityData(`${username} 队员`),
         gradeCode: 'level-2',
         status: MemberStatus.ACTIVE,
       },
@@ -198,7 +199,7 @@ describe('第 2 批第 ⑧a 刀 —— generate dispatch → worker auto commit 
       data: memberIds.map((id, index) => ({
         id,
         memberNo: `${tag}-m${index}`,
-        displayName: `${tag} 队员 ${index}`,
+        ...memberIdentityData(`${tag} 队员 ${index}`),
         gradeCode: 'level-2',
       })),
     });
@@ -223,7 +224,11 @@ describe('第 2 批第 ⑧a 刀 —— generate dispatch → worker auto commit 
     });
 
     const owner = await prisma.member.create({
-      data: { memberNo: `${tag}-owner`, displayName: `${tag} 负责人`, gradeCode: 'level-2' },
+      data: {
+        memberNo: `${tag}-owner`,
+        ...memberIdentityData(`${tag} 负责人`),
+        gradeCode: 'level-2',
+      },
       select: { id: true },
     });
     await prisma.activityResponsibilityAssignment.create({

@@ -10,6 +10,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 14.6.1 admin-list spec(10 用例)
 // 覆盖:分页参数、排序(createdAt desc)、角色可见范围、软删过滤
@@ -265,7 +266,7 @@ describe('GET /api/admin/v1/users(管理列表)', () => {
 
     it('memberId 过滤生效', async () => {
       const member = await prisma.member.create({
-        data: { memberNo: 'f1useropt-mem-1', displayName: 'F1用户选择器队员' },
+        data: { memberNo: 'f1useropt-mem-1', ...memberIdentityData('F1用户选择器队员') },
       });
       const linked = await createTestUser(app, { username: 'f1memberlinked', role: Role.USER });
       await prisma.user.update({ where: { id: linked.id }, data: { memberId: member.id } });
@@ -282,11 +283,21 @@ describe('GET /api/admin/v1/users(管理列表)', () => {
         res.body.data.items as Array<{
           id: string;
           memberId: string | null;
-          member: { memberNo: string; displayName: string } | null;
+          member: {
+            memberNo: string;
+            realName: string;
+            nickname: string | null;
+            label: string;
+          } | null;
         }>
       )[0];
       expect(item.memberId).toBe(member.id);
-      expect(item.member).toEqual({ memberNo: member.memberNo, displayName: member.displayName });
+      expect(item.member).toEqual({
+        memberNo: member.memberNo,
+        realName: member.realName,
+        nickname: member.nickname,
+        label: `${member.memberNo} · ${member.realName}`,
+      });
     });
 
     it('list 未绑定队员的用户 → memberId/member 为 null(而非缺省 key)', async () => {

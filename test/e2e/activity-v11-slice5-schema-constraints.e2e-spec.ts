@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../src/database/prisma.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 活动改造 v1.1 —— 第 1 批**第五刀**(第 75 migration)与第 4 批缺口⑤
 // (第 80 migration `20260808133500_activity_v11_batch4_allocation_contract_guards`)。
@@ -330,7 +331,7 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
 
     memberId = (
       await prisma.member.create({
-        data: { memberNo: uniq('member'), displayName: 'V11 Slice5 Member' },
+        data: { memberNo: uniq('member'), ...memberIdentityData('V11 Slice5 Member') },
         select: { id: true },
       })
     ).id;

@@ -11,6 +11,7 @@ import { httpServer } from '../helpers/http-server';
 import { waitFor } from '../helpers/wait-for';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // Phase 2 P2-3(2026-05-20)App 视角本人自助改密 e2e。
 //
@@ -51,10 +52,15 @@ describe('App 视角本人自助改密 PUT /api/app/v1/me/password (P2-3)', () =
 
   async function createActiveMember(
     memberNo: string,
-    displayName = '测试队员',
+    realName = '测试队员',
   ): Promise<{ id: string }> {
     const m = await prisma.member.create({
-      data: { memberNo, displayName, gradeCode: 'L1', status: MemberStatus.ACTIVE },
+      data: {
+        memberNo,
+        ...memberIdentityData(realName),
+        gradeCode: 'L1',
+        status: MemberStatus.ACTIVE,
+      },
     });
     return { id: m.id };
   }

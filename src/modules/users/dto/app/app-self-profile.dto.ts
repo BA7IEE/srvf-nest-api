@@ -34,8 +34,15 @@ export class AppSelfProfileDto {
   @ApiProperty({ description: '队员编号(终身不变)', example: 'V0001' })
   memberNo!: string;
 
-  @ApiProperty({ description: '队员展示名', example: '王小明' })
-  displayName!: string;
+  // ⚠️ issue #1048 T1 的命名冲突处置:本 DTO 是**扁平**结构,`nickname` 已被
+  // 登录账号昵称(`User.nickname`)占用,队内外号(`Member.nickname`)不能同名平铺。
+  // 故此处只出 `realName` + 统一标签 `memberLabel`(标签里已经含外号),
+  // 不再单独平铺队员外号 —— 两个 nickname 挤在一层是必然被人读错的形状。
+  @ApiProperty({ description: '队员真实姓名', example: '王小明' })
+  realName!: string;
+
+  @ApiProperty({ description: '统一展示标签 `编号 · 姓名(外号)`', example: 'V0001 · 王小明(小明)' })
+  memberLabel!: string;
 
   @ApiProperty({
     description: '队员状态(P2-2 进入时强约 ACTIVE)',

@@ -12,6 +12,7 @@ import { ActivityCapacityBucketProjector } from '../../src/modules/activities/ac
 import { assertTestDatabaseUrl } from '../setup/test-db';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const FAR = {
   start: new Date('2099-12-01T08:00:00.000Z'),
@@ -168,7 +169,7 @@ describe('batch4 capacity reservation kernel', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `capacity-reservation-member-${fixture.sequence}-${suffix}`,
-        displayName: `Capacity Reservation Member ${fixture.sequence}-${suffix}`,
+        ...memberIdentityData(`Capacity Reservation Member ${fixture.sequence}-${suffix}`),
       },
       select: { id: true },
     });

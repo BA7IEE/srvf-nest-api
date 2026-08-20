@@ -13,6 +13,7 @@ import { UsersService } from '../../src/modules/users/users.service';
 import { WechatSettingsService } from '../../src/modules/wechat/wechat-settings.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 第六刀 finding 15:控制面高危写 audit characterization。
 //
@@ -340,7 +341,7 @@ describe('control-plane audit characterization (finding 15)', () => {
       const member = await prisma.member.create({
         data: {
           memberNo: `control-audit-member-${targetSeq}`,
-          displayName: `Control Audit Member ${targetSeq}`,
+          ...memberIdentityData(`Control Audit Member ${targetSeq}`),
           status: MemberStatus.ACTIVE,
         },
         select: { id: true },

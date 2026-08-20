@@ -9,6 +9,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { seedActivityResponsibilitySystemRoles } from '../fixtures/activity-responsibility.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 async function waitForActivityLockWaiters(prisma: PrismaService, expected: number): Promise<void> {
   const deadline = Date.now() + 5_000;
@@ -69,7 +70,7 @@ describe('activity publish review multi-instance concurrency', () => {
     const creatorMember = await prismaA.member.create({
       data: {
         memberNo: 'activity-review-concurrency-member',
-        displayName: '并发发布发起人',
+        ...memberIdentityData('并发发布发起人'),
         gradeCode: 'level-2',
       },
       select: { id: true },

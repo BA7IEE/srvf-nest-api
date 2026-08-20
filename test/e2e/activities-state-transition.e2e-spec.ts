@@ -10,6 +10,7 @@ import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // activities state transitions characterization tests
 // (god-service 拆分前置锁;沿 attendances / activity-registrations state-transition 范式)。
@@ -399,7 +400,7 @@ describe('ActivitiesService state transitions (characterization)', () => {
           ctx.prisma.member.create({
             data: {
               memberNo: `act-cancel-${statusCode}-${Math.random().toString(36).slice(2, 8)}`,
-              displayName: `Cancel ${statusCode}`,
+              ...memberIdentityData(`Cancel ${statusCode}`),
             },
           }),
         ),
@@ -558,7 +559,7 @@ describe('ActivitiesService state transitions (characterization)', () => {
       const member = await ctx.prisma.member.create({
         data: {
           memberNo: `act-del-${statusCode}-${Math.random().toString(36).slice(2, 8)}`,
-          displayName: 'Delete Guard Member',
+          ...memberIdentityData('Delete Guard Member'),
         },
       });
       await ctx.prisma.activityRegistration.create({
@@ -577,7 +578,7 @@ describe('ActivitiesService state transitions (characterization)', () => {
           ctx.prisma.member.create({
             data: {
               memberNo: `act-del-${statusCode}-${Math.random().toString(36).slice(2, 8)}`,
-              displayName: `Delete Guard ${statusCode}`,
+              ...memberIdentityData(`Delete Guard ${statusCode}`),
             },
           }),
         ),

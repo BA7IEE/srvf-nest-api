@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../src/database/prisma.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 活动改造 v1.1 —— 第 1 批第三刀(2026-08-04;第 73 migration
 // `20260804060000_activity_v11_slice3_punch_evidence`)。
@@ -295,7 +296,7 @@ describe('活动改造 v1.1 第 1 批第三刀 schema 约束(第 73 migration)',
 
     memberId = (
       await prisma.member.create({
-        data: { memberNo: uniq('member'), displayName: 'V11 Slice3 Member' },
+        data: { memberNo: uniq('member'), ...memberIdentityData('V11 Slice3 Member') },
         select: { id: true },
       })
     ).id;

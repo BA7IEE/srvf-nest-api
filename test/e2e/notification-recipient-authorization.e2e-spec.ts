@@ -9,6 +9,7 @@ import { NotificationWechatDispatchService } from '../../src/modules/notificatio
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ============================================================================
 // T5A / PR-F0 —— 通知「受众判定」characterization(**现状**行为矩阵,零 src 改动)
@@ -170,7 +171,7 @@ describe('T5A F0 —— 通知受众判定 characterization(现状行为矩阵)'
     const member = await prisma.member.create({
       data: {
         memberNo: `T5A${String(seq).padStart(4, '0')}`,
-        displayName: spec.key,
+        ...memberIdentityData(spec.key),
         status: spec.memberStatus ?? 'ACTIVE',
         gradeCode: spec.grade,
         deletedAt: spec.memberDeleted ? new Date() : null,

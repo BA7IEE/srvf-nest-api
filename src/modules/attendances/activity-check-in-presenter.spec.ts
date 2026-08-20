@@ -17,6 +17,7 @@ import {
   type AttendanceSheetDraftRegistrationRow,
 } from './activity-check-in-field-policy';
 import { ActivityCheckInPresenter } from './activity-check-in-presenter';
+import { memberIdentityData } from '../../../test/helpers/member-identity.fixture';
 
 describe('ActivityCheckInFieldPolicy + Presenter', () => {
   const fieldPolicy = new ActivityCheckInFieldPolicy();
@@ -39,7 +40,8 @@ describe('ActivityCheckInFieldPolicy + Presenter', () => {
   const member: AdminActivityCheckInMemberRow = {
     id: 'member-1',
     memberNo: 'M0001',
-    displayName: '测试队员',
+    ...memberIdentityData('测试队员'),
+    nickname: null,
   };
   const adminRow: AdminActivityCheckInListRow = {
     ...appRow,
@@ -87,7 +89,13 @@ describe('ActivityCheckInFieldPolicy + Presenter', () => {
     expect(Object.keys(dto.member).sort()).toEqual(
       [...ADMIN_ACTIVITY_CHECK_IN_MEMBER_RESPONSE_FIELDS].sort(),
     );
-    expect(dto.member).toEqual(member);
+    expect(dto.member).toEqual({
+      id: member.id,
+      memberNo: member.memberNo,
+      realName: member.realName,
+      nickname: member.nickname,
+      label: `${member.memberNo} · ${member.realName}`,
+    });
     expect(dto.checkInDistance).toBe('12.3');
     expect(dto.checkOutDistance).toBe('45.67');
     expect(dto.checkInAt).toBe(t0);
@@ -209,7 +217,9 @@ describe('ActivityCheckInFieldPolicy + Presenter', () => {
       registrationId: registration.id,
       memberId: member.id,
       memberNo: member.memberNo,
-      displayName: member.displayName,
+      realName: member.realName,
+      nickname: member.nickname,
+      label: `${member.memberNo} · ${member.realName}`,
     });
 
     const mapped = presenter.toAttendanceSheetDraftRecordDto(

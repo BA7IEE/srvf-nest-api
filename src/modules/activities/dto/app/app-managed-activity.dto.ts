@@ -380,8 +380,17 @@ export class AppManagedMemberSummaryDto {
   @ApiProperty()
   memberNo!: string;
 
-  @ApiProperty()
-  displayName!: string;
+  @ApiProperty({ description: '队员真实姓名', example: '张三' })
+  realName!: string;
+
+  @ApiProperty({ description: '队员外号(队内称呼)', nullable: true, type: String })
+  nickname!: string | null;
+
+  @ApiProperty({
+    description: '统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号',
+    example: 'M-0001 · 张三(老张)',
+  })
+  label!: string;
 
   @ApiPropertyOptional({ nullable: true, type: String })
   gradeCode!: string | null;
@@ -599,7 +608,7 @@ export class AppCollaboratorOptionDto extends AppManagedMemberSummaryDto {
 // 既有调用方会从 200 条掉到 20 条,那是破坏性变更而不是扩面。偏离方向只会「不缩小既有页」。
 export class AppCollaboratorOptionsQueryDto {
   @ApiPropertyOptional({
-    description: '模糊搜索(跨字段命中 displayName + memberNo;trim + contains + case-insensitive)',
+    description: '模糊搜索(跨字段命中 realName + memberNo;trim + contains + case-insensitive)',
     maxLength: 100,
   })
   @OmittableOnly()

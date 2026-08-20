@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { AttendancePresenter } from './attendance-presenter';
+import { memberIdentityData } from '../../../test/helpers/member-identity.fixture';
 
 // AttendancePresenter 组件级 unit spec(P1-4 第一刀伴随护栏;沿 #278/#279 纯组件 spec 范式)。
 // 行为权威是 attendances.service.spec.ts mapper characterization(经真实 Presenter 实例)
@@ -86,7 +87,7 @@ describe('AttendancePresenter', () => {
       id: 'rec-1',
       sheetId: 'sheet-1',
       memberId: 'mem-1',
-      member: { id: 'mem-1', memberNo: 'M001', displayName: '张三' },
+      member: { id: 'mem-1', memberNo: 'M001', ...memberIdentityData('张三'), nickname: null },
       roleCode: 'volunteer',
       checkInAt: T1,
       checkOutAt: T2,
@@ -104,7 +105,13 @@ describe('AttendancePresenter', () => {
 
       expect(dto.serviceHours).toBe('4');
       expect(dto.contributionPoints).toBe('1.25');
-      expect(dto.member).toEqual({ id: 'mem-1', memberNo: 'M001', displayName: '张三' });
+      expect(dto.member).toEqual({
+        id: 'mem-1',
+        memberNo: 'M001',
+        realName: '张三',
+        nickname: null,
+        label: 'M001 · 张三',
+      });
       expect(dto.id).toBe('rec-1');
       expect(dto.sheetId).toBe('sheet-1');
       expect(dto.registrationId).toBeNull();

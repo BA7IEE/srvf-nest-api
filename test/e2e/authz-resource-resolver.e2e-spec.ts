@@ -8,6 +8,7 @@ import {
 } from '../fixtures/certificate-standard.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 活动责任闭环 PR3:ResourceResolver 14 类逐类 service 级测试。
 // 沿 characterization 先例(createTestApp + resetDb + 真实 PrismaService,直调 service 绕过 HTTP)。
@@ -98,7 +99,7 @@ describe('authz ResourceResolver(14 类资源归属解析)', () => {
 
     // ===== 人:owner(user+member,PRIMARY→dept)/ orphan(无归属无 user)/ submitter / reviewer =====
     const ownerMember = await prisma.member.create({
-      data: { memberNo: 'rr-m-001', displayName: 'RR Owner' },
+      data: { memberNo: 'rr-m-001', ...memberIdentityData('RR Owner') },
       select: { id: true },
     });
     ownerMemberId = ownerMember.id;
@@ -121,7 +122,7 @@ describe('authz ResourceResolver(14 类资源归属解析)', () => {
       },
     });
     const orphanMember = await prisma.member.create({
-      data: { memberNo: 'rr-m-002', displayName: 'RR Orphan' },
+      data: { memberNo: 'rr-m-002', ...memberIdentityData('RR Orphan') },
       select: { id: true },
     });
     orphanMemberId = orphanMember.id;
@@ -258,14 +259,11 @@ describe('authz ResourceResolver(14 类资源归属解析)', () => {
     const profile = await prisma.memberProfile.create({
       data: {
         memberId: ownerMemberId,
-        realName: 'RR 属主',
         genderCode: 'male',
         birthDate: new Date('1990-01-01T00:00:00.000Z'),
         documentTypeCode: 'idcard',
         documentNumber: '110101199001010011',
         mobile: '13800000001',
-        joinedDate: new Date('2020-01-01T00:00:00.000Z'),
-        joinSourceCode: 'recruit',
         privacyConsentSigned: true,
       },
       select: { id: true },
@@ -358,7 +356,7 @@ describe('authz ResourceResolver(14 类资源归属解析)', () => {
 
     // ===== attachment 多态(委派 member / certificate / activity;content-* 未映射;委派断裂)=====
     const brokenMember = await prisma.member.create({
-      data: { memberNo: 'rr-m-003', displayName: 'RR Broken', deletedAt: new Date() },
+      data: { memberNo: 'rr-m-003', ...memberIdentityData('RR Broken'), deletedAt: new Date() },
       select: { id: true },
     });
     const mkAtt = (
@@ -533,7 +531,7 @@ describe('authz ResourceResolver(14 类资源归属解析)', () => {
 
   it('member 归属 fail-close:future ACTIVE 不生效,当前 ACTIVE 结束后立即失效', async () => {
     const futureMember = await prisma.member.create({
-      data: { memberNo: 'rr-m-future', displayName: 'RR Future Membership' },
+      data: { memberNo: 'rr-m-future', ...memberIdentityData('RR Future Membership') },
       select: { id: true },
     });
     await prisma.memberOrganizationMembership.create({
@@ -551,7 +549,7 @@ describe('authz ResourceResolver(14 类资源归属解析)', () => {
     });
 
     const endingMember = await prisma.member.create({
-      data: { memberNo: 'rr-m-ending', displayName: 'RR Ending Membership' },
+      data: { memberNo: 'rr-m-ending', ...memberIdentityData('RR Ending Membership') },
       select: { id: true },
     });
     const endingMembership = await prisma.memberOrganizationMembership.create({

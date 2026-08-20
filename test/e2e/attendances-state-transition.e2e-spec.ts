@@ -8,6 +8,7 @@ import { AttendancesService } from '../../src/modules/attendances/attendances.se
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // attendances 状态机 characterization tests(只读评审报告 §10 优先级 2)。
 //
@@ -210,7 +211,7 @@ describe('AttendancesService state transitions (characterization)', () => {
     });
 
     const member = await prisma.member.create({
-      data: { memberNo: 'att-state-m-001', displayName: 'State Member' },
+      data: { memberNo: 'att-state-m-001', ...memberIdentityData('State Member') },
       select: { id: true },
     });
 

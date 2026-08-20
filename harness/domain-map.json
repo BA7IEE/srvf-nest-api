@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:5de72625a39b1e96d16c69ba626af7e2edec0290eab6e97ef6ed91fb5efd6a7a",
+  "inputDigest": "sha256:7be9254709a698e09f360179bdb1dfef1189d0dd97f93522690078023c03e543",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -811,7 +811,7 @@
       "confirmed": true,
       "fields": {
         "User": ["id", "username", "nickname", "status", "memberId"],
-        "Member": ["id", "memberNo", "displayName", "gradeCode", "status"],
+        "Member": ["id", "memberNo", "realName", "nickname", "gradeCode", "status"],
         "Organization": ["id", "name", "code", "nodeTypeCode", "status", "parentId"]
       }
     },

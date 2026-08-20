@@ -21,6 +21,7 @@ import { devStubOcrImage, VALID_PNG_IMAGE } from '../helpers/file-fixtures';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 招新报名全链 e2e(OCR 改造冻结评审稿 docs/archive/reviews/recruitment-realname-ocr-review.md §4/§8):
 // 识别端点 + 报名全链(大陆 OCR 匹配→verified / 不匹配·防伪告警·不清晰→manual_review)+ 非大陆证件人工 +
@@ -1305,7 +1306,12 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     const cycle = await openCycle();
     // 发号后形态:报名行 promoted + PII 清空(openid null),User 持 openid,Member ACTIVE
     const member = await prisma.member.create({
-      data: { memberNo: '26903', displayName: '癸十', status: 'ACTIVE', gradeCode: 'volunteer' },
+      data: {
+        memberNo: '26903',
+        ...memberIdentityData('癸十'),
+        status: 'ACTIVE',
+        gradeCode: 'volunteer',
+      },
     });
     await prisma.user.create({
       data: {
@@ -1339,7 +1345,12 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
 
     // 有账号但非招新出身(无 promotedMemberId 报名行)→ 维持 28002
     const member2 = await prisma.member.create({
-      data: { memberNo: '26904', displayName: '子甲', status: 'ACTIVE', gradeCode: 'volunteer' },
+      data: {
+        memberNo: '26904',
+        ...memberIdentityData('子甲'),
+        status: 'ACTIVE',
+        gradeCode: 'volunteer',
+      },
     });
     await prisma.user.create({
       data: {
@@ -3080,7 +3091,10 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     const volOrg = await prisma.organization.findFirstOrThrow({ where: { code: 'VOL' } });
     expect(li.memberOrganizationMemberships[0].organizationId).toBe(volOrg.id);
     expect(li.memberOrganizationMemberships[0].deletedAt).toBeNull();
-    expect(li.displayName).toBe('李四');
+    expect(li.realName).toBe('李四');
+    // issue #1048 T1:招新转入写路径改落主档三件套(外号不采集 ⇒ 恒 null)。
+    expect(li.nickname).toBeNull();
+    expect(li.memberOriginCode).toBe('recruitment');
     // wrinkle③ User:openid 绑定、username=memberNo、passwordHash 非空(密码登录天然关闭)、memberId 回链
     // 队员账号闭环 v2:User.memberId 改一对多(partial unique),users 数组;刚 promote
     // 出的队员恰好只有这一条 live 关联,故 users[0] 与 v1 单条 user 断言逐字等价。
@@ -3090,7 +3104,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(li.users[0]?.passwordHash).toBeTruthy();
     expect(li.users[0]?.memberId).toBe(li.id);
     // MemberProfile 映射 + email null(M-1)+ 证件照搬入(wrinkle①)
-    expect(li.memberProfile?.realName).toBe('李四');
+    // realName 已搬到 Member 主档(上方已断言),档案侧不再有这一列。
     expect(li.memberProfile?.documentNumber).toBe(ID_MATCH_B);
     expect(li.memberProfile?.documentTypeCode).toBe('id_card');
     const profileLifecycle = await request(httpServer(app))
@@ -3103,7 +3117,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     // F1 fixture 手机唯一化后动态引用(语义不变:profile.mobile = 报名行 phone 原值搬运)
     expect(li.memberProfile?.mobile).toBe(phoneFor('p3-l'));
     expect(li.memberProfile?.email).toBeNull();
-    expect(li.memberProfile?.joinSourceCode).toBe('recruitment');
+    // joinSourceCode → Member.memberOriginCode(上方已断言)。
     expect(li.memberProfile?.privacyConsentSigned).toBe(true);
     expect(li.memberProfile?.idCardImageKey).toBeTruthy();
     // 十项收口刀E:建档搬运补齐——区县→residenceArea、详址→detailedAddress(此前被销毁无落点);

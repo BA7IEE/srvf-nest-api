@@ -10,6 +10,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { seedActivityResponsibilitySystemRoles } from '../fixtures/activity-responsibility.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 多岗位递补共享**事务内父预算**(2026-08-01 整批评审 P1)。
 //
@@ -76,7 +77,7 @@ describe('activity waitlist promotion shares one parent capacity budget', () => 
     const ownerMember = await prisma.member.create({
       data: {
         memberNo: 'waitlist-shared-capacity-owner',
-        displayName: '共享预算发起人',
+        ...memberIdentityData('共享预算发起人'),
         gradeCode: 'level-2',
       },
       select: { id: true },
@@ -217,7 +218,7 @@ describe('activity waitlist promotion shares one parent capacity budget', () => 
     const member = await prisma.member.create({
       data: {
         memberNo: `waitlist-shared-${sequence}`,
-        displayName: label,
+        ...memberIdentityData(label),
         gradeCode: 'level-2',
       },
       select: { id: true },

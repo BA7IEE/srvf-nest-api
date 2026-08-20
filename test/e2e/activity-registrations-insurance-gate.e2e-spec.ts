@@ -14,6 +14,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 保险模块 T3 报名门槛 e2e(2026-06-13)。
 // 沿冻结评审稿 docs/archive/reviews/insurance-module-review.md §4 / §8 goal 5 场景:
@@ -129,7 +130,7 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `GATE-${nextSeq()}`,
-        displayName: 'Gate Tester',
+        ...memberIdentityData('Gate Tester'),
         status: MemberStatus.ACTIVE,
       },
       select: { id: true },
@@ -146,14 +147,11 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
     await prisma.memberProfile.create({
       data: {
         memberId,
-        realName: '性别闸测试',
         genderCode,
         birthDate: new Date('1990-01-01T00:00:00.000Z'),
         documentTypeCode: 'id_card',
         documentNumber: `gender-gate-${nextSeq()}`,
         mobile: `138${String(seq).padStart(8, '0')}`,
-        joinedDate: new Date('2020-01-01T00:00:00.000Z'),
-        joinSourceCode: 'recommend',
         privacyConsentSigned: true,
       },
     });

@@ -22,14 +22,10 @@ import { MedicalNoteItemDto, PHONE_PATTERN } from './member-profile.shared.dto';
 
 // PATCH 语义:全字段 optional;**绝对禁止** id / memberId / createdAt / updatedAt /
 // deletedAt 等系统字段(由 forbidNonWhitelisted 兜底)。
+// ⚠️ issue #1048 T1:realName / joinedDate / joinSourceCode 三项已搬到 `Member` 主档
+//(分别对应 realName / memberSinceDate / memberOriginCode),**不在本档案的读写面**。
+// 要拿姓名/发号日/来源,读队员主档端点;这里刻意不做转发投影 —— 转发就是第二份真相。
 export class UpdateMemberProfileDto {
-  @ApiPropertyOptional({ description: '真实姓名', maxLength: 64 })
-  @IsOptional()
-  @IsString()
-  @MinLength(1)
-  @MaxLength(64)
-  realName?: string;
-
   @ApiPropertyOptional({ description: '性别字典 code', maxLength: 64 })
   @IsOptional()
   @IsString()
@@ -245,18 +241,6 @@ export class UpdateMemberProfileDto {
   @IsString()
   @MaxLength(2000)
   otherSkills?: string;
-
-  @ApiPropertyOptional({ description: '加入日期(ISO 8601)' })
-  @IsOptional()
-  @IsDateString()
-  joinedDate?: string;
-
-  @ApiPropertyOptional({ description: '加入来源字典 code', maxLength: 64 })
-  @IsOptional()
-  @IsString()
-  @MinLength(1)
-  @MaxLength(64)
-  joinSourceCode?: string;
 
   @ApiPropertyOptional({ description: '是否签署无违法犯罪声明' })
   @IsOptional()

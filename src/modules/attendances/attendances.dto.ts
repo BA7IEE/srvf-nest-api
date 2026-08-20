@@ -483,8 +483,17 @@ export class AttendanceMemberSummaryDto {
   @ApiProperty({ description: '队员编号' })
   memberNo!: string;
 
-  @ApiProperty({ description: '显示名' })
-  displayName!: string;
+  @ApiProperty({ description: '队员真实姓名', example: '张三' })
+  realName!: string;
+
+  @ApiProperty({ description: '队员外号(队内称呼)', nullable: true, type: String })
+  nickname!: string | null;
+
+  @ApiProperty({
+    description: '统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号',
+    example: 'M-0001 · 张三(老张)',
+  })
+  label!: string;
 }
 
 // AttendanceRecord 详情(Q-A9 不独立暴露路由;仅作为 review-detail 嵌套 + /me 列表项)。

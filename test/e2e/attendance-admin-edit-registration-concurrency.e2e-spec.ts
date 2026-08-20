@@ -14,6 +14,7 @@ import type {
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 并发审计 K1(A-R1 = B-F1 双确认 · A-Y1 · B-Y1):
 // Admin 面的考勤单写路径此前把 Activity 聚合锁绑在 `managedActivityId !== undefined`
@@ -201,7 +202,7 @@ describe('attendance Admin edit(records) × 报名取消 并发(K1 · A-R1/B-F1)
   }> {
     seq += 1;
     const member = await prismaA.member.create({
-      data: { memberNo: `aaerc-${seq}`, displayName: `并发考勤${seq}` },
+      data: { memberNo: `aaerc-${seq}`, ...memberIdentityData(`并发考勤${seq}`) },
       select: { id: true },
     });
     const registration = await prismaA.activityRegistration.create({

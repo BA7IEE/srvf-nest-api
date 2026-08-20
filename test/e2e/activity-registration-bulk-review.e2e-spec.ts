@@ -9,6 +9,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 describe('activity registration bulk approve/reject F6', () => {
   let app: INestApplication;
@@ -55,7 +56,7 @@ describe('activity registration bulk approve/reject F6', () => {
     const members = await Promise.all(
       ['bulk-review-m1', 'bulk-review-m2', 'bulk-review-m3'].map((memberNo) =>
         prisma.member.create({
-          data: { memberNo, displayName: memberNo },
+          data: { memberNo, ...memberIdentityData(memberNo) },
           select: { id: true },
         }),
       ),

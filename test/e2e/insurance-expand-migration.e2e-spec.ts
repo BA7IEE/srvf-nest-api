@@ -9,6 +9,7 @@ import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const MIGRATION_PATH = 'prisma/migrations/20260719071116_insurance_expand/migration.sql';
 const BACKFILL_START = '-- insurance-expand:legacy-backfill:begin';
@@ -64,7 +65,7 @@ describe('D-INSURANCE v3 PR1 expand migration', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `insurance-expand-${label}-${sequence}`,
-        displayName: `Insurance Expand ${label}`,
+        ...memberIdentityData(`Insurance Expand ${label}`),
       },
       select: { id: true },
     });

@@ -12,6 +12,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // F3/C3「authz/action-state/batch」e2e(2026-07-04;冻结路线图 admin-api-fe-integration-roadmap.md
 // §4 C3 + D8)。覆盖:判权门 / 判定对象=调用者本人 / allowed = authz ∧ 状态机只读
@@ -134,7 +135,7 @@ describe('F3/C3 authz/action-state/batch(批量业务态闸)', () => {
     sheetPendingFinalId = sheetPendingFinal.id;
 
     const member = await prisma.member.create({
-      data: { memberNo: 'ast-m1', displayName: 'AST 队员甲' },
+      data: { memberNo: 'ast-m1', ...memberIdentityData('AST 队员甲') },
       select: { id: true },
     });
     const regPending = await prisma.activityRegistration.create({
@@ -143,7 +144,7 @@ describe('F3/C3 authz/action-state/batch(批量业务态闸)', () => {
     });
     regPendingId = regPending.id;
     const member2 = await prisma.member.create({
-      data: { memberNo: 'ast-m2', displayName: 'AST 队员乙' },
+      data: { memberNo: 'ast-m2', ...memberIdentityData('AST 队员乙') },
       select: { id: true },
     });
     const regPass = await prisma.activityRegistration.create({

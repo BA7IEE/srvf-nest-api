@@ -259,7 +259,10 @@ V2 第一阶段**最小骨架**:身份基础 + 启停 + 时间戳 + 字典关联
 |---|---|---|---|---|
 | `id` | String / cuid | 否 | 主键(**独立 cuid,不复用 `users.id`**)| data-model-draft §3.3.10 M-1 |
 | `memberNo` | String | 否 | 队员业务唯一编号 — 救援队入队时人工分配的固定编号;**非敏感**但**高价值**业务标识;创建必填,**禁止 PATCH 修改**;**全局唯一**(不因软删释放) | memberNo 决议(2026-05-08) |
-| `displayName` | String | 否 | 称呼 / 显示名(业务可读;**不**写真实姓名 — 由运营在系统内录入) | — |
+| `realName` | String | 否 | 真实姓名(issue #1048 T1:`displayName` 退役,主档改承载真实姓名) | issue #1048 |
+| `nickname` | String | 是 | 外号 / 队内称呼;**刻意不唯一、也不是身份键**(重外号正常并存) | issue #1048 |
+| `memberSinceDate` | DateTime | 否 | 发号日(该 memberNo 生效日期,按北京日历日归一);**与 `TeamJoinApplication.joinedAt` 是两个不同的时间事实** | issue #1048 |
+| `memberOriginCode` | String | 否 | 来源字典 `join_source` code(自由串候选字典,无 FK) | issue #1048 |
 | `gradeCode` | String | 是 | 引用 `dict_items.code`(隐含 `type code = '队员等级'`)| data-model-draft §3.3.10 M-4 |
 | `status` | enum(`ACTIVE` / `INACTIVE`) | 否 | 在队 / 离队状态;最小集 | data-model-draft §3.3.10 M-5 |
 | `createdAt` | DateTime | 否 | 创建时间 | baseline §2.1 |
@@ -273,9 +276,10 @@ V2 第一阶段**最小骨架**:身份基础 + 启停 + 时间戳 + 字典关联
   - `memberNo` 创建时必填(DTO 层 `@MinLength(1)`);`trim()` 后保存;长度 1-32(DTO 层 `@MaxLength(32)`);允许字母 / 数字 / 连字符(DTO 层 `@Matches(/^[A-Za-z0-9-]+$/)`);**不**写死真实编号规则,**不**把真实编号样例写进代码
   - `memberNo` 唯一性预检查必须用 `findUnique`(包含软删记录;沿用 `docs/srvf-foundation-baseline.md §10` / `docs/reference/soft-delete-transactions.md §10` 唯一性预检查纪律)— 防止"软删后旧 memberNo 复活创建" 撞约束
   - `gradeCode` 若提供,必须存在于 `dict_items` 中且 type code = '队员等级' 且 `status = ACTIVE`
-  - `displayName` 不允许空字符串(DTO 层 `@MinLength(1)`)
-- **索引**:`memberNo`(精确查找 + 登录回退查找路径热点)/ `gradeCode`(按等级筛选)/ `status`(按在队 / 离队筛选)/ `createdAt`
-- **`displayName` 不强制唯一**:同名队员业务可接受(与 memberNo 的角色分工:`memberNo` 是身份,`displayName` 是称呼)
+  - `realName` 不允许空字符串(DTO 层 `@MinLength(1)`);`nickname` 可省略,但给了就不许是空串
+- **索引**:`memberNo`(精确查找 + 登录回退查找路径热点)/ `realName`(目录检索的完全匹配级)/ `gradeCode`(按等级筛选)/ `status`(按在队 / 离队筛选)/ `createdAt`
+- **`realName` / `nickname` 均不强制唯一**:重名重外号业务可接受(与 memberNo 的角色分工:`memberNo` 是身份,姓名与外号是称呼)。
+  外号的不唯一是**刻意的合同**(issue §5.2 规则 4:外号永远不能自动确认身份),不是暂缺约束
 
 ### 5.4 与 users 的关系
 
@@ -644,7 +648,10 @@ V2.x 复活触发条件见 [`docs/V2红线与复活路径.md §4.3`](V2红线与
                           │ members              │
                           │ - id (独立 cuid)     │
                           │ - memberNo (全局唯一)│
-                          │ - displayName        │
+                          │ - realName           │
+                          │ - nickname?          │
+                          │ - memberSinceDate    │
+                          │ - memberOriginCode   │
                           │ - gradeCode? ────────┼──── N..1 ───┐
                           │ - status             │             │
                           └──────────────────────┘             │

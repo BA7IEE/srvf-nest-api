@@ -8,6 +8,7 @@ import {
   type RegistrationListRowLike,
   type RegistrationResponseRowLike,
 } from './activity-registration-presenter';
+import { memberIdentityData } from '../../../test/helpers/member-identity.fixture';
 
 // Phase 6-B 第三域第二刀的 characterization spec。
 //
@@ -49,7 +50,7 @@ function listRow(overrides: Partial<RegistrationListRowLike> = {}): Registration
     activityId: 'act-1',
     activityPosition: null,
     memberId: 'mem-1',
-    member: { memberNo: 'M001', displayName: '张三' },
+    member: { memberNo: 'M001', ...memberIdentityData('张三'), nickname: null },
     statusCode: 'pending',
     registeredAt: D('2099-01-01T00:00:00.000Z'),
     reviewedAt: null,
@@ -64,7 +65,13 @@ function adminListRow(
 ): RegistrationAdminListRowLike {
   return {
     ...listRow(),
-    member: { id: 'mem-1', memberNo: 'M001', displayName: '张三', gradeCode: 'L3' },
+    member: {
+      id: 'mem-1',
+      memberNo: 'M001',
+      ...memberIdentityData('张三'),
+      nickname: null,
+      gradeCode: 'L3',
+    },
     activity: {
       id: 'act-1',
       title: '山地搜救',
@@ -79,7 +86,7 @@ function csvRow(overrides: Partial<RegistrationCsvRowLike> = {}): RegistrationCs
   return {
     id: 'reg-1',
     memberId: 'mem-1',
-    member: { memberNo: 'M001', displayName: '张三' },
+    member: { memberNo: 'M001', ...memberIdentityData('张三'), nickname: null },
     statusCode: 'pass',
     registeredAt: D('2099-01-01T00:00:00.000Z'),
     reviewedAt: null,
@@ -141,10 +148,11 @@ describe('ActivityRegistrationPresenter (characterization)', () => {
   });
 
   describe('toListItemDto', () => {
-    it('member 缺失时 memberNo / memberDisplayName 必须是 null,不能是 undefined', () => {
+    it('member 缺失时 memberNo / memberRealName / memberLabel 必须是 null,不能是 undefined', () => {
       const dto = presenter.toListItemDto(listRow({ member: null }), null);
       expect(dto.memberNo).toBeNull();
-      expect(dto.memberDisplayName).toBeNull();
+      expect(dto.memberRealName).toBeNull();
+      expect(dto.memberLabel).toBeNull();
       // undefined 会在 JSON 序列化时让字段整个消失 —— 与 null 不是一回事。
       expect(Object.keys(dto)).toContain('memberNo');
     });
@@ -181,7 +189,9 @@ describe('ActivityRegistrationPresenter (characterization)', () => {
       expect(dto.member).toEqual({
         id: 'mem-1',
         memberNo: 'M001',
-        displayName: '张三',
+        realName: '张三',
+        nickname: null,
+        label: 'M001 · 张三',
         gradeCode: 'L3',
       });
       expect(dto).not.toHaveProperty('activity');
@@ -236,7 +246,7 @@ describe('ActivityRegistrationPresenter (characterization)', () => {
       expect(bom).toBe('\uFEFF');
       expect(bom).toHaveLength(1);
       expect(header).toBe(
-        'registration_id,member_id,member_no,display_name,status_code,registered_at,reviewed_at,review_note,cancelled_at,cancel_reason',
+        'registration_id,member_id,member_no,real_name,nickname,status_code,registered_at,reviewed_at,review_note,cancelled_at,cancel_reason',
       );
     });
 
@@ -252,7 +262,7 @@ describe('ActivityRegistrationPresenter (characterization)', () => {
 
     it('null 出空串,不出字面 null / undefined', () => {
       expect(presenter.formatCsvRow(csvRow())).toBe(
-        'reg-1,mem-1,M001,张三,pass,2099-01-01T00:00:00.000Z,,,,',
+        'reg-1,mem-1,M001,张三,,pass,2099-01-01T00:00:00.000Z,,,,',
       );
     });
 
@@ -265,7 +275,7 @@ describe('ActivityRegistrationPresenter (characterization)', () => {
         csvRow({
           id: 'c-id',
           memberId: 'c-member',
-          member: { memberNo: 'c-no', displayName: 'c-name' },
+          member: { memberNo: 'c-no', realName: 'c-name', nickname: 'c-nick' },
           statusCode: 'c-status',
           registeredAt: D('2099-03-03T03:03:03.000Z'),
           reviewedAt: D('2099-04-04T04:04:04.000Z'),
@@ -275,7 +285,7 @@ describe('ActivityRegistrationPresenter (characterization)', () => {
         }),
       );
       expect(line).toBe(
-        'c-id,c-member,c-no,c-name,c-status,' +
+        'c-id,c-member,c-no,c-name,c-nick,c-status,' +
           '2099-03-03T03:03:03.000Z,2099-04-04T04:04:04.000Z,c-review-note,' +
           '2099-05-05T05:05:05.000Z,c-cancel-reason',
       );
@@ -286,7 +296,8 @@ describe('ActivityRegistrationPresenter (characterization)', () => {
         registration_id: 'c-id',
         member_id: 'c-member',
         member_no: 'c-no',
-        display_name: 'c-name',
+        real_name: 'c-name',
+        nickname: 'c-nick',
         status_code: 'c-status',
         registered_at: '2099-03-03T03:03:03.000Z',
         reviewed_at: '2099-04-04T04:04:04.000Z',
@@ -296,10 +307,11 @@ describe('ActivityRegistrationPresenter (characterization)', () => {
       });
     });
 
-    it('member 缺失时 member_no / display_name 出空串,不出 undefined', () => {
+    it('member 缺失时 member_no / real_name / nickname 出空串,不出 undefined', () => {
       const cells = presenter.formatCsvRow(csvRow({ member: null })).split(',');
       expect(cells[2]).toBe('');
       expect(cells[3]).toBe('');
+      expect(cells[4]).toBe('');
     });
 
     // WARN 这几条比对的是**结构化输出**(CSV 的转义结果),原写法用的是 toContain('1+1') ——
@@ -312,23 +324,23 @@ describe('ActivityRegistrationPresenter (characterization)', () => {
       ['@x', "'@x"],
     ])('CSV 注入防护:公式前缀 %s 被中和成 %s(逐字锁全值)', (raw, expected) => {
       const cells = presenter.formatCsvRow(csvRow({ cancelReason: raw })).split(',');
-      expect(cells[9]).toBe(expected);
+      expect(cells[10]).toBe(expected);
     });
 
     it('普通值不被加前缀(反向对照 —— 否则「恒加前缀」也能骗过上面那组)', () => {
       const cells = presenter.formatCsvRow(csvRow({ cancelReason: '临时取消' })).split(',');
-      expect(cells[9]).toBe('临时取消');
+      expect(cells[10]).toBe('临时取消');
     });
 
     it('含逗号 / 引号 / 换行的字段被 RFC4180 包裹,整行逐字锁定', () => {
       expect(presenter.formatCsvRow(csvRow({ reviewNote: 'a,b' }))).toBe(
-        'reg-1,mem-1,M001,张三,pass,2099-01-01T00:00:00.000Z,,"a,b",,',
+        'reg-1,mem-1,M001,张三,,pass,2099-01-01T00:00:00.000Z,,"a,b",,',
       );
       expect(presenter.formatCsvRow(csvRow({ reviewNote: 'say "hi"' }))).toBe(
-        'reg-1,mem-1,M001,张三,pass,2099-01-01T00:00:00.000Z,,"say ""hi""",,',
+        'reg-1,mem-1,M001,张三,,pass,2099-01-01T00:00:00.000Z,,"say ""hi""",,',
       );
       expect(presenter.formatCsvRow(csvRow({ reviewNote: 'a\nb' }))).toBe(
-        'reg-1,mem-1,M001,张三,pass,2099-01-01T00:00:00.000Z,,"a\nb",,',
+        'reg-1,mem-1,M001,张三,,pass,2099-01-01T00:00:00.000Z,,"a\nb",,',
       );
     });
   });

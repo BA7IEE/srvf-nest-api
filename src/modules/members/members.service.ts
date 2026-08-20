@@ -13,6 +13,7 @@ import {
   SupervisionStatus,
   UserStatus,
 } from '@prisma/client';
+import { normalizeDateOnly } from '../../common/datetime/date-only.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -289,7 +290,13 @@ export class MembersService {
         tx.member.create({
           data: {
             memberNo,
-            displayName: dto.displayName,
+            realName: dto.realName,
+            // 不传 = 没有外号,落 null;不落空串(空串会让 `formatMemberLabel` 之外的
+            // 任何「有没有外号」判断出现第二种「空」的形态)。
+            nickname: dto.nickname ?? null,
+            // 按北京日历日归一(全仓纯日期字段统一口径,见 common/datetime/date-only.util.ts)。
+            memberSinceDate: normalizeDateOnly(dto.memberSinceDate),
+            memberOriginCode: dto.memberOriginCode,
             gradeCode: dto.gradeCode ?? null,
           },
           select: memberSafeSelect,
@@ -311,7 +318,8 @@ export class MembersService {
 
   // ============ update ============
 
-  // 仅允许 displayName / gradeCode;memberNo / status 由 DTO 白名单兜底拒绝。
+  // 仅允许 realName / nickname / gradeCode;memberNo / status / memberSinceDate /
+  // memberOriginCode 由 DTO 白名单兜底拒绝(理由见 UpdateMemberDto 上方注释)。
   async update(
     id: string,
     dto: UpdateMemberDto,
@@ -334,7 +342,10 @@ export class MembersService {
       }
 
       const data: Prisma.MemberUpdateInput = {};
-      if (dto.displayName !== undefined) data.displayName = dto.displayName;
+      if (dto.realName !== undefined) data.realName = dto.realName;
+      // `null` 是显式清空、`undefined` 是不改动 —— 两者必须分开判,
+      // 用 `dto.nickname ?? null` 会把「不传」也写成清空。
+      if (dto.nickname !== undefined) data.nickname = dto.nickname;
       if (dto.gradeCode !== undefined) data.gradeCode = dto.gradeCode;
 
       const updated = await tx.member.update({

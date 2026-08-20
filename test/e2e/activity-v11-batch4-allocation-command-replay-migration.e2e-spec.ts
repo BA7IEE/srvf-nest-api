@@ -22,7 +22,7 @@ const MIGRATION_NAME = '20260813100000_activity_v11_batch4_allocation_command_re
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
 const MIGRATION_85_COUNT = 85;
 const MIGRATION_86_COUNT = 86;
-const CURRENT_MIGRATION_COUNT = 89;
+const CURRENT_MIGRATION_COUNT = 90;
 const COLD_REPLAY_TIMEOUT_MS = 300_000;
 const RESPONSE_SCHEMA_VERSION = 'allocation-command-response-v1';
 const HASH_A = 'a'.repeat(64);
@@ -502,7 +502,31 @@ function responseHash(
     .digest('hex');
 }
 
+// issue #1048 T1:本 spec 会把**同一份夹具**灌进两种 schema 世代 ——
+// `deployCurrentMigrations()` 建的当前库(`Member` 已是 realName / memberSinceDate /
+// memberOriginCode)与 `deployMigrationsThrough{N}()` 建的历史回放库(那时还是 displayName)。
+// 单一硬编码列名服务不了两者:写死新列名,历史回放库直接 42703「column does not exist」;
+// 写死旧列名,当前库同样炸。故按目标库**实际存在的列**选,夹具自己适配世代。
+function memberIdentityColumns(databaseName: string): {
+  columns: string;
+  values: (name: string) => string;
+} {
+  const hasRealName =
+    runPsql(
+      databaseName,
+      `SELECT COUNT(*) FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'Member' AND column_name = 'realName';`,
+    ).trim() === '1';
+  return hasRealName
+    ? {
+        columns: '"realName","memberSinceDate","memberOriginCode"',
+        values: (name: string) => `${sqlValue(name)},DATE '2020-01-01','manual'`,
+      }
+    : { columns: '"displayName"', values: (name: string) => sqlValue(name) };
+}
+
 function createFixture(databaseName: string, suffix: string): Fixture {
+  const memberIdentity = memberIdentityColumns(databaseName);
   const fixture: Fixture = {
     activityId: `allocation-d86-activity-${suffix}`,
     sessionId: `allocation-d86-session-${suffix}`,
@@ -541,9 +565,9 @@ function createFixture(databaseName: string, suffix: string): Fixture {
        (${sqlValue(fixture.activityId)},${sqlValue(`Allocation D86 ${suffix}`)},'allocation-d86',
         ${sqlValue(organizationId)},TIMESTAMP '2099-08-13 08:00:00',
         TIMESTAMP '2099-08-13 18:00:00','test','draft',CURRENT_TIMESTAMP);
-     INSERT INTO "Member" ("id","memberNo","displayName","updatedAt") VALUES
-       (${sqlValue(fixture.memberId)},${sqlValue(`D86-${suffix}-1`)},'D86 Member 1',CURRENT_TIMESTAMP),
-       (${sqlValue(fixture.memberId2)},${sqlValue(`D86-${suffix}-2`)},'D86 Member 2',CURRENT_TIMESTAMP);
+     INSERT INTO "Member" ("id","memberNo",${memberIdentity.columns},"updatedAt") VALUES
+       (${sqlValue(fixture.memberId)},${sqlValue(`D86-${suffix}-1`)},${memberIdentity.values('D86 Member 1')},CURRENT_TIMESTAMP),
+       (${sqlValue(fixture.memberId2)},${sqlValue(`D86-${suffix}-2`)},${memberIdentity.values('D86 Member 2')},CURRENT_TIMESTAMP);
      INSERT INTO "User" ("id","username","passwordHash","updatedAt") VALUES
        (${sqlValue(fixture.actorUserId)},${sqlValue(`d86-actor-${suffix}`)},'test-password-hash',CURRENT_TIMESTAMP);
      INSERT INTO "ActivitySession"
@@ -1438,7 +1462,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
   );
 
   it(
-    'replays all 89 migrations from empty and accepts prepare, commit, void receipts plus every legal projection shape',
+    'replays all 90 migrations from empty and accepts prepare, commit, void receipts plus every legal projection shape',
     () => {
       const databaseName = recreateEmptyScratchDatabase();
       try {

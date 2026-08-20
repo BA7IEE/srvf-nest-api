@@ -22,6 +22,7 @@ import { LedgerQueryService } from '../../src/modules/activities/ledger-query.se
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ===== 活动改造 v1.1 第 2 批第五刀:账本分块准备 + 短事务统一生效 =====
 // (合同 §5.12 + §5.13 + §3.22 / §3.23 / §3.24)
@@ -193,7 +194,7 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
         data: memberIds.map((id, index) => ({
           id,
           memberNo: `${tag}-m${index}`,
-          displayName: `${tag} 队员 ${index}`,
+          ...memberIdentityData(`${tag} 队员 ${index}`),
           gradeCode: 'level-2',
         })),
       });
@@ -209,7 +210,11 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
     });
 
     const ownerMember = await prisma.member.create({
-      data: { memberNo: `${tag}-owner`, displayName: `${tag} 负责人`, gradeCode: 'level-2' },
+      data: {
+        memberNo: `${tag}-owner`,
+        ...memberIdentityData(`${tag} 负责人`),
+        gradeCode: 'level-2',
+      },
       select: { id: true },
     });
     await prisma.activityResponsibilityAssignment.create({

@@ -28,6 +28,7 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 终态 scoped-authz PR10(2026-07-02;冻结稿 §7.6 + §9 行 20):POST admin/v1/authz/explain 语义 e2e。
 // 角色 / 职务 / policy / 组织树用**真 seed**(子进程,沿 authz-three-source / final-review-authz 范式)——
@@ -196,7 +197,7 @@ describe('authz/explain 权限解释端点(PR10:可解释性出口)', () => {
     const mkMember = async (tag: string): Promise<string> =>
       (
         await prisma.member.create({
-          data: { memberNo: `aex-m-${tag}`, displayName: `AEX ${tag}` },
+          data: { memberNo: `aex-m-${tag}`, ...memberIdentityData(`AEX ${tag}`) },
           select: { id: true },
         })
       ).id;

@@ -15,6 +15,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { OmittableOnly } from '../../common/decorators/omittable-only.decorator';
 
 // 终态 scoped-authz PR11(2026-07-02;冻结稿 §8.4 / §11 PR11):公告导入 preview/execute 两段式 DTO。
 //
@@ -27,7 +28,7 @@ import {
 //   `class-validator` 挡下、被 `ValidationPipe` 把整批请求一次性 400 掉,不会走到 service 层逐行
 //   `blocked` 分类——这是刻意接受的权衡(格式校验留在 DTO 层不下沉),不是此前"缺字段/写错皆不 400"
 //   措辞所暗示的对称行为。
-// - 双锚铁律(R7):execute 只接受带 memberNo + orgCode 的行;preview 对只有 displayName 的行做辅助解析
+// - 双锚铁律(R7):execute 只接受带 memberNo + orgCode 的行;preview 对只有 realName 的行做辅助解析
 //   (唯一命中 → 回显建议,仍需人工确认;多义/零命中 → needs-manual)。**绝不按姓名自动落库**。
 //
 // **组织行 code 双重用途:** 既是 Organization.code(全局唯一,持久落库),也是同一请求内本批新建组
@@ -92,10 +93,14 @@ export class ImportPositionRowDto {
     description: '姓名(仅 preview 辅助解析用;唯一命中 active 队员时回显建议 memberNo,仍需人工确认)',
     maxLength: 100,
   })
-  @IsOptional()
+  // issue #1048 T1:本字段由 displayName 改名为 realName —— 旧名在执法层的
+  // is-optional 存量基线里按「类名.字段名」具名冻结,改名后自然掉出冻结集。
+  // 不去动那份台账(它只减不增),直接按规则自己给的出口修好:
+  // 姓名只是**可省略**、不可为空 ⇒ OmittableOnly,显式 null 稳定 400。
+  @OmittableOnly()
   @IsString()
   @MaxLength(100)
-  displayName?: string;
+  realName?: string;
 
   @ApiPropertyOptional({
     description: '组织 code(双锚之一;可引用已存在组织,或本请求 organizations[] 新建的组织)',
@@ -151,13 +156,17 @@ export class ImportSupervisionRowDto {
   supervisorMemberNo?: string;
 
   @ApiPropertyOptional({
-    description: '姓名(仅 preview 辅助解析用;语义同 ImportPositionRowDto.displayName)',
+    description: '姓名(仅 preview 辅助解析用;语义同 ImportPositionRowDto.realName)',
     maxLength: 100,
   })
-  @IsOptional()
+  // issue #1048 T1:本字段由 displayName 改名为 realName —— 旧名在执法层的
+  // is-optional 存量基线里按「类名.字段名」具名冻结,改名后自然掉出冻结集。
+  // 不去动那份台账(它只减不增),直接按规则自己给的出口修好:
+  // 姓名只是**可省略**、不可为空 ⇒ OmittableOnly,显式 null 稳定 400。
+  @OmittableOnly()
   @IsString()
   @MaxLength(100)
-  displayName?: string;
+  realName?: string;
 
   @ApiPropertyOptional({
     description: '被分管组织 code(双锚之一;可引用已存在组织,或本请求 organizations[] 新建的组织)',
@@ -268,7 +277,7 @@ export class ImportPositionRowResultDto {
   reasons!: ImportRowIssueDto[];
 
   @ApiPropertyOptional({
-    description: 'displayName 唯一命中 active 队员时的建议 memberNo(仅 needs-manual 可能带值)',
+    description: 'realName 唯一命中 active 队员时的建议 memberNo(仅 needs-manual 可能带值)',
     nullable: true,
   })
   suggestedMemberNo?: string | null;
@@ -288,7 +297,7 @@ export class ImportSupervisionRowResultDto {
   reasons!: ImportRowIssueDto[];
 
   @ApiPropertyOptional({
-    description: 'displayName 唯一命中 active 队员时的建议 memberNo(仅 needs-manual 可能带值)',
+    description: 'realName 唯一命中 active 队员时的建议 memberNo(仅 needs-manual 可能带值)',
     nullable: true,
   })
   suggestedMemberNo?: string | null;

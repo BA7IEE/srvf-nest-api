@@ -17,16 +17,27 @@ import {
 } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 
-// 队员账号闭环 v1(2026-07-07):关联队员摘要投影(仅 memberNo + displayName,不含任何
+// 队员账号闭环 v1(2026-07-07):关联队员摘要投影(仅身份三件套 + 统一 label,不含任何
 // 敏感字段)。**仅** admin list / findOne 两处填充(userAdminSelect);其余 UserResponseDto
 // 生产者(App 自助 / phone / wechat / 密码流)不选本字段,故字段在响应体里整体缺失
 // (TS 可选属性语义,非 null)。
+//
+// ⚠️ issue #1048 T1 的一个真实歧义点:`UserResponseDto` **自己也有 `nickname`**
+//(那是登录账号的昵称,`User.nickname`),与这里的 `Member.nickname`(队内外号)同名不同物。
+// 二者分居两层对象(user.nickname vs user.member.nickname)故 JSON 上不冲突,
+// 但读代码时极易串味 —— 谁在这两处之间复制字段,先回来看这段。
 export class UserLinkedMemberDto {
   @ApiProperty({ description: '队员业务唯一编号', example: 'M-0001' })
   memberNo!: string;
 
-  @ApiProperty({ description: '队员称呼 / 显示名', example: 'Demo Member' })
-  displayName!: string;
+  @ApiProperty({ description: '队员真实姓名', example: '张三' })
+  realName!: string;
+
+  @ApiPropertyOptional({ description: '队员外号(队内称呼,非登录昵称)', nullable: true })
+  nickname!: string | null;
+
+  @ApiProperty({ description: '统一展示标签 `编号 · 姓名(外号)`', example: 'M-0001 · 张三(老张)' })
+  label!: string;
 }
 
 // ============ 出参 DTO ============

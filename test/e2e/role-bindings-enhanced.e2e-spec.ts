@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // F3/C1「role-bindings /page + :id + preview + batch」e2e(2026-07-04;冻结路线图
 // admin-api-fe-integration-roadmap.md §4 C1 + D6/D9 拍板)。
@@ -137,7 +138,7 @@ describe('F3/C1 role-bindings 增强面(page / detail / preview / batch)', () =>
     });
     deletedOrgId = deletedOrg.id;
     const member = await prisma.member.create({
-      data: { memberNo: 'rbe-m1', displayName: 'RBE 队员甲' },
+      data: { memberNo: 'rbe-m1', ...memberIdentityData('RBE 队员甲') },
       select: { id: true },
     });
     memberId = member.id;
@@ -304,7 +305,7 @@ describe('F3/C1 role-bindings 增强面(page / detail / preview / batch)', () =>
       expect(byOrg.body.data.items.map((i: { id: string }) => i.id)).toEqual([bOrgScopedId]);
     });
 
-    it('principalQ:USER 主体命中 username;MEMBER 主体命中 displayName', async () => {
+    it('principalQ:USER 主体命中 username;MEMBER 主体命中 realName', async () => {
       const byUser = await getPage(adminAuth, { principalQ: 'target-alice' });
       expect(byUser.body.data.items.map((i: { id: string }) => i.id)).toEqual([bActiveId]);
 
@@ -340,7 +341,7 @@ describe('F3/C1 role-bindings 增强面(page / detail / preview / batch)', () =>
       expect(item).not.toHaveProperty('principal');
     });
 
-    it('expand=role,principal:USER 主体附 username;MEMBER 主体附 memberNo/displayName;role 附 code/displayName', async () => {
+    it('expand=role,principal:USER 主体附 username;MEMBER 主体附 memberNo/realName/memberLabel;role 附 code/displayName', async () => {
       const res = await getPage(adminAuth, { expand: 'role,principal', includeExpired: 'true' });
       expect(res.status).toBe(200);
       const items: Array<{
@@ -360,7 +361,8 @@ describe('F3/C1 role-bindings 增强面(page / detail / preview / batch)', () =>
         type: 'MEMBER',
         id: memberId,
         memberNo: 'rbe-m1',
-        displayName: 'RBE 队员甲',
+        realName: 'RBE 队员甲',
+        memberLabel: 'rbe-m1 · RBE 队员甲',
       });
     });
 

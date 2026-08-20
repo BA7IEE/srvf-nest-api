@@ -7,6 +7,7 @@ import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { journeyPrisma, type JourneyRuntime } from './journey-runtime';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const ADMIN_ACTIVITIES = '/api/admin/v1/activities';
 const CHECK_IN_LOCATION = { longitude: 114, latitude: 22, accuracy: 5 };
@@ -79,7 +80,7 @@ async function prepareActivityRegistrationFixture(runtime: JourneyRuntime): Prom
   const member = await prisma.member.create({
     data: {
       memberNo: `${tag}-member`,
-      displayName: '旅程二报名队员',
+      ...memberIdentityData('旅程二报名队员'),
       status: MemberStatus.ACTIVE,
     },
     select: { id: true },

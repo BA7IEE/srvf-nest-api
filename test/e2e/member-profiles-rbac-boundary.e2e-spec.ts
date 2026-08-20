@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // Slow-4 T2(2026-06-11):member-profiles 模块 RBAC 权限边界 spec。
 // 沿冻结评审稿 slow4-rbac-business-face-review.md §7 零行为漂移验收
@@ -62,12 +63,12 @@ describe('member-profiles RBAC 权限边界(Slow-4 T2)', () => {
     documentTypeCode = await seedDict('document_type', 'mprb-doc-id');
 
     const a = await prisma.member.create({
-      data: { memberNo: 'mprb-m-a', displayName: 'A' },
+      data: { memberNo: 'mprb-m-a', ...memberIdentityData('A') },
       select: { id: true },
     });
     memberA = a.id;
     const b = await prisma.member.create({
-      data: { memberNo: 'mprb-m-b', displayName: 'B' },
+      data: { memberNo: 'mprb-m-b', ...memberIdentityData('B') },
       select: { id: true },
     });
     memberB = b.id;
@@ -77,16 +78,14 @@ describe('member-profiles RBAC 权限边界(Slow-4 T2)', () => {
     await app.close();
   });
 
+  // issue #1048 T1:realName / joinedDate / joinSourceCode 已搬到 Member 主档,不再属于档案 DTO。
   const createPayload = (): Record<string, unknown> => ({
-    realName: '边界张三',
     genderCode,
     birthDate: '1990-01-15T00:00:00.000Z',
     documentTypeCode,
     documentNumber: 'MPRB000000',
     mobile: '13800000009',
     email: 'mprb@example.com',
-    joinedDate: '2020-06-01T00:00:00.000Z',
-    joinSourceCode: 'mprb-join-demo',
     privacyConsentSigned: true,
   });
 
@@ -143,22 +142,22 @@ describe('member-profiles RBAC 权限边界(Slow-4 T2)', () => {
       const ok1 = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberA}/profile`)
         .set('Authorization', saAuth)
-        .send({ realName: '边界李四' });
+        .send({ major: '边界李四' });
       expect(ok1.status).toBe(200);
       const ok2 = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberA}/profile`)
         .set('Authorization', admBizAuth)
-        .send({ realName: '边界王五' });
+        .send({ major: '边界王五' });
       expect(ok2.status).toBe(200);
       const deny1 = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberA}/profile`)
         .set('Authorization', admDefaultAuth)
-        .send({ realName: 'X' });
+        .send({ major: 'X' });
       expectBizError(deny1, BizCode.RBAC_FORBIDDEN);
       const deny2 = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberA}/profile`)
         .set('Authorization', userAuth)
-        .send({ realName: 'X' });
+        .send({ major: 'X' });
       expectBizError(deny2, BizCode.RBAC_FORBIDDEN);
     });
   });

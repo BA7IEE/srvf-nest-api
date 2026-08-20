@@ -50,7 +50,9 @@ export const ADMIN_ACTIVITY_CHECK_IN_LIST_RESPONSE_FIELDS = [
 export const ADMIN_ACTIVITY_CHECK_IN_MEMBER_RESPONSE_FIELDS = [
   'id',
   'memberNo',
-  'displayName',
+  'realName',
+  'nickname',
+  'label',
 ] as const;
 
 export const ATTENDANCE_SHEET_DRAFT_RESPONSE_FIELDS = [
@@ -82,7 +84,9 @@ export const ATTENDANCE_SHEET_DRAFT_ABSENT_RESPONSE_FIELDS = [
   'registrationId',
   'memberId',
   'memberNo',
-  'displayName',
+  'realName',
+  'nickname',
+  'label',
 ] as const;
 
 export const APP_ACTIVITY_CHECK_IN_SELECT = {
@@ -127,7 +131,8 @@ export type AdminActivityCheckInListRow = Prisma.ActivityCheckInGetPayload<{
 export const ADMIN_ACTIVITY_CHECK_IN_MEMBER_SELECT = {
   id: true,
   memberNo: true,
-  displayName: true,
+  realName: true,
+  nickname: true,
 } as const satisfies Prisma.MemberSelect;
 
 export type AdminActivityCheckInMemberRow = Prisma.MemberGetPayload<{

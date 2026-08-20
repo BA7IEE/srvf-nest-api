@@ -8,6 +8,7 @@ import { MemberDepartmentsService } from '../../src/modules/member-departments/m
 import { MembershipsService } from '../../src/modules/member-departments/memberships.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // memberships / member-departments audit characterization tests
 // (review #484 G5;沿 activity-registrations-audit-characterization / attachments-audit-characterization
@@ -116,7 +117,11 @@ describe('memberships / member-departments audit characterization', () => {
     });
 
     const member = await prisma.member.create({
-      data: { memberNo: 'ms-audit-m-1', displayName: 'Audit Member', status: MemberStatus.ACTIVE },
+      data: {
+        memberNo: 'ms-audit-m-1',
+        ...memberIdentityData('Audit Member'),
+        status: MemberStatus.ACTIVE,
+      },
       select: { id: true },
     });
 

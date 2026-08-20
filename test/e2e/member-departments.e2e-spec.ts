@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // V2 Step 6 member_departments 归属能力 e2e。
 // 覆盖 3 接口主成功 + 关键失败:权限边界 / GET 无归属返 null / PUT 幂等 + 事务原子 /
@@ -101,7 +102,7 @@ describe('member-departments 归属能力', () => {
 
     beforeAll(async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'demo-md-pb-1', displayName: 'PB' },
+        data: { memberNo: 'demo-md-pb-1', ...memberIdentityData('PB') },
         select: { id: true },
       });
       memberId = m.id;
@@ -154,12 +155,12 @@ describe('member-departments 归属能力', () => {
 
     beforeAll(async () => {
       const m1 = await prisma.member.create({
-        data: { memberNo: 'demo-md-get-1', displayName: 'NoDept' },
+        data: { memberNo: 'demo-md-get-1', ...memberIdentityData('NoDept') },
       });
       memberWithoutDept = m1.id;
 
       const m2 = await prisma.member.create({
-        data: { memberNo: 'demo-md-get-2', displayName: 'WithDept' },
+        data: { memberNo: 'demo-md-get-2', ...memberIdentityData('WithDept') },
       });
       memberWithDept = m2.id;
       const dept = await prisma.memberOrganizationMembership.create({
@@ -203,7 +204,7 @@ describe('member-departments 归属能力', () => {
 
     beforeAll(async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'demo-md-put-1', displayName: 'Put' },
+        data: { memberNo: 'demo-md-put-1', ...memberIdentityData('Put') },
       });
       memberId = m.id;
     });
@@ -228,7 +229,7 @@ describe('member-departments 归属能力', () => {
       const inactiveMember = await prisma.member.create({
         data: {
           memberNo: 'demo-md-put-i',
-          displayName: 'I',
+          ...memberIdentityData('I'),
           status: MemberStatus.INACTIVE,
         },
       });
@@ -333,7 +334,7 @@ describe('member-departments 归属能力', () => {
 
     it('member 无归属 → MEMBER_DEPARTMENT_NOT_FOUND', async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'demo-md-del-1', displayName: 'NoDept' },
+        data: { memberNo: 'demo-md-del-1', ...memberIdentityData('NoDept') },
       });
       const res = await request(httpServer(app))
         .delete(`/api/admin/v1/members/${m.id}/department`)
@@ -343,7 +344,7 @@ describe('member-departments 归属能力', () => {
 
     it('member 有归属 → 200 + DB 结束(status=ENDED,不软删)+ 之后 GET 返 null', async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'demo-md-del-2', displayName: 'WithDept' },
+        data: { memberNo: 'demo-md-del-2', ...memberIdentityData('WithDept') },
       });
       const dept = await prisma.memberOrganizationMembership.create({
         data: { memberId: m.id, organizationId: activeOrgIdA },
@@ -378,7 +379,7 @@ describe('member-departments 归属能力', () => {
   describe('单归属约束 (partial unique index)', () => {
     it('DB 层:同 member 直接创建第二条 active 归属 → P2002', async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'demo-md-uq-1', displayName: 'UQ' },
+        data: { memberNo: 'demo-md-uq-1', ...memberIdentityData('UQ') },
       });
       await prisma.memberOrganizationMembership.create({
         data: { memberId: m.id, organizationId: activeOrgIdA },
@@ -393,7 +394,7 @@ describe('member-departments 归属能力', () => {
 
     it('软删旧归属后,再次 PUT 同 organizationId → 创建新归属(不撞 partial unique)', async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'demo-md-resu-1', displayName: 'ReSU' },
+        data: { memberNo: 'demo-md-resu-1', ...memberIdentityData('ReSU') },
       });
       // 创建 + 软删
       const old = await prisma.memberOrganizationMembership.create({
@@ -421,7 +422,7 @@ describe('member-departments 归属能力', () => {
     // (旧软删痕在新面 where deletedAt=null 下不可见;收敛 ENDED 后可见)。
     it('旧面 DELETE 解除 → 新面 memberships 列表出现 status=ENDED 历史行', async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'demo-md-ended-1', displayName: 'EndedHistory' },
+        data: { memberNo: 'demo-md-ended-1', ...memberIdentityData('EndedHistory') },
       });
       // 旧面 PUT 建 active PRIMARY
       await request(httpServer(app))
@@ -459,7 +460,7 @@ describe('member-departments 归属能力', () => {
 
     it('旧面换部门 → 新面 memberships 见旧组织 ENDED + 新组织 ACTIVE 两行', async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'demo-md-ended-2', displayName: 'EndedTransfer' },
+        data: { memberNo: 'demo-md-ended-2', ...memberIdentityData('EndedTransfer') },
       });
       await request(httpServer(app))
         .put(`/api/admin/v1/members/${m.id}/department`)

@@ -18,6 +18,7 @@ import {
 import * as bcrypt from 'bcryptjs';
 import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { MEMBER_ORIGIN_MANUAL } from './common/identity/member-origin.constant';
 import { isFormalMemberGradeCode } from './modules/members/member-grade';
 
 const LOCAL_DATABASE_PATTERN = /^app_local_frontend(?:_[a-z0-9][a-z0-9_]*)?$/;
@@ -101,7 +102,10 @@ type FixtureOrganizationKey = (typeof LOCAL_ACTIVITY_FRONTEND_ORGANIZATIONS)[num
 interface FixtureAccount {
   username: string;
   memberNo: string;
-  displayName: string;
+  realName: string;
+  // 三个账号刻意带外号、其余为 null:本 fixture 服务的是**前端**,
+  // 若一个外号都不给,`编号 · 姓名(外号)` 的带括号分支在联调时永远不会出现。
+  nickname: string | null;
   duty: string;
   organization: FixtureOrganizationKey;
   gradeCode: string | null;
@@ -109,11 +113,15 @@ interface FixtureAccount {
   page: string;
 }
 
+// fixture 队员的发号日:固定常量(见下方 create 处注释)。
+const FIXTURE_MEMBER_SINCE_DATE = new Date('2020-01-01T00:00:00.000Z');
+
 export const LOCAL_ACTIVITY_FRONTEND_ACCOUNTS: readonly FixtureAccount[] = [
   {
     username: 'local_fe_owner',
     memberNo: 'LOCAL-FE-OWNER',
-    displayName: 'LOCAL-FE Owner',
+    realName: 'LOCAL-FE Owner',
+    nickname: '老板',
     duty: '活动发起人 / 初始负责人',
     organization: 'A',
     gradeCode: 'level-3',
@@ -123,7 +131,8 @@ export const LOCAL_ACTIVITY_FRONTEND_ACCOUNTS: readonly FixtureAccount[] = [
   {
     username: 'local_fe_publish_reviewer',
     memberNo: 'LOCAL-FE-PUBLISH-REVIEWER',
-    displayName: 'LOCAL-FE Publish Reviewer',
+    realName: 'LOCAL-FE Publish Reviewer',
+    nickname: null,
     duty: '组织 A 发布审核员',
     organization: 'A',
     gradeCode: 'level-3',
@@ -133,7 +142,8 @@ export const LOCAL_ACTIVITY_FRONTEND_ACCOUNTS: readonly FixtureAccount[] = [
   {
     username: 'local_fe_registration_collab',
     memberNo: 'LOCAL-FE-REGISTRATION-COLLAB',
-    displayName: 'LOCAL-FE Registration Collaborator',
+    realName: 'LOCAL-FE Registration Collaborator',
+    nickname: null,
     duty: '报名协办候选人（初始无活动责任）',
     organization: 'A',
     gradeCode: 'level-3',
@@ -143,7 +153,8 @@ export const LOCAL_ACTIVITY_FRONTEND_ACCOUNTS: readonly FixtureAccount[] = [
   {
     username: 'local_fe_attendance_collab',
     memberNo: 'LOCAL-FE-ATTENDANCE-COLLAB',
-    displayName: 'LOCAL-FE Attendance Collaborator',
+    realName: 'LOCAL-FE Attendance Collaborator',
+    nickname: null,
     duty: '考勤协办候选人（初始无活动责任）',
     organization: 'A',
     gradeCode: 'level-3',
@@ -153,7 +164,8 @@ export const LOCAL_ACTIVITY_FRONTEND_ACCOUNTS: readonly FixtureAccount[] = [
   {
     username: 'local_fe_first_a',
     memberNo: 'LOCAL-FE-FIRST-A',
-    displayName: 'LOCAL-FE First Reviewer A',
+    realName: 'LOCAL-FE First Reviewer A',
+    nickname: null,
     duty: '组织 A 考勤一审员 A',
     organization: 'A',
     gradeCode: 'level-3',
@@ -163,7 +175,8 @@ export const LOCAL_ACTIVITY_FRONTEND_ACCOUNTS: readonly FixtureAccount[] = [
   {
     username: 'local_fe_first_b',
     memberNo: 'LOCAL-FE-FIRST-B',
-    displayName: 'LOCAL-FE First Reviewer B',
+    realName: 'LOCAL-FE First Reviewer B',
+    nickname: null,
     duty: '组织 A 考勤一审员 B',
     organization: 'A',
     gradeCode: 'level-3',
@@ -173,7 +186,8 @@ export const LOCAL_ACTIVITY_FRONTEND_ACCOUNTS: readonly FixtureAccount[] = [
   {
     username: 'local_fe_final_a',
     memberNo: 'LOCAL-FE-FINAL-A',
-    displayName: 'LOCAL-FE Final Reviewer A',
+    realName: 'LOCAL-FE Final Reviewer A',
+    nickname: null,
     duty: '组织 A 考勤终审员 A',
     organization: 'A',
     gradeCode: 'level-3',
@@ -183,7 +197,8 @@ export const LOCAL_ACTIVITY_FRONTEND_ACCOUNTS: readonly FixtureAccount[] = [
   {
     username: 'local_fe_final_b',
     memberNo: 'LOCAL-FE-FINAL-B',
-    displayName: 'LOCAL-FE Final Reviewer B',
+    realName: 'LOCAL-FE Final Reviewer B',
+    nickname: null,
     duty: '组织 A 考勤终审员 B',
     organization: 'A',
     gradeCode: 'level-3',
@@ -193,7 +208,8 @@ export const LOCAL_ACTIVITY_FRONTEND_ACCOUNTS: readonly FixtureAccount[] = [
   {
     username: 'local_fe_new_owner',
     memberNo: 'LOCAL-FE-NEW-OWNER',
-    displayName: 'LOCAL-FE New Owner',
+    realName: 'LOCAL-FE New Owner',
+    nickname: null,
     duty: '负责人移交接收人',
     organization: 'A',
     gradeCode: 'level-3',
@@ -203,7 +219,8 @@ export const LOCAL_ACTIVITY_FRONTEND_ACCOUNTS: readonly FixtureAccount[] = [
   {
     username: 'local_fe_participant_a',
     memberNo: 'LOCAL-FE-PARTICIPANT-A',
-    displayName: 'LOCAL-FE Participant A',
+    realName: 'LOCAL-FE Participant A',
+    nickname: '小A',
     duty: '报名与考勤参与者 A',
     organization: 'A',
     gradeCode: 'level-3',
@@ -213,7 +230,8 @@ export const LOCAL_ACTIVITY_FRONTEND_ACCOUNTS: readonly FixtureAccount[] = [
   {
     username: 'local_fe_participant_b',
     memberNo: 'LOCAL-FE-PARTICIPANT-B',
-    displayName: 'LOCAL-FE Participant B',
+    realName: 'LOCAL-FE Participant B',
+    nickname: null,
     duty: '报名与考勤参与者 B',
     organization: 'A',
     gradeCode: 'level-3',
@@ -223,7 +241,8 @@ export const LOCAL_ACTIVITY_FRONTEND_ACCOUNTS: readonly FixtureAccount[] = [
   {
     username: 'local_fe_unrelated_admin',
     memberNo: 'LOCAL-FE-UNRELATED-ADMIN',
-    displayName: 'LOCAL-FE Unrelated Admin',
+    realName: 'LOCAL-FE Unrelated Admin',
+    nickname: null,
     duty: '普通业务管理员（活动责任负向验证）',
     organization: 'A',
     gradeCode: 'level-3',
@@ -233,7 +252,8 @@ export const LOCAL_ACTIVITY_FRONTEND_ACCOUNTS: readonly FixtureAccount[] = [
   {
     username: 'local_fe_cross_org',
     memberNo: 'LOCAL-FE-CROSS-ORG',
-    displayName: 'LOCAL-FE Cross Organization Initiator',
+    realName: 'LOCAL-FE Cross Organization Initiator',
+    nickname: null,
     duty: '组织 B 精确跨组织发起人',
     organization: 'A',
     gradeCode: 'level-3',
@@ -243,7 +263,8 @@ export const LOCAL_ACTIVITY_FRONTEND_ACCOUNTS: readonly FixtureAccount[] = [
   {
     username: 'local_fe_org_b_owner',
     memberNo: 'LOCAL-FE-ORG-B-OWNER',
-    displayName: 'LOCAL-FE Organization B Owner',
+    realName: 'LOCAL-FE Organization B Owner',
+    nickname: null,
     duty: '组织 B 发起人兼发布审核员',
     organization: 'B',
     gradeCode: 'level-3',
@@ -253,7 +274,8 @@ export const LOCAL_ACTIVITY_FRONTEND_ACCOUNTS: readonly FixtureAccount[] = [
   {
     username: 'local_fe_volunteer',
     memberNo: 'LOCAL-FE-VOLUNTEER',
-    displayName: 'LOCAL-FE Volunteer',
+    realName: 'LOCAL-FE Volunteer',
+    nickname: '小志',
     duty: '志愿者等级负向账号',
     organization: 'A',
     gradeCode: 'volunteer',
@@ -263,7 +285,8 @@ export const LOCAL_ACTIVITY_FRONTEND_ACCOUNTS: readonly FixtureAccount[] = [
   {
     username: 'local_fe_reserve',
     memberNo: 'LOCAL-FE-RESERVE',
-    displayName: 'LOCAL-FE Reserve',
+    realName: 'LOCAL-FE Reserve',
+    nickname: null,
     duty: '预备队员等级负向账号',
     organization: 'A',
     gradeCode: 'reserve',
@@ -273,7 +296,8 @@ export const LOCAL_ACTIVITY_FRONTEND_ACCOUNTS: readonly FixtureAccount[] = [
   {
     username: 'local_fe_no_grade',
     memberNo: 'LOCAL-FE-NO-GRADE',
-    displayName: 'LOCAL-FE No Grade',
+    realName: 'LOCAL-FE No Grade',
+    nickname: null,
     duty: '无等级负向账号',
     organization: 'A',
     gradeCode: null,
@@ -886,7 +910,8 @@ async function ensureFixtureAccounts(
       select: {
         id: true,
         memberNo: true,
-        displayName: true,
+        realName: true,
+        nickname: true,
         gradeCode: true,
         status: true,
         deletedAt: true,
@@ -896,14 +921,20 @@ async function ensureFixtureAccounts(
       member = await tx.member.create({
         data: {
           memberNo: expected.memberNo,
-          displayName: expected.displayName,
+          realName: expected.realName,
+          nickname: expected.nickname,
+          // 固定常量而不是 `new Date()`:fixture 必须可重复,
+          // 且本文件已登记在 clock-authority 表内,不该新增一次墙钟读取。
+          memberSinceDate: FIXTURE_MEMBER_SINCE_DATE,
+          memberOriginCode: MEMBER_ORIGIN_MANUAL,
           gradeCode: expected.gradeCode,
           status: MemberStatus.ACTIVE,
         },
         select: {
           id: true,
           memberNo: true,
-          displayName: true,
+          realName: true,
+          nickname: true,
           gradeCode: true,
           status: true,
           deletedAt: true,
@@ -912,7 +943,8 @@ async function ensureFixtureAccounts(
     }
     if (
       member.memberNo !== expected.memberNo ||
-      member.displayName !== expected.displayName ||
+      member.realName !== expected.realName ||
+      member.nickname !== expected.nickname ||
       member.gradeCode !== expected.gradeCode ||
       member.status !== MemberStatus.ACTIVE ||
       member.deletedAt !== null
@@ -954,7 +986,7 @@ async function ensureFixtureAccounts(
         data: {
           username: expected.username,
           passwordHash,
-          nickname: expected.displayName,
+          nickname: expected.realName,
           role: expected.role,
           status: UserStatus.ACTIVE,
           memberId: member.id,
@@ -1023,7 +1055,7 @@ function assertFixtureUserShape(
   if (
     user.username !== expected.username ||
     user.email !== null ||
-    user.nickname !== expected.displayName ||
+    user.nickname !== expected.realName ||
     user.avatarKey !== null ||
     user.role !== expected.role ||
     user.status !== UserStatus.ACTIVE ||
@@ -1320,7 +1352,8 @@ async function verifyFixtureDatabaseState(db: FixtureDatabaseClient): Promise<{
     select: {
       id: true,
       memberNo: true,
-      displayName: true,
+      realName: true,
+      nickname: true,
       gradeCode: true,
       status: true,
       deletedAt: true,
@@ -1339,7 +1372,8 @@ async function verifyFixtureDatabaseState(db: FixtureDatabaseClient): Promise<{
     const member = membersByMemberNo.get(expected.memberNo);
     if (
       !member ||
-      member.displayName !== expected.displayName ||
+      member.realName !== expected.realName ||
+      member.nickname !== expected.nickname ||
       member.gradeCode !== expected.gradeCode ||
       member.status !== MemberStatus.ACTIVE ||
       member.deletedAt !== null

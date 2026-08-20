@@ -9,6 +9,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // Phase 2 P2-4a App /api/app/v1/activities/available 列表 e2e。
 // 沿 docs/app-api-p2-4-activities-review.md §10.2 九类 it block;字段集恰好 11 项(沿 §4.1)。
@@ -115,12 +116,14 @@ describe('App GET /api/app/v1/activities/available (P2-4a)', () => {
 
   // ============== helpers ==============
 
-  async function createActiveMember(
-    memberNo: string,
-    displayName = '队员',
-  ): Promise<{ id: string }> {
+  async function createActiveMember(memberNo: string, realName = '队员'): Promise<{ id: string }> {
     return prisma.member.create({
-      data: { memberNo, displayName, gradeCode: 'level-1', status: MemberStatus.ACTIVE },
+      data: {
+        memberNo,
+        ...memberIdentityData(realName),
+        gradeCode: 'level-1',
+        status: MemberStatus.ACTIVE,
+      },
       select: { id: true },
     });
   }

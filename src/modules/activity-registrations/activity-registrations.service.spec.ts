@@ -23,6 +23,7 @@ import { ActivityRegistrationAccessService } from './activity-registration-acces
 import { ActivityRegistrationCreateService } from './activity-registration-create.service';
 import { ActivityRegistrationReviewService } from './activity-registration-review.service';
 import { ActivityRegistrationsService } from './activity-registrations.service';
+import { memberIdentityData } from '../../../test/helpers/member-identity.fixture';
 
 jest.mock('../activities/activity-waitlist-promotion', () => ({
   promoteActivityWaitlist: jest.fn().mockResolvedValue({ activityTitle: '测试活动', promoted: [] }),
@@ -62,7 +63,7 @@ interface RegRow {
   createdAt: Date;
   updatedAt: Date;
   currentRevision: number;
-  member?: { memberNo: string; displayName: string } | null;
+  member?: { memberNo: string; realName: string; nickname: string | null } | null;
   activityPosition?: { id: string; name: string } | null;
 }
 
@@ -83,7 +84,8 @@ interface ActivityRow {
 interface MemberRow {
   id: string;
   memberNo: string;
-  displayName: string;
+  realName: string;
+  nickname: string | null;
   status: 'ACTIVE' | 'INACTIVE';
   deletedAt: Date | null;
 }
@@ -159,7 +161,8 @@ function makeMemberRow(overrides: Partial<MemberRow> = {}): MemberRow {
   return {
     id: 'mem-1',
     memberNo: 'LOCAL-001',
-    displayName: '本地队员甲',
+    ...memberIdentityData('本地队员甲'),
+    nickname: null,
     status: 'ACTIVE',
     deletedAt: null,
     ...overrides,
@@ -510,11 +513,14 @@ describe('ActivityRegistrationsService (characterization)', () => {
       expect(r2.extras).toBeNull();
     });
 
-    it('toListItemDto via list: member 映射 memberNo / displayName,member 缺省时为 null', async () => {
+    it('toListItemDto via list: member 映射 memberNo / realName / label,member 缺省时为 null', async () => {
       const prisma = makePrismaMock();
       prisma.activity.findFirst.mockResolvedValue(makeActivityRow());
       prisma.activityRegistration.findMany.mockResolvedValue([
-        makeRegRow({ id: 'r-1', member: { memberNo: 'M-1', displayName: 'D-1' } }),
+        makeRegRow({
+          id: 'r-1',
+          member: { memberNo: 'M-1', ...memberIdentityData('D-1'), nickname: null },
+        }),
         makeRegRow({ id: 'r-2', member: null }),
       ]);
       prisma.activityRegistration.count.mockResolvedValue(2);
@@ -529,9 +535,11 @@ describe('ActivityRegistrationsService (characterization)', () => {
 
       expect(page.total).toBe(2);
       expect(page.items[0].memberNo).toBe('M-1');
-      expect(page.items[0].memberDisplayName).toBe('D-1');
+      expect(page.items[0].memberRealName).toBe('D-1');
+      expect(page.items[0].memberLabel).toBe('M-1 · D-1');
       expect(page.items[1].memberNo).toBeNull();
-      expect(page.items[1].memberDisplayName).toBeNull();
+      expect(page.items[1].memberRealName).toBeNull();
+      expect(page.items[1].memberLabel).toBeNull();
     });
   });
 
@@ -1067,7 +1075,7 @@ describe('ActivityRegistrationsService (characterization)', () => {
     });
 
     // B-D3 起只有取消 pass 才通知负责人，故快照断言必须挂在 pass 上（pending 根本不会调 producer）。
-    it('cancelMy(pass):同事务只快照 memberNo/displayName 传给通知 producer', async () => {
+    it('cancelMy(pass):同事务只快照 memberNo/realName/nickname 传给通知 producer', async () => {
       const prisma = makePrismaMock();
       const recorder = makeAuditRecorderMock();
       const notificationProducer = makeNotificationProducerMock();
@@ -1081,7 +1089,7 @@ describe('ActivityRegistrationsService (characterization)', () => {
       );
       prisma.activity.findFirst.mockResolvedValue(makeActivityRow());
       prisma.member.findUnique.mockResolvedValue(
-        makeMemberRow({ memberNo: 'LOCAL-001', displayName: '本地队员甲' }),
+        makeMemberRow({ memberNo: 'LOCAL-001', ...memberIdentityData('本地队员甲') }),
       );
       const service = makeService(prisma, recorder, stateMachine, notificationProducer);
 
@@ -1094,12 +1102,12 @@ describe('ActivityRegistrationsService (characterization)', () => {
 
       expect(prisma.member.findUnique).toHaveBeenCalledWith({
         where: { id: 'mem-1' },
-        select: { memberNo: true, displayName: true },
+        select: { memberNo: true, realName: true, nickname: true },
       });
       const [, input] = notificationProducer.enqueueSelfCancellation.mock.calls[0];
       expect(input).toMatchObject({
         registrationId: 'reg-1',
-        cancellingMember: { memberNo: 'LOCAL-001', displayName: '本地队员甲' },
+        cancellingMember: { memberNo: 'LOCAL-001', ...memberIdentityData('本地队员甲') },
         cancelReason: '临时有事',
       });
       expect(input).not.toHaveProperty('cancellingMemberId');
@@ -1238,7 +1246,7 @@ describe('ActivityRegistrationsService (characterization)', () => {
       const recorder = makeAuditRecorderMock();
       prisma.activity.findFirst.mockResolvedValue(makeActivityRow());
       prisma.activityRegistration.findMany.mockResolvedValue([
-        makeRegRow({ member: { memberNo: 'M-1', displayName: 'D-1' } }),
+        makeRegRow({ member: { memberNo: 'M-1', ...memberIdentityData('D-1'), nickname: null } }),
       ]);
       const service = makeService(prisma, recorder, makeStateMachineMock(DENY_DECISION));
 

@@ -11,6 +11,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 describe('activity batch4 qualification configuration', () => {
   let app: INestApplication;
@@ -43,7 +44,7 @@ describe('activity batch4 qualification configuration', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: 'batch4-qualification-config-manager-member',
-        displayName: '资格配置负责人',
+        ...memberIdentityData('资格配置负责人'),
         gradeCode: 'level-3',
         status: MemberStatus.ACTIVE,
       },

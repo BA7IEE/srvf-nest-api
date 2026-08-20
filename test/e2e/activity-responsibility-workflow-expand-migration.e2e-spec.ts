@@ -9,6 +9,7 @@ import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const MIGRATION_PATH =
   'prisma/migrations/20260723225802_activity_responsibility_workflow_expand/migration.sql';
@@ -80,7 +81,7 @@ describe('activity responsibility workflow PR1 expand migration', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `activity-workflow-expand-${label}-${sequence}`,
-        displayName: `Activity Workflow Expand ${label}`,
+        ...memberIdentityData(`Activity Workflow Expand ${label}`),
       },
       select: { id: true },
     });

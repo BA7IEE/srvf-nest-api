@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AssignmentStatus, MemberStatus, Prisma } from '@prisma/client';
+import { toMemberLabelFields } from '../../common/identity/member-label.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import type { PageResultDto } from '../../common/dto/pagination.dto';
 import { parseExpandQuery } from '../../common/dto/expand-query.util';
@@ -366,7 +367,7 @@ export class PositionAssignmentsService {
       const contains = { contains: query.q, mode: 'insensitive' as const };
       where.OR = [
         { member: { memberNo: contains } },
-        { member: { displayName: contains } },
+        { member: { realName: contains } },
         { position: { code: contains } },
         { position: { name: contains } },
         { organization: { name: contains } },
@@ -408,9 +409,11 @@ export class PositionAssignmentsService {
       if (want.member) {
         const rows = await this.prisma.member.findMany({
           where: { id: { in: [...new Set(items.map((i) => i.memberId))] } },
-          select: { id: true, memberNo: true, displayName: true, gradeCode: true },
+          select: { id: true, memberNo: true, realName: true, nickname: true, gradeCode: true },
         });
-        for (const r of rows) memberMap.set(r.id, r);
+        // issue #1048 T1:`label` 由后端拼装,Prisma 行里没有。
+        for (const r of rows)
+          memberMap.set(r.id, { id: r.id, gradeCode: r.gradeCode, ...toMemberLabelFields(r) });
       }
       if (want.position) {
         const rows = await this.prisma.organizationPosition.findMany({

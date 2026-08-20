@@ -9,6 +9,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 async function waitForLockWaiters(prisma: PrismaService, expected: number): Promise<void> {
   const deadline = Date.now() + 5_000;
@@ -170,7 +171,7 @@ describe('PositionAssignment policy multi-instance concurrency', () => {
     const member = await prismaA.member.create({
       data: {
         memberNo: `pa-policy-${tag}-${memberSeq}`,
-        displayName: `PA policy ${tag} ${memberSeq}`,
+        ...memberIdentityData(`PA policy ${tag} ${memberSeq}`),
       },
       select: { id: true },
     });

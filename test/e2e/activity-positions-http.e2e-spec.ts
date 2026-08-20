@@ -9,6 +9,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -48,7 +49,7 @@ describe('activity positions HTTP surface', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: 'pos-http-user',
-        displayName: '岗位HTTP队员',
+        ...memberIdentityData('岗位HTTP队员'),
         gradeCode: 'level-1',
       },
       select: { id: true },
@@ -60,7 +61,7 @@ describe('activity positions HTTP surface', () => {
 
     occupierMemberId = (
       await prisma.member.create({
-        data: { memberNo: 'pos-http-occupier', displayName: '占位队员' },
+        data: { memberNo: 'pos-http-occupier', ...memberIdentityData('占位队员') },
         select: { id: true },
       })
     ).id;

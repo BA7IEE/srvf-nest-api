@@ -3,7 +3,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.66.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:12fc1b8c910f694ff94d5a56e414c42c391de31cc4a969460c41b220079d724a
+// inputDigest: sha256:e614c31870eb3692a12c75b35ee78664b24535e85b3cbee5b70679c9bbcfd002
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -123,7 +123,9 @@ export interface ActivityReconciliationRegisteredParticipantDto {
   "registrationId": string;
   "memberId": string;
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
   "outcome": "attended" | "no-show";
   "recordCount": number;
   "approvedRecordCount": number;
@@ -133,7 +135,9 @@ export interface ActivityReconciliationRegisteredParticipantDto {
 export interface ActivityReconciliationTemporaryParticipantDto {
   "memberId": string;
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
   "outcome": "temporary";
   "recordCount": number;
   "approvedRecordCount": number;
@@ -160,7 +164,8 @@ export interface ActivityRegistrationListItemDto {
   "activityPosition": ActivityRegistrationActivityPositionDto;
   "memberId": string;
   "memberNo"?: Record<string, unknown> | null;
-  "memberDisplayName"?: Record<string, unknown> | null;
+  "memberRealName"?: Record<string, unknown> | null;
+  "memberLabel"?: Record<string, unknown> | null;
   "statusCode": string;
   "waitlistPosition": number | null;
   "registeredAt": string;
@@ -254,7 +259,9 @@ export interface ActivityResponsibilityAssignmentDto {
 export interface ActivityResponsibilityMemberDto {
   "id": string;
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
   "gradeCode": string | null;
 }
 
@@ -284,12 +291,16 @@ export interface AdminActivityCheckInListItemDto {
 export interface AdminActivityCheckInMemberDto {
   "id": string;
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
 }
 
 export interface AdminActivityFeedbackListItemDto {
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
   "rating": number;
   "comment": string | null;
   "createdAt": string;
@@ -390,7 +401,9 @@ export interface AdminRegistrationExpandedActivityDto {
 export interface AdminRegistrationExpandedMemberDto {
   "id": string;
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
   "gradeCode"?: Record<string, unknown> | null;
 }
 
@@ -401,7 +414,8 @@ export interface AdminRegistrationListItemDto {
   "activityTitle"?: Record<string, unknown> | null;
   "memberId": string;
   "memberNo"?: Record<string, unknown> | null;
-  "memberDisplayName"?: Record<string, unknown> | null;
+  "memberRealName"?: Record<string, unknown> | null;
+  "memberLabel"?: Record<string, unknown> | null;
   "statusCode": string;
   "waitlistPosition": number | null;
   "registeredAt": string;
@@ -604,7 +618,9 @@ export interface AttendanceSheetDraftAbsentRegistrationDto {
   "registrationId": string;
   "memberId": string;
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
 }
 
 export interface AttendanceSheetDraftDto {
@@ -1104,20 +1120,20 @@ export interface CreateEmergencyContactDto {
 
 export interface CreateMemberDto {
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname"?: string;
+  "memberSinceDate": string;
+  "memberOriginCode": string;
   "gradeCode"?: string;
 }
 
 export interface CreateMemberProfileDto {
-  "realName": string;
   "genderCode": string;
   "birthDate": string;
   "documentTypeCode": string;
   "documentNumber": string;
   "mobile": string;
   "email": string;
-  "joinedDate": string;
-  "joinSourceCode": string;
   "privacyConsentSigned": boolean;
   "ethnicityCode"?: string;
   "politicalStatusCode"?: string;
@@ -1447,7 +1463,7 @@ export interface ImportOrganizationRowResultDto {
 
 export interface ImportPositionRowDto {
   "memberNo"?: string;
-  "displayName"?: string;
+  "realName"?: string;
   "orgCode"?: string;
   "positionCode"?: string;
   "startedAt"?: string;
@@ -1480,7 +1496,7 @@ export interface ImportSummaryDto {
 
 export interface ImportSupervisionRowDto {
   "supervisorMemberNo"?: string;
-  "displayName"?: string;
+  "realName"?: string;
   "orgCode"?: string;
   "scopeMode"?: "EXACT" | "TREE";
   "startedAt"?: string;
@@ -1680,7 +1696,6 @@ export interface MemberParticipationSummaryDto {
 export interface MemberProfileResponseDto {
   "id": string;
   "memberId": string;
-  "realName": string;
   "genderCode": string;
   "birthDate": Record<string, unknown> | null;
   "documentTypeCode": string;
@@ -1712,8 +1727,6 @@ export interface MemberProfileResponseDto {
   "firstAidKnowledgeCode"?: Record<string, unknown> | null;
   "firstAidSkills": string[];
   "otherSkills"?: Record<string, unknown> | null;
-  "joinedDate": string;
-  "joinSourceCode": string;
   "noCriminalRecordSigned"?: Record<string, unknown> | null;
   "privacyConsentSigned": boolean;
   "privacyConsentSignedAt"?: Record<string, unknown> | null;
@@ -1725,7 +1738,11 @@ export interface MemberProfileResponseDto {
 export interface MemberResponseDto {
   "id": string;
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname"?: Record<string, unknown> | null;
+  "label": string;
+  "memberSinceDate": string;
+  "memberOriginCode": string;
   "gradeCode"?: Record<string, unknown> | null;
   "status": "ACTIVE" | "INACTIVE";
   "hasAccount": boolean;
@@ -1750,7 +1767,9 @@ export interface MembershipConflictsResponseDto {
 export interface MembershipExpandedMemberDto {
   "id": string;
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
   "gradeCode"?: Record<string, unknown> | null;
 }
 
@@ -1917,7 +1936,9 @@ export interface ParticipationOverviewResponseDto {
 export interface PositionAssignmentExpandedMemberDto {
   "id": string;
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
   "gradeCode"?: Record<string, unknown> | null;
 }
 
@@ -2349,7 +2370,8 @@ export interface RoleBindingExpandedPrincipalDto {
   "username"?: string;
   "nickname"?: Record<string, unknown> | null;
   "memberNo"?: string;
-  "displayName"?: string;
+  "realName"?: string;
+  "memberLabel"?: string;
   "organizationId"?: string;
   "positionId"?: string;
   "memberId"?: string;
@@ -2452,7 +2474,9 @@ export interface SupervisionExpandedOrganizationDto {
 export interface SupervisionExpandedSupervisorDto {
   "id": string;
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
   "gradeCode"?: Record<string, unknown> | null;
 }
 
@@ -2468,7 +2492,8 @@ export interface TeamInsuranceCoverageResponseDto {
   "policyId": string;
   "memberId": string;
   "memberNo": string;
-  "memberDisplayName": string;
+  "memberRealName": string;
+  "memberLabel": string;
   "createdAt": string;
 }
 
@@ -2488,7 +2513,8 @@ export interface TeamJoinApplicationAdminDto {
   "cycleId": string;
   "memberId": string;
   "memberNo"?: Record<string, unknown> | null;
-  "memberDisplayName"?: Record<string, unknown> | null;
+  "memberRealName"?: Record<string, unknown> | null;
+  "memberLabel"?: Record<string, unknown> | null;
   "statusCode": string;
   "targetOrganizationIds": string[];
   "selectedOrganizationId"?: Record<string, unknown> | null;
@@ -2642,12 +2668,12 @@ export interface UpdateMemberAccountStatusDto {
 }
 
 export interface UpdateMemberDto {
-  "displayName"?: string;
+  "realName"?: string;
+  "nickname"?: Record<string, unknown> | null;
   "gradeCode"?: string;
 }
 
 export interface UpdateMemberProfileDto {
-  "realName"?: string;
   "genderCode"?: string;
   "birthDate"?: string;
   "documentTypeCode"?: string;
@@ -2679,8 +2705,6 @@ export interface UpdateMemberProfileDto {
   "firstAidKnowledgeCode"?: string;
   "firstAidSkills"?: string[];
   "otherSkills"?: string;
-  "joinedDate"?: string;
-  "joinSourceCode"?: string;
   "noCriminalRecordSigned"?: boolean;
   "privacyConsentSigned"?: boolean;
   "privacyConsentSignedAt"?: string;
@@ -2845,7 +2869,9 @@ export interface WechatSubscribeTemplateDto {
 export interface WorkbenchMemberSummaryDto {
   "id": string;
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
 }
 
 export interface WorkbenchStandardSummaryDto {

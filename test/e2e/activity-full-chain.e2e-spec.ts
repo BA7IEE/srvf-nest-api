@@ -21,6 +21,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ===== 活动全链路贯通 e2e —— 验证刀,零 src 改动 =====
 //
@@ -236,7 +237,7 @@ describe('活动全链路贯通(14 站 · 8 条接缝)', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `FULL-CHAIN-${label.toUpperCase()}`,
-        displayName: `全链路 ${label}`,
+        ...memberIdentityData(`全链路 ${label}`),
         gradeCode: 'level-3',
         status: MemberStatus.ACTIVE,
       },

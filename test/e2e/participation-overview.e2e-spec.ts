@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 interface ActivitySummaryBody {
   attendeeCount: number;
@@ -143,7 +144,7 @@ describe('participation overview F5 + scoped reconciliation', () => {
     const members = await Promise.all(
       ['pov-m1', 'pov-m2', 'pov-m3', 'pov-hidden'].map((memberNo) =>
         prisma.member.create({
-          data: { memberNo, displayName: memberNo },
+          data: { memberNo, ...memberIdentityData(memberNo) },
           select: { id: true },
         }),
       ),

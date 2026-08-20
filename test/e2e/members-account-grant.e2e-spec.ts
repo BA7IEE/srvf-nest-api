@@ -11,6 +11,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 队员账号闭环 v1(MVP,2026-07-07;goal「队员账号闭环 v1(MVP)——给已存在队员开
 // "手机验证码登录"账号 + 队员面/用户面互相回显」)e2e。
@@ -71,7 +72,7 @@ describe('队员账号闭环 v1:POST /api/admin/v1/members/:id/account', () => {
     memberSeq += 1;
     const memberNo = `mag-e2e-${memberSeq}`;
     return prisma.member.create({
-      data: { memberNo, displayName: `MAG-${memberSeq}`, status },
+      data: { memberNo, ...memberIdentityData(`MAG-${memberSeq}`), status },
       select: { id: true, memberNo: true },
     });
   }

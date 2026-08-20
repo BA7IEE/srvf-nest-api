@@ -8,6 +8,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuthzService } from '../authz/authz.service';
 import { RbacService } from '../permissions/rbac.service';
 import { DashboardSummaryResponseDto, ResolveLabelsDto } from './meta.dto';
+import { formatMemberLabel } from '../../common/identity/member-label.util';
 
 // F1/A7(路线图 §4 A7;架构映射 §7):跨资源批量 id→label 解析。**只读、无 audit、无
 // schema**;不复用其它模块的 service(镜像 authz/resource-resolver.service.ts 的自包含
@@ -246,12 +247,12 @@ export class MetaService {
   private async resolveMembers(ids: string[]): Promise<Record<string, ResolvedLabelEntry>> {
     const rows = await this.prisma.member.findMany({
       where: { id: { in: ids }, deletedAt: null },
-      select: { id: true, displayName: true, memberNo: true, gradeCode: true },
+      select: { id: true, realName: true, nickname: true, memberNo: true, gradeCode: true },
     });
     return Object.fromEntries(
       rows.map((r) => [
         r.id,
-        { label: r.displayName, memberNo: r.memberNo, gradeCode: r.gradeCode },
+        { label: formatMemberLabel(r), memberNo: r.memberNo, gradeCode: r.gradeCode },
       ]),
     );
   }

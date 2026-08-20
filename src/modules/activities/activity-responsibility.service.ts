@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { MemberStatus, MembershipStatus, Prisma, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { toMemberLabelFields } from '../../common/identity/member-label.util';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
@@ -12,6 +13,7 @@ import { ActivityResponsibilityAuditRecorder } from './activity-responsibility-a
 import {
   ActivityResponsibilitiesResponseDto,
   ActivityResponsibilityAssignmentDto,
+  ActivityResponsibilityMemberDto,
   AssignLegacyActivityInitiatorDto,
   ClaimLegacyActivityDto,
   CreateActivityCollaboratorDto,
@@ -44,7 +46,8 @@ const assignmentSelect = {
     select: {
       id: true,
       memberNo: true,
-      displayName: true,
+      realName: true,
+      nickname: true,
       gradeCode: true,
     },
   },
@@ -53,6 +56,25 @@ const assignmentSelect = {
 type AssignmentView = Prisma.ActivityResponsibilityAssignmentGetPayload<{
   select: typeof assignmentSelect;
 }>;
+
+// issue #1048 T1:`ActivityResponsibilityMemberDto` 多了后端拼装的 `label`,而 Prisma 行里没有。
+// 本文件四处人员引用(1 处 assignment.member + 3 处 initiator)同形,收成一个本地小工具;
+// 格式本体仍在 common/identity/member-label.util.ts,这里不重写格式。
+type MemberRefRow = {
+  id: string;
+  memberNo: string;
+  realName: string;
+  nickname: string | null;
+  gradeCode: string | null;
+};
+
+function toMemberRefDto(row: MemberRefRow): ActivityResponsibilityMemberDto;
+function toMemberRefDto(row: MemberRefRow | null): ActivityResponsibilityMemberDto | null;
+function toMemberRefDto(row: MemberRefRow | null): ActivityResponsibilityMemberDto | null {
+  return row === null
+    ? null
+    : { id: row.id, gradeCode: row.gradeCode, ...toMemberLabelFields(row) };
+}
 
 @Injectable()
 export class ActivityResponsibilityService {
@@ -74,7 +96,7 @@ export class ActivityResponsibilityService {
   }
 
   private toAssignmentDto(row: AssignmentView): ActivityResponsibilityAssignmentDto {
-    return row;
+    return { ...row, member: toMemberRefDto(row.member) };
   }
 
   private async lockActivity(activityId: string, tx: PrismaTx): Promise<void> {
@@ -321,7 +343,7 @@ export class ActivityResponsibilityService {
         id: true,
         statusCode: true,
         initiator: {
-          select: { id: true, memberNo: true, displayName: true, gradeCode: true },
+          select: { id: true, memberNo: true, realName: true, nickname: true, gradeCode: true },
         },
       },
     });
@@ -335,7 +357,7 @@ export class ActivityResponsibilityService {
     const owner = assignments.find((item) => item.responsibilityType === 'owner') ?? null;
     return {
       activityId,
-      initiator: activity.initiator,
+      initiator: toMemberRefDto(activity.initiator),
       owner: owner ? this.toAssignmentDto(owner) : null,
       collaborators: assignments
         .filter((item) => item.responsibilityType === 'collaborator')
@@ -364,7 +386,7 @@ export class ActivityResponsibilityService {
         id: true,
         statusCode: true,
         initiator: {
-          select: { id: true, memberNo: true, displayName: true, gradeCode: true },
+          select: { id: true, memberNo: true, realName: true, nickname: true, gradeCode: true },
         },
       },
     });
@@ -377,7 +399,7 @@ export class ActivityResponsibilityService {
     const owner = assignments.find((item) => item.responsibilityType === 'owner') ?? null;
     return {
       activityId,
-      initiator: activity.initiator,
+      initiator: toMemberRefDto(activity.initiator),
       owner: owner ? this.toAssignmentDto(owner) : null,
       collaborators: assignments
         .filter((item) => item.responsibilityType === 'collaborator')
@@ -611,7 +633,7 @@ export class ActivityResponsibilityService {
           title: true,
           statusCode: true,
           initiator: {
-            select: { id: true, memberNo: true, displayName: true, gradeCode: true },
+            select: { id: true, memberNo: true, realName: true, nickname: true, gradeCode: true },
           },
         },
       });
@@ -638,7 +660,7 @@ export class ActivityResponsibilityService {
       });
       return {
         activityId,
-        initiator: activity.initiator,
+        initiator: toMemberRefDto(activity.initiator),
         owner: responseOwner ? this.toAssignmentDto(responseOwner) : null,
         collaborators: activeAssignments
           .filter((item) => item.responsibilityType === 'collaborator')
@@ -714,7 +736,7 @@ export class ActivityResponsibilityService {
         select: {
           statusCode: true,
           initiator: {
-            select: { id: true, memberNo: true, displayName: true, gradeCode: true },
+            select: { id: true, memberNo: true, realName: true, nickname: true, gradeCode: true },
           },
         },
       });
@@ -726,7 +748,7 @@ export class ActivityResponsibilityService {
       const owner = assignments.find((item) => item.responsibilityType === 'owner') ?? null;
       return {
         activityId,
-        initiator: updated.initiator,
+        initiator: toMemberRefDto(updated.initiator),
         owner: owner ? this.toAssignmentDto(owner) : null,
         collaborators: assignments
           .filter((item) => item.responsibilityType === 'collaborator')

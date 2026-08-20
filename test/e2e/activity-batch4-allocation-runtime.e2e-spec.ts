@@ -19,6 +19,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const FAR = {
   startAt: new Date('2099-12-15T08:00:00.000Z'),
@@ -56,7 +57,7 @@ describe('activity batch4 allocation runtime', () => {
       prisma.member.create({
         data: {
           memberNo: 'B4-ALLOCATION-MANAGER',
-          displayName: 'Batch4 Allocation Manager',
+          ...memberIdentityData('Batch4 Allocation Manager'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },
@@ -65,7 +66,7 @@ describe('activity batch4 allocation runtime', () => {
       prisma.member.create({
         data: {
           memberNo: 'B4-ALLOCATION-APPLICANT',
-          displayName: 'Batch4 Allocation Applicant',
+          ...memberIdentityData('Batch4 Allocation Applicant'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },
@@ -215,7 +216,7 @@ describe('activity batch4 allocation runtime', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `B4-${label.toUpperCase()}-${sequence}`,
-        displayName: `Batch4 ${label}`,
+        ...memberIdentityData(`Batch4 ${label}`),
         gradeCode,
         status: MemberStatus.ACTIVE,
       },
@@ -371,7 +372,7 @@ describe('activity batch4 allocation runtime', () => {
     const secondMember = await prisma.member.create({
       data: {
         memberNo: `B4-FIRST-COME-SECOND-${sequence}`,
-        displayName: 'Batch4 First Come Second',
+        ...memberIdentityData('Batch4 First Come Second'),
         gradeCode: 'L1',
         status: MemberStatus.ACTIVE,
       },
@@ -606,7 +607,7 @@ describe('activity batch4 allocation runtime', () => {
     const secondMember = await prisma.member.create({
       data: {
         memberNo: `B4-RANK-SECOND-${sequence}`,
-        displayName: 'Batch4 Rank Second',
+        ...memberIdentityData('Batch4 Rank Second'),
         gradeCode: 'L2',
         status: MemberStatus.ACTIVE,
       },
@@ -2254,7 +2255,7 @@ describe('activity batch4 allocation runtime', () => {
     const secondMember = await prisma.member.create({
       data: {
         memberNo: `B4-LOTTERY-SECOND-${sequence}`,
-        displayName: 'Batch4 Lottery Second',
+        ...memberIdentityData('Batch4 Lottery Second'),
         gradeCode: 'L1',
         status: MemberStatus.ACTIVE,
       },

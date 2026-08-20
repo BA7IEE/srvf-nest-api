@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.66.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:12fc1b8c910f694ff94d5a56e414c42c391de31cc4a969460c41b220079d724a
+// inputDigest: sha256:e614c31870eb3692a12c75b35ee78664b24535e85b3cbee5b70679c9bbcfd002
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -771,7 +771,7 @@ export function createAdminClient(fetcher: Fetcher) {
     MembersControllerBulkGrantAccounts(body: BulkGrantMemberAccountsDto): Promise<ApiEnvelope<BulkGrantMemberAccountsResponseDto>> {
       return fetcher<BulkGrantMemberAccountsResponseDto>({ method: "POST", path: "/api/admin/v1/members/accounts/bulk-grant", body });
     },
-    /** 队员选择器投影(q 模糊 displayName+memberNo;limit≤100,默认 20) [rbac: member.read.record] */
+    /** 队员选择器投影(q 模糊 realName+memberNo;limit≤100,默认 20) [rbac: member.read.record] */
     MembersControllerOptions(query?: { "q"?: string; "organizationId"?: string; "includeDescendants"?: boolean; "limit"?: number }): Promise<ApiEnvelope<MemberOptionsResponseDto>> {
       return fetcher<MemberOptionsResponseDto>({ method: "GET", path: "/api/admin/v1/members/options", query });
     },
@@ -779,7 +779,7 @@ export function createAdminClient(fetcher: Fetcher) {
     MembersControllerFindOne(id: string): Promise<ApiEnvelope<MemberResponseDto>> {
       return fetcher<MemberResponseDto>({ method: "GET", path: `/api/admin/v1/members/${id}` });
     },
-    /** 更新队员(displayName / gradeCode;**禁止改 memberNo / status**) [rbac: member.update.record] */
+    /** 更新队员(realName / nickname / gradeCode;**禁止改 memberNo / status / memberSinceDate / memberOriginCode**) [rbac: member.update.record] */
     MembersControllerUpdate(id: string, body: UpdateMemberDto): Promise<ApiEnvelope<MemberResponseDto>> {
       return fetcher<MemberResponseDto>({ method: "PATCH", path: `/api/admin/v1/members/${id}`, body });
     },

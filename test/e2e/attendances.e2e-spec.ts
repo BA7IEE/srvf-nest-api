@@ -11,6 +11,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const relativeIso = (yearOffset: number, suffix: string): string =>
   `${new Date().getUTCFullYear() + yearOffset}-${suffix}`;
@@ -94,22 +95,22 @@ describe('attendances 模块', () => {
     await grantBizAdminToUser(app, submitter.id, bizSeed.bizAdminRoleId);
 
     const ma = await prisma.member.create({
-      data: { memberNo: 'att-m-a', displayName: 'Member A' },
+      data: { memberNo: 'att-m-a', ...memberIdentityData('Member A') },
       select: { id: true },
     });
     memberAId = ma.id;
     const mb = await prisma.member.create({
-      data: { memberNo: 'att-m-b', displayName: 'Member B' },
+      data: { memberNo: 'att-m-b', ...memberIdentityData('Member B') },
       select: { id: true },
     });
     memberBId = mb.id;
     const mc = await prisma.member.create({
-      data: { memberNo: 'att-m-c', displayName: 'Member C' },
+      data: { memberNo: 'att-m-c', ...memberIdentityData('Member C') },
       select: { id: true },
     });
     memberCId = mc.id;
     const mOther = await prisma.member.create({
-      data: { memberNo: 'att-m-other', displayName: 'Other Member' },
+      data: { memberNo: 'att-m-other', ...memberIdentityData('Other Member') },
       select: { id: true },
     });
     otherMemberId = mOther.id;
@@ -856,7 +857,7 @@ describe('attendances 模块', () => {
     beforeAll(async () => {
       // 单独 member 隔离本段干扰
       const m = await prisma.member.create({
-        data: { memberNo: 'att-m-overlap', displayName: 'Overlap M' },
+        data: { memberNo: 'att-m-overlap', ...memberIdentityData('Overlap M') },
         select: { id: true },
       });
       overlapMember = m.id;
@@ -938,7 +939,7 @@ describe('attendances 模块', () => {
     it('数组内部重叠(同 batch 内同 memberId)→ 22060', async () => {
       const otherM = (
         await prisma.member.create({
-          data: { memberNo: 'att-m-internal', displayName: 'Internal' },
+          data: { memberNo: 'att-m-internal', ...memberIdentityData('Internal') },
           select: { id: true },
         })
       ).id;
@@ -1030,7 +1031,8 @@ describe('attendances 模块', () => {
       // record 嵌套含 member 摘要
       expect(res.body.data.records[0].member).toBeDefined();
       expect(res.body.data.records[0].member.memberNo).toBeTruthy();
-      expect(res.body.data.records[0].member.displayName).toBeTruthy();
+      expect(res.body.data.records[0].member.realName).toBeTruthy();
+      expect(res.body.data.records[0].member.label).toBeTruthy();
       // Decimal 序列化为 string
       expect(typeof res.body.data.records[0].serviceHours).toBe('string');
     });
@@ -2237,7 +2239,7 @@ describe('attendances 模块', () => {
   describe('v0.47.0 attendance reopen 完整链路', () => {
     it('pending→approve→finalApprove→reopen→edit→approve→finalApprove;贡献值下降后恢复', async () => {
       const member = await prisma.member.create({
-        data: { memberNo: 'att-reopen-m-001', displayName: 'Reopen Member' },
+        data: { memberNo: 'att-reopen-m-001', ...memberIdentityData('Reopen Member') },
         select: { id: true },
       });
       const childOrg = await prisma.organization.findFirstOrThrow({

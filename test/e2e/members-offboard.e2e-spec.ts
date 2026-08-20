@@ -23,6 +23,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 参与域生命周期收口⑤(v0.40.0):POST /api/admin/v1/members/:id/offboard 一键离队 e2e。
 //
@@ -60,7 +61,7 @@ describe('参与域生命周期收口⑤:POST /api/admin/v1/members/:id/offboard
     memberSeq += 1;
     const memberNo = `off-e2e-${memberSeq}`;
     return prisma.member.create({
-      data: { memberNo, displayName: `OFF-${memberSeq}`, status },
+      data: { memberNo, ...memberIdentityData(`OFF-${memberSeq}`), status },
       select: { id: true, memberNo: true },
     });
   }

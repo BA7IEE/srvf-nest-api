@@ -8,10 +8,11 @@ import type { RbacService } from '../permissions/rbac.service';
 import type { PositionAssignmentsService } from '../position-assignments/position-assignments.service';
 import type { SupervisionAssignmentsService } from '../supervision-assignments/supervision-assignments.service';
 import { AnnouncementImportService } from './announcement-import.service';
+import { memberIdentityData } from '../../../test/helpers/member-identity.fixture';
 
 // 终态 scoped-authz PR11 service-level characterization spec(纯构造器注入 mock,不连库、不起 Nest)。
 //
-// **本 spec 只锁本模块自己的逻辑**(锚定解析 / 批内去重 / displayName 辅助解析 / 逐行结果聚合 /
+// **本 spec 只锁本模块自己的逻辑**(锚定解析 / 批内去重 / realName 辅助解析 / 逐行结果聚合 /
 // transaction client 透传),**不**重新验证被复用三个 service 的 create() 内部校验(那些已在各自
 // spec 锁定)——
 // 三个被复用 service 在这里全部是薄 jest.fn() mock,只关心"传参是否正确"与"抛出的 BizException
@@ -417,7 +418,7 @@ describe('AnnouncementImportService — 组织行', () => {
   });
 });
 
-describe('AnnouncementImportService — 任命行(双锚 + displayName 辅助解析)', () => {
+describe('AnnouncementImportService — 任命行(双锚 + realName 辅助解析)', () => {
   it('缺 orgCode/positionCode/startedAt → blocked', async () => {
     const { svc, positionAssignments } = build(makePrismaMock());
     const res = await svc.preview(USER, { positions: [{ memberNo: 'M1' }] }, META);
@@ -425,7 +426,7 @@ describe('AnnouncementImportService — 任命行(双锚 + displayName 辅助解
     expect(positionAssignments.create).not.toHaveBeenCalled();
   });
 
-  it('execute 且 memberNo 缺失(即便 displayName 唯一命中)→ blocked,绝不按姓名自动落库', async () => {
+  it('execute 且 memberNo 缺失(即便 realName 唯一命中)→ blocked,绝不按姓名自动落库', async () => {
     const prisma = makePrismaMock();
     const { svc, positionAssignments } = build(prisma);
     const res = await svc.execute(
@@ -433,7 +434,7 @@ describe('AnnouncementImportService — 任命行(双锚 + displayName 辅助解
       {
         positions: [
           {
-            displayName: '张三',
+            ...memberIdentityData('张三'),
             orgCode: 'ORG',
             positionCode: 'POS',
             startedAt: '2026-07-01T00:00:00.000Z',
@@ -446,7 +447,7 @@ describe('AnnouncementImportService — 任命行(双锚 + displayName 辅助解
     expect(positionAssignments.create).not.toHaveBeenCalled();
   });
 
-  it('preview 且 memberNo/displayName 均缺 → blocked', async () => {
+  it('preview 且 memberNo/realName 均缺 → blocked', async () => {
     const { svc } = build(makePrismaMock());
     const res = await svc.preview(
       USER,
@@ -458,7 +459,7 @@ describe('AnnouncementImportService — 任命行(双锚 + displayName 辅助解
     expect(res.positions[0].status).toBe('blocked');
   });
 
-  it('preview 且 displayName 唯一命中 active 队员 → needs-manual + suggestedMemberNo,不落库', async () => {
+  it('preview 且 realName 唯一命中 active 队员 → needs-manual + suggestedMemberNo,不落库', async () => {
     const prisma = makePrismaMock();
     prisma.member.findMany.mockResolvedValue([{ memberNo: 'T0001' }]);
     const { svc, positionAssignments } = build(prisma);
@@ -467,7 +468,7 @@ describe('AnnouncementImportService — 任命行(双锚 + displayName 辅助解
       {
         positions: [
           {
-            displayName: '张三',
+            ...memberIdentityData('张三'),
             orgCode: 'ORG',
             positionCode: 'POS',
             startedAt: '2026-07-01T00:00:00.000Z',
@@ -481,7 +482,7 @@ describe('AnnouncementImportService — 任命行(双锚 + displayName 辅助解
     expect(positionAssignments.create).not.toHaveBeenCalled();
   });
 
-  it('preview 且 displayName 零命中 → needs-manual,无建议', async () => {
+  it('preview 且 realName 零命中 → needs-manual,无建议', async () => {
     const prisma = makePrismaMock();
     prisma.member.findMany.mockResolvedValue([]);
     const { svc } = build(prisma);
@@ -490,7 +491,7 @@ describe('AnnouncementImportService — 任命行(双锚 + displayName 辅助解
       {
         positions: [
           {
-            displayName: '查无此人',
+            realName: '查无此人',
             orgCode: 'ORG',
             positionCode: 'POS',
             startedAt: '2026-07-01T00:00:00.000Z',
@@ -503,7 +504,7 @@ describe('AnnouncementImportService — 任命行(双锚 + displayName 辅助解
     expect(res.positions[0].suggestedMemberNo ?? null).toBeNull();
   });
 
-  it('preview 且 displayName 多义命中 → needs-manual,无建议', async () => {
+  it('preview 且 realName 多义命中 → needs-manual,无建议', async () => {
     const prisma = makePrismaMock();
     prisma.member.findMany.mockResolvedValue([{ memberNo: 'T0001' }, { memberNo: 'T0002' }]);
     const { svc } = build(prisma);
@@ -512,7 +513,7 @@ describe('AnnouncementImportService — 任命行(双锚 + displayName 辅助解
       {
         positions: [
           {
-            displayName: '重名',
+            ...memberIdentityData('重名'),
             orgCode: 'ORG',
             positionCode: 'POS',
             startedAt: '2026-07-01T00:00:00.000Z',
@@ -759,9 +760,7 @@ describe('AnnouncementImportService — 分管行(镜像任命行的锚定解析
     const res = await svc.execute(
       USER,
       {
-        supervisions: [
-          { displayName: '张三', orgCode: 'ORG', startedAt: '2026-07-01T00:00:00.000Z' },
-        ],
+        supervisions: [{ realName: '张三', orgCode: 'ORG', startedAt: '2026-07-01T00:00:00.000Z' }],
       },
       META,
     );

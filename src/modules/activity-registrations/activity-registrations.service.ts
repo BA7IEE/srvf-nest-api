@@ -389,7 +389,7 @@ export class ActivityRegistrationsService {
       });
       const cancellingMember = await tx.member.findUnique({
         where: { id: lockedReg.memberId },
-        select: { memberNo: true, displayName: true },
+        select: { memberNo: true, realName: true, nickname: true },
       });
 
       const cancelledAt = new Date();

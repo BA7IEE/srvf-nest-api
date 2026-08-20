@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 招新三期(入队)T3 App 自助面 e2e(冻结评审稿 docs/archive/reviews/recruitment-phase3-review.md §7)。
 // 覆盖:准入(unlinked/INACTIVE → 403)/ 发起申请(open 轮 + 未入队 + 候选 org 存在 ACTIVE + 防重)/
@@ -84,7 +85,7 @@ describe('招新三期(入队)App 自助面 e2e', () => {
   ): Promise<LinkedUser> {
     const user = await createTestUser(app, { username, role: Role.USER });
     const member = await prisma.member.create({
-      data: { memberNo: `TJA-${username}`, displayName: username, status: memberStatus },
+      data: { memberNo: `TJA-${username}`, ...memberIdentityData(username), status: memberStatus },
     });
     await prisma.user.update({ where: { id: user.id }, data: { memberId: member.id } });
     const { authHeader } = await loginAs(app, username);

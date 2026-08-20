@@ -9,6 +9,7 @@ import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const MIGRATION_PATH = 'prisma/migrations/20260719160335_insurance_constraints/migration.sql';
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
@@ -270,11 +271,11 @@ describe('D-INSURANCE v3 PR4 evidence constraints', () => {
       select: { id: true },
     });
     const memberA = await prisma.member.create({
-      data: { memberNo: nextId('member-a'), displayName: 'Insurance Constraint A' },
+      data: { memberNo: nextId('member-a'), ...memberIdentityData('Insurance Constraint A') },
       select: { id: true },
     });
     const memberB = await prisma.member.create({
-      data: { memberNo: nextId('member-b'), displayName: 'Insurance Constraint B' },
+      data: { memberNo: nextId('member-b'), ...memberIdentityData('Insurance Constraint B') },
       select: { id: true },
     });
     const organization = await prisma.organization.create({

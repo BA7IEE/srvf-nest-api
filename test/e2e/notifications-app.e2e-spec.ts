@@ -11,6 +11,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 统一通知模块 S1 站内信渠道(第 28 模块 notifications 扩 controller)app/v1 会员读取面 e2e
 // (冻结评审稿 unified-notification-dispatcher-review.md §5 / member-notification-review.md §7 + §9 DoD)。
@@ -71,7 +72,7 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
     const member = await prisma.member.create({
       data: {
         memberNo: `NTF-${username}`,
-        displayName: username,
+        ...memberIdentityData(username),
         status: memberStatus,
         gradeCode,
       },
@@ -175,7 +176,7 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
     // mgmt caller:普通 USER + 显式 biz-admin RoleBinding + ACTIVE member。
     const mgmtUser = await createTestUser(app, { username: 'ntf_mgmt', role: Role.USER });
     const mgmtMember = await prisma.member.create({
-      data: { memberNo: 'NTF-mgmt', displayName: 'mgmt', status: 'ACTIVE' },
+      data: { memberNo: 'NTF-mgmt', ...memberIdentityData('mgmt'), status: 'ACTIVE' },
     });
     await prisma.user.update({ where: { id: mgmtUser.id }, data: { memberId: mgmtMember.id } });
     await grantBizAdminToUser(app, mgmtUser.id, bizAdminRoleId);
@@ -186,7 +187,7 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
       role: Role.ADMIN,
     });
     const plainAdminMember = await prisma.member.create({
-      data: { memberNo: 'NTF-plain-admin', displayName: 'plain-admin', status: 'ACTIVE' },
+      data: { memberNo: 'NTF-plain-admin', ...memberIdentityData('plain-admin'), status: 'ACTIVE' },
     });
     await prisma.user.update({
       where: { id: plainAdmin.id },

@@ -8,6 +8,7 @@ import { RbacService } from '../../src/modules/permissions/rbac.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 终态 scoped-authz PR8:🔴 authz ↔ rbac 等价矩阵 characterization(行为锁最高优先,goal DoD 2)。
 //
@@ -140,7 +141,7 @@ describe('authz ↔ rbac 等价矩阵(🔴 无 ref 行为锁)', () => {
     await bindGlobalRole(opsHolderPayload.id, 'ops-admin');
     bareUserPayload = await createUser('pr8-equiv-bare', Role.USER);
     const memberRow = await prisma.member.create({
-      data: { memberNo: 'pr8-equiv-m-001', displayName: 'Equiv Member' },
+      data: { memberNo: 'pr8-equiv-m-001', ...memberIdentityData('Equiv Member') },
       select: { id: true },
     });
     memberHolderPayload = await createUser('pr8-equiv-member', Role.USER, memberRow.id);
@@ -219,7 +220,7 @@ describe('authz ↔ rbac 等价矩阵(🔴 无 ref 行为锁)', () => {
   it('finding 5 任期统一：未来/过期/在期 GLOBAL 绑定在 rbac.can、effectiveRoles、authz.explain 三处一致', async () => {
     const referenceNow = new Date();
     const resource = await prisma.member.create({
-      data: { memberNo: 'term-equiv-resource', displayName: 'Term Equivalence Resource' },
+      data: { memberNo: 'term-equiv-resource', ...memberIdentityData('Term Equivalence Resource') },
       select: { id: true },
     });
     const cases = [

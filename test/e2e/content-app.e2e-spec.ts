@@ -11,6 +11,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // CMS 内容发布模块(第 28 模块)T4 app/v1 会员读取面 e2e
 // (冻结评审稿 docs/archive/reviews/content-module-review.md §4 5 档可见 + §8 app + §9 DoD)。
@@ -73,7 +74,7 @@ describe('CMS 内容发布模块(第 28 模块)app/v1 会员读取面 e2e(5 档�
     const member = await prisma.member.create({
       data: {
         memberNo: `CON-${username}`,
-        displayName: username,
+        ...memberIdentityData(username),
         status: memberStatus,
         gradeCode,
       },
@@ -162,7 +163,7 @@ describe('CMS 内容发布模块(第 28 模块)app/v1 会员读取面 e2e(5 档�
     // mgmt caller:普通 USER + 显式 biz-admin RoleBinding + ACTIVE member。
     const mgmtUser = await createTestUser(app, { username: 'con_mgmt', role: Role.USER });
     const mgmtMember = await prisma.member.create({
-      data: { memberNo: 'CON-mgmt', displayName: 'mgmt', status: 'ACTIVE' },
+      data: { memberNo: 'CON-mgmt', ...memberIdentityData('mgmt'), status: 'ACTIVE' },
     });
     await prisma.user.update({ where: { id: mgmtUser.id }, data: { memberId: mgmtMember.id } });
     await grantBizAdminToUser(app, mgmtUser.id, bizAdminRoleId);
@@ -173,7 +174,7 @@ describe('CMS 内容发布模块(第 28 模块)app/v1 会员读取面 e2e(5 档�
       role: Role.ADMIN,
     });
     const plainAdminMember = await prisma.member.create({
-      data: { memberNo: 'CON-plain-admin', displayName: 'plain-admin', status: 'ACTIVE' },
+      data: { memberNo: 'CON-plain-admin', ...memberIdentityData('plain-admin'), status: 'ACTIVE' },
     });
     await prisma.user.update({
       where: { id: plainAdmin.id },

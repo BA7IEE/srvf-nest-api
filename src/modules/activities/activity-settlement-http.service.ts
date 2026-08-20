@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { toMemberLabelFields } from '../../common/identity/member-label.util';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
@@ -183,7 +184,13 @@ export interface SettlementHttpItem {
   identityId: string;
   decisionCode: 'pending' | 'determined';
   session: { id: string; code: string; name: string };
-  member: { id: string; memberNo: string; displayName: string };
+  member: {
+    id: string;
+    memberNo: string;
+    realName: string;
+    nickname: string | null;
+    label: string;
+  };
   resultCode: string | null;
   recognizedServiceHours: number | null;
   recognizedContributionPoints: number | null;
@@ -542,7 +549,7 @@ export class ActivitySettlementHttpService {
       where.member = {
         OR: [
           { memberNo: { contains: query.q, mode: 'insensitive' } },
-          { displayName: { contains: query.q, mode: 'insensitive' } },
+          { realName: { contains: query.q, mode: 'insensitive' } },
         ],
       };
     }
@@ -560,7 +567,7 @@ export class ActivitySettlementHttpService {
         select: {
           id: true,
           session: { select: { id: true, code: true, name: true } },
-          member: { select: { id: true, memberNo: true, displayName: true } },
+          member: { select: { id: true, memberNo: true, realName: true, nickname: true } },
           settlementResultRevisions: {
             where: { settlementVersionId: draft.id },
             select: {
@@ -586,7 +593,8 @@ export class ActivitySettlementHttpService {
           identityId: row.id,
           decisionCode: result === null ? 'pending' : 'determined',
           session: row.session,
-          member: row.member,
+          // issue #1048 T1:`label` 由后端拼装,Prisma 行里没有。
+          member: { id: row.member.id, ...toMemberLabelFields(row.member) },
           resultCode: result?.resultCode ?? null,
           recognizedServiceHours: result?.recognizedServiceHours.toNumber() ?? null,
           recognizedContributionPoints: result?.recognizedContributionPoints.toNumber() ?? null,

@@ -26,6 +26,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const BASE = '/api/admin/v1/notifications';
 const ALLOW_EFFECT = { beforeEffect: () => Promise.resolve() };
@@ -229,7 +230,7 @@ describe('notification publishGeneration · two-app PostgreSQL fence', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `GEN-${Date.now()}-${Math.random()}`,
-        displayName: 'generation member',
+        ...memberIdentityData('generation member'),
         status: 'ACTIVE',
       },
     });
@@ -318,7 +319,7 @@ describe('notification publishGeneration · two-app PostgreSQL fence', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `GEN-SHARED-${Date.now()}-${Math.random()}`,
-        displayName: 'shared parent generation member',
+        ...memberIdentityData('shared parent generation member'),
         status: 'ACTIVE',
       },
     });

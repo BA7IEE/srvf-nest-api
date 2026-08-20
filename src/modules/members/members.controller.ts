@@ -88,7 +88,7 @@ export class MembersController {
   @RequiresPermission('member.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
-      '队员选择器投影(q 模糊 displayName+memberNo;limit≤100,默认 20) [rbac: member.read.record]',
+      '队员选择器投影(q 模糊 realName+memberNo;limit≤100,默认 20) [rbac: member.read.record]',
   })
   @ApiWrappedOkResponse(MemberOptionsResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -199,7 +199,7 @@ export class MembersController {
   @RequiresPermission('member.update.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
-      '更新队员(displayName / gradeCode;**禁止改 memberNo / status**) [rbac: member.update.record]',
+      '更新队员(realName / nickname / gradeCode;**禁止改 memberNo / status / memberSinceDate / memberOriginCode**) [rbac: member.update.record]',
   })
   @ApiWrappedOkResponse(MemberResponseDto)
   @ApiBizErrorResponse(

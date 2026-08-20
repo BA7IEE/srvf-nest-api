@@ -20,6 +20,7 @@ import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const PREFLIGHT_SQL_PATH = path.resolve('docs/ops/activity-responsibility-workflow-preflight.sql');
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
@@ -205,7 +206,7 @@ describe('activity responsibility workflow PR10 rollout drill', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `activity-rollout-${label}-${sequence}`,
-        displayName: `活动切换演练 ${label} ${sequence}`,
+        ...memberIdentityData(`活动切换演练 ${label} ${sequence}`),
         gradeCode: `level-${(sequence % 7) + 1}`,
         status: MemberStatus.ACTIVE,
       },

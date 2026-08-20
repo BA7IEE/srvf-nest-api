@@ -17,6 +17,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 终态 scoped-authz PR6「RoleBinding」e2e(2026-07-01;冻结稿 §3.6 / §7.5 / §4.3 / §10.6 + goal DoD §4/§5/§6)。
 // 覆盖:RBAC 边界 / CRUD 全流程 / scoped 各型建库 / 校验各拒 / 防重(P2002)/
@@ -140,7 +141,7 @@ describe('role-bindings 带 scope 的角色绑定管理 + 行为锁边界', () =
     });
     activityId = activity.id;
     const member = await prisma.member.create({
-      data: { memberNo: 'rb-e2e-m1', displayName: 'RB 队员1' },
+      data: { memberNo: 'rb-e2e-m1', ...memberIdentityData('RB 队员1') },
       select: { id: true },
     });
     memberId = member.id;

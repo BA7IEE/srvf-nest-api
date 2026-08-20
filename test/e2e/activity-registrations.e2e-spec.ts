@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // Slow-4 T3(2026-06-11,评审稿 §8 / D-S4-4):管理端 6 端点入口切到 service 层 rbac.can(),
 // 失败统一 RBAC_FORBIDDEN(30100)。`adminAuth` 在 beforeAll 全局 grant biz-admin,
@@ -65,17 +66,17 @@ describe('activity-registrations 模块', () => {
 
     // 3 个 member(memberA 绑 USER;memberC / memberD 自由用于代报名 / capacity)
     const ma = await prisma.member.create({
-      data: { memberNo: 'reg-m-a', displayName: 'Member A' },
+      data: { memberNo: 'reg-m-a', ...memberIdentityData('Member A') },
       select: { id: true },
     });
     memberAId = ma.id;
     const mc = await prisma.member.create({
-      data: { memberNo: 'reg-m-c', displayName: 'Member C' },
+      data: { memberNo: 'reg-m-c', ...memberIdentityData('Member C') },
       select: { id: true },
     });
     memberCId = mc.id;
     const md = await prisma.member.create({
-      data: { memberNo: 'reg-m-d', displayName: 'Member D' },
+      data: { memberNo: 'reg-m-d', ...memberIdentityData('Member D') },
       select: { id: true },
     });
     memberDId = md.id;
@@ -277,7 +278,7 @@ describe('activity-registrations 模块', () => {
       const member = await prisma.member.create({
         data: {
           memberNo: 'reg-inactive-create',
-          displayName: 'Inactive Registration Target',
+          ...memberIdentityData('Inactive Registration Target'),
           status: MemberStatus.INACTIVE,
         },
         select: { id: true },
@@ -313,7 +314,7 @@ describe('activity-registrations 模块', () => {
       const member = await prisma.member.create({
         data: {
           memberNo: 'reg-deleted-create',
-          displayName: 'Deleted Registration Target',
+          ...memberIdentityData('Deleted Registration Target'),
           deletedAt: new Date(),
         },
         select: { id: true },
@@ -1029,7 +1030,7 @@ describe('activity-registrations 模块', () => {
       const m2 = memberDId;
       const m3 = (
         await prisma.member.create({
-          data: { memberNo: 'reg-m-list', displayName: 'List Member' },
+          data: { memberNo: 'reg-m-list', ...memberIdentityData('List Member') },
           select: { id: true },
         })
       ).id;
@@ -1085,13 +1086,15 @@ describe('activity-registrations 模块', () => {
       for (const s of statuses) expect(s).toBe('pass');
     });
 
-    it('list 列表项含 memberNo / memberDisplayName 冗余字段', async () => {
+    it('list 列表项含 memberNo / memberRealName / memberLabel 冗余字段', async () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/activities/${listActivityId}/registrations`)
         .set('Authorization', adminAuth);
       const first = res.body.data.items[0] as Record<string, unknown>;
       expect(first).toHaveProperty('memberNo');
-      expect(first).toHaveProperty('memberDisplayName');
+      // issue #1048 T1:memberDisplayName → memberRealName + memberLabel(统一标签)
+      expect(first).toHaveProperty('memberRealName');
+      expect(first).toHaveProperty('memberLabel');
     });
 
     it('activity 不存在 → ACTIVITY_NOT_FOUND', async () => {
@@ -1119,7 +1122,7 @@ describe('activity-registrations 模块', () => {
       const m2 = memberDId;
       const m3 = (
         await prisma.member.create({
-          data: { memberNo: 'reg-m-csv', displayName: 'CSV Member' },
+          data: { memberNo: 'reg-m-csv', ...memberIdentityData('CSV Member') },
           select: { id: true },
         })
       ).id;

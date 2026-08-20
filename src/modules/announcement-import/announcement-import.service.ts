@@ -305,10 +305,10 @@ export class AnnouncementImportService {
   }
 
   // 双锚铁律(R7,决断③):memberNo 给了就唯一确认;execute 不接受仅姓名行;preview 对仅姓名行做
-  // displayName 唯一命中辅助解析(仍需人工确认,绝不据此自动落库)。
+  // realName 唯一命中辅助解析(仍需人工确认,绝不据此自动落库)。
   private async resolveMemberAnchor(
     memberNo: string | undefined,
-    displayName: string | undefined,
+    realName: string | undefined,
     dryRun: boolean,
     tx: PrismaTx,
   ): Promise<MemberAnchorResult> {
@@ -333,31 +333,36 @@ export class AnnouncementImportService {
       };
     }
 
-    if (!displayName) {
-      return { kind: 'blocked', issue: synthetic('缺 memberNo 与 displayName,无法解析队员身份') };
+    if (!realName) {
+      return { kind: 'blocked', issue: synthetic('缺 memberNo 与 realName,无法解析队员身份') };
     }
 
     const matches = await tx.member.findMany({
-      where: notDeletedWhere({ displayName, status: MemberStatus.ACTIVE }),
+      // ⚠️ `notDeletedWhere` 的签名是 `<T extends Record<string, unknown>>` —— **完全泛型**,
+      // 它不校验字段名属不属于 `Prisma.MemberWhereInput`。issue #1048 T1 改列名时,
+      // 本行写着旧列名 `displayName` 却**照样通过 typecheck**(返回值不是字面量,
+      // 逃过了多余属性检查),只会在运行时炸 Prisma "Unknown argument"。
+      // 结论:经过 `notDeletedWhere` 的 where 没有列名保护,改列名时必须**人工**扫一遍它的调用点。
+      where: notDeletedWhere({ realName, status: MemberStatus.ACTIVE }),
       select: { memberNo: true },
       take: 2,
     });
     if (matches.length === 0) {
       return {
         kind: 'needs-manual',
-        issue: synthetic(`姓名"${displayName}"未命中任何 active 队员,需人工指定 memberNo`),
+        issue: synthetic(`姓名"${realName}"未命中任何 active 队员,需人工指定 memberNo`),
       };
     }
     if (matches.length > 1) {
       return {
         kind: 'needs-manual',
-        issue: synthetic(`姓名"${displayName}"命中多个 active 队员,需人工指定 memberNo`),
+        issue: synthetic(`姓名"${realName}"命中多个 active 队员,需人工指定 memberNo`),
       };
     }
     return {
       kind: 'needs-manual',
       issue: synthetic(
-        `姓名"${displayName}"唯一命中 active 队员,建议 memberNo=${matches[0].memberNo},请确认后回填`,
+        `姓名"${realName}"唯一命中 active 队员,建议 memberNo=${matches[0].memberNo},请确认后回填`,
       ),
       suggestedMemberNo: matches[0].memberNo,
     };
@@ -495,7 +500,7 @@ export class AnnouncementImportService {
       };
     }
 
-    const anchor = await this.resolveMemberAnchor(row.memberNo, row.displayName, dryRun, tx);
+    const anchor = await this.resolveMemberAnchor(row.memberNo, row.realName, dryRun, tx);
     if (anchor.kind === 'needs-manual') {
       return {
         row,
@@ -589,12 +594,7 @@ export class AnnouncementImportService {
       };
     }
 
-    const anchor = await this.resolveMemberAnchor(
-      row.supervisorMemberNo,
-      row.displayName,
-      dryRun,
-      tx,
-    );
+    const anchor = await this.resolveMemberAnchor(row.supervisorMemberNo, row.realName, dryRun, tx);
     if (anchor.kind === 'needs-manual') {
       return {
         row,

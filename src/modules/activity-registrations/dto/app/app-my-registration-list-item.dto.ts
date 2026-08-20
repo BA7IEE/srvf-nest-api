@@ -12,7 +12,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 // activityCoverImageUrl —— 前端列表展示活动概要;详情走 P2-4 GET /activities/:id。
 //
 // 明确不返(沿 §8.2.1 / §16.B.2):memberId / reviewedBy / cancelledByUserId / reviewNote /
-// cancelReason / extras / updatedAt / deletedAt / member.memberNo / member.displayName。
+// cancelReason / extras / updatedAt / deletedAt / member.memberNo / member.realName。
 export class AppMyRegistrationListItemDto {
   @ApiProperty({ description: '报名记录主键(cuid)', example: 'cl9z3a8b00000abcd1234efgh' })
   id!: string;

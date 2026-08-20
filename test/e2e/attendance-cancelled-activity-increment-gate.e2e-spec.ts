@@ -14,6 +14,7 @@ import type {
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // A-R2 拍板落地(2026-07-31,**方案乙:放行存量、掐断增量**)。
 //
@@ -66,7 +67,7 @@ describe('已取消活动的考勤增量闸(A-R2 · 方案乙)', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `ACG${String(seq).padStart(3, '0')}`,
-        displayName: `取消闸${seq}`,
+        ...memberIdentityData(`取消闸${seq}`),
         status: MemberStatus.ACTIVE,
       },
       select: { id: true },

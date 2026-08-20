@@ -8,6 +8,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ===== 第 2 批第 ⑨a 刀：负责人结算工作台 =====
 //
@@ -103,7 +104,7 @@ describe('第 2 批第 ⑨a 刀 —— App 负责人结算工作台', () => {
     const actorMember = await prisma.member.create({
       data: {
         memberNo: 'activity-batch2-9a-owner-member',
-        displayName: '第 ⑨a 刀负责人',
+        ...memberIdentityData('第 ⑨a 刀负责人'),
         gradeCode: 'level-2',
         status: MemberStatus.ACTIVE,
       },
@@ -127,7 +128,7 @@ describe('第 2 批第 ⑨a 刀 —— App 负责人结算工作台', () => {
         sessionKey: string;
         resultCode: string;
         memberNo: string;
-        displayName: string;
+        realName: string;
         recognizedServiceHours?: number;
         recognizedContributionPoints?: number;
       }>;
@@ -140,7 +141,7 @@ describe('第 2 批第 ⑨a 刀 —— App 负责人结算工作台', () => {
         sessionKey: 's1',
         resultCode: 'present',
         memberNo: `${tag}-member-1`,
-        displayName: `${tag} 队员一`,
+        ...memberIdentityData(`${tag} 队员一`),
       },
     ];
 
@@ -234,7 +235,7 @@ describe('第 2 批第 ⑨a 刀 —— App 负责人结算工作台', () => {
       const member = await prisma.member.create({
         data: {
           memberNo: participant.memberNo,
-          displayName: participant.displayName,
+          ...memberIdentityData(participant.realName),
           gradeCode: 'level-2',
           status: MemberStatus.ACTIVE,
         },
@@ -365,19 +366,19 @@ describe('第 2 批第 ⑨a 刀 —— App 负责人结算工作台', () => {
           sessionKey: 'session-a',
           resultCode: 'present',
           memberNo: `${tag}-session-only`,
-          displayName: 'Session Filter',
+          realName: 'Session Filter',
         },
         {
           sessionKey: 'session-b',
           resultCode: 'leave',
           memberNo: `${tag}-result-only`,
-          displayName: 'Result Filter',
+          realName: 'Result Filter',
         },
         {
           sessionKey: 'session-c',
           resultCode: 'absent',
           memberNo: `${tag}-query-only`,
-          displayName: 'Query Filter',
+          realName: 'Query Filter',
         },
       ],
     });

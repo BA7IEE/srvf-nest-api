@@ -7,6 +7,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 第四轮跨模型评审 P1 —— 证书域 **null 契约**的真 HTTP e2e。
 //
@@ -241,7 +242,7 @@ describe('证书域 null 契约(第四轮评审 P1)', () => {
 
     memberId = (
       await prisma.member.create({
-        data: { memberNo: 'nc-m-1', displayName: 'Null 契约测试队员' },
+        data: { memberNo: 'nc-m-1', ...memberIdentityData('Null 契约测试队员') },
         select: { id: true },
       })
     ).id;

@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // Phase 2 P2-5b App /api/app/v1/my/* registrations write e2e。
 // 沿 docs/app-api-p2-5-registrations-review.md §13.5 + §13.6 共 30+ 用例:
@@ -60,7 +61,10 @@ const APP_MY_REG_DETAIL_KEYS = [
 const REG_FORBIDDEN_KEYS = [
   'memberId',
   'memberNo',
-  'memberDisplayName',
+  // issue #1048 T1:`memberDisplayName` 已不可能出现,只留旧名 = 这道闸从此什么都不守。
+  // 换成改名后的两个字段,App 侧「不泄露队员身份」才继续被守着。
+  'memberRealName',
+  'memberLabel',
   'reviewedBy',
   'cancelledByUserId',
   'deletedAt',
@@ -128,7 +132,7 @@ describe('App /api/app/v1/my/* (P2-5b 写 2 endpoint)', () => {
     return prisma.member.create({
       data: {
         memberNo: opts.memberNo,
-        displayName: 'Tester',
+        ...memberIdentityData('Tester'),
         status: opts.status ?? MemberStatus.ACTIVE,
         deletedAt: opts.deleted === true ? new Date() : null,
       },

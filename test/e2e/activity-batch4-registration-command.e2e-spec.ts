@@ -11,6 +11,7 @@ import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const FAR = {
   start: new Date('2099-11-01T08:00:00.000Z'),
@@ -71,7 +72,7 @@ describe('activity batch4 canonical registration command', () => {
       prisma.member.create({
         data: {
           memberNo: 'B4CMD-APPLICANT',
-          displayName: 'Command Applicant',
+          ...memberIdentityData('Command Applicant'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },
@@ -80,7 +81,7 @@ describe('activity batch4 canonical registration command', () => {
       prisma.member.create({
         data: {
           memberNo: 'B4CMD-OTHER',
-          displayName: 'Command Other',
+          ...memberIdentityData('Command Other'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },
@@ -1081,14 +1082,11 @@ describe('activity batch4 canonical registration command', () => {
     await prisma.memberProfile.create({
       data: {
         memberId: otherMemberId,
-        realName: 'Command Gender Mismatch',
         genderCode: 'male',
         birthDate: new Date('1990-01-01T00:00:00.000Z'),
         documentTypeCode: 'id_card',
         documentNumber: 'batch4-command-gender-mismatch',
         mobile: '13800000001',
-        joinedDate: new Date('2020-01-01T00:00:00.000Z'),
-        joinSourceCode: 'recommend',
         privacyConsentSigned: true,
       },
     });

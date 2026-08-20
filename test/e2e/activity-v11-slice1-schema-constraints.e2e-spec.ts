@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../src/database/prisma.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 活动改造 v1.1 —— 第 1 批第一刀(2026-08-04;第 71 migration
 // `20260804020000_activity_v11_slice1_sessions_participation_capacity`)。
@@ -159,7 +160,7 @@ describe('活动改造 v1.1 schema 约束(第 71–81 migration)', () => {
     otherActivityId = await makeActivity('other-activity');
 
     const member = await prisma.member.create({
-      data: { memberNo: uniq('member'), displayName: 'V11 Slice1 Member' },
+      data: { memberNo: uniq('member'), ...memberIdentityData('V11 Slice1 Member') },
       select: { id: true },
     });
     memberId = member.id;
@@ -1371,7 +1372,7 @@ describe('活动改造 v1.1 schema 约束(第 71–81 migration)', () => {
     it('不同 member、同 activity 的 active activity-person reservation 同时放行', async () => {
       const first = await createActivityPersonReservationFixture();
       const otherMember = await prisma.member.create({
-        data: { memberNo: uniq('other-member'), displayName: 'V11 Slice1 Other Member' },
+        data: { memberNo: uniq('other-member'), ...memberIdentityData('V11 Slice1 Other Member') },
         select: { id: true },
       });
       const otherRegistrationId = await createRegistrationFor(activityId, otherMember.id);
@@ -1468,7 +1469,10 @@ describe('活动改造 v1.1 schema 约束(第 71–81 migration)', () => {
 
     it('换 activity、换 member 都合法', async () => {
       const otherMember = await prisma.member.create({
-        data: { memberNo: uniq('permanent-other-member'), displayName: 'Permanent Other Member' },
+        data: {
+          memberNo: uniq('permanent-other-member'),
+          ...memberIdentityData('Permanent Other Member'),
+        },
         select: { id: true },
       });
 

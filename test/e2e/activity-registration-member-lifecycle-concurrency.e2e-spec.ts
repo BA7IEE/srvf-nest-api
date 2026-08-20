@@ -10,6 +10,7 @@ import { MembersService } from '../../src/modules/members/members.service';
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const META: AuditMeta = {
   requestId: 'registration-member-lifecycle-concurrency',
@@ -101,7 +102,7 @@ describe('activity registration Member lifecycle concurrency', () => {
       const target = await prismaA.member.create({
         data: {
           memberNo: `registration-lifecycle-${Date.now()}`,
-          displayName: 'Lifecycle Target',
+          ...memberIdentityData('Lifecycle Target'),
           status: MemberStatus.ACTIVE,
         },
         select: { id: true },

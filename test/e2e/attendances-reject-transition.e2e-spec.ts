@@ -8,6 +8,7 @@ import { AttendancesService } from '../../src/modules/attendances/attendances.se
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // attendances reject(...) 状态转移 characterization tests(StateMachine 抽离前最后一块前置)。
 //
@@ -98,7 +99,7 @@ describe('AttendancesService reject transition (characterization)', () => {
     await grantBizAdminToUser(app, reviewer.id, bizSeed.bizAdminRoleId);
 
     const member = await prisma.member.create({
-      data: { memberNo: 'att-rej-m-001', displayName: 'Reject Member' },
+      data: { memberNo: 'att-rej-m-001', ...memberIdentityData('Reject Member') },
       select: { id: true },
     });
 

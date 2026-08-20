@@ -182,7 +182,8 @@ describe('activity closure checks —— 八类判定层 (合同 §5.15 ④–�
     for (const forbidden of [
       'memberId',
       'memberNo',
-      'displayName',
+      'realName',
+      'nickname',
       'identityId',
       'participationIdentityId',
       'userId',

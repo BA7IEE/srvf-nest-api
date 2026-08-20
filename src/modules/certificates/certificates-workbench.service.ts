@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { toMemberLabelFields } from '../../common/identity/member-label.util';
 import { maskIdentifier } from '../../common/audit/mask-pii.util';
 import { beijingDateOnly } from '../../common/datetime/date-only.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -50,7 +51,7 @@ const workbenchSelect = {
   certStatusCode: true,
   sourceCode: true,
   createdAt: true,
-  member: { select: { id: true, memberNo: true, displayName: true } },
+  member: { select: { id: true, memberNo: true, realName: true, nickname: true } },
   standard: { select: { id: true, code: true, name: true, categoryCode: true, levelCode: true } },
   // 证据只判「有没有」,不取 key。RECRUITMENT 来源看 Claim 的图(有关联,随行取回);
   // ADMIN 来源的 attachment 是**多态归属**(ownerType/ownerId,无 Prisma 关联),
@@ -110,7 +111,8 @@ export class CertificatesWorkbenchService {
   ): CertificateWorkbenchItemDto {
     return {
       id: row.id,
-      member: row.member,
+      // issue #1048 T1:`label` 由后端拼装,Prisma 行里没有。
+      member: { id: row.member.id, ...toMemberLabelFields(row.member) },
       standard: row.standard,
       issuingOrg: row.issuingOrg,
       certNumberMasked: maskIdentifier(row.certNumber),
@@ -208,7 +210,7 @@ export class CertificatesWorkbenchService {
     if (q !== undefined && q !== '') {
       where.OR = [
         { member: { memberNo: { contains: q, mode: 'insensitive' } } },
-        { member: { displayName: { contains: q, mode: 'insensitive' } } },
+        { member: { realName: { contains: q, mode: 'insensitive' } } },
         { standard: { name: { contains: q, mode: 'insensitive' } } },
         { standard: { code: { contains: q, mode: 'insensitive' } } },
         { issuingOrg: { contains: q, mode: 'insensitive' } },

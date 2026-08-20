@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { toMemberLabelFields } from '../../common/identity/member-label.util';
 import {
   ActivityCheckInFieldPolicy,
   type AdminActivityCheckInListRow,
@@ -52,11 +53,7 @@ export class ActivityCheckInPresenter {
       id: row.id,
       activityId: row.activityId,
       registrationId: row.registrationId,
-      member: {
-        id: member.id,
-        memberNo: member.memberNo,
-        displayName: member.displayName,
-      },
+      member: { id: member.id, ...toMemberLabelFields(member) },
       checkInAt: row.checkInAt,
       checkOutAt: row.checkOutAt,
       checkInDistance: row.checkInDistance?.toString() ?? null,
@@ -108,8 +105,7 @@ export class ActivityCheckInPresenter {
     const dto: AttendanceSheetDraftAbsentRegistrationDto = {
       registrationId: registration.id,
       memberId: member.id,
-      memberNo: member.memberNo,
-      displayName: member.displayName,
+      ...toMemberLabelFields(member),
     };
     this.fields.assertAttendanceSheetDraftAbsentResponse(dto as unknown as Record<string, unknown>);
     return dto;

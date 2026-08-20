@@ -10,14 +10,14 @@ import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 // - 任何未在 schema 中声明的字段
 //
 // 字段长度上限对齐草案 §6.1:
-// - realName 64 / mobile / landline 32 / email 256 / qq 32 / wechat 64
+// - mobile / landline 32 / email 256 / qq 32 / wechat 64
 // - documentNumber 64 / address 256 / residenceArea / workArea 64 / major 128
 // - vehicleType 64 / eyesight 32 / otherSkills 2000 / volunteerNo 32
 // - 字典 code 上限 64(与 dict_items.code 一致)
 //
 // 手机 / 座机弱校验 /^[0-9+\-() ]{6,32}$/ — 兼容 +86 / 港澳台 / 历史档案。
 // 身份证号弱校验:仅长度 + 字符集,不写死 18 位身份证正则(兼容护照 / 港澳台通行证)。
-// 日期字段(birthDate / joinedDate / privacyConsentSignedAt)用 @IsDateString,
+// 日期字段(birthDate / privacyConsentSignedAt)用 @IsDateString,
 // service 层按 00:00:00.000Z 规范化(B 路径,详见草案 §6)。
 
 export const PHONE_PATTERN = /^[0-9+\-() ]{6,32}$/;

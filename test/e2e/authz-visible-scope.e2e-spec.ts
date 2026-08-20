@@ -19,6 +19,7 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // v0.49 部门数据范围:AuthzService 三源 grant → 可见组织集合 + 前端有效权限出口。
 // 真 seed 锁定副职只读投影；旧 rbac/me/permissions 保持只读 GLOBAL USER-binding 的既有语义。
@@ -65,7 +66,7 @@ describe('v0.49 Authz visible organization scope + effective permissions', () =>
 
   async function mkPerson(tag: string): Promise<TestPerson> {
     const member = await prisma.member.create({
-      data: { memberNo: `v049-authz-${tag}`, displayName: `v0.49 ${tag}` },
+      data: { memberNo: `v049-authz-${tag}`, ...memberIdentityData(`v0.49 ${tag}`) },
       select: { id: true },
     });
     const user = await prisma.user.create({

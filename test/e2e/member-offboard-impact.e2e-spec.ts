@@ -12,6 +12,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const META = { requestId: 'member-offboard-impact', ip: null, ua: null };
 
@@ -80,7 +81,7 @@ describe('member offboard activity responsibility and participation impact', () 
     const member = await prisma.member.create({
       data: {
         memberNo,
-        displayName: `离队影响 ${label} ${sequence}`,
+        ...memberIdentityData(`离队影响 ${label} ${sequence}`),
         gradeCode: 'level-2',
         status: MemberStatus.ACTIVE,
       },

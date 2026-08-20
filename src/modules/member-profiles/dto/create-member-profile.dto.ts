@@ -20,17 +20,14 @@ import { MedicalNoteItemDto, PHONE_PATTERN } from './member-profile.shared.dto';
 
 // ============ 入参:Create ============
 
-// NOT NULL 业务字段(对齐草案 §7 第一档):realName / genderCode / birthDate /
-// documentTypeCode / documentNumber / mobile / email / joinedDate / joinSourceCode /
-// privacyConsentSigned。其余字段可空(schema 兼容 3000+ 历史档案缺字段)。
+// NOT NULL 业务字段(对齐草案 §7 第一档):genderCode / birthDate /
+// documentTypeCode / documentNumber / mobile / email / privacyConsentSigned。
+// 其余字段可空(schema 兼容 3000+ 历史档案缺字段)。
+// ⚠️ issue #1048 T1:realName / joinedDate / joinSourceCode 三项已搬到 `Member` 主档
+//(分别对应 realName / memberSinceDate / memberOriginCode),**不在本档案的读写面**。
+// 要拿姓名/发号日/来源,读队员主档端点;这里刻意不做转发投影 —— 转发就是第二份真相。
 export class CreateMemberProfileDto {
   // ===== 报名表必填基础信息(NOT NULL) =====
-
-  @ApiProperty({ description: '真实姓名', maxLength: 64 })
-  @IsString()
-  @MinLength(1)
-  @MaxLength(64)
-  realName!: string;
 
   @ApiProperty({ description: '性别字典 code(字典 gender)', maxLength: 64 })
   @IsString()
@@ -63,16 +60,6 @@ export class CreateMemberProfileDto {
   @IsEmail()
   @MaxLength(256)
   email!: string;
-
-  @ApiProperty({ description: '加入日期(ISO 8601)' })
-  @IsDateString()
-  joinedDate!: string;
-
-  @ApiProperty({ description: '加入来源字典 code(候选字典 join_source)', maxLength: 64 })
-  @IsString()
-  @MinLength(1)
-  @MaxLength(64)
-  joinSourceCode!: string;
 
   @ApiProperty({ description: '是否授权个人信息使用' })
   @IsBoolean()

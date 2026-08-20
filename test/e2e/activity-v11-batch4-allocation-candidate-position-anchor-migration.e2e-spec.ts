@@ -19,7 +19,7 @@ const SCRATCH_WORKER_ID = 88;
 const MIGRATION_NAME = '20260813150000_activity_v11_batch4_allocation_candidate_position_anchor';
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
 const MIGRATION_86_COUNT = 86;
-const CURRENT_MIGRATION_COUNT = 89;
+const CURRENT_MIGRATION_COUNT = 90;
 const COLD_REPLAY_TIMEOUT_MS = 300_000;
 const HASH_A = 'a'.repeat(64);
 const HASH_B = 'b'.repeat(64);
@@ -261,7 +261,31 @@ function removeMarkedBlock(source: string, beginMarker: string, endMarker: strin
   return `${source.slice(0, start)}${source.slice(end + endMarker.length)}`;
 }
 
+// issue #1048 T1:本 spec 会把**同一份夹具**灌进两种 schema 世代 ——
+// `deployCurrentMigrations()` 建的当前库(`Member` 已是 realName / memberSinceDate /
+// memberOriginCode)与 `deployMigrationsThrough{N}()` 建的历史回放库(那时还是 displayName)。
+// 单一硬编码列名服务不了两者:写死新列名,历史回放库直接 42703「column does not exist」;
+// 写死旧列名,当前库同样炸。故按目标库**实际存在的列**选,夹具自己适配世代。
+function memberIdentityColumns(databaseName: string): {
+  columns: string;
+  values: (name: string) => string;
+} {
+  const hasRealName =
+    runPsql(
+      databaseName,
+      `SELECT COUNT(*) FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'Member' AND column_name = 'realName';`,
+    ).trim() === '1';
+  return hasRealName
+    ? {
+        columns: '"realName","memberSinceDate","memberOriginCode"',
+        values: (name: string) => `${sqlValue(name)},DATE '2020-01-01','manual'`,
+      }
+    : { columns: '"displayName"', values: (name: string) => sqlValue(name) };
+}
+
 function createFixture(databaseName: string, suffix: string): Fixture {
+  const memberIdentity = memberIdentityColumns(databaseName);
   const fixture: Fixture = {
     activityId: `allocation-d87-activity-${suffix}`,
     otherActivityId: `allocation-d87-other-activity-${suffix}`,
@@ -305,10 +329,10 @@ function createFixture(databaseName: string, suffix: string): Fixture {
        (${sqlValue(fixture.otherActivityId)},${sqlValue(`Allocation D87 other ${suffix}`)},'allocation-d87',
         ${sqlValue(organizationId)},TIMESTAMP '2099-08-14 08:00:00',
         TIMESTAMP '2099-08-14 18:00:00','test','draft',CURRENT_TIMESTAMP);
-     INSERT INTO "Member" ("id","memberNo","displayName","updatedAt") VALUES
-       (${sqlValue(fixture.memberIds[0])},${sqlValue(`D87-${suffix}-0`)},'D87 Member 0',CURRENT_TIMESTAMP),
-       (${sqlValue(fixture.memberIds[1])},${sqlValue(`D87-${suffix}-1`)},'D87 Member 1',CURRENT_TIMESTAMP),
-       (${sqlValue(fixture.memberIds[2])},${sqlValue(`D87-${suffix}-2`)},'D87 Member 2',CURRENT_TIMESTAMP);
+     INSERT INTO "Member" ("id","memberNo",${memberIdentity.columns},"updatedAt") VALUES
+       (${sqlValue(fixture.memberIds[0])},${sqlValue(`D87-${suffix}-0`)},${memberIdentity.values('D87 Member 0')},CURRENT_TIMESTAMP),
+       (${sqlValue(fixture.memberIds[1])},${sqlValue(`D87-${suffix}-1`)},${memberIdentity.values('D87 Member 1')},CURRENT_TIMESTAMP),
+       (${sqlValue(fixture.memberIds[2])},${sqlValue(`D87-${suffix}-2`)},${memberIdentity.values('D87 Member 2')},CURRENT_TIMESTAMP);
      INSERT INTO "ActivitySession"
        ("id","updatedAt","activityId","code","name","startAt","endAt","locationText",
         "checkInOpenAt","checkInCloseAt","checkOutOpenAt","checkOutCloseAt",
@@ -735,7 +759,7 @@ describe('Activity v1.1 batch4 allocation candidate position anchor migration', 
   );
 
   it(
-    'replays all 89 migrations from empty and permits rank one independently in two positions',
+    'replays all 90 migrations from empty and permits rank one independently in two positions',
     () => {
       const databaseName = recreateEmptyScratchDatabase();
       try {

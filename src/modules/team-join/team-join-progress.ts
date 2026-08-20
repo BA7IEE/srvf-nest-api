@@ -14,6 +14,7 @@ import {
   isGateSatisfied,
 } from './team-join.constants';
 import type { GateStatusDto, TeamJoinApplicationAdminDto } from './team-join.dto';
+import { formatMemberLabel } from '../../common/identity/member-label.util';
 
 // 招新三期(入队)进度派生(贡献值汇总 + gate 实况);admin 面与 app 自助面共用,避免逻辑分叉
 // (评审稿 §4.2/§4.3;2026-06-19 元核验后抽出:同一份「本轮按北京日 / years / 延长期」判定单一真相源)。
@@ -188,7 +189,7 @@ export const TEAM_JOIN_APPLICATION_INCLUDE = {
       openOrganizationIds: true,
     },
   },
-  member: { select: { memberNo: true, displayName: true } },
+  member: { select: { memberNo: true, realName: true, nickname: true } },
 } as const;
 
 export type TeamJoinApplicationRow = Prisma.TeamJoinApplicationGetPayload<{
@@ -206,7 +207,8 @@ export function buildAdminDto(
     cycleId: row.cycleId,
     memberId: row.memberId,
     memberNo: row.member.memberNo,
-    memberDisplayName: row.member.displayName,
+    memberRealName: row.member.realName,
+    memberLabel: formatMemberLabel(row.member),
     statusCode: row.statusCode,
     targetOrganizationIds: (row.targetOrganizationIds as string[] | null) ?? [],
     selectedOrganizationId: row.selectedOrganizationId,

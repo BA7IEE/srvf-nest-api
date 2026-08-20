@@ -40,7 +40,13 @@ import {
   UserResponseDto,
 } from './users.dto';
 import { canChangeRole, canCreateRole, canManageUser, canViewUser } from './users.policy';
-import { SafeUser, SafeUserWithMember, userAdminSelect, userSafeSelect } from './users.select';
+import {
+  presentUserWithMember,
+  SafeUser,
+  SafeUserWithMember,
+  userAdminSelect,
+  userSafeSelect,
+} from './users.select';
 import { revokeActiveWecomIdentityInTx } from './wecom-identity-revoke';
 
 const BCRYPT_SALT_ROUNDS = 10;
@@ -400,7 +406,8 @@ export class UsersService {
       this.prisma.user.count({ where }),
     ]);
 
-    return { items, total, page, pageSize };
+    // issue #1048 T1:`member.label` 由后端拼装,Prisma 行里没有 ⇒ 必须过 presenter。
+    return { items: items.map(presentUserWithMember), total, page, pageSize };
   }
 
   // ============ F1/A2 选择器(路线图 §4;D2/D3 拍板)============
@@ -476,7 +483,7 @@ export class UsersService {
     this.assertCanViewUser(currentUser, target);
     // 队员账号闭环 v1(2026-07-07):详情走 userAdminSelect,additive 暴露
     // memberId + member 摘要(见 findByIdWithMemberOrThrow 注释)。
-    return this.findByIdWithMemberOrThrow(id);
+    return presentUserWithMember(await this.findByIdWithMemberOrThrow(id));
   }
 
   // ============ admin: update profile ============

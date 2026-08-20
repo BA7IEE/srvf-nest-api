@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 跨轴只读 e2e:考勤 + 贡献值(2026-06-23 队员/审批跨轴只读查询 goal · GAP-001 Tier2 / GAP-002 Tier3)。
 // 覆盖每端点:存在 + statusCode 过滤 + member-scope 命中 + 空集 + MEMBER_NOT_FOUND + RBAC_FORBIDDEN;
@@ -55,15 +56,15 @@ describe('跨轴只读:考勤 + 贡献值(Tier2 跨活动 + Tier3 队员 360)', 
     await grantBizAdminToUser(app, adm.id, seed.bizAdminRoleId);
 
     const ma = await prisma.member.create({
-      data: { memberNo: 'xatt-a', displayName: 'XAtt Member A' },
+      data: { memberNo: 'xatt-a', ...memberIdentityData('XAtt Member A') },
       select: { id: true },
     });
     const mb = await prisma.member.create({
-      data: { memberNo: 'xatt-b', displayName: 'XAtt Member B' },
+      data: { memberNo: 'xatt-b', ...memberIdentityData('XAtt Member B') },
       select: { id: true },
     });
     const me = await prisma.member.create({
-      data: { memberNo: 'xatt-empty', displayName: 'XAtt Member Empty' },
+      data: { memberNo: 'xatt-empty', ...memberIdentityData('XAtt Member Empty') },
       select: { id: true },
     });
     memberAId = ma.id;

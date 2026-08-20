@@ -15,6 +15,7 @@ import { httpServer } from '../helpers/http-server';
 import { extractMethodSource } from '../helpers/source-span';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 /**
  * AC-068「500/2000/10000 人操作均不要求业务人员手工拆 200 人数组」。
@@ -107,9 +108,14 @@ describe('activity scale usability: onsite bulk punch without manual splitting',
     else process.env[key] = previous;
   }
 
-  async function createMember(memberNo: string, displayName: string): Promise<string> {
+  async function createMember(memberNo: string, realName: string): Promise<string> {
     const member = await prisma.member.create({
-      data: { memberNo, displayName, gradeCode: 'L1', status: MemberStatus.ACTIVE },
+      data: {
+        memberNo,
+        ...memberIdentityData(realName),
+        gradeCode: 'L1',
+        status: MemberStatus.ACTIVE,
+      },
       select: { id: true },
     });
     return member.id;
@@ -327,10 +333,11 @@ describe('activity scale usability: onsite bulk punch without manual splitting',
   ): Promise<string[]> {
     const tag = `bulkscale${++sequence}`;
     await prisma.$executeRaw`
-      INSERT INTO "Member" ("id", "createdAt", "updatedAt", "memberNo", "displayName", "status")
+      INSERT INTO "Member" ("id", "createdAt", "updatedAt", "memberNo", "realName",
+                            "memberSinceDate", "memberOriginCode", "status")
       SELECT gen_random_uuid()::text, NOW(), NOW(),
              ${tag} || '-' || lpad(g::text, 6, '0'),
-             '规模夹具 ' || g::text, 'ACTIVE'
+             '规模夹具 ' || g::text, '2020-01-01', 'manual', 'ACTIVE'
       FROM generate_series(1, ${count}::int) g
     `;
     await prisma.$executeRaw`

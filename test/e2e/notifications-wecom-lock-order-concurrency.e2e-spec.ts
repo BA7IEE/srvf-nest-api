@@ -17,6 +17,7 @@ import type { CurrentUserPayload } from '../../src/common/decorators/current-use
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ============================================================================
 // 外部评审 F2 / B4 —— 共同实体相对锁序统一为 `settings → User → identity`
@@ -124,7 +125,7 @@ describe('F2 / B4 —— 企业微信最终闸的锁序(真三连接 barrier)', 
     const member = await prisma.member.create({
       data: {
         memberNo: 'F2LOCK001',
-        displayName: 'F2 锁序队员',
+        ...memberIdentityData('F2 锁序队员'),
         status: 'ACTIVE',
         gradeCode: 'level-3',
       },

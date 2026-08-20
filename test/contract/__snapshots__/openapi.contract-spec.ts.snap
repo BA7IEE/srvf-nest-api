@@ -699,8 +699,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "其中 approved Sheet 记录数",
         "type": "number",
       },
-      "displayName": {
-        "description": "队员显示名",
+      "label": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`;外号为空时不带括号",
+        "example": "M-0001 · 张三(老张)",
         "type": "string",
       },
       "memberId": {
@@ -711,12 +712,22 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "队员编号",
         "type": "string",
       },
+      "nickname": {
+        "description": "队员外号(队内称呼)",
+        "nullable": true,
+        "type": "string",
+      },
       "outcome": {
         "description": "核对结果",
         "enum": [
           "attended",
           "no-show",
         ],
+        "type": "string",
+      },
+      "realName": {
+        "description": "队员真实姓名",
+        "example": "张三",
         "type": "string",
       },
       "recordCount": {
@@ -736,7 +747,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "registrationId",
       "memberId",
       "memberNo",
-      "displayName",
+      "realName",
+      "nickname",
+      "label",
       "outcome",
       "recordCount",
       "approvedRecordCount",
@@ -750,8 +763,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "其中 approved Sheet 记录数",
         "type": "number",
       },
-      "displayName": {
-        "description": "队员显示名",
+      "label": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`;外号为空时不带括号",
+        "example": "M-0001 · 张三(老张)",
         "type": "string",
       },
       "memberId": {
@@ -762,11 +776,21 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "队员编号",
         "type": "string",
       },
+      "nickname": {
+        "description": "队员外号(队内称呼)",
+        "nullable": true,
+        "type": "string",
+      },
       "outcome": {
         "description": "核对结果",
         "enum": [
           "temporary",
         ],
+        "type": "string",
+      },
+      "realName": {
+        "description": "队员真实姓名",
+        "example": "张三",
         "type": "string",
       },
       "recordCount": {
@@ -781,7 +805,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "required": [
       "memberId",
       "memberNo",
-      "displayName",
+      "realName",
+      "nickname",
+      "label",
       "outcome",
       "recordCount",
       "approvedRecordCount",
@@ -873,17 +899,22 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "主键",
         "type": "string",
       },
-      "memberDisplayName": {
-        "description": "队员显示名(冗余字段,便于前端展示)",
-        "nullable": true,
-        "type": "object",
-      },
       "memberId": {
         "description": "队员外键",
         "type": "string",
       },
+      "memberLabel": {
+        "description": "队员统一展示标签 \`编号 · 姓名(外号)\`(冗余字段,便于前端展示)",
+        "nullable": true,
+        "type": "object",
+      },
       "memberNo": {
         "description": "队员编号(冗余字段,便于前端展示)",
+        "nullable": true,
+        "type": "object",
+      },
+      "memberRealName": {
+        "description": "队员真实姓名(冗余字段,便于前端展示)",
         "nullable": true,
         "type": "object",
       },
@@ -1346,9 +1377,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "ActivityResponsibilityMemberDto": {
     "properties": {
-      "displayName": {
-        "type": "string",
-      },
       "gradeCode": {
         "nullable": true,
         "type": "string",
@@ -1356,14 +1384,31 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "id": {
         "type": "string",
       },
+      "label": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`;外号为空时不带括号",
+        "example": "M-0001 · 张三(老张)",
+        "type": "string",
+      },
       "memberNo": {
+        "type": "string",
+      },
+      "nickname": {
+        "description": "队员外号(队内称呼)",
+        "nullable": true,
+        "type": "string",
+      },
+      "realName": {
+        "description": "队员真实姓名",
+        "example": "张三",
         "type": "string",
       },
     },
     "required": [
       "id",
       "memberNo",
-      "displayName",
+      "realName",
+      "nickname",
+      "label",
       "gradeCode",
     ],
     "type": "object",
@@ -1500,23 +1545,36 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "AdminActivityCheckInMemberDto": {
     "properties": {
-      "displayName": {
-        "description": "队员显示名",
-        "type": "string",
-      },
       "id": {
         "description": "队员 Member.id",
+        "type": "string",
+      },
+      "label": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`;外号为空时不带括号",
+        "example": "M-0001 · 张三(老张)",
         "type": "string",
       },
       "memberNo": {
         "description": "队员业务编号",
         "type": "string",
       },
+      "nickname": {
+        "description": "队员外号(队内称呼)",
+        "nullable": true,
+        "type": "string",
+      },
+      "realName": {
+        "description": "队员真实姓名",
+        "example": "张三",
+        "type": "string",
+      },
     },
     "required": [
       "id",
       "memberNo",
-      "displayName",
+      "realName",
+      "nickname",
+      "label",
     ],
     "type": "object",
   },
@@ -1532,12 +1590,18 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "format": "date-time",
         "type": "string",
       },
-      "displayName": {
-        "description": "评价人显示名",
+      "label": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`;外号为空时不带括号",
+        "example": "M-0001 · 张三(老张)",
         "type": "string",
       },
       "memberNo": {
         "description": "评价人队员编号",
+        "type": "string",
+      },
+      "nickname": {
+        "description": "队员外号(队内称呼)",
+        "nullable": true,
         "type": "string",
       },
       "rating": {
@@ -1545,6 +1609,11 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "maximum": 5,
         "minimum": 1,
         "type": "number",
+      },
+      "realName": {
+        "description": "队员真实姓名",
+        "example": "张三",
+        "type": "string",
       },
       "updatedAt": {
         "description": "最近修改时间(ISO 8601 UTC)",
@@ -1554,7 +1623,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     },
     "required": [
       "memberNo",
-      "displayName",
+      "realName",
+      "nickname",
+      "label",
       "rating",
       "comment",
       "createdAt",
@@ -1976,10 +2047,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "AdminRegistrationExpandedMemberDto": {
     "properties": {
-      "displayName": {
-        "description": "队员显示名",
-        "type": "string",
-      },
       "gradeCode": {
         "description": "等级字典 code",
         "nullable": true,
@@ -1989,15 +2056,32 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "队员主键(cuid)",
         "type": "string",
       },
+      "label": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`;外号为空时不带括号",
+        "example": "M-0001 · 张三(老张)",
+        "type": "string",
+      },
       "memberNo": {
         "description": "队员业务编号",
+        "type": "string",
+      },
+      "nickname": {
+        "description": "队员外号(队内称呼)",
+        "nullable": true,
+        "type": "string",
+      },
+      "realName": {
+        "description": "队员真实姓名",
+        "example": "张三",
         "type": "string",
       },
     },
     "required": [
       "id",
       "memberNo",
-      "displayName",
+      "realName",
+      "nickname",
+      "label",
     ],
     "type": "object",
   },
@@ -2052,17 +2136,22 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         ],
         "description": "队员摘要(仅 ?expand 含 member 时返回;默认省略)",
       },
-      "memberDisplayName": {
-        "description": "队员显示名(冗余字段,便于前端展示)",
-        "nullable": true,
-        "type": "object",
-      },
       "memberId": {
         "description": "队员外键",
         "type": "string",
       },
+      "memberLabel": {
+        "description": "队员统一展示标签 \`编号 · 姓名(外号)\`(冗余字段,便于前端展示)",
+        "nullable": true,
+        "type": "object",
+      },
       "memberNo": {
         "description": "队员编号(冗余字段,便于前端展示)",
+        "nullable": true,
+        "type": "object",
+      },
+      "memberRealName": {
+        "description": "队员真实姓名(冗余字段,便于前端展示)",
         "nullable": true,
         "type": "object",
       },
@@ -4441,9 +4530,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "AppCollaboratorOptionDto": {
     "properties": {
-      "displayName": {
-        "type": "string",
-      },
       "eligibilitySource": {
         "enum": [
           "participant",
@@ -4458,14 +4544,31 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "id": {
         "type": "string",
       },
+      "label": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`;外号为空时不带括号",
+        "example": "M-0001 · 张三(老张)",
+        "type": "string",
+      },
       "memberNo": {
+        "type": "string",
+      },
+      "nickname": {
+        "description": "队员外号(队内称呼)",
+        "nullable": true,
+        "type": "string",
+      },
+      "realName": {
+        "description": "队员真实姓名",
+        "example": "张三",
         "type": "string",
       },
     },
     "required": [
       "id",
       "memberNo",
-      "displayName",
+      "realName",
+      "nickname",
+      "label",
       "eligibilitySource",
     ],
     "type": "object",
@@ -5338,13 +5441,20 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "AppManagedAttendanceDraftAbsentDto": {
     "properties": {
-      "displayName": {
+      "label": {
         "type": "string",
       },
       "memberId": {
         "type": "string",
       },
       "memberNo": {
+        "type": "string",
+      },
+      "nickname": {
+        "nullable": true,
+        "type": "string",
+      },
+      "realName": {
         "type": "string",
       },
       "registrationId": {
@@ -5355,7 +5465,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "registrationId",
       "memberId",
       "memberNo",
-      "displayName",
+      "realName",
+      "nickname",
+      "label",
     ],
     "type": "object",
   },
@@ -5425,20 +5537,29 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "AppManagedAttendanceMemberDto": {
     "properties": {
-      "displayName": {
-        "type": "string",
-      },
       "id": {
         "type": "string",
       },
+      "label": {
+        "type": "string",
+      },
       "memberNo": {
+        "type": "string",
+      },
+      "nickname": {
+        "nullable": true,
+        "type": "string",
+      },
+      "realName": {
         "type": "string",
       },
     },
     "required": [
       "id",
       "memberNo",
-      "displayName",
+      "realName",
+      "nickname",
+      "label",
     ],
     "type": "object",
   },
@@ -6078,9 +6199,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "AppManagedMemberSummaryDto": {
     "properties": {
-      "displayName": {
-        "type": "string",
-      },
       "gradeCode": {
         "nullable": true,
         "type": "string",
@@ -6088,14 +6206,31 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "id": {
         "type": "string",
       },
+      "label": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`;外号为空时不带括号",
+        "example": "M-0001 · 张三(老张)",
+        "type": "string",
+      },
       "memberNo": {
+        "type": "string",
+      },
+      "nickname": {
+        "description": "队员外号(队内称呼)",
+        "nullable": true,
+        "type": "string",
+      },
+      "realName": {
+        "description": "队员真实姓名",
+        "example": "张三",
         "type": "string",
       },
     },
     "required": [
       "id",
       "memberNo",
-      "displayName",
+      "realName",
+      "nickname",
+      "label",
     ],
     "type": "object",
   },
@@ -6781,13 +6916,13 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "AppManagedRegistrationMemberDto": {
     "properties": {
-      "displayName": {
-        "description": "队员显示名",
-        "nullable": true,
-        "type": "string",
-      },
       "id": {
         "description": "队员 id",
+        "type": "string",
+      },
+      "label": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`;外号为空时不带括号",
+        "nullable": true,
         "type": "string",
       },
       "memberNo": {
@@ -6795,11 +6930,23 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "nullable": true,
         "type": "string",
       },
+      "nickname": {
+        "description": "队员外号(队内称呼)",
+        "nullable": true,
+        "type": "string",
+      },
+      "realName": {
+        "description": "队员真实姓名",
+        "nullable": true,
+        "type": "string",
+      },
     },
     "required": [
       "id",
       "memberNo",
-      "displayName",
+      "realName",
+      "nickname",
+      "label",
     ],
     "type": "object",
   },
@@ -7107,12 +7254,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "example": true,
         "type": "boolean",
       },
-      "displayName": {
-        "description": "队员展示名(未绑定时为 null)",
-        "example": "王小明",
-        "nullable": true,
-        "type": "object",
-      },
       "email": {
         "description": "邮箱(可空)",
         "example": "volunteer@example.com",
@@ -7128,6 +7269,12 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "memberId": {
         "description": "已绑定 member id(未绑定时为 null)",
         "example": "cl9z3a8b00000mxxxxxxxxxx",
+        "nullable": true,
+        "type": "object",
+      },
+      "memberLabel": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`(未绑定时为 null)",
+        "example": "V0001 · 王小明(小明)",
         "nullable": true,
         "type": "object",
       },
@@ -7149,6 +7296,12 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "nickname": {
         "description": "昵称(可空)",
         "example": "小王",
+        "nullable": true,
+        "type": "object",
+      },
+      "realName": {
+        "description": "队员真实姓名(未绑定时为 null)",
+        "example": "王小明",
         "nullable": true,
         "type": "object",
       },
@@ -7190,7 +7343,8 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "status",
       "memberId",
       "memberNo",
-      "displayName",
+      "realName",
+      "memberLabel",
       "gradeCode",
       "memberStatus",
       "canUseApp",
@@ -7264,8 +7418,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "AppMyActivityBatchJobCreatorDto": {
     "properties": {
-      "displayName": {
-        "description": "创建人显示名",
+      "label": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`;外号为空时不带括号",
+        "example": "M-0001 · 张三(老张)",
         "type": "string",
       },
       "memberId": {
@@ -7276,11 +7431,23 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "创建人编号",
         "type": "string",
       },
+      "nickname": {
+        "description": "队员外号(队内称呼)",
+        "nullable": true,
+        "type": "string",
+      },
+      "realName": {
+        "description": "队员真实姓名",
+        "example": "张三",
+        "type": "string",
+      },
     },
     "required": [
       "memberId",
       "memberNo",
-      "displayName",
+      "realName",
+      "nickname",
+      "label",
     ],
     "type": "object",
   },
@@ -8291,11 +8458,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "nullable": true,
         "type": "object",
       },
-      "displayName": {
-        "description": "队员展示名",
-        "example": "王小明",
-        "type": "string",
-      },
       "hasMemberProfile": {
         "description": "是否已有 MemberProfile 档案(派生;单字段 select)",
         "example": true,
@@ -8304,6 +8466,11 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "memberId": {
         "description": "已绑定 member id(canUseApp=true 时非空)",
         "example": "cl9z3a8b00000mxxxxxxxxxx",
+        "type": "string",
+      },
+      "memberLabel": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`",
+        "example": "V0001 · 王小明(小明)",
         "type": "string",
       },
       "memberNo": {
@@ -8326,6 +8493,11 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "nullable": true,
         "type": "object",
       },
+      "realName": {
+        "description": "队员真实姓名",
+        "example": "王小明",
+        "type": "string",
+      },
       "userId": {
         "description": "当前登录用户 id",
         "example": "cl9z3a8b00000abcd1234efgh",
@@ -8344,7 +8516,8 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "nickname",
       "avatarKey",
       "memberNo",
-      "displayName",
+      "realName",
+      "memberLabel",
       "memberStatus",
       "hasMemberProfile",
     ],
@@ -8717,20 +8890,34 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "AppSettlementItemMemberDto": {
     "properties": {
-      "displayName": {
-        "type": "string",
-      },
       "id": {
         "type": "string",
       },
+      "label": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`;外号为空时不带括号",
+        "example": "M-0001 · 张三(老张)",
+        "type": "string",
+      },
       "memberNo": {
+        "type": "string",
+      },
+      "nickname": {
+        "description": "队员外号(队内称呼)",
+        "nullable": true,
+        "type": "string",
+      },
+      "realName": {
+        "description": "队员真实姓名",
+        "example": "张三",
         "type": "string",
       },
     },
     "required": [
       "id",
       "memberNo",
-      "displayName",
+      "realName",
+      "nickname",
+      "label",
     ],
     "type": "object",
   },
@@ -10121,8 +10308,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "AttendanceSheetDraftAbsentRegistrationDto": {
     "properties": {
-      "displayName": {
-        "description": "队员显示名",
+      "label": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`;外号为空时不带括号",
+        "example": "M-0001 · 张三(老张)",
         "type": "string",
       },
       "memberId": {
@@ -10131,6 +10319,16 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       },
       "memberNo": {
         "description": "队员业务编号",
+        "type": "string",
+      },
+      "nickname": {
+        "description": "队员外号(队内称呼)",
+        "nullable": true,
+        "type": "string",
+      },
+      "realName": {
+        "description": "队员真实姓名",
+        "example": "张三",
         "type": "string",
       },
       "registrationId": {
@@ -10142,7 +10340,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "registrationId",
       "memberId",
       "memberNo",
-      "displayName",
+      "realName",
+      "nickname",
+      "label",
     ],
     "type": "object",
   },
@@ -14392,11 +14592,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "CreateMemberDto": {
     "properties": {
-      "displayName": {
-        "description": "称呼 / 显示名",
-        "maxLength": 100,
-        "type": "string",
-      },
       "gradeCode": {
         "description": "等级字典 code(可选;若提供必须在 type=member_grade 字典中存在且 ACTIVE)",
         "maxLength": 64,
@@ -14409,10 +14604,32 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "minLength": 1,
         "type": "string",
       },
+      "memberOriginCode": {
+        "description": "来源字典 code(字典 join_source)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "memberSinceDate": {
+        "description": "发号日(ISO 8601;按北京日历日归一)",
+        "example": "2020-01-15",
+        "type": "string",
+      },
+      "nickname": {
+        "description": "外号 / 队内称呼(可选)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "realName": {
+        "description": "真实姓名",
+        "maxLength": 64,
+        "type": "string",
+      },
     },
     "required": [
       "memberNo",
-      "displayName",
+      "realName",
+      "memberSinceDate",
+      "memberOriginCode",
     ],
     "type": "object",
   },
@@ -14507,15 +14724,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "是否退伍军人",
         "type": "boolean",
       },
-      "joinSourceCode": {
-        "description": "加入来源字典 code(候选字典 join_source)",
-        "maxLength": 64,
-        "type": "string",
-      },
-      "joinedDate": {
-        "description": "加入日期(ISO 8601)",
-        "type": "string",
-      },
       "landline": {
         "description": "座机(选填;弱校验)",
         "maxLength": 32,
@@ -14570,11 +14778,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "maxLength": 32,
         "type": "string",
       },
-      "realName": {
-        "description": "真实姓名",
-        "maxLength": 64,
-        "type": "string",
-      },
       "residenceArea": {
         "description": "居住区行政区粒度",
         "maxLength": 64,
@@ -14613,15 +14816,12 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       },
     },
     "required": [
-      "realName",
       "genderCode",
       "birthDate",
       "documentTypeCode",
       "documentNumber",
       "mobile",
       "email",
-      "joinedDate",
-      "joinSourceCode",
       "privacyConsentSigned",
     ],
     "type": "object",
@@ -16351,11 +16551,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "maxLength": 64,
         "type": "string",
       },
-      "displayName": {
-        "description": "姓名(仅 preview 辅助解析用;唯一命中 active 队员时回显建议 memberNo,仍需人工确认)",
-        "maxLength": 100,
-        "type": "string",
-      },
       "endedAt": {
         "description": "任期止(ISO 8601;须晚于任期起)",
         "type": "string",
@@ -16382,6 +16577,11 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "positionCode": {
         "description": "职务 code",
         "maxLength": 64,
+        "type": "string",
+      },
+      "realName": {
+        "description": "姓名(仅 preview 辅助解析用;唯一命中 active 队员时回显建议 memberNo,仍需人工确认)",
+        "maxLength": 100,
         "type": "string",
       },
       "startedAt": {
@@ -16422,7 +16622,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "suggestedMemberNo": {
-        "description": "displayName 唯一命中 active 队员时的建议 memberNo(仅 needs-manual 可能带值)",
+        "description": "realName 唯一命中 active 队员时的建议 memberNo(仅 needs-manual 可能带值)",
         "nullable": true,
         "type": "object",
       },
@@ -16482,11 +16682,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "ImportSupervisionRowDto": {
     "properties": {
-      "displayName": {
-        "description": "姓名(仅 preview 辅助解析用;语义同 ImportPositionRowDto.displayName)",
-        "maxLength": 100,
-        "type": "string",
-      },
       "endedAt": {
         "description": "任期止(ISO 8601;须晚于任期起)",
         "type": "string",
@@ -16499,6 +16694,11 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "orgCode": {
         "description": "被分管组织 code(双锚之一;可引用已存在组织,或本请求 organizations[] 新建的组织)",
         "maxLength": 32,
+        "type": "string",
+      },
+      "realName": {
+        "description": "姓名(仅 preview 辅助解析用;语义同 ImportPositionRowDto.realName)",
+        "maxLength": 100,
         "type": "string",
       },
       "scopeMode": {
@@ -16547,7 +16747,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "suggestedMemberNo": {
-        "description": "displayName 唯一命中 active 队员时的建议 memberNo(仅 needs-manual 可能带值)",
+        "description": "realName 唯一命中 active 队员时的建议 memberNo(仅 needs-manual 可能带值)",
         "nullable": true,
         "type": "object",
       },
@@ -17439,7 +17639,8 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "label": {
-        "description": "展示标签(= displayName)",
+        "description": "展示标签 \`编号 · 姓名(外号)\`;外号为空时不带括号",
+        "example": "M-0001 · 张三(老张)",
         "type": "string",
       },
       "memberNo": {
@@ -17639,15 +17840,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "nullable": true,
         "type": "object",
       },
-      "joinSourceCode": {
-        "description": "加入来源字典 code(MP-28;候选字典 join_source)",
-        "type": "string",
-      },
-      "joinedDate": {
-        "description": "加入日期(MP-27;ISO 8601)",
-        "format": "date-time",
-        "type": "string",
-      },
       "landline": {
         "description": "座机(MP-16;选填;无 sensitive 码时为 null,十项收口刀D)",
         "nullable": true,
@@ -17708,10 +17900,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "nullable": true,
         "type": "object",
       },
-      "realName": {
-        "description": "真实姓名(MP-1)",
-        "type": "string",
-      },
       "residenceArea": {
         "description": "居住区行政区粒度(MP-13)",
         "nullable": true,
@@ -17756,7 +17944,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "required": [
       "id",
       "memberId",
-      "realName",
       "genderCode",
       "birthDate",
       "documentTypeCode",
@@ -17764,8 +17951,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "mobile",
       "exerciseMethods",
       "firstAidSkills",
-      "joinedDate",
-      "joinSourceCode",
       "privacyConsentSigned",
       "createdAt",
       "updatedAt",
@@ -17788,11 +17973,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "format": "date-time",
         "type": "string",
       },
-      "displayName": {
-        "description": "称呼 / 显示名(业务可读)",
-        "example": "Demo Member",
-        "type": "string",
-      },
       "gradeCode": {
         "description": "等级字典 code(隐含 type code = member_grade)",
         "nullable": true,
@@ -17807,9 +17987,36 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "example": "cl9z3a8b00000abcd1234efgh",
         "type": "string",
       },
+      "label": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`;外号为空时不带括号。由后端拼装,前端直接渲染",
+        "example": "M-0001 · 张三(老张)",
+        "type": "string",
+      },
       "memberNo": {
         "description": "队员业务唯一编号(全局唯一,包含软删不复用;非敏感、高价值业务标识)",
         "example": "M-0001",
+        "type": "string",
+      },
+      "memberOriginCode": {
+        "description": "来源字典 code(字典 join_source)",
+        "example": "recruitment",
+        "type": "string",
+      },
+      "memberSinceDate": {
+        "description": "发号日(该 memberNo 生效日期;ISO 8601,已按北京日历日归一到 UTC 午夜)",
+        "example": "2020-01-15T00:00:00.000Z",
+        "format": "date-time",
+        "type": "string",
+      },
+      "nickname": {
+        "description": "外号 / 队内称呼(可空;**不是**身份键,重名重外号都正常并存)",
+        "example": "老张",
+        "nullable": true,
+        "type": "object",
+      },
+      "realName": {
+        "description": "真实姓名(日常身份事实源)",
+        "example": "张三",
         "type": "string",
       },
       "status": {
@@ -17834,7 +18041,10 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "required": [
       "id",
       "memberNo",
-      "displayName",
+      "realName",
+      "label",
+      "memberSinceDate",
+      "memberOriginCode",
       "status",
       "hasAccount",
       "createdAt",
@@ -17899,10 +18109,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "MembershipExpandedMemberDto": {
     "properties": {
-      "displayName": {
-        "description": "队员显示名",
-        "type": "string",
-      },
       "gradeCode": {
         "description": "等级字典 code",
         "nullable": true,
@@ -17912,15 +18118,32 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "队员主键(cuid)",
         "type": "string",
       },
+      "label": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`;外号为空时不带括号",
+        "example": "M-0001 · 张三(老张)",
+        "type": "string",
+      },
       "memberNo": {
         "description": "队员业务编号",
+        "type": "string",
+      },
+      "nickname": {
+        "description": "队员外号(队内称呼)",
+        "nullable": true,
+        "type": "string",
+      },
+      "realName": {
+        "description": "队员真实姓名",
+        "example": "张三",
         "type": "string",
       },
     },
     "required": [
       "id",
       "memberNo",
-      "displayName",
+      "realName",
+      "nickname",
+      "label",
     ],
     "type": "object",
   },
@@ -18881,10 +19104,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "PositionAssignmentExpandedMemberDto": {
     "properties": {
-      "displayName": {
-        "description": "队员显示名",
-        "type": "string",
-      },
       "gradeCode": {
         "description": "等级字典 code",
         "nullable": true,
@@ -18894,15 +19113,32 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "队员主键(cuid)",
         "type": "string",
       },
+      "label": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`;外号为空时不带括号",
+        "example": "M-0001 · 张三(老张)",
+        "type": "string",
+      },
       "memberNo": {
         "description": "队员业务编号",
+        "type": "string",
+      },
+      "nickname": {
+        "description": "队员外号(队内称呼)",
+        "nullable": true,
+        "type": "string",
+      },
+      "realName": {
+        "description": "队员真实姓名",
+        "example": "张三",
         "type": "string",
       },
     },
     "required": [
       "id",
       "memberNo",
-      "displayName",
+      "realName",
+      "nickname",
+      "label",
     ],
     "type": "object",
   },
@@ -22081,16 +22317,16 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "RoleBindingExpandedPrincipalDto": {
     "properties": {
-      "displayName": {
-        "description": "type=MEMBER / POSITION_ASSIGNMENT 时:队员显示名(任职主体取其背后队员)",
-        "type": "string",
-      },
       "id": {
         "description": "主体实体 id(= 绑定行 principalId)",
         "type": "string",
       },
       "memberId": {
         "description": "type=POSITION_ASSIGNMENT 时:任职队员 id",
+        "type": "string",
+      },
+      "memberLabel": {
+        "description": "type=MEMBER / POSITION_ASSIGNMENT 时:统一展示标签 \`编号 · 姓名(外号)\`(任职主体取其背后队员)",
         "type": "string",
       },
       "memberNo": {
@@ -22108,6 +22344,10 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       },
       "positionId": {
         "description": "type=POSITION_ASSIGNMENT 时:职务 id",
+        "type": "string",
+      },
+      "realName": {
+        "description": "type=MEMBER / POSITION_ASSIGNMENT 时:队员真实姓名(任职主体取其背后队员)",
         "type": "string",
       },
       "type": {
@@ -23136,10 +23376,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "SupervisionExpandedSupervisorDto": {
     "properties": {
-      "displayName": {
-        "description": "队员显示名",
-        "type": "string",
-      },
       "gradeCode": {
         "description": "等级字典 code",
         "nullable": true,
@@ -23149,15 +23385,32 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "分管人队员主键(cuid)",
         "type": "string",
       },
+      "label": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`;外号为空时不带括号",
+        "example": "M-0001 · 张三(老张)",
+        "type": "string",
+      },
       "memberNo": {
         "description": "队员业务编号",
+        "type": "string",
+      },
+      "nickname": {
+        "description": "队员外号(队内称呼)",
+        "nullable": true,
+        "type": "string",
+      },
+      "realName": {
+        "description": "队员真实姓名",
+        "example": "张三",
         "type": "string",
       },
     },
     "required": [
       "id",
       "memberNo",
-      "displayName",
+      "realName",
+      "nickname",
+      "label",
     ],
     "type": "object",
   },
@@ -23207,16 +23460,20 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "覆盖行 id(cuid)",
         "type": "string",
       },
-      "memberDisplayName": {
-        "description": "队员姓名(展示用冗余,自 Member 关联读出)",
-        "type": "string",
-      },
       "memberId": {
         "description": "队员 id",
         "type": "string",
       },
+      "memberLabel": {
+        "description": "队员统一展示标签 \`编号 · 姓名(外号)\`(展示用冗余)",
+        "type": "string",
+      },
       "memberNo": {
         "description": "队员编号(展示用冗余,自 Member 关联读出)",
+        "type": "string",
+      },
+      "memberRealName": {
+        "description": "队员真实姓名(展示用冗余,自 Member 关联读出)",
         "type": "string",
       },
       "policyId": {
@@ -23229,7 +23486,8 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "policyId",
       "memberId",
       "memberNo",
-      "memberDisplayName",
+      "memberRealName",
+      "memberLabel",
       "createdAt",
     ],
     "type": "object",
@@ -23339,16 +23597,21 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "nullable": true,
         "type": "object",
       },
-      "memberDisplayName": {
-        "description": "队员称呼",
-        "nullable": true,
-        "type": "object",
-      },
       "memberId": {
         "type": "string",
       },
+      "memberLabel": {
+        "description": "队员统一展示标签 \`编号 · 姓名(外号)\`",
+        "nullable": true,
+        "type": "object",
+      },
       "memberNo": {
         "description": "队员永久编号",
+        "nullable": true,
+        "type": "object",
+      },
+      "memberRealName": {
+        "description": "队员真实姓名",
         "nullable": true,
         "type": "object",
       },
@@ -24615,13 +24878,19 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "UpdateMemberDto": {
     "properties": {
-      "displayName": {
-        "description": "称呼 / 显示名",
-        "maxLength": 100,
-        "type": "string",
-      },
       "gradeCode": {
         "description": "等级字典 code",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "nickname": {
+        "description": "外号 / 队内称呼;传 null 清空,不传则不改动",
+        "maxLength": 64,
+        "nullable": true,
+        "type": "object",
+      },
+      "realName": {
+        "description": "真实姓名",
         "maxLength": 64,
         "type": "string",
       },
@@ -24719,15 +24988,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "是否退伍军人",
         "type": "boolean",
       },
-      "joinSourceCode": {
-        "description": "加入来源字典 code",
-        "maxLength": 64,
-        "type": "string",
-      },
-      "joinedDate": {
-        "description": "加入日期(ISO 8601)",
-        "type": "string",
-      },
       "landline": {
         "description": "座机",
         "maxLength": 32,
@@ -24780,11 +25040,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "qq": {
         "description": "QQ",
         "maxLength": 32,
-        "type": "string",
-      },
-      "realName": {
-        "description": "真实姓名",
-        "maxLength": 64,
         "type": "string",
       },
       "residenceArea": {
@@ -25640,9 +25895,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "UserLinkedMemberDto": {
     "properties": {
-      "displayName": {
-        "description": "队员称呼 / 显示名",
-        "example": "Demo Member",
+      "label": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`",
+        "example": "M-0001 · 张三(老张)",
         "type": "string",
       },
       "memberNo": {
@@ -25650,10 +25905,21 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "example": "M-0001",
         "type": "string",
       },
+      "nickname": {
+        "description": "队员外号(队内称呼,非登录昵称)",
+        "nullable": true,
+        "type": "object",
+      },
+      "realName": {
+        "description": "队员真实姓名",
+        "example": "张三",
+        "type": "string",
+      },
     },
     "required": [
       "memberNo",
-      "displayName",
+      "realName",
+      "label",
     ],
     "type": "object",
   },
@@ -26359,23 +26625,36 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "WorkbenchMemberSummaryDto": {
     "properties": {
-      "displayName": {
-        "description": "队员展示名",
-        "type": "string",
-      },
       "id": {
         "description": "Member id",
+        "type": "string",
+      },
+      "label": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`;外号为空时不带括号",
+        "example": "M-0001 · 张三(老张)",
         "type": "string",
       },
       "memberNo": {
         "description": "队员编号",
         "type": "string",
       },
+      "nickname": {
+        "description": "队员外号(队内称呼)",
+        "nullable": true,
+        "type": "string",
+      },
+      "realName": {
+        "description": "队员真实姓名",
+        "example": "张三",
+        "type": "string",
+      },
     },
     "required": [
       "id",
       "memberNo",
-      "displayName",
+      "realName",
+      "nickname",
+      "label",
     ],
     "type": "object",
   },
@@ -30261,7 +30540,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
         },
         {
-          "description": "模糊搜索(仅 admin/v1/registrations 全局横扫生效;命中 memberNo+memberDisplayName+activityTitle;contains + insensitive)",
+          "description": "模糊搜索(仅 admin/v1/registrations 全局横扫生效;命中 memberNo+memberRealName+activityTitle;contains + insensitive)",
           "in": "query",
           "name": "q",
           "required": false,
@@ -30271,7 +30550,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
         },
         {
-          "description": "模糊搜索(仅命中队员 memberNo+displayName;仅 admin/v1/registrations 全局横扫生效)",
+          "description": "模糊搜索(仅命中队员 memberNo+realName;仅 admin/v1/registrations 全局横扫生效)",
           "in": "query",
           "name": "memberQ",
           "required": false,
@@ -49281,7 +49560,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
         },
         {
-          "description": "模糊搜索(跨字段命中 displayName + memberNo;contains + insensitive)",
+          "description": "模糊搜索(跨字段命中 memberNo + realName + nickname;contains + insensitive)。排序见 MemberDirectory 五级规则",
           "in": "query",
           "name": "q",
           "required": false,
@@ -49839,7 +50118,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "operationId": "MembersController_options",
       "parameters": [
         {
-          "description": "模糊搜索(跨字段命中 displayName + memberNo)",
+          "description": "模糊搜索(跨字段命中 memberNo + realName + nickname)",
           "in": "query",
           "name": "q",
           "required": false,
@@ -50018,7 +50297,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "队员选择器投影(q 模糊 displayName+memberNo;limit≤100,默认 20) [rbac: member.read.record]",
+      "summary": "队员选择器投影(q 模糊 realName+memberNo;limit≤100,默认 20) [rbac: member.read.record]",
       "tags": [
         "Admin - Members",
       ],
@@ -50645,7 +50924,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "更新队员(displayName / gradeCode;**禁止改 memberNo / status**) [rbac: member.update.record]",
+      "summary": "更新队员(realName / nickname / gradeCode;**禁止改 memberNo / status / memberSinceDate / memberOriginCode**) [rbac: member.update.record]",
       "tags": [
         "Admin - Members",
       ],
@@ -59505,7 +59784,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
         },
         {
-          "description": "模糊搜索(仅 admin/v1/registrations 全局横扫生效;命中 memberNo+memberDisplayName+activityTitle;contains + insensitive)",
+          "description": "模糊搜索(仅 admin/v1/registrations 全局横扫生效;命中 memberNo+memberRealName+activityTitle;contains + insensitive)",
           "in": "query",
           "name": "q",
           "required": false,
@@ -59515,7 +59794,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
         },
         {
-          "description": "模糊搜索(仅命中队员 memberNo+displayName;仅 admin/v1/registrations 全局横扫生效)",
+          "description": "模糊搜索(仅命中队员 memberNo+realName;仅 admin/v1/registrations 全局横扫生效)",
           "in": "query",
           "name": "memberQ",
           "required": false,
@@ -60085,7 +60364,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
         },
         {
-          "description": "模糊搜索(命中队员 memberNo+displayName + 组织 name+code;contains + insensitive)",
+          "description": "模糊搜索(命中队员 memberNo+realName + 组织 name+code;contains + insensitive)",
           "in": "query",
           "name": "q",
           "required": false,
@@ -65795,7 +66074,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
         },
         {
-          "description": "模糊搜索(跨字段命中 displayName + memberNo)",
+          "description": "模糊搜索(跨字段命中 realName + memberNo)",
           "in": "query",
           "name": "q",
           "required": false,
@@ -66081,7 +66360,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
         },
         {
-          "description": "模糊搜索(命中队员 memberNo+displayName + 组织 name+code;contains + insensitive)",
+          "description": "模糊搜索(命中队员 memberNo+realName + 组织 name+code;contains + insensitive)",
           "in": "query",
           "name": "q",
           "required": false,
@@ -67012,7 +67291,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
         },
         {
-          "description": "模糊搜索(命中队员 memberNo+displayName + 职务 code+name + 组织 name+code;contains + insensitive)",
+          "description": "模糊搜索(命中队员 memberNo+realName + 职务 code+name + 组织 name+code;contains + insensitive)",
           "in": "query",
           "name": "q",
           "required": false,
@@ -74484,7 +74763,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
         },
         {
-          "description": "模糊搜索(仅 admin/v1/registrations 全局横扫生效;命中 memberNo+memberDisplayName+activityTitle;contains + insensitive)",
+          "description": "模糊搜索(仅 admin/v1/registrations 全局横扫生效;命中 memberNo+memberRealName+activityTitle;contains + insensitive)",
           "in": "query",
           "name": "q",
           "required": false,
@@ -74494,7 +74773,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
         },
         {
-          "description": "模糊搜索(仅命中队员 memberNo+displayName;仅 admin/v1/registrations 全局横扫生效)",
+          "description": "模糊搜索(仅命中队员 memberNo+realName;仅 admin/v1/registrations 全局横扫生效)",
           "in": "query",
           "name": "memberQ",
           "required": false,
@@ -75512,7 +75791,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
         },
         {
-          "description": "主体模糊搜索(USER 命中 username+nickname;MEMBER 命中 memberNo+displayName;POSITION_ASSIGNMENT 命中其背后队员的 memberNo+displayName;contains + insensitive)",
+          "description": "主体模糊搜索(USER 命中 username+nickname;MEMBER 命中 memberNo+realName;POSITION_ASSIGNMENT 命中其背后队员的 memberNo+realName;contains + insensitive)",
           "in": "query",
           "name": "principalQ",
           "required": false,
@@ -77304,7 +77583,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
         },
         {
-          "description": "模糊搜索(命中分管人 memberNo+displayName + 组织 name+code;contains + insensitive)",
+          "description": "模糊搜索(命中分管人 memberNo+realName + 组织 name+code;contains + insensitive)",
           "in": "query",
           "name": "q",
           "required": false,
@@ -98565,7 +98844,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
         },
         {
-          "description": "模糊搜索(跨字段命中 displayName + memberNo;trim + contains + case-insensitive)",
+          "description": "模糊搜索(跨字段命中 realName + memberNo;trim + contains + case-insensitive)",
           "in": "query",
           "name": "q",
           "required": false,
