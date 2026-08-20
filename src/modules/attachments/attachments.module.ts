@@ -15,7 +15,9 @@ import { AttachmentsController } from './attachments.controller';
 import { AttachmentAccessService } from './attachment-access.service';
 import { AttachmentContentUploadConfirmService } from './attachment-content-upload-confirm.service';
 import { AttachmentImportPreviewUploadService } from './attachment-import-preview-upload.service';
+import { AttachmentImageNormalizer } from './attachment-image-normalizer';
 import { AttachmentRegistrationUploadService } from './attachment-registration-upload.service';
+import { AttachmentVisualIdentityUploadService } from './attachment-visual-identity-upload.service';
 import { AttachmentWriteService } from './attachment-write.service';
 import { AttachmentsService } from './attachments.service';
 
@@ -40,6 +42,9 @@ import { AttachmentsService } from './attachments.service';
     AttachmentContentUploadConfirmService,
     AttachmentImportPreviewUploadService,
     AttachmentRegistrationUploadService,
+    // issue #1055 T2:视觉身份可信 facade + 其依赖的图片规范化层。
+    AttachmentVisualIdentityUploadService,
+    AttachmentImageNormalizer,
     AttachmentWriteService,
     AttachmentsService,
     AttachmentAuditRecorder,
@@ -53,6 +58,8 @@ import { AttachmentsService } from './attachments.service';
   ],
   // CMS 内容模块(2026-06-21,评审稿 §5.2):导出 AttachmentsService 供 content 模块复用
   // 上传/确认/删(写路径 rbac.can)+ listOwnerAttachmentsTrusted / resolveSignedUrlTrusted(可信只读)。
-  exports: [AttachmentsService, AttachmentContentValidator],
+  // issue #1055 T2:视觉身份 facade 导出给 users(T3 账号头像)与 members(T4 队员标准照)——
+  // 这两个 owner type 在通用端点上恒 fail-closed,本 facade 是它们唯一的入口。
+  exports: [AttachmentsService, AttachmentContentValidator, AttachmentVisualIdentityUploadService],
 })
 export class AttachmentsModule {}

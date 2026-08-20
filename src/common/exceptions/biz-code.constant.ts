@@ -3245,6 +3245,39 @@ export const BizCode = {
     message: '附件内容与声明的 MIME 类型不符',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+  // ===== issue #1055 T2:视觉身份图片的**内容级**校验(13035–13039)=====
+  //
+  // 与既有 13016 的分工:13016 只核**固定前缀签名**(最多 12 字节,证明"像不像那种文件");
+  // 这五条要求**真的解码出一张图**,并核它的实际形状。签名对但解不开、
+  // 或解开后尺寸/比例/帧数不合规,都落在这里,不复用 13016 ——
+  // 一码多义正是 13033 当初被从 13012 切出来的原因。
+  ATTACHMENT_IMAGE_UNDECODABLE: {
+    code: 13035,
+    message: '图片无法解码(文件已损坏,或不是受支持的图片格式)',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ATTACHMENT_IMAGE_ANIMATED_NOT_ALLOWED: {
+    code: 13036,
+    message: '不接受多帧 / 动图(请上传单帧静态图片)',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ATTACHMENT_IMAGE_TOO_SMALL: {
+    code: 13037,
+    message: '图片分辨率低于最低要求(不做插值放大,请上传更清晰的原图)',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ATTACHMENT_IMAGE_ASPECT_RATIO_INVALID: {
+    code: 13038,
+    message: '图片宽高比不符合该用途的规格要求',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  // 解压炸弹护栏:文件很小但解码后是一张巨幅位图(如 30000×30000 PNG)。
+  // 与 13013 ATTACHMENT_SIZE_EXCEEDED 是两件事 —— 那个量的是**字节数**,这个量的是**像素数**。
+  ATTACHMENT_IMAGE_PIXELS_EXCEEDED: {
+    code: 13039,
+    message: '图片像素总数超出上限',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
 } as const;
 
 export type BizCodeEntry = (typeof BizCode)[keyof typeof BizCode];

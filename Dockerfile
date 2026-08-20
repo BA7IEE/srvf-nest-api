@@ -127,6 +127,18 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
 #   - lockfile 大版本重写(pnpm 升级、依赖大规模 dedupe)
 #
 # **禁止**未经验证就增删本清单(漏删 → 镜像膨胀;误删 → 容器启动 MODULE_NOT_FOUND)。
+#
+# issue #1055 T2 追加两条 **glibc 版 sharp 二进制**(`@img/sharp-linux-x64` 与
+# `@img/sharp-libvips-linux-x64`)。本镜像基于 **alpine = musl**,这两个包**永远加载不了**,
+# 装进来纯粹是因为 pnpm 在 `--ignore-scripts` 下会把两种 libc 的预编译包一并解析。
+# 容器内实测体积:
+#   sharp-libvips-linuxmusl-x64  17.6 M  ← 要留
+#   sharp-linuxmusl-x64           316 K  ← 要留
+#   sharp-libvips-linux-x64      17.4 M  ← 删
+#   sharp-linux-x64               432 K  ← 删
+# 即删掉 17.8 M,约占 sharp 全部 35.8 M 的一半。
+# ⚠️ 删对了没有,由本仓既有的 `Docker image build` + `Container boot + API smoke` 两个
+# CI job 裁决 —— sharp 在启动期就会被 attachments 模块加载,删错了容器起不来。
 # Smoke test 至少覆盖:GET /api/health、GET /api/health/ready、GET /api/docs;
 # 容器进程必须为非 root(uid 1000 node)。
 RUN rm -rf \
@@ -142,7 +154,9 @@ RUN rm -rf \
         node_modules/@prisma/generator-helper \
         node_modules/@prisma/generator \
         node_modules/@prisma/internals \
-        node_modules/@types
+        node_modules/@types \
+        node_modules/@img/sharp-linux-x64 \
+        node_modules/@img/sharp-libvips-linux-x64
 
 # 还原 generated Prisma Client 到 hoisted 布局的固定路径
 # (hoisted 模式下 node_modules/@prisma/client 是真实目录,直接覆盖)
