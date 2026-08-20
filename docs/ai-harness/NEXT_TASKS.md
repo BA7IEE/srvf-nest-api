@@ -1157,6 +1157,17 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 - **F7 付费核验 cost-DoS**(P3)— 同 openid 可用不同伪造身份证号无限提交、每条直达付费实名核验(去重键 `(cycleId,idCardNumber)` 无 per-openid 上限),与已接受的 28003 枚举面**同源**(current-state §4)。**真实腾讯云实名核验休眠(DevStub 免费)→ 今日零成本**;接通才激活(类 F2/COS 接通前非紧急)。彻底修 = per-openid 配额(改报名去重语义,属产品决策)→ **真实通道接通触发再评**。
 - **F8 promote 写字典码契约**(P3)— promote 写 `MemberProfile.genderCode`/`documentTypeCode` 不经 canonical 字典校验。**R0 复核降级**:`isForeignDocument` 令非 `mainland_id` 即 foreign(不进一键发号),故 promote 只写固定 canonical 码 `mainland_id`/`male`/`female`(身份证派生 / 非用户可控,**无 F3 式注入污染**),且 profile 码当前无字典校验消费点 → **零运行时危害**。真修 = 保证 prod 字典 seed 含 `male`/`female`/`mainland_id` item code(**seed/ops 不变量**;加 promote 断言反会把潜在不一致硬化成 promote 失败、且 demo seed `demo-*` 会打挂既有 e2e)→ seed/字典治理时一并保障。
 
+### P2-8 `storage-settings-bootstrap` 报错文案把权限错误说成 JSON 语法错误 — 2026-08-20 真机实测查出
+
+> 第二阶段真机部署(维护者实测,`docs/ops/server-deployment-runbook-stage2.md` §2 D-2)踩出。
+> **零运行时危害**(只影响一次性离线运维动作),但**实付了一轮白查的时间**。
+
+- **缺陷**:`src/modules/storage/storage-settings-bootstrap.ts:215-217` 把 `readFileSync()` 与 `JSON.parse()` 放在同一个 `try`、共用一个 `catch`,统一抛「`config-file 不是合法 JSON`」。⇒ 配置文件按安全要求设为 `600 root:root`、而 runner 镜像是 `USER node`(uid 1000)读不了时,**权限错误被报成 JSON 语法错误**。实测方在服务器上 `python3 -m json.tool` 验 JSON 完全合法,于是照着错误信息白查一轮。
+- **已做的**:runbook §2 D-2 已补 `--user 0:0` 与「报 JSON 错先怀疑权限」的对照表,运维侧不再被绊住。
+- **待做(本条)**:把两种失败拆成两句话 —— 读取失败报「无法读取 config-file(检查权限/属主/路径)」,解析失败才报「不是合法 JSON」。同文件 `:249` 的 `new URL()` catch 形状相同但**无此问题**(只有一个失败原因),不必动。
+- **为什么登记而不是当场修**:改动落在 `src/`,而 ROUTE_AUTHZ 的 `computeControllerInputDigest()` 递归覆盖**全部 `src/`**(见 authz manifest 生成器 `:141-142`)⇒ 与在飞的 #1048 必冲突。**#1048 落地后随手做掉**,属 A 档微刀。
+- **缺陷类**:「把不同失败原因合并成一句话」。修的时候顺手想想仓内还有没有同形状的 —— 判据是「一个 `catch` 覆盖了两个及以上会独立失败的调用」。
+
 ## 已收口项
 
 全部移至 [`docs/archive/ai-harness/next-tasks-completed.md`](../archive/ai-harness/next-tasks-completed.md)(冻结,不再增长)。
