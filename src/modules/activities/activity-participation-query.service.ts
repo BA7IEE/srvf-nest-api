@@ -9,6 +9,9 @@ import type { ResourceRef } from '../authz/authz.types';
 import { ACTIVITY_REGISTRATION_STATUS } from '../activity-registrations/activity-registration-state-machine';
 import { ActivityFeedbacksQueryService } from '../activity-feedbacks/activity-feedbacks-query.service';
 import { ATTENDANCE_SHEET_STATUS } from '../attendances/attendances.dto';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
+import { LedgerQueryService } from './ledger-query.service';
+import { decimalToHundredths, hundredthsToDecimal } from './ledger-day-allocation';
 import { RbacService } from '../permissions/rbac.service';
 import {
   ActivityParticipationSummaryDto,
@@ -16,6 +19,25 @@ import {
 } from './activity-participation.dto';
 import { buildActivityParticipationMetrics } from './activity-participation-metrics';
 import { toMemberLabelFields } from '../../common/identity/member-label.util';
+
+/**
+ * 「活动 × 队员」小计 → 活动两轴总计。**整数分累加**,不用浮点 ——
+ * 逐队员字符串直接 `Number` 相加会在末位漂出 `5.000000000000001`。
+ */
+function foldActivityTotals(
+  byMember: ReadonlyMap<string, { serviceHours: string; creditedPoints: string }>,
+): { totalServiceHours: string; totalContributionPoints: string } {
+  let serviceHundredths = 0;
+  let creditedHundredths = 0;
+  for (const totals of byMember.values()) {
+    serviceHundredths += decimalToHundredths(totals.serviceHours);
+    creditedHundredths += decimalToHundredths(totals.creditedPoints);
+  }
+  return {
+    totalServiceHours: hundredthsToDecimal(serviceHundredths).toString(),
+    totalContributionPoints: hundredthsToDecimal(creditedHundredths).toString(),
+  };
+}
 
 const PARTICIPATION_READ_ACTIONS = [
   'attendance.read.sheet',
@@ -29,6 +51,9 @@ export class ActivityParticipationQueryService {
     private readonly authz: AuthzService,
     private readonly rbac: RbacService,
     private readonly feedbacks: ActivityFeedbacksQueryService,
+    private readonly ledgerQuery: LedgerQueryService,
+    // 活动 v1.1 cutover gate —— 统计读面取数源的判闸依据(合同 §16.2 单轨第三项)。
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
 
   private async assertCanReadActivity(
@@ -55,6 +80,29 @@ export class ActivityParticipationQueryService {
     });
     if (!activity) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
     return activity;
+  }
+
+  /**
+   * 闸开后的取数:工时 / 贡献值来自**已 committed 的账本分录**(按队员折)。
+   *
+   * 🔴 **本闸只切「结算量」这一轴** —— 逐队员的服务时长与贡献值。
+   *    名册与计数(谁到场 / recordCount / durationHistogram)**刻意不随闸切换**:
+   *    合同拍板的闸控范围是「结算真相链」,**不含 Session / Participation / Registration**
+   *    (`docs/ai-harness/NEXT_TASKS.md` 第 7 批第 ③ 刀);而「参与活动数 / 记录条数在账本
+   *    口径下如何定义」是**已登记的悬案 D1**,维护者明文「不在无数据时凭空发明语义」。
+   *    ⇒ 半切换在这里是**刻意的**,与既有 `participation-summary-query` 把
+   *    `contributionPoints` 留在 approved 口径是同一种取舍,别顺手统一。
+   */
+  private async loadCommittedTotalsByMember(
+    activityId: string,
+  ): Promise<Map<string, { serviceHours: string; creditedPoints: string }>> {
+    const rows = await this.ledgerQuery.sumCommittedByMemberForActivities([activityId]);
+    return new Map(
+      rows.map((row) => [
+        row.memberId,
+        { serviceHours: row.serviceHours, creditedPoints: row.creditedPoints },
+      ]),
+    );
   }
 
   async reconciliation(
@@ -107,7 +155,13 @@ export class ActivityParticipationQueryService {
       allRegistrations.map((registration) => registration.memberId),
     );
 
-    const summarizeRecords = (memberRecords: typeof records) => {
+    // 取数源由闸决定,不是两套并存(合同 §16.2 第三项)。闸关(默认)= 今天的行为。
+    const committedByMember =
+      this.activityWorkflowGate.participationReadSource() === 'committed-ledger'
+        ? await this.loadCommittedTotalsByMember(activityId)
+        : null;
+
+    const summarizeRecords = (memberId: string, memberRecords: typeof records) => {
       const approved = memberRecords.filter(
         (record) => record.sheet.statusCode === ATTENDANCE_SHEET_STATUS.APPROVED,
       );
@@ -116,9 +170,13 @@ export class ActivityParticipationQueryService {
         new Prisma.Decimal(0),
       );
       return {
+        // 计数两项留在 approved 口径 —— 见 loadCommittedTotalsByMember 的注释(悬案 D1)。
         recordCount: memberRecords.length,
         approvedRecordCount: approved.length,
-        totalServiceHours: hours.toString(),
+        totalServiceHours:
+          committedByMember === null
+            ? hours.toString()
+            : (committedByMember.get(memberId)?.serviceHours ?? '0'),
       };
     };
 
@@ -129,7 +187,7 @@ export class ActivityParticipationQueryService {
         memberId: registration.memberId,
         ...toMemberLabelFields(registration.member),
         outcome: memberRecords.length > 0 ? ('attended' as const) : ('no-show' as const),
-        ...summarizeRecords(memberRecords),
+        ...summarizeRecords(registration.memberId, memberRecords),
       };
     });
 
@@ -139,7 +197,7 @@ export class ActivityParticipationQueryService {
         memberId,
         ...toMemberLabelFields(memberRecords[0].member),
         outcome: 'temporary' as const,
-        ...summarizeRecords(memberRecords),
+        ...summarizeRecords(memberId, memberRecords),
       }));
 
     return {
@@ -179,6 +237,15 @@ export class ActivityParticipationQueryService {
     ]);
     const metrics = buildActivityParticipationMetrics(activity.statusCode, registrations, records);
 
+    // 取数源由闸决定(合同 §16.2 第三项);范式与 participation-summary-query 同构。
+    const settlement =
+      this.activityWorkflowGate.participationReadSource() === 'committed-ledger'
+        ? foldActivityTotals(await this.loadCommittedTotalsByMember(activityId))
+        : {
+            totalServiceHours: metrics.totalServiceHours.toString(),
+            totalContributionPoints: metrics.totalContributionPoints.toString(),
+          };
+
     return {
       activityId,
       activityStatusCode: activity.statusCode,
@@ -188,8 +255,8 @@ export class ActivityParticipationQueryService {
       temporaryAttendeeCount: metrics.temporaryAttendeeCount,
       noShowCount: metrics.noShowCount,
       attendanceRate: metrics.attendanceRate,
-      totalServiceHours: metrics.totalServiceHours.toString(),
-      totalContributionPoints: metrics.totalContributionPoints.toString(),
+      ...settlement,
+      // durationHistogram 留在 approved 口径 —— 见 loadCommittedTotalsByMember 注释(悬案 D1)。
       durationHistogram: metrics.durationHistogram,
       feedback,
     };
