@@ -33,13 +33,21 @@
 ## 2. 能力清单
 
 **逐条摘要已迁出到 [`ai-harness/CAPABILITIES.md`](ai-harness/CAPABILITIES.md)**(2026-08-20;18 条逐字搬运,无删减)。
-⚠️ 新增能力条目**写那份、不写本文** —— 那份不在恒读层,写多不付预算;本节只留常用指针与下面那条被钉住的。
+⚠️ 新增能力条目**写那份、不写本文** —— 那份不在恒读层,写多不付预算;本节只留常用指针与下面 🔒 两条。
 
 - **接口与字段真相**:live `/api/docs-json` + contract snapshot + `EXPECTED_ROUTES`
 - **模块地图** `CODEMAP.md` · **权限地图** `ai-harness/RBAC_MAP.md` · **数据模型** `prisma/schema.prisma`
 - **逐版本叙事**:[`CHANGELOG.md`](../CHANGELOG.md) + `archive/handoff/`
 - **安全**:审计SA全量/持码非SA仅self|USER；敏感读闭锁/extra禁PII；Decision 15.1=B/15.2=B(业务负责人最终确认:2026-07-27):C/N管理=SA|GLOBAL读码(ADMIN不直通)，部门=PRIMARY/SECONDARY/TEMPORARY/SUPPORT有效任职+组织ACTIVE；RBAC任期单轨，ops-admin现任常驻/同锁重读
-  <br>🔒 **此条不得迁出** —— 被 `notification-canonical-docs.spec.ts` 钉成代码级契约(三处互证);搬走即打红 unit(历史事故 INC-16)
+- **活动业务改造合同**:冻结件在 [`archive/reviews/activity-business-overhaul-v1.1/`](archive/reviews/activity-business-overhaul-v1.1/);批次台账见 `ai-harness/NEXT_TASKS.md` **P1-28**
+
+> 🔒 **上面两条不得迁出 CAPABILITIES** —— 它们被单测 `readFileSync` 本文件后 `toContain` 钉成**代码级契约**:
+> `notification-canonical-docs.spec.ts`(Decision 15.1/15.2 三处互证)与
+> `activity-business-overhaul-acceptance.spec.ts`(合同目录指针 + P1-28)。
+> **搬走即打红 unit**(历史事故 INC-16;2026-08-20 §2 迁出时两条各踩一次)。
+>
+> ⚠️ **改本文件前先跑**:`grep -rl "current-state.md" src --include='*.spec.ts'`
+> —— 当前恰 2 个 spec 命中,**别信任何写死的数目**(INC-16 教训原文说「3 个」,列的三个里不含活动那个)。
 
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)
 
