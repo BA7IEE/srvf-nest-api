@@ -1,7 +1,9 @@
 # 短信闭环测试 —— 证明「这套系统能用腾讯云短信」
 
-> **状态**:**验证码链路 PASS**(2026-08-20 真机实测,16 项验收全过)。
-> 🔴 **通知模板链路仍未验** —— 见 §5 与 §6.3。两条要分别声称。
+> **状态**:**验证码链路 + 通知链路均 PASS**(2026-08-20 真机实测,两轮)。
+>
+> 🔴 **但请先读 §6.5** —— 实测拿到一个反例:`status=SENT` 且 `providerMsgId` 非空,
+> **手机仍未收到**(运营商免打扰名单)。`SENT` 是**已提交 Provider**,**不是已送达终端**。
 >
 > 配套:[`sms-production-rollout-checklist.md`](./sms-production-rollout-checklist.md)(录入侧 SOP)。
 > 本文只管**录入之后怎么验**。
@@ -27,9 +29,12 @@
 | ⑤ **回验** | 码真的可用 | `PUT /app/v1/me/phone` 通过 ⇒ 发码→收码→回验闭合 |
 | ⑥ 留痕 | 可审计 | `status=SENT` · `providerMsgId` **非空** · 手机号**掩码** |
 
-⚠️ **⑥ 的 `providerMsgId` 非空是关键判据** —— 它是腾讯云返回的 SerialNo。
+⚠️ **⑥ 的 `providerMsgId` 非空是关键判据,但它只管到腾讯云那一段** —— 它是腾讯云返回的 SerialNo。
 接口返回 200 只说明**我们受理了**,`providerMsgId` 非空才说明**腾讯云受理了**。
-两者之间差着整条网络与鉴权链路。
+
+🔴 **它证明不了手机收到**(2026-08-20 实测反例,见 §6.5):
+`status=SENT` + `providerMsgId` 非空 + `errCode=null`,而终端因**运营商免打扰名单**未收到。
+⇒ **必须同时确认真机响了**,不能只看留痕。
 
 ⚠️ **收不到短信时不要直接判失败** —— 脚本会继续查留痕,帮你分清两种情况:
 「没发出去」(providerMsgId 为空 / status≠SENT)vs「发了但没到」(留痕正常但手机没响,
@@ -66,13 +71,18 @@
 - **三个模板相互独立**:`missingRuntimeParams(settings, template)` 按 template 分别校验
   ⇒ 缺生日模板不影响验证码与通知。
 
-## 5. 本脚本**不**覆盖:通知模板(紧急召集兜底)
+## 5. 通知模板链路:脚本不覆盖,已于 2026-08-20 手工验过
 
-`templateIdNotification` 的链路要**真发一条紧急召集**才算验过,涉及业务侧操作,
-不适合塞进这支脚本。见 checklist 验收第 4 条 —— 那条明写
-**「不能靠等它自己触发」**(紧急召集是低频动作,不主动发一次就等于没验)。
+`templateIdNotification` 的链路要**真发一条通知**才算验过,涉及业务侧操作(建草稿 → 发布 →
+受众计算 → 计费确认),不适合塞进这支脚本。**已手工完成,结论见 §6.4。**
 
-⇒ **验证码链路 PASS ≠ 短信通道全部可用。** 两条要分别声称。
+手工步骤(可重复):
+1. `POST /admin/v1/notifications` 建草稿 —— `channels: ["in-app","sms"]` **必须显式含 `sms`**
+2. `POST /admin/v1/notifications/{id}/publish` —— ⭐ **发布本身不发短信**(实测确认)
+3. `POST /admin/v1/notifications/{id}/send-sms` `{"confirmed":false}` —— **安全预览,零发送**
+4. 核对 `recipientCount` **与人工预期完全一致**后,再 `{"confirmed":true}`
+
+🔴 **第 3 步是硬要求不是建议** —— 见 §6.6。
 
 ## 6. 实测结论
 
@@ -106,12 +116,78 @@ SRVF API → 腾讯云 SMS → 真实手机收码 → 验证码校验 → 手机
 由此一并证实:凭据可解密可用 · SDK AppID 可用 · 签名匹配 · 模板匹配 ·
 **模板参数数量与顺序正确** · 服务器→腾讯云网络通 · 腾讯云→运营商→手机链路通。
 
-### 6.3 🔴 本轮**没有**证明的事
+### 6.3(原「本轮未证明的事」—— 已于同日补验闭合,见 6.4)
 
-`templateIdNotification=2675285` 已配置且腾讯云侧已生效,但**本轮没有触发真实通知业务发送**。
+### 6.4 通知模板链路:PASS(2026-08-20 第二轮)
 
-⇒ 当前只能声称「**验证码 SMS 基础设施真实闭环 PASS**」,
-**不能**据此宣称「通知类 SMS 业务链路已验收」。后者须在对应通知业务验收中单独完成真实发送。
+模板 `2675285`,走完整业务链:建草稿 → 发布 → 受众计算 → 计费预览 → 显式确认 → 腾讯云 → 运营商 → 真机。
+
+| 验收项 | 实测 |
+|---|---|
+| `channels` 含 `sms` 才可发 | ✅ |
+| **发布本身不发短信** | ✅ `publish` 后零发送 |
+| `confirmed=false` 预览 | ✅ `recipientCount=1` / `sent=0` |
+| `confirmed=true` 真发 | ✅ `sent=1` / `failed=0` |
+| `templateKey` | **`notification`**(与验证码轮的 `verify-code` 分属两条路) |
+| `providerMsgId` | `99:3375363021…` 非空 |
+| 手机号留痕 | 掩码 |
+| **真机收到** | ✅(第二号码) |
+
+⇒ 验证码与通知两条 SMS 链路**均已完成真机验证**。
+
+### 6.5 🔴 实测反例:`SENT` ≠ 已送达
+
+第一个测试号码给出了明确反例:
+
+| 系统侧 | 腾讯云控制台 |
+|---|---|
+| `status=SENT` · `providerMsgId=99:2507238470…` 非空 · `errCode=null` | 提交状态**成功** / 送达状态**失败** / 原因:**运营商免打扰名单** |
+
+**手机始终没收到。**
+
+⇒ 当前 `sms_send_logs.status` 的 `SENT` 表达的是「**Provider 已接受 / SendSms 请求成功**」,
+**不是**「用户已收到短信」。`SmsSendStatus` 只有 `SENT` / `FAILED` 两态,
+且全仓**无任何送达回执 / 状态回调链路**。
+
+⚠️ **这条推翻了本文档早先的说法** —— 原文把 `providerMsgId` 非空写成「最硬的一条」,
+当时的措辞暗示它能证明送达。它只证明到腾讯云那一段。
+⇒ **验收必须同时确认真机响了**,只看留痕会得出错误结论。
+
+改进项(状态语义细化 + 回执回调)已登记 `NEXT_TASKS` **P2-10**。
+
+### 6.6 🔴 `confirmed=false` 预览是硬要求,不是建议
+
+实测确认安全阀有效:`confirmed=false` 时 `sent=0`,只返回 `recipientCount`。
+
+**规则**:任何人工广播 SMS 真实发送前**必须先跑一次 `confirmed=false`**,
+**只有 `recipientCount` 与人工预期完全一致才允许 `confirmed=true`**。
+
+本轮若无此检查,就存在**误发真实队员 + 产生短信费用**的双重风险。
+
+### 6.7 本轮暴露的前置条件错误(本文档原文写错了)
+
+原文假设「SUPER_ADMIN 绑了手机就能当通知短信收件人」。**不成立。**
+
+通知广播 SMS 的收件人链是:
+
+```
+ACTIVE Member → 满足通知 visibility → 关联 ACTIVE User → User.phone 非空
+```
+
+`david` 的 `memberId` 为 `null` ⇒ **无论绑不绑手机都不会成为收件人**。
+且 `account/bind` 护栏只允许绑 `role=USER` 的悬空账号,不能为测试把 SUPER_ADMIN 挂到 Member。
+
+**正确前置**:准备一个 **ACTIVE Member + 关联 ACTIVE USER**,`User.phone` 为唯一测试号;
+发送前必须 `confirmed=false` 并核对 `recipientCount`。
+
+另:`visibilityCode` 用 **`member`** 而非 `management` —— 普通 USER 测试账号不在 management 可见范围内。
+
+### 6.8 部署版本漂移(非本轮故障,但值得记)
+
+实测时服务器上的 `Member` 仍是 `displayName`,而 main 已演进为 `realName` / `nickname`
+(#1048 T1)⇒ 按新代码写的 SQL 报 `column m.realName does not exist`。
+
+⇒ **运维 / 验收脚本必须以实际部署的 commit 与 schema 为准**,不能拿当前 main 的 DTO/schema 假设已部署。
 
 ### 6.4 本轮暴露的两处文档缺陷(均已修)
 

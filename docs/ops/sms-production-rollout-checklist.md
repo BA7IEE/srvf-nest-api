@@ -9,7 +9,7 @@
 |---|---|
 | 签名「深圳市公益救援」 | ✅ 已生效;验证码/通知 **报备成功** |
 | 验证码模板 `2675279` | ✅ 已生效 · **已录入** · **已真机验发验收** |
-| 通知模板 `2675285` | ✅ 已生效 · **已录入** · ⏸ **尚未真机验发**(见 §6 第 5 步) |
+| 通知模板 `2675285` | ✅ 已生效 · **已录入** · ✅ **已真机验发**(2026-08-20 第二轮) |
 | 生日祝福模板 | ⏸ **未建**(只影响生日祝福,不阻塞其余两条链) |
 | `sms_settings` 录入 | ✅ **已完成**:`sdkAppId=1401142432` / `region=ap-guangzhou` / `credentialStatus=configured` |
 
@@ -17,8 +17,12 @@
 `providerMsgId=99:1400533524…` 非空、手机号留痕掩码。详见
 [`sms-closed-loop-test.md`](./sms-closed-loop-test.md) §6。
 
-🔴 **但不得据此宣称「短信通道全部可用」** —— 通知模板(紧急召集兜底)**只完成配置、未完成验发**。
-两条要分别声称;验发方法见 §6 第 5 步。
+**通知链路实测(2026-08-20 第二轮)**:建草稿 → 发布 → 受众计算 → `confirmed=false` 预览
+→ `confirmed=true` 真发 → 真机收到 → 留痕 `templateKey=notification`。两条链路均已验。
+
+🔴 **但 `SENT` 不等于已送达** —— 同轮拿到反例:`status=SENT` + `providerMsgId` 非空,
+手机因**运营商免打扰名单**未收到。`SENT` 只表示「已提交腾讯云」。
+详见 [`sms-closed-loop-test.md`](./sms-closed-loop-test.md) §6.5,改进项登记 `NEXT_TASKS` P2-10。
 
 ⚠️ **签名内容要逐字填进 `signName`** —— 是「深圳市公益救援」(七个字),不是队伍全名。
 填错腾讯云返 `FailedOperation.SignatureIncorrectOrUnapproved`。
@@ -198,9 +202,22 @@
    # 期望:status=SENT / providerType=TENCENT_SMS / providerMsgId 非空 / 手机号显示为掩码 138****XXXX
    ```
 
-5. **通知链路验收**(2026-08-20 补):`templateIdNotification` 录入后,发一条紧急召集(或任一走短信兜底的通知),
-   查 send-logs —— 期望出现 `templateKey=notification` / `status=SENT` / `providerMsgId` 非空。
-   ⚠️ **这条不能靠"等它自己触发"** —— 紧急召集是低频动作,不主动发一次就等于没验。
+5. **通知链路验收**(2026-08-20 已完成;步骤如下,可重复):
+
+   🔴 **前置(原文写错过,勿再犯)**:通知广播 SMS 的收件人链是
+   `ACTIVE Member → 满足 visibility → 关联 ACTIVE User → User.phone 非空`。
+   **SUPER_ADMIN 绑了手机也没用** —— 它 `memberId` 为 null,不在受众链内。
+   须准备 **ACTIVE Member + 关联 ACTIVE USER**,`User.phone` 为唯一测试号。
+
+   ① `POST /admin/v1/notifications` 建草稿 —— `channels` **必须显式含 `sms`**;
+      `visibilityCode` 用 **`member`**(普通 USER 不在 `management` 可见范围内)
+   ② `POST /admin/v1/notifications/{id}/publish` —— ⭐ **发布本身不发短信**(实测确认)
+   ③ `POST /admin/v1/notifications/{id}/send-sms` `{"confirmed":false}` —— 安全预览,`sent=0`
+   ④ 🔴 **核对 `recipientCount` 与人工预期完全一致后**,才 `{"confirmed":true}`
+   ⑤ 查 send-logs:期望 `templateKey=notification` / `status=SENT` / `providerMsgId` 非空
+
+   🔴 **第 ③ 步是硬要求不是建议** —— 少了它就存在**误发真实队员 + 产生短信费用**的双重风险。
+   ⚠️ **第 ⑤ 步的 `SENT` 不等于送达**,必须同时确认真机响了(见 §0-pre 的反例)。
 
 6. 生日祝福链路验收(轻量;2026-06-11 +):`templateIdBirthday` 录入后,任一队员生日当天 09:00(Asia/Shanghai)后查 send-logs——期望出现 `templateKey=birthday-greeting / status=SENT` 行且真机收到祝福短信;当天无人生日则顺延至最近生日核验(系统侧幂等保证不重发)。
 
