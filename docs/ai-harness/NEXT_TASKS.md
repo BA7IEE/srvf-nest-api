@@ -1276,6 +1276,41 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 判据是「这条 hook 挂了哪些 matcher?写文件还有别的通道吗?」——
 仓内每条 PreToolUse hook 都值得照此对一遍。
 
+### P1-32 RBAC 权限目录与角色权限管理终态 —— 8 个 PR,**已抽 1 条实施,余 7 条待排**
+
+> 方案冻结件:[`archive/reviews/rbac-permission-catalog-t0-review.md`](../archive/reviews/rbac-permission-catalog-t0-review.md)
+> (3,006 行,维护者 2026-08-20 提供,逐字入仓)。
+> **本条只做排期登记,不复述方案内容** —— 细节读冻结件。
+
+**方案的核心判断**(主会话认同):当前权限底座本身不弱
+(`Permission → RbacRole → RolePermission → RoleBinding` + GLOBAL/scoped 双轨 +
+三种授权来源 + explain + 审计 + 末位管理员保护 + 控制面防委派 + 每请求直读 PG),
+**真正缺的是授权管理产品层** —— 管理员面对的是机器权限码,不是人类可理解、可安全操作的权限目录。
+
+⚠️ 方案自己点破的一句,**值得当排期铁律**:
+
+> 只做中文展示而不做第一优先级,会让「更好用的后台」**反而更容易把现有控制面改坏**。
+
+#### 已抽出实施
+
+- ⭐ **授撤对称收口**(方案 PR 3 的安全部分)—— 8 条缺陷里**唯一「现在就存在的、可被利用的安全缺口」**:
+  `assign` 有控制面闸、`revoke` **一个都没有** ⇒ 非 SUPER_ADMIN 授不了控制面码**但可以撤**。
+  与 E-B1(#1115)同族:**一侧有闸、另一侧没有**。已单独立项下发(C 档,无需红区授权)。
+
+#### 余 7 条的建议排期(四档)
+
+| 档 | 内容 | 前置 |
+|---|---|---|
+| **第一** | 发版 **v0.67.0** —— 182 个提交 / 128 份 fragment 该收口 | 第六轮四刀落完 |
+| **第二** | PR 0 **决策拍板** → PR 1 Catalog 单一事实源 → PR 2 只读 API | ⚠️ PR 0 要维护者给 **236 条权限**逐条定中文名/分类/风险/授予策略,DoD 明写「**没有『以后再说』的未分类 active 权限**」—— 建议照字典定稿单的做法,先拉成可过目清单分批确认 |
+| **第三** | PR 3 剩余(Catalog-owned Permission 禁运行时增删改 + 系统角色只读)· PR 4 原子 `PUT` + `permissionRevision` · PR 5 影响预览 + step-up | 依赖 Catalog 落地 |
+| **第四** | PR 6 scope 兼容提示 · PR 7 Admin Web 接入 · PR 8 旧接口退役 | ⚠️ PR 7 依赖前端;`srvf-admin-web` 目前**尚未真正投用** |
+
+#### 体量提示
+
+8 个 PR,动 schema、动 236 条权限元数据、动控制面策略、动前端 ——
+**比 issue #1048 与 #1055 加起来还大**。不要一次性启动;逐档立项,每档单独 goal。
+
 ## 已收口项
 
 全部移至 [`docs/archive/ai-harness/next-tasks-completed.md`](../archive/ai-harness/next-tasks-completed.md)(冻结,不再增长)。
