@@ -1,8 +1,7 @@
 # COS 闭环测试 —— 证明「这套系统能用 COS」
 
-> **状态**:⚠️ **未实测**(脚本已按仓库实况写好并逐条核过参数,但尚未在真机跑过)。
-> 跑完请把结论回填到本文末尾,并同步 [`server-deployment-runbook-stage2.md`](./server-deployment-runbook-stage2.md) 开头的
-> 「本轮没有证明的事」那一节。
+> **状态**:**PASS**(2026-08-20,维护者在真机实测,9 项判据全通过)。
+> 实测中查出本脚本一处字段名缺陷(见 §6),已修。
 
 ## 0. 为什么需要这一轮
 
@@ -88,11 +87,41 @@ token 全程不回显。脚本自建一条测试内容作为附件 owner,**退�
 | ⑤ 字节不一致 | 取到了别的对象,或传输被改写 —— **这是严重问题,停下取证** |
 | ⑥ 删除后仍 200 | 云端对象未真正删除 —— 停下取证,别当小问题 |
 
-## 6. 实测结论(跑完回填)
+## 6. 实测结论
+
+**2026-08-20 · PASS · 通过 9 项 / 失败 0 项**
+
+环境:`https://srvf-dp.23cc.cn` · `APP_ENV=production` ·
+bucket `srvf-attachments-1433783892` / region `ap-guangzhou` / envPrefix `staging`。
+
+| 步骤 | 实测读数 |
+|---|---|
+| ② 签名 URL | 签发成功,对象 key = `attachments/staging/2026/08/20/MMjIH_o30Dlk0imH.png` |
+| ③ **COS PUT** | **200** |
+| ④ confirm(服务端 HEAD) | 通过,attachmentId = `cmt15f7gy000rph011sj9ka1o` |
+| ⑤ **signed GET + 字节比对** | 下载 **70 字节**,与上传**逐字节一致** |
+| ⑥ **DELETE + 复查** | 删除返 200;复用删除前那条短链再取 → **404** |
+
+⇒ **可以声称「对象存储真实可用」**。issue #935「完成真实外部供应商链路验证」的 **COS 那一半已闭合**
+(企业微信 / 短信 / OCR 仍未验)。
+
+### 🔴 首跑失败:本脚本的字段名缺陷(已修)
+
+第一次跑在第 ② 步就失败:
 
 ```
-日期:
-环境:
-结果:
-备注:
+签 URL 失败: {"code":40000,"message":"property size should not exist;
+sizeBytes must not be less than 0; sizeBytes must be an integer number"}
 ```
+
+**根因是脚本自己的 bug,不是 COS 出错** —— `GenerateUploadUrlDto` 要的是 `sizeBytes`,
+脚本发的是 `size`。
+
+⚠️ **起草时是怎么错的**(留给后来者):当时用
+`grep -B2 "ownerType\|ownerId\|mime\|size\|originalName" attachments.dto.ts`
+一次性捞字段名,输出把**多个 DTO 类的字段拍平成一张列表**,里面既有 `size!` 又有 `sizeBytes!`,
+**没核端点绑的是哪个类**就挑了前者。
+
+⇒ **教训:查请求体字段必须先定位端点绑定的那个 DTO 类,再读那个类的字段**,
+不能跨类 grep 字段名 —— 同名/近名字段在不同 DTO 里含义不同。
+修复后已把脚本其余三个请求体(登录 / 建内容 / confirm)**逐个对着各自的 DTO 类重核**,均无误。
