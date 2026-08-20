@@ -365,6 +365,76 @@ describe('v0.49 department data scope — member axis', () => {
     );
   });
 
+  // ==========================================================================
+  // issue #1048 T2 DoD 3:相关性搜索**不得**绕过 scoped authz
+  //
+  // ⚠️ 反面样本必须**只在授权这一维上不同** —— 仓内已记录过的坑:上层边界会遮蔽
+  // 下层边界,两个样本若还有别的差异(姓名不同、状态不同…),即便授权腿被删掉,
+  // 用例也可能因为那个别的差异而"照样绿",于是判据看着在守、其实什么都没守。
+  // 故这里两个人的 realName / nickname / status 逐字相同,**只有 PRIMARY 组织不同**。
+  // ==========================================================================
+  it('🔴 搜索命中同名两人、只有组织不同 → scoped 调用者只见树内那个(GLOBAL 见两个作正对照)', async () => {
+    const SAME_NAME = 'T2范围同名样本';
+    const inScope = await prisma.member.create({
+      data: { memberNo: 'v049-t2-in', ...memberIdentityData(SAME_NAME, 'T2同外号') },
+      select: { id: true },
+    });
+    const outOfScope = await prisma.member.create({
+      data: { memberNo: 'v049-t2-out', ...memberIdentityData(SAME_NAME, 'T2同外号') },
+      select: { id: true },
+    });
+    await prisma.memberOrganizationMembership.createMany({
+      data: [
+        {
+          memberId: inScope.id,
+          organizationId: sectId, // leader 树内
+          membershipType: MembershipType.PRIMARY,
+          status: MembershipStatus.ACTIVE,
+        },
+        {
+          memberId: outOfScope.id,
+          organizationId: swrtId, // leader 树外 —— 两人唯一的差别
+          membershipType: MembershipType.PRIMARY,
+          status: MembershipStatus.ACTIVE,
+        },
+      ],
+    });
+
+    // ---- 正对照:GLOBAL 调用者必须**两个都看得到** ----
+    // 这一步是判据成立的前提:证明两行除组织外确实等价、都能被同一个 q 命中。
+    // 少了它,下面的"只见一个"可能是因为另一个压根没被搜到,而不是被授权挡住。
+    const global = await request(httpServer(app))
+      .get('/api/admin/v1/members?page=1&pageSize=100')
+      .query({ q: SAME_NAME })
+      .set('Authorization', globalAdmin.authHeader);
+    expect(global.status).toBe(200);
+    const globalIds = (global.body.data.items as Array<{ id: string }>).map((item) => item.id);
+    expect(globalIds).toEqual(expect.arrayContaining([inScope.id, outOfScope.id]));
+
+    // ---- 真读数:scoped 调用者只见树内那个 ----
+    const scoped = await request(httpServer(app))
+      .get('/api/admin/v1/members?page=1&pageSize=100')
+      .query({ q: SAME_NAME })
+      .set('Authorization', leader.authHeader);
+    expect(scoped.status).toBe(200);
+    const scopedIds = (scoped.body.data.items as Array<{ id: string }>).map((item) => item.id);
+    expect(scopedIds).toContain(inScope.id);
+    expect(scopedIds).not.toContain(outOfScope.id);
+    // total 也必须只数树内的那个 —— 计数走的是另一条 count 查询,
+    // 授权腿若只加在 findMany 上、漏在 count 上,行数对但总数会泄露树外人数。
+    expect(scoped.body.data.total).toBe(1);
+
+    // ---- 选择器同一条路径,同样只见树内那个 ----
+    const options = await request(httpServer(app))
+      .get('/api/admin/v1/members/options?limit=100')
+      .query({ q: SAME_NAME })
+      .set('Authorization', leader.authHeader);
+    expect(options.status).toBe(200);
+    const optionIds = (options.body.data.items as Array<{ id: string }>).map((item) => item.id);
+    expect(optionIds).toContain(inScope.id);
+    expect(optionIds).not.toContain(outOfScope.id);
+  });
+
   it('无码返回 30100；有 read 码但仅 SELF scope 的列表返回空集', async () => {
     const denied = await request(httpServer(app))
       .get('/api/admin/v1/members')

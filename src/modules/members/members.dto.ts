@@ -398,7 +398,8 @@ export class ListMembersQueryDto extends PaginationQueryDto {
 
   @ApiPropertyOptional({
     description:
-      '模糊搜索(跨字段命中 memberNo + realName + nickname;contains + insensitive)。排序见 MemberDirectory 五级规则',
+      '模糊搜索(跨字段命中 memberNo + realName + nickname;两端空白自动 trim)。' +
+      '相关性排序:memberNo 完全 > realName 完全 > memberNo 前缀 > realName 部分 > nickname;重名重外号正常返回多条,不做拼音/纠错/相似度绑定',
     maxLength: 100,
   })
   @IsOptional()
@@ -437,7 +438,9 @@ export class ListMembersQueryDto extends PaginationQueryDto {
 
 export class MemberOptionsQueryDto {
   @ApiPropertyOptional({
-    description: '模糊搜索(跨字段命中 memberNo + realName + nickname)',
+    description:
+      '模糊搜索(跨字段命中 memberNo + realName + nickname;两端空白自动 trim)。' +
+      '与列表同序:memberNo 完全 > realName 完全 > memberNo 前缀 > realName 部分 > nickname;重名重外号正常返回多条,不做拼音/纠错/相似度绑定',
     maxLength: 100,
   })
   @IsOptional()

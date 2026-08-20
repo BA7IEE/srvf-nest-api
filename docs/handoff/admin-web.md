@@ -332,7 +332,7 @@
 
 | 资源 | list 增强(query,均可省略) | 新增 `/options`(或同类)端点 | 鉴权 |
 |---|---|---|---|
-| **members** | `q`(模糊 realName+memberNo)/ `organizationId` / `includeDescendants` | `GET admin/v1/members/options` → `{items:[{id,label,memberNo,gradeCode}]}` | `[rbac: member.read.record]` |
+| **members** | `q`(模糊 memberNo+realName+nickname,两端 trim;与列表同一套五级相关性:memberNo 完全 > realName 完全 > memberNo 前缀 > realName 部分 > nickname;重名重外号正常多条)/ `organizationId` / `includeDescendants` | `GET admin/v1/members/options` → `{items:[{id,label,memberNo,gradeCode}]}` | `[rbac: member.read.record]` |
 | **users** | `q`(模糊 username+nickname+email+phone)/ `role` / `status` / `memberId` | `GET admin/v1/users/options` → `{items:[{id,label,username}]}`(label=nickname‖username) | `[rbac: user.read.account]` |
 | **organizations** | `q`(模糊 name+code)/ `nameContains` / `codeContains` | `GET admin/v1/organizations/options` → `{items:[{id,label,code,nodeTypeCode,parentId}]}` · `GET admin/v1/organizations/tree-options` → 树形 `[{id,label,code,children[]}]`(表单级联选择器用,`label`/`code` 精简版 `/tree`) | `[rbac: org.read.node]` |
 | **roles**(⚠️ 落 `system/v1`,唯一跨 surface 例外,D4 拍板) | — | `GET system/v1/roles/options` → `{items:[{id,label,code}]}`(label=displayName;`q` 模糊 code+displayName) | `[rbac: rbac.role.read]` |
