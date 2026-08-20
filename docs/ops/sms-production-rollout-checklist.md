@@ -3,17 +3,26 @@
 > **性质**:运维侧 SOP(沿 [`cos-production-rollout-checklist.md`](cos-production-rollout-checklist.md) 范式);系统侧能力已随 SMS 基础设施 T1-T3 就绪,**本清单是真实通道开通的唯一接力入口**。
 > **权威源**:行为契约见冻结评审稿 [`docs/archive/reviews/sms-verification-infra-review.md`](../archive/reviews/sms-verification-infra-review.md);字段事实见 [`prisma/schema.prisma`](../../prisma/schema.prisma) `SmsSettings`。
 
-## 0-pre. 当前实况(2026-08-20)
-
-腾讯云侧维护者已备妥,系统侧尚未录入:
+## 0-pre. 当前实况(2026-08-20 · **验证码链路已真机 PASS**)
 
 | 项 | 状态 |
 |---|---|
-| 签名「深圳市公益救援」 | ✅ **可用(已生效)**;验证码/通知 **报备成功** |
-| 验证码模板 | ✅ 已生效;正文 `您的验证码为{1},...{2}分钟内有效` —— **恰 2 变量,与 §3a 要求逐项对上** |
-| 通知模板 | ✅ 已生效;正文零变量 —— 与 §3b 要求对上 |
+| 签名「深圳市公益救援」 | ✅ 已生效;验证码/通知 **报备成功** |
+| 验证码模板 `2675279` | ✅ 已生效 · **已录入** · **已真机验发验收** |
+| 通知模板 `2675285` | ✅ 已生效 · **已录入** · ✅ **已真机验发**(2026-08-20 第二轮) |
 | 生日祝福模板 | ⏸ **未建**(只影响生日祝福,不阻塞其余两条链) |
-| `sms_settings` 录入 | ⏸ 待做(§5) |
+| `sms_settings` 录入 | ✅ **已完成**:`sdkAppId=1401142432` / `region=ap-guangzhou` / `credentialStatus=configured` |
+
+**验证码闭环实测(2026-08-20)**:step-up → 真发 → 真机收码 → 回验绑定 → 留痕,
+`providerMsgId=99:1400533524…` 非空、手机号留痕掩码。详见
+[`sms-closed-loop-test.md`](./sms-closed-loop-test.md) §6。
+
+**通知链路实测(2026-08-20 第二轮)**:建草稿 → 发布 → 受众计算 → `confirmed=false` 预览
+→ `confirmed=true` 真发 → 真机收到 → 留痕 `templateKey=notification`。两条链路均已验。
+
+🔴 **但 `SENT` 不等于已送达** —— 同轮拿到反例:`status=SENT` + `providerMsgId` 非空,
+手机因**运营商免打扰名单**未收到。`SENT` 只表示「已提交腾讯云」。
+详见 [`sms-closed-loop-test.md`](./sms-closed-loop-test.md) §6.5,改进项登记 `NEXT_TASKS` P2-10。
 
 ⚠️ **签名内容要逐字填进 `signName`** —— 是「深圳市公益救援」(七个字),不是队伍全名。
 填错腾讯云返 `FailedOperation.SignatureIncorrectOrUnapproved`。
@@ -160,16 +169,32 @@
    # 期望:{"code":0,...,"data":{"expiresInSeconds":300}};手机收到带 <SIGN_NAME> 签名的 6 位码
    ```
 
-2. 用收到的码完成绑定:
+2. **先取 step-up proof**(2026-08-20 补 —— 本步原文缺失,照旧文直接绑定必失败):
+
+   ```bash
+   curl -X POST https://<API_HOST>/api/auth/v1/step-up/password \
+     -H "Authorization: Bearer <ACCESS_TOKEN>" -H "Content-Type: application/json" \
+     -d '{"action":"PHONE_BIND","password":"<当前账号密码>"}'
+   # 期望:data.stepUpToken 非空;**有效期仅 5 分钟**
+   ```
+
+   ⏱ 只有 5 分钟,所以**这一步要放在收到短信之后、绑定之前**,别一开始就取。
+
+3. 用收到的码完成绑定(**必须带 `stepUpToken`**):
 
    ```bash
    curl -X PUT https://<API_HOST>/api/app/v1/me/phone \
      -H "Authorization: Bearer <ACCESS_TOKEN>" -H "Content-Type: application/json" \
-     -d '{"phone":"<真实手机号>","code":"<收到的码>"}'
-   # 期望:data.phone 为该号,phoneVerifiedAt 为时间串
+     -d '{"phone":"<真实手机号>","code":"<收到的码>","stepUpToken":"<上一步的 token>"}'
+   # 期望:data.phone 为掩码号(139****XXXX 形状),phoneVerifiedAt 为时间串
    ```
 
-3. 后台核验发送留痕(持 `sms-send-log.read.list`):
+   🔴 **2026-08-20 契约漂移订正**:本步原文只写 `phone` + `code`,**漏了 `stepUpToken`**。
+   当前 `BindMyPhoneDto` 是**三个必填字段** —— `phone` / `code` / `stepUpToken`,
+   且该 token 必须是 `action=PHONE_BIND` 的 5 分钟 step-up proof。
+   缺口由 2026-08-20 真机实测暴露(维护者照本清单操作时发现)。
+
+4. 后台核验发送留痕(持 `sms-send-log.read.list`):
 
    ```bash
    curl "https://<API_HOST>/api/system/v1/sms-send-logs?page=1&pageSize=20" \
@@ -177,11 +202,24 @@
    # 期望:status=SENT / providerType=TENCENT_SMS / providerMsgId 非空 / 手机号显示为掩码 138****XXXX
    ```
 
-4. **通知链路验收**(2026-08-20 补):`templateIdNotification` 录入后,发一条紧急召集(或任一走短信兜底的通知),
-   查 send-logs —— 期望出现 `templateKey=notification` / `status=SENT` / `providerMsgId` 非空。
-   ⚠️ **这条不能靠"等它自己触发"** —— 紧急召集是低频动作,不主动发一次就等于没验。
+5. **通知链路验收**(2026-08-20 已完成;步骤如下,可重复):
 
-5. 生日祝福链路验收(轻量;2026-06-11 +):`templateIdBirthday` 录入后,任一队员生日当天 09:00(Asia/Shanghai)后查 send-logs——期望出现 `templateKey=birthday-greeting / status=SENT` 行且真机收到祝福短信;当天无人生日则顺延至最近生日核验(系统侧幂等保证不重发)。
+   🔴 **前置(原文写错过,勿再犯)**:通知广播 SMS 的收件人链是
+   `ACTIVE Member → 满足 visibility → 关联 ACTIVE User → User.phone 非空`。
+   **SUPER_ADMIN 绑了手机也没用** —— 它 `memberId` 为 null,不在受众链内。
+   须准备 **ACTIVE Member + 关联 ACTIVE USER**,`User.phone` 为唯一测试号。
+
+   ① `POST /admin/v1/notifications` 建草稿 —— `channels` **必须显式含 `sms`**;
+      `visibilityCode` 用 **`member`**(普通 USER 不在 `management` 可见范围内)
+   ② `POST /admin/v1/notifications/{id}/publish` —— ⭐ **发布本身不发短信**(实测确认)
+   ③ `POST /admin/v1/notifications/{id}/send-sms` `{"confirmed":false}` —— 安全预览,`sent=0`
+   ④ 🔴 **核对 `recipientCount` 与人工预期完全一致后**,才 `{"confirmed":true}`
+   ⑤ 查 send-logs:期望 `templateKey=notification` / `status=SENT` / `providerMsgId` 非空
+
+   🔴 **第 ③ 步是硬要求不是建议** —— 少了它就存在**误发真实队员 + 产生短信费用**的双重风险。
+   ⚠️ **第 ⑤ 步的 `SENT` 不等于送达**,必须同时确认真机响了(见 §0-pre 的反例)。
+
+6. 生日祝福链路验收(轻量;2026-06-11 +):`templateIdBirthday` 录入后,任一队员生日当天 09:00(Asia/Shanghai)后查 send-logs——期望出现 `templateKey=birthday-greeting / status=SENT` 行且真机收到祝福短信;当天无人生日则顺延至最近生日核验(系统侧幂等保证不重发)。
 
 **全部通过 = 通道上线完成。**
 
