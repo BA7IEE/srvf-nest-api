@@ -17638,6 +17638,97 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "MemberOfficialPortraitDto": {
+    "properties": {
+      "accessUrl": {
+        "description": "短 TTL 签名下载 URL;签不出来或已清理时为 null",
+        "nullable": true,
+        "type": "string",
+      },
+      "accessUrlExpiresAt": {
+        "description": "accessUrl 的失效时刻",
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "activatedAt": {
+        "description": "本版生效时刻",
+        "format": "date-time",
+        "type": "string",
+      },
+      "attachmentId": {
+        "description": "二进制附件 id;历史版本被合规清理后为 null",
+        "nullable": true,
+        "type": "string",
+      },
+      "capturedAt": {
+        "description": "实际拍摄日期;未知为 null(不拿上传日期冒充)",
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "endReason": {
+        "description": "终结原因;ACTIVE 时为 null",
+        "nullable": true,
+        "type": "string",
+      },
+      "endedAt": {
+        "description": "终结时刻;ACTIVE 时为 null",
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "id": {
+        "description": "标准照版本 id。正式材料引用它,不要引用 accessUrl",
+        "type": "string",
+      },
+      "memberId": {
+        "description": "所属队员 id",
+        "type": "string",
+      },
+      "source": {
+        "description": "来源",
+        "enum": [
+          "ADMIN_UPLOAD",
+          "LEGACY_IMPORT",
+        ],
+        "type": "string",
+      },
+      "specVersion": {
+        "description": "冻结规格代码,当前恒 uniform-portrait-v1",
+        "type": "string",
+      },
+      "status": {
+        "description": "状态:ACTIVE 当前 / SUPERSEDED 被顶替 / VOIDED 照片本身被判无效",
+        "enum": [
+          "ACTIVE",
+          "SUPERSEDED",
+          "VOIDED",
+        ],
+        "type": "string",
+      },
+      "version": {
+        "description": "版本号,按队员单调递增,从 1 起;作废过的号不复用",
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "memberId",
+      "version",
+      "status",
+      "specVersion",
+      "source",
+      "capturedAt",
+      "activatedAt",
+      "endedAt",
+      "endReason",
+      "attachmentId",
+      "accessUrl",
+      "accessUrlExpiresAt",
+    ],
+    "type": "object",
+  },
   "MemberOptionItemDto": {
     "properties": {
       "gradeCode": {
@@ -17993,6 +18084,10 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "是否已开通登录账号(队员账号闭环 v1;存在关联 User 即 true,含已禁用/软删的绑定 —— 不代表当前可登录,仅表示该 memberId 槽位已被占用)",
         "type": "boolean",
       },
+      "hasOfficialPortrait": {
+        "description": "是否有当前生效的标准照(等价于 officialPortraitId !== null)",
+        "type": "boolean",
+      },
       "id": {
         "description": "主键(cuid;独立,不复用 users.id)",
         "example": "cl9z3a8b00000abcd1234efgh",
@@ -18024,6 +18119,11 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "example": "老张",
         "nullable": true,
         "type": "object",
+      },
+      "officialPortraitId": {
+        "description": "当前生效标准照的版本 id;无则 null。**这里不返图片 URL** —— 图走 GET :id/official-portrait(短 TTL 签名 URL)",
+        "nullable": true,
+        "type": "string",
       },
       "realName": {
         "description": "真实姓名(日常身份事实源)",
@@ -18060,6 +18160,8 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "hasAccount",
       "createdAt",
       "updatedAt",
+      "officialPortraitId",
+      "hasOfficialPortrait",
     ],
     "type": "object",
   },
@@ -26123,6 +26225,19 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     },
     "required": [
       "operationKey",
+      "reason",
+    ],
+    "type": "object",
+  },
+  "VoidMemberOfficialPortraitDto": {
+    "properties": {
+      "reason": {
+        "description": "作废原因(必填)",
+        "maxLength": 200,
+        "type": "string",
+      },
+    },
+    "required": [
       "reason",
     ],
     "type": "object",
@@ -52989,6 +53104,770 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
         },
       ],
       "summary": "离队影响预检(活动发起/负责人/协办及当前未来报名安全摘要) [rbac: member.offboard.record]",
+      "tags": [
+        "Admin - Members",
+      ],
+    },
+  },
+  "/api/admin/v1/members/{id}/official-portrait": {
+    "delete": {
+      "operationId": "MembersController_voidOfficialPortrait",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/VoidMemberOfficialPortraitDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "204": {
+          "description": "No content",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "15001: 队员不存在; 15039: 该队员当前没有生效中的标准照",
+                    "enum": [
+                      15001,
+                      15039,
+                    ],
+                    "example": 15001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "队员不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "队员不存在(code=15001) / 该队员当前没有生效中的标准照(code=15039)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "作废当前队员标准照(ACTIVE → VOIDED,必填 reason;**不**自动回退到上一版;另按组织数据范围判权) [rbac: member-portrait.manage.record]",
+      "tags": [
+        "Admin - Members",
+      ],
+    },
+    "get": {
+      "operationId": "MembersController_getOfficialPortrait",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/MemberOfficialPortraitDto",
+                      },
+                    ],
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "15001: 队员不存在",
+                    "enum": [
+                      15001,
+                    ],
+                    "example": 15001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "队员不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "队员不存在(code=15001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "当前生效的队员标准照(无则返 null;另按调用者的组织数据范围过滤) [rbac: member.read.record]",
+      "tags": [
+        "Admin - Members",
+      ],
+    },
+    "post": {
+      "operationId": "MembersController_uploadOfficialPortrait",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "multipart/form-data": {
+            "schema": {
+              "properties": {
+                "file": {
+                  "description": "JPEG / PNG 原图,≤10 MiB,**5:7 ±1%** 且不低于 826×1158(服务端规范化成 826×1158 JPEG q90、白底、清 EXIF/GPS)",
+                  "format": "binary",
+                  "type": "string",
+                },
+              },
+              "required": [
+                "file",
+              ],
+              "type": "object",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/MemberOfficialPortraitDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 13012: 附件 MIME 类型不在白名单; 13013: 附件大小超过上限; 13035: 图片无法解码(文件已损坏,或不是受支持的图片格式); 13036: 不接受多帧 / 动图(请上传单帧静态图片); 13037: 图片分辨率低于最低要求(不做插值放大,请上传更清晰的原图); 13038: 图片宽高比不符合该用途的规格要求; 13039: 图片像素总数超出上限",
+                    "enum": [
+                      40000,
+                      13012,
+                      13013,
+                      13035,
+                      13036,
+                      13037,
+                      13038,
+                      13039,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 附件 MIME 类型不在白名单(code=13012) / 附件大小超过上限(code=13013) / 图片无法解码(文件已损坏,或不是受支持的图片格式)(code=13035) / 不接受多帧 / 动图(请上传单帧静态图片)(code=13036) / 图片分辨率低于最低要求(不做插值放大,请上传更清晰的原图)(code=13037) / 图片宽高比不符合该用途的规格要求(code=13038) / 图片像素总数超出上限(code=13039)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "15001: 队员不存在",
+                    "enum": [
+                      15001,
+                    ],
+                    "example": 15001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "队员不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "队员不存在(code=15001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "15040: 该队员的标准照正在被另一次操作变更,请重试",
+                    "enum": [
+                      15040,
+                    ],
+                    "example": 15040,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "该队员的标准照正在被另一次操作变更,请重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "该队员的标准照正在被另一次操作变更,请重试(code=15040)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "上传 / 替换队员标准照(multipart;旧版转 SUPERSEDED 同事务保留;另按组织数据范围判权) [rbac: member-portrait.manage.record]",
+      "tags": [
+        "Admin - Members",
+      ],
+    },
+  },
+  "/api/admin/v1/members/{id}/official-portraits": {
+    "get": {
+      "operationId": "MembersController_listOfficialPortraits",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "items": {
+                      "$ref": "#/components/schemas/MemberOfficialPortraitDto",
+                    },
+                    "type": "array",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "15001: 队员不存在",
+                    "enum": [
+                      15001,
+                    ],
+                    "example": 15001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "队员不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "队员不存在(code=15001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "队员标准照版本历史(含已顶替 / 已作废,version 倒序;另按组织数据范围过滤) [rbac: member-portrait.read.history]",
       "tags": [
         "Admin - Members",
       ],

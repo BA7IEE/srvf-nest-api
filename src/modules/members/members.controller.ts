@@ -1,22 +1,33 @@
 import {
+  type ArgumentsHost,
   Body,
+  Catch,
   Controller,
   Delete,
+  type ExceptionFilter,
   Get,
   HttpCode,
   HttpStatus,
   Param,
   Patch,
+  PayloadTooLargeException,
   Post,
   Put,
   Query,
   Req,
+  UploadedFile,
+  UseFilters,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
   ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
+  ApiNoContentResponse,
+  ApiWrappedArrayResponse,
+  ApiWrappedNullableResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
 } from '../../common/decorators/api-response.decorator';
@@ -27,6 +38,7 @@ import {
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import { BizException } from '../../common/exceptions/biz.exception';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   BindMemberAccountDto,
@@ -46,7 +58,10 @@ import {
   UpdateMemberDto,
   UpdateMemberStatusDto,
   ReplaceMemberAudienceTagsDto,
+  MemberOfficialPortraitDto,
+  VoidMemberOfficialPortraitDto,
 } from './members.dto';
+import { MemberOfficialPortraitService } from './member-official-portrait.service';
 import { MembersService } from './members.service';
 import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
@@ -62,11 +77,47 @@ import { RequiresPermission } from '../../common/decorators/route-authz.decorato
 // POST :id/account/reopen 复用 `member.grant.account`;PATCH :id/account/status 复用既有
 // `user.update.status`(零新权限码扩散,均绑 ops-admin,不绑 biz-admin)。
 
+// issue #1055 T4:标准照 multipart。
+//
+// ⚠️ 与 `app-me.controller.ts` / `app-registration-upload-sessions.controller.ts` 是**同形的三份**。
+// 刻意不抽公共:共享处只能落在 `src/common/filters/**`(`global-pipeline` 红区,全局
+// Guard/Filter/Interceptor 影响每个请求)。三个各十行、无共享清单的 filter 各自漂移
+// 也不会互相影响,代价小于动红区。
+type PortraitMultipartFile = {
+  originalname: string;
+  mimetype: string;
+  size: number;
+  buffer: Buffer;
+};
+
+// Busboy 在「已解析字节数等于配置值」时才发 limit,故配置值取上限 +1:
+// 对外接受的最大值仍是 10 MiB,第 1 个超出字节在进路由前被拒。
+const PORTRAIT_MULTIPART_FILE_SIZE_LIMIT = 10 * 1024 * 1024 + 1;
+
+// 全局 filter 把通用 multipart 413 保持在 40000。本路由有固定附件契约,
+// 解析层的体积拒绝必须保住 13013,否则客户端拿到的错误码会随「在哪一层被拒」漂移。
+@Catch(PayloadTooLargeException)
+class PortraitUploadFileSizeFilter implements ExceptionFilter<PayloadTooLargeException> {
+  catch(_exception: PayloadTooLargeException, host: ArgumentsHost): void {
+    const response = host.switchToHttp().getResponse<{
+      status: (code: number) => { json: (body: unknown) => void };
+    }>();
+    response.status(BizCode.ATTACHMENT_SIZE_EXCEEDED.httpStatus).json({
+      code: BizCode.ATTACHMENT_SIZE_EXCEEDED.code,
+      message: BizCode.ATTACHMENT_SIZE_EXCEEDED.message,
+      data: null,
+    });
+  }
+}
+
 @ApiTags('Admin - Members')
 @ApiBearerAuth()
 @Controller('admin/v1/members')
 export class MembersController {
-  constructor(private readonly service: MembersService) {}
+  constructor(
+    private readonly service: MembersService,
+    private readonly portraits: MemberOfficialPortraitService,
+  ) {}
 
   @Get()
   @RequiresPermission('member.read.record', { require: 'all', engine: 'rbac-global' })
@@ -139,6 +190,131 @@ export class MembersController {
     @CurrentUser() currentUser: CurrentUserPayload,
   ): Promise<MemberResponseDto> {
     return this.service.create(dto, currentUser);
+  }
+
+  // ===== issue #1055 T4:队员标准照 =====
+  //
+  // 四个端点(issue §8.1 写的是五个,upload-url + confirm-upload 按 T3 已拍板的口径
+  // 合成一次 multipart POST —— 服务端要规范化就必须看见字节)。
+  //
+  // ⚠️ 装饰器沿本 controller 既有形状用 `rbac-global` 做**粗判**(有没有这个码),
+  // **组织数据范围在 service 内判**(`getVisibleOrganizationScope` 取范围,再验目标 memberId
+  // 在不在范围内)。issue §8.1 要求的 scoped 就落在后半截 —— 只验前半截的话,
+  // A 部门的队长拿着 org-scoped 绑定就能改 B 部门队员的标准照,而 `hasPermission` 照样为 true。
+
+  @Get(':id/official-portrait')
+  @RequiresPermission('member.read.record', { require: 'all', engine: 'rbac-global' })
+  @ApiOperation({
+    summary:
+      '当前生效的队员标准照(无则返 null;另按调用者的组织数据范围过滤) [rbac: member.read.record]',
+  })
+  @ApiWrappedNullableResponse(MemberOfficialPortraitDto)
+  @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN, BizCode.MEMBER_NOT_FOUND)
+  getOfficialPortrait(
+    @Param() params: IdParamDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+  ): Promise<MemberOfficialPortraitDto | null> {
+    return this.portraits.getCurrent(params.id, currentUser);
+  }
+
+  @Get(':id/official-portraits')
+  @RequiresPermission('member-portrait.read.history', { require: 'all', engine: 'rbac-global' })
+  @ApiOperation({
+    summary:
+      '队员标准照版本历史(含已顶替 / 已作废,version 倒序;另按组织数据范围过滤) [rbac: member-portrait.read.history]',
+  })
+  @ApiWrappedArrayResponse(MemberOfficialPortraitDto)
+  @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN, BizCode.MEMBER_NOT_FOUND)
+  listOfficialPortraits(
+    @Param() params: IdParamDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+  ): Promise<MemberOfficialPortraitDto[]> {
+    return this.portraits.listHistory(params.id, currentUser);
+  }
+
+  @Post(':id/official-portrait')
+  @RequiresPermission('member-portrait.manage.record', { require: 'all', engine: 'rbac-global' })
+  @HttpCode(HttpStatus.OK)
+  @UseFilters(PortraitUploadFileSizeFilter)
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: PORTRAIT_MULTIPART_FILE_SIZE_LIMIT, files: 1 } }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description:
+            'JPEG / PNG 原图,≤10 MiB,**5:7 ±1%** 且不低于 826×1158(服务端规范化成 826×1158 JPEG q90、白底、清 EXIF/GPS)',
+        },
+      },
+    },
+  })
+  @ApiOperation({
+    summary:
+      '上传 / 替换队员标准照(multipart;旧版转 SUPERSEDED 同事务保留;另按组织数据范围判权) [rbac: member-portrait.manage.record]',
+  })
+  @ApiWrappedOkResponse(MemberOfficialPortraitDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.MEMBER_NOT_FOUND,
+    BizCode.MEMBER_OFFICIAL_PORTRAIT_CONFLICT,
+    BizCode.ATTACHMENT_MIME_NOT_ALLOWED,
+    BizCode.ATTACHMENT_SIZE_EXCEEDED,
+    BizCode.ATTACHMENT_IMAGE_UNDECODABLE,
+    BizCode.ATTACHMENT_IMAGE_ANIMATED_NOT_ALLOWED,
+    BizCode.ATTACHMENT_IMAGE_TOO_SMALL,
+    BizCode.ATTACHMENT_IMAGE_ASPECT_RATIO_INVALID,
+    BizCode.ATTACHMENT_IMAGE_PIXELS_EXCEEDED,
+  )
+  uploadOfficialPortrait(
+    @Param() params: IdParamDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @UploadedFile() file: PortraitMultipartFile | undefined,
+    @Req() req: Request,
+  ): Promise<MemberOfficialPortraitDto> {
+    if (file === undefined) throw new BizException(BizCode.BAD_REQUEST);
+    return this.portraits.replace(
+      params.id,
+      currentUser,
+      {
+        buffer: file.buffer,
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+      },
+      this.buildAuditMeta(req),
+    );
+  }
+
+  @Delete(':id/official-portrait')
+  @RequiresPermission('member-portrait.manage.record', { require: 'all', engine: 'rbac-global' })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary:
+      '作废当前队员标准照(ACTIVE → VOIDED,必填 reason;**不**自动回退到上一版;另按组织数据范围判权) [rbac: member-portrait.manage.record]',
+  })
+  @ApiNoContentResponse()
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.MEMBER_NOT_FOUND,
+    BizCode.MEMBER_OFFICIAL_PORTRAIT_NOT_FOUND,
+  )
+  async voidOfficialPortrait(
+    @Param() params: IdParamDto,
+    @Body() dto: VoidMemberOfficialPortraitDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<void> {
+    await this.portraits.void(params.id, currentUser, dto.reason, this.buildAuditMeta(req));
   }
 
   @Get(':id/audience-tags')

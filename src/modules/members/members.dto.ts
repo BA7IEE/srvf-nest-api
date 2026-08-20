@@ -1,5 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { DictItemStatus, MemberStatus, Role, UserStatus } from '@prisma/client';
+import {
+  DictItemStatus,
+  MemberOfficialPortraitSource,
+  MemberOfficialPortraitStatus,
+  MemberStatus,
+  Role,
+  UserStatus,
+} from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -10,6 +17,7 @@ import {
   IsDateString,
   IsEnum,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Length,
@@ -112,6 +120,17 @@ export class MemberResponseDto {
 
   @ApiProperty({ description: '更新时间' })
   updatedAt!: Date;
+
+  @ApiProperty({
+    description:
+      '当前生效标准照的版本 id;无则 null。**这里不返图片 URL** —— 图走 GET :id/official-portrait(短 TTL 签名 URL)',
+    nullable: true,
+    type: String,
+  })
+  officialPortraitId!: string | null;
+
+  @ApiProperty({ description: '是否有当前生效的标准照(等价于 officialPortraitId !== null)' })
+  hasOfficialPortrait!: boolean;
 }
 
 export class MemberAudienceTagDto {
@@ -636,4 +655,80 @@ export class BulkGrantMemberAccountsResponseDto {
 
   @ApiProperty({ type: () => BulkGrantSummaryDto })
   summary!: BulkGrantSummaryDto;
+}
+
+// ===== issue #1055 T4:队员标准照 =====
+
+/**
+ * 队员标准照的对外投影。
+ *
+ * ⚠️ **不返 raw storage key**(与 T3 的 `AccountAvatarDto` 同一条理由):裸 key 是一个
+ * 永不过期、与鉴权无关的对象引用。这里给短 TTL 签名 URL;要长期引用请存 `id`
+ * (正式材料引用的就是它 —— issue §10.3:定稿后不得动态读「当前标准照」)。
+ *
+ * `attachmentId` 可空:历史版本的二进制被合规清理后,元数据仍留存以解释「曾经有过第 N 版」。
+ */
+export class MemberOfficialPortraitDto {
+  @ApiProperty({ description: '标准照版本 id。正式材料引用它,不要引用 accessUrl' })
+  id!: string;
+
+  @ApiProperty({ description: '所属队员 id' })
+  memberId!: string;
+
+  @ApiProperty({ description: '版本号,按队员单调递增,从 1 起;作废过的号不复用' })
+  version!: number;
+
+  @ApiProperty({
+    description: '状态:ACTIVE 当前 / SUPERSEDED 被顶替 / VOIDED 照片本身被判无效',
+    enum: MemberOfficialPortraitStatus,
+  })
+  status!: MemberOfficialPortraitStatus;
+
+  @ApiProperty({ description: '冻结规格代码,当前恒 uniform-portrait-v1' })
+  specVersion!: string;
+
+  @ApiProperty({ description: '来源', enum: MemberOfficialPortraitSource })
+  source!: MemberOfficialPortraitSource;
+
+  @ApiProperty({
+    description: '实际拍摄日期;未知为 null(不拿上传日期冒充)',
+    nullable: true,
+    type: Date,
+  })
+  capturedAt!: Date | null;
+
+  @ApiProperty({ description: '本版生效时刻' })
+  activatedAt!: Date;
+
+  @ApiProperty({ description: '终结时刻;ACTIVE 时为 null', nullable: true, type: Date })
+  endedAt!: Date | null;
+
+  @ApiProperty({ description: '终结原因;ACTIVE 时为 null', nullable: true, type: String })
+  endReason!: string | null;
+
+  @ApiProperty({
+    description: '二进制附件 id;历史版本被合规清理后为 null',
+    nullable: true,
+    type: String,
+  })
+  attachmentId!: string | null;
+
+  @ApiProperty({
+    description: '短 TTL 签名下载 URL;签不出来或已清理时为 null',
+    nullable: true,
+    type: String,
+  })
+  accessUrl!: string | null;
+
+  @ApiProperty({ description: 'accessUrl 的失效时刻', nullable: true, type: Date })
+  accessUrlExpiresAt!: Date | null;
+}
+
+/** 作废当前标准照。**reason 必填**(issue §8.3)—— 作废含「这张照片有问题」的判断,须留下依据。 */
+export class VoidMemberOfficialPortraitDto {
+  @ApiProperty({ description: '作废原因(必填)', maxLength: 200 })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  reason!: string;
 }

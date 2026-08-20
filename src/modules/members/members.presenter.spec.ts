@@ -27,7 +27,22 @@ describe('attachAccountInfo', () => {
       hasAccount: true,
       accountStatus: UserStatus.ACTIVE,
       userId: 'u1',
+      // issue #1055 T4:不传第三个入参 = 没有标准照。
+      // ⚠️ 这里是**完整字段集相等**(非 objectContaining)—— 多一个字段同样红。
+      // 那正是本 spec 的意义:presenter 是对外 DTO 的唯一组装点,悄悄多吐一个字段
+      // 就是一次没人察觉的契约扩张。
+      officialPortraitId: null,
+      hasOfficialPortrait: false,
     });
+  });
+
+  it('传入当前标准照版本 id → 两个字段一起翻面(**只给 id 不给 URL**)', () => {
+    const dto = attachAccountInfo(MEMBER, undefined, 'portrait-v3');
+    expect(dto.officialPortraitId).toBe('portrait-v3');
+    expect(dto.hasOfficialPortrait).toBe(true);
+    // 详情面刻意不带签名 URL:URL 的 TTL 只有几分钟,塞进可缓存的详情响应里
+    // 会让整个响应跟着过期;图走 GET :id/official-portrait。
+    expect(JSON.stringify(dto)).not.toContain('accessUrl');
   });
 
   it('无关联账号 → hasAccount=false,两个字段落 null(不是 undefined / 不省略)', () => {

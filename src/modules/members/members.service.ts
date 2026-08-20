@@ -5,6 +5,7 @@ import {
   BindingStatus,
   DictItemStatus,
   DictTypeStatus,
+  MemberOfficialPortraitStatus,
   MemberStatus,
   MembershipStatus,
   PrincipalType,
@@ -309,7 +310,13 @@ export class MembersService {
     await this.access.assertCanOrThrow(currentUser, 'member.read.record', { type: 'member', id });
     const member = await this.access.findMemberOrThrow(id);
     const linked = await this.query.findLinkedUser(id);
-    return attachAccountInfo(member, linked);
+    // issue #1055 T4:详情带出当前标准照的**版本 id**(不带签名 URL,理由见 presenter 注释)。
+    // 走 `(memberId, status)` 索引,单行读。
+    const portrait = await this.prisma.memberOfficialPortrait.findFirst({
+      where: { memberId: id, status: MemberOfficialPortraitStatus.ACTIVE },
+      select: { id: true },
+    });
+    return attachAccountInfo(member, linked, portrait?.id ?? null);
   }
 
   // ============ update ============

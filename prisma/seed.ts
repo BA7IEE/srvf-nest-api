@@ -3511,11 +3511,6 @@ const BIZ_ADMIN_TARGETED_REMOVAL_CODES = [
 // 活动责任闭环 contract 二十二码（其中两条 return 从未进入业务面集合）。
 const BIZ_ADMIN_EXCLUDED_CODES: ReadonlySet<string> = new Set([
   MEMBER_DELETE_RECORD_CODE,
-  // issue #1055 T1:标准照两码本刀只登记不绑定。manage 必须走组织数据范围(issue §8.1),
-  // 而 biz-admin 是 GLOBAL 绑定 —— 先绑再收回等于缩小既有角色权限,要另走拍板。
-  // read.history 一并排除:让「谁能看标准照历史」和「谁能管标准照」在 T4 一次定。
-  MEMBER_PORTRAIT_MANAGE_RECORD_CODE,
-  MEMBER_PORTRAIT_READ_HISTORY_CODE,
   ...BIZ_ADMIN_TARGETED_REMOVAL_CODES,
 ]);
 
@@ -3577,7 +3572,7 @@ const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISS
 const BIZ_ADMIN_ROLE_CODE = 'biz-admin';
 const BIZ_ADMIN_DISPLAY_NAME = '业务管理员';
 const BIZ_ADMIN_DESCRIPTION =
-  '业务面通用管理角色(Slow-3 决议 2026-06-11;v0.61.0 PR-11 contract 后活动发布/更新/取消/完成、报名写动作、考勤提交/编辑/删除/一审动作改由 owner/collaborator/reviewer 显式责任角色承载):89 条业务码中绑 69；继续保留 activity.create/delete.record、activity-registration.read.record、attendance.read.sheet。member.delete.record 仅 SUPER_ADMIN；考勤终审/撤回与活动责任 contract 动作均不绑。member-portrait 两码（issue #1055 T1）登记但不绑——manage 须走组织数据范围，绑定与 scoped 判权一并在 T4 定。attachment 存量 20 码(member/certificate/activity)不在本角色，CMS content 附件写 4 码保留；notification 7 码与 membership.transfer.record 保留；证书标准库 PR-1 起含 certificate.read.sensitive(证书编号/审核备注明文，org-admin 不继承)；每个 ADMIN 用户由 seed 自动补挂本角色。';
+  '业务面通用管理角色(Slow-3 决议 2026-06-11;v0.61.0 PR-11 contract 后活动发布/更新/取消/完成、报名写动作、考勤提交/编辑/删除/一审动作改由 owner/collaborator/reviewer 显式责任角色承载):89 条业务码中绑 69；继续保留 activity.create/delete.record、activity-registration.read.record、attendance.read.sheet。member.delete.record 仅 SUPER_ADMIN；考勤终审/撤回与活动责任 contract 动作均不绑。member-portrait 两码（issue #1055 T4）交给既有派生链：biz-admin 全局持有，org-admin 按组织范围继承，副职只读投影自动拿到 read.history，group-manager 不绑。manage 的**组织范围由端点判**（getVisibleOrganizationScope 取范围，再验目标 memberId 在不在范围内），不是靠绑定形态判 —— biz-admin 的 GLOBAL 绑定本来就该能管全队。attachment 存量 20 码(member/certificate/activity)不在本角色，CMS content 附件写 4 码保留；notification 7 码与 membership.transfer.record 保留；证书标准库 PR-1 起含 certificate.read.sensitive(证书编号/审核备注明文，org-admin 不继承)；每个 ADMIN 用户由 seed 自动补挂本角色。';
 
 // Slow-4 T1(36/35)+ 保险模块含 PR2 增量(+8 全绑 → 44/43)+ 招新一期 T1 增量(+5 → 49/48):
 // 业务面权限点 + biz-admin 角色 + 绑定 + ADMIN 全员补挂 + 强校验。

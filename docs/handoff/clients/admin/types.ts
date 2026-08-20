@@ -3,7 +3,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.66.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:31c1a7c480f7419dfa584b743c0b2ffd2b70bb8b9f6b5667285438e4cdaa730a
+// inputDigest: sha256:8319f54a178447df9b0f5a5398c843f15c0246fc0849a95be72b8471d02373ba
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -1666,6 +1666,22 @@ export interface MemberOffboardResponseDto {
   "residualActiveSupervisions": number;
 }
 
+export interface MemberOfficialPortraitDto {
+  "id": string;
+  "memberId": string;
+  "version": number;
+  "status": "ACTIVE" | "SUPERSEDED" | "VOIDED";
+  "specVersion": string;
+  "source": "ADMIN_UPLOAD" | "LEGACY_IMPORT";
+  "capturedAt": string | null;
+  "activatedAt": string;
+  "endedAt": string | null;
+  "endReason": string | null;
+  "attachmentId": string | null;
+  "accessUrl": string | null;
+  "accessUrlExpiresAt": string | null;
+}
+
 export interface MemberOptionItemDto {
   "id": string;
   "label": string;
@@ -1750,6 +1766,8 @@ export interface MemberResponseDto {
   "userId"?: Record<string, unknown> | null;
   "createdAt": string;
   "updatedAt": string;
+  "officialPortraitId": string | null;
+  "hasOfficialPortrait": boolean;
 }
 
 export interface MembershipConflictItemDto {
@@ -2855,6 +2873,10 @@ export interface UserOptionsResponseDto {
 
 export interface VerifyCertificateDto {
   "verifyNote"?: string;
+}
+
+export interface VoidMemberOfficialPortraitDto {
+  "reason": string;
 }
 
 export interface WechatSubscribeTemplateDto {
