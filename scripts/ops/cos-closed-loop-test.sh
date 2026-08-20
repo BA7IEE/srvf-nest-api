@@ -54,7 +54,7 @@ trap 'cleanup_content; rm -rf "$WORK"' EXIT
 echo; echo "── 2. 申请签名上传 URL ──"
 UP=$(curl -sS -X POST "$BASE/api/admin/v1/attachments/upload-url" "${AUTH[@]}" \
   -d "$(jq -nc --arg oid "$CONTENT_ID" --argjson sz "$SIZE" \
-        '{ownerType:"content-image",ownerId:$oid,originalName:"probe.png",mime:"image/png",size:$sz}')")
+        '{ownerType:"content-image",ownerId:$oid,originalName:"probe.png",mime:"image/png",sizeBytes:$sz}')")
 UPLOAD_URL=$(echo "$UP" | jq -r '.data.uploadUrl // empty')
 UPLOAD_TOKEN=$(echo "$UP" | jq -r '.data.uploadToken // empty')
 UPLOAD_METHOD=$(echo "$UP" | jq -r '.data.uploadMethod // "PUT"')
